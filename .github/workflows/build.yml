@@ -1,0 +1,28 @@
+name: Build APK
+on:
+  push:
+  workflow_dispatch:
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check project is at repo root
+        run: |
+          test -f settings.gradle.kts || { echo "::error::settings.gradle.kts not at repo root"; ls -R | head -40; exit 1; }
+          V=$(grep -o 'versionName = "[^"]*"' app/build.gradle.kts)
+          echo "Building $V commit ${GITHUB_SHA::7}" | tee -a "$GITHUB_STEP_SUMMARY"
+          echo "APPVER=$(echo $V | grep -o '[0-9.]*')" >> $GITHUB_ENV
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: 8.11.1
+      - name: Build
+        run: gradle assembleDebug --no-daemon
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Subtitler-v${{ env.APPVER }}-run${{ github.run_number }}
+          path: app/build/outputs/apk/debug/app-debug.apk
