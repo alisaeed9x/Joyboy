@@ -300,6 +300,50 @@ The sentences below are consecutive speech from one video, in order. Each one al
         return sb.toString()
     }
 
+    // ───────────────────────── (v219) الوضع 4: ترجمة سياقية بعد ما النص كله اتنسخ ─────────────────────────
+
+    private const val CONTEXT_RULES = """
+═══ WHOLE-VIDEO CONTEXT (this is what makes this task different) ═══
+- 🔴🔴 You are given the COMPLETE transcript of the video (or a very large part of it) in order, before the sentences you must translate. Read all of it first. Understand the whole story: who the people are, how they relate to each other, who is speaking to whom, what is happening, what was said earlier that explains what is said later, the tone of each scene.
+- Translate realistically, the way a native speaker would naturally say it in that situation, using the meaning of the WHOLE conversation, never a piece-by-piece or sentence-by-sentence rendering. A line that is ambiguous alone must be resolved by what comes before and after it anywhere in the transcript.
+- 🔴 Pronouns and gender: decide who every "he/she/you/they/it/this/that" refers to from the full context, and write the correct Arabic pronoun, verb form and adjective for that person (masculine/feminine, singular/dual/plural, formal/informal "you"). If the speaker_gender / addressee_gender / topic_gender fields of a sentence contradict what the full context clearly shows, trust the full context.
+- Keep every name, nickname, title, relationship word (father, boss, sir, darling…) and recurring term translated the same way everywhere. Keep the register of each character consistent from the first line to the last.
+- Callbacks, running jokes, sarcasm and references to earlier events must keep their link to the earlier lines in the translation.
+- Translate ONLY the sentences listed under "SENTENCES TO TRANSLATE". The transcript above is for understanding only: never translate, return or repeat any line from it that is not in that list.
+"""
+
+    /**
+     * (v219) ترجمة سياقية لجزء من الجمل: [all] = النص الأصلي الكامل (أو نافذة كبيرة منه) كسياق، [ctxFrom] = ترتيب أول جملة فيه في الفيديو كله،
+     * [refs] = ترتيب كل جملة من [items] في الفيديو كله (0-based)، [before] = آخر جمل اتترجمت في الأجزاء اللي قبل (ثبات المصطلحات والضمائر).
+     */
+    fun contextual(pb: PromptBuilder, c: Conf, all: List<Sub>, ctxFrom: Int, refs: List<Int>, items: List<Sub>, before: List<Sub>, chars: List<Chr>, gloss: List<Gloss>, part: Int, parts: Int, strict: Boolean = false): String {
+        val tgt = dialectEn(c.lang)
+        val main = TRANSLATE_MAIN.replace("{{TARGET}}", tgt).replace("{{STYLE}}", styleEn(c.style))
+            .replace("The sentences below are consecutive speech from one video, in order.", "The transcript and the sentences below are speech from one video, in order.")
+        val sb = StringBuilder(main).append(CONTEXT_RULES)
+        sb.append(charTable(chars)).append(glossBlock(c, gloss))
+        sb.append("\n═══ FULL TRANSCRIPT OF THE VIDEO, FOR UNDERSTANDING ONLY (line numbers are #N) ═══\n")
+        all.forEachIndexed { k, s ->
+            sb.append('#').append(ctxFrom + k + 1).append(' ')
+            if (s.speakerName.isNotEmpty()) sb.append('[').append(s.speakerName).append("] ")
+            else if (s.speakerTag.isNotEmpty()) sb.append('[').append(s.speakerTag).append("] ")
+            sb.append(s.original.replace('\n', ' ')).append('\n')
+        }
+        if (before.isNotEmpty()) {
+            sb.append("\n═══ ALREADY TRANSLATED IN EARLIER PARTS (keep names, terms and pronoun choices consistent with these; do not translate again) ═══\n")
+            before.takeLast(20).forEach { s -> sb.append("- ").append(s.original.replace('\n', ' ')).append("  ⇒  ").append(s.translated.replace('\n', ' ')).append('\n') }
+        }
+        sb.append("\n═══ SENTENCES TO TRANSLATE (part ").append(part).append(" of ").append(parts).append(": ").append(items.size).append(" sentences, idx 0 to ").append(items.size - 1).append("; \"ref\" = their line number #N in the transcript above) ═══\n")
+        val arr = itemsJson(items)
+        for (k in 0 until arr.length()) arr.getJSONObject(k).put("ref", refs.getOrElse(k) { 0 } + 1)
+        sb.append(arr.toString()).append("\n")
+        sb.append("\nReturn JSON only, with exactly ").append(items.size).append(" entries, no text outside it:\n")
+        sb.append("{\"translations\":[{\"idx\":0,\"translated\":\"...\"},{\"idx\":1,\"translated\":\"...\"}]}\n")
+        sb.append(langLock(pb, c, false))
+        if (strict) sb.append("- ⚠⚠ Your previous reply was missing sentences or had empty / non-Arabic entries. This time return all ").append(items.size).append(" idx values, each with a non-empty Arabic translation.\n")
+        return sb.toString()
+    }
+
     /** الجمل كـ JSON للبرومبت: idx + النص الأصلي + أجناس المتكلم/المخاطَب/الغايب + علامات */
     fun itemsJson(items: List<Sub>): JSONArray {
         val a = JSONArray()

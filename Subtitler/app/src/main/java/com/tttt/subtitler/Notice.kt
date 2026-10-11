@@ -50,7 +50,11 @@ object Notice {
     fun dismiss() { if (Looper.myLooper() == Looper.getMainLooper()) removeNow() else main.post { removeNow() } }
 
     /** إشعار عادي صغير */
-    fun show(c: Context, msg: String, ms: Long = 2400L) { present(c, msg, null, null, ms, null, null) }
+    fun show(c: Context, msg: String, ms: Long = 2400L) {
+        NoticeLog.add(msg)
+        if (NoticeLog.sinkFor(c)) return   // (v217) المشغّل فاتح: الإشعار بيتسجّل في مثلث ▲ فوق اليمين بدل ما يطلع عايم
+        present(c, msg, null, null, ms, null, null)
+    }
 
     /** إشعار بسؤال. onNo بتتنادي لو دوس «لا» أو عدّت المهلة من غير رد */
     fun ask(c: Context, msg: String, yes: String, no: String, ms: Long = 5000L, onYes: () -> Unit, onNo: () -> Unit) {
@@ -148,4 +152,43 @@ object Notice {
             timeout = t; main.postDelayed(t, ms)
         }
     }
+}
+
+
+/**
+ * (v217) سجل الإشعارات: كل Notice.show بيتسجّل هنا (الأحدث الأول). لو شاشة المشغّل فاتحة (attach) الإشعار مابيطلعش عايم،
+ * وبيظهر كمثلث ▲ أحمر شفاف جنب عدّاد الجمل، ولمسة عليه بتفتح قايمة منسدلة بالإشعارات. برّه المشغّل (الإعدادات مثلًا) الإشعار العايم زي ما هو.
+ */
+object NoticeLog {
+    class Item(val at: Long, val msg: String)
+    private val items = ArrayList<Item>()
+    private val main = Handler(Looper.getMainLooper())
+    @Volatile private var owner: Activity? = null
+    @Volatile private var onChange: (() -> Unit)? = null
+
+    fun attach(a: Activity, f: () -> Unit) { owner = a; onChange = f }
+    fun detach(a: Activity) { if (owner === a) { owner = null; onChange = null } }
+
+    fun sinkFor(c: Context): Boolean {
+        val o = owner ?: return false
+        var x: Context? = c
+        while (x is ContextWrapper) { if (x is Activity) return x === o && !o.isFinishing; x = x.baseContext }
+        return false
+    }
+
+    fun add(msg: String) {
+        val now = System.currentTimeMillis()
+        synchronized(items) {
+            val top = items.firstOrNull()
+            if (top != null && top.msg == msg && now - top.at < 3000L) return
+            items.add(0, Item(now, msg))
+            while (items.size > 80) items.removeAt(items.size - 1)
+        }
+        LogStore.add("🔔 $msg")
+        val f = onChange
+        if (f != null) main.post { try { f() } catch (_: Throwable) {} }
+    }
+
+    fun list(): List<Item> = synchronized(items) { ArrayList(items) }
+    fun clear() { synchronized(items) { items.clear() }; val f = onChange; if (f != null) main.post { try { f() } catch (_: Throwable) {} } }
 }

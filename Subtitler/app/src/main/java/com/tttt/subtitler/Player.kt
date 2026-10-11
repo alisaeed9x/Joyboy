@@ -270,6 +270,7 @@ class PlayerActivity : Activity(), Host {
     lateinit var extras: View
     lateinit var videoBoxRef: FrameLayout
     lateinit var fsBadge: TransBadge
+    lateinit var noticeBtn: TextView   // (v217) مثلث ▲ الإشعارات جنب عدّاد الجمل
     lateinit var visBadge: TransBadge   // (v182) عدّاد جمل الوضع البصري — أقصى الشمال
     lateinit var fsBtnV: TextView
     lateinit var fsBarFs: TextView
@@ -437,6 +438,11 @@ class PlayerActivity : Activity(), Host {
         var lgRef: TextView? = null
         val lgB = b(if (compact) "🌐 اللغة ▾" else "🌐 لغة الترجمة ▾", 0xFF37474F.toInt()) { lgRef?.let { langPopup(it) } }
         lgRef = lgB
+        // (v218) زرار وضع المفاتيح جنب زرار الترجمة: بيوري الوضع الشغّال دلوقتي وبيفتح قايمة الأوضاع التلاتة
+        var kmRef: TextView? = null
+        val kmTr = b("🔑 " + KeyMode.short(Cfg.int("kmode", 1)) + " ▾", 0xFF37474F.toInt()) { kmRef?.let { keyModePopup(it) } }
+        kmRef = kmTr
+        kmLabels.add(kmTr to { n: Int -> "🔑 " + KeyMode.short(n) + " ▾" })
         fun qBtn(): TextView {
             val cur = qOpts.getOrNull(qCur)?.h ?: 0
             val v = b(if (cur > 0) "${cur}p ▾" else "الجودة ▾", 0xFF37474F.toInt()) { }
@@ -470,7 +476,7 @@ class PlayerActivity : Activity(), Host {
                 taskBadges.add(badge); if (!TaskCenter.extra.contains(taskListener)) TaskCenter.extra.add(taskListener); taskListener()
                 return fl
             }
-            row.addView(chipB, lp(-2)); row.addView(taskBtn(), lp(-2)); row.addView(tg, lp(-2)); row.addView(rd, lp(-2)); row.addView(lgB, lp(-2))
+            row.addView(chipB, lp(-2)); row.addView(taskBtn(), lp(-2)); row.addView(tg, lp(-2)); row.addView(rd, lp(-2)); row.addView(lgB, lp(-2)); row.addView(kmTr, lp(-2))
             if (webVid) { row.addView(qBtn(), lp(-2)); row.addView(dlB, lp(-2)) }
             trUpdaters.add {
                 val paused = ::engine.isInitialized && engine.userPaused
@@ -479,6 +485,7 @@ class PlayerActivity : Activity(), Host {
                 tg.visibility = if (started && open) View.VISIBLE else View.GONE
                 rd.visibility = View.VISIBLE
                 lgB.visibility = if (!started || open) View.VISIBLE else View.GONE
+                kmTr.visibility = lgB.visibility
                 if (!started) { chipB.text = "▶ ترجمة"; chipB.background = ui.box(0xFFE53935.toInt(), 0x33FFFFFF, 12) }
                 else {
                     chipB.text = (if (paused) "⏸ " else if (trPct >= 100) "✅ " else "⏳ ") + trPct + "%" + (if (open) " ▴" else " ▾")
@@ -497,6 +504,7 @@ class PlayerActivity : Activity(), Host {
             row.addView(rs, lp(0).apply { width = 0; weight = 1f })
             row.addView(rd2, lp(0).apply { width = 0; weight = 1f })
             row.addView(lgB, lp(0).apply { width = 0; weight = 1.3f })
+            row.addView(kmTr, lp(0).apply { width = 0; weight = 1.5f })
             if (webVid) { row.addView(qBtn(), lp(0).apply { width = 0; weight = 1.1f }); row.addView(dlB, lp(0).apply { width = 0; weight = 0.6f }) }
             trUpdaters.add {
                 val paused = ::engine.isInitialized && engine.userPaused
@@ -1043,7 +1051,17 @@ class PlayerActivity : Activity(), Host {
         }
         videoBox.addView(centerPlay, FrameLayout.LayoutParams(ui.dp(64), ui.dp(64), Gravity.CENTER))
         fsBadge = TransBadge(this, th).apply { visibility = View.GONE; alpha = 0.5f; setOnClickListener { alpha = 1f; toggleMiniLog(); h.postDelayed({ alpha = 0.5f }, 4000) }; setOnLongClickListener { alpha = 1f; closeMiniLog(); versionsPopup(this); h.postDelayed({ alpha = 0.5f }, 4000); true } }   // (v125) دوسة = اللوج الصغير (أنهي باتش بيترجم) · ضغطة طويلة = قايمة الترجمات المحفوظة
-        videoBox.addView(fsBadge, FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.END).apply { setMargins(0, ui.dp(14), ui.dp(14), 0) })
+        // (v217) مثلث ▲ أحمر شفاف 70% جنب عدّاد الجمل (فوق اليمين): بيظهر لما فيه إشعارات، ولمسة عليه = قايمة منسدلة من الأحدث للأقدم
+        noticeBtn = ui.text("▲", 13f, 0xFFFF3B30.toInt(), true).apply {
+            visibility = View.GONE; alpha = 0.7f; gravity = Gravity.CENTER
+            setPadding(ui.dp(10), ui.dp(4), ui.dp(10), ui.dp(4)); background = ui.box(0x33FF3B30, 0x99FF3B30.toInt(), 20)
+            setOnClickListener { noticePopup(this) }
+        }
+        val fsTop = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_LTR; gravity = Gravity.CENTER_VERTICAL }
+        fsTop.addView(noticeBtn, LinearLayout.LayoutParams(-2, -2).apply { marginEnd = ui.dp(8) })
+        fsTop.addView(fsBadge, LinearLayout.LayoutParams(-2, -2))
+        videoBox.addView(fsTop, FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.END).apply { setMargins(0, ui.dp(14), ui.dp(14), 0) })
+        NoticeLog.attach(this) { paintNotices() }; paintNotices()
         // (v182) عدّاد جمل الوضع البصري: أقصى الشمال (عدّاد الصوت أقصى اليمين). دوسة = قايمة الوضع البصري
         visBadge = TransBadge(this, th).apply { visibility = View.GONE; alpha = 0.5f; setOnClickListener { alpha = 1f; visualDialog(); h.postDelayed({ alpha = 0.5f }, 4000) } }
         videoBox.addView(visBadge, FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.START).apply { setMargins(ui.dp(14), ui.dp(14), 0, 0) })
@@ -1194,11 +1212,11 @@ class PlayerActivity : Activity(), Host {
         val dualB = mini("💬") { v -> cycleDual(v) }.apply { background = dualCircleBg() }
         // (v208) زرار 🔑 بيبدّل وضع المفاتيح (1→2→3→4) ويوصل للمحرك الشغّال فورًا — زي زرار اللغة
         val kmB = mini("🔑" + KeyMode.clamp(Cfg.int("kmode", 1))) { v ->
-            val n = KeyMode.clamp(Cfg.int("kmode", 1)) % 4 + 1
-            Cfg.put("kmode", n.toString()); v.text = "🔑$n"
-            try { val nc = Cfg.snapshot(); conf = nc; if (::engine.isInitialized) engine.applyConf(nc) } catch (e: Throwable) { LogStore.err("Player:kmode", e) }
-            giShow("🔑 وضع المفاتيح " + KeyMode.name(n), Gravity.CENTER)
-        }   // وضع الترجمة (فردي / أصلي / مزدوج) — أيقونة بس من غير كلام
+            val n = KeyMode.clamp(Cfg.int("kmode", 1)) % KeyMode.count + 1
+            applyKeyMode(n); giShow("🔑 وضع المفاتيح " + KeyMode.name(n), Gravity.CENTER)
+        }
+        kmLabels.add(kmB to { n: Int -> "🔑$n" })
+   // وضع الترجمة (فردي / أصلي / مزدوج) — أيقونة بس من غير كلام
         ccToggleFn = { toggleCc() }
         if (noSub) { ccOn = false; ccB.alpha = 0.4f; ctl.cc.alpha = 0.4f }
         val fitB = fb("⬛ " + PlayerLogic.fitNames[curFit()]) { v ->
@@ -2601,6 +2619,40 @@ class PlayerActivity : Activity(), Host {
         }
         applyChromeFn()
     }
+    private fun paintNotices() {
+        if (!::noticeBtn.isInitialized) return
+        val n = NoticeLog.list().size
+        noticeBtn.visibility = if (n == 0) View.GONE else View.VISIBLE
+        noticeBtn.text = "▲ $n"
+    }
+
+    /** (v217) قايمة منسدلة بالإشعارات من الأحدث للأقدم */
+    private fun noticePopup(anchor: View) {
+        val fmt = java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.US)
+        val col = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; setPadding(ui.dp(14), ui.dp(4), ui.dp(14), ui.dp(4)) }
+        val items = NoticeLog.list()
+        for (it in items) {
+            col.addView(ui.text(fmt.format(java.util.Date(it.at)), 10.5f, th.muted), LinearLayout.LayoutParams(-1, -2))
+            col.addView(ui.text(it.msg, 13f, th.text).apply { setPadding(0, 0, 0, ui.dp(9)) }, LinearLayout.LayoutParams(-1, -2))
+        }
+        if (items.isEmpty()) col.addView(ui.text("مفيش إشعارات", 13f, th.muted))
+        val dm = resources.displayMetrics
+        val w = (dm.widthPixels * 0.86f).toInt()
+        col.measure(View.MeasureSpec.makeMeasureSpec(w, View.MeasureSpec.EXACTLY), View.MeasureSpec.UNSPECIFIED)
+        val maxH = (dm.heightPixels * 0.5f).toInt()
+        val sc = android.widget.ScrollView(this).apply { addView(col) }
+        val root = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL }
+        root.addView(ui.text("▲ الإشعارات (من الأحدث للأقدم)", 12.5f, th.text, true).apply { setPadding(ui.dp(14), ui.dp(10), ui.dp(14), ui.dp(4)) })
+        root.addView(sc, LinearLayout.LayoutParams(-1, minOf(col.measuredHeight, maxH)))
+        val pw = android.widget.PopupWindow(root, w, ViewGroup.LayoutParams.WRAP_CONTENT, true)
+        root.addView(ui.text("🧹 مسح الكل", 12.5f, th.primary, true).apply {
+            gravity = Gravity.CENTER; setPadding(ui.dp(14), ui.dp(10), ui.dp(14), ui.dp(10))
+            setOnClickListener { NoticeLog.clear(); pw.dismiss() }
+        }, LinearLayout.LayoutParams(-1, -2))
+        pw.setBackgroundDrawable(ui.box(th.card, th.border, 14)); pw.elevation = ui.dp(10).toFloat(); pw.isOutsideTouchable = true
+        try { pw.showAsDropDown(anchor, 0, ui.dp(6), Gravity.END) } catch (e: Throwable) { LogStore.err("Player:noticePopup", e) }
+    }
+
     private fun say(m: String) = runOnUiThread { Notice.show(this, (m).toString(), 2300L) }
     private fun touchSubs() = runOnUiThread { curIdx = -2; dirty = true }
 
@@ -2680,6 +2732,63 @@ class PlayerActivity : Activity(), Host {
 
     private var langPop: android.widget.PopupWindow? = null
     /** 🌐 لغة الترجمة: قايمة صغيرة تحت الزرار بنفس شكل قوايم الشريط. فصحى = ترجمة حرفية بس، غير كده = حرفية + تحويل تلقائي كل ~3 باتشات */
+    // ===== (v218) وضع المفاتيح: الأوضاع التلاتة + قايمة الاختيار جنب زرار الترجمة =====
+    private val kmLabels = ArrayList<Pair<TextView, (Int) -> String>>()
+    private var kmPop: android.widget.PopupWindow? = null
+
+    fun applyKeyMode(n0: Int) {
+        val n = KeyMode.clamp(n0)
+        Cfg.put("kmode", n.toString())
+        try { val nc = Cfg.snapshot(); conf = nc; if (::engine.isInitialized) engine.applyConf(nc) } catch (e: Throwable) { LogStore.err("Player:kmode", e) }
+        for ((v, f) in kmLabels) v.text = f(n)
+        LogStore.add("🔑 وضع المفاتيح اتغيّر لـ " + KeyMode.name(n))
+    }
+
+    fun keyModePopup(anchor: View) {
+        kmPop?.let { if (it.isShowing) { it.dismiss(); kmPop = null; return } }
+        val cur = KeyMode.clamp(Cfg.int("kmode", 1))
+        val col = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL
+            setPadding(ui.dp(8), ui.dp(8), ui.dp(8), ui.dp(8)); background = ui.box(0xF2141418.toInt(), 0x33FFFFFF, 12)
+        }
+        col.addView(ui.text("🔑 وضع المفاتيح — الشغّال دلوقتي: " + KeyMode.name(cur), 12.5f, Color.WHITE, true).apply { setPadding(ui.dp(6), ui.dp(2), ui.dp(6), ui.dp(8)) })
+        lateinit var pwRef: android.widget.PopupWindow
+        for (m in 1..KeyMode.count) {
+            val on = m == cur
+            val item = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL
+                setPadding(ui.dp(12), ui.dp(8), ui.dp(12), ui.dp(8))
+                background = ui.box(if (on) 0xFF1F5FBF.toInt() else 0x22FFFFFF, if (on) 0x66FFFFFF else 0x22FFFFFF, 10)
+                setOnClickListener {
+                    pwRef.dismiss()
+                    if (m != cur) {
+                        applyKeyMode(m)
+                        say("🔑 وضع المفاتيح: " + KeyMode.name(m) + (if (::engine.isInitialized && engineStarted) " — الباتشات الشغالة هتخلص الأول وبعدها الباتشات الجديدة تمشي بيه" else ""))
+                    }
+                }
+            }
+            item.addView(ui.text((if (on) "✓ " else "") + KeyMode.name(m), 13.5f, Color.WHITE, true))
+            item.addView(ui.text(KeyMode.descs[m - 1], 11f, 0xFFC9CED6.toInt()).apply { setPadding(0, ui.dp(2), 0, 0) })
+            col.addView(item, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = ui.dp(5) })
+        }
+        val popW = minOf(resources.displayMetrics.widthPixels - ui.dp(24), ui.dp(400))
+        col.measure(View.MeasureSpec.makeMeasureSpec(popW, View.MeasureSpec.EXACTLY), View.MeasureSpec.UNSPECIFIED)
+        val loc = IntArray(2); anchor.getLocationOnScreen(loc)
+        val screenH = resources.displayMetrics.heightPixels
+        val up = loc[1] > screenH / 2
+        val avail = (if (up) loc[1] - ui.dp(12) else screenH - loc[1] - anchor.height - ui.dp(12)).coerceAtLeast(ui.dp(120))
+        val popH = minOf(col.measuredHeight, avail)
+        val scroll = android.widget.ScrollView(this).apply { isVerticalScrollBarEnabled = false; addView(col) }
+        val pw = android.widget.PopupWindow(scroll, popW, popH, true)
+        pwRef = pw
+        pw.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(0))
+        pw.isOutsideTouchable = true
+        pw.setOnDismissListener { if (kmPop === pw) kmPop = null; showChrome() }
+        try { if (up) pw.showAsDropDown(anchor, 0, -(anchor.height + popH + ui.dp(2))) else pw.showAsDropDown(anchor, 0, ui.dp(2)) } catch (e: Throwable) { LogStore.err("Player:kmPop", e) }
+        kmPop = pw
+        h.removeCallbacks(hideChrome); showChrome(); h.removeCallbacks(hideChrome)
+    }
+
     fun langPopup(anchor: View) {
         langPop?.let { if (it.isShowing) { it.dismiss(); langPop = null; return } }
         val langs = listOf("فصحى", "مصري", "شامي", "لبناني", "خليجي", "مغربي", "عراقي", "سوداني")
@@ -3063,6 +3172,7 @@ class PlayerActivity : Activity(), Host {
     }
     override fun onDestroy() {
         LogStore.add("🔚 onDestroy (isFinishing=$isFinishing)")
+        NoticeLog.detach(this)
         try { TaskCenter.extra.remove(taskListener) } catch (_: Throwable) {}
         h.removeCallbacksAndMessages(null)
         pipOv?.hide(); pipOv = null

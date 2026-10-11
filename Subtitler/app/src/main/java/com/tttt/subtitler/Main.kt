@@ -194,7 +194,7 @@ class MainActivity : Activity() {
             return box
         }
         val keysUi = keyRows("🔑 مفاتيح Gemini الأساسية", keys, "الأساسية")
-        val backupUi = keyRows("🛟 مفاتيح احتياطية", backup, "الاحتياطية")
+        val backupUi = keyRows("🛟 مفاتيح احتياطية (أي باتش يرجع صفر جمل أو يفشل بيتترجم عليها بالترتيب)", backup, "الاحتياطية")
         val extraUi = keyRows("➕ مفاتيح إضافية (بتتضاف للأساسية)", extra, "الإضافية")
         val visKeysUi = keyRows("👁 مفتاح الوضع البصري", vkeys, "البصري")
         var modelSel = Cfg.str("model", Models.DEFAULT)
@@ -510,9 +510,7 @@ class MainActivity : Activity() {
                 },
                 ui.button("📊 إحصائية الاستهلاك والكوتة") { StatsUi(this, ui, th).show() },
                                 ui.section("🔑 كل المفاتيح", true,
-                    ui.text("حط كل مفاتيحك هنا في قايمة واحدة — البرنامج بيوزّعها لوحده: مفاتيح للترجمة (أغلبها)، ومفتاح أو اتنين للتنقيح الجزئي أثناء الترجمة، ومفتاح احتياطي لو مفتاح اتعطّل (من 6 مفاتيح). التنقيح الجزئي بيبدأ من 3 مفاتيح.", 12f, th.muted), keysUi),
-                                ui.section("🔑 أوضاع المفاتيح", true, kmodeChips, nMainSl, nBackSl,
-                    ui.text("الوضع 1 = الشغل القديم (قالب ثم متوازي). الوضع 2 = كل المفاتيح متوازية من الأول وبرومبت إنجليزي. الوضعين 3 و4 = ٧٥٪ من المفاتيح بتنسخ الكلام بس و٢٥٪ بتترجم كل ٣–٥ باتشات مع بعض. نفس الوضع بيتبدّل من زرار 🔑 في المشغّل.", 12f, th.muted))), false, "مفاتيح Gemini (توزيع تلقائي) · أوضاع المفاتيح 1–4 · الاستهلاك والكوتة · طريقة جلب مفتاح", group = "🌍 عام — بيأثر على الفيديو والموسيقى"),
+                    ui.text("حط كل مفاتيحك هنا في قايمة واحدة — البرنامج بيوزّعها لوحده: مفاتيح للترجمة (أغلبها)، ومفتاح أو اتنين للتنقيح الجزئي أثناء الترجمة، ومفتاح احتياطي لو مفتاح اتعطّل (من 6 مفاتيح). التنقيح الجزئي بيبدأ من 3 مفاتيح.", 12f, th.muted), keysUi)), false, "مفاتيح Gemini (توزيع تلقائي) · الاستهلاك والكوتة · طريقة جلب مفتاح", group = "🌍 عام — بيأثر على الفيديو والموسيقى"),
             TabDef("more", SettingsTabs.label("more"), listOf<View>(
                                 ui.section("▶ التشغيل", true,
                     ui.switchRow("كمّل الطابور تلقائيًا بعد إعادة تشغيل الجهاز", Cfg.bool("bg_autostart", true)) { Cfg.put("bg_autostart", if (it) "1" else "0") },
@@ -538,12 +536,14 @@ class MainActivity : Activity() {
             TabDef("general", SettingsTabs.label("general"), listOf<View>(
                                 ui.section("اللهجة", true, ui.chips(langs, { lang }) { lang = it; save() }),
                 ui.section("أسلوب الترجمة", true, ui.chips(styles, { style }) { style = it; save() }),
+                                ui.section("🔑 أوضاع المفاتيح", true, kmodeChips, nMainSl, nBackSl,
+                    ui.text("الوضع 1 = أول باتش لوحده يعرّف اللغة ويترجم قالب البرومبت ثم الباقي متوازي (الشغل القديم). الوضع 2 = كل المفاتيح متوازية من الأول وبرومبت إنجليزي ثابت. الوضع 3 = ٧٥٪ من المفاتيح بتنسخ الكلام بس و٢٥٪ بتترجم كل ٣–٥ باتشات مع بعض (برومبت إنجليزي). الوضع 4 = كل المفاتيح بتنسخ بس، وبعد ما الفيديو كله يتنسخ النص كله يتبعت لجيميناي يترجمه بالسياق الكامل (واقعي، مع ضبط الضمائر) مرة واحدة أو على أجزاء — والترجمة بتظهر في الآخر. أي باتش يرجع صفر جمل أو يفشل في أي وضع بيتترجم على مفتاح من «🛟 مفاتيح احتياطية» بالترتيب. نفس الوضع بيتبدّل من زرار «🔑 وضع» جنب زرار الترجمة في المشغّل.", 12f, th.muted)),
                                 ui.section("🤖 الموديل", true, modelChips, fetchModelsBtn, model, modelDesc),
                                 ui.section("🏎 اختبار سرعة رد الـ AI", false,
                     ui.text("بيبعت طلب صغير على كل مفتاح بالموديل المختار وflash-lite-latest ويوريك زمن الرد والأسرع (🏆). بيستهلك طلبات قليلة.", 12f, th.muted), speedBtn, speedOut, speedUseBtn),
                                 ui.section("⏱ الأداء والتقطيع", false, chunk, ahead, hlsAhead, atrack),
                                 ui.section("🧠 الذكاء التلقائي والمراجعة", false, *fl("autochars", "autopron", "autotpl", "gapfill", "prefine")),
-                ui.section("💾 الحفظ", false, *fl("autosrt"))), false, "اللهجة · الأسلوب · الموديل · السرعة · الأداء · التصحيح التلقائي · الحفظ", group = "🎞 مشغّل الفيديو"),
+                ui.section("💾 الحفظ", false, *fl("autosrt"))), false, "اللهجة · الأسلوب · أوضاع المفاتيح 1–4 · الموديل · السرعة · الأداء · التصحيح التلقائي · الحفظ", group = "🎞 مشغّل الفيديو"),
             TabDef("look", SettingsTabs.label("look"), listOf<View>(
                 ui.section("🔤 الخطوط", true, *sp.fonts.toTypedArray()),
                 ui.section("✨ الأنيميشن", false, *sp.anim.toTypedArray()),

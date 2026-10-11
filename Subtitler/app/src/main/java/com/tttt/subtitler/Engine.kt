@@ -69,23 +69,28 @@ class Engine(
     @Volatile private var lastGapTry = 0L
     private val basePool = Pool(conf)
     // (v210) الوضعين 3 و4: حوضين منفصلين — مفاتيح الترانسكريبشن (pool) ومفاتيح الترجمة (trPool). الاحتياطي مشترك. بيتبنوا من جديد بس لو المفاتيح/الوضع اتغيروا
+    // (v220) تبديل وضع المفاتيح أثناء الترجمة: conf.keyMode = اللي اليوزر اختاره، activeMode = اللي الشغل الجاري ماشي بيه. لو اختلفوا: الباتشات الشغالة
+    // (والمنسوخة المستنية ترجمة) بتخلص بالوضع القديم، مفيش باتشات جديدة بتتبعت، وبعدها activeMode بيتبدّل والباتشات الجديدة تمشي بالوضع الجديد.
+    @Volatile private var activeMode: Int = conf.keyMode
+    private val switching: Boolean get() = conf.keyMode != activeMode
+    private fun drained(): Boolean = inflight.isEmpty() && tHold.isEmpty() && tTaken.isEmpty() && trBusy.get() == 0 && bkQ.isEmpty() && rehomeQ.isEmpty()
     private var splitSig = ""
     private var txP: Pool? = null
     private var trP: Pool? = null
     @Synchronized private fun splitPools(): Pair<Pool, Pool> {
         val c = conf
-        val sig = c.keyMode.toString() + "|" + c.keys.joinToString(",") + "|" + c.backup.joinToString(",") + "|" + c.refine.joinToString(",")
+        val sig = activeMode.toString() + "|" + c.keys.joinToString(",") + "|" + c.backup.joinToString(",") + "|" + c.refine.joinToString(",")
         val a = txP; val b = trP
         if (a != null && b != null && sig == splitSig) return a to b
-        val (nTx, nTr) = KeyMode.txTrCounts(c.keys.size, c.keyMode)
+        val (nTx, nTr) = KeyMode.txTrCounts(c.keys.size, activeMode)
         val txKeys = c.keys.take(nTx)
-        val trKeys = if (c.keys.size <= 1) c.keys else c.keys.takeLast(nTr)
+        val trKeys = if (c.keys.size <= 1 || activeMode >= KeyMode.TRANSCRIBE_ALL) c.keys else c.keys.takeLast(nTr)   // (v219) الوضع 4: كل المفاتيح بتنسخ وكل المفاتيح بتترجم
         val p1 = Pool(c.withKeys(txKeys)); val p2 = Pool(c.withKeys(trKeys))
         txP = p1; trP = p2; splitSig = sig
-        host.log("🔑 وضع ${c.keyMode}: ${txKeys.size} مفتاح ترانسكريبشن + ${trKeys.size} مفتاح ترجمة" + (if (c.keys.size <= 1) " (مفتاح واحد بيعمل الاتنين)" else ""))
+        host.log("🔑 وضع $activeMode: ${txKeys.size} مفتاح ترانسكريبشن + ${trKeys.size} مفتاح ترجمة" + (if (c.keys.size <= 1) " (مفتاح واحد بيعمل الاتنين)" else if (activeMode >= KeyMode.TRANSCRIBE_ALL) " (كل المفاتيح بتعمل الاتنين)" else ""))
         return p1 to p2
     }
-    private val pool: Pool get() = if (conf.keyMode >= KeyMode.SPLIT_A) splitPools().first else basePool
+    private val pool: Pool get() = if (activeMode >= KeyMode.SPLIT_A) splitPools().first else basePool
     private val trPool: Pool get() = splitPools().second
     @Volatile private var running = true
     /** وقفة: المحرك مايبعتش مقاطع جديدة (مستني اختيار المستخدم: كمّل ولا ترجم من جديد) */
@@ -543,11 +548,23 @@ class Engine(
                     host.log("🔁 باتش ${ri + 1} (فاشل) → أقرب مفتاح فاضي ${pool.tail(rk)} — قبل باقي الباتشات")
                     dispatch(ri, ex, true, rk, re.prep); continue
                 }
+                // (v220) تبديل الوضع أثناء الترجمة: خلّص اللي شغّال الأول (من غير باتشات جديدة) وبعدين بدّل
+                if (switching) {
+                    if (drained()) {
+                        val from = activeMode; activeMode = conf.keyMode
+                        host.log("🔑 الباتشات الشغالة خلصت — الوضع اتبدّل من $from لـ ${KeyMode.name(activeMode)} والباتشات الجديدة هتمشي بيه")
+                        host.notice("🔑 الوضع الجديد شغّال: " + KeyMode.short(activeMode))
+                        if (activeMode < KeyMode.ALL_PARALLEL && detDone) try { maybeTranslateTemplate() } catch (_: Throwable) {}
+                    } else {
+                        host.status("🔑 بخلّص الباتشات الشغالة قبل ما أبدّل للوضع " + KeyMode.short(conf.keyMode) + "…")
+                        nap(200); continue
+                    }
+                }
                 // إعادة الباتشات الفاشلة بالأولوية (أكتر من 3): مفيش باتشات جديدة تتبعت لحد ما الفاشلين يتبعتوا، وبعدين الترجمة تكمّل عادي
                 if (priorityRetry.isNotEmpty()) {
                     val nx = priorityRetry.firstOrNull { it !in inflight }
                     if (nx == null) { nap(150); continue }
-                    if (inflight.size >= cap) { nap(150); continue }
+                    if (activeInflight() >= cap) { nap(150); continue }
                     priorityRetry.remove(nx)
                     host.log("🔁 باتش ${nx + 1} (أولوية) — على المفاتيح الأساسية، باقي ${priorityRetry.size}")
                     dispatch(nx, ex, true); continue
@@ -576,7 +593,7 @@ class Engine(
                 if (next < 0 && translateTick(inflight.isEmpty())) { nap(100); continue }   // (v210) مفيش ترانسكريبشن جاي: ابعت اللي اتجمّع للترجمة مهما كان عدده
                 if (next >= 0) {
                     // أول مقطع لوحده (عشان نعرف لغة الفيديو ونختار القالب الصح)، وبعدين بالتوازي — إلا الوضع 2+ (برومبت إنجليزي ثابت: مفيش قالب يتختار)
-                    if (inflight.size >= cap || (conf.keyMode < KeyMode.ALL_PARALLEL && !anyApplied && inflight.isNotEmpty())) { gapTick(); nap(150); continue }   // (v209) الوضع 2+: كل المفاتيح بالتوازي من الأول من غير ما نستنى أول باتش
+                    if (activeInflight() >= cap || (activeMode < KeyMode.ALL_PARALLEL && !anyApplied && inflight.isNotEmpty())) { gapTick(); nap(150); continue }   // (v209) الوضع 2+: كل المفاتيح بالتوازي من الأول من غير ما نستنى أول باتش
                     dispatch(next, ex); continue
                 }
                 if (inflight.isEmpty() && retryGaps()) continue
@@ -703,9 +720,9 @@ class Engine(
                     if (ok) {
                         val pp = p
                         if (pp == null) failed.remove(i)
-                        else { startedAt[i] = System.currentTimeMillis(); if (guard(i) { send(i, pp, firstKey = fk) }) failed.remove(i) }
+                        else { startedAt[i] = System.currentTimeMillis(); if (guard(i) { sendOrBackup(i, pp, fk) }) failed.remove(i) }
                     }
-                } finally { inflight.remove(i); preps.remove(i); startedAt.remove(i); keyOf.remove(i); pool.unreserve(i); host.changed() }
+                } finally { if (i !in bkQueued) inflight.remove(i); preps.remove(i); startedAt.remove(i); keyOf.remove(i); pool.unreserve(i); host.changed() }   // (v216) باتش في طابور الاحتياطي يفضل «شغّال» لحد ما يخلص
             }
         } catch (_: RejectedExecutionException) { inflight.remove(i); preps.remove(i); startedAt.remove(i); pool.unreserve(i) }
     }
@@ -799,7 +816,7 @@ class Engine(
         var key = firstKey?.takeIf { pool.ok(it) } ?: nextKey(avoidKey) ?: throw Exception("كل المفاتيح معطلة مؤقتًا — راجع المفاتيح")
         var partial = false
         var trunc = 0; var empties = 0; var bad = 0; var net = 0; var tries = 0; var langBad = 0
-        val tx = conf.keyMode >= KeyMode.SPLIT_A && i !in fullChunks   // (v210) ترانسكريبشن بس، والترجمة بعدين مجمّعة على مفاتيح الترجمة
+        val tx = activeMode >= KeyMode.SPLIT_A && i !in fullChunks   // (v210) ترانسكريبشن بس، والترجمة بعدين مجمّعة على مفاتيح الترجمة
         while (running && tries++ < MAX_TRIES) {
             if (claimed.contains(i)) return   // نسخة تانية من الباتش ده خلصت وطُبّقت قبلنا
             if (!hedge) keyOf[i] = key
@@ -826,6 +843,7 @@ class Engine(
                     nap(400); continue
                 }
                 if (off.isNotEmpty()) fresh = fixForeign(fresh)
+                if (fresh.isEmpty() && !w.silent && !hedge && !backupFirst && queueBackup(i, p, "رجع من غير جمل")) return   // (v216) صفر جمل: على المفتاح الاحتياطي بالترتيب في كل الأوضاع
                 if (fresh.isEmpty() && empties < (if (w.silent) 1 else 3)) {
                     empties++
                     if (!w.silent) host.log("⚠ المقطع ${i + 1} رجع من غير جمل رغم وجود صوت — إعادة محاولة ($empties/3)")
@@ -880,6 +898,68 @@ class Engine(
         if (running) throw Exception("استنفدت المحاولات")
     }
 
+    // ===== (v216) طابور المفتاح الاحتياطي (كل الأوضاع) =====
+    // أي باتش يرجع من غير جمل أو يفشل على مفتاح أساسي بيتحط هنا، والمفتاح الاحتياطي بيترجمهم واحد ورا التاني بالترتيب (الأقدم الأول):
+    // لو باتش 1 فشل وباتش 2 رجع صفر → باتش 1 الأول، ولما جمله ترجع يبدأ باتش 2. الباتش بيتبعت كطلب كامل (صوت ← ترجمة) بنفس الصوت المفكوك.
+    private val bkQ = java.util.concurrent.ConcurrentSkipListMap<Int, Prep>()
+    private val bkQueued = ConcurrentHashMap.newKeySet<Int>()
+    private val bkRunning = AtomicBoolean(false)
+    private fun activeInflight(): Int = inflight.count { it !in bkQueued }
+
+    /** true = الباتش اتسلّم للاحتياطي (الأساسي يسيبه). false = مفيش مفتاح احتياطي → السلوك القديم */
+    private fun queueBackup(i: Int, p: Prep, why: String): Boolean {
+        if (!running || isClosed) return false
+        if (pool.pickBackup(null) == null) return false
+        if (claimed.contains(i)) return true
+        if (bkQueued.add(i)) {
+            bkQ[i] = p; inflight.add(i)
+            host.log("🛟 باتش ${i + 1}: $why — اتحط في طابور المفتاح الاحتياطي (بالترتيب، في الطابور ${bkQ.size})")
+            host.notice("🛟 باتش ${i + 1} رايح للمفتاح الاحتياطي")
+        }
+        startBkLane()
+        return true
+    }
+
+    private fun sendOrBackup(i: Int, p: Prep, fk: String?) {
+        try { send(i, p, firstKey = fk) }
+        catch (e: Unsupported) { throw e }
+        catch (e: RehomeEx) { throw e }
+        catch (e: Exception) {
+            if (!running || isClosed || !queueBackup(i, p, "فشل: " + (e.message ?: e.javaClass.simpleName).take(80))) throw e
+        }
+    }
+
+    private fun startBkLane() {
+        if (!bkRunning.compareAndSet(false, true)) return
+        Thread {
+            try {
+                nap(1500)   // مهلة صغيرة عشان باتشات تانية فاشلة في نفس اللحظة تدخل الطابور وتترتب
+                while (running && !isClosed) {
+                    val e = bkQ.pollFirstEntry() ?: break
+                    val i = e.key
+                    try {
+                        if (claimed.contains(i)) continue
+                        host.log("🛟 باتش ${i + 1} ← المفتاح الاحتياطي (باقي ${bkQ.size} في الطابور)")
+                        fullChunks.add(i)
+                        send(i, e.value, true)
+                        failed.remove(i)
+                        host.log("🛟 باتش ${i + 1}: خلص على الاحتياطي — ${subCount(i, currentDur())} جملة")
+                    } catch (x: Unsupported) {
+                        fatal = x.message; host.log("⛔ ${x.message}"); host.status("⛔ ${x.message}"); running = false
+                    } catch (x: Exception) {
+                        failed[i] = MAX_FAILS
+                        host.log("⚠ باتش ${i + 1} فشل برضه على الاحتياطي: " + (x.message ?: x.javaClass.simpleName).take(120))
+                    } finally {
+                        bkQueued.remove(i); inflight.remove(i); host.changed(); persist()
+                    }
+                }
+            } finally {
+                bkRunning.set(false)
+                if (running && !isClosed && bkQ.isNotEmpty()) startBkLane()
+            }
+        }.apply { isDaemon = true; name = "backup-lane" }.start()
+    }
+
     /** لهجة الباتش اللي بيتبعت: لو اتختارت لهجة، الباتش بيتترجم بيها مباشرة (من غير فصحى ثم تحويل — توفير على المفاتيح) */
     private val dialOf = ConcurrentHashMap<Int, String>()
     private val dialConf = ConcurrentHashMap<String, Conf>()
@@ -888,7 +968,7 @@ class Engine(
         if (chunk >= 0) { if (dl.isEmpty()) dialOf.remove(chunk) else dialOf[chunk] = dl }
         val c = if (dl.isEmpty() || dl == conf.lang) conf else dialConf.getOrPut(dl) { conf.withLang(dl) }
         // (v209) الوضع 2+ (وكمان 3 و4 في طلبات الصوت): برومبت إنجليزي بدل القالب العربي — نفس شكل الرد فـ Parse.subs بيقراه عادي
-        if (conf.keyMode >= KeyMode.ALL_PARALLEL) {
+        if (activeMode >= KeyMode.ALL_PARALLEL) {
             val prev = if (hole) "" else Subs.prevContext(subs, start)
             // (v210) tx = طلب ترانسكريبشن بس (الوضعين 3/4، الباتشات العادية). الثغرات والفجوات وإعادة الباتش الكامل بتفضل صوت ← ترجمة مباشرة
             return if (tx) toneBlock() + ModePrompts.transcribe(pb, c, durSec, prev, effectiveChars(), effectiveGloss(), strict, hole, holeNear)
@@ -956,6 +1036,7 @@ class Engine(
 
     private fun releaseToFull(t: TItem, why: String) {
         fullChunks.add(t.i); claimed.remove(t.i); tHold.remove(t.i)
+        if (queueBackup(t.i, t.p, why)) { host.changed(); return }   // (v216) على المفتاح الاحتياطي بالترتيب
         host.log("↩ باتش ${t.i + 1}: $why — هيتبعت تاني كطلب كامل (صوت ← ترجمة) عشان ما يتخطّاش")
         host.changed()
     }
@@ -965,6 +1046,7 @@ class Engine(
      * TR_MAX_WAIT_MS أو المشاهد واصل له تقريبًا أو الوضع اتبدّل لـ 1/2. بيرجع true لو بعت مجموعة.
      */
     private fun translateTick(flush: Boolean): Boolean {
+        if (activeMode >= KeyMode.TRANSCRIBE_ALL && !switching) return contextTick()   // (v219) الوضع 4: ترجمة سياقية واحدة بعد ما كل الباتشات تتنسخ
         if (tHold.isEmpty() || !running || isClosed) return false
         if (trBusy.get() >= maxOf(1, trPool.capacity(1))) return false
         val avail = tHold.keys.filter { it !in tTaken }.sorted()
@@ -972,7 +1054,7 @@ class Engine(
         val now = System.currentTimeMillis()
         val oldest = avail.minOf { tHold[it]?.at ?: now }
         val viewer = if (headless) -1 else (host.position() / ch).toInt()
-        val urgent = conf.keyMode < KeyMode.SPLIT_A || flush || now - oldest > TR_MAX_WAIT_MS || (viewer >= 0 && avail.first() <= viewer + 1)
+        val urgent = activeMode < KeyMode.SPLIT_A || flush || switching || now - oldest > TR_MAX_WAIT_MS || (viewer >= 0 && avail.first() <= viewer + 1)
         if (!urgent && avail.size < TGROUP_MIN) return false
         val take = avail.take(TGROUP_MAX)
         val group = take.mapNotNull { tHold[it] }
@@ -1053,6 +1135,11 @@ class Engine(
             host.log("⚠ ترجمة مجمّعة: " + (e.message ?: e.javaClass.simpleName).take(120))
         }
         if (!running || isClosed) return
+        applyGroupTranslated(group, off, tr, pv, dl)
+    }
+
+    /** كل باتش بيتطبّق بجمله كلها بتوقيتها الأصلي بالترتيب (idx)، أو يرجع كطلب كامل (v219: اتفصلت عشان الترجمة السياقية تستخدمها كمان) */
+    private fun applyGroupTranslated(group: List<TItem>, off: IntArray, tr: Array<String?>, pv: Array<String?>, dl: String) {
         // كل باتش بيتطبّق بجمله كلها بتوقيتها الأصلي بالترتيب (idx)، أو يرجع كطلب كامل
         for ((g, t) in group.withIndex()) {
             if (tHold[t.i] !== t) continue   // اتعمله redo أثناء الترجمة
@@ -1067,6 +1154,143 @@ class Engine(
                 if (t.partial) { incomplete.add(t.i); host.log("⚠ باتش ${t.i + 1} رجع ناقص — تقدر تعيده من علامة التحذير") }
                 scheduleHoleFill(t.i, t.p.rawStart, t.p.rawEnd, t.p.w, t.key)
             } catch (e: Exception) { releaseToFull(t, "فشل تطبيق الترجمة: " + (e.message ?: "").take(80)) }
+        }
+    }
+
+    // ===== (v219) الوضع 4: ترانسكريبشن بكل المفاتيح، وبعدها ترجمة سياقية لكل النص (مرة واحدة أو أجزاء) =====
+    private val CTX_PART_MAX = 260     // أقصى عدد جمل في الجزء الواحد (الأجزاء بتتقسم على حدود الباتشات)
+    private val CTX_FULL_MAX = 1500    // لحد العدد ده بنبعت النص الكامل كسياق مع كل جزء، وفوقه بنبعت نافذة حوالين الجزء
+    private val CTX_WINDOW = 300
+    @Volatile private var ctxMsg = ""
+
+    /** كل الباتشات المطلوبة اتنسخت (مفيش حاجة شغالة ولا مستنية ولا مستنية إعادة) */
+    private fun ctxReady(): Boolean {
+        val d = currentDur()
+        if (d <= 0 || inflight.isNotEmpty() || rehomeQ.isNotEmpty() || priorityRetry.isNotEmpty() || bkQ.isNotEmpty()) return false
+        val only = onlyChunks
+        val win = !keepGoing && !headless && only == null
+        val cur = if (win) (host.position() / ch).toInt().coerceAtLeast(0) else 0
+        var i = only?.first ?: cur
+        val end = only?.last ?: if (win) cur + window - 1 else Int.MAX_VALUE
+        while (i <= end && cStart(i) < d) {
+            if (!(isDone(i, d) || (failed[i] ?: 0) >= MAX_FAILS || tHold.containsKey(i))) return false
+            i++
+        }
+        return true
+    }
+
+    private fun contextTick(): Boolean {
+        if (tHold.isEmpty() || !running || isClosed) return false
+        if (trBusy.get() > 0) return false
+        val avail = tHold.keys.filter { it !in tTaken }.sorted()
+        if (avail.isEmpty()) return false
+        if (!ctxReady()) {
+            val m = "📝 ترانسكريبشن: ${avail.size} باتش جاهز — الترجمة السياقية بتبدأ لما كل الباتشات تتنسخ"
+            if (m != ctxMsg) { ctxMsg = m; host.status(m) }
+            return false
+        }
+        val group = avail.mapNotNull { tHold[it] }
+        if (group.isEmpty()) return false
+        tTaken.addAll(avail); trBusy.incrementAndGet()
+        try {
+            trEx.submit {
+                try { translateContextual(group) }
+                catch (e: Exception) { host.log("⚠ ترجمة سياقية فشلت: " + (e.message ?: e.javaClass.simpleName).take(120)) }
+                finally { tTaken.removeAll(avail.toSet()); trBusy.decrementAndGet(); host.changed() }
+            }
+        } catch (_: RejectedExecutionException) { tTaken.removeAll(avail.toSet()); trBusy.decrementAndGet(); return false }
+        return true
+    }
+
+    /** طلب Gemini نصي واحد (من غير صوت) بإعادة المحاولة وتحويل المفتاح عند الكوتة/الخطأ. null = فشل */
+    private fun askJson(prompt: String, maxTok: Int, tp: Pool, tag: String): JSONObject? {
+        var key: String? = null
+        var attempts = 0; var net = 0; var bad = 0
+        while (running && !isClosed && attempts++ < 6) {
+            val k = key?.takeIf { tp.ok(it) } ?: tp.pickFree(null, rr.getAndIncrement()) ?: pool.pickFree(null, rr.getAndIncrement())
+            if (k == null) { nap(1500); continue }
+            key = k
+            val t0 = System.currentTimeMillis()
+            try {
+                tp.begin(k)
+                val r = try { Api.generate(curModel(), k, prompt, null, maxTokens = maxTok, temp = 0.2).also { tp.end(k, System.currentTimeMillis() - t0, true) } }
+                        catch (e: Throwable) { tp.end(k, 0, false); throw e }
+                if (isClosed) return null
+                val jj = if (r.text.isBlank()) null else Parse.json(r.text)
+                if (jj == null) { if (++bad > 2) return null; host.log("⚠ $tag: رد مش JSON صالح — إعادة"); nap(600); continue }
+                tp.good(k); return jj
+            } catch (e: ApiErr) {
+                val invalid = e.code == 401 || e.code == 403 || (e.code == 400 && (e.message ?: "").contains("API key", true))
+                if (e.code == 429) { tp.block(k, 60_000); key = null; host.log("⏳ $tag: كوتة على ${tp.tail(k)} — تحويل لمفتاح تاني"); nap(800); continue }
+                if (invalid) { tp.block(k, 3_600_000); key = null; host.log("🔑 $tag: مفتاح ${tp.tail(k)} غير صالح — تحويل"); continue }
+                if (e.code >= 500) { host.log("⚠ $tag: خطأ سيرفر (${e.code}) — إعادة"); nap(3000); continue }
+                throw e
+            } catch (e: Unsupported) { throw e
+            } catch (e: IOException) {
+                if (++net > 4) throw e
+                host.log("📶 $tag: مشكلة اتصال — إعادة"); nap(2000L * net)
+            }
+        }
+        return null
+    }
+
+    /**
+     * الباتشات المنسوخة كلها بتتترجم بالسياق: النص الكامل بيتبعت كسياق مع كل جزء، والجزء (لحد CTX_PART_MAX جملة) بيتترجم بعد اللي قبله بالترتيب
+     * (الأجزاء ورا بعض عشان الأسماء والضمائر تفضل ثابتة)، وكل جزء بيتطبّق بمجرد ما يخلص. باتش رجع ناقص = يرجع كطلب كامل (احتياطي ثم صوت ← ترجمة).
+     */
+    private fun translateContextual(group0: List<TItem>) {
+        val dl = convDialect.let { if (it.isBlank() || it == "فصحى") "" else it }
+        val c = if (dl.isEmpty() || dl == conf.lang) conf else dialConf.getOrPut(dl) { conf.withLang(dl) }
+        val group = group0.sortedBy { it.i }
+        val flatAll = group.flatMap { it.fresh }
+        val parts = ArrayList<List<TItem>>(); var cur = ArrayList<TItem>(); var n = 0
+        for (t in group) {
+            if (cur.isNotEmpty() && n + t.fresh.size > CTX_PART_MAX) { parts.add(cur); cur = ArrayList(); n = 0 }
+            cur.add(t); n += t.fresh.size
+        }
+        if (cur.isNotEmpty()) parts.add(cur)
+        host.log("🧠 ترجمة سياقية: ${flatAll.size} جملة من ${group.size} باتش — " + (if (parts.size == 1) "طلب واحد" else "${parts.size} أجزاء ورا بعض"))
+        host.status("🧠 بترجم بالسياق الكامل (${flatAll.size} جملة)…")
+        val tp = trPool
+        val doneTr = ArrayList<Sub>()
+        var base = 0
+        for ((pn, part) in parts.withIndex()) {
+            if (!running || isClosed) return
+            val flat = ArrayList<Sub>(); val off = IntArray(part.size)
+            part.forEachIndexed { g, t -> off[g] = flat.size; flat.addAll(t.fresh) }
+            val tr = arrayOfNulls<String>(flat.size); val pv = arrayOfNulls<String>(flat.size)
+            var round = 0; var langBad = 0
+            try {
+                while (running && !isClosed && round < TR_ROUNDS) {
+                    val missing = flat.indices.filter { tr[it].isNullOrBlank() }
+                    if (missing.isEmpty()) break
+                    round++
+                    val items = missing.map { flat[it] }
+                    val full = flatAll.size <= CTX_FULL_MAX
+                    val lo = if (full) 0 else (base - CTX_WINDOW).coerceAtLeast(0)
+                    val hi = if (full) flatAll.size else (base + flat.size + CTX_WINDOW).coerceAtMost(flatAll.size)
+                    val prompt = toneBlock() + ModePrompts.contextual(pb, c, flatAll.subList(lo, hi), lo, missing.map { base + it }, items, doneTr, effectiveChars(), effectiveGloss(), pn + 1, parts.size, langBad > 0)
+                    val rep = askJson(prompt, (items.size * 90).coerceIn(4096, 32768), tp, "ترجمة سياقية") ?: break
+                    val got = TParse.translations(rep, items.size)
+                    val okMap = LinkedHashMap<Int, Pair<String, String>>()
+                    var offCount = 0
+                    for ((ix, pr) in got) { val o = missing[ix]; if (LangGuard.foreign(flat[o].copy(translated = pr.first))) offCount++; okMap[o] = pr }
+                    if (offCount > 0 && offCount * 10 >= got.size * 3 && langBad < 2) {
+                        langBad++; host.log("🌐 ترجمة سياقية: $offCount/${got.size} جملة مش بالعربي — إعادة بتشديد"); continue
+                    }
+                    for ((o, pr) in okMap) { tr[o] = pr.first; pv[o] = pr.second }
+                    if (got.size < items.size) host.log("↩ ترجمة سياقية (جزء ${pn + 1}): رجع ناقص ${items.size - got.size} جملة — هعيد الناقص بس")
+                }
+            } catch (e: Unsupported) {
+                fatal = e.message; host.log("⛔ ${e.message}"); host.status("⛔ ${e.message}"); running = false; return
+            } catch (e: Exception) {
+                host.log("⚠ ترجمة سياقية (جزء ${pn + 1}): " + (e.message ?: e.javaClass.simpleName).take(120))
+            }
+            if (!running || isClosed) return
+            applyGroupTranslated(part, off, tr, pv, dl)
+            for (k in flat.indices) tr[k]?.takeIf { it.isNotBlank() }?.let { doneTr.add(flat[k].copy(translated = it)) }
+            base += flat.size
+            host.log("🧠 ترجمة سياقية: خلص جزء ${pn + 1}/${parts.size}")
         }
     }
 
@@ -1843,7 +2067,7 @@ class Engine(
     }
 
     private fun maybeTranslateTemplate() {
-        if (!conf.autoTemplate || conf.keyMode >= KeyMode.ALL_PARALLEL) return   // (v209) الوضع 2+: البرومبت إنجليزي ثابت، مفيش قالب يتترجم
+        if (!conf.autoTemplate || activeMode >= KeyMode.ALL_PARALLEL) return   // (v209) الوضع 2+: البرومبت إنجليزي ثابت، مفيش قالب يتترجم
         if (pb.caseOf(srcLang, detDone) != "other") return
         val lang = srcLang
         if (lang.contains("عرب")) return
