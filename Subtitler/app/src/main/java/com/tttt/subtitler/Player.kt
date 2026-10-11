@@ -485,7 +485,7 @@ class PlayerActivity : Activity(), Host {
                 tg.visibility = if (started && open) View.VISIBLE else View.GONE
                 rd.visibility = View.VISIBLE
                 lgB.visibility = if (!started || open) View.VISIBLE else View.GONE
-                kmTr.visibility = lgB.visibility
+                kmTr.visibility = View.VISIBLE   // (v221) ظاهر دايمًا — لازم تقدر تبدّل الوضع وانت بتترجم
                 if (!started) { chipB.text = "▶ ترجمة"; chipB.background = ui.box(0xFFE53935.toInt(), 0x33FFFFFF, 12) }
                 else {
                     chipB.text = (if (paused) "⏸ " else if (trPct >= 100) "✅ " else "⏳ ") + trPct + "%" + (if (open) " ▴" else " ▾")
@@ -1211,10 +1211,7 @@ class PlayerActivity : Activity(), Host {
         val loopB = mini("🔂") { v -> Cfg.put("loop", if (Cfg.str("loop", "0") == "1") "0" else "1"); v.background = loopBg(); giShow(if (Cfg.str("loop", "0") == "1") "🔂 تكرار الفيديو: شغّال" else "🔂 تكرار الفيديو: مقفول", Gravity.CENTER) }.apply { background = loopBg() }
         val dualB = mini("💬") { v -> cycleDual(v) }.apply { background = dualCircleBg() }
         // (v208) زرار 🔑 بيبدّل وضع المفاتيح (1→2→3→4) ويوصل للمحرك الشغّال فورًا — زي زرار اللغة
-        val kmB = mini("🔑" + KeyMode.clamp(Cfg.int("kmode", 1))) { v ->
-            val n = KeyMode.clamp(Cfg.int("kmode", 1)) % KeyMode.count + 1
-            applyKeyMode(n); giShow("🔑 وضع المفاتيح " + KeyMode.name(n), Gravity.CENTER)
-        }
+        val kmB = mini("🔑" + KeyMode.clamp(Cfg.int("kmode", 1))) { v -> keyModePopup(v) }   // (v221) بيفتح قايمة الأوضاع (كان بيلفّ على الأوضاع بالدور)
         kmLabels.add(kmB to { n: Int -> "🔑$n" })
    // وضع الترجمة (فردي / أصلي / مزدوج) — أيقونة بس من غير كلام
         ccToggleFn = { toggleCc() }
@@ -1468,6 +1465,8 @@ class PlayerActivity : Activity(), Host {
             tbRow.addView(toolBtns[4], lp(4)); tbRow.addView(toolBtns[1], lp(1)); tbRow.addView(toolBtns[2], lp(2)); tbRow.addView(toolBtns[6], lp(6))
             tbRow.addView(textB, LinearLayout.LayoutParams(-2, ui.dp(38)).apply { setMargins(ui.dp(3), ui.dp(3), ui.dp(3), ui.dp(3)) })
             tbRow.addView(toolBtns[0], lp(0)); tbRow.addView(toolBtns[5], lp(5)); tbRow.addView(toolBtns[3], lp(3))
+            // (v221) زرار 🔑 وضع المفاتيح (toolBtns[7]) كان بيتشال هنا ومابيترجّعش — فمكانش بيظهر خالص في الشريط العلوي
+            tbRow.addView(toolBtns[7], LinearLayout.LayoutParams(ui.dp(46), ui.dp(38)).apply { setMargins(ui.dp(3), ui.dp(3), ui.dp(3), ui.dp(3)) })
             tbRow.addView(bgOnB, LinearLayout.LayoutParams(ui.dp(40), ui.dp(40)).apply { setMargins(ui.dp(3), ui.dp(3), ui.dp(3), ui.dp(3)) })
             tbRow.addView(sceneB, LinearLayout.LayoutParams(ui.dp(40), ui.dp(40)).apply { setMargins(ui.dp(3), ui.dp(3), ui.dp(3), ui.dp(3)) })
             (toolsB.parent as? ViewGroup)?.removeView(toolsB)
@@ -2622,8 +2621,9 @@ class PlayerActivity : Activity(), Host {
     private fun paintNotices() {
         if (!::noticeBtn.isInitialized) return
         val n = NoticeLog.list().size
-        noticeBtn.visibility = if (n == 0) View.GONE else View.VISIBLE
-        noticeBtn.text = "▲ $n"
+        noticeBtn.visibility = View.VISIBLE   // (v221) ظاهر دايمًا عشان تلاقيه — خافت لو مفيش إشعارات
+        noticeBtn.alpha = if (n == 0) 0.35f else 0.7f
+        noticeBtn.text = if (n == 0) "▲" else "▲ $n"
     }
 
     /** (v217) قايمة منسدلة بالإشعارات من الأحدث للأقدم */

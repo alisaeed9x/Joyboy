@@ -44,7 +44,7 @@ object LyricsEngine {
         val o = JSONObject(File(dir(ctx), key(t, m)).readText())
         val r = parse(o)
         // (v198) نسخ «كلمات كاملة» القديمة (توقيت موزّع بالتساوي) بتتعامل كناقصة عشان تتظبط على الصوت
-        if (m == M_FULL && o.optInt("v", 0) < 3 && r.complete) LyricsResult(r.title, r.artist, r.lines, false, 0, 0, emptySet(), r.note, r.raw.ifEmpty { r.lines.map { it.text } }) else r
+        if (m == M_FULL && o.optInt("v", 0) < 4 && r.complete) LyricsResult(r.title, r.artist, r.lines, false, 0, 0, emptySet(), r.note, r.raw.ifEmpty { r.lines.map { it.text } }) else r
     } catch (_: Throwable) { null }
     fun clear(ctx: Context, t: Track, m: String) { try { File(dir(ctx), key(t, m)).delete() } catch (_: Throwable) {}; version++ }
     fun clearAll(ctx: Context, t: Track) { clear(ctx, t, M_AUDIO); clear(ctx, t, M_FULL) }
@@ -63,7 +63,7 @@ object LyricsEngine {
         val ra = JSONArray(); for (x in r.raw) ra.put(x)
         try {
             File(dir(ctx), key(t, m)).writeText(JSONObject().put("title", r.title).put("artist", r.artist).put("lines", a)
-                .put("complete", r.complete).put("done", r.done).put("total", r.total).put("ok", oa).put("note", r.note).put("raw", ra).put("v", 3).toString())
+                .put("complete", r.complete).put("done", r.done).put("total", r.total).put("ok", oa).put("note", r.note).put("raw", ra).put("v", 4).toString())
         } catch (_: Throwable) {}
         version++
     }
@@ -137,6 +137,18 @@ object LyricsEngine {
                 val model = Cfg.str("model", Models.DEFAULT).trim().ifEmpty { Models.DEFAULT }
                 if (m == M_FULL) runFull(app, t, keys, model, hint, fresh, onStage, onDone) else runAudio(app, t, keys, model, hint, retry, fresh, onStage, onDone)
             } catch (e: Throwable) { LogStore.err("lyrics", e); onDone(null, "فشل: " + shortErr(e)) }
+            finally { running.remove(k) }
+        }.apply { isDaemon = true }.start()
+    }
+
+    /** (v223) كلمات من المستخدم (لصق/تعديل): بتتحفظ زي ما هي وجيميناي بيسمع الأغنية ويظبط توقيت كل سطر */
+    fun startManual(ctx: Context, t: Track, hint: Pair<String, String>?, lines: List<String>, onStage: (String) -> Unit, onDone: (LyricsResult?, String) -> Unit) {
+        val app = ctx.applicationContext
+        val k = key(t, M_FULL)
+        if (running.putIfAbsent(k, true) != null) { onDone(null, "بتتكتب دلوقتي"); return }
+        Thread {
+            try { finishLocal(app, t, (hint?.first ?: "").ifBlank { t.title }, (hint?.second ?: "").ifBlank { t.artist }, lines, onStage, onDone) }
+            catch (e: Throwable) { LogStore.err("lyrics-manual", e); onDone(null, "فشل: " + shortErr(e)) }
             finally { running.remove(k) }
         }.apply { isDaemon = true }.start()
     }
@@ -266,15 +278,205 @@ object LyricsEngine {
         finishLocal(app, t, name, by, lines, onStage, onDone)
     }
 
-    /** (v202) بيوزّع السطور على الأجزاء اللي فيها غنا فعلًا في الصوت (بيتخطى المقدمة والفواصل) — فالكلام مايبدأش وهي لسه في أول الموسيقى */
+    // ===================== (v222) مواءمة التوقيت على الصوت الحقيقي =====================
+    // 1) جيميناي بيسمع الأغنية على نوافذ قصيرة (24ث بتداخل 4ث) ويفرّغ اللي اتغنّى فعلًا بوقت بداية/نهاية كل سطر.
+    // 2) المفرّغ بيتطابق كلمة بكلمة (Needleman–Wunsch) مع الكلمات الرسمية — فمفيش مشكلة لو التقسيم أو الإملاء اختلف أو سطر اتكرر.
+    // 3) بداية كل سطر بتتشدّ لأقرب بداية صوت حقيقية في منحنى الطاقة (±0.8ث، بدقة 50ms).
+    // 4) أي سطر جيميناي ماسمعوش بيتوزّع بين أقرب سطرين متثبّتين. لو الطريقة كلها فشلت: الطريقة القديمة (توزيع على لحظات الغنا).
+    private const val WWIN = 24.0
+    private const val WSTEP = 20.0
+
+    private class Det(val s: Double, val e: Double, val text: String, val edge: Double)
+    private class OW(val n: String, val line: Int, val cb: Int, val ca: Int)
+    private class DW(val n: String, val s: Double, val e: Double, val spc: Double)
+
+    private fun timedPrompt() =
+        "You are given a short audio clip cut from a song (about 24 seconds; it may start or end in the middle of a sung line). " +
+        "Transcribe ONLY the words that are actually sung or spoken, exactly as heard, in the original language and script (Arabic stays in Arabic script; do NOT translate, transliterate or correct). " +
+        "Return one entry per sung phrase/line. For each entry give s = the exact second (one decimal, 0.0 = the very first sample of THIS clip) at which the FIRST word starts being sung, and e = the exact second the LAST word ends. " +
+        "Listen for the real onset of the voice: do not count instrumental intro or breaks, do not spread lines evenly, do not round times to look regular. " +
+        "If a line is cut at the start or end of the clip, still include the audible part. If no words are clearly audible return an empty list. " +
+        "Return JSON only: {\"lines\":[{\"s\":0.0,\"e\":0.0,\"t\":\"\"}]}"
+
+    private fun normWord(x: String): String {
+        val sb = StringBuilder()
+        for (ch in x.lowercase()) {
+            if (!ch.isLetterOrDigit()) continue
+            sb.append(when (ch) { 'أ', 'إ', 'آ', 'ٱ' -> 'ا'; 'ى' -> 'ي'; 'ة' -> 'ه'; 'ؤ' -> 'و'; 'ئ' -> 'ي'; else -> ch })
+        }
+        return sb.toString()
+    }
+    private fun lev(a: String, b: String): Int {
+        var prev = IntArray(b.length + 1) { it }; var cur = IntArray(b.length + 1)
+        for (i in 1..a.length) {
+            cur[0] = i
+            for (j in 1..b.length) { val c = if (a[i - 1] == b[j - 1]) 0 else 1; cur[j] = minOf(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + c) }
+            val tmp = prev; prev = cur; cur = tmp
+        }
+        return prev[b.length]
+    }
+    private fun wsim(a: String, b: String): Double {
+        if (a == b) return 1.0
+        if (a.isEmpty() || b.isEmpty()) return 0.0
+        return 1.0 - lev(a, b).toDouble() / maxOf(a.length, b.length)
+    }
+
+    /** تفريغ بتوقيت على نوافذ متداخلة (بالتوازي على لحد 3 مفاتيح). بيرجّع (السطور المسموعة بتوقيت مطلق، أول خطأ لو فيه) */
+    private fun transcribeTimed(app: Context, t: Track, keys: List<String>, model: String, onStage: (String) -> Unit): Pair<List<Det>, String?> {
+        val src = AudioSources.make(app, Uri.parse(t.uri), null, emptyMap(), 1) { }
+        try {
+            val total = src.durationSec().takeIf { it > 0 } ?: (t.durMs / 1000.0)
+            val starts = ArrayList<Double>(); var p = 0.0
+            while (p < total - 3.0 || starts.isEmpty()) { starts.add(p); p += WSTEP }
+            val pending = ConcurrentLinkedQueue<Int>((0 until starts.size).toList())
+            val out = ConcurrentLinkedQueue<Det>(); val errs = ConcurrentLinkedQueue<String>()
+            val srcLock = Any(); val done = java.util.concurrent.atomic.AtomicInteger(0)
+            val nThreads = keys.size.coerceIn(1, 3).coerceAtMost(starts.size)
+            val workers = (0 until nThreads).map { wi ->
+                Thread {
+                    while (true) {
+                        val c = pending.poll() ?: break
+                        val a = starts[c]; val b = minOf(a + WWIN, total.coerceAtLeast(a + 1))
+                        val w = try { synchronized(srcLock) { src.wav(a, b) } } catch (e: Throwable) { errs.add("قراءة الصوت: " + shortErr(e)); null }
+                        if (w != null && !w.silent) {
+                            var got: JSONObject? = null
+                            for (kk in 0 until keys.size.coerceAtMost(4)) {
+                                val key = keys[(c + wi + kk) % keys.size]
+                                try { val r = Api.generate(model, key, timedPrompt(), w.bytes, 8192, 0.0, true); got = jsonOf(r.text); break } catch (e: Throwable) { errs.add(shortErr(e)) }
+                            }
+                            val g = got
+                            if (g != null) {
+                                val base = if (Math.abs(w.startSec - a) <= 5.0) w.startSec else a
+                                val dur = w.durSec.coerceAtLeast(1.0)
+                                val arr = g.optJSONArray("lines")
+                                if (arr != null) for (i in 0 until arr.length()) {
+                                    val x = arr.optJSONObject(i) ?: continue
+                                    val txt = x.optString("t").trim(); if (txt.isEmpty()) continue
+                                    var s0 = x.optDouble("s", 0.0); var e0 = x.optDouble("e", s0 + 2.0)
+                                    s0 = s0.coerceIn(0.0, dur); e0 = e0.coerceIn(s0 + 0.3, dur + 1.0)
+                                    val mid = (s0 + e0) / 2
+                                    out.add(Det(base + s0, base + e0, txt, minOf(mid, dur - mid)))
+                                }
+                            }
+                        }
+                        onStage("⏱ بسمع الأغنية وبظبط التوقيت… ${done.incrementAndGet()} من ${starts.size} جزء")
+                    }
+                }.apply { isDaemon = true }
+            }
+            workers.forEach { it.start() }; workers.forEach { it.join() }
+            val merged = ArrayList<Det>()
+            for (d in out.sortedBy { it.s }) {
+                val last = merged.lastOrNull()
+                if (last != null && Math.abs(d.s - last.s) < 1.8 && wsim(normWord(d.text), normWord(last.text)) >= 0.6) { if (d.edge > last.edge) merged[merged.size - 1] = d; continue }
+                merged.add(d)
+            }
+            return Pair(merged, errs.firstOrNull())
+        } finally { try { src.close() } catch (_: Throwable) {} }
+    }
+
+    /** مطابقة كلمات الأغنية الرسمية مع المفرّغ المتوقّت، وبيرجّع سطور بتوقيت الصوت (أو null لو المطابقة ضعيفة) */
+    private fun alignLines(lines: List<String>, dets: List<Det>, env: FloatArray?): List<LyricLine>? {
+        val ow = ArrayList<OW>()
+        for ((li, ln) in lines.withIndex()) {
+            val toks = ln.split(' ', '\t').map { normWord(it) }.filter { it.isNotEmpty() }
+            val tot = toks.sumOf { it.length }; var cb = 0
+            for (n in toks) { ow.add(OW(n, li, cb, tot - cb - n.length)); cb += n.length }
+        }
+        val dw = ArrayList<DW>()
+        for (d in dets) {
+            val toks = d.text.split(' ', '\t').map { normWord(it) }.filter { it.isNotEmpty() }
+            val tot = toks.sumOf { it.length }.coerceAtLeast(1)
+            val spc = (d.e - d.s).coerceAtLeast(0.3) / tot; var c = 0
+            for (n in toks) { dw.add(DW(n, d.s + c * spc, d.s + (c + n.length) * spc, spc)); c += n.length }
+        }
+        val n = ow.size; val m = dw.size
+        if (n < 4 || m < 4 || n.toLong() * m > 4_000_000L) return null
+        val M = m + 1; val GAP = -0.4f
+        val sc = FloatArray((n + 1) * M); val tr = ByteArray((n + 1) * M)   // 0 قطري · 1 تخطّي كلمة رسمية · 2 تخطّي كلمة مفرّغة
+        for (i in 1..n) { sc[i * M] = i * GAP; tr[i * M] = 1 }
+        for (j in 1..m) { sc[j] = j * GAP; tr[j] = 2 }
+        for (i in 1..n) for (j in 1..m) {
+            val sm = wsim(ow[i - 1].n, dw[j - 1].n)
+            val diag = sc[(i - 1) * M + j - 1] + (if (sm >= 0.55) (sm * 2 - 0.5).toFloat() else -1.0f)
+            val up = sc[(i - 1) * M + j] + GAP; val left = sc[i * M + j - 1] + GAP
+            if (diag >= up && diag >= left) { sc[i * M + j] = diag; tr[i * M + j] = 0 }
+            else if (up >= left) { sc[i * M + j] = up; tr[i * M + j] = 1 } else { sc[i * M + j] = left; tr[i * M + j] = 2 }
+        }
+        val L = lines.size
+        val es = Array(L) { ArrayList<Double>() }; val ee = Array(L) { ArrayList<Double>() }
+        var i = n; var j = m
+        while (i > 0 || j > 0) {
+            val d = if (i == 0) 2 else if (j == 0) 1 else tr[i * M + j].toInt()
+            if (d == 0) {
+                if (wsim(ow[i - 1].n, dw[j - 1].n) >= 0.55) {
+                    val o = ow[i - 1]; val w = dw[j - 1]
+                    es[o.line].add(w.s - o.cb * w.spc); ee[o.line].add(w.e + o.ca * w.spc)
+                }
+                i--; j--
+            } else if (d == 1) i-- else j--
+        }
+        fun med(l: List<Double>): Double { val q = l.sorted(); return q[q.size / 2] }
+        val st = DoubleArray(L); val en = DoubleArray(L); val anch = BooleanArray(L)
+        var na = 0
+        for (k in 0 until L) if (es[k].isNotEmpty()) { anch[k] = true; st[k] = med(es[k]).coerceAtLeast(0.0); en[k] = maxOf(med(ee[k]), st[k] + 0.5); na++ }
+        if (na < maxOf(3, (L * 0.35).toInt())) return null
+        // السطور اللي جيميناي ماسمعهاش: توزيع بين أقرب سطرين متثبّتين بنسبة الحروف
+        var k = 0
+        while (k < L) {
+            if (anch[k]) { k++; continue }
+            var e2 = k; while (e2 < L && !anch[e2]) e2++
+            val wts = (k until e2).map { lines[it].count { c -> c.isLetterOrDigit() }.coerceAtLeast(6).toDouble() }; val sw = wts.sum()
+            val hasP = k > 0; val hasN = e2 < L
+            val a: Double; val b: Double
+            if (hasP && hasN) { a = en[k - 1]; b = maxOf(st[e2], a + 0.5 * (e2 - k)) }
+            else if (hasP) { a = en[k - 1] + 0.3; b = a + sw * 0.12 }
+            else { b = st[e2] - 0.3; a = maxOf(0.0, b - sw * 0.12) }
+            var acc = 0.0
+            for (q in k until e2) { val x0 = a + acc / sw * (b - a); acc += wts[q - k]; val x1 = a + acc / sw * (b - a); st[q] = x0; en[q] = maxOf(x1, x0 + 0.5) }
+            k = e2
+        }
+        // تثبيت بدايات السطور المسموعة على أقرب بداية صوت حقيقية
+        if (env != null) for (q in 0 until L) if (anch[q]) st[q] = Karaoke.snapOnset(env, st[q], 0.8)
+        var prevS = -1.0
+        for (q in 0 until L) { if (st[q] < prevS + 0.2) st[q] = prevS + 0.2; prevS = st[q] }
+        val res = ArrayList<LyricLine>()
+        for (q in 0 until L) {
+            var e = en[q]
+            if (q + 1 < L) e = minOf(e, st[q + 1])
+            e = e.coerceAtLeast(st[q] + 0.5).coerceAtMost(st[q] + 12.0)
+            res.add(LyricLine(st[q], e, lines[q]))
+        }
+        return res
+    }
+
     private fun finishLocal(app: Context, t: Track, name: String, by: String, lines: List<String>, onStage: (String) -> Unit, onDone: (LyricsResult?, String) -> Unit) {
-        onStage("⏱ مرحلة 3 من 3: بحدّد امتى المغني بيبدأ يغني…")
+        onStage("⏱ مرحلة 3 من 3: جيميناي بيسمع الأغنية ويظبط توقيت كل سطر…")
+        var aligned: List<LyricLine>? = null; var why = ""
+        try {
+            val keys = Cfg.allMainKeys()
+            val model = Cfg.str("model", Models.DEFAULT).trim().ifEmpty { Models.DEFAULT }
+            if (keys.isNotEmpty()) {
+                val (dets, err) = transcribeTimed(app, t, keys, model, onStage)
+                if (dets.size >= 3) {
+                    onStage("⏱ بطابق الكلمات وبثبّت البدايات على الصوت…")
+                    val env = try { Karaoke.envelope(app, t) } catch (e: Throwable) { LogStore.err("lyrics-env", e); null }
+                    aligned = alignLines(lines, dets, env)
+                    if (aligned == null) why = "التطابق مع الصوت ضعيف"
+                } else why = err ?: "جيميناي ماسمعش كلام واضح"
+            }
+        } catch (e: Throwable) { LogStore.err("lyrics-align", e); why = shortErr(e) }
+        if (aligned != null) {
+            val res = LyricsResult(name, by, aligned, true, 1, 1, emptySet(), "", lines)
+            save(app, t, M_FULL, res); onDone(res, ""); return
+        }
+        // احتياطي: التوزيع القديم على لحظات الغنا
+        onStage("⏱ بحدّد لحظات الغنا في الصوت…")
         val segs = try { Karaoke.segments(app, t) } catch (e: Throwable) { LogStore.err("lyrics-vad", e); emptyList() }
         val placed = if (segs.isNotEmpty()) Karaoke.place(lines, segs) else emptyList()
         val ok = placed.isNotEmpty()
-        val res = LyricsResult(name, by, if (ok) placed else estimate(t, lines), true, 1, 1, emptySet(), if (ok) "" else "التوقيت تقريبي", lines)
+        val res = LyricsResult(name, by, if (ok) placed else estimate(t, lines), true, 1, 1, emptySet(), "التوقيت تقريبي", lines)
         save(app, t, M_FULL, res)
-        onDone(res, if (ok) "" else "ماقدرتش أحدد لحظات الغنا في الصوت — التوقيت تقريبي")
+        onDone(res, "ماقدرتش أظبط التوقيت على الصوت" + (if (why.isNotEmpty()) " ($why)" else "") + " — التوقيت تقريبي، دوس 🔁 يعيد")
     }
 
     /** السطر الشغّال دلوقتي عند الوقت ده (آخر سطر بدأ)، أو -1 قبل أول سطر */

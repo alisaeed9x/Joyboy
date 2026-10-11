@@ -36,6 +36,42 @@ object Karaoke {
     fun hasStem(ctx: Context, t: Track, kind: Int): Boolean = file(ctx, t, kind).let { it.exists() && it.length() > 4096 }
     fun isRunning(t: Track) = running.containsKey(base(t))
     private fun vadFile(ctx: Context, t: Track) = File(dir(ctx), base(t) + ".vad")
+    private fun envFile(ctx: Context, t: Track) = File(dir(ctx), base(t) + ".env")
+
+    private fun readEnv(ctx: Context, t: Track): FloatArray? = try {
+        val f = envFile(ctx, t)
+        if (!f.exists() || f.length() < 400) null else {
+            val bb = ByteBuffer.wrap(f.readBytes()).order(ByteOrder.LITTLE_ENDIAN)
+            FloatArray(bb.remaining() / 4) { bb.float }
+        }
+    } catch (_: Throwable) { null }
+
+    /** (v222) منحنى طاقة الصوت (إطار كل 50ms) — لو مش محفوظ بيحلّل الأغنية الأول (من خيط خلفية). null = ماقدرتش */
+    fun envelope(ctx: Context, t: Track): FloatArray? {
+        readEnv(ctx, t)?.let { return it }
+        analyze(ctx, t, false) { }
+        return readEnv(ctx, t)
+    }
+
+    /**
+     * (v222) بيشدّ بداية سطر لأقرب «بداية صوت» حقيقية (أكبر قفزة طاقة بعد هدوء نسبي) في ±win ثانية — بدقة 50ms.
+     * لو مفيش قفزة واضحة (موسيقى مستمرة مثلًا) بيرجّع الوقت زي ما هو.
+     */
+    fun snapOnset(env: FloatArray, tSec: Double, win: Double): Double {
+        if (env.size < 12) return tSec
+        val c = (tSec / HOP).toInt(); val w = (win / HOP).toInt()
+        var best = -1; var bestScore = 0f
+        for (k in maxOf(3, c - w)..minOf(env.size - 4, c + w)) {
+            val before = (env[k - 3] + env[k - 2] + env[k - 1]) / 3f
+            val after = (env[k] + env[k + 1] + env[k + 2]) / 3f
+            if (after > before * 1.6f + 0.002f) {
+                val near = 1f - 0.5f * Math.abs(k - c).toFloat() / w.coerceAtLeast(1)
+                val score = (after - before) * near
+                if (score > bestScore) { bestScore = score; best = k }
+            }
+        }
+        return if (best < 0) tSec else best * HOP
+    }
 
     /** لحظات الغناء المحفوظة للأغنية (أو null لو لسه ماتحلّلتش / مفيش غناء واضح) */
     fun cachedSegments(ctx: Context, t: Track): List<Seg>? = try {
@@ -184,6 +220,7 @@ object Karaoke {
                 }
             }
             // خريطة الغناء من منحنى الصوت
+            try { val bb = ByteBuffer.allocate(rv.size * 4).order(ByteOrder.LITTLE_ENDIAN); for (x in rv) bb.putFloat(x); envFile(app, t).writeBytes(bb.array()) } catch (_: Throwable) {}
             val seg = buildSegments(rv)
             try { vadFile(app, t).writeText(seg.joinToString("\n") { "%.2f %.2f".format(java.util.Locale.US, it.s, it.e) }) } catch (_: Throwable) {}
             ok = true
