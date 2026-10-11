@@ -38,6 +38,9 @@ import java.net.URL
 class Found(val url: String, val kind: String, val title: String = "", val ref: String = "", val ua: String = "") {
     @Volatile var size = -1L
     @Volatile var mime = ""
+    /** (v203) التبويب + «جيل» الصفحة اللي اتلقط منها: لما الصفحة تتغير الجيل بيزيد واللقطات القديمة بتختفي */
+    @Volatile var tabId = -1L
+    @Volatile var gen = 0
 }
 
 /** منطق الصيد (من غير Android): إيه اللي يتحسب فيديو، وتنضيف الروابط، وأسماء العرض */
@@ -91,7 +94,12 @@ object Sniff {
     }
     // (v120) جودات الفيديو في أي موقع: بنستنتج الارتفاع من اللينك (…/720/… أو _1080p) ونجمّع اللينكات اللي نفس الفيديو بجودات مختلفة
     private val HQ = Regex("(?<![0-9])(2160|1440|1080|720|576|540|480|432|406|360|288|270|240|180|144)(?![0-9])")
-    fun heightOf(u: String): Int = HQ.findAll(u.substringBefore('?').substringBefore('#')).lastOrNull()?.value?.toIntOrNull() ?: 0
+    fun heightOf(u: String): Int {
+        // (v203) يوتيوب: الجودة من الـ itag (18 = 360p، 22 = 720p)
+        if (u.contains("videoplayback")) { when (Regex("[?&]itag=(\\d+)").find(u)?.groupValues?.get(1)) { "18" -> return 360; "22" -> return 720 } }
+        return heightOf0(u)
+    }
+    private fun heightOf0(u: String): Int = HQ.findAll(u.substringBefore('?').substringBefore('#')).lastOrNull()?.value?.toIntOrNull() ?: 0
     /** هيكل اللينك من غير رقم الجودة — اللينكات اللي ليها نفس الهيكل بجودات مختلفة = نفس الفيديو */
     fun skeleton(u: String): String = key(u).replace(HQ, "#")
     /** سطر الجودة: «720p · 85.3 MB» (الحجم الكلي لو معروف) */

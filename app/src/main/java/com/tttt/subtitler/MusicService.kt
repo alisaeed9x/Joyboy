@@ -94,6 +94,63 @@ object MusicEngine {
         try { val pp = m.playbackParams; pp.setSpeed(speed); pp.setPitch(1f); m.playbackParams = pp } catch (e: Throwable) { LogStore.err("music-speed", e) }
     }
 
+    // (v202) فصل الصوت عن الموسيقى: 0 الكل (الأغنية الأصلية) · 1 الصوت بس · 2 الموسيقى بس — الملفات بتتحسب مرة وبتتخزّن (Karaoke.kt)
+    @Volatile var stem = 0; private set
+    @Volatile var stemPct = -1; private set          // -1 مفيش تحليل شغّال · 0..100 نسبة التحليل
+    @Volatile private var stemErr = ""
+    private var playingStem = 0
+    fun takeStemErr(): String { val e = stemErr; stemErr = ""; return e }
+    fun cycleStem(): Int { setStem((stem + 1) % 3); return stem }
+    fun setStem(s: Int) {
+        stem = s.coerceIn(0, 2)
+        try { Cfg.put("music_stem", stem.toString()) } catch (_: Throwable) {}
+        applyStem(); changed()
+    }
+    private fun applyStem() {
+        val t = current ?: return; val a = app ?: return
+        val want = if (stem != 0 && Karaoke.hasStem(a, t, stem)) stem else 0
+        if (stem != 0 && want == 0) requestStem(t)
+        if (want != playingStem && mp != null) swapSource(want)
+    }
+    private fun requestStem(t: Track) {
+        val a = app ?: return
+        if (Karaoke.isRunning(t)) return
+        stemPct = 0; changed()
+        Thread {
+            val err = try { Karaoke.analyze(a, t, true) { p -> if (p != stemPct) { stemPct = p; if (p % 5 == 0) changed() } } } catch (e: Throwable) { e.message ?: "فشل" }
+            main.post {
+                stemPct = -1
+                if (err != null) { stemErr = "🎚 " + t.title + ": " + err; stem = 0; try { Cfg.put("music_stem", "0") } catch (_: Throwable) {} }
+                if (current?.id == t.id) applyStem()
+                changed()
+            }
+        }.apply { isDaemon = true }.start()
+    }
+    /** بيبدّل مصدر التشغيل (الأصلي ↔ الصوت/الموسيقى) من نفس المكان من غير ما الأغنية توقف */
+    private fun swapSource(want: Int) {
+        val t = current ?: return; val a = app ?: return
+        val pos = posMs; val wasPlaying = wantPlay
+        try { loud?.release() } catch (_: Throwable) {}; loud = null
+        try { mp?.release() } catch (_: Throwable) {}; mp = null; ready = false
+        openPlayer(a, t, want, pos)
+        wantPlay = wasPlaying
+    }
+    private fun openPlayer(ctx: Context, t: Track, which: Int, startMs: Int) {
+        playingStem = which
+        val uri = if (which != 0) Uri.fromFile(Karaoke.file(ctx, t, which)) else Uri.parse(t.uri)
+        try {
+            mp = MediaPlayer().apply {
+                setAudioAttributes(AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA).setContentType(AudioAttributes.CONTENT_TYPE_MUSIC).build())
+                setWakeMode(ctx, android.os.PowerManager.PARTIAL_WAKE_LOCK)
+                setDataSource(ctx, uri)
+                setOnPreparedListener { ready = true; applyVol(); if (startMs > 0) { try { it.seekTo(startMs) } catch (_: Throwable) {} }; if (wantPlay) { try { it.start() } catch (_: Throwable) {}; applySpeed() }; changed() }
+                setOnCompletionListener { onEnded() }
+                setOnErrorListener { _, _, _ -> ready = false; main.post { if (which != 0) { stem = 0; playingStem = 0; stemErr = "🎚 ملف الفصل ماتفتحش — رجعت للأغنية الأصلية"; swapSource(0) } else if (queue.size > 1) step(1) }; true }
+                prepareAsync()
+            }
+        } catch (e: Exception) { LogStore.err("music-play", e) }
+    }
+
     // (v193) الصوت: 0..100 صوت عادي · 100..200 تضخيم (LoudnessEnhancer لحد +15dB) — نفس فكرة مشغّل الفيديو
     @Volatile var volPct = 100; private set
     private var loud: android.media.audiofx.LoudnessEnhancer? = null
@@ -104,6 +161,7 @@ object MusicEngine {
             shuffle = raw == 3 || Cfg.str("music_shuffle", "0") == "1"
             volPct = (Cfg.str("music_vol", "100").toIntOrNull() ?: 100).coerceIn(0, 200)
             speed = (Cfg.str("music_speed", "1").toFloatOrNull() ?: 1f).coerceIn(0.5f, 2f)
+            stem = (Cfg.str("music_stem", "0").toIntOrNull() ?: 0).coerceIn(0, 2)
         } catch (_: Throwable) {}
     }
     fun setVol(p: Int) {
@@ -166,17 +224,9 @@ object MusicEngine {
         MusicService.start(ctx.applicationContext)
         gainFocus()
         val t = q[i]
-        try {
-            mp = MediaPlayer().apply {
-                setAudioAttributes(AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA).setContentType(AudioAttributes.CONTENT_TYPE_MUSIC).build())
-                setWakeMode(ctx.applicationContext, android.os.PowerManager.PARTIAL_WAKE_LOCK)
-                setDataSource(ctx.applicationContext, Uri.parse(t.uri))
-                setOnPreparedListener { ready = true; applyVol(); if (wantPlay) { try { it.start() } catch (_: Throwable) {}; applySpeed() }; changed() }
-                setOnCompletionListener { onEnded() }
-                setOnErrorListener { _, _, _ -> ready = false; main.post { if (queue.size > 1) step(1) }; true }
-                prepareAsync()
-            }
-        } catch (e: Exception) { LogStore.err("music-play", e) }
+        val want = if (stem != 0 && Karaoke.hasStem(ctx.applicationContext, t, stem)) stem else 0
+        openPlayer(ctx.applicationContext, t, want, 0)
+        if (stem != 0 && want == 0) requestStem(t)
         changed()
     }
     private fun peekRandom(): Int {

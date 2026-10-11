@@ -121,7 +121,35 @@ class MusicUi(private val act: Activity, private val ui: Ui, private val th: The
     private var tintBmp: Bitmap? = null
     private var tintDone = false
 
-    private val onEngine: () -> Unit = { paint(); refreshNow(); lib.refreshRows(); paintMini() }
+    private val onEngine: () -> Unit = { val se = MusicEngine.takeStemErr(); if (se.isNotBlank()) errNote(se); paint(); refreshNow(); lib.refreshRows(); paintMini() }
+
+    // ===== (v202) الإشعارات الكبيرة اتشالت: الأخطاء بس بتتسجّل ▲ حمرا فوق «إظهار الكلمات» (من الأحدث للأقدم) =====
+    private val errLog = ArrayList<Pair<Long, String>>()
+    @Suppress("UNUSED_PARAMETER")
+    private fun quiet(m: String, ms: Long = 0L) {}
+    private fun errNote(m: String) {
+        errLog.add(0, Pair(System.currentTimeMillis(), m)); while (errLog.size > 60) errLog.removeAt(errLog.size - 1)
+        LogStore.add("🎵 " + m)
+        h.post { paintErr() }
+    }
+    private val errBtn = ui.text("▲", 15f, 0xFFFF3B30.toInt(), true).apply {
+        gravity = Gravity.CENTER; visibility = View.GONE; setPadding(ui.dp(12), ui.dp(2), ui.dp(12), ui.dp(2))
+        background = ui.box(0x33FF3B30, 0x99FF3B30.toInt(), 20); setOnClickListener { errDialog() }
+    }
+    private fun paintErr() { errBtn.visibility = if (errLog.isEmpty()) View.GONE else View.VISIBLE; errBtn.text = "▲ " + errLog.size }
+    private fun errDialog() {
+        val fmt = java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.US)
+        val col = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL; setPadding(ui.dp(4), ui.dp(2), ui.dp(4), ui.dp(2)) }
+        for ((tm, m) in errLog) {
+            col.addView(ui.text(fmt.format(java.util.Date(tm)), 11f, th.muted), LinearLayout.LayoutParams(-1, -2))
+            col.addView(ui.text(m, 13.5f, th.text).apply { setPadding(0, 0, 0, ui.dp(10)) }, LinearLayout.LayoutParams(-1, -2))
+        }
+        if (errLog.isEmpty()) col.addView(ui.text("مفيش أخطاء", 14f, th.muted))
+        val sc = ScrollView(act).apply { addView(col) }
+        GAlert(act).setTitle("▲ الأخطاء (من الأحدث للأقدم)").setView(sc)
+            .setPositiveButton("تمام", null)
+            .setNegativeButton("مسح") { _, _ -> errLog.clear(); paintErr() }.show()
+    }
 
     // ===== الشريط الصغير (كبسولة زجاجية تحت القايمة، وتقدّم الأغنية كتعبئة فيها) =====
     private val nowTitle = ui.text("", 14f, Color.WHITE, true).apply { setSingleLine(); ellipsize = android.text.TextUtils.TruncateAt.END; textAlignment = View.TEXT_ALIGNMENT_TEXT_START }
@@ -166,36 +194,44 @@ class MusicUi(private val act: Activity, private val ui: Ui, private val th: The
     private val tCur = ui.text("0:00", 12f, 0xCCFFFFFF.toInt()).apply { textAlignment = View.TEXT_ALIGNMENT_CENTER; gravity = Gravity.CENTER }
     private val tTot = ui.text("0:00", 12f, 0xCCFFFFFF.toInt()).apply { textAlignment = View.TEXT_ALIGNMENT_CENTER; gravity = Gravity.CENTER }
     private var seeking = false
-    private val lyrBtn = ui.text("📝 إظهار الكلمات", 12.5f, Color.WHITE, true).apply {
-        gravity = Gravity.CENTER; setPadding(ui.dp(14), ui.dp(8), ui.dp(14), ui.dp(8)); background = ui.box(0x33FFFFFF, 0x55FFFFFF, 20)
+    private val lyrBtn = ui.text("📝 إظهار الكلمات", 11.5f, Color.WHITE, true).apply {
+        gravity = Gravity.CENTER; setPadding(ui.dp(10), ui.dp(5), ui.dp(10), ui.dp(5)); background = ui.box(0x33FFFFFF, 0x55FFFFFF, 20)
         setOnClickListener { toggleLyrics() }
     }
     private var lyrFontBtn: TextView? = null
     // ===== (v200) أدوات المشغّل: ⏱ مؤقت النوم · ⏩ السرعة · 📃 التالي =====
-    private fun pillBg(on: Boolean) = if (on) ui.box(0x445B9DFF, BLUE, 20) else ui.box(0x22FFFFFF, 0x33FFFFFF, 20)
-    private fun toolPill(t: String, f: () -> Unit) = ui.text(t, 12f, Color.WHITE, true).apply {
-        gravity = Gravity.CENTER; setSingleLine(); ellipsize = android.text.TextUtils.TruncateAt.END; setPadding(ui.dp(6), ui.dp(9), ui.dp(6), ui.dp(9))
+    private fun pillBg(on: Boolean) = if (on) ui.box(0x445B9DFF, BLUE, 15) else ui.box(0x22FFFFFF, 0x33FFFFFF, 15)
+    private fun toolPill(t: String, f: () -> Unit) = ui.text(t, 11f, Color.WHITE, true).apply {
+        gravity = Gravity.CENTER; setSingleLine(); ellipsize = android.text.TextUtils.TruncateAt.END; setPadding(ui.dp(4), ui.dp(4), ui.dp(4), ui.dp(4))
         background = pillBg(false); setOnClickListener { f() }
     }
     private val bSleep = toolPill("⏱ نوم") { sleepDialog() }
     private val bSpeed = toolPill("⏩ 1×") { speedDialog() }
     private val bQueue = toolPill("📃 التالي") { queueDialog() }
-    private val bVol = toolPill("🔊 100%") { volumeDialog() }
+    private val bStem = toolPill("🎼 الكل") { MusicEngine.cycleStem(); lastToolSig = ""; paintTools() }
+    private val volIcon = ui.text("🔊", 15f, Color.WHITE).apply { gravity = Gravity.CENTER }
+    private val volLbl = ui.text("100%", 12f, Color.WHITE, true).apply { gravity = Gravity.CENTER }
+    private val volBar = DualVolBar(act, BLUE, 0x40FFFFFF).apply { max = 200; progress = 100; layoutDirection = View.LAYOUT_DIRECTION_LTR; setPadding(ui.dp(10), 0, ui.dp(10), 0) }
     private var lastToolSig = ""
+    private var volTouch = false
     private fun speedLabel(s: Float): String = if (s == s.toInt().toFloat()) s.toInt().toString() + "×" else String.format(java.util.Locale.US, "%.2f", s).trimEnd('0') + "×"
     private fun paintTools() {
         val left = MusicEngine.sleepLeftMs(); val sec = (left + 999L) / 1000L
         val eot = MusicEngine.sleepEndOfTrack; val sp = MusicEngine.speed
         val rest = (MusicEngine.queue.size - MusicEngine.idx - 1).coerceAtLeast(0)
         val vp = MusicEngine.volPct
-        val sig = "$sec|$eot|$sp|$rest|$vp"
+        val sig = "$sec|$eot|$sp|$rest|$vp|${MusicEngine.stem}|${MusicEngine.stemPct}"
         if (sig == lastToolSig) return
         lastToolSig = sig
         bSleep.text = when { eot -> "⏱ بعد دي"; sec > 0L -> "⏱ " + VideoLib.fmtDur(left); else -> "⏱ نوم" }
         bSleep.background = pillBg(eot || sec > 0L)
         bSpeed.text = "⏩ " + speedLabel(sp); bSpeed.background = pillBg(sp != 1f)
         bQueue.text = if (rest > 0) "📃 التالي ($rest)" else "📃 التالي"
-        bVol.text = "🔊 $vp%"; bVol.background = pillBg(vp != 100)
+        val sg = MusicEngine.stem; val pc = MusicEngine.stemPct
+        bStem.text = if (pc >= 0 && sg != 0) "⏳ $pc%" else when (sg) { 1 -> "🎤 صوت"; 2 -> "🎸 موسيقى"; else -> "🎼 الكل" }
+        bStem.background = pillBg(sg != 0)
+        if (!volTouch) volBar.progress = vp
+        volLbl.text = "$vp%"; volLbl.setTextColor(if (vp > 100) 0xFFFF5252.toInt() else Color.WHITE)
     }
     private fun optRow(label: String, on: Boolean, f: () -> Unit) = ui.text(label, 15f, th.text, on).apply {
         gravity = Gravity.CENTER; setPadding(ui.dp(10), ui.dp(12), ui.dp(10), ui.dp(12))
@@ -207,9 +243,9 @@ class MusicUi(private val act: Activity, private val ui: Ui, private val th: The
         fun add(label: String, on: Boolean, f: () -> Unit) {
             col.addView(optRow(label, on) { f(); lastToolSig = ""; paintTools(); dlg?.dismiss() }, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = ui.dp(6) })
         }
-        if (MusicEngine.sleepLeftMs() > 0L || MusicEngine.sleepEndOfTrack) add("🚫 إلغاء المؤقت", false) { MusicEngine.setSleep(0); Notice.show(act, "المؤقت اتلغى", 1500L) }
-        for (m in intArrayOf(5, 10, 15, 30, 45, 60)) add("⏱ بعد $m دقيقة", false) { MusicEngine.setSleep(m); Notice.show(act, "😴 هتقف بعد $m دقيقة (بفيد هادي)", 2200L) }
-        add("🎵 لما الأغنية دي تخلص", MusicEngine.sleepEndOfTrack) { MusicEngine.setSleep(-1); Notice.show(act, "😴 هتقف في آخر الأغنية دي", 2200L) }
+        if (MusicEngine.sleepLeftMs() > 0L || MusicEngine.sleepEndOfTrack) add("🚫 إلغاء المؤقت", false) { MusicEngine.setSleep(0); quiet("المؤقت اتلغى", 1500L) }
+        for (m in intArrayOf(5, 10, 15, 30, 45, 60)) add("⏱ بعد $m دقيقة", false) { MusicEngine.setSleep(m); quiet("😴 هتقف بعد $m دقيقة (بفيد هادي)", 2200L) }
+        add("🎵 لما الأغنية دي تخلص", MusicEngine.sleepEndOfTrack) { MusicEngine.setSleep(-1); quiet("😴 هتقف في آخر الأغنية دي", 2200L) }
         dlg = ui.sheet(act, "⏱ مؤقت النوم", listOf<View>(col)); dlg.show()
     }
     private fun speedDialog() {
@@ -217,14 +253,14 @@ class MusicUi(private val act: Activity, private val ui: Ui, private val th: The
         val col = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL; setPadding(ui.dp(4), ui.dp(2), ui.dp(4), ui.dp(2)) }
         for (sp in floatArrayOf(0.5f, 0.75f, 1f, 1.25f, 1.5f, 1.75f, 2f)) {
             val lbl = speedLabel(sp) + (if (sp == 1f) "  (عادي)" else "")
-            col.addView(optRow(lbl, MusicEngine.speed == sp) { MusicEngine.setSpeed(sp); lastToolSig = ""; paintTools(); Notice.show(act, "⏩ السرعة " + speedLabel(sp), 1300L); dlg?.dismiss() }, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = ui.dp(6) })
+            col.addView(optRow(lbl, MusicEngine.speed == sp) { MusicEngine.setSpeed(sp); lastToolSig = ""; paintTools(); quiet("⏩ السرعة " + speedLabel(sp), 1300L); dlg?.dismiss() }, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = ui.dp(6) })
         }
         col.addView(ui.text("الصوت بيفضل بنفس الدرجة (من غير تخين أو رفع)", 11.5f, th.muted).apply { gravity = Gravity.CENTER; setPadding(0, ui.dp(2), 0, 0) })
         dlg = ui.sheet(act, "⏩ سرعة التشغيل", listOf<View>(col)); dlg.show()
     }
     private fun queueDialog() {
         val q = MusicEngine.queue; val cur = MusicEngine.idx
-        if (q.isEmpty() || cur !in q.indices) { Notice.show(act, "مفيش حاجة شغّالة", 1500L); return }
+        if (q.isEmpty() || cur !in q.indices) { quiet("مفيش حاجة شغّالة", 1500L); return }
         var dlg: android.app.Dialog? = null
         val col = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL; setPadding(ui.dp(4), ui.dp(2), ui.dp(4), ui.dp(2)) }
         if (MusicEngine.shuffle) col.addView(ui.text("🔀 العشوائي شغّال — الترتيب هنا مش بالضرورة اللي هيشتغل", 11.5f, th.muted).apply { gravity = Gravity.CENTER; setPadding(0, 0, 0, ui.dp(6)) })
@@ -295,7 +331,7 @@ class MusicUi(private val act: Activity, private val ui: Ui, private val th: The
     private fun bumpSize(dlt: Int) {
         val n = (lsz().toInt() + dlt).coerceIn(14, 36)
         Cfg.put("lyr_size", n.toString()); restyleLyrics()
-        Notice.show(act, "حجم الكلمات: $n", 900L)
+        quiet("حجم الكلمات: $n", 900L)
     }
     private fun fontDialog() {
         val col = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL; setPadding(ui.dp(6), ui.dp(4), ui.dp(6), ui.dp(4)) }
@@ -323,7 +359,7 @@ class MusicUi(private val act: Activity, private val ui: Ui, private val th: The
         GAlert(act).setTitle("🔤 خط وحجم الكلمات").setView(sc).setPositiveButton("تمام", null).show()
     }
 
-    // ===== الكلمات: حيّة فوق الدايرة + صفحة كاملة (بوضعين: 📝 كاملة من جيميناي · 🎧 تفريغ من الصوت) =====
+    // ===== الكلمات: حيّة فوق الدايرة + صفحة كاملة (كاملة من جيميناي + توقيت من لحظات الغنا في الصوت) =====
     private val lyrPrevTv = ui.text("", 13f, 0x80FFFFFF.toInt()).apply { setLineSpacing(0f, 1.1f); maxLines = 2; textDirection = View.TEXT_DIRECTION_FIRST_STRONG; textAlignment = View.TEXT_ALIGNMENT_TEXT_START }
     private val lyrCurTv = ui.text("", 25f, Color.WHITE).apply { setLineSpacing(0f, 1.08f); maxLines = 3; textDirection = View.TEXT_DIRECTION_FIRST_STRONG; textAlignment = View.TEXT_ALIGNMENT_TEXT_START }
     private val lyrNextTv = ui.text("", 13f, 0x80FFFFFF.toInt()).apply { setLineSpacing(0f, 1.1f); maxLines = 2; textDirection = View.TEXT_DIRECTION_FIRST_STRONG; textAlignment = View.TEXT_ALIGNMENT_TEXT_START }
@@ -358,9 +394,7 @@ class MusicUi(private val act: Activity, private val ui: Ui, private val th: The
             gravity = Gravity.CENTER; setPadding(ui.dp(12), ui.dp(11), ui.dp(12), ui.dp(11)); background = ui.box(0x22FFFFFF, 0x33FFFFFF, 10); setOnClickListener { f() }
         }
         fun add(v: View) { tools.addView(v, LinearLayout.LayoutParams(-2, -2).apply { marginEnd = ui.dp(6) }) }
-        val a = chip("📝 كلمات كاملة (جيميناي)", LyricsEngine.M_FULL); val b = chip("🎧 تفريغ من الصوت", LyricsEngine.M_AUDIO)
-        modeChips.add(a); modeChips.add(b)
-        add(a); add(b)
+        // (v202) وضع التفريغ من الصوت اتشال — الكلمات من جيميناي بس
         // (v201) شريط الكلمات: 4 أزرار بس — الباقي (إعادة · الكلمات غلط · الأغنية غلط · ريفريش …) جوه «⋯ المزيد»
         val fbtn = fb("🔤 خط وحجم") { fontDialog() }; lyrFontBtn = fbtn; add(fbtn)
         add(fb("⋯ المزيد") { moreSheet() })
@@ -398,20 +432,22 @@ class MusicUi(private val act: Activity, private val ui: Ui, private val th: The
     /** (v198) المسافة اللي الدواير بتنزلها: من أسفل الحلقة لحد ما تلمس اسم الأغنية بالظبط — من غير تصغير (فمفيش قص للأغلفة اللي على الجنبين) */
     private fun lyrShift(): Float = (orb.height / 2f - orb.ringR - ui.dp(3)).coerceAtLeast(0f)
     /** فتح/قفل صفحة الكلمات (بتتفتح بزرار «إظهار الكلمات» أو من ⋮) */
+    private val LYR_SCALE = 0.3f     // (v201) حجم الدواير وقت الكلمات = 30% من الأصل
     private fun toggleLyrics() {
-        if (MusicEngine.current == null) { Notice.show(act, "شغّل أغنية الأول وبعدين دوس على الكلمات", 2200L); return }
+        if (MusicEngine.current == null) { quiet("شغّل أغنية الأول وبعدين دوس على الكلمات", 2200L); return }
         if (lyrOn) { hideLyrics(); return }
         lyrOn = true; lyrIdx = -2; lyrWordKey = ""
         paintModes(); paintLyrBtn()
         // الدواير بنفس حجمها بتنزل لتحت لحد اسم الأغنية، والكلمات بتظهر من وراها بفيد
         val shift = lyrShift()
-        val ringTop = orb.top + shift + (orb.ringCy - orb.ringR)
-        (lyrPanel.layoutParams as FrameLayout.LayoutParams).bottomMargin = (middle.height - ringTop - orb.ringR * 0.08f).toInt().coerceIn(0, (middle.height - ui.dp(140)).coerceAtLeast(0))
+        orb.pivotX = orb.width / 2f; orb.pivotY = orb.ringCy + orb.ringR      // (v201) بتصغر ناحية أسفل الحلقة
+        val ringTop = orb.top + shift + (orb.ringCy + orb.ringR) - 2f * orb.ringR * LYR_SCALE
+        (lyrPanel.layoutParams as FrameLayout.LayoutParams).bottomMargin = (middle.height - ringTop + ui.dp(4)).toInt().coerceIn(0, (middle.height - ui.dp(140)).coerceAtLeast(0))
         lyrPanel.requestLayout()
         orb.passThrough = true
         lyrPanel.animate().cancel(); lyrPanel.alpha = 0f; lyrPanel.visibility = View.VISIBLE
         lyrPanel.animate().alpha(1f).setStartDelay(120L).setDuration(340L).start()
-        orb.animate().cancel(); orb.animate().translationY(shift).setDuration(340L).setInterpolator(android.view.animation.DecelerateInterpolator(1.4f)).start()
+        orb.animate().cancel(); orb.animate().translationY(shift).scaleX(LYR_SCALE).scaleY(LYR_SCALE).setDuration(520L).setInterpolator(android.view.animation.DecelerateInterpolator(1.6f)).start()
         loadLyrics(manual = true)
     }
     private fun paintLyrBtn() { lyrBtn.text = if (lyrOn) "🙈 إخفاء الكلمات" else "📝 إظهار الكلمات" }
@@ -419,13 +455,13 @@ class MusicUi(private val act: Activity, private val ui: Ui, private val th: The
         if (!lyrOn) return
         lyrOn = false; paintLyrBtn(); orb.passThrough = false
         lyrPanel.animate().cancel(); lyrPanel.animate().setStartDelay(0L).alpha(0f).setDuration(220L).withEndAction { if (!lyrOn) lyrPanel.visibility = View.GONE }.start()
-        orb.animate().cancel(); orb.animate().translationY(0f).setDuration(320L).setInterpolator(android.view.animation.DecelerateInterpolator(1.4f)).start()
+        orb.animate().cancel(); orb.animate().translationY(0f).scaleX(1f).scaleY(1f).setDuration(460L).setInterpolator(android.view.animation.DecelerateInterpolator(1.6f)).start()
     }
     /** لما المشغّل نفسه يتقفل: رجّع الدايرة والكلمات لوضعهم فورًا (الأنيميشن مابيشتغلش على view مخفي) */
     private fun snapLyrReset() {
         lyrOn = false; paintLyrBtn(); orb.passThrough = false
         lyrPanel.animate().cancel(); lyrPanel.visibility = View.GONE; lyrPanel.alpha = 1f
-        orb.animate().cancel(); orb.translationY = 0f
+        orb.animate().cancel(); orb.translationY = 0f; orb.scaleX = 1f; orb.scaleY = 1f
     }
     private fun nameHint(t: Track): Pair<String, String>? = nameOf(t).let { if (it.first.isBlank()) null else it }
 
@@ -444,14 +480,14 @@ class MusicUi(private val act: Activity, private val ui: Ui, private val th: The
             else setStatus("")
             return
         }
-        if (c != null && c.complete) { bigMsg("ما لقيتش كلام لأغنية دي بالوضع ده."); setStatus("جرّب الوضع التاني من ⋮ ← الكلمات كاملة"); return }
+        if (c != null && c.complete) { bigMsg("ما لقيتش كلام لأغنية دي."); setStatus("جرّب ⋯ المزيد ← 🔁 إعادة تحميل الكلمات"); return }
         if (!manual && !autoLyr() && !LyricsEngine.isRunning(t, m)) { bigMsg("دوس على المكان ده عشان تجيب الكلمات."); setStatus("🎤 اضغط هنا للكلمات (الكلمات التلقائية مقفولة)"); return }
         startLyrics(t, m, false, false)
     }
     private fun redoLyrics(wrong: Boolean) {
-        val t = MusicEngine.current ?: run { Notice.show(act, "شغّل أغنية الأول", 1500L); return }
+        val t = MusicEngine.current ?: run { quiet("شغّل أغنية الأول", 1500L); return }
         val m = LyricsEngine.mode()
-        if (LyricsEngine.isRunning(t, m)) { Notice.show(act, "لسه بكتب الكلام… استنى شوية", 1800L); return }
+        if (LyricsEngine.isRunning(t, m)) { quiet("لسه بكتب الكلام… استنى شوية", 1800L); return }
         LyricsEngine.clear(act, t, m); lyrKey = t.uri + "|" + m
         startLyrics(t, m, wrong, true)
     }
@@ -459,18 +495,18 @@ class MusicUi(private val act: Activity, private val ui: Ui, private val th: The
         val ck = t.uri + "|" + m
         lyrKey = ck
         if (LyricsEngine.isRunning(t, m)) { setStatus("🎧 بتتكتب في الخلفية… استنى"); if (lyr == null) bigMsg("⏳ بتتكتب… هتظهر هنا أول ما تجهز"); return }
-        if (lyr == null) bigMsg(if (m == LyricsEngine.M_FULL) "📝 بطلب الكلمات الكاملة من جيميناي…\nعلى مرحلتين، ممكن تاخد دقيقة" else "🎧 بسمع الأغنية وبكتب الكلام…\nمقطع مقطع وبتظهر وهي بتتكتب")
-        setStatus(if (m == LyricsEngine.M_FULL) "📝 بجهّز الطلب…" else "🎧 بجهّز الصوت…")
+        if (lyr == null) bigMsg(if (m == LyricsEngine.M_FULL) "📝 بطلب الكلمات الكاملة من جيميناي…\nعلى مرحلتين، ممكن تاخد دقيقة" else "📝 بطلب الكلمات…")
+        setStatus("📝 بجهّز الطلب…")
         LyricsEngine.start(act, t, m, nameHint(t), retry, fresh, { stage ->
             act.runOnUiThread { if (fullOn && lyrKey == ck) setStatus(stage) }
         }) { r, msg ->
             act.runOnUiThread {
                 if (act.isDestroyed || act.isFinishing) return@runOnUiThread
-                if (!fullOn || lyrKey != ck) { if (msg.isNotBlank()) Notice.show(act, "🎤 " + t.title + ": " + msg, 3200L); return@runOnUiThread }
+                if (!fullOn || lyrKey != ck) { if (msg.isNotBlank()) errNote("🎤 " + t.title + ": " + msg); return@runOnUiThread }
                 val c = LyricsEngine.cached(act, t, m)
-                if (c != null && c.lines.isNotEmpty()) { showLyrics(c); setStatus(msg) }
-                else { bigMsg("⚠ " + msg.ifBlank { "ما لقيتش كلام" }); setStatus("جرّب ⋮ ← الكلمات كاملة ← 🔁 إعادة، أو الوضع التاني") }
-                if (msg.isNotBlank()) Notice.show(act, msg, 3600L)
+                if (msg.isNotBlank()) errNote("🎤 " + t.title + ": " + msg)
+                if (c != null && c.lines.isNotEmpty()) { showLyrics(c); setStatus("") }
+                else { bigMsg("⚠ " + msg.ifBlank { "ما لقيتش كلام" }); setStatus("جرّب ⋯ المزيد ← 🔁 إعادة تحميل الكلمات") }
             }
         }
     }
@@ -574,16 +610,16 @@ class MusicUi(private val act: Activity, private val ui: Ui, private val th: The
 
         // الأزرار
         val ctl = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_LTR; setPadding(ui.dp(14), 0, ui.dp(14), 0) }
-        bShuffle.setOnClickListener { val on = MusicEngine.toggleShuffle(); paintMode(); Notice.show(act, if (on) "🔀 العشوائي شغّال" else "➡️ العشوائي اتقفل", 1300L) }
+        bShuffle.setOnClickListener { val on = MusicEngine.toggleShuffle(); paintMode(); quiet(if (on) "🔀 العشوائي شغّال" else "➡️ العشوائي اتقفل", 1300L) }
         bRepeat.setOnClickListener { cycleMode() }
         bPrev.setOnClickListener { if (MusicEngine.current != null) orb.commit(-1) }
         bNext.setOnClickListener { if (MusicEngine.current != null) orb.commit(1) }
         bPlay.setOnClickListener { toggle() }
-        ctl.addView(bShuffle, LinearLayout.LayoutParams(0, ui.dp(64), 1f))
-        ctl.addView(bPrev, LinearLayout.LayoutParams(0, ui.dp(64), 1f))
-        ctl.addView(bPlay, LinearLayout.LayoutParams(0, ui.dp(72), 1.3f))
-        ctl.addView(bNext, LinearLayout.LayoutParams(0, ui.dp(64), 1f))
-        ctl.addView(bRepeat, LinearLayout.LayoutParams(0, ui.dp(64), 1f))
+        ctl.addView(bShuffle, LinearLayout.LayoutParams(0, ui.dp(52), 1f))
+        ctl.addView(bPrev, LinearLayout.LayoutParams(0, ui.dp(52), 1f))
+        ctl.addView(bPlay, LinearLayout.LayoutParams(0, ui.dp(58), 1.3f))
+        ctl.addView(bNext, LinearLayout.LayoutParams(0, ui.dp(52), 1f))
+        ctl.addView(bRepeat, LinearLayout.LayoutParams(0, ui.dp(52), 1f))
 
         inner.clipChildren = false; middle.clipChildren = false
         // الترتيب: [الكلمات] [الدايرة] [اسم الأغنية] — والوسط (inner) بيتغطى بصفحة الكلمات الكاملة لما تتفتح
@@ -593,11 +629,25 @@ class MusicUi(private val act: Activity, private val ui: Ui, private val th: The
         titleCol.addView(fTitle, LinearLayout.LayoutParams(-1, -2)); titleCol.addView(fArtist, LinearLayout.LayoutParams(-1, -2))
         val titleRow = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_LTR; setPadding(ui.dp(18), 0, ui.dp(14), 0) }
         titleRow.addView(titleCol, LinearLayout.LayoutParams(0, -2, 1f).apply { marginEnd = ui.dp(8) })
-        titleRow.addView(lyrBtn, LinearLayout.LayoutParams(-2, -2))
+        val rightCol = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER_HORIZONTAL }
+        rightCol.addView(errBtn, LinearLayout.LayoutParams(-2, -2).apply { bottomMargin = ui.dp(4) })
+        rightCol.addView(lyrBtn, LinearLayout.LayoutParams(-2, -2))
+        titleRow.addView(rightCol, LinearLayout.LayoutParams(-2, -2))
         inner.addView(titleRow, LinearLayout.LayoutParams(-1, -2).apply { topMargin = ui.dp(2); bottomMargin = ui.dp(2) })
         val toolsRow = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER; layoutDirection = View.LAYOUT_DIRECTION_RTL; setPadding(ui.dp(12), 0, ui.dp(12), 0) }
-        for (p in listOf<View>(bSleep, bSpeed, bQueue, bVol)) toolsRow.addView(p, LinearLayout.LayoutParams(0, ui.dp(40), 1f).apply { marginStart = ui.dp(3); marginEnd = ui.dp(3) })
-        inner.addView(toolsRow, LinearLayout.LayoutParams(-1, ui.dp(44)).apply { topMargin = ui.dp(4) })
+        for (p in listOf<View>(bSleep, bSpeed, bQueue, bStem)) toolsRow.addView(p, LinearLayout.LayoutParams(0, ui.dp(30), 1f).apply { marginStart = ui.dp(3); marginEnd = ui.dp(3) })
+        inner.addView(toolsRow, LinearLayout.LayoutParams(-1, ui.dp(34)).apply { topMargin = ui.dp(2) })
+        // (v202) سلايدر الصوت (0–200%) ظاهر في الصفحة بدل النافذة
+        volBar.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(sb: SeekBar?, p: Int, fromUser: Boolean) { if (fromUser) { MusicEngine.setVol(p); volLbl.text = "$p%"; volLbl.setTextColor(if (p > 100) 0xFFFF5252.toInt() else Color.WHITE) } }
+            override fun onStartTrackingTouch(sb: SeekBar?) { volTouch = true }
+            override fun onStopTrackingTouch(sb: SeekBar?) { volTouch = false; lastToolSig = "" }
+        })
+        val volRow = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_LTR; setPadding(ui.dp(10), 0, ui.dp(10), 0) }
+        volRow.addView(volIcon, LinearLayout.LayoutParams(ui.dp(32), -2))
+        volRow.addView(volBar, LinearLayout.LayoutParams(0, ui.dp(30), 1f))
+        volRow.addView(volLbl, LinearLayout.LayoutParams(ui.dp(44), -2))
+        inner.addView(volRow, LinearLayout.LayoutParams(-1, ui.dp(30)))
         // (v198) شريط تقدّم طولي: الوقت الحالي · السلايدر (أول الأغنية وآخرها) · المدة الكلية
         val seekRow = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_LTR; setPadding(ui.dp(10), 0, ui.dp(10), 0) }
         seekRow.addView(tCur, LinearLayout.LayoutParams(ui.dp(44), -2))
@@ -623,7 +673,7 @@ class MusicUi(private val act: Activity, private val ui: Ui, private val th: The
         col.addView(top, LinearLayout.LayoutParams(-1, ui.dp(56)))
         col.addView(middle, LinearLayout.LayoutParams(-1, 0, 1f))
         col.addView(eq, LinearLayout.LayoutParams(-1, ui.dp(58)).apply { setMargins(ui.dp(18), ui.dp(4), ui.dp(18), ui.dp(2)) })
-        col.addView(ctl, LinearLayout.LayoutParams(-1, ui.dp(76)))
+        col.addView(ctl, LinearLayout.LayoutParams(-1, ui.dp(60)).apply { bottomMargin = ui.dp(2) })
         full.addView(col, FrameLayout.LayoutParams(-1, -1))
         setBg(bgColor)
     }
@@ -669,11 +719,9 @@ class MusicUi(private val act: Activity, private val ui: Ui, private val th: The
         }
         head("📝 الكلمات")
         item(if (lyrOn) "🙈 إخفاء الكلمات" else "📝 إظهار الكلمات") { toggleLyrics() }
-        item("📝 كلمات كاملة من جيميناي", LyricsEngine.mode() == LyricsEngine.M_FULL) { pickLyrMode(LyricsEngine.M_FULL) }
-        item("🎧 تفريغ الكلمات من الصوت", LyricsEngine.mode() == LyricsEngine.M_AUDIO) { pickLyrMode(LyricsEngine.M_AUDIO) }
         item(if (autoLyr()) "⏹ إيقاف الكلمات التلقائية" else "▶ تشغيل الكلمات التلقائية") {
             Cfg.put("music_auto_lyr", if (autoLyr()) "0" else "1")
-            Notice.show(act, if (autoLyr()) "🎤 الكلمات هتتجاب تلقائيًا لما تفتح المشغّل" else "🎤 الكلمات مش هتتجاب إلا لما تدوس عليها", 2400L)
+            quiet(if (autoLyr()) "🎤 الكلمات هتتجاب تلقائيًا لما تفتح المشغّل" else "🎤 الكلمات مش هتتجاب إلا لما تدوس عليها", 2400L)
         }
         item("🔁 إعادة تحميل الكلمات") { redoLyrics(false) }
         item("✍️ الكلمات غلط") { redoLyrics(true) }
@@ -690,7 +738,7 @@ class MusicUi(private val act: Activity, private val ui: Ui, private val th: The
         dlg = ui.sheet(act, "⋮ المزيد", listOf<View>(col)); dlg.show()
     }
     private fun pickLyrMode(m: String) {
-        if (MusicEngine.current == null) { Notice.show(act, "شغّل أغنية الأول", 1500L); return }
+        if (MusicEngine.current == null) { quiet("شغّل أغنية الأول", 1500L); return }
         LyricsEngine.setMode(m); paintModes()
         if (!lyrOn) toggleLyrics() else loadLyrics(manual = true)
     }
@@ -716,7 +764,7 @@ class MusicUi(private val act: Activity, private val ui: Ui, private val th: The
     private val repeatNames = arrayOf("➡️ تشغيل بالترتيب (من غير تكرار)", "🔁 تكرار الكل", "🔂 تكرار الأغنية دي")
     private fun cycleMode() {
         val m = MusicEngine.cycleMode(); paintMode()
-        Notice.show(act, repeatNames[m], 1400L)
+        quiet(repeatNames[m], 1400L)
     }
     private fun paintMode() {
         bShuffle.set("shuffle", if (MusicEngine.shuffle) BLUE else OFF)
@@ -727,7 +775,7 @@ class MusicUi(private val act: Activity, private val ui: Ui, private val th: The
         if (MusicEngine.current == null) return
         fullOn = true; full.visibility = View.VISIBLE; onNavTint(navCol(bgColor))
         if (!canEq() && Cfg.str("eq_asked", "") != "1") {
-            Cfg.put("eq_asked", "1"); Notice.show(act, "📊 المؤثر الموسيقي محتاج إذن «تسجيل الصوت» (للتحليل بس، مفيش تسجيل)", 3200L); askEq()
+            Cfg.put("eq_asked", "1"); quiet("📊 المؤثر الموسيقي محتاج إذن «تسجيل الصوت» (للتحليل بس، مفيش تسجيل)", 3200L); askEq()
         }
         paint(); refreshNow(); lastToolSig = ""; paintTools()
         loadLyrics()
@@ -766,7 +814,7 @@ class MusicUi(private val act: Activity, private val ui: Ui, private val th: The
                 if (act.isDestroyed || act.isFinishing) return@runOnUiThread
                 if (b != null) artCache.put(k, b) else artNone.add(k)
                 if (k == MusicEngine.current?.uri) {
-                    if (b == null && notifyNoPoster) Notice.show(act, "🖼 مفيش بوستر تاني — هيفضل شكل الدايرة (🔄 ريفريش يرجّع البحث)", 3200L)
+                    if (b == null && notifyNoPoster) errNote("🖼 مفيش بوستر تاني — هيفضل شكل الدايرة (🔄 ريفريش يرجّع البحث)")
                     notifyNoPoster = false
                 }
                 refreshArts()
@@ -791,7 +839,7 @@ class MusicUi(private val act: Activity, private val ui: Ui, private val th: The
         val q = lib.shownVideos().ifEmpty { listOf(v) }
         val tracks = q.mapNotNull { MusicScan.trackFor(it) }
         val i = tracks.indexOfFirst { it.id == v.id }
-        if (i < 0) { Notice.show(act, "الأغنية دي مش موجودة في الفحص — دوس 🔄", 2400L); return }
+        if (i < 0) { errNote("الأغنية دي مش موجودة في الفحص — دوس 🔄"); return }
         MusicEngine.play(act, tracks, i); showFull()
     }
     private fun playFolder(f: FolderItem) {
@@ -886,10 +934,10 @@ class MusicUi(private val act: Activity, private val ui: Ui, private val th: The
     }
     private fun identify(avoid: List<String> = emptyList()) {
         val t = MusicEngine.current
-        if (t == null) { Notice.show(act, "شغّل الأغنية الأول وبعدين دوس 🔎", 2400L); return }
-        if (idBusy) { Notice.show(act, "لسه بدوّر…", 1500L); return }
+        if (t == null) { quiet("شغّل الأغنية الأول وبعدين دوس 🔎", 2400L); return }
+        if (idBusy) { quiet("لسه بدوّر…", 1500L); return }
         idBusy = true
-        Notice.show(act, if (SongId.token().isEmpty() || avoid.isNotEmpty()) "🔎 جيميناي بيسمع مقطع من الأغنية…" else "🔎 بسمع مقطع من الأغنية…", 2500L)
+        quiet(if (SongId.token().isEmpty() || avoid.isNotEmpty()) "🔎 جيميناي بيسمع مقطع من الأغنية…" else "🔎 بسمع مقطع من الأغنية…", 2500L)
         // لو الأغنية شغّالة ناخد من مكان التشغيل، وإلا من نص الأغنية
         val start = if (MusicEngine.posMs > 5000 && avoid.isEmpty()) MusicEngine.posMs / 1000.0 else maxOf(10.0, t.durMs / 2000.0)
         SongId.auto(act, t, start, avoid) { m, msg ->
@@ -915,13 +963,13 @@ class MusicUi(private val act: Activity, private val ui: Ui, private val th: The
     private val triedNames = HashMap<Long, ArrayList<String>>()
     /** الأغنية اتعرّفت غلط: نعرّفها تاني (جيميناي) من غير الأسماء اللي اتقال إنها غلط، ونحفظ الاسم الجديد ونجيب الغلاف والكلمات */
     private fun wrongSong() {
-        val t = MusicEngine.current ?: run { Notice.show(act, "شغّل أغنية الأول", 1500L); return }
-        if (idBusy) { Notice.show(act, "لسه بدوّر…", 1500L); return }
+        val t = MusicEngine.current ?: run { quiet("شغّل أغنية الأول", 1500L); return }
+        if (idBusy) { quiet("لسه بدوّر…", 1500L); return }
         val n = nameOf(t)
         val tried = triedNames.getOrPut(t.id) { ArrayList() }
         listOf(n.first + " — " + n.second, n.first).filter { it.isNotBlank() && it !in tried }.forEach { tried.add(it) }
         idBusy = true
-        Notice.show(act, "🔎 بدوّر على الأغنية الصح…", 2500L)
+        quiet("🔎 بدوّر على الأغنية الصح…", 2500L)
         val start = maxOf(8.0, t.durMs / 1000.0 * (0.25 + 0.2 * (tried.size % 3)))
         SongId.auto(act, t, start, tried.toList()) { m, msg ->
             act.runOnUiThread {
@@ -929,21 +977,21 @@ class MusicUi(private val act: Activity, private val ui: Ui, private val th: The
                 if (act.isDestroyed || act.isFinishing) return@runOnUiThread
                 if (m == null) { GAlert(act).setTitle("🔎 ما قدرتش أعرفها").setMessage(msg).setPositiveButton("تمام", null).show(); return@runOnUiThread }
                 applyIdentified(t, m)
-                Notice.show(act, "✅ الأغنية: " + listOf(m.title, m.artist).filter { it.isNotBlank() }.joinToString(" — "), 3000L)
+                quiet("✅ الأغنية: " + listOf(m.title, m.artist).filter { it.isNotBlank() }.joinToString(" — "), 3000L)
             }
         }
     }
     /** ريفريش: الاسم (لو مش محفوظ يدويًا) والغلاف والكلمات من الأول */
     private fun refreshAll() {
         val t = MusicEngine.current ?: return
-        if (LyricsEngine.isRunning(t, LyricsEngine.mode()) || idBusy) { Notice.show(act, "لسه شغّال… استنى شوية", 1500L); return }
+        if (LyricsEngine.isRunning(t, LyricsEngine.mode()) || idBusy) { quiet("لسه شغّال… استنى شوية", 1500L); return }
         val n = nameOf(t)
         Poster.resetSkip(n.first, n.second); Poster.forget(act, n.first, n.second); Cfg.put("noemb_${t.id}", "")
         forgetArt(t); refreshNow()
         LyricsEngine.clearAll(act, t); lyr = null; lyrKey = null
         if (SongId.override(t.id) == null) {
             idBusy = true
-            Notice.show(act, "🔎 بحدّث الاسم والكلمات والبوستر…", 2500L)
+            quiet("🔎 بحدّث الاسم والكلمات والبوستر…", 2500L)
             SongId.auto(act, t, maxOf(10.0, t.durMs / 2000.0), emptyList()) { m, _ ->
                 act.runOnUiThread {
                     idBusy = false
@@ -955,11 +1003,11 @@ class MusicUi(private val act: Activity, private val ui: Ui, private val th: The
     }
     /** البوستر غلط: انسى الغلاف ده (حتى لو كان مدمج في الملف) وجرّب اللي بعده (ويكيبيديا/iTunes/Deezer/صورة الفنان) */
     private fun wrongPoster() {
-        val t = MusicEngine.current ?: run { Notice.show(act, "شغّل أغنية الأول", 1500L); return }
+        val t = MusicEngine.current ?: run { quiet("شغّل أغنية الأول", 1500L); return }
         val n = nameOf(t)
         Poster.reject(act, n.first, n.second); Cfg.put("noemb_${t.id}", "1")
         notifyNoPoster = true; forgetArt(t)
-        Notice.show(act, "🖼 بدوّر على بوستر تاني…", 1800L)
+        quiet("🖼 بدوّر على بوستر تاني…", 1800L)
         refreshNow()
     }
 

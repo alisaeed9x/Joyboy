@@ -641,7 +641,8 @@ class LibraryUi(
         items += "📋 نسخ الرابط" to {
             try { (act.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager).setPrimaryClip(android.content.ClipData.newPlainText("url", w.url)); toastMsg("📋 اتنسخ الرابط") } catch (_: Exception) {}
         }
-        items += "🔗 تحديث لينك الفيديو" to { webPageLink(w) }
+        items += "🔧 تحديث اللينك من الصفحة" to { repairWeb(w) }
+        items += "🔗 حفظ لينك الصفحة" to { webPageLink(w) }
         items += "🗑 مسح من السجل" to {
             GAlert(act).setTitle("🗑 مسح من المصطادة").setMessage("هيتمسح «${w.title}» من السجل (الترجمة المحفوظة مش هتتمسح). تمام؟")
                 .setPositiveButton("امسح") { _, _ -> WebVideos.remove(act, w.id); render() }.setNegativeButton("إلغاء", null).show()
@@ -663,6 +664,13 @@ class LibraryUi(
             .setPositiveButton("امسح") { _, _ -> WebVideos.removeMany(act, ids); sel.clear(); render() }.setNegativeButton("إلغاء", null).show()
     }
     /** يحفظ لينك صفحة الفيديو (من الكليبورد أو بالكتابة) — ده اللي بيتفتح في الخلفية لما لينك التحميل يفشل */
+    /** (v203) بيفتح صفحة الفيديو في المتصفح: تدوس تشغيل وهو يلقط اللينك الجديد ويرجّعك للمشغّل بنفس ترجمة الفيديو وتقدمه */
+    private fun repairWeb(w: WebVid) {
+        val page = w.page.ifEmpty { if (WebIdent.specific(w.ref)) w.ref else "" }
+        if (page.isEmpty()) { webPageLink(w); return }   // مفيش صفحة محفوظة: احفظها الأول
+        act.startActivity(android.content.Intent(act, BrowserActivity::class.java).putExtra("start", page).putExtra("noauto", true)
+            .putExtra("repair_id", w.id).putExtra("repair_url", w.url).putExtra("repair_title", w.title))
+    }
     private fun webPageLink(w: WebVid) {
         val clip = try { (act.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager).primaryClip?.getItemAt(0)?.text?.toString()?.trim() ?: "" } catch (_: Exception) { "" }
         val start = if (clip.startsWith("http", true)) clip else w.page.ifEmpty { w.ref }

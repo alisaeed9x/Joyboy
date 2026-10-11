@@ -396,6 +396,13 @@ class PlayerActivity : Activity(), Host {
     fun beginTranslate() {
         try { val st = Throwable().stackTrace; LogStore.add("▶ طلب بدء الترجمة ← " + (st.getOrNull(1)?.let { it.methodName + ":" + it.lineNumber } ?: "?") + (if (autoTr) " (autotr)" else "")) } catch (_: Throwable) {}
         if (::engine.isInitialized && !engineReady) { pendingBegin = true; return }   // البيانات المحفوظة لسه بتتحمّل: هتبدأ لوحدها أول ما تخلص
+        // (v203) لو الفيديو مترجم 100% (مثلًا بعد تحديث لينكه): مفيش ترجمة تاني، الترجمة المحفوظة شغّالة. ولو ناقص بيكمّل الباقي بس (المخلّص بيتخطّى)
+        if (::engine.isInitialized && !engineStarted && !freshOnce && (try { engine.fullyDone() } catch (_: Throwable) { false })) {
+            dismissStrip()
+            if (noSub) { noSub = false; if (!ccOn) ccToggleFn() }
+            Notice.show(this, "✓ الفيديو ده مترجم 100% — مترجمتش حاجة (لو عايز تعيد: 🔁 إعادة)", 3600L)
+            return
+        }
         dismissStrip()
         if (noSub) { noSub = false; if (!ccOn) ccToggleFn() }   // بدأت ترجمة: رجّع إظهار الترجمة
         // (v134) الترجمة تبدأ من المكان اللي واقف فيه في الفيديو (مش من الأول): المؤشر بيتحط على باتش الوقت الحالي، واللي اتترجم قبل كده بيتخطّى
@@ -2138,11 +2145,32 @@ class PlayerActivity : Activity(), Host {
             val page = (w?.page?.takeIf { it.isNotEmpty() } ?: hdr["Referer"] ?: "")
             runOnUiThread {
                 if (isFinishing || isDestroyed) return@runOnUiThread
-                if (!page.startsWith("http")) { Notice.show(this, "مفيش لينك صفحة محفوظ للفيديو — احفظه من ⋮ ← تحديث لينك الفيديو", 4000L); return@runOnUiThread }
+                if (!page.startsWith("http")) { askPageLink(); return@runOnUiThread }
                 if (++refreshTries > 2) { refreshAsked = false; return@runOnUiThread }   // (v142) محاولتين بس في الجلسة عشان مايدخلش في لف
                 startLinkRefresh(page)   // (v142) بيجيب اللينك لوحده من غير ما يسألك
             }
         }.apply { isDaemon = true }.start()
+    }
+    /** (v203) بيفتح صفحة الفيديو قدامك في المتصفح: تدوس تشغيل، والتطبيق بيلقط اللينك الجديد ويرجّعك للمشغّل بنفس الفيديو (ترجمته وتقدمه وإعداداته) */
+    private fun repairInBrowser(page: String) {
+        val id = vid; val old = url ?: ""; val t = intent.getStringExtra("title") ?: ""
+        try { player.pause() } catch (_: Throwable) {}
+        startActivity(Intent(this, BrowserActivity::class.java).putExtra("start", page).putExtra("noauto", true)
+            .putExtra("repair_id", id).putExtra("repair_url", old).putExtra("repair_title", t))
+        finish()
+    }
+    /** مفيش لينك صفحة محفوظ: بنطلبه منك مرة واحدة ونحفظه جنب لينك الفيديو */
+    private fun askPageLink() {
+        val clip = try { (getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager).primaryClip?.getItemAt(0)?.text?.toString()?.trim() ?: "" } catch (_: Exception) { "" }
+        val et = EditText(this).apply { setText(if (clip.startsWith("http", true)) clip else ""); hint = "https://…"; layoutDirection = View.LAYOUT_DIRECTION_LTR; setPadding(48, 36, 48, 36); maxLines = 4 }
+        val appCtx = applicationContext; val id = vid
+        GAlert(this).setTitle("🔗 لينك صفحة الفيديو").setMessage("لينك الفيديو خلص ومفيش لينك الصفحة محفوظ. الصق لينك الصفحة اللي بيتشغّل فيها الفيديو في الموقع — هحفظه، وأفتحهالك: تدوس تشغيل وأنا ألقط اللينك الجديد وأكمّل بنفس الترجمة.").setView(et)
+            .setPositiveButton("فتح الصفحة") { _, _ ->
+                val u = et.text.toString().trim()
+                if (!u.startsWith("http", true)) { Notice.show(this, "اللينك لازم يبدأ بـ http", 3000L); return@setPositiveButton }
+                Thread { WebVideos.update(appCtx, id) { it.copy(page = u) } }.apply { isDaemon = true }.start()
+                repairInBrowser(u)
+            }.setNegativeButton("إلغاء", null).show()
     }
     private fun startLinkRefresh(page: String) {
         val old = url ?: return
@@ -2164,7 +2192,7 @@ class PlayerActivity : Activity(), Host {
                     .setNegativeButton("إلغاء", null).show()
             } else {
                 GAlert(this).setTitle("⚠ مالقيتش لينك الفيديو").setMessage("الصفحة ماطلّعتش أي لينك فيديو (غالبًا محمية أو محتاجة ضغطة على زرار التحميل).\nتفتح الصفحة تصطاد بنفسك؟")
-                    .setPositiveButton("نعم") { _, _ -> startActivity(Intent(this, BrowserActivity::class.java).putExtra("start", page)) }
+                    .setPositiveButton("نعم") { _, _ -> repairInBrowser(page) }
                     .setNegativeButton("لا", null).show()
             }
         }
@@ -2424,6 +2452,8 @@ class PlayerActivity : Activity(), Host {
         }
         intent.getStringExtra("ytid")?.takeIf { it.length == 11 }?.let { return "yt:$it" }   // (v117) يوتيوب: التقدم والترجمة على معرّف الفيديو مش على لينك الستريم المتغيّر
         val ref0 = intent.getStringExtra("ref") ?: ""; val title0 = intent.getStringExtra("title") ?: ""
+        // (v203) رجعنا من «إصلاح اللينك» في المتصفح: نفس هوية الفيديو القديم (الترجمة والتقدم والإعدادات) على اللينك الجديد
+        intent.getStringExtra("forceid")?.takeIf { it.isNotEmpty() }?.let { fid -> if (!incognito) WebIdent.bindLink(fid, url ?: "", ref0, title0); return fid }
         val legacy = webId(url ?: "", ref0, title0)
         if (incognito) return legacy
         // (v142) نفس الفيديو بجودة تانية أو اتصاد تاني بلينك جديد = نفس الهوية القديمة (الترجمة والتقدم بيفضلوا)

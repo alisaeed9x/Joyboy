@@ -28,8 +28,9 @@ class LyricsResult(
 object LyricsEngine {
     const val M_AUDIO = "audio"; const val M_FULL = "full"
     private const val CHUNK = 60.0
-    fun mode(): String = if (Cfg.str("lyr_mode", M_AUDIO) == M_FULL) M_FULL else M_AUDIO
-    fun setMode(m: String) { Cfg.put("lyr_mode", if (m == M_FULL) M_FULL else M_AUDIO) }
+    // (v202) الكلمات من جيميناي بس (التفريغ من الصوت اتشال) — والتوقيت بيتحسب محليًا من لحظات الغناء الفعلية في الصوت (Karaoke.kt)
+    fun mode(): String = M_FULL
+    fun setMode(@Suppress("UNUSED_PARAMETER") m: String) {}
 
     private fun dir(ctx: Context) = File(ctx.filesDir, "lyrics").apply { mkdirs() }
     private fun key(t: Track, m: String) = "t${t.id}_${t.durMs}" + (if (m == M_FULL) "_full" else "") + ".json"
@@ -43,7 +44,7 @@ object LyricsEngine {
         val o = JSONObject(File(dir(ctx), key(t, m)).readText())
         val r = parse(o)
         // (v198) نسخ «كلمات كاملة» القديمة (توقيت موزّع بالتساوي) بتتعامل كناقصة عشان تتظبط على الصوت
-        if (m == M_FULL && o.optInt("v", 0) < 2 && r.complete) LyricsResult(r.title, r.artist, r.lines, false, 0, 0, emptySet(), r.note, r.raw.ifEmpty { r.lines.map { it.text } }) else r
+        if (m == M_FULL && o.optInt("v", 0) < 3 && r.complete) LyricsResult(r.title, r.artist, r.lines, false, 0, 0, emptySet(), r.note, r.raw.ifEmpty { r.lines.map { it.text } }) else r
     } catch (_: Throwable) { null }
     fun clear(ctx: Context, t: Track, m: String) { try { File(dir(ctx), key(t, m)).delete() } catch (_: Throwable) {}; version++ }
     fun clearAll(ctx: Context, t: Track) { clear(ctx, t, M_AUDIO); clear(ctx, t, M_FULL) }
@@ -62,7 +63,7 @@ object LyricsEngine {
         val ra = JSONArray(); for (x in r.raw) ra.put(x)
         try {
             File(dir(ctx), key(t, m)).writeText(JSONObject().put("title", r.title).put("artist", r.artist).put("lines", a)
-                .put("complete", r.complete).put("done", r.done).put("total", r.total).put("ok", oa).put("note", r.note).put("raw", ra).put("v", 2).toString())
+                .put("complete", r.complete).put("done", r.done).put("total", r.total).put("ok", oa).put("note", r.note).put("raw", ra).put("v", 3).toString())
         } catch (_: Throwable) {}
         version++
     }
@@ -126,7 +127,7 @@ object LyricsEngine {
      */
     fun start(ctx: Context, t: Track, mode: String, hint: Pair<String, String>?, retry: Boolean, fresh: Boolean, onStage: (String) -> Unit, onDone: (LyricsResult?, String) -> Unit) {
         val app = ctx.applicationContext
-        val m = if (mode == M_FULL) M_FULL else M_AUDIO
+        val m = M_FULL
         val k = key(t, m)
         if (running.putIfAbsent(k, true) != null) { onDone(null, "بتتكتب دلوقتي"); return }
         Thread {
@@ -225,10 +226,10 @@ object LyricsEngine {
         val errs = ArrayList<String>()
         // لو الكلمات الرسمية اتجابت قبل كده (ومحفوظة) بنكمّل مواءمة الصوت من غير ما نطلبها تاني
         val saved = if (fresh) null else cached(app, t, M_FULL)?.raw?.takeIf { it.size >= 4 }
-        if (saved != null) { runAudio(app, t, keys, model, hint, false, false, onStage, onDone, M_FULL, saved); return }
+        if (saved != null) { finishLocal(app, t, name, by, saved, onStage, onDone); return }
         // المرحلة 1: JSON (كلمات + found)
         onStage("📝 مرحلة 1 من 3: بطلب كلمات $name من جيميناي…")
-        val pr1 = "Give the complete lyrics of the song $label in its original language: every sung line in order, no section labels, no translation, nothing invented. " +
+        val pr1 = "Give the complete lyrics of the song $label in its original language (Arabic songs must be written in Arabic script — never transliterated, never translated to English): every sung line in order, no section labels, no translation, nothing invented. " +
             "If you do not reliably know the full lyrics of this exact song, return found=false and an empty list. Return JSON only: {\"found\":true,\"lines\":[\"\"]}"
         for (kk in 0 until keys.size.coerceAtMost(3)) {
             try {
@@ -243,7 +244,7 @@ object LyricsEngine {
         // المرحلة 2: لو الرد اتقطع أو مش JSON → نص عادي سطر سطر
         if (lines.size < 4 && !notFound) {
             onStage("📝 مرحلة 2 من 3: بطلبها كنص عادي…")
-            val pr2 = "Write the complete lyrics of the song $label in its original language, one sung line per row, no section labels, no translation, no commentary. " +
+            val pr2 = "Write the complete lyrics of the song $label in its original language (Arabic songs must be written in Arabic script — never transliterated, never translated to English), one sung line per row, no section labels, no translation, no commentary. " +
                 "If you do not reliably know this exact song's lyrics, reply with exactly: NOT_FOUND"
             for (kk in 0 until keys.size.coerceAtMost(3)) {
                 try {
@@ -261,9 +262,19 @@ object LyricsEngine {
                       else "ماجاتش كلمات" + (if (errs.isNotEmpty()) " — السبب: " + errs.first() else "") + " — دوس 🔁 تاني"
             onDone(null, msg); return
         }
-        // المرحلة 3: مواءمة الكلمات مع الصوت الفعلي (بدل التوزيع بالتساوي اللي كان بيلخبط التوقيت)
-        onStage("⏱ مرحلة 3 من 3: بظبط توقيت الكلمات على الصوت…")
-        runAudio(app, t, keys, model, Pair(name, by), false, true, onStage, onDone, M_FULL, lines)
+        // المرحلة 3: توقيت الكلمات على لحظات الغناء الفعلية في الصوت (محليًا، من غير جيميناي)
+        finishLocal(app, t, name, by, lines, onStage, onDone)
+    }
+
+    /** (v202) بيوزّع السطور على الأجزاء اللي فيها غنا فعلًا في الصوت (بيتخطى المقدمة والفواصل) — فالكلام مايبدأش وهي لسه في أول الموسيقى */
+    private fun finishLocal(app: Context, t: Track, name: String, by: String, lines: List<String>, onStage: (String) -> Unit, onDone: (LyricsResult?, String) -> Unit) {
+        onStage("⏱ مرحلة 3 من 3: بحدّد امتى المغني بيبدأ يغني…")
+        val segs = try { Karaoke.segments(app, t) } catch (e: Throwable) { LogStore.err("lyrics-vad", e); emptyList() }
+        val placed = if (segs.isNotEmpty()) Karaoke.place(lines, segs) else emptyList()
+        val ok = placed.isNotEmpty()
+        val res = LyricsResult(name, by, if (ok) placed else estimate(t, lines), true, 1, 1, emptySet(), if (ok) "" else "التوقيت تقريبي", lines)
+        save(app, t, M_FULL, res)
+        onDone(res, if (ok) "" else "ماقدرتش أحدد لحظات الغنا في الصوت — التوقيت تقريبي")
     }
 
     /** السطر الشغّال دلوقتي عند الوقت ده (آخر سطر بدأ)، أو -1 قبل أول سطر */

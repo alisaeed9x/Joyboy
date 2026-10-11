@@ -125,6 +125,8 @@ class BTab(val id: Long) {
     var loaded = false
     var priv = false                 // (v124) تبويب متخفي: من غير سجل ولا حفظ
     var thumb: android.graphics.Bitmap? = null
+    @Volatile var gen = 0            // (v203) جيل الصفحة الحالية: كل صفحة جديدة بتزوّده فاللقطات القديمة بتتمسح
+    var capUrl = ""
 }
 
 /**
@@ -210,11 +212,11 @@ class BrowserActivity : Activity() {
         val grp = webGroups.firstOrNull { g -> g.any { Sniff.key(it.first) == k } }
         val raw = ArrayList<Triple<String, Int, Long>>()   // url, height, size
         if (grp != null) {
-            for (m in grp) { val it0 = items.firstOrNull { x -> Sniff.key(x.url) == Sniff.key(m.first) }
+            for (m in grp) { val it0 = vis().firstOrNull { x -> Sniff.key(x.url) == Sniff.key(m.first) }
                 raw.add(Triple(m.first, if (m.second > 0) m.second else Sniff.heightOf(m.first), it0?.size ?: -1L)) }
         } else {
             val sk = Sniff.skeleton(f.url)
-            for (x in items) if (x.ref == f.ref && x.kind != "HLS" && Sniff.skeleton(x.url) == sk) raw.add(Triple(x.url, Sniff.heightOf(x.url), x.size))
+            for (x in vis()) if (x.ref == f.ref && x.kind != "HLS" && Sniff.skeleton(x.url) == sk) raw.add(Triple(x.url, Sniff.heightOf(x.url), x.size))
             if (raw.map { it.second }.filter { it > 0 }.toSet().size < 2) return null
         }
         val uniq = raw.distinctBy { Sniff.key(it.first) }.sortedByDescending { it.second }
@@ -296,6 +298,13 @@ class BrowserActivity : Activity() {
 
         // التبويبات: رجّع المحفوظة (لو مفعّل) وبعدها لو جاي بلينك افتحه في تبويب جديد
         val start = intent?.getStringExtra("start")?.trim() ?: ""
+        // (v203) وضع «إصلاح اللينك»: أول فيديو يتلقط بيتحط مكان لينك الفيديو القديم بنفس هويته
+        repairId = intent?.getStringExtra("repair_id")?.takeIf { it.isNotEmpty() }
+        repairUrl = intent?.getStringExtra("repair_url") ?: ""; repairTitle = intent?.getStringExtra("repair_title") ?: ""
+        if (repairId != null) {
+            hint.text = "🔧 بتحدّث لينك «" + repairTitle.ifEmpty { "الفيديو" } + "» — دوس تشغيل في الصفحة وأنا ألقط اللينك الجديد وأرجّعك للمشغّل بنفس الترجمة"
+            h.postDelayed({ if (!dead) Notice.show(this, "🔧 شغّل الفيديو في الصفحة وأنا هلقطه", 4000L) }, 800L)
+        }
         val keep = prefs().getBoolean("br_save_tabs", true)
         val saved = if (keep) BrowserStore.loadTabs(this) else (emptyList<BrowserStore.SavedTab>() to 0)
         for (s in saved.first) tabs.add(BTab(nextId++).also { it.url = s.url; it.title = s.title; it.desktop = s.desktop })
@@ -364,7 +373,8 @@ class BrowserActivity : Activity() {
         w.webViewClient = object : WebViewClient() {
             override fun shouldInterceptRequest(v: WebView, r: WebResourceRequest): WebResourceResponse? {
                 val u = r.url.toString()
-                Sniff.accept(u)?.let { a -> h.post { if (!dead) addFound(Found(a, Sniff.kindOf(a), "", v.url ?: t.url, uaOf(t))) } }
+                val g0 = t.gen
+                Sniff.accept(u)?.let { a -> h.post { if (!dead) addFound(Found(a, Sniff.kindOf(a), "", v.url ?: t.url, uaOf(t)), t, g0) } }
                 if (adOn && AdBlock.blocked(u)) { blockedN++; h.post { if (!dead) shield.text = "🛡 $blockedN" }; return WebResourceResponse("text/plain", "utf-8", java.io.ByteArrayInputStream(ByteArray(0))) }
                 return null
             }
@@ -381,12 +391,12 @@ class BrowserActivity : Activity() {
                 return false
             }
             override fun onPageStarted(v: WebView, url: String?, f: android.graphics.Bitmap?) {
-                if (url != null && !url.startsWith("data:")) t.url = url
+                if (url != null && !url.startsWith("data:")) { t.url = url; newPage(t, url) }
                 if (t === tabs.getOrNull(curIdx)) { showUrl(url); updateNav() }
                 if (adOn) v.evaluateJavascript(AdBlock.JS, null)
             }
             override fun doUpdateVisitedHistory(v: WebView, url: String?, isReload: Boolean) {
-                if (url != null && !url.startsWith("data:")) { t.url = url; noteYt(url, null) }
+                if (url != null && !url.startsWith("data:")) { t.url = url; newPage(t, url); noteYt(url, null) }
                 if (t === tabs.getOrNull(curIdx)) { showUrl(url); updateNav() }
             }
             override fun onPageFinished(v: WebView, url: String?) {
@@ -410,7 +420,12 @@ class BrowserActivity : Activity() {
             }
         }
         w.setDownloadListener { url, ua, cd, mime, _ ->
-            Sniff.accept(url)?.let { a -> addFound(Found(a, Sniff.kindOf(a), "", t.url, ua ?: uaOf(t))) }
+            // (v203) وضع إصلاح اللينك: زرار «تحميل» في الصفحة حتى لو اللينك من غير .mp4 = ده لينك الفيديو
+            if (repairId != null && url.startsWith("http", true) && (mime?.startsWith("video") == true || mime == "application/octet-stream" || Sniff.accept(url) != null)) {
+                addFound(Found(url, Sniff.kindOf(url), "", t.url, ua ?: uaOf(t)), t)
+                return@setDownloadListener
+            }
+            Sniff.accept(url)?.let { a -> addFound(Found(a, Sniff.kindOf(a), "", t.url, ua ?: uaOf(t)), t) }
             val name = URLUtil.guessFileName(url, cd, mime)
             Notice.ask(this, "تحميل «$name»؟", "تحميل", "لا", 6000L, { startDownload(url, ua, name, mime) }, {})
         }
@@ -443,6 +458,7 @@ class BrowserActivity : Activity() {
         webHolder.removeAllViews()
         curIdx = i
         val t = tabs[i]
+        webGroups.clear(); openKey = null; refreshBadge()   // (v203) الاصطياد بتاع التبويب ده بس
         val first = t.wv == null
         if (first) t.wv = makeWebView(t)
         val w = t.wv!!
@@ -540,7 +556,7 @@ class BrowserActivity : Activity() {
             "🏠 الصفحة الرئيسية" to { load(home()) },
             "📋 نسخ الرابط" to { copyUrl(url) },
             "📤 مشاركة الصفحة" to { shareUrl(url) },
-            "🎬 الفيديوهات الملقوطة (${items.size})" to { showList() },
+            "🎬 الفيديوهات الملقوطة (${groupsOf(vis()).size})" to { showList() },
             "⚙️ الإعدادات" to { showSettings() },
             "✕ خروج من المتصفح" to { finish() }
         ))
@@ -667,7 +683,7 @@ class BrowserActivity : Activity() {
         tabs.removeAll(victims.toSet())
         tabsDlg?.dismiss()
         if (tabs.isEmpty()) { newTab(home(), true); return }
-        if (curT != null && curT in victims) select(0) else { curIdx = tabs.indexOf(curT).coerceAtLeast(0); refreshTabsCount(); persistTabs() }
+        if (curT != null && curT in victims) select(0) else { curIdx = tabs.indexOf(curT).coerceAtLeast(0); webGroups.clear(); refreshBadge(); refreshTabsCount(); persistTabs() }
     }
 
     private fun entryRow(e: BrowserStore.Entry, onOpen: () -> Unit, onDel: () -> Unit): View {
@@ -835,37 +851,184 @@ class BrowserActivity : Activity() {
     private val ytPicks = HashMap<String, YtExtract.Pick>()   // (v119) معرّف → أحسن اختيار (فيه الصوت المنفصل وقايمة الجودات)
     private fun ytFetch(id: String) {
         hint.text = "⏳ بجيب روابط يوتيوب…"
+        val tt = tab
         Thread {
             val r = try { YtExtract.fetch(id) } catch (_: Throwable) { emptyList() }
-            // لو الصيغ الجاهزة فشلت: نجرّب الصور+صوت المنفصلين / HLS (نفس طريقة بوابة يوتيوب)
-            val pk = if (r.isEmpty()) try { YtExtract.fetchPick(id, Cfg.int("yt_maxh", 0)) } catch (_: Throwable) { null } else null
+            // (v203) دايمًا بنجيب قايمة الجودات الكاملة (144p…1080p + الصوت) عشان تتجمّع في اصطياد واحد
+            val pk = try { YtExtract.fetchPick(id, 0) } catch (_: Throwable) { null }
             runOnUiThread {
                 if (dead) return@runOnUiThread
-                r.forEach { ytIds[Sniff.key(it.url)] = id; addFound(it) }
+                // لو المستخدم سابك الصفحة دي قبل ما النتيجة توصل: نتجاهلها (مش هتتحط على صفحة تانية)
+                if (!tabs.contains(tt) || YtExtract.videoId(tt.url) != id) return@runOnUiThread
+                val g = tt.gen
+                r.forEach { ytIds[Sniff.key(it.url)] = id; addFound(it, tt, g) }
                 if (pk != null) {
                     ytPicks[id] = pk
                     val f = Found(pk.url, if (pk.label == "HLS") "HLS" else "YT " + pk.label.substringBefore(' '), pk.title, "https://www.youtube.com/", pk.ua)
-                    ytIds[Sniff.key(f.url)] = id; addFound(f)
+                    ytIds[Sniff.key(f.url)] = id
+                    if (r.isEmpty()) addFound(f, tt, g) else refreshBadge()
                 }
-                if (r.isEmpty() && pk == null && items.isEmpty()) hint.text = "يوتيوب ما رضيش يدّي لينك مباشر — شغّل الفيديو في الصفحة وأنا هحاول ألقطه\n" + YtExtract.lastWhy
+                if (r.isEmpty() && pk == null && vis().isEmpty()) hint.text = "يوتيوب ما رضيش يدّي لينك مباشر — شغّل الفيديو في الصفحة وأنا هحاول ألقطه\n" + YtExtract.lastWhy
             }
         }.apply { isDaemon = true }.start()
     }
 
     fun addUrl(u: String) = addFound(Found(u, Sniff.kindOf(u), "", wvOrNull?.url ?: "", if (tabs.isNotEmpty()) uaOf(tab) else uaWeb))
-    fun addFound(f: Found) {
-        if (!keys.add(Sniff.key(f.url))) return
+    fun addFound(f: Found, t: BTab? = tabs.getOrNull(curIdx), g: Int = t?.gen ?: 0) {
+        if (t == null) return
+        f.tabId = t.id; f.gen = g
+        if (g != t.gen) return   // لقطة من صفحة قديمة
+        if (!keys.add("${t.id}:$g:" + Sniff.key(f.url))) return
         if (f.size > 0 || f.kind == "HLS") { accept(f); return }
         probe(f) { accept(f) }   // حجم مش معروف: نفحصه الأول، وأي فيديو أقل من 3 ميجا (إعلانات غالبًا) بيتتجاهل
     }
     private fun accept(f: Found) {
         if (dead) return
         if (f.size in 1 until Sniff.MIN_BYTES) return
+        val t = tabs.firstOrNull { it.id == f.tabId } ?: return
+        if (f.gen != t.gen) return      // الصفحة اتغيّرت وإحنا بنفحص الحجم
         items.add(f)
-        badge.text = "🎬 لقيت ${items.size} فيديو — اضغط للاختيار"; badge.visibility = View.VISIBLE; hint.visibility = View.GONE
+        if (t !== tabs.getOrNull(curIdx)) return
+        refreshBadge()
+        if (repairId != null && !repairPending) { repairPending = true; h.postDelayed({ repairPending = false; autoRepair() }, 2000L) }   // نستنى ثانيتين عشان باقي الجودات توصل
         if (autoOpen && !autoShown) { autoShown = true; showList() }
-        else if (dlg?.isShowing == true) renderList()
-        else if (items.size == 1) Notice.show(this, "🎬 لقيت فيديو", 2300L)
+        else if (dlg?.isShowing != true && vis().size == 1) Notice.show(this, "🎬 لقيت فيديو", 2300L)
+    }
+
+    // ===== (v203) صفحة جديدة = اصطياد جديد =====
+    private val NOISE = Regex("[?&](t|start|time_continue|feature|si|fbclid|pp|utm_[a-z]+)=[^&#]*", RegexOption.IGNORE_CASE)
+    private fun newPage(t: BTab, url: String?) {
+        val u = (url ?: return).substringBefore('#').replace(NOISE, "")
+        if (u.isEmpty() || u.startsWith("data:") || u == t.capUrl) return
+        t.capUrl = u; t.gen++
+        items.removeAll { it.tabId == t.id && it.gen != t.gen }
+        keys.removeAll { it.startsWith("${t.id}:") && !it.startsWith("${t.id}:${t.gen}:") }
+        if (t === tabs.getOrNull(curIdx)) { webGroups.clear(); autoShown = false; openKey = null; refreshBadge() }
+    }
+    /** اللقطات الحالية للتبويب اللي قدامك (صفحته الحالية بس) */
+    private fun vis(): List<Found> { val t = tabs.getOrNull(curIdx) ?: return emptyList(); return items.filter { it.tabId == t.id && it.gen == t.gen } }
+    private fun refreshBadge() {
+        val n = groupsOf(vis()).size
+        if (n == 0) { badge.visibility = View.GONE; hint.visibility = View.VISIBLE }
+        else { badge.text = "🎬 لقيت $n فيديو — اضغط للاختيار"; badge.visibility = View.VISIBLE; hint.visibility = View.GONE }
+        if (dlg?.isShowing == true) renderList()
+    }
+
+    // ===== (v203) تجميع الجودات: كل لينكات نفس الفيديو = اصطياد واحد =====
+    private class Qv(val label: String, val h: Int, val f: Found, val audio: String?)
+    private class Grp(val key: String, val title: String, val qs: List<Qv>)
+    private var openKey: String? = null
+    private var repairId: String? = null
+    private var repairUrl = ""
+    private var repairTitle = ""
+    private var repairPending = false
+    private val KIND_H = Regex("(\\d{3,4})p")
+
+    private fun groupKey(f: Found): String {
+        val k = Sniff.key(f.url)
+        ytIds[k]?.let { return "yt:$it" }
+        val gi = webGroups.indexOfFirst { g -> g.any { Sniff.key(it.first) == k } }
+        if (gi >= 0) return "g:$gi"
+        if (f.url.contains("videoplayback")) Regex("[?&]id=([^&]+)").find(f.url)?.let { return "gv:" + it.groupValues[1] }
+        return if (f.kind == "HLS") "u:$k" else "s:" + f.ref.substringBefore('#') + "|" + Sniff.skeleton(f.url)
+    }
+    private fun hOf(f: Found): Int = KIND_H.find(f.kind)?.groupValues?.get(1)?.toIntOrNull()
+        ?: webGroups.firstNotNullOfOrNull { g -> g.firstOrNull { Sniff.key(it.first) == Sniff.key(f.url) }?.second?.takeIf { it > 0 } }
+        ?: Sniff.heightOf(f.url)
+    private fun nameFor(f: Found): String = titleFor(f).ifEmpty { Sniff.nameOf(f.url).substringBeforeLast('.') }
+
+    private fun groupsOf(list: List<Found>): List<Grp> {
+        val order = LinkedHashMap<String, ArrayList<Found>>()
+        for (f in list.asReversed()) order.getOrPut(groupKey(f)) { ArrayList() }.add(f)
+        val out = ArrayList<Grp>()
+        for ((key, fs) in order) {
+            val first = fs.first()
+            val qs = ArrayList<Qv>()
+            val pk = if (key.startsWith("yt:")) ytPicks[key.removePrefix("yt:")] else null
+            if (pk != null && pk.opts.isNotEmpty()) {
+                val id = key.removePrefix("yt:")
+                for (o in pk.opts) {
+                    val fo = Found(o.url, "YT " + o.h + "p", pk.title, "https://www.youtube.com/", pk.ua)
+                    ytIds[Sniff.key(o.url)] = id
+                    qs.add(Qv(o.label, o.h, fo, o.audio))
+                }
+            } else {
+                val seen = HashSet<String>()
+                val sorted = fs.filter { seen.add(Sniff.key(it.url)) }.sortedByDescending { if (it.kind == "HLS") Int.MAX_VALUE else hOf(it) }
+                for ((i, f) in sorted.withIndex()) {
+                    val h = if (f.kind == "HLS") 0 else hOf(f)
+                    val lb = if (f.kind == "HLS") "HLS · جودة تلقائية" else if (h > 0) Sniff.qLabel(h, i + 1, f.size) else f.kind + (if (f.size > 0) " · " + Sniff.fmtSize(f.size) else "")
+                    qs.add(Qv(lb, h, f, null))
+                }
+            }
+            out.add(Grp(key, nameFor(first), qs))
+        }
+        return out
+    }
+
+    /** (v203) اختيار تلقائي: نفس لينك/هيكل الفيديو القديم لو اتلقط، وإلا أحدث فيديو اتلقط بأقرب جودة للقديمة */
+    private fun autoRepair() {
+        if (dead || repairId == null || dlg?.isShowing == true) return
+        val gs = groupsOf(vis()); if (gs.isEmpty()) return
+        val all = gs.flatMap { it.qs }
+        val oldKey = Sniff.key(repairUrl); val oldSkel = Sniff.skeleton(repairUrl); val oldH = Sniff.heightOf(repairUrl)
+        fun dist(q: Qv) = Math.abs(q.h - oldH)
+        val q = all.firstOrNull { Sniff.key(it.f.url) == oldKey }
+            ?: all.filter { Sniff.skeleton(it.f.url) == oldSkel }.minByOrNull { dist(it) }
+            ?: gs.first().qs.let { qs -> if (oldH > 0 && qs.any { it.h > 0 }) qs.minByOrNull { dist(it) } else qs.first() }
+            ?: return
+        applyRepair(q)
+    }
+    private fun applyRepair(q: Qv) {
+        val id = repairId ?: return; repairId = null
+        val f = q.f; val app = applicationContext
+        val ck = try { CookieManager.getInstance().getCookie(f.url) ?: "" } catch (_: Throwable) { "" }
+        val pageNow = wvOrNull?.url ?: ""
+        val ua = f.ua.ifEmpty { uaWeb }
+        val ttl = repairTitle.ifEmpty { titleFor(f) }
+        Thread {
+            WebVideos.update(app, id) { it.copy(url = f.url, ref = f.ref.ifEmpty { it.ref }, ua = ua.ifEmpty { it.ua }, cookie = if (ck.isNotEmpty()) ck else it.cookie,
+                page = if (WebIdent.specific(pageNow)) pageNow else it.page, ts = System.currentTimeMillis()) }
+            WebIdent.bindLink(id, f.url, f.ref, ttl)
+        }.apply { isDaemon = true }.start()
+        Notice.show(this, "✓ اتحدّث لينك الفيديو — برجّعك للمشغّل", 2500L)
+        startActivity(Intent(this, PlayerActivity::class.java).apply {
+            putExtra("url", f.url); putExtra("ref", f.ref); putExtra("cookie", ck); putExtra("ua", ua)
+            putExtra("title", ttl); putExtra("autotr", false); putExtra("forceid", id)
+            if (q.audio != null) putExtra("aurl", q.audio)
+        })
+        finish()
+    }
+    private val szCache = java.util.concurrent.ConcurrentHashMap<String, Long>()
+    private fun szTxt(q: Qv): String { val n = szCache[q.f.url] ?: return ""; return if (n > 0) " · " + Sniff.fmtSize(n) else "" }
+    private fun dlHeaders(f: Found): HashMap<String, String> {
+        val m = HashMap<String, String>()
+        val ua = f.ua.ifEmpty { uaWeb }; if (ua.isNotEmpty()) m["User-Agent"] = ua
+        if (f.ref.isNotEmpty()) m["Referer"] = f.ref
+        val ck = try { CookieManager.getInstance().getCookie(f.url) ?: "" } catch (_: Throwable) { "" }
+        if (ck.isNotEmpty()) m["Cookie"] = ck
+        return m
+    }
+    private fun isHls(f: Found) = f.kind == "HLS" || f.url.contains(".m3u8", true)
+    /** التحميل بيتحط في تبويب «المهام» (إيقاف مؤقت / استكمال / إلغاء) زي تحميل المشغّل */
+    private fun queueDl(job: Downloader.Job) {
+        val app = applicationContext
+        TaskCenter.add(app, "download", (if (job.audioOnly) "🎧 " else "⬇ ") + job.name) { t ->
+            job.ctl.cancelled = false; job.ctl.paused = false
+            job.ctl.ext = { t.cancelled }
+            t.onCancel = { job.ctl.cancelled = true }
+            t.onPause = { p -> job.ctl.paused = p }
+            val res = Downloader.run(app, job) { what, pct -> t.pct = pct.coerceIn(0, 99); t.msg = what; TaskCenter.changed() }
+            if (!res.first) throw java.io.IOException(res.second)
+            t.msg = ""; t.outPath = res.second
+        }
+        Notice.show(this, "⬇ اتضاف للتحميل — تابعه من تبويب «المهام»", 3000L)
+    }
+    private fun dlVideo(g: Grp, q: Qv) = queueDl(Downloader.Job(g.title, q.f.url, q.audio, isHls(q.f), q.h, dlHeaders(q.f)))
+    private fun dlAudio(g: Grp) {
+        // نفس منطق المشغّل: لو فيه صوت لوحده يتحمّل هو بس، وإلا بنسحب أصغر جودة ونستخرج منها الصوت
+        val q = g.qs.firstOrNull { it.audio != null } ?: g.qs.filter { it.h > 0 && !isHls(it.f) }.minByOrNull { it.h } ?: g.qs.last()
+        queueDl(Downloader.Job(g.title, q.f.url, q.audio, isHls(q.f), 1, dlHeaders(q.f), true))
     }
 
     private fun probe(f: Found, done: () -> Unit) {
@@ -900,21 +1063,44 @@ class BrowserActivity : Activity() {
     private fun renderList() {
         val box = listBox ?: return
         box.removeAllViews()
-        statusTv?.text = if (items.isEmpty()) "⏳ بدوّر على فيديوهات… شغّل الفيديو في الصفحة لو ما ظهرش" else "اختار الفيديو اللي عايزه (${items.size})"
-        for (f in items.asReversed()) box.addView(rowFor(f))
+        val gs = groupsOf(vis())
+        statusTv?.text = if (gs.isEmpty()) "⏳ بدوّر على فيديوهات… شغّل الفيديو في الصفحة لو ما ظهرش" else "اختار الفيديو اللي عايزه (${gs.size})"
+        for (g in gs) box.addView(groupCard(g))
     }
-    private fun rowFor(f: Found): View {
+    /** (v203) اصطياد واحد للفيديو: الضغط عليه بيفتح الجودات (⬇ تحميل · 🌐 ترجمة وفرجة · ▶ فرجة · 📋 نسخ) + تحميل كصوت بس */
+    private fun groupCard(g: Grp): View {
         val c = ui.card()
-        val sz = if (f.size > 0) " · " + Sniff.fmtSize(f.size) else ""
-        c.addView(ui.text(f.kind + sz, 15f, th.primary, true))
-        c.addView(ui.text(titleFor(f).ifEmpty { Sniff.nameOf(f.url) }, 12f, th.muted).apply {
-            maxLines = 2; ellipsize = TextUtils.TruncateAt.END; layoutDirection = View.LAYOUT_DIRECTION_LTR; textDirection = View.TEXT_DIRECTION_LTR
-        })
-        val br = LinearLayout(this).apply { layoutDirection = View.LAYOUT_DIRECTION_RTL }
-        br.addView(ui.button("🌐 ترجمة وفرجة", true) { dlg?.dismiss(); openPlayer(f, false) }.apply { layoutParams = LinearLayout.LayoutParams(0, -2, 1.3f).apply { marginEnd = ui.dp(4) } })
-        br.addView(ui.button("▶ فرجة بس") { dlg?.dismiss(); openPlayer(f, true) }.apply { layoutParams = LinearLayout.LayoutParams(0, -2, 1f).apply { marginEnd = ui.dp(4) } })
-        br.addView(ui.button("📋") { copyUrl(f.url) }.apply { layoutParams = LinearLayout.LayoutParams(-2, -2) })
-        c.addView(br)
+        val open = g.qs.size == 1 || openKey == g.key
+        val hs = g.qs.filter { it.h > 0 }.map { it.h.toString() + "p" }
+        val sub = if (g.qs.size > 1) "🎞 ${g.qs.size} جودات" + (if (hs.isNotEmpty()) ": " + hs.joinToString(" · ") else "") else g.qs[0].label
+        c.addView(ui.text(g.title, 14f, th.text, true).apply { maxLines = 2; ellipsize = TextUtils.TruncateAt.END })
+        c.addView(ui.text(sub + (if (g.qs.size > 1) (if (open) "  ▴" else "  ▾") else ""), 13f, th.primary, true))
+        if (g.qs.size > 1) c.setOnClickListener { openKey = if (openKey == g.key) null else g.key; renderList() }
+        if (!open) return c
+        if (g.qs.size > 1) c.addView(ui.text("⬇ تحميل   🌐 ترجمة وفرجة   ▶ فرجة بس   📋 نسخ", 11f, th.muted).apply { setPadding(0, ui.dp(6), 0, ui.dp(2)) })
+        for (q in g.qs) {
+            if (repairId != null) { c.addView(ui.button("🔧 استخدم " + q.label, true) { dlg?.dismiss(); applyRepair(q) }); continue }
+            val row = LinearLayout(this).apply { layoutDirection = View.LAYOUT_DIRECTION_RTL; gravity = Gravity.CENTER_VERTICAL }
+            fun lp(w: Float) = LinearLayout.LayoutParams(0, -2, w).apply { marginEnd = ui.dp(4) }
+            val hasSz = q.label.contains("MB") || q.label.contains("GB")
+            val dlB = ui.button("⬇ " + q.label + (if (!hasSz) szTxt(q) else ""), g.qs.size == 1) { dlg?.dismiss(); dlVideo(g, q) }.apply { layoutParams = lp(2.4f) }
+            row.addView(dlB)
+            if (!hasSz && !isHls(q.f) && szCache[q.f.url] == null) {   // الحجم مش معروف: نسأل السيرفر ونحدّث الزرار
+                szCache[q.f.url] = -2L
+                val hs2 = dlHeaders(q.f); val u1 = q.f.url; val u2 = q.audio
+                Thread {
+                    var n = try { Downloader.sizeOf(u1, hs2) } catch (_: Throwable) { -1L }
+                    if (n > 0 && u2 != null) { val a = try { Downloader.sizeOf(u2, hs2) } catch (_: Throwable) { -1L }; if (a > 0) n += a }
+                    szCache[u1] = n
+                    runOnUiThread { if (!dead && n > 0) dlB.text = "⬇ " + q.label + " · " + Sniff.fmtSize(n) }
+                }.apply { isDaemon = true }.start()
+            }
+            row.addView(ui.button("🌐") { dlg?.dismiss(); openPlayer(q.f, false, q.audio) }.apply { layoutParams = lp(0.8f) })
+            row.addView(ui.button("▶") { dlg?.dismiss(); openPlayer(q.f, true, q.audio) }.apply { layoutParams = lp(0.8f) })
+            row.addView(ui.button("📋") { copyUrl(q.f.url) }.apply { layoutParams = lp(0.8f) })
+            c.addView(row)
+        }
+        if (repairId == null) c.addView(ui.button("🎧 تحميل كصوت بس (M4A)") { dlg?.dismiss(); dlAudio(g) })
         return c
     }
 
@@ -954,7 +1140,7 @@ class BrowserActivity : Activity() {
             wvOrNull?.evaluateJavascript("(function(){var v=document.querySelector('video');return v?(v.currentSrc||v.src||''):''})()") { r ->
                 val u = try { JSONTokener(r ?: "").nextValue() as? String ?: "" } catch (_: Throwable) { "" }
                 if (u.startsWith("http")) { Sniff.accept(u)?.let { addUrl(it) } }
-                if (items.isEmpty()) Notice.show(this, "مفيش رابط مباشر للفيديو ده (محمي أو blob) — كمّل فرجة هنا بالأزرار", 3600L) else showList()
+                if (vis().isEmpty()) Notice.show(this, "مفيش رابط مباشر للفيديو ده (محمي أو blob) — كمّل فرجة هنا بالأزرار", 3600L) else showList()
             }
         })
         shield = chip("🛡") {
@@ -968,15 +1154,18 @@ class BrowserActivity : Activity() {
         return col
     }
 
-    fun openPlayer(f: Found, noSub: Boolean) { if (noSub) openPlayerNow(f, true) else ensureKeys { openPlayerNow(f, false) } }
-    fun openPlayerNow(f: Found, noSub: Boolean) {
+    fun openPlayer(f: Found, noSub: Boolean, audio: String? = null) { if (noSub) openPlayerNow(f, true, audio) else ensureKeys { openPlayerNow(f, false, audio) } }
+    fun openPlayerNow(f: Found, noSub: Boolean, audio: String? = null) {
         // (v117) فيديو يوتيوب: بنعرف معرّفه (من لينك الصفحة) عشان يتسجل في بوابة يوتيوب ويتحفظ تقدمه وترجمته على معرّفه
         val isYtStream = f.kind.startsWith("YT") || f.url.contains("googlevideo") || f.url.contains("videoplayback")
         val yid = ytIds[Sniff.key(f.url)] ?: YtExtract.videoId(f.ref) ?: (if (isYtStream) YtExtract.videoId(wvOrNull?.url ?: "") else null) ?: ""
         startActivity(Intent(this, PlayerActivity::class.java).apply {
             if (yid.isNotEmpty()) {
                 putExtra("ytid", yid)
-                ytPicks[yid]?.let { pk -> if (pk.url == f.url) { putExtra("aurl", pk.audio ?: ""); putExtra("qlist", pk.optsJson()) } }
+                ytPicks[yid]?.let { pk ->
+                    val o = pk.opts.firstOrNull { it.url == f.url }
+                    if (pk.url == f.url || o != null) { putExtra("aurl", audio ?: o?.audio ?: (if (pk.url == f.url) pk.audio else null) ?: ""); putExtra("qlist", pk.optsJson()) }
+                }
             }
             if (yid.isEmpty()) try { webQlist(f)?.let { putExtra("qlist", it) } } catch (e: Throwable) { LogStore.err("Browser:wq", e) }
             putExtra("url", f.url); putExtra("ref", f.ref)
