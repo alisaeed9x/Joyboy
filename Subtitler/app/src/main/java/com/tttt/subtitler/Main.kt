@@ -53,6 +53,10 @@ fun filePicker(mime: String, title: String, persist: Boolean): Intent {
 class MainActivity : Activity() {
     lateinit var link: EditText
     private var fromPlayer = false
+    // (v215) نسخة احتياطية: save() بتاعة الإعدادات ما بتشتغلش بعد الاسترجاع (وإلا بتكتب القيم القديمة فوقه)
+    private var noSaveCfg = false
+    private var saveCfgFn: (() -> Unit)? = null
+    private var dismissSettings: (() -> Unit)? = null
     private var libUi: LibraryUi? = null
     private var mediaOps: MediaOps? = null
     private var queueUi: QueueUi? = null
@@ -350,6 +354,7 @@ class MainActivity : Activity() {
         var lang = Cfg.str("lang", "فصحى"); var style = Cfg.str("style", "حرفي"); var themeId = th.id
         link = ui.input("رابط فيديو مباشر (mp4 / m3u8)", "")
         fun save() {
+            if (noSaveCfg) return
             val e = Cfg.p.edit().putString("keys", keys.text.toString()).putString("backup", backup.text.toString())
                 .putString("model", model.text.toString().trim()).putInt("chunk", chunkSec).putString("extra", extra.text.toString())
                 .putString("roster", roster.text.toString()).putString("gloss", gloss.text.toString())
@@ -361,6 +366,7 @@ class MainActivity : Activity() {
             flags.keys.forEachIndexed { i, k -> e.putBoolean(k, (flagViews[i] as Switch).isChecked) }
             e.apply()
         }
+        saveCfgFn = { save() }
         val themeChips = ui.chips(Themes.all.map { it.name }, { Themes.byId(themeId).name }) { n ->
             themeId = Themes.all.first { it.name == n }.id; save()
             Cfg.p.edit().putString("theme", themeId).commit()
@@ -504,7 +510,9 @@ class MainActivity : Activity() {
                 },
                 ui.button("📊 إحصائية الاستهلاك والكوتة") { StatsUi(this, ui, th).show() },
                                 ui.section("🔑 كل المفاتيح", true,
-                    ui.text("حط كل مفاتيحك هنا في قايمة واحدة — البرنامج بيوزّعها لوحده: مفاتيح للترجمة (أغلبها)، ومفتاح أو اتنين للتنقيح الجزئي أثناء الترجمة، ومفتاح احتياطي لو مفتاح اتعطّل (من 6 مفاتيح). التنقيح الجزئي بيبدأ من 3 مفاتيح.", 12f, th.muted), keysUi)), false, "مفاتيح Gemini (توزيع تلقائي) · الاستهلاك والكوتة · طريقة جلب مفتاح", group = "🌍 عام — بيأثر على الفيديو والموسيقى"),
+                    ui.text("حط كل مفاتيحك هنا في قايمة واحدة — البرنامج بيوزّعها لوحده: مفاتيح للترجمة (أغلبها)، ومفتاح أو اتنين للتنقيح الجزئي أثناء الترجمة، ومفتاح احتياطي لو مفتاح اتعطّل (من 6 مفاتيح). التنقيح الجزئي بيبدأ من 3 مفاتيح.", 12f, th.muted), keysUi),
+                                ui.section("🔑 أوضاع المفاتيح", true, kmodeChips, nMainSl, nBackSl,
+                    ui.text("الوضع 1 = الشغل القديم (قالب ثم متوازي). الوضع 2 = كل المفاتيح متوازية من الأول وبرومبت إنجليزي. الوضعين 3 و4 = ٧٥٪ من المفاتيح بتنسخ الكلام بس و٢٥٪ بتترجم كل ٣–٥ باتشات مع بعض. نفس الوضع بيتبدّل من زرار 🔑 في المشغّل.", 12f, th.muted))), false, "مفاتيح Gemini (توزيع تلقائي) · أوضاع المفاتيح 1–4 · الاستهلاك والكوتة · طريقة جلب مفتاح", group = "🌍 عام — بيأثر على الفيديو والموسيقى"),
             TabDef("more", SettingsTabs.label("more"), listOf<View>(
                                 ui.section("▶ التشغيل", true,
                     ui.switchRow("كمّل الطابور تلقائيًا بعد إعادة تشغيل الجهاز", Cfg.bool("bg_autostart", true)) { Cfg.put("bg_autostart", if (it) "1" else "0") },
@@ -520,6 +528,12 @@ class MainActivity : Activity() {
                 ui.button("🔑 تعيين / تغيير النمط") { lk.change { refreshLock() } }, bioBtn,
                 ui.button("🗑 إزالة القفل") { lk.remove { refreshLock() } },
                 ui.text("البصمة بتتحقق من بصمات جهازك المسجّلة في إعدادات الأندرويد (التطبيق مابيخزّنش بصمتك). لو نسيت النمط: «نسيت النمط؟» بيطلب قفل شاشة الجهاز.", 12f, th.muted)),
+                ui.section("💾 نسخة احتياطية (مفاتيح · إعدادات · ثيم)", false,
+                    ui.text("البرنامج بيحفظ نسخة كاملة لوحده (مشفّرة) في Android/media/com.tttt.subtitler/settings_backup.json وبتفضل موجودة بعد مسح البرنامج، ولما تثبّته من جديد بترجع لوحدها. وتقدر كمان تحفظ نسخة بإيدك في ملف (Downloads مثلًا) وترجّعها منه — الملف ده مش مشفّر وفيه مفاتيحك فاحتفظ بيه في مكان آمن. قفل المجلد مابيتحفظش (بتعمله من جديد).", 12f, th.muted),
+                    ui.text(Backup.autoTime(this).let { t -> if (t > 0) "آخر نسخة تلقائية: " + java.text.SimpleDateFormat("yyyy-MM-dd HH:mm", java.util.Locale.US).format(java.util.Date(t)) else "لسه مفيش نسخة تلقائية" }, 12f, th.text),
+                    ui.button("💾 احفظ نسخة في ملف") { backupToFile() },
+                    ui.button("📂 استرجع من ملف") { backupFromFile() },
+                    ui.button("♻ استرجع آخر نسخة تلقائية") { restoreAuto() }),
                 ui.section("🎨 المظهر", false, themeChips)), false, "الترجمة في الخلفية · استثناء البطارية · قفل المجلد · ثيم البرنامج", group = "🌍 عام — بيأثر على الفيديو والموسيقى"),
             TabDef("general", SettingsTabs.label("general"), listOf<View>(
                                 ui.section("اللهجة", true, ui.chips(langs, { lang }) { lang = it; save() }),
@@ -528,8 +542,6 @@ class MainActivity : Activity() {
                                 ui.section("🏎 اختبار سرعة رد الـ AI", false,
                     ui.text("بيبعت طلب صغير على كل مفتاح بالموديل المختار وflash-lite-latest ويوريك زمن الرد والأسرع (🏆). بيستهلك طلبات قليلة.", 12f, th.muted), speedBtn, speedOut, speedUseBtn),
                                 ui.section("⏱ الأداء والتقطيع", false, chunk, ahead, hlsAhead, atrack),
-                                ui.section("🔑 أوضاع المفاتيح", true, kmodeChips, nMainSl, nBackSl,
-                    ui.text("الوضع 1 = الشغل القديم (قالب ثم متوازي). الوضع 2 = كل المفاتيح متوازية من الأول وبرومبت إنجليزي. الوضعين 3 و4 = ٧٥٪ من المفاتيح بتنسخ الكلام بس و٢٥٪ بتترجم كل ٣–٥ باتشات مع بعض. نفس الوضع بيتبدّل من زرار 🔑 في المشغّل.", 12f, th.muted)),
                                 ui.section("🧠 الذكاء التلقائي والمراجعة", false, *fl("autochars", "autopron", "autotpl", "gapfill", "prefine")),
                 ui.section("💾 الحفظ", false, *fl("autosrt"))), false, "اللهجة · الأسلوب · الموديل · السرعة · الأداء · التصحيح التلقائي · الحفظ", group = "🎞 مشغّل الفيديو"),
             TabDef("look", SettingsTabs.label("look"), listOf<View>(
@@ -613,6 +625,7 @@ class MainActivity : Activity() {
         lib.onDeleteFolder = { f -> ops.deleteFolder(f) }
         lib.onDetails = { v -> ops.details(v, Recents.parse(try { recentFile.readText() } catch (_: Exception) { "" }).firstOrNull { it.id == v.videoId }) }
         val qui = QueueUi(this, ui, th); queueUi = qui; qui0 = qui; settingsDlg0 = settingsDlg
+        dismissSettings = { try { settingsDlg.dialog.dismiss() } catch (_: Throwable) {} }
         // رجّع الطابور المحفوظ (لو التطبيق اتقفل/اتمسح) وكمّل الترجمة
         if (!fromPlayer && BgJobs.restore(this) > 0) { BgService.start(this); libUi?.refreshRows() }
         lib.onQueue = { qui.show() }
@@ -970,8 +983,51 @@ class MainActivity : Activity() {
             if (intent?.getBooleanExtra("from_player", false) == true) addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_NO_ANIMATION)
         })
     }
+    // ===== (v215) نسخة احتياطية كاملة: حفظ في ملف / استرجاع من ملف / استرجاع آخر نسخة تلقائية =====
+    private fun backupToFile() {
+        try { saveCfgFn?.invoke() } catch (_: Throwable) {}   // اللي اتكتب في الخانات ولسه ما اتحفظش
+        val stamp = java.text.SimpleDateFormat("yyyyMMdd-HHmm", java.util.Locale.US).format(java.util.Date())
+        try { startActivityForResult(Intent(Intent.ACTION_CREATE_DOCUMENT).apply { addCategory(Intent.CATEGORY_OPENABLE); type = "application/json"; putExtra(Intent.EXTRA_TITLE, "Subtitler-backup-$stamp.json") }, 61) }
+        catch (e: Throwable) { LogStore.err("Main:backupSave", e); Notice.show(this, "⚠ مش قادر أفتح اختيار الملف", 2600L) }
+    }
+    private fun backupFromFile() {
+        try { startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT).apply { addCategory(Intent.CATEGORY_OPENABLE); type = "*/*" }, 62) }
+        catch (e: Throwable) { LogStore.err("Main:backupOpen", e); Notice.show(this, "⚠ مش قادر أفتح اختيار الملف", 2600L) }
+    }
+    private fun restoreAuto() {
+        val j = Backup.readAuto(this)
+        if (j == null) { Notice.show(this, "مفيش نسخة تلقائية على الجهاز", 2600L); return }
+        val t = BackupCodec.timestamp(j)
+        val d = if (t > 0) java.text.SimpleDateFormat("yyyy-MM-dd HH:mm", java.util.Locale.US).format(java.util.Date(t)) else "—"
+        Notice.ask(this, "أسترجع النسخة التلقائية ($d)؟ هتتبدّل الإعدادات الحالية.", "استرجع", "لا", 6000L, { restoreBackup(j) }, { })
+    }
+    private fun restoreBackup(json: String) {
+        val n = try { Backup.apply(json) } catch (e: Throwable) { Notice.show(this, ("⚠ " + (e.message ?: "الملف مش صالح")).toString(), 3400L); return }
+        noSaveCfg = true
+        try { Extras.load() } catch (_: Throwable) {}
+        Notice.show(this, ("✅ اتسترجع $n إعداد — بعيد فتح البرنامج").toString(), 2800L)
+        if (!fromPlayer) intent?.putExtra("reopen_tab", "more")
+        dismissSettings?.invoke()
+        if (fromPlayer) finish() else recreate()
+    }
     override fun onActivityResult(r: Int, c: Int, d: Intent?) {
         super.onActivityResult(r, c, d)
+        if (r == 61) {
+            if (c == RESULT_OK) d?.data?.let { u ->
+                try {
+                    contentResolver.openOutputStream(u, "wt")?.use { o -> o.write(Backup.toJson().toByteArray(Charsets.UTF_8)) }
+                    Notice.show(this, "✅ اتحفظت النسخة — احتفظ بيها في مكان آمن (فيها مفاتيحك)", 3600L)
+                } catch (e: Throwable) { LogStore.err("Main:backupWrite", e); Notice.show(this, ("⚠ فشل الحفظ: " + (e.message ?: "").take(80)).toString(), 3200L) }
+            }
+            return
+        }
+        if (r == 62) {
+            if (c == RESULT_OK) d?.data?.let { u ->
+                try { restoreBackup(contentResolver.openInputStream(u)?.use { i -> String(i.readBytes(), Charsets.UTF_8) } ?: "") }
+                catch (e: Throwable) { LogStore.err("Main:backupRead", e); Notice.show(this, ("⚠ مش قادر أقرا الملف: " + (e.message ?: "").take(80)).toString(), 3200L) }
+            }
+            return
+        }
         if (r == 52) { if (c == RESULT_OK) d?.data?.let { onToolPicked(it) }; return }
         if (r == 53) { if (c == RESULT_OK) d?.data?.let { onSrtPicked(it) } else pendingSrc = null; return }
         if (r == 47) { if (c == RESULT_OK) d?.data?.let { ytUi?.importUri(it) }; return }   // (v118) ملف اشتراكات يوتيوب

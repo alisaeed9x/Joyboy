@@ -42,12 +42,12 @@ object KeyVault {
         return out
     }
 
-    private fun enc(ctx: Context, plain: String): String {
+    internal fun enc(ctx: Context, plain: String): String {
         val iv = ByteArray(12).also { SecureRandom().nextBytes(it) }
         val c = Cipher.getInstance("AES/GCM/NoPadding"); c.init(Cipher.ENCRYPT_MODE, secret(ctx), GCMParameterSpec(128, iv))
         return Base64.encodeToString(iv + c.doFinal(plain.toByteArray(Charsets.UTF_8)), Base64.NO_WRAP)
     }
-    private fun dec(ctx: Context, b64: String): String {
+    internal fun dec(ctx: Context, b64: String): String {
         val raw = Base64.decode(b64.trim(), Base64.NO_WRAP)
         val c = Cipher.getInstance("AES/GCM/NoPadding"); c.init(Cipher.DECRYPT_MODE, secret(ctx), GCMParameterSpec(128, raw.copyOfRange(0, 12)))
         return String(c.doFinal(raw, 12, raw.size - 12), Charsets.UTF_8)

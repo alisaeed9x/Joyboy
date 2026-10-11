@@ -1026,6 +1026,14 @@ class PlayerActivity : Activity(), Host {
             addView(probBar, LinearLayout.LayoutParams(-2, -2)); addView(probHandle, LinearLayout.LayoutParams(ui.dp(26), ui.dp(40)).apply { marginStart = ui.dp(2) }) }
         probBar.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> if (!probOn) probDrawer.translationX = -(probBar.width + ui.dp(2)).toFloat() }
         leftCol.addView(probDrawer, 0, LinearLayout.LayoutParams(-2, -2).apply { bottomMargin = ui.dp(4) })
+        // (v213) شريط حالة الوضع البصري: تحت شريط الباتش الفاشل (probDrawer) ومكان الكلام اللي كان بيظهر إشعارات. بيظهر بس والوضع البصري شغّال
+        visBar = IconTextView(this).apply {
+            setTextColor(0xFFE8EAED.toInt()); textSize = 10f; maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END
+            setPadding(ui.dp(8), ui.dp(3), ui.dp(8), ui.dp(3)); layoutDirection = View.LAYOUT_DIRECTION_RTL; alpha = 0.85f
+            background = GradientDrawable().apply { setColor(0x99000000.toInt()); cornerRadius = ui.dp(8).toFloat() }
+            maxWidth = ui.dp(230); visibility = View.GONE
+        }
+        leftCol.addView(visBar, 1, LinearLayout.LayoutParams(-2, -2).apply { bottomMargin = ui.dp(4) })
 
         // زرار التشغيل الأوسط (بيظهر وقت الإيقاف) + شارة النسبة (شاشة كاملة) + فلاش السيك/الصوت/السطوع
         centerPlay = FadePop(this).apply {
@@ -1896,6 +1904,10 @@ class PlayerActivity : Activity(), Host {
                     soundTv.text = sTxt; soundTv.visibility = if (sTxt.isEmpty()) View.GONE else View.VISIBLE
                 }
                 st.text = status
+                run {   // (v213) شريط الوضع البصري
+                    val vs = if (::visBar.isInitialized && ::visual.isInitialized && visual.running && !pipNow()) visual.status else ""
+                    if (::visBar.isInitialized && vs != visBarTxt) { visBarTxt = vs; visBar.text = vs; visBar.visibility = if (vs.isBlank()) View.GONE else View.VISIBLE }
+                }
                 if (now - lastBatch > 700) {
                     lastBatch = now
                     val bs = batchStyled(); val bl = bs.toString()
@@ -2096,12 +2108,9 @@ class PlayerActivity : Activity(), Host {
         Live.engine = engine
         visual = VisualMode(conf, { cur / 1000.0 }, { makeRetriever() }, { m ->   // (v182) cur = نسخة volatile من مكان التشغيل — ExoPlayer بيرمي استثناء لو اتنادى من خيط تاني
             visLog(m)   // (v182) كل رسائل الوضع البصري بتتسجّل في اللوج
+            // (v213) الوضع البصري بيشتغل في صمت: حالته بتظهر في شريطه (visBar) تحت شريط الباتش الفاشل، ومفيش إشعارات على الشاشة غير الأخطاء اللي لازم تتصلّح (مفتاح ناقص / مصدر مش مدعوم)
             val important = (m.startsWith("ضيف مفتاح") || m.contains("مش مدعوم") || m.startsWith("المفاتيح")) && !(visAutoRun && !m.startsWith("المفاتيح"))
-            val now = System.currentTimeMillis()
-            if (important || ((m.startsWith("👁") || m.startsWith("⏸") || m.startsWith("😴") || m.startsWith("⚠")) && now - visSayAt > 2500)) {
-                if (!important) visSayAt = now
-                runOnUiThread { Notice.show(this, m, 2300L) }
-            }
+            if (important) runOnUiThread { Notice.show(this, m, 2300L) }
         }, { }, { grabSurface() }, log = { m -> visLog(m) })
         // (v185) النتايج بتتحفظ مع الفيديو وبترجع لما تفتحه تاني (المتخفي: من غير حفظ)
         if (!incognito) try { visual.bind(File(File(filesDir, "visual"), Store.keyFor(vid) + ".json")) } catch (_: Throwable) {}
@@ -2940,6 +2949,8 @@ class PlayerActivity : Activity(), Host {
         return bmp
     }
     private var visSayAt = 0L
+    private lateinit var visBar: TextView
+    private var visBarTxt = ""
     private var visAutoRun = false
     /** (v181) ضغطة واحدة على 👁 = تشغيل/إيقاف الوضع البصري المتواصل (كان لازم ضغطة مطوّلة ← تشغيل). اللقطة الواحدة من القايمة (ضغطة مطوّلة). */
     fun visualToggle() {

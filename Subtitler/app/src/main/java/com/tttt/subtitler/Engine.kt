@@ -207,7 +207,7 @@ class Engine(
             if (d > 0 && cStart(i) >= d) break
             val mark = when {
                 i in inflight -> "⏳"
-                i in tHold -> "📝"
+                tHold.containsKey(i) -> "📝"
                 (failed[i] ?: 0) >= MAX_FAILS -> "❌"
                 i in incomplete -> "⚠"
                 isDone(i, d) -> if (subCount(i, d) == 0) "🔇" else "✅"
@@ -256,7 +256,7 @@ class Engine(
         while (cStart(i) < d) {
             val mark = when {
                 i in inflight -> "⏳"
-                i in tHold -> "📝"
+                tHold.containsKey(i) -> "📝"
                 (failed[i] ?: 0) >= MAX_FAILS -> "❌"
                 i in incomplete -> "⚠"
                 isDone(i, d) -> if (subCount(i, d) == 0) "🔇" else "✅"
@@ -568,7 +568,7 @@ class Engine(
                 var next = -1
                 for (i in lo..hi) {
                     if (d > 0 && cStart(i) >= d) break
-                    if (isDone(i, d) || (failed[i] ?: 0) >= MAX_FAILS || i in inflight || i in tHold || rehomeQ.containsKey(i)) continue
+                    if (isDone(i, d) || (failed[i] ?: 0) >= MAX_FAILS || i in inflight || tHold.containsKey(i) || rehomeQ.containsKey(i)) continue
                     next = i; break
                 }
                 if (next < 0 && only == null && keepGoing && d > 0) next = nextUndone(c + window, d)
@@ -617,7 +617,7 @@ class Engine(
     private fun nextUndone(from: Int, d: Double): Int {
         var i = maxOf(0, from)
         while (cStart(i) < d) {
-            if (!(isDone(i, d) || (failed[i] ?: 0) >= MAX_FAILS || i in inflight || i in tHold || rehomeQ.containsKey(i))) return i
+            if (!(isDone(i, d) || (failed[i] ?: 0) >= MAX_FAILS || i in inflight || tHold.containsKey(i) || rehomeQ.containsKey(i))) return i
             i++
         }
         return -1

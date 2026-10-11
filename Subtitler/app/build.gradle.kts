@@ -8,7 +8,7 @@ android {
     }
     namespace = "com.tttt.subtitler"
     compileSdk = 36
-    defaultConfig { applicationId = "com.tttt.subtitler"; minSdk = 26; targetSdk = 34; versionCode = 212; versionName = "2.12"
+    defaultConfig { applicationId = "com.tttt.subtitler"; minSdk = 26; targetSdk = 34; versionCode = 215; versionName = "2.15"
         ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a") }   // (v181) معماريات الموبايل بس: بتصغّر مكتبة onnxruntime
     }
     compileOptions { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17 }
