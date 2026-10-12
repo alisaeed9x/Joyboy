@@ -13,6 +13,7 @@ import android.os.Looper
 import android.provider.MediaStore
 import android.graphics.Typeface
 import android.text.SpannableString
+import android.text.SpannableStringBuilder
 import android.text.Spanned
 import android.text.style.ForegroundColorSpan
 import android.graphics.Bitmap
@@ -599,11 +600,20 @@ class MusicUi(private val act: Activity, private val ui: Ui, private val th: The
             lyrBox.addView(ui.text("🎵 " + listOf(r.title, r.artist).filter { it.isNotBlank() }.joinToString(" — "), 12f, C_DIM).apply { gravity = Gravity.CENTER; setPadding(0, 0, 0, ui.dp(14)) })
         if (!r.synced) lyrBox.addView(ui.text("📄 كلمات من غير توقيت (مش متزامنة مع الصوت)", 11f, C_DIM).apply { gravity = Gravity.CENTER; setPadding(0, 0, 0, ui.dp(10)) })
         r.lines.forEach { l ->
+            val row = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER; layoutDirection = View.LAYOUT_DIRECTION_RTL }
             val tv = ui.text(l.text, lsz(), C_DIM, true).apply {
-                typeface = lyrTf(); gravity = Gravity.CENTER; setPadding(0, ui.dp(9), 0, ui.dp(9)); alpha = 0.6f
+                typeface = lyrTf(); gravity = Gravity.CENTER; setPadding(0, ui.dp(if (l.translation.isBlank()) 9 else 7), 0, ui.dp(if (l.translation.isBlank()) 9 else 2)); alpha = 0.6f
                 setOnClickListener { if (r.synced) MusicEngine.seekTo(((l.start - lyrOffMs / 1000.0) * 1000).toInt().coerceAtLeast(0)) }
             }
-            lyrViews.add(tv); lyrBox.addView(tv, LinearLayout.LayoutParams(-1, -2))
+            lyrViews.add(tv); row.addView(tv, LinearLayout.LayoutParams(-1, -2))
+            if (l.translation.isNotBlank()) {
+                val tr = ui.text("(" + l.translation + ")", (lsz() - 4f).coerceAtLeast(11f), C_DIM).apply {
+                    typeface = lyrTf(); gravity = Gravity.CENTER; alpha = 0.92f; setPadding(ui.dp(4), 0, ui.dp(4), ui.dp(8))
+                    textDirection = View.TEXT_DIRECTION_FIRST_STRONG; textAlignment = View.TEXT_ALIGNMENT_CENTER
+                }
+                row.addView(tr, LinearLayout.LayoutParams(-1, -2))
+            }
+            lyrBox.addView(row, LinearLayout.LayoutParams(-1, -2))
         }
         lyricsTick()
     }
@@ -649,8 +659,9 @@ class MusicUi(private val act: Activity, private val ui: Ui, private val th: The
         val key = "${r.lines.size}:$i:$k"
         if (key == liveKey) return
         liveKey = key
-        val prev = r.lines.getOrNull(i - 1)?.text ?: ""
-        val next = (if (i < 0) r.lines.firstOrNull() else r.lines.getOrNull(i + 1))?.text ?: ""
+        fun lineDisplay(x: LyricLine?): String = if (x == null) "" else x.text + if (x.translation.isNotBlank()) "\n(" + x.translation + ")" else ""
+        val prev = lineDisplay(r.lines.getOrNull(i - 1))
+        val next = lineDisplay(if (i < 0) r.lines.firstOrNull() else r.lines.getOrNull(i + 1))
         lyrPrevTv.text = prev; lyrPrevTv.visibility = if (prev.isEmpty()) View.GONE else View.VISIBLE
         lyrNextTv.text = next; lyrNextTv.visibility = if (next.isEmpty()) View.GONE else View.VISIBLE
         if (l == null) { lyrCurTv.text = "♪ ♪ ♪"; lyrCurTv.setTextColor(0x80FFFFFF.toInt()) }
@@ -658,9 +669,14 @@ class MusicUi(private val act: Activity, private val ui: Ui, private val th: The
             var chars = 0; var seen = 0
             for (w in words) { if (seen >= k) break; val at = l.text.indexOf(w, chars); chars = at + w.length; seen++ }
             val e = chars.coerceIn(0, l.text.length)
-            val sp = SpannableString(l.text)
+            val sp = SpannableStringBuilder(l.text)
             sp.setSpan(ForegroundColorSpan(Color.WHITE), 0, e, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
             sp.setSpan(ForegroundColorSpan(0x8CFFFFFF.toInt()), e, l.text.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            if (l.translation.isNotBlank()) {
+                val from = sp.length
+                sp.append("\n(").append(l.translation).append(")")
+                sp.setSpan(ForegroundColorSpan(0xCCFFFFFF.toInt()), from, sp.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            }
             lyrCurTv.text = sp
         }
         lyrCurTv.visibility = View.VISIBLE
@@ -677,7 +693,7 @@ class MusicUi(private val act: Activity, private val ui: Ui, private val th: The
         top.addView(View(act).apply { background = ui.box(0x59FFFFFF, Color.TRANSPARENT, 3) }, FrameLayout.LayoutParams(ui.dp(40), ui.dp(5), Gravity.CENTER))
         val dots = GlyphBtn(act, "dots", 24).apply { setOnClickListener { v -> menu(v) } }
         top.addView(dots, FrameLayout.LayoutParams(ui.dp(56), ui.dp(48), Gravity.END or Gravity.CENTER_VERTICAL))
-        // (v241) 🖼↻ ريفريش البوستر: بيدوّر في ويكيبيديا باسم الأغنية أو المغني (وبعدها باقي المصادر)
+        // 🖼↻ ريفريش غلاف الألبوم من قواعد بيانات الموسيقى المباشرة.
         val posterBtn = ui.text("🖼↻", 18f, Color.WHITE).apply { gravity = Gravity.CENTER; setOnClickListener { refreshPoster() } }
         top.addView(posterBtn, FrameLayout.LayoutParams(ui.dp(56), ui.dp(48), Gravity.END or Gravity.CENTER_VERTICAL).apply { marginEnd = ui.dp(56) })
         attachSwipeDown(top)
@@ -790,6 +806,50 @@ class MusicUi(private val act: Activity, private val ui: Ui, private val th: The
         miniFill.setBackgroundColor((col and 0x00FFFFFF) or 0x4A000000)
     }
 
+    /** اختيار نسخة مختلفة من الكلمات التي عثر عليها محرك الكلمات، مع بقاء بقية المشغّل كما هو. */
+    private fun chooseLyricVersion() {
+        val t = MusicEngine.current ?: run { quiet("شغّل أغنية الأول", 1500L); return }
+        val r = lyr ?: LyricsEngine.cached(act, t, LyricsEngine.mode())
+            ?: run { quiet("حمّل الكلمات الأول", 1500L); return }
+        fun sourceName(s: String) = when (s.lowercase()) {
+            "lrclib" -> "LRCLIB"
+            "lyrics.ovh" -> "Lyrics.ovh"
+            "aghanilyrics" -> "AghaniLyrics"
+            else -> s.ifBlank { "كلمات محفوظة" }
+        }
+        fun keyOf(v: LyricVersion) = v.sourceUrl.ifBlank { v.source + "|" + v.title + "|" + v.artist }
+        val current = LyricVersion(r.title, r.artist, r.source, r.sourceUrl, r.lines, r.synced)
+        val versions = (listOf(current) + r.alternatives).distinctBy { keyOf(it) }.take(9)
+        if (versions.size < 2) { quiet("ملقتش نسخ إضافية للأغنية دي", 1800L); return }
+        val labels = versions.mapIndexed { i, v ->
+            (if (i == 0) "✓ الحالي · " else "🎼 ") + v.title +
+                (if (v.artist.isBlank()) "" else " — " + v.artist) +
+                "\n" + sourceName(v.source) + " · " + v.lines.size + " سطر" +
+                (if (v.synced) " · متزامنة" else " · بدون توقيت")
+        }.toTypedArray()
+        val ck = t.uri + "|" + LyricsEngine.mode()
+        android.app.AlertDialog.Builder(act)
+            .setTitle("🎼 اختار نسخة الكلمات")
+            .setItems(labels) { _, which ->
+                val chosen = versions[which]
+                LyricsEngine.chooseVersion(act, t, chosen, versions, { stage ->
+                    act.runOnUiThread { if (fullOn && lyrKey == ck) setStatus(stage) }
+                }) { result, msg ->
+                    act.runOnUiThread {
+                        if (!fullOn || lyrKey != ck) return@runOnUiThread
+                        if (result != null) {
+                            showLyrics(result)
+                            setStatus(if (result.synced) "" else "📄 النسخة المختارة كلمات كاملة من غير توقيت")
+                            quiet("🎼 تم اختيار نسخة " + sourceName(result.source), 1700L)
+                        } else {
+                            setStatus("")
+                            quiet(msg.ifBlank { "ماقدرتش أغيّر نسخة الكلمات" }, 2200L)
+                        }
+                    }
+                }
+            }.setNegativeButton("إلغاء", null).show()
+    }
+
     // ===== قايمة ⋮ =====
     private fun menu(anchor: View) { moreSheet() }
     /** (v201) «⋮ المزيد»: 3 مجموعات (الكلمات · الأغنية · المشغّل) بدل 11 بند مخلوطين — وكل أمر في مكان واحد بس */
@@ -813,6 +873,7 @@ class MusicUi(private val act: Activity, private val ui: Ui, private val th: The
         item("🔁 إعادة تحميل الكلمات") { redoLyrics(false) }
         item("✍️ الكلمات غلط") { redoLyrics(true) }
         item("✍ كلمات يدوي (الصق أو عدّل)") { manualLyrics() }
+        if (lyr?.alternatives?.isNotEmpty() == true) item("🎼 نسخ وإصدارات الكلمات") { chooseLyricVersion() }
         item("⏱ تقديم / تأخير الكلمات") { offsetDialog() }
         item("✏️ اكتب اسم الأغنية والفنان") { renameSong() }
         item("🔤 خط وحجم الكلمات") { fontDialog() }
@@ -848,7 +909,7 @@ class MusicUi(private val act: Activity, private val ui: Ui, private val th: The
     private fun nameOf(t: Track): Pair<String, String> { val o = SongId.override(t.id); return (o?.first?.ifBlank { null } ?: t.title) to (o?.second?.ifBlank { null } ?: t.artist) }
 
     // ===== الأغلفة =====
-    /** غلاف المدمج في الملف، وإلا من الإنترنت (ويكيبيديا ← iTunes ← Deezer ← صورة الفنان) */
+    /** غلاف مدمج داخل الملف، وإلا من الإنترنت (iTunes ← Deezer ← MusicBrainz/Cover Art Archive). */
     private fun fetchArt(t: Track): Bitmap? {
         var bmp: Bitmap? = null
         val r = MediaMetadataRetriever()
@@ -1065,15 +1126,15 @@ class MusicUi(private val act: Activity, private val ui: Ui, private val th: The
         } else if (fullOn) loadLyrics(force = true)
     }
     private var posterBusy = false
-    /** (v241) ريفريش البوستر بس: ويكيبيديا (الأغنية ← المغني) وبعدين باقي المصادر؛ لو ملقاش حاجة الغلاف الحالي بيفضل */
+    /** ريفريش البوستر فقط من مصادر أغلفة الألبومات المباشرة بعيدًا عن ويكيبيديا. */
     private fun refreshPoster() {
         val t = MusicEngine.current ?: run { quiet("شغّل أغنية الأول", 1500L); return }
         if (posterBusy) { quiet("لسه بدوّر… استنى شوية", 1500L); return }
         posterBusy = true
-        quiet("🖼 بدوّر على البوستر في ويكيبيديا…", 2500L)
+        quiet("🖼 بدوّر على غلاف الألبوم من مصادر الموسيقى…", 2500L)
         val n = nameOf(t); val uri = t.uri; val id = t.id
         Thread {
-            val b = try { Poster.fetchWikiSync(act, n.first, n.second) } catch (_: Throwable) { null }
+            val b = try { Poster.fetchArtworkSync(act, n.first, n.second) } catch (_: Throwable) { null }
             if (b != null) try { FaceFocus.compute(b) } catch (_: Throwable) {}
             act.runOnUiThread {
                 posterBusy = false
@@ -1086,7 +1147,7 @@ class MusicUi(private val act: Activity, private val ui: Ui, private val th: The
             }
         }.apply { isDaemon = true }.start()
     }
-    /** البوستر غلط: انسى الغلاف ده (حتى لو كان مدمج في الملف) وجرّب اللي بعده (ويكيبيديا/iTunes/Deezer/صورة الفنان) */
+    /** البوستر غلط: انسى الغلاف الحالي وجرّب المصدر التالي من قواعد بيانات أغلفة الألبومات. */
     private fun wrongPoster() {
         val t = MusicEngine.current ?: run { quiet("شغّل أغنية الأول", 1500L); return }
         val n = nameOf(t)
