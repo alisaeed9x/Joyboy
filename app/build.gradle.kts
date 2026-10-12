@@ -1,4 +1,23 @@
 plugins { id("com.android.application"); id("org.jetbrains.kotlin.android") }
+
+// (v260) sherpa-onnx: مكتبة الـ AAR الرسمية (فيها كلاسات com.k2fsa.sherpa.onnx + libsherpa-onnx-jni.so + onnxruntime).
+// كانت ناقصة من الـ dependencies فكان SherpaStt.kt بيفشل "Unresolved reference: k2fsa". بتتنزّل مرة واحدة في app/libs وقت البناء.
+val sherpaVer = "1.12.39"
+val sherpaAar = file("libs/sherpa-onnx-$sherpaVer.aar")
+if (!sherpaAar.isFile || sherpaAar.length() < 50_000_000L) {
+    sherpaAar.parentFile.mkdirs()
+    val part = File(sherpaAar.path + ".part")
+    var err: Exception? = null
+    for (attempt in 1..3) {
+        try {
+            java.net.URL("https://github.com/k2-fsa/sherpa-onnx/releases/download/v$sherpaVer/sherpa-onnx-$sherpaVer.aar")
+                .openStream().use { ins -> part.outputStream().use { ins.copyTo(it) } }
+            if (part.length() > 50_000_000L) { part.renameTo(sherpaAar); err = null; break }
+            err = java.io.IOException("downloaded file too small: ${part.length()} bytes")
+        } catch (e: Exception) { err = e }
+    }
+    if (!sherpaAar.isFile) throw GradleException("sherpa-onnx AAR download failed: ${err?.message}")
+}
 android {
     signingConfigs {
         getByName("debug") {
@@ -24,4 +43,5 @@ dependencies {
     implementation("androidx.media3:media3-transformer:1.10.1")
     implementation("androidx.webkit:webkit:1.11.0")
     implementation("com.github.bumptech.glide:glide:4.16.0")
+    implementation(files("libs/sherpa-onnx-$sherpaVer.aar"))   // (v260)
 }
