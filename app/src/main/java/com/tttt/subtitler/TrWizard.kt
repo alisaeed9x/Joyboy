@@ -23,8 +23,9 @@ object TrWizard {
     const val CURRENT = "current"
     val sttLangs = listOf(
         "en" to "إنجليزي", "ja" to "ياباني", "zh" to "صيني",
-        "ko" to "كوري", "fr" to "فرنساوي", "" to "تلقائي (يكتشف اللغة)"
-    )
+        "ko" to "كوري", "fr" to "فرنساوي", "ar" to "عربي", "es" to "إسباني", "tr" to "تركي", "ru" to "روسي",
+        "de" to "ألماني", "it" to "إيطالي", "hi" to "هندي", "fa" to "فارسي", "ur" to "أوردو", "" to "تلقائي (يكتشف اللغة)"
+    )   // (v262) كل لغات Whisper (Offline.langIds) — كانت 6 بس والباقي من الإعدادات والخطة كانت بتكتب فوقه
 
     /** (v255) لازم يتظبط من Cfg.init — لفحص النت */
     @Volatile var appCtx: android.content.Context? = null
@@ -75,7 +76,7 @@ object TrWizard {
     /** «google» = بعد التفريغ الأوفلاين النص بيتترجم بجوجل (من غير API)، غير كده جيميناي بالسياق */
     fun method(): String = if (Cfg.str("tr_method", "gemini") == "google") "google" else "gemini"
     /** المحرك بيسأل: الترجمة بجوجل دلوقتي؟ (لازم الأوفلاين شغّال فعلًا، لأن جوجل بيترجم النص المفرّغ بس) */
-    fun googleOn(): Boolean = method() == "google" && Offline.on()
+    fun googleOn(): Boolean = method() == "google" && Offline.configured()
     /** كود لغة المصدر لجوجل من لغة الأوفلاين */
     fun googleLang(): String = when (val l = Offline.lang()) { "" -> "auto"; "zh" -> "zh-CN"; else -> l }
 
@@ -109,6 +110,17 @@ object TrWizard {
     }
 
     fun clearSaved() { Cfg.put("tr_saved", "0") }
+
+    /** (v261) تغيير من الإعدادات (لغة التفريغ / الموديل / المحرك / طريقة الترجمة) بيتكتب كمان في الخطة المحفوظة، وإلا «▶ ترجمة» كان بيكتب القديم فوقه */
+    fun syncSaved(key: String, v: String) {
+        if (!saved() || Cfg.str("tr_mode", "") != "offline") return
+        when (key) {
+            "stt_lang" -> { Cfg.put("tr_s_lang", v); if (!SherpaStt.handles(v)) Cfg.put("tr_s_engine", "whisper") }
+            "off_model" -> Cfg.put("tr_s_model", v)
+            "stt_engine" -> Cfg.put("tr_s_engine", v)
+            "tr_method" -> Cfg.put("tr_s_method", v)
+        }
+    }
 
     /** [onDone] (الخطة، احفظ؟، ابدأ ترجمة؟) — بتتنده مرة واحدة لما تخلّص الخطوات */
     fun show(act: Activity, edit: Boolean, onDone: (Plan, Boolean, Boolean) -> Unit) { Wiz(act, edit, onDone).start() }
@@ -195,10 +207,10 @@ object TrWizard {
 
         fun stepLang() {
             reset("🌍 لغة الفيديو")
-            note("اختار لغة الكلام في الفيديو — بيخلّي التفريغ أدق.")
+            note("اختار لغة الكلام في الفيديو — بيخلّي التفريغ أدق. لو الفيديو بيخلط لغات اختار «تلقائي»، بس التفريغ بيبقى أدق لما المقطع كله بلغة واحدة.")
             for ((id, label) in TrWizard.sttLangs) opt(label, "", lang == id) {
                 lang = id
-                if (id in SherpaStt.preferred) go { stepEngine() } else { engine = "whisper"; go { stepStt() } }
+                if (SherpaStt.handles(id)) go { stepEngine() }   // (v263) كل لغة SenseVoice بيفهمها (إنجليزي/ياباني/كوري/صيني/تلقائي) — كانت ياباني/كوري/صيني بس فمحرك SenseVoice مكنش بيظهر للإنجليزي else { engine = "whisper"; go { stepStt() } }
             }
             addBack()
         }
@@ -206,7 +218,7 @@ object TrWizard {
         fun stepEngine() {
             reset("🎙 محرك التفريغ")
             note("للغة " + TrWizard.langLabel(lang) + " فيه محركين على الجهاز. التفريغ كله من غير نت (النت بس لتنزيل الموديل مرة واحدة).")
-            opt("⭐ SenseVoice (sherpa-onnx)", "مترشّح للياباني والكوري والصيني. موديل ~" + SherpaStt.MODEL_MB + " ميجا. لسه ما اتجرّبش على جهازك، قارنه بـ Whisper.", engine == "sherpa") { engine = "sherpa"; go { stepSherpa() } }
+            opt("⭐ SenseVoice (sherpa-onnx)", "بيفهم إنجليزي وياباني وكوري وصيني بس (مش فرنساوي ولا عربي ولا إسباني)، وغالبًا أسرع بكتير من Whisper. موديل ~" + SherpaStt.MODEL_MB + " ميجا.", engine == "sherpa") { engine = "sherpa"; go { stepSherpa() } }
             opt("🎧 Whisper", "الأقدم والمجرّب: بتختار حجم الموديل (base / small / medium).", engine != "sherpa") { engine = "whisper"; go { stepStt() } }
             addBack()
         }
@@ -273,7 +285,7 @@ object TrWizard {
                 }
             }
             body.addView(ui.chips(Offline.models.map { it.label }, { cur().label }) { l ->
-                Offline.models.firstOrNull { m -> m.label == l }?.let { m -> model = m.id; Cfg.put("off_model", m.id) }
+                Offline.models.firstOrNull { m -> m.label == l }?.let { m -> model = m.id }   // (v261) ماتكتبش off_model هنا: الاختيار بيتطبّق في TrWizard.apply بس. قبل كده القفل من غير حفظ كان بيغيّر الموديل الشغّال وسط الترجمة
                 pr.text = ""; refresh()
             })
             body.addView(st); body.addView(dl); body.addView(pr)

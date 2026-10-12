@@ -508,7 +508,8 @@ class Engine(
         val s = store?.load() ?: return 0.0
         synchronized(lock) {
             subs = Subs.unifyOverlaps(Subs.dedup((if (s.chunkSec == conf.chunkSec) s.subs else s.subs.map { it.copy(chunk = -1) }).map { Subs.collapseSelfRepeat(it) }))
-            for (r in s.done) done.add(r[0], r[1])
+            if (s.subs.isNotEmpty()) { for (r in s.done) done.add(r[0], r[1]) }
+            else if (s.done.isNotEmpty()) host.log("♻ التقدم المحفوظ فيه دقايق «مخلّصة» من غير ولا جملة — هتتعاد الترجمة من الأول (v263)")
             for (r in s.failed) failed[Math.round(r[0] / ch).toInt()] = MAX_FAILS
             chars.addAll(s.chars); gloss.addAll(s.gloss); tplCache.putAll(s.tpl)
             srcLang = s.srcLang; detDone = s.detDone; autoCharsAttempts = s.charsTried
@@ -1246,7 +1247,7 @@ class Engine(
         if (trBusy.get() > 0) return false
         val avail = tHold.keys.filter { it !in tTaken }.sorted()
         if (avail.isEmpty()) return false
-        if (!ctxReady() && Offline.on() && partTick(avail)) return true   // (v253) جزء كامل اتنسخ ← يتترجم فورًا
+        if (!ctxReady() && Offline.configured() && partTick(avail)) return true   // (v253) جزء كامل اتنسخ ← يتترجم فورًا
         if (!ctxReady()) {
             val m = "📝 ترانسكريبشن: ${avail.size} باتش جاهز — الترجمة السياقية بتبدأ لما كل الباتشات تتنسخ"
             if (m != ctxMsg) { ctxMsg = m; host.status(m) }
@@ -1358,7 +1359,7 @@ class Engine(
         host.status("🧠 بترجم بالسياق الكامل (${flatAll.size} جملة)…")
         val tp = trPool
         val doneTr = ArrayList<Sub>()
-        if (Offline.on() && flatAll.isNotEmpty()) {   // (v253) الأجزاء بتتترجم أول بأول: آخر جمل اتترجمت قبل الجزء ده بتتبعت كسياق
+        if (Offline.configured() && flatAll.isNotEmpty()) {   // (v253) الأجزاء بتتترجم أول بأول: آخر جمل اتترجمت قبل الجزء ده بتتبعت كسياق
             val f0 = flatAll.first().start
             doneTr.addAll(synchronized(lock) { subs.filter { it.start < f0 && it.translated.isNotBlank() && it.translated != it.original }.takeLast(12) })
         }

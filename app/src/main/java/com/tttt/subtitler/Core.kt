@@ -244,7 +244,7 @@ object Cfg {
             emptyList() /* جدول الشخصيات اليدوي اتشال — الشخصيات بتتحلل تلقائيًا */, str("gloss"),
             true, true, true,   // (v229) تحليل الشخصيات · تصحيح الضمائر · ترجمة القالب: أوتوماتيك دايمًا (اتشال مفتاحهم من الإعدادات)
             1 /* (v141) طلب واحد لكل مفتاح */, bool("hitiming", false), true /* (v229) سد الفجوات أوتوماتيك دايمًا */,
-            bool("soundtags", true), keys("viskeys"), bool("prefine", true), rf, if (Offline.on()) KeyMode.TRANSCRIBE_ALL else KeyMode.clamp(int("kmode", 1))   // (v253) أوفلاين = وضع 4 (نسخ ثم ترجمة سياقية)
+            bool("soundtags", true), keys("viskeys"), bool("prefine", true), rf, if (Offline.configured()) KeyMode.TRANSCRIBE_ALL else KeyMode.clamp(int("kmode", 1))   // (v253) أوفلاين = وضع 4 (نسخ ثم ترجمة سياقية)
         )
     }
 }

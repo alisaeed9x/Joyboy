@@ -43,7 +43,9 @@ object Offline {
     /** المحرك المختار (مفتاح stt_engine: whisper | sherpa، الافتراضي whisper). لو المختار مش مدعوم على الجهاز أو مش بيفهم اللغة ← whisper */
     fun engine(): SttEngine = engines.firstOrNull { it.id == Cfg.str("stt_engine", "whisper") && it.supported() && it.handles(lang()) } ?: WhisperStt
     /** true = الترانسكريبشن بيتعمل أوفلاين (مفعّل + الموديل نازل + المكتبة موجودة) والوضع بيبقى «نسخ ثم ترجمة سياقية» */
-    fun on(): Boolean = Cfg.bool("stt_offline", false) && engine().ready() && System.currentTimeMillis() >= coolUntil
+    fun on(): Boolean = configured() && System.currentTimeMillis() >= coolUntil
+    /** (v262) الأوفلاين متظبّط (مفعّل + الموديل نازل) بغض النظر عن فترة الراحة بعد الأعطال. بيحدد وضع الترجمة (سياقية / جوجل)، أما on() فبيحدد مين بينسخ دلوقتي — قبل كده فترة الراحة كانت بتحوّل الترجمة من جوجل لجيميناي وسط الشغل */
+    fun configured(): Boolean = Cfg.bool("stt_offline", false) && engine().ready()
     /** حالة الأوفلاين للعرض في الإعدادات */
     fun status(): String = when {
         !WhisperLib.loaded -> "⛔ الأوفلاين مش مدعوم على جهازك (محتاج معالج 64-bit)."
@@ -52,7 +54,7 @@ object Offline {
         else -> "✅ الأوفلاين شغّال: Whisper ${model().id} بينسخ على الجهاز، وجيميناي بيترجم ويكمّل لو الأوفلاين فشل."
     }
     /** طول جزء الترجمة السياقية بالدقايق: 5/10/20، أو 0 لو الأوفلاين مقفول (السلوك القديم) */
-    fun partMin(): Int = if (!on()) 0 else Cfg.int("ctx_min", 10).let { if (it == 5 || it == 10 || it == 20) it else 10 }
+    fun partMin(): Int = if (!configured()) 0 else Cfg.int("ctx_min", 10).let { if (it == 5 || it == 10 || it == 20) it else 10 }
 
     // ===== التفريغ =====
     private val lock = ReentrantLock(true)   // fair: الباتشات بتتفرّغ بترتيب وصولها (واحد في المرة — المعالج مش هيستحمل اتنين)
@@ -65,11 +67,15 @@ object Offline {
     fun transcribe(wav: ByteArray, durSec: Double, terms: String, log: (String) -> Unit, fallback: () -> Api.Result, warn: (String) -> Unit = {}): Api.Result {
         val eng = engine()
         if (Cfg.str("stt_engine", "whisper") == "sherpa" && eng.id != "sherpa") softNotice("🎙 SenseVoice مش بيفهم لغة الكلام المختارة أو مش شغّال على جهازك — Whisper هو اللي بينسخ", warn)   // (v257)
+        val tq = System.currentTimeMillis()
         lock.lock()
         try {
+            val waited = System.currentTimeMillis() - tq
+            if (waited > 5000) log("⏳ الأوفلاين: الباتش استنى دوره ${waited / 1000}ث (التفريغ واحد في المرة)")
             eng.prepare(log)
             val pcm = toFloats(wav) ?: run { log("⚠ الأوفلاين: صيغة الصوت مش مدعومة — جيميناي هو اللي نسخ الباتش"); softNotice("⚠ الأوفلاين: صيغة الصوت مش مدعومة — " + who(), warn); return fallback() }
             val t0 = System.currentTimeMillis()
+            log("📴 بدأ التفريغ (${eng.id}): ${"%.0f".format(durSec)}ث صوت · ${threads()} خيوط")   // (v263)
             val res = eng.transcribe(pcm, lang(), terms.trim().take(200), threads())
             val took = System.currentTimeMillis() - t0
             log("📴 أوفلاين (${eng.id}${if (eng is SherpaStt) " · VAD=" + SherpaStt.lastVad else ""}): ${"%.0f".format(durSec)}ث صوت ← ${took / 1000}ث (${"%.1f".format(durSec * 1000.0 / took.coerceAtLeast(1))}× سرعة)")
@@ -195,7 +201,7 @@ object Offline {
         val dst = file(m) ?: run { done("مفيش مساحة تخزين"); return }
         startDl(done) {
             fetch(BASE_URL + m.file, dst, m.approxMb * 600_000L, progress)
-            WhisperStt.release()
+            releaseSafe(WhisperStt)
         }
     }
 
@@ -207,17 +213,20 @@ object Offline {
         startDl(done) {
             if (!(tk.isFile && tk.length() > SherpaStt.MIN_TOKENS)) fetch(SherpaStt.BASE + SherpaStt.TOKENS, tk, SherpaStt.MIN_TOKENS, { _, _ -> })
             if (!(md.isFile && md.length() > SherpaStt.MIN_MODEL)) fetch(SherpaStt.BASE + SherpaStt.MODEL, md, SherpaStt.MIN_MODEL, progress)
-            SherpaStt.release()
+            releaseSafe(SherpaStt)
         }
     }
 
+    /** (v261) تحرير الموديل بنفس قفل التفريغ: لو باتش بيتفرّغ دلوقتي بيستنى يخلص، وإلا release() كان ممكن يحرّر الموديل وهو شغّال ← كراش native */
+    private fun releaseSafe(e: SttEngine) { lock.lock(); try { e.release() } finally { lock.unlock() } }
+
     fun deleteSherpa() {
-        SherpaStt.release()
         SherpaStt.dir()?.deleteRecursively()
+        Thread { try { releaseSafe(SherpaStt) } catch (_: Throwable) {} }.also { it.isDaemon = true; it.start() }   // (v261) في خيط: مايعلّقش الشاشة لو باتش بيتفرّغ
     }
 
     fun delete(m: Model = model()) {
         file(m)?.let { it.delete(); File(it.path + ".part").delete() }
-        WhisperStt.release()
+        Thread { try { releaseSafe(WhisperStt) } catch (_: Throwable) {} }.also { it.isDaemon = true; it.start() }
     }
 }

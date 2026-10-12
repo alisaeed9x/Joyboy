@@ -411,7 +411,11 @@ class PlayerActivity : Activity(), Host {
     private val probAuto = Runnable { if (probOn) toggleProb() }  // كبسولة الباتش الفاشل بتتلم لوحدها
     fun updateTr() { trUpdaters.forEach { try { it() } catch (e: Exception) { LogStore.err("Main:866", e) } } }
     fun beginTranslate() {
-        if (Cfg.str("hard_mode", "0") == "1") Cfg.put("hard_mode", "0")   // (v240) أي ترجمة صوتية بتطلّعك من وضع الهارد سب
+        if (Cfg.str("hard_mode", "0") == "1") {
+            Cfg.put("hard_mode", "0")   // (v240) أي ترجمة صوتية بتطلّعك من وضع الهارد سب
+            // (v261) ووقّف الوضع البصري بتاع الهارد سب كمان، وإلا بيفضل شغّال جنب الترجمة الصوتية
+            try { if (::visual.isInitialized && visual.running) { visual.stop(); visOv.showBoxes(emptyList()); visAutoRun = false; visLog("👁 اتقفل — بدأت ترجمة صوتية") } } catch (_: Throwable) {}
+        }
         try { val st = Throwable().stackTrace; LogStore.add("▶ طلب بدء الترجمة ← " + (st.getOrNull(1)?.let { it.methodName + ":" + it.lineNumber } ?: "?") + (if (autoTr) " (autotr)" else "")) } catch (_: Throwable) {}
         if (::engine.isInitialized && !engineReady) { pendingBegin = true; return }   // البيانات المحفوظة لسه بتتحمّل: هتبدأ لوحدها أول ما تخلص
         // (v203) لو الفيديو مترجم 100% (مثلًا بعد تحديث لينكه): مفيش ترجمة تاني، الترجمة المحفوظة شغّالة. ولو ناقص بيكمّل الباقي بس (المخلّص بيتخطّى)
@@ -2824,6 +2828,8 @@ class PlayerActivity : Activity(), Host {
 
     fun keyModePopup(anchor: View) {
         kmPop?.let { if (it.isShowing) { it.dismiss(); kmPop = null; return } }
+        // (v262) الأوفلاين شغّال: Cfg.snapshot بيجبر الوضع 4، فاختيار وضع تاني كان بيتحفظ ويتعرض من غير أي أثر
+        if (engineStarted && Offline.configured()) { say("📴 الأوفلاين شغّال — وضع المفاتيح ثابت على «نسخ ثم ترجمة سياقية» (٤) لحد ما الترجمة دي تخلص"); return }
         val cur = KeyMode.clamp(Cfg.int("kmode", 1))
         val col = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL
@@ -3004,6 +3010,7 @@ class PlayerActivity : Activity(), Host {
 
     fun langPopup(anchor: View) {
         langPop?.let { if (it.isShowing) { it.dismiss(); langPop = null; return } }
+        if (!::engine.isInitialized) { say("استنى لحظة — الفيديو لسه بيتحمّل"); return }   // (v262) engine lateinit: الضغط قبل التحميل كان بيكرّش
         val langs = listOf("فصحى", "مصري", "شامي", "لبناني", "خليجي", "مغربي", "عراقي", "سوداني")
         val curL = Cfg.str("conv_dialect", "").ifBlank { "فصحى" }
         val col = LinearLayout(this).apply {

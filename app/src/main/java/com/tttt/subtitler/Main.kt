@@ -456,7 +456,7 @@ class MainActivity : Activity() {
             Cfg.put("stt_offline", if (it == offEngOpts[1]) "1" else "0"); offRefresh()
         }
         val offModelChips = ui.chips(Offline.models.map { it.label }, { Offline.model().label }) { l ->
-            Offline.models.firstOrNull { m -> m.label == l }?.let { m -> Cfg.put("off_model", m.id) }; offProg.text = ""; offRefresh()
+            Offline.models.firstOrNull { m -> m.label == l }?.let { m -> Cfg.put("off_model", m.id); TrWizard.syncSaved("off_model", m.id) }; offProg.text = ""; offRefresh()
         }
         offDlBtn = ui.button("") {
             if (Offline.downloading()) { Offline.cancelDownload() }
@@ -484,7 +484,7 @@ class MainActivity : Activity() {
             sherpaDlBtn.text = if (Offline.downloading()) "⏹ إلغاء التنزيل" else if (SherpaStt.downloaded()) "🗑 مسح موديل SenseVoice (دوسة طويلة)" else "⬇ تنزيل موديل SenseVoice (~" + SherpaStt.MODEL_MB + " ميجا)"
         }
         val sttEngChips = ui.chips(listOf(sEng1, sEng2), { if (Cfg.str("stt_engine", "whisper") == "sherpa") sEng2 else sEng1 }) {
-            Cfg.put("stt_engine", if (it == sEng2) "sherpa" else "whisper")
+            Cfg.put("stt_engine", if (it == sEng2) "sherpa" else "whisper"); TrWizard.syncSaved("stt_engine", if (it == sEng2) "sherpa" else "whisper")
             if (it == sEng2 && !SherpaStt.downloaded()) Notice.show(this, "نزّل موديل SenseVoice الأول، وإلا جيميناي هو اللي هينسخ", 2800L)
             sherpaRefresh()
         }
@@ -504,7 +504,7 @@ class MainActivity : Activity() {
         }
         sherpaRefresh()
         val mGoogle = "🌍 جوجل (من غير API)"; val mGem = "✨ جيميناي بالسياق"
-        val trMethodChips = ui.chips(listOf(mGoogle, mGem), { if (TrWizard.method() == "google") mGoogle else mGem }) { Cfg.put("tr_method", if (it == mGoogle) "google" else "gemini") }
+        val trMethodChips = ui.chips(listOf(mGoogle, mGem), { if (TrWizard.method() == "google") mGoogle else mGem }) { val tm = if (it == mGoogle) "google" else "gemini"; Cfg.put("tr_method", tm); TrWizard.syncSaved("tr_method", tm) }
         val savedPlanTxt = ui.text("", 12f, th.muted)
         fun planRefresh() { savedPlanTxt.text = TrWizard.savedPlan()?.let { "المحفوظ لزرار «▶ ترجمة»: " + TrWizard.describe(it).replace("\n", " · ") } ?: "مفيش إعداد محفوظ لزرار «▶ ترجمة» — بيسألك كل مرة." }
         val planBtn = ui.button("⚙ طريقة الترجمة (نفس زرار ⚙ في المشغّل)") {
@@ -512,7 +512,7 @@ class MainActivity : Activity() {
             catch (e: Throwable) { LogStore.err("Main:trWizard", e); Notice.show(this, "تعذّر فتح شاشة طريقة الترجمة", 2300L) }
         }
         planRefresh()
-        val offLangChips = ui.chips(Offline.langLabels, { Offline.langLabels[Offline.langIds.indexOf(Offline.lang()).coerceAtLeast(0)] }) { Cfg.put("stt_lang", Offline.langIds[Offline.langLabels.indexOf(it).coerceAtLeast(0)]) }
+        val offLangChips = ui.chips(Offline.langLabels, { Offline.langLabels[Offline.langIds.indexOf(Offline.lang()).coerceAtLeast(0)] }) { val lid = Offline.langIds[Offline.langLabels.indexOf(it).coerceAtLeast(0)]; Cfg.put("stt_lang", lid); TrWizard.syncSaved("stt_lang", lid) }
         val offPartLabels = listOf("٥ دقايق", "١٠ دقايق", "٢٠ دقيقة"); val offPartVals = listOf(5, 10, 20)
         val offPartChips = ui.chips(offPartLabels, { offPartLabels[offPartVals.indexOf(Cfg.int("ctx_min", 10)).coerceAtLeast(1)] }) { Cfg.put("ctx_min", offPartVals[offPartLabels.indexOf(it).coerceAtLeast(1)].toString()) }
         val vaOn = "⚡ تلقائي مع كل فيديو"; val vaOff = "✋ يدوي (بريسيتس / زرار 👁)"
