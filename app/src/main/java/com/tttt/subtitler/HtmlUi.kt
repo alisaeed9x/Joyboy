@@ -496,3 +496,50 @@ class DualVolBar(ctx: Context, private val normal: Int, private val trackBg: Int
         pt.color = if (progress > 100) red else Color.WHITE; c.drawCircle(x, cy, 8 * d, pt)
     }
 }
+
+
+/** (v230) سلايدر صوت طولي: من تحت (0%) لفوق (200%) — 0..100 بلون الثيم و100..200 أحمر (تضخيم)، علامة عند 100% وبيلزّق عليها لو قربت منها. */
+class VertVolBar(ctx: Context, private val normal: Int, private val trackBg: Int) : View(ctx) {
+    private val d = ctx.resources.displayMetrics.density
+    private val pt = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val red = 0xFFFF3B30.toInt()
+    var max = 200
+    var progress = 100
+        set(v) { val n = v.coerceIn(0, max); if (n != field) { field = n; invalidate() } }
+    /** بتتنادى مع كل تغيير من اللمس (القيمة 0..max) */
+    var onChange: ((Int) -> Unit)? = null
+    /** true أول ما الصباع يلمس، false لما يسيب */
+    var onTouch: ((Boolean) -> Unit)? = null
+
+    private fun yTop(): Float = paddingTop + 12 * d
+    private fun yBot(): Float = height - paddingBottom - 12 * d
+    private fun yOf(p: Int): Float { val a = yTop(); val b = yBot(); return b - (b - a) * p / max.coerceAtLeast(1) }
+
+    override fun onDraw(c: Canvas) {
+        val cx = width / 2f; val th = 5 * d
+        val a = yTop(); val b = yBot(); val y = yOf(progress); val mid = yOf(100)
+        pt.style = Paint.Style.FILL
+        pt.color = trackBg; c.drawRoundRect(cx - th / 2, a, cx + th / 2, b, th, th, pt)
+        pt.color = normal; c.drawRoundRect(cx - th / 2, maxOf(y, mid), cx + th / 2, b, th, th, pt)
+        if (progress > 100) { pt.color = red; c.drawRoundRect(cx - th / 2, y, cx + th / 2, mid, th, th, pt) }
+        pt.color = 0xCCFFFFFF.toInt(); c.drawRect(cx - th, mid - 0.5f * d, cx + th, mid + 0.5f * d, pt)   // علامة 100%
+        pt.color = if (progress > 100) red else Color.WHITE; c.drawCircle(cx, y, 9 * d, pt)
+    }
+
+    private fun setFrom(y: Float) {
+        val a = yTop(); val b = yBot()
+        var p = Math.round(((b - y) / (b - a)).coerceIn(0f, 1f) * max)
+        if (Math.abs(p - 100) <= 3) p = 100
+        if (p != progress) { progress = p; onChange?.invoke(p) }
+    }
+
+    override fun onTouchEvent(e: MotionEvent): Boolean {
+        when (e.actionMasked) {
+            MotionEvent.ACTION_DOWN -> { parent?.requestDisallowInterceptTouchEvent(true); onTouch?.invoke(true); setFrom(e.y) }
+            MotionEvent.ACTION_MOVE -> setFrom(e.y)
+            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> onTouch?.invoke(false)
+            else -> return super.onTouchEvent(e)
+        }
+        return true
+    }
+}

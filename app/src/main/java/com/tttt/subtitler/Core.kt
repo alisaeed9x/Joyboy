@@ -238,8 +238,8 @@ object Cfg {
             str("lang", "فصحى"), str("style", "حرفي"),
             int("chunk", 60).coerceIn(10, 600), int("ahead", 3).coerceIn(0, 50), int("atrack", 1).coerceAtLeast(1),
             emptyList() /* جدول الشخصيات اليدوي اتشال — الشخصيات بتتحلل تلقائيًا */, str("gloss"),
-            bool("autochars", true), bool("autopron", true), bool("autotpl", true),
-            1 /* (v141) طلب واحد لكل مفتاح */, bool("hitiming", false), bool("gapfill", true),
+            true, true, true,   // (v229) تحليل الشخصيات · تصحيح الضمائر · ترجمة القالب: أوتوماتيك دايمًا (اتشال مفتاحهم من الإعدادات)
+            1 /* (v141) طلب واحد لكل مفتاح */, bool("hitiming", false), true /* (v229) سد الفجوات أوتوماتيك دايمًا */,
             bool("soundtags", true), keys("viskeys"), bool("prefine", true), rf, KeyMode.clamp(int("kmode", 1))
         )
     }

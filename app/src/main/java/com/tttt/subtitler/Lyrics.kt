@@ -19,8 +19,9 @@ class LyricsResult(
 )
 
 /**
- * (v194) الكلمات بوضعين:
- *  • M_FULL  📝 كلمات كاملة: جيميناي بيجيب كلمات الأغنية كاملة بالاسم (مراحل: طلب JSON ← طلب نص عادي لو الرد اتقطع) — التوقيت تقريبي.
+ * (v194) الكلمات بوضعين (v230: الاختيار بيتحفظ، والأساسي «جلب الكلمات»):
+ *  • M_FULL  📝 جلب الكلمات: جيميناي بيجيب كلمات الأغنية كاملة بالاسم (JSON ← نص عادي لو الرد اتقطع). لو الاسم مش مفيد أو جيميناي ماعرفهاش،
+ *            بنبعتله مقطع واحد بس من نص الأغنية يقول اسمها وبعدين نجيب الكلمات بالاسم ده. التوقيت بيتوزّع محليًا على لحظات الغنا (من غير ما جيميناي يفرّغ الصوت).
  *  • M_AUDIO 🎧 تفريغ من الصوت: جيميناي بيسمع الأغنية على مقاطع 60ث (زي ترجمة الفيديو) — بالتوازي على كذا مفتاح، وبتتحفظ بعد كل مقطع
  *            فلو حصل فشل في النص بتتكمّل من اللي فاضل بس.
  * كل فشل بيرجّع سببه الحقيقي (كود جيميناي/قراءة الصوت…) بدل رسالة عامة.
@@ -28,9 +29,9 @@ class LyricsResult(
 object LyricsEngine {
     const val M_AUDIO = "audio"; const val M_FULL = "full"
     private const val CHUNK = 60.0
-    // (v202) الكلمات من جيميناي بس (التفريغ من الصوت اتشال) — والتوقيت بيتحسب محليًا من لحظات الغناء الفعلية في الصوت (Karaoke.kt)
-    fun mode(): String = M_FULL
-    fun setMode(@Suppress("UNUSED_PARAMETER") m: String) {}
+    // (v230) الخيارين رجعوا: «جلب الكلمات» (الأساسي) و«ترانسكريبت الصوت» — والاختيار بيتحفظ
+    fun mode(): String = if (Cfg.str("lyr_src", M_FULL) == M_AUDIO) M_AUDIO else M_FULL
+    fun setMode(m: String) { Cfg.put("lyr_src", if (m == M_AUDIO) M_AUDIO else M_FULL) }
 
     private fun dir(ctx: Context) = File(ctx.filesDir, "lyrics").apply { mkdirs() }
     private fun key(t: Track, m: String) = "t${t.id}_${t.durMs}" + (if (m == M_FULL) "_full" else "") + ".json"
@@ -127,7 +128,7 @@ object LyricsEngine {
      */
     fun start(ctx: Context, t: Track, mode: String, hint: Pair<String, String>?, retry: Boolean, fresh: Boolean, onStage: (String) -> Unit, onDone: (LyricsResult?, String) -> Unit) {
         val app = ctx.applicationContext
-        val m = M_FULL
+        val m = if (mode == M_AUDIO) M_AUDIO else M_FULL
         val k = key(t, m)
         if (running.putIfAbsent(k, true) != null) { onDone(null, "بتتكتب دلوقتي"); return }
         Thread {
@@ -135,7 +136,7 @@ object LyricsEngine {
                 val keys = Cfg.allMainKeys()
                 if (keys.isEmpty()) { onDone(null, "مفيش مفتاح Gemini — ضيفه من الإعدادات"); return@Thread }
                 val model = Cfg.str("model", Models.DEFAULT).trim().ifEmpty { Models.DEFAULT }
-                if (m == M_FULL) runFull(app, t, keys, model, hint, fresh, onStage, onDone) else runAudio(app, t, keys, model, hint, retry, fresh, onStage, onDone)
+                if (m == M_FULL) runFull(app, t, keys, model, hint, retry, fresh, onStage, onDone) else runAudio(app, t, keys, model, hint, retry, fresh, onStage, onDone)
             } catch (e: Throwable) { LogStore.err("lyrics", e); onDone(null, "فشل: " + shortErr(e)) }
             finally { running.remove(k) }
         }.apply { isDaemon = true }.start()
@@ -230,52 +231,106 @@ object LyricsEngine {
     }
 
     // ===================== 📝 كلمات كاملة من جيميناي (بالاسم) =====================
-    private fun runFull(app: Context, t: Track, keys: List<String>, model: String, hint: Pair<String, String>?, fresh: Boolean, onStage: (String) -> Unit, onDone: (LyricsResult?, String) -> Unit) {
-        val name = if (hint != null && hint.first.isNotBlank()) hint.first else t.title
-        val by = if (hint != null && hint.second.isNotBlank()) hint.second else t.artist
-        val label = "\"$name\"" + (if (by.isNotBlank()) " by $by" else "")
+    /** اسم الملف مش مفيد (فاضي / أرقام / تسجيل / تاريخ…) فمالوش لازمة نسأل بيه جيميناي */
+    private fun looksJunk(s: String): Boolean {
+        val x = s.trim(); val l = x.lowercase()
+        if (x.length < 3 || x.count { it.isLetter() } < 2) return true
+        if (Regex("^(track|audio|voice|rec|recording|new recording|video|vid|aud|ptt|whatsapp|unknown|untitled)[\\s_\\-.]*[0-9]*$").containsMatchIn(l)) return true
+        if (Regex("[0-9]{6,}").containsMatchIn(x)) return true
+        return false
+    }
+
+    /** بيبعت مقطع واحد (~25ث) من نص الأغنية لجيميناي (أو AudD لو فيه توكن) عشان يقول اسمها — متزامن (بيستنى الرد) */
+    private fun identifyByClip(app: Context, t: Track, startSec: Double): SongMatch? {
+        var res: SongMatch? = null
+        val latch = java.util.concurrent.CountDownLatch(1)
+        SongId.auto(app, t, startSec, emptyList()) { m, _ -> res = m; latch.countDown() }
+        try { latch.await(90, java.util.concurrent.TimeUnit.SECONDS) } catch (_: InterruptedException) {}
+        return res
+    }
+
+    // ===================== 📝 جلب الكلمات من جيميناي (بالاسم، أو بمقطع من نص الأغنية لو الاسم مش معروف) =====================
+    private fun runFull(app: Context, t: Track, keys: List<String>, model: String, hint: Pair<String, String>?, retry: Boolean, fresh: Boolean, onStage: (String) -> Unit, onDone: (LyricsResult?, String) -> Unit) {
+        val trusted = hint != null && hint.first.isNotBlank()          // اسم اتحفظ يدويًا أو من التعرف
+        var name = if (trusted) hint!!.first else t.title
+        var by = if (trusted) hint!!.second else t.artist
         var lines: List<String> = emptyList(); var notFound = false
         val errs = ArrayList<String>()
-        // لو الكلمات الرسمية اتجابت قبل كده (ومحفوظة) بنكمّل مواءمة الصوت من غير ما نطلبها تاني
+        // لو الكلمات الرسمية اتجابت قبل كده (ومحفوظة) بنكمّل توزيع التوقيت من غير ما نطلبها تاني
         val saved = if (fresh) null else cached(app, t, M_FULL)?.raw?.takeIf { it.size >= 4 }
-        if (saved != null) { finishLocal(app, t, name, by, saved, onStage, onDone); return }
-        // المرحلة 1: JSON (كلمات + found)
-        onStage("📝 مرحلة 1 من 3: بطلب كلمات $name من جيميناي…")
-        val pr1 = "Give the complete lyrics of the song $label in its original language (Arabic songs must be written in Arabic script — never transliterated, never translated to English): every sung line in order, no section labels, no translation, nothing invented. " +
-            "If you do not reliably know the full lyrics of this exact song, return found=false and an empty list. Return JSON only: {\"found\":true,\"lines\":[\"\"]}"
-        for (kk in 0 until keys.size.coerceAtMost(3)) {
-            try {
-                val r = Api.generate(model, keys[kk % keys.size], pr1, null, 8192, 0.0, true)
-                val o = jsonOf(r.text)
-                if (!o.optBoolean("found", true)) { notFound = true; break }
-                val arr = o.optJSONArray("lines")
-                lines = (0 until (arr?.length() ?: 0)).map { arr!!.optString(it).trim() }.filter { it.isNotEmpty() }
-                if (lines.size >= 4) break
-            } catch (e: Throwable) { errs.add(shortErr(e)) }
+        if (saved != null) { finishApprox(app, t, name, by, saved, onStage, onDone); return }
+        val totalSec = (t.durMs / 1000.0).coerceAtLeast(30.0)
+        var identified = false
+
+        // مقطع واحد من نص الأغنية يتبعت لجيميناي يقول اسمها
+        fun identify(posFrac: Double): Boolean {
+            onStage("🔎 بسمّع جيميناي مقطع من نص الأغنية عشان يعرف اسمها…")
+            val m = identifyByClip(app, t, maxOf(10.0, totalSec * posFrac)) ?: return false
+            name = m.title; by = m.artist; identified = true
+            return true
         }
-        // المرحلة 2: لو الرد اتقطع أو مش JSON → نص عادي سطر سطر
-        if (lines.size < 4 && !notFound) {
-            onStage("📝 مرحلة 2 من 3: بطلبها كنص عادي…")
-            val pr2 = "Write the complete lyrics of the song $label in its original language (Arabic songs must be written in Arabic script — never transliterated, never translated to English), one sung line per row, no section labels, no translation, no commentary. " +
-                "If you do not reliably know this exact song's lyrics, reply with exactly: NOT_FOUND"
+        // طلب الكلمات بالاسم الحالي: مرحلة 1 JSON ثم مرحلة 2 نص عادي لو اتقطع
+        fun fetch() {
+            lines = emptyList(); notFound = false
+            val label = "\"$name\"" + (if (by.isNotBlank()) " by $by" else "")
+            val temp = if (retry) 0.4 else 0.0
+            val again = if (retry) " A previous answer for this song was reported INACCURATE — be careful and precise, and do not mix in lines of other songs." else ""
+            onStage("📝 بطلب كلمات $name من جيميناي…")
+            val pr1 = "Give the complete lyrics of the song $label in its original language (Arabic songs must be written in Arabic script — never transliterated, never translated to English): every sung line in order, no section labels, no translation, nothing invented. " +
+                "If you do not reliably know the full lyrics of this exact song, return found=false and an empty list.$again Return JSON only: {\"found\":true,\"lines\":[\"\"]}"
             for (kk in 0 until keys.size.coerceAtMost(3)) {
                 try {
-                    val r = Api.generate(model, keys[(kk + 1) % keys.size], pr2, null, 8192, 0.0, false)
-                    val txt = r.text.trim()
-                    if (txt.contains("NOT_FOUND")) { notFound = true; break }
-                    val l2 = txt.lines().map { it.trim().removePrefix("-").removePrefix("*").trim() }.filter { it.isNotEmpty() && !it.startsWith("```") }
-                    if (l2.size > lines.size) lines = l2
+                    val r = Api.generate(model, keys[kk % keys.size], pr1, null, 8192, temp, true)
+                    val o = jsonOf(r.text)
+                    if (!o.optBoolean("found", true)) { notFound = true; break }
+                    val arr = o.optJSONArray("lines")
+                    lines = (0 until (arr?.length() ?: 0)).map { arr!!.optString(it).trim() }.filter { it.isNotEmpty() }
                     if (lines.size >= 4) break
                 } catch (e: Throwable) { errs.add(shortErr(e)) }
             }
+            if (lines.size < 4 && !notFound) {
+                onStage("📝 بطلبها كنص عادي…")
+                val pr2 = "Write the complete lyrics of the song $label in its original language (Arabic songs must be written in Arabic script — never transliterated, never translated to English), one sung line per row, no section labels, no translation, no commentary.$again " +
+                    "If you do not reliably know this exact song's lyrics, reply with exactly: NOT_FOUND"
+                for (kk in 0 until keys.size.coerceAtMost(3)) {
+                    try {
+                        val r = Api.generate(model, keys[(kk + 1) % keys.size], pr2, null, 8192, temp, false)
+                        val txt = r.text.trim()
+                        if (txt.contains("NOT_FOUND")) { notFound = true; break }
+                        val l2 = txt.lines().map { it.trim().removePrefix("-").removePrefix("*").trim() }.filter { it.isNotEmpty() && !it.startsWith("```") }
+                        if (l2.size > lines.size) lines = l2
+                        if (lines.size >= 4) break
+                    } catch (e: Throwable) { errs.add(shortErr(e)) }
+                }
+            }
+        }
+
+        // 1) اسم الملف مش مفيد (ومحدش حفظ اسم) ← نعرّف الأغنية من مقطع من نصها الأول
+        if (!trusted && looksJunk(name)) identify(0.5)
+        // 2) نجيب الكلمات بالاسم
+        fetch()
+        // 3) الاسم ماجابش كلمات (جيميناي مش متأكد) ← نعرّف الأغنية من مقطع من نصها ونجرّب بالاسم الجديد
+        if (lines.size < 4 && !trusted && !identified) {
+            val before = name.trim().lowercase()
+            if (identify(0.5) && name.trim().lowercase() != before) fetch()
         }
         if (lines.size < 4) {
-            val msg = if (notFound) "جيميناي مش متأكد من كلمات «$name» — جرّب 🔎 تعرّف على الأغنية أو وضع 🎧 تفريغ من الصوت"
+            val msg = if (notFound) "جيميناي مش متأكد من كلمات «$name» — جرّب ✏️ اسم الأغنية (اكتبه بإيدك) أو وضع 🎧 ترانسكريبت الصوت"
                       else "ماجاتش كلمات" + (if (errs.isNotEmpty()) " — السبب: " + errs.first() else "") + " — دوس 🔁 تاني"
             onDone(null, msg); return
         }
-        // المرحلة 3: توقيت الكلمات على لحظات الغناء الفعلية في الصوت (محليًا، من غير جيميناي)
-        finishLocal(app, t, name, by, lines, onStage, onDone)
+        // توزيع التوقيت محليًا على لحظات الغنا (من غير طلبات تفريغ صوت)
+        finishApprox(app, t, name, by, lines, onStage, onDone)
+    }
+
+    /** (v230) توقيت تقريبي محلي: الكلمات بتتوزّع على لحظات الغنا الفعلية في الصوت (Karaoke.segments) — من غير ما جيميناي يسمع الأغنية. للتوقيت الدقيق: وضع 🎧 ترانسكريبت الصوت. */
+    private fun finishApprox(app: Context, t: Track, name: String, by: String, lines: List<String>, onStage: (String) -> Unit, onDone: (LyricsResult?, String) -> Unit) {
+        onStage("⏱ بوزّع الكلمات على لحظات الغنا في الأغنية…")
+        val segs = try { Karaoke.segments(app, t) } catch (e: Throwable) { LogStore.err("lyrics-vad", e); emptyList() }
+        val placed = if (segs.isNotEmpty()) Karaoke.place(lines, segs) else emptyList()
+        val ok = placed.isNotEmpty()
+        val res = LyricsResult(name, by, if (ok) placed else estimate(t, lines), true, 1, 1, emptySet(), "التوقيت تقريبي", lines)
+        save(app, t, M_FULL, res); onDone(res, "")
     }
 
     // ===================== (v222) مواءمة التوقيت على الصوت الحقيقي =====================

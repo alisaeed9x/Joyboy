@@ -355,7 +355,7 @@ class PlayerActivity : Activity(), Host {
                     "prev" -> stepEpisode(-1)
                     "next" -> stepEpisode(1)
                     "seek" -> if (durMs > 0) player.seekTo(arg.coerceIn(0L, durMs))
-                    "tr" -> if (engineStarted && !engine.userPaused) pauseTranslate() else { beginTranslate(); engine.translateFrom(player.currentPosition / 1000.0) }
+                    "tr" -> if (engineStarted && !engine.userPaused) pauseTranslate() else beginTranslate()   // (v228) من غير translateFrom بعدها: كان بيلغي إعداد «ترجم من الأول» ويبدأ من مكان التشغيل
                     "exit" -> exitAll()
                 }
                 lastNotifAt = System.currentTimeMillis(); pushNotif()
@@ -415,12 +415,13 @@ class PlayerActivity : Activity(), Host {
         val wasFresh = freshOnce
         val posNow = try { player.currentPosition } catch (_: Throwable) { cur }
         if (posNow > 0) cur = posNow
-        if (!engineStarted) { engineStarted = true; engine.userPaused = false; startEngine() } else engine.userPaused = false
+        // (v228) المؤشر (من الأول / من مكان التشغيل) بيتظبط **قبل** ما خيط المحرك يشتغل — قبل كده كان بيتظبط بعده فالمحرك يلحق يبعت باتشات مكان التشغيل (30 و31 و32) وبعدين يرجع يبعت 1 و2 و3
         if (!wasFresh) {
             // (v224) الافتراضي: الترجمة بتبدأ من أول باتش ناقص في الفيديو من الأول (مش من مكان التشغيل اللي اتكمّل تلقائيًا). ممكن تتغيّر من قايمة 🔑
             if (Cfg.str("trstart", "1") != "0") { try { engine.translateFromStart(); log("▶ الترجمة من أول الفيديو (أول جزء ناقص)") } catch (_: Throwable) {} }
             else if (posNow > 2000L) { try { engine.translateFrom(posNow / 1000.0); log("▶ الترجمة من " + fmtMs(posNow)) } catch (_: Throwable) {} }
         }
+        if (!engineStarted) { engineStarted = true; engine.userPaused = false; startEngine() } else engine.userPaused = false
         updateTr()
     }
     private var trChipV: View? = null
@@ -730,7 +731,7 @@ class PlayerActivity : Activity(), Host {
     fun srtSoon() { h.removeCallbacks(srtRun); h.postDelayed(srtRun, 2500) }
     private fun srtCheck() {
         val u = uri?.toString() ?: return
-        if (durMs <= 0 || engine.subs.isEmpty() || !Cfg.bool("autosrt", true)) return
+        if (durMs <= 0 || engine.subs.isEmpty() /* (v229) حفظ SRT أوتوماتيك دايمًا */) return
         if (PlayerLogic.percent(engine.coveredSec(), durMs / 1000.0) < 97) return
         val n = engine.subs.size
         if (n == lastSrtN && offsetMs == lastSrtOff) return

@@ -19,7 +19,7 @@ object SrtWriter {
 
     /** بيرجّع المسار اللي اتكتب فيه أو null */
     fun save(ctx: Context, uri: String?, subs: List<Sub>, offsetMs: Long): String? {
-        if (uri.isNullOrEmpty() || subs.isEmpty() || !Cfg.bool("autosrt", true)) return null
+        if (uri.isNullOrEmpty() || subs.isEmpty()) return null
         synchronized(lock) {
             try {
                 val video = pathOf(ctx, uri) ?: return null

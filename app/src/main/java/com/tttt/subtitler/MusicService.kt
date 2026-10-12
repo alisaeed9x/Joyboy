@@ -161,7 +161,7 @@ object MusicEngine {
             shuffle = raw == 3 || Cfg.str("music_shuffle", "0") == "1"
             volPct = (Cfg.str("music_vol", "100").toIntOrNull() ?: 100).coerceIn(0, 200)
             speed = (Cfg.str("music_speed", "1").toFloatOrNull() ?: 1f).coerceIn(0.5f, 2f)
-            stem = (Cfg.str("music_stem", "0").toIntOrNull() ?: 0).coerceIn(0, 2)
+            stem = 0; Cfg.put("music_stem", "0")      // (v230) زرار فصل الصوت اتشال من الواجهة — بنصفّر أي قيمة قديمة محفوظة عشان الأغنية تشتغل عادي
         } catch (_: Throwable) {}
     }
     fun setVol(p: Int) {
