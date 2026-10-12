@@ -1,3 +1,6 @@
+import java.io.IOException
+import java.net.URL
+
 plugins { id("com.android.application"); id("org.jetbrains.kotlin.android") }
 
 // (v260) sherpa-onnx: مكتبة الـ AAR الرسمية (فيها كلاسات com.k2fsa.sherpa.onnx + libsherpa-onnx-jni.so + onnxruntime).
@@ -10,10 +13,10 @@ if (!sherpaAar.isFile || sherpaAar.length() < 50_000_000L) {
     var err: Exception? = null
     for (attempt in 1..3) {
         try {
-            java.net.URL("https://github.com/k2-fsa/sherpa-onnx/releases/download/v$sherpaVer/sherpa-onnx-$sherpaVer.aar")
+            URL("https://github.com/k2-fsa/sherpa-onnx/releases/download/v$sherpaVer/sherpa-onnx-$sherpaVer.aar")
                 .openStream().use { ins -> part.outputStream().use { ins.copyTo(it) } }
             if (part.length() > 50_000_000L) { part.renameTo(sherpaAar); err = null; break }
-            err = java.io.IOException("downloaded file too small: ${part.length()} bytes")
+            err = IOException("downloaded file too small: ${part.length()} bytes")
         } catch (e: Exception) { err = e }
     }
     if (!sherpaAar.isFile) throw GradleException("sherpa-onnx AAR download failed: ${err?.message}")
