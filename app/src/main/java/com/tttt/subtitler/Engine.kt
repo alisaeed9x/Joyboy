@@ -461,6 +461,8 @@ class Engine(
     fun redoAll(keep: Boolean = true) { redo(0, -1, keep); onlyChunks = null; forcedSticky = true; forcedCursor = 0; paused = false }
     fun resumeAuto() { onlyChunks = null; paused = false }
     /** كمّل الترجمة من المكان ده (من غير مسح حاجة): بيقفز بالمؤشر لباتش الوقت ده ويلغي الإيقاف */
+    /** (v224) ابدأ من أول الفيديو: أول باتش لسه ناقص من الأول، بغض النظر عن مكان الفيديو دلوقتي (ثابت لحد ما يوصل لمكان التشغيل) */
+    fun translateFromStart() { onlyChunks = null; forcedSticky = true; forcedCursor = 0; paused = false; userPaused = false }
     fun translateFrom(sec: Double) { onlyChunks = null; forcedSticky = false; forcedCursor = chunkOfSec(sec.coerceAtLeast(0.0)); paused = false; userPaused = false }
     fun stop() { isClosed = true; running = false; bg.shutdownNow(); gapEx.shutdownNow(); exec?.shutdownNow(); try { trEx.shutdownNow() } catch (_: Exception) {}; try { hedgeEx.shutdownNow() } catch (_: Exception) {}; try { holeEx.shutdownNow() } catch (_: Exception) {}; try { persistEx.shutdownNow() } catch (_: Exception) {} }
     /** (v122) إعدادات اتغيّرت من شاشة الإعدادات (لهجة / أسلوب / موديل / شخصيات…): تتطبّق على الباتشات والتحويلات الجاية من غير إعادة تشغيل المحرك */
@@ -528,7 +530,7 @@ class Engine(
             if (headless) try { src() } catch (e: Exception) { host.log("⚠ معرفتش أفتح الفيديو: " + (e.message ?: e.toString()).take(120)) }
             while (running) {
                 val d = currentDur()
-                val cap = pool.capacity(conf.parallelPerKey)   // (v210) بيتغيّر لو الوضع اتبدّل أثناء الشغل (3/4 = مفاتيح الترانسكريبشن بس)
+                val cap = capNow(pool.capacity(conf.parallelPerKey))   // (v227: 429 يقلّلها لـ 2) (v210) بيتغيّر لو الوضع اتبدّل أثناء الشغل (3/4 = مفاتيح الترانسكريبشن بس)
                 translateTick(userPaused || paused)            // (v210) الباتشات المنسوخة بتتجمّع وتتترجم حتى وقت الإيقاف المؤقت
                 if (headless && d <= 0 && (failed[0] ?: 0) >= MAX_FAILS) { fatal = "معرفتش أفتح الفيديو أو أقرأ مدته"; host.log("⛔ " + fatal); host.status("⛔ " + fatal); running = false; break }
                 if (headless && !anyApplied && failedCount() >= 5) { fatal = "المقاطع بتفشل ورا بعض — راجع المفاتيح والنت"; host.log("⛔ " + fatal); host.status("⛔ " + fatal); running = false; break }
@@ -816,6 +818,7 @@ class Engine(
         var key = firstKey?.takeIf { pool.ok(it) } ?: nextKey(avoidKey) ?: throw Exception("كل المفاتيح معطلة مؤقتًا — راجع المفاتيح")
         var partial = false
         var trunc = 0; var empties = 0; var bad = 0; var net = 0; var tries = 0; var langBad = 0
+        var srv = 0; var altModel: String? = null   // (v227) 503/5xx متكرر: الباتش يتجرّب على موديل بديل
         val tx = activeMode >= KeyMode.SPLIT_A && i !in fullChunks   // (v210) ترانسكريبشن بس، والترجمة بعدين مجمّعة على مفاتيح الترجمة
         while (running && tries++ < MAX_TRIES) {
             if (claimed.contains(i)) return   // نسخة تانية من الباتش ده خلصت وطُبّقت قبلنا
@@ -823,7 +826,7 @@ class Engine(
             val prompt = buildPrompt(w.durSec, w.startSec, langBad > 0 || (tx && empties > 0), i, tx = tx)
             try {
                 val t0 = System.currentTimeMillis()
-                val mdl = curModel()
+                val mdl = altModel ?: curModel()
                 val r = run {
                     pool.begin(key, i)
                     try { Api.generate(mdl, key, prompt, w.bytes, maxTokens = Api.outTokens(w.durSec)).also { pool.end(key, System.currentTimeMillis() - t0, true) } } catch (e: Throwable) { pool.end(key, 0, false); throw e }
@@ -874,6 +877,7 @@ class Engine(
             } catch (e: ApiErr) {
                 val invalid = e.code == 401 || e.code == 403 || (e.code == 400 && (e.message ?: "").contains("API key", true))
                 if (e.code == 429) {
+                    noteQuota()
                     pool.block(key, 60_000)
                     val alt = switchKey(key)
                     if (alt != null) { host.log("⏳ ${(e.message ?: "").take(130)} على ${pool.tail(key)} — تحويل لمفتاح ${pool.tail(alt)}"); key = alt; continue }
@@ -887,7 +891,10 @@ class Engine(
                     if (alt != null) { host.log("🔑 ${(e.message ?: "").take(110)} — مفتاح ${pool.tail(key)} غير صالح — تحويل"); key = alt; continue }
                     throw Exception("مفتاح API غير صالح أو الموديل مش متاح — ${(e.message ?: "").take(120)}")
                 }
-                if (e.code >= 500) { host.log("⚠ خطأ من السيرفر (${e.code}) — إعادة المحاولة"); nap(3000); continue }
+                if (e.code >= 500) {
+                    if (++srv >= 2 && altModel == null) { altModel = Models.alt(curModel()); host.log("🔀 الموديل تحت ضغط (${e.code}) — باتش ${i + 1} هيتجرّب على ${altModel}") }
+                    host.log("⚠ خطأ من السيرفر (${e.code}) — إعادة المحاولة"); nap(3000); continue
+                }
                 throw e
             } catch (e: Unsupported) { throw e
             } catch (e: IOException) {
@@ -1021,6 +1028,37 @@ class Engine(
     private val trBusy = AtomicInteger(0)
     private val trEx = Executors.newFixedThreadPool(4) { r -> Thread(r).also { it.isDaemon = true; it.name = "translate-group" } }
 
+    // (v224) الوضع 4: النص المنسوخ بيظهر فورًا بلغته الأصلية (من غير ترجمة) لحد ما الترجمة السياقية تحلّ محلّه.
+    // مابيتحسبش «مخلّص» (done) ومابيتحفظش على الديسك، وكل باتش بيتشال من القايمة دي أول ما يتطبّق بترجمته (applyChunk).
+    private val previewChunks = ConcurrentHashMap.newKeySet<Int>()
+
+    // (v227) حماية من أخطاء جوجل: 429 = الطلبات المتوازية تقلّ لـ 2 لمدة 5 دقايق + الاستعلامات الجانبية (اسم العمل/الشخصيات) تقف
+    @Volatile private var quotaCapUntil = 0L
+    private fun capNow(c: Int): Int = if (System.currentTimeMillis() < quotaCapUntil) minOf(c, 2).coerceAtLeast(1) else c
+    private fun noteQuota() {
+        val now = System.currentTimeMillis()
+        if (now >= quotaCapUntil) host.log("⚠ كوتة (429): الطلبات المتوازية اتقلّلت لـ 2 لمدة 5 دقايق، والبحث عن العمل/الشخصيات واقف لحد ما المفاتيح ترجع")
+        quotaCapUntil = now + 5 * 60_000L
+    }
+    /** الاستعلامات الجانبية (بحث اسم العمل · الشخصيات) بتشتغل بس لو فيه مفتاح شغّال ومفيش 429 جديد — عشان ماتاخدش كوتة من الترجمة نفسها */
+    private fun sideOk(): Boolean = System.currentTimeMillis() >= quotaCapUntil && basePool.all().any { basePool.ok(it) }
+    private fun showTranscriptPreview(i: Int, p: Prep, fresh: List<Sub>) {
+        if (isClosed || fresh.isEmpty()) return
+        try {
+            var tagged = Subs.splitAll(fresh.map { it.copy(translated = it.original, pivot = "") }).map { Subs.capPace(it).copy(chunk = i) }
+            synchronized(lock) {
+                tagged = Subs.dropOverlapZone(tagged, subs.filter { it.chunk != i }, p.rawStart)
+                val keep = subs.filter { it.chunk != i && !(it.chunk == -1 && it.start >= p.rawStart && it.start < p.rawEnd) && !Subs.inMyZone(it, tagged, i, p.rawEnd) }
+                subs = (keep + tagged).sortedBy { it.start }
+            }
+            previewChunks.add(i)
+            // (v227) النص المنسوخ يتحفظ على الديسك قبل الترجمة السياقية ويتحسب «اتنسخ» — لو التطبيق اتقفل أو الترجمة فشلت ما بيتنسخش من الأول
+            // (بعد الريستارت جمله بتتترجم بإصلاح اللغة الأجنبية التلقائي لحد ما الترجمة السياقية تحلّ محلها)
+            done.add(p.rawStart, p.rawEnd)
+            persist()
+        } catch (e: Throwable) { host.log("⚠ عرض النص المنسوخ فشل: " + (e.message ?: "").take(80)) }
+    }
+
     /** مفيش طلب ترانسكريبشن شغال ومفيش باتش منسوخ مستني الترجمة */
     private fun txIdle() = inflight.isEmpty() && tHold.isEmpty()
 
@@ -1030,6 +1068,7 @@ class Engine(
             if (dl.isNotEmpty()) { srcLang = dl; detDone = true; host.log("🌐 لغة الفيديو الأصلية: $dl") }
         }
         tHold[i] = TItem(i, p, j, fresh, prior, key, partial, System.currentTimeMillis())
+        if (activeMode >= KeyMode.TRANSCRIBE_ALL) showTranscriptPreview(i, p, fresh)   // (v224) الوضع 4: اعرض النص الأصلي فورًا
         host.log("📝 باتش ${i + 1}: ${fresh.size} جملة منسوخة — مستني الترجمة (في المجمّع ${tHold.size - tTaken.size})")
         host.changed()
     }
@@ -1108,7 +1147,7 @@ class Engine(
                         tp.good(k); reply = jj
                     } catch (e: ApiErr) {
                         val invalid = e.code == 401 || e.code == 403 || (e.code == 400 && (e.message ?: "").contains("API key", true))
-                        if (e.code == 429) { tp.block(k, 60_000); key = null; host.log("⏳ ترجمة مجمّعة: كوتة على ${tp.tail(k)} — تحويل لمفتاح تاني"); nap(800); continue }
+                        if (e.code == 429) { noteQuota(); tp.block(k, 60_000); key = null; host.log("⏳ ترجمة مجمّعة: كوتة على ${tp.tail(k)} — تحويل لمفتاح تاني"); nap(800); continue }
                         if (invalid) { tp.block(k, 3_600_000); key = null; host.log("🔑 ترجمة مجمّعة: مفتاح ${tp.tail(k)} غير صالح — تحويل"); continue }
                         if (e.code >= 500) { host.log("⚠ ترجمة مجمّعة: خطأ سيرفر (${e.code}) — إعادة"); nap(3000); continue }
                         throw e
@@ -1221,7 +1260,7 @@ class Engine(
                 tp.good(k); return jj
             } catch (e: ApiErr) {
                 val invalid = e.code == 401 || e.code == 403 || (e.code == 400 && (e.message ?: "").contains("API key", true))
-                if (e.code == 429) { tp.block(k, 60_000); key = null; host.log("⏳ $tag: كوتة على ${tp.tail(k)} — تحويل لمفتاح تاني"); nap(800); continue }
+                if (e.code == 429) { noteQuota(); tp.block(k, 60_000); key = null; host.log("⏳ $tag: كوتة على ${tp.tail(k)} — تحويل لمفتاح تاني"); nap(800); continue }
                 if (invalid) { tp.block(k, 3_600_000); key = null; host.log("🔑 $tag: مفتاح ${tp.tail(k)} غير صالح — تحويل"); continue }
                 if (e.code >= 500) { host.log("⚠ $tag: خطأ سيرفر (${e.code}) — إعادة"); nap(3000); continue }
                 throw e
@@ -1296,6 +1335,7 @@ class Engine(
 
     private fun applyChunk(i: Int, rawStart: Double, rawEnd: Double, w: WavChunk, j: JSONObject?, fresh0: List<Sub>, prior: List<Sub>) {
         if (isClosed) return
+        previewChunks.remove(i)   // (v224) الترجمة الحقيقية حلّت محلّ العرض المؤقت للنص الأصلي
         val fresh = fresh0
         if (j != null && !detDone) {
             val d = j.optString("detected_source_language", "").trim()
@@ -1407,7 +1447,7 @@ class Engine(
             try { return Api.generate(curModel(), key, prompt, null, maxTokens, temp, json, search) }
             catch (e: ApiErr) {
                 if (e.code >= 500) { if (++tries > 2) throw e; nap(2000L * tries); helperKey(i + tries)?.let { key = it }; continue }   // (v150) 503 مؤقت: جرّب تاني على مفتاح تاني
-                if (e.code == 429) pool.block(key, 60_000) else if (e.code == 403) pool.block(key, 3_600_000) else throw e
+                if (e.code == 429) { noteQuota(); pool.block(key, 60_000) } else if (e.code == 403) pool.block(key, 3_600_000) else throw e
                 val alt = helperKey(i + 1)
                 if (alt == null || alt == key || ++tries > 2) throw e
                 key = alt
@@ -1421,7 +1461,7 @@ class Engine(
         maybeLookup()
         maybeIdentify()
         synchronized(lock) {
-            if (charsBusy || lookupState == 1 || subs.size < CHAR_MIN_LINES) return
+            if (charsBusy || lookupState == 1 || subs.size < CHAR_MIN_LINES || !sideOk()) return
             // أول تحليل: لما مفيش شخصيات. بعد كده: تحديث كل 5 باتشات (لو الترجمة زادت 20 جملة على الأقل)
             val first = chars.isEmpty() && autoCharsAttempts == 0
             val refresh = chunksDone - lastCharChunk >= 5 && subs.size >= charsTrySize + 20
@@ -1441,7 +1481,7 @@ class Engine(
     private fun maybeLookup() {
         val hint = titleHint.trim()
         synchronized(lock) {
-            if (lookupState != 0 || hint.length < 3 || chars.isNotEmpty()) return
+            if (lookupState != 0 || hint.length < 3 || chars.isNotEmpty() || !sideOk()) return
             lookupState = 1
         }
         try {
@@ -1490,7 +1530,7 @@ class Engine(
      */
     private fun maybeIdentify() {
         synchronized(lock) {
-            if (identTried || castFound || subs.size < 30) return
+            if (identTried || castFound || subs.size < 30 || !sideOk()) return
             val pending = titleHint.trim().length >= 3 && lookupState != 2   // لسه بنجرّب الاسم الأول
             if (pending) return
             identTried = true
@@ -2101,12 +2141,12 @@ class Engine(
     private val fixTries = ConcurrentHashMap<String, Int>()
     @Volatile private var lastFix = 0L
     private fun fixKey(s: Sub) = "${s.start}|${s.original}"
-    private fun hasRepairable(): Boolean = synchronized(lock) { subs.any { LangGuard.foreign(it) && (fixTries[fixKey(it)] ?: 0) < 3 } }
+    private fun hasRepairable(): Boolean = synchronized(lock) { subs.any { it.chunk !in previewChunks && LangGuard.foreign(it) && (fixTries[fixKey(it)] ?: 0) < 3 } }
     private fun repairForeignTick(): Boolean {
         if (!running) return false
         val now = System.currentTimeMillis()
         if (now - lastFix < 12_000) return false
-        val bad = synchronized(lock) { subs.filter { LangGuard.foreign(it) && (fixTries[fixKey(it)] ?: 0) < 3 } }.take(30)
+        val bad = synchronized(lock) { subs.filter { it.chunk !in previewChunks && LangGuard.foreign(it) && (fixTries[fixKey(it)] ?: 0) < 3 } }.take(30)
         if (bad.isEmpty()) return false
         lastFix = now
         bad.forEach { fixTries.merge(fixKey(it), 1, Int::plus) }
@@ -2242,7 +2282,7 @@ class Engine(
                 host.log("✅ فجوة ${a.toInt()}ث: اتسدّ ${marked.size} جملة")
                 return
             } catch (e: ApiErr) {
-                if (e.code == 429) pool.block(key, 60_000) else if (e.code == 403) pool.block(key, 3_600_000) else throw e
+                if (e.code == 429) { noteQuota(); pool.block(key, 60_000) } else if (e.code == 403) pool.block(key, 3_600_000) else throw e
                 key = pool.gapKey(gapKeys - key, rr.getAndIncrement()) ?: return
             }
         }

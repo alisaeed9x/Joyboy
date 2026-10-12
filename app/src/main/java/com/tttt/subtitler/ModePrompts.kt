@@ -324,7 +324,7 @@ The sentences below are consecutive speech from one video, in order. Each one al
         sb.append(charTable(chars)).append(glossBlock(c, gloss))
         sb.append("\n═══ FULL TRANSCRIPT OF THE VIDEO, FOR UNDERSTANDING ONLY (line numbers are #N) ═══\n")
         all.forEachIndexed { k, s ->
-            sb.append('#').append(ctxFrom + k + 1).append(' ')
+            sb.append('#').append(ctxFrom + k + 1).append(" [").append(String.format(java.util.Locale.US, "%d:%02d", (s.start / 60).toInt(), (s.start % 60).toInt())).append("] ")
             if (s.speakerName.isNotEmpty()) sb.append('[').append(s.speakerName).append("] ")
             else if (s.speakerTag.isNotEmpty()) sb.append('[').append(s.speakerTag).append("] ")
             sb.append(s.original.replace('\n', ' ')).append('\n')
@@ -335,7 +335,7 @@ The sentences below are consecutive speech from one video, in order. Each one al
         }
         sb.append("\n═══ SENTENCES TO TRANSLATE (part ").append(part).append(" of ").append(parts).append(": ").append(items.size).append(" sentences, idx 0 to ").append(items.size - 1).append("; \"ref\" = their line number #N in the transcript above) ═══\n")
         val arr = itemsJson(items)
-        for (k in 0 until arr.length()) arr.getJSONObject(k).put("ref", refs.getOrElse(k) { 0 } + 1)
+        for (k in 0 until arr.length()) arr.getJSONObject(k).put("ref", refs.getOrElse(k) { 0 } + 1).put("time", String.format(java.util.Locale.US, "%d:%02d", (items[k].start / 60).toInt(), (items[k].start % 60).toInt()))
         sb.append(arr.toString()).append("\n")
         sb.append("\nReturn JSON only, with exactly ").append(items.size).append(" entries, no text outside it:\n")
         sb.append("{\"translations\":[{\"idx\":0,\"translated\":\"...\"},{\"idx\":1,\"translated\":\"...\"}]}\n")

@@ -26,18 +26,16 @@ object ModelWatch {
     }
 
     /** موديلات flash-lite أحدث من الأساس (من غير tts/image/live…) */
-    fun candidates(ids: List<String>): List<String> {
-        val b = baseline()
-        return ids.filter { id -> SKIP.none { id.contains(it) } && (ver(id)?.let { gt(it, b) } == true) }.distinct().sorted()
-    }
+    fun candidates(ids: List<String>): List<String> = emptyList()   // (v224) إشعار «موديل أحدث» اتلغى — الاعتماد على gemini-flash-lite-latest
 
     /** اللي اتبلّغت بيه ولسه أحدث من الموديل الحالي */
-    fun pending(): List<String> = candidates(Cfg.str("model_new").split(',').map { it.trim() }.filter { it.isNotEmpty() })
+    fun pending(): List<String> = emptyList()
 
     /** بعد ما يتختار موديل: شيل اللي بقى مش أحدث منه */
     fun refreshPending() { Cfg.p.edit().putString("model_new", pending().joinToString(",")).apply() }
 
     fun maybeCheck(act: Activity) {
+        if (true) return   // (v224) الفحص اليومي واقف
         val now = System.currentTimeMillis()
         if (now - Cfg.p.getLong("mw_last", 0L) < DAY_MS) return
         val c = Cfg.snapshot()

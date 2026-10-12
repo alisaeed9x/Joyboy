@@ -53,6 +53,8 @@ class DualProgress(ctx: Context, val th: Theme) : View(ctx) {
     var refine: List<DoubleArray> = emptyList()
     /** (v160) الأجزاء اللي اتحمّلت من الفيديو الأونلاين — على نفس الخط العلوي (سماوي) */
     var buf: List<DoubleArray> = emptyList()
+    /** (v226) أماكن جمل الوضع البصري — علامات زرقاء تحت الأخضر */
+    var vis: List<DoubleArray> = emptyList()
     private val p = Paint(Paint.ANTI_ALIAS_FLAG)
     private val d = ctx.resources.displayMetrics.density
 
@@ -103,6 +105,7 @@ class DualProgress(ctx: Context, val th: Theme) : View(ctx) {
             }
             // الشريط التاني (تحت): أخضر = فيه جملة ترجمة فعلًا (بيتقطع عند الفجوات)
             strip(c, w, cy + tr + 3f * d, 4f * d, cov, 0xFF22C55E.toInt(), th.border)
+            if (vis.isNotEmpty()) strip(c, w, cy + tr + 8.5f * d, 3f * d, vis, 0xFF3B82F6.toInt(), null)
             val r = (if (dragging) 5.5f else 3.5f) * d
             val tcx = px.coerceIn(r, w - r)
             p.style = Paint.Style.FILL; p.shader = null; p.color = Color.WHITE
@@ -122,6 +125,7 @@ class DualProgress(ctx: Context, val th: Theme) : View(ctx) {
         val px = w * played.coerceIn(0f, 1f)
         if (px > 0f) c.drawRoundRect(RectF(0f, cy - th6, px, cy + th6), th6, th6, p)
         strip(c, w, cy + th6 + 4f * d, 3f * d, cov, 0xFF22C55E.toInt(), 0x2EFFFFFF)
+        if (vis.isNotEmpty()) strip(c, w, cy + th6 + 8.5f * d, 3f * d, vis, 0xFF3B82F6.toInt(), null)
         val r = (if (dragging) 8f else 6.5f) * d
         p.style = Paint.Style.FILL; p.color = Color.WHITE
         c.drawCircle(px.coerceIn(r, w - r), cy, r, p)

@@ -771,6 +771,10 @@ text_hex: لون النص hex | opacity_pct: شفافية الخلفية 0-100 |
     // ───────────────────────── السجل (للعرض) ─────────────────────────
 
     /** جدول الترجمات البصرية (من → إلى + الأصل والترجمة) */
+    /** (v226) مجالات النصوص البصرية (ثواني) — علامات زرقاء على شريط التقدم */
+    fun spans(): List<DoubleArray> = try { map.spansSec() + frames.filter { it.boxes.isNotEmpty() }.map { doubleArrayOf(it.t, it.t + it.dur) } } catch (_: Throwable) { emptyList() }
+    /** (v226) النصوص البصرية بأوقاتها — لقايمة 📝 الجمل */
+    fun entries(): List<VisEntry> = try { map.entries() + frames.flatMap { f -> f.boxes.map { VisEntry(f.t, f.t + f.dur, it.original, it.translated) } } } catch (_: Throwable) { emptyList() }
     fun tableText(): String = map.tableText()
     /** أحداث الظهور/التمديد/الرجوع/الاختفاء */
     fun eventsText(): String = map.eventsText()

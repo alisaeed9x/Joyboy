@@ -9,7 +9,7 @@ jobs:
       - uses: actions/checkout@v4
       - name: Check project is at repo root
         run: |
-          test -f settings.gradle.kts || { echo "::error::settings.gradle.kts not at repo root"; ls -R | head -40; exit 1; }
+          test -f settings.gradle.kts || { echo "::error::settings.gradle.kts not at repo root - files are nested in a subfolder"; ls -R | head -40; exit 1; }
           V=$(grep -o 'versionName = "[^"]*"' app/build.gradle.kts)
           echo "Building $V commit ${GITHUB_SHA::7}" | tee -a "$GITHUB_STEP_SUMMARY"
           echo "APPVER=$(echo $V | grep -o '[0-9.]*')" >> $GITHUB_ENV

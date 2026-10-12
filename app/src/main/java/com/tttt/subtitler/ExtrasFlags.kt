@@ -24,16 +24,9 @@ object Extras {
     @Volatile var coverMode = 0
 
     fun load() {
-        try {
-            deaf = Cfg.bool("fx_deaf", false)
-            spkNames = Cfg.bool("fx_spk2", false)   // (v181) مفتاح جديد: اللي كان مفعّل تلقائيًا قبل كده مايفضلش شغّال
-            sceneMode = Cfg.int("fx_scene", 0).coerceIn(0, 2)
-            sceneViolence = Cfg.bool("fx_s_viol", true)
-            sceneIntimate = Cfg.bool("fx_s_int", true)
-            sceneScary = Cfg.bool("fx_s_scary", false)
-            smartPos = Cfg.bool("fx_smartpos", false)
-            coverMode = Cfg.int("fx_cover", 0).coerceIn(0, 2)
-        } catch (_: Throwable) { /* Cfg لسه ماتفتحتش (اختبارات JVM) */ }
+        // (v224) ميزات المشاهدة اتشالت (اسم المتكلم · وضع الصم · فلتر المشاهد الحساسة · الموضع الذكي · تغطية الهاردساب): كلها مقفولة دايمًا
+        deaf = false; spkNames = false; sceneMode = 0; sceneViolence = false; sceneIntimate = false; sceneScary = false
+        smartPos = false; coverMode = 0
     }
 
     /** بلوك الـ prompt بتاع وصف الأصوات (بيتضاف بس لو وضع الصم شغّال) */

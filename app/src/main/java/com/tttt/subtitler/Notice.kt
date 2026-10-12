@@ -78,7 +78,12 @@ object Notice {
             val pill = LinearLayout(act).apply {
                 orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL
                 background = ui.box(th.card, th.border, 20)
-                setPadding(dp(16), dp(8), dp(16), dp(if (yes != null) 8 else 8)); elevation = dp(10).toFloat()
+                setPadding(dp(16), dp(8), dp(16), dp(if (yes != null) 8 else 8))
+                // (v224) الحواف كانت مربعة (ظل/خلفية مستطيلة حوالين الكبسولة): قصّ دايري بنفس نصف القطر وشيل الظل المستطيل
+                outlineProvider = object : android.view.ViewOutlineProvider() {
+                    override fun getOutline(v: View, o: android.graphics.Outline) { o.setRoundRect(0, 0, v.width, v.height, dp(20).toFloat()) }
+                }
+                clipToOutline = true
             }
             pill.addView(IconTextView(act).apply {
                 text = msg; textSize = 12.5f; setTextColor(th.text); maxLines = 3; ellipsize = TextUtils.TruncateAt.END

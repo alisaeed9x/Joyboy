@@ -24,6 +24,9 @@ class HSeg(val sq: Int, var eq: Int, var fw: Int, var fh: Int) {
     var ver: Int = 0
 }
 
+/** (v226) جملة من الوضع البصري بوقتها — لقايمة الجمل وعلامات شريط التقدم */
+class VisEntry(val start: Double, val end: Double, val original: String, val translated: String)
+
 /** صورة للقراءة من الواجهة (نسخة من المقطع النشط) */
 class HView(val sq: Int, val eq: Int, val ver: Int, val boxes: List<HBox>)
 
@@ -377,6 +380,19 @@ class HMap {
             sb.append(HybridVis.f2(e.sec)).append("s  ").append(lbl).append("  «").append(e.original.take(40)).append("» — ").append(e.detail).append('\n')
         }
         return sb.toString().trimEnd()
+    }
+
+    /** (v226) مجالات الثواني اللي فيها نصوص بصرية (للعلامات الزرقاء على الشريط) */
+    @Synchronized fun spansSec(): List<DoubleArray> {
+        val out = ArrayList<DoubleArray>()
+        for (sg in map.values) if (sg.boxes.isNotEmpty()) out.add(doubleArrayOf(sg.sq / 4.0, sg.eq / 4.0))
+        return out
+    }
+    /** (v226) كل النصوص البصرية بأوقاتها */
+    @Synchronized fun entries(): List<VisEntry> {
+        val out = ArrayList<VisEntry>()
+        for (sg in map.values) for (b in sg.boxes) out.add(VisEntry(sg.sq / 4.0, sg.eq / 4.0, b.original, b.translated))
+        return out
     }
 
     @Synchronized fun tableText(): String {

@@ -171,6 +171,13 @@ object Cfg {
             if ((p.getString("model", "") ?: "").trim() == Models.OLD_ALIAS) e.putString("model", Models.DEFAULT)
             e.apply()
         }
+        // (v224) مرة واحدة: الموديل الأساسي بقى الاسم المتحرك gemini-flash-lite-latest (لو كان فاضي أو الافتراضي القديم 3.1)
+        if (!p.getBoolean("model_alias_v224", false)) {
+            val e = p.edit().putBoolean("model_alias_v224", true)
+            val cur = (p.getString("model", "") ?: "").trim()
+            if (cur.isEmpty() || cur == "gemini-3.1-flash-lite") e.putString("model", Models.DEFAULT)
+            e.apply()
+        }
         // مرة واحدة: الثيم الأساسي بقى «MX أبيض وأزرق» (القديم لسه موجود في الإعدادات ← المظهر)
         if (!p.getBoolean("theme_mx_v1", false)) p.edit().putString("theme", "mx").putBoolean("theme_mx_v1", true).apply()
     }

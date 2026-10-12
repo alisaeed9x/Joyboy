@@ -473,19 +473,6 @@ class MainActivity : Activity() {
         val convOpts = listOf("فصحى (حرفية)", "مصري", "شامي", "لبناني", "خليجي", "مغربي", "عراقي", "سوداني")
         val convChips = ui.chips(convOpts, { Cfg.str("conv_dialect", "").ifBlank { convOpts[0] } }) { Cfg.put("conv_dialect", if (it == convOpts[0]) "" else it) }
         val watchViews = listOf<View>(
-            ui.section("🗣 اسم المتكلم", true,
-                fxSwitch("اكتب اسم المتكلم قبل الجملة (هاوس: الكلام) — للشخصيات الأساسية بس", "fx_spk2", false),
-                ui.text("بيتطلب من جيميناي في المقاطع الجاية بس (اللي اتترجم قبل كده ما بيتغيرش). مقفول افتراضيًا.", 12f, th.muted)),
-            ui.section("🔊 وضع الصم — وصف الأصوات", false,
-                fxSwitch("اكتب [باب بيتفتح] [طلقة نار] [تليفون بيرن]…", "fx_deaf", false),
-                ui.text("بيتطلب من جيميناي في المقاطع الجاية بس، وبيظهر فوق الفيديو بخط مائل.", 12f, th.muted)),
-            ui.section("⏭ فلتر المشاهد الحساسة", false, sceneChips,
-                fxSwitch("عنف ودم", "fx_s_viol", true), fxSwitch("قبلات وحميمية", "fx_s_int", true), fxSwitch("رعب شديد", "fx_s_scary", false),
-                ui.text("بيحلل لقطات قدّام مكان التشغيل بمفتاح «الوضع البصري فقط». للفيديوهات المحلية والروابط المباشرة بس (مش m3u8).", 12f, th.muted)),
-            ui.section("🧽 تغطية الهاردساب القديم", false, coverChips,
-                ui.text("بيكشف مكان الترجمة المحروقة مرة واحدة للفيديو ويغطيها. «إعادة كشف الهاردساب للفيديو ده» من 🎛 جوه المشغّل (محتاجة الفيديو الشغّال).", 12f, th.muted)),
-            ui.section("🧭 موضع الترجمة الذكي", false,
-                fxSwitch("انقل الترجمة فوق لو تحت وش أو نص", "fx_smartpos", false)),
             ui.section("🎚 أسلوب وشدة الترجمة الحية", false,
                 ui.text("الأسلوب:", 12f, th.muted), toneChips, ui.text("الشدة (بتشتغل مع شعبي / جرئ / +18 بس):", 12f, th.muted), toneDegChips,
                 ui.text("الباتشات الجاية بتتترجم بيه. «طبّق» على اللي اتترجم فعلًا من زرار اللغة 🌐 جوه المشغّل.", 12f, th.muted)),
@@ -548,7 +535,7 @@ class MainActivity : Activity() {
                 ui.section("🔤 الخطوط", true, *sp.fonts.toTypedArray()),
                 ui.section("✨ الأنيميشن", false, *sp.anim.toTypedArray()),
                 ui.section("🎬 العرض والألوان", false, *sp.look.toTypedArray())), true, "الخطوط · الأنيميشن · وضع العرض · الألوان · الخلفية", group = "🎞 مشغّل الفيديو"),
-            TabDef("watch", SettingsTabs.label("watch"), watchViews, false, "اسم المتكلم · وضع الصم · المشاهد الحساسة · الأسلوب الحي · تحويل اللهجة · الخروج بالخلفية", group = "🎞 مشغّل الفيديو"),
+            TabDef("watch", SettingsTabs.label("watch"), watchViews, false, "الأسلوب الحي · تحويل اللهجة · الخروج بالخلفية · الترجمة الحية", group = "🎞 مشغّل الفيديو"),
             TabDef("visual", SettingsTabs.label("visual"), listOf<View>(
                                 ui.section("👁 محرك الوضع البصري", false, visAutoChips,
                     ui.text("الوضع البصري بيعتمد على Gemini فقط (مفتاح «الوضع البصري فقط» تحت). بيلقط فريم كل ثانية، بيتخطّى اللي مفيهوش تغيير أو نص، وبيبعت الباقي دفعات (30 فريم) في شبكات من 6 فريمات بالتوازي. النتايج بتتحفظ مع الفيديو، وبين الطلبات راحة تلقائية لو جيميناي رفض (429). بيتطبق من أول تشغيل جديد.", 12f, th.muted)),

@@ -23,7 +23,7 @@ object SettingsTabs {
         "more" to "🛠 الخلفية · الأمان · المظهر",
         "general" to "🌐 الترجمة",
         "look" to "🎬 شكل الترجمة",
-        "watch" to "🎛 ميزات المشاهدة",
+        "watch" to "🎚 الأسلوب والترجمة الحية",
         "visual" to "👁 الوضع البصري",
         "audio" to "🔊 الصوت والبصمة",
         "gloss" to "📖 المسرد")
