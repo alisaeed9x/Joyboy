@@ -74,7 +74,7 @@ fun Activity.showKeyGuide(onKey: (String) -> Unit) {
 }
 
 /** لو مفيش أي مفتاح Gemini متسجّل: نافذة منبثقة تطلب المفتاح (+ لإضافة شريط مفتاح جديد). بعد الحفظ أو "بعدين" بينفّذ onDone */
-private fun hasAnyKeyNow() = Cfg.keys("keys").isNotEmpty() || Cfg.keys("backup").isNotEmpty() || Cfg.keys("extra").isNotEmpty()
+private fun hasAnyKeyNow() = Cfg.keys("keys").isNotEmpty() || Cfg.keys("backup").isNotEmpty() || Cfg.keys("extra").isNotEmpty() || TrWizard.googleOn()   // (v259) أوفلاين + جوجل مابيحتاجوش مفتاح
 fun Activity.ensureKeys(onDone: () -> Unit) {
     Cfg.init(this)
     if (hasAnyKeyNow()) { onDone(); return }

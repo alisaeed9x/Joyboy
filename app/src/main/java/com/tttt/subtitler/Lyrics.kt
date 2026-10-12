@@ -8,29 +8,35 @@ import java.net.HttpURLConnection
 import java.net.URL
 import java.net.URLEncoder
 import java.util.concurrent.ConcurrentHashMap
-import java.util.LinkedHashMap
 
 /** سطر كلام متزامن: من start لـ end بالثواني */
-class LyricLine(val start: Double, val end: Double, val text: String, val translation: String = "")
-
-/** إصدار بديل كامل من مصدر آخر، يظهر في قائمة النسخ دون خلط كلماته بالإصدار الحالي. */
-class LyricVersion(
-    val title: String, val artist: String, val source: String, val sourceUrl: String,
-    val lines: List<LyricLine>, val synced: Boolean = false
-)
+class LyricLine(val start: Double, val end: Double, val text: String)
 
 /** نتيجة كلمات أغنية. note = ملاحظة تتعرض فوق الكلمات (مثلًا «التوقيت تقريبي»). raw = سطور الكلمات من غير توقيت */
 class LyricsResult(
     val title: String, val artist: String, val lines: List<LyricLine>,
     val complete: Boolean = true, val done: Int = 0, val total: Int = 0,
     val ok: Set<Int> = emptySet(), val note: String = "", val raw: List<String> = emptyList(),
-    val synced: Boolean = true, val source: String = "",
-    val alternatives: List<LyricVersion> = emptyList(), val sourceUrl: String = "", val aghaniChecked: Boolean = false
+    val synced: Boolean = true, val source: String = ""
 )
 
 /**
- * محرك الكلمات: LRCLIB + Lyrics.ovh + AghaniLyrics، مع تخزين محلي وإصدارات بديلة وترجمة السطور الأجنبية إلى العربية عبر Gemini.
- * Gemini لا يستخدم Google Search grounding لجلب الكلمات أو الأغلفة؛ النصوص تُقرأ من مصادرها المباشرة وتُرسل للترجمة فقط عند الحاجة.
+ * (v250) نسخة كلمات مرشّحة لأغنية (من أي مصدر). synced = نص LRC أو فاضي · plain = كلمات عادية أو فاضي · dur بالثواني (0 = مجهولة).
+ * القايمة بتتحفظ على الجهاز مع الأغنية، واليوزر بيختار منها من «🎼 نسخ بديلة للكلمات».
+ */
+class LyrCand(val src: String, val id: String, val title: String, val artist: String,
+              val synced: String, val plain: String, val dur: Double, val score: Double) {
+    fun key() = "$src:$id"
+}
+
+/**
+ * (v242 · مرحلة 1) محرك الكلمات اتفضّى من الطريقتين القديمتين (ترانسكريبت الصوت · جلب جيميناي بالاسم).
+ * (v243) المصدر الأساسي: LRCLIB (من غير مفاتيح) بعد تطبيع الاسم العربي (LyricsNorm.kt) — LRC متزامن أو كلمات من غير توقيت.
+ * (v250) إضافات:
+ *   • مصادر جديدة من أداة lyrics-api (LyricsApi.kt): Musixmatch (متزامن) ← YouTube Music (عادي) قبل Lyrics.ovh
+ *   • جيميناي (من غير Google Search) بيقترح صيغ بديلة للاسم، وبنبحث بيها عن نسخ إضافية (تلقائي لو مفيش نتيجة، ويدوي من «🎼 نسخ بديلة»)
+ *   • كل النسخ اللي اتلقت بتتحفظ محليًا والمستخدم يختار منها
+ *   • ترجمة عربية للسطور الأجنبية بجيميناي (بتتحفظ محليًا، والكلمات الأصلية والسطور العربي بتفضل زي ما هي)
  */
 object LyricsEngine {
     const val M_FULL = "full"
@@ -39,11 +45,15 @@ object LyricsEngine {
 
     private fun dir(ctx: Context) = File(ctx.filesDir, "lyrics").apply { mkdirs() }
     private fun key(t: Track, m: String) = "t${t.id}_${t.durMs}" + (if (m == M_FULL) "_full" else "") + ".json"
+    private fun candFile(ctx: Context, t: Track) = File(dir(ctx), "t${t.id}_${t.durMs}_cands.json")
+    private fun trFile(ctx: Context, t: Track) = File(dir(ctx), "t${t.id}_${t.durMs}_tr.json")
     private val running = ConcurrentHashMap<String, Boolean>()
+    private val trRun = ConcurrentHashMap<String, Boolean>()
     @Volatile var version = 0; private set      // بيزيد مع كل حفظ — الشاشة بتقارنه عشان تعرف تحدّث
 
     fun isRunning(t: Track, m: String) = running.containsKey(key(t, m))
     fun anyRunning() = running.isNotEmpty()
+    fun trRunning(t: Track) = trRun.containsKey("tr${t.id}_${t.durMs}")
 
     fun cached(ctx: Context, t: Track, m: String): LyricsResult? = try {
         val f = File(dir(ctx), key(t, m))
@@ -52,40 +62,28 @@ object LyricsEngine {
         if (r.lines.isEmpty() && r.raw.isEmpty() && System.currentTimeMillis() - f.lastModified() > 12 * 3600_000L) null else r
     } catch (_: Throwable) { null }
     fun clear(ctx: Context, t: Track, m: String) { try { File(dir(ctx), key(t, m)).delete() } catch (_: Throwable) {}; version++ }
-    fun clearAll(ctx: Context, t: Track) { clear(ctx, t, M_FULL) }
+    /** مسح كل حاجة للأغنية (كلمات + النسخ المرشّحة + الترجمة) — لما الاسم نفسه بيتغيّر أو ريفريش كامل */
+    fun clearAll(ctx: Context, t: Track) {
+        clear(ctx, t, M_FULL)
+        try { candFile(ctx, t).delete(); trFile(ctx, t).delete() } catch (_: Throwable) {}
+        lastId.remove(key(t, M_FULL))
+    }
 
     private fun parse(o: JSONObject): LyricsResult {
         val a = o.optJSONArray("lines") ?: JSONArray()
         val l = ArrayList<LyricLine>()
-        for (i in 0 until a.length()) { val x = a.getJSONObject(i); l.add(LyricLine(x.getDouble("s"), x.getDouble("e"), x.getString("t"), x.optString("tr"))) }
+        for (i in 0 until a.length()) { val x = a.getJSONObject(i); l.add(LyricLine(x.getDouble("s"), x.getDouble("e"), x.getString("t"))) }
         val ok = HashSet<Int>(); val oa = o.optJSONArray("ok"); if (oa != null) for (i in 0 until oa.length()) ok.add(oa.getInt(i))
         val ra = o.optJSONArray("raw"); val raw = ArrayList<String>(); if (ra != null) for (i in 0 until ra.length()) { val x = ra.optString(i).trim(); if (x.isNotEmpty()) raw.add(x) }
-        val alternatives = ArrayList<LyricVersion>()
-        val av = o.optJSONArray("alternatives") ?: JSONArray()
-        for (i in 0 until av.length()) try {
-            val v = av.getJSONObject(i); val va = v.optJSONArray("lines") ?: JSONArray(); val vl = ArrayList<LyricLine>()
-            for (j in 0 until va.length()) { val x = va.getJSONObject(j); vl.add(LyricLine(x.optDouble("s", 0.0), x.optDouble("e", 0.0), x.optString("t"), x.optString("tr"))) }
-            if (vl.isNotEmpty()) alternatives.add(LyricVersion(v.optString("title"), v.optString("artist"), v.optString("source"), v.optString("url"), vl, v.optBoolean("synced", false)))
-        } catch (_: Throwable) {}
-        return LyricsResult(o.optString("title"), o.optString("artist"), l, o.optBoolean("complete", true), o.optInt("done", 0), o.optInt("total", 0), ok, o.optString("note"), raw, o.optBoolean("synced", true), o.optString("source"), alternatives, o.optString("sourceUrl"), o.optBoolean("aghaniChecked", false))
+        return LyricsResult(o.optString("title"), o.optString("artist"), l, o.optBoolean("complete", true), o.optInt("done", 0), o.optInt("total", 0), ok, o.optString("note"), raw, o.optBoolean("synced", true), o.optString("source"))
     }
     private fun save(ctx: Context, t: Track, m: String, r: LyricsResult) {
-        fun lineArray(lines: List<LyricLine>): JSONArray {
-            val a = JSONArray()
-            for (x in lines) a.put(JSONObject().put("s", x.start).put("e", x.end).put("t", x.text).put("tr", x.translation))
-            return a
-        }
-        val a = lineArray(r.lines)
+        val a = JSONArray(); for (x in r.lines) a.put(JSONObject().put("s", x.start).put("e", x.end).put("t", x.text))
         val oa = JSONArray(); for (i in r.ok.sorted()) oa.put(i)
         val ra = JSONArray(); for (x in r.raw) ra.put(x)
-        val alt = JSONArray()
-        for (v in r.alternatives) alt.put(JSONObject().put("title", v.title).put("artist", v.artist).put("source", v.source)
-            .put("url", v.sourceUrl).put("synced", v.synced).put("lines", lineArray(v.lines)))
         try {
             File(dir(ctx), key(t, m)).writeText(JSONObject().put("title", r.title).put("artist", r.artist).put("lines", a)
-                .put("complete", r.complete).put("done", r.done).put("total", r.total).put("ok", oa).put("note", r.note).put("raw", ra)
-                .put("synced", r.synced).put("source", r.source).put("sourceUrl", r.sourceUrl).put("alternatives", alt)
-                .put("aghaniChecked", r.aghaniChecked).put("v", 8).toString())
+                .put("complete", r.complete).put("done", r.done).put("total", r.total).put("ok", oa).put("note", r.note).put("raw", ra).put("synced", r.synced).put("source", r.source).put("v", 6).toString())
         } catch (_: Throwable) {}
         version++
     }
@@ -97,115 +95,54 @@ object LyricsEngine {
         return lines.mapIndexed { i, x -> LyricLine(off + i * step, off + (i + 1) * step, x) }
     }
 
-    /** يميّز السطر العربي حتى لا يُرسل إلى Gemini للترجمة مرة أخرى. */
-    private fun hasArabicScript(s: String): Boolean = s.any { it in '\u0600'..'\u06FF' }
-
-    /** ترجمة السطور الأجنبية إلى العربية بمفتاح Gemini الموجود في إعدادات المستخدم، من غير Google Search grounding. */
-    private fun translateLines(ctx: Context, input: List<LyricLine>, onStage: ((String) -> Unit)? = null): List<LyricLine> {
-        if (input.isEmpty()) return input
-        // السطور العربية تظل كما هي؛ السطور الأجنبية فقط تُترجم، حتى لو كانت الأغنية مختلطة اللغات.
-        val pending = input.indices.filter { i ->
-            input[i].translation.isBlank() && input[i].text.any { it.isLetter() } && !hasArabicScript(input[i].text)
-        }
-        if (pending.isEmpty()) return input
-        val keys = (Cfg.keys("keys") + Cfg.keys("extra") + Cfg.keys("backup")).distinct()
-        val apiKey = keys.firstOrNull() ?: return input
-        val model = Cfg.str("model", Models.DEFAULT).trim().ifBlank { Models.DEFAULT }
-        val translated = HashMap<Int, String>()
-        for (batch in pending.chunked(35)) {
-            try {
-                onStage?.invoke("🌐 جيميناي بيترجم الكلمات للعربية (${translated.size}/${pending.size})…")
-                val src = JSONArray()
-                for (idx in batch) src.put(input[idx].text)
-                val prompt = "Translate each supplied song-lyric line into natural Arabic. The input is user-requested translation text from a lyrics source. Keep the same order and one output per input line; preserve meaning, tone, names, and repetition; do not add explanations, omit lines, combine lines, or invent lyrics. Return ONLY JSON exactly shaped as {\"translations\":[\"Arabic line 1\",\"Arabic line 2\"]}. Input lines JSON: " + src.toString()
-                // search=false صراحةً: لا يتم تشغيل Google Search أو grounding.
-                val reply = Api.generate(model, apiKey, prompt, maxTokens = 4096, temp = 0.1, json = true, search = false).text
-                val clean = reply.substring(reply.indexOf('{').coerceAtLeast(0)).trim().removeSuffix("```").trim()
-                val arr = JSONObject(clean).optJSONArray("translations") ?: continue
-                for (j in batch.indices) {
-                    val tr = arr.optString(j, "").trim()
-                    if (tr.isNotBlank() && tr != "null") translated[batch[j]] = tr
-                }
-            } catch (e: Throwable) {
-                LogStore.err("lyrics-translation", e)
-            }
-        }
-        return input.mapIndexed { i, line ->
-            val tr = translated[i].orEmpty()
-            if (tr.isBlank()) line else LyricLine(line.start, line.end, line.text, tr)
-        }
+    // ===================== النسخ المرشّحة (محفوظة محليًا) =====================
+    fun srcLabel(src: String) = when (src) {
+        "lrclib" -> "LRCLIB"; "musixmatch" -> "Musixmatch"; "youtube" -> "YouTube Music"; "lyrics.ovh" -> "Lyrics.ovh"; else -> src
     }
 
-    private fun toVersion(s: AghaniLyrics.Song) = LyricVersion(
-        s.title, s.artist, "aghanilyrics", s.url, s.lines.map { LyricLine(0.0, 0.0, it) }, false
-    )
+    fun candidates(ctx: Context, t: Track): List<LyrCand> = try {
+        val a = JSONObject(candFile(ctx, t).readText()).optJSONArray("list") ?: JSONArray()
+        val out = ArrayList<LyrCand>()
+        for (i in 0 until a.length()) {
+            val x = a.optJSONObject(i) ?: continue
+            out.add(LyrCand(x.optString("s"), x.optString("i"), x.optString("t"), x.optString("a"), x.optString("sy"), x.optString("pl"), x.optDouble("d", 0.0), x.optDouble("sc", 0.0)))
+        }
+        out
+    } catch (_: Throwable) { emptyList() }
 
-    /** يستخدم Gemini لتوليد صيغ بحث بديلة فقط؛ الكلمات نفسها لا تُولَّد بل تُقرأ من صفحات المصدر مباشرة. */
-    private fun searchAghaniVersions(title: String, artist: String, onStage: (String) -> Unit): List<AghaniLyrics.Song> {
-        val found = LinkedHashMap<String, AghaniLyrics.Song>()
-        fun add(songs: List<AghaniLyrics.Song>) {
-            for (song in songs) {
-                val sig = ArNorm.fold(song.lines.joinToString(" ") { it }).take(6000)
-                if (sig.isNotBlank()) found.putIfAbsent(sig, song)
-                if (found.size >= 6) break
-            }
-        }
-        add(AghaniLyrics.search(title, artist, 6))
-        if (found.size < 6) {
-            val apiKey = (Cfg.keys("keys") + Cfg.keys("extra") + Cfg.keys("backup")).firstOrNull()
-            if (!apiKey.isNullOrBlank()) try {
-                val model = Cfg.str("model", Models.DEFAULT).trim().ifBlank { Models.DEFAULT }
-                val prompt = "Return ONLY JSON: {\"title_variants\":[\"...\"]}. Find up to 4 plausible search-title variants for the exact same song, based only on spelling variants, alternate Arabic spelling, transliteration, official title aliases, and known version labels (live/acoustic/remix only when plausible). Do not invent different songs or song lyrics. Keep the artist unchanged and do not include explanations. Song title: " + title.replace("\"", "'").replace('\n', ' ') + "; artist: " + artist.replace("\"", "'").replace('\n', ' ')
-                // search=false: Gemini يوسّع صيغة البحث فقط دون Google Search/Grounding.
-                val reply = Api.generate(model, apiKey, prompt, maxTokens = 512, temp = 0.1, json = true, search = false).text
-                val clean = reply.substring(reply.indexOf('{').coerceAtLeast(0)).trim().removeSuffix("```").trim()
-                val array = JSONObject(clean).optJSONArray("title_variants")
-                if (array != null) for (i in 0 until minOf(array.length(), 4)) {
-                    val variant = array.optString(i).trim().trim('"', '\'')
-                    if (variant.length < 2 || ArNorm.fold(variant) == ArNorm.fold(title)) continue
-                    if (found.size >= 6) break
-                    onStage("🔎 بجرّب صيغة اسم بديلة عبر AghaniLyrics…")
-                    add(AghaniLyrics.search(variant, artist, 3))
-                }
-            } catch (e: Throwable) { LogStore.err("aghanilyrics-variants", e) }
-        }
-        return found.values.take(6)
+    /** مفتاح النسخة المختارة حاليًا («المصدر:الرقم») أو "" */
+    fun pickedId(ctx: Context, t: Track): String = try { JSONObject(candFile(ctx, t).readText()).optString("picked") } catch (_: Throwable) { "" }
+
+    private fun saveCands(ctx: Context, t: Track, list: List<LyrCand>, picked: String) {
+        try {
+            val a = JSONArray()
+            for (c in list.sortedByDescending { it.score }.take(14)) a.put(JSONObject().put("s", c.src).put("i", c.id).put("t", c.title).put("a", c.artist)
+                .put("sy", c.synced).put("pl", c.plain).put("d", c.dur).put("sc", c.score))
+            candFile(ctx, t).writeText(JSONObject().put("picked", picked).put("list", a).toString())
+        } catch (_: Throwable) {}
     }
 
-    private fun signature(lines: List<LyricLine>): String = ArNorm.fold(lines.joinToString(" ") { it.text }).take(6000)
+    /** عدد سطور النسخة (للعرض في قايمة النسخ) */
+    fun lineCount(t: Track, c: LyrCand): Int =
+        if (c.synced.isNotBlank()) parseLrc(c.synced, t.durMs / 1000.0).size
+        else c.plain.lines().count { it.isNotBlank() }
 
-    /** تبديل إصدار الكلمات من غير تغيير أي إعداد أو واجهة أخرى؛ تُحفظ النسخة المختارة في الكاش. */
-    fun chooseVersion(ctx: Context, t: Track, chosen: LyricVersion, available: List<LyricVersion>,
-                      onStage: (String) -> Unit, onDone: (LyricsResult?, String) -> Unit) {
+    /** يخلّي نسخة معيّنة هي الكلمات الحالية للأغنية (وبتتحفظ محليًا مع علامة «المختارة») */
+    fun applyCand(ctx: Context, t: Track, hint: Pair<String, String>?, c: LyrCand): LyricsResult? {
         val app = ctx.applicationContext
-        val k = key(t, M_FULL)
-        if (running.putIfAbsent(k, true) != null) { onDone(null, "الكلمات بتتحدث دلوقتي"); return }
-        Thread {
-            try {
-                onStage("🎼 بجهّز النسخة المختارة…")
-                val lines = translateLines(app, chosen.lines, onStage)
-                val chosenKey = chosen.sourceUrl.ifBlank { chosen.source + "|" + chosen.title + "|" + chosen.artist }
-                val alt = available.filter { v ->
-                    val vk = v.sourceUrl.ifBlank { v.source + "|" + v.title + "|" + v.artist }
-                    vk != chosenKey && v.lines.isNotEmpty()
-                }.distinctBy { it.sourceUrl.ifBlank { it.source + "|" + signature(it.lines) } }.take(8)
-                val res = LyricsResult(chosen.title, chosen.artist, lines, true, 1, 1, emptySet(),
-                    if (chosen.synced) "" else "من غير توقيت", lines.map { it.text }, chosen.synced, chosen.source, alt, chosen.sourceUrl, true)
-                save(app, t, M_FULL, res)
-                onDone(res, "")
-            } catch (e: Throwable) {
-                LogStore.err("lyrics-version", e)
-                onDone(null, "فشل تغيير النسخة: " + (e.message ?: e.javaClass.simpleName).take(90))
-            } finally { running.remove(k) }
-        }.apply { isDaemon = true }.start()
+        val name = (hint?.first ?: "").ifBlank { t.title }
+        val by = (hint?.second ?: "").ifBlank { t.artist }
+        val res = build(t, name, by, c) ?: return null
+        save(app, t, M_FULL, res)
+        lastId[key(t, M_FULL)] = c.key()
+        saveCands(app, t, candidates(app, t), c.key())
+        return res
     }
 
-    // ===== (v243) LRCLIB =====
+    // ===================== LRCLIB + باقي المصادر =====================
     private const val API = "https://lrclib.net/api/"
     private const val UA = "Subtitler/2.50 (Android; lyrics client)"
-    private val lastId = ConcurrentHashMap<String, Long>()   // آخر نتيجة اتعرضت لكل أغنية — «الكلمات غلط» بتتخطاها
-
-    private class Cand(val id: Long, val title: String, val artist: String, val synced: String, val plain: String, val score: Double)
+    private val lastId = ConcurrentHashMap<String, String>()   // آخر نسخة اتعرضت لكل أغنية — «الكلمات غلط» بتتخطاها
 
     private fun enc(s: String) = URLEncoder.encode(s, "UTF-8")
 
@@ -224,25 +161,127 @@ object LyricsEngine {
 
     private fun str(o: JSONObject, k: String): String = if (o.isNull(k)) "" else o.optString(k, "")
 
-    /** بيقيّم نتيجة LRCLIB: الاسم + الفنان + المدة. بيرجّع null لو مش نفس الأغنية (المدة بتفرق أكتر من 10ث، أو الاسم مش قريب) */
-    private fun candOf(o: JSONObject, t: Track, wantT: String, wantA: String): Cand? {
+    /**
+     * درجة تطابق نتيجة: الاسم (أي واحد من الأسماء المطلوبة) + الفنان + المدة. null لو مش نفس الأغنية.
+     * maxDiff = أقصى فرق مدة بالثواني (10 في الجلب العادي، أوسع لما بندوّر على نسخ تانية).
+     */
+    private fun rate(title: String, artist: String, dur: Double, hasSyn: Boolean, t: Track, wantT: List<String>, wantA: String, maxDiff: Double): Double? {
+        val have = t.durMs > 0 && dur > 0
+        val diff = if (have) Math.abs(dur - t.durMs / 1000.0) else 0.0
+        if (have && diff > maxDiff) return null
+        val durOk = have && diff <= 4.0
+        val tsim = wantT.maxOfOrNull { ArNorm.sim(it, title) } ?: 0.0
+        val asim = if (wantA.isBlank() || artist.isBlank()) 0.0 else ArNorm.sim(wantA, artist)
+        if (tsim < 0.5 && !(durOk && asim >= 0.5)) return null
+        val score = tsim * 2 + asim + (if (durOk) 1.5 else 0.0) + (if (hasSyn) 0.3 else 0.0)
+        return if (score < 2.0) null else score
+    }
+
+    private fun lrcCand(o: JSONObject, x: Ctx): LyrCand? {
         if (o.optBoolean("instrumental", false)) return null
         val syn = str(o, "syncedLyrics"); val plain = str(o, "plainLyrics")
         if (syn.isBlank() && plain.isBlank()) return null
         val title = str(o, "trackName").ifBlank { str(o, "name") }; val artist = str(o, "artistName")
         val dur = o.optDouble("duration", 0.0)
-        val have = t.durMs > 0 && dur > 0
-        val diff = if (have) Math.abs(dur - t.durMs / 1000.0) else 0.0
-        if (have && diff > 10.0) return null
-        val durOk = have && diff <= 4.0
-        val tsim = ArNorm.sim(wantT, title)
-        val asim = if (wantA.isBlank() || artist.isBlank()) 0.0 else ArNorm.sim(wantA, artist)
-        if (tsim < 0.5 && !(durOk && asim >= 0.5)) return null
-        val score = tsim * 2 + asim + (if (durOk) 1.5 else 0.0) + (if (syn.isNotBlank()) 0.3 else 0.0)
-        if (score < 2.0) return null
-        return Cand(o.optLong("id", 0L), title, artist, syn, plain, score)
+        val sc = rate(title, artist, dur, syn.isNotBlank(), x.t, x.wantT, x.wantA, x.maxDiff) ?: return null
+        return LyrCand("lrclib", o.optLong("id", 0L).toString(), title, artist, syn, plain, dur, sc)
     }
 
+    /** سياق بحث واحد: النتايج المتجمّعة، وهل أي مصدر رد فعلًا (عشان نفرّق «مفيش نتيجة» عن «مفيش نت») */
+    private class Ctx(val t: Track, val wantA: String, val maxDiff: Double, first: List<String>) {
+        val wantT = ArrayList<String>(first)
+        val found = ArrayList<LyrCand>()
+        var answered = false
+        var lastErr = ""
+        fun add(c: LyrCand?) { if (c != null && found.none { it.key() == c.key() }) found.add(c) }
+        fun addWant(s: String) { if (s.isNotBlank() && wantT.none { it == s }) wantT.add(s) }
+    }
+
+    private fun lrclibRound(x: Ctx, tt: String, aa: String) {
+        try {
+            if (aa.isNotBlank() && x.t.durMs > 0) {
+                val g = httpGet(API + "get?artist_name=" + enc(aa) + "&track_name=" + enc(tt) + "&duration=" + Math.round(x.t.durMs / 1000.0))
+                x.answered = true
+                if (g != null) x.add(lrcCand(JSONObject(g), x))
+            }
+            val q = "track_name=" + enc(tt) + (if (aa.isNotBlank()) "&artist_name=" + enc(aa) else "")
+            val s = httpGet(API + "search?" + q)
+            x.answered = true
+            if (s != null) { val a = JSONArray(s); for (i in 0 until minOf(a.length(), 20)) x.add(lrcCand(a.getJSONObject(i), x)) }
+        } catch (e: Throwable) { x.lastErr = e.message ?: e.javaClass.simpleName }
+    }
+
+    private fun mxmRound(x: Ctx, tt: String, aa: String) {
+        try {
+            val hits = LyricsApi.mxmFind(tt, aa) { ti, ar, d -> rate(ti, ar, d, true, x.t, x.wantT, x.wantA, x.maxDiff) != null }
+            x.answered = true
+            for (h in hits) {
+                val sc = rate(h.title, h.artist, h.dur, h.synced.isNotBlank(), x.t, x.wantT, x.wantA, x.maxDiff) ?: continue
+                x.add(LyrCand(h.src, h.id, h.title, h.artist, h.synced, h.plain, h.dur, sc))
+            }
+        } catch (e: Throwable) { x.lastErr = e.message ?: e.javaClass.simpleName }
+    }
+
+    private fun ytRound(x: Ctx, tt: String, aa: String) {
+        try {
+            val h = LyricsApi.ytFind(tt, aa) { text -> x.wantT.any { ArNorm.sim(it, text) >= 0.5 } }
+            x.answered = true
+            if (h != null) x.add(LyrCand(h.src, h.id, h.title, h.artist.ifBlank { aa }, "", h.plain, 0.0, 2.1))
+        } catch (e: Throwable) { x.lastErr = e.message ?: e.javaClass.simpleName }
+    }
+
+    private fun ovhRound(x: Ctx, tt: String, aa: String) {
+        try {
+            val r = httpGet("https://api.lyrics.ovh/v1/" + enc(aa).replace("+", "%20") + "/" + enc(tt).replace("+", "%20"))
+            x.answered = true
+            if (r != null) {
+                var ly = str(JSONObject(r), "lyrics").replace("\r", "").trim()
+                if (ly.startsWith("Paroles de la chanson")) ly = ly.lines().drop(1).joinToString("\n").trim()   // سطر دعائي بيبدأ بيه Lyrics.ovh أحيانًا
+                if (ly.lines().count { it.isNotBlank() } >= 4) x.add(LyrCand("lyrics.ovh", "0", tt, aa, "", ly, 0.0, 2.0))
+            }
+        } catch (e: Throwable) { x.lastErr = e.message ?: e.javaClass.simpleName }
+    }
+
+    // ===================== جيميناي: صيغ بديلة للاسم (من غير Google Search) =====================
+    private fun cleanJson(s: String) = s.trim().removePrefix("```json").removePrefix("```").removeSuffix("```").trim()
+
+    /**
+     * (v250) بيسأل جيميناي من معرفته هو بس (من غير أداة البحث/Grounding) عن صيغ تانية للاسم والفنان بتتسجّل بيها الأغنية في قواعد الكلمات:
+     * الاسم الأصلي، الكتابة بالحروف اللاتينية/العربية، تهجئات الفنان… مفيش مفاتيح = قايمة فاضية.
+     */
+    fun altNames(name: String, by: String, skip: Collection<String>): List<Pair<String, String>> {
+        val keys = Cfg.allMainKeys()
+        if (keys.isEmpty()) return emptyList()
+        val model = Cfg.str("model", Models.DEFAULT).trim().ifEmpty { Models.DEFAULT }
+        val pr = buildString {
+            append("You help find song lyrics in lyrics databases (LRCLIB, Musixmatch). Song title: \"$name\"")
+            if (by.isNotBlank()) append(", artist: \"$by\"")
+            append(". The title/artist may be misspelled, transliterated (Arabic <-> Latin), shortened, or contain junk like (Official Video). ")
+            append("Using ONLY your own knowledge (no web browsing), suggest up to 6 alternative title/artist forms under which this same song is likely listed: ")
+            append("the original-language title, the Latin-script and Arabic-script spellings, the official title, common alternate spellings of the artist, and the original song if this looks like a cover or remix. ")
+            append("Do not invent songs. If you do not recognize it, return only a cleaned-up title. ")
+            append("Return JSON only: {\"alts\":[{\"title\":\"\",\"artist\":\"\"}]}")
+        }
+        val seen = HashSet<String>(); skip.forEach { seen.add(ArNorm.fold(it)) }
+        for (k in 0 until keys.size.coerceAtMost(3)) {
+            try {
+                val r = Api.generate(model, keys[k % keys.size], pr, null, 1024, 0.3, true, false)
+                val a = JSONObject(cleanJson(r.text)).optJSONArray("alts") ?: continue
+                val out = ArrayList<Pair<String, String>>()
+                for (i in 0 until a.length()) {
+                    val o = a.optJSONObject(i) ?: continue
+                    val tt = o.optString("title").trim(); val aa = o.optString("artist").trim()
+                    if (tt.isEmpty() || !seen.add(ArNorm.fold(tt + " " + aa))) continue
+                    out.add(tt to aa)
+                    if (out.size >= 6) break
+                }
+                return out
+            } catch (e: Throwable) { LogStore.err("lyrics-altnames", e) }
+        }
+        return emptyList()
+    }
+
+    // ===================== LRC → سطور =====================
     /** LRC → سطور بتوقيت. السطر الفاضي بيقفل السطر اللي قبله (فجوات الموسيقى) */
     fun parseLrc(text: String, totalSec: Double): List<LyricLine> {
         val re = Regex("\\[(\\d{1,3}):(\\d{1,2})(?:[.:](\\d{1,3}))?\\]")
@@ -268,11 +307,21 @@ object LyricsEngine {
         return res
     }
 
+    /** نسخة مرشّحة → نتيجة كلمات (متزامنة لو فيها LRC سليم، وإلا سطور من غير توقيت). null لو فاضية */
+    private fun build(t: Track, name: String, by: String, b: LyrCand): LyricsResult? {
+        val tot = t.durMs / 1000.0
+        val lines = if (b.synced.isNotBlank()) parseLrc(b.synced, tot) else emptyList()
+        if (lines.size >= 2) return LyricsResult(name, by, lines, true, 1, 1, emptySet(), "", lines.map { it.text }, true, b.src)
+        val tagRe = Regex("\\[\\d{1,3}:\\d{1,2}(?:[.:]\\d{1,3})?\\]")   // (v246) لو بنرجع للنص المتزامن كنص عادي نشيل علامات الوقت
+        val pl = (if (b.plain.isNotBlank()) b.plain else b.synced).lines().map { tagRe.replace(it, "").trim() }.filter { it.isNotEmpty() }
+        if (pl.isEmpty()) return null
+        return LyricsResult(name, by, pl.map { LyricLine(0.0, 0.0, it) }, true, 1, 1, emptySet(), "من غير توقيت", pl, false, b.src)
+    }
+
     /**
-     * جلب الكلمات من LRCLIB (من غير مفاتيح). بيجرّب صيغ الاسم المطبّعة بالترتيب (ArNorm.variants):
-     * get بالاسم+الفنان+المدة ← search ← وأخيرًا q حر. بيرفض أي نتيجة مدتها بعيدة أو اسمها مش قريب.
-     * متزامنة → LRC بتوقيت فعلي · غير متزامنة → سطور من غير توقيت (من غير توقيت مختلق).
-     * فشل الشبكة ما بيتحفظش كـ«مفيش كلمات»؛ «مفيش نتيجة» بتتحفظ 12 ساعة.
+     * جلب الكلمات. الترتيب: LRCLIB (صيغ الاسم المطبّعة بالترتيب) ← Musixmatch (لو مفيش نسخة متزامنة) ← YouTube Music ← Lyrics.ovh
+     * ← وأخيرًا جيميناي يقترح صيغ بديلة للاسم ونعيد البحث بيها. كل النسخ اللي اتلقت بتتحفظ محليًا، وأحسن واحدة هي المعروضة.
+     * بيرفض أي نتيجة مدتها بعيدة أو اسمها مش قريب. فشل الشبكة ما بيتحفظش كـ«مفيش كلمات»؛ «مفيش نتيجة» بتتحفظ 12 ساعة.
      */
     fun start(ctx: Context, t: Track, mode: String, hint: Pair<String, String>?, retry: Boolean, fresh: Boolean, onStage: (String) -> Unit, onDone: (LyricsResult?, String) -> Unit) {
         val app = ctx.applicationContext
@@ -289,133 +338,136 @@ object LyricsEngine {
         val k = key(t, M_FULL)
         if (!fresh && !retry) {
             val c = cached(app, t, M_FULL)
-            if (c != null && c.lines.isNotEmpty()) {
-                val translated = translateLines(app, c.lines, onStage)
-                var alternatives = c.alternatives
-                var checked = c.aghaniChecked
-                // الإصدارات المحفوظة من النسخ القديمة تُثرى مرة واحدة بـ AghaniLyrics بدل إعادة بحث LRCLIB كاملًا.
-                if (!checked) {
-                    try {
-                        onStage("🔎 براجع النسخ الإضافية في AghaniLyrics…")
-                        val songs = searchAghaniVersions(c.title.ifBlank { t.title }, c.artist.ifBlank { t.artist }, onStage)
-                        val baseSig = signature(translated)
-                        alternatives = (alternatives + songs.map { toVersion(it) })
-                            .filter { it.lines.isNotEmpty() && signature(it.lines) != baseSig }
-                            .distinctBy { it.sourceUrl.ifBlank { signature(it.lines) } }.take(6)
-                    } catch (e: Throwable) { LogStore.err("aghanilyrics-cache", e) }
-                    checked = true
-                }
-                if (translated.indices.any { translated[it].translation != c.lines[it].translation } || !c.aghaniChecked || alternatives != c.alternatives) {
-                    val updated = LyricsResult(c.title, c.artist, translated, c.complete, c.done, c.total, c.ok, c.note,
-                        translated.map { it.text }, c.synced, c.source, alternatives, c.sourceUrl, checked)
-                    save(app, t, M_FULL, updated); onDone(updated, ""); return
-                }
-                onDone(c, ""); return
-            }
+            if (c != null && c.lines.isNotEmpty()) { onDone(c, ""); return }
         }
         val name = (hint?.first ?: "").ifBlank { t.title }
         val by = (hint?.second ?: "").ifBlank { t.artist }
         val vars = ArNorm.variants(name, by)
-        val skip: Long? = if (retry) lastId[k] else null
-        var best: Cand? = null
-        var answered = false
-        var lastErr = ""
+        val skip: String? = if (retry) (lastId[k] ?: pickedId(app, t).ifBlank { null }) else null
+        val x = Ctx(t, by, 10.0, listOf(name))
+        if (retry) for (c in candidates(app, t)) x.add(c)   // «الكلمات غلط»: النسخ المحفوظة قبل كده (من أي مصدر) بتدخل في الاختيار من غير ما نستنى الشبكة
+        fun best(): LyrCand? = x.found.filter { it.key() != skip }.maxByOrNull { it.score }
 
-        fun consider(o: JSONObject, wt: String, wa: String) {
-            val c = candOf(o, t, wt, wa) ?: return
-            if (skip != null && c.id == skip) return
-            val b0 = best
-            if (b0 == null || c.score > b0.score) best = c
-        }
-
+        // 1) LRCLIB
         var n = 0
         for ((tt, aa) in vars) {
             n++
             onStage("🔎 بدوّر في LRCLIB ($n/${vars.size})…")
-            try {
-                if (aa.isNotBlank() && t.durMs > 0) {
-                    val g = httpGet(API + "get?artist_name=" + enc(aa) + "&track_name=" + enc(tt) + "&duration=" + Math.round(t.durMs / 1000.0))
-                    answered = true
-                    if (g != null) consider(JSONObject(g), name, by)
-                }
-                val q = "track_name=" + enc(tt) + (if (aa.isNotBlank()) "&artist_name=" + enc(aa) else "")
-                val s = httpGet(API + "search?" + q)
-                answered = true
-                if (s != null) { val a = JSONArray(s); for (i in 0 until minOf(a.length(), 20)) consider(a.getJSONObject(i), name, by) }
-            } catch (e: Throwable) { lastErr = e.message ?: e.javaClass.simpleName }
-            if (best != null) break
+            lrclibRound(x, tt, aa)
+            if (best() != null) break
         }
-        if (best == null && answered) {
+        if (best() == null && x.answered) {
+            onStage("🔎 بحث حر في LRCLIB…")
             try {
-                onStage("🔎 بحث حر في LRCLIB…")
                 val s = httpGet(API + "search?q=" + enc((ArNorm.clean(name) + " " + ArNorm.clean(by)).trim()))
-                if (s != null) { val a = JSONArray(s); for (i in 0 until minOf(a.length(), 20)) consider(a.getJSONObject(i), name, by) }
-            } catch (e: Throwable) { lastErr = e.message ?: e.javaClass.simpleName }
+                if (s != null) { val a = JSONArray(s); for (i in 0 until minOf(a.length(), 20)) x.add(lrcCand(a.getJSONObject(i), x)) }
+            } catch (e: Throwable) { x.lastErr = e.message ?: e.javaClass.simpleName }
         }
 
-        var src = "lrclib"
-        // (v243 · مرحلة 3) مصدر احتياطي: Lyrics.ovh — كلمات عادية من غير توقيت، ومحتاج اسم فنان. من غير مقارنة مدة، فبنقبل بس لو الفنان معروف
-        if (best == null && !(retry && skip == 0L)) {
+        // 2) Musixmatch (من أداة lyrics-api): لو مفيش نسخة متزامنة لسه
+        fun hasSynced() = x.found.any { it.synced.isNotBlank() && it.key() != skip }
+        if (!hasSynced()) {
             var n2 = 0
             for ((tt, aa) in vars) {
-                if (aa.isBlank()) continue
                 if (++n2 > 3) break
-                onStage("🔎 بدوّر في مصدر احتياطي ($n2)…")
-                try {
-                    val r = httpGet("https://api.lyrics.ovh/v1/" + enc(aa).replace("+", "%20") + "/" + enc(tt).replace("+", "%20"))
-                    answered = true
-                    if (r != null) {
-                        var ly = str(JSONObject(r), "lyrics").replace("\r", "").trim()
-                        if (ly.startsWith("Paroles de la chanson")) ly = ly.lines().drop(1).joinToString("\n").trim()   // سطر دعائي بيبدأ بيه Lyrics.ovh أحيانًا
-                        if (ly.lines().count { it.isNotBlank() } >= 4) { best = Cand(0L, tt, aa, "", ly, 2.0); src = "lyrics.ovh"; break }
-                    }
-                } catch (e: Throwable) { lastErr = e.message ?: e.javaClass.simpleName }
+                onStage("🔎 بدوّر في Musixmatch ($n2)…")
+                mxmRound(x, tt, aa)
+                if (hasSynced()) break
             }
         }
 
-        // نجمع إصدارات الموقع العربي إلى جانب LRCLIB حتى لو كان المصدر الأساسي نجح.
-        var aghaniSongs: List<AghaniLyrics.Song> = emptyList()
-        try {
-            onStage("🔎 بدوّر في AghaniLyrics على كلمات ونسخ إضافية…")
-            aghaniSongs = searchAghaniVersions(name, by, onStage)
-        } catch (e: Throwable) { LogStore.err("aghanilyrics", e) }
-
-        val b = best
-        if (b == null) {
-            if (aghaniSongs.isNotEmpty()) {
-                val first = aghaniSongs.first()
-                val rawLines = first.lines.map { LyricLine(0.0, 0.0, it) }
-                val alternatives = aghaniSongs.drop(1).map { toVersion(it) }
-                val translated = translateLines(app, rawLines, onStage)
-                val res = LyricsResult(first.title, first.artist, translated, true, 1, 1, emptySet(), "من غير توقيت · AghaniLyrics",
-                    translated.map { it.text }, false, "aghanilyrics", alternatives, first.url, true)
-                save(app, t, M_FULL, res); onDone(res, ""); return
+        // 3) YouTube Music (كلمات عادية) — لو لسه مفيش حاجة
+        if (best() == null) {
+            var n3 = 0
+            for ((tt, aa) in vars) {
+                if (++n3 > 2) break
+                onStage("🔎 بدوّر في YouTube Music ($n3)…")
+                ytRound(x, tt, aa)
+                if (best() != null) break
             }
-            if (!answered) { onDone(null, "مفيش اتصال بالمصدر (" + lastErr.take(60) + ") — جرّب تاني"); return }
-            save(app, t, M_FULL, LyricsResult(name, by, emptyList(), true, 1, 1, emptySet(), "", emptyList(), true, src, emptyList(), "", true))
-            onDone(null, if (retry) "ما لقيتش نتيجة تانية — جرّب ✍ كلمات يدوي" else "ما لقيتش الأغنية دي (LRCLIB + Lyrics.ovh + AghaniLyrics) — جرّب ✍ كلمات يدوي")
+        }
+
+        // 4) Lyrics.ovh — كلمات عادية، ومحتاج فنان معروف
+        if (best() == null && !(retry && skip != null && skip.startsWith("lyrics.ovh"))) {
+            var n4 = 0
+            for ((tt, aa) in vars) {
+                if (aa.isBlank()) continue
+                if (++n4 > 3) break
+                onStage("🔎 بدوّر في مصدر احتياطي ($n4)…")
+                ovhRound(x, tt, aa)
+                if (best() != null) break
+            }
+        }
+
+        // 5) جيميناي يقترح صيغ بديلة للاسم (من غير Google Search) ونعيد البحث بيها
+        if (best() == null && x.answered) {
+            onStage("🤖 جيميناي بيقترح صيغ تانية للاسم…")
+            val alts = altNames(name, by, vars.map { it.first + " " + it.second })
+            var n5 = 0
+            for ((tt, aa) in alts) {
+                if (++n5 > 4) break
+                x.addWant(tt)
+                onStage("🔎 بجرّب «$tt»…")
+                lrclibRound(x, tt, aa)
+                if (best() == null) mxmRound(x, tt, aa)
+                if (best() != null) break
+            }
+        }
+
+        val b = best()
+        if (b == null) {
+            if (!x.answered) { onDone(null, "مفيش اتصال بالمصدر (" + x.lastErr.take(60) + ") — جرّب تاني"); return }
+            save(app, t, M_FULL, LyricsResult(name, by, emptyList(), true, 1, 1, emptySet(), "", emptyList(), true, "lrclib"))
+            onDone(null, if (retry) "ما لقيتش نتيجة تانية — جرّب 🎼 نسخ بديلة أو ✍ كلمات يدوي" else "ما لقيتش الأغنية دي (LRCLIB + Musixmatch + YouTube Music + مصدر احتياطي) — جرّب 🎼 نسخ بديلة أو ✍ كلمات يدوي")
             return
         }
-        lastId[k] = b.id
-        val tot = t.durMs / 1000.0
-        val lines = if (b.synced.isNotBlank()) parseLrc(b.synced, tot) else emptyList()
-        val base = if (lines.size >= 2) {
-            LyricsResult(name, by, lines, true, 1, 1, emptySet(), "", lines.map { it.text }, true, src)
-        } else {
-            val tagRe = Regex("\\[\\d{1,3}:\\d{1,2}(?:[.:]\\d{1,3})?\\]")
-            val pl = (if (b.plain.isNotBlank()) b.plain else b.synced).lines().map { tagRe.replace(it, "").trim() }.filter { it.isNotEmpty() }
-            if (pl.isEmpty()) { onDone(null, "النتيجة فاضية"); return }
-            LyricsResult(name, by, pl.map { LyricLine(0.0, 0.0, it) }, true, 1, 1, emptySet(), "من غير توقيت", pl, false, src)
-        }
-        val baseSig = signature(base.lines)
-        val alternatives = aghaniSongs.map { toVersion(it) }
-            .filter { signature(it.lines) != baseSig }
-            .distinctBy { it.sourceUrl }
-            .take(6)
-        val translated = translateLines(app, base.lines, onStage)
-        val res = LyricsResult(base.title, base.artist, translated, base.complete, base.done, base.total, base.ok, base.note,
-            translated.map { it.text }, base.synced, base.source, alternatives, base.sourceUrl, true)
+        val res = build(t, name, by, b)
+        if (res == null) { onDone(null, "النتيجة فاضية"); return }
+        lastId[k] = b.key()
+        val merged = ArrayList<LyrCand>(x.found)
+        for (c in candidates(app, t)) if (merged.none { it.key() == c.key() }) merged.add(c)   // النسخ اللي اتلقت قبل كده (نسخ بديلة) ما بتضيعش
+        saveCands(app, t, merged, b.key())
         save(app, t, M_FULL, res); onDone(res, "")
+    }
+
+    /**
+     * (v250) «🔎 دوّر على نسخ تانية»: جيميناي يقترح صيغ بديلة للاسم (من غير Google Search) وندوّر بيها كلها في LRCLIB وMusixmatch
+     * (بفرق مدة أوسع لحد 45ث عشان نلقط النسخ المختلفة: راديو/لايف/ريمكس). النسخ الجديدة بتتضاف للقايمة المحفوظة.
+     * onDone(عدد النسخ الجديدة، رسالة).
+     */
+    fun moreVersions(ctx: Context, t: Track, hint: Pair<String, String>?, onStage: (String) -> Unit, onDone: (Int, String) -> Unit) {
+        val app = ctx.applicationContext
+        val k = key(t, M_FULL)
+        if (running.putIfAbsent(k, true) != null) { onDone(0, "لسه شغّال… استنى شوية"); return }
+        Thread {
+            try {
+                val name = (hint?.first ?: "").ifBlank { t.title }
+                val by = (hint?.second ?: "").ifBlank { t.artist }
+                val vars = ArNorm.variants(name, by)
+                onStage("🤖 جيميناي بيقترح صيغ تانية للاسم…")
+                val alts = altNames(name, by, vars.map { it.first + " " + it.second })
+                val qs = LinkedHashMap<String, Pair<String, String>>()
+                for (p in vars + alts) qs.putIfAbsent(ArNorm.fold(p.first + " " + p.second), p)
+                val x = Ctx(t, by, 45.0, listOf(name))
+                for (p in qs.values) x.addWant(p.first)
+                var n = 0
+                for (p in qs.values.take(8)) {
+                    n++
+                    onStage("🔎 بدوّر على نسخ تانية ($n/${minOf(qs.size, 8)})…")
+                    lrclibRound(x, p.first, p.second)
+                    if (n <= 5) mxmRound(x, p.first, p.second)
+                }
+                if (!x.answered) { onDone(0, "مفيش اتصال بالمصادر (" + x.lastErr.take(60) + ") — جرّب تاني"); return@Thread }
+                val old = candidates(app, t)
+                val merged = ArrayList<LyrCand>(old)
+                var added = 0
+                for (c in x.found) if (merged.none { it.key() == c.key() }) { merged.add(c); added++ }
+                saveCands(app, t, merged, pickedId(app, t))
+                onDone(added, if (added > 0) "لقيت $added نسخة جديدة" else "ما لقيتش نسخ جديدة")
+            } catch (e: Throwable) {
+                LogStore.err("lyrics-more", e); onDone(0, "فشل: " + (e.message ?: e.javaClass.simpleName).replace('\n', ' ').take(110))
+            } finally { running.remove(k) }
+        }.apply { isDaemon = true }.start()
     }
 
     /** (v223) كلمات من المستخدم (لصق/تعديل): بتتحفظ زي ما هي، والتوقيت بيتحسب محليًا من لحظات الغنا في الصوت (من غير جيميناي) */
@@ -445,5 +497,80 @@ object LyricsEngine {
         var lo = 0; var hi = lines.size - 1; var r = -1
         while (lo <= hi) { val m = (lo + hi) ushr 1; if (lines[m].start <= sec) { r = m; lo = m + 1 } else hi = m - 1 }
         return r
+    }
+
+    // ===================== (v250) ترجمة عربية للسطور الأجنبية =====================
+    private fun sigOf(lines: List<LyricLine>): String = lines.size.toString() + ":" + lines.joinToString("\n") { it.text }.hashCode()
+
+    private fun isArabicCh(ch: Char) = ch in '\u0600'..'\u06FF' || ch in '\u0750'..'\u077F' || ch in '\uFB50'..'\uFDFF' || ch in '\uFE70'..'\uFEFF'
+
+    /** السطر أجنبي = حروفه غير العربية أكتر من العربية (السطور العربي والمخلوطة العربي-الغالب ما بتتترجمش) */
+    fun isForeign(s: String): Boolean {
+        var ar = 0; var ot = 0
+        for (ch in s) { if (!Character.isLetter(ch)) continue; if (isArabicCh(ch)) ar++ else ot++ }
+        return ot >= 2 && ot > ar
+    }
+
+    /** الترجمة المحفوظة لنفس الكلمات: قايمة بنفس ترتيب السطور، "" = السطر ما اتترجمش (عربي أصلًا). null = مفيش ترجمة محفوظة للكلمات دي */
+    fun translation(ctx: Context, t: Track, r: LyricsResult): List<String>? = try {
+        val o = JSONObject(trFile(ctx, t).readText())
+        val a = o.getJSONArray("tr")
+        if (o.optString("sig") != sigOf(r.lines) || a.length() != r.lines.size) null
+        else List(a.length()) { a.optString(it, "") }
+    } catch (_: Throwable) { null }
+
+    fun clearTranslation(ctx: Context, t: Track) { try { trFile(ctx, t).delete() } catch (_: Throwable) {}; version++ }
+
+    /** بيترجم السطور الأجنبية بس (دفعات 40 سطر) بجيميناي من غير Google Search. onDone(نجح؟، رسالة). بيتحفظ كله أو ولا حاجة */
+    fun translate(ctx: Context, t: Track, r: LyricsResult, onStage: (String) -> Unit, onDone: (Boolean, String) -> Unit) {
+        val app = ctx.applicationContext
+        val k = "tr${t.id}_${t.durMs}"
+        if (trRun.putIfAbsent(k, true) != null) { onDone(false, "الترجمة شغّالة دلوقتي"); return }
+        Thread {
+            try { doTranslate(app, t, r, onStage, onDone) }
+            catch (e: Throwable) { LogStore.err("lyrics-tr", e); onDone(false, "فشل: " + (e.message ?: e.javaClass.simpleName).replace('\n', ' ').take(110)) }
+            finally { trRun.remove(k) }
+        }.apply { isDaemon = true }.start()
+    }
+
+    private fun doTranslate(app: Context, t: Track, r: LyricsResult, onStage: (String) -> Unit, onDone: (Boolean, String) -> Unit) {
+        val keys = Cfg.allMainKeys()
+        if (keys.isEmpty()) { onDone(false, "الترجمة محتاجة مفتاح Gemini"); return }
+        val model = Cfg.str("model", Models.DEFAULT).trim().ifEmpty { Models.DEFAULT }
+        val idx = r.lines.indices.filter { isForeign(r.lines[it].text) }
+        val out = Array(r.lines.size) { "" }
+        val batches = idx.chunked(40)
+        var rot = 0
+        var lastErr = ""
+        for ((bi, b) in batches.withIndex()) {
+            onStage("🌐 بترجم السطور الأجنبية (${bi + 1}/${batches.size})…")
+            val pr = buildString {
+                append("ترجم سطور كلمات الأغنية دي للعربية. الأغنية: \"${r.title}\"" + (if (r.artist.isNotBlank()) " — ${r.artist}" else "") + ".\n")
+                append("القواعد: ترجمة سلسة ومفهومة بتحافظ على المعنى والإحساس، من غير شرح ولا تعليقات. ")
+                append("ماتغيّرش الأرقام، ماتدمجش سطرين في سطر، وماتسيبش سطر من غير ترجمة. ")
+                append("لو السطر أصوات من غير معنى (زي la la la أو oh oh) رجّعه زي ما هو. لو السطر عربي أصلًا رجّع \"\".\n")
+                append("السطور (الرقم: النص):\n")
+                for (i in b) append(i).append(": ").append(r.lines[i].text.replace('\n', ' ')).append('\n')
+                append("رجّع JSON بس بالشكل ده: {\"t\":{\"<الرقم>\":\"<الترجمة>\"}}")
+            }
+            var ok = false
+            for (a in 0 until keys.size.coerceAtMost(4)) {
+                try {
+                    val res = Api.generate(model, keys[(rot + a) % keys.size], pr, null, 8192, 0.2, true, false)
+                    val m = JSONObject(cleanJson(res.text)).optJSONObject("t") ?: throw java.io.IOException("رد غير مفهوم")
+                    var got = 0
+                    for (i in b) { val v = m.optString(i.toString(), "").trim(); if (v.isNotEmpty()) { out[i] = v; got++ } }
+                    if (got == 0) throw java.io.IOException("الرد فاضي")
+                    rot += a + 1; ok = true; break
+                } catch (e: Throwable) { lastErr = e.message ?: e.javaClass.simpleName }
+            }
+            if (!ok) { onDone(false, "الترجمة ما كملتش (" + lastErr.replace('\n', ' ').take(70) + ") — جرّب تاني"); return }
+        }
+        try {
+            val a = JSONArray(); for (s in out) a.put(s)
+            trFile(app, t).writeText(JSONObject().put("sig", sigOf(r.lines)).put("tr", a).toString())
+        } catch (e: Throwable) { onDone(false, "ما قدرتش أحفظ الترجمة"); return }
+        version++
+        onDone(true, "")
     }
 }

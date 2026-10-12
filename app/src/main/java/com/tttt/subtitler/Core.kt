@@ -149,6 +149,8 @@ object Cfg {
     lateinit var p: SharedPreferences
     fun init(c: Context) {
         p = c.getSharedPreferences("p", 0)
+        Offline.dir = c.applicationContext.filesDir   // (v253)
+        TrWizard.appCtx = c.applicationContext   // (v255) فحص النت لإشعار ترجمة جوجل
         Quota.load = { p.getString("quota", "") ?: "" }
         Quota.save = { p.edit().putString("quota", it).apply() }
         Stats.load = { p.getString("stats", "") ?: "" }
@@ -232,7 +234,9 @@ object Cfg {
     }
 
     fun snapshot(): Conf {
-        val (main, rf, bk) = roles()
+        val (main0, rf, bk) = roles()
+        // (v259) من غير أي مفتاح + أوفلاين + ترجمة جوجل: مفتاح محلي وهمي يخلّي المحرك يشتغل (الطلبات لجيميناي بتترفض محليًا)
+        val main = if (main0.isEmpty() && rf.isEmpty() && bk.isEmpty() && TrWizard.googleOn()) listOf(LocalKey.ID) else main0
         return Conf(
             main, bk, str("model", Models.DEFAULT).trim().ifEmpty { Models.DEFAULT },
             str("lang", "فصحى"), str("style", "حرفي"),
@@ -240,7 +244,7 @@ object Cfg {
             emptyList() /* جدول الشخصيات اليدوي اتشال — الشخصيات بتتحلل تلقائيًا */, str("gloss"),
             true, true, true,   // (v229) تحليل الشخصيات · تصحيح الضمائر · ترجمة القالب: أوتوماتيك دايمًا (اتشال مفتاحهم من الإعدادات)
             1 /* (v141) طلب واحد لكل مفتاح */, bool("hitiming", false), true /* (v229) سد الفجوات أوتوماتيك دايمًا */,
-            bool("soundtags", true), keys("viskeys"), bool("prefine", true), rf, KeyMode.clamp(int("kmode", 1))
+            bool("soundtags", true), keys("viskeys"), bool("prefine", true), rf, if (Offline.on()) KeyMode.TRANSCRIBE_ALL else KeyMode.clamp(int("kmode", 1))   // (v253) أوفلاين = وضع 4 (نسخ ثم ترجمة سياقية)
         )
     }
 }
@@ -513,6 +517,9 @@ object Quota {
     @Synchronized fun used(model: String, now: Long = System.currentTimeMillis()): Int = read(now).getJSONObject("m").optInt(model, 0)
 }
 
+/** (v259) «مفتاح محلي» وهمي: بيتحط مكان مفاتيح جيميناي لما الأوفلاين + ترجمة جوجل شغّالين ومفيش ولا مفتاح — عشان المحرك يبدأ. عمره ما بيتبعت لجيميناي (Api.generate بيرمي NoKey) */
+object LocalKey { const val ID = "local-offline-no-key" }
+class NoKey : Exception("مفيش مفتاح جيميناي — الأوفلاين وجوجل شغّالين من غير مفتاح، بس الخطوة دي محتاجة جيميناي")
 class ApiErr(val code: Int, val raw: String) : Exception("[$code] $raw")
 class Unsupported(msg: String) : Exception(msg)
 
@@ -672,6 +679,7 @@ object Api {
 
     fun generate(model: String, key: String, prompt: String, wav: ByteArray? = null,
                  maxTokens: Int = 8192, temp: Double = 0.1, json: Boolean = true, search: Boolean = false): Result {
+        if (key == LocalKey.ID) throw NoKey()   // (v259)
         Quota.hit(model); Stats.req(model, key)
         val mt0 = minOf(maxTokens, tokenCap[model] ?: Int.MAX_VALUE)
         if (search) return generateOnce(model, key, prompt, wav, mt0, temp, json, search, "")

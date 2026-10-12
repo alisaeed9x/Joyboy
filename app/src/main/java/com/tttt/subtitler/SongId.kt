@@ -29,6 +29,21 @@ object SongId {
     fun saveOverride(id: Long, m: SongMatch) = Cfg.put("mname_$id", m.title + "\u0001" + m.artist)
     fun clearOverride(id: Long) = Cfg.put("mname_$id", "")
 
+    // ===== (v251) حالة التعرّف على الأغنية: اتعرفت قبل كده؟ / اليوزر أكّد الاسم؟ =====
+    /** "1" = اتعرفت (تلقائي أو يدوي) · "t" = جيميناي سمعها ومش متأكد (ما نعيدش تلقائي) · "" = لسه ما اتدوّرش عليها */
+    fun known(id: Long) = Cfg.str("mknown_$id", "") == "1"
+    fun searched(id: Long) = Cfg.str("mknown_$id", "").isNotEmpty()
+    fun markKnown(id: Long) = Cfg.put("mknown_$id", "1")
+    fun markTried(id: Long) { if (Cfg.str("mknown_$id", "") != "1") Cfg.put("mknown_$id", "t") }
+    /** ✓ = اليوزر قال الاسم صح (مقفول: مفيش بحث تاني) */
+    fun verified(id: Long) = Cfg.str("mverd_$id", "") == "ok"
+    fun setVerified(id: Long, v: Boolean) = Cfg.put("mverd_$id", if (v) "ok" else "")
+    /** إعادة تعرّف / ✗ : انسى إنها اتعرفت واتأكدت */
+    fun resetKnown(id: Long) { Cfg.put("mknown_$id", ""); Cfg.put("mverd_$id", "") }
+    fun autoOn() = Cfg.str("song_auto_id", "1") != "0"
+    fun setAuto(on: Boolean) = Cfg.put("song_auto_id", if (on) "1" else "0")
+    const val UNSURE = "جيميناي مش متأكد"
+
     /**
      * (v193) التعرف التلقائي: لو فيه توكن AudD بنجرّبه الأول؛ ولو مفيش توكن (أو ما اتعرفتش، أو اليوزر قال إن الاسم غلط)
      * بنبعت المقطع لجيميناي يقول اسم الأغنية والفنان. [avoid] = أسماء اتقال إنها غلط ("العنوان — الفنان").

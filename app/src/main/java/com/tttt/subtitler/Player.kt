@@ -457,8 +457,9 @@ class PlayerActivity : Activity(), Host {
         val dlB = b("⬇", 0xFF37474F.toInt()) { dlRef?.let { downloadPopup(it) } }
         dlRef = dlB
         var trRef: TextView? = null
-        val tr = b("▶ ترجمة", 0xFFE53935.toInt()) { if (!engineStarted) trRef?.let { presetPopup(it) } else beginTranslate() }   // (v236) قبل البداية: قايمة البريسيتس
+        val tr = b("▶ ترجمة", 0xFFE53935.toInt()) { if (!engineStarted) translateEntry() else beginTranslate() }   // (v254) قبل البداية: الإعداد المحفوظ أو شاشة «طريقة الترجمة»
         trRef = tr
+        val wzB = b("⚙", 0xFF37474F.toInt()) { trWizard(true) }   // (v254) زرار صغير جنب ▶ ترجمة: يغيّر طريقة الترجمة (أونلاين/أوفلاين …)
         var lgRef: TextView? = null
         val lgB = b("🌐", 0xFF37474F.toInt()) { lgRef?.let { langPopup(it) } }
         lgRef = lgB
@@ -479,7 +480,7 @@ class PlayerActivity : Activity(), Host {
             val closeR = Runnable { open = false; updateTr() }
             var chipRef: TextView? = null
             val chipB = b("▶ ترجمة", 0xFFE53935.toInt()) {
-                if (!engineStarted) chipRef?.let { presetPopup(it) }   // (v236) قايمة البريسيتس بدل البدء المباشر
+                if (!engineStarted) translateEntry()   // (v254) الإعداد المحفوظ أو شاشة «طريقة الترجمة»
                 else { open = !open; h.removeCallbacks(closeR); if (open) h.postDelayed(closeR, 5000); updateTr() }
             }
             chipRef = chipB
@@ -502,7 +503,7 @@ class PlayerActivity : Activity(), Host {
                 taskBadges.add(badge); if (!TaskCenter.extra.contains(taskListener)) TaskCenter.extra.add(taskListener); taskListener()
                 return fl
             }
-            row.addView(chipB, lp(-2)); row.addView(tg, lp(-2)); row.addView(rd, lp(-2))   // (v224) زرار المهام اتشال؛ 🌐 و🔑 في الشريط السفلي جنب 🗣
+            row.addView(chipB, lp(-2)); row.addView(wzB, lp(-2)); row.addView(tg, lp(-2)); row.addView(rd, lp(-2))   // (v224) زرار المهام اتشال؛ 🌐 و🔑 في الشريط السفلي جنب 🗣
             if (webVid) { row.addView(qBtn(), lp(-2)); row.addView(dlB, lp(-2)) }
             trUpdaters.add {
                 val paused = ::engine.isInitialized && engine.userPaused
@@ -526,7 +527,7 @@ class PlayerActivity : Activity(), Host {
             var rd2Ref: TextView? = null
             val rd2 = b("🔁 إعادة", 0xFF6A1B9A.toInt()) { rd2Ref?.let { redoDialog(it) } }
             rd2Ref = rd2
-            row.addView(tr, lp(0).apply { width = 0; weight = 2f }); row.addView(ps, lp(0).apply { width = 0; weight = 1f })
+            row.addView(tr, lp(0).apply { width = 0; weight = 2f }); row.addView(wzB, lp(0).apply { width = 0; weight = 0.6f }); row.addView(ps, lp(0).apply { width = 0; weight = 1f })
             row.addView(rs, lp(0).apply { width = 0; weight = 1f })
             row.addView(rd2, lp(0).apply { width = 0; weight = 1f })
             if (webVid) { row.addView(qBtn(), lp(0).apply { width = 0; weight = 1.1f }); row.addView(dlB, lp(0).apply { width = 0; weight = 0.6f }) }
@@ -584,7 +585,7 @@ class PlayerActivity : Activity(), Host {
             Notice.show(this, (label).toString(), 2300L)
             engine.paused = true
             Thread {
-                try { work() } catch (e: Throwable) { log("⚠ " + (e.message ?: e.toString()).take(120)); engine.paused = false }
+                try { work() } catch (e: Throwable) { val m = "⚠ " + (e.message ?: e.toString()).take(120); log(m); runOnUiThread { say(m) }; engine.paused = false }
                 dirty = true; curIdx = -2
                 runOnUiThread { beginTranslate() }
             }.apply { isDaemon = true }.start()
@@ -643,7 +644,7 @@ class PlayerActivity : Activity(), Host {
         Notice.show(this, (label).toString(), 2300L)
         engine.paused = true
         Thread {
-            try { work() } catch (e: Throwable) { log("⚠ " + (e.message ?: e.toString()).take(120)); engine.paused = false }
+            try { work() } catch (e: Throwable) { val m = "⚠ " + (e.message ?: e.toString()).take(120); log(m); runOnUiThread { say(m) }; engine.paused = false }
             dirty = true; curIdx = -2
             runOnUiThread { beginTranslate() }
         }.apply { isDaemon = true }.start()
@@ -2132,7 +2133,7 @@ class PlayerActivity : Activity(), Host {
         if (fresh) { try { player.seekTo(0) } catch (e: Exception) { LogStore.err("Main:2041", e) }; cur = 0L }
         val eng = engine   // (v139) المحرك اللي اتطلب له التشغيل بالذات — مش اللي يبقى في الحقل وقت ما الخيط يشتغل
         Thread {
-            if (fresh) try { eng.redoAll() } catch (e: Throwable) { log("⚠ " + (e.message ?: e.toString()).take(120)) }
+            if (fresh) try { eng.redoAll() } catch (e: Throwable) { val m = "⚠ " + (e.message ?: e.toString()).take(120); log(m); runOnUiThread { say(m) } }
             eng.run()
         }.apply { isDaemon = true }.start()
     }
@@ -2881,6 +2882,51 @@ class PlayerActivity : Activity(), Host {
         try { if (up) pw.showAsDropDown(anchor, 0, -(anchor.height + popH + ui.dp(2))) else pw.showAsDropDown(anchor, 0, ui.dp(2)) } catch (e: Throwable) { LogStore.err("Player:kmPop", e) }
         kmPop = pw
         h.removeCallbacks(hideChrome); showChrome(); h.removeCallbacks(hideChrome)
+    }
+
+    /** (v254) ▶ ترجمة قبل البداية: لو فيه إعداد محفوظ بيشتغل بيه على طول، وإلا بيسأل (أونلاين / أوفلاين ← لغة ← تفريغ ← ترجمة ← حفظ؟) */
+    fun translateEntry() {
+        val pl = TrWizard.savedPlan()
+        if (pl != null) {
+            val m = Offline.models.firstOrNull { it.id == pl.model } ?: Offline.model()
+            val ready = if (pl.engine == "sherpa") SherpaStt.ready() else (WhisperLib.loaded && Offline.downloaded(m))
+            if (pl.offline && !ready) { say("📴 موديل الأوفلاين مش نازل — كمّل الإعداد وهتنزّله"); trWizard(false); return }
+            runPlan(pl); return
+        }
+        trWizard(false)
+    }
+
+    /** edit = true: جاي من زرار ⚙ (تغيير/مسح الإعداد من غير بدء ترجمة) */
+    fun trWizard(edit: Boolean) {
+        try {
+            TrWizard.show(this, edit) { pl, save, start ->
+                if (save) TrWizard.save(pl)
+                if (start) runPlan(pl) else if (save) say("💾 اتحفظ: " + TrWizard.describe(pl).replace("\n", " · "))
+            }
+        } catch (e: Throwable) { LogStore.err("Player:trWizard", e); say("تعذّر فتح شاشة طريقة الترجمة") }
+    }
+
+    /** بيطبّق الخطة على الإعدادات اللي المحرك بيقراها وبيبدأ الترجمة */
+    private fun runPlan(pl: TrWizard.Plan) {
+        TrWizard.apply(pl)
+        if (pl.offline) {
+            // الأوفلاين = وضع «نسخ ثم ترجمة سياقية» (Cfg.snapshot بيجبره لما Offline.on()): نفس إعدادات بريست الترانسكريبشن (مقاطع 60ث، من غير تنقيح ولا بصري)
+            TrPresets.byId("transcript")?.let { TrPresets.apply(it) }
+            try { val nc = Cfg.snapshot(); conf = nc; if (::engine.isInitialized) engine.applyConf(nc) } catch (e: Throwable) { LogStore.err("Player:runPlan", e) }
+            for ((v, f) in kmLabels) v.text = f(KeyMode.clamp(Cfg.int("kmode", 1)))
+            if (::engine.isInitialized) engine.convDialect = Cfg.str("conv_dialect", "")   // (v257) اللهجة اللي اخترتها في الشاشة
+            LogStore.add("🎛 طريقة الترجمة: أوفلاين — لغة=" + pl.lang.ifEmpty { "تلقائي" } + " · محرك=" + pl.engine + " · موديل=" + (if (pl.engine == "sherpa") "SenseVoice" else pl.model) + " · ترجمة=" + pl.method + " · لهجة=" + pl.dialect.ifBlank { "فصحى" })
+            say("📴 أوفلاين · " + TrWizard.langLabel(pl.lang) + " · " + (if (pl.method == "google") "ترجمة جوجل" else "ترجمة جيميناي"))
+            beginTranslate()
+            TrWizard.startNotices(pl).forEachIndexed { i, m -> h.postDelayed({ try { Notice.show(this, m, 4500L) } catch (e: Throwable) { LogStore.err("Player:startNotices", e) } }, 600L + i * 3200L) }   // (v255)
+        } else {
+            val pr = TrPresets.byId(pl.onlineId)
+            if (pr != null) applyPreset(pr)
+            else {
+                try { val nc = Cfg.snapshot(); conf = nc; if (::engine.isInitialized) engine.applyConf(nc) } catch (e: Throwable) { LogStore.err("Player:runPlan", e) }
+                beginTranslate()
+            }
+        }
     }
 
     private var presetPop: android.widget.PopupWindow? = null

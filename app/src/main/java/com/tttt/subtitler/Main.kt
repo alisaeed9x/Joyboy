@@ -442,6 +442,79 @@ class MainActivity : Activity() {
             Cfg.put(AudioEnc.PRESET_KEY, if (it == apNormal) AudioEnc.NORMAL else AudioEnc.FAST); apDesc()
         }
         apDesc()
+        // (v253) الترانسكريبشن الأوفلاين: Whisper على الجهاز من غير مفتاح. جيميناي بيترجم وهو الاحتياطي لو الأوفلاين فشل
+        val offStatus = ui.text("", 12f, th.muted)
+        val offProg = ui.text("", 12f, th.muted)
+        lateinit var offDlBtn: android.widget.Button
+        fun offRefresh() {
+            offStatus.text = Offline.status() + "\n" + Offline.model().note
+            offDlBtn.text = if (Offline.downloading()) "⏹ إلغاء التنزيل" else if (Offline.downloaded()) "🗑 مسح الموديل (دوسة طويلة)" else "⬇ تنزيل الموديل (~" + Offline.model().approxMb + " ميجا)"
+        }
+        val offEngOpts = listOf("☁ جيميناي (الحالي)", "📴 أوفلاين (Whisper — من غير مفتاح)")
+        val offEngChips = ui.chips(offEngOpts, { if (Cfg.bool("stt_offline", false)) offEngOpts[1] else offEngOpts[0] }) {
+            if (it == offEngOpts[1] && !Offline.downloaded()) Notice.show(this, "نزّل الموديل الأول، وإلا جيميناي هو اللي هينسخ", 2800L)
+            Cfg.put("stt_offline", if (it == offEngOpts[1]) "1" else "0"); offRefresh()
+        }
+        val offModelChips = ui.chips(Offline.models.map { it.label }, { Offline.model().label }) { l ->
+            Offline.models.firstOrNull { m -> m.label == l }?.let { m -> Cfg.put("off_model", m.id) }; offProg.text = ""; offRefresh()
+        }
+        offDlBtn = ui.button("") {
+            if (Offline.downloading()) { Offline.cancelDownload() }
+            else if (Offline.downloaded()) { Notice.show(this, "دوس دوسة طويلة على الزرار عشان تمسح الموديل", 2300L) }
+            else {
+                offProg.text = "⏳ بيبدأ التنزيل…"
+                Offline.download(Offline.model(), { a, t -> runOnUiThread { offProg.text = "⬇ " + (a / 1048576) + " / " + (t / 1048576) + " ميجا" } },
+                    { err -> runOnUiThread { offProg.text = if (err == null) "✅ الموديل نزل" else "❌ $err"; offDlBtn.postDelayed({ offRefresh() }, 500) } })
+                offRefresh()
+            }
+        }
+        offDlBtn.setOnLongClickListener {
+            if (!Offline.downloading() && Offline.downloaded()) { Offline.delete(); offProg.text = ""; offRefresh(); true } else false
+        }
+        offRefresh()
+        // (v257) محرك التفريغ (Whisper / SenseVoice) + الترجمة بعده + الخطة المحفوظة — كانوا في شاشة «▶ ترجمة» بس ومالهمش مكان في الإعدادات
+        val sEng1 = "🎧 Whisper (كل اللغات)"; val sEng2 = "⭐ SenseVoice (إنجليزي · ياباني · كوري · صيني)"
+        val sherpaStatus = ui.text("", 12f, th.muted)
+        val sherpaProg = ui.text("", 12f, th.muted)
+        lateinit var sherpaDlBtn: android.widget.Button
+        fun sherpaRefresh() {
+            val wantS = Cfg.str("stt_engine", "whisper") == "sherpa"
+            val eff = Offline.engine().id
+            sherpaStatus.text = "SenseVoice: " + SherpaStt.status() + "\nالمحرك الفعلي دلوقتي: " + (if (eff == "sherpa") "SenseVoice" else "Whisper" + (if (wantS) " (SenseVoice مش بيفهم لغة الكلام المختارة أو مش شغّال على جهازك)" else ""))
+            sherpaDlBtn.text = if (Offline.downloading()) "⏹ إلغاء التنزيل" else if (SherpaStt.downloaded()) "🗑 مسح موديل SenseVoice (دوسة طويلة)" else "⬇ تنزيل موديل SenseVoice (~" + SherpaStt.MODEL_MB + " ميجا)"
+        }
+        val sttEngChips = ui.chips(listOf(sEng1, sEng2), { if (Cfg.str("stt_engine", "whisper") == "sherpa") sEng2 else sEng1 }) {
+            Cfg.put("stt_engine", if (it == sEng2) "sherpa" else "whisper")
+            if (it == sEng2 && !SherpaStt.downloaded()) Notice.show(this, "نزّل موديل SenseVoice الأول، وإلا جيميناي هو اللي هينسخ", 2800L)
+            sherpaRefresh()
+        }
+        sherpaDlBtn = ui.button("") {
+            if (Offline.downloading()) { Offline.cancelDownload() }
+            else if (SherpaStt.downloaded()) { Notice.show(this, "دوس دوسة طويلة على الزرار عشان تمسح الموديل", 2300L) }
+            else if (!SherpaStt.supported()) { Notice.show(this, "جهازك مش بيدعم SenseVoice (محتاج معالج 64-bit)", 2600L) }
+            else {
+                sherpaProg.text = "⏳ بيبدأ التنزيل…"
+                Offline.downloadSherpa({ a, t -> runOnUiThread { sherpaProg.text = "⬇ " + (a / 1048576) + " / " + (t / 1048576) + " ميجا" } },
+                    { err -> runOnUiThread { sherpaProg.text = if (err == null) "✅ الموديل نزل" else "❌ $err"; sherpaDlBtn.postDelayed({ sherpaRefresh() }, 500) } })
+                sherpaRefresh()
+            }
+        }
+        sherpaDlBtn.setOnLongClickListener {
+            if (!Offline.downloading() && SherpaStt.downloaded()) { Offline.deleteSherpa(); sherpaProg.text = ""; sherpaRefresh(); true } else false
+        }
+        sherpaRefresh()
+        val mGoogle = "🌍 جوجل (من غير API)"; val mGem = "✨ جيميناي بالسياق"
+        val trMethodChips = ui.chips(listOf(mGoogle, mGem), { if (TrWizard.method() == "google") mGoogle else mGem }) { Cfg.put("tr_method", if (it == mGoogle) "google" else "gemini") }
+        val savedPlanTxt = ui.text("", 12f, th.muted)
+        fun planRefresh() { savedPlanTxt.text = TrWizard.savedPlan()?.let { "المحفوظ لزرار «▶ ترجمة»: " + TrWizard.describe(it).replace("\n", " · ") } ?: "مفيش إعداد محفوظ لزرار «▶ ترجمة» — بيسألك كل مرة." }
+        val planBtn = ui.button("⚙ طريقة الترجمة (نفس زرار ⚙ في المشغّل)") {
+            try { TrWizard.show(this, true) { pl, save, _ -> if (save) { TrWizard.save(pl); planRefresh() } } }
+            catch (e: Throwable) { LogStore.err("Main:trWizard", e); Notice.show(this, "تعذّر فتح شاشة طريقة الترجمة", 2300L) }
+        }
+        planRefresh()
+        val offLangChips = ui.chips(Offline.langLabels, { Offline.langLabels[Offline.langIds.indexOf(Offline.lang()).coerceAtLeast(0)] }) { Cfg.put("stt_lang", Offline.langIds[Offline.langLabels.indexOf(it).coerceAtLeast(0)]) }
+        val offPartLabels = listOf("٥ دقايق", "١٠ دقايق", "٢٠ دقيقة"); val offPartVals = listOf(5, 10, 20)
+        val offPartChips = ui.chips(offPartLabels, { offPartLabels[offPartVals.indexOf(Cfg.int("ctx_min", 10)).coerceAtLeast(1)] }) { Cfg.put("ctx_min", offPartVals[offPartLabels.indexOf(it).coerceAtLeast(1)].toString()) }
         val vaOn = "⚡ تلقائي مع كل فيديو"; val vaOff = "✋ يدوي (بريسيتس / زرار 👁)"
         val visAutoChips = ui.chips(listOf(vaOn, vaOff), { if (VisualMode.auto()) vaOn else vaOff }) { Cfg.put("vis_open_auto", if (it == vaOn) "1" else "0") }   // (v249) مفتاح مستقل: الافتراضي يدوي
         // (v198) إعدادات مشغّل الموسيقى
@@ -495,7 +568,9 @@ class MainActivity : Activity() {
                     ui.text("الوضع 1 = أول باتش لوحده يعرّف اللغة ويترجم قالب البرومبت ثم الباقي متوازي (الشغل القديم). الوضع 2 = كل المفاتيح متوازية من الأول وبرومبت إنجليزي ثابت. الوضع 3 = ٧٥٪ من المفاتيح بتنسخ الكلام بس و٢٥٪ بتترجم كل ٣–٥ باتشات مع بعض (برومبت إنجليزي). الوضع 4 = كل المفاتيح بتنسخ بس، وبعد ما الفيديو كله يتنسخ النص كله يتبعت لجيميناي يترجمه بالسياق الكامل (واقعي، مع ضبط الضمائر) مرة واحدة أو على أجزاء — والترجمة بتظهر في الآخر. أي باتش يرجع صفر جمل أو يفشل في أي وضع بيتترجم على مفتاح من «🛟 مفاتيح احتياطية» بالترتيب. نفس الوضع بيتبدّل من زرار «🔑 وضع» جنب زرار الترجمة في المشغّل.", 12f, th.muted)),
                                 ui.section("🤖 الموديل والسرعة", true, modelChips, fetchModelsBtn, model, modelDesc,
                     ui.text("🏎 اختبار السرعة: بيبعت طلب صغير على كل مفتاح بالموديل المختار وflash-lite-latest ويوريك زمن الرد والأسرع (🏆). بيستهلك طلبات قليلة.", 12f, th.muted), speedBtn, speedOut, speedUseBtn),
-                ui.section("⏱ التقطيع والتنقيح", false, chunk, *fl("prefine")))),
+                ui.section("⏱ التقطيع والتنقيح", false, chunk, ahead, hlsAhead,
+                    ui.switchRow("كمّل ترجمة باقي الفيديو بعد ما توصل لمكان التشغيل (بيرجع للأول لو فيه جزء ناقص)", Cfg.bool("keepgoing", true)) { Cfg.put("keepgoing", if (it) "1" else "0") },
+                    *fl("prefine")))),
             // ===== 💬 الترجمة وشكلها: اللغة والأسلوب واللهجة ثم شكل الظهور =====
             tab("general", listOf<View>(
                 ui.section("اللهجة", true, ui.chips(langs, { lang }) { lang = it; save() }),
@@ -510,9 +585,20 @@ class MainActivity : Activity() {
                     ui.slider("الظهور (100 = معتمة، أقل = أشفّ)", Cfg.int("badge_alpha", 55).coerceIn(15, 100), 15, 100, "%") { Cfg.put("badge_alpha", it.toString()) })), true),
             // ===== 🔊 الصوت والصورة =====
             tab("audio", listOf<View>(
-                ui.section("🔊 الصوت", true, atrack, audioPresetTitle, audioPresetChips, audioPresetDesc, *fl("soundtags", "hitiming")))),
+                ui.section("🔊 الصوت", true, atrack, audioPresetTitle, audioPresetChips, audioPresetDesc, *fl("soundtags", "hitiming")),
+                ui.section("📴 الترانسكريبشن الأوفلاين (من غير مفتاح) — v253", true,
+                    ui.text("اللي بينسخ الكلام من الصوت. الأوفلاين = Whisper شغّال على موبايلك نفسه (النت بس لتنزيل الموديل مرة واحدة). جيميناي بيفضل المترجم، وهو الاحتياطي لو الأوفلاين فشل.", 12f, th.muted),
+                    offEngChips,
+                    ui.text("محرك التفريغ:", 12f, th.muted), sttEngChips, sherpaStatus, sherpaDlBtn, sherpaProg,
+                    ui.text("حجم موديل Whisper:", 12f, th.muted), offModelChips, offStatus, offDlBtn, offProg,
+                    ui.text("لغة الكلام (لو عارفها بتقلّل أخطاء الاكتشاف التلقائي):", 12f, th.muted), offLangChips,
+                    ui.text("طول الجزء اللي بيتبعت لجيميناي يترجمه (أول ما يجهز):", 12f, th.muted), offPartChips,
+                    ui.text("الترجمة بعد التفريغ الأوفلاين (جوجل من غير API بيترجم فصحى؛ ولو اخترت لهجة جيميناي بيحوّلها):", 12f, th.muted), trMethodChips, savedPlanTxt, planBtn,
+                    ui.text("الأوفلاين أبطأ من السحابة (بيعتمد على معالج موبايلك) — الترجمة بتظهر جزء ورا جزء. لو سرعته أقل من 1× كبّر الموديل لأصغر (base).", 12f, th.muted)))),
             tab("visual", listOf<View>(
                                 ui.section("👁 محرك الوضع البصري", false, visAutoChips,
+                    ui.slider("المسافة اللي الوضع البصري بيفحصها قدّام مكان التشغيل", Cfg.int("vis_ahead", 180).coerceIn(30, 900), 30, 900, "ث") { Cfg.put("vis_ahead", it.toString()) },
+                    ui.switchRow("إظهار شريط حالة الوضع البصري فوق المشغّل", Cfg.str("visbar", "0") == "1") { Cfg.put("visbar", if (it) "1" else "0") },
                     ui.text("الوضع البصري بيعتمد على Gemini فقط (مفتاح «الوضع البصري فقط» في قسم 🔑 المفاتيح والمحرك). بيلقط فريم كل ثانية، بيتخطّى اللي مفيهوش تغيير أو نص، وبيبعت الباقي دفعات (30 فريم) في شبكات من 6 فريمات بالتوازي. النتايج بتتحفظ مع الفيديو، وبين الطلبات راحة تلقائية لو جيميناي رفض (429). بيتطبق من أول تشغيل جديد.\n(v249) الوضع البصري ما بيشتغلش لوحده لما تدخل فيديو — بيشتغل من البريسيتس اللي فيها بصري (شاملة / هارد سب) أو من زرار 👁، إلا لو اخترت «تلقائي مع كل فيديو» فوق.", 12f, th.muted)))),
             // ===== 🛠 عام: الخروج · الترجمة الحية · الطابور · البطارية · الأمان · النسخة الاحتياطية · الثيم =====
             tab("more", listOf<View>(

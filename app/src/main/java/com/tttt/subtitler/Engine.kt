@@ -67,7 +67,7 @@ class Engine(
     private val failed = ConcurrentHashMap<Int, Int>()
     private val gapPass = ConcurrentHashMap<Int, Int>()
     @Volatile private var lastGapTry = 0L
-    private val basePool = Pool(conf)
+    @Volatile private var basePool = Pool(conf)
     // (v210) الوضعين 3 و4: حوضين منفصلين — مفاتيح الترانسكريبشن (pool) ومفاتيح الترجمة (trPool). الاحتياطي مشترك. بيتبنوا من جديد بس لو المفاتيح/الوضع اتغيروا
     // (v220) تبديل وضع المفاتيح أثناء الترجمة: conf.keyMode = اللي اليوزر اختاره، activeMode = اللي الشغل الجاري ماشي بيه. لو اختلفوا: الباتشات الشغالة
     // (والمنسوخة المستنية ترجمة) بتخلص بالوضع القديم، مفيش باتشات جديدة بتتبعت، وبعدها activeMode بيتبدّل والباتشات الجديدة تمشي بالوضع الجديد.
@@ -383,6 +383,7 @@ class Engine(
     }
     /** بيحوّل الجمل اللي لسه ما اتحوّلتش كل ~3 باتشات (أو الباقي لما الترجمة تهدى) على المفاتيح الاحتياطية */
     fun maybeConvert(force: Boolean = false) {
+        if (keyless) return   // (v259) تحويل اللهجة محتاج جيميناي — من غير مفتاح الترجمة بتفضل فصحى (الإشعار اتعرض قبل البداية)
         val tgt = convDialect
         if (tgt.isBlank() || tgt == "فصحى" || tgt == conf.lang) return
         if (System.currentTimeMillis() - lastConvFail < minOf(60_000L, 10_000L shl minOf(convFailN, 3))) return
@@ -431,7 +432,7 @@ class Engine(
                     for (ix in got) pend.remove(pk(snap[ix]))
                 }
                 host.changed(); convFailN = 0
-            } catch (e: Exception) { lastConvFail = System.currentTimeMillis(); convFailN++; host.log("⚠ التحويل للهجة فشل: " + (e.message ?: "").take(130)) }
+            } catch (e: Exception) { lastConvFail = System.currentTimeMillis(); convFailN++; warnUser("conv", "⚠ التحويل للهجة فشل — الترجمة فضلت زي ما هي وهيتحاول تاني"); host.log("⚠ التحويل للهجة فشل: " + (e.message ?: "").take(130)) }
         }
         if (changed > 0) { persist(); host.log("✅ اتحوّلت $changed جملة للهجة $tgt") }
         return changed
@@ -466,7 +467,13 @@ class Engine(
     fun translateFrom(sec: Double) { onlyChunks = null; forcedSticky = false; forcedCursor = chunkOfSec(sec.coerceAtLeast(0.0)); paused = false; userPaused = false }
     fun stop() { isClosed = true; running = false; bg.shutdownNow(); gapEx.shutdownNow(); exec?.shutdownNow(); try { trEx.shutdownNow() } catch (_: Exception) {}; try { hedgeEx.shutdownNow() } catch (_: Exception) {}; try { holeEx.shutdownNow() } catch (_: Exception) {}; try { persistEx.shutdownNow() } catch (_: Exception) {} }
     /** (v122) إعدادات اتغيّرت من شاشة الإعدادات (لهجة / أسلوب / موديل / شخصيات…): تتطبّق على الباتشات والتحويلات الجاية من غير إعادة تشغيل المحرك */
-    fun applyConf(c: Conf) { conf = c; dialConf.clear() }
+    fun applyConf(c: Conf) {
+        val keysChanged = c.keys != conf.keys || c.backup != conf.backup || c.refine != conf.refine
+        conf = c; dialConf.clear()
+        if (keysChanged) basePool = Pool(c)   // (v259) المفاتيح اتغيّرت (مثلًا مفتاح محلي للأوفلاين+جوجل): الحوض لازم يتبني من جديد
+    }
+    /** (v259) مفيش ولا مفتاح جيميناي حقيقي — بس المفتاح المحلي الوهمي (أوفلاين + جوجل). المهام اللي محتاجة جيميناي بتتخطّى */
+    private val keyless: Boolean get() = conf.keys.isNotEmpty() && conf.keys.all { it == LocalKey.ID } && conf.backup.isEmpty() && conf.refine.isEmpty()
     fun saveNow() = doPersist(true)
     /** استيراد ترجمة جاهزة (SRT) لفيديو من غير ترجمة */
     fun importSubs(l: List<Sub>) { subs = l }
@@ -521,7 +528,7 @@ class Engine(
     private fun cEnd(i: Int, d: Double): Double { val e = cStart(i + 1); return if (d > 0) minOf(e, d) else e }
 
     fun run() {
-        if (conf.keys.isEmpty() && conf.backup.isEmpty()) { host.status("⚠ ادخل مفتاح Gemini في الإعدادات"); host.log("⚠ مفيش مفاتيح Gemini"); return }
+        if (conf.keys.isEmpty() && conf.backup.isEmpty()) { host.status("⚠ ادخل مفتاح Gemini في الإعدادات"); host.log("⚠ مفيش مفاتيح Gemini"); host.notice("⚠ مفيش مفتاح جيميناي — ضيف واحد من الإعدادات ← المفاتيح"); return }
         val capMax = basePool.capacity(conf.parallelPerKey)
         val ex = Executors.newFixedThreadPool(capMax + 2) { r -> Thread(r).also { it.isDaemon = true } }   // +2: باتش اتنسخ واتحسب من نسخته الاحتياطية ممكن يفضل خيطه الأصلي شغال شوية من غير ما يحجز مكان باتش جديد
         exec = ex
@@ -734,7 +741,7 @@ class Engine(
      * بنبعت نسخة منه على مفتاح تاني — أول نسخة تخلص هي اللي بتتطبّق والتانية بتتجاهل. نسخة واحدة بس في نفس الوقت.
      */
     private fun hedgeTick() {
-        if (inflight.isEmpty() || hedgeBusy.get() >= 1 || pool.usableCount() < 2) return
+        if (inflight.isEmpty() || hedgeBusy.get() >= 1 || pool.usableCount() < 2 || Offline.on()) return   // (v253) الأوفلاين: نسخة احتياطية بتستنى نفس المعالج
         val now = System.currentTimeMillis()
         val ms = recentMs.toList().sorted()
         val med = if (ms.isEmpty()) 0L else ms[ms.size / 2]
@@ -829,7 +836,12 @@ class Engine(
                 val mdl = altModel ?: curModel()
                 val r = run {
                     pool.begin(key, i)
-                    try { Api.generate(mdl, key, prompt, w.bytes, maxTokens = Api.outTokens(w.durSec)).also { pool.end(key, System.currentTimeMillis() - t0, true) } } catch (e: Throwable) { pool.end(key, 0, false); throw e }
+                    try {
+                        val gem = { Api.generate(mdl, key, prompt, w.bytes, maxTokens = Api.outTokens(w.durSec)) }
+                        // (v253) ترانسكريبشن أوفلاين (Whisper على الجهاز) — لو فشل جيميناي (gem) بيكمّل الباتش
+                        (if (tx && Offline.on()) Offline.transcribe(w.bytes, w.durSec, effectiveGloss().joinToString(", ") { it.term }, { host.log(it) }, gem, { host.notice(it) })
+                            else { if (tx) Offline.whyOff()?.let { m -> host.log(m); Offline.softNotice(m) { host.notice(it) } }; gem() }).also { pool.end(key, System.currentTimeMillis() - t0, true) }
+                    } catch (e: Throwable) { pool.end(key, 0, false); throw e }
                 }
                 val took = System.currentTimeMillis() - t0
                 if (isClosed) return   // الإنجن اتقفل أثناء الطلب (خرجت من الفيديو): ارمي الرد
@@ -1037,11 +1049,11 @@ class Engine(
     private fun capNow(c: Int): Int = if (System.currentTimeMillis() < quotaCapUntil) minOf(c, 2).coerceAtLeast(1) else c
     private fun noteQuota() {
         val now = System.currentTimeMillis()
-        if (now >= quotaCapUntil) host.log("⚠ كوتة (429): الطلبات المتوازية اتقلّلت لـ 2 لمدة 5 دقايق، والبحث عن العمل/الشخصيات واقف لحد ما المفاتيح ترجع")
+        if (now >= quotaCapUntil) { warnUser("quota", "⚠ كوتة جيميناي خلصت (429) — الترجمة هتبطّأ 5 دقايق وبترجع لوحدها"); host.log("⚠ كوتة (429): الطلبات المتوازية اتقلّلت لـ 2 لمدة 5 دقايق، والبحث عن العمل/الشخصيات واقف لحد ما المفاتيح ترجع") }
         quotaCapUntil = now + 5 * 60_000L
     }
     /** الاستعلامات الجانبية (بحث اسم العمل · الشخصيات) بتشتغل بس لو فيه مفتاح شغّال ومفيش 429 جديد — عشان ماتاخدش كوتة من الترجمة نفسها */
-    private fun sideOk(): Boolean = System.currentTimeMillis() >= quotaCapUntil && basePool.all().any { basePool.ok(it) }
+    private fun sideOk(): Boolean = !keyless && System.currentTimeMillis() >= quotaCapUntil && basePool.all().any { basePool.ok(it) }
     private fun showTranscriptPreview(i: Int, p: Prep, fresh: List<Sub>) {
         if (isClosed || fresh.isEmpty()) return
         try {
@@ -1201,6 +1213,17 @@ class Engine(
     private val CTX_FULL_MAX = 1500    // لحد العدد ده بنبعت النص الكامل كسياق مع كل جزء، وفوقه بنبعت نافذة حوالين الجزء
     private val CTX_WINDOW = 300
     @Volatile private var ctxMsg = ""
+    private val warnAtMap = java.util.concurrent.ConcurrentHashMap<String, Long>()
+    /** (v258) إشعار للمستخدم بدل ما الخطأ يفضل في اللوج بس. [key] بيحدّد النوع — نفس النوع مرة كل 60 ث بالكتير */
+    private fun warnUser(key: String, msg: String) {
+        if (keyless) return   // (v259) من غير مفتاح: خطوات جيميناي الجانبية بتتخطّى بهدوء (الإشعار الأساسي بيتعرض مرة واحدة)
+        val n = System.currentTimeMillis()
+        val last = warnAtMap[key] ?: 0L
+        if (n - last < 60_000L) return
+        warnAtMap[key] = n
+        try { host.notice(msg) } catch (_: Throwable) {}
+    }
+    @Volatile private var gtNoticeAt = 0L   // (v255) آخر إشعار «جوجل فشل» (مرة كل 30 ث بالكتير)
 
     /** كل الباتشات المطلوبة اتنسخت (مفيش حاجة شغالة ولا مستنية ولا مستنية إعادة) */
     private fun ctxReady(): Boolean {
@@ -1223,6 +1246,7 @@ class Engine(
         if (trBusy.get() > 0) return false
         val avail = tHold.keys.filter { it !in tTaken }.sorted()
         if (avail.isEmpty()) return false
+        if (!ctxReady() && Offline.on() && partTick(avail)) return true   // (v253) جزء كامل اتنسخ ← يتترجم فورًا
         if (!ctxReady()) {
             val m = "📝 ترانسكريبشن: ${avail.size} باتش جاهز — الترجمة السياقية بتبدأ لما كل الباتشات تتنسخ"
             if (m != ctxMsg) { ctxMsg = m; host.status(m) }
@@ -1234,11 +1258,52 @@ class Engine(
         try {
             trEx.submit {
                 try { translateContextual(group) }
-                catch (e: Exception) { host.log("⚠ ترجمة سياقية فشلت: " + (e.message ?: e.javaClass.simpleName).take(120)) }
+                catch (e: Exception) { warnUser("ctx", "⚠ الترجمة السياقية فشلت — جمل ممكن تفضل من غير ترجمة لحد ما تتعاد"); host.log("⚠ ترجمة سياقية فشلت: " + (e.message ?: e.javaClass.simpleName).take(120)) }
                 finally { tTaken.removeAll(avail.toSet()); trBusy.decrementAndGet(); host.changed() }
             }
         } catch (_: RejectedExecutionException) { tTaken.removeAll(avail.toSet()); trBusy.decrementAndGet(); return false }
         return true
+    }
+
+    /**
+     * (v253) الأوفلاين بطيء (دقايق للفيلم)، فمش بنستنى الفيلم كله: أول ما k باتش ورا بعض (= 5/10/20 دقيقة) يتنسخوا وماحدش قبلهم لسه شغّال
+     * بيتبعتوا لجيميناي يترجمهم. الباقي (اللي أقل من جزء) بيتترجم لما كل الباتشات تخلص زي الوضع 4 العادي.
+     */
+    private fun partTick(avail: List<Int>): Boolean {
+        val k = maxOf(1, (Offline.partMin() * 60.0 / ch).toInt())
+        if (avail.size < k) return false
+        val head = avail.take(k)
+        if (head.last() - head.first() != k - 1) return false      // فيه باتش ناقص في النص (لسه بيتنسخ أو متأخر)
+        if (inflight.any { it < head.last() }) return false
+        val group = head.mapNotNull { tHold[it] }
+        if (group.size != k) return false
+        tTaken.addAll(head); trBusy.incrementAndGet()
+        try {
+            trEx.submit {
+                try { translateContextual(group) }
+                catch (e: Exception) { warnUser("part", "⚠ ترجمة جزء من الفيديو فشلت — هتتعاد تلقائي"); host.log("⚠ ترجمة جزء فشلت: " + (e.message ?: e.javaClass.simpleName).take(120)) }
+                finally { tTaken.removeAll(head.toSet()); trBusy.decrementAndGet(); host.changed() }
+            }
+        } catch (_: RejectedExecutionException) { tTaken.removeAll(head.toSet()); trBusy.decrementAndGet(); return false }
+        host.log("📴 جزء جاهز (${k} باتش ≈ ${Offline.partMin()} دقيقة) — اتبعت " + (if (TrWizard.googleOn()) "لجوجل" else "لجيميناي") + " يترجمه")
+        return true
+    }
+
+    /** (v254) ترجمة جوجل غير الرسمية لقايمة نصوص (لغة المصدر من إعداد الأوفلاين). بترجّع نفس الطول، والفاشل null */
+    private fun googleItems(src0: List<String>): List<String?> {
+        val src = src0.map { it.replace(Regex("\\s*\n\\s*"), " ").trim() }
+        val out = arrayOfNulls<String>(src.size)
+        val sl = TrWizard.googleLang()
+        var failedB = 0
+        for (b in src.indices.chunked(25)) {
+            if (!running || isClosed) break
+            try {
+                val r = gtCall(b.map { src[it] }, "ar", sl)
+                if (r != null) { for ((q, k) in b.withIndex()) out[k] = r[q] }
+                else for (k in b) { gtCall(listOf(src[k]), "ar", sl)?.firstOrNull()?.let { out[k] = it } }   // عدد الأسطر اختلف: جملة جملة
+            } catch (e: Exception) { failedB++; host.log("⚠ ترجمة جوجل: " + (e.message ?: e.toString()).take(80)); if (failedB >= 3) break }
+        }
+        return out.toList()
     }
 
     /** طلب Gemini نصي واحد (من غير صوت) بإعادة المحاولة وتحويل المفتاح عند الكوتة/الخطأ. null = فشل */
@@ -1284,7 +1349,8 @@ class Engine(
         val flatAll = group.flatMap { it.fresh }
         val parts = ArrayList<List<TItem>>(); var cur = ArrayList<TItem>(); var n = 0
         for (t in group) {
-            if (cur.isNotEmpty() && n + t.fresh.size > CTX_PART_MAX) { parts.add(cur); cur = ArrayList(); n = 0 }
+            val pm = Offline.partMin()   // (v253) 5/10/20 دقيقة للجزء (0 = بعدد الجمل بس)
+            if (cur.isNotEmpty() && (n + t.fresh.size > CTX_PART_MAX || (pm > 0 && (t.i - cur.first().i + 1) * ch > pm * 60.0))) { parts.add(cur); cur = ArrayList(); n = 0 }
             cur.add(t); n += t.fresh.size
         }
         if (cur.isNotEmpty()) parts.add(cur)
@@ -1292,6 +1358,10 @@ class Engine(
         host.status("🧠 بترجم بالسياق الكامل (${flatAll.size} جملة)…")
         val tp = trPool
         val doneTr = ArrayList<Sub>()
+        if (Offline.on() && flatAll.isNotEmpty()) {   // (v253) الأجزاء بتتترجم أول بأول: آخر جمل اتترجمت قبل الجزء ده بتتبعت كسياق
+            val f0 = flatAll.first().start
+            doneTr.addAll(synchronized(lock) { subs.filter { it.start < f0 && it.translated.isNotBlank() && it.translated != it.original }.takeLast(12) })
+        }
         var base = 0
         for ((pn, part) in parts.withIndex()) {
             if (!running || isClosed) return
@@ -1305,6 +1375,18 @@ class Engine(
                     if (missing.isEmpty()) break
                     round++
                     val items = missing.map { flat[it] }
+                    if (TrWizard.googleOn()) {   // (v254) الترجمة بجوجل (من غير API): 25 جملة في الطلب؛ اللي فشل بيتعاد في اللفة الجاية، ولو الكل فشل الباتشات بتتسلّم لجيميناي
+                        val g = googleItems(items.map { it.original })
+                        var okN = 0
+                        for ((q, o) in missing.withIndex()) g.getOrNull(q)?.takeIf { it.isNotBlank() }?.let { tr[o] = it; pv[o] = ""; okN++ }
+                        if (okN == 0) {
+                            host.log("⚠ ترجمة جوجل: مفيش جملة اترجمت (النت أو جوجل واقف) — الباتشات هتتسلّم لجيميناي")
+                            val now = System.currentTimeMillis()
+                            if (now - gtNoticeAt > 30_000L) { gtNoticeAt = now; host.notice(if (!TrWizard.online()) TrWizard.NO_NET_MSG else if (keyless) "⚠ جوجل مردّش ومفيش مفتاح جيميناي — هيتحاول تاني لما جوجل يرجع" else "⚠ جوجل مردّش — الترجمة اتحوّلت لجيميناي") }   // (v255)
+                            break
+                        }
+                        continue
+                    }
                     val full = flatAll.size <= CTX_FULL_MAX
                     val lo = if (full) 0 else (base - CTX_WINDOW).coerceAtLeast(0)
                     val hi = if (full) flatAll.size else (base + flat.size + CTX_WINDOW).coerceAtMost(flatAll.size)
@@ -1323,7 +1405,7 @@ class Engine(
             } catch (e: Unsupported) {
                 fatal = e.message; host.log("⛔ ${e.message}"); host.status("⛔ ${e.message}"); running = false; return
             } catch (e: Exception) {
-                host.log("⚠ ترجمة سياقية (جزء ${pn + 1}): " + (e.message ?: e.javaClass.simpleName).take(120))
+                warnUser("ctx", "⚠ الترجمة السياقية (جزء ${pn + 1}) فشلت — الجمل دي هتتعاد"); host.log("⚠ ترجمة سياقية (جزء ${pn + 1}): " + (e.message ?: e.javaClass.simpleName).take(120))
             }
             if (!running || isClosed) return
             applyGroupTranslated(part, off, tr, pv, dl)
@@ -1434,6 +1516,7 @@ class Engine(
     }
 
     private fun helperKey(i: Int = 0): String? {
+        if (keyless) return null
         val pref = (conf.refine + conf.backup).distinct().ifEmpty { conf.keys }
         val ok = pref.filter { pool.ok(it) }
         if (ok.isNotEmpty()) return ok[Math.floorMod(i, ok.size)]
@@ -1457,6 +1540,7 @@ class Engine(
 
     // --- تحليل الشخصيات تلقائيًا (_maybeAutoAnalyzeCharacters / analyzeCharacters) ---
     private fun maybeAnalyze() {
+        if (keyless) return
         if (!conf.autoChars || conf.manualChars.isNotEmpty()) return
         maybeLookup()
         maybeIdentify()
@@ -1708,6 +1792,7 @@ class Engine(
     }
 
     private fun maybeRefine() {
+        if (keyless) return
         if (!conf.partialRefine) return
         val keysOk = partialKeys().isNotEmpty()
         if (!keysOk) {
@@ -1740,7 +1825,7 @@ class Engine(
     private fun runRefine(isFinal: Boolean) {
         try {
             bg.submit {
-                try { refinePass(isFinal) } catch (e: Exception) { host.log("⚠ تنقيح الترجمة فشل: " + (e.message ?: "").take(100)) }
+                try { refinePass(isFinal) } catch (e: Exception) { warnUser("refine", "⚠ تنقيح الترجمة فشل — الترجمة سليمة بس من غير تنقيح"); host.log("⚠ تنقيح الترجمة فشل: " + (e.message ?: "").take(100)) }
                 finally { refineBusy = false }
             }
         } catch (_: Exception) { refineBusy = false }
@@ -1995,8 +2080,8 @@ class Engine(
      * (25 جملة في الطلب) وتحطه مكان الترجمة الحالية، فيتعرض على الفيديو عادي. جوجل بيترجم لـ«العربية» بس (مش لهجة).
      * بيتحفظ نسخة «قبل ترجمة جوجل» للرجوع.
      */
-    private fun gtCall(texts: List<String>, tl: String): List<String>? {
-        val body = "client=gtx&sl=auto&tl=" + tl + "&dt=t&q=" + java.net.URLEncoder.encode(texts.joinToString("\n"), "UTF-8")
+    private fun gtCall(texts: List<String>, tl: String, sl: String = "auto"): List<String>? {
+        val body = "client=gtx&sl=" + sl + "&tl=" + tl + "&dt=t&q=" + java.net.URLEncoder.encode(texts.joinToString("\n"), "UTF-8")
         var last: Exception? = null
         for (t in 1..4) {
             try {
@@ -2170,6 +2255,7 @@ class Engine(
     // ===== سدّ الفجوات تلقائيًا أثناء المشاهدة (autoGapFill) =====
     /** مناطق اتترجمت بس مفيهاش جمل لمدة طويلة، قريبة من مكان التشغيل: بتتبعت بمفاتيح المراقبين/الاحتياطي وبتتعلّم بـ «» */
     private fun gapTick(all: Boolean = false): Boolean {
+        if (keyless) return false
         if (!conf.gapFill || !running) return false
         val now = System.currentTimeMillis()
         if (now - lastGapScan < Gaps.COOLDOWN_MS) return false
@@ -2343,6 +2429,6 @@ class Engine(
             val fr = failed.filter { it.value >= MAX_FAILS }.keys.sorted().map { doubleArrayOf(cStart(it), cStart(it + 1)) }
             Saved(conf.chunkSec, srcLang, detDone, subs, done.list(), fr, chars.toList(), gloss.toList(), synchronized(tplCache) { HashMap(tplCache) }, host.position(), autoCharsAttempts, HashMap(bounds), gapTried.list())
         }
-        try { st.save(saved) } catch (e: Exception) { host.log("⚠ تعذر حفظ التقدم: " + (e.message ?: "").take(80)) }
+        try { st.save(saved) } catch (e: Exception) { warnUser("save", "⚠ مقدرتش أحفظ تقدّم الترجمة — راجع مساحة التخزين، ممكن تضيع لو التطبيق اتقفل"); host.log("⚠ تعذر حفظ التقدم: " + (e.message ?: "").take(80)) }
     }
 }
