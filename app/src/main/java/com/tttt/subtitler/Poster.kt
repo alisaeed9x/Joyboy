@@ -146,6 +146,35 @@ object Poster {
     }
     fun resetSkip(title0: String, artist0: String) { Cfg.put(skipKey(clean(title0), artist0.trim()), "0") }
 
+    /**
+     * (v241) زرار «🖼↻» في المشغّل: بيدوّر من الأول — ويكيبيديا الأول (صفحة الأغنية باسمها والفنان ← صورة الفنان ← الأغنية بالاسم وحده)
+     * وبعدين باقي المصادر. لو ملقاش حاجة بيسيب الغلاف الحالي زي ما هو. على خيط خلفية.
+     */
+    fun fetchWikiSync(ctx: Context, title0: String, artist0: String): Bitmap? {
+        val title = clean(title0); val artist = artist0.trim()
+        if (title.length < 2) return null
+        resetSkip(title, artist)
+        val k = key(title, artist)
+        try {
+            File(dir(ctx), "$k.none").delete()
+            val urls = sequence {
+                yieldAll(wikiSongUrls(title, artist))
+                yieldAll(wikiArtistUrls(artist))
+                if (artist.isNotBlank()) yieldAll(wikiSongUrls(title, ""))
+                yieldAll(findUrls(title, artist))
+            }
+            val seen = HashSet<String>()
+            for (u in urls) {
+                if (!seen.add(u)) continue
+                val bytes = http(u) ?: continue
+                val bmp = BitmapFactory.decodeByteArray(bytes, 0, bytes.size) ?: continue
+                File(dir(ctx), "$k.jpg").writeBytes(bytes)
+                return bmp
+            }
+        } catch (e: Throwable) { LogStore.err("poster", e) }
+        return null
+    }
+
     /** على خيط خلفية. بيرجّع الغلاف أو null */
     fun fetchSync(ctx: Context, title0: String, artist0: String): Bitmap? {
         val title = clean(title0); val artist = artist0.trim()

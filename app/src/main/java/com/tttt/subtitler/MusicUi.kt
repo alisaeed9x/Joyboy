@@ -683,6 +683,9 @@ class MusicUi(private val act: Activity, private val ui: Ui, private val th: The
         top.addView(View(act).apply { background = ui.box(0x59FFFFFF, Color.TRANSPARENT, 3) }, FrameLayout.LayoutParams(ui.dp(40), ui.dp(5), Gravity.CENTER))
         val dots = GlyphBtn(act, "dots", 24).apply { setOnClickListener { v -> menu(v) } }
         top.addView(dots, FrameLayout.LayoutParams(ui.dp(56), ui.dp(48), Gravity.END or Gravity.CENTER_VERTICAL))
+        // (v241) 🖼↻ ريفريش البوستر: بيدوّر في ويكيبيديا باسم الأغنية أو المغني (وبعدها باقي المصادر)
+        val posterBtn = ui.text("🖼↻", 18f, Color.WHITE).apply { gravity = Gravity.CENTER; setOnClickListener { refreshPoster() } }
+        top.addView(posterBtn, FrameLayout.LayoutParams(ui.dp(56), ui.dp(48), Gravity.END or Gravity.CENTER_VERTICAL).apply { marginEnd = ui.dp(56) })
         attachSwipeDown(top)
 
         liveReset(); liveStatus.visibility = View.GONE
@@ -718,13 +721,26 @@ class MusicUi(private val act: Activity, private val ui: Ui, private val th: The
         rightCol.addView(errBtn, LinearLayout.LayoutParams(-2, -2).apply { bottomMargin = ui.dp(4) })
         rightCol.addView(lyrBtn, LinearLayout.LayoutParams(-2, -2))
         titleRow.addView(rightCol, LinearLayout.LayoutParams(-2, -2))
-        inner.addView(titleRow, LinearLayout.LayoutParams(-1, -2).apply { topMargin = ui.dp(2); bottomMargin = ui.dp(2) })
+        // (v241) اسم الأغنية + زرار الكلمات + أدوات (نوم/سرعة/التالي) في عمود، وسلايدر الصوت الطولي جنب زرار الكلمات على اليمين
+        val infoCol = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_LTR }
+        infoCol.addView(titleRow, LinearLayout.LayoutParams(-1, -2).apply { topMargin = ui.dp(2); bottomMargin = ui.dp(2) })
         val toolsRow = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER; layoutDirection = View.LAYOUT_DIRECTION_RTL; setPadding(ui.dp(12), 0, ui.dp(12), 0) }
         for (p in listOf<View>(bSleep, bSpeed, bQueue)) toolsRow.addView(p, LinearLayout.LayoutParams(0, ui.dp(30), 1f).apply { marginStart = ui.dp(3); marginEnd = ui.dp(3) })
-        inner.addView(toolsRow, LinearLayout.LayoutParams(-1, ui.dp(34)).apply { topMargin = ui.dp(2) })
+        infoCol.addView(toolsRow, LinearLayout.LayoutParams(-1, ui.dp(34)).apply { topMargin = ui.dp(2) })
         // (v230) سلايدر الصوت (0–200%) طولي على حافة الشاشة اليمين: النسبة فوق · الشريط · أيقونة الصوت تحت
         volBar.onChange = { p -> MusicEngine.setVol(p); volLbl.text = "$p%"; volLbl.setTextColor(if (p > 100) 0xFFFF5252.toInt() else Color.WHITE) }
         volBar.onTouch = { down -> volTouch = down; if (!down) lastToolSig = "" }
+        val volCol = LinearLayout(act).apply {
+            orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER_HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_LTR
+            setPadding(ui.dp(2), ui.dp(6), ui.dp(2), ui.dp(6)); background = ui.box(0x22000000, 0x22FFFFFF, 18)
+        }
+        volCol.addView(volLbl, LinearLayout.LayoutParams(-1, -2))
+        volCol.addView(volBar, LinearLayout.LayoutParams(-1, 0, 1f))
+        volCol.addView(volIcon, LinearLayout.LayoutParams(-1, -2).apply { topMargin = ui.dp(2) })
+        val infoRow = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_LTR }
+        infoRow.addView(infoCol, LinearLayout.LayoutParams(0, -2, 1f))
+        infoRow.addView(volCol, LinearLayout.LayoutParams(ui.dp(42), ui.dp(150)).apply { marginStart = ui.dp(4); marginEnd = ui.dp(8) })
+        inner.addView(infoRow, LinearLayout.LayoutParams(-1, -2))
         // (v198) شريط تقدّم طولي: الوقت الحالي · السلايدر (أول الأغنية وآخرها) · المدة الكلية
         val seekRow = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_LTR; setPadding(ui.dp(10), 0, ui.dp(10), 0) }
         seekRow.addView(tCur, LinearLayout.LayoutParams(ui.dp(44), -2))
@@ -745,15 +761,6 @@ class MusicUi(private val act: Activity, private val ui: Ui, private val th: The
         buildLyricsPanel(); lyrPanel.visibility = View.GONE
         // الكلمات ورا الدواير: لوحة الكلمات تحت، والدايرة (inner) فوقها
         middle.addView(lyrPanel, FrameLayout.LayoutParams(-1, -1)); middle.addView(inner, FrameLayout.LayoutParams(-1, -1))
-        val volCol = LinearLayout(act).apply {
-            orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER_HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_LTR
-            setPadding(ui.dp(2), ui.dp(6), ui.dp(2), ui.dp(6)); background = ui.box(0x22000000, 0x22FFFFFF, 18)
-        }
-        volCol.addView(volLbl, LinearLayout.LayoutParams(-1, -2))
-        volCol.addView(volBar, LinearLayout.LayoutParams(-1, 0, 1f))
-        volCol.addView(volIcon, LinearLayout.LayoutParams(-1, -2).apply { topMargin = ui.dp(2) })
-        middle.addView(volCol, FrameLayout.LayoutParams(ui.dp(40), ui.dp(200), Gravity.END or Gravity.CENTER_VERTICAL).apply { marginEnd = ui.dp(3) })
-
         val col = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL }
         col.addView(top, LinearLayout.LayoutParams(-1, ui.dp(56)))
         col.addView(middle, LinearLayout.LayoutParams(-1, 0, 1f))
@@ -895,7 +902,7 @@ class MusicUi(private val act: Activity, private val ui: Ui, private val th: The
         if (fullOn) { ensureArt(pv); ensureArt(nx) }
         val cb = cur?.let { artCache.get(it.uri) }
         orb.setArts(pv?.let { artCache.get(it.uri) }, cb, nx?.let { artCache.get(it.uri) }, pv != null, nx != null)
-        if (cb == null) miniArt.setImageDrawable(null) else miniArt.setImageBitmap(cb)
+        if (cb == null) miniArt.setImageResource(R.drawable.no_poster) else miniArt.setImageBitmap(cb)
         tint(cb)
     }
 
@@ -1066,6 +1073,28 @@ class MusicUi(private val act: Activity, private val ui: Ui, private val th: The
                 }
             }
         } else if (fullOn) loadLyrics(force = true)
+    }
+    private var posterBusy = false
+    /** (v241) ريفريش البوستر بس: ويكيبيديا (الأغنية ← المغني) وبعدين باقي المصادر؛ لو ملقاش حاجة الغلاف الحالي بيفضل */
+    private fun refreshPoster() {
+        val t = MusicEngine.current ?: run { quiet("شغّل أغنية الأول", 1500L); return }
+        if (posterBusy) { quiet("لسه بدوّر… استنى شوية", 1500L); return }
+        posterBusy = true
+        quiet("🖼 بدوّر على البوستر في ويكيبيديا…", 2500L)
+        val n = nameOf(t); val uri = t.uri; val id = t.id
+        Thread {
+            val b = try { Poster.fetchWikiSync(act, n.first, n.second) } catch (_: Throwable) { null }
+            if (b != null) try { FaceFocus.compute(b) } catch (_: Throwable) {}
+            act.runOnUiThread {
+                posterBusy = false
+                if (act.isDestroyed || act.isFinishing) return@runOnUiThread
+                if (b == null) { quiet("🖼 ملقيتش بوستر باسم «" + n.first + "»" + (if (n.second.isBlank()) "" else " / «" + n.second + "»"), 2800L); return@runOnUiThread }
+                Cfg.put("noemb_$id", "1")
+                artCache.put(uri, b); artNone.remove(uri); tintDone = false
+                refreshArts()
+                quiet("🖼 اتحدّث البوستر ✅", 1800L)
+            }
+        }.apply { isDaemon = true }.start()
     }
     /** البوستر غلط: انسى الغلاف ده (حتى لو كان مدمج في الملف) وجرّب اللي بعده (ويكيبيديا/iTunes/Deezer/صورة الفنان) */
     private fun wrongPoster() {

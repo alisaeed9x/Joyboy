@@ -66,6 +66,8 @@ class OrbView(ctx: Context) : View(ctx) {
     private val glassClip = Path()
     private val holeClip = Path()
     private val shaders = HashMap<Bitmap, BitmapShader>()
+    private val placeholder: Bitmap? by lazy { try { BitmapFactory.decodeResource(resources, R.drawable.no_poster) } catch (_: Throwable) { null } }
+    private var phShader: BitmapShader? = null
     private val tick = object : Runnable {
         override fun run() {
             val now = System.nanoTime()
@@ -136,11 +138,22 @@ class OrbView(ctx: Context) : View(ctx) {
             sh.setLocalMatrix(mx); p.shader = sh
             c.drawCircle(x, y, r, p)
         } else {
-            p.shader = LinearGradient(x - r, y - r, x + r, y + r, accent, 0xFF1A1030.toInt(), Shader.TileMode.CLAMP)
+            // (v241) مفيش بوستر: الروبوت جوه الفقاعة (no_poster) هو اللي بيلف مكان الغلاف
+            p.shader = LinearGradient(x - r, y - r, x + r, y + r, 0xFF2A2250.toInt(), 0xFF120C26.toInt(), Shader.TileMode.CLAMP)
             c.drawCircle(x, y, r, p)
-            p.shader = null; p.color = 0x66FFFFFF; p.alpha = minOf(alpha, 0x66); p.textAlign = Paint.Align.CENTER
-            p.textSize = r * 0.9f; p.typeface = Typeface.DEFAULT_BOLD
-            c.drawText(initial.take(2), x, y - (p.ascent() + p.descent()) / 2f, p)
+            val g = placeholder
+            if (g != null) {
+                p.reset(); p.isAntiAlias = true; p.isFilterBitmap = true; p.alpha = alpha
+                val sh = phShader ?: BitmapShader(g, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP).also { phShader = it }
+                val sc = (r * 2f) / g.width
+                mx.reset(); mx.postTranslate(-g.width / 2f, -g.height / 2f); mx.postScale(sc, sc); mx.postTranslate(x, y)
+                sh.setLocalMatrix(mx); p.shader = sh
+                c.drawCircle(x, y, r, p)
+            } else {
+                p.shader = null; p.color = 0x66FFFFFF; p.alpha = minOf(alpha, 0x66); p.textAlign = Paint.Align.CENTER
+                p.textSize = r * 0.9f; p.typeface = Typeface.DEFAULT_BOLD
+                c.drawText(initial.take(2), x, y - (p.ascent() + p.descent()) / 2f, p)
+            }
         }
         c.restore()
     }
