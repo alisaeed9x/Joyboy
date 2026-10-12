@@ -52,6 +52,10 @@ class VisualMode(
         const val REST_MAX = 20_000L
         /** (v181) تشغيل تلقائي مع فتح أي فيديو (لو فيه مفتاح للوضع البصري) — الافتراضي شغّال */
         fun auto(): Boolean = try { Cfg.bool("vis_auto", true) } catch (_: Throwable) { true }
+        /** (v240) وضع ترجمة الهارد سب: الوضع البصري بيترجم الترجمة المحروقة كمان (والترجمة الصوتية واقفة). لو مقفول: الهارد سب بأي لغة بيتتجاهل خالص */
+        fun hardMode(): Boolean = try { Cfg.str("hard_mode", "0") == "1" } catch (_: Throwable) { false }
+        const val NO_HARD_EXTRA = "\n\n🚫🚫🚫 تعليمات نهائية تغلب أي شيء قبلها: الترجمة المحروقة (hardsub) بأي لغة (إنجليزي/ياباني/كوري/صيني/عربي/غيره) — يعني سطر أو سطرين الحوار المكتوبين أسفل أو أعلى الفيديو — ممنوع تسجّلها أو تترجمها نهائيًا، تجاهلها تمامًا. سجّل بس النصوص التانية (لافتات، عناوين، كروت، كتابات في المشهد…)."
+        const val HARD_EXTRA = "\n\n✅✅✅ وضع ترجمة الهارد سب (يغلب أي شيء قبله): الترجمة المحروقة (hardsub) المكتوبة أسفل أو أعلى الفيديو بأي لغة غير العربية هي المطلوب الأساسي — سجّل كل جملة منها كـ entry منفصلة بتوقيت ظهورها واختفائها (frames) ومكانها الفعلي (x/y/w/h) وترجمها كاملة بدقة. سجّل كمان أي نصوص تانية مكتوبة في الصورة (لافتات، عناوين، كروت، كتابات). الاستثناء الوحيد: هارد سب عربي جاهز — تجاهله."
         /** أقصى مسافة مسح قدّام مكان التشغيل (ثواني) — بتوفّر الكوتة لو الفيديو طويل */
         fun ahead(): Double = try { Cfg.int("vis_ahead", 180).coerceIn(30, 3600).toDouble() } catch (_: Throwable) { 180.0 }
 
@@ -614,7 +618,7 @@ text_hex: لون النص hex | opacity_pct: شفافية الخلفية 0-100 |
         val n = sb.size
         val grid = buildGrid(sb)
         val prompt = buildPrompt(sb, grid.cols, grid.rows)
-        val system = HYBRID_SYSTEM.replace("§N§", n.toString())
+        val system = HYBRID_SYSTEM.replace("§N§", n.toString()) + (if (hardMode()) HARD_EXTRA else NO_HARD_EXTRA)
         var last = ""
         var attempt = 0
         while (attempt < 4 && alive(g)) {
@@ -686,7 +690,7 @@ text_hex: لون النص hex | opacity_pct: شفافية الخلفية 0-100 |
             if (i > 0) list.append('\n')
             list.append("فريم #").append(i + 1).append(" عند ").append(fx(f.t, 3)).append("s — موضعه في الصورة: العمود ").append((i % cols) + 1).append(" الصف ").append((i / cols) + 1)
         }
-        return HYBRID_PROMPT.replace("§N§", sb.size.toString()).replace("§ROWS§", rows.toString()).replace("§COLS§", cols.toString()).replace("§LIST§", list.toString())
+        return HYBRID_PROMPT.replace("§N§", sb.size.toString()).replace("§ROWS§", rows.toString()).replace("§COLS§", cols.toString()).replace("§LIST§", list.toString()) + (if (hardMode()) HARD_EXTRA else NO_HARD_EXTRA)
     }
 
     /** شبكة صورة واحدة من الفريمات: إطار أبيض + علامات مواضع كل 10% (سماوي عند 50%) + شريط سفلي «#رقم  وقت بالمللي» */

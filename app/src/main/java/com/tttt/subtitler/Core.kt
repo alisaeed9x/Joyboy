@@ -542,6 +542,7 @@ object Api {
             c.outputStream.use { it.write(bytes) }
             val code = c.responseCode
             val txt = (if (code < 300) c.inputStream else c.errorStream)?.bufferedReader(Charsets.UTF_8)?.use { it.readText() } ?: ""
+            NetUse.api(bytes.size.toLong(), txt)
             if (code >= 300) throw ApiErr(code, try { JSONObject(txt).getJSONObject("error").getString("message") } catch (_: Exception) { "HTTP $code" })
             val cand = JSONObject(txt).optJSONArray("candidates")?.optJSONObject(0) ?: return Result("", "")
             val parts = cand.optJSONObject("content")?.optJSONArray("parts")
@@ -569,6 +570,7 @@ object Api {
             c.outputStream.use { it.write(bytes) }
             val code = c.responseCode
             val txt = (if (code < 300) c.inputStream else c.errorStream)?.bufferedReader(Charsets.UTF_8)?.use { it.readText() } ?: ""
+            NetUse.api(bytes.size.toLong(), txt)
             if (code >= 300) throw ApiErr(code, try { JSONObject(txt).getJSONObject("error").getString("message") } catch (_: Exception) { "HTTP $code" })
             val cand = JSONObject(txt).optJSONArray("candidates")?.optJSONObject(0) ?: return Result("", "")
             val parts = cand.optJSONObject("content")?.optJSONArray("parts")
@@ -602,6 +604,7 @@ object Api {
             c.outputStream.use { it.write(hb); it.write(b64); it.write(tb) }
             val code = c.responseCode
             val txt = (if (code < 300) c.inputStream else c.errorStream)?.bufferedReader(Charsets.UTF_8)?.use { it.readText() } ?: ""
+            NetUse.api(hb.size.toLong() + b64.size + tb.size, txt)
             if (code >= 300) throw ApiErr(code, try { JSONObject(txt).getJSONObject("error").getString("message") } catch (_: Exception) { "HTTP $code" })
             val cand = JSONObject(txt).optJSONArray("candidates")?.optJSONObject(0) ?: return Result("", "")
             val parts = cand.optJSONObject("content")?.optJSONArray("parts")
@@ -724,6 +727,7 @@ object Api {
             val code = c.responseCode
             val stream = if (code < 300) c.inputStream else c.errorStream
             val txt = stream?.bufferedReader(Charsets.UTF_8)?.use { it.readText() } ?: ""
+            NetUse.api(total, txt)
             if (code >= 300) {
                 val m = try { JSONObject(txt).getJSONObject("error").getString("message") } catch (_: Exception) { "HTTP $code" }
                 throw ApiErr(code, m)

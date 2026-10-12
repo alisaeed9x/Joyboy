@@ -140,7 +140,7 @@ class LiveCaptionService : Service() {
         val stopPi = PendingIntent.getService(this, 1, Intent(this, LiveCaptionService::class.java).setAction("stop"), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
         val b = if (Build.VERSION.SDK_INT >= 26) Notification.Builder(this, CH) else Notification.Builder(this)
         val n = b.setContentTitle("🔴 الترجمة الحية شغّالة").setContentText("دوس «إيقاف» لقفلها")
-            .setSmallIcon(android.R.drawable.ic_btn_speak_now).setOngoing(true)
+            .setSmallIcon(R.drawable.ic_stat_sub).setOngoing(true)
             .addAction(Notification.Action.Builder(android.R.drawable.ic_menu_close_clear_cancel, "إيقاف", stopPi).build()).build()
         if (Build.VERSION.SDK_INT >= 29) startForeground(NID, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION)
         else startForeground(NID, n)

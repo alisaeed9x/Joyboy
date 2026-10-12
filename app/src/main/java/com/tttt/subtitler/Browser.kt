@@ -163,6 +163,16 @@ class BrowserActivity : Activity() {
     private var oldOrient = -1
     private val pageTitles = HashMap<String, String>()
 
+    // ===== (v231) زرار الطوارئ + التراجع =====
+    private lateinit var panicCover: View
+    private lateinit var panicB: TextView
+    private lateinit var undoB: TextView
+    private lateinit var panicCol: LinearLayout
+    private var panicUrl: String? = null        // الصفحة اللي اتمسحت (للتراجع)
+    private var panicTabId = -1L
+    private var panicClearId = -1L              // التبويب اللي مستني جوجل يحمّل (نمسح تاريخ الرجوع ونشيل الغطا)
+    private val GOOGLE = "https://www.google.com"
+
     // ===== التبويبات =====
     private val tabs = ArrayList<BTab>()
     private var curIdx = 0
@@ -282,10 +292,33 @@ class BrowserActivity : Activity() {
             layoutParams = LinearLayout.LayoutParams(-1, -2).apply { setMargins(ui.dp(8), ui.dp(4), ui.dp(8), ui.dp(6)) }
             setOnClickListener { showList() }
         }
+        // (v231) غلاف منطقة الصفحة: الصفحة + غطا أبيض وقت الطوارئ + زرارين عايمين تحت ‹ › (🚨 طوارئ · ↩ تراجع)
+        panicCover = View(this).apply { setBackgroundColor(Color.WHITE); visibility = View.GONE; isClickable = true }
+        panicB = IconTextView(this).apply {
+            text = "🚨"; textSize = 20f; gravity = Gravity.CENTER; setTextColor(Color.WHITE)
+            background = ui.box(0xCCD32F2F.toInt(), 0x66FFFFFF, 22); elevation = ui.dp(4).toFloat()
+            setOnClickListener { panic() }
+        }
+        undoB = IconTextView(this).apply {
+            text = "↩"; textSize = 20f; gravity = Gravity.CENTER; setTextColor(Color.WHITE)
+            background = ui.box(0xCC1E2A3A.toInt(), 0x66FFFFFF, 22); elevation = ui.dp(4).toFloat(); visibility = View.GONE
+            setOnClickListener { undoPanic() }
+        }
+        panicCol = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_LTR
+            addView(panicB, LinearLayout.LayoutParams(ui.dp(44), ui.dp(44)))
+            addView(undoB, LinearLayout.LayoutParams(ui.dp(44), ui.dp(44)).apply { topMargin = ui.dp(6) })
+        }
+        val webWrap = FrameLayout(this).apply {
+            layoutDirection = View.LAYOUT_DIRECTION_LTR
+            addView(webHolder, FrameLayout.LayoutParams(-1, -1))
+            addView(panicCover, FrameLayout.LayoutParams(-1, -1))
+            addView(panicCol, FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.LEFT).apply { setMargins(ui.dp(4), ui.dp(6), 0, 0) })
+        }
         root.addView(bar); root.addView(progTrack, LinearLayout.LayoutParams(-1, ui.dp(3))); root.addView(findBar); root.addView(hint)
-        root.addView(webHolder, LinearLayout.LayoutParams(-1, 0, 1f)); root.addView(badge)
-        // (v117) شريط البوابات: الفيديوهات · يوتيوب · المتصفح (إحنا فيه دلوقتي)
-        val gates = BottomNav(this, ui, th, 2) { i -> if (i == 0) goMain("videos") else if (i == 1) goMain("music") }
+        root.addView(webWrap, LinearLayout.LayoutParams(-1, 0, 1f)); root.addView(badge)
+        // (v117) شريط البوابات: الفيديوهات · الموسيقى · المتصفح (إحنا فيه دلوقتي) · (v231) المهام
+        val gates = BottomNav(this, ui, th, 2) { i -> if (i == 0) goMain("videos") else if (i == 1) goMain("music") else if (i == 3) goMain("tasks") }
         root.addView(gates.view, LinearLayout.LayoutParams(-1, -2))
         content = root
         frame = FrameLayout(this); frame.setBackgroundColor(th.bg)
@@ -349,7 +382,10 @@ class BrowserActivity : Activity() {
                 if (tr == null || nt.wv == null) return false
                 tr.webView = nt.wv; resultMsg?.sendToTarget(); return true
             }
-            override fun onProgressChanged(v: WebView?, p: Int) { t.progress = p; if (t === tabs.getOrNull(curIdx)) updateProgress() }
+            override fun onProgressChanged(v: WebView?, p: Int) {
+                t.progress = p; if (t === tabs.getOrNull(curIdx)) updateProgress()
+                if (p >= 70 && t.id == panicClearId && (v?.url ?: "").contains("google.")) endPanicCover()   // (v231) جوجل ثبت: شيل الغطا
+            }
             override fun onReceivedTitle(v: WebView?, title: String?) {
                 if (title.isNullOrBlank()) return
                 t.title = title; v?.url?.let { if (!t.priv) BrowserStore.setTitle(this@BrowserActivity, it, title); pageTitles[it] = title }
@@ -407,6 +443,7 @@ class BrowserActivity : Activity() {
                     if (!t.priv) BrowserStore.addHistory(this@BrowserActivity, url, ti)
                     noteYt(url, ti)
                 }
+                if (t.id == panicClearId && (url ?: "").contains("google.")) { try { v.clearHistory() } catch (_: Throwable) {}; endPanicCover(); updateNav() }   // (v231) الرجوع مايرجّعش الصفحة اللي اتمسحت
                 if (t === tabs.getOrNull(curIdx)) { showUrl(url); updateNav(); updateStar(); scanOnce() }
                 if (adOn) v.evaluateJavascript(AdBlock.JS, null)
                 persistTabs()
@@ -417,6 +454,7 @@ class BrowserActivity : Activity() {
                 if (u.startsWith("data:") || t.errUrl == u) return
                 t.errUrl = u
                 v.loadDataWithBaseURL(u, errHtml(u, e.description?.toString() ?: ""), "text/html", "utf-8", u)
+                if (t.id == panicClearId) endPanicCover()   // (v231) صفحة الخطأ حلّت مكان القديمة
             }
         }
         w.setDownloadListener { url, ua, cd, mime, _ ->
@@ -469,7 +507,7 @@ class BrowserActivity : Activity() {
         showUrl(t.url, true); updateNav(); updateProgress(); updateStar(); refreshTabsCount(); closeFind()
         addr.hint = if (t.priv) "🕶 متخفي — رابط الموقع / كلمة بحث" else "رابط الموقع / كلمة بحث"
         tabsB.setTextColor(if (t.priv) 0xFFE53935.toInt() else th.text)
-        ctl.visibility = View.GONE
+        endPanicCover()
         scanOnce(); persistTabs()
     }
     private fun closeTab(i: Int) {
@@ -489,14 +527,14 @@ class BrowserActivity : Activity() {
         // (v124) التبويبات المتخفية عمرها ما بتتحفظ
         val keep = tabs.filter { !it.priv }
         val ci = keep.indexOf(tabs.getOrNull(curIdx)).let { if (it < 0) 0 else it }
-        BrowserStore.saveTabs(this, keep.map { BrowserStore.SavedTab(it.wv?.url?.takeIf { u -> !u.startsWith("data:") } ?: it.url, it.title, it.desktop) }, ci)
+        BrowserStore.saveTabs(this, keep.map { BrowserStore.SavedTab(if (it.id == panicClearId) GOOGLE else (it.wv?.url?.takeIf { u -> !u.startsWith("data:") } ?: it.url), it.title, it.desktop) }, ci)
     }
 
     // ===== تحميل لينك / بحث =====
     private fun load(raw: String) {
         var u = raw.trim(); if (u.isEmpty()) return
         if (!u.startsWith("http") && !u.startsWith("about:")) u = if (u.contains(".") && !u.contains(" ")) "https://$u" else searchUrl(u)
-        addr.clearFocus()
+        addr.clearFocus(); endPanicCover()
         if (Sniff.isDirect(u)) { Sniff.accept(u)?.let { addFound(Found(it, Sniff.kindOf(it), "", tab.url, uaOf(tab))) }; return }   // لينك فيديو مباشر: مفيش صفحة تتحمّل
         YtExtract.videoId(u)?.let { ytFetch(it) }
         val t = tab; t.loaded = true; t.errUrl = ""
@@ -522,6 +560,68 @@ class BrowserActivity : Activity() {
         progV.layoutParams = FrameLayout.LayoutParams((w * p / 100f).toInt().coerceAtLeast(ui.dp(12)), -1)
     }
     private fun updateStar() { /* حالة النجمة بتتحسب وقت فتح القايمة */ }
+
+    // ===== (v231) 🚨 طوارئ: مسح الصفحة فورًا وفتح جوجل · ↩ تراجع =====
+    private fun endPanicCover() {
+        panicClearId = -1L
+        if (::panicCover.isInitialized) panicCover.visibility = View.GONE
+    }
+    private fun panic() {
+        if (dead || tabs.isEmpty()) return
+        val t = tabs[curIdx]
+        val w = t.wv ?: return
+        leaveCustom(); closeFind()
+        try { dlg?.dismiss() } catch (_: Throwable) {}
+        try { tabsDlg?.dismiss() } catch (_: Throwable) {}
+        val cur = w.url ?: t.url
+        // الصفحة اللي هتتمسح بتتحفظ للتراجع (ماعدا لو إحنا أصلًا على الصفحة الرئيسية لجوجل — الدوسة التانية ماتضيّعش اللي اتحفظ)
+        if (cur.isNotBlank() && !cur.startsWith("data:") && !cur.startsWith("about:") && cur.trimEnd('/') != GOOGLE) { panicUrl = cur; panicTabId = t.id }
+        WebMute.pauseAll()                              // أي صوت/فيديو يقف
+        panicCover.visibility = View.VISIBLE            // الصفحة القديمة تختفي في نفس اللحظة
+        panicClearId = t.id
+        t.thumb = null; t.title = ""; t.errUrl = ""
+        // اللقطات المصطادة من الصفحة دي تتمسح (الشريط «🎬 لقيت…» كان هيفضل ظاهر)
+        t.gen++
+        items.removeAll { it.tabId == t.id }
+        keys.removeAll { it.startsWith("${t.id}:") }
+        webGroups.clear(); openKey = null; autoShown = false; refreshBadge()
+        showUrl(GOOGLE, true)
+        w.stopLoading(); w.loadUrl(GOOGLE)
+        undoB.visibility = if (panicUrl != null) View.VISIBLE else View.GONE
+        persistTabs()   // (persistTabs بتحفظ جوجل مكان الصفحة اللي اتمسحت)
+    }
+    private fun undoPanic() {
+        val u = panicUrl ?: run { undoB.visibility = View.GONE; return }
+        val i = tabs.indexOfFirst { it.id == panicTabId }
+        panicUrl = null; undoB.visibility = View.GONE
+        if (i < 0) { newTab(u, true); return }          // التبويب اتقفل: افتحها في تبويب جديد
+        if (i != curIdx) select(i)
+        val t = tabs[i]; val w = t.wv ?: return
+        endPanicCover(); t.loaded = true
+        loadIn(w, t, u)
+        Notice.show(this, "↩ رجّعت الصفحة", 1500L)
+    }
+
+    // ===== (v231) تحكم الفيديو (كان شريط جنب الشاشة): جوه قايمة ⋮ =====
+    private fun showVideoControls() {
+        val box = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL }
+        fun row(vararg p: Pair<String, () -> Unit>): LinearLayout {
+            val r = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL }
+            for ((lab, f) in p) r.addView(ui.button(lab) { f() }, LinearLayout.LayoutParams(0, -2, 1f).apply { setMargins(ui.dp(3), 0, ui.dp(3), 0) })
+            return r
+        }
+        box.addView(row(
+            "⏪ 10ث" to { vjs("v.currentTime=Math.max(0,v.currentTime-10);return ''", false) },
+            "⏯ تشغيل/إيقاف" to { vjs("if(v.paused){v.play()}else{v.pause()};return ''", false) },
+            "10ث ⏩" to { vjs("v.currentTime=v.currentTime+10;return ''", false) }))
+        box.addView(row(
+            "⤢ ملاءمة الشاشة" to { vjs("s.fit=(s.fit+1)%3;v.style.setProperty('object-fit',['contain','fill','cover'][s.fit],'important');return ['يلائم','تمديد','قص'][s.fit]") },
+            "⏱ السرعة" to { vjs("var a=[0.75,1,1.25,1.5,2];var i=a.indexOf(s.sp);s.sp=a[(i+1)%a.length];v.playbackRate=s.sp;return 'السرعة '+s.sp+'x'") }))
+        box.addView(row(
+            "🔍＋ تكبير" to { vjs("s.z=Math.min(4,s.z+0.25);v.style.setProperty('transform','scale('+s.z+')','important');return 'تكبير x'+s.z.toFixed(2)") },
+            "🔍－ تصغير" to { vjs("s.z=Math.max(1,s.z-0.25);v.style.setProperty('transform','scale('+s.z+')','important');return 'تكبير x'+s.z.toFixed(2)") }))
+        sheet("🎞 تحكم الفيديو", box).show()
+    }
 
     // ===== القايمة ⋮ =====
     private fun popupMenu(anchor: View, entries: List<Pair<String, () -> Any?>>) {
@@ -556,6 +656,7 @@ class BrowserActivity : Activity() {
             "🏠 الصفحة الرئيسية" to { load(home()) },
             "📋 نسخ الرابط" to { copyUrl(url) },
             "📤 مشاركة الصفحة" to { shareUrl(url) },
+            "🎞 تحكم الفيديو" to { showVideoControls() },
             "🎬 الفيديوهات الملقوطة (${groupsOf(vis()).size})" to { showList() },
             "⚙️ الإعدادات" to { showSettings() },
             "✕ خروج من المتصفح" to { finish() }
@@ -819,7 +920,6 @@ class BrowserActivity : Activity() {
     private fun scanOnce() {
         if (dead) return
         val wv = wvOrNull ?: return
-        try { wv.evaluateJavascript("(function(){return document.querySelector('video')?1:0})()") { r -> if (!dead) ctl.visibility = if (r?.trim() == "1" || customView != null) View.VISIBLE else View.GONE } } catch (e: Throwable) { LogStore.err("Browser:scan1", e) }
         try {
             wv.evaluateJavascript(JS) { r ->
                 try {
@@ -900,6 +1000,7 @@ class BrowserActivity : Activity() {
     private fun newPage(t: BTab, url: String?) {
         val u = (url ?: return).substringBefore('#').replace(NOISE, "")
         if (u.isEmpty() || u.startsWith("data:") || u == t.capUrl) return
+        if (panicUrl != null && t.id == panicTabId && !u.contains("google.")) { panicUrl = null; if (::undoB.isInitialized) undoB.visibility = View.GONE }   // (v231) مشيت لصفحة تانية: مفيش تراجع
         t.capUrl = u; t.gen++
         items.removeAll { it.tabId == t.id && it.gen != t.gen }
         keys.removeAll { it.startsWith("${t.id}:") && !it.startsWith("${t.id}:${t.gen}:") }
@@ -937,11 +1038,29 @@ class BrowserActivity : Activity() {
         ?: Sniff.heightOf(f.url)
     private fun nameFor(f: Found): String = titleFor(f).ifEmpty { Sniff.nameOf(f.url).substringBeforeLast('.') }
 
+    /** (v231) نفس الاسم (من غير الامتداد) في نفس الصفحة = نفس الفيديو بجودة تانية، حتى لو الهيكل مختلف. الأسماء العامة (master/index/video…) مابتتحسبش */
+    private fun nameKey(f: Found): String? {
+        if (f.kind == "HLS" || f.url.contains("videoplayback")) return null
+        val nm = Sniff.nameOf(f.url).substringBeforeLast('.').lowercase()
+        if (nm.length < 4 || WebIdent.GENERIC.matches(nm) || WebIdent.GENERIC.matches(Sniff.nameOf(f.url).lowercase())) return null
+        return "n:" + f.ref.substringBefore('#') + "|" + nm
+    }
+
     private fun groupsOf(list: List<Found>): List<Grp> {
-        val order = LinkedHashMap<String, ArrayList<Found>>()
-        for (f in list.asReversed()) order.getOrPut(groupKey(f)) { ArrayList() }.add(f)
+        // تجميع: اللينكات اللي ليها نفس مفتاح الهيكل/الفيديو أو نفس الاسم = مجموعة واحدة (union-find)
+        val par = IntArray(list.size) { it }
+        fun find(x: Int): Int { var a = x; while (par[a] != a) { par[a] = par[par[a]]; a = par[a] }; return a }
+        val seenK = HashMap<String, Int>()
+        fun link(k: String, i: Int) { val j = seenK[k]; if (j == null) seenK[k] = i else par[find(i)] = find(j) }
+        val gk = list.map { groupKey(it) }
+        list.forEachIndexed { i, f -> link(gk[i], i); nameKey(f)?.let { link(it, i) } }
+        val order = LinkedHashMap<Int, ArrayList<Int>>()
+        for (i in list.indices.reversed()) order.getOrPut(find(i)) { ArrayList() }.add(i)
         val out = ArrayList<Grp>()
-        for ((key, fs) in order) {
+        for ((_, idx) in order) {
+            val fs = idx.map { list[it] }
+            val ks = idx.map { gk[it] }.distinct()
+            val key = ks.firstOrNull { it.startsWith("yt:") } ?: ks.sorted().first()
             val first = fs.first()
             val qs = ArrayList<Qv>()
             val pk = if (key.startsWith("yt:")) ytPicks[key.removePrefix("yt:")] else null
@@ -953,11 +1072,12 @@ class BrowserActivity : Activity() {
                     qs.add(Qv(o.label, o.h, fo, o.audio))
                 }
             } else {
-                val seen = HashSet<String>()
+                val seen = HashSet<String>(); val seenH = HashSet<Int>()
                 val sorted = fs.filter { seen.add(Sniff.key(it.url)) }.sortedByDescending { if (it.kind == "HLS") Int.MAX_VALUE else hOf(it) }
-                for ((i, f) in sorted.withIndex()) {
+                for (f in sorted) {
                     val h = if (f.kind == "HLS") 0 else hOf(f)
-                    val lb = if (f.kind == "HLS") "HLS · جودة تلقائية" else if (h > 0) Sniff.qLabel(h, i + 1, f.size) else f.kind + (if (f.size > 0) " · " + Sniff.fmtSize(f.size) else "")
+                    if (h > 0 && !seenH.add(h)) continue       // (v231) جودة واحدة مرة واحدة (لينكين بنفس الارتفاع = نفس الجودة)
+                    val lb = if (f.kind == "HLS") "HLS · جودة تلقائية" else if (h > 0) Sniff.qLabel(h, qs.size + 1, f.size) else f.kind + (if (f.size > 0) " · " + Sniff.fmtSize(f.size) else "")
                     qs.add(Qv(lb, h, f, null))
                 }
             }
@@ -1067,40 +1187,46 @@ class BrowserActivity : Activity() {
         statusTv?.text = if (gs.isEmpty()) "⏳ بدوّر على فيديوهات… شغّل الفيديو في الصفحة لو ما ظهرش" else "اختار الفيديو اللي عايزه (${gs.size})"
         for (g in gs) box.addView(groupCard(g))
     }
-    /** (v203) اصطياد واحد للفيديو: الضغط عليه بيفتح الجودات (⬇ تحميل · 🌐 ترجمة وفرجة · ▶ فرجة · 📋 نسخ) + تحميل كصوت بس */
+    private val selQ = HashMap<String, Int>()   // (v231) الجودة المختارة لكل اصطياد (مفتاح المجموعة ← رقم الجودة)
+
+    /** (v231) اصطياد واحد لكل فيديو: العنوان + اختيار الجودة (لو أكتر من جودة) + زرار أزرق كبير «🌐 شاهد وترجم» وتحته ▶ فرجة · ⬇ تحميل (بحجمه) · 📋 نسخ · 🎧 صوت */
     private fun groupCard(g: Grp): View {
         val c = ui.card()
-        val open = g.qs.size == 1 || openKey == g.key
-        val hs = g.qs.filter { it.h > 0 }.map { it.h.toString() + "p" }
-        val sub = if (g.qs.size > 1) "🎞 ${g.qs.size} جودات" + (if (hs.isNotEmpty()) ": " + hs.joinToString(" · ") else "") else g.qs[0].label
         c.addView(ui.text(g.title, 14f, th.text, true).apply { maxLines = 2; ellipsize = TextUtils.TruncateAt.END })
-        c.addView(ui.text(sub + (if (g.qs.size > 1) (if (open) "  ▴" else "  ▾") else ""), 13f, th.primary, true))
-        if (g.qs.size > 1) c.setOnClickListener { openKey = if (openKey == g.key) null else g.key; renderList() }
-        if (!open) return c
-        if (g.qs.size > 1) c.addView(ui.text("⬇ تحميل   🌐 ترجمة وفرجة   ▶ فرجة بس   📋 نسخ", 11f, th.muted).apply { setPadding(0, ui.dp(6), 0, ui.dp(2)) })
-        for (q in g.qs) {
-            if (repairId != null) { c.addView(ui.button("🔧 استخدم " + q.label, true) { dlg?.dismiss(); applyRepair(q) }); continue }
-            val row = LinearLayout(this).apply { layoutDirection = View.LAYOUT_DIRECTION_RTL; gravity = Gravity.CENTER_VERTICAL }
-            fun lp(w: Float) = LinearLayout.LayoutParams(0, -2, w).apply { marginEnd = ui.dp(4) }
-            val hasSz = q.label.contains("MB") || q.label.contains("GB")
-            val dlB = ui.button("⬇ " + q.label + (if (!hasSz) szTxt(q) else ""), g.qs.size == 1) { dlg?.dismiss(); dlVideo(g, q) }.apply { layoutParams = lp(2.4f) }
-            row.addView(dlB)
-            if (!hasSz && !isHls(q.f) && szCache[q.f.url] == null) {   // الحجم مش معروف: نسأل السيرفر ونحدّث الزرار
-                szCache[q.f.url] = -2L
-                val hs2 = dlHeaders(q.f); val u1 = q.f.url; val u2 = q.audio
-                Thread {
-                    var n = try { Downloader.sizeOf(u1, hs2) } catch (_: Throwable) { -1L }
-                    if (n > 0 && u2 != null) { val a = try { Downloader.sizeOf(u2, hs2) } catch (_: Throwable) { -1L }; if (a > 0) n += a }
-                    szCache[u1] = n
-                    runOnUiThread { if (!dead && n > 0) dlB.text = "⬇ " + q.label + " · " + Sniff.fmtSize(n) }
-                }.apply { isDaemon = true }.start()
-            }
-            row.addView(ui.button("🌐") { dlg?.dismiss(); openPlayer(q.f, false, q.audio) }.apply { layoutParams = lp(0.8f) })
-            row.addView(ui.button("▶") { dlg?.dismiss(); openPlayer(q.f, true, q.audio) }.apply { layoutParams = lp(0.8f) })
-            row.addView(ui.button("📋") { copyUrl(q.f.url) }.apply { layoutParams = lp(0.8f) })
-            c.addView(row)
+        if (repairId != null) {   // وضع إصلاح اللينك: اختيار الجودة بس
+            if (g.qs.size > 1) c.addView(ui.text("🎞 ${g.qs.size} جودات", 13f, th.primary, true))
+            for (q in g.qs) c.addView(ui.button("🔧 استخدم " + q.label, true) { dlg?.dismiss(); applyRepair(q) })
+            return c
         }
-        if (repairId == null) c.addView(ui.button("🎧 تحميل كصوت بس (M4A)") { dlg?.dismiss(); dlAudio(g) })
+        val cur = (selQ[g.key] ?: 0).coerceIn(0, g.qs.size - 1)
+        val q = g.qs[cur]
+        if (g.qs.size > 1) {
+            c.addView(ui.text("🎞 ${g.qs.size} جودات — اختار الجودة", 12f, th.muted).apply { setPadding(0, ui.dp(2), 0, ui.dp(2)) })
+            val labels = g.qs.mapIndexed { i, x -> if (x.h > 0) x.h.toString() + "p" else if (isHls(x.f)) "تلقائي" else "جودة " + (i + 1) }
+            c.addView(ui.chips(labels, { labels[cur] }) { pick -> val ni = labels.indexOf(pick); if (ni >= 0 && ni != cur) { selQ[g.key] = ni; renderList() } })
+        } else {
+            c.addView(ui.text(q.label, 13f, th.primary, true))
+        }
+        c.addView(ui.button("🌐 شاهد وترجم", true) { dlg?.dismiss(); openPlayer(q.f, false, q.audio) })
+        val row = LinearLayout(this).apply { layoutDirection = View.LAYOUT_DIRECTION_RTL; gravity = Gravity.CENTER_VERTICAL }
+        fun lp(w: Float) = LinearLayout.LayoutParams(0, -2, w).apply { marginEnd = ui.dp(4) }
+        row.addView(ui.button("▶ فرجة بس") { dlg?.dismiss(); openPlayer(q.f, true, q.audio) }.apply { layoutParams = lp(1.2f) })
+        val hasSz = q.label.contains("MB") || q.label.contains("GB")
+        val dlB = ui.button("⬇ تحميل" + (if (hasSz) "" else szTxt(q))) { dlg?.dismiss(); dlVideo(g, q) }.apply { layoutParams = lp(1.5f) }
+        row.addView(dlB)
+        row.addView(ui.button("📋") { copyUrl(q.f.url) }.apply { layoutParams = lp(0.6f) })
+        c.addView(row)
+        if (!hasSz && !isHls(q.f) && szCache[q.f.url] == null) {   // الحجم مش معروف: نسأل السيرفر ونحدّث الزرار
+            szCache[q.f.url] = -2L
+            val hs2 = dlHeaders(q.f); val u1 = q.f.url; val u2 = q.audio
+            Thread {
+                var n = try { Downloader.sizeOf(u1, hs2) } catch (_: Throwable) { -1L }
+                if (n > 0 && u2 != null) { val a = try { Downloader.sizeOf(u2, hs2) } catch (_: Throwable) { -1L }; if (a > 0) n += a }
+                szCache[u1] = n
+                runOnUiThread { if (!dead && n > 0) dlB.text = "⬇ تحميل · " + Sniff.fmtSize(n) }
+            }.apply { isDaemon = true }.start()
+        }
+        c.addView(ui.button("🎧 تحميل كصوت بس (M4A)") { dlg?.dismiss(); dlAudio(g) })
         return c
     }
 
@@ -1122,34 +1248,21 @@ class BrowserActivity : Activity() {
             if (t.isNotEmpty()) Notice.show(this, t, 2300L)
         }
     }
+    /** (v231) الشريط الجانبي القديم اتشال: كل أزراره (تقديم/تأخير/تشغيل/ملاءمة/تكبير/سرعة) بقت في ⋮ ← «🎞 تحكم الفيديو»، وفضل زرار مانع الإعلانات بس */
     private fun buildControls(): LinearLayout {
-        val col = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; visibility = View.GONE; setPadding(ui.dp(4), ui.dp(4), ui.dp(4), ui.dp(4)) }
-        fun chip(t: String, f: () -> Unit) = IconTextView(this).apply {
-            text = t; textSize = 15f; gravity = Gravity.CENTER; setTextColor(Color.WHITE); setPadding(ui.dp(8), ui.dp(8), ui.dp(8), ui.dp(8))
-            background = ui.box(0xB0000000.toInt(), 0x66FFFFFF, 10); setOnClickListener { f() }
+        val col = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(ui.dp(4), ui.dp(4), ui.dp(4), ui.dp(4)) }
+        shield = IconTextView(this).apply {
+            textSize = 12f; gravity = Gravity.CENTER; setTextColor(Color.WHITE); setPadding(ui.dp(8), ui.dp(8), ui.dp(8), ui.dp(8))
+            background = ui.box(0xB0000000.toInt(), 0x66FFFFFF, 10)
             layoutParams = LinearLayout.LayoutParams(ui.dp(46), -2).apply { setMargins(0, ui.dp(3), 0, ui.dp(3)) }
-        }
-        col.addView(chip("⏪") { vjs("v.currentTime=Math.max(0,v.currentTime-10);return ''", false) })
-        col.addView(chip("⏯") { vjs("if(v.paused){v.play()}else{v.pause()};return ''", false) })
-        col.addView(chip("⏩") { vjs("v.currentTime=v.currentTime+10;return ''", false) })
-        col.addView(chip("⤢") { vjs("s.fit=(s.fit+1)%3;v.style.setProperty('object-fit',['contain','fill','cover'][s.fit],'important');return ['يلائم','تمديد','قص'][s.fit]") })
-        col.addView(chip("🔍＋") { vjs("s.z=Math.min(4,s.z+0.25);v.style.setProperty('transform','scale('+s.z+')','important');return 'تكبير x'+s.z.toFixed(2)") })
-        col.addView(chip("🔍－") { vjs("s.z=Math.max(1,s.z-0.25);v.style.setProperty('transform','scale('+s.z+')','important');return 'تكبير x'+s.z.toFixed(2)") })
-        col.addView(chip("1x") { vjs("var a=[0.75,1,1.25,1.5,2];var i=a.indexOf(s.sp);s.sp=a[(i+1)%a.length];v.playbackRate=s.sp;return 'السرعة '+s.sp+'x'") })
-        col.addView(chip("🌐") {   // نقل الفيديو لمشغّلنا (للترجمة): لو الصفحة فيها رابط مباشر هيتلقط ويظهر في القايمة
-            wvOrNull?.evaluateJavascript("(function(){var v=document.querySelector('video');return v?(v.currentSrc||v.src||''):''})()") { r ->
-                val u = try { JSONTokener(r ?: "").nextValue() as? String ?: "" } catch (_: Throwable) { "" }
-                if (u.startsWith("http")) { Sniff.accept(u)?.let { addUrl(it) } }
-                if (vis().isEmpty()) Notice.show(this, "مفيش رابط مباشر للفيديو ده (محمي أو blob) — كمّل فرجة هنا بالأزرار", 3600L) else showList()
+            setOnClickListener {
+                adOn = !adOn; try { prefs().edit().putBoolean("adblock", adOn).apply() } catch (e: Exception) { LogStore.err("Browser:ad", e) }
+                shield.text = if (adOn) "🛡 $blockedN" else "🛡✗"; shield.alpha = if (adOn) 1f else 0.5f
+                Notice.show(this@BrowserActivity, if (adOn) "مانع الإعلانات شغال" else "مانع الإعلانات اتقفل", 2300L)
+                try { wvOrNull?.reload() } catch (e: Throwable) { LogStore.err("Browser:reload", e) }
             }
-        })
-        shield = chip("🛡") {
-            adOn = !adOn; try { prefs().edit().putBoolean("adblock", adOn).apply() } catch (e: Exception) { LogStore.err("Browser:ad", e) }
-            shield.text = if (adOn) "🛡 $blockedN" else "🛡✗"; shield.alpha = if (adOn) 1f else 0.5f
-            Notice.show(this, if (adOn) "مانع الإعلانات شغال" else "مانع الإعلانات اتقفل", 2300L)
-            try { wvOrNull?.reload() } catch (e: Throwable) { LogStore.err("Browser:reload", e) }
         }
-        shield.text = if (adOn) "🛡" else "🛡✗"; shield.alpha = if (adOn) 1f else 0.5f; shield.textSize = 12f
+        shield.text = if (adOn) "🛡" else "🛡✗"; shield.alpha = if (adOn) 1f else 0.5f
         col.addView(shield)
         return col
     }

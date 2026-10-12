@@ -239,7 +239,7 @@ class BgService : Service() {
 
     private fun build(job: BgJob?): Notification {
         fun act(code: Int, a: String) = PendingIntent.getService(this, code, Intent(this, BgService::class.java).setAction(a), PendingIntent.FLAG_IMMUTABLE)
-        val b = Notification.Builder(this, CH).setSmallIcon(android.R.drawable.stat_sys_download).setContentIntent(openApp()).setOngoing(true).setOnlyAlertOnce(true)
+        val b = Notification.Builder(this, CH).setSmallIcon(R.drawable.ic_stat_sub).setContentIntent(openApp()).setOngoing(true).setOnlyAlertOnce(true)
         // (v144) زرارين: ⏸ إيقاف مؤقت (يتحوّل ▶ استئناف لما يقف) + ✕ إلغاء الكل — الإيقاف بيحفظ التقدم والاستئناف بيكمّل من نفس المكان
         val paused = job != null && job.paused
         if (job != null) b.addAction(Notification.Action.Builder(Icon.createWithResource(this, if (paused) android.R.drawable.ic_media_play else android.R.drawable.ic_media_pause),
@@ -309,6 +309,7 @@ class BgService : Service() {
         }
         val lg: (String) -> Unit = {}
         val uri = job.uri?.let { Uri.parse(it) }
+        NetUse.init(); NetUse.online = (job.uri == null)
         val engine = Engine(conf, {
             val u = job.url
             AudioSources.make(app, uri, u, job.hdr, conf.audioTrack, lg)

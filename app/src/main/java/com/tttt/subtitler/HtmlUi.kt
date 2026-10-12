@@ -152,13 +152,19 @@ class TransBadge(ctx: Context, th: Theme) : LinearLayout(ctx) {
     private val d = ctx.resources.displayMetrics.density
     private val pct = IconTextView(ctx).apply { textSize = 13f; setTextColor(th.primary); typeface = android.graphics.Typeface.DEFAULT_BOLD; setShadowLayer(10f, 0f, 0f, (th.primary and 0x00FFFFFF) or 0x55000000); includeFontPadding = false }
     private val cnt = IconTextView(ctx).apply { textSize = 10f; setTextColor(0xB3FFFFFF.toInt()); includeFontPadding = false }
+    private val net = IconTextView(ctx).apply { textSize = 9f; setTextColor(0x99FFFFFF.toInt()); includeFontPadding = false; visibility = View.GONE }
+    private val dot = View(ctx).apply { background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(0xFFFF3B30.toInt()) }; visibility = View.GONE }
     init {
         orientation = VERTICAL; gravity = Gravity.END; layoutDirection = View.LAYOUT_DIRECTION_RTL
         setPadding((12 * d).toInt(), (6 * d).toInt(), (12 * d).toInt(), (6 * d).toInt())
         background = GradientDrawable().apply { setColor(0xE0141418.toInt()); cornerRadius = 12 * d; setStroke((1 * d).toInt().coerceAtLeast(1), 0x1FFFFFFF) }
+        addView(dot, LayoutParams((9 * d).toInt(), (9 * d).toInt()).apply { bottomMargin = (3 * d).toInt(); gravity = Gravity.END })
         addView(pct); addView(cnt, LayoutParams(-2, -2).apply { topMargin = (2 * d).toInt() })
+        addView(net, LayoutParams(-2, -2).apply { topMargin = (2 * d).toInt() })
     }
-    fun set(p: String, c: String) { pct.text = p; cnt.text = c }
+    /** (v236) نقطة الحالة: خضراء = الوضع شغّال، حمراء = واقف */
+    fun setOn(on: Boolean) { dot.visibility = View.VISIBLE; (dot.background as GradientDrawable).setColor(if (on) 0xFF34C759.toInt() else 0xFFFF3B30.toInt()) }
+    fun set(p: String, c: String, n: String? = null) { pct.text = p; cnt.text = c; if (n != null) { net.text = n; net.visibility = View.VISIBLE } }
 }
 
 class MaxHeightScroll(ctx: Context, val maxH: Int) : ScrollView(ctx) {

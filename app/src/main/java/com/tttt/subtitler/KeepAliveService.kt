@@ -104,7 +104,7 @@ class KeepAliveService : Service() {
         val b = Notification.Builder(this, CH)
             .setContentTitle(title)
             .setContentText("$timeTxt · $trTxt")
-            .setSmallIcon(android.R.drawable.ic_media_play)
+            .setSmallIcon(R.drawable.ic_stat_sub)
             .setContentIntent(open)
             .setOngoing(true)
             .setOnlyAlertOnce(true)

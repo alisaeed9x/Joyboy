@@ -88,7 +88,7 @@ object Downloader {
                             if (ctl.stop()) throw TaskCancelled()
                             if (ctl.paused) { interrupted = true; break }
                             val n = ins.read(buf); if (n < 0) break
-                            os.write(buf, 0, n); done += n
+                            os.write(buf, 0, n); done += n; NetUse.media(n.toLong())
                             if (total > 0) { val p = (done * 100 / total).toInt().coerceIn(0, 100); if (p != last) { last = p; onPct(p) } }
                         }
                     }
@@ -135,7 +135,7 @@ object Downloader {
                 var tries = 0
                 while (true) {
                     val c = open(s, headers)
-                    try { c.inputStream.use { it.copyTo(os) }; break }
+                    try { c.inputStream.use { ins -> val buf = ByteArray(64 * 1024); while (true) { val n = ins.read(buf); if (n < 0) break; os.write(buf, 0, n); NetUse.media(n.toLong()) } }; break }
                     catch (e: java.io.IOException) { if (++tries > 3) throw e; Thread.sleep(1200) }
                     finally { c.disconnect() }
                 }

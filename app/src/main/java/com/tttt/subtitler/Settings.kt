@@ -18,17 +18,22 @@ object Live { @Volatile var engine: Engine? = null }
  * قسم جديد يتضاف هنا مرة واحدة ويظهر في الاتنين؛ مفيش قسم في المشغّل ملوش قسم بره.
  */
 object SettingsTabs {
-    val video = listOf(
-        "keys" to "🔑 المفاتيح",
-        "more" to "🛠 الخلفية · الأمان · المظهر",
-        "general" to "🌐 الترجمة",
-        "look" to "🎬 شكل الترجمة",
-        "watch" to "🎚 الأسلوب والترجمة الحية",
-        "visual" to "👁 الوضع البصري",
-        "audio" to "🔊 الصوت والبصمة",
-        "gloss" to "📖 المسرد")
-    val all = video + ("music" to "🎵 مشغّل الموسيقى")
-    fun label(id: String): String = all.first { it.first == id }.second
+    class Sec(val id: String, val label: String, val sub: String, val group: String)
+    /** (v235) ترتيب واحد لكل أشكال الإعدادات (شاشة الإعدادات · قايمة ⚙️ في المكتبة · قايمة ⚙️ في المشغّل): كل حاجة جنب أخواتها */
+    val sections = listOf(
+        Sec("keys", "🔑 المفاتيح والمحرك", "المفاتيح · مفتاح الوضع البصري · أوضاع المفاتيح 1–4 · الموديل والسرعة · التقطيع والتنقيح · الاستهلاك", "🔑 المفاتيح والمحرك"),
+        Sec("general", "🌐 الترجمة", "اللهجة · الأسلوب · أسلوب وشدة الترجمة · تحويل اللهجة التلقائي", "💬 الترجمة وشكلها"),
+        Sec("look", "🎬 شكل الترجمة", "الخطوط · الأنيميشن · وضع العرض · الألوان · الخلفية", "💬 الترجمة وشكلها"),
+        Sec("audio", "🔊 الصوت", "مسار الصوت · جودة الصوت للـ AI · الأصوات الخلفية · دقة التوقيت", "🔊 الصوت والصورة"),
+        Sec("visual", "👁 الصورة (الوضع البصري)", "تلقائي أو يدوي · قراءة الكلام المكتوب في الفيديو", "🔊 الصوت والصورة"),
+        Sec("more", "🛠 الخلفية · الأمان · المظهر", "الخروج من المشغّل · الترجمة الحية · طابور الخلفية · البطارية · القفل · النسخة الاحتياطية · الثيم", "🛠 عام"),
+        Sec("music", "🎵 مشغّل الموسيقى", "الكلمات (جيميناي) · الخط والحجم · الكلمات التلقائية · فحص الأغاني", "🎵 الموسيقى"))
+    val video = sections.filter { it.id != "music" }.map { it.id to it.label }
+    val all = sections.map { it.id to it.label }
+    private fun sec(id: String) = sections.first { it.id == id }
+    fun label(id: String): String = sec(id).label
+    fun sub(id: String): String = sec(id).sub
+    fun group(id: String): String = sec(id).group
 }
 
 class TabDef(val id: String, val label: String, val content: List<View>, val preview: Boolean = false, val sub: String = "", val group: String = "")
@@ -74,7 +79,7 @@ class TabbedDialog(val act: Activity, val ui: Ui, val title: String, val tabs: L
         var lastGroup = ""
         tabs.forEachIndexed { i, t ->
             // (v198) عنوان قسم لما المجموعة تتغيّر: عام (الاتنين) · مشغّل الفيديو · مشغّل الموسيقى
-            if (t.group.isNotBlank() && t.group != lastGroup) {
+            if (t.group.isNotBlank() && t.group != lastGroup && tabs.count { it.group == t.group } > 1) {
                 lastGroup = t.group
                 listPage.addView(ui.text(t.group, 13f, th.muted, true).apply { setPadding(ui.dp(6), ui.dp(10), ui.dp(6), ui.dp(2)) }, LinearLayout.LayoutParams(-1, -2))
             }

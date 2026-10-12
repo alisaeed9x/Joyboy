@@ -365,7 +365,7 @@ class MusicService : Service() {
         } catch (_: Throwable) {}
         val b = Notification.Builder(this, CH)
             .setContentTitle(title).setContentText(sub)
-            .setSmallIcon(android.R.drawable.ic_media_play)
+            .setSmallIcon(R.drawable.ic_stat_sub)
             .setContentIntent(open).setOngoing(playing).setOnlyAlertOnce(true)
             .setVisibility(Notification.VISIBILITY_PUBLIC)
             .addAction(act(android.R.drawable.ic_media_previous, "السابق", "prev", 1))

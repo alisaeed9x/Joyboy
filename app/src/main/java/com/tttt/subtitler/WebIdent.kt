@@ -10,7 +10,7 @@ object WebIdent {
     class Hit(val id: String, val via: String?)   // via = المفتاح اللي وصّلنا لهوية قديمة (null لو الهوية اتحسبت من اللينك)
 
     private const val BLOCKED = "!"
-    private val GENERIC = Regex("(master|index|playlist|chunklist|manifest|stream|video|play|media|file|main|source|hls|dash)(\\.(m3u8|mpd|mp4|webm|ts|php|m4v))?")
+    val GENERIC = Regex("(master|index|playlist|chunklist|manifest|stream|video|play|media|file|main|source|hls|dash)(\\.(m3u8|mpd|mp4|webm|ts|php|m4v))?")
     private fun aliasKey(k: String) = "wa:" + Store.keyFor(k)
 
     fun pageKey(ref: String): String = ref.substringBefore('#').substringBefore('?').trim().trimEnd('/').lowercase()

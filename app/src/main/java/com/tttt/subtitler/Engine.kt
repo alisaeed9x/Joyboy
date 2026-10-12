@@ -41,8 +41,8 @@ class Engine(
         const val PRIOR_CAP = 400        // أقصى عدد جمل قديمة نبعتها للمراجعة
         const val CHAR_MIN_LINES = 12
         const val PRON_MIN_LINES = 20
-        const val HOLE_MIN = 1.6         // أقل ثغرة صوتية من غير ترجمة نعيد طلبها (ثواني)
-        const val HOLE_MAX = 10          // أقصى عدد ثغرات بنسدّها لكل مقطع
+        const val HOLE_MIN = 1.2         // أقل ثغرة صوتية من غير ترجمة نعيد طلبها (ثواني)
+        const val HOLE_MAX = 14          // أقصى عدد ثغرات بنسدّها لكل مقطع
         const val TGROUP_MIN = 4         // (v210) الوضعين 3/4: أقل عدد باتشات منسوخة تتجمّع قبل ما تتبعت للترجمة (إلا لو الدنيا مستعجلة)
         const val TGROUP_MAX = 5         // (v210) أقصى عدد باتشات في طلب ترجمة واحد
         const val TR_MAX_WAIT_MS = 40_000L   // (v210) باتش منسوخ مستني الترجمة أكتر من كده يتبعت من غير ما يستنى التجميع
@@ -975,7 +975,7 @@ class Engine(
         if (chunk >= 0) { if (dl.isEmpty()) dialOf.remove(chunk) else dialOf[chunk] = dl }
         val c = if (dl.isEmpty() || dl == conf.lang) conf else dialConf.getOrPut(dl) { conf.withLang(dl) }
         // (v209) الوضع 2+ (وكمان 3 و4 في طلبات الصوت): برومبت إنجليزي بدل القالب العربي — نفس شكل الرد فـ Parse.subs بيقراه عادي
-        if (activeMode >= KeyMode.ALL_PARALLEL) {
+        if (activeMode >= KeyMode.ALL_PARALLEL || tx) {   // (v239) tx يشتغل في كل الأوضاع (سدّ الثغرات بأسلوب الوضع 4)
             val prev = if (hole) "" else Subs.prevContext(subs, start)
             // (v210) tx = طلب ترانسكريبشن بس (الوضعين 3/4، الباتشات العادية). الثغرات والفجوات وإعادة الباتش الكامل بتفضل صوت ← ترجمة مباشرة
             return if (tx) toneBlock() + ModePrompts.transcribe(pb, c, durSec, prev, effectiveChars(), effectiveGloss(), strict, hole, holeNear)
@@ -1676,9 +1676,9 @@ class Engine(
 
     /** (v154) مفاتيح التنقيح الجزئي: الاحتياطي (وأي مفتاح إضافي اتحط على «احتياطي») الأول، وبعدين مفاتيح الصور — بس لو الوضع البصري مش شغّال دلوقتي. مفاتيح الترجمة الأساسية ماتتلمسش أبدًا. */
     private fun partialKeys(): List<String> {
-        val rf = conf.refine.filter { it.length > 10 && pool.ok(it) }
-        if (rf.isNotEmpty()) return rf   // (v158) مفاتيح التنقيح المخصوصة الأول
         val l = ArrayList<String>()
+        l.addAll(conf.refine.filter { it.length > 10 && pool.ok(it) })   // (v158) مفاتيح التنقيح المخصوصة الأول
+        // (v238) الاحتياطي بقى بيساعد في التنقيح الجزئي حتى لو فيه مفاتيح تنقيح (كان بيقعد فاضي لحد ما باتش يفشل)
         l.addAll(conf.backup.filter { it.length > 10 && pool.ok(it) })
         if (!VisualMode.anyActive()) l.addAll(conf.visKeys.filter { it.length > 10 && pool.ok(it) })
         return l.distinct()
@@ -2009,6 +2009,7 @@ class Engine(
                 if (code == 429 || code >= 500) { c.disconnect(); nap(3000L * t); continue }
                 if (code != 200) { c.disconnect(); throw IOException("HTTP $code") }
                 val txt = c.inputStream.use { String(it.readBytes(), Charsets.UTF_8) }; c.disconnect()
+                NetUse.api(body.length.toLong() + 200, txt)
                 val segs = JSONArray(txt).optJSONArray(0) ?: return null
                 val sb = StringBuilder()
                 for (k in 0 until segs.length()) sb.append(segs.optJSONArray(k)?.optString(0, "") ?: "")
@@ -2237,10 +2238,13 @@ class Engine(
                 var tries = 0; var got = false
                 while (running && !got && tries++ < 3) {
                     try {
-                        val r = Api.generate(curModel(), key, buildPrompt(w2.durSec, w2.startSec, hole = true, holeNear = near), w2.bytes)
-                        val j = if (r.text.isBlank()) null else Parse.json(r.text)
+                        // (v239) أسلوب الوضع 4 في كل الأوضاع: ترانسكريبشن بس من الصوت (بيسمع أكتر لأنه مش مشغول بالترجمة) ثم ترجمة نصية منفصلة. لو فشلت الترجمة: الطلب المباشر القديم
                         // (v143) الثغرة غالبًا موسيقى/مؤثرات: الرد الفاضي إجابة صحيحة، وماينفعش نعيد الطلب لحد ما الموديل "يلاقي" كلام
-                        var base = if (j == null) emptyList() else Subs.splitAll(Parse.subs(j, w2.startSec, w2.durSec)).filter { !it.isSound && (near || (!it.faint && !it.lowConf)) }.map { Subs.capPace(it) }
+                        var base: List<Sub> = txFillSubs(w2, near, key) ?: run {
+                            val r = Api.generate(curModel(), key, buildPrompt(w2.durSec, w2.startSec, hole = true, holeNear = near), w2.bytes)
+                            val j = if (r.text.isBlank()) null else Parse.json(r.text)
+                            if (j == null) emptyList() else Subs.splitAll(Parse.subs(j, w2.startSec, w2.durSec)).filter { !it.isSound && (near || (!it.faint && !it.lowConf)) }.map { Subs.capPace(it) }
+                        }
                         if (base.any { LangGuard.foreign(it) }) base = fixForeign(base)
                         val sp2 = Speech.activeSpans(w2.bytes, w2.gain)?.let { Speech.absolute(it, w2.startSec) }
                         if (sp2 != null) base = base.mapNotNull { Speech.fit(it, sp2) }
@@ -2259,6 +2263,37 @@ class Engine(
         }
     }
 
+    /**
+     * (v239) سدّ ثغرة/فجوة بأسلوب الوضع 4 في **كل** الأوضاع: (1) الصوت ← نص أصلي بس (من غير عبء الترجمة، فالموديل بيسمع أكتر ومابيسيبش جمل)
+     * (2) النص الأصلي ← ترجمة بالسياق اللي حواليه. بيرجّع null لو فيه كلام اتنسخ والترجمة فشلت (الكولر بيرجع للطلب المباشر القديم)، وفاضي لو مفيش كلام.
+     * بيرمي ApiErr/IOException زي أي طلب عادي (الكولر بيتصرف في 429 وغيره).
+     */
+    private fun txFillSubs(w: WavChunk, near: Boolean, key: String): List<Sub>? {
+        val r = Api.generate(curModel(), key, buildPrompt(w.durSec, w.startSec, hole = true, holeNear = near, tx = true), w.bytes)
+        val j = if (r.text.isBlank()) null else Parse.json(r.text)
+        if (j == null) return emptyList()
+        val raw = Subs.splitAll(TParse.transcript(j, w.startSec, w.durSec)).filter { !it.isSound && it.original.isNotBlank() && (near || (!it.faint && !it.lowConf)) }
+        if (raw.isEmpty()) return emptyList()
+        val dl = convDialect.let { if (it.isBlank() || it == "فصحى") "" else it }
+        val c = if (dl.isEmpty() || dl == conf.lang) conf else dialConf.getOrPut(dl) { conf.withLang(dl) }
+        val first = raw.first().start; val last = raw.last().end
+        val before = synchronized(lock) { subs.filter { it.start < first && it.translated.isNotBlank() }.takeLast(12) }
+        val after = synchronized(lock) { subs.filter { it.start > last && it.original.isNotBlank() }.take(6) }
+        val out = arrayOfNulls<Pair<String, String>>(raw.size)
+        for (round in 0 until 2) {
+            val missing = raw.indices.filter { out[it] == null }
+            if (missing.isEmpty()) break
+            val prompt = toneBlock() + ModePrompts.translate(pb, c, missing.map { raw[it] }, before, after, effectiveChars(), effectiveGloss(), round > 0)
+            val rr2 = Api.generate(curModel(), key, prompt, null, maxTokens = (missing.size * 150).coerceIn(2048, 8192), temp = 0.2)
+            val jj = if (rr2.text.isBlank()) null else Parse.json(rr2.text)
+            if (jj != null) for ((ix, pr) in TParse.translations(jj, missing.size)) out[missing[ix]] = pr
+        }
+        var list = raw.mapIndexedNotNull { q, sb -> out[q]?.let { sb.copy(translated = it.first.trim(), pivot = it.second) } }
+        if (list.isEmpty()) return null
+        if (LangGuard.foreignOf(list).isNotEmpty()) list = fixForeign(list)
+        return list.map { Subs.capPace(it) }
+    }
+
     /** (v177) في جملة مترجمة (مش وصف صوت) بتنتهي قبل بداية المجال أو بتبدأ بعد نهايته بـ ≤1.5ث؟ */
     private fun nearSpeech(a: Double, b: Double): Boolean = synchronized(lock) { subs.any { !it.isSound && (Math.abs(it.end - a) <= 1.5 || Math.abs(it.start - b) <= 1.5) } }
 
@@ -2269,9 +2304,11 @@ class Engine(
         val near = nearSpeech(a, b)
         while (running && tries++ < 3) {
             try {
-                val r = Api.generate(curModel(), key, buildPrompt(w.durSec, w.startSec, hole = true, holeNear = near), w.bytes)
-                val j = if (r.text.isBlank()) null else Parse.json(r.text)
-                var base = if (j == null) emptyList() else Subs.splitAll(Parse.subs(j, w.startSec, w.durSec)).filter { !it.isSound && (near || (!it.faint && !it.lowConf)) }.map { Subs.capPace(it) }
+                var base: List<Sub> = txFillSubs(w, near, key) ?: run {   // (v239) ترانسكريبشن ثم ترجمة منفصلة (أسلوب الوضع 4)، والقديم احتياطي
+                    val r = Api.generate(curModel(), key, buildPrompt(w.durSec, w.startSec, hole = true, holeNear = near), w.bytes)
+                    val j = if (r.text.isBlank()) null else Parse.json(r.text)
+                    if (j == null) emptyList() else Subs.splitAll(Parse.subs(j, w.startSec, w.durSec)).filter { !it.isSound && (near || (!it.faint && !it.lowConf)) }.map { Subs.capPace(it) }
+                }
                 if (base.any { LangGuard.foreign(it) }) base = fixForeign(base)
                 val sp = Speech.activeSpans(w.bytes, w.gain)?.let { Speech.absolute(it, w.startSec) }
                 if (sp != null) base = base.mapNotNull { Speech.fit(it, sp) }

@@ -295,6 +295,7 @@ class HttpRangeSource(private val url: String, private val hdr: Map<String, Stri
                         if (c.responseCode == 200 && start > 0) { var left = start; while (left > 0) { val k = ins.skip(left); if (k <= 0) break; left -= k } }   // سيرفر مابيدعمش Range
                         val out = ByteArray(want); var got = 0
                         while (got < want) { val n = ins.read(out, got, want - got); if (n < 0) break; got += n }
+                        NetUse.media(got.toLong())
                         if (got == want) out else out.copyOf(got)
                     }
                 } finally { c.disconnect() }
@@ -415,6 +416,7 @@ class HlsSource(
                 }
                 if (code >= 300) throw IOException("HTTP $code من ${u.take(90)}")
                 val b = c.inputStream.use { it.readBytes() }
+                NetUse.media(b.size.toLong())
                 if (off >= 0 && len > 0 && code == 200 && b.size > len) { val st = minOf(off.toInt(), b.size); return b.copyOfRange(st, minOf(b.size, st + len.toInt())) }
                 return b
             } finally { c.disconnect() }
