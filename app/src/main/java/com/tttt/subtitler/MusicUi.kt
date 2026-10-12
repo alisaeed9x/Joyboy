@@ -172,6 +172,11 @@ class MusicUi(private val act: Activity, private val ui: Ui, private val th: The
     private val orb = OrbView(act).apply { accent = BLUE }
     private val fTitle = ui.text("مفيش حاجة شغّالة", 16f, Color.WHITE, true).apply { gravity = Gravity.CENTER; setSingleLine(); ellipsize = android.text.TextUtils.TruncateAt.END }
     private val fArtist = ui.text("", 12f, C_DIM).apply { gravity = Gravity.CENTER; setSingleLine(); ellipsize = android.text.TextUtils.TruncateAt.END }
+    // (v245) قلم تعديل اسم الأغنية والفنان — جنب الاسم على طول
+    private val editBtn = ui.text("✏️", 16f, Color.WHITE, true).apply {
+        gravity = Gravity.CENTER; background = ui.box(0x33FFFFFF, 0x55FFFFFF, 18)
+        setOnClickListener { renameSong() }
+    }
     private val bShuffle = GlyphBtn(act, "shuffle", 24)
     private val bPrev = GlyphBtn(act, "prev", 28)
     private val bPlay = GlyphBtn(act, "play", 40)
@@ -308,7 +313,7 @@ class MusicUi(private val act: Activity, private val ui: Ui, private val th: The
     }
 
     // ===== (v223) إصلاح الأخطاء بإيدك: كلمات يدوي · تقديم/تأخير · اسم الأغنية =====
-    /** الصق/عدّل الكلمات بنفسك — بعد الحفظ جيميناي بيسمع الأغنية ويظبط توقيت كل سطر على الصوت */
+    /** الصق/عدّل الكلمات بنفسك — بعد الحفظ التوقيت بيتحسب محليًا على لحظات الغنا في الصوت (من غير جيميناي) */
     private fun manualLyrics() {
         val t = MusicEngine.current ?: run { quiet("شغّل أغنية الأول", 1800L); return }
         val m = LyricsEngine.mode()
@@ -317,7 +322,7 @@ class MusicUi(private val act: Activity, private val ui: Ui, private val th: The
         val prefill = (if (cur != null && cur.raw.isNotEmpty()) cur.raw else (cur?.lines?.map { it.text } ?: emptyList())).joinToString("\n")
         val et = ui.input("الصق الكلمات هنا — سطر لكل جملة", prefill, 10)
         val col = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL; setPadding(ui.dp(4), ui.dp(2), ui.dp(4), ui.dp(2)) }
-        col.addView(ui.text("الصق الكلمات الصح أو عدّل الموجودة (سطر لكل جملة). بعد الحفظ جيميناي بيسمع الأغنية ويظبط توقيت كل سطر على الصوت.", 12f, th.muted))
+        col.addView(ui.text("الصق الكلمات الصح أو عدّل الموجودة (سطر لكل جملة). بعد الحفظ التوقيت بيتوزّع تلقائيًا على لحظات الغنا في الصوت (تقريبي).", 12f, th.muted))
         col.addView(et)
         val sc = ScrollView(act).apply { addView(col) }
         GAlert(act).setTitle("✍ كلمات يدوي").setView(sc)
@@ -433,7 +438,7 @@ class MusicUi(private val act: Activity, private val ui: Ui, private val th: The
         fdlg = GAlert(act).setTitle("🔤 خط وحجم الكلمات").setView(sc).setPositiveButton("تمام", null).show()
     }
 
-    // ===== الكلمات: حيّة فوق الدايرة + صفحة كاملة (كاملة من جيميناي + توقيت من لحظات الغنا في الصوت) =====
+    // ===== الكلمات: حيّة فوق الدايرة + صفحة كاملة (مصدرها الإنترنت + توقيت) =====
     private val lyrPrevTv = ui.text("", 13f, 0x80FFFFFF.toInt()).apply { setLineSpacing(0f, 1.1f); maxLines = 2; textDirection = View.TEXT_DIRECTION_FIRST_STRONG; textAlignment = View.TEXT_ALIGNMENT_TEXT_START }
     private val lyrCurTv = ui.text("", 25f, Color.WHITE).apply { setLineSpacing(0f, 1.08f); maxLines = 3; textDirection = View.TEXT_DIRECTION_FIRST_STRONG; textAlignment = View.TEXT_ALIGNMENT_TEXT_START }
     private val lyrNextTv = ui.text("", 13f, 0x80FFFFFF.toInt()).apply { setLineSpacing(0f, 1.1f); maxLines = 2; textDirection = View.TEXT_DIRECTION_FIRST_STRONG; textAlignment = View.TEXT_ALIGNMENT_TEXT_START }
@@ -445,7 +450,6 @@ class MusicUi(private val act: Activity, private val ui: Ui, private val th: The
     private val lyrBox = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL; setPadding(ui.dp(12), ui.dp(8), ui.dp(12), ui.dp(40)) }
     private val lyrScroll = ScrollView(act).apply { overScrollMode = View.OVER_SCROLL_NEVER; isVerticalScrollBarEnabled = false; addView(lyrBox) }
     private val lyrViews = ArrayList<TextView>()
-    private val modeChips = ArrayList<TextView>()
     private var lyrOn = false
     private var lyr: LyricsResult? = null
     private var lyrKey: String? = null        // uri|mode للي معروض دلوقتي
@@ -460,17 +464,15 @@ class MusicUi(private val act: Activity, private val ui: Ui, private val th: The
     private fun buildLyricsPanel() {
         // (v198) صف واحد متحرك أفقيًا فيه كل الأزرار: وضعي الكلمات · التصحيح · الخط والحجم — عشان الكلمات تاخد أكبر مساحة
         val tools = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; gravity = Gravity.CENTER_VERTICAL; setPadding(ui.dp(10), ui.dp(2), ui.dp(10), ui.dp(2)) }
-        fun chip(label: String, m: String) = ui.text(label, 12.5f, Color.WHITE, true).apply {
-            gravity = Gravity.CENTER; setPadding(ui.dp(12), ui.dp(11), ui.dp(12), ui.dp(11)); tag = m
-            setOnClickListener { if (LyricsEngine.mode() != m) { LyricsEngine.setMode(m); paintModes(); loadLyrics(manual = true) } }
-        }.also { modeChips.add(it) }
         fun fb(t: String, f: () -> Unit) = ui.text(t, 12f, Color.WHITE).apply {
             gravity = Gravity.CENTER; setPadding(ui.dp(12), ui.dp(11), ui.dp(12), ui.dp(11)); background = ui.box(0x22FFFFFF, 0x33FFFFFF, 10); setOnClickListener { f() }
         }
         fun add(v: View) { tools.addView(v, LinearLayout.LayoutParams(-2, -2).apply { marginEnd = ui.dp(6) }) }
-        // (v230) اختيار مصدر الكلمات: 📝 جلب الكلمات من جيميناي (الأساسي) · 🎧 ترانسكريبت الصوت
-        add(chip("📝 جلب الكلمات", LyricsEngine.M_FULL))
-        add(chip("🎧 ترانسكريبت الصوت", LyricsEngine.M_AUDIO))
+        // (v242) زرار «جلب الكلمات» (نفس المكان والشكل الأزرق): يعرض المحفوظ لو موجود وإلا يجيب من الإنترنت. «ترانسكريبت الصوت» اتشال.
+        add(ui.text("📝 جلب الكلمات", 12.5f, Color.WHITE, true).apply {
+            gravity = Gravity.CENTER; setPadding(ui.dp(12), ui.dp(11), ui.dp(12), ui.dp(11)); background = ui.box(BLUE, BLUE, 10)
+            setOnClickListener { loadLyrics(force = true, manual = true) }
+        })
         // (v201) شريط الكلمات: 4 أزرار بس — الباقي (إعادة · الكلمات غلط · الأغنية غلط · ريفريش …) جوه «⋯ المزيد»
         // (v223) أزرار الإصلاح ظاهرة على طول: إعادة · لصق/تعديل الكلمات · تقديم/تأخير · اسم الأغنية
         add(fb("🔁 إعادة") { redoLyrics(false) })
@@ -485,15 +487,6 @@ class MusicUi(private val act: Activity, private val ui: Ui, private val th: The
         lyrScroll.apply { isVerticalFadingEdgeEnabled = true; setFadingEdgeLength(ui.dp(46)) }
         lyrPanel.addView(lyrScroll, LinearLayout.LayoutParams(-1, 0, 1f))
         lyrPanel.setBackgroundColor(0x00000000)
-        paintModes()
-    }
-    private fun paintModes() {
-        val m = LyricsEngine.mode()
-        modeChips.forEach { c ->
-            val on = c.tag == m
-            c.background = ui.box(if (on) BLUE else 0x22FFFFFF, if (on) BLUE else 0x33FFFFFF, 10)
-            c.setTextColor(Color.WHITE)
-        }
     }
     private fun setStatus(t: String) {
         lyrStatus.text = t; lyrStatus.visibility = if (t.isBlank()) View.GONE else View.VISIBLE
@@ -518,7 +511,7 @@ class MusicUi(private val act: Activity, private val ui: Ui, private val th: The
         if (MusicEngine.current == null) { quiet("شغّل أغنية الأول وبعدين دوس على الكلمات", 2200L); return }
         if (lyrOn) { hideLyrics(); return }
         lyrOn = true; lyrIdx = -2; lyrWordKey = ""
-        paintModes(); paintLyrBtn()
+        paintLyrBtn()
         // الدواير بنفس حجمها بتنزل لتحت لحد اسم الأغنية، والكلمات بتظهر من وراها بفيد
         val shift = lyrShift()
         orb.pivotX = orb.width / 2f; orb.pivotY = orb.ringCy + orb.ringR      // (v201) بتصغر ناحية أسفل الحلقة
@@ -576,7 +569,7 @@ class MusicUi(private val act: Activity, private val ui: Ui, private val th: The
         val ck = t.uri + "|" + m
         lyrKey = ck
         if (LyricsEngine.isRunning(t, m)) { setStatus("🎧 بتتكتب في الخلفية… استنى"); if (lyr == null) bigMsg("⏳ بتتكتب… هتظهر هنا أول ما تجهز"); return }
-        if (lyr == null) bigMsg(if (m == LyricsEngine.M_FULL) "📝 بجيب الكلمات من جيميناي…\nلو الاسم مش معروف هيسمع مقطع من نص الأغنية الأول" else "🎧 جيميناي بيسمع الأغنية ويكتب اللي بيتغنّى…")
+        if (lyr == null) bigMsg("📝 بجيب الكلمات…")
         setStatus("📝 بجهّز الطلب…")
         LyricsEngine.start(act, t, m, nameHint(t), retry, fresh, { stage ->
             act.runOnUiThread { if (fullOn && lyrKey == ck) setStatus(stage) }
@@ -604,10 +597,11 @@ class MusicUi(private val act: Activity, private val ui: Ui, private val th: The
         lyr = r; lyrBox.removeAllViews(); lyrViews.clear(); lyrIdx = -2; lyrWordKey = ""; liveKey = ""; liveIdx = -3
         if (r.title.isNotBlank() || r.artist.isNotBlank())
             lyrBox.addView(ui.text("🎵 " + listOf(r.title, r.artist).filter { it.isNotBlank() }.joinToString(" — "), 12f, C_DIM).apply { gravity = Gravity.CENTER; setPadding(0, 0, 0, ui.dp(14)) })
+        if (!r.synced) lyrBox.addView(ui.text("📄 كلمات من غير توقيت (مش متزامنة مع الصوت)", 11f, C_DIM).apply { gravity = Gravity.CENTER; setPadding(0, 0, 0, ui.dp(10)) })
         r.lines.forEach { l ->
             val tv = ui.text(l.text, lsz(), C_DIM, true).apply {
                 typeface = lyrTf(); gravity = Gravity.CENTER; setPadding(0, ui.dp(9), 0, ui.dp(9)); alpha = 0.6f
-                setOnClickListener { MusicEngine.seekTo(((l.start - lyrOffMs / 1000.0) * 1000).toInt().coerceAtLeast(0)) }
+                setOnClickListener { if (r.synced) MusicEngine.seekTo(((l.start - lyrOffMs / 1000.0) * 1000).toInt().coerceAtLeast(0)) }
             }
             lyrViews.add(tv); lyrBox.addView(tv, LinearLayout.LayoutParams(-1, -2))
         }
@@ -620,7 +614,7 @@ class MusicUi(private val act: Activity, private val ui: Ui, private val th: The
         val tid = MusicEngine.current?.id ?: -1L
         if (tid != lyrOffId) { lyrOffId = tid; lyrOffMs = Cfg.int("lyoff_$tid", 0) }   // (v223) إزاحة التوقيت لكل أغنية (+ = الكلمات أبكر)
         val sec = MusicEngine.posMs / 1000.0 + lyrOffMs / 1000.0
-        val i = LyricsEngine.indexAt(r.lines, sec)
+        val i = if (r.synced) LyricsEngine.indexAt(r.lines, sec) else -1   // (v243) كلمات من غير توقيت: من غير تحديد سطر
         if (!lyrOn) return
         if (i != lyrIdx) {
             lyrViews.getOrNull(lyrIdx)?.let { v -> v.text = r.lines[lyrIdx].text; v.setTextColor(C_DIM); v.alpha = 0.6f; v.textSize = lsz() }
@@ -717,6 +711,7 @@ class MusicUi(private val act: Activity, private val ui: Ui, private val th: The
         titleCol.addView(fTitle, LinearLayout.LayoutParams(-1, -2)); titleCol.addView(fArtist, LinearLayout.LayoutParams(-1, -2))
         val titleRow = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_LTR; setPadding(ui.dp(18), 0, ui.dp(14), 0) }
         titleRow.addView(titleCol, LinearLayout.LayoutParams(0, -2, 1f).apply { marginEnd = ui.dp(8) })
+        titleRow.addView(editBtn, LinearLayout.LayoutParams(ui.dp(36), ui.dp(36)).apply { marginEnd = ui.dp(8) })
         val rightCol = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER_HORIZONTAL }
         rightCol.addView(errBtn, LinearLayout.LayoutParams(-2, -2).apply { bottomMargin = ui.dp(4) })
         rightCol.addView(lyrBtn, LinearLayout.LayoutParams(-2, -2))
@@ -764,7 +759,7 @@ class MusicUi(private val act: Activity, private val ui: Ui, private val th: The
         val col = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL }
         col.addView(top, LinearLayout.LayoutParams(-1, ui.dp(56)))
         col.addView(middle, LinearLayout.LayoutParams(-1, 0, 1f))
-        col.addView(eq, LinearLayout.LayoutParams(-1, ui.dp(58)).apply { setMargins(ui.dp(18), ui.dp(4), ui.dp(18), ui.dp(2)) })
+        col.addView(eq, LinearLayout.LayoutParams(-1, ui.dp(96)).apply { setMargins(ui.dp(18), ui.dp(4), ui.dp(18), ui.dp(2)) })
         col.addView(ctl, LinearLayout.LayoutParams(-1, ui.dp(60)).apply { bottomMargin = ui.dp(2) })
         full.addView(col, FrameLayout.LayoutParams(-1, -1))
         setBg(bgColor)
@@ -828,11 +823,6 @@ class MusicUi(private val act: Activity, private val ui: Ui, private val th: The
         item("🔄 ريفريش (الاسم والكلمات والبوستر)") { refreshAll() }
         item("🎧 تعرّف على أغنية شغّالة في تطبيق تاني") { try { act.startActivity(android.content.Intent(act, SongRequestActivity::class.java)) } catch (_: Throwable) {} }
         dlg = ui.sheet(act, "⋮ المزيد", listOf<View>(col)); dlg.show()
-    }
-    private fun pickLyrMode(m: String) {
-        if (MusicEngine.current == null) { quiet("شغّل أغنية الأول", 1500L); return }
-        LyricsEngine.setMode(m); paintModes()
-        if (!lyrOn) toggleLyrics() else loadLyrics(manual = true)
     }
     private val repeatNames = arrayOf("➡️ تشغيل بالترتيب (من غير تكرار)", "🔁 تكرار الكل", "🔂 تكرار الأغنية دي")
     private fun cycleMode() {

@@ -442,8 +442,8 @@ class MainActivity : Activity() {
             Cfg.put(AudioEnc.PRESET_KEY, if (it == apNormal) AudioEnc.NORMAL else AudioEnc.FAST); apDesc()
         }
         apDesc()
-        val vaOn = "⚡ تلقائي مع كل فيديو"; val vaOff = "✋ يدوي (من زرار 👁)"
-        val visAutoChips = ui.chips(listOf(vaOn, vaOff), { if (VisualMode.auto()) vaOn else vaOff }) { Cfg.put("vis_auto", if (it == vaOn) "1" else "0") }
+        val vaOn = "⚡ تلقائي مع كل فيديو"; val vaOff = "✋ يدوي (بريسيتس / زرار 👁)"
+        val visAutoChips = ui.chips(listOf(vaOn, vaOff), { if (VisualMode.auto()) vaOn else vaOff }) { Cfg.put("vis_open_auto", if (it == vaOn) "1" else "0") }   // (v249) مفتاح مستقل: الافتراضي يدوي
         // (v198) إعدادات مشغّل الموسيقى
         val lyrFontChips = ui.chips(SubStyle.fonts.map { it.label }, { (SubStyle.fonts.firstOrNull { f -> f.id == Cfg.str("lyr_font", "Noto Sans Arabic") } ?: SubStyle.fonts[0]).label }) { l ->
             SubStyle.fonts.firstOrNull { f -> f.label == l }?.let { f -> Cfg.put("lyr_font", f.id) }
@@ -504,13 +504,16 @@ class MainActivity : Activity() {
             tab("look", listOf<View>(
                 ui.section("🔤 الخطوط", true, *sp.fonts.toTypedArray()),
                 ui.section("✨ الأنيميشن", false, *sp.anim.toTypedArray()),
-                ui.section("🎬 العرض والألوان", false, *sp.look.toTypedArray())), true),
+                ui.section("🎬 العرض والألوان", false, *sp.look.toTypedArray()),
+                ui.section("🔘 كبسولات العدّادات (صوتي · بصري · نت)", false,
+                    ui.text("الكبسولات الصغيرة شمال فوق الفيديو في الشاشة الكاملة. الشفافية دي هي حالتها العادية؛ لما تدوس كبسولة بتبقى 100% كام ثانية وترجع. بتتطبّق فورًا في المشغّل.", 12f, th.muted),
+                    ui.slider("الظهور (100 = معتمة، أقل = أشفّ)", Cfg.int("badge_alpha", 55).coerceIn(15, 100), 15, 100, "%") { Cfg.put("badge_alpha", it.toString()) })), true),
             // ===== 🔊 الصوت والصورة =====
             tab("audio", listOf<View>(
                 ui.section("🔊 الصوت", true, atrack, audioPresetTitle, audioPresetChips, audioPresetDesc, *fl("soundtags", "hitiming")))),
             tab("visual", listOf<View>(
                                 ui.section("👁 محرك الوضع البصري", false, visAutoChips,
-                    ui.text("الوضع البصري بيعتمد على Gemini فقط (مفتاح «الوضع البصري فقط» في قسم 🔑 المفاتيح والمحرك). بيلقط فريم كل ثانية، بيتخطّى اللي مفيهوش تغيير أو نص، وبيبعت الباقي دفعات (30 فريم) في شبكات من 6 فريمات بالتوازي. النتايج بتتحفظ مع الفيديو، وبين الطلبات راحة تلقائية لو جيميناي رفض (429). بيتطبق من أول تشغيل جديد.", 12f, th.muted)))),
+                    ui.text("الوضع البصري بيعتمد على Gemini فقط (مفتاح «الوضع البصري فقط» في قسم 🔑 المفاتيح والمحرك). بيلقط فريم كل ثانية، بيتخطّى اللي مفيهوش تغيير أو نص، وبيبعت الباقي دفعات (30 فريم) في شبكات من 6 فريمات بالتوازي. النتايج بتتحفظ مع الفيديو، وبين الطلبات راحة تلقائية لو جيميناي رفض (429). بيتطبق من أول تشغيل جديد.\n(v249) الوضع البصري ما بيشتغلش لوحده لما تدخل فيديو — بيشتغل من البريسيتس اللي فيها بصري (شاملة / هارد سب) أو من زرار 👁، إلا لو اخترت «تلقائي مع كل فيديو» فوق.", 12f, th.muted)))),
             // ===== 🛠 عام: الخروج · الترجمة الحية · الطابور · البطارية · الأمان · النسخة الاحتياطية · الثيم =====
             tab("more", listOf<View>(
                 watchViews[2], watchViews[3],

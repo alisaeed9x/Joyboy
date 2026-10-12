@@ -273,7 +273,18 @@ class PlayerActivity : Activity(), Host {
     lateinit var noticeBtn: TextView   // (v217) مثلث ▲ الإشعارات (v224: جنب زرار لاندسكيب/بورتريت)
     private var trLgB: TextView? = null   // (v224) 🌐 و🔑 بقوا أيقونات صغيرة جنب زرار 🗣 في الشريط السفلي
     private var trKmB: TextView? = null
-    lateinit var visBadge: TransBadge   // (v182) عدّاد جمل الوضع البصري — أقصى الشمال
+    lateinit var visBadge: TransBadge   // (v182) عدّاد جمل الوضع البصري — (v249) جنب كبسولة الصوت شمال فوق
+    lateinit var netBadge: NetBadge   // (v249) كبسولة سحب النت — منفصلة، نفس مكان الكبسولتين
+    private var badgeHotUntil = 0L   // (v249) لما تدوس كبسولة بتبقى 100% لحد الوقت ده، وبعدها ترجع للشفافية المضبوطة من الإعدادات
+    private fun badgeRestA(): Float = (Cfg.int("badge_alpha", 55).coerceIn(15, 100)) / 100f
+    private fun badgeHot() { badgeHotUntil = System.currentTimeMillis() + 4000; applyBadgeAlpha() }
+    private fun applyBadgeAlpha() {
+        if (!::fsBadge.isInitialized || !::visBadge.isInitialized || !::netBadge.isInitialized) return
+        val a = if (System.currentTimeMillis() < badgeHotUntil) 1f else badgeRestA()
+        if (fsBadge.alpha != a) fsBadge.alpha = a
+        if (visBadge.alpha != a) visBadge.alpha = a
+        if (netBadge.alpha != a) netBadge.alpha = a
+    }
     lateinit var fsBtnV: TextView
     lateinit var fsBarFs: TextView
     lateinit var fsBtnLp: FrameLayout.LayoutParams
@@ -836,7 +847,7 @@ class PlayerActivity : Activity(), Host {
         col.addView(head)
         col.addView(MaxHeightScroll(this, (resources.displayMetrics.heightPixels * 0.42f).toInt()).apply { addView(tv, FrameLayout.LayoutParams(-1, -2)) }, LinearLayout.LayoutParams(-1, -2))
         val w = minOf(ui.dp(270), resources.displayMetrics.widthPixels - ui.dp(28))
-        videoBoxRef.addView(col, FrameLayout.LayoutParams(w, -2, Gravity.TOP or Gravity.END).apply { setMargins(0, ui.dp(66), ui.dp(14), 0) })
+        videoBoxRef.addView(col, FrameLayout.LayoutParams(w, -2, Gravity.TOP or Gravity.LEFT).apply { setMargins(ui.dp(10), ui.dp(44), 0, 0) })   // (v249) تحت الكبسولات شمال
         miniLog = col
     }
     private var logMode = 0
@@ -1018,7 +1029,7 @@ class PlayerActivity : Activity(), Host {
         // عمود الشمال: كبسولة الباتش الفاشل (لو في) فوق، واللوج تحتها
         leftCol = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_LTR; clipChildren = false; clipToPadding = false }
         // (v100) اللوج العايم اتلغى: حالة الباتشات بقت جوه صفحة اللوجز (logCol)
-        videoBox.addView(leftCol, FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.START).apply { setMargins(0, ui.dp(66), 0, 0) })   // (v182) نازل تحت عدّاد الوضع البصري
+        videoBox.addView(leftCol, FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.START).apply { setMargins(0, ui.dp(44), 0, 0) })   // (v182) نازل تحت الكبسولات (v249: الكبسولات بقت أصغر فالمسافة 44)
         // 👁 بصري: دايرة عايمة فوق دايرة ✦
         // (v185) ضغطة واحدة = لقطة (بتتصوّر وتتترجم وتتحفظ مع الفيديو)؛ مفيش ضغطة مطوّلة، والتلقائي مابيتقفلش من الزرار ده (القايمة من عدّاد 👁 أقصى الشمال)
         floatBar = ui.fsCircle("👁") { flashFloat(floatBar); visualSnap() }.apply {
@@ -1063,20 +1074,23 @@ class PlayerActivity : Activity(), Host {
             setOnClickListener { togglePlay() }
         }
         videoBox.addView(centerPlay, FrameLayout.LayoutParams(ui.dp(64), ui.dp(64), Gravity.CENTER))
-        fsBadge = TransBadge(this, th).apply { visibility = View.GONE; alpha = 0.5f; setOnClickListener { alpha = 1f; toggleMiniLog(); h.postDelayed({ alpha = 0.5f }, 4000) }; setOnLongClickListener { alpha = 1f; closeMiniLog(); versionsPopup(this); h.postDelayed({ alpha = 0.5f }, 4000); true } }   // (v125) دوسة = اللوج الصغير (أنهي باتش بيترجم) · ضغطة طويلة = قايمة الترجمات المحفوظة
+        // (v249) كبسولات العدّادات: صغيرة، التلاتة جنب بعض شمال فوق الفيديو (صوتي · بصري · نت) والشفافية من الإعدادات (badge_alpha)
+        fsBadge = TransBadge(this, th).apply { visibility = View.GONE; setOnClickListener { badgeHot(); toggleMiniLog(); h.postDelayed({ applyBadgeAlpha() }, 4100) }; setOnLongClickListener { badgeHot(); closeMiniLog(); versionsPopup(this); h.postDelayed({ applyBadgeAlpha() }, 4100); true } }   // (v125) دوسة = اللوج الصغير (أنهي باتش بيترجم) · ضغطة طويلة = قايمة الترجمات المحفوظة
+        visBadge = TransBadge(this, th).apply { visibility = View.GONE; setOnClickListener { badgeHot(); visualDialog(); h.postDelayed({ applyBadgeAlpha() }, 4100) } }
+        netBadge = NetBadge(this).apply { visibility = View.GONE; setOnClickListener { badgeHot(); netDialog(); h.postDelayed({ applyBadgeAlpha() }, 4100) } }
         // (v217) مثلث ▲ أحمر شفاف 70% جنب عدّاد الجمل (فوق اليمين): بيظهر لما فيه إشعارات، ولمسة عليه = قايمة منسدلة من الأحدث للأقدم
         noticeBtn = ui.text("▲", 13f, 0xFFFF3B30.toInt(), true).apply {
             visibility = View.GONE; alpha = 0.7f; gravity = Gravity.CENTER
             setPadding(ui.dp(10), ui.dp(4), ui.dp(10), ui.dp(4)); background = ui.box(0x33FF3B30, 0x99FF3B30.toInt(), 20)
             setOnClickListener { noticePopup(this) }
         }
-        val fsTop = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_LTR; gravity = Gravity.CENTER_VERTICAL }
-        fsTop.addView(fsBadge, LinearLayout.LayoutParams(-2, -2))
-        videoBox.addView(fsTop, FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.END).apply { setMargins(0, ui.dp(14), ui.dp(14), 0) })
+        val badgeRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_LTR; gravity = Gravity.CENTER_VERTICAL }
+        badgeRow.addView(fsBadge, LinearLayout.LayoutParams(-2, -2))
+        badgeRow.addView(visBadge, LinearLayout.LayoutParams(-2, -2).apply { marginStart = ui.dp(4) })
+        badgeRow.addView(netBadge, LinearLayout.LayoutParams(-2, -2).apply { marginStart = ui.dp(4) })
+        videoBox.addView(badgeRow, FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.LEFT).apply { setMargins(ui.dp(10), ui.dp(8), 0, 0) })
+        applyBadgeAlpha()
         NoticeLog.attach(this) { paintNotices() }; paintNotices()
-        // (v182) عدّاد جمل الوضع البصري: أقصى الشمال (عدّاد الصوت أقصى اليمين). دوسة = قايمة الوضع البصري
-        visBadge = TransBadge(this, th).apply { visibility = View.GONE; alpha = 0.5f; setOnClickListener { alpha = 1f; visualDialog(); h.postDelayed({ alpha = 0.5f }, 4000) } }
-        videoBox.addView(visBadge, FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.START).apply { setMargins(ui.dp(14), ui.dp(14), 0, 0) })
         val gi = IconTextView(this).apply {
             textSize = 15f; setTextColor(Color.WHITE); gravity = Gravity.CENTER; typeface = android.graphics.Typeface.DEFAULT_BOLD
             setPadding(ui.dp(16), ui.dp(10), ui.dp(16), ui.dp(10)); background = ui.box(0x99000000.toInt(), Color.TRANSPARENT, 24); visibility = View.GONE
@@ -1088,7 +1102,7 @@ class PlayerActivity : Activity(), Host {
         val indHide = Runnable { volInd.visibility = View.GONE; briInd.visibility = View.GONE }
         fun indShow(v: VertInd, f: Float) { v.set(f); h.removeCallbacks(indHide); h.postDelayed(indHide, 900) }
         // (v200) فقاعة الأدوات ✦ (📝 🕳 📥 📂) اتشالت — نفس الأوامر موجودة في قايمة 🧰 الأدوات
-        fsOnly = listOf<View>(fsBadge, visBadge)
+        fsOnly = listOf<View>(fsBadge, visBadge, netBadge)
         val giHide = Runnable { gi.visibility = View.GONE }
         fun giShow(t: String, g: Int) {
             gi.text = t
@@ -1968,8 +1982,8 @@ class PlayerActivity : Activity(), Host {
                 }
                 if (now - lastBeat > 20000) { lastBeat = now; LogStore.add("💓 ${LogStore.heapLine()} · ${if (player.isPlaying) "بيشتغل" else "واقف"} @${fmtMs(cur)} · مترجم ${(engine.coveredSec() / 60).toInt()}د · ${engine.subs.size} جملة") }
                 run { val pc = PlayerLogic.percent(engine.coveredSec(), durMs / 1000.0); if (pc != trPct) { trPct = pc; updateTr() } }
-                if (fullMode) { fsBadge.set(PlayerLogic.percent(engine.coveredSec(), durMs / 1000.0).toString() + "%", list.size.toString() + " جملة ▾", NetUse.badgeLine()); fsBadge.setOn(engineStarted && !engine.userPaused) }   // (v236) نقطة خضراء = الوضع الصوتي شغّال
-                if (fullMode && ::visual.isInitialized) { visBadge.set("👁 " + (if (visual.running) "شغّال" else "واقف"), visual.count.toString() + " جملة"); visBadge.setOn(visual.running) }   // (v236) نقطة خضراء = الوضع البصري شغّال
+                if (fullMode) { fsBadge.set("🔊 " + PlayerLogic.percent(engine.coveredSec(), durMs / 1000.0).toString() + "%", list.size.toString() + " جملة ▾"); fsBadge.setOn(engineStarted && !engine.userPaused); netBadge.set(NetUse.fmt(NetUse.localTotal()), NetUse.fmt(NetUse.onlineTotal())); applyBadgeAlpha() }   // (v236) نقطة خضراء = الوضع الصوتي شغّال
+                if (fullMode && ::visual.isInitialized) { visBadge.set("👁 " + visual.count, if (visual.running) "شغّال" else "واقف"); visBadge.setOn(visual.running) }   // (v236) نقطة خضراء = الوضع البصري شغّال
                 if (now - lastMem > 4000) { lastMem = now; if (!fullMode) mem.update(this@PlayerActivity) }
                 counters.text = "جمل ${list.size} · 👁 ${visList.size} · تغطية ${PlayerLogic.percent(engine.coveredSec(), durMs / 1000.0)}% · فجوات ${engine.failedCount()} · كوتة ${Quota.used(conf.model)}/${Models.quotaOf(conf.model)} · ${NetUse.badgeLine()}"
                 if (logDlg.isShowing && logMode == 0) {
@@ -2418,7 +2432,7 @@ class PlayerActivity : Activity(), Host {
         fsBtnLp.setMargins(ui.dp(10), 0, 0, ui.dp(10)); fsBtnV.layoutParams = fsBtnLp
         fsOnly.forEach { it.visibility = if (f) View.VISIBLE else View.GONE }
         st.visibility = if (f) View.GONE else View.VISIBLE
-        if (::logDrawer.isInitialized) { (leftCol.layoutParams as FrameLayout.LayoutParams).topMargin = ui.dp(26); logDrawer.visibility = View.VISIBLE; leftCol.requestLayout() }
+        if (::logDrawer.isInitialized) { (leftCol.layoutParams as FrameLayout.LayoutParams).topMargin = ui.dp(44); logDrawer.visibility = View.VISIBLE; leftCol.requestLayout() }
         @Suppress("DEPRECATION") window.decorView.systemUiVisibility = if (f) (View.SYSTEM_UI_FLAG_FULLSCREEN or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY or View.SYSTEM_UI_FLAG_LAYOUT_STABLE) else (if (Build.VERSION.SDK_INT >= 23 && th.isLight) View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR else 0)
         placeCard()
         if (f) showChrome() else { h.removeCallbacks(hideChrome); chromeShown = false; applyChromeFn() }

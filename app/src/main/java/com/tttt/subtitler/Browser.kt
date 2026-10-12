@@ -304,8 +304,10 @@ class BrowserActivity : Activity() {
             background = ui.box(0xCC1E2A3A.toInt(), 0x66FFFFFF, 22); elevation = ui.dp(4).toFloat(); visibility = View.GONE
             setOnClickListener { undoPanic() }
         }
+        ctl = buildControls()   // (v248) زرار مانع الإعلانات 🛡 بقى فوق زرار الطوارئ على طول
         panicCol = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_LTR
+            orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_LTR; gravity = Gravity.CENTER_HORIZONTAL
+            addView(ctl, LinearLayout.LayoutParams(-2, -2))
             addView(panicB, LinearLayout.LayoutParams(ui.dp(44), ui.dp(44)))
             addView(undoB, LinearLayout.LayoutParams(ui.dp(44), ui.dp(44)).apply { topMargin = ui.dp(6) })
         }
@@ -313,7 +315,7 @@ class BrowserActivity : Activity() {
             layoutDirection = View.LAYOUT_DIRECTION_LTR
             addView(webHolder, FrameLayout.LayoutParams(-1, -1))
             addView(panicCover, FrameLayout.LayoutParams(-1, -1))
-            addView(panicCol, FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.LEFT).apply { setMargins(ui.dp(4), ui.dp(6), 0, 0) })
+            addView(panicCol, FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM or Gravity.RIGHT).apply { setMargins(0, 0, ui.dp(4), ui.dp(8)) })
         }
         root.addView(bar); root.addView(progTrack, LinearLayout.LayoutParams(-1, ui.dp(3))); root.addView(findBar); root.addView(hint)
         root.addView(webWrap, LinearLayout.LayoutParams(-1, 0, 1f)); root.addView(badge)
@@ -323,10 +325,8 @@ class BrowserActivity : Activity() {
         content = root
         frame = FrameLayout(this); frame.setBackgroundColor(th.bg)
         customBox = FrameLayout(this).apply { setBackgroundColor(Color.BLACK); visibility = View.GONE }
-        ctl = buildControls()
         frame.addView(root, FrameLayout.LayoutParams(-1, -1))
         frame.addView(customBox, FrameLayout.LayoutParams(-1, -1))
-        frame.addView(ctl, FrameLayout.LayoutParams(-2, -2, Gravity.END or Gravity.CENTER_VERTICAL))
         setContentView(frame)
 
         // التبويبات: رجّع المحفوظة (لو مفعّل) وبعدها لو جاي بلينك افتحه في تبويب جديد
@@ -1046,6 +1046,14 @@ class BrowserActivity : Activity() {
         return "n:" + f.ref.substringBefore('#') + "|" + nm
     }
 
+    /** (v247) نفس الاسم الظاهر (عنوان الفيديو/الصفحة) في نفس الصفحة = اصطياد واحد بجودات، حتى لو أسماء الملفات في اللينكات مختلفة */
+    private fun titleKey(f: Found): String? {
+        if (f.url.contains("videoplayback")) return null
+        val nm = nameFor(f).trim().lowercase()
+        if (nm.length < 4 || WebIdent.GENERIC.matches(nm)) return null
+        return "t:" + f.ref.substringBefore('#') + "|" + nm
+    }
+
     private fun groupsOf(list: List<Found>): List<Grp> {
         // تجميع: اللينكات اللي ليها نفس مفتاح الهيكل/الفيديو أو نفس الاسم = مجموعة واحدة (union-find)
         val par = IntArray(list.size) { it }
@@ -1053,7 +1061,7 @@ class BrowserActivity : Activity() {
         val seenK = HashMap<String, Int>()
         fun link(k: String, i: Int) { val j = seenK[k]; if (j == null) seenK[k] = i else par[find(i)] = find(j) }
         val gk = list.map { groupKey(it) }
-        list.forEachIndexed { i, f -> link(gk[i], i); nameKey(f)?.let { link(it, i) } }
+        list.forEachIndexed { i, f -> link(gk[i], i); nameKey(f)?.let { link(it, i) }; titleKey(f)?.let { link(it, i) } }
         val order = LinkedHashMap<Int, ArrayList<Int>>()
         for (i in list.indices.reversed()) order.getOrPut(find(i)) { ArrayList() }.add(i)
         val out = ArrayList<Grp>()
@@ -1077,7 +1085,7 @@ class BrowserActivity : Activity() {
                 for (f in sorted) {
                     val h = if (f.kind == "HLS") 0 else hOf(f)
                     if (h > 0 && !seenH.add(h)) continue       // (v231) جودة واحدة مرة واحدة (لينكين بنفس الارتفاع = نفس الجودة)
-                    val lb = if (f.kind == "HLS") "HLS · جودة تلقائية" else if (h > 0) Sniff.qLabel(h, qs.size + 1, f.size) else f.kind + (if (f.size > 0) " · " + Sniff.fmtSize(f.size) else "")
+                    val lb = if (f.kind == "HLS") "HLS · جودة تلقائية" else if (h > 0) Sniff.qLabel(h, qs.size + 1, f.size) else "جودة ${qs.size + 1} · " + f.kind + (if (f.size > 0) " · " + Sniff.fmtSize(f.size) else "")
                     qs.add(Qv(lb, h, f, null))
                 }
             }
