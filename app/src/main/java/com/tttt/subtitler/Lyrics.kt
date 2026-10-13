@@ -470,27 +470,7 @@ object LyricsEngine {
         }.apply { isDaemon = true }.start()
     }
 
-    /** (v223) كلمات من المستخدم (لصق/تعديل): بتتحفظ زي ما هي، والتوقيت بيتحسب محليًا من لحظات الغنا في الصوت (من غير جيميناي) */
-    fun startManual(ctx: Context, t: Track, hint: Pair<String, String>?, lines: List<String>, onStage: (String) -> Unit, onDone: (LyricsResult?, String) -> Unit) {
-        val app = ctx.applicationContext
-        val k = key(t, M_FULL)
-        if (running.putIfAbsent(k, true) != null) { onDone(null, "بتتكتب دلوقتي"); return }
-        Thread {
-            try { finishApprox(app, t, (hint?.first ?: "").ifBlank { t.title }, (hint?.second ?: "").ifBlank { t.artist }, lines, onStage, onDone) }
-            catch (e: Throwable) { LogStore.err("lyrics-manual", e); onDone(null, "فشل: " + (e.message ?: e.javaClass.simpleName).replace('\n', ' ').take(110)) }
-            finally { running.remove(k) }
-        }.apply { isDaemon = true }.start()
-    }
 
-    /** توقيت تقريبي محلي: الكلمات بتتوزّع على لحظات الغنا الفعلية في الصوت (Karaoke.segments) — من غير أي طلب شبكة */
-    private fun finishApprox(app: Context, t: Track, name: String, by: String, lines: List<String>, onStage: (String) -> Unit, onDone: (LyricsResult?, String) -> Unit) {
-        onStage("⏱ بوزّع الكلمات على لحظات الغنا في الأغنية…")
-        val segs = try { Karaoke.segments(app, t) } catch (e: Throwable) { LogStore.err("lyrics-vad", e); emptyList() }
-        val placed = if (segs.isNotEmpty()) Karaoke.place(lines, segs) else emptyList()
-        val ok = placed.isNotEmpty()
-        val res = LyricsResult(name, by, if (ok) placed else estimate(t, lines), true, 1, 1, emptySet(), "التوقيت تقريبي", lines)
-        save(app, t, M_FULL, res); onDone(res, "")
-    }
 
     /** السطر الشغّال دلوقتي عند الوقت ده (آخر سطر بدأ)، أو -1 قبل أول سطر */
     fun indexAt(lines: List<LyricLine>, sec: Double): Int {

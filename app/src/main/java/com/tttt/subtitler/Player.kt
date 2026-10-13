@@ -763,7 +763,9 @@ class PlayerActivity : Activity(), Host {
     }
 
     // ===== (v167) السلايدر الموحّد للصوت: 0..100% صوت عادي، 100..200% تضخيم (أحمر) — LoudnessEnhancer على جلسة صوت المشغّل (الجزء الزيادة 0..100 = لحد +15dB) =====
-    fun volTotal(): Int = 100 + (Cfg.str("vol_boost", "0").toIntOrNull() ?: 0).coerceIn(0, 100)
+    /** (v270) 0..100 = صوت النظام (زراري الفوليوم)، 100..200 = تضخيم والنظام على الآخر */
+    fun volTotal(): Int { val b = (Cfg.str("vol_boost", "0").toIntOrNull() ?: 0).coerceIn(0, 100); val s = SysVol.get(this); return if (b > 0 && s >= 100) 100 + b else s }
+    private var volWatch: SysVol.Watch? = null
     fun setBoostPct(b: Int) { Cfg.put("vol_boost", b.coerceIn(0, 100).toString()); applyBoost() }
     fun boostDbText(b: Int) = "+" + "%.1f".format(b * 0.15) + " dB"
     private var loud: android.media.audiofx.LoudnessEnhancer? = null
@@ -1757,14 +1759,22 @@ class PlayerActivity : Activity(), Host {
         ctl.vol.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(s: SeekBar?, p: Int, u: Boolean) {
                 if (!u) return
-                if (p <= 100) { player.volume = p / 100f; if ((Cfg.str("vol_boost", "0").toIntOrNull() ?: 0) != 0) setBoostPct(0) }
-                else { player.volume = 1f; setBoostPct(p - 100) }
+                player.volume = 1f   // (v270) الصوت العادي = صوت النظام
+                if (p <= 100) { SysVol.set(this@PlayerActivity, p); if ((Cfg.str("vol_boost", "0").toIntOrNull() ?: 0) != 0) setBoostPct(0) }
+                else { SysVol.set(this@PlayerActivity, 100); setBoostPct(p - 100) }
                 giShow(if (p <= 100) "🔊 $p%" else "🔊 $p%  تضخيم ${boostDbText(p - 100)}", Gravity.CENTER)
             }
             override fun onStartTrackingTouch(s: SeekBar?) {}
             override fun onStopTrackingTouch(s: SeekBar?) {}
         })
         ctl.vol.max = 200; ctl.vol.progress = volTotal()
+        // (v270) زراري الفوليوم أب/داون بيحرّكوا السلايدر (وبيصفّروا التضخيم لو الصوت نزل عن الآخر)
+        volWatch?.stop()
+        volWatch = SysVol.watch(this) {
+            if (SysVol.get(this) < 100 && (Cfg.str("vol_boost", "0").toIntOrNull() ?: 0) != 0) setBoostPct(0)
+            val t = volTotal(); volF = t / 100f
+            if (ctl.vol.progress != t) ctl.vol.progress = t
+        }
         fun seekFrac(f: Float) { if (durMs > 0) player.seekTo((f * durMs).toLong()) }
         // سحب شريط التقدم: الفيديو بيتحرك معاك لحظيًا + بيكتب الوقت والفرق، ويثبت لما ترفع صباعك
         var barStart = 0L
@@ -3394,6 +3404,7 @@ class PlayerActivity : Activity(), Host {
         if (pipNow() && interactive && !isFinishing && !audioOnlyMode) closeAfterPip()
     }
     override fun onDestroy() {
+        try { volWatch?.stop(); volWatch = null } catch (_: Throwable) {}
         LogStore.add("🔚 onDestroy (isFinishing=$isFinishing)")
         NoticeLog.detach(this)
         try { TaskCenter.extra.remove(taskListener) } catch (_: Throwable) {}

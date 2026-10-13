@@ -7,7 +7,7 @@ import java.net.HttpURLConnection
 import java.net.URL
 
 /** نتيجة التعرف على أغنية */
-class SongMatch(val title: String, val artist: String, val album: String, val conf: Int = 100)
+class SongMatch(val title: String, val artist: String, val album: String, val conf: Int = 100, val tLat: String = "", val aLat: String = "", val votes: Int = 1)
 
 /**
  * (v192) التعرف على أغنية مجهولة بالبصمة عن طريق خدمة AudD (api.audd.io): بياخد مقطع ~12ث من الأغنية، يبعته للخدمة، ويرجع الاسم والفنان.
@@ -43,6 +43,13 @@ object SongId {
     fun autoOn() = Cfg.str("song_auto_id", "1") != "0"
     fun setAuto(on: Boolean) = Cfg.put("song_auto_id", if (on) "1" else "0")
     const val UNSURE = "جيميناي مش متأكد"
+    /** (v270) اسم الملف/التاج مفيد؟ لو العنوان عام (Track 01 / AUD-2024 / أرقام بس) أو مفيش فنان نعتبره مش مفيد */
+    fun tagsLookGood(title: String, artist: String): Boolean {
+        val t = title.replace('_', ' ').trim().lowercase()
+        if (artist.isBlank() || t.length < 2) return false
+        if (t.all { it.isDigit() || it == ' ' || it == '-' || it == '.' }) return false
+        return !Regex("^(track|audio|aud|vid|video|record(ing)?|new recording|voice|whatsapp|untitled|unknown|مقطع|تسجيل)[ \\-]*\\d*").containsMatchIn(t)
+    }
 
     /**
      * (v193) التعرف التلقائي: لو فيه توكن AudD بنجرّبه الأول؛ ولو مفيش توكن (أو ما اتعرفتش، أو اليوزر قال إن الاسم غلط)
@@ -104,7 +111,8 @@ object SongId {
         if (multi) append("- The user will choose from your list, so give up to 4 DISTINCT candidates (different songs / different performers), best first, each a real existing track with its own honest confidence. Never pad the list with guesses you do not believe in; one or two good candidates is fine.\n")
         else append("- Give exactly ONE candidate (the best), or an empty list if you are not sure.\n")
         append("\nOUTPUT: one JSON object only, no markdown, no commentary:\n")
-        append("{\"kind\":\"\",\"heard\":\"\",\"candidates\":[{\"title\":\"\",\"artist\":\"\",\"album\":\"\",\"confidence\":0}]}")
+        append("- \"title_latin\" / \"artist_latin\" = the same title / performer written in English letters (standard transliteration or the official English spelling), so answers written in different scripts can be matched.\n")
+        append("{\"kind\":\"\",\"heard\":\"\",\"candidates\":[{\"title\":\"\",\"artist\":\"\",\"title_latin\":\"\",\"artist_latin\":\"\",\"album\":\"\",\"confidence\":0}]}")
     }
 
     private fun parseJson(txt: String): JSONObject? {
@@ -142,7 +150,7 @@ object SongId {
             val conf = if (o.has("confidence")) o.optInt("confidence", 100) else 100
             if (artist.equals("unknown", true) || artist == "غير معروف") artist = ""
             if (title.isEmpty() || title.equals("unknown", true) || title == "غير معروف") return
-            if (out.none { it.title.equals(title, true) && it.artist.equals(artist, true) }) out.add(SongMatch(title, artist, o.optString("album").trim(), conf))
+            if (out.none { it.title.equals(title, true) && it.artist.equals(artist, true) }) out.add(SongMatch(title, artist, o.optString("album").trim(), conf, o.optString("title_latin").trim(), o.optString("artist_latin").trim()))
         }
         val arr = j.optJSONArray("candidates")
         if (arr != null) { for (i in 0 until arr.length()) arr.optJSONObject(i)?.let { add(it) } } else add(j)   // لو الموديل رجّع الشكل القديم (title/artist فوق)
@@ -155,6 +163,88 @@ object SongId {
         val best = list.firstOrNull()
         if (best == null || best.conf < MIN_CONF) onDone(null, UNSURE + " من الأغنية/المقطع ده" + (if (best != null) " (ثقته ${best.conf}%)" else "") + " — جرّب مقطع تاني من وسط المسار")
         else onDone(best, "")
+    }
+
+
+    // ===== (v270) تعرّف أوتوماتيك: الـ3 دقايق بتتقسم على المفاتيح بالتوازي، ولو مقطعين اتفقوا = الأغنية الصح =====
+    private fun nk(s: String) = s.lowercase().filter { it.isLetterOrDigit() }
+    private fun sameTitle(a: SongMatch, b: SongMatch): Boolean {
+        val x = nk(a.tLat.ifBlank { a.title }); val y = nk(b.tLat.ifBlank { b.title })
+        if (x.isNotEmpty() && x == y) return true
+        if (nk(a.title) == nk(b.title) && nk(a.title).isNotEmpty()) return true
+        return ArNorm.sim(a.tLat.ifBlank { a.title }, b.tLat.ifBlank { b.title }) >= 0.85 || ArNorm.sim(a.title, b.title) >= 0.85
+    }
+    private fun sameArtist(a: SongMatch, b: SongMatch): Boolean {
+        if (a.artist.isBlank() || b.artist.isBlank()) return true   // فنان ناقص مايمنعش الاتفاق على الاسم
+        val x = nk(a.aLat.ifBlank { a.artist }); val y = nk(b.aLat.ifBlank { b.artist })
+        if (x == y || (x.length >= 4 && y.length >= 4 && (x.contains(y) || y.contains(x)))) return true
+        return ArNorm.sim(a.aLat.ifBlank { a.artist }, b.aLat.ifBlank { b.artist }) >= 0.7 || ArNorm.sim(a.artist, b.artist) >= 0.7
+    }
+
+    /**
+     * بيقسم النافذة الكبيرة (~3د) على عدد المفاتيح (كل مفتاح ياخد مقطع ~3د÷العدد) ويبعتهم في نفس الوقت.
+     * بعدها بيجمّع الإجابات: نفس اسم الأغنية + نفس المغني (حتى لو واحد عربي والتاني إنجليزي) = اتفاق.
+     * onDone(الأصح لو اتنين اتفقوا أو واحد واثق جدًا وإلا null، كل الخيارات مرتبة، رسالة خطأ). على خيط خلفية.
+     */
+    fun smart(ctx: Context, t: Track, startSec: Double, avoid: List<String>, onDone: (SongMatch?, List<SongMatch>, String) -> Unit) {
+        val app = ctx.applicationContext
+        Thread {
+            try {
+                val keys = Cfg.allMainKeys()
+                if (keys.isEmpty()) { onDone(null, emptyList(), "مفيش مفتاح Gemini — ضيف واحد"); return@Thread }
+                val n = keys.size.coerceIn(1, 6)
+                val src = AudioSources.make(app, Uri.parse(t.uri), null, emptyMap(), 1) { }
+                val slices = ArrayList<WavChunk>()
+                try {
+                    val total = src.durationSec().takeIf { it > 0 } ?: (t.durMs / 1000.0)
+                    var win = bigWindow(total, startSec)
+                    fun cut(w0: Pair<Double, Double>): List<WavChunk> {
+                        val out = ArrayList<WavChunk>(); val step = (w0.second - w0.first) / n
+                        for (i in 0 until n) {
+                            val a = w0.first + i * step; val b = if (i == n - 1) w0.second else a + step
+                            if (b - a < 4.0) continue
+                            val w = try { src.wav(a, b) } catch (_: Throwable) { null }
+                            if (w != null && !w.silent) out.add(w)
+                        }
+                        return out
+                    }
+                    slices.addAll(cut(win))
+                    if (slices.isEmpty() && win.first > 1.0) slices.addAll(cut(bigWindow(total, 0.0)))
+                } finally { try { src.close() } catch (_: Throwable) {} }
+                if (slices.isEmpty()) { onDone(null, emptyList(), "المقطع ده صامت — شغّل الأغنية لحد جزء فيه صوت وجرّب تاني"); return@Thread }
+
+                val answers = java.util.Collections.synchronizedList(ArrayList<SongMatch>())
+                val errs = java.util.Collections.synchronizedList(ArrayList<String>())
+                val latch = java.util.concurrent.CountDownLatch(slices.size)
+                slices.forEachIndexed { i, w ->
+                    Thread {
+                        try {
+                            val rot = keys.drop(i % keys.size) + keys.take(i % keys.size)   // كل مقطع يبدأ بمفتاح مختلف وبعدها يجرّب اللي بعده لو وقع
+                            val (list, e) = askList(rot, w.bytes, w.durSec, t.title, t.artist, avoid, false, 2, false)
+                            if (e.isNotEmpty()) errs.add(e)
+                            list.firstOrNull { it.conf >= 40 }?.let { answers.add(it) }
+                        } catch (e: Throwable) { LogStore.err("songid-smart", e) } finally { latch.countDown() }
+                    }.apply { isDaemon = true }.start()
+                }
+                latch.await(200, java.util.concurrent.TimeUnit.SECONDS)
+
+                val bad = avoid.map { it.trim().lowercase() }
+                val good = ArrayList(answers).filter { m -> val a = (m.title + " — " + m.artist).trim().lowercase(); a !in bad && m.title.trim().lowercase() !in bad }
+                // تجميع الاتفاقات
+                val groups = ArrayList<ArrayList<SongMatch>>()
+                for (m in good) { val g = groups.firstOrNull { sameTitle(it[0], m) && sameArtist(it[0], m) }; if (g != null) g.add(m) else groups.add(arrayListOf(m)) }
+                val reps = groups.map { g ->
+                    val b = g.maxByOrNull { it.conf }!!
+                    // لو أحسن إجابة مالهاش ألبوم وغيرها له، ناخده
+                    val alb = b.album.ifBlank { g.firstOrNull { it.album.isNotBlank() }?.album ?: "" }
+                    SongMatch(b.title, b.artist.ifBlank { g.firstOrNull { it.artist.isNotBlank() }?.artist ?: "" }, alb, b.conf, b.tLat, b.aLat, g.size)
+                }.sortedWith(compareByDescending<SongMatch> { it.votes }.thenByDescending { it.conf })
+                val top = reps.firstOrNull()
+                val sure = top != null && (top.votes >= 2 || (slices.size == 1 && good.size == 1 && top.conf >= 85))   // لازم مقطعين يتفقوا (إلا لو مفتاح واحد بس وواثق جدًا) — الغلط أسوأ من عدم التغيير
+                if (reps.isEmpty()) onDone(null, emptyList(), errs.firstOrNull()?.let { "جيميناي ما ردّش: $it" } ?: (UNSURE + " — جرّب مقطع تاني أو اكتب الاسم بإيدك"))
+                else onDone(if (sure) top else null, reps, "")
+            } catch (e: Throwable) { LogStore.err("songid-smart", e); onDone(null, emptyList(), "فشل: " + (e.message ?: "")) }
+        }.apply { isDaemon = true }.start()
     }
 
     /** مقطع كبير حوالين startSec، وبيجرّب أول المسار لو طلع صامت. null لو مفيش صوت */

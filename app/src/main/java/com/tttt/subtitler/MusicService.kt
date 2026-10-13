@@ -75,7 +75,7 @@ object MusicEngine {
             override fun run() {
                 n++
                 val f = (1f - n / steps.toFloat()).coerceAtLeast(0f)
-                try { val v = (minOf(volPct, 100) / 100f) * f; mp?.setVolume(v, v) } catch (_: Throwable) {}
+                try { mp?.setVolume(f, f) } catch (_: Throwable) {}   // (v270) الصوت العادي = صوت النظام، مفيش تخفيض تاني من التطبيق
                 if (n < steps) main.postDelayed(this, 700L) else { pause(); applyVol() }
             }
         }
@@ -166,13 +166,21 @@ object MusicEngine {
     }
     fun setVol(p: Int) {
         volPct = p.coerceIn(0, 200)
+        app?.let { SysVol.set(it, minOf(volPct, 100)) }   // (v270) 0..100 = صوت النظام نفسه؛ فوق 100 النظام على الآخر + تضخيم
         try { Cfg.put("music_vol", volPct.toString()) } catch (_: Throwable) {}
         applyVol()
+    }
+    /** (v270) مزامنة السلايدر مع زراري الفوليوم: صوت النظام هو الأصل؛ التضخيم (>100) بيفضل بس لو النظام على الآخر */
+    fun syncSys() {
+        val a = app ?: return
+        val s = SysVol.get(a)
+        val np = if (volPct > 100 && s >= 100) volPct else s
+        if (np != volPct) { volPct = np; try { Cfg.put("music_vol", volPct.toString()) } catch (_: Throwable) {}; applyVol() }
     }
     fun boostDbText(): String = if (volPct <= 100) "" else "+" + "%.1f".format((volPct - 100) * 0.15) + " dB"
     private fun applyVol() {
         val m = mp ?: return
-        try { val v = (minOf(volPct, 100) / 100f); m.setVolume(v, v) } catch (_: Throwable) {}
+        try { m.setVolume(1f, 1f) } catch (_: Throwable) {}
         try {
             val b = (volPct - 100).coerceAtLeast(0)
             if (b > 0) {
