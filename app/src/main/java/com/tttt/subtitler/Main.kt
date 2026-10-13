@@ -243,29 +243,7 @@ class MainActivity : Activity() {
             "hitiming" to "دقة توقيت أعلى (بيفك الصوت من قبل البداية بـ 3 ثواني — أبطأ شوية)",
             "soundtags" to "التقاط الأصوات الخلفية والهمهمات والموسيقى وعرضها كسطر وصف فوق الفيديو")
         val flagViews = flags.map { (k, d) -> ui.switchRow(flagText[k]!!, Cfg.bool(k, d)) { } }
-        val modes = KeyModes.parse(Cfg.str("keymodes")).toMutableList()
-        val modesBox = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         fun keyList(t: String) = t.lines().map { it.trim() }.filter { it.length > 10 }
-        fun rebuildModes() {
-            modesBox.removeAllViews()
-            val ks = (keyList(keys.text.toString()) + keyList(extra.text.toString())).distinct()
-            if (ks.isEmpty()) { modesBox.addView(ui.text("أوضاع المفاتيح بتظهر هنا بعد ما تكتب مفاتيح", 12f, th.muted)); return }
-            ks.forEachIndexed { i, k ->
-                val bk = KeyModes.modeOf(modes, i) == "backup"
-                modesBox.addView(ui.text("…" + k.takeLast(5) + "  —  " + (if (bk) "🔁 احتياطي" else "🔀 أساسي (متوازي)") + "   (اضغط للتبديل)", 13f, if (bk) th.primary else th.text).apply {
-                    setPadding(ui.dp(10), ui.dp(7), ui.dp(10), ui.dp(7)); background = ui.box(th.surface, th.border, 8)
-                    layoutParams = LinearLayout.LayoutParams(-1, -2).apply { setMargins(0, ui.dp(3), 0, ui.dp(3)) }
-                    setOnClickListener { while (modes.size <= i) modes.add("both"); modes[i] = KeyModes.next(modes[i]); rebuildModes() }
-                })
-            }
-        }
-        rebuildModes()
-        val modesBtn = ui.button("↻ حدّث قايمة أوضاع المفاتيح") { rebuildModes() }
-        // (v208) وضع استخدام المفاتيح + عدد الأساسي/الاحتياطي (نفس الإعداد بيتغيّر كمان من زرار 🔑 في المشغّل)
-        var kmode = KeyMode.clamp(Cfg.int("kmode", 1))
-        val kmodeChips = ui.chips(KeyMode.names, { KeyMode.name(kmode) }) { n -> kmode = KeyMode.names.indexOf(n) + 1; Cfg.put("kmode", kmode.toString()) }
-        val nMainSl = ui.slider("عدد المفاتيح الأساسية (0 = تلقائي)", Cfg.int("nmain", 0), 0, 20, "") { Cfg.put("nmain", it.toString()) }
-        val nBackSl = ui.slider("عدد المفاتيح الاحتياطية (0 = تلقائي)", Cfg.int("nback", 0), 0, 20, "") { Cfg.put("nback", it.toString()) }
         // ===== (v149) اختبار سرعة رد الـ AI من الإعدادات — زي لوج الباتشات في المشغّل: كل مفتاح × كل موديل + زمن الرد والأسرع =====
         class SpRes(val keyNo: Int, val model: String, val ms: Long, val ok: Boolean, val note: String)
         val speedOut = ui.text("", 12f, th.text).apply {
@@ -349,7 +327,7 @@ class MainActivity : Activity() {
                 .putString("model", model.text.toString().trim()).putInt("chunk", chunkSec).putString("extra", extra.text.toString())
                 .putString("roster", roster.text.toString()).putString("gloss", "")
                 .putString("lang", lang).putString("style", style).putString("theme", themeId)
-                .putString("keymodes", KeyModes.toJson(modes)).putString("viskeys", vkeys.text.toString())
+                .putString("viskeys", vkeys.text.toString())
             ahead.text.toString().trim().toIntOrNull()?.let { e.putInt("ahead", it) }
             atrack.text.toString().trim().toIntOrNull()?.let { e.putInt("atrack", it) }
             hlsAhead.text.toString().trim().toIntOrNull()?.let { e.putInt("hls_ahead", it.coerceIn(1, 8)) }
@@ -451,11 +429,6 @@ class MainActivity : Activity() {
             offStatus.text = Offline.status() + "\n" + Offline.model().note
             offDlBtn.text = if (Offline.downloading()) "⏹ إلغاء التنزيل" else if (Offline.downloaded()) "🗑 مسح الموديل (دوسة طويلة)" else "⬇ تنزيل الموديل (~" + Offline.model().approxMb + " ميجا)"
         }
-        val offEngOpts = listOf("☁ جيميناي (الحالي)", "📴 أوفلاين (Whisper — من غير مفتاح)")
-        val offEngChips = ui.chips(offEngOpts, { if (Cfg.bool("stt_offline", false)) offEngOpts[1] else offEngOpts[0] }) {
-            if (it == offEngOpts[1] && !Offline.downloaded()) Notice.show(this, "نزّل الموديل الأول، وإلا جيميناي هو اللي هينسخ", 2800L)
-            Cfg.put("stt_offline", if (it == offEngOpts[1]) "1" else "0"); offRefresh()
-        }
         val offModelChips = ui.chips(Offline.models.map { it.label }, { Offline.model().label }) { l ->
             Offline.models.firstOrNull { m -> m.label == l }?.let { m -> Cfg.put("off_model", m.id); TrWizard.syncSaved("off_model", m.id) }; offProg.text = ""; offRefresh()
         }
@@ -504,8 +477,6 @@ class MainActivity : Activity() {
             if (!Offline.downloading() && SherpaStt.downloaded()) { Offline.deleteSherpa(); sherpaProg.text = ""; sherpaRefresh(); true } else false
         }
         sherpaRefresh()
-        val mGoogle = "🌍 جوجل (من غير API)"; val mGem = "✨ جيميناي بالسياق"
-        val trMethodChips = ui.chips(listOf(mGoogle, mGem), { if (TrWizard.method() == "google") mGoogle else mGem }) { val tm = if (it == mGoogle) "google" else "gemini"; Cfg.put("tr_method", tm); TrWizard.syncSaved("tr_method", tm) }
         val savedPlanTxt = ui.text("", 12f, th.muted)
         fun planRefresh() { savedPlanTxt.text = TrWizard.savedPlan()?.let { "المحفوظ لزرار «▶ ترجمة»: " + TrWizard.describe(it).replace("\n", " · ") } ?: "مفيش إعداد محفوظ لزرار «▶ ترجمة» — بيسألك كل مرة." }
         val planBtn = ui.button("⚙ طريقة الترجمة (نفس زرار ⚙ في المشغّل)") {
@@ -536,7 +507,7 @@ class MainActivity : Activity() {
         val convOpts = listOf("فصحى (حرفية)", "مصري", "شامي", "لبناني", "خليجي", "مغربي", "عراقي", "سوداني")
         val convChips = ui.chips(convOpts, { Cfg.str("conv_dialect", "").ifBlank { convOpts[0] } }) { Cfg.put("conv_dialect", if (it == convOpts[0]) "" else it) }
         val watchViews = listOf<View>(
-            ui.section("🎚 أسلوب وشدة الترجمة الحية", false,
+            ui.section("🎚 أسلوب وشدة الترجمة", false,
                 ui.text("الأسلوب:", 12f, th.muted), toneChips, ui.text("الشدة (بتشتغل مع شعبي / جرئ / +18 بس):", 12f, th.muted), toneDegChips,
                 ui.text("الباتشات الجاية بتتترجم بيه. «طبّق» على اللي اتترجم فعلًا من زرار اللغة 🌐 جوه المشغّل.", 12f, th.muted)),
             ui.section("🔄 تحويل اللهجة التلقائي", false, convChips,
@@ -549,7 +520,15 @@ class MainActivity : Activity() {
         // (v235) نفس ترتيب الأقسام في كل أشكال الإعدادات (SettingsTabs): المفاتيح والمحرك · الترجمة وشكلها · الصوت والصورة · عام · الموسيقى. المسرد اتشال.
         fun tab(id: String, content: List<View>, preview: Boolean = false) = TabDef(id, SettingsTabs.label(id), content, preview, SettingsTabs.sub(id), SettingsTabs.group(id))
         val settingsDlg = TabbedDialog(this, ui, "⚙️ الإعدادات", listOf(
-            // ===== 🔑 المفاتيح والمحرك: كل حاجة بتخص المفاتيح والموديل والمحرك في مكان واحد =====
+            // ===== 🚀 خط الترجمة: الخطة (تفريغ ← ترجمة ← لهجة) + اللهجة والأسلوب + البرومبتات =====
+            tab("general", listOf<View>(
+                ui.text("خط الترجمة = ① تفريغ ← ② ترجمة ← ③ لهجة. بتختاره من الزرار اللي تحت أو من ⚙ جنب ▶ ترجمة في المشغّل، والبريستات بتكتب باقي الإعدادات (المقطع · الموديل · التنقيح …) لوحدها.", 12f, th.muted),
+                savedPlanTxt, planBtn,
+                ui.section("اللهجة", true, ui.chips(langs, { lang }) { lang = it; save() }),
+                ui.section("أسلوب الترجمة", true, ui.chips(styles, { style }) { style = it; save() }),
+                watchViews[0], watchViews[1],
+                ui.button("📝 البرومبتات (شوف · انسخ · عدّل · استبدل)") { PromptsUi.show(this, ui) })),
+            // ===== 🔑 المفاتيح: جيميناي · الوضع البصري · محركات خارجية =====
             tab("keys", listOf<View>(
                 ui.button("❓ إزاي أجيب مفتاح Gemini؟ (وألصقه)", true) {
                     showKeyGuide { k ->
@@ -565,18 +544,31 @@ class MainActivity : Activity() {
                     ui.text("حط كل مفاتيحك هنا في قايمة واحدة — البرنامج بيوزّعها لوحده: مفاتيح للترجمة (أغلبها)، ومفتاح أو اتنين للتنقيح الجزئي أثناء الترجمة، ومفتاح احتياطي لو مفتاح اتعطّل (من 6 مفاتيح). التنقيح الجزئي بيبدأ من 3 مفاتيح.", 12f, th.muted), keysUi),
                                 ui.section("👁 مفتاح الوضع البصري فقط", false,
                     ui.text("الوضع البصري (👁) بيشتغل بالمفاتيح اللي هنا بس، ومش بياخد أبدًا من مفاتيح الترجمة. لو سبتها فاضية الوضع البصري مش هيشتغل. ولما الوضع البصري مايكونش شغّال المفتاح ده بيشتغل كمفتاح احتياطي للترجمة والتنقيح.", 12f, th.muted), visKeysUi),
-                                ui.section("🔑 أوضاع المفاتيح", true, kmodeChips, nMainSl, nBackSl,
-                    ui.text("الوضع 1 = أول باتش لوحده يعرّف اللغة ويترجم قالب البرومبت ثم الباقي متوازي (الشغل القديم). الوضع 2 = كل المفاتيح متوازية من الأول وبرومبت إنجليزي ثابت. الوضع 3 = ٧٥٪ من المفاتيح بتنسخ الكلام بس و٢٥٪ بتترجم كل ٣–٥ باتشات مع بعض (برومبت إنجليزي). الوضع 4 = كل المفاتيح بتنسخ بس، وبعد ما الفيديو كله يتنسخ النص كله يتبعت لجيميناي يترجمه بالسياق الكامل (واقعي، مع ضبط الضمائر) مرة واحدة أو على أجزاء — والترجمة بتظهر في الآخر. أي باتش يرجع صفر جمل أو يفشل في أي وضع بيتترجم على مفتاح من «🛟 مفاتيح احتياطية» بالترتيب. نفس الوضع بيتبدّل من زرار «🔑 وضع» جنب زرار الترجمة في المشغّل.", 12f, th.muted)),
+                PublicApisUi.section(this, ui, th))),
+            // ===== 🎙 التفريغ والصوت: موديلات الجهاز + إعدادات الصوت =====
+            tab("audio", listOf<View>(
+                ui.section("🔊 الصوت", true, atrack, audioPresetTitle, audioPresetChips, audioPresetDesc, *fl("soundtags", "hitiming")),
+                ui.section("📴 التفريغ على الجهاز (من غير مفتاح)", true,
+                    ui.text("اختيار التفريغ (جيميناي / على الجهاز / سحابي) من خط الترجمة. هنا بس تنزيل ومسح الموديلات واختيار المحرك واللغة.", 12f, th.muted),
+                    ui.text("محرك التفريغ:", 12f, th.muted), sttEngChips, sherpaStatus, sherpaDlBtn, sherpaProg,
+                    ui.text("حجم موديل Whisper:", 12f, th.muted), offModelChips, offStatus, offDlBtn, offProg,
+                    ui.text("لغة الكلام (لو عارفها بتقلّل أخطاء الاكتشاف التلقائي):", 12f, th.muted), offLangChips,
+                    ui.text("طول الجزء اللي بيتفرّغ ويتبعت للترجمة أول ما يجهز:", 12f, th.muted), offPartChips,
+                    ui.text("التفريغ على الجهاز أبطأ من السحابة (بيعتمد على معالج موبايلك) — الترجمة بتظهر جزء ورا جزء. لو سرعته أقل من 1× كبّر الموديل لأصغر (base).", 12f, th.muted)))),
+            tab("visual", listOf<View>(
+                                ui.section("👁 محرك الوضع البصري", false, visAutoChips,
+                    ui.slider("المسافة اللي الوضع البصري بيفحصها قدّام مكان التشغيل", Cfg.int("vis_ahead", 180).coerceIn(30, 900), 30, 900, "ث") { Cfg.put("vis_ahead", it.toString()) },
+                    ui.switchRow("إظهار شريط حالة الوضع البصري فوق المشغّل", Cfg.str("visbar", "0") == "1") { Cfg.put("visbar", if (it) "1" else "0") },
+                    ui.text("الوضع البصري بيعتمد على Gemini فقط (مفتاح «الوضع البصري فقط» في قسم 🔑 المفاتيح). بيلقط فريم كل ثانية، بيتخطّى اللي مفيهوش تغيير أو نص، وبيبعت الباقي دفعات (30 فريم) في شبكات من 6 فريمات بالتوازي. النتايج بتتحفظ مع الفيديو، وبين الطلبات راحة تلقائية لو جيميناي رفض (429). بيتطبق من أول تشغيل جديد.\n(v249) الوضع البصري ما بيشتغلش لوحده لما تدخل فيديو — بيشتغل من البريسيتس اللي فيها بصري (شاملة / هارد سب) أو من زرار 👁، إلا لو اخترت «تلقائي مع كل فيديو» فوق.", 12f, th.muted)))),
+            // ===== 🤖 الموديل والأداء =====
+            tab("perf", listOf<View>(
+                ui.text("القيم دي بتتظبط لوحدها لما تختار بريست من ▶ ترجمة. اللي هنا هو اللي بيمشي لما تبدأ «بالإعدادات الحالية».", 12f, th.muted),
                                 ui.section("🤖 الموديل والسرعة", true, modelChips, fetchModelsBtn, model, modelDesc,
                     ui.text("🏎 اختبار السرعة: بيبعت طلب صغير على كل مفتاح بالموديل المختار وflash-lite-latest ويوريك زمن الرد والأسرع (🏆). بيستهلك طلبات قليلة.", 12f, th.muted), speedBtn, speedOut, speedUseBtn),
                 ui.section("⏱ التقطيع والتنقيح", false, chunk, ahead, hlsAhead,
                     ui.switchRow("كمّل ترجمة باقي الفيديو بعد ما توصل لمكان التشغيل (بيرجع للأول لو فيه جزء ناقص)", Cfg.bool("keepgoing", true)) { Cfg.put("keepgoing", if (it) "1" else "0") },
                     *fl("prefine")))),
-            // ===== 💬 الترجمة وشكلها: اللغة والأسلوب واللهجة ثم شكل الظهور =====
-            tab("general", listOf<View>(
-                ui.section("اللهجة", true, ui.chips(langs, { lang }) { lang = it; save() }),
-                ui.section("أسلوب الترجمة", true, ui.chips(styles, { style }) { style = it; save() }),
-                watchViews[0], watchViews[1])),
+            // ===== 🎬 شكل الترجمة =====
             tab("look", listOf<View>(
                 ui.section("🔤 الخطوط", true, *sp.fonts.toTypedArray()),
                 ui.section("✨ الأنيميشن", false, *sp.anim.toTypedArray()),
@@ -584,24 +576,6 @@ class MainActivity : Activity() {
                 ui.section("🔘 كبسولات العدّادات (صوتي · بصري · نت)", false,
                     ui.text("الكبسولات الصغيرة شمال فوق الفيديو في الشاشة الكاملة. الشفافية دي هي حالتها العادية؛ لما تدوس كبسولة بتبقى 100% كام ثانية وترجع. بتتطبّق فورًا في المشغّل.", 12f, th.muted),
                     ui.slider("الظهور (100 = معتمة، أقل = أشفّ)", Cfg.int("badge_alpha", 55).coerceIn(15, 100), 15, 100, "%") { Cfg.put("badge_alpha", it.toString()) })), true),
-            // ===== 🔊 الصوت والصورة =====
-            tab("audio", listOf<View>(
-                ui.section("🔊 الصوت", true, atrack, audioPresetTitle, audioPresetChips, audioPresetDesc, *fl("soundtags", "hitiming")),
-                ui.section("📴 الترانسكريبشن الأوفلاين (من غير مفتاح) — v253", true,
-                    ui.text("اللي بينسخ الكلام من الصوت. الأوفلاين = Whisper شغّال على موبايلك نفسه (النت بس لتنزيل الموديل مرة واحدة). جيميناي بيفضل المترجم، وهو الاحتياطي لو الأوفلاين فشل.", 12f, th.muted),
-                    offEngChips,
-                    ui.text("محرك التفريغ:", 12f, th.muted), sttEngChips, sherpaStatus, sherpaDlBtn, sherpaProg,
-                    ui.text("حجم موديل Whisper:", 12f, th.muted), offModelChips, offStatus, offDlBtn, offProg,
-                    ui.text("لغة الكلام (لو عارفها بتقلّل أخطاء الاكتشاف التلقائي):", 12f, th.muted), offLangChips,
-                    ui.text("طول الجزء اللي بيتبعت لجيميناي يترجمه (أول ما يجهز):", 12f, th.muted), offPartChips,
-                    ui.text("الترجمة بعد التفريغ الأوفلاين (جوجل من غير API بيترجم فصحى؛ ولو اخترت لهجة جيميناي بيحوّلها):", 12f, th.muted), trMethodChips, savedPlanTxt, planBtn,
-                    ui.text("الأوفلاين أبطأ من السحابة (بيعتمد على معالج موبايلك) — الترجمة بتظهر جزء ورا جزء. لو سرعته أقل من 1× كبّر الموديل لأصغر (base).", 12f, th.muted)),
-                PublicApisUi.section(this, ui, th))),
-            tab("visual", listOf<View>(
-                                ui.section("👁 محرك الوضع البصري", false, visAutoChips,
-                    ui.slider("المسافة اللي الوضع البصري بيفحصها قدّام مكان التشغيل", Cfg.int("vis_ahead", 180).coerceIn(30, 900), 30, 900, "ث") { Cfg.put("vis_ahead", it.toString()) },
-                    ui.switchRow("إظهار شريط حالة الوضع البصري فوق المشغّل", Cfg.str("visbar", "0") == "1") { Cfg.put("visbar", if (it) "1" else "0") },
-                    ui.text("الوضع البصري بيعتمد على Gemini فقط (مفتاح «الوضع البصري فقط» في قسم 🔑 المفاتيح والمحرك). بيلقط فريم كل ثانية، بيتخطّى اللي مفيهوش تغيير أو نص، وبيبعت الباقي دفعات (30 فريم) في شبكات من 6 فريمات بالتوازي. النتايج بتتحفظ مع الفيديو، وبين الطلبات راحة تلقائية لو جيميناي رفض (429). بيتطبق من أول تشغيل جديد.\n(v249) الوضع البصري ما بيشتغلش لوحده لما تدخل فيديو — بيشتغل من البريسيتس اللي فيها بصري (شاملة / هارد سب) أو من زرار 👁، إلا لو اخترت «تلقائي مع كل فيديو» فوق.", 12f, th.muted)))),
             // ===== 🛠 عام: الخروج · الترجمة الحية · الطابور · البطارية · الأمان · النسخة الاحتياطية · الثيم =====
             tab("more", listOf<View>(
                 watchViews[2], watchViews[3],

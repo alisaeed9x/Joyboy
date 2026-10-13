@@ -355,7 +355,7 @@ class PlayerActivity : Activity(), Host {
     }
     fun exitAll() {
         try { player.pause() } catch (e: Exception) { LogStore.err("exitAll", e) }
-        saveRecent(); Thread { try { engine.saveNow() } catch (_: Exception) {} }.start()
+        saveRecent(); Thread { try { engine.saveNow() } catch (e: Exception) { LogStore.err("Player:exitSave", e) } }.start()   // (v287) فشل الحفظ كان صامت
         finishAndRemoveTask()
     }
     /** أوامر الإشعار: toggle / prev / next / seek / tr / exit */
@@ -435,8 +435,8 @@ class PlayerActivity : Activity(), Host {
         // (v228) المؤشر (من الأول / من مكان التشغيل) بيتظبط **قبل** ما خيط المحرك يشتغل — قبل كده كان بيتظبط بعده فالمحرك يلحق يبعت باتشات مكان التشغيل (30 و31 و32) وبعدين يرجع يبعت 1 و2 و3
         if (!wasFresh) {
             // (v224) الافتراضي: الترجمة بتبدأ من أول باتش ناقص في الفيديو من الأول (مش من مكان التشغيل اللي اتكمّل تلقائيًا). ممكن تتغيّر من قايمة 🔑
-            if (Cfg.str("trstart", "1") != "0") { try { engine.translateFromStart(); log("▶ الترجمة من أول الفيديو (أول جزء ناقص)") } catch (_: Throwable) {} }
-            else if (posNow > 2000L) { try { engine.translateFrom(posNow / 1000.0); log("▶ الترجمة من " + fmtMs(posNow)) } catch (_: Throwable) {} }
+            if (Cfg.str("trstart", "1") != "0") { try { engine.translateFromStart(); log("▶ الترجمة من أول الفيديو (أول جزء ناقص)") } catch (e: Throwable) { LogStore.err("Player:translateFromStart", e); say("⚠ تعذّر بدء الترجمة من أول الفيديو — جرّب ▶ ترجمة تاني") }   // (v287) }
+            else if (posNow > 2000L) { try { engine.translateFrom(posNow / 1000.0); log("▶ الترجمة من " + fmtMs(posNow)) } catch (e: Throwable) { LogStore.err("Player:translateFrom", e); say("⚠ تعذّر بدء الترجمة من مكان التشغيل — جرّب ▶ ترجمة تاني") }   // (v287) }
         }
         if (!engineStarted) { engineStarted = true; engine.userPaused = false; startEngine() } else engine.userPaused = false
         updateTr()
@@ -517,7 +517,7 @@ class PlayerActivity : Activity(), Host {
                 tg.visibility = if (started && open) View.VISIBLE else View.GONE
                 rd.visibility = View.VISIBLE
                 lgB.visibility = View.VISIBLE
-                kmTr.visibility = View.VISIBLE
+                kmTr.visibility = if (Cfg.bool("kmode_adv", false)) View.VISIBLE else View.GONE   // (v287) أوضاع المفاتيح تحت «متقدم»
                 if (!started) { chipB.text = "▶ ترجمة"; chipB.background = ui.box(0xFFE53935.toInt(), 0x33FFFFFF, 12) }
                 else {
                     chipB.text = (if (paused) "⏸ " else if (trPct >= 100) "✅ " else "⏳ ") + trPct + "%" + (if (open) " ▴" else " ▾")
@@ -960,7 +960,7 @@ class PlayerActivity : Activity(), Host {
         try { pipOv?.hide(); pipOv = null } catch (_: Throwable) {}
         val eng0 = engine
         retireEngine()
-        Thread { try { eng0.saveNow() } catch (_: Throwable) {} }.start()
+        Thread { try { eng0.saveNow() } catch (e: Throwable) { LogStore.err("Player:newVideoSave", e) } }.start()   // (v287)
         if (!isFinishing) finish()
     }
     override fun onCreate(b: Bundle?) {
@@ -2196,7 +2196,7 @@ class PlayerActivity : Activity(), Host {
             if (important) runOnUiThread { Notice.show(this, m, 2300L) }
         }, { }, { grabSurface() }, log = { m -> visLog(m) })
         // (v185) النتايج بتتحفظ مع الفيديو وبترجع لما تفتحه تاني (المتخفي: من غير حفظ)
-        if (!incognito) try { visual.bind(File(File(filesDir, "visual"), Store.keyFor(vid) + ".json")) } catch (_: Throwable) {}
+        if (!incognito) try { visual.bind(File(File(filesDir, "visual"), Store.keyFor(vid) + ".json")) } catch (e: Throwable) { LogStore.err("Player:visualBind", e) }   // (v287) لو فشل نتايج البصري مش هتتحفظ
         fx?.start(vid)
         // (v181) الوضع البصري تلقائي: بيشتغل لوحده مع فتح الفيديو لو فيه مفتاح للوضع البصري (ضغطة 👁 بتقفله/تشغّله، ومن الإعدادات تقدر تقفل التلقائي)
         if (VisualMode.auto() && conf.visKeys.any { it.length > 10 } && !incognito) {
@@ -2689,7 +2689,7 @@ class PlayerActivity : Activity(), Host {
         val eng = engine; val v = vid
         try { retireEngine() } catch (e: Throwable) { LogStore.err("Player:closeNoBg1", e) }
         Thread {
-            try { eng.awaitStopped(3000); eng.saveNow() } catch (_: Throwable) {}
+            try { eng.awaitStopped(3000); eng.saveNow() } catch (e: Throwable) { LogStore.err("Player:closeNoBg0", e) }   // (v287)
             try { if (BgJobs.isActive(v)) BgJobs.stop(v) } catch (e: Throwable) { LogStore.err("Player:closeNoBg2", e) }
         }.start()
         super.onBackPressed()
@@ -2931,6 +2931,7 @@ class PlayerActivity : Activity(), Host {
     /** بيطبّق الخطة على الإعدادات اللي المحرك بيقراها وبيبدأ الترجمة */
     private fun runPlan(pl: TrWizard.Plan) {
         TrWizard.apply(pl)
+        try { if (::engine.isInitialized) engine.transOnly = pl.only } catch (e: Throwable) { LogStore.err("Player:transOnly", e) }   // (v280) تفريغ بس
         if (pl.offline) {
             // الأوفلاين = وضع «نسخ ثم ترجمة سياقية» (Cfg.snapshot بيجبره لما Offline.on()): نفس إعدادات بريست الترانسكريبشن (مقاطع 60ث، من غير تنقيح ولا بصري)
             TrPresets.byId("transcript")?.let { TrPresets.apply(it) }
@@ -2939,7 +2940,7 @@ class PlayerActivity : Activity(), Host {
             for ((v, f) in kmLabels) v.text = f(KeyMode.clamp(Cfg.int("kmode", 1)))
             if (::engine.isInitialized) engine.convDialect = Cfg.str("conv_dialect", "")   // (v257) اللهجة اللي اخترتها في الشاشة
             LogStore.add("🎛 طريقة الترجمة: أوفلاين — لغة=" + pl.lang.ifEmpty { "تلقائي" } + " · محرك=" + pl.engine + " · موديل=" + (if (pl.engine == "sherpa") "SenseVoice" else pl.model) + " · ترجمة=" + pl.method + " · لهجة=" + pl.dialect.ifBlank { "فصحى" })
-            say("📴 أوفلاين · " + TrWizard.langLabel(pl.lang) + " · " + (if (pl.method == "google") "ترجمة جوجل" else "ترجمة جيميناي") + "\n" + ExtTranslate.setupLine())
+            say(if (pl.only) "✍ أوفلاين · " + TrWizard.langLabel(pl.lang) + " · تفريغ بس (من غير ترجمة)" else "📴 أوفلاين · " + TrWizard.langLabel(pl.lang) + " · " + (if (pl.method == "google") "ترجمة جوجل" else "ترجمة جيميناي") + "\n" + ExtTranslate.setupLine())
             beginTranslate()
             TrWizard.startNotices(pl).forEachIndexed { i, m -> h.postDelayed({ try { Notice.show(this, m, 4500L) } catch (e: Throwable) { LogStore.err("Player:startNotices", e) } }, 600L + i * 3200L) }   // (v255)
         } else if (pl.cloud) {
@@ -2949,12 +2950,12 @@ class PlayerActivity : Activity(), Host {
             for ((v, f) in kmLabels) v.text = f(KeyMode.clamp(Cfg.int("kmode", 1)))
             if (::engine.isInitialized) engine.convDialect = Cfg.str("conv_dialect", "")
             LogStore.add("🎛 طريقة الترجمة: أونلاين بمحرك خارجي — ترجمة=" + pl.ext + " · تفريغ=" + (TrWizard.sttCandidate(pl.ext)?.id ?: "؟") + " · السلسلة: " + ExtTranslate.chainLabel())
-            say("☁ " + (ExtLlm.byId(pl.ext)?.label ?: pl.ext) + " · تفريغ سحابي\n" + ExtTranslate.setupLine())
+            say(if (pl.only) "✍ تفريغ سحابي بس (من غير ترجمة)" else "☁ " + (ExtLlm.byId(pl.ext)?.label ?: pl.ext) + " · تفريغ سحابي\n" + ExtTranslate.setupLine())
             beginTranslate()
             TrWizard.startNotices(pl).forEachIndexed { i, m -> h.postDelayed({ try { Notice.show(this, m, 4500L) } catch (e: Throwable) { LogStore.err("Player:startNotices", e) } }, 600L + i * 3200L) }
         } else {
             val pr = TrPresets.byId(pl.onlineId)
-            if (pr != null) applyPreset(pr)
+            if (pr != null) applyPreset(pr, pl.only)
             else {
                 try { val nc = Cfg.snapshot(); conf = nc; if (::engine.isInitialized) engine.applyConf(nc) } catch (e: Throwable) { LogStore.err("Player:runPlan", e) }
                 beginTranslate()
@@ -2985,7 +2986,7 @@ class PlayerActivity : Activity(), Host {
             col.addView(item, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = ui.dp(5) })
         }
         for (pr in TrPresets.all) row((if (pr.id == last) "✓ " else "") + pr.icon + " " + pr.name, pr.desc, pr.id == last) { applyPreset(pr) }
-        row("▶ ابدأ بالإعدادات الحالية", "من غير ما أغيّر أي إعداد", false) { beginTranslate() }
+        row("▶ ابدأ بالإعدادات الحالية", "من غير ما أغيّر أي إعداد", false) { try { if (::engine.isInitialized) engine.transOnly = false } catch (_: Throwable) {}; beginTranslate() }
         val popW = minOf(resources.displayMetrics.widthPixels - ui.dp(24), ui.dp(400))
         col.measure(View.MeasureSpec.makeMeasureSpec(popW, View.MeasureSpec.EXACTLY), View.MeasureSpec.UNSPECIFIED)
         val loc = IntArray(2); anchor.getLocationOnScreen(loc)
@@ -3003,15 +3004,16 @@ class PlayerActivity : Activity(), Host {
         h.removeCallbacks(hideChrome); showChrome(); h.removeCallbacks(hideChrome)
     }
 
-    private fun applyPreset(pr: TrPresets.P) {
+    private fun applyPreset(pr: TrPresets.P, keepOnly: Boolean = false) {
+        if (!keepOnly) try { if (::engine.isInitialized) engine.transOnly = false } catch (_: Throwable) {}   // (v280)
         val kv = TrPresets.apply(pr)
         if (pr.id == TrPresets.HARD_ID) {
             // (v240) وضع ترجمة الهارد سب: بصري بس — الترجمة الصوتية واقفة، والوضع البصري بيترجم الهارد سب
             try { if (::engine.isInitialized && engineStarted) pauseTranslate() } catch (_: Throwable) {}
-            try { conf = Cfg.snapshot() } catch (_: Throwable) {}
+            try { conf = Cfg.snapshot() } catch (e: Throwable) { LogStore.err("Player:hardSnapshot", e) }   // (v287)
             try {
                 if (::visual.isInitialized) {
-                    if (!conf.visKeys.any { it.length > 10 }) { say("🔤 ضيف مفتاح للوضع البصري الأول (الإعدادات ← مفتاح الوضع البصري)"); return }
+                    if (!conf.visKeys.any { it.length > 10 }) { say("🔤 ضيف مفتاح للوضع البصري الأول (الإعدادات ← 🔑 المفاتيح ← مفتاح الوضع البصري)"); return }
                     visAutoRun = false; visual.mode = "scene"
                     if (visual.running) visual.stop()
                     visual.start(); visLog("🔤 وضع ترجمة الهارد سب اتشغّل")

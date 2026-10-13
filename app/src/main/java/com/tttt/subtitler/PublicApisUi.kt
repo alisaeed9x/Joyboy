@@ -77,7 +77,7 @@ object PublicApisUi {
         refreshAll()
         PublicApis.onChange = { ref.get()?.runOnUiThread { try { refreshAll() } catch (_: Throwable) {} } }
 
-        return ui.section("🌐 APIs خارجية (public-apis · ChatGPT · Claude · LibreTranslate · تفريغ سحابي) — v275", false,
+        return ui.section("🌐 APIs خارجية (public-apis · ChatGPT · Claude · LibreTranslate · تفريغ سحابي)", false,
             ui.text("الترجمة بجوجل (مع الأوفلاين) ممكن تستعين بمزوّدين تانيين، والتفريغ ممكن يبقى سحابي. القايمة بتتسحب من ريبو public-apis لوحدها، والمزوّد بيشتغل بس لو ليه محوّل جاهز في التطبيق. الترتيب بيأثر على مسار «تفريغ أوفلاين + ترجمة جوجل» بس.", 12f, th.muted),
             status,
             ui.button("🔄 اسحب القايمة من الريبو دلوقتي") { PublicApis.pull(ref.get(), true) },

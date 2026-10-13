@@ -213,9 +213,10 @@ text_hex: لون النص hex | opacity_pct: شفافية الخلفية 0-100 |
     }
 
     /** (v185) ربط الوضع البصري بملف الفيديو: بيحمّل النتايج المحفوظة (لو فيه) وكل نتيجة جديدة بتتحفظ فيه */
+    @Volatile private var saveErrAt = 0L
     fun bind(f: File) {
         file = f
-        try { load() } catch (_: Throwable) {}
+        try { load() } catch (e: Throwable) { lg("⚠ نتايج الوضع البصري المحفوظة ماقدرتش اتقرا (" + (e.message ?: e.javaClass.simpleName).take(80) + ")") }   // (v287)
     }
 
     private fun boxJson(b: VisBox): JSONObject = JSONObject().put("x", b.x.toDouble()).put("y", b.y.toDouble()).put("w", b.w.toDouble()).put("h", b.h.toDouble())
@@ -253,7 +254,10 @@ text_hex: لون النص hex | opacity_pct: شفافية الخلفية 0-100 |
             f.parentFile?.mkdirs()
             val tmp = File(f.path + ".tmp"); tmp.writeText(root.toString(), Charsets.UTF_8)
             if (!tmp.renameTo(f)) { f.writeText(root.toString(), Charsets.UTF_8); tmp.delete() }
-        } catch (_: Throwable) {}
+        } catch (e: Throwable) {
+            val n = System.currentTimeMillis()
+            if (n - saveErrAt > 30000L) { saveErrAt = n; lg("⚠ حفظ نتايج الوضع البصري فشل (" + (e.message ?: e.javaClass.simpleName).take(80) + ") — مش هتتحفظ مع الفيديو") }   // (v287) كان صامت
+        }
     }
 
     private fun load() {
@@ -315,7 +319,7 @@ text_hex: لون النص hex | opacity_pct: شفافية الخلفية 0-100 |
     }
     private fun snapWork(bmp: Bitmap, nowSec: () -> Double) {
         val keys = keyList()
-        if (keys.isEmpty()) { say("ضيف مفتاح للوضع البصري (الإعدادات ← مفتاح الوضع البصري فقط)"); return }
+        if (keys.isEmpty()) { say("ضيف مفتاح للوضع البصري (الإعدادات ← 🔑 المفاتيح ← مفتاح الوضع البصري فقط)"); return }
         val jpeg = toJpeg(bmp); bmp.recycle()
         val prompt = if (mode == "hardsub") PROMPT_HARDSUB.replace("§DIALECT§", "بلهجة ${conf.lang} وأسلوب ${conf.style}")
             .replace("§LANG§", if (hardLang.isBlank()) "لغة الهاردسب: اكتشفها تلقائيًا من السطر المحروق." else "لغة الهاردسب في هذا الفيديو هي: \"$hardLang\" — اقرأ فقط الأسطر المكتوبة بيها.") else PROMPT_SCENE
@@ -369,7 +373,7 @@ text_hex: لون النص hex | opacity_pct: شفافية الخلفية 0-100 |
         val live = r == null   // (v182) m3u8 / مصدر مش مقروء: بنلقط الفريمات من الشاشة وقت التشغيل
         if (live && grab == null) { status = "المصدر ده مش مدعوم للوضع البصري"; say(status); return }
         val keys = keyList()
-        if (keys.isEmpty()) { say("ضيف مفتاح للوضع البصري (الإعدادات ← مفتاح الوضع البصري فقط)"); try { r?.release() } catch (_: Exception) {}; return }
+        if (keys.isEmpty()) { say("ضيف مفتاح للوضع البصري (الإعدادات ← 🔑 المفاتيح ← مفتاح الوضع البصري فقط)"); try { r?.release() } catch (_: Exception) {}; return }
         pool = KeyPool(keys)
         val durSec = if (r == null) 0.0 else try { (r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L) / 1000.0 } catch (_: Exception) { 0.0 }
         lastSig = null; lastQ = null; grabFails = 0
@@ -600,7 +604,7 @@ text_hex: لون النص hex | opacity_pct: شفافية الخلفية 0-100 |
         lg("🧠 تحليل " + batch.size + " فريم (" + subs.size + " مجموعات متوازية)…")
         val ths = ArrayList<Thread>()
         for (sb in subs) {
-            val t = Thread { try { doSub(sb, g) } catch (_: Throwable) {} }
+            val t = Thread { try { doSub(sb, g) } catch (e: Throwable) { lg("⚠ مجموعة فريمات فشلت: " + (e.message ?: e.javaClass.simpleName).take(100)) } }   // (v287)
             t.isDaemon = true; ths.add(t); t.start()
         }
         try { for (t in ths) t.join() } catch (e: InterruptedException) { for (x in ths) x.interrupt(); throw e }

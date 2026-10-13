@@ -16,7 +16,10 @@ import android.widget.LinearLayout
  * و stt_offline / stt_lang / off_model / tr_method (اللي المحرك بيقراه فعلًا — بتتكتب وقت التشغيل).
  */
 object TrWizard {
-    class Plan(val mode: String, val onlineId: String, val lang: String, val model: String, val method: String, val engine: String = "whisper", val dialect: String = "", val live: Boolean = false, val ext: String = "", val free: String = "") {
+    class Plan(val mode: String, val onlineId: String, val lang: String, val model: String, val method: String, val engine: String = "whisper", val dialect: String = "", val live: Boolean = false, val ext: String = "", val free: String = "", val dia: String? = null, val only: Boolean = false, val conv: String = "") {
+        // (v281) conv: id محرك LLM بيحوّل اللهجة بدل جيميناي ("" = جيميناي)
+        // (v280) only: «تفريغ بس» — النص الأصلي من غير ترجمة (Engine.transOnly)
+        // (v279) dia: لهجة اتحدّدت من كروت «خط الترجمة» للمسارات الأونلاين (null = ماتلمسش الإعدادات). أونلاين جيميناي ← Cfg lang · أونلاين بمحرك خارجي ← conv_dialect. الأوفلاين بيستخدم dialect زي الأول
         val offline: Boolean get() = mode == "offline"
         /** (v274) أونلاين بمحرك خارجي: ext = id مزوّد LLM (تفريغ سحابي + ترجمته)، فاضي = جيميناي */
         val cloud: Boolean get() = !offline && ext.isNotBlank()
@@ -76,6 +79,13 @@ object TrWizard {
      * مفيش نت: بيقولك تتصل (جوجل وجيميناي الاتنين محتاجين نت للترجمة).
      */
     fun startNotices(pl: Plan): List<String> {
+        if (pl.only) {   // (v280)
+            val o = ArrayList<String>()
+            o.add("✍ تفريغ بس — النص هيظهر بلغته الأصلية من غير ترجمة. لو عايز تترجمه بعدين اختار خطة ترجمة والجمل الأجنبية هتتصلّح بجيميناي")
+            if (pl.cloud) { o.add("☁ الصوت بيتبعت لـ " + (sttCandidate(pl.ext)?.label ?: "خدمة التفريغ") + " (خدمة خارجية)"); if (!online()) o.add(NO_NET_CLOUD) }
+            else if (!pl.offline && !online()) o.add(NO_NET_GEMINI)
+            return o
+        }
         if (pl.cloud) {   // (v274)
             val out = ArrayList<String>()
             out.add("☁ " + (ExtLlm.byId(pl.ext)?.label ?: pl.ext) + " بيترجم، والصوت بيتفرّغ بـ " + (sttCandidate(pl.ext)?.label ?: "؟") + " (الصوت بيتبعت لخدمة خارجية) — لو وقف بيكمّل الباقي ثم جيميناي، وهيطلعلك إشعار بكل تبديل")
@@ -85,17 +95,55 @@ object TrWizard {
         }
         if (!pl.offline) return emptyList()
         val out = ArrayList<String>()
-        if (pl.free.isNotBlank() && pl.method == "google") out.add("🌐 المترجم المجاني " + (ExtTranslate.all().firstOrNull { it.id == pl.free }?.label ?: pl.free) + " بيترجم الأول — لو وقف أو الحد اليومي خلص بيكمّل الباقي ثم جوجل ثم جيميناي")
+        if (pl.free.isNotBlank() && pl.method == "google") out.add((if (pl.free.startsWith("llm_")) "🤖 المترجم " else "🌐 المترجم المجاني ") + (ExtTranslate.all().firstOrNull { it.id == pl.free }?.label ?: pl.free) + " بيترجم الأول — لو وقف أو الحد اليومي خلص بيكمّل الباقي ثم جوجل ثم جيميناي")
         val d = pl.dialect.trim().let { if (it == "فصحى") "" else it }
         if (pl.method == "google") {
             if (d.isEmpty()) out.add("🌍 الترجمة بجوجل (فصحى، من غير API)")
+            else if (pl.conv.isNotBlank()) out.add("🗣 لهجة «$d» بتتحوّل بـ " + convLabel(pl.conv) + " بعد الترجمة")
             else if (!hasGeminiKey()) out.add("⚠ لهجة «$d» محتاجة مفتاح جيميناي يحوّل ترجمة جوجل — من غير مفتاح هتفضل فصحى")
             if (!online()) out.add(NO_NET_MSG)
         } else if (!online()) out.add(NO_NET_GEMINI)
         return out
     }
 
+    // ===== (v282) تجربة لحظية: طلب صغير حقيقي لكل كارت =====
+    /** طلب واحد صغير لجيميناي بأول مفتاح (بياخد طلب واحد من الكوتا). (نجح؟، سطر نتيجة) */
+    fun probeGemini(): Pair<Boolean, String> {
+        val k = try { Cfg.allMainKeys().firstOrNull() } catch (_: Throwable) { null } ?: return false to "مفيش مفتاح جيميناي"
+        val t0 = System.currentTimeMillis()
+        return try {
+            val mdl = Cfg.str("model", Models.DEFAULT).ifBlank { Models.DEFAULT }
+            val r = Api.generate(mdl, k, "Reply with one word: OK", null, 64, 0.0, false, false)
+            true to ((System.currentTimeMillis() - t0).toString() + "ms · المفتاح شغّال" + (if (r.text.isBlank()) "" else " «" + r.text.trim().take(20) + "»"))
+        } catch (e: Throwable) { false to (e.message ?: e.javaClass.simpleName).take(90) }
+    }
+
+    /** ترجمة جوجل الداخلي (من غير مفتاح): جملة واحدة */
+    fun probeGoogle(): Pair<Boolean, String> {
+        val t0 = System.currentTimeMillis()
+        return try {
+            val body = "client=gtx&sl=en&tl=ar&dt=t&q=" + java.net.URLEncoder.encode("Hello, how are you today?", "UTF-8")
+            val c = java.net.URL("https://translate.googleapis.com/translate_a/single").openConnection() as java.net.HttpURLConnection
+            c.requestMethod = "POST"; c.doOutput = true; c.connectTimeout = 10000; c.readTimeout = 15000
+            c.setRequestProperty("Content-Type", "application/x-www-form-urlencoded; charset=UTF-8")
+            c.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 Chrome/120 Mobile Safari/537.36")
+            c.outputStream.use { it.write(body.toByteArray(Charsets.UTF_8)) }
+            val code = c.responseCode
+            val txt = (if (code == 200) c.inputStream else c.errorStream)?.use { String(it.readBytes(), Charsets.UTF_8) } ?: ""
+            c.disconnect()
+            if (code != 200) false to ("HTTP $code" + (if (code == 429) " (جوجل رافض مؤقتًا)" else ""))
+            else {
+                val segs = org.json.JSONArray(txt).optJSONArray(0)
+                val sb = StringBuilder()
+                if (segs != null) for (k in 0 until segs.length()) sb.append(segs.optJSONArray(k)?.optString(0, "") ?: "")
+                if (sb.isBlank()) false to "ما رجّعش ترجمة" else true to ((System.currentTimeMillis() - t0).toString() + "ms «" + sb.toString().trim().take(40) + "»")
+            }
+        } catch (e: Throwable) { false to (e.message ?: e.javaClass.simpleName).take(90) }
+    }
+
     fun saved(): Boolean = Cfg.bool("tr_saved", false)
+    /** (v281) اسم محوّل اللهجة: فاضي = جيميناي */
+    fun convLabel(id: String): String = if (id.isBlank()) "جيميناي" else (ExtLlm.byId(id)?.label ?: id)
     /** «google» = بعد التفريغ الأوفلاين النص بيتترجم بجوجل (من غير API)، غير كده جيميناي بالسياق */
     fun method(): String = if (Cfg.str("tr_method", "gemini") == "google") "google" else "gemini"
     /** المحرك بيسأل: الترجمة بجوجل دلوقتي؟ (لازم الأوفلاين شغّال فعلًا، لأن جوجل بيترجم النص المفرّغ بس) */
@@ -108,16 +156,17 @@ object TrWizard {
     fun savedPlan(): Plan? {
         if (!saved()) return null
         return when (Cfg.str("tr_mode", "")) {
-            "offline" -> Plan("offline", "", Cfg.str("tr_s_lang", ""), Cfg.str("tr_s_model", "small").ifBlank { "small" }, if (Cfg.str("tr_s_method", "gemini") == "google") "google" else "gemini", if (Cfg.str("tr_s_engine", "whisper") == "sherpa") "sherpa" else "whisper", Cfg.str("tr_s_dialect", ""), Cfg.bool("tr_s_live", false), free = Cfg.str("tr_s_free", ""))
-            "online" -> Plan("online", Cfg.str("tr_online", CURRENT).ifBlank { CURRENT }, "", "", "gemini", ext = Cfg.str("tr_online_ext", ""))
+            "offline" -> Plan("offline", "", Cfg.str("tr_s_lang", ""), Cfg.str("tr_s_model", "small").ifBlank { "small" }, if (Cfg.str("tr_s_method", "gemini") == "google") "google" else "gemini", if (Cfg.str("tr_s_engine", "whisper") == "sherpa") "sherpa" else "whisper", Cfg.str("tr_s_dialect", ""), Cfg.bool("tr_s_live", false), free = Cfg.str("tr_s_free", ""), only = Cfg.bool("tr_s_only", false), conv = Cfg.str("tr_s_conv", ""))
+            "online" -> Plan("online", Cfg.str("tr_online", CURRENT).ifBlank { CURRENT }, "", "", "gemini", ext = Cfg.str("tr_online_ext", ""), dia = Cfg.str("tr_online_dia", "-").let { if (it == "-") null else it }, only = Cfg.bool("tr_s_only", false), conv = Cfg.str("tr_s_conv", ""))
             else -> null
         }
     }
 
     fun describe(pl: Plan): String =
-        if (pl.offline) "📴 أوفلاين" + (if (pl.live) " ⚡ لحظي" else "") + " · " + langLabel(pl.lang) + "\nالتفريغ: " + (if (pl.engine == "sherpa") "SenseVoice (sherpa-onnx)" else "Whisper " + pl.model) + " على الجهاز\nالترجمة: " + (if (pl.method == "google") "جوجل (من غير API)" else "جيميناي بالسياق") + "\nاللهجة: " + pl.dialect.ifBlank { "فصحى" } + (if (pl.method == "google" && pl.dialect.isNotBlank() && pl.dialect != "فصحى") " (جيميناي بيحوّل ترجمة جوجل)" else "") + (if (pl.free.isNotBlank() && pl.method == "google") "\nالمترجم: 🌐 " + pl.free + " الأول (مجاني من الريبو)" else "")
-        else if (pl.cloud) "☁ أونلاين بمحرك خارجي\nالترجمة: " + (ExtLlm.byId(pl.ext)?.label ?: pl.ext) + " (بمفتاحك)\nالتفريغ: " + (sttCandidate(pl.ext)?.let { it.label + " · " + ExtLlm.sttModel(it) } ?: "⚠ مفيش مزوّد تفريغ جاهز") + " (سحابي — الصوت بيتبعت لخدمة خارجية)\nلو وقف: الباقي من سلسلة الإعدادات ← جوجل ← جيميناي بمفاتيحك (مع إشعار)"
-        else "☁ أونلاين (جيميناي)\n" + (TrPresets.byId(pl.onlineId)?.let { it.icon + " " + it.name } ?: "⚙ الإعدادات الحالية")
+        if (pl.only) "✍ تفريغ بس (من غير ترجمة)\nالتفريغ: " + (if (pl.offline) (if (pl.engine == "sherpa") "SenseVoice" else "Whisper " + pl.model) + " على الجهاز · " + langLabel(pl.lang) else if (pl.cloud) (sttCandidate(pl.ext)?.let { it.label + " · " + ExtLlm.sttModel(it) } ?: "⚠ مفيش مزوّد تفريغ جاهز") + " (سحابي)" else "جيميناي") + "\nالنص بيظهر بلغته الأصلية"
+        else if (pl.offline) "📴 أوفلاين" + (if (pl.live) " ⚡ لحظي" else "") + " · " + langLabel(pl.lang) + "\nالتفريغ: " + (if (pl.engine == "sherpa") "SenseVoice (sherpa-onnx)" else "Whisper " + pl.model) + " على الجهاز\nالترجمة: " + (if (pl.method == "google") "جوجل (من غير API)" else "جيميناي بالسياق") + "\nاللهجة: " + pl.dialect.ifBlank { "فصحى" } + (if (pl.method == "google" && pl.dialect.isNotBlank() && pl.dialect != "فصحى") " (" + convLabel(pl.conv) + " بيحوّل الترجمة)" else "") + (if (pl.free.isNotBlank() && pl.method == "google") "\nالمترجم: " + (if (pl.free.startsWith("llm_")) "🤖 " + (ExtLlm.byId(pl.free.removePrefix("llm_"))?.label ?: pl.free) + " الأول (بمفتاحك)" else "🌐 " + pl.free + " الأول (مجاني من الريبو)") else "")
+        else if (pl.cloud) "☁ أونلاين بمحرك خارجي\nالترجمة: " + (ExtLlm.byId(pl.ext)?.label ?: pl.ext) + " (بمفتاحك)\nالتفريغ: " + (sttCandidate(pl.ext)?.let { it.label + " · " + ExtLlm.sttModel(it) } ?: "⚠ مفيش مزوّد تفريغ جاهز") + " (سحابي — الصوت بيتبعت لخدمة خارجية)\nلو وقف: الباقي من سلسلة الإعدادات ← جوجل ← جيميناي بمفاتيحك (مع إشعار)" + (pl.dia?.let { "\nاللهجة: " + it.ifBlank { "فصحى" } + " (" + convLabel(pl.conv) + " بيحوّل)" } ?: "")
+        else "☁ أونلاين (جيميناي)\n" + (TrPresets.byId(pl.onlineId)?.let { it.icon + " " + it.name } ?: "⚙ الإعدادات الحالية") + (pl.dia?.let { "\nاللهجة: " + it.ifBlank { "فصحى" } } ?: "")
 
     /** (v274) لو التفريغ السحابي كان شغّال بسبب خطة «أونلاين بمحرك خارجي» بنقفله لما نرجع لخطة تانية (إلا لو إنت شغّلته من الإعدادات) */
     private fun leaveCloud() {
@@ -127,6 +176,7 @@ object TrWizard {
 
     /** بيكتب الإعدادات اللي المحرك بيقراها (من غير ما يحفظ الخطة) */
     fun apply(pl: Plan) {
+        Cfg.put("conv_via", pl.conv)   // (v281) محوّل اللهجة (فاضي = جيميناي)
         Cfg.put("stt_offline", if (pl.offline || pl.cloud) "1" else "0")
         if (pl.offline) { Cfg.put("stt_lang", pl.lang); Cfg.put("off_model", pl.model); Cfg.put("tr_method", pl.method); Cfg.put("stt_engine", pl.engine); Cfg.put("conv_dialect", if (pl.dialect == "فصحى") "" else pl.dialect)
             if (pl.live) Cfg.put("ctx_min", "1") else if (Cfg.int("ctx_min", 3) == 1) Cfg.put("ctx_min", "3")   // (v266)
@@ -135,16 +185,19 @@ object TrWizard {
         else if (pl.cloud) {   // (v274) أونلاين بمحرك خارجي: تفريغ سحابي (لغة تلقائية) ← ترجمة بالسلسلة (المحرك المختار الأول) ← جيميناي
             val sp = sttCandidate(pl.ext)
             if (sp != null) { if (Cfg.str("rstt_on", "off") != "on") Cfg.put("rstt_by_plan", "1"); Cfg.put("rstt_on", "on"); Cfg.put("rstt_prov", sp.id) }
-            Cfg.put("stt_lang", ""); Cfg.put("tr_method", "google"); Cfg.put("ext_primary", pl.ext); Cfg.put("ext_on_llm_" + pl.ext, "on")
+            Cfg.put("stt_lang", ""); Cfg.put("tr_method", "google"); Cfg.put("ext_primary", if (pl.only) "" else pl.ext); if (!pl.only) Cfg.put("ext_on_llm_" + pl.ext, "on")
             if (Cfg.int("ctx_min", 3) == 1) Cfg.put("ctx_min", "3")
+            pl.dia?.let { Cfg.put("conv_dialect", if (it == "فصحى") "" else it) }   // (v279)
         }
-        else { Cfg.put("tr_method", "gemini"); leaveCloud() }
+        else { Cfg.put("tr_method", "gemini"); leaveCloud(); pl.dia?.let { Cfg.put("lang", it.ifBlank { "فصحى" }) } }   // (v279) لهجة ترجمة جيميناي من كارت ③
     }
 
     fun save(pl: Plan) {
         Cfg.put("tr_mode", pl.mode)
+        Cfg.put("tr_s_only", if (pl.only) "1" else "0")   // (v280)
+        Cfg.put("tr_s_conv", pl.conv)   // (v281)
         if (pl.offline) { Cfg.put("tr_s_lang", pl.lang); Cfg.put("tr_s_model", pl.model); Cfg.put("tr_s_method", pl.method); Cfg.put("tr_s_engine", pl.engine); Cfg.put("tr_s_dialect", pl.dialect); Cfg.put("tr_s_live", if (pl.live) "1" else "0"); Cfg.put("tr_s_free", pl.free) }
-        else { Cfg.put("tr_online", pl.onlineId); Cfg.put("tr_online_ext", pl.ext) }
+        else { Cfg.put("tr_online", pl.onlineId); Cfg.put("tr_online_ext", pl.ext); Cfg.put("tr_online_dia", pl.dia ?: "-") }
         Cfg.put("tr_saved", "1")
     }
 
@@ -191,7 +244,48 @@ object TrWizard {
         var testing = false
         val ftested = HashMap<String, Triple<Boolean, Long, String>>()
         var ftesting = false
-        fun plan() = Plan(mode, onlineId, lang, model, method, engine, dialect, live, if (mode == "online") ext else "", if (mode == "offline") free else "")
+
+        // ===== (v279) حالة كروت «خط الترجمة»: ① تفريغ ← ② ترجمة ← ③ لهجة =====
+        var src = ""          // gemini | whisper | sherpa | cloud
+        var tr = ""           // gemini | google | free | llm
+        var trId = ""         // free: id مزوّد الريبو · llm: id بريست LLM
+        var gp = CURRENT      // نوع ترجمة جيميناي (id بريست أو current) لما src=gemini
+        var dia = ""          // "" = فصحى
+        var diaSet = false    // اللهجة اتحدّدت صراحةً (وإلا الأونلاين مابيلمسش Cfg lang)
+        var hubFlow = false   // شاشات التنزيل بترجع للكروت
+        var convId = ""       // (v281) محوّل اللهجة: id محرك LLM أو فاضي = جيميناي
+        var hubActive = false // (v280) plan() بيقرا tr=="none" بس لما الكروت هي اللي شغّالة (الويزارد القديم ماله دعوة)
+        var repoToHub = false // فحص الريبو بيرجع للكروت
+        var lastQp = ""
+
+        init {
+            val s0 = sp
+            if (s0 != null) {
+                if (s0.offline) {
+                    src = if (s0.engine == "sherpa") "sherpa" else "whisper"
+                    when {
+                        s0.only -> tr = "none"
+                        s0.free.startsWith("llm_") -> { tr = "llm"; trId = s0.free.removePrefix("llm_") }
+                        s0.free.isNotBlank() -> { tr = "free"; trId = s0.free }
+                        else -> tr = if (s0.method == "google") "google" else "gemini"
+                    }
+                    live = s0.live; dia = s0.dialect; diaSet = true; convId = s0.conv
+                } else if (s0.cloud) {
+                    src = "cloud"; tr = if (s0.only) "none" else "llm"; trId = s0.ext; convId = s0.conv
+                    s0.dia?.let { dia = it; diaSet = true }
+                } else {
+                    src = "gemini"; tr = if (s0.only) "none" else "gemini"; gp = if (s0.only) CURRENT else s0.onlineId
+                    s0.dia?.let { dia = it; diaSet = true }
+                }
+            } else {
+                if (mode == "offline") { src = if (engine == "sherpa") "sherpa" else "whisper"; tr = if (method == "google") "google" else "gemini" }
+                else { src = "gemini"; tr = "gemini" }
+                dia = TrWizard.dialectWanted()
+            }
+            if (dia == "فصحى") dia = ""
+        }
+
+        fun plan() = Plan(mode, onlineId, lang, model, method, engine, dialect, live, if (mode == "online") ext else "", if (mode == "offline") free else "", if (mode == "online" && diaSet && tr != "none") dia else null, hubActive && tr == "none", if (hubActive && src != "gemini" && tr != "none" && tr != "gemini" && dia.isNotBlank()) convId else "")
 
         fun go(step: () -> Unit) { hist.add(step); step() }
         fun back() { if (hist.size > 1) { hist.removeAt(hist.size - 1); hist[hist.size - 1]() } else dlg.dismiss() }
@@ -234,12 +328,17 @@ object TrWizard {
             opt("🔀 ترتيب الترجمة: " + (if (ExtTranslate.externalFirst()) "🌐 الخارجية أولًا" else "🏠 جوجل الداخلي أولًا"), "دوس عشان تبدّل. السلسلة دلوقتي: " + ExtTranslate.chainLabel() + "\n(بيأثر على مسار «تفريغ + ترجمة نص» — الأوفلاين والأونلاين بمحرك خارجي)", false) {
                 Cfg.put("tx_order", if (ExtTranslate.externalFirst()) "internal" else "external"); stepSummary()
             }
+            val swapOn = Cfg.str("tr_autoswap", "on") != "off"
+            opt("🔄 بديل تلقائي لو جيميناي وقف: " + (if (swapOn) "✅ شغّال" else "⏸ مقفول"), "لو كوتا/مفاتيح جيميناي خلصت أثناء الترجمة، الجمل الناقصة بتتترجم بالمترجم الخارجي أو جوجل (فصحى، واللهجة بتتحوّل بعدين) بدل ما تستنى. دوس عشان تبدّل.", false) {
+                Cfg.put("tr_autoswap", if (swapOn) "off" else "on"); stepSummary()
+            }
             opt("✏ غيّر الإعداد", "", false) { go { stepMode() } }
             if (s != null) opt("🗑 امسح المحفوظ", "زرار «▶ ترجمة» هيسألك كل مرة تاني", false) { TrWizard.clearSaved(); Notice.show(act, "اتمسح الإعداد المحفوظ", 2200L); dlg.dismiss() }
-            addBack("إغلاق")
+            addBack(if (hist.size > 1) "← رجوع" else "إغلاق")
         }
 
         fun stepMode() {
+            hubFlow = false; repoToHub = false; hubActive = false   // (v279) الخطوات القديمة بترجع تعمل زي الأول
             reset(if (edit) "✏ اختار طريقة الترجمة" else "▶ هتترجم إزاي؟")
             opt("📴 أوفلاين", if (WhisperLib.loaded) "الكلام بيتفرّغ على جهازك من غير نت ولا مفتاح، وبعدها الترجمة بجوجل (من غير API) أو جيميناي" else Offline.status(), mode == "offline") {
                 if (!WhisperLib.loaded) Notice.show(act, "الأوفلاين مش مدعوم على جهازك", 2500L) else { mode = "offline"; free = ""; go { stepOffPreset() } }
@@ -271,7 +370,7 @@ object TrWizard {
             reset("☁ أونلاين — مين يترجم؟")
             note("المحركات غير جيميناي ما بتسمعش صوت: الصوت بيتفرّغ بـ Whisper سحابي (Groq / ChatGPT) وبعدين هي اللي بتترجم. لو واحد وقف (كوتة / مفتاح / نت) التالي بيكمّل، وآخر حاجة جيميناي بمفاتيحك — وبيطلعلك إشعار بكل تبديل.")
             val gk = Cfg.keys("keys").size + Cfg.keys("extra").size
-            opt("☁ جيميناي", (if (gk > 0) "$gk مفتاح" else "⚠ مفيش مفتاح لسه") + " · وضع المفاتيح: " + KeyMode.short(Cfg.int("kmode", 1)) + "\nالصوت بيتبعت لجيميناي — بتختار نوع الترجمة (سريعة / دقيقة / …)", ext.isBlank()) { ext = ""; go { stepOnlineGem() } }
+            opt("☁ جيميناي", (if (gk > 0) "$gk مفتاح" else "⚠ مفيش مفتاح لسه") + (if (Cfg.bool("kmode_adv", false)) " · وضع المفاتيح: " + KeyMode.short(Cfg.int("kmode", 1)) else "") + "\nالصوت بيتبعت لجيميناي — بتختار نوع الترجمة (سريعة / دقيقة / …)", ext.isBlank()) { ext = ""; go { stepOnlineGem() } }
             val rn = ExtLlm.presets.count { ExtLlm.configured(it) && ExtLlm.enabled(it) }
             opt("🔑 مفاتيحي (ChatGPT · Claude · Groq · …)", if (rn > 0) "$rn جاهز — تشوف الكل وتجرّبهم لحظيًا وتختار" else "لسه مفيش مفتاح — تضيفه من جوه", ext.isNotBlank()) { go { stepLocalKeys() } }
             opt("🌐 من الريبو (مجاني، من غير مفتاح)", "يفحص المترجمين المجانيين لحظيًا ويرتّبهم بالسرعة — التفريغ بيبقى أوفلاين على جهازك", free.isNotBlank()) { go { stepRepo() } }
@@ -299,6 +398,7 @@ object TrWizard {
             val okList = ordered.filter { ftested[it.id]?.first == true }
             val best = okList.firstOrNull { it.dailyChars == 0 } ?: okList.firstOrNull()   // (v277) اللي ليه حد يومي (MyMemory ~4800 حرف) مايبقاش «الأسرع» طول ما فيه بديل من غير حد
             fun choose(pv: ExtTranslate.Prov) {
+                if (repoToHub) { tr = "free"; trId = pv.id; sync(); toHub(); return }   // (v279) جاي من كارت ②
                 if (!WhisperLib.loaded) { Notice.show(act, "الأوفلاين مش مدعوم على جهازك — التفريغ هنا بيبقى على الجهاز", 3500L); return }
                 mode = "offline"; free = pv.id; method = "google"; go { stepOffPreset() }
             }
@@ -370,7 +470,7 @@ object TrWizard {
         /** (v275) مفاتيح جيميناي + أوضاعها (كانت زرار 🔑 لوحده في المشغّل) */
         fun stepGemKeys() {
             reset("🔑 مفاتيح جيميناي ووضعها")
-            note("أساسي: " + Cfg.keys("keys").size + " · إضافي: " + Cfg.keys("extra").size + " · احتياطي: " + Cfg.keys("backup").size + "\nتعديل/حذف المفاتيح بالتفصيل من الإعدادات ← 🔑 المفاتيح والمحرك.")
+            note("أساسي: " + Cfg.keys("keys").size + " · إضافي: " + Cfg.keys("extra").size + " · احتياطي: " + Cfg.keys("backup").size + "\nتعديل/حذف المفاتيح بالتفصيل من الإعدادات ← 🔑 المفاتيح.")
             opt("➕ ضيف مفتاح جيميناي", "إزاي تجيبه + لصقه من الكليبورد", false) {
                 act.showKeyGuide { k ->
                     val cur = Cfg.keys("keys")
@@ -380,7 +480,13 @@ object TrWizard {
                 }
             }
             val cur = KeyMode.clamp(Cfg.int("kmode", 1))
-            for (m in 1..KeyMode.count) opt(KeyMode.name(m), KeyMode.descs[m - 1], m == cur) {
+            val adv = Cfg.bool("kmode_adv", false)
+            // (v287) البريست هو اللي بيحدد وضع المفاتيح؛ الاختيار اليدوي (1–4) تحت «متقدم»
+            note("وضع المفاتيح بيتحدد لوحده من البريست اللي بتختاره (دلوقتي: " + KeyMode.short(cur) + ").")
+            opt("⚙ متقدم: اختيار وضع المفاتيح يدويًا " + (if (adv) "▾" else "▸"), if (adv) "دوس عشان تخفي الأوضاع (البريست هو اللي بيحدد)" else "بيظهر الأوضاع 1–4 وزرار 🔑 جنب ▶ ترجمة في المشغّل", false) {
+                Cfg.put("kmode_adv", if (adv) "0" else "1"); stepGemKeys()
+            }
+            if (adv) for (m in 1..KeyMode.count) opt(KeyMode.name(m), KeyMode.descs[m - 1], m == cur) {
                 Cfg.put("kmode", m.toString()); TrWizard.keyModeHook?.invoke(m); stepGemKeys()
             }
             addBack()
@@ -388,7 +494,7 @@ object TrWizard {
 
         fun stepOnlineGem() {
             reset("☁ نوع الترجمة (جيميناي)")
-            opt("🔑 مفاتيح جيميناي ووضعها", Cfg.keys("keys").size.toString() + " مفتاح · وضع " + KeyMode.short(Cfg.int("kmode", 1)), false) { go { stepGemKeys() } }
+            opt("🔑 مفاتيح جيميناي ووضعها", Cfg.keys("keys").size.toString() + " مفتاح" + (if (Cfg.bool("kmode_adv", false)) " · وضع " + KeyMode.short(Cfg.int("kmode", 1)) else ""), false) { go { stepGemKeys() } }
             for (pr in TrPresets.all) opt(pr.icon + " " + pr.name, pr.desc, ext.isBlank() && onlineId == pr.id) { ext = ""; onlineId = pr.id; go { stepSave() } }
             opt("⚙ الإعدادات الحالية", "من غير ما أغيّر أي إعداد", ext.isBlank() && onlineId == CURRENT) { ext = ""; onlineId = CURRENT; go { stepSave() } }
             addBack()
@@ -441,7 +547,7 @@ object TrWizard {
             footBtn("التالي ←", true) {
                 if (!SherpaStt.supported()) Notice.show(act, "جهازك مش بيدعم sherpa-onnx", 2500L)
                 else if (!SherpaStt.downloaded()) Notice.show(act, "نزّل الموديل الأول", 2500L)
-                else go { if (presetFlow) stepSave() else stepMethod() }
+                else go { if (hubFlow) toHub() else if (presetFlow) stepSave() else stepMethod() }
             }
             addBack()
         }
@@ -484,7 +590,7 @@ object TrWizard {
             footBtn("التالي ←", true) {
                 if (!WhisperLib.loaded) Notice.show(act, "جهازك مش بيدعم الأوفلاين", 2500L)
                 else if (!Offline.downloaded(cur())) Notice.show(act, "نزّل الموديل الأول", 2500L)
-                else go { if (presetFlow) stepSave() else stepMethod() }
+                else go { if (hubFlow) toHub() else if (presetFlow) stepSave() else stepMethod() }
             }
             addBack()
         }
@@ -521,6 +627,442 @@ object TrWizard {
             addBack()
         }
 
+        // ===================== (v279) كروت خط الترجمة + بريستات هاي/لو كوتا =====================
+        // ===== (v282) 🧪 تجربة كل كارت =====
+        val probe = HashMap<String, Pair<Boolean, String>>()
+        val probing = HashSet<String>()
+        fun onHub(): Boolean = dlg.isShowing && title.text.toString().contains("خط الترجمة")
+
+        /** k: "1" تفريغ · "2" ترجمة · "3" لهجة. بيشتغل في خيط ويحدّث الكروت لما يخلص */
+        fun runProbe(k: String) {
+            if (!probing.add(k)) return
+            probe.remove(k); sync()
+            val s = src; val t = tr; val tid = trId; val d = dia; val cv = convId; val mdl = model
+            Thread {
+                val r: Pair<Boolean, String> = try {
+                    when (k) {
+                        "1" -> when (s) {
+                            "whisper" -> if (!WhisperLib.loaded) false to "جهازك مش بيدعم Whisper" else if (!Offline.downloaded(Offline.models.firstOrNull { it.id == mdl } ?: Offline.model())) false to "الموديل مش نازل — دوس على الكارت وانزّله" else true to "الموديل نازل وجاهز (التفريغ بيشتغل على الجهاز)"
+                            "sherpa" -> if (!SherpaStt.supported()) false to "جهازك مش بيدعم SenseVoice" else if (!SherpaStt.downloaded()) false to "الموديل مش نازل — دوس على الكارت وانزّله" else true to "الموديل نازل وجاهز (التفريغ بيشتغل على الجهاز)"
+                            "cloud" -> {
+                                val p = TrWizard.sttCandidate(if (t == "llm") tid else "")
+                                if (p == null) false to "مفيش مفتاح تفريغ (Groq أو ChatGPT)"
+                                else { val x = ExtLlm.testTimed(p); x.first to (p.label + " · " + (if (x.first) x.second.toString() + "ms — المفتاح شغّال (التفريغ نفسه ماجرّبتوش)" else x.third)) }
+                            }
+                            else -> TrWizard.probeGemini()
+                        }
+                        "2" -> when {
+                            t == "none" -> true to "مفيش ترجمة"
+                            s == "gemini" -> true to "مدمجة مع ① (اتجرّبت هناك)"
+                            t == "google" -> TrWizard.probeGoogle()
+                            t == "free" -> { val pv = ExtTranslate.all().firstOrNull { it.id == tid }; if (pv == null) false to "المترجم مش موجود" else { val x = ExtTranslate.testTimed(pv); x.first to (if (x.first) x.second.toString() + "ms «" + x.third.take(40) + "»" else x.third) } }
+                            t == "llm" -> { val p = ExtLlm.byId(tid); if (p == null || !ExtLlm.configured(p)) false to "المفتاح مش مضبوط" else { val x = ExtLlm.testTimed(p); x.first to (if (x.first) x.second.toString() + "ms «" + x.third.take(40) + "»" else x.third) } }
+                            else -> TrWizard.probeGemini()
+                        }
+                        else -> when {
+                            t == "none" -> true to "مفيش لهجة من غير ترجمة"
+                            s == "gemini" || t == "gemini" -> true to "جيميناي بيترجم باللهجة على طول — مفيش محوّل"
+                            d.isBlank() -> true to "فصحى — مفيش تحويل"
+                            cv.isBlank() -> TrWizard.probeGemini()
+                            else -> {
+                                val p = ExtLlm.byId(cv)
+                                if (p == null || !ExtLlm.configured(p)) false to "مفتاح المحوّل مش مضبوط"
+                                else { val t0 = System.currentTimeMillis(); val o = ExtLlm.convert(p, listOf("How are you?"), listOf("كيف حالك؟"), listOf(""), d, "").firstOrNull(); if (o.isNullOrBlank()) false to "ما رجّعش تحويل" else true to ((System.currentTimeMillis() - t0).toString() + "ms «" + o.take(40) + "»") }
+                            }
+                        }
+                    }
+                } catch (e: Throwable) { false to (e.message ?: e.javaClass.simpleName).take(90) }
+                act.runOnUiThread { probe[k] = r; probing.remove(k); if (onHub()) stepHub() }
+            }.also { it.isDaemon = true }.start()
+            if (onHub()) stepHub()
+        }
+
+        /** لو ② وقف: السلسلة الفعلية اللي بتكمّل (نفس ترتيب ExtTranslate.chain) */
+        fun fallbackLine(): String {
+            if (src == "gemini" || tr == "none" || tr == "gemini") return ""
+            val prim = when (tr) { "free" -> trId; "llm" -> "llm_$trId"; else -> "" }
+            val pv = if (prim.isEmpty()) null else ExtTranslate.all().firstOrNull { it.id == prim }
+            val rest = ExtTranslate.active().filter { it.id != pv?.id }
+            val steps = ArrayList<ExtTranslate.Prov?>()
+            pv?.let { steps.add(it) }
+            if (ExtTranslate.externalFirst()) { steps.addAll(rest); steps.add(null) } else { steps.add(null); steps.addAll(rest) }
+            return "لو ② وقف بيكمّل تلقائي: " + steps.joinToString(" ← ") { ExtTranslate.whoLabel(it) } + (if (TrWizard.hasGeminiKey()) " ← 🔑 جيميناي" else "") + "\nوبيطلعلك إشعار باسم اللي كمّل."
+        }
+
+        class QP(val id: String, val label: String, val desc: String, val go: () -> Boolean)
+
+        /** هاي كوتا = مفاتيح جيميناي كتير (الدقة أهم) · لو كوتا = مفاتيح قليلة (وفّر). تلقائي: 3 مفاتيح فأكتر = هاي */
+        fun quotaHigh(): Boolean = when (Cfg.str("tr_quota", "auto")) { "high" -> true; "low" -> false; else -> Cfg.allMainKeys().size >= 3 }
+
+        fun readyLlm(needStt: Boolean): ExtLlm.Preset? = ExtLlm.presets.firstOrNull { ExtLlm.configured(it) && ExtLlm.enabled(it) && (!needStt || TrWizard.sttCandidate(it.id) != null) }
+
+        fun normalize() {
+            when (src) {
+                "gemini" -> if (tr != "none") tr = "gemini"
+                "cloud" -> if (tr != "llm" && tr != "none") { tr = "llm"; trId = readyLlm(true)?.id ?: "" }
+                else -> if (tr == "") tr = "google"
+            }
+        }
+
+        /** بيترجم حالة الكروت للمتغيرات اللي plan() بيقراها (نفس الخطط القديمة — من غير تغيير في المحرك) */
+        fun sync() {
+            when (src) {
+                "gemini" -> { mode = "online"; ext = ""; free = ""; onlineId = if (tr == "none") "transcript" else gp; method = "gemini"; live = false }
+                "cloud" -> { mode = "online"; ext = if (tr == "none") (TrWizard.sttCandidate("")?.id ?: "") else trId; free = ""; onlineId = CURRENT; method = "gemini"; live = false }
+                else -> {
+                    mode = "offline"; ext = ""; engine = src; method = if (tr == "gemini") "gemini" else "google"
+                    free = when (tr) { "free" -> trId; "llm" -> "llm_$trId"; else -> "" }
+                    dialect = if (tr == "none") "" else dia
+                }
+            }
+        }
+
+        fun toHub() { probe.clear(); while (hist.size > 1) hist.removeAt(hist.size - 1); hist[0]() }
+
+        fun srcName(): String = when (src) {
+            "gemini" -> "✨ جيميناي"
+            "whisper" -> "📴 Whisper " + (Offline.models.firstOrNull { it.id == model }?.label ?: model)
+            "sherpa" -> "📴 SenseVoice"
+            "cloud" -> "☁ " + (TrWizard.sttCandidate(trId)?.label ?: "Whisper سحابي")
+            else -> "؟"
+        }
+        fun trName(): String = when (tr) {
+            "gemini" -> if (src == "gemini") "✨ جيميناي (مدمج)" else "✨ جيميناي بالسياق"
+            "google" -> "🏠 جوجل الداخلي"
+            "free" -> "🌐 " + (ExtTranslate.all().firstOrNull { it.id == trId }?.label ?: trId)
+            "none" -> "✍ بدون ترجمة (تفريغ بس)"
+            "llm" -> "🤖 " + (ExtLlm.byId(trId)?.label ?: (if (trId.isBlank()) "اختار محرك" else trId))
+            else -> "؟"
+        }
+        fun diaName(): String = if (tr == "none") "—" else if (dia.isBlank()) "فصحى" else dia
+        fun isLocal() = src == "whisper" || src == "sherpa"
+
+        fun localStatus(): String =
+            if (src == "sherpa") (if (SherpaStt.downloaded()) "✅ الموديل نازل" else "⬇ لازم تنزّل الموديل")
+            else (if (Offline.downloaded(Offline.models.firstOrNull { it.id == model } ?: Offline.model())) "✅ الموديل نازل" else "⬇ لازم تنزّل الموديل")
+
+        /** null = تمام. forStart: بيفحص كمان إن موديل الأوفلاين نازل */
+        fun blocker(forStart: Boolean): String? {
+            sync()
+            when (src) {
+                "whisper" -> {
+                    if (!WhisperLib.loaded) return "الأوفلاين مش مدعوم على جهازك"
+                    if (forStart && !Offline.remoteOn() && !Offline.downloaded(Offline.models.firstOrNull { it.id == model } ?: Offline.model())) return "① نزّل موديل Whisper الأول — دوس على كارت ①"
+                }
+                "sherpa" -> {
+                    if (!SherpaStt.supported()) return "جهازك مش بيدعم SenseVoice"
+                    if (forStart && !Offline.remoteOn() && !SherpaStt.ready()) return "① نزّل موديل SenseVoice الأول — دوس على كارت ①"
+                }
+                "cloud" -> {
+                    if (tr == "none") { if (TrWizard.sttCandidate("") == null) return "① محتاج مفتاح تفريغ (Groq أو ChatGPT)" }
+                    else {
+                        val p = ExtLlm.byId(trId)
+                        if (p == null || !ExtLlm.configured(p) || !ExtLlm.enabled(p)) return "② اختار محرك جاهز (مفتاحه مضبوط)"
+                        if (TrWizard.sttCandidate(trId) == null) return "① محتاج مفتاح تفريغ (Groq أو ChatGPT)"
+                    }
+                }
+            }
+            if (convId.isNotBlank() && dia.isNotBlank() && src != "gemini" && tr != "none" && tr != "gemini") {
+                val cp = ExtLlm.byId(convId)
+                if (cp == null || !ExtLlm.configured(cp)) return "③ مفتاح محوّل اللهجة (" + TrWizard.convLabel(convId) + ") مش مضبوط"
+            }
+            if (tr == "llm" && src != "cloud") {
+                val p = ExtLlm.byId(trId)
+                if (p == null || !ExtLlm.configured(p)) return "② مفتاح المحرك ده مش مضبوط"
+            }
+            return null
+        }
+
+        fun useLocal(mdl: String, sherpaOk: Boolean) {
+            live = false; lang = ""; model = mdl
+            src = if (sherpaOk && SherpaStt.ready()) "sherpa" else "whisper"
+        }
+
+        fun qpresets(hi: Boolean): List<QP> = if (hi) listOf(
+            QP("acc", "🎯 دقيق", "جيميناي يسمع ويترجم: مقاطع 30ث + تنقيح + أصوات الخلفية. أدق نتيجة وبياكل كوتا عالية.") { src = "gemini"; gp = "accurate"; true },
+            QP("fast", "⚡ سريع", "جيميناي بكل المفاتيح بالتوازي، مقاطع 90ث من غير تنقيح. بياكل كوتا عالية.") { src = "gemini"; gp = "fast"; true },
+            QP("full", "👁 شاملة", "صوت بدقة + تنقيح + الوضع البصري للنص اللي في الصورة (بمفتاح الوضع البصري).") { src = "gemini"; gp = "full"; true },
+            QP("ctx", "📝 محلي + سياق", "Whisper small على جهازك يفرّغ، وجيميناي يترجم بالسياق (ضمائر وأجناس أدق). كوتا نص بس — أقل بكتير من الصوت.") { useLocal("small", false); tr = "gemini"; true },
+            QP("only", "✍ تفريغ بس", "النص الأصلي يظهر على طول من غير أي ترجمة. تفريغ على جهازك — من غير كوتا خالص.") { useLocal("small", false); tr = "none"; true }
+        ) else listOf(
+            QP("free", "💰 مجاني بالكامل", "تفريغ على الجهاز + ترجمة جوجل من غير مفتاح ولا كوتة. فصحى.") { useLocal("small", false); tr = "google"; dia = ""; diaSet = true; true },
+            QP("freeDia", "🗣 مجاني + لهجة", "نفس المجاني، وبعدها اللهجة بتتحوّل بأول محرك LLM جاهز عندك (ChatGPT/Claude/…) — وإلا بجيميناي (نص بس، كوتا قليلة جدًا).") { useLocal("small", false); tr = "google"; dia = TrWizard.dialectWanted().ifBlank { "مصري" }; diaSet = true; convId = readyLlm(false)?.id ?: ""; true },
+            QP("live", "⚡ لحظي", "باتشات قصيرة، وكل باتش يتفرّغ ويتترجم فورًا بجوجل. من غير كوتا.") { useLocal("base", true); tr = "google"; live = true; dia = ""; diaSet = true; true },
+            QP("repo", "🌐 مترجم الريبو", "تفريغ على الجهاز + Lingva (جوجل عبر وسيط، من غير حد يومي ولا مفتاح).") { useLocal("small", false); tr = "free"; trId = "lingva"; dia = ""; diaSet = true; true },
+            QP("keys", "🔑 مفاتيحي", "تفريغ Whisper سحابي (Groq/ChatGPT) + ترجمة ChatGPT/Claude/… بمفتاحك. جيميناي مابيتلمسش.") {
+                val p = readyLlm(true)
+                if (p == null) { Notice.show(act, "🔑 مفيش محرك جاهز (مفتاح ترجمة + مفتاح تفريغ) — اضبطهم من ② الأول", 3500L); false }
+                else { src = "cloud"; tr = "llm"; trId = p.id; live = false; true }
+            },
+            QP("only", "✍ تفريغ بس", "النص الأصلي يظهر على طول من غير أي ترجمة. تفريغ على جهازك — من غير كوتا.") { useLocal("small", false); tr = "none"; true }
+        )
+
+        /** (v287) ترتيب البريستات بالنتيجة: الجاهز على جهازك الأول (موديل نازل / مفتاح موجود)، والناقص آخر الصف بسبب مكتوب. الترتيب الأصلي بيكسر التعادل */
+        fun qScore(id: String): Pair<Int, String> {
+            val localOk = try { WhisperLib.loaded && Offline.downloaded(Offline.models.firstOrNull { it.id == "small" } ?: Offline.model()) } catch (_: Throwable) { false }
+            val baseOk = try { WhisperLib.loaded && Offline.downloaded(Offline.models.firstOrNull { it.id == "base" } ?: Offline.model()) || (SherpaStt.supported() && SherpaStt.ready()) } catch (_: Throwable) { false }
+            val gem = TrWizard.hasGeminiKey()
+            return when (id) {
+                "acc", "fast", "full" -> if (gem) 100 to "" else 20 to "محتاج مفتاح جيميناي"
+                "ctx" -> if (!gem) 20 to "محتاج مفتاح جيميناي" else if (!localOk) 60 to "هتنزّل Whisper small" else 100 to ""
+                "free" -> if (localOk) 100 to "" else 60 to "هتنزّل Whisper small"
+                "freeDia" -> if (!localOk) 60 to "هتنزّل Whisper small" else if (readyLlm(false) != null) 110 to "" else if (gem) 90 to "" else 70 to "اللهجة محتاجة محرك LLM أو مفتاح جيميناي"
+                "live" -> if (baseOk) 100 to "" else 60 to "هتنزّل موديل التفريغ"
+                "repo" -> if (localOk) 95 to "" else 60 to "هتنزّل Whisper small"
+                "keys" -> if (readyLlm(true) != null) 105 to "" else 15 to "محتاج مفتاح ترجمة + مفتاح تفريغ"
+                "only" -> if (localOk) 90 to "" else 60 to "هتنزّل Whisper small"
+                else -> 50 to ""
+            }
+        }
+
+        fun rankQp(list: List<QP>): List<QP> {
+            val scored = list.mapIndexed { i, q -> Triple(q, qScore(q.id), i) }
+            val sorted = scored.sortedWith(compareByDescending<Triple<QP, Pair<Int, String>, Int>> { it.second.first }.thenBy { it.third })
+            val best = sorted.firstOrNull()?.takeIf { it.second.first >= 90 }?.first?.id
+            return sorted.map { (q, sc, _) ->
+                val why = sc.second
+                QP(q.id, (if (q.id == best) "⭐ " else "") + q.label + (if (why.isNotEmpty() && sc.first <= 70) " ⚠" else ""),
+                    q.desc + (if (why.isNotEmpty()) "\n⚠ " + why else if (q.id == best) "\n⭐ الأنسب لإعدادك دلوقتي" else ""), q.go)
+            }
+        }
+
+        fun applyQp(q: QP) {
+            if (!q.go()) return
+            lastQp = q.id; probe.clear(); normalize(); sync()
+            val b = blocker(true)
+            if (b != null && isLocal()) {
+                Notice.show(act, "⬇ $b", 3200L); hubFlow = true
+                go { if (src == "sherpa") stepSherpa() else stepStt() }
+                return
+            }
+            stepHub()
+        }
+
+        fun pill(t: String, on: Boolean, f: () -> Unit): View {
+            val b = IconTextView(act).apply {
+                text = t; textSize = 13f; typeface = Typeface.DEFAULT_BOLD; gravity = Gravity.CENTER
+                setPadding(ui.dp(12), ui.dp(8), ui.dp(12), ui.dp(8)); setTextColor(th.text)
+                background = ui.box(if (on) ((th.primary and 0x00FFFFFF) or 0x33000000) else th.surface, if (on) th.primary else th.border, 18)
+            }
+            Glass.pressable(b); b.setOnClickListener { f() }
+            return b
+        }
+
+        fun card(num: String, title: String, value: String, sub0: String, lock: String, pk: String, f: () -> Unit) {
+            val locked = lock.isNotEmpty()
+            val pr = probe[pk]
+            val sub = sub0 + (if (probing.contains(pk)) "\n🧪 ⏳ بيجرّب…" else if (pr != null) "\n🧪 " + (if (pr.first) "✅ " else "❌ ") + pr.second else "")
+            val item = LinearLayout(act).apply {
+                orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL
+                setPadding(ui.dp(14), ui.dp(10), ui.dp(14), ui.dp(10)); background = ui.box(th.surface, th.border, 14)
+                alpha = if (locked) 0.6f else 1f
+            }
+            val head = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; gravity = Gravity.CENTER_VERTICAL }
+            head.addView(ui.text("$num $title", 12f, th.muted, true), LinearLayout.LayoutParams(0, -2, 1f))
+            head.addView(ui.text("🧪", 14f, th.text).apply { setPadding(ui.dp(12), ui.dp(4), ui.dp(12), ui.dp(4)); setOnClickListener { runProbe(pk) } })
+            head.addView(ui.text(if (locked) "🔒 $lock" else "تغيير ›", 12f, th.primary, true))
+            item.addView(head)
+            item.addView(ui.text(value, 15.5f, th.text, true).apply { setPadding(0, ui.dp(4), 0, 0) })
+            if (sub.isNotBlank()) item.addView(ui.text(sub, 11.5f, th.muted).apply { setLineSpacing(0f, 1.1f); setPadding(0, ui.dp(3), 0, 0) })
+            Glass.pressable(item); item.setOnClickListener { f() }
+            body.addView(item, LinearLayout.LayoutParams(-1, -2).apply { setMargins(0, ui.dp(2), 0, ui.dp(2)) })
+        }
+
+        fun arrow() { body.addView(ui.text("▼", 12f, th.muted).apply { gravity = Gravity.CENTER }, LinearLayout.LayoutParams(-1, -2)) }
+
+        fun footSm(t: String, main: Boolean, f: () -> Unit) {
+            val b = IconTextView(act).apply {
+                text = t; textSize = 13f; gravity = Gravity.CENTER; typeface = Typeface.DEFAULT_BOLD
+                setPadding(ui.dp(4), ui.dp(12), ui.dp(4), ui.dp(12))
+                setTextColor(if (main) (if (th.isLight) Color.WHITE else Color.BLACK) else th.text)
+                background = if (main) Glass.primaryFill(th, ui.dp(12).toFloat()) else ui.box(th.surface, th.border, 12)
+            }
+            Glass.pressable(b); b.setOnClickListener { f() }
+            foot.addView(b, LinearLayout.LayoutParams(0, -2, 1f).apply { setMargins(ui.dp(3), 0, ui.dp(3), 0) })
+        }
+
+        fun stepHub() {
+            hubFlow = false; repoToHub = false; hubActive = true
+            sync()
+            reset(if (edit) "⚙ خط الترجمة" else "▶ خط الترجمة")
+            val hi = quotaHigh()
+            val auto = Cfg.str("tr_quota", "auto") == "auto"
+            note("اختار بريست جاهز على حسب كوتا جيميناي عندك، أو اظبط الكروت بنفسك. عندك " + Cfg.allMainKeys().size + " مفتاح جيميناي.")
+            // تقسيمة الكوتا
+            val seg = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL }
+            seg.addView(pill("🔥 هاي كوتا", hi && !auto) { Cfg.put("tr_quota", "high"); lastQp = ""; stepHub() }, LinearLayout.LayoutParams(0, -2, 1f).apply { setMargins(ui.dp(2), 0, ui.dp(2), 0) })
+            seg.addView(pill("🪫 لو كوتا", !hi && !auto) { Cfg.put("tr_quota", "low"); lastQp = ""; stepHub() }, LinearLayout.LayoutParams(0, -2, 1f).apply { setMargins(ui.dp(2), 0, ui.dp(2), 0) })
+            seg.addView(pill("🔄 تلقائي" + if (auto) (if (hi) " (هاي)" else " (لو)") else "", auto) { Cfg.put("tr_quota", "auto"); lastQp = ""; stepHub() }, LinearLayout.LayoutParams(0, -2, 1f).apply { setMargins(ui.dp(2), 0, ui.dp(2), 0) })
+            body.addView(seg, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = ui.dp(6) })
+            // البريستات
+            val list = rankQp(qpresets(hi))   // (v287) مترتبة بالجاهزية
+            val hs = android.widget.HorizontalScrollView(act).apply { isHorizontalScrollBarEnabled = false; layoutDirection = View.LAYOUT_DIRECTION_RTL }
+            val row = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL }
+            for (q in list) row.addView(pill(q.label, q.id == lastQp) { applyQp(q) }, LinearLayout.LayoutParams(-2, -2).apply { setMargins(ui.dp(3), 0, ui.dp(3), 0) })
+            hs.addView(row)
+            body.addView(hs, LinearLayout.LayoutParams(-1, -2))
+            body.addView(ui.text(list.firstOrNull { it.id == lastQp }?.desc ?: (if (hi) "هاي كوتا: الدقة والسرعة أهم من توفير الكوتا — دوس على بريست." else "لو كوتا: توفير الكوتا أهم — التفريغ والترجمة على الجهاز أو بمفاتيح خارجية. دوس على بريست."), 12f, th.muted).apply { setLineSpacing(0f, 1.15f); setPadding(ui.dp(4), ui.dp(6), ui.dp(4), ui.dp(8)) })
+            // شريط الملخص
+            body.addView(ui.text("① " + srcName() + "  ←  ② " + trName() + "  ←  ③ " + diaName(), 12.5f, th.text, true).apply {
+                setLineSpacing(0f, 1.2f); gravity = Gravity.CENTER
+                setPadding(ui.dp(10), ui.dp(8), ui.dp(10), ui.dp(8)); background = ui.box((th.primary and 0x00FFFFFF) or 0x1A000000, th.border, 12)
+            }, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = ui.dp(8) })
+            // الكروت
+            card("①", "تفريغ — مين يسمع الكلام؟", srcName(),
+                (when (src) { "gemini" -> (if (tr == "none") "💸 كوتا جيميناي (تفريغ بس — أقل من الترجمة)" else "💸💸 كوتا جيميناي عالية (الصوت كله بيتبعت له)"); "cloud" -> "🔑 كوتا مفتاحك الخارجي · الصوت بيتبعت لخدمة خارجية"; else -> "🆓 على جهازك من غير كوتا · " + localStatus() + " · لغة: " + TrWizard.langLabel(lang) }), "", "1") { go { stepCardStt() } }
+            arrow()
+            card("②", "ترجمة — مين يترجم؟", trName(), if (tr == "none") "النص الأصلي بيظهر من غير ترجمة" else if (src == "gemini") "مدمج مع ① — جيميناي بيسمع ويترجم في طلب واحد" else (when (tr) { "gemini" -> "💸 كوتا جيميناي (نص بس)"; "llm" -> "🔑 كوتا مفتاحك"; else -> "🆓 مجاني" }), "", "2") { go { stepCardTr() } }
+            arrow()
+            card("③", "لهجة", diaName(),
+                if (tr == "none") "مفيش ترجمة فمفيش لهجة" else if (src == "gemini") "جيميناي بيترجم باللهجة دي على طول" else if (dia.isBlank()) "من غير تحويل — الترجمة فصحى" else if (tr == "gemini") "جيميناي بيترجم باللهجة دي على طول" else "التحويل بـ " + TrWizard.convLabel(convId) + " (نص بس)" + (if (convId.isBlank() && !TrWizard.hasGeminiKey()) " · ⚠ محتاج مفتاح جيميناي" else ""), if (tr == "none") "من غير ترجمة" else "", "3") { if (tr == "none") Notice.show(act, "③ مفيش لهجة من غير ترجمة — اختار مترجم في ②", 2800L) else go { stepCardDia() } }
+            fallbackLine().takeIf { it.isNotEmpty() }?.let { body.addView(ui.text(it, 11.5f, th.muted).apply { setLineSpacing(0f, 1.15f); setPadding(ui.dp(4), ui.dp(6), ui.dp(4), ui.dp(4)) }) }
+            opt("🧪 جرّب الخط كله", "بيجرّب كل كارت بطلب صغير حقيقي ويعرض الزمن أو سبب الفشل — جيميناي بياخد طلب واحد بس. أو دوس 🧪 على كارت لوحده.", false) { runProbe("1"); runProbe("2"); runProbe("3") }
+            opt("⋯ أكتر", "ترتيب الترجمة · الإعداد المحفوظ · الخطوات القديمة (خطوة خطوة)", false) { go { stepSummary() } }
+            // الأزرار
+            footSm("إغلاق", false) { dlg.dismiss() }
+            if (edit) footSm("💾 احفظ", true) {
+                val b = blocker(false)
+                if (b != null) Notice.show(act, "⚠ $b", 3200L) else { onDone(plan(), true, false); dlg.dismiss() }
+            } else {
+                footSm("▶ المرة دي", false) {
+                    val b = blocker(true)
+                    if (b != null) Notice.show(act, "⚠ $b", 3200L) else { onDone(plan(), false, true); dlg.dismiss() }
+                }
+                footSm("💾 احفظ وابدأ", true) {
+                    val b = blocker(true)
+                    if (b != null) Notice.show(act, "⚠ $b", 3200L) else { onDone(plan(), true, true); dlg.dismiss() }
+                }
+            }
+        }
+
+        /** ① التفريغ: الاختيارات بتترتّب حسب الكوتا (هاي: جيميناي الأول · لو: اللي على الجهاز الأول) */
+        fun stepCardStt() {
+            reset("① التفريغ — مين يسمع الكلام؟")
+            val hi = quotaHigh()
+            note("اختيارك هنا بيحدد اختيارات ② الترجمة. 🆓 من غير كوتا · 💸 بياكل كوتا جيميناي · 🔑 كوتا مفتاحك. الترتيب حسب " + (if (hi) "هاي كوتا" else "لو كوتا") + ".")
+            fun gemOpt() = opt("✨ جيميناي (يسمع ويترجم في طلب واحد)", "💸💸 كوتا عالية · أدق في الضمائر والأصوات · ② و③ بيتدمجوا فيه", src == "gemini") {
+                src = "gemini"; live = false; normalize(); sync(); go { stepCardGem() }
+            }
+            fun whisperOpt() = opt("📴 Whisper على الجهاز", "🆓 " + (if (WhisperLib.loaded) "بتختار الحجم وبتنزّله مرة واحدة · كل اللغات" else "⛔ جهازك مش بيدعمه"), src == "whisper") {
+                if (!WhisperLib.loaded) Notice.show(act, "الأوفلاين مش مدعوم على جهازك", 2500L)
+                else { src = "whisper"; engine = "whisper"; live = false; normalize(); sync(); hubFlow = true; go { stepStt() } }
+            }
+            fun sherpaOpt() = opt("📴 SenseVoice على الجهاز", "🆓 أسرع غالبًا · إنجليزي وياباني وكوري وصيني بس · موديل ~" + SherpaStt.MODEL_MB + " ميجا", src == "sherpa") {
+                if (!SherpaStt.supported()) Notice.show(act, "جهازك مش بيدعم sherpa-onnx", 2500L)
+                else { src = "sherpa"; engine = "sherpa"; live = false; if (!SherpaStt.handles(lang)) lang = ""; normalize(); sync(); hubFlow = true; go { stepSherpa() } }
+            }
+            fun cloudOpt() = opt("☁ Whisper سحابي (Groq / ChatGPT)", "🔑 بمفتاحك · الصوت بيتبعت لخدمة خارجية · ② بتبقى محرك LLM بس", src == "cloud") {
+                val p = readyLlm(true)
+                val okKey = if (tr == "none") TrWizard.sttCandidate("") != null else p != null
+                if (!okKey) { Notice.show(act, "🔑 اضبط مفتاح Groq أو ChatGPT (ترجمة + تفريغ) الأول", 3500L); go { stepEditKeys() } }
+                else { src = "cloud"; live = false; if (tr != "none" && p != null && (tr != "llm" || TrWizard.sttCandidate(trId) == null)) { tr = "llm"; trId = p.id }; sync(); toHub() }
+            }
+            if (hi) { gemOpt(); whisperOpt(); sherpaOpt(); cloudOpt() }
+            else { whisperOpt(); sherpaOpt(); cloudOpt(); note("⬇ اختيارات بتاكل كوتا:"); gemOpt() }
+            if (isLocal()) opt("🌍 لغة الفيديو: " + TrWizard.langLabel(lang), "بيخلّي التفريغ أدق", false) { go { stepCardLang() } }
+            footBtn("تمام ✓", true) { toHub() }
+            addBack()
+        }
+
+        fun stepCardLang() {
+            reset("🌍 لغة الفيديو")
+            note("«تلقائي» بيكتشف اللغة، بس التفريغ أدق لما المقطع كله بلغة واحدة.")
+            for ((id, label) in TrWizard.sttLangs) {
+                val sherpaNo = src == "sherpa" && !SherpaStt.handles(id)
+                opt(label, if (sherpaNo) "⚠ SenseVoice مابيفهمهاش — هيتحوّل لـ Whisper" else "", lang == id) {
+                    lang = id
+                    if (sherpaNo) { src = "whisper"; engine = "whisper"; normalize(); sync() }
+                    back()
+                }
+            }
+            addBack()
+        }
+
+        fun stepCardGem() {
+            reset("✨ نوع ترجمة جيميناي")
+            note("جيميناي بيسمع ويترجم. اختار النمط — بيظبط المقاطع والتنقيح وتوزيع المفاتيح.")
+            opt("🔑 مفاتيح جيميناي ووضعها", Cfg.keys("keys").size.toString() + " مفتاح" + (if (Cfg.bool("kmode_adv", false)) " · وضع " + KeyMode.short(Cfg.int("kmode", 1)) else ""), false) { go { stepGemKeys() } }
+            for (pr in TrPresets.all) opt(pr.icon + " " + pr.name, pr.desc, gp == pr.id) { gp = pr.id; src = "gemini"; normalize(); sync(); toHub() }
+            opt("⚙ الإعدادات الحالية", "من غير ما أغيّر أي إعداد", gp == CURRENT) { gp = CURRENT; src = "gemini"; normalize(); sync(); toHub() }
+            addBack()
+        }
+
+        fun llmOpts() {
+            for (pr in ExtLlm.presets) {
+                val cfgd = ExtLlm.configured(pr)
+                val bw = if (cfgd) ExtLlm.blockedWhy(pr) else null
+                val stt = TrWizard.sttCandidate(pr.id)
+                val st = if (!cfgd) "🔑 محتاج مفتاح — دوس تضبطه" else if (!ExtLlm.enabled(pr)) "⏸ موقوف" else if (bw != null) "⛔ $bw" else "✅ جاهز · " + ExtLlm.model(pr)
+                val sd = if (src == "cloud" && cfgd && stt == null) "\n⚠ محتاج مفتاح تفريغ (Groq أو ChatGPT)" else ""
+                opt("🤖 " + pr.label, "🔑 كوتا مفتاحك · " + st + sd, tr == "llm" && trId == pr.id) {
+                    if (!cfgd) PublicApisUi.editDialog(act, ui, th, pr) { stepCardTr() }
+                    else if (src == "cloud" && stt == null) Notice.show(act, "🔑 اضبط مفتاح Groq أو ChatGPT (للتفريغ) الأول", 3500L)
+                    else { tr = "llm"; trId = pr.id; sync(); toHub() }
+                }
+            }
+        }
+
+        /** ② الترجمة: الاختيارات بتتحدد بنوع التفريغ ①، وبتترتّب حسب الكوتا */
+        fun stepCardTr() {
+            reset("② الترجمة — مين يترجم؟")
+            val hi = quotaHigh()
+            fun noneOpt() = opt("✍ بدون ترجمة (تفريغ بس)", "النص الأصلي يظهر بلغته من غير أي ترجمة · " + (if (src == "gemini") "💸 كوتا جيميناي أقل من الترجمة" else if (src == "cloud") "🔑 كوتا التفريغ بس" else "🆓 من غير كوتا") + "\nلو عايز تترجمه بعدين اختار خطة ترجمة — الجمل الأجنبية بتتصلّح بجيميناي", tr == "none") { tr = "none"; trId = ""; sync(); toHub() }
+            if (src == "gemini") {
+                note("جيميناي بيسمع ويترجم في طلب واحد. لو عايز مترجم تاني غيّر ① لتفريغ على الجهاز أو سحابي.")
+                opt("✨ مدمج في جيميناي (يسمع ويترجم)", "💸💸 كوتا عالية · أدق في الضمائر والأصوات", tr == "gemini") { tr = "gemini"; sync(); toHub() }
+                noneOpt()
+                opt("↩ غيّر ① التفريغ", "", false) { toHub(); go { stepCardStt() } }
+                addBack(); return
+            }
+            if (src == "cloud") {
+                note("التفريغ السحابي بيشتغل حاليًا مع محرك LLM بس (ChatGPT / Claude / Groq / …). جوجل والريبو محتاجين تفريغ على الجهاز — غيّر ① لو عايزهم.")
+                llmOpts()
+                noneOpt()
+                opt("↩ غيّر ① التفريغ", "", false) { toHub(); go { stepCardStt() } }
+                addBack(); return
+            }
+            note("الاختيارات الـ🆓 من غير كوتا. الترتيب حسب " + (if (hi) "هاي كوتا" else "لو كوتا") + ".")
+            fun gemOpt() = opt("✨ جيميناي بالسياق", "💸 كوتا جيميناي (نص بس) · أدق في الضمائر والأسماء والجنس", tr == "gemini") { tr = "gemini"; trId = ""; sync(); toHub() }
+            fun googleOpt() = opt("🏠 جوجل الداخلي", "🆓 من غير مفتاح · فصحى جملة جملة · ③ لهجة بتتحوّل بجيميناي", tr == "google") { tr = "google"; trId = ""; sync(); toHub() }
+            fun repoOpt() = opt("🌐 مجاني من الريبو", "🆓 MyMemory · Lingva · LibreTranslate — بتفحصهم وتختار الأسرع" + (if (tr == "free") "\nالحالي: " + trName() else ""), tr == "free") { repoToHub = true; go { stepRepo() } }
+            if (hi) { gemOpt(); googleOpt(); repoOpt(); llmOpts() }
+            else { googleOpt(); repoOpt(); llmOpts(); note("⬇ اختيار بياكل كوتا:"); gemOpt() }
+            noneOpt()
+            addBack()
+        }
+
+        fun stepCardDia() {
+            reset("③ لهجة الترجمة")
+            note(when {
+                src == "gemini" -> "جيميناي بيترجم باللهجة اللي تختارها على طول."
+                tr == "gemini" -> "جيميناي بيترجم باللهجة اللي تختارها على طول."
+                else -> "المترجم ده بيطلّع فصحى. لو اخترت لهجة المحوّل (جيميناي أو محرك LLM بمفتاحك — من «🔄 يحوّل اللهجة بـ») بيحوّل النص ليها بعد الترجمة (نص بس — كوتا قليلة). فصحى = من غير تحويل."
+            } + (if (convId.isBlank() && src != "gemini" && tr != "gemini" && !TrWizard.hasGeminiKey()) "\n⚠ مفيش مفتاح جيميناي — اختار محوّل LLM أو ضيف مفتاح." else ""))
+            if (src != "gemini" && tr != "gemini") opt("🔄 يحوّل اللهجة بـ: " + (if (convId.isBlank()) "✨ جيميناي" else "🤖 " + TrWizard.convLabel(convId)), (if (convId.isBlank()) "💸 كوتا جيميناي (نص بس)" else "🔑 كوتا مفتاحك — جيميناي مابيتلمسش") + " · دوس تغيّره", false) { go { stepCardConv() } }
+            for (d in TrWizard.dialects) {
+                val v = if (d == "فصحى") "" else d
+                opt(d, "", dia == v) { dia = v; diaSet = true; sync(); toHub() }
+            }
+            addBack()
+        }
+
+        /** (v281) مين يحوّل الفصحى للهجة: جيميناي أو أي محرك LLM بمفتاحك */
+        fun stepCardConv() {
+            reset("🔄 محوّل اللهجة")
+            note("المترجم بيطلّع فصحى، والمحوّل بيحوّلها للهجة اللي اخترتها (نص بس). لو المحوّل وقف بيكمّل جيميناي (لو عندك مفتاح).")
+            opt("✨ جيميناي", "💸 كوتا جيميناي (نص بس) · " + (if (TrWizard.hasGeminiKey()) "✅ فيه مفتاح" else "⚠ مفيش مفتاح جيميناي"), convId.isBlank()) { convId = ""; back() }
+            for (pr in ExtLlm.presets) {
+                val cfgd = ExtLlm.configured(pr)
+                val bw = if (cfgd) ExtLlm.blockedWhy(pr) else null
+                val st = if (!cfgd) "🔑 محتاج مفتاح — دوس تضبطه" else if (!ExtLlm.enabled(pr)) "⏸ موقوف" else if (bw != null) "⛔ $bw" else "✅ جاهز · " + ExtLlm.model(pr)
+                opt("🤖 " + pr.label, "🔑 كوتا مفتاحك · " + st, convId == pr.id) {
+                    if (!cfgd) PublicApisUi.editDialog(act, ui, th, pr) { stepCardConv() }
+                    else { convId = pr.id; back() }
+                }
+            }
+            addBack()
+        }
+
         fun start() {
             val dm = act.resources.displayMetrics
             val root = LinearLayout(act).apply {
@@ -537,7 +1079,7 @@ object TrWizard {
                 setGravity(Gravity.CENTER)
             }
             dlg.onBack = { if (hist.size > 1) { back(); true } else false }
-            if (edit) go { stepSummary() } else go { stepMode() }
+            go { stepHub() }   // (v279) شاشة الكروت (الخطوات القديمة من «⋯ أكتر»)
             dlg.show()
         }
     }

@@ -174,7 +174,7 @@ object Offline {
     fun whyOff(): String? = when {
         !Cfg.bool("stt_offline", false) -> null
         System.currentTimeMillis() < coolUntil -> "📴 الأوفلاين مرتاح لحد ما تعدّي 5 دقايق بعد الأعطال — جيميناي هو اللي بينسخ دلوقتي"
-        !engine().ready() -> "📴 الأوفلاين مفعّل بس موديل التفريغ مش نازل — جيميناي هو اللي بينسخ. نزّله من الإعدادات ← الصوت والصورة"
+        !engine().ready() -> "📴 الأوفلاين مفعّل بس موديل التفريغ مش نازل — جيميناي هو اللي بينسخ. نزّله من الإعدادات ← 🎙 التفريغ والصوت"
         else -> null
     }
 
@@ -199,7 +199,7 @@ object Offline {
             if (t.isEmpty() || t.startsWith("[") && t.endsWith("]") || t.startsWith("(") && t.endsWith(")")) continue   // [موسيقى] (تصفيق) — مش كلام
             if ((g.noSpeech > 0.6 && g.logProb < -0.8) || g.logProb < -1.8) continue
             out.put(JSONObject().put("start", g.start).put("end", g.end).put("original", t)
-                .put("gender", "male").put("addressee", "unknown").put("topic_gender", "none")
+                .put("gender", "unknown").put("addressee", "unknown").put("topic_gender", "none")
                 .put("people", JSONArray()).put("places", JSONArray()).put("is_song", false).put("emotion", "neutral")
                 .put("low_confidence", g.logProb < -1.0).put("overlap", false).put("speaker_tag", "").put("is_continuation", false).put("faint", false))
         }

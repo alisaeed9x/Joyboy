@@ -52,7 +52,7 @@ object ModelWatch {
                     Cfg.p.edit().putStringSet("mw_seen", seen).putString("model_new", pend.joinToString(",")).apply()
                     act.runOnUiThread {
                         if (!act.isFinishing && !act.isDestroyed)
-                            Notice.show(act, "🆕 جوجل طلّعت موديل flash-lite أحدث من الحالي: " + fresh.joinToString("، ") + "\nالإعدادات ← الموديل ← «🔄 جلب كل الموديلات» وإختاره", 9000L)
+                            Notice.show(act, "🆕 جوجل طلّعت موديل flash-lite أحدث من الحالي: " + fresh.joinToString("، ") + "\nالإعدادات ← 🤖 الموديل والأداء ← «🔄 جلب كل الموديلات» وإختاره", 9000L)
                     }
                 }
             } catch (_: Exception) { }
