@@ -63,6 +63,7 @@ class Engine(
     private val tplFails = HashMap<String, Int>()
     @Volatile private var srcLang = ""
     @Volatile private var detDone = false
+    private val offSession = Offline.Session()   // (v267) قفل لغة الأوفلاين للفيديو ده
     private val done = Ranges()
     private val failed = ConcurrentHashMap<Int, Int>()
     private val gapPass = ConcurrentHashMap<Int, Int>()
@@ -826,6 +827,7 @@ class Engine(
         var key = firstKey?.takeIf { pool.ok(it) } ?: nextKey(avoidKey) ?: throw Exception("كل المفاتيح معطلة مؤقتًا — راجع المفاتيح")
         var partial = false
         var trunc = 0; var empties = 0; var bad = 0; var net = 0; var tries = 0; var langBad = 0
+        var langRetry = 0
         var srv = 0; var altModel: String? = null   // (v227) 503/5xx متكرر: الباتش يتجرّب على موديل بديل
         val tx = activeMode >= KeyMode.SPLIT_A && i !in fullChunks   // (v210) ترانسكريبشن بس، والترجمة بعدين مجمّعة على مفاتيح الترجمة
         while (running && tries++ < MAX_TRIES) {
@@ -840,7 +842,7 @@ class Engine(
                     try {
                         val gem = { Api.generate(mdl, key, prompt, w.bytes, maxTokens = Api.outTokens(w.durSec)) }
                         // (v253) ترانسكريبشن أوفلاين (Whisper على الجهاز) — لو فشل جيميناي (gem) بيكمّل الباتش
-                        (if (tx && Offline.on()) Offline.transcribe(w.bytes, w.durSec, effectiveGloss().joinToString(", ") { it.term }, { host.log(it) }, gem, { host.notice(it) })
+                        (if (tx && Offline.on()) Offline.transcribe(w.bytes, w.durSec, effectiveGloss().joinToString(", ") { it.term }, { host.log(it) }, gem, { host.notice(it) }, offSession)
                             else { if (tx) Offline.whyOff()?.let { m -> host.log(m); Offline.softNotice(m) { host.notice(it) } }; gem() }).also { pool.end(key, System.currentTimeMillis() - t0, true) }
                     } catch (e: Throwable) { pool.end(key, 0, false); throw e }
                 }
@@ -859,14 +861,21 @@ class Engine(
                     nap(400); continue
                 }
                 if (off.isNotEmpty()) fresh = fixForeign(fresh)
-                if (fresh.isEmpty() && !w.silent && !hedge && !backupFirst && queueBackup(i, p, "رجع من غير جمل")) return   // (v216) صفر جمل: على المفتاح الاحتياطي بالترتيب في كل الأوضاع
-                if (fresh.isEmpty() && empties < (if (w.silent) 1 else 3)) {
+                // (v267) الباتش اتفرّغ أوفلاين وطلع فاضي: Whisper بيرجّع نفس النتيجة لو أعدناه — بنعيد مرة واحدة بس لو اللغة اتقفلت بعد ما بدأ، وإلا بنقبله (مفيهوش كلام/موسيقى)
+                val offRan = tx && Offline.ranOffline.get() == true
+                if (fresh.isEmpty() && offRan) {
+                    val lk = offSession.lang
+                    if (!w.silent && !hedge && lk.isNotEmpty() && lk != Offline.usedLang.get().orEmpty() && langRetry++ < 1) { host.log("🌐 المقطع ${i + 1}: فاضي — إعادة واحدة باللغة المقفولة ($lk)"); continue }
+                    host.log("🔇 المقطع ${i + 1}: Whisper ما لقاش كلام — اتقبل من غير إعادة")
+                }
+                if (!offRan && fresh.isEmpty() && !w.silent && !hedge && !backupFirst && queueBackup(i, p, "رجع من غير جمل")) return   // (v216) صفر جمل: على المفتاح الاحتياطي بالترتيب في كل الأوضاع
+                if (!offRan && fresh.isEmpty() && empties < (if (w.silent) 1 else 3)) {
                     empties++
                     if (!w.silent) host.log("⚠ المقطع ${i + 1} رجع من غير جمل رغم وجود صوت — إعادة محاولة ($empties/3)")
                     switchKey(key)?.let { key = it }
                     nap(400); continue
                 }
-                if (fresh.isEmpty() && !w.silent) { partial = true; host.log("⚠ المقطع ${i + 1} لسه من غير جمل — هيتحاول تاني كفجوة") }
+                if (!offRan && fresh.isEmpty() && !w.silent) { partial = true; host.log("⚠ المقطع ${i + 1} لسه من غير جمل — هيتحاول تاني كفجوة") }
                 pool.good(key)
                 if (!claimed.add(i)) { host.log("↩ باتش ${i + 1}: نسخة تانية خلصته قبلها — اتجاهلت دي"); return }
                 if (i > maxApplied) maxApplied = i
@@ -1054,7 +1063,9 @@ class Engine(
         quotaCapUntil = now + 5 * 60_000L
     }
     /** الاستعلامات الجانبية (بحث اسم العمل · الشخصيات) بتشتغل بس لو فيه مفتاح شغّال ومفيش 429 جديد — عشان ماتاخدش كوتة من الترجمة نفسها */
-    private fun sideOk(): Boolean = !keyless && System.currentTimeMillis() >= quotaCapUntil && basePool.all().any { basePool.ok(it) }
+    /** (v267) في «أوفلاين + جوجل» مهام جيميناي الجانبية (سدّ الفجوات · الضمائر · الشخصيات/اسم العمل) واقفة — إلا لو side_in_google=1 */
+    private fun sideOff(): Boolean = keyless || (TrWizard.googleOn() && !Cfg.bool("side_in_google", false))
+    private fun sideOk(): Boolean = !sideOff() && System.currentTimeMillis() >= quotaCapUntil && basePool.all().any { basePool.ok(it) }
     private fun showTranscriptPreview(i: Int, p: Prep, fresh: List<Sub>) {
         if (isClosed || fresh.isEmpty()) return
         try {
@@ -1567,7 +1578,7 @@ class Engine(
 
     // --- تحليل الشخصيات تلقائيًا (_maybeAutoAnalyzeCharacters / analyzeCharacters) ---
     private fun maybeAnalyze() {
-        if (keyless) return
+        if (sideOff()) return
         if (!conf.autoChars || conf.manualChars.isNotEmpty()) return
         maybeLookup()
         maybeIdentify()
@@ -1717,7 +1728,7 @@ class Engine(
 
     // --- تصحيح الضمائر تلقائيًا (_maybeAutoCorrectPronouns) ---
     private fun maybePronouns() {
-        if (!conf.autoPronouns) return
+        if (sideOff() || !conf.autoPronouns) return
         if (effectiveChars().isEmpty()) return
         synchronized(lock) {
             if (pronBusy || subs.size < PRON_MIN_LINES || pronUpTo >= subs.size) return
@@ -2282,7 +2293,7 @@ class Engine(
     // ===== سدّ الفجوات تلقائيًا أثناء المشاهدة (autoGapFill) =====
     /** مناطق اتترجمت بس مفيهاش جمل لمدة طويلة، قريبة من مكان التشغيل: بتتبعت بمفاتيح المراقبين/الاحتياطي وبتتعلّم بـ «» */
     private fun gapTick(all: Boolean = false): Boolean {
-        if (keyless) return false
+        if (sideOff()) return false
         if (!conf.gapFill || !running) return false
         val now = System.currentTimeMillis()
         if (now - lastGapScan < Gaps.COOLDOWN_MS) return false

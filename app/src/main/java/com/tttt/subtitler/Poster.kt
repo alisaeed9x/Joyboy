@@ -8,6 +8,7 @@ import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
 import java.net.URLEncoder
+import java.util.concurrent.ConcurrentHashMap
 
 /**
  * (v193) غلاف الأغنية (البوستر) من قواعد بيانات مجانية من غير مفتاح.
@@ -18,7 +19,12 @@ import java.net.URLEncoder
  * ولو ما لقيناش حاجة بنفتكر ده 7 أيام عشان ما نكرّرش الطلب.
  */
 object Poster {
+    private const val BROWSER_UA = "Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Mobile Safari/537.36"
     private const val UA = "Subtitler/2.50 (Android; Arabic subtitle app)"   // MusicBrainz بيطلب User-Agent معرّف بالتطبيق
+
+    /** (v269) اسم الألبوم/المصدر لكل رابط غلاف — بيظهر تحت الصورة في شاشة الاختيار */
+    private val labels = ConcurrentHashMap<String, String>()
+    private fun label(u: String, l: String) { if (l.isNotBlank() && !labels.containsKey(u)) labels[u] = l.trim() }
 
     private fun dir(ctx: Context) = File(ctx.filesDir, "posters").apply { mkdirs() }
     private fun key(title: String, artist: String) = Integer.toHexString((clean(title).lowercase() + "|" + artist.trim().lowercase()).hashCode())
@@ -44,7 +50,10 @@ object Poster {
     private fun http(url: String, max: Int = 2_000_000): ByteArray? {
         val c = URL(url).openConnection() as HttpURLConnection
         return try {
-            c.connectTimeout = 8000; c.readTimeout = 10000; c.setRequestProperty("User-Agent", UA)
+            c.connectTimeout = 8000; c.readTimeout = 10000
+            // MusicBrainz بيطلب UA معرّف بالتطبيق؛ باقي المواقع (Bing وصور الويب) بتحجب UA غريب
+            c.setRequestProperty("User-Agent", if (url.contains("musicbrainz.org")) UA else BROWSER_UA)
+            c.setRequestProperty("Accept-Language", "en-US,en;q=0.9,ar;q=0.8")
             if (c.responseCode !in 200..299) null else c.inputStream.use { it.readBytes() }.takeIf { it.size in 1..max }
         } catch (_: Throwable) { null } finally { try { c.disconnect() } catch (_: Throwable) {} }
     }
@@ -62,7 +71,7 @@ object Poster {
                 if (!matches(o.optString("trackName"), title)) continue
                 if (artist.isNotBlank() && !matches(o.optString("artistName"), artist)) continue
                 val u = o.optString("artworkUrl100").replace("100x100bb", "600x600bb")
-                if (u.isNotBlank() && u !in out) out.add(u)
+                if (u.isNotBlank() && u !in out) { out.add(u); label(u, o.optString("collectionName").ifBlank { "iTunes" } + " · iTunes") }
             }
         } catch (_: Throwable) {}
         return out
@@ -80,7 +89,7 @@ object Poster {
                 if (!matches(o.optString("title"), title)) continue
                 if (artist.isNotBlank() && !matches(o.optJSONObject("artist")?.optString("name").orEmpty(), artist)) continue
                 val u = o.optJSONObject("album")?.optString("cover_big").orEmpty()
-                if (u.isNotBlank() && u !in out) out.add(u)
+                if (u.isNotBlank() && u !in out) { out.add(u); label(u, (o.optJSONObject("album")?.optString("title").orEmpty().ifBlank { "Deezer" }) + " · Deezer") }
             }
         } catch (_: Throwable) {}
         return out
@@ -107,14 +116,53 @@ object Poster {
                     if (!ok) continue
                 }
                 val rel = o.optJSONArray("releases") ?: continue
-                for (j in 0 until minOf(rel.length(), 3)) {
+                for (j in 0 until minOf(rel.length(), 5)) {
                     val id = rel.optJSONObject(j)?.optString("id").orEmpty()
-                    if (id.isNotBlank()) { val u = "https://coverartarchive.org/release/$id/front-500"; if (u !in out) out.add(u) }
+                    if (id.isNotBlank()) { val u = "https://coverartarchive.org/release/$id/front-500"; if (u !in out) { out.add(u); label(u, rel.optJSONObject(j)?.optString("title").orEmpty().ifBlank { "MusicBrainz" } + " · MusicBrainz") } }
                 }
-                if (out.size >= 5) break
+                if (out.size >= 10) break
             }
         } catch (_: Throwable) {}
         return out
+    }
+
+    // ===== (3b) (v268) YouTube Music — غلاف الأغنية من نتايج «أغاني»، من غير مفتاح =====
+    private fun ytUrls(title: String, artist: String): List<String> {
+        val out = ArrayList<String>()
+        try {
+            for (c in LyricsApi.ytCovers(title, artist)) {
+                if (!matches(c.title, title) && !matches(title, c.title)) continue
+                if (artist.isNotBlank() && !norm(c.info).contains(norm(artist)) && !(norm(artist).length >= 3 && norm(c.info).contains(norm(artist).take(norm(artist).length.coerceAtMost(8))))) continue
+                if (c.url !in out) { out.add(c.url); label(c.url, (c.info.split(" • ", "•").map { it.trim() }.filter { it.isNotBlank() }.getOrNull(2) ?: "YouTube Music") + " · YouTube Music") }
+            }
+        } catch (_: Throwable) {}
+        return out
+    }
+
+    // ===== (3c) (v268) بحث صور Bing (سكرابينج) — آخر حل قبل صورة المغني. الرابط بيتعلّم بـ #sq عشان نفلتر الشكل بعد التنزيل =====
+    private fun bingUrls(title: String, artist: String): List<String> {
+        val out = ArrayList<String>()
+        try {
+            val q = "$artist $title album cover".trim()
+            val u = "https://www.bing.com/images/search?q=${enc(q)}&form=HDRSC2&first=1&qft=+filterui:aspect-square+filterui:imagesize-large"
+            val html = http(u, 3_000_000)?.toString(Charsets.UTF_8) ?: return out
+            val bad = listOf("wikipedia.org", "wikimedia.org", "pinterest", "alamy", "shutterstock", "istockphoto", "dreamstime", "gettyimages", ".svg", ".gif")
+            for (m in Regex("murl&quot;:&quot;(.*?)&quot;").findAll(html)) {
+                val link = m.groupValues[1].replace("\\/", "/").replace("&amp;", "&")
+                if (!link.startsWith("http") || bad.any { link.contains(it, true) }) continue
+                val cand = "$link#sq"
+                if (cand !in out) { out.add(cand); label(cand, (try { URL(link).host.removePrefix("www.") } catch (_: Throwable) { "" }).ifBlank { "Bing" } + " · Bing") }
+                if (out.size >= 24) break
+            }
+        } catch (_: Throwable) {}
+        return out
+    }
+
+    /** صور Bing بس: لازم قريبة من المربّعة وكبيرة (مش لقطة شاشة/بانر) */
+    private fun shapeOk(u: String, b: Bitmap): Boolean {
+        if (!u.endsWith("#sq")) return true
+        val w = b.width; val h = b.height
+        return minOf(w, h) >= 300 && w.toDouble() / h in 0.85..1.18
     }
 
     // ===== (4) صورة المغني (لو الأغنية ملهاش غلاف) — من Deezer =====
@@ -128,17 +176,19 @@ object Poster {
                 val o = arr.optJSONObject(i) ?: continue
                 if (!matches(o.optString("name"), artist)) continue
                 val u = o.optString("picture_xl").ifBlank { o.optString("picture_big") }
-                if (u.isNotBlank() && !u.contains("/artist//") && u !in out) out.add(u)   // «/artist//» = صورة افتراضية فاضية
+                if (u.isNotBlank() && !u.contains("/artist//") && u !in out) { out.add(u); label(u, "صورة المغني · Deezer") }   // «/artist//» = صورة افتراضية فاضية
             }
         } catch (_: Throwable) {}
         return out
     }
 
-    /** كل الأغلفة المطابقة بالترتيب (iTunes ← Deezer ← MusicBrainz ← صورة المغني). بتتجمّع واحد واحد (lazy): المصدر اللي بعده مابيتطلبش إلا لو اللي قبله خلّص */
+    /** كل الأغلفة المطابقة بالترتيب (iTunes ← Deezer ← MusicBrainz ← YouTube Music ← Bing ← صورة المغني). بتتجمّع واحد واحد (lazy): المصدر اللي بعده مابيتطلبش إلا لو اللي قبله خلّص */
     private fun urlSeq(title: String, artist: String): Sequence<String> = sequence<String> {
         yieldAll(itunesUrls(title, artist))
         yieldAll(deezerUrls(title, artist))
         yieldAll(musicBrainzUrls(title, artist))
+        yieldAll(ytUrls(title, artist))
+        yieldAll(bingUrls(title, artist))
         yieldAll(artistPhotoUrls(artist))
     }.distinct()
 
@@ -167,6 +217,7 @@ object Poster {
             for (u in urlSeq(title, artist)) {
                 val bytes = http(u) ?: continue
                 val bmp = BitmapFactory.decodeByteArray(bytes, 0, bytes.size) ?: continue
+                if (!shapeOk(u, bmp)) continue
                 File(dir(ctx), "$k.jpg").writeBytes(bytes)
                 return bmp
             }
@@ -188,11 +239,43 @@ object Poster {
             for (u in urlSeq(title, artist)) {
                 val bytes = http(u) ?: continue
                 val bmp = BitmapFactory.decodeByteArray(bytes, 0, bytes.size) ?: continue
+                if (!shapeOk(u, bmp)) continue
                 if (n++ < skip) continue
                 jpg.writeBytes(bytes); return bmp
             }
             none.writeText("x")
         } catch (e: Throwable) { LogStore.err("poster", e) }
         return null
+    }
+
+    /** (v269) غلاف للاختيار: الصورة + اسم الألبوم/المصدر */
+    class CoverOpt(val url: String, val label: String, val bytes: ByteArray)
+
+    /**
+     * (v269) دفعة جديدة (لحد [n]) من الأغلفة المتاحة بالترتيب (iTunes ← Deezer ← MusicBrainz ← YouTube ← Bing ← صورة المغني).
+     * [shown] بتتملي بكل رابط اتجرّب (اتعرض أو مات) عشان ما يتكررش في «خيار آخر». على خيط خلفية.
+     */
+    fun nextOptions(ctx: Context, title0: String, artist0: String, shown: MutableSet<String>, n: Int = 6): List<CoverOpt> {
+        val title = clean(title0); val artist = artist0.trim()
+        val out = ArrayList<CoverOpt>()
+        if (title.length < 2) return out
+        try {
+            for (u in urlSeq(title, artist)) {
+                if (out.size >= n) break
+                if (!shown.add(u)) continue
+                val bytes = http(u) ?: continue
+                val bmp = BitmapFactory.decodeByteArray(bytes, 0, bytes.size) ?: continue
+                if (!shapeOk(u, bmp)) continue
+                out.add(CoverOpt(u, labels[u].orEmpty(), bytes))
+            }
+        } catch (e: Throwable) { LogStore.err("poster-opts", e) }
+        return out
+    }
+
+    /** الغلاف اللي اليوزر اختاره: بيتحفظ مكان الغلاف المخزّن للأغنية دي */
+    fun saveChosen(ctx: Context, title0: String, artist0: String, bytes: ByteArray) {
+        val title = clean(title0); val artist = artist0.trim()
+        val k = key(title, artist)
+        try { File(dir(ctx), "$k.none").delete(); File(dir(ctx), "$k.jpg").writeBytes(bytes); resetSkip(title, artist) } catch (e: Throwable) { LogStore.err("poster-save", e) }
     }
 }

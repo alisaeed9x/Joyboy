@@ -58,6 +58,42 @@ object Offline {
     /** (v266) «لحظي»: كل باتش يتفرّغ يتترجم فورًا (ctx_min = 1) */
     fun live(): Boolean = configured() && partMin() == 1
 
+    // ===== (v267) قفل اللغة: أول باتش «مضمون» يحدد لغة الفيديو، وباقي الباتشات بتتفرّغ بيها (Whisper الصغير بيغلط في الاكتشاف التلقائي) =====
+    /** حالة قفل اللغة لفيديو واحد (كل Engine عنده واحدة) */
+    class Session { @Volatile var lang = ""; @Volatile var badRun = 0 }
+    /** true = آخر نداء transcribe على الخيط ده اتنفّذ فعلًا على الجهاز (مش فولباك جيميناي) */
+    val ranOffline = ThreadLocal<Boolean>()
+    /** اللغة اللي اتفرّغ بيها آخر باتش على الخيط ده ("" = اكتشاف تلقائي) */
+    val usedLang = ThreadLocal<String>()
+
+    private fun lettersOf(t: String) = t.filter { it.isLetter() }
+    private fun ratio(t: String, f: (Char) -> Boolean): Double { val l = lettersOf(t); return if (l.isEmpty()) 0.0 else l.count(f).toDouble() / l.length }
+    /** النص اللي طلع شكله بحروف اللغة المكتشفة؟ (لو Whisper قال «روسي» والنص لاتيني يبقى الاكتشاف غلط) */
+    private fun scriptFits(lang: String, text: String): Boolean = when (lang) {
+        "ar", "fa", "ur" -> ratio(text) { it in '\u0600'..'\u06FF' || it in '\u0750'..'\u077F' || it in '\uFB50'..'\uFEFF' } > 0.6
+        "ru", "uk", "bg" -> ratio(text) { it in '\u0400'..'\u04FF' } > 0.6
+        "ko" -> ratio(text) { it in '\uAC00'..'\uD7AF' || it in '\u1100'..'\u11FF' } > 0.5
+        "ja" -> ratio(text) { it in '\u3040'..'\u30FF' || it in '\u4E00'..'\u9FFF' } > 0.5
+        "zh" -> ratio(text) { it in '\u4E00'..'\u9FFF' } > 0.6
+        "hi" -> ratio(text) { it in '\u0900'..'\u097F' } > 0.6
+        "en", "fr", "es", "de", "it", "tr", "pt", "nl" -> ratio(text) { it.code < 0x250 } > 0.85
+        else -> true
+    }
+
+    /** بيقفل اللغة بعد أول نتيجة مضمونة (3 جمل+ · 40 حرف+ · ثقة كويسة · الحروف مطابقة للغة)، وبيفكّها لو النتيجة بقت زبالة مرتين ورا بعض */
+    private fun noteLang(sess: Session, res: SttResult, forced: String, log: (String) -> Unit) {
+        val good = res.segs.filter { it.text.isNotBlank() && it.logProb > -1.0 && it.noSpeech < 0.5 }
+        if (forced.isNotEmpty()) {   // اللغة مقفولة: لو النتيجة وحشة مرتين ورا بعض نرجع للاكتشاف التلقائي
+            val avg = if (res.segs.size >= 4) res.segs.map { it.logProb }.average() else 0.0
+            if (avg < -1.4) { if (++sess.badRun >= 2) { sess.lang = ""; sess.badRun = 0; log("🌐 الأوفلاين: نتيجة اللغة المقفولة ($forced) وحشة مرتين — رجعت للاكتشاف التلقائي") } } else sess.badRun = 0
+            return
+        }
+        val txt = good.joinToString(" ") { it.text }
+        if (res.lang.isEmpty() || good.size < 3 || txt.length < 40 || !scriptFits(res.lang, txt)) return
+        sess.lang = res.lang; sess.badRun = 0
+        log("🔒 الأوفلاين: لغة الفيديو اتقفلت على (${res.lang}) — باقي الباتشات هتتفرّغ بيها")
+    }
+
     // ===== التفريغ =====
     private val lock = ReentrantLock(true)   // fair: الباتشات بتتفرّغ بترتيب وصولها (واحد في المرة — المعالج مش هيستحمل اتنين)
     @Volatile private var coolUntil = 0L
@@ -66,7 +102,8 @@ object Offline {
     private fun threads(): Int = (Runtime.getRuntime().availableProcessors() / 2).coerceIn(2, 4)
 
     /** ينسخ [wav] (PCM16 mono 16kHz بهيدر 44 بايت) على الجهاز بالمحرك المختار. أي فشل ← [fallback] (طلب جيميناي الأصلي) */
-    fun transcribe(wav: ByteArray, durSec: Double, terms: String, log: (String) -> Unit, fallback: () -> Api.Result, warn: (String) -> Unit = {}): Api.Result {
+    fun transcribe(wav: ByteArray, durSec: Double, terms: String, log: (String) -> Unit, fallback: () -> Api.Result, warn: (String) -> Unit = {}, sess: Session? = null): Api.Result {
+        ranOffline.set(false)
         val eng = engine()
         if (Cfg.str("stt_engine", "whisper") == "sherpa" && eng.id != "sherpa") softNotice("🎙 SenseVoice مش بيفهم لغة الكلام المختارة أو مش شغّال على جهازك — Whisper هو اللي بينسخ", warn)   // (v257)
         val tq = System.currentTimeMillis()
@@ -78,11 +115,18 @@ object Offline {
             val pcm = toFloats(wav) ?: run { log("⚠ الأوفلاين: صيغة الصوت مش مدعومة — جيميناي هو اللي نسخ الباتش"); softNotice("⚠ الأوفلاين: صيغة الصوت مش مدعومة — " + who(), warn); return fallback() }
             val t0 = System.currentTimeMillis()
             log("📴 بدأ التفريغ (${eng.id}): ${"%.0f".format(durSec)}ث صوت · ${threads()} خيوط")   // (v263)
-            val res = eng.transcribe(pcm, lang(), terms.trim().take(200), threads())
+            val manual = lang()
+            val locked = if (manual.isEmpty() && eng.id == "whisper") sess?.lang.orEmpty() else ""
+            val useLang = manual.ifEmpty { locked }
+            usedLang.set(useLang)
+            val res = eng.transcribe(pcm, useLang, terms.trim().take(200), threads())
+            if (sess != null && eng.id == "whisper") noteLang(sess, res, locked, log)
+            val outLang = manual.ifEmpty { if (eng.id == "whisper") sess?.lang.orEmpty() else res.lang }   // (v267) لغة غير مضمونة ما بتتبلّغش للمحرك (كانت بتبوّظ srcLang بـ «ru» لفيديو إنجليزي)
             val took = System.currentTimeMillis() - t0
             log("📴 أوفلاين (${eng.id}${if (eng is SherpaStt) " · VAD=" + SherpaStt.lastVad else ""}): ${"%.0f".format(durSec)}ث صوت ← ${took / 1000}ث (${"%.1f".format(durSec * 1000.0 / took.coerceAtLeast(1))}× سرعة)")
             fails = 0
-            return Api.Result(toJson(res), "STOP")
+            ranOffline.set(true)
+            return Api.Result(toJson(res, outLang), "STOP")
         } catch (e: SttInitFail) {
             log("⚠ الأوفلاين: ${e.message} — جيميناي هو اللي بينسخ")
             softNotice("⚠ الأوفلاين مش شغّال: ${e.message} — " + who(), warn)
@@ -133,7 +177,7 @@ object Offline {
     }
 
     /** نتيجة أي محرك ← نفس JSON جيميناي. بنشيل الأجزاء اللي شكلها هلوسة على صمت/موسيقى/تكرار (مشترك بين المحركات) */
-    private fun toJson(res: SttResult): String {
+    private fun toJson(res: SttResult, langOut: String): String {
         val out = JSONArray()
         for (g in res.segs) {
             val t = g.text.trim()
@@ -144,7 +188,7 @@ object Offline {
                 .put("people", JSONArray()).put("places", JSONArray()).put("is_song", false).put("emotion", "neutral")
                 .put("low_confidence", g.logProb < -1.0).put("overlap", false).put("speaker_tag", "").put("is_continuation", false).put("faint", false))
         }
-        return JSONObject().put("subtitles", out).apply { if (res.lang.isNotEmpty()) put("detected_source_language", res.lang) }.toString()
+        return JSONObject().put("subtitles", out).apply { if (langOut.isNotEmpty()) put("detected_source_language", langOut) }.toString()
     }
 
     // ===== تنزيل الموديل (بيكمّل من حيث وقف) =====

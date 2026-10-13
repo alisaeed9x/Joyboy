@@ -193,4 +193,36 @@ object LyricsApi {
         }
         return null
     }
+
+    /** (v268) غلاف من YouTube Music من غير مفتاح: نتايج «أغاني» فيها صورة الألبوم المربّعة. كل عنصر = (عنوان، سطر التفاصيل «فنان • ألبوم»، رابط الصورة بحجم 600) */
+    class YtCover(val title: String, val info: String, val url: String)
+
+    private fun collectCovers(n: Any?, out: MutableList<YtCover>) {
+        when (n) {
+            is JSONObject -> {
+                val r = n.optJSONObject("musicResponsiveListItemRenderer")
+                if (r != null) try {
+                    val cols = r.optJSONArray("flexColumns")
+                    fun runsOf(i: Int): String {
+                        val runs = cols?.optJSONObject(i)?.optJSONObject("musicResponsiveListItemFlexColumnRenderer")?.optJSONObject("text")?.optJSONArray("runs") ?: return ""
+                        val sb = StringBuilder(); for (k in 0 until runs.length()) sb.append(runs.optJSONObject(k)?.optString("text").orEmpty()); return sb.toString()
+                    }
+                    val th = r.optJSONObject("thumbnail")?.optJSONObject("musicThumbnailRenderer")?.optJSONObject("thumbnail")?.optJSONArray("thumbnails")
+                    val u = th?.optJSONObject(th.length() - 1)?.optString("url").orEmpty()
+                    // صور الأغاني الحقيقية على googleusercontent (مربّعة)؛ الفيديوهات على ytimg (16:9) فبنتجاهلها
+                    if (u.contains("googleusercontent.com") || u.contains("ggpht.com")) {
+                        val big = u.replace(Regex("=w\\d+-h\\d+[^\\s]*$"), "=w600-h600-l90-rj")
+                        out.add(YtCover(runsOf(0), runsOf(1), big))
+                    }
+                } catch (_: Throwable) {}
+                val ks = n.keys(); while (ks.hasNext()) collectCovers(n.opt(ks.next()), out)
+            }
+            is JSONArray -> for (i in 0 until n.length()) collectCovers(n.opt(i), out)
+        }
+    }
+
+    fun ytCovers(title: String, artist: String): List<YtCover> {
+        val s = ytPost("search", JSONObject().put("query", (title + " " + artist).trim()).put("params", "EgWKAQIIAWoKEAMQBRAKEAkQBA=="))
+        val out = ArrayList<YtCover>(); collectCovers(s, out); return out.take(8)
+    }
 }
