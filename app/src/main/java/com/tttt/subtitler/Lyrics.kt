@@ -97,7 +97,7 @@ object LyricsEngine {
 
     // ===================== النسخ المرشّحة (محفوظة محليًا) =====================
     fun srcLabel(src: String) = when (src) {
-        "lrclib" -> "LRCLIB"; "musixmatch" -> "Musixmatch"; "youtube" -> "YouTube Music"; "lyrics.ovh" -> "Lyrics.ovh"; else -> src
+        "lrclib" -> "LRCLIB"; "musixmatch" -> "Musixmatch"; "youtube" -> "YouTube Music"; "lyrics.ovh" -> "Lyrics.ovh"; "gemini" -> "Gemini"; "gemini-audio" -> "Gemini (من الصوت)"; else -> src
     }
 
     fun candidates(ctx: Context, t: Track): List<LyrCand> = try {
@@ -414,15 +414,29 @@ object LyricsEngine {
             }
         }
 
+        // 6) (v294) جيميناي يكتب الكلمات كاملة (بحث جوجل) ويوقّتها من سماع الأغنية نفسها — لو كل المصادر اللي فوق ملقتش حاجة
+        var aiMsg = ""
+        if (best() == null && x.answered && Cfg.allMainKeys().isNotEmpty()) {
+            val o = LyricsAI.run(app, t, name, by, SongId.albumOf(t.id), null, "", retry, onStage)
+            if (o.res != null) { save(app, t, M_FULL, o.res); onDone(o.res, ""); return }
+            aiMsg = o.msg
+        }
+
         val b = best()
         if (b == null) {
             if (!x.answered) { onDone(null, "مفيش اتصال بالمصدر (" + x.lastErr.take(60) + ") — جرّب تاني"); return }
             save(app, t, M_FULL, LyricsResult(name, by, emptyList(), true, 1, 1, emptySet(), "", emptyList(), true, "lrclib"))
-            onDone(null, if (retry) "ما لقيتش نتيجة تانية — جرّب 🎼 نسخ بديلة أو ✍ كلمات يدوي" else "ما لقيتش الأغنية دي (LRCLIB + Musixmatch + YouTube Music + مصدر احتياطي) — جرّب 🎼 نسخ بديلة أو ✍ كلمات يدوي")
+            val tail = if (aiMsg.isNotBlank()) " · جيميناي: $aiMsg" else ""
+            onDone(null, (if (retry) "ما لقيتش نتيجة تانية — جرّب 🎼 نسخ بديلة أو ✍ كلمات يدوي" else "ما لقيتش الأغنية دي (LRCLIB + Musixmatch + YouTube Music + مصدر احتياطي + جيميناي) — جرّب 🎼 نسخ بديلة أو ✍ كلمات يدوي") + tail)
             return
         }
-        val res = build(t, name, by, b)
+        var res = build(t, name, by, b)
         if (res == null) { onDone(null, "النتيجة فاضية"); return }
+        // (v294) النسخة اللي اتلقت من غير توقيت: جيميناي يسمع الأغنية ويوقّت كل سطر (لو التطابق مع الصوت كويس؛ غير كده بنسيب النص زي ما هو)
+        if (!res.synced && res.raw.size >= 4 && Cfg.allMainKeys().isNotEmpty() && !retry) {
+            val o = LyricsAI.run(app, t, name, by, SongId.albumOf(t.id), res.raw, b.src, false, onStage)
+            if (o.res != null && o.res.synced && o.res.source.endsWith("+gemini")) res = o.res
+        }
         lastId[k] = b.key()
         val merged = ArrayList<LyrCand>(x.found)
         for (c in candidates(app, t)) if (merged.none { it.key() == c.key() }) merged.add(c)   // النسخ اللي اتلقت قبل كده (نسخ بديلة) ما بتضيعش

@@ -42,6 +42,11 @@ object Poster {
         return a == b || (minOf(a.length, b.length) >= 3 && (a.contains(b) || b.contains(a)))
     }
 
+    /** (v294) اسم الألبوم المحفوظ للأغنية: نتايج iTunes/Deezer اللي ألبومها يطابقه بتتقدّم على الباقي (غلاف أدق). */
+    private val albumHints = java.util.concurrent.ConcurrentHashMap<String, String>()
+    fun albumHint(title: String, artist: String, album: String) { if (album.isNotBlank()) albumHints[key(clean(title), artist.trim())] = album.trim() else albumHints.remove(key(clean(title), artist.trim())) }
+    private fun hintOf(title: String, artist: String): String = albumHints[key(clean(title), artist.trim())] ?: ""
+
     fun forget(ctx: Context, title: String, artist: String) {
         val k = key(title, artist)
         try { File(dir(ctx), "$k.jpg").delete(); File(dir(ctx), "$k.none").delete() } catch (_: Throwable) {}
@@ -61,7 +66,7 @@ object Poster {
 
     // ===== (1) Apple iTunes =====
     private fun itunesUrls(title: String, artist: String): List<String> {
-        val out = ArrayList<String>()
+        val out = ArrayList<String>(); val alb = HashMap<String, String>()
         try {
             val q = (artist + " " + title).trim()
             val txt = http("https://itunes.apple.com/search?media=music&entity=song&limit=15&term=${enc(q)}", 500_000)?.toString(Charsets.UTF_8)
@@ -71,15 +76,17 @@ object Poster {
                 if (!matches(o.optString("trackName"), title)) continue
                 if (artist.isNotBlank() && !matches(o.optString("artistName"), artist)) continue
                 val u = o.optString("artworkUrl100").replace("100x100bb", "600x600bb")
-                if (u.isNotBlank() && u !in out) { out.add(u); label(u, o.optString("collectionName").ifBlank { "iTunes" } + " · iTunes") }
+                if (u.isNotBlank() && u !in out) { out.add(u); alb[u] = o.optString("collectionName"); label(u, o.optString("collectionName").ifBlank { "iTunes" } + " · iTunes") }
             }
         } catch (_: Throwable) {}
+        val hint = hintOf(title, artist)
+        if (hint.isNotBlank()) out.sortBy { if (matches(alb[it].orEmpty(), hint)) 0 else 1 }
         return out
     }
 
     // ===== (2) Deezer =====
     private fun deezerUrls(title: String, artist: String): List<String> {
-        val out = ArrayList<String>()
+        val out = ArrayList<String>(); val alb = HashMap<String, String>()
         try {
             val q = (artist + " " + title).trim()
             val txt = http("https://api.deezer.com/search?limit=15&q=${enc(q)}", 500_000)?.toString(Charsets.UTF_8)
@@ -89,9 +96,11 @@ object Poster {
                 if (!matches(o.optString("title"), title)) continue
                 if (artist.isNotBlank() && !matches(o.optJSONObject("artist")?.optString("name").orEmpty(), artist)) continue
                 val u = o.optJSONObject("album")?.optString("cover_big").orEmpty()
-                if (u.isNotBlank() && u !in out) { out.add(u); label(u, (o.optJSONObject("album")?.optString("title").orEmpty().ifBlank { "Deezer" }) + " · Deezer") }
+                if (u.isNotBlank() && u !in out) { out.add(u); alb[u] = o.optJSONObject("album")?.optString("title").orEmpty(); label(u, (o.optJSONObject("album")?.optString("title").orEmpty().ifBlank { "Deezer" }) + " · Deezer") }
             }
         } catch (_: Throwable) {}
+        val hint = hintOf(title, artist)
+        if (hint.isNotBlank()) out.sortBy { if (matches(alb[it].orEmpty(), hint)) 0 else 1 }
         return out
     }
 

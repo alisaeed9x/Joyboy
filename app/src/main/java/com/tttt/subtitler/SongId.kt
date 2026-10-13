@@ -26,8 +26,10 @@ object SongId {
         if (v.isBlank()) return null
         val p = v.split('\u0001'); return p[0] to p.getOrElse(1) { "" }
     }
-    fun saveOverride(id: Long, m: SongMatch) = Cfg.put("mname_$id", m.title + "\u0001" + m.artist)
-    fun clearOverride(id: Long) = Cfg.put("mname_$id", "")
+    fun saveOverride(id: Long, m: SongMatch) { Cfg.put("mname_$id", m.title + "\u0001" + m.artist); Cfg.put("malbum_$id", m.album.trim()) }
+    fun clearOverride(id: Long) { Cfg.put("mname_$id", ""); Cfg.put("malbum_$id", "") }
+    /** (v294) الألبوم المحفوظ مع الاسم (من التعرّف أو من اليوزر) — "" لو مش معروف */
+    fun albumOf(id: Long): String = Cfg.str("malbum_$id", "")
 
     // ===== (v251) حالة التعرّف على الأغنية: اتعرفت قبل كده؟ / اليوزر أكّد الاسم؟ =====
     /** "1" = اتعرفت (تلقائي أو يدوي) · "t" = جيميناي سمعها ومش متأكد (ما نعيدش تلقائي) · "" = لسه ما اتدوّرش عليها */
@@ -44,8 +46,16 @@ object SongId {
     fun setAuto(on: Boolean) = Cfg.put("song_auto_id", if (on) "1" else "0")
     const val UNSURE = "جيميناي مش متأكد"
     /** (v270) اسم الملف/التاج مفيد؟ لو العنوان عام (Track 01 / AUD-2024 / أرقام بس) أو مفيش فنان نعتبره مش مفيد */
+    /** (v294) الاسم/المغني باين إنه موقع أو لينك (www · .com · موقع …) مش اسم أغنية ولا مغني */
+    fun looksLikeSite(s: String): Boolean {
+        val x = s.lowercase()
+        if (Regex("(www\\.|https?:|\\b[a-z0-9-]+\\.(com|net|org|info|biz|me|tv|co|io|fm|ws|cc|ru|xyz|mobi)\\b)").containsMatchIn(x)) return true
+        return Regex("(^|\\s)(موقع|تحميل|download|mp3|ألبوماتي|البوماتي|albumaty|rnbxclusive|mp3quran)(\\s|$)").containsMatchIn(x)
+    }
     fun tagsLookGood(title: String, artist: String): Boolean {
         val t = title.replace('_', ' ').trim().lowercase()
+        if (looksLikeSite(title) || looksLikeSite(artist)) return false
+        if (artist.trim().lowercase().let { it == "<unknown>" || it == "unknown" || it == "غير معروف" }) return false
         if (artist.isBlank() || t.length < 2) return false
         if (t.all { it.isDigit() || it == ' ' || it == '-' || it == '.' }) return false
         return !Regex("^(track|audio|aud|vid|video|record(ing)?|new recording|voice|whatsapp|untitled|unknown|مقطع|تسجيل)[ \\-]*\\d*").containsMatchIn(t)
@@ -91,7 +101,7 @@ object SongId {
     private fun prompt(durSec: Double, hintTitle: String, hintArtist: String, avoid: List<String>, captured: Boolean, search: Boolean, multi: Boolean = false): String = buildString {
         val mins = "%.1f".format(java.util.Locale.US, durSec / 60.0)
         append("You are the world's best audio identification expert: popular music of every language and era (Arabic — Egyptian, Gulf, Levantine, Maghreb, classical tarab — plus English, Turkish, Persian, Indian, Korean…), Quran recitation (all qurra and riwayat), anasheed, soundtracks, podcasts, lectures and any other audio.\n\n")
-        append("INPUT: a LARGE excerpt (~$mins minutes) of ONE audio track" + (if (captured) " captured from another app's playback (ignore ads, voiceovers and sound effects that are not part of the track)" else "") + ". Because it is long, you can hear many lyric lines / verses and the voice repeatedly — use all of it, not just the first seconds.\n\n")
+        append("INPUT: a " + (if (durSec >= 90) "LARGE excerpt (~$mins minutes)" else "short excerpt (~${durSec.toInt()} seconds)") + " of ONE audio track" + (if (captured) " captured from another app's playback (ignore ads, voiceovers and sound effects that are not part of the track)" else "") + ". " + (if (durSec >= 90) "Because it is long, you can hear many lyric lines / verses and the voice repeatedly — use all of it, not just the first seconds." else "It is only a part of the song (other parts are heard separately by other listeners): use every sung line, the melody, the arrangement and the voice to identify it.") + "\n\n")
         append("STEP 1 — LISTEN. Internally transcribe the most distinctive sung/spoken lines you can clearly hear (the hook/chorus and 2-3 other lines, in the original language). Put them in \"heard\" (max 300 characters, no invention).\n")
         append("STEP 2 — CLASSIFY: kind = song | quran | nasheed | speech | soundtrack | other.\n")
         append("STEP 3 — IDENTIFY by kind:\n")
@@ -197,8 +207,21 @@ object SongId {
                 val slices = ArrayList<WavChunk>()
                 try {
                     val total = src.durationSec().takeIf { it > 0 } ?: (t.durMs / 1000.0)
-                    var win = bigWindow(total, startSec)
-                    fun cut(w0: Pair<Double, Double>): List<WavChunk> {
+                    // (v293) كل مفتاح ياخد مقطع مختلف (30–60ث حسب عدد المفاتيح) موزّع على الأغنية كلها بدل ما يسمعوا 3 دقايق ورا بعض:
+                    // مفتاح واحد = ~60ث حوالين مكان التشغيل · 6 مفاتيح = 6 مقاطع × 30ث من أماكن مختلفة (مقدمة · مقاطع · كورس)
+                    val len = (BIG_SEC / n).coerceIn(30.0, 60.0).coerceAtMost(total.coerceAtLeast(1.0))
+                    fun one(a: Double): WavChunk? {
+                        val a0 = a.coerceIn(0.0, (total - len).coerceAtLeast(0.0)); val b0 = minOf(a0 + len, total.coerceAtLeast(a0 + 1))
+                        if (b0 - a0 < 4.0) return null
+                        val w = try { src.wav(a0, b0) } catch (_: Throwable) { null }
+                        return if (w != null && !w.silent) w else null
+                    }
+                    fun spread(): List<WavChunk> {
+                        if (n == 1 || total <= len * n) return emptyList()
+                        val from = total * 0.06; val span = (total * 0.94 - len - from).coerceAtLeast(0.0)
+                        return (0 until n).mapNotNull { i -> one(from + span * i / (n - 1)) }
+                    }
+                    fun contiguous(w0: Pair<Double, Double>): List<WavChunk> {
                         val out = ArrayList<WavChunk>(); val step = (w0.second - w0.first) / n
                         for (i in 0 until n) {
                             val a = w0.first + i * step; val b = if (i == n - 1) w0.second else a + step
@@ -208,8 +231,9 @@ object SongId {
                         }
                         return out
                     }
-                    slices.addAll(cut(win))
-                    if (slices.isEmpty() && win.first > 1.0) slices.addAll(cut(bigWindow(total, 0.0)))
+                    if (n == 1) { one(startSec - len / 2)?.let { slices.add(it) } }
+                    else slices.addAll(spread().ifEmpty { contiguous(bigWindow(total, startSec)) })
+                    if (slices.isEmpty()) slices.addAll(contiguous(bigWindow(total, 0.0)))   // كله صامت/قصير: الطريقة القديمة من أول المسار
                 } finally { try { src.close() } catch (_: Throwable) {} }
                 if (slices.isEmpty()) { onDone(null, emptyList(), "المقطع ده صامت — شغّل الأغنية لحد جزء فيه صوت وجرّب تاني"); return@Thread }
 
