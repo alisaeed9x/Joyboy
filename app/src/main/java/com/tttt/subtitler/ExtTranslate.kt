@@ -50,13 +50,25 @@ object ExtTranslate {
     /** (v274) سلسلة الترجمة بالترتيب الفعلي (null = جوجل الداخلي). بعدها لو كلها فشلت الباتش بيتحوّل لجيميناي بمفاتيحك */
     fun chain(): List<Prov?> {
         val ext = active()
-        val prim = ext.firstOrNull { it.id == primaryId() }
+        // (v277) id المحفوظ لمحركات LLM هو id البريست (chatgpt) بينما id المزوّد llm_chatgpt — قبل كده المحرك الأساسي ماكانش بيتلقى أبدًا؛ وكمان وضع «الريبو بس» ماكانش لازم يستبعد اللي اخترته بإيدك
+        val pid = primaryId()
+        val prim = if (pid.isEmpty()) null else all().firstOrNull { enabled(it) && (it.id == pid || it.id == "llm_$pid") }
         val rest = ext.filter { it.id != prim?.id }
         val steps = ArrayList<Prov?>()
         prim?.let { steps.add(it) }
         if (externalFirst()) { steps.addAll(rest); steps.add(null) } else { steps.add(null); steps.addAll(rest) }
         return steps
     }
+    /** (v278) اسم المحرك بوضوح: جوجل الداخلي / ChatGPT… + الموديل / مجاني من الريبو / سيرفرك */
+    fun whoLabel(p: Prov?): String = when {
+        p == null -> "🏠 جوجل الداخلي"
+        p.id.startsWith("llm_") -> "🤖 " + p.label + (ExtLlm.byId(p.id.removePrefix("llm_"))?.let { " · " + ExtLlm.model(it) } ?: "")
+        p.id == "libre" -> "🌐 LibreTranslate (سيرفرك)"
+        else -> "🌐 " + p.label + " (مجاني من الريبو)"
+    }
+    /** (v278) سطر «مين بيترجم دلوقتي» للإشعارات: السلسلة بالترتيب، أو جيميناي بعدد مفاتيحه */
+    fun setupLine(): String = if (TrWizard.googleOn()) "المترجم: " + chain().joinToString(" ← ") { whoLabel(it) } + " ← 🔑 جيميناي (مفاتيحك)"
+        else "المترجم: 🔑 جيميناي — " + (Cfg.keys("keys").size + Cfg.keys("extra").size) + " مفتاح"
     fun chainLabel(): String = chain().joinToString(" ← ") { it?.label ?: "جوجل" } + " ← جيميناي (مفاتيحك)"
     fun enabled(p: Prov): Boolean = Cfg.str("ext_on_" + p.id, "on") != "off"
     fun setEnabled(p: Prov, on: Boolean) { Cfg.put("ext_on_" + p.id, if (on) "on" else "off") }
@@ -120,6 +132,16 @@ object ExtTranslate {
         val tr = r.firstOrNull()
         if (tr.isNullOrBlank()) "❌ ${p.label}: ما رجّعش ترجمة" else { clearBlock(p.id); "✅ ${p.label} شغّال: «$tr»" }
     } catch (e: Exception) { "❌ ${p.label}: " + (e.message ?: e.javaClass.simpleName).take(140) }
+
+    /** (v276) اختبار لحظي بقياس الزمن (من غير حفظ): (نجح؟، ms، الترجمة أو سبب الفشل). بيفك الإيقاف لو نجح */
+    fun testTimed(p: Prov): Triple<Boolean, Long, String> {
+        val t0 = System.currentTimeMillis()
+        return try {
+            val r = p.batch?.invoke(listOf("Hello, how are you today?"), "en") ?: listOf(p.call("Hello, how are you today?", "en"))
+            val tr = r.firstOrNull(); val ms = System.currentTimeMillis() - t0
+            if (tr.isNullOrBlank()) Triple(false, ms, "ما رجّعش ترجمة") else { clearBlock(p.id); Triple(true, ms, tr) }
+        } catch (e: Exception) { Triple(false, System.currentTimeMillis() - t0, (e.message ?: e.javaClass.simpleName).take(90)) }
+    }
 
     // ===== عدّادات =====
     private fun usedToday(id: String): Int {

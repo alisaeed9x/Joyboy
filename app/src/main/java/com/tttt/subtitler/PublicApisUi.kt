@@ -77,7 +77,7 @@ object PublicApisUi {
         refreshAll()
         PublicApis.onChange = { ref.get()?.runOnUiThread { try { refreshAll() } catch (_: Throwable) {} } }
 
-        return ui.section("🌐 APIs خارجية (public-apis · ChatGPT · Claude · LibreTranslate · تفريغ سحابي) — v274", false,
+        return ui.section("🌐 APIs خارجية (public-apis · ChatGPT · Claude · LibreTranslate · تفريغ سحابي) — v275", false,
             ui.text("الترجمة بجوجل (مع الأوفلاين) ممكن تستعين بمزوّدين تانيين، والتفريغ ممكن يبقى سحابي. القايمة بتتسحب من ريبو public-apis لوحدها، والمزوّد بيشتغل بس لو ليه محوّل جاهز في التطبيق. الترتيب بيأثر على مسار «تفريغ أوفلاين + ترجمة جوجل» بس.", 12f, th.muted),
             status,
             ui.button("🔄 اسحب القايمة من الريبو دلوقتي") { PublicApis.pull(ref.get(), true) },
@@ -90,7 +90,7 @@ object PublicApisUi {
     }
 
     /** نافذة ضبط مزوّد LLM: مفتاح · موديل · رابط · موديل تفريغ · تفعيل */
-    private fun editDialog(act: Activity, ui: Ui, th: Theme, p: ExtLlm.Preset, done: () -> Unit) {
+    internal fun editDialog(act: Activity, ui: Ui, th: Theme, p: ExtLlm.Preset, done: () -> Unit) {
         val d = GDialog(act)
         val box = LinearLayout(act).apply {
             orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL
@@ -163,7 +163,7 @@ object PublicApisUi {
     }
 
     /** LibreTranslate: رابط السيرفر + مفتاح اختياري + تفعيل + تجربة */
-    private fun libreDialog(act: Activity, ui: Ui, th: Theme, done: () -> Unit) {
+    internal fun libreDialog(act: Activity, ui: Ui, th: Theme, done: () -> Unit) {
         val d = GDialog(act)
         val box = LinearLayout(act).apply {
             orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL

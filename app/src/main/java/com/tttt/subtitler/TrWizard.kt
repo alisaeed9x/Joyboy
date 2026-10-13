@@ -16,11 +16,14 @@ import android.widget.LinearLayout
  * و stt_offline / stt_lang / off_model / tr_method (اللي المحرك بيقراه فعلًا — بتتكتب وقت التشغيل).
  */
 object TrWizard {
-    class Plan(val mode: String, val onlineId: String, val lang: String, val model: String, val method: String, val engine: String = "whisper", val dialect: String = "", val live: Boolean = false, val ext: String = "") {
+    class Plan(val mode: String, val onlineId: String, val lang: String, val model: String, val method: String, val engine: String = "whisper", val dialect: String = "", val live: Boolean = false, val ext: String = "", val free: String = "") {
         val offline: Boolean get() = mode == "offline"
         /** (v274) أونلاين بمحرك خارجي: ext = id مزوّد LLM (تفريغ سحابي + ترجمته)، فاضي = جيميناي */
         val cloud: Boolean get() = !offline && ext.isNotBlank()
     }
+
+    /** (v275) المشغّل بيحطه عشان تغيير وضع المفاتيح من الشاشة دي يوصل للمحرك الشغّال فورًا */
+    @Volatile var keyModeHook: ((Int) -> Unit)? = null
 
     const val CURRENT = "current"
     val sttLangs = listOf(
@@ -82,6 +85,7 @@ object TrWizard {
         }
         if (!pl.offline) return emptyList()
         val out = ArrayList<String>()
+        if (pl.free.isNotBlank() && pl.method == "google") out.add("🌐 المترجم المجاني " + (ExtTranslate.all().firstOrNull { it.id == pl.free }?.label ?: pl.free) + " بيترجم الأول — لو وقف أو الحد اليومي خلص بيكمّل الباقي ثم جوجل ثم جيميناي")
         val d = pl.dialect.trim().let { if (it == "فصحى") "" else it }
         if (pl.method == "google") {
             if (d.isEmpty()) out.add("🌍 الترجمة بجوجل (فصحى، من غير API)")
@@ -104,14 +108,14 @@ object TrWizard {
     fun savedPlan(): Plan? {
         if (!saved()) return null
         return when (Cfg.str("tr_mode", "")) {
-            "offline" -> Plan("offline", "", Cfg.str("tr_s_lang", ""), Cfg.str("tr_s_model", "small").ifBlank { "small" }, if (Cfg.str("tr_s_method", "gemini") == "google") "google" else "gemini", if (Cfg.str("tr_s_engine", "whisper") == "sherpa") "sherpa" else "whisper", Cfg.str("tr_s_dialect", ""), Cfg.bool("tr_s_live", false))
+            "offline" -> Plan("offline", "", Cfg.str("tr_s_lang", ""), Cfg.str("tr_s_model", "small").ifBlank { "small" }, if (Cfg.str("tr_s_method", "gemini") == "google") "google" else "gemini", if (Cfg.str("tr_s_engine", "whisper") == "sherpa") "sherpa" else "whisper", Cfg.str("tr_s_dialect", ""), Cfg.bool("tr_s_live", false), free = Cfg.str("tr_s_free", ""))
             "online" -> Plan("online", Cfg.str("tr_online", CURRENT).ifBlank { CURRENT }, "", "", "gemini", ext = Cfg.str("tr_online_ext", ""))
             else -> null
         }
     }
 
     fun describe(pl: Plan): String =
-        if (pl.offline) "📴 أوفلاين" + (if (pl.live) " ⚡ لحظي" else "") + " · " + langLabel(pl.lang) + "\nالتفريغ: " + (if (pl.engine == "sherpa") "SenseVoice (sherpa-onnx)" else "Whisper " + pl.model) + " على الجهاز\nالترجمة: " + (if (pl.method == "google") "جوجل (من غير API)" else "جيميناي بالسياق") + "\nاللهجة: " + pl.dialect.ifBlank { "فصحى" } + (if (pl.method == "google" && pl.dialect.isNotBlank() && pl.dialect != "فصحى") " (جيميناي بيحوّل ترجمة جوجل)" else "")
+        if (pl.offline) "📴 أوفلاين" + (if (pl.live) " ⚡ لحظي" else "") + " · " + langLabel(pl.lang) + "\nالتفريغ: " + (if (pl.engine == "sherpa") "SenseVoice (sherpa-onnx)" else "Whisper " + pl.model) + " على الجهاز\nالترجمة: " + (if (pl.method == "google") "جوجل (من غير API)" else "جيميناي بالسياق") + "\nاللهجة: " + pl.dialect.ifBlank { "فصحى" } + (if (pl.method == "google" && pl.dialect.isNotBlank() && pl.dialect != "فصحى") " (جيميناي بيحوّل ترجمة جوجل)" else "") + (if (pl.free.isNotBlank() && pl.method == "google") "\nالمترجم: 🌐 " + pl.free + " الأول (مجاني من الريبو)" else "")
         else if (pl.cloud) "☁ أونلاين بمحرك خارجي\nالترجمة: " + (ExtLlm.byId(pl.ext)?.label ?: pl.ext) + " (بمفتاحك)\nالتفريغ: " + (sttCandidate(pl.ext)?.let { it.label + " · " + ExtLlm.sttModel(it) } ?: "⚠ مفيش مزوّد تفريغ جاهز") + " (سحابي — الصوت بيتبعت لخدمة خارجية)\nلو وقف: الباقي من سلسلة الإعدادات ← جوجل ← جيميناي بمفاتيحك (مع إشعار)"
         else "☁ أونلاين (جيميناي)\n" + (TrPresets.byId(pl.onlineId)?.let { it.icon + " " + it.name } ?: "⚙ الإعدادات الحالية")
 
@@ -126,7 +130,8 @@ object TrWizard {
         Cfg.put("stt_offline", if (pl.offline || pl.cloud) "1" else "0")
         if (pl.offline) { Cfg.put("stt_lang", pl.lang); Cfg.put("off_model", pl.model); Cfg.put("tr_method", pl.method); Cfg.put("stt_engine", pl.engine); Cfg.put("conv_dialect", if (pl.dialect == "فصحى") "" else pl.dialect)
             if (pl.live) Cfg.put("ctx_min", "1") else if (Cfg.int("ctx_min", 3) == 1) Cfg.put("ctx_min", "3")   // (v266)
-            leaveCloud() }
+            leaveCloud()
+            if (pl.free.isNotBlank()) { Cfg.put("ext_primary", pl.free); Cfg.put("ext_on_" + pl.free, "on") } }   // (v275) مترجم مجاني من الريبو يتجرّب الأول
         else if (pl.cloud) {   // (v274) أونلاين بمحرك خارجي: تفريغ سحابي (لغة تلقائية) ← ترجمة بالسلسلة (المحرك المختار الأول) ← جيميناي
             val sp = sttCandidate(pl.ext)
             if (sp != null) { if (Cfg.str("rstt_on", "off") != "on") Cfg.put("rstt_by_plan", "1"); Cfg.put("rstt_on", "on"); Cfg.put("rstt_prov", sp.id) }
@@ -138,7 +143,7 @@ object TrWizard {
 
     fun save(pl: Plan) {
         Cfg.put("tr_mode", pl.mode)
-        if (pl.offline) { Cfg.put("tr_s_lang", pl.lang); Cfg.put("tr_s_model", pl.model); Cfg.put("tr_s_method", pl.method); Cfg.put("tr_s_engine", pl.engine); Cfg.put("tr_s_dialect", pl.dialect); Cfg.put("tr_s_live", if (pl.live) "1" else "0") }
+        if (pl.offline) { Cfg.put("tr_s_lang", pl.lang); Cfg.put("tr_s_model", pl.model); Cfg.put("tr_s_method", pl.method); Cfg.put("tr_s_engine", pl.engine); Cfg.put("tr_s_dialect", pl.dialect); Cfg.put("tr_s_live", if (pl.live) "1" else "0"); Cfg.put("tr_s_free", pl.free) }
         else { Cfg.put("tr_online", pl.onlineId); Cfg.put("tr_online_ext", pl.ext) }
         Cfg.put("tr_saved", "1")
     }
@@ -180,8 +185,13 @@ object TrWizard {
         var dialect = sp?.takeIf { it.offline }?.dialect ?: TrWizard.dialectWanted()
         var live = false
         var presetFlow = false
+        var free = sp?.takeIf { it.offline }?.free ?: ""   // (v275) id مترجم مجاني (من الريبو) أو فاضي
         var ext = sp?.takeIf { !it.offline }?.ext ?: ""   // (v274) محرك أونلاين خارجي (id مزوّد) أو فاضي = جيميناي
-        fun plan() = Plan(mode, onlineId, lang, model, method, engine, dialect, live, if (mode == "online") ext else "")
+        val tested = HashMap<String, Triple<Boolean, Long, String>>()
+        var testing = false
+        val ftested = HashMap<String, Triple<Boolean, Long, String>>()
+        var ftesting = false
+        fun plan() = Plan(mode, onlineId, lang, model, method, engine, dialect, live, if (mode == "online") ext else "", if (mode == "offline") free else "")
 
         fun go(step: () -> Unit) { hist.add(step); step() }
         fun back() { if (hist.size > 1) { hist.removeAt(hist.size - 1); hist[hist.size - 1]() } else dlg.dismiss() }
@@ -232,7 +242,7 @@ object TrWizard {
         fun stepMode() {
             reset(if (edit) "✏ اختار طريقة الترجمة" else "▶ هتترجم إزاي؟")
             opt("📴 أوفلاين", if (WhisperLib.loaded) "الكلام بيتفرّغ على جهازك من غير نت ولا مفتاح، وبعدها الترجمة بجوجل (من غير API) أو جيميناي" else Offline.status(), mode == "offline") {
-                if (!WhisperLib.loaded) Notice.show(act, "الأوفلاين مش مدعوم على جهازك", 2500L) else { mode = "offline"; go { stepOffPreset() } }
+                if (!WhisperLib.loaded) Notice.show(act, "الأوفلاين مش مدعوم على جهازك", 2500L) else { mode = "offline"; free = ""; go { stepOffPreset() } }
             }
             opt("☁ أونلاين", "جيميناي (الافتراضي) أو محرك خارجي بمفتاحك (ChatGPT / Claude / Groq / …) — بتشوف المتاح وتختار", mode == "online") { mode = "online"; go { stepOnline() } }
             addBack(if (hist.size > 1) "← رجوع" else "إغلاق")
@@ -250,32 +260,135 @@ object TrWizard {
             val fastEng = if (SherpaStt.ready()) "sherpa" else "whisper"
             opt("⚡ لحظي", "الأسرع: باتشات قصيرة (20-30ث) وكل باتش يتفرّغ يتترجم فورًا بجوجل. " + (if (fastEng == "sherpa") "SenseVoice." else "Whisper base (~60 ميجا)."), live && presetFlow && method == "google") { pick(fastEng, "base", "google", true, "") }
             opt("⚖ متوازن", "Whisper small + ترجمة جوجل كل 3 دقايق.", false) { pick("whisper", "small", "google", false, "") }
-            opt("🎯 دقيق", "Whisper small + ترجمة جيميناي بالسياق (ضمائر وأجناس أدق).", false) { pick("whisper", "small", "gemini", false, TrWizard.dialectWanted()) }
+            if (free.isBlank()) opt("🎯 دقيق", "Whisper small + ترجمة جيميناي بالسياق (ضمائر وأجناس أدق).", false) { pick("whisper", "small", "gemini", false, TrWizard.dialectWanted()) }
             opt("✏ مخصص", "اختار اللغة والمحرك والموديل والترجمة واللهجة بنفسك.", false) { presetFlow = false; live = false; go { stepLang() } }
             addBack()
         }
 
-        /** (v274) أونلاين: جيميناي (الافتراضي) أو واحد من المحركات الخارجية الجاهزة (مفتاحها مضبوط ومفعّلة) */
+        /** (v275) أونلاين: جيميناي، أو «🔑 مفاتيحي» (كل المحركات الخارجية بحالتها + ضبط المفتاح من هنا + تجربة لحظية) */
         fun stepOnline() {
-            val ready = ExtLlm.presets.filter { ExtLlm.configured(it) && ExtLlm.enabled(it) }
-            if (ready.isEmpty()) { ext = ""; stepOnlineGem(); return }
+            mode = "online"   // (v276) الرجوع من فحص الريبو (اللي بيحوّل لأوفلاين) لازم يرجّع الوضع أونلاين
             reset("☁ أونلاين — مين يترجم؟")
-            note("جيميناي بيسمع الصوت ويترجم (الافتراضي). المحركات التانية ما بتسمعش صوت: الصوت بيتفرّغ بـ Whisper سحابي (Groq / ChatGPT) وبعدين هي اللي بتترجم. لو واحد وقف (كوتة / مفتاح / نت) التالي بيكمّل، وآخر حاجة جيميناي بمفاتيحك — وبيطلعلك إشعار بكل تبديل.")
-            opt("☁ جيميناي (مفاتيحك)", "الصوت بيتبعت لجيميناي — بتختار نوع الترجمة (سريعة / دقيقة / …)", ext.isBlank()) { ext = ""; go { stepOnlineGem() } }
-            for (pv in ready) {
-                val st = TrWizard.sttCandidate(pv.id)
-                val bw = ExtLlm.blockedWhy(pv)
-                val d = (if (st != null) "التفريغ: " + st.label + " · " + ExtLlm.sttModel(st) else "⚠ محتاج مفتاح مزوّد تفريغ (Groq أو ChatGPT) من الإعدادات") + "\nالموديل: " + ExtLlm.model(pv) + (if (bw != null) "\n⛔ واقف دلوقتي: $bw" else "")
-                opt("🤖 " + pv.label, d, ext == pv.id) {
-                    if (st == null) Notice.show(act, "🔑 اضبط مفتاح Groq أو ChatGPT (للتفريغ) من الإعدادات ← 🌐 APIs خارجية", 3500L)
-                    else { ext = pv.id; onlineId = CURRENT; go { stepSave() } }
+            note("المحركات غير جيميناي ما بتسمعش صوت: الصوت بيتفرّغ بـ Whisper سحابي (Groq / ChatGPT) وبعدين هي اللي بتترجم. لو واحد وقف (كوتة / مفتاح / نت) التالي بيكمّل، وآخر حاجة جيميناي بمفاتيحك — وبيطلعلك إشعار بكل تبديل.")
+            val gk = Cfg.keys("keys").size + Cfg.keys("extra").size
+            opt("☁ جيميناي", (if (gk > 0) "$gk مفتاح" else "⚠ مفيش مفتاح لسه") + " · وضع المفاتيح: " + KeyMode.short(Cfg.int("kmode", 1)) + "\nالصوت بيتبعت لجيميناي — بتختار نوع الترجمة (سريعة / دقيقة / …)", ext.isBlank()) { ext = ""; go { stepOnlineGem() } }
+            val rn = ExtLlm.presets.count { ExtLlm.configured(it) && ExtLlm.enabled(it) }
+            opt("🔑 مفاتيحي (ChatGPT · Claude · Groq · …)", if (rn > 0) "$rn جاهز — تشوف الكل وتجرّبهم لحظيًا وتختار" else "لسه مفيش مفتاح — تضيفه من جوه", ext.isNotBlank()) { go { stepLocalKeys() } }
+            opt("🌐 من الريبو (مجاني، من غير مفتاح)", "يفحص المترجمين المجانيين لحظيًا ويرتّبهم بالسرعة — التفريغ بيبقى أوفلاين على جهازك", free.isNotBlank()) { go { stepRepo() } }
+            addBack()
+        }
+
+        /** (v276) فحص المترجمين المجانيين (اللي ليهم محوّل جاهز) وترتيبهم بالسرعة؛ الأخضر الأسرع يتختار */
+        fun stepRepo() {
+            reset("🌐 مترجمين مجانيين")
+            val provs = ExtTranslate.builtin + listOfNotNull(ExtTranslate.libreProv())
+            note("قايمة الريبو مفيهاش مفاتيح، فبنجرّب المترجمين اللي ليهم محوّل جاهز في التطبيق (بدون مفتاح). الأسرع الشغّال بيتختار الأول، والباقي بيكمّل لو وقف. التفريغ أوفلاين على جهازك.")
+            if (ftested.isEmpty() && !ftesting) {
+                ftesting = true
+                val left = java.util.concurrent.atomic.AtomicInteger(provs.size)
+                for (pv in provs) Thread {
+                    val r = ExtTranslate.testTimed(pv)
+                    act.runOnUiThread {
+                        ftested[pv.id] = r
+                        if (left.decrementAndGet() == 0) ftesting = false
+                        if (dlg.isShowing && title.text.toString().startsWith("🌐 مترجمين")) stepRepo()
+                    }
+                }.also { it.isDaemon = true }.start()
+            }
+            val ordered = provs.sortedBy { pv -> ftested[pv.id]?.let { if (it.first) it.second else Long.MAX_VALUE - 1 } ?: Long.MAX_VALUE }
+            val okList = ordered.filter { ftested[it.id]?.first == true }
+            val best = okList.firstOrNull { it.dailyChars == 0 } ?: okList.firstOrNull()   // (v277) اللي ليه حد يومي (MyMemory ~4800 حرف) مايبقاش «الأسرع» طول ما فيه بديل من غير حد
+            fun choose(pv: ExtTranslate.Prov) {
+                if (!WhisperLib.loaded) { Notice.show(act, "الأوفلاين مش مدعوم على جهازك — التفريغ هنا بيبقى على الجهاز", 3500L); return }
+                mode = "offline"; free = pv.id; method = "google"; go { stepOffPreset() }
+            }
+            for (pv in ordered) {
+                val t = ftested[pv.id]
+                val tag = if (ExtTranslate.inRepo(pv)) " · ✅ في الريبو" else ""
+                val st = if (t == null) "⏳ بيتجرّب…" else if (t.first) "🟢 شغّال · " + t.second + "ms" + (if (pv === best) " ⚡ الأسرع" else "") + (if (pv.dailyChars > 0) "\n⚠ حد يومي ~" + pv.dailyChars + " حرف (فيديو واحد ممكن يخلّصه)" else "") + "\n«" + t.third.take(50) + "»" else "🔴 " + t.third
+                opt((if (t?.first == true) "🟢 " else if (t == null) "⏳ " else "🔴 ") + pv.label, st + tag, free == pv.id) {
+                    if (t?.first == true) choose(pv) else Notice.show(act, if (t == null) "استنى الفحص يخلص" else "المترجم ده مش شغّال دلوقتي", 2500L)
                 }
+            }
+            footBtn("🔄 افحص تاني", true) { if (!ftesting) { ftested.clear(); stepRepo() } }
+            if (best != null) footBtn("⚡ اختار الأسرع", true) { choose(best) }
+            addBack()
+        }
+
+        /** (v275) كل محركات المفاتيح بحالتها. الجاهز يتختار، الناقص يفتح ضبط مفتاحه، و«🧪 جرّب الكل» بيقيس السرعة */
+        fun stepLocalKeys() {
+            reset("🔑 مفاتيحي")
+            note("دوس على الجاهز تختاره، وعلى الناقص تضبط مفتاحه. «🧪 جرّب الكل» بيبعت جملة لكل مفتاح جاهز ويقيس السرعة.")
+            val fastest = tested.filter { it.value.first && TrWizard.sttCandidate(it.key) != null }.minByOrNull { it.value.second }?.key   // (v277) الأسرع اللي ينفع فعلًا (ليه تفريغ)
+            for (pr in ExtLlm.presets) {
+                val cfgd = ExtLlm.configured(pr)
+                val bw = if (cfgd) ExtLlm.blockedWhy(pr) else null
+                val st = if (!cfgd) "🔑 محتاج مفتاح — دوس تضبطه" else if (!ExtLlm.enabled(pr)) "⏸ موقوف" else if (bw != null) "⛔ $bw" else "✅ جاهز · " + ExtLlm.model(pr)
+                val t = tested[pr.id]
+                val tl = if (t == null) "" else if (t.third.isNotEmpty() && t.first) "\n🧪 ✅ " + t.second + "ms" + (if (pr.id == fastest) " ⚡ الأسرع" else "") else "\n🧪 ❌ " + t.third
+                val stt = TrWizard.sttCandidate(pr.id)
+                val sd = if (cfgd && stt == null) "\n⚠ محتاج مفتاح تفريغ (Groq أو ChatGPT)" else ""
+                opt("🤖 " + pr.label, st + tl + sd, ext == pr.id) {
+                    if (!cfgd) PublicApisUi.editDialog(act, ui, th, pr) { tested.clear(); stepLocalKeys() }
+                    else if (stt == null) Notice.show(act, "🔑 اضبط مفتاح Groq أو ChatGPT (للتفريغ) الأول", 3500L)
+                    else { ext = pr.id; onlineId = CURRENT; go { stepSave() } }
+                }
+            }
+            opt("⚙ تعديل / إضافة مفتاح", "مفتاح · موديل · رابط · LibreTranslate", false) { go { stepEditKeys() } }
+            footBtn("🧪 جرّب الكل", true) {
+                val list = ExtLlm.presets.filter { ExtLlm.configured(it) }
+                if (list.isEmpty()) Notice.show(act, "مفيش مفتاح مضبوط يتجرّب", 2500L)
+                else if (!testing) {
+                    testing = true; tested.clear(); Notice.show(act, "⏳ بجرّب ${list.size} محرك…", 2000L)
+                    val left = java.util.concurrent.atomic.AtomicInteger(list.size)
+                    for (pr in list) Thread {
+                        val r = ExtLlm.testTimed(pr)
+                        act.runOnUiThread {
+                            tested[pr.id] = r
+                            if (left.decrementAndGet() == 0) testing = false
+                            if (dlg.isShowing && title.text.toString().startsWith("🔑 مفاتيحي")) stepLocalKeys()
+                        }
+                    }.also { it.isDaemon = true }.start()
+                }
+            }
+            if (fastest != null) footBtn("⚡ اختار الأسرع", true) {
+                val pv = ExtLlm.byId(fastest)
+                if (pv == null || TrWizard.sttCandidate(fastest) == null) Notice.show(act, "🔑 اضبط مفتاح Groq أو ChatGPT (للتفريغ) الأول", 3500L)
+                else { ext = fastest; onlineId = CURRENT; go { stepSave() } }
+            }
+            addBack()
+        }
+
+        fun stepEditKeys() {
+            reset("⚙ مفاتيح المحركات")
+            for (pr in ExtLlm.presets) opt(pr.label, if (ExtLlm.configured(pr)) "✅ مضبوط · " + ExtLlm.model(pr) else "🔑 محتاج مفتاح", false) { PublicApisUi.editDialog(act, ui, th, pr) { stepEditKeys() } }
+            val lp = ExtTranslate.libreProv()
+            opt("LibreTranslate", if (lp != null) "✅ مضبوط (بيشتغل في سلسلة الترجمة)" else "🔑 محتاج رابط السيرفر", false) { PublicApisUi.libreDialog(act, ui, th) { stepEditKeys() } }
+            addBack()
+        }
+
+        /** (v275) مفاتيح جيميناي + أوضاعها (كانت زرار 🔑 لوحده في المشغّل) */
+        fun stepGemKeys() {
+            reset("🔑 مفاتيح جيميناي ووضعها")
+            note("أساسي: " + Cfg.keys("keys").size + " · إضافي: " + Cfg.keys("extra").size + " · احتياطي: " + Cfg.keys("backup").size + "\nتعديل/حذف المفاتيح بالتفصيل من الإعدادات ← 🔑 المفاتيح والمحرك.")
+            opt("➕ ضيف مفتاح جيميناي", "إزاي تجيبه + لصقه من الكليبورد", false) {
+                act.showKeyGuide { k ->
+                    val cur = Cfg.keys("keys")
+                    if (k in cur || k in Cfg.keys("extra") || k in Cfg.keys("backup")) Notice.show(act, "⚠ المفتاح ده موجود قبل كده", 2600L)
+                    else { Cfg.p.edit().putString("keys", (cur + k).joinToString("\n")).apply(); Notice.show(act, "✓ اتحفظ المفتاح", 2200L) }
+                    stepGemKeys()
+                }
+            }
+            val cur = KeyMode.clamp(Cfg.int("kmode", 1))
+            for (m in 1..KeyMode.count) opt(KeyMode.name(m), KeyMode.descs[m - 1], m == cur) {
+                Cfg.put("kmode", m.toString()); TrWizard.keyModeHook?.invoke(m); stepGemKeys()
             }
             addBack()
         }
 
         fun stepOnlineGem() {
             reset("☁ نوع الترجمة (جيميناي)")
+            opt("🔑 مفاتيح جيميناي ووضعها", Cfg.keys("keys").size.toString() + " مفتاح · وضع " + KeyMode.short(Cfg.int("kmode", 1)), false) { go { stepGemKeys() } }
             for (pr in TrPresets.all) opt(pr.icon + " " + pr.name, pr.desc, ext.isBlank() && onlineId == pr.id) { ext = ""; onlineId = pr.id; go { stepSave() } }
             opt("⚙ الإعدادات الحالية", "من غير ما أغيّر أي إعداد", ext.isBlank() && onlineId == CURRENT) { ext = ""; onlineId = CURRENT; go { stepSave() } }
             addBack()

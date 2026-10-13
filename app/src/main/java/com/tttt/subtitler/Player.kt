@@ -1468,7 +1468,7 @@ class PlayerActivity : Activity(), Host {
             (v.parent as? ViewGroup)?.removeView(v); v.textSize = 15f; v.setPadding(0, 0, 0, 0)
             leftB.addView(v, LinearLayout.LayoutParams(ui.dp(34), ui.dp(34)).apply { marginStart = ui.dp(3) })
         }
-        leftB.addView(lockB, lockLp()); leftB.addView(aiB); smallIcon(kmIcon); smallIcon(lgIcon)
+        leftB.addView(lockB, lockLp()); leftB.addView(aiB); smallIcon(lgIcon)
         btnRow.addView(leftB, LinearLayout.LayoutParams(0, -2, 1f))
         val pillBg = { ui.box(0xE00F0F12.toInt(), 0x29FFFFFF, 24) }
         val prevB = ui.fsCircle("⏮") { stepOrSeek(-1); showChrome() }.apply { textSize = 20f; background = pillBg() }
@@ -1502,7 +1502,7 @@ class PlayerActivity : Activity(), Host {
             leftB.removeAllViews(); rightB.removeAllViews(); tbRow.removeAllViews()
             // toolBtns = [⏱ توقيت, 📋 لوج, 📝 جمل, CC, 🔁 تكرار, 💬 وضع الترجمة, 🧑 شخصيات]
             fun lp(i: Int) = LinearLayout.LayoutParams(if (i == 0) -2 else ui.dp(38), ui.dp(38)).apply { setMargins(ui.dp(3), ui.dp(3), ui.dp(3), ui.dp(3)) }
-            leftB.addView(lockB, lockLp()); leftB.addView(aiB); smallIcon(kmIcon); smallIcon(lgIcon)
+            leftB.addView(lockB, lockLp()); leftB.addView(aiB); smallIcon(lgIcon)
             (noticeBtn.parent as? ViewGroup)?.removeView(noticeBtn)
             rightB.addView(noticeBtn, LinearLayout.LayoutParams(-2, ui.dp(34)).apply { marginEnd = ui.dp(8) })
             rightB.addView(rotBarB, LinearLayout.LayoutParams(ui.dp(40), ui.dp(40)).apply { marginEnd = ui.dp(8) })
@@ -2859,7 +2859,7 @@ class PlayerActivity : Activity(), Host {
                     pwRef.dismiss()
                     if (m != cur) {
                         applyKeyMode(m)
-                        say("🔑 وضع المفاتيح: " + KeyMode.name(m) + (if (::engine.isInitialized && engineStarted) " — الباتشات الشغالة هتخلص الأول وبعدها الباتشات الجديدة تمشي بيه" else ""))
+                        say("🔑 وضع المفاتيح: " + KeyMode.name(m) + (if (::engine.isInitialized && engineStarted) " — الباتشات الشغالة هتخلص الأول وبعدها الباتشات الجديدة تمشي بيه" else "") + "\n" + ExtTranslate.setupLine())
                     }
                 }
             }
@@ -2920,6 +2920,7 @@ class PlayerActivity : Activity(), Host {
     /** edit = true: جاي من زرار ⚙ (تغيير/مسح الإعداد من غير بدء ترجمة) */
     fun trWizard(edit: Boolean) {
         try {
+            TrWizard.keyModeHook = { n -> applyKeyMode(n) }   // (v275)
             TrWizard.show(this, edit) { pl, save, start ->
                 if (save) TrWizard.save(pl)
                 if (start) runPlan(pl) else if (save) say("💾 اتحفظ: " + TrWizard.describe(pl).replace("\n", " · "))
@@ -2938,7 +2939,7 @@ class PlayerActivity : Activity(), Host {
             for ((v, f) in kmLabels) v.text = f(KeyMode.clamp(Cfg.int("kmode", 1)))
             if (::engine.isInitialized) engine.convDialect = Cfg.str("conv_dialect", "")   // (v257) اللهجة اللي اخترتها في الشاشة
             LogStore.add("🎛 طريقة الترجمة: أوفلاين — لغة=" + pl.lang.ifEmpty { "تلقائي" } + " · محرك=" + pl.engine + " · موديل=" + (if (pl.engine == "sherpa") "SenseVoice" else pl.model) + " · ترجمة=" + pl.method + " · لهجة=" + pl.dialect.ifBlank { "فصحى" })
-            say("📴 أوفلاين · " + TrWizard.langLabel(pl.lang) + " · " + (if (pl.method == "google") "ترجمة جوجل" else "ترجمة جيميناي"))
+            say("📴 أوفلاين · " + TrWizard.langLabel(pl.lang) + " · " + (if (pl.method == "google") "ترجمة جوجل" else "ترجمة جيميناي") + "\n" + ExtTranslate.setupLine())
             beginTranslate()
             TrWizard.startNotices(pl).forEachIndexed { i, m -> h.postDelayed({ try { Notice.show(this, m, 4500L) } catch (e: Throwable) { LogStore.err("Player:startNotices", e) } }, 600L + i * 3200L) }   // (v255)
         } else if (pl.cloud) {
@@ -2948,7 +2949,7 @@ class PlayerActivity : Activity(), Host {
             for ((v, f) in kmLabels) v.text = f(KeyMode.clamp(Cfg.int("kmode", 1)))
             if (::engine.isInitialized) engine.convDialect = Cfg.str("conv_dialect", "")
             LogStore.add("🎛 طريقة الترجمة: أونلاين بمحرك خارجي — ترجمة=" + pl.ext + " · تفريغ=" + (TrWizard.sttCandidate(pl.ext)?.id ?: "؟") + " · السلسلة: " + ExtTranslate.chainLabel())
-            say("☁ " + (ExtLlm.byId(pl.ext)?.label ?: pl.ext) + " · تفريغ سحابي · لو وقف: " + ExtTranslate.chainLabel().substringAfter(" ← "))
+            say("☁ " + (ExtLlm.byId(pl.ext)?.label ?: pl.ext) + " · تفريغ سحابي\n" + ExtTranslate.setupLine())
             beginTranslate()
             TrWizard.startNotices(pl).forEachIndexed { i, m -> h.postDelayed({ try { Notice.show(this, m, 4500L) } catch (e: Throwable) { LogStore.err("Player:startNotices", e) } }, 600L + i * 3200L) }
         } else {

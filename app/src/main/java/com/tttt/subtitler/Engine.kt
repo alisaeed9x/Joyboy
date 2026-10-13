@@ -564,7 +564,7 @@ class Engine(
                     if (drained()) {
                         val from = activeMode; activeMode = conf.keyMode
                         host.log("🔑 الباتشات الشغالة خلصت — الوضع اتبدّل من $from لـ ${KeyMode.name(activeMode)} والباتشات الجديدة هتمشي بيه")
-                        host.notice("🔑 الوضع الجديد شغّال: " + KeyMode.short(activeMode))
+                        host.notice("🔑 الوضع الجديد شغّال: " + KeyMode.short(activeMode) + "\n" + ExtTranslate.setupLine())
                         if (activeMode < KeyMode.ALL_PARALLEL && detDone) try { maybeTranslateTemplate() } catch (_: Throwable) {}
                     } else {
                         host.status("🔑 بخلّص الباتشات الشغالة قبل ما أبدّل للوضع " + KeyMode.short(conf.keyMode) + "…")
@@ -847,7 +847,8 @@ class Engine(
                     } catch (e: Throwable) { pool.end(key, 0, false); throw e }
                 }
                 val took = System.currentTimeMillis() - t0
-                if (isClosed) return   // الإنجن اتقفل أثناء الطلب (خرجت من الفيديو): ارمي الرد
+                if (isClosed) return
+                if (!(tx && Offline.on())) noteWho("🔑 جيميناي شغّال", " — باتش ${i + 1} بمفتاح " + pool.tail(key) + " (" + conf.keys.size + " أساسي)")   // (v278)   // الإنجن اتقفل أثناء الطلب (خرجت من الفيديو): ارمي الرد
                 if (r.finish == "MAX_TOKENS" && trunc >= 2) partial = true
                 if (r.finish == "MAX_TOKENS" && trunc < 2) { trunc++; host.log("⚠ الرد اتقطع — إعادة المحاولة"); nap(600); continue }
                 if (r.finish.isNotEmpty() && r.finish != "STOP" && r.finish != "MAX_TOKENS") throw Exception("رد Gemini اتوقف: ${r.finish}")
@@ -1239,6 +1240,15 @@ class Engine(
         warnAtMap[key] = n
         try { host.notice(msg) } catch (_: Throwable) {}
     }
+    @Volatile private var whoKind = ""; @Volatile private var whoAt = 0L
+    /** (v278) «مين اللي بيترجم فعلًا»: سطر لوج كل مرة، وإشعار لما النوع يتغيّر (أو كل 3 دقايق) — مش كل باتش */
+    private fun noteWho(kind: String, detail: String) {
+        host.log(kind + detail)
+        val n = System.currentTimeMillis()
+        if (kind == whoKind && n - whoAt < 180_000L) return
+        whoKind = kind; whoAt = n
+        try { host.notice(kind + detail) } catch (_: Throwable) {}
+    }
     @Volatile private var swapNoticeAt = 0L   // (v274) آخر إشعار «محرك وقف ← التاني كمّل» (مرة كل 20 ث بالكتير)
     private val skipNoted = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()   // (v274) مزوّدين اتقال إنهم موقوفين (بيتشالوا لما يرجعوا)
     /** (v274) إشعار تبديل محرك الترجمة + سطر في اللوج */
@@ -1369,6 +1379,7 @@ class Engine(
         }
         // (v274) السلسلة: [المحرك الأساسي لو متحدد] ← باقي الخارجيين ← جوجل (حسب سويتش الترتيب) ← (لو كله فشل) الباتش بيتحوّل لجيميناي بمفاتيحك
         val steps = ExtTranslate.chain()   // null = جوجل الداخلي
+        val who = LinkedHashMap<String, Int>()   // (v278) مين ترجم كام جملة في اللفة دي
         fun nm(st: ExtTranslate.Prov?): String = st?.label ?: "جوجل"
         for ((si, st) in steps.withIndex()) {
             if (!running || isClosed) break
@@ -1381,6 +1392,7 @@ class Engine(
                 skipNoted.remove(st.id)
             }
             if (st == null) viaGoogle(need) else viaExt(st, need)
+            need.count { !out[it].isNullOrBlank() }.let { g -> if (g > 0) who[ExtTranslate.whoLabel(st)] = g }
             val left = src.indices.count { out[it].isNullOrBlank() && src[it].isNotBlank() }
             if (left > 0) {
                 val why = if (st == null) "ما ردّش" else ExtTranslate.lastError.ifEmpty { "ما كمّلش" }
@@ -1388,6 +1400,7 @@ class Engine(
                 swapNotice("🔀 ${nm(st)} وقف ($why) — $left جملة هيكمّلها $nextName")
             }
         }
+        if (who.isNotEmpty()) noteWho("✅ بيترجم بـ " + who.keys.joinToString(" + "), " — " + who.entries.joinToString(" · ") { it.value.toString() + " جملة" })
         return out.toList()
     }
 

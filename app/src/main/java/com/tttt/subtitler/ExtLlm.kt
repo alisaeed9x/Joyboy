@@ -167,6 +167,18 @@ object ExtLlm {
         "✅ ${p.label} شغّال: «" + (r.firstOrNull() ?: "؟") + "»" + (if (note.isNotEmpty()) "\n$note" else "")
     } catch (e: Exception) { "❌ ${p.label}: " + (e.message ?: e.javaClass.simpleName).take(140) }
 
+
+    /** (v275) اختبار لحظي بقياس الزمن: (نجح؟، ms، سطر نتيجة). مابيحفظش حاجة، وبيفك الإيقاف لو نجح */
+    fun testTimed(p: Preset): Triple<Boolean, Long, String> {
+        val t0 = System.currentTimeMillis()
+        return try {
+            val r = translate(p, listOf("Hello, how are you today?"), "en").firstOrNull()
+            val ms = System.currentTimeMillis() - t0
+            ExtTranslate.lastNote = ""   // (v277) إشعار تغيير الموديل التلقائي ماينفعش يفضل لحد ما يظهر غلط في ترجمة شغّالة
+            if (r.isNullOrBlank()) Triple(false, ms, "ما رجّعش ترجمة") else { ExtTranslate.clearBlock("llm_" + p.id); Triple(true, ms, r) }
+        } catch (e: Exception) { Triple(false, System.currentTimeMillis() - t0, (e.message ?: e.javaClass.simpleName).take(90)) }
+    }
+
     private fun chatOnce(p: Preset, system: String, user: String, maxTokens: Int): String {
         val key = key(p)
         if (p.kind == "anthropic") {
