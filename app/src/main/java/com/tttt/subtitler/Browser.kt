@@ -1061,14 +1061,14 @@ class BrowserActivity : Activity() {
         val seenK = HashMap<String, Int>()
         fun link(k: String, i: Int) { val j = seenK[k]; if (j == null) seenK[k] = i else par[find(i)] = find(j) }
         val gk = list.map { groupKey(it) }
-        list.forEachIndexed { i, f -> link(gk[i], i); nameKey(f)?.let { link(it, i) }; titleKey(f)?.let { link(it, i) } }
+        list.forEachIndexed { i, f -> link(if (gk[i].startsWith("yt:")) gk[i] else "u:" + Sniff.key(f.url), i) }   // (v264) كل لينك = اصطياد لوحده (زي الأول)؛ يوتيوب بس بيتجمّع بالـ videoId
         val order = LinkedHashMap<Int, ArrayList<Int>>()
         for (i in list.indices.reversed()) order.getOrPut(find(i)) { ArrayList() }.add(i)
         val out = ArrayList<Grp>()
         for ((_, idx) in order) {
             val fs = idx.map { list[it] }
             val ks = idx.map { gk[it] }.distinct()
-            val key = ks.firstOrNull { it.startsWith("yt:") } ?: ks.sorted().first()
+            val key = ks.firstOrNull { it.startsWith("yt:") } ?: ("u:" + Sniff.key(fs.first().url))
             val first = fs.first()
             val qs = ArrayList<Qv>()
             val pk = if (key.startsWith("yt:")) ytPicks[key.removePrefix("yt:")] else null

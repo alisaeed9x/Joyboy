@@ -1226,6 +1226,32 @@ class Engine(
     }
     @Volatile private var gtNoticeAt = 0L   // (v255) آخر إشعار «جوجل فشل» (مرة كل 30 ث بالكتير)
 
+    // (v265) حالة الأوفلاين للعرض (الكبسولة + اللوج الصغير): بيفرّغ إيه، اتفرّغ كام، مستني إيه، بيترجم إيه
+    @Volatile private var offAt = 0L
+    @Volatile private var offB = ""
+    @Volatile private var offD = ""
+    private fun offRefresh() {
+        val now = System.currentTimeMillis()
+        if (now - offAt < 800L) return
+        offAt = now
+        val d = currentDur(); val tot = if (d > 0) Math.ceil(d / ch).toInt() else 0
+        val k = if (Offline.live()) 1 else maxOf(1, (Offline.partMin() * 60.0 / ch).toInt())
+        val doneN = if (tot > 0) (0 until tot).count { isDone(it, d) } else 0
+        val held = tHold.size
+        val txN = minOf(tot, doneN + held)
+        val cur = inflight.minOrNull(); val trN = trBusy.get()
+        val who = if (TrWizard.googleOn()) "جوجل" else "جيميناي"
+        offB = "📴 $txN/$tot" + (if (trN > 0) " 🌍" else if (cur != null) " ⏳" else "")
+        val sb = StringBuilder("📴 أوفلاين: اتفرّغ $txN من $tot باتش (الباتش ${ch.toInt()}ث)")
+        if (cur != null) sb.append("\n⏳ بيفرّغ دلوقتي باتش ${cur + 1} على الجهاز")
+        if (trN > 0) sb.append("\n🌍 بيترجم دلوقتي بـ$who")
+        else if (held > 0) sb.append("\n⏸ جاهز $held باتش — الترجمة بتبدأ أول ما يجهز $k" + (if (Offline.live()) " (لحظي)" else " (≈ ${Offline.partMin()} د)"))
+        else if (cur == null && txN < tot) sb.append("\n… مستني الباتش الجاي")
+        offD = sb.toString()
+    }
+    fun offlineBrief(): String? { if (!Offline.configured() || !running) return null; offRefresh(); return offB }
+    fun offlineDetail(): String? { if (!Offline.configured() || !running) return null; offRefresh(); return offD }
+
     /** كل الباتشات المطلوبة اتنسخت (مفيش حاجة شغالة ولا مستنية ولا مستنية إعادة) */
     private fun ctxReady(): Boolean {
         val d = currentDur()
@@ -1249,7 +1275,7 @@ class Engine(
         if (avail.isEmpty()) return false
         if (!ctxReady() && Offline.configured() && partTick(avail)) return true   // (v253) جزء كامل اتنسخ ← يتترجم فورًا
         if (!ctxReady()) {
-            val m = "📝 ترانسكريبشن: ${avail.size} باتش جاهز — الترجمة السياقية بتبدأ لما كل الباتشات تتنسخ"
+            val m = if (Offline.configured()) { offRefresh(); offD.replace("\n", " · ") } else "📝 ترانسكريبشن: ${avail.size} باتش جاهز — الترجمة السياقية بتبدأ لما كل الباتشات تتنسخ"
             if (m != ctxMsg) { ctxMsg = m; host.status(m) }
             return false
         }
@@ -1271,7 +1297,7 @@ class Engine(
      * بيتبعتوا لجيميناي يترجمهم. الباقي (اللي أقل من جزء) بيتترجم لما كل الباتشات تخلص زي الوضع 4 العادي.
      */
     private fun partTick(avail: List<Int>): Boolean {
-        val k = maxOf(1, (Offline.partMin() * 60.0 / ch).toInt())
+        val k = if (Offline.live()) 1 else maxOf(1, (Offline.partMin() * 60.0 / ch).toInt())
         if (avail.size < k) return false
         val head = avail.take(k)
         if (head.last() - head.first() != k - 1) return false      // فيه باتش ناقص في النص (لسه بيتنسخ أو متأخر)

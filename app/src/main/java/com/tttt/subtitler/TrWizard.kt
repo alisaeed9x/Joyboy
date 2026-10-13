@@ -16,7 +16,7 @@ import android.widget.LinearLayout
  * و stt_offline / stt_lang / off_model / tr_method (اللي المحرك بيقراه فعلًا — بتتكتب وقت التشغيل).
  */
 object TrWizard {
-    class Plan(val mode: String, val onlineId: String, val lang: String, val model: String, val method: String, val engine: String = "whisper", val dialect: String = "") {
+    class Plan(val mode: String, val onlineId: String, val lang: String, val model: String, val method: String, val engine: String = "whisper", val dialect: String = "", val live: Boolean = false) {
         val offline: Boolean get() = mode == "offline"
     }
 
@@ -85,26 +85,27 @@ object TrWizard {
     fun savedPlan(): Plan? {
         if (!saved()) return null
         return when (Cfg.str("tr_mode", "")) {
-            "offline" -> Plan("offline", "", Cfg.str("tr_s_lang", ""), Cfg.str("tr_s_model", "small").ifBlank { "small" }, if (Cfg.str("tr_s_method", "gemini") == "google") "google" else "gemini", if (Cfg.str("tr_s_engine", "whisper") == "sherpa") "sherpa" else "whisper", Cfg.str("tr_s_dialect", ""))
+            "offline" -> Plan("offline", "", Cfg.str("tr_s_lang", ""), Cfg.str("tr_s_model", "small").ifBlank { "small" }, if (Cfg.str("tr_s_method", "gemini") == "google") "google" else "gemini", if (Cfg.str("tr_s_engine", "whisper") == "sherpa") "sherpa" else "whisper", Cfg.str("tr_s_dialect", ""), Cfg.bool("tr_s_live", false))
             "online" -> Plan("online", Cfg.str("tr_online", CURRENT).ifBlank { CURRENT }, "", "", "gemini")
             else -> null
         }
     }
 
     fun describe(pl: Plan): String =
-        if (pl.offline) "📴 أوفلاين · " + langLabel(pl.lang) + "\nالتفريغ: " + (if (pl.engine == "sherpa") "SenseVoice (sherpa-onnx)" else "Whisper " + pl.model) + " على الجهاز\nالترجمة: " + (if (pl.method == "google") "جوجل (من غير API)" else "جيميناي بالسياق") + "\nاللهجة: " + pl.dialect.ifBlank { "فصحى" } + (if (pl.method == "google" && pl.dialect.isNotBlank() && pl.dialect != "فصحى") " (جيميناي بيحوّل ترجمة جوجل)" else "")
+        if (pl.offline) "📴 أوفلاين" + (if (pl.live) " ⚡ لحظي" else "") + " · " + langLabel(pl.lang) + "\nالتفريغ: " + (if (pl.engine == "sherpa") "SenseVoice (sherpa-onnx)" else "Whisper " + pl.model) + " على الجهاز\nالترجمة: " + (if (pl.method == "google") "جوجل (من غير API)" else "جيميناي بالسياق") + "\nاللهجة: " + pl.dialect.ifBlank { "فصحى" } + (if (pl.method == "google" && pl.dialect.isNotBlank() && pl.dialect != "فصحى") " (جيميناي بيحوّل ترجمة جوجل)" else "")
         else "☁ أونلاين (جيميناي)\n" + (TrPresets.byId(pl.onlineId)?.let { it.icon + " " + it.name } ?: "⚙ الإعدادات الحالية")
 
     /** بيكتب الإعدادات اللي المحرك بيقراها (من غير ما يحفظ الخطة) */
     fun apply(pl: Plan) {
         Cfg.put("stt_offline", if (pl.offline) "1" else "0")
-        if (pl.offline) { Cfg.put("stt_lang", pl.lang); Cfg.put("off_model", pl.model); Cfg.put("tr_method", pl.method); Cfg.put("stt_engine", pl.engine); Cfg.put("conv_dialect", if (pl.dialect == "فصحى") "" else pl.dialect) }
+        if (pl.offline) { Cfg.put("stt_lang", pl.lang); Cfg.put("off_model", pl.model); Cfg.put("tr_method", pl.method); Cfg.put("stt_engine", pl.engine); Cfg.put("conv_dialect", if (pl.dialect == "فصحى") "" else pl.dialect)
+            if (pl.live) Cfg.put("ctx_min", "1") else if (Cfg.int("ctx_min", 3) == 1) Cfg.put("ctx_min", "3") }   // (v266)
         else Cfg.put("tr_method", "gemini")
     }
 
     fun save(pl: Plan) {
         Cfg.put("tr_mode", pl.mode)
-        if (pl.offline) { Cfg.put("tr_s_lang", pl.lang); Cfg.put("tr_s_model", pl.model); Cfg.put("tr_s_method", pl.method); Cfg.put("tr_s_engine", pl.engine); Cfg.put("tr_s_dialect", pl.dialect) }
+        if (pl.offline) { Cfg.put("tr_s_lang", pl.lang); Cfg.put("tr_s_model", pl.model); Cfg.put("tr_s_method", pl.method); Cfg.put("tr_s_engine", pl.engine); Cfg.put("tr_s_dialect", pl.dialect); Cfg.put("tr_s_live", if (pl.live) "1" else "0") }
         else Cfg.put("tr_online", pl.onlineId)
         Cfg.put("tr_saved", "1")
     }
@@ -144,7 +145,9 @@ object TrWizard {
         var engine = sp?.takeIf { it.offline }?.engine ?: (if (Cfg.str("stt_engine", "whisper") == "sherpa") "sherpa" else "whisper")
 
         var dialect = sp?.takeIf { it.offline }?.dialect ?: TrWizard.dialectWanted()
-        fun plan() = Plan(mode, onlineId, lang, model, method, engine, dialect)
+        var live = false
+        var presetFlow = false
+        fun plan() = Plan(mode, onlineId, lang, model, method, engine, dialect, live)
 
         fun go(step: () -> Unit) { hist.add(step); step() }
         fun back() { if (hist.size > 1) { hist.removeAt(hist.size - 1); hist[hist.size - 1]() } else dlg.dismiss() }
@@ -192,10 +195,27 @@ object TrWizard {
         fun stepMode() {
             reset(if (edit) "✏ اختار طريقة الترجمة" else "▶ هتترجم إزاي؟")
             opt("📴 أوفلاين", if (WhisperLib.loaded) "الكلام بيتفرّغ على جهازك من غير نت ولا مفتاح، وبعدها الترجمة بجوجل (من غير API) أو جيميناي" else Offline.status(), mode == "offline") {
-                if (!WhisperLib.loaded) Notice.show(act, "الأوفلاين مش مدعوم على جهازك", 2500L) else { mode = "offline"; go { stepLang() } }
+                if (!WhisperLib.loaded) Notice.show(act, "الأوفلاين مش مدعوم على جهازك", 2500L) else { mode = "offline"; go { stepOffPreset() } }
             }
             opt("☁ أونلاين (جيميناي)", "الصوت بيتبعت لجيميناي — بتختار نوع الترجمة (سريعة / دقيقة / …)", mode == "online") { mode = "online"; go { stepOnline() } }
             addBack(if (hist.size > 1) "← رجوع" else "إغلاق")
+        }
+
+        /** (v266) بريستات الأوفلاين: لغة تلقائية، من غير أسئلة كتير. «✏ مخصص» بيفتح الخطوات التفصيلية */
+        fun stepOffPreset() {
+            reset("📴 نوع الأوفلاين")
+            note("اختار بريست جاهز (اللغة تلقائية). لو الموديل مش نازل هتنزّله مرة واحدة.")
+            fun pick(eng: String, mdl: String, meth: String, lv: Boolean, dia: String) {
+                presetFlow = true; lang = ""; engine = eng; model = mdl; method = meth; live = lv; dialect = dia
+                val ready = if (eng == "sherpa") SherpaStt.ready() else (WhisperLib.loaded && Offline.downloaded(Offline.models.firstOrNull { it.id == mdl } ?: Offline.model()))
+                if (ready) go { stepSave() } else go { if (eng == "sherpa") stepSherpa() else stepStt() }
+            }
+            val fastEng = if (SherpaStt.ready()) "sherpa" else "whisper"
+            opt("⚡ لحظي", "الأسرع: باتشات قصيرة (20-30ث) وكل باتش يتفرّغ يتترجم فورًا بجوجل. " + (if (fastEng == "sherpa") "SenseVoice." else "Whisper base (~60 ميجا)."), live && presetFlow && method == "google") { pick(fastEng, "base", "google", true, "") }
+            opt("⚖ متوازن", "Whisper small + ترجمة جوجل كل 3 دقايق.", false) { pick("whisper", "small", "google", false, "") }
+            opt("🎯 دقيق", "Whisper small + ترجمة جيميناي بالسياق (ضمائر وأجناس أدق).", false) { pick("whisper", "small", "gemini", false, TrWizard.dialectWanted()) }
+            opt("✏ مخصص", "اختار اللغة والمحرك والموديل والترجمة واللهجة بنفسك.", false) { presetFlow = false; live = false; go { stepLang() } }
+            addBack()
         }
 
         fun stepOnline() {
@@ -210,7 +230,9 @@ object TrWizard {
             note("اختار لغة الكلام في الفيديو — بيخلّي التفريغ أدق. لو الفيديو بيخلط لغات اختار «تلقائي»، بس التفريغ بيبقى أدق لما المقطع كله بلغة واحدة.")
             for ((id, label) in TrWizard.sttLangs) opt(label, "", lang == id) {
                 lang = id
-                if (SherpaStt.handles(id)) go { stepEngine() }   // (v263) كل لغة SenseVoice بيفهمها (إنجليزي/ياباني/كوري/صيني/تلقائي) — كانت ياباني/كوري/صيني بس فمحرك SenseVoice مكنش بيظهر للإنجليزي else { engine = "whisper"; go { stepStt() } }
+                // (v264) كل لغة SenseVoice بيفهمها (إنجليزي/ياباني/كوري/صيني/تلقائي) بتروح لاختيار المحرك، والباقي على Whisper على طول
+                if (SherpaStt.handles(id)) go { stepEngine() }
+                else { engine = "whisper"; go { stepStt() } }
             }
             addBack()
         }
@@ -250,7 +272,7 @@ object TrWizard {
             footBtn("التالي ←", true) {
                 if (!SherpaStt.supported()) Notice.show(act, "جهازك مش بيدعم sherpa-onnx", 2500L)
                 else if (!SherpaStt.downloaded()) Notice.show(act, "نزّل الموديل الأول", 2500L)
-                else go { stepMethod() }
+                else go { if (presetFlow) stepSave() else stepMethod() }
             }
             addBack()
         }
@@ -293,7 +315,7 @@ object TrWizard {
             footBtn("التالي ←", true) {
                 if (!WhisperLib.loaded) Notice.show(act, "جهازك مش بيدعم الأوفلاين", 2500L)
                 else if (!Offline.downloaded(cur())) Notice.show(act, "نزّل الموديل الأول", 2500L)
-                else go { stepMethod() }
+                else go { if (presetFlow) stepSave() else stepMethod() }
             }
             addBack()
         }

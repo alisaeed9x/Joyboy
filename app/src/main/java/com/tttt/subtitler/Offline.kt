@@ -54,7 +54,9 @@ object Offline {
         else -> "✅ الأوفلاين شغّال: Whisper ${model().id} بينسخ على الجهاز، وجيميناي بيترجم ويكمّل لو الأوفلاين فشل."
     }
     /** طول جزء الترجمة السياقية بالدقايق: 5/10/20، أو 0 لو الأوفلاين مقفول (السلوك القديم) */
-    fun partMin(): Int = if (!configured()) 0 else Cfg.int("ctx_min", 10).let { if (it == 5 || it == 10 || it == 20) it else 10 }
+    fun partMin(): Int = if (!configured()) 0 else Cfg.int("ctx_min", 3).let { if (it == 1 || it == 3 || it == 5 || it == 10 || it == 20) it else 3 }
+    /** (v266) «لحظي»: كل باتش يتفرّغ يتترجم فورًا (ctx_min = 1) */
+    fun live(): Boolean = configured() && partMin() == 1
 
     // ===== التفريغ =====
     private val lock = ReentrantLock(true)   // fair: الباتشات بتتفرّغ بترتيب وصولها (واحد في المرة — المعالج مش هيستحمل اتنين)

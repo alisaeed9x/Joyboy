@@ -314,6 +314,7 @@ class PlayerActivity : Activity(), Host {
     lateinit var logDlg: android.app.Dialog
     var chromeShown = false
     var fsOnly: List<View> = emptyList()
+    private var tbView: View? = null   // (v265) الشريط العلوي (أزرار المشغّل)
     var lastMem = 0L
     var applyChromeFn: () -> Unit = {}
     var dismissPopFn: () -> Unit = {}
@@ -852,7 +853,7 @@ class PlayerActivity : Activity(), Host {
         col.addView(head)
         col.addView(MaxHeightScroll(this, (resources.displayMetrics.heightPixels * 0.42f).toInt()).apply { addView(tv, FrameLayout.LayoutParams(-1, -2)) }, LinearLayout.LayoutParams(-1, -2))
         val w = minOf(ui.dp(270), resources.displayMetrics.widthPixels - ui.dp(28))
-        videoBoxRef.addView(col, FrameLayout.LayoutParams(w, -2, Gravity.TOP or Gravity.LEFT).apply { setMargins(ui.dp(10), ui.dp(44), 0, 0) })   // (v249) تحت الكبسولات شمال
+        videoBoxRef.addView(col, FrameLayout.LayoutParams(w, -2, Gravity.TOP or Gravity.RIGHT).apply { setMargins(0, ui.dp(48), ui.dp(66), 0) })   // (v265) تحت الكبسولات يمين   // (v249) تحت الكبسولات شمال
         miniLog = col
     }
     private var logMode = 0
@@ -1093,7 +1094,7 @@ class PlayerActivity : Activity(), Host {
         badgeRow.addView(fsBadge, LinearLayout.LayoutParams(-2, -2))
         badgeRow.addView(visBadge, LinearLayout.LayoutParams(-2, -2).apply { marginStart = ui.dp(4) })
         badgeRow.addView(netBadge, LinearLayout.LayoutParams(-2, -2).apply { marginStart = ui.dp(4) })
-        videoBox.addView(badgeRow, FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.LEFT).apply { setMargins(ui.dp(10), ui.dp(8), 0, 0) })
+        videoBox.addView(badgeRow, FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.RIGHT).apply { setMargins(0, ui.dp(8), ui.dp(10), 0) })   // (v265) الكبسولات يمين فوق
         applyBadgeAlpha()
         NoticeLog.attach(this) { paintNotices() }; paintNotices()
         val gi = IconTextView(this).apply {
@@ -1562,7 +1563,7 @@ class PlayerActivity : Activity(), Host {
         fsBar.addOnLayoutChangeListener { _, _, t, _, b, _, ot, _, ob -> if (b - t != ob - ot && chromeShown) applyChromeFn() }   // ارتفاع الشريط اتغيّر: ارفع الترجمة فوقه
         val chromeFrame = FrameLayout(this).apply { visibility = View.GONE; tag = "chromeFrame" }
         // في الرأسي الصفوف بتلفّ لسطر جديد (FlowRow) — من غير HorizontalScrollView لأنه بيدّي عرض لا نهائي فالصف عمره ما بيلفّ
-        chromeFrame.addView(tb, FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.RIGHT).apply { setMargins(ui.dp(8), ui.dp(10), ui.dp(100), 0) })   // (v90) يمين، جنب عداد الجمل
+        chromeFrame.addView(tb, FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.RIGHT).apply { setMargins(ui.dp(8), ui.dp(10), ui.dp(100), 0) }); tbView = tb   // (v265) في ملء الشاشة الهامش بيكبر عشان الشريط مايغطّيش الكبسولات   // (v90) يمين، جنب عداد الجمل
         chromeFrame.addView(fsBar, FrameLayout.LayoutParams(-1, -2, Gravity.BOTTOM).apply { setMargins(0, 0, 0, ui.dp(6)) })
         // زرار القفل الصغير: بيظهر لما تلمس الشاشة وهي مقفولة
         lockOv = ui.fsCircle("🔒") { setLock(false) }.apply { visibility = View.GONE }
@@ -1981,13 +1982,13 @@ class PlayerActivity : Activity(), Host {
                 }
                 if (now - lastBatch > 700) {
                     lastBatch = now
-                    val bs = batchStyled(); val bl = bs.toString()
-                    if (bl != lastBatchTxt) { lastBatchTxt = bl; batchTv.text = bs; miniLogTv?.text = if (bl.isBlank()) "مفيش باتشات لسه" else bs }
+                    val bs = batchStyled(); val od = try { engine.offlineDetail() } catch (_: Throwable) { null }; val bl = (od ?: "") + bs.toString()
+                    if (bl != lastBatchTxt) { lastBatchTxt = bl; batchTv.text = bs; miniLogTv?.text = if (bl.isBlank()) "مفيش باتشات لسه" else if (od != null) android.text.TextUtils.concat(od + "\n", bs) else bs }
                     updateProblems()
                 }
                 if (now - lastBeat > 20000) { lastBeat = now; LogStore.add("💓 ${LogStore.heapLine()} · ${if (player.isPlaying) "بيشتغل" else "واقف"} @${fmtMs(cur)} · مترجم ${(engine.coveredSec() / 60).toInt()}د · ${engine.subs.size} جملة") }
                 run { val pc = PlayerLogic.percent(engine.coveredSec(), durMs / 1000.0); if (pc != trPct) { trPct = pc; updateTr() } }
-                if (fullMode) { fsBadge.set("🔊 " + PlayerLogic.percent(engine.coveredSec(), durMs / 1000.0).toString() + "%", list.size.toString() + " جملة ▾"); fsBadge.setOn(engineStarted && !engine.userPaused); netBadge.set(NetUse.fmt(NetUse.localTotal()), NetUse.fmt(NetUse.onlineTotal())); applyBadgeAlpha() }   // (v236) نقطة خضراء = الوضع الصوتي شغّال
+                if (fullMode) { fsBadge.set("🔊 " + PlayerLogic.percent(engine.coveredSec(), durMs / 1000.0).toString() + "%", (try { engine.offlineBrief() } catch (_: Throwable) { null }?.let { it + " · " } ?: "") + list.size.toString() + " جملة ▾"); fsBadge.setOn(engineStarted && !engine.userPaused); netBadge.set(NetUse.fmt(NetUse.localTotal()), NetUse.fmt(NetUse.onlineTotal())); applyBadgeAlpha() }   // (v236) نقطة خضراء = الوضع الصوتي شغّال
                 if (fullMode && ::visual.isInitialized) { visBadge.set("👁 " + visual.count, if (visual.running) "شغّال" else "واقف"); visBadge.setOn(visual.running) }   // (v236) نقطة خضراء = الوضع البصري شغّال
                 if (now - lastMem > 4000) { lastMem = now; if (!fullMode) mem.update(this@PlayerActivity) }
                 counters.text = "جمل ${list.size} · 👁 ${visList.size} · تغطية ${PlayerLogic.percent(engine.coveredSec(), durMs / 1000.0)}% · فجوات ${engine.failedCount()} · كوتة ${Quota.used(conf.model)}/${Models.quotaOf(conf.model)} · ${NetUse.badgeLine()}"
@@ -2436,6 +2437,7 @@ class PlayerActivity : Activity(), Host {
         videoBoxRef.background = GradientDrawable().apply { setColor(Color.BLACK); cornerRadius = if (f) 0f else ui.dp(14).toFloat() }
         fsBtnLp.setMargins(ui.dp(10), 0, 0, ui.dp(10)); fsBtnV.layoutParams = fsBtnLp
         fsOnly.forEach { it.visibility = if (f) View.VISIBLE else View.GONE }
+        try { tbView?.let { v -> (v.layoutParams as? FrameLayout.LayoutParams)?.let { lp -> lp.rightMargin = ui.dp(if (f) 180 else 100); v.layoutParams = lp } } } catch (_: Throwable) {}   // (v265)
         st.visibility = if (f) View.GONE else View.VISIBLE
         if (::logDrawer.isInitialized) { (leftCol.layoutParams as FrameLayout.LayoutParams).topMargin = ui.dp(44); logDrawer.visibility = View.VISIBLE; leftCol.requestLayout() }
         @Suppress("DEPRECATION") window.decorView.systemUiVisibility = if (f) (View.SYSTEM_UI_FLAG_FULLSCREEN or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY or View.SYSTEM_UI_FLAG_LAYOUT_STABLE) else (if (Build.VERSION.SDK_INT >= 23 && th.isLight) View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR else 0)
@@ -2918,6 +2920,7 @@ class PlayerActivity : Activity(), Host {
         if (pl.offline) {
             // الأوفلاين = وضع «نسخ ثم ترجمة سياقية» (Cfg.snapshot بيجبره لما Offline.on()): نفس إعدادات بريست الترانسكريبشن (مقاطع 60ث، من غير تنقيح ولا بصري)
             TrPresets.byId("transcript")?.let { TrPresets.apply(it) }
+            if (pl.live) { Cfg.put("chunk", if (pl.engine == "sherpa") "20" else "30"); Cfg.put("trstart", "0") }   // (v266) لحظي: باتشات قصيرة تبدأ من مكان التشغيل
             try { val nc = Cfg.snapshot(); conf = nc; if (::engine.isInitialized) engine.applyConf(nc) } catch (e: Throwable) { LogStore.err("Player:runPlan", e) }
             for ((v, f) in kmLabels) v.text = f(KeyMode.clamp(Cfg.int("kmode", 1)))
             if (::engine.isInitialized) engine.convDialect = Cfg.str("conv_dialect", "")   // (v257) اللهجة اللي اخترتها في الشاشة
