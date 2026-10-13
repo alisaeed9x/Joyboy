@@ -96,6 +96,7 @@ class MainActivity : Activity() {
         if (fromPlayer) requestedOrientation = if (intent?.getBooleanExtra("land", false) == true) ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE else ActivityInfo.SCREEN_ORIENTATION_PORTRAIT   // الإعدادات من المشغّل: بنفس اتجاه المشغّل
         UiWatchdog.start()
         Cfg.init(this); CrashLog.install(this)
+        if (!fromPlayer) PublicApis.autoPull(this)   // (v272) سحب قايمة public-apis لوحده + إشعار
         val th = Themes.byId(Cfg.str("theme", "mx"))
         val ui = Ui(this, th)
         applyBars(th)
@@ -594,7 +595,8 @@ class MainActivity : Activity() {
                     ui.text("لغة الكلام (لو عارفها بتقلّل أخطاء الاكتشاف التلقائي):", 12f, th.muted), offLangChips,
                     ui.text("طول الجزء اللي بيتبعت لجيميناي يترجمه (أول ما يجهز):", 12f, th.muted), offPartChips,
                     ui.text("الترجمة بعد التفريغ الأوفلاين (جوجل من غير API بيترجم فصحى؛ ولو اخترت لهجة جيميناي بيحوّلها):", 12f, th.muted), trMethodChips, savedPlanTxt, planBtn,
-                    ui.text("الأوفلاين أبطأ من السحابة (بيعتمد على معالج موبايلك) — الترجمة بتظهر جزء ورا جزء. لو سرعته أقل من 1× كبّر الموديل لأصغر (base).", 12f, th.muted)))),
+                    ui.text("الأوفلاين أبطأ من السحابة (بيعتمد على معالج موبايلك) — الترجمة بتظهر جزء ورا جزء. لو سرعته أقل من 1× كبّر الموديل لأصغر (base).", 12f, th.muted)),
+                PublicApisUi.section(this, ui, th))),
             tab("visual", listOf<View>(
                                 ui.section("👁 محرك الوضع البصري", false, visAutoChips,
                     ui.slider("المسافة اللي الوضع البصري بيفحصها قدّام مكان التشغيل", Cfg.int("vis_ahead", 180).coerceIn(30, 900), 30, 900, "ث") { Cfg.put("vis_ahead", it.toString()) },

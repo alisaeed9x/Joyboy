@@ -36,8 +36,8 @@ object SherpaStt : SttEngine {
     private val libOk: Boolean by lazy { try { System.loadLibrary("sherpa-onnx-jni"); true } catch (_: Throwable) { false } }
 
     fun dir(): File? = Offline.dir?.let { File(it, SUB) }
-    fun modelFile(): File? = dir()?.let { File(it, MODEL) }
-    fun tokensFile(): File? = dir()?.let { File(it, TOKENS) }
+    fun modelFile(): File? = Offline.pick("$SUB/$MODEL", MIN_MODEL)     // (v271) الجديد الأول وبعده القديم (filesDir)
+    fun tokensFile(): File? = Offline.pick("$SUB/$TOKENS", MIN_TOKENS)
     fun downloaded(): Boolean =
         (modelFile()?.let { it.isFile && it.length() > MIN_MODEL } ?: false) && (tokensFile()?.let { it.isFile && it.length() > MIN_TOKENS } ?: false)
 

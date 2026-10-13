@@ -2907,8 +2907,11 @@ class PlayerActivity : Activity(), Host {
         val pl = TrWizard.savedPlan()
         if (pl != null) {
             val m = Offline.models.firstOrNull { it.id == pl.model } ?: Offline.model()
-            val ready = if (pl.engine == "sherpa") SherpaStt.ready() else (WhisperLib.loaded && Offline.downloaded(m))
+            val ready = Offline.remoteOn() || (if (pl.engine == "sherpa") SherpaStt.ready() else (WhisperLib.loaded && Offline.downloaded(m)))
             if (pl.offline && !ready) { say("📴 موديل الأوفلاين مش نازل — كمّل الإعداد وهتنزّله"); trWizard(false); return }
+            if (pl.cloud && (ExtLlm.byId(pl.ext)?.let { ExtLlm.configured(it) && ExtLlm.enabled(it) } != true || TrWizard.sttCandidate(pl.ext) == null)) {   // (v274) المحرك الخارجي المحفوظ مفتاحه اتمسح أو اتقفل
+                say("☁ المحرك الخارجي المحفوظ مش جاهز (مفتاح الترجمة أو التفريغ ناقص) — اختار تاني"); trWizard(false); return
+            }
             runPlan(pl); return
         }
         trWizard(false)
@@ -2938,6 +2941,16 @@ class PlayerActivity : Activity(), Host {
             say("📴 أوفلاين · " + TrWizard.langLabel(pl.lang) + " · " + (if (pl.method == "google") "ترجمة جوجل" else "ترجمة جيميناي"))
             beginTranslate()
             TrWizard.startNotices(pl).forEachIndexed { i, m -> h.postDelayed({ try { Notice.show(this, m, 4500L) } catch (e: Throwable) { LogStore.err("Player:startNotices", e) } }, 600L + i * 3200L) }   // (v255)
+        } else if (pl.cloud) {
+            // (v274) أونلاين بمحرك خارجي: نفس مسار «نسخ ثم ترجمة سياقية» (التفريغ سحابي) والترجمة بالسلسلة: المحرك المختار ← الباقي ← جوجل ← جيميناي بمفاتيحك
+            TrPresets.byId("transcript")?.let { TrPresets.apply(it) }
+            try { val nc = Cfg.snapshot(); conf = nc; if (::engine.isInitialized) engine.applyConf(nc) } catch (e: Throwable) { LogStore.err("Player:runPlan", e) }
+            for ((v, f) in kmLabels) v.text = f(KeyMode.clamp(Cfg.int("kmode", 1)))
+            if (::engine.isInitialized) engine.convDialect = Cfg.str("conv_dialect", "")
+            LogStore.add("🎛 طريقة الترجمة: أونلاين بمحرك خارجي — ترجمة=" + pl.ext + " · تفريغ=" + (TrWizard.sttCandidate(pl.ext)?.id ?: "؟") + " · السلسلة: " + ExtTranslate.chainLabel())
+            say("☁ " + (ExtLlm.byId(pl.ext)?.label ?: pl.ext) + " · تفريغ سحابي · لو وقف: " + ExtTranslate.chainLabel().substringAfter(" ← "))
+            beginTranslate()
+            TrWizard.startNotices(pl).forEachIndexed { i, m -> h.postDelayed({ try { Notice.show(this, m, 4500L) } catch (e: Throwable) { LogStore.err("Player:startNotices", e) } }, 600L + i * 3200L) }
         } else {
             val pr = TrPresets.byId(pl.onlineId)
             if (pr != null) applyPreset(pr)

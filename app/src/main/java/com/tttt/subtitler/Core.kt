@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.SharedPreferences
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
 
@@ -149,7 +150,12 @@ object Cfg {
     lateinit var p: SharedPreferences
     fun init(c: Context) {
         p = c.getSharedPreferences("p", 0)
-        Offline.dir = c.applicationContext.filesDir   // (v253)
+        run {   // (v271) الموديلات في Android/media/<الحزمة>/models (بتعدّي مسح التطبيق)؛ filesDir هو القديم وبينتقل لوحده
+            val app = c.applicationContext
+            val persistent = try { app.externalMediaDirs?.firstOrNull { it != null }?.let { File(it, "models").also { d -> d.mkdirs() }.takeIf { d -> d.isDirectory && d.canWrite() } } } catch (_: Throwable) { null }
+            if (persistent != null) { Offline.dir = persistent; Offline.legacy = app.filesDir; Offline.migrateLegacy() }
+            else { Offline.dir = app.filesDir; Offline.legacy = null }
+        }
         TrWizard.appCtx = c.applicationContext   // (v255) فحص النت لإشعار ترجمة جوجل
         Quota.load = { p.getString("quota", "") ?: "" }
         Quota.save = { p.edit().putString("quota", it).apply() }

@@ -33,15 +33,30 @@ object Offline {
     val langIds = listOf("", "en", "ar", "fr", "es", "tr", "ko", "ja", "zh", "ru", "de", "it", "hi", "fa", "ur")
     val langLabels = listOf("تلقائي", "إنجليزي", "عربي", "فرنساوي", "إسباني", "تركي", "كوري", "ياباني", "صيني", "روسي", "ألماني", "إيطالي", "هندي", "فارسي", "أوردو")   // (v255) بالعربي بس — الاسم بحروفه الأصلية كان بيلخبط
 
+    /** (v271) المكان الدائم للموديلات: Android/media/<الحزمة>/models — بيفضل بعد مسح/إعادة تثبيت التطبيق (زي نسخة المفاتيح). لو مش متاح بيرجع لـ filesDir */
     @Volatile var dir: File? = null   // بيتظبط من Cfg.init
+    /** (v271) مكان الموديلات القديم (filesDir) — بنقرا منه لو الموديل لسه مانتقلش، وبينتقل لوحده في الخلفية */
+    @Volatile var legacy: File? = null
     fun model(): Model = models.firstOrNull { it.id == Cfg.str("off_model", "small") } ?: models[1]
-    fun file(m: Model = model()): File? = dir?.let { File(File(it, "whisper"), m.file) }
+    /** (v271) الملف الكامل لو موجود في أي مكان (الجديد الأول)، وإلا مساره في المكان الجديد (للتنزيل) */
+    fun pick(rel: String, minBytes: Long): File? {
+        val n = dir?.let { File(it, rel) }
+        if (n != null && n.isFile && n.length() > minBytes) return n
+        val o = legacy?.let { File(it, rel) }
+        if (o != null && o.isFile && o.length() > minBytes) return o
+        return n ?: o
+    }
+    /** (v271) كل الأماكن اللي ممكن الموديل يكون فيها (للمسح) */
+    fun roots(): List<File> = listOfNotNull(dir, legacy).distinctBy { it.path }
+    fun file(m: Model = model()): File? = pick("whisper/" + m.file, m.approxMb * 600_000L)
     fun downloaded(m: Model = model()): Boolean = file(m)?.let { it.isFile && it.length() > m.approxMb * 600_000L } ?: false
     fun lang(): String = Cfg.str("stt_lang", "").trim().let { if (it in langIds) it else "" }
     /** (v255) المحركات المتاحة: Whisper (لكل اللغات) و sherpa-onnx SenseVoice (إنجليزي/ياباني/كوري/صيني) */
     val engines: List<SttEngine> = listOf(WhisperStt, SherpaStt)
     /** المحرك المختار (مفتاح stt_engine: whisper | sherpa، الافتراضي whisper). لو المختار مش مدعوم على الجهاز أو مش بيفهم اللغة ← whisper */
-    fun engine(): SttEngine = engines.firstOrNull { it.id == Cfg.str("stt_engine", "whisper") && it.supported() && it.handles(lang()) } ?: WhisperStt
+    fun engine(): SttEngine = (if (RemoteStt.active()) RemoteStt else null) ?: engines.firstOrNull { it.id == Cfg.str("stt_engine", "whisper") && it.supported() && it.handles(lang()) } ?: WhisperStt
+    /** (v273) التفريغ السحابي (RemoteStt) شغّال وجاهز — الموديل المحلي مش لازم يكون نازل */
+    fun remoteOn(): Boolean = RemoteStt.active()
     /** true = الترانسكريبشن بيتعمل أوفلاين (مفعّل + الموديل نازل + المكتبة موجودة) والوضع بيبقى «نسخ ثم ترجمة سياقية» */
     fun on(): Boolean = configured() && System.currentTimeMillis() >= coolUntil
     /** (v262) الأوفلاين متظبّط (مفعّل + الموديل نازل) بغض النظر عن فترة الراحة بعد الأعطال. بيحدد وضع الترجمة (سياقية / جوجل)، أما on() فبيحدد مين بينسخ دلوقتي — قبل كده فترة الراحة كانت بتحوّل الترجمة من جوجل لجيميناي وسط الشغل */
@@ -105,7 +120,7 @@ object Offline {
     fun transcribe(wav: ByteArray, durSec: Double, terms: String, log: (String) -> Unit, fallback: () -> Api.Result, warn: (String) -> Unit = {}, sess: Session? = null): Api.Result {
         ranOffline.set(false)
         val eng = engine()
-        if (Cfg.str("stt_engine", "whisper") == "sherpa" && eng.id != "sherpa") softNotice("🎙 SenseVoice مش بيفهم لغة الكلام المختارة أو مش شغّال على جهازك — Whisper هو اللي بينسخ", warn)   // (v257)
+        if (Cfg.str("stt_engine", "whisper") == "sherpa" && eng.id == "whisper") softNotice("🎙 SenseVoice مش بيفهم لغة الكلام المختارة أو مش شغّال على جهازك — Whisper هو اللي بينسخ", warn)   // (v257)
         val tq = System.currentTimeMillis()
         lock.lock()
         try {
@@ -267,12 +282,46 @@ object Offline {
     private fun releaseSafe(e: SttEngine) { lock.lock(); try { e.release() } finally { lock.unlock() } }
 
     fun deleteSherpa() {
-        SherpaStt.dir()?.deleteRecursively()
+        for (r in roots()) File(r, SherpaStt.SUB).deleteRecursively()   // (v271) الجديد والقديم
         Thread { try { releaseSafe(SherpaStt) } catch (_: Throwable) {} }.also { it.isDaemon = true; it.start() }   // (v261) في خيط: مايعلّقش الشاشة لو باتش بيتفرّغ
     }
 
     fun delete(m: Model = model()) {
-        file(m)?.let { it.delete(); File(it.path + ".part").delete() }
+        for (r in roots()) File(File(r, "whisper"), m.file).let { it.delete(); File(it.path + ".part").delete() }   // (v271) الجديد والقديم
         Thread { try { releaseSafe(WhisperStt) } catch (_: Throwable) {} }.also { it.isDaemon = true; it.start() }
+    }
+
+    // ===== (v271) نقل الموديلات من filesDir لمكان دائم (بيتعمل مرة واحدة في الخلفية) =====
+    @Volatile private var migrating = false
+    /** بيدوّر في المكان القديم على موديلات كاملة ويكوّشها للمكان الدائم (نسخ ← تحقق من الحجم ← مسح القديم). أي فشل = بنسيب القديم زي ما هو */
+    fun migrateLegacy() {
+        val nw = dir ?: return; val old = legacy ?: return
+        if (nw.path == old.path || migrating) return
+        migrating = true
+        Thread {
+            try {
+                val items = ArrayList<Triple<String, Long, SttEngine>>()
+                for (m in models) items.add(Triple("whisper/" + m.file, m.approxMb * 600_000L, WhisperStt))
+                items.add(Triple(SherpaStt.SUB + "/" + SherpaStt.MODEL, SherpaStt.MIN_MODEL, SherpaStt))
+                items.add(Triple(SherpaStt.SUB + "/" + SherpaStt.TOKENS, SherpaStt.MIN_TOKENS, SherpaStt))
+                for ((rel, min, eng) in items) {
+                    val src = File(old, rel); val dst = File(nw, rel)
+                    if (!src.isFile || src.length() <= min) continue
+                    if (dst.isFile && dst.length() == src.length()) { releaseSafe(eng); src.delete(); continue }
+                    if (downloading()) continue
+                    if ((nw.parentFile ?: nw).usableSpace < src.length() + 100_000_000L) continue
+                    dst.parentFile?.mkdirs()
+                    val part = File(dst.path + ".mig")
+                    try {
+                        src.inputStream().use { i -> part.outputStream().use { o -> i.copyTo(o, 256 * 1024) } }
+                        if (part.length() != src.length()) { part.delete(); continue }
+                        if (dst.exists()) dst.delete()
+                        if (!part.renameTo(dst)) { part.delete(); continue }
+                        releaseSafe(eng)   // لو الموديل متحمّل من القديم: اتحرر وهيتحمّل من الجديد
+                        src.delete()
+                    } catch (_: Throwable) { try { part.delete() } catch (_: Throwable) {} }
+                }
+            } finally { migrating = false }
+        }.also { it.isDaemon = true; it.priority = Thread.MIN_PRIORITY; it.start() }
     }
 }

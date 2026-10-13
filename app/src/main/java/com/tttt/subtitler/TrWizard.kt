@@ -16,8 +16,10 @@ import android.widget.LinearLayout
  * و stt_offline / stt_lang / off_model / tr_method (اللي المحرك بيقراه فعلًا — بتتكتب وقت التشغيل).
  */
 object TrWizard {
-    class Plan(val mode: String, val onlineId: String, val lang: String, val model: String, val method: String, val engine: String = "whisper", val dialect: String = "", val live: Boolean = false) {
+    class Plan(val mode: String, val onlineId: String, val lang: String, val model: String, val method: String, val engine: String = "whisper", val dialect: String = "", val live: Boolean = false, val ext: String = "") {
         val offline: Boolean get() = mode == "offline"
+        /** (v274) أونلاين بمحرك خارجي: ext = id مزوّد LLM (تفريغ سحابي + ترجمته)، فاضي = جيميناي */
+        val cloud: Boolean get() = !offline && ext.isNotBlank()
     }
 
     const val CURRENT = "current"
@@ -52,6 +54,16 @@ object TrWizard {
     /** فيه مفتاح جيميناي واحد على الأقل (أساسي أو احتياطي)؟ لو مش عارف يفحص يرجّع true */
     fun hasGeminiKey(): Boolean = try { Cfg.snapshot().let { c -> (c.keys + c.backup + c.refine).any { it != LocalKey.ID && it.length > 10 } } } catch (_: Throwable) { true }
 
+    const val NO_NET_CLOUD = "📵 مفيش نت — التفريغ والترجمة السحابيين محتاجين اتصال بالنت، اتصل بالنت"
+
+    /** (v274) مزوّد التفريغ السحابي المناسب لمحرك [ext]: هو نفسه لو بيدعم التفريغ ومفتاحه جاهز، وإلا المزوّد المختار في الإعدادات، وإلا أي مزوّد جاهز (Groq / ChatGPT / مخصص). null = مفيش */
+    fun sttCandidate(ext: String): ExtLlm.Preset? {
+        fun ok(p: ExtLlm.Preset) = ExtLlm.supportsStt(p) && ExtLlm.key(p).isNotEmpty() && ExtLlm.url(p).isNotEmpty() && ExtLlm.sttModel(p).isNotEmpty()
+        ExtLlm.byId(ext)?.takeIf { ok(it) }?.let { return it }
+        ExtLlm.byId(Cfg.str("rstt_prov", "groq"))?.takeIf { ok(it) }?.let { return it }
+        return ExtLlm.presets.firstOrNull { ok(it) }
+    }
+
     const val NO_NET_MSG = "📵 مفيش نت — ترجمة جوجل محتاجة اتصال بالنت عشان تترجم، اتصل بالنت"
     const val NO_NET_GEMINI = "📵 مفيش نت — جيميناي محتاج اتصال بالنت عشان يترجم، اتصل بالنت"
 
@@ -61,6 +73,13 @@ object TrWizard {
      * مفيش نت: بيقولك تتصل (جوجل وجيميناي الاتنين محتاجين نت للترجمة).
      */
     fun startNotices(pl: Plan): List<String> {
+        if (pl.cloud) {   // (v274)
+            val out = ArrayList<String>()
+            out.add("☁ " + (ExtLlm.byId(pl.ext)?.label ?: pl.ext) + " بيترجم، والصوت بيتفرّغ بـ " + (sttCandidate(pl.ext)?.label ?: "؟") + " (الصوت بيتبعت لخدمة خارجية) — لو وقف بيكمّل الباقي ثم جيميناي، وهيطلعلك إشعار بكل تبديل")
+            if (!online()) out.add(NO_NET_CLOUD)
+            if (!hasGeminiKey()) out.add("⚠ مفيش مفتاح جيميناي — لو المحركات الخارجية وقفت الباتشات هتتعاد لما ترجع تشتغل")
+            return out
+        }
         if (!pl.offline) return emptyList()
         val out = ArrayList<String>()
         val d = pl.dialect.trim().let { if (it == "فصحى") "" else it }
@@ -86,27 +105,41 @@ object TrWizard {
         if (!saved()) return null
         return when (Cfg.str("tr_mode", "")) {
             "offline" -> Plan("offline", "", Cfg.str("tr_s_lang", ""), Cfg.str("tr_s_model", "small").ifBlank { "small" }, if (Cfg.str("tr_s_method", "gemini") == "google") "google" else "gemini", if (Cfg.str("tr_s_engine", "whisper") == "sherpa") "sherpa" else "whisper", Cfg.str("tr_s_dialect", ""), Cfg.bool("tr_s_live", false))
-            "online" -> Plan("online", Cfg.str("tr_online", CURRENT).ifBlank { CURRENT }, "", "", "gemini")
+            "online" -> Plan("online", Cfg.str("tr_online", CURRENT).ifBlank { CURRENT }, "", "", "gemini", ext = Cfg.str("tr_online_ext", ""))
             else -> null
         }
     }
 
     fun describe(pl: Plan): String =
         if (pl.offline) "📴 أوفلاين" + (if (pl.live) " ⚡ لحظي" else "") + " · " + langLabel(pl.lang) + "\nالتفريغ: " + (if (pl.engine == "sherpa") "SenseVoice (sherpa-onnx)" else "Whisper " + pl.model) + " على الجهاز\nالترجمة: " + (if (pl.method == "google") "جوجل (من غير API)" else "جيميناي بالسياق") + "\nاللهجة: " + pl.dialect.ifBlank { "فصحى" } + (if (pl.method == "google" && pl.dialect.isNotBlank() && pl.dialect != "فصحى") " (جيميناي بيحوّل ترجمة جوجل)" else "")
+        else if (pl.cloud) "☁ أونلاين بمحرك خارجي\nالترجمة: " + (ExtLlm.byId(pl.ext)?.label ?: pl.ext) + " (بمفتاحك)\nالتفريغ: " + (sttCandidate(pl.ext)?.let { it.label + " · " + ExtLlm.sttModel(it) } ?: "⚠ مفيش مزوّد تفريغ جاهز") + " (سحابي — الصوت بيتبعت لخدمة خارجية)\nلو وقف: الباقي من سلسلة الإعدادات ← جوجل ← جيميناي بمفاتيحك (مع إشعار)"
         else "☁ أونلاين (جيميناي)\n" + (TrPresets.byId(pl.onlineId)?.let { it.icon + " " + it.name } ?: "⚙ الإعدادات الحالية")
+
+    /** (v274) لو التفريغ السحابي كان شغّال بسبب خطة «أونلاين بمحرك خارجي» بنقفله لما نرجع لخطة تانية (إلا لو إنت شغّلته من الإعدادات) */
+    private fun leaveCloud() {
+        Cfg.put("ext_primary", "")
+        if (Cfg.str("rstt_by_plan") == "1") { Cfg.put("rstt_on", "off"); Cfg.put("rstt_by_plan", "0") }
+    }
 
     /** بيكتب الإعدادات اللي المحرك بيقراها (من غير ما يحفظ الخطة) */
     fun apply(pl: Plan) {
-        Cfg.put("stt_offline", if (pl.offline) "1" else "0")
+        Cfg.put("stt_offline", if (pl.offline || pl.cloud) "1" else "0")
         if (pl.offline) { Cfg.put("stt_lang", pl.lang); Cfg.put("off_model", pl.model); Cfg.put("tr_method", pl.method); Cfg.put("stt_engine", pl.engine); Cfg.put("conv_dialect", if (pl.dialect == "فصحى") "" else pl.dialect)
-            if (pl.live) Cfg.put("ctx_min", "1") else if (Cfg.int("ctx_min", 3) == 1) Cfg.put("ctx_min", "3") }   // (v266)
-        else Cfg.put("tr_method", "gemini")
+            if (pl.live) Cfg.put("ctx_min", "1") else if (Cfg.int("ctx_min", 3) == 1) Cfg.put("ctx_min", "3")   // (v266)
+            leaveCloud() }
+        else if (pl.cloud) {   // (v274) أونلاين بمحرك خارجي: تفريغ سحابي (لغة تلقائية) ← ترجمة بالسلسلة (المحرك المختار الأول) ← جيميناي
+            val sp = sttCandidate(pl.ext)
+            if (sp != null) { if (Cfg.str("rstt_on", "off") != "on") Cfg.put("rstt_by_plan", "1"); Cfg.put("rstt_on", "on"); Cfg.put("rstt_prov", sp.id) }
+            Cfg.put("stt_lang", ""); Cfg.put("tr_method", "google"); Cfg.put("ext_primary", pl.ext); Cfg.put("ext_on_llm_" + pl.ext, "on")
+            if (Cfg.int("ctx_min", 3) == 1) Cfg.put("ctx_min", "3")
+        }
+        else { Cfg.put("tr_method", "gemini"); leaveCloud() }
     }
 
     fun save(pl: Plan) {
         Cfg.put("tr_mode", pl.mode)
         if (pl.offline) { Cfg.put("tr_s_lang", pl.lang); Cfg.put("tr_s_model", pl.model); Cfg.put("tr_s_method", pl.method); Cfg.put("tr_s_engine", pl.engine); Cfg.put("tr_s_dialect", pl.dialect); Cfg.put("tr_s_live", if (pl.live) "1" else "0") }
-        else Cfg.put("tr_online", pl.onlineId)
+        else { Cfg.put("tr_online", pl.onlineId); Cfg.put("tr_online_ext", pl.ext) }
         Cfg.put("tr_saved", "1")
     }
 
@@ -147,7 +180,8 @@ object TrWizard {
         var dialect = sp?.takeIf { it.offline }?.dialect ?: TrWizard.dialectWanted()
         var live = false
         var presetFlow = false
-        fun plan() = Plan(mode, onlineId, lang, model, method, engine, dialect, live)
+        var ext = sp?.takeIf { !it.offline }?.ext ?: ""   // (v274) محرك أونلاين خارجي (id مزوّد) أو فاضي = جيميناي
+        fun plan() = Plan(mode, onlineId, lang, model, method, engine, dialect, live, if (mode == "online") ext else "")
 
         fun go(step: () -> Unit) { hist.add(step); step() }
         fun back() { if (hist.size > 1) { hist.removeAt(hist.size - 1); hist[hist.size - 1]() } else dlg.dismiss() }
@@ -187,6 +221,9 @@ object TrWizard {
             reset("⚙ طريقة الترجمة")
             val s = TrWizard.savedPlan()
             note(if (s != null) "الإعداد المحفوظ دلوقتي:\n" + TrWizard.describe(s) + "\n\nزرار «▶ ترجمة» بيبدأ بيه على طول." else "مفيش إعداد محفوظ — زرار «▶ ترجمة» هيسألك كل مرة.")
+            opt("🔀 ترتيب الترجمة: " + (if (ExtTranslate.externalFirst()) "🌐 الخارجية أولًا" else "🏠 جوجل الداخلي أولًا"), "دوس عشان تبدّل. السلسلة دلوقتي: " + ExtTranslate.chainLabel() + "\n(بيأثر على مسار «تفريغ + ترجمة نص» — الأوفلاين والأونلاين بمحرك خارجي)", false) {
+                Cfg.put("tx_order", if (ExtTranslate.externalFirst()) "internal" else "external"); stepSummary()
+            }
             opt("✏ غيّر الإعداد", "", false) { go { stepMode() } }
             if (s != null) opt("🗑 امسح المحفوظ", "زرار «▶ ترجمة» هيسألك كل مرة تاني", false) { TrWizard.clearSaved(); Notice.show(act, "اتمسح الإعداد المحفوظ", 2200L); dlg.dismiss() }
             addBack("إغلاق")
@@ -197,7 +234,7 @@ object TrWizard {
             opt("📴 أوفلاين", if (WhisperLib.loaded) "الكلام بيتفرّغ على جهازك من غير نت ولا مفتاح، وبعدها الترجمة بجوجل (من غير API) أو جيميناي" else Offline.status(), mode == "offline") {
                 if (!WhisperLib.loaded) Notice.show(act, "الأوفلاين مش مدعوم على جهازك", 2500L) else { mode = "offline"; go { stepOffPreset() } }
             }
-            opt("☁ أونلاين (جيميناي)", "الصوت بيتبعت لجيميناي — بتختار نوع الترجمة (سريعة / دقيقة / …)", mode == "online") { mode = "online"; go { stepOnline() } }
+            opt("☁ أونلاين", "جيميناي (الافتراضي) أو محرك خارجي بمفتاحك (ChatGPT / Claude / Groq / …) — بتشوف المتاح وتختار", mode == "online") { mode = "online"; go { stepOnline() } }
             addBack(if (hist.size > 1) "← رجوع" else "إغلاق")
         }
 
@@ -207,7 +244,7 @@ object TrWizard {
             note("اختار بريست جاهز (اللغة تلقائية). لو الموديل مش نازل هتنزّله مرة واحدة.")
             fun pick(eng: String, mdl: String, meth: String, lv: Boolean, dia: String) {
                 presetFlow = true; lang = ""; engine = eng; model = mdl; method = meth; live = lv; dialect = dia
-                val ready = if (eng == "sherpa") SherpaStt.ready() else (WhisperLib.loaded && Offline.downloaded(Offline.models.firstOrNull { it.id == mdl } ?: Offline.model()))
+                val ready = Offline.remoteOn() || (if (eng == "sherpa") SherpaStt.ready() else (WhisperLib.loaded && Offline.downloaded(Offline.models.firstOrNull { it.id == mdl } ?: Offline.model())))
                 if (ready) go { stepSave() } else go { if (eng == "sherpa") stepSherpa() else stepStt() }
             }
             val fastEng = if (SherpaStt.ready()) "sherpa" else "whisper"
@@ -218,10 +255,29 @@ object TrWizard {
             addBack()
         }
 
+        /** (v274) أونلاين: جيميناي (الافتراضي) أو واحد من المحركات الخارجية الجاهزة (مفتاحها مضبوط ومفعّلة) */
         fun stepOnline() {
-            reset("☁ نوع الترجمة")
-            for (pr in TrPresets.all) opt(pr.icon + " " + pr.name, pr.desc, onlineId == pr.id) { onlineId = pr.id; go { stepSave() } }
-            opt("⚙ الإعدادات الحالية", "من غير ما أغيّر أي إعداد", onlineId == CURRENT) { onlineId = CURRENT; go { stepSave() } }
+            val ready = ExtLlm.presets.filter { ExtLlm.configured(it) && ExtLlm.enabled(it) }
+            if (ready.isEmpty()) { ext = ""; stepOnlineGem(); return }
+            reset("☁ أونلاين — مين يترجم؟")
+            note("جيميناي بيسمع الصوت ويترجم (الافتراضي). المحركات التانية ما بتسمعش صوت: الصوت بيتفرّغ بـ Whisper سحابي (Groq / ChatGPT) وبعدين هي اللي بتترجم. لو واحد وقف (كوتة / مفتاح / نت) التالي بيكمّل، وآخر حاجة جيميناي بمفاتيحك — وبيطلعلك إشعار بكل تبديل.")
+            opt("☁ جيميناي (مفاتيحك)", "الصوت بيتبعت لجيميناي — بتختار نوع الترجمة (سريعة / دقيقة / …)", ext.isBlank()) { ext = ""; go { stepOnlineGem() } }
+            for (pv in ready) {
+                val st = TrWizard.sttCandidate(pv.id)
+                val bw = ExtLlm.blockedWhy(pv)
+                val d = (if (st != null) "التفريغ: " + st.label + " · " + ExtLlm.sttModel(st) else "⚠ محتاج مفتاح مزوّد تفريغ (Groq أو ChatGPT) من الإعدادات") + "\nالموديل: " + ExtLlm.model(pv) + (if (bw != null) "\n⛔ واقف دلوقتي: $bw" else "")
+                opt("🤖 " + pv.label, d, ext == pv.id) {
+                    if (st == null) Notice.show(act, "🔑 اضبط مفتاح Groq أو ChatGPT (للتفريغ) من الإعدادات ← 🌐 APIs خارجية", 3500L)
+                    else { ext = pv.id; onlineId = CURRENT; go { stepSave() } }
+                }
+            }
+            addBack()
+        }
+
+        fun stepOnlineGem() {
+            reset("☁ نوع الترجمة (جيميناي)")
+            for (pr in TrPresets.all) opt(pr.icon + " " + pr.name, pr.desc, ext.isBlank() && onlineId == pr.id) { ext = ""; onlineId = pr.id; go { stepSave() } }
+            opt("⚙ الإعدادات الحالية", "من غير ما أغيّر أي إعداد", ext.isBlank() && onlineId == CURRENT) { ext = ""; onlineId = CURRENT; go { stepSave() } }
             addBack()
         }
 

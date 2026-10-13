@@ -1204,10 +1204,11 @@ class Engine(
     /** كل باتش بيتطبّق بجمله كلها بتوقيتها الأصلي بالترتيب (idx)، أو يرجع كطلب كامل (v219: اتفصلت عشان الترجمة السياقية تستخدمها كمان) */
     private fun applyGroupTranslated(group: List<TItem>, off: IntArray, tr: Array<String?>, pv: Array<String?>, dl: String) {
         // كل باتش بيتطبّق بجمله كلها بتوقيتها الأصلي بالترتيب (idx)، أو يرجع كطلب كامل
+        var released = 0
         for ((g, t) in group.withIndex()) {
             if (tHold[t.i] !== t) continue   // اتعمله redo أثناء الترجمة
             val a = off[g]
-            if ((a until a + t.fresh.size).any { tr[it].isNullOrBlank() }) { releaseToFull(t, "الترجمة رجعت ناقصة"); continue }
+            if ((a until a + t.fresh.size).any { tr[it].isNullOrBlank() }) { releaseToFull(t, "الترجمة رجعت ناقصة"); released++; continue }
             try {
                 var list = t.fresh.mapIndexed { q, s -> s.copy(translated = tr[a + q]!!.trim(), pivot = pv[a + q].orEmpty()) }
                 if (LangGuard.foreignOf(list).isNotEmpty()) list = fixForeign(list)
@@ -1217,6 +1218,9 @@ class Engine(
                 if (t.partial) { incomplete.add(t.i); host.log("⚠ باتش ${t.i + 1} رجع ناقص — تقدر تعيده من علامة التحذير") }
                 scheduleHoleFill(t.i, t.p.rawStart, t.p.rawEnd, t.p.w, t.key)
             } catch (e: Exception) { releaseToFull(t, "فشل تطبيق الترجمة: " + (e.message ?: "").take(80)) }
+        }
+        if (released > 0 && TrWizard.googleOn()) {   // (v274) المحركات الخارجية وجوجل ماكمّلوش: الباتشات دي بترجع كطلب كامل (احتياطي ثم صوت ← ترجمة) بمفاتيح جيميناي
+            swapNotice(if (keyless) "⚠ محركات الترجمة وقفت ومفيش مفتاح جيميناي — $released باتش هيتعاد لما تشتغل" else "⚠ محركات الترجمة (${ExtTranslate.chainLabel().substringBeforeLast(" ← ")}) ما كمّلتش — $released باتش اتحوّل لجيميناي بمفاتيحك")
         }
     }
 
@@ -1233,6 +1237,16 @@ class Engine(
         val last = warnAtMap[key] ?: 0L
         if (n - last < 60_000L) return
         warnAtMap[key] = n
+        try { host.notice(msg) } catch (_: Throwable) {}
+    }
+    @Volatile private var swapNoticeAt = 0L   // (v274) آخر إشعار «محرك وقف ← التاني كمّل» (مرة كل 20 ث بالكتير)
+    private val skipNoted = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()   // (v274) مزوّدين اتقال إنهم موقوفين (بيتشالوا لما يرجعوا)
+    /** (v274) إشعار تبديل محرك الترجمة + سطر في اللوج */
+    private fun swapNotice(msg: String) {
+        host.log(msg)
+        val n = System.currentTimeMillis()
+        if (n - swapNoticeAt < 20_000L) return
+        swapNoticeAt = n
         try { host.notice(msg) } catch (_: Throwable) {}
     }
     @Volatile private var gtNoticeAt = 0L   // (v255) آخر إشعار «جوجل فشل» (مرة كل 30 ث بالكتير)
@@ -1332,14 +1346,47 @@ class Engine(
         val src = src0.map { it.replace(Regex("\\s*\n\\s*"), " ").trim() }
         val out = arrayOfNulls<String>(src.size)
         val sl = TrWizard.googleLang()
-        var failedB = 0
-        for (b in src.indices.chunked(25)) {
+        /** جوجل الداخلي (gtCall): 25 جملة في الطلب */
+        fun viaGoogle(idx: List<Int>) {
+            var failedB = 0
+            for (b in idx.chunked(25)) {
+                if (!running || isClosed) break
+                try {
+                    val r = gtCall(b.map { src[it] }, "ar", sl)
+                    if (r != null) { for ((q, k) in b.withIndex()) out[k] = r[q] }
+                    else for (k in b) { gtCall(listOf(src[k]), "ar", sl)?.firstOrNull()?.let { out[k] = it } }   // عدد الأسطر اختلف: جملة جملة
+                } catch (e: Exception) { failedB++; host.log("⚠ ترجمة جوجل: " + (e.message ?: e.toString()).take(80)); if (failedB >= 3) break }
+            }
+        }
+        /** (v272) مزوّد خارجي (MyMemory / Lingva / LibreTranslate / LLM…) للجمل اللي لسه ماترجمتش */
+        fun viaExt(p: ExtTranslate.Prov, idx: List<Int>) {
+            val r = ExtTranslate.run(p, idx.map { src[it] }, sl) { running && !isClosed }
+            var n = 0
+            for ((q, k) in idx.withIndex()) r.getOrNull(q)?.let { out[k] = it; n++ }
+            host.log("🔀 ${p.label}: ترجم $n/${idx.size} جملة")
+            if (n < idx.size && ExtTranslate.lastError.isNotEmpty()) host.log("⚠ ${p.label}: ${ExtTranslate.lastError}")
+            ExtTranslate.lastNote.takeIf { it.isNotEmpty() }?.let { ExtTranslate.lastNote = ""; host.log(it); try { host.notice(it) } catch (_: Throwable) {} }   // (v274) مثلًا: الموديل اتغيّر لوحده
+        }
+        // (v274) السلسلة: [المحرك الأساسي لو متحدد] ← باقي الخارجيين ← جوجل (حسب سويتش الترتيب) ← (لو كله فشل) الباتش بيتحوّل لجيميناي بمفاتيحك
+        val steps = ExtTranslate.chain()   // null = جوجل الداخلي
+        fun nm(st: ExtTranslate.Prov?): String = st?.label ?: "جوجل"
+        for ((si, st) in steps.withIndex()) {
             if (!running || isClosed) break
-            try {
-                val r = gtCall(b.map { src[it] }, "ar", sl)
-                if (r != null) { for ((q, k) in b.withIndex()) out[k] = r[q] }
-                else for (k in b) { gtCall(listOf(src[k]), "ar", sl)?.firstOrNull()?.let { out[k] = it } }   // عدد الأسطر اختلف: جملة جملة
-            } catch (e: Exception) { failedB++; host.log("⚠ ترجمة جوجل: " + (e.message ?: e.toString()).take(80)); if (failedB >= 3) break }
+            val need = src.indices.filter { out[it].isNullOrBlank() && src[it].isNotBlank() }
+            if (need.isEmpty()) break
+            val nextName = if (si + 1 < steps.size) nm(steps[si + 1]) else "جيميناي (مفاتيحك)"
+            if (st != null) {   // مزوّد واقف (مفتاح مرفوض / كوتة / رصيد): بنعدّيه من غير ما نبعتله حاجة، وبنقول مرة واحدة بس
+                val bw = ExtTranslate.blockedWhy(st.id, st.keyHash())
+                if (bw != null) { if (skipNoted.add(st.id)) swapNotice("⏸ ${st.label} موقوف ($bw) — الترجمة بتكمّل بـ $nextName"); continue }
+                skipNoted.remove(st.id)
+            }
+            if (st == null) viaGoogle(need) else viaExt(st, need)
+            val left = src.indices.count { out[it].isNullOrBlank() && src[it].isNotBlank() }
+            if (left > 0) {
+                val why = if (st == null) "ما ردّش" else ExtTranslate.lastError.ifEmpty { "ما كمّلش" }
+                if (st != null) skipNoted.add(st.id)
+                swapNotice("🔀 ${nm(st)} وقف ($why) — $left جملة هيكمّلها $nextName")
+            }
         }
         return out.toList()
     }
@@ -1420,7 +1467,7 @@ class Engine(
                         if (okN == 0) {
                             host.log("⚠ ترجمة جوجل: مفيش جملة اترجمت (النت أو جوجل واقف) — الباتشات هتتسلّم لجيميناي")
                             val now = System.currentTimeMillis()
-                            if (now - gtNoticeAt > 30_000L) { gtNoticeAt = now; host.notice(if (!TrWizard.online()) TrWizard.NO_NET_MSG else if (keyless) "⚠ جوجل مردّش ومفيش مفتاح جيميناي — هيتحاول تاني لما جوجل يرجع" else "⚠ جوجل مردّش — الترجمة اتحوّلت لجيميناي") }   // (v255)
+                            if (now - gtNoticeAt > 30_000L) { gtNoticeAt = now; host.notice(if (!TrWizard.online()) TrWizard.NO_NET_MSG else if (keyless) "⚠ محركات الترجمة مردّتش ومفيش مفتاح جيميناي — هيتحاول تاني لما يرجعوا" else "⚠ محركات الترجمة (${ExtTranslate.chainLabel().substringBeforeLast(" ← ")}) مردّتش — الترجمة اتحوّلت لجيميناي بمفاتيحك") }   // (v255)
                             break
                         }
                         continue
