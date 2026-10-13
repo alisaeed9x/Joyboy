@@ -523,6 +523,10 @@ class MainActivity : Activity() {
             // ===== 🚀 خط الترجمة: الخطة (تفريغ ← ترجمة ← لهجة) + اللهجة والأسلوب + البرومبتات =====
             tab("general", listOf<View>(
                 ui.text("خط الترجمة = ① تفريغ ← ② ترجمة ← ③ لهجة. بتختاره من الزرار اللي تحت أو من ⚙ جنب ▶ ترجمة في المشغّل، والبريستات بتكتب باقي الإعدادات (المقطع · الموديل · التنقيح …) لوحدها.", 12f, th.muted),
+                ui.section("🎯 إيه اللي يترجم؟", true,
+                    ui.chips(listOf(SourceMode.label(SourceMode.AUDIO), SourceMode.label(SourceMode.VISUAL), SourceMode.label(SourceMode.HYBRID)), { SourceMode.label() }) { SourceMode.set(listOf(SourceMode.AUDIO, SourceMode.VISUAL, SourceMode.HYBRID).first { id -> SourceMode.label(id) == it }) },
+                    ui.text("البصري:", 12f, th.muted),
+                    ui.chips(listOf(SourceMode.kindLabel("scene"), SourceMode.kindLabel("hard")), { SourceMode.kindLabel() }) { Cfg.put("tr_vkind", if (it == SourceMode.kindLabel("hard")) "hard" else "scene") }),
                 savedPlanTxt, planBtn,
                 ui.section("اللهجة", true, ui.chips(langs, { lang }) { lang = it; save() }),
                 ui.section("أسلوب الترجمة", true, ui.chips(styles, { style }) { style = it; save() }),

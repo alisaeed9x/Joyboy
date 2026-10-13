@@ -157,6 +157,7 @@ object Cfg {
             else { Offline.dir = app.filesDir; Offline.legacy = null }
         }
         TrWizard.appCtx = c.applicationContext   // (v255) فحص النت لإشعار ترجمة جوجل
+        try { PromptStore.init(c.applicationContext) } catch (e: Throwable) { LogStore.err("Cfg:prompts", e) }   // (v288) البرومبتات المعدّلة
         Quota.load = { p.getString("quota", "") ?: "" }
         Quota.save = { p.edit().putString("quota", it).apply() }
         Stats.load = { p.getString("stats", "") ?: "" }
@@ -258,10 +259,15 @@ object Cfg {
 // ===== بناء الـ prompt: النصوص مستخرجة بالحرف من كود البرنامج الأصلي (assets/prompts) =====
 class PromptBuilder(private val readAsset: (String) -> String) {
     private val cache = HashMap<String, String>()
-    fun read(p: String): String = synchronized(cache) { cache.getOrPut(p) { readAsset(p) } }
+    /** (v288) النسخة المعدّلة من المستخدم (إعدادات ← البرومبتات) بتتقدّم على ملف assets من غير كاش عشان التعديل يظهر فورًا */
+    fun read(p: String): String { PromptStore.get(p)?.let { return it }; return synchronized(cache) { cache.getOrPut(p) { readAsset(p) } } }
     private val index by lazy { JSONObject(read("prompts/index.json")) }
 
     companion object {
+        /** (v288) بلوك معدّل من المستخدم لو موجود وإلا الأصلي */
+        fun blk(name: String, def: String): String = PromptStore.pick("blk:$name", def)
+        fun holeBlock(): String = blk("HOLE_BLOCK", HOLE_BLOCK)
+        fun holeNearBlock(): String = blk("HOLE_NEAR_BLOCK", HOLE_NEAR_BLOCK)
         const val TAIL_MARK = "\n\n\n⏱ مدة هذا المقطع الصوتي"
         /** تعليمات إضافية بتتحط على كل القوالب: التقسيم عند الوقفات الفعلية + المتحدثين المتداخلين (جيميناي هو اللي بيقسّم، مش التطبيق) */
         /** الأصوات غير الكلامية والخلفية: بتتسجل كعناصر مستقلة (is_sound) وبتتعرض فوق الفيديو */
@@ -388,10 +394,16 @@ class PromptBuilder(private val readAsset: (String) -> String) {
         else -> "other"
     }
 
-    fun templateId(c: Conf, case: String): String {
-        var id = index.optString("${c.lang}|${c.style}|$case")
-        if (id.isEmpty()) id = index.optString("${c.lang}|حرفي|$case")
+    /** (v288) رقم القالب للهجة + أسلوب + حالة لغة الصوت (first/ja/en/other) بنفس احتياطي templateId */
+    fun idFor(lang: String, style: String, case: String): String {
+        var id = index.optString("$lang|$style|$case")
+        if (id.isEmpty()) id = index.optString("$lang|حرفي|$case")
         if (id.isEmpty()) id = index.optString("مصري|حرفي|$case")
+        return id
+    }
+
+    fun templateId(c: Conf, case: String): String {
+        val id = idFor(c.lang, c.style, case)
         return id
     }
 
@@ -421,7 +433,7 @@ class PromptBuilder(private val readAsset: (String) -> String) {
         val ctxBlock = if (prev.isNotBlank()) read("prompts/ctx.txt").replace("§PREV§", prev) else ""
         val glossBlock = customBlock(c.manualGloss)
         val tailFinal = if (tail.isEmpty()) "" else tail.substring(1)
-        return (fixed + "\n" + SPLIT_BLOCK + EXTRA_BLOCK + (if (Extras.spkNames && !hole) SPEAKER_NAME_BLOCK else "") + TERM_BLOCK + (if (c.soundTags && !hole) SOUND_BLOCK else "") + (if (Extras.deaf && !hole) Extras.SFX_BLOCK else "") + glossBlock + tailFinal + langLock(c, strict) + NO_INVENT_BLOCK + (if (hole) HOLE_BLOCK else ""))
+        return (fixed + "\n" + blk("SPLIT_BLOCK", SPLIT_BLOCK) + blk("EXTRA_BLOCK", EXTRA_BLOCK) + (if (Extras.spkNames && !hole) blk("SPEAKER_NAME_BLOCK", SPEAKER_NAME_BLOCK) else "") + blk("TERM_BLOCK", TERM_BLOCK) + (if (c.soundTags && !hole) blk("SOUND_BLOCK", SOUND_BLOCK) else "") + (if (Extras.deaf && !hole) Extras.SFX_BLOCK else "") + glossBlock + tailFinal + langLock(c, strict) + blk("NO_INVENT_BLOCK", NO_INVENT_BLOCK) + (if (hole) holeBlock() else ""))
             .replace("\u0001", ctxBlock)
             .replace("{{DUR}}", String.format(java.util.Locale.US, "%.1f", durSec))
     }
@@ -829,7 +841,7 @@ object Parse {
         val tg = s.optString("topic_gender").lowercase().let { if (it in listOf("male", "female", "plural")) it else "none" }
         return Subs.collapseSelfRepeat(Sub(
             off + sec(s, "start", 0.0), off + sec(s, "end", 1.0),
-            orig, tr, if (s.optString("gender") == "female") "female" else "male", ad, tg,
+            orig, tr, when (s.optString("gender").lowercase()) { "female" -> "female"; "unknown" -> "unknown"; else -> "male" }, ad, tg,   // (v283) unknown = تفريغ أوفلاين: الصوت ما بيقولش الجنس، والمترجم يستنتجه من السياق بدل ما نفترض ذكر
             strs(s.optJSONArray("people")), strs(s.optJSONArray("places")), s.optBoolean("is_song", false), s.optBoolean("low_confidence", false), -1,
             s.optString("emotion").trim().lowercase(), s.optBoolean("overlap", false), s.optString("speaker_tag").trim(),
             s.optBoolean("is_continuation", false), s.optString("translated_en_pivot").trim(),
@@ -893,7 +905,7 @@ object Subs {
         val gapSec = if (last.isEmpty()) 0.0 else before - last.maxOf { it.end }
         val note = if (gapSec > 12.0) "⚠ السياق ده قديم: بينه وبين بداية المقطع الحالي حوالي ${Math.round(gapSec)} ثانية لسه ماترجمتش — ماتفترضش إن أول جملة في المقطع استكمال مباشر ليه إلا لو الكلام نفسه بيدل على كده.\n" else ""
         return note + last.joinToString("\n") { s ->
-            val g = if (s.gender == "female") "أنثى" else "ذكر"
+            val g = when (s.gender) { "female" -> "أنثى"; "unknown" -> "غير محدد"; else -> "ذكر" }
             val a = if (s.addressee != "unknown") s.addressee else "-"
             val tg = if (s.topicGender != "none") s.topicGender else "-"
             val names = if (s.people.isNotEmpty()) " | أسماء مذكورة: " + s.people.joinToString("، ") else ""

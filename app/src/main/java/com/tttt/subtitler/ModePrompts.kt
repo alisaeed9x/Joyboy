@@ -30,10 +30,12 @@ object ModePrompts {
     }
 
     private fun dur(d: Double) = String.format(java.util.Locale.US, "%.1f", d)
+    /** (v288) النسخة المعدّلة من المستخدم (إعدادات ← البرومبتات) لو موجودة وإلا الأصلي */
+    private fun P(name: String, def: String) = PromptStore.pick("mp:$name", def)
 
     // ───────────────────────── الوضع 2: برومبت إنجليزي كامل (صوت ← ترجمة) ─────────────────────────
 
-    private const val MAIN_EN = """You are a professional audio translator specialized in natural, complete speech translation.
+    internal const val MAIN_EN = """You are a professional audio translator specialized in natural, complete speech translation.
 This is a standalone audio segment; timestamps start at 0.0 relative to the beginning of this segment only.
 
 ═══ TASKS ═══
@@ -45,7 +47,7 @@ This is a standalone audio segment; timestamps start at 0.0 relative to the begi
 
 """
 
-    private const val TIMING_EN = """
+    internal const val TIMING_EN = """
 ═══ TIMING RULES ═══
 - start and end are relative to this segment only (0.0 = first moment of the audio). Do not add any external offset.
 - 🔴 Report exactly what you hear. start = the real moment the speaker's voice begins, end = the real moment it stops (not the grammatical end of the sentence if the speaker paused before it).
@@ -53,7 +55,7 @@ This is a standalone audio segment; timestamps start at 0.0 relative to the begi
 - 🔴 If there is silence or music between two sentences, the first one ends where its voice stops (not stretched to the next start), and the next begins where its voice begins.
 """
 
-    private const val GENDER_EN = """
+    internal const val GENDER_EN = """
 ═══ GENDER RULES ═══
 - gender is the gender of the character who is actually speaking (not necessarily what the voice sounds like). Priority: (1) the fixed character table, if the character is listed; (2) for Japanese, Korean and Chinese, the linguistic evidence in the speech itself: first-person pronouns (僕 / 俺 / 私 / あたし), honorifics, sentence-final particles, kinship titles such as 오빠 / 형; (3) for other languages, clues in the speech or in what others say about the speaker (name, a gendered descriptor, a pronoun, a title); (4) only as a last resort, the voice.
 - 🔴 Voices mislead: an adult voice actor may play a young boy, or the reverse. Linguistic evidence always beats voice tone.
@@ -61,7 +63,7 @@ This is a standalone audio segment; timestamps start at 0.0 relative to the begi
 - 🔴 Gendered vocabulary: some Arabic words change completely, not only in pronoun or verb form, depending on the owner's gender (body parts, clothing, some personal traits). Never use a feminine word for a male speaker, addressee or third person, or the reverse. When the sentence describes someone's body or personal state, decide the gender of the person it describes (not automatically the speaker). If you are truly unsure and nothing in the table or the context helps, rephrase with a neutral expression instead of risking a word that belongs to the other gender.
 """
 
-    private const val RULES_EN = """
+    internal const val RULES_EN = """
 ═══ SPLITTING AND COMPLETENESS (mandatory) ═══
 - 🔴 One subtitle = one stretch of continuous speech between two real pauses (a breath, a short silence, a change of tone, the end of a thought). When a speaker talks at length, cut at every breath or pause of about half a second or more, exactly like song lines, each part with its true start and end.
 - 🔴 Hard limit: one subtitle is at most about 12-14 Arabic words. If the translation of a continuous speech would be longer, split it into two or more consecutive subtitles whose start and end match the part of the audio each one covers. Look for the nearest natural cut (breath, comma, end of a sub-thought) even if the pause is tiny. Shorter subtitles beat smoother ones.
@@ -73,7 +75,7 @@ This is a standalone audio segment; timestamps start at 0.0 relative to the begi
 - 🔴 Precision of terms beats politeness: scientific, medical, anatomical, legal and technical terms must be translated with the exact correct term, never swapped for a nicer, softer or different word.
 """
 
-    private const val QUALITY_EN = """
+    internal const val QUALITY_EN = """
 ═══ TRANSLATION QUALITY (professional translator) ═══
 - 🔴 Accuracy first: convey the full meaning. Never add, drop or guess information. Numbers, names, dates and units must be carried over correctly.
 - Understand the intent before translating: idioms, proverbs, sarcasm and metaphors are never translated word by word. Render the meaning with the natural equivalent in the target language and keep the speaker's tone (formal, ironic, angry, tender). Pick the right sense of a multi-meaning word from the scene.
@@ -82,21 +84,21 @@ This is a standalone audio segment; timestamps start at 0.0 relative to the begi
 - Do not repeat sentences and do not copy the original into "translated".
 """
 
-    private const val REVIEW_EN = """
+    internal const val REVIEW_EN = """
 ═══ SELF-REVIEW BEFORE ANSWERING (mandatory) ═══
 - 🔴 For every sentence ask: does "original" make complete, logical sense in this context? If a word or part looks wrong (strange letters, a name that is off, a sentence that is cut or meaningless), listen to that exact part again, focusing on that word, and correct it to the closest pronunciation that really matches the audio. The correction must come from what you hear, never from a guess based on the story. If it is still unclear, write what you actually heard and set low_confidence=true.
 - 🔴 Names, numbers and terms: listen again to any you are not sure of; the same name is always written the same way.
 - 🔴 Last pass: go through the whole segment once more against your subtitles. Any stretch with audible human speech and no subtitle (between two sentences, after a pause, the first and last two seconds) must be listened to again and added.
 """
 
-    private const val NO_INVENT_EN = """
+    internal const val NO_INVENT_EN = """
 ═══ NO INVENTION (more important than full coverage) ═══
 - 🔴🔴 Write only speech you actually hear a human voice say in the attached audio. Silence, music, sound effects, noise, screams and breaths without intelligible words produce no subtitles at all. If the whole segment is like that, answer {"subtitles":[]}.
 - 🔴 Never continue the dialogue from the previous context, from the story or from your knowledge of the film: context is for understanding only. A sentence that is not audible in the attached audio is forbidden even if it fits the characters perfectly.
 - 🔴 low_confidence means "I heard speech but it is unclear", not "I guessed". If you do not hear real human speech, write nothing.
 """
 
-    private const val SOUND_EN = """
+    internal const val SOUND_EN = """
 ═══ ITEMS SHOWN ABOVE THE VIDEO (is_sound=true) ═══
 - 🔴🔴 Never record non-speech sounds, neither as an item nor as a description in brackets: music, screaming, laughing, crying, sighing, coughing, applause, humming, groaning, knocking, doors, ringing phones, rain, cars, gunshots, noise. Ignore them completely.
 - 🔴 What is recorded above the video is background speech only (not the dialogue of the main characters): a presenter on radio / TV / phone / loudspeaker, or people in a market, street, protest or crowd who talk, chant or object. Each one is its own item with its real timing and "is_sound": true.
@@ -104,21 +106,21 @@ This is a standalone audio segment; timestamps start at 0.0 relative to the begi
 - Songs with lyrics stay is_song as they are; instrumental music is ignored.
 """
 
-    private const val TERMS_EN = """
+    internal const val TERMS_EN = """
 ═══ EXPLAINING UNFAMILIAR TERMS (shown above the video) ═══
 - When the speech contains something most Arabic viewers would not understand (a drug or treatment name, a disease or medical condition, an idiom or proverb in any language, a reference to a series, film, character, event, song or celebrity), add one extra item with the same timing as that sentence and "is_sound": true.
 - original = the term as said. translated = «the term»: a simple explanation in the target dialect (a drug: what it is taken for; a disease: what it is in a few words; an idiom or proverb: the equivalent expression or its meaning; a reference: what it is and what it means here). Maximum two short lines.
 - The sentence's own translation stays normal; the explanation is an extra item only. Explain only things that are really unfamiliar. If you are not sure of the meaning, do not explain and do not guess. No more than about one term per half minute.
 """
 
-    private const val SPEAKER_EN = """
+    internal const val SPEAKER_EN = """
 ═══ SPEAKER NAME ═══
 - Add to every subtitle a field "speaker_name": the name of the person saying this sentence, written in Arabic and spelled identically for the same person everywhere.
 - 🔴 If a character table is given, use the name exactly as written there when you recognise the person. Otherwise take it from the dialogue (a call, an introduction, a name on screen) or from a voice that was already named before.
 - 🔴 If you are not 100% sure who speaks, write "" (empty). Never guess, never write "speaker 1", "man" or "woman". Names are for main characters only; minor or unknown voices get "". Never put the name inside "original" or "translated".
 """
 
-    private const val CTX_EN = """
+    internal const val CTX_EN = """
 ═══ CONTEXT FROM THE IMMEDIATELY PRECEDING DIALOGUE (for understanding only; do not translate it again or repeat it) ═══
 These are the last sentences translated before the current segment. Each line shows the translation, then the original text after "[أصلي]", with the speaker / addressee / absent-person genders that were set at the time:
 {{PREV}}
@@ -131,14 +133,14 @@ Use this context to:
 5. 🔴 Check old genders and pronouns: compare the original text of each previous sentence with the gender set for it. If one is clearly wrong (for example a masculine first-person pronoun was labelled female, or a Korean kinship title proves the opposite gender), report it in "prev_corrections": [{"original_snippet":"part of the old original text that identifies it exactly","gender":"male","addressee":"female","topic_gender":"none","translated":"the full corrected Arabic translation"}]. Only report an error you are sure about from clear linguistic evidence; otherwise leave prev_corrections as [].
 """
 
-    private const val HOLE_EN = """
+    internal const val HOLE_EN = """
 ═══ SHORT RE-REQUESTED SEGMENT (these instructions override everything above) ═══
 - 🔴🔴 This segment was cut because it contains a loud sound, but that sound is most likely music, effects or noise, not speech. The "full coverage" and "faint speech" rules above do not apply here.
 - 🔴🔴 Write only clear, intelligible human speech or singing that you really hear. If you are not 100% sure there is speech, answer {"subtitles":[]}: the empty answer is the correct one in most cases.
 - No faint, no low_confidence and no is_sound items in this segment.
 """
 
-    private const val HOLE_NEAR_EN = """
+    internal const val HOLE_NEAR_EN = """
 ═══ SHORT RE-REQUESTED SEGMENT: COMPLETE MISSING SPEECH (these instructions override everything above) ═══
 - 🔴🔴 This segment is part of continuous speech: the sentences before or after it were already recorded and this part was missed. It most likely contains real human speech (maybe quiet, faint or under music).
 - 🔴🔴 Listen closely and record every human word, even if quiet or unclear (faint=true and low_confidence=true are allowed). Never drop a sentence because its voice is low.
@@ -181,24 +183,24 @@ Use this context to:
     fun english(pb: PromptBuilder, c: Conf, durSec: Double, prev: String, chars: List<Chr>, gloss: List<Gloss>,
                 strict: Boolean = false, hole: Boolean = false, holeNear: Boolean = false): String {
         val sb = StringBuilder()
-        sb.append(MAIN_EN.replace("{{TARGET}}", dialectEn(c.lang)).replace("{{STYLE}}", styleEn(c.style)))
+        sb.append(P("MAIN_EN", MAIN_EN).replace("{{TARGET}}", dialectEn(c.lang)).replace("{{STYLE}}", styleEn(c.style)))
         sb.append(schema())
-        sb.append(TIMING_EN).append(GENDER_EN).append(RULES_EN).append(QUALITY_EN).append(REVIEW_EN)
+        sb.append(P("TIMING_EN", TIMING_EN)).append(P("GENDER_EN", GENDER_EN)).append(P("RULES_EN", RULES_EN)).append(P("QUALITY_EN", QUALITY_EN)).append(P("REVIEW_EN", REVIEW_EN))
         sb.append(charTable(chars)).append(glossBlock(c, gloss))
-        if (Extras.spkNames && !hole) sb.append(SPEAKER_EN)
-        if (!hole) sb.append(TERMS_EN)
-        if (c.soundTags && !hole) sb.append(SOUND_EN)
-        if (prev.isNotBlank() && !hole) sb.append(CTX_EN.replace("{{PREV}}", prev))
+        if (Extras.spkNames && !hole) sb.append(P("SPEAKER_EN", SPEAKER_EN))
+        if (!hole) sb.append(P("TERMS_EN", TERMS_EN))
+        if (c.soundTags && !hole) sb.append(P("SOUND_EN", SOUND_EN))
+        if (prev.isNotBlank() && !hole) sb.append(P("CTX_EN", CTX_EN).replace("{{PREV}}", prev))
         sb.append("\n\n⏱ Exact duration of this audio segment: ${dur(durSec)} seconds. Every start and end must be a number between 0.0 and ${dur(durSec)}, measured by real listening, not estimated.\n")
         sb.append("- If no speech is audible: {\"subtitles\":[]}\n- JSON only: no explanation, no introduction, no markdown.\n")
-        sb.append(langLock(pb, c, strict)).append(NO_INVENT_EN)
-        if (hole) sb.append(if (holeNear) HOLE_NEAR_EN else HOLE_EN)
+        sb.append(langLock(pb, c, strict)).append(P("NO_INVENT_EN", NO_INVENT_EN))
+        if (hole) sb.append(if (holeNear) P("HOLE_NEAR_EN", HOLE_NEAR_EN) else P("HOLE_EN", HOLE_EN))
         return sb.toString()
     }
 
     // ───────────────────────── الوضعين 3 و4: ترانسكريبشن بس ─────────────────────────
 
-    private const val TRANSCRIBE_MAIN = """You are a professional speech transcriber (verbatim, with exact timing). You do NOT translate.
+    internal const val TRANSCRIBE_MAIN = """You are a professional speech transcriber (verbatim, with exact timing). You do NOT translate.
 This is a standalone audio segment; timestamps start at 0.0 relative to the beginning of this segment only.
 
 ═══ TASKS ═══
@@ -210,7 +212,7 @@ This is a standalone audio segment; timestamps start at 0.0 relative to the begi
 
 """
 
-    private const val TRANSCRIBE_RULES = """
+    internal const val TRANSCRIBE_RULES = """
 ═══ SPLITTING AND COMPLETENESS (mandatory) ═══
 - 🔴 One subtitle = one stretch of continuous speech between two real pauses (a breath, a short silence, a change of tone, the end of a thought). When a speaker talks at length, cut at every breath or pause of about half a second or more, each part with its true start and end.
 - 🔴 Hard limit: one subtitle holds at most about 12 spoken words. Longer continuous speech is split into consecutive subtitles at the nearest natural cut (breath, comma, end of a sub-thought), each with the timing of the part it covers. Shorter subtitles beat smoother ones.
@@ -224,34 +226,34 @@ This is a standalone audio segment; timestamps start at 0.0 relative to the begi
     fun transcribe(pb: PromptBuilder, c: Conf, durSec: Double, prev: String, chars: List<Chr>, gloss: List<Gloss>,
                    strict: Boolean = false, hole: Boolean = false, holeNear: Boolean = false): String {
         val spk = if (Extras.spkNames) ",\"speaker_name\":\"\"" else ""
-        val sb = StringBuilder(TRANSCRIBE_MAIN)
+        val sb = StringBuilder(P("TRANSCRIBE_MAIN", TRANSCRIBE_MAIN))
         sb.append("Return JSON only, in exactly this shape, with no text outside it:\n")
         sb.append("{\"subtitles\":[{\"start\":0.0,\"end\":2.0,\"original\":\"...\",\"gender\":\"male\",\"addressee\":\"male\",\"topic_gender\":\"none\",\"people\":[],\"places\":[],\"is_song\":false,\"emotion\":\"neutral\",\"low_confidence\":false,\"overlap\":false,\"speaker_tag\":\"\",\"is_continuation\":false,\"faint\":false$spk},...],\"detected_source_language\":\"...\"}\n")
         sb.append("There is no \"translated\" field in this task.\n")
-        sb.append(TIMING_EN).append(GENDER_EN.substringBefore("- 🔴 Gendered vocabulary"))
-        sb.append(TRANSCRIBE_RULES)
-        sb.append(REVIEW_EN)
+        sb.append(P("TIMING_EN", TIMING_EN)).append(P("GENDER_EN", GENDER_EN).substringBefore("- 🔴 Gendered vocabulary"))
+        sb.append(P("TRANSCRIBE_RULES", TRANSCRIBE_RULES))
+        sb.append(P("REVIEW_EN", REVIEW_EN))
         sb.append(charTable(chars))
         if (gloss.isNotEmpty() || c.manualGloss.isNotBlank()) {
             val g = gloss.joinToString("\n") { "- ${it.term}${if (it.note.isNotEmpty()) ": " + it.note else ""}" }
             sb.append("\n═══ NAMES AND TERMS THAT APPEAR IN THIS VIDEO (spell them this way when you hear them) ═══\n").append(listOf(c.manualGloss.trim(), g).filter { it.isNotEmpty() }.joinToString("\n")).append("\n")
         }
-        if (Extras.spkNames && !hole) sb.append(SPEAKER_EN)
+        if (Extras.spkNames && !hole) sb.append(P("SPEAKER_EN", SPEAKER_EN))
         if (prev.isNotBlank() && !hole) {
             sb.append("\n═══ CONTEXT FROM THE PRECEDING DIALOGUE (for understanding only; never repeat it) ═══\n").append(prev)
             sb.append("\nUse it only to keep names spelled the same way, to keep the addressee consistent, and to set is_continuation. Never write a sentence that is not audible in the attached audio.\n")
         }
         sb.append("\n\n⏱ Exact duration of this audio segment: ${dur(durSec)} seconds. Every start and end must be a number between 0.0 and ${dur(durSec)}, measured by real listening, not estimated.\n")
         sb.append("- If no speech is audible: {\"subtitles\":[]}\n- JSON only: no explanation, no introduction, no markdown.\n")
-        sb.append(NO_INVENT_EN)
+        sb.append(P("NO_INVENT_EN", NO_INVENT_EN))
         if (strict) sb.append("- ⚠⚠ Your previous reply was incomplete or not valid JSON. Return every spoken sentence of the segment, as valid JSON in the exact shape above.\n")
-        if (hole) sb.append(if (holeNear) HOLE_NEAR_EN else HOLE_EN)
+        if (hole) sb.append(if (holeNear) P("HOLE_NEAR_EN", HOLE_NEAR_EN) else P("HOLE_EN", HOLE_EN))
         return sb.toString()
     }
 
     // ───────────────────────── الوضعين 3 و4: ترجمة احترافية لدفعة جمل منسوخة ─────────────────────────
 
-    private const val TRANSLATE_MAIN = """You are a senior professional translator and subtitler. You translate already-transcribed speech (you do not hear any audio) into {{TARGET}}, written in Arabic letters, as {{STYLE}}.
+    internal const val TRANSLATE_MAIN = """You are a senior professional translator and subtitler. You translate already-transcribed speech (you do not hear any audio) into {{TARGET}}, written in Arabic letters, as {{STYLE}}.
 The sentences below are consecutive speech from one video, in order. Each one already has its fixed timing on screen, so the translation must stay faithful to its own sentence.
 
 ═══ HARD RULES ON STRUCTURE (the app breaks if you violate them) ═══
@@ -264,7 +266,7 @@ The sentences below are consecutive speech from one video, in order. Each one al
 - 🔴 Scientific, medical, anatomical, pharmaceutical, legal and technical terms stay exactly as they are: use the precise, correct, standard term, never a softer, nicer or different word. When the professional norm in Arabic is to keep the Latin or English term (drug names, disease names, abbreviations, lab values), keep it exactly as spoken, in its original letters. Numbers, units, doses and dates are carried over exactly.
 - 🔴 Proverbs, idioms and popular sayings are never translated literally. Find the saying a native speaker of the target dialect would really use for the same meaning (for Egyptian Arabic: the matching Egyptian proverb or expression) and use it. If there is no real equivalent, express the meaning naturally in the target dialect.
 - Slang, sarcasm, jokes and metaphors: carry over the effect and the tone (formal, ironic, angry, tender), not the words.
-- Gender: use the speaker_gender, addressee_gender and topic_gender given for each sentence to choose correct Arabic verbs, pronouns and adjectives, and use the character table if provided. 🔴 Gendered vocabulary (body parts, clothing, some traits) must match the gender of the person the sentence describes; if you are unsure, rephrase neutrally instead of risking a word that belongs to the other gender.
+- Gender: use the speaker_gender, addressee_gender and topic_gender given for each sentence to choose correct Arabic verbs, pronouns and adjectives, and use the character table if provided. If speaker_gender is "unknown" (the transcript came from speech-to-text, which cannot hear gender), decide it from the context, names and the character table; if still unclear, prefer a neutral phrasing over guessing masculine. 🔴 Gendered vocabulary (body parts, clothing, some traits) must match the gender of the person the sentence describes; if you are unsure, rephrase neutrally instead of risking a word that belongs to the other gender.
 - Names: write in Arabic letters, and spell the same name the same way as in the context and in the character table.
 - Songs (is_song=true): translate the lyrics meaningfully line by line, naturally, not word by word.
 - Rows with faint=true are quiet or background speech: translate them with the same care.
@@ -277,7 +279,7 @@ The sentences below are consecutive speech from one video, in order. Each one al
      */
     fun translate(pb: PromptBuilder, c: Conf, items: List<Sub>, before: List<Sub>, after: List<Sub>, chars: List<Chr>, gloss: List<Gloss>, strict: Boolean = false): String {
         val tgt = dialectEn(c.lang)
-        val sb = StringBuilder(TRANSLATE_MAIN.replace("{{TARGET}}", tgt).replace("{{STYLE}}", styleEn(c.style)))
+        val sb = StringBuilder(P("TRANSLATE_MAIN", TRANSLATE_MAIN).replace("{{TARGET}}", tgt).replace("{{STYLE}}", styleEn(c.style)))
         sb.append(charTable(chars)).append(glossBlock(c, gloss))
         if (before.isNotEmpty()) {
             sb.append("\n═══ ALREADY TRANSLATED JUST BEFORE THIS BATCH (context and terminology consistency; do not translate again) ═══\n")
@@ -302,7 +304,7 @@ The sentences below are consecutive speech from one video, in order. Each one al
 
     // ───────────────────────── (v219) الوضع 4: ترجمة سياقية بعد ما النص كله اتنسخ ─────────────────────────
 
-    private const val CONTEXT_RULES = """
+    internal const val CONTEXT_RULES = """
 ═══ WHOLE-VIDEO CONTEXT (this is what makes this task different) ═══
 - 🔴🔴 You are given the COMPLETE transcript of the video (or a very large part of it) in order, before the sentences you must translate. Read all of it first. Understand the whole story: who the people are, how they relate to each other, who is speaking to whom, what is happening, what was said earlier that explains what is said later, the tone of each scene.
 - Translate realistically, the way a native speaker would naturally say it in that situation, using the meaning of the WHOLE conversation, never a piece-by-piece or sentence-by-sentence rendering. A line that is ambiguous alone must be resolved by what comes before and after it anywhere in the transcript.
@@ -318,9 +320,9 @@ The sentences below are consecutive speech from one video, in order. Each one al
      */
     fun contextual(pb: PromptBuilder, c: Conf, all: List<Sub>, ctxFrom: Int, refs: List<Int>, items: List<Sub>, before: List<Sub>, chars: List<Chr>, gloss: List<Gloss>, part: Int, parts: Int, strict: Boolean = false): String {
         val tgt = dialectEn(c.lang)
-        val main = TRANSLATE_MAIN.replace("{{TARGET}}", tgt).replace("{{STYLE}}", styleEn(c.style))
+        val main = P("TRANSLATE_MAIN", TRANSLATE_MAIN).replace("{{TARGET}}", tgt).replace("{{STYLE}}", styleEn(c.style))
             .replace("The sentences below are consecutive speech from one video, in order.", "The transcript and the sentences below are speech from one video, in order.")
-        val sb = StringBuilder(main).append(CONTEXT_RULES)
+        val sb = StringBuilder(main).append(P("CONTEXT_RULES", CONTEXT_RULES))
         sb.append(charTable(chars)).append(glossBlock(c, gloss))
         sb.append("\n═══ FULL TRANSCRIPT OF THE VIDEO, FOR UNDERSTANDING ONLY (line numbers are #N) ═══\n")
         all.forEachIndexed { k, s ->
@@ -349,7 +351,7 @@ The sentences below are consecutive speech from one video, in order. Each one al
         val a = JSONArray()
         items.forEachIndexed { i, s ->
             val o = JSONObject().put("idx", i).put("original", s.original)
-                .put("speaker_gender", if (s.gender == "female") "female" else "male")
+                .put("speaker_gender", when (s.gender) { "female" -> "female"; "unknown" -> "unknown"; else -> "male" })
                 .put("addressee_gender", s.addressee).put("topic_gender", s.topicGender)
             if (s.speakerTag.isNotEmpty()) o.put("speaker_tag", s.speakerTag)
             if (s.speakerName.isNotEmpty()) o.put("speaker_name", s.speakerName)

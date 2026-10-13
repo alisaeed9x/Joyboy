@@ -73,6 +73,29 @@ object ExtLlm {
         return out.toList()
     }
 
+    /**
+     * (v281) تحويل ترجمة فصحى للهجة [tgt] بمحرك LLM (ChatGPT / Claude / …) بدل جيميناي. بيرجّع نفس الطول والناقص null.
+     * [orig] النص الأصلي للمرجع، [msa] الفصحى، [meta] جنس المتكلم/المخاطَب (ممكن فاضي)، [rules] قواعد اللهجة (PromptBuilder.dialectBlock)
+     */
+    fun convert(p: Preset, orig: List<String>, msa: List<String>, meta: List<String>, tgt: String, rules: String): List<String?> {
+        fun clean(t: String) = t.replace(Regex("\\s*\n\\s*"), " ").trim()
+        val sys = "You are a professional Arabic subtitle editor. Each numbered line has the ORIGINAL line and its Modern Standard Arabic (MSA) translation. " +
+            "Rewrite ONLY the Arabic translation into authentic everyday spoken $tgt Arabic, the way native speakers really talk, keeping the exact meaning, names, numbers and the speaker/addressee gender. " +
+            "Never merge, split, reorder or drop lines. Return EVERY line, even if it is already close to the dialect. If the MSA misses the meaning, fix it from the ORIGINAL. " +
+            "Output ONLY lines in the exact format `N. text` (Arabic only), one per line, no notes, no blank lines.\n" + rules
+        val user = orig.indices.joinToString("\n") { i -> "${i + 1}. ORIGINAL: " + clean(orig[i]) + " | MSA: " + clean(msa[i]) + (meta.getOrNull(i)?.takeIf { it.isNotBlank() }?.let { " | $it" } ?: "") }
+        val reply = chat(p, sys, user, 4096)
+        val out = arrayOfNulls<String>(orig.size)
+        val rx = Regex("^\\s*(\\d+)\\s*[.)\\-:]\\s*(.*)$")
+        for (line in reply.lines()) {
+            val m = rx.find(line) ?: continue
+            val ix = (m.groupValues[1].toIntOrNull() ?: continue) - 1
+            val t = m.groupValues[2].trim()
+            if (ix in out.indices && t.isNotEmpty() && out[ix] == null) out[ix] = t
+        }
+        return out.toList()
+    }
+
     private fun http(method: String, url: String, headers: Map<String, String>, body: String?, readMs: Int): String {
         val c = URL(url).openConnection() as HttpURLConnection
         try {

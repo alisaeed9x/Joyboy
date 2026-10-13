@@ -168,6 +168,10 @@ class Engine(
     private var pronBusy = false
     /** لهجة التحويل التلقائي: الترجمة بتتعمل بالفصحى الحرفية وكل ~3 باتشات بتتحوّل للهجة دي. "" = من غير تحويل */
     @Volatile var convDialect: String = ""
+    /** (v280) «تفريغ بس»: النص بيتفرّغ ويتعرض بلغته الأصلية من غير ترجمة ولا تحويل لهجة ولا تنقيح ولا سدّ ثغرات.
+     *  لما يتقفل بعد ما كان شغّال، الجمل الأجنبية بتتعالج بإصلاح اللغة الأجنبية التلقائي (جيميناي) زي ما بيحصل بعد الريستارت */
+    @Volatile var transOnly: Boolean = false
+        set(v) { val was = field; field = v; if (was && !v) previewChunks.clear() }
     /** أسلوب الترجمة الحي (حرفي/شعبي/جرئ/+18) وشدته (خفيفة/متوسطة/شديدة): بيتحط في أول برومبت كل باتش جديد وكل تحويل لهجة */
     @Volatile var toneStyle: String = ""
     @Volatile var toneStrength: String = "متوسطة"
@@ -384,7 +388,8 @@ class Engine(
     }
     /** بيحوّل الجمل اللي لسه ما اتحوّلتش كل ~3 باتشات (أو الباقي لما الترجمة تهدى) على المفاتيح الاحتياطية */
     fun maybeConvert(force: Boolean = false) {
-        if (keyless) return   // (v259) تحويل اللهجة محتاج جيميناي — من غير مفتاح الترجمة بتفضل فصحى (الإشعار اتعرض قبل البداية)
+        if (transOnly || (keyless && convLlm() == null)) return   // (v280) تفريغ بس: مفيش تحويل لهجة · (v281) من غير مفتاح جيميناي التحويل بيشتغل لو فيه محرك LLM مختار
+        // (v259) تحويل اللهجة محتاج جيميناي — من غير مفتاح الترجمة بتفضل فصحى (الإشعار اتعرض قبل البداية)
         val tgt = convDialect
         if (tgt.isBlank() || tgt == "فصحى" || tgt == conf.lang) return
         if (System.currentTimeMillis() - lastConvFail < minOf(60_000L, 10_000L shl minOf(convFailN, 3))) return
@@ -394,6 +399,18 @@ class Engine(
         if (!force && span < ch * 0.5) return
         if (!convBusy.compareAndSet(false, true)) return
         try { bg.submit { try { convertSubs(tgt) } finally { convBusy.set(false) } } } catch (_: Exception) { convBusy.set(false) }
+    }
+    /** (v281) محرك LLM اللي اخترته لتحويل اللهجة (Cfg conv_via = id بريست)، لو جاهز ومش موقوف. null = جيميناي */
+    private fun convLlm(): ExtLlm.Preset? = ExtLlm.byId(Cfg.str("conv_via", "").trim())?.takeIf { ExtLlm.configured(it) && ExtLlm.enabled(it) && ExtLlm.blockedWhy(it) == null }
+    private fun convViaLlm(p: ExtLlm.Preset, batch: List<Int>, snap: List<Sub>, tgt: String): List<Pair<Int, String>> {
+        val out = ArrayList<Pair<Int, String>>()
+        for (part in batch.chunked(25)) {
+            val orig = part.map { snap[it].original }; val msa = part.map { snap[it].translated }
+            val meta = part.map { k -> val s = snap[k]; listOfNotNull(s.gender.takeIf { it.isNotBlank() }?.let { "speaker=$it" }, s.addressee.takeIf { it.isNotBlank() }?.let { "addressee=$it" }).joinToString(", ") }
+            val r = ExtLlm.convert(p, orig, msa, meta, tgt, pb.dialectBlock(tgt) + toneBlock())
+            for ((q, k) in part.withIndex()) r.getOrNull(q)?.takeIf { it.isNotBlank() }?.let { out.add(k to it) }
+        }
+        return out
     }
     private fun convertSubs(tgt: String): Int {
         var changed = 0
@@ -410,20 +427,30 @@ class Engine(
             if (!running) return@forEachIndexed
             val list = JSONArray()
             for (k in batch) { val s = snap[k]; list.put(JSONObject().put("idx", k).put("original", s.original).put("translated", s.translated).put("speaker_gender", s.gender).put("addressee_gender", s.addressee)) }
-            val prompt = "أنت محرر ترجمة محترف. الجمل دي مترجمة بالفصحى الحرفية. حوّل حقل translated في كل جملة للهجة $tgt الحقيقية (زي ما أهلها بيتكلموا فعلًا) مع الحفاظ الكامل على المعنى والأسماء والأرقام وجنس المتكلم speaker_gender والمخاطَب addressee_gender.\n" +
-                "- ماتدمجش ولا تقسّم جمل ولا تغيّر عددها أو ترتيبها. original للمرجع بس (لو الفصحى فيها غلط في المعنى صحّحه من original).\n" +
-                "- 🔴 لازم ترجّع كل الجمل (حتى لو الجملة أصلًا قريبة من اللهجة) بالصياغة النهائية باللهجة.\n" +
-                pb.dialectBlock(tgt) + toneBlock() + "\nالجمل:\n$list\n\n" +
-                "أرجع JSON فقط: {\"rewrites\":[{\"idx\":0,\"translated\":\"النص باللهجة\"}]}"
+            val prompt = PromptStore.fill(PromptStore.pick("eng:conv", EnginePrompts.CONV), "TGT" to tgt, "DIALECT" to pb.dialectBlock(tgt), "TONE" to toneBlock(), "LIST" to list.toString())
             try {
-                val r = bgCall(prompt, 8192, 0.3, true, bi)
-                val arr = (Parse.json(r.text) ?: throw BadReply("رد التحويل مش JSON")).optJSONArray("rewrites") ?: throw BadReply("رد التحويل من غير rewrites")
+                // (v281) محرك LLM مختار (ChatGPT / Claude / …): بيحوّل هو، ولو وقف بيكمّل جيميناي (إلا لو مفيش مفتاح جيميناي)
+                var rw: List<Pair<Int, String>>? = null
+                val via = convLlm()
+                if (via != null) {
+                    try { rw = convViaLlm(via, batch, snap, tgt) }
+                    catch (e: Exception) {
+                        if (e is ExtLlm.LlmErr) ExtTranslate.noteFail("llm_" + via.id, ExtLlm.key(via).hashCode(), e)
+                        host.log("⚠ تحويل اللهجة بـ ${via.label} فشل: " + (e.message ?: e.javaClass.simpleName).take(110))
+                        if (keyless) throw e
+                        warnUser("convvia", "⚠ ${via.label} وقف في تحويل اللهجة — اتحوّل لجيميناي")
+                    }
+                }
+                if (rw == null) {
+                    val r = bgCall(prompt, 8192, 0.3, true, bi)
+                    val arr = (Parse.json(r.text) ?: throw BadReply("رد التحويل مش JSON")).optJSONArray("rewrites") ?: throw BadReply("رد التحويل من غير rewrites")
+                    rw = (0 until arr.length()).mapNotNull { q -> val c = arr.optJSONObject(q) ?: return@mapNotNull null; val ix = c.optInt("idx", -1); if (ix !in batch) null else ix to c.optString("translated").trim() }
+                }
+                val rws: List<Pair<Int, String>> = rw ?: emptyList()
                 synchronized(lock) {
                     val cur = subs.toMutableList(); val got = HashSet<Int>()
-                    for (q in 0 until arr.length()) {
-                        val c = arr.optJSONObject(q) ?: continue
-                        val ix = c.optInt("idx", -1); if (ix !in batch) continue
-                        val tr = c.optString("translated").trim(); if (tr.isEmpty()) continue
+                    for ((ix, tr) in rws) {
+                        if (tr.isEmpty()) continue
                         val t = snap[ix]
                         val at = cur.indexOfFirst { Math.abs(it.start - t.start) < 0.05 && it.original == t.original }
                         if (at >= 0) { cur[at] = cur[at].copy(translated = tr, conv = true); got.add(ix); if (tr != t.translated) changed++ }
@@ -535,6 +562,7 @@ class Engine(
         val ex = Executors.newFixedThreadPool(capMax + 2) { r -> Thread(r).also { it.isDaemon = true } }   // +2: باتش اتنسخ واتحسب من نسخته الاحتياطية ممكن يفضل خيطه الأصلي شغال شوية من غير ما يحجز مكان باتش جديد
         exec = ex
         if (capMax > 1) host.log("⚡ ترجمة متوازية: لحد $capMax طلب في نفس الوقت")
+        try { sideNotice() } catch (_: Throwable) {}
         try {
             if (headless) try { src() } catch (e: Exception) { host.log("⚠ معرفتش أفتح الفيديو: " + (e.message ?: e.toString()).take(120)) }
             while (running) {
@@ -612,7 +640,7 @@ class Engine(
                 if (gapTick(headless || keepGoing)) continue
                 if (txIdle() && gapBusy.get() == 0 && holeBusy.get() == 0 && finalRefineTick()) { nap(300); continue }   // (v140) تنقيح نهائي قبل ما نقول «خلصت»
                 // (v158) كل المقاطع خلصت: تنقيح كامل واحد بالفيديو كله (بعد التنقيح الجزئي مقطع مقطع)
-                if (txIdle() && gapBusy.get() == 0 && holeBusy.get() == 0 && conf.partialRefine && d > 0 && cStart(firstUndone(d)) >= d && !fullRefineStarted && subs.size >= 12 && toolBusy == null) {
+                if (!transOnly && txIdle() && gapBusy.get() == 0 && holeBusy.get() == 0 && conf.partialRefine && d > 0 && cStart(firstUndone(d)) >= d && !fullRefineStarted && subs.size >= 12 && toolBusy == null) {
                     fullRefineStarted = true; host.log("✍ تنقيح كامل نهائي (الفيديو كله في طلب واحد)…")
                     refineWholeNow({ host.status(it) }, { fullRefineDone = true }); nap(300); continue
                 }
@@ -1007,7 +1035,7 @@ class Engine(
         val case = pb.caseOf(srcLang, detDone)
         val tf = if (case == "other") synchronized(tplCache) { tplCache[tplKey(pb.templateId(c, "other"))] } else null
         val built = toneBlock() + pb.build(c, srcLang, detDone, durSec, if (hole) "" else Subs.prevContext(subs, start), effectiveChars(), effectiveGloss(), tf, strict, hole)
-        return if (hole && holeNear) built.replace(PromptBuilder.HOLE_BLOCK, PromptBuilder.HOLE_NEAR_BLOCK) else built
+        return if (hole && holeNear) built.replace(PromptBuilder.holeBlock(), PromptBuilder.holeNearBlock()) else built
     }
 
     /** إصلاح الجمل اللي translated بتاعتها مش عربي: ترجمة نصية سريعة من original (وpivot) للهجة المختارة */
@@ -1065,8 +1093,33 @@ class Engine(
     }
     /** الاستعلامات الجانبية (بحث اسم العمل · الشخصيات) بتشتغل بس لو فيه مفتاح شغّال ومفيش 429 جديد — عشان ماتاخدش كوتة من الترجمة نفسها */
     /** (v267) في «أوفلاين + جوجل» مهام جيميناي الجانبية (سدّ الفجوات · الضمائر · الشخصيات/اسم العمل) واقفة — إلا لو side_in_google=1 */
-    private fun sideOff(): Boolean = keyless || (TrWizard.googleOn() && !Cfg.bool("side_in_google", false))
-    private fun sideOk(): Boolean = !sideOff() && System.currentTimeMillis() >= quotaCapUntil && basePool.all().any { basePool.ok(it) }
+    /** (v283→v285) المهام الجانبية النصية (ضمائر · شخصيات): تشتغل بجيميناي، أو بمحرك LLM اللي اخترته في كارت ③ («يحوّل اللهجة بـ») لو مفيش جيميناي أو في مسار جوجل المجاني. محرك LLM مختار = موافقة منك على استهلاك مفتاحه */
+    private fun sideOff(): Boolean {
+        if (transOnly) return true
+        val optIn = Cfg.bool("side_in_google", false) || convLlm() != null
+        if (keyless) return convLlm() == null
+        if (TrWizard.googleOn()) return !optIn
+        return false
+    }
+    private fun sideOk(): Boolean = !sideOff() && System.currentTimeMillis() >= quotaCapUntil && (basePool.all().any { basePool.ok(it) } || convLlm() != null)
+    @Volatile private var sideNoted = false
+    /** (v285) إشعار واحد لكل تشغيل: إيه اللي اتقفل ولسه ليه وإزاي يتفتح — بدل ما يتقفل بصمت */
+    private fun sideNotice() {
+        if (transOnly || sideNoted) return
+        sideNoted = true
+        val closed = ArrayList<String>()
+        if (sideOff()) { closed.add("تصحيح الضمائر"); closed.add("تحليل الشخصيات") }
+        if (keyless) closed.add("التنقيح")
+        if (!fillOk()) closed.add("سدّ الفجوات والثغرات")
+        if (closed.isEmpty()) return
+        val why = if (keyless) "مفيش مفتاح جيميناي" else "مسار جوجل المجاني"
+        val hint = if (sideOff() && convLlm() == null) " — اختار محرك LLM من كارت ③ («🔄 يحوّل اللهجة بـ») يشغّل الضمائر والشخصيات بيه" else ""
+        val msg = "ℹ واقف ($why): " + closed.joinToString(" · ") + hint
+        host.log(msg); try { host.notice(msg) } catch (_: Throwable) {}
+    }
+    /** (v283) سدّ الثغرات/الفجوات بالأوفلاين نفسه (Whisper / SenseVoice / السحابي) بدل صوت جيميناي: في «تفريغ بس» وفي مسار جوجل/الخارجي وبدون مفتاح جيميناي. جيميناي مترجم = الطريقة القديمة (جيميناي) */
+    private fun offFill(): Boolean = Offline.configured() && (transOnly || keyless || TrWizard.googleOn())
+    private fun fillOk(): Boolean = !isClosed && (!sideOff() || offFill())
     private fun showTranscriptPreview(i: Int, p: Prep, fresh: List<Sub>) {
         if (isClosed || fresh.isEmpty()) return
         try {
@@ -1091,6 +1144,13 @@ class Engine(
         if (j != null && !detDone) {
             val dl = j.optString("detected_source_language", "").trim()
             if (dl.isNotEmpty()) { srcLang = dl; detDone = true; host.log("🌐 لغة الفيديو الأصلية: $dl") }
+        }
+        if (transOnly) {   // (v280) تفريغ بس: النص الأصلي بيتعرض ويتحفظ ويتحسب «اتنسخ» من غير ما يدخل مجمّع الترجمة
+            showTranscriptPreview(i, p, fresh)
+            host.log("✍ باتش ${i + 1}: ${fresh.size} جملة اتفرّغت — تفريغ بس (من غير ترجمة)")
+            host.changed()
+            scheduleHoleFill(i, p.rawStart, p.rawEnd, p.w, key)   // (v283) الثغرات بتتسدّ بالتفريغ الأوفلاين نفسه (مفيش ترجمة)
+            return
         }
         tHold[i] = TItem(i, p, j, fresh, prior, key, partial, System.currentTimeMillis())
         if (activeMode >= KeyMode.TRANSCRIBE_ALL) showTranscriptPreview(i, p, fresh)   // (v224) الوضع 4: اعرض النص الأصلي فورًا
@@ -1144,7 +1204,7 @@ class Engine(
         val lastIdx = group.last().i
         host.log("🌍 ترجمة مجمّعة: باتشات " + group.joinToString("، ") { (it.i + 1).toString() } + " — ${flat.size} جملة")
         var key: String? = null
-        var round = 0; var langBad = 0
+        var round = 0; var langBad = 0; var swapped = false
         try {
             while (running && !isClosed && round < TR_ROUNDS) {
                 val missing = flat.indices.filter { tr[it].isNullOrBlank() }
@@ -1182,7 +1242,9 @@ class Engine(
                         host.log("📶 ترجمة مجمّعة: مشكلة اتصال — إعادة"); nap(2000L * net)
                     }
                 }
-                val rep = reply ?: break
+                val rep0 = reply
+                if (rep0 == null) { if (swapTranslate(items, missing, tr, pv) > 0) { swapped = true; continue } else break }   // (v286) بديل تلقائي
+                val rep = rep0
                 val got = TParse.translations(rep, items.size)
                 val okMap = LinkedHashMap<Int, Pair<String, String>>()
                 var offCount = 0
@@ -1199,7 +1261,7 @@ class Engine(
             host.log("⚠ ترجمة مجمّعة: " + (e.message ?: e.javaClass.simpleName).take(120))
         }
         if (!running || isClosed) return
-        applyGroupTranslated(group, off, tr, pv, dl)
+        applyGroupTranslated(group, off, tr, pv, if (swapped) "" else dl)
     }
 
     /** كل باتش بيتطبّق بجمله كلها بتوقيتها الأصلي بالترتيب (idx)، أو يرجع كطلب كامل (v219: اتفصلت عشان الترجمة السياقية تستخدمها كمان) */
@@ -1252,6 +1314,17 @@ class Engine(
     @Volatile private var swapNoticeAt = 0L   // (v274) آخر إشعار «محرك وقف ← التاني كمّل» (مرة كل 20 ث بالكتير)
     private val skipNoted = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()   // (v274) مزوّدين اتقال إنهم موقوفين (بيتشالوا لما يرجعوا)
     /** (v274) إشعار تبديل محرك الترجمة + سطر في اللوج */
+    /** (v286) بديل تلقائي: جيميناي وقف في الترجمة النصية (كوتة / مفاتيح / رد غلط) ← الجمل الناقصة بتتترجم بسلسلة المترجمين (المحرك الخارجي/LLM ← جوجل) بدل ما تستنى. بيتقفل من «⋯ أكتر». مش بيشتغل في مسار جوجل (هو أصلًا بالسلسلة) */
+    private fun autoSwapOn(): Boolean = Cfg.str("tr_autoswap", "on") != "off" && !transOnly && !TrWizard.googleOn() && TrWizard.online()
+    private fun swapTranslate(items: List<Sub>, missing: List<Int>, tr: Array<String?>, pv: Array<String?>): Int {
+        if (!autoSwapOn() || missing.isEmpty() || !running || isClosed) return 0
+        val g = googleItems(items.map { it.original })
+        var n = 0
+        for ((q, o) in missing.withIndex()) g.getOrNull(q)?.takeIf { it.isNotBlank() }?.let { tr[o] = it.trim(); pv[o] = ""; n++ }
+        if (n > 0) swapNotice("🔄 جيميناي وقف في الترجمة — $n جملة اتترجمت بـ " + ExtTranslate.chainLabel().substringBeforeLast(" ← ") + " (فصحى؛ اللهجة بتتحوّل بعدين)")
+        return n
+    }
+
     private fun swapNotice(msg: String) {
         host.log(msg)
         val n = System.currentTimeMillis()
@@ -1466,7 +1539,7 @@ class Engine(
             val flat = ArrayList<Sub>(); val off = IntArray(part.size)
             part.forEachIndexed { g, t -> off[g] = flat.size; flat.addAll(t.fresh) }
             val tr = arrayOfNulls<String>(flat.size); val pv = arrayOfNulls<String>(flat.size)
-            var round = 0; var langBad = 0
+            var round = 0; var langBad = 0; var swapped = false
             try {
                 while (running && !isClosed && round < TR_ROUNDS) {
                     val missing = flat.indices.filter { tr[it].isNullOrBlank() }
@@ -1489,7 +1562,9 @@ class Engine(
                     val lo = if (full) 0 else (base - CTX_WINDOW).coerceAtLeast(0)
                     val hi = if (full) flatAll.size else (base + flat.size + CTX_WINDOW).coerceAtMost(flatAll.size)
                     val prompt = toneBlock() + ModePrompts.contextual(pb, c, flatAll.subList(lo, hi), lo, missing.map { base + it }, items, doneTr, effectiveChars(), effectiveGloss(), pn + 1, parts.size, langBad > 0)
-                    val rep = askJson(prompt, (items.size * 90).coerceIn(4096, 32768), tp, "ترجمة سياقية") ?: break
+                    val rep0 = askJson(prompt, (items.size * 90).coerceIn(4096, 32768), tp, "ترجمة سياقية")
+                    if (rep0 == null) { if (swapTranslate(items, missing, tr, pv) > 0) { swapped = true; continue } else break }   // (v286) بديل تلقائي
+                    val rep = rep0
                     val got = TParse.translations(rep, items.size)
                     val okMap = LinkedHashMap<Int, Pair<String, String>>()
                     var offCount = 0
@@ -1506,7 +1581,7 @@ class Engine(
                 warnUser("ctx", "⚠ الترجمة السياقية (جزء ${pn + 1}) فشلت — الجمل دي هتتعاد"); host.log("⚠ ترجمة سياقية (جزء ${pn + 1}): " + (e.message ?: e.javaClass.simpleName).take(120))
             }
             if (!running || isClosed) return
-            applyGroupTranslated(part, off, tr, pv, dl)
+            applyGroupTranslated(part, off, tr, pv, if (swapped) "" else dl)
             for (k in flat.indices) tr[k]?.takeIf { it.isNotBlank() }?.let { doneTr.add(flat[k].copy(translated = it)) }
             base += flat.size
             host.log("🧠 ترجمة سياقية: خلص جزء ${pn + 1}/${parts.size}")
@@ -1621,7 +1696,28 @@ class Engine(
         return pool.helper()
     }
 
+    /** (v285) محرك النص الاحتياطي للمهام الجانبية: محرك LLM المختار في كارت ③ بس (مش أي محرك مضبوط) — null لو مفيش أو الطلب أكبر من حدّ المحركات */
+    private fun textViaLlm(prompt: String, maxTokens: Int, json: Boolean): Api.Result? {
+        val p = convLlm() ?: return null
+        if (maxTokens > 8192) return null
+        return try { Api.Result(ExtLlm.chat(p, if (json) "Reply with one valid JSON object only: no markdown, no explanation." else "", prompt, maxTokens), "STOP") }
+        catch (e: Exception) {
+            if (e is ExtLlm.LlmErr) ExtTranslate.noteFail("llm_" + p.id, ExtLlm.key(p).hashCode(), e)
+            host.log("⚠ ${p.label} (مهمة جانبية) فشل: " + (e.message ?: e.javaClass.simpleName).take(100)); null
+        }
+    }
+
+    /** (v285) طلب نص للمهام الجانبية: جيميناي الأول، ولو مفيش مفتاح أو فشل ← محرك LLM المختار. البحث بجوجل (search) جيميناي بس */
     private fun bgCall(prompt: String, maxTokens: Int, temp: Double, json: Boolean = true, i: Int = 0, search: Boolean = false): Api.Result {
+        if (!search && helperKey(i) == null) textViaLlm(prompt, maxTokens, json)?.let { return it }
+        try { return bgGemini(prompt, maxTokens, temp, json, i, search) }
+        catch (e: Exception) {
+            if (!search && !keyless) textViaLlm(prompt, maxTokens, json)?.let { host.log("↪ جيميناي وقف في مهمة جانبية — اتكمّلت بـ ${convLlm()?.label}"); return it }
+            throw e
+        }
+    }
+
+    private fun bgGemini(prompt: String, maxTokens: Int, temp: Double, json: Boolean = true, i: Int = 0, search: Boolean = false): Api.Result {
         var key = helperKey(i) ?: throw Exception("مفيش مفتاح")
         var tries = 0
         while (true) {
@@ -1907,7 +2003,7 @@ class Engine(
     private var finalAt = -1   // (v154) آخر chunksDone اتعمل عنده تنقيح نهائي (مرة واحدة لكل قيمة — مايتعادش لو فشل)
     /** من حلقة run() وقت الهدوء (مفيش باتش في الجو): لو في مقاطع خلصت بعد آخر تنقيح، نقّح الباقي. بيرجّع true لو التنقيح شغال — الحلقة تستنى */
     private fun finalRefineTick(): Boolean {
-        if (isClosed) return false
+        if (isClosed || transOnly) return false
         synchronized(lock) {
             if (refineBusy) return true
             if (subs.size < 8 || finalAt == chunksDone) return false
@@ -1951,20 +2047,7 @@ class Engine(
                 o.put("gap", Math.round(maxOf(0.0, q.start - prevEnd) * 10) / 10.0)
                 arr.put(o)
             }
-            val prompt = "أنت مراجع ترجمة محترف. دي جمل فيلم/مسلسل/فيديو بالترتيب. الترجمة الحالية (translated) اتعملت على مقاطع صوتية منفصلة، كل مقطع حوالي دقيقة اتترجم لوحده من غير ما يشوف اللي قبله واللي بعده كويس — يعني غالبًا فيها جمل اتترجمت حرفيًا أو بمعنى الكلمة لوحدها، ولما الجملة تتقرا وسط اللي حواليها معناها الحقيقي بيبقى مختلف.\n" +
-                "لكل جملة: i = رقمها، original = الأصل، en = نقل إنجليزي حرفي (لو موجود)، translated = الترجمة الحالية، speaker = جنس المتكلم، to = المخاطَب، gap = ثواني الصمت قبلها (فجوة كبيرة غالبًا = مشهد أو موضوع جديد).\n" +
-                (if (roster.isNotBlank()) "\nمعلومات الشخصيات والمصطلحات:\n$roster\n" else "") +
-                "\nالجمل:\n$arr\n\n" +
-                "طريقة الشغل: اقرا كل جملة مع 4-5 جمل قبلها وبعدها كأنك بتتفرج على المشهد، واسأل نفسك: هل الترجمة الحالية بتوصّل اللي المتكلم يقصده فعلًا هنا؟ صحّح الجملة لما تلاقي:\n" +
-                "1) ترجمة حرفية معناها بيتغيّر مع السياق: تعبير اصطلاحي، سخرية، تلميح، مجاز، سؤال بلاغي، شتيمة أو مجاملة بتتقال بمعنى غير معناها الحرفي، أو رد على جملة سابقة.\n" +
-                "2) فاعل أو مفعول أو ضمير محذوف في الأصل واتفهم غلط، أو مرجع الضمير (هو/هي/ده) مش هو اللي في المشهد.\n" +
-                "3) جملة مكمّلة لجملة قبلها أو بعدها (اتقطعت بين مقطعين) وترجمتها مش متصلة بيها.\n" +
-                "4) اسم أو مصطلح أو لقب متترجم بأشكال مختلفة، أو جنس/ضمير غلط، أو جملة مش مفهومة، أو بتتناقض مع اللي حواليها.\n" +
-                "القواعد:\n" +
-                "- حافظ على لهجة ${conf.lang} وأسلوب ${conf.style}، وخلّي الجملة قصيرة ومناسبة للعرض كترجمة (قد الأصلية تقريبًا).\n" +
-                "- ماتغيّرش جملة سليمة ولا تحسّن أسلوب بس. التصحيح لازم يبقى لمعنى أدق أو أوضح من السياق.\n" +
-                "- ممنوع تضيف أو تحذف أو تدمج جمل، والتوقيت مش بتاعك.\n" +
-                "رجّع JSON فقط: {\"corrections\":[{\"i\":12,\"why\":\"السبب في كلمتين تلاتة\",\"translated\":\"النص المصحح الكامل للجملة\"}]} — الجمل السليمة ماتتحطش. لو كله سليم: {\"corrections\":[]}"
+            val prompt = PromptStore.fill(PromptStore.pick("eng:refine", EnginePrompts.REFINE), "ROSTER" to (if (roster.isNotBlank()) "\nمعلومات الشخصيات والمصطلحات:\n$roster\n" else ""), "ARR" to arr.toString(), "LANG" to conf.lang, "STYLE" to conf.style)
             refiningSegs = listOf(doubleArrayOf(part.first().start, part.last().end))
             val r = try { if (isFinal) bgCall(prompt, 8192, 0.1, true, win) else partialCall(prompt, 8192, 0.1, win) } catch (e: Exception) { okAll = false; refiningSegs = emptyList(); throw e }
             refiningSegs = emptyList()
@@ -2325,9 +2408,9 @@ class Engine(
     private val fixTries = ConcurrentHashMap<String, Int>()
     @Volatile private var lastFix = 0L
     private fun fixKey(s: Sub) = "${s.start}|${s.original}"
-    private fun hasRepairable(): Boolean = synchronized(lock) { subs.any { it.chunk !in previewChunks && LangGuard.foreign(it) && (fixTries[fixKey(it)] ?: 0) < 3 } }
+    private fun hasRepairable(): Boolean = !transOnly && synchronized(lock) { subs.any { it.chunk !in previewChunks && LangGuard.foreign(it) && (fixTries[fixKey(it)] ?: 0) < 3 } }
     private fun repairForeignTick(): Boolean {
-        if (!running) return false
+        if (!running || transOnly) return false
         val now = System.currentTimeMillis()
         if (now - lastFix < 12_000) return false
         val bad = synchronized(lock) { subs.filter { it.chunk !in previewChunks && LangGuard.foreign(it) && (fixTries[fixKey(it)] ?: 0) < 3 } }.take(30)
@@ -2353,12 +2436,14 @@ class Engine(
     // ===== سدّ الفجوات تلقائيًا أثناء المشاهدة (autoGapFill) =====
     /** مناطق اتترجمت بس مفيهاش جمل لمدة طويلة، قريبة من مكان التشغيل: بتتبعت بمفاتيح المراقبين/الاحتياطي وبتتعلّم بـ «» */
     private fun gapTick(all: Boolean = false): Boolean {
-        if (sideOff()) return false
+        if (!fillOk()) return false
         if (!conf.gapFill || !running) return false
+        val off = offFill()
+        val maxPar = if (off) 1 else Gaps.MAX_PARALLEL   // (v283) الأوفلاين بينسخ واحد في المرة
         val now = System.currentTimeMillis()
         if (now - lastGapScan < Gaps.COOLDOWN_MS) return false
         lastGapScan = now
-        if (gapBusy.get() >= Gaps.MAX_PARALLEL) return false
+        if (gapBusy.get() >= maxPar) return false
         val d = currentDur(); val pos = if (headless) d else host.position()
         val atEnd = d > 0 && pos >= d - 2
         val elig = Gaps.find(subs, done.list(), Gaps.MIN_SEC).filter {
@@ -2367,8 +2452,8 @@ class Engine(
         if (elig.isEmpty()) { if (all || atEnd) gapScanClean = true; return false }
         var started = false
         for (g in elig) {
-            if (gapBusy.get() >= Gaps.MAX_PARALLEL || gapSession.total() >= Gaps.MAX_TOTAL * ch) break
-            val key = pool.gapKey(gapKeys, rr.getAndIncrement()) ?: break
+            if (gapBusy.get() >= maxPar || gapSession.total() >= Gaps.MAX_TOTAL * ch) break
+            val key = if (off) "off" else (pool.gapKey(gapKeys, rr.getAndIncrement()) ?: break)
             gapTried.add(g[0], g[1]); gapSession.add(g[0], g[1]); gapKeys.add(key); gapBusy.incrementAndGet()
             host.log("🔁 سدّ فجوة تلقائي: ${"%.0f".format(java.util.Locale.US, g[0])}ث → ${"%.0f".format(java.util.Locale.US, g[1])}ث")
             try {
@@ -2389,6 +2474,7 @@ class Engine(
     private val holeEx = Executors.newSingleThreadExecutor { r -> Thread(r).also { it.isDaemon = true; it.name = "holefill" } }
     /** سدّ الثغرات كان شغال جوه خانة الباتش (inflight) فكل باتش بيستنى طلبات الثغرات قبل ما الباتش اللي بعده يتبعت = تأخير. دلوقتي على خيط لوحده */
     private fun scheduleHoleFill(i: Int, rawStart: Double, rawEnd: Double, w: WavChunk, key: String) {
+        if (!fillOk()) return   // (v283) من غير أوفلاين ومن غير جيميناي مفيش حاجة تسدّ الثغرة
         if (holeTried.contains(i)) return
         holeBusy.incrementAndGet()
         try {
@@ -2412,6 +2498,7 @@ class Engine(
         if (holes.isEmpty()) return
         host.log("🧩 المقطع ${i + 1}: ${holes.size} ثغرة فيها صوت من غير ترجمة — بعيد طلبها")
         var key = key0
+        val off = offFill()
         for (h in holes) {
             // (v177) ثغرة ملزوقة في جملة اتترجمت (≤1.5ث) = غالبًا كلام ناقص مش موسيقى: بنطلبها بتعليمات «كمّل الناقص» وبنقبل الخافت
             val near = nearSpeech(h[0], h[1])
@@ -2424,18 +2511,18 @@ class Engine(
                     try {
                         // (v239) أسلوب الوضع 4 في كل الأوضاع: ترانسكريبشن بس من الصوت (بيسمع أكتر لأنه مش مشغول بالترجمة) ثم ترجمة نصية منفصلة. لو فشلت الترجمة: الطلب المباشر القديم
                         // (v143) الثغرة غالبًا موسيقى/مؤثرات: الرد الفاضي إجابة صحيحة، وماينفعش نعيد الطلب لحد ما الموديل "يلاقي" كلام
-                        var base: List<Sub> = txFillSubs(w2, near, key) ?: run {
+                        var base: List<Sub> = if (off) txFillOffline(w2, near) else txFillSubs(w2, near, key) ?: run {
                             val r = Api.generate(curModel(), key, buildPrompt(w2.durSec, w2.startSec, hole = true, holeNear = near), w2.bytes)
                             val j = if (r.text.isBlank()) null else Parse.json(r.text)
                             if (j == null) emptyList() else Subs.splitAll(Parse.subs(j, w2.startSec, w2.durSec)).filter { !it.isSound && (near || (!it.faint && !it.lowConf)) }.map { Subs.capPace(it) }
                         }
-                        if (base.any { LangGuard.foreign(it) }) base = fixForeign(base)
+                        if (!off && base.any { LangGuard.foreign(it) }) base = fixForeign(base)
                         val sp2 = Speech.activeSpans(w2.bytes, w2.gain)?.let { Speech.absolute(it, w2.startSec) }
                         if (sp2 != null) base = base.mapNotNull { Speech.fit(it, sp2) }
                         base = base.filter { val m = (it.start + it.end) / 2; m >= h[0] - 0.5 && m <= h[1] + 0.5 }.map { it.copy(chunk = i) }
                         if (base.isEmpty()) { got = true; host.log("… ثغرة ${"%.0f".format(java.util.Locale.US, pt[0])}ث: مفيهاش كلام — اتساب زي ما هي"); continue }
                         synchronized(lock) { subs = Subs.merge(Subs.dedup(subs + base)).sortedBy { it.start } }
-                        pool.good(key); got = true
+                        if (!off) pool.good(key); got = true
                         host.changed(); persist()
                         host.log("✅ ثغرة ${"%.0f".format(java.util.Locale.US, pt[0])}ث→${"%.0f".format(java.util.Locale.US, pt[1])}ث: اتضاف ${base.size} جملة")
                     } catch (e: ApiErr) {
@@ -2445,6 +2532,25 @@ class Engine(
                 }
             }
         }
+    }
+
+    /**
+     * (v283) نفس مرحلتين txFillSubs بس من غير جيميناي: (1) الصوت ← نص أصلي بالأوفلاين (Whisper/SenseVoice/السحابي)،
+     * (2) النص ← ترجمة بنفس سلسلة مترجم الباتشات (جوجل / خارجي)، أو من غير ترجمة في «تفريغ بس». أي فشل ← قائمة فاضية (مفيش رجوع لجيميناي).
+     * Whisper على مقاطع قصيرة بيهلوس أكتر: فلتر الأوفلاين (noSpeech/logProb) + هنا بنشيل التكرار الحرفي والنصوص القصيرة جدًا.
+     */
+    private fun txFillOffline(w: WavChunk, near: Boolean): List<Sub> {
+        val none = Api.Result("{\"subtitles\":[]}", "STOP")
+        val r = Offline.transcribe(w.bytes, w.durSec, effectiveGloss().joinToString(", ") { it.term }, { host.log(it) }, { none }, { host.notice(it) }, offSession)
+        val j = if (r.text.isBlank()) null else Parse.json(r.text)
+        if (j == null) return emptyList()
+        val seen = HashMap<String, Int>()
+        val raw = Subs.splitAll(TParse.transcript(j, w.startSec, w.durSec)).filter { !it.isSound && it.original.isNotBlank() && (near || (!it.faint && !it.lowConf)) }
+            .filter { s -> val k = s.original.lowercase().filter { it.isLetterOrDigit() }; k.length >= 2 && (seen.merge(k, 1, Int::plus) ?: 1) <= 1 }
+        if (raw.isEmpty()) return emptyList()
+        if (transOnly) return raw.map { Subs.capPace(it.copy(translated = it.original, pivot = "")) }
+        val tr = googleItems(raw.map { it.original })
+        return raw.mapIndexed { q, s -> Subs.capPace(s.copy(translated = tr.getOrNull(q)?.trim().orEmpty().ifBlank { s.original }, pivot = "")) }
     }
 
     /**
@@ -2486,20 +2592,21 @@ class Engine(
         if (w.silent) { host.log("🔇 الفجوة ${a.toInt()}ث صامتة — اتخطّيت"); return }
         var key = key0; var tries = 0
         val near = nearSpeech(a, b)
+        val off = offFill()
         while (running && tries++ < 3) {
             try {
-                var base: List<Sub> = txFillSubs(w, near, key) ?: run {   // (v239) ترانسكريبشن ثم ترجمة منفصلة (أسلوب الوضع 4)، والقديم احتياطي
+                var base: List<Sub> = if (off) txFillOffline(w, near) else txFillSubs(w, near, key) ?: run {   // (v239) ترانسكريبشن ثم ترجمة منفصلة (أسلوب الوضع 4)، والقديم احتياطي
                     val r = Api.generate(curModel(), key, buildPrompt(w.durSec, w.startSec, hole = true, holeNear = near), w.bytes)
                     val j = if (r.text.isBlank()) null else Parse.json(r.text)
                     if (j == null) emptyList() else Subs.splitAll(Parse.subs(j, w.startSec, w.durSec)).filter { !it.isSound && (near || (!it.faint && !it.lowConf)) }.map { Subs.capPace(it) }
                 }
-                if (base.any { LangGuard.foreign(it) }) base = fixForeign(base)
+                if (!off && base.any { LangGuard.foreign(it) }) base = fixForeign(base)
                 val sp = Speech.activeSpans(w.bytes, w.gain)?.let { Speech.absolute(it, w.startSec) }
                 if (sp != null) base = base.mapNotNull { Speech.fit(it, sp) }
                 val marked = base.map { it.copy(translated = "«" + it.translated + "»", chunk = -2) }
                 if (marked.isEmpty()) { host.log("… فجوة ${a.toInt()}ث: مفيهاش كلام — اتساب زي ما هي"); return }
                 synchronized(lock) { subs = Subs.merge(Subs.dedup(subs + marked)).sortedBy { it.start } }
-                pool.good(key); host.changed(); persist()
+                if (!off) pool.good(key); host.changed(); persist()
                 host.log("✅ فجوة ${a.toInt()}ث: اتسدّ ${marked.size} جملة")
                 return
             } catch (e: ApiErr) {

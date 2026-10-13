@@ -16,6 +16,11 @@ import android.widget.LinearLayout
  * و stt_offline / stt_lang / off_model / tr_method (اللي المحرك بيقراه فعلًا — بتتكتب وقت التشغيل).
  */
 object TrWizard {
+    /** (v291) ⓪ المصدر: القيم المؤقتة من الشاشة بتتكتب في Cfg لما الخطوات تخلّص (أو فورًا في «بصري بس») */
+    var pSrc: String? = null
+    var pKind: String? = null
+    var sourceHook: (Boolean) -> Unit = {}   // (edit) — Player بيسجّله: «بصري بس» مالوش خطة صوت
+    fun commitSource() { pSrc?.let { Cfg.put("tr_src", it) }; pKind?.let { Cfg.put("tr_vkind", it) }; pSrc = null; pKind = null }
     class Plan(val mode: String, val onlineId: String, val lang: String, val model: String, val method: String, val engine: String = "whisper", val dialect: String = "", val live: Boolean = false, val ext: String = "", val free: String = "", val dia: String? = null, val only: Boolean = false, val conv: String = "") {
         // (v281) conv: id محرك LLM بيحوّل اللهجة بدل جيميناي ("" = جيميناي)
         // (v280) only: «تفريغ بس» — النص الأصلي من غير ترجمة (Engine.transOnly)
@@ -162,7 +167,8 @@ object TrWizard {
         }
     }
 
-    fun describe(pl: Plan): String =
+    fun describe(pl: Plan): String = SourceMode.prefix() + describeCore(pl)
+    private fun describeCore(pl: Plan): String =
         if (pl.only) "✍ تفريغ بس (من غير ترجمة)\nالتفريغ: " + (if (pl.offline) (if (pl.engine == "sherpa") "SenseVoice" else "Whisper " + pl.model) + " على الجهاز · " + langLabel(pl.lang) else if (pl.cloud) (sttCandidate(pl.ext)?.let { it.label + " · " + ExtLlm.sttModel(it) } ?: "⚠ مفيش مزوّد تفريغ جاهز") + " (سحابي)" else "جيميناي") + "\nالنص بيظهر بلغته الأصلية"
         else if (pl.offline) "📴 أوفلاين" + (if (pl.live) " ⚡ لحظي" else "") + " · " + langLabel(pl.lang) + "\nالتفريغ: " + (if (pl.engine == "sherpa") "SenseVoice (sherpa-onnx)" else "Whisper " + pl.model) + " على الجهاز\nالترجمة: " + (if (pl.method == "google") "جوجل (من غير API)" else "جيميناي بالسياق") + "\nاللهجة: " + pl.dialect.ifBlank { "فصحى" } + (if (pl.method == "google" && pl.dialect.isNotBlank() && pl.dialect != "فصحى") " (" + convLabel(pl.conv) + " بيحوّل الترجمة)" else "") + (if (pl.free.isNotBlank() && pl.method == "google") "\nالمترجم: " + (if (pl.free.startsWith("llm_")) "🤖 " + (ExtLlm.byId(pl.free.removePrefix("llm_"))?.label ?: pl.free) + " الأول (بمفتاحك)" else "🌐 " + pl.free + " الأول (مجاني من الريبو)") else "")
         else if (pl.cloud) "☁ أونلاين بمحرك خارجي\nالترجمة: " + (ExtLlm.byId(pl.ext)?.label ?: pl.ext) + " (بمفتاحك)\nالتفريغ: " + (sttCandidate(pl.ext)?.let { it.label + " · " + ExtLlm.sttModel(it) } ?: "⚠ مفيش مزوّد تفريغ جاهز") + " (سحابي — الصوت بيتبعت لخدمة خارجية)\nلو وقف: الباقي من سلسلة الإعدادات ← جوجل ← جيميناي بمفاتيحك (مع إشعار)" + (pl.dia?.let { "\nاللهجة: " + it.ifBlank { "فصحى" } + " (" + convLabel(pl.conv) + " بيحوّل)" } ?: "")
@@ -215,7 +221,7 @@ object TrWizard {
     }
 
     /** [onDone] (الخطة، احفظ؟، ابدأ ترجمة؟) — بتتنده مرة واحدة لما تخلّص الخطوات */
-    fun show(act: Activity, edit: Boolean, onDone: (Plan, Boolean, Boolean) -> Unit) { Wiz(act, edit, onDone).start() }
+    fun show(act: Activity, edit: Boolean, onDone: (Plan, Boolean, Boolean) -> Unit) { pSrc = null; pKind = null; Wiz(act, edit) { pl, save, start -> commitSource(); onDone(pl, save, start) }.start() }
 
     private class Wiz(val act: Activity, val edit: Boolean, val onDone: (Plan, Boolean, Boolean) -> Unit) {
         val th = Glass.theme()
@@ -321,6 +327,30 @@ object TrWizard {
         fun addBack(label: String = "← رجوع") = footBtn(label, false) { back() }
 
         // ===== الخطوات =====
+        // ===== (v291) ⓪ المصدر: 🎙 صوتي بس · 👁 بصري بس · 🎙+👁 هجين — بعده خط الترجمة (للصوتي والهجين) =====
+        var tsrc = SourceMode.get()
+        var tkind = SourceMode.kind()
+        fun stepSource() {
+            reset("🎯 إيه اللي هيترجم؟")
+            note("اختار المصدر الأول. الصوتي والهجين بيكمّلوا على خط الترجمة (① تفريغ ← ② ترجمة ← ③ لهجة)، والبصري بس مالوش خط صوت.")
+            opt("🎙 صوتي بس", "الكلام المسموع بس. الوضع البصري بيتقفل.", tsrc == "audio") { tsrc = "audio"; TrWizard.pSrc = "audio"; go { stepHub() } }
+            opt("👁 بصري بس", "اللي مكتوب في الصورة بس — من غير ترجمة صوت.", tsrc == "visual") { tsrc = "visual"; go { stepVisKind() } }
+            opt("🎙+👁 هجين", "الصوت بخط الترجمة اللي هتختاره + البصري شغّال جنبه.", tsrc == "hybrid") { tsrc = "hybrid"; go { stepVisKind() } }
+            if (hist.size > 1) addBack() else footBtn("✖ إلغاء", false) { dlg.dismiss() }
+        }
+        fun stepVisKind() {
+            reset("👁 البصري يترجم إيه؟")
+            note(if (tsrc == "visual") "بصري بس: الترجمة الصوتية هتتقفل." else "هجين: الصوت بيترجم زي ما هتختار بعد كده، والبصري شغّال معاه.")
+            opt("👁 نصوص الشاشة", "لافتات وكلام مكتوب في الصورة. الهارد سب (الترجمة المحروقة) بيتتجاهل.", tkind == "scene") { tkind = "scene"; pickKind() }
+            opt("🔤 هارد سب", "الترجمة المحروقة في الفيديو (وأي نصوص في الصورة).", tkind == "hard") { tkind = "hard"; pickKind() }
+            addBack()
+        }
+        fun pickKind() {
+            TrWizard.pSrc = tsrc; TrWizard.pKind = tkind
+            if (tsrc == "visual") { dlg.dismiss(); TrWizard.commitSource(); TrWizard.sourceHook(edit) }
+            else go { stepHub() }
+        }
+
         fun stepSummary() {
             reset("⚙ طريقة الترجمة")
             val s = TrWizard.savedPlan()
@@ -1079,7 +1109,7 @@ object TrWizard {
                 setGravity(Gravity.CENTER)
             }
             dlg.onBack = { if (hist.size > 1) { back(); true } else false }
-            go { stepHub() }   // (v279) شاشة الكروت (الخطوات القديمة من «⋯ أكتر»)
+            go { stepSource() }   // (v291) ⓪ المصدر ← (v279) شاشة الكروت (الخطوات القديمة من «⋯ أكتر»)
             dlg.show()
         }
     }

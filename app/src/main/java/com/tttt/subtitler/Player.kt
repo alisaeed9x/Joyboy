@@ -412,7 +412,7 @@ class PlayerActivity : Activity(), Host {
     private val probAuto = Runnable { if (probOn) toggleProb() }  // كبسولة الباتش الفاشل بتتلم لوحدها
     fun updateTr() { trUpdaters.forEach { try { it() } catch (e: Exception) { LogStore.err("Main:866", e) } } }
     fun beginTranslate() {
-        if (Cfg.str("hard_mode", "0") == "1") {
+        if (Cfg.str("hard_mode", "0") == "1" && !SourceMode.keepHard()) {   // (v291) الهجين بهارد سب محتاج hard_mode=1 والصوت شغّال
             Cfg.put("hard_mode", "0")   // (v240) أي ترجمة صوتية بتطلّعك من وضع الهارد سب
             // (v261) ووقّف الوضع البصري بتاع الهارد سب كمان، وإلا بيفضل شغّال جنب الترجمة الصوتية
             try { if (::visual.isInitialized && visual.running) { visual.stop(); visOv.showBoxes(emptyList()); visAutoRun = false; visLog("👁 اتقفل — بدأت ترجمة صوتية") } } catch (_: Throwable) {}
@@ -2016,7 +2016,7 @@ class PlayerActivity : Activity(), Host {
         })
         engineStarted = false; updateTr()
         // «🌐 ترجمة وفرجة» من المتصفح: الترجمة تبدأ لوحدها من غير ما تدوس ▶ ترجمة
-        if (autoTr && !noSub && !askSaved && Cfg.str("hard_mode", "0") != "1") videoBoxRef.post { if (!engineStarted && !isFinishing && !isDestroyed) beginTranslate() }
+        if (autoTr && !noSub && !askSaved && (Cfg.str("hard_mode", "0") != "1" || SourceMode.get() == SourceMode.HYBRID) && SourceMode.get() != SourceMode.VISUAL) videoBoxRef.post { if (!engineStarted && !isFinishing && !isDestroyed) beginTranslate() }
     }
 
     /** (v118) تبديل جودة يوتيوب في نفس المكان من غير ما التشغيل يتقطع كتير. الجودة بتتحفظ للفيديوهات الجاية (داتا أقل) */
@@ -2904,6 +2904,7 @@ class PlayerActivity : Activity(), Host {
 
     /** (v254) ▶ ترجمة قبل البداية: لو فيه إعداد محفوظ بيشتغل بيه على طول، وإلا بيسأل (أونلاين / أوفلاين ← لغة ← تفريغ ← ترجمة ← حفظ؟) */
     fun translateEntry() {
+        if (SourceMode.get() == SourceMode.VISUAL) { runVisualOnly(); return }   // (v291) بصري بس: مفيش خطة صوت
         val pl = TrWizard.savedPlan()
         if (pl != null) {
             val m = Offline.models.firstOrNull { it.id == pl.model } ?: Offline.model()
@@ -2921,6 +2922,7 @@ class PlayerActivity : Activity(), Host {
     fun trWizard(edit: Boolean) {
         try {
             TrWizard.keyModeHook = { n -> applyKeyMode(n) }   // (v275)
+            TrWizard.sourceHook = { ed -> if (ed) say("💾 اتحفظ: " + SourceMode.line()) else runVisualOnly() }   // (v291)
             TrWizard.show(this, edit) { pl, save, start ->
                 if (save) TrWizard.save(pl)
                 if (start) runPlan(pl) else if (save) say("💾 اتحفظ: " + TrWizard.describe(pl).replace("\n", " · "))
@@ -2929,7 +2931,42 @@ class PlayerActivity : Activity(), Host {
     }
 
     /** بيطبّق الخطة على الإعدادات اللي المحرك بيقراها وبيبدأ الترجمة */
+    /** (v291) بيشغّل الخطة وبعدها بيظبط البصري حسب المصدر (صوتي: يقفله · هجين: يشغّله بنوعه) */
     private fun runPlan(pl: TrWizard.Plan) {
+        runPlanCore(pl)
+        if (pl.onlineId == TrPresets.HARD_ID) return
+        when (SourceMode.get()) {
+            SourceMode.AUDIO -> try {
+                Cfg.put("hard_mode", "0")
+                if (::visual.isInitialized && visual.running) { visual.stop(); visOv.showBoxes(emptyList()); visAutoRun = false; visLog("🎙 صوتي بس — الوضع البصري اتقفل") }
+            } catch (e: Throwable) { LogStore.err("Player:srcAudio", e) }
+            SourceMode.HYBRID -> {
+                Cfg.put("hard_mode", if (SourceMode.kind() == "hard") "1" else "0")
+                startVisualNow("🎙+👁 هجين · " + SourceMode.kindLabel())
+            }
+        }
+    }
+
+    /** (v291) 👁 بصري بس: الصوت واقف، والبصري بنوعه (نصوص الشاشة / هارد سب) */
+    fun runVisualOnly() {
+        try { if (::engine.isInitialized) { engine.transOnly = false; if (engineStarted) pauseTranslate() } } catch (_: Throwable) {}
+        Cfg.put("hard_mode", if (SourceMode.kind() == "hard") "1" else "0")
+        try { conf = Cfg.snapshot() } catch (e: Throwable) { LogStore.err("Player:visOnlySnapshot", e) }
+        if (startVisualNow("👁 بصري بس · " + SourceMode.kindLabel())) say("👁 بصري بس · " + SourceMode.kindLabel() + " — الترجمة الصوتية واقفة")
+    }
+
+    private fun startVisualNow(tag: String): Boolean {
+        try {
+            if (!::visual.isInitialized) return false
+            if (!conf.visKeys.any { it.length > 10 }) { say("👁 ضيف مفتاح للوضع البصري الأول (الإعدادات ← 🔑 المفاتيح ← مفتاح الوضع البصري)"); return false }
+            visAutoRun = false; visual.mode = "scene"
+            if (!visual.running) visual.start()
+            visLog(tag + " اتشغّل")
+            return true
+        } catch (e: Throwable) { LogStore.err("Player:startVisualNow", e); return false }
+    }
+
+    private fun runPlanCore(pl: TrWizard.Plan) {
         TrWizard.apply(pl)
         try { if (::engine.isInitialized) engine.transOnly = pl.only } catch (e: Throwable) { LogStore.err("Player:transOnly", e) }   // (v280) تفريغ بس
         if (pl.offline) {
