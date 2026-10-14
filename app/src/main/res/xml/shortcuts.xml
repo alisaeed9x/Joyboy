@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- (v317) اختصارات ثابتة (ضغطة طويلة على أيقونة البرنامج): احتياطي للّانشرات اللي بتعرض أيقونة واحدة بس للتطبيق -->
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut android:shortcutId="sc_music" android:enabled="true" android:icon="@mipmap/ic_launcher_music"
+        android:shortcutShortLabel="@string/sc_music" android:shortcutLongLabel="@string/sc_music">
+        <intent android:action="android.intent.action.MAIN" android:targetPackage="com.tttt.subtitler" android:targetClass="com.tttt.subtitler.MusicLauncher"/>
+    </shortcut>
+    <shortcut android:shortcutId="sc_browser" android:enabled="true" android:icon="@mipmap/ic_launcher_browser"
+        android:shortcutShortLabel="@string/sc_browser" android:shortcutLongLabel="@string/sc_browser">
+        <intent android:action="android.intent.action.MAIN" android:targetPackage="com.tttt.subtitler" android:targetClass="com.tttt.subtitler.BrowserLauncher"/>
+    </shortcut>
+    <shortcut android:shortcutId="sc_files" android:enabled="true" android:icon="@mipmap/ic_launcher_files"
+        android:shortcutShortLabel="@string/sc_files" android:shortcutLongLabel="@string/sc_files">
+        <intent android:action="android.intent.action.MAIN" android:targetPackage="com.tttt.subtitler" android:targetClass="com.tttt.subtitler.FilesLauncher"/>
+    </shortcut>
+</shortcuts>

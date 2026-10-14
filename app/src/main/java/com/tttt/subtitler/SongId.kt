@@ -115,7 +115,7 @@ object SongId {
         }.apply { isDaemon = true }.start()
     }
 
-    fun clearOverride(id: Long) { Cfg.put("mname_$id", ""); Cfg.put("malbum_$id", ""); Cfg.put("mlat_$id", "") }
+    fun clearOverride(id: Long) { Cfg.put("mname_$id", ""); Cfg.put("malbum_$id", ""); Cfg.put("mlat_$id", ""); FastId.forgetPart(id) }
     /** (v298) الاسم/الفنان بالحروف اللاتينية (أو اللغة التانية) المحفوظين مع التعرّف — null لو مفيش */
     fun alt(id: Long): Pair<String, String>? {
         val v = Cfg.str("mlat_$id", ""); if (v.isBlank()) return null
@@ -135,7 +135,7 @@ object SongId {
     fun verified(id: Long) = Cfg.str("mverd_$id", "") == "ok"
     fun setVerified(id: Long, v: Boolean) = Cfg.put("mverd_$id", if (v) "ok" else "")
     /** إعادة تعرّف / ✗ : انسى إنها اتعرفت واتأكدت */
-    fun resetKnown(id: Long) { Cfg.put("mknown_$id", ""); Cfg.put("mverd_$id", "") }
+    fun resetKnown(id: Long) { Cfg.put("mknown_$id", ""); Cfg.put("mverd_$id", ""); FastId.forgetPart(id) }
     fun autoOn() = Cfg.str("song_auto_id", "1") != "0"
     fun setAuto(on: Boolean) = Cfg.put("song_auto_id", if (on) "1" else "0")
     const val UNSURE = "جيميناي مش متأكد"
@@ -143,14 +143,23 @@ object SongId {
     /** (v294) الاسم/المغني باين إنه موقع أو لينك (www · .com · موقع …) مش اسم أغنية ولا مغني */
     fun looksLikeSite(s: String): Boolean {
         val x = s.lowercase()
-        if (Regex("(www\\.|https?:|\\b[a-z0-9-]+\\.(com|net|org|info|biz|me|tv|co|io|fm|ws|cc|ru|xyz|mobi)\\b)").containsMatchIn(x)) return true
+        if (Regex("(www\\.|https?:|@[a-z0-9_.]{3,}|\\b[a-z0-9-]+\\.(com|net|org|info|biz|me|tv|co|io|fm|ws|cc|ru|xyz|mobi|app|site|online|top|vip|club|pro|ink|link|stream|download|eg|sa|ae|ir|ly|to|ml|tk)\\b)").containsMatchIn(x)) return true
         return Regex("(^|\\s)(موقع|تحميل|download|mp3|ألبوماتي|البوماتي|albumaty|rnbxclusive|mp3quran)(\\s|$)").containsMatchIn(x)
+    }
+    /** (v314) اسم الملف بعد شيل اسم الموقع/اللينك/الكلام الزيادة («Song - www.site.com [128kbps]» ← «Song») — تلميح ضعيف للتعرّف مش أكتر */
+    fun cleanHint(raw: String): String {
+        var x = raw.replace('_', ' ')
+        x = x.replace(Regex("(?i)(https?://\\S+|www\\.\\S+|\\b[a-z0-9-]+\\.(com|net|org|info|biz|me|tv|co|io|fm|ws|cc|ru|xyz|mobi|app|site|online|top|vip|club|pro|ink|link|stream|download|eg|sa|ae|ir|ly|to|ml|tk)\\b)"), " ")
+        x = x.replace(Regex("(?i)[\\[(]?\\b(\\d{2,3}\\s?kbps|mp3|m4a|hd|official audio|lyrics|تحميل|download)\\b[\\])]?"), " ")
+        x = x.replace(Regex("[\\[\\]()]+"), " ").replace(Regex("\\s*[-–—|]\\s*$"), "").replace(Regex("^\\s*[-–—|]\\s*"), "").replace(Regex("\\s+"), " ").trim()
+        return if (looksLikeSite(x) || x.length < 2 || x.all { it.isDigit() || it == ' ' || it == '-' || it == '.' }) "" else x
     }
     fun tagsLookGood(title: String, artist: String): Boolean {
         val t = title.replace('_', ' ').trim().lowercase()
         if (looksLikeSite(title) || looksLikeSite(artist)) return false
         if (artist.trim().lowercase().let { it == "<unknown>" || it == "unknown" || it == "غير معروف" }) return false
         if (artist.isBlank() || t.length < 2) return false
+        if (artist.trim().lowercase() == title.trim().lowercase()) return false   // (v314) بعض المواقع بتكتب نفس الاسم في العنوان والفنان
         if (t.all { it.isDigit() || it == ' ' || it == '-' || it == '.' }) return false
         return !Regex("^(track|audio|aud|vid|video|record(ing)?|new recording|voice|whatsapp|untitled|unknown|مقطع|تسجيل)[ \\-]*\\d*").containsMatchIn(t)
     }

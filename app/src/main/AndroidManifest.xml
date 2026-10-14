@@ -24,6 +24,7 @@
         <activity android:name=".MainActivity" android:exported="true" android:theme="@style/AppSplash"
             android:label="الفيديو" android:icon="@mipmap/ic_launcher_video" android:roundIcon="@mipmap/ic_launcher_video">
             <intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/></intent-filter>
+            <meta-data android:name="android.app.shortcuts" android:resource="@xml/shortcuts"/>
             <intent-filter><action android:name="android.intent.action.SEND"/><category android:name="android.intent.category.DEFAULT"/><data android:mimeType="text/plain"/></intent-filter>
         </activity>
         <activity android:name=".BrowserActivity" android:exported="false" android:windowSoftInputMode="adjustResize" android:theme="@style/AppSplash"
@@ -66,6 +67,10 @@
         <receiver android:name=".SongWidget" android:exported="true" android:label="🎧 تعرّف على الأغنية">
             <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE"/></intent-filter>
             <meta-data android:name="android.appwidget.provider" android:resource="@xml/widget_song_info"/>
+        </receiver>
+        <receiver android:name=".LaunchWidget" android:exported="true" android:label="🧭 بوابات البرنامج (4 أيقونات)">
+            <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE"/></intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/widget_launch_info"/>
         </receiver>
         <receiver android:name=".TasksWidget" android:exported="true" android:label="📋 مهام الخلفية">
             <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE"/></intent-filter>

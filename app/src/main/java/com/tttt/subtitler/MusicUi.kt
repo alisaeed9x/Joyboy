@@ -705,6 +705,7 @@ class MusicUi(private val act: Activity, private val ui: Ui, private val th: The
     }
     private val winSpin = WinSpinnerDrawable()
     private fun bigMsg(t: String, loading: Boolean = false) {
+        lyrBox.animate().cancel(); lyrBox.alpha = 1f
         lyrBox.removeAllViews(); lyrViews.clear(); trViews.clear(); lyrTr = null; lyrIdx = -2; lyr = null
         winSpin.stop()
         if (loading) {
@@ -757,7 +758,7 @@ class MusicUi(private val act: Activity, private val ui: Ui, private val th: The
         val t = MusicEngine.current ?: run { bigMsg("شغّل أغنية الأول"); setStatus(""); return }
         val m = LyricsEngine.mode()
         val ck = t.uri + "|" + m
-        if (!force && lyrKey == ck && lyr != null) return
+        if (!force && lyrKey == ck && lyr != null) { lyrBox.animate().cancel(); lyrBox.alpha = 1f; return }
         lyrKey = ck; lyr = null; shownVer = LyricsEngine.version
         val c = LyricsEngine.cached(act, t, m)
         if (c != null && c.lines.isNotEmpty()) {
@@ -771,6 +772,21 @@ class MusicUi(private val act: Activity, private val ui: Ui, private val th: The
         if (c != null && c.complete) { bigMsg("ما لقيتش كلام لأغنية دي."); setStatus("جرّب 🔁 إعادة، أو ✍ كلمات يدوي (الصق الكلمات بنفسك)"); return }
         if (!manual && !autoLyr() && !LyricsEngine.isRunning(t, m)) { bigMsg("دوس على المكان ده عشان تجيب الكلمات."); setStatus("🎤 اضغط هنا للكلمات (الكلمات التلقائية مقفولة)"); return }
         startLyrics(t, m, false, false)
+    }
+    private var lyrPendingKey = ""
+    private var lyrRunnable: Runnable? = null
+    /** (v316) تغيير أغنية: الكلمات القديمة تختفي بفيد فورًا، وبناء الكلمات الجديدة (مئات الـ TextView على خيط الشاشة) يستنى لحد ما أنيميشن الكاروسيل يخلص — ده اللي كان بيسبّب التقطيع */
+    private fun scheduleLoadLyrics(t: Track) {
+        val ck = t.uri + "|" + LyricsEngine.mode()
+        if (lyrPendingKey == ck) return
+        lyrPendingKey = ck
+        lyrRunnable?.let { idHandler.removeCallbacks(it) }
+        lyrBox.animate().cancel(); lyrBox.animate().alpha(0f).setDuration(130L).start()
+        val r = Runnable {
+            lyrRunnable = null; lyrPendingKey = ""
+            if (!act.isDestroyed && !act.isFinishing && fullOn && MusicEngine.current?.uri == t.uri) loadLyrics()
+        }
+        lyrRunnable = r; idHandler.postDelayed(r, 320L)
     }
     private fun redoLyrics(wrong: Boolean) {
         val t = MusicEngine.current ?: run { quiet("شغّل أغنية الأول", 1500L); return }
@@ -820,6 +836,7 @@ class MusicUi(private val act: Activity, private val ui: Ui, private val th: The
         winSpin.stop()
         val trk = MusicEngine.current
         try { paintSrc() } catch (_: Throwable) {}
+        val fresh = lyrBox.childCount == 0 || lyr == null   // (v315) أول ظهور (أو بعد لودينج/أغنية تانية): فيد ناعم بدل ما الكلمات تنط فجأة
         lyr = r; lyrBox.removeAllViews(); lyrViews.clear(); trViews.clear(); lyrIdx = -2; lyrWordKey = ""; liveKey = ""; liveIdx = -3
         lyrTr = if (trOn() && trk != null) LyricsEngine.translation(act, trk, r) else null
         val tr = lyrTr
@@ -843,6 +860,8 @@ class MusicUi(private val act: Activity, private val ui: Ui, private val th: The
             } else trViews.add(null)
         }
         lyricsTick()
+        lyrBox.animate().cancel()
+        if (fresh || lyrBox.alpha < 1f) { lyrBox.alpha = 0f; lyrBox.animate().alpha(1f).setDuration(220L).start() } else lyrBox.alpha = 1f
         if (trOn() && tr == null && trk != null) startTranslation(r, trk)
     }
     private var lyrOffId = -1L
@@ -1083,7 +1102,8 @@ class MusicUi(private val act: Activity, private val ui: Ui, private val th: The
         val o = SongId.override(t.id)
         // (v298) اسم الموقع في التاج (Albumaty.Com…) مش اسم مغني — لو مفيش مغني متعرّف عليه نسيب الخانة فاضية بدل ما نعرض الموقع
         val tagArtist = if (SongId.looksLikeSite(t.artist)) "" else t.artist
-        return (o?.first?.ifBlank { null } ?: t.title) to (o?.second?.ifBlank { null } ?: tagArtist)
+        val pt = FastId.partial[t.id]   // (v314) اللي اتعرف لحد دلوقتي أثناء التعرّف السريع (المغني أول ما يوصل)
+        return (o?.first?.ifBlank { null } ?: pt?.first?.ifBlank { null } ?: t.title) to (o?.second?.ifBlank { null } ?: pt?.second?.ifBlank { null } ?: tagArtist)
     }
 
     // ===== الأغلفة =====
@@ -1145,7 +1165,8 @@ class MusicUi(private val act: Activity, private val ui: Ui, private val th: The
         val cur = MusicEngine.current
         val pv = MusicEngine.neighbor(-1); val nx = MusicEngine.neighbor(1)
         ensureArt(cur)
-        if (fullOn) { ensureArt(pv); ensureArt(nx) }
+        // (v316) أغلفة الأغاني المجاورة (للكاروسيل) بتتجاب بعد ما غلاف الأغنية الحالية يخلص (اتجاب أو اتأكد إنه مفيش) — عشان ما تزاحمش الغلاف والكلمات على النت
+        if (fullOn && cur != null && (artCache.get(cur.uri) != null || cur.uri in artNone)) { ensureArt(pv); ensureArt(nx) }
         val cb = cur?.let { artCache.get(it.uri) }
         orb.setArts(pv?.let { artCache.get(it.uri) }, cb, nx?.let { artCache.get(it.uri) }, pv != null, nx != null)
         if (cb == null) miniArt.setImageResource(R.drawable.no_poster) else miniArt.setImageBitmap(cb)
@@ -1197,12 +1218,17 @@ class MusicUi(private val act: Activity, private val ui: Ui, private val th: The
         orb.initial = (nm?.first ?: "♪").trim().take(1).ifEmpty { "♪" }
         if (t?.uri != curUri) {
             curUri = t?.uri
-            if (t != null) { artNone.remove(t.uri); tintDone = false; autoIdentify(t) }
+            // (v315) الأغنية اتغيّرت: العملية الجارية على القديمة توقف عند أول فاصل (من غير ما نحرق طلبات)، والجديدة تستنى ثانيتين ونص (لو بتعدّي بسرعة مفيش طلب يتبعت)
+            if (curTrackId != -1L && curTrackId != (t?.id ?: -1L)) FastId.abandon(curTrackId)
+            curTrackId = t?.id ?: -1L
+            if (t != null) { artNone.remove(t.uri); tintDone = false; scheduleAutoId(t) }
+            // (v316) أنيميشن تنقّل: الاسم والمغني يدخلوا بفيد + نزلة خفيفة بدل ما يتبدّلوا فجأة
+            if (t != null) for (v in listOf<View>(fTitle, fArtist, nowTitle, nowSub)) { v.animate().cancel(); v.alpha = 0f; v.translationY = ui.dp(10).toFloat(); v.animate().alpha(1f).translationY(0f).setDuration(280L).start() }
             if (t == null) { orb.progress = 0f; orb.timeText = "0:00"; miniFillW = -1; updateMiniFill(0f); liveReset() }
         }
         refreshArts(); paintIdState()
         // أغنية اتغيّرت والمشغّل مفتوح → حمّل كلماتها
-        if (fullOn && t != null && lyrKey != t.uri + "|" + LyricsEngine.mode() && !autoBusy.contains(t.id)) loadLyrics()   // (v293) لو لسه بيتعرّف على الأغنية، الكلمات بتستنى الاسم الصح
+        if (fullOn && t != null && lyrKey != t.uri + "|" + LyricsEngine.mode() && !autoBusy.contains(t.id)) scheduleLoadLyrics(t)   // (v293) لو لسه بيتعرّف على الأغنية، الكلمات بتستنى الاسم الصح
     }
     private fun tick() {
         if (MusicEngine.ready) {
@@ -1485,7 +1511,7 @@ class MusicUi(private val act: Activity, private val ui: Ui, private val th: The
         val t = MusicEngine.current
         val s = when {
             t == null -> ""
-            idBusy || autoBusy.contains(t.id) -> "🔎 المفاتيح بتسمع أجزاء مختلفة من الأغنية…"
+            idBusy || autoBusy.contains(t.id) -> FastId.stage[t.id] ?: "🔎 المفاتيح بتسمع أجزاء مختلفة من الأغنية…"
             SongId.verified(t.id) -> "✔ الاسم مؤكد"
             SongId.known(t.id) -> "✅ اتعرفت قبل كده"
             else -> ""
@@ -1511,16 +1537,48 @@ class MusicUi(private val act: Activity, private val ui: Ui, private val th: The
             .setNeutralButton("✏️ اكتب بنفسي") { _, _ -> renameSong() }
             .setNegativeButton("لاحقًا", null).show()
     }
+    private var curTrackId = -1L
+    private val idHandler = android.os.Handler(android.os.Looper.getMainLooper())
+    private var idRunnable: Runnable? = null
+    /** (v315) التعرّف التلقائي بعد ما الأغنية تفضل شغّالة ~2.5ث؛ أي تغيير أغنية قبلها بيلغي الانتظار */
+    private fun scheduleAutoId(t: Track) {
+        idRunnable?.let { idHandler.removeCallbacks(it) }
+        val r = Runnable { idRunnable = null; if (!act.isDestroyed && !act.isFinishing && MusicEngine.current?.id == t.id) autoIdentify(t) }
+        idRunnable = r; idHandler.postDelayed(r, 2500L)
+    }
     /** (v251) أغنية جديدة اتشغّلت ولسه ما اتعرفتش: جيميناي يسمع مقاطع منها ويغيّر الاسم تلقائي (مرة واحدة بس).
      *  (v294) الاسم المش اسم أغنية (موقع/رقم/من غير مغني) بيتعامل كأنه مش موجود؛ مفيش اتفاق ← أحسن تخمين بثقة 60%+ بدل ما نسيب اسم الموقع. */
     private fun autoIdentify(t: Track) {
         if (!SongId.autoOn() || SongId.searched(t.id) || autoBusy.contains(t.id)) return
         if (SongId.override(t.id) != null || SongId.verified(t.id)) return          // اتسمّت قبل كده أو اليوزر أكّدها: ما نلمسهاش
         if (SongId.tagsLookGood(t.title, t.artist)) return                          // اسم الملف/التاج كويس (عنوان + فنان): مفيش حاجة تتبعت لجيميناي
+        FastId.resume(t.id)
         SongId.markTried(t.id)                                                       // نسجّل المحاولة من البداية: مفيش تكرار لو خرجت أو الطلب فشل
         if (Cfg.allMainKeys().isEmpty()) { if (fullOn) noKeysDialog(t) else pendingNoKeys = t.id; return }
         autoBusy.add(t.id); paintIdState()
         val start = maxOf(10.0, t.durMs / 2000.0)
+        // (v314) الأول التعرّف السريع (مغني ← اسم ← ألبوم)؛ لو فشل نكمّل بالطريقة القديمة الموزّعة على المفاتيح
+        FastId.run(act, t, start, { act.runOnUiThread { if (!act.isDestroyed && !act.isFinishing && MusicEngine.current?.id == t.id) { refreshNow(); paintIdState() } } }) { fm, fmsg ->
+            act.runOnUiThread {
+                FastId.clear(t.id)
+                if (act.isDestroyed || act.isFinishing) { autoBusy.remove(t.id); return@runOnUiThread }
+                if (fm == null && fmsg == FastId.CANCELLED) {   // (v315) اليوزر سابها في النص: نسيب الحالة «ما اتدوّرش» عشان يكمّل (من مرحلة الاسم) لما يرجع لها
+                    autoBusy.remove(t.id); Cfg.put("mknown_${t.id}", ""); return@runOnUiThread
+                }
+                if (fm == null || SongId.verified(t.id)) { slowIdentify(t, start); return@runOnUiThread }
+                autoBusy.remove(t.id)
+                if (MusicEngine.current?.id == t.id) applyIdentified(t, fm, skipRepair = true)
+                else {
+                    val old = nameOf(t); SongId.saveOverride(t.id, fm); SongId.markKnown(t.id); Poster.forget(act, old.first, old.second); LyricsEngine.clearAll(act, t)
+                    if (Cfg.str("noemb_${t.id}", "").isEmpty()) Cfg.put("noemb_${t.id}", "2")
+                }
+                paintIdState()
+                quiet("🔎 اتعرفت: " + nameLine(fm), 3000L)
+            }
+        }
+    }
+    /** الطريقة القديمة (مقاطع 30ث موزّعة على كل المفاتيح + اتفاق مقطعين) — احتياطي لو التعرّف السريع فشل */
+    private fun slowIdentify(t: Track, start: Double) {
         SongId.smart(act, t, start, emptyList()) { m, lst, msg ->
             act.runOnUiThread {
                 autoBusy.remove(t.id)
@@ -1564,12 +1622,21 @@ class MusicUi(private val act: Activity, private val ui: Ui, private val th: The
         if (SongId.override(t.id) == null) {
             idBusy = true
             quiet("🔎 بحدّث الاسم والكلمات والبوستر…", 2500L)
-            SongId.smart(act, t, maxOf(10.0, t.durMs / 2000.0), emptyList()) { m, lst, _ ->   // (v293) نفس التعرّف الموزّع على المفاتيح
+            val st0 = maxOf(10.0, t.durMs / 2000.0)
+            // (v314) التعرّف السريع (مغني ← اسم ← ألبوم) الأول، والقديم الموزّع على المفاتيح احتياطي
+            FastId.run(act, t, st0, { act.runOnUiThread { if (!act.isDestroyed && !act.isFinishing) { refreshNow() } } }) { fm, _ ->
                 act.runOnUiThread {
-                    idBusy = false
-                    if (act.isDestroyed || act.isFinishing) return@runOnUiThread
-                    if (lst.isNotEmpty()) lastOpts[t.id] = lst.toMutableList()
-                    if (m != null) applyIdentified(t, m) else if (fullOn) loadLyrics(force = true)
+                    FastId.clear(t.id)
+                    if (act.isDestroyed || act.isFinishing) { idBusy = false; return@runOnUiThread }
+                    if (fm != null) { idBusy = false; applyIdentified(t, fm, skipRepair = true); return@runOnUiThread }
+                    SongId.smart(act, t, st0, emptyList()) { m, lst, _ ->   // (v293) نفس التعرّف الموزّع على المفاتيح
+                        act.runOnUiThread {
+                            idBusy = false
+                            if (act.isDestroyed || act.isFinishing) return@runOnUiThread
+                            if (lst.isNotEmpty()) lastOpts[t.id] = lst.toMutableList()
+                            if (m != null) applyIdentified(t, m) else if (fullOn) loadLyrics(force = true)
+                        }
+                    }
                 }
             }
         } else if (fullOn) loadLyrics(force = true)
@@ -1608,12 +1675,12 @@ class MusicUi(private val act: Activity, private val ui: Ui, private val th: The
     }
 
     /** اسم جديد اتأكد: احفظه، صفّر الغلاف القديم وهات الجديد، وعيد الكلمات */
-    private fun applyIdentified(t: Track, m: SongMatch) {
+    private fun applyIdentified(t: Track, m: SongMatch, skipRepair: Boolean = false) {
         val old = nameOf(t); val oldAlbum = SongId.albumOf(t.id)
         val keys = Cfg.allMainKeys().isNotEmpty()
         val needAlbum = m.album.isBlank() && keys && m.title.isNotBlank()
         val needLat = m.tLat.isBlank() && m.aLat.isBlank() && SongId.hasArabic(m.title + m.artist) && keys
-        if (!needAlbum && !needLat) { applyNow(t, m, old, oldAlbum); return }
+        if (skipRepair || (!needAlbum && !needLat)) { applyNow(t, m, old, oldAlbum); return }   // (v314) skipRepair: التعرّف السريع جاب الألبوم والصيغة الإنجليزي بالفعل
         // (v305) الألبوم فاضي أو الاسم عربي من غير صيغة إنجليزي: الاسم يظهر على طول، وجيميناي يكمّل الألبوم/السنة/الصيغة الإنجليزي في طلب نصي واحد قبل ما نجيب الغلاف والكلمات
         SongId.saveOverride(t.id, m); refreshNow()
         quiet("🔎 بجيب الألبوم والمعلومات الكاملة…", 2200L)

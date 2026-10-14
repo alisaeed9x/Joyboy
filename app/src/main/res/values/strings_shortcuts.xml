@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="sc_music">الموسيقى</string>
+    <string name="sc_browser">المتصفح</string>
+    <string name="sc_files">الملفات</string>
+</resources>
