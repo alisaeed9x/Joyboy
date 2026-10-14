@@ -2968,6 +2968,13 @@ class PlayerActivity : Activity(), Host {
 
     private fun runPlanCore(pl: TrWizard.Plan) {
         TrWizard.apply(pl)
+        // (v297) اللهجة الفعلية بتتحط على المحرك في كل المسارات (كانت في الأوفلاين والسحابي بس) وبتظهر في إشعار واللوج
+        try { if (::engine.isInitialized) engine.convDialect = Cfg.str("conv_dialect", "") } catch (_: Throwable) {}
+        try {
+            val eff = Cfg.str("conv_dialect", "").ifBlank { Cfg.str("lang", "فصحى") }.ifBlank { "فصحى" }
+            LogStore.add("🗣 لهجة الترجمة الفعلية: " + eff + " (conv_dialect='" + Cfg.str("conv_dialect", "") + "' · lang='" + Cfg.str("lang", "") + "')")
+            if (!pl.only) h.postDelayed({ try { Notice.show(this, "🗣 لهجة الترجمة: " + eff, 2600L) } catch (_: Throwable) {} }, 500L)
+        } catch (_: Throwable) {}
         try { if (::engine.isInitialized) engine.transOnly = pl.only } catch (e: Throwable) { LogStore.err("Player:transOnly", e) }   // (v280) تفريغ بس
         if (pl.offline) {
             // الأوفلاين = وضع «نسخ ثم ترجمة سياقية» (Cfg.snapshot بيجبره لما Offline.on()): نفس إعدادات بريست الترانسكريبشن (مقاطع 60ث، من غير تنقيح ولا بصري)
@@ -3022,7 +3029,7 @@ class PlayerActivity : Activity(), Host {
             if (desc.isNotBlank()) item.addView(ui.text(desc, 11f, 0xFFC9CED6.toInt()).apply { setPadding(0, ui.dp(2), 0, 0) })
             col.addView(item, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = ui.dp(5) })
         }
-        for (pr in TrPresets.all) row((if (pr.id == last) "✓ " else "") + pr.icon + " " + pr.name, pr.desc, pr.id == last) { applyPreset(pr) }
+        for (pr in TrPresets.all) row((if (pr.id == last) "✓ " else "") + pr.icon + " " + pr.name, pr.desc, pr.id == last) { applyPresetAsk(pr) }
         row("▶ ابدأ بالإعدادات الحالية", "من غير ما أغيّر أي إعداد", false) { try { if (::engine.isInitialized) engine.transOnly = false } catch (_: Throwable) {}; beginTranslate() }
         val popW = minOf(resources.displayMetrics.widthPixels - ui.dp(24), ui.dp(400))
         col.measure(View.MeasureSpec.makeMeasureSpec(popW, View.MeasureSpec.EXACTLY), View.MeasureSpec.UNSPECIFIED)
@@ -3041,7 +3048,18 @@ class PlayerActivity : Activity(), Host {
         h.removeCallbacks(hideChrome); showChrome(); h.removeCallbacks(hideChrome)
     }
 
-    private fun applyPreset(pr: TrPresets.P, keepOnly: Boolean = false) {
+    /** (v297) اختيار بريست والترجمة شغّالة/موجودة: يتطبّق على الباتشات الجاية بس (اللي اتترجم يفضل) ولا يعيد من الأول خالص (القديمة بتتحفظ في 🗂) */
+    private fun applyPresetAsk(pr: TrPresets.P) {
+        val has = try { ::engine.isInitialized && (engineStarted || engine.subs.isNotEmpty()) } catch (_: Throwable) { false }
+        if (!has || pr.id == TrPresets.HARD_ID) { applyPreset(pr); return }
+        GAlert(this).setTitle(pr.icon + " " + pr.name)
+            .setMessage("البريست ده يتطبّق إزاي؟\n\n⏭ على الباتشات الجاية: اللي اتترجم يفضل زي ما هو، والباقي بالإعدادات الجديدة.\n\n🔁 من الأول خالص: يعيد ترجمة الفيديو كله بالبريست الجديد (النسخة القديمة بتتحفظ في 🗂).")
+            .setPositiveButton("⏭ الباتشات الجاية") { _, _ -> applyPreset(pr) }
+            .setNeutralButton("🔁 من الأول خالص") { _, _ -> applyPreset(pr, false, true) }
+            .setNegativeButton("إلغاء", null).show()
+    }
+
+    private fun applyPreset(pr: TrPresets.P, keepOnly: Boolean = false, fresh: Boolean = false) {
         if (!keepOnly) try { if (::engine.isInitialized) engine.transOnly = false } catch (_: Throwable) {}   // (v280)
         val kv = TrPresets.apply(pr)
         if (pr.id == TrPresets.HARD_ID) {
@@ -3071,7 +3089,7 @@ class PlayerActivity : Activity(), Host {
         } catch (e: Throwable) { LogStore.err("Player:presetVis", e) }
         LogStore.add("🎛 بريست الترجمة: " + pr.name + " — " + kv.entries.joinToString(" · ") { it.key + "=" + it.value })
         say(pr.icon + " " + pr.name + " — اتظبطت كل الإعدادات")
-        beginTranslate()
+        if (fresh) { try { player.seekTo(0) } catch (_: Throwable) {}; redoGo("🔄 بترجم من الأول بالبريست: " + pr.name) { engine.redoAll(true) } } else beginTranslate()
     }
 
     fun langPopup(anchor: View) {
@@ -3093,6 +3111,7 @@ class PlayerActivity : Activity(), Host {
             langPop?.dismiss()
             val v = if (l == "فصحى") "" else l
             Cfg.p.edit().putString("conv_dialect", v).apply()
+            TrWizard.syncSaved("conv_dialect", v)
             engine.setConvDialect(v, true)
             if (v.isNotEmpty() && v == conf.lang) { say("لهجة الترجمة في الإعدادات أصلًا $v — مفيش تحويل مطلوب"); touchSubs(); return@fsBtn }
             say(if (l == "فصحى") "الترجمة بالفصحى الحرفية" else "هحوّل للهجة $l من الباتش اللي إنت فيه وللقدّام، وبعدين اللي قبله — والباتشات الجديدة هتيجي باللهجة دي (النسخة القديمة اتحفظت في 🗂)")
@@ -3212,6 +3231,7 @@ class PlayerActivity : Activity(), Host {
         val n = engine.applyVersion(i)
         val d = if (v.dialect == "فصحى") "" else v.dialect
         Cfg.p.edit().putString("conv_dialect", d).apply()
+        TrWizard.syncSaved("conv_dialect", d)
         engine.adoptDialect(d)
         say("اتطبّقت نسخة «${v.name}» (اتغيّرت $n جملة)"); touchSubs()
     }

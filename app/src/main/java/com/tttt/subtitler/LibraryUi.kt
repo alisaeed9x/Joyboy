@@ -132,6 +132,19 @@ class LibraryUi(
     private val hiddenFile = File(act.filesDir, if (audio) "hidden_audio.txt" else "hidden_videos.txt")
     private val hidden: MutableSet<String> = try { hiddenFile.readLines().filter { it.isNotEmpty() }.toMutableSet() } catch (_: Exception) { mutableSetOf() }
     private var inHidden = false
+    /** (v295) صفحة الموسيقى: عرض آخر الأغاني المشغّلة بدل الفولدرات */
+    private var inRecents = false
+    private lateinit var recBtn: TextView
+    private fun artRows() = Cfg.bool("mus_art_rows", true)
+    private fun toggleArtRows() { Cfg.put("mus_art_rows", if (artRows()) "0" else "1"); Thumbs.clear(); (listV.adapter as? BaseAdapter)?.notifyDataSetChanged(); toastMsg(if (artRows()) "🖼 صور الأغاني في الفولدرات: شغّالة" else "🖼 صور الأغاني في الفولدرات: مقفولة") }
+    private fun clearRecents() { RecentSongs.clear(); render(); toastMsg("🧹 اتمسح سجل آخر المشغّل") }
+    private fun toggleRecents() {
+        if (!audio) return
+        if (sel.isNotEmpty()) clearSel()
+        if (!inRecents) { rootPos = listV.firstVisiblePosition; inRecents = true; curFolder = null; if (query.isNotEmpty()) searchEt.setText("") }
+        else inRecents = false
+        render(); listV.setSelection(if (inRecents) 0 else rootPos)
+    }
     private fun saveHidden() { try { hiddenFile.writeText(hidden.joinToString("\n")) } catch (_: Exception) {} }
     private fun isHidden(v: VideoItem) = v.videoId in hidden
     private fun visible(): List<VideoItem> = all.filter { !isHidden(it) }
@@ -142,7 +155,7 @@ class LibraryUi(
         toastMsg("🙈 اتخفى — اسحب لتحت وكمّل السحب لحد 🔒 وسيب عشان تفتح المخفي")
     }
     fun unhideVideo(v: VideoItem) { hidden.remove(v.videoId); saveHidden(); render(); toastMsg("👁 رجع للقايمة") }
-    fun openHidden() { inHidden = true; secure(true); if (query.isNotEmpty()) searchEt.setText(""); render(); listV.setSelection(0) }
+    fun openHidden() { inHidden = true; inRecents = false; secure(true); if (query.isNotEmpty()) searchEt.setText(""); render(); listV.setSelection(0) }
     /** قفل المخفي تاني (لما التطبيق يقعد في الخلفية فترة) */
     fun relock() { if (inHidden) { inHidden = false; secure(false); render() } }
     /** وهو المخفي مفتوح: ممنوع لقطة الشاشة وصورة الأخيرة بتبقى سودا */
@@ -236,13 +249,16 @@ class LibraryUi(
         head.addView(selAllBtn); head.addView(selMenuBtn); head.addView(selCloseBtn)
         queueBtn = hbtn("📋") { onQueue() }
         head.addView(queueBtn)
+        recBtn = hbtn("🕘") { toggleRecents() }
+        recBtn.setOnLongClickListener { a -> a.performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS); popup(a, listOf((if (artRows()) "🖼 صور الأغاني في الفولدرات: شغّالة (دوس للقفل)" else "🖼 صور الأغاني في الفولدرات: مقفولة (دوس للتشغيل)") to { toggleArtRows() }, "🧹 مسح سجل آخر المشغّل" to { clearRecents() })); true }
+        if (audio) head.addView(recBtn)
         val linkBtn = hbtn("🔗") { onLink() }; head.addView(linkBtn)
         val pickBtn = hbtn("📂") { onPick() }; head.addView(pickBtn)
         lateinit var setRef: View
         val setBtn = hbtn("⚙️") { onSettings(setRef) }; setRef = setBtn; head.addView(setBtn)
         refreshBtn = hbtn("🔄") { refreshBtn.animate().rotationBy(360f).setDuration(600).start(); userRefresh = true; onRefresh() }
         head.addView(refreshBtn)
-        normalBtns = if (audio) listOf(setBtn, refreshBtn) else listOf(queueBtn, linkBtn, pickBtn, setBtn, refreshBtn)
+        normalBtns = if (audio) listOf(recBtn, setBtn, refreshBtn) else listOf(queueBtn, linkBtn, pickBtn, setBtn, refreshBtn)
         if (audio) { queueBtn.visibility = View.GONE; linkBtn.visibility = View.GONE; pickBtn.visibility = View.GONE }
         root.addView(head, LinearLayout.LayoutParams(-1, -2))
 
@@ -352,6 +368,7 @@ class LibraryUi(
         if (sel.isNotEmpty()) { clearSel(); return true }
         if (query.isNotEmpty()) { searchEt.setText(""); return true }
         if (inHidden) { inHidden = false; secure(false); render(); listV.setSelection(rootPos); return true }
+        if (inRecents) { inRecents = false; render(); listV.setSelection(rootPos); return true }
         if (curFolder == null) return false
         curFolder = null; render(); listV.setSelection(rootPos); return true
     }
@@ -382,6 +399,10 @@ class LibraryUi(
         } else if (inWeb) {
             rows = webList
             titleTv.text = "🌐 المصطادة من الإنترنت"; subTv.text = "${webList.size} فيديو"; backV.visibility = View.VISIBLE
+        } else if (inRecents) {
+            val byUri = src.associateBy { it.uri }
+            rows = RecentSongs.list().mapNotNull { byUri[it] }
+            titleTv.text = "🕘 آخر المشغّل"; subTv.text = "${rows.size} $noun"; backV.visibility = View.VISIBLE
         } else if (folder != null) {
             rows = VideoLib.sortVideos(folder.videos, sort)
             titleTv.text = "📂 " + folder.name; subTv.text = "${folder.videos.size} $noun · ${VideoLib.fmtSize(folder.totalSize)}"; backV.visibility = View.VISIBLE
@@ -389,15 +410,16 @@ class LibraryUi(
             rows = (if (audio) emptyList<Any>() else listOf<Any>(webFolder) + (if (BgJobs.jobs.isNotEmpty()) listOf<Any>(bgFolder) else emptyList<Any>())) + VideoLib.sortFolders(folders, sort)
             titleTv.text = if (audio) "🎵 الموسيقى" else "📁 الفيديوهات"; subTv.text = "${folders.size} مجلد · ${src.size} $noun"; backV.visibility = View.GONE
         }
-        val lvl = if (query.isNotEmpty()) "q" else if (inHidden) "h" else if (inWeb) "w" else "f:" + (curFolder ?: "")
+        val lvl = if (query.isNotEmpty()) "q" else if (inHidden) "h" else if (inRecents) "r" else if (inWeb) "w" else "f:" + (curFolder ?: "")
         if (lvl != selLevel) { selLevel = lvl; sel.clear() }
         sel.retainAll(selectableKeys().toSet())
-        emptyTv.text = if (rows.isNotEmpty()) "" else if (inWeb) "مفيش فيديوهات مصطادة لسه.\nأي فيديو تفتحه من لينك أو من المتصفح بيتسجل هنا لوحده بالاسم والتقدم." else if (inHidden && query.isEmpty()) "مفيش $noun مخفية.\nدوس ⋮ أو اضغط ضغطة مطولة على أي $noun واختار 🙈 الإخفاء." else if (query.isEmpty()) "كل الملفات مخفية.\nاسحب لتحت وكمّل لحد 🔒 وسيب عشان تفتح المخفي." else "مفيش نتائج."
+        emptyTv.text = if (rows.isNotEmpty()) "" else if (inWeb) "مفيش فيديوهات مصطادة لسه.\nأي فيديو تفتحه من لينك أو من المتصفح بيتسجل هنا لوحده بالاسم والتقدم." else if (inRecents && query.isEmpty()) "🕘 لسه ما شغّلتش أي أغنية.\nأي أغنية تشغّلها هتظهر هنا بالأحدث فوق." else if (inHidden && query.isEmpty()) "مفيش $noun مخفية.\nدوس ⋮ أو اضغط ضغطة مطولة على أي $noun واختار 🙈 الإخفاء." else if (query.isEmpty()) "كل الملفات مخفية.\nاسحب لتحت وكمّل لحد 🔒 وسيب عشان تفتح المخفي." else "مفيش نتائج."
         emptyTv.visibility = if (rows.isEmpty()) View.VISIBLE else View.GONE
         stateBox.visibility = View.GONE; listV.visibility = View.VISIBLE
         (listV.adapter as BaseAdapter).notifyDataSetChanged()
         applySelHeader()
         updateResume()
+        if (::recBtn.isInitialized) recBtn.text = if (inRecents) "📂" else "🕘"
     }
 
     private fun setState(busy: Boolean, msg: String, btn: String?) {
@@ -480,7 +502,7 @@ class LibraryUi(
     private fun folderMenu(anchor: View, f: FolderItem, withSel: Boolean) {
         val items = ArrayList<Pair<String, () -> Unit>>()
         if (withSel) { items += "☑ تحديد" to { toggleSel(f.key) }; items += "☑ تحديد الكل" to { selectAll() } }
-        if (audio) items += "▶ تشغيل الفولدر (${f.videos.size})" to { onPlayFolder(f) }
+        if (audio) { items += "▶ تشغيل الفولدر (${f.videos.size})" to { onPlayFolder(f) }; items += (if (artRows()) "🖼 صور الأغاني: شغّالة (قفل)" else "🖼 صور الأغاني: مقفولة (تشغيل)") to { toggleArtRows() } }
         else items += "🌙 ترجمة كل فيديوهات الفولدر في الخلفية (${f.videos.size})" to { onBgFolder(f) }
         items += "🙈 إخفاء الفولدر" to { hideFolder(f) }
         items += "✏ إعادة تسمية الفولدر" to { onRenameFolder(f) }
@@ -569,7 +591,7 @@ class LibraryUi(
         h.card.background = if (on) ui.box(th.card, th.primary, 12, 2) else ui.box(th.card, th.border, 12)
         h.badge.visibility = if (keyOf(vi) in newKeys) View.VISIBLE else View.GONE
         h.dur.text = VideoLib.fmtDur(vi.durMs); h.dur.visibility = if (vi.durMs > 0) View.VISIBLE else View.GONE
-        h.meta.text = listOf(if (inHidden) vi.folderName else "", vi.artist, VideoLib.fmtSize(vi.size), vi.ext.uppercase(), VideoLib.fmtDate(vi.dateMs)).filter { it.isNotEmpty() }.joinToString(" · ")
+        h.meta.text = listOf(if (inHidden || inRecents) vi.folderName else "", vi.artist, VideoLib.fmtSize(vi.size), vi.ext.uppercase(), VideoLib.fmtDate(vi.dateMs)).filter { it.isNotEmpty() }.joinToString(" · ")
         val nowPlaying = audio && MusicEngine.current?.uri == vi.uri
         h.title.setTextColor(if (nowPlaying) th.primary else th.text)
         val r = recMap[vi.videoId]
@@ -591,9 +613,11 @@ class LibraryUi(
         h.dots.setOnClickListener { v -> videoMenu(v, vi, false) }
         h.card.setOnLongClickListener { c -> c.performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS); if (sel.isNotEmpty()) toggleSel(vi.videoId) else videoMenu(h.dots, vi, true); true }
         h.iv.tag = vi.uri; h.iv.setImageDrawable(null)
-        val c = Thumbs.peek(vi)
-        if (c != null) h.iv.setImageBitmap(c)
-        else Thumbs.load(act, vi) { b -> if (b != null && h.iv.tag == vi.uri) h.iv.setImageBitmap(b) }
+        if (!audio || artRows()) {
+            val c = Thumbs.peek(vi)
+            if (c != null) h.iv.setImageBitmap(c)
+            else Thumbs.load(act, vi, audio) { b -> if (b != null && h.iv.tag == vi.uri) h.iv.setImageBitmap(b) }
+        }
         h.card.setOnClickListener { if (sel.isNotEmpty()) toggleSel(vi.videoId) else { markPlayed(vi); onPlay(vi) } }
     }
 

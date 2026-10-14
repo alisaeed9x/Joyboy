@@ -232,6 +232,7 @@ object MusicEngine {
         MusicService.start(ctx.applicationContext)
         gainFocus()
         val t = q[i]
+        try { RecentSongs.add(t.uri) } catch (_: Throwable) {}
         val want = if (stem != 0 && Karaoke.hasStem(ctx.applicationContext, t, stem)) stem else 0
         openPlayer(ctx.applicationContext, t, want, 0)
         if (stem != 0 && want == 0) requestStem(t)

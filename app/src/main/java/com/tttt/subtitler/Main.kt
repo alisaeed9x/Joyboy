@@ -505,7 +505,7 @@ class MainActivity : Activity() {
         val toneChips = ui.chips(toneStyles, { Cfg.str("tone_style", "").ifBlank { "حرفي" } }) { Cfg.put("tone_style", if (it == "حرفي") "" else it) }
         val toneDegChips = ui.chips(toneDegrees, { Cfg.str("tone_strength", "متوسطة").ifBlank { "متوسطة" } }) { Cfg.put("tone_strength", it) }
         val convOpts = listOf("فصحى (حرفية)", "مصري", "شامي", "لبناني", "خليجي", "مغربي", "عراقي", "سوداني")
-        val convChips = ui.chips(convOpts, { Cfg.str("conv_dialect", "").ifBlank { convOpts[0] } }) { Cfg.put("conv_dialect", if (it == convOpts[0]) "" else it) }
+        val convChips = ui.chips(convOpts, { Cfg.str("conv_dialect", "").ifBlank { convOpts[0] } }) { val dv = if (it == convOpts[0]) "" else it; Cfg.put("conv_dialect", dv); TrWizard.syncSaved("conv_dialect", dv) }
         val watchViews = listOf<View>(
             ui.section("🎚 أسلوب وشدة الترجمة", false,
                 ui.text("الأسلوب:", 12f, th.muted), toneChips, ui.text("الشدة (بتشتغل مع شعبي / جرئ / +18 بس):", 12f, th.muted), toneDegChips,
@@ -528,7 +528,7 @@ class MainActivity : Activity() {
                     ui.text("البصري:", 12f, th.muted),
                     ui.chips(listOf(SourceMode.kindLabel("scene"), SourceMode.kindLabel("hard")), { SourceMode.kindLabel() }) { Cfg.put("tr_vkind", if (it == SourceMode.kindLabel("hard")) "hard" else "scene") }),
                 savedPlanTxt, planBtn,
-                ui.section("اللهجة", true, ui.chips(langs, { lang }) { lang = it; save() }),
+                ui.section("اللهجة", true, ui.chips(langs, { lang }) { lang = it; save(); val dv = if (it == "فصحى") "" else it; Cfg.put("conv_dialect", dv); TrWizard.syncSaved("conv_dialect", dv) }),
                 ui.section("أسلوب الترجمة", true, ui.chips(styles, { style }) { style = it; save() }),
                 watchViews[0], watchViews[1],
                 ui.button("📝 البرومبتات (شوف · انسخ · عدّل · استبدل)") { PromptsUi.show(this, ui) })),

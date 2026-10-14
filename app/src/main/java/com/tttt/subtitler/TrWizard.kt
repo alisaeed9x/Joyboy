@@ -195,7 +195,7 @@ object TrWizard {
             if (Cfg.int("ctx_min", 3) == 1) Cfg.put("ctx_min", "3")
             pl.dia?.let { Cfg.put("conv_dialect", if (it == "فصحى") "" else it) }   // (v279)
         }
-        else { Cfg.put("tr_method", "gemini"); leaveCloud(); pl.dia?.let { Cfg.put("lang", it.ifBlank { "فصحى" }) } }   // (v279) لهجة ترجمة جيميناي من كارت ③
+        else { Cfg.put("tr_method", "gemini"); leaveCloud(); pl.dia?.let { val d = it.ifBlank { "فصحى" }; Cfg.put("lang", d); Cfg.put("conv_dialect", if (d == "فصحى") "" else d) } }   // (v279) لهجة ترجمة جيميناي من كارت ③ · (v297) conv_dialect بنفس القيمة عشان قيمة قديمة ماتغلبش
     }
 
     fun save(pl: Plan) {
@@ -211,7 +211,14 @@ object TrWizard {
 
     /** (v261) تغيير من الإعدادات (لغة التفريغ / الموديل / المحرك / طريقة الترجمة) بيتكتب كمان في الخطة المحفوظة، وإلا «▶ ترجمة» كان بيكتب القديم فوقه */
     fun syncSaved(key: String, v: String) {
-        if (!saved() || Cfg.str("tr_mode", "") != "offline") return
+        if (!saved()) return
+        // (v297) اللهجة اتغيّرت من أي مكان (إعدادات / زرار اللغة في المشغّل): تتكتب في الخطة المحفوظة كمان، وإلا «▶ ترجمة» كان بيرجّع القديمة (فصحى)
+        if (key == "conv_dialect" || key == "lang") {
+            val d = v.ifBlank { "فصحى" }
+            when (Cfg.str("tr_mode", "")) { "offline" -> Cfg.put("tr_s_dialect", d); "online" -> Cfg.put("tr_online_dia", d) }
+            return
+        }
+        if (Cfg.str("tr_mode", "") != "offline") return
         when (key) {
             "stt_lang" -> { Cfg.put("tr_s_lang", v); if (!SherpaStt.handles(v)) Cfg.put("tr_s_engine", "whisper") }
             "off_model" -> Cfg.put("tr_s_model", v)
@@ -900,6 +907,29 @@ object TrWizard {
 
         fun arrow() { body.addView(ui.text("▼", 12f, th.muted).apply { gravity = Gravity.CENTER }, LinearLayout.LayoutParams(-1, -2)) }
 
+        /** (v297) الكروت ① ② ③ جنب بعض في صف واحد (بالترتيب من اليمين للشمال) بدل ما كانت تحت بعض */
+        var cardsRow = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL }
+        fun miniCard(num: String, title: String, value: String, sub0: String, lock: String, pk: String, f: () -> Unit) {
+            val locked = lock.isNotEmpty()
+            val pr = probe[pk]
+            val sub = sub0 + (if (probing.contains(pk)) "\n🧪 ⏳" else if (pr != null) "\n🧪 " + (if (pr.first) "✅ " else "❌ ") + pr.second else "")
+            val item = LinearLayout(act).apply {
+                orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL
+                setPadding(ui.dp(8), ui.dp(8), ui.dp(8), ui.dp(8)); background = ui.box(th.surface, th.border, 14)
+                alpha = if (locked) 0.6f else 1f
+            }
+            val head = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; gravity = Gravity.CENTER_VERTICAL }
+            head.addView(ui.text("$num $title", 12f, th.primary, true), LinearLayout.LayoutParams(0, -2, 1f))
+            head.addView(ui.text("🧪", 13f, th.text).apply { setPadding(ui.dp(6), ui.dp(2), ui.dp(2), ui.dp(2)); setOnClickListener { runProbe(pk) } })
+            item.addView(head)
+            item.addView(ui.text(value, 13.5f, th.text, true).apply { setPadding(0, ui.dp(5), 0, 0) })
+            if (locked) item.addView(ui.text("🔒 $lock", 10.5f, th.primary, true).apply { setPadding(0, ui.dp(3), 0, 0) })
+            if (sub.isNotBlank()) item.addView(ui.text(sub, 10.5f, th.muted).apply { setLineSpacing(0f, 1.1f); setPadding(0, ui.dp(4), 0, 0) })
+            Glass.pressable(item); item.setOnClickListener { f() }
+            if (cardsRow.childCount > 0) cardsRow.addView(ui.text("‹", 18f, th.muted).apply { gravity = Gravity.CENTER }, LinearLayout.LayoutParams(ui.dp(14), -1))
+            cardsRow.addView(item, LinearLayout.LayoutParams(0, -1, 1f))
+        }
+
         fun footSm(t: String, main: Boolean, f: () -> Unit) {
             val b = IconTextView(act).apply {
                 text = t; textSize = 13f; gravity = Gravity.CENTER; typeface = Typeface.DEFAULT_BOLD
@@ -938,13 +968,13 @@ object TrWizard {
                 setPadding(ui.dp(10), ui.dp(8), ui.dp(10), ui.dp(8)); background = ui.box((th.primary and 0x00FFFFFF) or 0x1A000000, th.border, 12)
             }, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = ui.dp(8) })
             // الكروت
-            card("①", "تفريغ — مين يسمع الكلام؟", srcName(),
+            cardsRow = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL }
+            miniCard("①", "تفريغ", srcName(),
                 (when (src) { "gemini" -> (if (tr == "none") "💸 كوتا جيميناي (تفريغ بس — أقل من الترجمة)" else "💸💸 كوتا جيميناي عالية (الصوت كله بيتبعت له)"); "cloud" -> "🔑 كوتا مفتاحك الخارجي · الصوت بيتبعت لخدمة خارجية"; else -> "🆓 على جهازك من غير كوتا · " + localStatus() + " · لغة: " + TrWizard.langLabel(lang) }), "", "1") { go { stepCardStt() } }
-            arrow()
-            card("②", "ترجمة — مين يترجم؟", trName(), if (tr == "none") "النص الأصلي بيظهر من غير ترجمة" else if (src == "gemini") "مدمج مع ① — جيميناي بيسمع ويترجم في طلب واحد" else (when (tr) { "gemini" -> "💸 كوتا جيميناي (نص بس)"; "llm" -> "🔑 كوتا مفتاحك"; else -> "🆓 مجاني" }), "", "2") { go { stepCardTr() } }
-            arrow()
-            card("③", "لهجة", diaName(),
+            miniCard("②", "ترجمة", trName(), if (tr == "none") "النص الأصلي بيظهر من غير ترجمة" else if (src == "gemini") "مدمج مع ① — جيميناي بيسمع ويترجم في طلب واحد" else (when (tr) { "gemini" -> "💸 كوتا جيميناي (نص بس)"; "llm" -> "🔑 كوتا مفتاحك"; else -> "🆓 مجاني" }), "", "2") { go { stepCardTr() } }
+            miniCard("③", "لهجة", diaName(),
                 if (tr == "none") "مفيش ترجمة فمفيش لهجة" else if (src == "gemini") "جيميناي بيترجم باللهجة دي على طول" else if (dia.isBlank()) "من غير تحويل — الترجمة فصحى" else if (tr == "gemini") "جيميناي بيترجم باللهجة دي على طول" else "التحويل بـ " + TrWizard.convLabel(convId) + " (نص بس)" + (if (convId.isBlank() && !TrWizard.hasGeminiKey()) " · ⚠ محتاج مفتاح جيميناي" else ""), if (tr == "none") "من غير ترجمة" else "", "3") { if (tr == "none") Notice.show(act, "③ مفيش لهجة من غير ترجمة — اختار مترجم في ②", 2800L) else go { stepCardDia() } }
+            body.addView(cardsRow, LinearLayout.LayoutParams(-1, -2).apply { setMargins(0, ui.dp(2), 0, ui.dp(4)) })
             fallbackLine().takeIf { it.isNotEmpty() }?.let { body.addView(ui.text(it, 11.5f, th.muted).apply { setLineSpacing(0f, 1.15f); setPadding(ui.dp(4), ui.dp(6), ui.dp(4), ui.dp(4)) }) }
             opt("🧪 جرّب الخط كله", "بيجرّب كل كارت بطلب صغير حقيقي ويعرض الزمن أو سبب الفشل — جيميناي بياخد طلب واحد بس. أو دوس 🧪 على كارت لوحده.", false) { runProbe("1"); runProbe("2"); runProbe("3") }
             opt("⋯ أكتر", "ترتيب الترجمة · الإعداد المحفوظ · الخطوات القديمة (خطوة خطوة)", false) { go { stepSummary() } }

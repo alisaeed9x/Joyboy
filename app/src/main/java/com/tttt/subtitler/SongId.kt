@@ -71,7 +71,7 @@ object SongId {
     }
 
     /** (v267) جيميناي بيسمع جزء كبير (~3 دقايق) من المسار بدل 25 ثانية — كلمات أكتر = اسم وفنان أدق */
-    private const val BIG_SEC = 180.0
+    private const val BIG_SEC = 30.0   // (v295) أي مقطع يتبعت لمفتاح ما يزيدش عن 30 ثانية
     private const val MIN_CONF = 55
 
     /** حجم المقطع الكبير حوالين startSec (بيتحط startSec في نصه) */
@@ -133,13 +133,13 @@ object SongId {
 
     /** يسأل جيميناي (بحث جوجل الأول، وبدونه لو الموديل/المفتاح رفض) على كذا مفتاح. على خيط خلفية. بيرجّع (المرشحين بترتيب الأرجحية، رسالة الخطأ) */
     private fun askList(keys: List<String>, wav: ByteArray, durSec: Double, hintTitle: String, hintArtist: String, avoid: List<String>, captured: Boolean, maxKeys: Int, multi: Boolean): Pair<List<SongMatch>, String> {
-        val model = Cfg.str("model", Models.DEFAULT).trim().ifEmpty { Models.DEFAULT }
+        val model = Models.DEFAULT   // (v295) دايمًا gemini-flash-lite-latest للتعرّف
         Api.readTimeoutOverride.set(180000)
         var res: JSONObject? = null; var err = ""
         try {
             for (k in 0 until keys.size.coerceAtMost(maxKeys)) {
                 val key = keys[k % keys.size]
-                for (useSearch in booleanArrayOf(true, false)) {
+                for (useSearch in booleanArrayOf(false)) {   // (v295) من غير بحث جوجل: هو سبب الـ429
                     try {
                         val r = Api.generate(model, key, prompt(durSec, hintTitle, hintArtist, avoid, captured, useSearch, multi), wav, 4096, 0.1, true, useSearch)
                         val j = parseJson(r.text)
@@ -207,9 +207,9 @@ object SongId {
                 val slices = ArrayList<WavChunk>()
                 try {
                     val total = src.durationSec().takeIf { it > 0 } ?: (t.durMs / 1000.0)
-                    // (v293) كل مفتاح ياخد مقطع مختلف (30–60ث حسب عدد المفاتيح) موزّع على الأغنية كلها بدل ما يسمعوا 3 دقايق ورا بعض:
+                    // (v295: كل مقطع 30ث بالظبط أو أقل) (v293) كل مفتاح ياخد مقطع مختلف موزّع على الأغنية كلها بدل ما يسمعوا 3 دقايق ورا بعض:
                     // مفتاح واحد = ~60ث حوالين مكان التشغيل · 6 مفاتيح = 6 مقاطع × 30ث من أماكن مختلفة (مقدمة · مقاطع · كورس)
-                    val len = (BIG_SEC / n).coerceIn(30.0, 60.0).coerceAtMost(total.coerceAtLeast(1.0))
+                    val len = BIG_SEC.coerceAtMost(total.coerceAtLeast(1.0))
                     fun one(a: Double): WavChunk? {
                         val a0 = a.coerceIn(0.0, (total - len).coerceAtLeast(0.0)); val b0 = minOf(a0 + len, total.coerceAtLeast(a0 + 1))
                         if (b0 - a0 < 4.0) return null
@@ -222,9 +222,11 @@ object SongId {
                         return (0 until n).mapNotNull { i -> one(from + span * i / (n - 1)) }
                     }
                     fun contiguous(w0: Pair<Double, Double>): List<WavChunk> {
-                        val out = ArrayList<WavChunk>(); val step = (w0.second - w0.first) / n
-                        for (i in 0 until n) {
-                            val a = w0.first + i * step; val b = if (i == n - 1) w0.second else a + step
+                        // أغنية قصيرة: مقاطع متجاورة مختلفة، كل واحد ≤30ث (عدد المقاطع = اللي الأغنية تسمح بيه، بحد أقصى عدد المفاتيح)
+                        val out = ArrayList<WavChunk>()
+                        val cnt = ((total / len).toInt()).coerceIn(1, n)
+                        for (i in 0 until cnt) {
+                            val a = (w0.first + i * len).coerceAtMost((total - 4.0).coerceAtLeast(0.0)); val b = minOf(a + len, total)
                             if (b - a < 4.0) continue
                             val w = try { src.wav(a, b) } catch (_: Throwable) { null }
                             if (w != null && !w.silent) out.add(w)

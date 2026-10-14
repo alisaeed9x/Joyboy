@@ -94,15 +94,32 @@ object Thumbs {
     fun clear() { cache.evictAll(); synchronized(failed) { failed.clear() } }
 
     /** بيحمّل في الخلفية وبينادي onDone على الـ UI thread (null لو مفيش صورة) */
-    fun load(ctx: Context, v: VideoItem, onDone: (Bitmap?) -> Unit) {
+    fun load(ctx: Context, v: VideoItem, audio: Boolean = false, onDone: (Bitmap?) -> Unit) {
         cache.get(v.uri)?.let { onDone(it); return }
         if (synchronized(failed) { v.uri in failed }) { onDone(null); return }
         val app = ctx.applicationContext
         pool.execute {
-            val b = decode(app, v)
+            val b = if (audio) decodeAudio(app, v) else decode(app, v)
             if (b != null) cache.put(v.uri, b) else synchronized(failed) { failed.add(v.uri) }
             main.post { onDone(b) }
         }
+    }
+
+    /** (v295) غلاف أغنية للقايمة: الصورة المدمجة جوه الملف الأول، وبعدها اللي الموبايل فهرسه (cover.jpg…). أوفلاين بالكامل */
+    private fun decodeAudio(ctx: Context, v: VideoItem): Bitmap? {
+        val u = Uri.parse(v.uri)
+        val r = MediaMetadataRetriever()
+        try {
+            r.setDataSource(ctx, u)
+            r.embeddedPicture?.let { b ->
+                val o = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                android.graphics.BitmapFactory.decodeByteArray(b, 0, b.size, o)
+                var ss = 1; while (o.outWidth / ss > 300 || o.outHeight / ss > 300) ss *= 2
+                android.graphics.BitmapFactory.decodeByteArray(b, 0, b.size, android.graphics.BitmapFactory.Options().apply { inSampleSize = ss })?.let { return it }
+            }
+        } catch (_: Throwable) {} finally { try { r.release() } catch (_: Throwable) {} }
+        if (Build.VERSION.SDK_INT >= 29) { try { return ctx.contentResolver.loadThumbnail(u, Size(256, 256), null) } catch (_: Throwable) {} }
+        return null
     }
 
     @Suppress("DEPRECATION")
