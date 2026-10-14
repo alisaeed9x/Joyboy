@@ -135,7 +135,7 @@ class BTab(val id: Long) {
  */
 @SuppressLint("SetJavaScriptEnabled")
 class BrowserActivity : Activity() {
-    override fun finish() { super.finish(); try { overridePendingTransition(R.anim.act_stay, R.anim.act_exit) } catch (e: Exception) { LogStore.err("Browser:finish", e) } }
+    override fun finish() { super.finish(); try { if (!NavAnim.take(this)) overridePendingTransition(R.anim.act_stay, R.anim.act_exit) } catch (e: Exception) { LogStore.err("Browser:finish", e) } }
 
     lateinit var badge: Button
     lateinit var hint: TextView
@@ -239,6 +239,7 @@ class BrowserActivity : Activity() {
     // ===== بناء الشاشة =====
     override fun onCreate(b: Bundle?) {
         super.onCreate(b)
+        Cfg.ensure(this)   // (v310) المتصفح ممكن يتفتح من أيقونة اللانشر قبل Main
         th = Themes.byId(try { prefs().getString("theme", "mx") } catch (_: Exception) { "mx" })
         ui = Ui(this, th)
         applyBars(th)
@@ -320,7 +321,7 @@ class BrowserActivity : Activity() {
         root.addView(bar); root.addView(progTrack, LinearLayout.LayoutParams(-1, ui.dp(3))); root.addView(findBar); root.addView(hint)
         root.addView(webWrap, LinearLayout.LayoutParams(-1, 0, 1f)); root.addView(badge)
         // (v117) شريط البوابات: الفيديوهات · الموسيقى · المتصفح (إحنا فيه دلوقتي) · (v231) المهام
-        val gates = BottomNav(this, ui, th, 2) { i -> if (i == 0) goMain("videos") else if (i == 1) goMain("music") else if (i == 3) goMain("tasks") else if (i == 4) { startActivity(Intent(this, FileManagerActivity::class.java)); finish() } }   // (v310) الملفات
+        val gates = BottomNav(this, ui, th, 2) { i -> if (i != 2) NavAnim.set(2, i); if (i == 0) goMain("videos") else if (i == 1) goMain("music") else if (i == 4) goMain("tasks") else if (i == 3) { startActivity(Intent(this, FileManagerActivity::class.java)); finish() } }   // (v310) الملفات
         root.addView(gates.view, LinearLayout.LayoutParams(-1, -2))
         content = root
         frame = FrameLayout(this); frame.setBackgroundColor(th.bg)
@@ -494,7 +495,9 @@ class BrowserActivity : Activity() {
         tabs.getOrNull(curIdx)?.let { snapTab(it) }
         wvOrNull?.let { try { it.onPause() } catch (_: Throwable) {} }
         webHolder.removeAllViews()
+        val prevIdx = curIdx
         curIdx = i
+        if (prevIdx != i && tabs.size > 1) Motion.slideIn(webHolder, if (i > prevIdx) -1 else 1, 230L)   // (v313) تبديل التبويب بانزلاق
         val t = tabs[i]
         webGroups.clear(); openKey = null; refreshBadge()   // (v203) الاصطياد بتاع التبويب ده بس
         val first = t.wv == null
@@ -554,7 +557,8 @@ class BrowserActivity : Activity() {
     private fun updateProgress() {
         val p = tab.progress
         reloadB.text = if (p < 100) "✕" else "⟳"
-        if (p >= 100) { progTrack.visibility = View.INVISIBLE; return }
+        if (p >= 100) { progTrack.animate().cancel(); progTrack.animate().setStartDelay(0L).alpha(0f).setDuration(220L).withEndAction { progTrack.visibility = View.INVISIBLE }.start(); return }
+        progTrack.animate().cancel(); progTrack.alpha = 1f
         progTrack.visibility = View.VISIBLE
         val w = progTrack.width.takeIf { it > 0 } ?: resources.displayMetrics.widthPixels
         progV.layoutParams = FrameLayout.LayoutParams((w * p / 100f).toInt().coerceAtLeast(ui.dp(12)), -1)
@@ -730,6 +734,7 @@ class BrowserActivity : Activity() {
         d.window?.apply { setBackgroundDrawable(ColorDrawable(th.bg)); setLayout(-1, -1) }
         d.setOnDismissListener { tabsDlg = null; tabsBox = null }
         renderTabs(); d.show()
+        Motion.fadeSlideIn(root, 0f, 40f * resources.displayMetrics.density, 240L, 0L); Motion.stagger(box, 8, 35L)
     }
     private fun renderTabs() {
         val box = tabsBox ?: return

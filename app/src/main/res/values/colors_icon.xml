@@ -1,2 +1,4 @@
 <?xml version="1.0" encoding="utf-8"?>
-<resources><color name="ic_launcher_bg">#1E2238</color></resources>
+<resources>
+    <color name="ic_robot_bg">#0B0906</color>
+</resources>

@@ -21,16 +21,30 @@
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32"/>
     <application android:supportsRtl="true" android:label="مترجم الفيديو" android:icon="@mipmap/ic_launcher" android:roundIcon="@mipmap/ic_launcher"
         android:usesCleartextTraffic="true" android:theme="@android:style/Theme.DeviceDefault.NoActionBar">
-        <activity android:name=".MainActivity" android:exported="true" android:theme="@style/AppSplash">
+        <activity android:name=".MainActivity" android:exported="true" android:theme="@style/AppSplash"
+            android:label="الفيديو" android:icon="@mipmap/ic_launcher_video" android:roundIcon="@mipmap/ic_launcher_video">
             <intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/></intent-filter>
             <intent-filter><action android:name="android.intent.action.SEND"/><category android:name="android.intent.category.DEFAULT"/><data android:mimeType="text/plain"/></intent-filter>
         </activity>
-        <activity android:name=".BrowserActivity" android:exported="false" android:windowSoftInputMode="adjustResize"
+        <activity android:name=".BrowserActivity" android:exported="false" android:windowSoftInputMode="adjustResize" android:theme="@style/AppSplash"
             android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboardHidden|density"/>
         <activity android:name=".PlayerActivity" android:exported="false"
             android:supportsPictureInPicture="true" android:resizeableActivity="true"
             android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboardHidden|density"/>
-        <activity android:name=".FileManagerActivity" android:exported="false"
+        <!-- (v310) أربع أيقونات في اللانشر: الفيديو (MainActivity نفسها) · الموسيقى · المتصفح · الملفات -->
+        <activity-alias android:name=".MusicLauncher" android:targetActivity=".MainActivity" android:exported="true"
+            android:label="الموسيقى" android:icon="@mipmap/ic_launcher_music" android:roundIcon="@mipmap/ic_launcher_music">
+            <intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/></intent-filter>
+        </activity-alias>
+        <activity-alias android:name=".BrowserLauncher" android:targetActivity=".BrowserActivity" android:exported="true"
+            android:label="المتصفح" android:icon="@mipmap/ic_launcher_browser" android:roundIcon="@mipmap/ic_launcher_browser">
+            <intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/></intent-filter>
+        </activity-alias>
+        <activity-alias android:name=".FilesLauncher" android:targetActivity=".FileManagerActivity" android:exported="true"
+            android:label="الملفات" android:icon="@mipmap/ic_launcher_files" android:roundIcon="@mipmap/ic_launcher_files">
+            <intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/></intent-filter>
+        </activity-alias>
+        <activity android:name=".FileManagerActivity" android:exported="false" android:theme="@style/AppSplash"
             android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboardHidden|density"/>
         <provider android:name="androidx.core.content.FileProvider" android:authorities="${applicationId}.fmprov"
             android:exported="false" android:grantUriPermissions="true">

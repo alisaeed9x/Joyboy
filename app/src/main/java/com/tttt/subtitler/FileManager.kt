@@ -8,6 +8,9 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.Environment
+import android.os.Handler
+import android.os.Looper
+import android.os.StatFs
 import android.provider.Settings
 import android.text.Editable
 import android.text.TextUtils
@@ -18,21 +21,24 @@ import android.view.ViewGroup
 import android.webkit.MimeTypeMap
 import android.widget.BaseAdapter
 import android.widget.EditText
+import android.widget.FrameLayout
 import android.widget.HorizontalScrollView
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ListView
 import android.widget.TextView
+import com.bumptech.glide.Glide
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-/** (v310) عنصر في قايمة الفايل مانجر */
-class FmItem(val f: File, val dir: Boolean, val size: Long, val mod: Long, val count: Int) {
+/** (v310) عنصر في قايمة الفايل مانجر (sub = المجلد النسبي في نتايج البحث العميق) */
+class FmItem(val f: File, val dir: Boolean, val size: Long, val mod: Long, val count: Int, val sub: String = "") {
     val name: String get() = f.name
 }
 
-/** (v310) أدوات صغيرة للفايل مانجر: أيقونات · أحجام · نسخ · أسماء مش متكررة */
+/** (v310) أدوات الفايل مانجر: أيقونات · أحجام · نسخ/ضغط/فك بإلغاء وتقدّم · أسماء مش متكررة */
 object FmUtil {
     val VIDEO = setOf("mp4", "mkv", "webm", "avi", "mov", "3gp", "ts", "flv", "m4v", "wmv", "mpg", "mpeg")
     val AUDIO = setOf("mp3", "m4a", "aac", "wav", "flac", "ogg", "opus", "wma", "amr")
@@ -76,12 +82,61 @@ object FmUtil {
         return f
     }
 
-    fun copy(src: File, dst: File) {
+    /** نسخ ملف/مجلد (متداخل). cancel بيتفحص قبل كل ملف، onFile بيبلّغ باسم الملف الجاري */
+    fun copyTree(src: File, dst: File, cancel: () -> Boolean, onFile: (File) -> Unit) {
+        if (cancel()) return
         if (src.isDirectory) {
             dst.mkdirs()
             val kids = src.listFiles()
-            if (kids != null) for (k in kids) copy(k, File(dst, k.name))
-        } else src.copyTo(dst, false)
+            if (kids != null) for (k in kids) copyTree(k, File(dst, k.name), cancel, onFile)
+        } else { onFile(src); src.copyTo(dst, false) }
+    }
+
+    /** ضغط ZIP لمجموعة ملفات/مجلدات (المسارات جوه الأرشيف نسبية لمجلد كل عنصر) */
+    fun zipTo(files: List<File>, out: File, cancel: () -> Boolean, onFile: (String) -> Unit) {
+        java.util.zip.ZipOutputStream(java.io.BufferedOutputStream(java.io.FileOutputStream(out))).use { z ->
+            for (root in files) {
+                val base = root.parentFile ?: root
+                val all = if (root.isDirectory) root.walkTopDown().toList() else listOf(root)
+                for (f in all) {
+                    if (cancel()) return
+                    val rel = f.relativeTo(base).path.replace(File.separatorChar, '/')
+                    if (rel.isEmpty()) continue
+                    if (f.isDirectory) { z.putNextEntry(java.util.zip.ZipEntry("$rel/")); z.closeEntry() }
+                    else {
+                        onFile(f.name)
+                        z.putNextEntry(java.util.zip.ZipEntry(rel))
+                        f.inputStream().use { it.copyTo(z) }
+                        z.closeEntry()
+                    }
+                }
+            }
+        }
+    }
+
+    /** فك ZIP في مجلد (مع حماية zip-slip). بيرجّع عدد الملفات */
+    fun unzip(zip: File, dest: File, cancel: () -> Boolean, onFile: (String) -> Unit): Int {
+        var n = 0
+        val destPath = dest.canonicalPath
+        java.util.zip.ZipInputStream(java.io.BufferedInputStream(zip.inputStream())).use { zi ->
+            var e = zi.nextEntry
+            while (e != null) {
+                if (cancel()) break
+                val out = File(dest, e.name)
+                val cp = out.canonicalPath
+                if (cp != destPath && !cp.startsWith(destPath + File.separator)) throw SecurityException("مسار مش آمن جوه الأرشيف")
+                if (e.isDirectory) out.mkdirs()
+                else {
+                    out.parentFile?.mkdirs()
+                    onFile(out.name)
+                    out.outputStream().use { zi.copyTo(it) }
+                    n++
+                }
+                zi.closeEntry()
+                e = zi.nextEntry
+            }
+        }
+        return n
     }
 
     fun uriFor(ctx: Context, f: File): Uri = androidx.core.content.FileProvider.getUriForFile(ctx, ctx.packageName + ".fmprov", f)
@@ -103,9 +158,13 @@ object FmUtil {
     }
 }
 
-/** (v310) فايل مانجر شغّال على الملفات مباشرة (صلاحية «كل الملفات»): تصفّح · بحث · تحديد · نسخ/نقل/لصق · إعادة تسمية · حذف · مشاركة · تفاصيل */
+/**
+ * (v310) فايل مانجر شغّال على الملفات مباشرة (صلاحية «كل الملفات»):
+ * تصفّح · بحث (عادي وعميق) · صور مصغّرة · تحديد · نسخ/نقل/لصق بتقدّم وإلغاء · ضغط/فك ZIP · إعادة تسمية · مشاركة ·
+ * اختصارات مثبّتة ⭐ · شريط المساحة · أكبر الملفات · نسخ المسار
+ */
 class FileManagerActivity : Activity() {
-    override fun finish() { super.finish(); try { overridePendingTransition(R.anim.act_stay, R.anim.act_exit) } catch (e: Exception) { LogStore.err("Fm:finish", e) } }
+    override fun finish() { super.finish(); try { if (!NavAnim.take(this)) overridePendingTransition(R.anim.act_stay, R.anim.act_exit) } catch (e: Exception) { LogStore.err("Fm:finish", e) } }
 
     private lateinit var th: Theme
     private lateinit var ui: Ui
@@ -117,10 +176,16 @@ class FileManagerActivity : Activity() {
     private var clipCut = false
     private var sortMode = 0
     private var showHidden = false
+    private var deepOn = false
+    private var deepMode = false
+    private var pins = LinkedHashSet<String>()
+    private var pendingSel: String? = null
     private var query = ""
     private var loadErr = false
     private var loaded = false
     private var loadToken = 0
+    private val uiH = Handler(Looper.getMainLooper())
+    private val deepRun = Runnable { val q = query.trim(); if (deepOn && q.length >= 2) runDeep(q) }
 
     private lateinit var titleTv: TextView
     private lateinit var pathTv: TextView
@@ -131,6 +196,9 @@ class FileManagerActivity : Activity() {
     private lateinit var selBar: LinearLayout
     private lateinit var pasteBar: LinearLayout
     private lateinit var pasteTv: TextView
+    private lateinit var chipsRow: LinearLayout
+    private lateinit var storTv: TextView
+    private lateinit var storFill: View
     private lateinit var adapter: Adapter
     private val fmt = SimpleDateFormat("yyyy/MM/dd HH:mm", Locale.US)
 
@@ -154,6 +222,19 @@ class FileManagerActivity : Activity() {
         setOnClickListener { f() }
     }
 
+    private fun loadPins() { pins = LinkedHashSet((prefs().getString("fm_pins", "") ?: "").split("\n").filter { it.isNotBlank() }) }
+    private fun savePins() { prefs().edit().putString("fm_pins", pins.joinToString("\n")).apply() }
+
+    private fun buildChips() {
+        chipsRow.removeAllViews()
+        for ((label, f) in roots()) chipsRow.addView(chip(label) { load(f) }, LinearLayout.LayoutParams(-2, -2).apply { setMargins(ui.dp(3), 0, ui.dp(3), 0) })
+        for (p in pins) {
+            val c = chip("⭐ " + (File(p).name.ifEmpty { p })) { load(File(p)) }
+            c.setOnLongClickListener { pins.remove(p); savePins(); buildChips(); toast("اتشال من الاختصارات"); true }
+            chipsRow.addView(c, LinearLayout.LayoutParams(-2, -2).apply { setMargins(ui.dp(3), 0, ui.dp(3), 0) })
+        }
+    }
+
     override fun onCreate(b: Bundle?) {
         super.onCreate(b)
         th = Themes.byId(try { prefs().getString("theme", "mx") } catch (_: Exception) { "mx" })
@@ -161,6 +242,8 @@ class FileManagerActivity : Activity() {
         applyBars(th)
         sortMode = prefs().getInt("fm_sort", 0)
         showHidden = prefs().getBoolean("fm_hidden", false)
+        deepOn = prefs().getBoolean("fm_deep", false)
+        loadPins()
         val startPath = intent?.getStringExtra("path") ?: prefs().getString("fm_last", null)
         if (startPath != null) { val d = File(startPath); if (d.isDirectory) cur = d }
 
@@ -171,7 +254,10 @@ class FileManagerActivity : Activity() {
 
         // الهيدر: ✕ · العنوان/المسار · ↑ · ⋮
         titleTv = ui.text("", 16f, th.text, true).apply { setSingleLine(); ellipsize = TextUtils.TruncateAt.END }
-        pathTv = ui.text("", 11f, th.muted).apply { setSingleLine(); ellipsize = TextUtils.TruncateAt.START; layoutDirection = View.LAYOUT_DIRECTION_LTR; textDirection = View.TEXT_DIRECTION_LTR }
+        pathTv = ui.text("", 11f, th.muted).apply {
+            setSingleLine(); ellipsize = TextUtils.TruncateAt.START; layoutDirection = View.LAYOUT_DIRECTION_LTR; textDirection = View.TEXT_DIRECTION_LTR
+            setOnLongClickListener { copyText(cur.absolutePath); true }
+        }
         val titleCol = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; addView(titleTv); addView(pathTv) }
         fun tbtn(t: String, f: () -> Unit): TextView = IconTextView(this).apply {
             text = t; textSize = 20f; gravity = Gravity.CENTER; setTextColor(th.text)
@@ -186,21 +272,37 @@ class FileManagerActivity : Activity() {
         }
         root.addView(head, LinearLayout.LayoutParams(-1, -2))
 
-        // بحث داخل المجلد
+        // بحث داخل المجلد (أو في كل المجلدات الفرعية لو البحث العميق شغّال)
         searchEt = ui.input("🔍 بحث في المجلد", "").apply {
             addTextChangedListener(object : TextWatcher {
                 override fun beforeTextChanged(s: CharSequence?, st: Int, c: Int, a: Int) {}
                 override fun onTextChanged(s: CharSequence?, st: Int, b: Int, c: Int) {}
-                override fun afterTextChanged(s: Editable?) { query = s?.toString() ?: ""; refresh() }
+                override fun afterTextChanged(s: Editable?) {
+                    query = s?.toString() ?: ""
+                    uiH.removeCallbacks(deepRun)
+                    if (deepOn && query.trim().length >= 2) uiH.postDelayed(deepRun, 450)
+                    else if (deepMode) { deepMode = false; load(cur) }
+                    else refresh()
+                }
             })
         }
         root.addView(searchEt, LinearLayout.LayoutParams(-1, -2).apply { setMargins(ui.dp(12), 0, ui.dp(12), 0) })
 
-        // اختصارات الأماكن
-        val chipsRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; setPadding(ui.dp(8), ui.dp(4), ui.dp(8), ui.dp(4)) }
-        for ((label, f) in roots()) chipsRow.addView(chip(label) { load(f) }, LinearLayout.LayoutParams(-2, -2).apply { setMargins(ui.dp(3), 0, ui.dp(3), 0) })
+        // اختصارات الأماكن + المجلدات المثبّتة
+        chipsRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; setPadding(ui.dp(8), ui.dp(4), ui.dp(8), ui.dp(4)) }
+        buildChips()
         val chipsScroll = HorizontalScrollView(this).apply { isHorizontalScrollBarEnabled = false; addView(chipsRow) }
         root.addView(chipsScroll, LinearLayout.LayoutParams(-1, -2))
+
+        // شريط المساحة
+        storTv = ui.text("", 11f, th.muted).apply { setSingleLine() }
+        storFill = View(this).apply { setBackgroundColor(th.primary) }
+        val storBar = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_LTR; weightSum = 1f; setBackgroundColor(th.border)
+            addView(storFill, LinearLayout.LayoutParams(0, -1, 0f))
+        }
+        root.addView(storTv, LinearLayout.LayoutParams(-2, -2).apply { setMargins(ui.dp(14), 0, ui.dp(14), ui.dp(2)) })
+        root.addView(storBar, LinearLayout.LayoutParams(-1, ui.dp(3)).apply { setMargins(ui.dp(14), 0, ui.dp(14), ui.dp(4)) })
 
         // رسالة الصلاحية
         permBox = LinearLayout(this).apply {
@@ -215,13 +317,14 @@ class FileManagerActivity : Activity() {
         list = ListView(this).apply {
             adapter = this@FileManagerActivity.adapter
             divider = android.graphics.drawable.ColorDrawable(th.border); dividerHeight = 1
+            Motion.listAnim(this)
             setOnItemClickListener { _, _, pos, _ -> if (pos in shown.indices) onTap(shown[pos]) }
             setOnItemLongClickListener { _, _, pos, _ -> if (pos in shown.indices) toggleSel(shown[pos]); true }
         }
         emptyTv = ui.text("", 14f, th.muted).apply { gravity = Gravity.CENTER; setPadding(0, ui.dp(40), 0, 0); visibility = View.GONE }
-        val body = android.widget.FrameLayout(this)
-        body.addView(list, android.widget.FrameLayout.LayoutParams(-1, -1))
-        body.addView(emptyTv, android.widget.FrameLayout.LayoutParams(-1, -1))
+        val body = FrameLayout(this)
+        body.addView(list, FrameLayout.LayoutParams(-1, -1))
+        body.addView(emptyTv, FrameLayout.LayoutParams(-1, -1))
         root.addView(body, LinearLayout.LayoutParams(-1, 0, 1f))
 
         // شريط اللصق
@@ -247,6 +350,16 @@ class FileManagerActivity : Activity() {
         selBtn("🗑 حذف") { deleteSel() }
         selBtn("⋯") { moreSel() }
         root.addView(selBar, LinearLayout.LayoutParams(-1, -2))
+        // (v313) شريط البوابات السفلي (صغير) زي باقي الشاشات: الفيديوهات · الموسيقى · المتصفح · الملفات (إحنا فيه) · المهام
+        val gates = BottomNav(this, ui, th, 3) { i ->
+            if (i != 3) {
+                NavAnim.set(3, i)
+                if (i == 2) startActivity(Intent(this, BrowserActivity::class.java))
+                else startActivity(Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP).putExtra("tab", if (i == 0) "videos" else if (i == 1) "music" else "tasks"))
+                finish()
+            }
+        }
+        root.addView(gates.view, LinearLayout.LayoutParams(-1, -2))
 
         setContentView(root)
     }
@@ -261,6 +374,8 @@ class FileManagerActivity : Activity() {
             if (Build.VERSION.SDK_INT < 30) requestPermissions(arrayOf(android.Manifest.permission.READ_EXTERNAL_STORAGE, android.Manifest.permission.WRITE_EXTERNAL_STORAGE), 31)
         }
     }
+
+    override fun onDestroy() { loadToken++; uiH.removeCallbacksAndMessages(null); super.onDestroy() }
 
     override fun onRequestPermissionsResult(code: Int, perms: Array<out String>, res: IntArray) {
         super.onRequestPermissionsResult(code, perms, res)
@@ -295,8 +410,11 @@ class FileManagerActivity : Activity() {
     }
 
     // ===== تحميل وعرض =====
+    private var fmLoaded = false
     private fun load(dir: File) {
-        cur = dir; sel.clear(); query = ""
+        val deeper = dir != cur && dir.absolutePath.startsWith(cur.absolutePath)
+        cur = dir; sel.clear(); query = ""; deepMode = false
+        uiH.removeCallbacks(deepRun)
         if (searchEt.text.isNotEmpty()) searchEt.setText("")
         try { prefs().edit().putString("fm_last", dir.absolutePath).apply() } catch (_: Exception) {}
         val token = ++loadToken
@@ -310,23 +428,71 @@ class FileManagerActivity : Activity() {
                 } catch (_: Exception) {}
             }
             runOnUiThread {
-                if (!isDestroyed && token == loadToken) { all = res; loadErr = arr == null; refresh(); list.setSelection(0) }
+                if (!isDestroyed && token == loadToken) {
+                    all = res; loadErr = arr == null; refresh(); list.setSelection(0); updateStorage()
+                    if (fmLoaded) { Motion.slideIn(list, if (deeper) -1 else 1, 230L); Motion.replay(list) } else fmLoaded = true   // (v313) انتقال فولدر لفولدر
+                    val ps = pendingSel; pendingSel = null
+                    if (ps != null) {
+                        val idx = shown.indexOfFirst { it.f.absolutePath == ps }
+                        if (idx >= 0) { sel.add(ps); refresh(); list.setSelection(idx) }
+                    }
+                }
             }
         }.start()
     }
 
+    /** بحث عميق: كل الملفات/المجلدات اللي اسمها فيه النص، تحت المجلد الحالي (لحد 3000 نتيجة) */
+    private fun runDeep(q: String) {
+        val token = ++loadToken
+        val root = cur
+        val ql = q.lowercase()
+        emptyTv.text = "⏳ بدوّر في كل المجلدات…"; emptyTv.visibility = View.VISIBLE
+        Thread {
+            val res = ArrayList<FmItem>()
+            try {
+                val walk = root.walkTopDown().onEnter { d -> d == root || showHidden || !d.name.startsWith(".") }
+                for (f in walk.takeWhile { token == loadToken && res.size < 3000 }) {
+                    if (f == root) continue
+                    if (!showHidden && f.name.startsWith(".")) continue
+                    if (f.name.lowercase().contains(ql)) {
+                        val sub = try { f.parentFile?.relativeTo(root)?.path ?: "" } catch (_: Exception) { "" }
+                        res.add(FmItem(f, f.isDirectory, if (f.isDirectory) 0L else f.length(), f.lastModified(), 0, sub))
+                    }
+                }
+            } catch (e: Exception) { LogStore.err("Fm:deep", e) }
+            runOnUiThread {
+                if (!isDestroyed && token == loadToken) { all = res; deepMode = true; loadErr = false; refresh(); list.setSelection(0) }
+            }
+        }.start()
+    }
+
+    private fun updateStorage() {
+        try {
+            val st = StatFs(cur.absolutePath)
+            val total = st.blockCountLong * st.blockSizeLong
+            val free = st.availableBlocksLong * st.blockSizeLong
+            storTv.text = "💾 المتاح ${FmUtil.size(free)} من ${FmUtil.size(total)}"
+            val frac = if (total > 0) ((total - free).toDouble() / total.toDouble()).toFloat().coerceIn(0f, 1f) else 0f
+            (storFill.layoutParams as LinearLayout.LayoutParams).weight = frac
+            storFill.setBackgroundColor(if (frac > 0.9f) th.danger else th.primary)
+            storFill.requestLayout()
+        } catch (_: Exception) { storTv.text = "" }
+    }
+
     private fun refresh() {
         val q = query.trim().lowercase()
-        val filtered = all.filter { (showHidden || !it.name.startsWith(".")) && (q.isEmpty() || it.name.lowercase().contains(q)) }
+        val filtered = if (deepMode) all else all.filter { (showHidden || !it.name.startsWith(".")) && (q.isEmpty() || it.name.lowercase().contains(q)) }
+        val byName = compareBy<FmItem, String>(String.CASE_INSENSITIVE_ORDER) { it.name }
         val cmp: Comparator<FmItem> = when (sortMode) {
             1 -> compareByDescending<FmItem> { it.mod }
             2 -> compareByDescending<FmItem> { it.size }
-            else -> compareBy<FmItem, String>(String.CASE_INSENSITIVE_ORDER) { it.name }
+            3 -> compareBy<FmItem, String>(String.CASE_INSENSITIVE_ORDER) { it.f.extension }.then(byName)
+            else -> byName
         }
         shown = filtered.sortedWith(compareByDescending<FmItem> { it.dir }.then(cmp))
         adapter.notifyDataSetChanged()
         val ext = Environment.getExternalStorageDirectory().absolutePath
-        titleTv.text = if (sel.isNotEmpty()) "✔ ${sel.size} محدد" else if (cur.absolutePath == ext) "الذاكرة الداخلية" else cur.name.ifEmpty { "/" }
+        titleTv.text = if (sel.isNotEmpty()) "✔ ${sel.size} محدد" else if (deepMode) "🔎 ${shown.size} نتيجة" else if (cur.absolutePath == ext) "الذاكرة الداخلية" else cur.name.ifEmpty { "/" }
         pathTv.text = cur.absolutePath
         selBar.visibility = if (sel.isNotEmpty()) View.VISIBLE else View.GONE
         pasteBar.visibility = if (clip.isNotEmpty()) View.VISIBLE else View.GONE
@@ -350,36 +516,51 @@ class FileManagerActivity : Activity() {
     }
 
     // ===== القايمة =====
-    private class Holder { lateinit var ic: TextView; lateinit var name: TextView; lateinit var info: TextView }
+    private class Holder { lateinit var ic: TextView; lateinit var iv: ImageView; lateinit var name: TextView; lateinit var info: TextView }
 
     private inner class Adapter : BaseAdapter() {
         override fun getCount() = shown.size
         override fun getItem(p: Int): Any = shown[p]
         override fun getItemId(p: Int) = p.toLong()
         override fun getView(p: Int, cv: View?, parent: ViewGroup?): View {
+            val ctx = this@FileManagerActivity
             val h: Holder
             val row: View
             if (cv == null) {
                 h = Holder()
-                h.ic = IconTextView(this@FileManagerActivity).apply { textSize = 24f; gravity = Gravity.CENTER }
+                h.ic = IconTextView(ctx).apply { textSize = 24f; gravity = Gravity.CENTER }
+                h.iv = ImageView(ctx).apply { scaleType = ImageView.ScaleType.CENTER_CROP; visibility = View.GONE }
+                val box = FrameLayout(ctx)
+                box.addView(h.ic, FrameLayout.LayoutParams(-1, -1))
+                box.addView(h.iv, FrameLayout.LayoutParams(-1, -1))
                 h.name = ui.text("", 14f, th.text, true).apply { setSingleLine(); ellipsize = TextUtils.TruncateAt.MIDDLE }
-                h.info = ui.text("", 11f, th.muted).apply { setSingleLine() }
-                val col = LinearLayout(this@FileManagerActivity).apply { orientation = LinearLayout.VERTICAL; addView(h.name); addView(h.info) }
-                row = LinearLayout(this@FileManagerActivity).apply {
+                h.info = ui.text("", 11f, th.muted).apply { setSingleLine(); ellipsize = TextUtils.TruncateAt.START }
+                val col = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL; addView(h.name); addView(h.info) }
+                row = LinearLayout(ctx).apply {
                     orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; gravity = Gravity.CENTER_VERTICAL
-                    setPadding(ui.dp(12), ui.dp(9), ui.dp(12), ui.dp(9))
-                    addView(h.ic, LinearLayout.LayoutParams(ui.dp(40), ui.dp(40)))
+                    setPadding(ui.dp(12), ui.dp(8), ui.dp(12), ui.dp(8))
+                    addView(box, LinearLayout.LayoutParams(ui.dp(44), ui.dp(44)))
                     addView(col, LinearLayout.LayoutParams(0, -2, 1f).apply { setMargins(ui.dp(10), 0, 0, 0) })
                 }
                 row.tag = h
             } else { row = cv; h = cv.tag as Holder }
             val fi = shown[p]
             val on = sel.contains(fi.f.absolutePath)
+            val e = fi.f.extension.lowercase()
+            val thumb = !fi.dir && !on && (e in FmUtil.IMAGE || e in FmUtil.VIDEO)
+            if (thumb) {
+                h.iv.visibility = View.VISIBLE
+                try { Glide.with(ctx).load(fi.f).centerCrop().override(ui.dp(88), ui.dp(88)).into(h.iv) } catch (_: Exception) {}
+            } else {
+                try { Glide.with(ctx).clear(h.iv) } catch (_: Exception) {}
+                h.iv.setImageDrawable(null); h.iv.visibility = View.GONE
+            }
             h.ic.text = if (on) "✅" else FmUtil.icon(fi)
             h.name.text = fi.name
             h.name.gravity = Gravity.START; h.info.gravity = Gravity.START
             val date = fmt.format(Date(fi.mod))
-            h.info.text = if (fi.dir) "${fi.count} عنصر  ·  $date" else "${FmUtil.size(fi.size)}  ·  $date"
+            val base = if (fi.dir) "${fi.count} عنصر  ·  $date" else "${FmUtil.size(fi.size)}  ·  $date"
+            h.info.text = if (deepMode) "📂 ${fi.sub.ifEmpty { "." }}  ·  $base" else base
             row.setBackgroundColor(if (on) ((th.primary and 0x00FFFFFF) or 0x33000000) else 0)
             return row
         }
@@ -414,28 +595,55 @@ class FileManagerActivity : Activity() {
         } catch (ex: Exception) { LogStore.err("Fm:open", ex); toast("⚠ مفيش برنامج يفتح الملف ده") }
     }
 
+    private fun copyText(t: String) {
+        try {
+            (getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager).setPrimaryClip(android.content.ClipData.newPlainText("path", t))
+            toast("📋 اتنسخ")
+        } catch (e: Exception) { LogStore.err("Fm:clip", e) }
+    }
+
     // ===== القايمة ⋮ =====
     private fun menu() {
-        val sorts = arrayOf("الاسم", "الأحدث", "الأكبر حجماً")
-        val items = arrayOf("📁 مجلد جديد", "↕ الترتيب: ${sorts[sortMode.coerceIn(0, 2)]}", if (showHidden) "👁 إخفاء الملفات المخفية" else "👁 إظهار الملفات المخفية", "☑ تحديد الكل", "🔄 تحديث")
-        GAlert(this).setTitle("الفايل مانجر").setItems(items) { _, w ->
-            when (w) {
-                0 -> promptName("📁 مجلد جديد", "", "إنشاء") { n ->
-                    when {
-                        n.isEmpty() || n.contains("/") -> toast("الاسم مش صح")
-                        File(cur, n).exists() -> toast("الاسم موجود قبل كده")
-                        File(cur, n).mkdirs() -> load(cur)
-                        else -> toast("⚠ ما قدرتش أعمل المجلد")
-                    }
-                }
-                1 -> GAlert(this).setTitle("ترتيب حسب").setItems(sorts) { _, s ->
-                    sortMode = s; prefs().edit().putInt("fm_sort", s).apply(); refresh()
-                }.show()
-                2 -> { showHidden = !showHidden; prefs().edit().putBoolean("fm_hidden", showHidden).apply(); refresh() }
-                3 -> { shown.forEach { sel.add(it.f.absolutePath) }; refresh() }
-                4 -> load(cur)
+        val sorts = arrayOf("الاسم", "الأحدث", "الأكبر حجماً", "النوع")
+        val labels = ArrayList<String>()
+        val acts = ArrayList<() -> Unit>()
+        fun add(l: String, a: () -> Unit) { labels.add(l); acts.add(a) }
+        add("📁 مجلد جديد") { newFolder() }
+        add("↕ الترتيب: ${sorts[sortMode.coerceIn(0, 3)]}") {
+            GAlert(this).setTitle("ترتيب حسب").setItems(sorts) { _, s ->
+                sortMode = s; prefs().edit().putInt("fm_sort", s).apply(); refresh()
+            }.show()
+        }
+        add(if (showHidden) "👁 إخفاء الملفات المخفية" else "👁 إظهار الملفات المخفية") {
+            showHidden = !showHidden; prefs().edit().putBoolean("fm_hidden", showHidden).apply(); refresh()
+        }
+        add("☑ تحديد الكل") { shown.forEach { sel.add(it.f.absolutePath) }; refresh() }
+        val here = cur.absolutePath
+        add(if (here in pins) "⭐ شيل المجلد ده من الاختصارات" else "⭐ ثبّت المجلد ده في الاختصارات") {
+            if (!pins.remove(here)) pins.add(here)
+            savePins(); buildChips()
+        }
+        add(if (deepOn) "🔎 البحث العميق شغّال — اضغط لإيقافه" else "🔎 فعّل البحث في المجلدات الفرعية") {
+            deepOn = !deepOn; prefs().edit().putBoolean("fm_deep", deepOn).apply()
+            searchEt.hint = if (deepOn) "🔎 بحث في كل المجلدات تحت ده" else "🔍 بحث في المجلد"
+            if (!deepOn && deepMode) { deepMode = false; load(cur) }
+            toast(if (deepOn) "البحث بيدوّر في المجلدات الفرعية كمان" else "البحث في المجلد الحالي بس")
+        }
+        add("📊 أكبر الملفات هنا") { bigFiles() }
+        add("📋 نسخ مسار المجلد") { copyText(cur.absolutePath) }
+        add("🔄 تحديث") { load(cur) }
+        GAlert(this).setTitle("الفايل مانجر").setItems(labels.toTypedArray()) { _, w -> if (w in acts.indices) acts[w]() }.show()
+    }
+
+    private fun newFolder() {
+        promptName("📁 مجلد جديد", "", "إنشاء") { n ->
+            when {
+                n.isEmpty() || n.contains("/") -> toast("الاسم مش صح")
+                File(cur, n).exists() -> toast("الاسم موجود قبل كده")
+                File(cur, n).mkdirs() -> load(cur)
+                else -> toast("⚠ ما قدرتش أعمل المجلد")
             }
-        }.show()
+        }
     }
 
     private fun promptName(title: String, init: String, ok: String, onOk: (String) -> Unit) {
@@ -444,6 +652,22 @@ class FileManagerActivity : Activity() {
         GAlert(this).setTitle(title).setView(c)
             .setPositiveButton(ok) { _, _ -> onOk(et.text.toString().trim()) }
             .setNegativeButton("إلغاء", null).show()
+    }
+
+    /** نافذة تقدّم بزرار إلغاء: الشغل بيتعمل في خيط لوحده، والنتيجة (نص) بتتعرض كإشعار وبعدها المجلد بيتحدّث */
+    private fun busy(title: String, work: (upd: (String) -> Unit, cancelled: () -> Boolean) -> String) {
+        val tv = ui.text("⏳ …", 14f, th.text).apply { setPadding(ui.dp(20), ui.dp(12), ui.dp(20), ui.dp(8)) }
+        var cancel = false
+        val dlg = GAlert(this).setTitle(title).setView(tv).setCancelable(false)
+            .setNegativeButton("إلغاء") { _, _ -> cancel = true }.show()
+        Thread {
+            val msg = try { work({ t -> runOnUiThread { tv.text = t } }, { cancel }) }
+            catch (e: Exception) { LogStore.err("Fm:busy", e); "⚠ حصلت مشكلة: ${e.message ?: ""}" }
+            runOnUiThread {
+                try { dlg.dismiss() } catch (_: Exception) {}
+                if (!isDestroyed) { toast(msg); load(cur) }
+            }
+        }.start()
     }
 
     // ===== عمليات التحديد =====
@@ -455,11 +679,13 @@ class FileManagerActivity : Activity() {
     private fun paste() {
         val dest = cur; val src = clip; val cut = clipCut
         clip = emptyList(); refresh()
-        toast("⏳ جاري ${if (cut) "النقل" else "النسخ"}…")
-        Thread {
-            var ok = 0; var fail = 0
+        busy(if (cut) "✂ نقل" else "📋 نسخ") { upd, cancelled ->
+            var ok = 0; var fail = 0; var i = 0
             val made = ArrayList<File>()
             for (s in src) {
+                if (cancelled()) break
+                i++
+                upd("($i/${src.size}) ${s.name}")
                 try {
                     val same = s.parentFile?.absolutePath == dest.absolutePath
                     val inside = s.isDirectory && (dest.absolutePath == s.absolutePath || dest.absolutePath.startsWith(s.absolutePath + "/"))
@@ -467,14 +693,20 @@ class FileManagerActivity : Activity() {
                     else if (cut && same) { ok++ }
                     else {
                         val d = FmUtil.uniq(dest, s.name)
-                        if (cut) { if (!s.renameTo(d)) { FmUtil.copy(s, d); s.deleteRecursively() } } else FmUtil.copy(s, d)
-                        made.add(d); ok++
+                        val n = i
+                        if (cut) {
+                            if (!s.renameTo(d)) {
+                                FmUtil.copyTree(s, d, cancelled) { f -> upd("($n/${src.size}) ${f.name}") }
+                                if (cancelled()) d.deleteRecursively() else s.deleteRecursively()
+                            }
+                        } else FmUtil.copyTree(s, d, cancelled) { f -> upd("($n/${src.size}) ${f.name}") }
+                        if (!cancelled()) { made.add(d); ok++ }
                     }
                 } catch (e: Exception) { LogStore.err("Fm:paste", e); fail++ }
             }
             FmUtil.scan(this, made)
-            runOnUiThread { toast("✓ تم: $ok" + (if (fail > 0) "  ·  فشل: $fail" else "")); if (!isDestroyed) load(cur) }
-        }.start()
+            "✓ تم: $ok" + (if (fail > 0) "  ·  فشل: $fail" else "") + (if (cancelled()) "  ·  اتلغى" else "")
+        }
     }
 
     private fun deleteSel() {
@@ -483,12 +715,16 @@ class FileManagerActivity : Activity() {
         val msg = if (files.size == 1) "تمسح «${files[0].name}» نهائياً؟" else "تمسح ${files.size} عنصر نهائياً؟"
         GAlert(this).setTitle("🗑 حذف").setMessage(msg + "\nمش هتقدر ترجّعه.")
             .setPositiveButton("امسح") { _, _ ->
-                Thread {
+                busy("🗑 حذف") { upd, cancelled ->
                     var ok = 0; var fail = 0
-                    for (f in files) { try { if (f.deleteRecursively()) ok++ else fail++ } catch (e: Exception) { LogStore.err("Fm:del", e); fail++ } }
+                    for (f in files) {
+                        if (cancelled()) break
+                        upd(f.name)
+                        try { if (f.deleteRecursively()) ok++ else fail++ } catch (e: Exception) { LogStore.err("Fm:del", e); fail++ }
+                    }
                     FmUtil.scan(this, files)
-                    runOnUiThread { toast("✓ اتمسح: $ok" + (if (fail > 0) "  ·  فشل: $fail" else "")); if (!isDestroyed) load(cur) }
-                }.start()
+                    "✓ اتمسح: $ok" + (if (fail > 0) "  ·  فشل: $fail" else "") + (if (cancelled()) "  ·  اتلغى" else "")
+                }
             }.setNegativeButton("إلغاء", null).show()
     }
 
@@ -506,18 +742,30 @@ class FileManagerActivity : Activity() {
 
     private fun moreSel() {
         val files = selFiles()
+        if (files.isEmpty()) return
+        val labels = ArrayList<String>()
+        val acts = ArrayList<() -> Unit>()
+        fun add(l: String, a: () -> Unit) { labels.add(l); acts.add(a) }
         if (files.size == 1) {
             val f = files[0]
-            val items = if (f.isFile) arrayOf("✏ إعادة تسمية", "ℹ تفاصيل", "↗ فتح ببرنامج تاني") else arrayOf("✏ إعادة تسمية", "ℹ تفاصيل")
-            GAlert(this).setTitle(f.name).setItems(items) { _, w ->
-                when (w) { 0 -> rename(f); 1 -> details(f); 2 -> openFile(f, true) }
-            }.show()
-        } else {
-            GAlert(this).setTitle("${files.size} عنصر").setItems(arrayOf("☑ تحديد الكل", "✖ إلغاء التحديد")) { _, w ->
-                if (w == 0) shown.forEach { sel.add(it.f.absolutePath) } else sel.clear()
-                refresh()
-            }.show()
+            add("✏ إعادة تسمية") { rename(f) }
+            add("ℹ تفاصيل") { details(f) }
+            if (f.isFile) add("↗ فتح ببرنامج تاني") { openFile(f, true) }
+            if (f.isFile && f.extension.equals("zip", true)) add("📦 فك الضغط هنا") { unzipHere(f) }
+            if (deepMode) add("📂 افتح المجلد اللي فيه") { reveal(f) }
+            add("📋 نسخ المسار") { copyText(f.absolutePath) }
         }
+        add("🗜 ضغط ZIP") { zipSel(files) }
+        add("☑ تحديد الكل") { shown.forEach { sel.add(it.f.absolutePath) }; refresh() }
+        add("↔ عكس التحديد") { shown.forEach { val p = it.f.absolutePath; if (!sel.remove(p)) sel.add(p) }; refresh() }
+        add("✖ إلغاء التحديد") { sel.clear(); refresh() }
+        GAlert(this).setTitle(if (files.size == 1) files[0].name else "${files.size} عنصر").setItems(labels.toTypedArray()) { _, w -> if (w in acts.indices) acts[w]() }.show()
+    }
+
+    private fun reveal(f: File) {
+        val p = f.parentFile ?: return
+        pendingSel = f.absolutePath
+        load(p)
     }
 
     private fun rename(f: File) {
@@ -531,6 +779,54 @@ class FileManagerActivity : Activity() {
                 else -> toast("⚠ ما قدرتش أغيّر الاسم")
             }
         }
+    }
+
+    private fun zipSel(files: List<File>) {
+        val def = if (files.size == 1) files[0].nameWithoutExtension.ifEmpty { files[0].name } + ".zip" else "أرشيف.zip"
+        promptName("🗜 ضغط ZIP", def, "اضغط") { n ->
+            if (n.isEmpty() || n.contains("/")) { toast("الاسم مش صح"); return@promptName }
+            val out = FmUtil.uniq(cur, if (n.endsWith(".zip", true)) n else "$n.zip")
+            busy("🗜 ضغط") { upd, cancelled ->
+                FmUtil.zipTo(files, out, cancelled) { name -> upd(name) }
+                if (cancelled()) { out.delete(); "اتلغى" }
+                else { FmUtil.scan(this, listOf(out)); "✓ اتعمل ${out.name} (${FmUtil.size(out.length())})" }
+            }
+        }
+    }
+
+    private fun unzipHere(z: File) {
+        val dest = FmUtil.uniq(z.parentFile ?: cur, z.nameWithoutExtension.ifEmpty { "extracted" })
+        busy("📦 فك الضغط") { upd, cancelled ->
+            dest.mkdirs()
+            val n = FmUtil.unzip(z, dest, cancelled) { name -> upd(name) }
+            FmUtil.scan(this, dest.walkTopDown().filter { it.isFile }.toList())
+            if (cancelled()) "اتلغى (اتفكّ $n ملف)" else "✓ اتفكّ $n ملف ← ${dest.name}"
+        }
+    }
+
+    private fun bigFiles() {
+        val root = cur
+        toast("⏳ بدوّر على أكبر الملفات…")
+        Thread {
+            val top = ArrayList<File>()
+            try {
+                val walk = root.walkTopDown().onEnter { d -> d == root || showHidden || !d.name.startsWith(".") }
+                for (f in walk) {
+                    if (!f.isFile) continue
+                    top.add(f)
+                    if (top.size > 80) { top.sortByDescending { it.length() }; while (top.size > 30) top.removeAt(top.size - 1) }
+                }
+            } catch (e: Exception) { LogStore.err("Fm:big", e) }
+            top.sortByDescending { it.length() }
+            val best = top.take(30)
+            runOnUiThread {
+                if (isDestroyed) return@runOnUiThread
+                if (best.isEmpty()) { toast("مفيش ملفات هنا"); return@runOnUiThread }
+                GAlert(this).setTitle("📊 أكبر الملفات").setItems(best.map { "${FmUtil.size(it.length())}  ·  ${it.name}" }.toTypedArray()) { _, w ->
+                    if (w in best.indices) reveal(best[w])
+                }.show()
+            }
+        }.start()
     }
 
     private fun details(f: File) {

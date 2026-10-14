@@ -4,5 +4,7 @@
         <item name="android:windowBackground">@drawable/splash_window</item>
         <item name="android:windowSplashScreenBackground">@color/splash_bg</item>
         <item name="android:windowSplashScreenAnimatedIcon">@drawable/splash_empty</item>
+        <item name="android:windowSplashScreenAnimationDuration">0</item>
+        <item name="android:windowAnimationStyle">@null</item>
     </style>
 </resources>

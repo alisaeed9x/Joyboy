@@ -88,9 +88,9 @@ object Glass {
     fun pressable(v: View) {
         v.setOnTouchListener { view, ev ->
             when (ev.actionMasked) {
-                MotionEvent.ACTION_DOWN -> view.animate().scaleX(0.96f).scaleY(0.96f).setDuration(90).start()
+                MotionEvent.ACTION_DOWN -> view.animate().setStartDelay(0L).scaleX(0.95f).scaleY(0.95f).alpha(0.88f).setDuration(90).start()
                 MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL ->
-                    view.animate().scaleX(1f).scaleY(1f).setDuration(180).setInterpolator(OvershootInterpolator(2.2f)).start()
+                    view.animate().setStartDelay(0L).scaleX(1f).scaleY(1f).alpha(1f).setDuration(200).setInterpolator(OvershootInterpolator(2.4f)).start()
             }
             false
         }
@@ -190,6 +190,7 @@ class GAlert(private val ctx: Context) {
             val wrapped: View = if (scrollable) v else MaxHeightScroll(ctx, (dm.heightPixels * 0.6f).toInt()).apply { addView(v) }
             root.addView(wrapped, LinearLayout.LayoutParams(-1, -2).apply { topMargin = ui.dp(8) })
         }
+        var itemsCol: LinearLayout? = null
         items?.let { arr ->
             val col = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL }
             arr.forEachIndexed { i, s ->
@@ -198,6 +199,7 @@ class GAlert(private val ctx: Context) {
                 tv.setOnClickListener { d.dismiss(); itemsCb?.onClick(d, i) }
                 col.addView(tv, LinearLayout.LayoutParams(-1, -2).apply { setMargins(0, ui.dp(3), 0, ui.dp(3)) })
             }
+            itemsCol = col
             root.addView(MaxHeightScroll(ctx, (dm.heightPixels * 0.6f).toInt()).apply { addView(col) }, LinearLayout.LayoutParams(-1, -2).apply { topMargin = ui.dp(8) })
         }
         val btns = ArrayList<Triple<CharSequence, DialogInterface.OnClickListener?, Int>>()
@@ -230,6 +232,7 @@ class GAlert(private val ctx: Context) {
         d.setCancelable(cancelable); d.setCanceledOnTouchOutside(cancelable)
         cancelCb?.let { d.setOnCancelListener(it) }
         d.show()
+        itemsCol?.let { Motion.stagger(it, 8, 35L) }
         return d
     }
 }

@@ -74,7 +74,7 @@ class MainActivity : Activity() {
     private var showTabFn: (Int) -> Unit = {}
     private var tasksDlgRefresh: (() -> Unit)? = null
     /** (v231) صفحة المهام رجعت صفحة منفصلة في الشريط السفلي (جنب المتصفح): أي طلب «افتح المهام» (⚙️ · الزرار العايم · الويدجت) بيفتحها */
-    private fun showTasksDialog() { showTabFn(3) }
+    private fun showTasksDialog() { showTabFn(4) }
     // (v199) زرار «المهام» العايم (بشكل زرار التخطي): بيظهر لما فيه مهام شغّالة
     private var tasksFab: IconTextView? = null
     private var fabHide = false
@@ -82,8 +82,12 @@ class MainActivity : Activity() {
         val f = tasksFab ?: return
         val n = TaskCenter.active() + BgJobs.jobs.count { it.active }
         f.text = "⏳ المهام ($n)"
-        f.visibility = if (n > 0 && !fabHide && curTab != 3) View.VISIBLE else View.GONE
-        navUi?.label(3, if (n > 0) "المهام ($n)" else "المهام")
+        val wasShown = f.visibility == View.VISIBLE
+        f.visibility = if (n > 0 && !fabHide && curTab != 4) View.VISIBLE else View.GONE
+        val nowShown = f.visibility == View.VISIBLE
+        if (nowShown && !wasShown) Motion.pop(f, 0.5f)
+        Motion.breathe(f, nowShown)
+        navUi?.label(4, if (n > 0) "المهام ($n)" else "المهام")
     }
     private var toolsUiM: ToolsUi? = null
     private var pendingTool = ""
@@ -96,7 +100,7 @@ class MainActivity : Activity() {
         if (fromPlayer) requestedOrientation = if (intent?.getBooleanExtra("land", false) == true) ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE else ActivityInfo.SCREEN_ORIENTATION_PORTRAIT   // الإعدادات من المشغّل: بنفس اتجاه المشغّل
         UiWatchdog.start()
         Cfg.init(this); CrashLog.install(this)
-        if (!fromPlayer) PublicApis.autoPull(this)   // (v272) سحب قايمة public-apis لوحده + إشعار
+        if (!fromPlayer) android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({ if (!isDestroyed) PublicApis.autoPull(this) }, 6000L)   // (v272) سحب قايمة public-apis لوحده + إشعار
         val th = Themes.byId(Cfg.str("theme", "mx"))
         val ui = Ui(this, th)
         applyBars(th)
@@ -740,43 +744,54 @@ class MainActivity : Activity() {
                 }
             } catch (_: Throwable) {}
         }
-        val music = MusicUi(this, ui, th); musicUi = music; music.root.visibility = View.GONE
-        music.onNavTint = { c -> setNavTint(c) }
-        music.onGrant = { requestPermissions(arrayOf(MusicScan.permission()), 12) }
-        // (v194) صفحة الموسيقى = نفس كلاس صفحة الفيديوهات: نفس الإعدادات والعمليات (إعادة تسمية/نقل/مشاركة/حذف/تفاصيل) والبوابة بتاعة المخفي
-        music.lib.onSettings = lib.onSettings
-        music.lib.gate = { open -> lk.gate(open) }
-        music.lib.onRename = { v -> ops.rename(v) }
-        music.lib.onMove = { v -> ops.move(v, music.lib.allFolders()) }
-        music.lib.onShare = { v -> ops.share(v) }
-        music.lib.onShareMany = { vs -> ops.shareMany(vs) }
-        music.lib.onDelete = { v -> ops.delete(v) }
-        music.lib.onRenameFolder = { f -> ops.renameFolder(f) }
-        music.lib.onDeleteFolder = { f -> ops.deleteFolder(f) }
-        music.lib.onDetails = { v -> ops.details(v, null) }
+        val pane = FrameLayout(this)
+        // (v310) صفحة الموسيقى بتتبني أول ما تفتحها بس (كانت بتتبني كلها وقت فتح التطبيق وده كان أكتر حاجة بتبطّأ البداية)
+        fun ensureMusic(): MusicUi {
+            musicUi?.let { return it }
+            val music = MusicUi(this, ui, th); musicUi = music; music.root.visibility = View.GONE
+            music.onNavTint = { c -> setNavTint(c) }
+            music.onGrant = { requestPermissions(arrayOf(MusicScan.permission()), 12) }
+            // (v194) صفحة الموسيقى = نفس كلاس صفحة الفيديوهات: نفس الإعدادات والعمليات (إعادة تسمية/نقل/مشاركة/حذف/تفاصيل) والبوابة بتاعة المخفي
+            music.lib.onSettings = lib.onSettings
+            music.lib.gate = { open -> lk.gate(open) }
+            music.lib.onRename = { v -> ops.rename(v) }
+            music.lib.onMove = { v -> ops.move(v, music.lib.allFolders()) }
+            music.lib.onShare = { v -> ops.share(v) }
+            music.lib.onShareMany = { vs -> ops.shareMany(vs) }
+            music.lib.onDelete = { v -> ops.delete(v) }
+            music.lib.onRenameFolder = { f -> ops.renameFolder(f) }
+            music.lib.onDeleteFolder = { f -> ops.deleteFolder(f) }
+            music.lib.onDetails = { v -> ops.details(v, null) }
+            pane.addView(music.root, 1, FrameLayout.LayoutParams(-1, -1))
+            return music
+        }
         // (v189) البوابات: 0 الفيديوهات · 1 الموسيقى · 2 المتصفح (صفحة المهام بقت زرار ⏳ في المشغّل + قايمة ⚙️ في المكتبة)
         // (v231) 3 المهام (صفحة منفصلة جنب المتصفح)
         showTabFn = { i ->
-            if (i == 0 || i == 1 || i == 3) {
+            if (i == 0 || i == 1 || i == 4) {
+                val prevTab = curTab
                 curTab = i
                 lib.root.visibility = if (i == 0) View.VISIBLE else View.GONE
-                music.root.visibility = if (i == 1) View.VISIBLE else View.GONE
-                tasksUi.root.visibility = if (i == 3) View.VISIBLE else View.GONE
-                tasksDlgRefresh = if (i == 3) ({ tasksUi.refresh() }) else null
+                if (i == 1) ensureMusic()
+                musicUi?.root?.visibility = if (i == 1) View.VISIBLE else View.GONE
+                tasksUi.root.visibility = if (i == 4) View.VISIBLE else View.GONE
+                tasksDlgRefresh = if (i == 4) ({ tasksUi.refresh() }) else null
                 navUi?.set(i)
-                if (i == 1) { music.ensureLoaded(); music.applyNavTint() } else setNavTint(null)
-                if (i == 3) tasksUi.refresh()
+                if (i == 1) { musicUi?.ensureLoaded(); musicUi?.applyNavTint() } else setNavTint(null)
+                if (i == 4) tasksUi.refresh()
                 updateTasksFab()
+                if (prevTab != i) {   // (v312) الصفحة الجديدة بتنزلق من ناحية اتجاه الانتقال (الشريط RTL: رقم أكبر = شمال)
+                    val target: View? = when (i) { 0 -> lib.root; 1 -> musicUi?.root; else -> tasksUi.root }
+                    if (target != null) Motion.tabEnter(target, if (i > prevTab) -1 else 1)
+                }
             }
         }
-        val nav = BottomNav(this, ui, th, 0) { i -> if (i == 2) { save(); startActivity(Intent(this, BrowserActivity::class.java)) } else if (i == 4) { save(); startActivity(Intent(this, FileManagerActivity::class.java)) } else showTabFn(i) }   // (v310) 4 الملفات = شاشة منفصلة زي المتصفح
+        val nav = BottomNav(this, ui, th, 0) { i -> if (i == 2) { save(); NavAnim.set(curTab, 2); startActivity(Intent(this, BrowserActivity::class.java)) } else if (i == 3) { save(); NavAnim.set(curTab, 3); startActivity(Intent(this, FileManagerActivity::class.java)) } else showTabFn(i) }   // (v310) 4 الملفات = شاشة منفصلة زي المتصفح
         navUi = nav
         if (!fromPlayer) {
             TaskCenter.listener = { if (!isDestroyed && !isFinishing) { tasksDlgRefresh?.invoke(); runOnUiThread { updateTasksFab() } } }
         }
-        val pane = FrameLayout(this)
         pane.addView(lib.root, FrameLayout.LayoutParams(-1, -1))
-        pane.addView(music.root, FrameLayout.LayoutParams(-1, -1))
         tasksUi.root.visibility = View.GONE
         pane.addView(tasksUi.root, FrameLayout.LayoutParams(-1, -1))   // (v231) صفحة المهام
         val fab = IconTextView(this).apply {
@@ -797,10 +812,15 @@ class MainActivity : Activity() {
             return
         }
         setContentView(frame)
+        if (!fromPlayer && b == null) { frame.alpha = 0f; frame.animate().setStartDelay(0L).alpha(1f).setDuration(160L).start() }   // (v312) بدل السبلاش: ظهور ناعم سريع
+        if (!fromPlayer) {   // (v310) أيقونة «الموسيقى» في اللانشر (alias) أو رجوع من المتصفح/الملفات لتبويب معيّن
+            val cn = intent?.component?.className ?: ""
+            val t0 = intent?.getStringExtra("tab")
+            if (cn.endsWith(".MusicLauncher") || t0 == "music") frame.post { showTabFn(1) }
+            else if (t0 == "tasks") frame.post { showTabFn(4) }
+        }
         intent?.getStringExtra("reopen_tab")?.let { t -> intent?.removeExtra("reopen_tab"); frame.post { if (!isFinishing && !isDestroyed) settingsDlg.show(t) } }
         // لو مفيش مفتاح Gemini: القايمة بتظهر مباشرة أول البرنامج، وبعدها الفحص
-        val coldStart = b == null
-        if (coldStart) showSplash()
         frame.post { permFlow { ensureKeys { keys.setText(Cfg.allMainKeys().joinToString("\n")); keyLoadersRef.forEach { it() }; refreshChip(); doScan() } } }
         if (intent?.action == Intent.ACTION_SEND) {
             val t = intent.getStringExtra(Intent.EXTRA_TEXT) ?: ""
@@ -863,37 +883,6 @@ class MainActivity : Activity() {
         prev.style = st(); holder.post { showDemo() }
         return StyleParts(holder, fontsV, animV, lookV)
     }
-    // ===== سبلاش: صورة البرنامج كاملة + 3 نقط لودنج صغيرة تحت الروبوت =====
-    private fun showSplash() {
-        val ui = Ui(this, Themes.byId(Cfg.str("theme", "mx")))
-        val ov = FrameLayout(this).apply { setBackgroundColor(0xFFF7F0E0.toInt()); isClickable = true }
-        // (v232) صورتين: رأسي (drawable-nodpi) وأفقي (drawable-land-nodpi) — النظام بيختار حسب الاتجاه.
-        // الرأسي بياخد الشاشة كلها (قص بسيط من الجنب)، والأفقي بيتعرض كامل من غير قص فوق خلفية مموّهة عشان العنوان والروبوت ما يتقصّوش
-        val land = resources.configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
-        if (land) ov.addView(ImageView(this).apply { setImageResource(R.drawable.splash_blur); scaleType = ImageView.ScaleType.CENTER_CROP }, FrameLayout.LayoutParams(-1, -1))
-        val iv = ImageView(this).apply { setImageResource(R.drawable.splash_art); scaleType = if (land) ImageView.ScaleType.FIT_CENTER else ImageView.ScaleType.CENTER_CROP }
-        ov.addView(iv, FrameLayout.LayoutParams(-1, -1))
-        val dots = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER; layoutDirection = View.LAYOUT_DIRECTION_LTR }
-        val anims = ArrayList<android.animation.Animator>()
-        for (i in 0 until 3) {
-            val d = View(this).apply {
-                background = android.graphics.drawable.GradientDrawable().apply { shape = android.graphics.drawable.GradientDrawable.OVAL; setColor(0xFF8B6B4A.toInt()) }
-                alpha = 0.3f
-            }
-            dots.addView(d, LinearLayout.LayoutParams(ui.dp(9), ui.dp(9)).apply { setMargins(ui.dp(6), 0, ui.dp(6), 0) })
-            anims += android.animation.ObjectAnimator.ofFloat(d, "alpha", 0.3f, 1f, 0.3f).apply {
-                duration = 900; repeatCount = android.animation.ValueAnimator.INFINITE; startDelay = i * 150L
-            }
-        }
-        // النقط: أسفل الشاشة في النص (فوق الأفلام اللي تحت)
-        ov.addView(dots, FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL).apply { bottomMargin = ui.dp(if (land) 14 else 44) })
-        addContentView(ov, ViewGroup.LayoutParams(-1, -1))
-        anims.forEach { it.start() }
-        ov.postDelayed({
-            ov.animate().alpha(0f).setDuration(400).withEndAction { anims.forEach { it.cancel() }; (ov.parent as? ViewGroup)?.removeView(ov) }.start()
-        }, 1800)
-    }
-
     // ===== صلاحيات: بتتطلب كلها أول ما تفتح البرنامج (زي MX Player) — كل صلاحية مرة واحدة بس =====
     private class PermStep(val id: String, val title: String, val why: String, val granted: () -> Boolean, val launch: () -> Unit)
     private fun permSteps(): List<PermStep> {
@@ -1184,7 +1173,7 @@ class MainActivity : Activity() {
     /** (v117) الرجوع من المتصفح بشريط البوابات: بيفتح البوابة اللي اخترتها */
     override fun onNewIntent(i: Intent?) {
         super.onNewIntent(i)
-        when (i?.getStringExtra("tab")) { "videos" -> showTabFn(0); "music" -> showTabFn(1); "tasks" -> showTabFn(3) }
+        when (i?.getStringExtra("tab")) { "videos" -> showTabFn(0); "music" -> showTabFn(1); "tasks" -> showTabFn(4) }
     }
     @Suppress("DEPRECATION")
     override fun onBackPressed() {
@@ -1194,6 +1183,6 @@ class MainActivity : Activity() {
         if (!fromPlayer && libUi?.back() == true) return
         super.onBackPressed()
     }
-    override fun startActivity(i: Intent?) { super.startActivity(i); try { overridePendingTransition(R.anim.act_enter, R.anim.act_stay) } catch (e: Exception) { LogStore.err("Main:720", e) } }
+    override fun startActivity(i: Intent?) { super.startActivity(i); try { if (!NavAnim.take(this)) overridePendingTransition(R.anim.act_enter, R.anim.act_stay) } catch (e: Exception) { LogStore.err("Main:720", e) } }
     override fun finish() { super.finish(); try { if (fromPlayer) overridePendingTransition(0, 0) else overridePendingTransition(R.anim.act_stay, R.anim.act_exit) } catch (e: Exception) { LogStore.err("Main:721", e) } }
 }

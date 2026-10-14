@@ -454,7 +454,16 @@ object A11y {
 /** TextView بيرسم الإيموجي كأيقونات تلقائيًا (بديل TextView العادي في كل البرنامج) */
 open class IconTextView(ctx: Context) : TextView(ctx) {
     private var autoCd: String? = null
+    private var icT: CharSequence? = null
+    private var icV: Pair<String, Float>? = null
+    private fun oneIcon(): Pair<String, Float>? {
+        val t: CharSequence? = text
+        if (t === icT) return icV
+        icT = t; icV = Icons.singleIcon(t)
+        return icV
+    }
     override fun setText(text: CharSequence?, type: BufferType?) {
+        icT = null
         super.setText(Icons.convert(text), type)
         val one = Icons.singleIcon(text)
         if (one != null) { val l = A11y.label(one.first); if (l != null && (contentDescription == null || contentDescription == autoCd)) { contentDescription = l; autoCd = l } }
@@ -462,7 +471,7 @@ open class IconTextView(ctx: Context) : TextView(ctx) {
     }
     /** (v96) نص = أيقونة واحدة بس → بنرسمها في نص الزرار مباشرة بلون النص (أبيض) بدل الـ Span */
     override fun onDraw(canvas: Canvas) {
-        val one = Icons.singleIcon(text)
+        val one = oneIcon()
         if (one == null || width <= 0 || height <= 0) { super.onDraw(canvas); return }
         val aw = (width - paddingLeft - paddingRight).toFloat(); val ah = (height - paddingTop - paddingBottom).toFloat()
         var s = textSize * one.second
@@ -473,6 +482,7 @@ open class IconTextView(ctx: Context) : TextView(ctx) {
     }
     override fun append(text: CharSequence?, start: Int, end: Int) {
         super.append(text, start, end)
+        icT = null
         (getText() as? Spannable)?.let { Icons.applyInPlace(it) }
     }
 }

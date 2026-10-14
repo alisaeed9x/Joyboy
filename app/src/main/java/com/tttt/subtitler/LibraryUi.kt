@@ -115,6 +115,7 @@ class LibraryUi(
     private val titleTv = ui.text(if (audio) "🎵 الموسيقى" else "📁 الفيديوهات", 19f, th.primary, true).apply { setSingleLine(); ellipsize = TextUtils.TruncateAt.END }
     private val subTv = ui.text("", 11f, th.muted).apply { setSingleLine() }
     private val listV = ListView(act)
+    private var animLvl = ""
     private val stateBox = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER; setPadding(ui.dp(28), ui.dp(28), ui.dp(28), ui.dp(28)) }
     private val stateTv = ui.text("", 14f, th.muted).apply { gravity = Gravity.CENTER }
     private val stateBar = ProgressBar(act)
@@ -319,6 +320,7 @@ class LibraryUi(
             divider = null; dividerHeight = 0; setSelector(android.R.color.transparent); isVerticalScrollBarEnabled = false
             setPadding(ui.dp(12), ui.dp(4), ui.dp(12), ui.dp(16)); clipToPadding = false; cacheColorHint = Color.TRANSPARENT
             layoutDirection = View.LAYOUT_DIRECTION_RTL
+            Motion.listAnim(this)
             adapter = object : BaseAdapter() {
                 override fun getCount() = if (grid()) (rows.size + cols() - 1) / cols() else rows.size
                 override fun getItem(i: Int): Any = rows.getOrNull(if (grid()) i * cols() else i) ?: i
@@ -468,6 +470,7 @@ class LibraryUi(
         emptyTv.visibility = if (rows.isEmpty()) View.VISIBLE else View.GONE
         stateBox.visibility = View.GONE; listV.visibility = View.VISIBLE
         (listV.adapter as BaseAdapter).notifyDataSetChanged()
+        if (lvl != animLvl) { animLvl = lvl; Motion.replay(listV) }   // (v312) أنيميشن الصفوف مع كل مستوى جديد بس (مش مع كل حرف بحث)
         applySelHeader()
         updateResume()
         if (::recBtn.isInitialized) recBtn.text = if (inRecents) "📂" else "🕘"

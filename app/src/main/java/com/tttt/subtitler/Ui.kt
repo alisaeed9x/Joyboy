@@ -53,17 +53,18 @@ class Ui(val ctx: Context, var th: Theme) {
     }
     fun switchRow(t: String, on: Boolean, onChange: (Boolean) -> Unit): Switch = IconSwitch(ctx).apply {
         text = t; isChecked = on; setTextColor(th.text); textSize = 14f; setPadding(0, dp(6), 0, dp(6))
-        setOnCheckedChangeListener { _, v -> onChange(v) }
+        setOnCheckedChangeListener { _, v -> onChange(v); if (isShown) Motion.pop(this, 0.94f) }
     }
     /** صف chips بيلف على أكتر من سطر؛ بيرجّع الـ container، والاختيار بيتبلّغ بـ onPick */
     fun chips(items: List<String>, selected: () -> String, onPick: (String) -> Unit): LinearLayout {
-        val col = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL }
         val all = ArrayList<Pair<String, TextView>>()
+        var built = false
         fun paint() = all.forEach { (k, v) ->
             val on = k == selected()
             v.setTextColor(if (on) (if (th.isLight) Color.WHITE else Color.BLACK) else th.text)
             v.background = box(if (on) th.primary else th.surface, if (on) th.primary else th.border, 20)
         }
+        fun build(col: LinearLayout) {
         var row: LinearLayout? = null; var w = 0
         val max = ctx.resources.displayMetrics.widthPixels - dp(70)
         for (label in items) {
@@ -74,9 +75,19 @@ class Ui(val ctx: Context, var th: Theme) {
             row.addView(tv, LinearLayout.LayoutParams(-2, -2).apply { setMargins(dp(3), dp(3), dp(3), dp(3)) })
             all.add(label to tv)
             Glass.pressable(tv)
-            tv.setOnClickListener { onPick(label); paint() }
+            tv.setOnClickListener { onPick(label); paint(); Motion.pop(tv, 0.86f) }
         }
-        paint(); return col
+        paint()
+        }
+        // (v313) بتتبني أول ما تتقاس بس — chips الإعدادات المقفولة مابتكلّفش حاجة وقت فتح البرنامج
+        val col = object : LinearLayout(ctx) {
+            override fun onMeasure(wSpec: Int, hSpec: Int) {
+                if (!built) { built = true; build(this) }
+                super.onMeasure(wSpec, hSpec)
+            }
+        }
+        col.orientation = LinearLayout.VERTICAL
+        return col
     }
     /** قسم قابل للطي (الموبايل صغير) */
     fun section(title: String, open: Boolean, vararg views: View): LinearLayout {
@@ -88,6 +99,7 @@ class Ui(val ctx: Context, var th: Theme) {
             val o = body.visibility != View.VISIBLE
             try { android.transition.TransitionManager.beginDelayedTransition((c.parent as? android.view.ViewGroup) ?: c, android.transition.AutoTransition().setDuration(220)) } catch (_: Exception) {}
             body.visibility = if (o) View.VISIBLE else View.GONE
+            if (o) Motion.stagger(body, 6, 30L)
             head.text = (if (o) "▾ " else "▸ ") + title
         }
         c.addView(head); c.addView(body); return c
