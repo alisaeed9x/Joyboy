@@ -31,6 +31,90 @@ object SongId {
         // (v298) الصيغة التانية للاسم (إنجليزي لو الأصلي عربي): بتتحفظ جنب الاسم عشان الكلمات تدوّر بكل لغة لوحدها
         Cfg.put("mlat_$id", if (m.tLat.isBlank() && m.aLat.isBlank()) "" else m.tLat + "\u0001" + m.aLat)
     }
+    /** (v300) الصيغة الإنجليزية بس (من غير ما نلمس الاسم) — لو اتجابت بعد حفظ الاسم */
+    fun saveAlt(id: Long, t: String, a: String) { Cfg.put("mlat_$id", if (t.isBlank() && a.isBlank()) "" else t.trim() + "\u0001" + a.trim()) }
+    /** (v306) مفاتيح الطلبات النصية الصغيرة (ألبوم/تصحيح/صيغة إنجليزي): مفتاح الصور/الوضع البصري الأول (لوحده)، وبعده الأساسية — فمفاتيح السماع الأساسية بتفضل فاضية للمقاطع */
+    fun textKeys(): List<String> = (Cfg.keys("viskeys") + Cfg.allMainKeys()).distinct()
+    fun hasArabic(s: String) = Regex("[\\u0600-\\u06FF]").containsMatchIn(s)
+
+    /**
+     * (v300) اسم الأغنية والمغني بحروف إنجليزية (الكتابة الرسمية في Spotify/YouTube Music لو معروفة، وإلا نقل حروف) —
+     * عشان LRCLIB والبوستر يلاقوها. طلب نصي صغير لجيميناي (من غير صوت). على خيط خلفية؛ بيرجّع ("","") لو فشل.
+     */
+    fun latinize(title: String, artist: String, onDone: (String, String) -> Unit) {
+        Thread {
+            var lt = ""; var la = ""
+            try {
+                val keys = textKeys()
+                val p = "The song title and the singer name below are written in Arabic. Write the SAME song and the SAME singer in English letters exactly the way they are officially written on Spotify / Apple Music / YouTube Music if you know that spelling; otherwise use a standard transliteration (do NOT translate the meaning, and do NOT change who the singer is). " +
+                    "If a field is empty or already in English letters, return it as it is.\nTitle: \"$title\"\nSinger: \"$artist\"\n" +
+                    "Output one JSON object only, no markdown: {\"title_latin\":\"\",\"artist_latin\":\"\"}"
+                for (k in keys.take(3)) {
+                    try {
+                        val r = Api.generate(Models.DEFAULT, k, p, null, 600, 0.0, true, false)
+                        val j = parseJson(r.text)
+                        if (j != null) {
+                            lt = j.optString("title_latin").trim(); la = j.optString("artist_latin").trim()
+                            if (lt.isNotEmpty() || la.isNotEmpty()) break
+                        }
+                    } catch (_: Throwable) {}
+                }
+            } catch (e: Throwable) { LogStore.err("songid-latin", e) }
+            onDone(lt, la)
+        }.apply { isDaemon = true }.start()
+    }
+
+    /**
+     * (v305) تصحيح/إكمال المعلومات بطلب نصي لجيميناي: الحقول اللي اليوزر قال إنها صح (مش معلّمة غلط) هي الحقيقة المرجعية،
+     * والحقول المعلّمة غلط (أو الألبوم الفاضي) بتتدوّر من جديد على أساسها. بيرجّع الاسم والمغني والألبوم + سنة + الصيغة الإنجليزي.
+     * onDone(null, سبب) لو فشل أو ما اتأكدش.
+     */
+    fun repair(m: SongMatch, wrongTitle: Boolean, wrongArtist: Boolean, wrongAlbum: Boolean, fileName: String, durSec: Double, onDone: (SongMatch?, String) -> Unit) {
+        Thread {
+            var out: SongMatch? = null; var msg = ""
+            try {
+                val keys = textKeys()
+                if (keys.isEmpty()) { onDone(null, "مفيش مفتاح جيميناي"); return@Thread }
+                fun fld(label: String, v: String, wrong: Boolean) =
+                    if (v.isBlank()) "$label: (unknown — find it)\n" else if (wrong) "$label: \"$v\"  ← WRONG, reported by the user; never return this (or a trivial spelling variant) again\n" else "$label: \"$v\"  ← CORRECT (verified by the user — treat as ground truth)\n"
+                val p = buildString {
+                    append("You are a music metadata expert (Arabic — Egyptian, Gulf, Levantine, Maghreb, classical tarab — and international music). The metadata of ONE song file is partly wrong. ")
+                    append("Fields marked CORRECT are ground truth: build on them. Replace the fields marked WRONG or unknown with the real values of the SAME recording.\n\n")
+                    append(fld("Song title", m.title, wrongTitle)); append(fld("Performer (lead singer / band)", m.artist, wrongArtist)); append(fld("Album", m.album, wrongAlbum))
+                    if (fileName.isNotBlank()) append("File name (weak hint, often wrong): \"$fileName\"\n")
+                    if (durSec > 0) append("Track duration: about ${Math.round(durSec)} seconds\n")
+                    append("\nRULES:\n- Use Google Search to verify. The album is the ORIGINAL official release the song first appeared on (studio album / EP / official single title), NOT a compilation, greatest-hits, playlist or YouTube channel. If the song was only released as a single, the single's title is the album.\n")
+                    append("- Written in the original language/script (Arabic songs in Arabic). Performer = the singer of THIS recording, not the composer or lyricist; many classic songs are re-sung by other singers, so keep the CORRECT performer given above.\n")
+                    append("- Never invent: if below ~70% sure of a field, return \"\" for it.\n")
+                    append("- *_latin = the same value written in English letters exactly as on Spotify / Apple Music if known, otherwise a standard transliteration.\n")
+                    append("OUTPUT: one JSON object only, no markdown: {\"title\":\"\",\"artist\":\"\",\"album\":\"\",\"year\":\"\",\"title_latin\":\"\",\"artist_latin\":\"\",\"album_latin\":\"\",\"confidence\":0}")
+                }
+                var j: JSONObject? = null
+                loop@ for (k in keys.take(3)) {
+                    for (useSearch in booleanArrayOf(true, false)) {
+                        try {
+                            val r = Api.generate(Models.DEFAULT, k, p, null, 1500, 0.0, true, useSearch)
+                            j = parseJson(r.text); if (j != null) break@loop
+                        } catch (e: ApiErr) { msg = e.message ?: ""; if (e.code == 429) continue@loop }
+                        catch (e: Throwable) { msg = e.message ?: "" }
+                    }
+                }
+                if (j == null) { onDone(null, "جيميناي ما ردّش" + (if (msg.isNotBlank()) ": $msg" else "")); return@Thread }
+                val jj: JSONObject = j
+                fun g(k: String) = jj.optString(k).trim()
+                var title = if (wrongTitle) g("title") else m.title
+                var artist = if (wrongArtist) g("artist") else m.artist
+                var album = if (wrongAlbum || m.album.isBlank()) g("album").ifBlank { if (wrongAlbum) "" else m.album } else m.album
+                val conf = jj.optInt("confidence", 100)
+                if ((wrongTitle && title.isEmpty()) || (wrongArtist && artist.isEmpty())) { onDone(null, "جيميناي مش متأكد من القيمة الصح"); return@Thread }
+                if (conf in 1..49 && (wrongTitle || wrongArtist)) { onDone(null, "جيميناي مش متأكد (ثقته $conf%)"); return@Thread }
+                if (title.isEmpty()) title = m.title
+                out = SongMatch(title, artist, album, if (conf <= 0) 100 else conf, g("title_latin").ifBlank { m.tLat }, g("artist_latin").ifBlank { m.aLat })
+            } catch (e: Throwable) { LogStore.err("songid-repair", e); msg = e.message ?: "" }
+            onDone(out, if (out == null) msg.ifBlank { "فشل" } else "")
+        }.apply { isDaemon = true }.start()
+    }
+
     fun clearOverride(id: Long) { Cfg.put("mname_$id", ""); Cfg.put("malbum_$id", ""); Cfg.put("mlat_$id", "") }
     /** (v298) الاسم/الفنان بالحروف اللاتينية (أو اللغة التانية) المحفوظين مع التعرّف — null لو مفيش */
     fun alt(id: Long): Pair<String, String>? {
@@ -115,7 +199,7 @@ object SongId {
         append("STEP 1 — LISTEN. Internally transcribe the most distinctive sung/spoken lines you can clearly hear (the hook/chorus and 2-3 other lines, in the original language). Put them in \"heard\" (max 300 characters, no invention).\n")
         append("STEP 2 — CLASSIFY: kind = song | quran | nasheed | speech | soundtrack | other.\n")
         append("STEP 3 — IDENTIFY by kind:\n")
-        append("• song: \"title\" = the official released title of THIS song (original language/script — Arabic songs in Arabic, English in English). \"artist\" = the PERFORMER (lead singer / band), not the composer, lyricist, label, uploader or channel. If it is a cover, remix, live or duet version, name the performer you actually hear. Do not confuse songs that share a chorus or lyrics; match the specific melody, arrangement and voice.\n")
+        append("• song: \"title\" = the official released title of THIS song (original language/script — Arabic songs in Arabic, English in English). \"artist\" = the PERFORMER (lead singer / band), not the composer, lyricist, label, uploader or channel. If it is a cover, remix, live or duet version, name the performer you actually hear. Many songs — especially classic Arabic ones — have been re-sung by dozens of different singers: decide the performer ONLY from the voice, the arrangement and the recording quality you actually hear, never default to the original or most famous singer and never to the name in the file. Do not confuse songs that share a chorus or lyrics; match the specific melody, arrangement and voice.\n")
         append("• quran: \"artist\" = the reciter's full name in Arabic (identify the voice, style and riwaya; e.g. مشاري راشد العفاسي، عبد الباسط عبد الصمد، ماهر المعيقلي…). \"title\" = the surah name in Arabic with the verse range you hear, e.g. «سورة الكهف (١–١٠)». Decide the surah from the verses actually recited.\n")
         append("• nasheed: \"artist\" = the munshid / group, \"title\" = the nasheed's title.\n")
         append("• speech (lecture, sermon, podcast, audiobook): \"artist\" = the speaker, \"title\" = the lecture/episode/chapter title or its clear topic.\n")
@@ -127,6 +211,7 @@ object SongId {
         if (avoid.isNotEmpty()) append("\nThese answers were already reported WRONG by the user — NEVER return them again (nor a trivial spelling variant of them): " + avoid.joinToString("; ") + ". Find the real answer instead.")
         append("\n\nRULES:\n- Never invent. If you are below ~70% sure of a field, leave THAT field as \"\" (empty is better than wrong). Knowing the title but not the performer (or the reverse) is fine — fill only what you are sure of.\n")
         append("- Do not output a website, channel, uploader, or generic words like \"Unknown\" / \"Track\".\n")
+        append("- \"album\" = the ORIGINAL official album/EP (or the single's title) this song was first released on — NOT a compilation, greatest-hits or playlist. The album is used to find the cover art, so fill it whenever you are reasonably sure (≥70%); otherwise leave it \"\".\n")
         append("- \"confidence\" = your honest 0-100 certainty that title AND artist are both correct.\n")
         if (multi) append("- The user will choose from your list, so give up to 4 DISTINCT candidates (different songs / different performers), best first, each a real existing track with its own honest confidence. Never pad the list with guesses you do not believe in; one or two good candidates is fine.\n")
         else append("- Give exactly ONE candidate (the best), or an empty list if you are not sure.\n")
@@ -192,6 +277,9 @@ object SongId {
         val x = nk(a.tLat.ifBlank { a.title }); val y = nk(b.tLat.ifBlank { b.title })
         if (x.isNotEmpty() && x == y) return true
         if (nk(a.title) == nk(b.title) && nk(a.title).isNotEmpty()) return true
+        // (v306) عربي عند واحد وإنجليزي عند التاني: نقارن الصيغة اللاتينية بتاعة كل واحد بالأصل التاني
+        if (a.tLat.isNotBlank() && nk(a.tLat) == nk(b.title) && nk(b.title).isNotEmpty()) return true
+        if (b.tLat.isNotBlank() && nk(b.tLat) == nk(a.title) && nk(a.title).isNotEmpty()) return true
         return ArNorm.sim(a.tLat.ifBlank { a.title }, b.tLat.ifBlank { b.title }) >= 0.85 || ArNorm.sim(a.title, b.title) >= 0.85
     }
     private fun sameArtist(a: SongMatch, b: SongMatch): Boolean {

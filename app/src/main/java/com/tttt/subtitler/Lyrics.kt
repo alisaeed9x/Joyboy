@@ -435,7 +435,25 @@ object LyricsEngine {
             aiMsg = o.msg
         }
 
-        val b = best()
+        var b = best()
+        // (v304) النسخة اللي اتلقت من غير توقيت: ندوّر في LRCLIB وMusixmatch بالاسم/المغني اللي المصدر نفسه رجّعهم، لو فيه نسخة متزامنة
+        if (b != null && b.synced.isBlank() && !retry) {
+            val tried = HashSet<String>(vars.map { ArNorm.fold(it.first + " " + it.second) })
+            val pairs = ArrayList<Pair<String, String>>()
+            pairs.add(b.title to b.artist)
+            for (p in ArNorm.variants(b.title, b.artist)) pairs.add(p)
+            var n6 = 0
+            for ((tt, aa) in pairs) {
+                if (tt.isBlank() || !tried.add(ArNorm.fold(tt + " " + aa))) continue
+                if (++n6 > 3) break
+                x.addWant(tt)
+                onStage("🔎 بدوّر على نسخة متزامنة بالاسم «$tt»…")
+                lrclibRound(x, tt, aa)
+                mxmRound(x, tt, aa)
+                val sync = x.found.filter { it.key() != skip && it.synced.isNotBlank() }.maxByOrNull { it.score }
+                if (sync != null) { b = sync; break }
+            }
+        }
         if (b == null) {
             if (!x.answered) { onDone(null, "مفيش اتصال بالمصدر (" + x.lastErr.take(60) + ") — جرّب تاني"); return }
             save(app, t, M_FULL, LyricsResult(name, by, emptyList(), true, 1, 1, emptySet(), "", emptyList(), true, "lrclib"))
@@ -443,17 +461,18 @@ object LyricsEngine {
             onDone(null, (if (retry) "ما لقيتش نتيجة تانية — جرّب 🎼 نسخ بديلة أو ✍ كلمات يدوي" else "ما لقيتش الأغنية دي (LRCLIB + Musixmatch + YouTube Music + مصدر احتياطي + جيميناي) — جرّب 🎼 نسخ بديلة أو ✍ كلمات يدوي") + tail)
             return
         }
-        var res = build(t, name, by, b)
+        val bf: LyrCand = b
+        var res = build(t, name, by, bf)
         if (res == null) { onDone(null, "النتيجة فاضية"); return }
         // (v294) النسخة اللي اتلقت من غير توقيت: جيميناي يسمع الأغنية ويوقّت كل سطر (لو التطابق مع الصوت كويس؛ غير كده بنسيب النص زي ما هو)
         if (!res.synced && res.raw.size >= 4 && Cfg.allMainKeys().isNotEmpty() && !retry) {
-            val o = LyricsAI.run(app, t, name, by, SongId.albumOf(t.id), res.raw, b.src, false, onStage)
+            val o = LyricsAI.run(app, t, name, by, SongId.albumOf(t.id), res.raw, bf.src, false, onStage)
             if (o.res != null && o.res.synced && o.res.source.endsWith("+gemini")) res = o.res
         }
-        lastId[k] = b.key()
+        lastId[k] = bf.key()
         val merged = ArrayList<LyrCand>(x.found)
         for (c in candidates(app, t)) if (merged.none { it.key() == c.key() }) merged.add(c)   // النسخ اللي اتلقت قبل كده (نسخ بديلة) ما بتضيعش
-        saveCands(app, t, merged, b.key())
+        saveCands(app, t, merged, bf.key())
         save(app, t, M_FULL, res); onDone(res, "")
     }
 

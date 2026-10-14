@@ -75,11 +75,16 @@ object LyricsAI {
     }
 
     // ===================== ② السماع بتوقيت =====================
-    private fun listenPrompt(hintName: String, hintBy: String): String = buildString {
-        append("You are a precise lyrics transcriber and timer. The audio is a SHORT excerpt of a song")
-        if (hintName.isNotBlank()) append(" (\"$hintName\"" + (if (hintBy.isNotBlank()) " by $hintBy" else "") + ")")
+    private fun listenPrompt(hintName: String, hintBy: String, album: String = ""): String = buildString {
+        val ar = SongId.hasArabic(hintName + hintBy + album)
+        append("You are a meticulous lyrics transcriber and timer for songs in every language, with native-level command of ALL Arabic dialects (Egyptian, Gulf, Levantine, Maghrebi, Sudanese, Iraqi) and of classical tarab Arabic. The audio is a SHORT excerpt of a song")
+        if (hintName.isNotBlank()) append(" (title \"$hintName\"" + (if (hintBy.isNotBlank()) ", performer \"$hintBy\"" else "") + (if (album.isNotBlank()) ", album \"$album\"" else "") + ")")
         append(".\nTranscribe ONLY the words that are actually sung or spoken in this excerpt, in the original language and script, one sung phrase per row, with its start and end time in seconds measured from the START of this excerpt (1 decimal).\n")
-        append("RULES:\n- Never invent or complete lines you cannot hear. Skip instrumental parts. If a phrase is unintelligible, leave it out.\n")
+        append("FIRST (internally, do not output): decide the language and dialect being sung" + (if (ar) " — the title/performer are Arabic, so it is most likely Arabic, probably the singer's own dialect (e.g. Egyptian for Egyptian singers); verify by listening" else "") + ". Then transcribe.\n")
+        append("RULES:\n- Never invent or complete lines you cannot hear. Skip instrumental parts. If a phrase is unintelligible, leave it out — a missing line is better than gibberish.\n")
+        append("- Every row must be a meaningful, grammatical phrase of that language. Never output strings of random letters, broken words or words that mean nothing: if what you wrote does not make sense, listen again and pick the real words that fit the sound, the rhyme and the context of a song, or drop the row.\n")
+        if (ar) append("- Arabic: write in clean Arabic script with the natural spelling of the SUNG dialect. Egyptian examples: ده/دي/دول, إيه, مش, عايز/عايزة, بقى, كده, ليه, فين, أنا بحبك — do NOT convert dialect to Modern Standard Arabic and do NOT 'correct' grammar. Keep the real dialect words, use ة/ه, ى/ي, أ/إ/ا consistently, no tashkeel (diacritics), no English letters, no Latin transliteration, no mixed-in Hindi/Turkish/Persian letters.\n")
+        append("- Use the title, performer and album only as context for names and vocabulary; never copy lines from memory that you do not actually hear in this excerpt.\n")
         append("- A phrase is one natural sung line (usually 2-8 seconds). Do not merge two lines in one row. Write repeated lines every time they are sung.\n")
         append("- Times must follow the real audio: s = the moment the first word of the phrase starts, e = the moment its last word ends.\n")
         append("OUTPUT: JSON only: {\"lines\":[{\"s\":0.0,\"e\":0.0,\"t\":\"\"}]}")
@@ -111,7 +116,7 @@ object LyricsAI {
         val done = java.util.concurrent.atomic.AtomicInteger(0)
         val nThreads = keys.size.coerceIn(1, 3)
         val latch = CountDownLatch(nThreads)
-        val prompt = listenPrompt(name, by)
+        val prompt = listenPrompt(name, by, SongId.albumOf(t.id))
         for (w in 0 until nThreads) {
             Thread {
                 try {

@@ -23,6 +23,10 @@ class EqView(ctx: Context) : View(ctx) {
     private val level = FloatArray(N)       // المعروض (بعد التنعيم)
     private val target = FloatArray(N)      // من آخر FFT
     private val peak = FloatArray(N)
+    /** (v306) كل فريم: bass (0..1 طاقة الباص المنعّمة) وpulse (1 لحظة الضربة وبينزل بسرعة) — بتحرّك الكلمات على إيقاع الأغنية */
+    var onFrame: ((Float, Float) -> Unit)? = null
+    private var bassAvg = 0.1f
+    private var pulse = 0f
     private var viz: Visualizer? = null
     private var sessionId = 0
     @Volatile private var live = false      // وصلنا بيانات حقيقية
@@ -96,6 +100,12 @@ class EqView(ctx: Context) : View(ctx) {
                 level[i] = if (tg > cur) cur + (tg - cur) * minOf(1f, dt * 28f) else cur + (tg - cur) * minOf(1f, dt * 7f)
                 if (level[i] > peak[i]) peak[i] = level[i] else peak[i] = maxOf(level[i], peak[i] - dt * 0.55f)
                 if (level[i] > 0.004f || peak[i] > 0.01f) moving = true
+            }
+            run {   // (v306) ضربة الإيقاع: الباص بيعدّي متوسطه الجاري بنسبة واضحة
+                var b = 0f; for (i in 0 until 6) b += level[i]; b /= 6f
+                bassAvg += (b - bassAvg) * minOf(1f, dt * 1.5f)
+                pulse = if (playing && b > bassAvg * 1.25f + 0.04f && pulse < 0.55f) 1f else maxOf(0f, pulse - dt * 4.5f)
+                onFrame?.invoke(if (playing) b else 0f, if (playing) pulse else 0f)
             }
             invalidate()
             if (playing || moving) postOnAnimation(this) else { running = false; last = 0L }

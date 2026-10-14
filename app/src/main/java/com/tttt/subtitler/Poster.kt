@@ -216,22 +216,34 @@ object Poster {
      * (v241 · v250) زرار «🖼↻» في المشغّل: بيدوّر من الأول في المصادر بالترتيب (iTunes ← Deezer ← MusicBrainz ← صورة المغني).
      * لو ملقاش حاجة بيسيب الغلاف الحالي زي ما هو. على خيط خلفية.
      */
-    fun refetchSync(ctx: Context, title0: String, artist0: String): Bitmap? {
+    fun refetchSync(ctx: Context, title0: String, artist0: String, alt: Pair<String, String>? = null): Bitmap? {
         val title = clean(title0); val artist = artist0.trim()
         if (title.length < 2) return null
         resetSkip(title, artist)
         val k = key(title, artist)
         try {
             File(dir(ctx), "$k.none").delete()
-            for (u in urlSeq(title, artist)) {
-                val bytes = http(u) ?: continue
-                val bmp = BitmapFactory.decodeByteArray(bytes, 0, bytes.size) ?: continue
-                if (!shapeOk(u, bmp)) continue
-                File(dir(ctx), "$k.jpg").writeBytes(bytes)
-                return bmp
+            for ((tt, aa) in namesToTry(title, artist, alt)) {   // (v300) الاسم الأصلي وبعده الإنجليزي (لو متحفظ)
+                for (u in urlSeq(tt, aa)) {
+                    val bytes = http(u) ?: continue
+                    val bmp = BitmapFactory.decodeByteArray(bytes, 0, bytes.size) ?: continue
+                    if (!shapeOk(u, bmp)) continue
+                    File(dir(ctx), "$k.jpg").writeBytes(bytes)   // بيتخزّن على مفتاح الاسم الأصلي عشان القايمة تلاقيه
+                    return bmp
+                }
             }
         } catch (e: Throwable) { LogStore.err("poster", e) }
         return null
+    }
+
+    /** (v300) أسماء البحث بالترتيب: الأصلي، وبعده الصيغة التانية (إنجليزي لو الأصلي عربي) لو مختلفة */
+    private fun namesToTry(title: String, artist: String, alt: Pair<String, String>?): List<Pair<String, String>> {
+        val out = ArrayList<Pair<String, String>>(); out.add(title to artist)
+        if (alt != null) {
+            val at = clean(alt.first.ifBlank { title }).trim(); val aa = alt.second.ifBlank { artist }.trim()
+            if (at.length >= 2 && (norm(at) != norm(title) || norm(aa) != norm(artist))) out.add(at to aa)
+        }
+        return out
     }
 
     /** (v298) الغلاف المحفوظ للأغنية دي (لو اتجاب قبل كده) من غير أي نت — للقايمة */
@@ -247,7 +259,7 @@ object Poster {
     }
 
     /** على خيط خلفية. بيرجّع الغلاف أو null */
-    fun fetchSync(ctx: Context, title0: String, artist0: String): Bitmap? {
+    fun fetchSync(ctx: Context, title0: String, artist0: String, alt: Pair<String, String>? = null): Bitmap? {
         val title = clean(title0); val artist = artist0.trim()
         if (title.length < 2) return null
         val k = key(title, artist); val jpg = File(dir(ctx), "$k.jpg"); val none = File(dir(ctx), "$k.none")
@@ -257,12 +269,14 @@ object Poster {
             val skip = Cfg.str(skipKey(title, artist), "0").toIntOrNull() ?: 0
             // الرابط الميّت (مثلًا إصدار ملوش غلاف في Cover Art Archive) بيتخطّى من غير ما يتعدّ، و«البوستر غلط» بيعدّي على اللي بعده
             var n = 0
-            for (u in urlSeq(title, artist)) {
-                val bytes = http(u) ?: continue
-                val bmp = BitmapFactory.decodeByteArray(bytes, 0, bytes.size) ?: continue
-                if (!shapeOk(u, bmp)) continue
-                if (n++ < skip) continue
-                jpg.writeBytes(bytes); return bmp
+            for ((tt, aa) in namesToTry(title, artist, alt)) {   // (v300) بعد الاسم الأصلي بنجرّب الاسم الإنجليزي (iTunes/Deezer/MusicBrainz بيفهموه أحسن)
+                for (u in urlSeq(tt, aa)) {
+                    val bytes = http(u) ?: continue
+                    val bmp = BitmapFactory.decodeByteArray(bytes, 0, bytes.size) ?: continue
+                    if (!shapeOk(u, bmp)) continue
+                    if (n++ < skip) continue
+                    jpg.writeBytes(bytes); return bmp
+                }
             }
             none.writeText("x")
         } catch (e: Throwable) { LogStore.err("poster", e) }

@@ -94,7 +94,7 @@ object MusicEngine {
         try { val pp = m.playbackParams; pp.setSpeed(speed); pp.setPitch(1f); m.playbackParams = pp } catch (e: Throwable) { LogStore.err("music-speed", e) }
     }
 
-    // (v202) فصل الصوت عن الموسيقى: 0 الكل (الأغنية الأصلية) · 1 الصوت بس · 2 الموسيقى بس — الملفات بتتحسب مرة وبتتخزّن (Karaoke.kt)
+    // (v202) فصل الصوت عن الموسيقى: 0 الكل (الأغنية الأصلية) · 1 الصوت بس · 2 الموسيقى بس — الملفات بتتحسب مرة وبتتخزّن (v307: StemAi.kt بالذكاء الصناعي)
     @Volatile var stem = 0; private set
     @Volatile var stemPct = -1; private set          // -1 مفيش تحليل شغّال · 0..100 نسبة التحليل
     @Volatile private var stemErr = ""
@@ -112,15 +112,26 @@ object MusicEngine {
         if (stem != 0 && want == 0) requestStem(t)
         if (want != playingStem && mp != null) swapSource(want)
     }
+    /** (v307) بيمسح فصل الأغنية الحالية ويعيده (بعد تغيير محرك الفصل) */
+    fun redoStem() {
+        val t = current ?: return; val a = app ?: return
+        Karaoke.file(a, t, 1).delete(); Karaoke.file(a, t, 2).delete()
+        if (stem == 0) stem = 1
+        try { Cfg.put("music_stem", stem.toString()) } catch (_: Throwable) {}
+        applyStem(); changed()
+    }
+    /** (v308) فصل تلقائي لكل أغنية بتشتغل — بس لو الموديلات نازلة والمكتبة شغّالة (Cfg stem_auto، افتراضي شغّال) */
+    private fun autoStem(c: Context): Boolean = Cfg.str("stem_auto", "1") == "1" && StemAi.libOk() && StemAi.ready(c)
     private fun requestStem(t: Track) {
         val a = app ?: return
-        if (Karaoke.isRunning(t)) return
+        if (StemAi.isRunning(t)) return
         stemPct = 0; changed()
         Thread {
-            val err = try { Karaoke.analyze(a, t, true) { p -> if (p != stemPct) { stemPct = p; if (p % 5 == 0) changed() } } } catch (e: Throwable) { e.message ?: "فشل" }
+            // (v307) فصل بالذكاء الصناعي (MDX-Net) بدل القناة الوسطى. بيتلغي لو رجعت «الكل» أو غيّرت الأغنية
+            val err = try { StemAi.separate(a, t, { p -> if (current?.id == t.id && p != stemPct) { stemPct = p; if (p % 3 == 0) changed() } }, { current?.id != t.id }) } catch (e: Throwable) { e.message ?: "فشل" }
             main.post {
-                stemPct = -1
-                if (err != null) { stemErr = "🎚 " + t.title + ": " + err; stem = 0; try { Cfg.put("music_stem", "0") } catch (_: Throwable) {} }
+                if (current?.id == t.id) stemPct = -1
+                if (err != null && err != "اتلغى" && stem != 0) { stemErr = "🎚 " + t.title + ": " + err; stem = 0; try { Cfg.put("music_stem", "0") } catch (_: Throwable) {} }
                 if (current?.id == t.id) applyStem()
                 changed()
             }
@@ -164,19 +175,21 @@ object MusicEngine {
             stem = 0; Cfg.put("music_stem", "0")      // (v230) زرار فصل الصوت اتشال من الواجهة — بنصفّر أي قيمة قديمة محفوظة عشان الأغنية تشتغل عادي
         } catch (_: Throwable) {}
     }
+    /** (v302) محدش بيستخدمها من الواجهة (السلايدر اتشال) — لو اتنادت بتحرّك صوت النظام على نفس المقياس (0..200 ← 0..100) */
     fun setVol(p: Int) {
-        volPct = p.coerceIn(0, 200)
-        app?.let { SysVol.set(it, minOf(volPct, 100)) }   // (v270) 0..100 = صوت النظام نفسه؛ فوق 100 النظام على الآخر + تضخيم
-        try { Cfg.put("music_vol", volPct.toString()) } catch (_: Throwable) {}
-        applyVol()
+        app?.let { SysVol.set(it, p.coerceIn(0, 200) / 2) }
+        syncSys()
     }
-    /** (v270) مزامنة السلايدر مع زراري الفوليوم: صوت النظام هو الأصل؛ التضخيم (>100) بيفضل بس لو النظام على الآخر */
+    /**
+     * (v302) الصوت = زراري الفوليوم بس: صوت النظام 0..100% بيتحوّل لـ 0..200% (كل خطوة فوليوم = خطوتين في المقياس).
+     * لحد 100% صوت عادي، وفوق 100% (يعني النظام فوق النص) بيتضاف تضخيم LoudnessEnhancer لحد +15dB لما النظام على الآخر (200%).
+     */
     fun syncSys() {
         val a = app ?: return
-        val s = SysVol.get(a)
-        val np = if (volPct > 100 && s >= 100) volPct else s
+        val np = (SysVol.get(a) * 2).coerceIn(0, 200)
         if (np != volPct) { volPct = np; try { Cfg.put("music_vol", volPct.toString()) } catch (_: Throwable) {}; applyVol() }
     }
+    private var volWatch: SysVol.Watch? = null
     fun boostDbText(): String = if (volPct <= 100) "" else "+" + "%.1f".format((volPct - 100) * 0.15) + " dB"
     private fun applyVol() {
         val m = mp ?: return
@@ -225,6 +238,8 @@ object MusicEngine {
     fun play(ctx: Context, q: List<Track>, i: Int, fromHistory: Boolean = false) {
         if (i !in q.indices) return
         app = ctx.applicationContext
+        if (volWatch == null) volWatch = SysVol.watch(ctx.applicationContext) { syncSys() }   // (v302) زراري الفوليوم بيغيّروا التضخيم فورًا حتى والشاشة مقفولة/المشغّل مقفول
+        syncSys()
         if (!fromHistory && queue === q && idx in q.indices && idx != i) { history.add(idx); if (history.size > 50) history.removeAt(0) }
         if (queue !== q) history.clear()
         queue = q; idx = i; ready = false; wantPlay = true; pendingNext = -1
@@ -235,7 +250,7 @@ object MusicEngine {
         try { RecentSongs.add(t.uri) } catch (_: Throwable) {}
         val want = if (stem != 0 && Karaoke.hasStem(ctx.applicationContext, t, stem)) stem else 0
         openPlayer(ctx.applicationContext, t, want, 0)
-        if (stem != 0 && want == 0) requestStem(t)
+        if (want == 0 && (stem != 0 || autoStem(ctx.applicationContext))) requestStem(t)   // (v308) الفصل تلقائي في الخلفية لكل أغنية
         changed()
     }
     private fun peekRandom(): Int {
