@@ -106,8 +106,8 @@ class OrbView(ctx: Context) : View(ctx) {
         super.onSizeChanged(w, h, ow, oh)
         cx = w / 2f; cy = h / 2f
         ro = minOf(w * 0.40f, h * 0.49f)
-        ra = ro * 0.62f; rt = ro * 0.845f; rn = ro * 0.39f
-        dOut = ro * 1.04f; dIn = ra * 2f + 10 * d
+        ra = ro * 0.62f; rt = ro * 0.845f; rn = ro * 0.47f
+        dOut = ro * 1.06f; dIn = ra * 2f + 10 * d
         glassClip.reset(); glassClip.addCircle(cx, cy, ro, Path.Direction.CW)
         holeClip.reset(); holeClip.addCircle(cx, cy, ra, Path.Direction.CW)
         computeGap()

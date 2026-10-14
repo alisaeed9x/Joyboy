@@ -342,62 +342,75 @@ object LyricsEngine {
         }
         val name = (hint?.first ?: "").ifBlank { t.title }
         val by = (hint?.second ?: "").ifBlank { t.artist }
-        val vars = ArNorm.variants(name, by)
+        // (v298) مجموعات الأسماء: العربي لوحده والإنجليزي لوحده (لو التعرّف جاب الصيغتين) — كل مجموعة بتعدّي على كل المصادر قبل اللي بعدها
+        val hasAr = { s: String -> Regex("[\\u0600-\\u06FF]").containsMatchIn(s) }
+        val groups = ArrayList<Pair<String, List<Pair<String, String>>>>()
+        groups.add((if (hasAr(name + by)) "عربي" else "إنجليزي") to ArNorm.variants(name, by))
+        SongId.alt(t.id)?.let { (an, aa) ->
+            val n2 = an.ifBlank { name }; val b2 = aa.ifBlank { by }
+            if (ArNorm.fold(n2 + " " + b2) != ArNorm.fold(name + " " + by)) groups.add((if (hasAr(n2 + b2)) "عربي" else "إنجليزي") to ArNorm.variants(n2, b2))
+        }
+        val vars = groups.flatMap { it.second }.distinct()
         val skip: String? = if (retry) (lastId[k] ?: pickedId(app, t).ifBlank { null }) else null
         val x = Ctx(t, by, 10.0, listOf(name))
+        for (p in vars) x.addWant(p.first)   // (v298) أسماء المجموعتين كلها مقبولة في مطابقة النتايج (عربي/إنجليزي)
         if (retry) for (c in candidates(app, t)) x.add(c)   // «الكلمات غلط»: النسخ المحفوظة قبل كده (من أي مصدر) بتدخل في الاختيار من غير ما نستنى الشبكة
         fun best(): LyrCand? = x.found.filter { it.key() != skip }.maxByOrNull { it.score }
+        fun runChain(vars: List<Pair<String, String>>, lbl: String) {
 
-        // 1) LRCLIB
-        var n = 0
-        for ((tt, aa) in vars) {
-            n++
-            onStage("🔎 بدوّر في LRCLIB ($n/${vars.size})…")
-            lrclibRound(x, tt, aa)
-            if (best() != null) break
-        }
-        if (best() == null && x.answered) {
-            onStage("🔎 بحث حر في LRCLIB…")
-            try {
-                val s = httpGet(API + "search?q=" + enc((ArNorm.clean(name) + " " + ArNorm.clean(by)).trim()))
-                if (s != null) { val a = JSONArray(s); for (i in 0 until minOf(a.length(), 20)) x.add(lrcCand(a.getJSONObject(i), x)) }
-            } catch (e: Throwable) { x.lastErr = e.message ?: e.javaClass.simpleName }
-        }
-
-        // 2) Musixmatch (من أداة lyrics-api): لو مفيش نسخة متزامنة لسه
-        fun hasSynced() = x.found.any { it.synced.isNotBlank() && it.key() != skip }
-        if (!hasSynced()) {
-            var n2 = 0
+            // 1) LRCLIB
+            var n = 0
             for ((tt, aa) in vars) {
-                if (++n2 > 3) break
-                onStage("🔎 بدوّر في Musixmatch ($n2)…")
-                mxmRound(x, tt, aa)
-                if (hasSynced()) break
-            }
-        }
-
-        // 3) YouTube Music (كلمات عادية) — لو لسه مفيش حاجة
-        if (best() == null) {
-            var n3 = 0
-            for ((tt, aa) in vars) {
-                if (++n3 > 2) break
-                onStage("🔎 بدوّر في YouTube Music ($n3)…")
-                ytRound(x, tt, aa)
+                n++
+                onStage("🔎 [$lbl] بدوّر في LRCLIB ($n/${vars.size})…")
+                lrclibRound(x, tt, aa)
                 if (best() != null) break
             }
-        }
-
-        // 4) Lyrics.ovh — كلمات عادية، ومحتاج فنان معروف
-        if (best() == null && !(retry && skip != null && skip.startsWith("lyrics.ovh"))) {
-            var n4 = 0
-            for ((tt, aa) in vars) {
-                if (aa.isBlank()) continue
-                if (++n4 > 3) break
-                onStage("🔎 بدوّر في مصدر احتياطي ($n4)…")
-                ovhRound(x, tt, aa)
-                if (best() != null) break
+            if (best() == null && x.answered) {
+                onStage("🔎 [$lbl] بحث حر في LRCLIB…")
+                try {
+                    val s = httpGet(API + "search?q=" + enc((ArNorm.clean(vars.firstOrNull()?.first ?: name) + " " + ArNorm.clean(vars.firstOrNull()?.second ?: by)).trim()))
+                    if (s != null) { val a = JSONArray(s); for (i in 0 until minOf(a.length(), 20)) x.add(lrcCand(a.getJSONObject(i), x)) }
+                } catch (e: Throwable) { x.lastErr = e.message ?: e.javaClass.simpleName }
             }
+
+            // 2) Musixmatch (من أداة lyrics-api): لو مفيش نسخة متزامنة لسه
+            fun hasSynced() = x.found.any { it.synced.isNotBlank() && it.key() != skip }
+            if (!hasSynced()) {
+                var n2 = 0
+                for ((tt, aa) in vars) {
+                    if (++n2 > 3) break
+                    onStage("🔎 بدوّر في Musixmatch ($n2)…")
+                    mxmRound(x, tt, aa)
+                    if (hasSynced()) break
+                }
+            }
+
+            // 3) YouTube Music (كلمات عادية) — لو لسه مفيش حاجة
+            if (best() == null) {
+                var n3 = 0
+                for ((tt, aa) in vars) {
+                    if (++n3 > 2) break
+                    onStage("🔎 بدوّر في YouTube Music ($n3)…")
+                    ytRound(x, tt, aa)
+                    if (best() != null) break
+                }
+            }
+
+            // 4) Lyrics.ovh — كلمات عادية، ومحتاج فنان معروف
+            if (best() == null && !(retry && skip != null && skip.startsWith("lyrics.ovh"))) {
+                var n4 = 0
+                for ((tt, aa) in vars) {
+                    if (aa.isBlank()) continue
+                    if (++n4 > 3) break
+                    onStage("🔎 بدوّر في مصدر احتياطي ($n4)…")
+                    ovhRound(x, tt, aa)
+                    if (best() != null) break
+                }
+            }
+
         }
+        for ((lbl, gv) in groups) { if (best() != null) break; runChain(gv, lbl) }
 
         // 5) جيميناي يقترح صيغ بديلة للاسم (من غير Google Search) ونعيد البحث بيها
         if (best() == null && x.answered) {

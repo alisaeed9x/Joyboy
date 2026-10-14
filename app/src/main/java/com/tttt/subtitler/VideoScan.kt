@@ -107,6 +107,8 @@ object Thumbs {
 
     /** (v295) غلاف أغنية للقايمة: الصورة المدمجة جوه الملف الأول، وبعدها اللي الموبايل فهرسه (cover.jpg…). أوفلاين بالكامل */
     private fun decodeAudio(ctx: Context, v: VideoItem): Bitmap? {
+        // (v298) الأغنية اتعرّف عليها/اتسمّت: الغلاف الحقيقي (اللي المشغّل بيعرضه) بدل الصورة المدمجة (غالبًا لوجو موقع)
+        try { SongId.override(v.id)?.let { (tt, aa) -> if (tt.isNotBlank()) Poster.cachedBitmap(ctx, tt, aa)?.let { return it } } } catch (_: Throwable) {}
         val u = Uri.parse(v.uri)
         val r = MediaMetadataRetriever()
         try {

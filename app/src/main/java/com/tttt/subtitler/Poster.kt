@@ -234,6 +234,18 @@ object Poster {
         return null
     }
 
+    /** (v298) الغلاف المحفوظ للأغنية دي (لو اتجاب قبل كده) من غير أي نت — للقايمة */
+    fun cachedBitmap(ctx: Context, title0: String, artist0: String): Bitmap? {
+        val title = clean(title0); val artist = artist0.trim()
+        if (title.length < 2) return null
+        return try { val f = File(dir(ctx), key(title, artist) + ".jpg"); if (f.exists()) decodeSmall(f.path) else null } catch (_: Throwable) { null }
+    }
+    private fun decodeSmall(path: String): Bitmap? {
+        val o = BitmapFactory.Options().apply { inJustDecodeBounds = true }; BitmapFactory.decodeFile(path, o)
+        var ss = 1; while (o.outWidth / ss > 400 || o.outHeight / ss > 400) ss *= 2
+        return BitmapFactory.decodeFile(path, BitmapFactory.Options().apply { inSampleSize = ss })
+    }
+
     /** على خيط خلفية. بيرجّع الغلاف أو null */
     fun fetchSync(ctx: Context, title0: String, artist0: String): Bitmap? {
         val title = clean(title0); val artist = artist0.trim()

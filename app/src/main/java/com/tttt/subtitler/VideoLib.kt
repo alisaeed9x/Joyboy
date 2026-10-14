@@ -22,7 +22,13 @@ class VideoItem(
     val landscape: Boolean get() = !(w > 0 && h > w)
 }
 
-class FolderItem(val key: String, val name: String, val path: String, val videos: List<VideoItem>) {
+class FolderItem(
+    val key: String, val name: String, val path: String, val videos: List<VideoItem>,
+    /** (v299) التوزيع الذكي: فولدرات فرعية (مواسم) وأيقونة وفولدر أب. الفولدر العادي: الكل فاضي */
+    val kids: List<FolderItem> = emptyList(), val icon: String = "", val parentKey: String? = null, val virtual: Boolean = false
+) {
+    /** الفيديوهات اللي مباشرة جوه الفولدر ده (لو فيه فولدرات فرعية بتبقى جواها) */
+    val own: List<VideoItem> get() = if (kids.isEmpty()) videos else emptyList()
     val totalSize: Long get() = videos.sumOf { it.size }
     val newest: Long get() = videos.maxOfOrNull { it.dateMs } ?: 0L
     val oldest: Long get() = videos.minOfOrNull { it.dateMs } ?: 0L

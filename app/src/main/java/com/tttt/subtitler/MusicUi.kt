@@ -604,15 +604,22 @@ class MusicUi(private val act: Activity, private val ui: Ui, private val th: The
         lyrPrevTv.text = ""; lyrCurTv.text = ""; lyrNextTv.text = ""
         lyrPrevTv.visibility = View.GONE; lyrCurTv.visibility = View.GONE; lyrNextTv.visibility = View.GONE
     }
-    private fun bigMsg(t: String) {
+    private val winSpin = WinSpinnerDrawable()
+    private fun bigMsg(t: String, loading: Boolean = false) {
         lyrBox.removeAllViews(); lyrViews.clear(); trViews.clear(); lyrTr = null; lyrIdx = -2; lyr = null
-        lyrBox.addView(ui.text(t, 15f, C_DIM).apply { gravity = Gravity.CENTER; setPadding(ui.dp(8), ui.dp(40), ui.dp(8), ui.dp(12)) })
+        winSpin.stop()
+        if (loading) {
+            // (v298) لودينج بتاع ويندوز: 5 نقط بتلف وهو بيجيب الكلمات
+            lyrBox.addView(ImageView(act).apply { setImageDrawable(winSpin) }, LinearLayout.LayoutParams(ui.dp(64), ui.dp(64)).apply { gravity = Gravity.CENTER_HORIZONTAL; topMargin = ui.dp(36) })
+            winSpin.start()
+        }
+        lyrBox.addView(ui.text(t, 15f, C_DIM).apply { gravity = Gravity.CENTER; setPadding(ui.dp(8), if (loading) ui.dp(8) else ui.dp(40), ui.dp(8), ui.dp(12)) })
         liveReset()
     }
     /** (v198) المسافة اللي الدواير بتنزلها: من أسفل الحلقة لحد ما تلمس اسم الأغنية بالظبط — من غير تصغير (فمفيش قص للأغلفة اللي على الجنبين) */
     private fun lyrShift(): Float = (orb.height / 2f - orb.ringR - ui.dp(3)).coerceAtLeast(0f)
     /** فتح/قفل صفحة الكلمات (بتتفتح بزرار «إظهار الكلمات» أو من ⋮) */
-    private val LYR_SCALE = 0.3f     // (v201) حجم الدواير وقت الكلمات = 30% من الأصل
+    private val LYR_SCALE = 0.52f    // (v298) حجم الدواير وقت الكلمات = 52% من الأصل (كان 30%)
     private fun toggleLyrics() {
         if (MusicEngine.current == null) { quiet("شغّل أغنية الأول وبعدين دوس على الكلمات", 2200L); return }
         if (lyrOn) { hideLyrics(); return }
@@ -670,14 +677,14 @@ class MusicUi(private val act: Activity, private val ui: Ui, private val th: The
         val t = MusicEngine.current ?: run { quiet("شغّل أغنية الأول", 1500L); return }
         val m = LyricsEngine.mode()
         if (LyricsEngine.isRunning(t, m)) { quiet("لسه بكتب الكلام… استنى شوية", 1800L); return }
-        LyricsEngine.clear(act, t, m); lyrKey = t.uri + "|" + m
+        LyricsEngine.clear(act, t, m); lyrKey = t.uri + "|" + m; lyr = null
         startLyrics(t, m, wrong, true)
     }
     private fun startLyrics(t: Track, m: String, retry: Boolean, fresh: Boolean) {
         val ck = t.uri + "|" + m
         lyrKey = ck
-        if (LyricsEngine.isRunning(t, m)) { setStatus("🎧 بتتكتب في الخلفية… استنى"); if (lyr == null) bigMsg("⏳ بتتكتب… هتظهر هنا أول ما تجهز"); return }
-        if (lyr == null) bigMsg("📝 بجيب الكلمات…")
+        if (LyricsEngine.isRunning(t, m)) { setStatus("🎧 بتتكتب في الخلفية… استنى"); if (lyr == null) bigMsg("⏳ بتتكتب… هتظهر هنا أول ما تجهز", true); return }
+        if (lyr == null) bigMsg("📝 بجيب الكلمات…", true)
         setStatus("📝 بجهّز الطلب…")
         LyricsEngine.start(act, t, m, nameHint(t), retry, fresh, { stage ->
             act.runOnUiThread { if (fullOn && lyrKey == ck) setStatus(stage) }
@@ -711,6 +718,7 @@ class MusicUi(private val act: Activity, private val ui: Ui, private val th: The
         if (list.size >= 2 && srcNoteKey != nk) { srcNoteKey = nk; quiet("🎼 الكلمات اتلقت من ${list.size} مصادر — دوس 🔀 للتبديل بينهم", 3200L) }
     }
     private fun showLyrics(r: LyricsResult) {
+        winSpin.stop()
         val trk = MusicEngine.current
         try { paintSrc() } catch (_: Throwable) {}
         lyr = r; lyrBox.removeAllViews(); lyrViews.clear(); trViews.clear(); lyrIdx = -2; lyrWordKey = ""; liveKey = ""; liveIdx = -3
@@ -904,7 +912,7 @@ class MusicUi(private val act: Activity, private val ui: Ui, private val th: The
         val col = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL }
         col.addView(top, LinearLayout.LayoutParams(-1, ui.dp(56)))
         col.addView(middle, LinearLayout.LayoutParams(-1, 0, 1f))
-        col.addView(eq, LinearLayout.LayoutParams(-1, ui.dp(96)).apply { setMargins(ui.dp(18), ui.dp(4), ui.dp(18), ui.dp(2)) })
+        col.addView(eq, LinearLayout.LayoutParams(-1, ui.dp(58)).apply { setMargins(ui.dp(18), ui.dp(2), ui.dp(18), ui.dp(2)) })   // (v298) الإيكولايزر أقصر: المساحة الفاضية فوقه راحت للدواير والكلمات
         col.addView(ctl, LinearLayout.LayoutParams(-1, ui.dp(60)).apply { bottomMargin = ui.dp(2) })
         full.addView(col, FrameLayout.LayoutParams(-1, -1))
         setBg(bgColor)
@@ -982,7 +990,12 @@ class MusicUi(private val act: Activity, private val ui: Ui, private val th: The
     }
     private fun hideFull() { autoOpenFor = ""; snapLyrReset(); eq.release(); fullOn = false; full.visibility = View.GONE; onNavTint(null) }
     /** الاسم المعروض: الاسم اللي اتحفظ من التعرف لو موجود، وإلا بيانات الملف */
-    private fun nameOf(t: Track): Pair<String, String> { val o = SongId.override(t.id); return (o?.first?.ifBlank { null } ?: t.title) to (o?.second?.ifBlank { null } ?: t.artist) }
+    private fun nameOf(t: Track): Pair<String, String> {
+        val o = SongId.override(t.id)
+        // (v298) اسم الموقع في التاج (Albumaty.Com…) مش اسم مغني — لو مفيش مغني متعرّف عليه نسيب الخانة فاضية بدل ما نعرض الموقع
+        val tagArtist = if (SongId.looksLikeSite(t.artist)) "" else t.artist
+        return (o?.first?.ifBlank { null } ?: t.title) to (o?.second?.ifBlank { null } ?: tagArtist)
+    }
 
     // ===== الأغلفة =====
     /** غلاف المدمج في الملف، وإلا من الإنترنت (iTunes ← Deezer ← MusicBrainz/Cover Art Archive ← صورة المغني) */

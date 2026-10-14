@@ -26,8 +26,18 @@ object SongId {
         if (v.isBlank()) return null
         val p = v.split('\u0001'); return p[0] to p.getOrElse(1) { "" }
     }
-    fun saveOverride(id: Long, m: SongMatch) { Cfg.put("mname_$id", m.title + "\u0001" + m.artist); Cfg.put("malbum_$id", m.album.trim()) }
-    fun clearOverride(id: Long) { Cfg.put("mname_$id", ""); Cfg.put("malbum_$id", "") }
+    fun saveOverride(id: Long, m: SongMatch) {
+        Cfg.put("mname_$id", m.title + "\u0001" + m.artist); Cfg.put("malbum_$id", m.album.trim())
+        // (v298) الصيغة التانية للاسم (إنجليزي لو الأصلي عربي): بتتحفظ جنب الاسم عشان الكلمات تدوّر بكل لغة لوحدها
+        Cfg.put("mlat_$id", if (m.tLat.isBlank() && m.aLat.isBlank()) "" else m.tLat + "\u0001" + m.aLat)
+    }
+    fun clearOverride(id: Long) { Cfg.put("mname_$id", ""); Cfg.put("malbum_$id", ""); Cfg.put("mlat_$id", "") }
+    /** (v298) الاسم/الفنان بالحروف اللاتينية (أو اللغة التانية) المحفوظين مع التعرّف — null لو مفيش */
+    fun alt(id: Long): Pair<String, String>? {
+        val v = Cfg.str("mlat_$id", ""); if (v.isBlank()) return null
+        val p = v.split('\u0001'); val a = p[0].trim(); val b = p.getOrElse(1) { "" }.trim()
+        return if (a.isEmpty() && b.isEmpty()) null else a to b
+    }
     /** (v294) الألبوم المحفوظ مع الاسم (من التعرّف أو من اليوزر) — "" لو مش معروف */
     fun albumOf(id: Long): String = Cfg.str("malbum_$id", "")
 

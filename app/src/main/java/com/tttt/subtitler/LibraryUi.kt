@@ -83,6 +83,11 @@ class LibraryUi(
     private var recMap: Map<String, Recent> = emptyMap()
     private var rootPos = 0
     private var query = ""
+    // ===== (v299) التوزيع (ذكي / فولدرات / الكل) + وضع الشبكة =====
+    private val DISTS = listOf("smart" to "🧠 ذكي", "folders" to "📁 فولدرات", "flat" to "🗂 الكل")
+    private var nodeIdx: Map<String, FolderItem> = emptyMap()
+    private var gridOn: Boolean? = null
+    private lateinit var gridBtn: TextView
     // ===== فولدر «المصطادة من الإنترنت» (بلون مميز) + التحديد المتعدد =====
     private val WEB_KEY = "__web__"
     private val WEBC = 0xFFB39DDB.toInt()   // لافندر هادي للعين (مش أخضر)
@@ -219,17 +224,47 @@ class LibraryUi(
     private fun markPlayed(v: VideoItem) {
         if (newKeys.remove(keyOf(v))) try { newFile.writeText(newKeys.joinToString("\n")) } catch (_: Exception) {}
         Cfg.put(K + "lib_last", v.uri); Cfg.put(K + "lib_last_f:" + v.folderKey, v.uri)
+        var ck = curFolder
+        while (ck != null) { Cfg.put(K + "lib_last_f:" + ck, v.uri); ck = nodeIdx[ck]?.parentKey }   // (v299) زرار الاستكمال جوه فولدرات التوزيع الذكي
     }
     private fun updateResume() {
         val cf = curFolder
         val target = if (cf == null) Cfg.str(K + "lib_last") else Cfg.str(K + "lib_last_f:$cf")
-        val v = if (inHidden || target.isEmpty()) null else visible().firstOrNull { it.uri == target && (cf == null || it.folderKey == cf) }
+        val v = if (inHidden || target.isEmpty()) null else visible().firstOrNull { it.uri == target && (cf == null || inNode(cf, it)) }
         if (v == null) { resumeBtn.visibility = View.GONE; return }
         resumeBtn.visibility = View.VISIBLE
         resumeBtn.setOnClickListener { markPlayed(v); onPlay(v) }
     }
 
     private fun sortKey() = Cfg.str(K + "lib_sort", VideoLib.SORT_NAME)
+
+    // ===== (v299) التوزيع الذكي =====
+    private fun dist(): String { val d = Cfg.str(K + "lib_dist", "smart"); return if (DISTS.any { it.first == d }) d else "smart" }
+    /** شجرة الفولدرات اللي بتتعرض: ذكي = مسلسلات/مغنيين مجمّعين + باقي الفولدرات الأصلية، غير كده الفولدرات الأصلية */
+    private fun buildTree(src: List<VideoItem>): List<FolderItem> {
+        val tops: List<FolderItem> = if (dist() == "smart") {
+            val r = try { if (audio) SmartGroup.songs(src) { SongId.looksLikeSite(it) } else SmartGroup.videos(src) } catch (_: Exception) { null }
+            if (r != null) r.nodes + VideoLib.group(r.rest) else VideoLib.group(src)
+        } else VideoLib.group(src)
+        val m = HashMap<String, FolderItem>()
+        fun walk(f: FolderItem) { m[f.key] = f; f.kids.forEach { walk(it) } }
+        tops.forEach { walk(it) }
+        nodeIdx = m
+        return tops
+    }
+    private fun inNode(cf: String, v: VideoItem): Boolean = nodeIdx[cf]?.videos?.any { x -> x.uri == v.uri } == true || v.folderKey == cf
+
+    // ===== (v299) وضع الشبكة =====
+    private fun grid(): Boolean = gridOn ?: Cfg.bool(K + "lib_grid", false).also { gridOn = it }
+    private fun cols(): Int { val dm = act.resources.displayMetrics; return (dm.widthPixels / dm.density / (if (audio) 112f else 165f)).toInt().coerceIn(2, 5) }
+    private fun cellW(n: Int): Int = (act.resources.displayMetrics.widthPixels - ui.dp(24) - n * ui.dp(8)) / n
+    private fun toggleGrid() {
+        val was = grid(); val c = cols()
+        val firstItem = if (was) listV.firstVisiblePosition * c else listV.firstVisiblePosition
+        gridOn = !was; Cfg.put(K + "lib_grid", if (!was) "1" else "0")
+        gridBtn.text = if (!was) "☰" else "🧩"
+        render(); listV.setSelection(if (!was) firstItem / c else firstItem)
+    }
 
     private fun hbtn(t: String, f: () -> Unit): TextView = ui.circleBtn(t, false, f).apply {
         textSize = 16f; layoutParams = LinearLayout.LayoutParams(ui.dp(36), ui.dp(36)).apply { setMargins(ui.dp(2), 0, ui.dp(2), 0) }
@@ -262,6 +297,17 @@ class LibraryUi(
         if (audio) { queueBtn.visibility = View.GONE; linkBtn.visibility = View.GONE; pickBtn.visibility = View.GONE }
         root.addView(head, LinearLayout.LayoutParams(-1, -2))
 
+        // (v299) التوزيع (ذكي / فولدرات / الكل) + زرار الشبكة/القايمة
+        val distChips = ui.chips(DISTS.map { it.second }, { DISTS.first { x -> x.first == dist() }.second }) { n ->
+            Cfg.put(K + "lib_dist", DISTS.first { it.second == n }.first)
+            curFolder = null; inRecents = false; sel.clear(); render(); listV.setSelection(0)
+        }
+        gridBtn = hbtn(if (grid()) "☰" else "🧩") { toggleGrid() }
+        val distRow = LinearLayout(act).apply { layoutDirection = View.LAYOUT_DIRECTION_RTL; gravity = Gravity.CENTER_VERTICAL; setPadding(ui.dp(8), 0, ui.dp(8), 0) }
+        distRow.addView(HorizontalScrollView(act).apply { isHorizontalScrollBarEnabled = false; layoutDirection = View.LAYOUT_DIRECTION_RTL; addView(distChips) }, LinearLayout.LayoutParams(0, -2, 1f))
+        distRow.addView(gridBtn)
+        root.addView(distRow, LinearLayout.LayoutParams(-1, -2))
+
         val labels = VideoLib.sortLabels.map { it.second }
         val chips = ui.chips(labels, { VideoLib.sortLabelOf(sortKey()) }) { n -> Cfg.put(K + "lib_sort", VideoLib.sortKeyOf(n)); render() }
         root.addView(HorizontalScrollView(act).apply { isHorizontalScrollBarEnabled = false; layoutDirection = View.LAYOUT_DIRECTION_RTL; setPadding(ui.dp(8), 0, ui.dp(8), 0); addView(chips) },
@@ -274,12 +320,13 @@ class LibraryUi(
             setPadding(ui.dp(12), ui.dp(4), ui.dp(12), ui.dp(16)); clipToPadding = false; cacheColorHint = Color.TRANSPARENT
             layoutDirection = View.LAYOUT_DIRECTION_RTL
             adapter = object : BaseAdapter() {
-                override fun getCount() = rows.size
-                override fun getItem(i: Int): Any = rows[i]
+                override fun getCount() = if (grid()) (rows.size + cols() - 1) / cols() else rows.size
+                override fun getItem(i: Int): Any = rows.getOrNull(if (grid()) i * cols() else i) ?: i
                 override fun getItemId(i: Int) = i.toLong()
-                override fun getViewTypeCount() = 3
-                override fun getItemViewType(i: Int) = when (rows[i]) { is FolderItem -> 0; is WebVid -> 2; else -> 1 }
+                override fun getViewTypeCount() = 7
+                override fun getItemViewType(i: Int): Int = if (grid()) cols() + 1 else when (rows[i]) { is FolderItem -> 0; is WebVid -> 2; else -> 1 }
                 override fun getView(i: Int, cv: View?, p: ViewGroup?): View {
+                    if (grid()) { val n = cols(); return (cv ?: newGridRow(n)).also { bindGridRow(it, i, n) } }
                     val r = rows[i]
                     return when (r) {
                         is FolderItem -> (cv ?: newFolderRow()).also { bindFolder(it, r) }
@@ -369,8 +416,8 @@ class LibraryUi(
         if (query.isNotEmpty()) { searchEt.setText(""); return true }
         if (inHidden) { inHidden = false; secure(false); render(); listV.setSelection(rootPos); return true }
         if (inRecents) { inRecents = false; render(); listV.setSelection(rootPos); return true }
-        if (curFolder == null) return false
-        curFolder = null; render(); listV.setSelection(rootPos); return true
+        val cf = curFolder ?: return false
+        curFolder = nodeIdx[cf]?.parentKey; render(); listV.setSelection(if (curFolder == null) rootPos else 0); return true
     }
 
     fun render() {
@@ -386,8 +433,8 @@ class LibraryUi(
         val cf = curFolder
         val inWeb = !inHidden && query.isEmpty() && cf == WEB_KEY
         if (!audio && !inHidden && query.isEmpty() && (cf == null || inWeb)) webList = WebVideos.load(act)
-        val folders = VideoLib.group(src)
-        val folder = if (!inHidden && cf != null && !inWeb) folders.firstOrNull { it.key == cf } else null
+        val folders = buildTree(src)
+        val folder = if (!inHidden && cf != null && !inWeb) nodeIdx[cf] else null
         if (!inHidden && cf != null && !inWeb && folder == null) curFolder = null
         if (query.isNotEmpty()) {
             val hits = VideoLib.search(src, query)
@@ -404,8 +451,12 @@ class LibraryUi(
             rows = RecentSongs.list().mapNotNull { byUri[it] }
             titleTv.text = "🕘 آخر المشغّل"; subTv.text = "${rows.size} $noun"; backV.visibility = View.VISIBLE
         } else if (folder != null) {
-            rows = VideoLib.sortVideos(folder.videos, sort)
-            titleTv.text = "📂 " + folder.name; subTv.text = "${folder.videos.size} $noun · ${VideoLib.fmtSize(folder.totalSize)}"; backV.visibility = View.VISIBLE
+            val mix = ArrayList<Any>(); mix.addAll(VideoLib.sortFolders(folder.kids, sort)); mix.addAll(VideoLib.sortVideos(folder.own, sort)); rows = mix
+            titleTv.text = (if (folder.icon.isNotEmpty()) folder.icon + " " else "📂 ") + folder.name; subTv.text = "${folder.videos.size} $noun · ${VideoLib.fmtSize(folder.totalSize)}"; backV.visibility = View.VISIBLE
+        } else if (dist() == "flat") {
+            val head0: List<Any> = if (audio) emptyList() else listOf<Any>(webFolder) + (if (BgJobs.jobs.isNotEmpty()) listOf<Any>(bgFolder) else emptyList<Any>())
+            rows = head0 + VideoLib.sortVideos(src, sort)
+            titleTv.text = if (audio) "🗂 كل الأغاني" else "🗂 كل الفيديوهات"; subTv.text = "${src.size} $noun · ${VideoLib.fmtSize(src.sumOf { it.size })}"; backV.visibility = View.GONE
         } else {
             rows = (if (audio) emptyList<Any>() else listOf<Any>(webFolder) + (if (BgJobs.jobs.isNotEmpty()) listOf<Any>(bgFolder) else emptyList<Any>())) + VideoLib.sortFolders(folders, sort)
             titleTv.text = if (audio) "🎵 الموسيقى" else "📁 الفيديوهات"; subTv.text = "${folders.size} مجلد · ${src.size} $noun"; backV.visibility = View.GONE
@@ -429,6 +480,172 @@ class LibraryUi(
         stateTv.text = msg
         stateBtn.visibility = if (btn != null) View.VISIBLE else View.GONE
         if (btn != null) stateBtn.text = btn
+    }
+
+    // ===== (v299) وضع الشبكة: كل صف في الـ ListView فيه n خلية (فولدر / فيديو / مصطاد) =====
+    private class GC(val root: LinearLayout, val iv: ImageView, val ph: TextView, val dur: TextView, val tick: TextView, val cb: View, val badge: TextView,
+                     val title: TextView, val sub: TextView, val bar: View, val fill: View, val rest: View, val dots: TextView)
+
+    private fun newGridCell(n: Int): GC {
+        val ph = IconTextView(act).apply { textSize = 28f; gravity = Gravity.CENTER; alpha = 0.45f; text = if (audio) "🎵" else "🎞" }
+        val iv = ImageView(act).apply { scaleType = ImageView.ScaleType.CENTER_CROP }
+        val dur = IconTextView(act).apply { textSize = 10f; setTextColor(Color.WHITE); setPadding(ui.dp(5), ui.dp(1), ui.dp(5), ui.dp(1)); background = ui.box(0xCC000000.toInt(), Color.TRANSPARENT, 4); visibility = View.GONE }
+        val tick = IconTextView(act).apply { text = "✓"; textSize = 12f; setTextColor(Color.WHITE); gravity = Gravity.CENTER; background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(0xFF3B82F6.toInt()) }; visibility = View.GONE }
+        val cb = newCheck()
+        val badge = newBadge()
+        val tw = cellW(n) - ui.dp(8)
+        val thumbH = if (audio) tw else tw * 9 / 16
+        val thumb = FrameLayout(act).apply {
+            background = ui.box(0xFF000000.toInt(), th.border, 10); clipToOutline = true
+            addView(ph, FrameLayout.LayoutParams(-1, -1)); addView(iv, FrameLayout.LayoutParams(-1, -1))
+            addView(dur, FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM or Gravity.END).apply { setMargins(ui.dp(4), ui.dp(4), ui.dp(4), ui.dp(4)) })
+            addView(badge, FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM or Gravity.START).apply { setMargins(ui.dp(4), ui.dp(4), ui.dp(4), ui.dp(4)) })
+            addView(tick, FrameLayout.LayoutParams(ui.dp(20), ui.dp(20), Gravity.TOP or Gravity.END).apply { setMargins(ui.dp(4), ui.dp(4), ui.dp(4), 0) })
+            addView(cb, FrameLayout.LayoutParams(ui.dp(40), ui.dp(40), Gravity.TOP or Gravity.START))
+        }
+        val title = ui.text("", 13f, th.text, true).apply { maxLines = 2; ellipsize = TextUtils.TruncateAt.END }
+        val sub = ui.text("", 11f, th.muted).apply { setSingleLine(); ellipsize = TextUtils.TruncateAt.END }
+        val dts = dots { }.apply { setPadding(ui.dp(6), ui.dp(2), ui.dp(2), ui.dp(2)) }
+        val fill = View(act).apply { setBackgroundColor(th.primary) }
+        val rest = View(act)
+        val bar = LinearLayout(act).apply {
+            layoutDirection = View.LAYOUT_DIRECTION_LTR; background = ui.box(th.border, Color.TRANSPARENT, 2); clipToOutline = true
+            addView(fill, LinearLayout.LayoutParams(0, -1, 0f)); addView(rest, LinearLayout.LayoutParams(0, -1, 1f)); visibility = View.GONE
+        }
+        val trow = LinearLayout(act).apply { gravity = Gravity.CENTER_VERTICAL; addView(title, LinearLayout.LayoutParams(0, -2, 1f)); addView(dts, LinearLayout.LayoutParams(-2, -2)) }
+        val root = LinearLayout(act).apply {
+            orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL
+            setPadding(ui.dp(4), ui.dp(4), ui.dp(4), ui.dp(6)); background = ui.box(th.card, th.border, 12)
+            addView(thumb, LinearLayout.LayoutParams(-1, thumbH))
+            addView(trow, LinearLayout.LayoutParams(-1, -2).apply { topMargin = ui.dp(4) })
+            addView(sub, LinearLayout.LayoutParams(-1, -2))
+            addView(bar, LinearLayout.LayoutParams(-1, ui.dp(3)).apply { topMargin = ui.dp(4) })
+        }
+        Glass.pressable(root)
+        return GC(root, iv, ph, dur, tick, cb, badge, title, sub, bar, fill, rest, dts)
+    }
+
+    private fun newGridRow(n: Int): View {
+        val row = LinearLayout(act).apply { layoutDirection = View.LAYOUT_DIRECTION_RTL; setPadding(0, ui.dp(4), 0, ui.dp(4)) }
+        val cells = ArrayList<GC>()
+        for (k in 0 until n) {
+            val c = newGridCell(n)
+            row.addView(c.root, LinearLayout.LayoutParams(0, -2, 1f).apply { setMargins(ui.dp(4), 0, ui.dp(4), 0) })
+            cells.add(c)
+        }
+        row.tag = cells
+        return row
+    }
+
+    @Suppress("UNCHECKED_CAST")
+    private fun bindGridRow(v: View, i: Int, n: Int) {
+        val cells = v.tag as ArrayList<GC>
+        for (k in 0 until n) bindCell(cells[k], rows.getOrNull(i * n + k))
+    }
+
+    private fun gridBar(c: GC, frac: Double) {
+        c.bar.visibility = if (frac > 0.01) View.VISIBLE else View.GONE
+        (c.fill.layoutParams as LinearLayout.LayoutParams).weight = frac.toFloat(); (c.rest.layoutParams as LinearLayout.LayoutParams).weight = (1.0 - frac).toFloat(); c.bar.requestLayout()
+    }
+
+    private fun bindCell(c: GC, item: Any?) {
+        if (item == null) { c.root.visibility = View.INVISIBLE; c.root.setOnClickListener(null); c.root.setOnLongClickListener(null); return }
+        c.root.visibility = View.VISIBLE
+        c.iv.setImageDrawable(null); c.tick.visibility = View.GONE; c.badge.visibility = View.GONE; c.bar.visibility = View.GONE
+        c.cb.visibility = View.VISIBLE; c.dots.visibility = View.VISIBLE; c.dur.visibility = View.GONE
+        c.ph.text = if (audio) "🎵" else "🎞"; c.title.setTextColor(th.text)
+        when (item) {
+            is FolderItem -> bindGridFolder(c, item)
+            is WebVid -> bindGridWeb(c, item)
+            is VideoItem -> bindGridVideo(c, item)
+        }
+    }
+
+    private fun bindGridFolder(c: GC, f: FolderItem) {
+        if (f === webFolder || f === bgFolder) {
+            val web = f === webFolder
+            c.ph.text = if (web) "🌐" else "🌙"
+            c.cb.visibility = View.GONE; c.dots.visibility = View.GONE
+            if (web) {
+                val n = webList.size
+                c.title.text = "الفيديوهات المصطادة"; c.sub.text = if (n > 0) "$n فيديو" else "لسه مفيش"
+                c.root.background = GradientDrawable().apply { cornerRadius = ui.dp(12).toFloat(); setColor((WEBC and 0x00FFFFFF) or 0x22000000); setStroke(ui.dp(2), WEBC) }
+                c.root.setOnClickListener { if (sel.isEmpty()) { rootPos = listV.firstVisiblePosition; curFolder = WEB_KEY; render(); listV.setSelection(0) } }
+            } else {
+                val run = BgJobs.jobs.firstOrNull { it.state == "running" }
+                c.title.text = "🌙 الترجمة في الخلفية"
+                c.sub.text = "${BgJobs.jobs.count { it.active }} في الطابور" + (if (run != null) " · ${run.pct}%" else "")
+                c.root.background = ui.box(th.card, th.border, 12)
+                c.root.setOnClickListener { onQueue() }
+            }
+            c.root.setOnLongClickListener(null)
+            return
+        }
+        val on = f.key in sel
+        bindCheck(c.cb, on) { toggleSel(f.key) }
+        c.root.background = if (on) ui.box(th.card, th.primary, 12, 2) else ui.box(th.card, th.border, 12)
+        c.ph.text = f.icon.ifEmpty { "📁" }
+        c.title.text = f.name
+        c.sub.text = (if (f.kids.isNotEmpty()) "${f.kids.size} أجزاء · " else "") + "${f.videos.size} $noun · ${VideoLib.fmtSize(f.totalSize)}"
+        c.dur.text = f.icon.ifEmpty { "📁" } + " " + f.videos.size; c.dur.visibility = View.VISIBLE
+        val nn = f.videos.count { keyOf(it) in newKeys }
+        c.badge.text = if (nn > 1) "NEW $nn" else "NEW"; c.badge.visibility = if (nn > 0) View.VISIBLE else View.GONE
+        val first = f.videos.firstOrNull()
+        if (first != null && (!audio || artRows())) {
+            c.iv.tag = first.uri
+            val bm = Thumbs.peek(first)
+            if (bm != null) c.iv.setImageBitmap(bm) else Thumbs.load(act, first, audio) { b -> if (b != null && c.iv.tag == first.uri) c.iv.setImageBitmap(b) }
+        }
+        c.dots.setOnClickListener { x -> folderMenu(x, f, false) }
+        c.root.setOnClickListener { if (sel.isNotEmpty()) toggleSel(f.key) else { rootPos = listV.firstVisiblePosition; curFolder = f.key; render(); listV.setSelection(0) } }
+        c.root.setOnLongClickListener { cc -> cc.performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS); if (sel.isNotEmpty()) toggleSel(f.key) else folderMenu(c.dots, f, true); true }
+    }
+
+    private fun bindGridVideo(c: GC, vi: VideoItem) {
+        c.title.text = vi.title
+        val on = vi.videoId in sel
+        bindCheck(c.cb, on) { toggleSel(vi.videoId) }
+        c.root.background = if (on) ui.box(th.card, th.primary, 12, 2) else ui.box(th.card, th.border, 12)
+        c.badge.visibility = if (keyOf(vi) in newKeys) View.VISIBLE else View.GONE
+        c.dur.text = VideoLib.fmtDur(vi.durMs); c.dur.visibility = if (vi.durMs > 0) View.VISIBLE else View.GONE
+        val nowPlaying = audio && MusicEngine.current?.uri == vi.uri
+        c.title.setTextColor(if (nowPlaying) th.primary else th.text)
+        val r = recMap[vi.videoId]
+        val parts = ArrayList<String>()
+        if (nowPlaying) parts.add(if (MusicEngine.isPlaying) "🔊 شغّالة" else "⏸ واقفة")
+        if (r != null && r.subs > 0) parts.add("✓ مترجم ${r.percent}%")
+        val bj = bgJob(vi)
+        if (bj != null && bj.active) parts.add("🌙 ${bj.pct}%")
+        parts.add(if (inHidden || inRecents) vi.folderName else if (audio) vi.artist else VideoLib.fmtSize(vi.size))
+        c.sub.text = parts.filter { it.isNotEmpty() }.joinToString(" · ")
+        val d = if (r != null && r.durSec > 0) r.durSec else vi.durMs / 1000.0
+        gridBar(c, if (r != null && d > 0) (r.posSec / d).coerceIn(0.0, 1.0) else 0.0)
+        c.tick.visibility = if (r != null && r.percent >= 97) View.VISIBLE else View.GONE
+        c.iv.tag = vi.uri
+        if (!audio || artRows()) {
+            val bm = Thumbs.peek(vi)
+            if (bm != null) c.iv.setImageBitmap(bm) else Thumbs.load(act, vi, audio) { b -> if (b != null && c.iv.tag == vi.uri) c.iv.setImageBitmap(b) }
+        }
+        c.dots.setOnClickListener { x -> videoMenu(x, vi, false) }
+        c.root.setOnLongClickListener { cc -> cc.performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS); if (sel.isNotEmpty()) toggleSel(vi.videoId) else videoMenu(c.dots, vi, true); true }
+        c.root.setOnClickListener { if (sel.isNotEmpty()) toggleSel(vi.videoId) else { markPlayed(vi); onPlay(vi) } }
+    }
+
+    private fun bindGridWeb(c: GC, w: WebVid) {
+        val onSel = w.id in sel
+        bindCheck(c.cb, onSel) { toggleSel(w.id) }
+        c.title.text = if (w.named) w.title else "🔎 " + w.title
+        val r = recMap[w.id]
+        val d = r?.durSec ?: 0.0
+        c.dur.text = VideoLib.fmtDur((d * 1000).toLong()); c.dur.visibility = if (d > 0) View.VISIBLE else View.GONE
+        c.sub.text = w.url.substringAfter("://").substringBefore('/').removePrefix("www.")
+        gridBar(c, if (r != null && d > 0) (r.posSec / d).coerceIn(0.0, 1.0) else 0.0)
+        c.tick.visibility = if (r != null && r.percent >= 97) View.VISIBLE else View.GONE
+        c.root.background = GradientDrawable().apply { cornerRadius = ui.dp(12).toFloat(); setColor(th.card); setStroke(ui.dp(2), if (onSel) th.primary else WEBC) }
+        c.iv.tag = w.id; c.iv.setImageBitmap(webThumb(w))
+        c.dots.setOnClickListener { x -> webMenu(x, w) }
+        c.root.setOnLongClickListener { cc -> cc.performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS); if (sel.isNotEmpty()) toggleSel(w.id) else webMenu(c.dots, w, true); true }
+        c.root.setOnClickListener { if (sel.isNotEmpty()) toggleSel(w.id) else onPlayWeb(w) }
     }
 
     // ===== صف الفولدر =====
@@ -472,7 +689,7 @@ class LibraryUi(
             t[3].setOnLongClickListener(null)
             return
         }
-        (t[7] as TextView).text = if (f === bgFolder) "🌙" else "📁"
+        (t[7] as TextView).text = if (f === bgFolder) "🌙" else f.icon.ifEmpty { "📁" }
         if (f === bgFolder) {
             val act = BgJobs.jobs.count { it.active }; val run = BgJobs.jobs.firstOrNull { it.state == "running" }
             (t[0] as TextView).text = "🌙 مجلد الترجمة في الخلفية"
@@ -490,7 +707,7 @@ class LibraryUi(
         bindCheck(t[6], on) { toggleSel(f.key) }
         t[3].background = if (on) ui.box(th.card, th.primary, 14, 2) else ui.box(th.card, th.border, 14)
         (t[0] as TextView).text = f.name
-        (t[1] as TextView).text = "${f.count} $noun · ${VideoLib.fmtSize(f.totalSize)}"
+        (t[1] as TextView).text = (if (f.kids.isNotEmpty()) "${f.kids.size} أجزاء · " else "") + "${f.count} $noun · ${VideoLib.fmtSize(f.totalSize)}"
         (t[2] as TextView).text = f.path
         val nn = f.videos.count { keyOf(it) in newKeys }
         (t[4] as TextView).apply { text = if (nn > 1) "NEW $nn" else "NEW"; visibility = if (nn > 0) View.VISIBLE else View.GONE }
@@ -505,7 +722,7 @@ class LibraryUi(
         if (audio) { items += "▶ تشغيل الفولدر (${f.videos.size})" to { onPlayFolder(f) }; items += (if (artRows()) "🖼 صور الأغاني: شغّالة (قفل)" else "🖼 صور الأغاني: مقفولة (تشغيل)") to { toggleArtRows() } }
         else items += "🌙 ترجمة كل فيديوهات الفولدر في الخلفية (${f.videos.size})" to { onBgFolder(f) }
         items += "🙈 إخفاء الفولدر" to { hideFolder(f) }
-        items += "✏ إعادة تسمية الفولدر" to { onRenameFolder(f) }
+        if (!f.virtual) items += "✏ إعادة تسمية الفولدر" to { onRenameFolder(f) }
         items += "ℹ تفاصيل الفولدر" to { folderDetails(f) }
         items += "🗑 مسح الفولدر بكل اللي فيه" to { onDeleteFolder(f) }
         popup(anchor, items)
@@ -775,7 +992,7 @@ class LibraryUi(
         else items += "🌙 ترجمة المحدد في الخلفية (${vids.size})" to { clearSel(); onBgFolder(synth) }
         if (inHidden) items += "👁 إظهار المحدد (يرجع للقايمة)" to { unhideMany(vids) }
         else items += "🙈 إخفاء المحدد" to { hideMany(vids) }
-        if (fs.size == 1 && vs.isEmpty()) items += "✏ إعادة تسمية الفولدر" to { clearSel(); onRenameFolder(fs[0]) }
+        if (fs.size == 1 && vs.isEmpty() && !fs[0].virtual) items += "✏ إعادة تسمية الفولدر" to { clearSel(); onRenameFolder(fs[0]) }
         if (fs.isEmpty() && vs.size == 1 && !inHidden) {
             items += "✏ إعادة تسمية" to { clearSel(); onRename(vs[0]) }
             items += "📁 نقل" to { clearSel(); onMove(vs[0]) }
