@@ -269,6 +269,8 @@ class PlayerActivity : Activity(), Host {
     lateinit var adapter: BaseAdapter
     lateinit var extras: View
     lateinit var videoBoxRef: FrameLayout
+    lateinit var sentCap: LinearLayout   // (v322) كبسولة موحّدة: 🔊 صوتي | 👁 بصري
+    lateinit var sentDiv: View
     lateinit var fsBadge: TransBadge
     lateinit var noticeBtn: TextView   // (v217) مثلث ▲ الإشعارات (v224: جنب زرار لاندسكيب/بورتريت)
     private var trLgB: TextView? = null   // (v224) 🌐 و🔑 بقوا أيقونات صغيرة جنب زرار 🗣 في الشريط السفلي
@@ -278,12 +280,15 @@ class PlayerActivity : Activity(), Host {
     private var badgeHotUntil = 0L   // (v249) لما تدوس كبسولة بتبقى 100% لحد الوقت ده، وبعدها ترجع للشفافية المضبوطة من الإعدادات
     private fun badgeRestA(): Float = (Cfg.int("badge_alpha", 55).coerceIn(15, 100)) / 100f
     private fun badgeHot() { badgeHotUntil = System.currentTimeMillis() + 4000; applyBadgeAlpha() }
+    private lateinit var badgeRowV: LinearLayout
+    /** (v323) العدّادات (صوتي/بصري/نت) مخفية خالص والشاشة نضيفة؛ لما أزرار المشغّل تظهر (لمسة) بتظهر 100%. BADGE_IDLE_A لو عايزها باهتة بدل مخفية (مثلًا 0.3f) */
+    private val BADGE_IDLE_A = 0f
     private fun applyBadgeAlpha() {
-        if (!::fsBadge.isInitialized || !::visBadge.isInitialized || !::netBadge.isInitialized) return
-        val a = if (System.currentTimeMillis() < badgeHotUntil) 1f else badgeRestA()
-        if (fsBadge.alpha != a) fsBadge.alpha = a
-        if (visBadge.alpha != a) visBadge.alpha = a
-        if (netBadge.alpha != a) netBadge.alpha = a
+        if (!::sentCap.isInitialized || !::netBadge.isInitialized || !::badgeRowV.isInitialized) return
+        val a = if (chromeShown || System.currentTimeMillis() < badgeHotUntil) 1f else BADGE_IDLE_A
+        if (badgeRowV.alpha != a) badgeRowV.alpha = a
+        val v = if (a <= 0.01f) View.INVISIBLE else View.VISIBLE   // INVISIBLE = مايستقبلش لمس
+        if (badgeRowV.visibility != v) badgeRowV.visibility = v
     }
     lateinit var fsBtnV: TextView
     lateinit var fsBarFs: TextView
@@ -1083,8 +1088,8 @@ class PlayerActivity : Activity(), Host {
         }
         videoBox.addView(centerPlay, FrameLayout.LayoutParams(ui.dp(64), ui.dp(64), Gravity.CENTER))
         // (v249) كبسولات العدّادات: صغيرة، التلاتة جنب بعض شمال فوق الفيديو (صوتي · بصري · نت) والشفافية من الإعدادات (badge_alpha)
-        fsBadge = TransBadge(this, th).apply { visibility = View.GONE; setOnClickListener { badgeHot(); toggleMiniLog(); h.postDelayed({ applyBadgeAlpha() }, 4100) }; setOnLongClickListener { badgeHot(); closeMiniLog(); versionsPopup(this); h.postDelayed({ applyBadgeAlpha() }, 4100); true } }   // (v125) دوسة = اللوج الصغير (أنهي باتش بيترجم) · ضغطة طويلة = قايمة الترجمات المحفوظة
-        visBadge = TransBadge(this, th).apply { visibility = View.GONE; setOnClickListener { badgeHot(); visualDialog(); h.postDelayed({ applyBadgeAlpha() }, 4100) } }
+        fsBadge = TransBadge(this, th, true).apply { visibility = View.GONE; setOnClickListener { badgeHot(); toggleMiniLog(); h.postDelayed({ applyBadgeAlpha() }, 4100) }; setOnLongClickListener { badgeHot(); closeMiniLog(); versionsPopup(this); h.postDelayed({ applyBadgeAlpha() }, 4100); true } }   // (v125) دوسة = اللوج الصغير (أنهي باتش بيترجم) · ضغطة طويلة = قايمة الترجمات المحفوظة
+        visBadge = TransBadge(this, th, true).apply { visibility = View.GONE; setOnClickListener { badgeHot(); visualDialog(); h.postDelayed({ applyBadgeAlpha() }, 4100) } }
         netBadge = NetBadge(this).apply { visibility = View.GONE; setOnClickListener { badgeHot(); netDialog(); h.postDelayed({ applyBadgeAlpha() }, 4100) } }
         // (v217) مثلث ▲ أحمر شفاف 70% جنب عدّاد الجمل (فوق اليمين): بيظهر لما فيه إشعارات، ولمسة عليه = قايمة منسدلة من الأحدث للأقدم
         noticeBtn = ui.text("▲", 13f, 0xFFFF3B30.toInt(), true).apply {
@@ -1093,8 +1098,14 @@ class PlayerActivity : Activity(), Host {
             setOnClickListener { noticePopup(this) }
         }
         val badgeRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_LTR; gravity = Gravity.CENTER_VERTICAL }
-        badgeRow.addView(fsBadge, LinearLayout.LayoutParams(-2, -2))
-        badgeRow.addView(visBadge, LinearLayout.LayoutParams(-2, -2).apply { marginStart = ui.dp(4) })
+        // (v322) عدّاد واحد: كبسولة فيها الصوتي والبصري بينهم فاصل (بدل كبسولتين ضيقين بيتقصّ نصهم)
+        sentCap = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_LTR; gravity = Gravity.CENTER_VERTICAL; background = ui.box(0xE0141418.toInt(), 0x1FFFFFFF, 9) }
+        sentDiv = View(this).apply { setBackgroundColor(0x33FFFFFF); visibility = View.GONE }
+        sentCap.addView(fsBadge, LinearLayout.LayoutParams(-2, -2))
+        sentCap.addView(sentDiv, LinearLayout.LayoutParams(ui.dp(1), ui.dp(24)).apply { setMargins(ui.dp(1), 0, ui.dp(1), 0) })
+        sentCap.addView(visBadge, LinearLayout.LayoutParams(-2, -2))
+        badgeRowV = badgeRow
+        badgeRow.addView(sentCap, LinearLayout.LayoutParams(-2, -2))
         badgeRow.addView(netBadge, LinearLayout.LayoutParams(-2, -2).apply { marginStart = ui.dp(4) })
         videoBox.addView(badgeRow, FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.RIGHT).apply { setMargins(0, ui.dp(8), ui.dp(10), 0) })   // (v265) الكبسولات يمين فوق
         applyBadgeAlpha()
@@ -1614,7 +1625,7 @@ class PlayerActivity : Activity(), Host {
             floatBar.visibility = if (!pipNow()) View.VISIBLE else View.GONE
             batchBtn.visibility = if (cv) View.VISIBLE else View.GONE
             miniBar.visibility = if (!on && !pipNow()) View.VISIBLE else View.GONE
-            updateTrChip()
+            updateTrChip(); applyBadgeAlpha()   // (v323) العدّادات بتظهر مع أزرار المشغّل بس
             fsBtnV.visibility = if (!fullMode) View.VISIBLE else View.GONE   // في الشاشة الكاملة ⛶ جوه الشريط السفلي
             subLp.bottomMargin = if (on) maxOf(ui.dp(128), fsBar.height + ui.dp(12)) else ui.dp(12); sub.requestLayout()
             placeFloatFn()
@@ -1998,8 +2009,8 @@ class PlayerActivity : Activity(), Host {
                 }
                 if (now - lastBeat > 20000) { lastBeat = now; LogStore.add("💓 ${LogStore.heapLine()} · ${if (player.isPlaying) "بيشتغل" else "واقف"} @${fmtMs(cur)} · مترجم ${(engine.coveredSec() / 60).toInt()}د · ${engine.subs.size} جملة") }
                 run { val pc = PlayerLogic.percent(engine.coveredSec(), durMs / 1000.0); if (pc != trPct) { trPct = pc; updateTr() } }
-                if (fullMode) { fsBadge.set("🔊 " + PlayerLogic.percent(engine.coveredSec(), durMs / 1000.0).toString() + "%", (try { engine.offlineBrief() } catch (_: Throwable) { null }?.let { it + " · " } ?: "") + list.size.toString() + " جملة ▾"); fsBadge.setOn(engineStarted && !engine.userPaused); netBadge.set(NetUse.fmt(NetUse.localTotal()), NetUse.fmt(NetUse.onlineTotal())); applyBadgeAlpha() }   // (v236) نقطة خضراء = الوضع الصوتي شغّال
-                if (fullMode && ::visual.isInitialized) { visBadge.set("👁 " + visual.count, if (visual.running) "شغّال" else "واقف"); visBadge.setOn(visual.running) }   // (v236) نقطة خضراء = الوضع البصري شغّال
+                if (fullMode) { fsBadge.set("🔊 " + PlayerLogic.percent(engine.coveredSec(), durMs / 1000.0).toString() + "% · " + list.size.toString() + " جملة ▾", ((try { engine.offlineBrief() } catch (_: Throwable) { null }) ?: "")); fsBadge.setOn(engineStarted && !engine.userPaused); netBadge.set(NetUse.fmt(NetUse.localTotal()), NetUse.fmt(NetUse.onlineTotal())); applyBadgeAlpha() }   // (v236) نقطة خضراء = الوضع الصوتي شغّال
+                if (fullMode && ::visual.isInitialized) { visBadge.set("👁 " + visual.count + " جملة", if (visual.running) "شغّال" else "واقف"); visBadge.setOn(visual.running); sentDiv.visibility = if (fsBadge.visibility == View.VISIBLE && visBadge.visibility == View.VISIBLE) View.VISIBLE else View.GONE }   // (v236) نقطة خضراء = الوضع البصري شغّال
                 if (now - lastMem > 4000) { lastMem = now; if (!fullMode) mem.update(this@PlayerActivity) }
                 counters.text = "جمل ${list.size} · 👁 ${visList.size} · تغطية ${PlayerLogic.percent(engine.coveredSec(), durMs / 1000.0)}% · فجوات ${engine.failedCount()} · كوتة ${Quota.used(conf.model)}/${Models.quotaOf(conf.model)} · ${NetUse.badgeLine()}"
                 if (logDlg.isShowing && logMode == 0) {
@@ -2189,10 +2200,10 @@ class PlayerActivity : Activity(), Host {
             listOf(clean(t), clean(folder)).filter { it.isNotBlank() }.distinct().joinToString(" | ")
         }
         Live.engine = engine
-        visual = VisualMode(conf, { cur / 1000.0 }, { makeRetriever() }, { m ->   // (v182) cur = نسخة volatile من مكان التشغيل — ExoPlayer بيرمي استثناء لو اتنادى من خيط تاني
+        visual = VisualMode({ conf }, { cur / 1000.0 }, { makeRetriever() }, { m ->   // (v182) cur = نسخة volatile من مكان التشغيل — ExoPlayer بيرمي استثناء لو اتنادى من خيط تاني
             visLog(m)   // (v182) كل رسائل الوضع البصري بتتسجّل في اللوج
             // (v213) الوضع البصري بيشتغل في صمت: حالته بتظهر في شريطه (visBar) تحت شريط الباتش الفاشل، ومفيش إشعارات على الشاشة غير الأخطاء اللي لازم تتصلّح (مفتاح ناقص / مصدر مش مدعوم)
-            val important = (m.startsWith("ضيف مفتاح") || m.contains("مش مدعوم") || m.startsWith("المفاتيح")) && !(visAutoRun && !m.startsWith("المفاتيح"))
+            val important = (m.startsWith("ضيف مفتاح") || m.contains("مش مدعوم") || m.startsWith("المفاتيح") || m.startsWith("⚠")) && !(visAutoRun && !m.startsWith("المفاتيح"))
             if (important) runOnUiThread { Notice.show(this, m, 2300L) }
         }, { }, { grabSurface() }, log = { m -> visLog(m) })
         // (v185) النتايج بتتحفظ مع الفيديو وبترجع لما تفتحه تاني (المتخفي: من غير حفظ)

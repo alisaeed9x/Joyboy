@@ -321,7 +321,7 @@ class BrowserActivity : Activity() {
         root.addView(bar); root.addView(progTrack, LinearLayout.LayoutParams(-1, ui.dp(3))); root.addView(findBar); root.addView(hint)
         root.addView(webWrap, LinearLayout.LayoutParams(-1, 0, 1f)); root.addView(badge)
         // (v117) شريط البوابات: الفيديوهات · الموسيقى · المتصفح (إحنا فيه دلوقتي) · (v231) المهام
-        val gates = BottomNav(this, ui, th, 2) { i -> if (i != 2) NavAnim.set(2, i); if (i == 0) goMain("videos") else if (i == 1) goMain("music") else if (i == 4) goMain("tasks") else if (i == 3) { startActivity(Intent(this, FileManagerActivity::class.java)); finish() } }   // (v310) الملفات
+        val gates = BottomNav(this, ui, th, 2) { i -> if (i != 2) NavAnim.set(2, i); if (i == 0) goMain("videos") else if (i == 1) goMain("music") else if (i == 4) goMain("tasks") else if (i == 3) { startActivity(Intent(this, FileManagerActivity::class.java)); NavAnim.peek(this); finish() } }   // (v310) الملفات
         root.addView(gates.view, LinearLayout.LayoutParams(-1, -2))
         content = root
         frame = FrameLayout(this); frame.setBackgroundColor(th.bg)
@@ -353,6 +353,7 @@ class BrowserActivity : Activity() {
     private fun goMain(tab: String) {
         persistTabs()
         startActivity(Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP).putExtra("tab", tab))
+        NavAnim.peek(this)
         finish()
     }
     /** (v117) أي صفحة فيديو يوتيوب بتتفتح في المتصفح بتتسجل في سجل بوابة يوتيوب (المعرّف + الاسم) */

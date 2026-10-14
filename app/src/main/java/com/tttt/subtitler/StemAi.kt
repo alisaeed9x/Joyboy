@@ -6,6 +6,11 @@ import android.media.MediaExtractor
 import android.media.MediaFormat
 import android.net.Uri
 import java.io.BufferedOutputStream
+import java.io.DataInputStream
+import java.io.DataOutputStream
+import java.io.BufferedInputStream
+import java.io.FileInputStream
+import java.nio.ByteBuffer
 import java.io.File
 import java.io.FileOutputStream
 import java.io.IOException
@@ -29,10 +34,10 @@ object StemAi {
     val VOC_FT = Mdl("UVR-MDX-NET-Voc_FT.onnx", "UVR-MDX-NET Voc FT", 67, MdxSpec(7680, 3072, 256, 1.021f, true))
     val KIM2 = Mdl("Kim_Vocal_2.onnx", "Kim Vocal 2", 67, MdxSpec(7680, 3072, 256, 1.009f, true))
     val engines = listOf(
-        Eng("fast", "⚡ سريع", "موديل واحد (Voc FT) — نضيف وأسرع حوالي ٢×", listOf(VOC_FT), 0.25),
-        Eng("best", "🥇 الأقوى", "موديلين مع بعض (Voc FT + Kim Vocal 2) وتداخل أكبر — أنضف صوت وأقل تسريب، وأبطأ حوالي ٤×", listOf(VOC_FT, KIM2), 0.5)
+        Eng("fast", "⚡ سريع", "موديل واحد (Voc FT) — نضيف وخفيف — الافتراضي", listOf(VOC_FT), 0.1),
+        Eng("best", "🥇 الأقوى", "موديلين مع بعض (Voc FT + Kim Vocal 2) وتداخل أكبر — أنضف صوت وأقل تسريب، وأبطأ حوالي ٢× وأتقل على الرام", listOf(VOC_FT, KIM2), 0.25)
     )
-    fun engine(): Eng = engines.firstOrNull { it.id == Cfg.str("stem_eng", "best") } ?: engines[1]
+    fun engine(): Eng = engines.firstOrNull { it.id == Cfg.str("stem_eng", "fast") } ?: engines[0]
     fun setEngine(id: String) { try { Cfg.put("stem_eng", id) } catch (_: Throwable) {} }
 
     // ===== مكان الموديلات (نفس المكان الدائم بتاع Whisper: Android/media/<الحزمة>/models/stem) =====
@@ -49,7 +54,7 @@ object StemAi {
         for (m in listOf(VOC_FT, KIM2)) for (r in Offline.roots().ifEmpty { listOf(File(ctx.filesDir, "models")) }) File(File(r, "stem"), m.file).let { it.delete(); File(it.path + ".part").delete() }
         File(File(ctx.filesDir, "models"), "stem").deleteRecursively()
     }
-    fun deleteStems(ctx: Context) { try { File(ctx.filesDir, "stems").listFiles { f -> f.name.endsWith(".wav") || f.name.endsWith(".tmp") }?.forEach { it.delete() } } catch (_: Throwable) {} }
+    fun deleteStems(ctx: Context) { try { File(File(ctx.filesDir, "stems"), "work").deleteRecursively() } catch (_: Throwable) {}; try { File(ctx.filesDir, "stems").listFiles { f -> f.name.endsWith(".wav") || f.name.endsWith(".tmp") }?.forEach { it.delete() } } catch (_: Throwable) {} }
 
     // ===== تنزيل الموديلات =====
     @Volatile private var dlThread: Thread? = null
@@ -204,14 +209,53 @@ object StemAi {
     private fun key(t: Track) = "t${t.id}_${t.durMs}"
     fun isRunning(t: Track) = running.containsKey(key(t))
 
-    private fun prune(ctx: Context, keep: Int = 10) {
+    /** (v319) بيحتفظ بالأغاني المفصولة لحد ~٢ جيجا (الأحدث الأول) بدل ٥ أغاني بس، ويمسح شغل ناقص عدّى عليه أكتر من ٧ أيام */
+    private fun prune(ctx: Context, capBytes: Long = 2_000_000_000L) {
         try {
             val l = File(ctx.filesDir, "stems").listFiles { f -> f.name.endsWith(".wav") }?.sortedByDescending { it.lastModified() } ?: return
-            for (i in keep until l.size) l[i].delete()
+            var sum = 0L
+            for ((i, f) in l.withIndex()) { sum += f.length(); if (i >= 2 && sum > capBytes) f.delete() }
+        } catch (_: Throwable) {}
+        try {
+            val old = System.currentTimeMillis() - 7L * 86_400_000L
+            File(File(ctx.filesDir, "stems"), "work").listFiles()?.forEach { if (it.lastModified() < old) it.delete() }
+            File(ctx.filesDir, "stems").listFiles { f -> f.name.endsWith(".tmp") && f.lastModified() < old }?.forEach { it.delete() }
         } catch (_: Throwable) {}
     }
 
-    private fun threads(): Int = Runtime.getRuntime().availableProcessors().let { if (it >= 8) 4 else (it / 2).coerceAtLeast(2) }
+    // ===== (v319) نقطة الاستكمال: بتتحفظ كل ~٦ قطع، فلو غيّرت الأغنية أو قفلت التطبيق يكمّل من مكانه =====
+    private const val CK_MAGIC = 0x53544D31
+    private fun workDir(ctx: Context) = File(File(ctx.filesDir, "stems"), "work").apply { mkdirs() }
+    private fun saveCk(f: File, e: Eng, frames: Long, i: Long, done: Int, vb: Long, mb: Long, aL: FloatArray, aR: FloatArray, dv: FloatArray) {
+        val tmp = File(f.path + ".new")
+        DataOutputStream(BufferedOutputStream(FileOutputStream(tmp), 1 shl 16)).use { o ->
+            o.writeInt(CK_MAGIC); o.writeUTF(e.id); o.writeDouble(e.overlap); o.writeLong(frames)
+            o.writeLong(i); o.writeInt(done); o.writeLong(vb); o.writeLong(mb); o.writeInt(aL.size)
+            val bb = ByteBuffer.allocate(aL.size * 4 * 3)
+            val fb = bb.asFloatBuffer(); fb.put(aL); fb.put(aR); fb.put(dv)
+            o.write(bb.array())
+        }
+        f.delete(); tmp.renameTo(f)
+    }
+    private class Ck(val st: StemState, val vb: Long, val mb: Long)
+    private fun loadCk(f: File, e: Eng, frames: Long, chunk: Int): Ck? {
+        if (!f.isFile) return null
+        return try {
+            DataInputStream(BufferedInputStream(FileInputStream(f), 1 shl 16)).use { d ->
+                if (d.readInt() != CK_MAGIC) return null
+                if (d.readUTF() != e.id || d.readDouble() != e.overlap || d.readLong() != frames) return null
+                val i = d.readLong(); val done = d.readInt(); val vb = d.readLong(); val mb = d.readLong(); val n = d.readInt()
+                if (n != chunk || i <= 0L) return null
+                val raw = ByteArray(n * 4 * 3); d.readFully(raw)
+                val fb = ByteBuffer.wrap(raw).asFloatBuffer()
+                val aL = FloatArray(n); val aR = FloatArray(n); val dv = FloatArray(n)
+                fb.get(aL); fb.get(aR); fb.get(dv)
+                Ck(StemState(i, done, aL, aR, dv), vb, mb)
+            }
+        } catch (_: Throwable) { null }
+    }
+
+    private fun threads(): Int = Runtime.getRuntime().availableProcessors().let { (it / 2).coerceIn(2, 3) }
 
     /**
      * بيفصل [t] لملفين WAV (صوت/موسيقى) في Karaoke.file. بيتنادى من خيط خلفية. null = تمام، غير كده رسالة الخطأ.
@@ -220,9 +264,11 @@ object StemAi {
     fun separate(ctx: Context, t: Track, onPct: (Int) -> Unit, cancelled: () -> Boolean): String? {
         val app = ctx.applicationContext
         val k = key(t)
+        if (Karaoke.hasStem(app, t, 1) && Karaoke.hasStem(app, t, 2)) return null       // (v319) مفصولة قبل كده — مفيش شغل
         if (running.putIfAbsent(k, true) != null) return "الأغنية دي بتتفصل دلوقتي"
         val e = engine()
-        val pcm = File(app.cacheDir, "stem_$k.pcm")
+        val wd = workDir(app)
+        val pcm = File(wd, "stem_$k.pcm"); val pcmPart = File(wd, "stem_$k.pcm.part"); val stf = File(wd, "stem_$k.st")
         val runners = ArrayList<OrtRunner>()
         var src: StemPcmFile? = null
         var vw: StemWav? = null; var mw: StemWav? = null
@@ -237,18 +283,33 @@ object StemAi {
             try {
                 if (cancelled()) return "اتلغى"
                 onPct(0)
-                val err = decodePcm(app, t, pcm, { p -> onPct(p * 5 / 100) }, cancelled)
-                if (err != null) return err
+                if (!(pcm.isFile && pcm.length() > 0L)) {                              // (v319) الفك اتعمل قبل كده؟ نكمّل عليه
+                    pcmPart.delete()
+                    val err = decodePcm(app, t, pcmPart, { p -> onPct(p * 5 / 100) }, cancelled)
+                    if (err != null) { pcmPart.delete(); return err }
+                    pcm.delete(); if (!pcmPart.renameTo(pcm)) return "مقدرتش أحفظ الصوت المفكوك"
+                }
                 val s = StemPcmFile(pcm); src = s
-                if (s.frames < 2048L) return "الملف قصير أوي"
+                if (s.frames < 2048L) { pcm.delete(); return "الملف قصير أوي" }
+                val dimT = e.models[0].spec.dimT
+                val chunk = StemSeparator.chunkLen(dimT)
+                val ck = loadCk(stf, e, s.frames, chunk)
                 val pairs = ArrayList<Pair<MdxSpec, StemRunner>>()
                 for (m in e.models) {
                     val rn = OrtRunner(modelFile(app, m).path, threads(), m.spec.dimF, m.spec.dimT)
                     if (rn.error != null) { rn.close(); return rn.error }
                     runners.add(rn); pairs.add(Pair(m.spec, rn))
                 }
-                vw = StemWav(Karaoke.file(app, t, 1), 44100); mw = StemWav(Karaoke.file(app, t, 2), 44100)
-                val res = StemSeparator.run(s, pairs, e.overlap, vw, mw, { p -> onPct(5 + p * 94 / 100) }, cancelled)
+                val vt = File(Karaoke.file(app, t, 1).path + ".tmp"); val mt = File(Karaoke.file(app, t, 2).path + ".tmp")
+                val useCk = ck != null && vt.length() >= 44L + ck.vb && mt.length() >= 44L + ck.mb       // الملفين الجزئيين لسه موجودين وبحجم كافي
+                if (!useCk) stf.delete()
+                val v = StemWav(Karaoke.file(app, t, 1), 44100, false, if (useCk) ck!!.vb else -1L); vw = v
+                val m2 = StemWav(Karaoke.file(app, t, 2), 44100, false, if (useCk) ck!!.mb else -1L); mw = m2
+                val start = if (useCk) ck!!.st else null
+                val save = { i: Long, done: Int, aL: FloatArray, aR: FloatArray, dv: FloatArray ->
+                    try { v.flush(); m2.flush(); saveCk(stf, e, s.frames, i, done, v.written, m2.written, aL, aR, dv) } catch (_: Throwable) {}
+                }
+                val res = StemSeparator.run(s, pairs, e.overlap, v, m2, { p -> onPct(5 + p * 94 / 100) }, cancelled, start, 6, save)
                 if (res != null) return res
                 ok = true
                 return null
@@ -259,10 +320,16 @@ object StemAi {
         } finally {
             for (r in runners) { try { r.close() } catch (_: Throwable) {} }
             try { src?.close() } catch (_: Throwable) {}
-            pcm.delete()
-            val a = vw?.finish(ok) ?: false; val b = mw?.finish(ok) ?: false
-            if (ok && (!a || !b)) { Karaoke.file(app, t, 1).delete(); Karaoke.file(app, t, 2).delete() }
-            if (ok) prune(app)
+            if (ok) {
+                pcm.delete(); stf.delete(); pcmPart.delete()
+                val a = vw?.finish(true) ?: false; val b = mw?.finish(true) ?: false
+                if (!a || !b) { Karaoke.file(app, t, 1).delete(); Karaoke.file(app, t, 2).delete() }
+                prune(app)
+            } else {
+                // (v319) اتلغى/وقف: نسيب الـPCM والـ.tmp ونقطة الاستكمال عشان يكمّل بعدين. من غير نقطة استكمال ولا حاجة تتحفظ
+                vw?.pause(); mw?.pause()
+                if (!stf.isFile) { vw?.let { File(it.file.path + ".tmp").delete() }; mw?.let { File(it.file.path + ".tmp").delete() }; pcm.delete() }
+            }
             running.remove(k)
         }
     }

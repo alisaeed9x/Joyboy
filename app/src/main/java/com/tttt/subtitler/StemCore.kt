@@ -277,13 +277,27 @@ class StemPcmFile(f: File) : PcmSource {
     fun close() { try { raf.close() } catch (_: Throwable) {} }
 }
 
-/** كاتب WAV ستيريو 16-bit — بيكتب لملف .tmp وبيتسمّى للاسم النهائي عند finish(true) */
-class StemWav(val file: File, val rate: Int, val monoMix: Boolean = false) : StemSink {
+/** كاتب WAV ستيريو 16-bit — بيكتب لملف .tmp وبيتسمّى للاسم النهائي عند finish(true). (v319) resumeBytes ≥ 0 = كمّل على نفس الـ.tmp من بايت معيّن (استكمال الفصل) */
+class StemWav(val file: File, val rate: Int, val monoMix: Boolean = false, resumeBytes: Long = -1L) : StemSink {
     private val tmp = File(file.path + ".tmp")
-    private val os = BufferedOutputStream(FileOutputStream(tmp), 1 shl 16)
     private var bytes = 0L
+    private val os: BufferedOutputStream
     private var buf = ByteArray(0)
-    init { os.write(ByteArray(44)) }
+    val written: Long get() = bytes
+    init {
+        val can = resumeBytes >= 0L && tmp.isFile && tmp.length() >= 44L + resumeBytes
+        if (can) {
+            RandomAccessFile(tmp, "rw").use { it.setLength(44L + resumeBytes) }
+            bytes = resumeBytes
+            os = BufferedOutputStream(FileOutputStream(tmp, true), 1 shl 16)
+        } else {
+            os = BufferedOutputStream(FileOutputStream(tmp), 1 shl 16)
+            os.write(ByteArray(44))
+        }
+    }
+    fun flush() { try { os.flush() } catch (_: Throwable) {} }
+    /** بيقفل الملف من غير ما يمسح الـ.tmp (للاستكمال بعدين) */
+    fun pause() { try { os.flush(); os.close() } catch (_: Throwable) {} }
     override fun write(l: FloatArray, r: FloatArray, n: Int) {
         if (buf.size < n * 4) buf = ByteArray(n * 4)
         var p = 0
@@ -371,8 +385,13 @@ class OrtRunner(path: String, threads: Int, val dimF: Int, val dimT: Int) : Stem
 // ============================================================================================
 class MdxSpec(val nFft: Int, val dimF: Int, val dimT: Int, val comp: Float, val vocalsPrimary: Boolean)
 
+/** (v319) نقطة استكمال للفاصل: مكان القطعة الجاية + عدّاد القطع + حالة دمج التداخل */
+class StemState(val i: Long, val done: Int, val accL: FloatArray, val accR: FloatArray, val div: FloatArray)
+
 object StemSeparator {
     const val HOP = 1024
+    fun chunkLen(dimT: Int) = HOP * (dimT - 1)
+    fun stepOf(dimT: Int, overlap: Double) = Math.max(1, ((1.0 - overlap.coerceIn(0.0, 0.75)) * chunkLen(dimT)).toInt())
 
     /** عدد القطع اللي هتتعالج (للتقدير) */
     fun chunkCount(frames: Long, spec: MdxSpec, overlap: Double): Int {
@@ -386,7 +405,9 @@ object StemSeparator {
      * overlap: 0..0.75 (أكتر = أبطأ وأنضف). بيرجّع null لو تمام أو رسالة الخطأ.
      */
     fun run(src: PcmSource, models: List<Pair<MdxSpec, StemRunner>>, overlap: Double, voice: StemSink, music: StemSink,
-            onPct: (Int) -> Unit, cancelled: () -> Boolean): String? {
+            onPct: (Int) -> Unit, cancelled: () -> Boolean,
+            start: StemState? = null, ckptEvery: Int = 6,
+            ckpt: ((Long, Int, FloatArray, FloatArray, FloatArray) -> Unit)? = null): String? {
         if (models.isEmpty()) return "مفيش موديل"
         val dimT = models[0].first.dimT
         if (models.any { it.first.dimT != dimT }) return "الموديلات لازم يبقوا بنفس dim_t"
@@ -418,13 +439,21 @@ object StemSeparator {
         }
         val totalChunks = Math.max(1L, (limit + step - 1) / step).toInt()
         var i = 0L; var done = 0
+        if (start != null && start.accL.size == chunk) {            // (v319) استكمال من نقطة محفوظة
+            i = start.i; done = start.done
+            System.arraycopy(start.accL, 0, accL, 0, chunk); System.arraycopy(start.accR, 0, accR, 0, chunk); System.arraycopy(start.div, 0, div, 0, chunk)
+        }
         val wgt = 1f / models.size
         while (i < limit) {
-            if (cancelled()) return "اتلغى"
+            if (cancelled()) { ckpt?.invoke(i, done, accL, accR, div); return "اتلغى" }
             val n = Math.min(chunk.toLong(), total - i).toInt()
             src.read(i - trim, chunk, inL, inR)
             java.util.Arrays.fill(vL, 0f); java.util.Arrays.fill(vR, 0f)
+            var peak = 0f
+            for (j in 0 until chunk) { val a = Math.abs(inL[j]); val b = Math.abs(inR[j]); if (a > peak) peak = a; if (b > peak) peak = b }
+            val silent = peak < 1e-4f            // (v319) قطعة صامتة: مفيش صوت يتفصل — نوفّر تشغيل الموديل
             for ((k, mp) in models.withIndex()) {
+                if (silent) break
                 val sp = mp.first; val spec = specs[k]; val pred = preds[k]
                 stfts[k].forward(inL, inR, chunk, spec)
                 val tt = dimT
@@ -463,6 +492,7 @@ object StemSeparator {
                 java.util.Arrays.fill(accL, chunk - step, chunk, 0f); java.util.Arrays.fill(accR, chunk - step, chunk, 0f); java.util.Arrays.fill(div, chunk - step, chunk, 0f)
             } else if (!last) { java.util.Arrays.fill(accL, 0f); java.util.Arrays.fill(accR, 0f); java.util.Arrays.fill(div, 0f) }
             i += step; done++
+            if (ckpt != null && done % ckptEvery == 0 && i < limit) ckpt(i, done, accL, accR, div)
             onPct((done * 100 / totalChunks).coerceIn(0, 99))
         }
         return null

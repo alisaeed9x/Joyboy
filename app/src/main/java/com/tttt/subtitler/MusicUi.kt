@@ -195,6 +195,13 @@ class MusicUi(private val act: Activity, private val ui: Ui, private val th: The
     private val eq = EqView(act).apply {
         accent = BLUE
         onFrame = { bass, pulse -> try { danceFrame(bass, pulse) } catch (_: Throwable) {} }
+        center = { orbCenter() }
+    }
+    /** (v320) مركز دايرة الألبوم ونص قطرها (بعد التصغير/الانزلاق وقت الكلمات) بإحداثيات middle — الإيكولايزر بقى خلفية ورا الدايرة والكلمات */
+    private fun orbCenter(): FloatArray? {
+        if (orb.width <= 0 || orb.height <= 0) return null
+        val pts = floatArrayOf(orb.width / 2f, orb.ringCy); orb.matrix.mapPoints(pts)
+        return floatArrayOf(orb.left + orb.translationX + pts[0], orb.top + orb.translationY + pts[1], orb.ringR * orb.scaleX)
     }
     // (v306) الكلمات بترقص على إيقاع الأغنية: السطر الشغّال بيكبّر ويهتز مع ضربة الباص (من Visualizer، ولو مفيش إذن حركة هادية)
     private fun danceOn() = Cfg.str("lyr_dance", "1") != "0"
@@ -723,7 +730,7 @@ class MusicUi(private val act: Activity, private val ui: Ui, private val th: The
     private fun toggleLyrics() {
         if (MusicEngine.current == null) { quiet("شغّل أغنية الأول وبعدين دوس على الكلمات", 2200L); return }
         if (lyrOn) { hideLyrics(); return }
-        lyrOn = true; lyrIdx = -2; lyrWordKey = ""
+        lyrOn = true; eq.alphaMul = 0.5f; lyrIdx = -2; lyrWordKey = ""
         paintLyrBtn()
         // الدواير بنفس حجمها بتنزل لتحت لحد اسم الأغنية، والكلمات بتظهر من وراها بفيد
         val shift = lyrShift()
@@ -741,13 +748,13 @@ class MusicUi(private val act: Activity, private val ui: Ui, private val th: The
     private fun paintLyrBtn() { lyrBtn.text = if (lyrOn) "🙈 إخفاء الكلمات" else "📝 إظهار الكلمات" }
     private fun hideLyrics() {
         if (!lyrOn) return
-        lyrOn = false; paintLyrBtn(); orb.passThrough = false; placeVol()
+        lyrOn = false; eq.alphaMul = 1f; paintLyrBtn(); orb.passThrough = false; placeVol()
         lyrPanel.animate().cancel(); lyrPanel.animate().setStartDelay(0L).alpha(0f).setDuration(220L).withEndAction { if (!lyrOn) lyrPanel.visibility = View.GONE }.start()
         orb.animate().cancel(); orb.animate().translationY(0f).scaleX(1f).scaleY(1f).setDuration(460L).setInterpolator(android.view.animation.DecelerateInterpolator(1.6f)).start()
     }
     /** لما المشغّل نفسه يتقفل: رجّع الدايرة والكلمات لوضعهم فورًا (الأنيميشن مابيشتغلش على view مخفي) */
     private fun snapLyrReset() {
-        lyrOn = false; paintLyrBtn(); orb.passThrough = false; placeVol()
+        lyrOn = false; eq.alphaMul = 1f; paintLyrBtn(); orb.passThrough = false; placeVol()
         lyrPanel.animate().cancel(); lyrPanel.visibility = View.GONE; lyrPanel.alpha = 1f
         orb.animate().cancel(); orb.translationY = 0f; orb.scaleX = 1f; orb.scaleY = 1f
     }
@@ -1012,11 +1019,11 @@ class MusicUi(private val act: Activity, private val ui: Ui, private val th: The
         })
         buildLyricsPanel(); lyrPanel.visibility = View.GONE
         // الكلمات ورا الدواير: لوحة الكلمات تحت، والدايرة (inner) فوقها
+        middle.addView(eq, FrameLayout.LayoutParams(-1, -1))      // (v320) الإيكولايزر أول طبقة: ورا الكلمات وورا الدايرة
         middle.addView(lyrPanel, FrameLayout.LayoutParams(-1, -1)); middle.addView(inner, FrameLayout.LayoutParams(-1, -1))
         val col = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL }
         col.addView(top, LinearLayout.LayoutParams(-1, ui.dp(56)))
         col.addView(middle, LinearLayout.LayoutParams(-1, 0, 1f))
-        col.addView(eq, LinearLayout.LayoutParams(-1, ui.dp(58)).apply { setMargins(ui.dp(18), ui.dp(2), ui.dp(18), ui.dp(2)) })   // (v298) الإيكولايزر أقصر: المساحة الفاضية فوقه راحت للدواير والكلمات
         col.addView(ctl, LinearLayout.LayoutParams(-1, ui.dp(60)).apply { bottomMargin = ui.dp(2) })
         full.addView(col, FrameLayout.LayoutParams(-1, -1))
         setBg(bgColor)

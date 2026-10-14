@@ -18,6 +18,12 @@ object NavAnim {
         else { enter = R.anim.nav_in_right; exit = R.anim.nav_out_left }
     }
 
+    /** (v321) بتطبّق الانتقال فورًا من غير ما تمسحه — بتتنده بعد startActivity مباشرة (قبل finish) عشان الشاشة الجديدة هي اللي تاخده */
+    fun peek(act: Activity) {
+        if (!has) return
+        try { act.overridePendingTransition(enter, exit) } catch (_: Throwable) {}
+    }
+
     /** بتتنده بعد startActivity/finish؛ true لو طبّقت الانتقال الاتجاهي */
     fun take(act: Activity): Boolean {
         if (!has) return false

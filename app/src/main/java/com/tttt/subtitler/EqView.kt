@@ -4,6 +4,7 @@ import android.content.Context
 import android.graphics.Canvas
 import android.graphics.LinearGradient
 import android.graphics.Paint
+import android.graphics.RadialGradient
 import android.graphics.RectF
 import android.graphics.Shader
 import android.media.audiofx.Visualizer
@@ -18,6 +19,12 @@ class EqView(ctx: Context) : View(ctx) {
         set(v) { field = v; shader = null; invalidate() }
     var playing = false
         set(v) { if (field != v) { field = v; kick() } }
+
+    /** (v320) خلفية: [مركز الدايرة x، y، نصف القطر] بإحداثيات الـView ده — الأعمدة بتتحرك حوالين الدايرة. null = نص الشاشة */
+    var center: (() -> FloatArray?)? = null
+    /** (v320) شفافية الخلفية (بتقل لما الكلمات تظهر عشان القراءة) */
+    var alphaMul = 1f
+        set(v) { field = v; invalidate() }
 
     private val N = 36
     private val level = FloatArray(N)       // المعروض (بعد التنعيم)
@@ -120,32 +127,56 @@ class EqView(ctx: Context) : View(ctx) {
     override fun onDetachedFromWindow() { removeCallbacks(tick); running = false; last = 0L; release(); super.onDetachedFromWindow() }
     override fun onSizeChanged(w: Int, h: Int, ow: Int, oh: Int) { super.onSizeChanged(w, h, ow, oh); shader = null }
 
+    private val pr = Paint(Paint.ANTI_ALIAS_FLAG).apply { strokeCap = Paint.Cap.ROUND; style = Paint.Style.STROKE }
+    private val pg = Paint(Paint.ANTI_ALIAS_FLAG)
+
     override fun onDraw(c: Canvas) {
         val w = width.toFloat(); val h = height.toFloat()
         if (w <= 0f || h <= 0f) return
+        val ctr = try { center?.invoke() } catch (_: Throwable) { null }
+        val cx = ctr?.get(0) ?: (w / 2f)
+        val cy = ctr?.get(1) ?: (h * 0.4f)
+        val r = (ctr?.get(2) ?: (Math.min(w, h) * 0.3f)).coerceAtLeast(20f * d)
+        val am = alphaMul.coerceIn(0f, 1f)
+        val rgb = accent and 0x00FFFFFF
+        var bass = 0f; for (i in 0 until 6) bass += level[i]; bass /= 6f
+
+        // 1) هالة ناعمة ورا الدايرة بتنبض مع الباص
+        val gr = r * (1.25f + 0.9f * bass)
+        pg.shader = RadialGradient(cx, cy, gr, intArrayOf((((0x66 * (0.35f + bass) * am).toInt().coerceIn(0, 255)) shl 24) or rgb, rgb), floatArrayOf(0.35f, 1f), Shader.TileMode.CLAMP)
+        c.drawCircle(cx, cy, gr, pg); pg.shader = null
+
+        // 2) أعمدة دايرية حوالين الدايرة (متماثلة شمال/يمين، الباص من تحت)
+        val m = N * 2
+        val sw = Math.max(2f * d, (2f * Math.PI.toFloat() * r * 1.06f / m) * 0.55f)
+        pr.strokeWidth = sw
+        val maxLen = Math.min(r * 0.75f, Math.min(w, h) * 0.22f)
+        for (j in 0 until m) {
+            val idx = if (j < N) j else m - 1 - j
+            val lv = level[idx]
+            val len = 3f * d + maxLen * lv
+            val ang = Math.PI / 2.0 + (j + 0.5) * 2.0 * Math.PI / m
+            val ca = Math.cos(ang).toFloat(); val sa = Math.sin(ang).toFloat()
+            val r0 = r * 1.07f
+            val a = ((0x38 + 0x50 * lv) * am).toInt().coerceIn(0, 255)
+            pr.color = (a shl 24) or (if (lv > 0.55f) 0xFFFFFF else rgb)
+            c.drawLine(cx + ca * r0, cy + sa * r0, cx + ca * (r0 + len), cy + sa * (r0 + len), pr)
+        }
+
+        // 3) موجة ناعمة من تحت الشاشة (شفافة، بتتلاشى لفوق)
         var sh = shader
         if (sh == null) {
-            sh = LinearGradient(0f, h, 0f, 0f, (accent and 0x00FFFFFF) or 0xE0000000.toInt(), 0xFFFFFFFF.toInt(), Shader.TileMode.CLAMP)
+            sh = LinearGradient(0f, h, 0f, h * 0.55f, (rgb or 0xFF000000.toInt()), rgb, Shader.TileMode.CLAMP)
             shader = sh
         }
         val gap = 3f * d
         val bw = (w - gap * (N - 1)) / N
-        val minH = 3f * d
-        p.reset(); p.isAntiAlias = true; p.shader = sh
+        p.reset(); p.isAntiAlias = true; p.shader = sh; p.alpha = (70 * am).toInt().coerceIn(0, 255)
+        val top = h * 0.4f
         for (i in 0 until N) {
             val x = i * (bw + gap)
-            val bh = minH + (h - minH - 4f * d) * level[i]
+            val bh = 3f * d + top * level[i]
             rf.set(x, h - bh, x + bw, h)
-            c.drawRoundRect(rf, bw / 2f, bw / 2f, p)
-        }
-        // نقطة القمة (بتنزل ببطء)
-        p.shader = null; p.color = 0xB3FFFFFF.toInt()
-        for (i in 0 until N) {
-            val pk = peak[i]
-            if (pk - level[i] < 0.02f) continue
-            val x = i * (bw + gap)
-            val y = h - (minH + (h - minH - 4f * d) * pk) - 3f * d
-            rf.set(x, y - 2f * d, x + bw, y)
             c.drawRoundRect(rf, bw / 2f, bw / 2f, p)
         }
     }

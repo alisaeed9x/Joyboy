@@ -125,8 +125,10 @@ object MusicEngine {
     private fun requestStem(t: Track) {
         val a = app ?: return
         if (StemAi.isRunning(t)) return
+        if (Karaoke.hasStem(a, t, 1) && Karaoke.hasStem(a, t, 2)) return       // (v319) اتفصلت قبل كده — جاهزة، مفيش إعادة فصل
         stemPct = 0; changed()
         Thread {
+            try { android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_BACKGROUND) } catch (_: Throwable) {}
             // (v307) فصل بالذكاء الصناعي (MDX-Net) بدل القناة الوسطى. بيتلغي لو رجعت «الكل» أو غيّرت الأغنية
             val err = try { StemAi.separate(a, t, { p -> if (current?.id == t.id && p != stemPct) { stemPct = p; if (p % 3 == 0) changed() } }, { current?.id != t.id }) } catch (e: Throwable) { e.message ?: "فشل" }
             main.post {
@@ -250,7 +252,9 @@ object MusicEngine {
         try { RecentSongs.add(t.uri) } catch (_: Throwable) {}
         val want = if (stem != 0 && Karaoke.hasStem(ctx.applicationContext, t, stem)) stem else 0
         openPlayer(ctx.applicationContext, t, want, 0)
-        if (want == 0 && (stem != 0 || autoStem(ctx.applicationContext))) requestStem(t)   // (v308) الفصل تلقائي في الخلفية لكل أغنية
+        // (v308) الفصل تلقائي في الخلفية — (v319) المستخدم بيقلّب بين الأغاني: الأوتوماتيك بيبدأ بعد ١٥ ثانية تشغيل، واليدوي (stem != 0) فورًا
+        if (want == 0 && stem != 0) requestStem(t)
+        else if (want == 0) { val a0 = ctx.applicationContext; main.postDelayed({ if (current?.id == t.id && autoStem(a0)) requestStem(t) }, 15000L) }
         changed()
     }
     private fun peekRandom(): Int {

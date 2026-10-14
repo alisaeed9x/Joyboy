@@ -28,7 +28,8 @@ class VisFrame(val t: Double, val boxes: List<VisBox>, val dur: Double = VisualM
  * (دمج + حد أدنى للعرض + فلتر شعارات + إزالة تكرار الحدود) ← لوج وأحداث ظهور/اختفاء. المنطق الصرف في HybridVis.kt.
  */
 class VisualMode(
-    private val conf: Conf,
+    /** (v322) كان بيمسك نسخة الإعدادات اللي اتعملت وقت فتح المشغّل (مفاتيح قديمة/فاضية) — دلوقتي بيقرا الإعدادات الحالية كل مرة */
+    private val confP: () -> Conf,
     private val position: () -> Double,
     private val retriever: () -> MediaMetadataRetriever?,
     private val say: (String) -> Unit,
@@ -38,6 +39,8 @@ class VisualMode(
     /** (v206) لوج تفصيلي (كل SKIP/queue/دفعة/حدث) — من غير إشعارات على الشاشة. لو null بيروح لـ say */
     private val log: ((String) -> Unit)? = null
 ) {
+    private val conf: Conf get() = confP()
+
     companion object {
         private val active = java.util.concurrent.atomic.AtomicInteger(0)
         /** (v154) true لو الوضع البصري شغّال دلوقتي — التنقيح الجزئي مابيستعملش مفاتيح الصور وقتها */
@@ -348,13 +351,21 @@ text_hex: لون النص hex | opacity_pct: شفافية الخلفية 0-100 |
 
     fun start() {
         stop(); running = true
+        status = "👁 بدأ…"
         val myGen = ++gen
         flushEx = java.util.concurrent.Executors.newSingleThreadExecutor { r -> Thread(r).also { it.isDaemon = true } }
         val t = Thread {
             active.incrementAndGet()
             try { loop(myGen); if (alive(myGen)) lg("👁 الحلقة خلصت") }
             catch (e: Throwable) { status = "⚠ " + e.javaClass.simpleName + ": " + (e.message ?: "").take(80); lg(status) }   // (v182) السبب بيتسجّل في اللوج دايمًا
-            finally { if (th === Thread.currentThread()) running = false; active.decrementAndGet() }
+            finally {
+                if (th === Thread.currentThread()) {
+                    running = false
+                    // (v322) الحلقة خلصت من نفسها (مش بإيدك) = وقفت بسبب: نقول للمستخدم بدل ما الحالة تفضل «واقف» من غير تفسير
+                    if (status.isBlank() || status.startsWith("👁")) { status = "⚠ الوضع البصري وقف من نفسه — شوف اللوج"; try { say(status) } catch (_: Throwable) {} }
+                }
+                active.decrementAndGet()
+            }
         }
         t.isDaemon = true; th = t; t.start()
     }
@@ -373,7 +384,7 @@ text_hex: لون النص hex | opacity_pct: شفافية الخلفية 0-100 |
         val live = r == null   // (v182) m3u8 / مصدر مش مقروء: بنلقط الفريمات من الشاشة وقت التشغيل
         if (live && grab == null) { status = "المصدر ده مش مدعوم للوضع البصري"; say(status); return }
         val keys = keyList()
-        if (keys.isEmpty()) { say("ضيف مفتاح للوضع البصري (الإعدادات ← 🔑 المفاتيح ← مفتاح الوضع البصري فقط)"); try { r?.release() } catch (_: Exception) {}; return }
+        if (keys.isEmpty()) { status = "ضيف مفتاح للوضع البصري"; say("ضيف مفتاح للوضع البصري (الإعدادات ← 🔑 المفاتيح ← مفتاح الوضع البصري فقط)"); try { r?.release() } catch (_: Exception) {}; return }
         pool = KeyPool(keys)
         val durSec = if (r == null) 0.0 else try { (r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L) / 1000.0 } catch (_: Exception) { 0.0 }
         lastSig = null; lastQ = null; grabFails = 0
