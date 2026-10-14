@@ -92,9 +92,9 @@ JNIEXPORT jlong JNICALL Java_com_tttt_subtitler_StemOrt_nOpen(JNIEnv *env, jclas
         ok = ck(g_api->GetAllocatorWithDefaultOptions(&al));
         char *nm = nullptr;
         if (ok) ok = ck(g_api->SessionGetInputName(s->session, 0, al, &nm));
-        if (ok && nm) { s->inName = nm; g_api->AllocatorFree(al, nm); nm = nullptr; }
+        if (ok && nm) { s->inName = nm; (void) ck(g_api->AllocatorFree(al, nm)); nm = nullptr; }
         if (ok) ok = ck(g_api->SessionGetOutputName(s->session, 0, al, &nm));
-        if (ok && nm) { s->outName = nm; g_api->AllocatorFree(al, nm); }
+        if (ok && nm) { s->outName = nm; (void) ck(g_api->AllocatorFree(al, nm)); }
     }
     if (ok) ok = ck(g_api->CreateCpuMemoryInfo(OrtArenaAllocator, OrtMemTypeDefault, &s->mem));
     if (!ok) { freeSess(s); return 0; }
@@ -108,7 +108,7 @@ JNIEXPORT jintArray JNICALL Java_com_tttt_subtitler_StemOrt_nShape(JNIEnv *env, 
     OrtTypeInfo *ti = nullptr;
     if (!ck(g_api->SessionGetInputTypeInfo(s->session, 0, &ti))) return nullptr;
     const OrtTensorTypeAndShapeInfo *tsi = nullptr;
-    bool ok = ck(g_api->CastTypeInfoToTensorTypeAndShapeInfo(ti, &tsi));
+    bool ok = ck(g_api->CastTypeInfoToTensorInfo(ti, &tsi));
     if (ok && !tsi) { g_err = "المدخل مش Tensor"; ok = false; }
     size_t n = 0;
     std::vector<int64_t> d;

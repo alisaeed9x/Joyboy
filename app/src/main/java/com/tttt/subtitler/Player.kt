@@ -2548,6 +2548,8 @@ class PlayerActivity : Activity(), Host {
                     if (c.moveToFirst()) return "f:" + c.getString(0) + ":" + c.getLong(1)
                 }
             } catch (e: Exception) { LogStore.err("Main:2289", e) }
+            // (v310) ملف مفتوح من الفايل مانجر (file://): نفس صيغة الهوية بتاعة المكتبة (الاسم:الحجم) فالتقدم والترجمة يتشاركوا
+            if (u.scheme == "file") { try { val ff = java.io.File(u.path ?: ""); if (ff.isFile) return "f:" + ff.name + ":" + ff.length() } catch (e: Exception) { LogStore.err("Player:fileId", e) } }
             return "f:$u"
         }
         intent.getStringExtra("ytid")?.takeIf { it.length == 11 }?.let { return "yt:$it" }   // (v117) يوتيوب: التقدم والترجمة على معرّف الفيديو مش على لينك الستريم المتغيّر

@@ -320,7 +320,7 @@ class BrowserActivity : Activity() {
         root.addView(bar); root.addView(progTrack, LinearLayout.LayoutParams(-1, ui.dp(3))); root.addView(findBar); root.addView(hint)
         root.addView(webWrap, LinearLayout.LayoutParams(-1, 0, 1f)); root.addView(badge)
         // (v117) شريط البوابات: الفيديوهات · الموسيقى · المتصفح (إحنا فيه دلوقتي) · (v231) المهام
-        val gates = BottomNav(this, ui, th, 2) { i -> if (i == 0) goMain("videos") else if (i == 1) goMain("music") else if (i == 3) goMain("tasks") }
+        val gates = BottomNav(this, ui, th, 2) { i -> if (i == 0) goMain("videos") else if (i == 1) goMain("music") else if (i == 3) goMain("tasks") else if (i == 4) { startActivity(Intent(this, FileManagerActivity::class.java)); finish() } }   // (v310) الملفات
         root.addView(gates.view, LinearLayout.LayoutParams(-1, -2))
         content = root
         frame = FrameLayout(this); frame.setBackgroundColor(th.bg)

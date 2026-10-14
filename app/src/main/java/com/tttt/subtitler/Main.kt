@@ -769,7 +769,7 @@ class MainActivity : Activity() {
                 updateTasksFab()
             }
         }
-        val nav = BottomNav(this, ui, th, 0) { i -> if (i == 2) { save(); startActivity(Intent(this, BrowserActivity::class.java)) } else showTabFn(i) }
+        val nav = BottomNav(this, ui, th, 0) { i -> if (i == 2) { save(); startActivity(Intent(this, BrowserActivity::class.java)) } else if (i == 4) { save(); startActivity(Intent(this, FileManagerActivity::class.java)) } else showTabFn(i) }   // (v310) 4 الملفات = شاشة منفصلة زي المتصفح
         navUi = nav
         if (!fromPlayer) {
             TaskCenter.listener = { if (!isDestroyed && !isFinishing) { tasksDlgRefresh?.invoke(); runOnUiThread { updateTasksFab() } } }

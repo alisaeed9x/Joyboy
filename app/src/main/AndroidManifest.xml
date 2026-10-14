@@ -30,6 +30,12 @@
         <activity android:name=".PlayerActivity" android:exported="false"
             android:supportsPictureInPicture="true" android:resizeableActivity="true"
             android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboardHidden|density"/>
+        <activity android:name=".FileManagerActivity" android:exported="false"
+            android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboardHidden|density"/>
+        <provider android:name="androidx.core.content.FileProvider" android:authorities="${applicationId}.fmprov"
+            android:exported="false" android:grantUriPermissions="true">
+            <meta-data android:name="android.support.FILE_PROVIDER_PATHS" android:resource="@xml/fm_paths"/>
+        </provider>
         <activity android:name=".LiveRequestActivity" android:exported="false" android:theme="@android:style/Theme.Translucent.NoTitleBar"/>
         <service android:name=".LiveCaptionService" android:exported="false" android:foregroundServiceType="mediaProjection"/>
         <service android:name=".BgService" android:exported="false" android:foregroundServiceType="dataSync" android:stopWithTask="false"/>
