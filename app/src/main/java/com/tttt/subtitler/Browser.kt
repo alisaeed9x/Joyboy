@@ -138,6 +138,14 @@ class BrowserActivity : Activity() {
     override fun finish() { super.finish(); try { if (!NavAnim.take(this)) overridePendingTransition(R.anim.act_stay, R.anim.act_exit) } catch (e: Exception) { LogStore.err("Browser:finish", e) } }
 
     lateinit var badge: Button
+    // (v324) شريط «تحميل؟» اللي بيظهر تحت الصفحة (زي شريط «لقيت فيديو»): تحميل · إلغاء، بيختفي بعد 9 ثواني (كان 6) أو بلمسة برّاه = مش عايز أحمّل
+    private lateinit var dlBar: LinearLayout
+    private lateinit var dlTxt: IconTextView
+    private lateinit var dlLine: View
+    private var dlHide: Runnable? = null
+    private var dlAct: (() -> Unit)? = null
+    private val DL_PROMPT_MS = 9000L
+    private var tasksFabUi: TasksFab? = null
     lateinit var hint: TextView
     lateinit var th: Theme
     lateinit var ui: Ui
@@ -293,6 +301,20 @@ class BrowserActivity : Activity() {
             layoutParams = LinearLayout.LayoutParams(-1, -2).apply { setMargins(ui.dp(8), ui.dp(4), ui.dp(8), ui.dp(6)) }
             setOnClickListener { showList() }
         }
+        dlTxt = IconTextView(this).apply { textSize = 13f; setTextColor(th.text); maxLines = 2; ellipsize = TextUtils.TruncateAt.END; gravity = Gravity.CENTER }
+        dlLine = View(this).apply { setBackgroundColor(th.primary) }
+        dlBar = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; visibility = View.GONE
+            background = ui.box(th.card, th.border, 12)
+            setPadding(ui.dp(12), ui.dp(8), ui.dp(12), ui.dp(8))
+            addView(dlTxt, LinearLayout.LayoutParams(-1, -2))
+            addView(LinearLayout(this@BrowserActivity).apply {
+                layoutDirection = View.LAYOUT_DIRECTION_RTL; gravity = Gravity.CENTER; setPadding(0, ui.dp(6), 0, ui.dp(6))
+                addView(ui.button("⬇ تحميل", true) { val a = dlAct; hideDl(); a?.invoke() }, LinearLayout.LayoutParams(0, ui.dp(46), 1f).apply { marginEnd = ui.dp(6) })
+                addView(ui.button("✕ إلغاء") { hideDl() }, LinearLayout.LayoutParams(0, ui.dp(46), 1f))
+            }, LinearLayout.LayoutParams(-1, -2))
+            addView(dlLine, LinearLayout.LayoutParams(-1, ui.dp(2)))
+        }
         // (v231) غلاف منطقة الصفحة: الصفحة + غطا أبيض وقت الطوارئ + زرارين عايمين تحت ‹ › (🚨 طوارئ · ↩ تراجع)
         panicCover = View(this).apply { setBackgroundColor(Color.WHITE); visibility = View.GONE; isClickable = true }
         panicB = IconTextView(this).apply {
@@ -318,10 +340,12 @@ class BrowserActivity : Activity() {
             addView(panicCover, FrameLayout.LayoutParams(-1, -1))
             addView(panicCol, FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM or Gravity.RIGHT).apply { setMargins(0, 0, ui.dp(4), ui.dp(8)) })
         }
+        tasksFabUi = TasksFab(this, webWrap, ui) { goMain("tasks") }   // (v324) زرار المهام العايم (دايرة حمراء بالعدد) فوق الصفحة
         root.addView(bar); root.addView(progTrack, LinearLayout.LayoutParams(-1, ui.dp(3))); root.addView(findBar); root.addView(hint)
         root.addView(webWrap, LinearLayout.LayoutParams(-1, 0, 1f)); root.addView(badge)
-        // (v117) شريط البوابات: الفيديوهات · الموسيقى · المتصفح (إحنا فيه دلوقتي) · (v231) المهام
-        val gates = BottomNav(this, ui, th, 2) { i -> if (i != 2) NavAnim.set(2, i); if (i == 0) goMain("videos") else if (i == 1) goMain("music") else if (i == 4) goMain("tasks") else if (i == 3) { startActivity(Intent(this, FileManagerActivity::class.java)); NavAnim.peek(this); finish() } }   // (v310) الملفات
+        root.addView(dlBar, LinearLayout.LayoutParams(-1, -2).apply { setMargins(ui.dp(8), ui.dp(4), ui.dp(8), ui.dp(6)) })   // (v324)
+        // (v117) شريط البوابات: الفيديوهات · الموسيقى · المتصفح (إحنا فيه دلوقتي) · الملفات · (v324) يوتيوب
+        val gates = BottomNav(this, ui, th, 2) { i -> if (i != 2) NavAnim.set(2, i); if (i == 0) goMain("videos") else if (i == 1) goMain("music") else if (i == 4) goMain("youtube") else if (i == 3) { startActivity(Intent(this, FileManagerActivity::class.java)); NavAnim.peek(this); finish() } }   // (v310) الملفات
         root.addView(gates.view, LinearLayout.LayoutParams(-1, -2))
         content = root
         frame = FrameLayout(this); frame.setBackgroundColor(th.bg)
@@ -467,7 +491,7 @@ class BrowserActivity : Activity() {
             }
             Sniff.accept(url)?.let { a -> addFound(Found(a, Sniff.kindOf(a), "", t.url, ua ?: uaOf(t)), t) }
             val name = URLUtil.guessFileName(url, cd, mime)
-            Notice.ask(this, "تحميل «$name»؟", "تحميل", "لا", 6000L, { startDownload(url, ua, name, mime) }, {})
+            showDl(name) { startDownload(url, ua, name, mime) }   // (v324) شريط تحت الصفحة بدل إشعار فوق
         }
         w.setOnLongClickListener { v -> longPress(v as WebView) }
         return w
@@ -904,16 +928,41 @@ class BrowserActivity : Activity() {
 
     private fun startDownload(url: String, ua: String?, name: String, mime: String?) {
         try {
-            val rq = DownloadManager.Request(Uri.parse(url))
-            CookieManager.getInstance().getCookie(url)?.let { rq.addRequestHeader("Cookie", it) }
-            rq.addRequestHeader("User-Agent", ua ?: uaWeb)
-            if (tab.url.isNotBlank()) rq.addRequestHeader("Referer", tab.url)
-            if (!mime.isNullOrBlank()) rq.setMimeType(mime)
-            rq.setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
-            rq.setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, name)
-            (getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager).enqueue(rq)
-            Notice.show(this, "⬇ بدأ التحميل: $name", 2300L)
+            val ck = try { CookieManager.getInstance().getCookie(url) } catch (_: Throwable) { null }
+            // (v324) التحميل بيظهر في «المهام» (DmTasks بتتابع DownloadManager)
+            DmTasks.start(applicationContext, url, name, mime, ua ?: uaWeb, ck, tab.url)
+            Notice.show(this, "⬇ اتضاف للتحميل — تابعه من زرار المهام: $name", 2600L)
         } catch (e: Throwable) { LogStore.err("Browser:download", e); Notice.show(this, "التحميل فشل: " + (e.message ?: "").take(60), 3000L) }
+    }
+
+    // ===== (v324) شريط «تحميل؟» =====
+    private fun showDl(name: String, go: () -> Unit) {
+        if (dead) return
+        dlHide?.let { h.removeCallbacks(it) }
+        dlAct = go
+        dlTxt.text = "⬇ تحميل «$name»؟"
+        dlBar.visibility = View.VISIBLE
+        dlLine.animate().cancel(); dlLine.scaleX = 1f
+        dlLine.post {
+            dlLine.pivotX = dlLine.width.toFloat()
+            dlLine.animate().scaleX(0f).setDuration(DL_PROMPT_MS).setInterpolator(android.view.animation.LinearInterpolator()).start()
+        }
+        val r = Runnable { hideDl() }
+        dlHide = r; h.postDelayed(r, DL_PROMPT_MS)
+    }
+    private fun hideDl() {
+        dlHide?.let { h.removeCallbacks(it) }; dlHide = null; dlAct = null
+        if (!::dlBar.isInitialized) return
+        dlLine.animate().cancel()
+        dlBar.visibility = View.GONE
+    }
+    /** لمسة في أي حتة برّا شريط التحميل = «مش عايز أحمّل» (اللمسة نفسها بتكمّل لحد الصفحة عادي) */
+    override fun dispatchTouchEvent(ev: android.view.MotionEvent): Boolean {
+        if (ev.actionMasked == android.view.MotionEvent.ACTION_DOWN && ::dlBar.isInitialized && dlBar.visibility == View.VISIBLE && dlBar.isLaidOut) {
+            val r = android.graphics.Rect()
+            if (dlBar.getGlobalVisibleRect(r) && !r.contains(ev.rawX.toInt(), ev.rawY.toInt())) hideDl()
+        }
+        return super.dispatchTouchEvent(ev)
     }
 
     @Suppress("DEPRECATION")
@@ -1304,6 +1353,7 @@ class BrowserActivity : Activity() {
     @Suppress("DEPRECATION")
     override fun onBackPressed() {
         if (customView != null) { leaveCustom(); return }
+        if (::dlBar.isInitialized && dlBar.visibility == View.VISIBLE) { hideDl(); return }   // (v324)
         if (findBar.visibility == View.VISIBLE) { closeFind(); return }
         val w = wvOrNull
         if (w != null && w.canGoBack()) { w.goBack(); return }
@@ -1317,6 +1367,7 @@ class BrowserActivity : Activity() {
     override fun onResume() { super.onResume(); try { wvOrNull?.onResume() } catch (_: Throwable) {} }
     override fun onDestroy() {
         dead = true; h.removeCallbacksAndMessages(null)
+        try { tasksFabUi?.detach() } catch (_: Throwable) {}
         try { dlg?.dismiss() } catch (e: Throwable) { LogStore.err("Browser:d1", e) }
         try { tabsDlg?.dismiss() } catch (e: Throwable) { LogStore.err("Browser:d2", e) }
         for (t in tabs) try { t.wv?.destroy() } catch (e: Throwable) { LogStore.err("Browser:d3", e) }

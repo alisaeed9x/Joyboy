@@ -350,19 +350,28 @@ class FileManagerActivity : Activity() {
         selBtn("🗑 حذف") { deleteSel() }
         selBtn("⋯") { moreSel() }
         root.addView(selBar, LinearLayout.LayoutParams(-1, -2))
-        // (v313) شريط البوابات السفلي (صغير) زي باقي الشاشات: الفيديوهات · الموسيقى · المتصفح · الملفات (إحنا فيه) · المهام
+        // (v313) شريط البوابات السفلي (صغير) زي باقي الشاشات: الفيديوهات · الموسيقى · المتصفح · الملفات (إحنا فيه) · (v324) يوتيوب
         val gates = BottomNav(this, ui, th, 3) { i ->
             if (i != 3) {
                 NavAnim.set(3, i)
                 if (i == 2) startActivity(Intent(this, BrowserActivity::class.java))
-                else startActivity(Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP).putExtra("tab", if (i == 0) "videos" else if (i == 1) "music" else "tasks"))
+                else startActivity(Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP).putExtra("tab", if (i == 0) "videos" else if (i == 1) "music" else "youtube"))
                 NavAnim.peek(this)
                 finish()
             }
         }
         root.addView(gates.view, LinearLayout.LayoutParams(-1, -2))
 
-        setContentView(root)
+        // (v324) زرار المهام العايم (دايرة حمراء بالعدد) فوق القايمة؛ دوسة عليه بتفتح صفحة المهام في الرئيسية
+        val host = FrameLayout(this)
+        host.addView(root, FrameLayout.LayoutParams(-1, -1))
+        fab = TasksFab(this, host, ui) {
+            NavAnim.set(3, 0)
+            startActivity(Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP).putExtra("tab", "tasks"))
+            NavAnim.peek(this)
+            finish()
+        }
+        setContentView(host)
     }
 
     override fun onResume() {
@@ -376,7 +385,8 @@ class FileManagerActivity : Activity() {
         }
     }
 
-    override fun onDestroy() { loadToken++; uiH.removeCallbacksAndMessages(null); super.onDestroy() }
+    private var fab: TasksFab? = null
+    override fun onDestroy() { loadToken++; uiH.removeCallbacksAndMessages(null); try { fab?.detach() } catch (_: Throwable) {}; super.onDestroy() }
 
     override fun onRequestPermissionsResult(code: Int, perms: Array<out String>, res: IntArray) {
         super.onRequestPermissionsResult(code, perms, res)

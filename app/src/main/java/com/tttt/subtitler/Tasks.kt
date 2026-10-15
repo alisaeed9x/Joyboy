@@ -96,12 +96,22 @@ object TaskCenter {
 
     fun changed() { main.post { try { listener?.invoke() } catch (_: Throwable) {}; for (l in extra) { try { l() } catch (_: Throwable) {} } }; WidgetHub.poke(appCtx) }
     fun active(): Int = items.count { it.state == 0 || it.state == 1 }
+    /** (v324) أي حاجة في صفحة المهام (شغّالة أو خالصة) — الزرار العايم بيفضل ظاهر طول ما فيه حاجة تتفتح */
+    fun total(): Int = items.size
 
     @Synchronized fun add(app: Context, kind: String, title: String, work: (TaskItem) -> Unit): TaskItem {
         val t = TaskItem(++seq, kind, title); t.work = work; t.workKeep = work
         appCtx = app.applicationContext
-        val dl = kind == "download"
-        items.add(0, t); (if (dl) qd else q).add(t); ensureWorker(app.applicationContext, dl); changed()
+        items.add(0, t)
+        if (kind == "dm") {
+            // (v324) تحميلات المتصفح (DownloadManager): بتتابع تقدّم التحميل بس، فكل واحدة في خيط لوحدها من غير طابور (التحميل نفسه شغّال في النظام بالتوازي)
+            val ctx = app.applicationContext
+            Thread { runOne(ctx, t) }.apply { isDaemon = true; start() }
+        } else {
+            val dl = kind == "download"
+            (if (dl) qd else q).add(t); ensureWorker(app.applicationContext, dl)
+        }
+        changed()
         return t
     }
 
@@ -128,25 +138,30 @@ object TaskCenter {
     private fun loop(app: Context, q: LinkedBlockingQueue<TaskItem>) {
         while (true) {
             val t = try { q.take() } catch (_: InterruptedException) { return }
-            if (t.cancelled) { aborted(t); afterEnd(t); changed(); continue }
-            t.state = 1; changed()
-            try {
-                t.work?.invoke(t)
-                if (t.cancelled) aborted(t)
-                else {
-                    t.state = 2; t.pct = 100
-                    main.post { try { Toast.makeText(app, "✅ خلصت: " + t.title, Toast.LENGTH_LONG).show() } catch (_: Throwable) {} }
-                }
-            } catch (_: TaskCancelled) { aborted(t)
-            } catch (e: Throwable) {
-                if (t.cancelled) aborted(t) else {
-                    t.state = 3
-                    t.msg = (e.message ?: e.javaClass.simpleName).take(160)
-                    LogStore.err("Tasks:" + t.kind, e)
-                }
-            }
-            t.work = null; t.onCancel = null; t.onPause = null; t.paused = false; afterEnd(t); changed()
+            runOne(app, t)
         }
+    }
+
+    /** (v324) تنفيذ مهمة واحدة (اتفصلت من loop عشان مهام «dm» تشتغل من غير طابور) */
+    private fun runOne(app: Context, t: TaskItem) {
+        if (t.cancelled) { aborted(t); afterEnd(t); changed(); return }
+        t.state = 1; changed()
+        try {
+            t.work?.invoke(t)
+            if (t.cancelled) aborted(t)
+            else {
+                t.state = 2; t.pct = 100
+                main.post { try { Toast.makeText(app, "✅ خلصت: " + t.title, Toast.LENGTH_LONG).show() } catch (_: Throwable) {} }
+            }
+        } catch (_: TaskCancelled) { aborted(t)
+        } catch (e: Throwable) {
+            if (t.cancelled) aborted(t) else {
+                t.state = 3
+                t.msg = (e.message ?: e.javaClass.simpleName).take(160)
+                LogStore.err("Tasks:" + t.kind, e)
+            }
+        }
+        t.work = null; t.onCancel = null; t.onPause = null; t.paused = false; afterEnd(t); changed()
     }
 
     /** (v147) ✕ إلغاء: بيوقف المهمة وبيشيلها من القايمة */

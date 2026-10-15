@@ -18,7 +18,12 @@ class TasksUi(private val act: Activity, private val ui: Ui, private val th: The
     private val bgList = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL }
     private val taskHead = ui.text("⚙ باقي المهام", 13f, th.muted, true).apply { setPadding(ui.dp(4), ui.dp(10), ui.dp(4), ui.dp(2)) }
     private val taskList = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL }
-    private val empty = ui.text("مفيش مهام لسه.\nدوس على أي أداة فوق واختار الفيديو، أو افتح فيديو في المشغّل وادوس 🧰 أدوات. التحميلات (⬇) بتظهر هنا كمان.", 14f, th.muted).apply { gravity = Gravity.CENTER; setPadding(ui.dp(24), ui.dp(60), ui.dp(24), 0) }
+    private val empty = ui.text("مفيش مهام لسه.\nدوس على أي أداة فوق واختار الفيديو، أو افتح فيديو في المشغّل وادوس 🧰 أدوات. التحميلات (⬇) وتحميلات المتصفح بتظهر هنا كمان.", 14f, th.muted).apply { gravity = Gravity.CENTER; setPadding(ui.dp(24), ui.dp(60), ui.dp(24), 0) }
+
+    /** (v324) لما الصفحة تتفتح من الزرار العايم (الرئيسية) بيتحط هنا إجراء الرجوع وبيظهر زرار ✕؛ لو null (نافذة المشغّل فيها زرار إغلاق لوحدها) الزرار مخفي */
+    private val closeB = ui.button("✕") { onClose?.invoke() }.apply { visibility = View.GONE }
+    var onClose: (() -> Unit)? = null
+        set(v) { field = v; closeB.visibility = if (v != null) View.VISIBLE else View.GONE }
 
     private class Row(val card: LinearLayout, val title: TextView, val status: TextView, val bar: ProgressBar, val btns: LinearLayout)
     private val rows = HashMap<Int, Row>()
@@ -29,6 +34,7 @@ class TasksUi(private val act: Activity, private val ui: Ui, private val th: The
         val head = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; setPadding(ui.dp(16), ui.dp(14), ui.dp(12), ui.dp(6)) }
         head.addView(ui.text("⏳ المهام", 18f, th.primary, true), LinearLayout.LayoutParams(0, -2, 1f))
         head.addView(ui.button("🗑 مسح المنتهي") { BgJobs.clearFinished(); TaskCenter.clearFinished() }, LinearLayout.LayoutParams(-2, -2))
+        head.addView(closeB, LinearLayout.LayoutParams(-2, -2).apply { marginStart = ui.dp(6) })
         val sv = ScrollView(act).apply { addView(list); overScrollMode = View.OVER_SCROLL_NEVER }
         root.addView(head, LinearLayout.LayoutParams(-1, -2))
         // (v137) الأدوات مباشرة من هنا: دوس الأداة → اختار الفيديو → نافذة الإعدادات → تبدأ

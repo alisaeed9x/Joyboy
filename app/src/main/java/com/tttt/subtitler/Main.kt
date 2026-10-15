@@ -67,28 +67,20 @@ class MainActivity : Activity() {
     private var scanFn: () -> Unit = {}
     private var libStarted = false
     private var curTab = 0                       // (v117) 0 = الفيديوهات · 1 = يوتيوب
-    private var ytUi: YoutubeUi? = null
+    private var ytUi: YtProUi? = null
     private var navUi: BottomNav? = null
     private var musicUi: MusicUi? = null            // (v189) صفحة الموسيقى
     private var tasksUiRef: TasksUi? = null
     private var showTabFn: (Int) -> Unit = {}
+    private var ytOpenFn: ((String) -> Unit)? = null   // (v327) فتح تفاصيل فيديو يوتيوب من إشعار
     private var tasksDlgRefresh: (() -> Unit)? = null
-    /** (v231) صفحة المهام رجعت صفحة منفصلة في الشريط السفلي (جنب المتصفح): أي طلب «افتح المهام» (⚙️ · الزرار العايم · الويدجت) بيفتحها */
-    private fun showTasksDialog() { showTabFn(4) }
-    // (v199) زرار «المهام» العايم (بشكل زرار التخطي): بيظهر لما فيه مهام شغّالة
-    private var tasksFab: IconTextView? = null
+    /** (v324) صفحة المهام طلعت من الشريط السفلي (مكانها بقى يوتيوب): بتتفتح من الزرار العايم (TasksFab) أو ⚙️ أو الويدجت، وبتتخبّى بالرجوع. رقمها الداخلي 5 */
+    private fun showTasksDialog() { showTabFn(5) }
+    private var tabBeforeTasks = 0
+    // (v324) زرار «المهام» العايم: دايرة حمراء بعدد المهام، بتتسحب لأي مكان (TasksFab.kt)
+    private var tasksFabUi: TasksFab? = null
     private var fabHide = false
-    private fun updateTasksFab() {
-        val f = tasksFab ?: return
-        val n = TaskCenter.active() + BgJobs.jobs.count { it.active }
-        f.text = "⏳ المهام ($n)"
-        val wasShown = f.visibility == View.VISIBLE
-        f.visibility = if (n > 0 && !fabHide && curTab != 4) View.VISIBLE else View.GONE
-        val nowShown = f.visibility == View.VISIBLE
-        if (nowShown && !wasShown) Motion.pop(f, 0.5f)
-        Motion.breathe(f, nowShown)
-        navUi?.label(4, if (n > 0) "المهام ($n)" else "المهام")
-    }
+    private fun updateTasksFab() { tasksFabUi?.hidden = fabHide || curTab == 5 }
     private var toolsUiM: ToolsUi? = null
     private var pendingTool = ""
     private var pendingSrc: ToolSrc? = null
@@ -728,6 +720,7 @@ class MainActivity : Activity() {
         // (v135) بوابة تالتة: «المهام» (قص · صوت · GIF · ضغط · ترجمة ثابتة)
         toolsUiM = ToolsUi(this, ui, th)
         val tasksUi = TasksUi(this, ui, th) { k -> pickTool(k) }; tasksUiRef = tasksUi
+        tasksUi.onClose = { showTabFn(if (tabBeforeTasks == 5) 0 else tabBeforeTasks) }   // (v324) ✕ في صفحة المهام
         // (v198) الشريط السفلي (البوابات) وشريط النظام بياخدوا لون مشغّل الموسيقى لما يتفتح، ويرجعوا لثيم البرنامج لما يتقفل
         @Suppress("DEPRECATION")
         fun setNavTint(c: Int?) {
@@ -765,23 +758,39 @@ class MainActivity : Activity() {
             pane.addView(music.root, 1, FrameLayout.LayoutParams(-1, -1))
             return music
         }
-        // (v189) البوابات: 0 الفيديوهات · 1 الموسيقى · 2 المتصفح (صفحة المهام بقت زرار ⏳ في المشغّل + قايمة ⚙️ في المكتبة)
-        // (v231) 3 المهام (صفحة منفصلة جنب المتصفح)
+        // (v325) بوابة يوتيوب (الخامسة): YtProUi — واجهة أصلية على NewPipeExtractor بدل صفحة الويب؛ بتتبني أول ما تفتحها
+        fun ensureYt(): YtProUi {
+            ytUi?.let { return it }
+            val yt = YtProUi(this, ui, th,
+                { Recents.parse(try { recentFile.readText() } catch (_: Exception) { "" }).associateBy { it.id } },
+                { id, name, tr -> playYt(id, name, tr) },
+                { u -> save(); NavAnim.set(curTab, 2); startActivity(Intent(this, BrowserActivity::class.java).putExtra("start", u)) },
+                { startActivityForResult(filePicker("*/*", "اختار ملف الاشتراكات", false), 47) })
+            ytUi = yt; yt.root.visibility = View.GONE; ytOpenFn = { vid -> yt.openVideo(vid) }
+            pane.addView(yt.root, 1, FrameLayout.LayoutParams(-1, -1))
+            return yt
+        }
+        // (v189) البوابات: 0 الفيديوهات · 1 الموسيقى · 2 المتصفح · 3 الملفات (شاشات لوحدها) · (v324) 4 يوتيوب
+        // (v324) 5 = صفحة المهام: مش في الشريط، بتتفتح من الزرار العايم (الشريط ساعتها مفيهوش بوابة نشطة)
         showTabFn = { i ->
-            if (i == 0 || i == 1 || i == 4) {
+            if (i == 0 || i == 1 || i == 4 || i == 5) {
                 val prevTab = curTab
+                if (i == 5 && prevTab != 5) tabBeforeTasks = prevTab
                 curTab = i
                 lib.root.visibility = if (i == 0) View.VISIBLE else View.GONE
                 if (i == 1) ensureMusic()
                 musicUi?.root?.visibility = if (i == 1) View.VISIBLE else View.GONE
-                tasksUi.root.visibility = if (i == 4) View.VISIBLE else View.GONE
-                tasksDlgRefresh = if (i == 4) ({ tasksUi.refresh() }) else null
-                navUi?.set(i)
+                if (i == 4) ensureYt()
+                ytUi?.root?.visibility = if (i == 4) View.VISIBLE else View.GONE
+                tasksUi.root.visibility = if (i == 5) View.VISIBLE else View.GONE
+                tasksDlgRefresh = if (i == 5) ({ tasksUi.refresh() }) else null
+                navUi?.set(if (i == 5) -1 else i)
                 if (i == 1) { musicUi?.ensureLoaded(); musicUi?.applyNavTint() } else setNavTint(null)
-                if (i == 4) tasksUi.refresh()
+                if (i == 4) ytUi?.refresh() else if (prevTab == 4) ytUi?.onHide()
+                if (i == 5) tasksUi.refresh()
                 updateTasksFab()
                 if (prevTab != i) {   // (v312) الصفحة الجديدة بتنزلق من ناحية اتجاه الانتقال (الشريط RTL: رقم أكبر = شمال)
-                    val target: View? = when (i) { 0 -> lib.root; 1 -> musicUi?.root; else -> tasksUi.root }
+                    val target: View? = when (i) { 0 -> lib.root; 1 -> musicUi?.root; 4 -> ytUi?.root; else -> tasksUi.root }
                     if (target != null) Motion.tabEnter(target, if (i > prevTab) -1 else 1)
                 }
             }
@@ -794,12 +803,7 @@ class MainActivity : Activity() {
         pane.addView(lib.root, FrameLayout.LayoutParams(-1, -1))
         tasksUi.root.visibility = View.GONE
         pane.addView(tasksUi.root, FrameLayout.LayoutParams(-1, -1))   // (v231) صفحة المهام
-        val fab = IconTextView(this).apply {
-            textSize = 14f; setTextColor(Color.WHITE); setPadding(ui.dp(14), ui.dp(8), ui.dp(14), ui.dp(8)); visibility = View.GONE; elevation = ui.dp(6).toFloat()
-            background = android.graphics.drawable.GradientDrawable().apply { setColor(0xDD1E2A3A.toInt()); cornerRadius = ui.dp(18).toFloat(); setStroke(ui.dp(1), 0x88FFFFFF.toInt()) }
-            setOnClickListener { showTasksDialog() }
-        }
-        tasksFab = fab; pane.addView(fab, FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM or Gravity.END).apply { bottomMargin = ui.dp(86); marginEnd = ui.dp(16) })
+        tasksFabUi = TasksFab(this, pane, ui) { showTasksDialog() }   // (v324) الزرار العايم بدل الـ pill القديمة
         updateTasksFab()
         val shell = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_LTR }
         shell.addView(pane, LinearLayout.LayoutParams(-1, 0, 1f))
@@ -817,7 +821,8 @@ class MainActivity : Activity() {
             val cn = intent?.component?.className ?: ""
             val t0 = intent?.getStringExtra("tab")
             if (cn.endsWith(".MusicLauncher") || t0 == "music") frame.post { showTabFn(1) }
-            else if (t0 == "tasks") frame.post { showTabFn(4) }
+            else if (t0 == "tasks") frame.post { showTabFn(5) }
+            else if (t0 == "youtube") frame.post { showTabFn(4); openYtFromIntent(intent) }
         }
         intent?.getStringExtra("reopen_tab")?.let { t -> intent?.removeExtra("reopen_tab"); frame.post { if (!isFinishing && !isDestroyed) settingsDlg.show(t) } }
         // لو مفيش مفتاح Gemini: القايمة بتظهر مباشرة أول البرنامج، وبعدها الفحص
@@ -1120,8 +1125,22 @@ class MainActivity : Activity() {
         Notice.show(this, ("⏳ بجيب الفيديو…").toString(), 2300L)
         Thread {
             val best = try { YtExtract.fetchPick(id, Cfg.int("yt_maxh", 0)) } catch (_: Throwable) { null }
+            // (v326) لو YtExtract فشل نجرّب NewPipeExtractor قبل ما نطلّع دايلوج الفشل
+            val np = if (best == null) try { YtNp.init(); YtNp.pick(id, Cfg.int("yt_maxh", 0)) } catch (_: Throwable) { null } else null
             runOnUiThread {
                 if (isFinishing || isDestroyed) return@runOnUiThread
+                if (best == null && np != null) {
+                    val go2 = {
+                        startActivity(Intent(this, PlayerActivity::class.java).apply {
+                            putExtra("url", np.url); putExtra("aurl", np.audio ?: ""); putExtra("ref", "https://www.youtube.com/"); putExtra("ua", np.ua)
+                            if (np.qlist.isNotEmpty()) putExtra("qlist", np.qlist)
+                            putExtra("title", title.ifBlank { np.title }); putExtra("ytid", id)
+                            putExtra("nosub", !translate); putExtra("autotr", auto)
+                        })
+                    }
+                    if (translate) ensureKeys { go2() } else go2()
+                    return@runOnUiThread
+                }
                 if (best == null) {
                     // (v119) مفيش رمي أوتوماتيك على المتصفح: بنقولك السبب وإنت تختار (تعيد / تفتحه في المتصفح / تقفل)
                     val why = YtExtract.lastWhy.ifBlank { "السبب مش معروف (راجع اللوج)" }
@@ -1167,17 +1186,24 @@ class MainActivity : Activity() {
         if (stoppedAt > 0 && System.currentTimeMillis() - stoppedAt > 60_000) { libUi?.relock(); musicUi?.lib?.relock() }
         stoppedAt = 0L
         if (!fromPlayer && libStarted) libUi?.let { if (it.hasData) it.render() else scanFn() }
-        if (!fromPlayer && curTab == 1) ytUi?.refresh()
+        if (!fromPlayer && curTab == 4) ytUi?.refresh()
     }
-    override fun onDestroy() { if (!fromPlayer) TaskCenter.listener = null; try { musicUi?.destroy() } catch (_: Throwable) {}; super.onDestroy() }
+    override fun onDestroy() { if (!fromPlayer) TaskCenter.listener = null; try { tasksFabUi?.detach() } catch (_: Throwable) {}; try { musicUi?.destroy() } catch (_: Throwable) {}; super.onDestroy() }
+    /** (v327) إشعار فيديو جديد: افتح تفاصيله في بوابة يوتيوب (الدالة بتتركّب أول ما بوابة يوتيوب تتبني؛ showTabFn(4) بتبنيها) */
+    private fun openYtFromIntent(i: Intent?) {
+        val id = i?.getStringExtra("yt_open") ?: return
+        i.removeExtra("yt_open")
+        ytOpenFn?.invoke(id)
+    }
     /** (v117) الرجوع من المتصفح بشريط البوابات: بيفتح البوابة اللي اخترتها */
     override fun onNewIntent(i: Intent?) {
         super.onNewIntent(i)
-        when (i?.getStringExtra("tab")) { "videos" -> showTabFn(0); "music" -> showTabFn(1); "tasks" -> showTabFn(4) }
+        when (i?.getStringExtra("tab")) { "videos" -> showTabFn(0); "music" -> showTabFn(1); "tasks" -> showTabFn(5); "youtube" -> { showTabFn(4); openYtFromIntent(i) } }
     }
     @Suppress("DEPRECATION")
     override fun onBackPressed() {
-        if (!fromPlayer && curTab == 1 && ytUi?.back() == true) return   // (v118) رجوع جوه يوتيوب الأول
+        if (!fromPlayer && curTab == 4 && ytUi?.back() == true) return   // (v118) رجوع جوه يوتيوب الأول
+        if (!fromPlayer && curTab == 5) { showTabFn(if (tabBeforeTasks == 5) 0 else tabBeforeTasks); return }   // (v324) صفحة المهام ← للصفحة اللي جيت منها
         if (!fromPlayer && curTab == 1 && musicUi?.onBack() == true) return   // (v193) يقفل مشغّل الأسطوانة/الفولدر الأول
         if (!fromPlayer && curTab != 0) { showTabFn(0); return }
         if (!fromPlayer && libUi?.back() == true) return

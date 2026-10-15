@@ -8,7 +8,8 @@ import android.view.animation.OvershootInterpolator
 import android.widget.FrameLayout
 import android.widget.LinearLayout
 
-/** (v117) شريط البوابات السفلي: 🎞 الفيديوهات · 🎵 الموسيقى · 🌐 المتصفح (v189) · 📂 الملفات (v310) · ⏳ المهام (v231) — بيظهر في الشاشة الرئيسية وفي المتصفح
+/** (v117) شريط البوابات السفلي: 🎞 الفيديوهات · 🎵 الموسيقى · 🌐 المتصفح (v189) · 📂 الملفات (v310) · ▶ يوتيوب (v324) — بيظهر في الشاشة الرئيسية وفي المتصفح والملفات
+ *  (v324) «المهام» اتشالت من الشريط وبقت زرار عايم (TasksFab)؛ active = -1 يعني مفيش بوابة نشطة (صفحة المهام مفتوحة)
  *  (v312) مؤشّر بيتزحلق تحت البوابة النشطة + قفزة للأيقونة لما تتفعّل */
 class BottomNav(act: Activity, private val ui: Ui, private val th: Theme, private var active: Int, private val onPick: (Int) -> Unit) {
     private val icons = ArrayList<IconTextView>()
@@ -29,7 +30,7 @@ class BottomNav(act: Activity, private val ui: Ui, private val th: Theme, privat
             orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; gravity = Gravity.CENTER_VERTICAL
             setBackgroundColor(th.card)
         }
-        val defs = listOf("🎞" to "الفيديوهات", "🎵" to "الموسيقى", "🌐" to "المتصفح", "📂" to "الملفات", "⏳" to "المهام")
+        val defs = listOf("🎞" to "الفيديوهات", "🎵" to "الموسيقى", "🌐" to "المتصفح", "📂" to "الملفات", "▶" to "يوتيوب")
         defs.forEachIndexed { idx, d ->
             val icon = IconTextView(act).apply { text = d.first; textSize = 16f; gravity = Gravity.CENTER; includeFontPadding = false }
             val lab = ui.text(d.second, 9.5f, th.muted, true).apply { gravity = Gravity.CENTER; setSingleLine() }
@@ -54,6 +55,7 @@ class BottomNav(act: Activity, private val ui: Ui, private val th: Theme, privat
     }
 
     private fun place(animate: Boolean) {
+        indicator.visibility = if (active in cells.indices) View.VISIBLE else View.INVISIBLE
         val c = cells.getOrNull(active) ?: return
         if (c.width == 0) return
         val x = (c.left + c.width / 2 - ui.dp(11)).toFloat()
