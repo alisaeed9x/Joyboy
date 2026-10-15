@@ -44,12 +44,12 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
               private val onBrowser: (String) -> Unit,
               private val onImport: () -> Unit) {
 
-    private class St(val title: String, val tab: Int, val items: ArrayList<YtItem>, var next: Page?, val more: ((Page) -> YtRes)?,
+    private class St(val title: String, val tab: Int, val items: ArrayList<NpItem>, var next: Page?, val more: ((Page) -> YtRes)?,
                       val chUrl: String?, val chName: String?, val q: String?, val filter: String,
-                      val vid: YtItem? = null, val det: YtDetail? = null) {
+                      val vid: NpItem? = null, val det: YtDetail? = null) {
         var pos = 0
-        var cMode = false; var cLoaded = false; val ci = ArrayList<YtItem>(); var cn: Page? = null; var cm: ((Page) -> YtRes)? = null
-        fun list(): ArrayList<YtItem> = if (cMode) ci else items
+        var cMode = false; var cLoaded = false; val ci = ArrayList<NpItem>(); var cn: Page? = null; var cm: ((Page) -> YtRes)? = null
+        fun list(): ArrayList<NpItem> = if (cMode) ci else items
         fun nxt(): Page? = if (cMode) cn else next
         fun mf(): ((Page) -> YtRes)? = if (cMode) cm else more
     }
@@ -226,7 +226,7 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
             try {
                 val txt = act.contentResolver.openInputStream(u)?.bufferedReader(Charsets.UTF_8)?.use { it.readText() } ?: ""
                 val subs = YtStore.read(YtStore.SUBS)
-                fun add(url: String, name: String) { if (url.isNotBlank() && subs.none { it.channelUrl == url }) { subs.add(YtItem("", name.ifBlank { url }, "", url, "", -1L, 0L, "", 1, url)); n++ } }
+                fun add(url: String, name: String) { if (url.isNotBlank() && subs.none { it.channelUrl == url }) { subs.add(NpItem("", name.ifBlank { url }, "", url, "", -1L, 0L, "", 1, url)); n++ } }
                 if (txt.trimStart().startsWith("{")) {
                     val arr = JSONObject(txt).optJSONArray("subscriptions")
                     if (arr != null) for (i in 0 until arr.length()) { val o = arr.getJSONObject(i); add(o.optString("url"), o.optString("name")) }
@@ -263,7 +263,7 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
         load("🔍 $q", -1, null, null, q, filter, true, false) { val r = YtNp.searchFirst(q, filter); Pair(r, { p: Page -> YtNp.searchMore(q, filter, p) }) }
     }
 
-    private fun open(it: YtItem) {
+    private fun open(it: NpItem) {
         when (it.kind) {
             0 -> openDetail(it)
             1 -> openChannel(it.channelUrl, it.title)
@@ -278,7 +278,7 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
 
     private fun toggleSub() {
         val st = cur ?: return; val url = st.chUrl ?: return
-        val now = YtStore.toggle(YtStore.SUBS, YtItem("", st.chName ?: url, "", url, "", -1L, 0L, "", 1, url))
+        val now = YtStore.toggle(YtStore.SUBS, NpItem("", st.chName ?: url, "", url, "", -1L, 0L, "", 1, url))
         paintSub(now); try { YtNotify.schedule(act) } catch (_: Throwable) {}
         Notice.show(act, (if (now) "✅ اشتركت في " + (st.chName ?: "") else "اتشال الاشتراك").toString(), 2200L)
     }
@@ -305,7 +305,7 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
     }
     /** فتح تفاصيل فيديو من معرّفه (من إشعار مثلًا) */
     fun openVideo(id: String) {
-        openDetail(YtItem(id, "", "", "", "https://i.ytimg.com/vi/$id/mqdefault.jpg", -1L, -1L, "", 0, "https://www.youtube.com/watch?v=$id"))
+        openDetail(NpItem(id, "", "", "", "https://i.ytimg.com/vi/$id/mqdefault.jpg", -1L, -1L, "", 0, "https://www.youtube.com/watch?v=$id"))
     }
 
     // ───────── تحميل وعرض ─────────
@@ -341,7 +341,7 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
         detailBox.visibility = if (det) View.VISIBLE else View.GONE
         chanRow.visibility = if (st.chUrl != null && !det) View.VISIBLE else View.GONE
         subsRow.visibility = if (st.tab == 1 && !det && st.items.isNotEmpty()) View.VISIBLE else View.GONE; paintNotif()
-        if (st.chUrl != null) { chanName.text = st.chName ?: ""; paintSub(YtStore.contains(YtStore.SUBS, YtItem("", "", "", st.chUrl, "", -1L, 0L, "", 1, st.chUrl))) }
+        if (st.chUrl != null) { chanName.text = st.chName ?: ""; paintSub(YtStore.contains(YtStore.SUBS, NpItem("", "", "", st.chUrl, "", -1L, 0L, "", 1, st.chUrl))) }
         filterRow.visibility = if (st.q != null && !det) View.VISIBLE else View.GONE
         filterViews.forEach { tv -> paintChip(tv, tv.tag == st.filter) }
         if (det) paintDetail(st)
@@ -350,7 +350,7 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
     }
 
     // ───────── (v326) تفاصيل الفيديو ─────────
-    private fun openDetail(v: YtItem) {
+    private fun openDetail(v: NpItem) {
         hideKb(); sugBox.visibility = View.GONE
         val my = ++gen
         val prev = cur; val prevPos = lv.firstVisiblePosition
@@ -375,13 +375,13 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
         }.start()
     }
 
-    private fun detItem(st: St): YtItem {
+    private fun detItem(st: St): NpItem {
         val v = st.vid!!; val d = st.det
-        return YtItem(v.id, d?.title?.ifBlank { v.title } ?: v.title, d?.channel?.ifBlank { v.channel } ?: v.channel, d?.channelUrl?.ifBlank { v.channelUrl } ?: v.channelUrl,
+        return NpItem(v.id, d?.title?.ifBlank { v.title } ?: v.title, d?.channel?.ifBlank { v.channel } ?: v.channel, d?.channelUrl?.ifBlank { v.channelUrl } ?: v.channelUrl,
             d?.thumb?.ifBlank { v.thumb } ?: v.thumb, d?.dur ?: v.dur, v.count, v.age, 0, v.url)
     }
     private fun playCur(tr: Boolean) { val st = cur ?: return; if (st.vid == null) return; play(detItem(st), tr) }
-    private fun play(it: YtItem, tr: Boolean) { YtStore.addFront(YtStore.HIST, it, 200); onPlay(it.id, it.title, tr) }
+    private fun play(it: NpItem, tr: Boolean) { YtStore.addFront(YtStore.HIST, it, 200); onPlay(it.id, it.title, tr) }
     private fun saveCur() {
         val st = cur ?: return; if (st.vid == null) return
         val on = YtStore.toggle(YtStore.SAVED, detItem(st)); Notice.show(act, (if (on) "🔖 اتحفظ" else "اتشال من المحفوظات").toString(), 1800L); paintDetail(st)
@@ -467,7 +467,7 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
     }
 
     // ───────── قايمة الضغطة الطويلة ─────────
-    private fun menu(anchor: View, it: YtItem) {
+    private fun menu(anchor: View, it: NpItem) {
         val m = PopupMenu(act, anchor)
         if (it.kind == 0) {
             m.menu.add(0, 1, 0, "▶ شغّل"); m.menu.add(0, 2, 1, "🌐 شغّل وترجم"); m.menu.add(0, 10, 7, "ℹ التفاصيل")
@@ -520,8 +520,8 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
     private class Hold(val thumb: ImageView, val dur: TextView, val title: TextView, val meta: TextView, val box: View, val col: View)
 
     private inner class Adapter : BaseAdapter() {
-        private var items: List<YtItem> = emptyList()
-        fun set(l: List<YtItem>) { items = l; notifyDataSetChanged() }
+        private var items: List<NpItem> = emptyList()
+        fun set(l: List<NpItem>) { items = l; notifyDataSetChanged() }
         fun clear() { items = emptyList(); notifyDataSetChanged() }
         override fun getCount() = items.size
         override fun getItem(p: Int) = items[p]

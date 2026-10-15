@@ -34,7 +34,7 @@ object YtRss {
     private const val PER_CH = 8
     private val RX = Regex("/channel/(UC[A-Za-z0-9_-]{22})")
 
-    private class Entry(val t: Long, val items: List<YtItem>)
+    private class Entry(val t: Long, val items: List<NpItem>)
     private val mem = HashMap<String, Entry>()
     @Volatile private var dir: File? = null
     @Volatile private var loaded = false
@@ -51,7 +51,7 @@ object YtRss {
             val f = File(dir ?: return, "yt_rss.json"); if (!f.isFile) return
             val o = JSONObject(f.readText())
             for (k in o.keys()) {
-                val e = o.getJSONObject(k); val a = e.getJSONArray("i"); val l = ArrayList<YtItem>()
+                val e = o.getJSONObject(k); val a = e.getJSONArray("i"); val l = ArrayList<NpItem>()
                 for (n in 0 until a.length()) {
                     val x = a.getJSONObject(n)
                     l.add(mk(x.optString("i"), x.optString("t"), x.optString("c"), x.optString("u"), x.optLong("p"), x.optLong("v", -1L)))
@@ -76,7 +76,7 @@ object YtRss {
     }
 
     private fun mk(id: String, title: String, ch: String, chUrl: String, ts: Long, views: Long) =
-        YtItem(id, title, ch, chUrl, "https://i.ytimg.com/vi/$id/mqdefault.jpg", -1L, views, ageOf(ts), 0, "https://www.youtube.com/watch?v=$id", ts)
+        NpItem(id, title, ch, chUrl, "https://i.ytimg.com/vi/$id/mqdefault.jpg", -1L, views, ageOf(ts), 0, "https://www.youtube.com/watch?v=$id", ts)
 
     /** «منذ 3 أيام» من وقت دقيق */
     fun ageOf(ts: Long): String {
@@ -106,9 +106,9 @@ object YtRss {
         } finally { c.disconnect() }
     }
 
-    fun parse(xml: String, chUrl: String): List<YtItem> {
+    fun parse(xml: String, chUrl: String): List<NpItem> {
         val p = Xml.newPullParser(); p.setInput(xml.reader())
-        val out = ArrayList<YtItem>()
+        val out = ArrayList<NpItem>()
         var inEntry = false; var inAuthor = false
         var id = ""; var title = ""; var pub = ""; var views = -1L; var author = ""; var feedAuthor = ""
         var ev = p.eventType
@@ -140,7 +140,7 @@ object YtRss {
         return out
     }
 
-    private fun fetchOne(cid: String, chUrl: String, force: Boolean): List<YtItem> {
+    private fun fetchOne(cid: String, chUrl: String, force: Boolean): List<NpItem> {
         val now = System.currentTimeMillis()
         val e = synchronized(this) { mem[cid] }
         if (!force && e != null && now - e.t < TTL_MS) return e.items
@@ -152,13 +152,13 @@ object YtRss {
     }
 
     /** فيد مدموج من كل الاشتراكات، الأحدث أولًا. force = تجاهل الكاش */
-    fun feed(subs: List<YtItem>, force: Boolean = false): YtRes {
+    fun feed(subs: List<NpItem>, force: Boolean = false): YtRes {
         loadDisk()
         val list = subs.take(MAX_CH)
         val pool = Executors.newFixedThreadPool(6)
         try {
             val fs = list.map { s ->
-                pool.submit(Callable<List<YtItem>> {
+                pool.submit(Callable<List<NpItem>> {
                     val cid = chanId(s.channelUrl)
                     try {
                         if (cid != null) fetchOne(cid, s.channelUrl, force)
@@ -168,10 +168,10 @@ object YtRss {
                     }
                 })
             }
-            val all = ArrayList<YtItem>()
+            val all = ArrayList<NpItem>()
             for (f in fs) try { all.addAll(f.get()) } catch (_: Throwable) {}
             // العمر بيتحسب من جديد (الكاش ممكن يكون قديم)
-            val fresh = all.distinctBy { it.id }.map { if (it.ts > 0L) YtItem(it.id, it.title, it.channel, it.channelUrl, it.thumb, it.dur, it.count, ageOf(it.ts), it.kind, it.url, it.ts) else it }
+            val fresh = all.distinctBy { it.id }.map { if (it.ts > 0L) NpItem(it.id, it.title, it.channel, it.channelUrl, it.thumb, it.dur, it.count, ageOf(it.ts), it.kind, it.url, it.ts) else it }
             saveDisk(list.mapNotNull { chanId(it.channelUrl) }.toSet())
             return YtRes(fresh.sortedByDescending { it.ts }.take(200), null)
         } finally { pool.shutdown() }
@@ -216,7 +216,7 @@ object YtNotify {
     private fun writeSeen(m: Map<String, Long>) = Cfg.put(SEEN, m.entries.joinToString("\n") { it.key + "=" + it.value })
 
     /** بيحدّث «آخر ما اتشاف» لكل القنوات للوقت الحالي من الفيد (بعد ما اليوزر يفتح الاشتراكات) عشان ما يجيش إشعار على حاجة شافها */
-    fun markSeen(items: List<YtItem>) {
+    fun markSeen(items: List<NpItem>) {
         try {
             val m = readSeen()
             for (it in items) { val cid = YtRss.chanId(it.channelUrl) ?: continue; if (it.ts > (m[cid] ?: 0L)) m[cid] = it.ts }
@@ -231,7 +231,7 @@ object YtNotify {
         val subs = YtStore.read(YtStore.SUBS); if (subs.isEmpty()) return 0
         val nm = c.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         val feed = YtRss.feed(subs, true).items
-        val seen = readSeen(); val fresh = ArrayList<YtItem>()
+        val seen = readSeen(); val fresh = ArrayList<NpItem>()
         val firstRun = seen.isEmpty()
         val newest = HashMap<String, Long>()
         for (it in feed) {

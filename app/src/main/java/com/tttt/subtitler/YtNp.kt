@@ -28,14 +28,14 @@ import java.util.concurrent.Executors
 import java.util.zip.GZIPInputStream
 
 /** (v325) عنصر في قوايم يوتيوب الداخلي: kind 0 فيديو · 1 قناة · 2 قايمة تشغيل (ts = وقت الرفع بالمللي لو معروف) */
-class YtItem(val id: String, val title: String, val channel: String, val channelUrl: String, val thumb: String,
+class NpItem(val id: String, val title: String, val channel: String, val channelUrl: String, val thumb: String,
              val dur: Long, val count: Long, val age: String, val kind: Int, val url: String, val ts: Long = 0L)
 
-class YtRes(val items: List<YtItem>, val next: Page?)
+class YtRes(val items: List<NpItem>, val next: Page?)
 class YtDetail(val id: String, val title: String, val channel: String, val channelUrl: String, val desc: String, val views: Long,
-               val likes: Long, val age: String, val thumb: String, val dur: Long, val related: List<YtItem>)
+               val likes: Long, val age: String, val thumb: String, val dur: Long, val related: List<NpItem>)
 class YtPick(val url: String, val audio: String?, val ua: String, val title: String, val h: Int, val qlist: String = "")
-class YtChan(val name: String, val first: YtRes, val more: (Page) -> YtRes)
+class NpChan(val name: String, val first: YtRes, val more: (Page) -> YtRes)
 
 /** (v325) Downloader بتاع NewPipeExtractor على HttpURLConnection (من غير مكتبة إضافية) */
 object YtDownloader : Downloader() {
@@ -86,17 +86,17 @@ object YtNp {
         return if (t == null || t.isEmpty()) "" else t[t.size / 2].url ?: ""
     }
 
-    fun conv(i: InfoItem): YtItem? = when (i) {
+    fun conv(i: InfoItem): NpItem? = when (i) {
         is StreamInfoItem -> {
             val id = idOf(i.url)
             if (id.isEmpty()) null else {
                 val ts = try { i.uploadDate?.offsetDateTime()?.toInstant()?.toEpochMilli() ?: 0L } catch (_: Throwable) { 0L }
-                YtItem(id, i.name ?: "", i.uploaderName ?: "", i.uploaderUrl ?: "", thumb(i), i.duration, i.viewCount,
+                NpItem(id, i.name ?: "", i.uploaderName ?: "", i.uploaderUrl ?: "", thumb(i), i.duration, i.viewCount,
                     i.textualUploadDate ?: "", 0, i.url, ts)
             }
         }
-        is ChannelInfoItem -> YtItem("", i.name ?: "", "", i.url, thumb(i), -1L, i.subscriberCount, "", 1, i.url)
-        is PlaylistInfoItem -> YtItem("", i.name ?: "", i.uploaderName ?: "", i.uploaderUrl ?: "", thumb(i), -1L, i.streamCount, "", 2, i.url)
+        is ChannelInfoItem -> NpItem("", i.name ?: "", "", i.url, thumb(i), -1L, i.subscriberCount, "", 1, i.url)
+        is PlaylistInfoItem -> NpItem("", i.name ?: "", i.uploaderName ?: "", i.uploaderUrl ?: "", thumb(i), -1L, i.streamCount, "", 2, i.url)
         else -> null
     }
 
@@ -117,13 +117,13 @@ object YtNp {
         return res(SearchInfo.getMoreItems(YT, qh, p))
     }
 
-    fun channel(url: String): YtChan {
+    fun channel(url: String): NpChan {
         init()
         val ci = ChannelInfo.getInfo(YT, url)
         val tab = ci.tabs.firstOrNull { it.contentFilters.contains("videos") } ?: ci.tabs.first()
         val ti = ChannelTabInfo.getInfo(YT, tab)
         val first = YtRes(ti.relatedItems.mapNotNull { conv(it) }, if (ti.hasNextPage()) ti.nextPage else null)
-        return YtChan(ci.name ?: "", first) { p -> res(ChannelTabInfo.getMoreItems(YT, tab, p)) }
+        return NpChan(ci.name ?: "", first) { p -> res(ChannelTabInfo.getMoreItems(YT, tab, p)) }
     }
 
     fun playlist(url: String): Pair<YtRes, (Page) -> YtRes> {
@@ -146,7 +146,7 @@ object YtNp {
         return i
     }
 
-    fun related(id: String): List<YtItem> = info(id).relatedItems.mapNotNull { conv(it) }.filter { it.kind == 0 }
+    fun related(id: String): List<NpItem> = info(id).relatedItems.mapNotNull { conv(it) }.filter { it.kind == 0 }
 
     /** (v326) تفاصيل فيديو: وصف · مشاهدات · لايكات · قناة · مقترحات */
     fun details(id: String): YtDetail {
@@ -191,9 +191,9 @@ object YtNp {
     fun comments(id: String): Pair<YtRes, (Page) -> YtRes> {
         init()
         val ci = CommentsInfo.getInfo(YT, watchUrl(id))
-        fun cv(c: CommentsInfoItem): YtItem {
+        fun cv(c: CommentsInfoItem): NpItem {
             val av = c.uploaderAvatars
-            return YtItem("", c.commentText?.content ?: "", c.uploaderName ?: "", "", if (av == null || av.isEmpty()) "" else av[0].url ?: "",
+            return NpItem("", c.commentText?.content ?: "", c.uploaderName ?: "", "", if (av == null || av.isEmpty()) "" else av[0].url ?: "",
                 -1L, c.likeCount.toLong(), c.textualUploadDate ?: "", 3, "")
         }
         val first = YtRes(ci.relatedItems.map { cv(it) }, if (ci.hasNextPage()) ci.nextPage else null)
@@ -204,12 +204,12 @@ object YtNp {
     }
 
     /** الرئيسية: مقترحات من آخر اللي اتفرّجت عليه، ولو مفيش سجل → تريند، ولو فشل → بحث عام */
-    fun home(hist: List<YtItem>): YtRes {
+    fun home(hist: List<NpItem>): YtRes {
         init()
-        val out = LinkedHashMap<String, YtItem>()
+        val out = LinkedHashMap<String, NpItem>()
         val seen = hist.map { it.id }.toSet()
         val seeds = hist.filter { it.kind == 0 && it.id.isNotEmpty() }.take(3)
-        val results = arrayOfNulls<List<YtItem>>(seeds.size)
+        val results = arrayOfNulls<List<NpItem>>(seeds.size)
         val ths = seeds.mapIndexed { n, s -> Thread { results[n] = try { related(s.id) } catch (_: Throwable) { emptyList() } }.also { it.start() } }
         ths.forEach { try { it.join(25000) } catch (_: Throwable) {} }
         // تقليب بين نتايج كل فيديو عشان التنوّع
@@ -231,7 +231,7 @@ object YtNp {
 
     /** فيد الاشتراكات: آخر فيديوهات كل قناة مدموجة بالأحدث أولًا */
     /** (v327) الفيد بقى RSS (YtRss.feed) — ده للتوافق بس */
-    fun subsFeed(subs: List<YtItem>): YtRes = YtRss.feed(subs)
+    fun subsFeed(subs: List<NpItem>): YtRes = YtRss.feed(subs)
 }
 
 /** (v325) تخزين محلي: سجل · محفوظات · اشتراكات (في Cfg، سطر لكل عنصر) */
@@ -240,27 +240,27 @@ object YtStore {
     const val HIST = "ytp_hist"; const val SAVED = "ytp_saved"; const val SUBS = "ytp_subs"
     private fun clean(s: String) = s.replace('\n', ' ').replace(SEP, " ")
 
-    fun read(key: String): MutableList<YtItem> = Cfg.str(key, "").lineSequence().filter { it.isNotBlank() }.mapNotNull { l ->
+    fun read(key: String): MutableList<NpItem> = Cfg.str(key, "").lineSequence().filter { it.isNotBlank() }.mapNotNull { l ->
         val p = l.split(SEP)
-        if (p.size < 7) null else YtItem(p[0], p[1], p[2], p[3], p[4], p[5].toLongOrNull() ?: -1L, 0L, "", p[6].toIntOrNull() ?: 0, p.getOrElse(7) { "" })
+        if (p.size < 7) null else NpItem(p[0], p[1], p[2], p[3], p[4], p[5].toLongOrNull() ?: -1L, 0L, "", p[6].toIntOrNull() ?: 0, p.getOrElse(7) { "" })
     }.toMutableList()
 
-    fun write(key: String, l: List<YtItem>) {
+    fun write(key: String, l: List<NpItem>) {
         Cfg.put(key, l.joinToString("\n") { listOf(it.id, clean(it.title), clean(it.channel), it.channelUrl, it.thumb, it.dur.toString(), it.kind.toString(), it.url).joinToString(SEP) })
     }
 
-    private fun same(a: YtItem, b: YtItem) = if (a.kind == 1 || b.kind == 1) a.channelUrl == b.channelUrl else a.id == b.id && a.url == b.url
+    private fun same(a: NpItem, b: NpItem) = if (a.kind == 1 || b.kind == 1) a.channelUrl == b.channelUrl else a.id == b.id && a.url == b.url
 
-    fun contains(key: String, x: YtItem) = read(key).any { same(it, x) }
+    fun contains(key: String, x: NpItem) = read(key).any { same(it, x) }
 
-    fun addFront(key: String, x: YtItem, cap: Int) {
+    fun addFront(key: String, x: NpItem, cap: Int) {
         val l = read(key); l.removeAll { same(it, x) }; l.add(0, x)
         write(key, if (l.size > cap) l.subList(0, cap) else l)
     }
     /** بيرجّع true لو بقى موجود بعد التبديل */
-    fun toggle(key: String, x: YtItem): Boolean {
+    fun toggle(key: String, x: NpItem): Boolean {
         val l = read(key)
         return if (l.removeAll { same(it, x) }) { write(key, l); false } else { l.add(0, x); write(key, l); true }
     }
-    fun remove(key: String, x: YtItem) { val l = read(key); if (l.removeAll { same(it, x) }) write(key, l) }
+    fun remove(key: String, x: NpItem) { val l = read(key); if (l.removeAll { same(it, x) }) write(key, l) }
 }
