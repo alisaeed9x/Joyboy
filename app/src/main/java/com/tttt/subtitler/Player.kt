@@ -720,6 +720,7 @@ class PlayerActivity : Activity(), Host {
         }
         if (goHome) try { startActivity(Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) } catch (e: Exception) { LogStore.err("Main:1029", e) }
         try { pipOv?.hide(); pipOv = null } catch (_: Throwable) {}
+        if (!goHome && !pipNow()) returnToOrigin()   // (v339)
         if (pipNow()) finishAndRemoveTask() else finish()   // (v149) من نافذة الـ PiP: يشيل النافذة خالص
     }
 
@@ -1703,6 +1704,10 @@ class PlayerActivity : Activity(), Host {
                     return true
                 }
                 if (Math.abs(dy) < Math.abs(dx)) return false
+                // (v340) سحب لفوق من حرف الفيديو التحتاني = لوحة «التالي» (فيديوهات القايمة / المقترحة) زي يوتيوب
+                if (!scrollLogged && !incognito && intent.getStringExtra("ytid") != null && e1.y > videoBox.height * 0.78f && e1.y - e2.y > ui.dp(56)) {
+                    scrollLogged = true; log("↕ سحب لفوق: التالي"); openNextSheet(); return true
+                }
                 val d = dy / videoBox.height.coerceAtLeast(1) * 1.3f
                 if (!scrollLogged) { scrollLogged = true; log(if (e1.x > videoBox.width / 2f) "↕ سحب: الصوت" else "↕ سحب: السطوع") }
                 if (e1.x > videoBox.width / 2f) {
@@ -2721,6 +2726,31 @@ class PlayerActivity : Activity(), Host {
             .show()
     }
     /** خروج من غير ترجمة خلفية: بيحفظ التقدم، يوقف المحرك وأي مهمة خلفية لنفس الفيديو، ويقفل */
+    /** (v340) لوحة «التالي»: دوسة على فيديو = يفتح في مشغّل جديد (القديم بيتقفل ويحفظ تقدمه) وبيكمّل نفس وضع الترجمة */
+    fun openNextSheet() {
+        val cid = intent.getStringExtra("ytid") ?: return
+        YtNext.show(this, ui, th, cid) { n -> playNextYt(n) }
+    }
+    private fun playNextYt(n: NpItem) {
+        say("⏳ بجيب «" + n.title.take(40) + "»…")
+        val ret = intent.getStringExtra("ret") ?: ""; val nosub = intent.getBooleanExtra("nosub", false); val auto = intent.getBooleanExtra("autotr", false)
+        Thread {
+            val best = try { YtExtract.fetchPick(n.id, Cfg.int("yt_maxh", 0)) } catch (_: Throwable) { null }
+            val np = if (best == null) try { YtNp.init(); YtNp.pick(n.id, Cfg.int("yt_maxh", 0)) } catch (_: Throwable) { null } else null
+            runOnUiThread {
+                if (isFinishing || isDestroyed) return@runOnUiThread
+                val url = best?.url ?: np?.url
+                if (url == null) { say("ما قدرتش أجيب الفيديو ده — جرّب غيره"); return@runOnUiThread }
+                try { if (YtStore.histOn()) YtStore.addFront(YtStore.HIST, NpItem(n.id, n.title, n.channel, n.channelUrl, n.thumb, n.dur, n.count, n.age, 0, YtNp.watchUrl(n.id)), 200); YtStore.markApp(n.id) } catch (_: Throwable) {}
+                startActivity(Intent(this, PlayerActivity::class.java).apply {
+                    putExtra("url", url); putExtra("aurl", best?.audio ?: np?.audio ?: ""); putExtra("ref", "https://www.youtube.com/"); putExtra("ua", best?.ua ?: np?.ua ?: "")
+                    (best?.optsJson() ?: np?.qlist)?.takeIf { it.isNotEmpty() }?.let { putExtra("qlist", it) }
+                    putExtra("title", n.title.ifBlank { best?.title ?: np?.title ?: "" }); putExtra("ytid", n.id)
+                    putExtra("nosub", nosub); putExtra("autotr", auto); putExtra("ret", ret)
+                })
+            }
+        }.apply { isDaemon = true }.start()
+    }
     @Suppress("DEPRECATION")
     private fun closeNoBg() {
         try { player.pause() } catch (e: Exception) { LogStore.err("Main:2347", e) }
@@ -2731,7 +2761,17 @@ class PlayerActivity : Activity(), Host {
             try { eng.awaitStopped(3000); eng.saveNow() } catch (e: Throwable) { LogStore.err("Player:closeNoBg0", e) }   // (v287)
             try { if (BgJobs.isActive(v)) BgJobs.stop(v) } catch (e: Throwable) { LogStore.err("Player:closeNoBg2", e) }
         }.start()
+        returnToOrigin()
         super.onBackPressed()
+    }
+    /** (v339) الرجوع من الفيديو يرجّعك للصفحة اللي فتحته منها (يوتيوب / المتصفح) بنفس مكانك — حتى لو النظام كان قفل الصفحة دي وإحنا في المشغّل */
+    private fun returnToOrigin() {
+        try {
+            when (intent.getStringExtra("ret")) {
+                "yt" -> startActivity(Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP).putExtra("tab", "youtube"))
+                "browser" -> startActivity(Intent(this, BrowserActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP))
+            }
+        } catch (e: Throwable) { LogStore.err("Player:ret", e) }
     }
     // ===== أدوات الـ HTML اللي كانت ناقصة في النسخة النيتف =====
     // ===== لودينج ويندوز: بدل زرار ⏸/▶ اللي في النص أثناء التحميل (فيديو أونلاين / تنقّل / سيك) =====

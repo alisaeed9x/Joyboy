@@ -191,6 +191,19 @@ class MusicUi(private val act: Activity, private val ui: Ui, private val th: The
     private val bNext = GlyphBtn(act, "next", 28)
     private val bRepeat = GlyphBtn(act, "repeat", 24)
     private var fullOn = false
+    // (v339) صوت يوتيوب: المشغّل الكامل بيفتح على طول ولودينج مكان الألبوم لحد ما رابط الصوت يوصل · وزرار ⬇ تحميل الصوت
+    var onYtDownload: ((NpItem) -> Unit)? = null
+    var onYtPlay: ((NpItem) -> Unit)? = null     // (v340) اختيار فيديو من لوحة «التالي» = يشتغل كصوت
+    var onFullClosed: (() -> Unit)? = null       // المشغّل الكامل اتقفل (رجوع/⌄/سحب) — Main بيرجّعك للصفحة اللي جيت منها
+    var onLoadCancel: (() -> Unit)? = null       // قفلت المشغّل وإحنا لسه بنجيب الصوت
+    private var ytLoading = false
+    private lateinit var fullCol: LinearLayout
+    private lateinit var ytLoadV: FrameLayout
+    private lateinit var ytDlBtn: TextView
+    private val ytSpin = WinSpinnerDrawable()
+    private val ytLoadTitle = ui.text("", 18f, Color.WHITE, true).apply { gravity = Gravity.CENTER; maxLines = 2; setPadding(ui.dp(24), ui.dp(18), ui.dp(24), 0) }
+    private val ytLoadSub = ui.text("", 13.5f, 0xB3FFFFFF.toInt()).apply { gravity = Gravity.CENTER; maxLines = 1; setPadding(ui.dp(24), ui.dp(4), ui.dp(24), 0) }
+    val isFullOpen: Boolean get() = fullOn
     private val middle = FrameLayout(act)
     private val eq = EqView(act).apply {
         accent = BLUE
@@ -254,7 +267,7 @@ class MusicUi(private val act: Activity, private val ui: Ui, private val th: The
     }
     private val bSleep = toolPill("⏱ نوم") { sleepDialog() }
     private val bSpeed = toolPill("⏩ 1×") { speedDialog() }
-    private val bQueue = toolPill("📃 التالي") { queueDialog() }
+    private val bQueue = toolPill("📃 التالي") { val yi = YtAudio.itemOf(MusicEngine.current); if (yi != null && onYtPlay != null) YtNext.show(act, ui, th, yi.id) { n -> onYtPlay?.invoke(n) } else queueDialog() }   // (v340) صوت يوتيوب: التالي = قايمة البلاي ليست/المقترحة
     private val bStem = toolPill("🎼 الكل") { stemTap() }.apply { setOnLongClickListener { stemDialog(); true } }   // (v308) دوسة = الكل ← صوت ← موسيقى · دوسة طويلة = الإعدادات   // (v307) فصل الصوت عن الموسيقى بالذكاء الصناعي
     private fun stemLabel(): String {
         val st = MusicEngine.stem; val p = MusicEngine.stemPct
@@ -1012,6 +1025,10 @@ class MusicUi(private val act: Activity, private val ui: Ui, private val th: The
         // (v241) 🖼↻ ريفريش البوستر: بيدوّر في iTunes ثم Deezer ثم MusicBrainz، ولو الأغنية ملهاش غلاف بيجيب صورة المغني
         val posterBtn = ui.text("🖼↻", 18f, Color.WHITE).apply { gravity = Gravity.CENTER; setOnClickListener { MusicEngine.current?.let { coverChoices(it, HashSet()) } ?: quiet("شغّل أغنية الأول", 1500L) } }
         top.addView(posterBtn, FrameLayout.LayoutParams(ui.dp(56), ui.dp(48), Gravity.END or Gravity.CENTER_VERTICAL).apply { marginEnd = ui.dp(56) })
+        // (v339) ⬇ تحميل الصوت — بيظهر بس لو الأغنية الحالية صوت فيديو يوتيوب
+        ytDlBtn = ui.text("⬇", 20f, Color.WHITE).apply { gravity = Gravity.CENTER; visibility = View.GONE
+            setOnClickListener { YtAudio.itemOf(MusicEngine.current)?.let { onYtDownload?.invoke(it) } ?: quiet("التحميل متاح لصوت يوتيوب بس", 1600L) } }
+        top.addView(ytDlBtn, FrameLayout.LayoutParams(ui.dp(56), ui.dp(48), Gravity.END or Gravity.CENTER_VERTICAL).apply { marginEnd = ui.dp(112) })
         attachSwipeDown(top)
 
         liveReset(); liveStatus.visibility = View.GONE
@@ -1082,10 +1099,26 @@ class MusicUi(private val act: Activity, private val ui: Ui, private val th: The
         middle.addView(lyrPanel, FrameLayout.LayoutParams(-1, -1)); middle.addView(inner, FrameLayout.LayoutParams(-1, -1))
         middle.addView(topTv, FrameLayout.LayoutParams(-1, -2, Gravity.TOP).apply { topMargin = ui.dp(10) })   // (v333) سطر الكلمات الحيّ فوق الدايرة
         val col = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL }
+        fullCol = col
         col.addView(top, LinearLayout.LayoutParams(-1, ui.dp(56)))
         col.addView(middle, LinearLayout.LayoutParams(-1, 0, 1f))
         col.addView(ctl, LinearLayout.LayoutParams(-1, ui.dp(60)).apply { bottomMargin = ui.dp(2) })
         full.addView(col, FrameLayout.LayoutParams(-1, -1))
+        // (v339) طبقة «بجيب الصوت…»: ⌄ فوق، ودايرة بلودينج في نفس مكان الدواير/الألبوم، واسم الفيديو تحتها
+        ytLoadV = FrameLayout(act).apply { visibility = View.GONE; isClickable = true }
+        val lcol = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER_HORIZONTAL }
+        val ltop = FrameLayout(act)
+        ltop.addView(GlyphBtn(act, "chev", 24).apply { setOnClickListener { hideFull() } }, FrameLayout.LayoutParams(ui.dp(56), ui.dp(48), Gravity.START or Gravity.CENTER_VERTICAL))
+        lcol.addView(ltop, LinearLayout.LayoutParams(-1, ui.dp(56)))
+        val mid = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER }
+        val circle = FrameLayout(act).apply { background = android.graphics.drawable.GradientDrawable().apply { shape = android.graphics.drawable.GradientDrawable.OVAL; setColor(0x24FFFFFF) } }
+        circle.addView(View(act).apply { foreground = ytSpin }, FrameLayout.LayoutParams(ui.dp(96), ui.dp(96), Gravity.CENTER))
+        mid.addView(circle, LinearLayout.LayoutParams(ui.dp(230), ui.dp(230)))
+        mid.addView(ytLoadTitle, LinearLayout.LayoutParams(-1, -2)); mid.addView(ytLoadSub, LinearLayout.LayoutParams(-1, -2))
+        lcol.addView(mid, LinearLayout.LayoutParams(-1, 0, 1f))
+        lcol.addView(View(act), LinearLayout.LayoutParams(-1, ui.dp(70)))
+        ytLoadV.addView(lcol, FrameLayout.LayoutParams(-1, -1))
+        full.addView(ytLoadV, FrameLayout.LayoutParams(-1, -1))
         setBg(bgColor)
     }
     private fun setBg(col: Int) {
@@ -1140,6 +1173,7 @@ class MusicUi(private val act: Activity, private val ui: Ui, private val th: The
         head("🎵 الأغنية")
         item("🖼 اختار الألبوم / الغلاف") { MusicEngine.current?.let { coverChoices(it, HashSet()) } ?: quiet("شغّل أغنية الأول", 1500L) }
         item("🖼 البوستر غلط") { wrongPoster() }
+        YtAudio.itemOf(MusicEngine.current)?.let { yi -> item("⬇ تحميل الصوت (من يوتيوب)") { onYtDownload?.invoke(yi) } }
         item("🎧 تعرّف على أغنية شغّالة في تطبيق تاني") { try { act.startActivity(android.content.Intent(act, SongRequestActivity::class.java)) } catch (_: Throwable) {} }
         dlg = ui.sheet(act, "⋮ المزيد", listOf<View>(col)); dlg.show()
     }
@@ -1163,7 +1197,26 @@ class MusicUi(private val act: Activity, private val ui: Ui, private val th: The
         if (MusicEngine.current?.let { autoBusy.contains(it.id) } == true) { bigMsg("🔎 بتعرّف على الأغنية الأول… وبعدها الغلاف والكلمات"); setStatus("🔎 المفاتيح بتسمع أجزاء مختلفة من الأغنية") } else loadLyrics()
         MusicEngine.current?.let { cur -> if (pendingNoKeys == cur.id) { pendingNoKeys = -1L; noKeysDialog(cur) } }   // (v294) كنا مستنيين تفتح المشغّل عشان نسألك عن المفتاح/الاسم
     }
-    private fun hideFull() { autoOpenFor = ""; snapLyrReset(); topHide(); eq.release(); fullOn = false; full.visibility = View.GONE; onNavTint(null) }
+    /** (v339) يفتح المشغّل الكامل فورًا بلودينج مكان الألبوم — لحد ما رابط صوت يوتيوب يتجاب (endYtLoading + showFull بعدها) */
+    fun showYtLoading(title: String, channel: String) {
+        ytLoading = true
+        ytLoadTitle.text = title; ytLoadSub.text = channel.ifBlank { "يوتيوب" } + " · ⏳ بجيب الصوت…"
+        fullCol.visibility = View.INVISIBLE; ytLoadV.visibility = View.VISIBLE; ytSpin.start()
+        fullOn = true; full.visibility = View.VISIBLE; onNavTint(navCol(bgColor))
+    }
+    fun endYtLoading() {
+        if (!ytLoading) return
+        ytLoading = false; ytSpin.stop(); ytLoadV.visibility = View.GONE; fullCol.visibility = View.VISIBLE
+    }
+    /** يقفل المشغّل الكامل من بره (مثلًا لو جلب الصوت فشل) */
+    fun closeFull() { if (fullOn) hideFull() }
+    private fun hideFull() {
+        val wasLoading = ytLoading
+        if (wasLoading) endYtLoading()
+        autoOpenFor = ""; snapLyrReset(); topHide(); eq.release(); fullOn = false; full.visibility = View.GONE; onNavTint(null)
+        if (wasLoading) onLoadCancel?.invoke()
+        onFullClosed?.invoke()
+    }
     /** الاسم المعروض: الاسم اللي اتحفظ من التعرف لو موجود، وإلا بيانات الملف */
     private fun nameOf(t: Track): Pair<String, String> {
         val o = SongId.override(t.id)
@@ -1285,6 +1338,7 @@ class MusicUi(private val act: Activity, private val ui: Ui, private val th: The
         nowTitle.text = nm?.first ?: ""; nowSub.text = nm?.second ?: ""
         fTitle.text = nm?.first ?: "مفيش حاجة شغّالة"; fArtist.text = nm?.second ?: ""
         orb.initial = (nm?.first ?: "♪").trim().take(1).ifEmpty { "♪" }
+        if (::ytDlBtn.isInitialized) ytDlBtn.visibility = if (YtAudio.itemOf(t) != null) View.VISIBLE else View.GONE
         if (t?.uri != curUri) {
             curUri = t?.uri
             // (v315) الأغنية اتغيّرت: العملية الجارية على القديمة توقف عند أول فاصل (من غير ما نحرق طلبات)، والجديدة تستنى ثانيتين ونص (لو بتعدّي بسرعة مفيش طلب يتبعت)

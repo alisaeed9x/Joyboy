@@ -406,13 +406,17 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
     private fun playCur(tr: Boolean) { val st = cur ?: return; if (st.vid == null) return; play(detItem(st), tr) }
     /** عنصر من التحميلات url بتاعه مكان الملف — بنرجّعه لرابط الفيديو قبل التشغيل/السجل */
     private fun asWatch(it: NpItem): NpItem = if (it.url.startsWith("http")) it else NpItem(it.id, it.title, it.channel, it.channelUrl, it.thumb, it.dur, it.count, it.age, 0, YtNp.watchUrl(it.id))
+    /** (v340) لو الفيديو اتفتح من قايمة تشغيل (أو أي قايمة فيديوهات) نسجّلها عشان لوحة «التالي» تعرضها */
+    private fun markCtx() { val st = cur; if (st != null && st.vid == null && st.title.startsWith("📃")) YtNext.setContext(st.list(), st.title.removePrefix("📃").trim()) else YtNext.clearContext() }
     private fun play(it0: NpItem, tr: Boolean) {
+        markCtx()
         val it = asWatch(it0)
         if (YtStore.histOn()) YtStore.addFront(YtStore.HIST, it, 200)
         YtStore.markApp(it.id)
         onPlay(it.id, it.title, tr)
     }
     private fun playAudio(it0: NpItem) {
+        markCtx()
         val it = asWatch(it0)
         if (YtStore.histOn()) YtStore.addFront(YtStore.HIST, it, 200)
         YtStore.markApp(it.id)

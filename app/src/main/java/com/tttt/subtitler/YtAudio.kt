@@ -17,6 +17,7 @@ import java.util.concurrent.ConcurrentHashMap
 object YtAudio {
     private val hdr = ConcurrentHashMap<String, Map<String, String>>()
     private val thumbs = ConcurrentHashMap<Long, String>()
+    private val items = ConcurrentHashMap<Long, NpItem>()   // (v339) معلومات الفيديو الأصلي لكل Track يوتيوب — عشان زرار ⬇ في مشغّل الموسيقى يعرف يحمّله
 
     fun isRemote(uri: String) = uri.startsWith("http", true)
     fun headersFor(uri: String): Map<String, String> = hdr[uri] ?: emptyMap()
@@ -46,8 +47,12 @@ object YtAudio {
         hdr[a.url] = mapOf("User-Agent" to a.ua, "Referer" to "https://www.youtube.com/")
         val id = idOf(vid)
         thumbs[id] = thumb.ifBlank { "https://i.ytimg.com/vi/$vid/mqdefault.jpg" }
+        items[id] = NpItem(vid, title.ifBlank { a.title }, channel, "", thumbs[id] ?: "", a.durMs / 1000L, -1L, "", 0, YtNp.watchUrl(vid))
         return Track(id, a.url, nm, ar, a.durMs, "yt", "يوتيوب")
     }
+
+    /** (v339) فيديو يوتيوب الأصلي لـ Track بيشتغل من يوتيوب (null لو أغنية من الجهاز أو الجلسة اتقفلت) */
+    fun itemOf(t: Track?): NpItem? = if (t != null && isRemote(t.uri)) items[t.id] else null
 
     /** مصدر صوت للتعرّف/الكلمات: ستريم يوتيوب بالهيدرز بتاعته، أو ملف الجهاز */
     fun src(app: Context, t: Track): AudioSource =

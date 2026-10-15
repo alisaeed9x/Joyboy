@@ -78,6 +78,12 @@ class MainActivity : Activity() {
     /** (v324) صفحة المهام طلعت من الشريط السفلي (مكانها بقى يوتيوب): بتتفتح من الزرار العايم (TasksFab) أو ⚙️ أو الويدجت، وبتتخبّى بالرجوع. رقمها الداخلي 5 */
     private fun showTasksDialog() { showTabFn(5) }
     private var tabBeforeTasks = 0
+    // (v339) فتح فيديو/صوت يوتيوب فورًا بلودينج جوه المشغّل + الرجوع لنفس المكان
+    private var ytLoadUi: YtLoadingPage? = null
+    private var ytLoadTok = 0          // أي طلب فيديو جديد/إلغاء بيزوّده؛ النتيجة المتأخرة بتتجاهل
+    private var ytLoadLaunched = false // المشغّل الحقيقي اتفتح (صفحة اللودينج بتتشال لما نرجع)
+    private var ytAudTok = 0
+    private var musicReturnTab = -1    // الصفحة اللي جينا منها لمشغّل الموسيقى (يوتيوب) عشان نرجعلها لما نقفله
     // (v324) زرار «المهام» العايم: دايرة حمراء بعدد المهام، بتتسحب لأي مكان (TasksFab.kt)
     private var tasksFabUi: TasksFab? = null
     private var fabHide = false
@@ -745,6 +751,13 @@ class MainActivity : Activity() {
             musicUi?.let { return it }
             val music = MusicUi(this, ui, th); musicUi = music; music.root.visibility = View.GONE
             music.onNavTint = { c -> setNavTint(c) }
+            music.onYtDownload = { n -> ytDownload(n, true) }
+            music.onYtPlay = { n -> playYtAudio(n.id, n.title, n.channel, n.thumb) }   // (v340)   // (v339) ⬇ تحميل صوت يوتيوب من مشغّل الموسيقى
+            music.onLoadCancel = { ytAudTok++ }                 // قفلت المشغّل وإحنا بنجيب الصوت: النتيجة المتأخرة تتجاهل
+            music.onFullClosed = {                              // (v339) قفلت مشغّل صوت يوتيوب: ارجع لصفحة يوتيوب في نفس المكان
+                val t = musicReturnTab
+                if (t >= 0 && curTab == 1) { musicReturnTab = -1; showTabFn(t) }
+            }
             music.onGrant = { requestPermissions(arrayOf(MusicScan.permission()), 12) }
             // (v194) صفحة الموسيقى = نفس كلاس صفحة الفيديوهات: نفس الإعدادات والعمليات (إعادة تسمية/نقل/مشاركة/حذف/تفاصيل) والبوابة بتاعة المخفي
             music.lib.onSettings = lib.onSettings
@@ -801,7 +814,7 @@ class MainActivity : Activity() {
             }
         }
         musicOpenFn = { showTabFn(1); musicUi?.showFull() }   // (v337)
-        val nav = BottomNav(this, ui, th, 0) { i -> if (i == 2) { save(); NavAnim.set(curTab, 2); startActivity(Intent(this, BrowserActivity::class.java)) } else if (i == 3) { save(); NavAnim.set(curTab, 3); startActivity(Intent(this, FileManagerActivity::class.java)) } else showTabFn(i) }   // (v310) 4 الملفات = شاشة منفصلة زي المتصفح
+        val nav = BottomNav(this, ui, th, 0) { i -> if (i == 2) { save(); NavAnim.set(curTab, 2); startActivity(Intent(this, BrowserActivity::class.java)) } else if (i == 3) { save(); NavAnim.set(curTab, 3); startActivity(Intent(this, FileManagerActivity::class.java)) } else { musicReturnTab = -1; showTabFn(i) } }   // (v310) 4 الملفات = شاشة منفصلة زي المتصفح
         navUi = nav
         if (!fromPlayer) {
             TaskCenter.listener = { if (!isDestroyed && !isFinishing) { tasksDlgRefresh?.invoke(); runOnUiThread { updateTasksFab() } } }
@@ -816,6 +829,7 @@ class MainActivity : Activity() {
         shell.addView(nav.view, LinearLayout.LayoutParams(-1, -2))
         val frame = FrameLayout(this).apply { setBackgroundColor(th.bg); layoutDirection = View.LAYOUT_DIRECTION_LTR }
         frame.addView(shell, FrameLayout.LayoutParams(-1, -1))
+        ytLoadUi = YtLoadingPage(this, ui, th) { cancelYtLoad() }.also { frame.addView(it.root, FrameLayout.LayoutParams(-1, -1)) }
         if (fromPlayer) {
             setContentView(FrameLayout(this))
             settingsDlg.show(intent?.getStringExtra("tab"))   // من غير قسم محدد = قايمة الإعدادات كاملة
@@ -825,7 +839,9 @@ class MainActivity : Activity() {
         if (!fromPlayer && b == null) { frame.alpha = 0f; frame.animate().setStartDelay(0L).alpha(1f).setDuration(160L).start() }   // (v312) بدل السبلاش: ظهور ناعم سريع
         if (!fromPlayer) {   // (v310) أيقونة «الموسيقى» في اللانشر (alias) أو رجوع من المتصفح/الملفات لتبويب معيّن
             val cn = intent?.component?.className ?: ""
-            val t0 = intent?.getStringExtra("tab")
+            // (v339) لو الأكتيفيتي اتعمل لها إعادة إنشاء (النظام قتلها وإنت في المشغّل): ارجع لنفس البوابة مش للفيديوهات
+            val savedTab = b?.getInt("cur_tab", -1) ?: -1
+            val t0 = intent?.getStringExtra("tab") ?: when (savedTab) { 1 -> "music"; 4 -> "youtube"; 5 -> "tasks"; else -> null }
             if (cn.endsWith(".MusicLauncher") || t0 == "music") frame.post { showTabFn(1) }
             else if (t0 == "tasks") frame.post { showTabFn(5) }
             else if (t0 == "youtube") frame.post { showTabFn(4); openYtFromIntent(intent) }
@@ -1109,7 +1125,15 @@ class MainActivity : Activity() {
             try { startActivity(Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$packageName"))) } catch (e: Exception) { LogStore.err("Main:675", e) }
         }
     }
-    override fun onStop() { super.onStop(); stoppedAt = System.currentTimeMillis(); WebMute.pauseAll() }
+    override fun onStop() { super.onStop(); stoppedAt = System.currentTimeMillis(); WebMute.pauseAll(); if (ytLoadLaunched) { ytLoadLaunched = false; ytLoadUi?.hide() } }   // (v339) المشغّل ظهر فوقنا: شيل صفحة اللودينج
+    // (v339) الأكتيفيتي بقت بتتحمّل الدوران بنفسها (من غير إعادة إنشاء) — كانت بتتعمل لها إعادة إنشاء لما المشغّل يلفّ الشاشة فنرجع للفيديوهات بدل يوتيوب
+    override fun onConfigurationChanged(c: android.content.res.Configuration) {
+        super.onConfigurationChanged(c)
+        if (fromPlayer) return
+        try { if (libStarted) libUi?.let { if (it.hasData) it.render() } } catch (_: Throwable) {}
+        try { musicUi?.lib?.let { if (it.hasData) it.render() } } catch (_: Throwable) {}
+    }
+    override fun onSaveInstanceState(o: Bundle) { super.onSaveInstanceState(o); if (!fromPlayer) o.putInt("cur_tab", curTab) }   // (v339)
     /** أندرويد 10+ مابيسمحش بقراءة الكليبورد غير والتطبيق عليه الفوكس — فالفحص بيتعمل هنا */
     override fun onWindowFocusChanged(hasFocus: Boolean) {
         super.onWindowFocusChanged(hasFocus)
@@ -1128,58 +1152,71 @@ class MainActivity : Activity() {
     }
     /** (v117) دخول مباشر لفيديو يوتيوب من معرّفه: بيجيب أحسن لينك فيه صوت وصورة ويفتح المشغّل (لو فشل بيفتح صفحته في المتصفح) */
     fun playYt(id: String, title: String, translate: Boolean = true, auto: Boolean = translate) {
-        if (curTab == 4 && ytUi != null) ytUi?.busy(true) else Notice.show(this, ("⏳ بجيب الفيديو…").toString(), 2300L)   // (v337) في يوتيوب: أنيميشن لودنج بدل الإشعار
+        // (v339) مفتاح الترجمة الأول (لو ناقص بيسأل) وبعدها ندخل صفحة المشغّل فورًا
+        if (translate) ensureKeys { ytStart(id, title, translate, auto) } else ytStart(id, title, translate, auto)
+    }
+    private fun cancelYtLoad() { ytLoadTok++; ytLoadLaunched = false; ytLoadUi?.hide() }
+    /** (v339) بنفتح «صفحة المشغّل» فورًا (لودينج جواها) وبنجيب رابط الفيديو في الخلفية؛ لو فشل بنقفلها ونطلّع الدايلوج ونفضل في يوتيوب */
+    private fun ytStart(id: String, title: String, translate: Boolean, auto: Boolean) {
+        val tok = ++ytLoadTok; ytLoadLaunched = false
+        val ret = if (curTab == 4) "yt" else ""   // الرجوع من المشغّل لصفحة يوتيوب بس لو إحنا جينا منها (مش من المكتبة)
+        ytLoadUi?.show(title)
         Thread {
             val best = try { YtExtract.fetchPick(id, Cfg.int("yt_maxh", 0)) } catch (_: Throwable) { null }
             // (v326) لو YtExtract فشل نجرّب NewPipeExtractor قبل ما نطلّع دايلوج الفشل
             val np = if (best == null) try { YtNp.init(); YtNp.pick(id, Cfg.int("yt_maxh", 0)) } catch (_: Throwable) { null } else null
             runOnUiThread {
-                ytUi?.busy(false)   // (v337)
+                if (tok != ytLoadTok) return@runOnUiThread   // اتلغى (رجوع/✕) أو طلب أحدث
                 if (isFinishing || isDestroyed) return@runOnUiThread
                 if (best == null && np != null) {
-                    val go2 = {
-                        startActivity(Intent(this, PlayerActivity::class.java).apply {
-                            putExtra("url", np.url); putExtra("aurl", np.audio ?: ""); putExtra("ref", "https://www.youtube.com/"); putExtra("ua", np.ua)
-                            if (np.qlist.isNotEmpty()) putExtra("qlist", np.qlist)
-                            putExtra("title", title.ifBlank { np.title }); putExtra("ytid", id)
-                            putExtra("nosub", !translate); putExtra("autotr", auto)
-                        })
-                    }
-                    if (translate) ensureKeys { go2() } else go2()
+                    ytLoadLaunched = true
+                    startActivity(Intent(this, PlayerActivity::class.java).apply {
+                        putExtra("url", np.url); putExtra("aurl", np.audio ?: ""); putExtra("ref", "https://www.youtube.com/"); putExtra("ua", np.ua)
+                        if (np.qlist.isNotEmpty()) putExtra("qlist", np.qlist)
+                        putExtra("title", title.ifBlank { np.title }); putExtra("ytid", id)
+                        putExtra("nosub", !translate); putExtra("autotr", auto); putExtra("ret", ret)
+                    })
                     return@runOnUiThread
                 }
                 if (best == null) {
+                    ytLoadUi?.hide()
                     // (v119) مفيش رمي أوتوماتيك على المتصفح: بنقولك السبب وإنت تختار (تعيد / تفتحه في المتصفح / تقفل)
                     val why = YtExtract.lastWhy.ifBlank { "السبب مش معروف (راجع اللوج)" }
                     GAlert(this).setTitle("⚠ ما قدرتش أجيب الفيديو")
                         .setMessage("يوتيوب ما رضيش يدّي لينك للفيديو ده من التطبيق.\n\n" + why)
-                        .setPositiveButton("🔁 جرّب تاني") { _, _ -> playYt(id, title, translate, auto) }
+                        .setPositiveButton("🔁 جرّب تاني") { _, _ -> ytStart(id, title, translate, auto) }
                         .setNeutralButton("🌐 افتحه في المتصفح") { _, _ -> startActivity(Intent(this, BrowserActivity::class.java).putExtra("start", YtHistory.watchUrl(id)).putExtra("noauto", true)) }
                         .setNegativeButton("إغلاق", null).show()
                     return@runOnUiThread
                 }
                 val ttl = title.ifBlank { best.title }
-                val go = {
-                    startActivity(Intent(this, PlayerActivity::class.java).apply {
-                        putExtra("url", best.url); putExtra("aurl", best.audio ?: ""); putExtra("qlist", best.optsJson()); putExtra("ref", "https://www.youtube.com/"); putExtra("ua", best.ua)
-                        putExtra("title", ttl); putExtra("ytid", id)
-                        putExtra("nosub", !translate); putExtra("autotr", auto)
-                    })
-                }
-                if (translate) ensureKeys { go() } else go()
+                ytLoadLaunched = true
+                startActivity(Intent(this, PlayerActivity::class.java).apply {
+                    putExtra("url", best.url); putExtra("aurl", best.audio ?: ""); putExtra("qlist", best.optsJson()); putExtra("ref", "https://www.youtube.com/"); putExtra("ua", best.ua)
+                    putExtra("title", ttl); putExtra("ytid", id)
+                    putExtra("nosub", !translate); putExtra("autotr", auto); putExtra("ret", ret)
+                })
             }
         }.apply { isDaemon = true }.start()
     }
     /** (v337) 🎧 صوت بس: بنجيب رابط الصوت بس (من غير داتا فيديو) ونشغّله في مشغّل الموسيقى — الاسم والمغني من عنوان الفيديو والكلمات/الغلاف بنفس طريقة الأغاني */
     fun playYtAudio(id: String, title: String, channel: String, thumb: String) {
-        if (curTab == 4 && ytUi != null) ytUi?.busy(true) else Notice.show(this, ("⏳ بجيب الصوت…").toString(), 2300L)
+        // (v339) بنفتح مشغّل الموسيقى الكامل فورًا (لودينج مكان الألبوم) وبنفتكر إحنا جينا منين عشان نرجع لنفس المكان لما نقفله
+        val tok = ++ytAudTok
+        if (curTab != 1) musicReturnTab = curTab
+        showTabFn(1)
+        musicUi?.showYtLoading(title, channel)
         Thread {
             val a = try { YtNp.init(); YtNp.pickAudio(id) } catch (_: Throwable) { null }
             runOnUiThread {
-                ytUi?.busy(false)
+                if (tok != ytAudTok) return@runOnUiThread   // قفلت المشغّل أو دوست على حاجة تانية
                 if (isFinishing || isDestroyed) return@runOnUiThread
-                if (a == null) { Notice.show(this, ("ما قدرتش أجيب صوت الفيديو ده — جرّب تاني أو شغّله فيديو").toString(), 3800L); return@runOnUiThread }
+                if (a == null) {
+                    musicUi?.endYtLoading(); musicUi?.closeFull()   // ← بيرجّعك لصفحة يوتيوب (onFullClosed)
+                    Notice.show(this, ("ما قدرتش أجيب صوت الفيديو ده — جرّب تاني أو شغّله فيديو").toString(), 3800L); return@runOnUiThread
+                }
                 val tr = YtAudio.track(id, title, channel, thumb, a)
+                musicUi?.endYtLoading()
                 MusicEngine.play(this, listOf(tr), 0)
                 musicOpenFn?.invoke()
             }
@@ -1248,6 +1285,7 @@ class MainActivity : Activity() {
     }
     @Suppress("DEPRECATION")
     override fun onBackPressed() {
+        if (!fromPlayer && ytLoadUi?.visible == true) { cancelYtLoad(); return }   // (v339) لسه بنجيب الفيديو: رجوع = إلغاء ونفضل في يوتيوب
         if (!fromPlayer && curTab == 4 && ytUi?.back() == true) return   // (v118) رجوع جوه يوتيوب الأول
         if (!fromPlayer && curTab == 5) { showTabFn(if (tabBeforeTasks == 5) 0 else tabBeforeTasks); return }   // (v324) صفحة المهام ← للصفحة اللي جيت منها
         if (!fromPlayer && curTab == 1 && musicUi?.onBack() == true) return   // (v193) يقفل مشغّل الأسطوانة/الفولدر الأول
