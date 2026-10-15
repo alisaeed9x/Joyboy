@@ -194,9 +194,9 @@ object YtNotify {
     private const val BADGE_AT = "ytp_badge_at"
     @Volatile var badge = -1
     fun badgeCount(): Int { if (badge < 0) badge = Cfg.str(BADGE, "0").toIntOrNull() ?: 0; return badge }
-    private fun setBadge(n: Int) { badge = n; Cfg.put(BADGE, n.toString()) }
+    private fun storeBadge(n: Int) { badge = n; Cfg.put(BADGE, n.toString()) }
     /** فتحت الاشتراكات: العدّاد يتصفّر وبنبدأ العدّ من دلوقتي */
-    fun markOpened(c: Context) { Cfg.put(OPENED, System.currentTimeMillis().toString()); setBadge(0); try { (c as? MainActivity)?.let { m -> m.runOnUiThread { m.updateYtBadge() } } } catch (_: Throwable) {} }
+    fun markOpened(c: Context) { Cfg.put(OPENED, System.currentTimeMillis().toString()); storeBadge(0); try { (c as? MainActivity)?.let { m -> m.runOnUiThread { m.updateYtBadge() } } } catch (_: Throwable) {} }
     private fun countNew(items: List<NpItem>): Int {
         val t = Cfg.str(OPENED, "").toLongOrNull() ?: 0L
         if (t == 0L) { Cfg.put(OPENED, System.currentTimeMillis().toString()); return 0 }   // أول مرة: خط أساس
@@ -212,7 +212,7 @@ object YtNotify {
                 Cfg.ensure(c); YtRss.attach(c)
                 val subs = YtStore.read(YtStore.SUBS); if (subs.isEmpty()) return@Thread
                 val n = countNew(YtRss.feed(subs, false).items)
-                setBadge(n); done(n)
+                storeBadge(n); done(n)
             } catch (_: Throwable) {}
         }.apply { isDaemon = true; start() }
     }
@@ -260,7 +260,7 @@ object YtNotify {
         val subs = YtStore.read(YtStore.SUBS); if (subs.isEmpty()) return 0
         val nm = c.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         val feed = YtRss.feed(subs, true).items
-        try { setBadge(countNew(feed)) } catch (_: Throwable) {}   // (v350) العدّاد بيتحدّث مع الفحص الدوري كمان
+        try { storeBadge(countNew(feed)) } catch (_: Throwable) {}   // (v350) العدّاد بيتحدّث مع الفحص الدوري كمان
         val seen = readSeen(); val fresh = ArrayList<NpItem>()
         val firstRun = seen.isEmpty()
         val newest = HashMap<String, Long>()
