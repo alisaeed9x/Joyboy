@@ -72,6 +72,7 @@ class MainActivity : Activity() {
     private var musicUi: MusicUi? = null            // (v189) صفحة الموسيقى
     private var tasksUiRef: TasksUi? = null
     private var showTabFn: (Int) -> Unit = {}
+    private var musicOpenFn: (() -> Unit)? = null   // (v337) يفتح صفحة الموسيقى ومشغّلها الكامل (لتشغيل صوت يوتيوب)
     private var ytOpenFn: ((String) -> Unit)? = null   // (v327) فتح تفاصيل فيديو يوتيوب من إشعار
     private var tasksDlgRefresh: (() -> Unit)? = null
     /** (v324) صفحة المهام طلعت من الشريط السفلي (مكانها بقى يوتيوب): بتتفتح من الزرار العايم (TasksFab) أو ⚙️ أو الويدجت، وبتتخبّى بالرجوع. رقمها الداخلي 5 */
@@ -80,7 +81,8 @@ class MainActivity : Activity() {
     // (v324) زرار «المهام» العايم: دايرة حمراء بعدد المهام، بتتسحب لأي مكان (TasksFab.kt)
     private var tasksFabUi: TasksFab? = null
     private var fabHide = false
-    private fun updateTasksFab() { tasksFabUi?.hidden = fabHide || curTab == 5 }
+    /** (v336) الزرار العايم اتشال؛ الدالة دلوقتي بتحدّث عدّاد زرار «المهام» في الشريط السفلي */
+    private fun updateTasksFab() { try { val a = TaskCenter.active() + BgJobs.jobs.count { it.active }; val t = TaskCenter.total() + BgJobs.jobs.size; val n = if (a > 0) a else t; navUi?.label(5, if (n > 0) "المهام ($n)" else "المهام") } catch (_: Throwable) {} }
     private var toolsUiM: ToolsUi? = null
     private var pendingTool = ""
     private var pendingSrc: ToolSrc? = null
@@ -765,9 +767,12 @@ class MainActivity : Activity() {
                 { Recents.parse(try { recentFile.readText() } catch (_: Exception) { "" }).associateBy { it.id } },
                 { id, name, tr -> playYt(id, name, tr) },
                 { u -> save(); NavAnim.set(curTab, 2); startActivity(Intent(this, BrowserActivity::class.java).putExtra("start", u)) },
-                { startActivityForResult(filePicker("*/*", "اختار ملف الاشتراكات", false), 47) })
+                { startActivityForResult(filePicker("*/*", "اختار ملف الاشتراكات", false), 47) },
+                { n -> playYtAudio(n.id, n.title, n.channel, n.thumb) },
+                { n, a -> ytDownload(n, a) })
             ytUi = yt; yt.root.visibility = View.GONE; ytOpenFn = { vid -> yt.openVideo(vid) }
             pane.addView(yt.root, 1, FrameLayout.LayoutParams(-1, -1))
+            pane.addView(yt.busyView, FrameLayout.LayoutParams(-1, -1))   // (v337) لودينج جلب رابط الفيديو فوق الصفحة
             return yt
         }
         // (v189) البوابات: 0 الفيديوهات · 1 الموسيقى · 2 المتصفح · 3 الملفات (شاشات لوحدها) · (v324) 4 يوتيوب
@@ -784,17 +789,18 @@ class MainActivity : Activity() {
                 ytUi?.root?.visibility = if (i == 4) View.VISIBLE else View.GONE
                 tasksUi.root.visibility = if (i == 5) View.VISIBLE else View.GONE
                 tasksDlgRefresh = if (i == 5) ({ tasksUi.refresh() }) else null
-                navUi?.set(if (i == 5) -1 else i)
+                navUi?.set(i)
                 if (i == 1) { musicUi?.ensureLoaded(); musicUi?.applyNavTint() } else setNavTint(null)
                 if (i == 4) ytUi?.refresh() else if (prevTab == 4) ytUi?.onHide()
                 if (i == 5) tasksUi.refresh()
                 updateTasksFab()
                 if (prevTab != i) {   // (v312) الصفحة الجديدة بتنزلق من ناحية اتجاه الانتقال (الشريط RTL: رقم أكبر = شمال)
                     val target: View? = when (i) { 0 -> lib.root; 1 -> musicUi?.root; 4 -> ytUi?.root; else -> tasksUi.root }
-                    if (target != null) Motion.tabEnter(target, if (i > prevTab) -1 else 1)
+                    if (target != null) Motion.tabEnter(target, if (NavAnim.pos(i) > NavAnim.pos(prevTab)) -1 else 1)
                 }
             }
         }
+        musicOpenFn = { showTabFn(1); musicUi?.showFull() }   // (v337)
         val nav = BottomNav(this, ui, th, 0) { i -> if (i == 2) { save(); NavAnim.set(curTab, 2); startActivity(Intent(this, BrowserActivity::class.java)) } else if (i == 3) { save(); NavAnim.set(curTab, 3); startActivity(Intent(this, FileManagerActivity::class.java)) } else showTabFn(i) }   // (v310) 4 الملفات = شاشة منفصلة زي المتصفح
         navUi = nav
         if (!fromPlayer) {
@@ -803,7 +809,7 @@ class MainActivity : Activity() {
         pane.addView(lib.root, FrameLayout.LayoutParams(-1, -1))
         tasksUi.root.visibility = View.GONE
         pane.addView(tasksUi.root, FrameLayout.LayoutParams(-1, -1))   // (v231) صفحة المهام
-        tasksFabUi = TasksFab(this, pane, ui) { showTasksDialog() }   // (v324) الزرار العايم بدل الـ pill القديمة
+        // (v336) الزرار العايم (TasksFab) اتشال مؤقتًا — المهام بقت زرار في الشريط السفلي
         updateTasksFab()
         val shell = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_LTR }
         shell.addView(pane, LinearLayout.LayoutParams(-1, 0, 1f))
@@ -1122,12 +1128,13 @@ class MainActivity : Activity() {
     }
     /** (v117) دخول مباشر لفيديو يوتيوب من معرّفه: بيجيب أحسن لينك فيه صوت وصورة ويفتح المشغّل (لو فشل بيفتح صفحته في المتصفح) */
     fun playYt(id: String, title: String, translate: Boolean = true, auto: Boolean = translate) {
-        Notice.show(this, ("⏳ بجيب الفيديو…").toString(), 2300L)
+        if (curTab == 4 && ytUi != null) ytUi?.busy(true) else Notice.show(this, ("⏳ بجيب الفيديو…").toString(), 2300L)   // (v337) في يوتيوب: أنيميشن لودنج بدل الإشعار
         Thread {
             val best = try { YtExtract.fetchPick(id, Cfg.int("yt_maxh", 0)) } catch (_: Throwable) { null }
             // (v326) لو YtExtract فشل نجرّب NewPipeExtractor قبل ما نطلّع دايلوج الفشل
             val np = if (best == null) try { YtNp.init(); YtNp.pick(id, Cfg.int("yt_maxh", 0)) } catch (_: Throwable) { null } else null
             runOnUiThread {
+                ytUi?.busy(false)   // (v337)
                 if (isFinishing || isDestroyed) return@runOnUiThread
                 if (best == null && np != null) {
                     val go2 = {
@@ -1162,6 +1169,45 @@ class MainActivity : Activity() {
                 if (translate) ensureKeys { go() } else go()
             }
         }.apply { isDaemon = true }.start()
+    }
+    /** (v337) 🎧 صوت بس: بنجيب رابط الصوت بس (من غير داتا فيديو) ونشغّله في مشغّل الموسيقى — الاسم والمغني من عنوان الفيديو والكلمات/الغلاف بنفس طريقة الأغاني */
+    fun playYtAudio(id: String, title: String, channel: String, thumb: String) {
+        if (curTab == 4 && ytUi != null) ytUi?.busy(true) else Notice.show(this, ("⏳ بجيب الصوت…").toString(), 2300L)
+        Thread {
+            val a = try { YtNp.init(); YtNp.pickAudio(id) } catch (_: Throwable) { null }
+            runOnUiThread {
+                ytUi?.busy(false)
+                if (isFinishing || isDestroyed) return@runOnUiThread
+                if (a == null) { Notice.show(this, ("ما قدرتش أجيب صوت الفيديو ده — جرّب تاني أو شغّله فيديو").toString(), 3800L); return@runOnUiThread }
+                val tr = YtAudio.track(id, title, channel, thumb, a)
+                MusicEngine.play(this, listOf(tr), 0)
+                musicOpenFn?.invoke()
+            }
+        }.apply { isDaemon = true }.start()
+    }
+    /** (v337) ⬇ تحميل فيديو يوتيوب (صوت بس أو فيديو بالجودة الافتراضية) — مهمة في تبويب المهام، والملف في التنزيلات/Subtitler، ومعلوماته بتتسجّل (إعدادات يوتيوب ← التحميلات المسجّلة) */
+    fun ytDownload(n: NpItem, audioOnly: Boolean) {
+        val app = applicationContext
+        val nm = n.title.ifBlank { n.id }
+        TaskCenter.add(app, "download", (if (audioOnly) "🎧 " else "⬇ ") + nm) { t ->
+            t.msg = "بجيب الرابط…"; TaskCenter.changed()
+            YtNp.init()
+            val p = (if (audioOnly) YtNp.pickAudio(n.id) else YtNp.pick(n.id, Cfg.int("yt_maxh", 0))) ?: throw java.io.IOException("ما قدرتش أجيب رابط التحميل")
+            val hs = mapOf("User-Agent" to p.ua, "Referer" to "https://www.youtube.com/")
+            val job = if (audioOnly) Downloader.Job(nm, p.url, null, false, 1, hs, true)
+                      else Downloader.Job(nm, p.url, p.audio, p.url.contains(".m3u8", true), p.h, hs)
+            job.ctl.cancelled = false; job.ctl.paused = false
+            job.ctl.ext = { t.cancelled }
+            t.onCancel = { job.ctl.cancelled = true }
+            t.onPause = { pz -> job.ctl.paused = pz }
+            val res = Downloader.run(app, job) { what, pct -> t.pct = pct.coerceIn(0, 99); t.msg = what; TaskCenter.changed() }
+            if (!res.first) throw java.io.IOException(res.second)
+            t.msg = ""; t.outPath = res.second
+            try {   // معلومات التحميل: العنوان/القناة/الصورة/المدة + مكان الملف (في خانة الوقت بتظهر)
+                YtStore.addFront(YtStore.DL, NpItem(n.id, n.title, n.channel, n.channelUrl, n.thumb, n.dur, -1L, "⬇ " + (if (audioOnly) "صوت" else "فيديو") + " · " + res.second, 0, res.second), 300)
+            } catch (_: Throwable) {}
+        }
+        Notice.show(this, ("⬇ اتضاف للتحميل — تابعه من تبويب «المهام»").toString(), 3000L)
     }
     fun playClip(c: ClipVideo) {
         fun go(u: String, ref: String, ua: String) {

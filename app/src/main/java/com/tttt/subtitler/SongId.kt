@@ -314,7 +314,7 @@ object SongId {
                 val keys = Cfg.allMainKeys()
                 if (keys.isEmpty()) { onDone(null, emptyList(), "مفيش مفتاح Gemini — ضيف واحد"); return@Thread }
                 val n = keys.size.coerceIn(1, 6)
-                val src = AudioSources.make(app, Uri.parse(t.uri), null, emptyMap(), 1) { }
+                val src = YtAudio.src(app, t)
                 val slices = ArrayList<WavChunk>()
                 try {
                     val total = src.durationSec().takeIf { it > 0 } ?: (t.durMs / 1000.0)
@@ -386,7 +386,7 @@ object SongId {
 
     /** مقطع كبير حوالين startSec، وبيجرّب أول المسار لو طلع صامت. null لو مفيش صوت */
     private fun loadWindow(app: Context, t: Track, startSec: Double): WavChunk? {
-        val src = AudioSources.make(app, Uri.parse(t.uri), null, emptyMap(), 1) { }
+        val src = YtAudio.src(app, t)
         try {
             val total = src.durationSec().takeIf { it > 0 } ?: (t.durMs / 1000.0)
             var win = bigWindow(total, startSec)
@@ -436,7 +436,7 @@ object SongId {
         if (tk.isEmpty()) { onDone(null, "محتاج توكن AudD"); return }
         Thread {
             try {
-                val src = AudioSources.make(app, Uri.parse(t.uri), null, emptyMap(), 1) { }
+                val src = YtAudio.src(app, t)
                 val total = src.durationSec().takeIf { it > 0 } ?: (t.durMs / 1000.0)
                 val a = startSec.coerceIn(0.0, (total - CLIP_SEC).coerceAtLeast(0.0))
                 val w = try { src.wav(a, minOf(a + CLIP_SEC, total.coerceAtLeast(a + 1))) } catch (_: Throwable) { null }

@@ -30,7 +30,9 @@ class BottomNav(act: Activity, private val ui: Ui, private val th: Theme, privat
             orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; gravity = Gravity.CENTER_VERTICAL
             setBackgroundColor(th.card)
         }
-        val defs = listOf("🎞" to "الفيديوهات", "🎵" to "الموسيقى", "🌐" to "المتصفح", "📂" to "الملفات", "▶" to "يوتيوب")
+        // (v336) الأرقام ثابتة (0 فيديوهات · 1 موسيقى · 2 متصفح · 3 ملفات · 4 يوتيوب · 5 مهام) لكن ترتيب العرض: يوتيوب قبل الملفات، والمهام رجعت زرار في الشريط
+        val defs = listOf("🎞" to "الفيديوهات", "🎵" to "الموسيقى", "🌐" to "المتصفح", "📂" to "الملفات", "▶" to "يوتيوب", "📋" to "المهام")
+        val order = listOf(0, 1, 2, 4, 3, 5)
         defs.forEachIndexed { idx, d ->
             val icon = IconTextView(act).apply { text = d.first; textSize = 16f; gravity = Gravity.CENTER; includeFontPadding = false }
             val lab = ui.text(d.second, 9.5f, th.muted, true).apply { gravity = Gravity.CENTER; setSingleLine() }
@@ -42,8 +44,8 @@ class BottomNav(act: Activity, private val ui: Ui, private val th: Theme, privat
                 setOnClickListener { onPick(idx) }
             }
             icons.add(icon); labels.add(lab); cells.add(cell)
-            row.addView(cell, LinearLayout.LayoutParams(0, ui.dp(42), 1f))
         }
+        for (id in order) row.addView(cells[id], LinearLayout.LayoutParams(0, ui.dp(42), 1f))
         val wrap = FrameLayout(act)
         wrap.addView(row, FrameLayout.LayoutParams(-1, -2))
         wrap.addView(indicator, FrameLayout.LayoutParams(ui.dp(22), ui.dp(2), Gravity.TOP or Gravity.START))

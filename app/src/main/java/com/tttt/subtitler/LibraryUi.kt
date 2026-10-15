@@ -93,6 +93,9 @@ class LibraryUi(
     private val WEBC = 0xFFB39DDB.toInt()   // لافندر هادي للعين (مش أخضر)
     private val webFolder = FolderItem(WEB_KEY, "الفيديوهات المصطادة", "", emptyList())
     private var webList: List<WebVid> = emptyList()
+    private var webSrc = 0                       // (v337) فولدر المصطادة: 0 الكل · 1 من يوتيوب (اللي اتشغّل من صفحة يوتيوب) · 2 من المتصفح/اللينكات
+    private var srcRow: View? = null
+    private val WEB_SRC = listOf("الكل", "▶ من يوتيوب", "🌐 من المتصفح")
     private val sel = LinkedHashSet<String>()
     private var selLevel = ""
     private val webThumbs = android.util.LruCache<String, android.graphics.Bitmap>(40)
@@ -314,6 +317,12 @@ class LibraryUi(
         root.addView(HorizontalScrollView(act).apply { isHorizontalScrollBarEnabled = false; layoutDirection = View.LAYOUT_DIRECTION_RTL; setPadding(ui.dp(8), 0, ui.dp(8), 0); addView(chips) },
             LinearLayout.LayoutParams(-1, -2))
 
+        // (v337) تقسيم المصطادة (بيظهر جوه فولدر المصطادة بس): الكل / من يوتيوب / من المتصفح
+        if (!audio) {
+            val srcChips = ui.chips(WEB_SRC, { WEB_SRC[webSrc] }) { n -> webSrc = WEB_SRC.indexOf(n).coerceAtLeast(0); render(); listV.setSelection(0) }
+            val sr = HorizontalScrollView(act).apply { isHorizontalScrollBarEnabled = false; layoutDirection = View.LAYOUT_DIRECTION_RTL; setPadding(ui.dp(8), 0, ui.dp(8), 0); addView(srcChips); visibility = View.GONE }
+            srcRow = sr; root.addView(sr, LinearLayout.LayoutParams(-1, -2))
+        }
         root.addView(searchEt, LinearLayout.LayoutParams(-1, -2).apply { setMargins(ui.dp(12), ui.dp(6), ui.dp(12), ui.dp(2)) })
 
         listV.apply {
@@ -434,6 +443,7 @@ class LibraryUi(
         val src = if (inHidden) all.filter { isHidden(it) } else visible()
         val cf = curFolder
         val inWeb = !inHidden && query.isEmpty() && cf == WEB_KEY
+        srcRow?.visibility = if (inWeb) View.VISIBLE else View.GONE
         if (!audio && !inHidden && query.isEmpty() && (cf == null || inWeb)) webList = WebVideos.load(act)
         val folders = buildTree(src)
         val folder = if (!inHidden && cf != null && !inWeb) nodeIdx[cf] else null
@@ -446,8 +456,11 @@ class LibraryUi(
             rows = VideoLib.sortVideos(src, sort)
             titleTv.text = "🙈 المخفي"; subTv.text = "${src.size} $noun · ${VideoLib.fmtSize(src.sumOf { it.size })}"; backV.visibility = View.VISIBLE
         } else if (inWeb) {
-            rows = webList
-            titleTv.text = "🌐 المصطادة من الإنترنت"; subTv.text = "${webList.size} فيديو"; backV.visibility = View.VISIBLE
+            val yIds = YtStore.appIds()
+            fun fromYt(w: WebVid) = w.id.startsWith("yt:") && w.id.removePrefix("yt:") in yIds
+            val shown = when (webSrc) { 1 -> webList.filter { fromYt(it) }; 2 -> webList.filter { !fromYt(it) }; else -> webList }
+            rows = shown
+            titleTv.text = "🌐 المصطادة من الإنترنت"; subTv.text = if (webSrc == 0) "${webList.size} فيديو" else "${shown.size} من ${webList.size} فيديو"; backV.visibility = View.VISIBLE
         } else if (inRecents) {
             val byUri = src.associateBy { it.uri }
             rows = RecentSongs.list().mapNotNull { byUri[it] }

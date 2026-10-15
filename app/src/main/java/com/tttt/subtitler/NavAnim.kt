@@ -11,10 +11,13 @@ object NavAnim {
     private var exit = 0
     private var has = false
 
+    /** (v336) مكان البوابة في الشريط (يوتيوب بقى قبل الملفات): الأرقام الداخلية 3=ملفات و4=يوتيوب */
+    fun pos(i: Int): Int = when (i) { 4 -> 3; 3 -> 4; else -> i }
+
     fun set(from: Int, to: Int) {
         if (from == to) return
         has = true
-        if (to > from) { enter = R.anim.nav_in_left; exit = R.anim.nav_out_right }
+        if (pos(to) > pos(from)) { enter = R.anim.nav_in_left; exit = R.anim.nav_out_right }
         else { enter = R.anim.nav_in_right; exit = R.anim.nav_out_left }
     }
 

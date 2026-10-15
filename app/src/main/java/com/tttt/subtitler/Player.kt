@@ -273,6 +273,8 @@ class PlayerActivity : Activity(), Host {
     lateinit var sentDiv: View
     lateinit var fsBadge: TransBadge
     lateinit var noticeBtn: TextView   // (v217) مثلث ▲ الإشعارات (v224: جنب زرار لاندسكيب/بورتريت)
+    private var voice: VoiceClean.Playback? = null   // (v334) 🎙 صوت الكلام النضيف شغّال جنب الفيديو
+    private var voiceBtnRef: TextView? = null
     private var trLgB: TextView? = null   // (v224) 🌐 و🔑 بقوا أيقونات صغيرة جنب زرار 🗣 في الشريط السفلي
     private var trKmB: TextView? = null
     lateinit var visBadge: TransBadge   // (v182) عدّاد جمل الوضع البصري — (v249) جنب كبسولة الصوت شمال فوق
@@ -1260,6 +1262,8 @@ class PlayerActivity : Activity(), Host {
         // (v208) زرار 🔑 بيبدّل وضع المفاتيح (1→2→3→4) ويوصل للمحرك الشغّال فورًا — زي زرار اللغة
         val kmB = mini("🔑" + KeyMode.clamp(Cfg.int("kmode", 1))) { v -> keyModePopup(v) }   // (v221) بيفتح قايمة الأوضاع (كان بيلفّ على الأوضاع بالدور)
         kmLabels.add(kmB to { n: Int -> "🔑$n" })
+        val voiceB = mini("🎙") { voiceMenu() }   // (v334) فصل صوت الكلام عن الموسيقى — يدوي بس
+        voiceBtnRef = voiceB
    // وضع الترجمة (فردي / أصلي / مزدوج) — أيقونة بس من غير كلام
         ccToggleFn = { toggleCc() }
         if (noSub) { ccOn = false; ccB.alpha = 0.4f; ctl.cc.alpha = 0.4f }
@@ -1464,7 +1468,7 @@ class PlayerActivity : Activity(), Host {
         val aiB = barPill(tip(grp("🗣", gAi, true), "لهجة (عائلي/صريح)"))
         val syncB = barPill(tip(grp("⏱", gSub, true), "تزامن الترجمة (تقديم / تأخير)"))   // (v91) مكان Aa — حجم الخط بقى بالقرص (pinch) على الشاشة
         toolR.addView(syncB)
-        val toolBtns = listOf<TextView>(syncB, tip(logB, "اللوج"), tip(sentB, "الجمل"), tip(ccB, "إظهار/إخفاء الترجمة"), tip(loopB, "تكرار الفيديو"), tip(dualB, "وضع الترجمة"), tip(charsB, "الشخصيات"), tip(kmB, "وضع المفاتيح (1–4)"))
+        val toolBtns = listOf<TextView>(syncB, tip(logB, "اللوج"), tip(sentB, "الجمل"), tip(ccB, "إظهار/إخفاء الترجمة"), tip(loopB, "تكرار الفيديو"), tip(dualB, "وضع الترجمة"), tip(charsB, "الشخصيات"), tip(kmB, "وضع المفاتيح (1–4)"), tip(voiceB, "فصل صوت الكلام عن الموسيقى"))
         toolBtns.drop(1).filter { it !== kmB }.forEach { b ->   // (v226) 🔑 اتشال من الشريط العلوي
             toolR.addView(b, LinearLayout.LayoutParams(if (b.text.startsWith("🔑")) ui.dp(42) else ui.dp(30), ui.dp(30)).apply { setMargins(ui.dp(3), 0, ui.dp(3), 0) })
         }
@@ -1524,7 +1528,7 @@ class PlayerActivity : Activity(), Host {
             // من الشمال لليمين (LTR): 🔁 📋 📝 🔤 ⏱ 💬 CC ☰  ← يعني ☰ على اليمين جنب عداد الجمل
             tbRow.addView(toolBtns[4], lp(4)); tbRow.addView(toolBtns[1], lp(1)); tbRow.addView(toolBtns[2], lp(2)); tbRow.addView(toolBtns[6], lp(6))
             tbRow.addView(textB, LinearLayout.LayoutParams(-2, ui.dp(38)).apply { setMargins(ui.dp(3), ui.dp(3), ui.dp(3), ui.dp(3)) })
-            tbRow.addView(toolBtns[0], lp(0)); tbRow.addView(toolBtns[5], lp(5)); tbRow.addView(toolBtns[3], lp(3))
+            tbRow.addView(toolBtns[0], lp(0)); tbRow.addView(toolBtns[5], lp(5)); tbRow.addView(toolBtns[3], lp(3)); tbRow.addView(toolBtns[8], lp(8))
             // (v221) زرار 🔑 وضع المفاتيح (toolBtns[7]) كان بيتشال هنا ومابيترجّعش — فمكانش بيظهر خالص في الشريط العلوي
             tbRow.addView(bgOnB, LinearLayout.LayoutParams(ui.dp(40), ui.dp(40)).apply { setMargins(ui.dp(3), ui.dp(3), ui.dp(3), ui.dp(3)) })
             (toolsB.parent as? ViewGroup)?.removeView(toolsB)
@@ -2031,7 +2035,7 @@ class PlayerActivity : Activity(), Host {
                 if (now - lastBeat > 20000) { lastBeat = now; LogStore.add("💓 ${LogStore.heapLine()} · ${if (player.isPlaying) "بيشتغل" else "واقف"} @${fmtMs(cur)} · مترجم ${(engine.coveredSec() / 60).toInt()}د · ${engine.subs.size} جملة") }
                 run { val pc = PlayerLogic.percent(engine.coveredSec(), durMs / 1000.0); if (pc != trPct) { trPct = pc; updateTr() } }
                 if (fullMode) { fsBadge.set("🔊 " + PlayerLogic.percent(engine.coveredSec(), durMs / 1000.0).toString() + "% · " + list.size.toString() + " جملة ▾", ((try { engine.offlineBrief() } catch (_: Throwable) { null }) ?: "")); fsBadge.setOn(engineStarted && !engine.userPaused); netBadge.set(NetUse.fmt(NetUse.localTotal()), NetUse.fmt(NetUse.onlineTotal())); applyBadgeAlpha() }   // (v236) نقطة خضراء = الوضع الصوتي شغّال
-                if (fullMode && ::visual.isInitialized) { visBadge.set("👁 " + visual.count + " جملة", visual.status.let { st -> if (visual.running) "شغّال" else if (st.isBlank() || st.startsWith("👁")) "واقف" else st.take(30) })   // (v330) لو واقف بسبب (مفتاح/مصدر…) السبب يظهر على الكبسولة; visBadge.setOn(visual.running); sentDiv.visibility = if (fsBadge.visibility == View.VISIBLE && visBadge.visibility == View.VISIBLE) View.VISIBLE else View.GONE }   // (v236) نقطة خضراء = الوضع البصري شغّال
+                if (fullMode && ::visual.isInitialized) { visBadge.set("👁 " + visual.count + " جملة", visual.status.let { st -> if (visual.running) "شغّال" else if (st.isBlank() || st.startsWith("👁")) "واقف" else st.take(30) }); visBadge.setOn(visual.running); sentDiv.visibility = if (fsBadge.visibility == View.VISIBLE && visBadge.visibility == View.VISIBLE) View.VISIBLE else View.GONE }   // (v330) لو واقف بسبب (مفتاح/مصدر…) السبب يظهر على الكبسولة · (v236) نقطة خضراء = الوضع البصري شغّال
                 if (now - lastMem > 4000) { lastMem = now; if (!fullMode) mem.update(this@PlayerActivity) }
                 counters.text = "جمل ${list.size} · 👁 ${visList.size} · تغطية ${PlayerLogic.percent(engine.coveredSec(), durMs / 1000.0)}% · فجوات ${engine.failedCount()} · كوتة ${Quota.used(conf.model)}/${Models.quotaOf(conf.model)} · ${NetUse.badgeLine()}"
                 if (logDlg.isShowing && logMode == 0) {
@@ -2445,6 +2449,7 @@ class PlayerActivity : Activity(), Host {
 
     /** بدّل الفيديو في نفس الشاشة من غير ما تفتح Activity جديدة */
     fun swapVideo(newUri: Uri) {
+        stopVoice()   // (v334) الصوت النضيف بتاع الفيديو القديم
         saveRecent()
         try { visual.stop() } catch (e: Exception) { LogStore.err("Main:2164", e) }
         retireEngine()
@@ -2950,6 +2955,66 @@ class PlayerActivity : Activity(), Host {
             runPlan(pl); return
         }
         trWizard(false)
+    }
+
+    /** (v334) 🎙 فصل صوت الكلام عن الموسيقى — يدوي بس (VoiceClean: DPDFNet على قطع متوازية) */
+    private fun voiceMenu() {
+        try {
+            val u = uri
+            if (u == null || (u.scheme != "file" && u.scheme != "content")) { say("🎙 الفصل شغّال على الفيديو المحلي بس — نزّل الفيديو الأول"); return }
+            val dur = player.duration.let { if (it > 0) it else 0L }
+            val items = ArrayList<Pair<String, () -> Unit>>()
+            val pb = voice
+            val ready = VoiceClean.ready(this, u, dur)
+            when {
+                VoiceClean.busy -> items.add("⏹ وقّف الفصل اللي شغّال" to { VoiceClean.cancel() })
+                VoiceClean.downloading() -> items.add("⏹ وقّف تنزيل الموديل" to { VoiceClean.cancelDownload() })
+                pb != null && pb.active -> items.add("🔊 رجّع الصوت الأصلي" to { stopVoice() })
+                ready != null -> items.add("🎙 شغّل صوت الكلام النضيف" to { startVoice(ready) })
+                else -> items.add("🎙 ابدأ فصل صوت الكلام (" + VoiceClean.model().label + ")" to { startVoiceJob(u, dur) })
+            }
+            if (!VoiceClean.busy && !VoiceClean.downloading()) {
+                for (m in VoiceClean.models) if (m.file != VoiceClean.model().file) items.add("⚙ المحرك: " + m.label + " — " + m.note to { VoiceClean.setModel(m.file); say("⚙ المحرك: " + m.label) })
+                if (ready != null) items.add("🗑 امسح كل الصوت المفصول" to { stopVoice(); VoiceClean.deleteAll(this); say("🗑 اتمسح") })
+            }
+            android.app.AlertDialog.Builder(this).setTitle("🎙 فصل صوت الكلام").setItems(items.map { it.first }.toTypedArray()) { _, i -> items[i].second() }.show()
+        } catch (e: Throwable) { LogStore.err("Player:voiceMenu", e); say("تعذّر فتح قايمة فصل الصوت") }
+    }
+
+    private fun startVoiceJob(u: Uri, dur: Long) {
+        val m = VoiceClean.model()
+        if (!VoiceClean.has(this, m)) {
+            say("🎙 بنزّل موديل الفصل…")
+            VoiceClean.download(this, m, { have, total -> runOnUiThread { voiceBtnRef?.text = if (total > 0) "⬇" + (have * 100 / total) + "%" else "⬇" + (have / 1_000_000) + "MB" } }) { err ->
+                runOnUiThread {
+                    voiceBtnRef?.text = "🎙"
+                    if (isFinishing || isDestroyed) return@runOnUiThread
+                    if (err == null) startVoiceJob(u, dur) else say("🎙 التنزيل فشل: " + err)
+                }
+            }
+            return
+        }
+        say("🎙 بدأ فصل صوت الكلام — الفيديو شغّال عادي لحد ما يخلص")
+        VoiceClean.run(this, u, dur, { p -> runOnUiThread { voiceBtnRef?.text = "🎙" + p + "%" } }) { f, err ->
+            runOnUiThread {
+                voiceBtnRef?.text = "🎙"
+                if (isFinishing || isDestroyed) return@runOnUiThread
+                if (f == null) { say("🎙 " + (if (err == "اتلغى") "اتلغى" else "فشل: " + err)); return@runOnUiThread }
+                if (uri != u) { say("🎙 الفيديو اتغيّر — الصوت النضيف اتحفظ وهتلاقيه لما ترجع للفيديو"); return@runOnUiThread }
+                say("✅ الصوت النضيف جاهز — بيشتغل دلوقتي"); startVoice(f)
+            }
+        }
+    }
+
+    private fun startVoice(f: File) {
+        stopVoice()
+        try { voice = VoiceClean.Playback(this, player, f).also { it.start() }; voiceBtnRef?.text = "🎙✓"; say("🎙 صوت الكلام النضيف شغّال") }
+        catch (e: Throwable) { LogStore.err("Player:startVoice", e); stopVoice(); say("تعذّر تشغيل الصوت النضيف") }
+    }
+
+    private fun stopVoice() {
+        try { voice?.stop() } catch (_: Throwable) {}
+        voice = null; voiceBtnRef?.text = "🎙"
     }
 
     /** edit = true: جاي من زرار ⚙ (تغيير/مسح الإعداد من غير بدء ترجمة) */
@@ -3522,6 +3587,7 @@ class PlayerActivity : Activity(), Host {
         try { volWatch?.stop(); volWatch = null } catch (_: Throwable) {}
         LogStore.add("🔚 onDestroy (isFinishing=$isFinishing)")
         NoticeLog.detach(this)
+        stopVoice()
         try { TaskCenter.extra.remove(taskListener) } catch (_: Throwable) {}
         h.removeCallbacksAndMessages(null)
         pipOv?.hide(); pipOv = null

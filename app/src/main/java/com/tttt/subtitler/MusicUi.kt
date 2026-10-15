@@ -1178,6 +1178,7 @@ class MusicUi(private val act: Activity, private val ui: Ui, private val th: The
     /** (v300) غلاف الملف نفسه (مدمج أو من فهرس الموبايل). [force] = حتى لو الغلاف المدمج اتعلّم «غلط» */
     private fun localArt(t: Track, force: Boolean): Bitmap? {
         var bmp: Bitmap? = null
+        if (YtAudio.isRemote(t.uri)) return null   // (v337) ستريم يوتيوب: مفيش غلاف مدمج
         val blocked = !force && Cfg.str("noemb_${t.id}", "").isNotEmpty()
         val r = MediaMetadataRetriever()
         try {
@@ -1205,6 +1206,7 @@ class MusicUi(private val act: Activity, private val ui: Ui, private val th: The
         var bmp: Bitmap? = if (flag == "2") null else localArt(t, false)
         if (bmp == null && online) { val n = nameOf(t); Poster.albumHint(n.first, n.second, SongId.albumOf(t.id)); bmp = Poster.fetchSync(act, n.first, n.second, SongId.alt(t.id)) }   // (v293) أونلاين بعد ما الاسم يتحدد
         if (bmp == null && online && flag == "2") bmp = localArt(t, true)
+        if (bmp == null && online && YtAudio.isRemote(t.uri)) bmp = YtAudio.thumb(t)   // (v337) احتياطي: صورة فيديو يوتيوب
         return bmp
     }
     private fun ensureArt(t: Track?) {

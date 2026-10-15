@@ -98,7 +98,7 @@ object LyricsAI {
     fun listen(app: Context, t: Track, name: String, by: String, reference: List<String>? = null, onPartial: ((List<Heard>, Int, Int) -> Unit)? = null, onProg: (Int, Int) -> Unit): List<Heard> {
         val keys = Cfg.allMainKeys()
         if (keys.isEmpty()) return emptyList()
-        val src = AudioSources.make(app, Uri.parse(t.uri), null, emptyMap(), 1) { }
+        val src = YtAudio.src(app, t)
         val wins = ArrayList<Triple<Int, Double, WavChunk>>()
         val total: Double
         try {

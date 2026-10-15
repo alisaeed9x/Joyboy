@@ -355,7 +355,7 @@ class FileManagerActivity : Activity() {
             if (i != 3) {
                 NavAnim.set(3, i)
                 if (i == 2) startActivity(Intent(this, BrowserActivity::class.java))
-                else startActivity(Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP).putExtra("tab", if (i == 0) "videos" else if (i == 1) "music" else "youtube"))
+                else startActivity(Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP).putExtra("tab", if (i == 0) "videos" else if (i == 1) "music" else if (i == 4) "youtube" else "tasks"))
                 NavAnim.peek(this)
                 finish()
             }
@@ -365,12 +365,7 @@ class FileManagerActivity : Activity() {
         // (v324) زرار المهام العايم (دايرة حمراء بالعدد) فوق القايمة؛ دوسة عليه بتفتح صفحة المهام في الرئيسية
         val host = FrameLayout(this)
         host.addView(root, FrameLayout.LayoutParams(-1, -1))
-        fab = TasksFab(this, host, ui) {
-            NavAnim.set(3, 0)
-            startActivity(Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP).putExtra("tab", "tasks"))
-            NavAnim.peek(this)
-            finish()
-        }
+        // (v336) زرار المهام العايم اتشال — المهام في الشريط السفلي
         setContentView(host)
     }
 

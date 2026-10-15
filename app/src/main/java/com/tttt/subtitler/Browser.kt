@@ -340,12 +340,13 @@ class BrowserActivity : Activity() {
             addView(panicCover, FrameLayout.LayoutParams(-1, -1))
             addView(panicCol, FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM or Gravity.RIGHT).apply { setMargins(0, 0, ui.dp(4), ui.dp(8)) })
         }
-        tasksFabUi = TasksFab(this, webWrap, ui) { goMain("tasks") }   // (v324) زرار المهام العايم (دايرة حمراء بالعدد) فوق الصفحة
+        // (v336) زرار المهام العايم اتشال — المهام في الشريط السفلي
+        //   // (v324) زرار المهام العايم (دايرة حمراء بالعدد) فوق الصفحة
         root.addView(bar); root.addView(progTrack, LinearLayout.LayoutParams(-1, ui.dp(3))); root.addView(findBar); root.addView(hint)
         root.addView(webWrap, LinearLayout.LayoutParams(-1, 0, 1f)); root.addView(badge)
         root.addView(dlBar, LinearLayout.LayoutParams(-1, -2).apply { setMargins(ui.dp(8), ui.dp(4), ui.dp(8), ui.dp(6)) })   // (v324)
         // (v117) شريط البوابات: الفيديوهات · الموسيقى · المتصفح (إحنا فيه دلوقتي) · الملفات · (v324) يوتيوب
-        val gates = BottomNav(this, ui, th, 2) { i -> if (i != 2) NavAnim.set(2, i); if (i == 0) goMain("videos") else if (i == 1) goMain("music") else if (i == 4) goMain("youtube") else if (i == 3) { startActivity(Intent(this, FileManagerActivity::class.java)); NavAnim.peek(this); finish() } }   // (v310) الملفات
+        val gates = BottomNav(this, ui, th, 2) { i -> if (i != 2) NavAnim.set(2, i); if (i == 0) goMain("videos") else if (i == 1) goMain("music") else if (i == 4) goMain("youtube") else if (i == 5) goMain("tasks") else if (i == 3) { startActivity(Intent(this, FileManagerActivity::class.java)); NavAnim.peek(this); finish() } }   // (v310) الملفات
         root.addView(gates.view, LinearLayout.LayoutParams(-1, -2))
         content = root
         frame = FrameLayout(this); frame.setBackgroundColor(th.bg)

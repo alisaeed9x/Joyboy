@@ -5,6 +5,8 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.graphics.Color
+import android.graphics.PorterDuff
+import android.graphics.PorterDuffColorFilter
 import android.graphics.drawable.GradientDrawable
 import android.net.Uri
 import android.os.Handler
@@ -42,7 +44,9 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
               private val recents: () -> Map<String, *>,
               private val onPlay: (String, String, Boolean) -> Unit,
               private val onBrowser: (String) -> Unit,
-              private val onImport: () -> Unit) {
+              private val onImport: () -> Unit,
+              private val onAudio: (NpItem) -> Unit = {},                      // (v337) 🎧 صوت بس في مشغّل الموسيقى
+              private val onDownload: (NpItem, Boolean) -> Unit = { _, _ -> }) {   // (v337) ⬇ تحميل (true = صوت بس)
 
     private class St(val title: String, val tab: Int, val items: ArrayList<NpItem>, var next: Page?, val more: ((Page) -> YtRes)?,
                       val chUrl: String?, val chName: String?, val q: String?, val filter: String,
@@ -56,6 +60,22 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
 
     val root = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL; setBackgroundColor(th.bg); layoutDirection = View.LAYOUT_DIRECTION_RTL }
     private val h = Handler(Looper.getMainLooper())
+    // (v337) لودينج ويندوز (نفس اللي في المشغّل) بدل «⏳ …» وقت البحث/التحميل، وطبقة لودينج فوق الصفحة وقت جلب رابط الفيديو
+    private val spinDr = WinSpinnerDrawable().apply { setColorFilter(PorterDuffColorFilter(th.primary, PorterDuff.Mode.SRC_IN)) }
+    private val spinView = View(act).apply { foreground = spinDr; visibility = View.GONE }
+    private fun spin(on: Boolean) { if (on) { spinView.visibility = View.VISIBLE; spinDr.start() } else { spinView.visibility = View.GONE; spinDr.stop() } }
+    private val busyDr = WinSpinnerDrawable()
+    private val busyOff = Runnable { busy(false) }
+    /** (v337) بيتضاف في Main فوق الصفحة (pane) — بيظهر وإحنا بنجيب رابط الفيديو قبل ما المشغّل يفتح */
+    val busyView = FrameLayout(act).apply {
+        visibility = View.GONE; isClickable = true; setBackgroundColor(0x66000000)
+        addView(View(act).apply { foreground = busyDr }, FrameLayout.LayoutParams(ui.dp(72), ui.dp(72), Gravity.CENTER))
+    }
+    fun busy(on: Boolean) {
+        h.removeCallbacks(busyOff)
+        if (on) { busyView.visibility = View.VISIBLE; busyDr.start(); h.postDelayed(busyOff, 40_000L) }
+        else { busyView.visibility = View.GONE; busyDr.stop() }
+    }
     private val lv = ListView(act)
     private val statusTv: TextView
     private val search: EditText
@@ -107,6 +127,8 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
         val bar = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; setPadding(ui.dp(10), ui.dp(8), ui.dp(6), ui.dp(4)) }
         bar.addView(search, LinearLayout.LayoutParams(0, ui.dp(42), 1f))
         bar.addView(goBtn, LinearLayout.LayoutParams(-2, ui.dp(42)))
+        val setBtn = ui.text("⚙", 18f, th.muted, true).apply { gravity = Gravity.CENTER; setPadding(ui.dp(8), 0, ui.dp(8), 0); setOnClickListener { settings() } }   // (v337)
+        bar.addView(setBtn, LinearLayout.LayoutParams(-2, ui.dp(42)))
         root.addView(bar, LinearLayout.LayoutParams(-1, -2))
         root.addView(sugBox, LinearLayout.LayoutParams(-1, -2))
 
@@ -196,6 +218,7 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
 
         statusTv = ui.text("", 14f, th.muted).apply { gravity = Gravity.CENTER; setPadding(ui.dp(20), ui.dp(30), ui.dp(20), 0); visibility = View.GONE; setOnClickListener { retry?.invoke() } }
         root.addView(statusTv, LinearLayout.LayoutParams(-1, -2))
+        root.addView(spinView, LinearLayout.LayoutParams(ui.dp(64), ui.dp(64)).apply { gravity = Gravity.CENTER_HORIZONTAL; topMargin = ui.dp(36) })   // (v337)
 
         lv.apply {
             divider = null; setBackgroundColor(th.bg); selector = GradientDrawable().apply { setColor(Color.TRANSPARENT) }
@@ -265,7 +288,7 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
 
     private fun open(it: NpItem) {
         when (it.kind) {
-            0 -> openDetail(it)
+            0 -> play(it, false)   // (v337) دوسة على الفيديو = يتشغّل على طول (التفاصيل من الضغطة الطويلة ← ℹ)
             1 -> openChannel(it.channelUrl, it.title)
             2 -> load("📃 " + it.title, -1, null, null, null, "", true, false) { YtNp.playlist(it.url) }
         }
@@ -305,7 +328,7 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
     }
     /** فتح تفاصيل فيديو من معرّفه (من إشعار مثلًا) */
     fun openVideo(id: String) {
-        openDetail(NpItem(id, "", "", "", "https://i.ytimg.com/vi/$id/mqdefault.jpg", -1L, -1L, "", 0, "https://www.youtube.com/watch?v=$id"))
+        onPlay(id, "", false)   // (v337) من الإشعار: تشغيل مباشر من غير صفحة التفاصيل
     }
 
     // ───────── تحميل وعرض ─────────
@@ -336,7 +359,7 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
     }
 
     private fun bind(st: St) {
-        cur = st; statusTv.visibility = View.GONE
+        cur = st; statusTv.visibility = View.GONE; spin(false)
         val det = st.vid != null
         detailBox.visibility = if (det) View.VISIBLE else View.GONE
         chanRow.visibility = if (st.chUrl != null && !det) View.VISIBLE else View.GONE
@@ -381,7 +404,54 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
             d?.thumb?.ifBlank { v.thumb } ?: v.thumb, d?.dur ?: v.dur, v.count, v.age, 0, v.url)
     }
     private fun playCur(tr: Boolean) { val st = cur ?: return; if (st.vid == null) return; play(detItem(st), tr) }
-    private fun play(it: NpItem, tr: Boolean) { YtStore.addFront(YtStore.HIST, it, 200); onPlay(it.id, it.title, tr) }
+    /** عنصر من التحميلات url بتاعه مكان الملف — بنرجّعه لرابط الفيديو قبل التشغيل/السجل */
+    private fun asWatch(it: NpItem): NpItem = if (it.url.startsWith("http")) it else NpItem(it.id, it.title, it.channel, it.channelUrl, it.thumb, it.dur, it.count, it.age, 0, YtNp.watchUrl(it.id))
+    private fun play(it0: NpItem, tr: Boolean) {
+        val it = asWatch(it0)
+        if (YtStore.histOn()) YtStore.addFront(YtStore.HIST, it, 200)
+        YtStore.markApp(it.id)
+        onPlay(it.id, it.title, tr)
+    }
+    private fun playAudio(it0: NpItem) {
+        val it = asWatch(it0)
+        if (YtStore.histOn()) YtStore.addFront(YtStore.HIST, it, 200)
+        YtStore.markApp(it.id)
+        onAudio(it)
+    }
+    private fun dlMenu(anchor: View, it: NpItem) {
+        val m = PopupMenu(act, anchor)
+        m.menu.add(0, 1, 0, "🎧 تحميل صوت بس"); m.menu.add(0, 2, 1, "🎬 تحميل فيديو (" + (Cfg.int("yt_maxh", 0).let { h -> if (h <= 0) "أعلى جودة" else h.toString() + "p" }) + ")")
+        m.setOnMenuItemClickListener { mi -> onDownload(asWatch(it), mi.itemId == 1); true }
+        m.show()
+    }
+    // ───────── (v337) إعدادات يوتيوب ─────────
+    private fun settings() {
+        val q = Cfg.int("yt_maxh", 0)
+        val items = arrayOf("🎞 الجودة الافتراضية: " + (if (q <= 0) "أعلى جودة" else q.toString() + "p"),
+            "🕘 حفظ سجل المشاهدة: " + (if (YtStore.histOn()) "شغّال" else "مقفول"),
+            "📥 التحميلات المسجّلة", "🗑 مسح السجل", "🗑 مسح سجل التحميلات")
+        GAlert(act).setTitle("⚙ إعدادات يوتيوب").setItems(items) { _, w ->
+            when (w) {
+                0 -> qualityDialog()
+                1 -> { val on = !YtStore.histOn(); Cfg.put("ytp_hist_on", if (on) "1" else "0"); Notice.show(act, (if (on) "🕘 السجل شغّال" else "🕘 السجل اتقفل (اللي اتسجّل قبل كده لسه موجود)").toString(), 2400L) }
+                2 -> openDownloads()
+                3 -> { YtStore.write(YtStore.HIST, emptyList()); Notice.show(act, ("🗑 السجل اتمسح").toString(), 1800L); if (cur?.tab == 2) openTab(2) }
+                4 -> { YtStore.write(YtStore.DL, emptyList()); Notice.show(act, ("🗑 سجل التحميلات اتمسح").toString(), 1800L) }
+                else -> {}
+            }
+        }.setNegativeButton("إغلاق", null).show()
+    }
+    private fun qualityDialog() {
+        val hs = intArrayOf(0, 1080, 720, 480, 360, 240)
+        val labels = hs.map { if (it == 0) "أعلى جودة" else it.toString() + "p" }.toTypedArray()
+        GAlert(act).setTitle("🎞 الجودة الافتراضية").setItems(labels) { _, w ->
+            Cfg.put("yt_maxh", hs[w].toString()); Notice.show(act, ("🎞 الجودة الافتراضية: " + labels[w]).toString(), 2200L)
+        }.setNegativeButton("إلغاء", null).show()
+    }
+    private fun openDownloads() {
+        hideKb(); sugBox.visibility = View.GONE
+        load("📥 التحميلات", -1, null, null, null, "", true, false) { Pair(YtRes(YtStore.read(YtStore.DL), null), null) }
+    }
     private fun saveCur() {
         val st = cur ?: return; if (st.vid == null) return
         val on = YtStore.toggle(YtStore.SAVED, detItem(st)); Notice.show(act, (if (on) "🔖 اتحفظ" else "اتشال من المحفوظات").toString(), 1800L); paintDetail(st)
@@ -441,7 +511,11 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
         }.start()
     }
 
-    private fun status(t: String, onTap: (() -> Unit)? = null) { statusTv.text = t; statusTv.visibility = View.VISIBLE; retry = onTap }
+    private fun status(t: String, onTap: (() -> Unit)? = null) {
+        retry = onTap
+        if (t.startsWith("⏳")) { statusTv.visibility = View.GONE; spin(true) }   // (v337) لودينج بدل النص
+        else { spin(false); statusTv.text = t; statusTv.visibility = View.VISIBLE }
+    }
 
     // ───────── اقتراحات البحث ─────────
     private fun suggest(q: String) {
@@ -470,7 +544,7 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
     private fun menu(anchor: View, it: NpItem) {
         val m = PopupMenu(act, anchor)
         if (it.kind == 0) {
-            m.menu.add(0, 1, 0, "▶ شغّل"); m.menu.add(0, 2, 1, "🌐 شغّل وترجم"); m.menu.add(0, 10, 7, "ℹ التفاصيل")
+            m.menu.add(0, 1, 0, "▶ شغّل"); m.menu.add(0, 2, 1, "🌐 شغّل وترجم"); m.menu.add(0, 10, 7, "ℹ التفاصيل"); m.menu.add(0, 11, 8, "🎧 صوت بس (مشغّل الموسيقى)"); m.menu.add(0, 12, 9, "⬇ تحميل صوت"); m.menu.add(0, 13, 10, "⬇ تحميل فيديو")
             m.menu.add(0, 3, 2, if (YtStore.contains(YtStore.SAVED, it)) "❌ شيل من المحفوظات" else "🔖 احفظ")
             if (it.channelUrl.isNotBlank()) m.menu.add(0, 4, 3, "📺 افتح القناة")
             m.menu.add(0, 5, 4, "📋 انسخ اللينك"); m.menu.add(0, 6, 5, "🌐 افتحه في المتصفح")
@@ -484,6 +558,9 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
                 1 -> play(it, false)
                 2 -> play(it, true)
                 10 -> openDetail(it)
+                11 -> playAudio(it)
+                12 -> onDownload(asWatch(it), true)
+                13 -> onDownload(asWatch(it), false)
                 3 -> { val on = YtStore.toggle(YtStore.SAVED, it); Notice.show(act, (if (on) "🔖 اتحفظ" else "اتشال من المحفوظات").toString(), 1800L); if (cur?.tab == 3) openTab(3) }
                 4 -> openChannel(it.channelUrl, it.channel)
                 5 -> copy(if (it.kind == 0) YtNp.watchUrl(it.id) else it.url)
@@ -517,7 +594,7 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
     }
     private fun fmtDur(s: Long): String = if (s <= 0) "" else if (s >= 3600) String.format(Locale.US, "%d:%02d:%02d", s / 3600, s % 3600 / 60, s % 60) else String.format(Locale.US, "%d:%02d", s / 60, s % 60)
 
-    private class Hold(val thumb: ImageView, val dur: TextView, val title: TextView, val meta: TextView, val box: View, val col: View)
+    private class Hold(val thumb: ImageView, val dur: TextView, val title: TextView, val meta: TextView, val box: View, val col: View, val btns: View, val aud: TextView, val dl: TextView)
 
     private inner class Adapter : BaseAdapter() {
         private var items: List<NpItem> = emptyList()
@@ -542,12 +619,22 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
                 val row = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; setPadding(ui.dp(10), ui.dp(6), ui.dp(10), ui.dp(6)) }
                 row.addView(box, LinearLayout.LayoutParams(ui.dp(150), ui.dp(85)))
                 row.addView(col, LinearLayout.LayoutParams(0, ui.dp(85), 1f))
-                hd = Hold(th0, dur, title, meta, box, col); row.tag = hd; v = row
+                // (v337) زرارين على الجنب: 🎧 صوت بس (مشغّل الموسيقى) · ⬇ تحميل
+                fun sb(t: String) = ui.text(t, 17f, th.primary, true).apply { gravity = Gravity.CENTER; background = GradientDrawable().apply { setColor(th.surface); cornerRadius = ui.dp(18).toFloat() } }
+                val aud = sb("🎧"); val dl = sb("⬇")
+                val btns = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER }
+                btns.addView(aud, LinearLayout.LayoutParams(ui.dp(36), ui.dp(36)))
+                btns.addView(dl, LinearLayout.LayoutParams(ui.dp(36), ui.dp(36)).apply { topMargin = ui.dp(8) })
+                row.addView(btns, LinearLayout.LayoutParams(ui.dp(40), ui.dp(85)))
+                hd = Hold(th0, dur, title, meta, box, col, btns, aud, dl); row.tag = hd; v = row
             } else { v = cv; hd = cv.tag as Hold }
             val it = items[p]
             hd.title.text = it.title
             val cm = it.kind == 3
             hd.box.visibility = if (cm) View.GONE else View.VISIBLE
+            val vid = it.kind == 0 && it.id.isNotBlank()
+            hd.btns.visibility = if (vid) View.VISIBLE else View.GONE
+            if (vid) { val item = it; hd.aud.setOnClickListener { _ -> playAudio(item) }; hd.dl.setOnClickListener { x -> dlMenu(x, item) } }
             hd.title.maxLines = if (cm) 10 else 2
             (hd.col.layoutParams as LinearLayout.LayoutParams).height = if (cm) -2 else ui.dp(85)
             val seen = it.kind == 0 && recents().containsKey("yt:" + it.id)

@@ -156,7 +156,8 @@ object MusicEngine {
             mp = MediaPlayer().apply {
                 setAudioAttributes(AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA).setContentType(AudioAttributes.CONTENT_TYPE_MUSIC).build())
                 setWakeMode(ctx, android.os.PowerManager.PARTIAL_WAKE_LOCK)
-                setDataSource(ctx, uri)
+                val yh = if (YtAudio.isRemote(uri.toString())) YtAudio.headersFor(uri.toString()) else null   // (v337) ستريم يوتيوب: بهيدرز
+                if (yh != null && yh.isNotEmpty()) setDataSource(ctx, uri, yh) else setDataSource(ctx, uri)
                 setOnPreparedListener { ready = true; applyVol(); if (startMs > 0) { try { it.seekTo(startMs) } catch (_: Throwable) {} }; if (wantPlay) { try { it.start() } catch (_: Throwable) {}; applySpeed() }; changed() }
                 setOnCompletionListener { onEnded() }
                 setOnErrorListener { _, _, _ -> ready = false; main.post { if (which != 0) { stem = 0; playingStem = 0; stemErr = "🎚 ملف الفصل ماتفتحش — رجعت للأغنية الأصلية"; swapSource(0) } else if (queue.size > 1) step(1) }; true }
@@ -250,7 +251,7 @@ object MusicEngine {
         MusicService.start(ctx.applicationContext)
         gainFocus()
         val t = q[i]
-        try { RecentSongs.add(t.uri) } catch (_: Throwable) {}
+        try { if (!YtAudio.isRemote(t.uri)) RecentSongs.add(t.uri) } catch (_: Throwable) {}   // (v337) روابط يوتيوب مؤقتة: مش بتتسجّل في «آخر المشغّل»
         val want = if (stem != 0 && Karaoke.hasStem(ctx.applicationContext, t, stem)) stem else 0
         openPlayer(ctx.applicationContext, t, want, 0)
         // (v308) الفصل تلقائي في الخلفية — (v319) المستخدم بيقلّب بين الأغاني: الأوتوماتيك بيبدأ بعد ١٥ ثانية تشغيل، واليدوي (stem != 0) فورًا

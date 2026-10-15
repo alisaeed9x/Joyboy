@@ -34,7 +34,7 @@ class NpItem(val id: String, val title: String, val channel: String, val channel
 class YtRes(val items: List<NpItem>, val next: Page?)
 class YtDetail(val id: String, val title: String, val channel: String, val channelUrl: String, val desc: String, val views: Long,
                val likes: Long, val age: String, val thumb: String, val dur: Long, val related: List<NpItem>)
-class YtPick(val url: String, val audio: String?, val ua: String, val title: String, val h: Int, val qlist: String = "")
+class YtPick(val url: String, val audio: String?, val ua: String, val title: String, val h: Int, val qlist: String = "", val durMs: Long = 0L)
 class NpChan(val name: String, val first: YtRes, val more: (Page) -> YtRes)
 
 /** (v325) Downloader بتاع NewPipeExtractor على HttpURLConnection (من غير مكتبة إضافية) */
@@ -187,6 +187,15 @@ object YtNp {
         return null
     }
 
+    /** (v337) رابط الصوت بس (m4a لو متاح، وإلا أعلى جودة) من غير أي داتا فيديو — للتشغيل في مشغّل الموسيقى وللتحميل */
+    fun pickAudio(id: String): YtPick? {
+        val i = info(id)
+        val aud = i.audioStreams.filter { !it.content.isNullOrBlank() }.sortedByDescending { it.averageBitrate }
+        val b = aud.firstOrNull { it.format?.suffix == "m4a" } ?: aud.firstOrNull() ?: return null
+        val ua = "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Mobile Safari/537.36"
+        return YtPick(b.content, null, ua, i.name ?: "", 0, "", if (i.duration > 0L) i.duration * 1000L else 0L)
+    }
+
     /** (v326) تعليقات الفيديو (kind 3: title = النص · channel = الكاتب · count = لايكات · thumb = صورته) */
     fun comments(id: String): Pair<YtRes, (Page) -> YtRes> {
         init()
@@ -238,6 +247,11 @@ object YtNp {
 object YtStore {
     private const val SEP = "\u0001"
     const val HIST = "ytp_hist"; const val SAVED = "ytp_saved"; const val SUBS = "ytp_subs"
+    const val DL = "ytp_dl"          // (v337) التحميلات: url = مكان الملف اللي اتحفظ
+    private const val APPIDS = "ytp_appids"   // (v337) الفيديوهات اللي اتشغّلت من صفحة يوتيوب (عشان فولدر المصطادة يفصلها عن اللي من المتصفح)
+    fun histOn() = Cfg.str("ytp_hist_on", "1") != "0"
+    fun markApp(id: String) { if (id.isBlank()) return; val l = Cfg.str(APPIDS, "").split(',').filter { it.isNotBlank() && it != id }.toMutableList(); l.add(0, id); Cfg.put(APPIDS, l.take(600).joinToString(",")) }
+    fun appIds(): Set<String> = Cfg.str(APPIDS, "").split(',').filter { it.isNotBlank() }.toHashSet()
     private fun clean(s: String) = s.replace('\n', ' ').replace(SEP, " ")
 
     fun read(key: String): MutableList<NpItem> = Cfg.str(key, "").lineSequence().filter { it.isNotBlank() }.mapNotNull { l ->

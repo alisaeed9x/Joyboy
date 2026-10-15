@@ -59,7 +59,7 @@ object FastId {
     /** مقطع غير صامت بطول ~15ث من نقطة [at]؛ لو صامت بيجرّب نقاط تانية. */
     private fun clips(app: Context, t: Track, startSec: Double): List<WavChunk> {
         val out = ArrayList<WavChunk>()
-        val src = AudioSources.make(app, Uri.parse(t.uri), null, emptyMap(), 1) { }
+        val src = YtAudio.src(app, t)
         try {
             val total = src.durationSec().takeIf { it > 0 } ?: (t.durMs / 1000.0)
             if (total <= 1.0) return out
