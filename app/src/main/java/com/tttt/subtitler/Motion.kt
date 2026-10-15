@@ -26,15 +26,15 @@ object Motion {
     fun pop(v: View, from: Float = 0.8f) {
         v.animate().cancel()
         v.scaleX = from; v.scaleY = from
-        v.animate().setStartDelay(0L).scaleX(1f).scaleY(1f).setDuration(280L).setInterpolator(OvershootInterpolator(2.6f)).start()
+        v.animate().setStartDelay(0L).scaleX(1f).scaleY(1f).setDuration(Skins.dur(280L)).setInterpolator(Skins.interp(2.6f)).start()
     }
 
     /** قفزة صغيرة لفوق وبعدين استقرار (أيقونة الشريط السفلي لما تتفعّل) */
     fun bounce(v: View) {
         v.animate().cancel()
-        v.animate().setStartDelay(0L).translationY(-dp(v, 3f)).scaleX(1.2f).scaleY(1.2f).setDuration(110L).setInterpolator(DecelerateInterpolator())
+        v.animate().setStartDelay(0L).translationY(-dp(v, 3f)).scaleX(if (Skins.cur().overshoot <= 0f) 1.08f else 1.2f).scaleY(if (Skins.cur().overshoot <= 0f) 1.08f else 1.2f).setDuration(Skins.dur(110L)).setInterpolator(DecelerateInterpolator())
             .withEndAction {
-                v.animate().setStartDelay(0L).translationY(0f).scaleX(1f).scaleY(1f).setDuration(280L).setInterpolator(OvershootInterpolator(3f)).start()
+                v.animate().setStartDelay(0L).translationY(0f).scaleX(1f).scaleY(1f).setDuration(Skins.dur(280L)).setInterpolator(Skins.interp(3f)).start()
             }.start()
     }
 
@@ -42,14 +42,14 @@ object Motion {
     fun fadeSlideIn(v: View, dx: Float = 0f, dy: Float = 0f, dur: Long = 240L, delay: Long = 0L) {
         v.animate().cancel()
         v.alpha = 0f; v.translationX = dx; v.translationY = dy
-        v.animate().setStartDelay(delay).alpha(1f).translationX(0f).translationY(0f).setDuration(dur).setInterpolator(DecelerateInterpolator(1.6f)).start()
+        v.animate().setStartDelay(delay).alpha(1f).translationX(0f).translationY(0f).setDuration(Skins.dur(dur)).setInterpolator(DecelerateInterpolator(1.6f)).start()
     }
 
     /** انزلاق أفقي من غير تلاشي (للقوايم والـ WebView: التلاشي على الـ WebView بيعمل وميض) */
     fun slideIn(v: View, side: Int, dur: Long = 240L) {
         v.animate().cancel()
         v.translationX = side * dp(v, 40f)
-        v.animate().setStartDelay(0L).translationX(0f).setDuration(dur).setInterpolator(DecelerateInterpolator(1.6f)).start()
+        v.animate().setStartDelay(0L).translationX(0f).setDuration(Skins.dur(dur)).setInterpolator(DecelerateInterpolator(1.6f)).start()
     }
 
     /** أول N عناصر في الحاوية بتدخل ورا بعض */
@@ -69,7 +69,7 @@ object Motion {
         val set = AnimationSet(true)
         set.addAnimation(AlphaAnimation(0f, 1f))
         set.addAnimation(TranslateAnimation(Animation.RELATIVE_TO_SELF, 0f, Animation.RELATIVE_TO_SELF, 0f, Animation.RELATIVE_TO_SELF, 0.35f, Animation.RELATIVE_TO_SELF, 0f))
-        set.duration = 240L
+        set.duration = Skins.dur(240L)
         set.interpolator = DecelerateInterpolator(1.4f)
         lv.layoutAnimation = LayoutAnimationController(set, 0.08f)
     }

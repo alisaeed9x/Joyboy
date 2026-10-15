@@ -350,6 +350,21 @@ class MainActivity : Activity() {
             if (!fromPlayer) intent?.putExtra("reopen_tab", "more")
             recreate()
         }
+        // (v352) سويتش داكن/فاتح + أوضاع الواجهة (شكل الزراير والفولدرات والأنيميشن والأصوات)
+        val darkSwitch = ui.switchRow("🌙 الوضع الداكن (سويتش داكن / فاتح)", !Themes.byId(themeId).isLight) { dark ->
+            if (dark == !Themes.byId(themeId).isLight) return@switchRow
+            themeId = Themes.partner(themeId)
+            Cfg.p.edit().putString("theme", themeId).commit()
+            if (!fromPlayer) intent?.putExtra("reopen_tab", "more")
+            recreate()
+        }
+        val skinChips = ui.chips(Skins.all.map { it.name }, { Skins.cur().name }) { n ->
+            val id = Skins.all.first { it.name == n }.id
+            Cfg.p.edit().putString("skin", id).commit(); Skins.set(id)
+            if (!fromPlayer) intent?.putExtra("reopen_tab", "more")
+            recreate()
+        }
+        val skinSoundSwitch = ui.switchRow("🔊 أصوات اللمس (حسب الوضع)", Skins.soundOn()) { on -> Cfg.p.edit().putString("skin_sound", if (on) "1" else "0").apply() }
         // ===== الواجهة بشكل نسخة الـ HTML: دوائر علوية + كارت فيديو + كبسولة + شبكة أزرار + زرار الترجمة =====
         var recentDlg: android.app.Dialog? = null
         val recentFile = File(filesDir, "recent.json")
@@ -612,7 +627,9 @@ class MainActivity : Activity() {
                     ui.button("💾 احفظ نسخة في ملف") { backupToFile() },
                     ui.button("📂 استرجع من ملف") { backupFromFile() },
                     ui.button("♻ استرجع آخر نسخة تلقائية") { restoreAuto() }),
-                ui.section("🎨 المظهر", false, themeChips))),
+                ui.section("🎨 المظهر", false, darkSwitch, themeChips,
+                    ui.text("🧩 وضع الواجهة (شكل الزراير · الفولدرات · الأنيميشن · الأصوات):", 13f, th.muted).apply { setPadding(0, ui.dp(10), 0, ui.dp(4)) },
+                    skinChips, skinSoundSwitch))),
             // ===== 🎵 الموسيقى =====
             TabDef("music", SettingsTabs.label("music"), listOf<View>(
                 ui.section("📝 الكلمات", true,
@@ -1203,7 +1220,18 @@ class MainActivity : Activity() {
     }
     private fun cancelYtLoad() { ytLoadTok++; ytLoadLaunched = false; ytLoadUi?.hide() }
     /** (v339) بنفتح «صفحة المشغّل» فورًا (لودينج جواها) وبنجيب رابط الفيديو في الخلفية؛ لو فشل بنقفلها ونطلّع الدايلوج ونفضل في يوتيوب */
+    /** (v351) بنفتح المشغّل الكامل فورًا؛ هو اللي بيجيب رابط الفيديو ويحمّل جواه (من غير شاشة اللودينج السودا القديمة) */
     private fun ytStart(id: String, title: String, translate: Boolean, auto: Boolean, startMs: Long = 0L) {
+        if (id.length != 11) { ytStartLegacy(id, title, translate, auto, startMs); return }
+        ytLoadLaunched = true
+        val ret = if (curTab == 4) "yt" else ""
+        startActivity(Intent(this, PlayerActivity::class.java).apply {
+            putExtra("ytpend", true); putExtra("ytid", id); putExtra("title", title)
+            putExtra("ref", "https://www.youtube.com/")
+            putExtra("nosub", !translate); putExtra("autotr", auto); putExtra("ret", ret); if (startMs > 0L) putExtra("startms", startMs)
+        })
+    }
+    private fun ytStartLegacy(id: String, title: String, translate: Boolean, auto: Boolean, startMs: Long = 0L) {
         val tok = ++ytLoadTok; ytLoadLaunched = false
         val ret = if (curTab == 4) "yt" else ""   // الرجوع من المشغّل لصفحة يوتيوب بس لو إحنا جينا منها (مش من المكتبة)
         ytLoadUi?.show(title)
@@ -1246,13 +1274,25 @@ class MainActivity : Activity() {
         }.apply { isDaemon = true }.start()
     }
     /** (v337) 🎧 صوت بس: بنجيب رابط الصوت بس (من غير داتا فيديو) ونشغّله في مشغّل الموسيقى — الاسم والمغني من عنوان الفيديو والكلمات/الغلاف بنفس طريقة الأغاني */
-    fun playYtAudio(id: String, title: String, channel: String, thumb: String, quiet: Boolean = false, startMs: Int = 0) {
+    fun playYtAudio(id: String, title: String, channel: String, thumb: String, quiet: Boolean = false, startMs: Int = 0,
+                    preUrl: String? = null, preUa: String = "", preDur: Long = 0L) {
         MusicEngine.ytStep = { d -> ytAudioStep(d) }   // (v341) التالي/إعادة المحاولة لصوت يوتيوب
         YtNext.markPlayed(id)
         try { PubHistory.add("a", "youtube", title, id) } catch (_: Throwable) {}   // (v349) السجل العام
         // (v339) بنفتح مشغّل الموسيقى الكامل فورًا (لودينج مكان الألبوم) وبنفتكر إحنا جينا منين عشان نرجع لنفس المكان لما نقفله
         // (v341) quiet = تالي/إعادة محاولة: الأغنية الحالية تكمّل وإحنا ماشيين، من غير ما نغيّر الشاشة ولا نفتح لودينج
         val tok = ++ytAudTok
+        // (v351) رابط الصوت جاهز من مشغّل الفيديو: نشغّله فورًا (نفس المكان) من غير لودينج ولا جلب جديد
+        if (preUrl != null && !quiet) {
+            try {
+                if (curTab != 1) musicReturnTab = curTab
+                showTabFn(1)
+                val tr = YtAudio.track(id, title, channel, thumb, YtPick(preUrl, null, preUa.ifBlank { "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Mobile Safari/537.36" }, title, 0, "", preDur))
+                MusicEngine.play(this, listOf(tr), 0, false, startMs)
+                musicOpenFn?.invoke()
+                return
+            } catch (e: Throwable) { LogStore.err("Main:preAudio", e) }   // فشل؟ نكمّل بالطريقة العادية تحت
+        }
         if (!quiet) {
             if (curTab != 1) musicReturnTab = curTab
             showTabFn(1)
@@ -1343,8 +1383,11 @@ class MainActivity : Activity() {
             runOnUiThread { if (best != null) go(best.url, best.ref, best.ua) else playYt(id, "", true, false) }
         }.apply { isDaemon = true }.start()
     }
+    /** (v350) عدّاد الفيديوهات الجديدة على أيقونة يوتيوب */
+    fun updateYtBadge() { navUi?.badge(4, YtNotify.badgeCount()) }
     override fun onResume() {
         super.onResume()
+        if (!fromPlayer) { updateYtBadge(); YtNotify.refreshBadge(this) { runOnUiThread { updateYtBadge() } } }
         // الرجوع من المشغّل أو من إعدادات الإذن: حدّث العرض (تقدم الترجمة) أو أعد الفحص
         if (!fromPlayer) CrashLog.showIfAny(this)
         if (!fromPlayer) ModelWatch.maybeCheck(this)   // (v141) فحص يومي لموديل flash-lite أحدث
@@ -1365,7 +1408,10 @@ class MainActivity : Activity() {
     override fun onNewIntent(i: Intent?) {
         super.onNewIntent(i)
         i?.getStringExtra("ytaudio")?.let { id ->   // (v343) 🎧 من مشغّل الفيديو: كمّل كصوت من نفس المكان
-            playYtAudio(id, i?.getStringExtra("ytaudtitle") ?: "", "", "", false, (i?.getLongExtra("ytaudpos", 0L) ?: 0L).toInt())
+            try {
+                playYtAudio(id, i?.getStringExtra("ytaudtitle") ?: "", "", "", false, (i?.getLongExtra("ytaudpos", 0L) ?: 0L).toInt(),
+                    i?.getStringExtra("ytaudurl"), i?.getStringExtra("ytaudua") ?: "", i?.getLongExtra("ytauddur", 0L) ?: 0L)
+            } catch (e: Throwable) { LogStore.err("Main:ytaudio", e); Notice.show(this, ("ما قدرتش أحوّل لصوت — جرّب تاني").toString(), 3000L) }
         }
         handleExternal(i)   // (v345)
         if (i?.getBooleanExtra("fullmusic", false) == true) musicOpenFn?.invoke()   // (v344) ⤢ من المشغّل المصغّر في المتصفح/الملفات

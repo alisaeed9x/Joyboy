@@ -46,9 +46,10 @@ object Glass {
     /** أي نافذة جذرها له خلفية مدوّرة (box) بيتحوّل لزجاجي — بيتنده تلقائي من GDialog */
     fun restyle(v: View) {
         val bg = v.background as? GradientDrawable ?: return
-        val r = try { bg.cornerRadius } catch (_: Throwable) { 0f }
-        if (r < 1f) return
+        val r0 = try { bg.cornerRadius } catch (_: Throwable) { 0f }
+        if (r0 < 1f) return
         val th = theme(); val d = v.resources.displayMetrics.density
+        val r = Skins.radF(r0, d)   // (v352)
         v.background = drawable(th, r, maxOf(1, d.toInt()), if (th.isLight) th.border else alpha(Color.WHITE, 0x2E), 0xF2)
     }
 
@@ -88,9 +89,11 @@ object Glass {
     fun pressable(v: View) {
         v.setOnTouchListener { view, ev ->
             when (ev.actionMasked) {
-                MotionEvent.ACTION_DOWN -> view.animate().setStartDelay(0L).scaleX(0.95f).scaleY(0.95f).alpha(0.88f).setDuration(90).start()
-                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL ->
-                    view.animate().setStartDelay(0L).scaleX(1f).scaleY(1f).alpha(1f).setDuration(200).setInterpolator(OvershootInterpolator(2.4f)).start()
+                MotionEvent.ACTION_DOWN -> { val ps = Skins.cur().press; view.animate().setStartDelay(0L).scaleX(ps).scaleY(ps).alpha(0.88f).setDuration(Skins.dur(90)).start() }
+                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                    view.animate().setStartDelay(0L).scaleX(1f).scaleY(1f).alpha(1f).setDuration(Skins.dur(200)).setInterpolator(Skins.interp(2.4f)).start()
+                    if (ev.actionMasked == MotionEvent.ACTION_UP) SkinSound.event(view.context, 0)
+                }
             }
             false
         }

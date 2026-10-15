@@ -188,6 +188,35 @@ object YtNotify {
 
     fun enabled() = Cfg.bool(KEY, true)
 
+    // ───────── (v350) عدّاد الفيديوهات الجديدة على أيقونة يوتيوب ─────────
+    private const val OPENED = "ytp_opened"      // آخر مرة فتحت فيها الاشتراكات
+    private const val BADGE = "ytp_badge"
+    private const val BADGE_AT = "ytp_badge_at"
+    @Volatile var badge = -1
+    fun badgeCount(): Int { if (badge < 0) badge = Cfg.str(BADGE, "0").toIntOrNull() ?: 0; return badge }
+    private fun setBadge(n: Int) { badge = n; Cfg.put(BADGE, n.toString()) }
+    /** فتحت الاشتراكات: العدّاد يتصفّر وبنبدأ العدّ من دلوقتي */
+    fun markOpened(c: Context) { Cfg.put(OPENED, System.currentTimeMillis().toString()); setBadge(0); try { (c as? MainActivity)?.let { m -> m.runOnUiThread { m.updateYtBadge() } } } catch (_: Throwable) {} }
+    private fun countNew(items: List<NpItem>): Int {
+        val t = Cfg.str(OPENED, "").toLongOrNull() ?: 0L
+        if (t == 0L) { Cfg.put(OPENED, System.currentTimeMillis().toString()); return 0 }   // أول مرة: خط أساس
+        return items.count { it.ts > t }
+    }
+    /** بيحدّث العدّاد من الفيد (كاش 15 دقيقة) في خيط خلفي؛ بيستدعي done على نفس الخيط */
+    fun refreshBadge(c: Context, force: Boolean = false, done: (Int) -> Unit) {
+        val now = System.currentTimeMillis()
+        if (!force && now - (Cfg.str(BADGE_AT, "0").toLongOrNull() ?: 0L) < 5 * 60 * 1000L) return
+        Cfg.put(BADGE_AT, now.toString())
+        Thread {
+            try {
+                Cfg.ensure(c); YtRss.attach(c)
+                val subs = YtStore.read(YtStore.SUBS); if (subs.isEmpty()) return@Thread
+                val n = countNew(YtRss.feed(subs, false).items)
+                setBadge(n); done(n)
+            } catch (_: Throwable) {}
+        }.apply { isDaemon = true; start() }
+    }
+
     fun schedule(c: Context) {
         try {
             val js = c.getSystemService(Context.JOB_SCHEDULER_SERVICE) as JobScheduler
@@ -231,6 +260,7 @@ object YtNotify {
         val subs = YtStore.read(YtStore.SUBS); if (subs.isEmpty()) return 0
         val nm = c.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         val feed = YtRss.feed(subs, true).items
+        try { setBadge(countNew(feed)) } catch (_: Throwable) {}   // (v350) العدّاد بيتحدّث مع الفحص الدوري كمان
         val seen = readSeen(); val fresh = ArrayList<NpItem>()
         val firstRun = seen.isEmpty()
         val newest = HashMap<String, Long>()

@@ -89,7 +89,8 @@ object YtNp {
     fun conv(i: InfoItem): NpItem? = when (i) {
         is StreamInfoItem -> {
             val id = idOf(i.url)
-            if (id.isEmpty()) null else {
+            // (v351) الشورتس مش بتظهر خالص: رابط /shorts/ أو مدة ≤ 60 ثانية
+            if (id.isEmpty() || i.url.contains("/shorts/") || i.duration in 1L..60L) null else {
                 val ts = try { i.uploadDate?.offsetDateTime()?.toInstant()?.toEpochMilli() ?: 0L } catch (_: Throwable) { 0L }
                 NpItem(id, i.name ?: "", i.uploaderName ?: "", i.uploaderUrl ?: "", thumb(i), i.duration, i.viewCount,
                     i.textualUploadDate ?: "", 0, i.url, ts)
@@ -212,28 +213,37 @@ object YtNp {
         })
     }
 
-    /** الرئيسية: مقترحات من آخر اللي اتفرّجت عليه، ولو مفيش سجل → تريند، ولو فشل → بحث عام */
-    fun home(hist: List<NpItem>): YtRes {
+    /** (v351) الرئيسية: فيديوهات من اشتراكاتك (حتى القديمة) + توصيات شبه اللي بتتفرج عليه — من غير ترند خالص */
+    fun home(hist: List<NpItem>, subs: List<NpItem> = emptyList()): YtRes {
         init()
-        val out = LinkedHashMap<String, NpItem>()
         val seen = hist.map { it.id }.toSet()
-        val seeds = hist.filter { it.kind == 0 && it.id.isNotEmpty() }.take(3)
-        val results = arrayOfNulls<List<NpItem>>(seeds.size)
-        val ths = seeds.mapIndexed { n, s -> Thread { results[n] = try { related(s.id) } catch (_: Throwable) { emptyList() } }.also { it.start() } }
+        // بذور التوصيات: آخر اللي اتفرّجت عليه، ولو مفيش سجل → أحدث فيديوهات اشتراكاتك
+        var subsItems: List<NpItem> = emptyList()
+        val subTh = Thread { try { if (subs.isNotEmpty()) subsItems = YtRss.feed(subs, false).items.filter { it.kind == 0 } } catch (_: Throwable) {} }.also { it.start() }
+        val histSeeds = hist.filter { it.kind == 0 && it.id.isNotEmpty() }.take(4)
+        val results = arrayOfNulls<List<NpItem>>(histSeeds.size)
+        val ths = histSeeds.mapIndexed { n, s -> Thread { results[n] = try { related(s.id) } catch (_: Throwable) { emptyList() } }.also { it.start() } }
+        try { subTh.join(40000) } catch (_: Throwable) {}
         ths.forEach { try { it.join(25000) } catch (_: Throwable) {} }
-        // تقليب بين نتايج كل فيديو عشان التنوّع
-        val lists = results.map { it ?: emptyList() }
-        var k = 0
-        while (lists.any { k < it.size }) { for (l in lists) if (k < l.size) { val v = l[k]; if (v.id !in seen) out.putIfAbsent(v.id, v) }; k++ }
-        if (out.size < 12) {
-            try {
-                val ex = YT.kioskList.defaultKioskExtractor
-                ex.fetchPage()
-                ex.initialPage.items.mapNotNull { conv(it) }.forEach { if (it.id !in seen) out.putIfAbsent(it.id, it) }
-            } catch (_: Throwable) {}
+        var recLists = results.map { it ?: emptyList() }
+        if (recLists.isEmpty() && subsItems.isNotEmpty()) {
+            val seedSubs = subsItems.take(3)
+            val r2 = arrayOfNulls<List<NpItem>>(seedSubs.size)
+            seedSubs.mapIndexed { n, s -> Thread { r2[n] = try { related(s.id) } catch (_: Throwable) { emptyList() } }.also { it.start() } }
+                .forEach { try { it.join(25000) } catch (_: Throwable) {} }
+            recLists = r2.map { it ?: emptyList() }
         }
-        if (out.isEmpty()) {
-            try { searchFirst("الأكثر مشاهدة اليوم", "videos").items.forEach { out.putIfAbsent(it.id, it) } } catch (_: Throwable) {}
+        // توصيات: تقليب بين نتايج كل فيديو للتنوّع (بدون المشاهَد)
+        val rec = ArrayList<NpItem>(); var k = 0
+        while (recLists.any { k < it.size }) { for (l in recLists) if (k < l.size) { val v = l[k]; if (v.id !in seen) rec.add(v) }; k++ }
+        // اشتراكات: الغير مشاهَد الأحدث الأول، وبعدها القديم (المشاهَد) في الآخر
+        val subsOrdered = subsItems.filter { it.id !in seen } + subsItems.filter { it.id in seen }
+        // دمج: اثنين من الاشتراكات ثم اثنين توصيات … من غير تكرار
+        val out = LinkedHashMap<String, NpItem>()
+        var i = 0; var j = 0
+        while ((i < subsOrdered.size || j < rec.size) && out.size < 90) {
+            var c = 0; while (c < 2 && i < subsOrdered.size) { subsOrdered[i].let { out.putIfAbsent(it.id, it) }; i++; c++ }
+            c = 0; while (c < 2 && j < rec.size) { rec[j].let { out.putIfAbsent(it.id, it) }; j++; c++ }
         }
         return YtRes(out.values.toList(), null)
     }

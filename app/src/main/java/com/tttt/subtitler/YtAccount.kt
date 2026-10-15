@@ -224,6 +224,11 @@ object YtAccount {
         val parts = ArrayList<String>()
         walk(md?.optJSONObject("metadata")) { k, p -> if (k == "text") { val t = p.optString("content"); if (t.isNotEmpty()) parts.add(t) } }
         val type = o.optString("contentType")
+        if (type.contains("CHANNEL")) {   // (v350) القنوات بالشكل الجديد
+            if (!id.startsWith("UC")) return null
+            val u = "https://www.youtube.com/channel/$id"
+            return NpItem("", title, "", u, "", -1L, -1L, "", 1, u)
+        }
         if (type.contains("PLAYLIST")) return NpItem("", title, parts.firstOrNull() ?: "", "", "", -1L, -1L, "", 2, "yta:VL$id")
         if (!type.contains("VIDEO") || id.length != 11) return null
         var dur = -1L

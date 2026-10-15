@@ -990,6 +990,7 @@ class PlayerActivity : Activity(), Host {
         applyBars(th)
         speed = Cfg.str("speed", "1").toFloatOrNull() ?: 1f; fit = Cfg.int("fit", 0).coerceIn(0, 2); fsFit = Cfg.int("fs_fit", 2).coerceIn(0, 2); offsetMs = 0L
         uri = intent.data; url = intent.getStringExtra("url")
+        pendingYt = intent.getBooleanExtra("ytpend", false) && url == null && uri == null && intent.getStringExtra("ytid")?.length == 11   // (v351)
         try { if (!incognito) PubHistory.addVideoFrom(intent) } catch (_: Throwable) {}   // (v349) السجل العام
         try {
             intent.getStringExtra("qlist")?.let { sj -> val qa = org.json.JSONArray(sj)
@@ -1941,6 +1942,7 @@ class PlayerActivity : Activity(), Host {
         // المحرك + استرجاع التقدم المحفوظ
         freshOnce = intent.getBooleanExtra("fresh", false)
         initEngine()
+        if (pendingYt) startYtPend()   // (v351)
         if (Build.VERSION.SDK_INT >= 33) { try { requestPermissions(arrayOf("android.permission.POST_NOTIFICATIONS"), 7) } catch (e: Exception) { LogStore.err("Main:1892", e) } }
         PlayerRemote.act = java.lang.ref.WeakReference(this)
         KeepAliveService.start(this)
@@ -2065,7 +2067,7 @@ class PlayerActivity : Activity(), Host {
         })
         engineStarted = false; updateTr()
         // «🌐 ترجمة وفرجة» من المتصفح: الترجمة تبدأ لوحدها من غير ما تدوس ▶ ترجمة
-        if (autoTr && !noSub && !askSaved && (Cfg.str("hard_mode", "0") != "1" || SourceMode.get() == SourceMode.HYBRID) && SourceMode.get() != SourceMode.VISUAL) videoBoxRef.post { if (!engineStarted && !isFinishing && !isDestroyed) beginTranslate() }
+        if (autoTr && !noSub && !askSaved && (Cfg.str("hard_mode", "0") != "1" || SourceMode.get() == SourceMode.HYBRID) && SourceMode.get() != SourceMode.VISUAL) videoBoxRef.post { if (!engineStarted && !isFinishing && !isDestroyed && !pendingYt) beginTranslate() }
     }
 
     /** (v118) تبديل جودة يوتيوب في نفس المكان من غير ما التشغيل يتقطع كتير. الجودة بتتحفظ للفيديوهات الجاية (داتا أقل) */
@@ -2153,11 +2155,13 @@ class PlayerActivity : Activity(), Host {
                 }
             }
             override fun onPlayerError(e: PlaybackException) {
+                if (pendingYt) return   // (v351)
                 log("❌ خطأ في التشغيل: ${e.errorCodeName} — ${e.cause?.message ?: e.message}")
                 say("خطأ في تشغيل الفيديو — التفاصيل في 📜 اللوجز")
                 offerLinkRefresh()
             }
         })
+        if (pendingYt) return   // (v351) لسه بنجيب الرابط: المشغّل فاضي ولودينج ويندوز بيلف
         val au = aurl
         if (uri == null && au != null) {
             val pf = androidx.media3.exoplayer.source.ProgressiveMediaSource.Factory(httpDsf ?: DefaultHttpDataSource.Factory().setDefaultRequestProperties(hdr).setAllowCrossProtocolRedirects(true))
@@ -2191,6 +2195,51 @@ class PlayerActivity : Activity(), Host {
     }
 
     private var freshOnce = false
+    /** (v351) المشغّل بيفتح فورًا بشكله الكامل واللودينج جواه؛ رابط الفيديو بيتجاب في الخلفية وبعدين التشغيل يبدأ في نفس الشاشة */
+    @Volatile private var pendingYt = false
+    private var pendTok = 0
+    private fun startYtPend() {
+        val id = intent.getStringExtra("ytid") ?: return
+        val tok = ++pendTok
+        h.post { try { setBuffering(true) } catch (_: Throwable) {} }
+        Thread {
+            val best = try { YtExtract.fetchPick(id, Cfg.int("yt_maxh", 0)) } catch (_: Throwable) { null }
+            val np = if (best == null) try { YtNp.init(); YtNp.pick(id, Cfg.int("yt_maxh", 0)) } catch (_: Throwable) { null } else null
+            runOnUiThread {
+                if (tok != pendTok || isFinishing || isDestroyed || !pendingYt) return@runOnUiThread
+                val u = best?.url ?: np?.url
+                if (u == null) {
+                    try { setBuffering(false) } catch (_: Throwable) {}
+                    val why = YtExtract.lastWhy.ifBlank { "السبب مش معروف (راجع اللوج)" }
+                    GAlert(this).setTitle("⚠ ما قدرتش أجيب الفيديو")
+                        .setMessage("يوتيوب ما رضيش يدّي لينك للفيديو ده من التطبيق.\n\n" + why)
+                        .setPositiveButton("🔁 جرّب تاني") { _, _ -> startYtPend() }
+                        .setNeutralButton("🌐 افتحه في المتصفح") { _, _ ->
+                            try { startActivity(Intent(this, BrowserActivity::class.java).putExtra("start", YtHistory.watchUrl(id)).putExtra("noauto", true)) } catch (_: Throwable) {}
+                            closeNoBg() }
+                        .setNegativeButton("إغلاق") { _, _ -> closeNoBg() }.show()
+                    return@runOnUiThread
+                }
+                pendingYt = false
+                url = u; aurl = (best?.audio ?: np?.audio)?.takeIf { it.isNotEmpty() }
+                try {
+                    (best?.optsJson() ?: np?.qlist)?.takeIf { it.isNotEmpty() }?.let { sj -> val qa = org.json.JSONArray(sj)
+                        qOpts = (0 until qa.length()).map { qi -> val o = qa.getJSONObject(qi); YtExtract.Opt(o.optString("l"), o.optString("u"), o.optString("a").ifEmpty { null }, o.optInt("h")) } }
+                } catch (e: Exception) { LogStore.err("Player:pendQlist", e) }
+                qCur = qOpts.indexOfFirst { it.url == url }
+                hdr["User-Agent"] = best?.ua ?: np?.ua ?: ""; hdr["Referer"] = "https://www.youtube.com/"
+                if (intent.getStringExtra("title").isNullOrBlank()) (best?.title ?: np?.title)?.let { intent.putExtra("title", it) }
+                // نفس خطوات swapVideo: نقفل المحرك والمشغّل الفاضيين ونبنيهم على الرابط الحقيقي
+                try { retireEngine() } catch (_: Throwable) {}
+                try { loud?.release(); loud = null } catch (_: Throwable) {}
+                try { player.release() } catch (_: Throwable) {}
+                buildPlayer(); initEngine()
+                try { refreshList(); updateTr() } catch (_: Throwable) {}
+                val autoOk = autoTr && !noSub && !askSaved && (Cfg.str("hard_mode", "0") != "1" || SourceMode.get() == SourceMode.HYBRID) && SourceMode.get() != SourceMode.VISUAL
+                if (autoOk) videoBoxRef.post { if (!engineStarted && !isFinishing && !isDestroyed) beginTranslate() }
+            }
+        }.apply { isDaemon = true }.start()
+    }
     /** يشغّل المحرك. لو الدخول كان «ابدأ من الأول وجديد»: المسح والحفظ على خيط الخلفية قبل ما الحلقة تبدأ (مش على الـ UI) */
     private fun startEngine() {
         val fresh = freshOnce; freshOnce = false
@@ -2268,7 +2317,9 @@ class PlayerActivity : Activity(), Host {
             runOnUiThread {
                 if (isFinishing || isDestroyed || engine !== eng) return@runOnUiThread
                 engineReady = true
+                if (pendingYt) return@runOnUiThread   // (v351) لسه مفيش رابط: الاستكمال/السؤال بيحصلوا بعد ما initEngine تتعاد على الرابط الحقيقي
                 val startMs = intent.getLongExtra("startms", 0L)   // (v343) جاي من تحويل صوت→فيديو: كمّل من نفس مكان الصوت
+                if (startMs > 0L) intent.removeExtra("startms")   // (v351) بيتستهلك مرة واحدة
                 if (startMs > 0L) { player.seekTo(startMs); cur = startMs; log("⏩ كملت من ${fmtMs(cur)}") }
                 else if (savedPos > 5.0 && !freshOnce) { player.seekTo((savedPos * 1000).toLong()); cur = (savedPos * 1000).toLong(); log("⏩ كملت من ${fmtMs(cur)}") }
                 else if (uri == null && !freshOnce && rp > 5.0) {
@@ -2767,6 +2818,11 @@ class PlayerActivity : Activity(), Host {
         val id = intent.getStringExtra("ytid") ?: return
         audioHandoff = Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
             .putExtra("ytaudio", id).putExtra("ytaudtitle", intent.getStringExtra("title") ?: "").putExtra("ytaudpos", cur)
+        // (v351) رابط الصوت اللي بيشتغل دلوقتي (لو صوت منفصل) بيتبعت جاهز: التحويل فوري من غير ما نجيب الفيديو من الصفر
+        try {
+            val au = (qOpts.getOrNull(qCur)?.audio ?: aurl)?.takeIf { it.startsWith("http") }
+            if (au != null) audioHandoff?.putExtra("ytaudurl", au)?.putExtra("ytaudua", hdr["User-Agent"] ?: "")?.putExtra("ytauddur", durMs)
+        } catch (e: Throwable) { LogStore.err("Player:audHandoff", e) }
         closeNoBg()
     }
     private fun closeNoBg() {

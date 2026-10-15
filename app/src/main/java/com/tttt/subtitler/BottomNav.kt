@@ -15,6 +15,7 @@ class BottomNav(act: Activity, private val ui: Ui, private val th: Theme, privat
     private val icons = ArrayList<IconTextView>()
     private val labels = ArrayList<IconTextView>()
     private val cells = ArrayList<View>()
+    private val badges = ArrayList<android.widget.TextView>()   // (v350) عدّاد أحمر فوق الأيقونة
     val view = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL }
     private var rowV: View? = null
     private var lineV: View? = null
@@ -38,7 +39,18 @@ class BottomNav(act: Activity, private val ui: Ui, private val th: Theme, privat
             val lab = ui.text(d.second, 9.5f, th.muted, true).apply { gravity = Gravity.CENTER; setSingleLine() }
             val cell = LinearLayout(act).apply {
                 orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER; setPadding(0, ui.dp(3), 0, ui.dp(2))
-                addView(icon, LinearLayout.LayoutParams(ui.dp(24), ui.dp(20)))
+                val bdg = android.widget.TextView(act).apply {
+                    textSize = 8.5f; setTextColor(0xFFFFFFFF.toInt()); gravity = Gravity.CENTER; includeFontPadding = false
+                    setTypeface(typeface, android.graphics.Typeface.BOLD); setPadding(ui.dp(3), 0, ui.dp(3), 0); minWidth = ui.dp(14)
+                    background = GradientDrawable().apply { setColor(0xFFE53935.toInt()); cornerRadius = ui.dp(8).toFloat() }
+                    visibility = View.GONE
+                }
+                badges.add(bdg)
+                val box = FrameLayout(act).apply {
+                    addView(icon, FrameLayout.LayoutParams(ui.dp(24), ui.dp(20), Gravity.CENTER))
+                    addView(bdg, FrameLayout.LayoutParams(-2, ui.dp(14), Gravity.TOP or Gravity.END))
+                }
+                addView(box, LinearLayout.LayoutParams(ui.dp(38), ui.dp(20)))
                 addView(lab, LinearLayout.LayoutParams(-2, -2))
                 Glass.pressable(this)
                 setOnClickListener { onPick(idx) }
@@ -54,6 +66,14 @@ class BottomNav(act: Activity, private val ui: Ui, private val th: Theme, privat
         view.addView(line, LinearLayout.LayoutParams(-1, ui.dp(1)))
         view.addView(wrap, LinearLayout.LayoutParams(-1, -2))
         paint()
+        badge(4, YtNotify.badgeCount())
+    }
+
+    /** (v350) عدّاد أحمر فوق أيقونة البوابة؛ 0 = مخفي */
+    fun badge(i: Int, n: Int) {
+        val b = badges.getOrNull(i) ?: return
+        b.text = if (n > 99) "99+" else n.toString()
+        b.visibility = if (n > 0) View.VISIBLE else View.GONE
     }
 
     private fun place(animate: Boolean) {

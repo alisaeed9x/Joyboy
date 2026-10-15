@@ -214,7 +214,19 @@ object MusicEngine {
     val posMs: Int get() = try { if (ready) mp?.currentPosition ?: 0 else 0 } catch (_: Throwable) { 0 }
     val durMs: Int get() = try { if (ready) mp?.duration ?: 0 else (current?.durMs ?: 0L).toInt() } catch (_: Throwable) { 0 }
 
-    private fun changed() { main.post { for (l in listeners) { try { l() } catch (_: Throwable) {} }; MusicService.refresh() } }
+    /** (v351) مكان الوقوف الفعلي لصوت يوتيوب: بيتحفظ بنفس مفتاح مشغّل الفيديو (lastpos) عشان لما تفتح الفيديو تاني يكمّل من هنا مش من قبل ما تخرج */
+    private var lastYtPosSave = 0L
+    private fun saveYtPos(force: Boolean = false) {
+        try {
+            val now = System.currentTimeMillis()
+            if (!force && now - lastYtPosSave < 3000L) return
+            val id = YtAudio.itemOf(current)?.id ?: return
+            val p = posMs; if (p <= 1000) return
+            lastYtPosSave = now
+            Cfg.p.edit().putString("lastpos", "yt:" + id + "\t" + p).apply()
+        } catch (_: Throwable) {}
+    }
+    private fun changed() { saveYtPos(); main.post { for (l in listeners) { try { l() } catch (_: Throwable) {} }; MusicService.refresh() } }
 
     private val focusListener = AudioManager.OnAudioFocusChangeListener { c ->
         when (c) {
@@ -331,12 +343,13 @@ object MusicEngine {
         if (ready) { try { m.start() } catch (_: Throwable) {}; applySpeed() }
         changed()
     }
-    fun pause() { wantPlay = false; try { if (mp?.isPlaying == true) mp?.pause() } catch (_: Throwable) {}; changed() }
+    fun pause() { saveYtPos(true); wantPlay = false; try { if (mp?.isPlaying == true) mp?.pause() } catch (_: Throwable) {}; changed() }
     fun seekTo(ms: Int) { if (ready) try { mp?.seekTo(ms) } catch (_: Throwable) {}; changed() }
     private fun release() { try { loud?.release() } catch (_: Throwable) {}; loud = null; try { mp?.release() } catch (_: Throwable) {}; mp = null; ready = false }
     /** إيقاف نهائي (زرار ✕ في الإشعار) */
     fun stopAll() {
         sleepAtMs = 0L; sleepEndOfTrack = false; main.removeCallbacks(sleepTick)
+        saveYtPos(true)
         wantPlay = false; release(); dropFocus(); queue = emptyList(); idx = -1
         app?.let { MusicService.stop(it) }
         changed()

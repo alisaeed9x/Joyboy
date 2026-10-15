@@ -10,9 +10,10 @@ import android.widget.*
 /** مكوّنات واجهة بنفس شكل الأصل (radius 14/8، حدود، أمبر كلون أساسي) */
 class Ui(val ctx: Context, var th: Theme) {
     fun dp(v: Int) = (v * ctx.resources.displayMetrics.density).toInt()
-    fun box(fill: Int, stroke: Int, r: Int, sw: Int = 1): GradientDrawable {
+    fun box(fill: Int, stroke: Int, r0: Int, sw: Int = 1): GradientDrawable {
+        val r = Skins.rad(r0)   // (v352) استدارة حسب وضع الواجهة
         // الكروت (لون card) بتتحوّل لزجاج بتدرّج خفيف؛ الباقي زي ما هو
-        if (fill == th.card && r >= 12) return Glass.drawable(th, dp(r).toFloat(), dp(sw), stroke)
+        if (fill == th.card && r0 >= 12) return Glass.drawable(th, dp(r).toFloat(), dp(sw), stroke)
         return GradientDrawable().apply { setColor(fill); cornerRadius = dp(r).toFloat(); setStroke(dp(sw), stroke) }
     }
     private val plex: android.graphics.Typeface? by lazy { try { android.graphics.Typeface.createFromAsset(ctx.assets, "fonts/ibm_plex.ttf") } catch (_: Exception) { null } }
@@ -46,14 +47,14 @@ class Ui(val ctx: Context, var th: Theme) {
     }
     fun button(t: String, primary: Boolean = false, f: () -> Unit) = IconButton(ctx).apply {
         text = t; isAllCaps = false; stateListAnimator = null; setTextColor(if (primary) (if (th.isLight) Color.WHITE else Color.BLACK) else th.text)
-        background = if (primary) Glass.primaryFill(th, dp(12).toFloat()) else box(th.surface, th.border, 12)
+        background = if (primary) Glass.primaryFill(th, dp(Skins.rad(12)).toFloat()) else box(th.surface, th.border, 12)
         layoutParams = LinearLayout.LayoutParams(-1, -2).apply { setMargins(0, dp(4), 0, dp(4)) }
         Glass.pressable(this)
         setOnClickListener { f() }
     }
     fun switchRow(t: String, on: Boolean, onChange: (Boolean) -> Unit): Switch = IconSwitch(ctx).apply {
         text = t; isChecked = on; setTextColor(th.text); textSize = 14f; setPadding(0, dp(6), 0, dp(6))
-        setOnCheckedChangeListener { _, v -> onChange(v); if (isShown) Motion.pop(this, 0.94f) }
+        setOnCheckedChangeListener { _, v -> onChange(v); if (isShown) { Motion.pop(this, 0.94f); SkinSound.event(ctx, 1) } }
     }
     /** صف chips بيلف على أكتر من سطر؛ بيرجّع الـ container، والاختيار بيتبلّغ بـ onPick */
     fun chips(items: List<String>, selected: () -> String, onPick: (String) -> Unit): LinearLayout {

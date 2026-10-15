@@ -234,7 +234,7 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
         root.addView(content, LinearLayout.LayoutParams(-1, 0, 1f))
         root.addView(View(act).apply { setBackgroundColor(th.border) }, LinearLayout.LayoutParams(-1, ui.dp(1)))
         val navRow = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; gravity = Gravity.CENTER_VERTICAL; setBackgroundColor(th.card) }
-        listOf("🏠" to "الرئيسية", "📺" to "الاشتراكات", "⚡" to "الشورتس", "🧑" to "أنت").forEachIndexed { i, d ->
+        listOf("🏠" to "الرئيسية", "📺" to "الاشتراكات", "🧑" to "أنت").forEachIndexed { i, d ->
             val icon = IconTextView(act).apply { text = d.first; textSize = 16f; gravity = Gravity.CENTER; includeFontPadding = false }
             val lab = ui.text(d.second, 9.5f, th.muted, true).apply { gravity = Gravity.CENTER; setSingleLine() }
             val cell = LinearLayout(act).apply {
@@ -289,7 +289,7 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
         if (shortsOn) leaveShorts()
         hideKb(); sugBox.visibility = View.GONE; stack.clear(); paintTabs(i)
         when (i) {
-            0 -> load("🏠 الرئيسية", 0, null, null, null, "", false, false) { Pair(YtNp.home(YtStore.read(YtStore.HIST)), null) }
+            0 -> load("🏠 الرئيسية", 0, null, null, null, "", false, false) { Pair(YtNp.home(YtStore.read(YtStore.HIST), YtStore.read(YtStore.SUBS)), null) }
             1 -> {
                 val subs = YtStore.read(YtStore.SUBS)
                 if (subs.isEmpty() && !YtAccount.loggedIn()) { bind(St("📺 اشتراكاتي", 1, ArrayList(), null, null, null, null, null, "")); status("مفيش اشتراكات لسه.\nسجّل الدخول بحساب جوجل من تبويب «أنت» وهتتجاب اشتراكاتك لوحدها،\nأو افتح قناة من أي فيديو (ضغطة طويلة ← 📺 افتح القناة) واضغط 🔔 اشترك.\n\nأو استورد ملف اشتراكات (دوس هنا)") { onImport() } }
@@ -301,7 +301,7 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
     }
 
     // ───────── (v348) شريط يوتيوب السفلي + الشورتس ─────────
-    private fun navTap(i: Int) { when (i) { 0 -> openTab(0); 1 -> openTab(1); 2 -> openShorts(); else -> openTab(4) } }
+    private fun navTap(i: Int) { when (i) { 0 -> openTab(0); 1 -> openTab(1); else -> openTab(4) } }   // (v351) الشورتس اتشالت
     private fun paintNav() {
         for (i in navIcons.indices) {
             val c = if (i == navSel) th.primary else th.muted
@@ -438,10 +438,24 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
         hideKb(); sugBox.visibility = View.GONE; stack.clear(); paintTabs(1)
         load("📺 اشتراكاتي", 1, null, null, null, "", false, false) {
             // (v346) لو مسجّل بجوجل: بنزامن قنوات الحساب الأول (كل 6 ساعات أو لما تدوس تحديث) وبعدين نقرأ الاشتراكات من جديد
-            if (YtAccount.loggedIn() && (force || YtAccount.syncDue())) try { YtAccount.syncSubs() } catch (_: Throwable) {}
-            val r = YtRss.feed(YtStore.read(YtStore.SUBS), force)
-            YtNotify.markSeen(r.items)   // اللي اتعرض ما يجيش عليه إشعار
-            Pair(r, null)
+            // (v350) لو القنوات فاضية أو المزامنة فشلت: نحاول تاني ونظهر السبب بدل «مفيش نتايج» الصامتة
+            var syncErr: String? = null
+            if (YtAccount.loggedIn() && (force || YtAccount.syncDue() || YtStore.read(YtStore.SUBS).isEmpty())) {
+                try { YtAccount.syncSubs() } catch (e: Throwable) { syncErr = e.message ?: e.javaClass.simpleName }
+            }
+            var r = YtRss.feed(YtStore.read(YtStore.SUBS), force)
+            var more: ((Page) -> YtRes)? = null
+            if (r.items.isEmpty() && YtAccount.loggedIn()) {
+                // (v350) بديل: فيد الاشتراكات الرسمي من حسابك مباشرة (من غير RSS)
+                try {
+                    val a = YtAccount.listFirst("FEsubscriptions")
+                    val vids = a.items.filter { it.kind == 0 }
+                    if (vids.isNotEmpty()) { r = YtRes(vids, a.next); more = { p -> val x = YtAccount.listMore(p); YtRes(x.items.filter { it.kind == 0 }, x.next) } }
+                } catch (e: Throwable) { if (syncErr == null) syncErr = e.message ?: e.javaClass.simpleName }
+            }
+            if (r.items.isEmpty() && syncErr != null) throw RuntimeException(syncErr)
+            if (r.items.isNotEmpty()) { YtNotify.markSeen(r.items); YtNotify.markOpened(act) }   // اللي اتعرض ما يجيش عليه إشعار ولا عدّاد
+            Pair(r, more)
         }
     }
     private fun paintNotif() {
@@ -709,7 +723,7 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
 
     // ───────── رسم ─────────
     /** sel: 0 رئيسية · 1 اشتراكات · 2/3/4 = «أنت» · غير كده (بحث/قناة) بيسيب التحديد زي ما هو */
-    private fun paintTabs(sel: Int) { if (sel in 0..1) navSel = sel else if (sel in 2..4) navSel = 3; paintNav() }
+    private fun paintTabs(sel: Int) { if (sel in 0..1) navSel = sel else if (sel in 2..4) navSel = 2; paintNav() }
     private fun paintChip(tv: TextView, on: Boolean) {
         tv.setTextColor(if (on) Color.WHITE else th.text)
         tv.background = GradientDrawable().apply { setColor(if (on) th.primary else th.surface); cornerRadius = ui.dp(16).toFloat() }
