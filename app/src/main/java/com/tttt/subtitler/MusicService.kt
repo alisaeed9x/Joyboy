@@ -251,7 +251,7 @@ object MusicEngine {
         MusicService.start(ctx.applicationContext)
         gainFocus()
         val t = q[i]
-        try { if (!YtAudio.isRemote(t.uri)) RecentSongs.add(t.uri) } catch (_: Throwable) {}   // (v337) روابط يوتيوب مؤقتة: مش بتتسجّل في «آخر المشغّل»
+        try { if (!YtAudio.isRemote(t.uri)) { RecentSongs.add(t.uri); PubHistory.add("a", "music", t.title, t.uri) } } catch (_: Throwable) {}   // (v337) روابط يوتيوب مؤقتة: مش بتتسجّل في «آخر المشغّل»
         val want = if (stem != 0 && Karaoke.hasStem(ctx.applicationContext, t, stem)) stem else 0
         openPlayer(ctx.applicationContext, t, want, if (want == 0) startMs else 0)   // (v343) startMs: تحويل فيديو→صوت يكمّل من نفس المكان
         // (v308) الفصل تلقائي في الخلفية — (v319) المستخدم بيقلّب بين الأغاني: الأوتوماتيك بيبدأ بعد ١٥ ثانية تشغيل، واليدوي (stem != 0) فورًا

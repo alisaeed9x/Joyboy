@@ -63,16 +63,16 @@ class MiniDock(
         private var dx = 0f; private var dy = 0f; private var sx = 0f; private var sy = 0f; private var drag = false
         private fun down(e: MotionEvent) { dx = e.rawX; dy = e.rawY; sx = translationX; sy = translationY; drag = false; bump() }
         private fun move(e: MotionEvent) {
-            if (!drag && Math.abs(e.rawX - dx) + Math.abs(e.rawY - dy) > ui.dp(10)) { drag = true; main.removeCallbacks(collapseTick); parent.requestDisallowInterceptTouchEvent(true) }
+            if (!drag && Math.abs(e.rawX - dx) + Math.abs(e.rawY - dy) > ui.dp(10)) { drag = true; main.removeCallbacks(collapseTick); this@MiniDock.parent.requestDisallowInterceptTouchEvent(true) }
             if (drag) {
-                translationX = (sx + e.rawX - dx).coerceIn(0f, (parent.width - width).coerceAtLeast(0).toFloat())
-                translationY = (sy + e.rawY - dy).coerceIn(0f, (parent.height - height).coerceAtLeast(0).toFloat())
+                translationX = (sx + e.rawX - dx).coerceIn(0f, (this@MiniDock.parent.width - width).coerceAtLeast(0).toFloat())
+                translationY = (sy + e.rawY - dy).coerceIn(0f, (this@MiniDock.parent.height - height).coerceAtLeast(0).toFloat())
             }
         }
         private fun up() {
             if (drag) {
-                val right = translationX + width / 2f > parent.width / 2f
-                val room = (parent.height - height).coerceAtLeast(1)
+                val right = translationX + width / 2f > this@MiniDock.parent.width / 2f
+                val room = (this@MiniDock.parent.height - height).coerceAtLeast(1)
                 prefs.edit().putBoolean("dock_right", right).putFloat("dock_fy", (translationY / room).coerceIn(0f, 1f)).apply()
                 place(true); bump()
             } else if (!expanded) expand() else collapse()   // دوسة على الغلاف وهي مفتوحة = تتلم

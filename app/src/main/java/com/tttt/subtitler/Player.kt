@@ -990,6 +990,7 @@ class PlayerActivity : Activity(), Host {
         applyBars(th)
         speed = Cfg.str("speed", "1").toFloatOrNull() ?: 1f; fit = Cfg.int("fit", 0).coerceIn(0, 2); fsFit = Cfg.int("fs_fit", 2).coerceIn(0, 2); offsetMs = 0L
         uri = intent.data; url = intent.getStringExtra("url")
+        try { if (!incognito) PubHistory.addVideoFrom(intent) } catch (_: Throwable) {}   // (v349) السجل العام
         try {
             intent.getStringExtra("qlist")?.let { sj -> val qa = org.json.JSONArray(sj)
                 qOpts = (0 until qa.length()).map { qi -> val o = qa.getJSONObject(qi); YtExtract.Opt(o.optString("l"), o.optString("u"), o.optString("a").ifEmpty { null }, o.optInt("h")) } }

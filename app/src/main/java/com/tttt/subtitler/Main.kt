@@ -90,7 +90,7 @@ class MainActivity : Activity() {
     private var stripUi: StatusStrip? = null   // (v345) شريط الحالة الموحّد
     private var dockUi: MiniDock? = null   // (v344) المشغّل المصغّر العايم
     /** (v344) «ابحث في المتصفح»: بيفتح المتصفح ببحث جوجل عن النص */
-    private fun webSearch(q: String) { save(); NavAnim.set(curTab, 2); startActivity(Intent(this, BrowserActivity::class.java).putExtra("start", "https://www.google.com/search?q=" + java.net.URLEncoder.encode(q, "UTF-8"))) }
+    private fun webSearch(q: String) { saveCfgFn?.invoke(); NavAnim.set(curTab, 2); startActivity(Intent(this, BrowserActivity::class.java).putExtra("start", "https://www.google.com/search?q=" + java.net.URLEncoder.encode(q, "UTF-8"))) }
     private var fabHide = false
     /** (v336) الزرار العايم اتشال؛ الدالة دلوقتي بتحدّث عدّاد زرار «المهام» في الشريط السفلي */
     private fun updateTasksFab() { try { val a = TaskCenter.active() + BgJobs.jobs.count { it.active }; val t = TaskCenter.total() + BgJobs.jobs.size; val n = if (a > 0) a else t; navUi?.label(5, if (n > 0) "المهام ($n)" else "المهام") } catch (_: Throwable) {} }
@@ -801,7 +801,14 @@ class MainActivity : Activity() {
                 { u -> save(); NavAnim.set(curTab, 2); startActivity(Intent(this, BrowserActivity::class.java).putExtra("start", u)) },
                 { startActivityForResult(filePicker("*/*", "اختار ملف الاشتراكات", false), 47) },
                 { n -> playYtAudio(n.id, n.title, n.channel, n.thumb) },
-                { n, a -> ytDownload(n, a) })
+                { n, a -> ytDownload(n, a) },
+                { PubHistoryUi.show(this, ui, th) { kind, src, ref, title -> when {
+                    kind == "v" && src == "youtube" -> playYt(ref, title, false)
+                    kind == "v" && src == "local" -> play("", android.net.Uri.parse(ref), true)
+                    kind == "v" -> openLink(ref)
+                    kind == "a" && src == "youtube" -> playYtAudio(ref, title, "", "")
+                    else -> {}
+                } } })
             ytUi = yt; yt.root.visibility = View.GONE; ytOpenFn = { vid -> yt.openVideo(vid) }
             pane.addView(yt.root, 1, FrameLayout.LayoutParams(-1, -1))
             pane.addView(yt.busyView, FrameLayout.LayoutParams(-1, -1))   // (v337) لودينج جلب رابط الفيديو فوق الصفحة
@@ -889,7 +896,7 @@ class MainActivity : Activity() {
                 0 -> playYt(id, "", false)
                 1 -> playYt(id, "", true)
                 2 -> playYtAudio(id, "", "", "")
-                else -> { save(); NavAnim.set(curTab, 2); startActivity(Intent(this, BrowserActivity::class.java).putExtra("start", url)) }
+                else -> { saveCfgFn?.invoke(); NavAnim.set(curTab, 2); startActivity(Intent(this, BrowserActivity::class.java).putExtra("start", url)) }
             }
         }.show()
     }
@@ -1164,7 +1171,7 @@ class MainActivity : Activity() {
             try { startActivity(Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$packageName"))) } catch (e: Exception) { LogStore.err("Main:675", e) }
         }
     }
-    override fun onStop() { super.onStop(); stoppedAt = System.currentTimeMillis(); WebMute.pauseAll(); if (ytLoadLaunched) { ytLoadLaunched = false; ytLoadUi?.hide() } }   // (v339) المشغّل ظهر فوقنا: شيل صفحة اللودينج
+    override fun onStop() { super.onStop(); stoppedAt = System.currentTimeMillis(); WebMute.pauseAll(); try { ytUi?.onPause() } catch (_: Throwable) {}; if (ytLoadLaunched) { ytLoadLaunched = false; ytLoadUi?.hide() } }   // (v339) المشغّل ظهر فوقنا: شيل صفحة اللودينج
     // (v339) الأكتيفيتي بقت بتتحمّل الدوران بنفسها (من غير إعادة إنشاء) — كانت بتتعمل لها إعادة إنشاء لما المشغّل يلفّ الشاشة فنرجع للفيديوهات بدل يوتيوب
     override fun onConfigurationChanged(c: android.content.res.Configuration) {
         super.onConfigurationChanged(c)
@@ -1242,6 +1249,7 @@ class MainActivity : Activity() {
     fun playYtAudio(id: String, title: String, channel: String, thumb: String, quiet: Boolean = false, startMs: Int = 0) {
         MusicEngine.ytStep = { d -> ytAudioStep(d) }   // (v341) التالي/إعادة المحاولة لصوت يوتيوب
         YtNext.markPlayed(id)
+        try { PubHistory.add("a", "youtube", title, id) } catch (_: Throwable) {}   // (v349) السجل العام
         // (v339) بنفتح مشغّل الموسيقى الكامل فورًا (لودينج مكان الألبوم) وبنفتكر إحنا جينا منين عشان نرجع لنفس المكان لما نقفله
         // (v341) quiet = تالي/إعادة محاولة: الأغنية الحالية تكمّل وإحنا ماشيين، من غير ما نغيّر الشاشة ولا نفتح لودينج
         val tok = ++ytAudTok
@@ -1346,7 +1354,7 @@ class MainActivity : Activity() {
         if (!fromPlayer && libStarted) libUi?.let { if (it.hasData) it.render() else scanFn() }
         if (!fromPlayer && curTab == 4) ytUi?.refresh()
     }
-    override fun onDestroy() { try { dockUi?.detach() } catch (_: Throwable) {}; try { stripUi?.detach() } catch (_: Throwable) {}; if (!fromPlayer) TaskCenter.listener = null; try { tasksFabUi?.detach() } catch (_: Throwable) {}; try { musicUi?.destroy() } catch (_: Throwable) {}; super.onDestroy() }
+    override fun onDestroy() { try { dockUi?.detach() } catch (_: Throwable) {}; try { ytUi?.destroy() } catch (_: Throwable) {}; try { stripUi?.detach() } catch (_: Throwable) {}; if (!fromPlayer) TaskCenter.listener = null; try { tasksFabUi?.detach() } catch (_: Throwable) {}; try { musicUi?.destroy() } catch (_: Throwable) {}; super.onDestroy() }
     /** (v327) إشعار فيديو جديد: افتح تفاصيله في بوابة يوتيوب (الدالة بتتركّب أول ما بوابة يوتيوب تتبني؛ showTabFn(4) بتبنيها) */
     private fun openYtFromIntent(i: Intent?) {
         val id = i?.getStringExtra("yt_open") ?: return

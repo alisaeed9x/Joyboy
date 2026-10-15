@@ -46,7 +46,8 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
               private val onBrowser: (String) -> Unit,
               private val onImport: () -> Unit,
               private val onAudio: (NpItem) -> Unit = {},                      // (v337) 🎧 صوت بس في مشغّل الموسيقى
-              private val onDownload: (NpItem, Boolean) -> Unit = { _, _ -> }) {   // (v337) ⬇ تحميل (true = صوت بس)
+              private val onDownload: (NpItem, Boolean) -> Unit = { _, _ -> },
+              private val onPubHistory: () -> Unit = {}) {   // (v349) السجل العام   // (v337) ⬇ تحميل (true = صوت بس)
 
     private class St(val title: String, val tab: Int, val items: ArrayList<NpItem>, var next: Page?, val more: ((Page) -> YtRes)?,
                       val chUrl: String?, val chName: String?, val q: String?, val filter: String,
@@ -80,7 +81,15 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
     private val statusTv: TextView
     private val search: EditText
     private val sugBox = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL; visibility = View.GONE }
-    private val tabViews = ArrayList<TextView>()
+    // (v348) شريط يوتيوب السفلي + الشورتس: page = كل الشاشة القديمة (بحث/قوايم)، shortsHost = صفحة الشورتس فوقها
+    private val page = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL }
+    private val shortsHost = FrameLayout(act).apply { visibility = View.GONE }
+    private var shorts: YtShorts? = null
+    private var shortsOn = false
+    private var navSel = 0
+    private var navBeforeShorts = 0
+    private val navIcons = ArrayList<IconTextView>()
+    private val navLabs = ArrayList<TextView>()
     private val chanRow = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; visibility = View.GONE }
     private val chanName: TextView
     private val subBtn: TextView
@@ -129,21 +138,8 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
         bar.addView(goBtn, LinearLayout.LayoutParams(-2, ui.dp(42)))
         val setBtn = ui.text("⚙", 18f, th.muted, true).apply { gravity = Gravity.CENTER; setPadding(ui.dp(8), 0, ui.dp(8), 0); setOnClickListener { settings() } }   // (v337)
         bar.addView(setBtn, LinearLayout.LayoutParams(-2, ui.dp(42)))
-        root.addView(bar, LinearLayout.LayoutParams(-1, -2))
-        root.addView(sugBox, LinearLayout.LayoutParams(-1, -2))
-
-        // التبويبات
-        val tabs = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; setPadding(ui.dp(8), ui.dp(2), ui.dp(8), ui.dp(6)); layoutDirection = View.LAYOUT_DIRECTION_RTL }
-        val defs = listOf("🏠 الرئيسية", "📺 اشتراكاتي", "🕘 السجل", "🔖 المحفوظات")
-        defs.forEachIndexed { i, t ->
-            val tv = ui.text(t, 13f, th.text, true).apply {
-                gravity = Gravity.CENTER; setPadding(ui.dp(14), ui.dp(7), ui.dp(14), ui.dp(7)); setSingleLine()
-                setOnClickListener { openTab(i) }
-            }
-            tabViews.add(tv)
-            tabs.addView(tv, LinearLayout.LayoutParams(-2, -2).apply { setMargins(ui.dp(3), 0, ui.dp(3), 0) })
-        }
-        root.addView(HorizontalScrollView(act).apply { isHorizontalScrollBarEnabled = false; addView(tabs) }, LinearLayout.LayoutParams(-1, -2))
+        page.addView(bar, LinearLayout.LayoutParams(-1, -2))
+        page.addView(sugBox, LinearLayout.LayoutParams(-1, -2))
 
         // صف القناة (اسم + اشتراك)
         chanName = ui.text("", 15f, th.text, true).apply { setSingleLine(); ellipsize = TextUtils.TruncateAt.END }
@@ -154,7 +150,7 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
         chanRow.setPadding(ui.dp(14), ui.dp(4), ui.dp(14), ui.dp(6))
         chanRow.addView(chanName, LinearLayout.LayoutParams(0, -2, 1f))
         chanRow.addView(subBtn, LinearLayout.LayoutParams(-2, -2))
-        root.addView(chanRow, LinearLayout.LayoutParams(-1, -2))
+        page.addView(chanRow, LinearLayout.LayoutParams(-1, -2))
 
         // (v327) صف الاشتراكات: إشعارات الفيديوهات الجديدة + تحديث
         notifBtn = ui.text("", 12f, th.text, true).apply {
@@ -167,9 +163,9 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
         subsRow.setPadding(ui.dp(14), ui.dp(2), ui.dp(10), ui.dp(4))
         subsRow.addView(notifBtn, LinearLayout.LayoutParams(0, -2, 1f))
         subsRow.addView(refBtn, LinearLayout.LayoutParams(-2, -2))
-        root.addView(subsRow, LinearLayout.LayoutParams(-1, -2))
+        page.addView(subsRow, LinearLayout.LayoutParams(-1, -2))
         paintNotif()
-        YtRss.attach(act)
+        YtRss.attach(act); YtAccount.init(act)
         try { YtNotify.schedule(act) } catch (_: Throwable) {}
 
         // فلاتر نتايج البحث
@@ -182,7 +178,7 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
             filterViews.add(tv)
             filterRow.addView(tv, LinearLayout.LayoutParams(-2, -2).apply { setMargins(ui.dp(3), 0, ui.dp(3), 0) })
         }
-        root.addView(HorizontalScrollView(act).apply { isHorizontalScrollBarEnabled = false; addView(filterRow) }, LinearLayout.LayoutParams(-1, -2))
+        page.addView(HorizontalScrollView(act).apply { isHorizontalScrollBarEnabled = false; addView(filterRow) }, LinearLayout.LayoutParams(-1, -2))
 
         // (v326) صندوق تفاصيل الفيديو: صورة ▶ + عنوان + أزرار + وصف + مقترحات/تعليقات
         dThumb = ImageView(act).apply { scaleType = ImageView.ScaleType.CENTER_CROP; setBackgroundColor(th.surface) }
@@ -214,30 +210,54 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
         listOf(dRel, dCom).forEach { b -> seg.addView(b, LinearLayout.LayoutParams(0, -2, 1f).apply { setMargins(ui.dp(2), 0, ui.dp(2), 0) }) }
         detailBox.addView(r1, LinearLayout.LayoutParams(-1, -2)); detailBox.addView(dChan, LinearLayout.LayoutParams(-1, -2))
         detailBox.addView(btns, LinearLayout.LayoutParams(-1, -2)); detailBox.addView(dDesc, LinearLayout.LayoutParams(-1, -2)); detailBox.addView(seg, LinearLayout.LayoutParams(-1, -2))
-        root.addView(detailBox, LinearLayout.LayoutParams(-1, -2))
+        page.addView(detailBox, LinearLayout.LayoutParams(-1, -2))
 
         statusTv = ui.text("", 14f, th.muted).apply { gravity = Gravity.CENTER; setPadding(ui.dp(20), ui.dp(30), ui.dp(20), 0); visibility = View.GONE; setOnClickListener { retry?.invoke() } }
-        root.addView(statusTv, LinearLayout.LayoutParams(-1, -2))
-        root.addView(spinView, LinearLayout.LayoutParams(ui.dp(64), ui.dp(64)).apply { gravity = Gravity.CENTER_HORIZONTAL; topMargin = ui.dp(36) })   // (v337)
+        page.addView(statusTv, LinearLayout.LayoutParams(-1, -2))
+        page.addView(spinView, LinearLayout.LayoutParams(ui.dp(64), ui.dp(64)).apply { gravity = Gravity.CENTER_HORIZONTAL; topMargin = ui.dp(36) })   // (v337)
 
         lv.apply {
             divider = null; setBackgroundColor(th.bg); selector = GradientDrawable().apply { setColor(Color.TRANSPARENT) }
             this.adapter = this@YtProUi.adapter
             setOnItemClickListener { _, _, p, _ -> cur?.list()?.getOrNull(p)?.let { if (it.kind != 3) open(it) } }
-            setOnItemLongClickListener { _, v, p, _ -> cur?.list()?.getOrNull(p)?.let { if (it.kind == 3) copy(it.title) else menu(v, it) }; true }
+            setOnItemLongClickListener { _, v, p, _ -> cur?.list()?.getOrNull(p)?.let { if (it.kind == 3) copy(it.title) else if (it.id != "act") menu(v, it) }; true }
             setOnScrollListener(object : AbsListView.OnScrollListener {
                 override fun onScrollStateChanged(v: AbsListView?, s: Int) {}
                 override fun onScroll(v: AbsListView?, first: Int, vis: Int, total: Int) { if (total > 0 && first + vis >= total - 3) loadMore() }
             })
         }
-        root.addView(lv, LinearLayout.LayoutParams(-1, 0, 1f))
-        paintTabs(-1)
+        page.addView(lv, LinearLayout.LayoutParams(-1, 0, 1f))
+        // (v348) شريط يوتيوب السفلي: الرئيسية · الاشتراكات · الشورتس · أنت
+        val content = FrameLayout(act)
+        content.addView(page, FrameLayout.LayoutParams(-1, -1))
+        content.addView(shortsHost, FrameLayout.LayoutParams(-1, -1))
+        root.addView(content, LinearLayout.LayoutParams(-1, 0, 1f))
+        root.addView(View(act).apply { setBackgroundColor(th.border) }, LinearLayout.LayoutParams(-1, ui.dp(1)))
+        val navRow = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; gravity = Gravity.CENTER_VERTICAL; setBackgroundColor(th.card) }
+        listOf("🏠" to "الرئيسية", "📺" to "الاشتراكات", "⚡" to "الشورتس", "🧑" to "أنت").forEachIndexed { i, d ->
+            val icon = IconTextView(act).apply { text = d.first; textSize = 16f; gravity = Gravity.CENTER; includeFontPadding = false }
+            val lab = ui.text(d.second, 9.5f, th.muted, true).apply { gravity = Gravity.CENTER; setSingleLine() }
+            val cell = LinearLayout(act).apply {
+                orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER; setPadding(0, ui.dp(4), 0, ui.dp(3))
+                addView(icon, LinearLayout.LayoutParams(ui.dp(24), ui.dp(20)))
+                addView(lab, LinearLayout.LayoutParams(-2, -2))
+                setOnClickListener { navTap(i) }
+            }
+            navIcons.add(icon); navLabs.add(lab)
+            navRow.addView(cell, LinearLayout.LayoutParams(0, ui.dp(44), 1f))
+        }
+        root.addView(navRow, LinearLayout.LayoutParams(-1, -2))
+        paintNav()
     }
 
     // ───────── واجهة Main ─────────
-    fun refresh() { if (cur == null) openTab(0) else adapter.notifyDataSetChanged() }
-    fun onHide() { hideKb(); sugBox.visibility = View.GONE }
+    fun refresh() { if (shortsOn) { shorts?.resume(); return }; if (cur == null) openTab(0) else adapter.notifyDataSetChanged() }
+    fun onHide() { hideKb(); sugBox.visibility = View.GONE; shorts?.pause() }
+    /** (v348) Main.onStop: الشورتس تقف لما التطبيق يروح الخلفية أو يظهر المشغّل فوقه (بترجع في refresh() مع onResume) */
+    fun onPause() { shorts?.pause() }
+    fun destroy() { try { shorts?.release() } catch (_: Throwable) {}; shorts = null; shortsOn = false }
     fun back(): Boolean {
+        if (shortsOn) { leaveShorts(); return true }
         if (sugBox.visibility == View.VISIBLE) { sugBox.visibility = View.GONE; return true }
         if (stack.isNotEmpty()) { gen++; bind(stack.removeAt(stack.size - 1)); return true }
         return false
@@ -266,17 +286,76 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
 
     // ───────── تنقّل ─────────
     private fun openTab(i: Int) {
+        if (shortsOn) leaveShorts()
         hideKb(); sugBox.visibility = View.GONE; stack.clear(); paintTabs(i)
         when (i) {
             0 -> load("🏠 الرئيسية", 0, null, null, null, "", false, false) { Pair(YtNp.home(YtStore.read(YtStore.HIST)), null) }
             1 -> {
                 val subs = YtStore.read(YtStore.SUBS)
-                if (subs.isEmpty()) { bind(St("📺 اشتراكاتي", 1, ArrayList(), null, null, null, null, null, "")); status("مفيش اشتراكات لسه.\nافتح قناة من أي فيديو (ضغطة طويلة ← 📺 افتح القناة) واضغط 🔔 اشترك.\n\nأو استورد ملف اشتراكات (دوس هنا)") { onImport() } }
+                if (subs.isEmpty() && !YtAccount.loggedIn()) { bind(St("📺 اشتراكاتي", 1, ArrayList(), null, null, null, null, null, "")); status("مفيش اشتراكات لسه.\nسجّل الدخول بحساب جوجل من تبويب «أنت» وهتتجاب اشتراكاتك لوحدها،\nأو افتح قناة من أي فيديو (ضغطة طويلة ← 📺 افتح القناة) واضغط 🔔 اشترك.\n\nأو استورد ملف اشتراكات (دوس هنا)") { onImport() } }
                 else openSubs(false)
             }
-            2 -> bind(St("🕘 السجل", 2, ArrayList(YtStore.read(YtStore.HIST)), null, null, null, null, null, "")).also { if (cur!!.items.isEmpty()) status("السجل فاضي") }
-            3 -> bind(St("🔖 المحفوظات", 3, ArrayList(YtStore.read(YtStore.SAVED)), null, null, null, null, null, "")).also { if (cur!!.items.isEmpty()) status("مفيش محفوظات — ضغطة طويلة على أي فيديو ← 🔖") }
+            2, 3 -> showLocal(i, false)
+            4 -> openYou()
         }
+    }
+
+    // ───────── (v348) شريط يوتيوب السفلي + الشورتس ─────────
+    private fun navTap(i: Int) { when (i) { 0 -> openTab(0); 1 -> openTab(1); 2 -> openShorts(); else -> openTab(4) } }
+    private fun paintNav() {
+        for (i in navIcons.indices) {
+            val c = if (i == navSel) th.primary else th.muted
+            navIcons[i].setTextColor(c); navLabs[i].setTextColor(c)
+        }
+    }
+    private fun openShorts() {
+        hideKb(); sugBox.visibility = View.GONE
+        val s = shorts ?: YtShorts(act, ui, th, { v -> playShort(v) }, { v -> YtStore.toggle(YtStore.SAVED, v) }).also {
+            shorts = it; shortsHost.addView(it.root, FrameLayout.LayoutParams(-1, -1))
+        }
+        if (!shortsOn) navBeforeShorts = navSel
+        shortsOn = true; navSel = 2; paintNav()
+        page.visibility = View.GONE; shortsHost.visibility = View.VISIBLE
+        s.start()
+    }
+    private fun leaveShorts() {
+        if (!shortsOn) return
+        shortsOn = false; shorts?.pause()
+        shortsHost.visibility = View.GONE; page.visibility = View.VISIBLE
+        navSel = navBeforeShorts; paintNav()
+    }
+    /** ⤢ من الشورتس: يفتح المشغّل الكامل (من غير سياق قايمة تشغيل قديمة) */
+    private fun playShort(v: NpItem) {
+        val it = asWatch(v)
+        YtNext.clearContext()
+        if (YtStore.histOn()) YtStore.addFront(YtStore.HIST, it, 200)
+        YtStore.markApp(it.id)
+        onPlay(it.id, it.title, false)
+    }
+
+    // ───────── (v348) «أنت»: سجل الجهاز + المحفوظات + التحميلات + حساب جوجل في صفحة واحدة ─────────
+    private fun yrow(title: String, sub: String, key: String) = NpItem("act", title, sub, "", "", -1L, -1L, "", 2, "yta:$key")
+    private fun openYou() {
+        val rows = ArrayList<NpItem>()
+        rows.add(yrow("🕘 سجل المشاهدة", "اللي فتحته من يوتيوب على الجهاز (" + YtStore.read(YtStore.HIST).size + ")", "!hist"))
+        rows.add(yrow("🕘 السجل العام", "فيديوهات وصوتيات من كل المصادر — بالمسح", "!pub"))
+        rows.add(yrow("🔖 المحفوظات", "(" + YtStore.read(YtStore.SAVED).size + ")", "!saved"))
+        rows.add(yrow("📥 التحميلات", "الفيديوهات والصوتيات اللي نزّلتها من يوتيوب", "!dl"))
+        if (YtAccount.loggedIn()) rows.addAll(YtAccount.menuItems())
+        else rows.add(yrow("🔐 سجّل الدخول بحساب جوجل", "اشتراكاتك وسجلك وقوايمك وفيديوهات الإعجاب", "!login"))
+        rows.add(yrow("⚙ إعدادات يوتيوب", "الجودة · حفظ السجل · المسح", "!set"))
+        bind(St("👤 أنت", 4, rows, null, null, null, null, null, ""))
+    }
+    /** السجل المحلي (2) أو المحفوظات (3): push=true بيحط الصفحة الحالية في الـstack عشان الرجوع يرجّعك لـ«أنت» */
+    private fun showLocal(tab: Int, push: Boolean) {
+        val prev = cur; val prevPos = lv.firstVisiblePosition
+        if (push && prev != null) { prev.pos = prevPos; stack.add(prev) }
+        gen++
+        val l = ArrayList(YtStore.read(if (tab == 2) YtStore.HIST else YtStore.SAVED))
+        val st = St(if (tab == 2) "🕘 السجل" else "🔖 المحفوظات", tab, l, null, null, null, null, null, "")
+        if (!push && prev != null && prev.tab == tab) st.pos = prevPos
+        bind(st)
+        if (l.isEmpty()) status(if (tab == 2) "السجل فاضي" else "مفيش محفوظات — ضغطة طويلة على أي فيديو ← 🔖")
     }
 
     private fun doSearch(q0: String, filter: String = "videos") {
@@ -287,6 +366,7 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
     }
 
     private fun open(it: NpItem) {
+        if (it.kind == 2 && it.url.startsWith("yta:")) { openAcc(it); return }
         when (it.kind) {
             0 -> play(it, false)   // (v337) دوسة على الفيديو = يتشغّل على طول (التفاصيل من الضغطة الطويلة ← ℹ)
             1 -> openChannel(it.channelUrl, it.title)
@@ -299,6 +379,51 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
         load(name, -1, url, name, null, "", true, true) { val c = YtNp.channel(url); Pair(c.first, c.more) }
     }
 
+    // ───────── (v346) حساب جوجل ─────────
+    private fun startLogin() {
+        YtAccount.login(act, ui, th) { ok ->
+            act.runOnUiThread {
+                if (act.isFinishing || act.isDestroyed) return@runOnUiThread
+                if (ok) { Notice.show(act, "✅ اتسجّل الدخول", 2200L); syncNow(); openTab(4) }
+                else Notice.show(act, "اتقفلت صفحة الدخول من غير ما يتم", 2200L)
+            }
+        }
+    }
+    private fun syncNow() {
+        Notice.show(act, "🔄 بجيب اشتراكاتك من يوتيوب…", 2000L)
+        Thread {
+            try {
+                val n = YtAccount.syncSubs()
+                act.runOnUiThread {
+                    if (act.isFinishing || act.isDestroyed) return@runOnUiThread
+                    Notice.show(act, "✅ اتضاف $n قناة جديدة (الإجمالي " + YtStore.read(YtStore.SUBS).size + ")", 3500L)
+                    when (cur?.tab) { 1 -> openSubs(false); 4 -> openTab(4) }
+                }
+            } catch (e: Throwable) {
+                act.runOnUiThread { Notice.show(act, "⚠ " + (e.message ?: "فشلت المزامنة").take(140), 4800L) }
+            }
+        }.start()
+    }
+    private fun openAcc(it: NpItem) {
+        val key = it.url.removePrefix("yta:")
+        when (key) {
+            "!sync" -> syncNow()
+            "!hist" -> showLocal(2, true)
+            "!pub" -> onPubHistory()
+            "!saved" -> showLocal(3, true)
+            "!dl" -> openDownloads()
+            "!login" -> startLogin()
+            "!set" -> settings()
+            "!out" -> GAlert(act).setTitle("🚪 تسجيل الخروج").setMessage("هتتشال بيانات الدخول من التطبيق. الاشتراكات اللي اتحفظت هتفضل زي ما هي.")
+                .setPositiveButton("خروج") { _, _ -> YtAccount.logout(); Notice.show(act, "اتسجّل الخروج", 2000L); openTab(4) }
+                .setNegativeButton("إلغاء", null).show()
+            else -> {
+                val t = if (key.startsWith("VLPL")) "📃 " + it.title else it.title
+                load(t, -1, null, null, null, "", true, false) { Pair(YtAccount.listFirst(key), { p: Page -> YtAccount.listMore(p) }) }
+            }
+        }
+    }
+
     private fun toggleSub() {
         val st = cur ?: return; val url = st.chUrl ?: return
         val now = YtStore.toggle(YtStore.SUBS, NpItem("", st.chName ?: url, "", url, "", -1L, 0L, "", 1, url))
@@ -309,10 +434,12 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
     // ───────── (v327) فيد الاشتراكات RSS + إشعارات ─────────
     private fun openSubs(force: Boolean) {
         val subs = YtStore.read(YtStore.SUBS)
-        if (subs.isEmpty()) { openTab(1); return }
+        if (subs.isEmpty() && !YtAccount.loggedIn()) { openTab(1); return }
         hideKb(); sugBox.visibility = View.GONE; stack.clear(); paintTabs(1)
         load("📺 اشتراكاتي", 1, null, null, null, "", false, false) {
-            val r = YtRss.feed(subs, force)
+            // (v346) لو مسجّل بجوجل: بنزامن قنوات الحساب الأول (كل 6 ساعات أو لما تدوس تحديث) وبعدين نقرأ الاشتراكات من جديد
+            if (YtAccount.loggedIn() && (force || YtAccount.syncDue())) try { YtAccount.syncSubs() } catch (_: Throwable) {}
+            val r = YtRss.feed(YtStore.read(YtStore.SUBS), force)
             YtNotify.markSeen(r.items)   // اللي اتعرض ما يجيش عليه إشعار
             Pair(r, null)
         }
@@ -433,14 +560,16 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
         val q = Cfg.int("yt_maxh", 0)
         val items = arrayOf("🎞 الجودة الافتراضية: " + (if (q <= 0) "أعلى جودة" else q.toString() + "p"),
             "🕘 حفظ سجل المشاهدة: " + (if (YtStore.histOn()) "شغّال" else "مقفول"),
-            "📥 التحميلات المسجّلة", "🗑 مسح السجل", "🗑 مسح سجل التحميلات")
+            "📥 التحميلات المسجّلة", "🗑 مسح السجل", "🗑 مسح سجل التحميلات",
+            "👤 حساب جوجل: " + (if (YtAccount.loggedIn()) "مسجّل الدخول" else "مش مسجّل"))
         GAlert(act).setTitle("⚙ إعدادات يوتيوب").setItems(items) { _, w ->
             when (w) {
                 0 -> qualityDialog()
                 1 -> { val on = !YtStore.histOn(); Cfg.put("ytp_hist_on", if (on) "1" else "0"); Notice.show(act, (if (on) "🕘 السجل شغّال" else "🕘 السجل اتقفل (اللي اتسجّل قبل كده لسه موجود)").toString(), 2400L) }
                 2 -> openDownloads()
-                3 -> { YtStore.write(YtStore.HIST, emptyList()); Notice.show(act, ("🗑 السجل اتمسح").toString(), 1800L); if (cur?.tab == 2) openTab(2) }
+                3 -> { YtStore.write(YtStore.HIST, emptyList()); Notice.show(act, ("🗑 السجل اتمسح").toString(), 1800L); if (cur?.tab == 2) showLocal(2, false) }
                 4 -> { YtStore.write(YtStore.DL, emptyList()); Notice.show(act, ("🗑 سجل التحميلات اتمسح").toString(), 1800L) }
+                5 -> openTab(4)
                 else -> {}
             }
         }.setNegativeButton("إغلاق", null).show()
@@ -565,11 +694,11 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
                 11 -> playAudio(it)
                 12 -> onDownload(asWatch(it), true)
                 13 -> onDownload(asWatch(it), false)
-                3 -> { val on = YtStore.toggle(YtStore.SAVED, it); Notice.show(act, (if (on) "🔖 اتحفظ" else "اتشال من المحفوظات").toString(), 1800L); if (cur?.tab == 3) openTab(3) }
+                3 -> { val on = YtStore.toggle(YtStore.SAVED, it); Notice.show(act, (if (on) "🔖 اتحفظ" else "اتشال من المحفوظات").toString(), 1800L); if (cur?.tab == 3) showLocal(3, false) }
                 4 -> openChannel(it.channelUrl, it.channel)
                 5 -> copy(if (it.kind == 0) YtNp.watchUrl(it.id) else it.url)
                 6 -> onBrowser(YtNp.watchUrl(it.id))
-                7 -> { YtStore.remove(YtStore.HIST, it); openTab(2) }
+                7 -> { YtStore.remove(YtStore.HIST, it); showLocal(2, false) }
                 8 -> open(it)
                 9 -> { val on = YtStore.toggle(YtStore.SUBS, it); Notice.show(act, (if (on) "✅ اشتركت" else "اتشال الاشتراك").toString(), 1800L) }
             }
@@ -579,7 +708,8 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
     }
 
     // ───────── رسم ─────────
-    private fun paintTabs(sel: Int) = tabViews.forEachIndexed { i, tv -> paintChip(tv, i == sel) }
+    /** sel: 0 رئيسية · 1 اشتراكات · 2/3/4 = «أنت» · غير كده (بحث/قناة) بيسيب التحديد زي ما هو */
+    private fun paintTabs(sel: Int) { if (sel in 0..1) navSel = sel else if (sel in 2..4) navSel = 3; paintNav() }
     private fun paintChip(tv: TextView, on: Boolean) {
         tv.setTextColor(if (on) Color.WHITE else th.text)
         tv.background = GradientDrawable().apply { setColor(if (on) th.primary else th.surface); cornerRadius = ui.dp(16).toFloat() }
@@ -634,7 +764,7 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
             } else { v = cv; hd = cv.tag as Hold }
             val it = items[p]
             hd.title.text = it.title
-            val cm = it.kind == 3
+            val cm = it.kind == 3 || it.id == "act"
             hd.box.visibility = if (cm) View.GONE else View.VISIBLE
             val vid = it.kind == 0 && it.id.isNotBlank()
             hd.btns.visibility = if (vid) View.VISIBLE else View.GONE
@@ -647,6 +777,7 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
                 3 -> listOf(it.channel, if (it.count > 0) "♥ " + fmtN(it.count) else "", it.age).filter { s -> s.isNotBlank() }.joinToString(" · ")
                 0 -> listOf(it.channel, if (it.count >= 0) fmtN(it.count) + " مشاهدة" else "", it.age).filter { s -> s.isNotBlank() }.joinToString(" · ")
                 1 -> "📺 قناة" + if (it.count >= 0) " · " + fmtN(it.count) + " مشترك" else ""
+                2 -> if (it.id == "act") it.channel else "📃 قايمة" + (if (it.channel.isNotBlank()) " · " + it.channel else "") + if (it.count >= 0) " · " + it.count + " فيديو" else ""
                 else -> "📃 قايمة" + (if (it.channel.isNotBlank()) " · " + it.channel else "") + if (it.count >= 0) " · " + it.count + " فيديو" else ""
             }
             if (cm) return v
