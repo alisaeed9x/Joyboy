@@ -24,6 +24,22 @@ object YtNext {
     fun setContext(items: List<NpItem>, name: String) { ctxList = items.filter { it.kind == 0 }; ctxName = name }
     fun clearContext() { ctxList = emptyList(); ctxName = "" }
 
+    // (v341) اللي اتشغّل قريب — عشان «التالي» من المقترحات ما يلفّش في نفس الفيديوهات
+    private val played = LinkedHashSet<String>()
+    fun markPlayed(id: String) { synchronized(played) { played.add(id); if (played.size > 40) played.remove(played.first()) } }
+
+    /** (v341) الفيديو اللي بعد [id]: من قايمة التشغيل لو جاي منها، وإلا أول مقترح ما اتشغّلش. بتتنادى من خيط خلفي */
+    fun nextAfter(id: String): NpItem? {
+        markPlayed(id)
+        val c = ctxList
+        val i = c.indexOfFirst { it.id == id }
+        if (i >= 0 && i + 1 < c.size) return c[i + 1]
+        YtNp.init()
+        val rel = YtNp.related(id)
+        val seen = synchronized(played) { played.toSet() }
+        return rel.firstOrNull { it.id !in seen } ?: rel.firstOrNull { it.id != id }
+    }
+
     private fun fmtDur(s: Long): String = if (s <= 0) "" else if (s >= 3600) String.format(Locale.US, "%d:%02d:%02d", s / 3600, s % 3600 / 60, s % 60) else String.format(Locale.US, "%d:%02d", s / 60, s % 60)
 
     /** (القايمة، العنوان) للفيديو [id] — بتتنادى من خيط خلفي */

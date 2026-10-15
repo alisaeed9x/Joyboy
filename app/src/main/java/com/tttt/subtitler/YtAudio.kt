@@ -19,6 +19,7 @@ object YtAudio {
     private val thumbs = ConcurrentHashMap<Long, String>()
     private val items = ConcurrentHashMap<Long, NpItem>()   // (v339) معلومات الفيديو الأصلي لكل Track يوتيوب — عشان زرار ⬇ في مشغّل الموسيقى يعرف يحمّله
 
+    fun thumbUrl(t: Track): String? = thumbs[t.id]   // (v344) غلاف الفيديو للمشغّل المصغّر
     fun isRemote(uri: String) = uri.startsWith("http", true)
     fun headersFor(uri: String): Map<String, String> = hdr[uri] ?: emptyMap()
 

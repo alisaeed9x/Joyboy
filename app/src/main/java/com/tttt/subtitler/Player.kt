@@ -579,6 +579,8 @@ class PlayerActivity : Activity(), Host {
 
     private var batchPanel: View? = null
     lateinit var batchBtn: View
+    private lateinit var audBtn: View   // (v343) 🎧 حوّل لصوت
+    private var audioHandoff: Intent? = null
     fun closeBatchPanel() {
         batchPanel?.let { p -> try { (p.parent as? ViewGroup)?.removeView(p) } catch (e: Exception) { LogStore.err("Main:938", e) } }
         batchPanel = null
@@ -1058,6 +1060,9 @@ class PlayerActivity : Activity(), Host {
         rotBtn = ui.fsCircle(Icons.ROT) { flashFloat(rotBtn); toggleFs() }.apply { textSize = 24f; alpha = REST_A }
         videoBox.addView(rotBtn, FrameLayout.LayoutParams(ui.dp(48), ui.dp(48), Gravity.END or Gravity.TOP).apply { setMargins(0, ui.dp(60), ui.dp(11), 0) })
         rotBtn.visibility = View.GONE   // (v97) زرار الروتيشن العايم اتلغى — الروتيشن في الشريط السفلي بس
+        // (v343) 🎧 حوّل لصوت: بيكمّل نفس فيديو يوتيوب في مشغّل الموسيقى من نفس المكان (بيوفّر الداتا) — تحت 👁 على طول
+        audBtn = ui.fsCircle("🎧") { switchToAudio() }.apply { textSize = 20f; alpha = REST_A; visibility = View.GONE }
+        videoBox.addView(audBtn, FrameLayout.LayoutParams(ui.dp(44), ui.dp(44), Gravity.END or Gravity.TOP).apply { setMargins(0, ui.dp(174), ui.dp(8), 0) })
         // 🔄 ترجم باتش معين: دايرة عايمة فوق 👁
         batchBtn = ui.fsCircle("🔄") { batchDialog() }.apply { textSize = 20f; alpha = REST_A; translationY = -ui.dp(60).toFloat() }
         // (v90) الزرار العايم 🔄 اتشال من الشاشة — «إعادة ترجمة» لسه في 🧰 وفي ☰
@@ -1634,6 +1639,7 @@ class PlayerActivity : Activity(), Host {
             val eyeTop = if (showRot) top + rotH + gap else top
             if (rotLp.topMargin != top) { rotLp.topMargin = top; rotBtn.layoutParams = rotLp }
             if (eyeLp.topMargin != eyeTop) { eyeLp.topMargin = eyeTop; floatBar.layoutParams = eyeLp }
+            if (::audBtn.isInitialized) { val al = audBtn.layoutParams as FrameLayout.LayoutParams; val at = eyeTop + ui.dp(52); if (al.topMargin != at) { al.topMargin = at; audBtn.layoutParams = al } }
             val rv = if (showRot) View.VISIBLE else View.GONE
             if (rotBtn.visibility != rv) rotBtn.visibility = rv
         }
@@ -1650,6 +1656,7 @@ class PlayerActivity : Activity(), Host {
             val cv = (!fullMode || chromeShown) && !pipNow()
             floatBar.visibility = if (!pipNow()) View.VISIBLE else View.GONE
             batchBtn.visibility = if (cv) View.VISIBLE else View.GONE
+            if (::audBtn.isInitialized) audBtn.visibility = if (cv && intent.getStringExtra("ytid")?.length == 11) View.VISIBLE else View.GONE
             miniBar.visibility = if (!on && !pipNow()) View.VISIBLE else View.GONE
             updateTrChip(); applyBadgeAlpha()   // (v323) العدّادات بتظهر مع أزرار المشغّل بس
             fsBtnV.visibility = if (!fullMode) View.VISIBLE else View.GONE   // في الشاشة الكاملة ⛶ جوه الشريط السفلي
@@ -2260,7 +2267,9 @@ class PlayerActivity : Activity(), Host {
             runOnUiThread {
                 if (isFinishing || isDestroyed || engine !== eng) return@runOnUiThread
                 engineReady = true
-                if (savedPos > 5.0 && !freshOnce) { player.seekTo((savedPos * 1000).toLong()); cur = (savedPos * 1000).toLong(); log("⏩ كملت من ${fmtMs(cur)}") }
+                val startMs = intent.getLongExtra("startms", 0L)   // (v343) جاي من تحويل صوت→فيديو: كمّل من نفس مكان الصوت
+                if (startMs > 0L) { player.seekTo(startMs); cur = startMs; log("⏩ كملت من ${fmtMs(cur)}") }
+                else if (savedPos > 5.0 && !freshOnce) { player.seekTo((savedPos * 1000).toLong()); cur = (savedPos * 1000).toLong(); log("⏩ كملت من ${fmtMs(cur)}") }
                 else if (uri == null && !freshOnce && rp > 5.0) {
                     // رابط من الإنترنت: لو مفيش مكان وقوف في الترجمة، كمّل من آخر مكان اتفرجت عليه (من السجل)
                     player.seekTo((rp * 1000).toLong()); cur = (rp * 1000).toLong(); log("⏩ كملت من ${fmtMs(cur)}")
@@ -2752,6 +2761,13 @@ class PlayerActivity : Activity(), Host {
         }.apply { isDaemon = true }.start()
     }
     @Suppress("DEPRECATION")
+    /** (v343) 🎧 حوّل لصوت: بنقفل الفيديو (بيحفظ مكانه) ونفتح نفس الفيديو في مشغّل الموسيقى من نفس المكان */
+    fun switchToAudio() {
+        val id = intent.getStringExtra("ytid") ?: return
+        audioHandoff = Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+            .putExtra("ytaudio", id).putExtra("ytaudtitle", intent.getStringExtra("title") ?: "").putExtra("ytaudpos", cur)
+        closeNoBg()
+    }
     private fun closeNoBg() {
         try { player.pause() } catch (e: Exception) { LogStore.err("Main:2347", e) }
         saveRecent()
@@ -2766,6 +2782,7 @@ class PlayerActivity : Activity(), Host {
     }
     /** (v339) الرجوع من الفيديو يرجّعك للصفحة اللي فتحته منها (يوتيوب / المتصفح) بنفس مكانك — حتى لو النظام كان قفل الصفحة دي وإحنا في المشغّل */
     private fun returnToOrigin() {
+        audioHandoff?.let { h -> audioHandoff = null; try { startActivity(h) } catch (e: Throwable) { LogStore.err("Player:audioHandoff", e) }; return }   // (v343)
         try {
             when (intent.getStringExtra("ret")) {
                 "yt" -> startActivity(Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP).putExtra("tab", "youtube"))

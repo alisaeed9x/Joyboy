@@ -164,6 +164,8 @@ object FmUtil {
  * اختصارات مثبّتة ⭐ · شريط المساحة · أكبر الملفات · نسخ المسار
  */
 class FileManagerActivity : Activity() {
+    private var stripUi: StatusStrip? = null   // (v345)
+    private var dockUi: MiniDock? = null   // (v344)
     override fun finish() { super.finish(); try { if (!NavAnim.take(this)) overridePendingTransition(R.anim.act_stay, R.anim.act_exit) } catch (e: Exception) { LogStore.err("Fm:finish", e) } }
 
     private lateinit var th: Theme
@@ -367,6 +369,8 @@ class FileManagerActivity : Activity() {
         host.addView(root, FrameLayout.LayoutParams(-1, -1))
         // (v336) زرار المهام العايم اتشال — المهام في الشريط السفلي
         setContentView(host)
+        dockUi = MiniDock(this, host, ui, th, { startActivity(Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP).putExtra("fullmusic", true)) })   // (v344)
+        stripUi = StatusStrip(this, host, ui, th) { startActivity(Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP).putExtra("tab", "tasks")) }   // (v345)
     }
 
     override fun onResume() {
@@ -381,7 +385,7 @@ class FileManagerActivity : Activity() {
     }
 
     private var fab: TasksFab? = null
-    override fun onDestroy() { loadToken++; uiH.removeCallbacksAndMessages(null); try { fab?.detach() } catch (_: Throwable) {}; super.onDestroy() }
+    override fun onDestroy() { try { dockUi?.detach() } catch (_: Throwable) {}; try { stripUi?.detach() } catch (_: Throwable) {}; loadToken++; uiH.removeCallbacksAndMessages(null); try { fab?.detach() } catch (_: Throwable) {}; super.onDestroy() }
 
     override fun onRequestPermissionsResult(code: Int, perms: Array<out String>, res: IntArray) {
         super.onRequestPermissionsResult(code, perms, res)

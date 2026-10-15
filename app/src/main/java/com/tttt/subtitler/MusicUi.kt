@@ -193,6 +193,8 @@ class MusicUi(private val act: Activity, private val ui: Ui, private val th: The
     private var fullOn = false
     // (v339) صوت يوتيوب: المشغّل الكامل بيفتح على طول ولودينج مكان الألبوم لحد ما رابط الصوت يوصل · وزرار ⬇ تحميل الصوت
     var onYtDownload: ((NpItem) -> Unit)? = null
+    var onYtVideo: ((NpItem, Int) -> Unit)? = null   // (v343) 🎬 كمّل كفيديو (الـInt = المكان بالمللي ثانية)
+    private lateinit var ytVidBtn: TextView
     var onYtPlay: ((NpItem) -> Unit)? = null     // (v340) اختيار فيديو من لوحة «التالي» = يشتغل كصوت
     var onFullClosed: (() -> Unit)? = null       // المشغّل الكامل اتقفل (رجوع/⌄/سحب) — Main بيرجّعك للصفحة اللي جيت منها
     var onLoadCancel: (() -> Unit)? = null       // قفلت المشغّل وإحنا لسه بنجيب الصوت
@@ -680,6 +682,8 @@ class MusicUi(private val act: Activity, private val ui: Ui, private val th: The
     private var autoOpenFor = ""
     /** (v270) الكلمات جت (أو كانت محفوظة) والمشغّل مفتوح ← يفتح صفحة الكلمات لوحده (نفس دوسة «إظهار الكلمات»)؛ ولو ما جتش ما بيحصلش حاجة. مرة واحدة لكل أغنية */
     private fun maybeAutoOpen(ck: String) {
+        return   // (v343) الدواير التلاتة ماتتصغّرش لوحدها لما الكلمات تظهر — بإيدك بس (زرار 📝 إظهار الكلمات)
+        @Suppress("UNREACHABLE_CODE")
         if (!autoLyr() || !fullOn || lyrOn || autoOpenFor == ck) return
         autoOpenFor = ck
         orb.postDelayed({
@@ -873,7 +877,7 @@ class MusicUi(private val act: Activity, private val ui: Ui, private val th: The
         LyricsEngine.clear(act, t, m); lyrKey = t.uri + "|" + m; lyr = null
         startLyrics(t, m, wrong, true)
     }
-    private fun startLyrics(t: Track, m: String, retry: Boolean, fresh: Boolean) {
+    private fun startLyrics(t: Track, m: String, retry: Boolean, fresh: Boolean, gem: Boolean = false) {
         val ck = t.uri + "|" + m
         lyrKey = ck
         if (LyricsEngine.isRunning(t, m)) { setStatus("🎧 بتتكتب في الخلفية… استنى"); if (lyr == null) bigMsg("⏳ بتتكتب… هتظهر هنا أول ما تجهز", true); return }
@@ -881,7 +885,7 @@ class MusicUi(private val act: Activity, private val ui: Ui, private val th: The
         setStatus("📝 بجهّز الطلب…")
         LyricsEngine.start(act, t, m, nameHint(t), retry, fresh, !idPending(t), { stage ->
             act.runOnUiThread { if (fullOn && lyrKey == ck) setStatus(stage) }
-        }) { r, msg ->
+        }, { r, msg ->
             act.runOnUiThread {
                 if (act.isDestroyed || act.isFinishing) return@runOnUiThread
                 if (!fullOn || lyrKey != ck) { if (msg.isNotBlank()) errNote("🎤 " + t.title + ": " + msg); return@runOnUiThread }
@@ -890,7 +894,7 @@ class MusicUi(private val act: Activity, private val ui: Ui, private val th: The
                 if (c != null && c.lines.isNotEmpty()) { showLyrics(c); setStatus(""); maybeAutoOpen(ck) }
                 else { bigMsg("⚠ " + msg.ifBlank { "ما لقيتش كلام" }); setStatus("جرّب 🔁 إعادة، أو ✍ كلمات يدوي (الصق الكلمات بنفسك)") }
             }
-        }
+        }, gem)
     }
     /** لو الكلمات اتحفظت منها حتة جديدة وانت فاتحها (وضع الصوت بيتكتب مقطع مقطع) */
     private fun lyricsPoll() {
@@ -1029,6 +1033,10 @@ class MusicUi(private val act: Activity, private val ui: Ui, private val th: The
         ytDlBtn = ui.text("⬇", 20f, Color.WHITE).apply { gravity = Gravity.CENTER; visibility = View.GONE
             setOnClickListener { YtAudio.itemOf(MusicEngine.current)?.let { onYtDownload?.invoke(it) } ?: quiet("التحميل متاح لصوت يوتيوب بس", 1600L) } }
         top.addView(ytDlBtn, FrameLayout.LayoutParams(ui.dp(56), ui.dp(48), Gravity.END or Gravity.CENTER_VERTICAL).apply { marginEnd = ui.dp(112) })
+        // (v343) 🎬 تحويل صوت → فيديو: بيكمّل نفس الفيديو من نفس المكان (بيظهر لصوت يوتيوب بس)
+        ytVidBtn = ui.text("🎬", 20f, Color.WHITE).apply { gravity = Gravity.CENTER; visibility = View.GONE
+            setOnClickListener { YtAudio.itemOf(MusicEngine.current)?.let { onYtVideo?.invoke(it, MusicEngine.posMs) } } }
+        top.addView(ytVidBtn, FrameLayout.LayoutParams(ui.dp(56), ui.dp(48), Gravity.END or Gravity.CENTER_VERTICAL).apply { marginEnd = ui.dp(168) })
         attachSwipeDown(top)
 
         liveReset(); liveStatus.visibility = View.GONE
@@ -1173,7 +1181,7 @@ class MusicUi(private val act: Activity, private val ui: Ui, private val th: The
         head("🎵 الأغنية")
         item("🖼 اختار الألبوم / الغلاف") { MusicEngine.current?.let { coverChoices(it, HashSet()) } ?: quiet("شغّل أغنية الأول", 1500L) }
         item("🖼 البوستر غلط") { wrongPoster() }
-        YtAudio.itemOf(MusicEngine.current)?.let { yi -> item("⬇ تحميل الصوت (من يوتيوب)") { onYtDownload?.invoke(yi) } }
+        YtAudio.itemOf(MusicEngine.current)?.let { yi -> item("🎬 كمّل كفيديو (من نفس المكان)") { onYtVideo?.invoke(yi, MusicEngine.posMs) }; item("⬇ تحميل الصوت (من يوتيوب)") { onYtDownload?.invoke(yi) } }
         item("🎧 تعرّف على أغنية شغّالة في تطبيق تاني") { try { act.startActivity(android.content.Intent(act, SongRequestActivity::class.java)) } catch (_: Throwable) {} }
         dlg = ui.sheet(act, "⋮ المزيد", listOf<View>(col)); dlg.show()
     }
@@ -1283,6 +1291,9 @@ class MusicUi(private val act: Activity, private val ui: Ui, private val th: The
         }.apply { isDaemon = true }.start()
     }
     private fun forgetArt(t: Track) { artCache.remove(t.uri); artNone.remove(t.uri); tintDone = false }
+    /** (v344) الغلاف المحمّل للأغنية (للمشغّل المصغّر العايم) */
+    fun artBitmap(t: Track): android.graphics.Bitmap? = artCache.get(t.uri)
+    var onArt: (() -> Unit)? = null
     private fun refreshArts() {
         val cur = MusicEngine.current
         val pv = MusicEngine.neighbor(-1); val nx = MusicEngine.neighbor(1)
@@ -1293,6 +1304,7 @@ class MusicUi(private val act: Activity, private val ui: Ui, private val th: The
         orb.setArts(pv?.let { artCache.get(it.uri) }, cb, nx?.let { artCache.get(it.uri) }, pv != null, nx != null)
         if (cb == null) miniArt.setImageResource(R.drawable.no_poster) else miniArt.setImageBitmap(cb)
         tint(cb)
+        onArt?.invoke()
     }
 
     // ===== التشغيل =====
@@ -1339,6 +1351,8 @@ class MusicUi(private val act: Activity, private val ui: Ui, private val th: The
         fTitle.text = nm?.first ?: "مفيش حاجة شغّالة"; fArtist.text = nm?.second ?: ""
         orb.initial = (nm?.first ?: "♪").trim().take(1).ifEmpty { "♪" }
         if (::ytDlBtn.isInitialized) ytDlBtn.visibility = if (YtAudio.itemOf(t) != null) View.VISIBLE else View.GONE
+        if (::ytVidBtn.isInitialized) ytVidBtn.visibility = if (YtAudio.itemOf(t) != null) View.VISIBLE else View.GONE
+        bPrev.visibility = if (YtAudio.itemOf(t) != null) View.GONE else View.VISIBLE   // (v341) صوت يوتيوب: مفيش «سابق»
         if (t?.uri != curUri) {
             curUri = t?.uri
             // (v315) الأغنية اتغيّرت: العملية الجارية على القديمة توقف عند أول فاصل (من غير ما نحرق طلبات)، والجديدة تستنى ثانيتين ونص (لو بتعدّي بسرعة مفيش طلب يتبعت)
@@ -1850,6 +1864,15 @@ class MusicUi(private val act: Activity, private val ui: Ui, private val th: The
         body.addView(miniBar, LinearLayout.LayoutParams(-1, ui.dp(62)).apply { setMargins(ui.dp(12), ui.dp(4), ui.dp(12), ui.dp(8)) })
         root.addView(body, FrameLayout.LayoutParams(-1, -1))
         MusicEngine.loadPrefs()
+        // (v342) بوابة جيميناي للكلمات: إشعار «أيوه/لا» فوق الشاشة، ولو ما حدش رد خلال 5 ثواني = لا
+        LyricsEngine.geminiGate = { why ->
+            val latch = java.util.concurrent.CountDownLatch(1); val ans = java.util.concurrent.atomic.AtomicBoolean(false)
+            act.runOnUiThread {
+                try { Notice.ask(act, why, "أيوه", "لا", 5000L, { ans.set(true); latch.countDown() }, { latch.countDown() }) } catch (_: Throwable) { latch.countDown() }
+            }
+            try { latch.await(8, java.util.concurrent.TimeUnit.SECONDS) } catch (_: Throwable) {}
+            ans.get()
+        }
         buildFull()
         root.addView(full, FrameLayout.LayoutParams(-1, -1)); full.visibility = View.GONE
 

@@ -135,6 +135,8 @@ class BTab(val id: Long) {
  */
 @SuppressLint("SetJavaScriptEnabled")
 class BrowserActivity : Activity() {
+    private var stripUi: StatusStrip? = null   // (v345)
+    private var dockUi: MiniDock? = null   // (v344)
     override fun finish() { super.finish(); try { if (!NavAnim.take(this)) overridePendingTransition(R.anim.act_stay, R.anim.act_exit) } catch (e: Exception) { LogStore.err("Browser:finish", e) } }
 
     lateinit var badge: Button
@@ -354,6 +356,8 @@ class BrowserActivity : Activity() {
         frame.addView(root, FrameLayout.LayoutParams(-1, -1))
         frame.addView(customBox, FrameLayout.LayoutParams(-1, -1))
         setContentView(frame)
+        dockUi = MiniDock(this, frame, ui, th, { startActivity(Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP).putExtra("fullmusic", true)) })   // (v344)
+        stripUi = StatusStrip(this, frame, ui, th) { goMain("tasks") }   // (v345)
 
         // التبويبات: رجّع المحفوظة (لو مفعّل) وبعدها لو جاي بلينك افتحه في تبويب جديد
         val start = intent?.getStringExtra("start")?.trim() ?: ""
@@ -1367,6 +1371,9 @@ class BrowserActivity : Activity() {
     override fun onPause() { persistTabs(); WebMute.pauseAll(); for (t in tabs) try { t.wv?.onPause() } catch (_: Throwable) {}; super.onPause() }
     override fun onResume() { super.onResume(); try { wvOrNull?.onResume() } catch (_: Throwable) {} }
     override fun onDestroy() {
+        try { dockUi?.detach() } catch (_: Throwable) {}
+        try { stripUi?.detach() } catch (_: Throwable) {}
+
         dead = true; h.removeCallbacksAndMessages(null)
         try { tasksFabUi?.detach() } catch (_: Throwable) {}
         try { dlg?.dismiss() } catch (e: Throwable) { LogStore.err("Browser:d1", e) }

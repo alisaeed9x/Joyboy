@@ -43,6 +43,13 @@ object LyricsEngine {
     /** مفيش أوضاع تانية دلوقتي — بنسيبها دالة عشان باقي الكود مايتغيّرش */
     fun mode(): String = M_FULL
 
+    /**
+     * (v342) بوابة جيميناي: أي استخدام لجيميناي في الكلمات (اقتراح أسماء · كتابة الكلمات · ضبط التوقيت) بيسأل الأول —
+     * الواجهة بتعرض إشعار «أيوه/لا» وبتعتبر عدم الرد خلال 5 ثواني = لا. بتتنادى من خيط خلفي وبترجّع true لو اتوافق عليها.
+     * زرار «🤖 جيميناي» الصريح بيعدّي من غير سؤال (gemini = true).
+     */
+    @Volatile var geminiGate: ((String) -> Boolean)? = null
+
     private fun dir(ctx: Context) = File(ctx.filesDir, "lyrics").apply { mkdirs() }
     private fun key(t: Track, m: String) = "t${t.id}_${t.durMs}" + (if (m == M_FULL) "_full" else "") + ".json"
     private fun candFile(ctx: Context, t: Track) = File(dir(ctx), "t${t.id}_${t.durMs}_cands.json")
@@ -96,7 +103,7 @@ object LyricsEngine {
     }
 
     // ===================== النسخ المرشّحة (محفوظة محليًا) =====================
-    fun srcLabel(src: String) = when (src) {
+    fun srcLabel(src: String): String = if (src.endsWith("+local")) srcLabel(src.removeSuffix("+local")) + " + توقيت محلي" else when (src) {
         "lrclib" -> "LRCLIB"; "musixmatch" -> "Musixmatch"; "youtube" -> "YouTube Music"; "lyrics.ovh" -> "Lyrics.ovh"; "gemini" -> "Gemini"; "gemini-audio" -> "Gemini (من الصوت)"; else -> src
     }
 
@@ -307,6 +314,67 @@ object LyricsEngine {
         return res
     }
 
+    /**
+     * (v342) توقيت محلي من غير شبكة ولا جيميناي: بنحلّل طاقة الصوت (Karaoke.envelope)، نحدد مساحة الغنا (أول/آخر صوت متواصل)،
+     * ونوزّع السطور عليها بنسبة طول كل سطر بس على الفريمات «النشطة» (يعني الصمت/الفواصل ما بتاخدش وقت)، وبعدين نشدّ كل بداية لأقرب بداية صوت.
+     * النتيجة تقريبية (مش بتسمع الكلام) — ومتعلّمة كده في الملاحظة. null لو الصوت ما اتحلّلش.
+     */
+    /** (v345) توقيت تقريبي من غير أي سماع: السطور بتتوزّع على مدة الأغنية بنسبة طول كل سطر (بعد مقدمة ~6% وقبل نهاية ~4%) */
+    private fun evenSync(name: String, by: String, raw: List<String>, src: String, tot: Double): LyricsResult? {
+        if (tot < 20.0 || raw.size < 2) return null
+        val a0 = tot * 0.06; val span = tot * 0.90
+        val w = raw.map { maxOf(6, it.replace(" ", "").length).toDouble() }; val sw = w.sum()
+        var acc = 0.0; val starts = ArrayList<Double>()
+        for (i in raw.indices) { starts.add(a0 + acc / sw * span); acc += w[i] }
+        val lines = raw.mapIndexed { i, tx ->
+            val st = starts[i].coerceAtMost(tot - 1.0)
+            val en = if (i + 1 < raw.size) maxOf(starts[i + 1], st + 0.5) else minOf(tot, st + 4.0)
+            LyricLine(st, en, tx)
+        }
+        return LyricsResult(name, by, lines, true, 1, 1, emptySet(), "توقيت تقريبي (موزّع على مدة الأغنية)", raw, true, src + "+local")
+    }
+
+    private fun localSync(app: Context, t: Track, name: String, by: String, raw: List<String>, src: String): LyricsResult? {
+        val tot = t.durMs / 1000.0
+        if (tot < 20.0 || raw.size < 4) return null
+        val env0 = try { Karaoke.envelope(app, t) } catch (_: Throwable) { null }
+        if (env0 == null || env0.size < 60) return evenSync(name, by, raw, src, tot)   // (v345) صوت من النت/مفيش تحليل محلي: توزيع على المدة من غير سماع
+        val env = env0
+        val hop = 0.05   // نفس HOP بتاع Karaoke (إطار كل 50ms)
+        val sorted = env.sortedArray()
+        val thr = sorted[(sorted.size * 0.90).toInt().coerceAtMost(sorted.size - 1)] * 0.12f
+        val act = BooleanArray(env.size) { env[it] > thr }
+        // مساحة الغنا: أول وآخر 1.2 ثانية متواصلة نشطة
+        val need = (1.2 / hop).toInt().coerceAtLeast(3)
+        fun runAt(i: Int): Boolean { if (i + need > act.size) return false; for (k in i until i + need) if (!act[k]) return false; return true }
+        var a = 0; while (a < act.size && !runAt(a)) a++
+        var b = act.size - 1; while (b > a && !runAt(maxOf(0, b - need + 1))) b--
+        if (b - a < need * 4) return evenSync(name, by, raw, src, tot)
+        val cum = IntArray(b - a + 2)   // cum[i] = عدد الفريمات النشطة قبل a+i
+        for (i in 0..(b - a)) cum[i + 1] = cum[i] + (if (act[a + i]) 1 else 0)
+        val totalAct = cum[b - a + 1]
+        if (totalAct < need * 4) return evenSync(name, by, raw, src, tot)
+        val w = raw.map { maxOf(6, it.replace(" ", "").length).toDouble() }
+        val sw = w.sum()
+        var acc = 0.0
+        val starts = ArrayList<Double>()
+        for (i in raw.indices) {
+            val target = (acc / sw * totalAct).toInt()
+            var lo = 0; var hi = b - a   // أول فريم cum[f] >= target
+            while (lo < hi) { val m = (lo + hi) / 2; if (cum[m + 1] > target) hi = m else lo = m + 1 }
+            var st = (a + lo) * hop
+            st = Karaoke.snapOnset(env, st, 0.8)
+            if (starts.isNotEmpty() && st < starts.last() + 1.0) st = starts.last() + 1.0
+            starts.add(st); acc += w[i]
+        }
+        val lines = raw.mapIndexed { i, tx ->
+            val st = starts[i].coerceAtMost(tot - 1.0)
+            val en = if (i + 1 < raw.size) maxOf(starts[i + 1], st + 0.5) else minOf(tot, st + 4.0)
+            LyricLine(st, en, tx)
+        }
+        return LyricsResult(name, by, lines, true, 1, 1, emptySet(), "توقيت تقريبي من الصوت على الجهاز", raw, true, src + "+local")
+    }
+
     /** نسخة مرشّحة → نتيجة كلمات (متزامنة لو فيها LRC سليم، وإلا سطور من غير توقيت). null لو فاضية */
     private fun build(t: Track, name: String, by: String, b: LyrCand): LyricsResult? {
         val tot = t.durMs / 1000.0
@@ -323,12 +391,12 @@ object LyricsEngine {
      * ← وأخيرًا جيميناي يقترح صيغ بديلة للاسم ونعيد البحث بيها. كل النسخ اللي اتلقت بتتحفظ محليًا، وأحسن واحدة هي المعروضة.
      * بيرفض أي نتيجة مدتها بعيدة أو اسمها مش قريب. فشل الشبكة ما بيتحفظش كـ«مفيش كلمات»؛ «مفيش نتيجة» بتتحفظ 12 ساعة.
      */
-    fun start(ctx: Context, t: Track, mode: String, hint: Pair<String, String>?, retry: Boolean, fresh: Boolean, allowAi: Boolean, onStage: (String) -> Unit, onDone: (LyricsResult?, String) -> Unit) {
+    fun start(ctx: Context, t: Track, mode: String, hint: Pair<String, String>?, retry: Boolean, fresh: Boolean, allowAi: Boolean, onStage: (String) -> Unit, onDone: (LyricsResult?, String) -> Unit, gemini: Boolean = false) {
         val app = ctx.applicationContext
         val k = key(t, M_FULL)
         if (running.putIfAbsent(k, true) != null) { onDone(null, "بتتجاب دلوقتي"); return }
         Thread {
-            try { fetch(app, t, hint, retry, fresh, onStage, onDone, allowAi) }
+            try { fetch(app, t, hint, retry, fresh, onStage, onDone, allowAi, gemini) }
             catch (e: Throwable) { LogStore.err("lyrics-fetch", e); onDone(null, "فشل: " + (e.message ?: e.javaClass.simpleName).replace('\n', ' ').take(110)) }
             finally { running.remove(k) }
         }.apply { isDaemon = true }.start()
@@ -359,8 +427,18 @@ object LyricsEngine {
         for (ar in ars) get("artist_name=" + enc(ar), "المغني لوحده")
     }
 
-    private fun fetch(app: Context, t: Track, hint: Pair<String, String>?, retry: Boolean, fresh: Boolean, onStage: (String) -> Unit, onDone: (LyricsResult?, String) -> Unit, allowAi: Boolean = true) {
+    private fun fetch(app: Context, t: Track, hint: Pair<String, String>?, retry: Boolean, fresh: Boolean, onStage: (String) -> Unit, onDone: (LyricsResult?, String) -> Unit, allowAi: Boolean = true, gem: Boolean = false) {
         val k = key(t, M_FULL)
+        val hasKeys = Cfg.allMainKeys().isNotEmpty()
+        // (v342) جيميناي بالطلب بس: السؤال بيتسأل مرة لكل خطوة، والرفض/عدم الرد = نكمّل من غير جيميناي
+        var askedWrite: Boolean? = null
+        fun mayWrite(): Boolean {
+            if (!hasKeys) return false
+            if (gem) return true
+            askedWrite?.let { return it }
+            val a = try { geminiGate?.invoke("🤖 مالقيتش الكلمات في المصادر — جيميناي يكتبها ويوقّتها؟ (بيسحب كوتا)") ?: false } catch (_: Throwable) { false }
+            askedWrite = a; return a
+        }
         if (!fresh && !retry) {
             val c = cached(app, t, M_FULL)
             if (c != null && c.lines.isNotEmpty() && c.complete) { onDone(c, ""); return }   // (v331) نتيجة جزئية قديمة (التطبيق اتقفل في النص) بتتكمّل من الأول
@@ -449,7 +527,7 @@ object LyricsEngine {
         }
 
         // 5) جيميناي يقترح صيغ بديلة للاسم (من غير Google Search) ونعيد البحث بيها
-        if (best() == null && x.answered) {
+        if (best() == null && x.answered && mayWrite()) {
             onStage("🤖 جيميناي بيقترح صيغ تانية للاسم…")
             val alts = altNames(name, by, vars.map { it.first + " " + it.second })
             var n5 = 0
@@ -463,13 +541,8 @@ object LyricsEngine {
             }
         }
 
-        // 6) (v294) جيميناي يكتب الكلمات كاملة (بحث جوجل) ويوقّتها من سماع الأغنية نفسها — لو كل المصادر اللي فوق ملقتش حاجة
+        // (v345) اتشال: تفريغ/كتابة الكلمات بجيميناي من سماع الصوت — الكلمات من المصادر بس، ولو من غير توقيت بتتوقّت محليًا
         var aiMsg = ""
-        if (best() == null && x.answered && Cfg.allMainKeys().isNotEmpty()) {
-            val o = LyricsAI.run(app, t, name, by, SongId.albumOf(t.id), null, "", retry, onStage) { pr -> save(app, t, M_FULL, pr) }
-            if (o.res != null) { save(app, t, M_FULL, o.res); onDone(o.res, ""); return }
-            aiMsg = o.msg
-        }
 
         var b = best()
         // (v304) النسخة اللي اتلقت من غير توقيت: ندوّر في LRCLIB وMusixmatch بالاسم/المغني اللي المصدر نفسه رجّعهم، لو فيه نسخة متزامنة
@@ -494,18 +567,19 @@ object LyricsEngine {
             if (!x.answered) { onDone(null, "مفيش اتصال بالمصدر (" + x.lastErr.take(60) + ") — جرّب تاني"); return }
             save(app, t, M_FULL, LyricsResult(name, by, emptyList(), true, 1, 1, emptySet(), "", emptyList(), true, "lrclib"))
             val tail = if (aiMsg.isNotBlank()) " · جيميناي: $aiMsg" else ""
-            onDone(null, (if (retry) "ما لقيتش نتيجة تانية — جرّب 🎼 نسخ بديلة أو ✍ كلمات يدوي" else "ما لقيتش الأغنية دي (LRCLIB + Musixmatch + YouTube Music + مصدر احتياطي + جيميناي) — جرّب 🎼 نسخ بديلة أو ✍ كلمات يدوي") + tail)
+            onDone(null, (if (retry) "ما لقيتش نتيجة تانية — جرّب 🎼 نسخ بديلة أو ✍ كلمات يدوي" else "ما لقيتش الأغنية دي (LRCLIB + Musixmatch + YouTube Music + مصدر احتياطي) — جرّب 🎼 نسخ بديلة أو ✍ كلمات يدوي") + tail)
             return
         }
         val bf: LyrCand = b
         var res = build(t, name, by, bf)
         if (res == null) { onDone(null, "النتيجة فاضية"); return }
         // (v294) النسخة اللي اتلقت من غير توقيت: جيميناي يسمع الأغنية ويوقّت كل سطر (لو التطابق مع الصوت كويس؛ غير كده بنسيب النص زي ما هو)
-        if (!res.synced && res.raw.size >= 4 && Cfg.allMainKeys().isNotEmpty() && !retry) {
-            // (v331) الكلمات تظهر فورًا من غير توقيت، وجيميناي يوقّتها (بالكلمات + مقاطع الصوت) وتتبدّل بالمتزامنة أول ما تخلص
-            save(app, t, M_FULL, LyricsResult(name, by, res.lines, true, 1, 1, emptySet(), "من غير توقيت — جيميناي بيوقّتها دلوقتي…", res.raw, false, bf.src))
-            val o = LyricsAI.run(app, t, name, by, SongId.albumOf(t.id), res.raw, bf.src, false, onStage)
-            if (o.res != null && o.res.synced && o.res.source.endsWith("+gemini")) res = o.res
+        if (!res.synced && res.raw.size >= 4 && !retry) {
+            // (v342) توقيت محلي مجاني الأول (من طاقة الصوت على الجهاز — من غير جيميناي ولا مقاطع صوت)، وتظهر الكلمات بيه فورًا
+            onStage("⏱ بضبط التوقيت من الصوت على الجهاز…")
+            val loc = try { localSync(app, t, name, by, res.raw, bf.src) } catch (e: Throwable) { LogStore.err("lyrics-localsync", e); null }
+            if (loc != null) { res = loc; save(app, t, M_FULL, loc) }
+            else save(app, t, M_FULL, LyricsResult(name, by, res.lines, true, 1, 1, emptySet(), "من غير توقيت", res.raw, false, bf.src))
         }
         lastId[k] = bf.key()
         val merged = ArrayList<LyrCand>(x.found)

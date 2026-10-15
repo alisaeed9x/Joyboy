@@ -32,6 +32,29 @@ class LibraryUi(
     private val K = if (audio) "mus_" else ""
     private val noun = if (audio) "أغنية" else "فيديو"
     var onPlayFolder: (FolderItem) -> Unit = {}
+    /** (v344) بحث محلي فاضي: اقتراحات يوتيوب (دوسة = تشغيل) ثم «ابحث في المتصفح» */
+    var onYtPick: ((NpItem) -> Unit)? = null
+    var onWebSearch: ((String) -> Unit)? = null
+    var onUniSearch: ((String) -> Unit)? = null   // (v345) 🔎 بحث شامل
+    /** (v345) نتايج البحث المحلي (من غير المخفي) — للبحث الشامل */
+    fun searchHits(q: String): List<VideoItem> = try { VideoLib.search(visible(), q) } catch (_: Throwable) { emptyList() }
+    fun playItem(v: VideoItem) = onPlay(v)
+    private val ytBox = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL; setPadding(ui.dp(12), ui.dp(6), ui.dp(12), ui.dp(16)) }
+    private val ytScroll = ScrollView(act).apply { visibility = View.GONE; isVerticalScrollBarEnabled = false; addView(ytBox, FrameLayout.LayoutParams(-1, -2)) }
+    private var ytTok = 0
+    private var ytLastQ = ""
+    private val ytH = android.os.Handler(android.os.Looper.getMainLooper())
+    private fun hideYtFallback() { ytTok++; if (ytScroll.visibility != View.GONE) ytScroll.visibility = View.GONE }
+    private fun showYtFallback() {
+        val q = query; val tok = ++ytTok
+        ytScroll.visibility = View.VISIBLE
+        YtFallback.pending(ui, th, ytBox, q)
+        // مهلة صغيرة عشان مانبحثش في يوتيوب مع كل حرف بتكتبه
+        ytH.postDelayed({
+            if (tok != ytTok || query != q || act.isFinishing || act.isDestroyed) return@postDelayed
+            YtFallback.fill(act, ui, th, ytBox, q, { tok != ytTok || query != q }, { n -> onYtPick?.invoke(n) }, { s -> onWebSearch?.invoke(s) })
+        }, 700L)
+    }
     /** القايمة المعروضة دلوقتي (بترتيبها) — طابور التشغيل للموسيقى */
     fun shownVideos(): List<VideoItem> = rows.filterIsInstance<VideoItem>()
     var onRefresh: () -> Unit = {}
@@ -323,7 +346,15 @@ class LibraryUi(
             val sr = HorizontalScrollView(act).apply { isHorizontalScrollBarEnabled = false; layoutDirection = View.LAYOUT_DIRECTION_RTL; setPadding(ui.dp(8), 0, ui.dp(8), 0); addView(srcChips); visibility = View.GONE }
             srcRow = sr; root.addView(sr, LinearLayout.LayoutParams(-1, -2))
         }
-        root.addView(searchEt, LinearLayout.LayoutParams(-1, -2).apply { setMargins(ui.dp(12), ui.dp(6), ui.dp(12), ui.dp(2)) })
+        // (v345) بحث شامل: 🔎 جنب الخانة بيفتح بحث واحد في الفيديوهات والموسيقى ويوتيوب
+        val uniBtn = ui.text("🔎", 20f, Color.WHITE).apply {
+            gravity = Gravity.CENTER; background = ui.box(th.card, th.border, 14)
+            setOnClickListener { onUniSearch?.invoke(searchEt.text.toString().trim()) }
+        }
+        val sRow = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL }
+        sRow.addView(searchEt, LinearLayout.LayoutParams(0, -2, 1f))
+        sRow.addView(uniBtn, LinearLayout.LayoutParams(ui.dp(46), ui.dp(44)).apply { marginStart = ui.dp(6) })
+        root.addView(sRow, LinearLayout.LayoutParams(-1, -2).apply { setMargins(ui.dp(12), ui.dp(6), ui.dp(12), ui.dp(2)) })
 
         listV.apply {
             divider = null; dividerHeight = 0; setSelector(android.R.color.transparent); isVerticalScrollBarEnabled = false
@@ -353,6 +384,7 @@ class LibraryUi(
         val body = FrameLayout(act)
         body.addView(listV, FrameLayout.LayoutParams(-1, -1)); body.addView(stateBox, FrameLayout.LayoutParams(-1, -1))
         body.addView(emptyTv, FrameLayout.LayoutParams(-1, -2, Gravity.CENTER))
+        body.addView(ytScroll, FrameLayout.LayoutParams(-1, -1))
         body.addView(ptr, FrameLayout.LayoutParams(ui.dp(44), ui.dp(44), Gravity.TOP or Gravity.CENTER_HORIZONTAL))
         body.addView(toastTv, FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.CENTER_HORIZONTAL))
         body.addView(resumeBtn, FrameLayout.LayoutParams(ui.dp(58), ui.dp(58), Gravity.BOTTOM or Gravity.LEFT).apply { setMargins(ui.dp(20), 0, 0, ui.dp(24)) })
@@ -481,6 +513,9 @@ class LibraryUi(
         sel.retainAll(selectableKeys().toSet())
         emptyTv.text = if (rows.isNotEmpty()) "" else if (inWeb) "مفيش فيديوهات مصطادة لسه.\nأي فيديو تفتحه من لينك أو من المتصفح بيتسجل هنا لوحده بالاسم والتقدم." else if (inRecents && query.isEmpty()) "🕘 لسه ما شغّلتش أي أغنية.\nأي أغنية تشغّلها هتظهر هنا بالأحدث فوق." else if (inHidden && query.isEmpty()) "مفيش $noun مخفية.\nدوس ⋮ أو اضغط ضغطة مطولة على أي $noun واختار 🙈 الإخفاء." else if (query.isEmpty()) "كل الملفات مخفية.\nاسحب لتحت وكمّل لحد 🔒 وسيب عشان تفتح المخفي." else "مفيش نتائج."
         emptyTv.visibility = if (rows.isEmpty()) View.VISIBLE else View.GONE
+        // (v344) بحث محلي فاضي → اقتراحات يوتيوب / البحث في المتصفح (لو مربوطين)
+        if (query.isNotEmpty() && rows.isEmpty() && onYtPick != null && onWebSearch != null) { emptyTv.visibility = View.GONE; if (ytScroll.visibility != View.VISIBLE || ytBox.childCount == 0 || ytLastQ != query) { ytLastQ = query; showYtFallback() } }
+        else { ytLastQ = ""; hideYtFallback() }
         stateBox.visibility = View.GONE; listV.visibility = View.VISIBLE
         (listV.adapter as BaseAdapter).notifyDataSetChanged()
         if (lvl != animLvl) { animLvl = lvl; Motion.replay(listV) }   // (v312) أنيميشن الصفوف مع كل مستوى جديد بس (مش مع كل حرف بحث)

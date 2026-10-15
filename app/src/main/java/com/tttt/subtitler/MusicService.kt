@@ -160,7 +160,7 @@ object MusicEngine {
                 if (yh != null && yh.isNotEmpty()) setDataSource(ctx, uri, yh) else setDataSource(ctx, uri)
                 setOnPreparedListener { ready = true; applyVol(); if (startMs > 0) { try { it.seekTo(startMs) } catch (_: Throwable) {} }; if (wantPlay) { try { it.start() } catch (_: Throwable) {}; applySpeed() }; changed() }
                 setOnCompletionListener { onEnded() }
-                setOnErrorListener { _, _, _ -> ready = false; main.post { if (which != 0) { stem = 0; playingStem = 0; stemErr = "🎚 ملف الفصل ماتفتحش — رجعت للأغنية الأصلية"; swapSource(0) } else if (queue.size > 1) step(1) }; true }
+                setOnErrorListener { _, _, _ -> ready = false; main.post { if (which != 0) { stem = 0; playingStem = 0; stemErr = "🎚 ملف الفصل ماتفتحش — رجعت للأغنية الأصلية"; swapSource(0) } else if (YtAudio.isRemote(t.uri)) ytFailed(t) else if (queue.size > 1) step(1) }; true }
                 prepareAsync()
             }
         } catch (e: Exception) { LogStore.err("music-play", e) }
@@ -239,21 +239,21 @@ object MusicEngine {
         focusReq = null
     }
 
-    fun play(ctx: Context, q: List<Track>, i: Int, fromHistory: Boolean = false) {
+    fun play(ctx: Context, q: List<Track>, i: Int, fromHistory: Boolean = false, startMs: Int = 0) {
         if (i !in q.indices) return
         app = ctx.applicationContext
         if (volWatch == null) volWatch = SysVol.watch(ctx.applicationContext) { syncSys() }   // (v302) زراري الفوليوم بيغيّروا التضخيم فورًا حتى والشاشة مقفولة/المشغّل مقفول
         syncSys()
         if (!fromHistory && queue === q && idx in q.indices && idx != i) { history.add(idx); if (history.size > 50) history.removeAt(0) }
         if (queue !== q) history.clear()
-        queue = q; idx = i; ready = false; wantPlay = true; pendingNext = -1
+        queue = q; idx = i; ready = false; wantPlay = true; pendingNext = -1; ytBroken = false
         release()
         MusicService.start(ctx.applicationContext)
         gainFocus()
         val t = q[i]
         try { if (!YtAudio.isRemote(t.uri)) RecentSongs.add(t.uri) } catch (_: Throwable) {}   // (v337) روابط يوتيوب مؤقتة: مش بتتسجّل في «آخر المشغّل»
         val want = if (stem != 0 && Karaoke.hasStem(ctx.applicationContext, t, stem)) stem else 0
-        openPlayer(ctx.applicationContext, t, want, 0)
+        openPlayer(ctx.applicationContext, t, want, if (want == 0) startMs else 0)   // (v343) startMs: تحويل فيديو→صوت يكمّل من نفس المكان
         // (v308) الفصل تلقائي في الخلفية — (v319) المستخدم بيقلّب بين الأغاني: الأوتوماتيك بيبدأ بعد ١٥ ثانية تشغيل، واليدوي (stem != 0) فورًا
         if (want == 0 && stem != 0) requestStem(t)
         else if (want == 0) { val a0 = ctx.applicationContext; main.postDelayed({ if (current?.id == t.id && autoStem(a0)) requestStem(t) }, 15000L) }
@@ -275,10 +275,30 @@ object MusicEngine {
         val n = idx + d
         return queue.getOrNull(if (n in queue.indices) n else if (d > 0) 0 else queue.size - 1)
     }
+    /**
+     * (v341) صوت يوتيوب: الـqueue فيها فيديو واحد، فالتالي بييجي من قايمة التشغيل/المقترحات عن طريق Main.
+     * ytStep(1) = التالي · ytStep(0) = إعادة جلب رابط نفس الفيديو (الرابط بيخلص). بترجّع true لو اتعامل معاها.
+     * الأغنية الحالية بتفضل شغّالة لحد ما اللي بعدها يجهز (مش بنوقفها).
+     */
+    @Volatile var ytStep: ((Int) -> Boolean)? = null
+    @Volatile private var ytRetryId = Long.MIN_VALUE
+    private fun ytFailed(t: Track) {
+        // أول فشل لنفس الفيديو: نجيب رابط جديد تلقائي. تاني فشل: نقف ونسيب الزرار ▶ يعيد المحاولة
+        if (ytRetryId != t.id && ytStep?.invoke(0) == true) { ytRetryId = t.id; return }
+        wantPlay = false; ytBroken = true; changed()
+    }
+    @Volatile private var ytBroken = false
+
     /** التالي/السابق بالزرار — بيلف دايمًا (حتى لو التكرار مقفول) */
     fun step(d: Int) {
         if (queue.isEmpty()) return
         val a = app ?: return
+        val cu = current
+        if (cu != null && YtAudio.isRemote(cu.uri)) {   // (v341) صوت يوتيوب: مفيش «سابق» — بيرجّع لأول الفيديو بس
+            if (d < 0) { seekTo(0); return }
+            if (ytStep?.invoke(1) == true) return
+            return
+        }
         if (d < 0 && posMs > 3000) { seekTo(0); return }   // السابق بعد 3 ثواني = من أول الأغنية
         if (shuffle) {
             if (d < 0 && history.isNotEmpty()) { play(a, queue, history.removeAt(history.size - 1), true); return }
@@ -292,6 +312,8 @@ object MusicEngine {
         val a = app ?: return
         if (queue.isEmpty()) return
         if (sleepEndOfTrack) { sleepEndOfTrack = false; wantPlay = false; try { mp?.seekTo(0) } catch (_: Throwable) {}; changed(); return }   // (v200) مؤقت النوم: آخر الأغنية
+        val cu = current
+        if (mode != 2 && cu != null && YtAudio.isRemote(cu.uri) && ytStep?.invoke(1) == true) return   // (v341) صوت يوتيوب: كمّل على الفيديو التالي
         when {
             mode == 2 -> { try { mp?.seekTo(0); mp?.start() } catch (_: Throwable) {}; changed() }
             shuffle -> play(a, queue, randomOther())
@@ -301,6 +323,8 @@ object MusicEngine {
     }
     fun toggle() { if (isPlaying) pause() else resume() }
     fun resume() {
+        val cu = current
+        if (cu != null && YtAudio.isRemote(cu.uri) && ytBroken) { ytBroken = false; wantPlay = true; if (ytStep?.invoke(0) == true) { changed(); return } }   // (v341) الرابط خلص/فشل: ▶ بيجيب رابط جديد
         val m = mp
         if (m == null) { app?.let { if (queue.isNotEmpty()) play(it, queue, idx.coerceAtLeast(0)) }; return }
         wantPlay = true; gainFocus()
