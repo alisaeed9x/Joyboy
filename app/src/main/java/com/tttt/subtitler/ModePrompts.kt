@@ -180,8 +180,12 @@ Use this context to:
     }
 
     /** برومبت الوضع 2: إنجليزي بالكامل (ما عدا قواعد اللهجة العربية ومصطلحات الأمثلة)، نفس JSON القوالب العربي فـ Parse.subs يقراه من غير تغيير */
+    /** (v331) لغة الكلام الأصلية اتحدّدت من باتشات سابقة: نثبّتها عشان الباتش مايغيّرش اللغة لو كلمة غامضة (بس لو سمع لغة تانية واضحة يكتبها) */
+    private fun srcLock(srcLang: String): String = if (srcLang.isBlank()) "" else
+        "\n- 🔴 Spoken language: earlier segments of this same video were identified as $srcLang (the language name is written in Arabic). Unless you clearly hear a different language in this segment, hear and write the speech as $srcLang: when a word is ambiguous, choose the reading that is a real word of $srcLang with a meaning that fits the sentence; never switch language only because a word sounds similar, and never write random letters of another script for it.\n"
+
     fun english(pb: PromptBuilder, c: Conf, durSec: Double, prev: String, chars: List<Chr>, gloss: List<Gloss>,
-                strict: Boolean = false, hole: Boolean = false, holeNear: Boolean = false): String {
+                strict: Boolean = false, hole: Boolean = false, holeNear: Boolean = false, srcLang: String = ""): String {
         val sb = StringBuilder()
         sb.append(P("MAIN_EN", MAIN_EN).replace("{{TARGET}}", dialectEn(c.lang)).replace("{{STYLE}}", styleEn(c.style)))
         sb.append(schema())
@@ -193,7 +197,7 @@ Use this context to:
         if (prev.isNotBlank() && !hole) sb.append(P("CTX_EN", CTX_EN).replace("{{PREV}}", prev))
         sb.append("\n\n⏱ Exact duration of this audio segment: ${dur(durSec)} seconds. Every start and end must be a number between 0.0 and ${dur(durSec)}, measured by real listening, not estimated.\n")
         sb.append("- If no speech is audible: {\"subtitles\":[]}\n- JSON only: no explanation, no introduction, no markdown.\n")
-        sb.append(langLock(pb, c, strict)).append(P("NO_INVENT_EN", NO_INVENT_EN))
+        sb.append(langLock(pb, c, strict)).append(srcLock(srcLang)).append(P("NO_INVENT_EN", NO_INVENT_EN))
         if (hole) sb.append(if (holeNear) P("HOLE_NEAR_EN", HOLE_NEAR_EN) else P("HOLE_EN", HOLE_EN))
         return sb.toString()
     }
@@ -224,7 +228,7 @@ This is a standalone audio segment; timestamps start at 0.0 relative to the begi
 
     /** برومبت الترانسكريبشن (صوت ← نص أصلي + توقيت + جنس، من غير ترجمة). الرد: {"subtitles":[...],"detected_source_language":"..."} */
     fun transcribe(pb: PromptBuilder, c: Conf, durSec: Double, prev: String, chars: List<Chr>, gloss: List<Gloss>,
-                   strict: Boolean = false, hole: Boolean = false, holeNear: Boolean = false): String {
+                   strict: Boolean = false, hole: Boolean = false, holeNear: Boolean = false, srcLang: String = ""): String {
         val spk = if (Extras.spkNames) ",\"speaker_name\":\"\"" else ""
         val sb = StringBuilder(P("TRANSCRIBE_MAIN", TRANSCRIBE_MAIN))
         sb.append("Return JSON only, in exactly this shape, with no text outside it:\n")
@@ -245,7 +249,7 @@ This is a standalone audio segment; timestamps start at 0.0 relative to the begi
         }
         sb.append("\n\n⏱ Exact duration of this audio segment: ${dur(durSec)} seconds. Every start and end must be a number between 0.0 and ${dur(durSec)}, measured by real listening, not estimated.\n")
         sb.append("- If no speech is audible: {\"subtitles\":[]}\n- JSON only: no explanation, no introduction, no markdown.\n")
-        sb.append(P("NO_INVENT_EN", NO_INVENT_EN))
+        sb.append(srcLock(srcLang)).append(P("NO_INVENT_EN", NO_INVENT_EN))
         if (strict) sb.append("- ⚠⚠ Your previous reply was incomplete or not valid JSON. Return every spoken sentence of the segment, as valid JSON in the exact shape above.\n")
         if (hole) sb.append(if (holeNear) P("HOLE_NEAR_EN", HOLE_NEAR_EN) else P("HOLE_EN", HOLE_EN))
         return sb.toString()

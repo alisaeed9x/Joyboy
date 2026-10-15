@@ -102,7 +102,7 @@ object MusicEngine {
     fun takeStemErr(): String { val e = stemErr; stemErr = ""; return e }
     fun cycleStem(): Int { setStem((stem + 1) % 3); return stem }
     fun setStem(s: Int) {
-        stem = s.coerceIn(0, 2)
+        stem = if (StemAi.DISABLED) 0 else s.coerceIn(0, 2)   // (v331) الفصل متوقّف مؤقتًا
         try { Cfg.put("music_stem", stem.toString()) } catch (_: Throwable) {}
         applyStem(); changed()
     }
@@ -121,9 +121,10 @@ object MusicEngine {
         applyStem(); changed()
     }
     /** (v308) فصل تلقائي لكل أغنية بتشتغل — بس لو الموديلات نازلة والمكتبة شغّالة (Cfg stem_auto، افتراضي شغّال) */
-    private fun autoStem(c: Context): Boolean = Cfg.str("stem_auto", "1") == "1" && StemAi.libOk() && StemAi.ready(c)
+    private fun autoStem(c: Context): Boolean = !StemAi.DISABLED && Cfg.str("stem_auto", "1") == "1" && StemAi.libOk() && StemAi.ready(c)
     private fun requestStem(t: Track) {
         val a = app ?: return
+        if (StemAi.DISABLED) return
         if (StemAi.isRunning(t)) return
         if (Karaoke.hasStem(a, t, 1) && Karaoke.hasStem(a, t, 2)) return       // (v319) اتفصلت قبل كده — جاهزة، مفيش إعادة فصل
         stemPct = 0; changed()

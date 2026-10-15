@@ -382,9 +382,9 @@ text_hex: لون النص hex | opacity_pct: شفافية الخلفية 0-100 |
     private fun loop(g: Int) {
         val r = retriever()
         val live = r == null   // (v182) m3u8 / مصدر مش مقروء: بنلقط الفريمات من الشاشة وقت التشغيل
-        if (live && grab == null) { status = "المصدر ده مش مدعوم للوضع البصري"; say(status); return }
+        if (live && grab == null) { status = "المصدر ده مش مدعوم للوضع البصري"; lg("⚠ " + status); say(status); return }
         val keys = keyList()
-        if (keys.isEmpty()) { status = "ضيف مفتاح للوضع البصري"; say("ضيف مفتاح للوضع البصري (الإعدادات ← 🔑 المفاتيح ← مفتاح الوضع البصري فقط)"); try { r?.release() } catch (_: Exception) {}; return }
+        if (keys.isEmpty()) { status = "ضيف مفتاح للوضع البصري"; lg("⚠ مفيش مفتاح للوضع البصري في الإعدادات — الحلقة وقفت"); say("ضيف مفتاح للوضع البصري (الإعدادات ← 🔑 المفاتيح ← مفتاح الوضع البصري فقط)"); try { r?.release() } catch (_: Exception) {}; return }
         pool = KeyPool(keys)
         val durSec = if (r == null) 0.0 else try { (r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L) / 1000.0 } catch (_: Exception) { 0.0 }
         lastSig = null; lastQ = null; grabFails = 0

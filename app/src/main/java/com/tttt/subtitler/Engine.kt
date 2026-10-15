@@ -868,7 +868,7 @@ class Engine(
                 val r = run {
                     pool.begin(key, i)
                     try {
-                        val gem = { Api.generate(mdl, key, prompt, w.bytes, maxTokens = Api.outTokens(w.durSec)) }
+                        val gem = { Api.generate(mdl, key, prompt, w.bytes, maxTokens = Api.outTokens(w.durSec), temp = if (tx && empties == 0 && bad == 0 && trunc == 0) 0.0 else 0.1) }   // (v331) التفريغ بحرارة 0 (أدق وثابت)؛ الإعادة بعد فشل بحرارة 0.1 عشان ما يرجعش نفس الرد
                         // (v253) ترانسكريبشن أوفلاين (Whisper على الجهاز) — لو فشل جيميناي (gem) بيكمّل الباتش
                         (if (tx && Offline.on()) Offline.transcribe(w.bytes, w.durSec, effectiveGloss().joinToString(", ") { it.term }, { host.log(it) }, gem, { host.notice(it) }, offSession)
                             else { if (tx) Offline.whyOff()?.let { m -> host.log(m); Offline.softNotice(m) { host.notice(it) } }; gem() }).also { pool.end(key, System.currentTimeMillis() - t0, true) }
@@ -911,7 +911,7 @@ class Engine(
                 runs[i] = KeyRun(keyNo(key), mdl, took)
                 if (tx && fresh.isNotEmpty()) {
                     // (v210) الباتش ما بيتطبّقش دلوقتي: بيتحط في المجمّع لحد ما يتترجم (applyChunk + سدّ الثغرات بيحصلوا بعد الترجمة)
-                    holdTranscript(i, p, j, fresh, prior, key, partial)
+                    holdTranscript(i, p, j, relistenLow(i, fresh, key), prior, key, partial)   // (v331) الجمل واطية الثقة بتتسمع تاني قبل الترجمة
                     startedAt[i]?.let { recentMs.addLast(System.currentTimeMillis() - it); while (recentMs.size > 8) recentMs.pollFirst() }
                     if (hedge) { inflight.remove(i); host.log("⚡ باتش ${i + 1}: النسخة الاحتياطية خلصت الأول") }
                     return
@@ -1029,8 +1029,9 @@ class Engine(
         if (activeMode >= KeyMode.ALL_PARALLEL || tx) {   // (v239) tx يشتغل في كل الأوضاع (سدّ الثغرات بأسلوب الوضع 4)
             val prev = if (hole) "" else Subs.prevContext(subs, start)
             // (v210) tx = طلب ترانسكريبشن بس (الوضعين 3/4، الباتشات العادية). الثغرات والفجوات وإعادة الباتش الكامل بتفضل صوت ← ترجمة مباشرة
-            return if (tx) toneBlock() + ModePrompts.transcribe(pb, c, durSec, prev, effectiveChars(), effectiveGloss(), strict, hole, holeNear)
-            else toneBlock() + ModePrompts.english(pb, c, durSec, prev, effectiveChars(), effectiveGloss(), strict, hole, holeNear)
+            val sl = if (detDone) srcLang else ""   // (v331) لغة الكلام الأصلية بعد ما تتحدد من أول باتش
+            return if (tx) toneBlock() + ModePrompts.transcribe(pb, c, durSec, prev, effectiveChars(), effectiveGloss(), strict, hole, holeNear, sl)
+            else toneBlock() + ModePrompts.english(pb, c, durSec, prev, effectiveChars(), effectiveGloss(), strict, hole, holeNear, sl)
         }
         val case = pb.caseOf(srcLang, detDone)
         val tf = if (case == "other") synchronized(tplCache) { tplCache[tplKey(pb.templateId(c, "other"))] } else null
@@ -1139,6 +1140,44 @@ class Engine(
 
     /** مفيش طلب ترانسكريبشن شغال ومفيش باتش منسوخ مستني الترجمة */
     private fun txIdle() = inflight.isEmpty() && tHold.isEmpty()
+
+    /**
+     * (v331) الجمل اللي جيميناي علّم عليها low_confidence: سماع تاني لنافذة ضيقة حواليها (±1.2ث) بمفتاح تاني، ومعاها قراءة المرة الأولى كمرجع.
+     * بنستبدل النص بس لو الرد منطقي (مش فاضي ولا أطول بكتير)؛ التوقيت والباقي زي ما هو. أقصى 4 جمل للباتش. مش بيشتغل مع التفريغ الأوفلاين.
+     */
+    private fun relistenLow(i: Int, fresh: List<Sub>, key0: String): List<Sub> {
+        if (Offline.on() || !running || isClosed) return fresh
+        val idx = fresh.indices.filter { fresh[it].lowConf && !fresh[it].isSound && !fresh[it].isSong && fresh[it].original.isNotBlank() }.take(4)
+        if (idx.isEmpty()) return fresh
+        val out = fresh.toMutableList()
+        var key = pool.pick(key0, rr.getAndIncrement()) ?: key0
+        var fixed = 0
+        for (ix in idx) {
+            if (!running || isClosed) break
+            val s = fresh[ix]
+            try {
+                val wv = src().wav(maxOf(0.0, s.start - 1.2), s.end + 1.2) ?: continue
+                if (wv.silent) continue
+                val lang = if (detDone && srcLang.isNotBlank()) " in $srcLang" else ""
+                val gl = effectiveGloss().joinToString(", ") { it.term }.take(400)
+                val pr = "You are a meticulous verbatim transcriber. This short audio contains one spoken sentence (with a little context before and after). A first pass heard it as: «${s.original}» but was NOT sure. " +
+                    "Listen again very carefully and write exactly the words that are said$lang, using the sound only (never what the story would suggest). Keep it one sentence. " +
+                    (if (gl.isNotBlank()) "Names and terms that appear in this video: $gl. " else "") +
+                    "If it stays unclear, give your best reading and set low_confidence=true. If you hear no speech at all, return an empty original. " +
+                    "Return JSON only: {\"original\":\"\",\"low_confidence\":false}"
+                val r = Api.generate(curModel(), key, pr, wv.bytes, 512, 0.0)
+                val j = if (r.text.isBlank()) null else Parse.json(r.text)
+                val nt = j?.optString("original", "")?.trim().orEmpty()
+                if (nt.isEmpty() || nt.length > s.original.length * 2 + 20) continue
+                out[ix] = s.copy(original = nt, lowConf = j?.optBoolean("low_confidence", false) ?: s.lowConf)
+                if (nt != s.original) fixed++
+            } catch (e: ApiErr) {
+                if (e.code == 429) { pool.block(key, 60_000); key = pool.pick(key, rr.getAndIncrement()) ?: break } else break
+            } catch (_: Throwable) { }
+        }
+        if (fixed > 0) host.log("🎧 باتش ${i + 1}: سماع تاني لـ ${idx.size} جملة واطية الثقة — اتصحّحت $fixed")
+        return out
+    }
 
     private fun holdTranscript(i: Int, p: Prep, j: JSONObject?, fresh: List<Sub>, prior: List<Sub>, key: String, partial: Boolean) {
         if (j != null && !detDone) {

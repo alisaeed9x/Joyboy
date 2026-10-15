@@ -75,7 +75,7 @@ object LyricsAI {
     }
 
     // ===================== ② السماع بتوقيت =====================
-    private fun listenPrompt(hintName: String, hintBy: String, album: String = ""): String = buildString {
+    private fun listenPrompt(hintName: String, hintBy: String, album: String = "", reference: List<String>? = null): String = buildString {
         val ar = SongId.hasArabic(hintName + hintBy + album)
         append("You are a meticulous lyrics transcriber and timer for songs in every language, with native-level command of ALL Arabic dialects (Egyptian, Gulf, Levantine, Maghrebi, Sudanese, Iraqi) and of classical tarab Arabic. The audio is a SHORT excerpt of a song")
         if (hintName.isNotBlank()) append(" (title \"$hintName\"" + (if (hintBy.isNotBlank()) ", performer \"$hintBy\"" else "") + (if (album.isNotBlank()) ", album \"$album\"" else "") + ")")
@@ -87,11 +87,15 @@ object LyricsAI {
         append("- Use the title, performer and album only as context for names and vocabulary; never copy lines from memory that you do not actually hear in this excerpt.\n")
         append("- A phrase is one natural sung line (usually 2-8 seconds). Do not merge two lines in one row. Write repeated lines every time they are sung.\n")
         append("- Times must follow the real audio: s = the moment the first word of the phrase starts, e = the moment its last word ends.\n")
+        if (reference != null && reference.isNotEmpty()) {   // (v331) كلمات رسمية من مصدر تاني (من غير توقيت): مرجع للإملاء فقط، ومش بنكمّل منها حاجة ما اتسمعتش
+            append("- REFERENCE LYRICS of the whole song are given below (from a lyrics site, WITHOUT timing). Use them ONLY to spell the words you really hear: when a sung phrase matches a reference line, write that line with the reference wording. Output only phrases that are actually sung in THIS excerpt, with their real times; never add reference lines you do not hear here.\n")
+            append("REFERENCE:\n").append(reference.joinToString("\n").take(6000)).append("\n")
+        }
         append("OUTPUT: JSON only: {\"lines\":[{\"s\":0.0,\"e\":0.0,\"t\":\"\"}]}")
     }
 
     /** بيسمع الأغنية كلها على نوافذ بتداخل ويرجّع السطور المسموعة بوقتها المطلق. فاضية = ما سمعش حاجة. onProg(تم، الكل) */
-    fun listen(app: Context, t: Track, name: String, by: String, onProg: (Int, Int) -> Unit): List<Heard> {
+    fun listen(app: Context, t: Track, name: String, by: String, reference: List<String>? = null, onPartial: ((List<Heard>, Int, Int) -> Unit)? = null, onProg: (Int, Int) -> Unit): List<Heard> {
         val keys = Cfg.allMainKeys()
         if (keys.isEmpty()) return emptyList()
         val src = AudioSources.make(app, Uri.parse(t.uri), null, emptyMap(), 1) { }
@@ -116,7 +120,7 @@ object LyricsAI {
         val done = java.util.concurrent.atomic.AtomicInteger(0)
         val nThreads = keys.size.coerceIn(1, 3)
         val latch = CountDownLatch(nThreads)
-        val prompt = listenPrompt(name, by, SongId.albumOf(t.id))
+        val prompt = listenPrompt(name, by, SongId.albumOf(t.id), reference)
         for (w in 0 until nThreads) {
             Thread {
                 try {
@@ -148,7 +152,10 @@ object LyricsAI {
                             val own1 = if (idx == lastIdx) Double.MAX_VALUE else a0 + chunk.durSec - OVERLAP / 2
                             for (h in got) if (h.s >= own0 && h.s < own1) out.add(h)
                         }
-                        onProg(done.incrementAndGet(), wins.size)
+                        val dn = done.incrementAndGet()
+                        onProg(dn, wins.size)
+                        // (v331) كل باتش بيخلص بيتبعت فورًا (مرتّب بالوقت) — الشاشة بتعرض أول باتش من غير ما تستنى الباقي
+                        try { onPartial?.invoke(synchronized(out) { ArrayList(out) }.sortedBy { it.s }, dn, wins.size) } catch (_: Throwable) {}
                     }
                 } finally { Api.readTimeoutOverride.remove(); latch.countDown() }
             }.apply { isDaemon = true }.start()
@@ -271,7 +278,7 @@ object LyricsAI {
     /**
      * [givenText] = كلمات من غير توقيت لقاها مصدر تاني (بنوقّتها بس). null = ما لقيناش كلمات: جيميناي يكتبها كاملة.
      */
-    fun run(app: Context, t: Track, name: String, by: String, album: String, givenText: List<String>?, source: String, wrong: Boolean, onStage: (String) -> Unit): Out {
+    fun run(app: Context, t: Track, name: String, by: String, album: String, givenText: List<String>?, source: String, wrong: Boolean, onStage: (String) -> Unit, onPartial: ((LyricsResult) -> Unit)? = null): Out {
         if (Cfg.allMainKeys().isEmpty()) return Out(null, "محتاج مفتاح جيميناي عشان يكتب الكلمات ويوقّتها")
         val total = t.durMs / 1000.0
         var text = givenText
@@ -280,7 +287,14 @@ object LyricsAI {
             onStage("🤖 جيميناي بيكتب الكلمات كاملة…")
             text = try { fetchText(name, by, album, total, wrong) } catch (e: Throwable) { LogStore.err("lyricsai-fetch", e); null }
         }.apply { isDaemon = true; start() } else null
-        val heard = try { listen(app, t, name, by) { d, n -> onStage("🎧 جيميناي بيسمع الأغنية ويوقّت الكلمات ($d/$n)…") } }
+        val part: ((List<Heard>, Int, Int) -> Unit)? = if (givenText == null && onPartial != null) { { hs: List<Heard>, d: Int, n: Int ->
+            if (hs.isNotEmpty()) {
+                val ls = hs.map { LyricLine(it.s, maxOf(it.e, it.s + 0.8), it.text) }
+                val fx = ls.mapIndexed { i, l -> LyricLine(l.start, minOf(l.end, if (i + 1 < ls.size) ls[i + 1].start else Double.MAX_VALUE), l.text) }
+                onPartial(LyricsResult(name, by, fx, false, d, n, emptySet(), "بتتكتب… ($d/$n)", fx.map { it.text }, true, "gemini-audio"))
+            }
+        } } else null
+        val heard = try { listen(app, t, name, by, givenText, part) { d, n -> onStage("🎧 جيميناي بيسمع الأغنية ويوقّت الكلمات ($d/$n)…") } }
                     catch (e: Throwable) { LogStore.err("lyricsai-listen", e); emptyList() }
         fetchThread?.join(5 * 60_000L)
         val tx = text

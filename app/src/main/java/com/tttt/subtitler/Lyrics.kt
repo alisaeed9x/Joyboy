@@ -323,22 +323,47 @@ object LyricsEngine {
      * ← وأخيرًا جيميناي يقترح صيغ بديلة للاسم ونعيد البحث بيها. كل النسخ اللي اتلقت بتتحفظ محليًا، وأحسن واحدة هي المعروضة.
      * بيرفض أي نتيجة مدتها بعيدة أو اسمها مش قريب. فشل الشبكة ما بيتحفظش كـ«مفيش كلمات»؛ «مفيش نتيجة» بتتحفظ 12 ساعة.
      */
-    fun start(ctx: Context, t: Track, mode: String, hint: Pair<String, String>?, retry: Boolean, fresh: Boolean, onStage: (String) -> Unit, onDone: (LyricsResult?, String) -> Unit) {
+    fun start(ctx: Context, t: Track, mode: String, hint: Pair<String, String>?, retry: Boolean, fresh: Boolean, allowAi: Boolean, onStage: (String) -> Unit, onDone: (LyricsResult?, String) -> Unit) {
         val app = ctx.applicationContext
         val k = key(t, M_FULL)
         if (running.putIfAbsent(k, true) != null) { onDone(null, "بتتجاب دلوقتي"); return }
         Thread {
-            try { fetch(app, t, hint, retry, fresh, onStage, onDone) }
+            try { fetch(app, t, hint, retry, fresh, onStage, onDone, allowAi) }
             catch (e: Throwable) { LogStore.err("lyrics-fetch", e); onDone(null, "فشل: " + (e.message ?: e.javaClass.simpleName).replace('\n', ' ').take(110)) }
             finally { running.remove(k) }
         }.apply { isDaemon = true }.start()
     }
 
-    private fun fetch(app: Context, t: Track, hint: Pair<String, String>?, retry: Boolean, fresh: Boolean, onStage: (String) -> Unit, onDone: (LyricsResult?, String) -> Unit) {
+    /**
+     * (v331) بحث LRCLIB بالألبوم والمغني كل واحد لوحده (بعد ما بحث الاسم وحده فشل): اسم+ألبوم · مغني+اسم · ألبوم+اسم · المغني بس (والنتايج بتتقيّم بالاسم/المدة).
+     * [done] = لقينا نتيجة كويسة خلاص؛ بنوقف أول ما تتحقق. أقصى 12 طلب.
+     */
+    private fun lrclibExtra(x: Ctx, names: List<String>, artists: List<String>, albums: List<String>, onStage: (String) -> Unit, done: () -> Boolean) {
+        var calls = 0
+        fun get(q: String, lbl: String) {
+            if (calls >= 12 || done()) return
+            calls++
+            onStage("🔎 [$lbl] بدوّر في LRCLIB…")
+            try {
+                val s = httpGet(API + "search?" + q)
+                x.answered = true
+                if (s != null) { val a = JSONArray(s); for (i in 0 until minOf(a.length(), 20)) x.add(lrcCand(a.getJSONObject(i), x)) }
+            } catch (e: Throwable) { x.lastErr = e.message ?: e.javaClass.simpleName }
+        }
+        val ns = names.filter { it.isNotBlank() }.distinct().take(4)
+        val ars = artists.filter { it.isNotBlank() }.distinct().take(2)
+        val als = albums.filter { it.isNotBlank() }.distinct().take(2)
+        for (al in als) for (tt in ns) get("track_name=" + enc(tt) + "&album_name=" + enc(al), "الألبوم")
+        for (ar in ars) for (tt in ns) get("q=" + enc(ar + " " + tt), "المغني")
+        for (al in als) for (tt in ns) get("q=" + enc(al + " " + tt), "الألبوم")
+        for (ar in ars) get("artist_name=" + enc(ar), "المغني لوحده")
+    }
+
+    private fun fetch(app: Context, t: Track, hint: Pair<String, String>?, retry: Boolean, fresh: Boolean, onStage: (String) -> Unit, onDone: (LyricsResult?, String) -> Unit, allowAi: Boolean = true) {
         val k = key(t, M_FULL)
         if (!fresh && !retry) {
             val c = cached(app, t, M_FULL)
-            if (c != null && c.lines.isNotEmpty()) { onDone(c, ""); return }
+            if (c != null && c.lines.isNotEmpty() && c.complete) { onDone(c, ""); return }   // (v331) نتيجة جزئية قديمة (التطبيق اتقفل في النص) بتتكمّل من الأول
         }
         val name = (hint?.first ?: "").ifBlank { t.title }
         val by = (hint?.second ?: "").ifBlank { t.artist }
@@ -412,6 +437,17 @@ object LyricsEngine {
         }
         for ((lbl, gv) in groups) { if (best() != null) break; runChain(gv, lbl) }
 
+        // (v331) بحث بالمغني والألبوم كل واحد لوحده (عربي وإنجليزي)
+        if (best() == null && x.answered) {
+            val alt = SongId.alt(t.id)
+            lrclibExtra(x, listOf(name, alt?.first ?: "", ArNorm.clean(name)), listOf(by, alt?.second ?: ""),
+                listOf(SongId.albumOf(t.id), SongId.albumLat(t.id)), onStage) { best() != null }
+        }
+
+        if (best() == null && !allowAi) {   // (v331) لسه بيتعرّف على الأغنية: ما نحفظش «مفيش كلمات» ولا نشغّل جيميناي — الكلمات هتتجاب تاني أول ما الاسم يتحدّد
+            onDone(null, "بستنى التعرّف على الأغنية (الاسم/المغني/الألبوم) قبل ما أكمّل الكلمات"); return
+        }
+
         // 5) جيميناي يقترح صيغ بديلة للاسم (من غير Google Search) ونعيد البحث بيها
         if (best() == null && x.answered) {
             onStage("🤖 جيميناي بيقترح صيغ تانية للاسم…")
@@ -430,7 +466,7 @@ object LyricsEngine {
         // 6) (v294) جيميناي يكتب الكلمات كاملة (بحث جوجل) ويوقّتها من سماع الأغنية نفسها — لو كل المصادر اللي فوق ملقتش حاجة
         var aiMsg = ""
         if (best() == null && x.answered && Cfg.allMainKeys().isNotEmpty()) {
-            val o = LyricsAI.run(app, t, name, by, SongId.albumOf(t.id), null, "", retry, onStage)
+            val o = LyricsAI.run(app, t, name, by, SongId.albumOf(t.id), null, "", retry, onStage) { pr -> save(app, t, M_FULL, pr) }
             if (o.res != null) { save(app, t, M_FULL, o.res); onDone(o.res, ""); return }
             aiMsg = o.msg
         }
@@ -466,6 +502,8 @@ object LyricsEngine {
         if (res == null) { onDone(null, "النتيجة فاضية"); return }
         // (v294) النسخة اللي اتلقت من غير توقيت: جيميناي يسمع الأغنية ويوقّت كل سطر (لو التطابق مع الصوت كويس؛ غير كده بنسيب النص زي ما هو)
         if (!res.synced && res.raw.size >= 4 && Cfg.allMainKeys().isNotEmpty() && !retry) {
+            // (v331) الكلمات تظهر فورًا من غير توقيت، وجيميناي يوقّتها (بالكلمات + مقاطع الصوت) وتتبدّل بالمتزامنة أول ما تخلص
+            save(app, t, M_FULL, LyricsResult(name, by, res.lines, true, 1, 1, emptySet(), "من غير توقيت — جيميناي بيوقّتها دلوقتي…", res.raw, false, bf.src))
             val o = LyricsAI.run(app, t, name, by, SongId.albumOf(t.id), res.raw, bf.src, false, onStage)
             if (o.res != null && o.res.synced && o.res.source.endsWith("+gemini")) res = o.res
         }

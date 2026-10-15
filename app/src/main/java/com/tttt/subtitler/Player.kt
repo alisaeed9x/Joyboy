@@ -319,6 +319,8 @@ class PlayerActivity : Activity(), Host {
     lateinit var logDlg: android.app.Dialog
     var chromeShown = false
     var fsOnly: List<View> = emptyList()
+    private lateinit var topTitle: TextView   // (v330) اسم الفيديو الشغّال (فوق شمال، جنب كبسولات العدّ)
+    private var fixTopRowFn: () -> Unit = {}
     private var tbView: View? = null   // (v265) الشريط العلوي (أزرار المشغّل)
     var lastMem = 0L
     var applyChromeFn: () -> Unit = {}
@@ -1576,7 +1578,25 @@ class PlayerActivity : Activity(), Host {
         fsBar.addOnLayoutChangeListener { _, _, t, _, b, _, ot, _, ob -> if (b - t != ob - ot && chromeShown) applyChromeFn() }   // ارتفاع الشريط اتغيّر: ارفع الترجمة فوقه
         val chromeFrame = FrameLayout(this).apply { visibility = View.GONE; tag = "chromeFrame" }
         // في الرأسي الصفوف بتلفّ لسطر جديد (FlowRow) — من غير HorizontalScrollView لأنه بيدّي عرض لا نهائي فالصف عمره ما بيلفّ
-        chromeFrame.addView(tb, FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.RIGHT).apply { setMargins(ui.dp(8), ui.dp(10), ui.dp(100), 0) }); tbView = tb   // (v265) في ملء الشاشة الهامش بيكبر عشان الشريط مايغطّيش الكبسولات   // (v90) يمين، جنب عداد الجمل
+        // (v330) الصف الفوق: اسم الفيديو (شمال) + كبسولات العدّ (يمين)؛ أزرار المشغّل نزلت درجة تحتهم عشان ما تغطّيش الكبسولات
+        topTitle = TextView(this).apply {
+            textSize = 12f; setTextColor(Color.WHITE); maxLines = 2; ellipsize = android.text.TextUtils.TruncateAt.END
+            typeface = android.graphics.Typeface.DEFAULT_BOLD; setShadowLayer(5f, 0f, 1f, Color.BLACK)
+            setPadding(ui.dp(8), ui.dp(4), ui.dp(8), ui.dp(4)); background = ui.box(0x66000000, Color.TRANSPARENT, 8); visibility = View.GONE
+        }
+        chromeFrame.addView(topTitle, FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.LEFT).apply { setMargins(ui.dp(12), ui.dp(10), ui.dp(190), 0) })
+        chromeFrame.addView(tb, FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.RIGHT).apply { setMargins(ui.dp(8), ui.dp(50), ui.dp(8), 0) }); tbView = tb
+        fixTopRowFn = fn@{
+            val bw = if (::badgeRowV.isInitialized && badgeRowV.visibility == View.VISIBLE) badgeRowV.width else 0
+            val bh = if (::badgeRowV.isInitialized && badgeRowV.visibility == View.VISIBLE) badgeRowV.height else 0
+            val tl = topTitle.layoutParams as FrameLayout.LayoutParams
+            val rm = bw + ui.dp(24)
+            if (tl.rightMargin != rm) { tl.rightMargin = rm; topTitle.layoutParams = tl }
+            val tp = (ui.dp(8) + bh + ui.dp(6)).coerceAtLeast(ui.dp(46))
+            val tbl = tb.layoutParams as FrameLayout.LayoutParams
+            if (tbl.topMargin != tp) { tbl.topMargin = tp; tb.layoutParams = tbl; placeFloatFn() }
+        }
+        if (::badgeRowV.isInitialized) badgeRowV.addOnLayoutChangeListener { _, l, t, r, b, ol, ot, orr, ob -> if (r - l != orr - ol || b - t != ob - ot) fixTopRowFn() }   // (v265) في ملء الشاشة الهامش بيكبر عشان الشريط مايغطّيش الكبسولات   // (v90) يمين، جنب عداد الجمل
         chromeFrame.addView(fsBar, FrameLayout.LayoutParams(-1, -2, Gravity.BOTTOM).apply { setMargins(0, 0, 0, ui.dp(6)) })
         // زرار القفل الصغير: بيظهر لما تلمس الشاشة وهي مقفولة
         lockOv = ui.fsCircle("🔒") { setLock(false) }.apply { visibility = View.GONE }
@@ -1597,7 +1617,7 @@ class PlayerActivity : Activity(), Host {
             val bh = videoBox.height; if (bh <= 0) return@fn
             val chromeOn = fullMode && chromeShown && !pipNow()
             val eyeH = ui.dp(44); val rotH = ui.dp(48); val gap = ui.dp(10)
-            val zTop = ui.dp(84)   // (v97) تحت عداد الجمل خالص
+            val zTop = ui.dp(84) + (if (chromeOn) ui.dp(48) else 0)   // (v97) تحت عداد الجمل خالص (v330) + الأزرار نزلت درجة
             val zBot = bh - (if (chromeOn) fsBar.height + ui.dp(16) else ui.dp(60))
             val room = zBot - zTop
             val both = rotH + gap + eyeH
@@ -1618,6 +1638,7 @@ class PlayerActivity : Activity(), Host {
             val on = fullMode && chromeShown && !pipNow()
             val wasOn = chromeFrame.visibility == View.VISIBLE
             chromeFrame.visibility = if (on) View.VISIBLE else View.GONE; if (!on) { dismissPop(); tbCollapseFn() }
+            if (on) { try { val tt = notifTitle(); if (topTitle.text.toString() != tt) topTitle.text = tt; topTitle.visibility = if (tt.isBlank()) View.GONE else View.VISIBLE; fixTopRowFn() } catch (_: Throwable) {} }   // (v330)
             if (on && !wasOn) { chromeFrame.alpha = 0f; chromeFrame.translationY = ui.dp(14).toFloat(); chromeFrame.animate().alpha(1f).translationY(0f).setDuration(220).start() }
             else if (!on) { chromeFrame.animate().cancel(); chromeFrame.alpha = 1f; chromeFrame.translationY = 0f }
             centerPlay.visibility = if (on || pipNow() || uiLocked) View.GONE else if (buffering) View.VISIBLE else if (player.isPlaying) View.GONE else View.VISIBLE   // الشريط ظاهر = فيه زرار تشغيل تحت، فمنشيلش الأوسط فوق الترجمة
@@ -2010,7 +2031,7 @@ class PlayerActivity : Activity(), Host {
                 if (now - lastBeat > 20000) { lastBeat = now; LogStore.add("💓 ${LogStore.heapLine()} · ${if (player.isPlaying) "بيشتغل" else "واقف"} @${fmtMs(cur)} · مترجم ${(engine.coveredSec() / 60).toInt()}د · ${engine.subs.size} جملة") }
                 run { val pc = PlayerLogic.percent(engine.coveredSec(), durMs / 1000.0); if (pc != trPct) { trPct = pc; updateTr() } }
                 if (fullMode) { fsBadge.set("🔊 " + PlayerLogic.percent(engine.coveredSec(), durMs / 1000.0).toString() + "% · " + list.size.toString() + " جملة ▾", ((try { engine.offlineBrief() } catch (_: Throwable) { null }) ?: "")); fsBadge.setOn(engineStarted && !engine.userPaused); netBadge.set(NetUse.fmt(NetUse.localTotal()), NetUse.fmt(NetUse.onlineTotal())); applyBadgeAlpha() }   // (v236) نقطة خضراء = الوضع الصوتي شغّال
-                if (fullMode && ::visual.isInitialized) { visBadge.set("👁 " + visual.count + " جملة", if (visual.running) "شغّال" else "واقف"); visBadge.setOn(visual.running); sentDiv.visibility = if (fsBadge.visibility == View.VISIBLE && visBadge.visibility == View.VISIBLE) View.VISIBLE else View.GONE }   // (v236) نقطة خضراء = الوضع البصري شغّال
+                if (fullMode && ::visual.isInitialized) { visBadge.set("👁 " + visual.count + " جملة", visual.status.let { st -> if (visual.running) "شغّال" else if (st.isBlank() || st.startsWith("👁")) "واقف" else st.take(30) })   // (v330) لو واقف بسبب (مفتاح/مصدر…) السبب يظهر على الكبسولة; visBadge.setOn(visual.running); sentDiv.visibility = if (fsBadge.visibility == View.VISIBLE && visBadge.visibility == View.VISIBLE) View.VISIBLE else View.GONE }   // (v236) نقطة خضراء = الوضع البصري شغّال
                 if (now - lastMem > 4000) { lastMem = now; if (!fullMode) mem.update(this@PlayerActivity) }
                 counters.text = "جمل ${list.size} · 👁 ${visList.size} · تغطية ${PlayerLogic.percent(engine.coveredSec(), durMs / 1000.0)}% · فجوات ${engine.failedCount()} · كوتة ${Quota.used(conf.model)}/${Models.quotaOf(conf.model)} · ${NetUse.badgeLine()}"
                 if (logDlg.isShowing && logMode == 0) {
@@ -2200,7 +2221,7 @@ class PlayerActivity : Activity(), Host {
             listOf(clean(t), clean(folder)).filter { it.isNotBlank() }.distinct().joinToString(" | ")
         }
         Live.engine = engine
-        visual = VisualMode({ conf }, { cur / 1000.0 }, { makeRetriever() }, { m ->   // (v182) cur = نسخة volatile من مكان التشغيل — ExoPlayer بيرمي استثناء لو اتنادى من خيط تاني
+        visual = VisualMode({ visConfNow() }, { cur / 1000.0 }, { makeRetriever() }, { m ->   // (v182) cur = نسخة volatile من مكان التشغيل — ExoPlayer بيرمي استثناء لو اتنادى من خيط تاني
             visLog(m)   // (v182) كل رسائل الوضع البصري بتتسجّل في اللوج
             // (v213) الوضع البصري بيشتغل في صمت: حالته بتظهر في شريطه (visBar) تحت شريط الباتش الفاشل، ومفيش إشعارات على الشاشة غير الأخطاء اللي لازم تتصلّح (مفتاح ناقص / مصدر مش مدعوم)
             val important = (m.startsWith("ضيف مفتاح") || m.contains("مش مدعوم") || m.startsWith("المفاتيح") || m.startsWith("⚠")) && !(visAutoRun && !m.startsWith("المفاتيح"))
@@ -2458,7 +2479,7 @@ class PlayerActivity : Activity(), Host {
         videoBoxRef.background = GradientDrawable().apply { setColor(Color.BLACK); cornerRadius = if (f) 0f else ui.dp(14).toFloat() }
         fsBtnLp.setMargins(ui.dp(10), 0, 0, ui.dp(10)); fsBtnV.layoutParams = fsBtnLp
         fsOnly.forEach { it.visibility = if (f) View.VISIBLE else View.GONE }
-        try { tbView?.let { v -> (v.layoutParams as? FrameLayout.LayoutParams)?.let { lp -> lp.rightMargin = ui.dp(if (f) 180 else 100); v.layoutParams = lp } } } catch (_: Throwable) {}   // (v265)
+        try { tbView?.let { v -> (v.layoutParams as? FrameLayout.LayoutParams)?.let { lp -> lp.rightMargin = ui.dp(8); v.layoutParams = lp } } } catch (_: Throwable) {}   // (v265)
         st.visibility = if (f) View.GONE else View.VISIBLE
         if (::logDrawer.isInitialized) { (leftCol.layoutParams as FrameLayout.LayoutParams).topMargin = ui.dp(44); logDrawer.visibility = View.VISIBLE; leftCol.requestLayout() }
         @Suppress("DEPRECATION") window.decorView.systemUiVisibility = if (f) (View.SYSTEM_UI_FLAG_FULLSCREEN or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY or View.SYSTEM_UI_FLAG_LAYOUT_STABLE) else (if (Build.VERSION.SDK_INT >= 23 && th.isLight) View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR else 0)
@@ -3316,7 +3337,7 @@ class PlayerActivity : Activity(), Host {
             val r = android.media.MediaMetadataRetriever(); val u = uri; val l = url
             if (u != null) r.setDataSource(this, u) else if (l != null && !l.contains(".m3u8", true)) r.setDataSource(l, HashMap(hdr)) else return null
             r
-        } catch (_: Exception) { null }
+        } catch (e: Exception) { try { visLog("👁 المسح من الملف مش ممكن (" + e.javaClass.simpleName + ": " + (e.message ?: "").take(70) + ") — بلقط الفريمات من الشاشة بدل كده") } catch (_: Throwable) {}; null }
     }
 
     /** (v185) قاريء مقاطع لنفس مصدر الفيديو (لقص مقطع 10 ثواني للوضع البصري) — m3u8 مش مدعوم (بيرجّع null) */
@@ -3377,6 +3398,14 @@ class PlayerActivity : Activity(), Host {
         return bmp
     }
     private var visSayAt = 0L
+    /** (v330) الوضع البصري كان بياخد نسخة الإعدادات القديمة (conf) من وقت فتح المشغّل → مفتاح ضفته بعدها ما كانش بيشوفه فالحلقة بتقف فورًا. دلوقتي نسخة جديدة كل ~1.5 ثانية (من غير ما نلمس conf بتاعة المحرك) */
+    @Volatile private var visConfV: Conf? = null
+    @Volatile private var visConfAt = 0L
+    private fun visConfNow(): Conf {
+        val n = android.os.SystemClock.uptimeMillis(); val c = visConfV
+        if (c == null || n - visConfAt > 1500L) { try { visConfV = Cfg.snapshot(); visConfAt = n } catch (_: Throwable) {} }
+        return visConfV ?: conf
+    }
     private lateinit var visBar: TextView
     private var visBarTxt = ""
     private var visAutoRun = false

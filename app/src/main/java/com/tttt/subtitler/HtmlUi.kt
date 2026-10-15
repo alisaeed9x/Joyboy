@@ -158,13 +158,13 @@ class TransBadge(ctx: Context, th: Theme, plain: Boolean = false) : LinearLayout
         orientation = HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL
         setPadding((7 * d).toInt(), (3 * d).toInt(), (7 * d).toInt(), (3 * d).toInt())
         if (!plain) background = GradientDrawable().apply { setColor(0xE0141418.toInt()); cornerRadius = 9 * d; setStroke((1 * d).toInt().coerceAtLeast(1), 0x1FFFFFFF) }
-        val col = LinearLayout(ctx).apply { orientation = VERTICAL; gravity = Gravity.CENTER_HORIZONTAL; addView(pct); addView(cnt) }
+        val col = LinearLayout(ctx).apply { orientation = VERTICAL; gravity = Gravity.CENTER_HORIZONTAL; addView(pct, LayoutParams(-2, -2)); addView(cnt, LayoutParams(-2, -2)) }   // (v330) wrap_content: match_parent كان بيخلّي TextView ما يطلبش قياس جديد لما الرقم يكبر
         addView(col, LayoutParams(-2, -2))
         addView(dot, LayoutParams((6 * d).toInt(), (6 * d).toInt()).apply { marginStart = (5 * d).toInt() })
     }
     /** نقطة الحالة: خضراء = الوضع شغّال، حمراء = واقف */
     fun setOn(on: Boolean) { dot.visibility = View.VISIBLE; (dot.background as GradientDrawable).setColor(if (on) 0xFF34C759.toInt() else 0xFFFF3B30.toInt()) }
-    fun set(p: String, c: String) { if (pct.text.toString() != p) pct.text = p; if (cnt.text.toString() != c) cnt.text = c; val v = if (c.isBlank()) View.GONE else View.VISIBLE; if (cnt.visibility != v) cnt.visibility = v }
+    fun set(p: String, c: String) { var ch = false; if (pct.text.toString() != p) { pct.text = p; ch = true }; if (cnt.text.toString() != c) { cnt.text = c; ch = true }; val v = if (c.isBlank()) View.GONE else View.VISIBLE; if (cnt.visibility != v) { cnt.visibility = v; ch = true }; if (ch) requestLayout() }
 }
 
 /** (v249) كبسولة سحب النت — منفصلة عن الكبسولتين، نفس مكانهم (شمال فوق الفيديو). سطرين: 🌐 فيديوهات عادية · 🔗 فيديوهات النت */
@@ -176,9 +176,9 @@ class NetBadge(ctx: Context) : LinearLayout(ctx) {
         orientation = VERTICAL; gravity = Gravity.CENTER_VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_LTR
         setPadding((7 * d).toInt(), (3 * d).toInt(), (7 * d).toInt(), (3 * d).toInt())
         background = GradientDrawable().apply { setColor(0xE0141418.toInt()); cornerRadius = 9 * d; setStroke((1 * d).toInt().coerceAtLeast(1), 0x1FFFFFFF) }
-        addView(a); addView(b)
+        addView(a, LayoutParams(-2, -2)); addView(b, LayoutParams(-2, -2))   // (v330) wrap_content (كان match_parent فالكبسولة ما بتكبرش والأرقام الكبيرة بتتقصّ)
     }
-    fun set(local: String, online: String) { val x = "🌐 $local"; val y = "🔗 $online"; if (a.text.toString() != x) a.text = x; if (b.text.toString() != y) b.text = y }
+    fun set(local: String, online: String) { val x = "🌐 $local"; val y = "🔗 $online"; var ch = false; if (a.text.toString() != x) { a.text = x; ch = true }; if (b.text.toString() != y) { b.text = y; ch = true }; if (ch) requestLayout() }
 }
 
 class MaxHeightScroll(ctx: Context, val maxH: Int) : ScrollView(ctx) {

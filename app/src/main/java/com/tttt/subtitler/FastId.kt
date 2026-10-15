@@ -190,20 +190,20 @@ object FastId {
                 if (isGone(t.id)) { onDone(null, CANCELLED); return@Thread }   // (v315) اليوزر سابها: مفيش طلب ألبوم
 
                 // ===== 3) الألبوم (نصي من غير صوت، مهلة قصيرة — لو فشل نكمّل من غيره) =====
-                var album = ""
+                var album = ""; var albumLat = ""
                 try {
                     Api.readTimeoutOverride.set(10000)
                     for (k in SongId.textKeys().take(2)) {
                         try {
                             val r = Api.generate(Models.DEFAULT, k, albumPrompt(title, artist), null, 200, 0.0, true, false)
                             val j = parseJson(r.text)
-                            if (j != null) { album = j.optString("album").trim(); break }
+                            if (j != null) { album = j.optString("album").trim(); albumLat = j.optString("album_latin").trim(); break }
                         } catch (e: ApiErr) { if (e.code != 429) break } catch (_: Throwable) { break }
                     }
                 } finally { try { Api.readTimeoutOverride.remove() } catch (_: Throwable) {} }
 
                 forgetPart(t.id)
-                onDone(SongMatch(title, artist, album, minOf(artistConf, titleConf), titleLat, artistLat, 1), "")
+                onDone(SongMatch(title, artist, album, minOf(artistConf, titleConf), titleLat, artistLat, 1, albumLat), "")
             } catch (e: Throwable) { LogStore.err("fastid", e); onDone(null, "فشل: " + (e.message ?: "")) }
         }.apply { isDaemon = true }.start()
     }

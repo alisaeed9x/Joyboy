@@ -7,7 +7,7 @@ import java.net.HttpURLConnection
 import java.net.URL
 
 /** نتيجة التعرف على أغنية */
-class SongMatch(val title: String, val artist: String, val album: String, val conf: Int = 100, val tLat: String = "", val aLat: String = "", val votes: Int = 1)
+class SongMatch(val title: String, val artist: String, val album: String, val conf: Int = 100, val tLat: String = "", val aLat: String = "", val votes: Int = 1, val albLat: String = "")
 
 /**
  * (v192) التعرف على أغنية مجهولة بالبصمة عن طريق خدمة AudD (api.audd.io): بياخد مقطع ~12ث من الأغنية، يبعته للخدمة، ويرجع الاسم والفنان.
@@ -30,7 +30,11 @@ object SongId {
         Cfg.put("mname_$id", m.title + "\u0001" + m.artist); Cfg.put("malbum_$id", m.album.trim())
         // (v298) الصيغة التانية للاسم (إنجليزي لو الأصلي عربي): بتتحفظ جنب الاسم عشان الكلمات تدوّر بكل لغة لوحدها
         Cfg.put("mlat_$id", if (m.tLat.isBlank() && m.aLat.isBlank()) "" else m.tLat + "\u0001" + m.aLat)
+        Cfg.put("malbumlat_$id", m.albLat.trim())   // (v331) اسم الألبوم بالصيغة التانية (إنجليزي لو الأصلي عربي) — بيتدوّر بيه على الكلمات
     }
+    /** (v331) الألبوم بالصيغة التانية — "" لو مش معروف */
+    fun albumLat(id: Long): String = Cfg.str("malbumlat_$id", "")
+    fun saveAlbumLat(id: Long, v: String) { Cfg.put("malbumlat_$id", v.trim()) }
     /** (v300) الصيغة الإنجليزية بس (من غير ما نلمس الاسم) — لو اتجابت بعد حفظ الاسم */
     fun saveAlt(id: Long, t: String, a: String) { Cfg.put("mlat_$id", if (t.isBlank() && a.isBlank()) "" else t.trim() + "\u0001" + a.trim()) }
     /** (v306) مفاتيح الطلبات النصية الصغيرة (ألبوم/تصحيح/صيغة إنجليزي): مفتاح الصور/الوضع البصري الأول (لوحده)، وبعده الأساسية — فمفاتيح السماع الأساسية بتفضل فاضية للمقاطع */
@@ -109,13 +113,13 @@ object SongId {
                 if ((wrongTitle && title.isEmpty()) || (wrongArtist && artist.isEmpty())) { onDone(null, "جيميناي مش متأكد من القيمة الصح"); return@Thread }
                 if (conf in 1..49 && (wrongTitle || wrongArtist)) { onDone(null, "جيميناي مش متأكد (ثقته $conf%)"); return@Thread }
                 if (title.isEmpty()) title = m.title
-                out = SongMatch(title, artist, album, if (conf <= 0) 100 else conf, g("title_latin").ifBlank { m.tLat }, g("artist_latin").ifBlank { m.aLat })
+                out = SongMatch(title, artist, album, if (conf <= 0) 100 else conf, g("title_latin").ifBlank { m.tLat }, g("artist_latin").ifBlank { m.aLat }, 1, g("album_latin").ifBlank { m.albLat })
             } catch (e: Throwable) { LogStore.err("songid-repair", e); msg = e.message ?: "" }
             onDone(out, if (out == null) msg.ifBlank { "فشل" } else "")
         }.apply { isDaemon = true }.start()
     }
 
-    fun clearOverride(id: Long) { Cfg.put("mname_$id", ""); Cfg.put("malbum_$id", ""); Cfg.put("mlat_$id", ""); FastId.forgetPart(id) }
+    fun clearOverride(id: Long) { Cfg.put("mname_$id", ""); Cfg.put("malbum_$id", ""); Cfg.put("mlat_$id", ""); Cfg.put("malbumlat_$id", ""); FastId.forgetPart(id) }
     /** (v298) الاسم/الفنان بالحروف اللاتينية (أو اللغة التانية) المحفوظين مع التعرّف — null لو مفيش */
     fun alt(id: Long): Pair<String, String>? {
         val v = Cfg.str("mlat_$id", ""); if (v.isBlank()) return null

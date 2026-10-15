@@ -27,6 +27,8 @@ import java.util.concurrent.locks.ReentrantLock
  * موسيقى = الأغنية الأصلية − الصوت، يعني صوت + موسيقى = الأغنية بالظبط.
  */
 object StemAi {
+    /** (v331) فصل الصوت عن الموسيقى متوقّف مؤقتًا (النتيجة مش كويسة). غيّرها لـ false عشان يرجع (الكود كله موجود زي ما هو) */
+    const val DISABLED = true
     class Mdl(val file: String, val label: String, val mb: Int, val spec: MdxSpec)
     class Eng(val id: String, val label: String, val note: String, val models: List<Mdl>, val overlap: Double)
 
