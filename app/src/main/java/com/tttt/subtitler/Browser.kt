@@ -69,17 +69,42 @@ object BrowserStore {
     private fun skip(u: String) = u.isBlank() || u.startsWith("about:") || u.startsWith("data:") || u.startsWith("javascript:")
 
     fun history(c: Context): ArrayList<Entry> = hist ?: load(c, "br_history.json").also { hist = it }
-    fun addHistory(c: Context, url: String, title: String) {
-        if (skip(url)) return
-        val h = history(c)
+    private fun addTo(c: Context, h: ArrayList<Entry>, file: String, url: String, title: String) {
         if (h.isNotEmpty() && h[0].url == url) { h[0].time = System.currentTimeMillis(); if (title.isNotBlank()) h[0].title = title }
         else { h.add(0, Entry(url, title, System.currentTimeMillis())); while (h.size > 1000) h.removeAt(h.size - 1) }
-        save(c, "br_history.json", h)
+        save(c, file, h)
+    }
+    fun addHistory(c: Context, url: String, title: String) {
+        if (skip(url)) return
+        addTo(c, history(c), "br_history.json", url, title)
     }
     fun setTitle(c: Context, url: String, title: String) {
         if (skip(url) || title.isBlank()) return
-        val e = history(c).firstOrNull { it.url == url } ?: return
-        if (e.title != title) { e.title = title; save(c, "br_history.json", history(c)) }
+        val e = history(c).firstOrNull { it.url == url }
+        if (e != null) { if (e.title != title) { e.title = title; save(c, "br_history.json", history(c)) }; return }
+        val pe = privacy(c).firstOrNull { it.url == url } ?: return
+        if (pe.title != title) { pe.title = title; save(c, "br_privacy.json", privacy(c)) }
+    }
+
+    // (v358) سجل الخصوصية: اللينكات اللي اتصنّفت «للكبار» (محليًا أو بالذكاء الصناعي). بيتعرض بعد القفل بس.
+    private var priv: ArrayList<Entry>? = null
+    fun privacy(c: Context): ArrayList<Entry> = priv ?: load(c, "br_privacy.json").also { priv = it }
+    fun removePrivacy(c: Context, e: Entry) { privacy(c).remove(e); save(c, "br_privacy.json", privacy(c)) }
+    fun clearPrivacy(c: Context) { privacy(c).clear(); save(c, "br_privacy.json", privacy(c)) }
+    private fun addPrivacy(c: Context, url: String, title: String) { addTo(c, privacy(c), "br_privacy.json", url, title) }
+    /** نقل زيارة اتسجّلت عادي لسجل الخصوصية (بعد ما الذكاء الصناعي صنّفها) */
+    fun moveToPrivacy(c: Context, url: String) {
+        val h = history(c); val e = h.firstOrNull { it.url == url } ?: return
+        h.remove(e); save(c, "br_history.json", h)
+        addPrivacy(c, e.url, e.title)
+    }
+    /** كل زيارة صفحة بتعدّي من هنا: للكبار ← سجل الخصوصية، غير كده ← السجل العادي + تصنيف بالذكاء الصناعي في الخلفية */
+    fun recordVisit(c: Context, url: String, title: String) {
+        if (skip(url)) return
+        if (!PrivacyFilter.on()) { addHistory(c, url, title); return }
+        if (PrivacyFilter.localAdult(url, title)) { addPrivacy(c, url, title); return }
+        addHistory(c, url, title)
+        PrivacyFilter.aiCheck(url, title) { moveToPrivacy(c, url) }
     }
     fun removeHistory(c: Context, e: Entry) { history(c).remove(e); save(c, "br_history.json", history(c)) }
     fun clearHistory(c: Context) { history(c).clear(); save(c, "br_history.json", history(c)) }
@@ -471,7 +496,7 @@ class BrowserActivity : Activity() {
                     t.url = url
                     val ti = v.title?.takeIf { it.isNotBlank() } ?: ""
                     if (ti.isNotEmpty()) { t.title = ti; pageTitles[url] = ti }
-                    if (!t.priv) BrowserStore.addHistory(this@BrowserActivity, url, ti)
+                    if (!t.priv) BrowserStore.recordVisit(this@BrowserActivity, url, ti)
                     noteYt(url, ti)
                 }
                 if (t.id == panicClearId && (url ?: "").contains("google.")) { try { v.clearHistory() } catch (_: Throwable) {}; endPanicCover(); updateNav() }   // (v231) الرجوع مايرجّعش الصفحة اللي اتمسحت
@@ -685,6 +710,7 @@ class BrowserActivity : Activity() {
             },
             "📚 المفضلة" to { showBookmarks() },
             "🕘 السجل" to { showHistory() },
+            "🔒 سجل الخصوصية" to { showPrivacyHistory() },
             "🔍 بحث في الصفحة" to { openFind() },
             (if (tab.desktop) "🖥 نسخة الكمبيوتر: شغالة ✓" else "🖥 نسخة الكمبيوتر") to { toggleDesktop() },
             "🏠 الصفحة الرئيسية" to { load(home()) },
@@ -859,6 +885,39 @@ class BrowserActivity : Activity() {
         d = sheet("🕘 السجل", q, clear, box)
         render(); d.show()
     }
+    /** (v358) سجل الخصوصية: مقفول بنفس نمط/بصمة المجلد المخفي. بيتقفل من أول ما الدايلوج يتقفل (كل فتحة بتطلب القفل تاني) */
+    private var privLock: LockUi? = null
+    private fun showPrivacyHistory() {
+        val lk = privLock ?: LockUi(this, ui, th).also { privLock = it }
+        lk.gate { openPrivacyHistory() }
+    }
+    private fun openPrivacyHistory() {
+        val box = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL }
+        val q = ui.input("دوّر في سجل الخصوصية", "")
+        lateinit var d: Dialog
+        fun render() {
+            box.removeAllViews()
+            val f = q.text.toString().trim().lowercase()
+            val l = BrowserStore.privacy(this).filter { f.isEmpty() || it.url.lowercase().contains(f) || it.title.lowercase().contains(f) }.take(200)
+            if (l.isEmpty()) box.addView(ui.text("مفيش حاجة هنا. اللينكات اللي الذكاء الصناعي (أو الكلمات الواضحة) يصنّفها «للكبار» بتتحط هنا بدل السجل العادي.", 13f, th.muted))
+            val fmt = java.text.SimpleDateFormat("dd/MM HH:mm", java.util.Locale.US)
+            var lastDay = ""
+            for (e in l) {
+                val day = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US).format(java.util.Date(e.time))
+                if (day != lastDay) { lastDay = day; box.addView(ui.text(fmt.format(java.util.Date(e.time)).substringBefore(' '), 12f, th.primary, true).apply { setPadding(ui.dp(4), ui.dp(8), 0, ui.dp(2)) }) }
+                box.addView(entryRow(e, { d.dismiss(); load(e.url) }, { BrowserStore.removePrivacy(this, e); render() }))
+            }
+        }
+        q.addTextChangedListener(object : TextWatcher {
+            override fun afterTextChanged(s: Editable?) { render() }
+            override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
+            override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
+        })
+        val clear = ui.button("🗑 امسح سجل الخصوصية كله") { BrowserStore.clearPrivacy(this); render(); Notice.show(this, "سجل الخصوصية اتمسح", 1800L) }
+        d = sheet("🔒 سجل الخصوصية", q, clear, box)
+        try { d.window?.addFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE) } catch (_: Throwable) {}
+        render(); d.show()
+    }
     private fun showBookmarks() {
         val box = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL }
         lateinit var d: Dialog
@@ -897,6 +956,8 @@ class BrowserActivity : Activity() {
             try { CookieManager.getInstance().removeAllCookies(null); CookieManager.getInstance().flush(); WebStorage.getInstance().deleteAllData() } catch (_: Throwable) {}
             Notice.show(this, "الكوكيز وبيانات المواقع اتمسحت", 2000L)
         })
+        box.addView(ui.switchRow("🔒 فصل لينكات الكبار في «سجل الخصوصية» المقفول", PrivacyFilter.on()) { Cfg.put("pf_on", if (it) "1" else "0") })
+        box.addView(ui.switchRow("🤖 الذكاء الصناعي يصنّف الصفحات (بيبعت الرابط والعنوان بس، مرة لكل موقع)", PrivacyFilter.aiOn()) { Cfg.put("pf_ai", if (it) "1" else "0") })
         box.addView(ui.button("🕘 امسح السجل") { BrowserStore.clearHistory(this); Notice.show(this, "السجل اتمسح", 1800L) })
         sheet("⚙️ إعدادات المتصفح", box).show()
     }
@@ -973,6 +1034,7 @@ class BrowserActivity : Activity() {
     @Suppress("DEPRECATION")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         if (requestCode == 4711) { fileCb?.onReceiveValue(WebChromeClient.FileChooserParams.parseResult(resultCode, data)); fileCb = null; return }
+        if (privLock?.onResult(requestCode, resultCode == RESULT_OK) == true) return
         super.onActivityResult(requestCode, resultCode, data)
     }
 

@@ -1319,7 +1319,7 @@ class PlayerActivity : Activity(), Host {
         }
         gTool.addView(pk("🗂 ترجمات الفيديو ›") { fillVer(); dismissPop(); togglePop(menuB, gVer, false) })
         gTool.addView(pd("🔄 إعادة ترجمة") { batchDialog() })
-        gTool.addView(pd("👁 الوضع البصري (قايمة / إعادة)") { visualDialog() })
+        gTool.addView(pd("👁 الوضع البصري") { visualDialog() })
         gTool.addView(pd("🌙 ترجمة بالخلفية") { translateInBackground() })
         gTool.addView(pd("📶 استهلاك النت") { netDialog() })
         gTool.addView(pd("📜 ذكّرني") { recapDialog() })
@@ -2003,7 +2003,7 @@ class PlayerActivity : Activity(), Host {
                 if (now - lastBeat > 20000) { lastBeat = now; LogStore.add("💓 ${LogStore.heapLine()} · ${if (player.isPlaying) "بيشتغل" else "واقف"} @${fmtMs(cur)} · مترجم ${(engine.coveredSec() / 60).toInt()}د · ${engine.subs.size} جملة") }
                 run { val pc = PlayerLogic.percent(engine.coveredSec(), durMs / 1000.0); if (pc != trPct) { trPct = pc; updateTr() } }
                 if (fullMode) { fsBadge.set("🔊 " + PlayerLogic.percent(engine.coveredSec(), durMs / 1000.0).toString() + "% · " + list.size.toString() + " جملة ▾", ((try { engine.offlineBrief() } catch (_: Throwable) { null }) ?: "")); fsBadge.setOn(engineStarted && !engine.userPaused); netBadge.set(NetUse.fmt(NetUse.localTotal()), NetUse.fmt(NetUse.onlineTotal())); applyBadgeAlpha() }   // (v236) نقطة خضراء = الوضع الصوتي شغّال
-                if (fullMode && ::visual.isInitialized) { visBadge.set("👁 " + visual.count + " جملة", visual.status.let { st -> if (visual.running) "شغّال" else if (st.isBlank() || st.startsWith("👁")) "واقف" else st.take(30) }); visBadge.setOn(visual.running); sentDiv.visibility = if (fsBadge.visibility == View.VISIBLE && visBadge.visibility == View.VISIBLE) View.VISIBLE else View.GONE }   // (v330) لو واقف بسبب (مفتاح/مصدر…) السبب يظهر على الكبسولة · (v236) نقطة خضراء = الوضع البصري شغّال
+                if (fullMode && ::visual.isInitialized) { visBadge.set("👁 " + visual.count, "") }   // (v358) كبسولة واحدة للصوتي والبصري: من غير نقطة ولا كلمة شغّال/واقف ولا فاصل — الحالة من الدايرة الحمراء
                 if (now - lastMem > 4000) { lastMem = now; if (!fullMode) mem.update(this@PlayerActivity) }
                 counters.text = "جمل ${list.size} · 👁 ${visList.size} · تغطية ${PlayerLogic.percent(engine.coveredSec(), durMs / 1000.0)}% · فجوات ${engine.failedCount()} · كوتة ${Quota.used(conf.model)}/${Models.quotaOf(conf.model)} · ${NetUse.badgeLine()}"
                 if (logDlg.isShowing && logMode == 0) {
@@ -2891,7 +2891,9 @@ class PlayerActivity : Activity(), Host {
     /** (v151) بينفّذ كل الخيارات المحددة في قايمة ✨ بالترتيب بدوسة واحدة، وكل خطوة بتستنى اللي قبلها */
     fun applyAiOptions() {
         if (aiSel.isEmpty()) { say("اختار خيار واحد على الأقل من القايمة"); return }
-        if (Cfg.allMainKeys().isEmpty() && conf.keys.isEmpty()) { say("ضيف مفتاح API الأول"); return }
+        // (v360) من غير مفتاح جيميناي، المهام الجانبية بتكمّل بمحرك LLM المختار (conv_via) — نفس شرط Engine.bgCall
+        val llmOk = ExtLlm.byId(Cfg.str("conv_via", "").trim())?.let { ExtLlm.configured(it) && ExtLlm.enabled(it) && ExtLlm.blockedWhy(it) == null } == true
+        if (Cfg.allMainKeys().isEmpty() && conf.keys.isEmpty() && !llmOk) { say("ضيف مفتاح API (أو اختار محرك LLM للمهام الجانبية) الأول"); return }
         val order = listOf("refine", "dial", "family", "explicit", "pron", "dedup").filter { it in aiSel }
         val results = ArrayList<String>()
         var stopped = false
@@ -3479,7 +3481,85 @@ class PlayerActivity : Activity(), Host {
     private var visAutoRun = false
     private var visTok = 0
 
+    /**
+     * (v358) لوحة الوضع البصري الصغيرة: زرار تشغيل/إيقاف صغير + «⋯» للقايمة الكاملة، وتحتهم جمل الوضع البصري بتوقيتها —
+     * دوسة على جملة بتنقلك لمكانها في الفيديو. بتتحدّث لوحدها وهي مفتوحة والجملة الحالية متظلّلة.
+     */
     fun visualDialog() {
+        val d = GDialog(this); d.requestWindowFeature(android.view.Window.FEATURE_NO_TITLE)
+        visual.mode = "scene"
+        val box = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; setPadding(ui.dp(12), ui.dp(10), ui.dp(12), ui.dp(10)); background = ui.box(th.card, th.border, 18) }
+        val head = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; gravity = Gravity.CENTER_VERTICAL }
+        val title = ui.text("👁 الوضع البصري", 15f, th.primary, true)
+        fun chip(t: String, f: () -> Unit) = IconTextView(this).apply {
+            text = t; textSize = 12.5f; gravity = Gravity.CENTER; setTextColor(th.text); minHeight = ui.dp(34)
+            setPadding(ui.dp(12), ui.dp(4), ui.dp(12), ui.dp(4)); background = ui.box(th.surface, th.border, 10); setOnClickListener { f() }
+        }
+        val toggle = chip("") { }
+        fun paintToggle() { toggle.text = if (visual.running) "⏹ إيقاف" else "▶ تشغيل" }
+        toggle.setOnClickListener {
+            if (visual.running) { visual.stop(); visLog("👁 الوضع البصري اتقفل (اللوحة)") } else { visual.mode = "scene"; visLog("👁 الوضع البصري اتشغّل (اللوحة)"); visual.start() }
+            paintToggle()
+        }
+        paintToggle()
+        val more = chip("⋯") { d.dismiss(); visualOptionsDialog() }
+        head.addView(title, LinearLayout.LayoutParams(0, -2, 1f))
+        head.addView(toggle, LinearLayout.LayoutParams(-2, -2).apply { marginEnd = ui.dp(6) })
+        head.addView(more, LinearLayout.LayoutParams(-2, -2))
+        box.addView(head, LinearLayout.LayoutParams(-1, -2))
+        val info = ui.text("", 11f, th.muted).apply { setPadding(0, ui.dp(4), 0, ui.dp(4)) }
+        box.addView(info, LinearLayout.LayoutParams(-1, -2))
+        updVis()
+        val empty = ui.text("مفيش جمل بصرية لسه — شغّل الوضع البصري وهتظهر هنا بتوقيتها.", 13f, th.muted).apply { setPadding(ui.dp(4), ui.dp(10), ui.dp(4), ui.dp(10)) }
+        val maxH = (resources.displayMetrics.heightPixels * 0.5f).toInt()
+        val lst = object : ListView(this) { override fun onMeasure(w: Int, hh: Int) { super.onMeasure(w, View.MeasureSpec.makeMeasureSpec(maxH, View.MeasureSpec.AT_MOST)) } }   // طول على قد الجمل لحد نص الشاشة
+        var curV = -1
+        val ad = object : BaseAdapter() {
+            override fun getCount() = visList.size
+            override fun getItem(i: Int): Any = visList[i]
+            override fun getItemId(i: Int) = i.toLong()
+            override fun getView(i: Int, cv: View?, parent: ViewGroup): View {
+                val ve = visList[i]
+                val row = LinearLayout(this@PlayerActivity).apply { layoutDirection = View.LAYOUT_DIRECTION_RTL; setPadding(0, ui.dp(2), 0, ui.dp(2)) }
+                val bar = View(this@PlayerActivity).apply { setBackgroundColor(0xFF3B82F6.toInt()) }
+                val col = LinearLayout(this@PlayerActivity).apply { orientation = LinearLayout.VERTICAL; setPadding(ui.dp(10), ui.dp(6), ui.dp(10), ui.dp(6)) }
+                col.addView(ui.text("⏱ " + PlayerLogic.clock((ve.start * 1000).toLong()), 10f, th.muted))
+                col.addView(ui.text(if (ve.translated.isEmpty()) ve.original else ve.translated, 14f, th.text))
+                if (ve.original.isNotBlank() && ve.original != ve.translated) col.addView(ui.text(ve.original, 11f, th.muted))
+                row.addView(bar, LinearLayout.LayoutParams(ui.dp(4), -1)); row.addView(col, LinearLayout.LayoutParams(0, -2, 1f))
+                row.setBackgroundColor(if (i == curV) (th.primary and 0x00FFFFFF) or 0x33000000 else Color.TRANSPARENT)
+                return row
+            }
+        }
+        lst.adapter = ad; lst.divider = android.graphics.drawable.ColorDrawable(th.border); lst.dividerHeight = 1
+        lst.setOnItemClickListener { _, _, i, _ -> visList.getOrNull(i)?.let { player.seekTo((it.start * 1000).toLong()); d.dismiss() } }
+        box.addView(lst, LinearLayout.LayoutParams(-1, -2))
+        box.addView(empty, LinearLayout.LayoutParams(-1, -2))
+        box.addView(chip("إغلاق") { d.dismiss() }, LinearLayout.LayoutParams(-1, -2).apply { topMargin = ui.dp(6) })
+        lateinit var tick: Runnable
+        fun refresh() {
+            updVis()
+            val c = cur / 1000.0
+            val nv = visList.indexOfLast { it.start <= c }
+            if (nv != curV) curV = nv
+            ad.notifyDataSetChanged()
+            val none = visList.isEmpty()
+            lst.visibility = if (none) View.GONE else View.VISIBLE; empty.visibility = if (none) View.VISIBLE else View.GONE
+            info.text = "عدد الجمل: " + visList.size + (if (!visual.running && visual.status.isNotBlank() && !visual.status.startsWith("👁")) "  ·  " + visual.status.take(60) else "")
+            paintToggle()
+        }
+        tick = Runnable { if (d.isShowing) { refresh(); h.postDelayed(tick, 1500L) } }
+        d.setOnDismissListener { h.removeCallbacks(tick) }
+        d.setContentView(box)
+        d.window?.apply { setBackgroundDrawable(android.graphics.drawable.ColorDrawable(Color.TRANSPARENT)); setLayout((resources.displayMetrics.widthPixels * 0.92f).toInt(), WindowManager.LayoutParams.WRAP_CONTENT) }
+        ui.fullPage(d)
+        refresh(); d.show(); h.postDelayed(tick, 1500L)
+        // أول ما تفتح: انزل للجملة الحالية
+        if (curV >= 0) lst.post { try { lst.setSelection((curV - 1).coerceAtLeast(0)) } catch (_: Throwable) {} }
+    }
+
+    /** القايمة الكبيرة القديمة (إعادة من الأول / من مكان التشغيل / لقطة / سجل / مسح) — بتتفتح من «⋯» جوه اللوحة الصغيرة */
+    fun visualOptionsDialog() {
         val d = GDialog(this); d.requestWindowFeature(android.view.Window.FEATURE_NO_TITLE)
         val box = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; setPadding(ui.dp(14), ui.dp(12), ui.dp(14), ui.dp(14)); background = ui.box(th.card, th.border, 18) }
         box.addView(ui.text("👁 الوضع البصري", 17f, th.primary, true))

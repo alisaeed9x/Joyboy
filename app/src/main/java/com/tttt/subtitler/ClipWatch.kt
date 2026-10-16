@@ -7,7 +7,15 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.BitmapShader
+import android.graphics.Canvas
+import android.graphics.Color
+import android.graphics.Matrix
 import android.graphics.Outline
+import android.graphics.Paint
+import android.graphics.RectF
+import android.graphics.Shader
+import android.widget.FrameLayout
 import android.media.MediaMetadataRetriever
 import android.os.Handler
 import android.os.Looper
@@ -158,10 +166,82 @@ object ClipWatch {
 }
 
 /**
- * أول ما البرنامج يفتح (أو يرجع له الفوكس): لو في الكليبورد لينك جديد، بيظهر إشعار صغير فوق الشاشة:
- * «تم التقاط لينك — تروح تصطاد الفيديو اللي جواه؟» [نعم، روح] [لا] — ولو ما حدش ردّ في 5 ثواني بيختفي لوحده.
- * الفحص بيشتغل في الخلفية بالتوازي: لو «نعم» والفيديو اتعرف خلاص بيشتغل على طول، غير كده بتفتح شاشة الصيد على اللينك.
- * مفيش بوب-أب ولا توست.
+ * (v358) دايرة اللينك العايمة — بديل إشعار «تم التقاط لينك» اللي كان بيظهر فوق.
+ * زي دايرة مشغّل الموسيقى: حلقة زجاجية، في نصها صورة الفيديو (أو 🔗 لحد ما تتحمّل)، ونقطة صغيرة بتلف حوالين الحلقة
+ * وقوس بيقصر مع الوقت. لما المهلة تخلص بتختفي لوحدها. لمسة = روح للفيديو، ضغطة طويلة = اللينك اللي بعده (أو إخفاء).
+ */
+class ClipOrb(ctx: Context) : View(ctx) {
+    var accent: Int = 0xFF5B9DFF.toInt()
+    var count = 1
+    var found = false
+        set(v) { if (field != v) { field = v; invalidate() } }
+    var thumb: Bitmap? = null
+        set(v) { field = v; shader = null; invalidate() }
+    /** 0 → 1 مع الوقت؛ القوس بيتحسب منه */
+    var elapsed = 0f
+        set(v) { field = v.coerceIn(0f, 1f) }
+    private var shader: BitmapShader? = null
+    private val d = resources.displayMetrics.density
+    private val p = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val box = RectF()
+    private val mx = Matrix()
+    private val t0 = System.nanoTime()
+    private var running = false
+    private val tick = object : Runnable { override fun run() { invalidate(); if (running && isAttachedToWindow) postOnAnimation(this) else running = false } }
+    override fun onAttachedToWindow() { super.onAttachedToWindow(); if (!running) { running = true; postOnAnimation(tick) } }
+    override fun onDetachedFromWindow() { running = false; removeCallbacks(tick); super.onDetachedFromWindow() }
+
+    override fun onDraw(c: Canvas) {
+        val cx = width / 2f; val cy = height / 2f
+        val ro = minOf(width, height) * 0.46f
+        val ra = ro * 0.70f; val rt = ro * 0.86f
+        val col = if (found) 0xFF34C759.toInt() else accent
+        // زجاج
+        p.reset(); p.isAntiAlias = true; p.style = Paint.Style.FILL; p.color = 0x66101418
+        c.drawCircle(cx, cy, ro, p)
+        p.style = Paint.Style.STROKE; p.strokeWidth = 1.5f * d; p.color = 0x99FFFFFF.toInt()
+        c.drawCircle(cx, cy, ro, p)
+        // غلاف/صورة في النص
+        val b = thumb
+        if (b != null && !b.isRecycled) {
+            val sh = shader ?: BitmapShader(b, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP).also { shader = it }
+            val sc = maxOf(2 * ra / b.width, 2 * ra / b.height)
+            mx.reset(); mx.setScale(sc, sc); mx.postTranslate(cx - b.width * sc / 2f, cy - b.height * sc / 2f); sh.setLocalMatrix(mx)
+            p.reset(); p.isAntiAlias = true; p.shader = sh; c.drawCircle(cx, cy, ra, p); p.shader = null
+        } else {
+            p.reset(); p.isAntiAlias = true; p.style = Paint.Style.FILL; p.color = (col and 0x00FFFFFF) or 0x55000000
+            c.drawCircle(cx, cy, ra, p)
+            p.color = Color.WHITE; p.textAlign = Paint.Align.CENTER; p.textSize = ra * 1.0f
+            c.drawText("🔗", cx, cy + ra * 0.34f, p)
+        }
+        // مسار رفيع + قوس الوقت المتبقي
+        box.set(cx - rt, cy - rt, cx + rt, cy + rt)
+        p.reset(); p.isAntiAlias = true; p.style = Paint.Style.STROKE; p.strokeWidth = 2.2f * d; p.color = 0x33FFFFFF
+        c.drawOval(box, p)
+        p.color = col; p.strokeCap = Paint.Cap.ROUND
+        c.drawArc(box, -90f, 360f * (1f - elapsed), false, p)
+        // النقطة الصغيرة اللي بتلف حوالين الحلقة
+        val ang = Math.toRadians(((System.nanoTime() - t0) / 1e9 * 220.0) % 360.0 - 90.0)
+        val ox = cx + (ro + 1f * d) * Math.cos(ang).toFloat(); val oy = cy + (ro + 1f * d) * Math.sin(ang).toFloat()
+        p.reset(); p.isAntiAlias = true; p.style = Paint.Style.FILL; p.color = (col and 0x00FFFFFF) or 0x55000000
+        c.drawCircle(ox, oy, 6.5f * d, p)
+        p.color = col; c.drawCircle(ox, oy, 4f * d, p)
+        p.color = Color.WHITE; c.drawCircle(ox, oy, 1.6f * d, p)
+        // عدّاد لو فيه أكتر من لينك
+        if (count > 1) {
+            val bx = cx + ro * 0.72f; val by = cy - ro * 0.72f
+            p.reset(); p.isAntiAlias = true; p.style = Paint.Style.FILL; p.color = 0xFFE53935.toInt(); c.drawCircle(bx, by, 8f * d, p)
+            p.color = Color.WHITE; p.textAlign = Paint.Align.CENTER; p.textSize = 10f * d; p.typeface = android.graphics.Typeface.DEFAULT_BOLD
+            c.drawText(count.toString(), bx, by + 3.6f * d, p)
+        }
+    }
+}
+
+/**
+ * أول ما البرنامج يفتح (أو يرجع له الفوكس): لو في الكليبورد لينك جديد، بتظهر دايرة عايمة صغيرة (ClipOrb) بدل الإشعار اللي فوق.
+ * الفحص بيشتغل في الخلفية بالتوازي: أول ما الصورة تجهز بتظهر جوه الدايرة. المهلة 10 ثواني وبعدها تختفي لوحدها.
+ * لمسة على الدايرة: فيديو مباشر يشتغل على طول، لينك يوتيوب بيفتح عن طريق يوتيوب، وغير كده بتفتح شاشة الصيد في المتصفح.
+ * ضغطة طويلة: اللينك اللي بعده (لو فيه أكتر من واحد) أو إخفاء. مفيش بوب-أب ولا توست.
  */
 fun Activity.checkClipboard(onPlay: (ClipVideo) -> Unit) {
     if (ClipWatch.busy) return
@@ -170,27 +250,58 @@ fun Activity.checkClipboard(onPlay: (ClipVideo) -> Unit) {
     ClipWatch.markSeen(this, text)   // مرة واحدة لكل نسخة: ما يسألش تاني على نفس اللينك
     val links = ClipWatch.extract(text)
     if (links.isEmpty()) return
+    val root = findViewById<FrameLayout>(android.R.id.content) ?: return
     ClipWatch.busy = true
     val results = HashMap<String, ClipVideo?>()
+    val doneSet = HashSet<String>()
     Thread {
         for (u in links) {
             val r = try { ClipWatch.resolve(this, u) } catch (_: Throwable) { null }
-            synchronized(results) { results[u] = r }
+            synchronized(results) { results[u] = r; doneSet.add(u) }
         }
     }.apply { isDaemon = true }.start()
 
-    fun host(u: String) = try { java.net.URL(u).host.removePrefix("www.") } catch (_: Throwable) { u.take(30) }
-    fun next(i: Int) {
-        if (i >= links.size || isFinishing || isDestroyed) { ClipWatch.busy = false; return }
-        val u = links[i]
-        val cnt = if (links.size > 1) "  (${i + 1}/${links.size})" else ""
-        Notice.ask(this, "🔗 تم التقاط لينك من ${host(u)}$cnt\nتروح تصطاد الفيديو اللي جواه؟", "نعم، روح", "لا", 5000L,
-            onYes = {
-                ClipWatch.busy = false
-                val r = synchronized(results) { results[u] }
-                onPlay(r ?: ClipVideo(u, u, null, "", "WEB"))   // لسه مش معروف/مفيش فيديو ثابت: playClip بيفتح شاشة الصيد
-            },
-            onNo = { next(i + 1) })
+    val d = resources.displayMetrics.density
+    val size = (64 * d).toInt()
+    val main = Handler(Looper.getMainLooper())
+    val life = 10_000L
+    val orb = ClipOrb(this).apply { count = links.size; elevation = 10 * d; alpha = 0f }
+    root.addView(orb, FrameLayout.LayoutParams(size, size, Gravity.TOP or Gravity.LEFT))
+    root.post {
+        orb.translationX = (root.width - size - 10 * d).coerceAtLeast(0f)
+        orb.translationY = (root.height * 0.58f).coerceAtLeast(0f)
+        orb.scaleX = 0.4f; orb.scaleY = 0.4f
+        orb.animate().alpha(1f).scaleX(1f).scaleY(1f).setDuration(220).start()
     }
-    next(0)
+    var idx = 0; var t0 = System.currentTimeMillis(); var closed = false
+    lateinit var ticker: Runnable
+    fun close() {
+        if (closed) return; closed = true
+        main.removeCallbacks(ticker); ClipWatch.busy = false
+        orb.animate().alpha(0f).scaleX(0.3f).scaleY(0.3f).setDuration(200).withEndAction { try { root.removeView(orb) } catch (_: Throwable) {} }.start()
+    }
+    fun sync() {
+        val u = links[idx]
+        val r = synchronized(results) { results[u] }
+        val fin = synchronized(results) { u in doneSet }
+        if (fin) { orb.found = r != null; if (r?.thumb != null && orb.thumb !== r.thumb) orb.thumb = r.thumb }
+    }
+    ticker = Runnable {
+        if (closed) return@Runnable
+        if (isFinishing || isDestroyed) { close(); return@Runnable }
+        orb.elapsed = (System.currentTimeMillis() - t0).toFloat() / life
+        sync()
+        if (orb.elapsed >= 1f) close() else main.postDelayed(ticker, 80L)
+    }
+    main.postDelayed(ticker, 80L)
+    orb.setOnClickListener {
+        val u = links[idx]
+        val r = synchronized(results) { results[u] }
+        close()
+        onPlay(r ?: ClipVideo(u, u, null, "", "WEB"))   // لسه مش معروف/مفيش فيديو ثابت: playClip بيفتح شاشة الصيد (أو يوتيوب)
+    }
+    orb.setOnLongClickListener {
+        if (idx + 1 < links.size) { idx++; orb.count = links.size - idx; orb.thumb = null; orb.found = false; t0 = System.currentTimeMillis(); orb.elapsed = 0f; sync() } else close()
+        true
+    }
 }

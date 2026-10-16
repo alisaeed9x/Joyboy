@@ -1696,6 +1696,10 @@ class Engine(
         maybeRefine()
     }
 
+    // (v108) نوع العمل (أكشن/كوميدي/رعب…) من أول جمل مترجمة — للفلتر التلقائي
+    @Volatile var genreWanted = false
+    @Volatile var onGenre: ((String) -> Unit)? = null
+    @Volatile private var genreBusy = false
     private fun maybeGenre() {
         if (!genreWanted || genreBusy) return
         val sample: String

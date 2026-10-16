@@ -12,3 +12,7 @@ git rm app/src/main/java/com/tttt/subtitler/{LyricsAI,VinylView,TextTracker,Conf
 - Not touched: YtProUi.settingsLegacy (still reachable fallback), assets, backup/extra keys UI
 git rm app/src/main/java/com/tttt/subtitler/{Fx,StemAi}.kt app/src/main/cpp/stemort.cpp
 - v357: quality HD button + 📃 next-list button added to Player top bar (YouTube only); swipe-up anywhere in music full player opens next list (MusicUi.full interceptor + openNext()); YouTube Music lyrics without timing get AI text-only timing (Lyrics.aiTextSync, falls back to local/even sync)
+- v357 build fix: restored SubStyle.colorFor + companion close (emotionKind removal cut too much); restored Engine genreWanted/onGenre/genreBusy decls; moved settingsDlg0/qui0 decl in Main.kt above ytSettingsViews (forward reference)
+- v358: clipboard link prompt is now a floating glass orb (ClipOrb in ClipWatch.kt; tap = play/hunt, long-press = next link, auto-hides after 10s); YouTube clip links open via playYt; browser history split: PrivacyFilter.kt (local words + Gemini per-host verdict) sends adult pages to a pattern/bio-locked "🔒 سجل الخصوصية" (br_privacy.json), switches in browser settings (pf_on / pf_ai)
+- v359: visual mode — capsules merged into one (no dot / شغّال-واقف word / divider), tapping the 👁 count (or ☰ menu entry) opens a small panel: small ▶/⏹ + ⋯ (old big menu = visualOptionsDialog) + timed visual sentences list, tap = seek
+- v360: 🗣 apply-selected buttons (لهجة+/عائلي/صريح/ضمائر/تنقيح/دمج) no longer refuse when there is no Gemini key but a side-task LLM (conv_via) is set

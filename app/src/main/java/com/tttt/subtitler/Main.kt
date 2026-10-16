@@ -368,6 +368,7 @@ class MainActivity : Activity() {
         // (v355) إعدادات يوتيوب جوه إعدادات البرنامج (بدل الدايلوج المنفصل)
         val ytQ = listOf("أعلى جودة", "1080p", "720p", "480p", "360p", "240p")
         val ytQv = intArrayOf(0, 1080, 720, 480, 360, 240)
+        var settingsDlg0: TabbedDialog? = null; var qui0: QueueUi? = null
         val ytSettingsViews: List<View> = listOf(
             ui.section("🎞 الجودة الافتراضية", true,
                 ui.chips(ytQ, { ytQ[ytQv.indexOf(Cfg.int("yt_maxh", 0)).coerceAtLeast(0)] }) { n -> Cfg.put("yt_maxh", ytQv[ytQ.indexOf(n).coerceAtLeast(0)].toString()) },
@@ -438,7 +439,6 @@ class MainActivity : Activity() {
             refreshChip()
         }
         val sp = styleParts(ui, th)
-        var settingsDlg0: TabbedDialog? = null; var qui0: QueueUi? = null
         val lk = LockUi(this, ui, th); lockUi = lk
         val lockStatus = ui.text("", 13f, th.text)
         lateinit var bioBtn: android.widget.Button
@@ -1226,7 +1226,7 @@ class MainActivity : Activity() {
         super.onWindowFocusChanged(hasFocus)
         if (hasFocus && !fromPlayer) window.decorView.postDelayed({ if (!isFinishing && !isDestroyed) checkClipboard { playClip(it) } }, 900)
     }
-    /** «نعم» من بوب-أب الكليبورد: فيديو مباشر يشتغل على طول، يوتيوب بنجيب له أحسن رابط فيه صوت وصورة، وغير كده شاشة الصيد */
+    /** لمسة على دايرة الكليبورد: فيديو مباشر يشتغل على طول، يوتيوب يتفتح عن طريق يوتيوب، وغير كده شاشة الصيد */
     /** فيديو من سجل «المصطادة»: يفتح بنفس الرابط والهيدرز ويكمّل من آخر مكان وقفت عنده. روابط يوتيوب بتنتهي — فبنفتح صفحة الفيديو */
     fun playWeb(w: WebVid) {
         if (w.kind == "YT") { if (w.id.startsWith("yt:")) playYt(w.id.removePrefix("yt:"), w.title, true, false) else if (w.ref.isNotEmpty()) openLink(w.ref) else Notice.show(this, ("رابط يوتيوب انتهت صلاحيته — افتحه من المتصفح تاني").toString(), 3600L); return }
@@ -1406,12 +1406,8 @@ class MainActivity : Activity() {
         }
         if (c.playUrl.isNotEmpty()) { go(c.playUrl, c.ref, c.ua); return }
         val id = YtExtract.videoId(c.url)
-        if (id == null) { openLink(c.url); return }
-        Notice.show(this, ("بجيب الفيديو…").toString(), 2300L)
-        Thread {
-            val best = try { YtExtract.fetch(id).filter { it.kind != "HLS" }.maxByOrNull { Regex("(\\d+)p").find(it.kind)?.groupValues?.get(1)?.toIntOrNull() ?: 0 } } catch (_: Throwable) { null }
-            runOnUiThread { if (best != null) go(best.url, best.ref, best.ua) else playYt(id, "", true, false) }
-        }.apply { isDaemon = true }.start()
+        if (id == null) { openLink(c.url); return }   // مش يوتيوب ومفيش رابط مباشر: شاشة الصيد في المتصفح
+        playYt(id, c.title.takeIf { it.isNotBlank() && it != c.url } ?: "", true, false)   // (v358) لينك يوتيوب: بيتفتح عن طريق يوتيوب
     }
     /** (v350) عدّاد الفيديوهات الجديدة على أيقونة يوتيوب */
     /** (v355) فتح قسم من إعدادات البرنامج من أي شاشة (مثلًا ⚙ يوتيوب) */
