@@ -632,8 +632,21 @@ object Api {
     /** (v180) مهلة قراءة أقصر للخيط الحالي (الترجمة الحية: طلب أبطأ من ~12ث ملوش لازمة). null = الافتراضي 90ث */
     val readTimeoutOverride = ThreadLocal<Int?>()
 
+    /** (v368) غلاف بيسجّل نجاح/فشل جيميناي المحلي في TrSource (نقطة وسطر المحرك في المشغّل) */
     fun generate(model: String, key: String, prompt: String, wav: ByteArray? = null,
                  maxTokens: Int = 8192, temp: Double = 0.1, json: Boolean = true, search: Boolean = false): Result {
+        try {
+            val r = generateImpl(model, key, prompt, wav, maxTokens, temp, json, search)
+            TrSource.report(TrSource.LOCAL, true, "Gemini · $model")
+            return r
+        } catch (e: Throwable) {
+            if (e !is NoKey) TrSource.report(TrSource.LOCAL, false, "Gemini · $model · " + (e.message ?: e.javaClass.simpleName).take(40))
+            throw e
+        }
+    }
+
+    private fun generateImpl(model: String, key: String, prompt: String, wav: ByteArray?,
+                 maxTokens: Int, temp: Double, json: Boolean, search: Boolean): Result {
         if (key == LocalKey.ID) throw NoKey()   // (v259)
         Quota.hit(model); Stats.req(model, key)
         val mt0 = minOf(maxTokens, tokenCap[model] ?: Int.MAX_VALUE)

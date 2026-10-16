@@ -27,7 +27,6 @@ object PublicApisUi {
         lateinit var refreshAll: () -> Unit
 
         fun rebuild() {
-            OmniAuto.probeAsync()   // (v364) اكتشاف OmniRoute تلقائي (مرة كل دقيقة)
             listBox.removeAllViews()
             listBox.addView(ui.text("🔗 سلسلة الترجمة دلوقتي: " + ExtTranslate.chainLabel(), 12f, th.text, true).apply { setPadding(0, ui.dp(2), 0, ui.dp(6)) })
             // --- مزوّدين مجانيين من غير مفتاح ---
@@ -35,6 +34,11 @@ object PublicApisUi {
                 val origin = if (ExtTranslate.inRepo(p)) "✅ موجود في الريبو" else if (PublicApis.entries.isEmpty()) "⏳ لسه القايمة ما اتسحبتش" else "➕ مش في قايمة الريبو (شغّال بالمحوّل الجاهز)"
                 listBox.addView(ui.switchRow(p.label, ExtTranslate.enabled(p)) { ExtTranslate.setEnabled(p, it) })
                 listBox.addView(ui.text(origin + "\n" + ExtTranslate.statLine(p), 11.5f, th.muted))
+            }
+            // --- (v366) الراوتر الداخلي: أول محرك في الترجمة ---
+            if (InternalRouter.hasPool()) {
+                listBox.addView(ui.switchRow("🧭 " + ExtTranslate.router.label + " — أول محرك في الترجمة", ExtTranslate.enabled(ExtTranslate.router)) { ExtTranslate.setEnabled(ExtTranslate.router, it) })
+                listBox.addView(ui.text("بيجرّب مفاتيح جيميناي (2.5 فلاش) واحد ورا التاني، وبعدها مزوّديك. لو كله وقف الترجمة بتكمّل بجوجل ثم MyMemory ثم Lingva.\n" + ExtTranslate.statLine(ExtTranslate.router), 11.5f, th.muted))
             }
             // --- محركات LLM بمفتاحك ---
             listBox.addView(ui.text("🤖 محركات LLM بمفتاحك (ChatGPT · Claude · …) — بتترجم 25 جملة في الطلب:", 12.5f, th.primary, true).apply { setPadding(0, ui.dp(10), 0, ui.dp(2)) })

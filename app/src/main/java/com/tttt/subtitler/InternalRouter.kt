@@ -8,7 +8,7 @@ import java.util.concurrent.atomic.AtomicInteger
  *  - بيجمع كل المزوّدين اللي ليهم مفتاح (ChatGPT · Claude · Groq · OpenRouter · DeepSeek · Mistral · المخصص) + كل مفاتيح جيميناي (كل مفتاح لوحده).
  *  - الأوضاع: auto · auto/fast · auto/coding · auto/cheap · auto/offline · auto/smart — أو «مزوّد/موديل» لتثبيت مزوّد معيّن.
  *  - لو مزوّد وقع (429 كوتة / 401 مفتاح / 402 رصيد / 5xx / مهلة) بيتحط في «استراحة» وبيجرّب اللي بعده فورًا.
- *  - OmniRoute المحلي (Termux) بيتحط آخر واحد في السلسلة؛ ولو كل حاجة وقعت التطبيق بيشغّل Termux لوحده (OmniLauncher).
+ *  - (v366) اتشال OmniRoute/Termux من السلسلة خالص — الراوتر ده هو الوحيد.
  */
 object InternalRouter {
     const val ID = "router"
@@ -34,6 +34,7 @@ object InternalRouter {
     private fun all(mode: String): List<Cand> {
         val out = ArrayList<Cand>()
         for (s in AiApi.realSources()) {
+            if (s.id == "omniroute") continue   // (v368) OmniRoute مصدر منفصل بيتبدّل معاه — مش جزء من الراوتر
             if (s.id == "gemini") {
                 val m = if (mode == "auto/fast" || mode == "auto/cheap") "gemini-flash-lite-latest" else s.defModel
                 Cfg.allMainKeys().forEachIndexed { i, k ->
@@ -44,6 +45,9 @@ object InternalRouter {
         return out
     }
 
+    /** (v366) في مفتاح/مزوّد مش في استراحة للوضع ده؟ (الترجمة بتسأل قبل ما تبعت عشان ماتضربش مفاتيح واقفة) */
+    fun anyReady(model: String): Boolean = plan(model).any { !cooled(it.key) }
+
     fun hasPool(): Boolean = AiApi.realSources().any { it.id != "omniroute" }
 
     private fun rank(mode: String, pid: String): Int {
@@ -51,6 +55,10 @@ object InternalRouter {
         val i = (ORDER[mode] ?: ORDER["auto"]!!).indexOf(pid)
         return if (i < 0) 500 else i
     }
+
+    /** (v366) اسم المرشّح للعرض: جيميناي بيتميّز برقم المفتاح وآخر 4 حروف منه عشان تعرف أنهي مفتاح واقع */
+    private fun tag(c: Cand): String = c.src.label.substringBefore(" (") +
+        (if (c.pid == "gemini") " #" + ((c.key.substringAfter('#', "").toIntOrNull() ?: 0) + 1) + " …" + c.src.key.takeLast(4) else "")
 
     private fun cooled(k: String) = (coolUntil[k] ?: 0L) > System.currentTimeMillis()
 
@@ -65,7 +73,7 @@ object InternalRouter {
             else -> 30
         }
         coolUntil[c.key] = System.currentTimeMillis() + sec * 1000L
-        coolWhy[c.key] = c.src.label.substringBefore(" (") + ": " + (e.message ?: "فشل").take(70)
+        coolWhy[c.key] = tag(c) + ": " + (e.message ?: "فشل").take(70)
     }
 
     /** السلسلة المرتبة للطلب ده */
@@ -116,20 +124,15 @@ object InternalRouter {
                 latMs[c.key] = ((latMs[c.key] ?: ms) * 2 + ms) / 3
                 coolUntil.remove(c.key)
                 OmniMeta.record(c.src.label.substringBefore(" ("), c.model, if (model in AUTO) model else "pinned", ms, tried)
+                TrSource.report(TrSource.LOCAL, true, tag(c) + " · " + c.model)
                 return r
             } catch (e: Throwable) {
                 tried++
                 penalize(c, e)
-                fails.add(coolWhy[c.key] ?: (c.src.label + ": فشل"))
+                fails.add(coolWhy[c.key] ?: (tag(c) + ": فشل"))
             }
         }
-        // كله وقع ← الحل التاني: تشغيل OmniRoute في Termux لوحده (لو Termux موجود)
-        var tail = ""
-        try {
-            val ctx = TrWizard.appCtx
-            if (ctx != null && Cfg.str("termux_fallback", "on") != "off" && OmniAuto.last != OmniAuto.St.UP && !OmniLauncher.triedRecently() && OmniLauncher.start(ctx) == OmniLauncher.R.SENT)
-                tail = "\n↪ شغّلت OmniRoute في Termux احتياطي — جرّب تاني بعد دقيقة (أول مرة بياخد وقت تثبيت)"
-        } catch (_: Throwable) {}
-        throw ExtLlm.LlmErr(0, "كل المزوّدين فشلوا:\n" + fails.joinToString("\n") + tail)
+        TrSource.report(TrSource.LOCAL, false, fails.firstOrNull() ?: "كل المزوّدين فشلوا")
+        throw ExtLlm.LlmErr(0, "كل المزوّدين فشلوا:\n" + fails.joinToString("\n"))
     }
 }

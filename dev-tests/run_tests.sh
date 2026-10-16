@@ -26,7 +26,7 @@ echo "OK (skipped)"
 
 echo "== 2) اختبارات JVM (المنطق بدون Android: Core/Store/AudioCore/Engine)"
 # (v177) القايمة القديمة كانت متأخرة عن الكود. دلوقتي: ملفات المنطق + stubs لـ VisualMode (محتاج ML Kit)
-NOUI="$(for n in Core Store AudioCore Engine Theme SubStyle PlayerLogic Recents Models ExtrasFlags Blur VideoLib Stats KeyVault Speech Coverage AudioEnc LiveLogic ModePrompts; do echo -n "$SRC/$n.kt "; done) $ROOT/dev-tests/logic-stubs/LogicStubs.kt"
+NOUI="$(for n in Core Store AudioCore Engine Theme SubStyle PlayerLogic Recents Models ExtrasFlags Blur VideoLib Stats KeyVault Speech Coverage AudioEnc LiveLogic ModePrompts TrSource; do echo -n "$SRC/$n.kt "; done) $ROOT/dev-tests/logic-stubs/LogicStubs.kt"
 "$KC" -jvm-target 17 -cp "$AJ:$TOOLS/jsonout" -d "$OUT/app" $NOUI 2>&1 | grep -E "error:|^ERROR" && exit 1 || true
 CP="$OUT/app:$TOOLS/jsonout:$STD:$AJ"   # jsonout قبل android.jar عشان org.json الحقيقي يتقدم على الـ stubs
 JOPT="-Dfile.encoding=UTF-8 -Dstdout.encoding=UTF-8"

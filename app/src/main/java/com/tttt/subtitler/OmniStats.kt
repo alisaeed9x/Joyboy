@@ -75,12 +75,7 @@ object OmniMeta {
 
     /** سطر شريط الحالة: حالة OmniRoute + آخر رد (مين رد، أنهي موديل، الزمن، تحويلات، كاش، تكلفة) */
     fun statusLine(): String {
-        val head = when (OmniAuto.last) {
-            OmniAuto.St.UP -> "🟢 OmniRoute شغّال" + (if (version.isNotEmpty()) " · v$version" else "")
-            OmniAuto.St.NEED_KEY -> "🟡 OmniRoute شغّال بس طالب مفتاح"
-            OmniAuto.St.DOWN -> if (InternalRouter.hasPool()) InternalRouter.summary() + " · (OmniRoute/Termux احتياطي)" else "🔴 OmniRoute مش شغّال"
-            null -> "⚪ بدوّر على OmniRoute…"
-        }
+        val head = if (InternalRouter.hasPool()) InternalRouter.summary() else "🔴 مفيش مفاتيح — ضيف مفتاح جيميناي"
         val m = last ?: return head
         val s = (System.currentTimeMillis() - m.at) / 1000
         val ago = if (s < 60) "${s}ث" else "${s / 60}د"

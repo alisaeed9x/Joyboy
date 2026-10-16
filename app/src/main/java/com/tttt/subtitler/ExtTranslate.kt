@@ -36,8 +36,21 @@ object ExtTranslate {
         Prov("lingva", "Lingva (جوجل عبر وسيط)", listOf("lingva"), 0) { t, sl -> lingva(t, sl) }
     )
 
-    /** المزوّدين المدمجين + محركات LLM اللي مفتاحها مضبوط */
-    fun all(): List<Prov> = builtin + listOfNotNull(libreProv()) + ExtLlm.provs()
+    /**
+     * (v366) 🧭 الراوتر الداخلي كمحرك ترجمة: بيجرّب مفاتيح جيميناي (gemini-2.5-flash) الأول، ولو الكوتة خلصت/المفتاح وقع بيلف على المفتاح اللي بعده،
+     * وبعدين مزوّديك (Groq · OpenRouter · DeepSeek · Mistral · ChatGPT · Claude) بالترتيب ده (وضع auto/offline). بيتحط أول السلسلة؛ لو كله وقع الترجمة بتكمّل بجوجل ← MyMemory ← Lingva.
+     */
+    private const val ROUTER_MODE = "auto/offline"
+    val router: Prov = Prov("router", "الراوتر الداخلي (جيميناي ← مزوّديك)", listOf("router"), 0) { _, _ -> null }.also {
+        it.batch = { texts, sl -> routerBatch(texts, sl) }
+    }
+    private fun routerBatch(texts: List<String>, sl: String): List<String?> {
+        if (!InternalRouter.anyReady(ROUTER_MODE)) throw ExtLlm.LlmErr(429, "كل مفاتيح الراوتر في استراحة (كوتة/مرفوضة)", 120)
+        return ExtLlm.translateVia(texts, sl) { sys, user -> InternalRouter.chat(ROUTER_MODE, sys, listOf(AiApi.Msg("user", user)), 4096) }
+    }
+
+    /** المزوّدين المدمجين + الراوتر (لو فيه مفاتيح) + محركات LLM اللي مفتاحها مضبوط */
+    fun all(): List<Prov> = builtin + listOfNotNull(libreProv()) + listOfNotNull(if (InternalRouter.hasPool()) router else null) + ExtLlm.provs()
 
     private fun day(): String = (System.currentTimeMillis() / 86_400_000L).toString()
 
@@ -53,15 +66,21 @@ object ExtTranslate {
         // (v277) id المحفوظ لمحركات LLM هو id البريست (chatgpt) بينما id المزوّد llm_chatgpt — قبل كده المحرك الأساسي ماكانش بيتلقى أبدًا؛ وكمان وضع «الريبو بس» ماكانش لازم يستبعد اللي اخترته بإيدك
         val pid = primaryId()
         val prim = if (pid.isEmpty()) null else all().firstOrNull { enabled(it) && (it.id == pid || it.id == "llm_$pid") }
-        val rest = ext.filter { it.id != prim?.id }
+        // (v366) الراوتر أول واحد بعد المحرك الأساسي؛ ومزوّدين LLM بتوعك جواه فمابيتكرروش بعد جوجل
+        val rt = ext.firstOrNull { it.id == "router" }?.takeIf { it.id != prim?.id }
+        // (v368) 🛰 OmniRoute ⇄ 🏠 المفاتيح الداخلية (الراوتر): المختار الأول والتاني احتياطي له (TrSource.mode)
+        val om = ext.firstOrNull { it.id == "llm_omniroute" }?.takeIf { it.id != prim?.id }
+        val rest = ext.filter { it.id != prim?.id && it.id != "router" && it.id != "llm_omniroute" && !(rt != null && it.id.startsWith("llm_")) }
         val steps = ArrayList<Prov?>()
         prim?.let { steps.add(it) }
+        if (TrSource.mode() == TrSource.OMNI) { om?.let { steps.add(it) }; rt?.let { steps.add(it) } } else { rt?.let { steps.add(it) }; om?.let { steps.add(it) } }
         if (externalFirst()) { steps.addAll(rest); steps.add(null) } else { steps.add(null); steps.addAll(rest) }
         return steps
     }
     /** (v278) اسم المحرك بوضوح: جوجل الداخلي / ChatGPT… + الموديل / مجاني من الريبو / سيرفرك */
     fun whoLabel(p: Prov?): String = when {
         p == null -> "🏠 جوجل الداخلي"
+        p.id == "router" -> "🧭 " + p.label
         p.id.startsWith("llm_") -> "🤖 " + p.label + (ExtLlm.byId(p.id.removePrefix("llm_"))?.let { " · " + ExtLlm.model(it) } ?: "")
         p.id == "libre" -> "🌐 LibreTranslate (سيرفرك)"
         else -> "🌐 " + p.label + " (مجاني من الريبو)"

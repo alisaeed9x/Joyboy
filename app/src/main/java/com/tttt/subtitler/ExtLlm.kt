@@ -62,11 +62,14 @@ object ExtLlm {
     }
 
     /** يترجم دفعة جمل (≤25) لعربي بسطور مرقّمة. بيرجّع نفس الطول والناقص null. أي خطأ HTTP ← استثناء برسالة واضحة */
-    fun translate(p: Preset, texts: List<String>, sl: String): List<String?> {
+    fun translate(p: Preset, texts: List<String>, sl: String): List<String?> = translateVia(texts, sl) { sys, user -> chat(p, sys, user, 4096) }
+
+    /** (v366) نفس الترجمة بس الإرسال بيتم بدالة [ask] (system, user) → رد — عشان الراوتر الداخلي يستخدمها */
+    fun translateVia(texts: List<String>, sl: String, ask: (String, String) -> String): List<String?> {
         val numbered = texts.mapIndexed { i, t -> "${i + 1}. $t" }.joinToString("\n")
         val sys = "You are a professional subtitle translator. Translate each numbered line from ${langName(sl)} to Arabic (clear, natural Modern Standard Arabic suitable for subtitles). " +
             "Keep the numbering. Output ONLY the translated lines in the exact format `N. translation`, one per line, with no extra text, notes or blank lines."
-        val reply = chat(p, sys, numbered, 4096)
+        val reply = ask(sys, numbered)
         val out = arrayOfNulls<String>(texts.size)
         val rx = Regex("^\\s*(\\d+)\\s*[.)\\-:]\\s*(.*)$")
         for (line in reply.lines()) {
@@ -133,6 +136,19 @@ object ExtLlm {
      * نحفظه ونعيد الطلب مرة واحدة، وبيطلع إشعار بالتغيير. لو ملقيناش قريب بيفضل الخطأ الأصلي.
      */
     fun chat(p: Preset, system: String, user: String, maxTokens: Int): String {
+        if (p.id != "omniroute") return chatHeal(p, system, user, maxTokens)
+        // (v368) OmniRoute: نسجّل مين رد (المزوّد · الموديل من الهيدرات) أو سبب الفشل — للنقطة وسطر المحرك في المشغّل
+        try {
+            val r = chatHeal(p, system, user, maxTokens)
+            TrSource.report(TrSource.OMNI, true, OmniMeta.last?.let { it.provider + (if (it.model.isNotEmpty()) " · " + it.model else "") } ?: "OmniRoute")
+            return r
+        } catch (e: Throwable) {
+            TrSource.report(TrSource.OMNI, false, (e.message ?: e.javaClass.simpleName).take(60))
+            throw e
+        }
+    }
+
+    private fun chatHeal(p: Preset, system: String, user: String, maxTokens: Int): String {
         try { return chatOnce(p, system, user, maxTokens) }
         catch (e: LlmErr) {
             if (!(e.code == 404 || (e.code == 400 && (e.message ?: "").contains("model", true)))) throw e

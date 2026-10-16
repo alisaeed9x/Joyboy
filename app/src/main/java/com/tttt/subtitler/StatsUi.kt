@@ -22,16 +22,16 @@ class StatsUi(private val act: Activity, private val ui: Ui, private val th: The
         col.addView(head("📡 عدد الطلبات"))
         col.addView(line("النهارده: ${d1.req}   ·   آخر 7 أيام: ${d7.req}   ·   آخر 30 يوم: ${d30.req}"))
 
-        // (v364) OmniRoute: من هيدرات الردود
+        // (v366) الراوتر الداخلي: ردوده بتتسجّل في OmniMeta
         val o1 = OmniMeta.range(1); val o7 = OmniMeta.range(7); val o30 = OmniMeta.range(30)
         if (o30.req > 0 || OmniMeta.last != null) {
-            col.addView(head("🛰 OmniRoute (من هيدرات الردود)"))
+            col.addView(head("🧭 الراوتر الداخلي (شاشة 🤖)"))
             col.addView(line("طلبات — النهارده: ${o1.req}   ·   7 أيام: ${o7.req}   ·   30 يوم: ${o30.req}"))
             col.addView(line("التكلفة المعلنة — النهارده: ${OmniMeta.usd(o1.cost)}   ·   7 أيام: ${OmniMeta.usd(o7.cost)}   ·   30 يوم: ${OmniMeta.usd(o30.cost)}"))
             col.addView(line("توكنز (دخل/خرج) — النهارده: ${o1.tIn}/${o1.tOut}   ·   7 أيام: ${o7.tIn}/${o7.tOut}"))
             col.addView(line("تحويلات تلقائية بين المزوّدين (7 أيام): ${o7.fb}"))
             o7.prov.entries.sortedByDescending { it.value }.take(6).forEach { col.addView(line("• ${it.key}: ${it.value} طلب")) }
-            col.addView(ui.text("الأرقام بتتسجّل من ردود OmniRoute بس (مش من مزوّد مباشر). الخدمات المجانية والاشتراكات ممكن تظهر تكلفتها \$0 لأن OmniRoute نفسه بيحسبها كده.", 11f, th.muted))
+            col.addView(ui.text("الأرقام من ردود شاشة 🤖 عن طريق الراوتر الداخلي بس. التكلفة مش بتتحسب هنا (بتظهر \$0).", 11f, th.muted))
         }
 
         // رسم آخر 7 أيام
