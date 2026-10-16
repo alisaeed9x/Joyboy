@@ -238,9 +238,13 @@ object Cfg {
     }
 
     fun snapshot(): Conf {
-        val (main0, rf, bk) = roles()
+        val (main0, rf0, bk0) = roles()
+        // (v369) وضع أومني روت: مفاتيح جيميناي مابتتلمسش خالص (المحرك يشتغل بمفتاح محلي وهمي، والطلبات كلها بأومني روت)
+        val omni = OmniMode.on()
+        val rf = if (omni) emptyList() else rf0
+        val bk = if (omni) emptyList() else bk0
         // (v259) من غير أي مفتاح + أوفلاين + ترجمة جوجل: مفتاح محلي وهمي يخلّي المحرك يشتغل (الطلبات لجيميناي بتترفض محليًا)
-        val main = if (main0.isEmpty() && rf.isEmpty() && bk.isEmpty() && TrWizard.googleOn()) listOf(LocalKey.ID) else main0
+        val main = if (omni || (main0.isEmpty() && rf.isEmpty() && bk.isEmpty() && TrWizard.googleOn())) listOf(LocalKey.ID) else main0
         return Conf(
             main, bk, str("model", Models.DEFAULT).trim().ifEmpty { Models.DEFAULT },
             str("lang", "فصحى"), str("style", "حرفي"),
@@ -632,21 +636,8 @@ object Api {
     /** (v180) مهلة قراءة أقصر للخيط الحالي (الترجمة الحية: طلب أبطأ من ~12ث ملوش لازمة). null = الافتراضي 90ث */
     val readTimeoutOverride = ThreadLocal<Int?>()
 
-    /** (v368) غلاف بيسجّل نجاح/فشل جيميناي المحلي في TrSource (نقطة وسطر المحرك في المشغّل) */
     fun generate(model: String, key: String, prompt: String, wav: ByteArray? = null,
                  maxTokens: Int = 8192, temp: Double = 0.1, json: Boolean = true, search: Boolean = false): Result {
-        try {
-            val r = generateImpl(model, key, prompt, wav, maxTokens, temp, json, search)
-            TrSource.report(TrSource.LOCAL, true, "Gemini · $model")
-            return r
-        } catch (e: Throwable) {
-            if (e !is NoKey) TrSource.report(TrSource.LOCAL, false, "Gemini · $model · " + (e.message ?: e.javaClass.simpleName).take(40))
-            throw e
-        }
-    }
-
-    private fun generateImpl(model: String, key: String, prompt: String, wav: ByteArray?,
-                 maxTokens: Int, temp: Double, json: Boolean, search: Boolean): Result {
         if (key == LocalKey.ID) throw NoKey()   // (v259)
         Quota.hit(model); Stats.req(model, key)
         val mt0 = minOf(maxTokens, tokenCap[model] ?: Int.MAX_VALUE)

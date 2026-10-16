@@ -282,41 +282,6 @@ class PlayerActivity : Activity(), Host {
     private fun badgeRestA(): Float = (Cfg.int("badge_alpha", 55).coerceIn(15, 100)) / 100f
     private fun badgeHot() { badgeHotUntil = System.currentTimeMillis() + 4000; applyBadgeAlpha() }
     private lateinit var badgeRowV: LinearLayout
-    private lateinit var engLine: LinearLayout   // (v368) سطر المحرك تحت كبسولة العدّاد: نقطة + (🏠 المفاتيح الداخلية | 🛰 OmniRoute · المزوّد · الموديل) — دوسة = تبديل
-    private lateinit var engDot: View
-    private lateinit var engTv: TextView
-    private var engSig = ""
-    private fun updateEngLine() {
-        if (!::engLine.isInitialized) return
-        try { OmniAuto.probeAsync() } catch (_: Throwable) {}   // مرة كل دقيقة بالكتير — بيعرّف التطبيق إن OmniRoute شغّال
-        val t = TrSource.line(); val st = TrSource.state()
-        val sig = t + "|" + st.name
-        if (sig == engSig) return
-        engSig = sig
-        engTv.text = t
-        engDot.visibility = if (st == TrSource.Dot.HIDDEN) View.INVISIBLE else View.VISIBLE
-        (engDot.background as GradientDrawable).setColor(when (st) { TrSource.Dot.BLUE -> 0xFF0A84FF.toInt(); TrSource.Dot.GREEN -> 0xFF34C759.toInt(); else -> 0xFFFF3B30.toInt() })
-    }
-    private fun switchTrSrc() {
-        badgeHot(); h.postDelayed({ applyBadgeAlpha() }, 4100)
-        if (TrSource.mode() == TrSource.LOCAL) {
-            // مش هنبدّل على OmniRoute وهو مش شغّال — بنفحصه الأول
-            Thread {
-                val st = try { OmniAuto.probe() } catch (_: Throwable) { OmniAuto.St.DOWN }
-                OmniAuto.last = st
-                runOnUiThread {
-                    if (isFinishing) return@runOnUiThread
-                    if (st == OmniAuto.St.DOWN) { Notice.show(this, "🛰 OmniRoute مش شغّال على الموبايل (localhost:20128) — شغّله الأول وجرّب تاني", 4200L); return@runOnUiThread }
-                    if (st == OmniAuto.St.NEED_KEY) { Notice.show(this, "🔑 OmniRoute شغّال بس طالب مفتاح — حطه من الإعدادات ← الذكاء الاصطناعي ← مفاتيحي", 4800L); return@runOnUiThread }
-                    TrSource.setMode(TrSource.OMNI); engSig = ""; updateEngLine()
-                    Notice.show(this, "🛰 الترجمة النصية دلوقتي بتبدأ بـ OmniRoute (والمفاتيح الداخلية احتياطي)", 3200L)
-                }
-            }.start()
-        } else {
-            TrSource.setMode(TrSource.LOCAL); engSig = ""; updateEngLine()
-            Notice.show(this, "🏠 الترجمة النصية دلوقتي بتبدأ بالمفاتيح الداخلية (OmniRoute احتياطي)", 3200L)
-        }
-    }
     /** (v323) العدّادات (صوتي/بصري/نت) مخفية خالص والشاشة نضيفة؛ لما أزرار المشغّل تظهر (لمسة) بتظهر 100%. BADGE_IDLE_A لو عايزها باهتة بدل مخفية (مثلًا 0.3f) */
     private val BADGE_IDLE_A = 0f
     private fun applyBadgeAlpha() {
@@ -1137,19 +1102,8 @@ class PlayerActivity : Activity(), Host {
         sentCap.addView(visBadge, LinearLayout.LayoutParams(-2, -2))
         badgeRow.addView(sentCap, LinearLayout.LayoutParams(-2, -2))
         badgeRow.addView(netBadge, LinearLayout.LayoutParams(-2, -2).apply { marginStart = ui.dp(4) })
-        // (v368) سطر المحرك تحت الكبسولة: نقطة في أقصى الشمال (🔵 داخلي · 🟢 OmniRoute · 🔴 فشل · مخفية لو مفيش استخدام) + اسم المصدر؛ دوسة = تبديل
-        engDot = View(this).apply { background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(0xFF34C759.toInt()) }; visibility = View.INVISIBLE }
-        engTv = IconTextView(this).apply { textSize = 9f; setTextColor(0xCCFFFFFF.toInt()); includeFontPadding = false; setSingleLine(); ellipsize = android.text.TextUtils.TruncateAt.END; maxWidth = ui.dp(240) }
-        engLine = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_LTR; gravity = Gravity.CENTER_VERTICAL; visibility = View.GONE
-            setPadding(ui.dp(7), ui.dp(3), ui.dp(7), ui.dp(3)); background = ui.box(0xB3141418.toInt(), 0x1FFFFFFF, 8)
-            addView(engDot, LinearLayout.LayoutParams(ui.dp(7), ui.dp(7)).apply { marginEnd = ui.dp(5) })
-            addView(engTv, LinearLayout.LayoutParams(-2, -2))
-            setOnClickListener { switchTrSrc() }
-        }
         val badgeCol = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.END }
         badgeCol.addView(badgeRow, LinearLayout.LayoutParams(-2, -2))
-        badgeCol.addView(engLine, LinearLayout.LayoutParams(-2, -2).apply { topMargin = ui.dp(3) })
         badgeRowV = badgeCol
         videoBox.addView(badgeCol, FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.RIGHT).apply { setMargins(0, ui.dp(8), ui.dp(10), 0) })   // (v265) الكبسولات يمين فوق
         applyBadgeAlpha()
@@ -1165,7 +1119,7 @@ class PlayerActivity : Activity(), Host {
         val indHide = Runnable { volInd.visibility = View.GONE; briInd.visibility = View.GONE }
         fun indShow(v: VertInd, f: Float) { v.set(f); h.removeCallbacks(indHide); h.postDelayed(indHide, 900) }
         // (v200) فقاعة الأدوات ✦ (📝 🕳 📥 📂) اتشالت — نفس الأوامر موجودة في قايمة 🧰 الأدوات
-        fsOnly = listOf<View>(fsBadge, visBadge, netBadge, engLine)
+        fsOnly = listOf<View>(fsBadge, visBadge, netBadge)
         val giHide = Runnable { gi.visibility = View.GONE }
         fun giShow(t: String, g: Int) {
             gi.text = t
@@ -2072,7 +2026,6 @@ class PlayerActivity : Activity(), Host {
                 if (now - lastBeat > 20000) { lastBeat = now; LogStore.add("💓 ${LogStore.heapLine()} · ${if (player.isPlaying) "بيشتغل" else "واقف"} @${fmtMs(cur)} · مترجم ${(engine.coveredSec() / 60).toInt()}د · ${engine.subs.size} جملة") }
                 run { val pc = PlayerLogic.percent(engine.coveredSec(), durMs / 1000.0); if (pc != trPct) { trPct = pc; updateTr() } }
                 if (fullMode) { fsBadge.set("🔊 " + PlayerLogic.percent(engine.coveredSec(), durMs / 1000.0).toString() + "% · " + list.size.toString() + " جملة ▾", ((try { engine.offlineBrief() } catch (_: Throwable) { null }) ?: "")); fsBadge.setOn(engineStarted && !engine.userPaused); netBadge.set(NetUse.fmt(NetUse.localTotal()), NetUse.fmt(NetUse.onlineTotal())); applyBadgeAlpha() }   // (v236) نقطة خضراء = الوضع الصوتي شغّال
-                if (fullMode) updateEngLine()   // (v368)
                 if (fullMode && ::visual.isInitialized) { visBadge.set("👁 " + visual.count, "") }   // (v358) كبسولة واحدة للصوتي والبصري: من غير نقطة ولا كلمة شغّال/واقف ولا فاصل — الحالة من الدايرة الحمراء
                 if (now - lastMem > 4000) { lastMem = now; if (!fullMode) mem.update(this@PlayerActivity) }
                 counters.text = "جمل ${list.size} · 👁 ${visList.size} · تغطية ${PlayerLogic.percent(engine.coveredSec(), durMs / 1000.0)}% · فجوات ${engine.failedCount()} · كوتة ${Quota.used(conf.model)}/${Models.quotaOf(conf.model)} · ${NetUse.badgeLine()}"

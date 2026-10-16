@@ -124,7 +124,6 @@ object InternalRouter {
                 latMs[c.key] = ((latMs[c.key] ?: ms) * 2 + ms) / 3
                 coolUntil.remove(c.key)
                 OmniMeta.record(c.src.label.substringBefore(" ("), c.model, if (model in AUTO) model else "pinned", ms, tried)
-                TrSource.report(TrSource.LOCAL, true, tag(c) + " · " + c.model)
                 return r
             } catch (e: Throwable) {
                 tried++
@@ -132,7 +131,6 @@ object InternalRouter {
                 fails.add(coolWhy[c.key] ?: (tag(c) + ": فشل"))
             }
         }
-        TrSource.report(TrSource.LOCAL, false, fails.firstOrNull() ?: "كل المزوّدين فشلوا")
         throw ExtLlm.LlmErr(0, "كل المزوّدين فشلوا:\n" + fails.joinToString("\n"))
     }
 }

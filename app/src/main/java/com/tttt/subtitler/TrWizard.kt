@@ -69,7 +69,7 @@ object TrWizard {
 
     /** (v274) مزوّد التفريغ السحابي المناسب لمحرك [ext]: هو نفسه لو بيدعم التفريغ ومفتاحه جاهز، وإلا المزوّد المختار في الإعدادات، وإلا أي مزوّد جاهز (Groq / ChatGPT / مخصص). null = مفيش */
     fun sttCandidate(ext: String): ExtLlm.Preset? {
-        fun ok(p: ExtLlm.Preset) = ExtLlm.supportsStt(p) && ExtLlm.key(p).isNotEmpty() && ExtLlm.url(p).isNotEmpty() && ExtLlm.sttModel(p).isNotEmpty()
+        fun ok(p: ExtLlm.Preset) = ExtLlm.supportsStt(p) && ExtLlm.hasAccess(p) && ExtLlm.url(p).isNotEmpty() && ExtLlm.sttModel(p).isNotEmpty()
         ExtLlm.byId(ext)?.takeIf { ok(it) }?.let { return it }
         ExtLlm.byId(Cfg.str("rstt_prov", "groq"))?.takeIf { ok(it) }?.let { return it }
         return ExtLlm.presets.firstOrNull { ok(it) }
@@ -93,9 +93,10 @@ object TrWizard {
         }
         if (pl.cloud) {   // (v274)
             val out = ArrayList<String>()
-            out.add("☁ " + (ExtLlm.byId(pl.ext)?.label ?: pl.ext) + " بيترجم، والصوت بيتفرّغ بـ " + (sttCandidate(pl.ext)?.label ?: "؟") + " (الصوت بيتبعت لخدمة خارجية) — لو وقف بيكمّل الباقي ثم جيميناي، وهيطلعلك إشعار بكل تبديل")
+            if (pl.ext == "omniroute") out.add("🛰 أومني روت بيفرّغ ويترجم (جيميناي مقفول) — موديل فشل بيروح لموديل تاني من أومني روت، وهيطلعلك إشعار بالتبديل")
+            else out.add("☁ " + (ExtLlm.byId(pl.ext)?.label ?: pl.ext) + " بيترجم، والصوت بيتفرّغ بـ " + (sttCandidate(pl.ext)?.label ?: "؟") + " (الصوت بيتبعت لخدمة خارجية) — لو وقف بيكمّل الباقي ثم جيميناي، وهيطلعلك إشعار بكل تبديل")
             if (!online()) out.add(NO_NET_CLOUD)
-            if (!hasGeminiKey()) out.add("⚠ مفيش مفتاح جيميناي — لو المحركات الخارجية وقفت الباتشات هتتعاد لما ترجع تشتغل")
+            if (pl.ext != "omniroute" && !hasGeminiKey()) out.add("⚠ مفيش مفتاح جيميناي — لو المحركات الخارجية وقفت الباتشات هتتعاد لما ترجع تشتغل")
             return out
         }
         if (!pl.offline) return emptyList()
@@ -175,7 +176,7 @@ object TrWizard {
             if (pl == null) "" else {
                 val id = Cfg.str("tr_mode_id", "")
                 val base = when (id) {
-                    "g_wav" -> "🧠 ذكاء صناعي · WAV"; "g_aac" -> "🧠 ذكاء صناعي · AAC"
+                    "g_wav" -> "🧠 ذكاء صناعي · WAV"; "g_aac" -> "🧠 ذكاء صناعي · AAC"; "omni_ai" -> "🛰 أومني روت · AAC"; "omni_only" -> "✍ تفريغ أومني روت"
                     "loc_ai" -> "📴 محلي + 🧠 ترجمة"; "loc_google" -> "📴 محلي + 🌍 جوجل"
                     "ai_only" -> "✍ تفريغ ذكاء صناعي"; "w_only" -> "✍ تفريغ Whisper"; "s_only" -> "✍ تفريغ SenseVoice"
                     else -> if (pl.only) "✍ تفريغ بس" else if (pl.offline) "📴 أوفلاين" else if (pl.cloud) "☁ محرك خارجي" else "☁ أونلاين"
@@ -185,7 +186,7 @@ object TrWizard {
                     val d = (if (pl.offline) pl.dialect else (pl.dia ?: "")).ifBlank { "فصحى" }
                     parts.add("🗣 $d")
                     val st = Cfg.str("tone_style", "")
-                    if (st.isNotBlank() && st != "حرفي" && id in setOf("g_wav", "g_aac", "loc_ai")) parts.add("🎚 $st/" + Cfg.str("tone_strength", "متوسطة"))
+                    if (st.isNotBlank() && st != "حرفي" && id in setOf("g_wav", "g_aac", "loc_ai", "omni_ai")) parts.add("🎚 $st/" + Cfg.str("tone_strength", "متوسطة"))
                 }
                 if (SourceMode.get() == SourceMode.HYBRID) parts.add("👁 " + SourceMode.kindLabel())
                 parts.joinToString(" · ")
@@ -197,6 +198,7 @@ object TrWizard {
     private fun describeCore(pl: Plan): String =
         if (pl.only) "✍ تفريغ بس (من غير ترجمة)\nالتفريغ: " + (if (pl.offline) (if (pl.engine == "sherpa") "SenseVoice" else "Whisper " + pl.model) + " على الجهاز · " + langLabel(pl.lang) else if (pl.cloud) (sttCandidate(pl.ext)?.let { it.label + " · " + ExtLlm.sttModel(it) } ?: "⚠ مفيش مزوّد تفريغ جاهز") + " (سحابي)" else "جيميناي") + "\nالنص بيظهر بلغته الأصلية"
         else if (pl.offline) "📴 أوفلاين" + (if (pl.live) " ⚡ لحظي" else "") + " · " + langLabel(pl.lang) + "\nالتفريغ: " + (if (pl.engine == "sherpa") "SenseVoice (sherpa-onnx)" else "Whisper " + pl.model) + " على الجهاز\nالترجمة: " + (if (pl.method == "google") "جوجل (من غير API)" else "جيميناي بالسياق") + "\nاللهجة: " + pl.dialect.ifBlank { "فصحى" } + (if (pl.method == "google" && pl.dialect.isNotBlank() && pl.dialect != "فصحى") " (" + convLabel(pl.conv) + " بيحوّل الترجمة)" else "") + (if (pl.free.isNotBlank() && pl.method == "google") "\nالمترجم: " + (if (pl.free.startsWith("llm_")) "🤖 " + (ExtLlm.byId(pl.free.removePrefix("llm_"))?.label ?: pl.free) + " الأول (بمفتاحك)" else "🌐 " + pl.free + " الأول (مجاني من الريبو)") else "")
+        else if (pl.cloud && pl.ext == "omniroute") "🛰 أومني روت · AAC (جيميناي مقفول)\nالتفريغ: " + (sttCandidate(pl.ext)?.let { ExtLlm.sttModel(it) } ?: "⚠ موديل التفريغ ناقص") + " (عن طريق أومني روت)\nالترجمة: بالسياق (شخصيات وضمائر وسد فجوات) بموديلات أومني روت — موديل فشل بيروح للي بعده" + (pl.dia?.let { "\nاللهجة: " + it.ifBlank { "فصحى" } } ?: "")
         else if (pl.cloud) "☁ أونلاين بمحرك خارجي\nالترجمة: " + (ExtLlm.byId(pl.ext)?.label ?: pl.ext) + " (بمفتاحك)\nالتفريغ: " + (sttCandidate(pl.ext)?.let { it.label + " · " + ExtLlm.sttModel(it) } ?: "⚠ مفيش مزوّد تفريغ جاهز") + " (سحابي — الصوت بيتبعت لخدمة خارجية)\nلو وقف: الباقي من سلسلة الإعدادات ← جوجل ← جيميناي بمفاتيحك (مع إشعار)" + (pl.dia?.let { "\nاللهجة: " + it.ifBlank { "فصحى" } + " (" + convLabel(pl.conv) + " بيحوّل)" } ?: "")
         else "☁ أونلاين (جيميناي)\n" + (TrPresets.byId(pl.onlineId)?.let { it.icon + " " + it.name } ?: "⚙ الإعدادات الحالية") + (pl.dia?.let { "\nاللهجة: " + it.ifBlank { "فصحى" } } ?: "")
 
@@ -208,7 +210,9 @@ object TrWizard {
 
     /** بيكتب الإعدادات اللي المحرك بيقراها (من غير ما يحفظ الخطة) */
     fun apply(pl: Plan) {
-        Cfg.put("conv_via", pl.conv)   // (v281) محوّل اللهجة (فاضي = جيميناي)
+        val omni = pl.cloud && pl.ext == "omniroute"   // (v369) وضع أومني روت (تفريغ + ترجمة + كل المهام الجانبية بأومني روت، جيميناي مقفول)
+        Cfg.put("omni_mode", if (omni) "1" else "0")
+        Cfg.put("conv_via", if (omni && !pl.only) "omniroute" else pl.conv)   // (v281) محوّل اللهجة (فاضي = جيميناي)
         Cfg.put("stt_offline", if (pl.offline || pl.cloud) "1" else "0")
         if (pl.offline) { Cfg.put("stt_lang", pl.lang); Cfg.put("off_model", pl.model); Cfg.put("tr_method", pl.method); Cfg.put("stt_engine", pl.engine); Cfg.put("conv_dialect", if (pl.dialect == "فصحى") "" else pl.dialect)
             if (pl.live) Cfg.put("ctx_min", "1") else if (Cfg.int("ctx_min", 3) == 1) Cfg.put("ctx_min", "3")   // (v266)
@@ -217,7 +221,7 @@ object TrWizard {
         else if (pl.cloud) {   // (v274) أونلاين بمحرك خارجي: تفريغ سحابي (لغة تلقائية) ← ترجمة بالسلسلة (المحرك المختار الأول) ← جيميناي
             val sp = sttCandidate(pl.ext)
             if (sp != null) { if (Cfg.str("rstt_on", "off") != "on") Cfg.put("rstt_by_plan", "1"); Cfg.put("rstt_on", "on"); Cfg.put("rstt_prov", sp.id) }
-            Cfg.put("stt_lang", ""); Cfg.put("tr_method", "google"); Cfg.put("ext_primary", if (pl.only) "" else pl.ext); if (!pl.only) Cfg.put("ext_on_llm_" + pl.ext, "on")
+            Cfg.put("stt_lang", ""); Cfg.put("tr_method", if (omni) "gemini" else "google"); Cfg.put("ext_primary", if (pl.only) "" else pl.ext); if (!pl.only) Cfg.put("ext_on_llm_" + pl.ext, "on")
             if (Cfg.int("ctx_min", 3) == 1) Cfg.put("ctx_min", "3")
             pl.dia?.let { Cfg.put("conv_dialect", if (it == "فصحى") "" else it) }   // (v279)
         }
@@ -393,7 +397,7 @@ object TrWizard {
         var mStyle = Cfg.str("tone_style", "").ifBlank { "حرفي" }
         var mDeg = Cfg.str("tone_strength", "متوسطة").ifBlank { "متوسطة" }
         var afterDl: (() -> Unit)? = null
-        val dialectModes = setOf("g_wav", "g_aac", "loc_ai")
+        val dialectModes = setOf("g_wav", "g_aac", "loc_ai", "omni_ai")
 
         fun sec(t: String) { body.addView(ui.text(t, 13f, th.primary, true).apply { setPadding(ui.dp(2), ui.dp(10), 0, ui.dp(2)) }) }
 
@@ -403,7 +407,7 @@ object TrWizard {
             TrWizard.pSrc = s; if (k != null) TrWizard.pKind = k
             if (mId in dialectModes) { Cfg.put("tone_style", if (mStyle == "حرفي") "" else mStyle); Cfg.put("tone_strength", mDeg) }
             if (mId == "g_wav") Cfg.put(AudioEnc.PRESET_KEY, AudioEnc.NORMAL)
-            if (mId == "g_aac") Cfg.put(AudioEnc.PRESET_KEY, AudioEnc.FAST)
+            if (mId == "g_aac" || mId == "omni_ai") Cfg.put(AudioEnc.PRESET_KEY, AudioEnc.FAST)
             Cfg.put("tr_mode_id", mId); viaModes = true
             sync()
             done(plan(), true, !edit)
@@ -457,12 +461,26 @@ object TrWizard {
                 "ai_only" -> { src = "gemini"; tr = "none"; trId = "" }
                 "w_only" -> { src = "whisper"; tr = "none"; trId = "" }
                 "s_only" -> { src = "sherpa"; tr = "none"; trId = "" }
+                "omni_ai" -> { src = "cloud"; tr = "llm"; trId = "omniroute"; convId = "omniroute"; live = false }
+                "omni_only" -> { src = "cloud"; tr = "none"; trId = "omniroute"; convId = ""; live = false }
             }
             if (src == "whisper") engine = "whisper"
             if (src == "sherpa") { engine = "sherpa"; if (!SherpaStt.handles(lang)) lang = "" }
             if (src == "whisper" && !WhisperLib.loaded) { Notice.show(act, "الأوفلاين مش مدعوم على جهازك", 2500L); return }
             if (src == "sherpa" && !SherpaStt.supported()) { Notice.show(act, "جهازك مش بيدعم SenseVoice", 2500L); return }
             normalize(); sync()
+            if (id == "omni_ai" || id == "omni_only") {   // (v369) لازم أومني روت يكون شغّال الأول (بنفحصه ونسجّل إنه من غير مفتاح لو كده)
+                Thread {
+                    val st = try { OmniAuto.probe() } catch (_: Throwable) { OmniAuto.St.DOWN }
+                    act.runOnUiThread {
+                        if (st == OmniAuto.St.DOWN) { Notice.show(act, "🛰 OmniRoute مش شغّال على الموبايل (localhost:20128) — شغّله الأول وجرّب تاني", 4200L); return@runOnUiThread }
+                        if (st == OmniAuto.St.NEED_KEY) { Notice.show(act, "🔑 OmniRoute شغّال بس طالب مفتاح — حطه من الإعدادات ← الذكاء الاصطناعي ← مفاتيحي", 4800L); return@runOnUiThread }
+                        if (TrWizard.sttCandidate("omniroute") == null) { Notice.show(act, "🎙 موديل التفريغ لأومني روت فاضي — اكتبه من الإعدادات ← الذكاء الاصطناعي (مثلًا deepgram/nova-3)", 4800L); return@runOnUiThread }
+                        afterModePick()
+                    }
+                }.start()
+                return
+            }
             if (isLocal() && !localReadyNow()) {
                 afterDl = { afterDl = null; afterModePick() }
                 go { if (src == "sherpa") stepSherpa() else stepStt() }
@@ -483,6 +501,9 @@ object TrWizard {
             opt("✍ تفريغ ذكاء صناعي", "جيميناي يفرّغ النص بلغته الأصلية", mId == "ai_only") { pickMode("ai_only") }
             opt("✍ تفريغ محلي · Whisper", "على جهازك · كل اللغات", mId == "w_only") { pickMode("w_only") }
             opt("✍ تفريغ محلي · SenseVoice (onnx)", "على جهازك · إنجليزي وياباني وكوري وصيني", mId == "s_only") { pickMode("s_only") }
+            sec("🛰 OmniRoute (من غير جيميناي)")
+            opt("🛰 أومني روت — تفريغ + ترجمة (AAC)", "الصوت بيتفرّغ بأومني روت (AAC)، والباتشات بتتترجم بالسياق بموديلات أومني روت — باتش فشل بيروح لموديل تاني · سد الفجوات وتصحيح الضمائر والشخصيات بنفس الطريقة · جيميناي مقفول خالص", mId == "omni_ai") { pickMode("omni_ai") }
+            opt("✍ أومني روت — تفريغ بس", "أومني روت يفرّغ النص بلغته الأصلية من غير ترجمة", mId == "omni_only") { pickMode("omni_only") }
             sec("👁 بصري")
             opt("👁 وضع بصري فقط", "بنوعيه: نصوص الشاشة أو هارد سب · من غير ترجمة صوت", SourceMode.get() == SourceMode.VISUAL) { mId = "visual"; Cfg.put("tr_mode_id", "visual"); viaModes = true; tsrc = "visual"; go { stepVisKind() } }
             opt("⋯ متقدّم", "الخط الكامل (تفريغ ← ترجمة ← لهجة) · محركات خارجية · مترجمين الريبو · الإعداد المحفوظ", false) { viaModes = false; go { stepSource() } }
@@ -876,7 +897,7 @@ object TrWizard {
         fun sync() {
             when (src) {
                 "gemini" -> { mode = "online"; ext = ""; free = ""; onlineId = if (tr == "none") "transcript" else gp; method = "gemini"; live = false }
-                "cloud" -> { mode = "online"; ext = if (tr == "none") (TrWizard.sttCandidate("")?.id ?: "") else trId; free = ""; onlineId = CURRENT; method = "gemini"; live = false }
+                "cloud" -> { mode = "online"; ext = if (tr == "none") (if (trId.isNotBlank() && TrWizard.sttCandidate(trId) != null) trId else (TrWizard.sttCandidate("")?.id ?: "")) else trId; free = ""; onlineId = CURRENT; method = "gemini"; live = false }
                 else -> {
                     mode = "offline"; ext = ""; engine = src; method = if (tr == "gemini") "gemini" else "google"
                     free = when (tr) { "free" -> trId; "llm" -> "llm_$trId"; else -> "" }
@@ -922,7 +943,7 @@ object TrWizard {
                     if (forStart && !Offline.remoteOn() && !SherpaStt.ready()) return "① نزّل موديل SenseVoice الأول — دوس على كارت ①"
                 }
                 "cloud" -> {
-                    if (tr == "none") { if (TrWizard.sttCandidate("") == null) return "① محتاج مفتاح تفريغ (Groq أو ChatGPT)" }
+                    if (tr == "none") { if (TrWizard.sttCandidate(ext) == null) return "① محتاج مفتاح تفريغ (Groq أو ChatGPT) أو أومني روت شغّال" }
                     else {
                         val p = ExtLlm.byId(trId)
                         if (p == null || !ExtLlm.configured(p) || !ExtLlm.enabled(p)) return "② اختار محرك جاهز (مفتاحه مضبوط)"

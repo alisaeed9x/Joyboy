@@ -19,7 +19,7 @@ object ExtLlm {
     val presets: List<Preset> = listOf(
         Preset("chatgpt", "ChatGPT (OpenAI)", "openai", "https://api.openai.com/v1", "gpt-4o-mini", "whisper-1", listOf("openai", "chatgpt")),
         Preset("claude", "Claude (Anthropic)", "anthropic", "https://api.anthropic.com/v1", "claude-haiku-5-5", "", listOf("anthropic", "claude")),
-        Preset("omniroute", "OmniRoute (بوابة كل المزوّدين)", "openai", "http://localhost:20128/v1", "auto", "", listOf("omniroute")),
+        Preset("omniroute", "OmniRoute (بوابة كل المزوّدين)", "openai", "http://localhost:20128/v1", "auto", "deepgram/nova-3", listOf("omniroute")),
         Preset("groq", "Groq", "openai", "https://api.groq.com/openai/v1", "llama-3.3-70b-versatile", "whisper-large-v3-turbo", listOf("groq")),
         Preset("openrouter", "OpenRouter", "openai", "https://openrouter.ai/api/v1", "openai/gpt-4o-mini", "", listOf("openrouter")),
         Preset("deepseek", "DeepSeek", "openai", "https://api.deepseek.com/v1", "deepseek-chat", "", listOf("deepseek")),
@@ -136,17 +136,12 @@ object ExtLlm {
      * نحفظه ونعيد الطلب مرة واحدة، وبيطلع إشعار بالتغيير. لو ملقيناش قريب بيفضل الخطأ الأصلي.
      */
     fun chat(p: Preset, system: String, user: String, maxTokens: Int): String {
-        if (p.id != "omniroute") return chatHeal(p, system, user, maxTokens)
-        // (v368) OmniRoute: نسجّل مين رد (المزوّد · الموديل من الهيدرات) أو سبب الفشل — للنقطة وسطر المحرك في المشغّل
-        try {
-            val r = chatHeal(p, system, user, maxTokens)
-            TrSource.report(TrSource.OMNI, true, OmniMeta.last?.let { it.provider + (if (it.model.isNotEmpty()) " · " + it.model else "") } ?: "OmniRoute")
-            return r
-        } catch (e: Throwable) {
-            TrSource.report(TrSource.OMNI, false, (e.message ?: e.javaClass.simpleName).take(60))
-            throw e
-        }
+        if (p.id == "omniroute") return OmniModels.chat(p, system, user, maxTokens)   // (v369) لو موديل فشل بيتبعت لموديل تاني من أومني روت
+        return chatHeal(p, system, user, maxTokens)
     }
+
+    /** (v369) طلب واحد بموديل محدد (من غير إصلاح تلقائي لاسم الموديل) — لتبديل موديلات أومني روت */
+    fun chatWith(p: Preset, modelName: String, system: String, user: String, maxTokens: Int): String = chatOnce(p, system, user, maxTokens, modelName)
 
     private fun chatHeal(p: Preset, system: String, user: String, maxTokens: Int): String {
         try { return chatOnce(p, system, user, maxTokens) }
@@ -171,7 +166,7 @@ object ExtLlm {
         return out.sorted()
     }
 
-    private val skipWords = listOf("embed", "tts", "whisper", "audio", "realtime", "image", "moderation", "transcribe", "dall", "guard", "rerank", "ocr", "search", "speech", "safeguard")
+    val skipWords = listOf("embed", "tts", "whisper", "audio", "realtime", "image", "moderation", "transcribe", "dall", "guard", "rerank", "ocr", "search", "speech", "safeguard")
     private fun words(n: String): Set<String> = n.lowercase().split(Regex("[^a-z0-9]+")).filter { w -> w.isNotEmpty() && w.any { it.isLetter() } }.toSet()
     private fun ver(n: String): List<Int> = Regex("\\d+").findAll(n).map { it.value.toIntOrNull()?.takeIf { v -> v < 100000 } ?: 0 }.toList()
 
@@ -224,10 +219,10 @@ object ExtLlm {
         } catch (e: Exception) { Triple(false, System.currentTimeMillis() - t0, (e.message ?: e.javaClass.simpleName).take(90)) }
     }
 
-    private fun chatOnce(p: Preset, system: String, user: String, maxTokens: Int): String {
+    private fun chatOnce(p: Preset, system: String, user: String, maxTokens: Int, modelName: String = model(p)): String {
         val key = key(p)
         if (p.kind == "anthropic") {
-            val body = JSONObject().put("model", model(p)).put("max_tokens", maxTokens).put("system", system)
+            val body = JSONObject().put("model", modelName).put("max_tokens", maxTokens).put("system", system)
                 .put("messages", JSONArray().put(JSONObject().put("role", "user").put("content", user))).toString()
             val txt = post(url(p) + "/messages", mapOf("x-api-key" to key, "anthropic-version" to "2023-06-01"), body)
             val arr = JSONObject(txt).optJSONArray("content") ?: return ""
@@ -235,7 +230,7 @@ object ExtLlm {
             for (i in 0 until arr.length()) sb.append(arr.optJSONObject(i)?.optString("text", "") ?: "")
             return sb.toString()
         }
-        val body = JSONObject().put("model", model(p)).put("temperature", 0.2)
+        val body = JSONObject().put("model", modelName).put("temperature", 0.2)
             .put("messages", JSONArray().put(JSONObject().put("role", "system").put("content", system)).put(JSONObject().put("role", "user").put("content", user))).toString()
         val txt = post(url(p) + "/chat/completions", bearer(p), body)
         return JSONObject(txt).optJSONArray("choices")?.optJSONObject(0)?.optJSONObject("message")?.optString("content", "") ?: ""
@@ -286,5 +281,64 @@ object OmniAuto {
         if (!force && now - lastAt < 60000L) { last?.let { onDone?.invoke(it) }; return }
         lastAt = now
         Thread { val r = try { probe() } catch (_: Throwable) { St.DOWN }; last = r; onDone?.invoke(r) }.start()
+    }
+}
+
+
+/**
+ * (v369) وضع أومني روت (تفريغ + ترجمة بأومني روت بس — جيميناي والراوتر الداخلي وجوجل مقفولين):
+ *  - on(): الخطة المحفوظة فيها محرك أومني روت (Cfg omni_mode=1، بتتكتب من TrWizard.apply).
+ *  - models(): الموديل الأساسي (llm_omniroute_model، افتراضي auto) + اللي كتبته في omni_models (مفصولين بفاصلة/سطر)؛ لو ماكتبتش بدايل
+ *    بنجيب قايمة موديلات أومني روت (GET /v1/models) ونضيف منها لحد 6 موديلات شات احتياطي (بتتحدّث كل 10 دقايق).
+ *  - chat(): بيجرّب الموديلات بالترتيب؛ موديل فشل (كوتة/خطأ/رد فاضي/مهلة) بيتوقف دقايق ويتبعت نفس الطلب للي بعده، لحد 4 موديلات في الطلب الواحد.
+ */
+object OmniModels {
+    @Volatile private var found: List<String> = emptyList()
+    @Volatile private var foundAt = 0L
+    private const val MAX_TRIES = 4
+
+    fun extras(): List<String> = Cfg.str("omni_models").split(Regex("[,\n;،]")).map { it.trim() }.filter { it.isNotEmpty() }
+
+    fun models(p: ExtLlm.Preset): List<String> {
+        val base = (listOf(ExtLlm.model(p)) + extras()).distinct()
+        if (base.size > 1) return base
+        val now = System.currentTimeMillis()
+        if (now - foundAt > 600_000L) {
+            foundAt = now
+            found = try {
+                ExtLlm.listModels(p, ExtLlm.key(p), ExtLlm.url(p)).filter { m -> ExtLlm.skipWords.none { m.contains(it, true) } }.take(6)
+            } catch (_: Throwable) { found }
+        }
+        return (base + found).distinct()
+    }
+
+    fun chat(p: ExtLlm.Preset, system: String, user: String, maxTokens: Int): String {
+        var last: Throwable? = null
+        var tried = 0
+        val all = models(p)
+        for ((ix, m) in all.withIndex()) {
+            if (tried >= MAX_TRIES) break
+            val id = "omni|" + m
+            if (ExtTranslate.blockedWhy(id, 0) != null) continue
+            tried++
+            try {
+                val r = ExtLlm.chatWith(p, m, system, user, maxTokens)
+                if (r.isBlank()) throw ExtLlm.LlmErr(502, "رد فاضي")
+                ExtTranslate.clearBlock(id)
+                if (ix > 0) ExtTranslate.lastNote = "🔄 أومني روت: اتحوّل لموديل «$m»"
+                return r
+            } catch (e: ExtLlm.LlmErr) {
+                last = e
+                when (e.code) {
+                    401, 403 -> ExtTranslate.coolFor(id, 60_000L, "المفتاح مرفوض")
+                    429, 402, 404, 500, 501, 502, 503, 504 -> ExtTranslate.noteFail(id, 0, e)
+                    else -> ExtTranslate.coolFor(id, 300_000L, "الموديل رفض الطلب (" + e.code + ")")
+                }
+            } catch (e: java.io.IOException) {
+                last = e
+                ExtTranslate.coolFor(id, 120_000L, "مهلة/اتصال")
+            }
+        }
+        throw last ?: ExtLlm.LlmErr(503, "كل موديلات أومني روت واقفة دلوقتي — هيتجرّبوا تاني بعد دقايق")
     }
 }

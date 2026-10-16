@@ -63,17 +63,17 @@ object ExtTranslate {
     /** (v274) سلسلة الترجمة بالترتيب الفعلي (null = جوجل الداخلي). بعدها لو كلها فشلت الباتش بيتحوّل لجيميناي بمفاتيحك */
     fun chain(): List<Prov?> {
         val ext = active()
+        if (OmniMode.on()) return listOfNotNull(ext.firstOrNull { it.id == "llm_omniroute" })   // (v369) وضع أومني روت: مفيش راوتر داخلي ولا جيميناي ولا جوجل
         // (v277) id المحفوظ لمحركات LLM هو id البريست (chatgpt) بينما id المزوّد llm_chatgpt — قبل كده المحرك الأساسي ماكانش بيتلقى أبدًا؛ وكمان وضع «الريبو بس» ماكانش لازم يستبعد اللي اخترته بإيدك
         val pid = primaryId()
         val prim = if (pid.isEmpty()) null else all().firstOrNull { enabled(it) && (it.id == pid || it.id == "llm_$pid") }
         // (v366) الراوتر أول واحد بعد المحرك الأساسي؛ ومزوّدين LLM بتوعك جواه فمابيتكرروش بعد جوجل
         val rt = ext.firstOrNull { it.id == "router" }?.takeIf { it.id != prim?.id }
-        // (v368) 🛰 OmniRoute ⇄ 🏠 المفاتيح الداخلية (الراوتر): المختار الأول والتاني احتياطي له (TrSource.mode)
         val om = ext.firstOrNull { it.id == "llm_omniroute" }?.takeIf { it.id != prim?.id }
         val rest = ext.filter { it.id != prim?.id && it.id != "router" && it.id != "llm_omniroute" && !(rt != null && it.id.startsWith("llm_")) }
         val steps = ArrayList<Prov?>()
         prim?.let { steps.add(it) }
-        if (TrSource.mode() == TrSource.OMNI) { om?.let { steps.add(it) }; rt?.let { steps.add(it) } } else { rt?.let { steps.add(it) }; om?.let { steps.add(it) } }
+        rt?.let { steps.add(it) }; om?.let { steps.add(it) }
         if (externalFirst()) { steps.addAll(rest); steps.add(null) } else { steps.add(null); steps.addAll(rest) }
         return steps
     }
@@ -111,6 +111,8 @@ object ExtTranslate {
         if (left <= 0L) { coolUntil.remove(id); coolWhy.remove(id); return null }
         return (coolWhy[id] ?: "واقف") + " — بيتجرّب تاني بعد " + ((left + 59_999L) / 60_000L) + " د"
     }
+    /** (v369) إيقاف مؤقت لمفتاح [id] (مثلًا موديل أومني روت) لمدة [ms] */
+    fun coolFor(id: String, ms: Long, why: String) { coolUntil[id] = System.currentTimeMillis() + ms; coolWhy[id] = why }
     fun clearBlock(id: String) { badKey.remove(id); coolUntil.remove(id); coolWhy.remove(id) }
     fun noteFail(id: String, keyHash: Int, e: ExtLlm.LlmErr) {
         val now = System.currentTimeMillis()

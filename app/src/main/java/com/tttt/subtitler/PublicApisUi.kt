@@ -105,12 +105,14 @@ object PublicApisUi {
         val model = ui.input("اسم الموديل" + (if (p.model.isNotEmpty()) " (فاضي = ${p.model})" else ""), Cfg.str("llm_${p.id}_model"), 1).apply { layoutDirection = View.LAYOUT_DIRECTION_LTR }
         val url = ui.input("الرابط الأساسي" + (if (p.url.isNotEmpty()) " (فاضي = ${p.url})" else " (مثال: https://…/v1)"), Cfg.str("llm_${p.id}_url"), 1).apply { layoutDirection = View.LAYOUT_DIRECTION_LTR }
         val stt = ui.input("موديل التفريغ الصوتي" + (if (p.sttModel.isNotEmpty()) " (فاضي = ${p.sttModel})" else ""), Cfg.str("llm_${p.id}_stt"), 1).apply { layoutDirection = View.LAYOUT_DIRECTION_LTR }
+        val alt = ui.input("موديلات بديلة لو الأساسي فشل (فاصلة بينهم)", Cfg.str("omni_models"), 1).apply { layoutDirection = View.LAYOUT_DIRECTION_LTR }   // (v369) أومني روت بس
         var enabled = Cfg.str("ext_on_llm_" + p.id, "on") != "off"
         box.addView(ui.text("🔑 ${p.label}", 17f, th.primary, true))
         box.addView(ui.text("المفتاح بيتخزن على جهازك بس، وبيتبعت لخدمة ${p.label} وحدها. أسماء الموديلات بتتغيّر — لو الاسم الافتراضي مابقاش شغّال اكتب اسم موديل حالي من موقع الخدمة.", 11.5f, th.muted).apply { setPadding(0, ui.dp(4), 0, ui.dp(8)) })
         fun save() {
             Cfg.put("llm_${p.id}_key", key.text.toString().trim()); Cfg.put("llm_${p.id}_model", model.text.toString().trim())
             Cfg.put("llm_${p.id}_url", url.text.toString().trim()); Cfg.put("llm_${p.id}_stt", stt.text.toString().trim())
+            if (p.id == "omniroute") Cfg.put("omni_models", alt.text.toString().trim())
             Cfg.put("ext_on_llm_" + p.id, if (enabled) "on" else "off")
             ExtTranslate.clearBlock("llm_" + p.id)   // (v274) حفظ جديد = نبدأ نجرّب من تاني
         }
@@ -130,6 +132,7 @@ object PublicApisUi {
             }.start()
         })
         if (p.kind == "openai") box.addView(url)
+        if (p.id == "omniroute") box.addView(alt)   // (v369) فاضي = بنجيب موديلات شات من أومني روت لوحدنا
         if (ExtLlm.supportsStt(p)) box.addView(stt)
         box.addView(ui.switchRow("مفعّل في سلسلة الترجمة", enabled) { enabled = it })
         box.addView(ui.button("💾 حفظ", true) {

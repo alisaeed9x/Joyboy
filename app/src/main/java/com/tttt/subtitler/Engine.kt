@@ -1105,10 +1105,10 @@ class Engine(
         sideNoted = true
         val closed = ArrayList<String>()
         if (sideOff()) { closed.add("تصحيح الضمائر"); closed.add("تحليل الشخصيات") }
-        if (keyless) closed.add("التنقيح")
+        if (keyless && !OmniMode.on()) closed.add("التنقيح")   // (v369) أومني روت: التنقيح النهائي شغّال (النصي)
         if (!fillOk()) closed.add("سدّ الفجوات والثغرات")
         if (closed.isEmpty()) return
-        val why = if (keyless) "مفيش مفتاح جيميناي" else "مسار جوجل المجاني"
+        val why = if (OmniMode.on()) "وضع أومني روت" else if (keyless) "مفيش مفتاح جيميناي" else "مسار جوجل المجاني"
         val hint = if (sideOff() && convLlm() == null) " — اختار محرك LLM من كارت ③ («🔄 يحوّل اللهجة بـ») يشغّل الضمائر والشخصيات بيه" else ""
         val msg = "ℹ واقف ($why): " + closed.joinToString(" · ") + hint
         host.log(msg); try { host.notice(msg) } catch (_: Throwable) {}
@@ -1512,7 +1512,30 @@ class Engine(
     }
 
     /** طلب Gemini نصي واحد (من غير صوت) بإعادة المحاولة وتحويل المفتاح عند الكوتة/الخطأ. null = فشل */
+    /** (v369) وضع أومني روت: نفس طلب الترجمة بس بأومني روت — موديل فشل بيروح لموديل تاني، ومفاتيح جيميناي مابتتلمسش */
+    private fun askJsonOmni(prompt: String, tag: String): JSONObject? {
+        val p = ExtLlm.byId("omniroute") ?: return null
+        var bad = 0; var net = 0; var attempts = 0
+        while (running && !isClosed && attempts++ < 4) {
+            try {
+                val txt = ExtLlm.chat(p, "Reply with one valid JSON object only: no markdown, no explanation.", prompt, 16384)
+                if (isClosed) return null
+                ExtTranslate.lastNote.takeIf { it.isNotEmpty() }?.let { ExtTranslate.lastNote = ""; host.log(it) }
+                val jj = if (txt.isBlank()) null else Parse.json(txt)
+                if (jj == null) { if (++bad > 2) return null; host.log("⚠ $tag: رد مش JSON صالح من أومني روت — إعادة"); nap(600); continue }
+                return jj
+            } catch (e: ExtLlm.LlmErr) {
+                host.log("⚠ $tag: أومني روت — " + (e.message ?: "").take(100)); nap(4000); return null
+            } catch (e: IOException) {
+                if (++net > 2) throw e
+                host.log("📶 $tag: مشكلة اتصال بأومني روت — إعادة"); nap(2000L * net)
+            }
+        }
+        return null
+    }
+
     private fun askJson(prompt: String, maxTok: Int, tp: Pool, tag: String): JSONObject? {
+        if (OmniMode.on()) return askJsonOmni(prompt, tag)
         var key: String? = null
         var attempts = 0; var net = 0; var bad = 0
         while (running && !isClosed && attempts++ < 6) {
@@ -1732,7 +1755,7 @@ class Engine(
     /** (v285) محرك النص الاحتياطي للمهام الجانبية: محرك LLM المختار في كارت ③ بس (مش أي محرك مضبوط) — null لو مفيش أو الطلب أكبر من حدّ المحركات */
     private fun textViaLlm(prompt: String, maxTokens: Int, json: Boolean): Api.Result? {
         val p = convLlm() ?: return null
-        if (maxTokens > 8192) return null
+        if (maxTokens > 8192 && !OmniMode.on()) return null
         return try { Api.Result(ExtLlm.chat(p, if (json) "Reply with one valid JSON object only: no markdown, no explanation." else "", prompt, maxTokens), "STOP") }
         catch (e: Exception) {
             if (e is ExtLlm.LlmErr) ExtTranslate.noteFail("llm_" + p.id, ExtLlm.key(p).hashCode(), e)
