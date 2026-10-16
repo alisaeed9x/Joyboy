@@ -32,7 +32,6 @@ fun main() {
     val hl = d.copy(plain = false).highlights(s.translated, s)
     check("تلوين الأسماء والأماكن", hl.count { !it.third } == 2 && hl.count { it.third } == 1)
     check("fontPx بيحترم الحدود والسكيل", SubStyle.fontPx(1080, 2f, 100) == 36f && SubStyle.fontPx(300, 2f, 200) == 52f)
-    check("emotionKind", SubStyle.emotionKind("shouting") == "shout" && SubStyle.emotionKind("Whisper") == "whisper" && SubStyle.emotionKind("neutral") == "")
     check("الافتراضي زي الـ HTML: ألوان وتمييز (مش أبيض بس) + تقسيم العرض مقفول", !d.plain && !d.splitOn && SubStyle.load { _, def -> def }.let { !it.plain && !it.splitOn })
     check("قسّم عند الترقيم: شغّال افتراضيًا", d.punctOn && SubStyle.load { _, def -> def }.punctOn)
     check("ألوان المتحدثين: نفس الجنس = لونين مختلفين", SubStyle.lineColors(listOf(mk("male"), mk("male"))).let { it[0] != it[1] } && SubStyle.lineColors(listOf(mk("male"), mk("female"))) == listOf(SubStyle.MALE, SubStyle.FEMALE))

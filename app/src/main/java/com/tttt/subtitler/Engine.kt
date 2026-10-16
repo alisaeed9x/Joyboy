@@ -202,8 +202,6 @@ class Engine(
 
     // ===== واجهة للـ UI =====
     fun failedCount() = failed.count { it.value >= MAX_FAILS }
-    /** حالة الباتشات حوالين مكان التشغيل للوج العايم: سطر لكل باتش (✅ خلص · ⏳ بيترجم · ❌ فشل · ▫ مستني) */
-    fun batchLines(): String = batchRows().joinToString("\n") { it.first }
     /** (v146) سطر لكل باتش + هل هو الأسرع في دفعته (بيتلوّن أخضر). الدفعة = الباتشات اللي بتتبعت مع بعض (عددها = عدد الطلبات المتوازية) */
     fun batchRows(): List<Pair<String, Boolean>> {
         val d = host.playerDuration()
@@ -322,8 +320,6 @@ class Engine(
             failed.remove(i); incomplete.remove(i); priorityRetry.add(i)
         }
     }
-    /** إعادة ترجمة باتش واحد على المفاتيح الاحتياطية */
-    fun retryOnBackup(i: Int) = retryOnBackupSeq(listOf(i))
 
     /** إعادة مجموعة باتشات على المفاتيح الاحتياطية بالتوالي (واحد ورا التاني: الأقدم فالأحدث) في خيط واحد — مش كلهم في نفس الوقت */
     fun retryOnBackupSeq(list: List<Int>) {
@@ -488,7 +484,6 @@ class Engine(
     fun redoOnly(i: Int, keep: Boolean = true) { redo(i, i, keep); onlyChunks = i..i; paused = false }
     /** من الأول خالص */
     fun redoAll(keep: Boolean = true) { redo(0, -1, keep); onlyChunks = null; forcedSticky = true; forcedCursor = 0; paused = false }
-    fun resumeAuto() { onlyChunks = null; paused = false }
     /** كمّل الترجمة من المكان ده (من غير مسح حاجة): بيقفز بالمؤشر لباتش الوقت ده ويلغي الإيقاف */
     /** (v224) ابدأ من أول الفيديو: أول باتش لسه ناقص من الأول، بغض النظر عن مكان الفيديو دلوقتي (ثابت لحد ما يوصل لمكان التشغيل) */
     fun translateFromStart() { onlyChunks = null; forcedSticky = true; forcedCursor = 0; paused = false; userPaused = false }
@@ -1701,11 +1696,6 @@ class Engine(
         maybeRefine()
     }
 
-    // (v108) نوع العمل (أكشن/كوميدي/رعب…) من أول جمل مترجمة — للفلتر التلقائي
-    @Volatile var genreWanted = false
-    @Volatile var onGenre: ((String) -> Unit)? = null
-    @Volatile private var genreBusy = false
-    fun detectGenre() { genreWanted = true; maybeGenre() }
     private fun maybeGenre() {
         if (!genreWanted || genreBusy) return
         val sample: String

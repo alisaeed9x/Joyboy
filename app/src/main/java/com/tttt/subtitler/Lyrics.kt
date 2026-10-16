@@ -103,7 +103,7 @@ object LyricsEngine {
     }
 
     // ===================== النسخ المرشّحة (محفوظة محليًا) =====================
-    fun srcLabel(src: String): String = if (src.endsWith("+local")) srcLabel(src.removeSuffix("+local")) + " + توقيت محلي" else when (src) {
+    fun srcLabel(src: String): String = if (src.endsWith("+ai")) srcLabel(src.removeSuffix("+ai")) + " + توقيت ذكاء اصطناعي" else if (src.endsWith("+local")) srcLabel(src.removeSuffix("+local")) + " + توقيت محلي" else when (src) {
         "lrclib" -> "LRCLIB"; "musixmatch" -> "Musixmatch"; "youtube" -> "YouTube Music"; "lyrics.ovh" -> "Lyrics.ovh"; "gemini" -> "Gemini"; "gemini-audio" -> "Gemini (من الصوت)"; else -> src
     }
 
@@ -319,6 +319,53 @@ object LyricsEngine {
      * ونوزّع السطور عليها بنسبة طول كل سطر بس على الفريمات «النشطة» (يعني الصمت/الفواصل ما بتاخدش وقت)، وبعدين نشدّ كل بداية لأقرب بداية صوت.
      * النتيجة تقريبية (مش بتسمع الكلام) — ومتعلّمة كده في الملاحظة. null لو الصوت ما اتحلّلش.
      */
+    /** (v357) بيقرا مصفوفة أوقات البداية من رد جيميناي: لازم العدد يطابق عدد السطور، ومن 0 لأقل من مدة الأغنية؛ المتساوي بيتزاح شوية عشان الترتيب يفضل تصاعدي */
+    private fun parseStarts(txt: String, n: Int, tot: Double): DoubleArray? {
+        val a = txt.indexOf('['); val b = txt.lastIndexOf(']'); if (a < 0 || b <= a) return null
+        val js = try { JSONArray(txt.substring(a, b + 1)) } catch (_: Throwable) { return null }
+        if (js.length() != n) return null
+        val st = DoubleArray(n)
+        for (k in 0 until n) { val v = js.optDouble(k, Double.NaN); if (v.isNaN() || v < 0.0) return null; st[k] = v }
+        for (k in 1 until n) { if (st[k] < st[k - 1]) return null; if (st[k] - st[k - 1] < 0.4) st[k] = st[k - 1] + 0.4 }
+        if (st[n - 1] >= tot) return null
+        return st
+    }
+    /**
+     * (v357) توقيت بالذكاء الاصطناعي من غير ما الأغنية تتبعت: جيميناي بياخد النص واسم الأغنية والمغني والمدة بس (نص من غير أي صوت)،
+     * ويقدّر وقت بداية كل سطر من معرفته بالتسجيل الحقيقي (طول المقدمة، المذهب المتكرر، الفواصل الموسيقية). النتيجة تقريبية وممكن تتزحلق.
+     * null لو مفيش مفتاح أو الرد مش صالح — وساعتها بنكمّل بالتوقيت المحلي/الموزّع زي الأول.
+     */
+    private fun aiTextSync(name: String, by: String, raw: List<String>, src: String, tot: Double): LyricsResult? {
+        if (tot < 30.0 || raw.size < 4 || raw.size > 220) return null
+        val keys = SongId.textKeys(); if (keys.isEmpty()) return null
+        val p = buildString {
+            append("You are a lyrics timing expert. Estimate when each line of this song's lyrics starts, WITHOUT hearing the audio: use your knowledge of the real recording ")
+            append("(length of the intro, verse/chorus structure, instrumental breaks, tempo, repeated choruses) together with the lyric text itself.\n\n")
+            append("Song: \"").append(name).append("\"\nArtist: \"").append(by).append("\"\nTotal duration: ").append(Math.round(tot)).append(" seconds\n\nLINES (numbered):\n")
+            raw.forEachIndexed { i, l -> append(i + 1).append(". ").append(l).append('\n') }
+            append("\nRULES:\n- Return the START time in seconds (one decimal) of EVERY line, in order: exactly ").append(raw.size).append(" numbers.\n")
+            append("- Increasing order; the first line starts after the real intro; the last start must be below ").append(Math.round(tot)).append(".\n")
+            append("- A sung line of normal tempo lasts roughly 2-6 seconds; leave a longer gap only for an instrumental break, a long intro/outro or a held note. A repeated chorus is sung at the same pace each time.\n")
+            append("- If unsure, distribute the lines using the song structure and the length of each line instead of refusing.\n")
+            append("OUTPUT: one JSON array of numbers only, no markdown, e.g. [12.5,16.0,19.8]")
+        }
+        var st: DoubleArray? = null
+        loop@ for (k in keys.take(3)) {
+            for (useSearch in booleanArrayOf(true, false)) {
+                try {
+                    val r = Api.generate(Models.DEFAULT, k, p, null, 4000, 0.1, true, useSearch)
+                    st = parseStarts(r.text, raw.size, tot); if (st != null) break@loop
+                } catch (e: ApiErr) { if (e.code == 429) continue@loop } catch (_: Throwable) {}
+            }
+        }
+        val s = st ?: return null
+        val lines = raw.mapIndexed { i, tx ->
+            val en = if (i + 1 < raw.size) minOf(s[i + 1], s[i] + 8.0) else minOf(tot, s[i] + 6.0)
+            LyricLine(s[i], maxOf(en, s[i] + 0.5), tx)
+        }
+        return LyricsResult(name, by, lines, true, 1, 1, emptySet(), "توقيت تقريبي بالذكاء الاصطناعي (من غير سماع الصوت — ممكن يتزحلق)", raw, true, src + "+ai")
+    }
+
     /** (v345) توقيت تقريبي من غير أي سماع: السطور بتتوزّع على مدة الأغنية بنسبة طول كل سطر (بعد مقدمة ~6% وقبل نهاية ~4%) */
     private fun evenSync(name: String, by: String, raw: List<String>, src: String, tot: Double): LyricsResult? {
         if (tot < 20.0 || raw.size < 2) return null
@@ -575,11 +622,19 @@ object LyricsEngine {
         if (res == null) { onDone(null, "النتيجة فاضية"); return }
         // (v294) النسخة اللي اتلقت من غير توقيت: جيميناي يسمع الأغنية ويوقّت كل سطر (لو التطابق مع الصوت كويس؛ غير كده بنسيب النص زي ما هو)
         if (!res.synced && res.raw.size >= 4 && !retry) {
+            // (v357) كلمات YouTube Music من غير توقيت: توقيت بالذكاء الاصطناعي من النص بس (من غير ما الصوت يتبعت لجيميناي)، ولو فشل بنكمّل بالطريقة المحلية
+            if (bf.src == "youtube") {
+                onStage("🤖 بوقّت الكلمات بالذكاء الاصطناعي (من غير رفع الصوت)…")
+                val ai = try { aiTextSync(name, by, res.raw, bf.src, t.durMs / 1000.0) } catch (e: Throwable) { LogStore.err("lyrics-aisync", e); null }
+                if (ai != null) { res = ai; save(app, t, M_FULL, ai) }
+            }
             // (v342) توقيت محلي مجاني الأول (من طاقة الصوت على الجهاز — من غير جيميناي ولا مقاطع صوت)، وتظهر الكلمات بيه فورًا
-            onStage("⏱ بضبط التوقيت من الصوت على الجهاز…")
-            val loc = try { localSync(app, t, name, by, res.raw, bf.src) } catch (e: Throwable) { LogStore.err("lyrics-localsync", e); null }
-            if (loc != null) { res = loc; save(app, t, M_FULL, loc) }
-            else save(app, t, M_FULL, LyricsResult(name, by, res.lines, true, 1, 1, emptySet(), "من غير توقيت", res.raw, false, bf.src))
+            if (!res.synced) {
+                onStage("⏱ بضبط التوقيت من الصوت على الجهاز…")
+                val loc = try { localSync(app, t, name, by, res.raw, bf.src) } catch (e: Throwable) { LogStore.err("lyrics-localsync", e); null }
+                if (loc != null) { res = loc; save(app, t, M_FULL, loc) }
+                else save(app, t, M_FULL, LyricsResult(name, by, res.lines, true, 1, 1, emptySet(), "من غير توقيت", res.raw, false, bf.src))
+            }
         }
         lastId[k] = bf.key()
         val merged = ArrayList<LyrCand>(x.found)

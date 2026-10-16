@@ -27,7 +27,11 @@ object SettingsTabs {
         Sec("visual", "👁 الصورة (الوضع البصري)", "تلقائي أو يدوي · قراءة الكلام المكتوب في الفيديو", "🚀 الترجمة والمحرك"),
         Sec("perf", "🤖 الموديل والأداء", "الموديل · اختبار السرعة · طول المقطع · المقاطع قدّام التشغيل · التنقيح", "🚀 الترجمة والمحرك"),
         Sec("look", "🎬 شكل الترجمة", "الخطوط · الأنيميشن · وضع العرض · الألوان · الخلفية", "🎬 الشكل"),
-        Sec("more", "🛠 عام", "الخروج من المشغّل · الترجمة الحية · طابور الخلفية · البطارية · القفل · النسخة الاحتياطية · الثيم", "🛠 عام"),
+        Sec("more", "🔋 الخلفية والتشغيل", "الخروج من المشغّل · طابور الترجمة في الخلفية · البطارية", "🛠 عام"),
+        Sec("live", "🔴 الترجمة الحية", "ترجمة عايمة فوق أي تطبيق", "🛠 عام"),
+        Sec("security", "🔒 الأمان والنسخ", "القفل بالنمط والبصمة · النسخة الاحتياطية والاسترجاع", "🛠 عام"),
+        Sec("appearance", "🎨 المظهر", "الثيم · داكن/فاتح · وضع الواجهة · الأصوات", "🛠 عام"),
+        Sec("youtube", "▶ يوتيوب", "الجودة · السجل · الإشعارات · الحساب · التحميلات", "▶ يوتيوب"),
         Sec("music", "🎵 مشغّل الموسيقى", "الكلمات (جيميناي) · الخط والحجم · الكلمات التلقائية · فحص الأغاني", "🎵 الموسيقى"))
     val video = sections.filter { it.id != "music" }.map { it.id to it.label }
     val all = sections.map { it.id to it.label }
@@ -77,27 +81,30 @@ class TabbedDialog(val act: Activity, val ui: Ui, val title: String, val tabs: L
 
         // صفحة القايمة الرئيسية
         listPage.apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL }
+        // (v355) الأقسام بقت مربعات: أيقونة كبيرة + اسم قصير، 3 في الصف، وعنوان لكل مجموعة. ضغطة طويلة على المربع = وصف اللي جواه
         var lastGroup = ""
+        var rowBox: LinearLayout? = null; var inRow = 0
+        fun flushRow() { val r = rowBox ?: return; while (inRow < 3) { r.addView(View(act), LinearLayout.LayoutParams(0, ui.dp(92), 1f).apply { setMargins(ui.dp(4), ui.dp(4), ui.dp(4), ui.dp(4)) }); inRow++ }; rowBox = null; inRow = 0 }
         tabs.forEachIndexed { i, t ->
-            // (v198) عنوان قسم لما المجموعة تتغيّر: عام (الاتنين) · مشغّل الفيديو · مشغّل الموسيقى
-            if (t.group.isNotBlank() && t.group != lastGroup && tabs.count { it.group == t.group } > 1) {
-                lastGroup = t.group
-                listPage.addView(ui.text(t.group, 13f, th.muted, true).apply { setPadding(ui.dp(6), ui.dp(10), ui.dp(6), ui.dp(2)) }, LinearLayout.LayoutParams(-1, -2))
+            // عنوان قسم لما المجموعة تتغيّر: عام · مشغّل الفيديو · مشغّل الموسيقى · يوتيوب
+            if (t.group.isNotBlank() && t.group != lastGroup) {
+                flushRow(); lastGroup = t.group
+                if (tabs.map { it.group }.distinct().size > 1) listPage.addView(ui.text(t.group, 13f, th.muted, true).apply { setPadding(ui.dp(6), ui.dp(12), ui.dp(6), ui.dp(2)) }, LinearLayout.LayoutParams(-1, -2))
             }
-            val row = LinearLayout(act).apply {
-                layoutDirection = View.LAYOUT_DIRECTION_RTL; gravity = Gravity.CENTER_VERTICAL
-                setPadding(ui.dp(12), ui.dp(12), ui.dp(12), ui.dp(12)); background = ui.box(th.surface, th.border, 12)
+            if (rowBox == null) { rowBox = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL }; listPage.addView(rowBox, LinearLayout.LayoutParams(-1, -2)); inRow = 0 }
+            val tile = LinearLayout(act).apply {
+                orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER; layoutDirection = View.LAYOUT_DIRECTION_RTL
+                setPadding(ui.dp(4), ui.dp(8), ui.dp(4), ui.dp(8)); background = ui.box(th.surface, th.border, 16)
                 Glass.pressable(this)
                 setOnClickListener { select(i) }
+                if (t.sub.isNotBlank()) setOnLongClickListener { Notice.show(act, t.sub, 3200L); true }
             }
-            row.addView(IconTextView(act).apply { text = iconOf(t.label); textSize = 22f; gravity = Gravity.CENTER }, LinearLayout.LayoutParams(ui.dp(40), -2))
-            val col = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL }
-            col.addView(ui.text(nameOf(t.label), 15f, th.text, true))
-            if (t.sub.isNotBlank()) col.addView(ui.text(t.sub, 12f, th.muted))
-            row.addView(col, LinearLayout.LayoutParams(0, -2, 1f))
-            row.addView(IconTextView(act).apply { text = "‹"; textSize = 22f; setTextColor(th.muted) })
-            listPage.addView(row, LinearLayout.LayoutParams(-1, -2).apply { setMargins(0, ui.dp(3), 0, ui.dp(3)) })
+            tile.addView(IconTextView(act).apply { text = iconOf(t.label); textSize = 30f; gravity = Gravity.CENTER }, LinearLayout.LayoutParams(-2, -2))
+            tile.addView(ui.text(nameOf(t.label), 12.5f, th.text, true).apply { gravity = Gravity.CENTER; maxLines = 2; setPadding(0, ui.dp(5), 0, 0) }, LinearLayout.LayoutParams(-1, -2))
+            rowBox!!.addView(tile, LinearLayout.LayoutParams(0, ui.dp(92), 1f).apply { setMargins(ui.dp(4), ui.dp(4), ui.dp(4), ui.dp(4)) })
+            if (++inRow == 3) { rowBox = null; inRow = 0 }
         }
+        flushRow()
 
         val frame = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL }
         frame.addView(listPage, LinearLayout.LayoutParams(-1, -2))

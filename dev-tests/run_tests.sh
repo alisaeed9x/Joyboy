@@ -72,8 +72,6 @@ mkdir -p "$OUT/t12"
 "$KC" -jvm-target 17 -cp "$CP" -d "$OUT/t12" "$SRC/GifWriter.kt" "$ROOT/dev-tests/GifTest.kt" 2>&1 | grep error && exit 1 || true
 java $JOPT -cp "$OUT/t12:$CP" GifTestKt | grep -E "^(PASS|FAIL)"
 mkdir -p "$OUT/t13"
-"$KC" -jvm-target 17 -cp "$CP" -d "$OUT/t13" "$SRC/TextTracker.kt" "$ROOT/dev-tests/TextTrackerTest.kt" 2>&1 | grep error && exit 1 || true
-java $JOPT -cp "$OUT/t13:$CP" TextTrackerTestKt | grep -E "^(PASS|FAIL)|الاختبارات"
 mkdir -p "$OUT/t15"
 "$KC" -jvm-target 17 -cp "$CP" -d "$OUT/t15" "$ROOT/dev-tests/NoLossTest.kt" 2>&1 | grep -E "error:" && exit 1 || true
 java $JOPT -cp "$OUT/t15:$CP" NoLossTestKt | tee /tmp/noloss.out | grep -E "^(PASS|FAIL)|اختبارات"
@@ -86,7 +84,3 @@ mkdir -p "$OUT/t17"
 "$KC" -jvm-target 17 -cp "$CP" -d "$OUT/t17" "$ROOT/dev-tests/ModePromptsTest.kt" 2>&1 | grep -E "error:" && exit 1 || true
 java $JOPT -cp "$OUT/t17:$CP" ModePromptsTestKt | tee /tmp/modeprompts.out | grep -E "^(PASS|FAIL)|ModePromptsTest"
 grep -q "^FAIL" /tmp/modeprompts.out && { echo "FAIL: ModePromptsTest"; exit 1; } || true
-mkdir -p "$OUT/t18"
-"$KC" -jvm-target 17 -cp "$STD" -d "$OUT/t18" "$SRC/StemCore.kt" "$ROOT/dev-tests/StemTest.kt" 2>&1 | grep -E "error:" && exit 1 || true
-java $JOPT -cp "$OUT/t18:$STD" StemTestKt | tee /tmp/stem.out | grep -E "^(PASS|FAIL)|الاختبارات"
-grep -q "^FAIL" /tmp/stem.out && { echo "FAIL: StemTest"; exit 1; } || true

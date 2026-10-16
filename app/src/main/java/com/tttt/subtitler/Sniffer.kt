@@ -235,57 +235,81 @@ object YtExtract {
      * maxH > 0: بيختار أعلى جودة لحد الارتفاع ده (للداتا القليلة)، غير كده أعلى جودة متاحة.
      * (v119) لو ولا عميل دّى روابط مباشرة لكن في HLS: بيرجّع HLS (المشغّل بيختار الجودة منه). لو مفيش خالص: null وlastWhy فيه السبب.
      */
-    fun fetchPick(id: String, maxH: Int = 0): Pick? {
-        val whys = ArrayList<String>(); var hlsPick: Pick? = null
-        for (c in clients) {
-            try {
-                val r = playerJson(c, id)
-                val j = r.j
-                if (j == null) { whys.add(c.tag + ": " + r.why); continue }
-                val title = j.optJSONObject("videoDetails")?.optString("title") ?: ""
-                val sd = j.optJSONObject("streamingData")
-                if (sd == null) { whys.add(c.tag + ": مفيش streamingData"); continue }
-                val byH = HashMap<Int, Opt>()
-                // صيغ فيها صوت وصورة (الأبسط): بتتفضّل لو نفس الجودة
-                sd.optJSONArray("formats")?.let { a -> for (i in 0 until a.length()) {
-                    val f = a.optJSONObject(i) ?: continue
-                    val u = f.optString("url"); val h = f.optInt("height")
-                    if (u.isEmpty() || h <= 0) continue
-                    byH[h] = Opt(h.toString() + "p" + mb(f.optString("contentLength").toLongOrNull() ?: 0L), u, null, h)
-                } }
-                var ba: JSONObject? = null; var baR = 0
-                val vids = ArrayList<JSONObject>()
-                sd.optJSONArray("adaptiveFormats")?.let { a -> for (i in 0 until a.length()) {
-                    val f = a.optJSONObject(i) ?: continue
-                    if (f.optString("url").isEmpty()) continue
-                    val m = f.optString("mimeType")
-                    if (m.startsWith("video/mp4") && m.contains("avc1")) { val h = f.optInt("height"); if (h in 1..1080) vids.add(f) }
-                    else if (m.startsWith("audio/mp4")) { val rt = f.optInt("bitrate"); if (rt > baR) { ba = f; baR = rt } }
-                } }
-                val au = ba
-                if (au != null) {
-                    val aSize = au.optString("contentLength").toLongOrNull() ?: 0L
-                    for (f in vids.sortedByDescending { it.optInt("bitrate") }) {
-                        val h = f.optInt("height")
-                        if (byH.containsKey(h)) continue
-                        val vs = f.optString("contentLength").toLongOrNull() ?: 0L
-                        byH[h] = Opt(h.toString() + "p" + mb(if (vs > 0) vs + aSize else 0L), f.optString("url"), au.optString("url"), h)
-                    }
+    // (v354) كاش + تشغيل العملاء بالتوازي (hedged) بدل واحد ورا التاني: أسرع بكتير لو أول عميل بطيء/مقفول
+    private val pickCache = java.util.concurrent.ConcurrentHashMap<String, Pair<Long, Pick>>()
+    private const val PICK_TTL = 3L * 60 * 60 * 1000L
+    /** النتيجة المخزّنة (لو لسه صالحة) من غير شبكة */
+    fun cachedPick(id: String, maxH: Int = 0): Pick? = pickCache["$id/$maxH"]?.takeIf { System.currentTimeMillis() - it.first < PICK_TTL }?.second
+    fun dropPick(id: String) { pickCache.keys.filter { it.startsWith("$id/") }.forEach { pickCache.remove(it) } }
+
+    private fun pickFrom(c: Cl, id: String, maxH: Int, whys: MutableList<String>, hls: java.util.concurrent.atomic.AtomicReference<Pick?>): Pick? {
+        try {
+            val r = playerJson(c, id)
+            val j = r.j
+            if (j == null) { whys.add(c.tag + ": " + r.why); return null }
+            val title = j.optJSONObject("videoDetails")?.optString("title") ?: ""
+            val sd = j.optJSONObject("streamingData")
+            if (sd == null) { whys.add(c.tag + ": مفيش streamingData"); return null }
+            val byH = HashMap<Int, Opt>()
+            sd.optJSONArray("formats")?.let { a -> for (i in 0 until a.length()) {
+                val f = a.optJSONObject(i) ?: continue
+                val u = f.optString("url"); val h = f.optInt("height")
+                if (u.isEmpty() || h <= 0) continue
+                byH[h] = Opt(h.toString() + "p" + mb(f.optString("contentLength").toLongOrNull() ?: 0L), u, null, h)
+            } }
+            var ba: JSONObject? = null; var baR = 0
+            val vids = ArrayList<JSONObject>()
+            sd.optJSONArray("adaptiveFormats")?.let { a -> for (i in 0 until a.length()) {
+                val f = a.optJSONObject(i) ?: continue
+                if (f.optString("url").isEmpty()) continue
+                val m = f.optString("mimeType")
+                if (m.startsWith("video/mp4") && m.contains("avc1")) { val h = f.optInt("height"); if (h in 1..1080) vids.add(f) }
+                else if (m.startsWith("audio/mp4")) { val rt = f.optInt("bitrate"); if (rt > baR) { ba = f; baR = rt } }
+            } }
+            val au = ba
+            if (au != null) {
+                val aSize = au.optString("contentLength").toLongOrNull() ?: 0L
+                for (f in vids.sortedByDescending { it.optInt("bitrate") }) {
+                    val h = f.optInt("height")
+                    if (byH.containsKey(h)) continue
+                    val vs = f.optString("contentLength").toLongOrNull() ?: 0L
+                    byH[h] = Opt(h.toString() + "p" + mb(if (vs > 0) vs + aSize else 0L), f.optString("url"), au.optString("url"), h)
                 }
-                if (byH.isEmpty()) {
-                    val hls = sd.optString("hlsManifestUrl")
-                    if (hls.isNotEmpty() && hlsPick == null) hlsPick = Pick(hls, null, title, c.ua, "HLS", emptyList())
-                    whys.add(c.tag + ": مفيش روابط مباشرة (محمي)" + (if (hls.isNotEmpty()) " — فيه HLS" else ""))
-                    continue
-                }
-                val opts = byH.values.sortedByDescending { it.h }
-                val chosen = (if (maxH > 0) opts.firstOrNull { it.h <= maxH } ?: opts.last() else opts.first())
-                lastWhy = ""
-                return Pick(chosen.url, chosen.audio, title, c.ua, chosen.label, opts)
-            } catch (e: Throwable) { LogStore.err("Sniffer:pick", e); whys.add(c.tag + ": " + e.javaClass.simpleName) }
+            }
+            if (byH.isEmpty()) {
+                val hu = sd.optString("hlsManifestUrl")
+                if (hu.isNotEmpty()) hls.compareAndSet(null, Pick(hu, null, title, c.ua, "HLS", emptyList()))
+                whys.add(c.tag + ": مفيش روابط مباشرة (محمي)" + (if (hu.isNotEmpty()) " — فيه HLS" else ""))
+                return null
+            }
+            val opts = byH.values.sortedByDescending { it.h }
+            val chosen = (if (maxH > 0) opts.firstOrNull { it.h <= maxH } ?: opts.last() else opts.first())
+            return Pick(chosen.url, chosen.audio, title, c.ua, chosen.label, opts)
+        } catch (e: Throwable) { LogStore.err("Sniffer:pick", e); whys.add(c.tag + ": " + e.javaClass.simpleName); return null }
+    }
+
+    fun fetchPick(id: String, maxH: Int = 0, fresh: Boolean = false): Pick? {
+        if (!fresh) cachedPick(id, maxH)?.let { lastWhy = ""; return it }
+        val whys = java.util.Collections.synchronizedList(ArrayList<String>())
+        val hls = java.util.concurrent.atomic.AtomicReference<Pick?>(null)
+        val q = java.util.concurrent.LinkedBlockingQueue<Any>()
+        val none = Any()
+        var launched = 0; var next = 0; var done = 0
+        fun launch() { val c = clients[next++]; launched++
+            Thread { q.put(try { pickFrom(c, id, maxH, whys, hls) ?: none } catch (_: Throwable) { none }) }.apply { isDaemon = true; start() } }
+        launch()
+        val deadline = System.currentTimeMillis() + 40000L
+        while (done < launched) {
+            // لو العميل الحالي مردّش في ثانية ونص: ابدأ اللي بعده من غير ما تقفل الأول
+            val r = q.poll(if (next < clients.size) 1500L else 30000L, java.util.concurrent.TimeUnit.MILLISECONDS)
+            if (r == null) { if (next < clients.size) launch() else if (System.currentTimeMillis() > deadline) break; continue }
+            done++
+            if (r is Pick) { lastWhy = ""; pickCache["$id/$maxH"] = Pair(System.currentTimeMillis(), r); return r }
+            if (next < clients.size) launch()   // فشل: ابدأ اللي بعده فورًا
         }
         lastWhy = whys.joinToString("\n")
-        LogStore.add("⚠ YtExtract.fetchPick ($id)" + (if (hlsPick != null) " — بجرّب HLS" else " فشل") + ":\n" + lastWhy)
-        return hlsPick
+        val hp = hls.get()
+        LogStore.add("⚠ YtExtract.fetchPick ($id)" + (if (hp != null) " — بجرّب HLS" else " فشل") + ":\n" + lastWhy)
+        return hp
     }
 }

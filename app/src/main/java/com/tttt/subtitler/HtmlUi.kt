@@ -261,27 +261,7 @@ fun Ui.grid(items: List<View>, cols: Int = 6): LinearLayout {
     return col
 }
 
-/** .action-fab-translate: كبسولة accent ثابتة أسفل المنتصف (ارتفاع 46، radius 26، نص 12.5 bold) */
-fun Ui.bigAction(icon: String, label: String, f: () -> Unit): LinearLayout = LinearLayout(ctx).apply {
-    orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER; layoutDirection = View.LAYOUT_DIRECTION_RTL
-    setPadding(dp(20), 0, dp(20), 0)
-    background = GradientDrawable().apply { setColor(th.accent); cornerRadius = dp(26).toFloat() }
-    elevation = dp(6).toFloat()
-    addView(IconTextView(ctx).apply { text = icon; textSize = 17f; setTextColor(Color.WHITE); includeFontPadding = false })
-    addView(IconTextView(ctx).apply { text = label; textSize = 12.5f; setTextColor(Color.WHITE); typeface = android.graphics.Typeface.DEFAULT_BOLD; includeFontPadding = false },
-        LinearLayout.LayoutParams(-2, -2).apply { marginStart = dp(8) })
-    layoutParams = FrameLayout.LayoutParams(-2, dp(46), Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL).apply { bottomMargin = dp(18) }
-    setOnClickListener { f() }
-}
 
-/** .main-fab-bubble: فقاعة ☰ ثابتة (يمين، 76dp من تحت) */
-fun Ui.mainBubble(f: () -> Unit): TextView = IconTextView(ctx).apply {
-    text = "☰"; textSize = 22f; gravity = Gravity.CENTER; setTextColor(Color.WHITE); alpha = 0.75f
-    background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(0xEB1E2228.toInt()); setStroke((1.5f * ctx.resources.displayMetrics.density).toInt(), 0x66F5A623) }
-    elevation = dp(6).toFloat()
-    layoutParams = FrameLayout.LayoutParams(dp(52), dp(52), Gravity.BOTTOM or Gravity.END).apply { bottomMargin = dp(76); marginEnd = dp(18) }
-    setOnClickListener { f() }
-}
 
 /** نافذة سفلية (bottom sheet) بنفس كروت الأصل. fixedH = ارتفاع ثابت للقوائم الطويلة */
 fun Ui.sheet(act: Activity, title: String, views: List<View>, fixedH: Boolean = false, onClose: () -> Unit = {}, frac: Float = 0f): Dialog {
@@ -349,18 +329,6 @@ fun Ui.fullPage(d: Dialog) {
     }
 }
 
-/** زرار القايمة الجانبية (الأفقي): أيقونة كبيرة + عنوان، بيتوزع 3 في الصف عن طريق Ui.grid(items, 3) */
-fun Ui.sideBtn(icon: String, label: String, f: () -> Unit): LinearLayout = LinearLayout(ctx).apply {
-    orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER
-    setPadding(dp(4), dp(8), dp(4), dp(8))
-    background = box(th.surface, th.border, 12)
-    addView(IconTextView(ctx).apply { text = icon; textSize = 24f; gravity = Gravity.CENTER; includeFontPadding = false })
-    addView(text(label, 11f, th.text, true).apply { gravity = Gravity.CENTER; maxLines = 2; includeFontPadding = false },
-        LinearLayout.LayoutParams(-2, -2).apply { topMargin = dp(4) })
-    val m = dp(4)
-    layoutParams = LinearLayout.LayoutParams(0, dp(84), 1f).apply { setMargins(m, m, m, m) }
-    setOnClickListener { f() }
-}
 
 /** .fs-subsize-btn: مربع 32dp داكن شفاف بحدود خفيفة (radius 10، 12sp bold) */
 fun Ui.fsBtn(t: String, f: (TextView) -> Unit): TextView = IconTextView(ctx).apply {

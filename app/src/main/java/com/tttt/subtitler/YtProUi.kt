@@ -64,7 +64,9 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
     // (v337) لودينج ويندوز (نفس اللي في المشغّل) بدل «⏳ …» وقت البحث/التحميل، وطبقة لودينج فوق الصفحة وقت جلب رابط الفيديو
     private val spinDr = WinSpinnerDrawable().apply { setColorFilter(PorterDuffColorFilter(th.primary, PorterDuff.Mode.SRC_IN)) }
     private val spinView = View(act).apply { foreground = spinDr; visibility = View.GONE }
-    private fun spin(on: Boolean) { if (on) { spinView.visibility = View.VISIBLE; spinDr.start() } else { spinView.visibility = View.GONE; spinDr.stop() } }
+    private fun spin(on: Boolean) { if (on) { spinView.visibility = View.VISIBLE; spinDr.start()
+        // (v354) اللودينج في نص الصفحة مش فوق
+        spinView.post { try { val p = spinView.parent as? View; if (p != null) spinView.translationY = maxOf(0f, (p.height - spinView.height) / 2f - spinView.top.toFloat() - ui.dp(30)) } catch (_: Throwable) {} } } else { spinView.visibility = View.GONE; spinDr.stop() } }
     private val busyDr = WinSpinnerDrawable()
     private val busyOff = Runnable { busy(false) }
     /** (v337) بيتضاف في Main فوق الصفحة (pane) — بيظهر وإحنا بنجيب رابط الفيديو قبل ما المشغّل يفتح */
@@ -78,16 +80,13 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
         else { busyView.visibility = View.GONE; busyDr.stop() }
     }
     private val lv = ListView(act)
+    @Volatile private var animRows = false
     private val statusTv: TextView
     private val search: EditText
     private val sugBox = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL; visibility = View.GONE }
     // (v348) شريط يوتيوب السفلي + الشورتس: page = كل الشاشة القديمة (بحث/قوايم)، shortsHost = صفحة الشورتس فوقها
     private val page = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL }
-    private val shortsHost = FrameLayout(act).apply { visibility = View.GONE }
-    private var shorts: YtShorts? = null
-    private var shortsOn = false
     private var navSel = 0
-    private var navBeforeShorts = 0
     private val navIcons = ArrayList<IconTextView>()
     private val navLabs = ArrayList<TextView>()
     private val chanRow = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; visibility = View.GONE }
@@ -230,7 +229,6 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
         // (v348) شريط يوتيوب السفلي: الرئيسية · الاشتراكات · الشورتس · أنت
         val content = FrameLayout(act)
         content.addView(page, FrameLayout.LayoutParams(-1, -1))
-        content.addView(shortsHost, FrameLayout.LayoutParams(-1, -1))
         root.addView(content, LinearLayout.LayoutParams(-1, 0, 1f))
         root.addView(View(act).apply { setBackgroundColor(th.border) }, LinearLayout.LayoutParams(-1, ui.dp(1)))
         val navRow = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; gravity = Gravity.CENTER_VERTICAL; setBackgroundColor(th.card) }
@@ -251,13 +249,12 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
     }
 
     // ───────── واجهة Main ─────────
-    fun refresh() { if (shortsOn) { shorts?.resume(); return }; if (cur == null) openTab(0) else adapter.notifyDataSetChanged() }
-    fun onHide() { hideKb(); sugBox.visibility = View.GONE; shorts?.pause() }
+    fun refresh() { if (cur == null) openTab(0) else adapter.notifyDataSetChanged() }
+    fun onHide() { hideKb(); sugBox.visibility = View.GONE }
     /** (v348) Main.onStop: الشورتس تقف لما التطبيق يروح الخلفية أو يظهر المشغّل فوقه (بترجع في refresh() مع onResume) */
-    fun onPause() { shorts?.pause() }
-    fun destroy() { try { shorts?.release() } catch (_: Throwable) {}; shorts = null; shortsOn = false }
+    fun onPause() { }
+    fun destroy() { }
     fun back(): Boolean {
-        if (shortsOn) { leaveShorts(); return true }
         if (sugBox.visibility == View.VISIBLE) { sugBox.visibility = View.GONE; return true }
         if (stack.isNotEmpty()) { gen++; bind(stack.removeAt(stack.size - 1)); return true }
         return false
@@ -286,7 +283,6 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
 
     // ───────── تنقّل ─────────
     private fun openTab(i: Int) {
-        if (shortsOn) leaveShorts()
         hideKb(); sugBox.visibility = View.GONE; stack.clear(); paintTabs(i)
         when (i) {
             0 -> load("🏠 الرئيسية", 0, null, null, null, "", false, false) { Pair(YtNp.home(YtStore.read(YtStore.HIST), YtStore.read(YtStore.SUBS)), null) }
@@ -308,31 +304,6 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
             navIcons[i].setTextColor(c); navLabs[i].setTextColor(c)
         }
     }
-    private fun openShorts() {
-        hideKb(); sugBox.visibility = View.GONE
-        val s = shorts ?: YtShorts(act, ui, th, { v -> playShort(v) }, { v -> YtStore.toggle(YtStore.SAVED, v) }).also {
-            shorts = it; shortsHost.addView(it.root, FrameLayout.LayoutParams(-1, -1))
-        }
-        if (!shortsOn) navBeforeShorts = navSel
-        shortsOn = true; navSel = 2; paintNav()
-        page.visibility = View.GONE; shortsHost.visibility = View.VISIBLE
-        s.start()
-    }
-    private fun leaveShorts() {
-        if (!shortsOn) return
-        shortsOn = false; shorts?.pause()
-        shortsHost.visibility = View.GONE; page.visibility = View.VISIBLE
-        navSel = navBeforeShorts; paintNav()
-    }
-    /** ⤢ من الشورتس: يفتح المشغّل الكامل (من غير سياق قايمة تشغيل قديمة) */
-    private fun playShort(v: NpItem) {
-        val it = asWatch(v)
-        YtNext.clearContext()
-        if (YtStore.histOn()) YtStore.addFront(YtStore.HIST, it, 200)
-        YtStore.markApp(it.id)
-        onPlay(it.id, it.title, false)
-    }
-
     // ───────── (v348) «أنت»: سجل الجهاز + المحفوظات + التحميلات + حساب جوجل في صفحة واحدة ─────────
     private fun yrow(title: String, sub: String, key: String) = NpItem("act", title, sub, "", "", -1L, -1L, "", 2, "yta:$key")
     private fun openYou() {
@@ -443,7 +414,9 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
             if (YtAccount.loggedIn() && (force || YtAccount.syncDue() || YtStore.read(YtStore.SUBS).isEmpty())) {
                 try { YtAccount.syncSubs() } catch (e: Throwable) { syncErr = e.message ?: e.javaClass.simpleName }
             }
-            var r = YtRss.feed(YtStore.read(YtStore.SUBS), force)
+            val subsNow = YtStore.read(YtStore.SUBS)
+            var r = YtRss.feed(subsNow, force, !force)   // (v354) أول عرض فوري من الكاش لو موجود
+            if (!force && r.items.isNotEmpty()) YtRss.refreshAsync(subsNow)   // وبنحدّث في الخلفية للزيارة الجاية
             var more: ((Page) -> YtRes)? = null
             if (r.items.isEmpty() && YtAccount.loggedIn()) {
                 // (v350) بديل: فيد الاشتراكات الرسمي من حسابك مباشرة (من غير RSS)
@@ -509,6 +482,7 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
         filterRow.visibility = if (st.q != null && !det) View.VISIBLE else View.GONE
         filterViews.forEach { tv -> paintChip(tv, tv.tag == st.filter) }
         if (det) paintDetail(st)
+        animRows = true; h.postDelayed({ animRows = false }, 700L)   // (v354) ظهور ناعم: الصفوف الأولى بتطلع بالتتابع
         adapter.set(st.list()); lv.setSelection(st.pos)
         if (st.tab >= 0) paintTabs(st.tab) else if (det) paintTabs(-1)
     }
@@ -571,6 +545,11 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
     }
     // ───────── (v337) إعدادات يوتيوب ─────────
     private fun settings() {
+        val m = act as? MainActivity
+        if (m != null) { m.openSettingsTab("youtube"); return }   // (v355) إعدادات يوتيوب بقت قسم جوه إعدادات البرنامج
+        settingsLegacy()
+    }
+    private fun settingsLegacy() {
         val q = Cfg.int("yt_maxh", 0)
         val items = arrayOf("🎞 الجودة الافتراضية: " + (if (q <= 0) "أعلى جودة" else q.toString() + "p"),
             "🕘 حفظ سجل المشاهدة: " + (if (YtStore.histOn()) "شغّال" else "مقفول"),
@@ -777,6 +756,12 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
                 hd = Hold(th0, dur, title, meta, box, col, btns, aud, dl); row.tag = hd; v = row
             } else { v = cv; hd = cv.tag as Hold }
             val it = items[p]
+            // (v354) أنيميشن سلس: لو الصف لسه بيظهر من عرض جديد (أول 9 صفوف) بيدخل fade + slide بتتابع، غير كده بيتصفّر من أي أنيميشن قديم
+            v.animate().cancel()
+            if (animRows && p < 9) {
+                v.alpha = 0f; v.translationY = ui.dp(22).toFloat()
+                v.animate().alpha(1f).translationY(0f).setStartDelay(p * 38L).setDuration(Skins.dur(300L)).setInterpolator(android.view.animation.DecelerateInterpolator(1.8f)).start()
+            } else { v.alpha = 1f; v.translationY = 0f }
             hd.title.text = it.title
             val cm = it.kind == 3 || it.id == "act"
             hd.box.visibility = if (cm) View.GONE else View.VISIBLE

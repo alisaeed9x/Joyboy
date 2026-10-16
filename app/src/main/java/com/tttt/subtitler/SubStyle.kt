@@ -68,18 +68,6 @@ data class SubStyle(
             val v = (widthPx * 0.035f).coerceIn(13f * density, 18f * density)
             return v * scale / 100f
         }
-        /** تأثير الانفعال: shout/surprise/cry/whisper، غير كده "" */
-        fun emotionKind(raw: String): String { val e = raw.lowercase(); return when {
-            e.contains("shout") || e.contains("anger") || e.contains("angry") -> "shout"
-            e.contains("surpris") || e.contains("shock") -> "surprise"
-            e.contains("cry") || e.contains("sad") || e.contains("sob") -> "cry"
-            e.contains("whisper") -> "whisper"
-            else -> ""
-        } }
-    }
-
-    fun colorFor(s: Sub): Int = when {
-        s.translated.startsWith("📻") -> WHITE   // كلام من راديو/إذاعة: أبيض عادي من غير لون جنس
         plain -> WHITE
         uniOn -> runCatching { Theme.parse(uniColor) }.getOrDefault(WHITE)
         s.gender == "female" -> FEMALE

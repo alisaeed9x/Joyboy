@@ -119,7 +119,6 @@ object SongId {
         }.apply { isDaemon = true }.start()
     }
 
-    fun clearOverride(id: Long) { Cfg.put("mname_$id", ""); Cfg.put("malbum_$id", ""); Cfg.put("mlat_$id", ""); Cfg.put("malbumlat_$id", ""); FastId.forgetPart(id) }
     /** (v298) الاسم/الفنان بالحروف اللاتينية (أو اللغة التانية) المحفوظين مع التعرّف — null لو مفيش */
     fun alt(id: Long): Pair<String, String>? {
         val v = Cfg.str("mlat_$id", ""); if (v.isBlank()) return null
@@ -141,7 +140,6 @@ object SongId {
     /** إعادة تعرّف / ✗ : انسى إنها اتعرفت واتأكدت */
     fun resetKnown(id: Long) { Cfg.put("mknown_$id", ""); Cfg.put("mverd_$id", ""); FastId.forgetPart(id) }
     fun autoOn() = Cfg.str("song_auto_id", "1") != "0"
-    fun setAuto(on: Boolean) = Cfg.put("song_auto_id", if (on) "1" else "0")
     const val UNSURE = "جيميناي مش متأكد"
     /** (v270) اسم الملف/التاج مفيد؟ لو العنوان عام (Track 01 / AUD-2024 / أرقام بس) أو مفيش فنان نعتبره مش مفيد */
     /** (v294) الاسم/المغني باين إنه موقع أو لينك (www · .com · موقع …) مش اسم أغنية ولا مغني */

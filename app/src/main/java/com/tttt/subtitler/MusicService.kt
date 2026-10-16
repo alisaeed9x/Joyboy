@@ -94,64 +94,8 @@ object MusicEngine {
         try { val pp = m.playbackParams; pp.setSpeed(speed); pp.setPitch(1f); m.playbackParams = pp } catch (e: Throwable) { LogStore.err("music-speed", e) }
     }
 
-    // (v202) فصل الصوت عن الموسيقى: 0 الكل (الأغنية الأصلية) · 1 الصوت بس · 2 الموسيقى بس — الملفات بتتحسب مرة وبتتخزّن (v307: StemAi.kt بالذكاء الصناعي)
-    @Volatile var stem = 0; private set
-    @Volatile var stemPct = -1; private set          // -1 مفيش تحليل شغّال · 0..100 نسبة التحليل
-    @Volatile private var stemErr = ""
-    private var playingStem = 0
-    fun takeStemErr(): String { val e = stemErr; stemErr = ""; return e }
-    fun cycleStem(): Int { setStem((stem + 1) % 3); return stem }
-    fun setStem(s: Int) {
-        stem = if (StemAi.DISABLED) 0 else s.coerceIn(0, 2)   // (v331) الفصل متوقّف مؤقتًا
-        try { Cfg.put("music_stem", stem.toString()) } catch (_: Throwable) {}
-        applyStem(); changed()
-    }
-    private fun applyStem() {
-        val t = current ?: return; val a = app ?: return
-        val want = if (stem != 0 && Karaoke.hasStem(a, t, stem)) stem else 0
-        if (stem != 0 && want == 0) requestStem(t)
-        if (want != playingStem && mp != null) swapSource(want)
-    }
-    /** (v307) بيمسح فصل الأغنية الحالية ويعيده (بعد تغيير محرك الفصل) */
-    fun redoStem() {
-        val t = current ?: return; val a = app ?: return
-        Karaoke.file(a, t, 1).delete(); Karaoke.file(a, t, 2).delete()
-        if (stem == 0) stem = 1
-        try { Cfg.put("music_stem", stem.toString()) } catch (_: Throwable) {}
-        applyStem(); changed()
-    }
-    /** (v308) فصل تلقائي لكل أغنية بتشتغل — بس لو الموديلات نازلة والمكتبة شغّالة (Cfg stem_auto، افتراضي شغّال) */
-    private fun autoStem(c: Context): Boolean = !StemAi.DISABLED && Cfg.str("stem_auto", "1") == "1" && StemAi.libOk() && StemAi.ready(c)
-    private fun requestStem(t: Track) {
-        val a = app ?: return
-        if (StemAi.DISABLED) return
-        if (StemAi.isRunning(t)) return
-        if (Karaoke.hasStem(a, t, 1) && Karaoke.hasStem(a, t, 2)) return       // (v319) اتفصلت قبل كده — جاهزة، مفيش إعادة فصل
-        stemPct = 0; changed()
-        Thread {
-            try { android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_BACKGROUND) } catch (_: Throwable) {}
-            // (v307) فصل بالذكاء الصناعي (MDX-Net) بدل القناة الوسطى. بيتلغي لو رجعت «الكل» أو غيّرت الأغنية
-            val err = try { StemAi.separate(a, t, { p -> if (current?.id == t.id && p != stemPct) { stemPct = p; if (p % 3 == 0) changed() } }, { current?.id != t.id }) } catch (e: Throwable) { e.message ?: "فشل" }
-            main.post {
-                if (current?.id == t.id) stemPct = -1
-                if (err != null && err != "اتلغى" && stem != 0) { stemErr = "🎚 " + t.title + ": " + err; stem = 0; try { Cfg.put("music_stem", "0") } catch (_: Throwable) {} }
-                if (current?.id == t.id) applyStem()
-                changed()
-            }
-        }.apply { isDaemon = true }.start()
-    }
-    /** بيبدّل مصدر التشغيل (الأصلي ↔ الصوت/الموسيقى) من نفس المكان من غير ما الأغنية توقف */
-    private fun swapSource(want: Int) {
-        val t = current ?: return; val a = app ?: return
-        val pos = posMs; val wasPlaying = wantPlay
-        try { loud?.release() } catch (_: Throwable) {}; loud = null
-        try { mp?.release() } catch (_: Throwable) {}; mp = null; ready = false
-        openPlayer(a, t, want, pos)
-        wantPlay = wasPlaying
-    }
-    private fun openPlayer(ctx: Context, t: Track, which: Int, startMs: Int) {
-        playingStem = which
-        val uri = if (which != 0) Uri.fromFile(Karaoke.file(ctx, t, which)) else Uri.parse(t.uri)
+    private fun openPlayer(ctx: Context, t: Track, startMs: Int) {
+        val uri = Uri.parse(t.uri)
         try {
             mp = MediaPlayer().apply {
                 setAudioAttributes(AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA).setContentType(AudioAttributes.CONTENT_TYPE_MUSIC).build())
@@ -160,7 +104,7 @@ object MusicEngine {
                 if (yh != null && yh.isNotEmpty()) setDataSource(ctx, uri, yh) else setDataSource(ctx, uri)
                 setOnPreparedListener { ready = true; applyVol(); if (startMs > 0) { try { it.seekTo(startMs) } catch (_: Throwable) {} }; if (wantPlay) { try { it.start() } catch (_: Throwable) {}; applySpeed() }; changed() }
                 setOnCompletionListener { onEnded() }
-                setOnErrorListener { _, _, _ -> ready = false; main.post { if (which != 0) { stem = 0; playingStem = 0; stemErr = "🎚 ملف الفصل ماتفتحش — رجعت للأغنية الأصلية"; swapSource(0) } else if (YtAudio.isRemote(t.uri)) ytFailed(t) else if (queue.size > 1) step(1) }; true }
+                setOnErrorListener { _, _, _ -> ready = false; main.post { if (YtAudio.isRemote(t.uri)) ytFailed(t) else if (queue.size > 1) step(1) }; true }
                 prepareAsync()
             }
         } catch (e: Exception) { LogStore.err("music-play", e) }
@@ -176,7 +120,6 @@ object MusicEngine {
             shuffle = raw == 3 || Cfg.str("music_shuffle", "0") == "1"
             volPct = (Cfg.str("music_vol", "100").toIntOrNull() ?: 100).coerceIn(0, 200)
             speed = (Cfg.str("music_speed", "1").toFloatOrNull() ?: 1f).coerceIn(0.5f, 2f)
-            stem = 0; Cfg.put("music_stem", "0")      // (v230) زرار فصل الصوت اتشال من الواجهة — بنصفّر أي قيمة قديمة محفوظة عشان الأغنية تشتغل عادي
         } catch (_: Throwable) {}
     }
     /** (v302) محدش بيستخدمها من الواجهة (السلايدر اتشال) — لو اتنادت بتحرّك صوت النظام على نفس المقياس (0..200 ← 0..100) */
@@ -264,11 +207,7 @@ object MusicEngine {
         gainFocus()
         val t = q[i]
         try { if (!YtAudio.isRemote(t.uri)) { RecentSongs.add(t.uri); PubHistory.add("a", "music", t.title, t.uri) } } catch (_: Throwable) {}   // (v337) روابط يوتيوب مؤقتة: مش بتتسجّل في «آخر المشغّل»
-        val want = if (stem != 0 && Karaoke.hasStem(ctx.applicationContext, t, stem)) stem else 0
-        openPlayer(ctx.applicationContext, t, want, if (want == 0) startMs else 0)   // (v343) startMs: تحويل فيديو→صوت يكمّل من نفس المكان
-        // (v308) الفصل تلقائي في الخلفية — (v319) المستخدم بيقلّب بين الأغاني: الأوتوماتيك بيبدأ بعد ١٥ ثانية تشغيل، واليدوي (stem != 0) فورًا
-        if (want == 0 && stem != 0) requestStem(t)
-        else if (want == 0) { val a0 = ctx.applicationContext; main.postDelayed({ if (current?.id == t.id && autoStem(a0)) requestStem(t) }, 15000L) }
+        openPlayer(ctx.applicationContext, t, startMs)   // (v343) startMs: تحويل فيديو→صوت يكمّل من نفس المكان
         changed()
     }
     private fun peekRandom(): Int {

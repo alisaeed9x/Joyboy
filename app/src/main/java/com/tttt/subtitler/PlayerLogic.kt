@@ -74,32 +74,7 @@ object PlayerLogic {
         }
         return w.subList(0, cut).joinToString(" ") + "\n" + w.subList(cut, w.size).joinToString(" ")
     }
-    /** تقسيم الجملة عند علامات الترقيم (نقطة ؟ ! … فاصلة). الجزء اللي أقل من minWords كلمات بيتلزق في اللي جنبه. جملة بسطر جديد = جزء واحد */
-    fun splitPunct(text: String, minWords: Int = 2): List<String> {
-        if (text.contains('\n')) return listOf(text)
-        val raw = text.trim().split(Regex("(?<=[.!?؟…،,])\\s+")).map { it.trim() }.filter { it.isNotEmpty() }
-        if (raw.size <= 1) return listOf(text)
-        fun wc(x: String) = x.split(Regex("\\s+")).count { it.isNotEmpty() }
-        val out = ArrayList<String>(); var buf = ""
-        for (q in raw) { buf = if (buf.isEmpty()) q else "$buf $q"; if (wc(buf) >= minWords) { out.add(buf); buf = "" } }
-        if (buf.isNotEmpty()) { if (out.isEmpty()) out.add(buf) else out[out.lastIndex] = out.last() + " " + buf }
-        return if (out.isEmpty()) listOf(text) else out
-    }
     private fun partWeight(t: String, byChars: Boolean) = if (byChars) maxOf(1, t.count { c -> !c.isWhitespace() }) else maxOf(1, t.trim().split(Regex("\\s+")).size)
-    /** أي جزء وقته (بالتناسب) أقل من minMs بيتدمج في اللي جنبه — عشان مفيش جزء يظهر جزء من الثانية ويختفي */
-    fun adaptParts(parts: List<String>, durMs: Long, byChars: Boolean, minMs: Long = 1000L): List<String> {
-        if (parts.size <= 1) return parts
-        val p = parts.toMutableList(); val w = parts.map { partWeight(it, byChars) }.toMutableList()
-        while (p.size > 1) {
-            val total = w.sum().toDouble()
-            var mi = 0; for (i in p.indices) if (w[i] < w[mi]) mi = i
-            if (durMs * w[mi] / total >= minMs) break
-            val nb = when { mi == 0 -> 1; mi == p.lastIndex -> mi - 1; else -> if (w[mi - 1] <= w[mi + 1]) mi - 1 else mi + 1 }
-            val a = minOf(mi, nb); val b = maxOf(mi, nb)
-            p[a] = p[a] + " " + p[b]; w[a] = w[a] + w[b]; p.removeAt(b); w.removeAt(b)
-        }
-        return p
-    }
     /** أي جزء يظهر دلوقتي: التوقيت موزّع على مدة الجملة بالتناسب مع عدد كلمات كل جزء (البداية والنهاية الأصليتين ما بيتغيروش) */
     fun partIndex(startMs: Long, endMs: Long, t: Long, parts: List<String>, byChars: Boolean = false): Int {
         if (parts.size <= 1) return 0

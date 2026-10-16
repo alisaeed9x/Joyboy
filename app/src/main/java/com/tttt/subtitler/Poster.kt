@@ -212,29 +212,6 @@ object Poster {
     }
     fun resetSkip(title0: String, artist0: String) { Cfg.put(skipKey(clean(title0), artist0.trim()), "0") }
 
-    /**
-     * (v241 · v250) زرار «🖼↻» في المشغّل: بيدوّر من الأول في المصادر بالترتيب (iTunes ← Deezer ← MusicBrainz ← صورة المغني).
-     * لو ملقاش حاجة بيسيب الغلاف الحالي زي ما هو. على خيط خلفية.
-     */
-    fun refetchSync(ctx: Context, title0: String, artist0: String, alt: Pair<String, String>? = null): Bitmap? {
-        val title = clean(title0); val artist = artist0.trim()
-        if (title.length < 2) return null
-        resetSkip(title, artist)
-        val k = key(title, artist)
-        try {
-            File(dir(ctx), "$k.none").delete()
-            for ((tt, aa) in namesToTry(title, artist, alt)) {   // (v300) الاسم الأصلي وبعده الإنجليزي (لو متحفظ)
-                for (u in urlSeq(tt, aa)) {
-                    val bytes = http(u) ?: continue
-                    val bmp = BitmapFactory.decodeByteArray(bytes, 0, bytes.size) ?: continue
-                    if (!shapeOk(u, bmp)) continue
-                    File(dir(ctx), "$k.jpg").writeBytes(bytes)   // بيتخزّن على مفتاح الاسم الأصلي عشان القايمة تلاقيه
-                    return bmp
-                }
-            }
-        } catch (e: Throwable) { LogStore.err("poster", e) }
-        return null
-    }
 
     /** (v300) أسماء البحث بالترتيب: الأصلي، وبعده الصيغة التانية (إنجليزي لو الأصلي عربي) لو مختلفة */
     private fun namesToTry(title: String, artist: String, alt: Pair<String, String>?): List<Pair<String, String>> {

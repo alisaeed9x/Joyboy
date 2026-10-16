@@ -347,7 +347,7 @@ class MainActivity : Activity() {
         val themeChips = ui.chips(Themes.all.map { it.name }, { Themes.byId(themeId).name }) { n ->
             themeId = Themes.all.first { it.name == n }.id; save()
             Cfg.p.edit().putString("theme", themeId).commit()
-            if (!fromPlayer) intent?.putExtra("reopen_tab", "more")
+            if (!fromPlayer) intent?.putExtra("reopen_tab", "appearance")
             recreate()
         }
         // (v352) سويتش داكن/فاتح + أوضاع الواجهة (شكل الزراير والفولدرات والأنيميشن والأصوات)
@@ -355,16 +355,33 @@ class MainActivity : Activity() {
             if (dark == !Themes.byId(themeId).isLight) return@switchRow
             themeId = Themes.partner(themeId)
             Cfg.p.edit().putString("theme", themeId).commit()
-            if (!fromPlayer) intent?.putExtra("reopen_tab", "more")
+            if (!fromPlayer) intent?.putExtra("reopen_tab", "appearance")
             recreate()
         }
         val skinChips = ui.chips(Skins.all.map { it.name }, { Skins.cur().name }) { n ->
             val id = Skins.all.first { it.name == n }.id
             Cfg.p.edit().putString("skin", id).commit(); Skins.set(id)
-            if (!fromPlayer) intent?.putExtra("reopen_tab", "more")
+            if (!fromPlayer) intent?.putExtra("reopen_tab", "appearance")
             recreate()
         }
         val skinSoundSwitch = ui.switchRow("🔊 أصوات اللمس (حسب الوضع)", Skins.soundOn()) { on -> Cfg.p.edit().putString("skin_sound", if (on) "1" else "0").apply() }
+        // (v355) إعدادات يوتيوب جوه إعدادات البرنامج (بدل الدايلوج المنفصل)
+        val ytQ = listOf("أعلى جودة", "1080p", "720p", "480p", "360p", "240p")
+        val ytQv = intArrayOf(0, 1080, 720, 480, 360, 240)
+        val ytSettingsViews: List<View> = listOf(
+            ui.section("🎞 الجودة الافتراضية", true,
+                ui.chips(ytQ, { ytQ[ytQv.indexOf(Cfg.int("yt_maxh", 0)).coerceAtLeast(0)] }) { n -> Cfg.put("yt_maxh", ytQv[ytQ.indexOf(n).coerceAtLeast(0)].toString()) },
+                ui.text("أعلى جودة بيتفتح بيها الفيديو. على الداتا اختار 360p أو 480p.", 12f, th.muted)),
+            ui.section("🔔 الإشعارات والسجل", true,
+                ui.switchRow("🔔 إشعارات الفيديوهات الجديدة من اشتراكاتي", YtNotify.enabled()) { YtNotify.setEnabled(this, it) },
+                ui.switchRow("🕘 حفظ سجل المشاهدة", YtStore.histOn()) { Cfg.put("ytp_hist_on", if (it) "1" else "0") }),
+            ui.section("👤 حساب جوجل", false,
+                ui.text(if (YtAccount.loggedIn()) "مسجّل الدخول — الاشتراكات بتتزامن من حسابك." else "مش مسجّل. سجّل من تبويب يوتيوب ▸ أنت.", 13f, th.text),
+                ui.button("▶ افتح يوتيوب") { settingsDlg0?.dialog?.dismiss(); showTabFn(4) },
+                ui.button("🚪 تسجيل الخروج") { YtAccount.logout(); Notice.show(this, ("اتسجّل الخروج").toString(), 1800L) }),
+            ui.section("🗑 مسح البيانات", false,
+                ui.button("🗑 مسح سجل المشاهدة") { YtStore.write(YtStore.HIST, emptyList()); Notice.show(this, ("🗑 السجل اتمسح").toString(), 1800L) },
+                ui.button("🗑 مسح سجل التحميلات") { YtStore.write(YtStore.DL, emptyList()); Notice.show(this, ("🗑 سجل التحميلات اتمسح").toString(), 1800L) }))
         // ===== الواجهة بشكل نسخة الـ HTML: دوائر علوية + كارت فيديو + كبسولة + شبكة أزرار + زرار الترجمة =====
         var recentDlg: android.app.Dialog? = null
         val recentFile = File(filesDir, "recent.json")
@@ -521,10 +538,6 @@ class MainActivity : Activity() {
         // (v212) ميزات المشاهدة + أسلوب الترجمة الحية + تحويل اللهجة + الخروج بالخلفية: كانت في المشغّل بس. دلوقتي هنا كمان، وبنفس مفاتيح Cfg بتاعة المشغّل (الاتنين دايمًا متطابقين)
         fun fxPut(k: String, v: String) { Cfg.put(k, v); Extras.load() }
         fun fxSwitch(label: String, key: String, def: Boolean) = ui.switchRow(label, Cfg.bool(key, def)) { fxPut(key, if (it) "1" else "0") }
-        val sceneOpts = listOf("مقفول", "زرار «تخطي» يظهر وقت المشهد", "تخطي تلقائي")
-        val sceneChips = ui.chips(sceneOpts, { sceneOpts[Cfg.int("fx_scene", 0).coerceIn(0, 2)] }) { fxPut("fx_scene", sceneOpts.indexOf(it).coerceAtLeast(0).toString()) }
-        val coverOpts = listOf("مقفول", "صندوق غامق", "صندوق شفاف")
-        val coverChips = ui.chips(coverOpts, { coverOpts[Cfg.int("fx_cover", 0).coerceIn(0, 2)] }) { fxPut("fx_cover", coverOpts.indexOf(it).coerceAtLeast(0).toString()) }
         val toneStyles = listOf("حرفي", "شعبي", "جرئ", "+18"); val toneDegrees = listOf("خفيفة", "متوسطة", "شديدة")
         val toneChips = ui.chips(toneStyles, { Cfg.str("tone_style", "").ifBlank { "حرفي" } }) { Cfg.put("tone_style", if (it == "حرفي") "" else it) }
         val toneDegChips = ui.chips(toneDegrees, { Cfg.str("tone_strength", "متوسطة").ifBlank { "متوسطة" } }) { Cfg.put("tone_strength", it) }
@@ -546,18 +559,24 @@ class MainActivity : Activity() {
         val settingsDlg = TabbedDialog(this, ui, "⚙️ الإعدادات", listOf(
             // ===== 🚀 خط الترجمة: الخطة (تفريغ ← ترجمة ← لهجة) + اللهجة والأسلوب + البرومبتات =====
             tab("general", listOf<View>(
-                ui.text("خط الترجمة = ① تفريغ ← ② ترجمة ← ③ لهجة. بتختاره من الزرار اللي تحت أو من ⚙ جنب ▶ ترجمة في المشغّل، والبريستات بتكتب باقي الإعدادات (المقطع · الموديل · التنقيح …) لوحدها.", 12f, th.muted),
+                ui.text("اختار إيه اللي يترجم واللهجة والأسلوب هنا. المفاتيح في 🔑، والتفريغ في 🎙، والموديل والسرعة في 🤖.", 12f, th.muted),
                 ui.section("🎯 إيه اللي يترجم؟", true,
                     ui.chips(listOf(SourceMode.label(SourceMode.AUDIO), SourceMode.label(SourceMode.VISUAL), SourceMode.label(SourceMode.HYBRID)), { SourceMode.label() }) { SourceMode.set(listOf(SourceMode.AUDIO, SourceMode.VISUAL, SourceMode.HYBRID).first { id -> SourceMode.label(id) == it }) },
                     ui.text("البصري:", 12f, th.muted),
                     ui.chips(listOf(SourceMode.kindLabel("scene"), SourceMode.kindLabel("hard")), { SourceMode.kindLabel() }) { Cfg.put("tr_vkind", if (it == SourceMode.kindLabel("hard")) "hard" else "scene") }),
                 savedPlanTxt, planBtn,
-                ui.section("اللهجة", true, ui.chips(langs, { lang }) { lang = it; save(); val dv = if (it == "فصحى") "" else it; Cfg.put("conv_dialect", dv); TrWizard.syncSaved("conv_dialect", dv) }),
-                ui.section("أسلوب الترجمة", true, ui.chips(styles, { style }) { style = it; save() }),
+                ui.section("🗣 اللهجة والأسلوب", true,
+                    ui.text("اللهجة:", 12f, th.muted),
+                    ui.chips(langs, { lang }) { lang = it; save(); val dv = if (it == "فصحى") "" else it; Cfg.put("conv_dialect", dv); TrWizard.syncSaved("conv_dialect", dv) },
+                    ui.text("أسلوب الترجمة:", 12f, th.muted),
+                    ui.chips(styles, { style }) { style = it; save() }),
                 watchViews[0], watchViews[1],
                 ui.button("📝 البرومبتات (شوف · انسخ · عدّل · استبدل)") { PromptsUi.show(this, ui) })),
             // ===== 🔑 المفاتيح: جيميناي · الوضع البصري · محركات خارجية =====
             tab("keys", listOf<View>(
+                ui.section("🆓 من غير مفتاح؟ تمام", true,
+                    ui.text("المفتاح اختياري. من غيره البرنامج بيشتغل بتفريغ على الجهاز (أوفلاين) + ترجمة جوجل المجانية. ومعاه الترجمة بتبقى أدق وأسرع (جيميناي بيفهم السياق).", 13f, th.text),
+                    ui.button("🎙 جهّز التفريغ على الجهاز (من غير مفتاح)") { settingsShow?.invoke("audio") }),
                 ui.button("❓ إزاي أجيب مفتاح Gemini؟ (وألصقه)", true) {
                     showKeyGuide { k ->
                         val cur = keys.text.toString().lines().map { it.trim() }.filter { it.isNotEmpty() }
@@ -575,6 +594,7 @@ class MainActivity : Activity() {
                 PublicApisUi.section(this, ui, th))),
             // ===== 🎙 التفريغ والصوت: موديلات الجهاز + إعدادات الصوت =====
             tab("audio", listOf<View>(
+                ui.text("التفريغ = تحويل الكلام لنص. محرك الجهاز مجاني وبيشتغل من غير نت (بتنزّل الموديل مرة واحدة). الباقي: مسار الصوت وجودته.", 12f, th.muted),
                 ui.section("🔊 الصوت", true, atrack, audioPresetTitle, audioPresetChips, audioPresetDesc, *fl("soundtags", "hitiming")),
                 ui.section("📴 التفريغ على الجهاز (من غير مفتاح)", true,
                     ui.text("اختيار التفريغ (جيميناي / على الجهاز / سحابي) من خط الترجمة. هنا بس تنزيل ومسح الموديلات واختيار المحرك واللغة.", 12f, th.muted),
@@ -606,7 +626,7 @@ class MainActivity : Activity() {
                     ui.slider("الظهور (100 = معتمة، أقل = أشفّ)", Cfg.int("badge_alpha", 55).coerceIn(15, 100), 15, 100, "%") { Cfg.put("badge_alpha", it.toString()) })), true),
             // ===== 🛠 عام: الخروج · الترجمة الحية · الطابور · البطارية · الأمان · النسخة الاحتياطية · الثيم =====
             tab("more", listOf<View>(
-                watchViews[2], watchViews[3],
+                watchViews[2],
                                 ui.section("▶ التشغيل", true,
                     ui.switchRow("كمّل الطابور تلقائيًا بعد إعادة تشغيل الجهاز", Cfg.bool("bg_autostart", true)) { Cfg.put("bg_autostart", if (it) "1" else "0") },
                     ui.text("الطابور بيتحفظ، وبيكمّل حتى لو قفلت البرنامج أو مسحته من الأخيرة. الفيديو اللي فوق في «مجلد الترجمة في الخلفية» بيترجم الأول.", 12f, th.muted),
@@ -615,7 +635,9 @@ class MainActivity : Activity() {
                     ui.text("أجهزة شاومي / أوبو / فيفو / سامسونج / هواوي بتقتل الخدمات الخلفية. اعمل الخطوتين دول مرة واحدة:", 12f, th.muted),
                     ui.button("1) استثناء من توفير البطارية") { requestBatteryExemption() },
                     ui.button("2) السماح بالتشغيل التلقائي / الخلفية للتطبيق") { openAutoStartSettings() },
-                    ui.text("وكمان: في قايمة التطبيقات الأخيرة اعمل «قفل 🔒» للتطبيق لو جهازك فيه الخيار ده.", 12f, th.muted)),
+                    ui.text("وكمان: في قايمة التطبيقات الأخيرة اعمل «قفل 🔒» للتطبيق لو جهازك فيه الخيار ده.", 12f, th.muted)))),
+            tab("live", listOf<View>(watchViews[3])),
+            tab("security", listOf<View>(
                             ui.section("🔒 الأمان", false, lockStatus,
                 ui.text("القفل بيحمي المجلد المخفي. لفتحه: اسحب لتحت في قايمة الفيديوهات وكمّل السحب لحد 🔒 وسيب.", 12f, th.muted),
                 ui.button("🔑 تعيين / تغيير النمط") { lk.change { refreshLock() } }, bioBtn,
@@ -626,10 +648,12 @@ class MainActivity : Activity() {
                     ui.text(Backup.autoTime(this).let { t -> if (t > 0) "آخر نسخة تلقائية: " + java.text.SimpleDateFormat("yyyy-MM-dd HH:mm", java.util.Locale.US).format(java.util.Date(t)) else "لسه مفيش نسخة تلقائية" }, 12f, th.text),
                     ui.button("💾 احفظ نسخة في ملف") { backupToFile() },
                     ui.button("📂 استرجع من ملف") { backupFromFile() },
-                    ui.button("♻ استرجع آخر نسخة تلقائية") { restoreAuto() }),
+                    ui.button("♻ استرجع آخر نسخة تلقائية") { restoreAuto() }))),
+            tab("appearance", listOf<View>(
                 ui.section("🎨 المظهر", false, darkSwitch, themeChips,
                     ui.text("🧩 وضع الواجهة (شكل الزراير · الفولدرات · الأنيميشن · الأصوات):", 13f, th.muted).apply { setPadding(0, ui.dp(10), 0, ui.dp(4)) },
                     skinChips, skinSoundSwitch))),
+            tab("youtube", ytSettingsViews),
             // ===== 🎵 الموسيقى =====
             TabDef("music", SettingsTabs.label("music"), listOf<View>(
                 ui.section("📝 الكلمات", true,
@@ -701,7 +725,7 @@ class MainActivity : Activity() {
         lib.onRenameFolder = { f -> ops.renameFolder(f) }
         lib.onDeleteFolder = { f -> ops.deleteFolder(f) }
         lib.onDetails = { v -> ops.details(v, Recents.parse(try { recentFile.readText() } catch (_: Exception) { "" }).firstOrNull { it.id == v.videoId }) }
-        val qui = QueueUi(this, ui, th); queueUi = qui; qui0 = qui; settingsDlg0 = settingsDlg
+        val qui = QueueUi(this, ui, th); queueUi = qui; qui0 = qui; settingsDlg0 = settingsDlg; settingsShow = { t -> settingsDlg.show(t) }
         dismissSettings = { try { settingsDlg.dialog.dismiss() } catch (_: Throwable) {} }
         // رجّع الطابور المحفوظ (لو التطبيق اتقفل/اتمسح) وكمّل الترجمة
         if (!fromPlayer && BgJobs.restore(this) > 0) { BgService.start(this); libUi?.refreshRows() }
@@ -895,7 +919,7 @@ class MainActivity : Activity() {
         }
         intent?.getStringExtra("reopen_tab")?.let { t -> intent?.removeExtra("reopen_tab"); frame.post { if (!isFinishing && !isDestroyed) settingsDlg.show(t) } }
         // لو مفيش مفتاح Gemini: القايمة بتظهر مباشرة أول البرنامج، وبعدها الفحص
-        frame.post { permFlow { ensureKeys { keys.setText(Cfg.allMainKeys().joinToString("\n")); keyLoadersRef.forEach { it() }; refreshChip(); doScan() } } }
+        frame.post { permFlow { ensureKeysSoft { keys.setText(Cfg.allMainKeys().joinToString("\n")); keyLoadersRef.forEach { it() }; refreshChip(); doScan() } } }
         frame.post { handleExternal(intent) }   // (v345) لينك جاي من تطبيق تاني (مشاركة / فتح)
     }
     /** (v345) المرحلة 1 «كتلة واحدة»: أي لينك جاي من برّه (مشاركة أو فتح). لينك يوتيوب ← قايمة «افتحه إزاي؟»، غير كده ← زي زمان */
@@ -1146,7 +1170,7 @@ class MainActivity : Activity() {
         noSaveCfg = true
         try { Extras.load() } catch (_: Throwable) {}
         Notice.show(this, ("✅ اتسترجع $n إعداد — بعيد فتح البرنامج").toString(), 2800L)
-        if (!fromPlayer) intent?.putExtra("reopen_tab", "more")
+        if (!fromPlayer) intent?.putExtra("reopen_tab", "security")
         dismissSettings?.invoke()
         if (fromPlayer) finish() else recreate()
     }
@@ -1299,7 +1323,13 @@ class MainActivity : Activity() {
             musicUi?.showYtLoading(title, channel)
         }
         Thread {
-            val a = try { YtNp.init(); YtNp.pickAudio(id) } catch (_: Throwable) { null }
+            // (v354) أسرع: نفس الاستخراج السريع بتاع الفيديو (متوازي + كاش) وبعدها NewPipe كاحتياطي — والكاش بيخلّي التحويل لفيديو فوري
+            val a = try {
+                val pk = YtExtract.fetchPick(id, Cfg.int("yt_maxh", 0))
+                val au = pk?.opts?.firstNotNullOfOrNull { it.audio }
+                if (pk != null && au != null) YtPick(au, null, pk.ua, pk.title, 0, "", 0L)
+                else { YtNp.init(); YtNp.pickAudio(id) }
+            } catch (_: Throwable) { try { YtNp.init(); YtNp.pickAudio(id) } catch (_: Throwable) { null } }
             runOnUiThread {
                 if (tok != ytAudTok) return@runOnUiThread   // قفلت المشغّل أو دوست على حاجة تانية
                 if (isFinishing || isDestroyed) return@runOnUiThread
@@ -1384,6 +1414,9 @@ class MainActivity : Activity() {
         }.apply { isDaemon = true }.start()
     }
     /** (v350) عدّاد الفيديوهات الجديدة على أيقونة يوتيوب */
+    /** (v355) فتح قسم من إعدادات البرنامج من أي شاشة (مثلًا ⚙ يوتيوب) */
+    var settingsShow: ((String?) -> Unit)? = null
+    fun openSettingsTab(t: String) { try { settingsShow?.invoke(t) } catch (_: Throwable) {} }
     fun updateYtBadge() { navUi?.badge(4, YtNotify.badgeCount()) }
     override fun onResume() {
         super.onResume()

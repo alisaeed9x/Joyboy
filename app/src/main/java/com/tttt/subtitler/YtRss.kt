@@ -98,7 +98,7 @@ object YtRss {
     // ───────── تحميل وتحليل RSS ─────────
     private fun http(url: String): String {
         val c = URL(url).openConnection() as HttpURLConnection
-        c.connectTimeout = 12000; c.readTimeout = 15000
+        c.connectTimeout = 6000; c.readTimeout = 9000   // (v354) أقصر: القناة البطيئة ما تعطّلش الفيد كله
         c.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 Chrome/124.0 Mobile Safari/537.36")
         try {
             if (c.responseCode != 200) throw RuntimeException("RSS " + c.responseCode)
@@ -140,10 +140,10 @@ object YtRss {
         return out
     }
 
-    private fun fetchOne(cid: String, chUrl: String, force: Boolean): List<NpItem> {
+    private fun fetchOne(cid: String, chUrl: String, force: Boolean, staleOk: Boolean = false): List<NpItem> {
         val now = System.currentTimeMillis()
         val e = synchronized(this) { mem[cid] }
-        if (!force && e != null && now - e.t < TTL_MS) return e.items
+        if (!force && e != null && (staleOk || now - e.t < TTL_MS)) return e.items   // (v354) staleOk: اعرض الكاش فورًا حتى لو قديم
         return try {
             val l = parse(http("https://www.youtube.com/feeds/videos.xml?channel_id=$cid"), chUrl).take(PER_CH)
             synchronized(this) { mem[cid] = Entry(now, l) }
@@ -152,28 +152,37 @@ object YtRss {
     }
 
     /** فيد مدموج من كل الاشتراكات، الأحدث أولًا. force = تجاهل الكاش */
-    fun feed(subs: List<NpItem>, force: Boolean = false): YtRes {
+    private val feedLock = Any()
+    private val fbBudget = java.util.concurrent.atomic.AtomicInteger(0)
+    /** (v354) يحدّث الكاش في الخلفية (القنوات المنتهية بس) من غير ما يعطّل الشاشة — الزيارة الجاية تلاقي فيد جديد */
+    fun refreshAsync(subs: List<NpItem>) {
+        Thread { try { feed(subs, false, false) } catch (_: Throwable) {} }.apply { isDaemon = true; start() }
+    }
+    /** staleOk: لو للقناة كاش (حتى لو قديم) بيتعرض فورًا من غير شبكة */
+    fun feed(subs: List<NpItem>, force: Boolean = false, staleOk: Boolean = false): YtRes = synchronized(feedLock) {   // (v354) طلب واحد في المرة: فحص العدّاد ما بيتخانقش مع فتح الاشتراكات (كان بيعمل ضغط ويوتيوب بيرفض)
         loadDisk()
+        fbBudget.set(5)   // أقصى عدد قنوات نرجع فيها للطريقة البطيئة (NewPipe) في الطلب الواحد
         val list = subs.take(MAX_CH)
-        val pool = Executors.newFixedThreadPool(6)
+        val pool = Executors.newFixedThreadPool(8)
         try {
             val fs = list.map { s ->
                 pool.submit(Callable<List<NpItem>> {
                     val cid = chanId(s.channelUrl)
                     try {
-                        if (cid != null) fetchOne(cid, s.channelUrl, force)
-                        else { YtNp.init(); YtNp.channel(s.channelUrl).first.items.filter { it.kind == 0 }.take(6) }
+                        if (cid != null) fetchOne(cid, s.channelUrl, force, staleOk)
+                        else if (fbBudget.getAndDecrement() > 0) { YtNp.init(); YtNp.channel(s.channelUrl).first.items.filter { it.kind == 0 }.take(6) } else emptyList()
                     } catch (_: Throwable) {
-                        if (cid != null) try { YtNp.init(); YtNp.channel(s.channelUrl).first.items.filter { it.kind == 0 }.take(6) } catch (_: Throwable) { emptyList() } else emptyList()
+                        if (cid != null && fbBudget.getAndDecrement() > 0) try { YtNp.init(); YtNp.channel(s.channelUrl).first.items.filter { it.kind == 0 }.take(6) } catch (_: Throwable) { emptyList() } else emptyList()
                     }
                 })
             }
             val all = ArrayList<NpItem>()
-            for (f in fs) try { all.addAll(f.get()) } catch (_: Throwable) {}
+            val dl = System.currentTimeMillis() + 40000L
+            for (f in fs) try { all.addAll(f.get(maxOf(1L, dl - System.currentTimeMillis()), java.util.concurrent.TimeUnit.MILLISECONDS)) } catch (_: Throwable) {}
             // العمر بيتحسب من جديد (الكاش ممكن يكون قديم)
             val fresh = all.distinctBy { it.id }.map { if (it.ts > 0L) NpItem(it.id, it.title, it.channel, it.channelUrl, it.thumb, it.dur, it.count, ageOf(it.ts), it.kind, it.url, it.ts) else it }
             saveDisk(list.mapNotNull { chanId(it.channelUrl) }.toSet())
-            return YtRes(fresh.sortedByDescending { it.ts }.take(200), null)
+            YtRes(fresh.sortedByDescending { it.ts }.take(200), null)
         } finally { pool.shutdown() }
     }
 }

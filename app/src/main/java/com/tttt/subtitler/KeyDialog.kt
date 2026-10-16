@@ -75,9 +75,20 @@ fun Activity.showKeyGuide(onKey: (String) -> Unit) {
 
 /** لو مفيش أي مفتاح Gemini متسجّل: نافذة منبثقة تطلب المفتاح (+ لإضافة شريط مفتاح جديد). بعد الحفظ أو "بعدين" بينفّذ onDone */
 private fun hasAnyKeyNow() = Cfg.keys("keys").isNotEmpty() || Cfg.keys("backup").isNotEmpty() || Cfg.keys("extra").isNotEmpty() || TrWizard.googleOn()   // (v259) أوفلاين + جوجل مابيحتاجوش مفتاح
+/** (v356) أول فتح: بيستعيد المفاتيح المحفوظة (لو فيه) من غير ما يطلع أي نافذة — المفتاح اختياري */
+fun Activity.ensureKeysSoft(onDone: () -> Unit) {
+    Cfg.init(this)
+    if (hasAnyKeyNow()) { onDone(); return }
+    val app = applicationContext
+    Thread {
+        try { KeyVault.restore(app, "kv_full"); KeyVault.save(app) } catch (_: Throwable) {}
+        runOnUiThread { if (!isFinishing && !isDestroyed) onDone() }
+    }.apply { isDaemon = true }.start()
+}
 fun Activity.ensureKeys(onDone: () -> Unit) {
     Cfg.init(this)
     if (hasAnyKeyNow()) { onDone(); return }
+    if (Cfg.str("key_later", "0") == "1") { onDone(); return }   // (v356) قلت «من غير مفتاح/بعدين»: ما نزعجكش تاني
     // مفيش مفاتيح: دوّر على النسخة المخفية بعد ما الصلاحيات تتمنح (تثبيت جديد) — على خيط خلفي عشان قراءة التخزين ما توقفش الواجهة
     val app = applicationContext
     Thread {
@@ -86,7 +97,7 @@ fun Activity.ensureKeys(onDone: () -> Unit) {
     }.apply { isDaemon = true }.start()
 }
 private fun Activity.ensureKeysUi(onDone: () -> Unit) {
-    if (hasAnyKeyNow()) { onDone(); return }
+    if (hasAnyKeyNow() || Cfg.str("key_later", "0") == "1") { onDone(); return }
     val th = Themes.byId(Cfg.str("theme", "mx")); val ui = Ui(this, th)
     val d = GDialog(this); d.requestWindowFeature(Window.FEATURE_NO_TITLE)
     var finished = false
@@ -113,7 +124,11 @@ private fun Activity.ensureKeysUi(onDone: () -> Unit) {
         setPadding(ui.dp(16), ui.dp(16), ui.dp(16), ui.dp(16)); background = ui.box(th.card, th.border, 18)
     }
     box.addView(ui.text("🔑 ضيف مفتاح Gemini", 17f, th.primary, true))
-    box.addView(ui.text("محتاج مفتاح واحد على الأقل عشان الترجمة تشتغل. تقدر تزوّد مفاتيح تانية بزرار +.", 12f, th.muted).apply { setPadding(0, ui.dp(4), 0, ui.dp(8)) })
+    box.addView(ui.text("المفتاح اختياري: بيخلّي الترجمة أدق وأسرع. تقدر تكمّل من غيره بتفريغ على الجهاز + ترجمة جوجل المجانية.", 12f, th.muted).apply { setPadding(0, ui.dp(4), 0, ui.dp(8)) })
+    box.addView(pill("🆓 كمّل من غير مفتاح", th.surface, th.primary) {
+        Cfg.p.edit().putString("key_later", "1").putString("tr_method", "google").apply(); d.dismiss()
+        try { (this as? MainActivity)?.openSettingsTab("audio") } catch (_: Throwable) {}
+    }, LinearLayout.LayoutParams(-1, ui.dp(42)).apply { bottomMargin = ui.dp(6) })
     box.addView(pill("❓ معييش مفتاح — إزاي أجيبه؟", th.surface, th.primary) {
         showKeyGuide { k ->
             val all = (fields.map { it.text.toString().trim() }.filter { it.length > 10 } + k).distinct()
@@ -129,7 +144,7 @@ private fun Activity.ensureKeysUi(onDone: () -> Unit) {
         if (ks.isEmpty()) Notice.show(this, ("اكتب مفتاح صالح").toString(), 2300L)
         else { Cfg.p.edit().putString("keys", ks.joinToString("\n")).apply(); d.dismiss() }
     }, LinearLayout.LayoutParams(0, ui.dp(44), 1f).apply { setMargins(0, 0, ui.dp(4), 0) })
-    btns.addView(pill("بعدين", th.surface, th.muted) { d.dismiss() }, LinearLayout.LayoutParams(0, ui.dp(44), 1f).apply { setMargins(ui.dp(4), 0, 0, 0) })
+    btns.addView(pill("بعدين", th.surface, th.muted) { Cfg.p.edit().putString("key_later", "1").apply(); d.dismiss() }, LinearLayout.LayoutParams(0, ui.dp(44), 1f).apply { setMargins(ui.dp(4), 0, 0, 0) })
     box.addView(btns, LinearLayout.LayoutParams(-1, -2).apply { topMargin = ui.dp(12) })
     d.setContentView(ScrollView(this).apply { addView(box) })
     d.setOnDismissListener { done() }
