@@ -12,7 +12,7 @@ object NavAnim {
     private var has = false
 
     /** (v336) مكان البوابة في الشريط (يوتيوب بقى قبل الملفات): الأرقام الداخلية 3=ملفات و4=يوتيوب */
-    fun pos(i: Int): Int = when (i) { 4 -> 3; 3 -> 4; else -> i }
+    fun pos(i: Int): Int = when (i) { 4 -> 3; 3 -> 4; 6 -> 5; 5 -> 6; else -> i }
 
     fun set(from: Int, to: Int) {
         if (from == to) return

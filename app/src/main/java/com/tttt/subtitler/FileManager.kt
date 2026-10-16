@@ -357,6 +357,7 @@ class FileManagerActivity : Activity() {
             if (i != 3) {
                 NavAnim.set(3, i)
                 if (i == 2) startActivity(Intent(this, BrowserActivity::class.java))
+                else if (i == 6) startActivity(Intent(this, AiHubActivity::class.java))
                 else startActivity(Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP).putExtra("tab", if (i == 0) "videos" else if (i == 1) "music" else if (i == 4) "youtube" else "tasks"))
                 NavAnim.peek(this)
                 finish()

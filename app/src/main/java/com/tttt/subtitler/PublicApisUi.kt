@@ -27,6 +27,7 @@ object PublicApisUi {
         lateinit var refreshAll: () -> Unit
 
         fun rebuild() {
+            OmniAuto.probeAsync()   // (v364) اكتشاف OmniRoute تلقائي (مرة كل دقيقة)
             listBox.removeAllViews()
             listBox.addView(ui.text("🔗 سلسلة الترجمة دلوقتي: " + ExtTranslate.chainLabel(), 12f, th.text, true).apply { setPadding(0, ui.dp(2), 0, ui.dp(6)) })
             // --- مزوّدين مجانيين من غير مفتاح ---
@@ -39,7 +40,7 @@ object PublicApisUi {
             listBox.addView(ui.text("🤖 محركات LLM بمفتاحك (ChatGPT · Claude · …) — بتترجم 25 جملة في الطلب:", 12.5f, th.primary, true).apply { setPadding(0, ui.dp(10), 0, ui.dp(2)) })
             for (pr in ExtLlm.presets) {
                 val bw = if (ExtLlm.configured(pr)) ExtLlm.blockedWhy(pr) else null
-                val st = if (!ExtLlm.configured(pr)) "🔑 محتاج مفتاح" else if (!ExtLlm.enabled(pr)) "⏸ موقوف" else if (bw != null) "⛔ $bw" else "✅ جاهز"
+                val st = if (!ExtLlm.configured(pr)) (if (ExtLlm.keyless(pr)) "🔌 مش شغّال (محلي، من غير مفتاح)" else "🔑 محتاج مفتاح") else if (!ExtLlm.enabled(pr)) "⏸ موقوف" else if (bw != null) "⛔ $bw" else "✅ جاهز"
                 val n = Cfg.str("ext_n_llm_" + pr.id).toIntOrNull() ?: 0
                 listBox.addView(ui.button("${pr.label} — $st" + (if (n > 0) " · ترجم $n جملة" else "") + repoTag(pr.keys)) { editDialog(act, ui, th, pr) { refreshAll() } })
             }

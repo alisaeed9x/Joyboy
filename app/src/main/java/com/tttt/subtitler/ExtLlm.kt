@@ -19,6 +19,7 @@ object ExtLlm {
     val presets: List<Preset> = listOf(
         Preset("chatgpt", "ChatGPT (OpenAI)", "openai", "https://api.openai.com/v1", "gpt-4o-mini", "whisper-1", listOf("openai", "chatgpt")),
         Preset("claude", "Claude (Anthropic)", "anthropic", "https://api.anthropic.com/v1", "claude-haiku-5-5", "", listOf("anthropic", "claude")),
+        Preset("omniroute", "OmniRoute (بوابة كل المزوّدين)", "openai", "http://localhost:20128/v1", "auto", "", listOf("omniroute")),
         Preset("groq", "Groq", "openai", "https://api.groq.com/openai/v1", "llama-3.3-70b-versatile", "whisper-large-v3-turbo", listOf("groq")),
         Preset("openrouter", "OpenRouter", "openai", "https://openrouter.ai/api/v1", "openai/gpt-4o-mini", "", listOf("openrouter")),
         Preset("deepseek", "DeepSeek", "openai", "https://api.deepseek.com/v1", "deepseek-chat", "", listOf("deepseek")),
@@ -35,7 +36,11 @@ object ExtLlm {
     fun model(p: Preset): String = Cfg.str("llm_${p.id}_model").trim().ifEmpty { p.model }
     fun url(p: Preset): String = Cfg.str("llm_${p.id}_url").trim().ifEmpty { p.url }.trimEnd('/')
     fun sttModel(p: Preset): String = Cfg.str("llm_${p.id}_stt").trim().ifEmpty { p.sttModel }
-    fun configured(p: Preset): Boolean = key(p).isNotEmpty() && url(p).isNotEmpty() && model(p).isNotEmpty()
+    /** (v364) OmniRoute المحلي بيشتغل من غير مفتاح (REQUIRE_API_KEY=false افتراضيًا) — بيتفعّل لوحده لما OmniAuto يلاقيه شغّال */
+    fun keyless(p: Preset): Boolean = p.id == "omniroute"
+    fun hasAccess(p: Preset): Boolean = key(p).isNotEmpty() || (keyless(p) && Cfg.str("omni_seen") == "1")
+    fun bearer(p: Preset): Map<String, String> = key(p).let { if (it.isEmpty()) emptyMap() else mapOf("Authorization" to "Bearer $it") }
+    fun configured(p: Preset): Boolean = hasAccess(p) && url(p).isNotEmpty() && model(p).isNotEmpty()
     /** يدعم تفريغ الصوت (/audio/transcriptions)؟ */
     fun supportsStt(p: Preset): Boolean = p.kind == "openai" && (p.sttModel.isNotEmpty() || p.id == "custom")
 
@@ -140,8 +145,8 @@ object ExtLlm {
     /** (v274) قايمة موديلات الخدمة (GET {url}/models) — الأسماء بس */
     fun listModels(p: Preset, key: String, url: String): List<String> {
         val u = url.trim().trimEnd('/')
-        if (u.isEmpty() || key.isEmpty()) throw IOException("المفتاح أو الرابط ناقص")
-        val hdr = if (p.kind == "anthropic") mapOf("x-api-key" to key, "anthropic-version" to "2023-06-01") else mapOf("Authorization" to "Bearer $key")
+        if (u.isEmpty() || (key.isEmpty() && !keyless(p))) throw IOException("المفتاح أو الرابط ناقص")
+        val hdr = if (p.kind == "anthropic") mapOf("x-api-key" to key, "anthropic-version" to "2023-06-01") else (if (key.isEmpty()) emptyMap() else mapOf("Authorization" to "Bearer $key"))
         val txt = http("GET", u + "/models" + (if (p.kind == "anthropic") "?limit=100" else ""), hdr, null, 30000)
         val arr = JSONObject(txt).optJSONArray("data") ?: return emptyList()
         val out = ArrayList<String>()
@@ -215,7 +220,54 @@ object ExtLlm {
         }
         val body = JSONObject().put("model", model(p)).put("temperature", 0.2)
             .put("messages", JSONArray().put(JSONObject().put("role", "system").put("content", system)).put(JSONObject().put("role", "user").put("content", user))).toString()
-        val txt = post(url(p) + "/chat/completions", mapOf("Authorization" to "Bearer $key"), body)
+        val txt = post(url(p) + "/chat/completions", bearer(p), body)
         return JSONObject(txt).optJSONArray("choices")?.optJSONObject(0)?.optJSONObject("message")?.optString("content", "") ?: ""
+    }
+}
+
+
+/**
+ * (v364) اكتشاف OmniRoute تلقائي: بيجرّب الرابط المحفوظ ثم 127.0.0.1:20128 و localhost:20128 (GET /v1/models).
+ *  - 200 = شغّال من غير مفتاح ← بيتفعّل لوحده (بيتحفظ omni_seen) ومفيش حاجة تكتبها.
+ *  - 401/403 = شغّال بس مضبوط على REQUIRE_API_KEY=true ← محتاج مفتاح من Dashboard → Endpoints.
+ */
+object OmniAuto {
+    enum class St { UP, NEED_KEY, DOWN }
+    @Volatile var last: St? = null
+    @Volatile private var lastAt = 0L
+
+    fun candidates(): List<String> {
+        val p = ExtLlm.byId("omniroute")
+        return listOfNotNull(p?.let { ExtLlm.url(it) }, "http://127.0.0.1:20128/v1", "http://localhost:20128/v1").map { it.trimEnd('/') }.distinct()
+    }
+
+    fun probe(): St {
+        val p = ExtLlm.byId("omniroute")!!
+        var needKey = false
+        for (u in candidates()) {
+            try {
+                val c = URL("$u/models").openConnection() as java.net.HttpURLConnection
+                try {
+                    c.connectTimeout = 1500; c.readTimeout = 3000
+                    ExtLlm.key(p).takeIf { it.isNotEmpty() }?.let { c.setRequestProperty("Authorization", "Bearer $it") }
+                    val code = c.responseCode
+                    if (code in 200..299) {
+                        if (ExtLlm.key(p).isEmpty()) Cfg.put("omni_seen", "1")
+                        if (u != ExtLlm.url(p)) Cfg.put("llm_omniroute_url", u)
+                        return St.UP
+                    }
+                    if (code == 401 || code == 403) needKey = true
+                } finally { try { c.disconnect() } catch (_: Throwable) {} }
+            } catch (_: Throwable) {}
+        }
+        return if (needKey) St.NEED_KEY else St.DOWN
+    }
+
+    /** مرة كل دقيقة على الأكتر؛ [onDone] بيتنادى على thread الخلفية */
+    fun probeAsync(force: Boolean = false, onDone: ((St) -> Unit)? = null) {
+        val now = System.currentTimeMillis()
+        if (!force && now - lastAt < 60000L) { last?.let { onDone?.invoke(it) }; return }
+        lastAt = now
+        Thread { val r = try { probe() } catch (_: Throwable) { St.DOWN }; last = r; onDone?.invoke(r) }.start()
     }
 }
