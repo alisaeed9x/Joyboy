@@ -84,6 +84,13 @@ object AiApi {
 
     /** كل المصادر الجاهزة: كل مزوّد ليه مفتاح (OmniRoute وغيره) + جيميناي لو عندك مفاتيح */
     fun sources(): List<Src> {
+        val real = realSources()
+        if (real.isEmpty()) return real
+        return listOf(Src(InternalRouter.ID, "🧭 الراوتر الداخلي (تلقائي · من غير سيرفر)", "openai", "", "", "auto", null)) + real
+    }
+
+    /** المزوّدين الحقيقيين بس (من غير الراوتر الداخلي) */
+    fun realSources(): List<Src> {
         val out = ArrayList<Src>()
         for (p in ExtLlm.presets) {
             if (ExtLlm.hasAccess(p) && ExtLlm.url(p).isNotEmpty()) out.add(Src(p.id, p.label, p.kind, ExtLlm.url(p), ExtLlm.key(p), ExtLlm.model(p), p))
@@ -102,6 +109,7 @@ object AiApi {
             for ((k, v) in h) c.setRequestProperty(k, v)
             if (body != null) { c.doOutput = true; c.setRequestProperty("Content-Type", "application/json; charset=UTF-8"); c.outputStream.use { it.write(body.toByteArray(Charsets.UTF_8)) } }
             val code = c.responseCode
+            OmniMeta.capture(c)
             val txt = (if (code in 200..299) c.inputStream else c.errorStream)?.use { String(it.readBytes(), Charsets.UTF_8) } ?: ""
             if (code !in 200..299) throw ExtLlm.LlmErr(code, ExtLlm.errMsg(code, txt), c.getHeaderField("Retry-After")?.trim()?.toIntOrNull() ?: 0)
             return txt
@@ -109,6 +117,7 @@ object AiApi {
     }
 
     fun models(s: Src): List<AiModels.Info> {
+        if (s.id == InternalRouter.ID) return InternalRouter.models()
         val txt = http("GET", s.url + "/models" + (if (s.kind == "anthropic") "?limit=100" else ""), hdr(s), null, 30000)
         val arr = JSONObject(txt).optJSONArray("data") ?: JSONArray()
         val out = ArrayList<AiModels.Info>()
@@ -125,6 +134,7 @@ object AiApi {
     class Msg(val role: String, val text: String, val imgB64: String? = null)
 
     fun chat(s: Src, model: String, system: String, msgs: List<Msg>, maxTokens: Int = 4096): String {
+        if (s.id == InternalRouter.ID) return InternalRouter.chat(model, system, msgs, maxTokens)
         val arr = JSONArray()
         val body = JSONObject().put("model", model.removePrefix(if (s.id == "gemini") "models/" else "")).put("max_tokens", maxTokens)
         if (s.kind == "anthropic") {
@@ -183,6 +193,7 @@ class AiHubActivity : Activity() {
     private lateinit var thumb: ImageView
     private lateinit var info: android.widget.TextView
     private lateinit var sendBtn: android.widget.Button
+    private lateinit var statusTv: android.widget.TextView
 
     private val modeNames = listOf("💬 نص", "💻 كود", "🖼 صورة", "📎 ملف")
     private val ext = mapOf("Kotlin" to "kt", "JavaScript/HTML" to "html", "Python" to "py", "Java" to "java", "Bash" to "sh", "أي لغة" to "txt")
@@ -201,6 +212,12 @@ class AiHubActivity : Activity() {
         val row = LinearLayout(this).apply { layoutDirection = View.LAYOUT_DIRECTION_RTL }
         row.addView(srcBtn, LinearLayout.LayoutParams(0, -2, 1f)); row.addView(modelBtn, LinearLayout.LayoutParams(0, -2, 1f))
         root.addView(row)
+        // (v364) شريط حالة OmniRoute: شغّال؟ + آخر رد (مزوّد · موديل · زمن · تحويلات · تكلفة)؛ ضغطة = إحصائية الاستهلاك
+        statusTv = ui.text("", 11.5f, th.muted).apply {
+            setPadding(ui.dp(8), ui.dp(2), ui.dp(8), ui.dp(4)); background = ui.box(th.surface, th.border, 10)
+            setOnClickListener { StatsUi(this@AiHubActivity, ui, th).show() }
+        }
+        root.addView(statusTv, LinearLayout.LayoutParams(-1, -2).apply { topMargin = ui.dp(2); bottomMargin = ui.dp(4) })
         root.addView(ui.chips(modeNames, { modeNames[mode] }) { mode = modeNames.indexOf(it); buildBody() })
         body = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL }
         root.addView(ScrollView(this).apply { addView(body) }, LinearLayout.LayoutParams(-1, 0, 1f))
@@ -229,10 +246,33 @@ class AiHubActivity : Activity() {
                 when (st) {
                     OmniAuto.St.UP -> if (force) toast("✅ OmniRoute شغّال وجاهز — من غير مفتاح")
                     OmniAuto.St.NEED_KEY -> toast("🔑 OmniRoute شغّال بس طالب مفتاح (REQUIRE_API_KEY=true). خده من Dashboard ← Endpoints وحطه من «ضبط مزوّد»", 6000L)
-                    OmniAuto.St.DOWN -> if (force || AiApi.sources().isEmpty()) toast("OmniRoute مش شغّال على الجهاز — شغّله في Termux (سكربت termux_omniroute.sh)", 5000L)
+                    OmniAuto.St.DOWN -> if (force || !InternalRouter.hasPool()) startOmni(force)   // الراوتر الداخلي الأول؛ Termux احتياطي
                 }
             }
         }
+    }
+
+    /** (v365) OmniRoute واقع ← التطبيق يشغّله في Termux لوحده (ويثبّته أول مرة) ويستنى لحد ما يرد */
+    private fun startOmni(force: Boolean) {
+        if (!force && OmniLauncher.triedRecently()) return
+        when (OmniLauncher.start(this)) {
+            OmniLauncher.R.NO_TERMUX -> toast("📲 OmniRoute بيشتغل جوه تطبيق Termux — نزّله من F-Droid أو GitHub وبعدها هيشتغل لوحده", 6000L)
+            OmniLauncher.R.NO_PERM -> {
+                toast("🔐 اسمح لـ Subtitler يشغّل Termux (إذن RUN_COMMAND) — مرة واحدة", 5000L)
+                try { OmniLauncher.requestPerm(this) } catch (_: Throwable) {}
+            }
+            OmniLauncher.R.ERROR -> toast("❌ مقدرتش أكلّم Termux — اضغط «🛠 إعداد Termux مرة واحدة» من قايمة المزوّد", 6000L)
+            OmniLauncher.R.SENT -> {
+                toast("⏳ بشغّل OmniRoute في Termux… أول مرة بياخد 5-10 دقايق تثبيت", 5000L)
+                OmniLauncher.waitUntilUp { runOnUiThread { if (!isFinishing) { reloadSrc(); toast("✅ OmniRoute اشتغل لوحده") } } }
+                Thread { try { Thread.sleep(25000) } catch (_: Throwable) {}; if (OmniAuto.last == OmniAuto.St.DOWN || OmniAuto.last == null) runOnUiThread { if (!isFinishing) toast("لو لسه ما اشتغلش بعد دقيقة: اضغط «🛠 إعداد Termux مرة واحدة» من قايمة المزوّد", 6000L) } }.start()
+            }
+        }
+    }
+
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == 365 && grantResults.firstOrNull() == android.content.pm.PackageManager.PERMISSION_GRANTED) startOmni(true)
     }
 
     override fun onResume() { super.onResume(); if (::srcBtn.isInitialized) { reloadSrc(); autoDetect() } }
@@ -240,9 +280,17 @@ class AiHubActivity : Activity() {
     private fun reloadSrc() {
         val all = AiApi.sources()
         val keep = Cfg.str("aihub_src")
-        src = all.firstOrNull { it.id == src?.id } ?: all.firstOrNull { it.id == keep } ?: all.firstOrNull { it.id == "omniroute" } ?: all.firstOrNull()
+        src = all.firstOrNull { it.id == src?.id } ?: all.firstOrNull { it.id == keep } ?: all.firstOrNull { it.id == InternalRouter.ID } ?: all.firstOrNull { it.id == "omniroute" } ?: all.firstOrNull()
         model = src?.let { Cfg.str("aihub_model_" + it.id).ifEmpty { it.defModel } } ?: ""
         srcBtn.text = "🔌 " + (src?.label ?: "ضيف مزوّد"); modelBtn.text = "🧠 " + model.ifEmpty { "اختار موديل" }
+        refreshStatus()
+    }
+
+    private fun refreshStatus() {
+        if (!::statusTv.isInitialized) return
+        val show = src?.id == "omniroute" || src?.id == InternalRouter.ID || OmniAuto.last != null && OmniAuto.last != OmniAuto.St.DOWN
+        statusTv.visibility = if (show || OmniAuto.last == OmniAuto.St.DOWN) View.VISIBLE else View.GONE
+        statusTv.text = OmniMeta.statusLine()
     }
 
     private fun toast(m: String, ms: Long = 2600L) = Notice.show(this, m, ms)
@@ -255,6 +303,9 @@ class AiHubActivity : Activity() {
         if (all.isEmpty()) box.addView(ui.text("لسه مفيش مزوّد. ضيف OmniRoute أو أي مزوّد من تحت.", 12f, th.muted))
         for (s in all) box.addView(ui.button((if (s.id == src?.id) "✅ " else "") + s.label) { src = s; Cfg.put("aihub_src", s.id); d.dismiss(); reloadSrc() })
         box.addView(ui.button("🔎 دوّر على OmniRoute دلوقتي") { d.dismiss(); autoDetect(true) })
+        box.addView(ui.button("💻 كونسول Termux (جوه التطبيق)") { d.dismiss(); startActivity(Intent(this, TermuxConsoleActivity::class.java)) })
+        box.addView(ui.button("▶ شغّل OmniRoute (Termux) دلوقتي") { d.dismiss(); startOmni(true) })
+        box.addView(ui.button("🛠 إعداد Termux مرة واحدة (بينسخ الأمر ويفتح Termux — الصقه ENTER)") { d.dismiss(); OmniLauncher.copySetupAndOpenTermux(this); toast("📋 اتنسخ الأمر — الصقه في Termux واضغط Enter، وارجع هنا", 6000L) })
         box.addView(ui.text("➕ ضبط مزوّد (رابط + مفتاح):", 12.5f, th.primary, true).apply { setPadding(0, ui.dp(8), 0, 0) })
         for (p in ExtLlm.presets) box.addView(ui.button(p.label + (if (ExtLlm.hasAccess(p)) " ✓" else "")) { d.dismiss(); PublicApisUi.editDialog(this, ui, th, p) { reloadSrc() } })
         box.addView(ui.button("إغلاق") { d.dismiss() })
@@ -392,7 +443,7 @@ class AiHubActivity : Activity() {
                 val a = r.getOrNull()
                 if (a == null) { toast("❌ " + (r.exceptionOrNull()?.message ?: "فشل").take(160), 5000L); return@runOnUiThread }
                 if (keepHist) { h.add(AiApi.Msg("user", text)); h.add(AiApi.Msg("assistant", a)); input.setText("") }
-                output.setText(a.ifEmpty { "(رد فاضي)" })
+                output.setText(a.ifEmpty { "(رد فاضي)" }); refreshStatus()
             }
         }.start()
     }

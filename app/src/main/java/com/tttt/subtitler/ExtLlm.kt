@@ -111,6 +111,7 @@ object ExtLlm {
                 c.outputStream.use { it.write(body.toByteArray(Charsets.UTF_8)) }
             }
             val code = c.responseCode
+            OmniMeta.capture(c)   // (v364) هيدرات OmniRoute
             val txt = (if (code in 200..299) c.inputStream else c.errorStream)?.use { String(it.readBytes(), Charsets.UTF_8) } ?: ""
             NetUse.api((body?.length ?: 0).toLong() + 200L, txt)
             if (code !in 200..299) throw LlmErr(code, errMsg(code, txt), c.getHeaderField("Retry-After")?.trim()?.toIntOrNull() ?: 0)

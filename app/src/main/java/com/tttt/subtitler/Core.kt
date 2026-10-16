@@ -150,6 +150,7 @@ object Cfg {
     lateinit var p: SharedPreferences
     /** (v310) للشاشات اللي بتفتح لوحدها من أيقونات اللانشر (المتصفح/الملفات) من غير ما Main يشتغل قبلها */
     fun ensure(c: Context) { if (!::p.isInitialized) init(c) }
+    fun isReady(): Boolean = ::p.isInitialized
     fun init(c: Context) {
         p = c.getSharedPreferences("p", 0)
         run {   // (v271) الموديلات في Android/media/<الحزمة>/models (بتعدّي مسح التطبيق)؛ filesDir هو القديم وبينتقل لوحده

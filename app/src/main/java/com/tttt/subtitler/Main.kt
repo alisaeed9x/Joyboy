@@ -592,6 +592,7 @@ class MainActivity : Activity() {
                                 ui.section("👁 مفتاح الوضع البصري فقط", false,
                     ui.text("الوضع البصري (👁) بيشتغل بالمفاتيح اللي هنا بس، ومش بياخد أبدًا من مفاتيح الترجمة. لو سبتها فاضية الوضع البصري مش هيشتغل. ولما الوضع البصري مايكونش شغّال المفتاح ده بيشتغل كمفتاح احتياطي للترجمة والتنقيح.", 12f, th.muted), visKeysUi),
                 ui.button("🤖 شاشة الذكاء الاصطناعي (نص · كود · صورة · ملف) — OmniRoute وأي مزوّد", true) { startActivity(android.content.Intent(this, AiHubActivity::class.java)) },
+                ui.button("💻 كونسول Termux (تشغيل/لوج OmniRoute من جوه التطبيق)") { startActivity(android.content.Intent(this, TermuxConsoleActivity::class.java)) },
                 PublicApisUi.section(this, ui, th))),
             // ===== 🎙 التفريغ والصوت: موديلات الجهاز + إعدادات الصوت =====
             tab("audio", listOf<View>(
