@@ -325,6 +325,7 @@ class PlayerActivity : Activity(), Host {
     private var tbView: View? = null   // (v265) الشريط العلوي (أزرار المشغّل)
     var lastMem = 0L
     var applyChromeFn: () -> Unit = {}
+    var nextPanel: NextPanel? = null   // (v378) لوحة «التالي» تحت أزرار المشغّل (يوتيوب)
     var dismissPopFn: () -> Unit = {}
     var restyleFn: () -> Unit = {}
     private var resumeAfterSettings = false
@@ -476,7 +477,7 @@ class PlayerActivity : Activity(), Host {
         }
         val hh = ui.dp(if (compact) 40 else 44); val m = ui.dp(if (compact) 3 else 4)
         fun lp(w: Int) = LinearLayout.LayoutParams(w, hh).apply { setMargins(m, m, m, m) }
-        val webVid = uri == null && url != null
+        val webVid = uri == null && (url != null || intent.getStringExtra("ytid") != null)   // (v378) يوتيوب: اللينك بيتجاب بعد بناء الشريط، فزرار الجودة كان بيختفي
         var dlRef: TextView? = null
         val dlB = b("⬇", 0xFF37474F.toInt()) { dlRef?.let { downloadPopup(it) } }
         dlRef = dlB
@@ -1444,7 +1445,7 @@ class PlayerActivity : Activity(), Host {
         val syncB = barPill(tip(grp("⏱", gSub, true), "تزامن الترجمة (تقديم / تأخير)"))   // (v91) مكان Aa — حجم الخط بقى بالقرص (pinch) على الشاشة
         toolR.addView(syncB)
         val toolBtns = listOf<TextView>(syncB, tip(logB, "اللوج"), tip(sentB, "الجمل"), tip(ccB, "إظهار/إخفاء الترجمة"), tip(loopB, "تكرار الفيديو"), tip(dualB, "وضع الترجمة"), tip(charsB, "الشخصيات"), tip(kmB, "وضع المفاتيح (1–4)"), tip(voiceB, "فصل صوت الكلام عن الموسيقى"), qualB, nextListB)
-        toolBtns.drop(1).filter { it !== kmB }.forEach { b ->   // (v226) 🔑 اتشال من الشريط العلوي
+        toolBtns.drop(1).filter { it !== kmB && it !== voiceB && it !== qualB && it !== nextListB }.forEach { b ->   // (v226) 🔑 اتشال من الشريط العلوي
             toolR.addView(b, LinearLayout.LayoutParams(if (b.text.startsWith("🔑")) ui.dp(42) else ui.dp(30), ui.dp(30)).apply { setMargins(ui.dp(3), 0, ui.dp(3), 0) })
         }
         toolRow.addView(toolR, FrameLayout.LayoutParams(-2, -2, Gravity.END or Gravity.CENTER_VERTICAL))
@@ -1503,7 +1504,7 @@ class PlayerActivity : Activity(), Host {
             // من الشمال لليمين (LTR): 🔁 📋 📝 🔤 ⏱ 💬 CC ☰  ← يعني ☰ على اليمين جنب عداد الجمل
             tbRow.addView(toolBtns[4], lp(4)); tbRow.addView(toolBtns[1], lp(1)); tbRow.addView(toolBtns[2], lp(2)); tbRow.addView(toolBtns[6], lp(6))
             tbRow.addView(textB, LinearLayout.LayoutParams(-2, ui.dp(38)).apply { setMargins(ui.dp(3), ui.dp(3), ui.dp(3), ui.dp(3)) })
-            tbRow.addView(toolBtns[0], lp(0)); tbRow.addView(toolBtns[5], lp(5)); tbRow.addView(toolBtns[3], lp(3)); tbRow.addView(toolBtns[8], lp(8)); tbRow.addView(toolBtns[9], lp(9)); tbRow.addView(toolBtns[10], lp(10))
+            tbRow.addView(toolBtns[0], lp(0)); tbRow.addView(toolBtns[5], lp(5)); tbRow.addView(toolBtns[3], lp(3)); // (v378) 🎙 فصل الصوت و HD و 📃 اتشالوا من الشريط العلوي (الجودة رجعت جنب زرار الترجمة، والتالي بقى لوحة تحت الأزرار)
             // (v221) زرار 🔑 وضع المفاتيح (toolBtns[7]) كان بيتشال هنا ومابيترجّعش — فمكانش بيظهر خالص في الشريط العلوي
             tbRow.addView(bgOnB, LinearLayout.LayoutParams(ui.dp(40), ui.dp(40)).apply { setMargins(ui.dp(3), ui.dp(3), ui.dp(3), ui.dp(3)) })
             (toolsB.parent as? ViewGroup)?.removeView(toolsB)
@@ -1591,6 +1592,13 @@ class PlayerActivity : Activity(), Host {
             addView(colB, FrameLayout.LayoutParams(-2, -2, Gravity.CENTER))
         }
         videoBox.addView(ytBusyV, FrameLayout.LayoutParams(-1, -1))
+        intent.getStringExtra("ytid")?.let { yid ->   // (v378)
+            val fsLp = fsBar.layoutParams as FrameLayout.LayoutParams
+            nextPanel = NextPanel(this, ui, th, videoBox, yid, { n -> playNextYt(n) },
+                { px -> fsLp.bottomMargin = ui.dp(6) + px; fsBar.layoutParams = fsLp },
+                { on -> if (on) { h.removeCallbacks(hideChrome); chromeShown = true; applyChromeFn() } else showChrome() },
+                { val a = IntArray(2); val b = IntArray(2); fsProgV.getLocationOnScreen(a); videoBox.getLocationOnScreen(b); (a[1] - b[1]) + fsProgV.height })
+        }
         // (v104) شرايط التقدم الـ3 بحجم رفيع جدًا دايمًا تحت الفيديو؛ لمسة على الشاشة بتظهر الشريط الكبير ولمسة تانية ترجّعها صغيرة
         miniBar = DualProgress(this, th).apply { thin = true; isClickable = false; isFocusable = false; alpha = 0.33f }
         videoBox.addView(miniBar, FrameLayout.LayoutParams(-1, 3, Gravity.BOTTOM))
@@ -1626,12 +1634,13 @@ class PlayerActivity : Activity(), Host {
         fsBar.addOnLayoutChangeListener { _, _, t, _, b, _, ot, _, ob -> if (b - t != ob - ot) placeFloatFn() }
         applyChromeFn = {
             val on = fullMode && chromeShown && !pipNow()
+            try { nextPanel?.onChrome(on) } catch (_: Throwable) {}
             val wasOn = chromeFrame.visibility == View.VISIBLE
             chromeFrame.visibility = if (on) View.VISIBLE else View.GONE; if (!on) { dismissPop(); tbCollapseFn() }
             if (on) { try { val tt = titleWithSummary(); if (topTitle.text.toString() != tt.toString()) topTitle.text = tt; topTitle.visibility = if (tt.isBlank()) View.GONE else View.VISIBLE; fixTopRowFn() } catch (_: Throwable) {} }   // (v330) (v360) + ملخص الإعداد
             if (on && !wasOn) { chromeFrame.alpha = 0f; chromeFrame.translationY = ui.dp(14).toFloat(); chromeFrame.animate().alpha(1f).translationY(0f).setDuration(220).start() }
             else if (!on) { chromeFrame.animate().cancel(); chromeFrame.alpha = 1f; chromeFrame.translationY = 0f }
-            centerPlay.visibility = if (on || pipNow() || uiLocked) View.GONE else if (buffering) View.VISIBLE else if (player.isPlaying) View.GONE else View.VISIBLE   // الشريط ظاهر = فيه زرار تشغيل تحت، فمنشيلش الأوسط فوق الترجمة
+            centerPlay.visibility = if (on || pipNow() || uiLocked || busyShown()) View.GONE else if (buffering) View.VISIBLE else if (player.isPlaying) View.GONE else View.VISIBLE   // الشريط ظاهر = فيه زرار تشغيل تحت، فمنشيلش الأوسط فوق الترجمة
             val cv = (!fullMode || chromeShown) && !pipNow()
             floatBar.visibility = if (!pipNow()) View.VISIBLE else View.GONE
             batchBtn.visibility = if (cv) View.VISIBLE else View.GONE
@@ -2105,7 +2114,7 @@ class PlayerActivity : Activity(), Host {
                 }
             }
             override fun onIsPlayingChanged(p: Boolean) {
-                val t = if (p) "⏸" else "▶"; if (!buffering) { ctl.play.text = t; fsPlayB.text = t; if (::centerPlay.isInitialized) centerPlay.text = t }; centerPlay.visibility = if (pipNow() || (fullMode && chromeShown)) View.GONE else if (buffering) View.VISIBLE else if (p) View.GONE else View.VISIBLE
+                val t = if (p) "⏸" else "▶"; if (!buffering) { ctl.play.text = t; fsPlayB.text = t; if (::centerPlay.isInitialized) centerPlay.text = t }; centerPlay.visibility = if (pipNow() || busyShown() || (fullMode && chromeShown)) View.GONE else if (buffering) View.VISIBLE else if (p) View.GONE else View.VISIBLE
                 // تشخيص الشاشة السودا: صوت شغّال ومفيش ولا فريم فيديو اتعرض بعد ٥ ثواني
                 if (p && !firstFrame) h.postDelayed({ if (!firstFrame && !isFinishing) log("⚠️ مفيش فريم فيديو اتعرض بعد ٥ ثواني — غالبًا كودك/بروفايل الفيديو مش مدعوم على الجهاز (مثلًا HEVC 10-bit)") }, 5000)
             }
@@ -2186,13 +2195,17 @@ class PlayerActivity : Activity(), Host {
             h.postDelayed(this, 500L)
         }
     }
+    /** (v377) طبقة «بيحمّل الفيديو» ظاهرة (ليها سبينر خاص بيها) — زرار التشغيل الأوسط ماينفعش يعرض سبينر تاني فوقها */
+    private fun busyShown(): Boolean = ytBusyV?.visibility == View.VISIBLE
     private fun ytBusy(on: Boolean, msg: String = "") {
         val v = ytBusyV ?: return
         if (on) {
+            if (::centerPlay.isInitialized) { spinners.remove(centerPlay)?.stop(); centerPlay.foreground = null; centerPlay.visibility = View.GONE }
             ytBusyMsg = msg
             if (v.visibility != View.VISIBLE) { ytBusyT0 = System.currentTimeMillis(); v.visibility = View.VISIBLE; ytBusyDr.start(); h.removeCallbacks(ytBusyTick); ytBusyTick.run() }
             else ytBusyTv?.text = msg
-        } else { h.removeCallbacks(ytBusyTick); v.visibility = View.GONE; ytBusyDr.stop() }
+        } else { h.removeCallbacks(ytBusyTick); v.visibility = View.GONE; ytBusyDr.stop()
+            if (::centerPlay.isInitialized && buffering && !pipNow() && !uiLocked) { val sp = spinners.getOrPut(centerPlay) { WinSpinnerDrawable() }; centerPlay.text = ""; centerPlay.foreground = sp; sp.start(); centerPlay.visibility = View.VISIBLE } }
     }
 
     private var freshOnce = false
@@ -2763,6 +2776,7 @@ class PlayerActivity : Activity(), Host {
     /** أفقي: يرجع للرأسي من غير ما يقفل. رأسي: يحفظ التقدم ويوقف الفيديو ويقفل. */
     @Suppress("DEPRECATION")
     override fun onBackPressed() {
+        if (nextPanel?.consumeBack() == true) return   // (v378)
         if (sideOpen) { closeSide(); return }
         // (v110) علامة ✔ فوق: لو الترجمة لسه ما خلصتش، كمّلها في الخلفية أول ما أخرج
         // (v232) مفيش ترجمة في الخلفية من غير موافقتك: لو الترجمة لسه ما خلصتش بنسألك، و«لا» = بتتقفل خالص ومفيش أي استهلاك نت
@@ -2855,6 +2869,7 @@ class PlayerActivity : Activity(), Host {
         buffering = b
         val targets = listOfNotNull<TextView>(if (::fsPlayB.isInitialized) fsPlayB else null, if (::ctl.isInitialized) ctl.play else null, if (::centerPlay.isInitialized) centerPlay else null)
         for (v in targets) {
+            if (b && v === (if (::centerPlay.isInitialized) centerPlay else null) && busyShown()) continue   // (v377) سبينر واحد بس
             if (b) {
                 val sp = spinners.getOrPut(v) { WinSpinnerDrawable() }
                 v.text = ""; v.foreground = sp; sp.start()

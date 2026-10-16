@@ -488,6 +488,7 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
         filterViews.forEach { tv -> paintChip(tv, tv.tag == st.filter) }
         if (det) paintDetail(st)
         animRows = true; h.postDelayed({ animRows = false }, 700L)   // (v354) ظهور ناعم: الصفوف الأولى بتطلع بالتتابع
+        adapter.grid = st.tab == 0 && !det && st.chUrl == null   // (v378) الرئيسية شبكة
         adapter.set(st.list()); lv.setSelection(st.pos)
         if (st.tab >= 0) paintTabs(st.tab) else if (det) paintTabs(-1)
     }
@@ -728,14 +729,63 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
 
     private class Hold(val thumb: ImageView, val dur: TextView, val title: TextView, val meta: TextView, val box: View, val col: View, val btns: View, val aud: TextView, val dl: TextView)
 
+    private class Cell(val root: LinearLayout, val thumb: ImageView, val dur: TextView, val title: TextView, val meta: TextView)
+
+    /** (v378) كارت فيديو للشبكة (الرئيسية): صورة 16:9 وتحتها اسم الفيديو ثم القناة */
+    private fun makeCell(): Cell {
+        val cw = (act.resources.displayMetrics.widthPixels - ui.dp(40)) / 2
+        val th0 = ImageView(act).apply { scaleType = ImageView.ScaleType.CENTER_CROP; setBackgroundColor(th.surface) }
+        val dur = ui.text("", 11f, Color.WHITE, true).apply { setPadding(ui.dp(5), ui.dp(1), ui.dp(5), ui.dp(1)); background = GradientDrawable().apply { setColor(0xCC000000.toInt()); cornerRadius = ui.dp(4).toFloat() } }
+        val box = FrameLayout(act)
+        box.addView(th0, FrameLayout.LayoutParams(-1, -1))
+        box.addView(dur, FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM or Gravity.END).apply { setMargins(ui.dp(4), ui.dp(4), ui.dp(4), ui.dp(4)) })
+        val title = ui.text("", 13f, th.text, true).apply { maxLines = 2; ellipsize = TextUtils.TruncateAt.END }
+        val meta = ui.text("", 11f, th.muted).apply { maxLines = 1; ellipsize = TextUtils.TruncateAt.END }
+        val col = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL }
+        col.addView(box, LinearLayout.LayoutParams(-1, cw * 9 / 16))
+        col.addView(title, LinearLayout.LayoutParams(-1, -2).apply { topMargin = ui.dp(6) })
+        col.addView(meta, LinearLayout.LayoutParams(-1, -2).apply { topMargin = ui.dp(2) })
+        return Cell(col, th0, dur, title, meta)
+    }
+
     private inner class Adapter : BaseAdapter() {
         private var items: List<NpItem> = emptyList()
+        var grid = false   // (v378) الرئيسية: فيديوهين جنب بعض
         fun set(l: List<NpItem>) { items = l; notifyDataSetChanged() }
         fun clear() { items = emptyList(); notifyDataSetChanged() }
-        override fun getCount() = items.size
-        override fun getItem(p: Int) = items[p]
+        override fun getCount() = if (grid) (items.size + 1) / 2 else items.size
+        override fun getItem(p: Int) = if (grid) items[p * 2] else items[p]
         override fun getItemId(p: Int) = p.toLong()
+        override fun getViewTypeCount() = 2
+        override fun getItemViewType(p: Int) = if (grid) 1 else 0
+        private fun gridView(p: Int, cv: View?): View {
+            val row: LinearLayout
+            if (cv == null) {
+                row = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; setPadding(ui.dp(10), ui.dp(6), ui.dp(10), ui.dp(10)) }
+                val a = makeCell(); val b = makeCell()
+                row.addView(a.root, LinearLayout.LayoutParams(0, -2, 1f).apply { setMargins(ui.dp(5), 0, ui.dp(5), 0) })
+                row.addView(b.root, LinearLayout.LayoutParams(0, -2, 1f).apply { setMargins(ui.dp(5), 0, ui.dp(5), 0) })
+                row.tag = arrayOf(a, b)
+            } else row = cv as LinearLayout
+            @Suppress("UNCHECKED_CAST") val pair = row.tag as Array<Cell>
+            for (k in 0..1) {
+                val c = pair[k]; val idx = p * 2 + k
+                if (idx >= items.size) { c.root.visibility = View.INVISIBLE; c.root.setOnClickListener(null); c.root.setOnLongClickListener(null); continue }
+                c.root.visibility = View.VISIBLE
+                val vi = items[idx]
+                c.title.text = vi.title
+                c.title.alpha = if (vi.kind == 0 && recents().containsKey("yt:" + vi.id)) 0.6f else 1f
+                c.meta.text = listOf(vi.channel, vi.age).filter { x -> x.isNotBlank() }.joinToString(" · ")
+                val d = if (vi.kind == 0) fmtDur(vi.dur) else ""
+                c.dur.text = d; c.dur.visibility = if (d.isEmpty()) View.GONE else View.VISIBLE
+                try { if (vi.thumb.isNotBlank()) Glide.with(act).load(vi.thumb).centerCrop().override(ui.dp(300), ui.dp(170)).into(c.thumb) else Glide.with(act).clear(c.thumb) } catch (_: Throwable) {}
+                c.root.setOnClickListener { if (vi.kind != 3) open(vi) }
+                c.root.setOnLongClickListener { x -> if (vi.id != "act") menu(x, vi); true }
+            }
+            return row
+        }
         override fun getView(p: Int, cv: View?, parent: ViewGroup?): View {
+            if (grid) return gridView(p, cv)
             val hd: Hold
             val v: View
             if (cv == null) {

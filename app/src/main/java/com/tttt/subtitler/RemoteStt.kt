@@ -52,7 +52,10 @@ object RemoteStt : SttEngine {
     @Volatile private var omniOk = ""   // آخر طريقة نجحت — بتتجرّب الأول في الباتش اللي بعده
 
     override fun transcribe(pcm: FloatArray, lang: String, terms: String, threads: Int): SttResult {
-        val p = provider() ?: throw SttInitFail("التفريغ السحابي: مفيش مزوّد مختار")
+        var p = provider() ?: throw SttInitFail("التفريغ السحابي: مفيش مزوّد مختار")
+        // (v376) أومني روت الحقيقي واقف ← نفرّغ بمزوّد تفريغ من مفاتيحك (Groq / ChatGPT / مخصص) بدل ما نفشل
+        if (p.id == "omniroute" && OmniAuto.useRouter())
+            p = TrWizard.sttFallback() ?: throw SttInitFail("التفريغ: أومني روت مش شغّال ومفيش مفتاح Groq أو ChatGPT للتفريغ — ضيف واحد منهم أو شغّل أومني روت")
         val wav = wavOf(pcm)
         val dur = pcm.size / 16000.0
         if (p.id != "omniroute") return parse(upload(p, "audio.wav", "audio/wav", wav, lang, terms, true), dur)

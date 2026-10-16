@@ -215,6 +215,27 @@ object YtNp {
         })
     }
 
+    /** (v378) فيديوهات عشوائية من قنوات اشتراكاتك: بنختار لحد 10 قنوات عشوائي، ومن كل قناة صفحة عشوائية (الأحدث أو أقدم) وناخد منها 4 فيديوهات عشوائي */
+    private fun randomSubVideos(subs: List<NpItem>): List<NpItem> {
+        val rnd = java.util.Random()
+        val chans = subs.filter { it.channelUrl.isNotBlank() }.shuffled(rnd).take(10)
+        val out = java.util.concurrent.ConcurrentLinkedQueue<NpItem>()
+        val ths = chans.map { c ->
+            Thread {
+                try {
+                    val ch = channel(c.channelUrl)
+                    var page = ch.first
+                    var depth = rnd.nextInt(3)   // 0 = الأحدث · 1-2 = أقدم
+                    while (depth > 0) { val n = page.next ?: break; page = try { ch.more(n) } catch (_: Throwable) { break }; depth-- }
+                    page.items.filter { it.kind == 0 }.shuffled(rnd).take(4).forEach { out.add(it) }
+                } catch (_: Throwable) {}
+            }.also { it.isDaemon = true; it.start() }
+        }
+        val end = System.currentTimeMillis() + 20_000L
+        ths.forEach { try { it.join(maxOf(1L, end - System.currentTimeMillis())) } catch (_: Throwable) {} }
+        return out.toList().shuffled(rnd)
+    }
+
     /** (v362) آخر رئيسية جاهزة (وقتها + النتيجة): بتتعرض فورًا وبتتحدّث في الخلفية للزيارة الجاية */
     @Volatile private var homeC: Pair<Long, YtRes>? = null
     fun homeCached(maxAgeMs: Long = 20L * 60 * 1000L): YtRes? = homeC?.takeIf { it.second.items.isNotEmpty() && System.currentTimeMillis() - it.first < maxAgeMs }?.second
@@ -228,7 +249,15 @@ object YtNp {
         val seen = hist.map { it.id }.toSet()
         // بذور التوصيات: آخر اللي اتفرّجت عليه، ولو مفيش سجل → أحدث فيديوهات اشتراكاتك
         var subsItems: List<NpItem> = emptyList()
-        val subTh = Thread { try { if (subs.isNotEmpty()) subsItems = YtRss.feed(subs, false, true).items.filter { it.kind == 0 } } catch (_: Throwable) {} }.also { it.isDaemon = true; it.start() }
+        // (v378) مش آخر فيديوهات كل الاشتراكات: فيديوهات عشوائية (حتى القديمة) من قنوات عشوائية من اشتراكاتك؛ لو فشل الجلب نرجع للفيد القديم مخلوط
+        val subTh = Thread {
+            try {
+                if (subs.isNotEmpty()) {
+                    subsItems = randomSubVideos(subs)
+                    if (subsItems.isEmpty()) subsItems = YtRss.feed(subs, false, true).items.filter { it.kind == 0 }.shuffled()
+                }
+            } catch (_: Throwable) {}
+        }.also { it.isDaemon = true; it.start() }
         val histSeeds = hist.filter { it.kind == 0 && it.id.isNotEmpty() }.take(4)
         val results = arrayOfNulls<List<NpItem>>(histSeeds.size)
         val ths = histSeeds.mapIndexed { n, s -> Thread { results[n] = try { related(s.id) } catch (_: Throwable) { emptyList() } }.also { it.isDaemon = true; it.start() } }
@@ -250,7 +279,7 @@ object YtNp {
             val rec = ArrayList<NpItem>(); var k = 0
             while (recLists.any { k < it.size }) { for (l in recLists) if (k < l.size) { val v = l[k]; if (v.id !in seen) rec.add(v) }; k++ }
             // اشتراكات: الغير مشاهَد الأحدث الأول، وبعدها القديم (المشاهَد) في الآخر
-            val subsOrdered = subsItems.filter { it.id !in seen } + subsItems.filter { it.id in seen }
+            val subsOrdered = subsItems.filter { it.id !in seen }.shuffled() + subsItems.filter { it.id in seen }.shuffled()   // (v378) عشوائي
             // دمج: اثنين من الاشتراكات ثم اثنين توصيات … من غير تكرار
             val out = LinkedHashMap<String, NpItem>()
             var i = 0; var j = 0

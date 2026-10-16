@@ -275,6 +275,24 @@ object OmniAuto {
         return if (needKey) St.NEED_KEY else St.DOWN
     }
 
+    @Volatile private var stAt = 0L
+
+    /** (v376) حالة السيرفر الحقيقي (Termux) بكاش 45 ثانية — لازم تتنادى من thread الخلفية */
+    fun state(): St {
+        val now = System.currentTimeMillis()
+        val l = last
+        if (l != null && now - stAt < 45000L) return l
+        val r = try { probe() } catch (_: Throwable) { St.DOWN }
+        last = r; stAt = now
+        return r
+    }
+
+    /**
+     * (v376) أومني روت الحقيقي (localhost:20128) مش شغّال، بس فيه مزوّدين بمفاتيح في الراوتر الداخلي ← نشتغل بالراوتر الداخلي (من غير سيرفر)
+     * بدل ما نقول «شغّل السيرفر». لازم تتنادى من thread الخلفية.
+     */
+    fun useRouter(): Boolean = InternalRouter.hasPool() && state() == St.DOWN
+
     /** مرة كل دقيقة على الأكتر؛ [onDone] بيتنادى على thread الخلفية */
     fun probeAsync(force: Boolean = false, onDone: ((St) -> Unit)? = null) {
         val now = System.currentTimeMillis()
@@ -313,6 +331,11 @@ object OmniModels {
     }
 
     fun chat(p: ExtLlm.Preset, system: String, user: String, maxTokens: Int): String {
+        // (v376) السيرفر الحقيقي مش شغّال ← الراوتر الداخلي (تلقائي · من غير سيرفر) يترجم بدله
+        if (OmniAuto.useRouter()) {
+            val m = ExtLlm.model(p).let { if (it in InternalRouter.AUTO || it.contains('/')) it else "auto" }
+            return InternalRouter.chat(m, system, listOf(AiApi.Msg("user", user)), maxTokens)
+        }
         var last: Throwable? = null
         var tried = 0
         val all = models(p)
@@ -340,5 +363,22 @@ object OmniModels {
             }
         }
         throw last ?: ExtLlm.LlmErr(503, "كل موديلات أومني روت واقفة دلوقتي — هيتجرّبوا تاني بعد دقايق")
+    }
+}
+
+
+/**
+ * (v377) قايمة موديلات الترجمة الحقيقية (Claude · Gemini · Groq · …) من غير auto/fast/cheap:
+ * من سيرفر أومني روت لو شغّال، وإلا من مزوّدات الراوتر الداخلي اللي عندك مفاتيحها (مزوّد/موديل). لازم تتنادى من thread الخلفية.
+ */
+object OmniPick {
+    fun list(): List<String> {
+        val p = ExtLlm.byId("omniroute")!!
+        if (OmniAuto.state() != OmniAuto.St.DOWN) {
+            val l = runCatching { ExtLlm.listModels(p, ExtLlm.key(p), ExtLlm.url(p)) }.getOrNull()
+            val f = l?.filter { m -> !m.startsWith("auto", true) && ExtLlm.skipWords.none { m.contains(it, true) } }.orEmpty()
+            if (f.isNotEmpty()) return f
+        }
+        return InternalRouter.models().map { it.id }.filter { it.contains('/') && !it.startsWith("auto") }.distinct()
     }
 }

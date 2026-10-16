@@ -302,8 +302,9 @@ class AiHubActivity : Activity() {
                 setModelLabel()
                 val l = r.getOrNull()
                 if (l == null) { toast("❌ " + (r.exceptionOrNull()?.message ?: "فشل").take(120), 4000L); return@runOnUiThread }
-                val extra = if (s.id == "omniroute" || s.url.contains(":20128")) listOf("auto", "auto/coding", "auto/fast", "auto/cheap", "auto/offline", "auto/smart").map { AiModels.describe(it, "OmniRoute", 0) } else emptyList()
-                val all = extra + l.filter { AiModels.isChat(it.id) && extra.none { e -> e.id == it.id } }
+                // (v377) أومني روت: أسماء الموديلات الحقيقية بس (Claude · Gemini · Groq …) من غير auto/fast/cheap
+                val omniSrc = s.id == "omniroute" || s.url.contains(":20128")
+                val all = l.filter { AiModels.isChat(it.id) && !(omniSrc && it.id.startsWith("auto", true)) }
                 cache[s.id] = all; modelDrop(s, all)
             }
         }.start()

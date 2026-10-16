@@ -75,6 +75,13 @@ object TrWizard {
         return ExtLlm.presets.firstOrNull { ok(it) }
     }
 
+    /** (v376) مزوّد تفريغ حقيقي من مفاتيحك (من غير أومني روت) — بديل لما سيرفر أومني روت مش شغّال */
+    fun sttFallback(): ExtLlm.Preset? {
+        fun ok(p: ExtLlm.Preset) = p.id != "omniroute" && ExtLlm.supportsStt(p) && ExtLlm.hasAccess(p) && ExtLlm.url(p).isNotEmpty() && ExtLlm.sttModel(p).isNotEmpty()
+        ExtLlm.byId(Cfg.str("rstt_prov", "groq"))?.takeIf { ok(it) }?.let { return it }
+        return ExtLlm.presets.firstOrNull { ok(it) }
+    }
+
     const val NO_NET_MSG = "📵 مفيش نت — ترجمة جوجل محتاجة اتصال بالنت عشان تترجم، اتصل بالنت"
     const val NO_NET_GEMINI = "📵 مفيش نت — جيميناي محتاج اتصال بالنت عشان يترجم، اتصل بالنت"
 
@@ -452,6 +459,27 @@ object TrWizard {
 
         fun afterModePick() { if (mId in dialectModes) go { stepMDia() } else go { stepMVis() } }
 
+        // (v377) اختيار موديل الترجمة من قايمة أومني روت الحقيقية (أو مزوّدات الراوتر الداخلي لو السيرفر مش شغّال)
+        fun stepOmniModel() {
+            reset("🎯 مين يترجم؟")
+            val cur = Cfg.str("llm_omniroute_model").trim().let { if (it.equals("auto", true)) "" else it }
+            note("اختار الموديل اللي يترجم الأول (لو وقف بيكمّل على موديلات تانية). «تلقائي» = هو اللي يختار.")
+            opt("⚡ تلقائي", "أومني روت يختار + بدايل", cur.isBlank()) { Cfg.put("llm_omniroute_model", "auto"); ExtTranslate.clearBlock("llm_omniroute"); afterModePick() }
+            val ld = ui.text("⏳ بجيب الموديلات…", 12f, th.muted)
+            body.addView(ld)
+            addBack()
+            Thread {
+                val r = runCatching { OmniPick.list() }
+                act.runOnUiThread {
+                    if (ld.parent == null) return@runOnUiThread   // الويزارد اتنقل لخطوة تانية
+                    body.removeView(ld)
+                    val l = r.getOrNull().orEmpty()
+                    if (l.isEmpty()) { body.addView(ui.text("مقدرتش أجيب قايمة الموديلات — هيشتغل تلقائي.", 12f, th.muted)); return@runOnUiThread }
+                    for (m in l.take(150)) opt(m, "", m == cur) { Cfg.put("llm_omniroute_model", m); ExtTranslate.clearBlock("llm_omniroute"); afterModePick() }
+                }
+            }.start()
+        }
+
         fun pickMode(id: String) {
             mId = id; afterDl = null; hubActive = true; hubFlow = false; presetFlow = false; live = false; repoToHub = false
             when (id) {
@@ -476,10 +504,18 @@ object TrWizard {
                     val st = try { OmniAuto.probe() } catch (_: Throwable) { OmniAuto.St.DOWN }
                     act.runOnUiThread {
                         fun fail(m: String) { title.text = m; Notice.show(act, m, 4800L) }
-                        if (st == OmniAuto.St.DOWN) { fail("🛰 OmniRoute مش شغّال على الموبايل (localhost:20128) — شغّله الأول وجرّب تاني"); return@runOnUiThread }
+                        if (st == OmniAuto.St.DOWN) {
+                            // (v376) من غير سيرفر: الراوتر الداخلي يترجم، والتفريغ بمفتاح Groq/ChatGPT
+                            if (!InternalRouter.hasPool()) { fail("🛰 مفيش مفاتيح ولا OmniRoute شغّال — ضيف مفتاح واحد على الأقل من الإعدادات ← الذكاء الاصطناعي"); return@runOnUiThread }
+                            if (TrWizard.sttFallback() == null) { fail("🎙 التفريغ من غير سيرفر محتاج مفتاح Groq أو ChatGPT — ضيف واحد منهم (أو اختار وضع جيميناي)"); return@runOnUiThread }
+                            Cfg.put("omni_seen", "1"); Cfg.put("rstt_prov", TrWizard.sttFallback()!!.id)
+                            OmniAuto.last = OmniAuto.St.DOWN
+                            if (id == "omni_ai") go { stepOmniModel() } else afterModePick()
+                            return@runOnUiThread
+                        }
                         if (st == OmniAuto.St.NEED_KEY) { fail("🔑 OmniRoute شغّال بس طالب مفتاح — حطه من الإعدادات ← الذكاء الاصطناعي ← مفاتيحي"); return@runOnUiThread }
                         if (TrWizard.sttCandidate("omniroute") == null) { fail("🎙 موديل التفريغ لأومني روت فاضي — اكتبه من الإعدادات ← الذكاء الاصطناعي (مثلًا deepgram/nova-3)"); return@runOnUiThread }
-                        afterModePick()
+                        if (id == "omni_ai") go { stepOmniModel() } else afterModePick()
                     }
                 }.start()
                 return

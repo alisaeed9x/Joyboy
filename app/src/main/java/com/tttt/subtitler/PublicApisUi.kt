@@ -46,7 +46,7 @@ object PublicApisUi {
         val p = ExtLlm.byId("omniroute")!!
         if (!force && omniListCache.isNotEmpty() && System.currentTimeMillis() - omniListAt < 600_000L) { onDone(omniListCache, null); return }
         Thread {
-            val r = runCatching { ExtLlm.listModels(p, ExtLlm.key(p), ExtLlm.url(p)).filter { m -> ExtLlm.skipWords.none { m.contains(it, true) } } }
+            val r = runCatching { OmniPick.list() }   // (v377) موديلات حقيقية بس (من غير auto/*)، ومن الراوتر الداخلي لو السيرفر مش شغّال
             act.runOnUiThread {
                 val l = r.getOrNull()
                 if (l == null) onDone(emptyList(), (r.exceptionOrNull()?.message ?: "فشل").take(80))

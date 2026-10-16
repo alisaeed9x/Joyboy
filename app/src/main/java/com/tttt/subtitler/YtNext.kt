@@ -43,7 +43,7 @@ object YtNext {
     private fun fmtDur(s: Long): String = if (s <= 0) "" else if (s >= 3600) String.format(Locale.US, "%d:%02d:%02d", s / 3600, s % 3600 / 60, s % 60) else String.format(Locale.US, "%d:%02d", s / 60, s % 60)
 
     /** (القايمة، العنوان) للفيديو [id] — بتتنادى من خيط خلفي */
-    private fun fetch(id: String): Pair<List<NpItem>, String> {
+    fun fetch(id: String): Pair<List<NpItem>, String> {
         val c = ctxList
         if (c.any { it.id == id }) return c to ("📃 " + ctxName.ifBlank { "قايمة التشغيل" })
         YtNp.init()

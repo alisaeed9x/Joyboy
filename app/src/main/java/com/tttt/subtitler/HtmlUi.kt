@@ -183,7 +183,11 @@ class NetBadge(ctx: Context) : LinearLayout(ctx) {
 
 class MaxHeightScroll(ctx: Context, var maxH: Int) : ScrollView(ctx) {
     override fun onMeasure(w: Int, h: Int) {
-        super.onMeasure(w, MeasureSpec.makeMeasureSpec(maxH, MeasureSpec.AT_MOST))
+        // (v377) لو الأب حدّد ارتفاع (weight / match_parent) نمشي عليه — قبل كده كنا بنتجاهله فالصفحة بتطلع أطول من الشاشة المتاحة وآخرها بيتقص ومابتسكرولش لحد الآخر
+        val mode = MeasureSpec.getMode(h); val sz = MeasureSpec.getSize(h)
+        if (mode == MeasureSpec.EXACTLY) { super.onMeasure(w, h); return }
+        val cap = if (mode == MeasureSpec.AT_MOST && sz > 0) minOf(maxH, sz) else maxH
+        super.onMeasure(w, MeasureSpec.makeMeasureSpec(cap, MeasureSpec.AT_MOST))
     }
 }
 
