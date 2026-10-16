@@ -167,6 +167,32 @@ object TrWizard {
         }
     }
 
+    /** (v360) ملخص قصير للإعداد المحفوظ — بيظهر تحت اسم الفيديو في المشغّل */
+    fun summaryLine(): String = try {
+        if (SourceMode.get() == SourceMode.VISUAL) "👁 بصري بس · " + SourceMode.kindLabel()
+        else {
+            val pl = savedPlan()
+            if (pl == null) "" else {
+                val id = Cfg.str("tr_mode_id", "")
+                val base = when (id) {
+                    "g_wav" -> "🧠 ذكاء صناعي · WAV"; "g_aac" -> "🧠 ذكاء صناعي · AAC"
+                    "loc_ai" -> "📴 محلي + 🧠 ترجمة"; "loc_google" -> "📴 محلي + 🌍 جوجل"
+                    "ai_only" -> "✍ تفريغ ذكاء صناعي"; "w_only" -> "✍ تفريغ Whisper"; "s_only" -> "✍ تفريغ SenseVoice"
+                    else -> if (pl.only) "✍ تفريغ بس" else if (pl.offline) "📴 أوفلاين" else if (pl.cloud) "☁ محرك خارجي" else "☁ أونلاين"
+                }
+                val parts = ArrayList<String>(); parts.add(base)
+                if (!pl.only) {
+                    val d = (if (pl.offline) pl.dialect else (pl.dia ?: "")).ifBlank { "فصحى" }
+                    parts.add("🗣 $d")
+                    val st = Cfg.str("tone_style", "")
+                    if (st.isNotBlank() && st != "حرفي" && id in setOf("g_wav", "g_aac", "loc_ai")) parts.add("🎚 $st/" + Cfg.str("tone_strength", "متوسطة"))
+                }
+                if (SourceMode.get() == SourceMode.HYBRID) parts.add("👁 " + SourceMode.kindLabel())
+                parts.joinToString(" · ")
+            }
+        }
+    } catch (_: Throwable) { "" }
+
     fun describe(pl: Plan): String = SourceMode.prefix() + describeCore(pl)
     private fun describeCore(pl: Plan): String =
         if (pl.only) "✍ تفريغ بس (من غير ترجمة)\nالتفريغ: " + (if (pl.offline) (if (pl.engine == "sherpa") "SenseVoice" else "Whisper " + pl.model) + " على الجهاز · " + langLabel(pl.lang) else if (pl.cloud) (sttCandidate(pl.ext)?.let { it.label + " · " + ExtLlm.sttModel(it) } ?: "⚠ مفيش مزوّد تفريغ جاهز") + " (سحابي)" else "جيميناي") + "\nالنص بيظهر بلغته الأصلية"
@@ -238,6 +264,8 @@ object TrWizard {
         val body = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL }
         val foot = LinearLayout(act).apply { layoutDirection = View.LAYOUT_DIRECTION_RTL; gravity = Gravity.CENTER_VERTICAL }
         val hist = ArrayList<() -> Unit>()
+        var viaModes = false   // (v360) الإعداد جه من الأوضاع المبسّطة (وإلا tr_mode_id بيتفضّى عشان الملخص ما يكدبش)
+        fun done(pl: Plan, save: Boolean, start: Boolean) { if (!viaModes) Cfg.put("tr_mode_id", ""); onDone(pl, save, start) }
 
         // المسودة: بتبدأ من اللي شغّال دلوقتي (أو المحفوظ لو فيه)
         val sp = TrWizard.savedPlan()
@@ -340,7 +368,7 @@ object TrWizard {
         fun stepSource() {
             reset("🎯 إيه اللي هيترجم؟")
             note("اختار المصدر الأول. الصوتي والهجين بيكمّلوا على خط الترجمة (① تفريغ ← ② ترجمة ← ③ لهجة)، والبصري بس مالوش خط صوت.")
-            opt("🎙 صوتي بس", "الكلام المسموع بس. الوضع البصري بيتقفل.", tsrc == "audio") { tsrc = "audio"; TrWizard.pSrc = "audio"; go { stepHub() } }
+            opt("🎙 صوتي بس", "الكلام المسموع بس. الوضع البصري بيتقفل.", tsrc == "audio") { tsrc = "audio"; TrWizard.pSrc = "audio"; go(hubL) }
             opt("👁 بصري بس", "اللي مكتوب في الصورة بس — من غير ترجمة صوت.", tsrc == "visual") { tsrc = "visual"; go { stepVisKind() } }
             opt("🎙+👁 هجين", "الصوت بخط الترجمة اللي هتختاره + البصري شغّال جنبه.", tsrc == "hybrid") { tsrc = "hybrid"; go { stepVisKind() } }
             if (hist.size > 1) addBack() else footBtn("✖ إلغاء", false) { dlg.dismiss() }
@@ -355,7 +383,110 @@ object TrWizard {
         fun pickKind() {
             TrWizard.pSrc = tsrc; TrWizard.pKind = tkind
             if (tsrc == "visual") { dlg.dismiss(); TrWizard.commitSource(); TrWizard.sourceHook(edit) }
-            else go { stepHub() }
+            else go(hubL)
+        }
+
+        // ===================== (v360) الأوضاع المبسّطة =====================
+        // شاشة واحدة بكل الأوضاع ← (للتلاتة الأولانية: لهجة ← أسلوب ← شدة) ← «بصري معاه؟» ← يطبّق ويحفظ ويقفل.
+        val hubL: () -> Unit = { stepHub() }
+        var mId = Cfg.str("tr_mode_id", "")
+        var mStyle = Cfg.str("tone_style", "").ifBlank { "حرفي" }
+        var mDeg = Cfg.str("tone_strength", "متوسطة").ifBlank { "متوسطة" }
+        var afterDl: (() -> Unit)? = null
+        val dialectModes = setOf("g_wav", "g_aac", "loc_ai")
+
+        fun sec(t: String) { body.addView(ui.text(t, 13f, th.primary, true).apply { setPadding(ui.dp(2), ui.dp(10), 0, ui.dp(2)) }) }
+
+        fun localReadyNow(): Boolean = Offline.remoteOn() || (if (src == "sherpa") SherpaStt.ready() else (WhisperLib.loaded && Offline.downloaded(Offline.models.firstOrNull { it.id == model } ?: Offline.model())))
+
+        fun finishModes(s: String, k: String?) {
+            TrWizard.pSrc = s; if (k != null) TrWizard.pKind = k
+            if (mId in dialectModes) { Cfg.put("tone_style", if (mStyle == "حرفي") "" else mStyle); Cfg.put("tone_strength", mDeg) }
+            if (mId == "g_wav") Cfg.put(AudioEnc.PRESET_KEY, AudioEnc.NORMAL)
+            if (mId == "g_aac") Cfg.put(AudioEnc.PRESET_KEY, AudioEnc.FAST)
+            Cfg.put("tr_mode_id", mId); viaModes = true
+            sync()
+            done(plan(), true, !edit)
+            dlg.dismiss()
+        }
+
+        fun stepMVis() {
+            reset("👁 الوضع البصري معاه؟")
+            note("هجين = الوضع البصري شغّال جنب الصوت (محتاج مفتاح الوضع البصري).")
+            opt("🎙 لأ — صوتي بس", "من غير بصري", tsrc != "hybrid") { finishModes("audio", null) }
+            opt("🎙+👁 هجين · نصوص الشاشة", "لافتات وكلام مكتوب في الصورة (الهارد سب بيتتجاهل)", tsrc == "hybrid" && tkind == "scene") { finishModes("hybrid", "scene") }
+            opt("🎙+👁 هجين · هارد سب", "الترجمة المحروقة في الفيديو (وأي نصوص في الصورة)", tsrc == "hybrid" && tkind == "hard") { finishModes("hybrid", "hard") }
+            addBack()
+        }
+
+        fun stepMDeg() {
+            reset("🎚 شدة الأسلوب")
+            note("أسلوب «" + mStyle + "» — بأي درجة؟")
+            for ((d, ds) in listOf("خفيفة" to "لمسة بسيطة في الجمل اللي تستاهل", "متوسطة" to "في معظم الجمل بدرجة معتدلة", "شديدة" to "في كل جملة تقريبًا وبأقصى درجة")) opt(d, ds, mDeg == d) { mDeg = d; go { stepMVis() } }
+            addBack()
+        }
+
+        fun stepMTone() {
+            reset("🎚 الأسلوب")
+            note("حرفي = ترجمة عادية من غير أسلوب. أي أسلوب تاني بتختار شدته في الخطوة اللي بعدها.")
+            for ((st, sd) in listOf("حرفي" to "ترجمة عادية", "شعبي" to "كلام الشارع والتعبيرات اليومية", "جرئ" to "ألفاظ أجرأ من غير تلطيف زيادة", "+18" to "صريح بلا تلطيف — يطابق الأصل بالظبط")) opt(st, sd, mStyle == st) {
+                mStyle = st
+                if (st == "حرفي") go { stepMVis() } else go { stepMDeg() }
+            }
+            addBack()
+        }
+
+        fun stepMDia() {
+            reset("🗣 اللهجة")
+            note("الترجمة هتطلع باللهجة دي. فصحى = من غير لهجة.")
+            for (d in TrWizard.dialects) {
+                val v = if (d == "فصحى") "" else d
+                opt(d, "", dia == v) { dia = v; diaSet = true; go { stepMTone() } }
+            }
+            addBack()
+        }
+
+        fun afterModePick() { if (mId in dialectModes) go { stepMDia() } else go { stepMVis() } }
+
+        fun pickMode(id: String) {
+            mId = id; afterDl = null; hubActive = true; hubFlow = false; presetFlow = false; live = false; repoToHub = false
+            when (id) {
+                "g_wav", "g_aac" -> { src = "gemini"; tr = "gemini"; gp = CURRENT }
+                "loc_ai" -> { src = if (engine == "sherpa" && SherpaStt.ready() && SherpaStt.handles(lang)) "sherpa" else "whisper"; tr = "gemini"; trId = "" }
+                "loc_google" -> { src = if (engine == "sherpa" && SherpaStt.ready() && SherpaStt.handles(lang)) "sherpa" else "whisper"; tr = "google"; trId = ""; dia = ""; diaSet = true; convId = "" }
+                "ai_only" -> { src = "gemini"; tr = "none"; trId = "" }
+                "w_only" -> { src = "whisper"; tr = "none"; trId = "" }
+                "s_only" -> { src = "sherpa"; tr = "none"; trId = "" }
+            }
+            if (src == "whisper") engine = "whisper"
+            if (src == "sherpa") { engine = "sherpa"; if (!SherpaStt.handles(lang)) lang = "" }
+            if (src == "whisper" && !WhisperLib.loaded) { Notice.show(act, "الأوفلاين مش مدعوم على جهازك", 2500L); return }
+            if (src == "sherpa" && !SherpaStt.supported()) { Notice.show(act, "جهازك مش بيدعم SenseVoice", 2500L); return }
+            normalize(); sync()
+            if (isLocal() && !localReadyNow()) {
+                afterDl = { afterDl = null; afterModePick() }
+                go { if (src == "sherpa") stepSherpa() else stepStt() }
+            } else afterModePick()
+        }
+
+        fun stepModes() {
+            reset(if (edit) "⚙ طريقة الترجمة" else "▶ هتترجم إزاي؟")
+            val cur = TrWizard.summaryLine()
+            note(if (cur.isBlank()) "اختار وضع — الإعداد بيتحفظ وبيفضل مع أي فيديو." else "الحالي: $cur")
+            sec("🧠 تفريغ وترجمة")
+            opt("🧠 ذكاء صناعي — عادي (WAV)", "جيميناي يسمع ويترجم في طلب واحد · صوت خام أعلى جودة، رفع أبطأ وداتا أكتر", mId == "g_wav") { pickMode("g_wav") }
+            opt("🧠 ذكاء صناعي — توفير بيانات (AAC)", "نفس الشيء بصوت مضغوط (أصغر ~8 مرات)", mId == "g_aac") { pickMode("g_aac") }
+            opt("📴+🧠 تفريغ محلي + ترجمة ذكاء صناعي", "التفريغ على جهازك والترجمة جيميناي بالسياق (كوتا نص بس)", mId == "loc_ai") { pickMode("loc_ai") }
+            sec("🆓 من غير مفتاح")
+            opt("📴+🌍 تفريغ محلي + ترجمة جوجل (فصحى)", "كله مجاني · فصحى بس · الترجمة محتاجة نت", mId == "loc_google") { pickMode("loc_google") }
+            sec("✍ تفريغ بس (من غير ترجمة)")
+            opt("✍ تفريغ ذكاء صناعي", "جيميناي يفرّغ النص بلغته الأصلية", mId == "ai_only") { pickMode("ai_only") }
+            opt("✍ تفريغ محلي · Whisper", "على جهازك · كل اللغات", mId == "w_only") { pickMode("w_only") }
+            opt("✍ تفريغ محلي · SenseVoice (onnx)", "على جهازك · إنجليزي وياباني وكوري وصيني", mId == "s_only") { pickMode("s_only") }
+            sec("👁 بصري")
+            opt("👁 وضع بصري فقط", "بنوعيه: نصوص الشاشة أو هارد سب · من غير ترجمة صوت", SourceMode.get() == SourceMode.VISUAL) { mId = "visual"; Cfg.put("tr_mode_id", "visual"); viaModes = true; tsrc = "visual"; go { stepVisKind() } }
+            opt("⋯ متقدّم", "الخط الكامل (تفريغ ← ترجمة ← لهجة) · محركات خارجية · مترجمين الريبو · الإعداد المحفوظ", false) { viaModes = false; go { stepSource() } }
+            if (hist.size > 1) addBack() else footBtn("✖ إلغاء", false) { dlg.dismiss() }
         }
 
         fun stepSummary() {
@@ -584,7 +715,7 @@ object TrWizard {
             footBtn("التالي ←", true) {
                 if (!SherpaStt.supported()) Notice.show(act, "جهازك مش بيدعم sherpa-onnx", 2500L)
                 else if (!SherpaStt.downloaded()) Notice.show(act, "نزّل الموديل الأول", 2500L)
-                else go { if (hubFlow) toHub() else if (presetFlow) stepSave() else stepMethod() }
+                else { val a = afterDl; if (a != null) { afterDl = null; a() } else go { if (hubFlow) toHub() else if (presetFlow) stepSave() else stepMethod() } }
             }
             addBack()
         }
@@ -627,7 +758,7 @@ object TrWizard {
             footBtn("التالي ←", true) {
                 if (!WhisperLib.loaded) Notice.show(act, "جهازك مش بيدعم الأوفلاين", 2500L)
                 else if (!Offline.downloaded(cur())) Notice.show(act, "نزّل الموديل الأول", 2500L)
-                else go { if (hubFlow) toHub() else if (presetFlow) stepSave() else stepMethod() }
+                else { val a = afterDl; if (a != null) { afterDl = null; a() } else go { if (hubFlow) toHub() else if (presetFlow) stepSave() else stepMethod() } }
             }
             addBack()
         }
@@ -655,11 +786,11 @@ object TrWizard {
             val pl = plan()
             body.addView(ui.text(TrWizard.describe(pl), 14f, th.text, true).apply { setLineSpacing(0f, 1.2f); setPadding(ui.dp(4), ui.dp(4), ui.dp(4), ui.dp(10)) })
             if (edit) {
-                opt("💾 أيوه، احفظ", "زرار «▶ ترجمة» هيبدأ بيه على طول", false) { onDone(pl, true, false); dlg.dismiss() }
+                opt("💾 أيوه، احفظ", "زرار «▶ ترجمة» هيبدأ بيه على طول", false) { done(pl, true, false); dlg.dismiss() }
                 opt("✖ لأ، سيبه زي ما كان", "", false) { dlg.dismiss() }
             } else {
-                opt("💾 أيوه، احفظ وابدأ الترجمة", "الضغطة الجاية على «▶ ترجمة» هتبدأ بالإعداد ده على طول — وتغيّره من زرار ⚙ اللي جنبه", false) { onDone(pl, true, true); dlg.dismiss() }
-                opt("▶ لأ، ابدأ المرة دي بس", "", false) { onDone(pl, false, true); dlg.dismiss() }
+                opt("💾 أيوه، احفظ وابدأ الترجمة", "الضغطة الجاية على «▶ ترجمة» هتبدأ بالإعداد ده على طول — وتغيّره من زرار ⚙ اللي جنبه", false) { done(pl, true, true); dlg.dismiss() }
+                opt("▶ لأ، ابدأ المرة دي بس", "", false) { done(pl, false, true); dlg.dismiss() }
             }
             addBack()
         }
@@ -754,7 +885,7 @@ object TrWizard {
             }
         }
 
-        fun toHub() { probe.clear(); while (hist.size > 1) hist.removeAt(hist.size - 1); hist[0]() }
+        fun toHub() { probe.clear(); val i = hist.indexOf(hubL); if (i >= 0) { while (hist.size > i + 1) hist.removeAt(hist.size - 1); hubL() } else { while (hist.size > 1) hist.removeAt(hist.size - 1); hist[0]() } }   // (v360) كانت بترجع لأول خطوة في السلسلة مش للكروت
 
         fun srcName(): String = when (src) {
             "gemini" -> "✨ جيميناي"
@@ -982,15 +1113,15 @@ object TrWizard {
             footSm("إغلاق", false) { dlg.dismiss() }
             if (edit) footSm("💾 احفظ", true) {
                 val b = blocker(false)
-                if (b != null) Notice.show(act, "⚠ $b", 3200L) else { onDone(plan(), true, false); dlg.dismiss() }
+                if (b != null) Notice.show(act, "⚠ $b", 3200L) else { done(plan(), true, false); dlg.dismiss() }
             } else {
                 footSm("▶ المرة دي", false) {
                     val b = blocker(true)
-                    if (b != null) Notice.show(act, "⚠ $b", 3200L) else { onDone(plan(), false, true); dlg.dismiss() }
+                    if (b != null) Notice.show(act, "⚠ $b", 3200L) else { done(plan(), false, true); dlg.dismiss() }
                 }
                 footSm("💾 احفظ وابدأ", true) {
                     val b = blocker(true)
-                    if (b != null) Notice.show(act, "⚠ $b", 3200L) else { onDone(plan(), true, true); dlg.dismiss() }
+                    if (b != null) Notice.show(act, "⚠ $b", 3200L) else { done(plan(), true, true); dlg.dismiss() }
                 }
             }
         }
@@ -1139,7 +1270,7 @@ object TrWizard {
                 setGravity(Gravity.CENTER)
             }
             dlg.onBack = { if (hist.size > 1) { back(); true } else false }
-            go { stepSource() }   // (v291) ⓪ المصدر ← (v279) شاشة الكروت (الخطوات القديمة من «⋯ أكتر»)
+            go { stepModes() }   // (v360) الأوضاع المبسّطة؛ الخط الكامل (v291/v279) من «⋯ متقدّم»  ·  (v291) ⓪ المصدر ← (v279) شاشة الكروت (الخطوات القديمة من «⋯ أكتر»)
             dlg.show()
         }
     }

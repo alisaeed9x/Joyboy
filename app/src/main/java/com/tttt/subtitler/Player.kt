@@ -351,6 +351,17 @@ class PlayerActivity : Activity(), Host {
         val t = notifTitleOv ?: intent.getStringExtra("title")?.takeIf { it.isNotBlank() } ?: Recents.titleOf(vid)
         return t.substringBeforeLast('.', t)
     }
+    /** (v360) اسم الفيديو + تحته سطر صغير بملخص إعداد الترجمة المحفوظ (بيفضل مع أي فيديو) */
+    private fun titleWithSummary(): CharSequence {
+        val t = notifTitle(); if (t.isBlank()) return ""
+        val s = try { TrWizard.summaryLine() } catch (_: Throwable) { "" }
+        if (s.isBlank()) return t
+        val sb = android.text.SpannableStringBuilder(t); val st = sb.length
+        sb.append("\n").append(s)
+        sb.setSpan(android.text.style.RelativeSizeSpan(0.85f), st, sb.length, 0)
+        sb.setSpan(android.text.style.ForegroundColorSpan(0xFFBFD0FF.toInt()), st, sb.length, 0)
+        return sb
+    }
     fun pushNotif() {
         try {
             val st = NotifState
@@ -1546,7 +1557,7 @@ class PlayerActivity : Activity(), Host {
         // في الرأسي الصفوف بتلفّ لسطر جديد (FlowRow) — من غير HorizontalScrollView لأنه بيدّي عرض لا نهائي فالصف عمره ما بيلفّ
         // (v330) الصف الفوق: اسم الفيديو (شمال) + كبسولات العدّ (يمين)؛ أزرار المشغّل نزلت درجة تحتهم عشان ما تغطّيش الكبسولات
         topTitle = TextView(this).apply {
-            textSize = 12f; setTextColor(Color.WHITE); maxLines = 2; ellipsize = android.text.TextUtils.TruncateAt.END
+            textSize = 12f; setTextColor(Color.WHITE); maxLines = 3; ellipsize = android.text.TextUtils.TruncateAt.END
             typeface = android.graphics.Typeface.DEFAULT_BOLD; setShadowLayer(5f, 0f, 1f, Color.BLACK)
             setPadding(ui.dp(8), ui.dp(4), ui.dp(8), ui.dp(4)); background = ui.box(0x66000000, Color.TRANSPARENT, 8); visibility = View.GONE
         }
@@ -1568,6 +1579,16 @@ class PlayerActivity : Activity(), Host {
         lockOv = ui.fsCircle("🔒") { setLock(false) }.apply { visibility = View.GONE }
         videoBox.addView(lockOv, FrameLayout.LayoutParams(ui.dp(44), ui.dp(44), Gravity.BOTTOM or Gravity.START).apply { setMargins(ui.dp(22), 0, 0, ui.dp(22)) })
         videoBox.addView(chromeFrame, FrameLayout.LayoutParams(-1, -1))
+        // (v362) لودينج كبير في نص الفيديو (لودينج ويندوز + عدّاد ثواني) وقت جلب رابط يوتيوب وأول تحميل — كان بس على زرار التشغيل الصغير ومخفي لما الشريط ظاهر
+        ytBusyV = FrameLayout(this).apply {
+            visibility = View.GONE; isClickable = false; isFocusable = false
+            val colB = LinearLayout(this@PlayerActivity).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER_HORIZONTAL }
+            colB.addView(View(this@PlayerActivity).apply { foreground = ytBusyDr }, LinearLayout.LayoutParams(ui.dp(72), ui.dp(72)))
+            ytBusyTv = TextView(this@PlayerActivity).apply { textSize = 13f; setTextColor(Color.WHITE); setShadowLayer(5f, 0f, 1f, Color.BLACK); gravity = Gravity.CENTER; setPadding(0, ui.dp(6), 0, 0) }
+            colB.addView(ytBusyTv, LinearLayout.LayoutParams(-2, -2))
+            addView(colB, FrameLayout.LayoutParams(-2, -2, Gravity.CENTER))
+        }
+        videoBox.addView(ytBusyV, FrameLayout.LayoutParams(-1, -1))
         // (v104) شرايط التقدم الـ3 بحجم رفيع جدًا دايمًا تحت الفيديو؛ لمسة على الشاشة بتظهر الشريط الكبير ولمسة تانية ترجّعها صغيرة
         miniBar = DualProgress(this, th).apply { thin = true; isClickable = false; isFocusable = false; alpha = 0.33f }
         videoBox.addView(miniBar, FrameLayout.LayoutParams(-1, 3, Gravity.BOTTOM))
@@ -1605,7 +1626,7 @@ class PlayerActivity : Activity(), Host {
             val on = fullMode && chromeShown && !pipNow()
             val wasOn = chromeFrame.visibility == View.VISIBLE
             chromeFrame.visibility = if (on) View.VISIBLE else View.GONE; if (!on) { dismissPop(); tbCollapseFn() }
-            if (on) { try { val tt = notifTitle(); if (topTitle.text.toString() != tt) topTitle.text = tt; topTitle.visibility = if (tt.isBlank()) View.GONE else View.VISIBLE; fixTopRowFn() } catch (_: Throwable) {} }   // (v330)
+            if (on) { try { val tt = titleWithSummary(); if (topTitle.text.toString() != tt.toString()) topTitle.text = tt; topTitle.visibility = if (tt.isBlank()) View.GONE else View.VISIBLE; fixTopRowFn() } catch (_: Throwable) {} }   // (v330) (v360) + ملخص الإعداد
             if (on && !wasOn) { chromeFrame.alpha = 0f; chromeFrame.translationY = ui.dp(14).toFloat(); chromeFrame.animate().alpha(1f).translationY(0f).setDuration(220).start() }
             else if (!on) { chromeFrame.animate().cancel(); chromeFrame.alpha = 1f; chromeFrame.translationY = 0f }
             centerPlay.visibility = if (on || pipNow() || uiLocked) View.GONE else if (buffering) View.VISIBLE else if (player.isPlaying) View.GONE else View.VISIBLE   // الشريط ظاهر = فيه زرار تشغيل تحت، فمنشيلش الأوسط فوق الترجمة
@@ -2088,6 +2109,8 @@ class PlayerActivity : Activity(), Host {
             }
             override fun onPlaybackStateChanged(st: Int) {
                 setBuffering(st == Player.STATE_BUFFERING)
+                if (st == Player.STATE_READY) ytBusy(false)   // (v362)
+                else if (st == Player.STATE_BUFFERING && !firstFrame && intent.getStringExtra("ytid") != null) ytBusy(true, "⏳ بيحمّل الفيديو…")
                 if (st == Player.STATE_READY) h.postDelayed({ checkIdentityDuration() }, 1500)
                 // (v97) الفيديو خلص: لو اللوب شغّال يعيد من الأول، وإلا يروح للحلقة اللي بعدها (لو في)
                 if (st == Player.STATE_ENDED && !isFinishing) {
@@ -2095,7 +2118,7 @@ class PlayerActivity : Activity(), Host {
                     else if (hasNextEpisode()) h.post { stepEpisode(1) }
                 }
             }
-            override fun onRenderedFirstFrame() { firstFrame = true; webFirstFrame = true }
+            override fun onRenderedFirstFrame() { firstFrame = true; webFirstFrame = true; ytBusy(false) }
             override fun onTracksChanged(t: Tracks) {
                 paintQual()
                 if (sizeTxt.isEmpty()) refreshSize()
@@ -2147,6 +2170,29 @@ class PlayerActivity : Activity(), Host {
         try { if (::engine.isInitialized) engine.stop() } catch (e: Throwable) { LogStore.err("Player:retire", e) }
     }
 
+    // (v362) لودينج يوتيوب الكبير
+    private var ytBusyV: FrameLayout? = null
+    private var ytBusyTv: TextView? = null
+    private val ytBusyDr = WinSpinnerDrawable()
+    private var ytBusyT0 = 0L
+    private var ytBusyMsg = ""
+    private val ytBusyTick = object : Runnable {
+        override fun run() {
+            if (isFinishing || isDestroyed || ytBusyV?.visibility != View.VISIBLE) return
+            val sec = (System.currentTimeMillis() - ytBusyT0) / 1000L
+            ytBusyTv?.text = ytBusyMsg + (if (sec >= 2L) " · " + sec + " ث" else "")
+            h.postDelayed(this, 500L)
+        }
+    }
+    private fun ytBusy(on: Boolean, msg: String = "") {
+        val v = ytBusyV ?: return
+        if (on) {
+            ytBusyMsg = msg
+            if (v.visibility != View.VISIBLE) { ytBusyT0 = System.currentTimeMillis(); v.visibility = View.VISIBLE; ytBusyDr.start(); h.removeCallbacks(ytBusyTick); ytBusyTick.run() }
+            else ytBusyTv?.text = msg
+        } else { h.removeCallbacks(ytBusyTick); v.visibility = View.GONE; ytBusyDr.stop() }
+    }
+
     private var freshOnce = false
     /** (v351) المشغّل بيفتح فورًا بشكله الكامل واللودينج جواه؛ رابط الفيديو بيتجاب في الخلفية وبعدين التشغيل يبدأ في نفس الشاشة */
     @Volatile private var pendingYt = false
@@ -2154,15 +2200,14 @@ class PlayerActivity : Activity(), Host {
     private fun startYtPend(fresh: Boolean = false) {
         val id = intent.getStringExtra("ytid") ?: return
         val tok = ++pendTok
-        h.post { try { setBuffering(true) } catch (_: Throwable) {} }
+        h.post { try { setBuffering(true); ytBusy(true, "⏳ بجيب الفيديو…") } catch (_: Throwable) {} }
         Thread {
-            val best = try { YtExtract.fetchPick(id, Cfg.int("yt_maxh", 0), fresh) } catch (_: Throwable) { null }
-            val np = if (best == null) try { YtNp.init(); YtNp.pick(id, Cfg.int("yt_maxh", 0)) } catch (_: Throwable) { null } else null
+            val got = try { YtFast.video(id, Cfg.int("yt_maxh", 0), fresh) } catch (_: Throwable) { null }   // (v362) YtExtract + NewPipe بالتوازي
             runOnUiThread {
                 if (tok != pendTok || isFinishing || isDestroyed || !pendingYt) return@runOnUiThread
-                val u = best?.url ?: np?.url
-                if (u == null) {
-                    try { setBuffering(false) } catch (_: Throwable) {}
+                val u = got?.url
+                if (u == null || got == null) {
+                    try { setBuffering(false); ytBusy(false) } catch (_: Throwable) {}
                     val why = YtExtract.lastWhy.ifBlank { "السبب مش معروف (راجع اللوج)" }
                     GAlert(this).setTitle("⚠ ما قدرتش أجيب الفيديو")
                         .setMessage("يوتيوب ما رضيش يدّي لينك للفيديو ده من التطبيق.\n\n" + why)
@@ -2174,14 +2219,15 @@ class PlayerActivity : Activity(), Host {
                     return@runOnUiThread
                 }
                 pendingYt = false
-                url = u; aurl = (best?.audio ?: np?.audio)?.takeIf { it.isNotEmpty() }
+                url = u; aurl = got.audio?.takeIf { it.isNotEmpty() }
+                try { ytBusy(true, "⏳ بيبدأ التشغيل…") } catch (_: Throwable) {}
                 try {
-                    (best?.optsJson() ?: np?.qlist)?.takeIf { it.isNotEmpty() }?.let { sj -> val qa = org.json.JSONArray(sj)
+                    got.qlist.takeIf { it.isNotEmpty() }?.let { sj -> val qa = org.json.JSONArray(sj)
                         qOpts = (0 until qa.length()).map { qi -> val o = qa.getJSONObject(qi); YtExtract.Opt(o.optString("l"), o.optString("u"), o.optString("a").ifEmpty { null }, o.optInt("h")) } }
                 } catch (e: Exception) { LogStore.err("Player:pendQlist", e) }
                 qCur = qOpts.indexOfFirst { it.url == url }
-                hdr["User-Agent"] = best?.ua ?: np?.ua ?: ""; hdr["Referer"] = "https://www.youtube.com/"
-                if (intent.getStringExtra("title").isNullOrBlank()) (best?.title ?: np?.title)?.let { intent.putExtra("title", it) }
+                hdr["User-Agent"] = got.ua; hdr["Referer"] = "https://www.youtube.com/"
+                if (intent.getStringExtra("title").isNullOrBlank()) got.title.takeIf { it.isNotBlank() }?.let { intent.putExtra("title", it) }
                 // نفس خطوات swapVideo: نقفل المحرك والمشغّل الفاضيين ونبنيهم على الرابط الحقيقي
                 try { retireEngine() } catch (_: Throwable) {}
                 try { loud?.release(); loud = null } catch (_: Throwable) {}
@@ -2748,17 +2794,16 @@ class PlayerActivity : Activity(), Host {
         say("⏳ بجيب «" + n.title.take(40) + "»…")
         val ret = intent.getStringExtra("ret") ?: ""; val nosub = intent.getBooleanExtra("nosub", false); val auto = intent.getBooleanExtra("autotr", false)
         Thread {
-            val best = try { YtExtract.fetchPick(n.id, Cfg.int("yt_maxh", 0)) } catch (_: Throwable) { null }
-            val np = if (best == null) try { YtNp.init(); YtNp.pick(n.id, Cfg.int("yt_maxh", 0)) } catch (_: Throwable) { null } else null
+            val got = try { YtFast.video(n.id, Cfg.int("yt_maxh", 0)) } catch (_: Throwable) { null }   // (v362)
             runOnUiThread {
                 if (isFinishing || isDestroyed) return@runOnUiThread
-                val url = best?.url ?: np?.url
-                if (url == null) { say("ما قدرتش أجيب الفيديو ده — جرّب غيره"); return@runOnUiThread }
+                val url = got?.url
+                if (url == null || got == null) { say("ما قدرتش أجيب الفيديو ده — جرّب غيره"); return@runOnUiThread }
                 try { if (YtStore.histOn()) YtStore.addFront(YtStore.HIST, NpItem(n.id, n.title, n.channel, n.channelUrl, n.thumb, n.dur, n.count, n.age, 0, YtNp.watchUrl(n.id)), 200); YtStore.markApp(n.id) } catch (_: Throwable) {}
                 startActivity(Intent(this, PlayerActivity::class.java).apply {
-                    putExtra("url", url); putExtra("aurl", best?.audio ?: np?.audio ?: ""); putExtra("ref", "https://www.youtube.com/"); putExtra("ua", best?.ua ?: np?.ua ?: "")
-                    (best?.optsJson() ?: np?.qlist)?.takeIf { it.isNotEmpty() }?.let { putExtra("qlist", it) }
-                    putExtra("title", n.title.ifBlank { best?.title ?: np?.title ?: "" }); putExtra("ytid", n.id)
+                    putExtra("url", url); putExtra("aurl", got.audio ?: ""); putExtra("ref", "https://www.youtube.com/"); putExtra("ua", got.ua)
+                    got.qlist.takeIf { it.isNotEmpty() }?.let { putExtra("qlist", it) }
+                    putExtra("title", n.title.ifBlank { got.title }); putExtra("ytid", n.id)
                     putExtra("nosub", nosub); putExtra("autotr", auto); putExtra("ret", ret)
                 })
             }
@@ -3074,10 +3119,11 @@ class PlayerActivity : Activity(), Host {
     fun trWizard(edit: Boolean) {
         try {
             TrWizard.keyModeHook = { n -> applyKeyMode(n) }   // (v275)
-            TrWizard.sourceHook = { ed -> if (ed) say("💾 اتحفظ: " + SourceMode.line()) else runVisualOnly() }   // (v291)
+            TrWizard.sourceHook = { ed -> if (ed) say("💾 اتحفظ: " + SourceMode.line()) else runVisualOnly(); try { applyChromeFn() } catch (_: Throwable) {} }   // (v291)
             TrWizard.show(this, edit) { pl, save, start ->
                 if (save) TrWizard.save(pl)
                 if (start) runPlan(pl) else if (save) say("💾 اتحفظ: " + TrWizard.describe(pl).replace("\n", " · "))
+                try { applyChromeFn() } catch (_: Throwable) {}   // (v360) ملخص الإعداد تحت اسم الفيديو
             }
         } catch (e: Throwable) { LogStore.err("Player:trWizard", e); say("تعذّر فتح شاشة طريقة الترجمة") }
     }

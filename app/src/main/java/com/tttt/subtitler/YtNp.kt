@@ -134,16 +134,18 @@ object YtNp {
         return Pair(first, { p: Page -> res(PlaylistInfo.getMoreItems(YT, url, p)) })
     }
 
-    // كاش لآخر StreamInfo (5 دقايق): صفحة التفاصيل والتشغيل بيتشاركوا نفس الطلب
-    @Volatile private var infoId = ""
-    @Volatile private var infoAt = 0L
-    @Volatile private var infoV: StreamInfo? = null
+    // (v362) كاش لآخر 4 StreamInfo (20 دقيقة) بدل واحد بس: الرئيسية بتجيب 4 فيديوهات مع بعض وكانت بتمسح بعض، وتحويل صوت⇄فيديو بيرجع لنفس الفيديو
+    private val infoMap = LinkedHashMap<String, Pair<Long, StreamInfo>>()
     private fun info(id: String): StreamInfo {
-        val c = infoV
-        if (c != null && infoId == id && System.currentTimeMillis() - infoAt < 300000L) return c
+        synchronized(infoMap) { infoMap[id]?.takeIf { System.currentTimeMillis() - it.first < 20L * 60 * 1000L }?.let { return it.second } }
         init()
+        val t0 = System.currentTimeMillis()
         val i = StreamInfo.getInfo(YT, watchUrl(id))
-        infoV = i; infoId = id; infoAt = System.currentTimeMillis()
+        LogStore.add("⏱ NewPipe info $id: " + (System.currentTimeMillis() - t0) + "ms")
+        synchronized(infoMap) {
+            infoMap[id] = Pair(System.currentTimeMillis(), i)
+            while (infoMap.size > 4) { val k = infoMap.keys.first(); infoMap.remove(k) }
+        }
         return i
     }
 
@@ -213,39 +215,60 @@ object YtNp {
         })
     }
 
-    /** (v351) الرئيسية: فيديوهات من اشتراكاتك (حتى القديمة) + توصيات شبه اللي بتتفرج عليه — من غير ترند خالص */
+    /** (v362) آخر رئيسية جاهزة (وقتها + النتيجة): بتتعرض فورًا وبتتحدّث في الخلفية للزيارة الجاية */
+    @Volatile private var homeC: Pair<Long, YtRes>? = null
+    fun homeCached(maxAgeMs: Long = 20L * 60 * 1000L): YtRes? = homeC?.takeIf { it.second.items.isNotEmpty() && System.currentTimeMillis() - it.first < maxAgeMs }?.second
+    fun refreshHomeAsync(hist: List<NpItem>, subs: List<NpItem>) { Thread { try { home(hist, subs) } catch (_: Throwable) {} }.also { it.isDaemon = true; it.start() } }
+
+    /** (v351) الرئيسية: فيديوهات من اشتراكاتك (حتى القديمة) + توصيات شبه اللي بتتفرج عليه — من غير ترند خالص
+     *  (v362) بتستنى 12 ثانية بالكتير وتطلّع اللي جهز؛ اللي لسه شغّال بيكمّل في الخلفية وبيتخزّن للزيارة الجاية (كانت بتستنى لحد 65 ثانية) */
     fun home(hist: List<NpItem>, subs: List<NpItem> = emptyList()): YtRes {
         init()
+        val t0 = System.currentTimeMillis()
         val seen = hist.map { it.id }.toSet()
         // بذور التوصيات: آخر اللي اتفرّجت عليه، ولو مفيش سجل → أحدث فيديوهات اشتراكاتك
         var subsItems: List<NpItem> = emptyList()
-        val subTh = Thread { try { if (subs.isNotEmpty()) subsItems = YtRss.feed(subs, false).items.filter { it.kind == 0 } } catch (_: Throwable) {} }.also { it.start() }
+        val subTh = Thread { try { if (subs.isNotEmpty()) subsItems = YtRss.feed(subs, false).items.filter { it.kind == 0 } } catch (_: Throwable) {} }.also { it.isDaemon = true; it.start() }
         val histSeeds = hist.filter { it.kind == 0 && it.id.isNotEmpty() }.take(4)
         val results = arrayOfNulls<List<NpItem>>(histSeeds.size)
-        val ths = histSeeds.mapIndexed { n, s -> Thread { results[n] = try { related(s.id) } catch (_: Throwable) { emptyList() } }.also { it.start() } }
-        try { subTh.join(40000) } catch (_: Throwable) {}
-        ths.forEach { try { it.join(25000) } catch (_: Throwable) {} }
-        var recLists = results.map { it ?: emptyList() }
-        if (recLists.isEmpty() && subsItems.isNotEmpty()) {
-            val seedSubs = subsItems.take(3)
-            val r2 = arrayOfNulls<List<NpItem>>(seedSubs.size)
-            seedSubs.mapIndexed { n, s -> Thread { r2[n] = try { related(s.id) } catch (_: Throwable) { emptyList() } }.also { it.start() } }
-                .forEach { try { it.join(25000) } catch (_: Throwable) {} }
-            recLists = r2.map { it ?: emptyList() }
+        val ths = histSeeds.mapIndexed { n, s -> Thread { results[n] = try { related(s.id) } catch (_: Throwable) { emptyList() } }.also { it.isDaemon = true; it.start() } }
+        val dl = t0 + 12_000L
+        fun waitAll(deadline: Long) {
+            try { subTh.join(maxOf(1L, deadline - System.currentTimeMillis())) } catch (_: Throwable) {}
+            ths.forEach { try { it.join(maxOf(1L, deadline - System.currentTimeMillis())) } catch (_: Throwable) {} }
         }
-        // توصيات: تقليب بين نتايج كل فيديو للتنوّع (بدون المشاهَد)
-        val rec = ArrayList<NpItem>(); var k = 0
-        while (recLists.any { k < it.size }) { for (l in recLists) if (k < l.size) { val v = l[k]; if (v.id !in seen) rec.add(v) }; k++ }
-        // اشتراكات: الغير مشاهَد الأحدث الأول، وبعدها القديم (المشاهَد) في الآخر
-        val subsOrdered = subsItems.filter { it.id !in seen } + subsItems.filter { it.id in seen }
-        // دمج: اثنين من الاشتراكات ثم اثنين توصيات … من غير تكرار
-        val out = LinkedHashMap<String, NpItem>()
-        var i = 0; var j = 0
-        while ((i < subsOrdered.size || j < rec.size) && out.size < 90) {
-            var c = 0; while (c < 2 && i < subsOrdered.size) { subsOrdered[i].let { out.putIfAbsent(it.id, it) }; i++; c++ }
-            c = 0; while (c < 2 && j < rec.size) { rec[j].let { out.putIfAbsent(it.id, it) }; j++; c++ }
+        fun assemble(): YtRes {
+            var recLists = results.map { it ?: emptyList() }
+            if (recLists.isEmpty() && subsItems.isNotEmpty()) {
+                val seedSubs = subsItems.take(3)
+                val r2 = arrayOfNulls<List<NpItem>>(seedSubs.size)
+                seedSubs.mapIndexed { n, s -> Thread { r2[n] = try { related(s.id) } catch (_: Throwable) { emptyList() } }.also { it.isDaemon = true; it.start() } }
+                    .forEach { try { it.join(8000L) } catch (_: Throwable) {} }
+                recLists = r2.map { it ?: emptyList() }
+            }
+            // توصيات: تقليب بين نتايج كل فيديو للتنوّع (بدون المشاهَد)
+            val rec = ArrayList<NpItem>(); var k = 0
+            while (recLists.any { k < it.size }) { for (l in recLists) if (k < l.size) { val v = l[k]; if (v.id !in seen) rec.add(v) }; k++ }
+            // اشتراكات: الغير مشاهَد الأحدث الأول، وبعدها القديم (المشاهَد) في الآخر
+            val subsOrdered = subsItems.filter { it.id !in seen } + subsItems.filter { it.id in seen }
+            // دمج: اثنين من الاشتراكات ثم اثنين توصيات … من غير تكرار
+            val out = LinkedHashMap<String, NpItem>()
+            var i = 0; var j = 0
+            while ((i < subsOrdered.size || j < rec.size) && out.size < 90) {
+                var c = 0; while (c < 2 && i < subsOrdered.size) { subsOrdered[i].let { out.putIfAbsent(it.id, it) }; i++; c++ }
+                c = 0; while (c < 2 && j < rec.size) { rec[j].let { out.putIfAbsent(it.id, it) }; j++; c++ }
+            }
+            return YtRes(out.values.toList(), null)
         }
-        return YtRes(out.values.toList(), null)
+        waitAll(dl)
+        val partial = assemble()
+        val stillBusy = subTh.isAlive || ths.any { it.isAlive }
+        LogStore.add("⏱ يوتيوب الرئيسية: " + (System.currentTimeMillis() - t0) + "ms · " + partial.items.size + " فيديو" + (if (stillBusy) " (الباقي بيكمّل في الخلفية)" else ""))
+        if (partial.items.isNotEmpty()) homeC = Pair(System.currentTimeMillis(), partial)
+        if (stillBusy) Thread {
+            try { waitAll(System.currentTimeMillis() + 60_000L); val full = assemble(); if (full.items.isNotEmpty()) homeC = Pair(System.currentTimeMillis(), full) } catch (_: Throwable) {}
+        }.also { it.isDaemon = true; it.start() }
+        return partial
     }
 
     /** فيد الاشتراكات: آخر فيديوهات كل قناة مدموجة بالأحدث أولًا */

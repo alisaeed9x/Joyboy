@@ -225,6 +225,7 @@ object YtExtract {
     class Opt(val label: String, val url: String, val audio: String?, val h: Int)
     /** نتيجة الاستخراج: الخيار المختار + كل الجودات المتاحة (لزرار الجودة في المشغّل) */
     class Pick(val url: String, val audio: String?, val title: String, val ua: String, val label: String, val opts: List<Opt>) {
+        var tag: String = ""   // (v363) أي عميل جاب النتيجة دي (للتثبيت)
         fun optsJson(): String { val a = JSONArray(); for (o in opts) a.put(JSONObject().put("l", o.label).put("u", o.url).put("a", o.audio ?: "").put("h", o.h)); return a.toString() }
     }
 
@@ -235,6 +236,57 @@ object YtExtract {
      * maxH > 0: بيختار أعلى جودة لحد الارتفاع ده (للداتا القليلة)، غير كده أعلى جودة متاحة.
      * (v119) لو ولا عميل دّى روابط مباشرة لكن في HLS: بيرجّع HLS (المشغّل بيختار الجودة منه). لو مفيش خالص: null وlastWhy فيه السبب.
      */
+    // ===== (v363) تثبيت العميل الشغّال =====
+    // أول ما التطبيق يفتح بنجرّب كل عملاء يوتيوب على فيديو اختبار ثابت (بالتوازي) ونثبّت الأسرع الشغّال؛ fetchPick بيبدأ بيه الأول.
+    // أي نجاح فعلي بعميل تاني بيثبّته. لو الجلب فشل كله بنعيد الفحص في الخلفية (مرة كل 5 دقايق بالكتير).
+    class Probe(val tag: String, val ok: Boolean, val ms: Long, val why: String)
+    @Volatile private var pinTag = ""
+    @Volatile private var probing = false
+    @Volatile private var lastProbe = 0L
+    fun pinned(): String = pinTag
+    fun loadPin() { try { pinTag = Cfg.str("yt_pin", "") } catch (_: Throwable) {} }
+    fun setPin(t: String) {
+        if (t.isEmpty() || t == pinTag) return
+        pinTag = t; try { Cfg.put("yt_pin", t) } catch (_: Throwable) {}
+        LogStore.add("📌 يوتيوب: العميل المثبّت دلوقتي " + t)
+    }
+    private fun ordered(): List<Cl> {
+        val p = clients.firstOrNull { it.tag == pinTag } ?: return clients
+        return listOf(p) + clients.filter { it !== p }
+    }
+    fun probeAll(testId: String = "jNQXAC9IVRw"): List<Probe> {
+        val out = java.util.Collections.synchronizedList(ArrayList<Probe>())
+        val ths = clients.map { c -> Thread {
+            val t0 = System.currentTimeMillis()
+            var ok = false; var why = ""
+            try {
+                val r = playerJson(c, testId); why = r.why
+                val sd = r.j?.optJSONObject("streamingData")
+                fun hasUrl(a: JSONArray?): Boolean { if (a == null) return false; for (i in 0 until a.length()) if (a.optJSONObject(i)?.optString("url").orEmpty().isNotEmpty()) return true; return false }
+                ok = sd != null && (hasUrl(sd.optJSONArray("formats")) || hasUrl(sd.optJSONArray("adaptiveFormats")))
+                if (!ok && why.isEmpty()) why = "مفيش روابط مباشرة"
+            } catch (e: Throwable) { why = e.javaClass.simpleName }
+            out.add(Probe(c.tag, ok, System.currentTimeMillis() - t0, why))
+        }.also { it.isDaemon = true; it.start() } }
+        ths.forEach { try { it.join(20000L) } catch (_: Throwable) {} }
+        return out.toList()
+    }
+    /** بيفحص ويثبّت. بيرجّع true لو فيه عميل واحد على الأقل شغّال */
+    fun reprobe(force: Boolean = false): Boolean {
+        if (probing) return pinTag.isNotEmpty()
+        if (!force && System.currentTimeMillis() - lastProbe < 5L * 60 * 1000L) return pinTag.isNotEmpty()
+        probing = true; lastProbe = System.currentTimeMillis()
+        try {
+            val r = probeAll()
+            LogStore.add("🔎 فحص عملاء يوتيوب: " + r.sortedBy { it.ms }.joinToString(" · ") { it.tag + (if (it.ok) " ✅" + it.ms + "ms" else " ❌ " + it.why.take(24)) })
+            val best = r.filter { it.ok }.minByOrNull { it.ms }
+            if (best != null) { setPin(best.tag); YtFast.markAlive(); return true }
+            pinTag = ""; try { Cfg.put("yt_pin", "") } catch (_: Throwable) {}
+            YtFast.markDead(); return false
+        } finally { probing = false }
+    }
+    fun reprobeAsync() { if (probing) return; Thread { try { reprobe(false) } catch (_: Throwable) {} }.also { it.isDaemon = true; it.start() } }
+
     // (v354) كاش + تشغيل العملاء بالتوازي (hedged) بدل واحد ورا التاني: أسرع بكتير لو أول عميل بطيء/مقفول
     private val pickCache = java.util.concurrent.ConcurrentHashMap<String, Pair<Long, Pick>>()
     private const val PICK_TTL = 3L * 60 * 60 * 1000L
@@ -284,7 +336,7 @@ object YtExtract {
             }
             val opts = byH.values.sortedByDescending { it.h }
             val chosen = (if (maxH > 0) opts.firstOrNull { it.h <= maxH } ?: opts.last() else opts.first())
-            return Pick(chosen.url, chosen.audio, title, c.ua, chosen.label, opts)
+            return Pick(chosen.url, chosen.audio, title, c.ua, chosen.label, opts).also { it.tag = c.tag }
         } catch (e: Throwable) { LogStore.err("Sniffer:pick", e); whys.add(c.tag + ": " + e.javaClass.simpleName); return null }
     }
 
@@ -294,20 +346,22 @@ object YtExtract {
         val hls = java.util.concurrent.atomic.AtomicReference<Pick?>(null)
         val q = java.util.concurrent.LinkedBlockingQueue<Any>()
         val none = Any()
+        val order = ordered()
         var launched = 0; var next = 0; var done = 0
-        fun launch() { val c = clients[next++]; launched++
+        fun launch() { val c = order[next++]; launched++
             Thread { q.put(try { pickFrom(c, id, maxH, whys, hls) ?: none } catch (_: Throwable) { none }) }.apply { isDaemon = true; start() } }
         launch()
         val deadline = System.currentTimeMillis() + 40000L
         while (done < launched) {
             // لو العميل الحالي مردّش في ثانية ونص: ابدأ اللي بعده من غير ما تقفل الأول
-            val r = q.poll(if (next < clients.size) 1500L else 30000L, java.util.concurrent.TimeUnit.MILLISECONDS)
-            if (r == null) { if (next < clients.size) launch() else if (System.currentTimeMillis() > deadline) break; continue }
+            val r = q.poll(if (next < order.size) 1500L else 30000L, java.util.concurrent.TimeUnit.MILLISECONDS)
+            if (r == null) { if (next < order.size) launch() else if (System.currentTimeMillis() > deadline) break; continue }
             done++
-            if (r is Pick) { lastWhy = ""; pickCache["$id/$maxH"] = Pair(System.currentTimeMillis(), r); return r }
-            if (next < clients.size) launch()   // فشل: ابدأ اللي بعده فورًا
+            if (r is Pick) { lastWhy = ""; pickCache["$id/$maxH"] = Pair(System.currentTimeMillis(), r); if (r.tag.isNotEmpty()) setPin(r.tag); return r }
+            if (next < order.size) launch()   // فشل: ابدأ اللي بعده فورًا
         }
         lastWhy = whys.joinToString("\n")
+        reprobeAsync()   // (v363)
         val hp = hls.get()
         LogStore.add("⚠ YtExtract.fetchPick ($id)" + (if (hp != null) " — بجرّب HLS" else " فشل") + ":\n" + lastWhy)
         return hp

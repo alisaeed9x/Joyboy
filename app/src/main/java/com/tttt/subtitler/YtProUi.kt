@@ -285,7 +285,11 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
     private fun openTab(i: Int) {
         hideKb(); sugBox.visibility = View.GONE; stack.clear(); paintTabs(i)
         when (i) {
-            0 -> load("🏠 الرئيسية", 0, null, null, null, "", false, false) { Pair(YtNp.home(YtStore.read(YtStore.HIST), YtStore.read(YtStore.SUBS)), null) }
+            0 -> load("🏠 الرئيسية", 0, null, null, null, "", false, false) {
+                val hh = YtStore.read(YtStore.HIST); val ss = YtStore.read(YtStore.SUBS)
+                val cached = YtNp.homeCached()   // (v362) فورًا من آخر مرة، والتحديث في الخلفية للزيارة الجاية
+                if (cached != null) { YtNp.refreshHomeAsync(hh, ss); Pair(cached, null) } else Pair(YtNp.home(hh, ss), null)
+            }
             1 -> {
                 val subs = YtStore.read(YtStore.SUBS)
                 if (subs.isEmpty() && !YtAccount.loggedIn()) { bind(St("📺 اشتراكاتي", 1, ArrayList(), null, null, null, null, null, "")); status("مفيش اشتراكات لسه.\nسجّل الدخول بحساب جوجل من تبويب «أنت» وهتتجاب اشتراكاتك لوحدها،\nأو افتح قناة من أي فيديو (ضغطة طويلة ← 📺 افتح القناة) واضغط 🔔 اشترك.\n\nأو استورد ملف اشتراكات (دوس هنا)") { onImport() } }

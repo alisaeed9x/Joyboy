@@ -104,7 +104,7 @@ class MainActivity : Activity() {
         super.onCreate(b)
         if (fromPlayer) requestedOrientation = if (intent?.getBooleanExtra("land", false) == true) ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE else ActivityInfo.SCREEN_ORIENTATION_PORTRAIT   // الإعدادات من المشغّل: بنفس اتجاه المشغّل
         UiWatchdog.start()
-        Cfg.init(this); CrashLog.install(this)
+        Cfg.init(this); CrashLog.install(this); YtFast.startup()
         if (!fromPlayer) android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({ if (!isDestroyed) PublicApis.autoPull(this) }, 6000L)   // (v272) سحب قايمة public-apis لوحده + إشعار
         val th = Themes.byId(Cfg.str("theme", "mx"))
         val ui = Ui(this, th)
@@ -1324,12 +1324,7 @@ class MainActivity : Activity() {
         }
         Thread {
             // (v354) أسرع: نفس الاستخراج السريع بتاع الفيديو (متوازي + كاش) وبعدها NewPipe كاحتياطي — والكاش بيخلّي التحويل لفيديو فوري
-            val a = try {
-                val pk = YtExtract.fetchPick(id, Cfg.int("yt_maxh", 0))
-                val au = pk?.opts?.firstNotNullOfOrNull { it.audio }
-                if (pk != null && au != null) YtPick(au, null, pk.ua, pk.title, 0, "", 0L)
-                else { YtNp.init(); YtNp.pickAudio(id) }
-            } catch (_: Throwable) { try { YtNp.init(); YtNp.pickAudio(id) } catch (_: Throwable) { null } }
+            val a = try { YtFast.audio(id, Cfg.int("yt_maxh", 0)) } catch (_: Throwable) { null }   // (v362) YtExtract + NewPipe بالتوازي + كاش
             runOnUiThread {
                 if (tok != ytAudTok) return@runOnUiThread   // قفلت المشغّل أو دوست على حاجة تانية
                 if (isFinishing || isDestroyed) return@runOnUiThread
