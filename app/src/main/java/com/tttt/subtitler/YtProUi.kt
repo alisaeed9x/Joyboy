@@ -286,7 +286,8 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
         hideKb(); sugBox.visibility = View.GONE; stack.clear(); paintTabs(i)
         when (i) {
             0 -> load("🏠 الرئيسية", 0, null, null, null, "", false, false) {
-                val hh = YtStore.read(YtStore.HIST); val ss = YtStore.read(YtStore.SUBS)
+                val hh = YtStore.read(YtStore.HIST); var ss = YtStore.read(YtStore.SUBS)
+                if (ss.isEmpty() && YtAccount.loggedIn()) { try { YtAccount.syncSubs() } catch (_: Throwable) {}; ss = YtStore.read(YtStore.SUBS) }   // (v375) مسجّل بجوجل ولسه ما فتحتش الاشتراكات: هات القنوات الأول
                 val cached = YtNp.homeCached()   // (v362) فورًا من آخر مرة، والتحديث في الخلفية للزيارة الجاية
                 if (cached != null) { YtNp.refreshHomeAsync(hh, ss); Pair(cached, null) } else Pair(YtNp.home(hh, ss), null)
             }
@@ -464,7 +465,7 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
                     if (my != gen || act.isFinishing || act.isDestroyed) return@runOnUiThread
                     if (push && prev != null) { prev.pos = prevPos; stack.add(prev) }
                     bind(St(title, tab, ArrayList(r.items), r.next, more, chUrl, chName, q, filter))
-                    if (r.items.isEmpty()) status("مفيش نتايج")
+                    if (r.items.isEmpty()) status("مفيش نتايج\n\n(دوس هنا لإعادة المحاولة)", retry)
                 }
             } catch (e: Throwable) {
                 act.runOnUiThread {

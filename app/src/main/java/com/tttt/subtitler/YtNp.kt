@@ -228,7 +228,7 @@ object YtNp {
         val seen = hist.map { it.id }.toSet()
         // بذور التوصيات: آخر اللي اتفرّجت عليه، ولو مفيش سجل → أحدث فيديوهات اشتراكاتك
         var subsItems: List<NpItem> = emptyList()
-        val subTh = Thread { try { if (subs.isNotEmpty()) subsItems = YtRss.feed(subs, false).items.filter { it.kind == 0 } } catch (_: Throwable) {} }.also { it.isDaemon = true; it.start() }
+        val subTh = Thread { try { if (subs.isNotEmpty()) subsItems = YtRss.feed(subs, false, true).items.filter { it.kind == 0 } } catch (_: Throwable) {} }.also { it.isDaemon = true; it.start() }
         val histSeeds = hist.filter { it.kind == 0 && it.id.isNotEmpty() }.take(4)
         val results = arrayOfNulls<List<NpItem>>(histSeeds.size)
         val ths = histSeeds.mapIndexed { n, s -> Thread { results[n] = try { related(s.id) } catch (_: Throwable) { emptyList() } }.also { it.isDaemon = true; it.start() } }
@@ -261,7 +261,12 @@ object YtNp {
             return YtRes(out.values.toList(), null)
         }
         waitAll(dl)
-        val partial = assemble()
+        var partial = assemble()
+        // (v375) لو لسه فاضية والفيد لسه بيتحمّل: كمّل استنى (لحد 50 ثانية) بدل ما ترجع «مفيش نتايج»، وبعده فيد حسابك المباشر لو مسجّل
+        if (partial.items.isEmpty() && (subTh.isAlive || ths.any { it.isAlive })) { waitAll(t0 + 50_000L); partial = assemble() }
+        if (partial.items.isEmpty() && YtAccount.loggedIn()) {
+            try { val v = YtAccount.listFirst("FEsubscriptions").items.filter { it.kind == 0 }; if (v.isNotEmpty()) partial = YtRes(v, null) } catch (_: Throwable) {}
+        }
         val stillBusy = subTh.isAlive || ths.any { it.isAlive }
         LogStore.add("⏱ يوتيوب الرئيسية: " + (System.currentTimeMillis() - t0) + "ms · " + partial.items.size + " فيديو" + (if (stillBusy) " (الباقي بيكمّل في الخلفية)" else ""))
         if (partial.items.isNotEmpty()) homeC = Pair(System.currentTimeMillis(), partial)

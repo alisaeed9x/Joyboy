@@ -6,7 +6,6 @@ import android.graphics.drawable.ColorDrawable
 import android.view.View
 import android.widget.LinearLayout
 import android.widget.ScrollView
-import java.lang.ref.WeakReference
 
 /**
  * (v272/v273) قسم الإعدادات «🌐 APIs خارجية»: حالة سحب قايمة public-apis (بتتحدّث لوحدها)، زرار سحب يدوي،
@@ -14,84 +13,72 @@ import java.lang.ref.WeakReference
  * والتفريغ السحابي. كل مزوّد بيتعلّم لو موجود في القايمة المسحوبة من الريبو.
  */
 object PublicApisUi {
-    private const val OPT_INTERNAL = "🏠 جوجل الداخلي أولًا"
-    private const val OPT_EXTERNAL = "🌐 APIs الخارجية أولًا"
+    @Volatile private var omniListCache: List<String> = emptyList()
+    @Volatile private var omniListAt = 0L
 
-    private fun repoTag(keys: List<String>): String =
-        if (keys.isEmpty()) "" else if (PublicApis.entries.isEmpty()) "" else if (PublicApis.listed(keys) != null) " · ✅ في الريبو" else " · ➕ مش في قايمة الريبو"
+    /** (v373) قايمة صغيرة منسدلة (مش شاشة كاملة): [autoLabel] فوق (بترجّع "") وبعدها [items]. اللي عليه ✓ هو الحالي */
+    fun dropdown(act: Activity, ui: Ui, th: Theme, anchor: View, items: List<String>, current: String, autoLabel: String, footer: Pair<String, () -> Unit>? = null, onPick: (String) -> Unit) {
+        val col = LinearLayout(act).apply {
+            orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL
+            setPadding(ui.dp(6), ui.dp(6), ui.dp(6), ui.dp(6)); background = ui.box(th.card, th.border, 14)
+        }
+        lateinit var pw: android.widget.PopupWindow
+        fun row(label: String, on: Boolean, v: String) {
+            col.addView(IconTextView(act).apply {
+                text = (if (on) "✓ " else "") + label; textSize = 14f; setTextColor(if (on) th.primary else th.text)
+                minHeight = ui.dp(40); maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.MIDDLE
+                gravity = android.view.Gravity.CENTER_VERTICAL or android.view.Gravity.START
+                setPadding(ui.dp(14), ui.dp(6), ui.dp(14), ui.dp(6))
+                setOnClickListener { pw.dismiss(); onPick(v) }
+            })
+        }
+        row(autoLabel, current.isBlank(), "")
+        for (m in items) row(m, m == current, m)
+        footer?.let { f -> col.addView(IconTextView(act).apply { text = f.first; textSize = 13f; setTextColor(th.primary); minHeight = ui.dp(40); gravity = android.view.Gravity.CENTER_VERTICAL or android.view.Gravity.START; setPadding(ui.dp(14), ui.dp(6), ui.dp(14), ui.dp(6)); setOnClickListener { pw.dismiss(); f.second() } }) }
+        val scroll = MaxHeightScroll(act, (act.resources.displayMetrics.heightPixels * 0.45f).toInt()).apply { addView(col) }
+        pw = android.widget.PopupWindow(scroll, anchor.width.coerceAtLeast(ui.dp(240)), -2, true)
+        pw.setBackgroundDrawable(ColorDrawable(0)); pw.elevation = ui.dp(8).toFloat()
+        try { pw.showAsDropDown(anchor, 0, ui.dp(2)) } catch (_: Throwable) {}
+    }
 
-    fun section(act: Activity, ui: Ui, th: Theme): LinearLayout {
-        val ref = WeakReference(act)
-        val status = ui.text(PublicApis.statusLine(), 12.5f, th.text)
-        val listBox = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL }
-        lateinit var refreshAll: () -> Unit
+    /** (v373) موديلات OmniRoute (شات بس) — مخزّنة 10 دقايق؛ [onDone] على الـ UI: (القايمة، رسالة خطأ أو null) */
+    private fun omniModels(act: Activity, force: Boolean, onDone: (List<String>, String?) -> Unit) {
+        val p = ExtLlm.byId("omniroute")!!
+        if (!force && omniListCache.isNotEmpty() && System.currentTimeMillis() - omniListAt < 600_000L) { onDone(omniListCache, null); return }
+        Thread {
+            val r = runCatching { ExtLlm.listModels(p, ExtLlm.key(p), ExtLlm.url(p)).filter { m -> ExtLlm.skipWords.none { m.contains(it, true) } } }
+            act.runOnUiThread {
+                val l = r.getOrNull()
+                if (l == null) onDone(emptyList(), (r.exceptionOrNull()?.message ?: "فشل").take(80))
+                else { omniListCache = l; omniListAt = System.currentTimeMillis(); onDone(l, if (l.isEmpty()) "القايمة فاضية" else null) }
+            }
+        }.start()
+    }
 
-        fun rebuild() {
-            listBox.removeAllViews()
-            listBox.addView(ui.text("🔗 سلسلة الترجمة دلوقتي: " + ExtTranslate.chainLabel(), 12f, th.text, true).apply { setPadding(0, ui.dp(2), 0, ui.dp(6)) })
-            // --- مزوّدين مجانيين من غير مفتاح ---
-            for (p in ExtTranslate.builtin) {
-                val origin = if (ExtTranslate.inRepo(p)) "✅ موجود في الريبو" else if (PublicApis.entries.isEmpty()) "⏳ لسه القايمة ما اتسحبتش" else "➕ مش في قايمة الريبو (شغّال بالمحوّل الجاهز)"
-                listBox.addView(ui.switchRow(p.label, ExtTranslate.enabled(p)) { ExtTranslate.setEnabled(p, it) })
-                listBox.addView(ui.text(origin + "\n" + ExtTranslate.statLine(p), 11.5f, th.muted))
-            }
-            // --- (v366) الراوتر الداخلي: أول محرك في الترجمة ---
-            if (InternalRouter.hasPool()) {
-                listBox.addView(ui.switchRow("🧭 " + ExtTranslate.router.label + " — أول محرك في الترجمة", ExtTranslate.enabled(ExtTranslate.router)) { ExtTranslate.setEnabled(ExtTranslate.router, it) })
-                listBox.addView(ui.text("بيجرّب مفاتيح جيميناي (2.5 فلاش) واحد ورا التاني، وبعدها مزوّديك. لو كله وقف الترجمة بتكمّل بجوجل ثم MyMemory ثم Lingva.\n" + ExtTranslate.statLine(ExtTranslate.router), 11.5f, th.muted))
-            }
-            // --- محركات LLM بمفتاحك ---
-            listBox.addView(ui.text("🤖 محركات LLM بمفتاحك (ChatGPT · Claude · …) — بتترجم 25 جملة في الطلب:", 12.5f, th.primary, true).apply { setPadding(0, ui.dp(10), 0, ui.dp(2)) })
-            for (pr in ExtLlm.presets) {
-                val bw = if (ExtLlm.configured(pr)) ExtLlm.blockedWhy(pr) else null
-                val st = if (!ExtLlm.configured(pr)) (if (ExtLlm.keyless(pr)) "🔌 مش شغّال (محلي، من غير مفتاح)" else "🔑 محتاج مفتاح") else if (!ExtLlm.enabled(pr)) "⏸ موقوف" else if (bw != null) "⛔ $bw" else "✅ جاهز"
-                val n = Cfg.str("ext_n_llm_" + pr.id).toIntOrNull() ?: 0
-                listBox.addView(ui.button("${pr.label} — $st" + (if (n > 0) " · ترجم $n جملة" else "") + repoTag(pr.keys)) { editDialog(act, ui, th, pr) { refreshAll() } })
-            }
-            // --- LibreTranslate (سيرفرك أو سيرفر بمفتاح) ---
-            val lp = ExtTranslate.libreProv()
-            val lbw = lp?.let { ExtTranslate.blockedWhy(it.id, it.keyHash()) }
-            val ln = Cfg.str("ext_n_libre").toIntOrNull() ?: 0
-            listBox.addView(ui.button("LibreTranslate — " + (if (lp == null) "🔑 محتاج رابط السيرفر" else if (!ExtTranslate.enabled(lp)) "⏸ موقوف" else if (lbw != null) "⛔ $lbw" else "✅ جاهز") + (if (ln > 0) " · ترجم $ln جملة" else "") + repoTag(listOf("libretranslate"))) { libreDialog(act, ui, th) { refreshAll() } })
-            // --- تفريغ سحابي ---
-            listBox.addView(ui.text("🎙 التفريغ السحابي (Whisper API):", 12.5f, th.primary, true).apply { setPadding(0, ui.dp(10), 0, ui.dp(2)) })
-            listBox.addView(ui.switchRow("فرّغ الصوت عن طريق API سحابي بدل الموديل اللي على الجهاز", RemoteStt.on()) {
-                Cfg.put("rstt_on", if (it) "on" else "off")
-                if (it) {
-                    if (RemoteStt.ready()) Cfg.put("stt_offline", "1")
-                    else ref.get()?.let { a -> Notice.show(a, "🔑 ضبط مفتاح مزوّد التفريغ الأول (ChatGPT أو Groq من اللي فوق)", 3200L) }
+    /** (v372) قسم الإعدادات الوحيد المتبقي لمحركات الـ LLM: OmniRoute (باقي المزوّدين من شاشة 🤖 الذكاء). (v373) + اختيار موديل الترجمة من قايمة منسدلة */
+    fun omniSection(act: Activity, ui: Ui, th: Theme): LinearLayout {
+        val p = ExtLlm.byId("omniroute")!!
+        val st = ui.text("", 12.5f, th.text)
+        lateinit var modelBtn: IconButton
+        fun curModel(): String = Cfg.str("llm_omniroute_model").trim().let { if (it.equals("auto", true)) "" else it }
+        fun label(note: String = "") { modelBtn.text = "🎯 موديل الترجمة: " + curModel().ifBlank { "تلقائي" } + " ▾" + note }
+        fun refresh() { st.text = if (ExtLlm.configured(p)) "✅ جاهز · " + ExtLlm.model(p) else "🔌 مش مضبوط — بيشتغل من غير مفتاح لو OmniRoute شغّال على الموبايل" }
+        modelBtn = ui.button("") {
+            modelBtn.text = "⏳ بجيب الموديلات…"
+            omniModels(act, false) { list, err ->
+                label()
+                if (err != null) { label("  ⚠ $err"); return@omniModels }
+                dropdown(act, ui, th, modelBtn, list, curModel(), "تلقائي (OmniRoute يختار + بدايل)") { v ->
+                    Cfg.put("llm_omniroute_model", v.ifBlank { "auto" }); ExtTranslate.clearBlock("llm_omniroute"); label(); refresh()
                 }
-                refreshAll()
-            })
-            val stts = ExtLlm.presets.filter { ExtLlm.supportsStt(it) }
-            listBox.addView(ui.chips(stts.map { it.label }, { RemoteStt.provider()?.label ?: stts.first { s -> s.id == "groq" }.label }) { l ->
-                stts.firstOrNull { it.label == l }?.let { Cfg.put("rstt_prov", it.id) }; refreshAll()
-            })
-            val rp = RemoteStt.provider()
-            listBox.addView(ui.text(
-                (if (!RemoteStt.on()) "مقفول." else if (RemoteStt.ready()) "✅ جاهز: ${rp?.label} · ${rp?.let { ExtLlm.sttModel(it) }}" else "🔑 المزوّد المختار ناقصه مفتاح أو موديل تفريغ — اضبطه من الزرار فوق.") +
-                "\n⚠ الصوت بيتبعت لخدمة خارجية. لو فشلت (نت/مفتاح/كوتة) جيميناي هو اللي بينسخ الباتش.", 11.5f, th.muted))
-            // --- ذات صلة في الريبو ---
-            val rel = PublicApis.related()
-            if (rel.isNotEmpty()) {
-                val names = rel.take(30).joinToString("، ") { it.name + (if (it.auth.isNotBlank() && !it.auth.equals("No", true)) " (مفتاح)" else "") }
-                listBox.addView(ui.text("ليها علاقة بالترجمة/الكلام في قايمة الريبو (${rel.size}): $names" + if (rel.size > 30) " …" else "", 11.5f, th.muted).apply { setPadding(0, ui.dp(10), 0, 0) })
             }
         }
-        refreshAll = { status.text = PublicApis.statusLine(); rebuild() }
-        refreshAll()
-        PublicApis.onChange = { ref.get()?.runOnUiThread { try { refreshAll() } catch (_: Throwable) {} } }
-
-        return ui.section("🌐 APIs خارجية (public-apis · ChatGPT · Claude · LibreTranslate · تفريغ سحابي)", false,
-            ui.text("الترجمة بجوجل (مع الأوفلاين) ممكن تستعين بمزوّدين تانيين، والتفريغ ممكن يبقى سحابي. القايمة بتتسحب من ريبو public-apis لوحدها، والمزوّد بيشتغل بس لو ليه محوّل جاهز في التطبيق. الترتيب بيأثر على مسار «تفريغ أوفلاين + ترجمة جوجل» بس.", 12f, th.muted),
-            status,
-            ui.button("🔄 اسحب القايمة من الريبو دلوقتي") { PublicApis.pull(ref.get(), true) },
-            ui.switchRow("اسحب القايمة لوحدها كل 24 ساعة", Cfg.str("papi_auto", "on") != "off") { Cfg.put("papi_auto", if (it) "on" else "off") },
-            ui.text("ترتيب الترجمة (لو الأول فشل في جمل، التاني بيكمّل — ولو كلهم فشلوا الباتش بيتحوّل لجيميناي بمفاتيحك، وبيطلعلك إشعار بكل تبديل):", 12f, th.muted),
-            ui.chips(listOf(OPT_INTERNAL, OPT_EXTERNAL), { if (ExtTranslate.externalFirst()) OPT_EXTERNAL else OPT_INTERNAL }) { Cfg.put("tx_order", if (it == OPT_EXTERNAL) "external" else "internal") },
-            ui.switchRow("استخدم المزوّدين اللي في قايمة الريبو المسحوبة بس", ExtTranslate.strict()) { Cfg.put("ext_strict", if (it) "on" else "off"); try { refreshAll() } catch (_: Throwable) {} },
-            listBox,
-            ui.text("جوجل الداخلي أدق في العادة من المزوّدين المجانيين، وMyMemory ليه حد يومي (~5000 حرف) — فالافتراضي «الداخلي أولًا». محركات LLM بتستهلك من رصيد مفتاحك.", 11.5f, th.muted))
+        label(); refresh()
+        return ui.section("🛰 OmniRoute", false,
+            st, modelBtn,
+            ui.text("اللي تختاره بيترجم بيه الأول، ولو وقف بيكمّل على موديلات تانية من OmniRoute. «تلقائي» = OmniRoute يختار.", 11.5f, th.muted),
+            ui.button("⚙ ضبط OmniRoute (مفتاح · موديل التفريغ · بدايل)") { editDialog(act, ui, th, p) { refresh(); label() } },
+            ui.text("باقي مزوّدين الذكاء الاصطناعي (ChatGPT · Claude · Groq …) من شاشة 🤖 الذكاء.", 11.5f, th.muted))
     }
 
     /** نافذة ضبط مزوّد LLM: مفتاح · موديل · رابط · موديل تفريغ · تفعيل */

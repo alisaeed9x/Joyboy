@@ -181,7 +181,7 @@ class NetBadge(ctx: Context) : LinearLayout(ctx) {
     fun set(local: String, online: String) { val x = "🌐 $local"; val y = "🔗 $online"; var ch = false; if (a.text.toString() != x) { a.text = x; ch = true }; if (b.text.toString() != y) { b.text = y; ch = true }; if (ch) requestLayout() }
 }
 
-class MaxHeightScroll(ctx: Context, val maxH: Int) : ScrollView(ctx) {
+class MaxHeightScroll(ctx: Context, var maxH: Int) : ScrollView(ctx) {
     override fun onMeasure(w: Int, h: Int) {
         super.onMeasure(w, MeasureSpec.makeMeasureSpec(maxH, MeasureSpec.AT_MOST))
     }

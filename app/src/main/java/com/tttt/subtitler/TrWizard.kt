@@ -470,12 +470,15 @@ object TrWizard {
             if (src == "sherpa" && !SherpaStt.supported()) { Notice.show(act, "جهازك مش بيدعم SenseVoice", 2500L); return }
             normalize(); sync()
             if (id == "omni_ai" || id == "omni_only") {   // (v369) لازم أومني روت يكون شغّال الأول (بنفحصه ونسجّل إنه من غير مفتاح لو كده)
+                // (v370) الإشعارات بتتحبس في مثلث ▲ لما المشغّل فاتح (Notice.sinkFor) فرسايل الفشل ماكانتش بتظهر والقايمة تفضل ساكتة — بقت بتظهر في عنوان القايمة نفسها
+                title.text = "🛰 بفحص OmniRoute…"
                 Thread {
                     val st = try { OmniAuto.probe() } catch (_: Throwable) { OmniAuto.St.DOWN }
                     act.runOnUiThread {
-                        if (st == OmniAuto.St.DOWN) { Notice.show(act, "🛰 OmniRoute مش شغّال على الموبايل (localhost:20128) — شغّله الأول وجرّب تاني", 4200L); return@runOnUiThread }
-                        if (st == OmniAuto.St.NEED_KEY) { Notice.show(act, "🔑 OmniRoute شغّال بس طالب مفتاح — حطه من الإعدادات ← الذكاء الاصطناعي ← مفاتيحي", 4800L); return@runOnUiThread }
-                        if (TrWizard.sttCandidate("omniroute") == null) { Notice.show(act, "🎙 موديل التفريغ لأومني روت فاضي — اكتبه من الإعدادات ← الذكاء الاصطناعي (مثلًا deepgram/nova-3)", 4800L); return@runOnUiThread }
+                        fun fail(m: String) { title.text = m; Notice.show(act, m, 4800L) }
+                        if (st == OmniAuto.St.DOWN) { fail("🛰 OmniRoute مش شغّال على الموبايل (localhost:20128) — شغّله الأول وجرّب تاني"); return@runOnUiThread }
+                        if (st == OmniAuto.St.NEED_KEY) { fail("🔑 OmniRoute شغّال بس طالب مفتاح — حطه من الإعدادات ← الذكاء الاصطناعي ← مفاتيحي"); return@runOnUiThread }
+                        if (TrWizard.sttCandidate("omniroute") == null) { fail("🎙 موديل التفريغ لأومني روت فاضي — اكتبه من الإعدادات ← الذكاء الاصطناعي (مثلًا deepgram/nova-3)"); return@runOnUiThread }
                         afterModePick()
                     }
                 }.start()
@@ -506,7 +509,6 @@ object TrWizard {
             opt("✍ أومني روت — تفريغ بس", "أومني روت يفرّغ النص بلغته الأصلية من غير ترجمة", mId == "omni_only") { pickMode("omni_only") }
             sec("👁 بصري")
             opt("👁 وضع بصري فقط", "بنوعيه: نصوص الشاشة أو هارد سب · من غير ترجمة صوت", SourceMode.get() == SourceMode.VISUAL) { mId = "visual"; Cfg.put("tr_mode_id", "visual"); viaModes = true; tsrc = "visual"; go { stepVisKind() } }
-            opt("⋯ متقدّم", "الخط الكامل (تفريغ ← ترجمة ← لهجة) · محركات خارجية · مترجمين الريبو · الإعداد المحفوظ", false) { viaModes = false; go { stepSource() } }
             if (hist.size > 1) addBack() else footBtn("✖ إلغاء", false) { dlg.dismiss() }
         }
 

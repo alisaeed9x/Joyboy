@@ -22,7 +22,7 @@ object SettingsTabs {
     /** (v235) ترتيب واحد لكل أشكال الإعدادات (شاشة الإعدادات · قايمة ⚙️ في المكتبة · قايمة ⚙️ في المشغّل): كل حاجة جنب أخواتها */
     val sections = listOf(
         Sec("general", "🚀 خط الترجمة", "الخطة (تفريغ ← ترجمة ← لهجة) · اللهجة · الأسلوب · شدة الترجمة · تحويل اللهجة · 📝 البرومبتات", "🚀 الترجمة والمحرك"),
-        Sec("keys", "🔑 المفاتيح", "مفاتيح جيميناي · مفتاح الوضع البصري · محركات خارجية (ChatGPT · Claude · …) · الاستهلاك", "🚀 الترجمة والمحرك"),
+        Sec("keys", "🔑 المفاتيح", "مفاتيح جيميناي · مفتاح الوضع البصري · OmniRoute · الاستهلاك", "🚀 الترجمة والمحرك"),
         Sec("audio", "🎙 التفريغ والصوت", "موديلات التفريغ على الجهاز · لغة الكلام · مسار الصوت · جودة الصوت · الأصوات الخلفية · دقة التوقيت", "🚀 الترجمة والمحرك"),
         Sec("visual", "👁 الصورة (الوضع البصري)", "تلقائي أو يدوي · قراءة الكلام المكتوب في الفيديو", "🚀 الترجمة والمحرك"),
         Sec("perf", "🤖 الموديل والأداء", "الموديل · اختبار السرعة · طول المقطع · المقاطع قدّام التشغيل · التنقيح", "🚀 الترجمة والمحرك"),
@@ -44,7 +44,12 @@ object SettingsTabs {
 class TabDef(val id: String, val label: String, val content: List<View>, val preview: Boolean = false, val sub: String = "", val group: String = "")
 
 /** إعدادات على طريقة MX Player: قايمة أقسام (أيقونة · عنوان · وصف) ← دوس على قسم يفتح شاشته ← سهم الرجوع يرجّعك للقايمة. preview = معاينة الترجمة بتظهر فوق المحتوى في الأقسام اللي preview=true */
-class TabbedDialog(val act: Activity, val ui: Ui, val title: String, val tabs: List<TabDef>, val preview: View?, onClose: () -> Unit) {
+class TabbedDialog(val act: Activity, val ui: Ui, val title: String, val tabs: List<TabDef>, val preview: View?, private val onClose: () -> Unit) {
+    /** (v370) لو اتحط: الإعدادات صفحة جوه التطبيق (تبويب ⚙️) مش دايلوج، و«إغلاق/رجوع من القايمة» بينده ده */
+    var embedClose: (() -> Unit)? = null
+    private var embedded = false
+    private lateinit var root: LinearLayout
+    private lateinit var scrollBox: MaxHeightScroll
     val dialog = GDialog(act)
     private val listPage = LinearLayout(act)
     private val bodies = ArrayList<LinearLayout>()
@@ -60,7 +65,7 @@ class TabbedDialog(val act: Activity, val ui: Ui, val title: String, val tabs: L
         val th = ui.th
         dialog.requestWindowFeature(Window.FEATURE_NO_TITLE)
         val dm = act.resources.displayMetrics
-        val root = LinearLayout(act).apply {
+        root = LinearLayout(act).apply {
             orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL
             setPadding(ui.dp(12), ui.dp(10), ui.dp(12), ui.dp(12)); background = ui.box(th.card, th.border, 18)
         }
@@ -74,37 +79,34 @@ class TabbedDialog(val act: Activity, val ui: Ui, val title: String, val tabs: L
         head.addView(backTv, LinearLayout.LayoutParams(-2, -2).apply { marginEnd = ui.dp(10) })
         titleTv = ui.text(title, 17f, th.primary, true)
         head.addView(titleTv, LinearLayout.LayoutParams(0, -2, 1f))
-        head.addView(IconTextView(act).apply { text = "✕"; textSize = 18f; setTextColor(th.muted); setPadding(ui.dp(10), ui.dp(4), ui.dp(10), ui.dp(4)); setOnClickListener { dialog.dismiss() } })
+        head.addView(IconTextView(act).apply { text = "✕"; textSize = 18f; setTextColor(th.muted); setPadding(ui.dp(10), ui.dp(4), ui.dp(10), ui.dp(4)); setOnClickListener { embedClose?.invoke() ?: dialog.dismiss() } })
         root.addView(head, LinearLayout.LayoutParams(-1, -2))
 
         if (preview != null) { previewBox.addView(preview); previewBox.visibility = View.GONE; root.addView(previewBox, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = ui.dp(8) }) }
 
         // صفحة القايمة الرئيسية
         listPage.apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL }
-        // (v355) الأقسام بقت مربعات: أيقونة كبيرة + اسم قصير، 3 في الصف، وعنوان لكل مجموعة. ضغطة طويلة على المربع = وصف اللي جواه
+        // (v370) الأقسام صفوف على طريقة MX Player (أيقونة · عنوان · وصف) بدل المربعات — نفس الشكل في الصفحة الكاملة وفي الدايلوج
         var lastGroup = ""
-        var rowBox: LinearLayout? = null; var inRow = 0
-        fun flushRow() { val r = rowBox ?: return; while (inRow < 3) { r.addView(View(act), LinearLayout.LayoutParams(0, ui.dp(92), 1f).apply { setMargins(ui.dp(4), ui.dp(4), ui.dp(4), ui.dp(4)) }); inRow++ }; rowBox = null; inRow = 0 }
         tabs.forEachIndexed { i, t ->
-            // عنوان قسم لما المجموعة تتغيّر: عام · مشغّل الفيديو · مشغّل الموسيقى · يوتيوب
             if (t.group.isNotBlank() && t.group != lastGroup) {
-                flushRow(); lastGroup = t.group
+                lastGroup = t.group
                 if (tabs.map { it.group }.distinct().size > 1) listPage.addView(ui.text(t.group, 13f, th.muted, true).apply { setPadding(ui.dp(6), ui.dp(12), ui.dp(6), ui.dp(2)) }, LinearLayout.LayoutParams(-1, -2))
             }
-            if (rowBox == null) { rowBox = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL }; listPage.addView(rowBox, LinearLayout.LayoutParams(-1, -2)); inRow = 0 }
-            val tile = LinearLayout(act).apply {
-                orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER; layoutDirection = View.LAYOUT_DIRECTION_RTL
-                setPadding(ui.dp(4), ui.dp(8), ui.dp(4), ui.dp(8)); background = ui.box(th.surface, th.border, 16)
+            val row = LinearLayout(act).apply {
+                orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL
+                setPadding(ui.dp(12), ui.dp(10), ui.dp(12), ui.dp(10)); background = ui.box(th.surface, th.border, 14)
                 Glass.pressable(this)
                 setOnClickListener { select(i) }
-                if (t.sub.isNotBlank()) setOnLongClickListener { Notice.show(act, t.sub, 3200L); true }
             }
-            tile.addView(IconTextView(act).apply { text = iconOf(t.label); textSize = 30f; gravity = Gravity.CENTER }, LinearLayout.LayoutParams(-2, -2))
-            tile.addView(ui.text(nameOf(t.label), 12.5f, th.text, true).apply { gravity = Gravity.CENTER; maxLines = 2; setPadding(0, ui.dp(5), 0, 0) }, LinearLayout.LayoutParams(-1, -2))
-            rowBox!!.addView(tile, LinearLayout.LayoutParams(0, ui.dp(92), 1f).apply { setMargins(ui.dp(4), ui.dp(4), ui.dp(4), ui.dp(4)) })
-            if (++inRow == 3) { rowBox = null; inRow = 0 }
+            row.addView(IconTextView(act).apply { text = iconOf(t.label); textSize = 24f; gravity = Gravity.CENTER }, LinearLayout.LayoutParams(ui.dp(40), -2))
+            val col = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL }
+            col.addView(ui.text(nameOf(t.label), 15f, th.text, true))
+            if (t.sub.isNotBlank()) col.addView(ui.text(t.sub, 11.5f, th.muted).apply { maxLines = 2; setPadding(0, ui.dp(2), 0, 0) })
+            row.addView(col, LinearLayout.LayoutParams(0, -2, 1f).apply { marginStart = ui.dp(6) })
+            row.addView(IconTextView(act).apply { text = "‹"; textSize = 20f; setTextColor(th.muted); gravity = Gravity.CENTER })
+            listPage.addView(row, LinearLayout.LayoutParams(-1, -2).apply { setMargins(ui.dp(2), ui.dp(3), ui.dp(2), ui.dp(3)) })
         }
-        flushRow()
 
         val frame = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL }
         frame.addView(listPage, LinearLayout.LayoutParams(-1, -2))
@@ -113,7 +115,8 @@ class TabbedDialog(val act: Activity, val ui: Ui, val title: String, val tabs: L
             t.content.forEach { b.addView(it) }
             bodies.add(b); frame.addView(b, LinearLayout.LayoutParams(-1, -2))
         }
-        root.addView(MaxHeightScroll(act, (dm.heightPixels * 0.66f).toInt()).apply { addView(frame) }, LinearLayout.LayoutParams(-1, -2))
+        scrollBox = MaxHeightScroll(act, (dm.heightPixels * 0.66f).toInt()).apply { addView(frame) }
+        root.addView(scrollBox, LinearLayout.LayoutParams(-1, -2))
         dialog.setContentView(root)
         dialog.window?.apply {
             setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
@@ -145,7 +148,7 @@ class TabbedDialog(val act: Activity, val ui: Ui, val title: String, val tabs: L
         titleTv.text = title
     }
 
-    fun back() { if (cur >= 0) showList() else dialog.dismiss() }
+    fun back() { if (cur >= 0) showList() else (embedClose?.invoke() ?: dialog.dismiss()) }
 
     fun select(i: Int) {
         if (i !in tabs.indices) return
@@ -160,7 +163,21 @@ class TabbedDialog(val act: Activity, val ui: Ui, val title: String, val tabs: L
 
     fun show(tabId: String? = null) {
         if (tabId == null) showList() else tabs.indexOfFirst { it.id == tabId }.takeIf { it >= 0 }?.let { select(it) } ?: showList()
-        dialog.show()
+        if (!embedded) dialog.show()
     }
+
+    /** (v370) بيطلّع الإعدادات من الدايلوج ويحطها صفحة كاملة جوه [parent] (تبويب ⚙️ في الشريط السفلي) */
+    fun embedInto(parent: android.view.ViewGroup) {
+        (root.parent as? android.view.ViewGroup)?.removeView(root)
+        embedded = true
+        root.background = ColorDrawable(ui.th.bg)
+        scrollBox.maxH = act.resources.displayMetrics.heightPixels
+        root.removeView(scrollBox)
+        root.addView(scrollBox, LinearLayout.LayoutParams(-1, 0, 1f))
+        parent.addView(root, FrameLayout.LayoutParams(-1, -1))
+    }
+
+    /** (v370) في الوضع المدمج: يفتح قسم (أو القايمة لو null) */
+    fun showEmbedded(tabId: String? = null) = show(tabId)
 }
 

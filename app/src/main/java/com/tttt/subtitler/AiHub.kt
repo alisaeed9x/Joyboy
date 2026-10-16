@@ -247,9 +247,16 @@ class AiHubActivity : Activity() {
         val all = AiApi.sources()
         val keep = Cfg.str("aihub_src")
         src = all.firstOrNull { it.id == src?.id } ?: all.firstOrNull { it.id == keep } ?: all.firstOrNull { it.id == InternalRouter.ID } ?: all.firstOrNull()
-        model = src?.let { Cfg.str("aihub_model_" + it.id).ifEmpty { it.defModel } } ?: ""
-        srcBtn.text = "🔌 " + (src?.label ?: "ضيف مزوّد"); modelBtn.text = "🧠 " + model.ifEmpty { "اختار موديل" }
+        model = src?.let { Cfg.str("aihub_model_" + it.id).ifEmpty { autoModel(it) } } ?: ""
+        srcBtn.text = "🔌 " + (src?.label ?: "ضيف مزوّد"); setModelLabel()
         refreshStatus()
+    }
+
+    /** (v374) «تلقائي» لكل مزوّد: أومني روت = auto (مش موديل الترجمة المثبّت)، والباقي موديله الافتراضي */
+    private fun autoModel(s: AiApi.Src): String = if (s.id == "omniroute") "auto" else s.defModel
+    private fun setModelLabel() {
+        val s = src
+        modelBtn.text = "🧠 " + (if (s == null) "اختار موديل" else Cfg.str("aihub_model_" + s.id).let { if (it.isBlank() || it == "auto") "تلقائي" else it }) + " ▾"
     }
 
     private fun refreshStatus() {
@@ -283,21 +290,31 @@ class AiHubActivity : Activity() {
         d.window?.setLayout((resources.displayMetrics.widthPixels * 0.94f).toInt(), android.view.WindowManager.LayoutParams.WRAP_CONTENT)
     }
 
+    /** (v374) زرار الموديل: قايمة صغيرة منسدلة (تلقائي + كل الموديلات اللي اتجابت) بدل الشاشة الكاملة؛ البحث والتفاصيل في آخرها */
     private fun pickModelDialog() {
         val s = src ?: run { toast("ضيف مزوّد الأول"); return }
         val cached = cache[s.id]
-        if (cached != null) { modelList(s, cached); return }
-        toast("⏳ بجيب الموديلات…", 1600L)
+        if (cached != null) { modelDrop(s, cached); return }
+        modelBtn.text = "⏳ بجيب الموديلات…"
         Thread {
             val r = runCatching { AiApi.models(s) }
             runOnUiThread {
+                setModelLabel()
                 val l = r.getOrNull()
                 if (l == null) { toast("❌ " + (r.exceptionOrNull()?.message ?: "فشل").take(120), 4000L); return@runOnUiThread }
                 val extra = if (s.id == "omniroute" || s.url.contains(":20128")) listOf("auto", "auto/coding", "auto/fast", "auto/cheap", "auto/offline", "auto/smart").map { AiModels.describe(it, "OmniRoute", 0) } else emptyList()
                 val all = extra + l.filter { AiModels.isChat(it.id) && extra.none { e -> e.id == it.id } }
-                cache[s.id] = all; modelList(s, all)
+                cache[s.id] = all; modelDrop(s, all)
             }
         }.start()
+    }
+
+    private fun modelDrop(s: AiApi.Src, all: List<AiModels.Info>) {
+        val cur = Cfg.str("aihub_model_" + s.id).let { if (it == "auto") "" else it }
+        PublicApisUi.dropdown(this, ui, th, modelBtn, all.map { it.id }.filter { it != "auto" }, cur, "تلقائي", "🔍 بحث وتفاصيل الموديلات…" to { modelList(s, all) }) { v ->
+            Cfg.put("aihub_model_" + s.id, v); model = v.ifEmpty { autoModel(s) }; setModelLabel()
+            if (mode == 2 && v.isNotEmpty() && all.firstOrNull { it.id == v }?.let { "صور" !in it.tags && !v.startsWith("auto") } == true) toast("⚠ الموديل ده غالبًا مش بيشوف صور")
+        }
     }
 
     private fun modelList(s: AiApi.Src, all: List<AiModels.Info>) {
@@ -314,7 +331,7 @@ class AiHubActivity : Activity() {
             val f = all.filter { (tag == "الكل" || tag in it.tags) && (q.isEmpty() || it.id.lowercase().contains(q)) }
                 .sortedByDescending { if (pref.isNotEmpty() && pref in it.tags) 1 else 0 }
             for (m in f.take(60)) list.addView(ui.button(m.id + "\n" + (if (m.tags.isNotEmpty()) m.tags.joinToString(" · ") + "\n" else "") + m.desc) {
-                model = m.id; Cfg.put("aihub_model_" + s.id, m.id); modelBtn.text = "🧠 " + m.id; d.dismiss()
+                model = m.id; Cfg.put("aihub_model_" + s.id, m.id); setModelLabel(); d.dismiss()
                 if (mode == 2 && "صور" !in m.tags && !m.id.startsWith("auto")) toast("⚠ الموديل ده غالبًا مش بيشوف صور")
             }.apply { gravity = Gravity.START or Gravity.CENTER_VERTICAL; textSize = 12.5f })
             if (f.size > 60) list.addView(ui.text("… و${f.size - 60} كمان — اكتب في البحث عشان تضيّق", 11.5f, th.muted))
@@ -333,7 +350,7 @@ class AiHubActivity : Activity() {
         box.addView(ui.button("✏ اكتب اسم موديل يدوي") {
             val e = ui.input("اسم الموديل", model, 1).apply { layoutDirection = View.LAYOUT_DIRECTION_LTR }
             val d2 = GDialog(this); val b2 = dlgBox(); b2.addView(e)
-            b2.addView(ui.button("حفظ", true) { val v = e.text.toString().trim(); if (v.isNotEmpty()) { model = v; Cfg.put("aihub_model_" + s.id, v); modelBtn.text = "🧠 $v" }; d2.dismiss(); d.dismiss() })
+            b2.addView(ui.button("حفظ", true) { val v = e.text.toString().trim(); if (v.isNotEmpty()) { model = v; Cfg.put("aihub_model_" + s.id, v); setModelLabel() }; d2.dismiss(); d.dismiss() })
             showDlg(d2, b2)
         })
         box.addView(ui.button("🔄 حدّث القايمة") { cache.remove(s.id); d.dismiss(); pickModelDialog() })

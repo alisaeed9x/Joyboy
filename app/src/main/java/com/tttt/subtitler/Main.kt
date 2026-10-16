@@ -78,6 +78,8 @@ class MainActivity : Activity() {
     /** (v324) صفحة المهام طلعت من الشريط السفلي (مكانها بقى يوتيوب): بتتفتح من الزرار العايم (TasksFab) أو ⚙️ أو الويدجت، وبتتخبّى بالرجوع. رقمها الداخلي 5 */
     private fun showTasksDialog() { showTabFn(5) }
     private var tabBeforeTasks = 0
+    private var tabBeforeSettings = 0   // (v370) تبويب ⚙️ الإعدادات (رقمه 7): الرجوع منه للصفحة اللي جيت منها
+    private var settingsHostRef: FrameLayout? = null
     // (v339) فتح فيديو/صوت يوتيوب فورًا بلودينج جوه المشغّل + الرجوع لنفس المكان
     private var ytLoadUi: YtLoadingPage? = null
     private var ytLoadTok = 0          // أي طلب فيديو جديد/إلغاء بيزوّده؛ النتيجة المتأخرة بتتجاهل
@@ -105,7 +107,6 @@ class MainActivity : Activity() {
         if (fromPlayer) requestedOrientation = if (intent?.getBooleanExtra("land", false) == true) ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE else ActivityInfo.SCREEN_ORIENTATION_PORTRAIT   // الإعدادات من المشغّل: بنفس اتجاه المشغّل
         UiWatchdog.start()
         Cfg.init(this); CrashLog.install(this); YtFast.startup()
-        if (!fromPlayer) android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({ if (!isDestroyed) PublicApis.autoPull(this) }, 6000L)   // (v272) سحب قايمة public-apis لوحده + إشعار
         val th = Themes.byId(Cfg.str("theme", "mx"))
         val ui = Ui(this, th)
         applyBars(th)
@@ -592,7 +593,7 @@ class MainActivity : Activity() {
                                 ui.section("👁 مفتاح الوضع البصري فقط", false,
                     ui.text("الوضع البصري (👁) بيشتغل بالمفاتيح اللي هنا بس، ومش بياخد أبدًا من مفاتيح الترجمة. لو سبتها فاضية الوضع البصري مش هيشتغل. ولما الوضع البصري مايكونش شغّال المفتاح ده بيشتغل كمفتاح احتياطي للترجمة والتنقيح.", 12f, th.muted), visKeysUi),
                 ui.button("🤖 شاشة الذكاء الاصطناعي (نص · كود · صورة · ملف)", true) { startActivity(android.content.Intent(this, AiHubActivity::class.java)) },
-                PublicApisUi.section(this, ui, th))),
+                PublicApisUi.omniSection(this, ui, th))),
             // ===== 🎙 التفريغ والصوت: موديلات الجهاز + إعدادات الصوت =====
             tab("audio", listOf<View>(
                 ui.text("التفريغ = تحويل الكلام لنص. محرك الجهاز مجاني وبيشتغل من غير نت (بتنزّل الموديل مرة واحدة). الباقي: مسار الصوت وجودته.", 12f, th.muted),
@@ -726,7 +727,7 @@ class MainActivity : Activity() {
         lib.onRenameFolder = { f -> ops.renameFolder(f) }
         lib.onDeleteFolder = { f -> ops.deleteFolder(f) }
         lib.onDetails = { v -> ops.details(v, Recents.parse(try { recentFile.readText() } catch (_: Exception) { "" }).firstOrNull { it.id == v.videoId }) }
-        val qui = QueueUi(this, ui, th); queueUi = qui; qui0 = qui; settingsDlg0 = settingsDlg; settingsShow = { t -> settingsDlg.show(t) }
+        val qui = QueueUi(this, ui, th); queueUi = qui; qui0 = qui; settingsDlg0 = settingsDlg; settingsShow = { t -> if (fromPlayer) settingsDlg.show(t) else { showTabFn(7); settingsDlg.showEmbedded(t) } }; settingsBack = { settingsDlg.back() }
         dismissSettings = { try { settingsDlg.dialog.dismiss() } catch (_: Throwable) {} }
         // رجّع الطابور المحفوظ (لو التطبيق اتقفل/اتمسح) وكمّل الترجمة
         if (!fromPlayer && BgJobs.restore(this) > 0) { BgService.start(this); libUi?.refreshRows() }
@@ -734,28 +735,7 @@ class MainActivity : Activity() {
         BgJobs.onChange = { runOnUiThread { if (!isDestroyed) { libUi?.refreshRows(); if (qui.showing) qui.refresh(); TaskCenter.changed(); updateTasksFab() } } }
         lib.gate = { open -> lk.gate(open) }
         // (v87) ⚙️ في المكتبة: قايمة صغيرة منسدلة بالأقسام، دوسة على قسم تفتحه دايركت (بدل شاشة القايمة الكبيرة)
-        lib.onSettings = { anchor ->
-            val col = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; setPadding(ui.dp(6), ui.dp(6), ui.dp(6), ui.dp(6)); background = ui.box(th.card, th.border, 14); elevation = ui.dp(8).toFloat() }
-            val pw = android.widget.PopupWindow(col, -2, -2, true)
-            pw.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(0))
-            col.addView(IconTextView(this).apply {
-                val n = TaskCenter.active() + BgJobs.jobs.count { it.active }
-                text = if (n > 0) "⏳ المهام ($n)" else "⏳ المهام"; textSize = 14f; setTextColor(th.text); minHeight = ui.dp(42); gravity = Gravity.CENTER_VERTICAL or Gravity.START
-                setPadding(ui.dp(14), ui.dp(6), ui.dp(14), ui.dp(6)); minimumWidth = ui.dp(190)
-                setOnClickListener { pw.dismiss(); showTasksDialog() }
-            })
-            var lastG = ""
-            for (t in settingsDlg.tabs) {
-                if (t.group != lastG && settingsDlg.tabs.count { it.group == t.group } > 1) col.addView(ui.text(t.group, 11f, th.muted, true).apply { setPadding(ui.dp(14), ui.dp(8), ui.dp(14), ui.dp(2)) })
-                lastG = t.group
-                col.addView(IconTextView(this).apply {
-                text = t.label; textSize = 14f; setTextColor(th.text); minHeight = ui.dp(42); gravity = Gravity.CENTER_VERTICAL or Gravity.START
-                setPadding(ui.dp(14), ui.dp(6), ui.dp(14), ui.dp(6)); minimumWidth = ui.dp(190)
-                setOnClickListener { pw.dismiss(); settingsDlg.show(t.id) }
-            })
-            }
-            try { pw.showAsDropDown(anchor, 0, ui.dp(2)) } catch (_: Throwable) { settingsDlg.show() }
-        }
+        lib.onSettings = { _ -> settingsShow?.invoke(null) }   // (v370) ⚙️ فوق = نفس تبويب ⚙️ الإعدادات تحت (كانت قايمة منسدلة تانية)
         lib.onLink = { recentDlg?.show() }
         lib.onPick = { save(); pickVideo() }
         lib.onGrant = { requestPermissions(arrayOf(VideoScan.permission()), 11) }
@@ -859,9 +839,11 @@ class MainActivity : Activity() {
         // (v189) البوابات: 0 الفيديوهات · 1 الموسيقى · 2 المتصفح · 3 الملفات (شاشات لوحدها) · (v324) 4 يوتيوب
         // (v324) 5 = صفحة المهام: مش في الشريط، بتتفتح من الزرار العايم (الشريط ساعتها مفيهوش بوابة نشطة)
         showTabFn = { i ->
-            if (i == 0 || i == 1 || i == 4 || i == 5) {
+            if (i == 0 || i == 1 || i == 4 || i == 5 || i == 7) {
                 val prevTab = curTab
                 if (i == 5 && prevTab != 5) tabBeforeTasks = prevTab
+                if (i == 7 && prevTab != 7) tabBeforeSettings = prevTab
+                if (prevTab == 7 && i != 7) { try { save(); refreshChip() } catch (_: Throwable) {} }
                 curTab = i
                 dockUi?.refresh()   // (v344) المشغّل المصغّر بيختفي
                 stripUi?.hidden = (curTab == 5)   // (v345) في صفحة الموسيقى وبيظهر في الباقي
@@ -871,6 +853,7 @@ class MainActivity : Activity() {
                 if (i == 4) ensureYt()
                 ytUi?.root?.visibility = if (i == 4) View.VISIBLE else View.GONE
                 tasksUi.root.visibility = if (i == 5) View.VISIBLE else View.GONE
+                settingsHostRef?.visibility = if (i == 7) View.VISIBLE else View.GONE
                 tasksDlgRefresh = if (i == 5) ({ tasksUi.refresh() }) else null
                 navUi?.set(i)
                 if (i == 1) { musicUi?.ensureLoaded(); musicUi?.applyNavTint() } else setNavTint(null)
@@ -878,13 +861,13 @@ class MainActivity : Activity() {
                 if (i == 5) tasksUi.refresh()
                 updateTasksFab()
                 if (prevTab != i) {   // (v312) الصفحة الجديدة بتنزلق من ناحية اتجاه الانتقال (الشريط RTL: رقم أكبر = شمال)
-                    val target: View? = when (i) { 0 -> lib.root; 1 -> musicUi?.root; 4 -> ytUi?.root; else -> tasksUi.root }
+                    val target: View? = when (i) { 0 -> lib.root; 1 -> musicUi?.root; 4 -> ytUi?.root; 7 -> settingsHostRef; else -> tasksUi.root }
                     if (target != null) Motion.tabEnter(target, if (NavAnim.pos(i) > NavAnim.pos(prevTab)) -1 else 1)
                 }
             }
         }
         musicOpenFn = { showTabFn(1); musicUi?.showFull() }   // (v337)
-        val nav = BottomNav(this, ui, th, 0) { i -> if (i == 2) { save(); NavAnim.set(curTab, 2); startActivity(Intent(this, BrowserActivity::class.java)) } else if (i == 3) { save(); NavAnim.set(curTab, 3); startActivity(Intent(this, FileManagerActivity::class.java)) } else if (i == 6) { save(); NavAnim.set(curTab, 6); startActivity(Intent(this, AiHubActivity::class.java)) } else { musicReturnTab = -1; showTabFn(i) } }   // (v310) 4 الملفات = شاشة منفصلة زي المتصفح
+        val nav = BottomNav(this, ui, th, 0) { i -> if (i == 2) { save(); NavAnim.set(curTab, 2); startActivity(Intent(this, BrowserActivity::class.java)) } else if (i == 3) { save(); NavAnim.set(curTab, 3); startActivity(Intent(this, FileManagerActivity::class.java)) } else if (i == 6) { save(); NavAnim.set(curTab, 6); startActivity(Intent(this, AiHubActivity::class.java)) } else if (i == 7) { musicReturnTab = -1; settingsShow?.invoke(null) } else { musicReturnTab = -1; showTabFn(i) } }   // (v310) 4 الملفات = شاشة منفصلة زي المتصفح
         navUi = nav
         if (!fromPlayer) {
             TaskCenter.listener = { if (!isDestroyed && !isFinishing) { tasksDlgRefresh?.invoke(); runOnUiThread { updateTasksFab() } } }
@@ -892,6 +875,12 @@ class MainActivity : Activity() {
         pane.addView(lib.root, FrameLayout.LayoutParams(-1, -1))
         tasksUi.root.visibility = View.GONE
         pane.addView(tasksUi.root, FrameLayout.LayoutParams(-1, -1))   // (v231) صفحة المهام
+        if (!fromPlayer) {   // (v370) الإعدادات صفحة كاملة (تبويب ⚙️) بدل الدايلوج — الدايلوج بيفضل بس لما الإعدادات تتفتح من المشغّل
+            val host = FrameLayout(this).apply { visibility = View.GONE }
+            settingsDlg.embedClose = { showTabFn(if (tabBeforeSettings == 7) 0 else tabBeforeSettings) }
+            settingsDlg.embedInto(host)
+            pane.addView(host, FrameLayout.LayoutParams(-1, -1)); settingsHostRef = host
+        }
         // (v336) الزرار العايم (TasksFab) اتشال مؤقتًا — المهام بقت زرار في الشريط السفلي
         updateTasksFab()
         val shell = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_LTR }
@@ -918,7 +907,7 @@ class MainActivity : Activity() {
             else if (t0 == "tasks") frame.post { showTabFn(5) }
             else if (t0 == "youtube") frame.post { showTabFn(4); openYtFromIntent(intent) }
         }
-        intent?.getStringExtra("reopen_tab")?.let { t -> intent?.removeExtra("reopen_tab"); frame.post { if (!isFinishing && !isDestroyed) settingsDlg.show(t) } }
+        intent?.getStringExtra("reopen_tab")?.let { t -> intent?.removeExtra("reopen_tab"); frame.post { if (!isFinishing && !isDestroyed) settingsShow?.invoke(t) } }
         // لو مفيش مفتاح Gemini: القايمة بتظهر مباشرة أول البرنامج، وبعدها الفحص
         frame.post { permFlow { ensureKeysSoft { keys.setText(Cfg.allMainKeys().joinToString("\n")); keyLoadersRef.forEach { it() }; refreshChip(); doScan() } } }
         frame.post { handleExternal(intent) }   // (v345) لينك جاي من تطبيق تاني (مشاركة / فتح)
@@ -1408,6 +1397,7 @@ class MainActivity : Activity() {
     /** (v350) عدّاد الفيديوهات الجديدة على أيقونة يوتيوب */
     /** (v355) فتح قسم من إعدادات البرنامج من أي شاشة (مثلًا ⚙ يوتيوب) */
     var settingsShow: ((String?) -> Unit)? = null
+    var settingsBack: (() -> Unit)? = null   // (v370) رجوع جوه صفحة الإعدادات (قسم ← القايمة ← الصفحة السابقة)
     fun openSettingsTab(t: String) { try { settingsShow?.invoke(t) } catch (_: Throwable) {} }
     fun updateYtBadge() { navUi?.badge(4, YtNotify.badgeCount()) }
     override fun onResume() {
@@ -1446,6 +1436,7 @@ class MainActivity : Activity() {
     override fun onBackPressed() {
         if (!fromPlayer && ytLoadUi?.visible == true) { cancelYtLoad(); return }   // (v339) لسه بنجيب الفيديو: رجوع = إلغاء ونفضل في يوتيوب
         if (!fromPlayer && curTab == 4 && ytUi?.back() == true) return   // (v118) رجوع جوه يوتيوب الأول
+        if (!fromPlayer && curTab == 7) { settingsBack?.invoke(); return }   // (v370)
         if (!fromPlayer && curTab == 5) { showTabFn(if (tabBeforeTasks == 5) 0 else tabBeforeTasks); return }   // (v324) صفحة المهام ← للصفحة اللي جيت منها
         if (!fromPlayer && curTab == 1 && musicUi?.onBack() == true) return   // (v193) يقفل مشغّل الأسطوانة/الفولدر الأول
         if (!fromPlayer && curTab != 0) { showTabFn(0); return }

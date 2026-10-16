@@ -32,11 +32,11 @@ class BottomNav(act: Activity, private val ui: Ui, private val th: Theme, privat
             setBackgroundColor(th.card)
         }
         // (v336) الأرقام ثابتة (0 فيديوهات · 1 موسيقى · 2 متصفح · 3 ملفات · 4 يوتيوب · 5 مهام) لكن ترتيب العرض: يوتيوب قبل الملفات، والمهام رجعت زرار في الشريط
-        val defs = listOf("🎞" to "الفيديوهات", "🎵" to "الموسيقى", "🌐" to "المتصفح", "📂" to "الملفات", "▶" to "يوتيوب", "📋" to "المهام", "🤖" to "الذكاء")
-        val order = listOf(0, 1, 2, 4, 3, 6, 5)   // (v364) 🤖 الذكاء بين الملفات والمهام
+        val defs = listOf("🎞" to "الفيديوهات", "🎵" to "الموسيقى", "🌐" to "المتصفح", "📂" to "الملفات", "▶" to "يوتيوب", "📋" to "المهام", "🤖" to "الذكاء", "⚙️" to "الإعدادات")
+        val order = listOf(0, 1, 2, 4, 3, 6, 5, 7)   // (v364) 🤖 الذكاء بين الملفات والمهام
         defs.forEachIndexed { idx, d ->
             val icon = IconTextView(act).apply { text = d.first; textSize = 16f; gravity = Gravity.CENTER; includeFontPadding = false }
-            val lab = ui.text(d.second, 9.5f, th.muted, true).apply { gravity = Gravity.CENTER; setSingleLine() }
+            val lab = ui.text(d.second, 9f, th.muted, true).apply { gravity = Gravity.CENTER; setSingleLine() }
             val cell = LinearLayout(act).apply {
                 orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER; setPadding(0, ui.dp(3), 0, ui.dp(2))
                 val bdg = android.widget.TextView(act).apply {
