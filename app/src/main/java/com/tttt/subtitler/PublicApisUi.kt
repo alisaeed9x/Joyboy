@@ -55,6 +55,44 @@ object PublicApisUi {
         }.start()
     }
 
+    /** (v379) 🆓 قسم أوبن كود في المفاتيح: مفتاح (زي جيميناي) + اختيار الموديل + تجربة */
+    fun ocSection(act: Activity, ui: Ui, th: Theme): LinearLayout {
+        val p = ExtLlm.byId(OpenCodeFree.ID)!!
+        val st = ui.text("", 12.5f, th.text)
+        val key = ui.input("مفتاح أوبن كود (من opencode.ai)", Cfg.str("llm_opencode_key"), 1).apply { layoutDirection = View.LAYOUT_DIRECTION_LTR }
+        lateinit var modelBtn: IconButton
+        fun curModel(): String = Cfg.str("llm_opencode_model").trim().let { if (it.equals("auto", true)) "" else it }
+        fun label(note: String = "") { modelBtn.text = "🎯 موديل أوبن كود: " + curModel().ifBlank { "تلقائي" } + " ▾" + note }
+        fun hasKey() = Cfg.str("llm_opencode_key").trim().isNotEmpty() || OpenCodeFree.BUILTIN_KEY.isNotEmpty()
+        fun refresh() { st.text = (if (hasKey()) "✅ المفتاح محفوظ" else "🔓 من غير مفتاح — أوبن كود ممكن يرفض الطلب المجهول") + " · الموديل: " + curModel().ifBlank { "تلقائي (أول موديل مجاني شغّال)" } }
+        fun saveKey() { Cfg.put("llm_opencode_key", key.text.toString().trim()); OpenCodeFree.resetCool(); refresh() }
+        modelBtn = ui.button("") {
+            modelBtn.text = "⏳ بجيب الموديلات المجانية…"
+            Thread {
+                val r = runCatching { OpenCodeFree.list(true) }
+                act.runOnUiThread {
+                    label()
+                    val l = r.getOrNull().orEmpty()
+                    if (l.isEmpty()) { label("  ⚠ القايمة فاضية"); return@runOnUiThread }
+                    dropdown(act, ui, th, modelBtn, l, curModel(), "تلقائي (أول موديل مجاني شغّال + بدايل)") { v ->
+                        Cfg.put("llm_opencode_model", v.ifBlank { "auto" }); OpenCodeFree.resetCool(); label(); refresh()
+                    }
+                }
+            }.start()
+        }
+        label(); refresh()
+        return ui.section("🆓 أوبن كود (موديلات مجانية)", false,
+            st, key,
+            ui.button("💾 حفظ المفتاح", true) { saveKey(); Notice.show(act, "✅ اتحفظ مفتاح أوبن كود", 2200L) },
+            modelBtn,
+            ui.button("🧪 جرّب (يبعت جملة واحدة)") {
+                saveKey(); Notice.show(act, "⏳ بجرّب أوبن كود…", 1500L)
+                Thread { val r = ExtLlm.test(p); act.runOnUiThread { Notice.show(act, r, 6500L) } }.start()
+            },
+            ui.button("🗑 مسح المفتاح") { key.setText(""); saveKey() },
+            ui.text("الموديلات المجانية بتتجاب لوحدها وبتتحدّث. لو الموديل المختار وقع بيتحوّل لموديل مجاني تاني. الوضع بتاعه (تفريغ محلي + ترجمة أوبن كود) في ▶ ترجمة ← 🆓 أوبن كود.", 11.5f, th.muted))
+    }
+
     /** (v372) قسم الإعدادات الوحيد المتبقي لمحركات الـ LLM: OmniRoute (باقي المزوّدين من شاشة 🤖 الذكاء). (v373) + اختيار موديل الترجمة من قايمة منسدلة */
     fun omniSection(act: Activity, ui: Ui, th: Theme): LinearLayout {
         val p = ExtLlm.byId("omniroute")!!
@@ -73,9 +111,28 @@ object PublicApisUi {
                 }
             }
         }
+        // (v379) زرار صريح: اجلب القايمة من السيرفر (أو من مزوّدات الراوتر الداخلي لو السيرفر مش شغّال) واختار منها اللي يترجم
+        val fetchBtn = ui.button("🔄 اجلب القايمة واختار اللي يترجم") {
+            Notice.show(act, "⏳ بجيب القايمة من OmniRoute…", 1800L)
+            omniModels(act, true) { list, err ->
+                if (err != null) { Notice.show(act, "❌ $err", 3500L); return@omniModels }
+                Thread {
+                    val stt = try { OmniAuto.state() } catch (_: Throwable) { OmniAuto.St.DOWN }
+                    val where = when (stt) {
+                        OmniAuto.St.UP -> "🛰 السيرفر شغّال على " + OmniAuto.candidates().first()
+                        OmniAuto.St.NEED_KEY -> "🔑 السيرفر شغّال بس طالب مفتاح"
+                        OmniAuto.St.DOWN -> "🧭 السيرفر مش شغّال — القايمة من المزوّدين المكتوبين في الراوتر الداخلي"
+                    }
+                    act.runOnUiThread { Notice.show(act, "✅ اتجابت ${list.size} موديل/مفتاح\n$where", 4200L) }
+                }.start()
+                dropdown(act, ui, th, modelBtn, list, curModel(), "تلقائي (OmniRoute يختار + بدايل)") { v ->
+                    Cfg.put("llm_omniroute_model", v.ifBlank { "auto" }); ExtTranslate.clearBlock("llm_omniroute"); label(); refresh()
+                }
+            }
+        }
         label(); refresh()
         return ui.section("🛰 OmniRoute", false,
-            st, modelBtn,
+            st, fetchBtn, modelBtn,
             ui.text("اللي تختاره بيترجم بيه الأول، ولو وقف بيكمّل على موديلات تانية من OmniRoute. «تلقائي» = OmniRoute يختار.", 11.5f, th.muted),
             ui.button("⚙ ضبط OmniRoute (مفتاح · موديل التفريغ · بدايل)") { editDialog(act, ui, th, p) { refresh(); label() } },
             ui.text("باقي مزوّدين الذكاء الاصطناعي (ChatGPT · Claude · Groq …) من شاشة 🤖 الذكاء.", 11.5f, th.muted))

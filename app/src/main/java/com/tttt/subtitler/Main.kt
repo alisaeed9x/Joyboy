@@ -578,6 +578,9 @@ class MainActivity : Activity() {
                 ui.section("🆓 من غير مفتاح؟ تمام", true,
                     ui.text("المفتاح اختياري. من غيره البرنامج بيشتغل بتفريغ على الجهاز (أوفلاين) + ترجمة جوجل المجانية. ومعاه الترجمة بتبقى أدق وأسرع (جيميناي بيفهم السياق).", 13f, th.text),
                     ui.button("🎙 جهّز التفريغ على الجهاز (من غير مفتاح)") { settingsShow?.invoke("audio") }),
+                PublicApisUi.ocSection(this, ui, th),
+                PublicApisUi.omniSection(this, ui, th),
+                ui.section("✨ جيميناي", false,
                 ui.button("❓ إزاي أجيب مفتاح Gemini؟ (وألصقه)", true) {
                     showKeyGuide { k ->
                         val cur = keys.text.toString().lines().map { it.trim() }.filter { it.isNotEmpty() }
@@ -591,9 +594,8 @@ class MainActivity : Activity() {
                                 ui.section("🔑 كل المفاتيح", true,
                     ui.text("حط كل مفاتيحك هنا في قايمة واحدة — البرنامج بيوزّعها لوحده: مفاتيح للترجمة (أغلبها)، ومفتاح أو اتنين للتنقيح الجزئي أثناء الترجمة، ومفتاح احتياطي لو مفتاح اتعطّل (من 6 مفاتيح). التنقيح الجزئي بيبدأ من 3 مفاتيح.", 12f, th.muted), keysUi),
                                 ui.section("👁 مفتاح الوضع البصري فقط", false,
-                    ui.text("الوضع البصري (👁) بيشتغل بالمفاتيح اللي هنا بس، ومش بياخد أبدًا من مفاتيح الترجمة. لو سبتها فاضية الوضع البصري مش هيشتغل. ولما الوضع البصري مايكونش شغّال المفتاح ده بيشتغل كمفتاح احتياطي للترجمة والتنقيح.", 12f, th.muted), visKeysUi),
-                ui.button("🤖 شاشة الذكاء الاصطناعي (نص · كود · صورة · ملف)", true) { startActivity(android.content.Intent(this, AiHubActivity::class.java)) },
-                PublicApisUi.omniSection(this, ui, th))),
+                    ui.text("الوضع البصري (👁) بيشتغل بالمفاتيح اللي هنا بس، ومش بياخد أبدًا من مفاتيح الترجمة. لو سبتها فاضية الوضع البصري مش هيشتغل. ولما الوضع البصري مايكونش شغّال المفتاح ده بيشتغل كمفتاح احتياطي للترجمة والتنقيح.", 12f, th.muted), visKeysUi)),
+                ui.button("🤖 شاشة الذكاء الاصطناعي (نص · كود · صورة · ملف)", true) { startActivity(android.content.Intent(this, AiHubActivity::class.java)) })),
             // ===== 🎙 التفريغ والصوت: موديلات الجهاز + إعدادات الصوت =====
             tab("audio", listOf<View>(
                 ui.text("التفريغ = تحويل الكلام لنص. محرك الجهاز مجاني وبيشتغل من غير نت (بتنزّل الموديل مرة واحدة). الباقي: مسار الصوت وجودته.", 12f, th.muted),

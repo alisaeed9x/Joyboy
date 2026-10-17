@@ -19,6 +19,7 @@ object ExtLlm {
     val presets: List<Preset> = listOf(
         Preset("chatgpt", "ChatGPT (OpenAI)", "openai", "https://api.openai.com/v1", "gpt-4o-mini", "whisper-1", listOf("openai", "chatgpt")),
         Preset("claude", "Claude (Anthropic)", "anthropic", "https://api.anthropic.com/v1", "claude-haiku-5-5", "", listOf("anthropic", "claude")),
+        Preset("opencode", "أوبن كود (موديلات مجانية)", "openai", "https://opencode.ai/zen/v1", "auto", "", listOf("opencode")),
         Preset("omniroute", "OmniRoute (بوابة كل المزوّدين)", "openai", "http://localhost:20128/v1", "auto", "deepgram/nova-3", listOf("omniroute")),
         Preset("groq", "Groq", "openai", "https://api.groq.com/openai/v1", "llama-3.3-70b-versatile", "whisper-large-v3-turbo", listOf("groq")),
         Preset("openrouter", "OpenRouter", "openai", "https://openrouter.ai/api/v1", "openai/gpt-4o-mini", "", listOf("openrouter")),
@@ -38,7 +39,7 @@ object ExtLlm {
     fun sttModel(p: Preset): String = Cfg.str("llm_${p.id}_stt").trim().ifEmpty { p.sttModel }
     /** (v364) OmniRoute المحلي بيشتغل من غير مفتاح (REQUIRE_API_KEY=false افتراضيًا) — بيتفعّل لوحده لما OmniAuto يلاقيه شغّال */
     fun keyless(p: Preset): Boolean = p.id == "omniroute"
-    fun hasAccess(p: Preset): Boolean = key(p).isNotEmpty() || (keyless(p) && Cfg.str("omni_seen") == "1")
+    fun hasAccess(p: Preset): Boolean = key(p).isNotEmpty() || p.id == "opencode" || (keyless(p) && Cfg.str("omni_seen") == "1")
     fun bearer(p: Preset): Map<String, String> = key(p).let { if (it.isEmpty()) emptyMap() else mapOf("Authorization" to "Bearer $it") }
     fun configured(p: Preset): Boolean = hasAccess(p) && url(p).isNotEmpty() && model(p).isNotEmpty()
     /** يدعم تفريغ الصوت (/audio/transcriptions)؟ */
@@ -121,7 +122,7 @@ object ExtLlm {
             return txt
         } finally { try { c.disconnect() } catch (_: Throwable) {} }
     }
-    fun post(url: String, headers: Map<String, String>, body: String, readMs: Int = 60000): String = http("POST", url, headers, body, readMs)
+    fun post(url: String, headers: Map<String, String>, body: String, readMs: Int = 60000, method: String = "POST"): String = http(method, url, headers, if (method == "GET") null else body, readMs)
 
     /** رسالة خطأ مفهومة: 401/403 = مفتاح، 429 = كوتة، + أول سطر من رد الخدمة */
     fun errMsg(code: Int, body: String): String {
@@ -136,6 +137,7 @@ object ExtLlm {
      * نحفظه ونعيد الطلب مرة واحدة، وبيطلع إشعار بالتغيير. لو ملقيناش قريب بيفضل الخطأ الأصلي.
      */
     fun chat(p: Preset, system: String, user: String, maxTokens: Int): String {
+        if (p.id == "opencode") return OpenCodeFree.chat(model(p), system, listOf(AiApi.Msg("user", user)), maxTokens)   // (v379)
         if (p.id == "omniroute") return OmniModels.chat(p, system, user, maxTokens)   // (v369) لو موديل فشل بيتبعت لموديل تاني من أومني روت
         return chatHeal(p, system, user, maxTokens)
     }

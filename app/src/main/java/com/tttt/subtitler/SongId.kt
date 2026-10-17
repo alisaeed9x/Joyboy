@@ -63,6 +63,13 @@ object SongId {
                         }
                     } catch (_: Throwable) {}
                 }
+                // (v382) مفيش جيميناي أو فشل ← أوبن كود (نص بس، لو فيه مفتاح)
+                if (lt.isEmpty() && la.isEmpty() && OpenCodeFree.hasKey()) {
+                    try {
+                        val j = parseJson(OpenCodeFree.ask(p, 600))
+                        if (j != null) { lt = j.optString("title_latin").trim(); la = j.optString("artist_latin").trim() }
+                    } catch (_: Throwable) {}
+                }
             } catch (e: Throwable) { LogStore.err("songid-latin", e) }
             onDone(lt, la)
         }.apply { isDaemon = true }.start()
@@ -78,7 +85,7 @@ object SongId {
             var out: SongMatch? = null; var msg = ""
             try {
                 val keys = textKeys()
-                if (keys.isEmpty()) { onDone(null, "مفيش مفتاح جيميناي"); return@Thread }
+                if (keys.isEmpty() && !OpenCodeFree.hasKey()) { onDone(null, "مفيش مفتاح جيميناي ولا أوبن كود"); return@Thread }
                 fun fld(label: String, v: String, wrong: Boolean) =
                     if (v.isBlank()) "$label: (unknown — find it)\n" else if (wrong) "$label: \"$v\"  ← WRONG, reported by the user; never return this (or a trivial spelling variant) again\n" else "$label: \"$v\"  ← CORRECT (verified by the user — treat as ground truth)\n"
                 val p = buildString {
@@ -103,6 +110,7 @@ object SongId {
                         catch (e: Throwable) { msg = e.message ?: "" }
                     }
                 }
+                if (j == null && OpenCodeFree.hasKey()) { try { j = parseJson(OpenCodeFree.ask(p, 1500)) } catch (e: Throwable) { msg = e.message ?: msg } }   // (v382) أوبن كود احتياطي (من غير بحث جوجل)
                 if (j == null) { onDone(null, "جيميناي ما ردّش" + (if (msg.isNotBlank()) ": $msg" else "")); return@Thread }
                 val jj: JSONObject = j
                 fun g(k: String) = jj.optString(k).trim()

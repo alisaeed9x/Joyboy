@@ -87,7 +87,7 @@ object AiApi {
         val real = realSources()
         if (real.isEmpty()) return real
         // (v366) الراوتر التلقائي + جيميناي بمفاتيحك بس — باقي المزوّدين بيدخلوا الراوتر من وراه (بيتضبطوا من «مفاتيحي»)
-        return listOf(Src(InternalRouter.ID, "🧭 الراوتر الداخلي (تلقائي · من غير سيرفر)", "openai", "", "", "auto", null)) + real.filter { it.id == "gemini" || it.id == "omniroute" }
+        return listOf(Src(InternalRouter.ID, "🧭 الراوتر الداخلي (تلقائي · من غير سيرفر)", "openai", "", "", "auto", null)) + real.filter { it.id == "gemini" || it.id == "omniroute" || it.id == "opencode" }
     }
 
     /** المزوّدين الحقيقيين بس (من غير الراوتر الداخلي) */
@@ -96,7 +96,7 @@ object AiApi {
         for (p in ExtLlm.presets) {
             if (ExtLlm.hasAccess(p) && ExtLlm.url(p).isNotEmpty()) out.add(Src(p.id, p.label, p.kind, ExtLlm.url(p), ExtLlm.key(p), ExtLlm.model(p), p))
         }
-        Cfg.allMainKeys().firstOrNull()?.let { out.add(Src("gemini", "Gemini (مفاتيحك الحالية)", "openai", "https://generativelanguage.googleapis.com/v1beta/openai", it, "gemini-2.5-flash", null)) }
+        Cfg.allMainKeys().firstOrNull()?.let { out.add(Src("gemini", "Gemini (مفاتيحك الحالية)", "openai", "https://generativelanguage.googleapis.com/v1beta/openai", it, "gemini-flash-latest", null)) }
         return out
     }
 
@@ -119,6 +119,7 @@ object AiApi {
 
     fun models(s: Src): List<AiModels.Info> {
         if (s.id == InternalRouter.ID) return InternalRouter.models()
+        if (s.id == OpenCodeFree.ID) return OpenCodeFree.list(true).map { AiModels.describe(it, "OpenCode (مجاني)", 0) }   // (v379)
         val txt = http("GET", s.url + "/models" + (if (s.kind == "anthropic") "?limit=100" else ""), hdr(s), null, 30000)
         val arr = JSONObject(txt).optJSONArray("data") ?: JSONArray()
         val out = ArrayList<AiModels.Info>()
@@ -136,6 +137,7 @@ object AiApi {
 
     fun chat(s: Src, model: String, system: String, msgs: List<Msg>, maxTokens: Int = 4096): String {
         if (s.id == InternalRouter.ID) return InternalRouter.chat(model, system, msgs, maxTokens)
+        if (s.id == OpenCodeFree.ID) return OpenCodeFree.chat(model, system, msgs, maxTokens)   // (v379)
         val arr = JSONArray()
         val body = JSONObject().put("model", model.removePrefix(if (s.id == "gemini") "models/" else "")).put("max_tokens", maxTokens)
         if (s.kind == "anthropic") {

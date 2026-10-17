@@ -22,12 +22,12 @@ object InternalRouter {
     private val rr = AtomicInteger(0)
 
     private val ORDER = mapOf(
-        "auto" to listOf("claude", "chatgpt", "gemini", "deepseek", "groq", "mistral", "openrouter", "custom"),
-        "auto/smart" to listOf("claude", "chatgpt", "gemini", "deepseek", "groq", "mistral", "openrouter", "custom"),
-        "auto/fast" to listOf("groq", "gemini", "mistral", "deepseek", "chatgpt", "openrouter", "claude", "custom"),
-        "auto/coding" to listOf("claude", "deepseek", "chatgpt", "gemini", "groq", "openrouter", "mistral", "custom"),
-        "auto/cheap" to listOf("groq", "gemini", "deepseek", "mistral", "openrouter", "chatgpt", "claude", "custom"),
-        "auto/offline" to listOf("gemini", "groq", "openrouter", "deepseek", "mistral", "chatgpt", "claude", "custom")
+        "auto" to listOf("claude", "chatgpt", "gemini", "deepseek", "opencode", "groq", "mistral", "openrouter", "custom"),
+        "auto/smart" to listOf("claude", "chatgpt", "gemini", "deepseek", "opencode", "groq", "mistral", "openrouter", "custom"),
+        "auto/fast" to listOf("opencode", "groq", "gemini", "mistral", "deepseek", "chatgpt", "openrouter", "claude", "custom"),
+        "auto/coding" to listOf("claude", "deepseek", "chatgpt", "gemini", "opencode", "groq", "openrouter", "mistral", "custom"),
+        "auto/cheap" to listOf("opencode", "groq", "gemini", "deepseek", "mistral", "openrouter", "chatgpt", "claude", "custom"),
+        "auto/offline" to listOf("opencode", "gemini", "groq", "openrouter", "deepseek", "mistral", "chatgpt", "claude", "custom")
     )
 
     /** كل مزوّد حقيقي (من غير الراوتر نفسه)؛ جيميناي بيتفرد لكل مفتاح */

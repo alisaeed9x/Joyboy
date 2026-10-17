@@ -183,8 +183,8 @@ object TrWizard {
             if (pl == null) "" else {
                 val id = Cfg.str("tr_mode_id", "")
                 val base = when (id) {
-                    "g_wav" -> "🧠 ذكاء صناعي · WAV"; "g_aac" -> "🧠 ذكاء صناعي · AAC"; "omni_ai" -> "🛰 أومني روت · AAC"; "omni_only" -> "✍ تفريغ أومني روت"
-                    "loc_ai" -> "📴 محلي + 🧠 ترجمة"; "loc_google" -> "📴 محلي + 🌍 جوجل"
+                    "g_wav" -> "🧠 ذكاء صناعي · WAV"; "g_aac" -> "🧠 ذكاء صناعي · AAC"; "omni_ai" -> "📴 محلي + 🛰 ترجمة أومني روت"; "omni_only" -> "✍ تفريغ أومني روت"
+                    "loc_ai" -> "📴 محلي + 🧠 ترجمة"; "oc_ai" -> "🆓 محلي + ترجمة أوبن كود"; "loc_google" -> "📴 محلي + 🌍 جوجل"
                     "ai_only" -> "✍ تفريغ ذكاء صناعي"; "w_only" -> "✍ تفريغ Whisper"; "s_only" -> "✍ تفريغ SenseVoice"
                     else -> if (pl.only) "✍ تفريغ بس" else if (pl.offline) "📴 أوفلاين" else if (pl.cloud) "☁ محرك خارجي" else "☁ أونلاين"
                 }
@@ -193,7 +193,7 @@ object TrWizard {
                     val d = (if (pl.offline) pl.dialect else (pl.dia ?: "")).ifBlank { "فصحى" }
                     parts.add("🗣 $d")
                     val st = Cfg.str("tone_style", "")
-                    if (st.isNotBlank() && st != "حرفي" && id in setOf("g_wav", "g_aac", "loc_ai", "omni_ai")) parts.add("🎚 $st/" + Cfg.str("tone_strength", "متوسطة"))
+                    if (st.isNotBlank() && st != "حرفي" && id in setOf("g_wav", "g_aac", "loc_ai", "omni_ai", "oc_ai")) parts.add("🎚 $st/" + Cfg.str("tone_strength", "متوسطة"))
                 }
                 if (SourceMode.get() == SourceMode.HYBRID) parts.add("👁 " + SourceMode.kindLabel())
                 parts.joinToString(" · ")
@@ -404,7 +404,7 @@ object TrWizard {
         var mStyle = Cfg.str("tone_style", "").ifBlank { "حرفي" }
         var mDeg = Cfg.str("tone_strength", "متوسطة").ifBlank { "متوسطة" }
         var afterDl: (() -> Unit)? = null
-        val dialectModes = setOf("g_wav", "g_aac", "loc_ai", "omni_ai")
+        val dialectModes = setOf("g_wav", "g_aac", "loc_ai", "omni_ai", "oc_ai")
 
         fun sec(t: String) { body.addView(ui.text(t, 13f, th.primary, true).apply { setPadding(ui.dp(2), ui.dp(10), 0, ui.dp(2)) }) }
 
@@ -480,50 +480,64 @@ object TrWizard {
             }.start()
         }
 
+        // (v379) اختيار موديل أوبن كود المجاني اللي يترجم (من القايمة الحية)
+        fun stepOcModel() {
+            reset("🎯 أنهي موديل أوبن كود يترجم؟")
+            val cur = Cfg.str("llm_opencode_model").trim().let { if (it.equals("auto", true)) "" else it }
+            val noKey = Cfg.str("llm_opencode_key").trim().isEmpty() && OpenCodeFree.BUILTIN_KEY.isEmpty()
+            note((if (noKey) "⚠ مفيش مفتاح أوبن كود — ممكن يرفض الطلب المجهول. حط المفتاح من الإعدادات ← 🔑 المفاتيح ← 🆓 أوبن كود.\n" else "") + "اختار الموديل اللي يترجم الأول (لو وقف بيكمّل على موديل مجاني تاني). «تلقائي» = أول موديل شغّال.")
+            opt("⚡ تلقائي", "أول موديل مجاني شغّال + بدايل", cur.isBlank()) { Cfg.put("llm_opencode_model", "auto"); OpenCodeFree.resetCool(); afterModePick() }
+            val ld = ui.text("⏳ بجيب الموديلات المجانية…", 12f, th.muted)
+            body.addView(ld)
+            addBack()
+            Thread {
+                val r = runCatching { OpenCodeFree.list(true) }
+                act.runOnUiThread {
+                    if (ld.parent == null) return@runOnUiThread
+                    body.removeView(ld)
+                    for (m in r.getOrNull().orEmpty()) opt(m, "", m == cur) { Cfg.put("llm_opencode_model", m); OpenCodeFree.resetCool(); afterModePick() }
+                }
+            }.start()
+        }
+        fun ocThen() { if (mId == "oc_ai") go { stepOcModel() } else afterModePick() }
+
         fun pickMode(id: String) {
             mId = id; afterDl = null; hubActive = true; hubFlow = false; presetFlow = false; live = false; repoToHub = false
             when (id) {
                 "g_wav", "g_aac" -> { src = "gemini"; tr = "gemini"; gp = CURRENT }
                 "loc_ai" -> { src = if (engine == "sherpa" && SherpaStt.ready() && SherpaStt.handles(lang)) "sherpa" else "whisper"; tr = "gemini"; trId = "" }
+                "oc_ai" -> { src = if (engine == "sherpa" && SherpaStt.ready() && SherpaStt.handles(lang)) "sherpa" else "whisper"; tr = "llm"; trId = "opencode"; convId = "opencode" }
                 "loc_google" -> { src = if (engine == "sherpa" && SherpaStt.ready() && SherpaStt.handles(lang)) "sherpa" else "whisper"; tr = "google"; trId = ""; dia = ""; diaSet = true; convId = "" }
                 "ai_only" -> { src = "gemini"; tr = "none"; trId = "" }
                 "w_only" -> { src = "whisper"; tr = "none"; trId = "" }
                 "s_only" -> { src = "sherpa"; tr = "none"; trId = "" }
-                "omni_ai" -> { src = "cloud"; tr = "llm"; trId = "omniroute"; convId = "omniroute"; live = false }
-                "omni_only" -> { src = "cloud"; tr = "none"; trId = "omniroute"; convId = ""; live = false }
+                "omni_ai" -> { src = if (engine == "sherpa" && SherpaStt.ready() && SherpaStt.handles(lang)) "sherpa" else "whisper"; tr = "llm"; trId = "omniroute"; convId = "omniroute"; live = false }   // (v384) تفريغ محلي + ترجمة أومني روت
             }
             if (src == "whisper") engine = "whisper"
             if (src == "sherpa") { engine = "sherpa"; if (!SherpaStt.handles(lang)) lang = "" }
             if (src == "whisper" && !WhisperLib.loaded) { Notice.show(act, "الأوفلاين مش مدعوم على جهازك", 2500L); return }
             if (src == "sherpa" && !SherpaStt.supported()) { Notice.show(act, "جهازك مش بيدعم SenseVoice", 2500L); return }
             normalize(); sync()
-            if (id == "omni_ai" || id == "omni_only") {   // (v369) لازم أومني روت يكون شغّال الأول (بنفحصه ونسجّل إنه من غير مفتاح لو كده)
-                // (v370) الإشعارات بتتحبس في مثلث ▲ لما المشغّل فاتح (Notice.sinkFor) فرسايل الفشل ماكانتش بتظهر والقايمة تفضل ساكتة — بقت بتظهر في عنوان القايمة نفسها
+            if (id == "omni_ai") {   // (v384) تفريغ محلي (Whisper/SenseVoice) + ترجمة أومني روت (السيرفر لو شغّال، وإلا الراوتر الداخلي) — مفيش تفريغ سحابي
                 title.text = "🛰 بفحص OmniRoute…"
                 Thread {
                     val st = try { OmniAuto.probe() } catch (_: Throwable) { OmniAuto.St.DOWN }
                     act.runOnUiThread {
                         fun fail(m: String) { title.text = m; Notice.show(act, m, 4800L) }
                         if (st == OmniAuto.St.DOWN) {
-                            // (v376) من غير سيرفر: الراوتر الداخلي يترجم، والتفريغ بمفتاح Groq/ChatGPT
-                            if (!InternalRouter.hasPool()) { fail("🛰 مفيش مفاتيح ولا OmniRoute شغّال — ضيف مفتاح واحد على الأقل من الإعدادات ← الذكاء الاصطناعي"); return@runOnUiThread }
-                            if (TrWizard.sttFallback() == null) { fail("🎙 التفريغ من غير سيرفر محتاج مفتاح Groq أو ChatGPT — ضيف واحد منهم (أو اختار وضع جيميناي)"); return@runOnUiThread }
-                            Cfg.put("omni_seen", "1"); Cfg.put("rstt_prov", TrWizard.sttFallback()!!.id)
-                            OmniAuto.last = OmniAuto.St.DOWN
-                            if (id == "omni_ai") go { stepOmniModel() } else afterModePick()
-                            return@runOnUiThread
-                        }
-                        if (st == OmniAuto.St.NEED_KEY) { fail("🔑 OmniRoute شغّال بس طالب مفتاح — حطه من الإعدادات ← الذكاء الاصطناعي ← مفاتيحي"); return@runOnUiThread }
-                        if (TrWizard.sttCandidate("omniroute") == null) { fail("🎙 موديل التفريغ لأومني روت فاضي — اكتبه من الإعدادات ← الذكاء الاصطناعي (مثلًا deepgram/nova-3)"); return@runOnUiThread }
-                        if (id == "omni_ai") go { stepOmniModel() } else afterModePick()
+                            if (!InternalRouter.hasPool()) { fail("🛰 مفيش مفاتيح ولا OmniRoute شغّال — ضيف مفتاح واحد على الأقل (جيميناي أو أوبن كود أو أي مزوّد)"); return@runOnUiThread }
+                            Cfg.put("omni_seen", "1"); OmniAuto.last = OmniAuto.St.DOWN
+                        } else if (st == OmniAuto.St.NEED_KEY) { fail("🔑 OmniRoute شغّال بس طالب مفتاح — حطه من الإعدادات ← 🔑 المفاتيح ← OmniRoute"); return@runOnUiThread }
+                        val next = { go { stepOmniModel() } }
+                        if (isLocal() && !localReadyNow()) { afterDl = { afterDl = null; next() }; go { if (src == "sherpa") stepSherpa() else stepStt() } } else next()
                     }
                 }.start()
                 return
             }
             if (isLocal() && !localReadyNow()) {
-                afterDl = { afterDl = null; afterModePick() }
+                afterDl = { afterDl = null; ocThen() }
                 go { if (src == "sherpa") stepSherpa() else stepStt() }
-            } else afterModePick()
+            } else ocThen()
         }
 
         fun stepModes() {
@@ -540,9 +554,10 @@ object TrWizard {
             opt("✍ تفريغ ذكاء صناعي", "جيميناي يفرّغ النص بلغته الأصلية", mId == "ai_only") { pickMode("ai_only") }
             opt("✍ تفريغ محلي · Whisper", "على جهازك · كل اللغات", mId == "w_only") { pickMode("w_only") }
             opt("✍ تفريغ محلي · SenseVoice (onnx)", "على جهازك · إنجليزي وياباني وكوري وصيني", mId == "s_only") { pickMode("s_only") }
+            sec("🆓 أوبن كود (مجاني)")
+            opt("🆓 تفريغ محلي + ترجمة أوبن كود", "التفريغ على جهازك (Whisper/SenseVoice) والباتشات بتتترجم بموديل أوبن كود المجاني اللي تختاره · موديل وقع بيروح للي بعده · اللهجة والأسلوب بنفس الموديل · جيميناي مش مستخدم", mId == "oc_ai") { pickMode("oc_ai") }
             sec("🛰 OmniRoute (من غير جيميناي)")
-            opt("🛰 أومني روت — تفريغ + ترجمة (AAC)", "الصوت بيتفرّغ بأومني روت (AAC)، والباتشات بتتترجم بالسياق بموديلات أومني روت — باتش فشل بيروح لموديل تاني · سد الفجوات وتصحيح الضمائر والشخصيات بنفس الطريقة · جيميناي مقفول خالص", mId == "omni_ai") { pickMode("omni_ai") }
-            opt("✍ أومني روت — تفريغ بس", "أومني روت يفرّغ النص بلغته الأصلية من غير ترجمة", mId == "omni_only") { pickMode("omni_only") }
+            opt("📴+🛰 تفريغ محلي + ترجمة أومني روت", "التفريغ على جهازك (Whisper أو SenseVoice) والباتشات بتتترجم بالسياق بموديلات أومني روت — باتش فشل بيروح لموديل تاني · لو السيرفر مش شغّال الراوتر الداخلي بيترجم · سد الفجوات وتصحيح الضمائر بنفس الطريقة", mId == "omni_ai") { pickMode("omni_ai") }
             sec("👁 بصري")
             opt("👁 وضع بصري فقط", "بنوعيه: نصوص الشاشة أو هارد سب · من غير ترجمة صوت", SourceMode.get() == SourceMode.VISUAL) { mId = "visual"; Cfg.put("tr_mode_id", "visual"); viaModes = true; tsrc = "visual"; go { stepVisKind() } }
             if (hist.size > 1) addBack() else footBtn("✖ إلغاء", false) { dlg.dismiss() }
