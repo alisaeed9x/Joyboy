@@ -47,8 +47,6 @@
             android:label="الملفات" android:icon="@mipmap/ic_launcher_files" android:roundIcon="@mipmap/ic_launcher_files">
             <intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/></intent-filter>
         </activity-alias>
-        <activity android:name=".AiHubActivity" android:exported="false" android:windowSoftInputMode="adjustResize" android:theme="@style/AppSplash"
-            android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboardHidden|density"/>
         <activity android:name=".FileManagerActivity" android:exported="false" android:theme="@style/AppSplash"
             android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboardHidden|density"/>
         <provider android:name="androidx.core.content.FileProvider" android:authorities="${applicationId}.fmprov"

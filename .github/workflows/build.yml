@@ -13,6 +13,13 @@ jobs:
           V=$(grep -o 'versionName = "[^"]*"' app/build.gradle.kts)
           echo "Building $V commit ${GITHUB_SHA::7}" | tee -a "$GITHUB_STEP_SUMMARY"
           echo "APPVER=$(echo $V | grep -o '[0-9.]*')" >> $GITHUB_ENV
+      - name: Remove stale Kotlin files (not in this version)
+        run: |
+          if [ -f app/kt_manifest.txt ]; then
+            (cd app/src/main/java && find . -name '*.kt' | sed 's|^\./||' | sort) > /tmp/have.txt
+            sort app/kt_manifest.txt > /tmp/want.txt
+            comm -23 /tmp/have.txt /tmp/want.txt | while read f; do echo "removing stale $f"; rm -f "app/src/main/java/$f"; done
+          fi
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
