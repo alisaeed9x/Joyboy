@@ -74,7 +74,7 @@ fun Activity.showKeyGuide(onKey: (String) -> Unit) {
 }
 
 /** لو مفيش أي مفتاح Gemini متسجّل: نافذة منبثقة تطلب المفتاح (+ لإضافة شريط مفتاح جديد). بعد الحفظ أو "بعدين" بينفّذ onDone */
-private fun hasAnyKeyNow() = Cfg.keys("keys").isNotEmpty() || Cfg.keys("backup").isNotEmpty() || Cfg.keys("extra").isNotEmpty() || TrWizard.googleOn() || OmniMode.on()   // (v259) · (v369) أومني روت أوفلاين + جوجل مابيحتاجوش مفتاح
+private fun hasAnyKeyNow() = Cfg.keys("keys").isNotEmpty() || Cfg.keys("backup").isNotEmpty() || Cfg.keys("extra").isNotEmpty() || TrWizard.googleOn()
 /** (v356) أول فتح: بيستعيد المفاتيح المحفوظة (لو فيه) من غير ما يطلع أي نافذة — المفتاح اختياري */
 fun Activity.ensureKeysSoft(onDone: () -> Unit) {
     Cfg.init(this)

@@ -82,6 +82,10 @@ This is a standalone audio segment; timestamps start at 0.0 relative to the begi
 - Natural, correct, readable Arabic: no foreign sentence structure, no machine-translation feel, no missing words. Keep the same name or term spelled the same way across the segment.
 - Use the preceding context and the character table to decide pronouns (he / she / they) and the addressee.
 - Do not repeat sentences and do not copy the original into "translated".
+- Readability: each translated line must be short enough to read in its display time (about 17 characters per second at most) and about as long as the original sentence. Cut filler, never meaning.
+- Consistency: one fixed Arabic rendering for each name, title, drug, medical or technical term across the whole video; proper names are transliterated, not translated.
+- Register and tone: keep the speaker's register (slang, formal, vulgar, childish) and emotion. Keep vocatives and interjections that carry tone. Do not soften or censor unless the chosen style says so.
+- Before answering, re-read every translated line alone: would a native speaker really say it this way? If not, rewrite it.
 """
 
     internal const val REVIEW_EN = """
@@ -96,6 +100,7 @@ This is a standalone audio segment; timestamps start at 0.0 relative to the begi
 - 🔴🔴 Write only speech you actually hear a human voice say in the attached audio. Silence, music, sound effects, noise, screams and breaths without intelligible words produce no subtitles at all. If the whole segment is like that, answer {"subtitles":[]}.
 - 🔴 Never continue the dialogue from the previous context, from the story or from your knowledge of the film: context is for understanding only. A sentence that is not audible in the attached audio is forbidden even if it fits the characters perfectly.
 - 🔴 low_confidence means "I heard speech but it is unclear", not "I guessed". If you do not hear real human speech, write nothing.
+- 🔴 Repetition guard: if you notice yourself writing the same sentence or phrase three or more times in a row, you are looping or hallucinating: keep only what is truly audible and stop. Never write stock endings (thanks for watching, subscribe, subtitles by someone) unless they are clearly spoken.
 """
 
     internal const val SOUND_EN = """
@@ -224,6 +229,8 @@ This is a standalone audio segment; timestamps start at 0.0 relative to the begi
 - 🔴 Never merge the speech of two different speakers into one subtitle, even back to back. A question and its answer are two subtitles. If several people talk at once: one subtitle per speaker, overlap=true, a different speaker_tag for each.
 - 🔴 Full coverage: write every spoken word from the first to the last second: loud or quiet, whispered, far away, from a TV / radio / phone / loudspeaker, short interjections, side comments, and speech over music or noise. Never summarise, shorten or merge sentences. Quiet speech gets faint=true; if only partly intelligible write what you understood and set low_confidence=true.
 - Keep proper names, drug names, medical and scientific terms exactly as spoken, spelled correctly.
+- Write numbers, dates and units the way they are spoken, in the script and punctuation of the spoken language. Mark a stutter or cut-off word once, never repeat it as a loop.
+- Do not write sound descriptions (music, applause, laughter) as text, and no stock hallucinations (thanks for watching, subscribe) unless truly spoken.
 """
 
     /** برومبت الترانسكريبشن (صوت ← نص أصلي + توقيت + جنس، من غير ترجمة). الرد: {"subtitles":[...],"detected_source_language":"..."} */

@@ -27,7 +27,7 @@ import java.net.HttpURLConnection
 import java.net.URL
 
 /**
- * (v364) 🤖 شاشة الذكاء الاصطناعي: 💬 نص · 💻 كود · 🖼 صورة · 📎 ملف — بأي مزوّد بمفتاحك (OmniRoute · ChatGPT · Claude · Groq · … · أو مفاتيح جيميناي الحالية).
+ * (v364) 🤖 شاشة الذكاء الاصطناعي: 💬 نص · 💻 كود · 🖼 صورة · 📎 ملف — بأي مزوّد بمفتاحك (مفاتيح جيميناي الحالية).
  * الموديلات بتتجاب من GET {url}/models، ووصف تخصص كل موديل بيتخمّن من اسمه (مش من الخدمة) — فهو إرشاد مش ضمان.
  */
 object AiModels {
@@ -55,16 +55,6 @@ object AiModels {
         val uniq = tags.distinct(); tags.clear(); tags.addAll(uniq)
         val d = StringBuilder()
         when {
-            l.contains("fable") -> d.append("أعلى فئة من Claude: الأقوى في الكود المعقد والتفكير، وغالبًا الأغلى. ")
-            l.contains("opus") -> d.append("Claude Opus: قوي جدًا للكود والمشاريع الكبيرة والتفكير العميق. ")
-            l.contains("sonnet") -> d.append("Claude Sonnet: توازن ممتاز بين السرعة والجودة، اختيار شائع للبرمجة اليومية. ")
-            l.contains("haiku") -> d.append("Claude Haiku: سريع ورخيص للمهام الخفيفة والترجمة. ")
-            l.startsWith("auto/coding") -> d.append("OmniRoute يختار تلقائيًا أفضل موديل للكود")
-            l.startsWith("auto/fast") -> d.append("OmniRoute يختار أسرع موديل متاح")
-            l.startsWith("auto/cheap") -> d.append("OmniRoute يختار الأرخص لكل توكن")
-            l.startsWith("auto/offline") -> d.append("OmniRoute يختار اللي كوتته أكبر")
-            l.startsWith("auto/smart") -> d.append("OmniRoute يفضّل الجودة ويجرّب موديلات جديدة أحيانًا")
-            l == "auto" -> d.append("OmniRoute يختار تلقائيًا ويحوّل لموديل تاني لو الأول وقع (الأنسب كبداية)")
             else -> {
                 if ("كود" in tags) d.append("متخصص في البرمجة. ")
                 if ("تفكير" in tags && "كود" !in tags) d.append("كويس في الاستدلال والمسائل الصعبة. ")
@@ -82,26 +72,22 @@ object AiModels {
 object AiApi {
     class Src(val id: String, val label: String, val kind: String, val url: String, val key: String, val defModel: String, val preset: ExtLlm.Preset?)
 
-    /** (v366) المصادر اللي بتظهر في 🤖: 🧭 الراوتر التلقائي + جيميناي (لو عندك مفاتيح) */
-    fun sources(): List<Src> {
-        val real = realSources()
-        if (real.isEmpty()) return real
-        // (v393) أومني روت وأوبن كود بيظهروا دايمًا (حتى من غير مفتاح/سيرفر) — كان المصدر بيختفي ويتحوّل للراوتر/جيميناي من غير ما تحس والخطأ الحقيقي مايظهرش
-        val always = listOf("omniroute", "opencode").mapNotNull { id ->
-            real.firstOrNull { it.id == id } ?: ExtLlm.byId(id)?.let { p -> Src(p.id, p.label, p.kind, ExtLlm.url(p), ExtLlm.key(p), ExtLlm.model(p), p) }
-        }
-        // (v366) الراوتر التلقائي + جيميناي بمفاتيحك بس — باقي المزوّدين بيدخلوا الراوتر من وراه (بيتضبطوا من «مفاتيحي»)
-        return listOf(Src(InternalRouter.ID, "🧭 الراوتر الداخلي (تلقائي · من غير سيرفر)", "openai", "", "", "auto", null)) + real.filter { it.id == "gemini" } + always
-    }
+    /** (v395) المصدر الوحيد: جيميناي بمفاتيحك */
+    fun sources(): List<Src> = realSources()
 
-    /** المزوّدين الحقيقيين بس (من غير الراوتر الداخلي) */
     fun realSources(): List<Src> {
         val out = ArrayList<Src>()
-        for (p in ExtLlm.presets) {
-            if (ExtLlm.hasAccess(p) && ExtLlm.url(p).isNotEmpty()) out.add(Src(p.id, p.label, p.kind, ExtLlm.url(p), ExtLlm.key(p), ExtLlm.model(p), p))
-        }
         Cfg.allMainKeys().firstOrNull()?.let { out.add(Src("gemini", "Gemini (مفاتيحك الحالية)", "openai", "https://generativelanguage.googleapis.com/v1beta/openai", it, "gemini-flash-latest", null)) }
         return out
+    }
+
+    /** سبب مفهوم بالعربي لأي استثناء شبكة/خدمة */
+    fun explain(e: Throwable): String = when (e) {
+        is java.net.ConnectException -> "مفيش اتصال بالخدمة"
+        is java.net.UnknownHostException -> "العنوان مش موجود أو مفيش نت"
+        is java.net.SocketTimeoutException -> "مهلة — الخدمة مردّتش في الوقت"
+        is ExtLlm.LlmErr -> e.message ?: ("HTTP " + e.code)
+        else -> e.message ?: e.javaClass.simpleName
     }
 
     private fun hdr(s: Src): Map<String, String> =
@@ -116,8 +102,7 @@ object AiApi {
                 for ((k, v) in h) c.setRequestProperty(k, v)
                 if (body != null) { c.doOutput = true; c.setRequestProperty("Content-Type", "application/json; charset=UTF-8"); c.outputStream.use { it.write(body.toByteArray(Charsets.UTF_8)) } }
                 c.responseCode
-            } catch (e: ExtLlm.LlmErr) { throw e } catch (e: java.io.IOException) { throw ExtLlm.LlmErr(0, AiDiag.explain(e) + " — " + url.substringAfter("://").substringBefore('/')) }
-            OmniMeta.capture(c)
+            } catch (e: ExtLlm.LlmErr) { throw e } catch (e: java.io.IOException) { throw ExtLlm.LlmErr(0, explain(e) + " — " + url.substringAfter("://").substringBefore('/')) }
             val txt = (if (code in 200..299) c.inputStream else c.errorStream)?.use { String(it.readBytes(), Charsets.UTF_8) } ?: ""
             if (code !in 200..299) throw ExtLlm.LlmErr(code, ExtLlm.errMsg(code, txt), c.getHeaderField("Retry-After")?.trim()?.toIntOrNull() ?: 0)
             return txt
@@ -125,8 +110,6 @@ object AiApi {
     }
 
     fun models(s: Src): List<AiModels.Info> {
-        if (s.id == InternalRouter.ID) return InternalRouter.models()
-        if (s.id == OpenCodeFree.ID) return OpenCodeFree.list(true).map { AiModels.describe(it, "OpenCode (مجاني)", 0) }   // (v379)
         val txt = http("GET", s.url + "/models" + (if (s.kind == "anthropic") "?limit=100" else ""), hdr(s), null, 30000)
         val arr = JSONObject(txt).optJSONArray("data") ?: JSONArray()
         val out = ArrayList<AiModels.Info>()
@@ -143,8 +126,6 @@ object AiApi {
     class Msg(val role: String, val text: String, val imgB64: String? = null)
 
     fun chat(s: Src, model: String, system: String, msgs: List<Msg>, maxTokens: Int = 4096): String {
-        if (s.id == InternalRouter.ID) return InternalRouter.chat(model, system, msgs, maxTokens)
-        if (s.id == OpenCodeFree.ID) return OpenCodeFree.chat(model, system, msgs, maxTokens)   // (v379)
         val arr = JSONArray()
         val body = JSONObject().put("model", model.removePrefix(if (s.id == "gemini") "models/" else "")).put("max_tokens", maxTokens)
         if (s.kind == "anthropic") {
@@ -203,7 +184,6 @@ class AiHubActivity : Activity() {
     private lateinit var thumb: ImageView
     private lateinit var info: android.widget.TextView
     private lateinit var sendBtn: android.widget.Button
-    private lateinit var statusTv: android.widget.TextView
 
     private val modeNames = listOf("💬 نص", "💻 كود", "🖼 صورة", "📎 ملف")
     private val ext = mapOf("Kotlin" to "kt", "JavaScript/HTML" to "html", "Python" to "py", "Java" to "java", "Bash" to "sh", "أي لغة" to "txt")
@@ -222,13 +202,6 @@ class AiHubActivity : Activity() {
         val row = LinearLayout(this).apply { layoutDirection = View.LAYOUT_DIRECTION_RTL }
         row.addView(srcBtn, LinearLayout.LayoutParams(0, -2, 1f)); row.addView(modelBtn, LinearLayout.LayoutParams(0, -2, 1f))
         root.addView(row)
-        root.addView(ui.button("🩺 فحص شامل — ليه أومني روت/أوبن كود مش شغّالين؟") { diagDialog() })   // (v393)
-        // (v364) شريط حالة OmniRoute: شغّال؟ + آخر رد (مزوّد · موديل · زمن · تحويلات · تكلفة)؛ ضغطة = إحصائية الاستهلاك
-        statusTv = ui.text("", 11.5f, th.muted).apply {
-            setPadding(ui.dp(8), ui.dp(2), ui.dp(8), ui.dp(4)); background = ui.box(th.surface, th.border, 10)
-            setOnClickListener { StatsUi(this@AiHubActivity, ui, th).show() }
-        }
-        root.addView(statusTv, LinearLayout.LayoutParams(-1, -2).apply { topMargin = ui.dp(2); bottomMargin = ui.dp(4) })
         root.addView(ui.chips(modeNames, { modeNames[mode] }) { mode = modeNames.indexOf(it); buildBody() })
         body = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL }
         root.addView(ScrollView(this).apply { addView(body) }, LinearLayout.LayoutParams(-1, 0, 1f))
@@ -252,19 +225,6 @@ class AiHubActivity : Activity() {
         super.onResume()
         if (::srcBtn.isInitialized) {
             reloadSrc()
-            OmniAuto.probeAsync { st ->   // (v368) OmniRoute بيظهر كمصدر لو شغّال على الموبايل
-                runOnUiThread { if (!isFinishing) reloadSrc() }
-                // (v393) السيرفر واقف وTermux جاهز (مثبّت + إذن) ← بيتشغّل لوحده من غير ما تعمل حاجة
-                if (st == OmniAuto.St.DOWN && Cfg.str("omni_auto", "on") != "off") {
-                    val c = applicationContext
-                    if (OmniLauncher.installed(c) && OmniLauncher.hasPerm(c) && !OmniLauncher.triedRecently()) {
-                        if (OmniLauncher.start(c) == OmniLauncher.R.SENT) {
-                            runOnUiThread { if (!isFinishing) toast(if (Linux.supported(c)) "▶ بشغّل OmniRoute (البيئة الداخلية)…" else "▶ بشغّل OmniRoute في Termux…", 3000L) }
-                            OmniLauncher.waitUntilUp { runOnUiThread { if (!isFinishing) { reloadSrc(); toast("✅ OmniRoute اشتغل") } } }
-                        }
-                    }
-                }
-            }
         }
     }
 
@@ -272,25 +232,17 @@ class AiHubActivity : Activity() {
         val all = AiApi.sources()
         val keep = Cfg.str("aihub_src")
         val prevId = src?.id ?: keep
-        src = all.firstOrNull { it.id == src?.id } ?: all.firstOrNull { it.id == keep } ?: all.firstOrNull { it.id == InternalRouter.ID } ?: all.firstOrNull()
+        src = all.firstOrNull { it.id == src?.id } ?: all.firstOrNull { it.id == keep } ?: all.firstOrNull()
         // (v393) لو المصدر اللي كنت مختاره اختفى مش هيتحوّل في السر
-        if (prevId.isNotEmpty() && src?.id != prevId && all.none { it.id == prevId }) toast("⚠ المصدر «$prevId» مش متاح دلوقتي ← اتحوّلت لـ «" + (src?.label ?: "؟") + "». 🩺 فحص شامل يوريك السبب", 5000L)
+        if (prevId.isNotEmpty() && src?.id != prevId && all.none { it.id == prevId }) toast("⚠ المصدر «$prevId» مش متاح دلوقتي ← اتحوّلت لـ «" + (src?.label ?: "؟") + "»", 5000L)
         model = src?.let { Cfg.str("aihub_model_" + it.id).ifEmpty { autoModel(it) } } ?: ""
         srcBtn.text = "🔌 " + (src?.label ?: "ضيف مزوّد"); setModelLabel()
-        refreshStatus()
     }
 
-    /** (v374) «تلقائي» لكل مزوّد: أومني روت = auto (مش موديل الترجمة المثبّت)، والباقي موديله الافتراضي */
-    private fun autoModel(s: AiApi.Src): String = if (s.id == "omniroute") "auto" else s.defModel
+    private fun autoModel(s: AiApi.Src): String = s.defModel
     private fun setModelLabel() {
         val s = src
         modelBtn.text = "🧠 " + (if (s == null) "اختار موديل" else Cfg.str("aihub_model_" + s.id).let { if (it.isBlank() || it == "auto") "تلقائي" else it }) + " ▾"
-    }
-
-    private fun refreshStatus() {
-        if (!::statusTv.isInitialized) return
-        statusTv.visibility = View.VISIBLE
-        statusTv.text = OmniMeta.statusLine()
     }
 
     private fun toast(m: String, ms: Long = 2600L) = Notice.show(this, m, ms)
@@ -300,10 +252,8 @@ class AiHubActivity : Activity() {
         val box = dlgBox()
         box.addView(ui.text("🔌 المصدر", 16f, th.primary, true))
         val all = AiApi.sources()
-        if (all.isEmpty()) box.addView(ui.text("لسه مفيش مفتاح. ضيف مفتاح جيميناي (من الإعدادات ← 🔑 المفاتيح) أو مفتاح أي مزوّد من تحت.", 12f, th.muted))
+        if (all.isEmpty()) box.addView(ui.text("لسه مفيش مفتاح. ضيف مفتاح جيميناي من الإعدادات ← 🔑 المفاتيح.", 12f, th.muted))
         for (s in all) box.addView(ui.button((if (s.id == src?.id) "✅ " else "") + s.label) { src = s; Cfg.put("aihub_src", s.id); d.dismiss(); reloadSrc() })
-        box.addView(ui.text("🔑 مفاتيحي (أي مفتاح تحطه بيدخل الراوتر التلقائي لوحده):", 12.5f, th.primary, true).apply { setPadding(0, ui.dp(8), 0, 0) })
-        for (p in ExtLlm.presets) box.addView(ui.button(p.label + (if (ExtLlm.hasAccess(p)) " ✓" else "")) { d.dismiss(); PublicApisUi.editDialog(this, ui, th, p) { reloadSrc() } })
         box.addView(ui.button("إغلاق") { d.dismiss() })
         showDlg(d, box)
     }
@@ -329,11 +279,8 @@ class AiHubActivity : Activity() {
             runOnUiThread {
                 setModelLabel()
                 val l = r.getOrNull()
-                if (l == null) { toast("❌ " + AiDiag.explain(r.exceptionOrNull() ?: Exception("فشل")).take(200), 6000L); return@runOnUiThread }
-                if (s.id == OpenCodeFree.ID && !OpenCodeFree.lastListReal) toast("⚠ دي قايمة احتياطية جاهزة — مقدرتش أجيبها من أوبن كود فعلًا. 🩺 فحص شامل يوريك السبب", 6000L)
-                // (v377) أومني روت: أسماء الموديلات الحقيقية بس (Claude · Gemini · Groq …) من غير auto/fast/cheap
-                val omniSrc = s.id == "omniroute" || s.url.contains(":20128")
-                val all = l.filter { AiModels.isChat(it.id) && !(omniSrc && it.id.startsWith("auto", true)) }
+                if (l == null) { toast("❌ " + AiApi.explain(r.exceptionOrNull() ?: Exception("فشل")).take(200), 6000L); return@runOnUiThread }
+                val all = l.filter { AiModels.isChat(it.id) }
                 cache[s.id] = all; modelDrop(s, all)
             }
         }.start()
@@ -341,7 +288,7 @@ class AiHubActivity : Activity() {
 
     private fun modelDrop(s: AiApi.Src, all: List<AiModels.Info>) {
         val cur = Cfg.str("aihub_model_" + s.id).let { if (it == "auto") "" else it }
-        PublicApisUi.dropdown(this, ui, th, modelBtn, all.map { it.id }.filter { it != "auto" }, cur, "تلقائي", "🔍 بحث وتفاصيل الموديلات…" to { modelList(s, all) }) { v ->
+        AiDrop.dropdown(this, ui, th, modelBtn, all.map { it.id }.filter { it != "auto" }, cur, "تلقائي", "🔍 بحث وتفاصيل الموديلات…" to { modelList(s, all) }) { v ->
             Cfg.put("aihub_model_" + s.id, v); model = v.ifEmpty { autoModel(s) }; setModelLabel()
             if (mode == 2 && v.isNotEmpty() && all.firstOrNull { it.id == v }?.let { "صور" !in it.tags && !v.startsWith("auto") } == true) toast("⚠ الموديل ده غالبًا مش بيشوف صور")
         }
@@ -375,7 +322,7 @@ class AiHubActivity : Activity() {
         box.addView(search)
         box.addView(ui.chips(listOf("الكل", "كود", "صور", "تفكير", "سريع", "قوي", "عربي كويس"), { tag }) { tag = it; fill() })
         box.addView(ui.text("اختصار بالاسم:", 11.5f, th.muted))
-        box.addView(ui.chips(listOf("—", "fable", "opus", "sonnet", "haiku", "claude", "gpt", "gemini", "deepseek", "kimi", "glm", "qwen", "llama"), { "" }) { search.setText(if (it == "—") "" else it) })
+        box.addView(ui.chips(listOf("—", "flash", "pro", "lite", "gemini"), { "" }) { search.setText(if (it == "—") "" else it) })
         box.addView(list); fill()
         box.addView(ui.button("✏ اكتب اسم موديل يدوي") {
             val e = ui.input("اسم الموديل", model, 1).apply { layoutDirection = View.LAYOUT_DIRECTION_LTR }
@@ -384,31 +331,6 @@ class AiHubActivity : Activity() {
             showDlg(d2, b2)
         })
         box.addView(ui.button("🔄 حدّث القايمة") { cache.remove(s.id); d.dismiss(); pickModelDialog() })
-        box.addView(ui.button("إغلاق") { d.dismiss() })
-        showDlg(d, box)
-    }
-
-    /** (v393) 🩺 فحص شامل: AiDiag في الخلفية والنتيجة بتظهر سطر سطر + نسخ / إصلاح تلقائي / كونسول Termux / أمر الإعداد */
-    private fun diagDialog() {
-        val d = GDialog(this); val box = dlgBox()
-        box.addView(ui.text("🩺 فحص شامل", 16f, th.primary, true))
-        val out = ui.text("⏳ بفحص… (لحد دقيقة)", 12f, th.text)
-        out.setTextIsSelectable(true)
-        box.addView(out)
-        val sb = StringBuilder()
-        val say: (String) -> Unit = { line ->
-            val t = synchronized(sb) { sb.append(line).append('\n'); sb.toString() }
-            runOnUiThread { if (!isFinishing) out.text = t }
-        }
-        Thread {
-            try { AiDiag.run(applicationContext, say) } catch (e: Throwable) { say("❌ الفحص نفسه وقع: " + AiDiag.explain(e)) }
-            say("— خلص —")
-        }.start()
-        box.addView(ui.button("📋 انسخ التقرير") { copy(synchronized(sb) { sb.toString() }) })
-        box.addView(ui.button("🔧 إصلاح تلقائي (Termux)") { AiDiag.fix(this@AiHubActivity, say) })
-        box.addView(ui.button("🐧 كونسول Linux (داخل التطبيق)") { try { startActivity(Intent(this@AiHubActivity, LinuxConsoleActivity::class.java)) } catch (e: Throwable) { toast("❌ " + (e.message ?: "فشل")) } })
-        box.addView(ui.button("💻 كونسول Termux") { try { startActivity(Intent(this@AiHubActivity, TermuxConsoleActivity::class.java)) } catch (e: Throwable) { toast("❌ " + (e.message ?: "فشل")) } })
-        box.addView(ui.button("📋 أمر إعداد Termux (مرة واحدة)") { OmniLauncher.copySetupAndOpenTermux(this@AiHubActivity) })
         box.addView(ui.button("إغلاق") { d.dismiss() })
         showDlg(d, box)
     }
@@ -474,9 +396,9 @@ class AiHubActivity : Activity() {
             runOnUiThread {
                 busy = false; sendBtn.text = "▶ إرسال"; sendBtn.isEnabled = true
                 val a = r.getOrNull()
-                if (a == null) { toast("❌ " + s.label.substringBefore(" (") + ": " + AiDiag.explain(r.exceptionOrNull() ?: Exception("فشل")).take(260), 8000L); return@runOnUiThread }
+                if (a == null) { toast("❌ " + s.label.substringBefore(" (") + ": " + AiApi.explain(r.exceptionOrNull() ?: Exception("فشل")).take(260), 8000L); return@runOnUiThread }
                 if (keepHist) { h.add(AiApi.Msg("user", text)); h.add(AiApi.Msg("assistant", a)); input.setText("") }
-                output.setText(a.ifEmpty { "(رد فاضي)" }); refreshStatus()
+                output.setText(a.ifEmpty { "(رد فاضي)" })
             }
         }.start()
     }
@@ -531,5 +453,31 @@ class AiHubActivity : Activity() {
                 3 -> { contentResolver.openOutputStream(u, "wt")?.use { it.write(pendingSave.toByteArray(Charsets.UTF_8)) }; toast("✅ اتحفظ") }
             }
         } catch (e: Exception) { toast("❌ " + (e.message ?: "فشل").take(100), 4000L) }
+    }
+}
+
+object AiDrop {
+    fun dropdown(act: Activity, ui: Ui, th: Theme, anchor: View, items: List<String>, current: String, autoLabel: String, footer: Pair<String, () -> Unit>? = null, onPick: (String) -> Unit) {
+        val col = LinearLayout(act).apply {
+            orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL
+            setPadding(ui.dp(6), ui.dp(6), ui.dp(6), ui.dp(6)); background = ui.box(th.card, th.border, 14)
+        }
+        lateinit var pw: android.widget.PopupWindow
+        fun row(label: String, on: Boolean, v: String) {
+            col.addView(IconTextView(act).apply {
+                text = (if (on) "✓ " else "") + label; textSize = 14f; setTextColor(if (on) th.primary else th.text)
+                minHeight = ui.dp(40); maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.MIDDLE
+                gravity = android.view.Gravity.CENTER_VERTICAL or android.view.Gravity.START
+                setPadding(ui.dp(14), ui.dp(6), ui.dp(14), ui.dp(6))
+                setOnClickListener { pw.dismiss(); onPick(v) }
+            })
+        }
+        row(autoLabel, current.isBlank(), "")
+        for (m in items) row(m, m == current, m)
+        footer?.let { f -> col.addView(IconTextView(act).apply { text = f.first; textSize = 13f; setTextColor(th.primary); minHeight = ui.dp(40); gravity = android.view.Gravity.CENTER_VERTICAL or android.view.Gravity.START; setPadding(ui.dp(14), ui.dp(6), ui.dp(14), ui.dp(6)); setOnClickListener { pw.dismiss(); f.second() } }) }
+        val scroll = MaxHeightScroll(act, (act.resources.displayMetrics.heightPixels * 0.45f).toInt()).apply { addView(col) }
+        pw = android.widget.PopupWindow(scroll, anchor.width.coerceAtLeast(ui.dp(240)), -2, true)
+        pw.setBackgroundDrawable(ColorDrawable(0)); pw.elevation = ui.dp(8).toFloat()
+        try { pw.showAsDropDown(anchor, 0, ui.dp(2)) } catch (_: Throwable) {}
     }
 }

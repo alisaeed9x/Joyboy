@@ -106,7 +106,7 @@ class MainActivity : Activity() {
         super.onCreate(b)
         if (fromPlayer) requestedOrientation = if (intent?.getBooleanExtra("land", false) == true) ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE else ActivityInfo.SCREEN_ORIENTATION_PORTRAIT   // الإعدادات من المشغّل: بنفس اتجاه المشغّل
         UiWatchdog.start()
-        Cfg.init(this); CrashLog.install(this); YtFast.startup(); OpenCodeAuto.start(this); try { Linux.onAppStart(this) } catch (_: Throwable) {}   // (v394) البيئة الداخلية: تكمّل/تشغّل أومني روت لو وافقت قبل كده // (v387) تجهيز أوبن كود تلقائي في الخلفية
+        Cfg.init(this); CrashLog.install(this); YtFast.startup();
         val th = Themes.byId(Cfg.str("theme", "mx"))
         val ui = Ui(this, th)
         applyBars(th)
@@ -583,8 +583,6 @@ class MainActivity : Activity() {
                 ui.section("🆓 من غير مفتاح؟ تمام", true,
                     ui.text("المفتاح اختياري. من غيره البرنامج بيشتغل بتفريغ على الجهاز (أوفلاين) + ترجمة جوجل المجانية. ومعاه الترجمة بتبقى أدق وأسرع (جيميناي بيفهم السياق).", 13f, th.text),
                     ui.button("🎙 جهّز التفريغ على الجهاز (من غير مفتاح)") { settingsShow?.invoke("audio") }),
-                PublicApisUi.ocSection(this, ui, th),
-                PublicApisUi.omniSection(this, ui, th),
                 ui.section("✨ جيميناي", false,
                 ui.button("❓ إزاي أجيب مفتاح Gemini؟ (وألصقه)", true) {
                     showKeyGuide { k ->

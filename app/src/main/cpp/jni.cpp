@@ -19,6 +19,7 @@ JNIEXPORT jlong JNICALL Java_com_tttt_subtitler_WhisperLib_nInit(JNIEnv *env, jc
     const char *p = env->GetStringUTFChars(path, nullptr);
     whisper_context_params cp = whisper_context_default_params();
     cp.use_gpu = false;
+    cp.flash_attn = true;   // (v394) أسرع على المعالج وبياخد رام أقل
     whisper_context *ctx = whisper_init_from_file_with_params(p, cp);
     env->ReleaseStringUTFChars(path, p);
     return reinterpret_cast<jlong>(ctx);
@@ -51,6 +52,14 @@ JNIEXPORT jbyteArray JNICALL Java_com_tttt_subtitler_WhisperLib_nRun(JNIEnv *env
         wp.language = langS.c_str();
         wp.translate = false;
         wp.no_context = true;
+        // (v394) سرعة + دقة: greedy بعينة واحدة/اتنين عند الفشل، وعتبات الهلوسة والتكرار صريحة
+        wp.greedy.best_of = 2;
+        wp.temperature_inc = 0.2f;
+        wp.suppress_blank = true;
+        wp.no_speech_thold = 0.6f;
+        wp.logprob_thold = -1.0f;
+        wp.entropy_thold = 2.4f;
+        wp.token_timestamps = false;
         wp.print_progress = false;
         wp.print_realtime = false;
         wp.print_special = false;

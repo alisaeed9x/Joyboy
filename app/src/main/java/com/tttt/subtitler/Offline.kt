@@ -54,9 +54,9 @@ object Offline {
     /** (v255) المحركات المتاحة: Whisper (لكل اللغات) و sherpa-onnx SenseVoice (إنجليزي/ياباني/كوري/صيني) */
     val engines: List<SttEngine> = listOf(WhisperStt, SherpaStt)
     /** المحرك المختار (مفتاح stt_engine: whisper | sherpa، الافتراضي whisper). لو المختار مش مدعوم على الجهاز أو مش بيفهم اللغة ← whisper */
-    fun engine(): SttEngine = (if (RemoteStt.active()) RemoteStt else null) ?: engines.firstOrNull { it.id == Cfg.str("stt_engine", "whisper") && it.supported() && it.handles(lang()) } ?: WhisperStt
-    /** (v273) التفريغ السحابي (RemoteStt) شغّال وجاهز — الموديل المحلي مش لازم يكون نازل */
-    fun remoteOn(): Boolean = RemoteStt.active()
+    fun engine(): SttEngine = engines.firstOrNull { it.id == Cfg.str("stt_engine", "whisper") && it.supported() && it.handles(lang()) } ?: WhisperStt
+    /** (v395) التفريغ السحابي الخارجي اتشال — دايمًا false */
+    fun remoteOn(): Boolean = false
     /** true = الترانسكريبشن بيتعمل أوفلاين (مفعّل + الموديل نازل + المكتبة موجودة) والوضع بيبقى «نسخ ثم ترجمة سياقية» */
     fun on(): Boolean = configured() && System.currentTimeMillis() >= coolUntil
     /** (v262) الأوفلاين متظبّط (مفعّل + الموديل نازل) بغض النظر عن فترة الراحة بعد الأعطال. بيحدد وضع الترجمة (سياقية / جوجل)، أما on() فبيحدد مين بينسخ دلوقتي — قبل كده فترة الراحة كانت بتحوّل الترجمة من جوجل لجيميناي وسط الشغل */
@@ -114,7 +114,7 @@ object Offline {
     @Volatile private var coolUntil = 0L
     @Volatile private var fails = 0
 
-    private fun threads(): Int = (Runtime.getRuntime().availableProcessors() / 2).coerceIn(2, 4)
+    private fun threads(): Int = (Runtime.getRuntime().availableProcessors() - 2).coerceIn(3, 6)   // (v394) كان cores/2 بحد أقصى 4
 
     /** ينسخ [wav] (PCM16 mono 16kHz بهيدر 44 بايت) على الجهاز بالمحرك المختار. أي فشل ← [fallback] (طلب جيميناي الأصلي) */
     fun transcribe(wav: ByteArray, durSec: Double, terms: String, log: (String) -> Unit, fallback: () -> Api.Result, warn: (String) -> Unit = {}, sess: Session? = null): Api.Result {

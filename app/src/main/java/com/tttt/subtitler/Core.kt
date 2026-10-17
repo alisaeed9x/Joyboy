@@ -240,7 +240,7 @@ object Cfg {
     fun snapshot(): Conf {
         val (main0, rf0, bk0) = roles()
         // (v369) وضع أومني روت: مفاتيح جيميناي مابتتلمسش خالص (المحرك يشتغل بمفتاح محلي وهمي، والطلبات كلها بأومني روت)
-        val omni = OmniMode.on()
+        val omni = false   // (v395) وضع أومني روت اتشال
         val rf = if (omni) emptyList() else rf0
         val bk = if (omni) emptyList() else bk0
         // (v259) من غير أي مفتاح + أوفلاين + ترجمة جوجل: مفتاح محلي وهمي يخلّي المحرك يشتغل (الطلبات لجيميناي بتترفض محليًا)
