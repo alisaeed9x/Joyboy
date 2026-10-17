@@ -534,6 +534,8 @@ class MainActivity : Activity() {
         val offLangChips = ui.chips(Offline.langLabels, { Offline.langLabels[Offline.langIds.indexOf(Offline.lang()).coerceAtLeast(0)] }) { val lid = Offline.langIds[Offline.langLabels.indexOf(it).coerceAtLeast(0)]; Cfg.put("stt_lang", lid); TrWizard.syncSaved("stt_lang", lid) }
         val offPartLabels = listOf("⚡ لحظي (كل باتش)", "٣ دقايق", "٥ دقايق", "١٠ دقايق", "٢٠ دقيقة"); val offPartVals = listOf(1, 3, 5, 10, 20)
         val offPartChips = ui.chips(offPartLabels, { offPartLabels[offPartVals.indexOf(Cfg.int("ctx_min", 3)).coerceAtLeast(1)] }) { Cfg.put("ctx_min", offPartVals[offPartLabels.indexOf(it).coerceAtLeast(0)].toString()) }
+        val cbLabels = listOf("٢ باتش", "٣ باتشات"); val cbVals = listOf(2, 3)   // (v400) وضع «وشبر + جيميناي بالسياق»
+        val ctxBatchChips = ui.chips(cbLabels, { cbLabels[cbVals.indexOf(Cfg.int("ctx_batches", 3)).coerceAtLeast(1)] }) { Cfg.put("ctx_batches", cbVals[cbLabels.indexOf(it).coerceAtLeast(0)].toString()) }
         val vaOn = "⚡ تلقائي مع كل فيديو"; val vaOff = "✋ يدوي (بريسيتس / زرار 👁)"
         val visAutoChips = ui.chips(listOf(vaOn, vaOff), { if (VisualMode.auto()) vaOn else vaOff }) { Cfg.put("vis_open_auto", if (it == vaOn) "1" else "0") }   // (v249) مفتاح مستقل: الافتراضي يدوي
         // (v198) إعدادات مشغّل الموسيقى
@@ -609,6 +611,7 @@ class MainActivity : Activity() {
                     ui.text("حجم موديل Whisper:", 12f, th.muted), offModelChips, offStatus, offDlBtn, offProg,
                     ui.text("لغة الكلام (لو عارفها بتقلّل أخطاء الاكتشاف التلقائي):", 12f, th.muted), offLangChips,
                     ui.text("طول الجزء اللي بيتفرّغ ويتبعت للترجمة أول ما يجهز:", 12f, th.muted), offPartChips,
+                    ui.text("وضع «وشبر + جيميناي بالسياق»: كام باتش يتبعتوا لجيميناي مع بعض:", 12f, th.muted), ctxBatchChips,
                     ui.text("التفريغ على الجهاز أبطأ من السحابة (بيعتمد على معالج موبايلك) — الترجمة بتظهر جزء ورا جزء. لو سرعته أقل من 1× كبّر الموديل لأصغر (base).", 12f, th.muted)))),
             tab("visual", listOf<View>(
                                 ui.section("👁 محرك الوضع البصري", false, visAutoChips,

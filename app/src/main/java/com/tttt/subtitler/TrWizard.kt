@@ -165,7 +165,7 @@ object TrWizard {
                 val id = Cfg.str("tr_mode_id", "")
                 val base = when (id) {
                     "g_wav" -> "🧠 ذكاء صناعي · WAV"; "g_aac" -> "🧠 ذكاء صناعي · AAC"
-                    "loc_ai" -> "📴 محلي + 🧠 ترجمة"; "loc_google" -> "📴 محلي + 🌍 جوجل"
+                    "loc_ai" -> "📴 محلي + 🧠 ترجمة"; "loc_ctx" -> "📴 وشبر + 🧠 جيميناي بالسياق"; "loc_google" -> "📴 محلي + 🌍 جوجل"
                     "ai_only" -> "✍ تفريغ ذكاء صناعي"; "w_only" -> "✍ تفريغ Whisper"; "s_only" -> "✍ تفريغ SenseVoice"
                     else -> if (pl.only) "✍ تفريغ بس" else if (pl.offline) "📴 أوفلاين" else if (pl.cloud) "☁ محرك خارجي" else "☁ أونلاين"
                 }
@@ -174,7 +174,7 @@ object TrWizard {
                     val d = (if (pl.offline) pl.dialect else (pl.dia ?: "")).ifBlank { "فصحى" }
                     parts.add("🗣 $d")
                     val st = Cfg.str("tone_style", "")
-                    if (st.isNotBlank() && st != "حرفي" && id in setOf("g_wav", "g_aac", "loc_ai")) parts.add("🎚 $st/" + Cfg.str("tone_strength", "متوسطة"))
+                    if (st.isNotBlank() && st != "حرفي" && id in setOf("g_wav", "g_aac", "loc_ai", "loc_ctx")) parts.add("🎚 $st/" + Cfg.str("tone_strength", "متوسطة"))
                 }
                 if (SourceMode.get() == SourceMode.HYBRID) parts.add("👁 " + SourceMode.kindLabel())
                 parts.joinToString(" · ")
@@ -374,7 +374,7 @@ object TrWizard {
         var mStyle = Cfg.str("tone_style", "").ifBlank { "حرفي" }
         var mDeg = Cfg.str("tone_strength", "متوسطة").ifBlank { "متوسطة" }
         var afterDl: (() -> Unit)? = null
-        val dialectModes = setOf("g_wav", "g_aac", "loc_ai")
+        val dialectModes = setOf("g_wav", "g_aac", "loc_ai", "loc_ctx")
 
         fun sec(t: String) { body.addView(ui.text(t, 13f, th.primary, true).apply { setPadding(ui.dp(2), ui.dp(10), 0, ui.dp(2)) }) }
 
@@ -434,7 +434,7 @@ object TrWizard {
             mId = id; afterDl = null; hubActive = true; hubFlow = false; presetFlow = false; live = false; repoToHub = false
             when (id) {
                 "g_wav", "g_aac" -> { src = "gemini"; tr = "gemini"; gp = CURRENT }
-                "loc_ai" -> { src = if (engine == "sherpa" && SherpaStt.ready() && SherpaStt.handles(lang)) "sherpa" else "whisper"; tr = "gemini"; trId = "" }
+                "loc_ai", "loc_ctx" -> { src = if (engine == "sherpa" && SherpaStt.ready() && SherpaStt.handles(lang)) "sherpa" else "whisper"; tr = "gemini"; trId = "" }
                 "loc_google" -> { src = if (engine == "sherpa" && SherpaStt.ready() && SherpaStt.handles(lang)) "sherpa" else "whisper"; tr = "google"; trId = ""; dia = ""; diaSet = true; convId = "" }
                 "ai_only" -> { src = "gemini"; tr = "none"; trId = "" }
                 "w_only" -> { src = "whisper"; tr = "none"; trId = "" }
@@ -459,6 +459,7 @@ object TrWizard {
             opt("🧠 ذكاء صناعي — عادي (WAV)", "جيميناي يسمع ويترجم في طلب واحد · صوت خام أعلى جودة، رفع أبطأ وداتا أكتر", mId == "g_wav") { pickMode("g_wav") }
             opt("🧠 ذكاء صناعي — توفير بيانات (AAC)", "نفس الشيء بصوت مضغوط (أصغر ~8 مرات)", mId == "g_aac") { pickMode("g_aac") }
             opt("📴+🧠 تفريغ محلي + ترجمة ذكاء صناعي", "التفريغ على جهازك والترجمة جيميناي بالسياق (كوتا نص بس)", mId == "loc_ai") { pickMode("loc_ai") }
+            opt("📴+🧠 وشبر + جيميناي بالسياق (كل 2–3 باتشات)", "وشبر يفرّغ باتش باتش، وكل ٢–٣ باتشات بتتبعت لجيميناي (بمفتاحك) ومعاها تفريغ وترجمة الباتشات اللي قبلها — وبترجع بتوقيتاتها (العدد من الإعدادات ← التفريغ)", mId == "loc_ctx") { pickMode("loc_ctx") }
             sec("🆓 من غير مفتاح")
             opt("📴+🌍 تفريغ محلي + ترجمة جوجل (فصحى)", "كله مجاني · فصحى بس · الترجمة محتاجة نت", mId == "loc_google") { pickMode("loc_google") }
             sec("✍ تفريغ بس (من غير ترجمة)")

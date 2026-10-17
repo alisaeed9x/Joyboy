@@ -329,7 +329,7 @@ The sentences below are consecutive speech from one video, in order. Each one al
      * (v219) ترجمة سياقية لجزء من الجمل: [all] = النص الأصلي الكامل (أو نافذة كبيرة منه) كسياق، [ctxFrom] = ترتيب أول جملة فيه في الفيديو كله،
      * [refs] = ترتيب كل جملة من [items] في الفيديو كله (0-based)، [before] = آخر جمل اتترجمت في الأجزاء اللي قبل (ثبات المصطلحات والضمائر).
      */
-    fun contextual(pb: PromptBuilder, c: Conf, all: List<Sub>, ctxFrom: Int, refs: List<Int>, items: List<Sub>, before: List<Sub>, chars: List<Chr>, gloss: List<Gloss>, part: Int, parts: Int, strict: Boolean = false): String {
+    fun contextual(pb: PromptBuilder, c: Conf, all: List<Sub>, ctxFrom: Int, refs: List<Int>, items: List<Sub>, before: List<Sub>, chars: List<Chr>, gloss: List<Gloss>, part: Int, parts: Int, strict: Boolean = false, beforeMax: Int = 20): String {
         val tgt = dialectEn(c.lang)
         val main = P("TRANSLATE_MAIN", TRANSLATE_MAIN).replace("{{TARGET}}", tgt).replace("{{STYLE}}", styleEn(c.style))
             .replace("The sentences below are consecutive speech from one video, in order.", "The transcript and the sentences below are speech from one video, in order.")
@@ -344,7 +344,7 @@ The sentences below are consecutive speech from one video, in order. Each one al
         }
         if (before.isNotEmpty()) {
             sb.append("\n═══ ALREADY TRANSLATED IN EARLIER PARTS (keep names, terms and pronoun choices consistent with these; do not translate again) ═══\n")
-            before.takeLast(20).forEach { s -> sb.append("- ").append(s.original.replace('\n', ' ')).append("  ⇒  ").append(s.translated.replace('\n', ' ')).append('\n') }
+            before.takeLast(beforeMax).forEach { s -> sb.append("- ").append(s.original.replace('\n', ' ')).append("  ⇒  ").append(s.translated.replace('\n', ' ')).append('\n') }
         }
         sb.append("\n═══ SENTENCES TO TRANSLATE (part ").append(part).append(" of ").append(parts).append(": ").append(items.size).append(" sentences, idx 0 to ").append(items.size - 1).append("; \"ref\" = their line number #N in the transcript above) ═══\n")
         val arr = itemsJson(items)

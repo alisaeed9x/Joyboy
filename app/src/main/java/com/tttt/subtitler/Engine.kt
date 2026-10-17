@@ -661,6 +661,14 @@ class Engine(
         val d = currentDur(); if (d <= 0) return false
         var i = 0
         while (cStart(i) < d) { if (!isDone(i, d)) return false; i++ }
+        if (!transOnly && hasRepairable()) return false   // (v399) فيه جمل متفرّغة بس (لسه بلغتها الأصلية) — لسه ناقصها ترجمة
+        return true
+    }
+
+    /** (v399) المحرك خلّص ووقف (مثلًا «تفريغ بس» خلص) وبعدين الوضع اتغيّر: بيجهّزه يشتغل تاني. true = لازم المشغّل يبدأ الحلقة من جديد */
+    fun reopen(): Boolean {
+        if (!stoppedFlag || isClosed) return false
+        stoppedFlag = false; finished = false; fatal = null; source = null; running = true
         return true
     }
 
@@ -1193,6 +1201,15 @@ class Engine(
     }
 
     private fun releaseToFull(t: TItem, why: String) {
+        if (keyless) {   // (v399) من غير مفتاح جيميناي: «طلب كامل» مستحيل (NoKey) — الباتش يفضل في المجمّع ويتعاد ترجمته بجوجل بعد شوية، وبعد 4 محاولات يفضل بنصه الأصلي والإصلاح التلقائي بيكمّله
+            val n = trRetryN.merge(t.i, 1, Int::plus) ?: 1
+            if (n < 4) {
+                trRetryAt[t.i] = System.currentTimeMillis() + 8_000L * n
+                host.log("🔁 باتش ${t.i + 1}: $why — هعيد الترجمة بجوجل ($n/3)"); host.changed(); return
+            }
+            trRetryN.remove(t.i); trRetryAt.remove(t.i); tHold.remove(t.i)
+            host.log("⚠ باتش ${t.i + 1}: جوجل ماترجمش بعد 3 محاولات — فضل بنصه الأصلي ومحاولة الإصلاح التلقائي هتكمّله"); host.changed(); return
+        }
         fullChunks.add(t.i); claimed.remove(t.i); tHold.remove(t.i)
         if (queueBackup(t.i, t.p, why)) { host.changed(); return }   // (v216) على المفتاح الاحتياطي بالترتيب
         host.log("↩ باتش ${t.i + 1}: $why — هيتبعت تاني كطلب كامل (صوت ← ترجمة) عشان ما يتخطّاش")
@@ -1311,7 +1328,7 @@ class Engine(
                 if (LangGuard.foreignOf(list).isNotEmpty()) list = fixForeign(list)
                 if (dl.isEmpty()) dialOf.remove(t.i) else dialOf[t.i] = dl
                 applyChunk(t.i, t.p.rawStart, t.p.rawEnd, t.p.w, t.j, list, t.prior)
-                tHold.remove(t.i)
+                tHold.remove(t.i); trRetryN.remove(t.i); trRetryAt.remove(t.i)
                 if (t.partial) { incomplete.add(t.i); host.log("⚠ باتش ${t.i + 1} رجع ناقص — تقدر تعيده من علامة التحذير") }
                 scheduleHoleFill(t.i, t.p.rawStart, t.p.rawEnd, t.p.w, t.key)
             } catch (e: Exception) { releaseToFull(t, "فشل تطبيق الترجمة: " + (e.message ?: "").take(80)) }
@@ -1327,6 +1344,12 @@ class Engine(
     private val CTX_PART_MAX = 260     // أقصى عدد جمل في الجزء الواحد (الأجزاء بتتقسم على حدود الباتشات)
     private val CTX_FULL_MAX = 1500    // لحد العدد ده بنبعت النص الكامل كسياق مع كل جزء، وفوقه بنبعت نافذة حوالين الجزء
     private val CTX_WINDOW = 300
+    /** (v400) وضع «وشبر + جيميناي بالسياق»: عدد الباتشات في كل طلب ترجمة (2 أو 3)، 0 = الوضع مش شغّال */
+    private fun ctxBatches(): Int = if (Cfg.str("tr_mode_id", "") == "loc_ctx" && Offline.configured() && !TrWizard.googleOn()) Cfg.int("ctx_batches", 3).coerceIn(2, 3) else 0
+    private val GT_CTX_LINES = 30      // (v399) أقصى عدد سطور سياق (من الباتشات اللي قبل) مع كل طلب جوجل
+    private val GT_CTX_CHARS = 2500    // (v399) وأقصى عدد حروف — الطلب ما بيكبرش مع طول الفيديو
+    private val trRetryAt = ConcurrentHashMap<Int, Long>()   // (v399) باتش جوجل فشل في ترجمته: ميعاد المحاولة الجاية
+    private val trRetryN = ConcurrentHashMap<Int, Int>()
     @Volatile private var ctxMsg = ""
     private val warnAtMap = java.util.concurrent.ConcurrentHashMap<String, Long>()
     /** (v258) إشعار للمستخدم بدل ما الخطأ يفضل في اللوج بس. [key] بيحدّد النوع — نفس النوع مرة كل 60 ث بالكتير */
@@ -1382,7 +1405,7 @@ class Engine(
         if (now - offAt < 800L) return
         offAt = now
         val d = currentDur(); val tot = if (d > 0) Math.ceil(d / ch).toInt() else 0
-        val k = if (Offline.live()) 1 else maxOf(1, (Offline.partMin() * 60.0 / ch).toInt())
+        val k = ctxBatches().takeIf { it > 0 } ?: if (Offline.live() || TrWizard.googleOn()) 1 else maxOf(1, (Offline.partMin() * 60.0 / ch).toInt())
         val doneN = if (tot > 0) (0 until tot).count { isDone(it, d) } else 0
         val held = tHold.size
         val txN = minOf(tot, doneN + held)
@@ -1418,7 +1441,8 @@ class Engine(
     private fun contextTick(): Boolean {
         if (tHold.isEmpty() || !running || isClosed) return false
         if (trBusy.get() > 0) return false
-        val avail = tHold.keys.filter { it !in tTaken }.sorted()
+        val nowT = System.currentTimeMillis()
+        val avail = tHold.keys.filter { it !in tTaken && (trRetryAt[it] ?: 0L) <= nowT }.sorted()   // (v399) باتش جوجل فشل: بيستنى شوية قبل المحاولة الجاية
         if (avail.isEmpty()) return false
         if (!ctxReady() && Offline.configured() && partTick(avail)) return true   // (v253) جزء كامل اتنسخ ← يتترجم فورًا
         if (!ctxReady()) {
@@ -1444,7 +1468,7 @@ class Engine(
      * بيتبعتوا لجيميناي يترجمهم. الباقي (اللي أقل من جزء) بيتترجم لما كل الباتشات تخلص زي الوضع 4 العادي.
      */
     private fun partTick(avail: List<Int>): Boolean {
-        val k = if (Offline.live()) 1 else maxOf(1, (Offline.partMin() * 60.0 / ch).toInt())
+        val k = ctxBatches().takeIf { it > 0 } ?: if (Offline.live() || TrWizard.googleOn()) 1 else maxOf(1, (Offline.partMin() * 60.0 / ch).toInt())   // (v399) جوجل: باتش بباتش · (v400) وضع السياق: 2–3 باتشات
         if (avail.size < k) return false
         val head = avail.take(k)
         if (head.last() - head.first() != k - 1) return false      // فيه باتش ناقص في النص (لسه بيتنسخ أو متأخر)
@@ -1459,22 +1483,35 @@ class Engine(
                 finally { tTaken.removeAll(head.toSet()); trBusy.decrementAndGet(); host.changed() }
             }
         } catch (_: RejectedExecutionException) { tTaken.removeAll(head.toSet()); trBusy.decrementAndGet(); return false }
-        host.log("📴 جزء جاهز (${k} باتش ≈ ${Offline.partMin()} دقيقة) — اتبعت " + (if (TrWizard.googleOn()) "لجوجل" else "لجيميناي") + " يترجمه")
+        host.log("📴 جزء جاهز (${k} باتش" + (if (k > 1 && ctxBatches() == 0) " ≈ ${Offline.partMin()} دقيقة" else "") + ") — اتبعت " + (if (TrWizard.googleOn()) "لجوجل" else "لجيميناي") + " يترجمه")
         return true
     }
 
     /** (v254) ترجمة جوجل غير الرسمية لقايمة نصوص (لغة المصدر من إعداد الأوفلاين). بترجّع نفس الطول، والفاشل null */
-    private fun googleItems(src0: List<String>): List<String?> {
+    private fun googleItems(src0: List<String>, ctx: List<String> = emptyList()): List<String?> {
         val src = src0.map { it.replace(Regex("\\s*\n\\s*"), " ").trim() }
         val out = arrayOfNulls<String>(src.size)
         val sl = TrWizard.googleLang()
         /** جوجل الداخلي (gtCall): 25 جملة في الطلب */
+        // (v399) سياق جوجل: سطور الباتشات اللي قبل (ctx) + الجمل اللي قبلها في نفس الباتش بتتبعت قدام الطلب عشان جوجل يترجم بالسياق،
+        // وبعدين بنشيل رد سطور السياق ونرجّع رد الجمل المطلوبة بس بنفس ترتيبها (يعني بنفس توقيتاتها). لو عدد الأسطر اختلف: نرجع للطلب من غير سياق
+        val ctxL = ctx.map { it.replace(Regex("\\s*\n\\s*"), " ").trim() }.filter { it.isNotBlank() }
+        fun lead(firstIdx: Int): List<String> {
+            val pre = ArrayList<String>(ctxL)
+            for (q in 0 until firstIdx) if (src[q].isNotBlank()) pre.add(src[q])
+            val keep = ArrayList<String>(); var chars = 0
+            for (s in pre.asReversed()) { if (keep.size >= GT_CTX_LINES || chars + s.length > GT_CTX_CHARS) break; keep.add(s); chars += s.length }
+            return keep.asReversed()
+        }
         fun viaGoogle(idx: List<Int>) {
             var failedB = 0
             for (b in idx.chunked(25)) {
                 if (!running || isClosed) break
                 try {
-                    val r = gtCall(b.map { src[it] }, "ar", sl)
+                    val ld = lead(b.first())
+                    var r: List<String>? = null
+                    if (ld.isNotEmpty()) r = gtCall(ld + b.map { src[it] }, "ar", sl)?.drop(ld.size)
+                    if (r == null || r.size != b.size) r = gtCall(b.map { src[it] }, "ar", sl)
                     if (r != null) { for ((q, k) in b.withIndex()) out[k] = r[q] }
                     else for (k in b) { gtCall(listOf(src[k]), "ar", sl)?.firstOrNull()?.let { out[k] = it } }   // عدد الأسطر اختلف: جملة جملة
                 } catch (e: Exception) { failedB++; host.log("⚠ ترجمة جوجل: " + (e.message ?: e.toString()).take(80)); if (failedB >= 3) break }
@@ -1559,7 +1596,7 @@ class Engine(
         val flatAll = group.flatMap { it.fresh }
         val parts = ArrayList<List<TItem>>(); var cur = ArrayList<TItem>(); var n = 0
         for (t in group) {
-            val pm = Offline.partMin()   // (v253) 5/10/20 دقيقة للجزء (0 = بعدد الجمل بس)
+            val pm = if (ctxBatches() > 0) 0 else Offline.partMin()   // (v253) 5/10/20 دقيقة للجزء (0 = بعدد الجمل بس) · (v400) وضع السياق: بعدد الباتشات بس
             if (cur.isNotEmpty() && (n + t.fresh.size > CTX_PART_MAX || (pm > 0 && (t.i - cur.first().i + 1) * ch > pm * 60.0))) { parts.add(cur); cur = ArrayList(); n = 0 }
             cur.add(t); n += t.fresh.size
         }
@@ -1570,7 +1607,7 @@ class Engine(
         val doneTr = ArrayList<Sub>()
         if (Offline.configured() && flatAll.isNotEmpty()) {   // (v253) الأجزاء بتتترجم أول بأول: آخر جمل اتترجمت قبل الجزء ده بتتبعت كسياق
             val f0 = flatAll.first().start
-            doneTr.addAll(synchronized(lock) { subs.filter { it.start < f0 && it.translated.isNotBlank() && it.translated != it.original }.takeLast(12) })
+            doneTr.addAll(synchronized(lock) { subs.filter { it.start < f0 && it.translated.isNotBlank() && it.translated != it.original }.takeLast(if (ctxBatches() > 0) 40 else 12) })
         }
         var base = 0
         for ((pn, part) in parts.withIndex()) {
@@ -1586,7 +1623,9 @@ class Engine(
                     round++
                     val items = missing.map { flat[it] }
                     if (TrWizard.googleOn()) {   // (v254) الترجمة بجوجل (من غير API): 25 جملة في الطلب؛ اللي فشل بيتعاد في اللفة الجاية، ولو الكل فشل الباتشات بتتسلّم لجيميناي
-                        val g = googleItems(items.map { it.original })
+                        val gf = flat.first().start
+                        val gctx = synchronized(lock) { subs.filter { it.start < gf && it.original.isNotBlank() && !it.isSound }.takeLast(GT_CTX_LINES).map { it.original } }   // (v399) الباتشات اللي قبل كسياق
+                        val g = googleItems(items.map { it.original }, gctx)
                         var okN = 0
                         for ((q, o) in missing.withIndex()) g.getOrNull(q)?.takeIf { it.isNotBlank() }?.let { tr[o] = it; pv[o] = ""; okN++ }
                         if (okN == 0) {
@@ -1600,7 +1639,7 @@ class Engine(
                     val full = flatAll.size <= CTX_FULL_MAX
                     val lo = if (full) 0 else (base - CTX_WINDOW).coerceAtLeast(0)
                     val hi = if (full) flatAll.size else (base + flat.size + CTX_WINDOW).coerceAtMost(flatAll.size)
-                    val prompt = toneBlock() + ModePrompts.contextual(pb, c, flatAll.subList(lo, hi), lo, missing.map { base + it }, items, doneTr, effectiveChars(), effectiveGloss(), pn + 1, parts.size, langBad > 0)
+                    val prompt = toneBlock() + ModePrompts.contextual(pb, c, flatAll.subList(lo, hi), lo, missing.map { base + it }, items, doneTr, effectiveChars(), effectiveGloss(), pn + 1, parts.size, langBad > 0, beforeMax = if (ctxBatches() > 0) 40 else 20)
                     val rep0 = askJson(prompt, (items.size * 90).coerceIn(4096, 32768), tp, "ترجمة سياقية")
                     if (rep0 == null) { if (swapTranslate(items, missing, tr, pv) > 0) { swapped = true; continue } else break }   // (v286) بديل تلقائي
                     val rep = rep0
@@ -2446,17 +2485,29 @@ class Engine(
     private val fixTries = ConcurrentHashMap<String, Int>()
     @Volatile private var lastFix = 0L
     private fun fixKey(s: Sub) = "${s.start}|${s.original}"
+    /** (v399) إصلاح جمل نصها لسه بلغتها الأصلية بجوجل (من غير مفتاح)، والتوقيت بيفضل زي ما هو لأن بنغيّر النص بس */
+    private fun fixViaGoogle(list: List<Sub>): List<Sub> {
+        if (list.isEmpty()) return list
+        val first = list.minOf { it.start }
+        val ctx = synchronized(lock) { subs.filter { it.start < first && it.original.isNotBlank() && !it.isSound }.takeLast(GT_CTX_LINES).map { it.original } }
+        val g = googleItems(list.map { it.original }, ctx)
+        return list.mapIndexed { k, s ->
+            val t = g.getOrNull(k)?.takeIf { it.isNotBlank() }
+            if (t == null) s else s.copy(translated = t).takeIf { !LangGuard.foreign(it) } ?: s
+        }
+    }
     private fun hasRepairable(): Boolean = !transOnly && synchronized(lock) { subs.any { it.chunk !in previewChunks && LangGuard.foreign(it) && (fixTries[fixKey(it)] ?: 0) < 3 } }
     private fun repairForeignTick(): Boolean {
         if (!running || transOnly) return false
         val now = System.currentTimeMillis()
         if (now - lastFix < 12_000) return false
-        val bad = synchronized(lock) { subs.filter { it.chunk !in previewChunks && LangGuard.foreign(it) && (fixTries[fixKey(it)] ?: 0) < 3 } }.take(30)
+        val viaG = TrWizard.googleOn() || keyless   // (v399) من غير مفتاح جيميناي (أو مسار جوجل): الإصلاح بجوجل بالسياق بدل جيميناي
+        val bad = synchronized(lock) { subs.filter { it.chunk !in previewChunks && LangGuard.foreign(it) && (fixTries[fixKey(it)] ?: 0) < 3 } }.take(if (viaG) 100 else 30)
         if (bad.isEmpty()) return false
         lastFix = now
         bad.forEach { fixTries.merge(fixKey(it), 1, Int::plus) }
-        host.log("🌐 بصلّح ${bad.size} جملة لسه مش بـ${conf.lang}…")
-        val fixed = fixForeign(bad)
+        host.log("🌐 بصلّح ${bad.size} جملة لسه مش بـ${conf.lang}" + (if (viaG) " (بجوجل)" else "") + "…")
+        val fixed = if (viaG) fixViaGoogle(bad) else fixForeign(bad)
         val map = HashMap<String, Sub>()
         bad.indices.forEach {
             if (fixed[it].translated != bad[it].translated) {

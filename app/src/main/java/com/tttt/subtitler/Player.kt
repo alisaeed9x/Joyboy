@@ -488,8 +488,21 @@ class PlayerActivity : Activity(), Host {
             if (Cfg.str("trstart", "1") != "0") { try { engine.translateFromStart(); log("▶ الترجمة من أول الفيديو (أول جزء ناقص)") } catch (e: Throwable) { LogStore.err("Player:translateFromStart", e); say("⚠ تعذّر بدء الترجمة من أول الفيديو — جرّب ▶ ترجمة تاني") } }   // (v287)
             else if (posNow > 2000L) { try { engine.translateFrom(posNow / 1000.0); log("▶ الترجمة من " + fmtMs(posNow)) } catch (e: Throwable) { LogStore.err("Player:translateFrom", e); say("⚠ تعذّر بدء الترجمة من مكان التشغيل — جرّب ▶ ترجمة تاني") } }   // (v287)
         }
-        if (!engineStarted) { engineStarted = true; engine.userPaused = false; startEngine() } else engine.userPaused = false
+        if (!engineStarted) { engineStarted = true; engine.userPaused = false; startEngine() }
+        else {
+            // (v399) استئناف: لو الوضع المحفوظ اتغيّر من ⚙/الإعدادات بعد الإيقاف بنطبّقه على المحرك قبل ما نكمّل (كان بيكمّل بالوضع القديم)
+            try { TrWizard.savedPlan()?.let { sp -> if (appliedSig.isNotEmpty() && planSig(sp) != appliedSig) { LogStore.add("🔄 الوضع المحفوظ اختلف عن اللي شغّال — بطبّقه قبل الاستئناف"); runPlanCore(sp, false) } } } catch (e: Throwable) { LogStore.err("Player:resumeSync", e) }
+            engine.userPaused = false
+            engineKick()
+        }
         updateTr()
+    }
+    @Volatile private var appliedSig = ""
+    /** (v399) بصمة الخطة (الوضع + تفريغ بس + المحرك + الطريقة + البريست) عشان نعرف لو اتغيّرت */
+    private fun planSig(pl: TrWizard.Plan) = listOf(pl.mode, pl.only, pl.engine, pl.method, pl.onlineId, pl.lang, pl.model, pl.dialect, pl.dia ?: "-", Cfg.str("tr_mode_id", "")).joinToString("|")
+    /** (v399) لو المحرك كان خلّص ووقف (مثلًا «تفريغ بس» خلص) والوضع اتغيّر: يبدأ الحلقة من جديد عشان الباقي يتترجم */
+    private fun engineKick() {
+        try { if (engineStarted && ::engine.isInitialized && engine.reopen()) { LogStore.add("♻ المحرك كان واقف — بشغّله تاني بالوضع الجديد"); startEngine() } } catch (e: Throwable) { LogStore.err("Player:engineKick", e) }
     }
     private var trChipV: View? = null
     private var trChipDismissed = false
@@ -3182,7 +3195,13 @@ class PlayerActivity : Activity(), Host {
             TrWizard.sourceHook = { ed -> if (ed) say("💾 اتحفظ: " + SourceMode.line()) else runVisualOnly(); try { applyChromeFn() } catch (_: Throwable) {} }   // (v291)
             TrWizard.show(this, edit) { pl, save, start ->
                 if (save) TrWizard.save(pl)
-                if (start) runPlan(pl) else if (save) say("💾 اتحفظ: " + TrWizard.describe(pl).replace("\n", " · "))
+                if (start) runPlan(pl)
+                else if (save) {
+                    // (v399) تعديل الوضع (⚙) في نص الفيديو كان بيتحفظ بس ومابيوصلش للمحرك الشغّال (فالاستئناف يكمّل بالوضع القديم): دلوقتي بيتطبّق فورًا على المحرك من غير ما يبدأ الترجمة
+                    val live = try { ::engine.isInitialized && (engineStarted || engine.subs.isNotEmpty()) } catch (_: Throwable) { false }
+                    if (live) { runPlan(pl, false); say("💾 اتحفظ واتطبّق على الترجمة: " + TrWizard.describe(pl).replace("\n", " · ") + (if (engineStarted) "\n▶ دوس «إلغاء الإيقاف» تكمّل" else "")) }
+                    else say("💾 اتحفظ: " + TrWizard.describe(pl).replace("\n", " · "))
+                }
                 try { applyChromeFn() } catch (_: Throwable) {}   // (v360) ملخص الإعداد تحت اسم الفيديو
             }
         } catch (e: Throwable) { LogStore.err("Player:trWizard", e); say("تعذّر فتح شاشة طريقة الترجمة") }
@@ -3190,8 +3209,9 @@ class PlayerActivity : Activity(), Host {
 
     /** بيطبّق الخطة على الإعدادات اللي المحرك بيقراها وبيبدأ الترجمة */
     /** (v291) بيشغّل الخطة وبعدها بيظبط البصري حسب المصدر (صوتي: يقفله · هجين: يشغّله بنوعه) */
-    private fun runPlan(pl: TrWizard.Plan) {
-        runPlanCore(pl)
+    private fun runPlan(pl: TrWizard.Plan, startNow: Boolean = true) {
+        runPlanCore(pl, startNow)
+        if (!startNow) return   // (v399) تطبيق على المحرك بس: ماتلمسش الوضع البصري ولا تبدأ حاجة
         if (pl.onlineId == TrPresets.HARD_ID) return
         when (SourceMode.get()) {
             SourceMode.AUDIO -> try {
@@ -3224,8 +3244,9 @@ class PlayerActivity : Activity(), Host {
         } catch (e: Throwable) { LogStore.err("Player:startVisualNow", e); return false }
     }
 
-    private fun runPlanCore(pl: TrWizard.Plan) {
+    private fun runPlanCore(pl: TrWizard.Plan, startNow: Boolean = true) {
         TrWizard.apply(pl)
+        appliedSig = planSig(pl)   // (v399)
         // (v297) اللهجة الفعلية بتتحط على المحرك في كل المسارات (كانت في الأوفلاين والسحابي بس) وبتظهر في إشعار واللوج
         try { if (::engine.isInitialized) engine.convDialect = Cfg.str("conv_dialect", "") } catch (_: Throwable) {}
         try {
@@ -3242,9 +3263,9 @@ class PlayerActivity : Activity(), Host {
             for ((v, f) in kmLabels) v.text = f(KeyMode.clamp(Cfg.int("kmode", 1)))
             if (::engine.isInitialized) engine.convDialect = Cfg.str("conv_dialect", "")   // (v257) اللهجة اللي اخترتها في الشاشة
             LogStore.add("🎛 طريقة الترجمة: أوفلاين — لغة=" + pl.lang.ifEmpty { "تلقائي" } + " · محرك=" + pl.engine + " · موديل=" + (if (pl.engine == "sherpa") "SenseVoice" else pl.model) + " · ترجمة=" + pl.method + " · لهجة=" + pl.dialect.ifBlank { "فصحى" })
-            say(if (pl.only) "✍ أوفلاين · " + TrWizard.langLabel(pl.lang) + " · تفريغ بس (من غير ترجمة)" else "📴 أوفلاين · " + TrWizard.langLabel(pl.lang) + " · " + (if (pl.method == "google") "ترجمة جوجل" else "ترجمة جيميناي") + "\n" + ExtTranslate.setupLine())
-            beginTranslate()
-            TrWizard.startNotices(pl).forEachIndexed { i, m -> h.postDelayed({ try { Notice.show(this, m, 4500L) } catch (e: Throwable) { LogStore.err("Player:startNotices", e) } }, 600L + i * 3200L) }   // (v255)
+            if (startNow) say(if (pl.only) "✍ أوفلاين · " + TrWizard.langLabel(pl.lang) + " · تفريغ بس (من غير ترجمة)" else "📴 أوفلاين · " + TrWizard.langLabel(pl.lang) + " · " + (if (pl.method == "google") "ترجمة جوجل" else "ترجمة جيميناي") + "\n" + ExtTranslate.setupLine())
+            if (startNow) beginTranslate() else engineKick()
+            if (startNow) TrWizard.startNotices(pl).forEachIndexed { i, m -> h.postDelayed({ try { Notice.show(this, m, 4500L) } catch (e: Throwable) { LogStore.err("Player:startNotices", e) } }, 600L + i * 3200L) }   // (v255)
         } else if (pl.cloud) {
             // (v274) أونلاين بمحرك خارجي: نفس مسار «نسخ ثم ترجمة سياقية» (التفريغ سحابي) والترجمة بالسلسلة: المحرك المختار ← الباقي ← جوجل ← جيميناي بمفاتيحك
             TrPresets.byId("transcript")?.let { TrPresets.apply(it) }
@@ -3252,15 +3273,15 @@ class PlayerActivity : Activity(), Host {
             for ((v, f) in kmLabels) v.text = f(KeyMode.clamp(Cfg.int("kmode", 1)))
             if (::engine.isInitialized) engine.convDialect = Cfg.str("conv_dialect", "")
             LogStore.add("🎛 طريقة الترجمة: أونلاين بمحرك خارجي — ترجمة=" + pl.ext + " · تفريغ=" + (TrWizard.sttCandidate(pl.ext)?.id ?: "؟") + " · السلسلة: " + ExtTranslate.chainLabel())
-            say(if (pl.only) "✍ تفريغ سحابي بس (من غير ترجمة)" else "☁ " + (ExtLlm.byId(pl.ext)?.label ?: pl.ext) + " · تفريغ سحابي\n" + ExtTranslate.setupLine())
-            beginTranslate()
-            TrWizard.startNotices(pl).forEachIndexed { i, m -> h.postDelayed({ try { Notice.show(this, m, 4500L) } catch (e: Throwable) { LogStore.err("Player:startNotices", e) } }, 600L + i * 3200L) }
+            if (startNow) say(if (pl.only) "✍ تفريغ سحابي بس (من غير ترجمة)" else "☁ " + (ExtLlm.byId(pl.ext)?.label ?: pl.ext) + " · تفريغ سحابي\n" + ExtTranslate.setupLine())
+            if (startNow) beginTranslate() else engineKick()
+            if (startNow) TrWizard.startNotices(pl).forEachIndexed { i, m -> h.postDelayed({ try { Notice.show(this, m, 4500L) } catch (e: Throwable) { LogStore.err("Player:startNotices", e) } }, 600L + i * 3200L) }
         } else {
             val pr = TrPresets.byId(pl.onlineId)
-            if (pr != null) applyPreset(pr, pl.only)
+            if (pr != null) applyPreset(pr, pl.only, false, startNow)
             else {
                 try { val nc = Cfg.snapshot(); conf = nc; if (::engine.isInitialized) engine.applyConf(nc) } catch (e: Throwable) { LogStore.err("Player:runPlan", e) }
-                beginTranslate()
+                if (startNow) beginTranslate() else engineKick()
             }
         }
     }
@@ -3278,7 +3299,7 @@ class PlayerActivity : Activity(), Host {
             .setNegativeButton("إلغاء", null).show()
     }
 
-    private fun applyPreset(pr: TrPresets.P, keepOnly: Boolean = false, fresh: Boolean = false) {
+    private fun applyPreset(pr: TrPresets.P, keepOnly: Boolean = false, fresh: Boolean = false, startNow: Boolean = true) {
         if (!keepOnly) try { if (::engine.isInitialized) engine.transOnly = false } catch (_: Throwable) {}   // (v280)
         val kv = TrPresets.apply(pr)
         if (pr.id == TrPresets.HARD_ID) {
@@ -3308,7 +3329,7 @@ class PlayerActivity : Activity(), Host {
         } catch (e: Throwable) { LogStore.err("Player:presetVis", e) }
         LogStore.add("🎛 بريست الترجمة: " + pr.name + " — " + kv.entries.joinToString(" · ") { it.key + "=" + it.value })
         say(pr.icon + " " + pr.name + " — اتظبطت كل الإعدادات")
-        if (fresh) { try { player.seekTo(0) } catch (_: Throwable) {}; redoGo("🔄 بترجم من الأول بالبريست: " + pr.name) { engine.redoAll(true) } } else beginTranslate()
+        if (fresh) { try { player.seekTo(0) } catch (_: Throwable) {}; redoGo("🔄 بترجم من الأول بالبريست: " + pr.name) { engine.redoAll(true) } } else if (startNow) beginTranslate() else engineKick()
     }
 
     fun langPopup(anchor: View) {
