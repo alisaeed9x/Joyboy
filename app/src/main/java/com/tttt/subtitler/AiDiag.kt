@@ -41,7 +41,7 @@ object TranslatePick {
         return s
     }
 
-    /** موديلات الشات بس (من غير auto/* ومن غير تفريغ/صور/embeddings) مرتّبة الأنسب للترجمة الأول */
+    /** موديلات الشات بس (من غير auto/… ومن غير تفريغ/صور/embeddings) مرتّبة الأنسب للترجمة الأول */
     fun rank(ids: List<String>): List<String> = ids
         .filter { AiModels.isChat(it) && ExtLlm.skipWords.none { w -> it.contains(w, true) } && !it.startsWith("auto", true) }
         .distinct()
