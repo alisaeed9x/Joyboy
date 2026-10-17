@@ -60,7 +60,8 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
         fun mf(): ((Page) -> YtRes)? = if (cMode) cm else more
     }
 
-    val root = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL; setBackgroundColor(th.bg); layoutDirection = View.LAYOUT_DIRECTION_RTL }
+    private val skinInit = YtSkin.init(th.bg)   // (v397) ألوان يوتيوب (داكن/فاتح حسب ثيم التطبيق)
+    val root = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL; setBackgroundColor(YtSkin.bg); layoutDirection = View.LAYOUT_DIRECTION_RTL }
     private val h = Handler(Looper.getMainLooper())
     // (v337) لودينج ويندوز (نفس اللي في المشغّل) بدل «⏳ …» وقت البحث/التحميل، وطبقة لودينج فوق الصفحة وقت جلب رابط الفيديو
     private val spinDr = WinSpinnerDrawable().apply { setColorFilter(PorterDuffColorFilter(th.primary, PorterDuff.Mode.SRC_IN)) }
@@ -108,7 +109,7 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
     // (v348) شريط يوتيوب السفلي + الشورتس: page = كل الشاشة القديمة (بحث/قوايم)، shortsHost = صفحة الشورتس فوقها
     private val page = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL }
     private var navSel = 0
-    private val navIcons = ArrayList<IconTextView>()
+    private val navIcons = ArrayList<YtIcon>()
     private val navLabs = ArrayList<TextView>()
     private val chanRow = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; visibility = View.GONE }
     private val chanName: TextView
@@ -136,13 +137,23 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
     private val adapter = Adapter()
     private val FILTERS = listOf("" to "الكل", "videos" to "فيديوهات", "channels" to "قنوات", "playlists" to "قوايم")
 
+    // (v397) شريط يوتيوب العلوي (شعار + أيقونات) وشريط البحث وشرائح الرئيسية
+    private val appBar = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; setBackgroundColor(YtSkin.bg) }
+    private val searchBar = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; visibility = View.GONE; setBackgroundColor(YtSkin.bg) }
+    private var searchTyping = false
+    private val HOME_CHIPS = listOf("الكل" to "", "موسيقى" to "موسيقى", "ألعاب" to "ألعاب", "أخبار" to "أخبار", "مباشر" to "بث مباشر", "رياضة" to "رياضة",
+        "طبخ" to "وصفات طبخ", "كوميديا" to "كوميديا", "قرآن" to "قرآن كريم", "أفلام" to "أفلام", "تعلّم" to "شرح دروس", "تقنية" to "تقنية")
+    private val chipViews = ArrayList<TextView>()
+    private var chipSel = 0
+    private val chipsScroll = HorizontalScrollView(act).apply { isHorizontalScrollBarEnabled = false; visibility = View.GONE; setBackgroundColor(YtSkin.bg) }
+
     init {
-        // الشريط العلوي: خانة البحث + زرار 🔍
+        // (v397) الشريط العلوي زي يوتيوب: شعار + أيقونات (إشعارات · بحث · إعدادات)؛ البحث بيفتح شريط (سهم رجوع + خانة + مسح)
         search = EditText(act).apply {
-            hint = "ابحث في يوتيوب"; setHintTextColor(th.muted); setTextColor(th.text); textSize = 14f
+            hint = "ابحث في يوتيوب"; setHintTextColor(YtSkin.sub); setTextColor(YtSkin.text); textSize = 15f
             setSingleLine(); imeOptions = EditorInfo.IME_ACTION_SEARCH; gravity = Gravity.CENTER_VERTICAL or Gravity.START
-            setPadding(ui.dp(14), 0, ui.dp(14), 0)
-            background = GradientDrawable().apply { setColor(th.surface); cornerRadius = ui.dp(20).toFloat() }
+            setPadding(ui.dp(16), 0, ui.dp(12), 0)
+            background = GradientDrawable().apply { setColor(YtSkin.surface); cornerRadius = ui.dp(20).toFloat() }
             setOnEditorActionListener { _, a, _ -> if (a == EditorInfo.IME_ACTION_SEARCH) { doSearch(text.toString()); true } else false }
             addTextChangedListener(object : TextWatcher {
                 override fun afterTextChanged(s: Editable?) { suggest(s?.toString() ?: "") }
@@ -150,16 +161,49 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
                 override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
             })
         }
-        val goBtn = ui.text("🔍", 18f, th.primary, true).apply {
-            gravity = Gravity.CENTER; setPadding(ui.dp(10), 0, ui.dp(10), 0); setOnClickListener { doSearch(search.text.toString()) }
+        fun iconBtn(kind: String, desc: String, onClick: () -> Unit): YtIcon = YtIcon(act, kind).apply {
+            contentDescription = desc; foreground = YtSkin.ripple(true); setOnClickListener { onClick() }
         }
-        val bar = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; setPadding(ui.dp(10), ui.dp(8), ui.dp(6), ui.dp(4)) }
-        bar.addView(search, LinearLayout.LayoutParams(0, ui.dp(42), 1f))
-        bar.addView(goBtn, LinearLayout.LayoutParams(-2, ui.dp(42)))
-        val setBtn = ui.text("⚙", 18f, th.muted, true).apply { gravity = Gravity.CENTER; setPadding(ui.dp(8), 0, ui.dp(8), 0); setOnClickListener { settings() } }   // (v337)
-        bar.addView(setBtn, LinearLayout.LayoutParams(-2, ui.dp(42)))
-        page.addView(bar, LinearLayout.LayoutParams(-1, -2))
+        val logoMark = YtLogo(act)
+        val logoWord = TextView(act).apply {
+            text = "YouTube"; textSize = 19f; setTextColor(YtSkin.text); includeFontPadding = false; letterSpacing = -0.04f
+            typeface = android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.BOLD)
+        }
+        val logoBox = LinearLayout(act).apply {
+            orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_LTR
+            setOnClickListener { openTab(0) }
+        }
+        logoBox.addView(logoMark, LinearLayout.LayoutParams(ui.dp(30), ui.dp(21)))
+        logoBox.addView(logoWord, LinearLayout.LayoutParams(-2, -2).apply { marginStart = ui.dp(4) })
+        appBar.setPadding(ui.dp(14), ui.dp(4), ui.dp(4), ui.dp(4))
+        appBar.addView(logoBox, LinearLayout.LayoutParams(0, ui.dp(44), 1f))
+        appBar.addView(iconBtn("bell", "الاشتراكات") { openTab(1) }, LinearLayout.LayoutParams(ui.dp(44), ui.dp(44)))
+        appBar.addView(iconBtn("search", "بحث") { enterSearch(true) }, LinearLayout.LayoutParams(ui.dp(44), ui.dp(44)))
+        appBar.addView(iconBtn("gear", "إعدادات يوتيوب") { settings() }, LinearLayout.LayoutParams(ui.dp(44), ui.dp(44)))
+        val backBtn = iconBtn("back", "رجوع") { exitSearch() }.apply { scaleX = -1f }
+        val clearBtn = iconBtn("close", "مسح") { search.setText(""); search.requestFocus(); showKb() }
+        searchBar.setPadding(ui.dp(4), ui.dp(4), ui.dp(8), ui.dp(4))
+        searchBar.addView(backBtn, LinearLayout.LayoutParams(ui.dp(44), ui.dp(44)))
+        searchBar.addView(search, LinearLayout.LayoutParams(0, ui.dp(40), 1f))
+        searchBar.addView(clearBtn, LinearLayout.LayoutParams(ui.dp(44), ui.dp(44)))
+        page.addView(appBar, LinearLayout.LayoutParams(-1, -2))
+        page.addView(searchBar, LinearLayout.LayoutParams(-1, -2))
         page.addView(sugBox, LinearLayout.LayoutParams(-1, -2))
+        // (v397) شرائح الرئيسية (الكل · موسيقى · ألعاب …): الضغط على شريحة بيبدّل فيد الرئيسية من غير ما تسيب الصفحة
+        val chipRow = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; setPadding(ui.dp(12), ui.dp(4), ui.dp(12), ui.dp(8)) }
+        HOME_CHIPS.forEachIndexed { i, (label, term) ->
+            val tv = TextView(act).apply {
+                text = label; textSize = 14f; gravity = Gravity.CENTER; includeFontPadding = false; setSingleLine()
+                typeface = android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL)
+                setPadding(ui.dp(12), 0, ui.dp(12), 0)
+                setOnClickListener { homeChip(i, term) }
+            }
+            chipViews.add(tv)
+            chipRow.addView(tv, LinearLayout.LayoutParams(-2, ui.dp(32)).apply { marginEnd = ui.dp(8) })
+        }
+        chipsScroll.addView(chipRow)
+        page.addView(chipsScroll, LinearLayout.LayoutParams(-1, -2))
+        paintHomeChips()
 
         // صف القناة (اسم + اشتراك)
         chanName = ui.text("", 15f, th.text, true).apply { setSingleLine(); ellipsize = TextUtils.TruncateAt.END }
@@ -236,7 +280,7 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
         page.addView(statusTv, LinearLayout.LayoutParams(-1, -2))
 
         lv.apply {
-            divider = null; setBackgroundColor(th.bg); selector = GradientDrawable().apply { setColor(Color.TRANSPARENT) }
+            divider = null; setBackgroundColor(YtSkin.bg); selector = GradientDrawable().apply { setColor(Color.TRANSPARENT) }
             this.adapter = this@YtProUi.adapter
             setOnItemClickListener { _, _, p, _ -> cur?.list()?.getOrNull(p)?.let { if (it.kind != 3) open(it) } }
             setOnItemLongClickListener { _, v, p, _ -> cur?.list()?.getOrNull(p)?.let { if (it.kind == 3) copy(it.title) else if (it.id != "act") menu(v, it) }; true }
@@ -287,19 +331,20 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
         content.addView(spinBox, FrameLayout.LayoutParams(-2, -2, Gravity.CENTER))   // (v389)
         content.addView(ptr, FrameLayout.LayoutParams(ui.dp(44), ui.dp(44), Gravity.TOP or Gravity.CENTER_HORIZONTAL))   // (v390)
         root.addView(content, LinearLayout.LayoutParams(-1, 0, 1f))
-        root.addView(View(act).apply { setBackgroundColor(th.border) }, LinearLayout.LayoutParams(-1, ui.dp(1)))
-        val navRow = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; gravity = Gravity.CENTER_VERTICAL; setBackgroundColor(th.card) }
-        listOf("🏠" to "الرئيسية", "📺" to "الاشتراكات", "🧑" to "أنت").forEachIndexed { i, d ->
-            val icon = IconTextView(act).apply { text = d.first; textSize = 16f; gravity = Gravity.CENTER; includeFontPadding = false }
-            val lab = ui.text(d.second, 9.5f, th.muted, true).apply { gravity = Gravity.CENTER; setSingleLine() }
+        root.addView(View(act).apply { setBackgroundColor(YtSkin.line) }, LinearLayout.LayoutParams(-1, ui.dp(1)))
+        val navRow = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; gravity = Gravity.CENTER_VERTICAL; setBackgroundColor(YtSkin.bg) }
+        listOf("home" to "الرئيسية", "subs" to "الاشتراكات", "you" to "أنت").forEachIndexed { i, d ->
+            val icon = YtIcon(act, d.first).apply { glyph = 1f }
+            val lab = TextView(act).apply { text = d.second; textSize = 10f; gravity = Gravity.CENTER; setSingleLine(); includeFontPadding = false }
             val cell = LinearLayout(act).apply {
-                orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER; setPadding(0, ui.dp(4), 0, ui.dp(3))
-                addView(icon, LinearLayout.LayoutParams(ui.dp(24), ui.dp(20)))
-                addView(lab, LinearLayout.LayoutParams(-2, -2))
+                orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER; setPadding(0, ui.dp(6), 0, ui.dp(6))
+                addView(icon, LinearLayout.LayoutParams(ui.dp(26), ui.dp(26)))
+                addView(lab, LinearLayout.LayoutParams(-2, -2).apply { topMargin = ui.dp(2) })
+                foreground = YtSkin.ripple()
                 setOnClickListener { navTap(i) }
             }
             navIcons.add(icon); navLabs.add(lab)
-            navRow.addView(cell, LinearLayout.LayoutParams(0, ui.dp(44), 1f))
+            navRow.addView(cell, LinearLayout.LayoutParams(0, ui.dp(54), 1f))
         }
         root.addView(navRow, LinearLayout.LayoutParams(-1, -2))
         paintNav()
@@ -314,6 +359,7 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
     fun back(): Boolean {
         if (sugBox.visibility == View.VISIBLE) { sugBox.visibility = View.GONE; return true }
         if (stack.isNotEmpty()) { gen++; bind(stack.removeAt(stack.size - 1)); return true }
+        if (searchBar.visibility == View.VISIBLE) { exitSearch(); return true }   // (v397)
         return false
     }
     /** ملف اشتراكات: NewPipe JSON أو subscriptions.csv بتاع Google Takeout */
@@ -338,9 +384,40 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
         }.start()
     }
 
+    // ───────── (v397) بحث + شرائح ─────────
+    private fun showKb() { try { search.requestFocus(); (act.getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager).showSoftInput(search, InputMethodManager.SHOW_IMPLICIT) } catch (_: Throwable) {} }
+    private fun enterSearch(focus: Boolean) {
+        searchTyping = focus
+        appBar.visibility = View.GONE; searchBar.visibility = View.VISIBLE
+        if (focus) { search.requestFocus(); h.postDelayed({ showKb() }, 80L) }
+    }
+    private fun exitSearch() {
+        searchTyping = false
+        hideKb(); sugBox.visibility = View.GONE; searchBar.visibility = View.GONE; appBar.visibility = View.VISIBLE
+        val wasResults = cur?.q != null
+        search.setText("")
+        if (wasResults) openTab(0)
+    }
+    private fun paintHomeChips() {
+        chipViews.forEachIndexed { i, tv ->
+            val on = i == chipSel
+            tv.setTextColor(if (on) YtSkin.chipOnText else YtSkin.text)
+            tv.background = GradientDrawable().apply { setColor(if (on) YtSkin.chipOnBg else YtSkin.chip); cornerRadius = ui.dp(8).toFloat() }
+        }
+    }
+    private fun homeChip(i: Int, term: String) {
+        if (i == chipSel && i != 0) return
+        chipSel = i; paintHomeChips()
+        if (i == 0) { openTab(0); return }
+        hideKb()
+        load("🏠 " + term, 0, null, null, null, "", false, false) { val r = YtNp.searchFirst(term, "videos"); Pair(r, { p: Page -> YtNp.searchMore(term, "videos", p) }) }
+    }
+
     // ───────── تنقّل ─────────
     private fun openTab(i: Int) {
         hideKb(); sugBox.visibility = View.GONE; stack.clear(); paintTabs(i)
+        searchTyping = false; searchBar.visibility = View.GONE; appBar.visibility = View.VISIBLE   // (v397)
+        if (i == 0) { chipSel = 0; paintHomeChips() }
         when (i) {
             0 -> load("🏠 الرئيسية", 0, null, null, null, "", false, false) {
                 val hh = YtStore.read(YtStore.HIST); var ss = YtStore.read(YtStore.SUBS)
@@ -376,8 +453,18 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
     private fun navTap(i: Int) { when (i) { 0 -> openTab(0); 1 -> openTab(1); else -> openTab(4) } }   // (v351) الشورتس اتشالت
     private fun paintNav() {
         for (i in navIcons.indices) {
-            val c = if (i == navSel) th.primary else th.muted
-            navIcons[i].setTextColor(c); navLabs[i].setTextColor(c)
+            val on = i == navSel
+            val ic = navIcons[i]
+            ic.color = YtSkin.text; ic.cut = YtSkin.bg
+            if (ic.filled != on) {
+                ic.filled = on
+                if (on) {
+                    ic.animate().cancel(); ic.scaleX = 0.82f; ic.scaleY = 0.82f
+                    ic.animate().scaleX(1f).scaleY(1f).setDuration(Skins.dur(220L)).setInterpolator(android.view.animation.OvershootInterpolator(2.2f)).start()
+                }
+            }
+            navLabs[i].setTextColor(if (on) YtSkin.text else YtSkin.sub)
+            navLabs[i].typeface = android.graphics.Typeface.create("sans-serif-medium", if (on) android.graphics.Typeface.BOLD else android.graphics.Typeface.NORMAL)
         }
     }
     // ───────── (v348) «أنت»: سجل الجهاز + المحفوظات + التحميلات + حساب جوجل في صفحة واحدة ─────────
@@ -408,6 +495,7 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
     private fun doSearch(q0: String, filter: String = "videos") {
         val q = q0.trim(); if (q.isEmpty()) return
         hideKb(); sugBox.visibility = View.GONE; search.setText(q); search.setSelection(q.length); sugGen++
+        enterSearch(false); chipsScroll.visibility = View.GONE   // (v397)
         paintTabs(-1)
         load("🔍 $q", -1, null, null, q, filter, true, false) { val r = YtNp.searchFirst(q, filter); Pair(r, { p: Page -> YtNp.searchMore(q, filter, p) }) }
     }
@@ -561,7 +649,10 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
         filterViews.forEach { tv -> paintChip(tv, tv.tag == st.filter) }
         if (det) paintDetail(st)
         animRows = true; h.postDelayed({ animRows = false }, 700L)   // (v354) ظهور ناعم: الصفوف الأولى بتطلع بالتتابع
-        adapter.grid = st.tab == 0 && !det && st.chUrl == null   // (v378) الرئيسية شبكة
+        adapter.grid = false   // (v397) كروت يوتيوب بدل الشبكة
+        adapter.cards = st.tab == 0 || st.tab == 1 || st.q != null || st.chUrl != null || det
+        chipsScroll.visibility = if (st.tab == 0 && !det && st.chUrl == null) View.VISIBLE else View.GONE
+        if (st.q != null) enterSearch(false) else if (!searchTyping) { searchBar.visibility = View.GONE; appBar.visibility = View.VISIBLE }
         adapter.set(st.list()); lv.setSelection(st.pos)
         if (st.tab >= 0) paintTabs(st.tab) else if (det) paintTabs(-1)
     }
@@ -783,8 +874,8 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
     /** sel: 0 رئيسية · 1 اشتراكات · 2/3/4 = «أنت» · غير كده (بحث/قناة) بيسيب التحديد زي ما هو */
     private fun paintTabs(sel: Int) { if (sel in 0..1) navSel = sel else if (sel in 2..4) navSel = 2; paintNav() }
     private fun paintChip(tv: TextView, on: Boolean) {
-        tv.setTextColor(if (on) Color.WHITE else th.text)
-        tv.background = GradientDrawable().apply { setColor(if (on) th.primary else th.surface); cornerRadius = ui.dp(16).toFloat() }
+        tv.setTextColor(if (on) YtSkin.chipOnText else YtSkin.text)
+        tv.background = GradientDrawable().apply { setColor(if (on) YtSkin.chipOnBg else YtSkin.chip); cornerRadius = ui.dp(8).toFloat() }
     }
     private fun paintSub(on: Boolean) {
         subBtn.text = if (on) "✅ مشترك" else "🔔 اشترك"
@@ -803,6 +894,47 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
     private class Hold(val thumb: ImageView, val dur: TextView, val title: TextView, val meta: TextView, val box: View, val col: View, val btns: View, val aud: TextView, val dl: TextView)
 
     private class Cell(val root: LinearLayout, val thumb: ImageView, val dur: TextView, val title: TextView, val meta: TextView)
+
+    private class Card(val root: LinearLayout, val thumb: ImageView, val dur: TextView, val prog: View, val av: TextView, val avImg: ImageView,
+                        val title: TextView, val meta: TextView, val more: View)
+
+    /** (v397) كارت فيديو زي يوتيوب: صورة بعرض الشاشة 16:9 (مدة + شريط استكمال) + أفاتار القناة + العنوان + «القناة · المشاهدات · الوقت» + ⋮ */
+    private fun makeCard(): Card {
+        val sw = act.resources.displayMetrics.widthPixels
+        val medium = android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL)
+        val thumb = ImageView(act).apply { scaleType = ImageView.ScaleType.CENTER_CROP; setBackgroundColor(YtSkin.surface) }
+        val dur = TextView(act).apply {
+            textSize = 12f; setTextColor(Color.WHITE); includeFontPadding = false; typeface = medium
+            setPadding(ui.dp(5), ui.dp(3), ui.dp(5), ui.dp(3))
+            background = GradientDrawable().apply { setColor(0xCC000000.toInt()); cornerRadius = ui.dp(4).toFloat() }
+        }
+        val prog = View(act).apply { setBackgroundColor(YtSkin.red); visibility = View.GONE }
+        val box = FrameLayout(act)
+        box.addView(thumb, FrameLayout.LayoutParams(-1, -1))
+        box.addView(dur, FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM or Gravity.END).apply { setMargins(ui.dp(8), ui.dp(8), ui.dp(8), ui.dp(8)) })
+        box.addView(prog, FrameLayout.LayoutParams(0, ui.dp(3), Gravity.BOTTOM or Gravity.START))
+        val av = TextView(act).apply { gravity = Gravity.CENTER; textSize = 15f; setTextColor(Color.WHITE); includeFontPadding = false; typeface = medium }
+        val avImg = ImageView(act).apply { scaleType = ImageView.ScaleType.CENTER_CROP; visibility = View.GONE }
+        val avBox = FrameLayout(act)
+        avBox.addView(av, FrameLayout.LayoutParams(-1, -1)); avBox.addView(avImg, FrameLayout.LayoutParams(-1, -1))
+        val title = TextView(act).apply { textSize = 14f; setTextColor(YtSkin.text); maxLines = 2; ellipsize = TextUtils.TruncateAt.END; typeface = medium }
+        val meta = TextView(act).apply { textSize = 12f; setTextColor(YtSkin.sub); maxLines = 2; ellipsize = TextUtils.TruncateAt.END }
+        val col = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL }
+        col.addView(title, LinearLayout.LayoutParams(-1, -2))
+        col.addView(meta, LinearLayout.LayoutParams(-1, -2).apply { topMargin = ui.dp(3) })
+        val more = YtIcon(act, "more").apply { foreground = YtSkin.ripple(true); glyph = 0.8f; contentDescription = "المزيد" }
+        val info = LinearLayout(act).apply {
+            orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; gravity = Gravity.TOP
+            setPadding(ui.dp(4), ui.dp(12), ui.dp(12), ui.dp(16))
+        }
+        info.addView(avBox, LinearLayout.LayoutParams(ui.dp(36), ui.dp(36)).apply { marginEnd = ui.dp(12) })
+        info.addView(col, LinearLayout.LayoutParams(0, -2, 1f))
+        info.addView(more, LinearLayout.LayoutParams(ui.dp(40), ui.dp(40)))
+        val root = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL }
+        root.addView(box, LinearLayout.LayoutParams(-1, sw * 9 / 16))
+        root.addView(info, LinearLayout.LayoutParams(-1, -2))
+        return Card(root, thumb, dur, prog, av, avImg, title, meta, more)
+    }
 
     /** (v378) كارت فيديو للشبكة (الرئيسية): صورة 16:9 وتحتها اسم الفيديو ثم القناة */
     private fun makeCell(): Cell {
@@ -824,13 +956,14 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
     private inner class Adapter : BaseAdapter() {
         private var items: List<NpItem> = emptyList()
         var grid = false   // (v378) الرئيسية: فيديوهين جنب بعض
+        var cards = false  // (v397) كروت يوتيوب
         fun set(l: List<NpItem>) { items = l; notifyDataSetChanged() }
         fun clear() { items = emptyList(); notifyDataSetChanged() }
         override fun getCount() = if (grid) (items.size + 1) / 2 else items.size
         override fun getItem(p: Int) = if (grid) items[p * 2] else items[p]
         override fun getItemId(p: Int) = p.toLong()
-        override fun getViewTypeCount() = 2
-        override fun getItemViewType(p: Int) = if (grid) 1 else 0
+        override fun getViewTypeCount() = 3
+        override fun getItemViewType(p: Int): Int = if (grid) 1 else if (cards && items[p].kind == 0 && items[p].id != "act") 2 else 0
         private fun gridView(p: Int, cv: View?): View {
             val row: LinearLayout
             if (cv == null) {
@@ -857,8 +990,45 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
             }
             return row
         }
+        private fun cardView(p: Int, cv: View?): View {
+            val c: Card
+            val v: View
+            if (cv == null) { c = makeCard(); v = c.root; v.tag = c } else { v = cv; c = cv.tag as Card }
+            val sw = act.resources.displayMetrics.widthPixels
+            val vi = items[p]
+            v.animate().cancel()
+            if (animRows && p < 6) {
+                v.alpha = 0f; v.translationY = ui.dp(18).toFloat()
+                v.animate().alpha(1f).translationY(0f).setStartDelay(p * 45L).setDuration(Skins.dur(280L)).setInterpolator(android.view.animation.DecelerateInterpolator(1.8f)).start()
+            } else { v.alpha = 1f; v.translationY = 0f }
+            c.title.text = vi.title
+            c.meta.text = listOf(vi.channel, if (vi.count >= 0) fmtN(vi.count) + " مشاهدة" else "", vi.age).filter { x -> x.isNotBlank() }.joinToString(" · ")
+            val d = fmtDur(vi.dur)
+            c.dur.text = d; c.dur.visibility = if (d.isEmpty()) View.GONE else View.VISIBLE
+            val rec = recents()["yt:" + vi.id] as? Recent
+            val fr = if (rec != null && rec.durSec > 0.0) (rec.posSec / rec.durSec).coerceIn(0.0, 1.0) else 0.0
+            if (fr > 0.01) { c.prog.layoutParams.width = (sw * fr).toInt(); c.prog.requestLayout(); c.prog.visibility = View.VISIBLE } else c.prog.visibility = View.GONE
+            val nm = vi.channel.trim()
+            c.av.text = if (nm.isEmpty()) "▶" else nm.substring(0, nm.offsetByCodePoints(0, 1)).uppercase(Locale.getDefault())
+            c.av.background = GradientDrawable().apply { setShape(GradientDrawable.OVAL); setColor(YtSkin.avatarColor(nm)) }
+            if (vi.avatar.isNotBlank()) {
+                c.avImg.visibility = View.VISIBLE
+                try { Glide.with(act).load(vi.avatar).circleCrop().override(ui.dp(72), ui.dp(72)).into(c.avImg) } catch (_: Throwable) {}
+            } else {
+                c.avImg.visibility = View.GONE
+                try { Glide.with(act).clear(c.avImg) } catch (_: Throwable) {}
+            }
+            try {
+                if (vi.thumb.isNotBlank()) Glide.with(act).load(vi.thumb).centerCrop().override(sw, sw * 9 / 16)
+                    .transition(com.bumptech.glide.load.resource.drawable.DrawableTransitionOptions.withCrossFade(140)).into(c.thumb)
+                else Glide.with(act).clear(c.thumb)
+            } catch (_: Throwable) {}
+            c.more.setOnClickListener { x -> menu(x, vi) }
+            return v
+        }
         override fun getView(p: Int, cv: View?, parent: ViewGroup?): View {
             if (grid) return gridView(p, cv)
+            if (cards && items[p].kind == 0 && items[p].id != "act") return cardView(p, cv)
             val hd: Hold
             val v: View
             if (cv == null) {

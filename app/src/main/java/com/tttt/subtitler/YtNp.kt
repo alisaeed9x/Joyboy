@@ -29,7 +29,7 @@ import java.util.zip.GZIPInputStream
 
 /** (v325) عنصر في قوايم يوتيوب الداخلي: kind 0 فيديو · 1 قناة · 2 قايمة تشغيل (ts = وقت الرفع بالمللي لو معروف) */
 class NpItem(val id: String, val title: String, val channel: String, val channelUrl: String, val thumb: String,
-             val dur: Long, val count: Long, val age: String, val kind: Int, val url: String, val ts: Long = 0L)
+             val dur: Long, val count: Long, val age: String, val kind: Int, val url: String, val ts: Long = 0L, val avatar: String = "")
 
 class YtRes(val items: List<NpItem>, val next: Page?)
 class YtDetail(val id: String, val title: String, val channel: String, val channelUrl: String, val desc: String, val views: Long,
@@ -113,6 +113,14 @@ object YtNp {
         return if (t == null || t.isEmpty()) "" else t[t.size / 2].url ?: ""
     }
 
+    /** (v397) صورة القناة (أفاتار) لو النسخة بتوفّرها — بالريفلكشن عشان ما يتكسرش البناء لو الدالة مش موجودة */
+    private fun avatarOf(i: Any): String {
+        return try {
+            val l = i.javaClass.getMethod("getUploaderAvatars").invoke(i) as? List<*>
+            val f = l?.firstOrNull()
+            if (f == null) "" else (f.javaClass.getMethod("getUrl").invoke(f) as? String) ?: ""
+        } catch (_: Throwable) { "" }
+    }
     fun conv(i: InfoItem): NpItem? = when (i) {
         is StreamInfoItem -> {
             val id = idOf(i.url)
@@ -120,7 +128,7 @@ object YtNp {
             if (id.isEmpty() || i.url.contains("/shorts/") || i.duration in 1L..60L) null else {
                 val ts = try { i.uploadDate?.offsetDateTime()?.toInstant()?.toEpochMilli() ?: 0L } catch (_: Throwable) { 0L }
                 NpItem(id, i.name ?: "", i.uploaderName ?: "", i.uploaderUrl ?: "", thumb(i), i.duration, i.viewCount,
-                    i.textualUploadDate ?: "", 0, i.url, ts)
+                    i.textualUploadDate ?: "", 0, i.url, ts, avatarOf(i))
             }
         }
         is ChannelInfoItem -> NpItem("", i.name ?: "", "", i.url, thumb(i), -1L, i.subscriberCount, "", 1, i.url)
