@@ -42,14 +42,32 @@ exec omniroute >> ${'$'}LOG 2>&1
     /** تتلصق في Termux مرة واحدة */
     const val SETUP_CMD = "mkdir -p ~/.termux && sed -i '/allow-external-apps/d' ~/.termux/termux.properties 2>/dev/null; echo 'allow-external-apps = true' >> ~/.termux/termux.properties && termux-reload-settings && echo تمام"
 
-    enum class R { NO_TERMUX, NO_PERM, SENT, ERROR }
+    enum class R { NO_TERMUX, NO_PERM, SENT, ERROR, NEEDS_SETUP }
 
-    fun installed(c: Context): Boolean = try { c.packageManager.getPackageInfo(PKG, 0); true } catch (_: Throwable) { false }
-    fun hasPerm(c: Context): Boolean = c.checkSelfPermission(PERM) == PackageManager.PERMISSION_GRANTED
+    /** Termux نفسه متسطب؟ */
+    fun termuxInstalled(c: Context): Boolean = try { c.packageManager.getPackageInfo(PKG, 0); true } catch (_: Throwable) { false }
+    fun termuxHasPerm(c: Context): Boolean = c.checkSelfPermission(PERM) == PackageManager.PERMISSION_GRANTED
+    /** (v394) «متاح» = البيئة الداخلية (proot) مدعومة، أو Termux متسطب — الاتنين بيعملوا نفس الشغل */
+    fun installed(c: Context): Boolean = Linux.supported(c) || termuxInstalled(c)
+    fun hasPerm(c: Context): Boolean = Linux.supported(c) || termuxHasPerm(c)
 
     fun start(c: Context): R {
-        if (!installed(c)) return R.NO_TERMUX
-        if (!hasPerm(c)) return R.NO_PERM
+        if (Linux.supported(c)) {   // (v394) البيئة الداخلية أولاً — من غير Termux ولا إذن
+            if (!Linux.ready(c) && !Linux.optedIn()) {
+                val now = System.currentTimeMillis()
+                if (now - (Cfg.str("linux_hint_at").toLongOrNull() ?: 0L) > 24L * 3600_000L) {
+                    Cfg.put("linux_hint_at", now.toString())
+                    NoticeLog.add("🐧 أومني روت محتاج تجهيز مرة واحدة: افتح 🤖 ← 💻 كونسول Linux ← 🚀 جهّز تلقائي")
+                }
+                return R.NEEDS_SETUP
+            }
+            if (Linux.busy) return R.SENT
+            Cfg.put("omni_try_at", System.currentTimeMillis().toString())
+            Linux.setupAsync(c)
+            return R.SENT
+        }
+        if (!termuxInstalled(c)) return R.NO_TERMUX
+        if (!termuxHasPerm(c)) return R.NO_PERM
         return try {
             val i = Intent("com.termux.RUN_COMMAND").setClassName(PKG, "com.termux.app.RunCommandService")
                 .putExtra("com.termux.RUN_COMMAND_PATH", BASH)
@@ -74,7 +92,7 @@ exec omniroute >> ${'$'}LOG 2>&1
     }
 
     /** بيستنى لحد ما OmniRoute يرد (لحد 12 دقيقة عشان التثبيت أول مرة) — [onUp] على thread الخلفية */
-    fun waitUntilUp(maxMs: Long = 720000L, onUp: () -> Unit) {
+    fun waitUntilUp(maxMs: Long = 3_600_000L, onUp: () -> Unit) {
         Thread {
             val end = System.currentTimeMillis() + maxMs
             while (System.currentTimeMillis() < end) {

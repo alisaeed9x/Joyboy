@@ -106,7 +106,7 @@ class MainActivity : Activity() {
         super.onCreate(b)
         if (fromPlayer) requestedOrientation = if (intent?.getBooleanExtra("land", false) == true) ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE else ActivityInfo.SCREEN_ORIENTATION_PORTRAIT   // الإعدادات من المشغّل: بنفس اتجاه المشغّل
         UiWatchdog.start()
-        Cfg.init(this); CrashLog.install(this); YtFast.startup(); OpenCodeAuto.start(this)   // (v387) تجهيز أوبن كود تلقائي في الخلفية
+        Cfg.init(this); CrashLog.install(this); YtFast.startup(); OpenCodeAuto.start(this); try { Linux.onAppStart(this) } catch (_: Throwable) {}   // (v394) البيئة الداخلية: تكمّل/تشغّل أومني روت لو وافقت قبل كده // (v387) تجهيز أوبن كود تلقائي في الخلفية
         val th = Themes.byId(Cfg.str("theme", "mx"))
         val ui = Ui(this, th)
         applyBars(th)

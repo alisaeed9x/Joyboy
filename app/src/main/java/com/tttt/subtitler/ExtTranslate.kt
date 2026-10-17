@@ -148,8 +148,15 @@ object ExtTranslate {
     }
 
     /** (v274) تجربة مزوّد بجملة واحدة (من الإعدادات): سطر نتيجة، وبيفك الإيقاف لو نجح */
+    /** (v393) اختبار محرك أومني روت من غير التحويل الصامت للراوتر الداخلي */
+    private fun <T> strictTest(p: Prov, f: () -> T): T {
+        if (p.id != "llm_omniroute") return f()
+        OmniModels.strict.set(true)
+        try { return f() } finally { OmniModels.strict.set(false) }
+    }
+
     fun testProv(p: Prov): String = try {
-        val r = p.batch?.invoke(listOf("Hello, how are you today?"), "en") ?: listOf(p.call("Hello, how are you today?", "en"))
+        val r = strictTest(p) { p.batch?.invoke(listOf("Hello, how are you today?"), "en") ?: listOf(p.call("Hello, how are you today?", "en")) }
         val tr = r.firstOrNull()
         if (tr.isNullOrBlank()) "❌ ${p.label}: ما رجّعش ترجمة" else { clearBlock(p.id); "✅ ${p.label} شغّال: «$tr»" }
     } catch (e: Exception) { "❌ ${p.label}: " + (e.message ?: e.javaClass.simpleName).take(140) }
@@ -158,7 +165,7 @@ object ExtTranslate {
     fun testTimed(p: Prov): Triple<Boolean, Long, String> {
         val t0 = System.currentTimeMillis()
         return try {
-            val r = p.batch?.invoke(listOf("Hello, how are you today?"), "en") ?: listOf(p.call("Hello, how are you today?", "en"))
+            val r = strictTest(p) { p.batch?.invoke(listOf("Hello, how are you today?"), "en") ?: listOf(p.call("Hello, how are you today?", "en")) }
             val tr = r.firstOrNull(); val ms = System.currentTimeMillis() - t0
             if (tr.isNullOrBlank()) Triple(false, ms, "ما رجّعش ترجمة") else { clearBlock(p.id); Triple(true, ms, tr) }
         } catch (e: Exception) { Triple(false, System.currentTimeMillis() - t0, (e.message ?: e.javaClass.simpleName).take(90)) }

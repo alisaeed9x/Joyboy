@@ -30,14 +30,15 @@ android {
     }
     namespace = "com.tttt.subtitler"
     compileSdk = 36
-    defaultConfig { applicationId = "com.tttt.subtitler"; minSdk = 26; targetSdk = 34; versionCode = 392; versionName = "3.92"
+    defaultConfig { applicationId = "com.tttt.subtitler"; minSdk = 26; targetSdk = 34; versionCode = 394; versionName = "3.94"
         ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a") }
         externalNativeBuild { cmake { arguments += listOf("-DCMAKE_BUILD_TYPE=Release"); abiFilters += listOf("arm64-v8a") } }   // (v253) whisper.cpp + (v307) substem: arm64 بس (armeabi-v7a من غير أوفلاين)   // (v181) معماريات الموبايل بس: بتصغّر مكتبة onnxruntime
     }
     externalNativeBuild { cmake { path = file("src/main/cpp/CMakeLists.txt"); version = "3.22.1" } }
     compileOptions { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17; isCoreLibraryDesugaringEnabled = true }   // (v327) NewPipeExtractor بيستخدم List.of وغيره
     kotlinOptions { jvmTarget = "17" }
-    packaging { resources { excludes += listOf("/META-INF/{AL2.0,LGPL2.1}", "/META-INF/INDEX.LIST", "/META-INF/DEPENDENCIES", "/META-INF/*.version") } }   // (v325) NewPipeExtractor
+    packaging { jniLibs { useLegacyPackaging = true }   // (v394) لازم: proot بيتشغّل كملف عادي من nativeLibraryDir (أندرويد 10+ بيمنع تنفيذ أي حاجة من مجلد بيانات التطبيق)
+        resources { excludes += listOf("/META-INF/{AL2.0,LGPL2.1}", "/META-INF/INDEX.LIST", "/META-INF/DEPENDENCIES", "/META-INF/*.version") } }   // (v325) NewPipeExtractor
 }
 dependencies {
     implementation("androidx.media3:media3-exoplayer:1.10.1")
@@ -48,6 +49,7 @@ dependencies {
     implementation("androidx.webkit:webkit:1.11.0")
     implementation("androidx.core:core:1.13.1")   // (v310) FileProvider للفايل مانجر
     implementation("com.github.bumptech.glide:glide:4.16.0")
+    implementation(project(":terminal"))   // (v394) طرفية Termux الداخلية (terminal-view + pty)
     implementation(files("libs/sherpa-onnx-$sherpaVer.aar"))   // (v260)
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs_nio:2.1.5")   // (v327)
     implementation("com.github.TeamNewPipe:NewPipeExtractor:v0.26.5")   // (v325) يوتيوب الداخلي — نفس نسخة Flow؛ محتاج jitpack.io في settings (add_jitpack.sh)

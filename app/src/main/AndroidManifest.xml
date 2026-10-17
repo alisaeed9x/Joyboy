@@ -54,6 +54,9 @@
         <activity android:name=".TermuxConsoleActivity" android:exported="false" android:windowSoftInputMode="adjustResize" android:theme="@style/AppSplash"
             android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboardHidden|density"/>
         <receiver android:name=".TermuxResultReceiver" android:exported="false"/>
+        <activity android:name=".LinuxConsoleActivity" android:exported="false" android:windowSoftInputMode="adjustResize" android:theme="@style/AppSplash"
+            android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboardHidden|density"/>   <!-- (v394) كونسول Linux الداخلي -->
+        <service android:name=".LinuxService" android:exported="false" android:foregroundServiceType="dataSync"/>
         <activity android:name=".FileManagerActivity" android:exported="false" android:theme="@style/AppSplash"
             android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboardHidden|density"/>
         <provider android:name="androidx.core.content.FileProvider" android:authorities="${applicationId}.fmprov"

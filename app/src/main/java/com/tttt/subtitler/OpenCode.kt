@@ -22,6 +22,8 @@ object OpenCodeFree {
 
     @Volatile private var found: List<String> = emptyList()
     @Volatile private var foundAt = 0L
+    /** (v393) آخر قايمة موديلات جاية فعلًا من السيرفر/CLI؟ false = القايمة احتياطية جاهزة (أسماء مش مؤكدة) */
+    @Volatile var lastListReal = true
 
     /** في مفتاح (محفوظ أو مبني) — بنستخدمه كاحتياطي نصي في الموسيقى بس لو فيه مفتاح فعلًا */
     fun hasKey(): Boolean = OpenCodeLocal.enabled() || ExtLlm.key(preset()).isNotEmpty() || BUILTIN_KEY.isNotEmpty()
@@ -41,14 +43,15 @@ object OpenCodeFree {
         return (l.contains("free") || l.contains("pickle") || l.contains("bunny")) && ExtLlm.skipWords.none { l.contains(it) }
     }
 
-    private fun score(id: String): Int { val l = id.lowercase(); val i = PREFER.indexOfFirst { l.contains(it) }; return if (i < 0) 99 else i }
+    /** (v393) الأنسب للترجمة الأول (بالسالب عشان sortedBy الصاعد) — بدل الترتيب الثابت القديم */
+    private fun score(id: String): Int = -TranslatePick.score(id)
 
     /** قايمة الموديلات المجانية (بكاش 10 دقايق). لو الجلب فشل بنرجع لآخر قايمة أو للاحتياطي */
     fun list(force: Boolean = false): List<String> {
         // (v387) القايمة اللي التجهيز التلقائي جابها من opencode models (محلي) — بتتقدّم على جلب /models من السيرفر
         if (OpenCodeLocal.enabled()) {
             val loc = Cfg.str("oc_models").split(',').map { it.trim() }.filter { it.isNotEmpty() }.sortedBy { score(it) }
-            if (loc.isNotEmpty()) return loc
+            if (loc.isNotEmpty()) { lastListReal = true; return loc }
         }
         val now = System.currentTimeMillis()
         if (!force && found.isNotEmpty() && now - foundAt < 600_000L) return found
@@ -58,7 +61,8 @@ object OpenCodeFree {
             (0 until arr.length()).mapNotNull { arr.optJSONObject(it)?.optString("id", "")?.takeIf { s -> s.isNotBlank() } }
         } catch (_: Throwable) { emptyList() }
         val free = ids.filter { isFree(it) }.sortedBy { score(it) }
-        if (free.isNotEmpty()) { found = free; foundAt = now }
+        if (free.isNotEmpty()) { found = free; foundAt = now; lastListReal = true }
+        else if (found.isEmpty()) lastListReal = false
         return found.ifEmpty { FALLBACK }
     }
 
@@ -82,7 +86,7 @@ object OpenCodeFree {
         val txt = try { ExtLlm.post(BASE + "/chat/completions", headers(), body, 120000) }
         catch (e: ExtLlm.LlmErr) {
             if ((e.message ?: "").contains("free tier", true))
-                throw ExtLlm.LlmErr(401, "أوبن كود قفل الفري على التطبيقات الخارجية (FreeTierError) — ثبّت OpenCode في Termux من الكونسول وسجّل دخول وهيشتغل منه. (opencode.ai)")
+                throw ExtLlm.LlmErr(401, "أوبن كود بيرفض الموديلات المجانية من أي تطبيق برا أداته (403 FreeTierError) — ده قيد منهم مش من مفتاحك. الحل: Termux + OpenCode CLI (🤖 ← 🩺 فحص شامل ← 🔧 إصلاح)، أو موديلات Zen المدفوعة. (opencode.ai)")
             throw e
         }
         val msg = JSONObject(txt).optJSONArray("choices")?.optJSONObject(0)?.optJSONObject("message") ?: return ""

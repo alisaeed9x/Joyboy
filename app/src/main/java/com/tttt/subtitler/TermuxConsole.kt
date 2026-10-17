@@ -36,8 +36,8 @@ object TermuxRun {
 
     /** بيشغّل [cmd] في Termux بالخلفية؛ [onDone] بيتنادى على الـ main thread بالنتيجة النصية. بيرجّع OmniLauncher.R */
     fun run(c: Context, cmd: String, onDone: (String) -> Unit): OmniLauncher.R {
-        if (!OmniLauncher.installed(c)) return OmniLauncher.R.NO_TERMUX
-        if (!OmniLauncher.hasPerm(c)) return OmniLauncher.R.NO_PERM
+        if (!OmniLauncher.termuxInstalled(c)) return OmniLauncher.R.NO_TERMUX
+        if (!OmniLauncher.termuxHasPerm(c)) return OmniLauncher.R.NO_PERM
         val id = ids.incrementAndGet()
         lastId = id
         waiting[id] = onDone
@@ -58,8 +58,8 @@ object TermuxRun {
 
     /** (v386) سكربت bash بمعاملات موضعية (\$1 \$2 …) — للنصوص الطويلة من غير مشاكل اقتباس. [onDone] على الـ main thread */
     fun runScript(c: Context, script: String, args: List<String>, onDone: (String) -> Unit): OmniLauncher.R {
-        if (!OmniLauncher.installed(c)) return OmniLauncher.R.NO_TERMUX
-        if (!OmniLauncher.hasPerm(c)) return OmniLauncher.R.NO_PERM
+        if (!OmniLauncher.termuxInstalled(c)) return OmniLauncher.R.NO_TERMUX
+        if (!OmniLauncher.termuxHasPerm(c)) return OmniLauncher.R.NO_PERM
         val id = ids.incrementAndGet()
         lastId = id
         waiting[id] = onDone

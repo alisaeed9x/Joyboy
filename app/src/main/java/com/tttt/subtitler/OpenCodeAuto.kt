@@ -123,12 +123,23 @@ printf '{"opencode":{"type":"api","key":"%s"},"opencode-go":{"type":"api","key":
     private fun manual(msg: String) = done(St.MANUAL, "أوبن كود محتاج خطوة منك: $msg", false)
 
     // ===== التشغيل =====
+    private fun noTermux() {
+        state = St.MANUAL
+        say("📱 Termux مش متسطب — أوبن كود المجاني (وأومني روت المحلي) محتاجينه")
+        val now = System.currentTimeMillis()
+        if (now - (Cfg.str("oc_nt_at").toLongOrNull() ?: 0L) > 24L * 3600_000L) {
+            Cfg.put("oc_nt_at", now.toString())
+            notify("🆓 أوبن كود المجاني محتاج Termux (مش متسطب). افتح 🤖 ← 🩺 فحص شامل للتفاصيل")
+        }
+    }
+
     /** بيتنادى من Main عند الفتح. مش بيبلوك. [force] من زرار الكونسول: يتخطّى فترات الانتظار */
     fun start(act: Activity, force: Boolean = false) {
         host = WeakReference(act)
         if (!Cfg.isReady() || Cfg.str("oc_auto", "on") == "off") return
         val c = act.applicationContext
-        if (!OmniLauncher.installed(c)) return         // مفيش Termux: مفيش حاجة نعملها (ومنزعجكش كل فتحة)
+        if (Linux.supported(c)) { startEmbedded(act, c, force); return }   // (v394) البيئة الداخلية بدل Termux
+        if (!OmniLauncher.installed(c)) { noTermux(); return }   // (v393) كان بيخرج صامت — دلوقتي لوج + إشعار مرة كل 24 ساعة
         if (running) return
         val now = System.currentTimeMillis()
         if (!force) {
@@ -137,6 +148,44 @@ printf '{"opencode":{"type":"api","key":"%s"},"opencode-go":{"type":"api","key":
         }
         running = true; state = St.RUNNING
         Thread { try { work(act, c) } catch (e: Throwable) { fail("خطأ غير متوقع: " + (e.message ?: e.javaClass.simpleName)) } finally { running = false } }.apply { isDaemon = true }.start()
+    }
+
+    /** (v394) نفس الفكرة على البيئة الداخلية: ننتظر لحد ما أومني روت/Node يجهزوا، نثبّت opencode (npm)، نجرّب، ونجيب الموديلات */
+    private fun startEmbedded(act: Activity, c: Context, force: Boolean) {
+        if (running) return
+        if (!Linux.optedIn() && !force) return
+        if (Linux.busy || !(Linux.rootReady(c) && Linux.nodeReady(c))) { state = St.MANUAL; say("⏳ البيئة الداخلية لسه بتتجهّز — هكمّل أوبن كود بعدها"); return }
+        val now = System.currentTimeMillis()
+        if (!force) {
+            if ((Cfg.str("oc_ready_at").toLongOrNull() ?: 0L) > now - FRESH_MS && Cfg.str("oc_models").isNotBlank()) { state = St.READY; return }
+            if ((Cfg.str("oc_fail_at").toLongOrNull() ?: 0L) > now - RETRY_MS) return
+        }
+        running = true; state = St.RUNNING
+        Thread { try { workEmbedded(c) } catch (e: Throwable) { fail("خطأ غير متوقع: " + (e.message ?: e.javaClass.simpleName)) } finally { running = false } }.apply { isDaemon = true }.start()
+    }
+
+    private fun workEmbedded(c: Context) {
+        say("— بدء تجهيز أوبن كود (البيئة الداخلية) —")
+        if (!Linux.opencodeInstalled(c)) {
+            say("⬇ بثبّت OpenCode CLI عن طريق npm (دقايق)…")
+            Linux.installOpenCode(c) { say(it) }
+            if (!Linux.opencodeInstalled(c)) return fail("تثبيت OpenCode CLI فشل — شوف لوج التجهيز في كونسول Linux")
+        }
+        val err = probe()
+        if (err != null) {
+            say("❌ التجربة فشلت: " + err.take(300))
+            return if (Regex("auth|login|unauthor|credential|401", RegexOption.IGNORE_CASE).containsMatchIn(err)) manual("OpenCode محتاج تسجيل دخول مرة واحدة: افتح كونسول Linux واكتب opencode auth login")
+                   else fail("آخر خطأ: " + err.take(140))
+        }
+        say("✅ الاتصال شغّال — بجيب قايمة الموديلات")
+        val ml = Linux.exec(c, "opencode models 2>&1", timeoutSec = 90).second
+        val ids = ml.lines().map { it.trim() }.filter { it.startsWith("opencode/") }.map { it.removePrefix("opencode/") }.filter { OpenCodeFree.isFree(it) }.distinct()
+        if (ids.isEmpty()) return fail("الاتصال شغّال بس قايمة الموديلات المجانية طلعت فاضية")
+        Cfg.put("oc_models", ids.joinToString(","))
+        Cfg.put("oc_ready_at", System.currentTimeMillis().toString())
+        Cfg.put("oc_fail_at", "0")
+        OpenCodeFree.resetCool()
+        done(St.READY, "أوبن كود جاهز — اتضافت ${ids.size} موديل مجاني للقايمة", true)
     }
 
     private fun work(act: Activity, c: Context) {

@@ -202,8 +202,15 @@ object ExtLlm {
     }
 
     /** (v274) اختبار سريع من الإعدادات: جملة واحدة. بيرجّع سطر نتيجة (✅ / ❌ بالسبب) وبيفك الإيقاف لو نجح */
+    /** (v393) اختبار أومني روت لازم يختبر أومني روت نفسه — من غير التحويل الصامت للراوتر الداخلي/جيميناي اللي كان بيطلّع «✅ شغّال» غلط */
+    private fun <T> strictly(p: Preset, f: () -> T): T {
+        if (p.id != "omniroute") return f()
+        OmniModels.strict.set(true)
+        try { return f() } finally { OmniModels.strict.set(false) }
+    }
+
     fun test(p: Preset): String = try {
-        val r = translate(p, listOf("Hello, how are you today?"), "en")
+        val r = strictly(p) { translate(p, listOf("Hello, how are you today?"), "en") }
         ExtTranslate.clearBlock("llm_" + p.id)
         val note = ExtTranslate.lastNote.also { ExtTranslate.lastNote = "" }
         "✅ ${p.label} شغّال: «" + (r.firstOrNull() ?: "؟") + "»" + (if (note.isNotEmpty()) "\n$note" else "")
@@ -214,7 +221,7 @@ object ExtLlm {
     fun testTimed(p: Preset): Triple<Boolean, Long, String> {
         val t0 = System.currentTimeMillis()
         return try {
-            val r = translate(p, listOf("Hello, how are you today?"), "en").firstOrNull()
+            val r = strictly(p) { translate(p, listOf("Hello, how are you today?"), "en") }.firstOrNull()
             val ms = System.currentTimeMillis() - t0
             ExtTranslate.lastNote = ""   // (v277) إشعار تغيير الموديل التلقائي ماينفعش يفضل لحد ما يظهر غلط في ترجمة شغّالة
             if (r.isNullOrBlank()) Triple(false, ms, "ما رجّعش ترجمة") else { ExtTranslate.clearBlock("llm_" + p.id); Triple(true, ms, r) }
@@ -315,7 +322,12 @@ object OmniAuto {
 object OmniModels {
     @Volatile private var found: List<String> = emptyList()
     @Volatile private var foundAt = 0L
+    @Volatile private var fbNoteAt = 0L
     private const val MAX_TRIES = 4
+    /** (v393) true على الـ thread الحالي = اختبار: ممنوع التحويل الصامت للراوتر الداخلي */
+    val strict = ThreadLocal<Boolean>()
+
+    private fun isAutoName(m: String): Boolean = m.isBlank() || m.equals("auto", true) || m.startsWith("auto/", true)
 
     fun extras(): List<String> = Cfg.str("omni_models").split(Regex("[,\n;،]")).map { it.trim() }.filter { it.isNotEmpty() }
 
@@ -323,21 +335,27 @@ object OmniModels {
         val base = (listOf(ExtLlm.model(p)) + extras()).distinct()
         if (base.size > 1) return base
         val now = System.currentTimeMillis()
-        if (now - foundAt > 600_000L) {
+        if (now - foundAt > 600_000L || (found.isEmpty() && now - foundAt > 30_000L)) {
             foundAt = now
             found = try {
-                ExtLlm.listModels(p, ExtLlm.key(p), ExtLlm.url(p)).filter { m -> ExtLlm.skipWords.none { m.contains(it, true) } }.take(6)
+                TranslatePick.rank(ExtLlm.listModels(p, ExtLlm.key(p), ExtLlm.url(p))).take(6)   // (v393) الأنسب للترجمة الأول (كان أول 6 بالأبجدية)
             } catch (_: Throwable) { found }
         }
-        return (base + found).distinct()
+        // (v393) «تلقائي» = أنسب موديل للترجمة من القايمة الحقيقية الأول، و auto بتاع أومني روت آخر احتياطي
+        return if (isAutoName(base[0]) && found.isNotEmpty()) (found + base).distinct() else (base + found).distinct()
     }
 
     fun chat(p: ExtLlm.Preset, system: String, user: String, maxTokens: Int): String {
         // (v376) السيرفر الحقيقي مش شغّال ← الراوتر الداخلي (تلقائي · من غير سيرفر) يترجم بدله
-        if (OmniAuto.useRouter()) {
+        val noFb = strict.get() == true
+        if (!noFb && OmniAuto.useRouter()) {
+            // (v393) التحويل ده كان صامت — دلوقتي بيطلّع إشارة (مرة كل 5 دقايق) إن الترجمة مش بأومني روت
+            val now = System.currentTimeMillis()
+            if (now - fbNoteAt > 300_000L) { fbNoteAt = now; ExtTranslate.lastNote = "⚠ OmniRoute مش شغّال (مفيش سيرفر عليه) ← الترجمة ماشية بالراوتر الداخلي (جيميناي/مزوّديك) مش بأومني روت. 🤖 ← 🩺 فحص شامل" }
             val m = ExtLlm.model(p).let { if (it in InternalRouter.AUTO || it.contains('/')) it else "auto" }
             return InternalRouter.chat(m, system, listOf(AiApi.Msg("user", user)), maxTokens)
         }
+        if (noFb && OmniAuto.state() == OmniAuto.St.DOWN) throw ExtLlm.LlmErr(503, "OmniRoute مش شغّال: مفيش سيرفر على " + OmniAuto.candidates().first() + " (لازم Termux أو سيرفر برا) — 🤖 ← 🩺 فحص شامل")
         var last: Throwable? = null
         var tried = 0
         val all = models(p)

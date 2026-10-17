@@ -71,7 +71,7 @@ object PublicApisUi {
             Thread {
                 val r = runCatching { OpenCodeFree.list(true) }
                 act.runOnUiThread {
-                    label()
+                    label(if (!OpenCodeFree.lastListReal) "  ⚠ قايمة احتياطية (السيرفر ما ردّش)" else "")
                     val l = r.getOrNull().orEmpty()
                     if (l.isEmpty()) { label("  ⚠ القايمة فاضية"); return@runOnUiThread }
                     dropdown(act, ui, th, modelBtn, l, curModel(), "تلقائي (أول موديل مجاني شغّال + بدايل)") { v ->
