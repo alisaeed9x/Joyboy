@@ -226,7 +226,8 @@ object YtExtract {
     /** نتيجة الاستخراج: الخيار المختار + كل الجودات المتاحة (لزرار الجودة في المشغّل) */
     class Pick(val url: String, val audio: String?, val title: String, val ua: String, val label: String, val opts: List<Opt>) {
         var tag: String = ""   // (v363) أي عميل جاب النتيجة دي (للتثبيت)
-        fun optsJson(): String { val a = JSONArray(); for (o in opts) a.put(JSONObject().put("l", o.label).put("u", o.url).put("a", o.audio ?: "").put("h", o.h)); return a.toString() }
+        var at: JSONArray? = null   // (v388) مسارات اللغات (لو الفيديو فيه أكتر من لغة صوت) — بتتحط في أول عنصر
+        fun optsJson(): String { val a = JSONArray(); for ((ix, o) in opts.withIndex()) { val j = JSONObject().put("l", o.label).put("u", o.url).put("a", o.audio ?: "").put("h", o.h); if (ix == 0) at?.let { j.put("at", it) }; a.put(j) }; return a.toString() }
     }
 
     private fun mb(n: Long) = if (n > 0) " · " + (if (n >= 10_485_760L) (n / 1_048_576L).toString() else String.format("%.1f", n / 1048576.0)) + "MB" else ""
@@ -292,6 +293,7 @@ object YtExtract {
     private const val PICK_TTL = 3L * 60 * 60 * 1000L
     /** النتيجة المخزّنة (لو لسه صالحة) من غير شبكة */
     fun cachedPick(id: String, maxH: Int = 0): Pick? = pickCache["$id/$maxH"]?.takeIf { System.currentTimeMillis() - it.first < PICK_TTL }?.second
+    fun clearPicks() { pickCache.clear() }   // (v388) تغيير لغة الصوت الافتراضية
     fun dropPick(id: String) { pickCache.keys.filter { it.startsWith("$id/") }.forEach { pickCache.remove(it) } }
 
     private fun pickFrom(c: Cl, id: String, maxH: Int, whys: MutableList<String>, hls: java.util.concurrent.atomic.AtomicReference<Pick?>): Pick? {
@@ -310,20 +312,35 @@ object YtExtract {
                 byH[h] = Opt(h.toString() + "p" + mb(f.optString("contentLength").toLongOrNull() ?: 0L), u, null, h)
             } }
             var ba: JSONObject? = null; var baR = 0
+            val auds = ArrayList<JSONObject>()
             val vids = ArrayList<JSONObject>()
             sd.optJSONArray("adaptiveFormats")?.let { a -> for (i in 0 until a.length()) {
                 val f = a.optJSONObject(i) ?: continue
                 if (f.optString("url").isEmpty()) continue
                 val m = f.optString("mimeType")
                 if (m.startsWith("video/mp4") && m.contains("avc1")) { val h = f.optInt("height"); if (h in 1..1080) vids.add(f) }
-                else if (m.startsWith("audio/mp4")) { val rt = f.optInt("bitrate"); if (rt > baR) { ba = f; baR = rt } }
+                else if (m.startsWith("audio/mp4")) { auds.add(f); val rt = f.optInt("bitrate"); if (rt > baR) { ba = f; baR = rt } }
             } }
-            val au = ba
+            // (v388) مسارات الصوت (audioTrack.id مثل ar.4 / en-US.4): نختار لغتك المفضّلة (عربي افتراضيًا) بدل أعلى bitrate (كان بيجيب الدبلجة الإنجليزي أحيانًا)
+            val trs = ArrayList<YtLang.Tr>(); val byLang = HashMap<String, JSONObject>()
+            for (f in auds.sortedByDescending { it.optInt("bitrate") }) {
+                val atk = f.optJSONObject("audioTrack") ?: continue
+                val dn = atk.optString("displayName").lowercase()
+                if (dn.contains("descriptive")) continue
+                val lg = YtLang.code(atk.optString("id"))
+                if (lg.isEmpty() || byLang.containsKey(lg)) continue
+                byLang[lg] = f
+                trs.add(YtLang.Tr(lg, dn.contains("original"), atk.optBoolean("audioIsDefault"), f.optString("url"), f.optInt("bitrate")))
+            }
+            val multi = trs.size > 1
+            val chTr = if (multi) YtLang.choose(trs) else null
+            val au = if (chTr != null) (byLang[chTr.lang] ?: ba) else ba
             if (au != null) {
                 val aSize = au.optString("contentLength").toLongOrNull() ?: 0L
+                val seenVo = HashSet<Int>()
                 for (f in vids.sortedByDescending { it.optInt("bitrate") }) {
                     val h = f.optInt("height")
-                    if (byH.containsKey(h)) continue
+                    if (if (multi) !seenVo.add(h) else byH.containsKey(h)) continue   // (v388) أكتر من لغة صوت: الفيديو-بس + الصوت المختار بيحلّ محل المدمج
                     val vs = f.optString("contentLength").toLongOrNull() ?: 0L
                     byH[h] = Opt(h.toString() + "p" + mb(if (vs > 0) vs + aSize else 0L), f.optString("url"), au.optString("url"), h)
                 }
@@ -336,7 +353,7 @@ object YtExtract {
             }
             val opts = byH.values.sortedByDescending { it.h }
             val chosen = (if (maxH > 0) opts.firstOrNull { it.h <= maxH } ?: opts.last() else opts.first())
-            return Pick(chosen.url, chosen.audio, title, c.ua, chosen.label, opts).also { it.tag = c.tag }
+            return Pick(chosen.url, chosen.audio, title, c.ua, chosen.label, opts).also { it.tag = c.tag; if (multi) it.at = YtLang.json(trs, chTr) }
         } catch (e: Throwable) { LogStore.err("Sniffer:pick", e); whys.add(c.tag + ": " + e.javaClass.simpleName); return null }
     }
 

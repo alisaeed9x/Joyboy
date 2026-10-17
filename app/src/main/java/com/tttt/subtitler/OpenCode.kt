@@ -16,7 +16,7 @@ object OpenCodeFree {
     const val BUILTIN_KEY = ""
     const val ID = "opencode"
     const val BASE = "https://opencode.ai/zen/v1"
-    private val FALLBACK = listOf("big-pickle", "deepseek-v4-flash-free", "mimo-v2.5-free", "nemotron-3-super-free")
+    private val FALLBACK = listOf("glm-5.3-flash-free", "big-pickle", "deepseek-v4.1-flash-free", "nemotron-3.5-super-vl-free", "mimo-v2.6-flash-free", "nemotron-3-ultra-free", "longcat-2.5-preview-free")
     private val PREFER = listOf("glm", "big-pickle", "deepseek", "minimax", "qwen", "mimo", "nemotron", "bunny")
     private const val MAX_TRIES = 4
 
@@ -24,7 +24,7 @@ object OpenCodeFree {
     @Volatile private var foundAt = 0L
 
     /** في مفتاح (محفوظ أو مبني) — بنستخدمه كاحتياطي نصي في الموسيقى بس لو فيه مفتاح فعلًا */
-    fun hasKey(): Boolean = ExtLlm.key(preset()).isNotEmpty() || BUILTIN_KEY.isNotEmpty()
+    fun hasKey(): Boolean = OpenCodeLocal.enabled() || ExtLlm.key(preset()).isNotEmpty() || BUILTIN_KEY.isNotEmpty()
 
     /** طلب نصي واحد بسيط (JSON/نص) — للمهام الصغيرة */
     fun ask(prompt: String, maxTokens: Int): String = chat("auto", "You are a precise assistant. Follow the output format exactly.", listOf(AiApi.Msg("user", prompt)), maxTokens)
@@ -36,7 +36,7 @@ object OpenCodeFree {
         return mapOf("Authorization" to "Bearer $k")
     }
 
-    private fun isFree(id: String): Boolean {
+    fun isFree(id: String): Boolean {
         val l = id.lowercase()
         return (l.contains("free") || l.contains("pickle") || l.contains("bunny")) && ExtLlm.skipWords.none { l.contains(it) }
     }
@@ -45,6 +45,11 @@ object OpenCodeFree {
 
     /** قايمة الموديلات المجانية (بكاش 10 دقايق). لو الجلب فشل بنرجع لآخر قايمة أو للاحتياطي */
     fun list(force: Boolean = false): List<String> {
+        // (v387) القايمة اللي التجهيز التلقائي جابها من opencode models (محلي) — بتتقدّم على جلب /models من السيرفر
+        if (OpenCodeLocal.enabled()) {
+            val loc = Cfg.str("oc_models").split(',').map { it.trim() }.filter { it.isNotEmpty() }.sortedBy { score(it) }
+            if (loc.isNotEmpty()) return loc
+        }
         val now = System.currentTimeMillis()
         if (!force && found.isNotEmpty() && now - foundAt < 600_000L) return found
         val ids = try {
@@ -65,6 +70,7 @@ object OpenCodeFree {
     }
 
     private fun call(model: String, system: String, msgs: List<AiApi.Msg>, maxTokens: Int): String {
+        if (OpenCodeLocal.enabled()) return OpenCodeLocal.ask(model, system, msgs)   // (v386) الفري بيشتغل بس من جوه OpenCode: بنعدّي على Termux
         val arr = JSONArray().put(JSONObject().put("role", "system").put("content", system))
         for (m in msgs) {
             val content: Any = if (m.imgB64 == null) m.text else JSONArray()
@@ -76,7 +82,7 @@ object OpenCodeFree {
         val txt = try { ExtLlm.post(BASE + "/chat/completions", headers(), body, 120000) }
         catch (e: ExtLlm.LlmErr) {
             if ((e.message ?: "").contains("free tier", true))
-                throw ExtLlm.LlmErr(401, "أوبن كود قفل الفري على التطبيقات الخارجية — اعمل مفتاح مجاني من opencode.ai وحطه في إعدادات أوبن كود (مرة واحدة)")
+                throw ExtLlm.LlmErr(401, "أوبن كود قفل الفري على التطبيقات الخارجية (FreeTierError) — ثبّت OpenCode في Termux من الكونسول وسجّل دخول وهيشتغل منه. (opencode.ai)")
             throw e
         }
         val msg = JSONObject(txt).optJSONArray("choices")?.optJSONObject(0)?.optJSONObject("message") ?: return ""
@@ -111,7 +117,7 @@ object OpenCodeFree {
             } catch (e: ExtLlm.LlmErr) {
                 last = e
                 when (e.code) {
-                    401, 403 -> { ExtTranslate.coolFor(id, 120_000L, e.message ?: "المفتاح مرفوض"); if ((e.message ?: "").contains("opencode.ai")) throw e }
+                    401, 403 -> { ExtTranslate.coolFor(id, 120_000L, e.message ?: "المفتاح مرفوض"); if ((e.message ?: "").let { it.contains("opencode.ai") || it.startsWith(OpenCodeLocal.FATAL) }) throw e }
                     429, 402, 404, 500, 501, 502, 503, 504 -> ExtTranslate.noteFail(id, 0, e)
                     else -> ExtTranslate.coolFor(id, 300_000L, "الموديل رفض الطلب (" + e.code + ")")
                 }

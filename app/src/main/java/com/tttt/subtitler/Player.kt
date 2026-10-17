@@ -88,6 +88,36 @@ class PlayerActivity : Activity(), Host {
     private var qualBRef: TextView? = null
     private val qualRowRefs = ArrayList<TextView>()          // (v120) زرار «🎞 الجودة» اللي جنب زرار الترجمة (في الشريط السفلي والواسع)
     private var qualPopFn: ((View) -> Unit)? = null
+    // (v388) لغات الصوت (يوتيوب بأكتر من مسار صوت): مربع 🔊 جنب الجودة يبدّل اللغة في نفس الفيديو
+    private class ATrack(val name: String, val lang: String, val url: String, val cur: Boolean)
+    private var aTracks: List<ATrack> = emptyList()
+    private var aCur = 0
+    private var aOverride: String? = null
+    private val audRowRefs = ArrayList<TextView>()
+    private var audPopFn: ((View) -> Unit)? = null
+    private fun parseATracks(sj: String) {
+        try {
+            val at = org.json.JSONArray(sj).optJSONObject(0)?.optJSONArray("at")
+            aTracks = if (at == null) emptyList() else (0 until at.length()).map { k -> val o = at.getJSONObject(k); ATrack(o.optString("n"), o.optString("l"), o.optString("u"), o.optInt("c") == 1) }.filter { it.url.isNotEmpty() }
+            aCur = aTracks.indexOfFirst { it.cur }.coerceAtLeast(0); aOverride = null
+        } catch (e: Exception) { aTracks = emptyList(); LogStore.err("Player:atracks", e) }
+        paintAud()
+    }
+    private fun paintAud() {
+        val multi = aTracks.size > 1
+        val lbl = "🔊 " + (aTracks.getOrNull(aCur)?.lang?.uppercase() ?: "") + " ▾"
+        for (v in audRowRefs) { v.text = lbl; v.setTextColor(0xFF6FCF8A.toInt()); v.visibility = if (multi) View.VISIBLE else View.GONE }
+    }
+    private fun switchAudio(i: Int) {
+        val t = aTracks.getOrNull(i) ?: return
+        if (i == aCur) return
+        val o = qOpts.getOrNull(qCur)
+        if (o == null || o.audio == null) { Notice.show(this, "الجودة دي مدمجة بصوت واحد — اختار جودة تانية الأول", 2600L); return }
+        aOverride = t.url; aCur = i
+        switchYt(qCur, true)
+        paintAud()
+        Notice.show(this, "🔊 لغة الصوت: " + t.name, 2000L)
+    }
     // (v188) زرار «⏳ المهام» جنب زرار الترجمة: عداد أحمر + قايمة الأدوات بتنزل لفوق
     private var tasksPopFn: ((View) -> Unit)? = null
     private val taskBadges = ArrayList<TextView>()
@@ -499,6 +529,11 @@ class PlayerActivity : Activity(), Host {
             v.setOnClickListener { qualPopFn?.invoke(v) }
             qualRowRefs.add(v); return v
         }
+        fun aBtn(): TextView {   // (v388) مربع لغة الصوت: بيظهر بس لو الفيديو له أكتر من لغة
+            val v = b("🔊 ▾", 0xFF37474F.toInt()) { }
+            v.setOnClickListener { audPopFn?.invoke(v) }
+            audRowRefs.add(v); v.visibility = View.GONE; paintAud(); return v
+        }
         if (compact) {
             // الشريط السفلي: شريحة صغيرة بنسبة الترجمة (⏳ 19%) — دوس عليها تتفرد: إيقاف/استئناف + اللغة، وبتتلم لوحدها بعد 5 ثواني
             var open = false
@@ -514,7 +549,7 @@ class PlayerActivity : Activity(), Host {
             val rd = b("🔁 إعادة", 0xFF6A1B9A.toInt()) { h.removeCallbacks(closeR); h.postDelayed(closeR, 8000); rdRef?.let { redoDialog(it) } }
             rdRef = rd
             row.addView(chipB, lp(-2)); row.addView(wzB, lp(-2)); row.addView(tg, lp(-2)); row.addView(rd, lp(-2))   // (v224) زرار المهام اتشال؛ 🌐 و🔑 في الشريط السفلي جنب 🗣
-            if (webVid) { row.addView(qBtn(), lp(-2)); row.addView(dlB, lp(-2)) }
+            if (webVid) { row.addView(qBtn(), lp(-2)); row.addView(aBtn(), lp(-2)); row.addView(dlB, lp(-2)) }
             trUpdaters.add {
                 val paused = ::engine.isInitialized && engine.userPaused
                 val started = engineStarted
@@ -540,7 +575,7 @@ class PlayerActivity : Activity(), Host {
             row.addView(tr, lp(0).apply { width = 0; weight = 2f }); row.addView(wzB, lp(0).apply { width = 0; weight = 0.6f }); row.addView(ps, lp(0).apply { width = 0; weight = 1f })
             row.addView(rs, lp(0).apply { width = 0; weight = 1f })
             row.addView(rd2, lp(0).apply { width = 0; weight = 1f })
-            if (webVid) { row.addView(qBtn(), lp(0).apply { width = 0; weight = 1.1f }); row.addView(dlB, lp(0).apply { width = 0; weight = 0.6f }) }
+            if (webVid) { row.addView(qBtn(), lp(0).apply { width = 0; weight = 1.1f }); row.addView(aBtn(), lp(0).apply { width = 0; weight = 0.9f }); row.addView(dlB, lp(0).apply { width = 0; weight = 0.6f }) }
             trUpdaters.add {
                 val paused = ::engine.isInitialized && engine.userPaused
                                 tr.visibility = if (engineStarted) View.GONE else View.VISIBLE
@@ -983,7 +1018,7 @@ class PlayerActivity : Activity(), Host {
         try { if (!incognito) PubHistory.addVideoFrom(intent) } catch (_: Throwable) {}   // (v349) السجل العام
         try {
             intent.getStringExtra("qlist")?.let { sj -> val qa = org.json.JSONArray(sj)
-                qOpts = (0 until qa.length()).map { qi -> val o = qa.getJSONObject(qi); YtExtract.Opt(o.optString("l"), o.optString("u"), o.optString("a").ifEmpty { null }, o.optInt("h")) } }
+                qOpts = (0 until qa.length()).map { qi -> val o = qa.getJSONObject(qi); YtExtract.Opt(o.optString("l"), o.optString("u"), o.optString("a").ifEmpty { null }, o.optInt("h")) }; parseATracks(sj) }
         } catch (e: Exception) { LogStore.err("Player:qlist", e) }
         qCur = qOpts.indexOfFirst { it.url == url }
         aurl = intent.getStringExtra("aurl")?.takeIf { it.isNotEmpty() }   // (v118) صوت منفصل ليوتيوب (جودة عالية)
@@ -1303,6 +1338,14 @@ class PlayerActivity : Activity(), Host {
         qualB.visibility = if (uri == null) View.VISIBLE else View.GONE
         qualBRef = qualB
         qualPopFn = { v -> if (fillQ()) togglePop(v, gQ, true) else Notice.show(this, "مفيش جودات تانية للفيديو ده", 2300L) }
+        // (v388) قايمة لغات الصوت
+        val gA = gCol()
+        fun fillA(): Boolean {
+            gA.removeAllViews()
+            for ((ai, t) in aTracks.withIndex()) gA.addView(pd((if (ai == aCur) "✓ " else "") + t.name) { switchAudio(ai) })
+            return aTracks.size > 1
+        }
+        audPopFn = { v -> if (fillA()) togglePop(v, gA, true) else Notice.show(this, "مفيش لغات صوت تانية للفيديو ده", 2300L) }
         setQualLabel(qOpts.getOrNull(qCur)?.h ?: 0)
         val sentB = mini("📝") { sentDlg.show() }   // الجمل
         val charsB = mini("🧑") { showChars() }   // (v151) الشخصيات وجنسها — نافذة فوق الفيديو من غير ما تضغط شاشته
@@ -2056,21 +2099,21 @@ class PlayerActivity : Activity(), Host {
     }
 
     /** (v118) تبديل جودة يوتيوب في نفس المكان من غير ما التشغيل يتقطع كتير. الجودة بتتحفظ للفيديوهات الجاية (داتا أقل) */
-    private fun switchYt(i: Int) {
+    private fun switchYt(i: Int, force: Boolean = false) {
         val o = qOpts.getOrNull(i) ?: return
-        if (i == qCur) return
+        if (i == qCur && !force) return
         try {
             val pos = player.currentPosition; val play = player.playWhenReady
             val f = httpDsf ?: DefaultHttpDataSource.Factory().setDefaultRequestProperties(hdr).setAllowCrossProtocolRedirects(true)
-            val au = o.audio
+            val au = if (o.audio != null) (aOverride ?: o.audio) else null   // (v388) لغة الصوت اللي اخترتها بتفضل مع تبديل الجودة
             // (v120) أي موقع: من غير صوت منفصل بنسيب ExoPlayer يختار النوع (MP4/HLS…) من اللينك؛ يوتيوب بصوت منفصل بيتدمج
             val src = if (au != null) { val pf = androidx.media3.exoplayer.source.ProgressiveMediaSource.Factory(f)
                 androidx.media3.exoplayer.source.MergingMediaSource(pf.createMediaSource(MediaItem.fromUri(Uri.parse(o.url))), pf.createMediaSource(MediaItem.fromUri(Uri.parse(au)))) }
             else DefaultMediaSourceFactory(f).createMediaSource(MediaItem.fromUri(Uri.parse(o.url)))
             player.setMediaSource(src, pos); player.prepare(); player.playWhenReady = play
             qCur = i; sizeTxt = ""; setQualLabel(o.h); refreshSize()
-            if (intent.getStringExtra("ytid") != null) Cfg.put("yt_maxh", o.h.toString())
-            Notice.show(this, "🎞 الجودة: " + o.label, 2000L)
+            if (!force) { if (intent.getStringExtra("ytid") != null) Cfg.put("yt_maxh", o.h.toString())
+                Notice.show(this, "🎞 الجودة: " + o.label, 2000L) }
         } catch (e: Exception) { LogStore.err("Player:switchYt", e); Notice.show(this, "ما قدرتش أغيّر الجودة", 2300L) }
     }
     private fun hlsAuto() {
@@ -2238,7 +2281,7 @@ class PlayerActivity : Activity(), Host {
                 try { ytBusy(true, "⏳ بيبدأ التشغيل…") } catch (_: Throwable) {}
                 try {
                     got.qlist.takeIf { it.isNotEmpty() }?.let { sj -> val qa = org.json.JSONArray(sj)
-                        qOpts = (0 until qa.length()).map { qi -> val o = qa.getJSONObject(qi); YtExtract.Opt(o.optString("l"), o.optString("u"), o.optString("a").ifEmpty { null }, o.optInt("h")) } }
+                        qOpts = (0 until qa.length()).map { qi -> val o = qa.getJSONObject(qi); YtExtract.Opt(o.optString("l"), o.optString("u"), o.optString("a").ifEmpty { null }, o.optInt("h")) }; parseATracks(sj) }
                 } catch (e: Exception) { LogStore.err("Player:pendQlist", e) }
                 qCur = qOpts.indexOfFirst { it.url == url }
                 hdr["User-Agent"] = got.ua; hdr["Referer"] = "https://www.youtube.com/"

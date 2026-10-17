@@ -55,6 +55,29 @@ object TermuxRun {
             OmniLauncher.R.SENT
         } catch (_: SecurityException) { waiting.remove(id); OmniLauncher.R.NO_PERM } catch (_: Throwable) { waiting.remove(id); OmniLauncher.R.ERROR }
     }
+
+    /** (v386) سكربت bash بمعاملات موضعية (\$1 \$2 …) — للنصوص الطويلة من غير مشاكل اقتباس. [onDone] على الـ main thread */
+    fun runScript(c: Context, script: String, args: List<String>, onDone: (String) -> Unit): OmniLauncher.R {
+        if (!OmniLauncher.installed(c)) return OmniLauncher.R.NO_TERMUX
+        if (!OmniLauncher.hasPerm(c)) return OmniLauncher.R.NO_PERM
+        val id = ids.incrementAndGet()
+        lastId = id
+        waiting[id] = onDone
+        return try {
+            val cb = Intent(c, TermuxResultReceiver::class.java).putExtra("rid", id)
+            val flags = PendingIntent.FLAG_UPDATE_CURRENT or (if (Build.VERSION.SDK_INT >= 31) PendingIntent.FLAG_MUTABLE else 0)
+            val pi = PendingIntent.getBroadcast(c, id, cb, flags)
+            val argv = arrayOf("-c", "export PATH=/data/data/com.termux/files/usr/bin:\$PATH; " + script, "oc") + args
+            val i = Intent("com.termux.RUN_COMMAND").setClassName(PKG, "com.termux.app.RunCommandService")
+                .putExtra("com.termux.RUN_COMMAND_PATH", BASH)
+                .putExtra("com.termux.RUN_COMMAND_ARGUMENTS", argv)
+                .putExtra("com.termux.RUN_COMMAND_WORKDIR", HOME)
+                .putExtra("com.termux.RUN_COMMAND_BACKGROUND", true)
+                .putExtra("com.termux.RUN_COMMAND_PENDING_INTENT", pi)
+            if (Build.VERSION.SDK_INT >= 26) c.startForegroundService(i) else c.startService(i)
+            OmniLauncher.R.SENT
+        } catch (_: SecurityException) { waiting.remove(id); OmniLauncher.R.NO_PERM } catch (_: Throwable) { waiting.remove(id); OmniLauncher.R.ERROR }
+    }
 }
 
 class TermuxResultReceiver : BroadcastReceiver() {
@@ -105,6 +128,10 @@ class TermuxConsoleActivity : Activity() {
         chip("📜 اللوج") { exec("tail -n 60 \$HOME/omniroute.log 2>&1") }
         chip("⬆ حدّث") { exec("npm install -g omniroute@latest 2>&1 | tail -n 15") }
         chip("🛠 إعداد مرة واحدة") { OmniLauncher.copySetupAndOpenTermux(this); append("📋 اتنسخ أمر الإعداد — الصقه في Termux واضغط Enter ثم ارجع هنا.") }
+        chip("🤖 جهّز أوبن كود تلقائي") { OpenCodeAuto.start(this, true); append("🤖 بدأ التجهيز التلقائي في الخلفية — تابع بزرار «📜 لوج التجهيز».") }
+        chip("📜 لوج التجهيز") { append(OpenCodeAuto.logText()) }
+        chip("⬇ ثبّت OpenCode") { installOc() }
+        chip("🧪 جرّب OpenCode") { testOc() }
         chip("🧹 مسح") { out.text = "" }
         root.addView(HorizontalScrollView(this).apply { isHorizontalScrollBarEnabled = false; addView(chips) })
 
@@ -137,6 +164,20 @@ class TermuxConsoleActivity : Activity() {
             append("▶ بعتّ أمر تشغيل OmniRoute لـ Termux (أول مرة بيثبّته — 5-10 دقايق). تابع بزرار 📜 اللوج.")
             OmniLauncher.waitUntilUp { runOnUiThread { if (!isFinishing) append("✅ OmniRoute اشتغل (البورت 20128 بيرد)") } }
         } else problem(r)
+    }
+
+    private fun installOc() {
+        append("⬇ بثبّت OpenCode في Termux (3-5 دقايق أول مرة، حوالي 105MB). استنى رسالة OC_OK…")
+        val r = OpenCodeLocal.install(this) { res -> if (!isFinishing) append(res.takeLast(1500) + if (res.contains("OC_OK")) "\n✅ OpenCode جاهز. لو لسه ماسجلتش دخول: في Termux اكتب opencode auth login" else "") }
+        if (r != OmniLauncher.R.SENT) problem(r)
+    }
+
+    private fun testOc() {
+        append("🧪 بجرّب opencode run …")
+        Thread {
+            val res = try { OpenCodeLocal.ask("", "You are a precise assistant.", listOf(AiApi.Msg("user", "Say hi in one short sentence."))) } catch (e: Throwable) { "❌ " + (e.message ?: e.javaClass.simpleName) }
+            runOnUiThread { if (!isFinishing) append(res) }
+        }.start()
     }
 
     private fun problem(r: OmniLauncher.R) {

@@ -15,6 +15,7 @@ import android.text.Editable
 import android.text.TextUtils
 import android.text.TextWatcher
 import android.view.Gravity
+import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
 import android.view.inputmethod.EditorInfo
@@ -63,10 +64,30 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
     private val h = Handler(Looper.getMainLooper())
     // (v337) لودينج ويندوز (نفس اللي في المشغّل) بدل «⏳ …» وقت البحث/التحميل، وطبقة لودينج فوق الصفحة وقت جلب رابط الفيديو
     private val spinDr = WinSpinnerDrawable().apply { setColorFilter(PorterDuffColorFilter(th.primary, PorterDuff.Mode.SRC_IN)) }
-    private val spinView = View(act).apply { foreground = spinDr; visibility = View.GONE }
-    private fun spin(on: Boolean) { if (on) { spinView.visibility = View.VISIBLE; spinDr.start()
-        // (v354) اللودينج في نص الصفحة مش فوق
-        spinView.post { try { val p = spinView.parent as? View; if (p != null) spinView.translationY = maxOf(0f, (p.height - spinView.height) / 2f - spinView.top.toFloat() - ui.dp(30)) } catch (_: Throwable) {} } } else { spinView.visibility = View.GONE; spinDr.stop() } }
+    private val spinView = View(act).apply { foreground = spinDr }
+    // (v389) اللودينج كان بيتحرّك لنص الصفحة بس بيتحط تحت الـ ListView (اللي ليه خلفية) فكان مخفي في الرئيسية والاشتراكات — بقى طبقة فوق الصفحة في النص
+    private val spinBox = LinearLayout(act).apply {
+        orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER; visibility = View.GONE; isClickable = false
+        addView(spinView, LinearLayout.LayoutParams(ui.dp(64), ui.dp(64)))
+        addView(ui.text("جاري التحميل…", 12f, th.muted).apply { gravity = Gravity.CENTER; setPadding(0, ui.dp(8), 0, 0) }, LinearLayout.LayoutParams(-2, -2))
+    }
+    private fun spin(on: Boolean) { if (on) { spinBox.visibility = View.VISIBLE; spinDr.start() } else { spinBox.visibility = View.GONE; spinDr.stop() } }
+    // (v390) سحب لتحت = تحديث (الرئيسية · الاشتراكات · أنت) زي قايمة الفيديوهات
+    private val ptr = IconTextView(act).apply {
+        text = "🔄"; textSize = 20f; gravity = Gravity.CENTER; background = ui.box(th.surface, th.border, 22)
+        elevation = ui.dp(6).toFloat(); alpha = 0f; translationY = -ui.dp(50).toFloat()
+    }
+    private fun endPull() {
+        lv.animate().translationY(0f).setDuration(250).start()
+        ptr.animate().alpha(0f).translationY(-ui.dp(50).toFloat()).setDuration(250).start()
+    }
+    private fun pullRefresh() {
+        when (cur?.tab) {
+            0 -> { YtNp.clearHome(); if (YtAccount.loggedIn()) YtAccount.syncAsync(true); openTab(0) }
+            1 -> openSubs(true)
+            4 -> if (YtAccount.loggedIn()) syncNow() else openTab(4)
+        }
+    }
     private val busyDr = WinSpinnerDrawable()
     private val busyOff = Runnable { busy(false) }
     /** (v337) بيتضاف في Main فوق الصفحة (pane) — بيظهر وإحنا بنجيب رابط الفيديو قبل ما المشغّل يفتح */
@@ -213,7 +234,6 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
 
         statusTv = ui.text("", 14f, th.muted).apply { gravity = Gravity.CENTER; setPadding(ui.dp(20), ui.dp(30), ui.dp(20), 0); visibility = View.GONE; setOnClickListener { retry?.invoke() } }
         page.addView(statusTv, LinearLayout.LayoutParams(-1, -2))
-        page.addView(spinView, LinearLayout.LayoutParams(ui.dp(64), ui.dp(64)).apply { gravity = Gravity.CENTER_HORIZONTAL; topMargin = ui.dp(36) })   // (v337)
 
         lv.apply {
             divider = null; setBackgroundColor(th.bg); selector = GradientDrawable().apply { setColor(Color.TRANSPARENT) }
@@ -226,9 +246,46 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
             })
         }
         page.addView(lv, LinearLayout.LayoutParams(-1, 0, 1f))
+        run {
+            var y0 = 0f; var pulling = false; var pd = 0f
+            val thr = ui.dp(60).toFloat()
+            lv.setOnTouchListener { _, e ->
+                when (e.actionMasked) {
+                    MotionEvent.ACTION_DOWN -> { y0 = e.rawY; pulling = false; false }
+                    MotionEvent.ACTION_MOVE -> {
+                        val t = cur?.tab ?: -1
+                        if ((t != 0 && t != 1 && t != 4) || spinBox.visibility == View.VISIBLE) return@setOnTouchListener false
+                        val dy = e.rawY - y0
+                        val atTop = lv.firstVisiblePosition == 0 && (lv.childCount == 0 || lv.getChildAt(0).top >= lv.paddingTop)
+                        if (!pulling && dy > ui.dp(10) && atTop) {
+                            pulling = true; y0 = e.rawY
+                            val c = MotionEvent.obtain(e); c.action = MotionEvent.ACTION_CANCEL; lv.onTouchEvent(c); c.recycle()
+                        }
+                        if (pulling) {
+                            pd = ((e.rawY - y0) * 0.5f).coerceIn(0f, ui.dp(120).toFloat())
+                            lv.translationY = pd; ptr.translationY = pd - ui.dp(50)
+                            ptr.alpha = (pd / ui.dp(40)).coerceIn(0f, 1f); ptr.rotation = pd * 4f
+                            true
+                        } else false
+                    }
+                    MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                        if (pulling) {
+                            pulling = false
+                            val go = pd >= thr && e.actionMasked == MotionEvent.ACTION_UP
+                            endPull()
+                            if (go) pullRefresh()
+                            true
+                        } else false
+                    }
+                    else -> false
+                }
+            }
+        }
         // (v348) شريط يوتيوب السفلي: الرئيسية · الاشتراكات · الشورتس · أنت
         val content = FrameLayout(act)
         content.addView(page, FrameLayout.LayoutParams(-1, -1))
+        content.addView(spinBox, FrameLayout.LayoutParams(-2, -2, Gravity.CENTER))   // (v389)
+        content.addView(ptr, FrameLayout.LayoutParams(ui.dp(44), ui.dp(44), Gravity.TOP or Gravity.CENTER_HORIZONTAL))   // (v390)
         root.addView(content, LinearLayout.LayoutParams(-1, 0, 1f))
         root.addView(View(act).apply { setBackgroundColor(th.border) }, LinearLayout.LayoutParams(-1, ui.dp(1)))
         val navRow = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; gravity = Gravity.CENTER_VERTICAL; setBackgroundColor(th.card) }
@@ -288,8 +345,22 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
             0 -> load("🏠 الرئيسية", 0, null, null, null, "", false, false) {
                 val hh = YtStore.read(YtStore.HIST); var ss = YtStore.read(YtStore.SUBS)
                 if (ss.isEmpty() && YtAccount.loggedIn()) { try { YtAccount.syncSubs() } catch (_: Throwable) {}; ss = YtStore.read(YtStore.SUBS) }   // (v375) مسجّل بجوجل ولسه ما فتحتش الاشتراكات: هات القنوات الأول
+                if (YtAccount.loggedIn()) YtAccount.syncAsync()   // (v390) مزامنة تلقائية في الخلفية في كل دخول للرئيسية (نجحت الرئيسية ولا فشلت)، مش بس بعد الفشل
                 val cached = YtNp.homeCached()   // (v362) فورًا من آخر مرة، والتحديث في الخلفية للزيارة الجاية
-                if (cached != null) { YtNp.refreshHomeAsync(hh, ss); Pair(cached, null) } else Pair(YtNp.home(hh, ss), null)
+                if (cached != null) { YtNp.refreshHomeAsync(hh, ss); Pair(cached, null) }
+                else {
+                    // (v389) علاج ذاتي: لو الرئيسية فضيت أو فشلت (كان لازم تدخل «أنت» وتعمل مزامنة) → نعمل نفس المزامنة + نعيد تهيئة NewPipe ونحاول تاني
+                    var err: Throwable? = null
+                    var r = try { YtNp.home(hh, ss) } catch (e: Throwable) { err = e; YtRes(emptyList(), null) }
+                    if (r.items.isEmpty()) {
+                        LogStore.add("🩹 الرئيسية فاضية" + (err?.let { " (" + (it.message ?: it.javaClass.simpleName).take(80) + ")" } ?: "") + " — مزامنة + إعادة تهيئة وإعادة محاولة")
+                        YtNp.reset()
+                        if (YtAccount.loggedIn()) { try { YtAccount.syncSubs() } catch (e: Throwable) { LogStore.add("⚠ مزامنة العلاج الذاتي فشلت: " + (e.message ?: "").take(100)) }; ss = YtStore.read(YtStore.SUBS) }
+                        try { r = YtNp.home(hh, ss); err = null } catch (e: Throwable) { err = e }
+                    }
+                    if (r.items.isEmpty() && err != null) throw err
+                    Pair(r, null)
+                }
             }
             1 -> {
                 val subs = YtStore.read(YtStore.SUBS)
@@ -416,8 +487,10 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
             // (v346) لو مسجّل بجوجل: بنزامن قنوات الحساب الأول (كل 6 ساعات أو لما تدوس تحديث) وبعدين نقرأ الاشتراكات من جديد
             // (v350) لو القنوات فاضية أو المزامنة فشلت: نحاول تاني ونظهر السبب بدل «مفيش نتايج» الصامتة
             var syncErr: String? = null
-            if (YtAccount.loggedIn() && (force || YtAccount.syncDue() || YtStore.read(YtStore.SUBS).isEmpty())) {
+            if (YtAccount.loggedIn() && (force || YtStore.read(YtStore.SUBS).isEmpty())) {
                 try { YtAccount.syncSubs() } catch (e: Throwable) { syncErr = e.message ?: e.javaClass.simpleName }
+            } else if (YtAccount.loggedIn()) {   // (v390) مزامنة تلقائية في الخلفية في كل دخول؛ لو جابت قنوات جديدة والصفحة لسه مفتوحة بتتحدّث
+                YtAccount.syncAsync { n -> if (n > 0) act.runOnUiThread { if (!act.isFinishing && !act.isDestroyed && cur?.tab == 1) openSubs(false) } }
             }
             val subsNow = YtStore.read(YtStore.SUBS)
             var r = YtRss.feed(subsNow, force, !force)   // (v354) أول عرض فوري من الكاش لو موجود

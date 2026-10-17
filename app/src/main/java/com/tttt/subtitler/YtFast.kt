@@ -17,6 +17,7 @@ object YtFast {
     private const val TTL = 3L * 60 * 60 * 1000L
     private val npVid = ConcurrentHashMap<String, Pair<Long, YtPick>>()   // id/maxH
     private val npAud = ConcurrentHashMap<String, Pair<Long, YtPick>>()   // id
+    fun clearCache() { npVid.clear(); npAud.clear() }   // (v388) تغيير لغة الصوت الافتراضية
     @Volatile private var exFails = 0
     @Volatile private var exFailAt = 0L
 

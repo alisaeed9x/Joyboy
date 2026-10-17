@@ -15,7 +15,9 @@ import android.provider.Settings
 import android.text.Editable
 import android.text.TextUtils
 import android.text.TextWatcher
+import android.view.DragEvent
 import android.view.Gravity
+import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
 import android.webkit.MimeTypeMap
@@ -187,6 +189,14 @@ class FileManagerActivity : Activity() {
     private var loaded = false
     private var loadToken = 0
     private val uiH = Handler(Looper.getMainLooper())
+    // (v391) تبويبات زي MiXplorer: كل تبويب مجلد، وتقدر تسحب ملفات من تبويب لتاني (نقل / استخراج)
+    private val tabs = ArrayList<File>()
+    private var tabIdx = 0
+    private lateinit var tabsRow: LinearLayout
+    private var dragFiles: List<File> = emptyList()
+    private var fingerDown = false
+    private var lastDragPos = -1
+    private var swX = 0f; private var swY = 0f; private var swPos = -1
     private val deepRun = Runnable { val q = query.trim(); if (deepOn && q.length >= 2) runDeep(q) }
 
     private lateinit var titleTv: TextView
@@ -248,6 +258,14 @@ class FileManagerActivity : Activity() {
         loadPins()
         val startPath = intent?.getStringExtra("path") ?: prefs().getString("fm_last", null)
         if (startPath != null) { val d = File(startPath); if (d.isDirectory) cur = d }
+        run {   // (v391) استرجاع التبويبات
+            val saved = (prefs().getString("fm_tabs", "") ?: "").split("\n").filter { it.isNotBlank() }.map { File(it) }.filter { it.isDirectory }
+            tabs.addAll(saved)
+            tabIdx = prefs().getInt("fm_tab_i", 0)
+            if (tabs.isEmpty()) { tabs.add(cur); tabIdx = 0 }
+            tabIdx = tabIdx.coerceIn(0, tabs.size - 1)
+            if (intent?.getStringExtra("path") != null) tabs[tabIdx] = cur else cur = tabs[tabIdx]
+        }
 
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL
@@ -274,6 +292,10 @@ class FileManagerActivity : Activity() {
         }
         root.addView(head, LinearLayout.LayoutParams(-1, -2))
 
+        // (v391) شريط التبويبات
+        tabsRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; gravity = Gravity.CENTER_VERTICAL; setPadding(ui.dp(8), ui.dp(2), ui.dp(8), ui.dp(2)) }
+        root.addView(HorizontalScrollView(this).apply { isHorizontalScrollBarEnabled = false; addView(tabsRow) }, LinearLayout.LayoutParams(-1, -2))
+
         // بحث داخل المجلد (أو في كل المجلدات الفرعية لو البحث العميق شغّال)
         searchEt = ui.input("🔍 بحث في المجلد", "").apply {
             addTextChangedListener(object : TextWatcher {
@@ -296,6 +318,7 @@ class FileManagerActivity : Activity() {
         val chipsScroll = HorizontalScrollView(this).apply { isHorizontalScrollBarEnabled = false; addView(chipsRow) }
         root.addView(chipsScroll, LinearLayout.LayoutParams(-1, -2))
 
+        paintTabs()
         // شريط المساحة
         storTv = ui.text("", 11f, th.muted).apply { setSingleLine() }
         storFill = View(this).apply { setBackgroundColor(th.primary) }
@@ -321,7 +344,36 @@ class FileManagerActivity : Activity() {
             divider = android.graphics.drawable.ColorDrawable(th.border); dividerHeight = 1
             Motion.listAnim(this)
             setOnItemClickListener { _, _, pos, _ -> if (pos in shown.indices) onTap(shown[pos]) }
-            setOnItemLongClickListener { _, _, pos, _ -> if (pos in shown.indices) toggleSel(shown[pos]); true }
+            setOnItemLongClickListener { _, _, pos, _ -> if (pos in shown.indices) { toggleSel(shown[pos]); if (sel.contains(shown[pos].f.absolutePath)) armDrag(shown[pos]) }; true }
+            setOnTouchListener { v, e ->
+                when (e.actionMasked) {
+                    MotionEvent.ACTION_DOWN -> { fingerDown = true; swX = e.x; swY = e.y; swPos = (v as ListView).pointToPosition(e.x.toInt(), e.y.toInt()) }
+                    MotionEvent.ACTION_UP -> {
+                        fingerDown = false
+                        // (v392) سلايد لليمين على مجلد = يفتح في تبويب لوحده
+                        val dx = e.x - swX; val dy = e.y - swY
+                        val it = shown.getOrNull(swPos)
+                        if (it != null && it.dir && dx > ui.dp(90) && dx > Math.abs(dy) * 2f && !deepMode) openInNewTab(it.f)
+                        swPos = -1
+                    }
+                    MotionEvent.ACTION_CANCEL -> { fingerDown = false; swPos = -1 }
+                }
+                false
+            }
+            setOnDragListener { v, ev ->
+                when (ev.action) {
+                    DragEvent.ACTION_DRAG_STARTED -> dragFiles.isNotEmpty()
+                    DragEvent.ACTION_DRAG_LOCATION -> { lastDragPos = (v as ListView).pointToPosition(ev.x.toInt(), ev.y.toInt()); true }
+                    DragEvent.ACTION_DROP -> {
+                        val pos = (v as ListView).pointToPosition(ev.x.toInt(), ev.y.toInt())
+                        val t = shown.getOrNull(pos)
+                        if (t != null && t.dir) dropOn(t.f) else toast("سيبه على مجلد أو على تبويب")
+                        true
+                    }
+                    DragEvent.ACTION_DRAG_ENDED -> { dragFiles = emptyList(); true }
+                    else -> true
+                }
+            }
         }
         emptyTv = ui.text("", 14f, th.muted).apply { gravity = Gravity.CENTER; setPadding(0, ui.dp(40), 0, 0); visibility = View.GONE }
         val body = FrameLayout(this)
@@ -425,6 +477,7 @@ class FileManagerActivity : Activity() {
     private fun load(dir: File) {
         val deeper = dir != cur && dir.absolutePath.startsWith(cur.absolutePath)
         cur = dir; sel.clear(); query = ""; deepMode = false
+        if (tabs.isNotEmpty()) { tabs[tabIdx.coerceIn(0, tabs.size - 1)] = dir; saveTabs(); paintTabs() }
         uiH.removeCallbacks(deepRun)
         if (searchEt.text.isNotEmpty()) searchEt.setText("")
         try { prefs().edit().putString("fm_last", dir.absolutePath).apply() } catch (_: Exception) {}
@@ -580,6 +633,125 @@ class FileManagerActivity : Activity() {
     private fun onTap(fi: FmItem) {
         if (sel.isNotEmpty()) { toggleSel(fi); return }
         if (fi.dir) load(fi.f) else openFile(fi.f, false)
+    }
+
+    // ===== (v391) تبويبات =====
+    private fun saveTabs() { try { prefs().edit().putString("fm_tabs", tabs.joinToString("\n") { it.absolutePath }).putInt("fm_tab_i", tabIdx).apply() } catch (_: Exception) {} }
+    private fun tabName(f: File): String = if (f.absolutePath == Environment.getExternalStorageDirectory().absolutePath) "📱 الداخلية" else "📁 " + f.name.ifEmpty { "/" }
+    private fun paintTabs() {
+        if (!::tabsRow.isInitialized) return
+        tabsRow.removeAllViews()
+        for ((i, f) in tabs.withIndex()) {
+            val on = i == tabIdx
+            val c = IconTextView(this).apply {
+                text = tabName(f).take(18); textSize = 12.5f; setTextColor(if (on) th.primary else th.text); gravity = Gravity.CENTER
+                setPadding(ui.dp(12), ui.dp(6), ui.dp(12), ui.dp(6))
+                background = ui.box(if (on) ((th.primary and 0x00FFFFFF) or 0x33000000) else th.surface, if (on) th.primary else th.border, 18)
+                Glass.pressable(this)
+                setOnClickListener { if (i != tabIdx) switchTab(i) }
+                setOnLongClickListener { closeTab(i); true }
+                // الإفلات على تبويب = نقل/استخراج لمجلده
+                setOnDragListener { v, ev ->
+                    when (ev.action) {
+                        DragEvent.ACTION_DRAG_STARTED -> dragFiles.isNotEmpty()
+                        DragEvent.ACTION_DRAG_ENTERED -> { v.scaleX = 1.12f; v.scaleY = 1.12f; true }
+                        DragEvent.ACTION_DRAG_EXITED -> { v.scaleX = 1f; v.scaleY = 1f; true }
+                        DragEvent.ACTION_DROP -> { v.scaleX = 1f; v.scaleY = 1f; dropOn(tabs.getOrNull(i) ?: cur); true }
+                        DragEvent.ACTION_DRAG_ENDED -> { v.scaleX = 1f; v.scaleY = 1f; true }
+                        else -> true
+                    }
+                }
+            }
+            tabsRow.addView(c, LinearLayout.LayoutParams(-2, -2).apply { setMargins(ui.dp(3), 0, ui.dp(3), 0) })
+        }
+        tabsRow.addView(chip("＋") { addTab() }, LinearLayout.LayoutParams(-2, -2).apply { setMargins(ui.dp(3), 0, ui.dp(3), 0) })
+    }
+    /** (v392) فتح مجلد في تبويب جديد جنب التبويب الحالي */
+    private fun openInNewTab(f: File) {
+        if (tabs.size >= 8) { toast("أقصى عدد تبويبات 8"); return }
+        tabs.add(tabIdx + 1, f); tabIdx++; saveTabs()
+        toast("📂 اتفتح في تبويب جديد: " + f.name)
+        load(f)
+    }
+    private fun switchTab(i: Int) { tabIdx = i.coerceIn(0, tabs.size - 1); saveTabs(); load(tabs[tabIdx]) }
+    private fun addTab() {
+        if (tabs.size >= 8) { toast("أقصى عدد تبويبات 8"); return }
+        tabs.add(tabIdx + 1, cur); tabIdx++; saveTabs(); paintTabs(); toast("تبويب جديد — افتح فيه المجلد التاني")
+    }
+    private fun closeTab(i: Int) {
+        if (tabs.size <= 1) { toast("ده آخر تبويب"); return }
+        GAlert(this).setTitle("إغلاق التبويب").setMessage(tabName(tabs[i]))
+            .setPositiveButton("إغلاق") { _, _ ->
+                tabs.removeAt(i)
+                if (tabIdx >= tabs.size) tabIdx = tabs.size - 1 else if (i < tabIdx) tabIdx--
+                saveTabs(); load(tabs[tabIdx])
+            }.setNegativeButton("إلغاء", null).show()
+    }
+
+    // ===== (v391) سحب وإفلات: ضغطة مطولة = تحديد، كمّل ضغط = الملف يتشال ويكبر ويتحرك =====
+    private fun armDrag(fi: FmItem) {
+        uiH.postDelayed({
+            if (isDestroyed || !fingerDown || !sel.contains(fi.f.absolutePath)) return@postDelayed
+            val idx = shown.indexOf(fi); if (idx < 0) return@postDelayed
+            val row = list.getChildAt(idx - list.firstVisiblePosition) ?: return@postDelayed
+            dragFiles = selFiles()
+            try { row.performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS) } catch (_: Throwable) {}
+            val shadow = object : View.DragShadowBuilder(row) {
+                override fun onProvideShadowMetrics(size: android.graphics.Point, touch: android.graphics.Point) {
+                    val w = (row.width * 1.12f).toInt(); val h = (row.height * 1.12f).toInt()
+                    size.set(w, h); touch.set(w / 2, h / 2)
+                }
+                override fun onDrawShadow(canvas: android.graphics.Canvas) { canvas.scale(1.12f, 1.12f); row.draw(canvas) }
+            }
+            val data = android.content.ClipData.newPlainText("fm", dragFiles.joinToString("\n") { it.absolutePath })
+            val ok = try { row.startDragAndDrop(data, shadow, null, 0) } catch (_: Throwable) { false }
+            if (!ok) dragFiles = emptyList()
+        }, 450L)
+    }
+    private fun isZip(f: File) = f.isFile && f.extension.equals("zip", true)
+    /** الإفلات على مجلد (تبويب أو صف مجلد): نقل — ولو فيه ZIP يتعرض كمان «استخراج» */
+    private fun dropOn(dest: File) {
+        val files = dragFiles; dragFiles = emptyList()
+        if (files.isEmpty() || !dest.isDirectory) return
+        val movable = files.filter { s -> !(s.isDirectory && (dest.absolutePath == s.absolutePath || dest.absolutePath.startsWith(s.absolutePath + "/"))) }
+        if (movable.isEmpty()) { toast("مينفعش تنقل مجلد جوه نفسه"); return }
+        val zips = movable.filter { isZip(it) }
+        val allSame = movable.all { it.parentFile?.absolutePath == dest.absolutePath }
+        val what = if (movable.size == 1) movable[0].name else "${movable.size} عنصر"
+        val dlg = GAlert(this).setTitle("إلى: " + (dest.name.ifEmpty { "/" })).setMessage(what + (if (zips.isNotEmpty()) "\n(فيه ${zips.size} ZIP: تقدر تستخرجه في المجلد ده)" else ""))
+            .setPositiveButton(if (allSame) "نفس المكان" else "✂ نقل") { _, _ -> if (!allSame) moveInto(movable, dest, false) }
+        if (zips.isNotEmpty()) dlg.setNeutralButton("📦 استخراج") { _, _ -> moveInto(movable, dest, true) }
+        dlg.setNegativeButton("إلغاء", null).show()
+    }
+    /** نقل [src] لـ [dest]؛ extract=true: أي ZIP بيتفك في مجلد جديد جوه [dest] (الأصل بيفضل مكانه) والباقي بيتنقل */
+    private fun moveInto(src: List<File>, dest: File, extract: Boolean) {
+        busy(if (extract) "📦 استخراج / نقل" else "✂ نقل") { upd, cancelled ->
+            var ok = 0; var fail = 0; var i = 0
+            val made = ArrayList<File>()
+            for (s in src) {
+                if (cancelled()) break
+                i++; val n = i
+                upd("($n/${src.size}) ${s.name}")
+                try {
+                    if (extract && isZip(s)) {
+                        val d = FmUtil.uniq(dest, s.nameWithoutExtension.ifEmpty { "extracted" })
+                        d.mkdirs()
+                        FmUtil.unzip(s, d, cancelled) { f -> upd("($n/${src.size}) $f") }
+                        made.addAll(d.walkTopDown().filter { it.isFile }.toList()); ok++
+                    } else if (s.parentFile?.absolutePath == dest.absolutePath) { ok++ }
+                    else {
+                        val d = FmUtil.uniq(dest, s.name)
+                        if (!s.renameTo(d)) {
+                            FmUtil.copyTree(s, d, cancelled) { f -> upd("($n/${src.size}) ${f.name}") }
+                            if (cancelled()) d.deleteRecursively() else s.deleteRecursively()
+                        }
+                        if (!cancelled()) { made.add(d); ok++ }
+                    }
+                } catch (e: Exception) { LogStore.err("Fm:drop", e); fail++ }
+            }
+            FmUtil.scan(this, made)
+            "✓ تم: $ok" + (if (fail > 0) "  ·  فشل: $fail" else "") + (if (cancelled()) "  ·  اتلغى" else "")
+        }
     }
 
     private fun toggleSel(fi: FmItem) {

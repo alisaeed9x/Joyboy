@@ -106,7 +106,7 @@ class MainActivity : Activity() {
         super.onCreate(b)
         if (fromPlayer) requestedOrientation = if (intent?.getBooleanExtra("land", false) == true) ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE else ActivityInfo.SCREEN_ORIENTATION_PORTRAIT   // الإعدادات من المشغّل: بنفس اتجاه المشغّل
         UiWatchdog.start()
-        Cfg.init(this); CrashLog.install(this); YtFast.startup()
+        Cfg.init(this); CrashLog.install(this); YtFast.startup(); OpenCodeAuto.start(this)   // (v387) تجهيز أوبن كود تلقائي في الخلفية
         val th = Themes.byId(Cfg.str("theme", "mx"))
         val ui = Ui(this, th)
         applyBars(th)
@@ -369,11 +369,16 @@ class MainActivity : Activity() {
         // (v355) إعدادات يوتيوب جوه إعدادات البرنامج (بدل الدايلوج المنفصل)
         val ytQ = listOf("أعلى جودة", "1080p", "720p", "480p", "360p", "240p")
         val ytQv = intArrayOf(0, 1080, 720, 480, 360, 240)
+        val ytLangN = listOf("العربية", "الأصلي", "English", "Français", "Español", "Türkçe", "Deutsch", "Русский", "हिन्दी")
+        val ytLangV = listOf("ar", "orig", "en", "fr", "es", "tr", "de", "ru", "hi")
         var settingsDlg0: TabbedDialog? = null; var qui0: QueueUi? = null
         val ytSettingsViews: List<View> = listOf(
             ui.section("🎞 الجودة الافتراضية", true,
                 ui.chips(ytQ, { ytQ[ytQv.indexOf(Cfg.int("yt_maxh", 0)).coerceAtLeast(0)] }) { n -> Cfg.put("yt_maxh", ytQv[ytQ.indexOf(n).coerceAtLeast(0)].toString()) },
                 ui.text("أعلى جودة بيتفتح بيها الفيديو. على الداتا اختار 360p أو 480p.", 12f, th.muted)),
+            ui.section("🔊 لغة صوت الفيديو", true,
+                ui.chips(ytLangN, { ytLangN[ytLangV.indexOf(YtLang.pref()).coerceAtLeast(0)] }) { n -> Cfg.put("yt_alang", ytLangV[ytLangN.indexOf(n).coerceAtLeast(0)]); YtExtract.clearPicks(); YtFast.clearCache() },
+                ui.text("لو الفيديو له أكتر من لغة صوت بيفتح بالعربي، ولو مفيش عربي بيفتح بالصوت الأصلي. وفي المشغّل بيظهر مربع 🔊 جنب الجودة تبدّل بين اللغات.", 12f, th.muted)),
             ui.section("🔔 الإشعارات والسجل", true,
                 ui.switchRow("🔔 إشعارات الفيديوهات الجديدة من اشتراكاتي", YtNotify.enabled()) { YtNotify.setEnabled(this, it) },
                 ui.switchRow("🕘 حفظ سجل المشاهدة", YtStore.histOn()) { Cfg.put("ytp_hist_on", if (it) "1" else "0") }),

@@ -434,7 +434,7 @@ class Engine(
                         if (e is ExtLlm.LlmErr) ExtTranslate.noteFail("llm_" + via.id, ExtLlm.key(via).hashCode(), e)
                         host.log("⚠ تحويل اللهجة بـ ${via.label} فشل: " + (e.message ?: e.javaClass.simpleName).take(110))
                         if (keyless) throw e
-                        warnUser("convvia", "⚠ ${via.label} وقف في تحويل اللهجة — اتحوّل لجيميناي")
+                        warnUser("convvia", "🔄 فشل ${via.label} في تحويل اللهجة — تم التحويل لجيميناي")
                     }
                 }
                 if (rw == null) {
@@ -1317,7 +1317,9 @@ class Engine(
             } catch (e: Exception) { releaseToFull(t, "فشل تطبيق الترجمة: " + (e.message ?: "").take(80)) }
         }
         if (released > 0 && TrWizard.googleOn()) {   // (v274) المحركات الخارجية وجوجل ماكمّلوش: الباتشات دي بترجع كطلب كامل (احتياطي ثم صوت ← ترجمة) بمفاتيح جيميناي
-            swapNotice(if (keyless) "⚠ محركات الترجمة وقفت ومفيش مفتاح جيميناي — $released باتش هيتعاد لما تشتغل" else "⚠ محركات الترجمة (${ExtTranslate.chainLabel().substringBeforeLast(" ← ")}) ما كمّلتش — $released باتش اتحوّل لجيميناي بمفاتيحك")
+            // (v389) إشعار واحد «فشل ← اتحوّل» وبس؛ لو مفيش تحويل (مفيش مفتاح جيميناي) مفيش إشعار (اللوج بس)
+            if (keyless) host.log("⚠ محركات الترجمة وقفت ومفيش مفتاح جيميناي — $released باتش هيتعاد لما تشتغل")
+            else swapNotice("🔄 فشلت محركات الترجمة (${ExtTranslate.chainLabel().substringBeforeLast(" ← ")}) — تم التحويل لجيميناي ($released باتش)")
         }
     }
 
@@ -1329,6 +1331,8 @@ class Engine(
     private val warnAtMap = java.util.concurrent.ConcurrentHashMap<String, Long>()
     /** (v258) إشعار للمستخدم بدل ما الخطأ يفضل في اللوج بس. [key] بيحدّد النوع — نفس النوع مرة كل 60 ث بالكتير */
     private fun warnUser(key: String, msg: String) {
+        // (v389) إشعارات «فشل من غير تحويل» مابتظهرش (اللوج بس) — الإشعار الوحيد هو «فشل ← تم التحويل»
+        if (key in quietFailKeys) { host.log(msg); return }
         if (keyless) return   // (v259) من غير مفتاح: خطوات جيميناي الجانبية بتتخطّى بهدوء (الإشعار الأساسي بيتعرض مرة واحدة)
         val n = System.currentTimeMillis()
         val last = warnAtMap[key] ?: 0L
@@ -1345,6 +1349,7 @@ class Engine(
         whoKind = kind; whoAt = n
         try { host.notice(kind + detail) } catch (_: Throwable) {}
     }
+    private val quietFailKeys = setOf("conv", "ctx", "part", "refine")
     @Volatile private var swapNoticeAt = 0L   // (v274) آخر إشعار «محرك وقف ← التاني كمّل» (مرة كل 20 ث بالكتير)
     private val skipNoted = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()   // (v274) مزوّدين اتقال إنهم موقوفين (بيتشالوا لما يرجعوا)
     /** (v274) إشعار تبديل محرك الترجمة + سطر في اللوج */
@@ -1355,7 +1360,7 @@ class Engine(
         val g = googleItems(items.map { it.original })
         var n = 0
         for ((q, o) in missing.withIndex()) g.getOrNull(q)?.takeIf { it.isNotBlank() }?.let { tr[o] = it.trim(); pv[o] = ""; n++ }
-        if (n > 0) swapNotice("🔄 جيميناي وقف في الترجمة — $n جملة اتترجمت بـ " + ExtTranslate.chainLabel().substringBeforeLast(" ← ") + " (فصحى؛ اللهجة بتتحوّل بعدين)")
+        if (n > 0) swapNotice("🔄 فشل جيميناي في الترجمة — تم التحويل لـ " + ExtTranslate.chainLabel().substringBeforeLast(" ← ") + " ($n جملة، فصحى؛ اللهجة بتتحوّل بعدين)")
         return n
     }
 
@@ -1495,7 +1500,7 @@ class Engine(
             val nextName = if (si + 1 < steps.size) nm(steps[si + 1]) else "جيميناي (مفاتيحك)"
             if (st != null) {   // مزوّد واقف (مفتاح مرفوض / كوتة / رصيد): بنعدّيه من غير ما نبعتله حاجة، وبنقول مرة واحدة بس
                 val bw = ExtTranslate.blockedWhy(st.id, st.keyHash())
-                if (bw != null) { if (skipNoted.add(st.id)) swapNotice("⏸ ${st.label} موقوف ($bw) — الترجمة بتكمّل بـ $nextName"); continue }
+                if (bw != null) { if (skipNoted.add(st.id)) swapNotice("🔄 فشل ${st.label} ($bw) — تم التحويل لـ $nextName"); continue }
                 skipNoted.remove(st.id)
             }
             if (st == null) viaGoogle(need) else viaExt(st, need)
@@ -1504,7 +1509,7 @@ class Engine(
             if (left > 0) {
                 val why = if (st == null) "ما ردّش" else ExtTranslate.lastError.ifEmpty { "ما كمّلش" }
                 if (st != null) skipNoted.add(st.id)
-                swapNotice("🔀 ${nm(st)} وقف ($why) — $left جملة هيكمّلها $nextName")
+                swapNotice("🔄 فشل ${nm(st)} ($why) — تم التحويل لـ $nextName ($left جملة)")
             }
         }
         if (who.isNotEmpty()) noteWho("✅ بيترجم بـ " + who.keys.joinToString(" + "), " — " + who.entries.joinToString(" · ") { it.value.toString() + " جملة" })
@@ -1610,7 +1615,7 @@ class Engine(
                         if (okN == 0) {
                             host.log("⚠ ترجمة جوجل: مفيش جملة اترجمت (النت أو جوجل واقف) — الباتشات هتتسلّم لجيميناي")
                             val now = System.currentTimeMillis()
-                            if (now - gtNoticeAt > 30_000L) { gtNoticeAt = now; host.notice(if (!TrWizard.online()) TrWizard.NO_NET_MSG else if (keyless) "⚠ محركات الترجمة مردّتش ومفيش مفتاح جيميناي — هيتحاول تاني لما يرجعوا" else "⚠ محركات الترجمة (${ExtTranslate.chainLabel().substringBeforeLast(" ← ")}) مردّتش — الترجمة اتحوّلت لجيميناي بمفاتيحك") }   // (v255)
+                            if (now - gtNoticeAt > 30_000L) { gtNoticeAt = now; (if (!TrWizard.online()) TrWizard.NO_NET_MSG else if (keyless) null else "🔄 فشلت محركات الترجمة (${ExtTranslate.chainLabel().substringBeforeLast(" ← ")}) — تم التحويل لجيميناي")?.let { m -> host.notice(m) } }   // (v255)
                             break
                         }
                         continue

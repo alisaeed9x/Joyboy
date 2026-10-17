@@ -120,14 +120,14 @@ object Offline {
     fun transcribe(wav: ByteArray, durSec: Double, terms: String, log: (String) -> Unit, fallback: () -> Api.Result, warn: (String) -> Unit = {}, sess: Session? = null): Api.Result {
         ranOffline.set(false)
         val eng = engine()
-        if (Cfg.str("stt_engine", "whisper") == "sherpa" && eng.id == "whisper") softNotice("🎙 SenseVoice مش بيفهم لغة الكلام المختارة أو مش شغّال على جهازك — Whisper هو اللي بينسخ", warn)   // (v257)
+        if (Cfg.str("stt_engine", "whisper") == "sherpa" && eng.id == "whisper") softNotice("🔄 فشل SenseVoice (مش بيفهم لغة الكلام أو مش شغّال على جهازك) — تم التحويل لـ Whisper", warn)   // (v257)
         val tq = System.currentTimeMillis()
         lock.lock()
         try {
             val waited = System.currentTimeMillis() - tq
             if (waited > 5000) log("⏳ الأوفلاين: الباتش استنى دوره ${waited / 1000}ث (التفريغ واحد في المرة)")
             eng.prepare(log)
-            val pcm = toFloats(wav) ?: run { log("⚠ الأوفلاين: صيغة الصوت مش مدعومة — جيميناي هو اللي نسخ الباتش"); softNotice("⚠ الأوفلاين: صيغة الصوت مش مدعومة — " + who(), warn); return fallback() }
+            val pcm = toFloats(wav) ?: run { log("⚠ الأوفلاين: صيغة الصوت مش مدعومة — جيميناي هو اللي نسخ الباتش"); switchNote("صيغة الصوت مش مدعومة", warn); return fallback() }
             val t0 = System.currentTimeMillis()
             log("📴 بدأ التفريغ (${eng.id}): ${"%.0f".format(durSec)}ث صوت · ${threads()} خيوط")   // (v263)
             val manual = lang()
@@ -144,19 +144,22 @@ object Offline {
             return Api.Result(toJson(res, outLang), "STOP")
         } catch (e: SttInitFail) {
             log("⚠ الأوفلاين: ${e.message} — جيميناي هو اللي بينسخ")
-            softNotice("⚠ الأوفلاين مش شغّال: ${e.message} — " + who(), warn)
+            switchNote((e.message ?: "مش شغّال").take(70), warn)
             cool()
             return fallback()
         } catch (e: Throwable) {
             log("⚠ الأوفلاين فشل: ${(e.message ?: e.javaClass.simpleName).take(100)} — جيميناي هو اللي بينسخ الباتش ده")
-            if (++fails >= 3) { cool(); fails = 0; log("🛟 الأوفلاين فشل 3 مرات ورا بعض — جيميناي بينسخ 5 دقايق"); softNotice("🛟 الأوفلاين فشل 3 مرات ورا بعض — " + (if (noFallback()) "مفيش مفتاح جيميناي، هكمّل أحاول" else "جيميناي بينسخ 5 دقايق"), warn) }
-            else softNotice("⚠ الأوفلاين فشل في باتش — " + (if (noFallback()) "مفيش مفتاح جيميناي، هيتعاد" else "جيميناي نسخه"), warn)
+            if (++fails >= 3) { cool(); fails = 0; log("🛟 الأوفلاين فشل 3 مرات ورا بعض — جيميناي بينسخ 5 دقايق"); switchNote("فشل 3 مرات ورا بعض — جيميناي بينسخ 5 دقايق", warn) }
+            else switchNote("فشل في باتش", warn)
             return fallback()
         } finally { lock.unlock() }
     }
 
     /** (v259) جيميناي مش موجود يكمّل بدل الأوفلاين لو فشل (مفيش مفتاح حقيقي) */
     private fun noFallback(): Boolean = !TrWizard.hasGeminiKey()
+    private fun engName(): String = when (engine().id) { "remote" -> "التفريغ السحابي"; "sherpa" -> "SenseVoice"; else -> "Whisper" }
+    /** (v389) إشعار واحد «فشل ← تم التحويل لجيميناي»؛ لو مفيش مفتاح جيميناي (مفيش تحويل) مفيش إشعار (اللوج بس) */
+    private fun switchNote(reason: String, warn: (String) -> Unit) { if (!noFallback()) softNotice("🔄 فشل " + engName() + " ($reason) — تم التحويل لجيميناي", warn) }
     private fun who(): String = if (noFallback()) "مفيش مفتاح جيميناي يكمّل بدله — الباتش هيتعاد" else "جيميناي بينسخ"
     /** راحة الأوفلاين 5 دقايق بعد الأعطال — إلا لو مفيش مفتاح (مفيش بديل، فنكمّل نحاول) */
     private fun cool() { if (!noFallback()) coolUntil = System.currentTimeMillis() + 300_000L }

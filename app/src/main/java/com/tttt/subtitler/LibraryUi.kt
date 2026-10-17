@@ -266,7 +266,11 @@ class LibraryUi(
     private fun sortKey() = Cfg.str(K + "lib_sort", VideoLib.SORT_NAME)
 
     // ===== (v299) التوزيع الذكي =====
-    private fun dist(): String { val d = Cfg.str(K + "lib_dist", "smart"); return if (DISTS.any { it.first == d }) d else "smart" }
+    private fun dist(): String {
+        // (v390) الافتراضي بقى «فولدرات» (مرتّبة بالاسم A→Z) بدل «ذكي»؛ مرة واحدة بس بتتطبّق على اللي قبل كده، وبعدها اختيارك بيتحفظ
+        if (Cfg.str(K + "lib_dist_mig", "") != "390") { Cfg.put(K + "lib_dist", "folders"); Cfg.put(K + "lib_dist_mig", "390") }
+        val d = Cfg.str(K + "lib_dist", "folders"); return if (DISTS.any { it.first == d }) d else "folders"
+    }
     /** شجرة الفولدرات اللي بتتعرض: ذكي = مسلسلات/مغنيين مجمّعين + باقي الفولدرات الأصلية، غير كده الفولدرات الأصلية */
     private fun buildTree(src: List<VideoItem>): List<FolderItem> {
         val tops: List<FolderItem> = if (dist() == "smart") {

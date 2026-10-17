@@ -48,7 +48,19 @@ object YtAccount {
         return null
     }
     fun loggedIn(): Boolean = cv("SAPISID") != null || cv("__Secure-3PAPISID") != null
-    fun syncDue(): Boolean = System.currentTimeMillis() - (sp?.getLong("sync_at", 0L) ?: 0L) > SYNC_EVERY_MS
+    fun syncDue(every: Long = SYNC_EVERY_MS): Boolean = System.currentTimeMillis() - (sp?.getLong("sync_at", 0L) ?: 0L) > every
+    @Volatile private var syncing = false
+    /** (v389) مزامنة في الخلفية (نفس زرار «🔄 مزامنة الاشتراكات») من غير ما المستخدم يدخل صفحة «أنت»؛ مرة واحدة في نفس الوقت */
+    fun syncAsync(force: Boolean = false, onDone: (Int) -> Unit = {}) {
+        if (syncing || !loggedIn()) return
+        if (!force && System.currentTimeMillis() - lastSyncAt() < 60_000L) return   // مش أكتر من مرة في الدقيقة
+        syncing = true
+        Thread {
+            try { val n = syncSubs(); LogStore.add("🔄 مزامنة تلقائية للاشتراكات: +$n قناة"); onDone(n) }
+            catch (e: Throwable) { LogStore.add("⚠ المزامنة التلقائية فشلت: " + (e.message ?: e.javaClass.simpleName).take(120)) }
+            finally { syncing = false }
+        }.also { it.isDaemon = true; it.start() }
+    }
     fun lastSyncAt(): Long = sp?.getLong("sync_at", 0L) ?: 0L
     fun chanCount(): Int = sp?.getInt("chan_n", 0) ?: 0
 

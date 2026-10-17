@@ -35,6 +35,29 @@ class YtRes(val items: List<NpItem>, val next: Page?)
 class YtDetail(val id: String, val title: String, val channel: String, val channelUrl: String, val desc: String, val views: Long,
                val likes: Long, val age: String, val thumb: String, val dur: Long, val related: List<NpItem>)
 class YtPick(val url: String, val audio: String?, val ua: String, val title: String, val h: Int, val qlist: String = "", val durMs: Long = 0L)
+
+/** (v388) لغة صوت يوتيوب: التفضيل (yt_alang: ar افتراضي · orig = الأصلي · أو كود لغة) + اختيار المسار + اسمه بالعربي */
+object YtLang {
+    fun pref(): String = try { Cfg.str("yt_alang", "ar").trim().lowercase().ifBlank { "ar" } } catch (_: Throwable) { "ar" }
+    fun code(raw: String): String = raw.substringBefore('.').substringBefore('-').substringBefore('_').trim().lowercase()
+    fun name(lang: String, orig: Boolean): String {
+        val n = if (lang.isBlank()) "؟" else try { java.util.Locale(lang).getDisplayLanguage(java.util.Locale("ar")).ifBlank { lang } } catch (_: Throwable) { lang }
+        return if (orig) "$n (الأصلي)" else n
+    }
+    class Tr(val lang: String, val orig: Boolean, val dflt: Boolean, val url: String, val bitrate: Int)
+    /** لغتك المفضّلة لو موجودة، وإلا الأصلي، وإلا الافتراضي، وإلا الأول (الأعلى جودة) */
+    fun choose(tr: List<Tr>, pref: String = pref()): Tr? {
+        if (tr.isEmpty()) return null
+        if (pref != "orig") tr.firstOrNull { it.lang == pref }?.let { return it }
+        return tr.firstOrNull { it.orig } ?: tr.firstOrNull { it.dflt } ?: tr.first()
+    }
+    /** [{n: الاسم, l: اللغة, u: الرابط, c: 1 للمختار}] — بتتحط في أول عنصر من qlist تحت المفتاح "at" */
+    fun json(tr: List<Tr>, chosen: Tr?): org.json.JSONArray {
+        val a = org.json.JSONArray()
+        for (t in tr) a.put(org.json.JSONObject().put("n", name(t.lang, t.orig)).put("l", t.lang).put("u", t.url).put("c", if (t === chosen) 1 else 0))
+        return a
+    }
+}
 class NpChan(val name: String, val first: YtRes, val more: (Page) -> YtRes)
 
 /** (v325) Downloader بتاع NewPipeExtractor على HttpURLConnection (من غير مكتبة إضافية) */
@@ -77,6 +100,10 @@ object YtNp {
         NewPipe.init(YtDownloader, Localization("ar", "EG"), ContentCountry("EG"))
         ready = true
     }
+
+    /** (v389) إعادة تهيئة NewPipe ومسح كاش الرئيسية — بتتنادى لما الرئيسية تفضى بعد فترة (علاج ذاتي بدل المزامنة اليدوية) */
+    fun clearHome() { homeC = null }
+    @Synchronized fun reset() { ready = false; homeC = null }
 
     fun idOf(url: String): String = try { YT.streamLHFactory.getId(url) } catch (_: Throwable) { "" }
     fun watchUrl(id: String) = "https://www.youtube.com/watch?v=$id"
@@ -170,18 +197,26 @@ object YtNp {
         val bestAud = aud.firstOrNull { it.format?.suffix == "m4a" } ?: aud.firstOrNull()
         val ua = "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Mobile Safari/537.36"
         val ttl = i.name ?: ""
+        // (v388) مسارات الصوت (لغات): نختار لغتك المفضّلة (عربي افتراضيًا) بدل أعلى bitrate عشوائي (كان بيجيب الدبلجة الإنجليزي أحيانًا)
+        val trs = audioTracks(aud)
+        val multi = trs.size > 1
+        val chTr = if (multi) YtLang.choose(trs) else null
+        val audUrl: String? = chTr?.url ?: bestAud?.content
         // (v327) كل الجودات المتاحة (نفس شكل YtExtract.Pick.optsJson: l/u/a/h) عشان زرار الجودة في المشغّل يشتغل
         val byH = HashMap<Int, Array<String?>>()   // h -> [label, url, audio]
-        for (m in mux) if (m.height > 0 && !byH.containsKey(m.height)) byH[m.height] = arrayOf(m.height.toString() + "p", m.content, null)
-        if (bestAud != null) for (v in vo.sortedByDescending { it.bitrate }) {
+        fun addMux() { for (m in mux) if (m.height > 0 && !byH.containsKey(m.height)) byH[m.height] = arrayOf(m.height.toString() + "p", m.content, null) }
+        fun addVo() { if (audUrl != null) for (v in vo.sortedByDescending { it.bitrate }) {
             if (v.height <= 0 || byH.containsKey(v.height)) continue
-            byH[v.height] = arrayOf(v.height.toString() + "p", v.content, bestAud.content)
-        }
+            byH[v.height] = arrayOf(v.height.toString() + "p", v.content, audUrl)
+        } }
+        // أكتر من لغة صوت: الفيديو-بس + الصوت المختار الأول (عشان لغة الصوت تتبدّل)، والمدمج (بصوته الافتراضي) للارتفاعات الناقصة بس
+        if (multi) { addVo(); addMux() } else { addMux(); addVo() }
         if (byH.isNotEmpty()) {
             val hs = byH.keys.sortedDescending()
             val h = (if (maxH > 0) hs.firstOrNull { it <= maxH } ?: hs.last() else hs.first())
             val arr = org.json.JSONArray()
             for (k in hs) { val o = byH[k]!!; arr.put(org.json.JSONObject().put("l", o[0]).put("u", o[1]).put("a", o[2] ?: "").put("h", k)) }
+            if (multi) arr.optJSONObject(0)?.put("at", YtLang.json(trs, chTr))
             val c = byH[h]!!
             return YtPick(c[1]!!, c[2], ua, ttl, h, arr.toString())
         }
@@ -190,13 +225,32 @@ object YtNp {
         return null
     }
 
+    /** (v388) مسارات الصوت مجمّعة باللغة (بنتخطى الوصف الصوتي)؛ لكل لغة أعلى جودة (m4a أولًا) */
+    private fun audioTracks(aud: List<org.schabi.newpipe.extractor.stream.AudioStream>): List<YtLang.Tr> {
+        val by = LinkedHashMap<String, MutableList<org.schabi.newpipe.extractor.stream.AudioStream>>()
+        for (a in aud) {
+            if (a.audioTrackType?.name == "DESCRIPTIVE") continue
+            val lg = (a.audioLocale?.language ?: "").lowercase().ifBlank { YtLang.code(a.audioTrackId ?: "") }
+            if (lg.isBlank()) continue
+            by.getOrPut(lg) { ArrayList() }.add(a)
+        }
+        val out = ArrayList<YtLang.Tr>()
+        for ((lg, l) in by) {
+            val b = l.filter { it.format?.suffix == "m4a" }.maxByOrNull { it.averageBitrate } ?: l.maxByOrNull { it.averageBitrate } ?: continue
+            out.add(YtLang.Tr(lg, l.any { it.audioTrackType?.name == "ORIGINAL" }, false, b.content, b.averageBitrate))
+        }
+        return out
+    }
+
     /** (v337) رابط الصوت بس (m4a لو متاح، وإلا أعلى جودة) من غير أي داتا فيديو — للتشغيل في مشغّل الموسيقى وللتحميل */
     fun pickAudio(id: String): YtPick? {
         val i = info(id)
         val aud = i.audioStreams.filter { !it.content.isNullOrBlank() }.sortedByDescending { it.averageBitrate }
         val b = aud.firstOrNull { it.format?.suffix == "m4a" } ?: aud.firstOrNull() ?: return null
         val ua = "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Mobile Safari/537.36"
-        return YtPick(b.content, null, ua, i.name ?: "", 0, "", if (i.duration > 0L) i.duration * 1000L else 0L)
+        val trs = audioTracks(aud)   // (v388) أغاني/صوت بس: الأصلي (مش الدبلجة)
+        val au = (if (trs.size > 1) YtLang.choose(trs, "orig")?.url else null) ?: b.content
+        return YtPick(au, null, ua, i.name ?: "", 0, "", if (i.duration > 0L) i.duration * 1000L else 0L)
     }
 
     /** (v326) تعليقات الفيديو (kind 3: title = النص · channel = الكاتب · count = لايكات · thumb = صورته) */
@@ -295,6 +349,9 @@ object YtNp {
         if (partial.items.isEmpty() && (subTh.isAlive || ths.any { it.isAlive })) { waitAll(t0 + 50_000L); partial = assemble() }
         if (partial.items.isEmpty() && YtAccount.loggedIn()) {
             try { val v = YtAccount.listFirst("FEsubscriptions").items.filter { it.kind == 0 }; if (v.isNotEmpty()) partial = YtRes(v, null) } catch (_: Throwable) {}
+        }
+        if (partial.items.isEmpty() && YtAccount.loggedIn()) {   // (v389) آخر بديل: رئيسية حسابك الرسمية
+            try { val v = YtAccount.listFirst("FEwhat_to_watch").items.filter { it.kind == 0 }; if (v.isNotEmpty()) partial = YtRes(v, null) } catch (_: Throwable) {}
         }
         val stillBusy = subTh.isAlive || ths.any { it.isAlive }
         LogStore.add("⏱ يوتيوب الرئيسية: " + (System.currentTimeMillis() - t0) + "ms · " + partial.items.size + " فيديو" + (if (stillBusy) " (الباقي بيكمّل في الخلفية)" else ""))
