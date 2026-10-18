@@ -197,6 +197,16 @@ object YtNotify {
 
     fun enabled() = Cfg.bool(KEY, true)
 
+    // (v403) إشعار لكل قناة: القنوات اللي قفلت إشعاراتها (الباقي شغّال لو الإشعارات العامة شغّالة)
+    private const val OFF = "ytp_notif_off"
+    private fun offSet(): HashSet<String> = HashSet(Cfg.str(OFF, "").split("\n").filter { it.isNotBlank() })
+    fun chanOn(url: String): Boolean { val id = YtRss.chanId(url) ?: return true; return !offSet().contains(id) }
+    fun setChanOn(url: String, on: Boolean) {
+        val id = YtRss.chanId(url) ?: return
+        val s = offSet(); if (on) s.remove(id) else s.add(id)
+        Cfg.put(OFF, s.joinToString("\n"))
+    }
+
     // ───────── (v350) عدّاد الفيديوهات الجديدة على أيقونة يوتيوب ─────────
     private const val OPENED = "ytp_opened"      // آخر مرة فتحت فيها الاشتراكات
     private const val BADGE = "ytp_badge"
@@ -273,11 +283,12 @@ object YtNotify {
         val seen = readSeen(); val fresh = ArrayList<NpItem>()
         val firstRun = seen.isEmpty()
         val newest = HashMap<String, Long>()
+        val off = offSet()
         for (it in feed) {
             val cid = YtRss.chanId(it.channelUrl) ?: continue
             if (it.ts > (newest[cid] ?: 0L)) newest[cid] = it.ts
             val last = seen[cid]
-            if (last != null && it.ts > last) fresh.add(it)   // قناة جديدة على الإشعارات (من غير سجل) = خط أساس من غير إشعار
+            if (last != null && it.ts > last && !off.contains(cid)) fresh.add(it)   // قناة جديدة على الإشعارات (من غير سجل) = خط أساس من غير إشعار
         }
         for ((k, v) in newest) if (v > (seen[k] ?: 0L)) seen[k] = v
         writeSeen(seen)

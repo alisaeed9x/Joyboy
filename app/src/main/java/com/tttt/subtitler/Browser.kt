@@ -152,6 +152,7 @@ class BTab(val id: Long) {
     var thumb: android.graphics.Bitmap? = null
     @Volatile var gen = 0            // (v203) جيل الصفحة الحالية: كل صفحة جديدة بتزوّده فاللقطات القديمة بتتمسح
     var capUrl = ""
+    var hold: PopupGuard.Hold? = null   // (v401) بوب-أب في الحجر: مش في قايمة التبويبات لحد ما نحكم عليه
 }
 
 /**
@@ -188,6 +189,10 @@ class BrowserActivity : Activity() {
     @Volatile private var dead = false
     private var adOn = true
     private var blockedN = 0
+    private var lastTouchAt = 0L                                  // (v401) آخر لمسة منك (بوب-أب بعد لمسة ≠ بوب-أب من نفسه)
+    private var lastPopNotice = 0L
+    private val holds = ArrayList<PopupGuard.Hold>()              // (v401) بوب-أبات في الحجر
+    private val blockedPops = ArrayList<PopupGuard.Blocked>()     // (v401) آخر اللي اتمنع (للعرض و«افتحه»)
     private lateinit var ctl: LinearLayout
     private lateinit var shield: TextView
     private lateinit var frame: FrameLayout
@@ -422,7 +427,7 @@ class BrowserActivity : Activity() {
             javaScriptEnabled = true; domStorageEnabled = true; mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
             setSupportZoom(true); builtInZoomControls = true; displayZoomControls = false
             useWideViewPort = true; loadWithOverviewMode = true
-            setSupportMultipleWindows(true); javaScriptCanOpenWindowsAutomatically = false
+            setSupportMultipleWindows(true); javaScriptCanOpenWindowsAutomatically = popMode() != PopupGuard.OFF   // (v401) الذكي بيشوف كل بوب-أب ويحكم عليه بنفسه
         }
         if (uaWeb.isEmpty()) uaWeb = w.settings.userAgentString ?: ""
         if (t.desktop) w.settings.userAgentString = DESK_UA
@@ -431,6 +436,9 @@ class BrowserActivity : Activity() {
         w.setBackgroundColor(Color.WHITE)
         w.webChromeClient = object : WebChromeClient() {
             override fun onCreateWindow(v: WebView?, isDialog: Boolean, isUserGesture: Boolean, resultMsg: Message?): Boolean {
+                // (v401) المانع الذكي: البوب-أب بيتفتح في الحجر وبنحكم عليه (إعلان = يتقفل · صفحة مشاهدة = تبويب)
+                if (t.hold != null) { popBlocked("", listOf("بوب-أب جوه بوب-أب"), true); return true }
+                if (popMode() != PopupGuard.OFF) return popupWindow(t, v, isUserGesture, resultMsg)
                 // نافذة جديدة بلمسة منك = تبويب جديد؛ من غير لمسة (بوب-أب) بتتمنع لو مانع الإعلانات شغال
                 if (!isUserGesture && adOn) return true
                 val nt = newTab(null, true, t.id, t.priv)
@@ -444,12 +452,13 @@ class BrowserActivity : Activity() {
             }
             override fun onReceivedTitle(v: WebView?, title: String?) {
                 if (title.isNullOrBlank()) return
-                t.title = title; v?.url?.let { if (!t.priv) BrowserStore.setTitle(this@BrowserActivity, it, title); pageTitles[it] = title }
+                t.title = title; v?.url?.let { if (!t.priv && t.hold == null) BrowserStore.setTitle(this@BrowserActivity, it, title); pageTitles[it] = title }
                 noteYt(v?.url, title)
                 if (tabsDlg?.isShowing == true) renderTabs()
             }
             override fun onShowCustomView(view: View?, cb: CustomViewCallback?) {
                 if (view == null) return
+                if (t.hold != null) { cb?.onCustomViewHidden(); return }   // (v401) بوب-أب في الحجر مايخطفش الشاشة
                 if (customView != null) { cb?.onCustomViewHidden(); return }
                 customView = view; customCb = cb
                 customBox.addView(view, FrameLayout.LayoutParams(-1, -1)); customBox.visibility = View.VISIBLE; content.visibility = View.GONE
@@ -466,12 +475,31 @@ class BrowserActivity : Activity() {
             override fun shouldInterceptRequest(v: WebView, r: WebResourceRequest): WebResourceResponse? {
                 val u = r.url.toString()
                 val g0 = t.gen
-                Sniff.accept(u)?.let { a -> h.post { if (!dead) addFound(Found(a, Sniff.kindOf(a), "", v.url ?: t.url, uaOf(t)), t, g0) } }
+                Sniff.accept(u)?.let { a ->
+                    val hd = t.hold
+                    if (hd != null) { hd.media = true; if (hd.sniffed.size < 6) hd.sniffed.add(a) }   // (v401) فيديو في بوب-أب = دليل إنه صفحة مشاهدة
+                    else h.post { if (!dead) addFound(Found(a, Sniff.kindOf(a), "", v.url ?: t.url, uaOf(t)), t, g0) }
+                }
                 if (adOn && AdBlock.blocked(u)) { blockedN++; h.post { if (!dead) shield.text = "🛡 $blockedN" }; return WebResourceResponse("text/plain", "utf-8", java.io.ByteArrayInputStream(ByteArray(0))) }
                 return null
             }
             override fun shouldOverrideUrlLoading(v: WebView, r: WebResourceRequest): Boolean {
                 val u = r.url.toString()
+                val hd = t.hold
+                if (hd != null) {   // (v401) بوب-أب في الحجر: كل خطوة تحويل بتتسجّل
+                    if (!u.startsWith("http")) {
+                        if (!u.startsWith("about:") && !u.startsWith("data:") && !u.startsWith("blob:")) h.post { popKill(hd, u, listOf("بيحاول يفتح تطبيق/سوق")) }
+                        return true
+                    }
+                    hd.addUrl(u)
+                    if (adOn && AdBlock.blocked(u)) { h.post { popKill(hd, u, listOf("شبكة إعلانات معروفة")) }; return true }
+                    return false
+                }
+                if (r.isForMainFrame && !r.hasGesture() && popMode() != PopupGuard.OFF && android.os.SystemClock.uptimeMillis() - lastTouchAt > 1500L) {
+                    // (v401) تحويل تلقائي للصفحة نفسها من غير لمسة لينك شكله إعلان
+                    val why = ArrayList<String>()
+                    if (u.startsWith("http") && PopupGuard.urlScore(u, why) >= 5 && !PopupGuard.sameReg(PopupGuard.hostOf(u), PopupGuard.hostOf(v.url ?: ""))) { popBlocked(u, why + "تحويل تلقائي من غير لمسة", false); return true }
+                }
                 if (!u.startsWith("http")) {
                     if (u.startsWith("tel:") || u.startsWith("mailto:") || u.startsWith("sms:") || u.startsWith("geo:")) {
                         try { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(u))) } catch (_: Throwable) {}
@@ -483,15 +511,30 @@ class BrowserActivity : Activity() {
                 return false
             }
             override fun onPageStarted(v: WebView, url: String?, f: android.graphics.Bitmap?) {
+                val hd = t.hold
+                if (hd != null) {   // (v401) بوب-أب في الحجر
+                    if (url != null && !url.startsWith("data:")) { t.url = url; hd.addUrl(url); h.post { popDecide(hd, false) } }
+                    v.evaluateJavascript(adJs(), null)
+                    return
+                }
                 if (url != null && !url.startsWith("data:")) { t.url = url; newPage(t, url) }
                 if (t === tabs.getOrNull(curIdx)) { showUrl(url); updateNav() }
-                if (adOn) v.evaluateJavascript(AdBlock.JS, null)
+                if (adOn) v.evaluateJavascript(adJs(), null)
             }
             override fun doUpdateVisitedHistory(v: WebView, url: String?, isReload: Boolean) {
+                val hd = t.hold
+                if (hd != null) { if (url != null && !url.startsWith("data:")) { t.url = url; hd.addUrl(url) }; return }
                 if (url != null && !url.startsWith("data:")) { t.url = url; newPage(t, url); noteYt(url, null) }
                 if (t === tabs.getOrNull(curIdx)) { showUrl(url); updateNav() }
             }
             override fun onPageFinished(v: WebView, url: String?) {
+                val hd = t.hold
+                if (hd != null) {   // (v401) بوب-أب في الحجر: نسيبه لحظة يخلّص تحويلاته وبعدين نفحصه
+                    if (url != null && !url.startsWith("data:")) { t.url = url; hd.addUrl(url) }
+                    v.evaluateJavascript(adJs(), null)
+                    h.postDelayed({ popProbe(hd) }, 700L)
+                    return
+                }
                 if (url != null && !url.startsWith("data:")) {
                     t.url = url
                     val ti = v.title?.takeIf { it.isNotBlank() } ?: ""
@@ -501,11 +544,12 @@ class BrowserActivity : Activity() {
                 }
                 if (t.id == panicClearId && (url ?: "").contains("google.")) { try { v.clearHistory() } catch (_: Throwable) {}; endPanicCover(); updateNav() }   // (v231) الرجوع مايرجّعش الصفحة اللي اتمسحت
                 if (t === tabs.getOrNull(curIdx)) { showUrl(url); updateNav(); updateStar(); scanOnce() }
-                if (adOn) v.evaluateJavascript(AdBlock.JS, null)
+                if (adOn) v.evaluateJavascript(adJs(), null)
                 persistTabs()
             }
             override fun onReceivedError(v: WebView, r: WebResourceRequest, e: android.webkit.WebResourceError) {
                 if (!r.isForMainFrame) return
+                if (t.hold != null) return   // (v401) بوب-أب في الحجر: المهلة هتحكم
                 val u = r.url.toString()
                 if (u.startsWith("data:") || t.errUrl == u) return
                 t.errUrl = u
@@ -936,6 +980,9 @@ class BrowserActivity : Activity() {
             adOn = v; prefs().edit().putBoolean("adblock", v).apply()
             shield.text = if (adOn) "🛡 $blockedN" else "🛡✗"; shield.alpha = if (adOn) 1f else 0.5f
         })
+        box.addView(ui.text("🚫 البوب-أب (النوافذ المنبثقة)", 12f, th.muted).apply { setPadding(0, ui.dp(8), 0, ui.dp(2)) })
+        box.addView(ui.chips(listOf("ذكي", "صارم", "مقفول"), { prefs().getString("pop_mode", "ذكي") ?: "ذكي" }) { setPopMode(it) })
+        box.addView(ui.text("ذكي: يفتح البوب-أب في الخفا ويفحصه — إعلان يتقفل، وصفحة تحويل لمشاهدة الفيديو تتفتح تبويب. صارم: بس اللينكات الحقيقية. مقفول: السلوك القديم.", 11f, th.muted).apply { setPadding(0, 0, 0, ui.dp(6)) })
         box.addView(ui.switchRow("🖥 نسخة الكمبيوتر في التبويبات الجديدة", prefs().getBoolean("br_desktop_default", false)) { v -> prefs().edit().putBoolean("br_desktop_default", v).apply() })
         box.addView(ui.switchRow("💾 احفظ التبويبات لما أخرج وارجّعها", prefs().getBoolean("br_save_tabs", true)) { v ->
             prefs().edit().putBoolean("br_save_tabs", v).apply()
@@ -1024,6 +1071,7 @@ class BrowserActivity : Activity() {
     }
     /** لمسة في أي حتة برّا شريط التحميل = «مش عايز أحمّل» (اللمسة نفسها بتكمّل لحد الصفحة عادي) */
     override fun dispatchTouchEvent(ev: android.view.MotionEvent): Boolean {
+        if (ev.actionMasked == android.view.MotionEvent.ACTION_DOWN || ev.actionMasked == android.view.MotionEvent.ACTION_UP) lastTouchAt = android.os.SystemClock.uptimeMillis()
         if (ev.actionMasked == android.view.MotionEvent.ACTION_DOWN && ::dlBar.isInitialized && dlBar.visibility == View.VISIBLE && dlBar.isLaidOut) {
             val r = android.graphics.Rect()
             if (dlBar.getGlobalVisibleRect(r) && !r.contains(ev.rawX.toInt(), ev.rawY.toInt())) hideDl()
@@ -1115,6 +1163,110 @@ class BrowserActivity : Activity() {
         if (repairId != null && !repairPending) { repairPending = true; h.postDelayed({ repairPending = false; autoRepair() }, 2000L) }   // نستنى ثانيتين عشان باقي الجودات توصل
         if (autoOpen && !autoShown) { autoShown = true; showList() }
         else if (dlg?.isShowing != true && vis().size == 1) Notice.show(this, "🎬 لقيت فيديو", 2300L)
+    }
+
+    // ===== (v401) مانع البوب-أب الذكي =====
+    private fun popMode(): Int = if (!adOn) PopupGuard.OFF else PopupGuard.modeOf(prefs().getString("pop_mode", "ذكي"))
+    private fun adJs(): String = if (popMode() != PopupGuard.OFF) AdBlock.JS_SMART + ";" + PopupGuard.TRACK else AdBlock.JS
+    private fun allowedHosts(): Set<String> = try { prefs().getStringSet("pop_allow", emptySet()) ?: emptySet() } catch (_: Throwable) { emptySet() }
+    private fun setPopMode(m: String) {
+        prefs().edit().putString("pop_mode", m).apply()
+        val on = PopupGuard.modeOf(m) != PopupGuard.OFF
+        for (x in tabs) try { x.wv?.settings?.javaScriptCanOpenWindowsAutomatically = on } catch (_: Throwable) {}
+        Notice.show(this, when (m) { "مقفول" -> "مانع البوب-أب اتقفل"; "صارم" -> "مانع البوب-أب: صارم"; else -> "مانع البوب-أب: ذكي" }, 2200L)
+    }
+
+    /** نافذة منبثقة جديدة: من غير ضغطة/لمسة قريبة = إعلان واتمنع فورًا؛ غير كده بتتفتح في الحجر وبنفحصها */
+    private fun popupWindow(opener: BTab, openerView: WebView?, gesture: Boolean, resultMsg: Message?): Boolean {
+        val touchAgo = android.os.SystemClock.uptimeMillis() - lastTouchAt
+        if (!gesture && touchAgo > 2500L) { popBlocked("", listOf("من غير ضغطة منك"), true); return true }
+        if (holds.size >= 3) { popBlocked("", listOf("بوب-أبات كتير ورا بعض"), true); return true }
+        val msg = resultMsg ?: return false
+        val tr = msg.obj as? WebView.WebViewTransport ?: return false
+        val t = BTab(nextId++); t.opener = opener.id; t.priv = opener.priv
+        t.desktop = prefs().getBoolean("br_desktop_default", false)
+        t.wv = makeWebView(t); t.loaded = true
+        val hd = PopupGuard.Hold(t, openerView?.url ?: opener.url, opener.title, gesture, touchAgo)
+        t.hold = hd; holds.add(hd)
+        tr.webView = t.wv; msg.sendToTarget()
+        try { openerView?.evaluateJavascript(PopupGuard.READ_CLICK) { r -> hd.setClick(r) } } catch (_: Throwable) {}
+        val tm = Runnable { popDecide(hd, true) }
+        hd.timer = tm; h.postDelayed(tm, PopupGuard.MAX_WAIT_MS)
+        return true
+    }
+
+    private fun popProbe(hd: PopupGuard.Hold) {
+        if (hd.done || dead) return
+        val w = hd.tab.wv ?: return
+        try { w.evaluateJavascript(PopupGuard.PROBE) { r -> hd.setProbe(r); popDecide(hd, false) } } catch (_: Throwable) {}
+    }
+
+    private fun popDecide(hd: PopupGuard.Hold, final: Boolean) {
+        if (hd.done || dead) return
+        val w = hd.tab.wv
+        val fin = w?.url?.takeIf { it.isNotBlank() && it != "about:blank" } ?: hd.chain.lastOrNull() ?: ""
+        val v = PopupGuard.verdict(hd, fin, popMode(), final, allowedHosts())
+        when (v.action) {
+            PopupGuard.WAIT -> return
+            PopupGuard.ALLOW -> popPromote(hd)
+            else -> popKill(hd, fin, v.why)
+        }
+    }
+
+    /** صفحة سليمة (مشاهدة/لينك حقيقي): تتحوّل لتبويب عادي وتتفتح */
+    private fun popPromote(hd: PopupGuard.Hold) {
+        if (hd.done) return
+        hd.done = true; hd.timer?.let { h.removeCallbacks(it) }; holds.remove(hd)
+        val t = hd.tab; t.hold = null
+        tabs.add(t); refreshTabsCount(); persistTabs()
+        select(tabs.size - 1)
+        for (a in hd.sniffed) addFound(Found(a, Sniff.kindOf(a), "", t.url, uaOf(t)), t)
+    }
+
+    /** إعلان: بيتقفل ويتمسح */
+    private fun popKill(hd: PopupGuard.Hold, url: String, why: List<String>) {
+        if (hd.done) return
+        hd.done = true; hd.timer?.let { h.removeCallbacks(it) }; holds.remove(hd)
+        val t = hd.tab; t.hold = null
+        val w = t.wv; t.wv = null
+        h.post { try { w?.let { (it.parent as? ViewGroup)?.removeView(it); it.stopLoading(); it.destroy() } } catch (_: Throwable) {} }
+        popBlocked(url, why, false)
+    }
+
+    private fun popBlocked(url: String, why: List<String>, silent: Boolean) {
+        blockedN++
+        if (::shield.isInitialized && adOn) shield.text = "🛡 $blockedN"
+        if (url.isBlank() || silent) return
+        blockedPops.add(0, PopupGuard.Blocked(url, why.joinToString(" · "), System.currentTimeMillis()))
+        while (blockedPops.size > 30) blockedPops.removeAt(blockedPops.size - 1)
+        val now = android.os.SystemClock.uptimeMillis()
+        if (now - lastPopNotice < 5000L) return
+        lastPopNotice = now
+        val host = PopupGuard.hostOf(url).ifEmpty { "موقع" }
+        Notice.ask(this, "🚫 بوب-أب اتمنع من «$host»" + (why.firstOrNull()?.let { "\n$it" } ?: "") + " — تفتحه؟", "افتحه", "تمام", 5000L,
+            { allowHost(host); newTab(url, true, tab.id) }, {})
+    }
+
+    private fun allowHost(host: String) {
+        try { val cur = HashSet(allowedHosts()); cur.add(PopupGuard.reg(host)); prefs().edit().putStringSet("pop_allow", cur).apply() } catch (_: Throwable) {}
+    }
+
+    /** ضغطة طويلة على 🛡: الوضع + آخر اللي اتمنع */
+    private fun showPopupSheet() {
+        val box = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL }
+        box.addView(ui.text("بيفتح أي نافذة منبثقة في الخفا الأول ويفحصها: لينكها · ضغطتك · فيها فيديو؟ · نفس اسم الفيلم؟ — لو إعلان بيقفلها، ولو صفحة تحويل لمشاهدة الفيديو بيفتحها تبويب عادي.", 12f, th.muted).apply { setPadding(0, 0, 0, ui.dp(8)) })
+        box.addView(ui.chips(listOf("ذكي", "صارم", "مقفول"), { prefs().getString("pop_mode", "ذكي") ?: "ذكي" }) { setPopMode(it) })
+        box.addView(ui.text("اللي اتمنع في الجلسة دي", 12f, th.muted).apply { setPadding(0, ui.dp(10), 0, ui.dp(2)) })
+        if (blockedPops.isEmpty()) box.addView(ui.text("مفيش بوب-أب اتمنع لسه", 13f, th.muted))
+        for (b in blockedPops.take(12)) {
+            val host = PopupGuard.hostOf(b.url).ifEmpty { b.url.take(40) }
+            val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; gravity = Gravity.CENTER_VERTICAL; setPadding(0, ui.dp(4), 0, ui.dp(4)) }
+            row.addView(ui.text("$host\n${b.why}", 12f), LinearLayout.LayoutParams(0, -2, 1f))
+            row.addView(ui.button("افتح") { allowHost(host); newTab(b.url, true, tab.id) }, LinearLayout.LayoutParams(ui.dp(76), ui.dp(40)))
+            box.addView(row)
+        }
+        box.addView(ui.button("🧹 امسح المواقع اللي سمحت بيها") { prefs().edit().remove("pop_allow").apply(); Notice.show(this, "اتمسحت", 1800L) }, LinearLayout.LayoutParams(-1, ui.dp(46)).apply { topMargin = ui.dp(10) })
+        sheet("🚫 مانع البوب-أب", box).show()
     }
 
     // ===== (v203) صفحة جديدة = اصطياد جديد =====
@@ -1385,6 +1537,7 @@ class BrowserActivity : Activity() {
             textSize = 12f; gravity = Gravity.CENTER; setTextColor(Color.WHITE); setPadding(ui.dp(8), ui.dp(8), ui.dp(8), ui.dp(8))
             background = ui.box(0xB0000000.toInt(), 0x66FFFFFF, 10)
             layoutParams = LinearLayout.LayoutParams(ui.dp(46), -2).apply { setMargins(0, ui.dp(3), 0, ui.dp(3)) }
+            setOnLongClickListener { showPopupSheet(); true }   // (v401) ضغطة طويلة = مانع البوب-أب الذكي
             setOnClickListener {
                 adOn = !adOn; try { prefs().edit().putBoolean("adblock", adOn).apply() } catch (e: Exception) { LogStore.err("Browser:ad", e) }
                 shield.text = if (adOn) "🛡 $blockedN" else "🛡✗"; shield.alpha = if (adOn) 1f else 0.5f

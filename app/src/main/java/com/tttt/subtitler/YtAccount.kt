@@ -305,4 +305,36 @@ object YtAccount {
         sp?.edit()?.putLong("sync_at", System.currentTimeMillis())?.putInt("chan_n", chans.size)?.apply()
         return added
     }
+
+    // ───────── (v403) أفعال على حسابك: اشتراك · لايك · تعليق (best effort — بتفشل بهدوء لو يوتيوب غيّر الشكل) ─────────
+    fun setSubscribed(chanUrl: String, on: Boolean) {
+        val id = YtRss.chanId(chanUrl) ?: throw RuntimeException("مش قادر أعرف معرّف القناة")
+        post(if (on) "subscription/subscribe" else "subscription/unsubscribe",
+            JSONObject().put("context", ctx()).put("channelIds", JSONArray().put(id)))
+    }
+    fun setLiked(videoId: String, on: Boolean) {
+        post(if (on) "like/like" else "like/removelike",
+            JSONObject().put("context", ctx()).put("target", JSONObject().put("videoId", videoId)))
+    }
+    private fun findStr(n: Any?, key: String): String? {
+        when (n) {
+            is JSONObject -> {
+                val d = n.optString(key); if (d.isNotEmpty() && n.opt(key) is String) return d
+                val ks = n.keys(); while (ks.hasNext()) { val r = findStr(n.opt(ks.next()), key); if (r != null) return r }
+            }
+            is JSONArray -> for (i in 0 until n.length()) { val r = findStr(n.opt(i), key); if (r != null) return r }
+        }
+        return null
+    }
+    /** بينشر تعليق على الفيديو (بيجيب بارامتر الإنشاء من قسم التعليقات في ردّ next) */
+    fun postComment(videoId: String, text: String) {
+        val r1 = post("next", JSONObject().put("context", ctx()).put("videoId", videoId))
+        var tok: String? = null
+        walk(r1) { k, o -> if (tok == null && k == "itemSectionRenderer" && o.optString("sectionIdentifier").contains("comment")) tok = findStr(o, "token") }
+        if (tok == null) walk(r1) { k, o -> if (tok == null && k == "engagementPanelSectionListRenderer" && o.optString("panelIdentifier").contains("comments")) tok = findStr(o, "token") }
+        val t = tok ?: throw RuntimeException("ما لقيتش قسم التعليقات (التعليقات مقفولة؟)")
+        val r2 = post("next", JSONObject().put("context", ctx()).put("continuation", t))
+        val params = findStr(r2, "createCommentParams") ?: throw RuntimeException("يوتيوب مدّاش صلاحية التعليق من هنا")
+        post("comment/create_comment", JSONObject().put("context", ctx()).put("createCommentParams", params).put("commentText", text))
+    }
 }

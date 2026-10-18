@@ -48,7 +48,8 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
               private val onImport: () -> Unit,
               private val onAudio: (NpItem) -> Unit = {},                      // (v337) 🎧 صوت بس في مشغّل الموسيقى
               private val onDownload: (NpItem, Boolean) -> Unit = { _, _ -> },
-              private val onPubHistory: () -> Unit = {}) {   // (v349) السجل العام   // (v337) ⬇ تحميل (true = صوت بس)
+              private val onPubHistory: () -> Unit = {},
+              private val onPlayAt: ((String, String, Boolean, Long) -> Unit)? = null) {   // (v402) تشغيل من ثانية معيّنة (زرار التكبير في المشغّل المصغّر)   // (v349) السجل العام   // (v337) ⬇ تحميل (true = صوت بس)
 
     private class St(val title: String, val tab: Int, val items: ArrayList<NpItem>, var next: Page?, val more: ((Page) -> YtRes)?,
                       val chUrl: String?, val chName: String?, val q: String?, val filter: String,
@@ -102,6 +103,11 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
         else { busyView.visibility = View.GONE; busyDr.stop() }
     }
     private val lv = ListView(act)
+    private lateinit var watch: YtWatchPage          // (v402) صفحة المشاهدة (مشغّل مصغّر + تعليقات + مقترحات)
+    private lateinit var chan: YtChannelPage         // (v403) صفحة القناة (بانر + اشتراك + جرس + تابات)
+    private var navBar: View? = null
+    private var navLine: View? = null
+    private var lastDownX = 0
     @Volatile private var animRows = false
     private val statusTv: TextView
     private val search: EditText
@@ -282,7 +288,7 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
         lv.apply {
             divider = null; setBackgroundColor(YtSkin.bg); selector = GradientDrawable().apply { setColor(Color.TRANSPARENT) }
             this.adapter = this@YtProUi.adapter
-            setOnItemClickListener { _, _, p, _ -> cur?.list()?.getOrNull(p)?.let { if (it.kind != 3) open(it) } }
+            setOnItemClickListener { _, view, p, _ -> cur?.list()?.getOrNull(p)?.let { if (it.kind != 3) open(it, view) } }
             setOnItemLongClickListener { _, v, p, _ -> cur?.list()?.getOrNull(p)?.let { if (it.kind == 3) copy(it.title) else if (it.id != "act") menu(v, it) }; true }
             setOnScrollListener(object : AbsListView.OnScrollListener {
                 override fun onScrollStateChanged(v: AbsListView?, s: Int) {}
@@ -295,7 +301,7 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
             val thr = ui.dp(60).toFloat()
             lv.setOnTouchListener { _, e ->
                 when (e.actionMasked) {
-                    MotionEvent.ACTION_DOWN -> { y0 = e.rawY; pulling = false; false }
+                    MotionEvent.ACTION_DOWN -> { y0 = e.rawY; lastDownX = e.rawX.toInt(); pulling = false; false }
                     MotionEvent.ACTION_MOVE -> {
                         val t = cur?.tab ?: -1
                         if ((t != 0 && t != 1 && t != 4) || spinBox.visibility == View.VISIBLE) return@setOnTouchListener false
@@ -330,8 +336,27 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
         content.addView(page, FrameLayout.LayoutParams(-1, -1))
         content.addView(spinBox, FrameLayout.LayoutParams(-2, -2, Gravity.CENTER))   // (v389)
         content.addView(ptr, FrameLayout.LayoutParams(ui.dp(44), ui.dp(44), Gravity.TOP or Gravity.CENTER_HORIZONTAL))   // (v390)
+        chan = YtChannelPage(act, ui, object : YtChanHost {   // (v403) تحت صفحة المشاهدة: فيديو من القناة بيفتح المشاهدة فوقها
+            override fun openVideo(v: NpItem) { open(v, null) }
+            override fun openPlaylist(url: String, title: String) { chan.close(false); load("📃 " + title, -1, null, null, null, "", true, false) { YtNp.playlist(url) } }
+            override fun state(open: Boolean) { setNavHidden(open || watch.isOpen) }
+        })
+        content.addView(chan, FrameLayout.LayoutParams(-1, -1))
+        watch = YtWatchPage(act, ui, object : YtWatchHost {   // (v402)
+            override fun expand(id: String, title: String, posMs: Long, translate: Boolean) {
+                val f = onPlayAt
+                if (f != null) f(id, title, translate, posMs) else onPlay(id, title, translate)
+            }
+            override fun openChannel(url: String, name: String) { watch.close(false); this@YtProUi.openChannel(url, name, "") }
+            override fun openVideo(v: NpItem) { watchVideo(v, null) }
+            override fun audio(v: NpItem) { playAudio(v) }
+            override fun download(anchor: View, v: NpItem) { dlMenu(anchor, v) }
+            override fun state(open: Boolean) { setNavHidden(open || chan.isOpen) }
+        })
+        content.addView(watch, FrameLayout.LayoutParams(-1, -1))
         root.addView(content, LinearLayout.LayoutParams(-1, 0, 1f))
-        root.addView(View(act).apply { setBackgroundColor(YtSkin.line) }, LinearLayout.LayoutParams(-1, ui.dp(1)))
+        val navLn = View(act).apply { setBackgroundColor(YtSkin.line) }; navLine = navLn
+        root.addView(navLn, LinearLayout.LayoutParams(-1, ui.dp(1)))
         val navRow = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; gravity = Gravity.CENTER_VERTICAL; setBackgroundColor(YtSkin.bg) }
         listOf("home" to "الرئيسية", "subs" to "الاشتراكات", "you" to "أنت").forEachIndexed { i, d ->
             val icon = YtIcon(act, d.first).apply { glyph = 1f }
@@ -346,17 +371,20 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
             navIcons.add(icon); navLabs.add(lab)
             navRow.addView(cell, LinearLayout.LayoutParams(0, ui.dp(54), 1f))
         }
+        navBar = navRow
         root.addView(navRow, LinearLayout.LayoutParams(-1, -2))
         paintNav()
     }
 
     // ───────── واجهة Main ─────────
     fun refresh() { if (cur == null) openTab(0) else adapter.notifyDataSetChanged() }
-    fun onHide() { hideKb(); sugBox.visibility = View.GONE }
+    fun onHide() { hideKb(); sugBox.visibility = View.GONE; watch.pause() }
     /** (v348) Main.onStop: الشورتس تقف لما التطبيق يروح الخلفية أو يظهر المشغّل فوقه (بترجع في refresh() مع onResume) */
-    fun onPause() { }
-    fun destroy() { }
+    fun onPause() { watch.pause() }
+    fun destroy() { watch.release() }
     fun back(): Boolean {
+        if (watch.isOpen) { watch.close(true); return true }   // (v402)
+        if (chan.isOpen) { chan.close(true); return true }     // (v403)
         if (sugBox.visibility == View.VISIBLE) { sugBox.visibility = View.GONE; return true }
         if (stack.isNotEmpty()) { gen++; bind(stack.removeAt(stack.size - 1)); return true }
         if (searchBar.visibility == View.VISIBLE) { exitSearch(); return true }   // (v397)
@@ -500,18 +528,38 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
         load("🔍 $q", -1, null, null, q, filter, true, false) { val r = YtNp.searchFirst(q, filter); Pair(r, { p: Page -> YtNp.searchMore(q, filter, p) }) }
     }
 
-    private fun open(it: NpItem) {
+    /** (v402) فيديو: صفحة المشاهدة (بأنيميشن من مكان الكارت) أو المشغّل مباشرة حسب إعداد «لما تدوس على فيديو» */
+    private fun setNavHidden(h: Boolean) { navBar?.visibility = if (h) View.GONE else View.VISIBLE; navLine?.visibility = if (h) View.GONE else View.VISIBLE }
+
+    private fun watchVideo(v: NpItem, view: View?) {
+        hideKb(); sugBox.visibility = View.GONE
+        markCtx()
+        val it = asWatch(v)
+        if (YtStore.histOn()) YtStore.addFront(YtStore.HIST, it, 200)
+        YtStore.markApp(it.id)
+        var r: android.graphics.Rect? = null
+        if (view != null) {
+            val loc = IntArray(2); view.getLocationOnScreen(loc)
+            val w = view.width; val x = loc[0]
+            if (w > 0) r = android.graphics.Rect(x, loc[1], x + w, loc[1] + w * 9 / 16)
+        }
+        watch.open(it, r)
+    }
+
+    private fun open(it: NpItem, srcView: View? = null) {
         if (it.kind == 2 && it.url.startsWith("yta:")) { openAcc(it); return }
         when (it.kind) {
-            0 -> play(it, false)   // (v337) دوسة على الفيديو = يتشغّل على طول (التفاصيل من الضغطة الطويلة ← ℹ)
-            1 -> openChannel(it.channelUrl, it.title)
+            0 -> if (YtOpen.mode() == YtOpen.PAGE && it.id.length == 11) watchVideo(it, srcView) else play(it, false)   // (v337) دوسة على الفيديو = يتشغّل على طول (التفاصيل من الضغطة الطويلة ← ℹ)
+            1 -> openChannel(it.channelUrl, it.title, it.thumb)
             2 -> load("📃 " + it.title, -1, null, null, null, "", true, false) { YtNp.playlist(it.url) }
         }
     }
 
-    private fun openChannel(url: String, name: String) {
-        if (url.isBlank()) { Notice.show(act, ("القناة دي مالهاش لينك").toString(), 2500L); return }
-        load(name, -1, url, name, null, "", true, true) { val c = YtNp.channel(url); Pair(c.first, c.more) }
+    /** (v403) صفحة القناة الجديدة (بانر + أفاتار + مشتركين + اشترك + جرس + تابات). لو اللينك ناقص بندوّر على القناة بالاسم */
+    private fun openChannel(url: String, name: String, avatar: String = "") {
+        if (url.isBlank() && name.isBlank()) { Notice.show(act, ("القناة دي مالهاش لينك").toString(), 2500L); return }
+        hideKb(); sugBox.visibility = View.GONE
+        chan.open(url, name, avatar)
     }
 
     // ───────── (v346) حساب جوجل ─────────
@@ -858,7 +906,7 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
                 12 -> onDownload(asWatch(it), true)
                 13 -> onDownload(asWatch(it), false)
                 3 -> { val on = YtStore.toggle(YtStore.SAVED, it); Notice.show(act, (if (on) "🔖 اتحفظ" else "اتشال من المحفوظات").toString(), 1800L); if (cur?.tab == 3) showLocal(3, false) }
-                4 -> openChannel(it.channelUrl, it.channel)
+                4 -> openChannel(it.channelUrl, it.channel, it.avatar)
                 5 -> copy(if (it.kind == 0) YtNp.watchUrl(it.id) else it.url)
                 6 -> onBrowser(YtNp.watchUrl(it.id))
                 7 -> { YtStore.remove(YtStore.HIST, it); showLocal(2, false) }
@@ -985,7 +1033,7 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
                 val d = if (vi.kind == 0) fmtDur(vi.dur) else ""
                 c.dur.text = d; c.dur.visibility = if (d.isEmpty()) View.GONE else View.VISIBLE
                 try { if (vi.thumb.isNotBlank()) Glide.with(act).load(vi.thumb).centerCrop().override(ui.dp(300), ui.dp(170)).into(c.thumb) else Glide.with(act).clear(c.thumb) } catch (_: Throwable) {}
-                c.root.setOnClickListener { if (vi.kind != 3) open(vi) }
+                c.root.setOnClickListener { if (vi.kind != 3) open(vi, c.root) }
                 c.root.setOnLongClickListener { x -> if (vi.id != "act") menu(x, vi); true }
             }
             return row
@@ -1024,6 +1072,10 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
                 else Glide.with(act).clear(c.thumb)
             } catch (_: Throwable) {}
             c.more.setOnClickListener { x -> menu(x, vi) }
+            // (v403) دوسة على صورة القناة أو سطر «القناة · المشاهدات» = صفحة القناة
+            val chOpen = View.OnClickListener { openChannel(vi.channelUrl, vi.channel, vi.avatar) }
+            val chMenu = View.OnLongClickListener { x -> menu(x, vi); true }
+            for (cv2 in listOf<View>(c.av, c.avImg, c.meta)) { cv2.setOnClickListener(chOpen); cv2.setOnLongClickListener(chMenu) }
             return v
         }
         override fun getView(p: Int, cv: View?, parent: ViewGroup?): View {

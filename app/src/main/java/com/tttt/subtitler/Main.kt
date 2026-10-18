@@ -373,6 +373,10 @@ class MainActivity : Activity() {
         val ytLangV = listOf("ar", "orig", "en", "fr", "es", "tr", "de", "ru", "hi")
         var settingsDlg0: TabbedDialog? = null; var qui0: QueueUi? = null
         val ytSettingsViews: List<View> = listOf(
+            ui.section("🎬 لما تدوس على فيديو", true,
+                ui.chips(listOf("صفحة المشاهدة", "المشغّل مباشرة"), { if (YtOpen.mode() == YtOpen.PLAYER) "المشغّل مباشرة" else "صفحة المشاهدة" }) { n -> Cfg.put("yt_open_mode", if (n == "المشغّل مباشرة") YtOpen.PLAYER else YtOpen.PAGE) },
+                ui.switchRow("▶ شغّل تلقائي في المشغّل المصغّر", YtOpen.autoPlay()) { Cfg.put("yt_mini_auto", if (it) "1" else "0") },
+                ui.text("صفحة المشاهدة: الفيديو بيكبر بأنيميشن ومعاه الوصف والتعليقات والمقترحات والاشتراك، وزرار التكبير في ركن المشغّل المصغّر بيفتح مشغّلك الكامل من نفس الثانية. المشغّل مباشرة: الدوسة بتفتح المشغّل على طول.", 12f, th.muted)),
             ui.section("🎞 الجودة الافتراضية", true,
                 ui.chips(ytQ, { ytQ[ytQv.indexOf(Cfg.int("yt_maxh", 0)).coerceAtLeast(0)] }) { n -> Cfg.put("yt_maxh", ytQv[ytQ.indexOf(n).coerceAtLeast(0)].toString()) },
                 ui.text("أعلى جودة بيتفتح بيها الفيديو. على الداتا اختار 360p أو 480p.", 12f, th.muted)),
@@ -381,7 +385,10 @@ class MainActivity : Activity() {
                 ui.text("لو الفيديو له أكتر من لغة صوت بيفتح بالعربي، ولو مفيش عربي بيفتح بالصوت الأصلي. وفي المشغّل بيظهر مربع 🔊 جنب الجودة تبدّل بين اللغات.", 12f, th.muted)),
             ui.section("🔔 الإشعارات والسجل", true,
                 ui.switchRow("🔔 إشعارات الفيديوهات الجديدة من اشتراكاتي", YtNotify.enabled()) { YtNotify.setEnabled(this, it) },
-                ui.switchRow("🕘 حفظ سجل المشاهدة", YtStore.histOn()) { Cfg.put("ytp_hist_on", if (it) "1" else "0") }),
+                ui.switchRow("🕘 حفظ سجل المشاهدة", YtStore.histOn()) { Cfg.put("ytp_hist_on", if (it) "1" else "0") },
+                ui.switchRow("🔄 الاشتراك يتسجّل على حسابي كمان (لو مسجّل الدخول)", YtSubs.syncOn()) { Cfg.put("yt_acc_sync", if (it) "1" else "0") },
+                ui.button("🔔 رجّع إشعارات كل القنوات (بعد ما قفلت قنوات بالجرس)") { Cfg.put("ytp_notif_off", ""); Notice.show(this, ("🔔 رجعت إشعارات كل القنوات").toString(), 2200L) },
+                ui.text("جرس 🔔 في صفحة كل قناة: إشعار بكل فيديو جديد أو بدون. اللايك والتعليق من صفحة المشاهدة بيتسجّلوا على حسابك بس لو مسجّل الدخول.", 12f, th.muted)),
             ui.section("👤 حساب جوجل", false,
                 ui.text(if (YtAccount.loggedIn()) "مسجّل الدخول — الاشتراكات بتتزامن من حسابك." else "مش مسجّل. سجّل من تبويب يوتيوب ▸ أنت.", 13f, th.text),
                 ui.button("▶ افتح يوتيوب") { settingsDlg0?.dialog?.dismiss(); showTabFn(4) },
@@ -838,7 +845,7 @@ class MainActivity : Activity() {
                     kind == "v" -> openLink(ref)
                     kind == "a" && src == "youtube" -> playYtAudio(ref, title, "", "")
                     else -> {}
-                } } })
+                } } }, onPlayAt = { id, name, tr, ms -> playYt(id, name, tr, tr, ms) })
             ytUi = yt; yt.root.visibility = View.GONE; ytOpenFn = { vid -> yt.openVideo(vid) }
             pane.addView(yt.root, 1, FrameLayout.LayoutParams(-1, -1))
             pane.addView(yt.busyView, FrameLayout.LayoutParams(-1, -1))   // (v337) لودينج جلب رابط الفيديو فوق الصفحة
@@ -1408,9 +1415,33 @@ class MainActivity : Activity() {
     var settingsBack: (() -> Unit)? = null   // (v370) رجوع جوه صفحة الإعدادات (قسم ← القايمة ← الصفحة السابقة)
     fun openSettingsTab(t: String) { try { settingsShow?.invoke(t) } catch (_: Throwable) {} }
     fun updateYtBadge() { navUi?.badge(4, YtNotify.badgeCount()) }
+    private var ytBgAt = 0L
+    /** (v404) مزامنة يوتيوب في الخلفية أول ما التطبيق يفتح (ومرة كل 20 دقيقة لو رجعت له): بعد ما الشاشة تظهر بـ3.5 ثانية وبأولوية خلفية
+     *  عشان ما تبطّأش فتح البرنامج. بتجيب اشتراكات حسابك (لو مسجّل ومرّ وقت من آخر مزامنة) وبعدين بتعدّ الفيديوهات الجديدة
+     *  من آخر مرة فتحت فيها الاشتراكات وتظهر العدّاد (1 2 3…) على زرار يوتيوب تحت. المشغّل بيفتح عادي ومش بيستنى حاجة. */
+    private fun ytBackgroundSync() {
+        val now = android.os.SystemClock.elapsedRealtime()
+        if (ytBgAt != 0L && now - ytBgAt < 20L * 60_000L) return
+        ytBgAt = now
+        window.decorView.postDelayed({
+            if (isFinishing || isDestroyed) return@postDelayed
+            Thread {
+                try { android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_BACKGROUND) } catch (_: Throwable) {}
+                try {
+                    Cfg.ensure(this); YtRss.attach(this); YtAccount.init(this)
+                    if (YtAccount.loggedIn() && YtAccount.syncDue(30L * 60_000L)) {
+                        try { val n = YtAccount.syncSubs(); LogStore.add("🔄 مزامنة يوتيوب عند فتح البرنامج: +$n قناة") }
+                        catch (e: Throwable) { LogStore.add("⚠ مزامنة يوتيوب عند الفتح فشلت: " + (e.message ?: e.javaClass.simpleName).take(100)) }
+                    }
+                    YtNotify.refreshBadge(this, true) { runOnUiThread { updateYtBadge() } }
+                    YtNotify.schedule(this)
+                } catch (_: Throwable) {}
+            }.apply { isDaemon = true; start() }
+        }, 3500L)
+    }
     override fun onResume() {
         super.onResume()
-        if (!fromPlayer) { updateYtBadge(); YtNotify.refreshBadge(this) { runOnUiThread { updateYtBadge() } } }
+        if (!fromPlayer) { updateYtBadge(); ytBackgroundSync() }
         // الرجوع من المشغّل أو من إعدادات الإذن: حدّث العرض (تقدم الترجمة) أو أعد الفحص
         if (!fromPlayer) CrashLog.showIfAny(this)
         if (!fromPlayer) ModelWatch.maybeCheck(this)   // (v141) فحص يومي لموديل flash-lite أحدث

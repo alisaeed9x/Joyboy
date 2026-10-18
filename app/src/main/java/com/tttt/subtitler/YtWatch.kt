@@ -1,0 +1,797 @@
+@file:OptIn(UnstableApi::class)
+
+package com.tttt.subtitler
+
+import android.app.Activity
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
+import android.content.Intent
+import android.content.res.ColorStateList
+import android.graphics.Canvas
+import android.graphics.Color
+import android.graphics.Paint
+import android.graphics.Path
+import android.graphics.Rect
+import android.graphics.Typeface
+import android.graphics.drawable.GradientDrawable
+import android.net.Uri
+import android.os.Handler
+import android.os.Looper
+import android.text.TextUtils
+import android.view.Gravity
+import android.view.TextureView
+import android.view.View
+import android.view.animation.DecelerateInterpolator
+import android.widget.EditText
+import android.widget.FrameLayout
+import android.widget.HorizontalScrollView
+import android.widget.ImageView
+import android.widget.LinearLayout
+import android.widget.ScrollView
+import android.widget.SeekBar
+import android.widget.TextView
+import androidx.media3.common.AudioAttributes
+import androidx.media3.common.C
+import androidx.media3.common.MediaItem
+import androidx.media3.common.PlaybackException
+import androidx.media3.common.util.UnstableApi
+import androidx.media3.datasource.DefaultHttpDataSource
+import androidx.media3.exoplayer.DefaultRenderersFactory
+import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
+import androidx.media3.exoplayer.source.MergingMediaSource
+import androidx.media3.exoplayer.source.ProgressiveMediaSource
+import com.bumptech.glide.Glide
+import org.schabi.newpipe.extractor.Page
+import java.util.Locale
+
+/**
+ * (v402) صفحة المشاهدة (زي يوتيوب): دوسة على فيديو → المربع بتاعه بيكبر بأنيميشن من مكان الكارت لمشغّل مصغّر فوق،
+ * وتحته العنوان واللايكات والقناة والاشتراك والوصف والتعليقات والمقترحات. زرار التكبير (الركن) بيفتح مشغّلك الكامل من نفس الثانية.
+ * الإعداد: يوتيوب ← «لما تدوس على فيديو»: صفحة المشاهدة (الافتراضي) أو المشغّل مباشرة.
+ */
+object YtOpen {
+    const val PAGE = "page"
+    const val PLAYER = "player"
+    fun mode(): String = if (Cfg.str("yt_open_mode", PAGE) == PLAYER) PLAYER else PAGE
+    fun autoPlay(): Boolean = Cfg.str("yt_mini_auto", "1") != "0"
+}
+
+interface YtWatchHost {
+    fun expand(id: String, title: String, posMs: Long, translate: Boolean)
+    fun openChannel(url: String, name: String)
+    fun openVideo(v: NpItem)
+    fun audio(v: NpItem)
+    fun download(anchor: View, v: NpItem)
+    fun state(open: Boolean)
+}
+
+/** أيقونات مرسومة (من غير خطوط): 0 تشغيل · 1 إيقاف · 2 تكبير · 3 سهم لتحت */
+private class YtGlyph(ctx: Context, var kind: Int) : View(ctx) {
+    private val p = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val path = Path()
+    override fun onDraw(c: Canvas) {
+        val w = width.toFloat(); val h = height.toFloat(); val s = minOf(w, h)
+        if (s <= 0f) return
+        val cx = w / 2f; val cy = h / 2f
+        p.color = Color.WHITE
+        when (kind) {
+            0 -> {
+                p.style = Paint.Style.FILL
+                path.reset(); path.moveTo(cx - s * 0.14f, cy - s * 0.22f); path.lineTo(cx - s * 0.14f, cy + s * 0.22f); path.lineTo(cx + s * 0.22f, cy); path.close()
+                c.drawPath(path, p)
+            }
+            1 -> {
+                p.style = Paint.Style.FILL
+                c.drawRect(cx - s * 0.18f, cy - s * 0.2f, cx - s * 0.06f, cy + s * 0.2f, p)
+                c.drawRect(cx + s * 0.06f, cy - s * 0.2f, cx + s * 0.18f, cy + s * 0.2f, p)
+            }
+            2 -> {
+                p.style = Paint.Style.STROKE; p.strokeWidth = s * 0.08f; p.strokeCap = Paint.Cap.ROUND
+                val a = s * 0.27f; val l = s * 0.15f
+                c.drawLine(cx - a, cy - a, cx - a + l, cy - a, p); c.drawLine(cx - a, cy - a, cx - a, cy - a + l, p)
+                c.drawLine(cx + a, cy - a, cx + a - l, cy - a, p); c.drawLine(cx + a, cy - a, cx + a, cy - a + l, p)
+                c.drawLine(cx - a, cy + a, cx - a + l, cy + a, p); c.drawLine(cx - a, cy + a, cx - a, cy + a - l, p)
+                c.drawLine(cx + a, cy + a, cx + a - l, cy + a, p); c.drawLine(cx + a, cy + a, cx + a, cy + a - l, p)
+            }
+            else -> {
+                p.style = Paint.Style.STROKE; p.strokeWidth = s * 0.08f; p.strokeCap = Paint.Cap.ROUND; p.strokeJoin = Paint.Join.ROUND
+                path.reset(); path.moveTo(cx - s * 0.2f, cy - s * 0.08f); path.lineTo(cx, cy + s * 0.12f); path.lineTo(cx + s * 0.2f, cy - s * 0.08f)
+                c.drawPath(path, p)
+            }
+        }
+    }
+}
+
+/** مشغّل مصغّر (نسخة صغيرة من المشغّل): ExoPlayer + تحكم (تشغيل/إيقاف · شريط · زرار تكبير في الركن · سهم تصغير) */
+class YtMiniPlayer(private val act: Activity, private val ui: Ui) : FrameLayout(act) {
+    var onExpand: (Long) -> Unit = {}
+    var onCollapse: () -> Unit = {}
+    private var exo: ExoPlayer? = null
+    private var lastPick: YtPick? = null
+    private var resumeMs = 0L
+    private var vw = 0
+    private var vh = 0
+    private var dragging = false
+    private var ctlOn = true
+    private val hh = Handler(Looper.getMainLooper())
+    private val tex = TextureView(act)
+    private val thumb = ImageView(act).apply { scaleType = ImageView.ScaleType.CENTER_CROP; setBackgroundColor(Color.BLACK) }
+    private val spin = WinSpinnerDrawable()
+    private val spinV = View(act).apply { foreground = spin; visibility = View.GONE }
+    private val shade = View(act).apply { setBackgroundColor(0x55000000) }
+    private val playG = YtGlyph(act, 0)
+    private val playB = FrameLayout(act).apply { background = GradientDrawable().apply { setShape(GradientDrawable.OVAL); setColor(0x99000000.toInt()) } }
+    private val msgTv = TextView(act).apply { textSize = 13f; setTextColor(Color.WHITE); gravity = Gravity.CENTER; visibility = View.GONE; setPadding(ui.dp(28), 0, ui.dp(28), 0) }
+    private val timeTv = TextView(act).apply { textSize = 11f; setTextColor(Color.WHITE); text = "0:00 / 0:00" }
+    private val seek = SeekBar(act)
+    private val expandG = YtGlyph(act, 2)
+    private val closeG = YtGlyph(act, 3)
+    private val bar = LinearLayout(act)
+
+    private val hideR = Runnable { if (exo?.isPlaying == true && !dragging) showCtl(false, false) }
+    private val ticker = object : Runnable {
+        override fun run() {
+            val p = exo ?: return
+            val d = p.duration; val pos = p.currentPosition
+            if (d > 0 && !dragging) seek.progress = (pos * 1000L / d).toInt()
+            timeTv.text = fmt(pos) + " / " + fmt(if (d > 0) d else 0L)
+            hh.postDelayed(this, 500L)
+        }
+    }
+    private val listener = object : androidx.media3.common.Player.Listener {
+        override fun onPlaybackStateChanged(state: Int) {
+            when (state) {
+                androidx.media3.common.Player.STATE_BUFFERING -> loading(true)
+                androidx.media3.common.Player.STATE_READY -> loading(false)
+                androidx.media3.common.Player.STATE_ENDED -> { loading(false); showCtl(true, false) }
+                else -> {}
+            }
+        }
+        override fun onIsPlayingChanged(isPlaying: Boolean) {
+            playG.kind = if (isPlaying) 1 else 0; playG.invalidate()
+            keepScreenOn = isPlaying
+            if (isPlaying) scheduleHide() else showCtl(true, false)
+        }
+        override fun onRenderedFirstFrame() { thumb.visibility = View.GONE }
+        override fun onVideoSizeChanged(v: androidx.media3.common.VideoSize) { vw = (v.width * v.pixelWidthHeightRatio).toInt(); vh = v.height; fit() }
+        override fun onPlayerError(e: PlaybackException) {
+            LogStore.err("YtMini", e)
+            this@YtMiniPlayer.error("ما قدرتش أشغّله هنا — دوس زرار التكبير يفتحه في مشغّلك")
+        }
+    }
+
+    init {
+        layoutDirection = View.LAYOUT_DIRECTION_LTR
+        setBackgroundColor(Color.BLACK)
+        addView(tex, FrameLayout.LayoutParams(-1, -1, Gravity.CENTER))
+        addView(thumb, FrameLayout.LayoutParams(-1, -1))
+        addView(shade, FrameLayout.LayoutParams(-1, -1))
+        addView(spinV, FrameLayout.LayoutParams(ui.dp(64), ui.dp(64), Gravity.CENTER))
+        addView(msgTv, FrameLayout.LayoutParams(-1, -2, Gravity.CENTER))
+        playB.addView(playG, FrameLayout.LayoutParams(-1, -1))
+        addView(playB, FrameLayout.LayoutParams(ui.dp(56), ui.dp(56), Gravity.CENTER))
+        addView(closeG, FrameLayout.LayoutParams(ui.dp(44), ui.dp(44), Gravity.TOP or Gravity.START))
+        bar.apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; setPadding(ui.dp(10), 0, ui.dp(2), 0) }
+        seek.max = 1000
+        try {
+            seek.progressTintList = ColorStateList.valueOf(YtSkin.red)
+            seek.thumbTintList = ColorStateList.valueOf(YtSkin.red)
+            seek.progressBackgroundTintList = ColorStateList.valueOf(0x66FFFFFF)
+        } catch (_: Throwable) {}
+        bar.addView(timeTv, LinearLayout.LayoutParams(-2, -2))
+        bar.addView(seek, LinearLayout.LayoutParams(0, ui.dp(36), 1f))
+        bar.addView(expandG, LinearLayout.LayoutParams(ui.dp(44), ui.dp(44)))
+        addView(bar, FrameLayout.LayoutParams(-1, ui.dp(44), Gravity.BOTTOM))
+
+        setOnClickListener { showCtl(!ctlOn, true) }
+        closeG.setOnClickListener { onCollapse() }
+        expandG.setOnClickListener {
+            val pos = exo?.currentPosition ?: resumeMs
+            resumeMs = pos
+            releasePlayer(true)
+            showCtl(true, false)
+            onExpand(pos)
+        }
+        playB.setOnClickListener {
+            val p = exo
+            if (p == null) {
+                val lp = lastPick
+                if (lp != null) start(lp, true, resumeMs) else onExpand(0L)
+            } else if (p.playbackState == androidx.media3.common.Player.STATE_ENDED) { p.seekTo(0L); p.playWhenReady = true }
+            else p.playWhenReady = !p.playWhenReady
+        }
+        seek.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(sb: SeekBar?, progress: Int, fromUser: Boolean) {
+                if (fromUser) { val d = exo?.duration ?: 0L; if (d > 0) timeTv.text = fmt(d * progress / 1000L) + " / " + fmt(d) }
+            }
+            override fun onStartTrackingTouch(sb: SeekBar?) { dragging = true; hh.removeCallbacks(hideR) }
+            override fun onStopTrackingTouch(sb: SeekBar?) {
+                dragging = false
+                exo?.let { val d = it.duration; if (d > 0) it.seekTo(d * seek.progress / 1000L) }
+                scheduleHide()
+            }
+        })
+    }
+
+    override fun onSizeChanged(w: Int, h: Int, ow: Int, oh: Int) { super.onSizeChanged(w, h, ow, oh); fit() }
+
+    private fun fit() {
+        val bw = width; val bh = height
+        if (bw <= 0 || bh <= 0 || vw <= 0 || vh <= 0) return
+        val sc = minOf(bw.toFloat() / vw, bh.toFloat() / vh)
+        val lp = tex.layoutParams as? FrameLayout.LayoutParams ?: return
+        val nw = (vw * sc).toInt(); val nh = (vh * sc).toInt()
+        if (lp.width != nw || lp.height != nh) { lp.width = nw; lp.height = nh; lp.gravity = Gravity.CENTER; tex.layoutParams = lp }
+    }
+
+    private fun fmt(ms: Long): String {
+        val s = (ms / 1000L).coerceAtLeast(0L)
+        return if (s >= 3600) String.format(Locale.US, "%d:%02d:%02d", s / 3600, s % 3600 / 60, s % 60) else String.format(Locale.US, "%d:%02d", s / 60, s % 60)
+    }
+
+    private fun scheduleHide() { hh.removeCallbacks(hideR); hh.postDelayed(hideR, 3200L) }
+
+    private fun showCtl(on: Boolean, auto: Boolean) {
+        ctlOn = on
+        hh.removeCallbacks(hideR)
+        for (v in listOf<View>(shade, playB, bar, closeG)) {
+            if (on) { v.visibility = View.VISIBLE; v.animate().alpha(1f).setDuration(160L).start() }
+            else v.animate().alpha(0f).setDuration(160L).withEndAction { if (!ctlOn) v.visibility = View.INVISIBLE }.start()
+        }
+        if (on && auto && exo?.isPlaying == true) scheduleHide()
+    }
+
+    fun setThumb(url: String) {
+        thumb.visibility = View.VISIBLE
+        try { if (url.isNotBlank()) Glide.with(act).load(url).centerCrop().into(thumb) else Glide.with(act).clear(thumb) } catch (_: Throwable) {}
+    }
+
+    fun loading(on: Boolean) {
+        spinV.visibility = if (on) View.VISIBLE else View.GONE
+        if (on) spin.start() else spin.stop()
+        if (on) { playB.visibility = View.INVISIBLE; msgTv.visibility = View.GONE } else if (ctlOn) playB.visibility = View.VISIBLE
+    }
+
+    fun error(msg: String) {
+        loading(false); msgTv.text = msg; msgTv.visibility = View.VISIBLE
+        showCtl(true, false)
+    }
+
+    fun reset() {
+        releasePlayer(false)
+        lastPick = null; resumeMs = 0L; vw = 0; vh = 0
+        msgTv.visibility = View.GONE; seek.progress = 0; timeTv.text = "0:00 / 0:00"
+        playG.kind = 0; playG.invalidate()
+        thumb.visibility = View.VISIBLE
+        showCtl(true, false)
+    }
+
+    fun start(pick: YtPick, autoplay: Boolean, seekMs: Long = 0L) {
+        lastPick = pick
+        releasePlayer(false)
+        try {
+            val f = DefaultHttpDataSource.Factory().setUserAgent(pick.ua)
+                .setDefaultRequestProperties(mapOf("Referer" to "https://www.youtube.com/")).setAllowCrossProtocolRedirects(true)
+            val p = ExoPlayer.Builder(act, DefaultRenderersFactory(act).setEnableDecoderFallback(true)).build()
+            try { p.setAudioAttributes(AudioAttributes.Builder().setUsage(C.USAGE_MEDIA).setContentType(C.AUDIO_CONTENT_TYPE_MOVIE).build(), true) } catch (_: Throwable) {}
+            p.setVideoTextureView(tex)
+            val au = pick.audio
+            val src = if (!au.isNullOrBlank()) {
+                val pf = ProgressiveMediaSource.Factory(f)
+                MergingMediaSource(pf.createMediaSource(MediaItem.fromUri(Uri.parse(pick.url))), pf.createMediaSource(MediaItem.fromUri(Uri.parse(au))))
+            } else DefaultMediaSourceFactory(f).createMediaSource(MediaItem.fromUri(Uri.parse(pick.url)))
+            p.addListener(listener)
+            if (seekMs > 0L) p.setMediaSource(src, seekMs) else p.setMediaSource(src)
+            p.prepare(); p.playWhenReady = autoplay
+            exo = p
+            loading(true)
+            hh.removeCallbacks(ticker); hh.post(ticker)
+        } catch (e: Throwable) {
+            LogStore.err("YtMini:start", e)
+            error("ما قدرتش أشغّله هنا — دوس زرار التكبير يفتحه في مشغّلك")
+        }
+    }
+
+    private fun releasePlayer(showThumb: Boolean) {
+        hh.removeCallbacks(ticker)
+        exo?.let { try { it.release() } catch (_: Throwable) {} }
+        exo = null
+        keepScreenOn = false
+        if (showThumb) { thumb.visibility = View.VISIBLE; playG.kind = 0; playG.invalidate() }
+    }
+
+    fun position(): Long = exo?.currentPosition ?: resumeMs
+    fun pause() { exo?.playWhenReady = false }
+    fun release() { releasePlayer(false); hh.removeCallbacks(hideR) }
+}
+
+/** الصفحة نفسها: مشغّل مصغّر فوق + (عنوان · قناة · اشتراك · وصف · مقترحات/تعليقات) بتتحرك بالسحب تحته */
+class YtWatchPage(private val act: Activity, private val ui: Ui, private val host: YtWatchHost) : FrameLayout(act) {
+    private val sw = act.resources.displayMetrics.widthPixels
+    private val medium: Typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+    private val mini = YtMiniPlayer(act, ui)
+    private val scroll = ScrollView(act)
+    private val body = LinearLayout(act)
+    private var gen = 0
+    private var item: NpItem? = null
+    private var det: YtDetail? = null
+    private var from: Rect? = null
+    private var closing = false
+    private var comments = false
+    private var cLoaded = false
+    private var cNext: Page? = null
+    private var cMore: ((Page) -> NpComments)? = null
+    private var cItems = ArrayList<NpComment>()
+    private var cTotal = -1
+    private var liked = false
+    private var likeCount = -1L
+    private var relShown = 20
+
+    private val titleTv = TextView(act).apply { textSize = 17f; setTextColor(YtSkin.text); typeface = medium; maxLines = 2; ellipsize = TextUtils.TruncateAt.END; setPadding(ui.dp(14), ui.dp(12), ui.dp(14), 0) }
+    private val metaTv = TextView(act).apply { textSize = 12f; setTextColor(YtSkin.sub); setPadding(ui.dp(14), ui.dp(4), ui.dp(14), 0) }
+    private val chipsRow = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; setPadding(ui.dp(10), 0, ui.dp(10), 0) }
+    private val chanBox = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; gravity = Gravity.CENTER_VERTICAL; setPadding(ui.dp(14), ui.dp(10), ui.dp(14), ui.dp(10)) }
+    private val chanAvHost = FrameLayout(act)
+    private val chanName = TextView(act).apply { textSize = 14f; setTextColor(YtSkin.text); typeface = medium; setSingleLine(); ellipsize = TextUtils.TruncateAt.END }
+    private val subB = TextView(act).apply { textSize = 13f; typeface = medium; gravity = Gravity.CENTER; setPadding(ui.dp(16), ui.dp(8), ui.dp(16), ui.dp(8)) }
+    private val descTv = TextView(act).apply { textSize = 13f; setTextColor(YtSkin.text); maxLines = 2; ellipsize = TextUtils.TruncateAt.END; setPadding(ui.dp(12), ui.dp(10), ui.dp(12), ui.dp(10)) }
+    private val tabRel = TextView(act)
+    private val tabCom = TextView(act)
+    private val listBox = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL }
+    private val bellB = YtIcon(act, "bell")
+    private val cEdit = EditText(act)
+    private val composer = LinearLayout(act)
+    private val likeChip: TextView
+    private val saveChip: TextView
+
+    val isOpen: Boolean get() = visibility == View.VISIBLE && !closing
+
+    init {
+        visibility = View.GONE; isClickable = true; setBackgroundColor(YtSkin.bg); layoutDirection = View.LAYOUT_DIRECTION_RTL
+        val col = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL }
+        col.addView(mini, LinearLayout.LayoutParams(-1, sw * 9 / 16))
+        col.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f))
+        addView(col, FrameLayout.LayoutParams(-1, -1))
+        body.orientation = LinearLayout.VERTICAL; body.layoutDirection = View.LAYOUT_DIRECTION_RTL
+        scroll.addView(body, FrameLayout.LayoutParams(-1, -2))
+        scroll.isFillViewport = false
+
+        likeChip = chip("👍") { toggleLike() }
+        saveChip = chip("🔖 احفظ") { toggleSave() }
+        for (c in listOf(likeChip, saveChip,
+            chip("🌐 ترجمة وفرجة") { val v = item; if (v != null) host.expand(v.id, titleNow(), mini.position(), true) },
+            chip("🎧 صوت") { val v = item; if (v != null) { mini.pause(); host.audio(saveItem()) } },
+            chip("⬇ تحميل") { a -> val v = item; if (v != null) host.download(a, saveItem()) },
+            chip("📋 نسخ") { val v = item; if (v != null) copy(YtNp.watchUrl(v.id)) },
+            chip("↗ مشاركة") { val v = item; if (v != null) share(YtNp.watchUrl(v.id)) })) {
+            chipsRow.addView(c, LinearLayout.LayoutParams(-2, -2).apply { setMargins(ui.dp(4), 0, ui.dp(4), 0) })
+        }
+
+        chanBox.addView(chanAvHost, LinearLayout.LayoutParams(ui.dp(40), ui.dp(40)).apply { marginEnd = ui.dp(12) })
+        chanBox.addView(chanName, LinearLayout.LayoutParams(0, -2, 1f))
+        chanBox.addView(subB, LinearLayout.LayoutParams(-2, -2))
+        bellB.apply { glyph = 0.62f; contentDescription = "إشعارات القناة"; foreground = YtSkin.ripple(true); visibility = View.GONE
+            setOnClickListener { v -> YtSubs.bellMenu(act, v, chanUrl(), chanNameNow(), "") { paintSub() } } }
+        chanBox.addView(bellB, LinearLayout.LayoutParams(ui.dp(40), ui.dp(40)).apply { marginStart = ui.dp(6) })
+        chanBox.isClickable = true
+        chanBox.setOnClickListener { openChan() }
+        subB.setOnClickListener { toggleSub() }
+
+        descTv.background = GradientDrawable().apply { setColor(YtSkin.surface); cornerRadius = ui.dp(12).toFloat() }
+        descTv.setOnClickListener { descTv.maxLines = if (descTv.maxLines == 2) 60 else 2 }
+
+        val tabs = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; setPadding(ui.dp(10), ui.dp(12), ui.dp(10), ui.dp(8)) }
+        for (t in listOf(tabRel, tabCom)) {
+            t.apply { textSize = 13f; typeface = medium; gravity = Gravity.CENTER; setPadding(ui.dp(14), ui.dp(8), ui.dp(14), ui.dp(8)) }
+            tabs.addView(t, LinearLayout.LayoutParams(0, -2, 1f).apply { setMargins(ui.dp(4), 0, ui.dp(4), 0) })
+        }
+        tabRel.text = "📑 مقترحات"; tabCom.text = "💬 تعليقات"
+        tabRel.setOnClickListener { setTab(false) }
+        tabCom.setOnClickListener { setTab(true) }
+
+        body.addView(titleTv, LinearLayout.LayoutParams(-1, -2))
+        body.addView(metaTv, LinearLayout.LayoutParams(-1, -2))
+        body.addView(HorizontalScrollView(act).apply { isHorizontalScrollBarEnabled = false; addView(chipsRow) }, LinearLayout.LayoutParams(-1, -2).apply { topMargin = ui.dp(10) })
+        body.addView(chanBox, LinearLayout.LayoutParams(-1, -2))
+        body.addView(descTv, LinearLayout.LayoutParams(-1, -2).apply { setMargins(ui.dp(12), 0, ui.dp(12), 0) })
+        // (v403) مربع كتابة تعليق (بيظهر في تاب التعليقات؛ النشر على حسابك لو مسجّل الدخول)
+        cEdit.apply { hint = "اكتب تعليق…"; textSize = 14f; setTextColor(YtSkin.text); setHintTextColor(YtSkin.sub); maxLines = 4; background = GradientDrawable().apply { setColor(YtSkin.surface); cornerRadius = ui.dp(20).toFloat() }
+            setPadding(ui.dp(14), ui.dp(8), ui.dp(14), ui.dp(8)) }
+        val send = TextView(act).apply { text = "نشر"; textSize = 13f; typeface = medium; gravity = Gravity.CENTER; setTextColor(YtSkin.chipOnText)
+            background = GradientDrawable().apply { setColor(YtSkin.chipOnBg); cornerRadius = ui.dp(18).toFloat() }; setPadding(ui.dp(16), ui.dp(8), ui.dp(16), ui.dp(8)); setOnClickListener { sendComment() } }
+        composer.apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; gravity = Gravity.CENTER_VERTICAL; visibility = View.GONE; setPadding(ui.dp(12), 0, ui.dp(12), ui.dp(6)) }
+        composer.addView(cEdit, LinearLayout.LayoutParams(0, -2, 1f)); composer.addView(send, LinearLayout.LayoutParams(-2, -2).apply { marginStart = ui.dp(8) })
+        body.addView(tabs, LinearLayout.LayoutParams(-1, -2))
+        body.addView(composer, LinearLayout.LayoutParams(-1, -2))
+        body.addView(listBox, LinearLayout.LayoutParams(-1, -2))
+
+        mini.onCollapse = { close(true) }
+        mini.onExpand = { pos -> val v = item; if (v != null) host.expand(v.id, titleNow(), pos, false) }
+    }
+
+    // ───────── عناصر مساعدة ─────────
+    private fun chip(label: String, onClick: (View) -> Unit): TextView = TextView(act).apply {
+        text = label; textSize = 13f; setTextColor(YtSkin.text); gravity = Gravity.CENTER; setSingleLine(); typeface = medium
+        setPadding(ui.dp(14), ui.dp(8), ui.dp(14), ui.dp(8))
+        background = GradientDrawable().apply { setColor(YtSkin.chip); cornerRadius = ui.dp(18).toFloat() }
+        setOnClickListener { onClick(it) }
+    }
+
+    private fun fmtN(n: Long): String = when {
+        n >= 1_000_000_000L -> String.format(Locale.US, "%.1fB", n / 1e9)
+        n >= 1_000_000L -> String.format(Locale.US, "%.1fM", n / 1e6)
+        n >= 1_000L -> String.format(Locale.US, "%.1fK", n / 1e3)
+        else -> n.toString()
+    }
+    private fun fmtDur(s: Long): String = if (s <= 0) "" else if (s >= 3600) String.format(Locale.US, "%d:%02d:%02d", s / 3600, s % 3600 / 60, s % 60) else String.format(Locale.US, "%d:%02d", s / 60, s % 60)
+
+    private fun avatar(name: String, sizeDp: Int, url: String): View {
+        val colors = intArrayOf(0xFFE53935.toInt(), 0xFF8E24AA.toInt(), 0xFF3949AB.toInt(), 0xFFF4511E.toInt(), 0xFF6D4C41.toInt(), 0xFF1E88E5.toInt(), 0xFF5E35B1.toInt())
+        val c = colors[(name.hashCode() and 0x7fffffff) % colors.size]
+        val f = FrameLayout(act)
+        f.addView(TextView(act).apply {
+            text = name.trim().take(1).uppercase(); gravity = Gravity.CENTER; setTextColor(Color.WHITE); textSize = if (sizeDp >= 40) 17f else 14f; typeface = medium
+            background = GradientDrawable().apply { setShape(GradientDrawable.OVAL); setColor(c) }
+        }, FrameLayout.LayoutParams(-1, -1))
+        if (url.isNotBlank()) {
+            val iv = ImageView(act).apply { scaleType = ImageView.ScaleType.CENTER_CROP }
+            f.addView(iv, FrameLayout.LayoutParams(-1, -1))
+            try { Glide.with(act).load(url).circleCrop().override(ui.dp(sizeDp), ui.dp(sizeDp)).into(iv) } catch (_: Throwable) {}
+        }
+        return f
+    }
+
+    private fun titleNow(): String { val v = item ?: return ""; return det?.title?.ifBlank { v.title } ?: v.title }
+    private fun chanUrl(): String { val v = item ?: return ""; return (det?.channelUrl ?: "").ifBlank { v.channelUrl } }
+    private fun chanNameNow(): String { val v = item ?: return ""; return (det?.channel ?: "").ifBlank { v.channel } }
+    private fun subItem(): NpItem { val u = chanUrl(); return NpItem("", chanNameNow().ifBlank { u }, "", u, "", -1L, 0L, "", 1, u) }
+    private fun saveItem(): NpItem {
+        val v = item!!; val d = det
+        return NpItem(v.id, titleNow(), chanNameNow(), chanUrl(), (d?.thumb ?: "").ifBlank { v.thumb }, d?.dur ?: v.dur, d?.views ?: v.count, (d?.age ?: "").ifBlank { v.age }, 0, YtNp.watchUrl(v.id))
+    }
+
+    private fun copy(t: String) {
+        (act.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager).setPrimaryClip(ClipData.newPlainText("t", t))
+        Notice.show(act, "📋 اتنسخ", 1500L)
+    }
+    private fun share(t: String) {
+        try { act.startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, t), "مشاركة")) } catch (_: Throwable) {}
+    }
+
+    private fun paintSub() {
+        val u = chanUrl()
+        val on = YtSubs.isSub(u)
+        subB.text = if (on) "✓ مشترك" else "اشترك"
+        subB.setTextColor(if (on) YtSkin.text else YtSkin.chipOnText)
+        subB.background = GradientDrawable().apply { setColor(if (on) YtSkin.chip else YtSkin.chipOnBg); cornerRadius = ui.dp(18).toFloat() }
+        bellB.visibility = if (on) View.VISIBLE else View.GONE
+        bellB.filled = on && YtNotify.chanOn(u)
+        bellB.background = GradientDrawable().apply { setColor(YtSkin.chip); cornerRadius = ui.dp(20).toFloat() }
+    }
+    private fun toggleSub() { YtSubs.toggle(act, chanUrl(), chanNameNow(), "") { paintSub() } }
+
+    // ───────── (v403) لايك على حسابك ─────────
+    private fun likedSet(): HashSet<String> = HashSet(Cfg.str("ytp_liked", "").split("\n").filter { it.isNotBlank() })
+    private fun paintLike() {
+        val c = if (likeCount >= 0) " " + fmtN(likeCount) else ""
+        likeChip.text = (if (liked) "👍✓" else "👍") + c
+        likeChip.background = GradientDrawable().apply { setColor(if (liked) YtSkin.chipOnBg else YtSkin.chip); cornerRadius = ui.dp(18).toFloat() }
+        likeChip.setTextColor(if (liked) YtSkin.chipOnText else YtSkin.text)
+    }
+    private fun toggleLike() {
+        val v = item ?: return
+        if (!YtAccount.loggedIn()) { Notice.show(act, "سجّل الدخول بحساب جوجل من تبويب «أنت» عشان اللايك يتسجّل على حسابك", 3600L); return }
+        val now = !liked
+        liked = now; if (likeCount >= 0) likeCount += if (now) 1 else -1
+        paintLike()
+        val ls = likedSet(); if (now) ls.add(v.id) else ls.remove(v.id); Cfg.put("ytp_liked", ls.toList().takeLast(500).joinToString("\n"))
+        Thread {
+            try { YtAccount.setLiked(v.id, now) }
+            catch (e: Throwable) {
+                act.runOnUiThread {
+                    liked = !now; if (likeCount >= 0) likeCount += if (now) -1 else 1; paintLike()
+                    val l2 = likedSet(); if (liked) l2.add(v.id) else l2.remove(v.id); Cfg.put("ytp_liked", l2.joinToString("\n"))
+                    Notice.show(act, "اللايك ما اتسجّلش: " + (e.message ?: e.javaClass.simpleName).take(90), 3200L)
+                }
+            }
+        }.apply { isDaemon = true }.start()
+    }
+    private fun openChan() {
+        val u = chanUrl()
+        if (u.isBlank()) { Notice.show(act, "القناة دي مالهاش لينك", 2200L); return }
+        host.openChannel(u, chanNameNow())
+    }
+    private fun paintSave() {
+        if (item == null) return
+        saveChip.text = if (YtStore.contains(YtStore.SAVED, saveItem())) "❌ محفوظ" else "🔖 احفظ"
+    }
+    private fun toggleSave() {
+        if (item == null) return
+        val on = YtStore.toggle(YtStore.SAVED, saveItem())
+        Notice.show(act, if (on) "🔖 اتحفظ" else "اتشال من المحفوظات", 1600L); paintSave()
+    }
+
+    private fun paintTabs() {
+        for ((t, on) in listOf(tabRel to !comments, tabCom to comments)) {
+            t.setTextColor(if (on) YtSkin.chipOnText else YtSkin.text)
+            t.background = GradientDrawable().apply { setColor(if (on) YtSkin.chipOnBg else YtSkin.chip); cornerRadius = ui.dp(10).toFloat() }
+        }
+    }
+
+    // ───────── فتح/قفل ─────────
+    fun open(v: NpItem, src: Rect?) {
+        val wasOpen = visibility == View.VISIBLE && !closing
+        closing = false
+        animate().cancel(); mini.animate().cancel(); scroll.animate().cancel()
+        gen++; val my = gen
+        item = v; det = null; comments = false; cLoaded = false; cNext = null; cMore = null; cItems = ArrayList(); cTotal = -1; relShown = 20
+        liked = likedSet().contains(v.id); likeCount = -1L; cEdit.setText(""); composer.visibility = View.GONE; tabCom.text = "💬 تعليقات"
+        mini.reset(); mini.setThumb(v.thumb); mini.loading(true)
+        bindItem(v)
+        scroll.scrollTo(0, 0)
+        if (!wasOpen) { from = src; host.state(true); animateIn(src) }
+        else { body.alpha = 0f; body.animate().alpha(1f).setDuration(220L).start() }
+        Thread {
+            try {
+                val d = YtNp.details(v.id)
+                act.runOnUiThread { if (my == gen && !act.isFinishing && !act.isDestroyed) bindDetail(d) }
+            } catch (e: Throwable) {
+                LogStore.err("YtWatch:details", e)
+                act.runOnUiThread { if (my == gen) status("⚠ ما قدرتش أجيب التفاصيل: " + (e.message ?: e.javaClass.simpleName).take(120)) }
+            }
+            val cap = Cfg.int("yt_maxh", 0).let { if (it in 1..480) it else 480 }
+            var pk: YtPick? = null
+            try { pk = YtNp.pick(v.id, cap) } catch (_: Throwable) {}
+            if (pk == null) { try { val b = YtExtract.fetchPick(v.id, cap); if (b != null) pk = YtPick(b.url, b.audio, b.ua, b.title, 0) } catch (_: Throwable) {} }
+            val pick = pk
+            act.runOnUiThread {
+                if (my != gen || act.isFinishing || act.isDestroyed) return@runOnUiThread
+                if (pick == null) mini.error("ما قدرتش أجيب الفيديو هنا — دوس زرار التكبير يجرّب في مشغّلك")
+                else mini.start(pick, YtOpen.autoPlay())
+            }
+        }.apply { isDaemon = true }.start()
+    }
+
+    fun close(animated: Boolean) {
+        if (visibility != View.VISIBLE || closing) return
+        closing = true; gen++
+        mini.pause()
+        host.state(false)
+        fun finish() {
+            visibility = View.GONE; closing = false
+            mini.release(); mini.animate().cancel(); scroll.animate().cancel()
+            mini.scaleX = 1f; mini.scaleY = 1f; mini.translationX = 0f; mini.translationY = 0f; mini.alpha = 1f
+            scroll.translationY = 0f; scroll.alpha = 1f; alpha = 1f
+        }
+        if (!animated) { finish(); return }
+        val src = from
+        mini.pivotX = 0f; mini.pivotY = 0f
+        val loc = IntArray(2); mini.getLocationOnScreen(loc)
+        val pw = mini.width.toFloat().coerceAtLeast(1f); val ph = mini.height.toFloat().coerceAtLeast(1f)
+        scroll.animate().translationY(ui.dp(90).toFloat()).alpha(0f).setDuration(180L).start()
+        if (src != null && src.width() > 0) {
+            mini.animate().scaleX(src.width() / pw).scaleY(src.height() / ph).translationX((src.left - loc[0]).toFloat()).translationY((src.top - loc[1]).toFloat())
+                .setDuration(260L).setInterpolator(DecelerateInterpolator(1.4f)).start()
+            animate().alpha(0f).setStartDelay(120L).setDuration(160L).withEndAction { finish() }.start()
+        } else {
+            mini.animate().translationY(ui.dp(60).toFloat()).alpha(0f).setDuration(200L).start()
+            animate().alpha(0f).setDuration(220L).withEndAction { finish() }.start()
+        }
+    }
+
+    private fun animateIn(src: Rect?) {
+        visibility = View.VISIBLE; alpha = 0f
+        scroll.alpha = 0f; scroll.translationY = ui.dp(90).toFloat()
+        post {
+            val pw = (if (mini.width > 0) mini.width else sw).toFloat(); val ph = (if (mini.height > 0) mini.height else sw * 9 / 16).toFloat()
+            val loc = IntArray(2); mini.getLocationOnScreen(loc)
+            mini.pivotX = 0f; mini.pivotY = 0f
+            if (src != null && src.width() > 0) {
+                mini.scaleX = src.width() / pw; mini.scaleY = src.height() / ph
+                mini.translationX = (src.left - loc[0]).toFloat(); mini.translationY = (src.top - loc[1]).toFloat()
+            } else { mini.translationY = ui.dp(60).toFloat(); mini.alpha = 0f }
+            animate().alpha(1f).setStartDelay(0L).setDuration(140L).start()
+            mini.animate().scaleX(1f).scaleY(1f).translationX(0f).translationY(0f).alpha(1f).setDuration(360L).setInterpolator(DecelerateInterpolator(1.6f)).start()
+            scroll.animate().translationY(0f).alpha(1f).setStartDelay(140L).setDuration(320L).setInterpolator(DecelerateInterpolator()).start()
+        }
+    }
+
+    // ───────── المحتوى ─────────
+    private fun bindItem(v: NpItem) {
+        titleTv.text = v.title
+        metaTv.text = listOf(if (v.count > 0) fmtN(v.count) + " مشاهدة" else "", v.age).filter { it.isNotBlank() }.joinToString(" · ")
+        paintLike()
+        chanName.text = v.channel
+        chanAvHost.removeAllViews(); chanAvHost.addView(avatar(v.channel.ifBlank { "؟" }, 40, v.avatar), FrameLayout.LayoutParams(-1, -1))
+        descTv.text = "⏳ …"; descTv.maxLines = 2
+        paintSub(); paintSave(); paintTabs()
+        listBox.removeAllViews()
+        status("⏳ …")
+    }
+
+    private fun bindDetail(d: YtDetail) {
+        det = d
+        val v = item ?: return
+        titleTv.text = d.title.ifBlank { v.title }
+        metaTv.text = listOf(if (d.views >= 0) fmtN(d.views) + " مشاهدة" else "", d.age.ifBlank { v.age }).filter { it.isNotBlank() }.joinToString(" · ")
+        likeCount = d.likes; paintLike()
+        val nm = chanNameNow()
+        chanName.text = nm
+        chanAvHost.removeAllViews(); chanAvHost.addView(avatar(nm.ifBlank { "؟" }, 40, v.avatar), FrameLayout.LayoutParams(-1, -1))
+        descTv.text = d.desc.trim().ifBlank { "(مفيش وصف)" }
+        paintSub(); paintSave()
+        renderList()
+    }
+
+    private fun status(t: String) {
+        listBox.removeAllViews()
+        listBox.addView(TextView(act).apply { text = t; textSize = 13f; setTextColor(YtSkin.sub); gravity = Gravity.CENTER; setPadding(ui.dp(20), ui.dp(30), ui.dp(20), ui.dp(30)) }, LinearLayout.LayoutParams(-1, -2))
+    }
+
+    private fun setTab(c: Boolean) {
+        if (comments == c) return
+        comments = c; paintTabs()
+        composer.visibility = if (c) View.VISIBLE else View.GONE
+        if (c && !cLoaded) loadComments() else renderList()
+    }
+
+    private fun renderList() {
+        if (comments) { renderComments(); return }
+        listBox.removeAllViews()
+        val rel = det?.related ?: emptyList()
+        if (rel.isEmpty()) { status("مفيش مقترحات"); return }
+        for (r in rel.take(relShown)) listBox.addView(relCard(r), LinearLayout.LayoutParams(-1, -2))
+        if (rel.size > relShown) listBox.addView(chip("عرض المزيد") { relShown += 20; renderList() }, LinearLayout.LayoutParams(-1, -2).apply { setMargins(ui.dp(14), ui.dp(8), ui.dp(14), ui.dp(16)) })
+    }
+
+    private fun relCard(v: NpItem): View {
+        val thumb = ImageView(act).apply { scaleType = ImageView.ScaleType.CENTER_CROP; setBackgroundColor(YtSkin.surface) }
+        val box = FrameLayout(act)
+        box.addView(thumb, FrameLayout.LayoutParams(-1, -1))
+        if (v.dur > 0) box.addView(TextView(act).apply {
+            text = fmtDur(v.dur); textSize = 12f; setTextColor(Color.WHITE); typeface = medium; includeFontPadding = false
+            setPadding(ui.dp(5), ui.dp(3), ui.dp(5), ui.dp(3)); background = GradientDrawable().apply { setColor(0xCC000000.toInt()); cornerRadius = ui.dp(4).toFloat() }
+        }, FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM or Gravity.END).apply { setMargins(ui.dp(8), ui.dp(8), ui.dp(8), ui.dp(8)) })
+        try { if (v.thumb.isNotBlank()) Glide.with(act).load(v.thumb).centerCrop().override(sw, sw * 9 / 16).into(thumb) } catch (_: Throwable) {}
+        val title = TextView(act).apply { text = v.title; textSize = 14f; setTextColor(YtSkin.text); typeface = medium; maxLines = 2; ellipsize = TextUtils.TruncateAt.END }
+        val meta = TextView(act).apply {
+            text = listOf(v.channel, if (v.count > 0) fmtN(v.count) + " مشاهدة" else "", v.age).filter { it.isNotBlank() }.joinToString(" · ")
+            textSize = 12f; setTextColor(YtSkin.sub); maxLines = 2; ellipsize = TextUtils.TruncateAt.END
+        }
+        val col = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL }
+        col.addView(title, LinearLayout.LayoutParams(-1, -2)); col.addView(meta, LinearLayout.LayoutParams(-1, -2).apply { topMargin = ui.dp(3) })
+        val info = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; gravity = Gravity.TOP; setPadding(ui.dp(12), ui.dp(12), ui.dp(12), ui.dp(16)) }
+        info.addView(avatar(v.channel.ifBlank { "؟" }, 36, v.avatar), LinearLayout.LayoutParams(ui.dp(36), ui.dp(36)).apply { marginEnd = ui.dp(12) })
+        info.addView(col, LinearLayout.LayoutParams(0, -2, 1f))
+        val root = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; foreground = YtSkin.ripple(); setOnClickListener { host.openVideo(v) } }
+        root.addView(box, LinearLayout.LayoutParams(-1, sw * 9 / 16)); root.addView(info, LinearLayout.LayoutParams(-1, -2))
+        return root
+    }
+
+    private fun loadComments() {
+        val v = item ?: return
+        val my = gen
+        status("⏳ …")
+        Thread {
+            try {
+                val (r, more) = YtNp.commentsX(v.id)
+                act.runOnUiThread {
+                    if (my != gen) return@runOnUiThread
+                    cItems.addAll(r.items); cNext = r.next; cMore = more; cLoaded = true; cTotal = r.total
+                    if (r.total > 0) tabCom.text = "💬 تعليقات " + fmtN(r.total.toLong())
+                    if (comments) renderComments()
+                }
+            } catch (e: Throwable) {
+                LogStore.err("YtWatch:comments", e)
+                act.runOnUiThread { if (my == gen && comments) status("⚠ التعليقات مش متاحة: " + (e.message ?: e.javaClass.simpleName).take(100)) }
+            }
+        }.apply { isDaemon = true }.start()
+    }
+
+    private fun renderComments() {
+        listBox.removeAllViews()
+        if (cItems.isEmpty()) { status(if (cLoaded) "مفيش تعليقات" else "⏳ …"); return }
+        for (c in cItems) listBox.addView(commentView(c, false), LinearLayout.LayoutParams(-1, -2))
+        val nx = cNext; val mf = cMore
+        if (nx != null && mf != null) listBox.addView(chip("عرض المزيد") { loadMoreComments(nx, mf) }, LinearLayout.LayoutParams(-1, -2).apply { setMargins(ui.dp(14), ui.dp(8), ui.dp(14), ui.dp(16)) })
+    }
+
+    /** تعليق (أو رد): مثبّت 📌 · قلب ❤ من صاحب القناة · علامة صاحب القناة · وزرار «ردود» بيفتحها تحته */
+    private fun commentView(c: NpComment, isReply: Boolean): View {
+        val sz = if (isReply) 28 else 36
+        val tags = ArrayList<String>()
+        if (c.pinned) tags.add("📌 مثبّت")
+        if (c.owner) tags.add("✓ صاحب القناة")
+        val head = (tags.joinToString(" ") + " " + listOf(c.author, c.age).filter { it.isNotBlank() }.joinToString(" · ")).trim()
+        val col = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL }
+        col.addView(TextView(act).apply { text = head; textSize = 12f; setTextColor(if (c.owner) YtSkin.text else YtSkin.sub); typeface = medium; setSingleLine(); ellipsize = TextUtils.TruncateAt.END }, LinearLayout.LayoutParams(-1, -2))
+        col.addView(TextView(act).apply { text = c.text; textSize = 14f; setTextColor(YtSkin.text) }, LinearLayout.LayoutParams(-1, -2).apply { topMargin = ui.dp(2) })
+        val foot = ArrayList<String>()
+        if (c.likes > 0) foot.add("👍 " + fmtN(c.likes))
+        if (c.hearted) foot.add("❤ من صاحب القناة")
+        if (foot.isNotEmpty()) col.addView(TextView(act).apply { text = foot.joinToString("   "); textSize = 12f; setTextColor(YtSkin.sub) }, LinearLayout.LayoutParams(-2, -2).apply { topMargin = ui.dp(4) })
+        val repBox = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL; visibility = View.GONE }
+        val rp = c.replies
+        if (!isReply && c.replyCount > 0 && rp != null) {
+            val tv = TextView(act).apply { text = "↩ " + c.replyCount + " ردود"; textSize = 13f; setTextColor(YtSkin.text); typeface = medium; setPadding(0, ui.dp(8), 0, ui.dp(2)) }
+            tv.setOnClickListener { toggleReplies(tv, repBox, rp, c.replyCount) }
+            col.addView(tv, LinearLayout.LayoutParams(-2, -2))
+        }
+        val row = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; gravity = Gravity.TOP; setPadding(ui.dp(14), ui.dp(10), ui.dp(14), ui.dp(6)) }
+        row.addView(avatar(c.author.ifBlank { "؟" }, sz, c.avatar), LinearLayout.LayoutParams(ui.dp(sz), ui.dp(sz)).apply { marginEnd = ui.dp(12) })
+        row.addView(col, LinearLayout.LayoutParams(0, -2, 1f))
+        row.setOnLongClickListener { copy(c.text); true }
+        val wrap = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL }
+        wrap.addView(row, LinearLayout.LayoutParams(-1, -2))
+        repBox.setPadding(ui.dp(44), 0, 0, 0)
+        wrap.addView(repBox, LinearLayout.LayoutParams(-1, -2))
+        return wrap
+    }
+
+    private fun toggleReplies(tv: TextView, box: LinearLayout, first: Page, n: Int) {
+        if (box.visibility == View.VISIBLE) { box.visibility = View.GONE; tv.text = "↩ $n ردود"; return }
+        box.visibility = View.VISIBLE; tv.text = "⏳ …"
+        if (box.childCount > 0) { tv.text = "▲ إخفاء الردود"; return }
+        val v = item ?: return; val my = gen
+        fun fill(page: Page) {
+            Thread {
+                try {
+                    val r = YtNp.repliesOf(v.id, page)
+                    act.runOnUiThread {
+                        if (my != gen) return@runOnUiThread
+                        if (box.childCount > 0 && box.getChildAt(box.childCount - 1).tag == "more") box.removeViewAt(box.childCount - 1)
+                        for (c in r.items) box.addView(commentView(c, true), LinearLayout.LayoutParams(-1, -2))
+                        val nx = r.next
+                        if (nx != null) box.addView(chip("المزيد من الردود") { fill(nx) }.also { it.tag = "more" }, LinearLayout.LayoutParams(-2, -2).apply { setMargins(ui.dp(14), ui.dp(4), ui.dp(14), ui.dp(8)) })
+                        tv.text = "▲ إخفاء الردود"
+                    }
+                } catch (e: Throwable) {
+                    act.runOnUiThread { if (my == gen) { tv.text = "↩ $n ردود"; box.visibility = View.GONE; Notice.show(act, "ما قدرتش أجيب الردود", 2000L) } }
+                }
+            }.apply { isDaemon = true }.start()
+        }
+        fill(first)
+    }
+
+    private fun loadMoreComments(nx: Page, mf: (Page) -> NpComments) {
+        val my = gen
+        Thread {
+            try {
+                val r = mf(nx)
+                act.runOnUiThread { if (my == gen) { cItems.addAll(r.items); cNext = r.next; if (comments) renderComments() } }
+            } catch (e: Throwable) {
+                act.runOnUiThread { if (my == gen) Notice.show(act, "ما قدرتش أجيب تعليقات أكتر", 2000L) }
+            }
+        }.apply { isDaemon = true }.start()
+    }
+
+    /** نشر تعليق على حسابك (best effort) */
+    private fun sendComment() {
+        val v = item ?: return
+        val t = cEdit.text.toString().trim()
+        if (t.isEmpty()) return
+        if (!YtAccount.loggedIn()) { Notice.show(act, "سجّل الدخول بحساب جوجل من تبويب «أنت» عشان تكتب تعليق", 3600L); return }
+        val my = gen
+        Notice.show(act, "⏳ بنشر التعليق…", 1500L)
+        Thread {
+            try {
+                YtAccount.postComment(v.id, t)
+                act.runOnUiThread {
+                    if (my != gen) return@runOnUiThread
+                    cEdit.setText("")
+                    cItems.add(0, NpComment(t, "أنت", "", 0L, "دلوقتي", false, false, false, 0, null))
+                    cLoaded = true; if (comments) renderComments()
+                    Notice.show(act, "✅ التعليق اتنشر على حسابك", 2200L)
+                }
+            } catch (e: Throwable) {
+                LogStore.err("YtWatch:postComment", e)
+                act.runOnUiThread { Notice.show(act, "ما قدرتش أنشر التعليق: " + (e.message ?: e.javaClass.simpleName).take(110), 4000L) }
+            }
+        }.apply { isDaemon = true }.start()
+    }
+
+    fun pause() { mini.pause() }
+    fun release() { mini.release() }
+}

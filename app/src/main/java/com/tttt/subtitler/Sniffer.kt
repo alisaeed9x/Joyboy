@@ -130,6 +130,8 @@ object AdBlock {
     val JS = "(function(){try{window.open=function(){return null};" +
         "if(!document.getElementById('__svab')){var st=document.createElement('style');st.id='__svab';st.textContent='" + CSS + "';(document.head||document.documentElement).appendChild(st)}" +
         "}catch(e){}})()"
+    /** (v401) نفس الـ JS من غير تعطيل window.open — البوب-أب بيعدّي على PopupGuard يحكم عليه */
+    val JS_SMART: String = JS.replace("window.open=function(){return null};", "")
 }
 
 /**

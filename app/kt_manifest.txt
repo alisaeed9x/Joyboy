@@ -64,6 +64,7 @@ com/tttt/subtitler/OrbPlayer.kt
 com/tttt/subtitler/PipSubBar.kt
 com/tttt/subtitler/Player.kt
 com/tttt/subtitler/PlayerLogic.kt
+com/tttt/subtitler/PopupGuard.kt
 com/tttt/subtitler/Poster.kt
 com/tttt/subtitler/Presets.kt
 com/tttt/subtitler/PrivacyFilter.kt
@@ -122,6 +123,7 @@ com/tttt/subtitler/Widgets.kt
 com/tttt/subtitler/YoutubeUi.kt
 com/tttt/subtitler/YtAccount.kt
 com/tttt/subtitler/YtAudio.kt
+com/tttt/subtitler/YtChannel.kt
 com/tttt/subtitler/YtFallback.kt
 com/tttt/subtitler/YtFast.kt
 com/tttt/subtitler/YtLoad.kt
@@ -131,4 +133,5 @@ com/tttt/subtitler/YtProUi.kt
 com/tttt/subtitler/YtRss.kt
 com/tttt/subtitler/YtShorts.kt
 com/tttt/subtitler/YtSkin.kt
+com/tttt/subtitler/YtWatch.kt
 com/tttt/subtitler/YtWeb.kt

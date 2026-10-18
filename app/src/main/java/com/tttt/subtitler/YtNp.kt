@@ -59,6 +59,14 @@ object YtLang {
     }
 }
 class NpChan(val name: String, val first: YtRes, val more: (Page) -> YtRes)
+/** (v403) صفحة قناة كاملة: بانر · أفاتار · مشتركين · وصف · تابات (فيديوهات/بث/قوايم) */
+class NpChanTab(val key: String, val label: String)
+class NpChanFull(val url: String, val name: String, val avatar: String, val banner: String, val subs: Long, val desc: String, val verified: Boolean,
+                 val tabs: List<NpChanTab>, val loadTab: (String) -> Pair<YtRes, (Page) -> YtRes>)
+/** (v403) تعليق: مثبّت/قلب من صاحب القناة/صاحب القناة + عدد الردود (صفحة الردود في replies) */
+class NpComment(val text: String, val author: String, val avatar: String, val likes: Long, val age: String,
+                val pinned: Boolean, val hearted: Boolean, val owner: Boolean, val replyCount: Int, val replies: Page?)
+class NpComments(val total: Int, val items: List<NpComment>, val next: Page?)
 
 /** (v325) Downloader بتاع NewPipeExtractor على HttpURLConnection (من غير مكتبة إضافية) */
 object YtDownloader : Downloader() {
@@ -160,6 +168,69 @@ object YtNp {
         val ti = ChannelTabInfo.getInfo(YT, tab)
         val first = YtRes(ti.relatedItems.mapNotNull { conv(it) }, if (ti.hasNextPage()) ti.nextPage else null)
         return NpChan(ci.name ?: "", first) { p -> res(ChannelTabInfo.getMoreItems(YT, tab, p)) }
+    }
+
+
+    // ───────── (v403) صفحة القناة + تعليقات بالردود ─────────
+    private fun callAny(o: Any?, name: String): Any? = try { o?.javaClass?.getMethod(name)?.invoke(o) } catch (_: Throwable) { null }
+    private fun imgUrl(l: Any?): String {
+        val list = l as? List<*> ?: return ""
+        // أكبر صورة (آخر واحدة غالبًا)
+        for (x in list.reversed()) { val u = callAny(x, "getUrl") as? String; if (!u.isNullOrBlank()) return u }
+        return ""
+    }
+
+    /** لو لينك القناة ناقص/بايظ: بندوّر على القناة بالاسم ونرجّع أول نتيجة */
+    fun findChannelUrl(name: String): String? = try {
+        searchFirst(name, "channels").items.firstOrNull { it.kind == 1 && it.channelUrl.isNotBlank() }?.channelUrl
+    } catch (_: Throwable) { null }
+
+    fun channelFull(url: String): NpChanFull {
+        init()
+        val ci = ChannelInfo.getInfo(YT, url)
+        val byKey = LinkedHashMap<String, org.schabi.newpipe.extractor.linkhandler.ListLinkHandler>()
+        val tabs = ArrayList<NpChanTab>()
+        for (t in ci.tabs) {
+            val f = t.contentFilters.firstOrNull() ?: continue
+            val label = when (f) { "videos" -> "الفيديوهات"; "livestreams" -> "البث المباشر"; "playlists" -> "قوايم التشغيل"; else -> continue }   // الشورتس مخفية (v351)
+            if (!byKey.containsKey(f)) { byKey[f] = t; tabs.add(NpChanTab(f, label)) }
+        }
+        if (tabs.isEmpty()) { val t = ci.tabs.firstOrNull(); if (t != null) { val f = t.contentFilters.firstOrNull() ?: "videos"; byKey[f] = t; tabs.add(NpChanTab(f, "الفيديوهات")) } }
+        val subs = (callAny(ci, "getSubscriberCount") as? Long) ?: -1L
+        val desc = (callAny(ci, "getDescription") as? String) ?: ""
+        val ver = (callAny(ci, "isVerified") as? Boolean) ?: false
+        val av = imgUrl(callAny(ci, "getAvatars")); val bn = imgUrl(callAny(ci, "getBanners"))
+        val load = { key: String ->
+            val h = byKey[key] ?: byKey.values.first()
+            val ti = ChannelTabInfo.getInfo(YT, h)
+            val first = YtRes(ti.relatedItems.mapNotNull { conv(it) }, if (ti.hasNextPage()) ti.nextPage else null)
+            Pair(first, { p: Page -> res(ChannelTabInfo.getMoreItems(YT, h, p)) })
+        }
+        return NpChanFull(ci.url ?: url, ci.name ?: "", av, bn, subs, desc, ver, tabs, load)
+    }
+
+    private fun cmt(c: CommentsInfoItem): NpComment {
+        val av = c.uploaderAvatars
+        return NpComment(c.commentText?.content ?: "", c.uploaderName ?: "", if (av == null || av.isEmpty()) "" else av[0].url ?: "",
+            c.likeCount.toLong(), c.textualUploadDate ?: "",
+            (callAny(c, "isPinned") as? Boolean) ?: false, (callAny(c, "isHeartedByUploader") as? Boolean) ?: false, (callAny(c, "isChannelOwner") as? Boolean) ?: false,
+            (callAny(c, "getReplyCount") as? Int) ?: 0, callAny(c, "getReplies") as? Page)
+    }
+    fun commentsX(id: String): Pair<NpComments, (Page) -> NpComments> {
+        init()
+        val ci = CommentsInfo.getInfo(YT, watchUrl(id))
+        val total = (callAny(ci, "getCommentsCount") as? Int) ?: -1
+        val first = NpComments(total, ci.relatedItems.map { cmt(it) }, if (ci.hasNextPage()) ci.nextPage else null)
+        return Pair(first, { p: Page ->
+            val pg = CommentsInfo.getMoreItems(YT, ci, p)
+            NpComments(total, pg.items.map { cmt(it) }, if (pg.hasNextPage()) pg.nextPage else null)
+        })
+    }
+    /** ردود تعليق واحد */
+    fun repliesOf(id: String, p: Page): NpComments {
+        init()
+        val pg = CommentsInfo.getMoreItems(YT, watchUrl(id), p)
+        return NpComments(-1, pg.items.map { cmt(it) }, if (pg.hasNextPage()) pg.nextPage else null)
     }
 
     fun playlist(url: String): Pair<YtRes, (Page) -> YtRes> {
