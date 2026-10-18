@@ -28,6 +28,7 @@ import android.widget.FrameLayout
 import android.widget.HorizontalScrollView
 import android.widget.ImageView
 import android.widget.LinearLayout
+import android.widget.PopupMenu
 import android.widget.ScrollView
 import android.widget.SeekBar
 import android.widget.TextView
@@ -59,7 +60,7 @@ object YtOpen {
 }
 
 interface YtWatchHost {
-    fun expand(id: String, title: String, posMs: Long, translate: Boolean)
+    fun expand(id: String, title: String, posMs: Long, translate: Boolean, pick: YtPick?)
     fun openChannel(url: String, name: String)
     fun openVideo(v: NpItem)
     fun audio(v: NpItem)
@@ -95,6 +96,10 @@ private class YtGlyph(ctx: Context, var kind: Int) : View(ctx) {
                 c.drawLine(cx - a, cy + a, cx - a + l, cy + a, p); c.drawLine(cx - a, cy + a, cx - a, cy + a - l, p)
                 c.drawLine(cx + a, cy + a, cx + a - l, cy + a, p); c.drawLine(cx + a, cy + a, cx + a, cy + a - l, p)
             }
+            4 -> {
+                p.style = Paint.Style.FILL
+                c.drawCircle(cx, cy - s * 0.2f, s * 0.07f, p); c.drawCircle(cx, cy, s * 0.07f, p); c.drawCircle(cx, cy + s * 0.2f, s * 0.07f, p)
+            }
             else -> {
                 p.style = Paint.Style.STROKE; p.strokeWidth = s * 0.08f; p.strokeCap = Paint.Cap.ROUND; p.strokeJoin = Paint.Join.ROUND
                 path.reset(); path.moveTo(cx - s * 0.2f, cy - s * 0.08f); path.lineTo(cx, cy + s * 0.12f); path.lineTo(cx + s * 0.2f, cy - s * 0.08f)
@@ -104,10 +109,63 @@ private class YtGlyph(ctx: Context, var kind: Int) : View(ctx) {
     }
 }
 
+/** (v406) تسليم المشغّل: زرار التكبير بيدّي نفس الـ ExoPlayer (شغّال ومحمّل) للمشغّل الكامل من غير ما يعيد التحميل. بيتنسى بعد 12 ثانية لو محدّش أخده */
+object YtHandoff {
+    @Volatile private var p: ExoPlayer? = null
+    private val hh = Handler(Looper.getMainLooper())
+    private val expire = Runnable { val x = p; p = null; try { x?.release() } catch (_: Throwable) {} }
+    fun put(x: ExoPlayer) {
+        val old = p; p = x
+        hh.removeCallbacks(expire); hh.postDelayed(expire, 12000L)
+        if (old != null && old !== x) try { old.release() } catch (_: Throwable) {}
+    }
+    fun take(): ExoPlayer? { hh.removeCallbacks(expire); val x = p; p = null; return x }
+}
+
+/** (v406) علامة «مدبلج» على كروت القوايم: بنفحص لغات الصوت للفيديوهات الظاهرة (خيطين خلفيين، بعد ما الكارت يفضل ظاهر لحظة) ونكاشّي النتيجة */
+object YtDub {
+    private val cache = java.util.concurrent.ConcurrentHashMap<String, List<String>>()
+    private val queued = java.util.concurrent.ConcurrentHashMap<String, Long>()
+    private val waiters = java.util.concurrent.ConcurrentHashMap<String, java.util.concurrent.CopyOnWriteArrayList<(List<String>) -> Unit>>()
+    private val pool = java.util.concurrent.ThreadPoolExecutor(2, 2, 0L, java.util.concurrent.TimeUnit.MILLISECONDS,
+        java.util.concurrent.LinkedBlockingDeque<Runnable>(40), { r -> Thread(r).apply { isDaemon = true; priority = Thread.MIN_PRIORITY } },
+        java.util.concurrent.ThreadPoolExecutor.DiscardOldestPolicy())
+    fun enabled(): Boolean = Cfg.str("yt_dub_scan", "1") != "0"
+    fun get(id: String): List<String>? = cache[id]
+    fun set(id: String, langs: List<String>) { cache[id] = langs }
+    /** cb بتتنادى على خيط خلفي — الـ UI لازم يعمل runOnUiThread */
+    fun request(id: String, cb: (List<String>) -> Unit) {
+        if (!enabled() || id.length != 11) return
+        cache[id]?.let { cb(it); return }
+        waiters.getOrPut(id) { java.util.concurrent.CopyOnWriteArrayList() }.add(cb)
+        val now = System.currentTimeMillis()
+        val t = queued[id]
+        if (t != null && now - t < 45_000L) return
+        queued[id] = now
+        pool.execute {
+            val l = try { YtNp.init(); YtNp.audioLangs(id) } catch (_: Throwable) { null }
+            if (l != null) cache[id] = l
+            val ws = waiters.remove(id)
+            if (l != null && ws != null) for (w in ws) try { w(l) } catch (_: Throwable) {}
+        }
+    }
+    fun isDubbed(l: List<String>?): Boolean = l != null && l.size > 1
+}
+
 /** مشغّل مصغّر (نسخة صغيرة من المشغّل): ExoPlayer + تحكم (تشغيل/إيقاف · شريط · زرار تكبير في الركن · سهم تصغير) */
 class YtMiniPlayer(private val act: Activity, private val ui: Ui) : FrameLayout(act) {
-    var onExpand: (Long) -> Unit = {}
+    var onExpand: (Long, YtPick?) -> Unit = { _, _ -> }
     var onCollapse: () -> Unit = {}
+    private class Ent(val label: String, val url: String, val audio: String, val h: Int)
+    private class Lg(val name: String, val code: String, val url: String, val q: List<Pair<String, String>>)
+    private val ents = ArrayList<Ent>()
+    private val lgs = ArrayList<Lg>()
+    private val aq = ArrayList<Pair<String, String>>()
+    private var curEnt = 0
+    private var lgIdx = -1
+    private var audOvr: String? = null
+    private var qRaw = ""
+    private var curPick: YtPick? = null
     private var exo: ExoPlayer? = null
     private var lastPick: YtPick? = null
     private var resumeMs = 0L
@@ -128,6 +186,11 @@ class YtMiniPlayer(private val act: Activity, private val ui: Ui) : FrameLayout(
     private val seek = SeekBar(act)
     private val expandG = YtGlyph(act, 2)
     private val closeG = YtGlyph(act, 3)
+    private val gearG = YtGlyph(act, 4)
+    private val dubTv = TextView(act).apply {
+        text = "🌐 مدبلج"; textSize = 11f; setTextColor(Color.WHITE); visibility = View.GONE; includeFontPadding = false
+        setPadding(ui.dp(8), ui.dp(5), ui.dp(8), ui.dp(5)); background = GradientDrawable().apply { setColor(0xAA000000.toInt()); cornerRadius = ui.dp(6).toFloat() }
+    }
     private val bar = LinearLayout(act)
 
     private val hideR = Runnable { if (exo?.isPlaying == true && !dragging) showCtl(false, false) }
@@ -173,6 +236,8 @@ class YtMiniPlayer(private val act: Activity, private val ui: Ui) : FrameLayout(
         playB.addView(playG, FrameLayout.LayoutParams(-1, -1))
         addView(playB, FrameLayout.LayoutParams(ui.dp(56), ui.dp(56), Gravity.CENTER))
         addView(closeG, FrameLayout.LayoutParams(ui.dp(44), ui.dp(44), Gravity.TOP or Gravity.START))
+        addView(gearG, FrameLayout.LayoutParams(ui.dp(44), ui.dp(44), Gravity.TOP or Gravity.END))
+        addView(dubTv, FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.END).apply { setMargins(0, ui.dp(10), ui.dp(48), 0) })
         bar.apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; setPadding(ui.dp(10), 0, ui.dp(2), 0) }
         seek.max = 1000
         try {
@@ -187,18 +252,25 @@ class YtMiniPlayer(private val act: Activity, private val ui: Ui) : FrameLayout(
 
         setOnClickListener { showCtl(!ctlOn, true) }
         closeG.setOnClickListener { onCollapse() }
+        gearG.setOnClickListener { showMenu(it) }
+        dubTv.setOnClickListener { langMenu(it) }
         expandG.setOnClickListener {
-            val pos = exo?.currentPosition ?: resumeMs
-            resumeMs = pos
-            releasePlayer(true)
-            showCtl(true, false)
-            onExpand(pos)
+            // (v406) تكبير فوري: بنسلّم نفس المشغّل (شغّال ومحمّل) للمشغّل الكامل من غير إعادة تحميل
+            val ho = handoff()
+            if (ho != null) { showCtl(true, false); onExpand(ho.second, ho.first) }
+            else {
+                val pos = exo?.currentPosition ?: resumeMs
+                resumeMs = pos
+                releasePlayer(true)
+                showCtl(true, false)
+                onExpand(pos, null)
+            }
         }
         playB.setOnClickListener {
             val p = exo
             if (p == null) {
                 val lp = lastPick
-                if (lp != null) start(lp, true, resumeMs) else onExpand(0L)
+                if (lp != null) playPick(lp, true, resumeMs) else onExpand(0L, null)
             } else if (p.playbackState == androidx.media3.common.Player.STATE_ENDED) { p.seekTo(0L); p.playWhenReady = true }
             else p.playWhenReady = !p.playWhenReady
         }
@@ -236,7 +308,7 @@ class YtMiniPlayer(private val act: Activity, private val ui: Ui) : FrameLayout(
     private fun showCtl(on: Boolean, auto: Boolean) {
         ctlOn = on
         hh.removeCallbacks(hideR)
-        for (v in listOf<View>(shade, playB, bar, closeG)) {
+        for (v in listOf<View>(shade, playB, bar, closeG, gearG)) {
             if (on) { v.visibility = View.VISIBLE; v.animate().alpha(1f).setDuration(160L).start() }
             else v.animate().alpha(0f).setDuration(160L).withEndAction { if (!ctlOn) v.visibility = View.INVISIBLE }.start()
         }
@@ -261,15 +333,136 @@ class YtMiniPlayer(private val act: Activity, private val ui: Ui) : FrameLayout(
 
     fun reset() {
         releasePlayer(false)
-        lastPick = null; resumeMs = 0L; vw = 0; vh = 0
+        lastPick = null; curPick = null; resumeMs = 0L; vw = 0; vh = 0
+        ents.clear(); lgs.clear(); aq.clear(); audOvr = null; lgIdx = -1; curEnt = 0; qRaw = ""; dubTv.visibility = View.GONE
         msgTv.visibility = View.GONE; seek.progress = 0; timeTv.text = "0:00 / 0:00"
         playG.kind = 0; playG.invalidate()
         thumb.visibility = View.VISIBLE
         showCtl(true, false)
     }
 
-    fun start(pick: YtPick, autoplay: Boolean, seekMs: Long = 0L) {
-        lastPick = pick
+    fun start(pick: YtPick, autoplay: Boolean, seekMs: Long = 0L) { parse(pick); playPick(pick, autoplay, seekMs) }
+
+    private fun parse(pick: YtPick) {
+        ents.clear(); lgs.clear(); aq.clear(); audOvr = null; lgIdx = -1; curEnt = 0
+        qRaw = pick.qlist
+        try {
+            val a = org.json.JSONArray(pick.qlist)
+            for (i in 0 until a.length()) { val o = a.getJSONObject(i); ents.add(Ent(o.optString("l"), o.optString("u"), o.optString("a"), o.optInt("h"))) }
+            val at = a.optJSONObject(0)?.optJSONArray("at")
+            if (at != null) for (i in 0 until at.length()) {
+                val o = at.getJSONObject(i); val q = ArrayList<Pair<String, String>>(); val qa = o.optJSONArray("q")
+                if (qa != null) for (j in 0 until qa.length()) q.add(Pair(qa.getJSONObject(j).optString("n"), qa.getJSONObject(j).optString("u")))
+                lgs.add(Lg(o.optString("n"), o.optString("l"), o.optString("u"), q)); if (o.optInt("c") == 1) lgIdx = i
+            }
+            val aqa = a.optJSONObject(0)?.optJSONArray("aq")
+            if (aqa != null) for (j in 0 until aqa.length()) aq.add(Pair(aqa.getJSONObject(j).optString("n"), aqa.getJSONObject(j).optString("u")))
+        } catch (_: Throwable) {}
+        curEnt = ents.indexOfFirst { it.url == pick.url }.let { if (it >= 0) it else ents.indexOfFirst { e -> e.h == pick.h } }
+        dubTv.visibility = if (lgs.size > 1) View.VISIBLE else View.GONE
+    }
+
+    // ───────── (v406) جودة الفيديو · لغة الصوت · جودة الصوت ─────────
+    private fun audioVariants(): List<Pair<String, String>> = if (lgIdx >= 0 && lgIdx < lgs.size && lgs[lgIdx].q.isNotEmpty()) lgs[lgIdx].q else aq
+
+    private fun showMenu(anchor: View) {
+        val m = PopupMenu(act, anchor)
+        if (ents.size > 1) {
+            val sm = m.menu.addSubMenu("🎞 الجودة" + (ents.getOrNull(curEnt)?.let { " (" + it.label + ")" } ?: ""))
+            ents.forEachIndexed { i, e -> sm.add(0, 100 + i, i, (if (i == curEnt) "✓ " else "") + e.label) }
+        }
+        if (lgs.size > 1) {
+            val sm = m.menu.addSubMenu("🌐 لغة الصوت" + (lgs.getOrNull(lgIdx)?.let { " (" + it.name + ")" } ?: ""))
+            lgs.forEachIndexed { i, l -> sm.add(0, 200 + i, i, (if (i == lgIdx) "✓ " else "") + l.name) }
+        }
+        val av = audioVariants()
+        if (av.size > 1) {
+            val sm = m.menu.addSubMenu("🔊 جودة الصوت")
+            av.forEachIndexed { i, v -> sm.add(0, 300 + i, i, (if (audOvr == v.second) "✓ " else "") + v.first) }
+        }
+        if (m.menu.size() == 0) { Notice.show(act, "مفيش خيارات جودة أو صوت للفيديو ده", 2000L); return }
+        m.setOnMenuItemClickListener { mi ->
+            val id = mi.itemId
+            if (id in 100..199) pickQuality(id - 100) else if (id in 200..299) pickLang(id - 200) else if (id in 300..399) pickAudioQ(id - 300)
+            true
+        }
+        m.show()
+    }
+
+    private fun langMenu(anchor: View) {
+        if (lgs.size < 2) return
+        val m = PopupMenu(act, anchor)
+        lgs.forEachIndexed { i, l -> m.menu.add(0, 200 + i, i, (if (i == lgIdx) "✓ " else "") + "🌐 " + l.name) }
+        m.setOnMenuItemClickListener { mi -> pickLang(mi.itemId - 200); true }
+        m.show()
+    }
+
+    /** لو الجودة الحالية فيديو بصوت مدمج: ننقل لأقرب جودة فيديو-بس (عشان الصوت يتبدّل) */
+    private fun splitEnt(): Ent? {
+        val e = ents.getOrNull(curEnt)
+        if (e != null && e.audio.isNotEmpty()) return e
+        val curH = e?.h ?: 0
+        val cand = ents.filter { it.audio.isNotEmpty() }
+        val n = cand.filter { it.h <= curH }.maxByOrNull { it.h } ?: cand.firstOrNull() ?: return null
+        curEnt = ents.indexOf(n)
+        return n
+    }
+
+    private fun pickQuality(i: Int) {
+        val e = ents.getOrNull(i) ?: return
+        curEnt = i
+        reload(e.url, if (e.audio.isEmpty()) null else (audOvr ?: e.audio), e.h, "🎞 الجودة: " + e.label)
+    }
+    private fun pickLang(i: Int) {
+        val l = lgs.getOrNull(i) ?: return
+        lgIdx = i; audOvr = l.url
+        val e = splitEnt()
+        if (e == null) { Notice.show(act, "اللغة دي مش متاحة مع الجودات الحالية", 2200L); return }
+        reload(e.url, audOvr, e.h, "🌐 الصوت: " + l.name)
+    }
+    private fun pickAudioQ(i: Int) {
+        val v = audioVariants().getOrNull(i) ?: return
+        audOvr = v.second
+        val e = splitEnt()
+        if (e == null) { Notice.show(act, "جودة الصوت دي مش متاحة مع الجودات الحالية", 2200L); return }
+        reload(e.url, audOvr, e.h, "🔊 جودة الصوت: " + v.first)
+    }
+    private fun reload(url: String, audio: String?, h: Int, msg: String) {
+        val old = curPick
+        val pos = position(); val play = exo?.playWhenReady ?: true
+        playPick(YtPick(url, audio, old?.ua ?: "", old?.title ?: "", h, qRaw), play, pos)
+        Notice.show(act, msg, 1600L)
+    }
+
+    /** qlist للمشغّل الكامل بعد ما تغيّر لغة/جودة صوت: كل الجودات بصوت اللغة المختارة */
+    private fun qlistForHandoff(): String {
+        val ov = audOvr ?: return qRaw
+        return try {
+            val a = org.json.JSONArray(qRaw)
+            for (i in 0 until a.length()) { val o = a.getJSONObject(i); if (o.optString("a").isNotEmpty()) o.put("a", ov) }
+            val at = a.optJSONObject(0)?.optJSONArray("at")
+            if (at != null) for (i in 0 until at.length()) at.getJSONObject(i).put("c", if (i == lgIdx) 1 else 0)
+            a.toString()
+        } catch (_: Throwable) { qRaw }
+    }
+
+    /** بيسلّم المشغّل الشغّال للـ YtHandoff ويرجّع (pick الحالي, الموضع) عشان نفتح المشغّل الكامل من غير تحميل */
+    fun handoff(): Pair<YtPick, Long>? {
+        val p = exo ?: return null; val cp = curPick ?: return null
+        if (p.playbackState == androidx.media3.common.Player.STATE_IDLE) return null
+        val pos = p.currentPosition
+        try { p.removeListener(listener) } catch (_: Throwable) {}
+        hh.removeCallbacks(ticker); exo = null; keepScreenOn = false
+        p.playWhenReady = true
+        YtHandoff.put(p)
+        thumb.visibility = View.VISIBLE
+        playG.kind = 0; playG.invalidate()
+        resumeMs = pos
+        return Pair(YtPick(cp.url, cp.audio, cp.ua, cp.title, cp.h, qlistForHandoff()), pos)
+    }
+
+    private fun playPick(pick: YtPick, autoplay: Boolean, seekMs: Long) {
+        lastPick = pick; curPick = pick
         releasePlayer(false)
         try {
             val f = DefaultHttpDataSource.Factory().setUserAgent(pick.ua)
@@ -361,7 +554,7 @@ class YtWatchPage(private val act: Activity, private val ui: Ui, private val hos
         likeChip = chip("👍") { toggleLike() }
         saveChip = chip("🔖 احفظ") { toggleSave() }
         for (c in listOf(likeChip, saveChip,
-            chip("🌐 ترجمة وفرجة") { val v = item; if (v != null) host.expand(v.id, titleNow(), mini.position(), true) },
+            chip("🌐 ترجمة وفرجة") { val v = item; if (v != null) { val ho = mini.handoff(); host.expand(v.id, titleNow(), ho?.second ?: mini.position(), true, ho?.first) } },
             chip("🎧 صوت") { val v = item; if (v != null) { mini.pause(); host.audio(saveItem()) } },
             chip("⬇ تحميل") { a -> val v = item; if (v != null) host.download(a, saveItem()) },
             chip("📋 نسخ") { val v = item; if (v != null) copy(YtNp.watchUrl(v.id)) },
@@ -408,7 +601,7 @@ class YtWatchPage(private val act: Activity, private val ui: Ui, private val hos
         body.addView(listBox, LinearLayout.LayoutParams(-1, -2))
 
         mini.onCollapse = { close(true) }
-        mini.onExpand = { pos -> val v = item; if (v != null) host.expand(v.id, titleNow(), pos, false) }
+        mini.onExpand = { pos, pk -> val v = item; if (v != null) host.expand(v.id, titleNow(), pos, false, pk) }
     }
 
     // ───────── عناصر مساعدة ─────────
@@ -541,10 +734,10 @@ class YtWatchPage(private val act: Activity, private val ui: Ui, private val hos
                 LogStore.err("YtWatch:details", e)
                 act.runOnUiThread { if (my == gen) status("⚠ ما قدرتش أجيب التفاصيل: " + (e.message ?: e.javaClass.simpleName).take(120)) }
             }
-            val cap = Cfg.int("yt_maxh", 0).let { if (it in 1..480) it else 480 }
+            val cap = Cfg.int("yt_maxh", 0)   // (v406) نفس جودة المشغّل الكامل (المصغّر هو نفس المشغّل)
             var pk: YtPick? = null
             try { pk = YtNp.pick(v.id, cap) } catch (_: Throwable) {}
-            if (pk == null) { try { val b = YtExtract.fetchPick(v.id, cap); if (b != null) pk = YtPick(b.url, b.audio, b.ua, b.title, 0) } catch (_: Throwable) {} }
+            if (pk == null) { try { val b = YtExtract.fetchPick(v.id, cap); if (b != null) pk = YtPick(b.url, b.audio, b.ua, b.title, 0, b.optsJson()) } catch (_: Throwable) {} }
             val pick = pk
             act.runOnUiThread {
                 if (my != gen || act.isFinishing || act.isDestroyed) return@runOnUiThread

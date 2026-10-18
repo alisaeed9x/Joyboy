@@ -44,7 +44,11 @@ object YtLang {
         val n = if (lang.isBlank()) "؟" else try { java.util.Locale(lang).getDisplayLanguage(java.util.Locale("ar")).ifBlank { lang } } catch (_: Throwable) { lang }
         return if (orig) "$n (الأصلي)" else n
     }
-    class Tr(val lang: String, val orig: Boolean, val dflt: Boolean, val url: String, val bitrate: Int)
+    class Tr(val lang: String, val orig: Boolean, val dflt: Boolean, val url: String, val bitrate: Int, val alts: List<Pair<String, String>> = emptyList())
+    // (v406) لغة لفيديو واحد بس (من علامة «مدبلج» برّه أو من المشغّل المصغّر): بتتستهلك مرة واحدة في pick()
+    private val ovr = java.util.concurrent.ConcurrentHashMap<String, String>()
+    fun setOverride(id: String, lang: String) { ovr[id] = lang }
+    fun takeOverride(id: String): String? = ovr.remove(id)
     /** لغتك المفضّلة لو موجودة، وإلا الأصلي، وإلا الافتراضي، وإلا الأول (الأعلى جودة) */
     fun choose(tr: List<Tr>, pref: String = pref()): Tr? {
         if (tr.isEmpty()) return null
@@ -54,7 +58,11 @@ object YtLang {
     /** [{n: الاسم, l: اللغة, u: الرابط, c: 1 للمختار}] — بتتحط في أول عنصر من qlist تحت المفتاح "at" */
     fun json(tr: List<Tr>, chosen: Tr?): org.json.JSONArray {
         val a = org.json.JSONArray()
-        for (t in tr) a.put(org.json.JSONObject().put("n", name(t.lang, t.orig)).put("l", t.lang).put("u", t.url).put("c", if (t === chosen) 1 else 0))
+        for (t in tr) {
+            val q = org.json.JSONArray()
+            for ((n, u) in t.alts) q.put(org.json.JSONObject().put("n", n).put("u", u))
+            a.put(org.json.JSONObject().put("n", name(t.lang, t.orig)).put("l", t.lang).put("u", t.url).put("c", if (t === chosen) 1 else 0).put("q", q))
+        }
         return a
     }
 }
@@ -110,8 +118,9 @@ object YtNp {
     }
 
     /** (v389) إعادة تهيئة NewPipe ومسح كاش الرئيسية — بتتنادى لما الرئيسية تفضى بعد فترة (علاج ذاتي بدل المزامنة اليدوية) */
-    fun clearHome() { homeC = null }
-    @Synchronized fun reset() { ready = false; homeC = null }
+    fun clearHome() { homeC = null; dropHomeFile() }   // (v407) + ملف الكاش (سحب للتحديث = رئيسية جديدة فعلًا)
+    @Synchronized fun reset() { ready = false; homeC = null; dropHomeFile() }
+    private fun dropHomeFile() { try { homeDir?.let { java.io.File(it, "yt_home.json").delete() } } catch (_: Throwable) {} }
 
     fun idOf(url: String): String = try { YT.streamLHFactory.getId(url) } catch (_: Throwable) { "" }
     fun watchUrl(id: String) = "https://www.youtube.com/watch?v=$id"
@@ -279,7 +288,7 @@ object YtNp {
         // (v388) مسارات الصوت (لغات): نختار لغتك المفضّلة (عربي افتراضيًا) بدل أعلى bitrate عشوائي (كان بيجيب الدبلجة الإنجليزي أحيانًا)
         val trs = audioTracks(aud)
         val multi = trs.size > 1
-        val chTr = if (multi) YtLang.choose(trs) else null
+        val chTr = if (multi) YtLang.choose(trs, YtLang.takeOverride(id) ?: YtLang.pref()) else null
         val audUrl: String? = chTr?.url ?: bestAud?.content
         // (v327) كل الجودات المتاحة (نفس شكل YtExtract.Pick.optsJson: l/u/a/h) عشان زرار الجودة في المشغّل يشتغل
         val byH = HashMap<Int, Array<String?>>()   // h -> [label, url, audio]
@@ -296,6 +305,7 @@ object YtNp {
             val arr = org.json.JSONArray()
             for (k in hs) { val o = byH[k]!!; arr.put(org.json.JSONObject().put("l", o[0]).put("u", o[1]).put("a", o[2] ?: "").put("h", k)) }
             if (multi) arr.optJSONObject(0)?.put("at", YtLang.json(trs, chTr))
+            else { val al = altsOf(aud.filter { it.audioTrackType?.name != "DESCRIPTIVE" }); if (al.size > 1) { val q = org.json.JSONArray(); for ((n, u) in al) q.put(org.json.JSONObject().put("n", n).put("u", u)); arr.optJSONObject(0)?.put("aq", q) } }   // (v406) جودات الصوت
             val c = byH[h]!!
             return YtPick(c[1]!!, c[2], ua, ttl, h, arr.toString())
         }
@@ -316,9 +326,30 @@ object YtNp {
         val out = ArrayList<YtLang.Tr>()
         for ((lg, l) in by) {
             val b = l.filter { it.format?.suffix == "m4a" }.maxByOrNull { it.averageBitrate } ?: l.maxByOrNull { it.averageBitrate } ?: continue
-            out.add(YtLang.Tr(lg, l.any { it.audioTrackType?.name == "ORIGINAL" }, false, b.content, b.averageBitrate))
+            out.add(YtLang.Tr(lg, l.any { it.audioTrackType?.name == "ORIGINAL" }, false, b.content, b.averageBitrate, altsOf(l)))
         }
         return out
+    }
+
+    /** (v406) جودات الصوت المتاحة (أعلى أولًا): [(اسم, رابط)] — kbps + الصيغة */
+    private fun altsOf(l: List<org.schabi.newpipe.extractor.stream.AudioStream>): List<Pair<String, String>> {
+        val seen = HashSet<String>(); val out = ArrayList<Pair<String, String>>()
+        for (a in l.sortedByDescending { it.averageBitrate }) {
+            val c = a.content ?: continue
+            if (c.isBlank()) continue
+            val b = a.averageBitrate; val kb = if (b > 1000) b / 1000 else b
+            val n = (if (kb > 0) "$kb kbps" else "؟") + " · " + (a.format?.suffix ?: "audio")
+            if (seen.add(n)) out.add(Pair(n, c))
+            if (out.size >= 6) break
+        }
+        return out
+    }
+
+    /** (v406) لغات الصوت المتاحة للفيديو (أكواد) — لعلامة «مدبلج»: أكتر من لغة = مدبلج. بيستخدم كاش info */
+    fun audioLangs(id: String): List<String> {
+        val i = info(id)
+        val aud = i.audioStreams.filter { !it.content.isNullOrBlank() }
+        return audioTracks(aud).map { it.lang }
     }
 
     /** (v337) رابط الصوت بس (m4a لو متاح، وإلا أعلى جودة) من غير أي داتا فيديو — للتشغيل في مشغّل الموسيقى وللتحميل */
@@ -351,7 +382,7 @@ object YtNp {
     /** (v378) فيديوهات عشوائية من قنوات اشتراكاتك: بنختار لحد 10 قنوات عشوائي، ومن كل قناة صفحة عشوائية (الأحدث أو أقدم) وناخد منها 4 فيديوهات عشوائي */
     private fun randomSubVideos(subs: List<NpItem>): List<NpItem> {
         val rnd = java.util.Random()
-        val chans = subs.filter { it.channelUrl.isNotBlank() }.shuffled(rnd).take(10)
+        val chans = subs.filter { it.channelUrl.isNotBlank() }.shuffled(rnd).take(6)   // (v407) 6 بدل 10: الجلب العميق بقى في الخلفية
         val out = java.util.concurrent.ConcurrentLinkedQueue<NpItem>()
         val ths = chans.map { c ->
             Thread {
@@ -371,74 +402,157 @@ object YtNp {
 
     /** (v362) آخر رئيسية جاهزة (وقتها + النتيجة): بتتعرض فورًا وبتتحدّث في الخلفية للزيارة الجاية */
     @Volatile private var homeC: Pair<Long, YtRes>? = null
+    @Volatile private var homeBusy = false
+    @Volatile private var homeDir: java.io.File? = null
+    /** (v407) بيتنده (من خيط خلفي) لما الرئيسية تتحدّث في الخلفية — الواجهة بتقارن وتظهر كبسولة «فيديوهات جديدة» */
+    @Volatile var onHome: ((YtRes) -> Unit)? = null
+    fun attach(c: android.content.Context) { if (homeDir == null) homeDir = c.applicationContext.filesDir }
+
     fun homeCached(maxAgeMs: Long = 20L * 60 * 1000L): YtRes? = homeC?.takeIf { it.second.items.isNotEmpty() && System.currentTimeMillis() - it.first < maxAgeMs }?.second
-    fun refreshHomeAsync(hist: List<NpItem>, subs: List<NpItem>) { Thread { try { home(hist, subs) } catch (_: Throwable) {} }.also { it.isDaemon = true; it.start() } }
+    fun homeAgeMs(): Long = homeC?.let { System.currentTimeMillis() - it.first } ?: Long.MAX_VALUE
+
+    /** (v407) آخر رئيسية محفوظة حتى لو قديمة (من الذاكرة، وإلا من الملف yt_home.json لحد 7 أيام) — بتتعرض فورًا وبعدين تتحدّث في الخلفية */
+    fun homeStale(maxAgeMs: Long = 7L * 24 * 3600 * 1000L): YtRes? {
+        homeC?.let { if (it.second.items.isNotEmpty()) return it.second }
+        val d = loadHomeDisk() ?: return null
+        if (System.currentTimeMillis() - d.first > maxAgeMs) return null
+        homeC = d
+        return d.second
+    }
+
+    private fun saveHome(r: YtRes) {
+        try {
+            val d = homeDir ?: return
+            val a = org.json.JSONArray()
+            for (x in r.items.take(90)) a.put(org.json.JSONObject().put("i", x.id).put("t", x.title).put("c", x.channel).put("cu", x.channelUrl).put("th", x.thumb)
+                .put("d", x.dur).put("n", x.count).put("a", x.age).put("k", x.kind).put("u", x.url).put("ts", x.ts).put("av", x.avatar))
+            val o = org.json.JSONObject().put("at", System.currentTimeMillis()).put("items", a)
+            val tmp = java.io.File(d, "yt_home.json.tmp"); tmp.writeText(o.toString()); tmp.renameTo(java.io.File(d, "yt_home.json"))
+        } catch (_: Throwable) {}
+    }
+
+    private fun loadHomeDisk(): Pair<Long, YtRes>? {
+        return try {
+            val d = homeDir ?: return null
+            val f = java.io.File(d, "yt_home.json"); if (!f.isFile) return null
+            val o = org.json.JSONObject(f.readText())
+            val a = o.getJSONArray("items"); val l = ArrayList<NpItem>()
+            for (n in 0 until a.length()) {
+                val x = a.getJSONObject(n)
+                val ts = x.optLong("ts", 0L)
+                l.add(NpItem(x.optString("i"), x.optString("t"), x.optString("c"), x.optString("cu"), x.optString("th"), x.optLong("d", -1L), x.optLong("n", -1L),
+                    if (ts > 0L) YtRss.ageOf(ts) else x.optString("a"), x.optInt("k", 0), x.optString("u"), ts, x.optString("av")))
+            }
+            if (l.isEmpty()) null else Pair(o.optLong("at"), YtRes(l, null))
+        } catch (_: Throwable) { null }
+    }
+
+    private fun setHome(r: YtRes) { homeC = Pair(System.currentTimeMillis(), r); saveHome(r) }
+
+    /** بيرجّع true لو بدأ تحديث فعلًا (false = تحديث تاني شغّال) */
+    fun refreshHomeAsync(hist: List<NpItem>, subs: List<NpItem>): Boolean {
+        if (homeBusy) return false
+        Thread {
+            try { val r = home(hist, subs); onHome?.invoke(r) } catch (_: Throwable) { try { onHome?.invoke(YtRes(emptyList(), null)) } catch (_: Throwable) {} }
+        }.also { it.isDaemon = true; it.start() }
+        return true
+    }
 
     /** (v351) الرئيسية: فيديوهات من اشتراكاتك (حتى القديمة) + توصيات شبه اللي بتتفرج عليه — من غير ترند خالص
-     *  (v362) بتستنى 12 ثانية بالكتير وتطلّع اللي جهز؛ اللي لسه شغّال بيكمّل في الخلفية وبيتخزّن للزيارة الجاية (كانت بتستنى لحد 65 ثانية) */
+     *  (v407) أسرع بكتير: أول نتيجة بتطلع من RSS (طلب صغير لكل قناة) + التوصيات، من غير ما تستنى أبطأ قناة — كان بيستنى لحد 12 ثانية (وممكن 50)
+     *  لحد ما كل خيوط NewPipe التقيلة تخلص. الجلب العميق (فيديوهات قديمة عشوائية + توصيات من الاشتراكات) بيكمّل في الخلفية وبعدين بيتعرض
+     *  من كبسولة «فيديوهات جديدة»؛ والنتيجة بتتحفظ في ملف عشان الفتح الجاي (حتى بعد قفل البرنامج) يبقى فوري. */
     fun home(hist: List<NpItem>, subs: List<NpItem> = emptyList()): YtRes {
         init()
-        val t0 = System.currentTimeMillis()
-        val seen = hist.map { it.id }.toSet()
-        // بذور التوصيات: آخر اللي اتفرّجت عليه، ولو مفيش سجل → أحدث فيديوهات اشتراكاتك
-        var subsItems: List<NpItem> = emptyList()
-        // (v378) مش آخر فيديوهات كل الاشتراكات: فيديوهات عشوائية (حتى القديمة) من قنوات عشوائية من اشتراكاتك؛ لو فشل الجلب نرجع للفيد القديم مخلوط
-        val subTh = Thread {
-            try {
-                if (subs.isNotEmpty()) {
-                    subsItems = randomSubVideos(subs)
-                    if (subsItems.isEmpty()) subsItems = YtRss.feed(subs, false, true).items.filter { it.kind == 0 }.shuffled()
+        homeBusy = true
+        var tail = false
+        try {
+            val t0 = System.currentTimeMillis()
+            val seen = hist.map { it.id }.toSet()
+            val fast = java.util.concurrent.atomic.AtomicReference<List<NpItem>>(emptyList())   // RSS: سريع
+            val deep = java.util.concurrent.atomic.AtomicReference<List<NpItem>>(emptyList())   // NewPipe: قديم عشوائي (بطيء)
+            val fastTh = Thread {
+                try { if (subs.isNotEmpty()) fast.set(YtRss.sample(subs, 14).filter { it.kind == 0 }.shuffled()) } catch (_: Throwable) {}
+            }.also { it.isDaemon = true; it.start() }
+            val deepTh = Thread {
+                try {
+                    if (subs.isNotEmpty()) {
+                        var d = randomSubVideos(subs)
+                        if (d.isEmpty() && fast.get().isEmpty()) d = YtRss.feed(subs, false, true).items.filter { it.kind == 0 }.shuffled()
+                        deep.set(d)
+                    }
+                } catch (_: Throwable) {}
+            }.also { it.isDaemon = true; it.start() }
+            val histSeeds = hist.filter { it.kind == 0 && it.id.isNotEmpty() }.take(3)
+            val results = arrayOfNulls<List<NpItem>>(histSeeds.size)
+            val ths = histSeeds.mapIndexed { n, sd -> Thread { results[n] = try { related(sd.id) } catch (_: Throwable) { emptyList() } }.also { it.isDaemon = true; it.start() } }
+
+            // withSeeds = true (في الخلفية بس): لو مفيش سجل نجيب توصيات من أحدث فيديوهات الاشتراكات
+            fun assemble(withSeeds: Boolean): YtRes {
+                val subsItems = if (deep.get().isNotEmpty()) (fast.get() + deep.get()).distinctBy { it.id } else fast.get()
+                var recLists = results.map { it ?: emptyList() }
+                if (withSeeds && recLists.all { it.isEmpty() } && subsItems.isNotEmpty()) {
+                    val seedSubs = subsItems.take(3)
+                    val r2 = arrayOfNulls<List<NpItem>>(seedSubs.size)
+                    seedSubs.mapIndexed { n, sd -> Thread { r2[n] = try { related(sd.id) } catch (_: Throwable) { emptyList() } }.also { it.isDaemon = true; it.start() } }
+                        .forEach { try { it.join(8000L) } catch (_: Throwable) {} }
+                    recLists = r2.map { it ?: emptyList() }
                 }
-            } catch (_: Throwable) {}
-        }.also { it.isDaemon = true; it.start() }
-        val histSeeds = hist.filter { it.kind == 0 && it.id.isNotEmpty() }.take(4)
-        val results = arrayOfNulls<List<NpItem>>(histSeeds.size)
-        val ths = histSeeds.mapIndexed { n, s -> Thread { results[n] = try { related(s.id) } catch (_: Throwable) { emptyList() } }.also { it.isDaemon = true; it.start() } }
-        val dl = t0 + 12_000L
-        fun waitAll(deadline: Long) {
-            try { subTh.join(maxOf(1L, deadline - System.currentTimeMillis())) } catch (_: Throwable) {}
-            ths.forEach { try { it.join(maxOf(1L, deadline - System.currentTimeMillis())) } catch (_: Throwable) {} }
-        }
-        fun assemble(): YtRes {
-            var recLists = results.map { it ?: emptyList() }
-            if (recLists.isEmpty() && subsItems.isNotEmpty()) {
-                val seedSubs = subsItems.take(3)
-                val r2 = arrayOfNulls<List<NpItem>>(seedSubs.size)
-                seedSubs.mapIndexed { n, s -> Thread { r2[n] = try { related(s.id) } catch (_: Throwable) { emptyList() } }.also { it.isDaemon = true; it.start() } }
-                    .forEach { try { it.join(8000L) } catch (_: Throwable) {} }
-                recLists = r2.map { it ?: emptyList() }
+                // توصيات: تقليب بين نتايج كل فيديو للتنوّع (بدون المشاهَد)
+                val rec = ArrayList<NpItem>(); var k = 0
+                while (recLists.any { k < it.size }) { for (l in recLists) if (k < l.size) { val v = l[k]; if (v.id !in seen) rec.add(v) }; k++ }
+                // اشتراكات: غير المشاهَد الأول (عشوائي)، وبعدها المشاهَد في الآخر
+                val subsOrdered = subsItems.filter { it.id !in seen }.shuffled() + subsItems.filter { it.id in seen }.shuffled()
+                // دمج: اثنين من الاشتراكات ثم اثنين توصيات … من غير تكرار
+                val out = LinkedHashMap<String, NpItem>()
+                var i = 0; var j = 0
+                while ((i < subsOrdered.size || j < rec.size) && out.size < 90) {
+                    var c = 0; while (c < 2 && i < subsOrdered.size) { subsOrdered[i].let { out.putIfAbsent(it.id, it) }; i++; c++ }
+                    c = 0; while (c < 2 && j < rec.size) { rec[j].let { out.putIfAbsent(it.id, it) }; j++; c++ }
+                }
+                return YtRes(out.values.toList(), null)
             }
-            // توصيات: تقليب بين نتايج كل فيديو للتنوّع (بدون المشاهَد)
-            val rec = ArrayList<NpItem>(); var k = 0
-            while (recLists.any { k < it.size }) { for (l in recLists) if (k < l.size) { val v = l[k]; if (v.id !in seen) rec.add(v) }; k++ }
-            // اشتراكات: الغير مشاهَد الأحدث الأول، وبعدها القديم (المشاهَد) في الآخر
-            val subsOrdered = subsItems.filter { it.id !in seen }.shuffled() + subsItems.filter { it.id in seen }.shuffled()   // (v378) عشوائي
-            // دمج: اثنين من الاشتراكات ثم اثنين توصيات … من غير تكرار
-            val out = LinkedHashMap<String, NpItem>()
-            var i = 0; var j = 0
-            while ((i < subsOrdered.size || j < rec.size) && out.size < 90) {
-                var c = 0; while (c < 2 && i < subsOrdered.size) { subsOrdered[i].let { out.putIfAbsent(it.id, it) }; i++; c++ }
-                c = 0; while (c < 2 && j < rec.size) { rec[j].let { out.putIfAbsent(it.id, it) }; j++; c++ }
+
+            // (v407) انتظار ذكي: نخرج أول ما الاتنين (RSS + التوصيات) يخلصوا، أو بعد 2.5 ثانية لو فيه 20 فيديو جاهزين وواحد منهم خلص، أو بعد 7 ثواني بالكتير
+            val hardEnd = t0 + 7_000L
+            while (System.currentTimeMillis() < hardEnd) {
+                val subsDone = !fastTh.isAlive
+                val recDone = ths.none { it.isAlive }
+                if (subsDone && recDone) break
+                if (System.currentTimeMillis() - t0 >= 2_500L && (subsDone || recDone) && assemble(false).items.size >= 20) break
+                try { Thread.sleep(120L) } catch (_: Throwable) { break }
             }
-            return YtRes(out.values.toList(), null)
-        }
-        waitAll(dl)
-        var partial = assemble()
-        // (v375) لو لسه فاضية والفيد لسه بيتحمّل: كمّل استنى (لحد 50 ثانية) بدل ما ترجع «مفيش نتايج»، وبعده فيد حسابك المباشر لو مسجّل
-        if (partial.items.isEmpty() && (subTh.isAlive || ths.any { it.isAlive })) { waitAll(t0 + 50_000L); partial = assemble() }
-        if (partial.items.isEmpty() && YtAccount.loggedIn()) {
-            try { val v = YtAccount.listFirst("FEsubscriptions").items.filter { it.kind == 0 }; if (v.isNotEmpty()) partial = YtRes(v, null) } catch (_: Throwable) {}
-        }
-        if (partial.items.isEmpty() && YtAccount.loggedIn()) {   // (v389) آخر بديل: رئيسية حسابك الرسمية
-            try { val v = YtAccount.listFirst("FEwhat_to_watch").items.filter { it.kind == 0 }; if (v.isNotEmpty()) partial = YtRes(v, null) } catch (_: Throwable) {}
-        }
-        val stillBusy = subTh.isAlive || ths.any { it.isAlive }
-        LogStore.add("⏱ يوتيوب الرئيسية: " + (System.currentTimeMillis() - t0) + "ms · " + partial.items.size + " فيديو" + (if (stillBusy) " (الباقي بيكمّل في الخلفية)" else ""))
-        if (partial.items.isNotEmpty()) homeC = Pair(System.currentTimeMillis(), partial)
-        if (stillBusy) Thread {
-            try { waitAll(System.currentTimeMillis() + 60_000L); val full = assemble(); if (full.items.isNotEmpty()) homeC = Pair(System.currentTimeMillis(), full) } catch (_: Throwable) {}
-        }.also { it.isDaemon = true; it.start() }
-        return partial
+            var partial = assemble(false)
+            // لو لسه فاضية والجلب شغّال: كمّل استنى (لحد 30 ثانية) بدل «مفيش نتايج»
+            if (partial.items.isEmpty() && (fastTh.isAlive || deepTh.isAlive || ths.any { it.isAlive })) {
+                val end2 = t0 + 30_000L
+                while (System.currentTimeMillis() < end2 && partial.items.isEmpty() && (fastTh.isAlive || deepTh.isAlive || ths.any { it.isAlive })) {
+                    try { Thread.sleep(150L) } catch (_: Throwable) { break }
+                    partial = assemble(false)
+                }
+            }
+            if (partial.items.isEmpty() && YtAccount.loggedIn()) {
+                try { val v = YtAccount.listFirst("FEsubscriptions").items.filter { it.kind == 0 }; if (v.isNotEmpty()) partial = YtRes(v, null) } catch (_: Throwable) {}
+            }
+            if (partial.items.isEmpty() && YtAccount.loggedIn()) {   // (v389) آخر بديل: رئيسية حسابك الرسمية
+                try { val v = YtAccount.listFirst("FEwhat_to_watch").items.filter { it.kind == 0 }; if (v.isNotEmpty()) partial = YtRes(v, null) } catch (_: Throwable) {}
+            }
+            val stillBusy = fastTh.isAlive || deepTh.isAlive || ths.any { it.isAlive }
+            LogStore.add("⏱ يوتيوب الرئيسية: " + (System.currentTimeMillis() - t0) + "ms · " + partial.items.size + " فيديو" + (if (stillBusy) " (الباقي بيكمّل في الخلفية)" else ""))
+            if (partial.items.isNotEmpty()) setHome(partial)
+            if (stillBusy) {
+                tail = true
+                Thread {
+                    try {
+                        val end = System.currentTimeMillis() + 60_000L
+                        for (t in listOf(fastTh, deepTh) + ths) try { t.join(maxOf(1L, end - System.currentTimeMillis())) } catch (_: Throwable) {}
+                        val full = assemble(true)
+                        if (full.items.isNotEmpty()) { setHome(full); try { onHome?.invoke(full) } catch (_: Throwable) {} }
+                    } catch (_: Throwable) {} finally { homeBusy = false }
+                }.also { it.isDaemon = true; it.start() }
+            }
+            return partial
+        } finally { if (!tail) homeBusy = false }
     }
 
     /** فيد الاشتراكات: آخر فيديوهات كل قناة مدموجة بالأحدث أولًا */

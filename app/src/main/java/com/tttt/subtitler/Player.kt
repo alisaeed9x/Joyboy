@@ -1029,6 +1029,7 @@ class PlayerActivity : Activity(), Host {
         uri = intent.data; url = intent.getStringExtra("url")
         pendingYt = intent.getBooleanExtra("ytpend", false) && url == null && uri == null && intent.getStringExtra("ytid")?.length == 11   // (v351)
         try { if (!incognito) PubHistory.addVideoFrom(intent) } catch (_: Throwable) {}   // (v349) السجل العام
+        try { if (!incognito) intent.getStringExtra("ytid")?.let { yid -> if (yid.length == 11) YtHistory.add(this, yid, intent.getStringExtra("title") ?: "") } } catch (_: Throwable) {}   // (v407) سجل يوتيوب المنفصل
         try {
             intent.getStringExtra("qlist")?.let { sj -> val qa = org.json.JSONArray(sj)
                 qOpts = (0 until qa.length()).map { qi -> val o = qa.getJSONObject(qi); YtExtract.Opt(o.optString("l"), o.optString("u"), o.optString("a").ifEmpty { null }, o.optInt("h")) }; parseATracks(sj) }
@@ -2142,11 +2143,19 @@ class PlayerActivity : Activity(), Host {
 
     private fun buildPlayer() {
         val sv = svRef; val videoBox = videoBoxRef
+        // (v406) تكبير من المشغّل المصغّر في يوتيوب: بناخد نفس المشغّل (شغّال ومحمّل) بدل ما نبني واحد جديد ونحمّل من الأول
+        val ho = if (intent.getBooleanExtra("handoff", false) && uri == null) YtHandoff.take() else null
+        handedOff = ho != null
+        if (ho != null) {
+            httpDsf = DefaultHttpDataSource.Factory().setDefaultRequestProperties(hdr).setAllowCrossProtocolRedirects(true)
+            player = ho
+        } else {
         val factory = if (uri != null) DefaultMediaSourceFactory(this)
         else { val f = DefaultHttpDataSource.Factory().setDefaultRequestProperties(hdr).setAllowCrossProtocolRedirects(true); httpDsf = f; DefaultMediaSourceFactory(f) }
         // MKV وغيره: لو الديكودر الأول فشل (HEVC / 10-bit) جرّب اللي بعده بدل شاشة سودا
         val rf = DefaultRenderersFactory(this).setEnableDecoderFallback(true)
         player = ExoPlayer.Builder(this, rf).setMediaSourceFactory(factory).build()
+        }
         // (v149) المشغّل بيمسك الـ audio focus: أي تطبيق تاني شغّال صوت بيتوقف، ولو حد تاني خد الصوت المشغّل بيقف بدل ما الصوتين يتخلطوا
         try { player.setAudioAttributes(androidx.media3.common.AudioAttributes.Builder().setUsage(C.USAGE_MEDIA).setContentType(C.AUDIO_CONTENT_TYPE_MOVIE).build(), true); player.setHandleAudioBecomingNoisy(true) } catch (e: Throwable) { LogStore.err("Player:focus", e) }
         WebMute.pauseAll()
@@ -2154,7 +2163,7 @@ class PlayerActivity : Activity(), Host {
         applyBoost()
         player.setPlaybackSpeed(speed)
         var firstFrame = false
-        player.addListener(object : Player.Listener {
+        val plst = object : Player.Listener {
             override fun onAudioSessionIdChanged(audioSessionId: Int) { try { loud?.release() } catch (_: Throwable) {}; loud = null; applyBoost() }
             override fun onVideoSizeChanged(v: VideoSize) {
                 if (v.width > 0 && v.height > 0) {
@@ -2203,7 +2212,19 @@ class PlayerActivity : Activity(), Host {
                 say("خطأ في تشغيل الفيديو — التفاصيل في 📜 اللوجز")
                 offerLinkRefresh()
             }
-        })
+        }
+        player.addListener(plst)
+        if (handedOff) {   // (v406) المشغّل جاهز وشغّال: بنزامن الواجهة (حجم الفيديو/زرار التشغيل/اللودينج) لأن الأحداث دي عدّت قبل ما نسمع
+            h.post {
+                try {
+                    plst.onVideoSizeChanged(player.videoSize)
+                    plst.onIsPlayingChanged(player.isPlaying)
+                    plst.onPlaybackStateChanged(player.playbackState)
+                    if (player.playbackState == Player.STATE_READY) plst.onRenderedFirstFrame()
+                } catch (_: Throwable) {}
+            }
+            return
+        }
         if (pendingYt) return   // (v351) لسه بنجيب الرابط: المشغّل فاضي ولودينج ويندوز بيلف
         val au = aurl
         if (uri == null && au != null) {
@@ -2267,6 +2288,7 @@ class PlayerActivity : Activity(), Host {
     private var freshOnce = false
     /** (v351) المشغّل بيفتح فورًا بشكله الكامل واللودينج جواه؛ رابط الفيديو بيتجاب في الخلفية وبعدين التشغيل يبدأ في نفس الشاشة */
     @Volatile private var pendingYt = false
+    private var handedOff = false   // (v406)
     private var pendTok = 0
     private fun startYtPend(fresh: Boolean = false) {
         val id = intent.getStringExtra("ytid") ?: return

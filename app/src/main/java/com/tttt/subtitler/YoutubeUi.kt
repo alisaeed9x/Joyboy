@@ -25,41 +25,43 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 
-/** فيديو يوتيوب اتفتح قبل كده (v117): المعرّف (11 حرف) + الاسم + آخر مرة اتفتح */
-class YtItem(val id: String, val title: String, val ts: Long)
+/** فيديو يوتيوب اتفتح قبل كده (v117): المعرّف (11 حرف) + الاسم + آخر مرة اتفتح (v407: + القناة + اتفتح كصوت بس؟) */
+class YtItem(val id: String, val title: String, val ts: Long, val chan: String = "", val audio: Boolean = false)
 
 /** سجل فيديوهات يوتيوب (yt_history.json): بيتسجل من المتصفح ومن بوابة يوتيوب، والمعرّف بيتحوّل للينك قابل للنسخ */
 object YtHistory {
     private val lock = Any()
-    private const val MAX = 300
+    private const val MAX = 600   // (v407) سجل يوتيوب المنفصل: 600 بدل 300
     private fun file(ctx: Context) = File(ctx.filesDir, "yt_history.json")
     fun watchUrl(id: String) = "https://www.youtube.com/watch?v=$id"
 
     private fun read(ctx: Context): List<YtItem> = try {
         val a = JSONArray(file(ctx).readText().ifEmpty { "[]" })
         (0 until a.length()).mapNotNull { a.optJSONObject(it) }
-            .map { YtItem(it.optString("id"), it.optString("t"), it.optLong("ts", 0)) }
+            .map { YtItem(it.optString("id"), it.optString("t"), it.optLong("ts", 0), it.optString("c"), it.optBoolean("a", false)) }
             .filter { it.id.length == 11 }
     } catch (_: Exception) { emptyList() }
 
     private fun write(ctx: Context, l: List<YtItem>) {
         try {
             val a = JSONArray()
-            for (x in l.take(MAX)) a.put(JSONObject().put("id", x.id).put("t", x.title).put("ts", x.ts))
+            for (x in l.take(MAX)) a.put(JSONObject().put("id", x.id).put("t", x.title).put("ts", x.ts).put("c", x.chan).put("a", x.audio))
             file(ctx).writeText(a.toString())
         } catch (e: Exception) { LogStore.err("YtHistory", e) }
     }
 
     fun load(ctx: Context): List<YtItem> = synchronized(lock) { read(ctx).sortedByDescending { it.ts } }
 
-    /** نفس الفيديو بيطلع فوق، وبيحتفظ باسمه القديم لو الاسم الجديد فاضي */
-    fun add(ctx: Context, id: String, title: String) {
+    /** نفس الفيديو بيطلع فوق، وبيحتفظ باسمه/قناته القديمة لو الجديدة فاضية. (v407) بيحترم مفتاح «حفظ سجل المشاهدة» */
+    fun add(ctx: Context, id: String, title: String, chan: String = "", audio: Boolean = false) {
         if (id.length != 11) return
+        try { if (!YtStore.histOn()) return } catch (_: Throwable) {}
         synchronized(lock) {
             val l = read(ctx)
             val old = l.firstOrNull { it.id == id }
             val t = title.trim().ifEmpty { old?.title ?: "" }
-            write(ctx, listOf(YtItem(id, t, System.currentTimeMillis())) + l.filter { it.id != id })
+            val c = chan.trim().ifEmpty { old?.chan ?: "" }
+            write(ctx, listOf(YtItem(id, t, System.currentTimeMillis(), c, audio)) + l.filter { it.id != id })
         }
     }
 

@@ -155,11 +155,53 @@ object YtRss {
     private val feedLock = Any()
     private val fbBudget = java.util.concurrent.atomic.AtomicInteger(0)
     /** (v354) يحدّث الكاش في الخلفية (القنوات المنتهية بس) من غير ما يعطّل الشاشة — الزيارة الجاية تلاقي فيد جديد */
+    /** (v407) بيتنده (من خيط خلفي) لما التحديث الخلفي يخلص — تبويب الاشتراكات بيقارن ويظهر كبسولة «فيديوهات جديدة» */
+    @Volatile var onFeed: ((YtRes) -> Unit)? = null
     fun refreshAsync(subs: List<NpItem>) {
-        Thread { try { feed(subs, false, false) } catch (_: Throwable) {} }.apply { isDaemon = true; start() }
+        Thread {
+            var r: YtRes? = null
+            try { r = feed(subs, false, false) } catch (_: Throwable) {}
+            try { onFeed?.invoke(r ?: YtRes(emptyList(), null)) } catch (_: Throwable) {}
+        }.apply { isDaemon = true; start() }
     }
     /** staleOk: لو للقناة كاش (حتى لو قديم) بيتعرض فورًا من غير شبكة */
-    fun feed(subs: List<NpItem>, force: Boolean = false, staleOk: Boolean = false): YtRes = synchronized(feedLock) {   // (v354) طلب واحد في المرة: فحص العدّاد ما بيتخانقش مع فتح الاشتراكات (كان بيعمل ضغط ويوتيوب بيرفض)
+    /** (v407) من الكاش بس (من غير شبكة ومن غير قفل): لو كل قنوات الاشتراكات ليها معرّف UC وكاش. غير كده null (ويكمّل المسار العادي).
+     *  قبل كده فتح الاشتراكات كان بيستنى نهاية أي فحص خلفي شغّال (لحد 40 ثانية) لأن الاتنين على نفس القفل */
+    fun cachedFeed(subs: List<NpItem>): YtRes? {
+        loadDisk()
+        val all = ArrayList<NpItem>()
+        synchronized(this) {
+            for (s in subs.take(MAX_CH)) {
+                val cid = chanId(s.channelUrl) ?: return null
+                val e = mem[cid] ?: return null
+                all.addAll(e.items)
+            }
+        }
+        if (all.isEmpty()) return null
+        val fresh = all.distinctBy { it.id }.map { if (it.ts > 0L) NpItem(it.id, it.title, it.channel, it.channelUrl, it.thumb, it.dur, it.count, ageOf(it.ts), it.kind, it.url, it.ts) else it }
+        return YtRes(fresh.sortedByDescending { it.ts }.take(200), null)
+    }
+
+    /** (v407) عينة سريعة للرئيسية: [n] قناة عشوائية (ليها معرّف UC) → RSS بالتوازي (القنوات اللي كاشها لسه صالح من غير شبكة). مش بتقفل feedLock ومحدودة بـ7 ثواني */
+    fun sample(subs: List<NpItem>, n: Int): List<NpItem> {
+        loadDisk()
+        val chans = subs.filter { chanId(it.channelUrl) != null }.shuffled().take(n)
+        if (chans.isEmpty()) return emptyList()
+        val pool = Executors.newFixedThreadPool(minOf(6, chans.size))
+        try {
+            val fs = chans.map { s -> pool.submit(Callable<List<NpItem>> { try { fetchOne(chanId(s.channelUrl)!!, s.channelUrl, false, false) } catch (_: Throwable) { emptyList() } }) }
+            val out = ArrayList<NpItem>()
+            val dl = System.currentTimeMillis() + 7000L
+            for (f in fs) try { out.addAll(f.get(maxOf(1L, dl - System.currentTimeMillis()), java.util.concurrent.TimeUnit.MILLISECONDS)) } catch (_: Throwable) {}
+            return out.distinctBy { it.id }.map { if (it.ts > 0L) NpItem(it.id, it.title, it.channel, it.channelUrl, it.thumb, it.dur, it.count, ageOf(it.ts), it.kind, it.url, it.ts) else it }
+        } finally { pool.shutdownNow() }
+    }
+
+    fun feed(subs: List<NpItem>, force: Boolean = false, staleOk: Boolean = false): YtRes {
+        if (staleOk && !force) cachedFeed(subs)?.let { return it }
+        return feedLocked(subs, force, staleOk)
+    }
+    private fun feedLocked(subs: List<NpItem>, force: Boolean, staleOk: Boolean): YtRes = synchronized(feedLock) {   // (v354) طلب واحد في المرة: فحص العدّاد ما بيتخانقش مع فتح الاشتراكات (كان بيعمل ضغط ويوتيوب بيرفض)
         loadDisk()
         fbBudget.set(5)   // أقصى عدد قنوات نرجع فيها للطريقة البطيئة (NewPipe) في الطلب الواحد
         val list = subs.take(MAX_CH)

@@ -70,6 +70,7 @@ class LibraryUi(
     var onQueue: () -> Unit = {}
     var onShareMany: (List<VideoItem>) -> Unit = {}
     var onPlayWeb: (WebVid) -> Unit = {}
+    var onYtHistory: () -> Unit = {}   // (v407) فتح صفحة «سجل يوتيوب» المنفصلة
     private lateinit var queueBtn: TextView
     var onRename: (VideoItem) -> Unit = {}
     var onMove: (VideoItem) -> Unit = {}
@@ -118,7 +119,8 @@ class LibraryUi(
     private var webList: List<WebVid> = emptyList()
     private var webSrc = 0                       // (v337) فولدر المصطادة: 0 الكل · 1 من يوتيوب (اللي اتشغّل من صفحة يوتيوب) · 2 من المتصفح/اللينكات
     private var srcRow: View? = null
-    private val WEB_SRC = listOf("الكل", "▶ من يوتيوب", "🌐 من المتصفح")
+    private val YT_HIST = "🕘 سجل يوتيوب"
+    private val WEB_SRC = listOf("الكل", "▶ من يوتيوب", "🌐 من المتصفح", YT_HIST)
     private val sel = LinkedHashSet<String>()
     private var selLevel = ""
     private val webThumbs = android.util.LruCache<String, android.graphics.Bitmap>(40)
@@ -346,7 +348,7 @@ class LibraryUi(
 
         // (v337) تقسيم المصطادة (بيظهر جوه فولدر المصطادة بس): الكل / من يوتيوب / من المتصفح
         if (!audio) {
-            val srcChips = ui.chips(WEB_SRC, { WEB_SRC[webSrc] }) { n -> webSrc = WEB_SRC.indexOf(n).coerceAtLeast(0); render(); listV.setSelection(0) }
+            val srcChips = ui.chips(WEB_SRC, { WEB_SRC[webSrc] }) { n -> if (n == YT_HIST) { onYtHistory() } else { webSrc = WEB_SRC.indexOf(n).coerceAtLeast(0); render(); listV.setSelection(0) } }
             val sr = HorizontalScrollView(act).apply { isHorizontalScrollBarEnabled = false; layoutDirection = View.LAYOUT_DIRECTION_RTL; setPadding(ui.dp(8), 0, ui.dp(8), 0); addView(srcChips); visibility = View.GONE }
             srcRow = sr; root.addView(sr, LinearLayout.LayoutParams(-1, -2))
         }

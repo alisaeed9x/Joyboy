@@ -376,6 +376,7 @@ class MainActivity : Activity() {
             ui.section("🎬 لما تدوس على فيديو", true,
                 ui.chips(listOf("صفحة المشاهدة", "المشغّل مباشرة"), { if (YtOpen.mode() == YtOpen.PLAYER) "المشغّل مباشرة" else "صفحة المشاهدة" }) { n -> Cfg.put("yt_open_mode", if (n == "المشغّل مباشرة") YtOpen.PLAYER else YtOpen.PAGE) },
                 ui.switchRow("▶ شغّل تلقائي في المشغّل المصغّر", YtOpen.autoPlay()) { Cfg.put("yt_mini_auto", if (it) "1" else "0") },
+                ui.switchRow("🌐 علامة «مدبلج» على الفيديوهات متعددة اللغات في القوايم", YtDub.enabled()) { Cfg.put("yt_dub_scan", if (it) "1" else "0") },
                 ui.text("صفحة المشاهدة: الفيديو بيكبر بأنيميشن ومعاه الوصف والتعليقات والمقترحات والاشتراك، وزرار التكبير في ركن المشغّل المصغّر بيفتح مشغّلك الكامل من نفس الثانية. المشغّل مباشرة: الدوسة بتفتح المشغّل على طول.", 12f, th.muted)),
             ui.section("🎞 الجودة الافتراضية", true,
                 ui.chips(ytQ, { ytQ[ytQv.indexOf(Cfg.int("yt_maxh", 0)).coerceAtLeast(0)] }) { n -> Cfg.put("yt_maxh", ytQv[ytQ.indexOf(n).coerceAtLeast(0)].toString()) },
@@ -386,6 +387,7 @@ class MainActivity : Activity() {
             ui.section("🔔 الإشعارات والسجل", true,
                 ui.switchRow("🔔 إشعارات الفيديوهات الجديدة من اشتراكاتي", YtNotify.enabled()) { YtNotify.setEnabled(this, it) },
                 ui.switchRow("🕘 حفظ سجل المشاهدة", YtStore.histOn()) { Cfg.put("ytp_hist_on", if (it) "1" else "0") },
+                ui.button("🕘 سجل يوتيوب (فيديوهات وصوتيات اتشافت)") { showYtHistory() },
                 ui.switchRow("🔄 الاشتراك يتسجّل على حسابي كمان (لو مسجّل الدخول)", YtSubscribe.syncOn()) { Cfg.put("yt_acc_sync", if (it) "1" else "0") },
                 ui.button("🔔 رجّع إشعارات كل القنوات (بعد ما قفلت قنوات بالجرس)") { Cfg.put("ytp_notif_off", ""); Notice.show(this, ("🔔 رجعت إشعارات كل القنوات").toString(), 2200L) },
                 ui.text("جرس 🔔 في صفحة كل قناة: إشعار بكل فيديو جديد أو بدون. اللايك والتعليق من صفحة المشاهدة بيتسجّلوا على حسابك بس لو مسجّل الدخول.", 12f, th.muted)),
@@ -738,6 +740,8 @@ class MainActivity : Activity() {
         lib.onShare = { v -> ops.share(v) }
         lib.onShareMany = { vs -> ops.shareMany(vs) }
         lib.onPlayWeb = { w -> save(); playWeb(w) }
+        saveFn = { save() }
+        lib.onYtHistory = { showYtHistory() }   // (v407) شريحة «🕘 سجل يوتيوب» في فولدر المصطادة
         lib.onDelete = { v -> ops.delete(v) }
         lib.onRenameFolder = { f -> ops.renameFolder(f) }
         lib.onDeleteFolder = { f -> ops.deleteFolder(f) }
@@ -845,7 +849,7 @@ class MainActivity : Activity() {
                     kind == "v" -> openLink(ref)
                     kind == "a" && src == "youtube" -> playYtAudio(ref, title, "", "")
                     else -> {}
-                } } }, onPlayAt = { id, name, tr, ms -> playYt(id, name, tr, tr, ms) })
+                } } }, onPlayAt = { id, name, tr, ms, pk -> playYt(id, name, tr, tr, ms, pk) })
             ytUi = yt; yt.root.visibility = View.GONE; ytOpenFn = { vid -> yt.openVideo(vid) }
             pane.addView(yt.root, 1, FrameLayout.LayoutParams(-1, -1))
             pane.addView(yt.busyView, FrameLayout.LayoutParams(-1, -1))   // (v337) لودينج جلب رابط الفيديو فوق الصفحة
@@ -1243,17 +1247,27 @@ class MainActivity : Activity() {
         }
     }
     /** (v117) دخول مباشر لفيديو يوتيوب من معرّفه: بيجيب أحسن لينك فيه صوت وصورة ويفتح المشغّل (لو فشل بيفتح صفحته في المتصفح) */
-    fun playYt(id: String, title: String, translate: Boolean = true, auto: Boolean = translate, startMs: Long = 0L) {
+    fun playYt(id: String, title: String, translate: Boolean = true, auto: Boolean = translate, startMs: Long = 0L, handoff: YtPick? = null) {
         // (v339) مفتاح الترجمة الأول (لو ناقص بيسأل) وبعدها ندخل صفحة المشغّل فورًا
-        if (translate) ensureKeys { ytStart(id, title, translate, auto, startMs) } else ytStart(id, title, translate, auto, startMs)
+        if (translate) ensureKeys { ytStart(id, title, translate, auto, startMs, handoff) } else ytStart(id, title, translate, auto, startMs, handoff)
     }
     private fun cancelYtLoad() { ytLoadTok++; ytLoadLaunched = false; ytLoadUi?.hide() }
     /** (v339) بنفتح «صفحة المشغّل» فورًا (لودينج جواها) وبنجيب رابط الفيديو في الخلفية؛ لو فشل بنقفلها ونطلّع الدايلوج ونفضل في يوتيوب */
     /** (v351) بنفتح المشغّل الكامل فورًا؛ هو اللي بيجيب رابط الفيديو ويحمّل جواه (من غير شاشة اللودينج السودا القديمة) */
-    private fun ytStart(id: String, title: String, translate: Boolean, auto: Boolean, startMs: Long = 0L) {
+    private fun ytStart(id: String, title: String, translate: Boolean, auto: Boolean, startMs: Long = 0L, handoff: YtPick? = null) {
         if (id.length != 11) { ytStartLegacy(id, title, translate, auto, startMs); return }
         ytLoadLaunched = true
         val ret = if (curTab == 4) "yt" else ""
+        if (handoff != null) {   // (v406) المشغّل المصغّر اتسلّم (YtHandoff): المشغّل الكامل بياخده شغّال من غير ما يجيب الرابط ويحمّل من الأول
+            startActivity(Intent(this, PlayerActivity::class.java).apply {
+                putExtra("handoff", true)
+                putExtra("url", handoff.url); putExtra("aurl", handoff.audio ?: ""); putExtra("ref", "https://www.youtube.com/"); putExtra("ua", handoff.ua)
+                if (handoff.qlist.isNotEmpty()) putExtra("qlist", handoff.qlist)
+                putExtra("title", title.ifBlank { handoff.title }); putExtra("ytid", id)
+                putExtra("nosub", !translate); putExtra("autotr", auto); putExtra("ret", ret); if (startMs > 0L) putExtra("startms", startMs)
+            })
+            return
+        }
         startActivity(Intent(this, PlayerActivity::class.java).apply {
             putExtra("ytpend", true); putExtra("ytid", id); putExtra("title", title)
             putExtra("ref", "https://www.youtube.com/")
@@ -1308,6 +1322,7 @@ class MainActivity : Activity() {
         MusicEngine.ytStep = { d -> ytAudioStep(d) }   // (v341) التالي/إعادة المحاولة لصوت يوتيوب
         YtNext.markPlayed(id)
         try { PubHistory.add("a", "youtube", title, id) } catch (_: Throwable) {}   // (v349) السجل العام
+        try { YtHistory.add(this, id, title, channel, true) } catch (_: Throwable) {}   // (v407) سجل يوتيوب المنفصل
         // (v339) بنفتح مشغّل الموسيقى الكامل فورًا (لودينج مكان الألبوم) وبنفتكر إحنا جينا منين عشان نرجع لنفس المكان لما نقفله
         // (v341) quiet = تالي/إعادة محاولة: الأغنية الحالية تكمّل وإحنا ماشيين، من غير ما نغيّر الشاشة ولا نفتح لودينج
         val tok = ++ytAudTok
@@ -1414,6 +1429,12 @@ class MainActivity : Activity() {
     var settingsShow: ((String?) -> Unit)? = null
     var settingsBack: (() -> Unit)? = null   // (v370) رجوع جوه صفحة الإعدادات (قسم ← القايمة ← الصفحة السابقة)
     fun openSettingsTab(t: String) { try { settingsShow?.invoke(t) } catch (_: Throwable) {} }
+    /** (v407) صفحة «سجل يوتيوب» المنفصلة — بتتفتح من فولدر المصطادة ومن الإعدادات ▸ يوتيوب (نفس البيانات) */
+    private var saveFn: () -> Unit = {}   // (v407) save() دالة محلية في onCreate — بنمسكها هنا
+    fun showYtHistory() {
+        val th0 = Themes.byId(Cfg.str("theme", "mx")); val ui0 = Ui(this, th0)   // ui/th محليين في onCreate فبنبني نسخة هنا
+        YtHistoryUi.show(this, ui0, th0, { id, t -> saveFn(); playYt(id, t, false) }, { id, t, ch -> saveFn(); playYtAudio(id, t, ch, "") })
+    }
     fun updateYtBadge() { navUi?.badge(4, YtNotify.badgeCount()) }
     private var ytBgAt = 0L
     /** (v404) مزامنة يوتيوب في الخلفية أول ما التطبيق يفتح (ومرة كل 20 دقيقة لو رجعت له): بعد ما الشاشة تظهر بـ3.5 ثانية وبأولوية خلفية
