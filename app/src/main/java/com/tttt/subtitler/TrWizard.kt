@@ -158,6 +158,15 @@ object TrWizard {
     }
 
     /** (v360) ملخص قصير للإعداد المحفوظ — بيظهر تحت اسم الفيديو في المشغّل */
+    /** (v413) سطر «كشف اللغة بـ Whisper» تحت اسم الفيديو: اللغة المكتشفة، أو اللي اخترتها بإيدك */
+    fun langLine(): String = try {
+        val pl = savedPlan()
+        if (pl == null || !pl.offline || pl.engine == "sherpa" || SourceMode.get() == SourceMode.VISUAL) "" else {
+            val man = Offline.lang(); val det = Offline.detectedLang
+            "🔎 " + if (man.isNotEmpty()) "اللغة: " + langLabel(man) + " (إنت حددتها)" else if (det.isNotEmpty()) "كشف وشبر اللغة: " + OffLang.nameOf(det) + " — غلط؟ غيّرها من ⚙" else "كشف وشبر اللغة: لسه بيكتشف…"
+        }
+    } catch (_: Throwable) { "" }
+
     fun summaryLine(): String = try {
         if (SourceMode.get() == SourceMode.VISUAL) "👁 بصري بس · " + SourceMode.kindLabel()
         else {
@@ -1086,7 +1095,9 @@ object TrWizard {
 
         fun stepCardLang() {
             reset("🌍 لغة الفيديو")
-            note("«تلقائي» بيكتشف اللغة، بس التفريغ أدق لما المقطع كله بلغة واحدة.")
+            note("«تلقائي» بيكتشف اللغة، بس التفريغ أدق لما المقطع كله بلغة واحدة.\nلو غيّرت اللغة والفيديو شغّال: بيكمّل من مكانك وبيعيد الباتشات اللي اتفرّغت بلغة غلط.")
+            TrWizard.langLine().takeIf { it.isNotBlank() }?.let { note(it) }
+            opt("⬇ تنزيل موديل الترجمة للغة المختارة", "ML Kit ~30 ميجا، مرة واحدة — بيشتغل بعدها من غير نت", false) { MlKitTr.downloadAsync(act, lang) }
             for ((id, label) in TrWizard.sttLangs) {
                 val sherpaNo = src == "sherpa" && !SherpaStt.handles(id)
                 opt(label, if (sherpaNo) "⚠ SenseVoice مابيفهمهاش — هيتحوّل لـ Whisper" else "", lang == id) {

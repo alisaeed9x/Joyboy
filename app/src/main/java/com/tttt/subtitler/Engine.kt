@@ -64,6 +64,8 @@ class Engine(
     @Volatile private var srcLang = ""
     @Volatile private var detDone = false
     private val offSession = Offline.Session()   // (v267) قفل لغة الأوفلاين للفيديو ده
+    private val chunkLang = ConcurrentHashMap<Int, String>()   // (v413) اللغة اللي اتفرّغ بيها كل باتش أوفلاين
+    init { Offline.detectedLang = "" }
     private val langVote = OffLang.Vote()   // (v411) لغة المصدر للترجمة: Whisper + فحص الحروف (كانا/هانجول/هان)
     private val done = Ranges()
     private val failed = ConcurrentHashMap<Int, Int>()
@@ -89,9 +91,11 @@ class Engine(
         val trKeys = if (c.keys.size <= 1 || activeMode >= KeyMode.TRANSCRIBE_ALL) c.keys else c.keys.takeLast(nTr)   // (v219) الوضع 4: كل المفاتيح بتنسخ وكل المفاتيح بتترجم
         val p1 = Pool(c.withKeys(txKeys)); val p2 = Pool(c.withKeys(trKeys))
         txP = p1; trP = p2; splitSig = sig
-        host.log("🔑 وضع $activeMode: ${txKeys.size} مفتاح ترانسكريبشن + ${trKeys.size} مفتاح ترجمة" + (if (c.keys.size <= 1) " (مفتاح واحد بيعمل الاتنين)" else if (activeMode >= KeyMode.TRANSCRIBE_ALL) " (كل المفاتيح بتعمل الاتنين)" else ""))
+        modeMsg = "🔑 وضع $activeMode: ${txKeys.size} مفتاح ترانسكريبشن + ${trKeys.size} مفتاح ترجمة" + (if (c.keys.size <= 1) " (مفتاح واحد بيعمل الاتنين)" else if (activeMode >= KeyMode.TRANSCRIBE_ALL) " (كل المفاتيح بتعمل الاتنين)" else "")   // (v413) مابتتطبعش إلا لما جيميناي يتنده فعلًا
         return p1 to p2
     }
+    @Volatile private var modeMsg: String? = null
+    private fun flushModeMsg() { val m = modeMsg ?: return; modeMsg = null; host.log(m) }
     private val pool: Pool get() = if (activeMode >= KeyMode.SPLIT_A) splitPools().first else basePool
     private val trPool: Pool get() = splitPools().second
     @Volatile private var running = true
@@ -128,6 +132,7 @@ class Engine(
     // ===== توزيع الباتشات على المفاتيح + نسخة احتياطية للباتش المتأخر (كل باتش يتحسب مرة واحدة بس) =====
     private val startedAt = ConcurrentHashMap<Int, Long>()          // وقت بداية الباتش الشغال
     private val preps = ConcurrentHashMap<Int, Prep>()              // صوت الباتش الشغال (عشان النسخة الاحتياطية ماتفكوش تاني)
+    private val offOf = ConcurrentHashMap<Int, Boolean>()               // (v413) الباتش ده ماشي على Whisper أوفلاين (مش جيميناي)
     private val keyOf = ConcurrentHashMap<Int, String>()            // المفتاح اللي الباتش شغال عليه دلوقتي
     private val hedged = ConcurrentHashMap.newKeySet<Int>()         // باتشات اتبعتلها نسخة احتياطية
     private val claimed = ConcurrentHashMap.newKeySet<Int>()        // باتشات نتيجتها اتطبّقت (أول نسخة تخلص تكسب)
@@ -138,7 +143,7 @@ class Engine(
     private val hedgeBusy = AtomicInteger(0)
     private val recentMs = java.util.concurrent.ConcurrentLinkedDeque<Long>()   // أزمنة آخر باتشات خلصت
     // ===== مفتاح/موديل/زمن رد كل باتش =====
-    class KeyRun(val keyNo: Int, val model: String, val ms: Long)
+    class KeyRun(val keyNo: Int, val model: String, val ms: Long, val viaGemini: Boolean = true)
     private val runs = ConcurrentHashMap<Int, KeyRun>()                // آخر تنفيذ ناجح لكل باتش (مفتاح · موديل · زمن)
     private fun curModel(): String = conf.model
     private fun keyNo(k: String): Int = basePool.all().indexOf(k) + 1
@@ -232,11 +237,12 @@ class Engine(
             val r = runs[i]
             var fast = false
             if (mark == "⏳" && k != null) {
-                sb.append(" · 🔑").append(keyNo(k)).append(" ").append(shortModel(conf.model))
+                if (offOf[i] == true) sb.append(" · 🎙 Whisper أوفلاين") else sb.append(" · 🔑").append(keyNo(k)).append(" ").append(shortModel(conf.model))
                 startedAt[i]?.let { sb.append(" · ").append(fmtSec(System.currentTimeMillis() - it)) }
             } else if (r != null && (mark == "✅" || mark == "🔇" || mark == "🔁")) {
                 fast = fastest[i / cap] == i
-                sb.append(" · 🔑").append(r.keyNo).append(" · ").append(fmtSec(r.ms)).append(" · ").append(shortModel(r.model)).append(if (fast) " ⚡" else "")
+                if (r.viaGemini) sb.append(" · 🔑").append(r.keyNo).append(" · ").append(fmtSec(r.ms)).append(" · ").append(shortModel(r.model)).append(if (fast) " ⚡" else "")
+                else sb.append(" · 🎙 Whisper · ").append(fmtSec(r.ms)).append(if (fast) " ⚡" else "")
             }
             out.add(Pair(sb.toString(), fast))
         }
@@ -480,6 +486,21 @@ class Engine(
         pool.clear(); lastGapTry = 0L; gapScanClean = false
         fullRefineStarted = false; fullRefineDone = false
         host.changed(); persist()
+    }
+    /**
+     * (v413) اليوزر غيّر لغة الكلام من ⚙: بنفك قفل اللغة، وبنعيد الباتشات اللي اتفرّغت بلغة غير الجديدة (اللي باظت)،
+     * وبنكمّل الترجمة من المكان اللي واقف عليه المشغّل.
+     */
+    fun langChanged(newLang: String, posSec: Double) {
+        offSession.lang = ""; offSession.hint = ""; offSession.badRun = 0
+        Offline.detectedLang = ""
+        if (newLang.isNotEmpty()) {
+            val bad = chunkLang.entries.filter { it.value.isNotEmpty() && it.value != newLang }.map { it.key }.sorted()
+            for ((n, i) in bad.withIndex()) { redo(i, i, keep = n == 0); chunkLang.remove(i) }
+            if (bad.isNotEmpty()) host.log("🌐 اللغة اتغيّرت لـ $newLang: هتتعاد ${bad.size} باتش اتفرّغت بلغة غلط (" + bad.take(8).joinToString("، ") { (it + 1).toString() } + (if (bad.size > 8) "…" else "") + ")")
+            else host.log("🌐 اللغة اتغيّرت لـ $newLang — مفيش باتشات قديمة محتاجة إعادة")
+        }
+        translateFrom(posSec)
     }
     /** باتش ده وبعده كله (بيبدأ منه ويكمل) */
     fun redoFrom(i: Int, keep: Boolean = true) { redo(i, -1, keep); onlyChunks = null; forcedSticky = true; forcedCursor = i; paused = false }
@@ -862,28 +883,29 @@ class Engine(
         var key = firstKey?.takeIf { pool.ok(it) } ?: nextKey(avoidKey) ?: throw Exception("كل المفاتيح معطلة مؤقتًا — راجع المفاتيح")
         var partial = false
         var trunc = 0; var empties = 0; var bad = 0; var net = 0; var tries = 0; var langBad = 0
-        var langRetry = 0
+        var langRetry = 0; var langSwitchRetry = 0
         var srv = 0; var altModel: String? = null   // (v227) 503/5xx متكرر: الباتش يتجرّب على موديل بديل
         val tx = activeMode >= KeyMode.SPLIT_A && i !in fullChunks   // (v210) ترانسكريبشن بس، والترجمة بعدين مجمّعة على مفاتيح الترجمة
         while (running && tries++ < MAX_TRIES) {
             if (claimed.contains(i)) return   // نسخة تانية من الباتش ده خلصت وطُبّقت قبلنا
-            if (!hedge) keyOf[i] = key
+            if (!hedge) { keyOf[i] = key; offOf[i] = (tx && Offline.on()) }
             val prompt = buildPrompt(w.durSec, w.startSec, langBad > 0 || (tx && empties > 0), i, tx = tx)
             try {
                 val t0 = System.currentTimeMillis()
                 val mdl = altModel ?: curModel()
+                var gemCalled = false   // (v413) هل جيميناي اتنده فعلًا للباتش ده؟ (false = Whisper لوحده)
                 val r = run {
                     pool.begin(key, i)
                     try {
-                        val gem = { Api.generate(mdl, key, prompt, w.bytes, maxTokens = Api.outTokens(w.durSec), temp = if (tx && empties == 0 && bad == 0 && trunc == 0) 0.0 else 0.1) }   // (v331) التفريغ بحرارة 0 (أدق وثابت)؛ الإعادة بعد فشل بحرارة 0.1 عشان ما يرجعش نفس الرد
+                        val gem = { gemCalled = true; Api.generate(mdl, key, prompt, w.bytes, maxTokens = Api.outTokens(w.durSec), temp = if (tx && empties == 0 && bad == 0 && trunc == 0) 0.0 else 0.1) }   // (v331) التفريغ بحرارة 0 (أدق وثابت)؛ الإعادة بعد فشل بحرارة 0.1 عشان ما يرجعش نفس الرد
                         // (v253) ترانسكريبشن أوفلاين (Whisper على الجهاز) — لو فشل جيميناي (gem) بيكمّل الباتش
-                        (if (tx && Offline.on()) Offline.transcribe(w.bytes, w.durSec, effectiveGloss().joinToString(", ") { it.term }, { host.log(it) }, gem, { host.notice(it) }, offSession)
+                        (if (tx && Offline.on()) { Offline.batchTag.set(i); Offline.transcribe(w.bytes, w.durSec, effectiveGloss().joinToString(", ") { it.term }, { host.log(it) }, gem, { host.notice(it) }, offSession) }
                             else { if (tx) Offline.whyOff()?.let { m -> host.log(m); Offline.softNotice(m) { host.notice(it) } }; gem() }).also { pool.end(key, System.currentTimeMillis() - t0, true) }
                     } catch (e: Throwable) { pool.end(key, 0, false); throw e }
                 }
                 val took = System.currentTimeMillis() - t0
                 if (isClosed) return
-                if (!(tx && Offline.on())) noteWho("🔑 جيميناي شغّال", " — باتش ${i + 1} بمفتاح " + pool.tail(key) + " (" + conf.keys.size + " أساسي)")   // (v278)   // الإنجن اتقفل أثناء الطلب (خرجت من الفيديو): ارمي الرد
+                if (gemCalled) { flushModeMsg(); noteWho("🔑 جيميناي شغّال", " — باتش ${i + 1} بمفتاح " + pool.tail(key) + " (" + conf.keys.size + " أساسي)") }   // (v278)   // الإنجن اتقفل أثناء الطلب (خرجت من الفيديو): ارمي الرد
                 if (r.finish == "MAX_TOKENS" && trunc >= 2) partial = true
                 if (r.finish == "MAX_TOKENS" && trunc < 2) { trunc++; host.log("⚠ الرد اتقطع — إعادة المحاولة"); nap(600); continue }
                 if (r.finish.isNotEmpty() && r.finish != "STOP" && r.finish != "MAX_TOKENS") throw Exception("رد Gemini اتوقف: ${r.finish}")
@@ -899,6 +921,11 @@ class Engine(
                 if (off.isNotEmpty()) fresh = fixForeign(fresh)
                 // (v267) الباتش اتفرّغ أوفلاين وطلع فاضي: Whisper بيرجّع نفس النتيجة لو أعدناه — بنعيد مرة واحدة بس لو اللغة اتقفلت بعد ما بدأ، وإلا بنقبله (مفيهوش كلام/موسيقى)
                 val offRan = tx && Offline.ranOffline.get() == true
+                if (offRan) {   // (v413) سجّل لغة التفريغ؛ ولو اليوزر غيّر اللغة والباتش شغّال بالقديمة: أعده بالجديدة
+                    val ul = Offline.usedLang.get().orEmpty(); val man = Offline.lang()
+                    if (!hedge && man.isNotEmpty() && ul != man && langSwitchRetry++ < 1) { host.log("🌐 المقطع ${i + 1}: اللغة اتغيّرت أثناء التفريغ (${ul.ifEmpty { "تلقائي" }} ← $man) — إعادة بالجديدة"); continue }
+                    chunkLang[i] = ul.ifEmpty { Offline.gotLang.get().orEmpty() }
+                }
                 if (fresh.isEmpty() && offRan) {
                     val lk = offSession.lang
                     if (!w.silent && !hedge && lk.isNotEmpty() && lk != Offline.usedLang.get().orEmpty() && langRetry++ < 1) { host.log("🌐 المقطع ${i + 1}: فاضي — إعادة واحدة باللغة المقفولة ($lk)"); continue }
@@ -915,7 +942,7 @@ class Engine(
                 pool.good(key)
                 if (!claimed.add(i)) { host.log("↩ باتش ${i + 1}: نسخة تانية خلصته قبلها — اتجاهلت دي"); return }
                 if (i > maxApplied) maxApplied = i
-                runs[i] = KeyRun(keyNo(key), mdl, took)
+                runs[i] = KeyRun(keyNo(key), mdl, took, gemCalled)
                 if (tx && fresh.isNotEmpty()) {
                     // (v210) الباتش ما بيتطبّقش دلوقتي: بيتحط في المجمّع لحد ما يتترجم (applyChunk + سدّ الثغرات بيحصلوا بعد الترجمة)
                     holdTranscript(i, p, j, relistenLow(i, fresh, key), prior, key, partial)   // (v331) الجمل واطية الثقة بتتسمع تاني قبل الترجمة
@@ -1284,7 +1311,7 @@ class Engine(
                         if (isClosed) return
                         val jj = if (r.text.isBlank()) null else Parse.json(r.text)
                         if (jj == null) { if (++bad > 2) break; host.log("⚠ ترجمة مجمّعة: رد مش JSON صالح — إعادة"); nap(600); continue }
-                        tp.good(k); reply = jj
+                        tp.good(k); reply = jj; flushModeMsg()
                     } catch (e: ApiErr) {
                         val invalid = e.code == 401 || e.code == 403 || (e.code == 400 && (e.message ?: "").contains("API key", true))
                         if (e.code == 429) { noteQuota(); tp.block(k, 60_000); key = null; host.log("⏳ ترجمة مجمّعة: كوتة على ${tp.tail(k)} — تحويل لمفتاح تاني"); nap(800); continue }
@@ -1417,7 +1444,9 @@ class Engine(
         val who = if (TrWizard.googleOn()) "جوجل" else "جيميناي"
         offB = "📴 $txN/$tot" + (if (trN > 0) " 🌍" else if (cur != null) " ⏳" else "")
         val sb = StringBuilder("📴 أوفلاين: اتفرّغ $txN من $tot باتش (الباتش ${ch.toInt()}ث)")
-        if (cur != null) sb.append("\n⏳ بيفرّغ دلوقتي باتش ${cur + 1} على الجهاز")
+        val live = Offline.liveLine()
+        if (live != null) { sb.append("\n").append(live); if (inflight.size > 1) sb.append(" (+${inflight.size - 1} مستنيين دورهم)") }   // (v415) تقدم Whisper الفعلي
+        else if (cur != null) sb.append("\n⏳ بيفرّغ دلوقتي باتش ${cur + 1} على الجهاز")
         if (trN > 0) sb.append("\n🌍 بيترجم دلوقتي بـ$who")
         else if (held > 0) sb.append("\n⏸ جاهز $held باتش — الترجمة بتبدأ أول ما يجهز $k" + (if (Offline.live()) " (لحظي)" else " (≈ ${Offline.partMin()} د)"))
         else if (cur == null && txN < tot) sb.append("\n… مستني الباتش الجاي")
@@ -1621,7 +1650,7 @@ class Engine(
                 if (isClosed) return null
                 val jj = if (r.text.isBlank()) null else Parse.json(r.text)
                 if (jj == null) { if (++bad > 2) return null; host.log("⚠ $tag: رد مش JSON صالح — إعادة"); nap(600); continue }
-                tp.good(k); return jj
+                tp.good(k); flushModeMsg(); return jj
             } catch (e: ApiErr) {
                 val invalid = e.code == 401 || e.code == 403 || (e.code == 400 && (e.message ?: "").contains("API key", true))
                 if (e.code == 429) { noteQuota(); tp.block(k, 60_000); key = null; host.log("⏳ $tag: كوتة على ${tp.tail(k)} — تحويل لمفتاح تاني"); nap(800); continue }

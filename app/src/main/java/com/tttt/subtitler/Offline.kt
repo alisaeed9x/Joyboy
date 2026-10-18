@@ -14,6 +14,7 @@ object WhisperLib {
     init { try { System.loadLibrary("subwhisper"); loaded = true } catch (_: Throwable) {} }
     @JvmStatic external fun nInit(path: String): Long
     @JvmStatic external fun nFree(h: Long)
+    @JvmStatic external fun nProgress(): Int   // (v415) تقدم التفريغ الحالي 0..100
     @JvmStatic external fun nRun(h: Long, pcm: FloatArray, threads: Int, lang: String, prompt: String): ByteArray
 }
 
@@ -80,6 +81,19 @@ object Offline {
     val ranOffline = ThreadLocal<Boolean>()
     /** اللغة اللي اتفرّغ بيها آخر باتش على الخيط ده ("" = اكتشاف تلقائي) */
     val usedLang = ThreadLocal<String>()
+    /** (v415) الباتش اللي المحرك بيبعته للتفريغ دلوقتي (الإنجن بيحطه قبل النداء) + حالة التفريغ الشغّال فعلًا */
+    val batchTag = ThreadLocal<Int>()
+    @Volatile var runIdx = -1
+    @Volatile var runStart = 0L
+    private fun pctTxt(): String = if (engine().id == "whisper") (try { WhisperLib.nProgress().coerceIn(0, 99) } catch (_: Throwable) { 0 }).toString() + "%" else "شغّال"
+    /** نسبة Whisper الحالية (-1 = مفيش تفريغ شغّال) */
+    fun livePct(): Int = if (runIdx < 0 || engine().id != "whisper") -1 else try { WhisperLib.nProgress().coerceIn(0, 99) } catch (_: Throwable) { 0 }
+    fun liveShort(): String? = if (runIdx < 0) null else "🎙 باتش ${runIdx + 1} · " + pctTxt()
+    fun liveLine(): String? = if (runIdx < 0) null else "🎙 ${engName()} شغّال — باتش ${runIdx + 1}: " + pctTxt() + " · من ${(System.currentTimeMillis() - runStart) / 1000}ث"
+    /** (v413) اللغة اللي Whisper كشفها فعلًا في آخر باتش على الخيط ده */
+    val gotLang = ThreadLocal<String>()
+    /** (v413) آخر لغة كشفها Whisper للفيديو الجاري (بتتعرض تحت اسم الفيديو) — بتتصفّر مع كل إنجن جديد */
+    @Volatile var detectedLang = ""
 
     private fun lettersOf(t: String) = t.filter { it.isLetter() }
     private fun ratio(t: String, f: (Char) -> Boolean): Double { val l = lettersOf(t); return if (l.isEmpty()) 0.0 else l.count(f).toDouble() / l.length }
@@ -127,6 +141,7 @@ object Offline {
             val waited = System.currentTimeMillis() - tq
             if (waited > 5000) log("⏳ الأوفلاين: الباتش استنى دوره ${waited / 1000}ث (التفريغ واحد في المرة)")
             eng.prepare(log)
+            runIdx = batchTag.get() ?: -1; runStart = System.currentTimeMillis()   // (v415)
             val pcm = toFloats(wav) ?: run { log("⚠ الأوفلاين: صيغة الصوت مش مدعومة — جيميناي هو اللي نسخ الباتش"); switchNote("صيغة الصوت مش مدعومة", warn); return fallback() }
             val t0 = System.currentTimeMillis()
             log("📴 بدأ التفريغ (${eng.id}): ${"%.0f".format(durSec)}ث صوت · ${threads()} خيوط")   // (v263)
@@ -140,6 +155,8 @@ object Offline {
                 val gt = res.segs.filter { it.text.isNotBlank() && it.logProb > -1.0 && it.noSpeech < 0.5 }.joinToString(" ") { it.text }
                 if (gt.length >= 15 && scriptFits(res.lang, gt)) sess.hint = res.lang
             }
+            gotLang.set(res.lang)
+            if (manual.isEmpty() && eng.id == "whisper") detectedLang = (sess?.lang.orEmpty()).ifEmpty { sess?.hint.orEmpty() }.ifEmpty { res.lang }
             val outLang = manual.ifEmpty { if (eng.id == "whisper") sess?.lang.orEmpty() else res.lang }   // (v267) لغة غير مضمونة ما بتتبلّغش للمحرك (كانت بتبوّظ srcLang بـ «ru» لفيديو إنجليزي)
             val took = System.currentTimeMillis() - t0
             log("📴 أوفلاين (${eng.id}${if (eng is SherpaStt) " · VAD=" + SherpaStt.lastVad else ""}): ${"%.0f".format(durSec)}ث صوت ← ${took / 1000}ث (${"%.1f".format(durSec * 1000.0 / took.coerceAtLeast(1))}× سرعة)")
@@ -156,7 +173,7 @@ object Offline {
             if (++fails >= 3) { cool(); fails = 0; log("🛟 الأوفلاين فشل 3 مرات ورا بعض — جيميناي بينسخ 5 دقايق"); switchNote("فشل 3 مرات ورا بعض — جيميناي بينسخ 5 دقايق", warn) }
             else switchNote("فشل في باتش", warn)
             return fallback()
-        } finally { lock.unlock() }
+        } finally { runIdx = -1; lock.unlock() }
     }
 
     /** (v259) جيميناي مش موجود يكمّل بدل الأوفلاين لو فشل (مفيش مفتاح حقيقي) */

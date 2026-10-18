@@ -13,7 +13,22 @@ static std::string clean(const char *s) {
     return o;
 }
 
+// (v415) تقدم التفريغ الحقيقي: نسبة من 0 لـ 100 بتتحدّث من whisper.cpp نفسه (كل نافذة + كل جملة جديدة)
+static volatile int g_prog = 0;
+static volatile long g_total_cs = 1;
+static void on_progress(struct whisper_context *, struct whisper_state *, int p, void *) { if (p > g_prog) g_prog = p; }
+static void on_segment(struct whisper_context *ctx, struct whisper_state *, int, void *) {
+    int n = whisper_full_n_segments(ctx);
+    if (n > 0 && g_total_cs > 0) {
+        long p = (long) whisper_full_get_segment_t1(ctx, n - 1) * 100 / g_total_cs;
+        if (p > 99) p = 99;
+        if (p > g_prog) g_prog = (int) p;
+    }
+}
+
 extern "C" {
+
+JNIEXPORT jint JNICALL Java_com_tttt_subtitler_WhisperLib_nProgress(JNIEnv *, jclass) { return g_prog; }
 
 JNIEXPORT jlong JNICALL Java_com_tttt_subtitler_WhisperLib_nInit(JNIEnv *env, jclass, jstring path) {
     const char *p = env->GetStringUTFChars(path, nullptr);
@@ -66,7 +81,11 @@ JNIEXPORT jbyteArray JNICALL Java_com_tttt_subtitler_WhisperLib_nRun(JNIEnv *env
         wp.print_timestamps = false;
         if (!promptS.empty()) wp.initial_prompt = promptS.c_str();
 
+        g_prog = 0; g_total_cs = (long) (n / 160); if (g_total_cs < 1) g_total_cs = 1;
+        wp.progress_callback = on_progress; wp.progress_callback_user_data = nullptr;
+        wp.new_segment_callback = on_segment; wp.new_segment_callback_user_data = nullptr;
         int rc = whisper_full(ctx, wp, pcm, (int) n);
+        g_prog = 100;
         env->ReleaseFloatArrayElements(audio, pcm, JNI_ABORT);
 
         if (rc != 0) {

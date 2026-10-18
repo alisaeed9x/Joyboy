@@ -619,6 +619,7 @@ class MainActivity : Activity() {
                     ui.text("محرك التفريغ:", 12f, th.muted), sttEngChips, sherpaStatus, sherpaDlBtn, sherpaProg,
                     ui.text("حجم موديل Whisper:", 12f, th.muted), offModelChips, offStatus, offDlBtn, offProg,
                     ui.text("لغة الكلام (لو عارفها بتقلّل أخطاء الاكتشاف التلقائي):", 12f, th.muted), offLangChips,
+                    ui.button("⬇ تنزيل موديل ترجمة اللغة المختارة (ML Kit)") { MlKitTr.downloadAsync(this, Offline.lang()) },
                     ui.text("طول الجزء اللي بيتفرّغ ويتبعت للترجمة أول ما يجهز:", 12f, th.muted), offPartChips,
                     ui.text("وضع «وشبر + جيميناي بالسياق»: كام باتش يتبعتوا لجيميناي مع بعض:", 12f, th.muted), ctxBatchChips,
                     ui.text("التفريغ على الجهاز أبطأ من السحابة (بيعتمد على معالج موبايلك) — الترجمة بتظهر جزء ورا جزء. لو سرعته أقل من 1× كبّر الموديل لأصغر (base).", 12f, th.muted)))),

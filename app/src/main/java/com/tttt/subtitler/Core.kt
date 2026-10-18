@@ -637,9 +637,29 @@ object Api {
     /** (v180) مهلة قراءة أقصر للخيط الحالي (الترجمة الحية: طلب أبطأ من ~12ث ملوش لازمة). null = الافتراضي 90ث */
     val readTimeoutOverride = ThreadLocal<Int?>()
 
+    /** (v413) إثبات إن جيميناي اتنده فعلًا: كل طلب حقيقي بيتسجّل (قبل + بعد). لو مفيش سطور 🌐 في اللوج يبقى جيميناي ماتندهش خالص. */
+    private val gemSeq = java.util.concurrent.atomic.AtomicInteger(0)
     fun generate(model: String, key: String, prompt: String, wav: ByteArray? = null,
                  maxTokens: Int = 8192, temp: Double = 0.1, json: Boolean = true, search: Boolean = false): Result {
         if (key == LocalKey.ID) throw NoKey()   // (v259)
+        val n = gemSeq.incrementAndGet()
+        val kind = if (wav != null) "صوت" else "نص"
+        val tail = "…" + key.takeLast(4)
+        val t0 = System.currentTimeMillis()
+        LogStore.add("🌐 [جيميناي #$n] طلب فعلي ← ${model.removePrefix("gemini-")} · مفتاح $tail · $kind" + (if (wav != null) " ${wav.size / 1024}KB" else " ${prompt.length}حرف"))
+        try {
+            val r = generateInner(model, key, prompt, wav, maxTokens, temp, json, search)
+            LogStore.add("🌐 [جيميناي #$n] ✅ رد ${r.text.length}حرف في ${System.currentTimeMillis() - t0}ms" + (if (r.finish.isNotEmpty() && r.finish != "STOP") " (${r.finish})" else ""))
+            return r
+        } catch (e: Throwable) {
+            val m = if (e is ApiErr) "HTTP ${e.code}: " + (e.message ?: "").take(90) else (e.javaClass.simpleName + ": " + (e.message ?: "").take(90))
+            LogStore.add("🌐 [جيميناي #$n] ❌ فشل في ${System.currentTimeMillis() - t0}ms — $m")
+            throw e
+        }
+    }
+
+    private fun generateInner(model: String, key: String, prompt: String, wav: ByteArray?,
+                 maxTokens: Int, temp: Double, json: Boolean, search: Boolean): Result {
         Quota.hit(model); Stats.req(model, key)
         val mt0 = minOf(maxTokens, tokenCap[model] ?: Int.MAX_VALUE)
         if (search) return generateOnce(model, key, prompt, wav, mt0, temp, json, search, "")
