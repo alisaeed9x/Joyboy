@@ -33,7 +33,8 @@ object ExtTranslate {
 
     val builtin: List<Prov> = listOf(
         Prov("mymemory", "MyMemory", listOf("mymemory"), 4800) { t, sl -> myMemory(t, sl) },
-        Prov("lingva", "Lingva (جوجل عبر وسيط)", listOf("lingva"), 0) { t, sl -> lingva(t, sl) }
+        Prov("lingva", "Lingva (جوجل عبر وسيط)", listOf("lingva"), 0) { t, sl -> lingva(t, sl) },
+        Prov("mlkit", "ML Kit (أوفلاين · فصحى)", listOf("mlkit"), 0) { _, _ -> null }.also { pv -> pv.batch = { texts, sl -> MlKitTr.translate(texts, sl) } }   // (v408)
     )
 
     /** المزوّدين المدمجين + الراوتر (لو فيه مفاتيح) + محركات LLM اللي مفتاحها مضبوط */
@@ -49,6 +50,7 @@ object ExtTranslate {
     fun primaryId(): String = Cfg.str("ext_primary").trim()
     /** (v274) سلسلة الترجمة بالترتيب الفعلي (null = جوجل الداخلي). بعدها لو كلها فشلت الباتش بيتحوّل لجيميناي بمفاتيحك */
     fun chain(): List<Prov?> {
+        if (Strict.offline()) return listOfNotNull(builtin.firstOrNull { it.id == "mlkit" })   // (v410) أوفلاين كامل: ML Kit بس — مفيش جوجل ولا مزوّدين بالنت
         val ext = active()
         // (v277) id المحفوظ لمحركات LLM هو id البريست (chatgpt) بينما id المزوّد llm_chatgpt — قبل كده المحرك الأساسي ماكانش بيتلقى أبدًا؛ وكمان وضع «الريبو بس» ماكانش لازم يستبعد اللي اخترته بإيدك
         val pid = primaryId()
@@ -67,16 +69,16 @@ object ExtTranslate {
         else -> "🌐 " + p.label + " (مجاني من الريبو)"
     }
     /** (v278) سطر «مين بيترجم دلوقتي» للإشعارات: السلسلة بالترتيب، أو جيميناي بعدد مفاتيحه */
-    fun setupLine(): String = if (TrWizard.googleOn()) "المترجم: " + chain().joinToString(" ← ") { whoLabel(it) } + " ← 🔑 جيميناي (مفاتيحك)"
+    fun setupLine(): String = if (TrWizard.googleOn()) "المترجم: " + chain().joinToString(" ← ") { whoLabel(it) } + (if (Strict.noGemini()) "" else " ← 🔑 جيميناي (مفاتيحك)")
         else "المترجم: 🔑 جيميناي — " + (Cfg.keys("keys").size + Cfg.keys("extra").size) + " مفتاح"
-    fun chainLabel(): String = chain().joinToString(" ← ") { it?.label ?: "جوجل" } + " ← جيميناي (مفاتيحك)"
+    fun chainLabel(): String = chain().joinToString(" ← ") { it?.label ?: "جوجل" } + (if (Strict.noGemini()) "" else " ← جيميناي (مفاتيحك)")
     fun enabled(p: Prov): Boolean = Cfg.str("ext_on_" + p.id, "on") != "off"
     fun setEnabled(p: Prov, on: Boolean) { Cfg.put("ext_on_" + p.id, if (on) "on" else "off") }
     /** مزوّد موجود في القايمة المسحوبة من الريبو؟ */
     fun inRepo(p: Prov): Boolean = PublicApis.listed(p.keys) != null
 
     /** المزوّدين اللي هيتستخدموا فعلًا: مفعّلين، ولو «الريبو بس» شغّال لازم يكونوا في القايمة المسحوبة */
-    fun active(): List<Prov> = all().filter { enabled(it) && (!strict() || inRepo(it)) }
+    fun active(): List<Prov> = all().filter { enabled(it) && (!strict() || inRepo(it) || it.id == "mlkit") }
 
     // ===== (v274) إيقاف مؤقت لمزوّد فشل: مفتاح مرفوض (لحد ما المفتاح يتغيّر) / كوتة أو رصيد (دقايق) / رابط أو موديل غلط / سيرفر واقع =====
     private val coolUntil = ConcurrentHashMap<String, Long>()

@@ -30,7 +30,7 @@ android {
     }
     namespace = "com.tttt.subtitler"
     compileSdk = 36
-    defaultConfig { applicationId = "com.tttt.subtitler"; minSdk = 26; targetSdk = 34; versionCode = 407; versionName = "4.07"
+    defaultConfig { applicationId = "com.tttt.subtitler"; minSdk = 26; targetSdk = 34; versionCode = 412; versionName = "4.12"
         ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a") }
         externalNativeBuild { cmake { arguments += listOf("-DCMAKE_BUILD_TYPE=Release"); abiFilters += listOf("arm64-v8a") } }   // (v253) whisper.cpp + (v307) substem: arm64 بس (armeabi-v7a من غير أوفلاين)   // (v181) معماريات الموبايل بس: بتصغّر مكتبة onnxruntime
     }
@@ -50,6 +50,7 @@ dependencies {
     implementation("com.github.bumptech.glide:glide:4.16.0")
     implementation(files("libs/sherpa-onnx-$sherpaVer.aar"))   // (v260)
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs_nio:2.1.5")   // (v327)
+    implementation("com.google.mlkit:translate:17.0.3")   // (v408) ML Kit: ترجمة أوفلاين (فصحى) — موديل ~30MB لكل لغة بيتحمّل مرة
     implementation("com.github.TeamNewPipe:NewPipeExtractor:v0.26.5")   // (v325) يوتيوب الداخلي — نفس نسخة Flow؛ محتاج jitpack.io في settings (add_jitpack.sh)
 }
 

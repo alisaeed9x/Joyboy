@@ -241,10 +241,11 @@ object Cfg {
         val (main0, rf0, bk0) = roles()
         // (v369) وضع أومني روت: مفاتيح جيميناي مابتتلمسش خالص (المحرك يشتغل بمفتاح محلي وهمي، والطلبات كلها بأومني روت)
         val omni = false   // (v395) وضع أومني روت اتشال
-        val rf = if (omni) emptyList() else rf0
-        val bk = if (omni) emptyList() else bk0
+        val strict = Strict.noGemini()   // (v410) نص-أونلاين / أوفلاين: جيميناي ممنوع (مفتاح محلي وهمي بس)
+        val rf = if (omni || strict) emptyList() else rf0
+        val bk = if (omni || strict) emptyList() else bk0
         // (v259) من غير أي مفتاح + أوفلاين + ترجمة جوجل: مفتاح محلي وهمي يخلّي المحرك يشتغل (الطلبات لجيميناي بتترفض محليًا)
-        val main = if (omni || (main0.isEmpty() && rf.isEmpty() && bk.isEmpty() && TrWizard.googleOn())) listOf(LocalKey.ID) else main0
+        val main = if (omni || strict || (main0.isEmpty() && rf.isEmpty() && bk.isEmpty() && TrWizard.googleOn())) listOf(LocalKey.ID) else main0
         return Conf(
             main, bk, str("model", Models.DEFAULT).trim().ifEmpty { Models.DEFAULT },
             str("lang", "فصحى"), str("style", "حرفي"),
@@ -252,7 +253,7 @@ object Cfg {
             emptyList() /* جدول الشخصيات اليدوي اتشال — الشخصيات بتتحلل تلقائيًا */, str("gloss"),
             true, true, true,   // (v229) تحليل الشخصيات · تصحيح الضمائر · ترجمة القالب: أوتوماتيك دايمًا (اتشال مفتاحهم من الإعدادات)
             1 /* (v141) طلب واحد لكل مفتاح */, bool("hitiming", false), true /* (v229) سد الفجوات أوتوماتيك دايمًا */,
-            bool("soundtags", true), keys("viskeys"), bool("prefine", true), rf, if (Offline.configured()) KeyMode.TRANSCRIBE_ALL else KeyMode.clamp(int("kmode", 1))   // (v253) أوفلاين = وضع 4 (نسخ ثم ترجمة سياقية)
+            bool("soundtags", true), if (strict) emptyList() else keys("viskeys"), bool("prefine", true), rf, if (Offline.configured()) KeyMode.TRANSCRIBE_ALL else KeyMode.clamp(int("kmode", 1))   // (v253) أوفلاين = وضع 4 (نسخ ثم ترجمة سياقية)
         )
     }
 }

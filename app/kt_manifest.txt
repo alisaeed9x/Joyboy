@@ -48,6 +48,7 @@ com/tttt/subtitler/LyricsNorm.kt
 com/tttt/subtitler/Main.kt
 com/tttt/subtitler/MediaOps.kt
 com/tttt/subtitler/MiniDock.kt
+com/tttt/subtitler/MlKitTr.kt
 com/tttt/subtitler/ModePrompts.kt
 com/tttt/subtitler/ModelWatch.kt
 com/tttt/subtitler/Models.kt
@@ -59,6 +60,7 @@ com/tttt/subtitler/NetUse.kt
 com/tttt/subtitler/NextPanel.kt
 com/tttt/subtitler/Notice.kt
 com/tttt/subtitler/Offline.kt
+com/tttt/subtitler/OffLang.kt
 com/tttt/subtitler/OfflineVis.kt
 com/tttt/subtitler/OrbPlayer.kt
 com/tttt/subtitler/PipSubBar.kt
@@ -94,6 +96,8 @@ com/tttt/subtitler/StatusStrip.kt
 com/tttt/subtitler/StemAi.kt
 com/tttt/subtitler/StemCore.kt
 com/tttt/subtitler/Store.kt
+com/tttt/subtitler/Strict.kt
+com/tttt/subtitler/SiteBlock.kt
 com/tttt/subtitler/Stt.kt
 com/tttt/subtitler/SubStyle.kt
 com/tttt/subtitler/SubtitleView.kt
@@ -102,6 +106,7 @@ com/tttt/subtitler/SysVol.kt
 com/tttt/subtitler/Tasks.kt
 com/tttt/subtitler/TasksFab.kt
 com/tttt/subtitler/TasksUi.kt
+com/tttt/subtitler/TermNotes.kt
 com/tttt/subtitler/TextTracker.kt
 com/tttt/subtitler/Theme.kt
 com/tttt/subtitler/ToolsUi.kt
@@ -126,6 +131,7 @@ com/tttt/subtitler/YtAudio.kt
 com/tttt/subtitler/YtChannel.kt
 com/tttt/subtitler/YtFallback.kt
 com/tttt/subtitler/YtFast.kt
+com/tttt/subtitler/YtHistoryUi.kt
 com/tttt/subtitler/YtLoad.kt
 com/tttt/subtitler/YtNext.kt
 com/tttt/subtitler/YtNp.kt
@@ -133,5 +139,6 @@ com/tttt/subtitler/YtProUi.kt
 com/tttt/subtitler/YtRss.kt
 com/tttt/subtitler/YtShorts.kt
 com/tttt/subtitler/YtSkin.kt
+com/tttt/subtitler/YtTopBar.kt
 com/tttt/subtitler/YtWatch.kt
 com/tttt/subtitler/YtWeb.kt

@@ -64,6 +64,7 @@ class Engine(
     @Volatile private var srcLang = ""
     @Volatile private var detDone = false
     private val offSession = Offline.Session()   // (v267) قفل لغة الأوفلاين للفيديو ده
+    private val langVote = OffLang.Vote()   // (v411) لغة المصدر للترجمة: Whisper + فحص الحروف (كانا/هانجول/هان)
     private val done = Ranges()
     private val failed = ConcurrentHashMap<Int, Int>()
     private val gapPass = ConcurrentHashMap<Int, Int>()
@@ -369,6 +370,7 @@ class Engine(
 
     /** اختيار لهجة التحويل. existing=true: بيحوّل كمان اللي اتترجم قبل كده — من مكان المشاهدة وللقدّام الأول، وبعدين اللي قبله. بيحفظ نسخة باللهجة القديمة قبل التحويل (🗂) */
     fun setConvDialect(d: String, existing: Boolean) {
+        if (Strict.noGemini()) { convDialect = ""; pend.clear(); return }   // (v410) فصحى بس في نص-أونلاين والأوفلاين
         val prev = convDialect
         if (existing && subs.isNotEmpty() && prev != d) { val lb = if (prev.isBlank()) "فصحى" else prev; saveVersion("ترجمة $lb", lb) }
         convDialect = d
@@ -384,6 +386,7 @@ class Engine(
     }
     /** بيحوّل الجمل اللي لسه ما اتحوّلتش كل ~3 باتشات (أو الباقي لما الترجمة تهدى) على المفاتيح الاحتياطية */
     fun maybeConvert(force: Boolean = false) {
+        if (Strict.noGemini()) return   // (v410) تحويل اللهجة بجيميناي — أونلاين بس
         if (transOnly || (keyless && convLlm() == null)) return   // (v280) تفريغ بس: مفيش تحويل لهجة · (v281) من غير مفتاح جيميناي التحويل بيشتغل لو فيه محرك LLM مختار
         // (v259) تحويل اللهجة محتاج جيميناي — من غير مفتاح الترجمة بتفضل فصحى (الإشعار اتعرض قبل البداية)
         val tgt = convDialect
@@ -632,6 +635,7 @@ class Engine(
                 }
                 if (inflight.isEmpty() && retryGaps()) continue
                 if (inflight.isEmpty() && repairForeignTick()) continue
+                if (inflight.isEmpty() && noteTick()) continue   // (v408) 📖 نبذة عن المصطلحات
                 if (gapTick(headless || keepGoing)) continue
                 if (txIdle() && gapBusy.get() == 0 && holeBusy.get() == 0 && finalRefineTick()) { nap(300); continue }   // (v140) تنقيح نهائي قبل ما نقول «خلصت»
                 // (v158) كل المقاطع خلصت: تنقيح كامل واحد بالفيديو كله (بعد التنقيح الجزئي مقطع مقطع)
@@ -1336,7 +1340,7 @@ class Engine(
         if (released > 0 && TrWizard.googleOn()) {   // (v274) المحركات الخارجية وجوجل ماكمّلوش: الباتشات دي بترجع كطلب كامل (احتياطي ثم صوت ← ترجمة) بمفاتيح جيميناي
             // (v389) إشعار واحد «فشل ← اتحوّل» وبس؛ لو مفيش تحويل (مفيش مفتاح جيميناي) مفيش إشعار (اللوج بس)
             if (keyless) host.log("⚠ محركات الترجمة وقفت ومفيش مفتاح جيميناي — $released باتش هيتعاد لما تشتغل")
-            else swapNotice("🔄 فشلت محركات الترجمة (${ExtTranslate.chainLabel().substringBeforeLast(" ← ")}) — تم التحويل لجيميناي ($released باتش)")
+            else if (!Strict.noGemini()) swapNotice("🔄 فشلت محركات الترجمة (${ExtTranslate.chainLabel().substringBeforeLast(" ← ")}) — تم التحويل لجيميناي ($released باتش)")
         }
     }
 
@@ -1488,10 +1492,58 @@ class Engine(
     }
 
     /** (v254) ترجمة جوجل غير الرسمية لقايمة نصوص (لغة المصدر من إعداد الأوفلاين). بترجّع نفس الطول، والفاشل null */
+    /** (v411) لغة المصدر لجوجل/ML Kit: اللي اخترتها بإيدك، وإلا (في مسار Whisper) لغة Whisper متراجعة بحروف النص، وإلا "auto" */
+    private fun resolveSl(src: List<String>): String {
+        val manual = Offline.lang()
+        if (manual.isNotEmpty()) return if (manual == "zh") "zh-CN" else manual
+        if (!OffLang.mergeOn()) return TrWizard.googleLang()
+        langVote.add(src)
+        val d = langVote.decide(srcLang.ifEmpty { offSession.hint })
+        if (d != langVote.lastAnnounced) {
+            langVote.lastAnnounced = d
+            if (d.isNotEmpty()) {
+                val c = langVote.conflict(srcLang.ifEmpty { offSession.hint })
+                host.log("🌐 لغة الترجمة: ${OffLang.nameOf(d)}" + (c?.let { " ($it — اخترت بالحروف)" } ?: ""))
+                if (c != null) try { host.notice("🌐 اللغة: ${OffLang.nameOf(d)} — $c") } catch (_: Throwable) {}
+            }
+        }
+        return when { d.isEmpty() -> "auto"; d == "zh" -> "zh-CN"; else -> d }
+    }
+
+    /**
+     * (v411) دمج الجمل المقطّعة: Whisper بيقطّع الجملة نصين، وML Kit/جوجل بيترجموا كل سطر لوحده فبيطلع مكسّر.
+     * بنضم الأسطر المتتالية اللي مش واقفة بعلامة نهاية في جملة واحدة، نترجمها، وبعدين نقسم الترجمة على نفس الأسطر (والتوقيتات بتفضل زي ما هي لأن بنرجّع نص كل سطر بس).
+     */
     private fun googleItems(src0: List<String>, ctx: List<String> = emptyList()): List<String?> {
+        if (OffLang.mergeOn()) MlKitTr.say = { m -> host.log(m); try { host.notice(m) } catch (_: Throwable) {} }   // رسائل تحميل موديل اللغة
+        if (!OffLang.mergeOn() || src0.size < 2) return googleItemsRaw(src0, ctx)
+        val clean = src0.map { it.replace(Regex("\\s*\n\\s*"), " ").trim() }
+        val groups = OffLang.group(clean)
+        if (groups.all { it.size == 1 }) return googleItemsRaw(src0, ctx)
+        val merged = groups.map { g -> OffLang.join(g.map { clean[it] }) }
+        val tr = googleItemsRaw(merged, ctx)
+        val out = arrayOfNulls<String>(src0.size)
+        val redo = ArrayList<Int>()   // مجموعات الترجمة بتاعتها أقصر من عدد أسطرها — بتتترجم سطر سطر
+        for ((gi, g) in groups.withIndex()) {
+            val t = tr.getOrNull(gi)?.takeIf { it.isNotBlank() } ?: continue
+            if (g.size == 1) { out[g[0]] = t; continue }
+            val parts = OffLang.split(t, g.map { clean[it].length.coerceAtLeast(1) })
+            if (parts == null) { redo.addAll(g); continue }
+            for ((q, k) in g.withIndex()) out[k] = parts[q]
+        }
+        if (redo.isNotEmpty() && running && !isClosed) {
+            val r = googleItemsRaw(redo.map { src0[it] }, ctx)
+            for ((q, k) in redo.withIndex()) r.getOrNull(q)?.takeIf { it.isNotBlank() }?.let { out[k] = it }
+        }
+        val n = groups.count { it.size > 1 }
+        if (n > 0) host.log("🔗 دمج الجمل: $n جملة مقطّعة اتترجمت كاملة وانقسمت على أسطرها")
+        return out.toList()
+    }
+
+    private fun googleItemsRaw(src0: List<String>, ctx: List<String> = emptyList()): List<String?> {
         val src = src0.map { it.replace(Regex("\\s*\n\\s*"), " ").trim() }
         val out = arrayOfNulls<String>(src.size)
-        val sl = TrWizard.googleLang()
+        val sl = resolveSl(src)
         /** جوجل الداخلي (gtCall): 25 جملة في الطلب */
         // (v399) سياق جوجل: سطور الباتشات اللي قبل (ctx) + الجمل اللي قبلها في نفس الباتش بتتبعت قدام الطلب عشان جوجل يترجم بالسياق،
         // وبعدين بنشيل رد سطور السياق ونرجّع رد الجمل المطلوبة بس بنفس ترتيبها (يعني بنفس توقيتاتها). لو عدد الأسطر اختلف: نرجع للطلب من غير سياق
@@ -2520,6 +2572,58 @@ class Engine(
             host.changed(); persist()
         }
         return true
+    }
+
+    // ===== (v408) 📖 نبذة عن المصطلحات الطبية/الصعبة: سطر شرح فوق الترجمة (بيتعرض زي أوصاف الأصوات isSound) =====
+    // بيشتغل في مسار الترجمة من غير جيميناي (جوجل/ML Kit/خارجي) — جيميناي بيعمل الشرح ده بنفسه من البرومبت. القاموس أوفلاين، وويكيبيديا للمصطلح المجهول (بالنت).
+    @Volatile private var noteAt = 0L
+    private var noteSeeded = false
+    private val noteShown = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+    private val noteScanned = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+    private fun noteTick(): Boolean {
+        if (transOnly || Strict.offline() || !(TrWizard.googleOn() || keyless) || !TermNotes.enabled() || !running || isClosed) return false
+        val now = System.currentTimeMillis()
+        if (now - noteAt < 2500L) return false
+        noteAt = now
+        if (!noteBusy.compareAndSet(false, true)) return false
+        Thread { try { noteWork() } catch (e: Exception) { host.log("⚠ النبذة: " + (e.message ?: e.javaClass.simpleName).take(80)) } finally { noteBusy.set(false) } }.apply { isDaemon = true }.start()
+        return false   // في خيط لوحده (ويكيبيديا/جوجل ممكن يبطّأوا) — عشان لفة المحرك ماتستناش
+    }
+    private val noteBusy = java.util.concurrent.atomic.AtomicBoolean(false)
+    private fun noteWork() {
+        if (!noteSeeded) {
+            noteSeeded = true
+            synchronized(lock) { subs.filter { it.isSound && it.original.startsWith("📖 ") }.forEach { s -> s.original.removePrefix("📖 ").split(" · ").forEach { k -> noteShown.add(k.trim()) } } }
+        }
+        val snap = synchronized(lock) { subs.filter { !it.isSound && it.original.isNotBlank() && it.translated.isNotBlank() && it.chunk !in previewChunks && fixKey(it) !in noteScanned } }.take(60)
+        if (snap.isEmpty()) return
+        val add = ArrayList<Sub>()
+        var wikiLeft = 2
+        for (s in snap) {
+            noteScanned.add(fixKey(s))
+            val lines = ArrayList<Pair<String, String>>()   // (مفتاح المصطلح، سطر العرض)
+            for (en in TermNotes.match(s.original + "\n" + s.translated).take(2)) if (noteShown.add(en.ar)) lines.add(en.ar to ("📖 " + en.ar + ": " + en.note))
+            if (lines.isEmpty() && wikiLeft > 0 && TrWizard.online()) {
+                for (w in TermNotes.candidates(s.original)) {
+                    if (wikiLeft <= 0) break
+                    if (!noteShown.add("w:" + w.lowercase())) continue
+                    wikiLeft--
+                    val wk = TermNotes.wiki(w) ?: continue
+                    val tr = (try { gtCall(listOf(wk.first, wk.second), "ar", "en") } catch (_: Exception) { null }) ?: continue
+                    if (tr.size < 2 || tr[0].isBlank() || tr[1].isBlank()) continue
+                    if (!noteShown.add(wk.first)) continue
+                    lines.add(wk.first to ("📖 " + tr[0] + " (" + wk.first + "): " + tr[1]))
+                    break
+                }
+            }
+            if (lines.isEmpty()) continue
+            add.add(Sub(s.start, maxOf(s.end, s.start + 3.5), "📖 " + lines.joinToString(" · ") { it.first }, lines.joinToString("\n") { it.second },
+                "unknown", "unknown", "none", emptyList(), emptyList(), false, false, s.chunk, isSound = true))
+        }
+        if (add.isEmpty()) return
+        synchronized(lock) { subs = (subs + add).sortedBy { it.start } }
+        host.log("📖 نبذة: اتضاف شرح لـ ${add.size} جملة فيها مصطلحات")
+        host.changed(); persist()
     }
 
     // ===== سدّ الفجوات تلقائيًا أثناء المشاهدة (autoGapFill) =====

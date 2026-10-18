@@ -75,7 +75,7 @@ object Offline {
 
     // ===== (v267) قفل اللغة: أول باتش «مضمون» يحدد لغة الفيديو، وباقي الباتشات بتتفرّغ بيها (Whisper الصغير بيغلط في الاكتشاف التلقائي) =====
     /** حالة قفل اللغة لفيديو واحد (كل Engine عنده واحدة) */
-    class Session { @Volatile var lang = ""; @Volatile var badRun = 0 }
+    class Session { @Volatile var lang = ""; @Volatile var badRun = 0; /** (v411) لغة Whisper المبدئية (مش مقفولة) — للترجمة بس، بعد فحص إن حروف النص مطابقة */ @Volatile var hint = "" }
     /** true = آخر نداء transcribe على الخيط ده اتنفّذ فعلًا على الجهاز (مش فولباك جيميناي) */
     val ranOffline = ThreadLocal<Boolean>()
     /** اللغة اللي اتفرّغ بيها آخر باتش على الخيط ده ("" = اكتشاف تلقائي) */
@@ -136,6 +136,10 @@ object Offline {
             usedLang.set(useLang)
             val res = eng.transcribe(pcm, useLang, terms.trim().take(200), threads())
             if (sess != null && eng.id == "whisper") noteLang(sess, res, locked, log)
+            if (sess != null && sess.lang.isEmpty() && res.lang.isNotEmpty()) {   // (v411) اكتشاف Whisper قبل القفل: بيتستخدم كتلميح لموديل الترجمة بس لو الحروف مطابقة
+                val gt = res.segs.filter { it.text.isNotBlank() && it.logProb > -1.0 && it.noSpeech < 0.5 }.joinToString(" ") { it.text }
+                if (gt.length >= 15 && scriptFits(res.lang, gt)) sess.hint = res.lang
+            }
             val outLang = manual.ifEmpty { if (eng.id == "whisper") sess?.lang.orEmpty() else res.lang }   // (v267) لغة غير مضمونة ما بتتبلّغش للمحرك (كانت بتبوّظ srcLang بـ «ru» لفيديو إنجليزي)
             val took = System.currentTimeMillis() - t0
             log("📴 أوفلاين (${eng.id}${if (eng is SherpaStt) " · VAD=" + SherpaStt.lastVad else ""}): ${"%.0f".format(durSec)}ث صوت ← ${took / 1000}ث (${"%.1f".format(durSec * 1000.0 / took.coerceAtLeast(1))}× سرعة)")

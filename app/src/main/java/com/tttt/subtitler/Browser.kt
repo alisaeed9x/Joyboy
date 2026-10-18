@@ -107,6 +107,24 @@ object BrowserStore {
         PrivacyFilter.aiCheck(url, title) { moveToPrivacy(c, url) }
     }
     fun removeHistory(c: Context, e: Entry) { history(c).remove(e); save(c, "br_history.json", history(c)) }
+    /** (v412) اللي اتمسح من السجل (العادي أو الخصوصية) بسبب حجب موقع — بيتحفظ عشان زرار ↩ تراجع يرجّعه */
+    class Purged(val priv: Boolean, val e: Entry)
+    /** بيمسح من السجل وسجل الخصوصية كل لينك الدومين بتاعه فيه كلمة [key] */
+    fun purgeByKey(c: Context, key: String): List<Purged> {
+        val out = ArrayList<Purged>()
+        val h = history(c); val hi = h.filter { SiteBlock.purgeMatch(key, it.url) }
+        if (hi.isNotEmpty()) { h.removeAll(hi.toSet()); hi.forEach { out.add(Purged(false, it)) }; save(c, "br_history.json", h) }
+        val p = privacy(c); val pi = p.filter { SiteBlock.purgeMatch(key, it.url) }
+        if (pi.isNotEmpty()) { p.removeAll(pi.toSet()); pi.forEach { out.add(Purged(true, it)) }; save(c, "br_privacy.json", p) }
+        return out
+    }
+    fun restorePurged(c: Context, l: List<Purged>) {
+        if (l.isEmpty()) return
+        val h = history(c); val p = privacy(c)
+        for (x in l) (if (x.priv) p else h).add(x.e)
+        h.sortByDescending { it.time }; p.sortByDescending { it.time }
+        save(c, "br_history.json", h); save(c, "br_privacy.json", p)
+    }
     fun clearHistory(c: Context) { history(c).clear(); save(c, "br_history.json", history(c)) }
 
     fun bookmarks(c: Context): ArrayList<Entry> = marks ?: load(c, "br_bookmarks.json").also { marks = it }
@@ -152,6 +170,8 @@ class BTab(val id: Long) {
     var thumb: android.graphics.Bitmap? = null
     @Volatile var gen = 0            // (v203) جيل الصفحة الحالية: كل صفحة جديدة بتزوّده فاللقطات القديمة بتتمسح
     var capUrl = ""
+    var blockedUrl: String? = null      // (v412) موقع محجوب مستني قرارك (🚨 طوارئ / ▶ كمّل) — غطا أسود فوق الصفحة
+    var allowKey: String? = null        // (v412) «كمّل» اتداس على الموقع ده في التبويب ده (بيتشال أول ما تسيب الموقع)
     var hold: PopupGuard.Hold? = null   // (v401) بوب-أب في الحجر: مش في قايمة التبويبات لحد ما نحكم عليه
 }
 
@@ -210,6 +230,11 @@ class BrowserActivity : Activity() {
     private lateinit var panicCol: LinearLayout
     private var panicUrl: String? = null        // الصفحة اللي اتمسحت (للتراجع)
     private var panicTabId = -1L
+    private lateinit var blockCover: FrameLayout    // (v412) غطا أسود للمواقع المحجوبة
+    private lateinit var blockTxt: TextView
+    private var panicKey: String? = null            // (v412) الموقع اللي اتحجب في آخر طوارئ (للتراجع)
+    private var panicPurged: List<BrowserStore.Purged> = emptyList()   // (v412) اللي اتمسح من السجل (للتراجع)
+    private var lastPurgeKey: String? = null
     private var panicClearId = -1L              // التبويب اللي مستني جوجل يحمّل (نمسح تاريخ الرجوع ونشيل الغطا)
     private val GOOGLE = "https://www.google.com"
 
@@ -366,11 +391,13 @@ class BrowserActivity : Activity() {
             addView(panicB, LinearLayout.LayoutParams(ui.dp(44), ui.dp(44)))
             addView(undoB, LinearLayout.LayoutParams(ui.dp(44), ui.dp(44)).apply { topMargin = ui.dp(6) })
         }
+        blockCover = buildBlockCover()
         val webWrap = FrameLayout(this).apply {
             layoutDirection = View.LAYOUT_DIRECTION_LTR
             addView(webHolder, FrameLayout.LayoutParams(-1, -1))
             addView(panicCover, FrameLayout.LayoutParams(-1, -1))
             addView(panicCol, FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM or Gravity.RIGHT).apply { setMargins(0, 0, ui.dp(4), ui.dp(8)) })
+            addView(blockCover, FrameLayout.LayoutParams(-1, -1))   // (v412) فوق كل حاجة
         }
         // (v336) زرار المهام العايم اتشال — المهام في الشريط السفلي
         //   // (v324) زرار المهام العايم (دايرة حمراء بالعدد) فوق الصفحة
@@ -500,6 +527,7 @@ class BrowserActivity : Activity() {
                     if (adOn && AdBlock.blocked(u)) { h.post { popKill(hd, u, listOf("شبكة إعلانات معروفة")) }; return true }
                     return false
                 }
+                if (r.isForMainFrame && u.startsWith("http") && gateBlocked(t, u)) return true   // (v412) موقع محجوب
                 if (r.isForMainFrame && !r.hasGesture() && popMode() != PopupGuard.OFF && android.os.SystemClock.uptimeMillis() - lastTouchAt > 1500L) {
                     // (v401) تحويل تلقائي للصفحة نفسها من غير لمسة لينك شكله إعلان
                     val why = ArrayList<String>()
@@ -522,6 +550,7 @@ class BrowserActivity : Activity() {
                     v.evaluateJavascript(adJs(), null)
                     return
                 }
+                if (url != null && gateBlocked(t, url)) return   // (v412) شبكة أمان: تحويل/رجوع/JS وصل لموقع محجوب
                 if (url != null && !url.startsWith("data:")) { t.url = url; newPage(t, url) }
                 if (t === tabs.getOrNull(curIdx)) { showUrl(url); updateNav() }
                 if (adOn) v.evaluateJavascript(adJs(), null)
@@ -529,6 +558,7 @@ class BrowserActivity : Activity() {
             override fun doUpdateVisitedHistory(v: WebView, url: String?, isReload: Boolean) {
                 val hd = t.hold
                 if (hd != null) { if (url != null && !url.startsWith("data:")) { t.url = url; hd.addUrl(url) }; return }
+                if (t.blockedUrl != null && url != null && SiteBlock.keyOf(url) == SiteBlock.keyOf(t.blockedUrl)) return   // (v412)
                 if (url != null && !url.startsWith("data:")) { t.url = url; newPage(t, url); noteYt(url, null) }
                 if (t === tabs.getOrNull(curIdx)) { showUrl(url); updateNav() }
             }
@@ -540,11 +570,12 @@ class BrowserActivity : Activity() {
                     h.postDelayed({ popProbe(hd) }, 700L)
                     return
                 }
+                if (t.blockedUrl != null && url != null && SiteBlock.keyOf(url) == SiteBlock.keyOf(t.blockedUrl)) return   // (v412) موقع محجوب: مفيش تسجيل ولا اصطياد
                 if (url != null && !url.startsWith("data:")) {
                     t.url = url
                     val ti = v.title?.takeIf { it.isNotBlank() } ?: ""
                     if (ti.isNotEmpty()) { t.title = ti; pageTitles[url] = ti }
-                    if (!t.priv) BrowserStore.recordVisit(this@BrowserActivity, url, ti)
+                    if (!t.priv && !(t.id == panicClearId && SiteBlock.keyOf(url) == lastPurgeKey)) BrowserStore.recordVisit(this@BrowserActivity, url, ti)   // (v412) صفحة جوجل بعد الطوارئ ماتتسجّلش لو هي نفسها اللي اتمسحت
                     noteYt(url, ti)
                 }
                 if (t.id == panicClearId && (url ?: "").contains("google.")) { try { v.clearHistory() } catch (_: Throwable) {}; endPanicCover(); updateNav() }   // (v231) الرجوع مايرجّعش الصفحة اللي اتمسحت
@@ -614,7 +645,7 @@ class BrowserActivity : Activity() {
         showUrl(t.url, true); updateNav(); updateProgress(); updateStar(); refreshTabsCount(); closeFind()
         addr.hint = if (t.priv) "🕶 متخفي — رابط الموقع / كلمة بحث" else "رابط الموقع / كلمة بحث"
         tabsB.setTextColor(if (t.priv) 0xFFE53935.toInt() else th.text)
-        endPanicCover()
+        endPanicCover(); refreshBlockCover()
         scanOnce(); persistTabs()
     }
     private fun closeTab(i: Int) {
@@ -647,7 +678,83 @@ class BrowserActivity : Activity() {
         val t = tab; t.loaded = true; t.errUrl = ""
         loadIn(t.wv ?: return, t, u)
     }
-    private fun loadIn(w: WebView, t: BTab, u: String) { t.url = u; t.errUrl = ""; w.loadUrl(u) }
+    private fun loadIn(w: WebView, t: BTab, u: String) {
+        t.url = u; t.errUrl = ""
+        if (gateBlocked(t, u)) return   // (v412) موقع محجوب: غطا أسود وبلاش تحميل
+        t.blockedUrl = null; refreshBlockCover()
+        w.loadUrl(u)
+    }
+
+    // ===== (v412) المواقع المحجوبة بزرار 🚨: غطا أسود قبل ما الصفحة تتحمّل · 🚨 طوارئ ← جوجل · ▶ كمّل ← افتح الموقع =====
+    /** true = الموقع محجوب ومش مسموح في التبويب ده دلوقتي: الصفحة اتوقّفت والغطا ظهر */
+    private fun gateBlocked(t: BTab, u: String?): Boolean {
+        if (u == null || t.hold != null) return false
+        val k = SiteBlock.keyOf(u) ?: return false
+        if (t.allowKey != null && t.allowKey != k) t.allowKey = null   // سبت الموقع اللي كنت داس عليه «كمّل»
+        if (t.allowKey == k) return false
+        if (!SiteBlock.has(this, k)) return false
+        t.blockedUrl = u; t.url = u
+        try { t.wv?.stopLoading() } catch (_: Throwable) {}
+        if (t === tabs.getOrNull(curIdx)) { showUrl(u, true); refreshBlockCover() }
+        return true
+    }
+    private fun refreshBlockCover() {
+        if (!::blockCover.isInitialized) return
+        val u = tabs.getOrNull(curIdx)?.blockedUrl
+        if (u != null) { blockTxt.text = PopupGuard.hostOf(u); blockCover.visibility = View.VISIBLE } else blockCover.visibility = View.GONE
+    }
+    private fun buildBlockCover(): FrameLayout {
+        fun btn(label: String, fill: Int, f: () -> Unit) = IconTextView(this).apply {
+            text = label; textSize = 17f; gravity = Gravity.CENTER; setTextColor(Color.WHITE); typeface = android.graphics.Typeface.DEFAULT_BOLD
+            background = ui.box(fill, 0x66FFFFFF, 14); setOnClickListener { f() }
+        }
+        blockTxt = ui.text("", 14f, 0xFFBBBBBB.toInt()).apply { gravity = Gravity.CENTER; layoutDirection = View.LAYOUT_DIRECTION_LTR }
+        val col = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER_HORIZONTAL; setPadding(ui.dp(24), 0, ui.dp(24), 0)
+            addView(ui.text("🚫", 44f, Color.WHITE).apply { gravity = Gravity.CENTER })
+            addView(ui.text("موقع محجوب", 20f, Color.WHITE, true).apply { gravity = Gravity.CENTER; setPadding(0, ui.dp(6), 0, ui.dp(4)) })
+            addView(blockTxt, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = ui.dp(22) })
+            addView(LinearLayout(this@BrowserActivity).apply {
+                orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_LTR
+                addView(btn("🚨 طوارئ", 0xFFD32F2F.toInt()) { blockEmergency() }, LinearLayout.LayoutParams(0, ui.dp(54), 1f).apply { marginEnd = ui.dp(8) })
+                addView(btn("▶ كمّل", 0xFF2E7D32.toInt()) { blockContinue() }, LinearLayout.LayoutParams(0, ui.dp(54), 1f))
+            }, LinearLayout.LayoutParams(-1, -2))
+        }
+        return FrameLayout(this).apply {
+            setBackgroundColor(Color.BLACK); visibility = View.GONE; isClickable = true; isFocusable = true
+            addView(col, FrameLayout.LayoutParams(-1, -2, Gravity.CENTER))
+        }
+    }
+    private fun blockContinue() {
+        val t = tabs.getOrNull(curIdx) ?: return
+        val u = t.blockedUrl ?: return
+        t.allowKey = SiteBlock.keyOf(u); t.blockedUrl = null; refreshBlockCover()
+        val w = t.wv ?: return
+        t.loaded = true; loadIn(w, t, u)
+    }
+    private fun blockEmergency() {
+        val t = tabs.getOrNull(curIdx) ?: return
+        val u = t.blockedUrl ?: return
+        t.blockedUrl = null; refreshBlockCover()
+        panic(u)
+    }
+    private fun showBlocked() {
+        val box = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL }
+        fun render() {
+            box.removeAllViews()
+            val l = SiteBlock.list(this)
+            if (l.isEmpty()) box.addView(ui.text("مفيش مواقع محجوبة. زرار 🚨 على أي موقع بيحجبه وبيمسحه من السجل.", 13f, th.muted))
+            for (k in l) {
+                val c = ui.card()
+                val row = LinearLayout(this).apply { layoutDirection = View.LAYOUT_DIRECTION_RTL; gravity = Gravity.CENTER_VERTICAL }
+                row.addView(ui.text(k, 14f, th.text, true).apply { layoutDirection = View.LAYOUT_DIRECTION_LTR; textDirection = View.TEXT_DIRECTION_LTR }, LinearLayout.LayoutParams(0, -2, 1f))
+                row.addView(IconTextView(this).apply { text = "✕"; textSize = 18f; setTextColor(th.muted); setPadding(ui.dp(12), ui.dp(6), ui.dp(4), ui.dp(6)); setOnClickListener { SiteBlock.remove(this@BrowserActivity, k); render() } })
+                c.addView(row); box.addView(c)
+            }
+        }
+        render()
+        sheet("🚫 المواقع المحجوبة", box).show()
+    }
 
     private fun showUrl(u: String?, force: Boolean = false) {
         if (!::addr.isInitialized) return
@@ -674,16 +781,22 @@ class BrowserActivity : Activity() {
         panicClearId = -1L
         if (::panicCover.isInitialized) panicCover.visibility = View.GONE
     }
-    private fun panic() {
+    private fun panic(blockedUrl: String? = null) {
         if (dead || tabs.isEmpty()) return
         val t = tabs[curIdx]
         val w = t.wv ?: return
         leaveCustom(); closeFind()
         try { dlg?.dismiss() } catch (_: Throwable) {}
         try { tabsDlg?.dismiss() } catch (_: Throwable) {}
-        val cur = w.url ?: t.url
+        val cur = blockedUrl ?: (w.url ?: t.url)
         // الصفحة اللي هتتمسح بتتحفظ للتراجع (ماعدا لو إحنا أصلًا على الصفحة الرئيسية لجوجل — الدوسة التانية ماتضيّعش اللي اتحفظ)
-        if (cur.isNotBlank() && !cur.startsWith("data:") && !cur.startsWith("about:") && cur.trimEnd('/') != GOOGLE) { panicUrl = cur; panicTabId = t.id }
+        if (cur.isNotBlank() && !cur.startsWith("data:") && !cur.startsWith("about:") && cur.trimEnd('/') != GOOGLE) { panicUrl = cur; panicTabId = t.id; panicKey = null; panicPurged = emptyList() }
+        // (v412) الموقع ده بيتمسح من السجل (كل لينك دومينه فيه اسمه) وبيتحجب: أي دخول تاني بيبدأ بغطا أسود. جوجل نفسه مابيتحجبش (هو صفحة الهروب)
+        SiteBlock.keyOf(cur)?.let { k ->
+            lastPurgeKey = k
+            panicPurged = panicPurged + BrowserStore.purgeByKey(this, k)
+            if (k != SiteBlock.keyOf(GOOGLE) && SiteBlock.add(this, k)) panicKey = k
+        }
         WebMute.pauseAll()                              // أي صوت/فيديو يقف
         panicCover.visibility = View.VISIBLE            // الصفحة القديمة تختفي في نفس اللحظة
         panicClearId = t.id
@@ -702,6 +815,8 @@ class BrowserActivity : Activity() {
         val u = panicUrl ?: run { undoB.visibility = View.GONE; return }
         val i = tabs.indexOfFirst { it.id == panicTabId }
         panicUrl = null; undoB.visibility = View.GONE
+        panicKey?.let { SiteBlock.remove(this, it) }; panicKey = null   // (v412) التراجع بيشيل الحجب ويرجّع اللي اتمسح من السجل
+        BrowserStore.restorePurged(this, panicPurged); panicPurged = emptyList()
         if (i < 0) { newTab(u, true); return }          // التبويب اتقفل: افتحها في تبويب جديد
         if (i != curIdx) select(i)
         val t = tabs[i]; val w = t.wv ?: return
@@ -760,6 +875,7 @@ class BrowserActivity : Activity() {
             "📚 المفضلة" to { showBookmarks() },
             "🕘 السجل" to { showHistory() },
             "🔒 سجل الخصوصية" to { showPrivacyHistory() },
+            "🚫 المواقع المحجوبة (${SiteBlock.list(this).size})" to { showBlocked() },
             "🔍 بحث في الصفحة" to { openFind() },
             (if (tab.desktop) "🖥 نسخة الكمبيوتر: شغالة ✓" else "🖥 نسخة الكمبيوتر") to { toggleDesktop() },
             "🏠 الصفحة الرئيسية" to { load(home()) },

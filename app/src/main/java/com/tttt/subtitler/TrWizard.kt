@@ -87,6 +87,7 @@ object TrWizard {
             if (!pl.offline && !online()) o.add(NO_NET_GEMINI)
             return o
         }
+        if (pl.offline && pl.free == "mlkit") return listOf("📴 أوفلاين كامل: Whisper + ML Kit على جهازك — فصحى، من غير نت ولا جيميناي (موديل لغة الترجمة بيتحمّل مرة واحدة لو مش نازل)")   // (v410)
         if (!pl.offline) return emptyList()
         val out = ArrayList<String>()
         if (pl.free.isNotBlank() && pl.method == "google") out.add((if (pl.free.startsWith("llm_")) "🤖 المترجم " else "🌐 المترجم المجاني ") + (ExtTranslate.all().firstOrNull { it.id == pl.free }?.label ?: pl.free) + " بيترجم الأول — لو وقف أو الحد اليومي خلص بيكمّل الباقي ثم جوجل ثم جيميناي")
@@ -164,8 +165,8 @@ object TrWizard {
             if (pl == null) "" else {
                 val id = Cfg.str("tr_mode_id", "")
                 val base = when (id) {
-                    "g_wav" -> "🧠 ذكاء صناعي · WAV"; "g_aac" -> "🧠 ذكاء صناعي · AAC"
-                    "loc_ai" -> "📴 محلي + 🧠 ترجمة"; "loc_ctx" -> "📴 وشبر + 🧠 جيميناي بالسياق"; "loc_google" -> "📴 محلي + 🌍 جوجل"
+                    "g_wav" -> (if (pl.only) "✍ تفريغ ذكاء صناعي" else "☁ أونلاين · WAV"); "g_aac" -> (if (pl.only) "✍ تفريغ ذكاء صناعي" else "☁ أونلاين · AAC")
+                    "loc_ai" -> "📴 محلي + 🧠 ترجمة"; "loc_ctx" -> "📴 وشبر + 🧠 جيميناي بالسياق"; "loc_google" -> (if (pl.only) "✍ تفريغ Whisper" else "🌗 وشبر + 🌍 جوجل"); "off_ml" -> (if (pl.only) "✍ تفريغ Whisper (أوفلاين)" else "📴 وشبر + ML Kit")
                     "ai_only" -> "✍ تفريغ ذكاء صناعي"; "w_only" -> "✍ تفريغ Whisper"; "s_only" -> "✍ تفريغ SenseVoice"
                     else -> if (pl.only) "✍ تفريغ بس" else if (pl.offline) "📴 أوفلاين" else if (pl.cloud) "☁ محرك خارجي" else "☁ أونلاين"
                 }
@@ -185,7 +186,7 @@ object TrWizard {
     fun describe(pl: Plan): String = SourceMode.prefix() + describeCore(pl)
     private fun describeCore(pl: Plan): String =
         if (pl.only) "✍ تفريغ بس (من غير ترجمة)\nالتفريغ: " + (if (pl.offline) (if (pl.engine == "sherpa") "SenseVoice" else "Whisper " + pl.model) + " على الجهاز · " + langLabel(pl.lang) else "جيميناي") + "\nالنص بيظهر بلغته الأصلية"
-        else if (pl.offline) "📴 أوفلاين" + (if (pl.live) " ⚡ لحظي" else "") + " · " + langLabel(pl.lang) + "\nالتفريغ: " + (if (pl.engine == "sherpa") "SenseVoice (sherpa-onnx)" else "Whisper " + pl.model) + " على الجهاز\nالترجمة: " + (if (pl.method == "google") "جوجل (من غير API)" else "جيميناي بالسياق") + "\nاللهجة: " + pl.dialect.ifBlank { "فصحى" } + (if (pl.method == "google" && pl.dialect.isNotBlank() && pl.dialect != "فصحى") " (" + convLabel(pl.conv) + " بيحوّل الترجمة)" else "") + (if (pl.free.isNotBlank() && pl.method == "google") "\nالمترجم: " + (if (pl.free.startsWith("llm_")) "🤖 " + (ExtLlm.byId(pl.free.removePrefix("llm_"))?.label ?: pl.free) + " الأول (بمفتاحك)" else "🌐 " + pl.free + " الأول (مجاني من الريبو)") else "")
+        else if (pl.offline) "📴 أوفلاين" + (if (pl.live) " ⚡ لحظي" else "") + " · " + langLabel(pl.lang) + "\nالتفريغ: " + (if (pl.engine == "sherpa") "SenseVoice (sherpa-onnx)" else "Whisper " + pl.model) + " على الجهاز\nالترجمة: " + (if (pl.free == "mlkit") "ML Kit (أوفلاين · من غير نت)" else if (pl.method == "google") "جوجل (من غير API)" else "جيميناي بالسياق") + "\nاللهجة: " + pl.dialect.ifBlank { "فصحى" } + (if (pl.method == "google" && pl.dialect.isNotBlank() && pl.dialect != "فصحى") " (" + convLabel(pl.conv) + " بيحوّل الترجمة)" else "") + (if (pl.free.isNotBlank() && pl.method == "google") "\nالمترجم: " + (if (pl.free.startsWith("llm_")) "🤖 " + (ExtLlm.byId(pl.free.removePrefix("llm_"))?.label ?: pl.free) + " الأول (بمفتاحك)" else "🌐 " + pl.free + " الأول (مجاني من الريبو)") else "")
         else "☁ أونلاين (جيميناي)\n" + (TrPresets.byId(pl.onlineId)?.let { it.icon + " " + it.name } ?: "⚙ الإعدادات الحالية") + (pl.dia?.let { "\nاللهجة: " + it.ifBlank { "فصحى" } } ?: "")
 
     /** (v274) لو التفريغ السحابي كان شغّال بسبب خطة «أونلاين بمحرك خارجي» بنقفله لما نرجع لخطة تانية (إلا لو إنت شغّلته من الإعدادات) */
@@ -371,6 +372,7 @@ object TrWizard {
         // شاشة واحدة بكل الأوضاع ← (للتلاتة الأولانية: لهجة ← أسلوب ← شدة) ← «بصري معاه؟» ← يطبّق ويحفظ ويقفل.
         val hubL: () -> Unit = { stepHub() }
         var mId = Cfg.str("tr_mode_id", "")
+        var onlySw = Cfg.bool("tr_s_only", false)   // (v410) «تفريغ بس» سويتش بيتطبّق على الوضع اللي تختاره
         var mStyle = Cfg.str("tone_style", "").ifBlank { "حرفي" }
         var mDeg = Cfg.str("tone_strength", "متوسطة").ifBlank { "متوسطة" }
         var afterDl: (() -> Unit)? = null
@@ -427,7 +429,11 @@ object TrWizard {
             addBack()
         }
 
-        fun afterModePick() { if (mId in dialectModes) go { stepMDia() } else go { stepMVis() } }
+        fun afterModePick() {
+            // (v410) تفريغ بس: مفيش لهجة ولا أسلوب · نص-أونلاين وأوفلاين: فصحى + صوتي بس (مفيش لهجة ولا بصري)
+            if (onlySw || mId == Strict.SEMI || mId == Strict.OFF) { finishModes("audio", null); return }
+            if (mId in dialectModes) go { stepMDia() } else go { stepMVis() }
+        }
 
 
         fun pickMode(id: String) {
@@ -435,11 +441,13 @@ object TrWizard {
             when (id) {
                 "g_wav", "g_aac" -> { src = "gemini"; tr = "gemini"; gp = CURRENT }
                 "loc_ai", "loc_ctx" -> { src = if (engine == "sherpa" && SherpaStt.ready() && SherpaStt.handles(lang)) "sherpa" else "whisper"; tr = "gemini"; trId = "" }
-                "loc_google" -> { src = if (engine == "sherpa" && SherpaStt.ready() && SherpaStt.handles(lang)) "sherpa" else "whisper"; tr = "google"; trId = ""; dia = ""; diaSet = true; convId = "" }
+                "loc_google" -> { src = "whisper"; tr = "google"; trId = ""; dia = ""; diaSet = true; convId = ""; lang = "" }   // (v410) 🌗 Whisper فقط + لغة تلقائية
+                "off_ml" -> { src = "whisper"; tr = "free"; trId = "mlkit"; dia = ""; diaSet = true; convId = ""; lang = "" }   // (v410) 📴 Whisper + ML Kit
                 "ai_only" -> { src = "gemini"; tr = "none"; trId = "" }
                 "w_only" -> { src = "whisper"; tr = "none"; trId = "" }
                 "s_only" -> { src = "sherpa"; tr = "none"; trId = "" }
             }
+            if (onlySw && id in setOf("g_wav", "g_aac", Strict.SEMI, Strict.OFF)) tr = "none"   // (v410)
             if (src == "whisper") engine = "whisper"
             if (src == "sherpa") { engine = "sherpa"; if (!SherpaStt.handles(lang)) lang = "" }
             if (src == "whisper" && !WhisperLib.loaded) { Notice.show(act, "الأوفلاين مش مدعوم على جهازك", 2500L); return }
@@ -451,23 +459,27 @@ object TrWizard {
             } else afterModePick()
         }
 
+        fun stepOnlineQ() {
+            reset("☁ أونلاين — جودة الصوت")
+            note("جيميناي بيسمع ويترجم بمفاتيحك. اللهجات والأسلوب والضمائر والشخصيات والوضع البصري متاحة هنا بس.")
+            opt("🧠 عادي (WAV)", "صوت خام أعلى جودة · رفع أبطأ وداتا أكتر", mId == "g_wav") { pickMode("g_wav") }
+            opt("🧠 توفير بيانات (AAC)", "نفس الشيء بصوت مضغوط (أصغر ~8 مرات)", mId == "g_aac") { pickMode("g_aac") }
+            addBack()
+        }
+
+        /** (v410) الأوضاع التلاتة: ☁ أونلاين · 🌗 نص-أونلاين · 📴 أوفلاين (+ تفريغ بس سويتش · بصري فقط) */
         fun stepModes() {
             reset(if (edit) "⚙ طريقة الترجمة" else "▶ هتترجم إزاي؟")
             val cur = TrWizard.summaryLine()
             note(if (cur.isBlank()) "اختار وضع — الإعداد بيتحفظ وبيفضل مع أي فيديو." else "الحالي: $cur")
-            sec("🧠 تفريغ وترجمة")
-            opt("🧠 ذكاء صناعي — عادي (WAV)", "جيميناي يسمع ويترجم في طلب واحد · صوت خام أعلى جودة، رفع أبطأ وداتا أكتر", mId == "g_wav") { pickMode("g_wav") }
-            opt("🧠 ذكاء صناعي — توفير بيانات (AAC)", "نفس الشيء بصوت مضغوط (أصغر ~8 مرات)", mId == "g_aac") { pickMode("g_aac") }
-            opt("📴+🧠 تفريغ محلي + ترجمة ذكاء صناعي", "التفريغ على جهازك والترجمة جيميناي بالسياق (كوتا نص بس)", mId == "loc_ai") { pickMode("loc_ai") }
-            opt("📴+🧠 وشبر + جيميناي بالسياق (كل 2–3 باتشات)", "وشبر يفرّغ باتش باتش، وكل ٢–٣ باتشات بتتبعت لجيميناي (بمفتاحك) ومعاها تفريغ وترجمة الباتشات اللي قبلها — وبترجع بتوقيتاتها (العدد من الإعدادات ← التفريغ)", mId == "loc_ctx") { pickMode("loc_ctx") }
-            sec("🆓 من غير مفتاح")
-            opt("📴+🌍 تفريغ محلي + ترجمة جوجل (فصحى)", "كله مجاني · فصحى بس · الترجمة محتاجة نت", mId == "loc_google") { pickMode("loc_google") }
-            sec("✍ تفريغ بس (من غير ترجمة)")
-            opt("✍ تفريغ ذكاء صناعي", "جيميناي يفرّغ النص بلغته الأصلية", mId == "ai_only") { pickMode("ai_only") }
-            opt("✍ تفريغ محلي · Whisper", "على جهازك · كل اللغات", mId == "w_only") { pickMode("w_only") }
-            opt("✍ تفريغ محلي · SenseVoice (onnx)", "على جهازك · إنجليزي وياباني وكوري وصيني", mId == "s_only") { pickMode("s_only") }
+            opt("☁ أونلاين — جيميناي", "تفريغ وترجمة بجيميناي · لهجات + أسلوب + ضمائر + شخصيات + وضع بصري · محتاج مفتاح ونت", mId == "g_wav" || mId == "g_aac") { go { stepOnlineQ() } }
+            opt("🌗 نص-أونلاين — Whisper + جوجل  🔒 من غير مفتاح", "التفريغ على جهازك والترجمة بجوجل (وبعدها MyMemory/Lingva ثم ML Kit) · فصحى بس · جيميناي ممنوع · الترجمة محتاجة نت · اللغة بتتكشف لوحدها", mId == Strict.SEMI) { pickMode(Strict.SEMI) }
+            opt("📴 أوفلاين — Whisper + ML Kit  🔒 مابيتصلش بالنت", "كله على جهازك · فصحى بس · اللغة بتتكشف لوحدها (Whisper + حروف النص) وموديلها بيتحمّل مرة واحدة مع شريط تقدم · بعدها من غير نت", mId == Strict.OFF) { pickMode(Strict.OFF) }
+            sec("✍ تفريغ بس")
+            opt("✍ تفريغ بس (من غير ترجمة): " + (if (onlySw) "✅ شغّال" else "⏸ مقفول"), "النص بيظهر بلغته الأصلية، وبيتطبّق على الوضع اللي تختاره فوق. دوس عشان تبدّل.", onlySw) { onlySw = !onlySw; Cfg.put("tr_s_only", if (onlySw) "1" else "0"); stepModes() }
             sec("👁 بصري")
-            opt("👁 وضع بصري فقط", "بنوعيه: نصوص الشاشة أو هارد سب · من غير ترجمة صوت", SourceMode.get() == SourceMode.VISUAL) { mId = "visual"; Cfg.put("tr_mode_id", "visual"); viaModes = true; tsrc = "visual"; go { stepVisKind() } }
+            opt("👁 وضع بصري فقط", "بنوعيه: نصوص الشاشة أو هارد سب · جيميناي · من غير ترجمة صوت", SourceMode.get() == SourceMode.VISUAL) { mId = "visual"; Cfg.put("tr_mode_id", "visual"); viaModes = true; tsrc = "visual"; go { stepVisKind() } }
+            opt("⋯ إعدادات أكتر", "الإعداد المحفوظ · بديل تلقائي · نبذة المصطلحات الطبية", false) { go { stepSummary() } }
             if (hist.size > 1) addBack() else footBtn("✖ إلغاء", false) { dlg.dismiss() }
         }
 
@@ -481,6 +493,10 @@ object TrWizard {
             val swapOn = Cfg.str("tr_autoswap", "on") != "off"
             opt("🔄 بديل تلقائي لو جيميناي وقف: " + (if (swapOn) "✅ شغّال" else "⏸ مقفول"), "لو كوتا/مفاتيح جيميناي خلصت أثناء الترجمة، الجمل الناقصة بتتترجم بالمترجم الخارجي أو جوجل (فصحى، واللهجة بتتحوّل بعدين) بدل ما تستنى. دوس عشان تبدّل.", false) {
                 Cfg.put("tr_autoswap", if (swapOn) "off" else "on"); stepSummary()
+            }
+            val tnOn = TermNotes.enabled()
+            opt("📖 نبذة عن المصطلحات الطبية: " + (if (tnOn) "✅ شغّال" else "⏸ مقفول"), "لما جملة فيها مصطلح طبي (زي «القوباء» أو «psoriasis») بيظهر سطر شرح قصير فوق الترجمة. قاموس مدمج أوفلاين + ويكيبيديا للمصطلحات اللي مش فيه (بالنت). الشرح تعريفي عام مش تشخيص. دوس عشان تبدّل.", false) {
+                Cfg.put("term_notes", if (tnOn) "off" else "on"); stepSummary()
             }
             opt("✏ غيّر الإعداد", "", false) { go { stepMode() } }
             if (s != null) opt("🗑 امسح المحفوظ", "زرار «▶ ترجمة» هيسألك كل مرة تاني", false) { TrWizard.clearSaved(); Notice.show(act, "اتمسح الإعداد المحفوظ", 2200L); dlg.dismiss() }

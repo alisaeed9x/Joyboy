@@ -322,7 +322,7 @@ text_hex: لون النص hex | opacity_pct: شفافية الخلفية 0-100 |
     }
     private fun snapWork(bmp: Bitmap, nowSec: () -> Double) {
         val keys = keyList()
-        if (keys.isEmpty()) { say("ضيف مفتاح للوضع البصري (الإعدادات ← 🔑 المفاتيح ← مفتاح الوضع البصري فقط)"); return }
+        if (keys.isEmpty()) { say(if (Strict.noGemini()) Strict.NO_VISUAL_MSG else "ضيف مفتاح للوضع البصري (الإعدادات ← 🔑 المفاتيح ← مفتاح الوضع البصري فقط)"); return }
         val jpeg = toJpeg(bmp); bmp.recycle()
         val prompt = if (mode == "hardsub") PROMPT_HARDSUB.replace("§DIALECT§", "بلهجة ${conf.lang} وأسلوب ${conf.style}")
             .replace("§LANG§", if (hardLang.isBlank()) "لغة الهاردسب: اكتشفها تلقائيًا من السطر المحروق." else "لغة الهاردسب في هذا الفيديو هي: \"$hardLang\" — اقرأ فقط الأسطر المكتوبة بيها.") else PROMPT_SCENE
