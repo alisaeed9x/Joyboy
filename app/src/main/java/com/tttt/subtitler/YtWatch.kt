@@ -373,7 +373,7 @@ class YtWatchPage(private val act: Activity, private val ui: Ui, private val hos
         chanBox.addView(chanName, LinearLayout.LayoutParams(0, -2, 1f))
         chanBox.addView(subB, LinearLayout.LayoutParams(-2, -2))
         bellB.apply { glyph = 0.62f; contentDescription = "إشعارات القناة"; foreground = YtSkin.ripple(true); visibility = View.GONE
-            setOnClickListener { v -> YtSubs.bellMenu(act, v, chanUrl(), chanNameNow(), "") { paintSub() } } }
+            setOnClickListener { v -> YtSubscribe.bellMenu(act, v, chanUrl(), chanNameNow(), "") { paintSub() } } }
         chanBox.addView(bellB, LinearLayout.LayoutParams(ui.dp(40), ui.dp(40)).apply { marginStart = ui.dp(6) })
         chanBox.isClickable = true
         chanBox.setOnClickListener { openChan() }
@@ -462,7 +462,7 @@ class YtWatchPage(private val act: Activity, private val ui: Ui, private val hos
 
     private fun paintSub() {
         val u = chanUrl()
-        val on = YtSubs.isSub(u)
+        val on = YtSubscribe.isSub(u)
         subB.text = if (on) "✓ مشترك" else "اشترك"
         subB.setTextColor(if (on) YtSkin.text else YtSkin.chipOnText)
         subB.background = GradientDrawable().apply { setColor(if (on) YtSkin.chip else YtSkin.chipOnBg); cornerRadius = ui.dp(18).toFloat() }
@@ -470,7 +470,7 @@ class YtWatchPage(private val act: Activity, private val ui: Ui, private val hos
         bellB.filled = on && YtNotify.chanOn(u)
         bellB.background = GradientDrawable().apply { setColor(YtSkin.chip); cornerRadius = ui.dp(20).toFloat() }
     }
-    private fun toggleSub() { YtSubs.toggle(act, chanUrl(), chanNameNow(), "") { paintSub() } }
+    private fun toggleSub() { YtSubscribe.toggle(act, chanUrl(), chanNameNow(), "") { paintSub() } }
 
     // ───────── (v403) لايك على حسابك ─────────
     private fun likedSet(): HashSet<String> = HashSet(Cfg.str("ytp_liked", "").split("\n").filter { it.isNotBlank() })

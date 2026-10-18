@@ -386,7 +386,7 @@ class MainActivity : Activity() {
             ui.section("🔔 الإشعارات والسجل", true,
                 ui.switchRow("🔔 إشعارات الفيديوهات الجديدة من اشتراكاتي", YtNotify.enabled()) { YtNotify.setEnabled(this, it) },
                 ui.switchRow("🕘 حفظ سجل المشاهدة", YtStore.histOn()) { Cfg.put("ytp_hist_on", if (it) "1" else "0") },
-                ui.switchRow("🔄 الاشتراك يتسجّل على حسابي كمان (لو مسجّل الدخول)", YtSubs.syncOn()) { Cfg.put("yt_acc_sync", if (it) "1" else "0") },
+                ui.switchRow("🔄 الاشتراك يتسجّل على حسابي كمان (لو مسجّل الدخول)", YtSubscribe.syncOn()) { Cfg.put("yt_acc_sync", if (it) "1" else "0") },
                 ui.button("🔔 رجّع إشعارات كل القنوات (بعد ما قفلت قنوات بالجرس)") { Cfg.put("ytp_notif_off", ""); Notice.show(this, ("🔔 رجعت إشعارات كل القنوات").toString(), 2200L) },
                 ui.text("جرس 🔔 في صفحة كل قناة: إشعار بكل فيديو جديد أو بدون. اللايك والتعليق من صفحة المشاهدة بيتسجّلوا على حسابك بس لو مسجّل الدخول.", 12f, th.muted)),
             ui.section("👤 حساب جوجل", false,

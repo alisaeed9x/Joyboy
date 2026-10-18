@@ -23,7 +23,7 @@ import java.util.Locale
  * (v403) الاشتراك: بيتحفظ في التطبيق، ولو إنت مسجّل بحساب جوجل (وإعداد «مزامنة الاشتراك مع حسابي» شغّال) بيتسجّل على حسابك كمان.
  * الإشعارات: لكل قناة مشتركة جرس (الكل / بدون) — والإشعارات العامة من إعدادات يوتيوب.
  */
-object YtSubs {
+object YtSubscribe {
     fun item(url: String, name: String, avatar: String = ""): NpItem = NpItem("", name.ifBlank { url }, "", url, avatar, -1L, 0L, "", 1, url)
     fun isSub(url: String): Boolean = url.isNotBlank() && YtStore.contains(YtStore.SUBS, item(url, ""))
     fun syncOn(): Boolean = Cfg.str("yt_acc_sync", "1") != "0"
@@ -124,7 +124,7 @@ class YtChannelPage(private val act: Activity, private val ui: Ui, private val h
             setOnClickListener { maxLines = if (maxLines == 2) 60 else 2 } }
         subB.apply { textSize = 14f; typeface = medium; gravity = Gravity.CENTER; setPadding(ui.dp(22), ui.dp(9), ui.dp(22), ui.dp(9)); setOnClickListener { onSub() } }
         bellB.apply { glyph = 0.62f; contentDescription = "إشعارات القناة"; foreground = YtSkin.ripple(true); visibility = View.GONE
-            setOnClickListener { v -> YtSubs.bellMenu(act, v, curUrl, curName, curAv) { paintSub() } } }
+            setOnClickListener { v -> YtSubscribe.bellMenu(act, v, curUrl, curName, curAv) { paintSub() } } }
         tabsRow.apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; setPadding(ui.dp(10), ui.dp(12), ui.dp(10), ui.dp(8)) }
         listBox.apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL }
 
@@ -176,7 +176,7 @@ class YtChannelPage(private val act: Activity, private val ui: Ui, private val h
     }
 
     private fun paintSub() {
-        val on = YtSubs.isSub(curUrl)
+        val on = YtSubscribe.isSub(curUrl)
         subB.text = if (on) "✓ مشترك" else "اشترك"
         subB.setTextColor(if (on) YtSkin.text else YtSkin.chipOnText)
         subB.background = GradientDrawable().apply { setColor(if (on) YtSkin.chip else YtSkin.chipOnBg); cornerRadius = ui.dp(20).toFloat() }
@@ -186,7 +186,7 @@ class YtChannelPage(private val act: Activity, private val ui: Ui, private val h
     }
     private fun onSub() {
         if (curUrl.isBlank()) { Notice.show(act, "لسه بحمّل القناة…", 1600L); return }
-        YtSubs.toggle(act, curUrl, curName, curAv) { paintSub() }
+        YtSubscribe.toggle(act, curUrl, curName, curAv) { paintSub() }
     }
 
     private fun status(t: String) {

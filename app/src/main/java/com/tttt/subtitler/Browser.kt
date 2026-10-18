@@ -477,8 +477,13 @@ class BrowserActivity : Activity() {
                 val g0 = t.gen
                 Sniff.accept(u)?.let { a ->
                     val hd = t.hold
-                    if (hd != null) { hd.media = true; if (hd.sniffed.size < 6) hd.sniffed.add(a) }   // (v401) فيديو في بوب-أب = دليل إنه صفحة مشاهدة
-                    else h.post { if (!dead) addFound(Found(a, Sniff.kindOf(a), "", v.url ?: t.url, uaOf(t)), t, g0) }
+                    if (hd != null) {   // (v401) فيديو في بوب-أب = دليل إنه صفحة مشاهدة
+                        hd.media = true
+                        if (hd.sniffed.size < 6) { hd.sniffed.add(a) }
+                    } else {
+                        h.post { if (!dead) addFound(Found(a, Sniff.kindOf(a), "", v.url ?: t.url, uaOf(t)), t, g0) }
+                    }
+                    Unit
                 }
                 if (adOn && AdBlock.blocked(u)) { blockedN++; h.post { if (!dead) shield.text = "🛡 $blockedN" }; return WebResourceResponse("text/plain", "utf-8", java.io.ByteArrayInputStream(ByteArray(0))) }
                 return null
