@@ -13,7 +13,7 @@ object FreeLlm {
     const val GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/openai"
     const val GROQ_URL = "https://api.groq.com/openai/v1"
 
-    /** موديل مجاني وحدوده (TPM = 0 يعني مفيش حد توكنز) — الأرقام من defaults/*.yml في المشروع */
+    /** موديل مجاني وحدوده (TPM = 0 يعني مفيش حد توكنز) — الأرقام من defaults (ملفات yml) في المشروع */
     class M(val provider: String, val name: String, val tpm: Int, val rpm: Int, val rpd: Int)
 
     val DEFAULTS: List<M> = listOf(

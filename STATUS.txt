@@ -1,3 +1,4 @@
+v448: إصلاح بناء v447 — FreeLlm.kt:14 «Unclosed comment»: كلمة defaults/*.yml جوه كومنت كانت بتفتح كومنت متداخل (كوتلن بيدعم التداخل). اتغيّرت. ماتجرّبش compile.
 v447: إصلاح بناء v446 — TrWizard.kt:192 «Unresolved reference liveName» ← FreeLlm.liveName() اتحسب في متغير flName قبل الـ when. ماتجرّبش compile.
 v446: إصلاح بناء v445 — FreeLlm.kt كان ناقص من kt_manifest.txt فـ pruneStaleKt كان بيمسحه قبل الكومبايل (Unresolved reference: FreeLlm). اتضاف. نفس سبب v422. ماتجرّبش compile.
 v442: وضع FreeLLM الصوتي بقى الأول في قايمة «ترجم» (⭐ الأساسي) وجيميناي نزل تحته (لسه موجود). مفتاح Gemini بتاع FreeLLM لو فاضي بياخد أول مفتاح جيميناي مضاف في التطبيق. ماتجرّبش compile.
