@@ -163,7 +163,7 @@ object OffLang {
     }
 
     /** الدمج شغّال بس في مسار Whisper (نص-أونلاين / أوفلاين / أي تفريغ أوفلاين) — مش في جيميناي الأونلاين */
-    fun mergeOn(): Boolean = Strict.noGemini() || Offline.configured()
+    fun mergeOn(): Boolean = Strict.noGemKeys() || Offline.configured()
 }
 
 /**

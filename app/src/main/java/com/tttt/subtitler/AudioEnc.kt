@@ -41,6 +41,16 @@ object AudioEnc {
         return r
     }
 
+    private val aacCache: MutableMap<ByteArray, Packed> = Collections.synchronizedMap(WeakHashMap<ByteArray, Packed>())
+    /** (v437) AAC إجباري (بيتجاهل بريسيت «نورمال»): لـ Beat. لو الضغط فشل بيرجّع null — مفيش رجوع لـ WAV */
+    fun packAac(wav: ByteArray): Packed? {
+        aacCache[wav]?.let { return it }
+        if (!isWav(wav)) return null
+        val p = try { aac(wav) } catch (_: Throwable) { null }
+        if (p != null) aacCache[wav] = p
+        return p
+    }
+
     private fun isWav(b: ByteArray) = b.size > 46 && b[0] == 'R'.code.toByte() && b[1] == 'I'.code.toByte() && b[2] == 'F'.code.toByte() && b[3] == 'F'.code.toByte()
 
     private fun freqIdx(rate: Int): Int = when (rate) {

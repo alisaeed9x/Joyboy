@@ -18,6 +18,14 @@ object Strict {
     fun semi(): Boolean = id() == SEMI
     /** true = جيميناي ممنوع تمامًا (مفاتيح، تحويل لهجة، بصري، تسليم احتياطي) */
     fun noGemini(): Boolean = id() == SEMI
+    /** (v436) وشبر + Beat: جيميناي ممنوع (مفاتيح/تحويل لهجة/تسليم احتياطي) بس اللهجة مسموحة — Beat نفسه بيترجم بيها */
+    const val BEAT_TXT = "loc_beat"
+    fun beatText(): Boolean = id() == BEAT_TXT
+    /** (v436) 🔑 ترجمة ببيت: نفس مسار جيميناي (صوت ← موديل) بس بمفتاح Beat وموديلاته — مفيش جيميناي خالص */
+    const val BEAT_GEM = "b_gem"
+    fun beatGem(): Boolean = id() == BEAT_GEM
+    /** مفاتيح جيميناي مش بتتلمس خالص (نص-أونلاين / وشبر + Beat) */
+    fun noGemKeys(): Boolean = noGemini() || beatText()
     const val NO_VISUAL_MSG = "👁 الوضع البصري شغّال في الوضع الأونلاين (جيميناي) بس"
     const val NO_DIALECT_MSG = "🗣 اللهجات في الوضع الأونلاين (جيميناي) بس — الوضع ده فصحى"
 }

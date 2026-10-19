@@ -378,7 +378,7 @@ class Engine(
 
     /** اختيار لهجة التحويل. existing=true: بيحوّل كمان اللي اتترجم قبل كده — من مكان المشاهدة وللقدّام الأول، وبعدين اللي قبله. بيحفظ نسخة باللهجة القديمة قبل التحويل (🗂) */
     fun setConvDialect(d: String, existing: Boolean) {
-        if (Strict.noGemini()) { convDialect = ""; pend.clear(); return }   // (v410) فصحى بس في نص-أونلاين والأوفلاين
+        if (Strict.noGemKeys()) { convDialect = ""; pend.clear(); return }   // (v410) فصحى بس في نص-أونلاين والأوفلاين
         val prev = convDialect
         if (existing && subs.isNotEmpty() && prev != d) { val lb = if (prev.isBlank()) "فصحى" else prev; saveVersion("ترجمة $lb", lb) }
         convDialect = d
@@ -394,7 +394,7 @@ class Engine(
     }
     /** بيحوّل الجمل اللي لسه ما اتحوّلتش كل ~3 باتشات (أو الباقي لما الترجمة تهدى) على المفاتيح الاحتياطية */
     fun maybeConvert(force: Boolean = false) {
-        if (Strict.noGemini()) return   // (v410) تحويل اللهجة بجيميناي — أونلاين بس
+        if (Strict.noGemKeys()) return   // (v436) · (v410) تحويل اللهجة بجيميناي — أونلاين بس
         if (transOnly || (keyless && convLlm() == null)) return   // (v280) تفريغ بس: مفيش تحويل لهجة · (v281) من غير مفتاح جيميناي التحويل بيشتغل لو فيه محرك LLM مختار
         // (v259) تحويل اللهجة محتاج جيميناي — من غير مفتاح الترجمة بتفضل فصحى (الإشعار اتعرض قبل البداية)
         val tgt = convDialect
@@ -1369,7 +1369,7 @@ class Engine(
         if (released > 0 && TrWizard.googleOn()) {   // (v274) المحركات الخارجية وجوجل ماكمّلوش: الباتشات دي بترجع كطلب كامل (احتياطي ثم صوت ← ترجمة) بمفاتيح جيميناي
             // (v389) إشعار واحد «فشل ← اتحوّل» وبس؛ لو مفيش تحويل (مفيش مفتاح جيميناي) مفيش إشعار (اللوج بس)
             if (keyless) host.log("⚠ محركات الترجمة وقفت ومفيش مفتاح جيميناي — $released باتش هيتعاد لما تشتغل")
-            else if (!Strict.noGemini()) swapNotice("🔄 فشلت محركات الترجمة (${ExtTranslate.chainLabel().substringBeforeLast(" ← ")}) — تم التحويل لجيميناي ($released باتش)")
+            else if (!Strict.noGemKeys()) swapNotice("🔄 فشلت محركات الترجمة (${ExtTranslate.chainLabel().substringBeforeLast(" ← ")}) — تم التحويل لجيميناي ($released باتش)")
         }
     }
 

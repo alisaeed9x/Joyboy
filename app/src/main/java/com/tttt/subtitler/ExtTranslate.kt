@@ -41,7 +41,7 @@ object ExtTranslate {
     )
 
     /** المزوّدين المدمجين + الراوتر (لو فيه مفاتيح) + محركات LLM اللي مفتاحها مضبوط */
-    fun all(): List<Prov> = builtin + listOfNotNull(libreProv())
+    fun all(): List<Prov> = builtin + listOfNotNull(libreProv(), beatProv())
 
     private fun day(): String = (System.currentTimeMillis() / 86_400_000L).toString()
 
@@ -73,19 +73,20 @@ object ExtTranslate {
     fun whoLabel(p: Prov?): String = when {
         p == null -> "🏠 جوجل الداخلي"
         p.id == "libre" -> if (Cfg.str("libre_url").isBlank()) "🌐 LibreTranslate" else "🌐 LibreTranslate (سيرفرك)"
+        p.id == "beat" -> "🔑 Beat · " + beatNow()
         else -> "🌐 " + p.label + " (مجاني من الريبو)"
     }
     /** (v278) سطر «مين بيترجم دلوقتي» للإشعارات: السلسلة بالترتيب، أو جيميناي بعدد مفاتيحه */
-    fun setupLine(): String = if (TrWizard.googleOn()) "المترجم: " + chain().joinToString(" ← ") { whoLabel(it) } + (if (Strict.noGemini()) "" else " ← 🔑 جيميناي (مفاتيحك)")
+    fun setupLine(): String = if (TrWizard.googleOn()) "المترجم: " + chain().joinToString(" ← ") { whoLabel(it) } + (if (Strict.noGemKeys()) "" else " ← 🔑 جيميناي (مفاتيحك)")
         else "المترجم: 🔑 جيميناي — " + (Cfg.keys("keys").size + Cfg.keys("extra").size) + " مفتاح"
-    fun chainLabel(): String = chain().joinToString(" ← ") { it?.label ?: "جوجل" } + (if (Strict.noGemini()) "" else " ← جيميناي (مفاتيحك)")
+    fun chainLabel(): String = chain().joinToString(" ← ") { it?.label ?: "جوجل" } + (if (Strict.noGemKeys()) "" else " ← جيميناي (مفاتيحك)")
     fun enabled(p: Prov): Boolean = Cfg.str("ext_on_" + p.id, "on") != "off"
     fun setEnabled(p: Prov, on: Boolean) { Cfg.put("ext_on_" + p.id, if (on) "on" else "off") }
     /** مزوّد موجود في القايمة المسحوبة من الريبو؟ */
     fun inRepo(p: Prov): Boolean = PublicApis.listed(p.keys) != null
 
     /** المزوّدين اللي هيتستخدموا فعلًا: مفعّلين، ولو «الريبو بس» شغّال لازم يكونوا في القايمة المسحوبة */
-    fun active(): List<Prov> = all().filter { enabled(it) && (!strict() || inRepo(it) || it.id == "mlkit") }
+    fun active(): List<Prov> = all().filter { enabled(it) && (!strict() || inRepo(it) || it.id == "mlkit" || it.id == "beat") }
 
     // ===== (v274) إيقاف مؤقت لمزوّد فشل: مفتاح مرفوض (لحد ما المفتاح يتغيّر) / كوتة أو رصيد (دقايق) / رابط أو موديل غلط / سيرفر واقع =====
     private val coolUntil = ConcurrentHashMap<String, Long>()
@@ -141,6 +142,229 @@ object ExtTranslate {
         if (arr != null) { for (i in 0 until minOf(arr.length(), texts.size)) out[i] = arr.optString(i, "").trim().takeIf { it.isNotEmpty() } }
         else if (texts.size == 1) out[0] = o.optString("translatedText", "").trim().takeIf { it.isNotEmpty() }
         return out.toList()
+    }
+
+
+    // ===== (v435) Beat API — OpenAI-compatible: POST https://api.beatapi.io/v1/chat/completions (موديلات -free بتتبدّل) =====
+    const val BEAT_URL = "https://api.beatapi.io/v1"
+    /** الموديلات المجانية المسموحة للمفتاح (من لوحة Beat ← Allowed models). الأول = الافتراضي */
+    val BEAT_DEFAULT_MODELS = listOf("gemini-3.8-flash-free", "deepseek-v4.1-flash-free", "glm-5.3-flash-free", "glm-5.3-free")
+    fun beatUrl(): String = Cfg.str("beat_url").trim().trimEnd('/').ifEmpty { BEAT_URL }
+    fun beatModels(): List<String> = Cfg.str("beat_models").split('\n', ',', ' ').map { it.trim() }.filter { it.isNotEmpty() }.distinct().ifEmpty { BEAT_DEFAULT_MODELS }
+    /** الموديل اللي إنت مختاره (المفضّل) */
+    fun beatModel(): String { val m = Cfg.str("beat_model").trim(); val l = beatModels(); return if (m in l) m else l.first() }
+    fun beatSetModel(m: String) {
+        val l = beatModels()
+        if (m !in l) Cfg.put("beat_models", (l + m).joinToString("\n"))
+        Cfg.put("beat_model", m)
+    }
+    /** بدّل لموديل تاني تلقائي لو الموديل المختار وقف (429 / خطأ) */
+    fun beatRotate(): Boolean = Cfg.str("beat_rotate", "on") != "off"
+    fun beatReady(): Boolean = beatKeys().isNotEmpty()
+    /** (v436) مفاتيح Beat (واحد في كل سطر، أو بفاصلة) */
+    fun beatKeys(): List<String> = Cfg.str("beat_key").split('\n', ',', ' ').map { it.trim() }.filter { it.length > 8 }.distinct()
+    fun isBeatKey(k: String): Boolean = k.length > 8 && k in beatKeys()
+    /** (v436) إشعار لما الموديل يتبدّل لوحده (Player بيحطه وهو شغّال) */
+    @Volatile var onNote: ((String) -> Unit)? = null
+    /** آخر موديل ردّ فعلًا (ممكن يختلف عن المختار لو اتبدّل لوحده) */
+    @Volatile var beatLive = ""
+    /** الموديل الشغّال دلوقتي للعرض */
+    fun beatNow(): String = beatLive.ifEmpty { beatModel() }
+    private val modelCool = ConcurrentHashMap<String, Long>()
+    private val modelWhy = ConcurrentHashMap<String, String>()
+    /** سبب إن الموديل واقف مؤقتًا (أو "" لو شغّال) */
+    fun beatModelStatus(m: String): String {
+        val u = modelCool[m] ?: return ""
+        val left = (u - System.currentTimeMillis()) / 1000L
+        if (left <= 0L) { modelCool.remove(m); modelWhy.remove(m); return "" }
+        return (modelWhy[m] ?: "واقف") + " — بعد " + left + " ث"
+    }
+    /** تبديل فوري من القايمة السريعة: الموديل ده بقى المختار والشغّال */
+    fun beatPick(m: String) { beatSetModel(m); beatLive = m }
+    fun beatResetCool() { modelCool.clear(); modelWhy.clear(); beatLive = "" }
+    private fun beatEndpoint(base0: String): String { val base = base0.trim().trimEnd('/').ifEmpty { BEAT_URL }; return if (base.endsWith("/chat/completions")) base else "$base/chat/completions" }
+
+    fun beatProv(): Prov? {
+        if (!beatReady()) return null
+        return Prov("beat", "Beat · " + beatModel(), listOf("beat"), 0) { _, _ -> null }.also { pv ->
+            pv.keyHash = { Cfg.str("beat_key").hashCode() }
+            pv.chunk = 40; pv.gapMs = 300L
+            pv.batch = { texts, sl -> beat(texts, sl) }
+        }
+    }
+
+    /** (v436) تنفيذ طلب على Beat: الموديل المختار الأول، ولو وقف (429/خطأ) وفيه «بدّل تلقائي» بيكمّل بالموديل اللي بعده وهكذا. 401 = المفتاح نفسه غلط فبيوقف على طول */
+    private fun <T> beatRun(call: (String) -> T): T {
+        val pref = beatModel()
+        val order = if (beatRotate()) listOf(pref) + beatModels().filter { it != pref } else listOf(pref)
+        var lastErr: Exception? = null
+        var tried = 0
+        var soonest = Long.MAX_VALUE
+        for (m in order) {
+            val until = modelCool[m] ?: 0L
+            val now = System.currentTimeMillis()
+            if (until > now) { soonest = minOf(soonest, until - now); continue }
+            tried++
+            try {
+                val r = call(m)
+                if (beatLive != m) {
+                    val prev = beatLive
+                    beatLive = m
+                    if (m != pref) {
+                        val note = "🔑 Beat: " + (prev.ifEmpty { pref }) + " وقف مؤقتًا — بترجم بـ " + m
+                        lastNote = note
+                        LogStore.add(note)
+                        try { onNote?.invoke(note) } catch (_: Throwable) {}
+                    }
+                }
+                return r
+            } catch (e: ExtLlm.LlmErr) {
+                lastErr = e
+                if (e.code == 401) throw e   // المفتاح نفسه مرفوض — مفيش فايدة من باقي الموديلات
+                val ms = when (e.code) {
+                    429 -> (if (e.retryAfterSec > 0) e.retryAfterSec.coerceIn(10, 600) else 60) * 1000L
+                    402 -> 1_800_000L
+                    403, 404 -> 1_800_000L   // الموديل مش مسموح للمفتاح / مش موجود
+                    else -> 60_000L
+                }
+                modelCool[m] = System.currentTimeMillis() + ms
+                modelWhy[m] = when (e.code) { 429 -> "الحد خلص مؤقتًا"; 402 -> "الرصيد خلص"; 403 -> "مش مسموح للمفتاح"; 404 -> "الموديل مش موجود"; else -> "خطأ " + e.code }
+                LogStore.add("🔑 Beat: " + m + " ← " + (e.message ?: "").take(100) + " — بجرّب الموديل اللي بعده")
+            } catch (e: Exception) {
+                lastErr = e
+                modelCool[m] = System.currentTimeMillis() + 60_000L
+                modelWhy[m] = "رد غلط"
+                LogStore.add("🔑 Beat: " + m + " ← " + (e.message ?: e.javaClass.simpleName).take(100) + " — بجرّب الموديل اللي بعده")
+            }
+        }
+        if (tried == 0) throw ExtLlm.LlmErr(429, "كل موديلات Beat واقفة مؤقتًا — أقربهم بعد " + (soonest / 1000L) + " ث", (soonest / 1000L).toInt())
+        throw lastErr ?: java.io.IOException("Beat: فشل")
+    }
+
+    /** ترجمة نص (مسار «وشبر + Beat» وكبديل): دفعة جمل بنفس بدّل-الموديلات */
+    private fun beat(texts: List<String>, sl0: String): List<String?> {
+        val key = beatKeys().firstOrNull() ?: throw ExtLlm.LlmErr(401, "مفيش مفتاح Beat")
+        val url = beatEndpoint(Cfg.str("beat_url"))
+        return beatRun { m -> beatCall(url, key, m, texts, sl0) }
+    }
+
+    // ===== (v436) 🔑 ترجمة ببيت: نفس طلبات جيميناي (صوت + برومبت) بس على Beat — Api.generate بيحوّل لهنا لما المفتاح يبقى مفتاح Beat =====
+    fun beatGenerate(key: String, prompt: String, wav: ByteArray?, maxTokens: Int, temp: Double, json: Boolean): Api.Result {
+        val url = beatEndpoint(Cfg.str("beat_url"))
+        val n = beatSeq.incrementAndGet()
+        val t0 = System.currentTimeMillis()
+        LogStore.add("🔑 [Beat #" + n + "] طلب ← " + beatNow() + " · مفتاح …" + key.takeLast(4) + " · " + (if (wav != null) "صوت " + (wav.size / 1024) + "KB" else "نص " + prompt.length + "حرف"))
+        try {
+            val r = beatRun { m -> beatChat(url, key, m, prompt, wav, maxTokens, temp, json) }
+            LogStore.add("🔑 [Beat #" + n + "] ✅ " + beatNow() + " · رد " + r.text.length + "حرف في " + (System.currentTimeMillis() - t0) + "ms")
+            return r
+        } catch (e: ExtLlm.LlmErr) {
+            LogStore.add("🔑 [Beat #" + n + "] ❌ " + (e.message ?: "").take(120))
+            throw ApiErr(e.code, e.message ?: ("HTTP " + e.code))
+        } catch (e: java.io.IOException) {
+            LogStore.add("🔑 [Beat #" + n + "] ❌ " + (e.message ?: e.javaClass.simpleName).take(120))
+            throw e
+        }
+    }
+    private val beatSeq = java.util.concurrent.atomic.AtomicInteger(0)
+
+    /** طلب chat واحد لموديل واحد، بصوت اختياري (input_audio / aac دايمًا). لو رفض max_tokens الكبير بيجرّب 4096 */
+    private fun beatChat(url: String, key: String, model: String, prompt: String, wav: ByteArray?, maxTokens: Int, temp: Double, json: Boolean): Api.Result {
+        val msgs = JSONArray()
+        if (json) msgs.put(JSONObject().put("role", "system").put("content", "Reply with ONLY valid JSON. No markdown fences, no text before or after the JSON."))
+        val user = JSONObject().put("role", "user")
+        if (wav != null) {
+            val aac = AudioEnc.packAac(wav) ?: throw java.io.IOException("ضغط الصوت AAC فشل (الملف مش WAV سليم أو قصير جدًا)")   // (v437) AAC دايمًا
+            val parts = JSONArray()
+            parts.put(JSONObject().put("type", "input_audio").put("input_audio", JSONObject().put("data", java.util.Base64.getEncoder().encodeToString(aac.bytes)).put("format", "aac")))
+            parts.put(JSONObject().put("type", "text").put("text", prompt))
+            user.put("content", parts)
+        } else user.put("content", prompt)
+        msgs.put(user)
+        fun go(mt: Int): String {
+            val body = JSONObject().put("model", model).put("messages", msgs).put("temperature", temp).put("max_tokens", mt).put("stream", false)
+            return ExtLlm.post(url, mapOf("Authorization" to "Bearer $key"), body.toString(), 180000)
+        }
+        val raw = try { go(maxTokens) } catch (e: ExtLlm.LlmErr) {
+            if (e.code == 400 && maxTokens > 4096 && (e.message ?: "").contains("token", true)) go(4096) else throw e
+        }
+        val ch = JSONObject(raw).optJSONArray("choices")?.optJSONObject(0) ?: throw java.io.IOException("رد " + model + " من غير choices")
+        val cm = ch.optJSONObject("message")?.opt("content")
+        var text = when (cm) {
+            is String -> cm
+            is JSONArray -> { val sb = StringBuilder(); for (i in 0 until cm.length()) sb.append(cm.optJSONObject(i)?.optString("text", "") ?: ""); sb.toString() }
+            else -> ""
+        }
+        text = text.trim().removePrefix("```json").removePrefix("```JSON").removePrefix("```").removeSuffix("```").trim()
+        val fin = when (ch.optString("finish_reason", "")) { "length" -> "MAX_TOKENS"; "stop", "" -> "STOP"; else -> ch.optString("finish_reason") }
+        return Api.Result(text, fin)
+    }
+
+    /** تجربة الصوت: بيبعت ثانية صمت AAC للموديل — بيكشف لو الموديل بيرفض الصوت أصلًا (مش بيثبت إنه بيفهم الكلام) */
+    fun beatAudioTest(base: String, key: String, model: String): Triple<Boolean, Long, String> {
+        val t0 = System.currentTimeMillis()
+        return try {
+            val n = 16000; val pcm = ByteArray(n * 2)
+            val h = java.nio.ByteBuffer.allocate(44 + pcm.size).order(java.nio.ByteOrder.LITTLE_ENDIAN)
+            h.put("RIFF".toByteArray()).putInt(36 + pcm.size).put("WAVE".toByteArray()).put("fmt ".toByteArray()).putInt(16).putShort(1).putShort(1).putInt(16000).putInt(32000).putShort(2).putShort(16).put("data".toByteArray()).putInt(pcm.size).put(pcm)
+            val r = beatChat(beatEndpoint(base), key.trim(), model, "This audio is silent. Reply with the single word OK.", h.array(), 64, 0.0, false)
+            Triple(true, System.currentTimeMillis() - t0, "الصوت اتقبل — رد: " + r.text.take(60).ifBlank { "(فاضي)" })
+        } catch (e: Exception) { Triple(false, System.currentTimeMillis() - t0, (e.message ?: e.javaClass.simpleName).take(140)) }
+    }
+
+    /** (v436) تعليمات اللهجة والأسلوب والشدة من الإعدادات — Beat بيترجم بيها مباشرة (من غير جيميناي) */
+    private fun beatTarget(): String {
+        val d = try { TrWizard.dialectWanted() } catch (_: Throwable) { "" }
+        val style = Cfg.str("tone_style", "").ifBlank { "حرفي" }
+        val deg = Cfg.str("tone_strength", "متوسطة")
+        val sb = StringBuilder()
+        if (d.isBlank()) sb.append("Translate into Modern Standard Arabic (fusha). ")
+        else {
+            sb.append("Translate into the Arabic dialect: ").append(d).append(" — real colloquial speech as native speakers talk, NOT Modern Standard Arabic. ")
+            if (d == "مصري") sb.append("Use pure Egyptian Arabic: ده/دي/دول, إيه, ليه, إزاي, فين, إمتى, مين, اللي, مش, مفيش, عايز, دلوقتي, كده, عشان, أوي; present tense with ب (بيقول), future with ه (هعمل), negation ما…ش; never use لقد/سوف/لماذا/ماذا/هذا/الآن/أريد/كيف/أين. ")
+        }
+        if (style != "حرفي") sb.append("Style: ").append(style).append(", intensity: ").append(deg).append(" — use informal street-level wording that fits this style, without changing the meaning or gender. ")
+        else sb.append("Keep the translation faithful to the source. ")
+        return sb.toString()
+    }
+
+    /** طلب واحد لموديل واحد. بيبعت الجمل بأرقام ({i,t}) ويطابق الرد بالرقم، فمحدش يتزحزح لو الموديل دمج أو فوّت سطر */
+    private fun beatCall(url: String, key: String, model: String, texts: List<String>, sl0: String): List<String?> {
+        val sys = "You are a professional subtitle translator. " + beatTarget() +
+            "Keep the meaning, tone, names and numbers; never merge or split items; do not explain. " +
+            "The input is a JSON array of objects {\"i\": index, \"t\": text}. Reply with ONLY a JSON array of objects {\"i\": index, \"t\": translation} using the same i values."
+        val arrIn = JSONArray()
+        for ((i, t) in texts.withIndex()) arrIn.put(JSONObject().put("i", i).put("t", t))
+        val user = (if (sl0.isNotEmpty() && sl0 != "auto") "Source language: $sl0\n" else "") + arrIn.toString()
+        val msgs = JSONArray().put(JSONObject().put("role", "system").put("content", sys)).put(JSONObject().put("role", "user").put("content", user))
+        val body = JSONObject().put("model", model).put("messages", msgs).put("temperature", 0.2).put("stream", false)
+        val raw = ExtLlm.post(url, mapOf("Authorization" to "Bearer $key"), body.toString(), 120000)
+        val content = JSONObject(raw).optJSONArray("choices")?.optJSONObject(0)?.optJSONObject("message")?.optString("content", "") ?: ""
+        val a = content.indexOf('['); val b = content.lastIndexOf(']')
+        if (a < 0 || b <= a) throw java.io.IOException("رد " + model + " مش JSON array")
+        val arr = JSONArray(content.substring(a, b + 1))
+        val out = arrayOfNulls<String>(texts.size)
+        for (k in 0 until arr.length()) {
+            val o = arr.opt(k)
+            if (o is JSONObject) {
+                val i = o.optInt("i", -1); val t = o.optString("t", "").trim()
+                if (i in out.indices && t.isNotEmpty()) out[i] = t
+            } else if (o is String && arr.length() == texts.size) {
+                val t = o.trim(); if (t.isNotEmpty()) out[k] = t
+            }
+        }
+        if (out.all { it == null }) throw java.io.IOException("رد " + model + " مفيهوش ترجمة")
+        return out.toList()
+    }
+
+    /** تجربة موديل واحد بالقيم اللي في الشاشة (من غير حفظ ومن غير تبديل): (نجح؟، ms، الترجمة أو سبب الفشل) */
+    fun beatTest(base: String, key: String, model: String): Triple<Boolean, Long, String> {
+        val t0 = System.currentTimeMillis()
+        return try {
+            val r = beatCall(beatEndpoint(base), key.trim(), model, listOf("Hello, how are you today?"), "en")
+            val tr = r.firstOrNull(); val ms = System.currentTimeMillis() - t0
+            if (tr.isNullOrBlank()) Triple(false, ms, "ما رجّعش ترجمة") else { modelCool.remove(model); modelWhy.remove(model); Triple(true, ms, tr) }
+        } catch (e: Exception) { Triple(false, System.currentTimeMillis() - t0, (e.message ?: e.javaClass.simpleName).take(120)) }
     }
 
     /** (v274) تجربة مزوّد بجملة واحدة (من الإعدادات): سطر نتيجة، وبيفك الإيقاف لو نجح */

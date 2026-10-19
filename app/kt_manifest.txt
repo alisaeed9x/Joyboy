@@ -3,6 +3,7 @@ com/tttt/subtitler/AudioEnc.kt
 com/tttt/subtitler/AudioIO.kt
 com/tttt/subtitler/Backup.kt
 com/tttt/subtitler/BackupCodec.kt
+com/tttt/subtitler/BeatUi.kt
 com/tttt/subtitler/BgTranslate.kt
 com/tttt/subtitler/Blur.kt
 com/tttt/subtitler/BootReceiver.kt
