@@ -11,7 +11,8 @@ import java.io.File
 data class WebVid(
     val id: String, val url: String, val ref: String, val ua: String, val cookie: String,
     val title: String, val named: Boolean, val tries: Int, val ts: Long, val kind: String,
-    val page: String = ""   // لينك صفحة الفيديو في الموقع (بيتحفظ من ⋮ ← تحديث لينك الفيديو) — منه بنعيد الاصطياد لما لينك التحميل يبوظ
+    val page: String = "",   // لينك صفحة الفيديو في الموقع (بيتحفظ من ⋮ ← تحديث لينك الفيديو) — منه بنعيد الاصطياد لما لينك التحميل يبوظ
+    val hidden: Boolean = false   // (v433) جاي من موقع محجوب (🚨): مخفي من القايمة العادية ومابيتفتحش غير بالقفل
 )
 
 /** سجل الفيديوهات المصطادة (web_videos.json) + لقطة مصغّرة لكل فيديو (الاسم بيتاخد من صفحة الموقع مش من اللقطة) */
@@ -26,14 +27,14 @@ object WebVideos {
         val a = JSONArray(s.ifEmpty { "[]" })
         (0 until a.length()).mapNotNull { a.optJSONObject(it) }.map {
             WebVid(it.optString("id"), it.optString("url"), it.optString("ref"), it.optString("ua"), it.optString("cookie"),
-                it.optString("title"), it.optBoolean("named", false), it.optInt("tries", 0), it.optLong("ts", 0), it.optString("kind"), it.optString("page"))
+                it.optString("title"), it.optBoolean("named", false), it.optInt("tries", 0), it.optLong("ts", 0), it.optString("kind"), it.optString("page"), it.optBoolean("hidden", false))
         }.filter { it.id.isNotEmpty() && it.url.isNotEmpty() }
     } catch (_: Exception) { emptyList() }
 
     private fun toJson(l: List<WebVid>): String {
         val a = JSONArray()
         for (w in l) a.put(JSONObject().put("id", w.id).put("url", w.url).put("ref", w.ref).put("ua", w.ua).put("cookie", w.cookie)
-            .put("title", w.title).put("named", w.named).put("tries", w.tries).put("ts", w.ts).put("kind", w.kind).put("page", w.page))
+            .put("title", w.title).put("named", w.named).put("tries", w.tries).put("ts", w.ts).put("kind", w.kind).put("page", w.page).put("hidden", w.hidden))
         return a.toString()
     }
 
@@ -44,10 +45,10 @@ object WebVideos {
     private fun write(ctx: Context, l: List<WebVid>) { try { file(ctx).writeText(toJson(l.sortedByDescending { it.ts }.take(MAX))) } catch (_: Exception) {} }
 
     /** تسجيل فيديو اتفتح: لو موجود قبل كده بيحتفظ باسمه ويحدّث الرابط والهيدرز (الكوكيز بتتجدد) */
-    fun register(ctx: Context, id: String, url: String, ref: String, ua: String, cookie: String, title0: String, kind: String, named0: Boolean = false, page: String = ""): WebVid = synchronized(lock) {
+    fun register(ctx: Context, id: String, url: String, ref: String, ua: String, cookie: String, title0: String, kind: String, named0: Boolean = false, page: String = "", hidden0: Boolean = false): WebVid = synchronized(lock) {
         val l = parse(try { file(ctx).readText() } catch (_: Exception) { "" })
         val old = l.firstOrNull { it.id == id }
-        val w = WebVid(id, url, ref, ua, cookie, if (old?.named == true) old.title else title0, old?.named == true || named0, old?.tries ?: 0, System.currentTimeMillis(), kind, old?.page?.ifEmpty { page } ?: page)
+        val w = WebVid(id, url, ref, ua, cookie, if (old?.named == true) old.title else title0, old?.named == true || named0, old?.tries ?: 0, System.currentTimeMillis(), kind, old?.page?.ifEmpty { page } ?: page, hidden0 || old?.hidden == true)
         write(ctx, listOf(w) + l.filter { it.id != id })
         w
     }

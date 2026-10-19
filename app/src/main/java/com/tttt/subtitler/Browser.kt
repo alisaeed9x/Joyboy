@@ -167,6 +167,7 @@ class BTab(val id: Long) {
     var errUrl = ""
     var loaded = false
     var priv = false                 // (v124) تبويب متخفي: من غير سجل ولا حفظ
+    var auto = false                 // (v433) متخفي اتفتح لوحده لموقع محجوب (🚨): الفيديو بيتسجل مخفي بالقفل مش متخفي بالكامل
     var thumb: android.graphics.Bitmap? = null
     @Volatile var gen = 0            // (v203) جيل الصفحة الحالية: كل صفحة جديدة بتزوّده فاللقطات القديمة بتتمسح
     var capUrl = ""
@@ -691,12 +692,16 @@ class BrowserActivity : Activity() {
     private fun gateBlocked(t: BTab, u: String?): Boolean {
         if (u == null || t.hold != null) return false
         val k = SiteBlock.keyOf(u) ?: return false
-        if (t.allowKey != null && t.allowKey != k) t.allowKey = null   // سبت الموقع اللي كنت داس عليه «كمّل»
-        if (t.allowKey == k) return false
         if (!SiteBlock.has(this, k)) return false
-        t.blockedUrl = u; t.url = u
+        if (t.priv) return false   // (v433) متخفي أصلًا: كمّل عادي
+        // (v433) الموقع المحجوب بيتفتح لوحده في تبويب متخفي (مفيش سجل) + إشعار من غير اسم الموقع
         try { t.wv?.stopLoading() } catch (_: Throwable) {}
-        if (t === tabs.getOrNull(curIdx)) { showUrl(u, true); refreshBlockCover() }
+        val oldId = t.id
+        val canBack = try { t.wv?.canGoBack() == true } catch (_: Throwable) { false }
+        if (canBack) { t.url = try { t.wv?.url ?: "" } catch (_: Throwable) { "" } }
+        val nt = newTab(u, true, -1L, true); nt.auto = true
+        Notice.show(this, "🕶 اتفتح متخفي", 2200L)
+        if (!canBack) h.post { val i = tabs.indexOfFirst { it.id == oldId }; if (i >= 0 && tabs.size > 1) closeTab(i) }
         return true
     }
     private fun refreshBlockCover() {
@@ -1689,7 +1694,7 @@ class BrowserActivity : Activity() {
             if (yid.isEmpty()) try { webQlist(f)?.let { putExtra("qlist", it) } } catch (e: Throwable) { LogStore.err("Browser:wq", e) }
             putExtra("url", f.url); putExtra("ref", f.ref)
             putExtra("cookie", try { CookieManager.getInstance().getCookie(f.url) ?: "" } catch (_: Throwable) { "" })
-            putExtra("ua", f.ua.ifEmpty { uaWeb }); putExtra("title", titleFor(f)); putExtra("nosub", noSub); putExtra("autotr", !noSub); putExtra("incognito", tabs.getOrNull(curIdx)?.priv == true); putExtra("ret", "browser")
+            putExtra("ua", f.ua.ifEmpty { uaWeb }); putExtra("title", titleFor(f)); putExtra("nosub", noSub); putExtra("autotr", !noSub); putExtra("incognito", tabs.getOrNull(curIdx)?.let { it.priv && !it.auto } == true); putExtra("hsite", tabs.getOrNull(curIdx)?.let { SiteBlock.keyOf(it.url)?.let { k -> SiteBlock.has(this@BrowserActivity, k) } } == true); putExtra("ret", "browser")
         })
     }
 

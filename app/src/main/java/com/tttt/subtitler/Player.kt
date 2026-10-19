@@ -1267,7 +1267,7 @@ class PlayerActivity : Activity(), Host {
         speed = Cfg.str("speed", "1").toFloatOrNull() ?: 1f; fit = Cfg.int("fit", 0).coerceIn(0, 2); fsFit = Cfg.int("fs_fit", 2).coerceIn(0, 2); offsetMs = 0L
         uri = intent.data; url = intent.getStringExtra("url")
         pendingYt = intent.getBooleanExtra("ytpend", false) && url == null && uri == null && intent.getStringExtra("ytid")?.length == 11   // (v351)
-        try { if (!incognito) PubHistory.addVideoFrom(intent) } catch (_: Throwable) {}   // (v349) السجل العام
+        try { if (!incognito && !hiddenSite) PubHistory.addVideoFrom(intent) } catch (_: Throwable) {}   // (v349) السجل العام
         try { if (!incognito) intent.getStringExtra("ytid")?.let { yid -> if (yid.length == 11) YtHistory.add(this, yid, intent.getStringExtra("title") ?: "") } } catch (_: Throwable) {}   // (v407) سجل يوتيوب المنفصل
         try {
             intent.getStringExtra("qlist")?.let { sj -> val qa = org.json.JSONArray(sj)
@@ -2763,7 +2763,7 @@ class PlayerActivity : Activity(), Host {
         val t0 = siteTitle ?: Sniff.nameOf(u)
         val kind = if (u.contains("videoplayback")) "YT" else Sniff.kindOf(u)
         val page = if (WebIdent.specific(ref)) ref else ""   // (v142) صفحة الفيديو بتتحفظ لوحدها (من الصفحة اللي اتصاد منها) عشان تحديث اللينك يشتغل من غير ما تدخلها بإيدك
-        Thread { WebVideos.register(appCtx, id, u, ref, ua, ck, t0, kind, siteTitle != null, page) }.apply { isDaemon = true }.start()
+        Thread { WebVideos.register(appCtx, id, u, ref, ua, ck, t0, kind, siteTitle != null, page, hiddenSite) }.apply { isDaemon = true }.start()
         h.postDelayed({ webSnap() }, 9000)
     }
     private fun webSnap() {
@@ -3098,10 +3098,10 @@ class PlayerActivity : Activity(), Host {
     private fun saveRecent() { if (!handedOff) saveRecentForce() }
     private fun saveRecentForce() {
         if (incognito) return
-        try { if (durMs > 0 && cur > 1000 && cur < durMs - 4000 && vid.isNotEmpty()) Cfg.p.edit().putString("lastpos", vid + "\t" + cur).apply() } catch (_: Throwable) {}
+        try { if (!hiddenSite && durMs > 0 && cur > 1000 && cur < durMs - 4000 && vid.isNotEmpty()) Cfg.p.edit().putString("lastpos", vid + "\t" + cur).apply() } catch (_: Throwable) {}
         if (!::engine.isInitialized || !engineReady) return
         try {
-            if (!incognito) {
+            if (!incognito && !hiddenSite) {
             val f = File(filesDir, "recent.json")
             val old = Recents.parse(try { f.readText() } catch (_: Exception) { "" })
             val r = Recent(vid, (if (uri == null) intent.getStringExtra("title")?.takeIf { it.isNotBlank() } else null) ?: Recents.titleOf(vid), url ?: "", uri?.toString() ?: "", cur / 1000.0, durMs / 1000.0, engine.subs.size, engine.coveredSec(), System.currentTimeMillis())
@@ -4144,6 +4144,13 @@ class PlayerActivity : Activity(), Host {
     private var settingsOpened = false
     /** (v124) تشغيل من تبويب متخفي: مفيش «فيديوهات الإنترنت المحفوظة» ولا «الأخيرة» ولا لقطة مصغّرة ولا ترجمة خلفية */
     private val incognito: Boolean by lazy { intent?.getBooleanExtra("incognito", false) == true }
+    /** (v433) الفيديو جاي من موقع محجوب بزرار 🚨: بيتسجل في المصطادة مخفي (بالقفل) ومايدخلش «الأخيرة» ولا السجل العام */
+    private val hiddenSite: Boolean by lazy {
+        try {
+            intent?.getBooleanExtra("hsite", false) == true ||
+                listOf(intent?.getStringExtra("url"), intent?.getStringExtra("ref")).any { u -> SiteBlock.keyOf(u)?.let { k -> SiteBlock.has(this, k) } == true }
+        } catch (_: Throwable) { false }
+    }
     fun openSettings(tab: String? = null) {
         settingsOpened = true
         resumeAfterSettings = try { player.isPlaying } catch (_: Exception) { false }

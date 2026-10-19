@@ -108,7 +108,7 @@ class LibraryUi(
     private var rootPos = 0
     private var query = ""
     // ===== (v299) التوزيع (ذكي / فولدرات / الكل) + وضع الشبكة =====
-    private val DISTS = listOf("smart" to "🧠 ذكي", "folders" to "📁 فولدرات", "flat" to "🗂 الكل")
+    private val DISTS = listOf("folders" to "📁 فولدرات", "flat" to "🗂 الكل")   // (v433) الوضع الذكي اتشال
     private var nodeIdx: Map<String, FolderItem> = emptyMap()
     private var gridOn: Boolean? = null
     private lateinit var gridBtn: TextView
@@ -120,7 +120,9 @@ class LibraryUi(
     private var webSrc = 0                       // (v337) فولدر المصطادة: 0 الكل · 1 من يوتيوب (اللي اتشغّل من صفحة يوتيوب) · 2 من المتصفح/اللينكات
     private var srcRow: View? = null
     private val YT_HIST = "🕘 سجل يوتيوب"
-    private val WEB_SRC = listOf("الكل", "▶ من يوتيوب", "🌐 من المتصفح", YT_HIST)
+    private val WEB_HID = "🔒 المخفي"
+    private val WEB_SRC = listOf("الكل", "▶ من يوتيوب", "🌐 من المتصفح", YT_HIST, WEB_HID)
+    private var webHidList: List<WebVid> = emptyList()   // (v433) المصطادة من مواقع محجوبة 🚨 — بتتفتح بالقفل بس
     private val sel = LinkedHashSet<String>()
     private var selLevel = ""
     private val webThumbs = android.util.LruCache<String, android.graphics.Bitmap>(40)
@@ -191,7 +193,7 @@ class LibraryUi(
     fun unhideVideo(v: VideoItem) { hidden.remove(v.videoId); saveHidden(); render(); toastMsg("👁 رجع للقايمة") }
     fun openHidden() { inHidden = true; inRecents = false; secure(true); if (query.isNotEmpty()) searchEt.setText(""); render(); listV.setSelection(0) }
     /** قفل المخفي تاني (لما التطبيق يقعد في الخلفية فترة) */
-    fun relock() { if (inHidden) { inHidden = false; secure(false); render() } }
+    fun relock() { if (webSrc == 4) { webSrc = 0; secure(false); if (!inHidden) render() }; if (inHidden) { inHidden = false; secure(false); render() } }
     /** وهو المخفي مفتوح: ممنوع لقطة الشاشة وصورة الأخيرة بتبقى سودا */
     private fun secure(on: Boolean) { try { if (on) act.window.addFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE) else act.window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE) } catch (_: Exception) {} }
     private val emptyTv = ui.text("", 14f, th.muted).apply { gravity = Gravity.CENTER; setPadding(ui.dp(30), 0, ui.dp(30), 0); visibility = View.GONE }
@@ -330,25 +332,25 @@ class LibraryUi(
         if (audio) { queueBtn.visibility = View.GONE; linkBtn.visibility = View.GONE; pickBtn.visibility = View.GONE }
         root.addView(head, LinearLayout.LayoutParams(-1, -2))
 
-        // (v299) التوزيع (ذكي / فولدرات / الكل) + زرار الشبكة/القايمة
-        val distChips = ui.chips(DISTS.map { it.second }, { DISTS.first { x -> x.first == dist() }.second }) { n ->
-            Cfg.put(K + "lib_dist", DISTS.first { it.second == n }.first)
-            curFolder = null; inRecents = false; sel.clear(); render(); listV.setSelection(0)
-        }
+        // (v433) صف واحد بدل اتنين: الترتيب (شيبس) + زرار فولدرات/الكل + زرار الشبكة/القايمة
         gridBtn = hbtn(if (grid()) "☰" else "🧩") { toggleGrid() }
-        val distRow = LinearLayout(act).apply { layoutDirection = View.LAYOUT_DIRECTION_RTL; gravity = Gravity.CENTER_VERTICAL; setPadding(ui.dp(8), 0, ui.dp(8), 0) }
-        distRow.addView(HorizontalScrollView(act).apply { isHorizontalScrollBarEnabled = false; layoutDirection = View.LAYOUT_DIRECTION_RTL; addView(distChips) }, LinearLayout.LayoutParams(0, -2, 1f))
-        distRow.addView(gridBtn)
-        root.addView(distRow, LinearLayout.LayoutParams(-1, -2))
-
+        lateinit var distBtn: TextView
+        distBtn = hbtn(if (dist() == "flat") "🗂" else "📁") {
+            Cfg.put(K + "lib_dist", if (dist() == "flat") "folders" else "flat")
+            distBtn.text = if (dist() == "flat") "🗂" else "📁"
+            curFolder = null; inRecents = false; sel.clear(); render(); listV.setSelection(0)
+            toastMsg(if (dist() == "flat") "🗂 كل الملفات في قايمة واحدة" else "📁 عرض بالفولدرات")
+        }
         val labels = VideoLib.sortLabels.map { it.second }
         val chips = ui.chips(labels, { VideoLib.sortLabelOf(sortKey()) }) { n -> Cfg.put(K + "lib_sort", VideoLib.sortKeyOf(n)); render() }
-        root.addView(HorizontalScrollView(act).apply { isHorizontalScrollBarEnabled = false; layoutDirection = View.LAYOUT_DIRECTION_RTL; setPadding(ui.dp(8), 0, ui.dp(8), 0); addView(chips) },
-            LinearLayout.LayoutParams(-1, -2))
+        val toolRow = LinearLayout(act).apply { layoutDirection = View.LAYOUT_DIRECTION_RTL; gravity = Gravity.CENTER_VERTICAL; setPadding(ui.dp(8), ui.dp(2), ui.dp(8), ui.dp(2)) }
+        toolRow.addView(HorizontalScrollView(act).apply { isHorizontalScrollBarEnabled = false; layoutDirection = View.LAYOUT_DIRECTION_RTL; addView(chips) }, LinearLayout.LayoutParams(0, -2, 1f))
+        toolRow.addView(distBtn); toolRow.addView(gridBtn)
+        root.addView(toolRow, LinearLayout.LayoutParams(-1, -2))
 
         // (v337) تقسيم المصطادة (بيظهر جوه فولدر المصطادة بس): الكل / من يوتيوب / من المتصفح
         if (!audio) {
-            val srcChips = ui.chips(WEB_SRC, { WEB_SRC[webSrc] }) { n -> if (n == YT_HIST) { onYtHistory() } else { webSrc = WEB_SRC.indexOf(n).coerceAtLeast(0); render(); listV.setSelection(0) } }
+            val srcChips = ui.chips(WEB_SRC, { WEB_SRC[webSrc] }) { n -> if (n == YT_HIST) { onYtHistory() } else if (n == WEB_HID) { gate { webSrc = 4; secure(true); render(); listV.setSelection(0) } } else { if (webSrc == 4) secure(false); webSrc = WEB_SRC.indexOf(n).coerceAtLeast(0); render(); listV.setSelection(0) } }
             val sr = HorizontalScrollView(act).apply { isHorizontalScrollBarEnabled = false; layoutDirection = View.LAYOUT_DIRECTION_RTL; setPadding(ui.dp(8), 0, ui.dp(8), 0); addView(srcChips); visibility = View.GONE }
             srcRow = sr; root.addView(sr, LinearLayout.LayoutParams(-1, -2))
         }
@@ -465,6 +467,7 @@ class LibraryUi(
         if (query.isNotEmpty()) { searchEt.setText(""); return true }
         if (inHidden) { inHidden = false; secure(false); render(); listV.setSelection(rootPos); return true }
         if (inRecents) { inRecents = false; render(); listV.setSelection(rootPos); return true }
+        if (webSrc == 4) { webSrc = 0; secure(false) }
         val cf = curFolder ?: return false
         curFolder = nodeIdx[cf]?.parentKey; render(); listV.setSelection(if (curFolder == null) rootPos else 0); return true
     }
@@ -482,7 +485,7 @@ class LibraryUi(
         val cf = curFolder
         val inWeb = !inHidden && query.isEmpty() && cf == WEB_KEY
         srcRow?.visibility = if (inWeb) View.VISIBLE else View.GONE
-        if (!audio && !inHidden && query.isEmpty() && (cf == null || inWeb)) webList = WebVideos.load(act)
+        if (!audio && !inHidden && query.isEmpty() && (cf == null || inWeb)) WebVideos.load(act).let { all0 -> webList = all0.filter { !it.hidden }; webHidList = all0.filter { it.hidden } }
         val folders = buildTree(src)
         val folder = if (!inHidden && cf != null && !inWeb) nodeIdx[cf] else null
         if (!inHidden && cf != null && !inWeb && folder == null) curFolder = null
@@ -496,9 +499,9 @@ class LibraryUi(
         } else if (inWeb) {
             val yIds = YtStore.appIds()
             fun fromYt(w: WebVid) = w.id.startsWith("yt:") && w.id.removePrefix("yt:") in yIds
-            val shown = when (webSrc) { 1 -> webList.filter { fromYt(it) }; 2 -> webList.filter { !fromYt(it) }; else -> webList }
+            val shown = when (webSrc) { 1 -> webList.filter { fromYt(it) }; 2 -> webList.filter { !fromYt(it) }; 4 -> webHidList; else -> webList }
             rows = shown
-            titleTv.text = "🌐 المصطادة من الإنترنت"; subTv.text = if (webSrc == 0) "${webList.size} فيديو" else "${shown.size} من ${webList.size} فيديو"; backV.visibility = View.VISIBLE
+            titleTv.text = if (webSrc == 4) "🔒 المخفي من الإنترنت" else "🌐 المصطادة من الإنترنت"; subTv.text = if (webSrc == 0) "${webList.size} فيديو" else if (webSrc == 4) "${shown.size} فيديو" else "${shown.size} من ${webList.size} فيديو"; backV.visibility = View.VISIBLE
         } else if (inRecents) {
             val byUri = src.associateBy { it.uri }
             rows = RecentSongs.list().mapNotNull { byUri[it] }
@@ -971,12 +974,12 @@ class LibraryUi(
                 .setPositiveButton("امسح") { _, _ -> WebVideos.remove(act, w.id); render() }.setNegativeButton("إلغاء", null).show()
             Unit
         }
-        items += "🗑 مسح كل الفيديوهات المصطادة (${webList.size})" to { webClearAll() }
+        items += "🗑 مسح كل الفيديوهات المصطادة (${(if (webSrc == 4) webHidList else webList).size})" to { webClearAll() }
         popup(anchor, items)
     }
     /** (v157) مسح كل المصطادة (من السجل بس — الترجمة المحفوظة مش بتتمسح) بعد تأكيد */
     private fun webClearAll() {
-        val all = webList.map { it.id }.toSet()
+        val all = (if (webSrc == 4) webHidList else webList).map { it.id }.toSet()
         if (all.isEmpty()) return
         GAlert(act).setTitle("🗑 مسح كل المصطادة").setMessage("هيتمسح ${all.size} فيديو من سجل المصطادة (الترجمة المحفوظة مش هتتمسح). تمام؟")
             .setPositiveButton("امسح الكل") { _, _ -> WebVideos.removeMany(act, all); sel.clear(); render() }.setNegativeButton("إلغاء", null).show()
