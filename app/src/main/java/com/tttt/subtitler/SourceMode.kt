@@ -9,7 +9,7 @@ package com.tttt.subtitler
  */
 object SourceMode {
     const val AUDIO = "audio"; const val VISUAL = "visual"; const val HYBRID = "hybrid"
-    fun get(): String = try { Cfg.str("tr_src", "").let { if (it == AUDIO || it == VISUAL || it == HYBRID) it else "" } } catch (_: Throwable) { "" }
+    fun get(): String = try { Cfg.str("tr_src", "").let { if (it == AUDIO || it == VISUAL || it == HYBRID) AUDIO else "" } } catch (_: Throwable) { "" }   // (v427) بصري بس / هجين اتشالوا من الأوضاع: أي إعداد قديم بيتحوّل لصوتي
     fun kind(): String = try { if (Cfg.str("tr_vkind", "scene") == "hard") "hard" else "scene" } catch (_: Throwable) { "scene" }
     fun visualOn(): Boolean = get() == VISUAL || get() == HYBRID
     fun keepHard(): Boolean = visualOn() && kind() == "hard"

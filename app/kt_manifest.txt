@@ -144,6 +144,4 @@ com/tttt/subtitler/YtWatch.kt
 com/tttt/subtitler/YtWeb.kt
 com/tttt/subtitler/Links.kt
 com/tttt/subtitler/Dub.kt
-com/tttt/subtitler/LocalLlm.kt
 com/tttt/subtitler/TaskService.kt
-com/tttt/subtitler/VideoLingo.kt

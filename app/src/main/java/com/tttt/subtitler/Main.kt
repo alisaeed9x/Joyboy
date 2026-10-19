@@ -1378,13 +1378,16 @@ class MainActivity : Activity() {
         // (v339) بنفتح مشغّل الموسيقى الكامل فورًا (لودينج مكان الألبوم) وبنفتكر إحنا جينا منين عشان نرجع لنفس المكان لما نقفله
         // (v341) quiet = تالي/إعادة محاولة: الأغنية الحالية تكمّل وإحنا ماشيين، من غير ما نغيّر الشاشة ولا نفتح لودينج
         val tok = ++ytAudTok
+        // (v429) جاي من صفحة المشاهدة: رابط الصوت جاهز عندها — نشغّله فورًا من نفس الموضع من غير جلب جديد
+        var pu = preUrl; var pua = preUa; var sm = startMs
+        if (!quiet && pu == null) YtAudioHint.take(id)?.let { pu = it.url; pua = it.ua; if (sm == 0) sm = it.pos.toInt(); LogStore.add("⏱ يوتيوب $id: صوت من صفحة المشاهدة (من غير جلب)") }
         // (v351) رابط الصوت جاهز من مشغّل الفيديو: نشغّله فورًا (نفس المكان) من غير لودينج ولا جلب جديد
-        if (preUrl != null && !quiet) {
+        if (pu != null && !quiet) {
             try {
                 if (curTab != 1) musicReturnTab = curTab
                 showTabFn(1)
-                val tr = YtAudio.track(id, title, channel, thumb, YtPick(preUrl, null, preUa.ifBlank { "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Mobile Safari/537.36" }, title, 0, "", preDur))
-                MusicEngine.play(this, listOf(tr), 0, false, startMs)
+                val tr = YtAudio.track(id, title, channel, thumb, YtPick(pu!!, null, pua.ifBlank { "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Mobile Safari/537.36" }, title, 0, "", preDur))
+                MusicEngine.play(this, listOf(tr), 0, false, sm)
                 musicOpenFn?.invoke()
                 return
             } catch (e: Throwable) { LogStore.err("Main:preAudio", e) }   // فشل؟ نكمّل بالطريقة العادية تحت

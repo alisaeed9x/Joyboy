@@ -175,9 +175,8 @@ object TrWizard {
                 val id = Cfg.str("tr_mode_id", "")
                 val base = when (id) {
                     "g_wav" -> (if (pl.only) "✍ تفريغ ذكاء صناعي" else "☁ أونلاين · WAV"); "g_aac" -> (if (pl.only) "✍ تفريغ ذكاء صناعي" else "☁ أونلاين · AAC")
-                    "loc_ai" -> "📴 محلي + 🧠 ترجمة"; "loc_ctx" -> "📴 وشبر + 🧠 جيميناي بالسياق"; "loc_google" -> (if (pl.only) "✍ تفريغ Whisper" else "🌗 وشبر + " + (if (ExtTranslate.semiLibre()) "🌐 LibreTranslate" else "🌍 جوجل")); "off_ml" -> (if (pl.only) "✍ تفريغ Whisper (أوفلاين)" else "📴 وشبر + ML Kit")
+                    "loc_google" -> (if (pl.only) "✍ تفريغ Whisper" else "🌗 وشبر + 🌐 LibreTranslate")
                     "ai_only" -> "✍ تفريغ ذكاء صناعي"; "w_only" -> "✍ تفريغ Whisper"; "s_only" -> "✍ تفريغ SenseVoice"
-                    "off_vl" -> "📴 وشبر + Gemma محلي + لينجو"; "vl_gemini" -> "✨ وشبر + جيميناي + لينجو"   // (v418)
                     else -> if (pl.only) "✍ تفريغ بس" else if (pl.offline) "📴 أوفلاين" else if (pl.cloud) "☁ محرك خارجي" else "☁ أونلاين"
                 }
                 val parts = ArrayList<String>(); parts.add(base)
@@ -185,7 +184,7 @@ object TrWizard {
                     val d = (if (pl.offline) pl.dialect else (pl.dia ?: "")).ifBlank { "فصحى" }
                     parts.add("🗣 $d")
                     val st = Cfg.str("tone_style", "")
-                    if (st.isNotBlank() && st != "حرفي" && id in setOf("g_wav", "g_aac", "loc_ai", "loc_ctx")) parts.add("🎚 $st/" + Cfg.str("tone_strength", "متوسطة"))
+                    if (st.isNotBlank() && st != "حرفي" && id in setOf("g_wav", "g_aac")) parts.add("🎚 $st/" + Cfg.str("tone_strength", "متوسطة"))
                 }
                 if (SourceMode.get() == SourceMode.HYBRID) parts.add("👁 " + SourceMode.kindLabel())
                 parts.joinToString(" · ")
@@ -246,9 +245,9 @@ object TrWizard {
     }
 
     /** [onDone] (الخطة، احفظ؟، ابدأ ترجمة؟) — بتتنده مرة واحدة لما تخلّص الخطوات */
-    fun show(act: Activity, edit: Boolean, onDone: (Plan, Boolean, Boolean) -> Unit) { pSrc = null; pKind = null; Wiz(act, edit) { pl, save, start -> commitSource(); onDone(pl, save, start) }.start() }
+    fun show(act: Activity, edit: Boolean, entry: String = "", onDone: (Plan, Boolean, Boolean) -> Unit) { pSrc = null; pKind = null; Wiz(act, edit, entry) { pl, save, start -> commitSource(); onDone(pl, save, start) }.start() }   // (v427) entry="gem" = يفتح خيارات جيميناي على طول
 
-    private class Wiz(val act: Activity, val edit: Boolean, val onDone: (Plan, Boolean, Boolean) -> Unit) {
+    private class Wiz(val act: Activity, val edit: Boolean, val entry: String, val onDone: (Plan, Boolean, Boolean) -> Unit) {
         val th = Glass.theme()
         val ui = Ui(act, th)
         val dlg = GDialog(act)
@@ -382,11 +381,11 @@ object TrWizard {
         // شاشة واحدة بكل الأوضاع ← (للتلاتة الأولانية: لهجة ← أسلوب ← شدة) ← «بصري معاه؟» ← يطبّق ويحفظ ويقفل.
         val hubL: () -> Unit = { stepHub() }
         var mId = Cfg.str("tr_mode_id", "")
-        var onlySw = Cfg.bool("tr_s_only", false)   // (v410) «تفريغ بس» سويتش بيتطبّق على الوضع اللي تختاره
+        var onlySw = false   // (v427) «تفريغ بس» بقى وضع لوحده (ai_only / w_only) مش سويتش
         var mStyle = Cfg.str("tone_style", "").ifBlank { "حرفي" }
         var mDeg = Cfg.str("tone_strength", "متوسطة").ifBlank { "متوسطة" }
         var afterDl: (() -> Unit)? = null
-        val dialectModes = setOf("g_wav", "g_aac", "loc_ai", "loc_ctx")
+        val dialectModes = setOf("g_wav", "g_aac")
 
         fun sec(t: String) { body.addView(ui.text(t, 13f, th.primary, true).apply { setPadding(ui.dp(2), ui.dp(10), 0, ui.dp(2)) }) }
 
@@ -403,19 +402,10 @@ object TrWizard {
             dlg.dismiss()
         }
 
-        fun stepMVis() {
-            reset("👁 الوضع البصري معاه؟")
-            note("هجين = الوضع البصري شغّال جنب الصوت (محتاج مفتاح الوضع البصري).")
-            opt("🎙 لأ — صوتي بس", "من غير بصري", tsrc != "hybrid") { finishModes("audio", null) }
-            opt("🎙+👁 هجين · نصوص الشاشة", "لافتات وكلام مكتوب في الصورة (الهارد سب بيتتجاهل)", tsrc == "hybrid" && tkind == "scene") { finishModes("hybrid", "scene") }
-            opt("🎙+👁 هجين · هارد سب", "الترجمة المحروقة في الفيديو (وأي نصوص في الصورة)", tsrc == "hybrid" && tkind == "hard") { finishModes("hybrid", "hard") }
-            addBack()
-        }
-
         fun stepMDeg() {
             reset("🎚 شدة الأسلوب")
             note("أسلوب «" + mStyle + "» — بأي درجة؟")
-            for ((d, ds) in listOf("خفيفة" to "لمسة بسيطة في الجمل اللي تستاهل", "متوسطة" to "في معظم الجمل بدرجة معتدلة", "شديدة" to "في كل جملة تقريبًا وبأقصى درجة")) opt(d, ds, mDeg == d) { mDeg = d; go { stepMVis() } }
+            for ((d, ds) in listOf("خفيفة" to "لمسة بسيطة في الجمل اللي تستاهل", "متوسطة" to "في معظم الجمل بدرجة معتدلة", "شديدة" to "في كل جملة تقريبًا وبأقصى درجة")) opt(d, ds, mDeg == d) { mDeg = d; finishModes("audio", null) }
             addBack()
         }
 
@@ -424,7 +414,7 @@ object TrWizard {
             note("حرفي = ترجمة عادية من غير أسلوب. أي أسلوب تاني بتختار شدته في الخطوة اللي بعدها.")
             for ((st, sd) in listOf("حرفي" to "ترجمة عادية", "شعبي" to "كلام الشارع والتعبيرات اليومية", "جرئ" to "ألفاظ أجرأ من غير تلطيف زيادة", "+18" to "صريح بلا تلطيف — يطابق الأصل بالظبط")) opt(st, sd, mStyle == st) {
                 mStyle = st
-                if (st == "حرفي") go { stepMVis() } else go { stepMDeg() }
+                if (st == "حرفي") finishModes("audio", null) else go { stepMDeg() }
             }
             addBack()
         }
@@ -441,46 +431,22 @@ object TrWizard {
 
         fun afterModePick() {
             // (v410) تفريغ بس: مفيش لهجة ولا أسلوب · نص-أونلاين وأوفلاين: فصحى + صوتي بس (مفيش لهجة ولا بصري)
-            if (onlySw || mId == Strict.SEMI || mId == Strict.OFF || mId == Strict.OFF_VL || mId.startsWith("vl_")) { finishModes("audio", null); return }   // (v418) لينجو: مصري ثابت، من غير أسئلة لهجة
-            if (mId in dialectModes) go { stepMDia() } else go { stepMVis() }
+            if (onlySw || mId == Strict.SEMI || mId == "ai_only" || mId == "w_only") { finishModes("audio", null); return }   // (v427) وشبر+Libre وتفريغ بس: من غير أسئلة لهجة
+            go { stepMDia() }
         }
 
 
-        /** (v418) أوضاع لينجو: لو مفتاح المحرك ناقص بنفتح شرح جلبه ونكمّل لوحدنا بعد اللصق */
-        fun pickVl(id: String) {
-            if (id == "vl_gemini" && Cfg.allMainKeys().isEmpty()) { Notice.show(act, "حط مفتاح جيميناي الأول من الإعدادات", 2800L); return }
-            pickMode(id)
-        }
 
-        /** (v420) 📴 أوفلاين + لينجو: لو موديل Gemma المحلي مش نازل بنسأل وننزّله (~2.6 جيجا، مرة واحدة) وبعدين نكمّل لوحدنا */
-        fun pickLocalVl() {
-            if (!LocalLlm.supported()) { Notice.show(act, "الموديل المحلي محتاج جهاز arm64", 2800L); return }
-            if (LocalLlm.ready()) { pickMode(Strict.OFF_VL); return }
-            if (LocalLlm.downloading()) { Notice.show(act, "⬇ موديل Gemma بيتنزّل دلوقتي — استنى يخلص", 2500L); return }
-            android.app.AlertDialog.Builder(act)
-                .setTitle("⬇ تنزيل موديل الترجمة المحلي")
-                .setMessage("Gemma 4 E2B حجمه حوالي ${LocalLlm.APPROX_MB} ميجا، بيتنزّل مرة واحدة (بيكمّل من حيث وقف) ومحتاج 3 جيجا فاضية. بعدها الترجمة بتشتغل من غير نت. ننزّله؟")
-                .setPositiveButton("نزّل") { _, _ ->
-                    LocalLlm.download({ a, t -> act.runOnUiThread { Notice.show(act, "⬇ Gemma: " + (a / 1048576) + " / " + (t / 1048576) + " ميجا", 900L) } }) { err ->
-                        act.runOnUiThread { if (err != null) Notice.show(act, "⚠ التنزيل فشل: $err", 3500L) else { Notice.show(act, "✓ الموديل نزل", 2000L); pickMode(Strict.OFF_VL) } }
-                    }
-                }
-                .setNegativeButton("إلغاء", null).show()
-        }
 
         fun pickMode(id: String) {
             mId = id; afterDl = null; hubActive = true; hubFlow = false; presetFlow = false; live = false; repoToHub = false
             when (id) {
                 "g_wav", "g_aac" -> { src = "gemini"; tr = "gemini"; gp = CURRENT }
-                "loc_ai", "loc_ctx" -> { src = if (engine == "sherpa" && SherpaStt.ready() && SherpaStt.handles(lang)) "sherpa" else "whisper"; tr = "gemini"; trId = "" }
                 "loc_google" -> { src = "whisper"; tr = "google"; trId = ""; dia = ""; diaSet = true; convId = ""; lang = "" }   // (v410) 🌗 Whisper فقط + لغة تلقائية
-                "off_ml", "off_vl" -> { src = "whisper"; tr = "free"; trId = "mlkit"; dia = ""; diaSet = true; convId = ""; lang = "" }   // (v410) 📴 Whisper + ML Kit
-                "vl_gemini" -> { src = "whisper"; tr = "free"; trId = "vl_gemini"; dia = ""; diaSet = true; convId = ""; lang = "" }   // (v418) Whisper + محرك AI بخطوات لينجو (مصري)
                 "ai_only" -> { src = "gemini"; tr = "none"; trId = "" }
                 "w_only" -> { src = "whisper"; tr = "none"; trId = "" }
-                "s_only" -> { src = "sherpa"; tr = "none"; trId = "" }
             }
-            if (onlySw && id in setOf("g_wav", "g_aac", Strict.SEMI, Strict.OFF, Strict.OFF_VL)) tr = "none"   // (v410)
+            if (onlySw && id in setOf("g_wav", "g_aac", Strict.SEMI)) tr = "none"   // (v410)
             if (src == "whisper") engine = "whisper"
             if (src == "sherpa") { engine = "sherpa"; if (!SherpaStt.handles(lang)) lang = "" }
             if (src == "whisper" && !WhisperLib.loaded) { Notice.show(act, "الأوفلاين مش مدعوم على جهازك", 2500L); return }
@@ -494,24 +460,22 @@ object TrWizard {
 
         fun stepOnlineQ() {
             reset("☁ أونلاين — جودة الصوت")
-            note("جيميناي بيسمع ويترجم بمفاتيحك. اللهجات والأسلوب والضمائر والشخصيات والوضع البصري متاحة هنا بس.")
+            note("جيميناي بيسمع ويترجم بمفاتيحك. اللهجات والأسلوب والشدة والضمائر والشخصيات متاحة هنا بس.")
             opt("🧠 عادي (WAV)", "صوت خام أعلى جودة · رفع أبطأ وداتا أكتر", mId == "g_wav") { pickMode("g_wav") }
             opt("🧠 توفير بيانات (AAC)", "نفس الشيء بصوت مضغوط (أصغر ~8 مرات)", mId == "g_aac") { pickMode("g_aac") }
             addBack()
         }
 
-        /** (v410) الأوضاع التلاتة: ☁ أونلاين · 🌗 نص-أونلاين · 📴 أوفلاين (+ تفريغ بس سويتش · بصري فقط) */
+        /** (v427) الأوضاع التلاتة بس: ☁ ترجمة بجيميناي · 🌗 أوفلاين وشبر + LibreTranslate · ✍ تفريغ بس (جيميناي أو وشبر) */
         fun stepModes() {
             reset(if (edit) "⚙ طريقة الترجمة" else "▶ هتترجم إزاي؟")
             val cur = TrWizard.summaryLine()
-            note(if (cur.isBlank()) "اختار وضع — الإعداد بيتحفظ وبيفضل مع أي فيديو." else "الحالي: $cur")
-            opt("☁ جيميناي — ٧٥٪ نسخ + ٢٥٪ ترجمة", "٧٥٪ من مفاتيحك بتنسخ الكلام (مع مصدر الصوت وشرح المصطلحات والتلميحات فوق) و٢٥٪ بتترجم بالسياق · لهجات + أسلوب + ضمائر + شخصيات + وضع بصري · محتاج مفتاح ونت", mId == "g_wav" || mId == "g_aac") { go { stepOnlineQ() } }
-            opt("🌗 وشبر + LibreTranslate  🔒 من غير مفتاح", "التفريغ بوشبر على جهازك والترجمة بـ LibreTranslate (لو وقف بيكمّل MyMemory/Lingva) · فصحى بس · جيميناي ممنوع · الترجمة محتاجة نت · اللغة بتتكشف لوحدها", mId == Strict.SEMI) { pickMode(Strict.SEMI) }
-            sec("✍ تفريغ بس")
-            opt("✍ تفريغ بس (من غير ترجمة): " + (if (onlySw) "✅ شغّال" else "⏸ مقفول"), "النص بيظهر بلغته الأصلية، وبيتطبّق على الوضع اللي تختاره فوق. دوس عشان تبدّل.", onlySw) { onlySw = !onlySw; Cfg.put("tr_s_only", if (onlySw) "1" else "0"); stepModes() }
-            sec("👁 بصري")
-            opt("👁 وضع بصري فقط", "بنوعيه: نصوص الشاشة أو هارد سب · جيميناي · من غير ترجمة صوت", SourceMode.get() == SourceMode.VISUAL) { mId = "visual"; Cfg.put("tr_mode_id", "visual"); viaModes = true; tsrc = "visual"; go { stepVisKind() } }
-            opt("⋯ إعدادات أكتر", "الإعداد المحفوظ · بديل تلقائي · نبذة المصطلحات الطبية", false) { go { stepSummary() } }
+            note(if (cur.isBlank()) "اختار وضع من التلاتة." else "الحالي: $cur")
+            opt("☁ ترجمة بجيميناي", "٧٥٪ من مفاتيحك بتنسخ الكلام (مع مصدر الصوت وشرح المصطلحات والتلميحات فوق) و٢٥٪ بتترجم بالسياق · لهجات + أسلوب + شدة + ضمائر + شخصيات · محتاج مفتاح ونت", mId == "g_wav" || mId == "g_aac") { go { stepOnlineQ() } }
+            opt("🌗 أوفلاين — وشبر + LibreTranslate  🔒 من غير مفتاح", "التفريغ بوشبر على جهازك والترجمة بـ LibreTranslate (لو وقف بيكمّل MyMemory/Lingva) · فصحى بس · جيميناي ممنوع · الترجمة محتاجة نت · اللغة بتتكشف لوحدها", mId == Strict.SEMI) { pickMode(Strict.SEMI) }
+            sec("✍ تفريغ بس (من غير ترجمة)")
+            opt("☁ تفريغ بجيميناي", "النص بيظهر بلغته الأصلية · محتاج مفتاح ونت", mId == "ai_only") { pickMode("ai_only") }
+            opt("📴 تفريغ أوفلاين بوشبر", "النص بيظهر بلغته الأصلية · من غير مفتاح ولا نت (النت بس لتنزيل الموديل مرة واحدة)", mId == "w_only") { pickMode("w_only") }
             if (hist.size > 1) addBack() else footBtn("✖ إلغاء", false) { dlg.dismiss() }
         }
 
@@ -546,15 +510,6 @@ object TrWizard {
             addBack(if (hist.size > 1) "← رجوع" else "إغلاق")
         }
 
-        fun stepMode() {
-            hubFlow = false; repoToHub = false; hubActive = false   // (v279) الخطوات القديمة بترجع تعمل زي الأول
-            reset(if (edit) "✏ اختار طريقة الترجمة" else "▶ هتترجم إزاي؟")
-            opt("📴 أوفلاين", if (WhisperLib.loaded) "الكلام بيتفرّغ على جهازك من غير نت ولا مفتاح، وبعدها الترجمة بجوجل (من غير API) أو جيميناي" else Offline.status(), mode == "offline") {
-                if (!WhisperLib.loaded) Notice.show(act, "الأوفلاين مش مدعوم على جهازك", 2500L) else { mode = "offline"; free = ""; go { stepOffPreset() } }
-            }
-            opt("☁ أونلاين", "جيميناي بمفاتيحك", mode == "online") { mode = "online"; go { stepOnline() } }
-            addBack(if (hist.size > 1) "← رجوع" else "إغلاق")
-        }
 
         /** (v266) بريستات الأوفلاين: لغة تلقائية، من غير أسئلة كتير. «✏ مخصص» بيفتح الخطوات التفصيلية */
         fun stepOffPreset() {
@@ -573,16 +528,6 @@ object TrWizard {
             addBack()
         }
 
-        /** (v275) أونلاين: جيميناي، أو «🔑 مفاتيحي» (كل المحركات الخارجية بحالتها + ضبط المفتاح من هنا + تجربة لحظية) */
-        fun stepOnline() {
-            mode = "online"   // (v276) الرجوع من فحص الريبو (اللي بيحوّل لأوفلاين) لازم يرجّع الوضع أونلاين
-            reset("☁ أونلاين — مين يترجم؟")
-            note("جيميناي بمفاتيحك، أو مترجمين مجانيين (جوجل وغيره) من الريبو.")
-            val gk = Cfg.keys("keys").size + Cfg.keys("extra").size
-            opt("☁ جيميناي", (if (gk > 0) "$gk مفتاح" else "⚠ مفيش مفتاح لسه") + (if (Cfg.bool("kmode_adv", false)) " · وضع المفاتيح: " + KeyMode.short(Cfg.int("kmode", 1)) else "") + "\nالصوت بيتبعت لجيميناي — بتختار نوع الترجمة (سريعة / دقيقة / …)", ext.isBlank()) { ext = ""; go { stepOnlineGem() } }
-            opt("🌐 من الريبو (مجاني، من غير مفتاح)", "يفحص المترجمين المجانيين لحظيًا ويرتّبهم بالسرعة — التفريغ بيبقى أوفلاين على جهازك", free.isNotBlank()) { go { stepRepo() } }
-            addBack()
-        }
 
         /** (v276) فحص المترجمين المجانيين (اللي ليهم محوّل جاهز) وترتيبهم بالسرعة؛ الأخضر الأسرع يتختار */
         fun stepRepo() {
@@ -1195,7 +1140,7 @@ object TrWizard {
                 setGravity(Gravity.CENTER)
             }
             dlg.onBack = { if (hist.size > 1) { back(); true } else false }
-            go { stepModes() }   // (v360) الأوضاع المبسّطة؛ الخط الكامل (v291/v279) من «⋯ متقدّم»  ·  (v291) ⓪ المصدر ← (v279) شاشة الكروت (الخطوات القديمة من «⋯ أكتر»)
+            go { if (entry == "gem") stepOnlineQ() else stepModes() }   // (v427) (v360) الأوضاع المبسّطة؛ الخط الكامل (v291/v279) من «⋯ متقدّم»  ·  (v291) ⓪ المصدر ← (v279) شاشة الكروت (الخطوات القديمة من «⋯ أكتر»)
             dlg.show()
         }
     }

@@ -313,7 +313,7 @@ class PlayerActivity : Activity(), Host {
     private fun badgeHot() { badgeHotUntil = System.currentTimeMillis() + 4000; applyBadgeAlpha() }
     private lateinit var badgeRowV: LinearLayout
     /** (v323) العدّادات (صوتي/بصري/نت) مخفية خالص والشاشة نضيفة؛ لما أزرار المشغّل تظهر (لمسة) بتظهر 100%. BADGE_IDLE_A لو عايزها باهتة بدل مخفية (مثلًا 0.3f) */
-    private val BADGE_IDLE_A = 0f
+    private val BADGE_IDLE_A = 0.3f   // (v432) عدّاد الجمل باهت 30% حتى والأزرار مخفية (كان 0.5)
     private fun applyBadgeAlpha() {
         if (!::sentCap.isInitialized || !::netBadge.isInitialized || !::badgeRowV.isInitialized) return
         val a = if (chromeShown || System.currentTimeMillis() < badgeHotUntil) 1f else BADGE_IDLE_A
@@ -509,6 +509,8 @@ class PlayerActivity : Activity(), Host {
     private var trChipDismissed = false
     private fun updateTrChip() { trChipV?.visibility = if (engineStarted || trChipDismissed || pipNow()) View.GONE else View.VISIBLE }
     fun pauseTranslate() { if (engineStarted) { engine.userPaused = true; updateTr() } }
+    /** (v427) فيه محرك شغّال أو ترجمة موجودة؟ (الإعادة ملهاش معنى قبل كده) */
+    private fun hasSubsNow(): Boolean = try { ::engine.isInitialized && (engineStarted || engine.subs.isNotEmpty()) } catch (_: Throwable) { false }
     /** صف الأزرار: [▶ ترجمة] (أحمر) قبل البداية — وبعد الضغط يختفي ويظهر مكانه [⏸ إيقاف مؤقت] [▶ إلغاء الإيقاف] */
     private fun makeTrRow(compact: Boolean): ViewGroup {
         // (v144) الشريط السفلي: صف بيلفّ لوحده (FlowRow) والعلامة جواه — مفيش عمود رأسي ولا عرض ثابت يخلي الأزرار تتقص أو الشريحة تعلق
@@ -529,7 +531,9 @@ class PlayerActivity : Activity(), Host {
         val tr = b("▶ ترجم ▾", 0xFFE53935.toInt()) { trRef?.let { translateMenu(it) } }   // (v254) قبل البداية: الإعداد المحفوظ أو شاشة «طريقة الترجمة»
         trRef = tr
         val offB = b("🌗 وشبر + ليبرا", 0xFF1F5FBF.toInt()) { if (!engineStarted) offlineQuick() }.apply { textSize = if (compact) 13f else 15f }   // (v408) زرار واحد: تفريغ Whisper + ترجمة ML Kit أوفلاين
-        val wzB = b("⚙", 0xFF37474F.toInt()) { trWizard(true) }   // (v254) زرار صغير جنب ▶ ترجمة: يغيّر طريقة الترجمة (أونلاين/أوفلاين …)
+        var wzRef: TextView? = null
+        val wzB = b("⚙", 0xFF37474F.toInt()) { wzRef?.let { modeSettings(it) } }   // (v427) إعدادات الوضع الحالي (بتتطبّق لايف) — غير اللغة واللهجة
+        wzRef = wzB
         var lgRef: TextView? = null
         val lgB = b("🌐", 0xFF37474F.toInt()) { lgRef?.let { langPopup(it) } }
         lgRef = lgB
@@ -560,7 +564,8 @@ class PlayerActivity : Activity(), Host {
             var rdRef: TextView? = null
             val rd = b("🔁 إعادة", 0xFF6A1B9A.toInt()) { h.removeCallbacks(closeR); h.postDelayed(closeR, 8000); rdRef?.let { redoDialog(it) } }
             rdRef = rd
-            row.addView(chipB, lp(-2))   // (v415) زرار «ترجم» الواحد   // (v224) زرار المهام اتشال؛ 🌐 و🔑 في الشريط السفلي جنب 🗣
+            row.addView(chipB, lp(-2))   // (v415) زرار «ترجم» الواحد
+            row.addView(wzB, lp(-2)); row.addView(rd, lp(-2))   // (v427) ⚙ إعدادات الوضع + 🔁 إعادة جنبه   // (v224) زرار المهام اتشال؛ 🌐 و🔑 في الشريط السفلي جنب 🗣
             if (webVid) { row.addView(qBtn(), lp(-2)); row.addView(aBtn(), lp(-2)); row.addView(dlB, lp(-2)) }
             trUpdaters.add {
                 val paused = ::engine.isInitialized && engine.userPaused
@@ -568,7 +573,7 @@ class PlayerActivity : Activity(), Host {
                 if (!started) open = false
                 offB.visibility = if (started) View.GONE else View.VISIBLE
                 tg.visibility = if (started && open) View.VISIBLE else View.GONE
-                rd.visibility = View.VISIBLE
+                rd.visibility = if (hasSubsNow()) View.VISIBLE else View.GONE   // (v427) الإعادة بتظهر لما يبقى فيه ترجمة
                 lgB.visibility = View.VISIBLE
                 kmTr.visibility = if (Cfg.bool("kmode_adv", false)) View.VISIBLE else View.GONE   // (v287) أوضاع المفاتيح تحت «متقدم»
                 if (!started) { chipB.text = "▶ ترجم ▾"; chipB.background = ui.box(0xFFE53935.toInt(), 0x33FFFFFF, 12) }
@@ -586,12 +591,14 @@ class PlayerActivity : Activity(), Host {
             val rd2 = b("🔁 إعادة", 0xFF6A1B9A.toInt()) { rd2Ref?.let { redoDialog(it) } }
             rd2Ref = rd2
             row.addView(tr, lp(0).apply { width = 0; weight = 3f })   // (v415) زرار «ترجم» الواحد
+            row.addView(wzB, lp(0).apply { width = 0; weight = 0.8f }); row.addView(rd2, lp(0).apply { width = 0; weight = 1.5f })   // (v427) ⚙ + 🔁 جنب «ترجم»
             if (webVid) { row.addView(qBtn(), lp(0).apply { width = 0; weight = 1.1f }); row.addView(aBtn(), lp(0).apply { width = 0; weight = 0.9f }); row.addView(dlB, lp(0).apply { width = 0; weight = 0.6f }) }
             trUpdaters.add {
                 val paused = ::engine.isInitialized && engine.userPaused
                                 tr.visibility = View.VISIBLE
                                 tr.text = if (!engineStarted) "▶ ترجم ▾" else (Offline.liveShort()?.let { "$it · " } ?: "") + (if (paused) "⏸ " else if (trPct >= 100) "✅ " else "⏳ ") + trPct + "% ▾"
                 offB.visibility = if (engineStarted) View.GONE else View.VISIBLE
+                rd2.visibility = if (hasSubsNow()) View.VISIBLE else View.GONE   // (v427)
                 ps.visibility = if (engineStarted) View.VISIBLE else View.GONE
                 rs.visibility = if (engineStarted) View.VISIBLE else View.GONE
                 ps.alpha = if (paused) 0.4f else 1f; rs.alpha = if (paused) 1f else 0.4f
@@ -723,15 +730,18 @@ class PlayerActivity : Activity(), Host {
         val head = if (!started) "اختار طريقة الترجمة" else (Offline.liveLine() ?: ("الترجمة: " + trPct + "%" + (if (paused) " (واقفة)" else "")))
         col.addView(ui.text(head, 12.5f, Color.WHITE, true).apply { setPadding(ui.dp(8), ui.dp(4), ui.dp(8), ui.dp(6)) })
         if (!started) {
-            col.addView(item("🌗 وشبر + LibreTranslate (التفريغ على جهازك)") { offlineQuick() })
-            col.addView(item("☁ أونلاين — جيميناي") { startOnlineQuick() })
-            TrWizard.savedPlan()?.let { sp -> col.addView(item("▶ بالإعداد المحفوظ: " + TrWizard.describe(sp).substringBefore("\n")) { translateEntry() }) }
+            // (v427) التلات أوضاع بس: ☁ ترجمة جيميناي · 🌗 أوفلاين وشبر + LibreTranslate · ✍ تفريغ بس (جيميناي أو وشبر)
+            col.addView(item("☁ ترجمة بجيميناي") { geminiPick() })
+            col.addView(item("🌗 أوفلاين — وشبر + LibreTranslate") { offlineQuick() })
+            col.addView(ui.text("✍ تفريغ بس (من غير ترجمة)", 11.5f, 0xFF9AA0A6.toInt(), true).apply { setPadding(ui.dp(8), ui.dp(6), ui.dp(8), ui.dp(2)) })
+            col.addView(item("☁ تفريغ بجيميناي") { startGeminiTranscribe() })
+            col.addView(item("📴 تفريغ أوفلاين بوشبر") { offlineQuick(true) })
         } else {
             col.addView(item(if (paused) "▶ كمّل الترجمة" else "⏸ إيقاف مؤقت") { if (paused) beginTranslate() else pauseTranslate() })
             col.addView(item("🔁 إعادة…") { h.post { redoDialog(anchor) } })
             col.addView(item("📊 تقدم الباتشات (كل باتش بنسبته)") { batchDialog() })
+            col.addView(item("🔀 غيّر الوضع") { trWizard(true) })
         }
-        col.addView(item("⚙ إعدادات متقدمة (اللغة / الطريقة)") { trWizard(true) })
         val scroll = android.widget.ScrollView(this).apply { isVerticalScrollBarEnabled = false; addView(col) }
         val popW = minOf(resources.displayMetrics.widthPixels - ui.dp(24), ui.dp(300))
         col.measure(View.MeasureSpec.makeMeasureSpec(popW, View.MeasureSpec.EXACTLY), View.MeasureSpec.UNSPECIFIED)
@@ -749,12 +759,191 @@ class PlayerActivity : Activity(), Host {
         h.removeCallbacks(hideChrome); showChrome(); h.removeCallbacks(hideChrome)
     }
 
-    /** (v415) أونلاين بضغطة: الخطة الأونلاين المحفوظة أو الإعدادات الحالية (جيميناي) */
-    private fun startOnlineQuick() {
+    /** (v427) ☁ ترجمة بجيميناي: بيفتح خيارات جيميناي (جودة الصوت ← لهجة ← أسلوب ← شدة) وبعدها يبدأ الترجمة */
+    private fun geminiPick() {
+        if (!TrWizard.hasGeminiKey()) { say("☁ جيميناي محتاج مفتاح — ضيفه من الإعدادات ← 🔑 المفاتيح"); return }
+        try {
+            TrWizard.keyModeHook = { n -> applyKeyMode(n) }
+            TrWizard.show(this, false, "gem") { pl, save, start ->
+                if (save) TrWizard.save(pl)
+                if (start) runPlan(pl)
+                try { applyChromeFn() } catch (_: Throwable) {}
+            }
+        } catch (e: Throwable) { LogStore.err("Player:geminiPick", e); say("تعذّر فتح خيارات جيميناي") }
+    }
+
+    /** (v427) ✍ تفريغ بجيميناي: النص بلغته الأصلية من غير ترجمة */
+    private fun startGeminiTranscribe() {
         if (!TrWizard.hasGeminiKey()) { say("☁ الأونلاين محتاج مفتاح جيميناي — ضيفه من الإعدادات ← 🔑 المفاتيح"); return }
-        val pl = TrWizard.savedPlan()?.takeIf { it.mode == "online" } ?: TrWizard.Plan("online", Cfg.str("tr_online", TrWizard.CURRENT).ifBlank { TrWizard.CURRENT }, "", "", "gemini")
+        val pl = TrWizard.Plan("online", "transcript", "", "", "gemini", only = true)
+        Cfg.put("tr_mode_id", "ai_only"); SourceMode.set(SourceMode.AUDIO)
         try { TrWizard.save(pl) } catch (e: Throwable) { LogStore.err("Player:onQuickSave", e) }
         runPlan(pl)
+    }
+
+    // ===================== (v427) ⚙ إعدادات الوضع الحالي (بتتطبّق لايف) =====================
+    private var setPop: android.widget.PopupWindow? = null
+
+    /** الوضع الحالي: gem = ترجمة جيميناي · off = وشبر + Libre · txg = تفريغ جيميناي · txw = تفريغ وشبر */
+    private fun curModeKey(): String {
+        val id = Strict.id()
+        if (id == "g_wav" || id == "g_aac") return "gem"
+        if (id == Strict.SEMI) return "off"
+        if (id == "ai_only") return "txg"
+        if (id == "w_only") return "txw"
+        val sp = TrWizard.savedPlan()
+        if (sp != null) return if (sp.offline) (if (sp.only) "txw" else "off") else (if (sp.only) "txg" else "gem")
+        return if (Cfg.bool("stt_offline", false)) "off" else "gem"
+    }
+
+    /** يطبّق الإعدادات الحالية على المحرك الشغّال من غير ما يبدأ ولا يعيد حاجة */
+    private fun liveConf() {
+        try { val nc = Cfg.snapshot(); conf = nc; if (::engine.isInitialized) engine.applyConf(nc) } catch (e: Throwable) { LogStore.err("Player:liveConf", e) }
+    }
+
+    /** لغة الفيديو / موديل وشبر بتتغيّر والمحرك شغّال: بتتحفظ وبتتطبّق على الباتشات الجاية (واللغة بتصلّح اللي اتفرّغ بلغة غلط) */
+    private fun liveOffline(newLang: String?, newModel: String?) {
+        val oldLang = Offline.lang()
+        val lang = newLang ?: oldLang
+        val mdl = newModel ?: Offline.model().id
+        val only = curModeKey() == "txw"
+        val pl = TrWizard.Plan("offline", "", lang, mdl, "google", "whisper", if (only) "" else "فصحى", false, free = "", only = only)
+        try { TrWizard.save(pl) } catch (e: Throwable) { LogStore.err("Player:liveOffSave", e) }
+        try { runPlanCore(pl, false) } catch (e: Throwable) { LogStore.err("Player:liveOff", e) }
+        if (lang != oldLang) {
+            try {
+                if (::engine.isInitialized && (engineStarted || engine.subs.isNotEmpty())) {
+                    engine.langChanged(lang, player.currentPosition.coerceAtLeast(0) / 1000.0)
+                    say("🌐 لغة الفيديو بقت " + TrWizard.langLabel(lang) + " — بكمّل من مكانك وبعيد الباتشات اللي اتفرّغت بلغة غلط")
+                } else say("🌐 لغة الفيديو بقت " + TrWizard.langLabel(lang))
+            } catch (e: Throwable) { LogStore.err("Player:langChanged", e) }
+        }
+        try { applyChromeFn() } catch (_: Throwable) {}
+    }
+
+    private fun pickWhisperModel(m: Offline.Model) {
+        if (!WhisperLib.loaded) { say("📴 الأوفلاين مش مدعوم على جهازك"); return }
+        if (Offline.downloaded(m)) { liveOffline(null, m.id); say("🎧 موديل وشبر: " + m.label + " — بيتطبّق على الباتشات الجاية"); return }
+        if (Offline.downloading()) { say("⬇ فيه تنزيل موديل شغّال — استنى يخلص وادوس تاني"); return }
+        android.app.AlertDialog.Builder(this).setTitle("⬇ تنزيل موديل " + m.label)
+            .setMessage("الموديل ده مش نازل (~" + m.approxMb + " ميجا، مرة واحدة، محتاج نت). تنزّله وتطبّقه؟")
+            .setPositiveButton("نزّل وطبّق") { _, _ ->
+                say("⬇ بنحمّل موديل " + m.label + "…")
+                Offline.download(m, { a, t -> runOnUiThread { Notice.show(this, "⬇ موديل التفريغ: " + (a / 1048576) + " / " + (t / 1048576) + " ميجا", 900L) } }) { e ->
+                    runOnUiThread { if (e != null) say("⚠ تنزيل الموديل فشل: $e") else { liveOffline(null, m.id); say("✅ موديل " + m.label + " نزل واتطبّق") } }
+                }
+            }
+            .setNegativeButton("إلغاء", null).show()
+    }
+
+    private fun libreDialog() {
+        val box = LinearLayout(this); box.orientation = LinearLayout.VERTICAL; box.setPadding(40, 20, 40, 0)
+        val eu = android.widget.EditText(this); eu.hint = "https://libretranslate.com"; eu.setText(Cfg.str("libre_url")); eu.setSingleLine(true)
+        val ek = android.widget.EditText(this); ek.hint = "مفتاح API (لو محتاج)"; ek.setText(Cfg.str("libre_key")); ek.setSingleLine(true)
+        box.addView(eu); box.addView(ek)
+        android.app.AlertDialog.Builder(this).setTitle("🌐 LibreTranslate").setView(box)
+            .setPositiveButton("حفظ") { _, _ ->
+                Cfg.put("libre_url", eu.text.toString().trim().trimEnd('/')); Cfg.put("libre_key", ek.text.toString().trim())
+                ExtTranslate.libreProv()?.let { ExtTranslate.clearBlock(it.id) }
+                say("🌐 سيرفر LibreTranslate اتحفظ — بيتطبّق على الباتشات الجاية")
+            }
+            .setNegativeButton("إلغاء", null).show()
+    }
+
+    /** زرار ⚙ جنب «ترجم»: إعدادات الوضع الحالي (+ (v428) زرار 🌐 اللغة واللهجة والأسلوب جواه). كل تغيير بيتطبّق فورًا من غير إعادة */
+    fun modeSettings(anchor: View) {
+        setPop?.let { if (it.isShowing) { it.dismiss(); setPop = null; return } }
+        val mk = curModeKey()
+        val col = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL
+            setPadding(ui.dp(6), ui.dp(6), ui.dp(6), ui.dp(6)); background = ui.box(0xF2141418.toInt(), 0x33FFFFFF, 12)
+        }
+        fun flow() = FlowRow(this).apply { layoutDirection = View.LAYOUT_DIRECTION_RTL }
+        fun cLp() = ViewGroup.MarginLayoutParams(-2, ui.dp(34)).apply { setMargins(ui.dp(3), ui.dp(2), ui.dp(3), ui.dp(2)) }
+        fun lbl(t: String) = ui.text(t, 11.5f, 0xFF9AA0A6.toInt(), true).apply { setPadding(ui.dp(8), ui.dp(8), ui.dp(8), ui.dp(2)) }
+        fun item(t: String, f: () -> Unit) = ui.fsBtn(t) { _ -> setPop?.dismiss(); f() }.apply { layoutParams = LinearLayout.LayoutParams(-1, ui.dp(42)).apply { setMargins(ui.dp(3), ui.dp(2), ui.dp(3), ui.dp(2)) } }
+        val head = when (mk) { "gem" -> "☁ إعدادات ترجمة جيميناي"; "off" -> "🌗 إعدادات وشبر + LibreTranslate"; "txg" -> "☁ إعدادات تفريغ جيميناي"; else -> "📴 إعدادات تفريغ وشبر" }
+        col.addView(ui.text(head, 13f, Color.WHITE, true).apply { setPadding(ui.dp(8), ui.dp(4), ui.dp(8), ui.dp(2)) })
+        col.addView(ui.text("بتتطبّق فورًا وانت شغّال", 11f, 0xFF9AA0A6.toInt()).apply { setPadding(ui.dp(8), 0, ui.dp(8), ui.dp(4)) })
+        // (v428) 🌐 اللغة واللهجة والأسلوب جوه الإعدادات (في كل الأوضاع) — بيفتح نفس قايمة 🌐 بتاعة الشريط
+        col.addView(item("🌐 اللهجة والأسلوب واللغة: " + Cfg.str("conv_dialect", "").ifBlank { "فصحى" }) { langPopup(anchor) })
+
+        fun audioSection() {
+            col.addView(lbl("🎧 جودة الصوت المرفوع لجيميناي"))
+            val wavNow = AudioEnc.preset() == AudioEnc.NORMAL
+            val r = flow()
+            r.addView(ui.fsBtn((if (wavNow) "✓ " else "") + "🧠 عادي (WAV)") { _ ->
+                setPop?.dismiss(); Cfg.put(AudioEnc.PRESET_KEY, AudioEnc.NORMAL); if (mk == "gem") Cfg.put("tr_mode_id", "g_wav")
+                say("🎧 جودة الصوت: WAV — الباتشات الجاية هتترفع بيها")
+            }, cLp())
+            r.addView(ui.fsBtn((if (!wavNow) "✓ " else "") + "🧠 توفير داتا (AAC)") { _ ->
+                setPop?.dismiss(); Cfg.put(AudioEnc.PRESET_KEY, AudioEnc.FAST); if (mk == "gem") Cfg.put("tr_mode_id", "g_aac")
+                say("🎧 جودة الصوت: AAC (داتا أقل) — الباتشات الجاية هتترفع بيها")
+            }, cLp())
+            col.addView(r, LinearLayout.LayoutParams(-1, -2))
+        }
+        fun keysSection() {
+            val n = try { Cfg.keys("keys").size + Cfg.keys("extra").size + Cfg.keys("backup").size } catch (_: Throwable) { 0 }
+            col.addView(lbl("🔑 مفاتيح جيميناي: $n مفتاح" + (if (mk == "gem") " · ٧٥٪ بتنسخ و٢٥٪ بتترجم بالسياق" else "")))
+            col.addView(item("➕ ضيف مفتاح جيميناي") {
+                showKeyGuide { k ->
+                    val cur = Cfg.keys("keys")
+                    if (k in cur || k in Cfg.keys("extra") || k in Cfg.keys("backup")) Notice.show(this, "⚠ المفتاح ده موجود قبل كده", 2600L)
+                    else { Cfg.p.edit().putString("keys", (cur + k).joinToString("\n")).apply(); Notice.show(this, "✓ اتحفظ المفتاح وبقى شغّال", 2200L); liveConf() }
+                }
+            })
+        }
+        fun whisperSection() {
+            col.addView(lbl("🌍 لغة كلام الفيديو (للتفريغ)"))
+            val curL = Offline.lang()
+            val rl = flow()
+            for (i in Offline.langIds.indices) {
+                val id = Offline.langIds[i]
+                rl.addView(ui.fsBtn((if (id == curL) "✓ " else "") + Offline.langLabels[i]) { _ -> setPop?.dismiss(); if (id != curL) liveOffline(id, null) }, cLp())
+            }
+            col.addView(rl, LinearLayout.LayoutParams(-1, -2))
+            col.addView(lbl("🎧 موديل وشبر (الأكبر أدق وأبطأ · ⬇ = مش نازل)"))
+            val curM = Offline.model().id
+            val rm = flow()
+            for (m in Offline.models) rm.addView(ui.fsBtn((if (m.id == curM) "✓ " else "") + m.label + (if (Offline.downloaded(m)) "" else " ⬇")) { _ -> setPop?.dismiss(); if (m.id != curM) pickWhisperModel(m) }, cLp())
+            col.addView(rm, LinearLayout.LayoutParams(-1, -2))
+        }
+
+        when (mk) {
+            "gem" -> {
+                audioSection(); keysSection()
+                val swapOn = Cfg.str("tr_autoswap", "on") != "off"
+                col.addView(item("🔄 بديل تلقائي لو جيميناي وقف: " + (if (swapOn) "✅ شغّال" else "⏸ مقفول")) {
+                    Cfg.put("tr_autoswap", if (swapOn) "off" else "on"); say("🔄 البديل التلقائي: " + (if (swapOn) "اتقفل" else "اتفتح"))
+                })
+            }
+            "off" -> {
+                whisperSection()
+                col.addView(item("🌐 سيرفر LibreTranslate: " + Cfg.str("libre_url").ifBlank { "الافتراضي" }) { libreDialog() })
+                val tnOn = TermNotes.enabled()
+                col.addView(item("📖 نبذة المصطلحات الطبية: " + (if (tnOn) "✅ شغّال" else "⏸ مقفول")) {
+                    Cfg.put("term_notes", if (tnOn) "off" else "on"); say("📖 نبذة المصطلحات: " + (if (tnOn) "اتقفلت" else "اتفتحت"))
+                })
+            }
+            "txg" -> { audioSection(); keysSection() }
+            else -> whisperSection()
+        }
+
+        val scroll = android.widget.ScrollView(this).apply { isVerticalScrollBarEnabled = false; addView(col) }
+        val popW = minOf(resources.displayMetrics.widthPixels - ui.dp(24), ui.dp(340))
+        col.measure(View.MeasureSpec.makeMeasureSpec(popW, View.MeasureSpec.EXACTLY), View.MeasureSpec.UNSPECIFIED)
+        val loc = IntArray(2); anchor.getLocationOnScreen(loc)
+        val screenH = resources.displayMetrics.heightPixels
+        val up = loc[1] > screenH / 2
+        val avail = (if (up) loc[1] - ui.dp(12) else screenH - loc[1] - anchor.height - ui.dp(12)).coerceAtLeast(ui.dp(120))
+        val popH = minOf(col.measuredHeight, avail)
+        val pw = android.widget.PopupWindow(scroll, popW, popH, true)
+        pw.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(0))
+        pw.isOutsideTouchable = true
+        pw.setOnDismissListener { if (setPop === pw) setPop = null; showChrome() }
+        try { if (up) pw.showAsDropDown(anchor, 0, -(anchor.height + popH + ui.dp(2))) else pw.showAsDropDown(anchor, 0, ui.dp(2)) } catch (e: Throwable) { LogStore.err("Player:modeSettings", e) }
+        setPop = pw
+        h.removeCallbacks(hideChrome); showChrome(); h.removeCallbacks(hideChrome)
     }
 
     private var redoPop: android.widget.PopupWindow? = null
@@ -1062,6 +1251,7 @@ class PlayerActivity : Activity(), Host {
     }
     override fun onCreate(b: Bundle?) {
         super.onCreate(b)
+        smoothRotation()   // (v429)
         MlKitTr.ask = { t -> runOnUiThread { askMlDownload(t) } }   // (v413)
         synchronized(liveList) {
             liveList.removeAll { it.get() == null }
@@ -1750,9 +1940,16 @@ class PlayerActivity : Activity(), Host {
             else if (!on) { chromeFrame.animate().cancel(); chromeFrame.alpha = 1f; chromeFrame.translationY = 0f }
             centerPlay.visibility = if (on || pipNow() || uiLocked || busyShown()) View.GONE else if (buffering) View.VISIBLE else if (player.isPlaying) View.GONE else View.VISIBLE   // الشريط ظاهر = فيه زرار تشغيل تحت، فمنشيلش الأوسط فوق الترجمة
             val cv = (!fullMode || chromeShown) && !pipNow()
-            floatBar.visibility = if (!pipNow()) View.VISIBLE else View.GONE
+            floatBar.visibility = if (cv) View.VISIBLE else View.GONE   // (v427) 👁 مابقاش ظاهر طول الوقت: بيظهر مع الشريط (أو في الوضع العادي)
             batchBtn.visibility = if (cv) View.VISIBLE else View.GONE
             if (::audBtn.isInitialized) audBtn.visibility = if (cv && intent.getStringExtra("ytid")?.length == 11) View.VISIBLE else View.GONE
+            // (v430) في الشاشة الكاملة 👁 (وجنبه 🔄/🎧) مخفي 100% وبيظهر بس مع باقي أدوات المشغّل (لمسة) بوضوح كامل مش باهت
+            if (fullMode) {
+                floatBar.animate().cancel(); batchBtn.animate().cancel(); floatFades.remove(floatBar)?.let { h.removeCallbacks(it) }
+                val ta = if (on) 1f else 0f
+                floatBar.alpha = ta; batchBtn.alpha = ta
+                if (::audBtn.isInitialized) { audBtn.animate().cancel(); audBtn.alpha = ta }
+            }
             miniBar.visibility = if (!on && !pipNow()) View.VISIBLE else View.GONE
             updateTrChip(); applyBadgeAlpha()   // (v323) العدّادات بتظهر مع أزرار المشغّل بس
             fsBtnV.visibility = if (!fullMode) View.VISIBLE else View.GONE   // في الشاشة الكاملة ⛶ جوه الشريط السفلي
@@ -2143,7 +2340,12 @@ class PlayerActivity : Activity(), Host {
                 if (now - lastBeat > 20000) { lastBeat = now; LogStore.add("💓 ${LogStore.heapLine()} · ${if (player.isPlaying) "بيشتغل" else "واقف"} @${fmtMs(cur)} · مترجم ${(engine.coveredSec() / 60).toInt()}د · ${engine.subs.size} جملة") }
                 run { val pc = PlayerLogic.percent(engine.coveredSec(), durMs / 1000.0); val wp = Offline.livePct() * 1000 + Offline.runIdx; if (pc != trPct || wp != lastWp) { trPct = pc; lastWp = wp; updateTr() } }
                 if (fullMode) { fsBadge.set("🔊 " + PlayerLogic.percent(engine.coveredSec(), durMs / 1000.0).toString() + "% · " + list.size.toString() + " جملة ▾", ((try { engine.offlineBrief() } catch (_: Throwable) { null }) ?: "")); fsBadge.setOn(engineStarted && !engine.userPaused); netBadge.set(NetUse.fmt(NetUse.localTotal()), NetUse.fmt(NetUse.onlineTotal())); applyBadgeAlpha() }   // (v236) نقطة خضراء = الوضع الصوتي شغّال
-                if (fullMode && ::visual.isInitialized) { visBadge.set("👁 " + visual.count, "") }   // (v358) كبسولة واحدة للصوتي والبصري: من غير نقطة ولا كلمة شغّال/واقف ولا فاصل — الحالة من الدايرة الحمراء
+                if (fullMode && ::visual.isInitialized) {   // (v431) الجزء البصري (👁 + الفاصل) بيظهر بس لما الوضع البصري شغّال؛ غير كده الكبسولة صوتي بس
+                    val vOn = visual.running; val vv = if (vOn) View.VISIBLE else View.GONE
+                    if (visBadge.visibility != vv) visBadge.visibility = vv
+                    if (sentDiv.visibility != vv) sentDiv.visibility = vv
+                    if (vOn) visBadge.set("👁 " + visual.count, "")
+                }   // (v358) كبسولة واحدة للصوتي والبصري: من غير نقطة ولا كلمة شغّال/واقف ولا فاصل — الحالة من الدايرة الحمراء
                 if (now - lastMem > 4000) { lastMem = now; if (!fullMode) mem.update(this@PlayerActivity) }
                 counters.text = "جمل ${list.size} · 👁 ${visList.size} · تغطية ${PlayerLogic.percent(engine.coveredSec(), durMs / 1000.0)}% · فجوات ${engine.failedCount()} · كوتة ${Quota.used(conf.model)}/${Models.quotaOf(conf.model)} · ${NetUse.badgeLine()}"
                 if (logDlg.isShowing && logMode == 0) {
@@ -2690,13 +2892,14 @@ class PlayerActivity : Activity(), Host {
         videoBoxRef.layoutParams = lp
         videoBoxRef.background = GradientDrawable().apply { setColor(Color.BLACK); cornerRadius = if (f) 0f else ui.dp(14).toFloat() }
         fsBtnLp.setMargins(ui.dp(10), 0, 0, ui.dp(10)); fsBtnV.layoutParams = fsBtnLp
-        fsOnly.forEach { it.visibility = if (f) View.VISIBLE else View.GONE }
+        fsOnly.forEach { it.visibility = if (f && (it !== visBadge || (::visual.isInitialized && visual.running))) View.VISIBLE else View.GONE }   // (v431) 👁 البصري بس لو شغّال
         try { tbView?.let { v -> (v.layoutParams as? FrameLayout.LayoutParams)?.let { lp -> lp.rightMargin = ui.dp(8); v.layoutParams = lp } } } catch (_: Throwable) {}   // (v265)
         st.visibility = if (f) View.GONE else View.VISIBLE
         if (::logDrawer.isInitialized) { (leftCol.layoutParams as FrameLayout.LayoutParams).topMargin = ui.dp(44); logDrawer.visibility = View.VISIBLE; leftCol.requestLayout() }
         @Suppress("DEPRECATION") window.decorView.systemUiVisibility = if (f) (View.SYSTEM_UI_FLAG_FULLSCREEN or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY or View.SYSTEM_UI_FLAG_LAYOUT_STABLE) else (if (Build.VERSION.SDK_INT >= 23 && th.isLight) View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR else 0)
         placeCard()
         if (f) showChrome() else { h.removeCallbacks(hideChrome); chromeShown = false; applyChromeFn() }
+        if (::svRef.isInitialized) videoBoxRef.post { applyFit(svRef, videoBoxRef) }   // (v429) بعد ما الـ layout يخلص بالمقاس الجديد (كان بيتحسب على المقاس القديم لفريم)
     }
     fun showChrome() { if (pipNow() || uiLocked) return; chromeShown = true; applyChromeFn(); h.removeCallbacks(hideChrome); h.postDelayed(hideChrome, 3500) }
     fun togglePlay() { if (player.isPlaying) player.pause() else { if (player.playbackState == Player.STATE_ENDED) player.seekTo(0); player.play() } }
@@ -2710,7 +2913,12 @@ class PlayerActivity : Activity(), Host {
     }
     private var userRot = false
     private var autoRotDone = false
+    /** (v429) الدوران بين البورتريه والشاشة الكاملة كان بيبان «نتشة»: الشاشة بتلف بأنيميشن النظام والسطح بيتمدّد لحظة بمقاس قديم. كروس-فيد بيخفي ده */
+    private fun smoothRotation() {
+        try { val a = window.attributes; if (a.rotationAnimation != 1) { a.rotationAnimation = 1; window.attributes = a } } catch (_: Throwable) {}   // ROTATION_ANIMATION_CROSSFADE
+    }
     fun toggleFs() {
+        smoothRotation()
         userRot = true
         requestedOrientation = if (resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE) ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT else ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
     }
@@ -3228,7 +3436,7 @@ class PlayerActivity : Activity(), Host {
      * تفريغ Whisper على الجهاز + ترجمة ML Kit (فصحى؛ اللهجة بتتحوّل زي إعدادك). اللغة: إعداد التفريغ أو الإنجليزي لو تلقائي. الخطة بتتحفظ (وإلا الاستئناف كان هيرجّع القديمة).
      */
     private var offBusy = false
-    fun offlineQuick() {
+    fun offlineQuick(only: Boolean = false) {
         if (offBusy) return
         if (!WhisperLib.loaded) { say("📴 الأوفلاين مش مدعوم على جهازك"); return }
         if (Offline.downloading()) { say("⬇ فيه تنزيل موديل شغّال — استنى يخلص وادوس تاني"); return }
@@ -3237,8 +3445,8 @@ class PlayerActivity : Activity(), Host {
         val order = listOf(Offline.model()) + listOf("small", "base", "medium").mapNotNull { id -> Offline.models.firstOrNull { it.id == id } }
         val m = order.firstOrNull { Offline.downloaded(it) } ?: Offline.models.first { it.id == "small" }
         fun startIt() {
-            val pl = TrWizard.Plan("offline", "", lang, m.id, "google", "whisper", "فصحى", false, free = "")   // (v425) وشبر + LibreTranslate
-            Cfg.put("tr_mode_id", Strict.SEMI); SourceMode.set(SourceMode.AUDIO)
+            val pl = TrWizard.Plan("offline", "", lang, m.id, "google", "whisper", if (only) "" else "فصحى", false, free = "", only = only)   // (v425) وشبر + LibreTranslate · (v427) only = تفريغ بس بوشبر
+            Cfg.put("tr_mode_id", if (only) "w_only" else Strict.SEMI); SourceMode.set(SourceMode.AUDIO)
             try { TrWizard.save(pl) } catch (e: Throwable) { LogStore.err("Player:offQuickSave", e) }
             offBusy = false
             runPlan(pl)

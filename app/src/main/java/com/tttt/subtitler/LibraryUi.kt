@@ -511,8 +511,14 @@ class LibraryUi(
             rows = head0 + VideoLib.sortVideos(src, sort)
             titleTv.text = if (audio) "🗂 كل الأغاني" else "🗂 كل الفيديوهات"; subTv.text = "${src.size} $noun · ${VideoLib.fmtSize(src.sumOf { it.size })}"; backV.visibility = View.GONE
         } else {
-            rows = (if (audio) emptyList<Any>() else listOf<Any>(webFolder) + (if (BgJobs.jobs.isNotEmpty()) listOf<Any>(bgFolder) else emptyList<Any>())) + VideoLib.sortFolders(folders, sort)
-            titleTv.text = if (audio) "🎵 الموسيقى" else "📁 الفيديوهات"; subTv.text = "${folders.size} مجلد · ${src.size} $noun"; backV.visibility = View.GONE
+            // (v432) التوزيع الذكي: المسلسلات/الفنانين المجمّعين الأول (مرتّبين لوحدهم) وبعدهم الفولدرات العادية — مش مخلوطين بالأبجدية
+            val smart = dist() == "smart"
+            val (grp, plain) = if (smart) folders.partition { it.virtual } else Pair(emptyList<FolderItem>(), folders)
+            val ordered = VideoLib.sortFolders(grp, sort) + VideoLib.sortFolders(plain, sort)
+            rows = (if (audio) emptyList<Any>() else listOf<Any>(webFolder) + (if (BgJobs.jobs.isNotEmpty()) listOf<Any>(bgFolder) else emptyList<Any>())) + ordered
+            titleTv.text = if (audio) "🎵 الموسيقى" else "📁 الفيديوهات"
+            subTv.text = if (smart && grp.isNotEmpty()) "${grp.size} ${if (audio) "فنان" else "مسلسل"} · ${plain.size} مجلد · ${src.size} $noun" else "${folders.size} مجلد · ${src.size} $noun"
+            backV.visibility = View.GONE
         }
         val lvl = if (query.isNotEmpty()) "q" else if (inHidden) "h" else if (inRecents) "r" else if (inWeb) "w" else "f:" + (curFolder ?: "")
         if (lvl != selLevel) { selLevel = lvl; sel.clear() }
@@ -709,6 +715,13 @@ class LibraryUi(
     private fun newFolderRow(): View {
         val cb = newCheck()
         val icon = IconTextView(act).apply { text = "📁"; textSize = 24f; gravity = Gravity.CENTER; background = ui.box(th.surface, th.border, 12) }
+        // (v432) صورة أول فيديو/أغنية جوه الفولدر (زي وضع الشبكة) بدل أيقونة 📁 بس — عشان تشوف إيه جواه
+        val thumbIv = ImageView(act).apply {
+            scaleType = ImageView.ScaleType.CENTER_CROP; visibility = View.GONE
+            clipToOutline = true
+            outlineProvider = object : android.view.ViewOutlineProvider() { override fun getOutline(v: View, o: android.graphics.Outline) { o.setRoundRect(0, 0, v.width, v.height, ui.dp(12).toFloat()) } }
+        }
+        val iconBox = FrameLayout(act).apply { addView(icon, FrameLayout.LayoutParams(-1, -1)); addView(thumbIv, FrameLayout.LayoutParams(-1, -1)) }
         val name = ui.text("", 15f, th.text, true).apply { setSingleLine(); ellipsize = TextUtils.TruncateAt.END }
         val info = ui.text("", 12f, th.primary)
         val path = ui.text("", 10f, th.muted).apply { setSingleLine(); ellipsize = TextUtils.TruncateAt.MIDDLE }
@@ -720,19 +733,20 @@ class LibraryUi(
         val card = LinearLayout(act).apply {
             layoutDirection = View.LAYOUT_DIRECTION_RTL; gravity = Gravity.CENTER_VERTICAL; setPadding(ui.dp(10), ui.dp(10), ui.dp(8), ui.dp(10)); background = ui.box(th.card, th.border, 14)
             addView(cb, LinearLayout.LayoutParams(ui.dp(38), ui.dp(48)))
-            addView(icon, LinearLayout.LayoutParams(ui.dp(52), ui.dp(52)))
+            addView(iconBox, LinearLayout.LayoutParams(ui.dp(56), ui.dp(56)))
             addView(col, LinearLayout.LayoutParams(0, -2, 1f).apply { marginStart = ui.dp(12) })
             addView(fDots)
             addView(chev)
         }
         Glass.pressable(card)
-        val wrap = FrameLayout(act).apply { setPadding(0, ui.dp(3), 0, ui.dp(3)); addView(card, FrameLayout.LayoutParams(-1, -2)); tag = arrayOf(name, info, path, card, fBadge, fDots, cb, icon) }
+        val wrap = FrameLayout(act).apply { setPadding(0, ui.dp(3), 0, ui.dp(3)); addView(card, FrameLayout.LayoutParams(-1, -2)); tag = arrayOf(name, info, path, card, fBadge, fDots, cb, icon, thumbIv) }
         return wrap
     }
 
     @Suppress("UNCHECKED_CAST")
     private fun bindFolder(v: View, f: FolderItem) {
         val t = v.tag as Array<View>
+        (t[8] as ImageView).apply { visibility = View.GONE; tag = null }   // (v432)
         if (f === webFolder) {
             val n = webList.size
             (t[7] as TextView).text = "🌐"
@@ -759,12 +773,23 @@ class LibraryUi(
             t[3].setOnLongClickListener(null)
             return
         }
-        t[5].visibility = View.VISIBLE; t[6].visibility = View.VISIBLE
+        t[5].visibility = View.VISIBLE
+        t[6].visibility = if (sel.isNotEmpty()) View.VISIBLE else View.GONE   // (v432) المربع بيظهر بس لما التحديد يتفعّل (ضغطة مطوّلة ← تحديد) — الصف أنضف
         val on = f.key in sel
         bindCheck(t[6], on) { toggleSel(f.key) }
         t[3].background = if (on) ui.box(th.card, th.primary, 14, 2) else ui.box(th.card, th.border, 14)
         (t[0] as TextView).text = f.name
-        (t[1] as TextView).text = (if (f.kids.isNotEmpty()) "${f.kids.size} أجزاء · " else "") + "${f.count} $noun · ${VideoLib.fmtSize(f.totalSize)}"
+        val unit = if (f.virtual && !audio) "حلقة" else noun
+        (t[1] as TextView).text = (if (f.kids.isNotEmpty()) "${f.kids.size} مواسم · " else "") + "${f.count} $unit · ${VideoLib.fmtSize(f.totalSize)}"
+        run {   // (v432) صورة أول عنصر
+            val first = f.videos.firstOrNull(); val iv = t[8] as ImageView
+            if (first != null && (!audio || artRows())) {
+                iv.tag = first.uri
+                val bm = Thumbs.peek(first)
+                if (bm != null) { iv.setImageBitmap(bm); iv.visibility = View.VISIBLE }
+                else Thumbs.load(act, first, audio) { b -> if (b != null && iv.tag == first.uri) { iv.setImageBitmap(b); iv.visibility = View.VISIBLE } }
+            }
+        }
         (t[2] as TextView).text = f.path
         val nn = f.videos.count { keyOf(it) in newKeys }
         (t[4] as TextView).apply { text = if (nn > 1) "NEW $nn" else "NEW"; visibility = if (nn > 0) View.VISIBLE else View.GONE }

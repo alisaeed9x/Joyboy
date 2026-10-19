@@ -2612,7 +2612,7 @@ class Engine(
     private val noteShown = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
     private val noteScanned = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
     private fun noteTick(): Boolean {
-        if (transOnly || Strict.offline() || !(TrWizard.googleOn() || keyless) || !TermNotes.enabled() || !running || isClosed) return false
+        if (transOnly || !(TrWizard.googleOn() || keyless) || !TermNotes.enabled() || !running || isClosed) return false
         val now = System.currentTimeMillis()
         if (now - noteAt < 2500L) return false
         noteAt = now

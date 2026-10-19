@@ -95,7 +95,10 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
         visibility = View.GONE; alpha = 0f
         setOnClickListener { applyPending() }
     }
+    private var pillN = 1
     private fun showPill(n: Int) {
+        pillN = n
+        if (watch.isOpen || chan.isOpen) return   // (v428) الكبسولة بس في الرئيسية/الاشتراكات — مش فوق صفحة مشاهدة أو قناة
         newPill.text = if (n >= 2) "⬆ " + n + " فيديو جديد" else "⬆ فيديوهات جديدة"
         newPill.animate().cancel()
         if (newPill.visibility != View.VISIBLE) { newPill.visibility = View.VISIBLE; newPill.translationY = -ui.dp(12).toFloat(); newPill.alpha = 0f }
@@ -106,6 +109,12 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
         if (newPill.visibility != View.VISIBLE) return
         newPill.animate().cancel()
         newPill.animate().alpha(0f).translationY(-ui.dp(12).toFloat()).setDuration(Skins.dur(160L)).withEndAction { newPill.visibility = View.GONE }.start()
+    }
+    /** (v428) فتح/قفل صفحة المشاهدة أو القناة: الكبسولة تتخبّى فورًا (elevation بتاعها كان بيرسمها فوق الصفحة) وترجع لما ترجع للقايمة */
+    private fun pillGate(covered: Boolean) {
+        if (covered) { newPill.animate().cancel(); newPill.visibility = View.GONE; newPill.alpha = 0f; return }
+        val st = cur
+        if (pendingItems != null && st != null && st.tab == pendingTab && st.vid == null && st.q == null && st.chUrl == null) showPill(pillN)
     }
     /** دوسة على الكبسولة: القايمة تتبدّل بالجديد وترجع لفوق */
     private fun applyPending() {
@@ -431,7 +440,7 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
         chan = YtChannelPage(act, ui, object : YtChanHost {   // (v403) تحت صفحة المشاهدة: فيديو من القناة بيفتح المشاهدة فوقها
             override fun openVideo(v: NpItem) { open(v, null) }
             override fun openPlaylist(url: String, title: String) { chan.close(false); load("📃 " + title, -1, null, null, null, "", true, false) { YtNp.playlist(url) } }
-            override fun state(open: Boolean) { setNavHidden(open || watch.isOpen) }
+            override fun state(open: Boolean) { setNavHidden(open || watch.isOpen); pillGate(open || watch.isOpen) }
         })
         content.addView(chan, FrameLayout.LayoutParams(-1, -1))
         watch = YtWatchPage(act, ui, object : YtWatchHost {   // (v402)
@@ -443,7 +452,7 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
             override fun openVideo(v: NpItem) { watchVideo(v, null) }
             override fun audio(v: NpItem) { playAudio(v) }
             override fun download(anchor: View, v: NpItem) { dlMenu(anchor, v) }
-            override fun state(open: Boolean) { if (open) ytDock.dismiss(); setNavHidden(open || chan.isOpen) }
+            override fun state(open: Boolean) { if (open) ytDock.dismiss(); setNavHidden(open || chan.isOpen); pillGate(open || chan.isOpen) }
             override fun dock(item: NpItem, kept: YtKept) { ytDock.show(item, kept) }   // (v417)
         })
         content.addView(watch, FrameLayout.LayoutParams(-1, -1))

@@ -40,14 +40,8 @@ object ExtTranslate {
         Prov("mlkit", "ML Kit (أوفلاين · فصحى)", listOf("mlkit"), 0) { _, _ -> null }.also { pv -> pv.batch = { texts, sl -> MlKitTr.translate(texts, sl) } }   // (v408)
     )
 
-    /** (v418) جيميناي بخطوات لينجو — بيظهر بس لو فيه مفتاح جيميناي */
-    private val vlGemini: Prov = Prov("vl_gemini", "جيميناي + لينجو", listOf("vl_gemini"), 0) { _, _ -> null }.also { pv -> pv.chunk = 20; pv.gapMs = 1200L; pv.batch = { texts, sl -> VideoLingo.translateGemini(texts, sl) } }
-    /** (v420) Gemma محلي بخطوات لينجو — بيتحط الأول في وضع «أوفلاين + لينجو»، وبعده ML Kit لو فشل */
-    private val vlLocal: Prov = Prov("vl_local", "Gemma محلي + لينجو", listOf("vl_local"), 0) { _, _ -> null }.also { pv -> pv.chunk = 8; pv.gapMs = 0L; pv.batch = { texts, sl -> VideoLingo.translateLocal(texts, sl) } }
-    private fun vlProvs(): List<Prov> = if (Cfg.allMainKeys().isNotEmpty()) listOf(vlGemini) else emptyList()
-
     /** المزوّدين المدمجين + الراوتر (لو فيه مفاتيح) + محركات LLM اللي مفتاحها مضبوط */
-    fun all(): List<Prov> = vlProvs() + builtin + listOfNotNull(libreProv())
+    fun all(): List<Prov> = builtin + listOfNotNull(libreProv())
 
     private fun day(): String = (System.currentTimeMillis() / 86_400_000L).toString()
 
@@ -59,10 +53,6 @@ object ExtTranslate {
     fun primaryId(): String = Cfg.str("ext_primary").trim()
     /** (v274) سلسلة الترجمة بالترتيب الفعلي (null = جوجل الداخلي). بعدها لو كلها فشلت الباتش بيتحوّل لجيميناي بمفاتيحك */
     fun chain(): List<Prov?> {
-        if (Strict.offline()) {
-            val ml = builtin.firstOrNull { it.id == "mlkit" }
-            return if (Strict.id() == Strict.OFF_VL && LocalLlm.ready() && LocalLlm.supported()) listOfNotNull(vlLocal, ml) else listOfNotNull(ml)   // (v420)
-        }   // (v410) أوفلاين كامل: ML Kit بس — مفيش جوجل ولا مزوّدين بالنت
         val ext = active()
         // (v277) id المحفوظ لمحركات LLM هو id البريست بينما id المزوّد llm_<id> — قبل كده المحرك الأساسي ماكانش بيتلقى أبدًا؛ وكمان وضع «الريبو بس» ماكانش لازم يستبعد اللي اخترته بإيدك
         val pid = primaryId()

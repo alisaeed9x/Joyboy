@@ -20,8 +20,11 @@ import android.os.Handler
 import android.os.Looper
 import android.text.TextUtils
 import android.view.Gravity
+import android.view.MotionEvent
 import android.view.TextureView
+import android.view.VelocityTracker
 import android.view.View
+import android.view.ViewConfiguration
 import android.view.animation.DecelerateInterpolator
 import android.widget.EditText
 import android.widget.FrameLayout
@@ -108,6 +111,14 @@ private class YtGlyph(ctx: Context, var kind: Int) : View(ctx) {
             }
         }
     }
+}
+
+/** (v429) رابط صوت اتجاب بالفعل في صفحة المشاهدة — Main.playYtAudio بيستعمله بدل جلب جديد (صالح 20 ثانية) */
+object YtAudioHint {
+    class H(val id: String, val url: String, val ua: String, val pos: Long, val at: Long)
+    @Volatile private var h: H? = null
+    fun put(id: String, url: String, ua: String, pos: Long) { h = H(id, url, ua, pos, System.currentTimeMillis()) }
+    fun take(id: String): H? { val x = h; h = null; return if (x != null && x.id == id && System.currentTimeMillis() - x.at < 20_000L) x else null }
 }
 
 /** (v406) تسليم المشغّل: زرار التكبير بيدّي نفس الـ ExoPlayer (شغّال ومحمّل) للمشغّل الكامل من غير ما يعيد التحميل. بيتنسى بعد 12 ثانية لو محدّش أخده */
@@ -511,6 +522,13 @@ class YtMiniPlayer(private val act: Activity, private val ui: Ui) : FrameLayout(
     }
 
     fun position(): Long = exo?.currentPosition ?: resumeMs
+    /** (v429) رابط صوت جاهز من اللي شغّال دلوقتي (لتحويل «🎧 صوت» فوري من غير جلب جديد): url, ua, الموضع — null لو HLS/مفيش */
+    fun audioHint(): Triple<String, String, Long>? {
+        val cp = curPick ?: return null
+        val u = cp.audio?.takeIf { it.isNotBlank() } ?: cp.url
+        if (u.isBlank() || u.contains(".m3u8", true) || u.contains("/manifest/", true)) return null
+        return Triple(u, cp.ua, position())
+    }
     fun pause() { exo?.playWhenReady = false }
     fun release() { releasePlayer(false); hh.removeCallbacks(hideR) }
 }
@@ -556,6 +574,64 @@ class YtWatchPage(private val act: Activity, private val ui: Ui, private val hos
 
     val isOpen: Boolean get() = visibility == View.VISIBLE && !closing
 
+    // ───────── (v428) سحب لتحت = تصغير الصفحة (زي يوتيوب): الصفحة تتبع صباعك، وبعد حد معيّن/سرعة تنزل للشريط الصغير (YtDock) ─────────
+    private val slop = ViewConfiguration.get(act).scaledTouchSlop
+    private var dragDownY = 0f
+    private var dragDownX = 0f
+    private var dragStartedOnVideo = false
+    private var dragging = false
+    private var vt: VelocityTracker? = null
+
+    private fun canStartDrag(): Boolean = dragStartedOnVideo || !scroll.canScrollVertically(-1)   // فوق الفيديو دايمًا، وتحته لو المحتوى واقف في أوله
+
+    override fun onInterceptTouchEvent(e: MotionEvent): Boolean {
+        if (!isOpen) return false
+        when (e.actionMasked) {
+            MotionEvent.ACTION_DOWN -> {
+                dragDownY = e.rawY; dragDownX = e.rawX; dragging = false
+                dragStartedOnVideo = e.y < mini.bottom
+                vt?.recycle(); vt = VelocityTracker.obtain(); vt?.addMovement(e)
+            }
+            MotionEvent.ACTION_MOVE -> {
+                vt?.addMovement(e)
+                val dy = e.rawY - dragDownY; val dx = e.rawX - dragDownX
+                if (!dragging && dy > slop * 2 && dy > Math.abs(dx) * 1.5f && canStartDrag()) {
+                    dragging = true
+                    parent?.requestDisallowInterceptTouchEvent(true)
+                    return true
+                }
+            }
+            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> { vt?.recycle(); vt = null }
+        }
+        return false
+    }
+
+    override fun onTouchEvent(e: MotionEvent): Boolean {
+        if (!dragging) return super.onTouchEvent(e)
+        vt?.addMovement(e)
+        when (e.actionMasked) {
+            MotionEvent.ACTION_MOVE -> {
+                val dy = (e.rawY - dragDownY).coerceAtLeast(0f)
+                translationY = dy
+                alpha = (1f - dy / (height * 0.9f)).coerceIn(0.25f, 1f)
+            }
+            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                dragging = false
+                vt?.computeCurrentVelocity(1000)
+                val vy = vt?.yVelocity ?: 0f
+                vt?.recycle(); vt = null
+                val dy = translationY
+                if (e.actionMasked == MotionEvent.ACTION_UP && (dy > ui.dp(110) || vy > 1400f)) {
+                    animate().translationY(height * 0.55f).alpha(0f).setDuration(160L)
+                        .withEndAction { close(false); translationY = 0f; alpha = 1f }.start()
+                } else {
+                    animate().translationY(0f).alpha(1f).setDuration(180L).setInterpolator(DecelerateInterpolator()).start()
+                }
+            }
+        }
+        return true
+    }
+
     init {
         visibility = View.GONE; isClickable = true; setBackgroundColor(YtSkin.bg); layoutDirection = View.LAYOUT_DIRECTION_RTL
         val col = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL }
@@ -570,7 +646,7 @@ class YtWatchPage(private val act: Activity, private val ui: Ui, private val hos
         saveChip = chip("🔖 احفظ") { toggleSave() }
         for (c in listOf(likeChip, saveChip,
             chip("🌐 ترجمة وفرجة") { val v = item; if (v != null) { val ho = mini.handoff(); host.expand(v.id, titleNow(), ho?.second ?: mini.position(), true, ho?.first) } },
-            chip("🎧 صوت") { val v = item; if (v != null) { mini.pause(); host.audio(saveItem()) } },
+            chip("🎧 صوت") { val v = item; if (v != null) { try { mini.audioHint()?.let { YtAudioHint.put(v.id, it.first, it.second, it.third) } } catch (_: Throwable) {}; mini.pause(); host.audio(saveItem()) } },
             chip("⬇ تحميل") { a -> val v = item; if (v != null) host.download(a, saveItem()) },
             chip("📋 نسخ") { val v = item; if (v != null) copy(YtNp.watchUrl(v.id)) },
             chip("↗ مشاركة") { val v = item; if (v != null) share(YtNp.watchUrl(v.id)) })) {
