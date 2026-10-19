@@ -508,8 +508,8 @@ class PlayerActivity : Activity(), Host {
     private var trChipV: View? = null
     private var trChipDismissed = false
     private fun updateTrChip() { trChipV?.visibility = if (engineStarted || trChipDismissed || pipNow()) View.GONE else View.VISIBLE }
-    /** (v438) اسم موديل Beat الشغّال على شريحة الترجمة (في وضع ببيت بس) */
-    private fun beatChipTag(): String = if (Strict.beatGem() || Strict.beatText()) "🔑 " + ExtTranslate.beatNow().removeSuffix("-free").take(20) + " · " else if (Strict.freeText() || Strict.freeGem()) "🆓 " + FreeLlm.liveName().take(20) + " · " else ""
+    /** (v438) اسم موديل FreeLLM الشغّال على شريحة الترجمة */
+    private fun modeChipTag(): String = if (Strict.freeText() || Strict.freeGem()) "🆓 " + FreeLlm.liveName().take(20) + " · " else ""
     fun pauseTranslate() { if (engineStarted) { engine.userPaused = true; updateTr() } }
     /** (v427) فيه محرك شغّال أو ترجمة موجودة؟ (الإعادة ملهاش معنى قبل كده) */
     private fun hasSubsNow(): Boolean = try { ::engine.isInitialized && (engineStarted || engine.subs.isNotEmpty()) } catch (_: Throwable) { false }
@@ -562,10 +562,10 @@ class PlayerActivity : Activity(), Host {
             var rdRef: TextView? = null
             val rd = b("🔁", 0xFF6A1B9A.toInt()) { h.removeCallbacks(closeR); h.postDelayed(closeR, 8000); rdRef?.let { redoDialog(it) } }
             rdRef = rd
-            val pz = b("⏸ إيقاف مؤقت", 0xFF455A64.toInt()) { if (::engine.isInitialized && engine.userPaused) beginTranslate() else pauseTranslate() }   // (v438) إيقاف مؤقت / كمّل ظاهر جنب «ترجم» (كان جوه القايمة بس)
-            tidy(chipB); tidy(pz); wzB.setPadding(0, 0, 0, 0); rd.setPadding(0, 0, 0, 0); dlB.setPadding(0, 0, 0, 0)
+            val pz = b("⏸", 0xFF455A64.toInt()) { if (::engine.isInitialized && engine.userPaused) beginTranslate() else pauseTranslate() }   // (v438) إيقاف مؤقت / كمّل ظاهر جنب «ترجم» (كان جوه القايمة بس)
+            tidy(chipB); tidy(pz); pz.setPadding(0, 0, 0, 0); pz.textSize = 17f; wzB.setPadding(0, 0, 0, 0); rd.setPadding(0, 0, 0, 0); dlB.setPadding(0, 0, 0, 0)
             row.addView(chipB, lp(-2))   // (v415) زرار «ترجم» الواحد
-            row.addView(pz, lp(-2))
+            row.addView(pz, sq())
             row.addView(wzB, sq()); row.addView(rd, sq())   // (v427) ⚙ إعدادات الوضع + 🔁 إعادة جنبه   // (v224) زرار المهام اتشال؛ 🌐 و🔑 في الشريط السفلي جنب 🗣
             if (webVid) { row.addView(qBtn(), lp(-2)); row.addView(aBtn(), lp(-2)); row.addView(dlB, sq()) }
             trUpdaters.add {
@@ -574,12 +574,12 @@ class PlayerActivity : Activity(), Host {
                 if (!started) open = false
                 rd.visibility = if (hasSubsNow()) View.VISIBLE else View.GONE   // (v427) الإعادة بتظهر لما يبقى فيه ترجمة
                 pz.visibility = if (started) View.VISIBLE else View.GONE
-                pz.text = if (paused) "▶ كمّل" else "⏸ إيقاف مؤقت"
+                pz.text = if (paused) "▶" else "⏸"
                 pz.background = ui.box(if (paused) 0xFF2E7D32.toInt() else 0xFF455A64.toInt(), 0x33FFFFFF, 8)
                 lgB.visibility = if (caps().dialect) View.VISIBLE else View.GONE   // (v444) بس في الأوضاع اللي فيها لهجات
-                if (!started) { chipB.text = "▶ ترجم ▾"; chipB.background = ui.box(0xFFE53935.toInt(), 0x33FFFFFF, 12) }
+                if (!started) { chipB.text = "▶ ترجم · " + modeShort() + " ▾"; chipB.background = ui.box(0xFFE53935.toInt(), 0x33FFFFFF, 12) }
                 else {
-                    chipB.text = (Offline.liveShort()?.let { "$it · " } ?: beatChipTag()) + (if (paused) "⏸ " else if (trPct >= 100) "✅ " else "⏳ ") + trPct + "%" + " ▾"
+                    chipB.text = (Offline.liveShort()?.let { "$it · " } ?: modeChipTag()) + (if (paused) "⏸ " else if (trPct >= 100) "✅ " else "⏳ ") + trPct + "%" + " ▾"
                     chipB.background = ui.box(if (paused) 0xFF8D6E00.toInt() else if (trPct >= 100) 0xFF2E7D32.toInt() else 0xFF1F5FBF.toInt(), 0x33FFFFFF, 12)
                 }
             }
@@ -587,19 +587,19 @@ class PlayerActivity : Activity(), Host {
             var rd2Ref: TextView? = null
             val rd2 = b("🔁", 0xFF6A1B9A.toInt()) { rd2Ref?.let { redoDialog(it) } }
             rd2Ref = rd2
-            val pz2 = b("⏸ إيقاف", 0xFF455A64.toInt()) { if (::engine.isInitialized && engine.userPaused) beginTranslate() else pauseTranslate() }   // (v438)
-            tidy(tr); tidy(pz2); wzB.setPadding(0, 0, 0, 0); rd2.setPadding(0, 0, 0, 0); dlB.setPadding(0, 0, 0, 0)
-            row.addView(tr, lp(0).apply { width = 0; weight = 2.6f })   // (v415) زرار «ترجم» الواحد
-            row.addView(pz2, lp(0).apply { width = 0; weight = 1.6f })
+            val pz2 = b("⏸", 0xFF455A64.toInt()) { if (::engine.isInitialized && engine.userPaused) beginTranslate() else pauseTranslate() }   // (v438)
+            tidy(tr); tidy(pz2); pz2.setPadding(0, 0, 0, 0); pz2.textSize = 19f; wzB.setPadding(0, 0, 0, 0); rd2.setPadding(0, 0, 0, 0); dlB.setPadding(0, 0, 0, 0)
+            row.addView(tr, lp(0).apply { width = 0; weight = 3.6f })   // (v415) زرار «ترجم» الواحد
+            row.addView(pz2, sq())
             row.addView(wzB, sq()); row.addView(rd2, sq())   // (v427) ⚙ + 🔁 جنب «ترجم»
             if (webVid) { row.addView(qBtn(), lp(0).apply { width = 0; weight = 1.2f }); row.addView(aBtn(), lp(0).apply { width = 0; weight = 0.9f }); row.addView(dlB, sq()) }
             trUpdaters.add {
                 val paused = ::engine.isInitialized && engine.userPaused
                                 tr.visibility = View.VISIBLE
-                                tr.text = if (!engineStarted) "▶ ترجم ▾" else (Offline.liveShort()?.let { "$it · " } ?: beatChipTag()) + (if (paused) "⏸ " else if (trPct >= 100) "✅ " else "⏳ ") + trPct + "% ▾"
+                                tr.text = if (!engineStarted) "▶ ترجم · " + modeShort() + " ▾" else (Offline.liveShort()?.let { "$it · " } ?: modeChipTag()) + (if (paused) "⏸ " else if (trPct >= 100) "✅ " else "⏳ ") + trPct + "% ▾"
                 rd2.visibility = if (hasSubsNow()) View.VISIBLE else View.GONE   // (v427)
                 pz2.visibility = if (engineStarted) View.VISIBLE else View.GONE
-                pz2.text = if (paused) "▶ كمّل" else "⏸ إيقاف"
+                pz2.text = if (paused) "▶" else "⏸"
                 pz2.background = ui.box(if (paused) 0xFF2E7D32.toInt() else 0xFF455A64.toInt(), 0x33FFFFFF, 10)
             }
         }
@@ -730,17 +730,15 @@ class PlayerActivity : Activity(), Host {
         col.addView(ui.text(head, 12.5f, Color.WHITE, true).apply { setPadding(ui.dp(8), ui.dp(4), ui.dp(8), ui.dp(2)) })
         if (started) col.addView(ui.text("الوضع: " + modeName(), 11.5f, 0xFF9AA0A6.toInt()).apply { setPadding(ui.dp(8), 0, ui.dp(8), ui.dp(4)) })
         if (started && (Strict.freeText() || Strict.freeGem())) col.addView(ui.text("🆓 موديل FreeLLM الشغّال: " + FreeLlm.liveName(), 11.5f, 0xFFBFD0FF.toInt(), true).apply { setPadding(ui.dp(8), 0, ui.dp(8), ui.dp(4)) })
-        if (started && (Strict.beatGem() || Strict.beatText())) col.addView(ui.text("🔑 موديل Beat الشغّال: " + ExtTranslate.beatNow(), 11.5f, 0xFFBFD0FF.toInt(), true).apply { setPadding(ui.dp(8), 0, ui.dp(8), ui.dp(4)) })
         if (!started) {
-            // (v444) 3 طرق بس بدل 9: صوت←جيميناي (الأساسي) · صوت←Beat · وشبر على الجهاز (المترجم بيتختار تحت) + تفريغ بس
+            // (v444) 3 طرق بس بدل 9: صوت←جيميناي (الأساسي) · وشبر على الجهاز (المترجم بيتختار تحت) + تفريغ بس
             fun grpLbl(t: String) = ui.text(t, 11.5f, 0xFF9AA0A6.toInt(), true).apply { setPadding(ui.dp(8), ui.dp(6), ui.dp(8), ui.dp(2)) }
             col.addView(grpLbl("🎧 من الصوت مباشرة — أدق · محتاج نت"))
             col.addView(item("⭐ FreeLLM · جيميناي بكل مفاتيحك وموديلاته") { freeGemStart() })
-            col.addView(item("🔑 Beat · بديل لو جيميناي مش متاح") { beatGemStart() })
             col.addView(grpLbl("🌗 على الجهاز — وشبر يفرّغ وبعدين مترجم"))
             col.addView(item("🌗 وشبر + " + wTrLabel()) { whisperStart() })
             val wr = FlowRow(this).apply { layoutDirection = View.LAYOUT_DIRECTION_RTL }
-            for ((id, lb) in listOf("free" to "🆓 FreeLLM", "beat" to "🔑 Beat", "google" to "🌐 Libre")) {
+            for ((id, lb) in listOf("free" to "🆓 FreeLLM", "google" to "🌐 Libre")) {
                 wr.addView(ui.fsBtn((if (id == wTr()) "✓ " else "") + lb) { _ -> Cfg.put("wtr", id); trMenuPop?.dismiss(); h.post { translateMenu(anchor) } },
                     ViewGroup.MarginLayoutParams(-2, ui.dp(32)).apply { setMargins(ui.dp(3), ui.dp(1), ui.dp(3), ui.dp(1)) })
             }
@@ -788,26 +786,6 @@ class PlayerActivity : Activity(), Host {
         } catch (e: Throwable) { LogStore.err("Player:geminiPick", e); say("تعذّر بدء الترجمة بجيميناي") }
     }
 
-    /** (v436) 🔑 ترجمة ببيت: نفس وضع جيميناي بالظبط (صوت ← موديل، ٧٥٪ نسخ / ٢٥٪ ترجمة، لهجة وأسلوب وشدة من الإعدادات) بس بمفتاح Beat وموديلاته. مفيش جيميناي خالص */
-    private fun beatGemStart() {
-        if (!ExtTranslate.beatReady()) { say("🔑 Beat محتاج مفتاح — اكتبه وادوس حفظ وبعدين ارجع دوس الزرار"); beatDialog(); return }
-        try {
-            val dia = TrWizard.dialectWanted().ifBlank { "فصحى" }
-            val pl = TrWizard.Plan("online", TrWizard.CURRENT, "", "", "gemini", dia = dia)
-            Cfg.put("tr_mode_id", Strict.BEAT_GEM); SourceMode.set(SourceMode.AUDIO)
-            try { TrWizard.save(pl) } catch (e: Throwable) { LogStore.err("Player:beatGemSave", e) }
-            runPlan(pl)
-            try { applyChromeFn() } catch (_: Throwable) {}
-            say("🔑 ترجمة ببيت · " + ExtTranslate.beatNow() + " — لو موديل وقف (429) بيكمّل بالتاني")
-        } catch (e: Throwable) { LogStore.err("Player:beatGemStart", e); say("تعذّر بدء الترجمة ببيت") }
-    }
-
-    /** (v435) 🔑 وشبر + Beat API: تفريغ على الجهاز وترجمة Beat (الموديل المختار، وبيتبدّل لوحده لو وقف) — اللهجة من الإعدادات */
-    private fun beatStart() {
-        if (!ExtTranslate.beatReady()) { say("🔑 Beat محتاج مفتاح — اكتبه وادوس حفظ وبعدين ارجع دوس الزرار"); beatDialog(); return }
-        offlineQuick(false, true)
-    }
-
     /** (v440) 🆓 ترجمة FreeLLM الصوتية: زي جيميناي فلاش لايت — الصوت بيتبعت باتشات للموديلات المجانية وبترجع الترجمة جاهزة (من غير وشبر) */
     private fun freeGemStart() {
         if (!FreeLlm.audioReady()) { say("🆓 ضيف مفتاح جيميناي من الإعدادات ← 🔑 المفاتيح (أو رابط سيرفر FreeLLM)"); return }
@@ -825,7 +803,7 @@ class PlayerActivity : Activity(), Host {
     /** (v440) 🆓 وشبر + FreeLLM: تفريغ على الجهاز وترجمة بالموديلات المجانية (Gemini/Gemma/Groq) بمفاتيحك — الموزّع بيختار الأبعد عن حده */
     private fun freeStart() {
         if (!FreeLlm.ready()) { say("🆓 FreeLLM محتاج مفتاح Gemini أو Groq (أو رابط سيرفر) — اكتبه وادوس حفظ وبعدين ارجع دوس الزرار"); freeDialog(); return }
-        offlineQuick(false, false, true)
+        offlineQuick(false, true)
     }
 
     private fun freeDialog() {
@@ -881,13 +859,12 @@ class PlayerActivity : Activity(), Host {
     private class Caps(val dialect: Boolean, val tone: Boolean, val visual: Boolean, val translates: Boolean)
     private fun caps(mk: String = curModeKey()): Caps = when (mk) {
         "fgem" -> Caps(dialect = true, tone = true, visual = true, translates = true)     // صوت ← جيميناي (FreeLLM): كل حاجة شغّالة
-        "bgem" -> Caps(true, true, false, true)                                           // صوت ← Beat: لهجات وأسلوب، من غير بصري
-        "free", "beat" -> Caps(true, true, false, true)                                   // وشبر + مترجم LLM: لهجات وأسلوب
+        "free" -> Caps(true, true, false, true)                                   // وشبر + مترجم LLM: لهجات وأسلوب
         "off" -> Caps(false, false, false, true)                                          // وشبر + LibreTranslate: فصحى حرفية بس
         else -> Caps(false, false, false, false)                                          // تفريغ بس: مفيش ترجمة
     }
     private fun modeName(mk: String = curModeKey()): String = when (mk) {
-        "fgem" -> "⭐ FreeLLM · صوت ← جيميناي"; "bgem" -> "🔑 Beat · صوت"; "free" -> "🌗 وشبر + FreeLLM"; "beat" -> "🌗 وشبر + Beat"
+        "fgem" -> "⭐ FreeLLM · صوت ← جيميناي"; "free" -> "🌗 وشبر + FreeLLM"
         "off" -> "🌗 وشبر + LibreTranslate (فصحى)"; "txg" -> "✍ تفريغ بجيميناي"; else -> "✍ تفريغ بوشبر"
     }
     private var trAiB: TextView? = null
@@ -902,22 +879,20 @@ class PlayerActivity : Activity(), Host {
             if (sig != lastCapsSig) { lastCapsSig = sig; try { applyChromeFn() } catch (_: Throwable) {} }
         } catch (_: Throwable) {}
     }
-    /** المترجم المختار لوضع «وشبر»: free (لهجات) · beat (لهجات) · google (LibreTranslate فصحى). الافتراضي أحسن واحد جاهز */
+    /** المترجم المختار لوضع «وشبر»: free (لهجات) · google (LibreTranslate فصحى). الافتراضي أحسن واحد جاهز */
     private fun wTr(): String {
         val c = Cfg.str("wtr").trim()
         if (c == "free" && FreeLlm.ready()) return "free"
-        if (c == "beat" && ExtTranslate.beatReady()) return "beat"
         if (c == "google") return "google"
-        return if (FreeLlm.ready()) "free" else if (ExtTranslate.beatReady()) "beat" else "google"
+        return if (FreeLlm.ready()) "free" else "google"
     }
-    private fun wTrLabel(id: String = wTr()): String = when (id) { "free" -> "FreeLLM · لهجات"; "beat" -> "Beat · لهجات"; else -> "LibreTranslate · فصحى" }
-    private fun whisperStart() { when (wTr()) { "free" -> freeStart(); "beat" -> beatStart(); else -> offlineQuick() } }
+    private fun wTrLabel(id: String = wTr()): String = when (id) { "free" -> "FreeLLM · لهجات"; else -> "LibreTranslate · فصحى" }
+    private fun whisperStart() { when (wTr()) { "free" -> freeStart(); else -> offlineQuick() } }
     /** تبديل مترجم وضع وشبر والمحرك شغّال: بيتطبّق على الباتشات الجاية بنفس لغة الفيديو وموديل وشبر */
     private fun setWhisperTr(kind: String) {
         if (kind == "free" && !FreeLlm.ready()) { say("🆓 FreeLLM محتاج مفتاح جيميناي (أو Groq) — ضيفه من الإعدادات ← 🔑 المفاتيح"); return }
-        if (kind == "beat" && !ExtTranslate.beatReady()) { say("🔑 Beat محتاج مفتاح — اكتبه الأول"); beatDialog(); return }
         Cfg.put("wtr", kind)
-        Cfg.put("tr_mode_id", when (kind) { "beat" -> "loc_beat"; "free" -> Strict.FREE_TXT; else -> Strict.SEMI })
+        Cfg.put("tr_mode_id", when (kind) { "free" -> Strict.FREE_TXT; else -> Strict.SEMI })
         liveOffline(null, null)
         say("🌗 المترجم بقى " + wTrLabel(kind) + " — من الباتش الجاي")
         updateTr()
@@ -927,14 +902,17 @@ class PlayerActivity : Activity(), Host {
     private fun glassPanelBg(): GradientDrawable = GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, intArrayOf(0xF2242432.toInt(), 0xF5101017.toInt())).apply {
         cornerRadius = ui.dp(18).toFloat(); setStroke(maxOf(1, ui.dp(1)), 0x33FFFFFF)
     }
+    /** (v450) اسم الوضع الحالي مختصر على زرار «ترجم» عشان تعرف الوضع من غير ما تفتح القايمة */
+    private fun modeShort(): String = when (curModeKey()) {
+        "off" -> "🌗 وشبر"; "free" -> "🆓 وشبر+Free"; "fgem" -> "☁ جيميناي"
+        "txg" -> "✍ تفريغ ☁"; "txw" -> "✍ تفريغ وشبر"; else -> "تلقائي"
+    }
     private fun curModeKey(): String {
         val id = Strict.id()
         if (id == "g_wav" || id == "g_aac") return "fgem"   // (v444) جيميناي المباشر بقى FreeLLM (نفس الوضع)
         if (id == Strict.SEMI) return "off"
-        if (id == "loc_beat") return "beat"
         if (id == Strict.FREE_TXT) return "free"
         if (id == Strict.FREE_GEM) return "fgem"
-        if (id == Strict.BEAT_GEM) return "bgem"
         if (id == "ai_only") return "txg"
         if (id == "w_only") return "txw"
         val sp = TrWizard.savedPlan()
@@ -953,9 +931,8 @@ class PlayerActivity : Activity(), Host {
         val lang = newLang ?: oldLang
         val mdl = newModel ?: Offline.model().id
         val only = curModeKey() == "txw"
-        val beatMode = curModeKey() == "beat"   // (v435) وضع وشبر + Beat: ماتمسحش المترجم ولا اللهجة
         val freeMode = curModeKey() == "free"   // (v440) وضع وشبر + FreeLLM: نفس الكلام
-        val pl = TrWizard.Plan("offline", "", lang, mdl, "google", "whisper", if (only) "" else if (beatMode || freeMode) TrWizard.dialectWanted().ifBlank { "فصحى" } else "فصحى", false, free = if (only) "" else if (beatMode) "beat" else if (freeMode) "free" else "", only = only)
+        val pl = TrWizard.Plan("offline", "", lang, mdl, "google", "whisper", if (only) "" else if (freeMode) TrWizard.dialectWanted().ifBlank { "فصحى" } else "فصحى", false, free = if (only) "" else if (freeMode) "free" else "", only = only)
         try { TrWizard.save(pl) } catch (e: Throwable) { LogStore.err("Player:liveOffSave", e) }
         try { runPlanCore(pl, false) } catch (e: Throwable) { LogStore.err("Player:liveOff", e) }
         if (lang != oldLang) {
@@ -982,13 +959,6 @@ class PlayerActivity : Activity(), Host {
                 }
             }
             .setNegativeButton("إلغاء", null).show()
-    }
-
-    private fun beatDialog() {
-        BeatUi.show(this) {
-            say("🔑 Beat API اتحفظ — الموديل: " + ExtTranslate.beatModel() + (if (ExtTranslate.beatReady()) "" else " — ناقص المفتاح، مش هيشتغل لحد ما تكتبه") + " — بيتطبّق على الباتشات الجاية")
-            try { applyChromeFn() } catch (_: Throwable) {}
-        }
     }
 
     private fun libreDialog() {
@@ -1021,12 +991,12 @@ class PlayerActivity : Activity(), Host {
             addView(ui.text(t, 11.5f, 0xFF9AA0A6.toInt(), true).apply { setPadding(ui.dp(8), ui.dp(8), ui.dp(8), ui.dp(2)) })
         }
         fun item(t: String, f: () -> Unit) = ui.fsBtn(t) { _ -> setPop?.dismiss(); f() }.apply { layoutParams = LinearLayout.LayoutParams(-1, ui.dp(42)).apply { setMargins(ui.dp(3), ui.dp(2), ui.dp(3), ui.dp(2)) } }
-        val head = when (mk) { "off" -> "🌗 إعدادات وشبر + LibreTranslate"; "beat" -> "🔑 إعدادات وشبر + Beat API"; "free" -> "🆓 إعدادات وشبر + FreeLLM"; "fgem" -> "⭐ إعدادات FreeLLM · صوت ← جيميناي"; "bgem" -> "🔑 إعدادات ترجمة ببيت"; "txg" -> "☁ إعدادات تفريغ جيميناي"; else -> "📴 إعدادات تفريغ وشبر" }
+        val head = when (mk) { "off" -> "🌗 إعدادات وشبر + LibreTranslate"; "free" -> "🆓 إعدادات وشبر + FreeLLM"; "fgem" -> "⭐ إعدادات FreeLLM · صوت ← جيميناي"; "txg" -> "☁ إعدادات تفريغ جيميناي"; else -> "📴 إعدادات تفريغ وشبر" }
         col.addView(ui.text(head, 13f, Color.WHITE, true).apply { setPadding(ui.dp(8), ui.dp(4), ui.dp(8), ui.dp(2)) })
         col.addView(ui.text("بتتطبّق فورًا وانت شغّال", 11f, 0xFF9AA0A6.toInt()).apply { setPadding(ui.dp(8), 0, ui.dp(8), ui.dp(4)) })
         // (v428) 🌐 اللغة واللهجة والأسلوب جوه الإعدادات (في كل الأوضاع) — بيفتح نفس قايمة 🌐 بتاعة الشريط
         if (caps(mk).dialect) col.addView(item("🌐 اللهجة والأسلوب واللغة: " + Cfg.str("conv_dialect", "").ifBlank { "فصحى" }) { langPopup(anchor) })
-        else col.addView(ui.text(if (caps(mk).translates) "🌐 الوضع ده بيترجم فصحى حرفية بس — للهجات اختار مترجم FreeLLM أو Beat تحت" else "مفيش ترجمة في الوضع ده (تفريغ بس)", 11f, 0xFF9AA0A6.toInt()).apply { setPadding(ui.dp(8), 0, ui.dp(8), ui.dp(4)) })
+        else col.addView(ui.text(if (caps(mk).translates) "🌐 الوضع ده بيترجم فصحى حرفية بس — للهجات اختار مترجم FreeLLM تحت" else "مفيش ترجمة في الوضع ده (تفريغ بس)", 11f, 0xFF9AA0A6.toInt()).apply { setPadding(ui.dp(8), 0, ui.dp(8), ui.dp(4)) })
 
         fun audioSection() {
             col.addView(lbl("🎧 جودة الصوت المرفوع لجيميناي"))
@@ -1052,18 +1022,6 @@ class PlayerActivity : Activity(), Host {
                     else { Cfg.p.edit().putString("keys", (cur + k).joinToString("\n")).apply(); Notice.show(this, "✓ اتحفظ المفتاح وبقى شغّال", 2200L); liveConf() }
                 }
             })
-        }
-        fun beatSection() {
-            col.addView(lbl("🔑 Beat · الشغّال دلوقتي: " + ExtTranslate.beatNow() + " (اضغط موديل عشان تبدّل)"))
-            val rb = flow()
-            for (m in ExtTranslate.beatModels()) {
-                val st = ExtTranslate.beatModelStatus(m)
-                rb.addView(ui.fsBtn((if (m == ExtTranslate.beatModel()) "✓ " else "") + m + (if (st.isNotEmpty()) " ⛔" else "")) { _ ->
-                    setPop?.dismiss(); ExtTranslate.beatPick(m); say("🔑 Beat بقى بيترجم بـ " + m + " — من الباتش الجاي" + (if (st.isNotEmpty()) " (⛔ " + st + ")" else ""))
-                }, cLp())
-            }
-            col.addView(rb, LinearLayout.LayoutParams(-1, -2))
-            col.addView(item("🔑 إعدادات Beat (مفتاح · رابط · موديلات · تجربة)") { beatDialog() })
         }
         fun whisperSection() {
             col.addView(lbl("🌍 لغة كلام الفيديو (للتفريغ)"))
@@ -1096,8 +1054,8 @@ class PlayerActivity : Activity(), Host {
         fun translatorSection() {
             col.addView(lbl("🔤 المترجم (بعد تفريغ وشبر)"))
             val r = flow()
-            for ((id, lb) in listOf("free" to "🆓 FreeLLM · لهجات", "beat" to "🔑 Beat · لهجات", "google" to "🌐 LibreTranslate · فصحى")) {
-                val on = (mk == "free" && id == "free") || (mk == "beat" && id == "beat") || (mk == "off" && id == "google")
+            for ((id, lb) in listOf("free" to "🆓 FreeLLM · لهجات", "google" to "🌐 LibreTranslate · فصحى")) {
+                val on = (mk == "free" && id == "free") || (mk == "off" && id == "google")
                 r.addView(ui.fsBtn((if (on) "✓ " else "") + lb) { _ -> setPop?.dismiss(); if (!on) setWhisperTr(id) }, cLp())
             }
             col.addView(r, LinearLayout.LayoutParams(-1, -2))
@@ -1106,15 +1064,12 @@ class PlayerActivity : Activity(), Host {
         when (mk) {
             "fgem" -> {
                 audioSection(); keysSection(); freeSection()
-                col.addView(item("🔑 Beat API (بديل لو جيميناي وقف): " + (if (ExtTranslate.beatReady()) (if (ExtTranslate.primaryId() == "beat") "✅ أساسي · " else "✅ جاهز · ") + ExtTranslate.beatNow() else "مش مضبوط")) { beatDialog() })
                 val swapOn = Cfg.str("tr_autoswap", "on") != "off"
                 col.addView(item("🔄 بديل تلقائي لو جيميناي وقف: " + (if (swapOn) "✅ شغّال" else "⏸ مقفول")) {
                     Cfg.put("tr_autoswap", if (swapOn) "off" else "on"); say("🔄 البديل التلقائي: " + (if (swapOn) "اتقفل" else "اتفتح"))
                 })
             }
-            "bgem" -> beatSection()
             "free" -> { translatorSection(); whisperSection(); freeSection(); termSection() }
-            "beat" -> { translatorSection(); whisperSection(); beatSection(); termSection() }
             "off" -> {
                 translatorSection(); whisperSection()
                 col.addView(item("🌐 سيرفر LibreTranslate: " + Cfg.str("libre_url").ifBlank { "الافتراضي" }) { libreDialog() })
@@ -1298,6 +1253,49 @@ class PlayerActivity : Activity(), Host {
         LogStore.add(fmtMs(cur) + "  " + s)
     }
     private var lastBeat = 0L
+
+    // ===== (v452) مؤقت النوم للفيديو: بعد 5-60 دقيقة أو لما الفيديو يخلص — الصوت بينزل تدريجيًا في آخر 4 ثواني وبعدها يقف =====
+    private var sleepAtMs = 0L
+    private var sleepEndOfVideo = false
+    private val sleepTick = object : Runnable {
+        override fun run() {
+            if (isFinishing || isDestroyed || sleepAtMs <= 0L) return
+            val left = sleepAtMs - System.currentTimeMillis()
+            if (left <= 0L) { sleepFire(); return }
+            if (left <= 4000L) { try { player.volume = (left / 4000f).coerceIn(0f, 1f) } catch (_: Throwable) {} }
+            h.postDelayed(this, if (left <= 4000L) 200L else 1000L)
+        }
+    }
+    private fun sleepFire() {
+        sleepAtMs = 0L; sleepEndOfVideo = false
+        try { player.pause() } catch (_: Throwable) {}
+        try { player.volume = 1f } catch (_: Throwable) {}
+        say("😴 مؤقت النوم: الفيديو وقف")
+    }
+    /** min > 0 = بعد كذا دقيقة · -1 = لما الفيديو يخلص · 0 = إلغاء */
+    private fun setSleepTimer(min: Int) {
+        h.removeCallbacks(sleepTick)
+        sleepAtMs = 0L; sleepEndOfVideo = false
+        try { player.volume = 1f } catch (_: Throwable) {}
+        if (min > 0) { sleepAtMs = System.currentTimeMillis() + min * 60_000L; h.postDelayed(sleepTick, 1000L) }
+        else if (min < 0) sleepEndOfVideo = true
+    }
+    private fun sleepDialog() {
+        var dlg: android.app.Dialog? = null
+        val col = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(ui.dp(4), ui.dp(2), ui.dp(4), ui.dp(2)) }
+        fun add(label: String, on: Boolean, f: () -> Unit) {
+            col.addView(ui.text(label, 15f, th.text, on).apply {
+                gravity = Gravity.CENTER; setPadding(ui.dp(10), ui.dp(12), ui.dp(10), ui.dp(12))
+                background = ui.box(if (on) 0x445B9DFF else 0x14808080, if (on) 0xFF5B9DFF.toInt() else th.border, 12)
+                setOnClickListener { f(); dlg?.dismiss() }
+            }, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = ui.dp(6) })
+        }
+        val leftMin = if (sleepAtMs > 0L) ((sleepAtMs - System.currentTimeMillis() + 59_999L) / 60_000L).toInt().coerceAtLeast(1) else 0
+        if (sleepAtMs > 0L || sleepEndOfVideo) add("🚫 إلغاء المؤقت" + (if (leftMin > 0) " (فاضل $leftMin د)" else ""), false) { setSleepTimer(0); say("المؤقت اتلغى") }
+        for (m in intArrayOf(5, 10, 15, 30, 45, 60)) add("⏱ بعد $m دقيقة", false) { setSleepTimer(m); say("😴 الفيديو هيقف بعد $m دقيقة (والصوت بينزل بهدوء)") }
+        add("🎬 لما الفيديو ده يخلص", sleepEndOfVideo) { setSleepTimer(-1); say("😴 الفيديو هيقف في آخره (من غير ما يكمّل اللي بعده)") }
+        dlg = ui.sheet(this, "😴 مؤقت النوم", listOf<View>(col)); dlg?.show()
+    }
     // (v125) حفظ مكان الوقوف كل 3 ثواني (كان بيتحفظ عند الخروج بس → بعد PiP / تحديث النسخة بيرجع لمكان قديم)
     private var lastPosSave = 0L
     private var lastRecentSave = 0L
@@ -1450,7 +1448,6 @@ class PlayerActivity : Activity(), Host {
         super.onCreate(b)
         smoothRotation()   // (v429)
         MlKitTr.ask = { t -> runOnUiThread { askMlDownload(t) } }   // (v413)
-        ExtTranslate.onNote = { m -> runOnUiThread { try { Notice.show(this, m, 4000L) } catch (_: Throwable) {} } }   // (v436) إشعار لما موديل Beat يتبدّل لوحده
         synchronized(liveList) {
             liveList.removeAll { it.get() == null }
             liveList.toList().forEach { r -> r.get()?.let { o -> if (o !== this) try { o.runOnUiThread { o.killForNewVideo() } } catch (_: Throwable) {} } }
@@ -1832,6 +1829,7 @@ class PlayerActivity : Activity(), Host {
         gTool.addView(pd("🌙 ترجمة بالخلفية") { translateInBackground() })
         gTool.addView(pd("📶 استهلاك النت") { netDialog() })
         gTool.addView(pd("📜 ذكّرني") { recapDialog() })
+        gTool.addView(pd("😴 مؤقت النوم") { sleepDialog() })   // (v452)
         // (v356) اتشالت من القايمة: ترجمة جوجل بقت اختيار جوه خط الترجمة (الإعدادات ▸ 🚀). الدالة googleTranslateNow() لسه موجودة.
         // gTool.addView(pd("🌍 ترجمة جوجل (من غير API)") { googleTranslateNow() })
         // (v87) الإعدادات: قايمة صغيرة منسدلة بالأقسام — دوسة على قسم تفتحه دايركت (من غير شاشة القايمة الكبيرة)
@@ -2547,7 +2545,7 @@ class PlayerActivity : Activity(), Host {
                 }
                 if (now - lastBeat > 20000) { lastBeat = now; LogStore.add("💓 ${LogStore.heapLine()} · ${if (player.isPlaying) "بيشتغل" else "واقف"} @${fmtMs(cur)} · مترجم ${(engine.coveredSec() / 60).toInt()}د · ${engine.subs.size} جملة") }
                 run { val pc = PlayerLogic.percent(engine.coveredSec(), durMs / 1000.0); val wp = Offline.livePct() * 1000 + Offline.runIdx; if (pc != trPct || wp != lastWp) { trPct = pc; lastWp = wp; updateTr() } }
-                if (fullMode) { fsBadge.set("🔊 " + PlayerLogic.percent(engine.coveredSec(), durMs / 1000.0).toString() + "% · " + list.size.toString() + " جملة ▾", ((try { engine.offlineBrief() } catch (_: Throwable) { null }) ?: "")); fsBadge.setOn(engineStarted && !engine.userPaused, ((Strict.beatGem() || Strict.beatText()) && ExtTranslate.beatAllCooling()) || ((Strict.freeText() || Strict.freeGem()) && FreeLlm.waiting)); netBadge.set(NetUse.fmt(NetUse.localTotal()), NetUse.fmt(NetUse.onlineTotal())); applyBadgeAlpha() }   // (v236) نقطة خضراء = الوضع الصوتي شغّال
+                if (fullMode) { fsBadge.set("🔊 " + PlayerLogic.percent(engine.coveredSec(), durMs / 1000.0).toString() + "% · " + list.size.toString() + " جملة ▾", ((try { engine.offlineBrief() } catch (_: Throwable) { null }) ?: "")); fsBadge.setOn(engineStarted && !engine.userPaused, ((Strict.freeText() || Strict.freeGem()) && FreeLlm.waiting)); netBadge.set(NetUse.fmt(NetUse.localTotal()), NetUse.fmt(NetUse.onlineTotal())); applyBadgeAlpha() }   // (v236) نقطة خضراء = الوضع الصوتي شغّال
                 if (fullMode && ::visual.isInitialized) {   // (v431) الجزء البصري (👁 + الفاصل) بيظهر بس لما الوضع البصري شغّال؛ غير كده الكبسولة صوتي بس
                     val vOn = visual.running; val vv = if (vOn) View.VISIBLE else View.GONE
                     if (visBadge.visibility != vv) visBadge.visibility = vv
@@ -2651,7 +2649,8 @@ class PlayerActivity : Activity(), Host {
                 if (st == Player.STATE_READY) h.postDelayed({ checkIdentityDuration() }, 1500)
                 // (v97) الفيديو خلص: لو اللوب شغّال يعيد من الأول، وإلا يروح للحلقة اللي بعدها (لو في)
                 if (st == Player.STATE_ENDED && !isFinishing) {
-                    if (Cfg.str("loop", "0") == "1") { player.seekTo(0); player.play() }
+                    if (sleepEndOfVideo) { sleepEndOfVideo = false; say("😴 مؤقت النوم: الفيديو خلص") }
+                    else if (Cfg.str("loop", "0") == "1") { player.seekTo(0); player.play() }
                     else if (hasNextEpisode()) h.post { stepEpisode(1) }
                 }
             }
@@ -3140,7 +3139,7 @@ class PlayerActivity : Activity(), Host {
         // شريط الترجمة بره نافذة PiP محتاج إذن "العرض فوق التطبيقات" (مرة واحدة)
         if (fromUser && !canOverlay() && !Cfg.str("pip_overlay_asked", "0").equals("1")) {
             Cfg.put("pip_overlay_asked", "1")
-            Notice.show(this, ("فعّل «العرض فوق التطبيقات» لمترجم الفيديو عشان الترجمة تظهر فوق، وارجع دوس ⧉ تاني").toString(), 3600L)
+            Notice.show(this, ("فعّل «العرض فوق التطبيقات» لـ Subtitler عشان الترجمة تظهر فوق، وارجع دوس ⧉ تاني").toString(), 3600L)
             try { startActivity(Intent(android.provider.Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName"))); return } catch (e: Exception) { LogStore.err("Main:2229", e) }
         }
         if (Build.VERSION.SDK_INT >= 26) try {
@@ -3646,7 +3645,7 @@ class PlayerActivity : Activity(), Host {
      * تفريغ Whisper على الجهاز + ترجمة ML Kit (فصحى؛ اللهجة بتتحوّل زي إعدادك). اللغة: إعداد التفريغ أو الإنجليزي لو تلقائي. الخطة بتتحفظ (وإلا الاستئناف كان هيرجّع القديمة).
      */
     private var offBusy = false
-    fun offlineQuick(only: Boolean = false, beat: Boolean = false, free: Boolean = false) {
+    fun offlineQuick(only: Boolean = false, free: Boolean = false) {
         if (offBusy) return
         if (!WhisperLib.loaded) { say("📴 الأوفلاين مش مدعوم على جهازك"); return }
         if (Offline.downloading()) { say("⬇ فيه تنزيل موديل شغّال — استنى يخلص وادوس تاني"); return }
@@ -3655,10 +3654,9 @@ class PlayerActivity : Activity(), Host {
         val order = listOf(Offline.model()) + listOf("small", "base", "medium").mapNotNull { id -> Offline.models.firstOrNull { it.id == id } }
         val m = order.firstOrNull { Offline.downloaded(it) } ?: Offline.models.first { it.id == "small" }
         fun startIt() {
-            val bt = beat && !only   // (v435) وشبر + Beat: المترجم Beat (free="beat") واللهجة من الإعدادات (بتتحوّل بجيميناي زي باقي المترجمين الخارجيين)
             val fr = free && !only   // (v440) وشبر + FreeLLM (free="free")
-            val pl = TrWizard.Plan("offline", "", lang, m.id, "google", "whisper", if (only) "" else if (bt || fr) TrWizard.dialectWanted().ifBlank { "فصحى" } else "فصحى", false, free = if (bt) "beat" else if (fr) "free" else "", only = only)   // (v425) وشبر + LibreTranslate · (v427) only = تفريغ بس بوشبر
-            Cfg.put("tr_mode_id", if (only) "w_only" else if (bt) "loc_beat" else if (fr) Strict.FREE_TXT else Strict.SEMI); SourceMode.set(SourceMode.AUDIO)
+            val pl = TrWizard.Plan("offline", "", lang, m.id, "google", "whisper", if (only) "" else if (fr) TrWizard.dialectWanted().ifBlank { "فصحى" } else "فصحى", false, free = if (fr) "free" else "", only = only)   // (v425) وشبر + LibreTranslate · (v427) only = تفريغ بس بوشبر
+            Cfg.put("tr_mode_id", if (only) "w_only" else if (fr) Strict.FREE_TXT else Strict.SEMI); SourceMode.set(SourceMode.AUDIO)
             try { TrWizard.save(pl) } catch (e: Throwable) { LogStore.err("Player:offQuickSave", e) }
             offBusy = false
             runPlan(pl)
@@ -3831,7 +3829,7 @@ class PlayerActivity : Activity(), Host {
                 Cfg.put("hard_mode", "0")
                 if (::visual.isInitialized && visual.running) { visual.stop(); visOv.showBoxes(emptyList()); visAutoRun = false; visLog("🎙 صوتي بس — الوضع البصري اتقفل") }
             } catch (e: Throwable) { LogStore.err("Player:srcAudio", e) }
-            SourceMode.HYBRID -> if (!Strict.noGemKeys() && !Strict.beatGem()) {   // (v410) البصري جيميناي = أونلاين بس
+            SourceMode.HYBRID -> if (!Strict.noGemKeys()) {   // (v410) البصري جيميناي = أونلاين بس
                 Cfg.put("hard_mode", if (SourceMode.kind() == "hard") "1" else "0")
                 startVisualNow("🎙+👁 هجين · " + SourceMode.kindLabel())
             }
@@ -3849,7 +3847,7 @@ class PlayerActivity : Activity(), Host {
     private fun startVisualNow(tag: String): Boolean {
         try {
             if (!::visual.isInitialized) return false
-            if (Strict.noGemKeys() || Strict.beatGem()) { say(Strict.NO_VISUAL_MSG); return false }   // (v410)
+            if (Strict.noGemKeys()) { say(Strict.NO_VISUAL_MSG); return false }   // (v410)
             if (!conf.visKeys.any { it.length > 10 }) { say("👁 ضيف مفتاح للوضع البصري الأول (الإعدادات ← 🔑 المفاتيح ← مفتاح الوضع البصري)"); return false }
             visAutoRun = false; visual.mode = "scene"
             if (!visual.running) visual.start()
@@ -3950,7 +3948,7 @@ class PlayerActivity : Activity(), Host {
     fun langPopup(anchor: View) {
         langPop?.let { if (it.isShowing) { it.dismiss(); langPop = null; return } }
         if (!::engine.isInitialized) { say("استنى لحظة — الفيديو لسه بيتحمّل"); return }   // (v262) engine lateinit: الضغط قبل التحميل كان بيكرّش
-        if (!caps().dialect) { say("🗣 اللهجة والأسلوب مش شغّالين في «" + modeName() + "» — اختار وضع من اللي فيها لهجات (FreeLLM / Beat / وشبر + مترجم LLM)"); return }   // (v444)
+        if (!caps().dialect) { say("🗣 اللهجة والأسلوب مش شغّالين في «" + modeName() + "» — اختار وضع من اللي فيها لهجات (FreeLLM / وشبر + مترجم LLM)"); return }   // (v444)
         val langs = listOf("فصحى", "مصري", "شامي", "لبناني", "خليجي", "مغربي", "عراقي", "سوداني")
         val curL = Cfg.str("conv_dialect", "").ifBlank { "فصحى" }
         val col = LinearLayout(this).apply {
@@ -4410,7 +4408,6 @@ class PlayerActivity : Activity(), Host {
         dubCancel = true; try { dubPlay?.stop(); dubPlay = null } catch (_: Throwable) {}   // (v418)
         try { volWatch?.stop(); volWatch = null } catch (_: Throwable) {}
         LogStore.add("🔚 onDestroy (isFinishing=$isFinishing)")
-        ExtTranslate.onNote = null
         NoticeLog.detach(this)
         stopVoice()
         try { TaskCenter.extra.remove(taskListener) } catch (_: Throwable) {}

@@ -76,7 +76,7 @@ JNIEXPORT jbyteArray JNICALL Java_com_tttt_subtitler_WhisperLib_nRun(JNIEnv *env
         wp.no_context = true;
         // (v394) سرعة + دقة: greedy بعينة واحدة/اتنين عند الفشل، وعتبات الهلوسة والتكرار صريحة
         wp.greedy.best_of = 2;
-        wp.temperature_inc = 0.2f;
+        wp.temperature_inc = 0.0f;   // (v450) من غير إعادة فك بحرارة أعلى لما الثقة تقل (كانت بتكرر الفك وتبطّأ الأفلام)
         wp.suppress_blank = true;
         wp.no_speech_thold = 0.6f;
         wp.logprob_thold = -1.0f;

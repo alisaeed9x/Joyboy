@@ -97,14 +97,7 @@ object TrWizard {
             if (!online()) out.add(NO_NET_MSG)
             return out
         }
-        if (pl.free == "beat" && pl.method == "google") {   // (v436) Beat مستقل عن جيميناي: بيترجم باللهجة بنفسه، ولو موديل وقف بيكمّل بموديل Beat تاني ثم جوجل
-            out.add("🔑 المترجم Beat · " + ExtTranslate.beatNow() + " — لو موديل وقف بيكمّل بالتاني، وبعدهم جوجل (من غير جيميناي)")
-            val bd = pl.dialect.trim().let { if (it == "فصحى") "" else it }
-            out.add(if (bd.isEmpty()) "🌍 الترجمة فصحى" else "🗣 لهجة «$bd» — Beat بيترجمها مباشرة (مش جيميناي)")
-            if (!online()) out.add(NO_NET_MSG)
-            return out
-        }
-        if (pl.free.isNotBlank() && pl.method == "google") out.add((if (pl.free.startsWith("llm_")) "🤖 المترجم " else if (pl.free == "beat") "🔑 المترجم " else "🌐 المترجم المجاني ") + (ExtTranslate.all().firstOrNull { it.id == pl.free }?.label ?: pl.free) + " بيترجم الأول — لو وقف أو الحد اليومي خلص بيكمّل الباقي ثم جوجل ثم جيميناي")
+        if (pl.free.isNotBlank() && pl.method == "google") out.add((if (pl.free.startsWith("llm_")) "🤖 المترجم " else "🌐 المترجم المجاني ") + (ExtTranslate.all().firstOrNull { it.id == pl.free }?.label ?: pl.free) + " بيترجم الأول — لو وقف أو الحد اليومي خلص بيكمّل الباقي ثم جوجل ثم جيميناي")
         val d = pl.dialect.trim().let { if (it == "فصحى") "" else it }
         if (pl.method == "google") {
             if (d.isEmpty()) out.add("🌍 الترجمة بجوجل (فصحى، من غير API)")
@@ -190,7 +183,7 @@ object TrWizard {
                 val flName: String = com.tttt.subtitler.FreeLlm.liveName()   // (v447) برّه الـ when عشان السطر الطويل مابيحلّش المرجع
                 val base = when (id) {
                     "g_wav" -> (if (pl.only) "✍ تفريغ ذكاء صناعي" else "☁ أونلاين · WAV"); "g_aac" -> (if (pl.only) "✍ تفريغ ذكاء صناعي" else "☁ أونلاين · AAC")
-                    "loc_google" -> (if (pl.only) "✍ تفريغ Whisper" else "🌗 وشبر + 🌐 LibreTranslate"); "loc_beat" -> "🌗 وشبر + 🔑 Beat · " + ExtTranslate.beatNow(); "loc_free" -> "🌗 وشبر + 🆓 FreeLLM · " + flName; "f_gem" -> "🆓 FreeLLM · " + flName; "b_gem" -> (if (pl.only) "✍ تفريغ ذكاء صناعي" else "🔑 Beat · " + ExtTranslate.beatNow())
+                    "loc_google" -> (if (pl.only) "✍ تفريغ Whisper" else "🌗 وشبر + 🌐 LibreTranslate"); "loc_free" -> "🌗 وشبر + 🆓 FreeLLM · " + flName; "f_gem" -> "🆓 FreeLLM · " + flName
                     "ai_only" -> "✍ تفريغ ذكاء صناعي"; "w_only" -> "✍ تفريغ Whisper"; "s_only" -> "✍ تفريغ SenseVoice"
                     else -> if (pl.only) "✍ تفريغ بس" else if (pl.offline) "📴 أوفلاين" else if (pl.cloud) "☁ محرك خارجي" else "☁ أونلاين"
                 }
@@ -210,7 +203,7 @@ object TrWizard {
     fun describe(pl: Plan): String = SourceMode.prefix() + describeCore(pl)
     private fun describeCore(pl: Plan): String =
         if (pl.only) "✍ تفريغ بس (من غير ترجمة)\nالتفريغ: " + (if (pl.offline) (if (pl.engine == "sherpa") "SenseVoice" else "Whisper " + pl.model) + " على الجهاز · " + langLabel(pl.lang) else "جيميناي") + "\nالنص بيظهر بلغته الأصلية"
-        else if (pl.offline) "📴 أوفلاين" + (if (pl.live) " ⚡ لحظي" else "") + " · " + langLabel(pl.lang) + "\nالتفريغ: " + (if (pl.engine == "sherpa") "SenseVoice (sherpa-onnx)" else "Whisper " + pl.model) + " على الجهاز\nالترجمة: " + (if (pl.free == "mlkit") "ML Kit (أوفلاين · من غير نت)" else if (pl.method == "google") "جوجل (من غير API)" else "جيميناي بالسياق") + "\nاللهجة: " + pl.dialect.ifBlank { "فصحى" } + (if (pl.method == "google" && pl.dialect.isNotBlank() && pl.dialect != "فصحى") (if (pl.free == "free") " (FreeLLM بيترجمها مباشرة)" else if (pl.free == "beat") " (Beat بيترجمها مباشرة)" else " (" + convLabel(pl.conv) + " بيحوّل الترجمة)") else "") + (if (pl.free.isNotBlank() && pl.method == "google") "\nالمترجم: " + (if (pl.free.startsWith("llm_")) "🤖 " + (ExtLlm.byId(pl.free.removePrefix("llm_"))?.label ?: pl.free) + " الأول (بمفتاحك)" else if (pl.free == "beat") "🔑 Beat · " + ExtTranslate.beatNow() + " الأول (بمفتاحك)" else "🌐 " + (ExtTranslate.all().firstOrNull { it.id == pl.free }?.label ?: pl.free) + " الأول (مجاني من الريبو)") else "")
+        else if (pl.offline) "📴 أوفلاين" + (if (pl.live) " ⚡ لحظي" else "") + " · " + langLabel(pl.lang) + "\nالتفريغ: " + (if (pl.engine == "sherpa") "SenseVoice (sherpa-onnx)" else "Whisper " + pl.model) + " على الجهاز\nالترجمة: " + (if (pl.free == "mlkit") "ML Kit (أوفلاين · من غير نت)" else if (pl.method == "google") "جوجل (من غير API)" else "جيميناي بالسياق") + "\nاللهجة: " + pl.dialect.ifBlank { "فصحى" } + (if (pl.method == "google" && pl.dialect.isNotBlank() && pl.dialect != "فصحى") (if (pl.free == "free") " (FreeLLM بيترجمها مباشرة)" else " (" + convLabel(pl.conv) + " بيحوّل الترجمة)") else "") + (if (pl.free.isNotBlank() && pl.method == "google") "\nالمترجم: " + (if (pl.free.startsWith("llm_")) "🤖 " + (ExtLlm.byId(pl.free.removePrefix("llm_"))?.label ?: pl.free) + " الأول (بمفتاحك)" else "🌐 " + (ExtTranslate.all().firstOrNull { it.id == pl.free }?.label ?: pl.free) + " الأول (مجاني من الريبو)") else "")
         else "☁ أونلاين (جيميناي)\n" + (TrPresets.byId(pl.onlineId)?.let { it.icon + " " + it.name } ?: "⚙ الإعدادات الحالية") + (pl.dia?.let { "\nاللهجة: " + it.ifBlank { "فصحى" } } ?: "")
 
     /** (v274) لو التفريغ السحابي كان شغّال بسبب خطة «أونلاين بمحرك خارجي» بنقفله لما نرجع لخطة تانية (إلا لو إنت شغّلته من الإعدادات) */
@@ -513,9 +506,6 @@ object TrWizard {
                     }
                     .setNegativeButton("إلغاء", null).show()
             }
-            opt("🔑 Beat API: " + (if (ExtTranslate.beatReady()) (if (ExtTranslate.primaryId() == "beat") "✅ أساسي · " else "✅ جاهز · ") + ExtTranslate.beatNow() else "مش مضبوط"), "مترجم بمفتاحك (api.beatapi.io) بموديلات مجانية بتتبدّل لوحدها لو واحد وقف. بيشتغل في مسار «تفريغ أوفلاين + ترجمة نص» وكبديل لو جيميناي وقف. دوس عشان تضبطه وتختار الموديل.", false) {
-                BeatUi.show(act) { stepSummary() }
-            }
             val swapOn = Cfg.str("tr_autoswap", "on") != "off"
             opt("🔄 بديل تلقائي لو جيميناي وقف: " + (if (swapOn) "✅ شغّال" else "⏸ مقفول"), "لو كوتا/مفاتيح جيميناي خلصت أثناء الترجمة، الجمل الناقصة بتتترجم بالمترجم الخارجي أو جوجل (فصحى، واللهجة بتتحوّل بعدين) بدل ما تستنى. دوس عشان تبدّل.", false) {
                 Cfg.put("tr_autoswap", if (swapOn) "off" else "on"); stepSummary()
@@ -550,7 +540,7 @@ object TrWizard {
         /** (v276) فحص المترجمين المجانيين (اللي ليهم محوّل جاهز) وترتيبهم بالسرعة؛ الأخضر الأسرع يتختار */
         fun stepRepo() {
             reset("🌐 مترجمين مجانيين")
-            val provs = ExtTranslate.builtin + listOfNotNull(ExtTranslate.libreProv(), ExtTranslate.beatProv())
+            val provs = ExtTranslate.builtin + listOfNotNull(ExtTranslate.libreProv())
             note("قايمة الريبو مفيهاش مفاتيح، فبنجرّب المترجمين اللي ليهم محوّل جاهز في التطبيق (بدون مفتاح). الأسرع الشغّال بيتختار الأول، والباقي بيكمّل لو وقف. التفريغ أوفلاين على جهازك.")
             if (ftested.isEmpty() && !ftesting) {
                 ftesting = true

@@ -26,6 +26,7 @@ object WhisperLib {
 object Offline {
     class Model(val id: String, val label: String, val file: String, val approxMb: Int, val note: String)
     val models = listOf(
+        Model("tiny", "🚀 tiny", "ggml-tiny-q5_1.bin", 31, "الأسرع بكتير — دقة أقل بوضوح، للكلام الواضح بس"),
         Model("base", "⚡ base", "ggml-base-q5_1.bin", 60, "الأسرع — دقة أقل، مناسب لكلام واضح"),
         Model("small", "⚖ small", "ggml-small-q5_1.bin", 185, "متوازن (الافتراضي)"),
         Model("medium", "🎯 medium", "ggml-medium-q5_0.bin", 520, "الأدق — بطيء وبياخد رام كتير (~1.5GB)، مش لأي موبايل")
@@ -140,7 +141,7 @@ object Offline {
     fun par(): Int {
         if (engine().id != "whisper") return 1
         val d = if (model().id == "medium") 1 else 2
-        val v = Cfg.int("stt_par", d).coerceIn(1, MAX_PAR)
+        val v = Cfg.int("stt_par", d).coerceIn(1, 2)   // (v450) 3 خانات طلعت أبطأ (≈1.07×) وبتبطّأ استخراج الصوت
         return if (model().id == "medium") 1 else v
     }
     private fun busyCount(): Int = slotBusy.count { it }
@@ -169,7 +170,7 @@ object Offline {
     @Volatile private var coolUntil = 0L
     @Volatile private var fails = 0
 
-    private fun threadsAll(): Int = (Runtime.getRuntime().availableProcessors() - 2).coerceIn(3, 6)   // (v394) كان cores/2 بحد أقصى 4
+    private fun threadsAll(): Int = (Runtime.getRuntime().availableProcessors() / 2).coerceIn(3, 4)   // (v450) فوق 4 خيوط الأنوية الصغيرة بتبطّأ الباقي (قياس لوج v448: 6 خيوط ≈1.3× · خانتين×3 خيوط ≈1.6×) · (v394) كان cores/2 بحد أقصى 4
     /** (v420) الخيوط بتتقسّم على الباتشات الشغّالة فعلًا دلوقتي (باتش لوحده ياخد الكل) */
     private fun threads(active: Int = 1): Int = if (active <= 1) threadsAll() else (threadsAll() / active).coerceAtLeast(2)
 

@@ -18,13 +18,10 @@ object FreeLlm {
 
     val DEFAULTS: List<M> = listOf(
         M("gemini", "gemini-3.1-flash-lite", 250000, 15, 500),
-        M("gemini", "gemma-4-26b", 0, 15, 1500),
-        M("gemini", "gemma-4-31b", 0, 15, 1500),
         M("groq", "llama-3.1-8b-instant", 6000, 30, 14400),
         M("groq", "llama-3.3-70b-versatile", 12000, 30, 1000),
         M("gemini", "gemini-2.5-flash-lite", 250000, 10, 20),
         M("gemini", "gemini-2.5-flash", 250000, 5, 20),
-        M("gemini", "gemini-3-flash", 250000, 5, 20),
         M("gemini", "gemini-3.5-flash", 250000, 5, 20)
     )
 
@@ -181,13 +178,14 @@ object FreeLlm {
             val m = pr.first
             if (m == null) {
                 val w = pr.second
+                if (DEFAULTS.any { why[it.name + kid] == "المفتاح مرفوض" }) throw ApiErr(401, "FreeLLM: مفتاح " + tail + " مرفوض (API key not valid)")
                 throw lastErr as? ApiErr ?: ApiErr(429, "FreeLLM: كل موديلات المفتاح " + tail + " وصلت لحدها" + (if (w > 0) " — أقرب موديل بعد " + (w / 1000L) + " ث" else " النهارده"))
             }
             val t0 = System.currentTimeMillis()
             LogStore.add("🔁 [FreeLLM #" + n + "] طلب ← " + m.name + " · مفتاح " + tail + " · " + (if (wav != null) "صوت " + (wav.size / 1024) + "KB" else "نص " + prompt.length + "حرف"))
             try {
                 val r = if (m.name.startsWith("gemini")) Api.generateModel(m.name, key, prompt, wav, maxTokens, temp, json, search)
-                        else ExtTranslate.beatChat(endpoint(GEMINI_URL), key, m.name, prompt, wav, maxTokens, temp, json, false)
+                        else ExtTranslate.llmChat(endpoint(GEMINI_URL), key, m.name, prompt, wav, maxTokens, temp, json)
                 live = m.name + " " + tail
                 LogStore.add("🔁 [FreeLLM #" + n + "] ✅ " + m.name + " · رد " + r.text.length + "حرف في " + (System.currentTimeMillis() - t0) + "ms")
                 return r
@@ -212,8 +210,9 @@ object FreeLlm {
         val id = m.name + kid
         val now = System.currentTimeMillis()
         when {
+            code == 404 && msg.contains("no longer available") -> { cool[id] = now + 1_800_000L; why[id] = "الموديل مقفول على المفتاح ده" }
             code == 404 -> { cool[m.name + "#all"] = now + 1_800_000L; why[m.name + "#all"] = "الموديل مش موجود" }
-            code == 401 || code == 403 || msg.contains("api key not valid") -> { for (x in DEFAULTS) cool[x.name + kid] = now + 1_800_000L; why[id] = "المفتاح مرفوض" }
+            code == 401 || code == 403 || msg.contains("api key not valid") -> { for (x in DEFAULTS) { cool[x.name + kid] = now + 1_800_000L; why[x.name + kid] = "المفتاح مرفوض" } }
             code == 429 -> {
                 val perDay = msg.contains("per day") || msg.contains("daily") || msg.contains("rpd")
                 val ms = if ((retry ?: 0) > 0) retry!!.coerceIn(10, 3600) * 1000L else if (perDay) 3_600_000L else 62_000L
@@ -223,14 +222,14 @@ object FreeLlm {
         }
     }
 
-    /** ترجمة دفعة جمل (نفس بروميت وشكل Beat — باللهجة والأسلوب من الإعدادات) */
+    /** ترجمة دفعة جمل (باللهجة والأسلوب من الإعدادات) */
     fun translate(texts: List<String>, sl: String): List<String?> {
         val est = texts.sumOf { it.length } / 2 + 700
         val srv = serverUrl()
         if (srv.isNotEmpty()) {   // سيرفر FreeLLM بتاعك هو اللي بيوزّع
             var tries = 0
             while (true) {
-                try { return ExtTranslate.beatCall(endpoint(srv), serverKey(), serverModel(), texts, sl) }
+                try { return ExtTranslate.llmCall(endpoint(srv), serverKey(), serverModel(), texts, sl) }
                 catch (e: ExtLlm.LlmErr) {
                     if (e.code != 429 || ++tries >= 5) throw e
                     waiting = true
@@ -239,7 +238,7 @@ object FreeLlm {
                 }
             }
         }
-        return run(est, false) { m -> ExtTranslate.beatCall(endpoint(baseOf(m)), keyOf(m), m.name, texts, sl) }
+        return run(est, false) { m -> ExtTranslate.llmCall(endpoint(baseOf(m)), keyOf(m), m.name, texts, sl) }
     }
 
     private val seq = java.util.concurrent.atomic.AtomicInteger(0)
@@ -252,11 +251,11 @@ object FreeLlm {
         try {
             val r: Api.Result
             val srv = serverUrl()
-            if (srv.isNotEmpty()) r = ExtTranslate.beatChat(endpoint(srv), serverKey(), serverModel(), prompt, wav, maxTokens, temp, json, false)
+            if (srv.isNotEmpty()) r = ExtTranslate.llmChat(endpoint(srv), serverKey(), serverModel(), prompt, wav, maxTokens, temp, json)
             else {
                 if (wav != null && gemKey().length <= 8) throw ExtLlm.LlmErr(401, "الوضع الصوتي محتاج مفتاح Gemini مجاني (موديلات Groq/Gemma مابتسمعش)", 0)
                 val est = (wav?.size ?: 0) / 32 + prompt.length / 3 + 1000   // تقدير توكنز: الصوت ~ 32 بايت للتوكن تقريبًا
-                r = run(est, wav != null) { m -> ExtTranslate.beatChat(endpoint(baseOf(m)), keyOf(m), m.name, prompt, wav, maxTokens, temp, json, false) }
+                r = run(est, wav != null) { m -> ExtTranslate.llmChat(endpoint(baseOf(m)), keyOf(m), m.name, prompt, wav, maxTokens, temp, json) }
             }
             LogStore.add("🆓 [FreeLLM #" + n + "] ✅ " + liveName() + " · رد " + r.text.length + "حرف في " + (System.currentTimeMillis() - t0) + "ms")
             return r

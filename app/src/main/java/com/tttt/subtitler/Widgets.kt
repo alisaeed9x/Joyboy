@@ -209,20 +209,3 @@ class LiveWidget : AppWidgetProvider() {
 class SongWidget : AppWidgetProvider() {
     override fun onUpdate(context: Context, appWidgetManager: AppWidgetManager, appWidgetIds: IntArray) { WidgetHub.updateNow(context) }
 }
-
-/** (v318) ويدجت «بوابات البرنامج»: الأربع أيقونات (فيديو · موسيقى · متصفح · ملفات) في ويدجت واحدة؛ كل أيقونة بتفتح بوابتها. بديل لو اللانشر مابيعرضش أربع أيقونات للتطبيق */
-class LaunchWidget : AppWidgetProvider() {
-    override fun onUpdate(context: Context, appWidgetManager: AppWidgetManager, appWidgetIds: IntArray) {
-        val rv = RemoteViews(context.packageName, R.layout.widget_launch)
-        fun go(viewId: Int, req: Int, cls: String) {
-            val it = Intent(Intent.ACTION_MAIN).setComponent(ComponentName(context.packageName, cls)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED)
-            rv.setOnClickPendingIntent(viewId, PendingIntent.getActivity(context, req, it, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT))
-        }
-        val pk = context.packageName
-        go(R.id.w_l_video, 31, "$pk.MainActivity")
-        go(R.id.w_l_music, 32, "$pk.MusicLauncher")     // Main بيفتح تبويب الموسيقى لما يلاقي الـ alias ده
-        go(R.id.w_l_browser, 33, "$pk.BrowserLauncher")
-        go(R.id.w_l_files, 34, "$pk.FilesLauncher")
-        appWidgetManager.updateAppWidget(appWidgetIds, rv)
-    }
-}

@@ -490,9 +490,9 @@ class MainActivity : Activity() {
             Offline.models.firstOrNull { m -> m.label == l }?.let { m -> Cfg.put("off_model", m.id); TrWizard.syncSaved("off_model", m.id) }; offProg.text = ""; offRefresh()
         }
         // (v420) عدد خانات التفريغ المتوازي (باتشات Whisper في نفس الوقت)
-        val parOpts = listOf("خانة 1", "خانتين", "3 خانات")
+        val parOpts = listOf("خانة 1", "خانتين")
         val parNote = ui.text("الخانات أكتر = تفريغ أسرع لكن رام وحرارة أكتر. medium دايمًا خانة واحدة. الافتراضي خانتين.", 11f, th.muted)
-        val parChips = ui.chips(parOpts, { parOpts[(Offline.par()).coerceIn(1, 3) - 1] }) { l -> Cfg.put("stt_par", (parOpts.indexOf(l) + 1).toString()); parNote.text = if (Offline.model().id == "medium" && parOpts.indexOf(l) > 0) "⚠ موديل medium بيشتغل بخانة واحدة بغض النظر عن الاختيار (الرام)." else "الخانات أكتر = تفريغ أسرع لكن رام وحرارة أكتر. الافتراضي خانتين." }
+        val parChips = ui.chips(parOpts, { parOpts[(Offline.par()).coerceIn(1, 2) - 1] }) { l -> Cfg.put("stt_par", (parOpts.indexOf(l) + 1).toString()); parNote.text = if (Offline.model().id == "medium" && parOpts.indexOf(l) > 0) "⚠ موديل medium بيشتغل بخانة واحدة بغض النظر عن الاختيار (الرام)." else "الخانات أكتر = تفريغ أسرع لكن رام وحرارة أكتر. الافتراضي خانتين." }
         offDlBtn = ui.button("") {
             if (Offline.downloading()) { Offline.cancelDownload() }
             else if (Offline.downloaded()) { Notice.show(this, "دوس دوسة طويلة على الزرار عشان تمسح الموديل", 2300L) }
@@ -547,7 +547,7 @@ class MainActivity : Activity() {
         planRefresh()
         val offLangChips = ui.chips(Offline.langLabels, { Offline.langLabels[Offline.langIds.indexOf(Offline.lang()).coerceAtLeast(0)] }) { val lid = Offline.langIds[Offline.langLabels.indexOf(it).coerceAtLeast(0)]; Cfg.put("stt_lang", lid); TrWizard.syncSaved("stt_lang", lid) }
         val offPartLabels = listOf("⚡ لحظي (كل باتش)", "٣ دقايق", "٥ دقايق", "١٠ دقايق", "٢٠ دقيقة"); val offPartVals = listOf(1, 3, 5, 10, 20)
-        val offPartChips = ui.chips(offPartLabels, { offPartLabels[offPartVals.indexOf(Cfg.int("ctx_min", 3)).coerceAtLeast(1)] }) { Cfg.put("ctx_min", offPartVals[offPartLabels.indexOf(it).coerceAtLeast(0)].toString()) }
+        val offPartChips = ui.chips(offPartLabels, { offPartLabels[offPartVals.indexOf(Cfg.int("ctx_min", 3)).let { if (it < 0) 1 else it }]   // (v451) كان coerceAtLeast(1) فزرار «لحظي» (قيمة 1) كان بيتعرض «٣ دقايق» ومابيتعلّمش }) { Cfg.put("ctx_min", offPartVals[offPartLabels.indexOf(it).coerceAtLeast(0)].toString()) }
         val cbLabels = listOf("٢ باتش", "٣ باتشات"); val cbVals = listOf(2, 3)   // (v400) وضع «وشبر + جيميناي بالسياق»
         val ctxBatchChips = ui.chips(cbLabels, { cbLabels[cbVals.indexOf(Cfg.int("ctx_batches", 3)).coerceAtLeast(1)] }) { Cfg.put("ctx_batches", cbVals[cbLabels.indexOf(it).coerceAtLeast(0)].toString()) }
         val vaOn = "⚡ تلقائي مع كل فيديو"; val vaOff = "✋ يدوي (بريسيتس / زرار 👁)"
@@ -582,10 +582,6 @@ class MainActivity : Activity() {
             // ===== 🚀 خط الترجمة: الخطة (تفريغ ← ترجمة ← لهجة) + اللهجة والأسلوب + البرومبتات =====
             tab("general", listOf<View>(
                 ui.text("اختار إيه اللي يترجم واللهجة والأسلوب هنا. المفاتيح في 🔑، والتفريغ في 🎙، والموديل والسرعة في 🤖.", 12f, th.muted),
-                ui.section("🎯 إيه اللي يترجم؟", true,
-                    ui.chips(listOf(SourceMode.label(SourceMode.AUDIO), SourceMode.label(SourceMode.VISUAL), SourceMode.label(SourceMode.HYBRID)), { SourceMode.label() }) { SourceMode.set(listOf(SourceMode.AUDIO, SourceMode.VISUAL, SourceMode.HYBRID).first { id -> SourceMode.label(id) == it }) },
-                    ui.text("البصري:", 12f, th.muted),
-                    ui.chips(listOf(SourceMode.kindLabel("scene"), SourceMode.kindLabel("hard")), { SourceMode.kindLabel() }) { Cfg.put("tr_vkind", if (it == SourceMode.kindLabel("hard")) "hard" else "scene") }),
                 savedPlanTxt, planBtn,
                 ui.section("🗣 اللهجة والأسلوب", true,
                     ui.text("اللهجة:", 12f, th.muted),
@@ -631,7 +627,6 @@ class MainActivity : Activity() {
             tab("visual", listOf<View>(
                                 ui.section("👁 محرك الوضع البصري", false, visAutoChips,
                     ui.slider("المسافة اللي الوضع البصري بيفحصها قدّام مكان التشغيل", Cfg.int("vis_ahead", 180).coerceIn(30, 900), 30, 900, "ث") { Cfg.put("vis_ahead", it.toString()) },
-                    ui.switchRow("إظهار شريط حالة الوضع البصري فوق المشغّل", Cfg.str("visbar", "0") == "1") { Cfg.put("visbar", if (it) "1" else "0") },
                     ui.text("الوضع البصري بيعتمد على Gemini فقط (مفتاح «الوضع البصري فقط» في قسم 🔑 المفاتيح). بيلقط فريم كل ثانية، بيتخطّى اللي مفيهوش تغيير أو نص، وبيبعت الباقي دفعات (30 فريم) في شبكات من 6 فريمات بالتوازي. النتايج بتتحفظ مع الفيديو، وبين الطلبات راحة تلقائية لو جيميناي رفض (429). بيتطبق من أول تشغيل جديد.\n(v249) الوضع البصري ما بيشتغلش لوحده لما تدخل فيديو — بيشتغل من البريسيتس اللي فيها بصري (شاملة / هارد سب) أو من زرار 👁، إلا لو اخترت «تلقائي مع كل فيديو» فوق.", 12f, th.muted)))),
             // ===== 🤖 الموديل والأداء =====
             tab("perf", listOf<View>(
@@ -929,7 +924,7 @@ class MainActivity : Activity() {
             // (v339) لو الأكتيفيتي اتعمل لها إعادة إنشاء (النظام قتلها وإنت في المشغّل): ارجع لنفس البوابة مش للفيديوهات
             val savedTab = b?.getInt("cur_tab", -1) ?: -1
             val t0 = intent?.getStringExtra("tab") ?: when (savedTab) { 1 -> "music"; 4 -> "youtube"; 5 -> "tasks"; else -> null }
-            if (cn.endsWith(".MusicLauncher") || t0 == "music") frame.post { showTabFn(1) }
+            if (t0 == "music") frame.post { showTabFn(1) }
             else if (t0 == "tasks") frame.post { showTabFn(5) }
             else if (t0 == "settings") frame.post { settingsShow?.invoke(null) }
             else if (t0 == "youtube") frame.post { showTabFn(4); openYtFromIntent(intent) }

@@ -19,13 +19,11 @@
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="28"/>
     <uses-permission android:name="android.permission.READ_MEDIA_VIDEO"/>
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32"/>
-    <application android:supportsRtl="true" android:label="مترجم الفيديو" android:icon="@mipmap/ic_launcher" android:roundIcon="@mipmap/ic_launcher"
+    <application android:supportsRtl="true" android:label="Subtitler" android:icon="@mipmap/ic_launcher" android:roundIcon="@mipmap/ic_launcher"
         android:usesCleartextTraffic="true" android:theme="@android:style/Theme.DeviceDefault.NoActionBar">
         <activity android:name=".MainActivity" android:exported="true" android:theme="@style/AppSplash"
-            android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboardHidden|density"
-            android:label="الفيديو" android:icon="@mipmap/ic_launcher_video" android:roundIcon="@mipmap/ic_launcher_video">
+            android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboardHidden|density">
             <intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/></intent-filter>
-            <meta-data android:name="android.app.shortcuts" android:resource="@xml/shortcuts"/>
             <intent-filter><action android:name="android.intent.action.SEND"/><category android:name="android.intent.category.DEFAULT"/><data android:mimeType="text/plain"/></intent-filter>
             <intent-filter><action android:name="android.intent.action.VIEW"/><category android:name="android.intent.category.DEFAULT"/><category android:name="android.intent.category.BROWSABLE"/><data android:scheme="https"/><data android:host="www.youtube.com"/><data android:host="m.youtube.com"/><data android:host="youtu.be"/><data android:host="music.youtube.com"/></intent-filter>   <!-- (v345) لينكات يوتيوب تتفتح في Subtitler -->
         </activity>
@@ -34,19 +32,6 @@
         <activity android:name=".PlayerActivity" android:exported="false"
             android:supportsPictureInPicture="true" android:resizeableActivity="true"
             android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboardHidden|density"/>
-        <!-- (v310) أربع أيقونات في اللانشر: الفيديو (MainActivity نفسها) · الموسيقى · المتصفح · الملفات -->
-        <activity-alias android:name=".MusicLauncher" android:targetActivity=".MainActivity" android:exported="true"
-            android:label="الموسيقى" android:icon="@mipmap/ic_launcher_music" android:roundIcon="@mipmap/ic_launcher_music">
-            <intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/></intent-filter>
-        </activity-alias>
-        <activity-alias android:name=".BrowserLauncher" android:targetActivity=".BrowserActivity" android:exported="true"
-            android:label="المتصفح" android:icon="@mipmap/ic_launcher_browser" android:roundIcon="@mipmap/ic_launcher_browser">
-            <intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/></intent-filter>
-        </activity-alias>
-        <activity-alias android:name=".FilesLauncher" android:targetActivity=".FileManagerActivity" android:exported="true"
-            android:label="الملفات" android:icon="@mipmap/ic_launcher_files" android:roundIcon="@mipmap/ic_launcher_files">
-            <intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/></intent-filter>
-        </activity-alias>
         <activity android:name=".FileManagerActivity" android:exported="false" android:theme="@style/AppSplash"
             android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboardHidden|density"/>
         <provider android:name="androidx.core.content.FileProvider" android:authorities="${applicationId}.fmprov"
@@ -62,17 +47,13 @@
         </receiver>
         <activity android:name=".SongRequestActivity" android:exported="false" android:theme="@android:style/Theme.Translucent.NoTitleBar"/>
         <service android:name=".SongCatchService" android:exported="false" android:foregroundServiceType="mediaProjection"/>
-        <service android:name=".SongNotifListener" android:exported="true" android:label="مترجم الفيديو — قراءة اسم الأغنية"
+        <service android:name=".SongNotifListener" android:exported="true" android:label="Subtitler — قراءة اسم الأغنية"
             android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
             <intent-filter><action android:name="android.service.notification.NotificationListenerService"/></intent-filter>
         </service>
         <receiver android:name=".SongWidget" android:exported="true" android:label="🎧 تعرّف على الأغنية">
             <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE"/></intent-filter>
             <meta-data android:name="android.appwidget.provider" android:resource="@xml/widget_song_info"/>
-        </receiver>
-        <receiver android:name=".LaunchWidget" android:exported="true" android:label="🧭 بوابات البرنامج (4 أيقونات)">
-            <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE"/></intent-filter>
-            <meta-data android:name="android.appwidget.provider" android:resource="@xml/widget_launch_info"/>
         </receiver>
         <receiver android:name=".TasksWidget" android:exported="true" android:label="📋 مهام الخلفية">
             <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE"/></intent-filter>

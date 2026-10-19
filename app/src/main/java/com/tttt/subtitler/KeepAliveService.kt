@@ -91,7 +91,7 @@ class KeepAliveService : Service() {
         val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         nm.createNotificationChannel(NotificationChannel(CH, "تحكم المشغّل والترجمة", NotificationManager.IMPORTANCE_LOW).apply { setShowBadge(false) })
         val st = NotifState
-        val title = st.title.ifBlank { "مترجم الفيديو" }
+        val title = st.title.ifBlank { "Subtitler" }
         val trTxt = when (st.trState) { 1 -> "الترجمة ${st.trPct}%"; 2 -> "الترجمة موقوفة ${st.trPct}%"; else -> "الترجمة ماابتدتش" }
         val timeTxt = if (st.durMs > 0) "${clock(st.posMs)} / ${clock(st.durMs)}" else clock(st.posMs)
         val open = PendingIntent.getActivity(this, 0, Intent(this, PlayerActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT), PendingIntent.FLAG_IMMUTABLE)

@@ -176,7 +176,7 @@ class TransBadge(ctx: Context, th: Theme, plain: Boolean = false) : LinearLayout
         addView(col, LayoutParams(-2, -2))
         addView(dot, LayoutParams((6 * d).toInt(), (6 * d).toInt()).apply { marginStart = (5 * d).toInt() })
     }
-    /** نقطة الحالة: خضراء = الوضع شغّال، صفرا = شغّال بس مستني (كل موديلات Beat في استراحة)، حمراء = واقف */
+    /** نقطة الحالة: خضراء = الوضع شغّال، صفرا = شغّال بس مستني (كل موديلات FreeLLM في استراحة)، حمراء = واقف */
     fun setOn(on: Boolean, waiting: Boolean = false) { dot.visibility = View.VISIBLE; (dot.background as GradientDrawable).setColor(if (!on) 0xFFFF3B30.toInt() else if (waiting) 0xFFFFCC00.toInt() else 0xFF34C759.toInt()) }
     fun set(p: String, c: String) { var ch = false; if (pct.text.toString() != p) { pct.text = p; ch = true }; if (cnt.text.toString() != c) { cnt.text = c; ch = true }; val v = if (c.isBlank()) View.GONE else View.VISIBLE; if (cnt.visibility != v) { cnt.visibility = v; ch = true }; if (ch) requestLayout() }
 }

@@ -1438,7 +1438,7 @@ class Engine(
         if (now - offAt < 800L) return
         offAt = now
         val d = currentDur(); val tot = if (d > 0) Math.ceil(d / ch).toInt() else 0
-        val k = ctxBatches().takeIf { it > 0 } ?: if (Offline.live() || TrWizard.googleOn()) 1 else maxOf(1, (Offline.partMin() * 60.0 / ch).toInt())
+        val k = ctxBatches().takeIf { it > 0 } ?: if (Offline.live() || (TrWizard.googleOn() && Cfg.str("ctx_min", "").isEmpty())) 1 else maxOf(1, (Offline.partMin() * 60.0 / ch).toInt())
         val doneN = if (tot > 0) (0 until tot).count { isDone(it, d) } else 0
         val held = tHold.size
         val txN = minOf(tot, doneN + held)
@@ -1503,7 +1503,7 @@ class Engine(
      * بيتبعتوا لجيميناي يترجمهم. الباقي (اللي أقل من جزء) بيتترجم لما كل الباتشات تخلص زي الوضع 4 العادي.
      */
     private fun partTick(avail: List<Int>): Boolean {
-        val k = ctxBatches().takeIf { it > 0 } ?: if (Offline.live() || TrWizard.googleOn()) 1 else maxOf(1, (Offline.partMin() * 60.0 / ch).toInt())   // (v399) جوجل: باتش بباتش · (v400) وضع السياق: 2–3 باتشات
+        val k = ctxBatches().takeIf { it > 0 } ?: if (Offline.live() || (TrWizard.googleOn() && Cfg.str("ctx_min", "").isEmpty())) 1 else maxOf(1, (Offline.partMin() * 60.0 / ch).toInt())   // (v399) جوجل: باتش بباتش · (v400) وضع السياق: 2–3 باتشات
         if (avail.size < k) return false
         val head = avail.take(k)
         if (head.last() - head.first() != k - 1) return false      // فيه باتش ناقص في النص (لسه بيتنسخ أو متأخر)

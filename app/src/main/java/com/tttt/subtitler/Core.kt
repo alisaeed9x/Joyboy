@@ -242,15 +242,15 @@ object Cfg {
         val (main0, rf0, bk0) = roles()
         // (v369) وضع أومني روت: مفاتيح جيميناي مابتتلمسش خالص (المحرك يشتغل بمفتاح محلي وهمي، والطلبات كلها بأومني روت)
         val omni = false   // (v395) وضع أومني روت اتشال
-        val strict = Strict.noGemKeys()   // (v436) + وشبر/Beat · (v410) نص-أونلاين / أوفلاين: جيميناي ممنوع (مفتاح محلي وهمي بس)
+        val strict = Strict.noGemKeys()   // (v436) + وشبر/FreeLLM · (v410) نص-أونلاين / أوفلاين: جيميناي ممنوع (مفتاح محلي وهمي بس)
         val srv = Strict.freeGem() && FreeLlm.serverUrl().isNotEmpty()   // (v443) سيرفر FreeLLM بتاعك لو مكتوب = هو اللي يوزّع (زي الأول)
-        val beatG = Strict.beatGem() || srv   // (v436) ترجمة ببيت: المفتاح الوحيد هو مفتاح Beat، ومفيش احتياطي/تنقيح جيميناي
-        val rot = !srv && !beatG && !strict && FreeLlm.rotating()   // (v443) جيميناي بقى FreeLLM: كل مفتاح بيلف على كل موديلات جيميناي
+        val srvOnly = srv   // سيرفر FreeLLM: مفيش احتياطي/تنقيح جيميناي
+        val rot = !srv && !srvOnly && !strict && FreeLlm.rotating()   // (v443) جيميناي بقى FreeLLM: كل مفتاح بيلف على كل موديلات جيميناي
         fun w(l: List<String>): List<String> = if (rot) l.map { FreeLlm.wrap(it) } else l
-        val rf = if (omni || strict || beatG) emptyList() else w(rf0)
-        val bk = if (omni || strict || beatG) emptyList() else w(bk0)
+        val rf = if (omni || strict || srvOnly) emptyList() else w(rf0)
+        val bk = if (omni || strict || srvOnly) emptyList() else w(bk0)
         // (v259) من غير أي مفتاح + أوفلاين + ترجمة جوجل: مفتاح محلي وهمي يخلّي المحرك يشتغل (الطلبات لجيميناي بتترفض محليًا)
-        val main = if (srv) listOf(FreeLlm.KEY) else if (beatG) ExtTranslate.beatKeys().ifEmpty { listOf(LocalKey.ID) } else if (omni || strict || (main0.isEmpty() && rf.isEmpty() && bk.isEmpty() && TrWizard.googleOn())) listOf(LocalKey.ID) else if (Strict.freeGem() && main0.isEmpty()) listOf(FreeLlm.KEY) else w(main0)
+        val main = if (srv) listOf(FreeLlm.KEY) else if (omni || strict || (main0.isEmpty() && rf.isEmpty() && bk.isEmpty() && TrWizard.googleOn())) listOf(LocalKey.ID) else if (Strict.freeGem() && main0.isEmpty()) listOf(FreeLlm.KEY) else w(main0)
         return Conf(
             main, bk, str("model", Models.DEFAULT).trim().ifEmpty { Models.DEFAULT },
             str("lang", "فصحى"), str("style", "حرفي"),
@@ -258,7 +258,7 @@ object Cfg {
             emptyList() /* جدول الشخصيات اليدوي اتشال — الشخصيات بتتحلل تلقائيًا */, str("gloss"),
             true, true, true,   // (v229) تحليل الشخصيات · تصحيح الضمائر · ترجمة القالب: أوتوماتيك دايمًا (اتشال مفتاحهم من الإعدادات)
             1 /* (v141) طلب واحد لكل مفتاح */, bool("hitiming", false), true /* (v229) سد الفجوات أوتوماتيك دايمًا */,
-            bool("soundtags", true), if (strict || beatG) emptyList() else keys("viskeys"), bool("prefine", true), rf, if (Offline.configured()) KeyMode.TRANSCRIBE_ALL else KeyMode.SPLIT_A   // (v425) جيميناي = دايمًا ٧٥٪ نسخ + ٢٥٪ ترجمة سياقية · (v253) أوفلاين = وضع 4 (نسخ ثم ترجمة سياقية)
+            bool("soundtags", true), if (strict || srvOnly) emptyList() else keys("viskeys"), bool("prefine", true), rf, if (Offline.configured()) KeyMode.TRANSCRIBE_ALL else KeyMode.SPLIT_A   // (v425) جيميناي = دايمًا ٧٥٪ نسخ + ٢٥٪ ترجمة سياقية · (v253) أوفلاين = وضع 4 (نسخ ثم ترجمة سياقية)
         )
     }
 }
@@ -649,7 +649,6 @@ object Api {
         if (key == LocalKey.ID) throw NoKey()   // (v259)
         if (FreeLlm.isWrapped(key)) return FreeLlm.generateKey(key, prompt, wav, maxTokens, temp, json, search)   // (v443) جيميناي = FreeLLM: المفتاح بيلف على كل موديلاته
         if (FreeLlm.isKey(key)) return FreeLlm.generate(prompt, wav, maxTokens, temp, json)   // (v440) FreeLLM الصوتي
-        if (ExtTranslate.isBeatKey(key)) return ExtTranslate.beatGenerate(key, prompt, wav, maxTokens, temp, json)   // (v436) مفتاح Beat: نفس الطلب بس على Beat وبتبديل موديلات 429
         val n = gemSeq.incrementAndGet()
         val kind = if (wav != null) "صوت" else "نص"
         val tail = "…" + key.takeLast(4)
