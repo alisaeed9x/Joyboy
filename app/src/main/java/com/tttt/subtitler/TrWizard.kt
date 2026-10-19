@@ -187,9 +187,10 @@ object TrWizard {
             val pl = savedPlan()
             if (pl == null) "" else {
                 val id = Cfg.str("tr_mode_id", "")
+                val flName: String = com.tttt.subtitler.FreeLlm.liveName()   // (v447) برّه الـ when عشان السطر الطويل مابيحلّش المرجع
                 val base = when (id) {
                     "g_wav" -> (if (pl.only) "✍ تفريغ ذكاء صناعي" else "☁ أونلاين · WAV"); "g_aac" -> (if (pl.only) "✍ تفريغ ذكاء صناعي" else "☁ أونلاين · AAC")
-                    "loc_google" -> (if (pl.only) "✍ تفريغ Whisper" else "🌗 وشبر + 🌐 LibreTranslate"); "loc_beat" -> "🌗 وشبر + 🔑 Beat · " + ExtTranslate.beatNow(); "loc_free" -> "🌗 وشبر + 🆓 FreeLLM · " + FreeLlm.liveName(); "f_gem" -> "🆓 FreeLLM · " + FreeLlm.liveName(); "b_gem" -> (if (pl.only) "✍ تفريغ ذكاء صناعي" else "🔑 Beat · " + ExtTranslate.beatNow())
+                    "loc_google" -> (if (pl.only) "✍ تفريغ Whisper" else "🌗 وشبر + 🌐 LibreTranslate"); "loc_beat" -> "🌗 وشبر + 🔑 Beat · " + ExtTranslate.beatNow(); "loc_free" -> "🌗 وشبر + 🆓 FreeLLM · " + flName; "f_gem" -> "🆓 FreeLLM · " + flName; "b_gem" -> (if (pl.only) "✍ تفريغ ذكاء صناعي" else "🔑 Beat · " + ExtTranslate.beatNow())
                     "ai_only" -> "✍ تفريغ ذكاء صناعي"; "w_only" -> "✍ تفريغ Whisper"; "s_only" -> "✍ تفريغ SenseVoice"
                     else -> if (pl.only) "✍ تفريغ بس" else if (pl.offline) "📴 أوفلاين" else if (pl.cloud) "☁ محرك خارجي" else "☁ أونلاين"
                 }

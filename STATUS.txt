@@ -1,3 +1,4 @@
+v447: إصلاح بناء v446 — TrWizard.kt:192 «Unresolved reference liveName» ← FreeLlm.liveName() اتحسب في متغير flName قبل الـ when. ماتجرّبش compile.
 v446: إصلاح بناء v445 — FreeLlm.kt كان ناقص من kt_manifest.txt فـ pruneStaleKt كان بيمسحه قبل الكومبايل (Unresolved reference: FreeLlm). اتضاف. نفس سبب v422. ماتجرّبش compile.
 v442: وضع FreeLLM الصوتي بقى الأول في قايمة «ترجم» (⭐ الأساسي) وجيميناي نزل تحته (لسه موجود). مفتاح Gemini بتاع FreeLLM لو فاضي بياخد أول مفتاح جيميناي مضاف في التطبيق. ماتجرّبش compile.
 v441: وضع «🆓 ترجمة FreeLLM · صوت ← موديل» (f_gem): زي جيميناي فلاش لايت — الصوت باتشات للموديلات المجانية (gemini-3.1-flash-lite / 2.5-flash-lite / flash...) بالتوزيع حسب الحد، من غير وشبر. Api.generate بيحوّل لـ FreeLlm.generate لما المفتاح FREELLM-ROUTER؛ الصوت بيتبعت WAV (OpenAI-compat). Gemma وGroq نص بس فبيتستبعدوا من الصوتي. ماتجرّبش compile.
