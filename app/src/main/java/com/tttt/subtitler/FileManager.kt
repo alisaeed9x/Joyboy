@@ -409,7 +409,7 @@ class FileManagerActivity : Activity() {
             if (i != 3) {
                 NavAnim.set(3, i)
                 if (i == 2) startActivity(Intent(this, BrowserActivity::class.java))
-                else startActivity(Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP).putExtra("tab", if (i == 0) "videos" else if (i == 1) "music" else if (i == 4) "youtube" else "tasks"))
+                else startActivity(Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP).putExtra("tab", if (i == 0) "videos" else if (i == 1) "music" else if (i == 4) "youtube" else if (i == 7) "settings" else "tasks"))
                 NavAnim.peek(this)
                 finish()
             }
@@ -421,6 +421,7 @@ class FileManagerActivity : Activity() {
         host.addView(root, FrameLayout.LayoutParams(-1, -1))
         // (v336) زرار المهام العايم اتشال — المهام في الشريط السفلي
         setContentView(host)
+        fab = TasksFab(this, host, ui) { startActivity(Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP).putExtra("tab", "tasks")) }   // (v420)
         dockUi = MiniDock(this, host, ui, th, { startActivity(Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP).putExtra("fullmusic", true)) })   // (v344)
         stripUi = StatusStrip(this, host, ui, th) { startActivity(Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP).putExtra("tab", "tasks")) }   // (v345)
     }
@@ -763,6 +764,8 @@ class FileManagerActivity : Activity() {
 
     private fun openFile(f: File, external: Boolean) {
         val e = f.extension.lowercase()
+        // (v417) ملف صوت ← مشغّل الموسيقى (كان بيفتح في مشغّل الفيديو)؛ المشغّل المصغّر العايم بيظهر هنا وبيفتح الكامل
+        if (!external && e in FmUtil.AUDIO) { Links.playAudioHere(this, Uri.fromFile(f).toString(), f.nameWithoutExtension); toast("🎵 " + f.name); return }
         try {
             if (!external && (e in FmUtil.VIDEO || e in FmUtil.AUDIO)) {
                 startActivity(Intent(this, PlayerActivity::class.java).apply {

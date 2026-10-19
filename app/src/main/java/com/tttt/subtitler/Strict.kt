@@ -10,11 +10,13 @@ package com.tttt.subtitler
 object Strict {
     const val SEMI = "loc_google"
     const val OFF = "off_ml"
+    /** (v420) 📴 أوفلاين + لينجو: Whisper + Gemma محلي (بخطوات VideoLingo) وبعده ML Kit كاحتياطي — كله على الجهاز */
+    const val OFF_VL = "off_vl"
     fun id(): String = try { Cfg.str("tr_mode_id", "") } catch (_: Throwable) { "" }
     fun semi(): Boolean = id() == SEMI
-    fun offline(): Boolean = id() == OFF
+    fun offline(): Boolean = id() == OFF || id() == OFF_VL
     /** true = جيميناي ممنوع تمامًا (مفاتيح، تحويل لهجة، بصري، تسليم احتياطي) */
-    fun noGemini(): Boolean { val i = id(); return i == SEMI || i == OFF }
+    fun noGemini(): Boolean { val i = id(); return i == SEMI || i == OFF || i == OFF_VL }
     const val NO_VISUAL_MSG = "👁 الوضع البصري شغّال في الوضع الأونلاين (جيميناي) بس"
     const val NO_DIALECT_MSG = "🗣 اللهجات في الوضع الأونلاين (جيميناي) بس — الوضع ده فصحى"
 }

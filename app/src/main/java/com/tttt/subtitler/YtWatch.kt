@@ -66,6 +66,7 @@ interface YtWatchHost {
     fun audio(v: NpItem)
     fun download(anchor: View, v: NpItem)
     fun state(open: Boolean)
+    fun dock(item: NpItem, kept: YtKept) {}   // (v417) تصغير لشريط تحت: المشغّل بيكمّل شغّال
 }
 
 /** أيقونات مرسومة (من غير خطوط): 0 تشغيل · 1 إيقاف · 2 تكبير · 3 سهم لتحت */
@@ -461,6 +462,20 @@ class YtMiniPlayer(private val act: Activity, private val ui: Ui) : FrameLayout(
         return Pair(YtPick(cp.url, cp.audio, cp.ua, cp.title, cp.h, qlistForHandoff()), pos)
     }
 
+    /** (v417) تصغير لشريط يوتيوب السفلي (YtDock): بنسلّم نفس المشغّل شغّال من غير ما يقف أو يتحمّل تاني. null لو مفيش حاجة شغّالة تتسلّم */
+    fun detachForDock(): YtKept? {
+        val p = exo ?: return null; val cp = curPick ?: return null
+        val st = p.playbackState
+        if (st == androidx.media3.common.Player.STATE_IDLE || st == androidx.media3.common.Player.STATE_ENDED) return null
+        val pos = p.currentPosition
+        try { p.removeListener(listener) } catch (_: Throwable) {}
+        hh.removeCallbacks(ticker); exo = null; keepScreenOn = false
+        thumb.visibility = View.VISIBLE
+        playG.kind = 0; playG.invalidate()
+        resumeMs = pos
+        return YtKept(p, YtPick(cp.url, cp.audio, cp.ua, cp.title, cp.h, qlistForHandoff()), pos)
+    }
+
     private fun playPick(pick: YtPick, autoplay: Boolean, seekMs: Long) {
         lastPick = pick; curPick = pick
         releasePlayer(false)
@@ -747,11 +762,15 @@ class YtWatchPage(private val act: Activity, private val ui: Ui, private val hos
         }.apply { isDaemon = true }.start()
     }
 
-    fun close(animated: Boolean) {
+    fun close(animated: Boolean, dock: Boolean = true) {
         if (visibility != View.VISIBLE || closing) return
         closing = true; gen++
-        mini.pause()
+        // (v417) النزول من صفحة المشاهدة: الفيديو بيكمّل في شريط صغير تحت (YtDock) بدل ما يقف ويختفي
+        val kept = if (dock && YtDockCfg.on()) mini.detachForDock() else null
+        if (kept == null) mini.pause()
         host.state(false)
+        val dockItem = item
+        if (kept != null) { if (dockItem != null) host.dock(dockItem, kept) else { try { kept.p.release() } catch (_: Throwable) {} } }
         fun finish() {
             visibility = View.GONE; closing = false
             mini.release(); mini.animate().cancel(); scroll.animate().cancel()
@@ -987,4 +1006,133 @@ class YtWatchPage(private val act: Activity, private val ui: Ui, private val hos
 
     fun pause() { mini.pause() }
     fun release() { mini.release() }
+}
+
+/** (v417) مشغّل شغّال + الـ pick بتاعه + الموضع — بيتسلّم من المشغّل المصغّر لشريط يوتيوب السفلي */
+class YtKept(val p: ExoPlayer, val pick: YtPick, val pos: Long)
+
+object YtDockCfg { fun on(): Boolean = Cfg.str("yt_dock", "1") != "0" }
+
+/**
+ * (v417) الشريط الصغير السفلي زي يوتيوب: لما تنزّل من صفحة المشاهدة الفيديو بيكمّل في مربع صغير فوق شريط يوتيوب السفلي
+ * (مربع فيديو · العنوان · القناة · ⏸/▶ · ✕ · خط تقدم أحمر). دوسة عليه = يتكبّر لمشغّلك الكامل من نفس الثانية (نفس المشغّل من غير تحميل).
+ * بيقف لما الصفحة تتخبّى (تبويب تاني / خروج) وبيتقفل لما تفتح فيديو تاني.
+ */
+class YtDock(private val act: Activity, private val ui: Ui, private val onExpand: (String, String, Long, YtPick?) -> Unit) : FrameLayout(act) {
+    private var exo: ExoPlayer? = null
+    private var pick: YtPick? = null
+    private var vid = ""
+    private var ttl = ""
+    private var vw = 0
+    private var vh = 0
+    private val hh = Handler(Looper.getMainLooper())
+    private val tex = TextureView(act)
+    private val titleTv = TextView(act).apply { textSize = 13f; setTextColor(YtSkin.text); typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL); maxLines = 2; ellipsize = TextUtils.TruncateAt.END }
+    private val chanTv = TextView(act).apply { textSize = 11f; setTextColor(YtSkin.sub); setSingleLine(); ellipsize = TextUtils.TruncateAt.END }
+    private val playTv = TextView(act).apply { textSize = 20f; gravity = Gravity.CENTER; setTextColor(YtSkin.text); text = "⏸" }
+    private val closeTv = TextView(act).apply { textSize = 18f; gravity = Gravity.CENTER; setTextColor(YtSkin.text); text = "✕" }
+    private val prog = View(act).apply { setBackgroundColor(YtSkin.red); pivotX = 0f; scaleX = 0f }
+    private val listener = object : androidx.media3.common.Player.Listener {
+        override fun onIsPlayingChanged(isPlaying: Boolean) { paintPlay() }
+        override fun onPlaybackStateChanged(state: Int) { paintPlay() }
+        override fun onVideoSizeChanged(v: androidx.media3.common.VideoSize) { vw = (v.width * v.pixelWidthHeightRatio).toInt(); vh = v.height; fit() }
+        override fun onPlayerError(e: PlaybackException) { LogStore.err("YtDock", e); Notice.show(act, "⚠ الفيديو وقف — دوس عليه يفتحه في المشغّل", 2600L) }
+    }
+    private val tick = object : Runnable {
+        override fun run() {
+            val p = exo ?: return
+            val d = p.duration
+            if (d > 0) prog.scaleX = (p.currentPosition.toFloat() / d.toFloat()).coerceIn(0f, 1f)
+            hh.postDelayed(this, 500L)
+        }
+    }
+
+    init {
+        layoutDirection = View.LAYOUT_DIRECTION_LTR
+        visibility = View.GONE
+        setBackgroundColor(YtSkin.surface)
+        isClickable = true
+        elevation = ui.dp(6).toFloat()
+        val row = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL }
+        val vbox = FrameLayout(act).apply { setBackgroundColor(Color.BLACK) }
+        vbox.addView(tex, FrameLayout.LayoutParams(-1, -1, Gravity.CENTER))
+        row.addView(vbox, LinearLayout.LayoutParams(ui.dp(104), -1))
+        val col = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER_VERTICAL; setPadding(ui.dp(10), 0, ui.dp(6), 0) }
+        col.addView(titleTv, LinearLayout.LayoutParams(-1, -2))
+        col.addView(chanTv, LinearLayout.LayoutParams(-1, -2))
+        row.addView(col, LinearLayout.LayoutParams(0, -1, 1f))
+        row.addView(playTv, LinearLayout.LayoutParams(ui.dp(44), -1))
+        row.addView(closeTv, LinearLayout.LayoutParams(ui.dp(40), -1))
+        addView(row, FrameLayout.LayoutParams(-1, -1))
+        addView(prog, FrameLayout.LayoutParams(-1, ui.dp(2), Gravity.TOP))
+        setOnClickListener { expand() }
+        playTv.setOnClickListener { toggle() }
+        closeTv.setOnClickListener { dismiss() }
+    }
+
+    private fun fit() {
+        val bw = ui.dp(104); val bh = ui.dp(58)
+        if (vw <= 0 || vh <= 0) return
+        val sc = minOf(bw.toFloat() / vw, bh.toFloat() / vh)
+        val lp = tex.layoutParams as? FrameLayout.LayoutParams ?: return
+        val nw = (vw * sc).toInt(); val nh = (vh * sc).toInt()
+        if (lp.width != nw || lp.height != nh) { lp.width = nw; lp.height = nh; lp.gravity = Gravity.CENTER; tex.layoutParams = lp }
+    }
+
+    private fun paintPlay() {
+        val p = exo
+        playTv.text = if (p != null && p.playWhenReady && p.playbackState != androidx.media3.common.Player.STATE_ENDED) "⏸" else "▶"
+    }
+
+    private fun toggle() {
+        val p = exo ?: return
+        if (p.playbackState == androidx.media3.common.Player.STATE_ENDED) { p.seekTo(0L); p.playWhenReady = true } else p.playWhenReady = !p.playWhenReady
+        paintPlay()
+    }
+
+    fun show(item: NpItem, k: YtKept) {
+        dismissInner()
+        vid = item.id; ttl = item.title; pick = k.pick
+        titleTv.text = item.title; chanTv.text = item.channel
+        val p = k.p; exo = p
+        try { p.setVideoTextureView(tex) } catch (_: Throwable) {}
+        p.addListener(listener)
+        val v = p.videoSize
+        if (v.width > 0 && v.height > 0) { vw = (v.width * v.pixelWidthHeightRatio).toInt(); vh = v.height; fit() }
+        paintPlay()
+        alpha = 0f; translationY = ui.dp(24).toFloat(); visibility = View.VISIBLE
+        animate().alpha(1f).translationY(0f).setDuration(200L).start()
+        hh.removeCallbacks(tick); hh.post(tick)
+    }
+
+    /** دوسة على الشريط: نفس المشغّل (شغّال ومحمّل) بيتسلّم للمشغّل الكامل من نفس الثانية */
+    private fun expand() {
+        val p = exo ?: return; val pk = pick ?: return
+        val pos = p.currentPosition
+        try { p.removeListener(listener) } catch (_: Throwable) {}
+        hh.removeCallbacks(tick); exo = null
+        p.playWhenReady = true
+        YtHandoff.put(p)
+        visibility = View.GONE
+        onExpand(vid, ttl, pos, pk)
+    }
+
+    fun pause() { try { exo?.playWhenReady = false } catch (_: Throwable) {}; paintPlay() }
+
+    fun dismiss() { dismissInner(); visibility = View.GONE }
+
+    private fun dismissInner() {
+        hh.removeCallbacks(tick)
+        val p = exo; exo = null
+        if (p != null) {
+            try { p.removeListener(listener) } catch (_: Throwable) {}
+            try { p.release() } catch (_: Throwable) {}
+        }
+        prog.scaleX = 0f
+    }
+
+    override fun onVisibilityChanged(changedView: View, visibility: Int) {
+        super.onVisibilityChanged(changedView, visibility)
+        if (visibility != View.VISIBLE) { try { exo?.playWhenReady = false } catch (_: Throwable) {} }
+    }
 }

@@ -15,7 +15,7 @@ object WhisperLib {
     @JvmStatic external fun nInit(path: String): Long
     @JvmStatic external fun nFree(h: Long)
     @JvmStatic external fun nProgress(): Int   // (v415) تقدم التفريغ الحالي 0..100
-    @JvmStatic external fun nRun(h: Long, pcm: FloatArray, threads: Int, lang: String, prompt: String): ByteArray
+    @JvmStatic external fun nRun(h: Long, pcm: FloatArray, threads: Int, lang: String, prompt: String, slot: Int): ByteArray   // (v420) slot: خانة التفريغ المتوازي
 }
 
 /**
@@ -124,11 +124,54 @@ object Offline {
     }
 
     // ===== التفريغ =====
-    private val lock = ReentrantLock(true)   // fair: الباتشات بتتفرّغ بترتيب وصولها (واحد في المرة — المعالج مش هيستحمل اتنين)
+    // (v420) تفريغ متوازي: لحد MAX_PAR باتش في نفس الوقت، كل باتش على خانة whisper مستقلة (موديل + state). الترتيب بالتذكرة (الأقدم الأول).
+    // rw: التفريغ = قفل قراءة (متوازي)، وتحرير/حذف الموديل = قفل كتابة (بيستنى كل التفريغات تخلص)
+    const val MAX_PAR = 3
+    private val rw = java.util.concurrent.locks.ReentrantReadWriteLock(true)
+    private val slotLock = ReentrantLock(true)
+    private val slotCv = slotLock.newCondition()
+    private val slotBusy = BooleanArray(MAX_PAR)
+    private var tkNext = 0L
+    private var tkServe = 0L
+    private val tkSkip = HashSet<Long>()
+    /** الخانة اللي الخيط الحالي شغّال عليها (WhisperStt بيقراها) */
+    val slotTl = ThreadLocal<Int>()
+    /** عدد الباتشات المتوازية المسموحة: الافتراضي 2 (base/small)، 1 لـ medium أو لو المحرك مش Whisper. الإعداد stt_par = 1..3 */
+    fun par(): Int {
+        if (engine().id != "whisper") return 1
+        val d = if (model().id == "medium") 1 else 2
+        val v = Cfg.int("stt_par", d).coerceIn(1, MAX_PAR)
+        return if (model().id == "medium") 1 else v
+    }
+    private fun busyCount(): Int = slotBusy.count { it }
+    private fun advanceServe() { tkServe++; while (tkSkip.remove(tkServe)) tkServe++ }
+    private fun acquireSlot(): Int {
+        slotLock.lock()
+        try {
+            val my = tkNext++
+            try {
+                while (true) {
+                    if (my == tkServe) {
+                        val p = par()
+                        val f = (0 until p).firstOrNull { !slotBusy[it] }
+                        if (f != null) { slotBusy[f] = true; advanceServe(); slotCv.signalAll(); return f }
+                    }
+                    slotCv.await(500, java.util.concurrent.TimeUnit.MILLISECONDS)
+                }
+            } catch (t: Throwable) {
+                if (my == tkServe) advanceServe() else tkSkip.add(my)
+                slotCv.signalAll()
+                throw t
+            }
+        } finally { slotLock.unlock() }
+    }
+    private fun releaseSlot(i: Int) { slotLock.lock(); try { slotBusy[i] = false; slotCv.signalAll() } finally { slotLock.unlock() } }
     @Volatile private var coolUntil = 0L
     @Volatile private var fails = 0
 
-    private fun threads(): Int = (Runtime.getRuntime().availableProcessors() - 2).coerceIn(3, 6)   // (v394) كان cores/2 بحد أقصى 4
+    private fun threadsAll(): Int = (Runtime.getRuntime().availableProcessors() - 2).coerceIn(3, 6)   // (v394) كان cores/2 بحد أقصى 4
+    /** (v420) الخيوط بتتقسّم على الباتشات الشغّالة فعلًا دلوقتي (باتش لوحده ياخد الكل) */
+    private fun threads(active: Int = 1): Int = if (active <= 1) threadsAll() else (threadsAll() / active).coerceAtLeast(2)
 
     /** ينسخ [wav] (PCM16 mono 16kHz بهيدر 44 بايت) على الجهاز بالمحرك المختار. أي فشل ← [fallback] (طلب جيميناي الأصلي) */
     fun transcribe(wav: ByteArray, durSec: Double, terms: String, log: (String) -> Unit, fallback: () -> Api.Result, warn: (String) -> Unit = {}, sess: Session? = null): Api.Result {
@@ -136,20 +179,24 @@ object Offline {
         val eng = engine()
         if (Cfg.str("stt_engine", "whisper") == "sherpa" && eng.id == "whisper") softNotice("🔄 فشل SenseVoice (مش بيفهم لغة الكلام أو مش شغّال على جهازك) — تم التحويل لـ Whisper", warn)   // (v257)
         val tq = System.currentTimeMillis()
-        lock.lock()
+        val slot = acquireSlot()
+        slotTl.set(slot)
+        rw.readLock().lock()
         try {
             val waited = System.currentTimeMillis() - tq
-            if (waited > 5000) log("⏳ الأوفلاين: الباتش استنى دوره ${waited / 1000}ث (التفريغ واحد في المرة)")
+            if (waited > 5000) log("⏳ الأوفلاين: الباتش استنى دوره ${waited / 1000}ث (خانات التفريغ ${par()})")
             eng.prepare(log)
-            runIdx = batchTag.get() ?: -1; runStart = System.currentTimeMillis()   // (v415)
+            val myIdx = batchTag.get() ?: -1; runIdx = myIdx; runStart = System.currentTimeMillis()   // (v415)
             val pcm = toFloats(wav) ?: run { log("⚠ الأوفلاين: صيغة الصوت مش مدعومة — جيميناي هو اللي نسخ الباتش"); switchNote("صيغة الصوت مش مدعومة", warn); return fallback() }
             val t0 = System.currentTimeMillis()
-            log("📴 بدأ التفريغ (${eng.id}): ${"%.0f".format(durSec)}ث صوت · ${threads()} خيوط")   // (v263)
+            val act = slotLock.let { it.lock(); try { busyCount() } finally { it.unlock() } }
+            val thr = threads(act)
+            log("📴 بدأ التفريغ (${eng.id}): ${"%.0f".format(durSec)}ث صوت · $thr خيوط" + (if (par() > 1) " · خانة ${slot + 1}/${par()} (شغّال $act)" else ""))   // (v263)
             val manual = lang()
             val locked = if (manual.isEmpty() && eng.id == "whisper") sess?.lang.orEmpty() else ""
             val useLang = manual.ifEmpty { locked }
             usedLang.set(useLang)
-            val res = eng.transcribe(pcm, useLang, terms.trim().take(200), threads())
+            val res = eng.transcribe(pcm, useLang, terms.trim().take(200), thr)
             if (sess != null && eng.id == "whisper") noteLang(sess, res, locked, log)
             if (sess != null && sess.lang.isEmpty() && res.lang.isNotEmpty()) {   // (v411) اكتشاف Whisper قبل القفل: بيتستخدم كتلميح لموديل الترجمة بس لو الحروف مطابقة
                 val gt = res.segs.filter { it.text.isNotBlank() && it.logProb > -1.0 && it.noSpeech < 0.5 }.joinToString(" ") { it.text }
@@ -173,7 +220,7 @@ object Offline {
             if (++fails >= 3) { cool(); fails = 0; log("🛟 الأوفلاين فشل 3 مرات ورا بعض — جيميناي بينسخ 5 دقايق"); switchNote("فشل 3 مرات ورا بعض — جيميناي بينسخ 5 دقايق", warn) }
             else switchNote("فشل في باتش", warn)
             return fallback()
-        } finally { runIdx = -1; lock.unlock() }
+        } finally { if (runIdx == (batchTag.get() ?: -1)) runIdx = -1; rw.readLock().unlock(); releaseSlot(slot) }   // (v420) مايمسحش عرض باتش تاني لسه شغّال
     }
 
     /** (v259) جيميناي مش موجود يكمّل بدل الأوفلاين لو فشل (مفيش مفتاح حقيقي) */
@@ -237,7 +284,7 @@ object Offline {
     fun cancelDownload() { dlCancel = true }
 
     /** (v255) تنزيل ملف واحد بالاستكمال. [progress] (نزّل، الكلّي) بالبايت. بيرمي IOException عند أي مشكلة */
-    private fun fetch(url: String, dst: File, minBytes: Long, progress: (Long, Long) -> Unit) {
+    internal fun fetch(url: String, dst: File, minBytes: Long, progress: (Long, Long) -> Unit) {
         dst.parentFile?.mkdirs()
         val part = File(dst.path + ".part")
         var have = if (part.isFile) part.length() else 0L
@@ -303,7 +350,7 @@ object Offline {
     }
 
     /** (v261) تحرير الموديل بنفس قفل التفريغ: لو باتش بيتفرّغ دلوقتي بيستنى يخلص، وإلا release() كان ممكن يحرّر الموديل وهو شغّال ← كراش native */
-    private fun releaseSafe(e: SttEngine) { lock.lock(); try { e.release() } finally { lock.unlock() } }
+    private fun releaseSafe(e: SttEngine) { rw.writeLock().lock(); try { e.release() } finally { rw.writeLock().unlock() } }
 
     fun deleteSherpa() {
         for (r in roots()) File(r, SherpaStt.SUB).deleteRecursively()   // (v271) الجديد والقديم

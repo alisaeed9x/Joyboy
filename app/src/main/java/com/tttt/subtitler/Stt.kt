@@ -35,35 +35,44 @@ interface SttEngine {
 /** Whisper (whisper.cpp عن طريق WhisperLib) — نفس سلوك v254 بالظبط، بس ورا الواجهة */
 object WhisperStt : SttEngine {
     override val id = "whisper"
-    @Volatile private var ctx = 0L
+    // (v420) كل خانة تفريغ ليها context مستقل من نفس الملف (الأوزان بتتكرر في الرام: base ~60MB · small ~185MB؛ medium خانة واحدة بس)
+    private val ctxs = LongArray(Offline.MAX_PAR)
     @Volatile private var ctxFile = ""
+    private fun slot(): Int = (Offline.slotTl.get() ?: 0).coerceIn(0, Offline.MAX_PAR - 1)
 
     override fun supported() = WhisperLib.loaded
     override fun ready() = WhisperLib.loaded && Offline.downloaded()
     override fun handles(lang: String) = true
 
+    @Synchronized
     override fun prepare(log: (String) -> Unit) {
         val f = Offline.file() ?: throw SttInitFail("مفيش مساحة تخزين")
-        if (ctx == 0L || ctxFile != f.path) {
-            release()
+        if (ctxFile != f.path) { releaseAll() }
+        val s = slot()
+        if (ctxs[s] == 0L) {
             val t0 = System.currentTimeMillis()
-            ctx = WhisperLib.nInit(f.path); ctxFile = f.path
-            if (ctx == 0L) throw SttInitFail("الموديل ما اتحمّلش")
-            log("📴 الأوفلاين: الموديل اتحمّل في ${System.currentTimeMillis() - t0}ms")
+            ctxs[s] = WhisperLib.nInit(f.path); ctxFile = f.path
+            if (ctxs[s] == 0L) throw SttInitFail("الموديل ما اتحمّلش")
+            log("📴 الأوفلاين: الموديل اتحمّل (خانة ${s + 1}) في ${System.currentTimeMillis() - t0}ms")
         }
     }
 
     override fun transcribe(pcm: FloatArray, lang: String, terms: String, threads: Int): SttResult {
-        val raw = WhisperLib.nRun(ctx, pcm, threads, lang, terms)
+        val s = slot()
+        val raw = WhisperLib.nRun(ctxs[s], pcm, threads, lang, terms, s)
         val txt = String(raw, Charsets.UTF_8)
         if (txt.startsWith("ERR")) throw IOException(txt.replace('\t', ' '))
         return parse(txt)
     }
 
-    override fun release() {
-        if (ctx != 0L) { WhisperLib.nFree(ctx); ctx = 0L }
+    @Synchronized
+    private fun releaseAll() {
+        for (i in ctxs.indices) if (ctxs[i] != 0L) { WhisperLib.nFree(ctxs[i]); ctxs[i] = 0L }
         ctxFile = ""
     }
+
+    /** بيتنده من Offline.releaseSafe تحت قفل الكتابة (مفيش تفريغ شغّال) */
+    override fun release() { releaseAll() }
 
     /** رد nRun: سطر «L<tab>لغة» + سطور «بداية<tab>نهاية<tab>noSpeech<tab>logProb<tab>نص» (الوقت بالملي) */
     private fun parse(txt: String): SttResult {

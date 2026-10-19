@@ -95,7 +95,7 @@ class MainActivity : Activity() {
     private fun webSearch(q: String) { saveCfgFn?.invoke(); NavAnim.set(curTab, 2); startActivity(Intent(this, BrowserActivity::class.java).putExtra("start", "https://www.google.com/search?q=" + java.net.URLEncoder.encode(q, "UTF-8"))) }
     private var fabHide = false
     /** (v336) الزرار العايم اتشال؛ الدالة دلوقتي بتحدّث عدّاد زرار «المهام» في الشريط السفلي */
-    private fun updateTasksFab() { try { val a = TaskCenter.active() + BgJobs.jobs.count { it.active }; val t = TaskCenter.total() + BgJobs.jobs.size; val n = if (a > 0) a else t; navUi?.label(5, if (n > 0) "المهام ($n)" else "المهام") } catch (_: Throwable) {} }
+    private fun updateTasksFab() { try { val a = TaskCenter.active() + BgJobs.jobs.count { it.active }; val t = TaskCenter.total() + BgJobs.jobs.size; val n = if (a > 0) a else t; navUi?.label(5, if (n > 0) "المهام ($n)" else "المهام"); tasksFabUi?.let { it.hidden = fabHide || curTab == 5 } } catch (_: Throwable) {} }
     private var toolsUiM: ToolsUi? = null
     private var pendingTool = ""
     private var pendingSrc: ToolSrc? = null
@@ -376,6 +376,7 @@ class MainActivity : Activity() {
             ui.section("🎬 لما تدوس على فيديو", true,
                 ui.chips(listOf("صفحة المشاهدة", "المشغّل مباشرة"), { if (YtOpen.mode() == YtOpen.PLAYER) "المشغّل مباشرة" else "صفحة المشاهدة" }) { n -> Cfg.put("yt_open_mode", if (n == "المشغّل مباشرة") YtOpen.PLAYER else YtOpen.PAGE) },
                 ui.switchRow("▶ شغّل تلقائي في المشغّل المصغّر", YtOpen.autoPlay()) { Cfg.put("yt_mini_auto", if (it) "1" else "0") },
+                ui.switchRow("⬇ لما تنزّل من صفحة المشاهدة: الفيديو يكمّل في شريط صغير تحت (زي يوتيوب)", YtDockCfg.on()) { Cfg.put("yt_dock", if (it) "1" else "0") },
                 ui.switchRow("🌐 علامة «مدبلج» على الفيديوهات متعددة اللغات في القوايم", YtDub.enabled()) { Cfg.put("yt_dub_scan", if (it) "1" else "0") },
                 ui.text("صفحة المشاهدة: الفيديو بيكبر بأنيميشن ومعاه الوصف والتعليقات والمقترحات والاشتراك، وزرار التكبير في ركن المشغّل المصغّر بيفتح مشغّلك الكامل من نفس الثانية. المشغّل مباشرة: الدوسة بتفتح المشغّل على طول.", 12f, th.muted)),
             ui.section("🎞 الجودة الافتراضية", true,
@@ -488,6 +489,10 @@ class MainActivity : Activity() {
         val offModelChips = ui.chips(Offline.models.map { it.label }, { Offline.model().label }) { l ->
             Offline.models.firstOrNull { m -> m.label == l }?.let { m -> Cfg.put("off_model", m.id); TrWizard.syncSaved("off_model", m.id) }; offProg.text = ""; offRefresh()
         }
+        // (v420) عدد خانات التفريغ المتوازي (باتشات Whisper في نفس الوقت)
+        val parOpts = listOf("خانة 1", "خانتين", "3 خانات")
+        val parNote = ui.text("الخانات أكتر = تفريغ أسرع لكن رام وحرارة أكتر. medium دايمًا خانة واحدة. الافتراضي خانتين.", 11f, th.muted)
+        val parChips = ui.chips(parOpts, { parOpts[(Offline.par()).coerceIn(1, 3) - 1] }) { l -> Cfg.put("stt_par", (parOpts.indexOf(l) + 1).toString()); parNote.text = if (Offline.model().id == "medium" && parOpts.indexOf(l) > 0) "⚠ موديل medium بيشتغل بخانة واحدة بغض النظر عن الاختيار (الرام)." else "الخانات أكتر = تفريغ أسرع لكن رام وحرارة أكتر. الافتراضي خانتين." }
         offDlBtn = ui.button("") {
             if (Offline.downloading()) { Offline.cancelDownload() }
             else if (Offline.downloaded()) { Notice.show(this, "دوس دوسة طويلة على الزرار عشان تمسح الموديل", 2300L) }
@@ -609,6 +614,8 @@ class MainActivity : Activity() {
                     ui.text("حط كل مفاتيحك هنا في قايمة واحدة — البرنامج بيوزّعها لوحده: مفاتيح للترجمة (أغلبها)، ومفتاح أو اتنين للتنقيح الجزئي أثناء الترجمة، ومفتاح احتياطي لو مفتاح اتعطّل (من 6 مفاتيح). التنقيح الجزئي بيبدأ من 3 مفاتيح.", 12f, th.muted), keysUi),
                                 ui.section("👁 مفتاح الوضع البصري فقط", false,
                     ui.text("الوضع البصري (👁) بيشتغل بالمفاتيح اللي هنا بس، ومش بياخد أبدًا من مفاتيح الترجمة. لو سبتها فاضية الوضع البصري مش هيشتغل. ولما الوضع البصري مايكونش شغّال المفتاح ده بيشتغل كمفتاح احتياطي للترجمة والتنقيح.", 12f, th.muted), visKeysUi)),
+                // (v416) محركات الذكاء الصناعي المجانية بمفتاحك: Mistral · Cerebras (+ مين يترجم الأول؟)
+                *FreeLlmUi.sections(this, ui, th).toTypedArray(),
                 View(this))),
             // ===== 🎙 التفريغ والصوت: موديلات الجهاز + إعدادات الصوت =====
             tab("audio", listOf<View>(
@@ -617,7 +624,7 @@ class MainActivity : Activity() {
                 ui.section("📴 التفريغ على الجهاز (من غير مفتاح)", true,
                     ui.text("اختيار التفريغ (جيميناي / على الجهاز / سحابي) من خط الترجمة. هنا بس تنزيل ومسح الموديلات واختيار المحرك واللغة.", 12f, th.muted),
                     ui.text("محرك التفريغ:", 12f, th.muted), sttEngChips, sherpaStatus, sherpaDlBtn, sherpaProg,
-                    ui.text("حجم موديل Whisper:", 12f, th.muted), offModelChips, offStatus, offDlBtn, offProg,
+                    ui.text("حجم موديل Whisper:", 12f, th.muted), offModelChips, ui.text("⚡ خانات التفريغ المتوازي:", 12f, th.muted), parChips, parNote, offStatus, offDlBtn, offProg,
                     ui.text("لغة الكلام (لو عارفها بتقلّل أخطاء الاكتشاف التلقائي):", 12f, th.muted), offLangChips,
                     ui.button("⬇ تنزيل موديل ترجمة اللغة المختارة (ML Kit)") { MlKitTr.downloadAsync(this, Offline.lang()) },
                     ui.text("طول الجزء اللي بيتفرّغ ويتبعت للترجمة أول ما يجهز:", 12f, th.muted), offPartChips,
@@ -917,6 +924,7 @@ class MainActivity : Activity() {
         setContentView(frame)
         dockUi = MiniDock(this, frame, ui, th, { musicOpenFn?.invoke() }, { curTab == 1 }) { t -> musicUi?.artBitmap(t) }   // (v344)
         stripUi = StatusStrip(this, frame, ui, th) { showTabFn(5) }   // (v345)
+        tasksFabUi = TasksFab(this, frame, ui) { showTasksDialog() }   // (v420) عايم: بيظهر وقت المهام الشغّالة بس
         if (!fromPlayer && b == null) { frame.alpha = 0f; frame.animate().setStartDelay(0L).alpha(1f).setDuration(160L).start() }   // (v312) بدل السبلاش: ظهور ناعم سريع
         if (!fromPlayer) {   // (v310) أيقونة «الموسيقى» في اللانشر (alias) أو رجوع من المتصفح/الملفات لتبويب معيّن
             val cn = intent?.component?.className ?: ""
@@ -925,12 +933,13 @@ class MainActivity : Activity() {
             val t0 = intent?.getStringExtra("tab") ?: when (savedTab) { 1 -> "music"; 4 -> "youtube"; 5 -> "tasks"; else -> null }
             if (cn.endsWith(".MusicLauncher") || t0 == "music") frame.post { showTabFn(1) }
             else if (t0 == "tasks") frame.post { showTabFn(5) }
+            else if (t0 == "settings") frame.post { settingsShow?.invoke(null) }
             else if (t0 == "youtube") frame.post { showTabFn(4); openYtFromIntent(intent) }
         }
         intent?.getStringExtra("reopen_tab")?.let { t -> intent?.removeExtra("reopen_tab"); frame.post { if (!isFinishing && !isDestroyed) settingsShow?.invoke(t) } }
         // لو مفيش مفتاح Gemini: القايمة بتظهر مباشرة أول البرنامج، وبعدها الفحص
         frame.post { permFlow { ensureKeysSoft { keys.setText(Cfg.allMainKeys().joinToString("\n")); keyLoadersRef.forEach { it() }; refreshChip(); doScan() } } }
-        frame.post { handleExternal(intent) }   // (v345) لينك جاي من تطبيق تاني (مشاركة / فتح)
+        frame.post { handleLinkIntent(intent) }; frame.post { handleExternal(intent) }   // (v345) لينك جاي من تطبيق تاني (مشاركة / فتح)
     }
     /** (v345) المرحلة 1 «كتلة واحدة»: أي لينك جاي من برّه (مشاركة أو فتح). لينك يوتيوب ← قايمة «افتحه إزاي؟»، غير كده ← زي زمان */
     private fun ytIdOf(u: String): String? = Regex("(?:youtu\\.be/|youtube\\.com/(?:watch\\?(?:[^\\s#]*&)?v=|shorts/|live/|embed/))([A-Za-z0-9_-]{11})").find(u)?.groupValues?.get(1)
@@ -940,7 +949,11 @@ class MainActivity : Activity() {
         val url = Regex("https?://\\S+").find(raw)?.value ?: return
         i.action = null   // ما يتكررش لو الأكتيفيتي اتعمل لها إعادة إنشاء
         val id = ytIdOf(url)
-        if (id == null) { link.setText(url); openLink(url); return }
+        if (id == null) { link.setText(url); openLinkAs(url); return }
+        askYt(url, id)
+    }
+    /** (v417) لينك يوتيوب من برّه أو من الموزّع (auto): قايمة «افتحه إزاي؟» */
+    private fun askYt(url: String, id: String) {
         val items = arrayOf("🎬 شغّله فيديو", "🎬 شغّله وترجمه", "🎧 شغّله صوت بس (داتا أقل)", "🌐 افتحه في المتصفح")
         android.app.AlertDialog.Builder(this).setTitle("لينك يوتيوب — افتحه إزاي؟").setItems(items) { _, w ->
             when (w) {
@@ -1135,24 +1148,64 @@ class MainActivity : Activity() {
     fun pickVideo() { startActivityForResult(filePicker("video/*", "اختار فيديو", true), 1) }
     /** landscape: الفيديو من الجهاز بيفتح لاندسكيب مباشرة (زي MX) إلا لو معروف إنه طولي */
     /** لينك فيديو مباشر → يشتغل على طول؛ أي لينك تاني (يوتيوب / صفحة) → شاشة الصيد بتفتح الصفحة وتلقط الفيديوهات */
-    fun openLink(u0: String) {
-        val u = u0.trim()
-        if (Sniff.isDirect(u)) play(u, null) else startActivity(Intent(this, BrowserActivity::class.java).putExtra("start", u))
+    fun openLink(u0: String) { openLinkAs(u0.trim()) }
+    /** (v417) موزّع الروابط الواحد (Links.kt): how = auto (يتحدد من نوع اللينك) · video · video_tr · audio · web · dl — ret = الشاشة اللي يرجع لها المشغّل (browser/yt) */
+    fun openLinkAs(u: String, how: String = Links.AUTO, title: String = "", ret: String = "") {
+        if (u.isBlank() || isFinishing || isDestroyed) return
+        val id = Links.ytId(u)
+        val k = Links.kind(u)
+        val web = { saveCfgFn?.invoke(); NavAnim.set(curTab, 2); startActivity(Intent(this, BrowserActivity::class.java).putExtra("start", u)) }
+        when (how) {
+            Links.WEB -> web()
+            Links.DL -> Links.download(this, u, title)
+            Links.AUDIO -> if (id != null) playYtAudio(id, title, "", "") else openMusicLink(u, title)
+            Links.VIDEO_TR -> if (id != null) playYt(id, title, true, true, 0L, null, ret) else openVideoLink(u, ret)
+            Links.VIDEO -> if (id != null) playYt(id, title, false, false, 0L, null, ret) else openVideoLink(u, ret)
+            else -> when {
+                id != null -> askYt(u, id)
+                k == Links.Kind.AUDIO -> openMusicLink(u, title)
+                k == Links.Kind.VIDEO -> openVideoLink(u, ret)
+                else -> web()
+            }
+        }
     }
-    fun play(u: String, uri: Uri?, landscape: Boolean = uri != null, fresh: Boolean = false, noSub: Boolean = false, ask: Boolean = false) {
+    private fun openVideoLink(u: String, ret: String) {
+        if (u.startsWith("file:", true) || u.startsWith("content:", true)) play("", Uri.parse(u), true, false, false, false, ret)
+        else play(u, null, false, false, false, false, ret)
+    }
+    private fun openMusicLink(u: String, title: String) {
+        try {
+            val tr = Links.trackOf(u, title)
+            if (curTab != 1) musicReturnTab = curTab
+            showTabFn(1)
+            MusicEngine.play(this, listOf(tr), 0)
+            musicOpenFn?.invoke()
+        } catch (e: Throwable) { LogStore.err("Main:linkAudio", e); Notice.show(this, "ما قدرتش أشغّل الصوت ده", 2800L) }
+    }
+    /** (v417) لينك جاي من شاشة تانية (المتصفح/الملفات) عن طريق Links.open */
+    private fun handleLinkIntent(i: Intent?) {
+        val u = i?.getStringExtra(Links.EX_URL) ?: return
+        val how = i.getStringExtra(Links.EX_HOW) ?: Links.AUTO
+        val t = i.getStringExtra(Links.EX_TITLE) ?: ""
+        val r = i.getStringExtra(Links.EX_RET) ?: ""
+        i.removeExtra(Links.EX_URL)
+        openLinkAs(u, how, t, r)
+    }
+    fun play(u: String, uri: Uri?, landscape: Boolean = uri != null, fresh: Boolean = false, noSub: Boolean = false, ask: Boolean = false, ret: String = "") {
         try { musicUi?.pause() } catch (_: Throwable) {}
         if (u.isBlank() && uri == null) return
-        if (noSub) startPlayerNow(u, uri, landscape, fresh, true)   // فرجة من غير ترجمة: مش محتاج مفتاح
-        else ensureKeys { startPlayerNow(u, uri, landscape, fresh, false, ask) }
+        if (noSub) startPlayerNow(u, uri, landscape, fresh, true, false, ret)   // فرجة من غير ترجمة: مش محتاج مفتاح
+        else ensureKeys { startPlayerNow(u, uri, landscape, fresh, false, ask, ret) }
     }
     /** (v117) دخول فوري للمشغّل: مفيش قراءة لملف الترجمة هنا خالص — المشغّل بيحمّلها هو في الخلفية واللودنج بيظهر جواه */
     fun playChecked(v: VideoItem) {
         play("", Uri.parse(v.uri), v.landscape, false, false, !BgJobs.isActive(v.videoId))
     }
-    fun startPlayerNow(u: String, uri: Uri?, landscape: Boolean = uri != null, fresh: Boolean = false, noSub: Boolean = false, ask: Boolean = false) {
+    fun startPlayerNow(u: String, uri: Uri?, landscape: Boolean = uri != null, fresh: Boolean = false, noSub: Boolean = false, ask: Boolean = false, ret: String = "") {
         startActivity(Intent(this, PlayerActivity::class.java).apply {
             if (uri != null) { data = uri; addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION) } else putExtra("url", u)
             putExtra("landscape", landscape); putExtra("fresh", fresh); putExtra("nosub", noSub); putExtra("ask", ask)
+            if (ret.isNotEmpty()) putExtra("ret", ret)   // (v417) الرجوع من المشغّل لنفس الشاشة (متصفح/يوتيوب)
             // لو فتحنا الإعدادات من المشغّل واخترنا فيديو جديد: امسح المشغّل القديم بدل ما يفضل تحته
             if (intent?.getBooleanExtra("from_player", false) == true) addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_NO_ANIMATION)
         })
@@ -1248,17 +1301,17 @@ class MainActivity : Activity() {
         }
     }
     /** (v117) دخول مباشر لفيديو يوتيوب من معرّفه: بيجيب أحسن لينك فيه صوت وصورة ويفتح المشغّل (لو فشل بيفتح صفحته في المتصفح) */
-    fun playYt(id: String, title: String, translate: Boolean = true, auto: Boolean = translate, startMs: Long = 0L, handoff: YtPick? = null) {
+    fun playYt(id: String, title: String, translate: Boolean = true, auto: Boolean = translate, startMs: Long = 0L, handoff: YtPick? = null, retOv: String = "") {
         // (v339) مفتاح الترجمة الأول (لو ناقص بيسأل) وبعدها ندخل صفحة المشغّل فورًا
-        if (translate) ensureKeys { ytStart(id, title, translate, auto, startMs, handoff) } else ytStart(id, title, translate, auto, startMs, handoff)
+        if (translate) ensureKeys { ytStart(id, title, translate, auto, startMs, handoff, retOv) } else ytStart(id, title, translate, auto, startMs, handoff, retOv)
     }
     private fun cancelYtLoad() { ytLoadTok++; ytLoadLaunched = false; ytLoadUi?.hide() }
     /** (v339) بنفتح «صفحة المشغّل» فورًا (لودينج جواها) وبنجيب رابط الفيديو في الخلفية؛ لو فشل بنقفلها ونطلّع الدايلوج ونفضل في يوتيوب */
     /** (v351) بنفتح المشغّل الكامل فورًا؛ هو اللي بيجيب رابط الفيديو ويحمّل جواه (من غير شاشة اللودينج السودا القديمة) */
-    private fun ytStart(id: String, title: String, translate: Boolean, auto: Boolean, startMs: Long = 0L, handoff: YtPick? = null) {
+    private fun ytStart(id: String, title: String, translate: Boolean, auto: Boolean, startMs: Long = 0L, handoff: YtPick? = null, retOv: String = "") {
         if (id.length != 11) { ytStartLegacy(id, title, translate, auto, startMs); return }
         ytLoadLaunched = true
-        val ret = if (curTab == 4) "yt" else ""
+        val ret = if (retOv.isNotEmpty()) retOv else if (curTab == 4) "yt" else ""
         if (handoff != null) {   // (v406) المشغّل المصغّر اتسلّم (YtHandoff): المشغّل الكامل بياخده شغّال من غير ما يجيب الرابط ويحمّل من الأول
             startActivity(Intent(this, PlayerActivity::class.java).apply {
                 putExtra("handoff", true)
@@ -1473,7 +1526,7 @@ class MainActivity : Activity() {
         if (!fromPlayer && libStarted) libUi?.let { if (it.hasData) it.render() else scanFn() }
         if (!fromPlayer && curTab == 4) ytUi?.refresh()
     }
-    override fun onDestroy() { try { dockUi?.detach() } catch (_: Throwable) {}; try { ytUi?.destroy() } catch (_: Throwable) {}; try { stripUi?.detach() } catch (_: Throwable) {}; if (!fromPlayer) TaskCenter.listener = null; try { tasksFabUi?.detach() } catch (_: Throwable) {}; try { musicUi?.destroy() } catch (_: Throwable) {}; super.onDestroy() }
+    override fun onDestroy() { try { dockUi?.detach() } catch (_: Throwable) {}; try { ytUi?.destroy() } catch (_: Throwable) {}; try { stripUi?.detach() } catch (_: Throwable) {}; try { tasksFabUi?.detach() } catch (_: Throwable) {}; if (!fromPlayer) TaskCenter.listener = null; try { tasksFabUi?.detach() } catch (_: Throwable) {}; try { musicUi?.destroy() } catch (_: Throwable) {}; super.onDestroy() }
     /** (v327) إشعار فيديو جديد: افتح تفاصيله في بوابة يوتيوب (الدالة بتتركّب أول ما بوابة يوتيوب تتبني؛ showTabFn(4) بتبنيها) */
     private fun openYtFromIntent(i: Intent?) {
         val id = i?.getStringExtra("yt_open") ?: return
@@ -1489,9 +1542,9 @@ class MainActivity : Activity() {
                     i?.getStringExtra("ytaudurl"), i?.getStringExtra("ytaudua") ?: "", i?.getLongExtra("ytauddur", 0L) ?: 0L)
             } catch (e: Throwable) { LogStore.err("Main:ytaudio", e); Notice.show(this, ("ما قدرتش أحوّل لصوت — جرّب تاني").toString(), 3000L) }
         }
-        handleExternal(i)   // (v345)
+        handleExternal(i); handleLinkIntent(i)   // (v345)
         if (i?.getBooleanExtra("fullmusic", false) == true) musicOpenFn?.invoke()   // (v344) ⤢ من المشغّل المصغّر في المتصفح/الملفات
-        when (i?.getStringExtra("tab")) { "videos" -> showTabFn(0); "music" -> showTabFn(1); "tasks" -> showTabFn(5); "youtube" -> { showTabFn(4); openYtFromIntent(i) } }
+        when (i?.getStringExtra("tab")) { "videos" -> showTabFn(0); "music" -> showTabFn(1); "tasks" -> showTabFn(5); "settings" -> settingsShow?.invoke(null); "youtube" -> { showTabFn(4); openYtFromIntent(i) } }
     }
     @Suppress("DEPRECATION")
     override fun onBackPressed() {

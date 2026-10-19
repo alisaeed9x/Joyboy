@@ -405,7 +405,7 @@ class BrowserActivity : Activity() {
         root.addView(webWrap, LinearLayout.LayoutParams(-1, 0, 1f)); root.addView(badge)
         root.addView(dlBar, LinearLayout.LayoutParams(-1, -2).apply { setMargins(ui.dp(8), ui.dp(4), ui.dp(8), ui.dp(6)) })   // (v324)
         // (v117) شريط البوابات: الفيديوهات · الموسيقى · المتصفح (إحنا فيه دلوقتي) · الملفات · (v324) يوتيوب
-        val gates = BottomNav(this, ui, th, 2) { i -> if (i != 2) NavAnim.set(2, i); if (i == 0) goMain("videos") else if (i == 1) goMain("music") else if (i == 4) goMain("youtube") else if (i == 5) goMain("tasks") else if (i == 3) { startActivity(Intent(this, FileManagerActivity::class.java)); NavAnim.peek(this); finish() } }   // (v310) الملفات · (v364) الذكاء
+        val gates = BottomNav(this, ui, th, 2) { i -> if (i != 2) NavAnim.set(2, i); if (i == 0) goMain("videos") else if (i == 1) goMain("music") else if (i == 4) goMain("youtube") else if (i == 5) goMain("tasks") else if (i == 7) goMain("settings") else if (i == 3) { startActivity(Intent(this, FileManagerActivity::class.java)); NavAnim.peek(this); finish() } }   // (v310) الملفات · (v364) الذكاء
         root.addView(gates.view, LinearLayout.LayoutParams(-1, -2))
         content = root
         frame = FrameLayout(this); frame.setBackgroundColor(th.bg)
@@ -415,6 +415,7 @@ class BrowserActivity : Activity() {
         setContentView(frame)
         dockUi = MiniDock(this, frame, ui, th, { startActivity(Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP).putExtra("fullmusic", true)) })   // (v344)
         stripUi = StatusStrip(this, frame, ui, th) { goMain("tasks") }   // (v345)
+        tasksFabUi = TasksFab(this, frame, ui) { goMain("tasks") }   // (v420)
 
         // التبويبات: رجّع المحفوظة (لو مفعّل) وبعدها لو جاي بلينك افتحه في تبويب جديد
         val start = intent?.getStringExtra("start")?.trim() ?: ""
@@ -1155,6 +1156,7 @@ class BrowserActivity : Activity() {
             box.addView(ui.button("🖼 افتح الصورة في تبويب جديد") { d.dismiss(); newTab(u, true, tab.id) })
             box.addView(ui.button("⬇ احفظ الصورة") { d.dismiss(); startDownload(u, uaOf(tab), URLUtil.guessFileName(u, null, null), null) })
         }
+        if (!image) box.addView(ui.button("🎬 افتح بـ… (مشغّل · صوت · يوتيوب)") { d.dismiss(); Links.sheet(this, ui, u, "", "browser", false) { persistTabs() } })   // (v417) الموزّع الموحّد
         box.addView(ui.button("📋 انسخ اللينك") { d.dismiss(); copyUrl(u) })
         box.addView(ui.button("📤 شارك") { d.dismiss(); shareUrl(u) })
         d = sheet(if (image) "🖼 صورة" else "🔗 لينك", box); d.show()

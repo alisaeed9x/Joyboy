@@ -175,8 +175,9 @@ object TrWizard {
                 val id = Cfg.str("tr_mode_id", "")
                 val base = when (id) {
                     "g_wav" -> (if (pl.only) "✍ تفريغ ذكاء صناعي" else "☁ أونلاين · WAV"); "g_aac" -> (if (pl.only) "✍ تفريغ ذكاء صناعي" else "☁ أونلاين · AAC")
-                    "loc_ai" -> "📴 محلي + 🧠 ترجمة"; "loc_ctx" -> "📴 وشبر + 🧠 جيميناي بالسياق"; "loc_google" -> (if (pl.only) "✍ تفريغ Whisper" else "🌗 وشبر + 🌍 جوجل"); "off_ml" -> (if (pl.only) "✍ تفريغ Whisper (أوفلاين)" else "📴 وشبر + ML Kit")
+                    "loc_ai" -> "📴 محلي + 🧠 ترجمة"; "loc_ctx" -> "📴 وشبر + 🧠 جيميناي بالسياق"; "loc_google" -> (if (pl.only) "✍ تفريغ Whisper" else "🌗 وشبر + " + FreeLlm.firstId().let { f -> if (f.isEmpty()) "🌍 جوجل" else "🤖 " + (FreeLlm.eng(f)?.label ?: f) }); "off_ml" -> (if (pl.only) "✍ تفريغ Whisper (أوفلاين)" else "📴 وشبر + ML Kit")
                     "ai_only" -> "✍ تفريغ ذكاء صناعي"; "w_only" -> "✍ تفريغ Whisper"; "s_only" -> "✍ تفريغ SenseVoice"
+                    "off_vl" -> "📴 وشبر + Gemma محلي + لينجو"; "vl_mistral" -> "🌬 وشبر + Mistral + لينجو"; "vl_cerebras" -> "🧠 وشبر + Cerebras + لينجو"; "vl_gemini" -> "✨ وشبر + جيميناي + لينجو"   // (v418)
                     else -> if (pl.only) "✍ تفريغ بس" else if (pl.offline) "📴 أوفلاين" else if (pl.cloud) "☁ محرك خارجي" else "☁ أونلاين"
                 }
                 val parts = ArrayList<String>(); parts.add(base)
@@ -195,7 +196,7 @@ object TrWizard {
     fun describe(pl: Plan): String = SourceMode.prefix() + describeCore(pl)
     private fun describeCore(pl: Plan): String =
         if (pl.only) "✍ تفريغ بس (من غير ترجمة)\nالتفريغ: " + (if (pl.offline) (if (pl.engine == "sherpa") "SenseVoice" else "Whisper " + pl.model) + " على الجهاز · " + langLabel(pl.lang) else "جيميناي") + "\nالنص بيظهر بلغته الأصلية"
-        else if (pl.offline) "📴 أوفلاين" + (if (pl.live) " ⚡ لحظي" else "") + " · " + langLabel(pl.lang) + "\nالتفريغ: " + (if (pl.engine == "sherpa") "SenseVoice (sherpa-onnx)" else "Whisper " + pl.model) + " على الجهاز\nالترجمة: " + (if (pl.free == "mlkit") "ML Kit (أوفلاين · من غير نت)" else if (pl.method == "google") "جوجل (من غير API)" else "جيميناي بالسياق") + "\nاللهجة: " + pl.dialect.ifBlank { "فصحى" } + (if (pl.method == "google" && pl.dialect.isNotBlank() && pl.dialect != "فصحى") " (" + convLabel(pl.conv) + " بيحوّل الترجمة)" else "") + (if (pl.free.isNotBlank() && pl.method == "google") "\nالمترجم: " + (if (pl.free.startsWith("llm_")) "🤖 " + (ExtLlm.byId(pl.free.removePrefix("llm_"))?.label ?: pl.free) + " الأول (بمفتاحك)" else "🌐 " + pl.free + " الأول (مجاني من الريبو)") else "")
+        else if (pl.offline) "📴 أوفلاين" + (if (pl.live) " ⚡ لحظي" else "") + " · " + langLabel(pl.lang) + "\nالتفريغ: " + (if (pl.engine == "sherpa") "SenseVoice (sherpa-onnx)" else "Whisper " + pl.model) + " على الجهاز\nالترجمة: " + (if (pl.free == "mlkit") "ML Kit (أوفلاين · من غير نت)" else if (pl.method == "google") "جوجل (من غير API)" else "جيميناي بالسياق") + "\nاللهجة: " + pl.dialect.ifBlank { "فصحى" } + (if (pl.method == "google" && pl.dialect.isNotBlank() && pl.dialect != "فصحى") " (" + convLabel(pl.conv) + " بيحوّل الترجمة)" else "") + (if (pl.free.isNotBlank() && pl.method == "google") "\nالمترجم: " + (if (pl.free.startsWith("llm_")) "🤖 " + (ExtLlm.byId(pl.free.removePrefix("llm_"))?.label ?: pl.free) + " الأول (بمفتاحك)" else "🌐 " + (ExtTranslate.all().firstOrNull { it.id == pl.free }?.label ?: pl.free) + " الأول (" + (if (FreeLlm.isLlm(pl.free)) "مفتاحك المجاني" else "مجاني من الريبو") + ")") else "")
         else "☁ أونلاين (جيميناي)\n" + (TrPresets.byId(pl.onlineId)?.let { it.icon + " " + it.name } ?: "⚙ الإعدادات الحالية") + (pl.dia?.let { "\nاللهجة: " + it.ifBlank { "فصحى" } } ?: "")
 
     /** (v274) لو التفريغ السحابي كان شغّال بسبب خطة «أونلاين بمحرك خارجي» بنقفله لما نرجع لخطة تانية (إلا لو إنت شغّلته من الإعدادات) */
@@ -440,10 +441,37 @@ object TrWizard {
 
         fun afterModePick() {
             // (v410) تفريغ بس: مفيش لهجة ولا أسلوب · نص-أونلاين وأوفلاين: فصحى + صوتي بس (مفيش لهجة ولا بصري)
-            if (onlySw || mId == Strict.SEMI || mId == Strict.OFF) { finishModes("audio", null); return }
+            if (onlySw || mId == Strict.SEMI || mId == Strict.OFF || mId == Strict.OFF_VL || mId.startsWith("vl_")) { finishModes("audio", null); return }   // (v418) لينجو: مصري ثابت، من غير أسئلة لهجة
             if (mId in dialectModes) go { stepMDia() } else go { stepMVis() }
         }
 
+
+        /** (v418) أوضاع لينجو: لو مفتاح المحرك ناقص بنفتح شرح جلبه ونكمّل لوحدنا بعد اللصق */
+        fun pickVl(id: String) {
+            val e = FreeLlm.eng(id.removePrefix("vl_"))
+            if (e != null && !FreeLlm.hasKey(e)) {
+                FreeLlmUi.guide(act, ui, th, e) { k -> Cfg.put(e.keyCfg, (Cfg.keys(e.keyCfg) + k).distinct().joinToString("\n")); Notice.show(act, "✓ اتحفظ مفتاح ${e.label}", 2000L); pickMode(id) }
+                return
+            }
+            if (id == "vl_gemini" && Cfg.allMainKeys().isEmpty()) { Notice.show(act, "حط مفتاح جيميناي الأول من الإعدادات", 2800L); return }
+            pickMode(id)
+        }
+
+        /** (v420) 📴 أوفلاين + لينجو: لو موديل Gemma المحلي مش نازل بنسأل وننزّله (~2.6 جيجا، مرة واحدة) وبعدين نكمّل لوحدنا */
+        fun pickLocalVl() {
+            if (!LocalLlm.supported()) { Notice.show(act, "الموديل المحلي محتاج جهاز arm64", 2800L); return }
+            if (LocalLlm.ready()) { pickMode(Strict.OFF_VL); return }
+            if (LocalLlm.downloading()) { Notice.show(act, "⬇ موديل Gemma بيتنزّل دلوقتي — استنى يخلص", 2500L); return }
+            android.app.AlertDialog.Builder(act)
+                .setTitle("⬇ تنزيل موديل الترجمة المحلي")
+                .setMessage("Gemma 4 E2B حجمه حوالي ${LocalLlm.APPROX_MB} ميجا، بيتنزّل مرة واحدة (بيكمّل من حيث وقف) ومحتاج 3 جيجا فاضية. بعدها الترجمة بتشتغل من غير نت. ننزّله؟")
+                .setPositiveButton("نزّل") { _, _ ->
+                    LocalLlm.download({ a, t -> act.runOnUiThread { Notice.show(act, "⬇ Gemma: " + (a / 1048576) + " / " + (t / 1048576) + " ميجا", 900L) } }) { err ->
+                        act.runOnUiThread { if (err != null) Notice.show(act, "⚠ التنزيل فشل: $err", 3500L) else { Notice.show(act, "✓ الموديل نزل", 2000L); pickMode(Strict.OFF_VL) } }
+                    }
+                }
+                .setNegativeButton("إلغاء", null).show()
+        }
 
         fun pickMode(id: String) {
             mId = id; afterDl = null; hubActive = true; hubFlow = false; presetFlow = false; live = false; repoToHub = false
@@ -451,12 +479,13 @@ object TrWizard {
                 "g_wav", "g_aac" -> { src = "gemini"; tr = "gemini"; gp = CURRENT }
                 "loc_ai", "loc_ctx" -> { src = if (engine == "sherpa" && SherpaStt.ready() && SherpaStt.handles(lang)) "sherpa" else "whisper"; tr = "gemini"; trId = "" }
                 "loc_google" -> { src = "whisper"; tr = "google"; trId = ""; dia = ""; diaSet = true; convId = ""; lang = "" }   // (v410) 🌗 Whisper فقط + لغة تلقائية
-                "off_ml" -> { src = "whisper"; tr = "free"; trId = "mlkit"; dia = ""; diaSet = true; convId = ""; lang = "" }   // (v410) 📴 Whisper + ML Kit
+                "off_ml", "off_vl" -> { src = "whisper"; tr = "free"; trId = "mlkit"; dia = ""; diaSet = true; convId = ""; lang = "" }   // (v410) 📴 Whisper + ML Kit
+                "vl_mistral", "vl_cerebras", "vl_gemini" -> { src = "whisper"; tr = "free"; trId = id.removePrefix("vl_"); if (id == "vl_gemini") trId = "vl_gemini"; dia = ""; diaSet = true; convId = ""; lang = "" }   // (v418) Whisper + محرك AI بخطوات لينجو (مصري)
                 "ai_only" -> { src = "gemini"; tr = "none"; trId = "" }
                 "w_only" -> { src = "whisper"; tr = "none"; trId = "" }
                 "s_only" -> { src = "sherpa"; tr = "none"; trId = "" }
             }
-            if (onlySw && id in setOf("g_wav", "g_aac", Strict.SEMI, Strict.OFF)) tr = "none"   // (v410)
+            if (onlySw && id in setOf("g_wav", "g_aac", Strict.SEMI, Strict.OFF, Strict.OFF_VL)) tr = "none"   // (v410)
             if (src == "whisper") engine = "whisper"
             if (src == "sherpa") { engine = "sherpa"; if (!SherpaStt.handles(lang)) lang = "" }
             if (src == "whisper" && !WhisperLib.loaded) { Notice.show(act, "الأوفلاين مش مدعوم على جهازك", 2500L); return }
@@ -484,6 +513,11 @@ object TrWizard {
             opt("☁ أونلاين — جيميناي", "تفريغ وترجمة بجيميناي · لهجات + أسلوب + ضمائر + شخصيات + وضع بصري · محتاج مفتاح ونت", mId == "g_wav" || mId == "g_aac") { go { stepOnlineQ() } }
             opt("🌗 نص-أونلاين — Whisper + جوجل  🔒 من غير مفتاح", "التفريغ على جهازك والترجمة بجوجل (وبعدها MyMemory/Lingva ثم ML Kit) · فصحى بس · جيميناي ممنوع · الترجمة محتاجة نت · اللغة بتتكشف لوحدها", mId == Strict.SEMI) { pickMode(Strict.SEMI) }
             opt("📴 أوفلاين — Whisper + ML Kit  🔒 مابيتصلش بالنت", "كله على جهازك · فصحى بس · اللغة بتتكشف لوحدها (Whisper + حروف النص) وموديلها بيتحمّل مرة واحدة مع شريط تقدم · بعدها من غير نت", mId == Strict.OFF) { pickMode(Strict.OFF) }
+            sec("🎬 لينجو (VideoLingo) — ترجمة بخطوتين بالمصري")   // (v418)
+            opt("🌬 Mistral + لينجو", "Whisper على جهازك + Mistral بمفتاحك المجاني · ملخص ثم ترجمة حرفية ثم مراجعة بالمصري · محتاج نت", mId == "vl_mistral") { pickVl("vl_mistral") }
+            opt("🧠 Cerebras + لينجو", "Whisper على جهازك + Cerebras بمفتاحك المجاني · نفس خطوات لينجو بالمصري · محتاج نت", mId == "vl_cerebras") { pickVl("vl_cerebras") }
+            opt("✨ جيميناي + لينجو", "Whisper على جهازك + مفاتيح جيميناي بتاعتك · نفس خطوات لينجو بالمصري · محتاج نت", mId == "vl_gemini") { pickVl("vl_gemini") }
+            opt("📴 أوفلاين + لينجو — Gemma محلي  🔒 من غير نت", "Whisper + موديل Gemma على جهازك بخطوات لينجو بالمصري · أبطأ من ML Kit بس أحسن في الأسلوب · لو الموديل وقف بيكمّل بـ ML Kit · بيحتاج ~2.6 جيجا مرة واحدة", mId == Strict.OFF_VL) { pickLocalVl() }
             sec("✍ تفريغ بس")
             opt("✍ تفريغ بس (من غير ترجمة): " + (if (onlySw) "✅ شغّال" else "⏸ مقفول"), "النص بيظهر بلغته الأصلية، وبيتطبّق على الوضع اللي تختاره فوق. دوس عشان تبدّل.", onlySw) { onlySw = !onlySw; Cfg.put("tr_s_only", if (onlySw) "1" else "0"); stepModes() }
             sec("👁 بصري")
@@ -553,7 +587,7 @@ object TrWizard {
         /** (v276) فحص المترجمين المجانيين (اللي ليهم محوّل جاهز) وترتيبهم بالسرعة؛ الأخضر الأسرع يتختار */
         fun stepRepo() {
             reset("🌐 مترجمين مجانيين")
-            val provs = ExtTranslate.builtin + listOfNotNull(ExtTranslate.libreProv())
+            val provs = FreeLlm.provs() + ExtTranslate.builtin + listOfNotNull(ExtTranslate.libreProv())   // (v416) Mistral/Cerebras لو ليهم مفتاح
             note("قايمة الريبو مفيهاش مفاتيح، فبنجرّب المترجمين اللي ليهم محوّل جاهز في التطبيق (بدون مفتاح). الأسرع الشغّال بيتختار الأول، والباقي بيكمّل لو وقف. التفريغ أوفلاين على جهازك.")
             if (ftested.isEmpty() && !ftesting) {
                 ftesting = true
@@ -567,9 +601,9 @@ object TrWizard {
                     }
                 }.also { it.isDaemon = true }.start()
             }
-            val ordered = provs.sortedBy { pv -> ftested[pv.id]?.let { if (it.first) it.second else Long.MAX_VALUE - 1 } ?: Long.MAX_VALUE }
+            val ordered = provs.sortedBy { pv -> (if (FreeLlm.isLlm(pv.id)) -1_000_000_000L else 0L) + (ftested[pv.id]?.let { if (it.first) it.second else Long.MAX_VALUE - 1 } ?: Long.MAX_VALUE) }
             val okList = ordered.filter { ftested[it.id]?.first == true }
-            val best = okList.firstOrNull { it.dailyChars == 0 } ?: okList.firstOrNull()   // (v277) اللي ليه حد يومي (MyMemory ~4800 حرف) مايبقاش «الأسرع» طول ما فيه بديل من غير حد
+            val best = okList.firstOrNull { it.dailyChars == 0 && !FreeLlm.isLlm(it.id) } ?: okList.firstOrNull()   // (v277) اللي ليه حد يومي (MyMemory ~4800 حرف) مايبقاش «الأسرع» طول ما فيه بديل من غير حد
             fun choose(pv: ExtTranslate.Prov) {
                 if (repoToHub) { tr = "free"; trId = pv.id; sync(); toHub(); return }   // (v279) جاي من كارت ②
                 if (!WhisperLib.loaded) { Notice.show(act, "الأوفلاين مش مدعوم على جهازك — التفريغ هنا بيبقى على الجهاز", 3500L); return }

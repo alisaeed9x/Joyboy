@@ -94,7 +94,7 @@ object TaskCenter {
     private var appCtx: Context? = null
     private var seq = 0
 
-    fun changed() { main.post { try { listener?.invoke() } catch (_: Throwable) {}; for (l in extra) { try { l() } catch (_: Throwable) {} } }; WidgetHub.poke(appCtx) }
+    fun changed() { try { appCtx?.let { TaskService.sync(it) } } catch (_: Throwable) {}; main.post { try { listener?.invoke() } catch (_: Throwable) {}; for (l in extra) { try { l() } catch (_: Throwable) {} } }; WidgetHub.poke(appCtx) }
     fun active(): Int = items.count { it.state == 0 || it.state == 1 }
     /** (v324) أي حاجة في صفحة المهام (شغّالة أو خالصة) — الزرار العايم بيفضل ظاهر طول ما فيه حاجة تتفتح */
     fun total(): Int = items.size

@@ -1439,6 +1439,8 @@ class PlayerActivity : Activity(), Host {
         }
         gTool.addView(pk("🗂 ترجمات الفيديو ›") { fillVer(); dismissPop(); togglePop(menuB, gVer, false) })
         gTool.addView(pd("🔄 إعادة ترجمة") { batchDialog() })
+        gTool.addView(pd("🎙 دبلجة عربي (تشغيل/إيقاف)") { dubToggle() })   // (v418)
+        gTool.addView(pd("🗣 صوت الدبلجة: سلمى ⇄ شاكر") { dubVoiceSwap() })   // (v418)
         gTool.addView(pd("👁 الوضع البصري") { visualDialog() })
         gTool.addView(pd("🌙 ترجمة بالخلفية") { translateInBackground() })
         gTool.addView(pd("📶 استهلاك النت") { netDialog() })
@@ -3041,6 +3043,44 @@ class PlayerActivity : Activity(), Host {
     }
 
     private fun say(m: String) = runOnUiThread { Notice.show(this, (m).toString(), 2300L) }
+
+    // ===== (v418) دبلجة عربي (Edge TTS) =====
+    private var dubPlay: DubPlay? = null
+    @Volatile private var dubBusy = false
+    @Volatile private var dubCancel = false
+
+    private fun dubToggle() {
+        val dp = dubPlay
+        if (dp != null && dp.active) { dp.stop(); say("🎙 الدبلجة اتقفلت — صوت الفيديو الأصلي رجع"); return }
+        if (dubBusy) { dubCancel = true; say("⏹ بلغي الدبلجة…"); return }
+        val segs = Dub.segsOf(engine.subs)
+        if (segs.isEmpty()) { say("مفيش جمل مترجمة لسه — ترجم الأول وبعدين دبّلج"); return }
+        val dur = try { player.duration } catch (_: Throwable) { -1L }
+        val total = if (dur > 0) dur / 1000.0 else 0.0
+        val key = Store.keyFor(vid)
+        val app = applicationContext
+        dubBusy = true; dubCancel = false
+        say("🎙 بجهّز الدبلجة (" + segs.size + " جملة) بصوت " + Dub.voiceLabel() + "…")
+        Thread {
+            var last = 0L
+            val f = try {
+                Dub.build(app, key, segs, total, { d, t -> val n = System.currentTimeMillis(); if (n - last > 4000L) { last = n; say("🎙 دبلجة " + d + "/" + t) } }, { dubCancel || isDestroyed })
+            } catch (e: Throwable) { LogStore.err("Player:dub", e); null }
+            dubBusy = false
+            if (isDestroyed) return@Thread
+            runOnUiThread {
+                if (f == null) { say(if (dubCancel) "اتلغت الدبلجة" else "❌ الدبلجة فشلت — اتأكد إن النت شغّال وجرّب تاني"); return@runOnUiThread }
+                val dp2 = dubPlay ?: DubPlay(player).also { dubPlay = it }
+                if (dp2.start(f)) say("✅ الدبلجة شغّالة — صوت الفيديو الأصلي اتوطّى") else say("❌ مقدرتش أشغّل ملف الدبلجة")
+            }
+        }.start()
+    }
+
+    private fun dubVoiceSwap() {
+        val v = Dub.toggleVoice()
+        say("🗣 الصوت دلوقتي: " + Dub.voiceLabel(v) + " — دوس دبلجة تاني عشان تتبنى بالصوت الجديد")
+        dubPlay?.stop()
+    }
     private fun touchSubs() = runOnUiThread { curIdx = -2; dirty = true }
 
     fun runTool(label: String, instruction: String, all: Boolean) {
@@ -3938,6 +3978,7 @@ class PlayerActivity : Activity(), Host {
         if (pipNow() && interactive && !isFinishing && !audioOnlyMode) closeAfterPip()
     }
     override fun onDestroy() {
+        dubCancel = true; try { dubPlay?.stop(); dubPlay = null } catch (_: Throwable) {}   // (v418)
         try { volWatch?.stop(); volWatch = null } catch (_: Throwable) {}
         LogStore.add("🔚 onDestroy (isFinishing=$isFinishing)")
         NoticeLog.detach(this)

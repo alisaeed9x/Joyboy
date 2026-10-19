@@ -22,7 +22,7 @@ import javax.crypto.spec.SecretKeySpec
  * بيتحفظ لوحده عند أي تغيير في المفاتيح، وبيتسترجع لوحده لو التطبيق اتثبّت من جديد والمفاتيح فاضية.
  */
 object KeyVault {
-    private val FIELDS = listOf("keys", "backup", "extra", "keymodes")
+    private val FIELDS = listOf("keys", "backup", "extra", "keymodes", "mistral_keys", "cerebras_keys")   // (v416)
     private val h = Handler(Looper.getMainLooper())
     private var listener: SharedPreferences.OnSharedPreferenceChangeListener? = null
     @Volatile private var lastSaved = ""

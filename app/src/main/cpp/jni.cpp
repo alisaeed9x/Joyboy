@@ -2,6 +2,7 @@
 #include <jni.h>
 #include <android/log.h>
 #include <cmath>
+#include <cstdint>
 #include <string>
 #include "whisper.h"
 
@@ -14,21 +15,26 @@ static std::string clean(const char *s) {
 }
 
 // (v415) تقدم التفريغ الحقيقي: نسبة من 0 لـ 100 بتتحدّث من whisper.cpp نفسه (كل نافذة + كل جملة جديدة)
-static volatile int g_prog = 0;
-static volatile long g_total_cs = 1;
-static void on_progress(struct whisper_context *, struct whisper_state *, int p, void *) { if (p > g_prog) g_prog = p; }
-static void on_segment(struct whisper_context *ctx, struct whisper_state *, int, void *) {
+// (v420) تفريغ متوازي: كل خانة (slot) ليها whisper_context مستقل (موديل + state)، فمفيش مشاركة بيانات بين الخيوط. التقدم per-slot.
+#define MAX_SLOTS 4
+static volatile int g_prog[MAX_SLOTS] = {0, 0, 0, 0};
+static volatile long g_total_cs[MAX_SLOTS] = {1, 1, 1, 1};
+static volatile int g_last = 0;   // آخر خانة بدأت شغل (للعرض)
+static inline int slot_of(void *ud) { int s = (int) (intptr_t) ud; return (s < 0 || s >= MAX_SLOTS) ? 0 : s; }
+static void on_progress(struct whisper_context *, struct whisper_state *, int p, void *ud) { int s = slot_of(ud); if (p > g_prog[s]) g_prog[s] = p; }
+static void on_segment(struct whisper_context *ctx, struct whisper_state *, int, void *ud) {
+    int s = slot_of(ud);
     int n = whisper_full_n_segments(ctx);
-    if (n > 0 && g_total_cs > 0) {
-        long p = (long) whisper_full_get_segment_t1(ctx, n - 1) * 100 / g_total_cs;
+    if (n > 0 && g_total_cs[s] > 0) {
+        long p = (long) whisper_full_get_segment_t1(ctx, n - 1) * 100 / g_total_cs[s];
         if (p > 99) p = 99;
-        if (p > g_prog) g_prog = (int) p;
+        if (p > g_prog[s]) g_prog[s] = (int) p;
     }
 }
 
 extern "C" {
 
-JNIEXPORT jint JNICALL Java_com_tttt_subtitler_WhisperLib_nProgress(JNIEnv *, jclass) { return g_prog; }
+JNIEXPORT jint JNICALL Java_com_tttt_subtitler_WhisperLib_nProgress(JNIEnv *, jclass) { return g_prog[g_last]; }
 
 JNIEXPORT jlong JNICALL Java_com_tttt_subtitler_WhisperLib_nInit(JNIEnv *env, jclass, jstring path) {
     const char *p = env->GetStringUTFChars(path, nullptr);
@@ -46,7 +52,8 @@ JNIEXPORT void JNICALL Java_com_tttt_subtitler_WhisperLib_nFree(JNIEnv *, jclass
 
 // الرد: UTF-8 bytes. سطر أول "L\t<لغة>" وبعده لكل جزء "t0ms\tt1ms\tno_speech\tavg_logprob\tالنص". لو فشل: "ERR\t<كود>"
 JNIEXPORT jbyteArray JNICALL Java_com_tttt_subtitler_WhisperLib_nRun(JNIEnv *env, jclass, jlong h, jfloatArray audio,
-                                                                      jint threads, jstring lang, jstring prompt) {
+                                                                      jint threads, jstring lang, jstring prompt, jint slot) {
+    int sl = (slot < 0 || slot >= MAX_SLOTS) ? 0 : (int) slot;
     auto *ctx = reinterpret_cast<whisper_context *>(h);
     std::string out;
     if (!ctx) {
@@ -81,11 +88,11 @@ JNIEXPORT jbyteArray JNICALL Java_com_tttt_subtitler_WhisperLib_nRun(JNIEnv *env
         wp.print_timestamps = false;
         if (!promptS.empty()) wp.initial_prompt = promptS.c_str();
 
-        g_prog = 0; g_total_cs = (long) (n / 160); if (g_total_cs < 1) g_total_cs = 1;
-        wp.progress_callback = on_progress; wp.progress_callback_user_data = nullptr;
-        wp.new_segment_callback = on_segment; wp.new_segment_callback_user_data = nullptr;
+        g_prog[sl] = 0; g_last = sl; g_total_cs[sl] = (long) (n / 160); if (g_total_cs[sl] < 1) g_total_cs[sl] = 1;
+        wp.progress_callback = on_progress; wp.progress_callback_user_data = (void *) (intptr_t) sl;
+        wp.new_segment_callback = on_segment; wp.new_segment_callback_user_data = (void *) (intptr_t) sl;
         int rc = whisper_full(ctx, wp, pcm, (int) n);
-        g_prog = 100;
+        g_prog[sl] = 100;
         env->ReleaseFloatArrayElements(audio, pcm, JNI_ABORT);
 
         if (rc != 0) {

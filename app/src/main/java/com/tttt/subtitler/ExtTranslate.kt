@@ -22,6 +22,9 @@ object ExtTranslate {
         var batch: ((List<String>, String) -> List<String?>)? = null
         /** (v274) بصمة المفتاح الحالي — لو المفتاح اتغيّر الإيقاف بسبب «مفتاح مرفوض» بيتفك لوحده */
         var keyHash: () -> Int = { 0 }
+        /** (v416) حجم الدفعة لمحركات LLM (الافتراضي 25) + راحة بين الدفعات بالمللي ثانية (لتجنّب حد الطلبات في الثانية) */
+        var chunk: Int = 25
+        var gapMs: Long = 0L
     }
     /** (v274) ملاحظة غير خطأ من مزوّد (مثلًا: الموديل اتغيّر لوحده) — المحرك بيعرضها كإشعار وبيصفّرها */
     @Volatile var lastNote = ""
@@ -37,8 +40,14 @@ object ExtTranslate {
         Prov("mlkit", "ML Kit (أوفلاين · فصحى)", listOf("mlkit"), 0) { _, _ -> null }.also { pv -> pv.batch = { texts, sl -> MlKitTr.translate(texts, sl) } }   // (v408)
     )
 
+    /** (v418) جيميناي بخطوات لينجو — بيظهر بس لو فيه مفتاح جيميناي */
+    private val vlGemini: Prov = Prov("vl_gemini", "جيميناي + لينجو", listOf("vl_gemini"), 0) { _, _ -> null }.also { pv -> pv.chunk = 20; pv.gapMs = 1200L; pv.batch = { texts, sl -> VideoLingo.translateGemini(texts, sl) } }
+    /** (v420) Gemma محلي بخطوات لينجو — بيتحط الأول في وضع «أوفلاين + لينجو»، وبعده ML Kit لو فشل */
+    private val vlLocal: Prov = Prov("vl_local", "Gemma محلي + لينجو", listOf("vl_local"), 0) { _, _ -> null }.also { pv -> pv.chunk = 8; pv.gapMs = 0L; pv.batch = { texts, sl -> VideoLingo.translateLocal(texts, sl) } }
+    private fun vlProvs(): List<Prov> = if (Cfg.allMainKeys().isNotEmpty()) listOf(vlGemini) else emptyList()
+
     /** المزوّدين المدمجين + الراوتر (لو فيه مفاتيح) + محركات LLM اللي مفتاحها مضبوط */
-    fun all(): List<Prov> = builtin + listOfNotNull(libreProv())
+    fun all(): List<Prov> = FreeLlm.provs() + vlProvs() + builtin + listOfNotNull(libreProv())   // (v416) Mistral/Cerebras (لو فيه مفتاح) الأول
 
     private fun day(): String = (System.currentTimeMillis() / 86_400_000L).toString()
 
@@ -50,15 +59,20 @@ object ExtTranslate {
     fun primaryId(): String = Cfg.str("ext_primary").trim()
     /** (v274) سلسلة الترجمة بالترتيب الفعلي (null = جوجل الداخلي). بعدها لو كلها فشلت الباتش بيتحوّل لجيميناي بمفاتيحك */
     fun chain(): List<Prov?> {
-        if (Strict.offline()) return listOfNotNull(builtin.firstOrNull { it.id == "mlkit" })   // (v410) أوفلاين كامل: ML Kit بس — مفيش جوجل ولا مزوّدين بالنت
+        if (Strict.offline()) {
+            val ml = builtin.firstOrNull { it.id == "mlkit" }
+            return if (Strict.id() == Strict.OFF_VL && LocalLlm.ready() && LocalLlm.supported()) listOfNotNull(vlLocal, ml) else listOfNotNull(ml)   // (v420)
+        }   // (v410) أوفلاين كامل: ML Kit بس — مفيش جوجل ولا مزوّدين بالنت
         val ext = active()
         // (v277) id المحفوظ لمحركات LLM هو id البريست (chatgpt) بينما id المزوّد llm_chatgpt — قبل كده المحرك الأساسي ماكانش بيتلقى أبدًا؛ وكمان وضع «الريبو بس» ماكانش لازم يستبعد اللي اخترته بإيدك
-        val pid = primaryId()
+        val pid = primaryId().ifEmpty { FreeLlm.firstId() }   // (v416) مفيش محرك أساسي محدد: Mistral/Cerebras (لو ليهم مفتاح) قبل جوجل
         val prim = if (pid.isEmpty()) null else all().firstOrNull { enabled(it) && (it.id == pid || it.id == "llm_$pid") }
-        // (v366) الراوتر أول واحد بعد المحرك الأساسي؛ ومزوّدين LLM بتوعك جواه فمابيتكرروش بعد جوجل
-        val rest = ext.filter { it.id != prim?.id }
+        // (v416) باقي محركات الـLLM بتوعك بتيجي على طول بعد الأساسي وقبل جوجل (لو مش مختار «جوجل أولًا»)
+        val llmRest = if (FreeLlm.firstId().isNotEmpty()) ext.filter { FreeLlm.isLlm(it.id) && it.id != prim?.id } else emptyList()
+        val rest = ext.filter { it.id != prim?.id && it !in llmRest }
         val steps = ArrayList<Prov?>()
         prim?.let { steps.add(it) }
+        steps.addAll(llmRest)
         if (externalFirst()) { steps.addAll(rest); steps.add(null) } else { steps.add(null); steps.addAll(rest) }
         return steps
     }
@@ -66,6 +80,7 @@ object ExtTranslate {
     fun whoLabel(p: Prov?): String = when {
         p == null -> "🏠 جوجل الداخلي"
         p.id == "libre" -> "🌐 LibreTranslate (سيرفرك)"
+        FreeLlm.isLlm(p.id) -> "🤖 " + p.label + " (مفتاحك المجاني)"   // (v416)
         else -> "🌐 " + p.label + " (مجاني من الريبو)"
     }
     /** (v278) سطر «مين بيترجم دلوقتي» للإشعارات: السلسلة بالترتيب، أو جيميناي بعدد مفاتيحه */
@@ -78,7 +93,7 @@ object ExtTranslate {
     fun inRepo(p: Prov): Boolean = PublicApis.listed(p.keys) != null
 
     /** المزوّدين اللي هيتستخدموا فعلًا: مفعّلين، ولو «الريبو بس» شغّال لازم يكونوا في القايمة المسحوبة */
-    fun active(): List<Prov> = all().filter { enabled(it) && (!strict() || inRepo(it) || it.id == "mlkit") }
+    fun active(): List<Prov> = all().filter { enabled(it) && (!strict() || inRepo(it) || it.id == "mlkit" || FreeLlm.isLlm(it.id)) }
 
     // ===== (v274) إيقاف مؤقت لمزوّد فشل: مفتاح مرفوض (لحد ما المفتاح يتغيّر) / كوتة أو رصيد (دقايق) / رابط أو موديل غلط / سيرفر واقع =====
     private val coolUntil = ConcurrentHashMap<String, Long>()
@@ -236,8 +251,10 @@ object ExtTranslate {
         val bt = p.batch
         if (bt != null) {   // (v273) محرك LLM: 25 جملة في الطلب، ولو فشل طلبين ورا بعض بنقف
             var okN = 0; var failed = 0
-            for (chunk in texts.indices.chunked(25)) {
+            val chunks = texts.indices.chunked(p.chunk.coerceAtLeast(1))
+            for ((ci, chunk) in chunks.withIndex()) {
                 if (!alive()) break
+                if (ci > 0 && p.gapMs > 0L) { try { Thread.sleep(p.gapMs) } catch (_: InterruptedException) { break } }   // (v416) راحة بين الدفعات (حد الطلبات)
                 try {
                     val r = bt(chunk.map { texts[it] }, sl)
                     for ((q, i) in chunk.withIndex()) r.getOrNull(q)?.takeIf { it.isNotBlank() }?.let { out[i] = it; okN++ }

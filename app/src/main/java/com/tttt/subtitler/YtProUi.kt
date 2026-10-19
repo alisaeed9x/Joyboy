@@ -189,6 +189,7 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
         else { busyView.visibility = View.GONE; busyDr.stop() }
     }
     private val lv = ListView(act)
+    private lateinit var ytDock: YtDock               // (v417) شريط مصغّر سفلي بيكمّل الفيديو لما تنزّل من صفحة المشاهدة
     private lateinit var watch: YtWatchPage          // (v402) صفحة المشاهدة (مشغّل مصغّر + تعليقات + مقترحات)
     private lateinit var chan: YtChannelPage         // (v403) صفحة القناة (بانر + اشتراك + جرس + تابات)
     private var navBar: View? = null
@@ -442,9 +443,12 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
             override fun openVideo(v: NpItem) { watchVideo(v, null) }
             override fun audio(v: NpItem) { playAudio(v) }
             override fun download(anchor: View, v: NpItem) { dlMenu(anchor, v) }
-            override fun state(open: Boolean) { setNavHidden(open || chan.isOpen) }
+            override fun state(open: Boolean) { if (open) ytDock.dismiss(); setNavHidden(open || chan.isOpen) }
+            override fun dock(item: NpItem, kept: YtKept) { ytDock.show(item, kept) }   // (v417)
         })
         content.addView(watch, FrameLayout.LayoutParams(-1, -1))
+        ytDock = YtDock(act, ui) { id, t, pos, pk -> val f = onPlayAt; if (f != null) f(id, t, false, pos, pk) else onPlay(id, t, false) }   // (v417)
+        content.addView(ytDock, FrameLayout.LayoutParams(-1, ui.dp(58), Gravity.BOTTOM))
         root.addView(content, LinearLayout.LayoutParams(-1, 0, 1f))
         val navLn = View(act).apply { setBackgroundColor(YtSkin.line) }; navLine = navLn
         root.addView(navLn, LinearLayout.LayoutParams(-1, ui.dp(1)))
@@ -471,8 +475,8 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
     fun refresh() { recMemoAt = 0L; if (cur == null) openTab(0) else adapter.notifyDataSetChanged(); startPoll() }
     fun onHide() { hideKb(); sugBox.visibility = View.GONE; watch.pause(); h.removeCallbacks(pollRun) }
     /** (v348) Main.onStop: الشورتس تقف لما التطبيق يروح الخلفية أو يظهر المشغّل فوقه (بترجع في refresh() مع onResume) */
-    fun onPause() { watch.pause() }
-    fun destroy() { h.removeCallbacks(pollRun); h.removeCallbacks(lineWatch); YtNp.onHome = null; YtRss.onFeed = null; watch.release() }
+    fun onPause() { watch.pause(); ytDock.pause() }
+    fun destroy() { h.removeCallbacks(pollRun); h.removeCallbacks(lineWatch); YtNp.onHome = null; YtRss.onFeed = null; try { ytDock.dismiss() } catch (_: Throwable) {}; watch.release() }
     fun back(): Boolean {
         if (watch.isOpen) { watch.close(true); return true }   // (v402)
         if (chan.isOpen) { chan.close(true); return true }     // (v403)
@@ -864,7 +868,7 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
     /** (v340) لو الفيديو اتفتح من قايمة تشغيل (أو أي قايمة فيديوهات) نسجّلها عشان لوحة «التالي» تعرضها */
     private fun markCtx() { val st = cur; if (st != null && st.vid == null && st.title.startsWith("📃")) YtNext.setContext(st.list(), st.title.removePrefix("📃").trim()) else YtNext.clearContext() }
     private fun play(it0: NpItem, tr: Boolean) {
-        markCtx()
+        markCtx(); ytDock.dismiss()   // (v417)
         val it = asWatch(it0)
         if (YtStore.histOn()) YtStore.addFront(YtStore.HIST, it, 200)
         logWatch(it, false)
@@ -872,7 +876,7 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
         onPlay(it.id, it.title, tr)
     }
     private fun playAudio(it0: NpItem) {
-        markCtx()
+        markCtx(); ytDock.dismiss()   // (v417)
         val it = asWatch(it0)
         if (YtStore.histOn()) YtStore.addFront(YtStore.HIST, it, 200)
         logWatch(it, true)

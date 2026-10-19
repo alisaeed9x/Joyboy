@@ -88,7 +88,7 @@ class TasksFab(private val act: Activity, private val parent: FrameLayout, priva
     fun refresh() {
         val active = TaskCenter.active() + BgJobs.jobs.count { it.active }
         val total = TaskCenter.total() + BgJobs.jobs.size
-        val show = total > 0 && !hidden
+        val show = active > 0 && !hidden   // (v420) بيظهر وقت الشغل بس؛ بعد ما يخلص بيختفي (الناتج في ⋯ المزيد ← المهام)
         val n = if (active > 0) active else total
         view.text = if (n > 99) "99+" else n.toString()
         view.background = GradientDrawable().apply {

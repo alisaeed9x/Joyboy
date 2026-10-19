@@ -139,7 +139,9 @@ class Engine(
     /** (v151) باتشات فاشلة مستنية أقرب مفتاح فاضي: avoid = المفتاح اللي فشلت عليه، prep = الصوت المفكوك (من غير فك تاني) */
     private class Rehome(val avoid: String?, val at: Long, val prep: Prep?)
     private val rehomeQ = ConcurrentHashMap<Int, Rehome>()
-    private val perKey get() = conf.parallelPerKey.coerceIn(1, 4)
+    /** (v420) الأوفلاين: الباتشات المتوازية = خانات الوشبر (Offline.par) حتى لو المفاتيح أقل */
+    private val ppk: Int get() = if (Offline.on()) maxOf(conf.parallelPerKey, Offline.par()) else conf.parallelPerKey
+    private val perKey get() = ppk.coerceIn(1, 4)
     private val hedgeBusy = AtomicInteger(0)
     private val recentMs = java.util.concurrent.ConcurrentLinkedDeque<Long>()   // أزمنة آخر باتشات خلصت
     // ===== مفتاح/موديل/زمن رد كل باتش =====
@@ -204,7 +206,7 @@ class Engine(
     private val bg = Executors.newFixedThreadPool(2) { r -> Thread(r).also { it.isDaemon = true } }
     private val ch get() = conf.chunkSec.toDouble()
     /** عدد المقاطع قدّام = الأكبر بين الإعداد وعدد الطلبات المتوازية، عشان كل المفاتيح تشتغل مع بعض */
-    private val window get() = maxOf(conf.ahead.coerceAtLeast(1), pool.capacity(conf.parallelPerKey))
+    private val window get() = maxOf(conf.ahead.coerceAtLeast(1), pool.capacity(ppk))
 
     // ===== واجهة للـ UI =====
     fun failedCount() = failed.count { it.value >= MAX_FAILS }
@@ -212,7 +214,7 @@ class Engine(
     fun batchRows(): List<Pair<String, Boolean>> {
         val d = host.playerDuration()
         val c = (host.position() / ch).toInt().coerceAtLeast(0)
-        val cap = pool.capacity(conf.parallelPerKey).coerceAtLeast(1)
+        val cap = pool.capacity(ppk).coerceAtLeast(1)
         val out = ArrayList<Pair<String, Boolean>>()
         val fastest = HashMap<Int, Int>()   // الدفعة → رقم الباتش الأسرع
         val byWave = runs.entries.groupBy { it.key / cap }
@@ -577,8 +579,8 @@ class Engine(
 
     fun run() {
         if (conf.keys.isEmpty() && conf.backup.isEmpty()) { host.status("⚠ ادخل مفتاح Gemini في الإعدادات"); host.log("⚠ مفيش مفاتيح Gemini"); host.notice("⚠ مفيش مفتاح جيميناي — ضيف واحد من الإعدادات ← المفاتيح"); return }
-        val capMax = basePool.capacity(conf.parallelPerKey)
-        val ex = Executors.newFixedThreadPool(capMax + 2) { r -> Thread(r).also { it.isDaemon = true } }   // +2: باتش اتنسخ واتحسب من نسخته الاحتياطية ممكن يفضل خيطه الأصلي شغال شوية من غير ما يحجز مكان باتش جديد
+        val capMax = basePool.capacity(ppk)
+        val ex = Executors.newFixedThreadPool(maxOf(capMax, Offline.MAX_PAR) + 2) { r -> Thread(r).also { it.isDaemon = true } }   // +2: باتش اتنسخ واتحسب من نسخته الاحتياطية ممكن يفضل خيطه الأصلي شغال شوية من غير ما يحجز مكان باتش جديد
         exec = ex
         if (capMax > 1) host.log("⚡ ترجمة متوازية: لحد $capMax طلب في نفس الوقت")
         try { sideNotice() } catch (_: Throwable) {}
@@ -586,7 +588,7 @@ class Engine(
             if (headless) try { src() } catch (e: Exception) { host.log("⚠ معرفتش أفتح الفيديو: " + (e.message ?: e.toString()).take(120)) }
             while (running) {
                 val d = currentDur()
-                val cap = capNow(pool.capacity(conf.parallelPerKey))   // (v227: 429 يقلّلها لـ 2) (v210) بيتغيّر لو الوضع اتبدّل أثناء الشغل (3/4 = مفاتيح الترانسكريبشن بس)
+                val cap = capNow(pool.capacity(ppk))   // (v227: 429 يقلّلها لـ 2) (v210) بيتغيّر لو الوضع اتبدّل أثناء الشغل (3/4 = مفاتيح الترانسكريبشن بس)
                 translateTick(userPaused || paused)            // (v210) الباتشات المنسوخة بتتجمّع وتتترجم حتى وقت الإيقاف المؤقت
                 if (headless && d <= 0 && (failed[0] ?: 0) >= MAX_FAILS) { fatal = "معرفتش أفتح الفيديو أو أقرأ مدته"; host.log("⛔ " + fatal); host.status("⛔ " + fatal); running = false; break }
                 if (headless && !anyApplied && failedCount() >= 5) { fatal = "المقاطع بتفشل ورا بعض — راجع المفاتيح والنت"; host.log("⛔ " + fatal); host.status("⛔ " + fatal); running = false; break }
