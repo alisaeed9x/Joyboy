@@ -41,7 +41,7 @@ object ExtTranslate {
     )
 
     /** المزوّدين المدمجين + الراوتر (لو فيه مفاتيح) + محركات LLM اللي مفتاحها مضبوط */
-    fun all(): List<Prov> = builtin + listOfNotNull(libreProv(), beatProv())
+    fun all(): List<Prov> = builtin + listOfNotNull(libreProv(), beatProv(), FreeLlm.prov())
 
     private fun day(): String = (System.currentTimeMillis() / 86_400_000L).toString()
 
@@ -74,6 +74,7 @@ object ExtTranslate {
         p == null -> "🏠 جوجل الداخلي"
         p.id == "libre" -> if (Cfg.str("libre_url").isBlank()) "🌐 LibreTranslate" else "🌐 LibreTranslate (سيرفرك)"
         p.id == "beat" -> "🔑 Beat · " + beatNow()
+        p.id == "free" -> "🆓 FreeLLM · " + FreeLlm.liveName()
         else -> "🌐 " + p.label + " (مجاني من الريبو)"
     }
     /** (v278) سطر «مين بيترجم دلوقتي» للإشعارات: السلسلة بالترتيب، أو جيميناي بعدد مفاتيحه */
@@ -86,7 +87,7 @@ object ExtTranslate {
     fun inRepo(p: Prov): Boolean = PublicApis.listed(p.keys) != null
 
     /** المزوّدين اللي هيتستخدموا فعلًا: مفعّلين، ولو «الريبو بس» شغّال لازم يكونوا في القايمة المسحوبة */
-    fun active(): List<Prov> = all().filter { enabled(it) && (!strict() || inRepo(it) || it.id == "mlkit" || it.id == "beat") }
+    fun active(): List<Prov> = all().filter { enabled(it) && (!strict() || inRepo(it) || it.id == "mlkit" || it.id == "beat" || it.id == "free") }
 
     // ===== (v274) إيقاف مؤقت لمزوّد فشل: مفتاح مرفوض (لحد ما المفتاح يتغيّر) / كوتة أو رصيد (دقايق) / رابط أو موديل غلط / سيرفر واقع =====
     private val coolUntil = ConcurrentHashMap<String, Long>()
@@ -179,6 +180,8 @@ object ExtTranslate {
         if (left <= 0L) { modelCool.remove(m); modelWhy.remove(m); return "" }
         return (modelWhy[m] ?: "واقف") + " — بعد " + left + " ث"
     }
+    /** (v439) true لو كل موديلات Beat في استراحة دلوقتي (النقطة بتبقى صفرا) */
+    fun beatAllCooling(): Boolean { val l = beatModels(); return l.isNotEmpty() && l.all { beatModelStatus(it).isNotEmpty() } }
     /** تبديل فوري من القايمة السريعة: الموديل ده بقى المختار والشغّال */
     fun beatPick(m: String) { beatSetModel(m); beatLive = m }
     fun beatResetCool() { modelCool.clear(); modelWhy.clear(); beatLive = "" }
@@ -188,13 +191,29 @@ object ExtTranslate {
         if (!beatReady()) return null
         return Prov("beat", "Beat · " + beatModel(), listOf("beat"), 0) { _, _ -> null }.also { pv ->
             pv.keyHash = { Cfg.str("beat_key").hashCode() }
-            pv.chunk = 40; pv.gapMs = 300L
+            pv.chunk = 80; pv.gapMs = 0L   // (v439) دفعة أكبر لأن موديلات Beat المجانية حدها طلب في الدقيقة
             pv.batch = { texts, sl -> beat(texts, sl) }
         }
     }
 
     /** (v436) تنفيذ طلب على Beat: الموديل المختار الأول، ولو وقف (429/خطأ) وفيه «بدّل تلقائي» بيكمّل بالموديل اللي بعده وهكذا. 401 = المفتاح نفسه غلط فبيوقف على طول */
+    /** (v439) لو كل موديلات Beat في استراحة (429) بيستنى لأقرب واحد يفتح ويحاول تاني (لحد 10 دقايق) بدل ما يفشل */
     private fun <T> beatRun(call: (String) -> T): T {
+        val t0 = System.currentTimeMillis()
+        while (true) {
+            try { return beatRunOnce(call) }
+            catch (e: ExtLlm.LlmErr) {
+                if (e.code != 429) throw e
+                val now = System.currentTimeMillis()
+                val soonest = beatModels().mapNotNull { modelCool[it] }.minOrNull()?.minus(now) ?: 60_000L
+                val wait = (soonest + 500L).coerceIn(1_000L, 120_000L)
+                if (now - t0 + wait > 600_000L) throw e
+                LogStore.add("🔑 Beat: كل الموديلات في استراحة — بستنى " + (wait / 1000L) + " ث وبكمّل")
+                try { Thread.sleep(wait) } catch (_: InterruptedException) { throw e }
+            }
+        }
+    }
+    private fun <T> beatRunOnce(call: (String) -> T): T {
         val pref = beatModel()
         val order = if (beatRotate()) listOf(pref) + beatModels().filter { it != pref } else listOf(pref)
         var lastErr: Exception? = null
@@ -269,14 +288,16 @@ object ExtTranslate {
     private val beatSeq = java.util.concurrent.atomic.AtomicInteger(0)
 
     /** طلب chat واحد لموديل واحد، بصوت اختياري (input_audio / aac دايمًا). لو رفض max_tokens الكبير بيجرّب 4096 */
-    private fun beatChat(url: String, key: String, model: String, prompt: String, wav: ByteArray?, maxTokens: Int, temp: Double, json: Boolean): Api.Result {
+    internal fun beatChat(url: String, key: String, model: String, prompt: String, wav: ByteArray?, maxTokens: Int, temp: Double, json: Boolean, aacFmt: Boolean = true): Api.Result {
         val msgs = JSONArray()
         if (json) msgs.put(JSONObject().put("role", "system").put("content", "Reply with ONLY valid JSON. No markdown fences, no text before or after the JSON."))
         val user = JSONObject().put("role", "user")
         if (wav != null) {
-            val aac = AudioEnc.packAac(wav) ?: throw java.io.IOException("ضغط الصوت AAC فشل (الملف مش WAV سليم أو قصير جدًا)")   // (v437) AAC دايمًا
+            val adata: ByteArray; val afmt: String
+            if (aacFmt) { val aac = AudioEnc.packAac(wav) ?: throw java.io.IOException("ضغط الصوت AAC فشل (الملف مش WAV سليم أو قصير جدًا)"); adata = aac.bytes; afmt = "aac" }   // (v437) AAC دايمًا لـ Beat
+            else { adata = wav; afmt = "wav" }   // (v440) FreeLLM/جيميناي (OpenAI-compat) بيقبل wav / mp3
             val parts = JSONArray()
-            parts.put(JSONObject().put("type", "input_audio").put("input_audio", JSONObject().put("data", java.util.Base64.getEncoder().encodeToString(aac.bytes)).put("format", "aac")))
+            parts.put(JSONObject().put("type", "input_audio").put("input_audio", JSONObject().put("data", java.util.Base64.getEncoder().encodeToString(adata)).put("format", afmt)))
             parts.put(JSONObject().put("type", "text").put("text", prompt))
             user.put("content", parts)
         } else user.put("content", prompt)
@@ -329,7 +350,7 @@ object ExtTranslate {
     }
 
     /** طلب واحد لموديل واحد. بيبعت الجمل بأرقام ({i,t}) ويطابق الرد بالرقم، فمحدش يتزحزح لو الموديل دمج أو فوّت سطر */
-    private fun beatCall(url: String, key: String, model: String, texts: List<String>, sl0: String): List<String?> {
+    internal fun beatCall(url: String, key: String, model: String, texts: List<String>, sl0: String): List<String?> {
         val sys = "You are a professional subtitle translator. " + beatTarget() +
             "Keep the meaning, tone, names and numbers; never merge or split items; do not explain. " +
             "The input is a JSON array of objects {\"i\": index, \"t\": text}. Reply with ONLY a JSON array of objects {\"i\": index, \"t\": translation} using the same i values."

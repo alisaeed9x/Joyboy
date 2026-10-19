@@ -243,11 +243,14 @@ object Cfg {
         // (v369) وضع أومني روت: مفاتيح جيميناي مابتتلمسش خالص (المحرك يشتغل بمفتاح محلي وهمي، والطلبات كلها بأومني روت)
         val omni = false   // (v395) وضع أومني روت اتشال
         val strict = Strict.noGemKeys()   // (v436) + وشبر/Beat · (v410) نص-أونلاين / أوفلاين: جيميناي ممنوع (مفتاح محلي وهمي بس)
-        val beatG = Strict.beatGem()   // (v436) ترجمة ببيت: المفتاح الوحيد هو مفتاح Beat، ومفيش احتياطي/تنقيح جيميناي
-        val rf = if (omni || strict || beatG) emptyList() else rf0
-        val bk = if (omni || strict || beatG) emptyList() else bk0
+        val srv = Strict.freeGem() && FreeLlm.serverUrl().isNotEmpty()   // (v443) سيرفر FreeLLM بتاعك لو مكتوب = هو اللي يوزّع (زي الأول)
+        val beatG = Strict.beatGem() || srv   // (v436) ترجمة ببيت: المفتاح الوحيد هو مفتاح Beat، ومفيش احتياطي/تنقيح جيميناي
+        val rot = !srv && !beatG && !strict && FreeLlm.rotating()   // (v443) جيميناي بقى FreeLLM: كل مفتاح بيلف على كل موديلات جيميناي
+        fun w(l: List<String>): List<String> = if (rot) l.map { FreeLlm.wrap(it) } else l
+        val rf = if (omni || strict || beatG) emptyList() else w(rf0)
+        val bk = if (omni || strict || beatG) emptyList() else w(bk0)
         // (v259) من غير أي مفتاح + أوفلاين + ترجمة جوجل: مفتاح محلي وهمي يخلّي المحرك يشتغل (الطلبات لجيميناي بتترفض محليًا)
-        val main = if (beatG) ExtTranslate.beatKeys().ifEmpty { listOf(LocalKey.ID) } else if (omni || strict || (main0.isEmpty() && rf.isEmpty() && bk.isEmpty() && TrWizard.googleOn())) listOf(LocalKey.ID) else main0
+        val main = if (srv) listOf(FreeLlm.KEY) else if (beatG) ExtTranslate.beatKeys().ifEmpty { listOf(LocalKey.ID) } else if (omni || strict || (main0.isEmpty() && rf.isEmpty() && bk.isEmpty() && TrWizard.googleOn())) listOf(LocalKey.ID) else if (Strict.freeGem() && main0.isEmpty()) listOf(FreeLlm.KEY) else w(main0)
         return Conf(
             main, bk, str("model", Models.DEFAULT).trim().ifEmpty { Models.DEFAULT },
             str("lang", "فصحى"), str("style", "حرفي"),
@@ -644,6 +647,8 @@ object Api {
     fun generate(model: String, key: String, prompt: String, wav: ByteArray? = null,
                  maxTokens: Int = 8192, temp: Double = 0.1, json: Boolean = true, search: Boolean = false): Result {
         if (key == LocalKey.ID) throw NoKey()   // (v259)
+        if (FreeLlm.isWrapped(key)) return FreeLlm.generateKey(key, prompt, wav, maxTokens, temp, json, search)   // (v443) جيميناي = FreeLLM: المفتاح بيلف على كل موديلاته
+        if (FreeLlm.isKey(key)) return FreeLlm.generate(prompt, wav, maxTokens, temp, json)   // (v440) FreeLLM الصوتي
         if (ExtTranslate.isBeatKey(key)) return ExtTranslate.beatGenerate(key, prompt, wav, maxTokens, temp, json)   // (v436) مفتاح Beat: نفس الطلب بس على Beat وبتبديل موديلات 429
         val n = gemSeq.incrementAndGet()
         val kind = if (wav != null) "صوت" else "نص"
@@ -661,6 +666,9 @@ object Api {
         }
     }
 
+    /** (v443) طلب على موديل بعينه بمفتاح حقيقي (بيستعمله FreeLLM وهو بيلف على الموديلات) */
+    fun generateModel(model: String, key: String, prompt: String, wav: ByteArray?, maxTokens: Int, temp: Double, json: Boolean, search: Boolean): Result =
+        generateInner(model, key, prompt, wav, maxTokens, temp, json, search)
     private fun generateInner(model: String, key: String, prompt: String, wav: ByteArray?,
                  maxTokens: Int, temp: Double, json: Boolean, search: Boolean): Result {
         Quota.hit(model); Stats.req(model, key)

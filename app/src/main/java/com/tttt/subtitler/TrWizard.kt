@@ -90,6 +90,13 @@ object TrWizard {
         if (pl.offline && pl.free == "mlkit") return listOf("📴 أوفلاين كامل: Whisper + ML Kit على جهازك — فصحى، من غير نت ولا جيميناي (موديل لغة الترجمة بيتحمّل مرة واحدة لو مش نازل)")   // (v410)
         if (!pl.offline) return emptyList()
         val out = ArrayList<String>()
+        if (pl.free == "free" && pl.method == "google") {   // (v440) FreeLLM: بيترجم باللهجة بنفسه (Gemini/Groq المجانيين بمفاتيحك)
+            out.add("🆓 المترجم FreeLLM · " + FreeLlm.liveName() + " — بيوزّع على الموديلات المجانية حسب الحد، ولو كلهم وقفوا بيستنى (من غير جيميناي)")
+            val fd = pl.dialect.trim().let { if (it == "فصحى") "" else it }
+            out.add(if (fd.isEmpty()) "🌍 الترجمة فصحى" else "🗣 لهجة «$fd» — FreeLLM بيترجمها مباشرة (مش جيميناي)")
+            if (!online()) out.add(NO_NET_MSG)
+            return out
+        }
         if (pl.free == "beat" && pl.method == "google") {   // (v436) Beat مستقل عن جيميناي: بيترجم باللهجة بنفسه، ولو موديل وقف بيكمّل بموديل Beat تاني ثم جوجل
             out.add("🔑 المترجم Beat · " + ExtTranslate.beatNow() + " — لو موديل وقف بيكمّل بالتاني، وبعدهم جوجل (من غير جيميناي)")
             val bd = pl.dialect.trim().let { if (it == "فصحى") "" else it }
@@ -182,7 +189,7 @@ object TrWizard {
                 val id = Cfg.str("tr_mode_id", "")
                 val base = when (id) {
                     "g_wav" -> (if (pl.only) "✍ تفريغ ذكاء صناعي" else "☁ أونلاين · WAV"); "g_aac" -> (if (pl.only) "✍ تفريغ ذكاء صناعي" else "☁ أونلاين · AAC")
-                    "loc_google" -> (if (pl.only) "✍ تفريغ Whisper" else "🌗 وشبر + 🌐 LibreTranslate"); "loc_beat" -> "🌗 وشبر + 🔑 Beat · " + ExtTranslate.beatNow(); "b_gem" -> (if (pl.only) "✍ تفريغ ذكاء صناعي" else "🔑 Beat · " + ExtTranslate.beatNow())
+                    "loc_google" -> (if (pl.only) "✍ تفريغ Whisper" else "🌗 وشبر + 🌐 LibreTranslate"); "loc_beat" -> "🌗 وشبر + 🔑 Beat · " + ExtTranslate.beatNow(); "loc_free" -> "🌗 وشبر + 🆓 FreeLLM · " + FreeLlm.liveName(); "f_gem" -> "🆓 FreeLLM · " + FreeLlm.liveName(); "b_gem" -> (if (pl.only) "✍ تفريغ ذكاء صناعي" else "🔑 Beat · " + ExtTranslate.beatNow())
                     "ai_only" -> "✍ تفريغ ذكاء صناعي"; "w_only" -> "✍ تفريغ Whisper"; "s_only" -> "✍ تفريغ SenseVoice"
                     else -> if (pl.only) "✍ تفريغ بس" else if (pl.offline) "📴 أوفلاين" else if (pl.cloud) "☁ محرك خارجي" else "☁ أونلاين"
                 }
@@ -202,7 +209,7 @@ object TrWizard {
     fun describe(pl: Plan): String = SourceMode.prefix() + describeCore(pl)
     private fun describeCore(pl: Plan): String =
         if (pl.only) "✍ تفريغ بس (من غير ترجمة)\nالتفريغ: " + (if (pl.offline) (if (pl.engine == "sherpa") "SenseVoice" else "Whisper " + pl.model) + " على الجهاز · " + langLabel(pl.lang) else "جيميناي") + "\nالنص بيظهر بلغته الأصلية"
-        else if (pl.offline) "📴 أوفلاين" + (if (pl.live) " ⚡ لحظي" else "") + " · " + langLabel(pl.lang) + "\nالتفريغ: " + (if (pl.engine == "sherpa") "SenseVoice (sherpa-onnx)" else "Whisper " + pl.model) + " على الجهاز\nالترجمة: " + (if (pl.free == "mlkit") "ML Kit (أوفلاين · من غير نت)" else if (pl.method == "google") "جوجل (من غير API)" else "جيميناي بالسياق") + "\nاللهجة: " + pl.dialect.ifBlank { "فصحى" } + (if (pl.method == "google" && pl.dialect.isNotBlank() && pl.dialect != "فصحى") (if (pl.free == "beat") " (Beat بيترجمها مباشرة)" else " (" + convLabel(pl.conv) + " بيحوّل الترجمة)") else "") + (if (pl.free.isNotBlank() && pl.method == "google") "\nالمترجم: " + (if (pl.free.startsWith("llm_")) "🤖 " + (ExtLlm.byId(pl.free.removePrefix("llm_"))?.label ?: pl.free) + " الأول (بمفتاحك)" else if (pl.free == "beat") "🔑 Beat · " + ExtTranslate.beatNow() + " الأول (بمفتاحك)" else "🌐 " + (ExtTranslate.all().firstOrNull { it.id == pl.free }?.label ?: pl.free) + " الأول (مجاني من الريبو)") else "")
+        else if (pl.offline) "📴 أوفلاين" + (if (pl.live) " ⚡ لحظي" else "") + " · " + langLabel(pl.lang) + "\nالتفريغ: " + (if (pl.engine == "sherpa") "SenseVoice (sherpa-onnx)" else "Whisper " + pl.model) + " على الجهاز\nالترجمة: " + (if (pl.free == "mlkit") "ML Kit (أوفلاين · من غير نت)" else if (pl.method == "google") "جوجل (من غير API)" else "جيميناي بالسياق") + "\nاللهجة: " + pl.dialect.ifBlank { "فصحى" } + (if (pl.method == "google" && pl.dialect.isNotBlank() && pl.dialect != "فصحى") (if (pl.free == "free") " (FreeLLM بيترجمها مباشرة)" else if (pl.free == "beat") " (Beat بيترجمها مباشرة)" else " (" + convLabel(pl.conv) + " بيحوّل الترجمة)") else "") + (if (pl.free.isNotBlank() && pl.method == "google") "\nالمترجم: " + (if (pl.free.startsWith("llm_")) "🤖 " + (ExtLlm.byId(pl.free.removePrefix("llm_"))?.label ?: pl.free) + " الأول (بمفتاحك)" else if (pl.free == "beat") "🔑 Beat · " + ExtTranslate.beatNow() + " الأول (بمفتاحك)" else "🌐 " + (ExtTranslate.all().firstOrNull { it.id == pl.free }?.label ?: pl.free) + " الأول (مجاني من الريبو)") else "")
         else "☁ أونلاين (جيميناي)\n" + (TrPresets.byId(pl.onlineId)?.let { it.icon + " " + it.name } ?: "⚙ الإعدادات الحالية") + (pl.dia?.let { "\nاللهجة: " + it.ifBlank { "فصحى" } } ?: "")
 
     /** (v274) لو التفريغ السحابي كان شغّال بسبب خطة «أونلاين بمحرك خارجي» بنقفله لما نرجع لخطة تانية (إلا لو إنت شغّلته من الإعدادات) */

@@ -22,6 +22,13 @@ import java.util.WeakHashMap
 object Motion {
     private fun dp(v: View, n: Float): Float = n * v.resources.displayMetrics.density
 
+    /** (v445) ظهور القوايم المنسدلة: فيد + تكبير خفيف + انزلاق ناحية الزرار */
+    fun popIn(v: View, up: Boolean) {
+        v.animate().cancel()
+        v.alpha = 0f; v.scaleX = 0.94f; v.scaleY = 0.94f; v.translationY = dp(v, if (up) 12f else -12f)
+        v.animate().setStartDelay(0L).alpha(1f).scaleX(1f).scaleY(1f).translationY(0f).setDuration(Skins.dur(220L)).setInterpolator(DecelerateInterpolator(1.7f)).start()
+    }
+
     /** نطّة: العنصر بيكبر من حجم أصغر بارتداد خفيف (اختيار chip، ظهور زرار عائم، تبديل سويتش) */
     fun pop(v: View, from: Float = 0.8f) {
         v.animate().cancel()

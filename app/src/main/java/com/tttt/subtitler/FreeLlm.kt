@@ -1,256 +1,326 @@
 package com.tttt.subtitler
 
-import org.json.JSONArray
-import org.json.JSONObject
 import java.util.concurrent.ConcurrentHashMap
-import java.util.concurrent.atomic.AtomicInteger
 
 /**
- * (v416) محركين ترجمة بالذكاء الصناعي بمفتاحك إنت (طبقة مجانية): Mistral و Cerebras.
- * الاتنين واجهتهم OpenAI-compatible (chat/completions). بيدخلوا سلسلة الترجمة (ExtTranslate) كمزوّدين دفعات:
- *  - بيترجموا دفعة (15–20 سطر) في طلب واحد مع آخر 3 أسطر من الدفعة اللي قبلها كسياق.
- *  - لو عندك أكتر من مفتاح بيلفّ عليهم، ولو مفتاح خد 429 بيوقفه دقيقة ويكمّل بالتاني.
- *  - الموديل بيتختار لوحده من قايمة الموديلات اللي مفتاحك شايفها (Cerebras بتشيل موديلات فجأة)، أو بتكتبه إنت.
- * مفيش أي موديل مدفوع بيتحط تلقائي، لكن الخطة (مجانية/مدفوعة) على حسابك إنت عند الشركة.
+ * (v440) 🆓 FreeLLM — نفس فكرة مشروع FreeLLM بس جوه التطبيق (من غير سيرفر ولا دوكر):
+ * بيوزّع الطلبات على الموديلات المجانية (Gemini / Gemma / Groq) بمفاتيحك، وبيتابع حد الطلبات في الدقيقة (RPM)
+ * وفي اليوم (RPD) والتوكنز في الدقيقة (TPM)، وكل طلب بيروح للموديل الأبعد عن حده. لو كلهم وصلوا للحد بيستنى لأقرب واحد.
+ * اختياري: لو اتكتب رابط سيرفر FreeLLM بتاعك (مثلًا http://192.168.1.5:3000/v1) الطلب بيروح له والسيرفر هو اللي يوزّع.
+ * الاستخدام: وضع «وشبر + FreeLLM» — تفريغ Whisper على الجهاز وترجمة النص بالموديلات دي (مفيش جيميناي خالص).
  */
 object FreeLlm {
-    class Eng(
-        val id: String, val label: String, val icon: String,
-        val chatUrl: String, val modelsUrl: String,
-        val keyCfg: String, val modelCfg: String,
-        val prefer: List<String>, val keyPage: String, val keyPageLabel: String,
-        val chunk: Int, val gapMs: Long
+    const val GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/openai"
+    const val GROQ_URL = "https://api.groq.com/openai/v1"
+
+    /** موديل مجاني وحدوده (TPM = 0 يعني مفيش حد توكنز) — الأرقام من defaults/*.yml في المشروع */
+    class M(val provider: String, val name: String, val tpm: Int, val rpm: Int, val rpd: Int)
+
+    val DEFAULTS: List<M> = listOf(
+        M("gemini", "gemini-3.1-flash-lite", 250000, 15, 500),
+        M("gemini", "gemma-4-26b", 0, 15, 1500),
+        M("gemini", "gemma-4-31b", 0, 15, 1500),
+        M("groq", "llama-3.1-8b-instant", 6000, 30, 14400),
+        M("groq", "llama-3.3-70b-versatile", 12000, 30, 1000),
+        M("gemini", "gemini-2.5-flash-lite", 250000, 10, 20),
+        M("gemini", "gemini-2.5-flash", 250000, 5, 20),
+        M("gemini", "gemini-3-flash", 250000, 5, 20),
+        M("gemini", "gemini-3.5-flash", 250000, 5, 20)
     )
 
-    val engines: List<Eng> = listOf(
-        Eng("mistral", "Mistral", "🌬",
-            "https://api.mistral.ai/v1/chat/completions", "https://api.mistral.ai/v1/models",
-            "mistral_keys", "mistral_model",
-            listOf("mistral-small-latest", "mistral-medium-latest", "mistral-large-latest", "open-mistral-nemo"),
-            "https://console.mistral.ai/api-keys", "console.mistral.ai", 15, 1300L),
-        Eng("cerebras", "Cerebras", "🧠",
-            "https://api.cerebras.ai/v1/chat/completions", "https://api.cerebras.ai/v1/models",
-            "cerebras_keys", "cerebras_model",
-            listOf("gpt-oss-120b", "qwen-3-235b-a22b-instruct-2507", "llama-3.3-70b", "llama3.1-8b"),
-            "https://cloud.cerebras.ai/", "cloud.cerebras.ai", 20, 600L)
-    )
-
-    fun eng(id: String): Eng? = engines.firstOrNull { it.id == id }
-    fun isLlm(id: String): Boolean = engines.any { it.id == id }
-    fun keys(e: Eng): List<String> = Cfg.keys(e.keyCfg)
-    fun hasKey(e: Eng): Boolean = keys(e).isNotEmpty()
-
-    /** آخر موديل اشتغل فعلًا لكل محرك (للعرض في زرار التجربة) */
-    val usedModel = ConcurrentHashMap<String, String>()
-
-    /** المحرك اللي يترجم الأول: llm_first = auto (أول واحد عنده مفتاح) | mistral | cerebras | google (جوجل الأول). فاضي = مفيش */
-    fun firstId(): String {
-        val v = Cfg.str("llm_first", "auto")
-        if (v == "google") return ""
-        val ready = engines.filter { hasKey(it) && Cfg.str("ext_on_" + it.id, "on") != "off" }
-        if (v == "mistral" || v == "cerebras") return if (ready.any { it.id == v }) v else ""
-        return ready.firstOrNull()?.id ?: ""
+    // ===== إعدادات =====
+    /** (v442) مفتاح Gemini بتاع FreeLLM؛ لو فاضي بياخد أول مفتاح جيميناي مضاف في التطبيق (مفاتيحك) من غير ما تكتبه تاني */
+    fun gemKey(): String {
+        val k = Cfg.str("fl_gem_key").trim()
+        if (k.length > 8) return k
+        return try { (Cfg.keys("keys") + Cfg.keys("extra") + Cfg.keys("backup")).firstOrNull() ?: "" } catch (_: Throwable) { "" }
+    }
+    fun groqKey(): String = Cfg.str("fl_groq_key").trim()
+    fun serverUrl(): String = Cfg.str("fl_url").trim().trimEnd('/')
+    fun serverKey(): String = Cfg.str("fl_srv_key").trim()
+    /** اسم الموديل أو الجروب عند السيرفر (flash / large) — الافتراضي large */
+    fun serverModel(): String = Cfg.str("fl_srv_model").trim().ifEmpty { "large" }
+    fun ready(): Boolean = serverUrl().isNotEmpty() || gemKey().length > 8 || groqKey().length > 8
+    private fun keyOf(m: M): String = if (m.provider == "gemini") gemKey() else groqKey()
+    private fun hasKey(m: M): Boolean = keyOf(m).length > 8
+    /** (v440) موديلات بتسمع الصوت: جيميناي فلاش/لايت بس (Gemma وllama نص بس) */
+    private fun hearsAudio(m: M): Boolean = m.provider == "gemini" && m.name.startsWith("gemini")
+    const val KEY = "FREELLM-ROUTER"   // مفتاح وهمي بيدخل مسار جيميناي في المحرك وApi.generate بيحوّله هنا
+    fun isKey(k: String): Boolean = k == KEY
+    /** الوضع الصوتي محتاج مفتاح Gemini (أو سيرفر) */
+    fun audioReady(): Boolean = serverUrl().isNotEmpty() || gemKey().length > 8 || (try { Cfg.allMainKeys().isNotEmpty() } catch (_: Throwable) { false })
+    private fun baseOf(m: M): String = if (m.provider == "gemini") GEMINI_URL else GROQ_URL
+    private fun endpoint(base0: String): String {
+        val base = base0.trim().trimEnd('/')
+        return if (base.endsWith("/chat/completions")) base else "$base/chat/completions"
     }
 
-    fun provs(): List<ExtTranslate.Prov> = engines.filter { hasKey(it) }.map { prov(it) }
+    // ===== حالة الموزّع =====
+    private val hits = ConcurrentHashMap<String, java.util.ArrayDeque<Pair<Long, Int>>>()   // وقت الطلب + تقدير التوكنز (آخر دقيقة)
+    private val cool = ConcurrentHashMap<String, Long>()
+    private val why = ConcurrentHashMap<String, String>()
+    /** الموديل اللي رد آخر مرة (للعرض) */
+    @Volatile var live = ""
+    /** true = كل الموديلات وصلت لحدها دلوقتي والموزّع مستني (النقطة بتبقى صفرا) */
+    @Volatile var waiting = false
+    fun liveName(): String = if (live.isEmpty()) (if (serverUrl().isNotEmpty()) "سيرفر · " + serverModel() else "تلقائي") else live
 
-    fun prov(e: Eng): ExtTranslate.Prov =
-        ExtTranslate.Prov(e.id, e.label, listOf(e.id), 0) { _, _ -> null }.also { pv ->
-            pv.keyHash = { Cfg.str(e.keyCfg).hashCode() }
-            pv.chunk = e.chunk
-            pv.gapMs = e.gapMs
-            pv.batch = { texts, sl -> translate(e, texts, sl) }
-        }
-
-    // ===== مفاتيح: لفّ + إيقاف مؤقت =====
-    private val keyCool = ConcurrentHashMap<String, Long>()
-    private val keyBad = ConcurrentHashMap<String, Boolean>()
-    private val rr = AtomicInteger(0)
-
-    // ===== الموديل =====
-    private class ModelPick(val want: String, val pick: String, val at: Long)
-    private val modelCache = ConcurrentHashMap<String, ModelPick>()
-
-    fun listModels(e: Eng, key: String): List<String> {
-        val txt = ExtLlm.post(e.modelsUrl, mapOf("Authorization" to "Bearer $key"), "", 15000, "GET")
-        val arr = JSONObject(txt).optJSONArray("data") ?: return emptyList()
-        val out = ArrayList<String>()
-        for (i in 0 until arr.length()) {
-            val o = arr.optJSONObject(i) ?: continue
-            val id = o.optString("id", "")
-            if (id.isBlank()) continue
-            val low = id.lowercase()
-            if (low.contains("embed") || low.contains("moderation") || low.contains("ocr") || low.contains("whisper") || low.contains("voxtral")) continue
-            val cap = o.optJSONObject("capabilities")
-            if (cap != null && cap.has("completion_chat") && !cap.optBoolean("completion_chat", true)) continue
-            if (id !in out) out.add(id)
-        }
-        return out
+    private fun day(): String = (System.currentTimeMillis() / 86_400_000L).toString()
+    private fun used(m: M, kid: String = ""): Int {
+        val p = Cfg.str("fl_use_" + m.name + kid).split(":")
+        return if (p.size == 2 && p[0] == day()) (p[1].toIntOrNull() ?: 0) else 0
     }
+    private fun addUsed(m: M, kid: String = "") { Cfg.put("fl_use_" + m.name + kid, day() + ":" + (used(m, kid) + 1)) }
 
-    private fun resolveModel(e: Eng, key: String, force: Boolean = false): String {
-        val want = Cfg.str(e.modelCfg).trim()
+    fun resetAll() { hits.clear(); cool.clear(); why.clear(); live = ""; waiting = false }
+
+    /** يختار الموديل الأبعد عن حده (زي سيرفر FreeLLM). لو مفيش: (null، الانتظار بالمللي ثانية لأقرب واحد · -1 = مفيش أمل النهارده) */
+    @Synchronized private fun pick(est: Int, audio: Boolean, kid: String = ""): Pair<M?, Long> {
         val now = System.currentTimeMillis()
-        val c = modelCache[e.id]
-        if (!force && c != null && c.want == want && now - c.at < 6 * 3_600_000L) return c.pick
-        var ids: List<String> = emptyList()
-        try { ids = listModels(e, key) }
-        catch (x: ExtLlm.LlmErr) { if (x.code == 401 || x.code == 403 || x.code == 429) throw x }
-        catch (_: Exception) {}
-        val pick = when {
-            ids.isEmpty() -> if (want.isNotEmpty()) want else e.prefer.first()
-            want.isNotEmpty() && want in ids -> want
-            else -> e.prefer.firstOrNull { it in ids } ?: ids.first()
+        var best: M? = null; var bestU = Double.MAX_VALUE; var soonest = Long.MAX_VALUE
+        for (m in DEFAULTS) {
+            // (v443) kid = مفتاح جيميناي بعينه: يلف على موديلات جيميناي/جيما بس بالمفتاح ده، وكل (مفتاح × موديل) له عدّاده وراحته
+            if (kid.isEmpty()) { if (!hasKey(m)) continue } else if (m.provider != "gemini") continue
+            if (audio && !hearsAudio(m)) continue
+            val id = m.name + kid
+            val c = maxOf(cool[id] ?: 0L, cool[m.name + "#all"] ?: 0L)
+            if (c > now) { soonest = minOf(soonest, c - now); continue }
+            val dq = hits.getOrPut(id) { java.util.ArrayDeque() }
+            while (dq.isNotEmpty() && now - dq.peekFirst()!!.first > 60_000L) dq.removeFirst()
+            val n = dq.size
+            val tk = dq.fold(0) { a, p -> a + p.second }
+            if (n >= m.rpm) { soonest = minOf(soonest, 60_000L - (now - dq.peekFirst()!!.first)); continue }
+            if (m.tpm > 0 && n > 0 && tk + est > m.tpm) { soonest = minOf(soonest, 60_000L - (now - dq.peekFirst()!!.first)); continue }
+            val u = used(m, kid)
+            if (m.rpd > 0 && u >= m.rpd) continue
+            var util = n.toDouble() / m.rpm
+            if (m.rpd > 0) util = maxOf(util, u.toDouble() / m.rpd)
+            if (m.tpm > 0) util = maxOf(util, (tk + est).toDouble() / m.tpm)
+            if (util < bestU) { bestU = util; best = m }
         }
-        if (want.isNotEmpty() && ids.isNotEmpty() && pick != want) ExtTranslate.lastNote = "🔄 موديل ${e.label} «$want» مش متاح على مفتاحك — اتحوّل لـ «$pick»"
-        modelCache[e.id] = ModelPick(want, pick, now)
-        usedModel[e.id] = pick
-        return pick
+        val b = best
+        if (b != null) {
+            hits.getOrPut(b.name + kid) { java.util.ArrayDeque() }.addLast(Pair(now, est))
+            addUsed(b, kid)
+            return Pair(b, 0L)
+        }
+        return Pair(null, if (soonest == Long.MAX_VALUE) -1L else soonest)
     }
 
-    // ===== طلب واحد =====
-    private fun contentOf(txt: String): String {
-        val c = JSONObject(txt).optJSONArray("choices")?.optJSONObject(0)?.optJSONObject("message")?.opt("content")
-        val s: String = when (c) {
-            is String -> c
-            is JSONArray -> (0 until c.length()).joinToString("") { c.optJSONObject(it)?.optString("text", "") ?: "" }
-            else -> ""
-        }
-        return s.replace(Regex("(?s)<think>.*?</think>"), "").trim()
-    }
+    private fun coolModel(m: M, ms: Long, reason: String) { cool[m.name] = System.currentTimeMillis() + ms; why[m.name] = reason }
+    private fun coolProvider(p: String, ms: Long, reason: String) { for (m in DEFAULTS) if (m.provider == p) coolModel(m, ms, reason) }
 
-    private fun chatOnce(e: Eng, key: String, system: String, user: String, maxTok: Int): String {
-        var model = resolveModel(e, key)
-        for (attempt in 0..3) {
-            val body = JSONObject()
-                .put("model", model)
-                .put("temperature", 0.2)
-                .put("messages", JSONArray()
-                    .put(JSONObject().put("role", "system").put("content", system))
-                    .put(JSONObject().put("role", "user").put("content", user)))
-            if (e.id == "mistral") {
-                body.put("max_tokens", maxTok)
-                body.put("response_format", JSONObject().put("type", "json_object"))
-            } else {
-                body.put("max_completion_tokens", maxTok)
-                if (model.contains("gpt-oss")) body.put("reasoning_effort", "low")
+    /** ينفّذ طلب على أنسب موديل. 429 → الموديل ده يستريح ويروح للي بعده · كلهم واقفين → يستنى (لحد 10 دقايق) */
+    private fun <T> run(est: Int, audio: Boolean, call: (M) -> T): T {
+        val t0 = System.currentTimeMillis()
+        var lastErr: Exception? = null
+        var attempts = 0
+        try {
+            while (true) {
+                val pr = pick(est, audio)
+                val m = pr.first
+                if (m == null) {
+                    val wait = pr.second
+                    if (wait < 0L || System.currentTimeMillis() - t0 + wait > 600_000L) {
+                        throw lastErr ?: ExtLlm.LlmErr(429, "FreeLLM: كل الموديلات المجانية وصلت لحدها دلوقتي", 0)
+                    }
+                    waiting = true
+                    LogStore.add("🆓 FreeLLM: كل الموديلات في استراحة — بستنى " + ((wait + 300L) / 1000L) + " ث وبكمّل")
+                    try { Thread.sleep(wait + 300L) } catch (_: InterruptedException) { throw lastErr ?: ExtLlm.LlmErr(429, "FreeLLM: اتقاطع الانتظار", 0) }
+                    continue
+                }
+                waiting = false
+                try {
+                    val r = call(m)
+                    live = m.name
+                    return r
+                } catch (e: ExtLlm.LlmErr) {
+                    lastErr = e
+                    val msg = (e.message ?: "").lowercase()
+                    when (e.code) {
+                        401, 403 -> coolProvider(m.provider, 1_800_000L, "المفتاح مرفوض")
+                        404 -> coolModel(m, 1_800_000L, "الموديل مش موجود")
+                        429 -> {
+                            val perDay = msg.contains("per day") || msg.contains("daily") || msg.contains("rpd")
+                            val ms = if (e.retryAfterSec > 0) e.retryAfterSec.coerceIn(10, 3600) * 1000L else if (perDay) 3_600_000L else 62_000L
+                            coolModel(m, ms, "الحد خلص مؤقتًا")
+                        }
+                        else -> coolModel(m, 30_000L, "خطأ " + e.code)
+                    }
+                    LogStore.add("🆓 FreeLLM: " + m.name + " ← " + (e.message ?: "").take(100) + " — بجرّب اللي بعده")
+                } catch (e: Exception) {
+                    lastErr = e
+                    coolModel(m, 20_000L, "رد غلط")
+                    LogStore.add("🆓 FreeLLM: " + m.name + " ← " + (e.message ?: e.javaClass.simpleName).take(100) + " — بجرّب اللي بعده")
+                }
+                if (++attempts >= 14) throw lastErr ?: java.io.IOException("FreeLLM: فشل")
             }
+        } finally { waiting = false }
+    }
+
+    // ===== (v443) 🔁 جيميناي بقى FreeLLM: كل مفتاح من مفاتيحك بيلف على كل موديلات جيميناي =====
+    private const val PFX = "FLG~"
+    /** لفّة المفتاح: المحرك بيشوفه مفتاح عادي (التوزيع ٧٥/٢٥ والاحتياطي زي ما هو) وApi.generate بيحوّله هنا */
+    fun wrap(k: String): String = if (k.length > 10 && k != LocalKey.ID && !k.startsWith(PFX) && !isKey(k)) PFX + k else k
+    fun isWrapped(k: String): Boolean = k.startsWith(PFX)
+    /** true = اللف شغّال (الافتراضي)؛ fl_direct=1 يرجّع جيميناي المباشر بموديل واحد */
+    fun rotating(): Boolean = Cfg.str("fl_direct").trim() != "1"
+    private val kseq = java.util.concurrent.atomic.AtomicInteger(0)
+
+    /** طلب بمفتاح واحد بيلف على موديلاته: الأبعد عن حده الأول، 429 → الموديل ده يستريح ويروح للي بعده؛ كلهم وقفوا → 429 للمحرك يحوّل لمفتاح تاني */
+    fun generateKey(wrapped: String, prompt: String, wav: ByteArray?, maxTokens: Int, temp: Double, json: Boolean, search: Boolean): Api.Result {
+        val key = wrapped.removePrefix(PFX)
+        val kid = "@" + Integer.toHexString(key.hashCode())
+        val tail = "…" + key.takeLast(4)
+        val n = kseq.incrementAndGet()
+        val est = (wav?.size ?: 0) / 32 + prompt.length / 3 + 1000
+        var lastErr: Exception? = null
+        var attempts = 0
+        while (true) {
+            val pr = pick(est, wav != null || search, kid)
+            val m = pr.first
+            if (m == null) {
+                val w = pr.second
+                throw lastErr as? ApiErr ?: ApiErr(429, "FreeLLM: كل موديلات المفتاح " + tail + " وصلت لحدها" + (if (w > 0) " — أقرب موديل بعد " + (w / 1000L) + " ث" else " النهارده"))
+            }
+            val t0 = System.currentTimeMillis()
+            LogStore.add("🔁 [FreeLLM #" + n + "] طلب ← " + m.name + " · مفتاح " + tail + " · " + (if (wav != null) "صوت " + (wav.size / 1024) + "KB" else "نص " + prompt.length + "حرف"))
             try {
-                val txt = ExtLlm.post(e.chatUrl, mapOf("Authorization" to "Bearer $key", "Accept" to "application/json"), body.toString(), 90000)
-                usedModel[e.id] = model
-                return contentOf(txt)
-            } catch (x: ExtLlm.LlmErr) {
-                if (x.code == 404 && attempt == 0) { modelCache.remove(e.id); model = resolveModel(e, key, true); continue }   // الموديل اتشال
-                if (x.code == 429 && attempt < 2 && x.retryAfterSec <= 15) {   // حد في الثانية/الدقيقة: نستنى ثانيتين ونعيد مرة
-                    Thread.sleep((if (x.retryAfterSec > 0) x.retryAfterSec else 2) * 1000L); continue
-                }
-                throw x
+                val r = if (m.name.startsWith("gemini")) Api.generateModel(m.name, key, prompt, wav, maxTokens, temp, json, search)
+                        else ExtTranslate.beatChat(endpoint(GEMINI_URL), key, m.name, prompt, wav, maxTokens, temp, json, false)
+                live = m.name + " " + tail
+                LogStore.add("🔁 [FreeLLM #" + n + "] ✅ " + m.name + " · رد " + r.text.length + "حرف في " + (System.currentTimeMillis() - t0) + "ms")
+                return r
+            } catch (e: ApiErr) {
+                lastErr = e; rotateFail(m, kid, e.code, e.raw, null)
+                LogStore.add("🔁 [FreeLLM #" + n + "] ❌ " + m.name + " ← HTTP " + e.code + " " + e.raw.take(80) + " — بجرّب موديل تاني")
+                if (e.code == 401 || e.code == 403) throw e
+            } catch (e: ExtLlm.LlmErr) {
+                lastErr = e; rotateFail(m, kid, e.code, e.message ?: "", e.retryAfterSec)
+                LogStore.add("🔁 [FreeLLM #" + n + "] ❌ " + m.name + " ← " + (e.message ?: "").take(80) + " — بجرّب موديل تاني")
+                if (e.code == 401 || e.code == 403) throw ApiErr(e.code, e.message ?: "")
+            } catch (e: java.io.IOException) {
+                lastErr = e; cool[m.name + kid] = System.currentTimeMillis() + 15_000L; why[m.name + kid] = "شبكة"
+                LogStore.add("🔁 [FreeLLM #" + n + "] ❌ " + m.name + " ← " + (e.message ?: e.javaClass.simpleName).take(80) + " — بجرّب موديل تاني")
             }
+            if (++attempts >= 8) throw lastErr ?: java.io.IOException("FreeLLM: فشل")
         }
-        throw ExtLlm.LlmErr(500, "${e.label}: فشل الطلب")
     }
 
-    /** بيلفّ على المفاتيح: 401/403 = المفتاح بايظ (بيتتخطى)، 429 = دقيقة راحة للمفتاح ده، غير كده بيرمي الخطأ */
-    internal fun chat(e: Eng, system: String, user: String, maxTok: Int): String {   // (v418) internal عشان VideoLingo.kt
-        val all = keys(e)
-        if (all.isEmpty()) throw ExtLlm.LlmErr(401, "مفيش مفتاح ${e.label}")
-        val start = rr.getAndIncrement()
-        var lastErr: ExtLlm.LlmErr? = null
-        for (i in all.indices) {
-            val k = all[Math.floorMod(start + i, all.size)]
-            if (keyBad[k] == true) continue
-            if ((keyCool[k] ?: 0L) > System.currentTimeMillis()) continue
-            try { return chatOnce(e, k, system, user, maxTok) }
-            catch (x: ExtLlm.LlmErr) {
-                lastErr = x
-                when (x.code) {
-                    401, 403 -> keyBad[k] = true
-                    429 -> keyCool[k] = System.currentTimeMillis() + (if (x.retryAfterSec > 0) x.retryAfterSec.coerceIn(5, 3600) else 60) * 1000L
-                    else -> throw x
-                }
-            }
-        }
-        if (lastErr != null) throw lastErr
-        if (all.all { keyBad[it] == true }) throw ExtLlm.LlmErr(401, "كل مفاتيح ${e.label} مرفوضة — غيّرها")
-        throw ExtLlm.LlmErr(429, "كل مفاتيح ${e.label} واقفة مؤقتًا (حد الاستخدام)", 60)
-    }
-
-    // ===== الترجمة =====
-    private class Ctx(val src: List<String>, val tr: List<String>, val at: Long)
-    private val ctxMap = ConcurrentHashMap<String, Ctx>()
-
-    private fun langName(sl: String): String = when (sl) {
-        "en" -> "English"; "ja" -> "Japanese"; "ko" -> "Korean"; "zh", "zh-CN" -> "Chinese"; "ru" -> "Russian"
-        "fr" -> "French"; "es" -> "Spanish"; "de" -> "German"; "it" -> "Italian"; "tr" -> "Turkish"
-        "hi" -> "Hindi"; "pt" -> "Portuguese"; "auto", "" -> "the source language (auto-detect)"; else -> sl
-    }
-
-    private fun firstArray(j: JSONObject): JSONArray? {
-        val ks = j.keys()
-        while (ks.hasNext()) { val v = j.opt(ks.next()); if (v is JSONArray) return v }
-        return null
-    }
-
-    private fun parseList(raw: String): List<String>? {
-        val s = raw.trim().removePrefix("```json").removePrefix("```").removeSuffix("```").trim()
-        try {
-            val a = s.indexOf('{'); val b = s.lastIndexOf('}')
-            if (a >= 0 && b > a) {
-                val j = JSONObject(s.substring(a, b + 1))
-                val arr = j.optJSONArray("t") ?: j.optJSONArray("translations") ?: firstArray(j)
-                if (arr != null) return List(arr.length()) { arr.optString(it, "") }
-            }
-        } catch (_: Exception) {}
-        try {
-            val a = s.indexOf('['); val b = s.lastIndexOf(']')
-            if (a >= 0 && b > a) { val arr = JSONArray(s.substring(a, b + 1)); return List(arr.length()) { arr.optString(it, "") } }
-        } catch (_: Exception) {}
-        return null
-    }
-
-    /** ترجمة دفعة سطور للعربي. بيرجّع نفس الطول (الفاضي = null). بيرمي ExtLlm.LlmErr لو المفاتيح/الحد/الخدمة وقفت */
-    fun translate(e: Eng, texts: List<String>, sl: String): List<String?> {
-        if (texts.isEmpty()) return emptyList()
-        if (VideoLingo.on()) return VideoLingo.translate(e, texts, sl)   // (v418) خطوات فيديو لينجو (مصري)
-        val egy = Cfg.str("llm_dialect", "msa") == "egy"
-        val sys = "You are a professional subtitle translator. Translate every input line from ${langName(sl)} into " +
-            (if (egy) "natural spoken Egyptian Arabic (اللهجة المصرية العامية), the way a native Egyptian would say it"
-            else "clear, natural Modern Standard Arabic (فصحى بسيطة), idiomatic and never word-for-word") +
-            ". Rules: keep the meaning, tone and speaker gender; keep names, numbers and brand names; never merge, split, skip or add lines; " +
-            "keep each line short like a subtitle; do not censor; do not explain. " +
-            "Use previous_lines only as context. Reply with ONLY a JSON object: {\"t\":[...]} holding exactly ${texts.size} Arabic strings in the same order."
+    private fun rotateFail(m: M, kid: String, code: Int, msg0: String, retry: Int?) {
+        val msg = msg0.lowercase()
+        val id = m.name + kid
         val now = System.currentTimeMillis()
-        val c = ctxMap[e.id]
-        val prev = if (c != null && now - c.at < 120_000L) c else null
-        val prevArr = JSONArray()
-        if (prev != null) for (i in prev.src.indices) prevArr.put(JSONObject().put("src", prev.src[i]).put("ar", prev.tr[i]))
-        val user = JSONObject()
-            .put("previous_lines", prevArr)
-            .put("translate", JSONArray(texts.map { it.replace('\n', ' ').trim() }))
-            .toString()
-        val maxTok = (texts.sumOf { it.length } * 3 + 600).coerceIn(800, 6000)
-        var out: List<String>? = null
-        for (attempt in 0..1) {
-            val l = parseList(chat(e, sys, user, maxTok))
-            if (l != null && l.size == texts.size) { out = l; break }
+        when {
+            code == 404 -> { cool[m.name + "#all"] = now + 1_800_000L; why[m.name + "#all"] = "الموديل مش موجود" }
+            code == 401 || code == 403 || msg.contains("api key not valid") -> { for (x in DEFAULTS) cool[x.name + kid] = now + 1_800_000L; why[id] = "المفتاح مرفوض" }
+            code == 429 -> {
+                val perDay = msg.contains("per day") || msg.contains("daily") || msg.contains("rpd")
+                val ms = if ((retry ?: 0) > 0) retry!!.coerceIn(10, 3600) * 1000L else if (perDay) 3_600_000L else 62_000L
+                cool[id] = now + ms; why[id] = "الحد خلص مؤقتًا"
+            }
+            else -> { cool[id] = now + 30_000L; why[id] = "خطأ " + code }
         }
-        val o = out ?: throw Exception("${e.label}: الرد مش بنفس عدد الأسطر")
-        val res: List<String?> = o.map { s -> s.trim().takeIf { it.isNotEmpty() } }
-        val okIdx = texts.indices.filter { res[it] != null }.takeLast(3)
-        ctxMap[e.id] = Ctx(okIdx.map { texts[it] }, okIdx.map { res[it] ?: "" }, now)
-        return res
     }
 
-    /** تجربة محرك بجملة واحدة: (نجح؟، سطر نتيجة للعرض) */
-    fun test(e: Eng): Pair<Boolean, String> {
-        if (!hasKey(e)) return false to "حط مفتاح ${e.label} الأول"
-        keyBad.clear(); keyCool.clear(); modelCache.remove(e.id)
+    /** ترجمة دفعة جمل (نفس بروميت وشكل Beat — باللهجة والأسلوب من الإعدادات) */
+    fun translate(texts: List<String>, sl: String): List<String?> {
+        val est = texts.sumOf { it.length } / 2 + 700
+        val srv = serverUrl()
+        if (srv.isNotEmpty()) {   // سيرفر FreeLLM بتاعك هو اللي بيوزّع
+            var tries = 0
+            while (true) {
+                try { return ExtTranslate.beatCall(endpoint(srv), serverKey(), serverModel(), texts, sl) }
+                catch (e: ExtLlm.LlmErr) {
+                    if (e.code != 429 || ++tries >= 5) throw e
+                    waiting = true
+                    try { Thread.sleep((if (e.retryAfterSec > 0) e.retryAfterSec.coerceIn(5, 90) else 20) * 1000L) } catch (_: InterruptedException) { throw e }
+                    finally { waiting = false }
+                }
+            }
+        }
+        return run(est, false) { m -> ExtTranslate.beatCall(endpoint(baseOf(m)), keyOf(m), m.name, texts, sl) }
+    }
+
+    private val seq = java.util.concurrent.atomic.AtomicInteger(0)
+
+    /** (v440) 🆓 الوضع الصوتي: نفس طلب جيميناي (صوت + برومبت) بس على موديلات Gemini المجانية بالتوزيع حسب الحد — Api.generate بيحوّل هنا لما المفتاح = KEY */
+    fun generate(prompt: String, wav: ByteArray?, maxTokens: Int, temp: Double, json: Boolean): Api.Result {
+        val n = seq.incrementAndGet()
+        val t0 = System.currentTimeMillis()
+        LogStore.add("🆓 [FreeLLM #" + n + "] طلب ← " + liveName() + " · " + (if (wav != null) "صوت " + (wav.size / 1024) + "KB" else "نص " + prompt.length + "حرف"))
+        try {
+            val r: Api.Result
+            val srv = serverUrl()
+            if (srv.isNotEmpty()) r = ExtTranslate.beatChat(endpoint(srv), serverKey(), serverModel(), prompt, wav, maxTokens, temp, json, false)
+            else {
+                if (wav != null && gemKey().length <= 8) throw ExtLlm.LlmErr(401, "الوضع الصوتي محتاج مفتاح Gemini مجاني (موديلات Groq/Gemma مابتسمعش)", 0)
+                val est = (wav?.size ?: 0) / 32 + prompt.length / 3 + 1000   // تقدير توكنز: الصوت ~ 32 بايت للتوكن تقريبًا
+                r = run(est, wav != null) { m -> ExtTranslate.beatChat(endpoint(baseOf(m)), keyOf(m), m.name, prompt, wav, maxTokens, temp, json, false) }
+            }
+            LogStore.add("🆓 [FreeLLM #" + n + "] ✅ " + liveName() + " · رد " + r.text.length + "حرف في " + (System.currentTimeMillis() - t0) + "ms")
+            return r
+        } catch (e: ExtLlm.LlmErr) {
+            LogStore.add("🆓 [FreeLLM #" + n + "] ❌ " + (e.message ?: "").take(120))
+            throw ApiErr(e.code, e.message ?: ("HTTP " + e.code))
+        } catch (e: java.io.IOException) {
+            LogStore.add("🆓 [FreeLLM #" + n + "] ❌ " + (e.message ?: e.javaClass.simpleName).take(120))
+            throw e
+        }
+    }
+
+    /** المزوّد اللي بيدخل سلسلة الترجمة (id = free) — null لو مفيش مفتاح ولا سيرفر */
+    fun prov(): ExtTranslate.Prov? {
+        if (!ready()) return null
+        return ExtTranslate.Prov("free", "FreeLLM · " + liveName(), listOf("free"), 0) { _, _ -> null }.also { pv ->
+            pv.keyHash = { (gemKey() + groqKey() + serverUrl() + serverKey()).hashCode() }
+            pv.chunk = 30; pv.gapMs = 0L
+            pv.batch = { texts, sl -> translate(texts, sl) }
+        }
+    }
+
+    /** تجربة بجملة واحدة: (نجح؟، ms، الترجمة أو السبب) */
+    fun test(): Triple<Boolean, Long, String> {
         val t0 = System.currentTimeMillis()
         return try {
-            val r = translate(e, listOf("Hello, how are you today?"), "en").firstOrNull()
+            val r = translate(listOf("Hello, how are you today?"), "en").firstOrNull()
             val ms = System.currentTimeMillis() - t0
-            if (r.isNullOrBlank()) false to "${e.label}: ما رجّعش ترجمة"
-            else { ExtTranslate.clearBlock(e.id); true to "✅ ${e.label} شغّال · " + (usedModel[e.id] ?: "") + " · ${ms}ms\n«" + r.take(60) + "»" }
-        } catch (x: Exception) { false to "❌ ${e.label}: " + (x.message ?: x.javaClass.simpleName).take(140) }
+            if (r.isNullOrBlank()) Triple(false, ms, "ما رجّعش ترجمة") else Triple(true, ms, "[" + liveName() + "] " + r)
+        } catch (e: Exception) { Triple(false, System.currentTimeMillis() - t0, (e.message ?: e.javaClass.simpleName).take(140)) }
+    }
+
+    /** سطر لكل موديل: الاستخدام النهارده وحالته */
+    /** (v444) حالة اللف: لكل موديل جيميناي كام مفتاح شغّال منهم دلوقتي وكام طلب اتبعت النهارده */
+    fun rotationText(): String {
+        val keys = try { Cfg.allMainKeys() } catch (_: Throwable) { emptyList() }
+        if (keys.isEmpty()) return "مفيش مفاتيح جيميناي — ضيف مفتاح من الإعدادات ← 🔑 المفاتيح"
+        val now = System.currentTimeMillis()
+        val sb = StringBuilder().append(keys.size).append(" مفتاح × ").append(DEFAULTS.count { it.provider == "gemini" }).append(" موديل\n")
+        for (m in DEFAULTS) {
+            if (m.provider != "gemini") continue
+            var ok = 0; var tot = 0
+            for (k in keys) {
+                val kid = "@" + Integer.toHexString(k.hashCode())
+                tot += used(m, kid)
+                val c = maxOf(cool[m.name + kid] ?: 0L, cool[m.name + "#all"] ?: 0L)
+                if (c <= now && !(m.rpd > 0 && used(m, kid) >= m.rpd)) ok++
+            }
+            sb.append(m.name).append(" · ").append(ok).append('/').append(keys.size).append(" مفتاح شغّال · ").append(tot).append(" طلب النهارده\n")
+        }
+        return sb.toString().trim()
+    }
+
+    fun statusText(): String {
+        if (serverUrl().isNotEmpty()) return "السيرفر: " + serverUrl() + " · الجروب/الموديل: " + serverModel()
+        val now = System.currentTimeMillis()
+        val sb = StringBuilder()
+        for (m in DEFAULTS) {
+            if (!hasKey(m)) continue
+            val c = cool[m.name] ?: 0L
+            sb.append(m.name).append(" · ").append(used(m)).append('/').append(m.rpd)
+            if (c > now) sb.append(" · ").append(why[m.name] ?: "واقف").append(" ").append((c - now) / 1000L).append("ث")
+            sb.append('\n')
+        }
+        return sb.toString().trim().ifEmpty { "مفيش مفاتيح — ضيف مفتاح Gemini أو Groq" }
     }
 }

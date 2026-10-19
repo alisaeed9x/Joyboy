@@ -57,6 +57,16 @@ class DualProgress(ctx: Context, val th: Theme) : View(ctx) {
     var vis: List<DoubleArray> = emptyList()
     private val p = Paint(Paint.ANTI_ALIAS_FLAG)
     private val d = ctx.resources.displayMetrics.density
+    /** (v445) 0..1: الشريط بيتخن والمقبض بيكبر وبيتوهّج وانت ماسكه (أنيميشن ناعم) */
+    private var grow = 0f
+    private var growAnim: android.animation.ValueAnimator? = null
+    private fun animGrow(to: Float) {
+        growAnim?.cancel()
+        growAnim = android.animation.ValueAnimator.ofFloat(grow, to).apply {
+            duration = 170L; interpolator = android.view.animation.DecelerateInterpolator(1.5f)
+            addUpdateListener { grow = it.animatedValue as Float; invalidate() }; start()
+        }
+    }
 
     override fun onMeasure(w: Int, h: Int) {
         setMeasuredDimension(MeasureSpec.getSize(w), if (thin) MeasureSpec.getSize(h).coerceAtLeast(3) else ((if (mini) 30 else 34) * d).toInt())
@@ -114,23 +124,27 @@ class DualProgress(ctx: Context, val th: Theme) : View(ctx) {
             c.drawCircle(tcx, cy, r, p)
             return
         }
-        val cy = height / 2f; val th6 = 3f * d
+        val cy = height / 2f; val th6 = (2f + 1.4f * grow) * d
         if (buf.isNotEmpty()) strip(c, w, 2f * d, 3f * d, buf, 0xFF22D3EE.toInt(), 0x3322D3EE)
         if (pend.isNotEmpty()) strip(c, w, 2f * d, 3f * d, pend, 0xFFF59E0B.toInt(), if (buf.isEmpty()) 0x33F59E0B else null)
         if (refine.isNotEmpty()) strip(c, w, 2f * d, 3f * d, refine, 0xFF3B82F6.toInt(), null)
-        p.style = Paint.Style.FILL
-        p.color = 0x2EFFFFFF
+        p.style = Paint.Style.FILL; p.shader = null
+        p.color = 0x38FFFFFF
         c.drawRoundRect(RectF(0f, cy - th6, w, cy + th6), th6, th6, p)
-        p.color = 0xFF3B82F6.toInt()
         val px = w * played.coerceIn(0f, 1f)
-        if (px > 0f) c.drawRoundRect(RectF(0f, cy - th6, px, cy + th6), th6, th6, p)
+        if (px > 0f) {
+            p.shader = LinearGradient(0f, 0f, px.coerceAtLeast(1f), 0f, 0xFF60A5FA.toInt(), 0xFF3B82F6.toInt(), Shader.TileMode.CLAMP)
+            c.drawRoundRect(RectF(0f, cy - th6, px, cy + th6), th6, th6, p)
+            p.shader = null
+        }
         strip(c, w, cy + th6 + 4f * d, 3f * d, cov, 0xFF22C55E.toInt(), 0x2EFFFFFF)
         if (vis.isNotEmpty()) strip(c, w, cy + th6 + 8.5f * d, 3f * d, vis, 0xFF3B82F6.toInt(), null)
-        val r = (if (dragging) 8f else 6.5f) * d
-        p.style = Paint.Style.FILL; p.color = Color.WHITE
-        c.drawCircle(px.coerceIn(r, w - r), cy, r, p)
-        p.style = Paint.Style.STROKE; p.strokeWidth = 2f * d; p.color = 0xFF3B82F6.toInt()
-        c.drawCircle(px.coerceIn(r, w - r), cy, r, p)
+        val r = (5.5f + 3.5f * grow) * d
+        val tx = px.coerceIn(r, w - r)
+        p.style = Paint.Style.FILL; p.shader = null
+        p.color = 0x303B82F6; c.drawCircle(tx, cy, r + (4f + 5f * grow) * d, p)   // هالة
+        p.color = 0x55000000; c.drawCircle(tx, cy + 1.2f * d, r + 0.6f * d, p)    // ظل خفيف
+        p.color = Color.WHITE; c.drawCircle(tx, cy, r, p)
     }
 
     override fun onTouchEvent(e: MotionEvent): Boolean {
@@ -138,10 +152,10 @@ class DualProgress(ctx: Context, val th: Theme) : View(ctx) {
         if (width <= 0) return true
         val f = (e.x / width).coerceIn(0f, 1f)
         when (e.action) {
-            MotionEvent.ACTION_DOWN -> { dragging = true; parent?.requestDisallowInterceptTouchEvent(true); played = f; invalidate(); onDrag?.invoke(true); onScrub?.invoke(f) }
+            MotionEvent.ACTION_DOWN -> { dragging = true; animGrow(1f); parent?.requestDisallowInterceptTouchEvent(true); played = f; invalidate(); onDrag?.invoke(true); onScrub?.invoke(f) }
             MotionEvent.ACTION_MOVE -> { played = f; invalidate(); onScrub?.invoke(f) }
-            MotionEvent.ACTION_UP -> { dragging = false; played = f; invalidate(); onDrag?.invoke(false); onSeek?.invoke(f) }
-            MotionEvent.ACTION_CANCEL -> { dragging = false; invalidate(); onDrag?.invoke(false) }
+            MotionEvent.ACTION_UP -> { dragging = false; animGrow(0f); played = f; invalidate(); onDrag?.invoke(false); onSeek?.invoke(f) }
+            MotionEvent.ACTION_CANCEL -> { dragging = false; animGrow(0f); invalidate(); onDrag?.invoke(false) }
         }
         return true
     }
@@ -162,8 +176,8 @@ class TransBadge(ctx: Context, th: Theme, plain: Boolean = false) : LinearLayout
         addView(col, LayoutParams(-2, -2))
         addView(dot, LayoutParams((6 * d).toInt(), (6 * d).toInt()).apply { marginStart = (5 * d).toInt() })
     }
-    /** نقطة الحالة: خضراء = الوضع شغّال، حمراء = واقف */
-    fun setOn(on: Boolean) { dot.visibility = View.VISIBLE; (dot.background as GradientDrawable).setColor(if (on) 0xFF34C759.toInt() else 0xFFFF3B30.toInt()) }
+    /** نقطة الحالة: خضراء = الوضع شغّال، صفرا = شغّال بس مستني (كل موديلات Beat في استراحة)، حمراء = واقف */
+    fun setOn(on: Boolean, waiting: Boolean = false) { dot.visibility = View.VISIBLE; (dot.background as GradientDrawable).setColor(if (!on) 0xFFFF3B30.toInt() else if (waiting) 0xFFFFCC00.toInt() else 0xFF34C759.toInt()) }
     fun set(p: String, c: String) { var ch = false; if (pct.text.toString() != p) { pct.text = p; ch = true }; if (cnt.text.toString() != c) { cnt.text = c; ch = true }; val v = if (c.isBlank()) View.GONE else View.VISIBLE; if (cnt.visibility != v) { cnt.visibility = v; ch = true }; if (ch) requestLayout() }
 }
 
@@ -339,15 +353,21 @@ fun Ui.fsBtn(t: String, f: (TextView) -> Unit): TextView = IconTextView(ctx).app
     text = t; textSize = 13f; gravity = Gravity.CENTER; setTextColor(Color.WHITE); setSingleLine()
     typeface = android.graphics.Typeface.DEFAULT_BOLD
     minimumWidth = dp(40); setPadding(dp(10), 0, dp(10), 0)
-    background = box(0xE0141418.toInt(), 0x1FFFFFFF, 12)
+    background = glassBtnBg(ctx.resources.displayMetrics.density, 14)   // (v445) زجاج بدل المستطيل الغامق
     layoutParams = LinearLayout.LayoutParams(-2, dp(40)).apply { setMargins(dp(3), dp(3), dp(3), dp(3)) }
     setOnClickListener { f(this) }
+    Glass.pressable(this)   // (v445) ضغطة بتصغّر الزرار وترجّعه بارتداد
+}
+
+/** (v445) خلفية زجاجية للأزرار والقوايم الصغيرة: تدرّج شفاف خفيف + حد فاتح رفيع */
+fun glassBtnBg(d: Float, rDp: Int): GradientDrawable = GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, intArrayOf(0xA62C2C38.toInt(), 0xB3121219.toInt())).apply {
+    cornerRadius = rDp * d; setStroke(maxOf(1, d.toInt()), 0x2EFFFFFF)
 }
 
 /** .fullscreen-btn: دايرة 34dp داكنة (أسفل يسار الفيديو) */
 /** (v161) خلفية زجاجية للأزرار الدايرية: تدرّج شفاف من فوق لتحت + حد أبيض خفيف */
-fun glassCircleBg(d: Float): GradientDrawable = GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, intArrayOf(0xCC30303A.toInt(), 0xD90C0C10.toInt())).apply {
-    shape = GradientDrawable.OVAL; setStroke(maxOf(1, d.toInt()), 0x38FFFFFF)
+fun glassCircleBg(d: Float): GradientDrawable = GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, intArrayOf(0x9E383846.toInt(), 0xB30E0E15.toInt())).apply {
+    shape = GradientDrawable.OVAL; setStroke(maxOf(1, d.toInt()), 0x4DFFFFFF)
 }
 
 /** (v161) أيقونة بتظهر بأنيميشن (تكبير + فيد) وتختفي فورًا — لزرار التشغيل الأوسط */

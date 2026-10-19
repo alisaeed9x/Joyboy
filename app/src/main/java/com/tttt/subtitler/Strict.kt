@@ -24,8 +24,14 @@ object Strict {
     /** (v436) 🔑 ترجمة ببيت: نفس مسار جيميناي (صوت ← موديل) بس بمفتاح Beat وموديلاته — مفيش جيميناي خالص */
     const val BEAT_GEM = "b_gem"
     fun beatGem(): Boolean = id() == BEAT_GEM
+    /** (v440) 🆓 ترجمة بـ FreeLLM الصوتي: نفس مسار جيميناي (صوت ← موديل) بس على موديلات Gemini المجانية بالتوزيع — مفيش وشبر ولا مفاتيح جيميناي بتاعتك */
+    const val FREE_GEM = "f_gem"
+    fun freeGem(): Boolean = id() == FREE_GEM
     /** مفاتيح جيميناي مش بتتلمس خالص (نص-أونلاين / وشبر + Beat) */
-    fun noGemKeys(): Boolean = noGemini() || beatText()
+    /** (v440) 🆓 وشبر + FreeLLM: نفس وضع وشبر + Beat بس بموديلات Gemini/Groq المجانية بمفاتيحها (مفيش جيميناي خالص) */
+    const val FREE_TXT = "loc_free"
+    fun freeText(): Boolean = id() == FREE_TXT
+    fun noGemKeys(): Boolean = noGemini() || beatText() || freeText()
     const val NO_VISUAL_MSG = "👁 الوضع البصري شغّال في الوضع الأونلاين (جيميناي) بس"
     const val NO_DIALECT_MSG = "🗣 اللهجات في الوضع الأونلاين (جيميناي) بس — الوضع ده فصحى"
 }
