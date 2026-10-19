@@ -23,8 +23,6 @@ com/tttt/subtitler/ExtrasFlags.kt
 com/tttt/subtitler/FastId.kt
 com/tttt/subtitler/FileManager.kt
 com/tttt/subtitler/FlowRow.kt
-com/tttt/subtitler/FreeLlm.kt
-com/tttt/subtitler/FreeLlmUi.kt
 com/tttt/subtitler/Fx.kt
 com/tttt/subtitler/GifWriter.kt
 com/tttt/subtitler/Glass.kt

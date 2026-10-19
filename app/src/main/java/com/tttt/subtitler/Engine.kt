@@ -1066,7 +1066,7 @@ class Engine(
             val prev = if (hole) "" else Subs.prevContext(subs, start)
             // (v210) tx = طلب ترانسكريبشن بس (الوضعين 3/4، الباتشات العادية). الثغرات والفجوات وإعادة الباتش الكامل بتفضل صوت ← ترجمة مباشرة
             val sl = if (detDone) srcLang else ""   // (v331) لغة الكلام الأصلية بعد ما تتحدد من أول باتش
-            return if (tx) toneBlock() + ModePrompts.transcribe(pb, c, durSec, prev, effectiveChars(), effectiveGloss(), strict, hole, holeNear, sl)
+            return if (tx) toneBlock() + ModePrompts.transcribe(pb, c, durSec, prev, effectiveChars(), effectiveGloss(), strict, hole, holeNear, sl, notes = !hole)
             else toneBlock() + ModePrompts.english(pb, c, durSec, prev, effectiveChars(), effectiveGloss(), strict, hole, holeNear, sl)
         }
         val case = pb.caseOf(srcLang, detDone)
@@ -1296,7 +1296,7 @@ class Engine(
                 round++
                 val items = missing.map { flat[it] }
                 val first = items.first().start
-                val before = synchronized(lock) { subs.filter { it.start < first && it.translated.isNotBlank() }.takeLast(12) }
+                val before = synchronized(lock) { subs.filter { it.start < first && it.translated.isNotBlank() && !(it.isSound && (it.original.startsWith("📖") || it.original.startsWith("💡"))) }.takeLast(20) }   // (v425) الترانسكريبشن القديم + ترجمته (من غير سطور الشرح)
                 val after = tHold.values.filter { it.i > lastIdx }.sortedBy { it.i }.flatMap { it.fresh }.take(6)
                 val prompt = toneBlock() + ModePrompts.translate(pb, c, items, before, after, effectiveChars(), effectiveGloss(), langBad > 0)
                 var reply: JSONObject? = null
@@ -1443,7 +1443,7 @@ class Engine(
         val held = tHold.size
         val txN = minOf(tot, doneN + held)
         val cur = inflight.minOrNull(); val trN = trBusy.get()
-        val who = if (TrWizard.googleOn()) "جوجل" else "جيميناي"
+        val who = if (TrWizard.googleOn()) (if (ExtTranslate.semiLibre()) "LibreTranslate" else "جوجل") else "جيميناي"
         offB = "📴 $txN/$tot" + (if (trN > 0) " 🌍" else if (cur != null) " ⏳" else "")
         val sb = StringBuilder("📴 أوفلاين: اتفرّغ $txN من $tot باتش (الباتش ${ch.toInt()}ث)")
         val live = Offline.liveLine()
@@ -1518,7 +1518,7 @@ class Engine(
                 finally { tTaken.removeAll(head.toSet()); trBusy.decrementAndGet(); host.changed() }
             }
         } catch (_: RejectedExecutionException) { tTaken.removeAll(head.toSet()); trBusy.decrementAndGet(); return false }
-        host.log("📴 جزء جاهز (${k} باتش" + (if (k > 1 && ctxBatches() == 0) " ≈ ${Offline.partMin()} دقيقة" else "") + ") — اتبعت " + (if (TrWizard.googleOn()) "لجوجل" else "لجيميناي") + " يترجمه")
+        host.log("📴 جزء جاهز (${k} باتش" + (if (k > 1 && ctxBatches() == 0) " ≈ ${Offline.partMin()} دقيقة" else "") + ") — اتبعت " + (if (TrWizard.googleOn()) (if (ExtTranslate.semiLibre()) "لـ LibreTranslate" else "لجوجل") else "لجيميناي") + " يترجمه")
         return true
     }
 

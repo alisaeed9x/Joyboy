@@ -13,7 +13,7 @@ object BackupCodec {
     /** مفاتيح مابتتحفظش: قفل المجلد + علامة استرجاع المفاتيح التلقائي */
     fun skip(k: String): Boolean = k == "kv_init" || k.startsWith("lock_")
     /** مفاتيح المفاتيح: النسخة الفاضية ما بتمسحش مفاتيح موجودة */
-    val SECRET_FIELDS = setOf("keys", "backup", "extra", "viskeys", "mistral_keys", "cerebras_keys")
+    val SECRET_FIELDS = setOf("keys", "backup", "extra", "viskeys")
 
     fun encode(all: Map<String, Any?>, ts: Long): String {
         val prefs = JSONObject()

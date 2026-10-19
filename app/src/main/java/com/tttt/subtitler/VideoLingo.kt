@@ -5,7 +5,7 @@ import org.json.JSONObject
 import java.util.concurrent.ConcurrentHashMap
 
 /**
- * (v418) خطوات فيديو لينجو (VideoLingo) في الترجمة، على محركات FreeLlm (Mistral / Cerebras) بمفتاحك:
+ * (v418) خطوات فيديو لينجو (VideoLingo) في الترجمة، على جيميناي بمفاتيحك أو Gemma المحلي:
  *  1) ملخص الفيديو + مصطلحات (مرة واحدة ويتجدد مرة لما النص يكبر)
  *  2) ترجمة حرفية للدفعة (direct) بصيغة JSON
  *  3) مراجعة وتحرير (reflect → free) بالعامية المصرية، ولو فشلت بنكمّل بالحرفية
@@ -17,7 +17,7 @@ object VideoLingo {
 
     private const val TARGET = "Egyptian Arabic (colloquial spoken Egyptian, اللهجة المصرية العامية)"
 
-    /** محرك نص: Mistral/Cerebras (FreeLlm) أو جيميناي بمفاتيحك. [chat] (system, user, maxTokens) → نص الرد */
+    /** محرك نص: جيميناي بمفاتيحك أو Gemma المحلي. [chat] (system, user, maxTokens) → نص الرد */
     class Backend(val id: String, val label: String, val local: Boolean = false, val chat: (String, String, Int) -> String)
 
     private class Term(val src: String, val tgt: String, val note: String)
@@ -202,9 +202,6 @@ $fmt
         return null
     }
 
-    fun translate(e: FreeLlm.Eng, texts: List<String>, sl: String): List<String?> =
-        translate(Backend(e.id, e.label) { sys, usr, mx -> FreeLlm.chat(e, sys, usr, mx) }, texts, sl)
-
     private val gemRr = java.util.concurrent.atomic.AtomicInteger(0)
     private val gemBackend = Backend("vl_gemini", "جيميناي + لينجو") { sys, usr, mx ->
         val keys = Cfg.allMainKeys()
@@ -228,7 +225,7 @@ $fmt
     /** جيميناي بخطوات لينجو (للمزوّد vl_gemini في ExtTranslate) */
     fun translateGemini(texts: List<String>, sl: String): List<String?> = translate(gemBackend, texts, sl)
 
-    /** نفس توقيع FreeLlm.translate: نفس الطول، والفاضي = null. بيرمي ExtLlm.LlmErr لو المفاتيح/الحد وقفوا */
+    /** نفس الطول، والفاضي = null. بيرمي ExtLlm.LlmErr لو المفاتيح/الحد وقفوا */
     fun translate(b: Backend, texts: List<String>, sl: String): List<String?> {
         if (texts.isEmpty()) return emptyList()
         val lines = texts.map { it.replace('\n', ' ').trim() }

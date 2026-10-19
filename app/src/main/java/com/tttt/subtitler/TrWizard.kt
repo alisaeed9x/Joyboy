@@ -175,9 +175,9 @@ object TrWizard {
                 val id = Cfg.str("tr_mode_id", "")
                 val base = when (id) {
                     "g_wav" -> (if (pl.only) "✍ تفريغ ذكاء صناعي" else "☁ أونلاين · WAV"); "g_aac" -> (if (pl.only) "✍ تفريغ ذكاء صناعي" else "☁ أونلاين · AAC")
-                    "loc_ai" -> "📴 محلي + 🧠 ترجمة"; "loc_ctx" -> "📴 وشبر + 🧠 جيميناي بالسياق"; "loc_google" -> (if (pl.only) "✍ تفريغ Whisper" else "🌗 وشبر + " + FreeLlm.firstId().let { f -> if (f.isEmpty()) "🌍 جوجل" else "🤖 " + (FreeLlm.eng(f)?.label ?: f) }); "off_ml" -> (if (pl.only) "✍ تفريغ Whisper (أوفلاين)" else "📴 وشبر + ML Kit")
+                    "loc_ai" -> "📴 محلي + 🧠 ترجمة"; "loc_ctx" -> "📴 وشبر + 🧠 جيميناي بالسياق"; "loc_google" -> (if (pl.only) "✍ تفريغ Whisper" else "🌗 وشبر + " + (if (ExtTranslate.semiLibre()) "🌐 LibreTranslate" else "🌍 جوجل")); "off_ml" -> (if (pl.only) "✍ تفريغ Whisper (أوفلاين)" else "📴 وشبر + ML Kit")
                     "ai_only" -> "✍ تفريغ ذكاء صناعي"; "w_only" -> "✍ تفريغ Whisper"; "s_only" -> "✍ تفريغ SenseVoice"
-                    "off_vl" -> "📴 وشبر + Gemma محلي + لينجو"; "vl_mistral" -> "🌬 وشبر + Mistral + لينجو"; "vl_cerebras" -> "🧠 وشبر + Cerebras + لينجو"; "vl_gemini" -> "✨ وشبر + جيميناي + لينجو"   // (v418)
+                    "off_vl" -> "📴 وشبر + Gemma محلي + لينجو"; "vl_gemini" -> "✨ وشبر + جيميناي + لينجو"   // (v418)
                     else -> if (pl.only) "✍ تفريغ بس" else if (pl.offline) "📴 أوفلاين" else if (pl.cloud) "☁ محرك خارجي" else "☁ أونلاين"
                 }
                 val parts = ArrayList<String>(); parts.add(base)
@@ -196,7 +196,7 @@ object TrWizard {
     fun describe(pl: Plan): String = SourceMode.prefix() + describeCore(pl)
     private fun describeCore(pl: Plan): String =
         if (pl.only) "✍ تفريغ بس (من غير ترجمة)\nالتفريغ: " + (if (pl.offline) (if (pl.engine == "sherpa") "SenseVoice" else "Whisper " + pl.model) + " على الجهاز · " + langLabel(pl.lang) else "جيميناي") + "\nالنص بيظهر بلغته الأصلية"
-        else if (pl.offline) "📴 أوفلاين" + (if (pl.live) " ⚡ لحظي" else "") + " · " + langLabel(pl.lang) + "\nالتفريغ: " + (if (pl.engine == "sherpa") "SenseVoice (sherpa-onnx)" else "Whisper " + pl.model) + " على الجهاز\nالترجمة: " + (if (pl.free == "mlkit") "ML Kit (أوفلاين · من غير نت)" else if (pl.method == "google") "جوجل (من غير API)" else "جيميناي بالسياق") + "\nاللهجة: " + pl.dialect.ifBlank { "فصحى" } + (if (pl.method == "google" && pl.dialect.isNotBlank() && pl.dialect != "فصحى") " (" + convLabel(pl.conv) + " بيحوّل الترجمة)" else "") + (if (pl.free.isNotBlank() && pl.method == "google") "\nالمترجم: " + (if (pl.free.startsWith("llm_")) "🤖 " + (ExtLlm.byId(pl.free.removePrefix("llm_"))?.label ?: pl.free) + " الأول (بمفتاحك)" else "🌐 " + (ExtTranslate.all().firstOrNull { it.id == pl.free }?.label ?: pl.free) + " الأول (" + (if (FreeLlm.isLlm(pl.free)) "مفتاحك المجاني" else "مجاني من الريبو") + ")") else "")
+        else if (pl.offline) "📴 أوفلاين" + (if (pl.live) " ⚡ لحظي" else "") + " · " + langLabel(pl.lang) + "\nالتفريغ: " + (if (pl.engine == "sherpa") "SenseVoice (sherpa-onnx)" else "Whisper " + pl.model) + " على الجهاز\nالترجمة: " + (if (pl.free == "mlkit") "ML Kit (أوفلاين · من غير نت)" else if (pl.method == "google") "جوجل (من غير API)" else "جيميناي بالسياق") + "\nاللهجة: " + pl.dialect.ifBlank { "فصحى" } + (if (pl.method == "google" && pl.dialect.isNotBlank() && pl.dialect != "فصحى") " (" + convLabel(pl.conv) + " بيحوّل الترجمة)" else "") + (if (pl.free.isNotBlank() && pl.method == "google") "\nالمترجم: " + (if (pl.free.startsWith("llm_")) "🤖 " + (ExtLlm.byId(pl.free.removePrefix("llm_"))?.label ?: pl.free) + " الأول (بمفتاحك)" else "🌐 " + (ExtTranslate.all().firstOrNull { it.id == pl.free }?.label ?: pl.free) + " الأول (مجاني من الريبو)") else "")
         else "☁ أونلاين (جيميناي)\n" + (TrPresets.byId(pl.onlineId)?.let { it.icon + " " + it.name } ?: "⚙ الإعدادات الحالية") + (pl.dia?.let { "\nاللهجة: " + it.ifBlank { "فصحى" } } ?: "")
 
     /** (v274) لو التفريغ السحابي كان شغّال بسبب خطة «أونلاين بمحرك خارجي» بنقفله لما نرجع لخطة تانية (إلا لو إنت شغّلته من الإعدادات) */
@@ -448,11 +448,6 @@ object TrWizard {
 
         /** (v418) أوضاع لينجو: لو مفتاح المحرك ناقص بنفتح شرح جلبه ونكمّل لوحدنا بعد اللصق */
         fun pickVl(id: String) {
-            val e = FreeLlm.eng(id.removePrefix("vl_"))
-            if (e != null && !FreeLlm.hasKey(e)) {
-                FreeLlmUi.guide(act, ui, th, e) { k -> Cfg.put(e.keyCfg, (Cfg.keys(e.keyCfg) + k).distinct().joinToString("\n")); Notice.show(act, "✓ اتحفظ مفتاح ${e.label}", 2000L); pickMode(id) }
-                return
-            }
             if (id == "vl_gemini" && Cfg.allMainKeys().isEmpty()) { Notice.show(act, "حط مفتاح جيميناي الأول من الإعدادات", 2800L); return }
             pickMode(id)
         }
@@ -480,7 +475,7 @@ object TrWizard {
                 "loc_ai", "loc_ctx" -> { src = if (engine == "sherpa" && SherpaStt.ready() && SherpaStt.handles(lang)) "sherpa" else "whisper"; tr = "gemini"; trId = "" }
                 "loc_google" -> { src = "whisper"; tr = "google"; trId = ""; dia = ""; diaSet = true; convId = ""; lang = "" }   // (v410) 🌗 Whisper فقط + لغة تلقائية
                 "off_ml", "off_vl" -> { src = "whisper"; tr = "free"; trId = "mlkit"; dia = ""; diaSet = true; convId = ""; lang = "" }   // (v410) 📴 Whisper + ML Kit
-                "vl_mistral", "vl_cerebras", "vl_gemini" -> { src = "whisper"; tr = "free"; trId = id.removePrefix("vl_"); if (id == "vl_gemini") trId = "vl_gemini"; dia = ""; diaSet = true; convId = ""; lang = "" }   // (v418) Whisper + محرك AI بخطوات لينجو (مصري)
+                "vl_gemini" -> { src = "whisper"; tr = "free"; trId = "vl_gemini"; dia = ""; diaSet = true; convId = ""; lang = "" }   // (v418) Whisper + محرك AI بخطوات لينجو (مصري)
                 "ai_only" -> { src = "gemini"; tr = "none"; trId = "" }
                 "w_only" -> { src = "whisper"; tr = "none"; trId = "" }
                 "s_only" -> { src = "sherpa"; tr = "none"; trId = "" }
@@ -510,14 +505,8 @@ object TrWizard {
             reset(if (edit) "⚙ طريقة الترجمة" else "▶ هتترجم إزاي؟")
             val cur = TrWizard.summaryLine()
             note(if (cur.isBlank()) "اختار وضع — الإعداد بيتحفظ وبيفضل مع أي فيديو." else "الحالي: $cur")
-            opt("☁ أونلاين — جيميناي", "تفريغ وترجمة بجيميناي · لهجات + أسلوب + ضمائر + شخصيات + وضع بصري · محتاج مفتاح ونت", mId == "g_wav" || mId == "g_aac") { go { stepOnlineQ() } }
-            opt("🌗 نص-أونلاين — Whisper + جوجل  🔒 من غير مفتاح", "التفريغ على جهازك والترجمة بجوجل (وبعدها MyMemory/Lingva ثم ML Kit) · فصحى بس · جيميناي ممنوع · الترجمة محتاجة نت · اللغة بتتكشف لوحدها", mId == Strict.SEMI) { pickMode(Strict.SEMI) }
-            opt("📴 أوفلاين — Whisper + ML Kit  🔒 مابيتصلش بالنت", "كله على جهازك · فصحى بس · اللغة بتتكشف لوحدها (Whisper + حروف النص) وموديلها بيتحمّل مرة واحدة مع شريط تقدم · بعدها من غير نت", mId == Strict.OFF) { pickMode(Strict.OFF) }
-            sec("🎬 لينجو (VideoLingo) — ترجمة بخطوتين بالمصري")   // (v418)
-            opt("🌬 Mistral + لينجو", "Whisper على جهازك + Mistral بمفتاحك المجاني · ملخص ثم ترجمة حرفية ثم مراجعة بالمصري · محتاج نت", mId == "vl_mistral") { pickVl("vl_mistral") }
-            opt("🧠 Cerebras + لينجو", "Whisper على جهازك + Cerebras بمفتاحك المجاني · نفس خطوات لينجو بالمصري · محتاج نت", mId == "vl_cerebras") { pickVl("vl_cerebras") }
-            opt("✨ جيميناي + لينجو", "Whisper على جهازك + مفاتيح جيميناي بتاعتك · نفس خطوات لينجو بالمصري · محتاج نت", mId == "vl_gemini") { pickVl("vl_gemini") }
-            opt("📴 أوفلاين + لينجو — Gemma محلي  🔒 من غير نت", "Whisper + موديل Gemma على جهازك بخطوات لينجو بالمصري · أبطأ من ML Kit بس أحسن في الأسلوب · لو الموديل وقف بيكمّل بـ ML Kit · بيحتاج ~2.6 جيجا مرة واحدة", mId == Strict.OFF_VL) { pickLocalVl() }
+            opt("☁ جيميناي — ٧٥٪ نسخ + ٢٥٪ ترجمة", "٧٥٪ من مفاتيحك بتنسخ الكلام (مع مصدر الصوت وشرح المصطلحات والتلميحات فوق) و٢٥٪ بتترجم بالسياق · لهجات + أسلوب + ضمائر + شخصيات + وضع بصري · محتاج مفتاح ونت", mId == "g_wav" || mId == "g_aac") { go { stepOnlineQ() } }
+            opt("🌗 وشبر + LibreTranslate  🔒 من غير مفتاح", "التفريغ بوشبر على جهازك والترجمة بـ LibreTranslate (لو وقف بيكمّل MyMemory/Lingva) · فصحى بس · جيميناي ممنوع · الترجمة محتاجة نت · اللغة بتتكشف لوحدها", mId == Strict.SEMI) { pickMode(Strict.SEMI) }
             sec("✍ تفريغ بس")
             opt("✍ تفريغ بس (من غير ترجمة): " + (if (onlySw) "✅ شغّال" else "⏸ مقفول"), "النص بيظهر بلغته الأصلية، وبيتطبّق على الوضع اللي تختاره فوق. دوس عشان تبدّل.", onlySw) { onlySw = !onlySw; Cfg.put("tr_s_only", if (onlySw) "1" else "0"); stepModes() }
             sec("👁 بصري")
@@ -533,6 +522,18 @@ object TrWizard {
             opt("🔀 ترتيب الترجمة: " + (if (ExtTranslate.externalFirst()) "🌐 الخارجية أولًا" else "🏠 جوجل الداخلي أولًا"), "دوس عشان تبدّل. السلسلة دلوقتي: " + ExtTranslate.chainLabel() + "\n(بيأثر على مسار «تفريغ + ترجمة نص» — الأوفلاين والأونلاين بمحرك خارجي)", false) {
                 Cfg.put("tx_order", if (ExtTranslate.externalFirst()) "internal" else "external"); stepSummary()
             }
+            opt("🌐 سيرفر LibreTranslate: " + (Cfg.str("libre_url").ifBlank { "الافتراضي (" + ExtTranslate.LIBRE_DEFAULT + ")" }), "سيرفرك أو سيرفر عام، ومفتاح لو محتاج. السيرفرات العامة ممكن تطلب مفتاح أو تحط حد. دوس عشان تغيّر.", false) {
+                val box = LinearLayout(act); box.orientation = LinearLayout.VERTICAL; box.setPadding(40, 20, 40, 0)
+                val eu = android.widget.EditText(act); eu.hint = "https://libretranslate.com"; eu.setText(Cfg.str("libre_url")); eu.setSingleLine(true)
+                val ek = android.widget.EditText(act); ek.hint = "مفتاح API (لو محتاج)"; ek.setText(Cfg.str("libre_key")); ek.setSingleLine(true)
+                box.addView(eu); box.addView(ek)
+                android.app.AlertDialog.Builder(act).setTitle("🌐 LibreTranslate").setView(box)
+                    .setPositiveButton("حفظ") { _, _ ->
+                        Cfg.put("libre_url", eu.text.toString().trim().trimEnd('/')); Cfg.put("libre_key", ek.text.toString().trim())
+                        ExtTranslate.libreProv()?.let { ExtTranslate.clearBlock(it.id) }; stepSummary()
+                    }
+                    .setNegativeButton("إلغاء", null).show()
+            }
             val swapOn = Cfg.str("tr_autoswap", "on") != "off"
             opt("🔄 بديل تلقائي لو جيميناي وقف: " + (if (swapOn) "✅ شغّال" else "⏸ مقفول"), "لو كوتا/مفاتيح جيميناي خلصت أثناء الترجمة، الجمل الناقصة بتتترجم بالمترجم الخارجي أو جوجل (فصحى، واللهجة بتتحوّل بعدين) بدل ما تستنى. دوس عشان تبدّل.", false) {
                 Cfg.put("tr_autoswap", if (swapOn) "off" else "on"); stepSummary()
@@ -541,7 +542,6 @@ object TrWizard {
             opt("📖 نبذة عن المصطلحات الطبية: " + (if (tnOn) "✅ شغّال" else "⏸ مقفول"), "لما جملة فيها مصطلح طبي (زي «القوباء» أو «psoriasis») بيظهر سطر شرح قصير فوق الترجمة. قاموس مدمج أوفلاين + ويكيبيديا للمصطلحات اللي مش فيه (بالنت). الشرح تعريفي عام مش تشخيص. دوس عشان تبدّل.", false) {
                 Cfg.put("term_notes", if (tnOn) "off" else "on"); stepSummary()
             }
-            opt("✏ غيّر الإعداد", "", false) { go { stepMode() } }
             if (s != null) opt("🗑 امسح المحفوظ", "زرار «▶ ترجمة» هيسألك كل مرة تاني", false) { TrWizard.clearSaved(); Notice.show(act, "اتمسح الإعداد المحفوظ", 2200L); dlg.dismiss() }
             addBack(if (hist.size > 1) "← رجوع" else "إغلاق")
         }
@@ -587,7 +587,7 @@ object TrWizard {
         /** (v276) فحص المترجمين المجانيين (اللي ليهم محوّل جاهز) وترتيبهم بالسرعة؛ الأخضر الأسرع يتختار */
         fun stepRepo() {
             reset("🌐 مترجمين مجانيين")
-            val provs = FreeLlm.provs() + ExtTranslate.builtin + listOfNotNull(ExtTranslate.libreProv())   // (v416) Mistral/Cerebras لو ليهم مفتاح
+            val provs = ExtTranslate.builtin + listOfNotNull(ExtTranslate.libreProv())
             note("قايمة الريبو مفيهاش مفاتيح، فبنجرّب المترجمين اللي ليهم محوّل جاهز في التطبيق (بدون مفتاح). الأسرع الشغّال بيتختار الأول، والباقي بيكمّل لو وقف. التفريغ أوفلاين على جهازك.")
             if (ftested.isEmpty() && !ftesting) {
                 ftesting = true
@@ -601,9 +601,9 @@ object TrWizard {
                     }
                 }.also { it.isDaemon = true }.start()
             }
-            val ordered = provs.sortedBy { pv -> (if (FreeLlm.isLlm(pv.id)) -1_000_000_000L else 0L) + (ftested[pv.id]?.let { if (it.first) it.second else Long.MAX_VALUE - 1 } ?: Long.MAX_VALUE) }
+            val ordered = provs.sortedBy { pv -> (ftested[pv.id]?.let { if (it.first) it.second else Long.MAX_VALUE - 1 } ?: Long.MAX_VALUE) }
             val okList = ordered.filter { ftested[it.id]?.first == true }
-            val best = okList.firstOrNull { it.dailyChars == 0 && !FreeLlm.isLlm(it.id) } ?: okList.firstOrNull()   // (v277) اللي ليه حد يومي (MyMemory ~4800 حرف) مايبقاش «الأسرع» طول ما فيه بديل من غير حد
+            val best = okList.firstOrNull { it.dailyChars == 0 } ?: okList.firstOrNull()   // (v277) اللي ليه حد يومي (MyMemory ~4800 حرف) مايبقاش «الأسرع» طول ما فيه بديل من غير حد
             fun choose(pv: ExtTranslate.Prov) {
                 if (repoToHub) { tr = "free"; trId = pv.id; sync(); toHub(); return }   // (v279) جاي من كارت ②
                 if (!WhisperLib.loaded) { Notice.show(act, "الأوفلاين مش مدعوم على جهازك — التفريغ هنا بيبقى على الجهاز", 3500L); return }
@@ -634,16 +634,7 @@ object TrWizard {
                     stepGemKeys()
                 }
             }
-            val cur = KeyMode.clamp(Cfg.int("kmode", 1))
-            val adv = Cfg.bool("kmode_adv", false)
-            // (v287) البريست هو اللي بيحدد وضع المفاتيح؛ الاختيار اليدوي (1–4) تحت «متقدم»
-            note("وضع المفاتيح بيتحدد لوحده من البريست اللي بتختاره (دلوقتي: " + KeyMode.short(cur) + ").")
-            opt("⚙ متقدم: اختيار وضع المفاتيح يدويًا " + (if (adv) "▾" else "▸"), if (adv) "دوس عشان تخفي الأوضاع (البريست هو اللي بيحدد)" else "بيظهر الأوضاع 1–4 وزرار 🔑 جنب ▶ ترجمة في المشغّل", false) {
-                Cfg.put("kmode_adv", if (adv) "0" else "1"); stepGemKeys()
-            }
-            if (adv) for (m in 1..KeyMode.count) opt(KeyMode.name(m), KeyMode.descs[m - 1], m == cur) {
-                Cfg.put("kmode", m.toString()); TrWizard.keyModeHook?.invoke(m); stepGemKeys()
-            }
+            note("وضع المفاتيح ثابت: ٧٥٪ من المفاتيح بتنسخ الكلام و٢٥٪ بتترجم بالسياق (لو معاك مفتاح واحد بيعمل الاتنين).")
             addBack()
         }
 

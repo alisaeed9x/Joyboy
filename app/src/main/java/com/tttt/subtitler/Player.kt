@@ -528,7 +528,7 @@ class PlayerActivity : Activity(), Host {
         var trRef: TextView? = null
         val tr = b("▶ ترجم ▾", 0xFFE53935.toInt()) { trRef?.let { translateMenu(it) } }   // (v254) قبل البداية: الإعداد المحفوظ أو شاشة «طريقة الترجمة»
         trRef = tr
-        val offB = b("📴 ترجمة أوفلاين", 0xFF1F5FBF.toInt()) { if (!engineStarted) offlineQuick() }.apply { textSize = if (compact) 13f else 15f }   // (v408) زرار واحد: تفريغ Whisper + ترجمة ML Kit أوفلاين
+        val offB = b("🌗 وشبر + ليبرا", 0xFF1F5FBF.toInt()) { if (!engineStarted) offlineQuick() }.apply { textSize = if (compact) 13f else 15f }   // (v408) زرار واحد: تفريغ Whisper + ترجمة ML Kit أوفلاين
         val wzB = b("⚙", 0xFF37474F.toInt()) { trWizard(true) }   // (v254) زرار صغير جنب ▶ ترجمة: يغيّر طريقة الترجمة (أونلاين/أوفلاين …)
         var lgRef: TextView? = null
         val lgB = b("🌐", 0xFF37474F.toInt()) { lgRef?.let { langPopup(it) } }
@@ -723,7 +723,7 @@ class PlayerActivity : Activity(), Host {
         val head = if (!started) "اختار طريقة الترجمة" else (Offline.liveLine() ?: ("الترجمة: " + trPct + "%" + (if (paused) " (واقفة)" else "")))
         col.addView(ui.text(head, 12.5f, Color.WHITE, true).apply { setPadding(ui.dp(8), ui.dp(4), ui.dp(8), ui.dp(6)) })
         if (!started) {
-            col.addView(item("📴 أوفلاين — Whisper + ML Kit (من غير نت)") { offlineQuick() })
+            col.addView(item("🌗 وشبر + LibreTranslate (التفريغ على جهازك)") { offlineQuick() })
             col.addView(item("☁ أونلاين — جيميناي") { startOnlineQuick() })
             TrWizard.savedPlan()?.let { sp -> col.addView(item("▶ بالإعداد المحفوظ: " + TrWizard.describe(sp).substringBefore("\n")) { translateEntry() }) }
         } else {
@@ -3151,7 +3151,7 @@ class PlayerActivity : Activity(), Host {
     private var kmPop: android.widget.PopupWindow? = null
 
     fun applyKeyMode(n0: Int) {
-        val n = KeyMode.clamp(n0)
+        val n = KeyMode.SPLIT_A   // (v425) ثابت
         Cfg.put("kmode", n.toString())
         try { val nc = Cfg.snapshot(); conf = nc; if (::engine.isInitialized) engine.applyConf(nc) } catch (e: Throwable) { LogStore.err("Player:kmode", e) }
         for ((v, f) in kmLabels) v.text = f(n)
@@ -3160,6 +3160,7 @@ class PlayerActivity : Activity(), Host {
 
     fun keyModePopup(anchor: View) {
         kmPop?.let { if (it.isShowing) { it.dismiss(); kmPop = null; return } }
+        if (true) { say("🔑 وضع المفاتيح ثابت: ٧٥٪ من المفاتيح بتنسخ الكلام (مع شرح المصطلحات والتلميحات) و٢٥٪ بتترجم بالسياق"); return }   // (v425)
         // (v262) الأوفلاين شغّال: Cfg.snapshot بيجبر الوضع 4، فاختيار وضع تاني كان بيتحفظ ويتعرض من غير أي أثر
         if (engineStarted && Offline.configured()) { say("📴 الأوفلاين شغّال — وضع المفاتيح ثابت على «نسخ ثم ترجمة سياقية» (٤) لحد ما الترجمة دي تخلص"); return }
         val cur = KeyMode.clamp(Cfg.int("kmode", 1))
@@ -3236,14 +3237,14 @@ class PlayerActivity : Activity(), Host {
         val order = listOf(Offline.model()) + listOf("small", "base", "medium").mapNotNull { id -> Offline.models.firstOrNull { it.id == id } }
         val m = order.firstOrNull { Offline.downloaded(it) } ?: Offline.models.first { it.id == "small" }
         fun startIt() {
-            val pl = TrWizard.Plan("offline", "", lang, m.id, "google", "whisper", "فصحى", false, free = "mlkit")   // (v410) أوفلاين = فصحى دايمًا
-            Cfg.put("tr_mode_id", Strict.OFF); SourceMode.set(SourceMode.AUDIO)
+            val pl = TrWizard.Plan("offline", "", lang, m.id, "google", "whisper", "فصحى", false, free = "")   // (v425) وشبر + LibreTranslate
+            Cfg.put("tr_mode_id", Strict.SEMI); SourceMode.set(SourceMode.AUDIO)
             try { TrWizard.save(pl) } catch (e: Throwable) { LogStore.err("Player:offQuickSave", e) }
             offBusy = false
             runPlan(pl)
         }
         fun stepMl() {
-            if (lang.isBlank()) { startIt(); return }
+            if (true) { startIt(); return }   // (v425) ML Kit اتشال من الوضع ده
             MlKitTr.say = { m -> runOnUiThread { say(m) } }
             Thread {
                 val err = MlKitTr.prepare(lang)
@@ -3259,7 +3260,7 @@ class PlayerActivity : Activity(), Host {
         }
         // (v413) لو في موديل مش نازل: شاشة صغيرة تسأل قبل التنزيل (بدل ما ينزّل لوحده)
         Thread {
-            val needMl = lang.isNotBlank() && try { !MlKitTr.ready(lang) } catch (_: Throwable) { false }
+            val needMl = false   // (v425)
             runOnUiThread {
                 val needW = !Offline.downloaded(m)
                 if (!needW && !needMl) { go(); return@runOnUiThread }

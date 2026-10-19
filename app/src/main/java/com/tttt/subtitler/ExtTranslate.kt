@@ -47,7 +47,7 @@ object ExtTranslate {
     private fun vlProvs(): List<Prov> = if (Cfg.allMainKeys().isNotEmpty()) listOf(vlGemini) else emptyList()
 
     /** المزوّدين المدمجين + الراوتر (لو فيه مفاتيح) + محركات LLM اللي مفتاحها مضبوط */
-    fun all(): List<Prov> = FreeLlm.provs() + vlProvs() + builtin + listOfNotNull(libreProv())   // (v416) Mistral/Cerebras (لو فيه مفتاح) الأول
+    fun all(): List<Prov> = vlProvs() + builtin + listOfNotNull(libreProv())
 
     private fun day(): String = (System.currentTimeMillis() / 86_400_000L).toString()
 
@@ -64,23 +64,25 @@ object ExtTranslate {
             return if (Strict.id() == Strict.OFF_VL && LocalLlm.ready() && LocalLlm.supported()) listOfNotNull(vlLocal, ml) else listOfNotNull(ml)   // (v420)
         }   // (v410) أوفلاين كامل: ML Kit بس — مفيش جوجل ولا مزوّدين بالنت
         val ext = active()
-        // (v277) id المحفوظ لمحركات LLM هو id البريست (chatgpt) بينما id المزوّد llm_chatgpt — قبل كده المحرك الأساسي ماكانش بيتلقى أبدًا؛ وكمان وضع «الريبو بس» ماكانش لازم يستبعد اللي اخترته بإيدك
-        val pid = primaryId().ifEmpty { FreeLlm.firstId() }   // (v416) مفيش محرك أساسي محدد: Mistral/Cerebras (لو ليهم مفتاح) قبل جوجل
+        // (v277) id المحفوظ لمحركات LLM هو id البريست بينما id المزوّد llm_<id> — قبل كده المحرك الأساسي ماكانش بيتلقى أبدًا؛ وكمان وضع «الريبو بس» ماكانش لازم يستبعد اللي اخترته بإيدك
+        val pid = primaryId()
         val prim = if (pid.isEmpty()) null else all().firstOrNull { enabled(it) && (it.id == pid || it.id == "llm_$pid") }
-        // (v416) باقي محركات الـLLM بتوعك بتيجي على طول بعد الأساسي وقبل جوجل (لو مش مختار «جوجل أولًا»)
-        val llmRest = if (FreeLlm.firstId().isNotEmpty()) ext.filter { FreeLlm.isLlm(it.id) && it.id != prim?.id } else emptyList()
-        val rest = ext.filter { it.id != prim?.id && it !in llmRest }
+        val rest = ext.filter { it.id != prim?.id }
         val steps = ArrayList<Prov?>()
         prim?.let { steps.add(it) }
-        steps.addAll(llmRest)
+        if (semiLibre()) {   // (v423) 🌗 وشبر + LibreTranslate بدل جوجل: ليبرا أول واحد بعد محركات الـLLM، وبعده MyMemory/Lingva/ML Kit — جوجل الداخلي مش في السلسلة خالص
+            val lb = rest.firstOrNull { it.id == "libre" }
+            lb?.let { steps.add(it) }
+            steps.addAll(rest.filter { it.id != "libre" })
+            return steps
+        }
         if (externalFirst()) { steps.addAll(rest); steps.add(null) } else { steps.add(null); steps.addAll(rest) }
         return steps
     }
     /** (v278) اسم المحرك بوضوح: جوجل الداخلي / ChatGPT… + الموديل / مجاني من الريبو / سيرفرك */
     fun whoLabel(p: Prov?): String = when {
         p == null -> "🏠 جوجل الداخلي"
-        p.id == "libre" -> "🌐 LibreTranslate (سيرفرك)"
-        FreeLlm.isLlm(p.id) -> "🤖 " + p.label + " (مفتاحك المجاني)"   // (v416)
+        p.id == "libre" -> if (Cfg.str("libre_url").isBlank()) "🌐 LibreTranslate" else "🌐 LibreTranslate (سيرفرك)"
         else -> "🌐 " + p.label + " (مجاني من الريبو)"
     }
     /** (v278) سطر «مين بيترجم دلوقتي» للإشعارات: السلسلة بالترتيب، أو جيميناي بعدد مفاتيحه */
@@ -93,7 +95,7 @@ object ExtTranslate {
     fun inRepo(p: Prov): Boolean = PublicApis.listed(p.keys) != null
 
     /** المزوّدين اللي هيتستخدموا فعلًا: مفعّلين، ولو «الريبو بس» شغّال لازم يكونوا في القايمة المسحوبة */
-    fun active(): List<Prov> = all().filter { enabled(it) && (!strict() || inRepo(it) || it.id == "mlkit" || FreeLlm.isLlm(it.id)) }
+    fun active(): List<Prov> = all().filter { enabled(it) && (!strict() || inRepo(it) || it.id == "mlkit") }
 
     // ===== (v274) إيقاف مؤقت لمزوّد فشل: مفتاح مرفوض (لحد ما المفتاح يتغيّر) / كوتة أو رصيد (دقايق) / رابط أو موديل غلط / سيرفر واقع =====
     private val coolUntil = ConcurrentHashMap<String, Long>()
@@ -125,16 +127,22 @@ object ExtTranslate {
     }
 
     // ===== LibreTranslate (سيرفرك أو سيرفر بمفتاح): POST {url}/translate بدفعة جمل =====
+    /** (v423) 🌗 النص-أونلاين: «libre» (الافتراضي) = وشبر + LibreTranslate بدل جوجل · «google» = زي الأول */
+    fun semiLibre(): Boolean = Strict.semi()   // (v425) ليبرا بس — جوجل اتشال من الوضع ده
+    /** السيرفر الافتراضي لو ما حطيتش سيرفرك. السيرفرات العامة غالبًا بتطلب مفتاح أو بتحط حد — الجزء ده ما اتأكدتش منه، زرار 🧪 جرّب في الإعدادات هو الاختبار */
+    const val LIBRE_DEFAULT = "https://libretranslate.com"
+    fun libreUrl(): String = Cfg.str("libre_url").trim().trimEnd('/').ifEmpty { if (semiLibre()) LIBRE_DEFAULT else "" }
     fun libreProv(): Prov? {
-        val u = Cfg.str("libre_url").trim().trimEnd('/')
+        val u = libreUrl()
         if (u.isEmpty()) return null
         return Prov("libre", "LibreTranslate", listOf("libretranslate"), 0) { _, _ -> null }.also { pv ->
             pv.keyHash = { Cfg.str("libre_key").hashCode() }
+            pv.chunk = 20; pv.gapMs = 400L   // (v423) سيرفر عام: دفعات أصغر وراحة بينها
             pv.batch = { texts, sl -> libre(u, texts, sl) }
         }
     }
     private fun libre(url: String, texts: List<String>, sl0: String): List<String?> {
-        val sl = if (sl0 == "zh-CN") "zh" else sl0
+        val sl = if (sl0 == "zh-CN") "zh" else sl0.ifEmpty { "auto" }
         val j = JSONObject().put("q", JSONArray(texts)).put("source", sl).put("target", "ar").put("format", "text")
         Cfg.str("libre_key").trim().takeIf { it.isNotEmpty() }?.let { j.put("api_key", it) }
         val o = JSONObject(ExtLlm.post("$url/translate", emptyMap(), j.toString()))

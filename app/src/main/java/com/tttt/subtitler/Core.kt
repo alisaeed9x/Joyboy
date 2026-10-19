@@ -166,6 +166,7 @@ object Cfg {
         Stats.load = { p.getString("stats", "") ?: "" }
         Stats.save = { p.edit().putString("stats", it).apply() }
         migrate()
+        try { if (int("kmode", 0) != KeyMode.SPLIT_A) put("kmode", KeyMode.SPLIT_A.toString()) } catch (_: Throwable) {}   // (v425) وضع المفاتيح ثابت
         try { KeyVault.attach(c.applicationContext) } catch (_: Exception) {}
         try { Backup.attach(c.applicationContext) } catch (_: Exception) {}   // (v215) نسخة احتياطية تلقائية لكل الإعدادات
         
@@ -253,7 +254,7 @@ object Cfg {
             emptyList() /* جدول الشخصيات اليدوي اتشال — الشخصيات بتتحلل تلقائيًا */, str("gloss"),
             true, true, true,   // (v229) تحليل الشخصيات · تصحيح الضمائر · ترجمة القالب: أوتوماتيك دايمًا (اتشال مفتاحهم من الإعدادات)
             1 /* (v141) طلب واحد لكل مفتاح */, bool("hitiming", false), true /* (v229) سد الفجوات أوتوماتيك دايمًا */,
-            bool("soundtags", true), if (strict) emptyList() else keys("viskeys"), bool("prefine", true), rf, if (Offline.configured()) KeyMode.TRANSCRIBE_ALL else KeyMode.clamp(int("kmode", 1))   // (v253) أوفلاين = وضع 4 (نسخ ثم ترجمة سياقية)
+            bool("soundtags", true), if (strict) emptyList() else keys("viskeys"), bool("prefine", true), rf, if (Offline.configured()) KeyMode.TRANSCRIBE_ALL else KeyMode.SPLIT_A   // (v425) جيميناي = دايمًا ٧٥٪ نسخ + ٢٥٪ ترجمة سياقية · (v253) أوفلاين = وضع 4 (نسخ ثم ترجمة سياقية)
         )
     }
 }

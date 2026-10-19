@@ -12,7 +12,13 @@ object Strict {
     const val OFF = "off_ml"
     /** (v420) 📴 أوفلاين + لينجو: Whisper + Gemma محلي (بخطوات VideoLingo) وبعده ML Kit كاحتياطي — كله على الجهاز */
     const val OFF_VL = "off_vl"
-    fun id(): String = try { Cfg.str("tr_mode_id", "") } catch (_: Throwable) { "" }
+    /** (v425) الأوضاع المشالة وبديلها: أوفلاين ML Kit / لينجو ← وشبر + LibreTranslate · وشبر + جيميناي (محلي/سياق) ← جيميناي */
+    private val REMOVED = mapOf("off_ml" to SEMI, "off_vl" to SEMI, "vl_gemini" to SEMI, "loc_ai" to "g_wav", "loc_ctx" to "g_wav")
+    fun id(): String = try {
+        var i = Cfg.str("tr_mode_id", "")
+        REMOVED[i]?.let { m -> Cfg.put("tr_mode_id", m); Cfg.put("tr_saved", "0"); i = m }   // الإعداد المحفوظ بيتمسح عشان يسأل من جديد
+        i
+    } catch (_: Throwable) { "" }
     fun semi(): Boolean = id() == SEMI
     fun offline(): Boolean = id() == OFF || id() == OFF_VL
     /** true = جيميناي ممنوع تمامًا (مفاتيح، تحويل لهجة، بصري، تسليم احتياطي) */

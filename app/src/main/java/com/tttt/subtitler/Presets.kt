@@ -23,7 +23,7 @@ object TrPresets {
         // «المقاطع قدّام مكان التشغيل» لازم تكون أكتر من عدد المفاتيح الأساسية وإلا مفاتيح بتقعد مستنية
         val ahead = maxOf(aheadMin, main + 1).coerceAtMost(20)
         return linkedMapOf(
-            "kmode" to kmode.toString(), "chunk" to chunk.toString(), "ahead" to ahead.toString(), "hls_ahead" to hls.toString(),
+            "kmode" to KeyMode.SPLIT_A.toString(), "chunk" to chunk.toString(), "ahead" to ahead.toString(), "hls_ahead" to hls.toString(),
             "prefine" to b(prefine), "hitiming" to b(hitiming), "soundtags" to b(soundtags), "vis_auto" to b(vis),
             "model" to Models.DEFAULT, "trstart" to "1", "keepgoing" to "1",
             "nmain" to nm.toString(), "nback" to nb.toString(), "hard_mode" to "0")

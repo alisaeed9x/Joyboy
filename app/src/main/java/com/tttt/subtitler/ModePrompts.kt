@@ -233,9 +233,20 @@ This is a standalone audio segment; timestamps start at 0.0 relative to the begi
 - Do not write sound descriptions (music, applause, laughter) as text, and no stock hallucinations (thanks for watching, subscribe) unless truly spoken.
 """
 
+    /** (v425) إدخالات جانبية بتظهر فوق الصورة: كلام الأجهزة/الخلفية + شرح المصطلحات + قصة أسماء الأفلام + التلميحات. بتطلع من الترانسكريبشن نفسه والترجمة بتحافظ عليها فوق. */
+    internal const val ANNOTATE_EN = """
+═══ SIDE ENTRIES SHOWN ABOVE THE PICTURE (is_sound=true) ═══
+Besides the normal dialogue, add a few separate entries with "is_sound": true. They are displayed above the normal subtitles, so keep them rare, short and certain. Same JSON shape as every other entry (start/end as usual).
+1. 🔴 Speech from a device or from the background: a TV, radio, phone speaker, microphone / public address, loudspeaker, intercom, announcer, or a crowd. Transcribe it word for word as its own entry (never inside the normal dialogue), with "is_sound": true and "speaker_tag" set to exactly one of: tv, radio, phone, mic, intercom, loudspeaker, crowd. Its start/end are the real timing of that speech.
+2. 📖 Hard terms: when someone says a medical, scientific, engineering, legal or other specialised word or abbreviation that an ordinary viewer would not know, add one entry with the same start/end as that sentence, "is_sound": true, and "original" = "📖 <term>: <what it means, in plain words, max 14 words>". Never for common words; one entry per term.
+3. 📖 Titles: when a film, series, book, game or song title is mentioned and you know it for sure, add "📖 <title>: <its story in less than one line, max 18 words>". If you are not sure what it is, skip it.
+4. 💡 Hints: when a speaker is being sarcastic, ironic, joking with a hidden meaning, or alluding to something (a person, event, saying, culture), add "💡 <what is really meant, max 16 words>".
+Rules for entries 2 to 4: they are explanations, so they are the only entries allowed to contain words that are not spoken; write them in English (they get translated later), put at most about 4 of them in one segment, never invent, never explain what is obvious, and never repeat a term already explained earlier in the context. Entries of type 1 are real speech and must be accurate and complete.
+"""
+
     /** برومبت الترانسكريبشن (صوت ← نص أصلي + توقيت + جنس، من غير ترجمة). الرد: {"subtitles":[...],"detected_source_language":"..."} */
     fun transcribe(pb: PromptBuilder, c: Conf, durSec: Double, prev: String, chars: List<Chr>, gloss: List<Gloss>,
-                   strict: Boolean = false, hole: Boolean = false, holeNear: Boolean = false, srcLang: String = ""): String {
+                   strict: Boolean = false, hole: Boolean = false, holeNear: Boolean = false, srcLang: String = "", notes: Boolean = false): String {
         val spk = if (Extras.spkNames) ",\"speaker_name\":\"\"" else ""
         val sb = StringBuilder(P("TRANSCRIBE_MAIN", TRANSCRIBE_MAIN))
         sb.append("Return JSON only, in exactly this shape, with no text outside it:\n")
@@ -244,6 +255,7 @@ This is a standalone audio segment; timestamps start at 0.0 relative to the begi
         sb.append(P("TIMING_EN", TIMING_EN)).append(P("GENDER_EN", GENDER_EN).substringBefore("- 🔴 Gendered vocabulary"))
         sb.append(P("TRANSCRIBE_RULES", TRANSCRIBE_RULES))
         sb.append(P("REVIEW_EN", REVIEW_EN))
+        if (notes && !hole) sb.append(P("ANNOTATE_EN", ANNOTATE_EN))   // (v425)
         sb.append(charTable(chars))
         if (gloss.isNotEmpty() || c.manualGloss.isNotBlank()) {
             val g = gloss.joinToString("\n") { "- ${it.term}${if (it.note.isNotEmpty()) ": " + it.note else ""}" }
@@ -284,6 +296,14 @@ The sentences below are consecutive speech from one video, in order. Each one al
 - Do not invent, do not censor beyond what the register asks for, do not add anything that was not said.
 """
 
+    /** (v425) قواعد الإدخالات الجانبية (is_sound) في الترجمة: الشرح والكلام الخارجي بيتترجموا ويفضلوا فوق، والحوار العادي تحت */
+    internal const val TRANSLATE_NOTES = """
+═══ SIDE ENTRIES (items with "is_sound": true) — they are shown ABOVE the picture, separate from the dialogue ═══
+- An item whose original starts with 📖 or 💡 is an explanatory note, not speech. Translate it as one short helpful line (at most about 14 Arabic words) in the target language and keep its leading emoji. For 📖 keep the shape "<term>: <meaning>": the term in the form an Arabic reader knows (Arabic letters, or the Latin term when that is the professional norm), then a colon, then the meaning. For 💡 write what is really meant, plainly. Never add information that is not in the note.
+- An item with a speaker_tag of tv, radio, phone, mic, intercom, loudspeaker or crowd is speech coming from a device or the background. Translate the speech normally and start the translation with the Arabic source label and a colon: tv = «التلفزيون:» (or «المذيع:» if it is an announcer), radio = «الراديو:», phone = «التليفون:», mic = «الميكروفون:», intercom = «الإنتركوم:», loudspeaker = «مكبّر الصوت:», crowd = «الناس:».
+- Every other item is normal dialogue and is translated as described above. Side entries still count: return one entry for each idx.
+"""
+
     /**
      * دفعة جمل للترجمة. [items] = جمل الدفعة بالترتيب (idx = رقمها من 0 جوه الدفعة)، [before] = آخر جمل اتترجمت قبلها (سياق + ثبات مصطلحات)،
      * [after] = جمل جاية بنصها الأصلي بس (سياق).
@@ -292,9 +312,10 @@ The sentences below are consecutive speech from one video, in order. Each one al
         val tgt = dialectEn(c.lang)
         val sb = StringBuilder(P("TRANSLATE_MAIN", TRANSLATE_MAIN).replace("{{TARGET}}", tgt).replace("{{STYLE}}", styleEn(c.style)))
         sb.append(charTable(chars)).append(glossBlock(c, gloss))
+        if (items.any { it.isSound }) sb.append(P("TRANSLATE_NOTES", TRANSLATE_NOTES))   // (v425)
         if (before.isNotEmpty()) {
-            sb.append("\n═══ ALREADY TRANSLATED JUST BEFORE THIS BATCH (context and terminology consistency; do not translate again) ═══\n")
-            before.takeLast(12).forEach { s ->
+            sb.append("\n═══ ALREADY TRANSCRIBED AND TRANSLATED JUST BEFORE THIS BATCH (earlier transcript with its translation: context and terminology consistency; do not translate again) ═══\n")
+            before.takeLast(20).forEach { s ->
                 sb.append("- ").append(s.original.replace('\n', ' '))
                 if (s.translated.isNotBlank()) sb.append("  ⇒  ").append(s.translated.replace('\n', ' '))
                 sb.append('\n')
@@ -334,6 +355,7 @@ The sentences below are consecutive speech from one video, in order. Each one al
         val main = P("TRANSLATE_MAIN", TRANSLATE_MAIN).replace("{{TARGET}}", tgt).replace("{{STYLE}}", styleEn(c.style))
             .replace("The sentences below are consecutive speech from one video, in order.", "The transcript and the sentences below are speech from one video, in order.")
         val sb = StringBuilder(main).append(P("CONTEXT_RULES", CONTEXT_RULES))
+        if (items.any { it.isSound }) sb.append(P("TRANSLATE_NOTES", TRANSLATE_NOTES))   // (v425)
         sb.append(charTable(chars)).append(glossBlock(c, gloss))
         sb.append("\n═══ FULL TRANSCRIPT OF THE VIDEO, FOR UNDERSTANDING ONLY (line numbers are #N) ═══\n")
         all.forEachIndexed { k, s ->
@@ -367,6 +389,7 @@ The sentences below are consecutive speech from one video, in order. Each one al
             if (s.speakerTag.isNotEmpty()) o.put("speaker_tag", s.speakerTag)
             if (s.speakerName.isNotEmpty()) o.put("speaker_name", s.speakerName)
             if (s.isSong) o.put("is_song", true)
+            if (s.isSound) o.put("is_sound", true)   // (v425)
             if (s.faint) o.put("faint", true)
             if (s.people.isNotEmpty()) o.put("people", JSONArray(s.people))
             a.put(o)
