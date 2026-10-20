@@ -45,7 +45,7 @@ class Found(val url: String, val kind: String, val title: String = "", val ref: 
 
 /** منطق الصيد (من غير Android): إيه اللي يتحسب فيديو، وتنضيف الروابط، وأسماء العرض */
 object Sniff {
-    private val EXT = Regex("\\.(mp4|m3u8|webm|mkv|mov|m4v|flv|3gp)(?=[?#]|$)", RegexOption.IGNORE_CASE)
+    private val EXT = Regex("\\.(mp4|m3u8|mpd|webm|mkv|mov|m4v|flv|3gp|avi)(?=[?#&/]|$)", RegexOption.IGNORE_CASE)   // (v467) + DASH/AVI ونهايات بلينكات موقّعة
     private val JUNK = Regex("(doubleclick|googlesyndication|adservice|/ads?/|/preroll|analytics|\\.gif)", RegexOption.IGNORE_CASE)
 
     fun isDirect(u: String) = u.startsWith("http", true) && EXT.containsMatchIn(u)
@@ -67,6 +67,7 @@ object Sniff {
         val p = u.substringBefore('?').lowercase()
         return when {
             p.endsWith(".m3u8") -> "HLS"
+            p.endsWith(".mpd") -> "DASH"
             p.endsWith(".webm") -> "WEBM"
             p.endsWith(".mkv") -> "MKV"
             u.contains("videoplayback") -> "YT"
@@ -116,8 +117,11 @@ object AdBlock {
         "pubmatic.com", "rubiconproject.com", "openx.net", "amazon-adsystem.com", "adform.net", "smartadserver.com", "yieldmo.com",
         "bidswitch.net", "2mdn.net", "moatads.com", "scorecardresearch.com", "admaven.com", "ad-maven.com", "a-ads.com", "adcash.com",
         "monetag.com", "galaksion.com", "trafficstars.com", "adskeeper.com", "zedo.com", "yllix.com", "popunder.net", "adspyglass.com",
+        "magsrv.com", "exosrv.com", "clickadilla.com", "trafficfactory.biz", "adsco.re", "pushground.com", "pushnami.com", "webpushr.com",
+        "subscribers.com", "onesignal.com", "propu.sh", "push.house", "richads.com", "evadav.com", "mybid.io", "kadam.net", "bidgear.com",
+        "poptm.com", "adnium.com", "youradexchange.com", "bemobtrk.com", "voluumtrk.com", "zeroredirect.com", "hilltopads.com",
         "ero-advertising.com", "tsyndicate.com", "realsrv.com", "syndication.exdynsrv.com", "exdynsrv.com", "pushails.com", "richpush.co")
-    private val PATH = Regex("(/popunder|/pop\\.js|/adserver|/banner_ads|/prebid|/vast\\.xml|/vpaid)", RegexOption.IGNORE_CASE)
+    private val PATH = Regex("(/popunder|/pop\\.js|/adserver|/banner_ads|/prebid|/vast\\.xml|/vpaid|/afu\\.php|/adclick|/clickunder|/inpagepush|/ntf\\.js)", RegexOption.IGNORE_CASE)
     fun blocked(url: String): Boolean {
         val host = try { Uri.parse(url).host?.lowercase() } catch (_: Throwable) { null } ?: return false
         val parts = host.split('.')
@@ -126,9 +130,16 @@ object AdBlock {
     }
     const val CSS = "ins.adsbygoogle,.adsbygoogle,[id^=div-gpt-ad],[id*=google_ads],[class*=ad-banner],[class*=adbanner],[class*=popup-ad],[id*=popup-ad]," +
         "[class*=sponsored-],[id^=aswift],iframe[src*=doubleclick],iframe[src*=googlesyndication],iframe[src*=adsterra],iframe[src*=exoclick]," +
-        "iframe[src*=propeller],a[href*=popads],a[href*=exoclick],a[href*=adsterra]{display:none!important;visibility:hidden!important}"
+        "iframe[src*=propeller],a[href*=popads],a[href*=exoclick],a[href*=adsterra],[class*=ad-overlay],[id*=ad-overlay],[class*=ad-container],[id*=ad-container]," +
+        "[class*=ads-container],[class*=ad-wrapper],[class*=floatAd],[class*=floating-ad],[class*=popunder],iframe[src*=magsrv],iframe[src*=exosrv]," +
+        "a[href*=clickadu],a[href*=propellerads],a[href*=hilltopads]{display:none!important;visibility:hidden!important}"
+    /** (v467) محدّدات بس (من غير قاعدة العرض) — لمراقب الـ DOM اللي بيمسح الإعلانات المتأخرة أول ما تظهر */
+    private const val SEL = "ins.adsbygoogle,.adsbygoogle,[id^=div-gpt-ad],[id*=google_ads],[class*=ad-banner],[class*=adbanner],[class*=popup-ad],[id*=popup-ad],[id^=aswift],[class*=ad-overlay],[id*=ad-overlay],[class*=ad-container],[id*=ad-container],[class*=ads-container],[class*=ad-wrapper],[class*=floatAd],[class*=floating-ad],[class*=popunder],iframe[src*=doubleclick],iframe[src*=googlesyndication],iframe[src*=adsterra],iframe[src*=exoclick],iframe[src*=propeller],iframe[src*=magsrv],iframe[src*=exosrv]"
     val JS = "(function(){try{window.open=function(){return null};" +
         "if(!document.getElementById('__svab')){var st=document.createElement('style');st.id='__svab';st.textContent='" + CSS + "';(document.head||document.documentElement).appendChild(st)}" +
+        // (v467) إعلانات كتير بتتحقن بعد التحميل: مراقب DOM بيمسح أي عنصر إعلاني أول ما يظهر (بحد أقصى مرة كل 400ms)
+        "var __sel='" + SEL + "';function __rm(){try{document.querySelectorAll(__sel).forEach(function(e){e.remove()})}catch(e){}}" +
+        "__rm();try{new MutationObserver(function(){clearTimeout(window.__svt);window.__svt=setTimeout(__rm,400)}).observe(document.documentElement,{childList:true,subtree:true})}catch(e){}" +
         "}catch(e){}})()"
     /** (v401) نفس الـ JS من غير تعطيل window.open — البوب-أب بيعدّي على PopupGuard يحكم عليه */
     val JS_SMART: String = JS.replace("window.open=function(){return null};", "")

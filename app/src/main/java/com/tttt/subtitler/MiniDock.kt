@@ -104,6 +104,10 @@ class MiniDock(
 
     init {
         dock.addView(art, LinearLayout.LayoutParams(circle, circle))
+        // (v467) بطلب صاحب التطبيق: دوسة على صورة الأغنية أو اسمها/مغنيها ترجّع لمشغّل الموسيقى الكامل (زي ⤢ بالظبط)
+        art.setOnClickListener { bump(); collapse(); onOpenFull() }
+        title.setOnClickListener { bump(); collapse(); onOpenFull() }
+        sub.setOnClickListener { bump(); collapse(); onOpenFull() }
         val tc = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL; setPadding(ui.dp(8), 0, ui.dp(4), 0) }
         tc.addView(title); tc.addView(sub)
         capsule.addView(tc, LinearLayout.LayoutParams(-2, -2))

@@ -12,10 +12,14 @@ import android.widget.LinearLayout
  *  (v324) «المهام» اتشالت من الشريط وبقت زرار عايم (TasksFab)؛ active = -1 يعني مفيش بوابة نشطة (صفحة المهام مفتوحة)
  *  (v312) مؤشّر بيتزحلق تحت البوابة النشطة + قفزة للأيقونة لما تتفعّل */
 class BottomNav(act: Activity, private val ui: Ui, private val th: Theme, private var active: Int, private val rail: Boolean = false, private val onPick: (Int) -> Unit) {   // (v462) rail = شريط جانبي رأسي لوضع التابلت (زي يوتيوب التابلت)
-    companion object { const val MORE = 8 }
-    /** البوابات اللي ورا ⋯ المزيد: الملفات (3) · المهام (5) · الإعدادات (7) — الزرار بيتلوّن لما واحدة منهم تبقى هي النشطة */
-    private fun cellOf(a: Int): Int = if (a == 3 || a == 5 || a == 7) MORE else a
-    private val moreIds = intArrayOf(3, 5, 7)
+    companion object { const val MORE = 8
+        /** (v467) ترتيب الشريط بطلب صاحب التطبيق: الفيديوهات ← يوتيوب ← الموسيقى ← المتصفح ← المزيد.
+         *  أي بوابة مش في الشريط بتظهر تلقائيًا جوه «المزيد» — فأي إضافة جديدة هتبان من غير تعديل هنا. */
+        val BAR_ORDER = listOf(0, 4, 1, 2, 8)
+        val DEFS = listOf("🎞" to "الفيديوهات", "🎵" to "الموسيقى", "🌐" to "المتصفح", "📂" to "الملفات", "▶" to "يوتيوب", "📋" to "المهام", "🤖" to "الذكاء", "⚙️" to "الإعدادات", "⋯" to "المزيد")
+    }
+    /** البوابات اللي ورا ⋯ المزيد: أي بوابة مش في الشريط (حاليًا: الملفات 3 · المهام 5 · الذكاء 6 · الإعدادات 7) — الزرار بيتلوّن لما واحدة منهم تبقى هي النشطة */
+    private fun cellOf(a: Int): Int = if (a in BAR_ORDER) a else MORE
     private fun moreSheet(act: Activity) {
         val d = android.app.Dialog(act)
         d.requestWindowFeature(android.view.Window.FEATURE_NO_TITLE)
@@ -23,7 +27,7 @@ class BottomNav(act: Activity, private val ui: Ui, private val th: Theme, privat
             orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; setPadding(ui.dp(10), ui.dp(10), ui.dp(10), ui.dp(14))
             background = GradientDrawable().apply { setColor(th.card); cornerRadii = floatArrayOf(ui.dp(18).toFloat(), ui.dp(18).toFloat(), ui.dp(18).toFloat(), ui.dp(18).toFloat(), 0f, 0f, 0f, 0f) }
         }
-        val items = listOf(3 to "📂  الملفات", 5 to "📋  المهام", 7 to "⚙️  الإعدادات")
+        val items = DEFS.indices.filter { it != MORE && it !in BAR_ORDER }.map { id -> id to (DEFS[id].first + "  " + DEFS[id].second) }   // (v467) ديناميكي: أي بوابة جديدة بره الشريط هتظهر هنا لوحدها
         for ((id, label) in items) {
             val row = ui.text(label, 15f, if (id == active) th.primary else th.text, true).apply { setPadding(ui.dp(14), ui.dp(14), ui.dp(14), ui.dp(14)) }
             Glass.pressable(row)
@@ -58,8 +62,8 @@ class BottomNav(act: Activity, private val ui: Ui, private val th: Theme, privat
             setBackgroundColor(th.card)
         }
         // (v336) الأرقام ثابتة (0 فيديوهات · 1 موسيقى · 2 متصفح · 3 ملفات · 4 يوتيوب · 5 مهام) لكن ترتيب العرض: يوتيوب قبل الملفات، والمهام رجعت زرار في الشريط
-        val defs = listOf("🎞" to "الفيديوهات", "🎵" to "الموسيقى", "🌐" to "المتصفح", "📂" to "الملفات", "▶" to "يوتيوب", "📋" to "المهام", "🤖" to "الذكاء", "⚙️" to "الإعدادات", "⋯" to "المزيد")
-        val order = listOf(0, 1, 2, 4, 8)   // (v420) 5 أزرار: الملفات والمهام والإعدادات اتجمعوا في ⋯ المزيد (رقم 8)
+        val defs = DEFS
+        val order = BAR_ORDER   // (v467) فيديوهات ← يوتيوب ← موسيقى ← متصفح ← المزيد (والباقي جوه المزيد تلقائيًا)
         defs.forEachIndexed { idx, d ->
             val icon = IconTextView(act).apply { text = d.first; textSize = 16f; gravity = Gravity.CENTER; includeFontPadding = false }
             val lab = ui.text(d.second, 11f, th.muted, true)   // (v458) كانت 9f صغيرة قوي.apply { gravity = Gravity.CENTER; setSingleLine() }

@@ -268,7 +268,7 @@ class LibraryUi(
         resumeBtn.setOnClickListener { markPlayed(v); onPlay(v) }
     }
 
-    private fun sortKey() = Cfg.str(K + "lib_sort", VideoLib.SORT_NAME)
+    private fun sortKey() = Cfg.str(K + "lib_sort", VideoLib.SORT_NEW)   // (v467) الافتراضي بقى «الأحدث أولًا» بطلب صاحب التطبيق: الإضافات الجديدة تظهر فوق في كل فولدر (الاختيار اليدوي من الشرايح بيتحفظ زي ما هو)
 
     // ===== (v299) التوزيع الذكي =====
     private fun dist(): String {
@@ -536,7 +536,10 @@ class LibraryUi(
         val cf = curFolder
         val inWeb = !inHidden && query.isEmpty() && cf == WEB_KEY
         srcRow?.visibility = if (inWeb) View.VISIBLE else View.GONE
-        if (!audio && !inHidden && query.isEmpty() && (cf == null || inWeb)) WebVideos.load(act).let { all0 -> webList = all0.filter { !it.hidden }; webHidList = all0.filter { it.hidden } }
+        if (!audio && !inHidden && query.isEmpty() && (cf == null || inWeb)) WebVideos.load(act).let { all0 ->
+            // (v467) بطلب صاحب التطبيق: أي فيديو مصطاد من موقع اتحظر بعد الاصطياد بيختفي من القايمة العادية وبيروح «المخفي من الإنترنت» (المقفول بالقفل/البصمة) — ولو الحظر اتشال بيرجع لوحده
+            val fromBlocked = { w: WebVid -> try { SiteBlock.keyOf(w.page.ifEmpty { w.ref })?.let { k -> SiteBlock.has(act, k) } == true } catch (_: Throwable) { false } }
+            webList = all0.filter { !it.hidden && !fromBlocked(it) }; webHidList = all0.filter { it.hidden || fromBlocked(it) } }
         val folders = buildTree(src)
         val folder = if (!inHidden && cf != null && !inWeb) nodeIdx[cf] else null
         if (!inHidden && cf != null && !inWeb && folder == null) curFolder = null

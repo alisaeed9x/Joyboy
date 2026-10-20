@@ -315,6 +315,7 @@ class BgService : Service() {
             AudioSources.make(app, uri, u, job.hdr, conf.audioTrack, lg)
         }, store, host, pb)
         engine.headless = true
+        engine.skipIfBaseLang = true; engine.baseLangCode = Cfg.str("base_lang", "ar")   // (v467) المهام الخلفية تشغيل تلقائي: بتحترم اللغة الأساسية (الفيديو اللي بنفس اللغة بيتفرّغ بس)
         engine.titleHint = run {
             val t = job.title.substringBeforeLast('.', job.title)
             val folder = try { job.uri?.let { SrtWriter.pathOf(app, it)?.parentFile?.name } } catch (_: Exception) { null } ?: ""

@@ -53,6 +53,9 @@ fun filePicker(mime: String, title: String, persist: Boolean): Intent {
 class MainActivity : Activity() {
     lateinit var link: EditText
     private var fromPlayer = false
+    private var fromTv = false   // (v467) الزيارة دي جاية من واجهة التلفزيون: قفل الإعدادات/الرجوع من الجذر يرجّع لها
+    private val baseLangs = listOf("ar" to "العربية", "en" to "English", "fr" to "Français", "es" to "Español", "de" to "Deutsch", "tr" to "Türkçe", "hi" to "हिन्दी", "ko" to "한국어", "ja" to "日本語", "zh" to "中文")   // (v467) اللغة الأساسية
+    private fun baseLangName(): String = baseLangs.firstOrNull { it.first == Cfg.str("base_lang", "ar") }?.second ?: "العربية"
     // (v215) نسخة احتياطية: save() بتاعة الإعدادات ما بتشتغلش بعد الاسترجاع (وإلا بتكتب القيم القديمة فوقه)
     private var noSaveCfg = false
     private var saveCfgFn: (() -> Unit)? = null
@@ -102,6 +105,7 @@ class MainActivity : Activity() {
     override fun onCreate(b: Bundle?) {
         NetUse.init()
         fromPlayer = intent?.getBooleanExtra("from_player", false) == true
+        fromTv = intent?.getBooleanExtra("from_tv", false) == true
         if (fromPlayer) setTheme(android.R.style.Theme_Translucent_NoTitleBar)
         super.onCreate(b)
         if (fromPlayer) requestedOrientation = if (intent?.getBooleanExtra("land", false) == true) ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE else ActivityInfo.SCREEN_ORIENTATION_PORTRAIT   // الإعدادات من المشغّل: بنفس اتجاه المشغّل
@@ -581,6 +585,9 @@ class MainActivity : Activity() {
                     ui.chips(styles, { Cfg.str("tone_style", "").ifBlank { style }.ifBlank { "حرفي" } }) { style = it; save(); Cfg.put("tone_style", if (it == "حرفي") "" else it) },
                     ui.text("الشدة (بتشتغل مع شعبي / جرئ / +18 بس):", 12f, th.muted), toneDegChips,
                     ui.text("الباتشات الجاية بتتترجم بيهم. «طبّق» على اللي اتترجم فعلًا من زرار اللغة 🌐 جوه المشغّل.", 12f, th.muted)),
+                ui.section("🏠 اللغة الأساسية", false,
+                    ui.text("لغة الفيديوهات اللي بتتفرج عليها أصلًا. لو فيديو لغته الأصلية هي دي، الترجمة التلقائية مش هتشتغل عليه (بيتفرّغ بس ويظهر بنصه الأصلي) — ولو دوست زرار «ترجم» بنفسك الترجمة هتشتغل عادي.", 12f, th.muted),
+                    ui.chips(baseLangs.map { it.second }, { baseLangName() }) { n -> Cfg.put("base_lang", baseLangs.firstOrNull { it.second == n }?.first ?: "ar") }),
                 ui.button("📝 البرومبتات (شوف · انسخ · عدّل · استبدل)") { PromptsUi.show(this, ui) },
                 ui.section("📖 مسرد المصطلحات الثابت", false,
                     ui.text("كل سطر: الكلمة = ترجمتها. بيتبعت للمحرك مع كل باتش فالمصطلحات دي بتتترجم بنفس الشكل دايمًا.", 12f, th.muted), gloss))),
@@ -905,7 +912,7 @@ class MainActivity : Activity() {
         pane.addView(tasksUi.root, FrameLayout.LayoutParams(-1, -1))   // (v231) صفحة المهام
         if (!fromPlayer) {   // (v370) الإعدادات صفحة كاملة (تبويب ⚙️) بدل الدايلوج — الدايلوج بيفضل بس لما الإعدادات تتفتح من المشغّل
             val host = FrameLayout(this).apply { visibility = View.GONE }
-            settingsDlg.embedClose = { showTabFn(if (tabBeforeSettings == 7) 0 else tabBeforeSettings) }
+            settingsDlg.embedClose = { if (fromTv) { try { startActivity(Intent(this, TvActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)); finish() } catch (_: Throwable) { showTabFn(0) } } else showTabFn(if (tabBeforeSettings == 7) 0 else tabBeforeSettings) }   // (v467) جاي من التلفزيون: قفل صفحة الإعدادات يرجّع لواجهة التلفزيون مش لتبويب الفيديوهات
             settingsDlg.embedInto(host)
             pane.addView(host, FrameLayout.LayoutParams(-1, -1)); settingsHostRef = host
         }
@@ -951,7 +958,7 @@ class MainActivity : Activity() {
         i.action = null   // ما يتكررش لو الأكتيفيتي اتعمل لها إعادة إنشاء
         val id = ytIdOf(url)
         if (id == null) { link.setText(url); openLinkAs(url); return }
-        askYt(url, id)
+        playYt(id, "", false)   // (v467) بطلب صاحب التطبيق: لينك يوتيوب اللي البرنامج يمسكه بيفتح في يوتيوب عادي على طول — من غير قايمة «افتحه إزاي؟»
     }
     /** (v417) لينك يوتيوب من برّه أو من الموزّع (auto): قايمة «افتحه إزاي؟» */
     private fun askYt(url: String, id: String) {
@@ -1163,7 +1170,7 @@ class MainActivity : Activity() {
             Links.VIDEO_TR -> if (id != null) playYt(id, title, true, true, 0L, null, ret) else openVideoLink(u, ret)
             Links.VIDEO -> if (id != null) playYt(id, title, false, false, 0L, null, ret) else openVideoLink(u, ret)
             else -> when {
-                id != null -> askYt(u, id)
+                id != null -> playYt(id, title, false, false, 0L, null, ret)   // (v467) لينك يوتيوب بيفتح يوتيوب عادي على طول
                 k == Links.Kind.AUDIO -> openMusicLink(u, title)
                 k == Links.Kind.VIDEO -> openVideoLink(u, ret)
                 else -> web()
@@ -1558,6 +1565,7 @@ class MainActivity : Activity() {
         if (!fromPlayer && curTab == 5) { showTabFn(if (tabBeforeTasks == 5) 0 else tabBeforeTasks); return }   // (v324) صفحة المهام ← للصفحة اللي جيت منها
         if (!fromPlayer && curTab == 1 && musicUi?.onBack() == true) return   // (v193) يقفل مشغّل الأسطوانة/الفولدر الأول
         if (!fromPlayer && curTab != 0) { showTabFn(0); return }
+        if (!fromPlayer && fromTv && curTab == 0 && libUi?.back() != true) { try { startActivity(Intent(this, TvActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)); finish() } catch (_: Throwable) { super.onBackPressed() }; return }   // (v467) زيارة من التلفزيون: رجوع من الجذر يرجّع للتلفزيون
         if (!fromPlayer && libUi?.back() == true) return
         super.onBackPressed()
     }

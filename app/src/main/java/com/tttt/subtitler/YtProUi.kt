@@ -27,7 +27,7 @@ import android.widget.FrameLayout
 import android.widget.HorizontalScrollView
 import android.widget.ImageView
 import android.widget.LinearLayout
-import android.widget.ListView
+import android.widget.GridView
 import android.widget.PopupMenu
 import android.widget.TextView
 import com.bumptech.glide.Glide
@@ -197,7 +197,9 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
         if (on) { busyView.visibility = View.VISIBLE; busyDr.start(); h.postDelayed(busyOff, 40_000L) }
         else { busyView.visibility = View.GONE; busyDr.stop() }
     }
-    private val lv = ListView(act)
+    /** (v467) يوتيوب بيحترم وضع الواجهة: تابلت/تلفزيون/لاندسكيب = شبكة أعمدة، مش قايمة موبايل ممدودة */
+    private fun ytCols(): Int = when { DeviceUi.isTv(act) -> 3; DeviceUi.isTablet(act) -> 2; act.resources.configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE -> 2; else -> 1 }
+    private val lv = GridView(act)
     private lateinit var ytDock: YtDock               // (v417) شريط مصغّر سفلي بيكمّل الفيديو لما تنزّل من صفحة المشاهدة
     private lateinit var watch: YtWatchPage          // (v402) صفحة المشاهدة (مشغّل مصغّر + تعليقات + مقترحات)
     private lateinit var chan: YtChannelPage         // (v403) صفحة القناة (بانر + اشتراك + جرس + تابات)
@@ -385,7 +387,8 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
         page.addView(statusTv, LinearLayout.LayoutParams(-1, -2))
 
         lv.apply {
-            divider = null; setBackgroundColor(YtSkin.bg); selector = GradientDrawable().apply { setColor(Color.TRANSPARENT) }
+            setBackgroundColor(YtSkin.bg); selector = GradientDrawable().apply { setColor(Color.TRANSPARENT) }
+            numColumns = ytCols(); horizontalSpacing = ui.dp(6); verticalSpacing = ui.dp(6); stretchMode = GridView.STRETCH_COLUMN_WIDTH
             this.adapter = this@YtProUi.adapter
             setOnItemClickListener { _, view, p, _ -> cur?.list()?.getOrNull(p)?.let { if (it.kind != 3) open(it, view) } }
             setOnItemLongClickListener { _, v, p, _ -> cur?.list()?.getOrNull(p)?.let { if (it.kind == 3) copy(it.title) else if (it.id != "act") menu(v, it) }; true }
@@ -395,6 +398,7 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
             })
         }
         page.addView(lv, LinearLayout.LayoutParams(-1, 0, 1f))
+        lv.viewTreeObserver.addOnGlobalLayoutListener { val c = ytCols(); if (lv.numColumns != c) lv.numColumns = c }   // (v467) الأعمدة بتتظبط لو الوضع/الاتجاه اتغيّر
         run {
             var y0 = 0f; var pulling = false; var pd = 0f
             val thr = ui.dp(60).toFloat()

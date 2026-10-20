@@ -598,13 +598,15 @@ class PlayerActivity : Activity(), Host {
     private val logAuto = Runnable { if (logOn) toggleLog() }     // لوحة الباتشات بتتلم لوحدها
     private val probAuto = Runnable { if (probOn) toggleProb() }  // كبسولة الباتش الفاشل بتتلم لوحدها
     fun updateTr() { applyModeCaps(); trUpdaters.forEach { try { it() } catch (e: Exception) { LogStore.err("Main:866", e) } } }
-    fun beginTranslate() {
+    fun beginTranslate(auto: Boolean = false) {
         if (Cfg.str("hard_mode", "0") == "1" && !SourceMode.keepHard()) {   // (v291) الهجين بهارد سب محتاج hard_mode=1 والصوت شغّال
             Cfg.put("hard_mode", "0")   // (v240) أي ترجمة صوتية بتطلّعك من وضع الهارد سب
             // (v261) ووقّف الوضع البصري بتاع الهارد سب كمان، وإلا بيفضل شغّال جنب الترجمة الصوتية
             try { if (::visual.isInitialized && visual.running) { visual.stop(); visOv.showBoxes(emptyList()); visAutoRun = false; visLog("👁 اتقفل — بدأت ترجمة صوتية") } } catch (_: Throwable) {}
         }
         try { val st = Throwable().stackTrace; LogStore.add("▶ طلب بدء الترجمة ← " + (st.getOrNull(1)?.let { it.methodName + ":" + it.lineNumber } ?: "?") + (if (autoTr) " (autotr)" else "")) } catch (_: Throwable) {}
+        // (v467) اللغة الأساسية: البدء التلقائي بيحترمها، واليدوي (زرار «ترجم») بيفرض الترجمة ويلغي أي تخطي حصل في نفس الجلسة
+        if (::engine.isInitialized) { engine.baseLangCode = Cfg.str("base_lang", "ar"); if (auto) engine.skipIfBaseLang = true else { engine.skipIfBaseLang = false; if (engine.baseSkipped) { engine.baseSkipped = false; engine.transOnly = false } } }
         if (::engine.isInitialized && !engineReady) { pendingBegin = true; return }   // البيانات المحفوظة لسه بتتحمّل: هتبدأ لوحدها أول ما تخلص
         // (v203) لو الفيديو مترجم 100% (مثلًا بعد تحديث لينكه): مفيش ترجمة تاني، الترجمة المحفوظة شغّالة. ولو ناقص بيكمّل الباقي بس (المخلّص بيتخطّى)
         if (::engine.isInitialized && !engineStarted && !freshOnce && (try { engine.fullyDone() } catch (_: Throwable) { false })) {
@@ -766,7 +768,8 @@ class PlayerActivity : Activity(), Host {
     private var batchPanel: View? = null
     lateinit var batchBtn: View
     private lateinit var audBtn: View   // (v343) 🎧 حوّل لصوت
-    private lateinit var modePill: TextView   // (v459) كبسولة عريضة مكان 👁 لليوتيوب: «🎧 وضع الصوت / 🎬 وضع الفيديو» — تبديل جوه المشغّل نفسه
+    private lateinit var modePill: TextView   // (v459) كبسولة عريضة لليوتيوب: «🎧 وضع الصوت / 🎬 وضع الفيديو» — تبديل جوه المشغّل نفسه · (v467) مكانها بقى جوّه صف الكبسولات جنب 👁 مش عايمة لوحدها
+    private var badgeRowRef: LinearLayout? = null   // (v467) صف الكبسولات (🔊/👁/النت) — الكبسولة بتتنقل له أول ما يتبني
     private var ytAudioOnly = false
     private var audioHandoff: Intent? = null
     fun closeBatchPanel() {
@@ -1737,6 +1740,7 @@ class PlayerActivity : Activity(), Host {
         badgeRow.addView(netBadge, LinearLayout.LayoutParams(-2, -2).apply { marginStart = ui.dp(4) })
         val badgeCol = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.END }
         badgeCol.addView(badgeRow, LinearLayout.LayoutParams(-2, -2))
+        badgeRowRef = badgeRow
         badgeRowV = badgeCol
         videoBox.addView(badgeCol, FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.RIGHT).apply { setMargins(0, ui.dp(8), ui.dp(10), 0) })   // (v265) الكبسولات يمين فوق
         applyBadgeAlpha()
@@ -2271,12 +2275,9 @@ class PlayerActivity : Activity(), Host {
             if (rotLp.topMargin != top) { rotLp.topMargin = top; rotBtn.layoutParams = rotLp }
             if (eyeLp.topMargin != eyeTop) { eyeLp.topMargin = eyeTop; floatBar.layoutParams = eyeLp }
             if (::audBtn.isInitialized) { val al = audBtn.layoutParams as FrameLayout.LayoutParams; val at = eyeTop + ui.dp(52); if (al.topMargin != at) { al.topMargin = at; audBtn.layoutParams = al } }
-            if (::modePill.isInitialized) {   // (v459) الكبسولة تحت أول زرار باين (👁 ثم 🎧) — فبتقعد مكان 👁 بالظبط لما 👁 مخفية (الحالة العادية ليوتيوب)
-                var mt = eyeTop
-                if (floatBar.visibility == View.VISIBLE) mt += ui.dp(52)
-                if (::audBtn.isInitialized && audBtn.visibility == View.VISIBLE) mt += ui.dp(52)
-                val ml = modePill.layoutParams as FrameLayout.LayoutParams
-                if (ml.topMargin != mt) { ml.topMargin = mt; modePill.layoutParams = ml }
+            if (::modePill.isInitialized) {   // (v467) الكبسولة انتقلت لصف الكبسولات جنب 👁 (طلب صاحب التطبيق: جنب زرار الوضع البصري مش تحته) — فلا حساب مواضع ولا تغطية من زرار الترجمة بعد كده
+                val br = badgeRowRef
+                if (br != null && modePill.parent !== br) { (modePill.parent as? ViewGroup)?.removeView(modePill); br.addView(modePill, LinearLayout.LayoutParams(-2, ui.dp(34)).apply { marginStart = ui.dp(6) }) }
             }
             val rv = if (showRot) View.VISIBLE else View.GONE
             if (rotBtn.visibility != rv) rotBtn.visibility = rv
@@ -2311,9 +2312,9 @@ class PlayerActivity : Activity(), Host {
                 val ta = if (on) 1f else 0f
                 floatBar.alpha = ta; batchBtn.alpha = ta
                 if (::audBtn.isInitialized) { audBtn.animate().cancel(); audBtn.alpha = ta }
-                if (::modePill.isInitialized) { modePill.animate().cancel(); modePill.alpha = if (on) 1f else 0f }
+                if (::modePill.isInitialized) { modePill.animate().cancel(); modePill.alpha = 1f }   // (v467) الكبسولة جوّه صف الكبسولات: شفافيتها من الصف نفسه
             }
-            if (!fullMode && ::modePill.isInitialized && modePill.visibility == View.VISIBLE && modePill.alpha < 0.9f) modePill.alpha = 0.92f   // (v459) بره الشاشة الكاملة الكبسولة واضحة على طول
+            if (!fullMode && ::modePill.isInitialized && modePill.visibility == View.VISIBLE && modePill.alpha < 0.9f) modePill.alpha = 1f   // (v467) ألفا الكبسولة من صفّها
             miniBar.visibility = if (!on && !pipNow()) View.VISIBLE else View.GONE
             updateTrChip(); applyBadgeAlpha()   // (v323) العدّادات بتظهر مع أزرار المشغّل بس
             fsBtnV.visibility = if (!fullMode) View.VISIBLE else View.GONE   // في الشاشة الكاملة ⛶ جوه الشريط السفلي
@@ -2726,7 +2727,7 @@ class PlayerActivity : Activity(), Host {
         })
         engineStarted = false; updateTr()
         // «🌐 ترجمة وفرجة» من المتصفح: الترجمة تبدأ لوحدها من غير ما تدوس ▶ ترجمة
-        if (autoTr && !noSub && !askSaved && (Cfg.str("hard_mode", "0") != "1" || SourceMode.get() == SourceMode.HYBRID) && SourceMode.get() != SourceMode.VISUAL) videoBoxRef.post { if (!engineStarted && !isFinishing && !isDestroyed && !pendingYt) beginTranslate() }
+        if (autoTr && !noSub && !askSaved && (Cfg.str("hard_mode", "0") != "1" || SourceMode.get() == SourceMode.HYBRID) && SourceMode.get() != SourceMode.VISUAL) videoBoxRef.post { if (!engineStarted && !isFinishing && !isDestroyed && !pendingYt) beginTranslate(auto = true) }
     }
 
     /** (v118) تبديل جودة يوتيوب في نفس المكان من غير ما التشغيل يتقطع كتير. الجودة بتتحفظ للفيديوهات الجاية (داتا أقل) */
@@ -2751,6 +2752,7 @@ class PlayerActivity : Activity(), Host {
     /** (v459) رابط الصوت المنفصل الحالي (لغة الصوت المختارة أولًا، بعده الصوت الافتراضي، بعده أي جودة بصوت) */
     private fun ytAudioUrl(): String? = aOverride ?: aurl ?: qOpts.getOrNull(qCur)?.audio ?: qOpts.firstOrNull { it.audio != null }?.audio
 
+    private var ytResolving = false   // (v467) جلب مسار الصوت عند الطلب شغّال
     private fun paintModePill() { if (::modePill.isInitialized) modePill.text = if (ytAudioOnly) "🎬 وضع الفيديو" else "🎧 وضع الصوت" }
 
     /** (v459) تبديل وضع الصوت/الفيديو لفيديو يوتيوب جوه المشغّل نفسه ومن نفس المكان: الصوت بس بيوفّر الداتا،
@@ -2759,7 +2761,19 @@ class PlayerActivity : Activity(), Host {
         try {
             val play = player.playWhenReady
             if (!ytAudioOnly) {
-                val au = ytAudioUrl() ?: run { Notice.show(this, "الفيديو ده ملوش مسار صوت منفصل", 2000L); return }
+                val au = ytAudioUrl() ?: run {
+                    // (v467) مفيش مسار صوت جاهز (دخول handoff مثلًا): بنجيبه عند الطلب بدل ما نقول «ملوش» على طول
+                    val yid = intent.getStringExtra("ytid")?.takeIf { it.length == 11 }
+                    if (yid != null && !ytResolving) { ytResolving = true; Notice.show(this, "⏳ بجيب مسار الصوت…", 1500L)
+                        Thread { val got = try { YtFast.video(yid, Cfg.int("yt_maxh", 0), true) } catch (_: Throwable) { null }
+                            runOnUiThread { ytResolving = false
+                                if (got != null && !isFinishing && !isDestroyed) { aurl = got.audio?.takeIf { it.isNotEmpty() } ?: aurl
+                                    try { got.qlist.takeIf { it.isNotEmpty() }?.let { sj -> val qa = org.json.JSONArray(sj); qOpts = (0 until qa.length()).map { qi -> val o = qa.getJSONObject(qi); YtExtract.Opt(o.optString("l"), o.optString("u"), o.optString("a").ifEmpty { null }, o.optInt("h")) }; parseATracks(sj) } } catch (_: Exception) {}
+                                    if (ytAudioUrl() != null) toggleYtMode() else Notice.show(this, "الفيديو ده ملوش مسار صوت منفصل", 2000L)
+                                } else if (!isFinishing && !isDestroyed) Notice.show(this, "ما قدرتش أجيب مسار الصوت — جرّب تاني", 2200L) }
+                        }.apply { isDaemon = true }.start()
+                    } else Notice.show(this, "الفيديو ده ملوش مسار صوت منفصل", 2000L)
+                    return }
                 val pos = player.currentPosition
                 val f = httpDsf ?: DefaultHttpDataSource.Factory().setDefaultRequestProperties(hdr).setAllowCrossProtocolRedirects(true)
                 val src = DefaultMediaSourceFactory(f).createMediaSource(MediaItem.fromUri(Uri.parse(au)))
@@ -2800,6 +2814,17 @@ class PlayerActivity : Activity(), Host {
         // MKV وغيره: لو الديكودر الأول فشل (HEVC / 10-bit) جرّب اللي بعده بدل شاشة سودا
         val rf = DefaultRenderersFactory(this).setEnableDecoderFallback(true)
         player = ExoPlayer.Builder(this, rf).setMediaSourceFactory(factory).build()
+        }
+        // (v467) دخول الـ handoff (تكبير من مشغّل يوتيوب المصغّر): qOpts/aurl بيبقوا فاضيين فزرار الصوت/فيديو والجودات كانوا ميتين — بنجيب بيانات الستريم في الخلفية من غير ما نلمس التشغيل الشغّال
+        if (ho != null && qOpts.isEmpty()) intent.getStringExtra("ytid")?.takeIf { it.length == 11 }?.let { yid ->
+            Thread { val got = try { YtFast.video(yid, Cfg.int("yt_maxh", 0)) } catch (_: Throwable) { null }
+                if (got != null) runOnUiThread { if (!isFinishing && !isDestroyed && qOpts.isEmpty() && intent.getStringExtra("ytid") == yid) {
+                    aurl = got.audio?.takeIf { it.isNotEmpty() } ?: aurl
+                    try { got.qlist.takeIf { it.isNotEmpty() }?.let { sj -> val qa = org.json.JSONArray(sj); qOpts = (0 until qa.length()).map { qi -> val o = qa.getJSONObject(qi); YtExtract.Opt(o.optString("l"), o.optString("u"), o.optString("a").ifEmpty { null }, o.optInt("h")) }; parseATracks(sj) } } catch (e: Exception) { LogStore.err("Player:hoQlist", e) }
+                    if (qCur < 0) qCur = qOpts.indexOfFirst { it.url == url }
+                    paintModePill(); try { applyChromeFn() } catch (_: Throwable) {}
+                } }
+            }.apply { isDaemon = true }.start()
         }
         // (v149) المشغّل بيمسك الـ audio focus: أي تطبيق تاني شغّال صوت بيتوقف، ولو حد تاني خد الصوت المشغّل بيقف بدل ما الصوتين يتخلطوا
         try { player.setAudioAttributes(androidx.media3.common.AudioAttributes.Builder().setUsage(C.USAGE_MEDIA).setContentType(C.AUDIO_CONTENT_TYPE_MOVIE).build(), true); player.setHandleAudioBecomingNoisy(true) } catch (e: Throwable) { LogStore.err("Player:focus", e) }
@@ -2945,6 +2970,7 @@ class PlayerActivity : Activity(), Host {
                 if (tok != pendTok || isFinishing || isDestroyed || !pendingYt) return@runOnUiThread
                 val u = got?.url
                 if (u == null || got == null) {
+                    if (!fresh) { startYtPend(true); return@runOnUiThread }   // (v467) محاولة تانية صامتة بـ fresh (تخطي الكاش + إعادة فحص العملاء) قبل إزعاج المستخدم برسالة الفشل
                     try { setBuffering(false); ytBusy(false) } catch (_: Throwable) {}
                     val why = YtExtract.lastWhy.ifBlank { "السبب مش معروف (راجع اللوج)" }
                     GAlert(this).setTitle("⚠ ما قدرتش أجيب الفيديو")
@@ -2973,7 +2999,7 @@ class PlayerActivity : Activity(), Host {
                 buildPlayer(); initEngine()
                 try { refreshList(); updateTr() } catch (_: Throwable) {}
                 val autoOk = autoTr && !noSub && !askSaved && (Cfg.str("hard_mode", "0") != "1" || SourceMode.get() == SourceMode.HYBRID) && SourceMode.get() != SourceMode.VISUAL
-                if (autoOk) videoBoxRef.post { if (!engineStarted && !isFinishing && !isDestroyed) beginTranslate() }
+                if (autoOk) videoBoxRef.post { if (!engineStarted && !isFinishing && !isDestroyed) beginTranslate(auto = true) }
             }
         }.apply { isDaemon = true }.start()
     }
