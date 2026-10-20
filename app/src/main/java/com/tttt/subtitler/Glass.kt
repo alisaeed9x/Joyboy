@@ -161,6 +161,9 @@ class GAlert(private val ctx: Context) {
     private var pos: CharSequence? = null; private var posCb: DialogInterface.OnClickListener? = null
     private var neg: CharSequence? = null; private var negCb: DialogInterface.OnClickListener? = null
     private var neu: CharSequence? = null; private var neuCb: DialogInterface.OnClickListener? = null
+    private var multiItems: Array<out CharSequence>? = null
+    private var multiChecked: BooleanArray? = null
+    private var multiCb: DialogInterface.OnMultiChoiceClickListener? = null
     private var cancelable = true
     private var cancelCb: DialogInterface.OnCancelListener? = null
 
@@ -168,13 +171,14 @@ class GAlert(private val ctx: Context) {
     fun setMessage(m: CharSequence?): GAlert { msg = m; return this }
     fun setView(v: View?): GAlert { view = v; return this }
     fun setItems(a: Array<out CharSequence>, l: DialogInterface.OnClickListener?): GAlert { items = a; itemsCb = l; return this }
+    fun setMultiChoiceItems(a: Array<out CharSequence>, c: BooleanArray?, l: DialogInterface.OnMultiChoiceClickListener?): GAlert { multiItems = a; multiChecked = c; multiCb = l; return this }
     fun setPositiveButton(t: CharSequence, l: DialogInterface.OnClickListener?): GAlert { pos = t; posCb = l; return this }
     fun setNegativeButton(t: CharSequence, l: DialogInterface.OnClickListener?): GAlert { neg = t; negCb = l; return this }
     fun setNeutralButton(t: CharSequence, l: DialogInterface.OnClickListener?): GAlert { neu = t; neuCb = l; return this }
     fun setCancelable(b: Boolean): GAlert { cancelable = b; return this }
     fun setOnCancelListener(l: DialogInterface.OnCancelListener?): GAlert { cancelCb = l; return this }
 
-    fun show(): Dialog {
+    private fun build(): Pair<Dialog, LinearLayout?> {
         val th = Glass.theme(); val ui = Ui(ctx, th); val dm = ctx.resources.displayMetrics
         val d = GDialog(ctx)
         val root = LinearLayout(ctx).apply {
@@ -200,6 +204,22 @@ class GAlert(private val ctx: Context) {
                 val tv = ui.text(s.toString(), 15f, th.text).apply { setPadding(ui.dp(14), ui.dp(12), ui.dp(14), ui.dp(12)); background = ui.box(th.surface, th.border, 12) }
                 Glass.pressable(tv)
                 tv.setOnClickListener { d.dismiss(); itemsCb?.onClick(d, i) }
+                col.addView(tv, LinearLayout.LayoutParams(-1, -2).apply { setMargins(0, ui.dp(3), 0, ui.dp(3)) })
+            }
+            itemsCol = col
+            root.addView(MaxHeightScroll(ctx, (dm.heightPixels * 0.6f).toInt()).apply { addView(col) }, LinearLayout.LayoutParams(-1, -2).apply { topMargin = ui.dp(8) })
+        }
+        multiItems?.let { arr ->
+            val st = multiChecked ?: BooleanArray(arr.size)
+            val col = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL }
+            arr.forEachIndexed { i, s ->
+                val tv = ui.text((if (st[i]) "☑ " else "☐ ") + s.toString(), 15f, th.text).apply { setPadding(ui.dp(14), ui.dp(12), ui.dp(14), ui.dp(12)); background = ui.box(th.surface, th.border, 12) }
+                Glass.pressable(tv)
+                tv.setOnClickListener {
+                    st[i] = !st[i]
+                    tv.text = (if (st[i]) "☑ " else "☐ ") + s.toString()
+                    multiCb?.onClick(d, i, st[i])
+                }
                 col.addView(tv, LinearLayout.LayoutParams(-1, -2).apply { setMargins(0, ui.dp(3), 0, ui.dp(3)) })
             }
             itemsCol = col
@@ -234,8 +254,16 @@ class GAlert(private val ctx: Context) {
         }
         d.setCancelable(cancelable); d.setCanceledOnTouchOutside(cancelable)
         cancelCb?.let { d.setOnCancelListener(it) }
+        return Pair(d, itemsCol)
+    }
+
+    /** بيبني الدايلوج من غير ما يعرضه (زي AlertDialog.Builder.create) */
+    fun create(): Dialog = build().first
+
+    fun show(): Dialog {
+        val (d, col) = build()
         d.show()
-        itemsCol?.let { Motion.stagger(it, 8, 35L) }
+        col?.let { Motion.stagger(it, 8, 35L) }
         return d
     }
 }

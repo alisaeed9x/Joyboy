@@ -671,10 +671,8 @@ class FileManagerActivity : Activity() {
         val pane = detailPane ?: return
         detailFile = fi.f; pane.visibility = View.VISIBLE
         detailName?.text = (if (fi.dir) "📁 " else "📄 ") + fi.f.name
-        detailMeta?.text = if (fi.dir) "فولدر · " + (fi.f.list()?.size ?: 0) + " عنصر
-" + fi.f.absolutePath
-            else FmUtil.size(fi.f.length()) + " · " + java.text.SimpleDateFormat("yyyy/MM/dd HH:mm", java.util.Locale.getDefault()).format(java.util.Date(fi.f.lastModified())) + "
-" + fi.f.absolutePath
+        detailMeta?.text = if (fi.dir) "فولدر · " + (fi.f.list()?.size ?: 0) + " عنصر\n" + fi.f.absolutePath
+            else FmUtil.size(fi.f.length()) + " · " + java.text.SimpleDateFormat("yyyy/MM/dd HH:mm", java.util.Locale.getDefault()).format(java.util.Date(fi.f.lastModified())) + "\n" + fi.f.absolutePath
     }
 
     private fun onTap(fi: FmItem) {

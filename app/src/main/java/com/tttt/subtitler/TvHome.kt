@@ -207,7 +207,7 @@ class TvActivity : Activity() {
             cc.addView(ui.text(v.title + if (favs.contains(v.videoId)) " ⭐" else "", 12.5f, th.text, true).apply { maxLines = 2; setPadding(0, ui.dp(5), 0, 0) })
             cc.addView(ui.text("📁 " + v.folderName + if (v.durMs > 0) " · " + PlayerLogic.clock(v.durMs) else "", 10.5f, th.muted))
         }, { playFile(v.uri, v.landscape) }, { favToggle(v.videoId, v.title) })
-        VideoScan.load(this, v) { bmp -> if (bmp != null) runOnUiThread { iv.setImageBitmap(bmp) } }
+        Thumbs.load(this, v) { bmp -> if (bmp != null) runOnUiThread { iv.setImageBitmap(bmp) } }
         return c
     }
 
