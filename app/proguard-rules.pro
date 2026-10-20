@@ -32,3 +32,8 @@
 # انعكاس عام شائع
 -keepattributes Signature, *Annotation*, EnclosingMethod, InnerClasses
 -keep class * implements android.os.Parcelable { *; }
+
+# (v466) Rhino (org.mozilla.javascript) بيشاور على كلاسات مش موجودة على أندرويد — R8 كان بيوقع البناء
+-dontwarn java.beans.**
+-dontwarn javax.script.**
+-dontwarn org.mozilla.javascript.**
