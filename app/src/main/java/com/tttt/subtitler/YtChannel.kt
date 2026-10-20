@@ -1,0 +1,400 @@
+package com.tttt.subtitler
+
+import android.app.Activity
+import android.graphics.Color
+import android.graphics.Typeface
+import android.graphics.drawable.GradientDrawable
+import android.text.TextUtils
+import android.view.Gravity
+import android.view.View
+import android.view.animation.DecelerateInterpolator
+import android.widget.FrameLayout
+import android.widget.HorizontalScrollView
+import android.widget.ImageView
+import android.widget.LinearLayout
+import android.widget.PopupMenu
+import android.widget.ScrollView
+import android.widget.TextView
+import com.bumptech.glide.Glide
+import org.schabi.newpipe.extractor.Page
+import java.util.Locale
+
+/**
+ * (v403) الاشتراك: بيتحفظ في التطبيق، ولو إنت مسجّل بحساب جوجل (وإعداد «مزامنة الاشتراك مع حسابي» شغّال) بيتسجّل على حسابك كمان.
+ * الإشعارات: لكل قناة مشتركة جرس (الكل / بدون) — والإشعارات العامة من إعدادات يوتيوب.
+ */
+object YtSubscribe {
+    fun item(url: String, name: String, avatar: String = ""): NpItem = NpItem("", name.ifBlank { url }, "", url, avatar, -1L, 0L, "", 1, url)
+    fun isSub(url: String): Boolean = url.isNotBlank() && YtStore.contains(YtStore.SUBS, item(url, ""))
+    fun syncOn(): Boolean = Cfg.str("yt_acc_sync", "1") != "0"
+
+    /** بيقلب الاشتراك؛ done(now) بتتنادى فورًا على الـ UI، ومزامنة الحساب بتتم في الخلفية بإشعار نتيجتها */
+    fun toggle(act: Activity, url: String, name: String, avatar: String, done: (Boolean) -> Unit) {
+        if (url.isBlank()) { Notice.show(act, "القناة دي مالهاش لينك", 2200L); return }
+        val now = YtStore.toggle(YtStore.SUBS, item(url, name, avatar))
+        try { YtNotify.schedule(act) } catch (_: Throwable) {}
+        Notice.show(act, if (now) "✅ اشتركت في " + name else "اتشال الاشتراك", 2000L)
+        done(now)
+        if (syncOn() && YtAccount.loggedIn()) {
+            Thread {
+                try {
+                    YtAccount.setSubscribed(url, now)
+                    act.runOnUiThread { Notice.show(act, if (now) "✅ اتسجّل على حسابك كمان" else "✅ اتشال من حسابك كمان", 2200L) }
+                } catch (e: Throwable) {
+                    act.runOnUiThread { Notice.show(act, "اتحفظ في التطبيق بس — حسابك رفض: " + (e.message ?: e.javaClass.simpleName).take(80), 3600L) }
+                }
+            }.apply { isDaemon = true }.start()
+        }
+    }
+
+    /** قايمة الجرس: الكل / بدون / إلغاء الاشتراك */
+    fun bellMenu(act: Activity, anchor: View, url: String, name: String, avatar: String, changed: () -> Unit) {
+        val m = PopupMenu(act, anchor)
+        val on = YtNotify.chanOn(url)
+        m.menu.add(0, 1, 0, (if (on) "✓ " else "") + "🔔 الكل (إشعار بكل فيديو جديد)")
+        m.menu.add(0, 2, 1, (if (!on) "✓ " else "") + "🔕 بدون إشعارات")
+        m.menu.add(0, 3, 2, "❌ إلغاء الاشتراك")
+        m.setOnMenuItemClickListener { mi ->
+            when (mi.itemId) {
+                1 -> { YtNotify.setChanOn(url, true); if (!YtNotify.enabled()) Notice.show(act, "الإشعارات العامة مقفولة — شغّلها من إعدادات يوتيوب", 3200L) else Notice.show(act, "🔔 هتجيلك إشعارات بفيديوهات " + name, 2400L); changed() }
+                2 -> { YtNotify.setChanOn(url, false); Notice.show(act, "🔕 اتقفلت إشعارات " + name, 2200L); changed() }
+                else -> toggle(act, url, name, avatar) { changed() }
+            }
+            true
+        }
+        m.show()
+    }
+}
+
+interface YtChanHost {
+    fun openVideo(v: NpItem)
+    fun openPlaylist(url: String, title: String)
+    fun download(v: NpItem)   // (v459) زرار ⬇ على كارت الفيديو
+    fun state(open: Boolean)
+}
+
+/** صفحة القناة (زي يوتيوب): بانر · أفاتار · اسم ومشتركين · اشترك + جرس · تابات (الفيديوهات / البث / القوايم) · وصف */
+class YtChannelPage(private val act: Activity, private val ui: Ui, private val host: YtChanHost) : FrameLayout(act) {
+    private val sw = act.resources.displayMetrics.widthPixels
+    private val medium: Typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+    private val scroll = ScrollView(act)
+    private val body = LinearLayout(act)
+    private val topName = TextView(act)
+    private val banner = ImageView(act).apply { scaleType = ImageView.ScaleType.CENTER_CROP; setBackgroundColor(YtSkin.surface); visibility = View.GONE }
+    private val avHost = FrameLayout(act)
+    private val nameTv = TextView(act)
+    private val metaTv = TextView(act)
+    private val descTv = TextView(act)
+    private val subB = TextView(act)
+    private val bellB = YtIcon(act, "bell")
+    private val tabsRow = LinearLayout(act)
+    private val listBox = LinearLayout(act)
+    // (v459) ترتيب فيديوهات القناة (الأحدث = ترتيب يوتيوب نفسه؛ الباقي ترتيب محلي على اللي اتحمّل)
+    private val sortRow = LinearLayout(act)
+    private var sortMode = 0
+    private val sortLabels = listOf("الأحدث", "الأقدم", "أبجدي", "الأكتر مشاهدة")
+    private var gen = 0
+    private var closing = false
+    private var chan: NpChanFull? = null
+    private var curUrl = ""
+    private var curName = ""
+    private var curAv = ""
+    private var tabKey = ""
+    private var items = ArrayList<NpItem>()
+    private var next: Page? = null
+    private var more: ((Page) -> YtRes)? = null
+    private var loadingMore = false
+    private var tabLoad: ((String) -> Pair<YtRes, (Page) -> YtRes>)? = null
+
+    val isOpen: Boolean get() = visibility == View.VISIBLE && !closing
+
+    init {
+        visibility = View.GONE; isClickable = true; setBackgroundColor(YtSkin.bg); layoutDirection = View.LAYOUT_DIRECTION_RTL
+        val col = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL }
+        // شريط علوي: رجوع + اسم القناة
+        val back = YtIcon(act, "back").apply { contentDescription = "رجوع"; foreground = YtSkin.ripple(true); setOnClickListener { close(true) } }
+        topName.apply { textSize = 16f; setTextColor(YtSkin.text); typeface = medium; setSingleLine(); ellipsize = TextUtils.TruncateAt.END; gravity = Gravity.CENTER_VERTICAL }
+        val top = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; gravity = Gravity.CENTER_VERTICAL; setPadding(ui.dp(4), 0, ui.dp(12), 0) }
+        top.addView(back, LinearLayout.LayoutParams(ui.dp(44), ui.dp(44)))
+        top.addView(topName, LinearLayout.LayoutParams(0, -2, 1f))
+        col.addView(top, LinearLayout.LayoutParams(-1, ui.dp(48)))
+        col.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f))
+        addView(col, FrameLayout.LayoutParams(-1, -1))
+        body.orientation = LinearLayout.VERTICAL; body.layoutDirection = View.LAYOUT_DIRECTION_RTL
+        scroll.addView(body, FrameLayout.LayoutParams(-1, -2))
+
+        nameTv.apply { textSize = 20f; setTextColor(YtSkin.text); typeface = medium; maxLines = 2; ellipsize = TextUtils.TruncateAt.END }
+        metaTv.apply { textSize = 12f; setTextColor(YtSkin.sub); maxLines = 2 }
+        descTv.apply { textSize = 13f; setTextColor(YtSkin.sub); maxLines = 2; ellipsize = TextUtils.TruncateAt.END; setPadding(ui.dp(14), ui.dp(8), ui.dp(14), 0)
+            setOnClickListener { maxLines = if (maxLines == 2) 60 else 2 } }
+        subB.apply { textSize = 14f; typeface = medium; gravity = Gravity.CENTER; setPadding(ui.dp(22), ui.dp(9), ui.dp(22), ui.dp(9)); setOnClickListener { onSub() } }
+        bellB.apply { glyph = 0.62f; contentDescription = "إشعارات القناة"; foreground = YtSkin.ripple(true); visibility = View.GONE
+            setOnClickListener { v -> YtSubscribe.bellMenu(act, v, curUrl, curName, curAv) { paintSub() } } }
+        tabsRow.apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; setPadding(ui.dp(10), ui.dp(12), ui.dp(10), ui.dp(8)) }
+        listBox.apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL }
+
+        val head = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; gravity = Gravity.CENTER_VERTICAL; setPadding(ui.dp(14), ui.dp(12), ui.dp(14), 0) }
+        val hc = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL }
+        hc.addView(nameTv, LinearLayout.LayoutParams(-1, -2)); hc.addView(metaTv, LinearLayout.LayoutParams(-1, -2).apply { topMargin = ui.dp(3) })
+        head.addView(avHost, LinearLayout.LayoutParams(ui.dp(76), ui.dp(76)).apply { marginEnd = ui.dp(14) })
+        head.addView(hc, LinearLayout.LayoutParams(0, -2, 1f))
+        val acts = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; gravity = Gravity.CENTER_VERTICAL; setPadding(ui.dp(14), ui.dp(12), ui.dp(14), 0) }
+        acts.addView(subB, LinearLayout.LayoutParams(0, -2, 1f))
+        acts.addView(bellB, LinearLayout.LayoutParams(ui.dp(46), ui.dp(46)).apply { marginStart = ui.dp(8) })
+
+        body.addView(banner, LinearLayout.LayoutParams(-1, sw * 9 / 32))
+        body.addView(head, LinearLayout.LayoutParams(-1, -2))
+        body.addView(descTv, LinearLayout.LayoutParams(-1, -2))
+        body.addView(acts, LinearLayout.LayoutParams(-1, -2))
+        body.addView(HorizontalScrollView(act).apply { isHorizontalScrollBarEnabled = false; addView(tabsRow) }, LinearLayout.LayoutParams(-1, -2))
+        sortRow.apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; setPadding(ui.dp(10), 0, ui.dp(10), ui.dp(6)) }
+        for (i in sortLabels.indices) {
+            val tv = TextView(act).apply { text = sortLabels[i]; textSize = 12f; typeface = medium; gravity = Gravity.CENTER; tag = i
+                setPadding(ui.dp(12), ui.dp(6), ui.dp(12), ui.dp(6)); setOnClickListener { sortMode = i; paintSort(); renderList() } }
+            sortRow.addView(tv, LinearLayout.LayoutParams(-2, -2).apply { setMargins(ui.dp(3), 0, ui.dp(3), 0) })
+        }
+        paintSort()
+        body.addView(sortRow, LinearLayout.LayoutParams(-1, -2))
+        body.addView(listBox, LinearLayout.LayoutParams(-1, -2))
+
+        scroll.setOnScrollChangeListener { _, _, y, _, _ ->
+            val ch = scroll.getChildAt(0)
+            if (ch != null && y + scroll.height >= ch.height - ui.dp(500)) loadMore()
+        }
+    }
+
+    // ───────── مساعدات ─────────
+    private fun fmtN(n: Long): String = when {
+        n >= 1_000_000_000L -> String.format(Locale.US, "%.1fB", n / 1e9)
+        n >= 1_000_000L -> String.format(Locale.US, "%.1fM", n / 1e6)
+        n >= 1_000L -> String.format(Locale.US, "%.1fK", n / 1e3)
+        else -> n.toString()
+    }
+    private fun fmtDur(s: Long): String = if (s <= 0) "" else if (s >= 3600) String.format(Locale.US, "%d:%02d:%02d", s / 3600, s % 3600 / 60, s % 60) else String.format(Locale.US, "%d:%02d", s / 60, s % 60)
+
+    private fun avatar(name: String, sizeDp: Int, url: String): View {
+        val colors = intArrayOf(0xFFE53935.toInt(), 0xFF8E24AA.toInt(), 0xFF3949AB.toInt(), 0xFFF4511E.toInt(), 0xFF6D4C41.toInt(), 0xFF1E88E5.toInt(), 0xFF5E35B1.toInt())
+        val c = colors[(name.hashCode() and 0x7fffffff) % colors.size]
+        val f = FrameLayout(act)
+        f.addView(TextView(act).apply {
+            text = name.trim().take(1).uppercase(); gravity = Gravity.CENTER; setTextColor(Color.WHITE); textSize = if (sizeDp >= 60) 28f else 15f; typeface = medium
+            background = GradientDrawable().apply { setShape(GradientDrawable.OVAL); setColor(c) }
+        }, FrameLayout.LayoutParams(-1, -1))
+        if (url.isNotBlank()) {
+            val iv = ImageView(act).apply { scaleType = ImageView.ScaleType.CENTER_CROP }
+            f.addView(iv, FrameLayout.LayoutParams(-1, -1))
+            try { Glide.with(act).load(url).circleCrop().override(ui.dp(sizeDp), ui.dp(sizeDp)).into(iv) } catch (_: Throwable) {}
+        }
+        return f
+    }
+
+    private fun paintSub() {
+        val on = YtSubscribe.isSub(curUrl)
+        subB.text = if (on) "✓ مشترك" else "اشترك"
+        subB.setTextColor(if (on) YtSkin.text else YtSkin.chipOnText)
+        subB.background = GradientDrawable().apply { setColor(if (on) YtSkin.chip else YtSkin.chipOnBg); cornerRadius = ui.dp(20).toFloat() }
+        bellB.visibility = if (on) View.VISIBLE else View.GONE
+        bellB.filled = on && YtNotify.chanOn(curUrl)
+        bellB.background = GradientDrawable().apply { setColor(YtSkin.chip); cornerRadius = ui.dp(23).toFloat() }
+    }
+    private fun onSub() {
+        if (curUrl.isBlank()) { Notice.show(act, "لسه بحمّل القناة…", 1600L); return }
+        YtSubscribe.toggle(act, curUrl, curName, curAv) { paintSub() }
+    }
+
+    private fun status(t: String) {
+        listBox.removeAllViews()
+        listBox.addView(TextView(act).apply { text = t; textSize = 13f; setTextColor(YtSkin.sub); gravity = Gravity.CENTER; setPadding(ui.dp(20), ui.dp(30), ui.dp(20), ui.dp(30)) }, LinearLayout.LayoutParams(-1, -2))
+    }
+
+    // ───────── فتح/قفل ─────────
+    fun open(url0: String, name: String, avatar0: String) {
+        val wasOpen = isOpen
+        closing = false
+        animate().cancel()
+        gen++; val my = gen
+        chan = null; tabLoad = null; tabKey = ""; items = ArrayList(); next = null; more = null; loadingMore = false
+        curUrl = url0; curName = name; curAv = avatar0
+        topName.text = name; nameTv.text = name; metaTv.text = ""; descTv.text = ""; descTv.maxLines = 2
+        banner.visibility = View.GONE
+        avHost.removeAllViews(); avHost.addView(avatar(name.ifBlank { "؟" }, 76, avatar0), FrameLayout.LayoutParams(-1, -1))
+        tabsRow.removeAllViews()
+        paintSub(); status("⏳ …")
+        scroll.scrollTo(0, 0)
+        if (!wasOpen) {
+            host.state(true)
+            visibility = View.VISIBLE; alpha = 0f; translationY = ui.dp(48).toFloat()
+            animate().alpha(1f).translationY(0f).setDuration(260L).setInterpolator(DecelerateInterpolator(1.5f)).start()
+        }
+        Thread {
+            try {
+                var u = url0
+                if (u.isBlank()) u = YtNp.findChannelUrl(name) ?: throw RuntimeException("ملقيتش القناة دي")
+                val c = try { YtNp.channelFull(u) } catch (e: Throwable) {
+                    val alt = YtNp.findChannelUrl(name)
+                    if (alt != null && alt != u) YtNp.channelFull(alt) else throw e
+                }
+                val first = c.tabs.firstOrNull()?.key ?: "videos"
+                val r = c.loadTab(first)
+                act.runOnUiThread { if (my == gen && !act.isFinishing && !act.isDestroyed) bindChan(c, first, r.first, r.second) }
+            } catch (e: Throwable) {
+                LogStore.err("YtChannel:open", e)
+                act.runOnUiThread {
+                    if (my == gen) {
+                        status("⚠ ما قدرتش أفتح القناة: " + (e.message ?: e.javaClass.simpleName).take(140) + "\n\n(دوس هنا لإعادة المحاولة)")
+                        listBox.getChildAt(0)?.setOnClickListener { open(url0, name, avatar0) }
+                    }
+                }
+            }
+        }.apply { isDaemon = true }.start()
+    }
+
+    fun close(animated: Boolean) {
+        if (visibility != View.VISIBLE || closing) return
+        closing = true; gen++
+        host.state(false)
+        fun finish() { visibility = View.GONE; closing = false; alpha = 1f; translationY = 0f }
+        if (!animated) { finish(); return }
+        animate().alpha(0f).translationY(ui.dp(48).toFloat()).setDuration(200L).withEndAction { finish() }.start()
+    }
+
+    private fun bindChan(c: NpChanFull, key: String, first: YtRes, mf: (Page) -> YtRes) {
+        chan = c; tabLoad = c.loadTab
+        curUrl = c.url.ifBlank { curUrl }; curName = c.name.ifBlank { curName }; if (c.avatar.isNotBlank()) curAv = c.avatar
+        topName.text = curName
+        nameTv.text = curName + if (c.verified) "  ✓" else ""
+        metaTv.text = listOf(if (c.subs >= 0) fmtN(c.subs) + " مشترك" else "").filter { it.isNotBlank() }.joinToString(" · ")
+        avHost.removeAllViews(); avHost.addView(avatar(curName.ifBlank { "؟" }, 76, curAv), FrameLayout.LayoutParams(-1, -1))
+        descTv.text = c.desc.trim()
+        descTv.visibility = if (c.desc.isBlank()) View.GONE else View.VISIBLE
+        if (c.banner.isNotBlank()) { banner.visibility = View.VISIBLE; try { Glide.with(act).load(c.banner).centerCrop().into(banner) } catch (_: Throwable) {} }
+        paintSub()
+        tabsRow.removeAllViews()
+        for (t in c.tabs) {
+            val tv = TextView(act).apply { text = t.label; textSize = 13f; typeface = medium; gravity = Gravity.CENTER; tag = t.key
+                setPadding(ui.dp(16), ui.dp(8), ui.dp(16), ui.dp(8)); setOnClickListener { selectTab(t.key) } }
+            tabsRow.addView(tv, LinearLayout.LayoutParams(-2, -2).apply { setMargins(ui.dp(4), 0, ui.dp(4), 0) })
+        }
+        tabKey = key; paintTabs(); paintSort()
+        items = ArrayList(first.items); next = first.next; more = mf
+        renderList()
+    }
+
+    private fun paintTabs() {
+        for (i in 0 until tabsRow.childCount) {
+            val tv = tabsRow.getChildAt(i) as? TextView ?: continue
+            val on = tv.tag == tabKey
+            tv.setTextColor(if (on) YtSkin.chipOnText else YtSkin.text)
+            tv.background = GradientDrawable().apply { setColor(if (on) YtSkin.chipOnBg else YtSkin.chip); cornerRadius = ui.dp(10).toFloat() }
+        }
+    }
+
+    private fun selectTab(key: String) {
+        val c = chan ?: return
+        if (key == tabKey) return
+        tabKey = key; paintTabs(); paintSort(); items = ArrayList(); next = null; more = null; loadingMore = false
+        status("⏳ …")
+        val my = gen
+        Thread {
+            try {
+                val r = c.loadTab(key)
+                act.runOnUiThread { if (my == gen && tabKey == key) { items = ArrayList(r.first.items); next = r.first.next; more = r.second; renderList() } }
+            } catch (e: Throwable) {
+                LogStore.err("YtChannel:tab", e)
+                act.runOnUiThread { if (my == gen && tabKey == key) status("⚠ " + (e.message ?: e.javaClass.simpleName).take(120)) }
+            }
+        }.apply { isDaemon = true }.start()
+    }
+
+    private fun loadMore() {
+        val nx = next ?: return; val mf = more ?: return
+        if (loadingMore) return
+        loadingMore = true
+        val my = gen; val key = tabKey
+        Thread {
+            try {
+                val r = mf(nx)
+                act.runOnUiThread {
+                    if (my == gen && tabKey == key) {
+                        val seen = items.map { it.id + it.url }.toHashSet()
+                        val add = r.items.filter { seen.add(it.id + it.url) }
+                        items.addAll(add); next = r.next
+                        if (sortMode != 0) renderList() else for (v in add) listBox.addView(rowFor(v), LinearLayout.LayoutParams(-1, -2))
+                    }
+                    loadingMore = false
+                }
+            } catch (_: Throwable) { act.runOnUiThread { loadingMore = false } }
+        }.apply { isDaemon = true }.start()
+    }
+
+    private fun paintSort() {
+        for (i in 0 until sortRow.childCount) {
+            val tv = sortRow.getChildAt(i) as? TextView ?: continue
+            val on = (tv.tag as? Int) == sortMode
+            tv.setTextColor(if (on) YtSkin.chipOnText else YtSkin.text)
+            tv.background = GradientDrawable().apply { setColor(if (on) YtSkin.chipOnBg else YtSkin.chip); cornerRadius = ui.dp(9).toFloat() }
+        }
+        sortRow.visibility = if (tabKey == "playlists") View.GONE else View.VISIBLE
+    }
+
+    /** (v459) الترتيب المحلي على العناصر المحمّلة بس (NewPipe مفيهوش ترتيب من السيرفر غير الأحدث) */
+    private fun sortedItems(): List<NpItem> {
+        if (sortMode == 0 || items.size < 2 || items.firstOrNull()?.kind == 2) return items
+        return when (sortMode) {
+            1 -> items.sortedBy { if (it.ts > 0) it.ts else Long.MAX_VALUE }   // الأقدم: اللي ملوش تاريخ بيروح الآخر
+            2 -> items.sortedBy { it.title.lowercase() }
+            else -> items.sortedByDescending { it.count }
+        }
+    }
+
+    private fun renderList() {
+        listBox.removeAllViews()
+        if (items.isEmpty()) { status("مفيش حاجة هنا"); return }
+        for (v in sortedItems()) listBox.addView(rowFor(v), LinearLayout.LayoutParams(-1, -2))
+    }
+
+    private fun rowFor(v: NpItem): View = if (v.kind == 2) playlistRow(v) else videoCard(v)
+
+    /** فيديو القناة: بنكمّل اسم القناة ولينكها (الصفحة بتجيب الفيديوهات من غيرهم) */
+    private fun fix(v: NpItem): NpItem = if (v.kind == 0) NpItem(v.id, v.title, curName, curUrl, v.thumb, v.dur, v.count, v.age, 0, v.url, v.ts, curAv) else v
+
+    private fun videoCard(v: NpItem): View {
+        val thumb = ImageView(act).apply { scaleType = ImageView.ScaleType.CENTER_CROP; setBackgroundColor(YtSkin.surface) }
+        val box = FrameLayout(act)
+        box.addView(thumb, FrameLayout.LayoutParams(-1, -1))
+        if (v.dur > 0) box.addView(TextView(act).apply {
+            text = fmtDur(v.dur); textSize = 12f; setTextColor(Color.WHITE); typeface = medium; includeFontPadding = false
+            setPadding(ui.dp(5), ui.dp(3), ui.dp(5), ui.dp(3)); background = GradientDrawable().apply { setColor(0xCC000000.toInt()); cornerRadius = ui.dp(4).toFloat() }
+        }, FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM or Gravity.END).apply { setMargins(ui.dp(8), ui.dp(8), ui.dp(8), ui.dp(8)) })
+        try { if (v.thumb.isNotBlank()) Glide.with(act).load(v.thumb).centerCrop().override(sw, sw * 9 / 16).into(thumb) } catch (_: Throwable) {}
+        val title = TextView(act).apply { text = v.title; textSize = 14f; setTextColor(YtSkin.text); typeface = medium; maxLines = 2; ellipsize = TextUtils.TruncateAt.END }
+        val meta = TextView(act).apply {
+            text = listOf(if (v.count > 0) fmtN(v.count) + " مشاهدة" else "", v.age).filter { it.isNotBlank() }.joinToString(" · ")
+            textSize = 12f; setTextColor(YtSkin.sub); maxLines = 1
+        }
+        val infoCol = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL }
+        infoCol.addView(title, LinearLayout.LayoutParams(-1, -2)); infoCol.addView(meta, LinearLayout.LayoutParams(-1, -2).apply { topMargin = ui.dp(3) })
+        val dlB = TextView(act).apply { text = "⬇"; textSize = 19f; gravity = Gravity.CENTER; setTextColor(YtSkin.text); foreground = YtSkin.ripple(true); contentDescription = "تحميل"
+            setOnClickListener { host.download(fix(v)) } }
+        val info = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; gravity = Gravity.TOP; setPadding(ui.dp(14), ui.dp(10), ui.dp(8), ui.dp(16)) }
+        info.addView(infoCol, LinearLayout.LayoutParams(0, -2, 1f)); info.addView(dlB, LinearLayout.LayoutParams(ui.dp(44), ui.dp(44)))
+        val root = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; foreground = YtSkin.ripple(); setOnClickListener { host.openVideo(fix(v)) } }
+        root.addView(box, LinearLayout.LayoutParams(-1, sw * 9 / 16)); root.addView(info, LinearLayout.LayoutParams(-1, -2))
+        return root
+    }
+
+    private fun playlistRow(v: NpItem): View {
+        val thumb = ImageView(act).apply { scaleType = ImageView.ScaleType.CENTER_CROP; setBackgroundColor(YtSkin.surface) }
+        try { if (v.thumb.isNotBlank()) Glide.with(act).load(v.thumb).centerCrop().override(ui.dp(168), ui.dp(94)).into(thumb) } catch (_: Throwable) {}
+        val title = TextView(act).apply { text = v.title; textSize = 14f; setTextColor(YtSkin.text); typeface = medium; maxLines = 2; ellipsize = TextUtils.TruncateAt.END }
+        val meta = TextView(act).apply { text = if (v.count > 0) "📃 " + v.count + " فيديو" else "📃 قايمة تشغيل"; textSize = 12f; setTextColor(YtSkin.sub) }
+        val col = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL }
+        col.addView(title, LinearLayout.LayoutParams(-1, -2)); col.addView(meta, LinearLayout.LayoutParams(-1, -2).apply { topMargin = ui.dp(4) })
+        val row = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; setPadding(ui.dp(12), ui.dp(8), ui.dp(12), ui.dp(8)); foreground = YtSkin.ripple()
+            setOnClickListener { host.openPlaylist(v.url, v.title) } }
+        row.addView(thumb, LinearLayout.LayoutParams(ui.dp(168), ui.dp(94)))
+        row.addView(col, LinearLayout.LayoutParams(0, -2, 1f).apply { marginStart = ui.dp(12) })
+        return row
+    }
+
+}
