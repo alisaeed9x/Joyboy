@@ -179,6 +179,7 @@ class Engine(
     /** (v280) «تفريغ بس»: النص بيتفرّغ ويتعرض بلغته الأصلية من غير ترجمة ولا تحويل لهجة ولا تنقيح ولا سدّ ثغرات.
      *  لما يتقفل بعد ما كان شغّال، الجمل الأجنبية بتتعالج بإصلاح اللغة الأجنبية التلقائي (جيميناي) زي ما بيحصل بعد الريستارت */
     @Volatile var transOnly: Boolean = false
+        set(v) { val was = field; field = v; if (was && !v) previewChunks.clear() }
     /** (v467) اللغة الأساسية: المضيف بيظبط skipIfBaseLang في سياقات التشغيل التلقائي بس (فتح بـ autotr / مهام خلفية) — زرار «ترجم» اليدوي بيفرض الترجمة ويلغي التخطي */
     @Volatile var skipIfBaseLang = false
     @Volatile var baseLangCode = "ar"
@@ -186,7 +187,6 @@ class Engine(
     private fun langCodeOf(name: String): String { val n = name.trim().lowercase(); if (n.length <= 3 && n.all { it.code < 128 }) return n.substringBefore('-')
         return when { n.contains("arab") || n.contains("عرب") -> "ar"; n.contains("engl") || n.contains("إنجل") || n.contains("انجل") -> "en"; n.contains("french") || n.contains("français") || n.contains("فرنس") -> "fr"; n.contains("spanish") || n.contains("español") || n.contains("إسبان") || n.contains("اسبان") -> "es"; n.contains("german") || n.contains("deutsch") || n.contains("ألمان") || n.contains("المان") -> "de"; n.contains("turkish") || n.contains("türk") || n.contains("ترك") -> "tr"; n.contains("hindi") || n.contains("हिन्दी") || n.contains("هند") -> "hi"; n.contains("korean") || n.contains("한국") || n.contains("كور") -> "ko"; n.contains("japan") || n.contains("日本") || n.contains("يابان") -> "ja"; n.contains("chines") || n.contains("中文") || n.contains("صين") -> "zh"; n.contains("russian") || n.contains("روس") -> "ru"; n.contains("italian") || n.contains("إيطال") || n.contains("ايطال") -> "it"; n.contains("portugu") || n.contains("برتغال") -> "pt"; n.contains("persian") || n.contains("farsi") || n.contains("فارس") -> "fa"; n.contains("urdu") || n.contains("أردو") || n.contains("اردو") -> "ur"; else -> n.take(2) } }
     private fun checkBaseSkip() { if (!baseSkipped && skipIfBaseLang && detDone && srcLang.isNotEmpty() && langCodeOf(srcLang) == baseLangCode) { baseSkipped = true; transOnly = true; host.log("🏠 لغة الفيديو هي لغتك الأساسية ($srcLang) — الترجمة التلقائية اتخطّت والنص الأصلي هيظهر زي ما هو. عايز ترجمة غصب عنها؟ دوس زرار «ترجم»") } }
-        set(v) { val was = field; field = v; if (was && !v) previewChunks.clear() }
     /** أسلوب الترجمة الحي (حرفي/شعبي/جرئ/+18) وشدته (خفيفة/متوسطة/شديدة): بيتحط في أول برومبت كل باتش جديد وكل تحويل لهجة */
     @Volatile var toneStyle: String = ""
     @Volatile var toneStrength: String = "متوسطة"
