@@ -10,6 +10,8 @@ import java.io.File
 /** بيسجّل سبب أي كراش (مع آخر سطور اللوج) في ملف، ويعرضه في أول فتح بعدها عشان نعرف نصلّحه */
 object CrashLog {
     private var installed = false
+    /** (v471) اسم آخر شاشة كانت ظاهرة — بيتكتب في تقرير الكراش لأن الـ stack بتاع الـ layout مفيهوش أي كلاس من التطبيق */
+    @Volatile private var lastAct = ""
     private fun file(c: Context) = File(c.filesDir, "last_crash.txt")
     private fun seen(c: Context) = File(c.filesDir, "last_crash_seen.txt")
     fun install(c: Context) {
@@ -18,12 +20,23 @@ object CrashLog {
         val app = c.applicationContext
         LogStore.init(app)
         val f = file(app)
+        try {
+            (app as android.app.Application).registerActivityLifecycleCallbacks(object : android.app.Application.ActivityLifecycleCallbacks {
+                override fun onActivityCreated(a: Activity, b: android.os.Bundle?) { lastAct = a.javaClass.simpleName + " (created)" }
+                override fun onActivityStarted(a: Activity) {}
+                override fun onActivityResumed(a: Activity) { lastAct = a.javaClass.simpleName }
+                override fun onActivityPaused(a: Activity) {}
+                override fun onActivityStopped(a: Activity) {}
+                override fun onActivitySaveInstanceState(a: Activity, b: android.os.Bundle) {}
+                override fun onActivityDestroyed(a: Activity) {}
+            })
+        } catch (_: Throwable) {}
         val old = Thread.getDefaultUncaughtExceptionHandler()
         Thread.setDefaultUncaughtExceptionHandler { t, e ->
             try {
                 val st = android.util.Log.getStackTraceString(e).take(6000)
-                LogStore.add("💥 CRASH في thread ${t.name} · ${LogStore.heapLine()}\n$st")
-                f.writeText("thread: ${t.name}\n$st\n\n— آخر سطور اللوج —\n" + LogStore.lastLines(LogStore.currentText(20000), 40))
+                LogStore.add("💥 CRASH في thread ${t.name} · شاشة: $lastAct · ${LogStore.heapLine()}\n$st")
+                f.writeText("thread: ${t.name} · screen: $lastAct\n$st\n\n— آخر سطور اللوج —\n" + LogStore.lastLines(LogStore.currentText(20000), 40))
             } catch (_: Throwable) {}
             old?.uncaughtException(t, e)
         }

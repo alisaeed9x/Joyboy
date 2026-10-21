@@ -405,7 +405,7 @@ class LibraryUi(
         sRow.addView(searchEt, LinearLayout.LayoutParams(0, -2, 1f))
         sRow.addView(uniBtn, LinearLayout.LayoutParams(ui.dp(46), ui.dp(44)).apply { marginStart = ui.dp(6) })
         root.addView(sRow, LinearLayout.LayoutParams(-1, -2).apply { setMargins(ui.dp(12), ui.dp(6), ui.dp(12), ui.dp(2)) })
-        if (!audio) root.addView(dashBox, LinearLayout.LayoutParams(-1, -2))   // (v469) D3 لوحة البداية (نسخة الفيديو بس)
+        // (v471) لوحة البداية (أكمل المشاهدة + آخر المضافات + البلاطات) اتشالت بطلب صاحب التطبيق — dashBox ما بقاش بيتعلّق في الواجهة
 
         listV.apply {
             divider = null; dividerHeight = 0; setSelector(android.R.color.transparent); isVerticalScrollBarEnabled = false
@@ -654,6 +654,7 @@ class LibraryUi(
 
     /** (v469) D3 لوحة البداية: أكمل المشاهدة (من سجل الاستئناف) + آخر المضافات + بلاطات إجراءات سريعة — بتتحدّث بس لما محتواها يتغيّر فعليًا (مفتاح بصمة) عشان التحديث التلقائي كل ١٠ ثوانٍ ما يومضهاش */
     private fun updateDash() {
+        return   // (v471) اللوحة اتشالت — الدالة مقفولة (الكود تحتها متسيب من غير حذف عشان ما نكسرش مراجع)
         if (audio) return
         val showDash = !inHidden && !inRecents && query.isEmpty() && curFolder == null && smartFilter == null && mode == "ready"
         if (!showDash) { dashBox.visibility = View.GONE; return }

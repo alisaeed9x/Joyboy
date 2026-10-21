@@ -66,7 +66,7 @@ class BottomNav(act: Activity, private val ui: Ui, private val th: Theme, privat
         val order = BAR_ORDER   // (v467) فيديوهات ← يوتيوب ← موسيقى ← متصفح ← المزيد (والباقي جوه المزيد تلقائيًا)
         defs.forEachIndexed { idx, d ->
             val icon = IconTextView(act).apply { text = d.first; textSize = 16f; gravity = Gravity.CENTER; includeFontPadding = false }
-            val lab = ui.text(d.second, 11f, th.muted, true).apply { gravity = Gravity.CENTER; setSingleLine() }
+            val lab = ui.text(d.second, 11f, th.muted, true).apply { gravity = Gravity.CENTER; setSingleLine() }   // (v458) كانت 9f صغيرة قوي
             val cell = LinearLayout(act).apply {
                 orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER; setPadding(0, ui.dp(3), 0, ui.dp(2))
                 val bdg = android.widget.TextView(act).apply {

@@ -2626,6 +2626,7 @@ class PlayerActivity : Activity(), Host {
         fsBtnLp = FrameLayout.LayoutParams(ui.dp(34), ui.dp(34), Gravity.BOTTOM or Gravity.LEFT)
         videoBox.addView(fsBtnV, fsBtnLp)
         // (v95) مكان 👁 والروتيشن: في النص بين الشريط العلوي والشريط السفلي (مش فوق شريحة الترجمة أبدًا)
+        var modePillMoving = false
         placeFloatFn = fn@{
             val bh = videoBox.height; if (bh <= 0) return@fn
             val chromeOn = fullMode && chromeShown && !pipNow()
@@ -2645,7 +2646,14 @@ class PlayerActivity : Activity(), Host {
             if (::audBtn.isInitialized) { val al = audBtn.layoutParams as FrameLayout.LayoutParams; val at = eyeTop + ui.dp(52); if (al.topMargin != at) { al.topMargin = at; audBtn.layoutParams = al } }
             if (::modePill.isInitialized) {   // (v467) الكبسولة انتقلت لصف الكبسولات جنب 👁 (طلب صاحب التطبيق: جنب زرار الوضع البصري مش تحته) — فلا حساب مواضع ولا تغطية من زرار الترجمة بعد كده
                 val br = badgeRowRef
-                if (br != null && modePill.parent !== br) { (modePill.parent as? ViewGroup)?.removeView(modePill); br.addView(modePill, LinearLayout.LayoutParams(-2, ui.dp(34)).apply { marginStart = ui.dp(6) }) }
+                // (v471) كان بيتنقّل هنا مباشرة وده بيتنادى من مستمعات onLayoutChange → تعديل شجرة الواجهة جوه مرحلة الـ layout = NullPointerException في FrameLayout.layoutChildren (فورس كلوز بعد ثواني من التشغيل). دلوقتي بيتأجّل بـ post بعد ما الـ layout يخلص
+                if (br != null && modePill.parent !== br && !modePillMoving) {
+                    modePillMoving = true
+                    modePill.post {
+                        modePillMoving = false
+                        try { val b2 = badgeRowRef; if (b2 != null && modePill.parent !== b2) { (modePill.parent as? ViewGroup)?.removeView(modePill); b2.addView(modePill, LinearLayout.LayoutParams(-2, ui.dp(34)).apply { marginStart = ui.dp(6) }) } } catch (e: Throwable) { LogStore.err("Player:modePill", e) }
+                    }
+                }
             }
             val rv = if (showRot) View.VISIBLE else View.GONE
             if (rotBtn.visibility != rv) rotBtn.visibility = rv
@@ -2989,8 +2997,10 @@ class PlayerActivity : Activity(), Host {
         PlayerRemote.act = java.lang.ref.WeakReference(this)
         KeepAliveService.start(this)
 
+        var tickErrN = 0
         h.post(object : Runnable {
             override fun run() {
+                try {
                 cur = player.currentPosition
                 val d = player.duration
                 if (d > 0) durMs = d
@@ -3109,7 +3119,7 @@ class PlayerActivity : Activity(), Host {
                         if (atBottom) logSv.post { logSv.fullScroll(View.FOCUS_DOWN) }
                     }
                 }
-                h.postDelayed(this, 200)
+                } catch (e: Throwable) { if (tickErrN++ < 5) { try { LogStore.err("Player:tick", e) } catch (_: Throwable) {} } } finally { h.postDelayed(this, 200) }   // (v471) أي استثناء في حلقة العرض كان بيقفل التطبيق — دلوقتي بيتسجّل في اللوج والحلقة تكمل
             }
         })
         engineStarted = false; updateTr()
