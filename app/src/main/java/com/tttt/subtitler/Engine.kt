@@ -217,7 +217,7 @@ class Engine(
 
     /** (v469) A4: قاموس المصطلحات المقفول من إعداد Cfg ‏"glossary" — كل سطر «مصدر=هدف» */
     private fun glossaryPairs(): List<Pair<String, String>> =
-        try { Cfg.str("gloss", "").ifBlank { Cfg.str("glossary", "") }   // (v469) الدمج: واجهة المسرد القائمة بتكتب "gloss".lines().mapNotNull { ln -> val i = ln.indexOf('='); if (i <= 0) null else { val a = ln.substring(0, i).trim(); val b = ln.substring(i + 1).trim(); if (a.isEmpty() || b.isEmpty()) null else a to b } } } catch (_: Throwable) { emptyList() }
+        try { Cfg.str("gloss", "").ifBlank { Cfg.str("glossary", "") }.lines().mapNotNull { ln -> val i = ln.indexOf('='); if (i <= 0) null else { val a = ln.substring(0, i).trim(); val b = ln.substring(i + 1).trim(); if (a.isEmpty() || b.isEmpty()) null else a to b } } } catch (_: Throwable) { emptyList() }
 
     private fun glossaryBlock(): String {
         val g = glossaryPairs(); if (g.isEmpty()) return ""
