@@ -3179,7 +3179,7 @@ class Engine(
     private fun persist() {
         if (store == null || isClosed) return
         if (!persistPending.compareAndSet(false, true)) return
-        try { persistEx.schedule({ persistPending.set(false); try { doPersist() } catch (e: Exception) { LogStore.err("Engine:persist", e) } }, 3, java.util.concurrent.TimeUnit.SECONDS)   // (v468) }
+        try { persistEx.schedule({ persistPending.set(false); try { doPersist() } catch (e: Exception) { LogStore.err("Engine:persist", e) } }, 3, java.util.concurrent.TimeUnit.SECONDS) }
         catch (_: RejectedExecutionException) { persistPending.set(false); doPersist() }
     }
     private fun doPersist(force: Boolean = false) {
