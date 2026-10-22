@@ -30,7 +30,7 @@ android {
     }
     namespace = "com.tttt.subtitler"
     compileSdk = 36
-    defaultConfig { applicationId = "com.tttt.subtitler.lite"; minSdk = 26; targetSdk = 34; versionCode = 1; versionName = "1.0-lite"
+    defaultConfig { applicationId = "com.tttt.subtitler.lite"; minSdk = 26; targetSdk = 34; versionCode = 2; versionName = "1.1-lite"
         ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a") }
         externalNativeBuild { cmake { arguments += listOf("-DCMAKE_BUILD_TYPE=Release"); abiFilters += listOf("arm64-v8a") } }   // (v253) whisper.cpp + (v307) substem: arm64 بس (armeabi-v7a من غير أوفلاين)   // (v181) معماريات الموبايل بس: بتصغّر مكتبة onnxruntime
     }
@@ -49,7 +49,7 @@ android {
     // واليونيفرسال لسه بيتبني كاحتياطي. armeabi-v7a من غير مكتبة Whisper الأوفلاين كالعادة (v253).
     splits {
         abi {
-            isEnable = true
+            isEnable = false   // (v474) APK واحد universal لكل بيلد — مفيش تقسيم ABI
             reset()
             include("arm64-v8a", "armeabi-v7a")
             isUniversalApk = true
