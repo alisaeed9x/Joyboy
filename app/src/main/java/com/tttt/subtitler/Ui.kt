@@ -46,7 +46,8 @@ class Ui(val ctx: Context, var th: Theme) {
         layoutParams = LinearLayout.LayoutParams(-1, -2).apply { setMargins(0, dp(4), 0, dp(4)) }
     }
     fun button(t: String, primary: Boolean = false, f: () -> Unit) = IconButton(ctx).apply {
-        text = t; isAllCaps = false; stateListAnimator = null; minHeight = dp(48)   // (v458) هدف لمس قياسي setTextColor(if (primary) (if (th.isLight) Color.WHITE else Color.BLACK) else th.text)
+        text = t; isAllCaps = false; stateListAnimator = null; minHeight = dp(48)   // (v458) هدف لمس قياسي
+        setTextColor(if (primary) (if (th.isLight) Color.WHITE else Color.BLACK) else th.text)   // (v475) كان مبلوع جوه التعليق اللي فوق فالأزرار كلها كانت بلون الخط الافتراضي الباهت
         background = if (primary) Glass.primaryFill(th, dp(Skins.rad(12)).toFloat()) else box(th.surface, th.border, 12)
         layoutParams = LinearLayout.LayoutParams(-1, -2).apply { setMargins(0, dp(4), 0, dp(4)) }
         Glass.pressable(this)

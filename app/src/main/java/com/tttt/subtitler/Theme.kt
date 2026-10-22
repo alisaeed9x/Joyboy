@@ -11,7 +11,7 @@ class Theme(val id: String, val name: String, val bg: Int, val surface: Int, val
 }
 
 object Themes {
-    val all: List<Theme> = listOf(
+    private val raw: List<Theme> = listOf(
         // (v467) قايمة منضّفة بطلب صاحب التطبيق: سمة واحدة من كل نوع (اتحذف: أموليد الأصفر، دافئ، رملي، أزرق هادئ المكرر، حماية العين، رمادي ناعم) —
         // ونصوص السمات الفاتحة (الـ muted) بقت غامقة/سودا عشان تبان على الخلفيات الفاتحة (فانيلا/كريمي/رملي)
         Theme("mx", "كريمي دافئ (أساسي)", 0xFFF7F1E6.toInt(), 0xFFEFE5D0.toInt(), 0xFFFFFBF2.toInt(), 0xFFDCC9A8.toInt(), 0xFF9A5B12.toInt(), 0xFFC65D21.toInt(), 0xFF2A1D12.toInt(), 0xFF4A3F30.toInt(), 0xFFC6493F.toInt(), 0xFF2E86D6.toInt()),
@@ -30,6 +30,14 @@ object Themes {
         Theme("winxp", "ويندوز XP", 0xFFECE9D8.toInt(), 0xFFF5F4EC.toInt(), 0xFFFFFFFF.toInt(), 0xFF7F9DB9.toInt(), 0xFF0054E3.toInt(), 0xFF7A9CC6.toInt(), 0xFF000000.toInt(), 0xFF4A4A4A.toInt(), 0xFFC83232.toInt(), 0xFF2A66C8.toInt()),
         Theme("win7", "ويندوز 7 (إيرو)", 0xFFD6E4F0.toInt(), 0xFFEAF2FA.toInt(), 0xFFFFFFFF.toInt(), 0xFF8FA8BF.toInt(), 0xFF1F6FB2.toInt(), 0xFF57A7D8.toInt(), 0xFF10222E.toInt(), 0xFF33424F.toInt(), 0xFFC42B1C.toInt(), 0xFF1F6FB2.toInt())
     )
+    // (v475) السمات الفاتحة نصها أسود بالكامل، والغامقة نصها أبيض — بدون درجات رمادي باهتة؛ والـ muted بقى قريب من اللون الأساسي
+    private fun hard(t: Theme): Theme {
+        val light = t.isLight
+        return Theme(t.id, t.name, t.bg, t.surface, t.card, t.border, t.primary, t.accent,
+            if (light) 0xFF000000.toInt() else 0xFFFFFFFF.toInt(),
+            if (light) 0xFF262626.toInt() else 0xFFE2E2E2.toInt(), t.danger, t.success)
+    }
+    val all: List<Theme> = raw.map { hard(it) }
 
     fun byId(id: String?): Theme = if (id == "custom") custom() else all.firstOrNull { it.id == id } ?: all[0]   // all[0] = mx
 

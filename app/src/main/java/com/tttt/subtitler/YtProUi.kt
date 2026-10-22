@@ -215,6 +215,12 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
     // (v348) شريط يوتيوب السفلي + الشورتس: page = كل الشاشة القديمة (بحث/قوايم)، shortsHost = صفحة الشورتس فوقها
     private val page = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL }
     private var navSel = 0
+    private lateinit var topTitle: TextView
+    private val lite = act.packageName.endsWith(".lite")
+    /** (v475) تبويبات يوتيوب في شريط البرنامج السفلي: Main بيسمع هنا (onTab) وبيبعت الضغطات (tapTab) */
+    var onTab: ((Int) -> Unit)? = null
+    val currentTab: Int get() = navSel
+    private val promptBox = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER; visibility = View.GONE; setPadding(ui.dp(28), ui.dp(16), ui.dp(28), ui.dp(16)) }
     private val navIcons = ArrayList<YtIcon>()
     private val navLabs = ArrayList<TextView>()
     private val navBars = ArrayList<View>()   // (v472) خط التمييز تحت التبويب النشط
@@ -296,7 +302,9 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
             tabsBox.addView(cell, LinearLayout.LayoutParams(0, -1, 1f))
         }
         appBar.setPadding(ui.dp(6), ui.dp(2), ui.dp(4), ui.dp(2))
-        appBar.addView(tabsBox, LinearLayout.LayoutParams(0, ui.dp(46), 1f))
+        // (v475) التبويبات (الرئيسية · الاشتراكات · أنا) بقت في الشريط السفلي بتاع البرنامج — فوق بقى عنوان الصفحة + بحث + إعدادات بس
+        topTitle = TextView(act).apply { text = "يوتيوب"; textSize = 19f; setTextColor(YtSkin.text); typeface = YtSkin.medium; gravity = Gravity.CENTER_VERTICAL or Gravity.START; setSingleLine(); setPadding(ui.dp(12), 0, ui.dp(8), 0) }
+        appBar.addView(topTitle, LinearLayout.LayoutParams(0, ui.dp(46), 1f))
         appBar.addView(iconBtn("search", "بحث") { enterSearch(true) }, LinearLayout.LayoutParams(ui.dp(44), ui.dp(44)))
         appBar.addView(iconBtn("gear", "إعدادات يوتيوب") { settings() }, LinearLayout.LayoutParams(ui.dp(44), ui.dp(44)))
         val backBtn = iconBtn("back", "رجوع") { exitSearch() }.apply { scaleX = -1f }
@@ -411,6 +419,7 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
 
         statusTv = ui.text("", 14f, th.muted).apply { gravity = Gravity.CENTER; setPadding(ui.dp(20), ui.dp(30), ui.dp(20), 0); visibility = View.GONE; setOnClickListener { retry?.invoke() } }
         page.addView(statusTv, LinearLayout.LayoutParams(-1, -2))
+        page.addView(promptBox, LinearLayout.LayoutParams(-1, 0, 1f))   // (v475) شاشة «سجّل دخول / زامن» بدل «مفيش حاجة»
 
         lv.apply {
             setBackgroundColor(YtSkin.bg); selector = GradientDrawable().apply { setColor(Color.TRANSPARENT) }
@@ -600,7 +609,7 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
             }
             1 -> {
                 val subs = YtStore.read(YtStore.SUBS)
-                if (subs.isEmpty() && !YtAccount.loggedIn()) { bind(St("📺 اشتراكاتي", 1, ArrayList(), null, null, null, null, null, "")); status("مفيش اشتراكات لسه.\nسجّل الدخول بحساب جوجل من تبويب «أنت» وهتتجاب اشتراكاتك لوحدها،\nأو افتح قناة من أي فيديو (ضغطة طويلة ← 📺 افتح القناة) واضغط 🔔 اشترك.\n\nأو استورد ملف اشتراكات (دوس هنا)") { onImport() } }
+                if (subs.isEmpty() && !YtAccount.loggedIn()) { bind(St("📺 اشتراكاتي", 1, ArrayList(), null, null, null, null, null, "")); emptyPrompt(1, null) }
                 else openSubs(false)
             }
             2, 3 -> showLocal(i, false)
@@ -609,7 +618,21 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
     }
 
     // ───────── (v348) شريط يوتيوب السفلي + الشورتس ─────────
-    private fun navTap(i: Int) { when (i) { 0 -> openTab(0); 1 -> openTab(1); else -> openTab(4) } }   // (v351) الشورتس اتشالت
+    /** (v475) i: 0 الرئيسية · 1 الاشتراكات · 2 أنا. دوسة على التبويب وانت فيه: يرجّعك لفوق ويحدّث (نفس سحب التحديث). comeBack = جاي من بوابة تانية: لو إنت أصلًا على الصفحة دي ما يعملش حاجة */
+    fun tapTab(i: Int, comeBack: Boolean = false) {
+        val st = cur
+        val atRoot = st != null && !watch.isOpen && !chan.isOpen && st.vid == null && st.q == null && st.chUrl == null && stack.isEmpty() && st.tab == (if (i == 2) 4 else i)
+        if (atRoot && comeBack) return
+        if (watch.isOpen) watch.close(false)
+        if (chan.isOpen) chan.close(false)
+        if (atRoot) {
+            try { lv.smoothScrollToPosition(0); lv.setSelection(0) } catch (_: Throwable) {}
+            when (i) { 0, 1 -> pullRefresh(); else -> openTab(4) }
+            return
+        }
+        when (i) { 0 -> openTab(0); 1 -> openTab(1); else -> openTab(4) }
+    }
+    private fun navTap(i: Int) { tapTab(i) }   // (v351) الشورتس اتشالت
     private fun paintNav() {
         for (i in navLabs.indices) {
             val on = i == navSel
@@ -623,14 +646,17 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
     private fun yrow(title: String, sub: String, key: String) = NpItem("act", title, sub, "", "", -1L, -1L, "", 2, "yta:$key")
     private fun openYou() {
         val rows = ArrayList<NpItem>()
+        // (v475) أول سطر: لو مش مسجّل ← تسجيل الدخول · لو مسجّل ولسه مفيش قنوات متزامنة ← مزامنة
+        if (!YtAccount.loggedIn()) rows.add(yrow("🔐 سجّل الدخول بحساب جوجل", "اشتراكاتك وسجلك وقوايمك وفيديوهات الإعجاب", "!login"))
+        else if (YtStore.read(YtStore.SUBS).isEmpty()) rows.add(yrow("🔄 زامن اشتراكاتك دلوقتي", "لسه مفيش قنوات متزامنة من حسابك", "!sync"))
         rows.add(yrow("🕘 سجل المشاهدة", "اللي فتحته من يوتيوب على الجهاز (" + YtStore.read(YtStore.HIST).size + ")", "!hist"))
         rows.add(yrow("⏩ أكمل المشاهدة", "فيديوهات بدأتها ومكملتهاش — بتكمل من نفس المكان", "!cont"))   // (v469) C6
         rows.add(yrow("🕘 السجل العام", "فيديوهات وصوتيات من كل المصادر — بالمسح", "!pub"))
         rows.add(yrow("🔖 المحفوظات", "(" + YtStore.read(YtStore.SAVED).size + ")", "!saved"))
         rows.add(yrow("📥 التحميلات", "الفيديوهات والصوتيات اللي نزّلتها من يوتيوب", "!dl"))
         if (YtAccount.loggedIn()) rows.addAll(YtAccount.menuItems())
-        else rows.add(yrow("🔐 سجّل الدخول بحساب جوجل", "اشتراكاتك وسجلك وقوايمك وفيديوهات الإعجاب", "!login"))
         rows.add(yrow("⚙ إعدادات يوتيوب", "الجودة · حفظ السجل · المسح", "!set"))
+        if (lite) rows.add(yrow("⚙ إعدادات المشغّل والتطبيق", "الترجمة · شكل الترجمة · المظهر · الخلفية · الأمان", "!setall"))   // (v475) اللايت: «أنا» و«الإعدادات» مدموجين
         bind(St("👤 أنت", 4, rows, null, null, null, null, null, ""))
     }
     /** السجل المحلي (2) أو المحفوظات (3): push=true بيحط الصفحة الحالية في الـstack عشان الرجوع يرجّعك لـ«أنت» */
@@ -716,10 +742,11 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
 
     // ───────── (v346) حساب جوجل ─────────
     private fun startLogin() {
+        val from = navSel
         YtAccount.login(act, ui, th) { ok ->
             act.runOnUiThread {
                 if (act.isFinishing || act.isDestroyed) return@runOnUiThread
-                if (ok) { Notice.show(act, "✅ اتسجّل الدخول", 2200L); syncNow(); openTab(4) }
+                if (ok) { Notice.show(act, "✅ اتسجّل الدخول", 2200L); syncNow(); openTab(if (from == 2) 4 else from) }
                 else Notice.show(act, "اتقفلت صفحة الدخول من غير ما يتم", 2200L)
             }
         }
@@ -732,7 +759,7 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
                 act.runOnUiThread {
                     if (act.isFinishing || act.isDestroyed) return@runOnUiThread
                     Notice.show(act, "✅ اتضاف $n قناة جديدة (الإجمالي " + YtStore.read(YtStore.SUBS).size + ")", 3500L)
-                    when (cur?.tab) { 1 -> openSubs(false); 4 -> openTab(4) }
+                    when (cur?.tab) { 0 -> openTab(0); 1 -> openSubs(false); 4 -> openTab(4) }
                 }
             } catch (e: Throwable) {
                 act.runOnUiThread { Notice.show(act, "⚠ " + (e.message ?: "فشلت المزامنة").take(140), 4800L) }
@@ -750,6 +777,7 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
             "!dl" -> openDownloads()
             "!login" -> startLogin()
             "!set" -> settings()
+            "!setall" -> (act as? MainActivity)?.openSettingsRoot()
             "!out" -> GAlert(act).setTitle("🚪 تسجيل الخروج").setMessage("هتتشال بيانات الدخول من التطبيق. الاشتراكات اللي اتحفظت هتفضل زي ما هي.")
                 .setPositiveButton("خروج") { _, _ -> YtAccount.logout(); Notice.show(act, "اتسجّل الخروج", 2000L); openTab(4) }
                 .setNegativeButton("إلغاء", null).show()
@@ -875,14 +903,15 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
                     val nst = St(title, tab, ArrayList(r.items), r.next, more, chUrl, chName, q, filter)
                     nst.durF = durF; nst.dateF = dateF
                     bind(nst)
-                    if (r.items.isEmpty()) status("مفيش نتايج\n\n(دوس هنا لإعادة المحاولة)", retry)
+                    if (r.items.isEmpty()) { if (tab == 0 || tab == 1) emptyPrompt(tab, null) else status("مفيش نتايج\n\n(دوس هنا لإعادة المحاولة)", retry) }   // (v475)
                 }
             } catch (e: Throwable) {
                 act.runOnUiThread {
                     if (my != gen || act.isFinishing || act.isDestroyed) return@runOnUiThread
                     if (onSnap) { bgLine(false); Notice.show(act, "⚠ تعذّر التحديث — عرضت آخر نسخة محفوظة", 2400L); return@runOnUiThread }
                     if (prev != null) cur = prev
-                    status("⚠ " + (e.message ?: e.javaClass.simpleName).take(160) + "\n\n(دوس هنا لإعادة المحاولة)", retry)
+                    if ((tab == 0 || tab == 1) && chUrl == null && q == null) emptyPrompt(tab, e.message ?: e.javaClass.simpleName)   // (v475) بدل رسالة خطأ لوحدها: زرار دخول/مزامنة/إعادة محاولة
+                    else status("⚠ " + (e.message ?: e.javaClass.simpleName).take(160) + "\n\n(دوس هنا لإعادة المحاولة)", retry)
                 }
             }
         }.start()
@@ -904,7 +933,7 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
     }
 
     private fun bind(st: St) {
-        cur = st; statusTv.visibility = View.GONE; spin(false)
+        cur = st; statusTv.visibility = View.GONE; spin(false); hidePrompt()
         // (v469) C7: صف «شغّل الكل» على رأس أي قايمة تشغيل
         if (st.vid == null && st.title.startsWith("📃") && st.items.any { it.kind == 0 } && st.items.none { it.url == "ytpl:all" })
             st.items.add(0, NpItem("act", "▶ شغّل الكل", st.title.removePrefix("📃").trim(), "", "", -1L, st.items.count { it.kind == 0 }.toLong(), "", 2, "ytpl:all"))
@@ -1137,7 +1166,30 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
         }.start()
     }
 
+    // ───────── (v475) شاشة «مش مسجّل دخول» / «لسه ما اتزامنتش» بزرار في النص بدل «مفيش حاجة» ─────────
+    private fun hidePrompt() { if (promptBox.visibility == View.VISIBLE) promptBox.visibility = View.GONE; if (lv.visibility != View.VISIBLE) lv.visibility = View.VISIBLE }
+    private fun showPrompt(msg: String, vararg acts: Pair<String, () -> Unit>) {
+        spin(false); statusTv.visibility = View.GONE
+        promptBox.removeAllViews()
+        promptBox.addView(ui.text(msg, 15f, th.text).apply { gravity = Gravity.CENTER; setPadding(0, 0, 0, ui.dp(14)) }, LinearLayout.LayoutParams(-1, -2))
+        acts.forEachIndexed { k, a -> promptBox.addView(ui.button(a.first, k == 0) { a.second() }, LinearLayout.LayoutParams(-1, -2)) }
+        lv.visibility = View.GONE; promptBox.visibility = View.VISIBLE
+    }
+    /** الرئيسية/الاشتراكات رجعت فاضية أو فشلت: لو مش مسجّل ← تسجيل الدخول، لو مسجّل ولسه ما اتزامنش ← مزامنة. why = سبب الفشل لو فيه */
+    private fun emptyPrompt(tab: Int, why: String?) {
+        val pre = if (why.isNullOrBlank()) "" else "⚠ " + why.take(140) + "\n\n"
+        if (!YtAccount.loggedIn()) {
+            val m = if (tab == 1) "مش مسجّل دخول في يوتيوب.\nسجّل دخولك عشان تظهرلك اشتراكاتك." else "مش مسجّل دخول في يوتيوب.\nسجّل دخولك عشان الرئيسية تظهرلك فيديوهات على ذوقك."
+            if (tab == 1) showPrompt(pre + m, "🔐 تسجيل الدخول" to { startLogin() }, "📥 استورد ملف اشتراكات" to { onImport() }, "↻ إعادة المحاولة" to { openTab(tab) })
+            else showPrompt(pre + m, "🔐 تسجيل الدخول" to { startLogin() }, "↻ إعادة المحاولة" to { openTab(tab) })
+        } else {
+            val m = if (tab == 1) "الاشتراكات لسه ما اتزامنتش مع حسابك." else "الرئيسية فاضية لحد ما حسابك يتزامن."
+            showPrompt(pre + m, "🔄 مزامنة الآن" to { syncNow() }, "↻ إعادة المحاولة" to { openTab(tab) })
+        }
+    }
+
     private fun status(t: String, onTap: (() -> Unit)? = null) {
+        hidePrompt()
         retry = onTap
         if (t.startsWith("⏳")) { statusTv.visibility = View.GONE; spin(true) }   // (v337) لودينج بدل النص
         else { spin(false); statusTv.text = t; statusTv.visibility = View.VISIBLE }
@@ -1285,7 +1337,12 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
 
     // ───────── رسم ─────────
     /** sel: 0 رئيسية · 1 اشتراكات · 2/3/4 = «أنت» · غير كده (بحث/قناة) بيسيب التحديد زي ما هو */
-    private fun paintTabs(sel: Int) { if (sel in 0..1) navSel = sel else if (sel in 2..4) navSel = 2; paintNav() }
+    private fun paintTabs(sel: Int) {
+        if (sel in 0..1) navSel = sel else if (sel in 2..4) navSel = 2
+        paintNav()
+        if (::topTitle.isInitialized) topTitle.text = when (navSel) { 0 -> "الرئيسية"; 1 -> "الاشتراكات"; else -> "أنا" }
+        try { onTab?.invoke(navSel) } catch (_: Throwable) {}
+    }
     private fun paintChip(tv: TextView, on: Boolean) {
         tv.setTextColor(if (on) YtSkin.chipOnText else YtSkin.text)
         tv.background = GradientDrawable().apply { setColor(if (on) YtSkin.chipOnBg else YtSkin.chip); cornerRadius = ui.dp(8).toFloat() }
