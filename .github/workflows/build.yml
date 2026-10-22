@@ -1,39 +1,23 @@
-name: Build Universal Debug APK
-
+name: Build Debug APK
 on:
   push:
   workflow_dispatch:
-
-# كل فرع (main / lite) بيتبني لوحده، وأي دفعة جديدة على نفس الفرع بتلغي البيلد القديم
 concurrency:
   group: build-${{ github.ref_name }}
   cancel-in-progress: true
-
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Set up JDK 17
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: '17'
-
-      - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: '8.11.1'
-
-      # APK واحد بس (debug · universal): splits مقفولة في app/build.gradle.kts، ومفيش release
-      - name: Build Universal Debug APK only
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: '17' }
+      - uses: gradle/actions/setup-gradle@v4
+        with: { gradle-version: '8.11.1' }
+      - name: Build debug APK
         run: gradle assembleDebug --stacktrace
-
-      - name: Upload APK
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4
         with:
-          name: subtitler-${{ github.ref_name }}-universal-debug
+          name: vanilla-tv-${{ github.ref_name }}-debug
           path: app/build/outputs/apk/debug/*.apk
           if-no-files-found: error

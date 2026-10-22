@@ -1,5 +1,4 @@
 pluginManagement { repositories { google(); mavenCentral(); gradlePluginPortal() } }
-dependencyResolutionManagement { repositories { google(); mavenCentral()
-        maven { url = uri("https://jitpack.io") } } }
-rootProject.name = "Subtitler"
+dependencyResolutionManagement { repositories { google(); mavenCentral() } }
+rootProject.name = "VanillaTvLauncher"
 include(":app")
