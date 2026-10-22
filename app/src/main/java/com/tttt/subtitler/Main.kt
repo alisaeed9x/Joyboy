@@ -752,7 +752,7 @@ class MainActivity : Activity() {
             if (u.isEmpty()) Notice.show(this, ("الصق الرابط الأول").toString(), 2300L) else { recentDlg?.dismiss(); openLink(u) }
         }
         val linkBrowser = ui.button("🌐 افتح المتصفح (لصيد روابط الفيديو)") { save(); recentDlg?.dismiss(); startActivity(Intent(this, BrowserActivity::class.java)) }
-        recentDlg = ui.sheet(this, "🔗 رابط · 📼 المحفوظة", listOf<View>(link, linkPlay, linkBrowser,
+        recentDlg = ui.sheet(this, "🔗 رابط · 📼 المحفوظة", listOf<View>(link, linkPlay,
             ui.text("📼 فيديوهات محفوظة", 13f, th.muted).apply { setPadding(0, ui.dp(10), 0, ui.dp(4)) }, recentBox), false)
         recentDlg!!.setOnShowListener {
             rebuildRecents()
@@ -914,7 +914,7 @@ class MainActivity : Activity() {
                     kind == "a" && src == "youtube" -> playYtAudio(ref, title, "", "")
                     else -> {}
                 } } }, onPlayAt = { id, name, tr, ms, pk -> playYt(id, name, tr, tr, ms, pk) })
-            ytUi = yt; yt.root.visibility = View.GONE; ytOpenFn = { vid -> yt.openVideo(vid) }
+            ytUi = yt; yt.root.visibility = View.GONE; ytOpenFn = { vid -> yt.openVideo(vid) }; yt.onTab = { syncNav() }   // (v475) تبويبات يوتيوب في الشريط السفلي
             pane.addView(yt.root, 1, FrameLayout.LayoutParams(-1, -1))
             pane.addView(yt.busyView, FrameLayout.LayoutParams(-1, -1))   // (v337) لودينج جلب رابط الفيديو فوق الصفحة
             return yt
@@ -938,7 +938,7 @@ class MainActivity : Activity() {
                 tasksUi.root.visibility = if (i == 5) View.VISIBLE else View.GONE
                 settingsHostRef?.visibility = if (i == 7) View.VISIBLE else View.GONE
                 tasksDlgRefresh = if (i == 5) ({ tasksUi.refresh() }) else null
-                navUi?.set(i)
+                syncNav()   // (v475)
                 if (i == 1) { musicUi?.ensureLoaded(); musicUi?.applyNavTint() } else setNavTint(null)
                 if (i == 4) ytUi?.refresh() else if (prevTab == 4) ytUi?.onHide()
                 if (i == 5) tasksUi.refresh()
@@ -952,7 +952,7 @@ class MainActivity : Activity() {
         }
         musicOpenFn = { showTabFn(1); musicUi?.showFull() }   // (v337)
         val tabletShell = DeviceUi.isTablet(this)   // (v462) قشرة التابلت: ريل جانبي زي يوتيوب التابلت بدل الشريط السفلي
-        val nav = BottomNav(this, ui, th, 0, tabletShell) { i -> if (i == 2) { save(); NavAnim.set(curTab, 2); startActivity(Intent(this, BrowserActivity::class.java)) } else if (i == 3) { save(); NavAnim.set(curTab, 3); startActivity(Intent(this, FileManagerActivity::class.java)) } else if (i == 7) { musicReturnTab = -1; settingsShow?.invoke(null) } else { musicReturnTab = -1; showTabFn(i) } }   // (v310) 4 الملفات = شاشة منفصلة زي المتصفح
+        val nav = BottomNav(this, ui, th, 0, tabletShell) { i -> if (i >= BottomNav.YT_HOME) { musicReturnTab = -1; val was = curTab == 4; if (!was) showTabFn(4); ytUi?.tapTab(i - BottomNav.YT_HOME, !was) } else if (i == 2) { save(); NavAnim.set(curTab, 2); startActivity(Intent(this, BrowserActivity::class.java)) } else if (i == 3) { save(); NavAnim.set(curTab, 3); startActivity(Intent(this, FileManagerActivity::class.java)) } else if (i == 7) { musicReturnTab = -1; settingsShow?.invoke(null) } else { musicReturnTab = -1; showTabFn(i) } }   // (v310) 4 الملفات = شاشة منفصلة زي المتصفح
         navUi = nav
         if (!fromPlayer) {
             TaskCenter.listener = { if (!isDestroyed && !isFinishing) { tasksDlgRefresh?.invoke(); runOnUiThread { updateTasksFab() } } }
@@ -1281,12 +1281,10 @@ class MainActivity : Activity() {
             box.removeAllViews()
             if (q.length < 2) { box.addView(android.widget.TextView(this).apply { text = "اكتب حرفين على الأقل"; textSize = 13f; setTextColor(thx.muted); setPadding(px(8), px(22), px(8), px(8)) }); return }
             try { val vs = libUi?.searchHits(q)?.take(8) ?: emptyList(); if (vs.isNotEmpty()) { box.addView(head("🎬 فيديوهات المكتبة")); for (v in vs) box.addView(row("🎬 " + v.title, v.folderName) { libUi?.playItem(v) }) } } catch (_: Throwable) {}
-            try { val ms = musicUi?.lib?.searchHits(q)?.take(8) ?: emptyList(); if (ms.isNotEmpty()) { box.addView(head("🎵 الموسيقى")); for (v in ms) box.addView(row("🎵 " + v.title, v.folderName) { showTabFn(1); musicUi?.lib?.playItem(v) }) } } catch (_: Throwable) {}
             try { val hs = (PubHistory.list("v", "youtube") + PubHistory.list("a", "youtube")).filter { it.title.contains(q, true) }.take(8); if (hs.isNotEmpty()) { box.addView(head("🕘 سجل يوتيوب")); for (hh in hs) box.addView(row("▶ " + hh.title, "من سجل المشاهدة") { playYt(hh.ref, hh.title, false) }) } } catch (_: Throwable) {}
-            val ss = SettingsTabs.sections.filter { it.label.contains(q, true) || it.sub.contains(q, true) }
+            val ss = SettingsTabs.sections.filter { it.id != "music" && (it.label.contains(q, true) || it.sub.contains(q, true)) }
             if (ss.isNotEmpty()) { box.addView(head("⚙️ أقسام الإعدادات")); for (sec in ss) box.addView(row(sec.label, sec.sub) { settingsShow?.invoke(sec.id) }) }
             if (box.childCount == 0) box.addView(android.widget.TextView(this).apply { text = "مفيش نتائج — جرّب كلمة تانية"; textSize = 13f; setTextColor(thx.muted); setPadding(px(8), px(22), px(8), px(8)) })
-            box.addView(row("🌐 ابحث في المتصفح عن «" + q.take(30) + "»", "") { webSearch(q) })
         }
         val hh2 = android.os.Handler(android.os.Looper.getMainLooper()); val go = Runnable { run(et.text.toString().trim()) }
         et.addTextChangedListener(object : android.text.TextWatcher {
@@ -1311,8 +1309,6 @@ class MainActivity : Activity() {
                     "🔎 بحث شامل بيفتّش في المكتبة وسجل يوتيوب وأقسام الإعدادات\n" +
                     "⭐ مفضلة وتقييم نجوم ومجموعات ذكية (غير مشاهد / قيد المشاهدة / المفضلة)\n" +
                     "♿ وضع النص الكبير + مفاتيح للانتقالات والاهتزاز اللمسي\n" +
-                    "🎶 قوائم تشغيل للموسيقى (إنشاء وتشغيل بالترتيب أو عشوائي)\n" +
-                    "📖 وضع القارئ في المتصفح + إحصائيات حظر الإعلانات وقائمة سماح لكل موقع\n" +
                     "💾 نسخة احتياطية شاملة: إعدادات + سجل مشاهدة في ملف واحد"
                 val col = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; setPadding(52, 28, 52, 20); setBackgroundColor(thx.bg) }
                 col.addView(android.widget.TextView(this).apply { text = "✨ إيه الجديد في " + vn; textSize = 18f; setTextColor(thx.primary); setTypeface(typeface, android.graphics.Typeface.BOLD); setPadding(0, 0, 0, 16) })
@@ -1331,9 +1327,7 @@ class MainActivity : Activity() {
                     val tips = listOf(
                         "دوس ⋮ على أي فيديو واديله نجمة ⭐ — بيظهر بعد كده في «المفضلة» من درج المكتبة",
                         "من المظهر: «استوديو السمات» بيخليك تصنع ثيمك الخاص بلون تمييز من اختيارك",
-                        "المتصفح بقى فيه «وضع القارئ» 📖 من قايمة ⋮ — قراءة نضيفة من غير إعلانات وفوضى",
                         "لو الترجمة مش مظبوطة التوقيت، في المشغّل إزاحة ±١٠ ثواني بخطوات ربع ثانية",
-                        "قوائم التشغيل 🎶 في صفحة الموسيقى: اعمل قائمة وشغّلها بالترتيب أو عشوائي",
                         "الفلتر الدافئ 🌡 من قسم المظهر بيقلل إجهاد عينك بالليل")
                     val idx = java.util.Calendar.getInstance().get(java.util.Calendar.DAY_OF_YEAR) % tips.size
                     Notice.show(this, "💡 تلميح اليوم: " + tips[idx], 5000L)
@@ -1664,6 +1658,14 @@ class MainActivity : Activity() {
         YtHistoryUi.show(this, ui0, th0, { id, t -> saveFn(); playYt(id, t, false) }, { id, t, ch -> saveFn(); playYtAudio(id, t, ch, "") })
     }
     fun updateYtBadge() { navUi?.badge(4, YtNotify.badgeCount()) }
+    /** (v475) الشريط السفلي: وانت في يوتيوب بيعرض (الرئيسية · الاشتراكات · أنا)؛ اللايت ترتيبه ثابت (الرئيسية · الاشتراكات · محلي · أنا) */
+    fun syncNav() {
+        val n = navUi ?: return
+        val liteApp = packageName.endsWith(".lite")
+        n.mode(curTab == 4)
+        n.set(if (curTab == 4) BottomNav.YT_HOME + (ytUi?.currentTab ?: 0).coerceIn(0, 2) else if (liteApp && curTab == 7) BottomNav.YT_ME else curTab)
+    }
+    fun openSettingsRoot() { try { settingsShow?.invoke(null) } catch (_: Throwable) {} }
     private var ytBgAt = 0L
     /** (v404) مزامنة يوتيوب في الخلفية أول ما التطبيق يفتح (ومرة كل 20 دقيقة لو رجعت له): بعد ما الشاشة تظهر بـ3.5 ثانية وبأولوية خلفية
      *  عشان ما تبطّأش فتح البرنامج. بتجيب اشتراكات حسابك (لو مسجّل ومرّ وقت من آخر مزامنة) وبعدين بتعدّ الفيديوهات الجديدة

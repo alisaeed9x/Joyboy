@@ -17,11 +17,19 @@ class BottomNav(act: Activity, private val ui: Ui, private val th: Theme, privat
         const val DEAD_AI = 6
         /** (v467) ترتيب الشريط بطلب صاحب التطبيق: الفيديوهات ← يوتيوب ← الموسيقى ← المتصفح ← المزيد.
          *  أي بوابة مش في الشريط بتظهر تلقائيًا جوه «المزيد» — فأي إضافة جديدة هتبان من غير تعديل هنا. */
-        val BAR_ORDER = listOf(4, 0, 7)   // (lite) يوتيوب · الفيديوهات · الإعدادات
-        val DEFS = listOf("🎞" to "الفيديوهات", "🎵" to "الموسيقى", "🌐" to "المتصفح", "📂" to "الملفات", "▶" to "يوتيوب", "📋" to "المهام", "" to "", "⚙️" to "الإعدادات", "⋯" to "المزيد")
+        val BAR_ORDER = listOf(0, 4, 1, 2, 8)
+        /** (v475) خلايا يوتيوب الافتراضية (مش بوابات): الرئيسية 9 · الاشتراكات 10 · أنا 11 — بتحل محل خلية «يوتيوب» وانت جواه */
+        const val YT_HOME = 9; const val YT_SUBS = 10; const val YT_ME = 11
+        val NORMAL_ORDER = BAR_ORDER
+        val YT_ORDER = listOf(0, YT_HOME, YT_SUBS, YT_ME, MORE)       // نسخة كاملة وانت في يوتيوب: الموسيقى والمتصفح بيروحوا لـ«المزيد»
+        val LITE_ORDER = listOf(YT_HOME, YT_SUBS, 0, YT_ME)           // نسخة اللايت: الرئيسية · الاشتراكات · محلي · أنا
+        val DEFS = listOf("🎞" to "الفيديوهات", "🎵" to "الموسيقى", "🌐" to "المتصفح", "📂" to "الملفات", "▶" to "يوتيوب", "📋" to "المهام", "" to "", "⚙️" to "الإعدادات", "⋯" to "المزيد",
+            "🏠" to "الرئيسية", "📺" to "الاشتراكات", "👤" to "أنا")
     }
     /** البوابات اللي ورا ⋯ المزيد: أي بوابة مش في الشريط (حاليًا: الملفات 3 · المهام 5 · الذكاء 6 · الإعدادات 7) — الزرار بيتلوّن لما واحدة منهم تبقى هي النشطة */
-    private fun cellOf(a: Int): Int = if (a in BAR_ORDER) a else 4   // (lite) مفيش «المزيد»
+    private val lite = act.packageName.endsWith(".lite")
+    private var order: List<Int> = if (lite) LITE_ORDER else NORMAL_ORDER
+    private fun cellOf(a: Int): Int = if (a in order) a else if (lite) (if (a == 7) YT_ME else -1) else MORE
     private fun moreSheet(act: Activity) {
         val d = android.app.Dialog(act)
         d.requestWindowFeature(android.view.Window.FEATURE_NO_TITLE)
@@ -29,7 +37,7 @@ class BottomNav(act: Activity, private val ui: Ui, private val th: Theme, privat
             orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; setPadding(ui.dp(10), ui.dp(10), ui.dp(10), ui.dp(14))
             background = GradientDrawable().apply { setColor(th.card); cornerRadii = floatArrayOf(ui.dp(18).toFloat(), ui.dp(18).toFloat(), ui.dp(18).toFloat(), ui.dp(18).toFloat(), 0f, 0f, 0f, 0f) }
         }
-        val items = DEFS.indices.filter { it != MORE && it != DEAD_AI && it !in BAR_ORDER }.map { id -> id to (DEFS[id].first + "  " + DEFS[id].second) }   // (v467) ديناميكي: أي بوابة جديدة بره الشريط هتظهر هنا لوحدها
+        val items = DEFS.indices.filter { it != MORE && it != DEAD_AI && it < YT_HOME && it !in order && !(it == 4 && YT_HOME in order) }.map { id -> id to (DEFS[id].first + "  " + DEFS[id].second) }   // (v467) ديناميكي: أي بوابة جديدة بره الشريط هتظهر هنا لوحدها
         for ((id, label) in items) {
             val row = ui.text(label, 15f, if (id == active) th.primary else th.text, true).apply { setPadding(ui.dp(14), ui.dp(14), ui.dp(14), ui.dp(14)) }
             Glass.pressable(row)
@@ -53,6 +61,8 @@ class BottomNav(act: Activity, private val ui: Ui, private val th: Theme, privat
     private var lineV: View? = null
     private var tinted = false
     private var moving = false
+    private var snap = false
+    private lateinit var rowLL: LinearLayout
     private val indicator = View(act).apply {
         background = GradientDrawable().apply { setColor(th.primary); cornerRadius = ui.dp(2).toFloat() }
     }
@@ -65,10 +75,10 @@ class BottomNav(act: Activity, private val ui: Ui, private val th: Theme, privat
         }
         // (v336) الأرقام ثابتة (0 فيديوهات · 1 موسيقى · 2 متصفح · 3 ملفات · 4 يوتيوب · 5 مهام) لكن ترتيب العرض: يوتيوب قبل الملفات، والمهام رجعت زرار في الشريط
         val defs = DEFS
-        val order = BAR_ORDER   // (v467) فيديوهات ← يوتيوب ← موسيقى ← متصفح ← المزيد (والباقي جوه المزيد تلقائيًا)
+        rowLL = row
         defs.forEachIndexed { idx, d ->
             val icon = IconTextView(act).apply { text = d.first; textSize = 16f; gravity = Gravity.CENTER; includeFontPadding = false }
-            val lab = ui.text(d.second, 11f, th.muted, true).apply { gravity = Gravity.CENTER; setSingleLine() }   // (v458) كانت 9f صغيرة قوي
+            val lab = ui.text(if (lite && idx == 0) "محلي" else d.second, 11f, th.muted, true).apply { gravity = Gravity.CENTER; setSingleLine() }   // (v458) كانت 9f صغيرة قوي
             val cell = LinearLayout(act).apply {
                 orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER; setPadding(0, ui.dp(3), 0, ui.dp(2))
                 val bdg = android.widget.TextView(act).apply {
@@ -89,12 +99,11 @@ class BottomNav(act: Activity, private val ui: Ui, private val th: Theme, privat
             }
             icons.add(icon); labels.add(lab); cells.add(cell)
         }
-        if (rail) { for (id in order) row.addView(cells[id], LinearLayout.LayoutParams(ui.dp(76), ui.dp(66))) }   // (v462) خلايا الريل مكدّسة رأسيًا
-        else for (id in order) row.addView(cells[id], LinearLayout.LayoutParams(0, ui.dp(56), 1f))   // (v458) شريط تنقّل بارتفاع قياسي 56dp
+        fillRow()
         val wrap = FrameLayout(act)
         wrap.addView(row, if (rail) FrameLayout.LayoutParams(-2, -1) else FrameLayout.LayoutParams(-1, -2))
         wrap.addView(indicator, if (rail) FrameLayout.LayoutParams(ui.dp(2), ui.dp(22), Gravity.START or Gravity.CENTER_VERTICAL) else FrameLayout.LayoutParams(ui.dp(22), ui.dp(2), Gravity.TOP or Gravity.START))
-        row.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> if (!moving) place(false) }
+        row.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> if (!moving) { place(false); snap = false } }
         rowV = row; lineV = line
         if (rail) { view.addView(wrap, LinearLayout.LayoutParams(0, -1, 1f)); view.addView(line, LinearLayout.LayoutParams(ui.dp(1), -1)) }
         else { view.addView(line, LinearLayout.LayoutParams(-1, ui.dp(1))); view.addView(wrap, LinearLayout.LayoutParams(-1, -2)) }
@@ -104,9 +113,28 @@ class BottomNav(act: Activity, private val ui: Ui, private val th: Theme, privat
 
     /** (v350) عدّاد أحمر فوق أيقونة البوابة؛ 0 = مخفي */
     fun badge(i: Int, n: Int) {
-        val b = badges.getOrNull(i) ?: return
-        b.text = if (n > 99) "99+" else n.toString()
-        b.visibility = if (n > 0) View.VISIBLE else View.GONE
+        for (k in (if (i == 4) listOf(4, YT_SUBS) else listOf(i))) {   // (v475) عدّاد يوتيوب الجديد بيظهر كمان على خلية «الاشتراكات»
+            val b = badges.getOrNull(k) ?: continue
+            b.text = if (n > 99) "99+" else n.toString()
+            b.visibility = if (n > 0) View.VISIBLE else View.GONE
+        }
+    }
+
+    private fun fillRow() {
+        val row = rowLL
+        row.removeAllViews()
+        for (id in order) {
+            val c = cells[id]
+            if (rail) row.addView(c, LinearLayout.LayoutParams(ui.dp(76), ui.dp(66)))   // (v462) خلايا الريل مكدّسة رأسيًا
+            else row.addView(c, LinearLayout.LayoutParams(0, ui.dp(56), 1f))             // (v458) شريط تنقّل بارتفاع قياسي 56dp
+        }
+    }
+    /** (v475) وانت في يوتيوب (نسخة كاملة) الشريط بيعرض الرئيسية/الاشتراكات/أنا بدل «يوتيوب»؛ اللايت ترتيبه ثابت */
+    fun mode(inYoutube: Boolean) {
+        val o = if (lite) LITE_ORDER else if (inYoutube) YT_ORDER else NORMAL_ORDER
+        if (o == order) return
+        order = o; snap = true; indicator.animate().cancel(); moving = false
+        fillRow(); paint(); rowLL.requestLayout()
     }
 
     private fun place(animate: Boolean) {
@@ -134,7 +162,8 @@ class BottomNav(act: Activity, private val ui: Ui, private val th: Theme, privat
     fun set(i: Int) {
         val changed = cellOf(i) != cellOf(active)
         active = i; paint()
-        if (changed) { place(true); icons.getOrNull(cellOf(i))?.let { Motion.bounce(it) } }
+        if (snap) { rowLL.requestLayout() }
+        else if (changed) { place(true); icons.getOrNull(cellOf(i))?.let { Motion.bounce(it) } }
     }
     /** (v135) نص تحت أيقونة البوابة (بيتغيّر لـ «المهام (2)» لما فيه مهام شغّالة) */
     fun label(i: Int, t: String) { if (i in labels.indices) labels[i].text = t }
