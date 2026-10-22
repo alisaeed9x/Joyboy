@@ -33,7 +33,7 @@ object SettingsTabs {
         Sec("more", "🔋 الخلفية والتشغيل", "الخروج من المشغّل · الطابور · البطارية · الترجمة الحية", "🛠 عام"),
         Sec("security", "🔒 الأمان والنسخ", "القفل بالنمط والبصمة · النسخة الاحتياطية والاسترجاع", "🛠 عام"))
     val video = sections.filter { it.id != "music" }.map { it.id to it.label }
-    val all = sections.map { it.id to it.label }
+    val all = sections.filter { it.id != "music" }.map { it.id to it.label }   // (lite)
     private fun sec(id: String) = sections.first { it.id == id }
     fun label(id: String): String = sec(id).label
     fun sub(id: String): String = sec(id).sub

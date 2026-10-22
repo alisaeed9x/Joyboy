@@ -17,11 +17,11 @@ class BottomNav(act: Activity, private val ui: Ui, private val th: Theme, privat
         const val DEAD_AI = 6
         /** (v467) ترتيب الشريط بطلب صاحب التطبيق: الفيديوهات ← يوتيوب ← الموسيقى ← المتصفح ← المزيد.
          *  أي بوابة مش في الشريط بتظهر تلقائيًا جوه «المزيد» — فأي إضافة جديدة هتبان من غير تعديل هنا. */
-        val BAR_ORDER = listOf(0, 4, 1, 2, 8)
+        val BAR_ORDER = listOf(4, 0, 7)   // (lite) يوتيوب · الفيديوهات · الإعدادات
         val DEFS = listOf("🎞" to "الفيديوهات", "🎵" to "الموسيقى", "🌐" to "المتصفح", "📂" to "الملفات", "▶" to "يوتيوب", "📋" to "المهام", "" to "", "⚙️" to "الإعدادات", "⋯" to "المزيد")
     }
     /** البوابات اللي ورا ⋯ المزيد: أي بوابة مش في الشريط (حاليًا: الملفات 3 · المهام 5 · الذكاء 6 · الإعدادات 7) — الزرار بيتلوّن لما واحدة منهم تبقى هي النشطة */
-    private fun cellOf(a: Int): Int = if (a in BAR_ORDER) a else MORE
+    private fun cellOf(a: Int): Int = if (a in BAR_ORDER) a else 4   // (lite) مفيش «المزيد»
     private fun moreSheet(act: Activity) {
         val d = android.app.Dialog(act)
         d.requestWindowFeature(android.view.Window.FEATURE_NO_TITLE)

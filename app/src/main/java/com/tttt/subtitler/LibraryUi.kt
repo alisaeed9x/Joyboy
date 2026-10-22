@@ -699,8 +699,6 @@ class LibraryUi(
         }
         tile("🌙 ترجم") { onQueue() }
         tile("▶ يوتيوب") { onDash?.invoke("yt") }
-        tile("🎵 موسيقى") { onDash?.invoke("music") }
-        tile("🌐 متصفح") { onDash?.invoke("browser") }
         dashBox.addView(tiles, LinearLayout.LayoutParams(-1, -2))
     }
 

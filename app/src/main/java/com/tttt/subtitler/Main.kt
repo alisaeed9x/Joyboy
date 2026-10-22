@@ -743,7 +743,8 @@ class MainActivity : Activity() {
                     ui.button("📂 استرجع من ملف") { backupFromFile() },
                     ui.button("♻ استرجع آخر نسخة تلقائية") { restoreAuto() },
                     ui.button("💾 نسخة شاملة (إعدادات + سجل المشاهدة)") { fullToFile() },
-                    ui.button("📂 استرجع نسخة شاملة") { fullFromFile() })))), sp.holder) { save(); refreshChip(); if (fromPlayer) finish() }
+                    ui.button("📂 استرجع نسخة شاملة") { fullFromFile() }))))
+            .filter { it.id != "music" }, sp.holder) { save(); refreshChip(); if (fromPlayer) finish() }
         // رابط مباشر + المحفوظة (نافذة سفلية): حقل الرابط بيتحط هنا
         link.hint = "الصق أي لينك: فيديو مباشر / يوتيوب / صفحة فيها فيديو"; link.layoutDirection = View.LAYOUT_DIRECTION_LTR
         val linkPlay = ui.button("▶ شغّل / اصطد الرابط", true) {
@@ -991,7 +992,7 @@ class MainActivity : Activity() {
             val cn = intent?.component?.className ?: ""
             // (v339) لو الأكتيفيتي اتعمل لها إعادة إنشاء (النظام قتلها وإنت في المشغّل): ارجع لنفس البوابة مش للفيديوهات
             val savedTab = b?.getInt("cur_tab", -1) ?: -1
-            val t0 = intent?.getStringExtra("tab") ?: when (savedTab) { 1 -> "music"; 4 -> "youtube"; 5 -> "tasks"; else -> null }
+            val t0 = intent?.getStringExtra("tab") ?: when (savedTab) { 4, -1 -> "youtube"; 5 -> "tasks"; else -> null }   // (lite)
             if (t0 == "music") frame.post { showTabFn(1) }
             else if (t0 == "tasks") frame.post { showTabFn(5) }
             else if (t0 == "settings") frame.post { settingsShow?.invoke(null) }
