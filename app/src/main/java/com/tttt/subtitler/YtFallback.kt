@@ -19,8 +19,8 @@ object YtFallback {
 
     private fun msg(ui: Ui, th: Theme, t: String) = ui.text(t, 13.5f, th.muted).apply { gravity = Gravity.CENTER; setPadding(ui.dp(20), ui.dp(26), ui.dp(20), ui.dp(10)) }
 
-    private fun browserBtn(ui: Ui, q: String, onBrowser: (String) -> Unit) = ui.text("🌐 ابحث في المتصفح عن «" + q.take(40) + "»", 14f, Color.WHITE, true).apply {
-        gravity = Gravity.CENTER; setPadding(ui.dp(18), ui.dp(13), ui.dp(18), ui.dp(13)); background = ui.box(0xFF4C6FB5.toInt(), 0xFF4C6FB5.toInt(), 14)
+    private fun browserBtn(ui: Ui, q: String, onBrowser: (String) -> Unit) = ui.text("🌐 ابحث في المتصفح عن «" + q.take(40) + "»", 14f, YtSkin.onAccent, true).apply {
+        gravity = Gravity.CENTER; setPadding(ui.dp(18), ui.dp(13), ui.dp(18), ui.dp(13)); background = ui.box(YtSkin.accent, YtSkin.accent, 14)
         setOnClickListener { onBrowser(q) }
     }
 

@@ -18,12 +18,12 @@ import android.widget.FrameLayout
  * parent لازم يكون FrameLayout؛ onOpen بيفتح صفحة المهام.
  */
 class TasksFab(private val act: Activity, private val parent: FrameLayout, private val ui: Ui, private val onOpen: () -> Unit) {
-    val view = IconTextView(act)
+    val view = TaskRingView(act, Themes.byId(Cfg.str("theme", "mx")).primary)   // (v472) دايرة بحلقة تقدّم (زي دايرة مشغّل الموسيقى)
     private val main = Handler(Looper.getMainLooper())
-    private val size = ui.dp(46)
+    private val size = ui.dp(56)
     private val prefs = act.getSharedPreferences("p", 0)
     private val listener: () -> Unit = { if (!act.isDestroyed && !act.isFinishing) main.post { refresh() } }
-    private val tick = object : Runnable { override fun run() { if (!act.isDestroyed && !act.isFinishing) { refresh(); main.postDelayed(this, 1500L) } } }
+    private val tick = object : Runnable { override fun run() { if (!act.isDestroyed && !act.isFinishing) { refresh(); main.postDelayed(this, 1000L) } } }
     private var shown = false
     private var downX = 0f; private var downY = 0f; private var startTx = 0f; private var startTy = 0f; private var moved = false
     /** الشاشة اللي فيها الزرار ممكن تخبّيه (صفحة المهام نفسها مثلًا) */
@@ -31,11 +31,7 @@ class TasksFab(private val act: Activity, private val parent: FrameLayout, priva
         set(v) { field = v; refresh() }
 
     init {
-        view.apply {
-            textSize = 15f; setTextColor(Color.WHITE); typeface = android.graphics.Typeface.DEFAULT_BOLD
-            gravity = Gravity.CENTER; includeFontPadding = false; visibility = View.GONE; elevation = ui.dp(8).toFloat()
-            setPadding(0, 0, 0, 0)
-        }
+        view.apply { visibility = View.GONE; elevation = ui.dp(8).toFloat() }
         view.setOnTouchListener { v, e -> touch(v, e) }
         parent.addView(view, FrameLayout.LayoutParams(size, size, Gravity.TOP or Gravity.LEFT))
         parent.addOnLayoutChangeListener { _, l, t, r, b, ol, ot, or2, ob -> if (r - l != or2 - ol || b - t != ob - ot) place() }
@@ -86,19 +82,16 @@ class TasksFab(private val act: Activity, private val parent: FrameLayout, priva
     }
 
     fun refresh() {
-        val active = TaskCenter.active() + BgJobs.jobs.count { it.active }
-        val total = TaskCenter.total() + BgJobs.jobs.size
-        val show = active > 0 && !hidden   // (v420) بيظهر وقت الشغل بس؛ بعد ما يخلص بيختفي (الناتج في ⋯ المزيد ← المهام)
-        val n = if (active > 0) active else total
-        view.text = if (n > 99) "99+" else n.toString()
-        view.background = GradientDrawable().apply {
-            shape = GradientDrawable.OVAL
-            setColor(if (active > 0) 0xFFE53935.toInt() else 0xFF6B7280.toInt())
-            setStroke(ui.dp(2), 0xEEFFFFFF.toInt())
-        }
+        val a = TaskAgg.snap()   // (v472) إجمالي المهام الشغّالة (الواقفة مؤقتًا مش بتتحسب في النسبة والوقت)
+        val alive = a.running + a.paused
+        val show = alive > 0 && !hidden   // (v420) بيظهر وقت الشغل بس؛ بعد ما يخلص بيختفي (الناتج في ⋯ المزيد ← المهام)
+        val pctTxt = (a.frac * 100f).toInt().coerceIn(0, 100).toString() + "%"
+        if (a.running == 0) view.set(a.frac, "⏸", pctTxt, a.paused, true)
+        else if (a.etaSec >= 0L) view.set(a.frac, TaskAgg.fmt(a.etaSec), pctTxt, alive, false)
+        else view.set(a.frac, pctTxt, "", alive, false)
         if (show && !shown) { view.visibility = View.VISIBLE; Motion.pop(view, 0.5f) }
         if (!show && shown) view.visibility = View.GONE
         shown = show
-        Motion.breathe(view, show && active > 0)
+        Motion.breathe(view, show && a.running > 0)
     }
 }

@@ -415,6 +415,11 @@ class MainActivity : Activity() {
             ui.section("🔊 لغة صوت الفيديو", true,
                 ui.chips(ytLangN, { ytLangN[ytLangV.indexOf(YtLang.pref()).coerceAtLeast(0)] }) { n -> Cfg.put("yt_alang", ytLangV[ytLangN.indexOf(n).coerceAtLeast(0)]); YtExtract.clearPicks(); YtFast.clearCache() },
                 ui.text("لو الفيديو له أكتر من لغة صوت بيفتح بالعربي، ولو مفيش عربي بيفتح بالصوت الأصلي. وفي المشغّل بيظهر مربع 🔊 جنب الجودة تبدّل بين اللغات.", 12f, th.muted)),
+            ui.section("🌐 لغة المحتوى والحساب", true,
+                ui.chips(YtLocale.names, { YtLocale.names[YtLocale.values.indexOf(Cfg.str("yt_hl", "auto")).coerceAtLeast(0)] }) { n -> Cfg.put("yt_hl", YtLocale.values[YtLocale.names.indexOf(n).coerceAtLeast(0)]); YtNp.reset(); YtFast.clearCache() },
+                ui.switchRow("👤 التعليقات والمقترحات بحسابي (ترتيب ولغة حسابك)", Cfg.bool("yt_np_auth", true)) { Cfg.put("yt_np_auth", if (it) "1" else "0") },
+                ui.switchRow("📺 الاشتراكات من فيد حسابي الرسمي (أسرع وبلغتك، وRSS احتياطي)", Cfg.bool("yt_subs_official", true)) { Cfg.put("yt_subs_official", if (it) "1" else "0") },
+                ui.text("عناوين الفيديوهات والوصف بتيجي بلغة المحتوى المختارة لو صاحب القناة ضاف ترجمة. التعليقات نصوص كتبها الناس بلغاتهم، لكن لما تكون مسجّل دخول وإعداد «بحسابي» شغّال بيتم ترتيبها زي ما يوتيوب بيرتّبها لحسابك. تغيير اللغة بيحدّث الرئيسية من جديد.", 12f, th.muted)),
             ui.section("🔔 الإشعارات والسجل", true,
                 ui.switchRow("🔔 إشعارات الفيديوهات الجديدة من اشتراكاتي", YtNotify.enabled()) { YtNotify.setEnabled(this, it) },
                 ui.switchRow("🕘 حفظ سجل المشاهدة", YtStore.histOn()) { Cfg.put("ytp_hist_on", if (it) "1" else "0") },
@@ -834,6 +839,7 @@ class MainActivity : Activity() {
         // (v135) بوابة تالتة: «المهام» (قص · صوت · GIF · ضغط · ترجمة ثابتة)
         toolsUiM = ToolsUi(this, ui, th)
         val tasksUi = TasksUi(this, ui, th) { k -> pickTool(k) }; tasksUiRef = tasksUi
+        tasksUi.onOpenOut = { t -> openTaskOutput(t) }   // (v472) دوسة على مهمة خالصة تفتح الفيديو
         tasksUi.onClose = { showTabFn(if (tabBeforeTasks == 5) 0 else tabBeforeTasks) }   // (v324) ✕ في صفحة المهام
         // (v198) الشريط السفلي (البوابات) وشريط النظام بياخدوا لون مشغّل الموسيقى لما يتفتح، ويرجعوا لثيم البرنامج لما يتقفل
         @Suppress("DEPRECATION")
@@ -1622,11 +1628,18 @@ class MainActivity : Activity() {
             val res = Downloader.run(app, job) { what, pct -> t.pct = pct.coerceIn(0, 99); t.msg = what; TaskCenter.changed() }
             if (!res.first) throw java.io.IOException(res.second)
             t.msg = ""; t.outPath = res.second
+            Downloader.takeLastOut()?.let { t.outUri = it.first; t.mime = it.second }   // (v472) دوسة على المهمة الخالصة تفتح الفيديو
             try {   // معلومات التحميل: العنوان/القناة/الصورة/المدة + مكان الملف (في خانة الوقت بتظهر)
                 YtStore.addFront(YtStore.DL, NpItem(n.id, n.title, n.channel, n.channelUrl, n.thumb, n.dur, -1L, "⬇ " + (if (audioOnly) "صوت" else "فيديو") + " · " + res.second, 0, res.second), 300)
             } catch (_: Throwable) {}
         }
         Notice.show(this, ("⬇ اتضاف للتحميل — تابعه من تبويب «المهام»").toString(), 3000L)
+    }
+    /** (v472) دوسة على مهمة خالصة في صفحة المهام = افتح الفيديو/الصوت اللي طلع منها في مشغّل البرنامج */
+    fun openTaskOutput(t: TaskItem) {
+        val u: Uri? = t.outUri ?: (if (t.outPath.startsWith("/") && java.io.File(t.outPath).isFile) Uri.fromFile(java.io.File(t.outPath)) else null)
+        if (u == null) { Notice.show(this, ("الملف مش متاح للفتح من هنا — موجود في: " + t.outPath.take(60)).toString(), 3400L); return }
+        play("", u, !t.mime.startsWith("audio"))
     }
     fun playClip(c: ClipVideo) {
         fun go(u: String, ref: String, ua: String) {

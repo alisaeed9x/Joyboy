@@ -254,8 +254,8 @@ class YtMiniPlayer(private val act: Activity, private val ui: Ui) : FrameLayout(
         bar.apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; setPadding(ui.dp(10), 0, ui.dp(2), 0) }
         seek.max = 1000
         try {
-            seek.progressTintList = ColorStateList.valueOf(YtSkin.red)
-            seek.thumbTintList = ColorStateList.valueOf(YtSkin.red)
+            seek.progressTintList = ColorStateList.valueOf(YtSkin.accent)
+            seek.thumbTintList = ColorStateList.valueOf(YtSkin.accent)
             seek.progressBackgroundTintList = ColorStateList.valueOf(0x66FFFFFF)
         } catch (_: Throwable) {}
         bar.addView(timeTv, LinearLayout.LayoutParams(-2, -2))
@@ -571,7 +571,7 @@ object YtQueue {
 /** الصفحة نفسها: مشغّل مصغّر فوق + (عنوان · قناة · اشتراك · وصف · مقترحات/تعليقات) بتتحرك بالسحب تحته */
 class YtWatchPage(private val act: Activity, private val ui: Ui, private val host: YtWatchHost) : FrameLayout(act) {
     private val sw = act.resources.displayMetrics.widthPixels
-    private val medium: Typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+    private val medium: Typeface = YtSkin.medium
     private val mini = YtMiniPlayer(act, ui)
     private val scroll = ScrollView(act)
     private val body = LinearLayout(act)
@@ -898,6 +898,27 @@ class YtWatchPage(private val act: Activity, private val ui: Ui, private val hos
         scroll.scrollTo(0, 0)
         if (!wasOpen) { from = src; host.state(true); animateIn(src) }
         else { body.alpha = 0f; body.animate().alpha(1f).setDuration(220L).start() }
+        // (v471) الفيديو والتفاصيل بقوا على خيطين منفصلين: قبل كده المشغّل كان بيستنى NewPipe يخلّص كل التفاصيل (3-8 ثواني) قبل ما يبدأ يجيب الرابط،
+        // وكمان كان بيمشي في الطريق البطيء بس. دلوقتي الرابط بيتجاب من نفس السباق السريع بتاع المشغّل الكامل (YtExtract + NewPipe + كاش) والتفاصيل تظهر لما تجهز.
+        Thread {
+            val cap = Cfg.int("yt_maxh", 0)   // (v406) نفس جودة المشغّل الكامل (المصغّر هو نفس المشغّل)
+            var pk: YtPick? = null
+            try { val g = YtFast.video(v.id, cap); if (g != null) pk = YtPick(g.url, g.audio, g.ua, g.title, 0, g.qlist) } catch (_: Throwable) {}
+            val pick = pk
+            act.runOnUiThread {
+                if (my != gen || act.isFinishing || act.isDestroyed) return@runOnUiThread
+                if (pick == null) mini.error("ما قدرتش أجيب الفيديو هنا — دوس زرار التكبير يجرّب في مشغّلك")
+                else { val sk = seekOnOpenMs; seekOnOpenMs = 0L; mini.start(pick, YtOpen.autoPlay(), sk) }   // (v469) C6: استكمال من نفس المكان
+            }
+        }.apply { isDaemon = true }.start()
+        // (v472) المقترحات بتطلع من طلب next الخفيف (~ثانية، وبحسابك لو مسجّل) من غير ما تستنى تفاصيل NewPipe
+        liteRel = emptyList()
+        Thread {
+            try {
+                val l = YtAccount.relatedLite(v.id)
+                if (l.isNotEmpty()) act.runOnUiThread { if (my == gen && !act.isFinishing && !act.isDestroyed && det == null) { liteRel = l; if (!comments) renderList() } }
+            } catch (_: Throwable) {}
+        }.apply { isDaemon = true }.start()
         Thread {
             try {
                 val d = YtNp.details(v.id)
@@ -905,16 +926,6 @@ class YtWatchPage(private val act: Activity, private val ui: Ui, private val hos
             } catch (e: Throwable) {
                 LogStore.err("YtWatch:details", e)
                 act.runOnUiThread { if (my == gen) status("⚠ ما قدرتش أجيب التفاصيل: " + (e.message ?: e.javaClass.simpleName).take(120)) }
-            }
-            val cap = Cfg.int("yt_maxh", 0)   // (v406) نفس جودة المشغّل الكامل (المصغّر هو نفس المشغّل)
-            var pk: YtPick? = null
-            try { pk = YtNp.pick(v.id, cap) } catch (_: Throwable) {}
-            if (pk == null) { try { val b = YtExtract.fetchPick(v.id, cap); if (b != null) pk = YtPick(b.url, b.audio, b.ua, b.title, 0, b.optsJson()) } catch (_: Throwable) {} }
-            val pick = pk
-            act.runOnUiThread {
-                if (my != gen || act.isFinishing || act.isDestroyed) return@runOnUiThread
-                if (pick == null) mini.error("ما قدرتش أجيب الفيديو هنا — دوس زرار التكبير يجرّب في مشغّلك")
-                else { val sk = seekOnOpenMs; seekOnOpenMs = 0L; mini.start(pick, YtOpen.autoPlay(), sk) }   // (v469) C6: استكمال من نفس المكان
             }
         }.apply { isDaemon = true }.start()
     }
@@ -1012,11 +1023,12 @@ class YtWatchPage(private val act: Activity, private val ui: Ui, private val hos
         if (c && !cLoaded) loadComments() else renderList()
     }
 
+    private var liteRel: List<NpItem> = emptyList()   // (v472) مقترحات سريعة لحد ما تفاصيل NewPipe تجهز
     private fun renderList() {
         if (comments) { renderComments(); return }
         listBox.removeAllViews()
-        val rel = det?.related ?: emptyList()
-        if (rel.isEmpty()) { status("مفيش مقترحات"); return }
+        val rel = det?.related?.takeIf { it.isNotEmpty() } ?: liteRel
+        if (rel.isEmpty()) { status(if (det == null) "⏳ …" else "مفيش مقترحات"); return }
         for (r in rel.take(relShown)) listBox.addView(relCard(r), LinearLayout.LayoutParams(-1, -2))
         if (rel.size > relShown) listBox.addView(chip("عرض المزيد") { relShown += 20; renderList() }, LinearLayout.LayoutParams(-1, -2).apply { setMargins(ui.dp(14), ui.dp(8), ui.dp(14), ui.dp(16)) })
     }
@@ -1030,6 +1042,7 @@ class YtWatchPage(private val act: Activity, private val ui: Ui, private val hos
             setPadding(ui.dp(5), ui.dp(3), ui.dp(5), ui.dp(3)); background = GradientDrawable().apply { setColor(0xCC000000.toInt()); cornerRadius = ui.dp(4).toFloat() }
         }, FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM or Gravity.END).apply { setMargins(ui.dp(8), ui.dp(8), ui.dp(8), ui.dp(8)) })
         try { if (v.thumb.isNotBlank()) Glide.with(act).load(v.thumb).centerCrop().override(sw, sw * 9 / 16).into(thumb) } catch (_: Throwable) {}
+        if (v.kind == 0 && v.id.length == 11) { val tb = YtThumbBtns.attach(act, ui, box); YtThumbBtns.bind(tb.aud, tb.dl, v.id, { host.audio(v) }, { host.download(box, v) }) }   // (v472) 🎧 + ⬇ فوق صورة المقترح
         val title = TextView(act).apply { text = v.title; textSize = 14f; setTextColor(YtSkin.text); typeface = medium; maxLines = 2; ellipsize = TextUtils.TruncateAt.END }
         val meta = TextView(act).apply {
             text = listOf(v.channel, if (v.count > 0) fmtN(v.count) + " مشاهدة" else "", v.age).filter { it.isNotBlank() }.joinToString(" · ")
@@ -1040,7 +1053,7 @@ class YtWatchPage(private val act: Activity, private val ui: Ui, private val hos
         val info = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; gravity = Gravity.TOP; setPadding(ui.dp(12), ui.dp(12), ui.dp(12), ui.dp(16)) }
         info.addView(avatar(v.channel.ifBlank { "؟" }, 36, v.avatar), LinearLayout.LayoutParams(ui.dp(36), ui.dp(36)).apply { marginEnd = ui.dp(12) })
         info.addView(col, LinearLayout.LayoutParams(0, -2, 1f))
-        val root = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; foreground = YtSkin.ripple(); setOnClickListener { host.openVideo(v) } }
+        val root = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; foreground = YtSkin.ripple(); setOnClickListener { host.openVideo(v) }; YtFast.warmOnTouch(this) { v.id } }
         root.addView(box, LinearLayout.LayoutParams(-1, sw * 9 / 16)); root.addView(info, LinearLayout.LayoutParams(-1, -2))
         return root
     }
@@ -1190,12 +1203,12 @@ class YtDock(private val act: Activity, private val ui: Ui, private val onExpand
     private var vh = 0
     private val hh = Handler(Looper.getMainLooper())
     private val tex = TextureView(act)
-    private val titleTv = TextView(act).apply { textSize = 13f; setTextColor(YtSkin.text); typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL); maxLines = 2; ellipsize = TextUtils.TruncateAt.END }
+    private val titleTv = TextView(act).apply { textSize = 13f; setTextColor(YtSkin.text); typeface = YtSkin.medium; maxLines = 2; ellipsize = TextUtils.TruncateAt.END }
     private val chanTv = TextView(act).apply { textSize = 11f; setTextColor(YtSkin.sub); setSingleLine(); ellipsize = TextUtils.TruncateAt.END }
     private val playTv = TextView(act).apply { textSize = 20f; gravity = Gravity.CENTER; setTextColor(YtSkin.text); text = "▮▮" }
     private val queueTv = TextView(act).apply { textSize = 17f; gravity = Gravity.CENTER; setTextColor(YtSkin.text); text = "☰"; contentDescription = "قائمة الانتظار" }   // (v469) C9
     private val closeTv = TextView(act).apply { textSize = 18f; gravity = Gravity.CENTER; setTextColor(YtSkin.text); text = "✕" }
-    private val prog = View(act).apply { setBackgroundColor(YtSkin.red); pivotX = 0f; scaleX = 0f }
+    private val prog = View(act).apply { setBackgroundColor(YtSkin.accent); pivotX = 0f; scaleX = 0f }
     private val listener = object : androidx.media3.common.Player.Listener {
         override fun onIsPlayingChanged(isPlaying: Boolean) { paintPlay() }
         override fun onPlaybackStateChanged(state: Int) { paintPlay() }

@@ -12,8 +12,8 @@ import android.view.animation.LinearInterpolator
  * (فتح صفحة · تحديث الرئيسية/الاشتراكات في الخلفية) ويختفي لوحده لما التحميل يخلص.
  */
 class YtTopLine(ctx: Context) : View(ctx) {
-    private val seg = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0xFF3EA6FF.toInt() }
-    private val track = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0x333EA6FF }
+    private val seg = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = YtSkin.accent }
+    private val track = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = (YtSkin.accent and 0x00FFFFFF) or 0x33000000 }
     private var f = 0f
     private var anim: ValueAnimator? = null
 

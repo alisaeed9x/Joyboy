@@ -140,12 +140,30 @@ object YtRss {
         return out
     }
 
+    /** (v471) RSS يوتيوب بيرجّع 404/500 عشوائي لقنوات سليمة — كان فشل واحد = القناة تختفي من الفيد. دلوقتي: لو فشل رابط القناة بنجرّب رابط قايمة «الرفع» (UU…)
+     *  وبنعيد مرة واحدة؛ وأخطاء الشبكة (مفيش نت/مهلة) ما بنكرّرهاش عشان ما نعلّقش. */
+    private fun getFeed(cid: String, chUrl: String): List<NpItem> {
+        val urls = listOf("https://www.youtube.com/feeds/videos.xml?channel_id=$cid", "https://www.youtube.com/feeds/videos.xml?playlist_id=UU" + cid.substring(2))
+        var last: Throwable? = null
+        for (round in 0..1) {
+            for (u in urls) {
+                try { return parse(http(u), chUrl).take(PER_CH) }
+                catch (t: java.net.UnknownHostException) { throw t }
+                catch (t: java.net.ConnectException) { throw t }
+                catch (t: java.net.SocketTimeoutException) { last = t; break }
+                catch (t: Throwable) { last = t }
+            }
+            if (round == 0) try { Thread.sleep(300L + (Math.random() * 300L).toLong()) } catch (_: Throwable) {}
+        }
+        throw last ?: RuntimeException("RSS")
+    }
+
     private fun fetchOne(cid: String, chUrl: String, force: Boolean, staleOk: Boolean = false): List<NpItem> {
         val now = System.currentTimeMillis()
         val e = synchronized(this) { mem[cid] }
         if (!force && e != null && (staleOk || now - e.t < TTL_MS)) return e.items   // (v354) staleOk: اعرض الكاش فورًا حتى لو قديم
         return try {
-            val l = parse(http("https://www.youtube.com/feeds/videos.xml?channel_id=$cid"), chUrl).take(PER_CH)
+            val l = getFeed(cid, chUrl)
             synchronized(this) { mem[cid] = Entry(now, l) }
             l
         } catch (t: Throwable) { e?.items ?: throw t }   // فشل → آخر كاش لو موجود
@@ -174,9 +192,10 @@ object YtRss {
         loadDisk()
         val all = ArrayList<NpItem>()
         synchronized(this) {
+            // (v471) من الكاش بس حتى لو قناة أو اتنين مالهمش كاش لسه (كان لازم الكل، فأي قناة جديدة بتخلّي الفتح بطيء/فاضي) — الناقص بيتجاب في التحديث الخلفي وتظهر كبسولة «فيديوهات جديدة»
             for (s in subs.take(MAX_CH)) {
-                val cid = chanId(s.channelUrl) ?: return null
-                val e = mem[cid] ?: return null
+                val cid = chanId(s.channelUrl) ?: continue
+                val e = mem[cid] ?: continue
                 all.addAll(e.items)
             }
         }

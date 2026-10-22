@@ -216,7 +216,11 @@ object Downloader {
     }
 
     /** ينقل الملف لمجلد التنزيلات (MediaStore على أندرويد 10+) وبيرجّع المسار/الوصف */
+    /** (v472) آخر ملف اتحفظ على الخيط ده (uri + mime) — صفحة المهام بتفتحه بدوسة بعد ما التحميل يخلص */
+    private val lastOut = ThreadLocal<Pair<android.net.Uri, String>?>()
+    fun takeLastOut(): Pair<android.net.Uri, String>? { val x = lastOut.get(); lastOut.set(null); return x }
     private fun publish(ctx: Context, f: File, display: String, mime: String): String {
+        lastOut.set(null)
         if (Build.VERSION.SDK_INT >= 29) {
             val cv = ContentValues().apply {
                 put(MediaStore.MediaColumns.DISPLAY_NAME, display); put(MediaStore.MediaColumns.MIME_TYPE, mime)
@@ -225,10 +229,12 @@ object Downloader {
             val uri = ctx.contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, cv) ?: throw java.io.IOException("ما قدرتش أكتب في التنزيلات")
             ctx.contentResolver.openOutputStream(uri)?.use { os -> f.inputStream().use { it.copyTo(os) } }
             f.delete()
+            lastOut.set(Pair(uri, mime))
             return "Download/Subtitler/$display"
         }
         val dir = ctx.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS) ?: ctx.filesDir
         val dst = File(dir, display); f.copyTo(dst, true); f.delete()
+        lastOut.set(Pair(android.net.Uri.fromFile(dst), mime))
         return dst.absolutePath
     }
 
@@ -248,7 +254,7 @@ object Downloader {
 
     /** بيرجّع (نجح؟, رسالة). استدعيه من خيط خلفي. onPct: 0..100 */
     fun run(ctx: Context, job: Job, onPct: (String, Int) -> Unit): Pair<Boolean, String> {
-        val tmpDir = File(ctx.cacheDir, "dl"); tmpDir.mkdirs()
+        val tmpDir = File(File(ctx.cacheDir, "dl"), java.util.UUID.randomUUID().toString().take(8)); tmpDir.mkdirs()   // (v472) مجلد لكل تحميل: ينفع أكتر من تحميل في نفس الوقت
         val base = safeName(job.name)
         try {
             if (job.audioOnly) {
@@ -291,6 +297,8 @@ object Downloader {
             if (e is TaskCancelled) throw e
             LogStore.err("Downloader", e)
             return Pair(false, "التحميل فشل: " + (e.message ?: e.javaClass.simpleName).take(80))
+        } finally {
+            try { tmpDir.deleteRecursively() } catch (_: Throwable) {}
         }
     }
 }

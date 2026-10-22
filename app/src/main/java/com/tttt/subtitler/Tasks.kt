@@ -95,7 +95,7 @@ object TaskCenter {
     private val q = LinkedBlockingQueue<TaskItem>()
     private val qd = LinkedBlockingQueue<TaskItem>()   // (v137) التحميلات في طابور لوحدها عشان ما تستناش الترميز
     private var worker: Thread? = null
-    private var workerD: Thread? = null
+    private val workersD = ArrayList<Thread>()   // (v472) لحد 3 تحميلات متوازية
     private var appCtx: Context? = null
     private var seq = 0
 
@@ -121,7 +121,7 @@ object TaskCenter {
     }
 
     private fun ensureWorker(app: Context, dl: Boolean) {
-        if (dl) { if (workerD?.isAlive == true) return; workerD = Thread { loop(app, qd) }.apply { isDaemon = true; start() } }
+        if (dl) synchronized(workersD) { workersD.removeAll { !it.isAlive }; if (workersD.size < 3) workersD.add(Thread { loop(app, qd) }.apply { isDaemon = true; start() }) }
         else { if (worker?.isAlive == true) return; worker = Thread { loop(app, q) }.apply { isDaemon = true; start() } }
     }
 

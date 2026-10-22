@@ -43,6 +43,25 @@ object YtFast {
         }.apply { isDaemon = true; start() }
     }
     private fun exBad() { exFails++; exFailAt = System.currentTimeMillis() }
+
+    // (v471) تسخين: أول ما صباعك يلمس فيديو في أي قايمة بنبدأ نجيب رابطه (طلب YtExtract واحد خفيف) — لحد ما ترفع صباعك يكون غالبًا جاهز في الكاش
+    private val warming = ConcurrentHashMap<String, Long>()
+    fun warm(id: String) {
+        if (id.length != 11) return
+        val maxH = try { Cfg.int("yt_maxh", 0) } catch (_: Throwable) { 0 }
+        if (YtExtract.cachedPick(id, maxH) != null) return
+        val now = System.currentTimeMillis()
+        val prev = warming[id]
+        if (prev != null && now - prev < 60_000L) return
+        if (exLikelyDead()) return   // العملاء واقعين: مفيش داعي نضغط
+        warming[id] = now
+        if (warming.size > 40) warming.entries.removeAll { now - it.value > 120_000L }
+        Thread { try { YtExtract.fetchPick(id, maxH) } catch (_: Throwable) {} }.apply { isDaemon = true; start() }
+    }
+    /** بيربط التسخين بلمسة الصباع على صف فيديو (من غير ما يمنع الضغطة العادية) */
+    fun warmOnTouch(v: android.view.View, id: () -> String) {
+        v.setOnTouchListener { _, e -> if (e.actionMasked == android.view.MotionEvent.ACTION_DOWN) warm(id()); false }
+    }
     private fun <T> live(p: Pair<Long, T>?): T? = if (p != null && System.currentTimeMillis() - p.first < TTL) p.second else null
 
     /** نتيجة جاهزة للمشغّل: url (+ صوت منفصل لو فيه) + قايمة الجودات JSON */

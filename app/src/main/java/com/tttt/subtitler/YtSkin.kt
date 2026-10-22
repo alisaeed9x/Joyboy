@@ -6,6 +6,7 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.Path
+import android.graphics.Typeface
 import android.graphics.RectF
 import android.graphics.drawable.ColorDrawable
 import android.graphics.drawable.RippleDrawable
@@ -25,17 +26,32 @@ object YtSkin {
     var chipOnBg = 0xFFF1F1F1.toInt()
     var chipOnText = 0xFF0F0F0F.toInt()
     var line = 0x1FFFFFFF
-    val red = 0xFFFF0000.toInt()
+    val red = 0xFFFF0000.toInt()   // شعار يوتيوب بس
+    /** (v471) لون التمييز = لون سمة البرنامج (خط التحميل · شريط التقدم · الكبسولة · الأزرار المختارة) */
+    var accent = 0xFF3EA6FF.toInt()
+    var onAccent = Color.WHITE
+    /** (v471) خط العناوين = نفس خط البرنامج (IBM Plex) لو اتحمّل، وإلا الخط المتوسط بتاع النظام */
+    var medium: Typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+    private var fontTried = false
 
-    fun init(themeBg: Int) {
-        val lum = (Color.red(themeBg) * 299 + Color.green(themeBg) * 587 + Color.blue(themeBg) * 114) / 1000
-        dark = lum < 128
-        if (dark) {
-            bg = 0xFF0F0F0F.toInt(); surface = 0xFF272727.toInt(); text = 0xFFF1F1F1.toInt(); sub = 0xFFAAAAAA.toInt()
-            chip = 0xFF272727.toInt(); chipOnBg = 0xFFF1F1F1.toInt(); chipOnText = 0xFF0F0F0F.toInt(); line = 0x1FFFFFFF
-        } else {
-            bg = 0xFFFFFFFF.toInt(); surface = 0xFFF2F2F2.toInt(); text = 0xFF0F0F0F.toInt(); sub = 0xFF606060.toInt()
-            chip = 0xFFF2F2F2.toInt(); chipOnBg = 0xFF0F0F0F.toInt(); chipOnText = 0xFFFFFFFF.toInt(); line = 0x1F000000
+    private fun mix(a: Int, b: Int, t: Float): Int {
+        fun ch(x: Int, y: Int) = (x + (y - x) * t).toInt().coerceIn(0, 255)
+        return Color.argb(255, ch(Color.red(a), Color.red(b)), ch(Color.green(a), Color.green(b)), ch(Color.blue(a), Color.blue(b)))
+    }
+
+    /** (v471) الألوان كلها من سمة البرنامج الحالية (قبل كده كانت ألوان يوتيوب الثابتة وبس بتتبدّل بين داكن وفاتح) */
+    fun init(th: Theme, ctx: Context? = null) {
+        dark = !th.isLight
+        bg = th.bg; text = th.text; sub = th.muted; line = th.border
+        // سطح الكروت/الشرايح لازم يبان فوق الخلفية (في أموليد مثلًا السطح أسود زي الخلفية)
+        val s = listOf(th.surface, th.card).firstOrNull { Math.abs(Theme.lum(it) - Theme.lum(th.bg)) >= 0.03 } ?: mix(th.bg, th.border, 0.55f)
+        surface = s; chip = s
+        accent = th.primary
+        onAccent = if (Theme.lum(th.primary) > 0.6) 0xFF111111.toInt() else Color.WHITE
+        chipOnBg = th.primary; chipOnText = onAccent
+        if (ctx != null && !fontTried) {
+            fontTried = true
+            try { medium = Typeface.createFromAsset(ctx.applicationContext.assets, "fonts/ibm_plex.ttf") } catch (_: Throwable) {}
         }
     }
 

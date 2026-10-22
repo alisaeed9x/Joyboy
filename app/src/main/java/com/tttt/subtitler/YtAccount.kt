@@ -157,7 +157,46 @@ object YtAccount {
     }
 
     private fun ctx(): JSONObject = JSONObject().put("client",
-        JSONObject().put("clientName", "WEB").put("clientVersion", ver()).put("hl", "ar").put("gl", "EG"))
+        JSONObject().put("clientName", "WEB").put("clientVersion", ver()).put("hl", YtLocale.hl()).put("gl", YtLocale.gl()))   // (v471) اللغة من YtLocale
+
+    /** (v471) هيدرز حسابك (كوكيز + SAPISIDHASH) لطلبات الويب اللي بتخرج من NewPipe (next/browse/search) — null لو مش مسجّل الدخول */
+    fun authHeaders(): Map<String, String>? {
+        if (!loggedIn()) return null
+        return try {
+            refreshCookie()
+            val ck = cookie(); if (ck.isBlank()) return null
+            mapOf("Cookie" to ck, "Authorization" to auth(), "X-Goog-AuthUser" to "0", "Origin" to ORIGIN, "X-Origin" to ORIGIN)
+        } catch (_: Throwable) { null }
+    }
+
+    /** (v471) طلب InnerTube خفيف: بيشتغل من غير تسجيل دخول، ولو مسجّل بيتبعت بحسابك (لغة وترتيب حسابك). مهلة قصيرة عشان الرئيسية ما تتعطّلش */
+    private fun postLite(path: String, body: JSONObject): JSONObject {
+        val c = URL("$ORIGIN/youtubei/v1/$path?prettyPrint=false").openConnection() as HttpURLConnection
+        try {
+            c.connectTimeout = 8000; c.readTimeout = 12000; c.requestMethod = "POST"; c.doOutput = true
+            c.setRequestProperty("Content-Type", "application/json")
+            c.setRequestProperty("User-Agent", API_UA)
+            c.setRequestProperty("Origin", ORIGIN)
+            c.setRequestProperty("X-Youtube-Client-Name", "1"); c.setRequestProperty("X-Youtube-Client-Version", ver())
+            c.setRequestProperty("Accept-Language", YtLocale.acceptLanguage())
+            c.setRequestProperty("Accept-Encoding", "gzip")
+            val ah = authHeaders()
+            if (ah != null) for ((k, v) in ah) c.setRequestProperty(k, v)
+            c.outputStream.use { it.write(body.toString().toByteArray(Charsets.UTF_8)) }
+            val code = c.responseCode
+            var ins = if (code >= 400) c.errorStream else c.inputStream
+            if (ins != null && "gzip".equals(c.contentEncoding, true)) ins = GZIPInputStream(ins)
+            val txt = ins?.bufferedReader(Charsets.UTF_8)?.use { it.readText() } ?: ""
+            if (code >= 400) throw RuntimeException("يوتيوب رد بخطأ $code")
+            return JSONObject(txt)
+        } finally { c.disconnect() }
+    }
+
+    /** (v471) فيديوهات مقترحة لفيديو من ردّ next الخفيف (بدل StreamInfo الكامل) */
+    fun relatedLite(videoId: String): List<NpItem> {
+        val j = postLite("next", JSONObject().put("context", ctx()).put("videoId", videoId))
+        return parse(j).items.filter { it.kind == 0 && it.id != videoId && it.dur !in 1L..60L }
+    }
 
     private fun post(path: String, body: JSONObject): JSONObject {
         refreshCookie()   // (v459) نسخة أجدد من الكوكيز لو متاحة
@@ -172,7 +211,7 @@ object YtAccount {
             c.setRequestProperty("Origin", ORIGIN); c.setRequestProperty("X-Origin", ORIGIN)
             c.setRequestProperty("X-Goog-AuthUser", "0")
             c.setRequestProperty("X-Youtube-Client-Name", "1"); c.setRequestProperty("X-Youtube-Client-Version", ver())
-            c.setRequestProperty("Accept-Language", "ar-EG,ar;q=0.9,en;q=0.8")
+            c.setRequestProperty("Accept-Language", YtLocale.acceptLanguage())
             c.setRequestProperty("Accept-Encoding", "gzip")
             c.outputStream.use { it.write(body.toString().toByteArray(Charsets.UTF_8)) }
             val code = c.responseCode

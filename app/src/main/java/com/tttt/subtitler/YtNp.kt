@@ -79,7 +79,24 @@ class NpComments(val total: Int, val items: List<NpComment>, val next: Page?)
 /** (v325) Downloader بتاع NewPipeExtractor على HttpURLConnection (من غير مكتبة إضافية) */
 object YtDownloader : Downloader() {
     private const val UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:140.0) Gecko/20100101 Firefox/140.0"
+
+    /** (v471) طلبات الويب (next/browse) بس بتتبعت بحسابك لو مسجّل الدخول: ترتيب التعليقات والمقترحات ولغتها بتبقى زي يوتيوب الأصلي على حسابك.
+     *  طلبات player (استخراج الروابط) ما بتتلمسش أبدًا. وأي فشل بنعيد الطلب من غير الحساب. الإعداد yt_np_auth */
+    private fun accountFor(u: String): Map<String, String>? {
+        if (!u.contains("youtube.com/youtubei/v1/")) return null
+        if (!(u.contains("/v1/next") || u.contains("/v1/browse"))) return null   // البحث بره عمدًا: بحث الحساب بيتسجّل في «سجل البحث» بتاعك
+        return try { if (Cfg.bool("yt_np_auth", true)) YtAccount.authHeaders() else null } catch (_: Throwable) { null }
+    }
+
     override fun execute(request: Request): Response {
+        val ah = accountFor(request.url())
+        if (ah != null) {
+            try { val r = send(request, ah); if (r.responseCode() in 200..399) return r } catch (_: Throwable) {}
+        }
+        return send(request, null)
+    }
+
+    private fun send(request: Request, extra: Map<String, String>?): Response {
         val c = URL(request.url()).openConnection() as HttpURLConnection
         c.connectTimeout = 20000; c.readTimeout = 30000
         c.requestMethod = request.httpMethod()
@@ -88,6 +105,13 @@ object YtDownloader : Downloader() {
             if (vs.isEmpty()) continue
             c.setRequestProperty(k, vs[0])
             for (i in 1 until vs.size) c.addRequestProperty(k, vs[i])
+        }
+        if (extra != null) {
+            for ((k, v) in extra) {
+                if (k.equals("Cookie", true)) { val old = c.getRequestProperty("Cookie"); c.setRequestProperty("Cookie", if (old.isNullOrBlank()) v else "$v; $old") }
+                else if (k.equals("Authorization", true)) c.setRequestProperty(k, v)
+                else if (c.getRequestProperty(k) == null) c.setRequestProperty(k, v)
+            }
         }
         c.setRequestProperty("Accept-Encoding", "gzip")
         val data = request.dataToSend()
@@ -113,7 +137,7 @@ object YtNp {
 
     @Synchronized fun init() {
         if (ready) return
-        NewPipe.init(YtDownloader, Localization("ar", "EG"), ContentCountry("EG"))
+        NewPipe.init(YtDownloader, Localization(YtLocale.hl(), YtLocale.gl()), ContentCountry(YtLocale.gl()))   // (v471) اللغة من مكان واحد (YtLocale)
         ready = true
     }
 
@@ -276,20 +300,33 @@ object YtNp {
 
     // (v362) كاش لآخر 4 StreamInfo (20 دقيقة) بدل واحد بس: الرئيسية بتجيب 4 فيديوهات مع بعض وكانت بتمسح بعض، وتحويل صوت⇄فيديو بيرجع لنفس الفيديو
     private val infoMap = LinkedHashMap<String, Pair<Long, StreamInfo>>()
+    private val infoLocks = java.util.concurrent.ConcurrentHashMap<String, Any>()
     private fun info(id: String): StreamInfo {
         synchronized(infoMap) { infoMap[id]?.takeIf { System.currentTimeMillis() - it.first < 20L * 60 * 1000L }?.let { return it.second } }
-        init()
-        val t0 = System.currentTimeMillis()
-        val i = StreamInfo.getInfo(YT, watchUrl(id))
-        LogStore.add("⏱ NewPipe info $id: " + (System.currentTimeMillis() - t0) + "ms")
-        synchronized(infoMap) {
-            infoMap[id] = Pair(System.currentTimeMillis(), i)
-            while (infoMap.size > 4) { val k = infoMap.keys.first(); infoMap.remove(k) }
+        // (v471) طلب واحد بس لنفس الفيديو: التفاصيل والاستخراج كانوا بيعملوا نفس الجلب التقيل مرتين بالتوازي
+        synchronized(infoLocks.getOrPut(id) { Any() }) {
+            synchronized(infoMap) { infoMap[id]?.takeIf { System.currentTimeMillis() - it.first < 20L * 60 * 1000L }?.let { return it.second } }
+            init()
+            val t0 = System.currentTimeMillis()
+            val i = StreamInfo.getInfo(YT, watchUrl(id))
+            LogStore.add("⏱ NewPipe info $id: " + (System.currentTimeMillis() - t0) + "ms")
+            synchronized(infoMap) {
+                infoMap[id] = Pair(System.currentTimeMillis(), i)
+                while (infoMap.size > 4) { val k = infoMap.keys.first(); infoMap.remove(k) }
+            }
+            return i
         }
-        return i
     }
 
     fun related(id: String): List<NpItem> = info(id).relatedItems.mapNotNull { conv(it) }.filter { it.kind == 0 }
+
+    /** (v471) مقترحات خفيفة (طلب next واحد ~1 ثانية بدل StreamInfo الكامل اللي بيعمل فك تشفير جافاسكربت ويستنى 3-8 ثواني على الموبايل) — الرئيسية كانت بتعمل 3 منهم مع بعض.
+     *  لو فشل أو رجّع فاضي بنرجع للطريقة القديمة. */
+    fun relFast(id: String): List<NpItem> {
+        val l = try { YtAccount.relatedLite(id) } catch (_: Throwable) { emptyList() }
+        if (l.isNotEmpty()) return l
+        return try { related(id) } catch (_: Throwable) { emptyList() }
+    }
 
     /** (v326) تفاصيل فيديو: وصف · مشاهدات · لايكات · قناة · مقترحات */
     fun details(id: String): YtDetail {
@@ -509,7 +546,7 @@ object YtNp {
             }.also { it.isDaemon = true; it.start() }
             val histSeeds = hist.filter { it.kind == 0 && it.id.isNotEmpty() }.take(3)
             val results = arrayOfNulls<List<NpItem>>(histSeeds.size)
-            val ths = histSeeds.mapIndexed { n, sd -> Thread { results[n] = try { related(sd.id) } catch (_: Throwable) { emptyList() } }.also { it.isDaemon = true; it.start() } }
+            val ths = histSeeds.mapIndexed { n, sd -> Thread { results[n] = relFast(sd.id) }.also { it.isDaemon = true; it.start() } }
 
             // withSeeds = true (في الخلفية بس): لو مفيش سجل نجيب توصيات من أحدث فيديوهات الاشتراكات
             fun assemble(withSeeds: Boolean): YtRes {
@@ -518,7 +555,7 @@ object YtNp {
                 if (withSeeds && recLists.all { it.isEmpty() } && subsItems.isNotEmpty()) {
                     val seedSubs = subsItems.take(3)
                     val r2 = arrayOfNulls<List<NpItem>>(seedSubs.size)
-                    seedSubs.mapIndexed { n, sd -> Thread { r2[n] = try { related(sd.id) } catch (_: Throwable) { emptyList() } }.also { it.isDaemon = true; it.start() } }
+                    seedSubs.mapIndexed { n, sd -> Thread { r2[n] = relFast(sd.id) }.also { it.isDaemon = true; it.start() } }
                         .forEach { try { it.join(8000L) } catch (_: Throwable) {} }
                     recLists = r2.map { it ?: emptyList() }
                 }

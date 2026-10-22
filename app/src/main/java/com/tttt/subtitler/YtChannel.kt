@@ -70,13 +70,14 @@ interface YtChanHost {
     fun openVideo(v: NpItem)
     fun openPlaylist(url: String, title: String)
     fun download(v: NpItem)   // (v459) زرار ⬇ على كارت الفيديو
+    fun audio(v: NpItem) {}   // (v472) 🎧 صوت بس فوق الصورة
     fun state(open: Boolean)
 }
 
 /** صفحة القناة (زي يوتيوب): بانر · أفاتار · اسم ومشتركين · اشترك + جرس · تابات (الفيديوهات / البث / القوايم) · وصف */
 class YtChannelPage(private val act: Activity, private val ui: Ui, private val host: YtChanHost) : FrameLayout(act) {
     private val sw = act.resources.displayMetrics.widthPixels
-    private val medium: Typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+    private val medium: Typeface = YtSkin.medium
     private val scroll = ScrollView(act)
     private val body = LinearLayout(act)
     private val topName = TextView(act)
@@ -389,11 +390,11 @@ class YtChannelPage(private val act: Activity, private val ui: Ui, private val h
         }
         val infoCol = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL }
         infoCol.addView(title, LinearLayout.LayoutParams(-1, -2)); infoCol.addView(meta, LinearLayout.LayoutParams(-1, -2).apply { topMargin = ui.dp(3) })
-        val dlB = TextView(act).apply { text = "⬇"; textSize = 19f; gravity = Gravity.CENTER; setTextColor(YtSkin.text); foreground = YtSkin.ripple(true); contentDescription = "تحميل"
-            setOnClickListener { host.download(fix(v)) } }
-        val info = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; gravity = Gravity.TOP; setPadding(ui.dp(14), ui.dp(10), ui.dp(8), ui.dp(16)) }
-        info.addView(infoCol, LinearLayout.LayoutParams(0, -2, 1f)); info.addView(dlB, LinearLayout.LayoutParams(ui.dp(44), ui.dp(44)))
-        val root = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; foreground = YtSkin.ripple(); setOnClickListener { host.openVideo(fix(v)) } }
+        val tb = YtThumbBtns.attach(act, ui, box)   // (v472) 🎧 + ⬇ فوق الصورة
+        YtThumbBtns.bind(tb.aud, tb.dl, v.id, { host.audio(fix(v)) }, { host.download(fix(v)) })
+        val info = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; gravity = Gravity.TOP; setPadding(ui.dp(14), ui.dp(10), ui.dp(14), ui.dp(16)) }
+        info.addView(infoCol, LinearLayout.LayoutParams(0, -2, 1f))
+        val root = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; foreground = YtSkin.ripple(); setOnClickListener { host.openVideo(fix(v)) }; YtFast.warmOnTouch(this) { v.id } }
         root.addView(box, LinearLayout.LayoutParams(-1, sw * 9 / 16)); root.addView(info, LinearLayout.LayoutParams(-1, -2))
         return root
     }

@@ -23,6 +23,8 @@ class TasksUi(private val act: Activity, private val ui: Ui, private val th: The
     /** (v324) لما الصفحة تتفتح من الزرار العايم (الرئيسية) بيتحط هنا إجراء الرجوع وبيظهر زرار ✕؛ لو null (نافذة المشغّل فيها زرار إغلاق لوحدها) الزرار مخفي */
     private val closeB = ui.button("✕") { onClose?.invoke() }.apply { visibility = View.GONE }
     var onClose: (() -> Unit)? = null
+    /** (v472) دوسة على مهمة خالصة = افتح الفيديو/الصوت الناتج في مشغّل البرنامج (لو null بيتفتح بتطبيق خارجي) */
+    var onOpenOut: ((TaskItem) -> Unit)? = null
         set(v) { field = v; closeB.visibility = if (v != null) View.VISIBLE else View.GONE }
 
     private class Row(val card: LinearLayout, val title: TextView, val status: TextView, val bar: ProgressBar, val btns: LinearLayout)
@@ -53,7 +55,7 @@ class TasksUi(private val act: Activity, private val ui: Ui, private val th: The
     private fun statusOf(t: TaskItem): String = when (t.state) {
         0 -> "⏳ في الانتظار"
         1 -> (if (t.paused) "⏸ واقف مؤقتًا… " else "⚙ شغّال… ") + t.pct + "%" + (if (t.msg.isNotBlank()) "  ·  " + t.msg else "")
-        2 -> "✅ خلصت وتحفظت" + (if (t.outPath.isNotBlank()) "\n" + t.outPath else "") + (if (t.outSize > 0) "  ·  " + Sniff.fmtSize(t.outSize) else "")
+        2 -> "✅ خلصت وتحفظت" + (if (t.outUri != null || t.outPath.isNotBlank()) "  ·  دوس عشان تفتحه" else "") + (if (t.outPath.isNotBlank()) "\n" + t.outPath else "") + (if (t.outSize > 0) "  ·  " + Sniff.fmtSize(t.outSize) else "")
         3 -> "❌ فشلت: " + t.msg
         5 -> "⏹ " + t.msg
         6 -> "⏸ " + t.msg
@@ -89,8 +91,13 @@ class TasksUi(private val act: Activity, private val ui: Ui, private val th: The
         row.addView(b, LinearLayout.LayoutParams(0, -2, 1f).apply { setMargins(ui.dp(2), 0, ui.dp(2), 0) })
     }
 
+    private fun openOut(t: TaskItem) { val f = onOpenOut; if (f != null) f(t) else open(t, false) }
+
     private fun paint(t: TaskItem, r: Row) {
         r.status.text = statusOf(t)
+        val openable = t.state == 2 && (t.outUri != null || t.outPath.isNotBlank())   // (v472) المهمة الخالصة كلها قابلة للدوس = فتح الفيديو
+        r.card.setOnClickListener(if (openable) View.OnClickListener { openOut(t) } else null)
+        r.card.isClickable = openable
         r.bar.visibility = if (t.state == 1 || t.state == 0) View.VISIBLE else View.GONE
         r.bar.progress = t.pct
         r.btns.removeAllViews()
@@ -105,7 +112,7 @@ class TasksUi(private val act: Activity, private val ui: Ui, private val th: The
         r.btns.addView(four, LinearLayout.LayoutParams(-1, -2))
         if (t.state == 2) {
             val two = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL }
-            if (t.outUri != null) { act4(two, "▶ فتح", true) { open(t, false) }; act4(two, "📤 مشاركة", true) { open(t, true) } }
+            if (t.outUri != null) { act4(two, "▶ فتح", true) { openOut(t) }; act4(two, "📤 مشاركة", true) { open(t, true) } }
             act4(two, "🗑 حذف", true) { TaskCenter.remove(t) }
             r.btns.addView(two, LinearLayout.LayoutParams(-1, -2).apply { topMargin = ui.dp(2) })
         }

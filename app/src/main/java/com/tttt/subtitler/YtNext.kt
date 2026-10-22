@@ -68,7 +68,7 @@ object YtNext {
                     val row = LinearLayout(act).apply {
                         orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_LTR
                         setPadding(ui.dp(8), ui.dp(7), ui.dp(8), ui.dp(7))
-                        background = ui.box(if (on) 0x445B9DFF else 0x14808080, if (on) 0xFF5B9DFF.toInt() else th.border, 12)
+                        background = ui.box(if (on) ((th.primary and 0x00FFFFFF) or 0x44000000) else 0x14808080, if (on) th.primary else th.border, 12)
                         setOnClickListener { dlg.dismiss(); if (!on) onPick(v) }
                     }
                     val img = ImageView(act).apply { scaleType = ImageView.ScaleType.CENTER_CROP; setBackgroundColor(Color.BLACK) }
