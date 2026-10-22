@@ -1013,3 +1013,5 @@ v120 — زرار «🎞 الجودة» جنب زرار الترجمة لأي م
 - Player.kt: glassPanelBg() لكل القوايم المنسدلة (radius 18 + تدرّج + حد) + Motion.popIn (فيد + تكبير + انزلاق) على 6 قوايم؛ ظل علوي ناعم 120dp + تدرّج سفلي بـ3 نقاط؛ عنوان الفيديو وكبسولة العدّاد زجاجيين؛ زرار التشغيل الأوسط 74dp بضغطة متحركة؛ الشريط بيظهر بـ280ms decelerate (انزلاق 22dp) ويختفي بفيد-أوت 160ms بدل القطع.
 - Motion.kt: popIn جديدة.
 - ماتجرّبش compile ولا تشغيل (مفيش kotlinc هنا).
+
+v473: إصلاح بناء v472 — TaskRing/YtLocale/YtSnap/YtThumbBtns كانوا ناقصين من kt_manifest.txt فـ pruneStaleKt مسحهم (Unresolved reference). اتضافوا. رفع versionCode/versionName لـ473/4.73. من غير compile.

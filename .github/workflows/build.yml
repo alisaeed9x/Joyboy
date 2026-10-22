@@ -22,12 +22,12 @@ jobs:
         with:
           gradle-version: '8.11.1'
 
-      - name: Build Universal Debug APK only
-        run: gradle assembleDebug --stacktrace
+      - name: Build APKs
+        run: gradle assembleDebug assembleRelease --stacktrace
 
-      - name: Upload Universal Debug APK only
+      - name: Upload APKs
         uses: actions/upload-artifact@v4
         with:
-          name: subtitler-universal-debug
-          path: app/build/outputs/apk/debug/*universal*.apk
+          name: subtitler-apk
+          path: app/build/outputs/apk/**/*.apk
           if-no-files-found: error
