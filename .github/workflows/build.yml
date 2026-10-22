@@ -1,8 +1,13 @@
-name: Build APKs
+name: Build Universal Debug APK
 
 on:
   push:
   workflow_dispatch:
+
+# كل فرع (main / lite) بيتبني لوحده، وأي دفعة جديدة على نفس الفرع بتلغي البيلد القديم
+concurrency:
+  group: build-${{ github.ref_name }}
+  cancel-in-progress: true
 
 jobs:
   build:
@@ -22,12 +27,13 @@ jobs:
         with:
           gradle-version: '8.11.1'
 
-      - name: Build APKs
-        run: gradle assembleDebug assembleRelease --stacktrace
+      # APK واحد بس (debug · universal): splits مقفولة في app/build.gradle.kts، ومفيش release
+      - name: Build Universal Debug APK only
+        run: gradle assembleDebug --stacktrace
 
-      - name: Upload APKs
+      - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: subtitler-apk
-          path: app/build/outputs/apk/**/*.apk
+          name: subtitler-${{ github.ref_name }}-universal-debug
+          path: app/build/outputs/apk/debug/*.apk
           if-no-files-found: error

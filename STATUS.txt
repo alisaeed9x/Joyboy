@@ -1015,3 +1015,5 @@ v120 — زرار «🎞 الجودة» جنب زرار الترجمة لأي م
 - ماتجرّبش compile ولا تشغيل (مفيش kotlinc هنا).
 
 v473: إصلاح بناء v472 — TaskRing/YtLocale/YtSnap/YtThumbBtns كانوا ناقصين من kt_manifest.txt فـ pruneStaleKt مسحهم (Unresolved reference). اتضافوا. رفع versionCode/versionName لـ473/4.73. من غير compile.
+
+v474: APK واحد universal debug لكل بيلد — splits.abi اتقفل وbuild.yml اتبسّط (assembleDebug بس). رفع versionCode/versionName لـ474/4.74. من غير compile.
