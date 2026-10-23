@@ -133,6 +133,7 @@ open class GDialog(ctx: Context, theme: Int = 0) : Dialog(ctx, theme) {
     override fun show() {
         seq++; closing = false
         if (!plain) Glass.styleWindow(this)
+        try { TvFocus.attachWindow(context, window, Glass.theme().primary) } catch (_: Throwable) {}   // (v477 م3)
         super.show()
         try { Glass.enter(this) } catch (_: Throwable) {}
     }
@@ -180,14 +181,15 @@ class GAlert(private val ctx: Context) {
 
     private fun build(): Pair<Dialog, LinearLayout?> {
         val th = Glass.theme(); val ui = Ui(ctx, th); val dm = ctx.resources.displayMetrics
+        val tvk = TvFocus.onCtx(ctx)   // (v477 م3) تلفزيون: خطوط أكبر ونافذة أعرض
         val d = GDialog(ctx)
         val root = LinearLayout(ctx).apply {
             orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL
             setPadding(ui.dp(20), ui.dp(18), ui.dp(20), ui.dp(14)); background = ui.box(th.card, th.border, 22)
         }
-        title?.let { root.addView(ui.text(it.toString(), 18f, th.primary, true), LinearLayout.LayoutParams(-1, -2)) }
+        title?.let { root.addView(ui.text(it.toString(), if (tvk) 22f else 18f, th.primary, true), LinearLayout.LayoutParams(-1, -2)) }
         msg?.let { m ->
-            val tv = ui.text(m.toString(), 14f, th.text).apply { setLineSpacing(0f, 1.2f); setPadding(0, ui.dp(10), 0, ui.dp(4)); setTextIsSelectable(true) }
+            val tv = ui.text(m.toString(), if (tvk) 17f else 14f, th.text).apply { setLineSpacing(0f, 1.2f); setPadding(0, ui.dp(10), 0, ui.dp(4)); setTextIsSelectable(!tvk) }
             root.addView(MaxHeightScroll(ctx, (dm.heightPixels * 0.5f).toInt()).apply { addView(tv) }, LinearLayout.LayoutParams(-1, -2))
         }
         view?.let { v ->
@@ -201,7 +203,7 @@ class GAlert(private val ctx: Context) {
         items?.let { arr ->
             val col = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL }
             arr.forEachIndexed { i, s ->
-                val tv = ui.text(s.toString(), 15f, th.text).apply { setPadding(ui.dp(14), ui.dp(12), ui.dp(14), ui.dp(12)); background = ui.box(th.surface, th.border, 12) }
+                val tv = ui.text(s.toString(), if (tvk) 18f else 15f, th.text).apply { setPadding(ui.dp(14), ui.dp(12), ui.dp(14), ui.dp(12)); background = ui.box(th.surface, th.border, 12) }
                 Glass.pressable(tv)
                 tv.setOnClickListener { d.dismiss(); itemsCb?.onClick(d, i) }
                 col.addView(tv, LinearLayout.LayoutParams(-1, -2).apply { setMargins(0, ui.dp(3), 0, ui.dp(3)) })
@@ -213,7 +215,7 @@ class GAlert(private val ctx: Context) {
             val st = multiChecked ?: BooleanArray(arr.size)
             val col = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL }
             arr.forEachIndexed { i, s ->
-                val tv = ui.text((if (st[i]) "☑ " else "☐ ") + s.toString(), 15f, th.text).apply { setPadding(ui.dp(14), ui.dp(12), ui.dp(14), ui.dp(12)); background = ui.box(th.surface, th.border, 12) }
+                val tv = ui.text((if (st[i]) "☑ " else "☐ ") + s.toString(), if (tvk) 18f else 15f, th.text).apply { setPadding(ui.dp(14), ui.dp(12), ui.dp(14), ui.dp(12)); background = ui.box(th.surface, th.border, 12) }
                 Glass.pressable(tv)
                 tv.setOnClickListener {
                     st[i] = !st[i]
@@ -234,7 +236,7 @@ class GAlert(private val ctx: Context) {
             for ((t, cb, which) in btns) {
                 val main = which == DialogInterface.BUTTON_POSITIVE
                 val b = IconTextView(ctx).apply {
-                    text = t; textSize = 14f; gravity = Gravity.CENTER; typeface = Typeface.DEFAULT_BOLD
+                    text = t; textSize = if (tvk) 17f else 14f; gravity = Gravity.CENTER; typeface = Typeface.DEFAULT_BOLD
                     setPadding(ui.dp(8), ui.dp(12), ui.dp(8), ui.dp(12))
                     setTextColor(if (main) (if (th.isLight) Color.WHITE else Color.BLACK) else th.text)
                     background = if (main) Glass.primaryFill(th, ui.dp(12).toFloat()) else ui.box(th.surface, th.border, 12)
@@ -248,7 +250,7 @@ class GAlert(private val ctx: Context) {
         d.setContentView(root)
         d.window?.apply {
             setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
-            setLayout(minOf((dm.widthPixels * 0.9f).toInt(), ui.dp(420)), WindowManager.LayoutParams.WRAP_CONTENT)
+            setLayout(minOf((dm.widthPixels * 0.9f).toInt(), ui.dp(if (tvk) 560 else 420)), WindowManager.LayoutParams.WRAP_CONTENT)
             setGravity(Gravity.CENTER)
             setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE or (if (Glass.hasEdit(view)) WindowManager.LayoutParams.SOFT_INPUT_STATE_VISIBLE else 0))
         }

@@ -4,6 +4,7 @@ import android.app.Activity
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import android.content.Intent
 import android.graphics.Color
 import android.graphics.PorterDuff
 import android.graphics.PorterDuffColorFilter
@@ -11,6 +12,7 @@ import android.graphics.drawable.GradientDrawable
 import android.net.Uri
 import android.os.Handler
 import android.os.Looper
+import android.speech.RecognizerIntent
 import android.text.Editable
 import android.text.TextUtils
 import android.text.TextWatcher
@@ -200,8 +202,15 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
         else { busyView.visibility = View.GONE; busyDr.stop() }
     }
     /** (v467) يوتيوب بيحترم وضع الواجهة: تابلت/تلفزيون/لاندسكيب = شبكة أعمدة، مش قايمة موبايل ممدودة */
-    private fun ytCols(): Int = when { DeviceUi.isTv(act) -> 3; DeviceUi.isTablet(act) -> 2; act.resources.configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE -> 2; else -> 1 }
+    private fun ytCols(): Int = when { DeviceUi.isTv(act) -> 4; DeviceUi.isTablet(act) -> 2; act.resources.configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE -> 2; else -> 1 }
     private val lv = GridView(act)
+    /** (v477) عرض كارت الفيديو: على التلفزيون عرض العمود (4 أعمدة)، وعلى الباقي عرض الشاشة زي ما كان */
+    private fun cardW(): Int {
+        val sw = act.resources.displayMetrics.widthPixels
+        return if (DeviceUi.isTv(act)) (sw - ui.dp(32) - ui.dp(36)) / 4 else sw
+    }
+    /** (v477) تلفزيون: التركيز يروح لشبكة الفيديوهات (بيتندهي من Main لما تفتح تبويب يوتيوب) */
+    fun tvFocusList() { if (DeviceUi.isTv(act)) lv.post { try { if (root.visibility == View.VISIBLE && lv.isShown && !watch.isOpen && !chan.isOpen) lv.requestFocus() } catch (_: Throwable) {} } }   // (v479) مايسرقش التركيز وصفحة المشاهدة/القناة مفتوحة
     private lateinit var ytDock: YtDock               // (v417) شريط مصغّر سفلي بيكمّل الفيديو لما تنزّل من صفحة المشاهدة
     private lateinit var watch: YtWatchPage          // (v402) صفحة المشاهدة (مشغّل مصغّر + تعليقات + مقترحات)
     private lateinit var chan: YtChannelPage         // (v403) صفحة القناة (بانر + اشتراك + جرس + تابات)
@@ -290,6 +299,8 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
         fun iconBtn(kind: String, desc: String, onClick: () -> Unit): YtIcon = YtIcon(act, kind).apply {
             contentDescription = desc; foreground = YtSkin.ripple(true); setOnClickListener { onClick() }
         }
+        // (v479 م5) تلفزيون: زرار 🎤 بحث صوتي (RecognizerIntent) جنب البحث — الكتابة بلوحة مفاتيح النظام زي ما هي
+        fun micBtn(): TextView = TextView(act).apply { text = "🎤"; textSize = 20f; gravity = Gravity.CENTER; foreground = YtSkin.ripple(true); contentDescription = "بحث صوتي"; setOnClickListener { startVoice() } }
         // (v472) تبويبات يوتيوب (الرئيسية · الاشتراكات · أنت) بقت في الصف العلوي نفسه مع البحث والإعدادات — مفيش شريط سفلي تاني فوق شريط البرنامج
         val tabsBox = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; gravity = Gravity.CENTER_VERTICAL }
         listOf("الرئيسية", "الاشتراكات", "أنت").forEachIndexed { i, name ->
@@ -305,6 +316,7 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
         // (v475) التبويبات (الرئيسية · الاشتراكات · أنا) بقت في الشريط السفلي بتاع البرنامج — فوق بقى عنوان الصفحة + بحث + إعدادات بس
         topTitle = TextView(act).apply { text = "يوتيوب"; textSize = 19f; setTextColor(YtSkin.text); typeface = YtSkin.medium; gravity = Gravity.CENTER_VERTICAL or Gravity.START; setSingleLine(); setPadding(ui.dp(12), 0, ui.dp(8), 0) }
         appBar.addView(topTitle, LinearLayout.LayoutParams(0, ui.dp(46), 1f))
+        if (DeviceUi.isTv(act)) appBar.addView(micBtn(), LinearLayout.LayoutParams(ui.dp(48), ui.dp(44)))
         appBar.addView(iconBtn("search", "بحث") { enterSearch(true) }, LinearLayout.LayoutParams(ui.dp(44), ui.dp(44)))
         appBar.addView(iconBtn("gear", "إعدادات يوتيوب") { settings() }, LinearLayout.LayoutParams(ui.dp(44), ui.dp(44)))
         val backBtn = iconBtn("back", "رجوع") { exitSearch() }.apply { scaleX = -1f }
@@ -312,6 +324,7 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
         searchBar.setPadding(ui.dp(4), ui.dp(4), ui.dp(8), ui.dp(4))
         searchBar.addView(backBtn, LinearLayout.LayoutParams(ui.dp(44), ui.dp(44)))
         searchBar.addView(search, LinearLayout.LayoutParams(0, ui.dp(40), 1f))
+        if (DeviceUi.isTv(act)) searchBar.addView(micBtn(), LinearLayout.LayoutParams(ui.dp(48), ui.dp(44)))
         searchBar.addView(clearBtn, LinearLayout.LayoutParams(ui.dp(44), ui.dp(44)))
         page.addView(appBar, LinearLayout.LayoutParams(-1, -2))
         page.addView(searchBar, LinearLayout.LayoutParams(-1, -2))
@@ -424,6 +437,18 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
         lv.apply {
             setBackgroundColor(YtSkin.bg); selector = GradientDrawable().apply { setColor(Color.TRANSPARENT) }
             numColumns = ytCols(); horizontalSpacing = ui.dp(6); verticalSpacing = ui.dp(6); stretchMode = GridView.STRETCH_COLUMN_WIDTH
+            if (DeviceUi.isTv(act)) {   // (v477) يوتيوب على التلفزيون: تحديد واضح بالريموت + Menu = قايمة الفيديو
+                selector = GradientDrawable().apply { setColor(0x14FFFFFF); setStroke(ui.dp(3), YtSkin.accent); cornerRadius = ui.dp(10).toFloat() }
+                setDrawSelectorOnTop(true); descendantFocusability = ViewGroup.FOCUS_BLOCK_DESCENDANTS
+                isFocusable = true; isFocusableInTouchMode = false
+                horizontalSpacing = ui.dp(12); verticalSpacing = ui.dp(12); setPadding(ui.dp(16), ui.dp(8), ui.dp(16), ui.dp(24)); clipToPadding = false
+                setOnKeyListener { _, k, e ->
+                    if (e.action == android.view.KeyEvent.ACTION_DOWN && (k == android.view.KeyEvent.KEYCODE_MENU || k == android.view.KeyEvent.KEYCODE_BUTTON_Y)) {
+                        val item = cur?.list()?.getOrNull(selectedItemPosition); val sv = selectedView
+                        if (item != null && sv != null && item.kind != 3 && item.id != "act") { menu(sv, item); true } else false
+                    } else false
+                }
+            }
             this.adapter = this@YtProUi.adapter
             setOnItemClickListener { _, view, p, _ -> cur?.list()?.getOrNull(p)?.let { if (it.kind != 3) open(it, view) } }
             // (v471) تسخين: أول ما صباعك يلمس فيديو بنبدأ نجيب رابطه — لما ترفع صباعك يكون غالبًا جاهز
@@ -488,7 +513,7 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
             override fun download(v: NpItem) { dlMenu(chan, v) }   // (v459) زرار ⬇ على كروت القناة
             override fun audio(v: NpItem) { playAudio(v) }   // (v472)
             override fun openPlaylist(url: String, title: String) { chan.close(false); load("📃 " + title, -1, null, null, null, "", true, false) { YtNp.playlist(url) } }
-            override fun state(open: Boolean) { setNavHidden(open || watch.isOpen); pillGate(open || watch.isOpen) }
+            override fun state(open: Boolean) { setNavHidden(open || watch.isOpen); pillGate(open || watch.isOpen); if (!open) tvFocusList() }   // (v479 م5) التركيز يرجع للشبكة
         })
         content.addView(chan, FrameLayout.LayoutParams(-1, -1))
         watch = YtWatchPage(act, ui, object : YtWatchHost {   // (v402)
@@ -500,7 +525,7 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
             override fun openVideo(v: NpItem) { watchVideo(v, null) }
             override fun audio(v: NpItem) { playAudio(v) }
             override fun download(anchor: View, v: NpItem) { dlMenu(anchor, v) }
-            override fun state(open: Boolean) { if (open) ytDock.dismiss(); setNavHidden(open || chan.isOpen); pillGate(open || chan.isOpen) }
+            override fun state(open: Boolean) { if (open) ytDock.dismiss(); setNavHidden(open || chan.isOpen); pillGate(open || chan.isOpen); if (!open) tvFocusList() }   // (v479 م5)
             override fun dock(item: NpItem, kept: YtKept) { ytDock.show(item, kept) }   // (v417)
         })
         content.addView(watch, FrameLayout.LayoutParams(-1, -1))
@@ -517,9 +542,21 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
     /** (v348) Main.onStop: الشورتس تقف لما التطبيق يروح الخلفية أو يظهر المشغّل فوقه (بترجع في refresh() مع onResume) */
     fun onPause() { watch.pause(); ytDock.pause() }
     fun destroy() { h.removeCallbacks(pollRun); h.removeCallbacks(lineWatch); YtNp.onHome = null; YtRss.onFeed = null; try { ytDock.dismiss() } catch (_: Throwable) {}; watch.release() }
+    /** (v479 م5) بحث صوتي على التلفزيون: النتيجة بترجع من Main.onActivityResult (كود 78) */
+    private fun startVoice() {
+        try {
+            val i = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+                putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+                putExtra(RecognizerIntent.EXTRA_PROMPT, "قول اسم الفيديو…")
+            }
+            act.startActivityForResult(i, 78)
+        } catch (e: Exception) { LogStore.err("YtPro:voice", e); Notice.show(act, "⚠ البحث الصوتي مش متاح على الجهاز ده", 2200L) }
+    }
+    fun voiceResult(q: String) { if (q.isNotBlank()) doSearch(q.trim()) }
+
     fun back(): Boolean {
-        if (watch.isOpen) { watch.close(true); return true }   // (v402)
-        if (chan.isOpen) { chan.close(true); return true }     // (v403)
+        if (watch.isOpen) { if (watch.tvBack()) return true; watch.close(true); return true }   // (v402) (v479 م5) تلفزيون: أول Back يرجّع التركيز للفيديو
+        if (chan.isOpen) { if (chan.tvBack()) return true; chan.close(true); return true }     // (v403) (v479 م5)
         if (sugBox.visibility == View.VISIBLE) { sugBox.visibility = View.GONE; return true }
         if (stack.isNotEmpty()) { gen++; bind(stack.removeAt(stack.size - 1)); return true }
         if (searchBar.visibility == View.VISIBLE) { exitSearch(); return true }   // (v397)
@@ -954,6 +991,7 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
         chipsScroll.visibility = if (st.tab == 0 && !det && st.chUrl == null) View.VISIBLE else View.GONE
         if (st.q != null) enterSearch(false) else if (!searchTyping) { searchBar.visibility = View.GONE; appBar.visibility = View.VISIBLE }
         adapter.set(st.list()); lv.setSelection(st.pos)
+        if (DeviceUi.isTv(act) && (act.currentFocus == null || (act.currentFocus === search && !searchTyping))) tvFocusList()   // (v477) (v479 م5) بعد البحث التركيز ينتقل لنتايج البحث
         h.postDelayed({ prewarmVisible() }, 450L)   // (v472)
         if (st.tab >= 0) paintTabs(st.tab) else if (det) paintTabs(-1)
     }
@@ -1370,7 +1408,7 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
 
     /** (v397) كارت فيديو زي يوتيوب: صورة بعرض الشاشة 16:9 (مدة + شريط استكمال) + أفاتار القناة + العنوان + «القناة · المشاهدات · الوقت» + ⋮ */
     private fun makeCard(): Card {
-        val sw = act.resources.displayMetrics.widthPixels
+        val sw = cardW()
         val medium = YtSkin.medium
         val thumb = ImageView(act).apply { scaleType = ImageView.ScaleType.CENTER_CROP; setBackgroundColor(YtSkin.surface) }
         val dur = TextView(act).apply {
@@ -1394,8 +1432,8 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
         val avImg = ImageView(act).apply { scaleType = ImageView.ScaleType.CENTER_CROP; visibility = View.GONE }
         val avBox = FrameLayout(act)
         avBox.addView(av, FrameLayout.LayoutParams(-1, -1)); avBox.addView(avImg, FrameLayout.LayoutParams(-1, -1))
-        val title = TextView(act).apply { textSize = 14f; setTextColor(YtSkin.text); maxLines = 2; ellipsize = TextUtils.TruncateAt.END; typeface = medium }
-        val meta = TextView(act).apply { textSize = 12f; setTextColor(YtSkin.sub); maxLines = 2; ellipsize = TextUtils.TruncateAt.END }
+        val title = TextView(act).apply { textSize = if (DeviceUi.isTv(act)) 16f else 14f; setTextColor(YtSkin.text); maxLines = 2; ellipsize = TextUtils.TruncateAt.END; typeface = medium }
+        val meta = TextView(act).apply { textSize = if (DeviceUi.isTv(act)) 13f else 12f; setTextColor(YtSkin.sub); maxLines = 2; ellipsize = TextUtils.TruncateAt.END }
         val col = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL }
         col.addView(title, LinearLayout.LayoutParams(-1, -2))
         col.addView(meta, LinearLayout.LayoutParams(-1, -2).apply { topMargin = ui.dp(3) })
@@ -1471,7 +1509,7 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
             val c: Card
             val v: View
             if (cv == null) { c = makeCard(); v = c.root; v.tag = c } else { v = cv; c = cv.tag as Card }
-            val sw = act.resources.displayMetrics.widthPixels
+            val sw = cardW()
             val vi = items[p]
             v.animate().cancel()
             if (animRows && p < 4) {

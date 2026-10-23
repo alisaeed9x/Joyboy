@@ -52,6 +52,8 @@ class TabbedDialog(val act: Activity, val ui: Ui, val title: String, val tabs: L
     val dialog = GDialog(act)
     private val listPage = LinearLayout(act)
     private val bodies = ArrayList<LinearLayout>()
+    private val rowViews = ArrayList<View>()   // (v480 م7) صفوف القايمة (تلفزيون: التركيز يرجع للصف اللي كنت فيه)
+    private val tvMode = TvFocus.on(act)
     private val previewBox = FrameLayout(act)
     private val titleTv: TextView
     private val backTv: TextView
@@ -116,6 +118,7 @@ class TabbedDialog(val act: Activity, val ui: Ui, val title: String, val tabs: L
             if (t.sub.isNotBlank()) col.addView(ui.text(t.sub, 11.5f, th.muted).apply { maxLines = 2; setPadding(0, ui.dp(2), 0, 0) })
             row.addView(col, LinearLayout.LayoutParams(0, -2, 1f).apply { marginStart = ui.dp(6) })
             row.addView(IconTextView(act).apply { text = "‹"; textSize = 20f; setTextColor(th.muted); gravity = Gravity.CENTER })
+            rowViews.add(row)
             listPage.addView(row, LinearLayout.LayoutParams(-1, -2).apply { setMargins(ui.dp(2), ui.dp(4), ui.dp(2), ui.dp(4)) })
         }
 
@@ -154,6 +157,7 @@ class TabbedDialog(val act: Activity, val ui: Ui, val title: String, val tabs: L
     }
 
     private fun showList() {
+        val prev = cur
         cur = -1; directEntry = false
         if (::splitHint.isInitialized) splitHint.visibility = if (split) View.VISIBLE else View.GONE
         listPage.visibility = View.VISIBLE
@@ -162,6 +166,7 @@ class TabbedDialog(val act: Activity, val ui: Ui, val title: String, val tabs: L
         previewBox.visibility = View.GONE
         backTv.visibility = View.GONE
         titleTv.text = title
+        if (tvMode && rowViews.isNotEmpty()) TvFocus.focusIn(rowViews.getOrNull(prev) ?: rowViews[0])   // (v480 م7)
     }
 
     fun back() { if (split && cur >= 0) { showList(); return }; if (cur >= 0 && !directEntry) showList() else (embedClose?.invoke() ?: dialog.dismiss()) }   // (v459) دخول مباشر: رجوع واحد يخرج · (v462) التابلت: الرجوع بيفرّغ الاختيار بس
@@ -176,6 +181,7 @@ class TabbedDialog(val act: Activity, val ui: Ui, val title: String, val tabs: L
         backTv.visibility = View.VISIBLE
         swapIn(bodies[i], true)
         titleTv.text = tabs[i].label
+        if (tvMode) TvFocus.focusIn(bodies[i])   // (v480 م7) أول عنصر في القسم، مش ✕
     }
 
     fun show(tabId: String? = null) {

@@ -232,6 +232,14 @@ class BrowserActivity : Activity() {
     private var oldOrient = -1
     private val pageTitles = HashMap<String, String>()
 
+    // ===== (v480 م6) تلفزيون: مؤشر + تبديل الوضع =====
+    private val tvOn: Boolean by lazy { TvFocus.on(this) }
+    private var tvPtr: TvPointer? = null
+    private var tvPointerMode = true            // true = مؤشر · false = تنقل بالتركيز (الأسهم للصفحة نفسها)
+    private var tvBar: View? = null
+    private var tvModeB: TextView? = null
+    private var tvOkLong = false
+
     // ===== (v231) زرار الطوارئ + التراجع =====
     private lateinit var panicCover: View
     private lateinit var panicB: TextView
@@ -317,6 +325,7 @@ class BrowserActivity : Activity() {
         th = Themes.byId(try { prefs().getString("theme", "mx") } catch (_: Exception) { "mx" })
         ui = Ui(this, th)
         applyBars(th)
+        TvFocus.attach(this, th.primary)   // (v477)
         adOn = try { prefs().getBoolean("adblock", true) } catch (_: Exception) { true }
 
         val root = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setBackgroundColor(th.bg); setPadding(0, ui.dp(28), 0, 0) }
@@ -342,6 +351,13 @@ class BrowserActivity : Activity() {
         val bar = LinearLayout(this).apply {
             layoutDirection = View.LAYOUT_DIRECTION_LTR; gravity = Gravity.CENTER_VERTICAL; setPadding(ui.dp(2), 0, ui.dp(2), 0)
             addView(backB); addView(fwdB); addView(addr); addView(reloadB); addView(tabsB); addView(menuB)
+        }
+        if (tvOn) {   // (v480 م6) زرار تبديل الوضع: 🖱 مؤشر / 🎯 تنقل بالتركيز
+            tvPointerMode = Cfg.str("tv_br_mode", "ptr") != "focus"
+            val mb = tbtn(if (tvPointerMode) "🖱" else "🎯", 18f) { tvToggleMode() }
+            tvModeB = mb
+            bar.addView(mb, 4)
+            tvBar = bar
         }
         progV = View(this).apply { setBackgroundColor(th.primary) }
         progTrack = FrameLayout(this).apply { visibility = View.INVISIBLE; addView(progV, FrameLayout.LayoutParams(0, -1)) }
@@ -408,6 +424,15 @@ class BrowserActivity : Activity() {
             addView(panicCol, FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM or Gravity.RIGHT).apply { setMargins(0, 0, ui.dp(4), ui.dp(8)) })
             addView(blockCover, FrameLayout.LayoutParams(-1, -1))   // (v412) فوق كل حاجة
         }
+        if (tvOn) {   // (v480 م6) المؤشر فوق الصفحة والغطا والأزرار العايمة
+            val ptr = TvPointer(this, webWrap, th.primary)
+            ptr.onTap = { lastTouchAt = android.os.SystemClock.uptimeMillis() }
+            ptr.onTopEdge = { tvToToolbar() }
+            ptr.onBottomEdge = { tvToBottomBar() }
+            ptr.enabled = tvPointerMode
+            webWrap.addView(ptr.view, FrameLayout.LayoutParams(-1, -1))
+            tvPtr = ptr
+        }
         // (v336) زرار المهام العايم اتشال — المهام في الشريط السفلي
         //   // (v324) زرار المهام العايم (دايرة حمراء بالعدد) فوق الصفحة
         root.addView(bar); root.addView(progTrack, LinearLayout.LayoutParams(-1, ui.dp(3))); root.addView(findBar); root.addView(hint)
@@ -435,6 +460,7 @@ class BrowserActivity : Activity() {
             hint.text = "🔧 بتحدّث لينك «" + repairTitle.ifEmpty { "الفيديو" } + "» — دوس تشغيل في الصفحة وأنا ألقط اللينك الجديد وأرجّعك للمشغّل بنفس الترجمة"
             h.postDelayed({ if (!dead) Notice.show(this, "🔧 شغّل الفيديو في الصفحة وأنا هلقطه", 4000L) }, 800L)
         }
+        if (tvOn && repairId == null) hint.text = "🖱 الأسهم = مؤشر · OK = دوسة · Menu = الشريط · OK طويلة = تبديل الوضع · شغّل الفيديو وأنا هلقطه"
         val keep = prefs().getBoolean("br_save_tabs", true)
         val saved = if (keep) BrowserStore.loadTabs(this) else (emptyList<BrowserStore.SavedTab>() to 0)
         for (s in saved.first) tabs.add(BTab(nextId++).also { it.url = s.url; it.title = s.title; it.desktop = s.desktop })
@@ -658,6 +684,7 @@ class BrowserActivity : Activity() {
         tabsB.setTextColor(if (t.priv) 0xFFE53935.toInt() else th.text)
         endPanicCover(); refreshBlockCover()
         scanOnce(); persistTabs()
+        if (tvOn) h.post { if (!dead) tvToPage() }
     }
     private fun closeTab(i: Int) {
         if (i !in tabs.indices) return
@@ -866,7 +893,7 @@ class BrowserActivity : Activity() {
         val col = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; setPadding(ui.dp(6), ui.dp(6), ui.dp(6), ui.dp(6)); background = ui.box(th.card, th.border, 14); elevation = ui.dp(8).toFloat() }
         val sv = ScrollView(this).apply { addView(col); isVerticalScrollBarEnabled = false }
         val width = ui.dp(240)
-        val pw = PopupWindow(sv, width, -2, true)
+        val pw = TvFocus.pop(this@BrowserActivity, sv, width, -2, true)
         pw.setBackgroundDrawable(ColorDrawable(0))
         for ((t, f) in entries) col.addView(IconTextView(this).apply {
             text = t; textSize = 14f; setTextColor(th.text); minHeight = ui.dp(44); gravity = Gravity.CENTER_VERTICAL or Gravity.START
@@ -1014,7 +1041,7 @@ class BrowserActivity : Activity() {
         d.setContentView(root)
         d.window?.apply { setBackgroundDrawable(ColorDrawable(th.bg)); setLayout(-1, -1) }
         d.setOnDismissListener { tabsDlg = null; tabsBox = null }
-        renderTabs(); d.show()
+        renderTabs(); TvFocus.attachDialog(this, d, th.primary); d.show()   // (v480 م7)
         Motion.fadeSlideIn(root, 0f, 40f * resources.displayMetrics.density, 240L, 0L); Motion.stagger(box, 8, 35L)
     }
     private fun renderTabs() {
@@ -1738,6 +1765,122 @@ class BrowserActivity : Activity() {
             putExtra("cookie", try { CookieManager.getInstance().getCookie(f.url) ?: "" } catch (_: Throwable) { "" })
             putExtra("ua", f.ua.ifEmpty { uaWeb }); putExtra("title", titleFor(f)); putExtra("nosub", noSub); putExtra("autotr", !noSub); putExtra("incognito", tabs.getOrNull(curIdx)?.let { it.priv && !it.auto } == true); putExtra("hsite", tabs.getOrNull(curIdx)?.let { SiteBlock.keyOf(it.url)?.let { k -> SiteBlock.has(this@BrowserActivity, k) } } == true); putExtra("ret", "browser")
         })
+    }
+
+    // ===== (v480 م6) المتصفح على التلفزيون: مؤشر / تنقل بالتركيز / شريط العنوان =====
+    // الصفحة (مؤشر): أسهم = حركة، OK = دوسة، OK طويلة = تبديل لوضع التركيز، عند الحافة = سكرول (ضغطتين على حافة فوق/تحت من غير سكرول = الشريط/زرار الفيديو).
+    // Menu = شريط العنوان والتبويبات (وMenu تاني أو Back أو ↓ = رجوع للصفحة). شاشة كاملة: OK = تشغيل/إيقاف، ←/→ = ±10ث.
+    private fun isIn(v: View?, root: View?): Boolean {
+        if (root == null) return false
+        var p: View? = v
+        while (p != null) { if (p === root) return true; p = p.parent as? View }
+        return false
+    }
+
+    private fun tvToPage() {
+        try {
+            (getSystemService(Context.INPUT_METHOD_SERVICE) as? android.view.inputmethod.InputMethodManager)?.hideSoftInputFromWindow(frame.windowToken, 0)
+            wvOrNull?.requestFocus()
+        } catch (_: Throwable) {}
+    }
+
+    private fun tvToToolbar() { try { addr.requestFocus() } catch (_: Throwable) {} }
+
+    /** زرار «لقيت فيديو» أو شريط «تحميل؟» لو ظاهر */
+    private fun tvToBottomBar(): Boolean = try {
+        if (badge.visibility == View.VISIBLE) badge.requestFocus()
+        else if (::dlBar.isInitialized && dlBar.visibility == View.VISIBLE) dlBar.requestFocus()
+        else false
+    } catch (_: Throwable) { false }
+
+    private fun tvToggleMode() {
+        tvPointerMode = !tvPointerMode
+        Cfg.put("tv_br_mode", if (tvPointerMode) "ptr" else "focus")
+        tvPtr?.enabled = tvPointerMode
+        tvModeB?.text = if (tvPointerMode) "🖱" else "🎯"
+        Notice.show(this, if (tvPointerMode) "🖱 وضع المؤشر — الأسهم بتحرّك المؤشر · OK = دوسة" else "🎯 وضع التركيز — الأسهم بتروح للصفحة نفسها", 2400L)
+        tvToPage()
+    }
+
+    private fun tvSeekStep(rep: Int): Int = 10 * (1 + minOf(rep, 20) / 5)
+
+    /** فيديو HTML5 ملء الشاشة: OK تشغيل/إيقاف، ←/→ ±10ث (والضغط المستمر أسرع) */
+    private fun tvFullKey(ev: android.view.KeyEvent): Boolean {
+        val down = ev.action == android.view.KeyEvent.ACTION_DOWN
+        val js: String? = when (ev.keyCode) {
+            android.view.KeyEvent.KEYCODE_DPAD_CENTER, android.view.KeyEvent.KEYCODE_ENTER, android.view.KeyEvent.KEYCODE_NUMPAD_ENTER,
+            android.view.KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE, android.view.KeyEvent.KEYCODE_MEDIA_PLAY, android.view.KeyEvent.KEYCODE_MEDIA_PAUSE ->
+                if (down && ev.repeatCount == 0) TvPointer.jsToggle() else null
+            android.view.KeyEvent.KEYCODE_DPAD_LEFT, android.view.KeyEvent.KEYCODE_MEDIA_REWIND ->
+                if (down) TvPointer.jsSeek(-tvSeekStep(ev.repeatCount)) else null
+            android.view.KeyEvent.KEYCODE_DPAD_RIGHT, android.view.KeyEvent.KEYCODE_MEDIA_FAST_FORWARD ->
+                if (down) TvPointer.jsSeek(tvSeekStep(ev.repeatCount)) else null
+            else -> return false
+        }
+        if (js != null) wvOrNull?.evaluateJavascript(js, null)
+        return true
+    }
+
+    private fun tvOk(ev: android.view.KeyEvent): Boolean {
+        if (ev.action == android.view.KeyEvent.ACTION_DOWN) {
+            if (ev.repeatCount == 0) tvOkLong = false
+            else if (ev.repeatCount == 1 && !tvOkLong) { tvOkLong = true; tvToggleMode() }
+            return true
+        }
+        if (tvOkLong) { tvOkLong = false; return true }
+        tvPtr?.click()
+        return true
+    }
+
+    private fun tvKey(ev: android.view.KeyEvent): Boolean {
+        if (!::frame.isInitialized) return false
+        if (customView != null) return tvFullKey(ev)
+        val kc = ev.keyCode
+        val down = ev.action == android.view.KeyEvent.ACTION_DOWN
+        val f = currentFocus
+        val inBar = isIn(f, tvBar) || (::findBar.isInitialized && isIn(f, findBar))
+        val inPage = f == null || isIn(f, webHolder)
+
+        if (kc == android.view.KeyEvent.KEYCODE_MENU) {
+            if (down && ev.repeatCount == 0) { if (inPage) tvToToolbar() else tvToPage() }
+            return true
+        }
+        if (inBar) {
+            if (kc == android.view.KeyEvent.KEYCODE_BACK) { if (down) tvToPage(); return true }
+            val barToFind = isIn(f, tvBar) && ::findBar.isInitialized && findBar.visibility == View.VISIBLE
+            if (kc == android.view.KeyEvent.KEYCODE_DPAD_DOWN && !barToFind) { if (down) tvToPage(); return true }
+            return false
+        }
+        if (!inPage) {
+            if (kc == android.view.KeyEvent.KEYCODE_BACK) {
+                if (down) { if (::dlBar.isInitialized && dlBar.visibility == View.VISIBLE && isIn(f, dlBar)) hideDl(); tvToPage() }
+                return true
+            }
+            if (kc == android.view.KeyEvent.KEYCODE_DPAD_UP && (f === badge || (::dlBar.isInitialized && isIn(f, dlBar)))) { if (down) tvToPage(); return true }
+            return false
+        }
+        // الصفحة نفسها (الوضعين): مفاتيح الميديا والصفحة
+        when (kc) {
+            android.view.KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE, android.view.KeyEvent.KEYCODE_MEDIA_PLAY, android.view.KeyEvent.KEYCODE_MEDIA_PAUSE -> {
+                if (down && ev.repeatCount == 0) wvOrNull?.evaluateJavascript(TvPointer.jsToggle(), null); return true
+            }
+            android.view.KeyEvent.KEYCODE_MEDIA_REWIND -> { if (down) wvOrNull?.evaluateJavascript(TvPointer.jsSeek(-tvSeekStep(ev.repeatCount)), null); return true }
+            android.view.KeyEvent.KEYCODE_MEDIA_FAST_FORWARD -> { if (down) wvOrNull?.evaluateJavascript(TvPointer.jsSeek(tvSeekStep(ev.repeatCount)), null); return true }
+            android.view.KeyEvent.KEYCODE_CHANNEL_UP, android.view.KeyEvent.KEYCODE_PAGE_UP -> { if (down) tvPtr?.page(wvOrNull, false); return true }
+            android.view.KeyEvent.KEYCODE_CHANNEL_DOWN, android.view.KeyEvent.KEYCODE_PAGE_DOWN -> { if (down) tvPtr?.page(wvOrNull, true); return true }
+        }
+        if (!tvPointerMode) return false   // وضع التركيز: الأسهم وOK للصفحة نفسها
+        return when (kc) {
+            android.view.KeyEvent.KEYCODE_DPAD_UP, android.view.KeyEvent.KEYCODE_DPAD_DOWN,
+            android.view.KeyEvent.KEYCODE_DPAD_LEFT, android.view.KeyEvent.KEYCODE_DPAD_RIGHT -> { if (down) tvPtr?.move(kc, ev.repeatCount, wvOrNull); true }
+            android.view.KeyEvent.KEYCODE_DPAD_CENTER, android.view.KeyEvent.KEYCODE_ENTER, android.view.KeyEvent.KEYCODE_NUMPAD_ENTER -> tvOk(ev)
+            else -> false
+        }
+    }
+
+    override fun dispatchKeyEvent(ev: android.view.KeyEvent): Boolean {
+        if (tvOn && !dead) { try { if (tvKey(ev)) return true } catch (e: Throwable) { LogStore.err("Browser:tvKey", e) } }
+        return super.dispatchKeyEvent(ev)
     }
 
     @Suppress("DEPRECATION")

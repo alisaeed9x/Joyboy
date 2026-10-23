@@ -22,11 +22,16 @@
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="28"/>
     <uses-permission android:name="android.permission.READ_MEDIA_VIDEO"/>
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32"/>
+    <!-- (v476) صفحة «تطبيقاتك» في اللانشر: اكتشاف تطبيقات التلفزيون من غير QUERY_ALL_PACKAGES -->
+    <queries>
+        <intent><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LEANBACK_LAUNCHER"/></intent>
+        <intent><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/></intent>
+    </queries>
     <application android:supportsRtl="true" android:label="Subtitler" android:icon="@mipmap/ic_launcher" android:roundIcon="@mipmap/ic_launcher"
         android:usesCleartextTraffic="true" android:banner="@mipmap/ic_launcher" android:theme="@android:style/Theme.DeviceDefault.NoActionBar">
         <activity android:name=".MainActivity" android:exported="true" android:theme="@style/AppSplash"
             android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboardHidden|density">
-            <intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/><category android:name="android.intent.category.LEANBACK_LAUNCHER"/></intent-filter>
+            <intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/></intent-filter>
             <intent-filter><action android:name="android.intent.action.SEND"/><category android:name="android.intent.category.DEFAULT"/><data android:mimeType="text/plain"/></intent-filter>
             <intent-filter><action android:name="android.intent.action.VIEW"/><category android:name="android.intent.category.DEFAULT"/><category android:name="android.intent.category.BROWSABLE"/><data android:scheme="https"/><data android:host="www.youtube.com"/><data android:host="m.youtube.com"/><data android:host="youtu.be"/><data android:host="music.youtube.com"/></intent-filter>   <!-- (v345) لينكات يوتيوب تتفتح في Subtitler -->
         </activity>
@@ -35,8 +40,16 @@
         <activity android:name=".PlayerActivity" android:exported="false"
             android:supportsPictureInPicture="true" android:resizeableActivity="true"
             android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboardHidden|density"/>
-        <activity android:name=".TvActivity" android:exported="false" android:theme="@style/AppSplash"
-            android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboardHidden|density"/>
+        <!-- (v476) اللانشر: HOME + LEANBACK_LAUNCHER — TvActivity هي الشاشة الرئيسية للتلفزيون -->
+        <activity android:name=".TvActivity" android:exported="true" android:launchMode="singleTask" android:stateNotNeeded="true" android:theme="@style/AppSplash"
+            android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboardHidden|density">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN"/>
+                <category android:name="android.intent.category.HOME"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <category android:name="android.intent.category.LEANBACK_LAUNCHER"/>
+            </intent-filter>
+        </activity>
         <activity android:name=".FileManagerActivity" android:exported="false" android:theme="@style/AppSplash"
             android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboardHidden|density"/>
         <provider android:name="androidx.core.content.FileProvider" android:authorities="${applicationId}.fmprov"

@@ -130,6 +130,7 @@ class MainActivity : Activity() {
         val th = Themes.byId(Cfg.str("theme", "mx"))
         val ui = Ui(this, th)
         applyBars(th)
+        TvFocus.attach(this, th.primary)   // (v477) حلقة تركيز الريموت (تلفزيون بس)
         val root = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(0, ui.dp(32), 0, ui.dp(110)); layoutDirection = View.LAYOUT_DIRECTION_RTL; clipChildren = false; clipToPadding = false }
         val keys = ui.input("مفاتيح Gemini (مفتاح في كل سطر)", Cfg.allMainKeys().joinToString("\n"), 3)
         val backup = ui.input("مفاتيح احتياطية (مفتاح في كل سطر)", "", 2)
@@ -939,7 +940,7 @@ class MainActivity : Activity() {
                 tasksDlgRefresh = if (i == 5) ({ tasksUi.refresh() }) else null
                 syncNav()   // (v475)
                 if (i == 1) { musicUi?.ensureLoaded(); musicUi?.applyNavTint() } else setNavTint(null)
-                if (i == 4) ytUi?.refresh() else if (prevTab == 4) ytUi?.onHide()
+                if (i == 4) { ytUi?.refresh(); ytUi?.tvFocusList() } else if (prevTab == 4) ytUi?.onHide()
                 if (i == 5) tasksUi.refresh()
                 updateTasksFab()
                 if (prevTab != i) {   // (v312) الصفحة الجديدة بتنزلق من ناحية اتجاه الانتقال (الشريط RTL: رقم أكبر = شمال)
@@ -1420,6 +1421,7 @@ class MainActivity : Activity() {
         }
         if (r == 52) { if (c == RESULT_OK) d?.data?.let { onToolPicked(it) }; return }
         if (r == 53) { if (c == RESULT_OK) d?.data?.let { onSrtPicked(it) } else pendingSrc = null; return }
+        if (r == 78) { if (c == RESULT_OK) d?.getStringArrayListExtra(android.speech.RecognizerIntent.EXTRA_RESULTS)?.firstOrNull()?.let { ytUi?.voiceResult(it) }; return }   // (v479 م5) بحث صوتي يوتيوب على التلفزيون
         if (r == 47) { if (c == RESULT_OK) d?.data?.let { ytUi?.importUri(it) }; return }   // (v118) ملف اشتراكات يوتيوب
         if (lockUi?.onResult(r, c == RESULT_OK) == true) return
         if (mediaOps?.onResult(r, c == RESULT_OK) == true) return
@@ -1727,6 +1729,7 @@ class MainActivity : Activity() {
         if (i?.getBooleanExtra("fullmusic", false) == true) musicOpenFn?.invoke()   // (v344) ⤢ من المشغّل المصغّر في المتصفح/الملفات
         when (i?.getStringExtra("tab")) { "videos" -> showTabFn(0); "music" -> showTabFn(1); "tasks" -> showTabFn(5); "settings" -> settingsShow?.invoke(null); "youtube" -> { showTabFn(4); openYtFromIntent(i) } }
     }
+    override fun dispatchKeyEvent(ev: android.view.KeyEvent): Boolean { if (TvFocus.handleKey(this, ev)) return true; return super.dispatchKeyEvent(ev) }   // (v477) Menu = دوسة طويلة
     @Suppress("DEPRECATION")
     override fun onBackPressed() {
         if (!fromPlayer && ytLoadUi?.visible == true) { cancelYtLoad(); return }   // (v339) لسه بنجيب الفيديو: رجوع = إلغاء ونفضل في يوتيوب
@@ -1734,7 +1737,7 @@ class MainActivity : Activity() {
         if (!fromPlayer && curTab == 7) { settingsBack?.invoke(); return }   // (v370)
         if (!fromPlayer && curTab == 5) { showTabFn(if (tabBeforeTasks == 5) 0 else tabBeforeTasks); return }   // (v324) صفحة المهام ← للصفحة اللي جيت منها
         if (!fromPlayer && curTab == 1 && musicUi?.onBack() == true) return   // (v193) يقفل مشغّل الأسطوانة/الفولدر الأول
-        if (!fromPlayer && curTab != 0) { showTabFn(0); return }
+        if (!fromPlayer && curTab != 0) { if (fromTv && DeviceUi.isTv(this) && TvFocus.goHome(this)) return; showTabFn(0); return }   // (v477) تلفزيون: Back من أي قسم = الشاشة الرئيسية
         if (!fromPlayer && fromTv && curTab == 0 && libUi?.back() != true) { try { startActivity(Intent(this, TvActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)); finish() } catch (_: Throwable) { super.onBackPressed() }; return }   // (v467) زيارة من التلفزيون: رجوع من الجذر يرجّع للتلفزيون
         if (!fromPlayer && libUi?.back() == true) return
         super.onBackPressed()

@@ -19,12 +19,15 @@ import android.net.Uri
 import android.os.Handler
 import android.os.Looper
 import android.text.TextUtils
+import android.view.FocusFinder
 import android.view.Gravity
+import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.TextureView
 import android.view.VelocityTracker
 import android.view.View
 import android.view.ViewConfiguration
+import android.view.ViewGroup
 import android.view.animation.DecelerateInterpolator
 import android.widget.EditText
 import android.widget.FrameLayout
@@ -298,6 +301,53 @@ class YtMiniPlayer(private val act: Activity, private val ui: Ui) : FrameLayout(
                 scheduleHide()
             }
         })
+    }
+
+    // (v479 م5) تلفزيون: المشغّل المصغّر هدف تركيز واحد — OK = تشغيل/إيقاف · ←/→ = ±10ث (والضغط المستمر بيزوّد الخطوة) · Menu = قايمة الجودة/الصوت
+    init {
+        if (TvFocus.onCtx(act)) {
+            descendantFocusability = ViewGroup.FOCUS_BLOCK_DESCENDANTS
+            isFocusable = true
+            setOnKeyListener { _, k, e -> tvKey(k, e) }
+        }
+    }
+
+    private fun tvKey(k: Int, e: KeyEvent): Boolean {
+        if (e.action != KeyEvent.ACTION_DOWN) return false
+        when (k) {
+            KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER, KeyEvent.KEYCODE_NUMPAD_ENTER -> {
+                if (e.repeatCount == 0) { togglePlay(); showCtl(true, true) }
+                return true
+            }
+            KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_DPAD_RIGHT -> {
+                val p = exo ?: return true
+                val step = if (e.repeatCount > 12) 60_000L else if (e.repeatCount > 4) 30_000L else 10_000L
+                val d = p.duration
+                var t = p.currentPosition + (if (k == KeyEvent.KEYCODE_DPAD_RIGHT) step else -step)
+                t = if (d > 0L) t.coerceIn(0L, d) else t.coerceAtLeast(0L)
+                p.seekTo(t); showCtl(true, true)
+                return true
+            }
+            KeyEvent.KEYCODE_MENU -> { showMenu(this); return true }
+        }
+        return false
+    }
+
+    fun togglePlay() { if (exo == null && lastPick == null) return; playB.performClick() }   // لسه بيحمّل: OK ماتفتحش المشغّل الكامل بالغلط
+    fun hasQualities(): Boolean = ents.size > 1
+    fun hasLangs(): Boolean = lgs.size > 1
+    fun qualityLabel(): String = ents.getOrNull(curEnt)?.label ?: ""
+    fun langLabel(): String = lgs.getOrNull(lgIdx)?.name ?: ""
+    fun qualityMenu(anchor: View) {
+        if (ents.size < 2) { Notice.show(act, "مفيش جودات تانية للفيديو ده", 1800L); return }
+        val m = PopupMenu(act, anchor)
+        ents.forEachIndexed { i, e -> m.menu.add(0, 100 + i, i, (if (i == curEnt) "✓ " else "") + e.label) }
+        m.setOnMenuItemClickListener { mi -> pickQuality(mi.itemId - 100); true }
+        m.show()
+    }
+    fun audioLangMenu(anchor: View) {
+        if (lgs.size < 2) { Notice.show(act, "الفيديو ده مفيهوش لغات صوت تانية", 1800L); return }
+        langMenu(anchor)
     }
 
     override fun onSizeChanged(w: Int, h: Int, ow: Int, oh: Int) { super.onSizeChanged(w, h, ow, oh); fit() }
@@ -589,6 +639,15 @@ class YtWatchPage(private val act: Activity, private val ui: Ui, private val hos
     private var liked = false
     private var likeCount = -1L
     private var relShown = 20
+    // (v479 م5) تلفزيون: تخطيط SmartTube — فيديو + معلومات فوق، صف أزرار، وتحت صف مقترحات أفقي (أو التعليقات)
+    private val tv = DeviceUi.isTv(act)
+    private val rail = LinearLayout(act)
+    private val railScroll = HorizontalScrollView(act)
+    private val comScroll = ScrollView(act)
+    private var tail: View = scroll
+    private var qChip: TextView? = null
+    private var lChip: TextView? = null
+    private var chanChip: TextView? = null
 
     private val titleTv = TextView(act).apply { textSize = 17f; setTextColor(YtSkin.text); typeface = medium; maxLines = 2; ellipsize = TextUtils.TruncateAt.END; setPadding(ui.dp(14), ui.dp(12), ui.dp(14), 0) }
     private val metaTv = TextView(act).apply { textSize = 12f; setTextColor(YtSkin.sub); setPadding(ui.dp(14), ui.dp(4), ui.dp(14), 0) }
@@ -622,6 +681,7 @@ class YtWatchPage(private val act: Activity, private val ui: Ui, private val hos
             hh2.postDelayed(this, 500L)
             if (!isOpen) return
             val v = item ?: return
+            if (tv) tvPaint()
             val pos = mini.position(); val dur = mini.durationMs()
             if (dur > 0 && pos > 0) {
                 val now = System.currentTimeMillis()
@@ -643,6 +703,20 @@ class YtWatchPage(private val act: Activity, private val ui: Ui, private val hos
     }
 
     val isOpen: Boolean get() = visibility == View.VISIBLE && !closing
+
+    /** (v479 م5) تلفزيون: التركيز بالأسهم يفضل جوه صفحة المشاهدة (مايهربش للشبكة اللي تحتها) */
+    override fun focusSearch(focused: View?, direction: Int): View? {
+        if (!tv || visibility != View.VISIBLE) return super.focusSearch(focused, direction)
+        return FocusFinder.getInstance().findNextFocus(this, focused, direction) ?: focused
+    }
+
+    /** (v479 م5) Back على التلفزيون: لو التركيز تحت الفيديو (أزرار/مقترحات/تعليقات) يرجع للفيديو الأول، وبعدها يقفل الصفحة */
+    fun tvBack(): Boolean {
+        if (!tv || !isOpen) return false
+        val f = findFocus() ?: return false
+        if (f === mini) return false
+        mini.requestFocus(); return true
+    }
 
     // ───────── (v428) سحب لتحت = تصغير الصفحة (زي يوتيوب): الصفحة تتبع صباعك، وبعد حد معيّن/سرعة تنزل للشريط الصغير (YtDock) ─────────
     private val slop = ViewConfiguration.get(act).scaledTouchSlop
@@ -773,6 +847,153 @@ class YtWatchPage(private val act: Activity, private val ui: Ui, private val hos
         sb.addView(st, LinearLayout.LayoutParams(0, -2, 1f)); sb.addView(un, LinearLayout.LayoutParams(-2, -2))
         sbTxt = st; sbBar = sb
         (mini.parent as? LinearLayout)?.addView(sb, 1, LinearLayout.LayoutParams(-1, -2))
+        if (tv) tvLayout()
+    }
+
+    // ───────── (v479 م5) تخطيط التلفزيون (SmartTube): فيديو + معلومات · صف أزرار · صف مقترحات أفقي / تعليقات ─────────
+    private fun detach(v: View?) { (v?.parent as? ViewGroup)?.removeView(v) }
+
+    private fun setIf(t: TextView?, s: String) { if (t != null && t.text.toString() != s) t.text = s }
+
+    private fun tvLayout() {
+        val dm = act.resources.displayMetrics
+        val old = (0 until chipsRow.childCount).map { chipsRow.getChildAt(it) }   // 0 لايك · 1 حفظ · 2 ترجمة · 3 صوت · 4 تحميل · 5 نسخ · 6 مشاركة
+        chipsRow.removeAllViews()
+        removeAllViews()
+        for (v in listOf<View?>(mini, sbBar, listBox, tabRel, tabCom, subB, bellB, titleTv, metaTv, descTv)) detach(v)
+
+        val miniW = minOf((dm.widthPixels * 0.56f).toInt(), (dm.heightPixels * 0.52f * 16f / 9f).toInt())
+        val miniH = miniW * 9 / 16
+        mini.id = View.generateViewId()
+        val vcol = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL }
+        vcol.addView(mini, LinearLayout.LayoutParams(miniW, miniH))
+        sbBar?.let { vcol.addView(it, LinearLayout.LayoutParams(miniW, -2)) }
+
+        titleTv.apply { textSize = 22f; maxLines = 3 }
+        metaTv.textSize = 15f
+        descTv.apply { textSize = 15f; maxLines = 6; setOnClickListener(null); isClickable = false; isFocusable = false }
+        val info = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL }
+        info.addView(titleTv, LinearLayout.LayoutParams(-1, -2))
+        info.addView(metaTv, LinearLayout.LayoutParams(-1, -2))
+        info.addView(descTv, LinearLayout.LayoutParams(-1, -2).apply { setMargins(ui.dp(12), ui.dp(12), ui.dp(12), 0) })
+        val top = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; setPadding(ui.dp(24), ui.dp(16), ui.dp(24), 0) }
+        top.addView(vcol, LinearLayout.LayoutParams(-2, -2))
+        top.addView(info, LinearLayout.LayoutParams(0, miniH, 1f).apply { marginStart = ui.dp(20) })
+
+        // صف الأزرار: اشتراك · جرس · لايك · القناة · الجودة · لغة الصوت · مقترحات · تعليقات · حفظ · ترجمة · صوت · تحميل · مشاركة
+        val qc = chip("🎞 الجودة") { a -> mini.qualityMenu(a) }
+        val lc = chip("🌐 لغة الصوت") { a -> mini.audioLangMenu(a) }.apply { visibility = View.GONE }
+        val cc = chip("📺 القناة") { openChan() }
+        qChip = qc; lChip = lc; chanChip = cc
+        subB.id = View.generateViewId()
+        mini.nextFocusDownId = subB.id
+        val acts = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; gravity = Gravity.CENTER_VERTICAL; setPadding(ui.dp(20), ui.dp(12), ui.dp(20), ui.dp(12)) }
+        val btns = listOf<View?>(subB, bellB, likeChip, cc, qc, lc, tabRel, tabCom, saveChip, old.getOrNull(2), old.getOrNull(3), old.getOrNull(4), old.getOrNull(6))
+        for (v in btns) {
+            if (v == null) continue
+            detach(v)
+            if (v === bellB) { acts.addView(v, LinearLayout.LayoutParams(ui.dp(46), ui.dp(46)).apply { setMargins(ui.dp(5), 0, ui.dp(5), 0) }); v.nextFocusUpId = mini.id; continue }
+            (v as? TextView)?.apply { textSize = 16f; setPadding(ui.dp(18), ui.dp(10), ui.dp(18), ui.dp(10)) }
+            v.nextFocusUpId = mini.id
+            acts.addView(v, LinearLayout.LayoutParams(-2, -2).apply { setMargins(ui.dp(5), 0, ui.dp(5), 0) })
+        }
+        val actsHsv = HorizontalScrollView(act).apply { isHorizontalScrollBarEnabled = false; clipChildren = false; addView(acts, FrameLayout.LayoutParams(-2, -2)) }
+
+        // الجزء السفلي: صف مقترحات أفقي (الافتراضي) أو التعليقات (قايمة بتتسكرول بالأسهم)
+        rail.apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; setPadding(ui.dp(20), ui.dp(14), ui.dp(20), ui.dp(14)); clipChildren = false; clipToPadding = false }
+        railScroll.apply { isHorizontalScrollBarEnabled = false; addView(rail, FrameLayout.LayoutParams(-2, -2)) }
+        comScroll.apply {
+            descendantFocusability = ViewGroup.FOCUS_BEFORE_DESCENDANTS; isFocusable = true; visibility = View.GONE
+            setOnFocusChangeListener { v, f -> v.foreground = if (f) GradientDrawable().apply { setColor(Color.TRANSPARENT); setStroke(ui.dp(2), YtSkin.accent); cornerRadius = ui.dp(8).toFloat() } else null }
+            addView(listBox, FrameLayout.LayoutParams(-1, -2))
+        }
+        val lower = FrameLayout(act)
+        lower.addView(railScroll, FrameLayout.LayoutParams(-1, -2, Gravity.TOP))
+        lower.addView(comScroll, FrameLayout.LayoutParams(-1, -1))
+
+        val tl = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL }
+        tl.addView(actsHsv, LinearLayout.LayoutParams(-1, -2))
+        tl.addView(lower, LinearLayout.LayoutParams(-1, 0, 1f))
+        tail = tl
+        val colTv = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL }
+        colTv.addView(top, LinearLayout.LayoutParams(-1, -2))
+        colTv.addView(tl, LinearLayout.LayoutParams(-1, 0, 1f))
+        addView(colTv, FrameLayout.LayoutParams(-1, -1))
+        tvTabVis()
+    }
+
+    private fun tvTabVis() {
+        railScroll.visibility = if (comments) View.GONE else View.VISIBLE
+        comScroll.visibility = if (comments) View.VISIBLE else View.GONE
+    }
+
+    /** نصوص الأزرار اللي بتتغيّر بعد التحميل (الجودة الحالية · لغة الصوت لو الفيديو متعدد اللغات) */
+    private fun tvPaint() {
+        try {
+            setIf(qChip, "🎞 " + mini.qualityLabel().ifBlank { "الجودة" })
+            val hl = mini.hasLangs()
+            val l = lChip
+            if (l != null) {
+                val vis = if (hl) View.VISIBLE else View.GONE
+                if (l.visibility != vis) l.visibility = vis
+                if (hl) setIf(l, "🌐 " + mini.langLabel().ifBlank { "لغة الصوت" })
+            }
+        } catch (_: Throwable) {}
+    }
+
+    private fun renderRail() {
+        val rel = det?.related?.takeIf { it.isNotEmpty() } ?: liteRel
+        if (rel.isEmpty()) { status(if (det == null) "⏳ …" else "مفيش مقترحات"); return }
+        val fi = (0 until rail.childCount).firstOrNull { rail.getChildAt(it).hasFocus() } ?: -1   // التركيز مايضيعش لو القايمة اتحدّثت (وصلت التفاصيل)
+        rail.removeAllViews()
+        for (r in rel.take(relShown)) rail.addView(relCardTv(r), LinearLayout.LayoutParams(-2, -2).apply { setMargins(ui.dp(7), 0, ui.dp(7), 0) })
+        if (rel.size > relShown) rail.addView(chip("المزيد ▸") { relShown += 20; renderRail() }.apply { textSize = 16f; setPadding(ui.dp(18), ui.dp(10), ui.dp(18), ui.dp(10)); isFocusable = true },
+            LinearLayout.LayoutParams(-2, -2).apply { gravity = Gravity.CENTER_VERTICAL; setMargins(ui.dp(12), 0, ui.dp(12), 0) })
+        if (fi >= 0 && rail.childCount > 0) rail.getChildAt(minOf(fi, rail.childCount - 1))?.requestFocus()
+    }
+
+    private fun relCardTv(v: NpItem): View {
+        val cw = (act.resources.displayMetrics.widthPixels * 0.205f).toInt()
+        val ch = cw * 9 / 16
+        val thumb = ImageView(act).apply { scaleType = ImageView.ScaleType.CENTER_CROP; setBackgroundColor(YtSkin.surface) }
+        val box = FrameLayout(act)
+        box.addView(thumb, FrameLayout.LayoutParams(-1, -1))
+        if (v.dur > 0) box.addView(TextView(act).apply {
+            text = fmtDur(v.dur); textSize = 13f; setTextColor(Color.WHITE); typeface = medium; includeFontPadding = false
+            setPadding(ui.dp(5), ui.dp(3), ui.dp(5), ui.dp(3)); background = GradientDrawable().apply { setColor(0xCC000000.toInt()); cornerRadius = ui.dp(4).toFloat() }
+        }, FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM or Gravity.END).apply { setMargins(ui.dp(8), ui.dp(8), ui.dp(8), ui.dp(8)) })
+        try { if (v.thumb.isNotBlank()) Glide.with(act).load(v.thumb).centerCrop().override(cw, ch).into(thumb) } catch (_: Throwable) {}
+        val title = TextView(act).apply { text = v.title; textSize = 15f; setTextColor(YtSkin.text); typeface = medium; maxLines = 2; ellipsize = TextUtils.TruncateAt.END; setPadding(ui.dp(2), ui.dp(8), ui.dp(2), 0) }
+        val meta = TextView(act).apply {
+            text = listOf(v.channel, if (v.count > 0) fmtN(v.count) + " مشاهدة" else "", v.age).filter { it.isNotBlank() }.joinToString(" · ")
+            textSize = 12.5f; setTextColor(YtSkin.sub); maxLines = 2; ellipsize = TextUtils.TruncateAt.END; setPadding(ui.dp(2), ui.dp(2), ui.dp(2), 0)
+        }
+        val root = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; isFocusable = true; isClickable = true }
+        root.addView(box, LinearLayout.LayoutParams(cw, ch))
+        root.addView(title, LinearLayout.LayoutParams(cw, -2))
+        root.addView(meta, LinearLayout.LayoutParams(cw, -2))
+        root.setOnClickListener { host.openVideo(v) }
+        root.setOnLongClickListener { tvRelMenu(root, v); true }   // زر Menu على الريموت = نفس الدوسة الطويلة (TvFocus.handleKey)
+        root.setOnFocusChangeListener { _, f -> if (f && v.kind == 0 && v.id.length == 11) YtFast.warm(v.id) }
+        return root
+    }
+
+    private fun tvRelMenu(anchor: View, v: NpItem) {
+        val m = PopupMenu(act, anchor)
+        val vid = v.kind == 0 && v.id.length == 11
+        m.menu.add(0, 1, 0, "▶ شغّل")
+        if (vid) { m.menu.add(0, 2, 1, "🎧 صوت بس"); m.menu.add(0, 3, 2, "⬇ تحميل") }
+        if (v.channelUrl.isNotBlank()) m.menu.add(0, 4, 3, "📺 القناة")
+        m.setOnMenuItemClickListener { mi ->
+            when (mi.itemId) {
+                1 -> host.openVideo(v)
+                2 -> host.audio(v)
+                3 -> host.download(anchor, v)
+                4 -> host.openChannel(v.channelUrl, v.channel)
+            }
+            true
+        }
+        m.show()
     }
 
     // ───────── عناصر مساعدة ─────────
@@ -832,6 +1053,7 @@ class YtWatchPage(private val act: Activity, private val ui: Ui, private val hos
         bellB.visibility = if (on) View.VISIBLE else View.GONE
         bellB.filled = on && YtNotify.chanOn(u)
         bellB.background = GradientDrawable().apply { setColor(YtSkin.chip); cornerRadius = ui.dp(20).toFloat() }
+        if (tv) setIf(chanChip, "📺 " + chanNameNow().ifBlank { "القناة" })
     }
     private fun toggleSub() { YtSubscribe.toggle(act, chanUrl(), chanNameNow(), "") { paintSub() } }
 
@@ -887,7 +1109,7 @@ class YtWatchPage(private val act: Activity, private val ui: Ui, private val hos
     fun open(v: NpItem, src: Rect?) {
         val wasOpen = visibility == View.VISIBLE && !closing
         closing = false
-        animate().cancel(); mini.animate().cancel(); scroll.animate().cancel()
+        animate().cancel(); mini.animate().cancel(); tail.animate().cancel()
         gen++; val my = gen
         item = v; det = null; comments = false; cLoaded = false; cNext = null; cMore = null; cItems = ArrayList(); cTotal = -1; relShown = 20
         liked = likedSet().contains(v.id); likeCount = -1L; dislikeN = -1L; metaBase = ""; lastSkipFrom = -1L; sbBar?.visibility = View.GONE; cEdit.setText(""); composer.visibility = View.GONE; tabCom.text = "💬 تعليقات"
@@ -896,6 +1118,7 @@ class YtWatchPage(private val act: Activity, private val ui: Ui, private val hos
         mini.reset(); mini.setThumb(v.thumb); mini.loading(true)
         bindItem(v)
         scroll.scrollTo(0, 0)
+        if (tv) post { try { mini.requestFocus() } catch (_: Throwable) {} }   // (v479 م5) التركيز على الفيديو أول ما الصفحة تفتح (ومن مقترح كمان)
         if (!wasOpen) { from = src; host.state(true); animateIn(src) }
         else { body.alpha = 0f; body.animate().alpha(1f).setDuration(220L).start() }
         // (v471) الفيديو والتفاصيل بقوا على خيطين منفصلين: قبل كده المشغّل كان بيستنى NewPipe يخلّص كل التفاصيل (3-8 ثواني) قبل ما يبدأ يجيب الرابط،
@@ -943,16 +1166,16 @@ class YtWatchPage(private val act: Activity, private val ui: Ui, private val hos
         if (kept != null) { if (dockItem != null) host.dock(dockItem, kept) else { try { kept.p.release() } catch (_: Throwable) {} } }
         fun finish() {
             visibility = View.GONE; closing = false
-            mini.release(); mini.animate().cancel(); scroll.animate().cancel()
+            mini.release(); mini.animate().cancel(); tail.animate().cancel()
             mini.scaleX = 1f; mini.scaleY = 1f; mini.translationX = 0f; mini.translationY = 0f; mini.alpha = 1f
-            scroll.translationY = 0f; scroll.alpha = 1f; alpha = 1f
+            tail.translationY = 0f; tail.alpha = 1f; alpha = 1f
         }
         if (!animated) { finish(); return }
         val src = from
         mini.pivotX = 0f; mini.pivotY = 0f
         val loc = IntArray(2); mini.getLocationOnScreen(loc)
         val pw = mini.width.toFloat().coerceAtLeast(1f); val ph = mini.height.toFloat().coerceAtLeast(1f)
-        scroll.animate().translationY(ui.dp(90).toFloat()).alpha(0f).setDuration(180L).start()
+        tail.animate().translationY(ui.dp(90).toFloat()).alpha(0f).setDuration(180L).start()
         if (src != null && src.width() > 0) {
             mini.animate().scaleX(src.width() / pw).scaleY(src.height() / ph).translationX((src.left - loc[0]).toFloat()).translationY((src.top - loc[1]).toFloat())
                 .setDuration(260L).setInterpolator(DecelerateInterpolator(1.4f)).start()
@@ -965,7 +1188,7 @@ class YtWatchPage(private val act: Activity, private val ui: Ui, private val hos
 
     private fun animateIn(src: Rect?) {
         visibility = View.VISIBLE; alpha = 0f
-        scroll.alpha = 0f; scroll.translationY = ui.dp(90).toFloat()
+        tail.alpha = 0f; tail.translationY = ui.dp(90).toFloat()
         post {
             val pw = (if (mini.width > 0) mini.width else sw).toFloat(); val ph = (if (mini.height > 0) mini.height else sw * 9 / 16).toFloat()
             val loc = IntArray(2); mini.getLocationOnScreen(loc)
@@ -976,7 +1199,7 @@ class YtWatchPage(private val act: Activity, private val ui: Ui, private val hos
             } else { mini.translationY = ui.dp(60).toFloat(); mini.alpha = 0f }
             animate().alpha(1f).setStartDelay(0L).setDuration(140L).start()
             mini.animate().scaleX(1f).scaleY(1f).translationX(0f).translationY(0f).alpha(1f).setDuration(360L).setInterpolator(DecelerateInterpolator(1.6f)).start()
-            scroll.animate().translationY(0f).alpha(1f).setStartDelay(140L).setDuration(320L).setInterpolator(DecelerateInterpolator()).start()
+            tail.animate().translationY(0f).alpha(1f).setStartDelay(140L).setDuration(320L).setInterpolator(DecelerateInterpolator()).start()
         }
     }
 
@@ -987,9 +1210,10 @@ class YtWatchPage(private val act: Activity, private val ui: Ui, private val hos
         paintLike()
         chanName.text = v.channel
         chanAvHost.removeAllViews(); chanAvHost.addView(avatar(v.channel.ifBlank { "؟" }, 40, v.avatar), FrameLayout.LayoutParams(-1, -1))
-        descTv.text = "⏳ …"; descTv.maxLines = 2
+        descTv.text = "⏳ …"; descTv.maxLines = if (tv) 6 else 2
         paintSub(); paintSave(); paintTabs()
         listBox.removeAllViews()
+        if (tv) { rail.removeAllViews(); tvTabVis() }
         status("⏳ …")
     }
 
@@ -1012,20 +1236,23 @@ class YtWatchPage(private val act: Activity, private val ui: Ui, private val hos
     }
 
     private fun status(t: String) {
-        listBox.removeAllViews()
-        listBox.addView(TextView(act).apply { text = t; textSize = 13f; setTextColor(YtSkin.sub); gravity = Gravity.CENTER; setPadding(ui.dp(20), ui.dp(30), ui.dp(20), ui.dp(30)) }, LinearLayout.LayoutParams(-1, -2))
+        val box = if (tv && !comments) rail else listBox   // (v479 م5) تلفزيون: حالة المقترحات بتظهر في صف المقترحات
+        box.removeAllViews()
+        box.addView(TextView(act).apply { text = t; textSize = if (tv) 16f else 13f; setTextColor(YtSkin.sub); gravity = Gravity.CENTER; setPadding(ui.dp(20), ui.dp(30), ui.dp(20), ui.dp(30)) }, if (box === rail) LinearLayout.LayoutParams(-2, -2) else LinearLayout.LayoutParams(-1, -2))
     }
 
     private fun setTab(c: Boolean) {
         if (comments == c) return
         comments = c; paintTabs()
-        composer.visibility = if (c) View.VISIBLE else View.GONE
+        composer.visibility = if (c && !tv) View.VISIBLE else View.GONE   // (v479 م5) كتابة تعليق مش على التلفزيون
+        if (tv) tvTabVis()
         if (c && !cLoaded) loadComments() else renderList()
     }
 
     private var liteRel: List<NpItem> = emptyList()   // (v472) مقترحات سريعة لحد ما تفاصيل NewPipe تجهز
     private fun renderList() {
         if (comments) { renderComments(); return }
+        if (tv) { renderRail(); return }
         listBox.removeAllViews()
         val rel = det?.related?.takeIf { it.isNotEmpty() } ?: liteRel
         if (rel.isEmpty()) { status(if (det == null) "⏳ …" else "مفيش مقترحات"); return }

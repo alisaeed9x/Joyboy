@@ -260,6 +260,7 @@ class FileManagerActivity : Activity() {
         th = Themes.byId(try { prefs().getString("theme", "mx") } catch (_: Exception) { "mx" })
         ui = Ui(this, th)
         applyBars(th)
+        TvFocus.attach(this, th.primary)   // (v477)
         sortMode = prefs().getInt("fm_sort", 0)
         showHidden = prefs().getBoolean("fm_hidden", false)
         deepOn = prefs().getBoolean("fm_deep", false)

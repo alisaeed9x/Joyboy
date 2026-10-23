@@ -115,10 +115,23 @@ object YtAccount {
         val close = ui.text("✕", 18f, th.text, true).apply { setPadding(ui.dp(10), ui.dp(4), ui.dp(10), ui.dp(4)); setOnClickListener { d.dismiss() } }
         bar.addView(title, LinearLayout.LayoutParams(0, -2, 1f)); bar.addView(close, LinearLayout.LayoutParams(-2, -2))
         root.addView(bar, LinearLayout.LayoutParams(-1, -2))
-        root.addView(wv, LinearLayout.LayoutParams(-1, 0, 1f))
+        // (v480 م7) تلفزيون: تسجيل الدخول محتاج مؤشر (صفحات جوجل مش بتتنقل كويس بالتركيز)
+        val hostFl: android.widget.FrameLayout? = if (TvFocus.onCtx(act)) android.widget.FrameLayout(act) else null
+        val ptr: TvPointer? = hostFl?.let { TvPointer(act, it, th.primary) }
+        if (hostFl != null && ptr != null) {
+            hostFl.addView(wv, android.widget.FrameLayout.LayoutParams(-1, -1))
+            hostFl.addView(ptr.view, android.widget.FrameLayout.LayoutParams(-1, -1))
+            root.addView(hostFl, LinearLayout.LayoutParams(-1, 0, 1f))
+        } else root.addView(wv, LinearLayout.LayoutParams(-1, 0, 1f))
         d.setContentView(root)
         d.setOnKeyListener { _, kc, ev ->
-            if (kc == KeyEvent.KEYCODE_BACK && ev.action == KeyEvent.ACTION_UP && wv.canGoBack()) { wv.goBack(); true } else false
+            if (ptr != null && (kc == KeyEvent.KEYCODE_DPAD_UP || kc == KeyEvent.KEYCODE_DPAD_DOWN || kc == KeyEvent.KEYCODE_DPAD_LEFT || kc == KeyEvent.KEYCODE_DPAD_RIGHT)) {
+                if (ev.action == KeyEvent.ACTION_DOWN) ptr.move(kc, ev.repeatCount, wv)
+                true
+            } else if (ptr != null && (kc == KeyEvent.KEYCODE_DPAD_CENTER || kc == KeyEvent.KEYCODE_ENTER || kc == KeyEvent.KEYCODE_NUMPAD_ENTER)) {
+                if (ev.action == KeyEvent.ACTION_UP) ptr.click()
+                true
+            } else if (kc == KeyEvent.KEYCODE_BACK && ev.action == KeyEvent.ACTION_UP && wv.canGoBack()) { wv.goBack(); true } else false
         }
         d.setOnDismissListener { try { wv.stopLoading(); wv.destroy() } catch (_: Throwable) {}; if (!done) onDone(false) }
         d.show()

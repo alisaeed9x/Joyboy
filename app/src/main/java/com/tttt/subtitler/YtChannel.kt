@@ -5,6 +5,7 @@ import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.text.TextUtils
+import android.view.FocusFinder
 import android.view.Gravity
 import android.view.View
 import android.view.animation.DecelerateInterpolator
@@ -106,8 +107,27 @@ class YtChannelPage(private val act: Activity, private val ui: Ui, private val h
     private var more: ((Page) -> YtRes)? = null
     private var loadingMore = false
     private var tabLoad: ((String) -> Pair<YtRes, (Page) -> YtRes>)? = null
+    // (v479 م5) تلفزيون: شبكة 4 أعمدة بكروت متركّزة بدل القايمة الطويلة
+    private val tv = DeviceUi.isTv(act)
+    private val cols = 4
+    private var rowBox: LinearLayout? = null
+    private var rowN = 0
 
     val isOpen: Boolean get() = visibility == View.VISIBLE && !closing
+
+    /** (v479 م5) تلفزيون: التركيز بالأسهم يفضل جوه صفحة القناة (مايهربش للشبكة اللي تحتها) */
+    override fun focusSearch(focused: View?, direction: Int): View? {
+        if (!tv || visibility != View.VISIBLE) return super.focusSearch(focused, direction)
+        return FocusFinder.getInstance().findNextFocus(this, focused, direction) ?: focused
+    }
+
+    /** (v479 م5) Back على التلفزيون: لو التركيز في التابات/الترتيب/الشبكة يرجع لزرار الاشتراك فوق، وبعدها يقفل الصفحة */
+    fun tvBack(): Boolean {
+        if (!tv || !isOpen) return false
+        val f = findFocus() ?: return false
+        if (f === subB) return false
+        scroll.scrollTo(0, 0); subB.requestFocus(); return true
+    }
 
     init {
         visibility = View.GONE; isClickable = true; setBackgroundColor(YtSkin.bg); layoutDirection = View.LAYOUT_DIRECTION_RTL
@@ -117,6 +137,7 @@ class YtChannelPage(private val act: Activity, private val ui: Ui, private val h
         topName.apply { textSize = 16f; setTextColor(YtSkin.text); typeface = medium; setSingleLine(); ellipsize = TextUtils.TruncateAt.END; gravity = Gravity.CENTER_VERTICAL }
         val top = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; gravity = Gravity.CENTER_VERTICAL; setPadding(ui.dp(4), 0, ui.dp(12), 0) }
         top.addView(back, LinearLayout.LayoutParams(ui.dp(44), ui.dp(44)))
+        if (tv) back.isFocusable = false   // (v479 م5) Back بتاع الريموت كفاية — مايبقاش وقفة زيادة في التركيز
         top.addView(topName, LinearLayout.LayoutParams(0, -2, 1f))
         col.addView(top, LinearLayout.LayoutParams(-1, ui.dp(48)))
         col.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f))
@@ -143,8 +164,9 @@ class YtChannelPage(private val act: Activity, private val ui: Ui, private val h
         acts.addView(subB, LinearLayout.LayoutParams(0, -2, 1f))
         acts.addView(bellB, LinearLayout.LayoutParams(ui.dp(46), ui.dp(46)).apply { marginStart = ui.dp(8) })
 
-        body.addView(banner, LinearLayout.LayoutParams(-1, sw * 9 / 32))
+        body.addView(banner, LinearLayout.LayoutParams(-1, if (tv) sw * 9 / 64 else sw * 9 / 32))
         body.addView(head, LinearLayout.LayoutParams(-1, -2))
+        if (tv) { descTv.isClickable = false; descTv.isFocusable = false }
         body.addView(descTv, LinearLayout.LayoutParams(-1, -2))
         body.addView(acts, LinearLayout.LayoutParams(-1, -2))
         body.addView(HorizontalScrollView(act).apply { isHorizontalScrollBarEnabled = false; addView(tabsRow) }, LinearLayout.LayoutParams(-1, -2))
@@ -204,7 +226,7 @@ class YtChannelPage(private val act: Activity, private val ui: Ui, private val h
     }
 
     private fun status(t: String) {
-        listBox.removeAllViews()
+        listBox.removeAllViews(); rowBox = null; rowN = 0
         listBox.addView(TextView(act).apply { text = t; textSize = 13f; setTextColor(YtSkin.sub); gravity = Gravity.CENTER; setPadding(ui.dp(20), ui.dp(30), ui.dp(20), ui.dp(30)) }, LinearLayout.LayoutParams(-1, -2))
     }
 
@@ -213,6 +235,7 @@ class YtChannelPage(private val act: Activity, private val ui: Ui, private val h
         val wasOpen = isOpen
         closing = false
         animate().cancel()
+        if (tv) post { try { subB.requestFocus() } catch (_: Throwable) {} }   // (v479 م5) التركيز يدخل الصفحة أول ما تفتح
         gen++; val my = gen
         chan = null; tabLoad = null; tabKey = ""; items = ArrayList(); next = null; more = null; loadingMore = false
         curUrl = url0; curName = name; curAv = avatar0
@@ -335,7 +358,7 @@ class YtChannelPage(private val act: Activity, private val ui: Ui, private val h
                         val seen = items.map { it.id + it.url }.toHashSet()
                         val add = r.items.filter { seen.add(it.id + it.url) }
                         items.addAll(add); next = r.next
-                        if (sortMode != 0) renderList() else for (v in add) listBox.addView(rowFor(v), LinearLayout.LayoutParams(-1, -2))
+                        if (sortMode != 0) renderList() else if (tv) tvAppend(add) else for (v in add) listBox.addView(rowFor(v), LinearLayout.LayoutParams(-1, -2))
                     }
                     loadingMore = false
                 }
@@ -364,12 +387,69 @@ class YtChannelPage(private val act: Activity, private val ui: Ui, private val h
     }
 
     private fun renderList() {
-        listBox.removeAllViews()
+        listBox.removeAllViews(); rowBox = null; rowN = 0
         if (items.isEmpty()) { status("مفيش حاجة هنا"); return }
+        if (tv) { tvAppend(sortedItems()); return }
         for (v in sortedItems()) listBox.addView(rowFor(v), LinearLayout.LayoutParams(-1, -2))
     }
 
     private fun rowFor(v: NpItem): View = if (v.kind == 2) playlistRow(v) else videoCard(v)
+
+    // ───────── (v479 م5) تلفزيون: شبكة 4 أعمدة — كل صف 4 كروت متركّزة، OK = فتح، Menu = (شغّل · صوت · تحميل) ─────────
+    private fun tvCw(): Int = (sw - ui.dp(32) - cols * ui.dp(12)) / cols
+
+    private fun tvAppend(list: List<NpItem>) {
+        val cw = tvCw()
+        for (v in list) {
+            val cur = rowBox
+            val rb: LinearLayout = if (cur == null || rowN >= cols) {
+                LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; setPadding(ui.dp(16), ui.dp(6), ui.dp(16), ui.dp(6)); clipChildren = false }
+                    .also { listBox.addView(it, LinearLayout.LayoutParams(-1, -2)); rowBox = it; rowN = 0 }
+            } else cur
+            rb.addView(tvCard(v), LinearLayout.LayoutParams(cw, -2).apply { setMargins(ui.dp(6), 0, ui.dp(6), 0) })
+            rowN++
+        }
+    }
+
+    private fun tvCard(v: NpItem): View {
+        val cw = tvCw()
+        val ch = cw * 9 / 16
+        val thumb = ImageView(act).apply { scaleType = ImageView.ScaleType.CENTER_CROP; setBackgroundColor(YtSkin.surface) }
+        val box = FrameLayout(act)
+        box.addView(thumb, FrameLayout.LayoutParams(-1, -1))
+        if (v.kind != 2 && v.dur > 0) box.addView(TextView(act).apply {
+            text = fmtDur(v.dur); textSize = 13f; setTextColor(Color.WHITE); typeface = medium; includeFontPadding = false
+            setPadding(ui.dp(5), ui.dp(3), ui.dp(5), ui.dp(3)); background = GradientDrawable().apply { setColor(0xCC000000.toInt()); cornerRadius = ui.dp(4).toFloat() }
+        }, FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM or Gravity.END).apply { setMargins(ui.dp(8), ui.dp(8), ui.dp(8), ui.dp(8)) })
+        try { if (v.thumb.isNotBlank()) Glide.with(act).load(v.thumb).centerCrop().override(cw, ch).into(thumb) } catch (_: Throwable) {}
+        val title = TextView(act).apply { text = v.title; textSize = 15f; setTextColor(YtSkin.text); typeface = medium; maxLines = 2; ellipsize = TextUtils.TruncateAt.END; setPadding(ui.dp(2), ui.dp(8), ui.dp(2), 0) }
+        val meta = TextView(act).apply {
+            text = if (v.kind == 2) (if (v.count > 0) "📃 " + v.count + " فيديو" else "📃 قايمة تشغيل") else listOf(if (v.count > 0) fmtN(v.count) + " مشاهدة" else "", v.age).filter { it.isNotBlank() }.joinToString(" · ")
+            textSize = 12.5f; setTextColor(YtSkin.sub); maxLines = 1; ellipsize = TextUtils.TruncateAt.END; setPadding(ui.dp(2), ui.dp(2), ui.dp(2), 0)
+        }
+        val root = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; isFocusable = true; isClickable = true }
+        root.addView(box, LinearLayout.LayoutParams(cw, ch))
+        root.addView(title, LinearLayout.LayoutParams(cw, -2))
+        root.addView(meta, LinearLayout.LayoutParams(cw, -2))
+        root.setOnClickListener { if (v.kind == 2) host.openPlaylist(v.url, v.title) else host.openVideo(fix(v)) }
+        root.setOnLongClickListener { if (v.kind != 2 && v.id.length == 11) tvMenu(root, v); true }
+        root.setOnFocusChangeListener { _, f -> if (f && v.kind == 0 && v.id.length == 11) YtFast.warm(v.id) }
+        return root
+    }
+
+    private fun tvMenu(anchor: View, v: NpItem) {
+        val m = PopupMenu(act, anchor)
+        m.menu.add(0, 1, 0, "▶ شغّل"); m.menu.add(0, 2, 1, "🎧 صوت بس"); m.menu.add(0, 3, 2, "⬇ تحميل")
+        m.setOnMenuItemClickListener { mi ->
+            when (mi.itemId) {
+                1 -> host.openVideo(fix(v))
+                2 -> host.audio(fix(v))
+                3 -> host.download(fix(v))
+            }
+            true
+        }
+        m.show()
+    }
 
     /** فيديو القناة: بنكمّل اسم القناة ولينكها (الصفحة بتجيب الفيديوهات من غيرهم) */
     private fun fix(v: NpItem): NpItem = if (v.kind == 0) NpItem(v.id, v.title, curName, curUrl, v.thumb, v.dur, v.count, v.age, 0, v.url, v.ts, curAv) else v
