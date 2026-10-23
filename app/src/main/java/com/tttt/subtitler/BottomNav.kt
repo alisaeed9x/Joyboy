@@ -49,6 +49,7 @@ class BottomNav(act: Activity, private val ui: Ui, private val th: Theme, privat
             setBackgroundDrawable(android.graphics.drawable.ColorDrawable(0))
             setGravity(Gravity.BOTTOM); setLayout(-1, -2)
         }
+        TvFocus.attachDialog(act, d, th.primary)   // (v480 م7)
         d.show()
     }
 

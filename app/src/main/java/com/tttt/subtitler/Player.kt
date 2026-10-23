@@ -48,6 +48,41 @@ class PlayerActivity : Activity(), Host {
     // أرقام = قفز بالوقت (آخر رقمين ثواني، اللي قبلهم دقايق — دوس OK أو استنى ثانيتين) · OK/تشغيل = تشغيل/إيقاف
     private val tvH = android.os.Handler(android.os.Looper.getMainLooper())
     private var tvDigits = ""
+    private var tvBar: TvPlayerBar? = null
+    /** (v477 م4) بناء شريط التحكم وربطه بدوال المشغّل (تلفزيون بس) */
+    private fun tvInitBar(frame: FrameLayout) {
+        val self = this
+        val b = TvPlayerBar(this, ui, th, object : TvPlayerBar.Actions {
+            override fun pos(): Long = try { player.currentPosition } catch (_: Throwable) { 0L }
+            override fun dur(): Long = durMs
+            override fun playing(): Boolean = try { player.isPlaying } catch (_: Throwable) { false }
+            override fun toggle() { togglePlay() }
+            override fun seekBy(ms: Long) { tvSeek(ms) }
+            override fun seekTo(ms: Long) { try { player.seekTo(ms.coerceIn(0L, if (durMs > 0) durMs else Long.MAX_VALUE)) } catch (_: Throwable) {} }
+            override fun prev() { stepEpisode(-1) }
+            override fun next() { stepEpisode(1) }
+            override fun speedLabel(): String = PlayerLogic.speedLabel(speed)
+            override fun cycleSpeed() {
+                speed = PlayerLogic.nextSpeed(speed); try { player.setPlaybackSpeed(speed) } catch (_: Throwable) {}
+                Cfg.p.edit().putString("speed", speed.toString()).putString("speed:$vid", speed.toString()).apply()
+                speedBRef?.text = "⏩ " + PlayerLogic.speedLabel(speed)
+            }
+            override fun fitLabel(): String = fitNameOf(curFit())
+            override fun cycleFit() { cycleFitNow() }
+            override fun ccOn(): Boolean = ccOn
+            override fun toggleCc() { ccOn = !ccOn; if (!ccOn) sub.show(null) else curIdx = -2 }
+            override fun subScale(d: Int) { tvSubScale(d) }
+            override fun subShift(dMs: Long) {
+                offsetMs = (offsetMs + dMs).coerceIn(-10000L, 10000L)
+                Cfg.p.edit().putString("sub_offset_ms:$vid", offsetMs.toString()).apply(); srtSoon(); curIdx = -2
+                Notice.show(self, String.format("⏱ إزاحة الترجمة: %+.2fs", offsetMs / 1000.0), 1100L)
+            }
+            override fun hasAudio(): Boolean = aTracks.size > 1
+            override fun audio(anchor: View) { audPopFn?.invoke(anchor) }
+        })
+        frame.addView(b.view, FrameLayout.LayoutParams(-1, -2, Gravity.BOTTOM))
+        tvBar = b
+    }
     private var tvDigitRun: Runnable? = null
     private fun tvSeek(dMs: Long) {
         try {
@@ -169,15 +204,36 @@ class PlayerActivity : Activity(), Host {
     override fun dispatchKeyEvent(ev: android.view.KeyEvent): Boolean {
         // (v469) والقفل شغّال: مفاتيح الصوت الجانبية كمان تتبلع (حماية جيب/أطفال كاملة — اللمس كان محجوب أصلًا)
         if (uiLocked && (ev.keyCode == android.view.KeyEvent.KEYCODE_VOLUME_UP || ev.keyCode == android.view.KeyEvent.KEYCODE_VOLUME_DOWN || ev.keyCode == android.view.KeyEvent.KEYCODE_VOLUME_MUTE)) return true
-        if (ev.action == android.view.KeyEvent.ACTION_DOWN && DeviceUi.isTv(this)) {
-            when (ev.keyCode) {
-                android.view.KeyEvent.KEYCODE_DPAD_RIGHT -> { tvSeek(10_000L); return true }
-                android.view.KeyEvent.KEYCODE_DPAD_LEFT -> { tvSeek(-10_000L); return true }
-                android.view.KeyEvent.KEYCODE_DPAD_UP -> { tvSubScale(10); return true }
-                android.view.KeyEvent.KEYCODE_DPAD_DOWN -> { tvSubScale(-10); return true }
-                android.view.KeyEvent.KEYCODE_DPAD_CENTER, android.view.KeyEvent.KEYCODE_ENTER -> { if (tvDigits.isNotEmpty()) { tvJump(); return true }; togglePlay(); return true }
-                android.view.KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE, android.view.KeyEvent.KEYCODE_MEDIA_PLAY, android.view.KeyEvent.KEYCODE_MEDIA_PAUSE -> { togglePlay(); return true }
-                in android.view.KeyEvent.KEYCODE_0..android.view.KeyEvent.KEYCODE_9 -> { tvDigit(ev.keyCode - android.view.KeyEvent.KEYCODE_0); return true }
+        // (v477 م4) تلفزيون: شريط تحكم بنمط MX/VLC. الشريط مخفي: ←/→ تقديم وتأخير · OK/↑/↓/Menu = إظهار الشريط. ظاهر: الأسهم بتتنقل بين الأزرار.
+        if (DeviceUi.isTv(this)) {
+            val bar = tvBar; val k = ev.keyCode; val down = ev.action == android.view.KeyEvent.ACTION_DOWN
+            val media = k == android.view.KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE || k == android.view.KeyEvent.KEYCODE_MEDIA_PLAY || k == android.view.KeyEvent.KEYCODE_MEDIA_PAUSE
+            if (media || k == android.view.KeyEvent.KEYCODE_MEDIA_NEXT || k == android.view.KeyEvent.KEYCODE_MEDIA_PREVIOUS ||
+                k in android.view.KeyEvent.KEYCODE_0..android.view.KeyEvent.KEYCODE_9) {
+                if (down) {
+                    when {
+                        media -> togglePlay()
+                        k == android.view.KeyEvent.KEYCODE_MEDIA_NEXT -> stepEpisode(1)
+                        k == android.view.KeyEvent.KEYCODE_MEDIA_PREVIOUS -> stepEpisode(-1)
+                        else -> tvDigit(k - android.view.KeyEvent.KEYCODE_0)
+                    }
+                }
+                return true
+            }
+            if (bar != null && bar.visible) { bar.poke() }   // والشريط ظاهر: الأسهم/OK بتتعامل عادي مع التركيز على الأزرار
+            else when (k) {
+                android.view.KeyEvent.KEYCODE_DPAD_RIGHT, android.view.KeyEvent.KEYCODE_DPAD_LEFT -> {
+                    if (down) { val step = if (ev.repeatCount > 12) 60_000L else if (ev.repeatCount > 4) 30_000L else 10_000L; tvSeek(if (k == android.view.KeyEvent.KEYCODE_DPAD_RIGHT) step else -step) }
+                    return true
+                }
+                android.view.KeyEvent.KEYCODE_DPAD_CENTER, android.view.KeyEvent.KEYCODE_ENTER -> {
+                    if (down) { if (tvDigits.isNotEmpty()) tvJump() else { togglePlay(); bar?.show() } }
+                    return true
+                }
+                android.view.KeyEvent.KEYCODE_DPAD_UP, android.view.KeyEvent.KEYCODE_DPAD_DOWN, android.view.KeyEvent.KEYCODE_MENU -> {
+                    if (down) bar?.show()
+                    return true
+                }
             }
         }
         return super.dispatchKeyEvent(ev)
@@ -912,7 +968,7 @@ class PlayerActivity : Activity(), Host {
         val up = loc[1] > screenH / 2
         val avail = (if (up) loc[1] - ui.dp(12) else screenH - loc[1] - anchor.height - ui.dp(12)).coerceAtLeast(ui.dp(120))
         val popH = minOf(col.measuredHeight, avail)
-        val pw = android.widget.PopupWindow(scroll, popW, popH, true)
+        val pw = TvFocus.pop(this@PlayerActivity, scroll, popW, popH, true)
         Motion.popIn(scroll, up)   // (v445)
         pw.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(0))
         pw.isOutsideTouchable = true
@@ -1238,7 +1294,7 @@ class PlayerActivity : Activity(), Host {
         val up = loc[1] > screenH / 2
         val avail = (if (up) loc[1] - ui.dp(12) else screenH - loc[1] - anchor.height - ui.dp(12)).coerceAtLeast(ui.dp(120))
         val popH = minOf(col.measuredHeight, avail)
-        val pw = android.widget.PopupWindow(scroll, popW, popH, true)
+        val pw = TvFocus.pop(this@PlayerActivity, scroll, popW, popH, true)
         Motion.popIn(scroll, up)   // (v445)
         pw.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(0))
         pw.isOutsideTouchable = true
@@ -1274,7 +1330,7 @@ class PlayerActivity : Activity(), Host {
         val up = loc[1] > screenH / 2
         val avail = (if (up) loc[1] - ui.dp(12) else screenH - loc[1] - anchor.height - ui.dp(12)).coerceAtLeast(ui.dp(120))
         val popH = minOf(col.measuredHeight, avail)
-        val pw = android.widget.PopupWindow(scroll, popW, popH, true)
+        val pw = TvFocus.pop(this@PlayerActivity, scroll, popW, popH, true)
         Motion.popIn(scroll, up)   // (v445)
         pw.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(0))
         pw.isOutsideTouchable = true
@@ -2386,6 +2442,7 @@ class PlayerActivity : Activity(), Host {
             val l: () -> Unit = { tu.refresh() }
             TaskCenter.extra.add(l)
             dlg.setOnDismissListener { TaskCenter.extra.remove(l) }
+            TvFocus.attachDialog(this, dlg, th.primary)   // (v480 م7)
             dlg.show()
             dlg.window?.setLayout(-1, -1)
         }
@@ -2981,6 +3038,7 @@ class PlayerActivity : Activity(), Host {
         val rootFrame = FrameLayout(this).apply { layoutDirection = View.LAYOUT_DIRECTION_LTR }
         rootFrame.addView(page, FrameLayout.LayoutParams(-1, -1))
         setContentView(rootFrame)
+        if (DeviceUi.isTv(this)) { TvFocus.attach(this, th.primary); tvInitBar(rootFrame) }   // (v477 م4)
         applyFull(true)   // شاشة كاملة دايمًا (أفقي ورأسي) — الأزرار في الشريط العلوي وزرار ☰ القائمة
         // فيديو اتفتح من فولدرات الجهاز: يشتغل لاندسكيب مباشرة زي MX Player
         // الاتجاه الأولي من شكل الفيديو (من المكتبة) — وبعدها بيتصحح لوحده أول ما الأبعاد الحقيقية تظهر (onVideoSizeChanged)
@@ -3962,6 +4020,7 @@ class PlayerActivity : Activity(), Host {
     /** أفقي: يرجع للرأسي من غير ما يقفل. رأسي: يحفظ التقدم ويوقف الفيديو ويقفل. */
     @Suppress("DEPRECATION")
     override fun onBackPressed() {
+        if (tvBar?.visible == true) { tvBar?.hide(); return }   // (v477 م4) تلفزيون: Back بيقفل شريط التحكم الأول
         if (nextPanel?.consumeBack() == true) return   // (v378)
         if (sideOpen) { closeSide(); return }
         // (v110) علامة ✔ فوق: لو الترجمة لسه ما خلصتش، كمّلها في الخلفية أول ما أخرج
@@ -4092,7 +4151,7 @@ class PlayerActivity : Activity(), Host {
         val avail = (loc[1] - ui.dp(12)).coerceAtLeast(ui.dp(80))
         val popH = minOf(col.measuredHeight, avail, (dm.heightPixels * 0.4f).toInt())
         val scroll = android.widget.ScrollView(this).apply { isVerticalScrollBarEnabled = false; overScrollMode = View.OVER_SCROLL_NEVER; addView(col) }
-        val pw = android.widget.PopupWindow(scroll, popW, popH, true)
+        val pw = TvFocus.pop(this@PlayerActivity, scroll, popW, popH, true)
         Motion.popIn(scroll, false)   // (v445)
         pw.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(0)); pw.isOutsideTouchable = true
         col.setOnLongClickListener { NoticeLog.clear(); pw.dismiss(); true }
@@ -4587,7 +4646,7 @@ class PlayerActivity : Activity(), Host {
         val up = loc[1] > screenH / 2   // الزرار في النص التحتاني (الشريط السفلي) → القايمة تفتح فوقه
         val avail = (if (up) loc[1] - ui.dp(12) else screenH - loc[1] - anchor.height - ui.dp(12)).coerceAtLeast(ui.dp(120))
         val popH = minOf(col.measuredHeight, avail)
-        val pw = android.widget.PopupWindow(scroll, popW, popH, true)
+        val pw = TvFocus.pop(this@PlayerActivity, scroll, popW, popH, true)
         Motion.popIn(scroll, up)   // (v445)
         pw.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(0))
         pw.isOutsideTouchable = true
@@ -4666,7 +4725,7 @@ class PlayerActivity : Activity(), Host {
         val scroll = android.widget.ScrollView(this).apply { isVerticalScrollBarEnabled = false; addView(col) }
         col.measure(View.MeasureSpec.makeMeasureSpec(ui.dp(220), View.MeasureSpec.AT_MOST), View.MeasureSpec.UNSPECIFIED)
         val maxH = (resources.displayMetrics.heightPixels * 0.55f).toInt()
-        val pw = android.widget.PopupWindow(scroll, ui.dp(220), minOf(col.measuredHeight, maxH), true)
+        val pw = TvFocus.pop(this@PlayerActivity, scroll, ui.dp(220), minOf(col.measuredHeight, maxH), true)
         pw.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(0)); pw.isOutsideTouchable = true
         pw.setOnDismissListener { if (verPop === pw) verPop = null; showChrome() }
         verPop = pw

@@ -260,6 +260,7 @@ class FileManagerActivity : Activity() {
         th = Themes.byId(try { prefs().getString("theme", "mx") } catch (_: Exception) { "mx" })
         ui = Ui(this, th)
         applyBars(th)
+        TvFocus.attach(this, th.primary)   // (v477)
         sortMode = prefs().getInt("fm_sort", 0)
         showHidden = prefs().getBoolean("fm_hidden", false)
         deepOn = prefs().getBoolean("fm_deep", false)
@@ -416,7 +417,8 @@ class FileManagerActivity : Activity() {
         val gates = BottomNav(this, ui, th, 3) { i ->
             if (i != 3) {
                 NavAnim.set(3, i)
-                if (i == 2) startActivity(Intent(this, BrowserActivity::class.java))
+                if (i == 0 && TvFocus.on(this) && TvFocus.goHome(this)) { /* (v482) تلفزيون: الرئيسية = شاشة التلفزيون */ }
+                else if (i == 2) startActivity(Intent(this, BrowserActivity::class.java))
                 else startActivity(Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP).putExtra("tab", if (i == 0) "videos" else if (i == 1) "music" else if (i == 4) "youtube" else if (i == 7) "settings" else "tasks"))
                 NavAnim.peek(this)
                 finish()

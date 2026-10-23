@@ -172,6 +172,7 @@ object YtHistoryUi {
         root.addView(ScrollView(act).apply { addView(body, ViewGroup.LayoutParams(-1, -2)) }, LinearLayout.LayoutParams(-1, 0, 1f))
         dlg.setContentView(root)
         render()
+        TvFocus.attachDialog(act, dlg, th.primary)   // (v480 م7)
         dlg.show()
     }
 }
