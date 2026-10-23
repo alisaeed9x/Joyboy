@@ -699,7 +699,8 @@ class MainActivity : Activity() {
                         startActivity(Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TASK or Intent.FLAG_ACTIVITY_NEW_TASK).apply { if (m != DeviceUi.TV) putExtra("tab", "settings") })
                         finish()
                     },
-                    ui.button("🔁 بدّل للوضع اللي بعده (موبايل ← تلفزيون ← تابلت)") {
+                    // (v490) زرار «بدّل للوضع اللي بعده» بيحوّل التلفزيون لتابلت فبيبوّظ وضع التلفزيون — مش بيظهر في وضع التلفزيون
+                    if (DeviceUi.isTv(this)) View(this) else ui.button("🔁 بدّل للوضع اللي بعده (موبايل ← تلفزيون ← تابلت)") {
                         val nx = DeviceUi.cycleNext(this); Cfg.put("ui_mode", nx)
                         startActivity(Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TASK or Intent.FLAG_ACTIVITY_NEW_TASK).apply { if (nx != DeviceUi.TV) putExtra("tab", "settings") })
                         finish()

@@ -81,6 +81,7 @@ class TvActivity : Activity() {
         saver.addView(saverCol, FrameLayout.LayoutParams(-1, -1))
         rootF.addView(saver, FrameLayout.LayoutParams(-1, -1))
         setContentView(rootF)
+        TvFocus.attach(this, th.primary)   // (v490) حلقة تركيز واضحة على كل زرار/كارت في اللانشر
         showHome()
         h.post(tick)
         h.postDelayed({ if (!isDestroyed && !isFinishing) askDefaultHome() }, 1500L)   // (v485)
@@ -107,7 +108,11 @@ class TvActivity : Activity() {
         if (intent.hasCategory(Intent.CATEGORY_HOME)) { wake(); showHome() }
     }
     @Suppress("DEPRECATION", "OVERRIDE_DEPRECATION")
-    override fun onBackPressed() { wake(); showHome() }
+    override fun onBackPressed() {
+        wake()
+        if (openFolder != null && foldersHost != null) { closeFolder(); return }   // (v490) من جوه فولدر: ارجع لقايمة الفولدرات
+        showHome()
+    }
 
     // ===== الشريط العلوي والريل (تقسيمة يوتيوب TV) =====
     private fun topBar(): View {
@@ -253,11 +258,6 @@ class TvActivity : Activity() {
             Notice.show(this, if (on) "🌡 الدفء الليلي اشتغل" else "🌡 الدفء الليلي اتقفل", 1400L)
         })
         r.addView(railBtn("⚙️", "الإعدادات") { guardPin { openMain("settings") } })
-        r.addView(railBtn("🔁", "الواجهة") {
-            val nx = DeviceUi.cycleNext(this); Cfg.put("ui_mode", nx)
-            Notice.show(this, "🖥 الواجهة الجاية: " + DeviceUi.label(nx), 1500L)
-            startActivity(Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TASK or Intent.FLAG_ACTIVITY_NEW_TASK)); finish()
-        })
         r.addView(railBtn("🌙", "نوم") { showSaver() })
         r.addView(railBtn("📱", "الموبايل") { openMain("videos") })
         val sc = ScrollView(this).apply { isVerticalScrollBarEnabled = false; addView(r) }
@@ -511,7 +511,43 @@ class TvActivity : Activity() {
     private fun vidSort() = Cfg.str("tv_vid_sort", VideoLib.SORT_NAME)
 
     /** قايمة الفيديوهات مترتبة فولدرات، وزرار ⋮ لترتيب الفولدرات وترتيب الفيديوهات جواها */
+    private var openFolder: String? = null      // (v490) مفتاح الفولدر المفتوح (null = قايمة الفولدرات)
+    private var foldersHost: LinearLayout? = null
+
+    private fun closeFolder() {
+        val back = openFolder; openFolder = null
+        val fh = foldersHost ?: return
+        fillFolders(fh)
+        // رجّع التركيز على الفولدر اللي كنت فيه
+        fh.post { try { (fh.findViewWithTag<View>("fold:$back") ?: fh.findViewWithTag<View>("fold:first"))?.requestFocus() } catch (_: Throwable) {} }
+    }
+
+    private fun gridInto(parent: LinearLayout, cards: List<View>, perRow: Int) {
+        var k = 0
+        while (k < cards.size) {
+            val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; clipChildren = false }
+            for (c in cards.subList(k, minOf(k + perRow, cards.size))) row.addView(c)
+            parent.addView(row, LinearLayout.LayoutParams(-1, -2))
+            k += perRow
+        }
+    }
+
+    /** (v490) كارت فولدر: صورة أول فيديو + الاسم + عدد الفيديوهات */
+    private fun folderCard(f: FolderItem, first: Boolean): View {
+        val iv = ImageView(this).apply { scaleType = ImageView.ScaleType.CENTER_CROP; setBackgroundColor(th.border) }
+        val c = card(190, 150, { cc ->
+            cc.addView(iv, LinearLayout.LayoutParams(-1, ui.dp(84)))
+            cc.addView(ui.text("📁 " + f.name, 13f, th.text, true).apply { maxLines = 1; setPadding(0, ui.dp(5), 0, 0) })
+            cc.addView(ui.text(f.videos.size.toString() + " فيديو", 11f, th.muted))
+        }, { openFolder = f.key; foldersHost?.let { fillFolders(it) } })
+        c.tag = if (first) "fold:first" else "fold:" + f.key
+        f.videos.firstOrNull()?.let { v -> Thumbs.load(this, v) { bmp -> if (bmp != null) runOnUiThread { iv.setImageBitmap(bmp) } } }
+        return c
+    }
+
+    /** الفيديوهات: الأول الفولدرات كلها جنب بعض، ولما تدخل فولدر تظهر فيديوهاته */
     private fun fillFolders(fh: LinearLayout) {
+        foldersHost = fh
         fh.removeAllViews()
         val head = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL }
         head.addView(sectionTitle("🎬 الفيديوهات"))
@@ -522,13 +558,24 @@ class TvActivity : Activity() {
             return
         }
         if (lastScan.isEmpty()) { fh.addView(ui.text("⏳ بقرا الفيديوهات…", 12.5f, th.muted).apply { setPadding(ui.dp(8), ui.dp(6), ui.dp(8), ui.dp(6)) }); return }
-        val folders = VideoLib.sortFolders(VideoLib.group(lastScan), foldSort()).take(30)
-        for (f in folders) {
-            val vids = VideoLib.sortVideos(f.videos, vidSort())
-            val cards = vids.take(30).map { videoCard(it) }.toMutableList()
-            if (vids.size > 30) cards.add(tile("📂", "كل الـ ${vids.size}") { openMain("videos") })
-            rowInto(fh, "📁 ${f.name} · ${vids.size}", cards)
+        val all = VideoLib.sortFolders(VideoLib.group(lastScan), foldSort())
+        val open = openFolder?.let { k -> all.firstOrNull { it.key == k } }
+        if (open == null) {
+            openFolder = null
+            val cards = all.take(60).mapIndexed { i, f -> folderCard(f, i == 0) }
+            gridInto(fh, cards, 4)
+            return
         }
+        val back = pill("→ رجوع للفولدرات") { closeFolder() }.apply { setPadding(ui.dp(14), ui.dp(5), ui.dp(14), ui.dp(5)) }
+        fh.addView(LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL
+            addView(back); addView(ui.text("📁 ${open.name} · ${open.videos.size}", 16f, th.primary, true).apply { setPadding(ui.dp(12), 0, 0, 0) })
+        })
+        val vids = VideoLib.sortVideos(open.videos, vidSort())
+        val vcards = vids.take(120).map { videoCard(it) }
+        gridInto(fh, vcards, 3)
+        if (vids.size > 120) fh.addView(LinearLayout(this).apply { addView(tile("📂", "كل الـ ${vids.size}") { openMain("videos") }) })
+        fh.post { try { vcards.firstOrNull()?.requestFocus() } catch (_: Throwable) {} }
     }
 
     private fun sortMenu(fh: LinearLayout) {
