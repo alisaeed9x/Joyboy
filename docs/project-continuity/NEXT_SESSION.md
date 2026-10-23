@@ -1,0 +1,11 @@
+# NEXT_SESSION
+مشروع Vanilla TV Launcher. مرجع كود: Subtitler v475 (مصدر المستخدم). مصدر الحقيقة = هذا المجلد + الكود.
+- منجز ومُجمَّع/مفحوص (جلسة قديمة): P0–P5 (60 اختبار JVM). **منجز وغير مُجمَّع:** P5c + P6 + P7–P8 يوتيوب (D-013/D-014) + **P9 تطبيقات/أصوات/ترتيب + P10 سكون (D-015)**.
+- **أول حاجة:** شغّل `kotlinc` على كل `*.kt` + `sh dev-tests/run_tests.sh` (والـ stubs في `dev-tests/media3-stubs` قد تحتاج إضافات لـ MergingMediaSource/ProgressiveMediaSource/DefaultHttpDataSource/DefaultMediaSourceFactory؛ ملفات NewPipe (`YtNp.kt`) محتاجة المكتبة الحقيقية → تتفحص بـ Gradle/Actions مش بالـ stubs). لو فشل: أصلح الكود. لو المستخدم بعت لوج Actions ← أصلح منه.
+- لا تغيّر D-001/D-002/D-006/D-007/D-011/D-012/D-013/D-014 بدون قرار جديد. أول أخطاء محتملة: تواقيع NewPipe في `YtNp.kt` (منسوخة من Subtitler المبني) وتواقيع media3 في `PlayerLayer.kt` (`startYt`, `onCues`, `setPreferredTextLanguage`).
+- **يوتيوب (D-013):** بدون حساب/كوكيز — **ممنوع** تنقل `YtAccount`/`YtExtract`. ما تعدش بإزالة إعلانات. لو ظهر كسر من يوتيوب: حدّث رقم `NewPipeExtractor` في `app/build.gradle.kts` وراجع تغيّر الـ API. ما تدخلش يوتيوب في `HistoryStore` بدون قرار (D-014).
+- **P11–P14 اتعملوا كأوراق وأدوات** (مفيش بيئة تنفيذ): `TEST_PLAN_FINAL.md` · `dev-tests/adb_smoke.sh` · job `jvm-tests` في Actions · `RELEASE.md` · `HANDOFF_REPORT.md` · D-016/D-017. **التالي (شغل حقيقي):** (1) لوج Actions build+jvm-tests ← صلّح الكومبايل (2) smoke (3) جدول B على TCL ← سجّل في TEST_RESULTS (4) بعدها المتطلبات الناقصة (HANDOFF_REPORT §3) بترتيب أولوية المستخدم. **لا تكتب ميزات جديدة قبل ما الكومبايل يتشغّل.**
+- شرط ثابت: Back = خطوة واحدة دايمًا (شاشة يوتيوب: النتايج تتمسح الأول ثم تخرج)؛ أي طبقة جديدة تتسجّل في BackRouter (screen < player < saver).
+- **P15 (D-018) اتنفّذ:** مظهر/نسخ احتياطي/مشغّل/ترتيب/ترجمة خارجية+صورية. اتفحص بـ kotlinc (244 PASS + compile_check على android.jar+stubs). **ما اتبنيش بـ Gradle.** أول أخطاء محتملة: تواقيع media3 الجديدة (`SubtitleConfiguration`, `setPreferredAudioLanguage`, `Cue.*`) + `YtNp.kt`. لو لوج Actions جه، صلّح منه.
+- مش مدعوم عمدًا: VobSub · قنوات/اشتراكات/تعليقات يوتيوب. **دعم الشبكة (SMB/DLNA) مؤجّل — D-019 ينتظر قرار المستخدم.**
+- لا تنقل كود Subtitler بالجملة؛ لا تعيد تنفيذ المكتمل.

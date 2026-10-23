@@ -1,0 +1,14 @@
+# INTEGRATION_CONTRACTS (مسودة — تتكمّل في المرحلة 1)
+- **BackRouter (منفّذ):** `register(name){Boolean}` / `dispatch(): String?` — طبقات بترتيب التسجيل، الأحدث أولًا؛ أول handler يرجّع true بيستهلك الضغطة. المستهلكون: TvActivity (سكون/بحث/PIN)، حوارات GDialog، WebView الدخول.
+- **YouTube:** عبر Intent/واجهة منفصلة، تعطّله ما يعطّلش المكتبة.
+- **سجل المشاهدة/الإعدادات:** نسخة واحدة (Cfg + recents.json في Subtitler الحالي).
+- **المكتبة (منفّذ):** `LibraryStore.items` (قراءة فقط من الـ Main) ← يتحدّث بـ `scan(ctx){onUpdate}` (خيط خلفي، نتيجة على الـ Main، `gen` يلغي الفحص القديم). كاش `library.v1.txt` (ترويسة VTL-LIB-1؛ تالف/نسخة تانية → فاضي). الاستبعاد: `Cfg lib_excl` (CSV بـ folderKey) ويتطبّق وقت العرض فقط (المكتبة نفسها بتحتفظ بكل الفيديوهات). الفرز: `Cfg lib_sort`.
+- **السجل (منفّذ):** `HistoryStore.entries` ← `record(ctx, item, pos, dur, ended)` فقط من PlayerLayer. ملف `history.v1.txt` (VTL-HIST-1). الربط بالمكتبة: `HistoryLogic.find(entry, items)` (key ثم uri). المستهلكون: صف متابعة المشاهدة، شاشة السجل، (P6) البحث.
+- **المشغّل (منفّذ، D-008/D-011):** `PlayerLayer.open(PlayQueue)` / `close()` / `onBack()` (يقفل القايمة/بطاقة «التالي» الأول) / `handleKey()` / `onPause()`. الرجوع حصرًا عبر BackRouter. خارجه: ما يعرفش HomeActivity غير `onClosed`.
+- **ترتيب طبقات الرجوع:** screen < player < saver. معالج المشغّل بيرجّع false لو السكون ظاهر.
+- **البحث (منفّذ، D-012):** `SearchLogic.search(items, excluded, history, query)` نقي · الواجهة بتنادي `ExternalSearch.openYoutubeSearch(act, q)` / `startVoice` / `voiceText` فقط (مفيش اعتماد على تفاصيل يوتيوب الداخلية) · لا استدعاء خارجي إلا باختيار المستخدم الصريح. إعدادات: `search_recent` (سطر لكل استعلام، حد 10) · `search_yt` (إظهار الزرار).
+- **يوتيوب (منفّذ، D-013/D-014، غير مُجمَّع):** الواجهة (`HomeActivity`) بتتعامل مع `YtNp.searchFirst(q): YtRes` / `searchMore(q, res)` (خيط خلفي فقط، بترمي استثناء عند فشل الشبكة) و`YtItem` · النتايج بتتحوّل لـ `VideoItem(uri="yt:<id>")` عبر `YtLogic.toVideoItem` وتدخل `PlayQueue` عادي · `PlayerLayer.start` بيعرف يوتيوب من `YtLogic.isYt(uri)` فيستدعي `YtNp.pick(id, Cfg yt_maxh): YtStream?` (خيط خلفي، `startId` بيلغي النتيجة القديمة) · يوتيوب **مش** بيكتب في `HistoryStore` ومفيش مشغّل خارجي له · فشل الشبكة/الاستخراج = Toast + إغلاق المشغّل؛ **ما بيأثّرش على المكتبة المحلية** · لا حساب/كوكيز · `INTERNET` الصلاحية الوحيدة للشبكة · إعدادات: `yt_maxh` (0/720/1080) · `yt_hl` (اختياري، auto افتراضي) · الاحتياطي: `ExternalSearch.openYoutubeSearch` (التطبيق الرسمي).
+- **التطبيقات (منفّذ، D-015):** `AppsStore.list/icon/launch` (Android، بيعتمد على `<queries>`) + `AppsLogic.clean` نقي · إعداد `apps_on` · مفيش تخزين بيانات تطبيقات.
+- **السكون (D-015):** `SaverLogic` نقي (shouldShow/shouldMove/offset/styles) · إعدادات `saver_min` / `saver_style` · الطبقة العليا في BackRouter (saver) · ما بيقاطعش فيديو شغّال.
+- **ترتيب الرئيسية:** `rows_order` (CSV) + `rows_hide`؛ `HomePrefs.order/move`.
+
