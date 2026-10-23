@@ -122,6 +122,7 @@ class MainActivity : Activity() {
         if (fromPlayer) requestedOrientation = if (intent?.getBooleanExtra("land", false) == true) ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE else ActivityInfo.SCREEN_ORIENTATION_PORTRAIT   // الإعدادات من المشغّل: بنفس اتجاه المشغّل
         UiWatchdog.start()
         Cfg.init(this); CrashLog.install(this); YtFast.startup();
+        if (!fromPlayer) DeviceUi.applyOrientation(this)   // (v494) وضع التلفزيون/التابلت على موبايل = لاندسكيب تلقائي
         if (DeviceUi.isTv(this) && !fromPlayer) fromTv = true   // (v482) وضع التلفزيون مختار: أي دخول لـMain (من أي شاشة/إشعار/رجوع من المشغّل) رجوعه للتلفزيون مش للموبايل
         // (v461) وضع التلفزيون: شاشة TV بدال واجهة الموبايل (إلا لو جاي بطلب صريح: تبويب/رابط/فتح من شاشة TV نفسها)
         if (DeviceUi.isTv(this) && intent?.getBooleanExtra("force_phone", false) != true && intent?.getStringExtra("tab") == null &&

@@ -322,6 +322,7 @@ class BrowserActivity : Activity() {
     override fun onCreate(b: Bundle?) {
         super.onCreate(b)
         Cfg.ensure(this)   // (v310) المتصفح ممكن يتفتح من أيقونة اللانشر قبل Main
+        DeviceUi.applyOrientation(this)   // (v494) وضع التلفزيون/التابلت على موبايل = لاندسكيب تلقائي
         th = Themes.byId(try { prefs().getString("theme", "mx") } catch (_: Exception) { "mx" })
         ui = Ui(this, th)
         applyBars(th)
@@ -347,10 +348,11 @@ class BrowserActivity : Activity() {
             background = ui.box(0x00000000, th.text, 6); layoutParams = LinearLayout.LayoutParams(ui.dp(28), ui.dp(28)).apply { setMargins(ui.dp(5), ui.dp(6), ui.dp(5), ui.dp(6)) }
             setOnClickListener { showTabs() }
         }
+        val rotB = tbtn("🔄", 18f) { toggleRotate() }   // (v494) تدوير الشاشة لاندسكيب ⇄ بورتريه
         val menuB = tbtn("⋮", 22f) { showMenu(it) }
         val bar = LinearLayout(this).apply {
             layoutDirection = View.LAYOUT_DIRECTION_LTR; gravity = Gravity.CENTER_VERTICAL; setPadding(ui.dp(2), 0, ui.dp(2), 0)
-            addView(backB); addView(fwdB); addView(addr); addView(reloadB); addView(tabsB); addView(menuB)
+            addView(backB); addView(fwdB); addView(addr); addView(reloadB); addView(rotB); addView(tabsB); addView(menuB)
         }
         if (tvOn) {   // (v480 م6) زرار تبديل الوضع: 🖱 مؤشر / 🎯 تنقل بالتركيز
             tvPointerMode = Cfg.str("tv_br_mode", "ptr") != "focus"
@@ -905,6 +907,12 @@ class BrowserActivity : Activity() {
         pw.height = minOf(col.measuredHeight, maxH)
         try { pw.showAsDropDown(anchor, anchor.width - width, ui.dp(2)) } catch (_: Throwable) {}
     }
+    /** (v494) زرار تدوير: لو لاندسكيب يروّح بورتريه، والعكس */
+    private fun toggleRotate() {
+        val land = resources.configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
+        requestedOrientation = if (land) android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT else android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+    }
+
     private fun showMenu(anchor: View) {
         val url = tab.wv?.url ?: tab.url
         val marked = BrowserStore.isMarked(this, url)
@@ -919,6 +927,7 @@ class BrowserActivity : Activity() {
             "🕘 السجل" to { showHistory() },
             "🔒 سجل الخصوصية" to { showPrivacyHistory() },
             "🚫 المواقع المحجوبة (${SiteBlock.list(this).size})" to { showBlocked() },
+            "🔄 تدوير الشاشة (لاندسكيب ⇄ بورتريه)" to { toggleRotate() },
             "🔍 بحث في الصفحة" to { openFind() },
             (if (tab.desktop) "🖥 نسخة الكمبيوتر: شغالة ✓" else "🖥 نسخة الكمبيوتر") to { toggleDesktop() },
             "🏠 الصفحة الرئيسية" to { load(home()) },

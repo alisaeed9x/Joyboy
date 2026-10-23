@@ -117,7 +117,7 @@ object TvFocus {
             } catch (_: Throwable) {}
             return
         }
-        if (isContainer(v)) return
+        if (isContainer(v) || v is TvTileView) return   // (v491) كروت اللانشر عندها حلقتها البيضاء وتكبيرها الخاص
         try {
             val d = dm.density
             if (!saved.containsKey(v)) saved[v] = v.foreground

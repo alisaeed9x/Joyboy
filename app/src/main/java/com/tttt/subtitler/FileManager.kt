@@ -257,6 +257,7 @@ class FileManagerActivity : Activity() {
 
     override fun onCreate(b: Bundle?) {
         super.onCreate(b)
+        DeviceUi.applyOrientation(this)   // (v494)
         th = Themes.byId(try { prefs().getString("theme", "mx") } catch (_: Exception) { "mx" })
         ui = Ui(this, th)
         applyBars(th)

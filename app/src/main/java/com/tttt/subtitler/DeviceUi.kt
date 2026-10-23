@@ -33,6 +33,17 @@ object DeviceUi {
     }
 
     fun isTv(ctx: Context): Boolean = mode(ctx) == TV
+
+    /** (v494) تجربة وضع التلفزيون/التابلت على موبايل: الشاشة تتقفل لاندسكيب تلقائي (التلفزيون الحقيقي والتابلت الحقيقي ما بيتلمسوش) */
+    fun forcesLandscape(ctx: Context): Boolean = try {
+        Cfg.ensure(ctx)
+        val m = mode(ctx)
+        (m == TV || m == TABLET) && !isRealTv(ctx) && !isRealTablet(ctx)
+    } catch (_: Throwable) { false }
+
+    fun applyOrientation(act: android.app.Activity) {
+        try { if (forcesLandscape(act)) act.requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE } catch (_: Throwable) { }
+    }
     fun isTablet(ctx: Context): Boolean = mode(ctx) == TABLET
 
     fun label(m: String): String = when (m) {

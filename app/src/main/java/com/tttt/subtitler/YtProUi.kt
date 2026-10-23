@@ -522,7 +522,7 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
                 if (f != null) f(id, title, translate, posMs, pick) else onPlay(id, title, translate)
             }
             override fun openChannel(url: String, name: String) { watch.close(false); this@YtProUi.openChannel(url, name, "") }
-            override fun openVideo(v: NpItem) { watchVideo(v, null) }
+            override fun openVideo(v: NpItem) { if (DeviceUi.isTv(act)) play(v, false) else watchVideo(v, null) }   // (v494) تلفزيون: من غير صفحة المشاهدة
             override fun audio(v: NpItem) { playAudio(v) }
             override fun download(anchor: View, v: NpItem) { dlMenu(anchor, v) }
             override fun state(open: Boolean) { if (open) ytDock.dismiss(); setNavHidden(open || chan.isOpen); pillGate(open || chan.isOpen); if (!open) tvFocusList() }   // (v479 م5)
@@ -764,7 +764,7 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
         if (it.url == "ytpl:all") { cur?.let { st -> playAll(st) }; return }   // (v469) C7
         if (it.url.startsWith("ytdm:")) { Notice.show(act, "ده تنزيل شغّال في مدير تنزيلات النظام — لما يخلص هيظهر تحت في القايمة والملف في التنزيلات/Subtitler", 3000L); return }   // (v469) C3
         when (it.kind) {
-            0 -> if (YtOpen.mode() == YtOpen.PAGE && it.id.length == 11) watchVideo(it, srcView) else play(it, false)   // (v337) دوسة على الفيديو = يتشغّل على طول (التفاصيل من الضغطة الطويلة ← ℹ)
+            0 -> if (YtOpen.mode() == YtOpen.PAGE && it.id.length == 11 && !DeviceUi.isTv(act)) watchVideo(it, srcView) else play(it, false)   // (v494) وضع التلفزيون: دايمًا المشغّل على طول   // (v337) دوسة على الفيديو = يتشغّل على طول (التفاصيل من الضغطة الطويلة ← ℹ)
             1 -> openChannel(it.channelUrl, it.title, it.thumb)
             2 -> load("📃 " + it.title, -1, null, null, null, "", true, false) { YtNp.playlist(it.url) }
         }
