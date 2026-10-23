@@ -30,9 +30,9 @@ object TvFocus {
     private val saved = WeakHashMap<View, Drawable?>()
     private val listRinged = WeakHashMap<View, Boolean>()
 
-    fun on(a: Activity): Boolean = try { DeviceUi.isTv(a) } catch (_: Throwable) { false }
+    fun on(a: Activity): Boolean = try { DeviceUi.isRemote(a) } catch (_: Throwable) { false }
 
-    fun onCtx(c: Context): Boolean = try { DeviceUi.isTv(c) } catch (_: Throwable) { false }
+    fun onCtx(c: Context): Boolean = try { DeviceUi.isRemote(c) } catch (_: Throwable) { false }
 
     fun attach(act: Activity, accent: Int) {
         if (!on(act)) return
@@ -117,7 +117,7 @@ object TvFocus {
             } catch (_: Throwable) {}
             return
         }
-        if (isContainer(v) || v is TvTileView) return   // (v491) كروت اللانشر عندها حلقتها البيضاء وتكبيرها الخاص
+        if (isContainer(v) || v is TvTileView || v is TvOwnFocus) return   // (v491) كروت اللانشر عندها حلقتها البيضاء وتكبيرها الخاص
         try {
             val d = dm.density
             if (!saved.containsKey(v)) saved[v] = v.foreground

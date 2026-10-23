@@ -72,6 +72,8 @@ object Backup {
         // تثبيت جديد (أو مسح بيانات): نرجّع آخر نسخة تلقائية مرة واحدة قبل ما أي حاجة تتكتب فوقها (استرجاع المفاتيح بيغيّر الإعدادات وكان هيعمل نسخة جديدة فاضية فوق القديمة)
         if (!Cfg.p.getBoolean("bk_gate", false)) {
             try { readAuto(app)?.let { Backup.apply(it) } } catch (_: Throwable) {}
+            // (v498) بيانات مدمجة: لو لسه مفيش مفاتيح (تثبيت جديد من غير نسخة تلقائية) نقرا assets/seed_backup.json لو موجود — مرة واحدة بس
+            if (!hasKeys()) try { app.assets.open("seed_backup.json").use { Backup.apply(it.readBytes().toString(Charsets.UTF_8)) } } catch (_: Throwable) {}
             Cfg.p.edit().putBoolean("bk_gate", true).apply()
         }
         val l = SharedPreferences.OnSharedPreferenceChangeListener { _, k ->

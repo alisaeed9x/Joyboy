@@ -210,7 +210,7 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
         return if (DeviceUi.isTv(act)) (sw - ui.dp(32) - ui.dp(36)) / 4 else sw
     }
     /** (v477) تلفزيون: التركيز يروح لشبكة الفيديوهات (بيتندهي من Main لما تفتح تبويب يوتيوب) */
-    fun tvFocusList() { if (DeviceUi.isTv(act)) lv.post { try { if (root.visibility == View.VISIBLE && lv.isShown && !watch.isOpen && !chan.isOpen) lv.requestFocus() } catch (_: Throwable) {} } }   // (v479) مايسرقش التركيز وصفحة المشاهدة/القناة مفتوحة
+    fun tvFocusList() { if (DeviceUi.isRemote(act)) lv.post { try { if (root.visibility == View.VISIBLE && lv.isShown && !watch.isOpen && !chan.isOpen) lv.requestFocus() } catch (_: Throwable) {} } }   // (v479) مايسرقش التركيز وصفحة المشاهدة/القناة مفتوحة
     private lateinit var ytDock: YtDock               // (v417) شريط مصغّر سفلي بيكمّل الفيديو لما تنزّل من صفحة المشاهدة
     private lateinit var watch: YtWatchPage          // (v402) صفحة المشاهدة (مشغّل مصغّر + تعليقات + مقترحات)
     private lateinit var chan: YtChannelPage         // (v403) صفحة القناة (بانر + اشتراك + جرس + تابات)
@@ -316,7 +316,7 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
         // (v475) التبويبات (الرئيسية · الاشتراكات · أنا) بقت في الشريط السفلي بتاع البرنامج — فوق بقى عنوان الصفحة + بحث + إعدادات بس
         topTitle = TextView(act).apply { text = "يوتيوب"; textSize = 19f; setTextColor(YtSkin.text); typeface = YtSkin.medium; gravity = Gravity.CENTER_VERTICAL or Gravity.START; setSingleLine(); setPadding(ui.dp(12), 0, ui.dp(8), 0) }
         appBar.addView(topTitle, LinearLayout.LayoutParams(0, ui.dp(46), 1f))
-        if (DeviceUi.isTv(act)) appBar.addView(micBtn(), LinearLayout.LayoutParams(ui.dp(48), ui.dp(44)))
+        if (DeviceUi.isRemote(act)) appBar.addView(micBtn(), LinearLayout.LayoutParams(ui.dp(48), ui.dp(44)))
         appBar.addView(iconBtn("search", "بحث") { enterSearch(true) }, LinearLayout.LayoutParams(ui.dp(44), ui.dp(44)))
         appBar.addView(iconBtn("gear", "إعدادات يوتيوب") { settings() }, LinearLayout.LayoutParams(ui.dp(44), ui.dp(44)))
         val backBtn = iconBtn("back", "رجوع") { exitSearch() }.apply { scaleX = -1f }
@@ -324,7 +324,7 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
         searchBar.setPadding(ui.dp(4), ui.dp(4), ui.dp(8), ui.dp(4))
         searchBar.addView(backBtn, LinearLayout.LayoutParams(ui.dp(44), ui.dp(44)))
         searchBar.addView(search, LinearLayout.LayoutParams(0, ui.dp(40), 1f))
-        if (DeviceUi.isTv(act)) searchBar.addView(micBtn(), LinearLayout.LayoutParams(ui.dp(48), ui.dp(44)))
+        if (DeviceUi.isRemote(act)) searchBar.addView(micBtn(), LinearLayout.LayoutParams(ui.dp(48), ui.dp(44)))
         searchBar.addView(clearBtn, LinearLayout.LayoutParams(ui.dp(44), ui.dp(44)))
         page.addView(appBar, LinearLayout.LayoutParams(-1, -2))
         page.addView(searchBar, LinearLayout.LayoutParams(-1, -2))
@@ -437,7 +437,7 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
         lv.apply {
             setBackgroundColor(YtSkin.bg); selector = GradientDrawable().apply { setColor(Color.TRANSPARENT) }
             numColumns = ytCols(); horizontalSpacing = ui.dp(6); verticalSpacing = ui.dp(6); stretchMode = GridView.STRETCH_COLUMN_WIDTH
-            if (DeviceUi.isTv(act)) {   // (v477) يوتيوب على التلفزيون: تحديد واضح بالريموت + Menu = قايمة الفيديو
+            if (DeviceUi.isRemote(act)) {   // (v477) يوتيوب على التلفزيون: تحديد واضح بالريموت + Menu = قايمة الفيديو
                 selector = GradientDrawable().apply { setColor(0x14FFFFFF); setStroke(ui.dp(3), YtSkin.accent); cornerRadius = ui.dp(10).toFloat() }
                 setDrawSelectorOnTop(true); descendantFocusability = ViewGroup.FOCUS_BLOCK_DESCENDANTS
                 isFocusable = true; isFocusableInTouchMode = false
@@ -1000,7 +1000,7 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
         chipsScroll.visibility = if (st.tab == 0 && !det && st.chUrl == null) View.VISIBLE else View.GONE
         if (st.q != null) enterSearch(false) else if (!searchTyping) { searchBar.visibility = View.GONE; appBar.visibility = View.VISIBLE }
         adapter.set(st.list()); lv.setSelection(st.pos)
-        if (DeviceUi.isTv(act) && (act.currentFocus == null || (act.currentFocus === search && !searchTyping))) tvFocusList()   // (v477) (v479 م5) بعد البحث التركيز ينتقل لنتايج البحث
+        if (DeviceUi.isRemote(act) && (act.currentFocus == null || (act.currentFocus === search && !searchTyping))) tvFocusList()   // (v477) (v479 م5) بعد البحث التركيز ينتقل لنتايج البحث
         h.postDelayed({ prewarmVisible() }, 450L)   // (v472)
         if (st.tab >= 0) paintTabs(st.tab) else if (det) paintTabs(-1)
     }

@@ -36,7 +36,12 @@ class TvTileView(ctx: Context, private val radiusDp: Int = 14) : FrameLayout(ctx
         background = if (f) GradientDrawable().apply {
             setColor(0x00000000); setStroke((3 * d).toInt(), 0xFFFFFFFF.toInt()); cornerRadius = (radiusDp + 5) * d
         } else null
-        animate().scaleX(if (f) 1.08f else 1f).scaleY(if (f) 1.08f else 1f).translationZ(if (f) 10 * d else 0f)
+        animate().scaleX(if (f) 1.07f else 1f).scaleY(if (f) 1.07f else 1f).translationZ(if (f) 10 * d else 0f).setInterpolator(android.view.animation.DecelerateInterpolator())
             .setDuration(Skins.dur(130L)).start()
     }
 }
+
+/** (v496) أي View بيرسم تركيزه بنفسه (دواير/تابات/أزرار الشريط العلوي) — TvFocus بيسيبه من غير حلقته العامة */
+interface TvOwnFocus
+class TvOwnLinear(ctx: Context) : android.widget.LinearLayout(ctx), TvOwnFocus
+class TvOwnEdit(ctx: Context) : android.widget.EditText(ctx), TvOwnFocus

@@ -476,7 +476,7 @@ class BrowserActivity : Activity() {
     /** (v117) رجوع للشاشة الرئيسية على بوابة معيّنة (videos / yt) */
     private fun goMain(tab: String) {
         persistTabs()
-        if (tvOn && tab == "videos" && TvFocus.goHome(this)) return   // (v482) تلفزيون: الرئيسية = شاشة التلفزيون
+        if (DeviceUi.isTv(this) && tab == "videos" && TvFocus.goHome(this)) return   // (v482) تلفزيون: الرئيسية = شاشة التلفزيون
         startActivity(Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP).putExtra("tab", tab))
         NavAnim.peek(this)
         finish()

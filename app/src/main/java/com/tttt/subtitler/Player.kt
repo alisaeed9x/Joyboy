@@ -206,7 +206,7 @@ class PlayerActivity : Activity(), Host {
         // (v469) والقفل شغّال: مفاتيح الصوت الجانبية كمان تتبلع (حماية جيب/أطفال كاملة — اللمس كان محجوب أصلًا)
         if (uiLocked && (ev.keyCode == android.view.KeyEvent.KEYCODE_VOLUME_UP || ev.keyCode == android.view.KeyEvent.KEYCODE_VOLUME_DOWN || ev.keyCode == android.view.KeyEvent.KEYCODE_VOLUME_MUTE)) return true
         // (v477 م4) تلفزيون: شريط تحكم بنمط MX/VLC. الشريط مخفي: ←/→ تقديم وتأخير · OK/↑/↓/Menu = إظهار الشريط. ظاهر: الأسهم بتتنقل بين الأزرار.
-        if (DeviceUi.isTv(this)) {
+        if (DeviceUi.isRemote(this)) {
             val bar = tvBar; val k = ev.keyCode; val down = ev.action == android.view.KeyEvent.ACTION_DOWN
             val media = k == android.view.KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE || k == android.view.KeyEvent.KEYCODE_MEDIA_PLAY || k == android.view.KeyEvent.KEYCODE_MEDIA_PAUSE
             if (media || k == android.view.KeyEvent.KEYCODE_MEDIA_NEXT || k == android.view.KeyEvent.KEYCODE_MEDIA_PREVIOUS ||
@@ -221,7 +221,8 @@ class PlayerActivity : Activity(), Host {
                 }
                 return true
             }
-            if (bar != null && bar.visible) { bar.poke() }   // والشريط ظاهر: الأسهم/OK بتتعامل عادي مع التركيز على الأزرار
+            if (bar != null && bar.visible) { bar.poke() }
+            else if (tvOverlayFocused()) { /* (v500) في عنصر مفتوح في لوحة/قايمة جوه المشغّل: سيب الأسهم وOK توصله بدل ما نبلعها */ }   // والشريط ظاهر: الأسهم/OK بتتعامل عادي مع التركيز على الأزرار
             else when (k) {
                 android.view.KeyEvent.KEYCODE_DPAD_RIGHT, android.view.KeyEvent.KEYCODE_DPAD_LEFT -> {
                     if (down) { val step = if (ev.repeatCount > 12) 60_000L else if (ev.repeatCount > 4) 30_000L else 10_000L; tvSeek(if (k == android.view.KeyEvent.KEYCODE_DPAD_RIGHT) step else -step) }
@@ -239,6 +240,7 @@ class PlayerActivity : Activity(), Host {
         }
         return super.dispatchKeyEvent(ev)
     }
+    private fun tvOverlayFocused(): Boolean = try { val f = currentFocus; f != null && f.isShown && (f.isClickable || f is android.widget.EditText) } catch (_: Throwable) { false }
     override fun finish() { super.finish(); try { overridePendingTransition(R.anim.act_stay, R.anim.act_exit) } catch (e: Exception) { LogStore.err("Main:725", e) } }
     @Volatile var cur = 0L
     @Volatile var durMs = 0L
@@ -3039,7 +3041,7 @@ class PlayerActivity : Activity(), Host {
         val rootFrame = FrameLayout(this).apply { layoutDirection = View.LAYOUT_DIRECTION_LTR }
         rootFrame.addView(page, FrameLayout.LayoutParams(-1, -1))
         setContentView(rootFrame)
-        if (DeviceUi.isTv(this)) { TvFocus.attach(this, th.primary); tvInitBar(rootFrame) }   // (v477 م4)
+        if (DeviceUi.isRemote(this)) { TvFocus.attach(this, th.primary); tvInitBar(rootFrame) }   // (v477 م4)
         applyFull(true)   // شاشة كاملة دايمًا (أفقي ورأسي) — الأزرار في الشريط العلوي وزرار ☰ القائمة
         // فيديو اتفتح من فولدرات الجهاز: يشتغل لاندسكيب مباشرة زي MX Player
         // الاتجاه الأولي من شكل الفيديو (من المكتبة) — وبعدها بيتصحح لوحده أول ما الأبعاد الحقيقية تظهر (onVideoSizeChanged)
@@ -3838,7 +3840,7 @@ class PlayerActivity : Activity(), Host {
     fun canOverlay() = Build.VERSION.SDK_INT < 23 || android.provider.Settings.canDrawOverlays(this)
     fun enterPip(fromUser: Boolean = true) {
         // شريط الترجمة بره نافذة PiP محتاج إذن "العرض فوق التطبيقات" (مرة واحدة)
-        if (fromUser && !canOverlay() && !Cfg.str("pip_overlay_asked", "0").equals("1")) {
+        if (fromUser && !DeviceUi.isTv(this) && !canOverlay() && !Cfg.str("pip_overlay_asked", "0").equals("1")) {
             Cfg.put("pip_overlay_asked", "1")
             Notice.show(this, ("فعّل «العرض فوق التطبيقات» لـ Subtitler عشان الترجمة تظهر فوق، وارجع دوس ⧉ تاني").toString(), 3600L)
             try { startActivity(Intent(android.provider.Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName"))); return } catch (e: Exception) { LogStore.err("Main:2229", e) }
