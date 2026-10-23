@@ -581,6 +581,7 @@ class FileManagerActivity : Activity() {
     private fun up() { if (!isTop(cur)) cur.parentFile?.let { load(it) } }
 
     @Suppress("DEPRECATION")
+    override fun dispatchKeyEvent(ev: android.view.KeyEvent): Boolean { TvKill.watch(this, ev); return super.dispatchKeyEvent(ev) }   // (v486)
     override fun onBackPressed() {
         when {
             sel.isNotEmpty() -> { sel.clear(); refresh() }

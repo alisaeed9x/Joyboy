@@ -56,6 +56,17 @@ object TypeServer {
                     out.write("HTTP/1.1 200 OK\r\nContent-Type: $type\r\nContent-Length: ${b.size}\r\nConnection: close\r\n\r\n".toByteArray(Charsets.US_ASCII))
                     out.write(b); out.flush()
                 }
+                val path = line.split(" ").getOrNull(1) ?: "/"
+                if (path.startsWith("/ytlink")) {   // (v488) دخول يوتيوب بالـQR
+                    if (line.startsWith("POST")) {
+                        val buf = CharArray(len.coerceIn(0, 65536)); var got = 0
+                        while (got < buf.size) { val r = br.read(buf, got, buf.size - got); if (r < 0) break; got += r }
+                        val ok = try { YtLink.receive(String(buf, 0, got)) } catch (_: Throwable) { false }
+                        val b = (if (ok) "OK" else "NO").toByteArray()
+                        out.write("HTTP/1.1 ${if (ok) 200 else 403} X\r\nContent-Length: ${b.size}\r\nConnection: close\r\n\r\n".toByteArray(Charsets.US_ASCII)); out.write(b); out.flush()
+                    } else send(YtLink.page(path.substringAfter("pin=", "").takeWhile { it.isDigit() }), "text/html; charset=utf-8")
+                    return
+                }
                 if (line.startsWith("POST")) {
                     val buf = CharArray(len.coerceIn(0, 65536)); var got = 0
                     while (got < buf.size) { val r = br.read(buf, got, buf.size - got); if (r < 0) break; got += r }

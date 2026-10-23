@@ -981,6 +981,7 @@ class MainActivity : Activity() {
             return
         }
         setContentView(frame)
+        frame.post { YtLink.maybeHandle(this, intent) }   // (v488) فتح التطبيق من رابط QR بتاع التلفزيون
         // (v469) D2 طبقة الفلتر الدافئ فوق محتوى الشاشة (ما بتمنعش اللمس: View عادية من غير مستمعات، والعناصر العائمة فوقها)
         warmView = View(this).apply { isClickable = false; isFocusable = false; importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO }
         frame.addView(warmView, FrameLayout.LayoutParams(-1, -1))
@@ -1720,6 +1721,7 @@ class MainActivity : Activity() {
     /** (v117) الرجوع من المتصفح بشريط البوابات: بيفتح البوابة اللي اخترتها */
     override fun onNewIntent(i: Intent?) {
         super.onNewIntent(i)
+        YtLink.maybeHandle(this, i)   // (v488) دخول يوتيوب للتلفزيون بالـQR (subtitler://ytlink)
         if (DeviceUi.isTv(this) && !fromPlayer) fromTv = true   // (v482)
         i?.getStringExtra("ytaudio")?.let { id ->   // (v343) 🎧 من مشغّل الفيديو: كمّل كصوت من نفس المكان
             try {
@@ -1731,7 +1733,7 @@ class MainActivity : Activity() {
         if (i?.getBooleanExtra("fullmusic", false) == true) musicOpenFn?.invoke()   // (v344) ⤢ من المشغّل المصغّر في المتصفح/الملفات
         when (i?.getStringExtra("tab")) { "videos" -> showTabFn(0); "music" -> showTabFn(1); "tasks" -> showTabFn(5); "settings" -> settingsShow?.invoke(null); "youtube" -> { showTabFn(4); openYtFromIntent(i) } }
     }
-    override fun dispatchKeyEvent(ev: android.view.KeyEvent): Boolean { if (TvFocus.handleKey(this, ev)) return true; return super.dispatchKeyEvent(ev) }   // (v477) Menu = دوسة طويلة
+    override fun dispatchKeyEvent(ev: android.view.KeyEvent): Boolean { TvKill.watch(this, ev); if (TvFocus.handleKey(this, ev)) return true; return super.dispatchKeyEvent(ev) }   // (v477) Menu = دوسة طويلة
     @Suppress("DEPRECATION")
     override fun onBackPressed() {
         if (!fromPlayer && ytLoadUi?.visible == true) { cancelYtLoad(); return }   // (v339) لسه بنجيب الفيديو: رجوع = إلغاء ونفضل في يوتيوب

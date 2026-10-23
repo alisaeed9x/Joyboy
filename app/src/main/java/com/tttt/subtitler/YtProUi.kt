@@ -780,13 +780,22 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
     // ───────── (v346) حساب جوجل ─────────
     private fun startLogin() {
         val from = navSel
-        YtAccount.login(act, ui, th) { ok ->
+        val after: (Boolean) -> Unit = { ok ->
             act.runOnUiThread {
                 if (act.isFinishing || act.isDestroyed) return@runOnUiThread
                 if (ok) { Notice.show(act, "✅ اتسجّل الدخول", 2200L); syncNow(); openTab(if (from == 2) 4 else from) }
                 else Notice.show(act, "اتقفلت صفحة الدخول من غير ما يتم", 2200L)
             }
         }
+        // (v488) تلفزيون: اختيار بين QR من الموبايل أو الدخول اليدوي
+        if (TvFocus.onCtx(act)) {
+            GAlert(act).setTitle("🔐 تسجيل الدخول بحساب جوجل")
+                .setItems(arrayOf("📱 بالـQR من الموبايل (أسهل)", "⌨ يدوي على التلفزيون")) { _, which ->
+                    if (which == 0) YtLink.showTvQr(act, ui, th, after) else YtAccount.login(act, ui, th, after)
+                }.setNegativeButton("إلغاء", null).show()
+            return
+        }
+        YtAccount.login(act, ui, th, after)
     }
     private fun syncNow() {
         Notice.show(act, "🔄 بجيب اشتراكاتك من يوتيوب…", 2000L)

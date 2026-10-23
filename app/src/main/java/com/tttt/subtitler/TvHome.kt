@@ -83,11 +83,12 @@ class TvActivity : Activity() {
         setContentView(rootF)
         showHome()
         h.post(tick)
+        h.postDelayed({ if (!isDestroyed && !isFinishing) askDefaultHome() }, 1500L)   // (v485)
     }
 
     private val tick = object : Runnable {
         override fun run() {
-            val t = SimpleDateFormat("hh:mm", Locale.getDefault()).format(Date())
+            val t = SimpleDateFormat("hh:mm a", Locale.getDefault()).format(Date())   // (v484) نظام 12 ساعة بتوقيت الجهاز
             if (::clockTv.isInitialized) clockTv.text = "🕐 $t"
             if (saver.visibility == View.VISIBLE) saverClock.text = t else { idleSec++; if (idleSec >= 180) showSaver() }
             h.postDelayed(this, 1000)
@@ -97,7 +98,7 @@ class TvActivity : Activity() {
     private fun showSaver() { saver.visibility = View.VISIBLE; idleSec = 0 }
     private fun wake() { idleSec = 0; if (::saver.isInitialized && saver.visibility == View.VISIBLE) saver.visibility = View.GONE }
     override fun onUserInteraction() { super.onUserInteraction(); wake() }
-    override fun dispatchKeyEvent(ev: KeyEvent): Boolean { wake(); return super.dispatchKeyEvent(ev) }
+    override fun dispatchKeyEvent(ev: KeyEvent): Boolean { wake(); TvKill.watch(this, ev); return super.dispatchKeyEvent(ev) }   // (v486) 0 لمدة 5 ثواني = إلغاء تثبيت
     override fun onDestroy() { h.removeCallbacks(tick); super.onDestroy() }
 
     /** (v476) لانشر: زر Home وإحنا شغّالين = ارجع للرئيسية. Back عمره ما بيقفل اللانشر (بس بيرجّع للرئيسية). */
@@ -125,7 +126,96 @@ class TvActivity : Activity() {
         bar.addView(searchChip, LinearLayout.LayoutParams(0, -2, 1f).apply { setMargins(ui.dp(18), 0, ui.dp(18), 0) })
         clockTv = ui.text("", 15f, th.text, true)
         bar.addView(clockTv)
+        // (v483) أزرار اللانشر جنب الساعة: إعدادات البرنامج · إعدادات الأندرويد · تطبيقات السيستم · مشغّل افتراضي · إلغاء تثبيت
+        bar.addView(barBtn("⚙️", "إعدادات البرنامج") { guardPin { openMain("settings") } })
+        bar.addView(barBtn("🛠", "إعدادات الأندرويد") { openSystemSettings() })
+        bar.addView(barBtn("📦", "تطبيقات السيستم") { openSystemApps() })
+        bar.addView(barBtn("🏠", "خليه الافتراضي") { setAsDefaultLauncher() })
+        bar.addView(barBtn("🗑", "إلغاء تثبيت اللانشر") { uninstallSelf() })
         return bar
+    }
+
+    /** (v483) زرار دائري صغير في الشريط العلوي بتركيز واضح + اسمه بيظهر تحته وهو متركّز */
+    private fun barBtn(icon: String, label: String, onClick: () -> Unit): View {
+        val b = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER; isFocusable = true; isClickable = true
+            setPadding(ui.dp(11), ui.dp(7), ui.dp(11), ui.dp(7)); background = ui.box(th.surface, th.border, 22)
+            setOnClickListener { onClick() }
+            setOnFocusChangeListener { v, f ->
+                v.background = ui.box(if (f) th.card else th.surface, if (f) th.primary else th.border, 22, if (f) 3 else 1)
+                v.animate().scaleX(if (f) 1.1f else 1f).scaleY(if (f) 1.1f else 1f).setDuration(120).start()
+                if (f) Notice.show(this@TvActivity, label, 1100L)
+            }
+        }
+        b.addView(ui.text(icon, 18f, th.text).apply { gravity = Gravity.CENTER })
+        b.layoutParams = LinearLayout.LayoutParams(-2, -2).apply { setMargins(ui.dp(5), 0, ui.dp(5), 0) }
+        b.contentDescription = label
+        return b
+    }
+
+    /** يجرّب الـIntents بالترتيب لحد ما واحد يشتغل (أجهزة TV كتير بتشيل بعض شاشات الإعدادات) */
+    private fun tryIntents(failMsg: String, vararg list: Intent) {
+        for (i in list) {
+            try { startActivity(i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)); return } catch (_: Throwable) { }
+        }
+        Notice.show(this, failMsg, 2400L)
+    }
+
+    private fun openSystemSettings() = tryIntents("⚠ إعدادات الأندرويد مش متاحة على الجهاز ده",
+        Intent(android.provider.Settings.ACTION_SETTINGS),
+        Intent().setClassName("com.android.tv.settings", "com.android.tv.settings.MainSettings"))
+
+    /** تطبيقات السيستم (مش تطبيقات البرنامج): صفحة «كل التطبيقات» في إعدادات الأندرويد عشان تمسح/توقف/تمسح الكاش */
+    private fun openSystemApps() = tryIntents("⚠ شاشة التطبيقات مش متاحة على الجهاز ده",
+        Intent(android.provider.Settings.ACTION_MANAGE_ALL_APPLICATIONS_SETTINGS),
+        Intent(android.provider.Settings.ACTION_APPLICATION_SETTINGS),
+        Intent(android.provider.Settings.ACTION_MANAGE_APPLICATIONS_SETTINGS),
+        Intent().setClassName("com.android.tv.settings", "com.android.tv.settings.device.apps.AppsActivity"),
+        Intent(android.provider.Settings.ACTION_SETTINGS))
+
+    /** خلّي Subtitler المشغّل (Home) الافتراضي: RoleManager على أندرويد 10+، وإلا شاشة المشغّل الافتراضي في الإعدادات */
+    @Suppress("DEPRECATION")
+    private fun setAsDefaultLauncher() {
+        try {
+            if (android.os.Build.VERSION.SDK_INT >= 29) {
+                val rm = getSystemService(android.app.role.RoleManager::class.java)
+                if (rm != null && rm.isRoleAvailable(android.app.role.RoleManager.ROLE_HOME)) {
+                    if (rm.isRoleHeld(android.app.role.RoleManager.ROLE_HOME)) { Notice.show(this, "✅ Subtitler هو المشغّل الافتراضي بالفعل", 2200L); return }
+                    startActivityForResult(rm.createRequestRoleIntent(android.app.role.RoleManager.ROLE_HOME), 83); return
+                }
+            }
+        } catch (e: Throwable) { LogStore.err("TvHome:role", e) }
+        tryIntents("⚠ اختار المشغّل الافتراضي من إعدادات الأندرويد ← التطبيقات الافتراضية",
+            Intent(android.provider.Settings.ACTION_HOME_SETTINGS),
+            Intent(android.provider.Settings.ACTION_MANAGE_DEFAULT_APPS_SETTINGS),
+            Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME))   // آخر حل: شاشة «اختار المشغّل» بتظهر لو في أكتر من واحد
+    }
+
+    /** (v485) هل Subtitler هو الشاشة الرئيسية (Home) الحالية؟ */
+    private fun isDefaultHome(): Boolean = try {
+        val ri = packageManager.resolveActivity(Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME), android.content.pm.PackageManager.MATCH_DEFAULT_ONLY)
+        ri?.activityInfo?.packageName == packageName
+    } catch (_: Throwable) { false }
+
+    /** (v485) أول ما اللانشر يفتح وهو مش الافتراضي: نافذة تسأل تخليه الافتراضي */
+    private fun askDefaultHome() {
+        if (Cfg.str("tv_ask_home", "1") == "0" || isDefaultHome()) return
+        GAlert(this).setTitle("🏠 خلّي Subtitler المشغّل الافتراضي؟")
+            .setMessage("دلوقتي شاشة التلفزيون الأصلية هي الرئيسية. تحب Subtitler يبقى هو الرئيسية؟ (تقدر ترجّعها لأي وقت، أو تمسح اللانشر بزرار 🗑 أو دوسة طويلة على 0 في الريموت)")
+            .setPositiveButton("أيوه، خليه الافتراضي") { _, _ -> setAsDefaultLauncher() }
+            .setNeutralButton("ما تسألنيش تاني") { _, _ -> Cfg.put("tv_ask_home", "0") }
+            .setNegativeButton("بعدين", null).show()
+    }
+
+    /** إلغاء تثبيت Subtitler نفسه (لو حصلت مشكلة/بج في اللانشر) — بعد تأكيد */
+    @Suppress("DEPRECATION")
+    private fun uninstallSelf() {
+        GAlert(this).setTitle("🗑 إلغاء تثبيت اللانشر").setMessage("هيتمسح Subtitler من الجهاز بالكامل (ببياناته). التلفزيون هيرجع للمشغّل الأصلي. متأكد؟")
+            .setPositiveButton("امسح") { _, _ ->
+                tryIntents("⚠ ما قدرتش أفتح شاشة إلغاء التثبيت",
+                    Intent(Intent.ACTION_DELETE, Uri.parse("package:$packageName")),
+                    Intent(Intent.ACTION_UNINSTALL_PACKAGE, Uri.parse("package:$packageName")))
+            }.setNegativeButton("لأ", null).show()
     }
 
     private fun railBtn(icon: String, label: String, first: Boolean = false, onClick: () -> Unit): View {
@@ -315,39 +405,212 @@ class TvActivity : Activity() {
     }
 
     private fun launchApp(pkg: String) {
+        bumpUse(pkg)
         try {
             val i = packageManager.getLeanbackLaunchIntentForPackage(pkg) ?: packageManager.getLaunchIntentForPackage(pkg)
             if (i != null) startActivity(i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) else Notice.show(this, "⚠ التطبيق مش متاح", 1800L)
         } catch (e: Exception) { LogStore.err("Tv:app", e); Notice.show(this, "⚠ ما قدرتش أفتح التطبيق", 2000L) }
     }
 
+    // ===== (v484) الشاشة الرئيسية الجديدة: دواير التطبيقات · آخر المشغّل · الفولدرات · اشتراكات يوتيوب · تخصيص =====
+    private val SYS_BLOCK = listOf("settings", "setup", "provision", "wizard", "packageinstaller", "permissioncontroller", "inputmethod", "bugreport",
+        "certinstaller", "systemui", "onetimeinitializer", "keychain", "companiondevice", "tvlauncher", "launcher", "oem", "backuprestore",
+        "diagnostic", "tvrecommendations", "sharedstorage", "cts", "factory", "wfd", "miracast", "dreams", "tvsystem")
+
+    /** تطبيقات أساسية بس: بنشيل تطبيقات السيستم الداخلية (الإعدادات/الإعداد الأول/…) إلا لو فعّلت «إظهار تطبيقات السيستم» من التخصيص */
+    private fun essentialApps(): List<android.content.pm.ResolveInfo> {
+        val pm = packageManager
+        fun q(cat: String): List<android.content.pm.ResolveInfo> = try { pm.queryIntentActivities(Intent(Intent.ACTION_MAIN).addCategory(cat), 0) } catch (_: Throwable) { emptyList() }
+        val all = (q(Intent.CATEGORY_LEANBACK_LAUNCHER) + q(Intent.CATEGORY_LAUNCHER)).distinctBy { it.activityInfo.packageName }
+        val showSys = Cfg.str("tv_apps_sys", "0") == "1"
+        return all.filter { ri ->
+            val pkg = ri.activityInfo.packageName
+            if (pkg == packageName) return@filter false
+            if (showSys) return@filter true
+            val fl = ri.activityInfo.applicationInfo.flags
+            val pureSys = (fl and android.content.pm.ApplicationInfo.FLAG_SYSTEM) != 0 && (fl and android.content.pm.ApplicationInfo.FLAG_UPDATED_SYSTEM_APP) == 0
+            !(pureSys && SYS_BLOCK.any { pkg.lowercase().contains(it) })
+        }.sortedWith(compareByDescending<android.content.pm.ResolveInfo> { appUse()[it.activityInfo.packageName] ?: 0 }
+            .thenBy { it.loadLabel(pm).toString().lowercase() })   // (v485) الأكتر استخدامًا الأول
+    }
+
+    /** عدّاد فتح كل تطبيق من اللانشر (pkg=عدد) */
+    private fun appUse(): Map<String, Int> = Cfg.str("tv_app_use", "").lineSequence().mapNotNull { l ->
+        val i = l.lastIndexOf('='); if (i <= 0) null else l.substring(0, i) to (l.substring(i + 1).toIntOrNull() ?: 0)
+    }.toMap()
+    private fun bumpUse(pkg: String) {
+        val m = LinkedHashMap(appUse()); m[pkg] = (m[pkg] ?: 0) + 1
+        Cfg.put("tv_app_use", m.entries.joinToString("\n") { it.key + "=" + it.value })
+    }
+
+    /** دايرة تطبيق: اللي عليها التركيز بتكبر وإسمها بيتلوّن، والباقي أصغر (زي دواير الألبومات في مشغّل الموسيقى) */
+    private fun appCircle(ri: android.content.pm.ResolveInfo): View {
+        val pm = packageManager; val pkg = ri.activityInfo.packageName
+        val dsz = 76
+        val iv = ImageView(this).apply {
+            scaleType = ImageView.ScaleType.FIT_CENTER; setPadding(ui.dp(14), ui.dp(14), ui.dp(14), ui.dp(14))
+            background = android.graphics.drawable.GradientDrawable().apply { shape = android.graphics.drawable.GradientDrawable.OVAL; setColor(th.surface); setStroke(ui.dp(2), th.border) }
+            outlineProvider = android.view.ViewOutlineProvider.BACKGROUND; clipToOutline = true
+        }
+        try { iv.setImageDrawable(ri.loadIcon(pm)) } catch (_: Throwable) { }
+        val name = ui.text(ri.loadLabel(pm).toString(), 11.5f, th.muted, true).apply { maxLines = 1; gravity = Gravity.CENTER; setPadding(0, ui.dp(6), 0, 0) }
+        val c = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER_HORIZONTAL; isFocusable = true; isClickable = true
+            clipChildren = false; clipToPadding = false
+            setOnClickListener { launchApp(pkg) }
+            setOnLongClickListener { openAppInfo(pkg); true }
+            setOnFocusChangeListener { v, f ->
+                (iv.background as android.graphics.drawable.GradientDrawable).setStroke(ui.dp(if (f) 4 else 2), if (f) th.primary else th.border)
+                name.setTextColor(if (f) th.text else th.muted)
+                v.animate().scaleX(if (f) 1.38f else 1f).scaleY(if (f) 1.38f else 1f).setDuration(140).start()
+                v.elevation = if (f) ui.dp(10).toFloat() else 0f
+            }
+        }
+        c.addView(iv, LinearLayout.LayoutParams(ui.dp(dsz), ui.dp(dsz)))
+        c.addView(name, LinearLayout.LayoutParams(ui.dp(98), -2))
+        c.layoutParams = LinearLayout.LayoutParams(ui.dp(104), -2).apply { setMargins(ui.dp(8), ui.dp(14), ui.dp(8), ui.dp(14)) }
+        return c
+    }
+
+    private fun openAppInfo(pkg: String) = tryIntents("⚠ ما قدرتش أفتح معلومات التطبيق",
+        Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$pkg")))
+
+    private fun hrow(items: List<View>): View {
+        val inner = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; clipChildren = false; clipToPadding = false }
+        items.forEach { inner.addView(it) }
+        return HorizontalScrollView(this).apply { isHorizontalScrollBarEnabled = false; clipChildren = false; clipToPadding = false; addView(inner) }
+    }
+    private fun sectionTitle(t: String): View = ui.text(t, 17f, th.primary, true).apply { setPadding(ui.dp(6), ui.dp(14), 0, ui.dp(2)) }
+    private fun host(): LinearLayout = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; clipChildren = false }
+
+    private fun histCard(r: Recent, byUri: Map<String, VideoItem>): View {
+        val iv = ImageView(this).apply { scaleType = ImageView.ScaleType.CENTER_CROP; setBackgroundColor(th.border) }
+        val vi = byUri[r.uri]
+        val c = card(232, 176, { cc ->
+            cc.addView(iv, LinearLayout.LayoutParams(-1, ui.dp(100)))
+            cc.addView(ui.text(r.title + if (favs.contains(r.id)) " ⭐" else "", 12.5f, th.text, true).apply { maxLines = 2; setPadding(0, ui.dp(5), 0, 0) })
+            val track = FrameLayout(this).apply { background = ui.box(th.border, th.border, 4) }
+            track.addView(View(this).apply { setBackgroundColor(th.primary) }, FrameLayout.LayoutParams(ui.dp((200 * r.percent.coerceIn(0, 100) / 100).coerceAtLeast(0)), ui.dp(4)))
+            cc.addView(track, LinearLayout.LayoutParams(-1, ui.dp(4)).apply { topMargin = ui.dp(6) })
+        }, { playRecent(r) }, { favToggle(r.id, r.title) })
+        if (vi != null) Thumbs.load(this, vi) { bmp -> if (bmp != null) runOnUiThread { iv.setImageBitmap(bmp) } }
+        return c
+    }
+
+    /** آخر الفيديوهات المشغّلة (السجل): الأحدث أول واحد، والسهم بيمشي للأقدم فالأقدم */
+    private fun fillHistory(hh: LinearLayout) {
+        hh.removeAllViews()
+        val recs = recents().take(40)
+        if (recs.isEmpty()) return
+        val byUri = lastScan.associateBy { it.uri }
+        hh.addView(sectionTitle("🕘 آخر الفيديوهات المشغّلة"))
+        hh.addView(hrow(recs.map { histCard(it, byUri) }))
+    }
+
+    private fun foldSort() = Cfg.str("tv_fold_sort", VideoLib.SORT_NAME)
+    private fun vidSort() = Cfg.str("tv_vid_sort", VideoLib.SORT_NAME)
+
+    /** قايمة الفيديوهات مترتبة فولدرات، وزرار ⋮ لترتيب الفولدرات وترتيب الفيديوهات جواها */
+    private fun fillFolders(fh: LinearLayout) {
+        fh.removeAllViews()
+        val head = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL }
+        head.addView(sectionTitle("🎬 الفيديوهات"))
+        head.addView(pill("⋮ ترتيب") { sortMenu(fh) }.apply { setPadding(ui.dp(14), ui.dp(5), ui.dp(14), ui.dp(5)) })
+        fh.addView(head)
+        if (!VideoScan.hasPermission(this)) {
+            fh.addView(ui.text("محتاج إذن الوصول للفيديوهات — افتح «الفيديوهات» مرة واحدة وادّي الإذن", 12.5f, th.muted).apply { setPadding(ui.dp(8), ui.dp(6), ui.dp(8), ui.dp(6)) })
+            return
+        }
+        if (lastScan.isEmpty()) { fh.addView(ui.text("⏳ بقرا الفيديوهات…", 12.5f, th.muted).apply { setPadding(ui.dp(8), ui.dp(6), ui.dp(8), ui.dp(6)) }); return }
+        val folders = VideoLib.sortFolders(VideoLib.group(lastScan), foldSort()).take(30)
+        for (f in folders) {
+            val vids = VideoLib.sortVideos(f.videos, vidSort())
+            val cards = vids.take(30).map { videoCard(it) }.toMutableList()
+            if (vids.size > 30) cards.add(tile("📂", "كل الـ ${vids.size}") { openMain("videos") })
+            rowInto(fh, "📁 ${f.name} · ${vids.size}", cards)
+        }
+    }
+
+    private fun sortMenu(fh: LinearLayout) {
+        fun lab(k: String) = VideoLib.sortLabelOf(k)
+        val items = arrayOf("📁 ترتيب الفولدرات: " + lab(foldSort()), "🎞 ترتيب الفيديوهات جوه الفولدر: " + lab(vidSort()))
+        GAlert(this).setTitle("⋮ الترتيب").setItems(items) { _, which ->
+            val key = if (which == 0) "tv_fold_sort" else "tv_vid_sort"
+            val cur = if (which == 0) foldSort() else vidSort()
+            val labels = VideoLib.sortLabels.map { (if (it.first == cur) "✓ " else "") + it.second }.toTypedArray()
+            GAlert(this).setTitle(if (which == 0) "📁 رتّب الفولدرات حسب" else "🎞 رتّب الفيديوهات جوه حسب")
+                .setItems(labels) { _, i -> Cfg.put(key, VideoLib.sortLabels[i].first); fillFolders(fh) }
+                .setNegativeButton("إلغاء", null).show()
+        }.setNegativeButton("إغلاق", null).show()
+    }
+
+    /** أحدث فيديوهات اشتراكات يوتيوب (لو مسجّل دخول) */
+    private fun fillYt(yh: LinearLayout) {
+        if (!YtAccount.loggedIn()) return
+        Thread {
+            val items = try {
+                val subs = YtStore.read(YtStore.SUBS)
+                if (subs.isEmpty()) emptyList() else (YtRss.cachedFeed(subs) ?: YtRss.feed(subs, false, true)).items.filter { it.kind == 0 }.take(20)
+            } catch (e: Throwable) { LogStore.err("TvHome:yt", e); emptyList() }
+            runOnUiThread {
+                if (isDestroyed || items.isEmpty()) return@runOnUiThread
+                yh.removeAllViews()
+                yh.addView(sectionTitle("▶ أحدث اشتراكاتك على يوتيوب"))
+                yh.addView(hrow(items.map { ytCard(it) }))
+            }
+        }.start()
+    }
+
+    private fun ytCard(v: NpItem): View {
+        val iv = ImageView(this).apply { scaleType = ImageView.ScaleType.CENTER_CROP; setBackgroundColor(th.border) }
+        if (v.thumb.isNotBlank()) try { com.bumptech.glide.Glide.with(this).load(v.thumb).centerCrop().into(iv) } catch (_: Throwable) { }
+        return card(232, 176, { cc ->
+            cc.addView(iv, LinearLayout.LayoutParams(-1, ui.dp(100)))
+            cc.addView(ui.text(v.title, 12.5f, th.text, true).apply { maxLines = 2; setPadding(0, ui.dp(5), 0, 0) })
+            cc.addView(ui.text(v.channel + if (v.age.isNotBlank()) " · " + v.age else "", 10.5f, th.muted).apply { maxLines = 1 })
+        }, { openYt(v.id) })
+    }
+
+    private fun openYt(id: String) {
+        try {
+            startActivity(Intent(this, MainActivity::class.java).apply {
+                addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                putExtra("force_phone", true); putExtra("from_tv", true); putExtra("tab", "youtube"); putExtra("yt_open", id)
+            })
+        } catch (e: Throwable) { LogStore.err("TvHome:ytopen", e); Notice.show(this, "⚠ ما قدرتش أفتح الفيديو", 2000L) }
+    }
+
     private fun showHome() {
         content.removeAllViews(); heroBtn = null; heroImg = null
-        val hidden = Cfg.str("tv_rows_hide", "").split(",").map { it.trim() }.filter { it.isNotEmpty() }.toSet()
-        val recs = recents()
-        if ("hero" !in hidden) content.addView(hero(recs))
-        if ("cont" !in hidden) rowInto(content, "▶ كمّل مشاهدة", recs.take(15).map { recentCard(it) })
-        val favRecs = recs.filter { favs.contains(it.id) }
-        if ("fav" !in hidden && favRecs.isNotEmpty()) rowInto(content, "⭐ المفضلة", favRecs.map { recentCard(it) })
-        if ("quick" !in hidden) rowInto(content, "⚡ وصول سريع", quickTiles())
-        if ("apps" !in hidden) rowInto(content, "📲 تطبيقاتك", appCards())
-        if ("latest" !in hidden) {
-            val lt = LinearLayout(content.context).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL }
-            content.addView(lt)
-            if (!VideoScan.hasPermission(this)) {
-                lt.addView(ui.text("🎬 أحدث الفيديوهات", 17f, th.primary, true).apply { setPadding(ui.dp(6), ui.dp(14), 0, ui.dp(2)) })
-                lt.addView(ui.text("محتاج إذن الوصول للفيديوهات — افتح «الفيديوهات» مرة واحدة وادّي الإذن", 12.5f, th.muted).apply { setPadding(ui.dp(8), ui.dp(6), ui.dp(8), ui.dp(6)) })
-            } else Thread {
-                val items = try { VideoScan.scan(this).sortedByDescending { it.dateMs }.take(24) } catch (_: Exception) { emptyList() }
+        try { YtAccount.init(this); YtRss.attach(this) } catch (_: Throwable) { }
+        val hidden = Cfg.str("tv_rows_hide2", "").split(",").map { it.trim() }.filter { it.isNotEmpty() }.toSet()
+        // 1) دواير التطبيقات
+        if ("apps" !in hidden) {
+            val circles = essentialApps().map { appCircle(it) }
+            if (circles.isNotEmpty()) {
+                content.addView(sectionTitle("📲 تطبيقاتك"))
+                content.addView(hrow(circles))
+                heroBtn = circles.first()
+            }
+        }
+        // 2) آخر المشغّل  3) الفولدرات  4) اشتراكات يوتيوب (بتتملي أول ما الفحص يخلص)
+        val hh = host(); val fh = host(); val yh = host()
+        if ("hist" !in hidden) { content.addView(hh); fillHistory(hh) }
+        if ("vids" !in hidden) {
+            content.addView(fh); fillFolders(fh)
+            if (VideoScan.hasPermission(this)) Thread {
+                val items = try { VideoScan.scan(this) } catch (_: Exception) { emptyList() }
                 lastScan = items
                 runOnUiThread {
                     if (isDestroyed) return@runOnUiThread
-                    rowInto(lt, "🎬 أحدث الفيديوهات", items.map { videoCard(it) })
-                    // صورة البانر الرئيسي من مصغّرة آخر فيديو اتشاف (لو لقيناه في المكتبة)
-                    items.firstOrNull { it.uri == heroUri }?.let { m -> Thumbs.load(this, m) { bmp -> if (bmp != null) runOnUiThread { heroImg?.setImageBitmap(bmp) } } }
+                    if ("hist" !in hidden) fillHistory(hh)   // دلوقتي نعرف نجيب مصغّرات السجل
+                    fillFolders(fh)
                 }
             }.start()
         }
+        if ("yt" !in hidden) { content.addView(yh); fillYt(yh) }
+        // 5) تخصيص
+        content.addView(LinearLayout(this).apply { gravity = Gravity.CENTER; setPadding(0, ui.dp(18), 0, ui.dp(24)); addView(pill("🎛 تخصيص") { rowsDialog() }) })
         (heroBtn ?: firstRail)?.let { f -> content.post { try { f.requestFocus() } catch (_: Exception) {} } }
     }
 
@@ -437,13 +700,17 @@ class TvActivity : Activity() {
 
     // ===== تخصيص الصفوف وقفل PIN =====
     private fun rowsDialog() {
-        val ids = listOf("hero" to "🖼 البانر الرئيسي", "cont" to "▶ كمّل مشاهدة", "fav" to "⭐ المفضلة", "quick" to "⚡ وصول سريع", "apps" to "📲 تطبيقاتك", "latest" to "🎬 أحدث الفيديوهات")
-        val hidden = Cfg.str("tv_rows_hide", "").split(",").map { it.trim() }.filter { it.isNotEmpty() }.toMutableSet()
+        val ids = listOf("apps" to "📲 دواير التطبيقات", "hist" to "🕘 آخر الفيديوهات المشغّلة", "vids" to "🎬 الفيديوهات (فولدرات)", "yt" to "▶ اشتراكات يوتيوب", "sys" to "⚙ إظهار تطبيقات السيستم كمان")
+        val hidden = Cfg.str("tv_rows_hide2", "").split(",").map { it.trim() }.filter { it.isNotEmpty() }.toMutableSet()
+        var sysOn = Cfg.str("tv_apps_sys", "0") == "1"
         val labels = ids.map { it.second }.toTypedArray()
-        val checked = BooleanArray(ids.size) { ids[it].first !in hidden }
-        GAlert(this).setTitle("🎛 صفوف الشاشة الرئيسية")
-            .setMultiChoiceItems(labels, checked) { _, which, isChecked -> if (isChecked) hidden.remove(ids[which].first) else hidden.add(ids[which].first) }
-            .setPositiveButton("تمام") { _, _ -> Cfg.put("tv_rows_hide", hidden.joinToString(",")); showHome() }
+        val checked = BooleanArray(ids.size) { if (ids[it].first == "sys") sysOn else ids[it].first !in hidden }
+        GAlert(this).setTitle("🎛 تخصيص الشاشة الرئيسية")
+            .setMultiChoiceItems(labels, checked) { _, which, isChecked ->
+                val k = ids[which].first
+                if (k == "sys") sysOn = isChecked else if (isChecked) hidden.remove(k) else hidden.add(k)
+            }
+            .setPositiveButton("تمام") { _, _ -> Cfg.put("tv_rows_hide2", hidden.joinToString(",")); Cfg.put("tv_apps_sys", if (sysOn) "1" else "0"); showHome() }
             .setNegativeButton("إلغاء", null).show()
     }
 

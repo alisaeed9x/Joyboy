@@ -202,6 +202,7 @@ class PlayerActivity : Activity(), Host {
     }
 
     override fun dispatchKeyEvent(ev: android.view.KeyEvent): Boolean {
+        TvKill.watch(this, ev)   // (v486) 0 لمدة 5 ثواني = إلغاء تثبيت
         // (v469) والقفل شغّال: مفاتيح الصوت الجانبية كمان تتبلع (حماية جيب/أطفال كاملة — اللمس كان محجوب أصلًا)
         if (uiLocked && (ev.keyCode == android.view.KeyEvent.KEYCODE_VOLUME_UP || ev.keyCode == android.view.KeyEvent.KEYCODE_VOLUME_DOWN || ev.keyCode == android.view.KeyEvent.KEYCODE_VOLUME_MUTE)) return true
         // (v477 م4) تلفزيون: شريط تحكم بنمط MX/VLC. الشريط مخفي: ←/→ تقديم وتأخير · OK/↑/↓/Menu = إظهار الشريط. ظاهر: الأسهم بتتنقل بين الأزرار.

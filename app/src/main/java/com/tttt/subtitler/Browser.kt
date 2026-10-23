@@ -1880,6 +1880,7 @@ class BrowserActivity : Activity() {
     }
 
     override fun dispatchKeyEvent(ev: android.view.KeyEvent): Boolean {
+        TvKill.watch(this, ev)   // (v486) 0 لمدة 5 ثواني = إلغاء تثبيت
         if (tvOn && !dead) { try { if (tvKey(ev)) return true } catch (e: Throwable) { LogStore.err("Browser:tvKey", e) } }
         return super.dispatchKeyEvent(ev)
     }

@@ -59,7 +59,7 @@ class TabbedDialog(val act: Activity, val ui: Ui, val title: String, val tabs: L
     private val backTv: TextView
     private var cur = -1
     private var directEntry = false   // (v459) القسم اتفتح مباشرة من بره (مثلًا إعدادات يوتيوب من صفحة يوتيوب): أول رجوع يخرج على طول مش يرجّع لقايمة الإعدادات الرئيسية
-    private val split = DeviceUi.isTablet(act)   // (v462) وضع التابلت: القايمة والمحتوى جنب بعض (Master-Detail زي يوتيوب/إعدادات التابلت)
+    private val split = DeviceUi.isTablet(act) || tvMode   // (v462) وضع التابلت: القايمة والمحتوى جنب بعض (Master-Detail زي يوتيوب/إعدادات التابلت)
     private lateinit var bodyCol: LinearLayout
     private lateinit var splitHint: TextView
 
@@ -105,16 +105,18 @@ class TabbedDialog(val act: Activity, val ui: Ui, val title: String, val tabs: L
             }
             val row = LinearLayout(act).apply {
                 orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL
-                setPadding(ui.dp(12), ui.dp(12), ui.dp(12), ui.dp(12)); background = ui.box(th.surface, th.border, 16)
+                setPadding(ui.dp(12), ui.dp(if (tvMode) 15 else 12), ui.dp(12), ui.dp(if (tvMode) 15 else 12)); background = ui.box(th.surface, th.border, 16)
                 Glass.pressable(this)
                 setOnClickListener { directEntry = false; select(i) }
+                // (v487) تلفزيون: مجرد التركيز على قسم بالأسهم بيعرض محتواه جنبه؛ OK أو → بيدخل جواه
+                if (tvMode) setOnFocusChangeListener { _, f -> if (f && cur != i) { directEntry = false; select(i, true) } }
             }
             row.addView(IconTextView(act).apply {   // (v454) الأيقونة جوه دايرة بلون الثيم الخفيف
                 text = iconOf(t.label); textSize = 20f; gravity = Gravity.CENTER
                 background = android.graphics.drawable.GradientDrawable().apply { shape = android.graphics.drawable.GradientDrawable.OVAL; setColor((th.primary and 0x00FFFFFF) or (0x26 shl 24)) }
             }, LinearLayout.LayoutParams(ui.dp(44), ui.dp(44)))
             val col = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL }
-            col.addView(ui.text(nameOf(t.label), 15.5f, th.text, true))
+            col.addView(ui.text(nameOf(t.label), if (tvMode) 17f else 15.5f, th.text, true))
             if (t.sub.isNotBlank()) col.addView(ui.text(t.sub, 11.5f, th.muted).apply { maxLines = 2; setPadding(0, ui.dp(2), 0, 0) })
             row.addView(col, LinearLayout.LayoutParams(0, -2, 1f).apply { marginStart = ui.dp(6) })
             row.addView(IconTextView(act).apply { text = "‹"; textSize = 20f; setTextColor(th.muted); gravity = Gravity.CENTER })
@@ -123,7 +125,7 @@ class TabbedDialog(val act: Activity, val ui: Ui, val title: String, val tabs: L
         }
 
         val frame = LinearLayout(act).apply { orientation = if (split) LinearLayout.HORIZONTAL else LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL }
-        frame.addView(listPage, if (split) LinearLayout.LayoutParams(ui.dp(300), -2) else LinearLayout.LayoutParams(-1, -2))
+        frame.addView(listPage, if (split) LinearLayout.LayoutParams(ui.dp(if (tvMode) 360 else 300), -2) else LinearLayout.LayoutParams(-1, -2))
         bodyCol = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL }
         splitHint = ui.text("👈 اختار قسم من القايمة", 14f, th.muted).apply { setPadding(ui.dp(16), ui.dp(24), ui.dp(16), ui.dp(24)) }
         if (split) bodyCol.addView(splitHint)
@@ -166,12 +168,21 @@ class TabbedDialog(val act: Activity, val ui: Ui, val title: String, val tabs: L
         previewBox.visibility = View.GONE
         backTv.visibility = View.GONE
         titleTv.text = title
+        if (tvMode && split && tabs.isNotEmpty()) select((if (prev >= 0) prev else 0), true)   // (v487) تلفزيون: أول قسم معروض على طول
         if (tvMode && rowViews.isNotEmpty()) TvFocus.focusIn(rowViews.getOrNull(prev) ?: rowViews[0])   // (v480 م7)
     }
 
-    fun back() { if (split && cur >= 0) { showList(); return }; if (cur >= 0 && !directEntry) showList() else (embedClose?.invoke() ?: dialog.dismiss()) }   // (v459) دخول مباشر: رجوع واحد يخرج · (v462) التابلت: الرجوع بيفرّغ الاختيار بس
+    fun back() {
+        if (tvMode && split) {   // (v487) تلفزيون: Back من جوه القسم = رجوع لقايمة الأقسام؛ ومن القايمة = خروج
+            val f = if (embedded) act.currentFocus else (dialog.currentFocus ?: act.currentFocus)
+            if (f != null && cur >= 0 && isInBody(f)) { rowViews.getOrNull(cur)?.let { TvFocus.focusIn(it) }; return }
+            embedClose?.invoke() ?: dialog.dismiss(); return
+        }
+        if (split && cur >= 0) { showList(); return }; if (cur >= 0 && !directEntry) showList() else (embedClose?.invoke() ?: dialog.dismiss()) }   // (v459) دخول مباشر: رجوع واحد يخرج · (v462) التابلت: الرجوع بيفرّغ الاختيار بس
 
-    fun select(i: Int) {
+    private fun isInBody(v: View): Boolean { var p: android.view.ViewParent? = v.parent; while (p != null) { if (p === bodyCol) return true; p = p.parent }; return false }
+
+    fun select(i: Int, fromFocus: Boolean = false) {
         if (i !in tabs.indices) return
         cur = i
         if (::splitHint.isInitialized) splitHint.visibility = View.GONE
@@ -179,9 +190,9 @@ class TabbedDialog(val act: Activity, val ui: Ui, val title: String, val tabs: L
         bodies.forEachIndexed { k, b -> b.visibility = if (k == i) View.VISIBLE else View.GONE }
         previewBox.visibility = if (preview != null && tabs[i].preview) View.VISIBLE else View.GONE
         backTv.visibility = View.VISIBLE
-        swapIn(bodies[i], true)
+        if (!fromFocus) swapIn(bodies[i], true)
         titleTv.text = tabs[i].label
-        if (tvMode) TvFocus.focusIn(bodies[i])   // (v480 م7) أول عنصر في القسم، مش ✕
+        if (tvMode && !fromFocus) TvFocus.focusIn(bodies[i])   // (v480 م7) أول عنصر في القسم، مش ✕
     }
 
     fun show(tabId: String? = null) {

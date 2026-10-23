@@ -63,6 +63,19 @@ object YtAccount {
         for (p in cookie().split(";")) { val t = p.trim(); if (t.startsWith("$name=")) return t.substring(name.length + 1) }
         return null
     }
+    /** (v488) تصدير/استيراد الجلسة (دخول بالـQR: الموبايل بيبعت، التلفزيون بيستقبل) */
+    fun exportCookie(): String { refreshCookie(); return cookie() }
+    fun importCookie(ck: String): Boolean {
+        if (!ck.contains("SAPISID=") && !ck.contains("__Secure-3PAPISID=")) return false
+        sp?.edit()?.putString("cookie", ck)?.putLong("login_at", System.currentTimeMillis())?.putLong("sync_at", 0L)?.apply() ?: return false
+        try {   // كمان في مخزن الويب (عشان تحديث الجلسة وصفحات الويب جوه البرنامج)
+            val cm = CookieManager.getInstance(); cm.setAcceptCookie(true)
+            for (p in ck.split(";")) { val t = p.trim(); if (t.contains("=")) cm.setCookie(ORIGIN, "$t; Domain=.youtube.com; Path=/; Secure") }
+            cm.flush()
+        } catch (_: Throwable) { }
+        LogStore.add("🍪 جلسة يوتيوب اتستلمت من الموبايل (QR)")
+        return true
+    }
     fun loggedIn(): Boolean = cv("SAPISID") != null || cv("__Secure-3PAPISID") != null
     fun syncDue(every: Long = SYNC_EVERY_MS): Boolean = System.currentTimeMillis() - (sp?.getLong("sync_at", 0L) ?: 0L) > every
     @Volatile private var syncing = false

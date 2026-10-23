@@ -147,5 +147,7 @@ com/tttt/subtitler/YtLocale.kt
 com/tttt/subtitler/YtSnap.kt
 com/tttt/subtitler/YtThumbBtns.kt
 com/tttt/subtitler/TvFocus.kt
+com/tttt/subtitler/TvKill.kt
+com/tttt/subtitler/YtLink.kt
 com/tttt/subtitler/TvPlayerBar.kt
 com/tttt/subtitler/TvPointer.kt
