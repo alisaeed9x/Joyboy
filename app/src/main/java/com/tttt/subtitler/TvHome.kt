@@ -51,6 +51,9 @@ class TvActivity : Activity() {
     private lateinit var saver: FrameLayout
     private lateinit var saverClock: android.widget.TextView
     private lateinit var saverTemp: android.widget.TextView
+    private lateinit var saverPray: LinearLayout       // (v525) مواقيت الصلاة فوق ساعة شاشة السكون
+    private var saverCdTv: android.widget.TextView? = null
+    private var saverNextAt = 0L
     private lateinit var saverBg: ImageView
     private lateinit var clockTv: android.widget.TextView
     private lateinit var warmView: View
@@ -124,9 +127,9 @@ class TvActivity : Activity() {
         scroll.addView(content)
         rootCol.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f))
         val rb0 = railBox
-        val body: View = if (compactUi && rb0 != null) LinearLayout(this).apply {
+        val body: View = if (rb0 != null) LinearLayout(this).apply {   // (v527) القايمة الجانبية على كل الشاشات (مش الضيقة بس)
             orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL
-            addView(ScrollView(this@TvActivity).apply { isVerticalScrollBarEnabled = false; addView(rb0) }, LinearLayout.LayoutParams(ui.dp(62), -1))
+            addView(ScrollView(this@TvActivity).apply { isVerticalScrollBarEnabled = false; addView(rb0) }, LinearLayout.LayoutParams(ui.dp(if (compactUi) 62 else 76), -1))
             addView(rootCol, LinearLayout.LayoutParams(0, -1, 1f))
         } else rootCol
         rootF.addView(body, FrameLayout.LayoutParams(-1, -1))
@@ -137,13 +140,15 @@ class TvActivity : Activity() {
         // (v514) شاشة التوقف: خلفية اللانشر (لو متحطة) + كارت تظليل 60% في النص فيه ساعة إنجليزي ديجيتال 12 ساعة كبيرة + درجة الحرارة سيليزيوس تحتها
         saverBg = ImageView(this).apply { scaleType = ImageView.ScaleType.CENTER_CROP; visibility = View.GONE }
         saver.addView(saverBg, FrameLayout.LayoutParams(-1, -1))
-        saverClock = ui.text("", 120f, Color.WHITE, true).apply { gravity = Gravity.CENTER; layoutDirection = View.LAYOUT_DIRECTION_LTR; textDirection = View.TEXT_DIRECTION_LTR; includeFontPadding = false }
+        saverClock = ui.text("", 100f, Color.WHITE, true).apply { gravity = Gravity.CENTER; layoutDirection = View.LAYOUT_DIRECTION_LTR; textDirection = View.TEXT_DIRECTION_LTR; includeFontPadding = false }
         saverTemp = ui.text("", 44f, Color.WHITE, true).apply { gravity = Gravity.CENTER; layoutDirection = View.LAYOUT_DIRECTION_LTR; textDirection = View.TEXT_DIRECTION_LTR; setPadding(0, ui.dp(6), 0, 0) }
         val saverCol = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER
             setPadding(ui.dp(64), ui.dp(36), ui.dp(64), ui.dp(32))
             background = GradientDrawable().apply { setColor(0x99000000.toInt()); cornerRadius = ui.dp(36).toFloat() }
         }
+        saverPray = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER; layoutDirection = View.LAYOUT_DIRECTION_RTL; visibility = View.GONE; setPadding(0, 0, 0, ui.dp(14)) }
+        saverCol.addView(saverPray, LinearLayout.LayoutParams(-2, -2))
         saverCol.addView(saverClock, LinearLayout.LayoutParams(-2, -2))
         saverCol.addView(saverTemp, LinearLayout.LayoutParams(-2, -2))
         saverCol.addView(ui.text("📺 Subtitler — دوس أي زرار عشان تكمل", 15f, 0xFFB8BDC9.toInt()).apply { gravity = Gravity.CENTER; setPadding(0, ui.dp(14), 0, 0) }, LinearLayout.LayoutParams(-2, -2))
@@ -153,6 +158,7 @@ class TvActivity : Activity() {
         TvFocus.attach(this, th.primary)   // (v490) حلقة تركيز واضحة على كل زرار/كارت في اللانشر
         showHome()
         applyWall()   // (v506)
+        refreshTopPrayer()   // (v527)
         h.post(tick)
         handleShow(intent)   // (v516) راجع من يوتيوب (قشرة اللانشر) على «تطبيقات» أو «الرئيسية»
         h.postDelayed({ if (!isDestroyed && !isFinishing) { if (!VideoScan.hasPermission(this)) askVideoPermission() else askDefaultHome() } }, 1500L)   // (v485) (v500) الصلاحية الأول
@@ -162,8 +168,8 @@ class TvActivity : Activity() {
         override fun run() {
             val t = SimpleDateFormat(if (Cfg.str("tv_clock24", "0") == "1") "HH:mm" else "hh:mm a", Locale.getDefault()).format(Date())   // (v484) نظام 12 ساعة بتوقيت الجهاز (v516: أو 24 من المظهر)
             if (::clockTv.isInitialized) clockTv.text = t
-            if (saver.visibility == View.VISIBLE) saverClock.text = SimpleDateFormat("hh:mm a", Locale.US).format(Date()) else { idleSec++; if (idleSec >= saverLimit()) showSaver() }
-            prayerTick()
+            if (saver.visibility == View.VISIBLE) { saverClock.text = SimpleDateFormat("hh:mm a", Locale.US).format(Date()); saverPrayTick() } else { idleSec++; if (idleSec >= saverLimit()) showSaver() }
+            prayerTick(); topPrayTick()
             h.postDelayed(this, 1000)
         }
     }
@@ -176,6 +182,7 @@ class TvActivity : Activity() {
             val c = Cfg.str("tv_temp_c", ""); saverTemp.text = if (c.isNotBlank()) "$c°C" else ""
             saverTemp.visibility = if (c.isNotBlank()) View.VISIBLE else View.GONE
             if (System.currentTimeMillis() - (Cfg.str("tv_temp_ts", "0").toLongOrNull() ?: 0L) > 30 * 60_000L) fetchTemp()
+            loadPrayer(false) { res -> fillSaverPrayer(res) }   // (v525) المواقيت من الكاش أو النت
         } catch (e: Throwable) { LogStore.err("TvHome:saver", e) }
         saver.visibility = View.VISIBLE; idleSec = 0
     }
@@ -221,7 +228,7 @@ class TvActivity : Activity() {
         startVoice { q -> showHome(false); et.setText(q); et.setSelection(et.text.length) }
     }   // (v486) 0 لمدة 5 ثواني = إلغاء تثبيت
     override fun onDestroy() {
-        h.removeCallbacks(tick); muteRun?.let { h.removeCallbacks(it) }
+        h.removeCallbacks(wallLoop); h.removeCallbacks(tick); muteRun?.let { h.removeCallbacks(it) }
         try { sr?.destroy() } catch (_: Throwable) {}; sr = null
         super.onDestroy()
     }
@@ -230,9 +237,12 @@ class TvActivity : Activity() {
     private var histHost: LinearLayout? = null
     private var recSig = ""
     private var resumedOnce = false
+    override fun onPause() { h.removeCallbacks(wallLoop); super.onPause() }   // (v527) مفيش تنزيل خلفيات وانت في تطبيق تاني
     private fun recentsSig(): String = try { recents().take(40).joinToString("|") { it.uri + ":" + it.posSec.toInt() + ":" + it.ts } } catch (_: Throwable) { "" }
     override fun onResume() {
         super.onResume(); idleSec = 0
+        if (resumedOnce && wallMode() != "off") { h.removeCallbacks(wallLoop); h.postDelayed(wallLoop, 1500L) }   // (v527) كمّل دورة الخلفيات بعد الرجوع
+        if (resumedOnce) refreshTopPrayer()
         try { content.animate().cancel(); content.alpha = 1f; content.scaleX = 1f; content.scaleY = 1f; content.translationY = 0f } catch (_: Throwable) { }   // (v513) رجوع من صفحة اتفتحت بالتركيز
         val sig = recentsSig()
         if (resumedOnce && sig != recSig && !inSearch && storageKind == null && curTab == 0) {
@@ -262,6 +272,7 @@ class TvActivity : Activity() {
         if (rc == 11 && VideoScan.hasPermission(this)) { Notice.show(this, "✅ تمام — بقرا الفيديوهات", 1800L); showHome(false) }
         else if (rc == 11) Notice.show(this, "⚠ من غير الصلاحية مش هقدر أعرض الفيديوهات", 3000L)
         else if (rc == 92) { if (res.firstOrNull() == android.content.pm.PackageManager.PERMISSION_GRANTED) { Cfg.put("tv_loc", ""); if (prayerCd != null || curTab == -1) showPrayer() } }
+        else if (rc == TvWifi.RC_LOC) { TvWifi.show(this) }
         else if (rc == 91 && res.firstOrNull() == android.content.pm.PackageManager.PERMISSION_GRANTED) { val cb = pendingVoice; pendingVoice = null; if (cb != null) startVoiceInApp(cb) }
         else if (rc == 91) { pendingVoice = null; Notice.show(this, "⚠ البحث الصوتي محتاج صلاحية الميكروفون", 3000L) }
     }
@@ -274,7 +285,7 @@ class TvActivity : Activity() {
     private fun handleShow(i: Intent?) {
         val w = i?.getStringExtra("tv_show") ?: return
         i.removeExtra("tv_show")
-        when (w) { "apps" -> showApps(); "home" -> showHome() }
+        when (w) { "apps" -> showApps(); "home" -> showHome(); "youtube" -> openMain("youtube"); "browser" -> openBrowser(); "sd" -> showStorage("sd"); "int" -> showStorage("int"); "settings" -> guardPin { openMain("settings") }; "mic" -> voiceToSearch() }   // (v522) اختصارات الريموت
     }
     private fun saverLimit(): Int { val m = Cfg.str("tv_saver_min", "3").toIntOrNull() ?: 3; return if (m <= 0) Int.MAX_VALUE else m * 60 }
     @Suppress("DEPRECATION", "OVERRIDE_DEPRECATION")
@@ -332,15 +343,14 @@ class TvActivity : Activity() {
         val defs = listOf<Pair<String, () -> Unit>>(
             "الصفحة الرئيسية" to { showHome() },
             "تطبيقات" to { showApps() },
-            "الفيديوهات" to { openMain("videos") },
-            "الملفات" to { guardPin { startActivity(Intent(this, FileManagerActivity::class.java)) } })
+            "الفيديوهات" to { openMain("videos") })   // (v525) تاب «الملفات» اتشال من الشريط العلوي
         tabActions = defs.map { it.second }
-        defs.forEachIndexed { i, d -> val t = tabBtn(d.first, i, d.second); tabViews.add(t); if (!compactUi) tabsBox.addView(t) }
+        defs.forEachIndexed { i, d -> val t = tabBtn(d.first, i, d.second); tabViews.add(t) }   // (v527) التابات بقت في القايمة الجانبية على كل الشاشات
         firstRail = tabViews[0]
         setTab(0)
-        if (compactUi) {
+        run {
             // (v503) قايمة جنبية: أيقونات (الرئيسية · تطبيقات · يوتيوب · متصفح · فيديوهات · ملفات) + الإعدادات + المزيد
-            val icons = listOf("🏠", "📱", "🎬", "📁")   // (v521) يوتيوب والمتصفح بقوا أيقونات تطبيقات مش تابات
+            val icons = listOf("🏠", "📱", "🎬")   // (v521) يوتيوب والمتصفح بقوا أيقونات تطبيقات مش تابات
             val rail = LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER_HORIZONTAL
                 setPadding(ui.dp(4), ui.dp(8), ui.dp(4), ui.dp(8)); background = pillBg(0x99000000.toInt(), 24, 0x33FFFFFF, 1)
@@ -352,14 +362,18 @@ class TvActivity : Activity() {
                 t.layoutParams = LinearLayout.LayoutParams(-1, -2).apply { setMargins(0, ui.dp(2), 0, ui.dp(2)) }
                 rail.addView(t)
             }
+            // (v527) تابات مخصّصة (تطبيق أو فولدر فيديو بعينه) + زرار ➕ للإضافة/الشيل
+            sideTabs().forEach { t -> rail.addView(customTab(t)) }
+            rail.addView(roundBtn("➕", "أضف تاب (تطبيق / فولدر)", 42) { sideTabsMenu() })
             // (v516) مواقيت الصلاة · Google Play (اختياري) · المظهر
+            rail.addView(roundBtn("📶", "الواي فاي", 42) { TvWifi.show(this) })
             rail.addView(roundBtn("🕌", "مواقيت الصلاة", 42) { showPrayer() })
             if (playOn()) rail.addView(roundBtn("🛍", "Google Play", 42) { openPlay() })
             rail.addView(roundBtn("🎨", "المظهر", 42) { showAppearance() })
             rail.addView(roundBtn("⚙️", "إعدادات البرنامج", 42) { guardPin { openMain("settings") } })
             rail.addView(roundBtn("⋮", "المزيد", 42) { moreMenu() })
             railBox = rail
-        } else bar.addView(tabsBox, LinearLayout.LayoutParams(-2, -2).apply { marginEnd = ui.dp(14) })
+        }
         // 3) كبسولة الأزرار الدائرية: إعدادات البرنامج · المزيد (الإعدادات/التطبيقات/المشغّل الافتراضي/إلغاء التثبيت…)
         val rb = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL
@@ -377,6 +391,10 @@ class TvActivity : Activity() {
         tcV = tc
         clockTv = ui.text("", 19f, fg, true).apply { setShadowLayer(8f, 0f, 2f, Color.BLACK) }
         tc.addView(clockTv)
+        // (v527) الصلاة الجاية + المتبقي ليها جنب الساعة
+        topPrayTv = ui.text("", if (compactUi) 13f else 16f, 0xFFFFD27A.toInt(), true).apply { setShadowLayer(8f, 0f, 2f, Color.BLACK); visibility = View.GONE; setSingleLine(); setPadding(ui.dp(14), 0, 0, 0) }
+        tc.addView(topPrayTv)
+        tc.addView(roundBtn("📶", "الواي فاي", 40) { TvWifi.show(this) }.apply { (layoutParams as? LinearLayout.LayoutParams)?.leftMargin = ui.dp(12) })   // (v525) واي فاي سريع جنب الساعة
         bar.addView(tc)
         return bar
     }
@@ -446,6 +464,77 @@ class TvActivity : Activity() {
         else if (i != tabAutoBlock) { tabPending = i; h.postDelayed(tabGoAct, 380L) }   // فيديوهات/ملفات: تتفتح لوحدها بعد ما التركيز يستقر 380ms (عشان التنقل السريع ما يفتحش كل تاب)
     }
     private fun setTab(i: Int) { curTab = i; tabViews.forEachIndexed { k, v -> styleTab(v, k, v.isFocused) } }
+
+    // ===== (v527) تابات القايمة الجانبية المخصّصة: تطبيق أو فولدر فيديو بعينه، بدوسة واحدة =====
+    private class SideTab(val type: String, val id: String, val label: String)
+    private fun sideTabs(): List<SideTab> = Cfg.str("tv_side_tabs", "").split("\n").mapNotNull {
+        val p = it.split("|", limit = 3)
+        if (p.size == 3 && (p[0] == "app" || p[0] == "folder") && p[1].isNotBlank()) SideTab(p[0], p[1], p[2]) else null
+    }
+    private fun saveSideTabs(l: List<SideTab>) { Cfg.put("tv_side_tabs", l.joinToString("\n") { it.type + "|" + it.id + "|" + it.label.replace("|", " ").replace("\n", " ") }); recreate() }
+
+    private fun customTab(t: SideTab): View {
+        val b = TvOwnLinear(this).apply {
+            gravity = Gravity.CENTER; isFocusable = true; isClickable = true
+            setPadding(ui.dp(8), ui.dp(8), ui.dp(8), ui.dp(8)); contentDescription = t.label
+            background = pillBg(Color.TRANSPARENT, 24)
+            setOnClickListener { openSideTab(t) }
+            setOnFocusChangeListener { v, f -> v.background = pillBg(if (f) Color.WHITE else Color.TRANSPARENT, 24); if (f) Notice.show(this@TvActivity, t.label, 1100L) }
+        }
+        val icon: android.graphics.drawable.Drawable? = if (t.type == "app") try { packageManager.getApplicationIcon(t.id) } catch (_: Throwable) { null } else null
+        if (icon != null) b.addView(ImageView(this).apply { setImageDrawable(icon); scaleType = ImageView.ScaleType.FIT_CENTER }, LinearLayout.LayoutParams(ui.dp(30), ui.dp(30)))
+        else b.addView(ui.text(if (t.type == "app") "📱" else "📁", 20f, fg).apply { gravity = Gravity.CENTER })
+        b.layoutParams = LinearLayout.LayoutParams(-1, -2).apply { setMargins(0, ui.dp(2), 0, ui.dp(2)) }
+        return b
+    }
+
+    private fun openSideTab(t: SideTab) {
+        if (t.type == "app") { launchApp(t.id); return }
+        if (!scanned) { Notice.show(this, "⏳ لسه بقرا الفيديوهات — جرّب تاني بعد ثانيتين", 2400L); return }
+        val f = VideoLib.group(lastScan).firstOrNull { it.key == t.id }
+        if (f == null) { Notice.show(this, "⚠ الفولدر ده مش لاقيه (اتمسح أو الفلاشة مش موصّلة)", 2600L); return }
+        openFolderView(f)
+    }
+
+    private fun sideTabsMenu() {
+        val cur = sideTabs()
+        val items = ArrayList<String>(); items.add("📲 أضف تطبيق"); items.add("📁 أضف فولدر فيديو")
+        if (cur.isNotEmpty()) items.add("🗑 شيل تاب (" + cur.size + ")")
+        GAlert(this).setTitle("➕ تابات القايمة الجانبية").setItems(items.toTypedArray()) { _, i ->
+            when (i) { 0 -> pickSideApp(); 1 -> pickSideFolder(); else -> removeSideTab() }
+        }.setNegativeButton("إغلاق", null).show()
+    }
+
+    private fun pickSideApp() {
+        val pm = packageManager
+        val all = allLaunchApps().sortedBy { it.loadLabel(pm).toString().lowercase() }
+        if (all.isEmpty()) { Notice.show(this, "⚠ مفيش تطبيقات متاحة", 1800L); return }
+        GAlert(this).setTitle("📲 اختار التطبيق").setItems(all.map { it.loadLabel(pm).toString() }.toTypedArray()) { _, i ->
+            val pkg = all[i].activityInfo.packageName
+            val cur = sideTabs()
+            if (cur.any { it.type == "app" && it.id == pkg }) { Notice.show(this, "التاب ده موجود قبل كده", 1600L); return@setItems }
+            saveSideTabs(cur + SideTab("app", pkg, all[i].loadLabel(pm).toString()))
+        }.setNegativeButton("إلغاء", null).show()
+    }
+
+    private fun pickSideFolder() {
+        if (!VideoScan.hasPermission(this)) { Notice.show(this, "⚠ محتاج إذن الفيديوهات — افتح «الفيديوهات» مرة وادّي الإذن", 2800L); return }
+        if (!scanned) { Notice.show(this, "⏳ لسه بقرا الفيديوهات — جرّب تاني بعد ثانيتين", 2400L); return }
+        val all = VideoLib.sortFolders(VideoLib.group(lastScan), VideoLib.SORT_NAME)
+        if (all.isEmpty()) { Notice.show(this, "مفيش فولدرات فيها فيديوهات", 2000L); return }
+        GAlert(this).setTitle("📁 اختار الفولدر").setItems(all.map { "📁 " + it.name + " · " + it.videos.size + (if (it.path.isNotBlank()) "   (" + it.path + ")" else "") }.toTypedArray()) { _, i ->
+            val f = all[i]; val cur = sideTabs()
+            if (cur.any { it.type == "folder" && it.id == f.key }) { Notice.show(this, "التاب ده موجود قبل كده", 1600L); return@setItems }
+            saveSideTabs(cur + SideTab("folder", f.key, f.name))
+        }.setNegativeButton("إلغاء", null).show()
+    }
+
+    private fun removeSideTab() {
+        val cur = sideTabs()
+        GAlert(this).setTitle("🗑 شيل أنهي تاب؟").setItems(cur.map { (if (it.type == "app") "📱 " else "📁 ") + it.label }.toTypedArray()) { _, i ->
+            saveSideTabs(cur.filterIndexed { k, _ -> k != i })
+        }.setNegativeButton("إلغاء", null).show()
+    }
 
     /** قايمة «المزيد»: كل اللي كان في الريل القديم + أزرار اللانشر (إعدادات الأندرويد · تطبيقات السيستم · المشغّل الافتراضي · إلغاء التثبيت) */
     private fun moreMenu() {
@@ -578,9 +667,7 @@ class TvActivity : Activity() {
     private lateinit var wallView: ImageView
     private lateinit var wallScrim: View
     private var wallSeq = 0
-    private val BUILTIN_WALLS = listOf("wall/sunset_mountains.jpg" to "🌄 غروب الجبال", "wall/forest_lake.jpg" to "🌲 غابة وبحيرة", "wall/desert_dusk.jpg" to "🏜 صحراء الغروب")
 
-    private fun decodeAsset(path: String): android.graphics.Bitmap? = try { assets.open(path).use { android.graphics.BitmapFactory.decodeStream(it) } } catch (_: Throwable) { null }
     private fun decodeFileScaled(f: java.io.File): android.graphics.Bitmap? = try {
         val b = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
         android.graphics.BitmapFactory.decodeFile(f.path, b)
@@ -591,28 +678,52 @@ class TvActivity : Activity() {
     private fun showWall(bmp: android.graphics.Bitmap?, my: Int) {
         runOnUiThread {
             if (isDestroyed || my != wallSeq || bmp == null) return@runOnUiThread
-            wallView.setImageBitmap(bmp); wallView.visibility = View.VISIBLE; wallScrim.visibility = View.VISIBLE
+            val newD = android.graphics.drawable.BitmapDrawable(resources, bmp)
+            val oldD = if (wallView.visibility == View.VISIBLE) wallView.drawable else null
+            wallView.visibility = View.VISIBLE; wallScrim.visibility = View.VISIBLE
+            if (oldD != null) {   // (v527) تبديل بتلاشي متقاطع، وبعده نرجع لصورة واحدة عشان الذاكرة ماتتراكمش
+                val td = android.graphics.drawable.TransitionDrawable(arrayOf(oldD, newD)); td.isCrossFadeEnabled = true
+                wallView.setImageDrawable(td); td.startTransition(700)
+                h.postDelayed({ if (!isDestroyed && my == wallSeq) wallView.setImageDrawable(newD) }, 760L)
+            } else wallView.setImageDrawable(newD)
         }
     }
 
-    /** بيطبّق الخلفية المختارة. أونلاين: بيعرض آخر صورة محفوظة فورًا وبينزّل صورة جديدة في الخلفية لو عدّى 12 ساعة (أو طلبت «جديدة») */
+    /** (v527) الخلفية: بتتغيّر كل دقيقة من Bing ومن صور الإنترنت المنوّعة (Picsum) بالتبادل — الخلفيات المدمجة اتشالت.
+     *  الوضع المحفوظ: auto (الاتنين) · bing · picsum · off. القديم «builtin» بيتعامل كـ auto. */
+    private fun wallMode(): String { val m = Cfg.str("tv_wall", "auto"); return if (m == "off" || m == "bing" || m == "picsum") m else "auto" }
+    private val wallLoop = object : Runnable { override fun run() { if (isDestroyed || isFinishing) return; nextWall(false); h.postDelayed(this, 60_000L) } }
+    private var wallN = 0
+    private var bingUrls: List<String> = emptyList()
+    private val wallBusy = java.util.concurrent.atomic.AtomicBoolean(false)
+
+    /** بيطبّق الخلفية: يعرض آخر صورة محفوظة فورًا وبعدين يبدأ دورة التبديل كل دقيقة */
     private fun applyWall() {
-        val mode = Cfg.str("tv_wall", "builtin")
+        val mode = wallMode()
         val my = ++wallSeq
+        h.removeCallbacks(wallLoop)
         if (mode == "off") { wallView.setImageDrawable(null); wallView.visibility = View.GONE; wallScrim.visibility = View.GONE; return }
-        val force = Cfg.str("tv_wall_force", "0") == "1"
-        if (force) Cfg.put("tv_wall_force", "0")
         Thread {
             try {
-                val built = BUILTIN_WALLS[Cfg.int("tv_wall_idx", 0).coerceIn(0, BUILTIN_WALLS.size - 1)].first
-                if (mode == "builtin") { showWall(decodeAsset(built), my); return@Thread }
-                val f = java.io.File(filesDir, "wall_$mode.jpg")
-                showWall((if (f.exists()) decodeFileScaled(f) else null) ?: decodeAsset(built), my)
-                val stale = !f.exists() || System.currentTimeMillis() - f.lastModified() > 12L * 3600_000L
-                if (!stale && !force) return@Thread
-                if (fetchWall(mode, f, force)) showWall(decodeFileScaled(f), my)
-                else runOnUiThread { if (!isDestroyed) Notice.show(this, "⚠ ما قدرتش أنزّل خلفية جديدة (النت؟) — شغّال بآخر صورة محفوظة", 2800L) }
+                val f = java.io.File(filesDir, "wall_cur.jpg")
+                if (f.exists()) showWall(decodeFileScaled(f), my)
             } catch (e: Throwable) { LogStore.err("Tv:wall", e) }
+        }.apply { isDaemon = true }.start()
+        h.post(wallLoop)   // أول صورة جديدة فورًا ثم كل دقيقة
+    }
+
+    /** بينزّل الصورة الجاية (Bing/Picsum بالتبادل) ويعرضها. لو النزول فشل بيفضل على الحالية ويحاول بعد دقيقة */
+    private fun nextWall(force: Boolean) {
+        val mode = wallMode()
+        if (mode == "off" || !wallBusy.compareAndSet(false, true)) return
+        val my = wallSeq
+        val useBing = when (mode) { "bing" -> true; "picsum" -> false; else -> (wallN++ % 2 == 0) }
+        Thread {
+            try {
+                val f = java.io.File(filesDir, "wall_cur.jpg")
+                if (fetchWall(useBing, f) || fetchWall(!useBing && mode == "auto", f)) showWall(decodeFileScaled(f), my)
+                else if (force) runOnUiThread { if (!isDestroyed) Notice.show(this, "⚠ ما قدرتش أنزّل خلفية جديدة (النت؟) — شغّال بآخر صورة", 2800L) }
+            } catch (e: Throwable) { LogStore.err("Tv:wallNext", e) } finally { wallBusy.set(false) }
         }.apply { isDaemon = true }.start()
     }
 
@@ -624,15 +735,16 @@ class TvActivity : Activity() {
             if (c.responseCode in 200..299) c.inputStream.use { it.readBytes() } else null
         } finally { try { c.disconnect() } catch (_: Throwable) {} }
     }
-    private fun fetchWall(mode: String, dest: java.io.File, force: Boolean): Boolean {
+    private fun fetchWall(bing: Boolean, dest: java.io.File): Boolean {
         return try {
-            val url = if (mode == "bing") {
-                val j = org.json.JSONObject(String(httpBytes("https://www.bing.com/HPImageArchive.aspx?format=js&idx=" + (if (force) (0..7).random() else 0) + "&n=1&mkt=en-US") ?: return false))
-                "https://www.bing.com" + j.getJSONArray("images").getJSONObject(0).getString("url")
-            } else {
-                val seed = if (force) System.currentTimeMillis().toString() else (System.currentTimeMillis() / 86_400_000L).toString()
-                "https://picsum.photos/seed/$seed/1920/1080"
-            }
+            val url = if (bing) {
+                if (bingUrls.isEmpty()) {   // آخر 8 صور من أرشيف Bing (بتتجاب مرة وتتلف عليها عشوائي)
+                    val j = org.json.JSONObject(String(httpBytes("https://www.bing.com/HPImageArchive.aspx?format=js&idx=0&n=8&mkt=en-US") ?: return false))
+                    val arr = j.getJSONArray("images")
+                    bingUrls = (0 until arr.length()).map { "https://www.bing.com" + arr.getJSONObject(it).getString("url") }
+                }
+                bingUrls.randomOrNull() ?: return false
+            } else "https://picsum.photos/seed/" + System.currentTimeMillis() + "/1920/1080"
             val data = httpBytes(url) ?: return false
             if (data.size < 20_000) return false
             val tmp = java.io.File(dest.path + ".tmp"); tmp.writeBytes(data)
@@ -642,16 +754,16 @@ class TvActivity : Activity() {
     }
 
     private fun wallDialog() {
-        val items = arrayOf("🚫 بدون خلفية", "🏞 خلفيات مدمجة (طبيعة)", "🌐 صور من الإنترنت — منوّعة (Picsum)", "📰 صورة اليوم من Bing", "🔄 خلفية جديدة من الإنترنت")
+        val cur = wallMode()
+        fun mk(k: String, t: String) = (if (k == cur) "✔ " else "") + t
+        val items = arrayOf(mk("auto", "🔄 تلقائي — Bing + صور منوّعة، تتغيّر كل دقيقة"), mk("bing", "📰 Bing بس (كل دقيقة)"), mk("picsum", "🌐 صور منوّعة من الإنترنت بس (كل دقيقة)"), mk("off", "🚫 بدون خلفية"), "⏭ خلفية جديدة دلوقتي")
         GAlert(this).setTitle("🖼 خلفية اللانشر").setItems(items) { _, i ->
             when (i) {
-                0 -> { Cfg.put("tv_wall", "off"); applyWall() }
-                1 -> GAlert(this).setTitle("🏞 اختار الخلفية").setItems(BUILTIN_WALLS.map { it.second }.toTypedArray()) { _, n ->
-                    Cfg.put("tv_wall", "builtin"); Cfg.put("tv_wall_idx", n.toString()); applyWall()
-                }.setNegativeButton("إلغاء", null).show()
-                2 -> { Cfg.put("tv_wall", "picsum"); Cfg.put("tv_wall_force", "1"); applyWall() }
-                3 -> { Cfg.put("tv_wall", "bing"); Cfg.put("tv_wall_force", "1"); applyWall() }
-                4 -> { val m = Cfg.str("tv_wall", "builtin"); if (m != "picsum" && m != "bing") Cfg.put("tv_wall", "picsum"); Cfg.put("tv_wall_force", "1"); applyWall() }
+                0 -> { Cfg.put("tv_wall", "auto"); applyWall() }
+                1 -> { Cfg.put("tv_wall", "bing"); applyWall() }
+                2 -> { Cfg.put("tv_wall", "picsum"); applyWall() }
+                3 -> { Cfg.put("tv_wall", "off"); applyWall() }
+                4 -> { if (wallMode() == "off") { Cfg.put("tv_wall", "auto"); applyWall() } else nextWall(true) }
             }
         }.setNegativeButton("إغلاق", null).show()
     }
@@ -714,7 +826,7 @@ class TvActivity : Activity() {
         var anchor: View = nw; var p: View? = nw
         while (p != null && p !== content) { if (p is HorizontalScrollView) anchor = p; p = p.parent as? View }
         if (p == null) {   // التركيز فوق (الشريط العلوي) — على الشاشة الواسعة بس نرجع لفوق؛ مع القايمة الجنبية ما نحرّكش حاجة
-            if (!compactUi && scrollV.scrollY != 0) scrollV.smoothScrollTo(0, 0)
+            if (scrollV.scrollY != 0 && railBox?.let { isInside(nw, it) } != true) scrollV.smoothScrollTo(0, 0)   // (v527) التركيز في القايمة الجانبية ما يحرّكش الصفحة
             return
         }
         // (v504) السكرول بيتحرك بس لو الصف اللي عليه التركيز طلع (كله أو جزء منه) بره المنطقة الظاهرة — غير كده ثابت
@@ -1218,76 +1330,10 @@ class TvActivity : Activity() {
         return dockItem(ic.bmp, label, ic.glow, { launchApp(pkg) }, { openAppInfo(pkg) })
     }
 
-    // ===== (v516) تطبيقات قد تحتاجها (على حسب اللي عندك) + اختصار Google Play =====
-    private class Sug(val pkg: String, val label: String, val cat: String, val color: Int)
-    private val SUGS = listOf(
-        Sug("com.netflix.ninja", "Netflix", "video", 0xFFE50914.toInt()),
-        Sug("com.google.android.youtube.tv", "YouTube", "video", 0xFFFF0000.toInt()),
-        Sug("com.amazon.amazonvideo.livingroom", "Prime Video", "video", 0xFF00A8E1.toInt()),
-        Sug("com.disney.disneyplus", "Disney+", "video", 0xFF113CCF.toInt()),
-        Sug("com.plexapp.android", "Plex", "video", 0xFFE5A00D.toInt()),
-        Sug("tv.twitch.android.app", "Twitch", "video", 0xFF9146FF.toInt()),
-        Sug("org.videolan.vlc", "VLC", "video", 0xFFFF8800.toInt()),
-        Sug("com.mxtech.videoplayer.ad", "MX Player", "video", 0xFF2D7FF9.toInt()),
-        Sug("org.xbmc.kodi", "Kodi", "video", 0xFF17B2E7.toInt()),
-        Sug("com.spotify.tv.android", "Spotify", "music", 0xFF1DB954.toInt()),
-        Sug("com.soundcloud.android", "SoundCloud", "music", 0xFFFF5500.toInt()),
-        Sug("com.anghami", "Anghami", "music", 0xFF8B3FFF.toInt()),
-        Sug("com.google.android.apps.youtube.music", "YouTube Music", "music", 0xFFFF0033.toInt()),
-        Sug("com.kiloo.subwaysurf", "Subway Surfers", "game", 0xFF2AA7E8.toInt()),
-        Sug("com.king.candycrushsaga", "Candy Crush", "game", 0xFFE0489B.toInt()),
-        Sug("com.supercell.clashofclans", "Clash of Clans", "game", 0xFFD9A400.toInt()),
-        Sug("com.google.android.play.games", "Play Games", "game", 0xFF01875F.toInt()),
-        Sug("com.google.android.apps.nbu.files", "Files", "tools", 0xFF1A73E8.toInt()),
-        Sug("com.yablio.sendfilestotv", "Send Files to TV", "tools", 0xFF3F51B5.toInt()),
-        Sug("com.anydesk.anydeskandroid", "AnyDesk", "tools", 0xFFEF443B.toInt()),
-        Sug("org.zwanoo.android.speedtest", "Speedtest", "tools", 0xFF1B1F3B.toInt()),
-        Sug("com.android.chrome", "Chrome", "browser", 0xFF4285F4.toInt()),
-        Sug("org.mozilla.firefox", "Firefox", "browser", 0xFFFF7139.toInt()),
-        Sug("com.cloudmosa.puffinTV", "Puffin TV", "browser", 0xFF2F80ED.toInt()),
-        Sug("com.quran.labs.androidquran", "Quran Android", "quran", 0xFF2E7D6B.toInt()),
-        Sug("com.onefootball.android", "OneFootball", "sports", 0xFF0A1E3C.toInt()),
-        Sug("com.google.android.apps.photos", "Google Photos", "photo", 0xFFEA4335.toInt())
-    )
-    private fun catOf(c: Int): String? = when (c) { 0 -> "game"; 1 -> "music"; 2 -> "video"; 3 -> "photo"; 5 -> "news"; 7 -> "tools"; else -> null }   // ApplicationInfo.CATEGORY_*
-
-    private fun playItem(): View {
-        val px = ui.dp(iconDp())
-        val bmp = try { circleIcon(packageManager.getApplicationIcon("com.android.vending"), px) } catch (_: Throwable) { null } ?: letterIcon("▶", 0xFF01875F.toInt(), px)
-        return dockItem(bmp, "Google Play", 0xFF01875F.toInt(), { openPlay() })
-    }
-    private fun sugItem(s: Sug): View = dockItem(letterIcon(s.label, s.color, ui.dp(iconDp())), s.label, s.color, { openPlayFor(s.pkg) })
-
-    /** التطبيقات اللي عندك بتحدد النوع (فيديو/موسيقى/ألعاب/أدوات…) والمقترح من نفس الأنواع الأكتر عندك، من غير اللي مثبّته أصلًا */
-    private fun suggestRow(): List<View> {
-        val installed = try { allLaunchApps() } catch (_: Throwable) { emptyList() }
-        val have = installed.map { it.activityInfo.packageName }.toSet()
-        val score = HashMap<String, Int>()
-        for (ri in installed) {
-            val pkg = ri.activityInfo.packageName
-            val cat = SUGS.firstOrNull { it.pkg == pkg }?.cat ?: try { catOf(ri.activityInfo.applicationInfo.category) } catch (_: Throwable) { null }
-            if (cat != null) score[cat] = (score[cat] ?: 0) + 1
-        }
-        val out = ArrayList<View>()
-        if (playOn()) out.add(playItem())
-        SUGS.filter { it.pkg !in have }
-            .sortedWith(compareByDescending<Sug> { score[it.cat] ?: 0 }.thenBy { SUGS.indexOf(it) })
-            .take(12).forEach { out.add(sugItem(it)) }
-        return out
-    }
-
     private fun openPlay() {
         if (packageManager.getLaunchIntentForPackage("com.android.vending") == null) { Notice.show(this, "⚠ Google Play مش متثبّت على الجهاز ده", 2200L); return }
         launchApp("com.android.vending")
     }
-    private fun openPlayFor(pkg: String) {
-        try { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("market://details?id=$pkg")).setPackage("com.android.vending").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
-        catch (_: Throwable) {
-            try { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://play.google.com/store/apps/details?id=$pkg")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
-            catch (e: Throwable) { LogStore.err("TvHome:play", e); Notice.show(this, "⚠ ما قدرتش أفتح المتجر", 2000L) }
-        }
-    }
-
     // ===== (v516) مواقيت الصلاة (بالموقع) =====
     private var prayerCd: TextView? = null
     private var prayerNextAt = 0L
@@ -1422,12 +1468,77 @@ class TvActivity : Activity() {
         cards.getOrNull(PRAY_NAMES.indexOfFirst { it.first == nextKey }.coerceAtLeast(0))?.let { c -> c.post { try { c.requestFocus() } catch (_: Throwable) { } } }
     }
 
+    // (v527) شريط اللانشر العلوي: «🕌 العصر بعد 1:23:45»
+    private var topPrayTv: TextView? = null
+    private var topPrayAt = 0L
+    private var topPrayName = ""
+    private fun refreshTopPrayer() {
+        loadPrayer(false) { res ->
+            if (res == null) { topPrayAt = 0L; topPrayTv?.visibility = View.GONE; return@loadPrayer }
+            val now = System.currentTimeMillis()
+            val order = listOf("Fajr", "Dhuhr", "Asr", "Maghrib", "Isha")
+            val nextOrNull: String? = order.firstOrNull { timeToday(res.times[it] ?: "00:00") > now }
+            val nextKey: String = nextOrNull ?: "Fajr"
+            topPrayAt = timeToday(res.times[nextKey] ?: "00:00") + (if (nextOrNull == null) 24L * 3600_000L else 0L)
+            topPrayName = PRAY_NAMES.first { it.first == nextKey }.second
+            topPrayTick()
+        }
+    }
+    private fun topPrayTick() {
+        val tv = topPrayTv ?: return
+        if (topPrayAt <= 0L) return
+        val left = (topPrayAt - System.currentTimeMillis()) / 1000
+        if (left <= 0L) { topPrayAt = 0L; refreshTopPrayer(); return }
+        val t = if (left >= 3600L) String.format(Locale.US, "%d:%02d:%02d", left / 3600, (left % 3600) / 60, left % 60) else String.format(Locale.US, "%02d:%02d", left / 60, left % 60)
+        tv.text = "🕌 " + topPrayName + " بعد " + t
+        if (tv.visibility != View.VISIBLE) tv.visibility = View.VISIBLE
+    }
+
     private fun prayerTick() {
         val cd = prayerCd ?: return
         if (!cd.isAttachedToWindow || prayerNextAt <= 0L) return
         val left = (prayerNextAt - System.currentTimeMillis()) / 1000
         if (left <= 0L) { prayerNextAt = 0L; showPrayer(); return }
         cd.text = String.format(Locale.US, "%02d:%02d:%02d", left / 3600, (left % 3600) / 60, left % 60)
+    }
+
+    /** (v525) شاشة السكون: «متبقي على صلاة X» بعدّاد حي فوق، وتحته مواقيت اليوم كلها (الجاية متظلّلة) */
+    private fun fillSaverPrayer(res: PrayerRes?) {
+        if (!::saverPray.isInitialized) return
+        saverPray.removeAllViews(); saverCdTv = null; saverNextAt = 0L
+        if (res == null) { saverPray.visibility = View.GONE; return }
+        val now = System.currentTimeMillis()
+        val order = listOf("Fajr", "Dhuhr", "Asr", "Maghrib", "Isha")
+        val nextOrNull: String? = order.firstOrNull { timeToday(res.times[it] ?: "00:00") > now }
+        val nextKey: String = nextOrNull ?: "Fajr"
+        saverNextAt = timeToday(res.times[nextKey] ?: "00:00") + (if (nextOrNull == null) 24L * 3600_000L else 0L)
+        val nextAr = PRAY_NAMES.first { it.first == nextKey }.second
+        saverPray.addView(ui.text("🕌 متبقي على صلاة $nextAr", 22f, 0xFFE8EBF4.toInt(), true).apply { gravity = Gravity.CENTER })
+        val cd = ui.text("--:--:--", 40f, 0xFFFFD27A.toInt(), true).apply { gravity = Gravity.CENTER; layoutDirection = View.LAYOUT_DIRECTION_LTR; textDirection = View.TEXT_DIRECTION_LTR; setPadding(0, ui.dp(2), 0, ui.dp(8)) }
+        saverPray.addView(cd); saverCdTv = cd
+        val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER; layoutDirection = View.LAYOUT_DIRECTION_RTL }
+        for ((k, ar) in PRAY_NAMES) {
+            val isNext = k == nextKey
+            val colV = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER
+                setPadding(ui.dp(14), ui.dp(6), ui.dp(14), ui.dp(6))
+                if (isNext) background = GradientDrawable().apply { setColor(0x44FFD27A); cornerRadius = ui.dp(14).toFloat() }
+            }
+            colV.addView(ui.text(ar, 14f, if (isNext) 0xFFFFD27A.toInt() else 0xFFB8BDC9.toInt(), isNext).apply { gravity = Gravity.CENTER })
+            colV.addView(ui.text(fmt12(res.times[k] ?: ""), 17f, Color.WHITE, true).apply { gravity = Gravity.CENTER })
+            row.addView(colV)
+        }
+        saverPray.addView(row)
+        saverPray.visibility = View.VISIBLE
+        saverPrayTick()
+    }
+
+    private fun saverPrayTick() {
+        val tv = saverCdTv ?: return
+        if (saverNextAt <= 0L) return
+        val left = (saverNextAt - System.currentTimeMillis()) / 1000
+        if (left <= 0L) { saverNextAt = 0L; loadPrayer(false) { res -> fillSaverPrayer(res) }; return }
+        tv.text = String.format(Locale.US, "%02d:%02d:%02d", left / 3600, (left % 3600) / 60, left % 60)
     }
 
     private fun prayerMethodDialog() {
@@ -1455,7 +1566,7 @@ class TvActivity : Activity() {
         val saverNames = mapOf("1" to "دقيقة", "3" to "3 دقايق", "5" to "5 دقايق", "10" to "10 دقايق", "0" to "أبدًا")
         val opts = listOf(
             Opt("🎨 السمة (الألوان)", { th.name }, { themeDialog() }),
-            Opt("🖼 خلفية اللانشر", { when (Cfg.str("tv_wall", "builtin")) { "off" -> "بدون"; "picsum" -> "صور منوّعة"; "bing" -> "صورة Bing اليومية"; else -> BUILTIN_WALLS[Cfg.int("tv_wall_idx", 0).coerceIn(0, BUILTIN_WALLS.size - 1)].second } }, { wallDialog() }),
+            Opt("🖼 خلفية اللانشر", { when (wallMode()) { "off" -> "بدون"; "picsum" -> "صور منوّعة كل دقيقة"; "bing" -> "Bing كل دقيقة"; else -> "تلقائي (Bing + منوّعة) كل دقيقة" } }, { wallDialog() }),
             Opt("🌑 تعتيم الخلفية", { (Cfg.str("tv_scrim", "50")) + "%" }, { cyc("tv_scrim", "50", listOf("0", "25", "40", "50", "65", "80", "90"))(); applyScrim() }),
             Opt("📐 حجم الواجهة", { Cfg.str("tv_scale_adj", "100") + "%" }, { scaleDialog() }),
             Opt("⭕ شكل أيقونات التطبيقات", { if (squircle()) "مربع مدوّر" else "دايرة" }, cyc("tv_icon_shape", "circle", listOf("circle", "squircle"))),
@@ -1468,7 +1579,6 @@ class TvActivity : Activity() {
             Opt("💤 شاشة التوقف بعد", { saverNames[Cfg.str("tv_saver_min", "3")] ?: "3 دقايق" }, cyc("tv_saver_min", "3", listOf("1", "3", "5", "10", "0"))),
             Opt("🎞 وضع الواجهة والحركة", { Skins.cur().name }, { skinDialog() }),
             Opt("📲 تطبيقات السيستم", { if (Cfg.str("tv_apps_sys", "0") == "1") "ظاهرة" else "مخفية" }, tog("tv_apps_sys", "0")),
-            Opt("✨ تطبيقات قد تحتاجها", { onOff("tv_suggest", "1") }, tog("tv_suggest", "1")),
             Opt("🛍 اختصار Google Play", { onOff("tv_play", "1") }, { Cfg.put("tv_play", if (playOn()) "0" else "1"); recreate() }),
             Opt("🎛 تخصيص الصفوف", { "" }, { rowsDialog() })
         )
@@ -1638,11 +1748,24 @@ class TvActivity : Activity() {
         return l.map { it.folderKey }.distinct().size.toString() + " فولدر · " + l.size + " فيديو"
     }
 
-    /** (v493) الفيديوهات في الرئيسية = كارتين بس: الفلاشة + الذاكرة الداخلية */
+    /** (v525) الفيديوهات في الرئيسية = شريط واحد فيه فولدرات الفيديو من الفلاشة والذاكرة الداخلية (الفلاشة الأول)، تتنقل بينها بالأسهم */
     private fun fillStorageHome(fh: LinearLayout) {
         fh.removeAllViews()
         fh.addView(sectionTitle("🎬 الفيديوهات"))
-        fh.addView(hrow(listOf(storageTile("💾", "الفلاشة", storageSub("sd"), "sd"), storageTile("📱", "الذاكرة الداخلية", storageSub("int"), "int"))))
+        if (!VideoScan.hasPermission(this)) { fh.addView(hrow(listOf(tile("🔐", "اسمح بالفيديوهات") { askVideoPermission() }))); return }
+        if (!scanned) { fh.addView(ui.text("⏳ بقرا الفيديوهات…", 14f, th.muted).apply { setPadding(ui.dp(10), ui.dp(10), ui.dp(10), ui.dp(6)) }); return }
+        val groups = VideoLib.sortFolders(VideoLib.group(lastScan), foldSort())
+        if (groups.isEmpty()) { fh.addView(ui.text("مفيش فيديوهات على الفلاشة ولا على الذاكرة الداخلية", 14f, th.muted).apply { setPadding(ui.dp(10), ui.dp(10), ui.dp(10), ui.dp(6)) }); return }
+        val usb = groups.filter { g -> g.videos.firstOrNull()?.let { v -> isSd(v) } == true }
+        val internal = groups.filter { g -> g.videos.firstOrNull()?.let { v -> isSd(v) } != true }
+        val cards = (usb + internal).take(60).map { homeFolderTile(it) } + listOf(tile("📂", "كل الفيديوهات") { openMain("videos") })
+        fh.addView(hrow(cards))
+    }
+
+    private fun homeFolderTile(f: FolderItem): View {
+        val sd = f.videos.firstOrNull()?.let { isSd(it) } == true
+        return vTile({ iv -> f.videos.firstOrNull()?.let { v -> Thumbs.load(this, v) { bmp -> if (bmp != null) runOnUiThread { iv.setImageBitmap(bmp) } } } },
+            "📁 " + f.name, (if (sd) "💾 فلاشة · " else "📱 داخلية · ") + f.videos.size.toString() + " فيديو", -1, false, { openFolderView(f) }, null, true)
     }
 
     private fun showStorage(kind: String) {
@@ -1704,6 +1827,14 @@ class TvActivity : Activity() {
                 if (focus) body.post { try { cards.firstOrNull()?.requestFocus() } catch (_: Throwable) {} }
                 return
             }
+            // (v525) شريط فولدرات فوق: بدّل بين فولدرات الفلاشة والذاكرة الداخلية من غير ما ترجع للرئيسية
+            val sibs = VideoLib.sortFolders(VideoLib.group(lastScan), foldSort())
+            if (sibs.size > 1) body.addView(hrow(sibs.take(60).map { sf ->
+                pill((if (sf.key == open.key) "● " else "") + (if (sf.videos.firstOrNull()?.let { v -> isSd(v) } == true) "💾 " else "📱 ") + sf.name) {
+                    storageKind = if (sf.videos.firstOrNull()?.let { v -> isSd(v) } == true) "sd" else "int"
+                    openFolder = sf.key; storageQuery = ""; fillStorageView(fh, true)
+                }
+            }))
             body.addView(ui.text("📁 ${open.name} · ${open.videos.size}", 16f, th.primary, true).apply { setPadding(ui.dp(10), ui.dp(8), 0, ui.dp(2)) })
             val vids = VideoLib.sortVideos(open.videos, vidSort())
             val vcards = vids.take(120).map { videoCard(it) }
@@ -1811,13 +1942,7 @@ class TvActivity : Activity() {
             content.addView(sectionTitle("تطبيقاتك"))
             content.addView(hrow(circles))
         }
-        if ("apps" !in hidden) {
-            // (v516) تطبيقات قد تحتاجها: على حسب اللي مثبّته عندك + اختصار Google Play
-            if (Cfg.str("tv_suggest", "1") != "0") {
-                val sg = try { suggestRow() } catch (e: Throwable) { LogStore.err("TvHome:suggest", e); emptyList() }
-                if (sg.isNotEmpty()) { content.addView(sectionTitle("✨ تطبيقات قد تحتاجها")); content.addView(hrow(sg)) }
-            }
-        }
+        // (v525) صف «تطبيقات قد تحتاجها» (التطبيقات الأكتر شيوعًا اللي مش متثبتة وبأيقونة حرف) اتشال بالكامل
         // 6) تخصيص
         // (v512) صف الإعدادات فوق زرار التخصيص
         content.addView(LinearLayout(this).apply {
@@ -1826,12 +1951,7 @@ class TvActivity : Activity() {
             addView(pill("⋯ المزيد") { moreMenu() })
             addView(pill("🛠 إعدادات الأندرويد") { openSystemSettings() })
             addView(pill("🌙 نوم") { showSaver() })
-        })
-        if (!compactUi) content.addView(LinearLayout(this).apply {   // (v516) على الشاشة الواسعة مفيش ريل جانبي: نفس الأزرار هنا
-            gravity = Gravity.CENTER; layoutDirection = View.LAYOUT_DIRECTION_RTL; setPadding(0, ui.dp(8), 0, 0)
-            addView(pill("🕌 مواقيت الصلاة") { showPrayer() })
-            if (playOn()) addView(pill("🛍 Google Play") { openPlay() })
-            addView(pill("🎨 المظهر") { showAppearance() })
+            addView(pill("📶 الواي فاي") { TvWifi.show(this@TvActivity) })   // (v525)
         })
         content.addView(LinearLayout(this).apply { gravity = Gravity.CENTER; setPadding(0, ui.dp(12), 0, ui.dp(24)); addView(pill("🎛 تخصيص") { rowsDialog() }) })
         if (focus) (heroBtn ?: firstRail)?.let { f -> content.post { try { f.requestFocus() } catch (_: Exception) {} } }

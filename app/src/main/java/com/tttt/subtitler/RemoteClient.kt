@@ -435,12 +435,41 @@ object RemoteClient {
 
     fun hasKeys(): Boolean = Cfg.keys("keys").isNotEmpty() || Cfg.keys("backup").isNotEmpty() || Cfg.keys("extra").isNotEmpty()
 
+    /** (v522) كل إعدادات الترجمة اللي بتتنقل: مفاتيح Gemini + المزوّدين الخارجيين + الموديلات */
+    /** (v529) «أماكن» المفاتيح: أساسي/احتياطي/إضافي/بصري + عدد الأساسي والاحتياطي. بتتنقل زي ما هي حتى لو فاضية (عشان القديم على التلفزيون يتمسح ومفتاح ما يفضلش في مكان غلط) */
+    val PLACE_FIELDS = listOf("keys", "backup", "extra", "keymodes", "viskeys", "nmain", "nback")
+    val KEY_FIELDS = listOf("keys", "backup", "extra", "keymodes", "nmain", "nback", "viskeys", "prefine", "vis_auto", "model", "libre_url", "libre_key", "fl_gem_key", "fl_groq_key", "fl_url", "fl_srv_key", "fl_srv_model", "audd_token", "tx_order", "ext_primary", "ext_strict", "tr_s_model", "vc_model", "off_model")
+
     fun sendKeys(): String? {
         if (!hasKeys()) return "مفيش مفاتيح Gemini على الموبايل"
         val j = JSONObject()
-        for (f in listOf("keys", "backup", "extra", "keymodes")) j.put(f, Cfg.str(f))
+        for (f in KEY_FIELDS) {
+            var v = when (f) {
+                "model" -> Cfg.str("model", Models.DEFAULT).trim().ifEmpty { Models.DEFAULT }   // (v529) الموديل الفعلي المستخدم (حتى لو الموبايل ماسجّلوش صراحةً)
+                "prefine" -> Cfg.str("prefine", "1")
+                "vis_auto" -> Cfg.str("vis_auto", "1")
+                else -> Cfg.str(f)
+            }
+            if (v.isBlank() && (f == "nmain" || f == "nback")) v = "0"
+            if (v.isBlank() && f == "keymodes") v = "[]"
+            if (f in PLACE_FIELDS) j.put(f, v) else if (v.isNotBlank()) j.put(f, v)
+        }
+        j.put("place", true)
         val (c, _) = post("/keys", j)
         return if (c == 200) null else if (c < 0) "ما قدرتش أوصل للتلفزيون" else "فشل ($c)"
+    }
+
+    /** (v522) مشغّل الموسيقى على التلفزيون: state أو أمر (toggle/next/prev/seek/seekto/shuffle/mode). بيرجّع الحالة أو null */
+    fun music(a: String, v: Long = 0L): JSONObject? {
+        val (c, t) = post("/music", JSONObject().put("a", a).put("v", v).put("cid", UUID.randomUUID().toString()))
+        if (c != 200) return null
+        return try { JSONObject(t).optJSONObject("st") } catch (_: Exception) { null }
+    }
+
+    fun musicLyrics(): String? {
+        val (c, t) = post("/music", JSONObject().put("a", "lyrics"))
+        if (c != 200) return null
+        return try { JSONObject(t).optString("lyrics") } catch (_: Exception) { null }
     }
 
 
@@ -520,3 +549,6 @@ object ApkServe {
 
     fun stop() { try { http?.stop() } catch (_: Throwable) {}; http = null; token = "" }
 }
+
+/** (v529) لما مفاتيح توصل من الموبايل والإعدادات مفتوحة: Main بيسجّل هنا دالة تعيد تحميل الخانات من Cfg (من غير ما الحفظ القديم يمسح الجديد) */
+object KeysSync { @Volatile var reload: (() -> Unit)? = null }

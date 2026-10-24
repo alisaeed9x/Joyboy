@@ -76,7 +76,7 @@ object TvInput {
     private fun dispatchKey(k: String, code: Int) {
         val a = TvLink.topActivity()
         when (k) {
-            "home" -> { if (!TvAccess.global(AccessibilityService.GLOBAL_ACTION_HOME)) goHome(); return }
+            "home" -> { if (!TvLink.showTv("home")) { if (!TvAccess.global(AccessibilityService.GLOBAL_ACTION_HOME)) goHome() }; return }   // (v522) رئيسية اللانشر الأول
             "recents" -> { if (!TvAccess.global(AccessibilityService.GLOBAL_ACTION_RECENTS)) needAccess(); return }
             "ff", "rew" -> {
                 // مشغّلنا: يمين/شمال = تقديم/ترجيع 10 ثواني. غيره: زراير الميديا

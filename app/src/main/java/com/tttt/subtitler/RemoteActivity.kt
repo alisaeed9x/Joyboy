@@ -21,6 +21,7 @@ import android.view.MotionEvent
 import android.view.View
 import android.view.ViewConfiguration
 import android.widget.EditText
+import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.SeekBar
@@ -42,6 +43,20 @@ class RemoteActivity : Activity() {
     private lateinit var devices: LinearLayout
     private lateinit var connBtnBox: LinearLayout
     private lateinit var input: EditText
+    private lateinit var qBox: EditText
+    private lateinit var mainScroll: ScrollView
+    private lateinit var pageScroll: ScrollView
+    private lateinit var pageTitle: IconTextView
+    private lateinit var musicBox: LinearLayout
+    private var pageKind = ""
+    private lateinit var mTitle: IconTextView
+    private lateinit var mSub: IconTextView
+    private lateinit var mLine: IconTextView
+    private lateinit var mTime: IconTextView
+    private lateinit var mSeek: SeekBar
+    private val mBtns = HashMap<String, View>()
+    private var mDur = 0L
+    private var mDragging = false
     private lateinit var remote: LinearLayout
     private lateinit var smart: LinearLayout
     private var smartSig = ""
@@ -56,8 +71,12 @@ class RemoteActivity : Activity() {
     private var polling = false
     private val pollRun = object : Runnable {
         override fun run() {
-            if (isFinishing || isDestroyed || RemoteClient.tvCtx != "player" || RemoteClient.state != RemoteClient.St.CONNECTED) { polling = false; return }
-            Thread { val st = RemoteClient.player("state"); h.post { if (st != null) paintPlayer(st) } }.also { it.isDaemon = true }.start()
+            if (isFinishing || isDestroyed || pageKind.isEmpty() || RemoteClient.state != RemoteClient.St.CONNECTED) { polling = false; return }
+            val k = pageKind
+            Thread {
+                if (k == "video") { val st = RemoteClient.player("state"); h.post { paintPlayer(st) } }
+                else { val st = RemoteClient.music("state"); h.post { paintMusic(st) } }
+            }.also { it.isDaemon = true }.start()
             h.postDelayed(this, 1000L)
         }
     }
@@ -90,10 +109,9 @@ class RemoteActivity : Activity() {
         connBtnBox = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(0, ui.dp(8), 0, 0) }
         col.addView(connBtnBox)
 
-        ctrl = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; setPadding(0, ui.dp(10), 0, 0) }
-        fun rb(t: String, c: String) = ui.button(t) { RemoteClient.cmd(c) }.apply { textSize = 20f }
-        for ((t, c) in listOf("🔉" to "vol_down", "🔇" to "mute", "🔊" to "vol_up", "⏯" to "playpause"))
-            ctrl.addView(rb(t, c), LinearLayout.LayoutParams(0, -2, 1f).apply { marginStart = ui.dp(4); marginEnd = ui.dp(4) })
+        ctrl = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; setPadding(0, ui.dp(10), 0, 0) }
+        ctrl.addView(panel(vrow(cmdBtn("⏻", "power"), sleepBtn(), cmdBtn("🔇", "mute"))))
+        ctrl.addView(panel(vrow(wordCmd("▶ يوتيوب", "open_yt"), wordCmd("💾 فلاشة", "open_sd")), vrow(wordCmd("🌐 متصفح", "open_browser"), wordCmd("📱 ذاكرة داخلية", "open_int"))), LinearLayout.LayoutParams(-1, -2).apply { topMargin = ui.dp(10) })
         col.addView(ctrl)
 
         remote = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL }
@@ -125,7 +143,21 @@ class RemoteActivity : Activity() {
         tools.addView(ui.button("📤 ادفع التحديث إجباري (حتى لو نفس النسخة)") { offerUpdate(true) })   // (v521)
         col.addView(tools)
 
-        setContentView(ScrollView(this).apply { addView(col) })
+        buildPlayerCard(); buildMusicCard()
+        val pageCol = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL
+            setPadding(ui.dp(16), ui.dp(24), ui.dp(16), ui.dp(30))
+        }
+        val hdr = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; gravity = Gravity.CENTER_VERTICAL }
+        hdr.addView(ui.button("↩ رجوع") { closePage() }.skin().apply { textSize = 15f }, LinearLayout.LayoutParams(ui.dp(110), -2))
+        pageTitle = ui.text("", 20f, th.text, true).apply { setPadding(ui.dp(12), 0, 0, 0) }
+        hdr.addView(pageTitle)
+        pageCol.addView(hdr); pageCol.addView(playerBox); pageCol.addView(musicBox)
+        pageScroll = ScrollView(this).apply { addView(pageCol); visibility = View.GONE; setBackgroundColor(th.bg) }
+        mainScroll = ScrollView(this).apply { addView(col) }
+        setContentView(FrameLayout(this).apply {
+            addView(mainScroll, FrameLayout.LayoutParams(-1, -1)); addView(pageScroll, FrameLayout.LayoutParams(-1, -1))
+        })
 
         if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED)
             try { requestPermissions(arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), 71) } catch (_: Throwable) {}
@@ -143,10 +175,11 @@ class RemoteActivity : Activity() {
 
     override fun onDestroy() { stopRepeat(); RemoteClient.removeListener(lis); super.onDestroy() }
 
-    override fun onPause() { stopRepeat(); polling = false; retryOn = false; h.removeCallbacks(retryRun); h.removeCallbacks(pollRun); super.onPause() }
+    override fun onPause() { stopRepeat(); polling = false; h.removeCallbacks(pollRun); retryOn = false; h.removeCallbacks(retryRun); h.removeCallbacks(pollRun); super.onPause() }
 
     override fun onResume() {
         super.onResume(); smartSig = ""; retryOn = true
+        if (pageKind.isNotEmpty()) startPoll()
         if (::smart.isInitialized && RemoteClient.state == RemoteClient.St.CONNECTED) updateSmart()
         else if (RemoteClient.state == RemoteClient.St.IDLE && !searching) h.postDelayed(retryRun, 1500L)   // (v521) رجعت للشاشة ومش متصل ← دوّر تاني
     }
@@ -159,7 +192,7 @@ class RemoteActivity : Activity() {
     }
 
     private fun pBtn(key: String, t: String, a: String, v: Long = 0L, repeat: Boolean = false): View {
-        val b = if (repeat) keyLikeRepeat(t, a, v) else ui.button(t) { pAct(a, v) }.apply { textSize = 17f }
+        val b = (if (repeat) keyLikeRepeat(t, a, v) else ui.button(t) { pAct(a, v) }.apply { textSize = 17f }).skin()
         pBtns[key] = b
         return b
     }
@@ -183,7 +216,7 @@ class RemoteActivity : Activity() {
 
     private fun buildPlayerCard() {
         pBtns.clear()
-        playerBox = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; visibility = View.GONE; setPadding(0, ui.dp(8), 0, 0) }
+        playerBox = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; setPadding(0, ui.dp(8), 0, 0) }
         val card = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL
             background = ui.box(th.card, th.border, 16); setPadding(ui.dp(12), ui.dp(12), ui.dp(12), ui.dp(8))
@@ -207,18 +240,49 @@ class RemoteActivity : Activity() {
         card.addView(pTitle); card.addView(pSeek, LinearLayout.LayoutParams(-1, -2)); card.addView(pTime)
         playerBox.addView(card, LinearLayout.LayoutParams(-1, -2).apply { setMargins(ui.dp(4), 0, ui.dp(4), ui.dp(4)) })
 
-        pPlay = ui.button("⏯", true) { pAct("toggle") }.apply { textSize = 20f }
+        pPlay = ui.button("⏯", true) { pAct("toggle") }.skin(true).apply { textSize = 20f }
         pBtns["toggle"] = pPlay
         playerBox.addView(row(pBtn("prev", "⏮", "prev"), pBtn("rew", "⏪ 10", "seek", -10000L, true), pPlay, pBtn("ff", "10 ⏩", "seek", 10000L, true), pBtn("next", "⏭", "next")))
         playerBox.addView(row(pBtn("cc", "💬 ترجمة", "cc"), pBtn("subs", "🌐 مسار", "subs"), pBtn("tr", "▶ ترجم", "translate"), pBtn("more", "⋯", "more")))   // (v521) 🌐 مسار/لغة الترجمة
+        playerBox.addView(row(ui.button("📄 ترجمة ملف الترجمة (سوفت / هارد سب)") { sfDialog() }.skin().apply { textSize = 15f }.also { pBtns["sf"] = it }))   // (v529)
         playerBox.addView(row(pBtn("sc-", "🔤 −", "scale", -10L, true), pBtn("sc+", "🔤 +", "scale", 10L, true), pBtn("sh-", "⏱ −", "shift", -250L, true), pBtn("sh+", "⏱ +", "shift", 250L, true)))
         playerBox.addView(row(pBtn("speed", "⏩ 1x", "speed"), pBtn("fit", "📐", "fit"), pBtn("audio", "🔊 صوت", "audio"), pBtn("quality", "HD", "quality")))
     }
 
+    // ===== (v529) 📄 ترجمة ملف الترجمة من الموبايل: سوفت سب / ملف على التلفزيون / هارد سب — بجوجل أو جيميناي (بمفاتيح التلفزيون) =====
+    private var lastPSt: org.json.JSONObject? = null
+
+    private fun sfEngine(what: String, then: (String) -> Unit) {
+        AlertDialog.Builder(this).setTitle("ترجم $what بإيه؟")
+            .setItems(arrayOf("🌐 جوجل ترجمة — من غير مفتاح، سريع (فصحى)", "✨ جيميناي — بمفاتيح التلفزيون وباللهجة المختارة هناك")) { _, w -> then(if (w == 0) "google" else "gemini") }
+            .setNegativeButton("إلغاء", null).show()
+    }
+
+    private fun sfDialog() {
+        val st = lastPSt
+        if (st == null) { Notice.show(this, "مفيش فيديو شغّال على التلفزيون — شغّل فيديو الأول", 2800L); return }
+        val side = st.optString("sf_side"); val nat = st.optInt("sf_nat"); val live = st.optString("sf_live")
+        val labels = ArrayList<String>(); val acts = ArrayList<() -> Unit>()
+        fun add(l: String, a: () -> Unit) { labels.add(l); acts.add(a) }
+        add("💬 ترجمة السوفت سب" + (if (side.isNotEmpty()) " — ملف «$side»" else if (nat > 0) " — $nat مسار جوه الفيديو" else " (لو موجودة)")) {
+            sfEngine("السوفت سب") { e -> pAct("subfile:soft:$e"); Notice.show(this, "📄 بدأت الترجمة على التلفزيون — التقدّم على الزرار", 3000L) }
+        }
+        add("📂 اختار ملف ترجمة على التلفزيون (SRT / ASS / VTT)") {
+            sfEngine("الملف") { e -> pAct("subfile:pick:$e"); Notice.show(this, "اختار ملف الترجمة من شاشة التلفزيون بالريموت", 3500L) }
+        }
+        add("🔤 ترجمة الهارد سب (المحروقة على الصورة) — بجيميناي") { pAct("subfile:hard"); Notice.show(this, "🔤 بدأ الوضع البصري على التلفزيون (محتاج مفتاح الوضع البصري هناك)", 3500L) }
+        if (live.isNotEmpty()) add("⏹ وقّف الترجمة اللحظية") { pAct("subfile:off") }
+        AlertDialog.Builder(this).setTitle("📄 ترجمة ملف الترجمة")
+            .setItems(labels.toTypedArray()) { _, w -> if (w in acts.indices) acts[w]() }
+            .setNegativeButton("إلغاء", null).show()
+    }
+
     private fun setTxt(key: String, t: String) { (pBtns[key] as? android.widget.TextView)?.text = t }
 
-    private fun paintPlayer(st: org.json.JSONObject) {
+    private fun paintPlayer(st: org.json.JSONObject?) {
         if (isFinishing || isDestroyed || !::pTitle.isInitialized) return
+        lastPSt = st
+        if (st == null) { pTitle.text = "🎞 مفيش فيديو شغّال على التلفزيون دلوقتي"; return }
         pTitle.text = "🎞 " + st.optString("title")
         pDur = st.optLong("dur"); val pos = st.optLong("pos")
         if (!pDragging) {
@@ -232,6 +296,10 @@ class RemoteActivity : Activity() {
         setTxt("cc", if (st.optBoolean("cc")) "💬 ترجمة ✓" else "💬 ترجمة ✗")
         setTxt("sc-", "🔤 −"); setTxt("sc+", "🔤 + (" + st.optInt("scale") + "%)")
         setTxt("sh-", "⏱ −"); setTxt("sh+", "⏱ + (" + String.format("%+.2f", st.optLong("shift") / 1000.0) + ")")
+        run {   // (v529) حالة «ترجمة ملف الترجمة»
+            val busy = st.optString("sf_busy"); val live = st.optString("sf_live")
+            setTxt("sf", if (busy.isNotEmpty()) "⏳ $busy" else if (live.isNotEmpty()) "💬 ترجمة لحظية بـ " + (if (live == "gemini") "جيميناي" else "جوجل") + " — دوس للتحكم" else "📄 ترجمة ملف الترجمة (سوفت / هارد سب)")
+        }
         pBtns["audio"]?.visibility = if (st.optBoolean("audio")) View.VISIBLE else View.INVISIBLE
         pBtns["quality"]?.visibility = if (st.optBoolean("quality")) View.VISIBLE else View.INVISIBLE
     }
@@ -255,22 +323,202 @@ class RemoteActivity : Activity() {
         remote.removeAllViews()
         val pad = padMode()
         val sw = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; setPadding(0, ui.dp(14), 0, ui.dp(2)) }
-        sw.addView(ui.button("🎮 أزرار", !pad) { Cfg.put("remote_mode", "keys"); buildRemote(); updateSmart() }, lp(0, -2, 1f))
-        sw.addView(ui.button("🖐 تاتش باد", pad) { Cfg.put("remote_mode", "pad"); buildRemote(); updateSmart() }, lp(0, -2, 1f))
+        sw.addView(ui.button("🎮 أزرار", !pad) { Cfg.put("remote_mode", "keys"); buildRemote(); updateSmart() }.skin(!pad), lp(0, -2, 1f))
+        sw.addView(ui.button("🖐 تاتش باد", pad) { Cfg.put("remote_mode", "pad"); buildRemote(); updateSmart() }.skin(pad), lp(0, -2, 1f))
         remote.addView(sw)
         smart = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL }
         remote.addView(smart)
-        buildPlayerCard()
-        remote.addView(playerBox)
+        val gap = { LinearLayout.LayoutParams(-1, -2).apply { topMargin = ui.dp(10) } }
         if (pad) {
-            remote.addView(TouchPad(this, th), LinearLayout.LayoutParams(-1, ui.dp(300)).apply { setMargins(ui.dp(4), ui.dp(6), ui.dp(4), ui.dp(6)) })
+            remote.addView(panel(TouchPad(this, th).also { it.layoutParams = LinearLayout.LayoutParams(-1, ui.dp(300)).apply { setMargins(ui.dp(4), ui.dp(4), ui.dp(4), ui.dp(4)) } }, row(keyBtn("↩", "back", false), keyBtn("🏠", "home", false), cmdBtn("🎤", "mic"), menuBtn())), gap())
         } else {
-            remote.addView(row(spacer(), keyBtn("▲", "up", true), spacer()))
-            remote.addView(row(keyBtn("◀", "left", true), keyBtn("OK", "ok", false, true), keyBtn("▶", "right", true)))
-            remote.addView(row(spacer(), keyBtn("▼", "down", true), spacer()))
+            remote.addView(panel(
+                row(keyBtn("↩", "back", false), keyBtn("▲", "up", true), keyBtn("🏠", "home", false)),   // رجوع شمال فوق · رئيسية اللانشر يمين فوق
+                row(keyBtn("◀", "left", true), keyBtn("OK", "ok", false, true), keyBtn("▶", "right", true)),
+                row(menuBtn(), keyBtn("▼", "down", true), cmdBtn("🎤", "mic"))   // قايمة إعدادات البرنامج شمال تحت · ميك يمين تحت
+            ), gap())
         }
-        remote.addView(row(keyBtn("↩", "back", false), keyBtn("🏠", "home", false), keyBtn("☰", "menu", false), keyBtn("🕘", "recents", false)))
+        remote.addView(panel(searchRow()), gap())
+        remote.addView(panel(vrow(bigBtn("🎞 مشغّل الفيديو") { openPage("video") }, bigBtn("🎵 مشغّل الموسيقى") { openPage("music") }, h0 = 64)), gap())
     }
+
+    // ===== (v522) شكل الريموت: أزرار مصمتة بألوان السمة + لوحات بخطوط فاصلة =====
+    private fun blend(a: Int, b: Int, t: Float): Int {
+        fun ch(x: Int, y: Int) = (x + (y - x) * t).toInt().coerceIn(0, 255)
+        return (0xFF shl 24) or (ch((a shr 16) and 255, (b shr 16) and 255) shl 16) or (ch((a shr 8) and 255, (b shr 8) and 255) shl 8) or ch(a and 255, b and 255)
+    }
+    private fun btnFill(): Int = if (th.isLight) blend(th.bg, 0xFF000000.toInt(), 0.09f) else blend(th.bg, 0xFFFFFFFF.toInt(), 0.16f)
+    private fun btnPressed(): Int = if (th.isLight) blend(th.bg, 0xFF000000.toInt(), 0.20f) else blend(th.bg, 0xFFFFFFFF.toInt(), 0.30f)
+    private fun lineCol(): Int = blend(th.bg, th.text, 0.30f)
+
+    private fun <T : View> T.skin(primary: Boolean = false): T {
+        val f = if (primary) th.primary else btnFill()
+        val p = if (primary) blend(th.primary, if (th.isLight) 0xFF000000.toInt() else 0xFFFFFFFF.toInt(), 0.22f) else btnPressed()
+        val sd = android.graphics.drawable.StateListDrawable()
+        sd.addState(intArrayOf(android.R.attr.state_pressed), ui.box(p, lineCol(), 14, 2))
+        sd.addState(intArrayOf(), ui.box(f, lineCol(), 14, 2))
+        background = sd
+        if (this is android.widget.TextView) setTextColor(if (primary) (if (th.isLight) android.graphics.Color.WHITE else android.graphics.Color.BLACK) else th.text)
+        return this
+    }
+
+    private fun hline(): View = View(this).apply { setBackgroundColor(lineCol()); layoutParams = LinearLayout.LayoutParams(-1, ui.dp(1)).apply { setMargins(ui.dp(6), ui.dp(4), ui.dp(6), ui.dp(4)) } }
+    private fun vline(): View = View(this).apply { setBackgroundColor(lineCol()); layoutParams = LinearLayout.LayoutParams(ui.dp(1), ui.dp(34)) }
+
+    /** لوحة بحدود مستديرة وخطوط عرضية بين الصفوف */
+    private fun panel(vararg vs: View): LinearLayout = LinearLayout(this).apply {
+        orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL
+        background = ui.box(th.card, lineCol(), 22, 2); setPadding(ui.dp(6), ui.dp(6), ui.dp(6), ui.dp(6))
+        for ((i, v) in vs.withIndex()) { if (i > 0 && v !is TouchPad && vs[i - 1] !is TouchPad) addView(hline()); addView(v) }
+    }
+
+    /** صف بخطوط طولية بين الأزرار */
+    private fun vrow(vararg vs: View, h0: Int = 58): LinearLayout = LinearLayout(this).apply {
+        orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_LTR; gravity = Gravity.CENTER_VERTICAL
+        for ((i, v) in vs.withIndex()) { if (i > 0) addView(vline()); addView(v, lp(0, ui.dp(h0), 1f)) }
+    }
+
+    private fun bigBtn(t: String, f: () -> Unit): View = ui.button(t) { f() }.skin(true).apply { textSize = 15f }
+
+    // ===== (v522) صفحات المشغّل (فيديو / موسيقى) =====
+    private fun openPage(kind: String) {
+        pageKind = kind
+        pageTitle.text = if (kind == "video") "🎞 مشغّل الفيديو" else "🎵 مشغّل الموسيقى"
+        playerBox.visibility = if (kind == "video") View.VISIBLE else View.GONE
+        musicBox.visibility = if (kind == "music") View.VISIBLE else View.GONE
+        mainScroll.visibility = View.GONE; pageScroll.visibility = View.VISIBLE; pageScroll.scrollTo(0, 0)
+        polling = false; startPoll()
+    }
+
+    private fun closePage() {
+        pageKind = ""; polling = false; h.removeCallbacks(pollRun)
+        pageScroll.visibility = View.GONE; mainScroll.visibility = View.VISIBLE
+    }
+
+    @Suppress("DEPRECATION", "OVERRIDE_DEPRECATION")
+    override fun onBackPressed() { if (pageKind.isNotEmpty()) closePage() else super.onBackPressed() }
+
+    private fun mAct(a: String, v: Long = 0L) {
+        Thread { val st = RemoteClient.music(a, v); h.post { paintMusic(st) } }.also { it.isDaemon = true }.start()
+    }
+
+    private fun mBtn(key: String, t: String, a: String, v: Long = 0L, primary: Boolean = false): View {
+        val b = ui.button(t, primary) { mAct(a, v) }.skin(primary).apply { textSize = 17f }
+        mBtns[key] = b
+        return b
+    }
+
+    private fun buildMusicCard() {
+        mBtns.clear()
+        musicBox = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; visibility = View.GONE; setPadding(0, ui.dp(8), 0, 0) }
+        val card = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL
+            background = ui.box(th.card, lineCol(), 16, 2); setPadding(ui.dp(12), ui.dp(12), ui.dp(12), ui.dp(8))
+        }
+        mTitle = ui.text("🎵 —", 17f, th.text, true).apply { maxLines = 2 }
+        mSub = ui.text("", 13f, th.muted)
+        mLine = ui.text("", 15f, th.primary, true).apply { setPadding(0, ui.dp(8), 0, ui.dp(4)); maxLines = 3 }
+        mTime = ui.text("0:00 / 0:00", 13f, th.muted)
+        mSeek = SeekBar(this).apply {
+            max = 1000
+            setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+                override fun onProgressChanged(sb: SeekBar?, p: Int, fromUser: Boolean) { if (fromUser && mDur > 0) mTime.text = PlayerLogic.clock(mDur * p / 1000L) + " / " + PlayerLogic.clock(mDur) }
+                override fun onStartTrackingTouch(sb: SeekBar?) { mDragging = true }
+                override fun onStopTrackingTouch(sb: SeekBar?) { mDragging = false; if (mDur > 0) mAct("seekto", mDur * (sb?.progress ?: 0) / 1000L) }
+            })
+        }
+        card.addView(mTitle); card.addView(mSub); card.addView(mLine); card.addView(mSeek, LinearLayout.LayoutParams(-1, -2)); card.addView(mTime)
+        musicBox.addView(card, LinearLayout.LayoutParams(-1, -2).apply { setMargins(ui.dp(4), 0, ui.dp(4), ui.dp(4)) })
+        musicBox.addView(panel(
+            vrow(mBtn("prev", "⏮", "prev"), mBtn("rew", "⏪ 10", "seek", -10000L), mBtn("toggle", "⏯", "toggle", 0L, true), mBtn("ff", "10 ⏩", "seek", 10000L), mBtn("next", "⏭", "next")),
+            vrow(mBtn("shuffle", "🔀", "shuffle"), mBtn("mode", "🔁", "mode"), ui.button("📜 كلمات") { showLyrics() }.skin().apply { textSize = 16f }.also { mBtns["lyr"] = it })
+        ), LinearLayout.LayoutParams(-1, -2).apply { topMargin = ui.dp(6) })
+    }
+
+    private fun paintMusic(st: org.json.JSONObject?) {
+        if (isFinishing || isDestroyed || !::mTitle.isInitialized) return
+        if (st == null) { mTitle.text = "🎵 مفيش موسيقى شغّالة على التلفزيون دلوقتي"; mSub.text = ""; mLine.text = ""; return }
+        mTitle.text = "🎵 " + st.optString("title")
+        mSub.text = st.optString("artist")
+        mLine.text = st.optString("line")
+        mDur = st.optLong("dur"); val pos = st.optLong("pos")
+        if (!mDragging) {
+            mSeek.progress = if (mDur > 0) (pos * 1000L / mDur).toInt().coerceIn(0, 1000) else 0
+            mTime.text = PlayerLogic.clock(pos) + " / " + PlayerLogic.clock(mDur)
+        }
+        (mBtns["toggle"] as? android.widget.TextView)?.text = if (st.optBoolean("playing")) "⏸" else "▶"
+        (mBtns["shuffle"] as? android.widget.TextView)?.text = if (st.optBoolean("shuffle")) "🔀 ✓" else "🔀"
+        (mBtns["mode"] as? android.widget.TextView)?.text = when (st.optInt("mode")) { 1 -> "🔁 الكل"; 2 -> "🔂 واحدة"; else -> "🔁" }
+        (mBtns["lyr"] as? android.widget.TextView)?.text = if (st.optBoolean("haslyr")) "📜 كلمات" else "📜 (مفيش كلمات محفوظة)"
+    }
+
+    private fun showLyrics() {
+        Thread {
+            val t = RemoteClient.musicLyrics()
+            h.post {
+                if (isFinishing || isDestroyed) return@post
+                if (t.isNullOrBlank()) Notice.show(this, "مفيش كلمات محفوظة للأغنية دي على التلفزيون — اجيبها من مشغّل الموسيقى هناك الأول", 3600L)
+                else AlertDialog.Builder(this).setTitle("📜 الكلمات").setMessage(t).setPositiveButton("تمام", null).show()
+            }
+        }.also { it.isDaemon = true }.start()
+    }
+
+    /** (v522) بحث: اللي تكتبه يتبعت لخانة البحث على التلفزيون */
+    private fun searchRow(): View {
+        if (!::qBox.isInitialized) {
+            qBox = EditText(this).apply {
+                hint = "🔍 ابحث على التلفزيون"
+                setTextColor(th.text); setHintTextColor(th.muted); setSingleLine(true)
+                imeOptions = android.view.inputmethod.EditorInfo.IME_ACTION_SEARCH
+                background = ui.box(btnFill(), lineCol(), 14, 2)
+                setPadding(ui.dp(12), ui.dp(10), ui.dp(12), ui.dp(10))
+                setOnEditorActionListener { _, a, _ -> if (a == android.view.inputmethod.EditorInfo.IME_ACTION_SEARCH) { sendQuery(); true } else false }
+            }
+        }
+        (qBox.parent as? android.view.ViewGroup)?.removeView(qBox)
+        val r = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; gravity = Gravity.CENTER_VERTICAL; setPadding(0, ui.dp(8), 0, 0) }
+        r.addView(qBox, LinearLayout.LayoutParams(0, -2, 1f).apply { marginEnd = ui.dp(6) })
+        r.addView(ui.button("🔍", true) { sendQuery() }.skin(true).apply { textSize = 18f }, LinearLayout.LayoutParams(ui.dp(64), -2))
+        return r
+    }
+
+    private fun sendQuery() {
+        val t = qBox.text.toString().trim()
+        if (t.isEmpty()) return
+        Thread {
+            val er = RemoteClient.sendText(t)
+            h.post { Notice.show(this, if (er == null) "✅ اتبعت لبحث التلفزيون" else "⚠ $er", 2200L) }
+        }.also { it.isDaemon = true }.start()
+    }
+
+    /** ☰: في المتصفح بتفتح قايمة المتصفح، وغير كده إعدادات برنامج التلفزيون */
+    private fun menuBtn(): View = ui.button("☰") { if (RemoteClient.tvCtx == "browser") RemoteClient.key("menu") else RemoteClient.cmd("open_settings") }.skin().apply { textSize = 20f }
+
+    /** كيبورد الموبايل ← أي خانة على التلفزيون */
+    private fun askTvText() {
+        val et = EditText(this).apply { hint = "اكتب هنا وهيتبعت لخانة الكتابة على التلفزيون"; setSingleLine(false) }
+        AlertDialog.Builder(this).setTitle("⌨ كيبورد").setView(et)
+            .setPositiveButton("ابعت") { _, _ ->
+                val t = et.text.toString()
+                if (t.isNotEmpty()) Thread {
+                    val er = RemoteClient.sendText(t)
+                    h.post { Notice.show(this, if (er == null) "✅ النص وصل للتلفزيون" else "⚠ $er", 2200L) }
+                }.also { it.isDaemon = true }.start()
+            }.setNegativeButton("إلغاء", null).show()
+    }
+
+    private fun wordCmd(t: String, c: String): View = ui.button(t) { RemoteClient.cmd(c) }.skin().apply { textSize = 15f }
+
+    /** سليب: مؤقت نوم على التلفزيون */
+    private fun sleepBtn(): View = ui.button("😴") {
+        val opts = arrayOf("15 دقيقة", "30 دقيقة", "60 دقيقة", "90 دقيقة", "إلغاء المؤقت")
+        val mins = intArrayOf(15, 30, 60, 90, 0)
+        AlertDialog.Builder(this).setTitle("😴 مؤقت نوم التلفزيون")
+            .setItems(opts) { _, i ->
+                RemoteClient.cmd("sleep:" + mins[i])
+                Notice.show(this, if (mins[i] == 0) "اتلغى مؤقت النوم" else "😴 التلفزيون هيقفل بعد " + opts[i], 2600L)
+            }.show()
+    }.skin().apply { textSize = 20f }
 
     private fun spacer(): View = View(this)
 
@@ -283,7 +531,7 @@ class RemoteActivity : Activity() {
     private fun stopRepeat() { repKey = ""; h.removeCallbacks(repRun) }
 
     /** زرار ريموت: لمسة = أمر، والضغط المستمر على الأسهم بيكرر الحركة، واهتزاز خفيف */
-    private fun keyBtn(t: String, k: String, repeat: Boolean, primary: Boolean = false): View = ui.button(t, primary) { }.apply {
+    private fun keyBtn(t: String, k: String, repeat: Boolean, primary: Boolean = false): View = ui.button(t, primary) { }.skin(primary).apply {
         textSize = 20f
         setOnTouchListener { v, e ->
             when (e.actionMasked) {
@@ -299,7 +547,7 @@ class RemoteActivity : Activity() {
         }
     }
 
-    private fun cmdBtn(t: String, c: String): View = ui.button(t) { RemoteClient.cmd(c) }.apply { textSize = 20f }
+    private fun cmdBtn(t: String, c: String): View = ui.button(t) { RemoteClient.cmd(c) }.skin().apply { textSize = 20f }
 
     /** اللوحة الذكية: بتتغيّر على حسب اللي ظاهر على التلفزيون */
     private fun updateSmart() {
@@ -318,13 +566,15 @@ class RemoteActivity : Activity() {
             else -> ""
         }
         if (label.isNotEmpty()) smart.addView(ui.text(label, 13f, th.muted).apply { setPadding(ui.dp(4), ui.dp(8), 0, ui.dp(2)) })
-        playerBox.visibility = if (ctx == "player") View.VISIBLE else View.GONE
-        if (ctx == "player") startPoll()
         if (ctx == "other") {
             smart.addView(row(keyBtn("⏮", "prev", false), keyBtn("⏪", "rew", true), cmdBtn("⏯", "playpause"), keyBtn("⏩", "ff", true), keyBtn("⏭", "next", false)))
         }
-        if (ctx == "browser" && !padMode()) {
-            smart.addView(ui.button("🖐 افتح التاتش باد (أنسب للمتصفح)") { Cfg.put("remote_mode", "pad"); buildRemote(); updateSmart() })
+        if (ctx == "browser") {   // (v524) المتصفح: كليك شمال/يمين + كيبورد الموبايل
+            smart.addView(panel(vrow(
+                ui.button("🖱 كليك شمال") { RemoteClient.ptrClick("tap") }.skin().apply { textSize = 14f },
+                ui.button("⌨") { askTvText() }.skin().apply { textSize = 20f },
+                ui.button("🖱 كليك يمين") { RemoteClient.ptrClick("long") }.skin().apply { textSize = 14f })), LinearLayout.LayoutParams(-1, -2).apply { topMargin = ui.dp(6) })
+            if (!padMode()) smart.addView(ui.button("🖐 افتح التاتش باد (أنسب للمتصفح)") { Cfg.put("remote_mode", "pad"); buildRemote(); updateSmart() }.skin())
         }
         if (ctx == "other" && !RemoteClient.tvAcc) {
             smart.addView(ui.text("⚠ الأسهم والتاتش باد في التطبيقات التانية محتاجين تفعّل «إمكانية الوصول» لـ Subtitler على التلفزيون مرة واحدة: ⋯ المزيد ← 📱 ريموت الموبايل ← زرار التفعيل. الصوت والتشغيل والرئيسية شغّالين من غيرها.", 12f, th.danger).apply { setPadding(ui.dp(4), ui.dp(6), ui.dp(4), ui.dp(4)) })

@@ -51,7 +51,7 @@ object TvLink {
         fun alive(): Boolean = lastSeen > 0L && System.currentTimeMillis() - lastSeen < ALIVE_MS
     }
 
-    class Offer(val ver: Long, val vname: String, val url: String, val from: String, val force: Boolean = false)   // (v521) force = دفع إجباري من الموبايل
+    class Offer(val ver: Long, val vname: String, val url: String, val from: String, val force: Boolean = false) { @Volatile var accepted = false }   // (v521) force = دفع إجباري من الموبايل
 
     private val h = Handler(Looper.getMainLooper())
     private lateinit var app: Context
@@ -92,7 +92,7 @@ object TvLink {
     private fun trackActivities() {
         try {
             (app as? Application)?.registerActivityLifecycleCallbacks(object : Application.ActivityLifecycleCallbacks {
-                override fun onActivityResumed(a: Activity) { top = WeakReference(a); if (a is TvActivity) offerIfAny(a); TvUpdate.resumePending(a) }
+                override fun onActivityResumed(a: Activity) { top = WeakReference(a); if (a !is RemoteActivity && a !is SendToTvActivity) offerIfAny(a); TvUpdate.resumePending(a) }
                 override fun onActivityPaused(a: Activity) { if (top?.get() === a) top = null }
                 override fun onActivityCreated(a: Activity, b: Bundle?) {}
                 override fun onActivityStarted(a: Activity) {}
@@ -229,6 +229,7 @@ object TvLink {
             "/key" -> keyCmd(r)
             "/ptr" -> ptrCmd(r)
             "/player" -> playerCmd(r)
+            "/music" -> musicCmd(r)
             "/open" -> open(r)
             "/type" -> typeText(r)
             "/keys" -> keys(r, rm)
@@ -318,6 +319,41 @@ object TvLink {
         return ok(JSONObject().put("st", st))
     }
 
+    /** (v522) مشغّل الموسيقى: a = state أو أمر (toggle/next/prev/seek/seekto/shuffle/mode/lyrics) */
+    private fun musicCmd(r: HttpReq): HttpRes {
+        val j = try { JSONObject(r.bodyText()) } catch (_: Exception) { return err(403, "bad") }
+        val a = j.optString("a")
+        if (a != "state" && a != "lyrics" && a.isNotEmpty()) {
+            if (dup(j.optString("cid"))) return ok(JSONObject().put("dup", true))
+            h.post {
+                try {
+                    when (a) {
+                        "toggle" -> MusicEngine.toggle()
+                        "next" -> MusicEngine.step(1)
+                        "prev" -> MusicEngine.step(-1)
+                        "seekto" -> MusicEngine.seekTo(j.optLong("v").toInt().coerceAtLeast(0))
+                        "seek" -> MusicEngine.seekTo((MusicEngine.posMs + j.optLong("v").toInt()).coerceIn(0, MusicEngine.durMs.coerceAtLeast(0)))
+                        "shuffle" -> MusicEngine.toggleShuffle()
+                        "mode" -> MusicEngine.cycleMode()
+                    }
+                } catch (e: Throwable) { LogStore.err("TvLink:music", e) }
+            }
+            try { Thread.sleep(80L) } catch (_: Exception) {}
+        }
+        val t = MusicEngine.current ?: return ok(JSONObject().put("none", true))
+        val lr = try { LyricsEngine.cached(app, t, LyricsEngine.mode()) } catch (_: Throwable) { null }
+        if (a == "lyrics") {
+            val txt = lr?.lines?.joinToString("\n") { it.text } ?: ""
+            return ok(JSONObject().put("lyrics", txt))
+        }
+        val pos = MusicEngine.posMs.toLong()
+        val line = lr?.lines?.lastOrNull { it.start * 1000.0 <= pos }?.text ?: ""
+        return ok(JSONObject().put("st", JSONObject()
+            .put("title", t.title).put("artist", t.artist).put("pos", pos).put("dur", MusicEngine.durMs.toLong())
+            .put("playing", MusicEngine.isPlaying).put("shuffle", MusicEngine.shuffle).put("mode", MusicEngine.mode)
+            .put("line", line).put("haslyr", lr != null && lr.lines.isNotEmpty())))
+    }
+
     /** (v519) تاتش باد: mv / tap / long / scroll (dx, dy نسبة من حجم التاتش باد) */
     private fun ptrCmd(r: HttpReq): HttpRes {
         val j = try { JSONObject(r.bodyText()) } catch (_: Exception) { return err(403, "bad") }
@@ -325,6 +361,28 @@ object TvLink {
         if (op.isEmpty()) return err(403, "empty")
         TvInput.ptr(op, j.optDouble("dx", 0.0).toFloat(), j.optDouble("dy", 0.0).toFloat())
         return ok(JSONObject().put("ctx", TvInput.context()).put("acc", TvAccess.connected))
+    }
+
+    /** (v522) افتح شاشة من لانشر التلفزيون (home / youtube / browser / sd / int) */
+    fun showTv(w: String): Boolean {
+        val a = app
+        return try {
+            a.startActivity(Intent(a, TvActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP).putExtra("tv_show", w))
+            true
+        } catch (e: Throwable) { LogStore.err("TvLink:show", e); false }
+    }
+
+    private val sleepRun = Runnable {
+        try {
+            showTv("home")
+            if (!TvAccess.global(8)) notice("😴 مؤقت النوم خلص — اقفل التلفزيون من الريموت")   // 8 = GLOBAL_ACTION_LOCK_SCREEN
+        } catch (e: Throwable) { LogStore.err("TvLink:sleep", e) }
+    }
+
+    /** (v522) مؤقت نوم: بعد N دقيقة يرجع للرئيسية ويقفل الشاشة (لو إمكانية الوصول شغّالة). 0 = إلغاء */
+    fun setSleep(min: Int) {
+        h.removeCallbacks(sleepRun)
+        if (min > 0) { h.postDelayed(sleepRun, min * 60_000L); notice("😴 مؤقت النوم: $min دقيقة") } else notice("مؤقت النوم اتلغى")
     }
 
     /** أوامر الصوت والتشغيل — بتتنفّذ على الـUI thread */
@@ -337,6 +395,14 @@ object TvLink {
                     "vol_down" -> am.adjustStreamVolume(AudioManager.STREAM_MUSIC, AudioManager.ADJUST_LOWER, AudioManager.FLAG_SHOW_UI)
                     "mute" -> am.adjustStreamVolume(AudioManager.STREAM_MUSIC, AudioManager.ADJUST_TOGGLE_MUTE, AudioManager.FLAG_SHOW_UI)
                     "playpause" -> { if (!PlayerActivity.remoteToggle()) { if (MusicEngine.isPlaying) MusicEngine.pause() else MusicEngine.resume() } }
+                    "open_yt" -> showTv("youtube")
+                    "open_browser" -> showTv("browser")
+                    "open_sd" -> showTv("sd")
+                    "open_int" -> showTv("int")
+                    "open_settings" -> showTv("settings")
+                    "mic" -> showTv("mic")
+                    "power" -> { if (!TvAccess.global(android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_POWER_DIALOG)) notice("⚠ زرار الباور محتاج تفعّل «إمكانية الوصول» لـ Subtitler") }
+                    else -> if (c.startsWith("sleep:")) setSleep(c.substring(6).toIntOrNull() ?: 0)
                 }
             } catch (e: Throwable) { LogStore.err("TvLink:exec", e) }
         }
@@ -372,11 +438,19 @@ object TvLink {
     private fun keys(r: HttpReq, rm: Remote): HttpRes {
         val j = try { JSONObject(r.bodyText()) } catch (_: Exception) { return err(403, "bad") }
         var n = 0
-        for (f in listOf("keys", "backup", "extra", "keymodes")) {
+        val place = j.optBoolean("place")   // (v529) النسخة الجديدة من الموبايل: أماكن المفاتيح بتتبدّل بالكامل حتى لو فاضية
+        for (f in RemoteClient.KEY_FIELDS) {   // (v522) قايمة بيضاء: مفاتيح الترجمة + المزوّدين + الموديلات
+            if (!j.has(f)) continue
             val v = j.optString(f)
             if (v.isNotBlank()) { Cfg.put(f, v); n++ }
+            else if (place && f in RemoteClient.PLACE_FIELDS) {
+                Cfg.put(f, when (f) { "nmain", "nback" -> "0"; "keymodes" -> "[]"; else -> "" }); n++
+            }
         }
         if (n == 0) return err(403, "empty")
+        try { ExtTranslate.builtin.forEach { ExtTranslate.clearBlock(it.id) } } catch (_: Throwable) {}   // (v522) فك أي إيقاف قديم بسبب مفتاح مرفوض
+        try { KeyVault.save(app) } catch (_: Throwable) {}
+        h.post { try { KeysSync.reload?.invoke() } catch (_: Throwable) {} }   // (v529) لو شاشة الإعدادات مفتوحة على التلفزيون: تتحدّث بالقيم الجديدة بدل ما تكتب القديم فوقها
         notice("🔑 وصلت مفاتيح Gemini من «" + rm.name + "»")
         return ok(JSONObject().put("n", n))
     }
@@ -392,19 +466,37 @@ object TvLink {
         if (!force && j.optBoolean("auto") && ver == declinedVer) return err(403, "declined")
         pendingOffer = Offer(ver, vname, url, rm.name, force)
         val a = top?.get()
-        h.post { val t = top?.get(); if (t is TvActivity) offerIfAny(t) }
-        return ok(JSONObject().put("shown", a is TvActivity))
+        h.post { val t = top?.get(); if (t != null && t !is RemoteActivity && t !is SendToTvActivity) offerIfAny(t) else offerOverlay() }   // (v525) أي شاشة (مشغّل/متصفح/يوتيوب…) أو تطبيق تاني قدّام
+        return ok(JSONObject().put("shown", a != null || TvAccess.connected || canOverlay()))
     }
 
     private fun offerIfAny(a: Activity) {
         val o = pendingOffer ?: return
         if (offerShowing || a.isFinishing || a.isDestroyed) return
         if (if (o.force) o.ver < LinkVer.code(app) else o.ver <= LinkVer.code(app)) { pendingOffer = null; return }
+        if (o.accepted) { pendingOffer = null; TvUpdate.download(a, o); return }   // (v525) وافقت من النافذة العايمة: كمّل تنزيل من هنا
         offerShowing = true
         TvUpdate.ask(a, o) { accepted ->
             offerShowing = false
             pendingOffer = null
             if (!accepted && !o.force) declinedVer = o.ver
         }
+    }
+
+    private fun canOverlay(): Boolean = try { android.os.Build.VERSION.SDK_INT >= 26 && android.provider.Settings.canDrawOverlays(app) } catch (_: Throwable) { false }
+
+    /** (v525) تطبيق تاني شغّال قدّام (مفيش شاشة من برنامجنا): نافذة فوق كل حاجة بإمكانية الوصول أو صلاحية العرض فوق التطبيقات */
+    private fun offerOverlay() {
+        val o = pendingOffer ?: return
+        if (offerShowing) return
+        offerShowing = true
+        val ok = try {
+            TvUpdate.askOverlay(app, o) { accepted ->
+                offerShowing = false
+                if (accepted) o.accepted = true   // pendingOffer بتفضل: أول شاشة تفتح (TvActivity) بتكمّل التنزيل
+                else { pendingOffer = null; if (!o.force) declinedVer = o.ver }
+            }
+        } catch (e: Throwable) { LogStore.err("TvLink:overlay", e); false }
+        if (!ok) offerShowing = false
     }
 }

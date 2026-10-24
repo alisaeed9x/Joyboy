@@ -650,6 +650,7 @@ class YtWatchPage(private val act: Activity, private val ui: Ui, private val hos
     private var chanChip: TextView? = null
 
     private val titleTv = TextView(act).apply { textSize = 17f; setTextColor(YtSkin.text); typeface = medium; maxLines = 2; ellipsize = TextUtils.TruncateAt.END; setPadding(ui.dp(14), ui.dp(12), ui.dp(14), 0) }
+    private val crumbTv = TextView(act).apply { textSize = 13f; setTextColor(YtSkin.sub); setSingleLine(); ellipsize = TextUtils.TruncateAt.END; setPadding(ui.dp(14), 0, ui.dp(14), ui.dp(2)) }   // (v527) تلفزيون: «إنت فين»
     private val metaTv = TextView(act).apply { textSize = 12f; setTextColor(YtSkin.sub); setPadding(ui.dp(14), ui.dp(4), ui.dp(14), 0) }
     private val chipsRow = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; setPadding(ui.dp(10), 0, ui.dp(10), 0) }
     private val chanBox = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; gravity = Gravity.CENTER_VERTICAL; setPadding(ui.dp(14), ui.dp(10), ui.dp(14), ui.dp(10)) }
@@ -860,7 +861,7 @@ class YtWatchPage(private val act: Activity, private val ui: Ui, private val hos
         val old = (0 until chipsRow.childCount).map { chipsRow.getChildAt(it) }   // 0 لايك · 1 حفظ · 2 ترجمة · 3 صوت · 4 تحميل · 5 نسخ · 6 مشاركة
         chipsRow.removeAllViews()
         removeAllViews()
-        for (v in listOf<View?>(mini, sbBar, listBox, tabRel, tabCom, subB, bellB, titleTv, metaTv, descTv)) detach(v)
+        for (v in listOf<View?>(mini, sbBar, listBox, tabRel, tabCom, subB, bellB, crumbTv, titleTv, metaTv, descTv)) detach(v)
 
         val miniW = minOf((dm.widthPixels * 0.56f).toInt(), (dm.heightPixels * 0.52f * 16f / 9f).toInt())
         val miniH = miniW * 9 / 16
@@ -873,6 +874,7 @@ class YtWatchPage(private val act: Activity, private val ui: Ui, private val hos
         metaTv.textSize = 15f
         descTv.apply { textSize = 15f; maxLines = 6; setOnClickListener(null); isClickable = false; isFocusable = false }
         val info = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL }
+        info.addView(crumbTv, LinearLayout.LayoutParams(-1, -2))
         info.addView(titleTv, LinearLayout.LayoutParams(-1, -2))
         info.addView(metaTv, LinearLayout.LayoutParams(-1, -2))
         info.addView(descTv, LinearLayout.LayoutParams(-1, -2).apply { setMargins(ui.dp(12), ui.dp(12), ui.dp(12), 0) })
@@ -1206,6 +1208,7 @@ class YtWatchPage(private val act: Activity, private val ui: Ui, private val hos
     // ───────── المحتوى ─────────
     private fun bindItem(v: NpItem) {
         titleTv.text = v.title
+        if (tv) crumbTv.text = "يوتيوب › مشاهدة › " + v.channel.ifBlank { "فيديو" }   // (v527)
         metaTv.text = listOf(if (v.count > 0) fmtN(v.count) + " مشاهدة" else "", v.age).filter { it.isNotBlank() }.joinToString(" · ")
         paintLike()
         chanName.text = v.channel

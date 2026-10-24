@@ -316,6 +316,10 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
         // (v475) التبويبات (الرئيسية · الاشتراكات · أنا) بقت في الشريط السفلي بتاع البرنامج — فوق بقى عنوان الصفحة + بحث + إعدادات بس
         topTitle = TextView(act).apply { text = "يوتيوب"; textSize = 19f; setTextColor(YtSkin.text); typeface = YtSkin.medium; gravity = Gravity.CENTER_VERTICAL or Gravity.START; setSingleLine(); setPadding(ui.dp(12), 0, ui.dp(8), 0) }
         appBar.addView(topTitle, LinearLayout.LayoutParams(0, ui.dp(46), 1f))
+        if (DeviceUi.isTv(act)) {   // (v527) تلفزيون: تابات يوتيوب (الرئيسية · الاشتراكات · أنا) جوه صفحة يوتيوب نفسها (الشريط السفلي مشال على التلفزيون) — بالأسهم + OK
+            for (k in 0 until tabsBox.childCount) tabsBox.getChildAt(k).apply { isFocusable = true; isClickable = true }
+            appBar.addView(tabsBox, LinearLayout.LayoutParams(ui.dp(360), ui.dp(46)).apply { marginEnd = ui.dp(10) })
+        }
         if (DeviceUi.isRemote(act)) appBar.addView(micBtn(), LinearLayout.LayoutParams(ui.dp(48), ui.dp(44)))
         appBar.addView(iconBtn("search", "بحث") { enterSearch(true) }, LinearLayout.LayoutParams(ui.dp(44), ui.dp(44)))
         appBar.addView(iconBtn("gear", "إعدادات يوتيوب") { settings() }, LinearLayout.LayoutParams(ui.dp(44), ui.dp(44)))
@@ -1003,6 +1007,18 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
         if (DeviceUi.isRemote(act) && (act.currentFocus == null || (act.currentFocus === search && !searchTyping))) tvFocusList()   // (v477) (v479 م5) بعد البحث التركيز ينتقل لنتايج البحث
         h.postDelayed({ prewarmVisible() }, 450L)   // (v472)
         if (st.tab >= 0) paintTabs(st.tab) else if (det) paintTabs(-1)
+        if (DeviceUi.isTv(act)) tvCrumb(st, det)   // (v527)
+    }
+
+    /** (v527) تلفزيون: «إنت فين» — مسار ثابت فوق: يوتيوب › الاشتراكات › قناة X (أو بحث: كذا / اسم القسم) */
+    private fun tvCrumb(st: St, det: Boolean) {
+        if (!::topTitle.isInitialized) return
+        val sb = StringBuilder("يوتيوب › ").append(when (navSel) { 0 -> "الرئيسية"; 1 -> "الاشتراكات"; else -> "أنا" })
+        if (st.chUrl != null) sb.append(" › قناة ").append(st.chName ?: "")
+        else if (st.q != null) sb.append(" › بحث: ").append(st.q)
+        else if (st.tab >= 2 && st.title.isNotBlank()) sb.append(" › ").append(st.title)
+        else if (det) sb.append(" › تفاصيل")
+        topTitle.text = sb.toString(); topTitle.textSize = 17f
     }
 
     // ───────── (v326) تفاصيل الفيديو ─────────

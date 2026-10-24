@@ -7,6 +7,9 @@
     <uses-permission android:name="android.permission.INTERNET"/>
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>   <!-- (v516) مواقيت الصلاة بالموقع (اختياري: من غيره بنستخدم موقع تقريبي من الـIP) -->
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE"/>   <!-- (v525) زرار الواي فاي السريع في اللانشر -->
+    <uses-permission android:name="android.permission.CHANGE_WIFI_STATE"/>
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>   <!-- (v525) أندرويد بيشترطه عشان قايمة الشبكات (scanResults) تظهر -->
     <uses-permission android:name="android.permission.READ_MEDIA_AUDIO"/>
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>

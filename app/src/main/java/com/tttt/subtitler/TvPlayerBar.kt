@@ -56,7 +56,7 @@ class TvPlayerBar(private val act: Activity, private val ui: Ui, private val th:
     private lateinit var trB: TextView; private lateinit var qB: TextView
     private val slim: Boolean = try { a.slim() } catch (_: Throwable) { false }
 
-    private fun btn(label: String, onClick: (View) -> Unit): TextView = TextView(act).apply {
+    private fun btn(label: String, onClick: (View) -> Unit): TextView = IconTextView(act).apply {   // (v527) IconTextView: ⏸ ▶ ⏮ ⏭ بتترسم أيقونة (خطين متوازيين) بدل رمز الخط اللي على TCL كان بيطلع شكل «i»
         text = label; textSize = 17f; setTextColor(Color.WHITE); gravity = Gravity.CENTER; typeface = Typeface.DEFAULT_BOLD
         setPadding(ui.dp(14), ui.dp(10), ui.dp(14), ui.dp(10))
         background = GradientDrawable().apply { setColor(0x33FFFFFF); cornerRadius = ui.dp(12).toFloat() }

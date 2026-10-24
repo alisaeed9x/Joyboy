@@ -22,35 +22,30 @@ import java.io.File
  * فوق صفحة يوتيوب، عشان الانتقال بين «تطبيقات» و«يوتيوب» يحس إنه صفحة واحدة مش تطبيق جوه تطبيق.
  */
 object TvWall {
-    val BUILTIN = listOf("wall/sunset_mountains.jpg", "wall/forest_lake.jpg", "wall/desert_dusk.jpg")
-
     /** تعتيم الخلفية من الأپيرنس (٠..١٠٠٪) — الافتراضي ٥٠٪ زي زمان */
     fun scrimColor(): Int {
         val p = (Cfg.str("tv_scrim", "50").toIntOrNull() ?: 50).coerceIn(0, 100)
         return Color.argb((p * 255 / 100).coerceIn(0, 255), 0, 0, 0)
     }
 
-    /** بيحمّل صورة الخلفية المختارة (استدعيها من ثريد). null = بدون خلفية */
+    /** (v527) بيحمّل آخر خلفية نزّلها اللانشر (wall_cur.jpg) — مفيش خلفيات مدمجة. null = بدون خلفية (استدعيها من ثريد) */
     fun load(act: Activity): Bitmap? {
-        val mode = Cfg.str("tv_wall", "builtin")
-        if (mode == "off") return null
-        val built = BUILTIN[Cfg.int("tv_wall_idx", 0).coerceIn(0, BUILTIN.size - 1)]
-        fun asset(p: String): Bitmap? = try { act.assets.open(p).use { android.graphics.BitmapFactory.decodeStream(it) } } catch (_: Throwable) { null }
-        if (mode == "builtin") return asset(built)
-        val f = File(act.filesDir, "wall_$mode.jpg")
-        if (!f.exists()) return asset(built)
+        val m = Cfg.str("tv_wall", "auto")
+        if (m == "off") return null
+        val f = File(act.filesDir, "wall_cur.jpg")
+        if (!f.exists()) return null
         return try {
             val b = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
             android.graphics.BitmapFactory.decodeFile(f.path, b)
             var ss = 1; while (b.outWidth / ss > 2200) ss *= 2
-            android.graphics.BitmapFactory.decodeFile(f.path, android.graphics.BitmapFactory.Options().apply { inSampleSize = ss }) ?: asset(built)
-        } catch (_: Throwable) { asset(built) }
+            android.graphics.BitmapFactory.decodeFile(f.path, android.graphics.BitmapFactory.Options().apply { inSampleSize = ss })
+        } catch (_: Throwable) { null }
     }
 }
 
 object TvShell {
-    val LABELS = listOf("الصفحة الرئيسية", "تطبيقات", "يوتيوب", "المتصفح", "الفيديوهات", "الملفات")
-    val ICONS = listOf("🏠", "📱", "▶️", "🌐", "🎬", "📁")
+    val LABELS = listOf("الصفحة الرئيسية", "تطبيقات", "يوتيوب", "المتصفح", "الفيديوهات")   // (v525) «الملفات» اتشالت من الشريط
+    val ICONS = listOf("🏠", "📱", "▶️", "🌐", "🎬")
 
     /** خلفية اللانشر: تدرّج + الصورة المختارة + تعتيم (بتتحمّل في ثريد وتظهر بتلاشي) */
     fun backdrop(act: Activity, th: Theme): View {

@@ -1,13 +1,23 @@
 package com.tttt.subtitler
 
 import android.app.Activity
+import android.content.Context
 import android.content.Intent
+import android.graphics.Color
+import android.graphics.PixelFormat
+import android.graphics.drawable.GradientDrawable
+import android.view.Gravity
+import android.view.KeyEvent
+import android.view.WindowManager
+import android.widget.FrameLayout
+import android.widget.TextView
 import android.net.Uri
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.provider.Settings
 import android.view.View
+import android.view.ViewGroup
 import android.widget.LinearLayout
 import androidx.core.content.FileProvider
 import java.io.File
@@ -35,6 +45,86 @@ object TvUpdate {
                 .setOnCancelListener { done(false) }
                 .show()
         } catch (e: Throwable) { LogStore.err("TvUpdate:ask", e); done(false) }
+    }
+
+    private var overlayRoot: View? = null
+
+    /**
+     * (v525) عرض التحديث فوق أي تطبيق تاني (مثلًا فيديو شغّال في تطبيق غير Subtitler):
+     * بنستخدم نافذة إمكانية الوصول (لو مفعّلة) أو صلاحية «العرض فوق التطبيقات». لو الاتنين مش متاحين بنرجّع false.
+     * «تحديث» = بنفتح Subtitler وهو بيكمّل التنزيل (الأندرويد مبيسمحش بتنزيل/تثبيت من نافذة عايمة).
+     */
+    fun askOverlay(ctx: Context, o: TvLink.Offer, done: (Boolean) -> Unit): Boolean {
+        val svc = TvAccess.svc
+        val type: Int
+        val c: Context
+        if (svc != null) { type = WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY; c = svc }
+        else if (Build.VERSION.SDK_INT >= 26 && Settings.canDrawOverlays(ctx)) { type = WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY; c = ctx }
+        else return false
+        if (overlayRoot != null) return true
+        try {
+            val wm = c.getSystemService(Context.WINDOW_SERVICE) as WindowManager
+            val th = Themes.byId(Cfg.str("theme", "mx"))
+            val d = c.resources.displayMetrics.density
+            fun dp(v: Int) = (v * d).toInt()
+            var root: FrameLayout? = null
+            var finished = false
+            fun close(accepted: Boolean) {
+                if (finished) return
+                finished = true
+                try { root?.let { wm.removeView(it) } } catch (_: Throwable) {}
+                overlayRoot = null
+                done(accepted)
+                if (accepted) {
+                    try {
+                        ctx.startActivity(Intent(ctx, TvActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP))
+                    } catch (e: Throwable) { LogStore.err("TvUpdate:overlayOpen", e) }
+                }
+            }
+            val fr = object : FrameLayout(c) {
+                override fun dispatchKeyEvent(e: KeyEvent): Boolean {
+                    if (e.keyCode == KeyEvent.KEYCODE_BACK) { if (e.action == KeyEvent.ACTION_UP) close(false); return true }
+                    return super.dispatchKeyEvent(e)
+                }
+            }
+            root = fr
+            fr.setBackgroundColor(0x99000000.toInt())
+            val card = LinearLayout(c).apply {
+                orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL
+                setPadding(dp(24), dp(20), dp(24), dp(16))
+                background = GradientDrawable().apply { setColor(th.card); setStroke(dp(1), th.border); cornerRadius = dp(22).toFloat() }
+            }
+            card.addView(TextView(c).apply { text = "⬆ تحديث من الموبايل"; textSize = 22f; setTextColor(th.primary); typeface = android.graphics.Typeface.DEFAULT_BOLD })
+            val msg = (if (o.force) "«" + o.from + "» بيدفع تحديث إجباري: Subtitler " + o.vname else "«" + o.from + "» عليه Subtitler " + o.vname + " (أحدث من اللي على التلفزيون: " + LinkVer.name(c) + ")") +
+                "\nتفتح Subtitler وتنزّل التحديث دلوقتي؟"
+            card.addView(TextView(c).apply { text = msg; textSize = 17f; setTextColor(th.text); setPadding(0, dp(10), 0, dp(14)); setLineSpacing(0f, 1.2f) })
+            val row = LinearLayout(c).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; gravity = Gravity.CENTER }
+            fun btn(t: String, main: Boolean, act: () -> Unit): TextView = TextView(c).apply {
+                text = t; textSize = 17f; gravity = Gravity.CENTER; isFocusable = true; isClickable = true
+                setPadding(dp(26), dp(11), dp(26), dp(11))
+                fun paint(f: Boolean) {
+                    background = GradientDrawable().apply { setColor(if (f) Color.WHITE else if (main) th.primary else 0x33FFFFFF); cornerRadius = dp(24).toFloat() }
+                    setTextColor(if (f) Color.BLACK else if (main) (if (th.isLight) Color.WHITE else Color.BLACK) else th.text)
+                }
+                paint(false)
+                setOnFocusChangeListener { _, f -> paint(f) }
+                setOnClickListener { act() }
+                layoutParams = LinearLayout.LayoutParams(-2, -2).apply { setMargins(dp(8), 0, dp(8), 0) }
+            }
+            val yes = btn("تحديث", true) { close(true) }
+            val no = btn("لاحقًا", false) { close(false) }
+            row.addView(yes); row.addView(no)
+            card.addView(row)
+            fr.addView(card, FrameLayout.LayoutParams((c.resources.displayMetrics.widthPixels * 0.6f).toInt().coerceAtLeast(dp(300)), -2, Gravity.CENTER))
+            val lp = WindowManager.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT, type,
+                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
+                PixelFormat.TRANSLUCENT)
+            wm.addView(fr, lp)
+            overlayRoot = fr
+            fr.post { try { yes.requestFocus() } catch (_: Throwable) {} }
+            return true
+        } catch (e: Throwable) { LogStore.err("TvUpdate:overlay", e); overlayRoot = null; return false }
     }
 
     fun download(a: Activity, o: TvLink.Offer) {

@@ -495,6 +495,20 @@ class MainActivity : Activity() {
             ModelWatch.refreshPending(); modelDesc.text = descOf(id)
             refreshChip()
         }
+        // (v529) مفاتيح وصلت من الموبايل والإعدادات مفتوحة: حدّث الخانات من Cfg (وإلا الحفظ التلقائي بيكتب القديم فوق الجديد)
+        KeysSync.reload = {
+            runOnUiThread {
+                try {
+                    val was = noSaveCfg; noSaveCfg = true
+                    keys.setText(Cfg.allMainKeys().joinToString("\n")); backup.setText(""); extra.setText(""); vkeys.setText(Cfg.str("viskeys"))
+                    val m = Cfg.str("model", Models.DEFAULT).trim().ifEmpty { Models.DEFAULT }
+                    model.setText(m); modelSel = m; modelDesc.text = descOf(m)
+                    keyLoadersRef.forEach { it() }
+                    refreshChip()
+                    noSaveCfg = was
+                } catch (e: Throwable) { LogStore.err("Main:keysReload", e) }
+            }
+        }
         val sp = styleParts(ui, th)
         val lk = LockUi(this, ui, th); lockUi = lk
         val lockStatus = ui.text("", 13f, th.text)
@@ -980,16 +994,11 @@ class MainActivity : Activity() {
         else { shell.addView(pane, LinearLayout.LayoutParams(-1, 0, 1f)); shell.addView(nav.view, LinearLayout.LayoutParams(-1, -2)) }
         val frame = FrameLayout(this).apply { setBackgroundColor(th.bg); layoutDirection = View.LAYOUT_DIRECTION_LTR }
         tvShellOn = fromTv && !fromPlayer && DeviceUi.isTv(this)
+        if (tvShellOn) { try { (nav.view.parent as? android.view.ViewGroup)?.removeView(nav.view) } catch (_: Throwable) {} }   // (v524) تلفزيون: الشريط السفلي بتاع الموبايل (6 أزرار) مشال
         if (tvShellOn) {
-            // (v516) نفس شريط التابات/الريل ونفس خلفية اللانشر فوق صفحة يوتيوب (والفيديوهات)
+            // (v527) تلفزيون: يوتيوب صفحة كاملة — الشريط العلوي (تطبيقات/ملفات/يوتيوب/متصفح) اتشال. الخلفية بس فضلت، وتابات يوتيوب (الرئيسية · الاشتراكات · أنا) جوه صفحة يوتيوب نفسها. Back = اللانشر.
             frame.addView(TvShell.backdrop(this, th), FrameLayout.LayoutParams(-1, -1))
-            val compactShell = resources.configuration.screenWidthDp < 720
-            val sb = TvShellBar(this, ui, th, compactShell, { i -> tvShellGo(i) }, { try { saveCfgFn?.invoke() } catch (_: Throwable) {}; settingsShow?.invoke(null) })
-            tvBar = sb
-            val wrap = LinearLayout(this).apply { layoutDirection = View.LAYOUT_DIRECTION_RTL; orientation = if (compactShell) LinearLayout.HORIZONTAL else LinearLayout.VERTICAL }
-            if (compactShell) { wrap.addView(sb.view, LinearLayout.LayoutParams(ui.dp(70), -1)); wrap.addView(shell, LinearLayout.LayoutParams(0, -1, 1f)) }
-            else { wrap.addView(sb.view, LinearLayout.LayoutParams(-1, -2)); wrap.addView(shell, LinearLayout.LayoutParams(-1, 0, 1f)) }
-            frame.addView(wrap, FrameLayout.LayoutParams(-1, -1))
+            frame.addView(shell, FrameLayout.LayoutParams(-1, -1))
         } else frame.addView(shell, FrameLayout.LayoutParams(-1, -1))
         ytLoadUi = YtLoadingPage(this, ui, th) { cancelYtLoad() }.also { frame.addView(it.root, FrameLayout.LayoutParams(-1, -1)) }
         if (fromPlayer) {
@@ -1321,6 +1330,7 @@ class MainActivity : Activity() {
 
     /** (v469) D13 نافذة «إيه الجديد»: بتظهر مرة واحدة لكل إصدار (seen_ver) بملخص التغييرات، ووراها تلميح ميزة يومي صغير قابل للإيقاف من الإعدادات */
     private fun whatsNew() {
+        if (DeviceUi.isTv(this)) return   // (v527) تلفزيون: مفيش نافذة «إيه الجديد» ولا تلميح يومي (بيظهروا فوق يوتيوب/اللانشر بعد كل تحديث)
         try {
             val vn = try { packageManager.getPackageInfo(packageName, 0).versionName ?: "" } catch (_: Throwable) { "" }
             if (vn.isNotEmpty() && Cfg.str("seen_ver", "") != vn) {
@@ -1694,7 +1704,6 @@ class MainActivity : Activity() {
                 2 -> if (curTab != 4) showTabFn(4)
                 3 -> { saveCfgFn?.invoke(); startActivity(Intent(this, BrowserActivity::class.java).putExtra("from_tv", true)) }
                 4 -> if (curTab != 0) showTabFn(0)
-                5 -> { saveCfgFn?.invoke(); startActivity(Intent(this, FileManagerActivity::class.java)) }
             }
         } catch (e: Throwable) { LogStore.err("Main:tvShellGo", e) }
     }
@@ -1748,7 +1757,7 @@ class MainActivity : Activity() {
         if (!fromPlayer && libStarted) libUi?.let { if (it.hasData) it.render() else scanFn() }
         if (!fromPlayer && curTab == 4) ytUi?.refresh()
     }
-    override fun onDestroy() { try { dockUi?.detach() } catch (_: Throwable) {}; try { ytUi?.destroy() } catch (_: Throwable) {}; try { stripUi?.detach() } catch (_: Throwable) {}; try { tasksFabUi?.detach() } catch (_: Throwable) {}; if (!fromPlayer) TaskCenter.listener = null; try { tasksFabUi?.detach() } catch (_: Throwable) {}; try { musicUi?.destroy() } catch (_: Throwable) {}; super.onDestroy() }
+    override fun onDestroy() { try { KeysSync.reload = null } catch (_: Throwable) {}; try { dockUi?.detach() } catch (_: Throwable) {}; try { ytUi?.destroy() } catch (_: Throwable) {}; try { stripUi?.detach() } catch (_: Throwable) {}; try { tasksFabUi?.detach() } catch (_: Throwable) {}; if (!fromPlayer) TaskCenter.listener = null; try { tasksFabUi?.detach() } catch (_: Throwable) {}; try { musicUi?.destroy() } catch (_: Throwable) {}; super.onDestroy() }
     /** (v327) إشعار فيديو جديد: افتح تفاصيله في بوابة يوتيوب (الدالة بتتركّب أول ما بوابة يوتيوب تتبني؛ showTabFn(4) بتبنيها) */
     private fun openYtFromIntent(i: Intent?) {
         val id = i?.getStringExtra("yt_open") ?: return
