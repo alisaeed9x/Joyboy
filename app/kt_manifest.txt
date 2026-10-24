@@ -152,3 +152,4 @@ com/tttt/subtitler/YtLink.kt
 com/tttt/subtitler/TvPlayerBar.kt
 com/tttt/subtitler/TvPointer.kt
 com/tttt/subtitler/TvTiles.kt
+com/tttt/subtitler/TvScale.kt
