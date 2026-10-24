@@ -42,6 +42,8 @@ import android.util.Rational
 
 /** مشغّل الفيديو والترجمة (اتنقل من Main.kt في v100 — من غير أي تغيير في الكود) */
 class PlayerActivity : Activity(), Host {
+    // (v507) ريزوليوشن ديناميك لوضع التلفزيون
+    override fun attachBaseContext(newBase: android.content.Context) { super.attachBaseContext(TvScale.wrap(newBase)) }
     companion object { private val liveList = ArrayList<java.lang.ref.WeakReference<PlayerActivity>>() }
 
     // ===== (v461) ريموت التلفزيون (وضع 📺 بس): يمين/شمال = تقديم/ترجيع 10ث · فوق/تحت = حجم الترجمة ·
@@ -206,6 +208,14 @@ class PlayerActivity : Activity(), Host {
         // (v469) والقفل شغّال: مفاتيح الصوت الجانبية كمان تتبلع (حماية جيب/أطفال كاملة — اللمس كان محجوب أصلًا)
         if (uiLocked && (ev.keyCode == android.view.KeyEvent.KEYCODE_VOLUME_UP || ev.keyCode == android.view.KeyEvent.KEYCODE_VOLUME_DOWN || ev.keyCode == android.view.KeyEvent.KEYCODE_VOLUME_MUTE)) return true
         // (v477 م4) تلفزيون: شريط تحكم بنمط MX/VLC. الشريط مخفي: ←/→ تقديم وتأخير · OK/↑/↓/Menu = إظهار الشريط. ظاهر: الأسهم بتتنقل بين الأزرار.
+        // (v506) عدّاد «الحلقة الجاية»: بالريموت OK = شغّلها دلوقتي، رجوع = ألغي التشغيل التلقائي
+        if (nextUpAt > 0L && DeviceUi.isRemote(this) && (ev.keyCode == android.view.KeyEvent.KEYCODE_BACK || ev.keyCode == android.view.KeyEvent.KEYCODE_DPAD_CENTER || ev.keyCode == android.view.KeyEvent.KEYCODE_ENTER)) {
+            if (ev.action == android.view.KeyEvent.ACTION_DOWN && ev.repeatCount == 0) {
+                if (ev.keyCode == android.view.KeyEvent.KEYCODE_BACK) { cancelNextUp(); say("⏹ اتلغى التشغيل التلقائي") }
+                else { val g = nextUpGo; cancelNextUp(); try { g?.invoke() } catch (e: Throwable) { LogStore.err("Player:nextNow", e) } }
+            }
+            return true
+        }
         if (DeviceUi.isRemote(this)) {
             val bar = tvBar; val k = ev.keyCode; val down = ev.action == android.view.KeyEvent.ACTION_DOWN
             val media = k == android.view.KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE || k == android.view.KeyEvent.KEYCODE_MEDIA_PLAY || k == android.view.KeyEvent.KEYCODE_MEDIA_PAUSE
@@ -1798,14 +1808,14 @@ class PlayerActivity : Activity(), Host {
     /** (v469) B13: بطاقة «التالي بعد…» — أي لمسة عليها تلغي الانتقال، واستنى 6 ثواني بيشتغل لوحده */
     private fun showNextUp(title: String, go: () -> Unit) {
         cancelNextUp()
-        nextUpGo = go; nextUpAt = System.currentTimeMillis() + 6000L
+        nextUpGo = go; nextUpAt = System.currentTimeMillis() + 5000L
         val card = nextUpCard ?: run {
             val c = LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL
                 setPadding(ui.dp(14), ui.dp(10), ui.dp(14), ui.dp(10)); background = ui.box(0xE61A1C22.toInt(), 0x33FFFFFF, 14); alpha = REST_A
                 val t1 = ui.text("", 13f, Color.WHITE, true); nextUpTitleV = t1; addView(t1)
                 val t2 = ui.text("", 11f, 0xFFBFD0FF.toInt()); nextUpCountV = t2; addView(t2)
-                addView(ui.text("المس البطاقة للإلغاء · أو استنى وهيشتغل لوحده", 10f, 0xFF9AA0A6.toInt()))
+                addView(ui.text(if (DeviceUi.isRemote(this@PlayerActivity)) "OK = شغّل دلوقتي  ·  رجوع = إلغاء" else "دوس على الكارت لإلغاء التشغيل التلقائي", 10f, 0xFF9AA0A6.toInt()))
                 setOnClickListener { cancelNextUp(); say("✖ التشغيل التلقائي للتالي اتلغى") }
             }
             videoBoxRef.addView(c, FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM or Gravity.END).apply { setMargins(0, 0, ui.dp(14), ui.dp(120)) })

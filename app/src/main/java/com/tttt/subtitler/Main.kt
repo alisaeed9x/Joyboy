@@ -56,7 +56,8 @@ class MainActivity : Activity() {
     private var fromTv = false   // (v467) الزيارة دي جاية من واجهة التلفزيون: قفل الإعدادات/الرجوع من الجذر يرجّع لها
     private val baseLangs = listOf("ar" to "العربية", "en" to "English", "fr" to "Français", "es" to "Español", "de" to "Deutsch", "tr" to "Türkçe", "hi" to "हिन्दी", "ko" to "한국어", "ja" to "日本語", "zh" to "中文")   // (v467) اللغة الأساسية
     // (v469) D7 وضع النص الكبير: fontScale على مستوى الـ Context فبيكبّر كل نصوص الواجهة (المقاسة بـ SP) بنسبة ثابتة ٪٢٥
-    override fun attachBaseContext(newBase: android.content.Context) {
+    override fun attachBaseContext(nb0: android.content.Context) {
+        val newBase = TvScale.wrap(nb0)   // (v507)
         val big = try { val sp = newBase.getSharedPreferences("p", 0); try { sp.getBoolean("big_text", false) } catch (_: Throwable) { sp.getString("big_text", "") == "1" } } catch (_: Throwable) { false }
         if (!big) { super.attachBaseContext(newBase); return }
         val cfg = android.content.res.Configuration(newBase.resources.configuration); cfg.fontScale = 1.25f

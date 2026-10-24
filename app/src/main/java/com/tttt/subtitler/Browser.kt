@@ -182,6 +182,8 @@ class BTab(val id: Long) {
  */
 @SuppressLint("SetJavaScriptEnabled")
 class BrowserActivity : Activity() {
+    // (v507) ريزوليوشن ديناميك لوضع التلفزيون
+    override fun attachBaseContext(newBase: android.content.Context) { super.attachBaseContext(TvScale.wrap(newBase)) }
     private var stripUi: StatusStrip? = null   // (v345)
     private var dockUi: MiniDock? = null   // (v344)
     override fun finish() { super.finish(); try { if (!NavAnim.take(this)) overridePendingTransition(R.anim.act_stay, R.anim.act_exit) } catch (e: Exception) { LogStore.err("Browser:finish", e) } }
