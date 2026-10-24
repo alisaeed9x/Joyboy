@@ -331,36 +331,39 @@ class BrowserActivity : Activity() {
         TvFocus.attach(this, th.primary)   // (v477)
         adOn = try { prefs().getBoolean("adblock", true) } catch (_: Exception) { true }
 
-        val root = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setBackgroundColor(th.bg); setPadding(0, ui.dp(28), 0, 0) }
+        val root = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setBackgroundColor(th.bg); if (tvOn) setPadding(ui.dp(20), ui.dp(16), ui.dp(20), ui.dp(8)) else setPadding(0, ui.dp(28), 0, 0) }
+        // (v517) تلفزيون: أزرار الشريط أكبر (52dp) عشان التركيز بالريموت يبان
         fun tbtn(t: String, size: Float = 20f, f: (View) -> Unit): TextView = IconTextView(this).apply {
-            text = t; textSize = size; gravity = Gravity.CENTER; setTextColor(th.text)
-            layoutParams = LinearLayout.LayoutParams(ui.dp(38), ui.dp(40)); setOnClickListener { f(it) }
+            text = t; textSize = if (tvOn) size * 1.25f else size; gravity = Gravity.CENTER; setTextColor(th.text)
+            layoutParams = LinearLayout.LayoutParams(ui.dp(if (tvOn) 54 else 38), ui.dp(if (tvOn) 52 else 40)); setOnClickListener { f(it) }
         }
         backB = tbtn("‹", 26f) { wvOrNull?.let { if (it.canGoBack()) it.goBack() } }
         fwdB = tbtn("›", 26f) { wvOrNull?.let { if (it.canGoForward()) it.goForward() } }
         addr = ui.input("رابط الموقع / كلمة بحث", "").apply {
-            layoutParams = LinearLayout.LayoutParams(0, ui.dp(40), 1f).apply { setMargins(ui.dp(2), 0, ui.dp(2), 0) }
-            layoutDirection = View.LAYOUT_DIRECTION_LTR; setSelectAllOnFocus(true); textSize = 13f
+            layoutParams = LinearLayout.LayoutParams(0, ui.dp(if (tvOn) 52 else 40), 1f).apply { setMargins(ui.dp(2), 0, ui.dp(2), 0) }
+            layoutDirection = View.LAYOUT_DIRECTION_LTR; setSelectAllOnFocus(true); textSize = if (tvOn) 17f else 13f
             imeOptions = EditorInfo.IME_ACTION_GO; inputType = android.text.InputType.TYPE_TEXT_VARIATION_URI or android.text.InputType.TYPE_CLASS_TEXT
             setOnEditorActionListener { _, _, _ -> load(text.toString()); true }
         }
         reloadB = tbtn("⟳", 20f) { val w = wvOrNull ?: return@tbtn; if (tab.progress < 100) w.stopLoading() else w.reload() }
         tabsB = IconTextView(this).apply {
             text = "1"; textSize = 12f; gravity = Gravity.CENTER; setTextColor(th.text); typeface = android.graphics.Typeface.DEFAULT_BOLD
-            background = ui.box(0x00000000, th.text, 6); layoutParams = LinearLayout.LayoutParams(ui.dp(28), ui.dp(28)).apply { setMargins(ui.dp(5), ui.dp(6), ui.dp(5), ui.dp(6)) }
+            background = ui.box(0x00000000, th.text, 6); layoutParams = LinearLayout.LayoutParams(ui.dp(if (tvOn) 38 else 28), ui.dp(if (tvOn) 38 else 28)).apply { setMargins(ui.dp(5), ui.dp(if (tvOn) 7 else 6), ui.dp(5), ui.dp(6)) }
             setOnClickListener { showTabs() }
         }
         val rotB = tbtn("🔄", 18f) { toggleRotate() }   // (v494) تدوير الشاشة لاندسكيب ⇄ بورتريه
         val menuB = tbtn("⋮", 22f) { showMenu(it) }
         val bar = LinearLayout(this).apply {
             layoutDirection = View.LAYOUT_DIRECTION_LTR; gravity = Gravity.CENTER_VERTICAL; setPadding(ui.dp(2), 0, ui.dp(2), 0)
-            addView(backB); addView(fwdB); addView(addr); addView(reloadB); addView(rotB); addView(tabsB); addView(menuB)
+            addView(backB); addView(fwdB); addView(addr); addView(reloadB); if (!tvOn) addView(rotB); addView(tabsB); addView(menuB)
         }
         if (tvOn) {   // (v480 م6) زرار تبديل الوضع: 🖱 مؤشر / 🎯 تنقل بالتركيز
             tvPointerMode = Cfg.str("tv_br_mode", "ptr") != "focus"
             val mb = tbtn(if (tvPointerMode) "🖱" else "🎯", 18f) { tvToggleMode() }
             tvModeB = mb
             bar.addView(mb, 4)
+            // (v517) 🏠 رجوع لشاشة التلفزيون (بدل الشريط السفلي اللي اتشال) — أول زرار في الشريط
+            bar.addView(tbtn("🏠", 18f) { persistTabs(); if (!TvFocus.goHome(this)) finish() }, 0)
             tvBar = bar
         }
         progV = View(this).apply { setBackgroundColor(th.primary) }
@@ -444,7 +447,7 @@ class BrowserActivity : Activity() {
         root.addView(dlBar, LinearLayout.LayoutParams(-1, -2).apply { setMargins(ui.dp(8), ui.dp(4), ui.dp(8), ui.dp(6)) })   // (v324)
         // (v117) شريط البوابات: الفيديوهات · الموسيقى · المتصفح (إحنا فيه دلوقتي) · الملفات · (v324) يوتيوب
         val gates = BottomNav(this, ui, th, 2) { i -> if (i != 2) NavAnim.set(2, i); if (i == 0) goMain("videos") else if (i == 1) goMain("music") else if (i == 4) goMain("youtube") else if (i == 5) goMain("tasks") else if (i == 7) goMain("settings") else if (i == 3) { startActivity(Intent(this, FileManagerActivity::class.java)); NavAnim.peek(this); finish() } }   // (v310) الملفات · (v364) الذكاء
-        root.addView(gates.view, LinearLayout.LayoutParams(-1, -2))
+        if (!tvOn) root.addView(gates.view, LinearLayout.LayoutParams(-1, -2))   // (v517) تلفزيون: الشريط السفلي اتشال — 🏠 في شريط العنوان
         content = root
         frame = FrameLayout(this); frame.setBackgroundColor(th.bg)
         customBox = FrameLayout(this).apply { setBackgroundColor(Color.BLACK); visibility = View.GONE }
@@ -464,7 +467,7 @@ class BrowserActivity : Activity() {
             hint.text = "🔧 بتحدّث لينك «" + repairTitle.ifEmpty { "الفيديو" } + "» — دوس تشغيل في الصفحة وأنا ألقط اللينك الجديد وأرجّعك للمشغّل بنفس الترجمة"
             h.postDelayed({ if (!dead) Notice.show(this, "🔧 شغّل الفيديو في الصفحة وأنا هلقطه", 4000L) }, 800L)
         }
-        if (tvOn && repairId == null) hint.text = "🖱 الأسهم = مؤشر · OK = دوسة · Menu = الشريط · OK طويلة = تبديل الوضع · شغّل الفيديو وأنا هلقطه"
+        if (tvOn && repairId == null) { hint.text = "🖱 الأسهم = مؤشر · OK = دوسة · Menu = الشريط · OK طويلة = تبديل الوضع · شغّل الفيديو وأنا هلقطه"; h.postDelayed({ if (!dead && repairId == null) hint.visibility = View.GONE }, 12000L) }   // (v517) التلميحة بتختفي بعد 12 ثانية
         val keep = prefs().getBoolean("br_save_tabs", true)
         val saved = if (keep) BrowserStore.loadTabs(this) else (emptyList<BrowserStore.SavedTab>() to 0)
         for (s in saved.first) tabs.add(BTab(nextId++).also { it.url = s.url; it.title = s.title; it.desktop = s.desktop })
@@ -897,11 +900,11 @@ class BrowserActivity : Activity() {
     private fun popupMenu(anchor: View, entries: List<Pair<String, () -> Any?>>) {
         val col = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; setPadding(ui.dp(6), ui.dp(6), ui.dp(6), ui.dp(6)); background = ui.box(th.card, th.border, 14); elevation = ui.dp(8).toFloat() }
         val sv = ScrollView(this).apply { addView(col); isVerticalScrollBarEnabled = false }
-        val width = ui.dp(240)
+        val width = ui.dp(if (tvOn) 310 else 240)
         val pw = TvFocus.pop(this@BrowserActivity, sv, width, -2, true)
         pw.setBackgroundDrawable(ColorDrawable(0))
         for ((t, f) in entries) col.addView(IconTextView(this).apply {
-            text = t; textSize = 14f; setTextColor(th.text); minHeight = ui.dp(44); gravity = Gravity.CENTER_VERTICAL or Gravity.START
+            text = t; textSize = if (tvOn) 17f else 14f; setTextColor(th.text); minHeight = ui.dp(if (tvOn) 54 else 44); gravity = Gravity.CENTER_VERTICAL or Gravity.START
             setPadding(ui.dp(14), ui.dp(6), ui.dp(14), ui.dp(6)); setOnClickListener { pw.dismiss(); f() }
         })
         col.measure(View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY), View.MeasureSpec.UNSPECIFIED)
@@ -918,7 +921,7 @@ class BrowserActivity : Activity() {
     private fun showMenu(anchor: View) {
         val url = tab.wv?.url ?: tab.url
         val marked = BrowserStore.isMarked(this, url)
-        popupMenu(anchor, listOf(
+        val menuItems: List<Pair<String, () -> Unit>> = listOf(
             "➕ تبويب جديد" to { newTab(home(), true) },
             "🕶 تبويب متخفي جديد" to { newTab(home(), true, -1L, true) },
             (if (marked) "★ شيل من المفضلة" else "☆ ضيف للمفضلة") to {
@@ -942,7 +945,10 @@ class BrowserActivity : Activity() {
             (if (hostOf(url) in adWhite) "🛡 فعّل حظر الإعلانات للموقع ده" else "🛡 عطّل حظر الإعلانات للموقع ده") to { toggleAdWhite(url) },
             "⚙️ الإعدادات" to { showSettings() },
             "✕ خروج من المتصفح" to { finish() }
-        ))
+        )
+        // (v517) تلفزيون: القايمة بتشيل اللي مش بيتستعمل بالريموت (متخفي · سجل الخصوصية · تدوير · نسخ/مشاركة · وضع القارئ · إحصائيات وسماح الإعلانات)
+        val tvDrop = listOf("🕶", "🔒", "🔄 تدوير", "📋 نسخ", "📤", "📖", "🛡 إحصائيات", "🛡 فعّل", "🛡 عطّل")
+        popupMenu(anchor, if (tvOn) menuItems.filter { m -> tvDrop.none { m.first.startsWith(it) } } else menuItems)
     }
     /** (v469) D11 وضع القارئ: بيستخرج نص المقال (article ← main ← body) وبيعرضه في عرض قراءة نضيف بخط كبير من غير فوضى الصفحة */
     private fun readerMode() {

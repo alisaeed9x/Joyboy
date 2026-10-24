@@ -91,6 +91,19 @@ object Links {
         } catch (e: Throwable) { LogStore.err("Links:dl", e); Notice.show(act, "التحميل فشل", 2600L) }
     }
 
+    /** (v518) يبعت اللينك للتلفزيون المقترن (يوصّل لو مش متصل) ويشتغل هناك */
+    fun sendToTv(act: Activity, u: String) {
+        Notice.show(act, "📺 بوصّل بالتلفزيون…", 2500L)
+        Thread {
+            var msg = ""
+            try {
+                msg = if (!RemoteClient.ensureConnected(act, 8000L)) "⚠ ما قدرتش أوصل للتلفزيون — اتأكد إنه شغّال وعلى نفس الواي فاي"
+                else (RemoteClient.openLink(u)?.let { "⚠ $it" } ?: "✅ اتبعت للتلفزيون")
+            } catch (e: Throwable) { LogStore.err("Links:sendToTv", e); msg = "⚠ حصلت مشكلة" }
+            try { act.runOnUiThread { Notice.show(act, msg, 2600L) } } catch (_: Throwable) {}
+        }.also { it.isDaemon = true }.start()
+    }
+
     fun copy(act: Activity, u: String) {
         try {
             (act.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager).setPrimaryClip(ClipData.newPlainText("link", u))
@@ -131,6 +144,9 @@ object Links {
         }
         if (showWeb && isHttp(u)) box.addView(ui.button(if (k == Kind.WEB) "🌐 افتح في المتصفح (يصطاد الفيديوهات)" else "🌐 افتحه في المتصفح") { go(WEB) })
         box.addView(ui.button("📋 انسخ اللينك") { d.dismiss(); copy(act, u) })
+        if (isHttp(u) && !DeviceUi.isTv(act)) {   // (v518) ابعت للتلفزيون المقترن (لو فيه واحد)
+            try { RemoteClient.init(act); if (RemoteClient.lastTv() != null) box.addView(ui.button("📺 ابعت للتلفزيون") { d.dismiss(); sendToTv(act, u) }) } catch (_: Throwable) {}
+        }
         d = ui.sheet(act, "افتح بـ…", listOf<View>(box))
         d.show()
     }

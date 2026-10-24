@@ -5,6 +5,7 @@
     <uses-feature android:name="android.hardware.touchscreen" android:required="false"/>
     <uses-feature android:name="android.hardware.microphone" android:required="false"/>   <!-- (v500) تلفزيونات من غير مايك في الجهاز (الريموت بيسجّل) -->
     <uses-permission android:name="android.permission.INTERNET"/>
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>   <!-- (v516) مواقيت الصلاة بالموقع (اختياري: من غيره بنستخدم موقع تقريبي من الـIP) -->
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
     <uses-permission android:name="android.permission.READ_MEDIA_AUDIO"/>
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW"/>
@@ -21,6 +22,7 @@
     <uses-permission android:name="android.permission.WRITE_SETTINGS"/>
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS"/>
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="28"/>
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES"/>   <!-- (v518) تثبيت التحديث اللي جه من الموبايل -->
     <uses-permission android:name="android.permission.REQUEST_DELETE_PACKAGES"/>   <!-- (v483) زرار إلغاء تثبيت اللانشر -->
     <uses-permission android:name="android.permission.READ_MEDIA_VIDEO"/>
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32"/>
@@ -91,6 +93,16 @@
         <service android:name=".YtFeedJob" android:exported="false" android:permission="android.permission.BIND_JOB_SERVICE"/>   <!-- (v327) فحص فيديوهات الاشتراكات الجديدة -->
         <service android:name=".MusicService" android:exported="false" android:foregroundServiceType="mediaPlayback"/>
         <service android:name=".TaskService" android:exported="false" android:foregroundServiceType="dataSync" android:stopWithTask="false"/>   <!-- (v420) مهام الترميز في الخلفية -->
+        <!-- (v518) ريموت الموبايل: شاشة التحكم (أيقونة تانية على الموبايل) · هدف مشاركة «ابعت للتلفزيون» · الخدمة الأمامية -->
+        <activity android:name=".RemoteActivity" android:exported="true" android:label="ريموت التلفزيون" android:launchMode="singleTop"
+            android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboardHidden|density">
+            <intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/></intent-filter>
+        </activity>
+        <activity android:name=".SendToTvActivity" android:exported="true" android:label="📺 ابعت للتلفزيون" android:theme="@android:style/Theme.Translucent.NoTitleBar"
+            android:excludeFromRecents="true" android:taskAffinity="">
+            <intent-filter><action android:name="android.intent.action.SEND"/><category android:name="android.intent.category.DEFAULT"/><data android:mimeType="text/plain"/></intent-filter>
+        </activity>
+        <service android:name=".RemoteService" android:exported="false" android:foregroundServiceType="dataSync"/>
         <service android:name=".KeepAliveService" android:exported="false" android:foregroundServiceType="dataSync"/>
     </application>
 </manifest>

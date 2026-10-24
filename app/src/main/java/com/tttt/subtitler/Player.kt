@@ -44,7 +44,15 @@ import android.util.Rational
 class PlayerActivity : Activity(), Host {
     // (v507) ريزوليوشن ديناميك لوضع التلفزيون
     override fun attachBaseContext(newBase: android.content.Context) { super.attachBaseContext(TvScale.wrap(newBase)) }
-    companion object { private val liveList = ArrayList<java.lang.ref.WeakReference<PlayerActivity>>() }
+    companion object {
+        private val liveList = ArrayList<java.lang.ref.WeakReference<PlayerActivity>>()
+        /** (v518) ريموت الموبايل: تشغيل/إيقاف المشغّل الشغّال. بيرجّع false لو مفيش مشغّل فيديو مفتوح */
+        fun remoteToggle(): Boolean {
+            val o = synchronized(liveList) { liveList.mapNotNull { it.get() }.lastOrNull { !it.isFinishing && !it.isDestroyed } } ?: return false
+            try { o.runOnUiThread { try { o.togglePlay() } catch (_: Throwable) {} } } catch (_: Throwable) { return false }
+            return true
+        }
+    }
 
     // ===== (v461) ريموت التلفزيون (وضع 📺 بس): يمين/شمال = تقديم/ترجيع 10ث · فوق/تحت = حجم الترجمة ·
     // أرقام = قفز بالوقت (آخر رقمين ثواني، اللي قبلهم دقايق — دوس OK أو استنى ثانيتين) · OK/تشغيل = تشغيل/إيقاف
@@ -64,26 +72,97 @@ class PlayerActivity : Activity(), Host {
             override fun prev() { stepEpisode(-1) }
             override fun next() { stepEpisode(1) }
             override fun speedLabel(): String = PlayerLogic.speedLabel(speed)
-            override fun cycleSpeed() {
-                speed = PlayerLogic.nextSpeed(speed); try { player.setPlaybackSpeed(speed) } catch (_: Throwable) {}
-                Cfg.p.edit().putString("speed", speed.toString()).putString("speed:$vid", speed.toString()).apply()
-                speedBRef?.text = "⏩ " + PlayerLogic.speedLabel(speed)
-            }
+            override fun cycleSpeed() { tvCycleSpeed() }
             override fun fitLabel(): String = fitNameOf(curFit())
             override fun cycleFit() { cycleFitNow() }
             override fun ccOn(): Boolean = ccOn
             override fun toggleCc() { ccOn = !ccOn; if (!ccOn) sub.show(null) else curIdx = -2 }
             override fun subScale(d: Int) { tvSubScale(d) }
-            override fun subShift(dMs: Long) {
-                offsetMs = (offsetMs + dMs).coerceIn(-10000L, 10000L)
-                Cfg.p.edit().putString("sub_offset_ms:$vid", offsetMs.toString()).apply(); srtSoon(); curIdx = -2
-                Notice.show(self, String.format("⏱ إزاحة الترجمة: %+.2fs", offsetMs / 1000.0), 1100L)
-            }
+            override fun subShift(dMs: Long) { tvSubShift(dMs) }
             override fun hasAudio(): Boolean = aTracks.size > 1
             override fun audio(anchor: View) { audPopFn?.invoke(anchor) }
+            // (v517) الشريط المبسّط (تلفزيون بس — التابلت شريطه القديم زي ما هو)
+            override fun slim(): Boolean = DeviceUi.isTv(self)
+            override fun trLabel(): String = tvTrLabel()
+            override fun trColor(): Int = tvTrColor()
+            override fun translate(anchor: View) { translateMenu(anchor) }
+            override fun hasQuality(): Boolean = qualPopFn != null && (qOpts.size > 1 || uri == null)
+            override fun quality(anchor: View) { qualPopFn?.invoke(anchor) }
+            override fun subDialog() { tvSubDialog() }
+            override fun more(anchor: View) { tvMoreDialog(anchor) }
         })
         frame.addView(b.view, FrameLayout.LayoutParams(-1, -2, Gravity.BOTTOM))
+        b.onVis = { tvChromeGate() }
         tvBar = b
+    }
+    // ===== (v517) شريط التلفزيون المبسّط: دوال الأزرار =====
+    private var tvMenuFn: ((View) -> Unit)? = null
+    private var tvToolsFn: ((View) -> Unit)? = null
+    private fun tvCycleSpeed() {
+        speed = PlayerLogic.nextSpeed(speed); try { player.setPlaybackSpeed(speed) } catch (_: Throwable) {}
+        Cfg.p.edit().putString("speed", speed.toString()).putString("speed:$vid", speed.toString()).apply()
+        speedBRef?.text = "⏩ " + PlayerLogic.speedLabel(speed)
+    }
+    private fun tvSubShift(dMs: Long) {
+        offsetMs = (offsetMs + dMs).coerceIn(-10000L, 10000L)
+        Cfg.p.edit().putString("sub_offset_ms:$vid", offsetMs.toString()).apply(); srtSoon(); curIdx = -2
+        Notice.show(this, String.format("⏱ إزاحة الترجمة: %+.2fs", offsetMs / 1000.0), 1100L)
+    }
+    private fun tvTrLabel(): String = try {
+        if (!engineStarted) "▶ ترجم"
+        else (if (::engine.isInitialized && engine.userPaused) "⏸ " else if (trPct >= 100) "✅ " else "⏳ ") + trPct + "%"
+    } catch (_: Throwable) { "▶ ترجم" }
+    private fun tvTrColor(): Int = try {
+        if (!engineStarted) 0xFFE53935.toInt()
+        else if (::engine.isInitialized && engine.userPaused) 0xFF8D6E00.toInt() else if (trPct >= 100) 0xFF2E7D32.toInt() else 0xFF1F5FBF.toInt()
+    } catch (_: Throwable) { 0xFFE53935.toInt() }
+    /** حجم الترجمة وتوقيتها في نافذة واحدة بتفضل مفتوحة (± من غير ما تتقفل بعد كل دوسة) */
+    private fun tvSubDialog() {
+        val d = android.app.Dialog(this)
+        d.requestWindowFeature(android.view.Window.FEATURE_NO_TITLE)
+        val box = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL
+            setPadding(ui.dp(26), ui.dp(22), ui.dp(26), ui.dp(22)); background = ui.box(0xF2181B20.toInt(), 0x33FFFFFF, 20)
+        }
+        val scaleTv = TextView(this).apply { textSize = 20f; setTextColor(Color.WHITE); gravity = Gravity.CENTER }
+        val shiftTv = TextView(this).apply { textSize = 20f; setTextColor(Color.WHITE); gravity = Gravity.CENTER }
+        fun paint() {
+            scaleTv.text = "🔤 حجم الترجمة: " + Cfg.int("sub_scale", 100) + "%"
+            shiftTv.text = String.format("⏱ توقيت الترجمة: %+.2f ث", offsetMs / 1000.0)
+        }
+        fun pm(t: String, f: () -> Unit): TextView = TextView(this).apply {
+            text = t; textSize = 26f; gravity = Gravity.CENTER; setTextColor(Color.WHITE); typeface = android.graphics.Typeface.DEFAULT_BOLD
+            background = ui.box(0x33FFFFFF, 0x22FFFFFF, 12); isFocusable = true; isClickable = true
+            setPadding(ui.dp(26), ui.dp(8), ui.dp(26), ui.dp(8))
+            setOnClickListener { f(); paint() }
+        }
+        fun line(lbl: TextView, minus: TextView, plus: TextView) {
+            val r = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_LTR; gravity = Gravity.CENTER_VERTICAL }
+            r.addView(minus, LinearLayout.LayoutParams(-2, -2)); r.addView(lbl, LinearLayout.LayoutParams(ui.dp(300), -2)); r.addView(plus, LinearLayout.LayoutParams(-2, -2))
+            box.addView(r, LinearLayout.LayoutParams(-2, -2).apply { setMargins(0, ui.dp(6), 0, ui.dp(6)) })
+        }
+        line(scaleTv, pm("−") { tvSubScale(-10) }, pm("+") { tvSubScale(10) })
+        line(shiftTv, pm("−") { tvSubShift(-250L) }, pm("+") { tvSubShift(250L) })
+        paint()
+        d.setContentView(box)
+        d.window?.apply { setBackgroundDrawable(android.graphics.drawable.ColorDrawable(0)); setGravity(Gravity.BOTTOM); setLayout(-2, -2); attributes = attributes.apply { y = ui.dp(90) } }
+        try { TvFocus.attachDialog(this, d, th.primary) } catch (_: Throwable) {}
+        d.show()
+    }
+    /** ⋯ المزيد: الأدوات اللي مش لازمة على الشريط الأساسي */
+    private fun tvMoreDialog(anchor: View) {
+        val labels = ArrayList<String>(); val acts = ArrayList<() -> Unit>()
+        fun add(l: String, a: () -> Unit) { labels.add(l); acts.add(a) }
+        add("⏩ السرعة: " + PlayerLogic.speedLabel(speed)) { tvCycleSpeed(); Notice.show(this, "⏩ " + PlayerLogic.speedLabel(speed), 1100L) }
+        add("⬛ الاحتواء: " + fitNameOf(curFit())) { cycleFitNow() }
+        add("🧑 الشخصيات") { showChars() }
+        add("📝 الجمل") { try { if (::sentDlg.isInitialized) sentDlg.show() } catch (_: Throwable) {} }
+        add("📜 اللوج") { toggleLog() }
+        add("⚙ إعدادات الترجمة") { modeSettings(anchor) }
+        add("🌐 لغة / لهجة") { langPopup(anchor) }
+        add("☰ القائمة الكاملة") { tvMenuFn?.invoke(anchor) }
+        add("🧰 أدوات الفيديو") { tvToolsFn?.invoke(anchor) }
+        GAlert(this).setTitle("المزيد").setItems(labels.toTypedArray()) { _, w -> if (w in acts.indices) acts[w]() }.show()
     }
     private var tvDigitRun: Runnable? = null
     private fun tvSeek(dMs: Long) {
@@ -218,6 +297,10 @@ class PlayerActivity : Activity(), Host {
         }
         if (DeviceUi.isRemote(this)) {
             val bar = tvBar; val k = ev.keyCode; val down = ev.action == android.view.KeyEvent.ACTION_DOWN
+            if (k == android.view.KeyEvent.KEYCODE_VOLUME_UP || k == android.view.KeyEvent.KEYCODE_VOLUME_DOWN || k == android.view.KeyEvent.KEYCODE_VOLUME_MUTE) {
+                if (down) tvVolume(k)
+                return true
+            }
             val media = k == android.view.KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE || k == android.view.KeyEvent.KEYCODE_MEDIA_PLAY || k == android.view.KeyEvent.KEYCODE_MEDIA_PAUSE
             if (media || k == android.view.KeyEvent.KEYCODE_MEDIA_NEXT || k == android.view.KeyEvent.KEYCODE_MEDIA_PREVIOUS ||
                 k in android.view.KeyEvent.KEYCODE_0..android.view.KeyEvent.KEYCODE_9) {
@@ -231,6 +314,15 @@ class PlayerActivity : Activity(), Host {
                 }
                 return true
             }
+            if (bar != null && bar.visible && (k == android.view.KeyEvent.KEYCODE_DPAD_UP || k == android.view.KeyEvent.KEYCODE_DPAD_DOWN)) {
+                // (v509) فوق من الشريط = العدّادات · تحت من العدّادات = رجوع للشريط
+                val f = currentFocus
+                if (k == android.view.KeyEvent.KEYCODE_DPAD_UP && !tvInBadges(f) && ::badgeRowV.isInitialized) {
+                    val l = ArrayList<View>(); badgeRowV.addFocusables(l, View.FOCUS_DOWN)
+                    val t = l.firstOrNull { it.isShown }
+                    if (t != null) { if (down) { t.requestFocus(); bar.poke() }; return true }
+                } else if (k == android.view.KeyEvent.KEYCODE_DPAD_DOWN && tvInBadges(f)) { if (down) { bar.focusMain(); bar.poke() }; return true }
+            }
             if (bar != null && bar.visible) { bar.poke() }
             else if (tvOverlayFocused()) { /* (v500) في عنصر مفتوح في لوحة/قايمة جوه المشغّل: سيب الأسهم وOK توصله بدل ما نبلعها */ }   // والشريط ظاهر: الأسهم/OK بتتعامل عادي مع التركيز على الأزرار
             else when (k) {
@@ -239,7 +331,7 @@ class PlayerActivity : Activity(), Host {
                     return true
                 }
                 android.view.KeyEvent.KEYCODE_DPAD_CENTER, android.view.KeyEvent.KEYCODE_ENTER -> {
-                    if (down) { if (tvDigits.isNotEmpty()) tvJump() else { togglePlay(); bar?.show() } }
+                    if (down) { if (tvDigits.isNotEmpty()) tvJump() else bar?.show() }   // (v509) OK = يظهر الأزرار المخفية (التشغيل/الإيقاف من زرار ▶ في الشريط)
                     return true
                 }
                 android.view.KeyEvent.KEYCODE_DPAD_UP, android.view.KeyEvent.KEYCODE_DPAD_DOWN, android.view.KeyEvent.KEYCODE_MENU -> {
@@ -250,7 +342,35 @@ class PlayerActivity : Activity(), Host {
         }
         return super.dispatchKeyEvent(ev)
     }
-    private fun tvOverlayFocused(): Boolean = try { val f = currentFocus; f != null && f.isShown && (f.isClickable || f is android.widget.EditText) } catch (_: Throwable) { false }
+    /** (v509) الأزرار العايمة الدايمة فوق الفيديو (عدّاد الترجمة، 👁، الكبسولات...) مش «لوحة مفتوحة» — كانت بتاخد التركيز وتبلع OK والأسهم */
+    private var tvChrome: Set<View> = emptySet()
+    private fun tvSnapChrome() { try { val b = videoBoxRef; tvChrome = (0 until b.childCount).map { b.getChildAt(it) }.filter { it.tag != "chromeFrame" }.toSet() } catch (_: Throwable) {} }
+    /** (v509) تلفزيون: عدّاد الجمل/النت واللوج مخفيين تمامًا (ولا بياخدوا تركيز) إلا لما شريط التحكم يظهر بـ OK */
+    private fun tvGateClosed(): Boolean = DeviceUi.isRemote(this) && tvBar?.visible != true
+    private fun tvChromeGate() {
+        try {
+            if (!DeviceUi.isRemote(this)) return
+            val on = !tvGateClosed()
+            applyBadgeAlpha()
+            if (::leftCol.isInitialized) { leftCol.visibility = if (on) View.VISIBLE else View.INVISIBLE; if (!on) leftCol.clearFocus() }
+            if (::badgeRowV.isInitialized && !on) badgeRowV.clearFocus()
+        } catch (e: Throwable) { LogStore.err("Tv:gate", e) }
+    }
+    private fun tvInBadges(v: View?): Boolean { var x = v; while (x != null) { if (::badgeRowV.isInitialized && x === badgeRowV) return true; x = x.parent as? View }; return false }
+    private fun tvIsChrome(v: View): Boolean { var x: View? = v; while (x != null) { if (x in tvChrome) return true; x = x.parent as? View }; return false }
+    private fun tvOverlayFocused(): Boolean = try { val f = currentFocus; f != null && f.isShown && (f.isClickable || f is android.widget.EditText) && !tvIsChrome(f) } catch (_: Throwable) { false }
+    /** (v509) الصوت بالريموت: صوت النظام، ولو التلفزيون صوته ثابت نغيّر صوت المشغّل نفسه */
+    private fun tvVolume(k: Int) {
+        try {
+            val am = getSystemService(android.content.Context.AUDIO_SERVICE) as android.media.AudioManager
+            if (k == android.view.KeyEvent.KEYCODE_VOLUME_MUTE) { am.adjustStreamVolume(android.media.AudioManager.STREAM_MUSIC, android.media.AudioManager.ADJUST_TOGGLE_MUTE, android.media.AudioManager.FLAG_SHOW_UI); return }
+            val up = k == android.view.KeyEvent.KEYCODE_VOLUME_UP
+            if (am.isVolumeFixed) {
+                val v = ((player.volume + if (up) 0.1f else -0.1f).coerceIn(0f, 1f)); player.volume = v
+                Notice.show(this, "🔊 " + (v * 100).toInt() + "%", 900L)
+            } else am.adjustStreamVolume(android.media.AudioManager.STREAM_MUSIC, if (up) android.media.AudioManager.ADJUST_RAISE else android.media.AudioManager.ADJUST_LOWER, android.media.AudioManager.FLAG_SHOW_UI)
+        } catch (e: Throwable) { LogStore.err("Tv:vol", e) }
+    }
     override fun finish() { super.finish(); try { overridePendingTransition(R.anim.act_stay, R.anim.act_exit) } catch (e: Exception) { LogStore.err("Main:725", e) } }
     @Volatile var cur = 0L
     @Volatile var durMs = 0L
@@ -494,6 +614,39 @@ class PlayerActivity : Activity(), Host {
             .show()
     }
     var curIdx = -1; var curKey = ""; var lastRefresh = 0L
+    // (v515) ترجمة الفيديو الأصلية (سوفت صب جوه الملف أو ملف ترجمة جنبه): بتظهر بنفس ستايل المشغّل بلون أبيض لما مفيش ترجمة من المحرك
+    @Volatile private var nativeCue = ""
+    private var natShown = false
+    private var textPicked = false
+    private var natStart = 0.0
+    private var natLast = ""
+    private fun natSub(t: String): Sub {
+        if (t != natLast) { natLast = t; natStart = cur / 1000.0 }
+        return Sub(natStart, natStart + 3.0, t, t, "", "", "", emptyList(), emptyList(), false, false)
+    }
+    private fun natStyle(base: SubStyle): SubStyle = if (natShown) base.copy(uniOn = true, uniColor = "#FFFFFF") else base
+    /** ملف ترجمة جنب الفيديو المحلي (نفس الاسم .srt/.ass/.ssa/.vtt/.ttml، أو name.ar.srt)؛ العربي أولًا */
+    private fun findSidecar(u: Uri): java.io.File? = try {
+        var path: String? = null
+        if (u.scheme == "file") path = u.path
+        else if (u.scheme == "content") contentResolver.query(u, arrayOf(android.provider.MediaStore.MediaColumns.DATA), null, null, null)?.use { c -> if (c.moveToFirst()) path = c.getString(0) }
+        val f = path?.let { java.io.File(it) }
+        val dir = f?.parentFile
+        if (f == null || dir == null) null else {
+            val base = f.nameWithoutExtension.lowercase(); val exts = listOf("srt", "ass", "ssa", "vtt", "ttml")
+            val c = dir.listFiles()?.filter { it.isFile && it.extension.lowercase() in exts && it.nameWithoutExtension.lowercase().let { n -> n == base || n.startsWith("$base.") } }.orEmpty()
+            c.sortedWith(compareBy({ x -> val n = x.name.lowercase(); if (n.contains(".ar.") || n.contains("arab") || n.contains(".ara.")) 0 else 1 }, { x -> exts.indexOf(x.extension.lowercase()) }, { it.name })).firstOrNull()
+        }
+    } catch (e: Throwable) { LogStore.err("Player:sidecar", e); null }
+    private fun mediaItemFor(u: Uri): MediaItem {
+        val sc = findSidecar(u) ?: return MediaItem.fromUri(u)
+        return try {
+            val mime = when (sc.extension.lowercase()) { "ass", "ssa" -> androidx.media3.common.MimeTypes.TEXT_SSA; "vtt" -> androidx.media3.common.MimeTypes.TEXT_VTT; "ttml" -> androidx.media3.common.MimeTypes.APPLICATION_TTML; else -> androidx.media3.common.MimeTypes.APPLICATION_SUBRIP }
+            val cfg = MediaItem.SubtitleConfiguration.Builder(Uri.fromFile(sc)).setMimeType(mime).setSelectionFlags(C.SELECTION_FLAG_DEFAULT).build()
+            log("💬 لقيت ملف ترجمة جنب الفيديو: ${sc.name}")
+            MediaItem.Builder().setUri(u).setSubtitleConfigurations(listOf(cfg)).build()
+        } catch (e: Throwable) { LogStore.err("Player:sidecar2", e); MediaItem.fromUri(u) }
+    }
     var offsetMs = 0L; var speed = 1f; var fit = 0; var fsFit = 2; var ccOn = true; var fitFsB: TextView? = null
     fun isLandNow() = resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
     /** أفقي: وضع الشاشة الكاملة (الافتراضي تمديد) — رأسي: وضع منفصل (الافتراضي احتواء) */
@@ -523,7 +676,7 @@ class PlayerActivity : Activity(), Host {
     private val BADGE_IDLE_A = 0.3f   // (v432) عدّاد الجمل باهت 30% حتى والأزرار مخفية (كان 0.5)
     private fun applyBadgeAlpha() {
         if (!::sentCap.isInitialized || !::netBadge.isInitialized || !::badgeRowV.isInitialized) return
-        val a = if (chromeShown || System.currentTimeMillis() < badgeHotUntil) 1f else BADGE_IDLE_A
+        val a = if (tvGateClosed()) 0f else if (chromeShown || (DeviceUi.isRemote(this) && tvBar?.visible == true) || System.currentTimeMillis() < badgeHotUntil) 1f else BADGE_IDLE_A   // (v509) تلفزيون: العدّادات مخفية خالص لحد ما OK يظهر الشريط
         if (badgeRowV.alpha != a) badgeRowV.alpha = a
         val v = if (a <= 0.01f) View.INVISIBLE else View.VISIBLE   // INVISIBLE = مايستقبلش لمس
         if (badgeRowV.visibility != v) badgeRowV.visibility = v
@@ -2189,7 +2342,7 @@ class PlayerActivity : Activity(), Host {
 
         // ---- نفس خطوات الأصل: تحكم الشاشة الكاملة (أزرار الترجمة فوق + كبسولة التقدم تحت) ----
         fun curStyle() = SubStyle.load { k, d -> Cfg.str(k, d) }
-        fun restyle() { sub.style = curStyle(); curIdx = -2 }
+        fun restyle() { sub.style = natStyle(curStyle()); curIdx = -2 }
         restyleFn = { restyle() }
         fun fontLabel(): String { val f = curStyle().font; return SubStyle.fonts.firstOrNull { it.id == f }?.label ?: f }
         fun entLabel(): String { val a = curStyle().anim; return SubStyle.entrances.firstOrNull { it.id == a }?.label ?: "افتراضي" }
@@ -2262,8 +2415,10 @@ class PlayerActivity : Activity(), Host {
                 val avail = (if (goUp) loc[1] - ui.dp(8) else dmP.heightPixels - loc[1] - v.height - ui.dp(8)).coerceAtLeast(ui.dp(120))
                 val popH = minOf(col.measuredHeight, avail)
                 val svP = android.widget.ScrollView(this).apply { overScrollMode = View.OVER_SCROLL_NEVER; isVerticalScrollBarEnabled = false; addView(col) }
-                val pw = android.widget.PopupWindow(svP, maxOf(col.measuredWidth, ui.dp(150)), popH, false)
+                val pw = if (DeviceUi.isTv(this)) TvFocus.pop(this, svP, maxOf(col.measuredWidth, ui.dp(150)), popH, true)   // (v517) تلفزيون: القايمة بتاخد التركيز عشان الريموت يوصل لعناصرها
+                    else android.widget.PopupWindow(svP, maxOf(col.measuredWidth, ui.dp(150)), popH, false)
                 pw.isOutsideTouchable = true; pw.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(0))
+                if (DeviceUi.isTv(this)) pw.setOnDismissListener { if (popup === pw) { popup = null; popupOwner = null } }
                 if (goUp) pw.showAsDropDown(v, 0, -(v.height + popH + ui.dp(2)))
                 else pw.showAsDropDown(v, 0, ui.dp(2))
                 popup = pw; popupOwner = v
@@ -2463,6 +2618,7 @@ class PlayerActivity : Activity(), Host {
         gTools.addView(tasksPageB, 1)
         tasksPopFn = { v -> tasksPageB.text = "📋 صفحة المهام (" + taskCount() + ")"; togglePop(v, gTools, true) }
         val toolsB = IconGlyphButton(this, "toolbox").apply { background = ui.box(0xE0141418.toInt(), 0x1FFFFFFF, 12); setOnClickListener { togglePop(this, gTools, false) } }
+        tvMenuFn = { v -> togglePop(v, gTool, true) }; tvToolsFn = { v -> togglePop(v, gTools, true) }   // (v517) ⋯ المزيد على التلفزيون
         // (v151) خيارات متعددة الاختيار + زرار واحد «طبّق المحدد»: بيتنفّذوا ورا بعض (تنقيح ← لهجة+ ← عائلي/صريح ← ضمائر ← دمج مكرر)
         val aiBase = linkedMapOf("refine" to "✍ تنقيح بالسياق", "dial" to "🔥 لهجة +", "family" to "🧹 عائلي", "explicit" to "🔞 صريح", "pron" to "🔧 ضمائر", "dedup" to "🧠 دمج مكرر")
         val aiBtns = HashMap<String, TextView>()
@@ -3051,7 +3207,7 @@ class PlayerActivity : Activity(), Host {
         val rootFrame = FrameLayout(this).apply { layoutDirection = View.LAYOUT_DIRECTION_LTR }
         rootFrame.addView(page, FrameLayout.LayoutParams(-1, -1))
         setContentView(rootFrame)
-        if (DeviceUi.isRemote(this)) { TvFocus.attach(this, th.primary); tvInitBar(rootFrame) }   // (v477 م4)
+        if (DeviceUi.isRemote(this)) { TvFocus.attach(this, th.primary); tvInitBar(rootFrame); tvSnapChrome(); tvChromeGate() }   // (v477 م4)
         applyFull(true)   // شاشة كاملة دايمًا (أفقي ورأسي) — الأزرار في الشريط العلوي وزرار ☰ القائمة
         // فيديو اتفتح من فولدرات الجهاز: يشتغل لاندسكيب مباشرة زي MX Player
         // الاتجاه الأولي من شكل الفيديو (من المكتبة) — وبعدها بيتصحح لوحده أول ما الأبعاد الحقيقية تظهر (onVideoSizeChanged)
@@ -3133,11 +3289,14 @@ class PlayerActivity : Activity(), Host {
                 // جملة طويلة واحدة: بتتقسم لأجزاء بتظهر بالتتابع على مدة الجملة (التوقيت الأصلي ثابت)
                 var parts: List<String> = emptyList(); var part = 0
                 val ssn = sub.style
-                val key = act.joinToString(",") + ":" + part
+                val nat = ccOn && gs.isEmpty() && nativeCue.isNotEmpty()   // (v515) ترجمة الفيديو الأصلية لما مفيش ترجمة من المحرك
+                if (nat != natShown) { natShown = nat; try { sub.style = natStyle(SubStyle.load { k, d -> Cfg.str(k, d) }) } catch (e: Throwable) { LogStore.err("Player:natStyle", e) } }
+                val key = act.joinToString(",") + ":" + part + (if (nat) "|N:" + nativeCue else "")
                 if (idx != curIdx || key != curKey) {
                     curIdx = idx; curKey = key
                     val shown: Sub? = when {
-                        !ccOn || gs.isEmpty() -> null
+                        !ccOn -> null
+                        gs.isEmpty() -> if (nat) natSub(nativeCue) else null
                         parts.size > 1 -> gs[0].copy(translated = parts[part], isContinuation = gs[0].isContinuation && part == parts.size - 1)
                         else -> PlayerLogic.combine(gs)
                     }
@@ -3334,7 +3493,24 @@ class PlayerActivity : Activity(), Host {
                 }
             }
             override fun onRenderedFirstFrame() { firstFrame = true; webFirstFrame = true; ytBusy(false) }
+            override fun onCues(cueGroup: androidx.media3.common.text.CueGroup) {
+                nativeCue = cueGroup.cues.mapNotNull { it.text?.toString()?.trim() }.filter { it.isNotEmpty() }.joinToString("\n")
+            }
             override fun onTracksChanged(t: Tracks) {
+                try {
+                    if (!textPicked) {
+                        val tg = t.groups.filter { it.type == C.TRACK_TYPE_TEXT && it.length > 0 && it.isSupported }
+                        if (tg.isNotEmpty()) {
+                            textPicked = true
+                            if (tg.none { it.isSelected }) {
+                                val pick = tg.firstOrNull { g -> (g.getTrackFormat(0).language ?: "").lowercase().startsWith("ar") } ?: tg.first()
+                                player.trackSelectionParameters = player.trackSelectionParameters.buildUpon().setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
+                                    .setOverrideForType(androidx.media3.common.TrackSelectionOverride(pick.mediaTrackGroup, 0)).build()
+                            }
+                            log("💬 ترجمة أصلية في الفيديو: ${tg.size} مسار")
+                        }
+                    }
+                } catch (e: Throwable) { LogStore.err("Player:textTrack", e) }
                 paintQual()
                 if (sizeTxt.isEmpty()) refreshSize()
                 for (g in t.groups) {
@@ -3370,7 +3546,7 @@ class PlayerActivity : Activity(), Host {
         if (uri == null && au != null) {
             val pf = androidx.media3.exoplayer.source.ProgressiveMediaSource.Factory(httpDsf ?: DefaultHttpDataSource.Factory().setDefaultRequestProperties(hdr).setAllowCrossProtocolRedirects(true))
             player.setMediaSource(androidx.media3.exoplayer.source.MergingMediaSource(pf.createMediaSource(MediaItem.fromUri(Uri.parse(url!!))), pf.createMediaSource(MediaItem.fromUri(Uri.parse(au)))))
-        } else player.setMediaItem(MediaItem.fromUri(uri ?: Uri.parse(url!!)))
+        } else player.setMediaItem(uri?.let { mediaItemFor(it) } ?: MediaItem.fromUri(Uri.parse(url!!)))
         player.prepare(); player.playWhenReady = true
     }
 
@@ -3787,6 +3963,7 @@ class PlayerActivity : Activity(), Host {
         try { player.release() } catch (e: Exception) { LogStore.err("Main:2167", e) }
         uri = newUri; url = null; aurl = null; hdr.clear()
         cur = 0L; durMs = 0L; vidW = 0; vidH = 0; curIdx = -2; curKey = ""; dirty = true
+        nativeCue = ""; textPicked = false; natShown = false; natLast = ""
         synchronized(logBuf) { logBuf.setLength(0) }
         status = ""; conf = Cfg.snapshot()
         try { sub.show(null) } catch (e: Exception) { LogStore.err("Main:2172", e) }
@@ -4033,6 +4210,7 @@ class PlayerActivity : Activity(), Host {
     /** أفقي: يرجع للرأسي من غير ما يقفل. رأسي: يحفظ التقدم ويوقف الفيديو ويقفل. */
     @Suppress("DEPRECATION")
     override fun onBackPressed() {
+        if (DeviceUi.isRemote(this) && miniLog != null) { closeMiniLog(); return }   // (v509) ✕ الصغيرة في لوج الجمل: Back يقفلها
         if (tvBar?.visible == true) { tvBar?.hide(); return }   // (v477 م4) تلفزيون: Back بيقفل شريط التحكم الأول
         if (nextPanel?.consumeBack() == true) return   // (v378)
         if (sideOpen) { closeSide(); return }

@@ -80,6 +80,8 @@ class MainActivity : Activity() {
     private var libStarted = false
     private var curTab = 0                       // (v117) 0 = الفيديوهات · 1 = يوتيوب
     private var ytUi: YtProUi? = null
+    private var tvShellOn = false           // (v516) يوتيوب جوه قشرة اللانشر (نفس الشريط والخلفية، من غير انتقال تطبيق جديد)
+    private var tvBar: TvShellBar? = null
     private var navUi: BottomNav? = null
     private var warmView: View? = null   // (v469) D2 طبقة الفلتر الدافئ
     /** (v469) D2 فلتر راحة العين الدافئ: طبقة عنبرية شفافة فوق الشاشة الرئيسية (٠ = مقفول، ١٠٠ = أقصى دفء ≈ ٪٣٣ عتمة) */
@@ -904,6 +906,7 @@ class MainActivity : Activity() {
         // (v325) بوابة يوتيوب (الخامسة): YtProUi — واجهة أصلية على NewPipeExtractor بدل صفحة الويب؛ بتتبني أول ما تفتحها
         fun ensureYt(): YtProUi {
             ytUi?.let { return it }
+            YtSkin.translucent = tvShellOn   // (v516)
             val yt = YtProUi(this, ui, th,
                 { Recents.parse(try { recentFile.readText() } catch (_: Exception) { "" }).associateBy { it.id } },
                 { id, name, tr -> playYt(id, name, tr) },
@@ -976,7 +979,18 @@ class MainActivity : Activity() {
         if (tabletShell) { shell.addView(pane, LinearLayout.LayoutParams(0, -1, 1f)); shell.addView(nav.view, LinearLayout.LayoutParams(ui.dp(80), -1)) }
         else { shell.addView(pane, LinearLayout.LayoutParams(-1, 0, 1f)); shell.addView(nav.view, LinearLayout.LayoutParams(-1, -2)) }
         val frame = FrameLayout(this).apply { setBackgroundColor(th.bg); layoutDirection = View.LAYOUT_DIRECTION_LTR }
-        frame.addView(shell, FrameLayout.LayoutParams(-1, -1))
+        tvShellOn = fromTv && !fromPlayer && DeviceUi.isTv(this)
+        if (tvShellOn) {
+            // (v516) نفس شريط التابات/الريل ونفس خلفية اللانشر فوق صفحة يوتيوب (والفيديوهات)
+            frame.addView(TvShell.backdrop(this, th), FrameLayout.LayoutParams(-1, -1))
+            val compactShell = resources.configuration.screenWidthDp < 720
+            val sb = TvShellBar(this, ui, th, compactShell, { i -> tvShellGo(i) }, { try { saveCfgFn?.invoke() } catch (_: Throwable) {}; settingsShow?.invoke(null) })
+            tvBar = sb
+            val wrap = LinearLayout(this).apply { layoutDirection = View.LAYOUT_DIRECTION_RTL; orientation = if (compactShell) LinearLayout.HORIZONTAL else LinearLayout.VERTICAL }
+            if (compactShell) { wrap.addView(sb.view, LinearLayout.LayoutParams(ui.dp(70), -1)); wrap.addView(shell, LinearLayout.LayoutParams(0, -1, 1f)) }
+            else { wrap.addView(sb.view, LinearLayout.LayoutParams(-1, -2)); wrap.addView(shell, LinearLayout.LayoutParams(-1, 0, 1f)) }
+            frame.addView(wrap, FrameLayout.LayoutParams(-1, -1))
+        } else frame.addView(shell, FrameLayout.LayoutParams(-1, -1))
         ytLoadUi = YtLoadingPage(this, ui, th) { cancelYtLoad() }.also { frame.addView(it.root, FrameLayout.LayoutParams(-1, -1)) }
         if (fromPlayer) {
             setContentView(FrameLayout(this))
@@ -992,7 +1006,7 @@ class MainActivity : Activity() {
         dockUi = MiniDock(this, frame, ui, th, { musicOpenFn?.invoke() }, { curTab == 1 }) { t -> musicUi?.artBitmap(t) }   // (v344)
         stripUi = StatusStrip(this, frame, ui, th) { showTabFn(5) }   // (v345)
         tasksFabUi = TasksFab(this, frame, ui) { showTasksDialog() }   // (v420) عايم: بيظهر وقت المهام الشغّالة بس
-        if (!fromPlayer && b == null) { frame.alpha = 0f; frame.animate().setStartDelay(0L).alpha(1f).setDuration(160L).start() }   // (v312) بدل السبلاش: ظهور ناعم سريع
+        if (!fromPlayer && b == null && !tvShellOn) { frame.alpha = 0f; frame.animate().setStartDelay(0L).alpha(1f).setDuration(160L).start() }   // (v312) بدل السبلاش: ظهور ناعم سريع
         if (!fromPlayer) {   // (v310) أيقونة «الموسيقى» في اللانشر (alias) أو رجوع من المتصفح/الملفات لتبويب معيّن
             val cn = intent?.component?.className ?: ""
             // (v339) لو الأكتيفيتي اتعمل لها إعادة إنشاء (النظام قتلها وإنت في المشغّل): ارجع لنفس البوابة مش للفيديوهات
@@ -1671,9 +1685,27 @@ class MainActivity : Activity() {
         val th0 = Themes.byId(Cfg.str("theme", "mx")); val ui0 = Ui(this, th0)   // ui/th محليين في onCreate فبنبني نسخة هنا
         YtHistoryUi.show(this, ui0, th0, { id, t -> saveFn(); playYt(id, t, false) }, { id, t, ch -> saveFn(); playYtAudio(id, t, ch, "") })
     }
+    /** (v516) تابات اللانشر من جوه يوتيوب: 0 رئيسية · 1 تطبيقات · 2 يوتيوب · 3 متصفح · 4 فيديوهات · 5 ملفات */
+    private fun tvShellGo(i: Int) {
+        try {
+            when (i) {
+                0 -> tvToLauncher("home")
+                1 -> tvToLauncher("apps")
+                2 -> if (curTab != 4) showTabFn(4)
+                3 -> { saveCfgFn?.invoke(); startActivity(Intent(this, BrowserActivity::class.java).putExtra("from_tv", true)) }
+                4 -> if (curTab != 0) showTabFn(0)
+                5 -> { saveCfgFn?.invoke(); startActivity(Intent(this, FileManagerActivity::class.java)) }
+            }
+        } catch (e: Throwable) { LogStore.err("Main:tvShellGo", e) }
+    }
+    private fun tvToLauncher(show: String) {
+        try { startActivity(Intent(this, TvActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP).putExtra("tv_show", show)); finish() }
+        catch (_: Throwable) { showTabFn(0) }
+    }
     fun updateYtBadge() { navUi?.badge(4, YtNotify.badgeCount()) }
     /** (v475) الشريط السفلي: وانت في يوتيوب بيعرض (الرئيسية · الاشتراكات · أنا)؛ اللايت ترتيبه ثابت (الرئيسية · الاشتراكات · محلي · أنا) */
     fun syncNav() {
+        tvBar?.select(if (curTab == 4) 2 else if (curTab == 0) 4 else -1)   // (v516)
         val n = navUi ?: return
         val liteApp = packageName.endsWith(".lite")
         n.mode(curTab == 4)
@@ -1751,6 +1783,6 @@ class MainActivity : Activity() {
         if (!fromPlayer && libUi?.back() == true) return
         super.onBackPressed()
     }
-    override fun startActivity(i: Intent?) { super.startActivity(i); try { if (!NavAnim.take(this)) overridePendingTransition(R.anim.act_enter, R.anim.act_stay) } catch (e: Exception) { LogStore.err("Main:720", e) } }
-    override fun finish() { super.finish(); try { if (fromPlayer) overridePendingTransition(0, 0) else overridePendingTransition(R.anim.act_stay, R.anim.act_exit) } catch (e: Exception) { LogStore.err("Main:721", e) } }
+    override fun startActivity(i: Intent?) { super.startActivity(i); try { if (tvShellOn) { NavAnim.take(this); overridePendingTransition(0, 0) } else if (!NavAnim.take(this)) overridePendingTransition(R.anim.act_enter, R.anim.act_stay) } catch (e: Exception) { LogStore.err("Main:720", e) } }
+    override fun finish() { super.finish(); try { if (fromPlayer || tvShellOn) overridePendingTransition(0, 0) else overridePendingTransition(R.anim.act_stay, R.anim.act_exit) } catch (e: Exception) { LogStore.err("Main:721", e) } }
 }

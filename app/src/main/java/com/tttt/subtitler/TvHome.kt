@@ -4,7 +4,12 @@ import android.animation.ArgbEvaluator
 import android.animation.ValueAnimator
 import android.app.Activity
 import android.content.Intent
+import android.graphics.Bitmap
+import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.Paint
+import android.graphics.Typeface
+import android.graphics.drawable.Drawable
 import android.graphics.drawable.GradientDrawable
 import android.net.Uri
 import android.os.Bundle
@@ -45,6 +50,8 @@ class TvActivity : Activity() {
     private lateinit var content: LinearLayout
     private lateinit var saver: FrameLayout
     private lateinit var saverClock: android.widget.TextView
+    private lateinit var saverTemp: android.widget.TextView
+    private lateinit var saverBg: ImageView
     private lateinit var clockTv: android.widget.TextView
     private lateinit var warmView: View
     private val h = Handler(Looper.getMainLooper())
@@ -62,6 +69,10 @@ class TvActivity : Activity() {
     private var glowAnim: ValueAnimator? = null
     private val glowMap = java.util.WeakHashMap<View, Int>()
     private var searchBox: LinearLayout? = null
+    private var tabsBoxV: View? = null
+    private var tabActions: List<() -> Unit> = emptyList()
+    private var tabAutoBlock = -1   // (v513) التاب اللي اتفتح بالتركيز: مايتفتحش تاني لما نرجع عليه بـ Back (لحد ما التركيز يروح لتاب تاني)
+    private var tcV: View? = null
     private var searchExtras: List<View> = emptyList()
     private var searchExpanded = false
     private val tabViews = ArrayList<TvOwnLinear>()
@@ -87,12 +98,12 @@ class TvActivity : Activity() {
         // (v491) الثيم الأساسي على التلفزيون = أسود (أموليد) — مرة واحدة بس، وتقدر تغيّره من الإعدادات بعدها
         if (DeviceUi.isTv(this) && Cfg.str("tv_black_v491", "0") != "1") { Cfg.put("theme", "amoled_w"); Cfg.put("tv_black_v491", "1") }
         th = Themes.byId(Cfg.str("theme", "mx")); ui = Ui(this, th)
-        TypeServer.start(); TvWatchNext.sync(this)
+        TypeServer.start(); TvWatchNext.sync(this); TvLink.start(this)   // (v518) ريموت الموبايل
         val rootF = FrameLayout(this).apply {
             if (Theme.lum(th.bg) < 0.2f) background = GradientDrawable(GradientDrawable.Orientation.TL_BR, intArrayOf(0xFF0A0F22.toInt(), 0xFF150E27.toInt())) else setBackgroundColor(th.bg)
         }
         wallView = ImageView(this).apply { scaleType = ImageView.ScaleType.CENTER_CROP; isFocusable = false; isClickable = false; visibility = View.GONE }
-        wallScrim = View(this).apply { setBackgroundColor(0x80000000.toInt()); isFocusable = false; isClickable = false; visibility = View.GONE }
+        wallScrim = View(this).apply { setBackgroundColor(TvWall.scrimColor()); isFocusable = false; isClickable = false; visibility = View.GONE }
         rootF.addView(wallView, FrameLayout.LayoutParams(-1, -1))
         rootF.addView(wallScrim, FrameLayout.LayoutParams(-1, -1))
         glowDrawable = GradientDrawable().apply { gradientType = GradientDrawable.RADIAL_GRADIENT; gradientRadius = ui.dp(640).toFloat(); setGradientCenter(0.5f, 0.55f); colors = intArrayOf(0x00000000, 0x00000000) }
@@ -123,30 +134,65 @@ class TvActivity : Activity() {
         warmView = View(this).apply { setBackgroundColor(0x2EFF8C1A); isClickable = false; isFocusable = false; visibility = if (Cfg.str("tv_warm", "0") == "1") View.VISIBLE else View.GONE }
         rootF.addView(warmView, FrameLayout.LayoutParams(-1, -1))
         saver = FrameLayout(this).apply { setBackgroundColor(Color.BLACK); visibility = View.GONE }
-        saverClock = ui.text("", 54f, Color.WHITE, true).apply { gravity = Gravity.CENTER }
-        val saverCol = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER }
-        saverCol.addView(saverClock, LinearLayout.LayoutParams(-1, -2))
-        saverCol.addView(ui.text("📺 Subtitler — دوس أي زرار عشان تكمل", 15f, 0xFF9AA0A6.toInt()).apply { gravity = Gravity.CENTER }, LinearLayout.LayoutParams(-1, -2))
-        saver.addView(saverCol, FrameLayout.LayoutParams(-1, -1))
+        // (v514) شاشة التوقف: خلفية اللانشر (لو متحطة) + كارت تظليل 60% في النص فيه ساعة إنجليزي ديجيتال 12 ساعة كبيرة + درجة الحرارة سيليزيوس تحتها
+        saverBg = ImageView(this).apply { scaleType = ImageView.ScaleType.CENTER_CROP; visibility = View.GONE }
+        saver.addView(saverBg, FrameLayout.LayoutParams(-1, -1))
+        saverClock = ui.text("", 120f, Color.WHITE, true).apply { gravity = Gravity.CENTER; layoutDirection = View.LAYOUT_DIRECTION_LTR; textDirection = View.TEXT_DIRECTION_LTR; includeFontPadding = false }
+        saverTemp = ui.text("", 44f, Color.WHITE, true).apply { gravity = Gravity.CENTER; layoutDirection = View.LAYOUT_DIRECTION_LTR; textDirection = View.TEXT_DIRECTION_LTR; setPadding(0, ui.dp(6), 0, 0) }
+        val saverCol = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER
+            setPadding(ui.dp(64), ui.dp(36), ui.dp(64), ui.dp(32))
+            background = GradientDrawable().apply { setColor(0x99000000.toInt()); cornerRadius = ui.dp(36).toFloat() }
+        }
+        saverCol.addView(saverClock, LinearLayout.LayoutParams(-2, -2))
+        saverCol.addView(saverTemp, LinearLayout.LayoutParams(-2, -2))
+        saverCol.addView(ui.text("📺 Subtitler — دوس أي زرار عشان تكمل", 15f, 0xFFB8BDC9.toInt()).apply { gravity = Gravity.CENTER; setPadding(0, ui.dp(14), 0, 0) }, LinearLayout.LayoutParams(-2, -2))
+        saver.addView(saverCol, FrameLayout.LayoutParams(-2, -2, Gravity.CENTER))
         rootF.addView(saver, FrameLayout.LayoutParams(-1, -1))
         setContentView(rootF)
         TvFocus.attach(this, th.primary)   // (v490) حلقة تركيز واضحة على كل زرار/كارت في اللانشر
         showHome()
         applyWall()   // (v506)
         h.post(tick)
+        handleShow(intent)   // (v516) راجع من يوتيوب (قشرة اللانشر) على «تطبيقات» أو «الرئيسية»
         h.postDelayed({ if (!isDestroyed && !isFinishing) { if (!VideoScan.hasPermission(this)) askVideoPermission() else askDefaultHome() } }, 1500L)   // (v485) (v500) الصلاحية الأول
     }
 
     private val tick = object : Runnable {
         override fun run() {
-            val t = SimpleDateFormat("hh:mm a", Locale.getDefault()).format(Date())   // (v484) نظام 12 ساعة بتوقيت الجهاز
+            val t = SimpleDateFormat(if (Cfg.str("tv_clock24", "0") == "1") "HH:mm" else "hh:mm a", Locale.getDefault()).format(Date())   // (v484) نظام 12 ساعة بتوقيت الجهاز (v516: أو 24 من المظهر)
             if (::clockTv.isInitialized) clockTv.text = t
-            if (saver.visibility == View.VISIBLE) saverClock.text = t else { idleSec++; if (idleSec >= 180) showSaver() }
+            if (saver.visibility == View.VISIBLE) saverClock.text = SimpleDateFormat("hh:mm a", Locale.US).format(Date()) else { idleSec++; if (idleSec >= saverLimit()) showSaver() }
+            prayerTick()
             h.postDelayed(this, 1000)
         }
     }
 
-    private fun showSaver() { saver.visibility = View.VISIBLE; idleSec = 0 }
+    private fun showSaver() {
+        try {
+            val d = if (::wallView.isInitialized && wallView.visibility == View.VISIBLE) wallView.drawable else null
+            saverBg.setImageDrawable(d); saverBg.visibility = if (d != null) View.VISIBLE else View.GONE
+            saverClock.text = SimpleDateFormat("hh:mm a", Locale.US).format(Date())
+            val c = Cfg.str("tv_temp_c", ""); saverTemp.text = if (c.isNotBlank()) "$c°C" else ""
+            saverTemp.visibility = if (c.isNotBlank()) View.VISIBLE else View.GONE
+            if (System.currentTimeMillis() - (Cfg.str("tv_temp_ts", "0").toLongOrNull() ?: 0L) > 30 * 60_000L) fetchTemp()
+        } catch (e: Throwable) { LogStore.err("TvHome:saver", e) }
+        saver.visibility = View.VISIBLE; idleSec = 0
+    }
+    /** (v514) درجة الحرارة بالسيليزيوس: موقع تقريبي من IP (ipwho.is) ثم Open-Meteo — بدون مفاتيح، ومتخزنة نص ساعة */
+    private fun fetchTemp() {
+        Thread {
+            try {
+                fun get(u: String): String { val c = java.net.URL(u).openConnection() as java.net.HttpURLConnection; c.connectTimeout = 6000; c.readTimeout = 6000; return c.inputStream.bufferedReader().use { it.readText() } }
+                val loc = org.json.JSONObject(get("https://ipwho.is/"))
+                val lat = loc.getDouble("latitude"); val lon = loc.getDouble("longitude")
+                val w = org.json.JSONObject(get("https://api.open-meteo.com/v1/forecast?latitude=$lat&longitude=$lon&current=temperature_2m&temperature_unit=celsius"))
+                val t = Math.round(w.getJSONObject("current").getDouble("temperature_2m")).toInt().toString()
+                Cfg.put("tv_temp_c", t); Cfg.put("tv_temp_ts", System.currentTimeMillis().toString())
+                runOnUiThread { try { if (!isDestroyed) { saverTemp.text = "$t°C"; saverTemp.visibility = View.VISIBLE } } catch (_: Throwable) { } }
+            } catch (e: Throwable) { LogStore.err("TvHome:temp", e) }
+        }.start()
+    }
     private fun wake() { idleSec = 0; if (::saver.isInitialized && saver.visibility == View.VISIBLE) saver.visibility = View.GONE }
     override fun onUserInteraction() { super.onUserInteraction(); wake() }
     override fun dispatchKeyEvent(ev: KeyEvent): Boolean {
@@ -187,6 +233,7 @@ class TvActivity : Activity() {
     private fun recentsSig(): String = try { recents().take(40).joinToString("|") { it.uri + ":" + it.posSec.toInt() + ":" + it.ts } } catch (_: Throwable) { "" }
     override fun onResume() {
         super.onResume(); idleSec = 0
+        try { content.animate().cancel(); content.alpha = 1f; content.scaleX = 1f; content.scaleY = 1f; content.translationY = 0f } catch (_: Throwable) { }   // (v513) رجوع من صفحة اتفتحت بالتركيز
         val sig = recentsSig()
         if (resumedOnce && sig != recSig && !inSearch && storageKind == null && curTab == 0) {
             val hh = histHost
@@ -214,6 +261,7 @@ class TvActivity : Activity() {
         super.onRequestPermissionsResult(rc, perms, res)
         if (rc == 11 && VideoScan.hasPermission(this)) { Notice.show(this, "✅ تمام — بقرا الفيديوهات", 1800L); showHome(false) }
         else if (rc == 11) Notice.show(this, "⚠ من غير الصلاحية مش هقدر أعرض الفيديوهات", 3000L)
+        else if (rc == 92) { if (res.firstOrNull() == android.content.pm.PackageManager.PERMISSION_GRANTED) { Cfg.put("tv_loc", ""); if (prayerCd != null || curTab == -1) showPrayer() } }
         else if (rc == 91 && res.firstOrNull() == android.content.pm.PackageManager.PERMISSION_GRANTED) { val cb = pendingVoice; pendingVoice = null; if (cb != null) startVoiceInApp(cb) }
         else if (rc == 91) { pendingVoice = null; Notice.show(this, "⚠ البحث الصوتي محتاج صلاحية الميكروفون", 3000L) }
     }
@@ -221,8 +269,14 @@ class TvActivity : Activity() {
     /** (v476) لانشر: زر Home وإحنا شغّالين = ارجع للرئيسية. Back عمره ما بيقفل اللانشر (بس بيرجّع للرئيسية). */
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent); setIntent(intent)
-        if (intent.hasCategory(Intent.CATEGORY_HOME)) { wake(); showHome() }
+        if (intent.hasCategory(Intent.CATEGORY_HOME)) { wake(); showHome() } else handleShow(intent)
     }
+    private fun handleShow(i: Intent?) {
+        val w = i?.getStringExtra("tv_show") ?: return
+        i.removeExtra("tv_show")
+        when (w) { "apps" -> showApps(); "home" -> showHome() }
+    }
+    private fun saverLimit(): Int { val m = Cfg.str("tv_saver_min", "3").toIntOrNull() ?: 3; return if (m <= 0) Int.MAX_VALUE else m * 60 }
     @Suppress("DEPRECATION", "OVERRIDE_DEPRECATION")
     override fun onBackPressed() {
         wake()
@@ -244,7 +298,7 @@ class TvActivity : Activity() {
         // 1) كبسولة البحث (بتتوسّع لما التركيز يدخلها، ومعاها 🎤 و📱)
         val sb = TvOwnLinear(this).apply {
             orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL
-            setPadding(ui.dp(16), ui.dp(2), ui.dp(8), ui.dp(2)); background = pillBg(0x24FFFFFF, 28)
+            setPadding(ui.dp(16), ui.dp(2), ui.dp(8), ui.dp(2)); background = pillBg(0x99000000.toInt(), 28, 0x33FFFFFF, 1)
         }
         searchBox = sb
         sb.addView(ui.text("🔍", 17f, fg))
@@ -252,7 +306,7 @@ class TvActivity : Activity() {
             setSingleLine(); textSize = 15f; setTextColor(fg); setHintTextColor(0xAAFFFFFF.toInt()); hint = "بحث"
             setBackgroundColor(Color.TRANSPARENT); setPadding(ui.dp(10), ui.dp(9), ui.dp(10), ui.dp(9))
             imeOptions = android.view.inputmethod.EditorInfo.IME_ACTION_SEARCH
-            setOnFocusChangeListener { _, f -> sb.background = if (f) pillBg(0x40FFFFFF, 28, Color.WHITE, 2) else pillBg(0x24FFFFFF, 28) }
+            setOnFocusChangeListener { _, f -> sb.background = if (f) pillBg(0xCC000000.toInt(), 28, Color.WHITE, 2) else pillBg(0x99000000.toInt(), 28, 0x33FFFFFF, 1) }
             addTextChangedListener(object : android.text.TextWatcher {
                 override fun beforeTextChanged(x: CharSequence?, a: Int, b: Int, c: Int) {}
                 override fun onTextChanged(x: CharSequence?, a: Int, b: Int, c: Int) {}
@@ -270,8 +324,10 @@ class TvActivity : Activity() {
         // 2) كبسولة التابات (الصفحة الحالية متظلّلة، والمتركّز أبيض)
         val tabsBox = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL
-            setPadding(ui.dp(5), ui.dp(5), ui.dp(5), ui.dp(5)); background = pillBg(0x24FFFFFF, 30)
+            setPadding(ui.dp(5), ui.dp(5), ui.dp(5), ui.dp(5)); background = pillBg(0x99000000.toInt(), 30, 0x33FFFFFF, 1)
         }
+        tabsBoxV = tabsBox
+        tabActions = emptyList()
         tabViews.clear()
         val defs = listOf<Pair<String, () -> Unit>>(
             "الصفحة الرئيسية" to { showHome() },
@@ -280,6 +336,7 @@ class TvActivity : Activity() {
             "المتصفح" to { openBrowser() },
             "الفيديوهات" to { openMain("videos") },
             "الملفات" to { guardPin { startActivity(Intent(this, FileManagerActivity::class.java)) } })
+        tabActions = defs.map { it.second }
         defs.forEachIndexed { i, d -> val t = tabBtn(d.first, i, d.second); tabViews.add(t); if (!compactUi) tabsBox.addView(t) }
         firstRail = tabViews[0]
         setTab(0)
@@ -288,15 +345,19 @@ class TvActivity : Activity() {
             val icons = listOf("🏠", "📱", "▶️", "🌐", "🎬", "📁")
             val rail = LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER_HORIZONTAL
-                setPadding(ui.dp(4), ui.dp(8), ui.dp(4), ui.dp(8)); background = pillBg(0x24FFFFFF, 24)
+                setPadding(ui.dp(4), ui.dp(8), ui.dp(4), ui.dp(8)); background = pillBg(0x99000000.toInt(), 24, 0x33FFFFFF, 1)
             }
             tabViews.forEachIndexed { i, t ->
                 (t.getChildAt(0) as? TextView)?.apply { text = icons[i]; textSize = 20f }
                 t.setPadding(ui.dp(8), ui.dp(8), ui.dp(8), ui.dp(8)); t.contentDescription = defs[i].first
-                t.setOnFocusChangeListener { v, f -> styleTab(v as TvOwnLinear, i, f); if (f) Notice.show(this@TvActivity, defs[i].first, 1100L) }
+                t.setOnFocusChangeListener { v, f -> styleTab(v as TvOwnLinear, i, f); if (f) { Notice.show(this@TvActivity, defs[i].first, 1100L); tabFocused(i) } }
                 t.layoutParams = LinearLayout.LayoutParams(-1, -2).apply { setMargins(0, ui.dp(2), 0, ui.dp(2)) }
                 rail.addView(t)
             }
+            // (v516) مواقيت الصلاة · Google Play (اختياري) · المظهر
+            rail.addView(roundBtn("🕌", "مواقيت الصلاة", 42) { showPrayer() })
+            if (playOn()) rail.addView(roundBtn("🛍", "Google Play", 42) { openPlay() })
+            rail.addView(roundBtn("🎨", "المظهر", 42) { showAppearance() })
             rail.addView(roundBtn("⚙️", "إعدادات البرنامج", 42) { guardPin { openMain("settings") } })
             rail.addView(roundBtn("⋮", "المزيد", 42) { moreMenu() })
             railBox = rail
@@ -304,18 +365,19 @@ class TvActivity : Activity() {
         // 3) كبسولة الأزرار الدائرية: إعدادات البرنامج · المزيد (الإعدادات/التطبيقات/المشغّل الافتراضي/إلغاء التثبيت…)
         val rb = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL
-            setPadding(ui.dp(4), ui.dp(4), ui.dp(4), ui.dp(4)); background = pillBg(0x24FFFFFF, 30)
+            setPadding(ui.dp(4), ui.dp(4), ui.dp(4), ui.dp(4)); background = pillBg(0x99000000.toInt(), 30, 0x33FFFFFF, 1)
         }
         rb.addView(roundBtn("⚙️", "إعدادات البرنامج", 42) { guardPin { openMain("settings") } })
         rb.addView(roundBtn("⋯", "المزيد", 42) { moreMenu() })
-        if (!compactUi) { bar.addView(rb); bar.addView(View(this), LinearLayout.LayoutParams(0, 1, 1f)) }
+        if (!compactUi) { bar.addView(View(this), LinearLayout.LayoutParams(0, 1, 1f)) }   // (v512) أزرار الإعدادات اتنقلت لصف فوق «🎛 تخصيص» في الرئيسية (كانت بتطلع بره الشاشة)
         // 4) الشعار | الساعة على الشمال زي «Google TV | 3:10»
         val tc = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_LTR }
         if (!compactUi) {
-            tc.addView(ui.text("Subtitler", 21f, fg, true))
+            tc.addView(ui.text("Subtitler", 21f, fg, true).apply { setShadowLayer(8f, 0f, 2f, Color.BLACK) })
             tc.addView(View(this).apply { setBackgroundColor(0x66FFFFFF) }, LinearLayout.LayoutParams(ui.dp(2), ui.dp(20)).apply { setMargins(ui.dp(12), 0, ui.dp(12), 0) })
         }
-        clockTv = ui.text("", 19f, fg, true)
+        tcV = tc
+        clockTv = ui.text("", 19f, fg, true).apply { setShadowLayer(8f, 0f, 2f, Color.BLACK) }
         tc.addView(clockTv)
         bar.addView(tc)
         return bar
@@ -345,7 +407,7 @@ class TvActivity : Activity() {
             gravity = Gravity.CENTER; isFocusable = true; isClickable = true
             setPadding(ui.dp(20), ui.dp(9), ui.dp(20), ui.dp(9))
             setOnClickListener { onClick() }
-            setOnFocusChangeListener { v, f -> styleTab(v as TvOwnLinear, idx, f) }
+            setOnFocusChangeListener { v, f -> styleTab(v as TvOwnLinear, idx, f); if (f) tabFocused(idx) }
         }
         b.addView(ui.text(label, 15f, fg, true).apply { gravity = Gravity.CENTER })
         b.layoutParams = LinearLayout.LayoutParams(-2, -2).apply { setMargins(ui.dp(2), 0, ui.dp(2), 0) }
@@ -353,8 +415,37 @@ class TvActivity : Activity() {
     }
     private fun styleTab(b: TvOwnLinear, idx: Int, f: Boolean) {
         val sel = idx == curTab
-        b.background = pillBg(if (f) Color.WHITE else if (sel) 0x38FFFFFF else Color.TRANSPARENT, 24)
+        b.background = pillBg(if (f) Color.WHITE else if (sel) 0x66FFFFFF else Color.TRANSPARENT, 24)
         (b.getChildAt(0) as? TextView)?.setTextColor(if (f) Color.BLACK else if (sel) fg else 0xCCFFFFFF.toInt())
+    }
+    /** (v512) التركيز على تاب «الرئيسية»/«تطبيقات» بيفتح صفحته فورًا (من غير OK) بتلاشي سريع؛ باقي التابات بتفتح أنشطة تانية فبتفضل بالدوسة */
+    private var tabPending = -1
+    private val tabGo = Runnable {
+        val i = tabPending; tabPending = -1
+        if (i < 0 || i == curTab || isDestroyed) return@Runnable
+        try {
+            content.animate().cancel(); content.alpha = 0f; content.translationY = ui.dp(10).toFloat()
+            if (i == 0) showHome(false) else if (i == 1) showApps(false)
+            content.animate().alpha(1f).translationY(0f).setDuration(Skins.dur(180L)).setInterpolator(DecelerateInterpolator()).start()
+        } catch (e: Throwable) { LogStore.err("TvHome:tabGo", e); content.alpha = 1f; content.translationY = 0f }
+    }
+    private val tabGoAct = Runnable {
+        val i = tabPending; tabPending = -1
+        if (i < 2 || isDestroyed || tabViews.getOrNull(i)?.isFocused != true) return@Runnable
+        val act = tabActions.getOrNull(i) ?: return@Runnable
+        tabAutoBlock = i
+        try {
+            content.animate().cancel()
+            content.animate().alpha(0.15f).scaleX(0.97f).scaleY(0.97f).setDuration(Skins.dur(140L)).setInterpolator(DecelerateInterpolator())
+                .withEndAction { try { act() } catch (e: Throwable) { LogStore.err("TvHome:tabAct", e) } }.start()
+        } catch (e: Throwable) { LogStore.err("TvHome:tabAct2", e); act() }
+    }
+    private fun tabFocused(i: Int) {
+        h.removeCallbacks(tabGo); h.removeCallbacks(tabGoAct); tabPending = -1
+        if (i != tabAutoBlock) tabAutoBlock = -1
+        if (i == curTab) return
+        if (i == 0 || i == 1) { tabPending = i; h.postDelayed(tabGo, 90L) }
+        else if (i != tabAutoBlock) { tabPending = i; h.postDelayed(tabGoAct, 380L) }   // يوتيوب/متصفح/فيديوهات/ملفات: تتفتح لوحدها بعد ما التركيز يستقر 380ms (عشان التنقل السريع ما يفتحش كل تاب)
     }
     private fun setTab(i: Int) { curTab = i; tabViews.forEachIndexed { k, v -> styleTab(v, k, v.isFocused) } }
 
@@ -364,12 +455,16 @@ class TvActivity : Activity() {
             "🎛 تخصيص الصفوف", "🔒 قفل TV", "🌡 دفء ليلي (شغّل/اقفل)", "🌙 نوم (شاشة سكون)", "🎵 الموسيقى", "📋 المهام",
             "🎮 اختصارات الريموت",
             "🖼 خلفية اللانشر",
-            "📐 حجم الواجهة")
+            "📐 حجم الواجهة",
+            "🎨 المظهر",
+            if (playOn()) "🛍 اختصار Google Play: شغّال (دوس يقفله)" else "🛍 اختصار Google Play: مقفول (دوس يشغّله)",
+            "📱 ريموت الموبايل (اقتران · تحديث)")
         GAlert(this).setTitle("⋯ المزيد").setItems(items) { _, i ->
             when (i) {
                 0 -> openSystemSettings(); 1 -> openSystemApps(); 2 -> setAsDefaultLauncher(); 3 -> uninstallSelf()
                 4 -> rowsDialog(); 5 -> pinMenu(); 6 -> toggleWarm(); 7 -> showSaver()
-                8 -> openMain("music"); 9 -> openMain("tasks"); 10 -> remoteShortcuts(); 11 -> wallDialog(); 12 -> scaleDialog()
+                8 -> openMain("music"); 9 -> openMain("tasks"); 10 -> remoteShortcuts(); 11 -> wallDialog(); 12 -> scaleDialog(); 13 -> showAppearance(); 14 -> { Cfg.put("tv_play", if (playOn()) "0" else "1"); recreate() }
+                15 -> TvLinkUi.show(this)
             }
         }.setNegativeButton("إغلاق", null).show()
     }
@@ -586,6 +681,7 @@ class TvActivity : Activity() {
     private fun isInside(v: View, anc: View): Boolean { var p: View? = v; while (p != null) { if (p === anc) return true; p = p.parent as? View }; return false }
 
     private fun onFocusMoved(nw: View) {
+        if (tabViews.none { it === nw }) { h.removeCallbacks(tabGoAct); tabAutoBlock = -1 }   // (v513) التركيز خرج من التابات
         updateSearchExpand(nw); alignScroll(nw)   // (v504) التوهّج بقى ثابت: مبقاش بيتغيّر مع التركيز
     }
 
@@ -596,7 +692,17 @@ class TvActivity : Activity() {
         searchExpanded = want
         searchExtras.forEach { it.visibility = if (want) View.VISIBLE else View.GONE }
         if (compactUi) return
-        val from = sb.layoutParams.width; val to = ui.dp(if (want) 430 else 170)
+        // (v512) العرض الموسّع بيتحسب من المتاح فعلًا في الشريط عشان كبسولة التابات والساعة ما يتزقّوش/يتمدّدوا
+        var maxW = ui.dp(430)
+        try {
+            val bar = sb.parent as? ViewGroup; val tb = tabsBoxV; val tcv = tcV
+            if (want && bar != null && tb != null && tcv != null && bar.width > 0) {
+                tcv.measure(View.MeasureSpec.UNSPECIFIED, View.MeasureSpec.UNSPECIFIED)
+                val free = bar.width - bar.paddingLeft - bar.paddingRight - tb.width - tcv.measuredWidth - ui.dp(14) * 3
+                maxW = free.coerceIn(ui.dp(170), ui.dp(430))
+            }
+        } catch (_: Throwable) { }
+        val from = sb.layoutParams.width; val to = if (want) maxW else ui.dp(170)
         ValueAnimator.ofInt(from, to).setDuration(Skins.dur(220L)).apply {
             interpolator = DecelerateInterpolator()
             addUpdateListener { a -> sb.layoutParams.width = a.animatedValue as Int; sb.requestLayout() }
@@ -750,7 +856,7 @@ class TvActivity : Activity() {
 
     /** (v492 م2) كارت فيديو 16:9 كبير على نمط Google TV: الصورة واخدة الكارت كله، والعنوان بيظهر تحت الكارت المتركّز بس */
     private fun vTile(thumb: (ImageView) -> Unit, title: String, sub: String, pct: Int = -1, fav: Boolean = false,
-                      onClick: () -> Unit, onLong: (() -> Unit)? = null): View {
+                      onClick: () -> Unit, onLong: (() -> Unit)? = null, folder: Boolean = false): View {
         val wDp = 236; val hDp = 133
         val t = TvTileView(this, 14)
         val iv = ImageView(this).apply { scaleType = ImageView.ScaleType.CENTER_CROP; setBackgroundColor(th.border) }
@@ -766,16 +872,26 @@ class TvActivity : Activity() {
         t.setOnClickListener { onClick() }
         if (onLong != null) t.setOnLongClickListener { onLong(); true }
         t.contentDescription = title
+        // (v511) الاسم تحت الكارت دايمًا (كل الكروت). الفولدر: الاسم في نص الكارت دايمًا بخط كبير وتظليل على قد الاسم.
+        // الفيديو: الاسم تحته دايمًا + نفس الاسم في نص الكارت المتركّز بس (بيختفي من اللي ماتركّزش).
         val cap = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; visibility = View.INVISIBLE
+            orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL
             setPadding(ui.dp(10), ui.dp(9), ui.dp(10), 0)
         }
-        cap.addView(ui.text(title, 13f, Color.WHITE, true).apply { maxLines = 2 })
-        if (sub.isNotBlank()) cap.addView(ui.text(sub, 11f, th.muted).apply { maxLines = 1 })
-        t.onFocus = { f -> cap.visibility = if (f) View.VISIBLE else View.INVISIBLE }
+        if (!folder) cap.addView(ui.text(title, 13f, Color.WHITE, true).apply { maxLines = 2 })
+        if (sub.isNotBlank()) cap.addView(ui.text(sub, 11f, if (folder) Color.WHITE else th.muted).apply { maxLines = 1 })
+        val mid = ui.text(if (folder) title.removePrefix("📁 ") else title, if (folder) 21f else 17f, Color.WHITE, true).apply {
+            maxLines = if (folder) 3 else 2; gravity = Gravity.CENTER; ellipsize = android.text.TextUtils.TruncateAt.END
+            maxWidth = ui.dp(wDp - 30)
+            setPadding(ui.dp(12), ui.dp(5), ui.dp(12), ui.dp(5))
+            background = GradientDrawable().apply { setColor(0xCC000000.toInt()); cornerRadius = ui.dp(10).toFloat() }
+            visibility = View.VISIBLE
+        }
+        t.inner.addView(mid, FrameLayout.LayoutParams(-2, -2, Gravity.CENTER))
+        if (!folder) t.onFocus = { f -> mid.visibility = if (f) View.INVISIBLE else View.VISIBLE }   // (v512) الاسم في النص على كل الفيديوهات ما عدا المتركّز
         val w = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; clipChildren = false; clipToPadding = false }
         w.addView(t, LinearLayout.LayoutParams(ui.dp(wDp + 10), ui.dp(hDp + 10)))
-        w.addView(cap, LinearLayout.LayoutParams(ui.dp(wDp + 10), ui.dp(58)))
+        w.addView(cap, LinearLayout.LayoutParams(ui.dp(wDp + 10), ui.dp(68)))
         w.layoutParams = LinearLayout.LayoutParams(-2, -2).apply { setMargins(ui.dp(10), ui.dp(6), ui.dp(10), ui.dp(2)) }
         return w
     }
@@ -935,52 +1051,407 @@ class TvActivity : Activity() {
         Cfg.put("tv_app_use", m.entries.joinToString("\n") { it.key + "=" + it.value })
     }
 
-    /** (v496) أيقونة التطبيق مقصوصة دايرة كاملة (الخلفية والأمامية بتملا الدايرة) زي Google TV */
-    private fun circleIcon(d: android.graphics.drawable.Drawable?, px: Int): android.graphics.Bitmap? {
+    // ===== (v516) شريط التطبيقات على نمط دوك TVMorph =====
+    // دواير الأيقونة فيها واخدة الدايرة كلها · المتركّز بيطلع لفوق ويكبر وبيتوهّج من ورا واسمه بيظهر · انتقال ناعم بين التطبيقات
+    private fun iconDp(): Int = (Cfg.str("tv_icon_px", "86").toIntOrNull() ?: 86).coerceIn(56, 140)
+    private fun squircle(): Boolean = Cfg.str("tv_icon_shape", "circle") == "squircle"
+    private fun liftLevel(): Int = (Cfg.str("tv_lift", "2").toIntOrNull() ?: 2).coerceIn(0, 3)
+    private fun namesMode(): String = Cfg.str("tv_names", "focus")
+    private fun playOn(): Boolean = Cfg.str("tv_play", "1") != "0"
+
+    private fun shapePath(px: Int): android.graphics.Path = android.graphics.Path().apply {
+        if (squircle()) addRoundRect(0f, 0f, px.toFloat(), px.toFloat(), px * 0.26f, px * 0.26f, android.graphics.Path.Direction.CW)
+        else addCircle(px / 2f, px / 2f, px / 2f, android.graphics.Path.Direction.CW)
+    }
+
+    /** متوسط ألوان البكسلات الظاهرة في الأيقونة (من غير تغميق) — بيملا الفراغ حوالين الأيقونة اللي مش بتملا الدايرة */
+    private fun rawAvg(d: Drawable): Int = try {
+        val b = Bitmap.createBitmap(8, 8, Bitmap.Config.ARGB_8888)
+        d.setBounds(0, 0, 8, 8); d.draw(Canvas(b))
+        var r = 0L; var g = 0L; var bl = 0L; var n = 0L
+        for (x in 0 until 8) for (y in 0 until 8) {
+            val p = b.getPixel(x, y)
+            if ((p ushr 24) > 40) { r += (p shr 16) and 255; g += (p shr 8) and 255; bl += p and 255; n++ }
+        }
+        b.recycle()
+        if (n == 0L) th.surface else Color.rgb((r / n).toInt(), (g / n).toInt(), (bl / n).toInt())
+    } catch (_: Throwable) { th.surface }
+
+    /** (v516) أيقونة التطبيق مقصوصة بالشكل المختار (دايرة/مربع مدوّر) والصورة واخدة الشكل كله — الأيقونات العادية بتتكبّر لحد ما تملا مش بتفضل مربع صغير جوه الدايرة */
+    private fun circleIcon(d: Drawable?, px: Int): Bitmap? {
         if (d == null) return null
         return try {
-            val bmp = android.graphics.Bitmap.createBitmap(px, px, android.graphics.Bitmap.Config.ARGB_8888)
-            val cv = android.graphics.Canvas(bmp)
-            cv.clipPath(android.graphics.Path().apply { addCircle(px / 2f, px / 2f, px / 2f, android.graphics.Path.Direction.CW) })
-            if (d is android.graphics.drawable.AdaptiveIconDrawable) {
+            val src: Drawable = d.constantState?.newDrawable()?.mutate() ?: d
+            val bmp = Bitmap.createBitmap(px, px, Bitmap.Config.ARGB_8888)
+            val cv = Canvas(bmp)
+            cv.clipPath(shapePath(px))
+            if (src is android.graphics.drawable.AdaptiveIconDrawable) {
                 val o = (px * 0.25f).toInt()
-                d.background?.let { it.setBounds(-o, -o, px + o, px + o); it.draw(cv) }
-                d.foreground?.let { it.setBounds(-o, -o, px + o, px + o); it.draw(cv) }
+                src.background?.let { it.setBounds(-o, -o, px + o, px + o); it.draw(cv) }
+                src.foreground?.let { it.setBounds(-o, -o, px + o, px + o); it.draw(cv) }
             } else {
-                cv.drawColor(avgColor(d))
-                val i = (px * 0.1f).toInt(); d.setBounds(i, i, px - i, px - i); d.draw(cv)
+                cv.drawColor(rawAvg(src))
+                val iw = if (src.intrinsicWidth > 0) src.intrinsicWidth else px
+                val ih = if (src.intrinsicHeight > 0) src.intrinsicHeight else px
+                val sc = maxOf(px.toFloat() / iw, px.toFloat() / ih) * 1.06f
+                val w = (iw * sc).toInt(); val hh = (ih * sc).toInt()
+                val l = (px - w) / 2; val t = (px - hh) / 2
+                src.setBounds(l, t, l + w, t + hh); src.draw(cv)
             }
             bmp
         } catch (_: Throwable) { null }
     }
 
-    /** دايرة تطبيق على نمط Google TV: أيقونة بملء الدايرة + الاسم تحتها دايمًا؛ المتركّز بيكبر وبيتحاط بحلقة بيضاء بينها وبين الأيقونة فراغ */
-    private fun appCircle(ri: android.content.pm.ResolveInfo): View {
-        val pm = packageManager; val pkg = ri.activityInfo.packageName
-        val px = ui.dp(86)
-        val bmp = circleIcon(try { ri.loadIcon(pm) } catch (_: Throwable) { null }, px)
+    /** أيقونة حرف على لون (للتطبيقات المقترحة اللي لسه مش متثبتة) */
+    private fun letterIcon(label: String, color: Int, px: Int): Bitmap {
+        val bmp = Bitmap.createBitmap(px, px, Bitmap.Config.ARGB_8888)
+        val cv = Canvas(bmp)
+        cv.clipPath(shapePath(px)); cv.drawColor(color)
+        val p = Paint(Paint.ANTI_ALIAS_FLAG).apply { this.color = Color.WHITE; textSize = px * 0.5f; typeface = Typeface.DEFAULT_BOLD; textAlign = Paint.Align.CENTER }
+        cv.drawText(label.trim().take(1).uppercase(), px / 2f, px / 2f - (p.descent() + p.ascent()) / 2f, p)
+        return bmp
+    }
+
+    /** عنصر دوك: أيقونة + اسم. المتركّز: بيكبر ويطلع لفوق، وهالة لون الأيقونة بتتوهّج من وراه، وحلقة بيضاء، واسمه بيظهر */
+    private fun dockItem(bmp: Bitmap?, label: String, glow: Int?, onClick: () -> Unit, onLong: (() -> Unit)? = null): View {
+        val px = ui.dp(iconDp())
+        val gColor = glow ?: th.primary
+        val sq = squircle()
+        fun ring(f: Boolean) = GradientDrawable().apply {
+            shape = if (sq) GradientDrawable.RECTANGLE else GradientDrawable.OVAL
+            if (sq) cornerRadius = (px + ui.dp(10)) * 0.26f
+            setColor(Color.TRANSPARENT); setStroke(ui.dp(3), if (f) Color.WHITE else Color.TRANSPARENT)
+        }
+        val halo = View(this).apply {
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.OVAL; gradientType = GradientDrawable.RADIAL_GRADIENT; gradientRadius = px * 0.5f
+                colors = intArrayOf((gColor and 0x00FFFFFF) or 0xE0000000.toInt(), gColor and 0x00FFFFFF)
+            }
+            alpha = 0f; isFocusable = false; isClickable = false
+        }
         val iv = ImageView(this).apply { scaleType = ImageView.ScaleType.FIT_XY; if (bmp != null) setImageBitmap(bmp) }
-        fun ring(f: Boolean) = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(Color.TRANSPARENT); setStroke(ui.dp(3), if (f) Color.WHITE else Color.TRANSPARENT) }
-        val frame = FrameLayout(this).apply { setPadding(ui.dp(5), ui.dp(5), ui.dp(5), ui.dp(5)); background = ring(false) }
-        frame.addView(iv, FrameLayout.LayoutParams(px, px))
-        val name = ui.text(ri.loadLabel(pm).toString(), 12.5f, 0xFFB8BDC9.toInt(), true).apply { maxLines = 1; gravity = Gravity.CENTER; setPadding(0, ui.dp(8), 0, 0) }
+        val frame = FrameLayout(this).apply { clipChildren = false; clipToPadding = false; setPadding(ui.dp(5), ui.dp(5), ui.dp(5), ui.dp(5)); background = ring(false) }
+        frame.addView(halo, FrameLayout.LayoutParams(px, px, Gravity.CENTER))
+        frame.addView(iv, FrameLayout.LayoutParams(px, px, Gravity.CENTER))
+        val mode = namesMode()
+        val name = ui.text(label, 13f, Color.WHITE, true).apply {
+            maxLines = 1; gravity = Gravity.CENTER; ellipsize = android.text.TextUtils.TruncateAt.END; setPadding(0, ui.dp(10), 0, 0)
+            alpha = if (mode == "always") 0.7f else 0f; setShadowLayer(8f, 0f, 2f, Color.BLACK)
+            if (mode == "off") visibility = View.INVISIBLE
+        }
+        val lv = liftLevel()
+        val big = when (lv) { 0 -> 1f; 1 -> 1.15f; 2 -> 1.3f; else -> 1.45f }
+        val up = if (lv == 0) 0f else ui.dp(6 + lv * 4).toFloat()
+        val haloOn = Cfg.str("tv_halo", "1") != "0"
         val c = TvOwnLinear(this).apply {
             orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER_HORIZONTAL; isFocusable = true; isClickable = true
             clipChildren = false; clipToPadding = false
-            setOnClickListener { launchApp(pkg) }
-            setOnLongClickListener { openAppInfo(pkg); true }
+            setOnClickListener { onClick() }
+            if (onLong != null) setOnLongClickListener { onLong(); true }
+            contentDescription = label
             setOnFocusChangeListener { v, f ->
                 frame.background = ring(f)
-                name.setTextColor(if (f) Color.WHITE else 0xFFB8BDC9.toInt())
-                v.animate().scaleX(if (f) 1.2f else 1f).scaleY(if (f) 1.2f else 1f).translationZ(if (f) ui.dp(10).toFloat() else 0f)
-                    .setDuration(Skins.dur(170L)).setInterpolator(DecelerateInterpolator()).start()
+                val d = Skins.dur(230L)
+                frame.animate().scaleX(if (f) big else 1f).scaleY(if (f) big else 1f).translationY(if (f) -up else 0f).setDuration(d)
+                    .setInterpolator(if (f) android.view.animation.OvershootInterpolator(1.1f) else DecelerateInterpolator()).start()
+                halo.animate().alpha(if (f && haloOn) 1f else 0f).scaleX(if (f) 2.1f else 1f).scaleY(if (f) 2.1f else 1f).setDuration(d + 60L).start()
+                if (mode != "off") name.animate().alpha(if (f) 1f else if (mode == "always") 0.7f else 0f).translationY(if (f) -up * 0.4f else 0f).setDuration(d).start()
+                v.animate().translationZ(if (f) ui.dp(10).toFloat() else 0f).setDuration(d).start()
             }
         }
         c.addView(frame, LinearLayout.LayoutParams(-2, -2))
-        c.addView(name, LinearLayout.LayoutParams(ui.dp(116), -2))
-        if (bmp != null) try { bmpGlow(android.graphics.Bitmap.createBitmap(bmp, px / 4, px / 4, px / 2, px / 2))?.let { glowMap[c] = it } } catch (_: Throwable) { }
-        c.layoutParams = LinearLayout.LayoutParams(ui.dp(120), -2).apply { setMargins(ui.dp(10), ui.dp(16), ui.dp(10), ui.dp(16)) }
+        c.addView(name, LinearLayout.LayoutParams(px + ui.dp(34), -2))
+        c.layoutParams = LinearLayout.LayoutParams(px + ui.dp(40), -2).apply { setMargins(ui.dp(8), ui.dp(30), ui.dp(8), ui.dp(18)) }
         return c
+    }
+
+    private fun appCircle(ri: android.content.pm.ResolveInfo): View {
+        val pm = packageManager; val pkg = ri.activityInfo.packageName
+        val px = ui.dp(iconDp())
+        val bmp = circleIcon(try { ri.loadIcon(pm) } catch (_: Throwable) { null }, px)
+        var glow: Int? = null
+        if (bmp != null) { try { glow = bmpGlow(Bitmap.createBitmap(bmp, px / 4, px / 4, px / 2, px / 2)) } catch (_: Throwable) { } }
+        return dockItem(bmp, ri.loadLabel(pm).toString(), glow, { launchApp(pkg) }, { openAppInfo(pkg) })
+    }
+
+    // ===== (v516) تطبيقات قد تحتاجها (على حسب اللي عندك) + اختصار Google Play =====
+    private class Sug(val pkg: String, val label: String, val cat: String, val color: Int)
+    private val SUGS = listOf(
+        Sug("com.netflix.ninja", "Netflix", "video", 0xFFE50914.toInt()),
+        Sug("com.google.android.youtube.tv", "YouTube", "video", 0xFFFF0000.toInt()),
+        Sug("com.amazon.amazonvideo.livingroom", "Prime Video", "video", 0xFF00A8E1.toInt()),
+        Sug("com.disney.disneyplus", "Disney+", "video", 0xFF113CCF.toInt()),
+        Sug("com.plexapp.android", "Plex", "video", 0xFFE5A00D.toInt()),
+        Sug("tv.twitch.android.app", "Twitch", "video", 0xFF9146FF.toInt()),
+        Sug("org.videolan.vlc", "VLC", "video", 0xFFFF8800.toInt()),
+        Sug("com.mxtech.videoplayer.ad", "MX Player", "video", 0xFF2D7FF9.toInt()),
+        Sug("org.xbmc.kodi", "Kodi", "video", 0xFF17B2E7.toInt()),
+        Sug("com.spotify.tv.android", "Spotify", "music", 0xFF1DB954.toInt()),
+        Sug("com.soundcloud.android", "SoundCloud", "music", 0xFFFF5500.toInt()),
+        Sug("com.anghami", "Anghami", "music", 0xFF8B3FFF.toInt()),
+        Sug("com.google.android.apps.youtube.music", "YouTube Music", "music", 0xFFFF0033.toInt()),
+        Sug("com.kiloo.subwaysurf", "Subway Surfers", "game", 0xFF2AA7E8.toInt()),
+        Sug("com.king.candycrushsaga", "Candy Crush", "game", 0xFFE0489B.toInt()),
+        Sug("com.supercell.clashofclans", "Clash of Clans", "game", 0xFFD9A400.toInt()),
+        Sug("com.google.android.play.games", "Play Games", "game", 0xFF01875F.toInt()),
+        Sug("com.google.android.apps.nbu.files", "Files", "tools", 0xFF1A73E8.toInt()),
+        Sug("com.yablio.sendfilestotv", "Send Files to TV", "tools", 0xFF3F51B5.toInt()),
+        Sug("com.anydesk.anydeskandroid", "AnyDesk", "tools", 0xFFEF443B.toInt()),
+        Sug("org.zwanoo.android.speedtest", "Speedtest", "tools", 0xFF1B1F3B.toInt()),
+        Sug("com.android.chrome", "Chrome", "browser", 0xFF4285F4.toInt()),
+        Sug("org.mozilla.firefox", "Firefox", "browser", 0xFFFF7139.toInt()),
+        Sug("com.cloudmosa.puffinTV", "Puffin TV", "browser", 0xFF2F80ED.toInt()),
+        Sug("com.quran.labs.androidquran", "Quran Android", "quran", 0xFF2E7D6B.toInt()),
+        Sug("com.onefootball.android", "OneFootball", "sports", 0xFF0A1E3C.toInt()),
+        Sug("com.google.android.apps.photos", "Google Photos", "photo", 0xFFEA4335.toInt())
+    )
+    private fun catOf(c: Int): String? = when (c) { 0 -> "game"; 1 -> "music"; 2 -> "video"; 3 -> "photo"; 5 -> "news"; 7 -> "tools"; else -> null }   // ApplicationInfo.CATEGORY_*
+
+    private fun playItem(): View {
+        val px = ui.dp(iconDp())
+        val bmp = try { circleIcon(packageManager.getApplicationIcon("com.android.vending"), px) } catch (_: Throwable) { null } ?: letterIcon("▶", 0xFF01875F.toInt(), px)
+        return dockItem(bmp, "Google Play", 0xFF01875F.toInt(), { openPlay() })
+    }
+    private fun sugItem(s: Sug): View = dockItem(letterIcon(s.label, s.color, ui.dp(iconDp())), s.label, s.color, { openPlayFor(s.pkg) })
+
+    /** التطبيقات اللي عندك بتحدد النوع (فيديو/موسيقى/ألعاب/أدوات…) والمقترح من نفس الأنواع الأكتر عندك، من غير اللي مثبّته أصلًا */
+    private fun suggestRow(): List<View> {
+        val installed = try { allLaunchApps() } catch (_: Throwable) { emptyList() }
+        val have = installed.map { it.activityInfo.packageName }.toSet()
+        val score = HashMap<String, Int>()
+        for (ri in installed) {
+            val pkg = ri.activityInfo.packageName
+            val cat = SUGS.firstOrNull { it.pkg == pkg }?.cat ?: try { catOf(ri.activityInfo.applicationInfo.category) } catch (_: Throwable) { null }
+            if (cat != null) score[cat] = (score[cat] ?: 0) + 1
+        }
+        val out = ArrayList<View>()
+        if (playOn()) out.add(playItem())
+        SUGS.filter { it.pkg !in have }
+            .sortedWith(compareByDescending<Sug> { score[it.cat] ?: 0 }.thenBy { SUGS.indexOf(it) })
+            .take(12).forEach { out.add(sugItem(it)) }
+        return out
+    }
+
+    private fun openPlay() {
+        if (packageManager.getLaunchIntentForPackage("com.android.vending") == null) { Notice.show(this, "⚠ Google Play مش متثبّت على الجهاز ده", 2200L); return }
+        launchApp("com.android.vending")
+    }
+    private fun openPlayFor(pkg: String) {
+        try { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("market://details?id=$pkg")).setPackage("com.android.vending").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
+        catch (_: Throwable) {
+            try { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://play.google.com/store/apps/details?id=$pkg")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
+            catch (e: Throwable) { LogStore.err("TvHome:play", e); Notice.show(this, "⚠ ما قدرتش أفتح المتجر", 2000L) }
+        }
+    }
+
+    // ===== (v516) مواقيت الصلاة (بالموقع) =====
+    private var prayerCd: TextView? = null
+    private var prayerNextAt = 0L
+    private val PRAY_NAMES = listOf("Fajr" to "الفجر", "Sunrise" to "الشروق", "Dhuhr" to "الظهر", "Asr" to "العصر", "Maghrib" to "المغرب", "Isha" to "العشاء")
+    private val PRAY_METHODS = listOf("5" to "الهيئة المصرية العامة للمساحة", "4" to "أم القرى (مكة)", "3" to "رابطة العالم الإسلامي", "2" to "أمريكا الشمالية (ISNA)",
+        "1" to "جامعة العلوم الإسلامية بكراتشي", "8" to "منطقة الخليج", "9" to "الكويت", "10" to "قطر", "13" to "تركيا (ديانت)", "12" to "اتحاد المنظمات الإسلامية بفرنسا")
+    private class PrayerRes(val city: String, val times: Map<String, String>)
+
+    private fun fmt12(t: String): String {
+        val hm = t.split(":"); val h24 = hm.getOrNull(0)?.toIntOrNull() ?: return t; val m = hm.getOrNull(1) ?: "00"
+        return (if (h24 % 12 == 0) 12 else h24 % 12).toString() + ":" + m + (if (h24 < 12) " ص" else " م")
+    }
+    private fun timeToday(t: String): Long {
+        val hm = t.split(":")
+        return java.util.Calendar.getInstance().apply {
+            set(java.util.Calendar.HOUR_OF_DAY, hm[0].toInt()); set(java.util.Calendar.MINUTE, hm[1].toInt()); set(java.util.Calendar.SECOND, 0); set(java.util.Calendar.MILLISECOND, 0)
+        }.timeInMillis
+    }
+
+    private fun askLocPermOnce() {
+        try {
+            if (checkSelfPermission(android.Manifest.permission.ACCESS_COARSE_LOCATION) == android.content.pm.PackageManager.PERMISSION_GRANTED) return
+            if (Cfg.str("tv_loc_asked", "0") == "1") return
+            Cfg.put("tv_loc_asked", "1")
+            requestPermissions(arrayOf(android.Manifest.permission.ACCESS_COARSE_LOCATION), 92)
+        } catch (e: Throwable) { LogStore.err("TvHome:locperm", e) }
+    }
+
+    @Suppress("MissingPermission")
+    private fun deviceLoc(): Pair<Double, Double>? = try {
+        if (checkSelfPermission(android.Manifest.permission.ACCESS_COARSE_LOCATION) != android.content.pm.PackageManager.PERMISSION_GRANTED) null
+        else {
+            val lm = getSystemService(android.content.Context.LOCATION_SERVICE) as android.location.LocationManager
+            val l = lm.getProviders(true).mapNotNull { try { lm.getLastKnownLocation(it) } catch (_: Throwable) { null } }.maxByOrNull { it.time }
+            if (l != null) l.latitude to l.longitude else null
+        }
+    } catch (_: Throwable) { null }
+
+    private fun httpText(u: String): String { val c = java.net.URL(u).openConnection() as java.net.HttpURLConnection; c.connectTimeout = 8000; c.readTimeout = 8000; return try { c.inputStream.bufferedReader().use { it.readText() } } finally { try { c.disconnect() } catch (_: Throwable) { } } }
+
+    /** الموقع: موقع الجهاز لو الإذن متاح، وإلا تقريبي من الـIP (بيتخزّن 24 ساعة). النتيجة: (lat, lon, اسم المكان) */
+    private fun resolveLoc(force: Boolean): Triple<Double, Double, String> {
+        val p = Cfg.str("tv_loc", "").split("|")
+        val ts = p.getOrNull(3)?.toLongOrNull() ?: 0L
+        if (!force && p.size >= 4 && System.currentTimeMillis() - ts < 24L * 3600_000L) return Triple(p[0].toDouble(), p[1].toDouble(), p[2])
+        var lat: Double; var lon: Double; var city = ""
+        val dl = deviceLoc()
+        if (dl != null) { lat = dl.first; lon = dl.second; city = "حسب موقع الجهاز" }
+        else {
+            val j = org.json.JSONObject(httpText("https://ipwho.is/"))
+            lat = j.getDouble("latitude"); lon = j.getDouble("longitude")
+            city = listOf(j.optString("city", ""), j.optString("country", "")).filter { it.isNotBlank() }.joinToString("، ")
+        }
+        Cfg.put("tv_loc", "$lat|$lon|$city|${System.currentTimeMillis()}")
+        return Triple(lat, lon, city)
+    }
+
+    private fun loadPrayer(force: Boolean, cb: (PrayerRes?) -> Unit) {
+        Thread {
+            val res = try {
+                val (lat, lon, city) = resolveLoc(force)
+                val day = SimpleDateFormat("dd-MM-yyyy", Locale.US).format(Date())
+                val key = day + "|" + prayerMethod() + "|" + String.format(Locale.US, "%.2f,%.2f", lat, lon)
+                val cached = Cfg.str("tv_pray", "").split("\n")
+                val times: Map<String, String> = if (!force && cached.size >= 2 && cached[0] == key) {
+                    cached[1].split(";").mapNotNull { val kv = it.split("="); if (kv.size == 2) kv[0] to kv[1] else null }.toMap()
+                } else {
+                    val j = org.json.JSONObject(httpText("https://api.aladhan.com/v1/timings/$day?latitude=$lat&longitude=$lon&method=${prayerMethod()}"))
+                    val t = j.getJSONObject("data").getJSONObject("timings")
+                    val m = PRAY_NAMES.associate { it.first to t.getString(it.first).take(5) }
+                    Cfg.put("tv_pray", key + "\n" + m.entries.joinToString(";") { it.key + "=" + it.value })
+                    m
+                }
+                if (times.size < 5) null else PrayerRes(city, times)
+            } catch (e: Throwable) { LogStore.err("TvHome:prayer", e); null }
+            runOnUiThread { if (!isDestroyed) cb(res) }
+        }.apply { isDaemon = true }.start()
+    }
+    private fun prayerMethod(): String = Cfg.str("tv_pray_method", "5")
+
+    private fun showPrayer(force: Boolean = false) {
+        h.removeCallbacks(searchRun)
+        muteSearch = true; searchEt?.setText(""); muteSearch = false; inSearch = false
+        storageKind = null; openFolder = null; foldersHost = null; setTab(-1)
+        content.removeAllViews(); prayerCd = null; prayerNextAt = 0L
+        content.addView(sectionTitle("🕌 مواقيت الصلاة"))
+        val body = host(); content.addView(body)
+        body.addView(ui.text("⏳ بجيب مكانك ومواقيت الصلاة…", 15f, th.muted).apply { setPadding(ui.dp(10), ui.dp(12), ui.dp(10), ui.dp(6)) })
+        askLocPermOnce()
+        loadPrayer(force) { res -> if (body.parent != null) renderPrayer(body, res) }
+    }
+
+    private fun renderPrayer(body: LinearLayout, res: PrayerRes?) {
+        body.removeAllViews()
+        val actions = LinearLayout(this).apply { gravity = Gravity.CENTER; layoutDirection = View.LAYOUT_DIRECTION_RTL; setPadding(0, ui.dp(10), 0, ui.dp(20)) }
+        actions.addView(pill("🔄 حدّث الموقع") { showPrayer(true) })
+        actions.addView(pill("📐 طريقة الحساب") { prayerMethodDialog() })
+        actions.addView(pill("→ الرئيسية") { showHome() })
+        if (res == null) {
+            body.addView(ui.text("⚠ ما قدرتش أجيب المواقيت — اتأكد من النت وجرّب تاني", 15f, th.muted).apply { setPadding(ui.dp(10), ui.dp(12), ui.dp(10), ui.dp(6)) })
+            body.addView(actions); try { actions.getChildAt(0).requestFocus() } catch (_: Throwable) { }
+            return
+        }
+        val now = System.currentTimeMillis()
+        val order = listOf("Fajr", "Dhuhr", "Asr", "Maghrib", "Isha")
+        val nextOrNull: String? = order.firstOrNull { timeToday(res.times[it] ?: "00:00") > now }
+        val nextKey: String = nextOrNull ?: "Fajr"
+        val nextAt = if (nextOrNull != null) timeToday(res.times[nextKey] ?: "00:00") else timeToday(res.times["Fajr"] ?: "00:00") + 24L * 3600_000L
+        prayerNextAt = nextAt
+        val nextAr = PRAY_NAMES.first { it.first == nextKey }.second
+        val big = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER; layoutDirection = View.LAYOUT_DIRECTION_RTL
+            setPadding(ui.dp(30), ui.dp(22), ui.dp(30), ui.dp(22)); background = ui.box(0x99000000.toInt(), 0x33FFFFFF, 24)
+        }
+        big.addView(ui.text("الصلاة الجاية: $nextAr", 22f, Color.WHITE, true).apply { gravity = Gravity.CENTER })
+        big.addView(ui.text(fmt12(res.times[nextKey] ?: ""), 40f, th.primary, true).apply { gravity = Gravity.CENTER; setPadding(0, ui.dp(4), 0, ui.dp(2)) })
+        val cd = ui.text("--:--:--", 26f, Color.WHITE, true).apply { gravity = Gravity.CENTER; layoutDirection = View.LAYOUT_DIRECTION_LTR; textDirection = View.TEXT_DIRECTION_LTR }
+        big.addView(cd); prayerCd = cd
+        big.addView(ui.text("📍 " + res.city, 13f, 0xFFB8BDC9.toInt()).apply { gravity = Gravity.CENTER; setPadding(0, ui.dp(8), 0, 0) })
+        body.addView(big, LinearLayout.LayoutParams(-1, -2).apply { setMargins(ui.dp(8), ui.dp(8), ui.dp(8), ui.dp(8)) })
+        val cards = PRAY_NAMES.map { (k, ar) ->
+            val isNext = k == nextKey
+            card(138, 104, { c ->
+                c.gravity = Gravity.CENTER
+                c.addView(ui.text(ar, 16f, if (isNext) th.primary else th.text, true).apply { gravity = Gravity.CENTER })
+                c.addView(ui.text(fmt12(res.times[k] ?: ""), 20f, th.text, true).apply { gravity = Gravity.CENTER; setPadding(0, ui.dp(4), 0, 0) })
+                if (isNext) c.addView(ui.text("◀ الجاية", 11f, th.primary).apply { gravity = Gravity.CENTER })
+            }, { })
+        }
+        body.addView(hrow(cards))
+        body.addView(actions)
+        cards.getOrNull(PRAY_NAMES.indexOfFirst { it.first == nextKey }.coerceAtLeast(0))?.let { c -> c.post { try { c.requestFocus() } catch (_: Throwable) { } } }
+    }
+
+    private fun prayerTick() {
+        val cd = prayerCd ?: return
+        if (!cd.isAttachedToWindow || prayerNextAt <= 0L) return
+        val left = (prayerNextAt - System.currentTimeMillis()) / 1000
+        if (left <= 0L) { prayerNextAt = 0L; showPrayer(); return }
+        cd.text = String.format(Locale.US, "%02d:%02d:%02d", left / 3600, (left % 3600) / 60, left % 60)
+    }
+
+    private fun prayerMethodDialog() {
+        val cur = prayerMethod()
+        GAlert(this).setTitle("📐 طريقة حساب المواقيت")
+            .setItems(PRAY_METHODS.map { (if (it.first == cur) "✔ " else "") + it.second }.toTypedArray()) { _, i -> Cfg.put("tv_pray_method", PRAY_METHODS[i].first); showPrayer(true) }
+            .setNegativeButton("إغلاق", null).show()
+    }
+
+    // ===== (v516) المظهر: كل إعدادات شكل اللانشر في صفحة واحدة =====
+    private fun applyScrim() { if (::wallScrim.isInitialized) wallScrim.setBackgroundColor(TvWall.scrimColor()) }
+
+    private fun showAppearance(focusIdx: Int = 0) {
+        h.removeCallbacks(searchRun)
+        muteSearch = true; searchEt?.setText(""); muteSearch = false; inSearch = false
+        storageKind = null; openFolder = null; foldersHost = null; setTab(-1); prayerCd = null
+        content.removeAllViews()
+        content.addView(sectionTitle("🎨 المظهر"))
+        class Opt(val title: String, val value: () -> String, val act: () -> Unit)
+        fun cyc(key: String, def: String, vals: List<String>): () -> Unit = { val i = vals.indexOf(Cfg.str(key, def)); Cfg.put(key, vals[(i + 1).mod(vals.size)]) }
+        fun tog(key: String, def: String): () -> Unit = { Cfg.put(key, if (Cfg.str(key, def) == "0") "1" else "0") }
+        fun onOff(key: String, def: String) = if (Cfg.str(key, def) == "0") "مقفول" else "شغّال"
+        val iconSizes = listOf("64", "76", "86", "100", "116", "132")
+        val liftNames = listOf("بدون", "خفيف", "متوسط", "عالي")
+        val saverNames = mapOf("1" to "دقيقة", "3" to "3 دقايق", "5" to "5 دقايق", "10" to "10 دقايق", "0" to "أبدًا")
+        val opts = listOf(
+            Opt("🎨 السمة (الألوان)", { th.name }, { themeDialog() }),
+            Opt("🖼 خلفية اللانشر", { when (Cfg.str("tv_wall", "builtin")) { "off" -> "بدون"; "picsum" -> "صور منوّعة"; "bing" -> "صورة Bing اليومية"; else -> BUILTIN_WALLS[Cfg.int("tv_wall_idx", 0).coerceIn(0, BUILTIN_WALLS.size - 1)].second } }, { wallDialog() }),
+            Opt("🌑 تعتيم الخلفية", { (Cfg.str("tv_scrim", "50")) + "%" }, { cyc("tv_scrim", "50", listOf("0", "25", "40", "50", "65", "80", "90"))(); applyScrim() }),
+            Opt("📐 حجم الواجهة", { Cfg.str("tv_scale_adj", "100") + "%" }, { scaleDialog() }),
+            Opt("⭕ شكل أيقونات التطبيقات", { if (squircle()) "مربع مدوّر" else "دايرة" }, cyc("tv_icon_shape", "circle", listOf("circle", "squircle"))),
+            Opt("🔎 حجم الأيقونات", { iconDp().toString() }, cyc("tv_icon_px", "86", iconSizes)),
+            Opt("🏷 أسماء التطبيقات", { when (namesMode()) { "always" -> "دايمًا"; "off" -> "مخفية"; else -> "عند التركيز" } }, cyc("tv_names", "focus", listOf("focus", "always", "off"))),
+            Opt("⬆ طلوع وتكبير المتركّز", { liftNames[liftLevel()] }, cyc("tv_lift", "2", listOf("0", "1", "2", "3"))),
+            Opt("✨ وهج خلف المتركّز", { onOff("tv_halo", "1") }, tog("tv_halo", "1")),
+            Opt("🌡 دفء ليلي", { if (Cfg.str("tv_warm", "0") == "1") "شغّال" else "مقفول" }, { toggleWarm() }),
+            Opt("🕒 شكل الساعة", { if (Cfg.str("tv_clock24", "0") == "1") "24 ساعة" else "12 ساعة" }, tog("tv_clock24", "0")),
+            Opt("💤 شاشة التوقف بعد", { saverNames[Cfg.str("tv_saver_min", "3")] ?: "3 دقايق" }, cyc("tv_saver_min", "3", listOf("1", "3", "5", "10", "0"))),
+            Opt("🎞 وضع الواجهة والحركة", { Skins.cur().name }, { skinDialog() }),
+            Opt("📲 تطبيقات السيستم", { if (Cfg.str("tv_apps_sys", "0") == "1") "ظاهرة" else "مخفية" }, tog("tv_apps_sys", "0")),
+            Opt("✨ تطبيقات قد تحتاجها", { onOff("tv_suggest", "1") }, tog("tv_suggest", "1")),
+            Opt("🛍 اختصار Google Play", { onOff("tv_play", "1") }, { Cfg.put("tv_play", if (playOn()) "0" else "1"); recreate() }),
+            Opt("🎛 تخصيص الصفوف", { "" }, { rowsDialog() })
+        )
+        val cards = opts.mapIndexed { i, o ->
+            card(if (compactUi) 250 else 270, 84, { c ->
+                c.gravity = Gravity.CENTER_VERTICAL
+                c.addView(ui.text(o.title, 14.5f, th.text, true))
+                val v = o.value()
+                if (v.isNotEmpty()) c.addView(ui.text(v, 13f, th.primary, true).apply { setPadding(0, ui.dp(4), 0, 0) })
+            }, { o.act(); if (!isFinishing && !isDestroyed && curTab == -1) showAppearance(i) })
+        }
+        gridInto(content, cards, if (compactUi) 2 else 3)
+        content.addView(LinearLayout(this).apply { gravity = Gravity.CENTER; setPadding(0, ui.dp(12), 0, ui.dp(24)); addView(pill("→ الرئيسية") { showHome() }) })
+        cards.getOrNull(focusIdx.coerceIn(0, cards.size - 1))?.let { c -> c.post { try { c.requestFocus() } catch (_: Throwable) { } } }
+    }
+
+    private fun themeDialog() {
+        val all = Themes.all
+        GAlert(this).setTitle("🎨 اختار السمة")
+            .setItems(all.map { (if (it.id == th.id) "✔ " else "") + it.name }.toTypedArray()) { _, i -> Cfg.put("theme", all[i].id); recreate() }
+            .setNegativeButton("إلغاء", null).show()
+    }
+    private fun skinDialog() {
+        val cur = Skins.cur().id
+        GAlert(this).setTitle("🎞 وضع الواجهة والحركة")
+            .setItems(Skins.all.map { (if (it.id == cur) "✔ " else "") + it.name }.toTypedArray()) { _, i -> Cfg.put("skin", Skins.all[i].id); Skins.set(Skins.all[i].id); showAppearance() }
+            .setNegativeButton("إلغاء", null).show()
     }
 
     /** (v491) متوسط لون أيقونة (مغمّق) — خلفية كارت التطبيق اللي ملوش بانر */
@@ -1040,7 +1511,7 @@ class TvActivity : Activity() {
             badge.addView(ui.text(t.substring(0, sp), 14f, fg).apply { gravity = Gravity.CENTER }, FrameLayout.LayoutParams(-1, -1, Gravity.CENTER))
             row.addView(badge, LinearLayout.LayoutParams(ui.dp(30), ui.dp(30)).apply { marginEnd = ui.dp(10) })
         }
-        row.addView(ui.text(if (hasIcon) t.substring(sp + 1) else t, 22f, fg, true))
+        row.addView(ui.text(if (hasIcon) t.substring(sp + 1) else t, 22f, fg, true).apply { setShadowLayer(8f, 0f, 2f, Color.BLACK) })
         return row
     }
     private fun host(): LinearLayout = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; clipChildren = false }
@@ -1141,7 +1612,7 @@ class TvActivity : Activity() {
     private fun folderCard(f: FolderItem, first: Boolean, fh: LinearLayout): View {
         val c = vTile({ iv -> f.videos.firstOrNull()?.let { v -> Thumbs.load(this, v) { bmp -> if (bmp != null) runOnUiThread { iv.setImageBitmap(bmp) } } } },
             "📁 " + f.name, f.videos.size.toString() + " فيديو", -1, false,
-            { openFolder = f.key; storageQuery = ""; fillStorageView(fh, true) })
+            { openFolder = f.key; storageQuery = ""; fillStorageView(fh, true) }, null, true)
         c.tag = if (first) "fold:first" else "fold:" + f.key
         return c
     }
@@ -1265,7 +1736,7 @@ class TvActivity : Activity() {
     private fun showHome(focus: Boolean = true) {
         h.removeCallbacks(searchRun)
         muteSearch = true; searchEt?.setText(""); muteSearch = false; inSearch = false
-        content.removeAllViews(); heroBtn = null; heroImg = null; setTab(0)
+        content.removeAllViews(); heroBtn = null; heroImg = null; setTab(0); prayerCd = null
         storageKind = null; openFolder = null; foldersHost = null
         try { YtAccount.init(this); YtRss.attach(this) } catch (_: Throwable) { }
         val hidden = Cfg.str("tv_rows_hide2", "").split(",").map { it.trim() }.filter { it.isNotEmpty() }.toSet()
@@ -1276,6 +1747,11 @@ class TvActivity : Activity() {
                 content.addView(sectionTitle("تطبيقاتك"))
                 content.addView(hrow(circles))
                 heroBtn = circles.first()
+            }
+            // (v516) تطبيقات قد تحتاجها: على حسب اللي مثبّته عندك + اختصار Google Play
+            if (Cfg.str("tv_suggest", "1") != "0") {
+                val sg = try { suggestRow() } catch (e: Throwable) { LogStore.err("TvHome:suggest", e); emptyList() }
+                if (sg.isNotEmpty()) { content.addView(sectionTitle("✨ تطبيقات قد تحتاجها")); content.addView(hrow(sg)) }
             }
         }
         // 2) آخر المشغّل  3) فولدراتك المضافة  4) الفلاشة/الذاكرة  5) اشتراكات يوتيوب (بتتملي أول ما الفحص يخلص)
@@ -1298,12 +1774,26 @@ class TvActivity : Activity() {
         }.start()
         if ("yt" !in hidden) { content.addView(yh); fillYt(yh) }
         // 6) تخصيص
-        content.addView(LinearLayout(this).apply { gravity = Gravity.CENTER; setPadding(0, ui.dp(18), 0, ui.dp(24)); addView(pill("🎛 تخصيص") { rowsDialog() }) })
+        // (v512) صف الإعدادات فوق زرار التخصيص
+        content.addView(LinearLayout(this).apply {
+            gravity = Gravity.CENTER; layoutDirection = View.LAYOUT_DIRECTION_RTL; setPadding(0, ui.dp(18), 0, 0)
+            addView(pill("⚙️ إعدادات البرنامج") { guardPin { openMain("settings") } })
+            addView(pill("⋯ المزيد") { moreMenu() })
+            addView(pill("🛠 إعدادات الأندرويد") { openSystemSettings() })
+            addView(pill("🌙 نوم") { showSaver() })
+        })
+        if (!compactUi) content.addView(LinearLayout(this).apply {   // (v516) على الشاشة الواسعة مفيش ريل جانبي: نفس الأزرار هنا
+            gravity = Gravity.CENTER; layoutDirection = View.LAYOUT_DIRECTION_RTL; setPadding(0, ui.dp(8), 0, 0)
+            addView(pill("🕌 مواقيت الصلاة") { showPrayer() })
+            if (playOn()) addView(pill("🛍 Google Play") { openPlay() })
+            addView(pill("🎨 المظهر") { showAppearance() })
+        })
+        content.addView(LinearLayout(this).apply { gravity = Gravity.CENTER; setPadding(0, ui.dp(12), 0, ui.dp(24)); addView(pill("🎛 تخصيص") { rowsDialog() }) })
         if (focus) (heroBtn ?: firstRail)?.let { f -> content.post { try { f.requestFocus() } catch (_: Exception) {} } }
     }
 
     /** (v496) تاب «تطبيقات»: كل التطبيقات (بما فيها السيستم) دواير في شبكة */
-    private fun showApps() {
+    private fun showApps(focus: Boolean = true) {
         h.removeCallbacks(searchRun)
         muteSearch = true; searchEt?.setText(""); muteSearch = false; inSearch = false
         storageKind = null; openFolder = null; foldersHost = null; setTab(1)
@@ -1312,8 +1802,8 @@ class TvActivity : Activity() {
         val pm = packageManager
         val apps = allLaunchApps().sortedBy { it.loadLabel(pm).toString().lowercase() }.map { appCircle(it) }
         val wdp = resources.displayMetrics.widthPixels / resources.displayMetrics.density - 68f
-        gridInto(content, apps, (wdp / 140f).toInt().coerceIn(4, 10))
-        apps.firstOrNull()?.let { f -> content.post { try { f.requestFocus() } catch (_: Throwable) {} } }
+        gridInto(content, apps, (wdp / (iconDp() + 56f)).toInt().coerceIn(3, 10))
+        if (focus) apps.firstOrNull()?.let { f -> content.post { try { f.requestFocus() } catch (_: Throwable) {} } }
     }
 
     // ===== (v495) بحث موحّد جوه الرئيسية: بيتكتب في الشريط العلوي والنتايج بتظهر مكان الصفوف =====
@@ -1340,7 +1830,7 @@ class TvActivity : Activity() {
     }
 
     private fun folderTile(f: FolderItem): View = vTile({ iv -> f.videos.firstOrNull()?.let { v -> Thumbs.load(this, v) { bmp -> if (bmp != null) runOnUiThread { iv.setImageBitmap(bmp) } } } },
-        "📁 " + f.name, f.videos.size.toString() + " فيديو", -1, false, { openFolderView(f) })
+        "📁 " + f.name, f.videos.size.toString() + " فيديو", -1, false, { openFolderView(f) }, null, true)
 
     private fun runSearch(q: String) {
         val ql = q.trim()
@@ -1625,6 +2115,7 @@ class TvActivity : Activity() {
             putExtra("from_tv", true)   // (v467) عشان رجوع Main من الزيارة دي يرجّع لواجهة التلفزيون
             if (tab != null) putExtra("tab", tab)
         })
+        try { overridePendingTransition(0, 0) } catch (_: Throwable) { }   // (v516) من غير انتقال «تطبيق جديد» — يوتيوب بقى جزء من اللانشر
     }
 
     private fun playFile(uriStr: String, landscape: Boolean) {

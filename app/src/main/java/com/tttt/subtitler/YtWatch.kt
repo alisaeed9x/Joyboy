@@ -777,7 +777,7 @@ class YtWatchPage(private val act: Activity, private val ui: Ui, private val hos
     }
 
     init {
-        visibility = View.GONE; isClickable = true; setBackgroundColor(YtSkin.bg); layoutDirection = View.LAYOUT_DIRECTION_RTL
+        visibility = View.GONE; isClickable = true; setBackgroundColor(YtSkin.bgSolid); layoutDirection = View.LAYOUT_DIRECTION_RTL
         val col = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL }
         col.addView(mini, LinearLayout.LayoutParams(-1, sw * 9 / 16))
         col.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f))

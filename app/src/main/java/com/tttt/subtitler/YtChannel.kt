@@ -130,7 +130,7 @@ class YtChannelPage(private val act: Activity, private val ui: Ui, private val h
     }
 
     init {
-        visibility = View.GONE; isClickable = true; setBackgroundColor(YtSkin.bg); layoutDirection = View.LAYOUT_DIRECTION_RTL
+        visibility = View.GONE; isClickable = true; setBackgroundColor(YtSkin.bgSolid); layoutDirection = View.LAYOUT_DIRECTION_RTL
         val col = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL }
         // شريط علوي: رجوع + اسم القناة
         val back = YtIcon(act, "back").apply { contentDescription = "رجوع"; foreground = YtSkin.ripple(true); setOnClickListener { close(true) } }

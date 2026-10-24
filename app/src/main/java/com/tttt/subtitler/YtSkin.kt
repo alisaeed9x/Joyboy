@@ -19,6 +19,10 @@ import android.view.View
 object YtSkin {
     var dark = true
     var bg = 0xFF0F0F0F.toInt()
+    /** (v516) لون الخلفية الصلب (للتفاصيل اللي بتتفرّغ في الأيقونات) — bg نفسه ممكن يبقى شفاف جزئيًا فوق خلفية اللانشر */
+    var bgSolid = 0xFF0F0F0F.toInt()
+    /** (v516) يوتيوب جوه قشرة اللانشر: الخلفية شبه شفافة عشان خلفية اللانشر تبان من تحتها */
+    var translucent = false
     var surface = 0xFF272727.toInt()
     var text = 0xFFF1F1F1.toInt()
     var sub = 0xFFAAAAAA.toInt()
@@ -42,7 +46,9 @@ object YtSkin {
     /** (v471) الألوان كلها من سمة البرنامج الحالية (قبل كده كانت ألوان يوتيوب الثابتة وبس بتتبدّل بين داكن وفاتح) */
     fun init(th: Theme, ctx: Context? = null) {
         dark = !th.isLight
-        bg = th.bg; text = th.text; sub = th.muted; line = th.border
+        bgSolid = th.bg
+        bg = if (translucent) (th.bg and 0x00FFFFFF) or 0xB8000000.toInt() else th.bg
+        text = th.text; sub = th.muted; line = th.border
         // سطح الكروت/الشرايح لازم يبان فوق الخلفية (في أموليد مثلًا السطح أسود زي الخلفية)
         val s = listOf(th.surface, th.card).firstOrNull { Math.abs(Theme.lum(it) - Theme.lum(th.bg)) >= 0.03 } ?: mix(th.bg, th.border, 0.55f)
         surface = s; chip = s
@@ -77,7 +83,7 @@ class YtIcon(ctx: Context, private val kind: String) : View(ctx) {
         set(v) { field = v; invalidate() }
     var filled: Boolean = false
         set(v) { field = v; invalidate() }
-    var cut: Int = YtSkin.bg
+    var cut: Int = YtSkin.bgSolid
         set(v) { field = v; invalidate() }
     var glyph: Float = 0.72f
     private val p = Paint(Paint.ANTI_ALIAS_FLAG)

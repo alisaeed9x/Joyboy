@@ -236,9 +236,12 @@ class FileManagerActivity : Activity() {
         return p.absolutePath in setOf("/", "/storage", "/storage/emulated", "/mnt")
     }
 
+    // (v517) تلفزيون: تخطيط جديد (قايمة أماكن جنب + قايمة ملفات كبيرة)؛ الموبايل والتابلت زي ما هما
+    private val tvMode: Boolean by lazy { DeviceUi.isTv(this) }
+
     private fun chip(t: String, f: () -> Unit): TextView = IconTextView(this).apply {
-        text = t; textSize = 13f; setTextColor(th.text); gravity = Gravity.CENTER
-        setPadding(ui.dp(12), ui.dp(7), ui.dp(12), ui.dp(7))
+        text = t; textSize = if (tvMode) 17f else 13f; setTextColor(th.text); gravity = if (tvMode) (Gravity.CENTER_VERTICAL or Gravity.START) else Gravity.CENTER
+        if (tvMode) setPadding(ui.dp(18), ui.dp(12), ui.dp(18), ui.dp(12)) else setPadding(ui.dp(12), ui.dp(7), ui.dp(12), ui.dp(7))
         background = ui.box(th.surface, th.border, 20)
         Glass.pressable(this)
         setOnClickListener { f() }
@@ -249,13 +252,16 @@ class FileManagerActivity : Activity() {
 
     private fun buildChips() {
         chipsRow.removeAllViews()
-        for ((label, f) in roots()) chipsRow.addView(chip(label) { load(f) }, LinearLayout.LayoutParams(-2, -2).apply { setMargins(ui.dp(3), 0, ui.dp(3), 0) })
+        for ((label, f) in roots()) chipsRow.addView(chip(label) { load(f) }, chipLp())
         for (p in pins) {
             val c = chip("⭐ " + (File(p).name.ifEmpty { p })) { load(File(p)) }
             c.setOnLongClickListener { pins.remove(p); savePins(); buildChips(); toast("اتشال من الاختصارات"); true }
-            chipsRow.addView(c, LinearLayout.LayoutParams(-2, -2).apply { setMargins(ui.dp(3), 0, ui.dp(3), 0) })
+            chipsRow.addView(c, chipLp())
         }
     }
+    private fun chipLp(): LinearLayout.LayoutParams =
+        if (tvMode) LinearLayout.LayoutParams(-1, -2).apply { setMargins(0, ui.dp(3), 0, ui.dp(3)) }
+        else LinearLayout.LayoutParams(-2, -2).apply { setMargins(ui.dp(3), 0, ui.dp(3), 0) }
 
     override fun onCreate(b: Bundle?) {
         super.onCreate(b)
@@ -281,23 +287,23 @@ class FileManagerActivity : Activity() {
 
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL
-            setBackgroundColor(th.bg); setPadding(0, ui.dp(28), 0, 0)
+            setBackgroundColor(th.bg); if (tvMode) setPadding(ui.dp(16), ui.dp(20), ui.dp(24), ui.dp(12)) else setPadding(0, ui.dp(28), 0, 0)
         }
 
         // الهيدر: ✕ · العنوان/المسار · ↑ · ⋮
-        titleTv = ui.text("", 16f, th.text, true).apply { setSingleLine(); ellipsize = TextUtils.TruncateAt.END }
-        pathTv = ui.text("", 11f, th.muted).apply {
+        titleTv = ui.text("", if (tvMode) 22f else 16f, th.text, true).apply { setSingleLine(); ellipsize = TextUtils.TruncateAt.END }
+        pathTv = ui.text("", if (tvMode) 13f else 11f, th.muted).apply {
             setSingleLine(); ellipsize = TextUtils.TruncateAt.START; layoutDirection = View.LAYOUT_DIRECTION_LTR; textDirection = View.TEXT_DIRECTION_LTR
             setOnLongClickListener { copyText(cur.absolutePath); true }
         }
         val titleCol = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; addView(titleTv); addView(pathTv) }
         fun tbtn(t: String, f: () -> Unit): TextView = IconTextView(this).apply {
-            text = t; textSize = 20f; gravity = Gravity.CENTER; setTextColor(th.text)
-            layoutParams = LinearLayout.LayoutParams(ui.dp(42), ui.dp(44)); Glass.pressable(this); setOnClickListener { f() }
+            text = t; textSize = if (tvMode) 26f else 20f; gravity = Gravity.CENTER; setTextColor(th.text)
+            layoutParams = LinearLayout.LayoutParams(ui.dp(if (tvMode) 60 else 42), ui.dp(if (tvMode) 56 else 44)); Glass.pressable(this); setOnClickListener { f() }
         }
         val head = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; setPadding(ui.dp(6), 0, ui.dp(6), 0)
-            addView(tbtn("✕") { finish() })
+            if (!tvMode) addView(tbtn("✕") { finish() })   // (v517) تلفزيون: Back بيقفل
             addView(titleCol, LinearLayout.LayoutParams(0, -2, 1f).apply { setMargins(ui.dp(6), 0, ui.dp(6), 0) })
             addView(tbtn("⬆") { up() })
             addView(tbtn("⋮") { menu() })
@@ -306,7 +312,7 @@ class FileManagerActivity : Activity() {
 
         // (v391) شريط التبويبات
         tabsRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; gravity = Gravity.CENTER_VERTICAL; setPadding(ui.dp(8), ui.dp(2), ui.dp(8), ui.dp(2)) }
-        root.addView(HorizontalScrollView(this).apply { isHorizontalScrollBarEnabled = false; addView(tabsRow) }, LinearLayout.LayoutParams(-1, -2))
+        if (!tvMode) root.addView(HorizontalScrollView(this).apply { isHorizontalScrollBarEnabled = false; addView(tabsRow) }, LinearLayout.LayoutParams(-1, -2))   // (v517) التبويبات مش للتلفزيون
 
         // بحث داخل المجلد (أو في كل المجلدات الفرعية لو البحث العميق شغّال)
         searchEt = ui.input("🔍 بحث في المجلد", "").apply {
@@ -325,10 +331,11 @@ class FileManagerActivity : Activity() {
         root.addView(searchEt, LinearLayout.LayoutParams(-1, -2).apply { setMargins(ui.dp(12), 0, ui.dp(12), 0) })
 
         // اختصارات الأماكن + المجلدات المثبّتة
-        chipsRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; setPadding(ui.dp(8), ui.dp(4), ui.dp(8), ui.dp(4)) }
+        chipsRow = LinearLayout(this).apply { orientation = if (tvMode) LinearLayout.VERTICAL else LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; setPadding(ui.dp(8), ui.dp(4), ui.dp(8), ui.dp(4)) }
         buildChips()
-        val chipsScroll = HorizontalScrollView(this).apply { isHorizontalScrollBarEnabled = false; addView(chipsRow) }
-        root.addView(chipsScroll, LinearLayout.LayoutParams(-1, -2))
+        val chipsScroll: ViewGroup = if (tvMode) android.widget.ScrollView(this).apply { isVerticalScrollBarEnabled = false; isFillViewport = false; addView(chipsRow) }
+            else HorizontalScrollView(this).apply { isHorizontalScrollBarEnabled = false; addView(chipsRow) }
+        if (!tvMode) root.addView(chipsScroll, LinearLayout.LayoutParams(-1, -2))
 
         paintTabs()
         // شريط المساحة
@@ -338,8 +345,18 @@ class FileManagerActivity : Activity() {
             orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_LTR; weightSum = 1f; setBackgroundColor(th.border)
             addView(storFill, LinearLayout.LayoutParams(0, -1, 0f))
         }
-        root.addView(storTv, LinearLayout.LayoutParams(-2, -2).apply { setMargins(ui.dp(14), 0, ui.dp(14), ui.dp(2)) })
-        root.addView(storBar, LinearLayout.LayoutParams(-1, ui.dp(3)).apply { setMargins(ui.dp(14), 0, ui.dp(14), ui.dp(4)) })
+        val side = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; setPadding(ui.dp(4), 0, ui.dp(12), 0) }
+        if (tvMode) {   // (v517) القايمة الجانبية: الرئيسية · الأماكن والمثبّتات · المساحة
+            side.addView(ui.text("📂 الملفات", 22f, th.text, true).apply { setPadding(ui.dp(10), ui.dp(4), ui.dp(10), ui.dp(10)) })
+            side.addView(chip("🏠 الرئيسية") { if (!TvFocus.goHome(this)) finish() }, LinearLayout.LayoutParams(-1, -2).apply { setMargins(0, ui.dp(3), 0, ui.dp(8)) })
+            side.addView(chipsScroll, LinearLayout.LayoutParams(-1, 0, 1f))
+            side.addView(storTv.apply { textSize = 13f }, LinearLayout.LayoutParams(-2, -2).apply { setMargins(ui.dp(8), ui.dp(8), ui.dp(8), ui.dp(4)) })
+            side.addView(storBar, LinearLayout.LayoutParams(-1, ui.dp(5)).apply { setMargins(ui.dp(8), 0, ui.dp(8), ui.dp(6)) })
+            side.addView(ui.text("OK = فتح · Menu = قايمة الملف · OK طويلة = تحديد", 12f, th.muted).apply { setPadding(ui.dp(8), ui.dp(4), ui.dp(8), 0) })
+        } else {
+            root.addView(storTv, LinearLayout.LayoutParams(-2, -2).apply { setMargins(ui.dp(14), 0, ui.dp(14), ui.dp(2)) })
+            root.addView(storBar, LinearLayout.LayoutParams(-1, ui.dp(3)).apply { setMargins(ui.dp(14), 0, ui.dp(14), ui.dp(4)) })
+        }
 
         // رسالة الصلاحية
         permBox = LinearLayout(this).apply {
@@ -427,11 +444,17 @@ class FileManagerActivity : Activity() {
                 finish()
             }
         }
-        root.addView(gates.view, LinearLayout.LayoutParams(-1, -2))
+        if (!tvMode) root.addView(gates.view, LinearLayout.LayoutParams(-1, -2))   // (v517) تلفزيون: الشريط السفلي اتشال (🏠 في القايمة الجانبية)
 
         // (v324) زرار المهام العايم (دايرة حمراء بالعدد) فوق القايمة؛ دوسة عليه بتفتح صفحة المهام في الرئيسية
         val host = FrameLayout(this)
-        host.addView(root, FrameLayout.LayoutParams(-1, -1))
+        if (tvMode) {
+            val shell = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; setBackgroundColor(th.bg); setPadding(ui.dp(16), ui.dp(20), 0, ui.dp(12)) }
+            root.setPadding(ui.dp(8), 0, ui.dp(8), 0)
+            shell.addView(side, LinearLayout.LayoutParams(ui.dp(280), -1))
+            shell.addView(root, LinearLayout.LayoutParams(0, -1, 1f))
+            host.addView(shell, FrameLayout.LayoutParams(-1, -1))
+        } else host.addView(root, FrameLayout.LayoutParams(-1, -1))
         if (DeviceUi.isTablet(this)) buildDetailPane(host)   // (v462)
         // (v336) زرار المهام العايم اتشال — المهام في الشريط السفلي
         setContentView(host)
@@ -508,6 +531,7 @@ class FileManagerActivity : Activity() {
             runOnUiThread {
                 if (!isDestroyed && token == loadToken) {
                     all = res; loadErr = arr == null; refresh(); list.setSelection(0); updateStorage()
+                    if (tvMode && currentFocus == null) try { list.requestFocus() } catch (_: Throwable) {}   // (v517) تلفزيون: التركيز الأول على قايمة الملفات
                     if (fmLoaded) { Motion.slideIn(list, if (deeper) -1 else 1, 230L); Motion.replay(list) } else fmLoaded = true   // (v313) انتقال فولدر لفولدر
                     val ps = pendingSel; pendingSel = null
                     if (ps != null) {
@@ -584,7 +608,32 @@ class FileManagerActivity : Activity() {
     private fun up() { if (!isTop(cur)) cur.parentFile?.let { load(it) } }
 
     @Suppress("DEPRECATION")
-    override fun dispatchKeyEvent(ev: android.view.KeyEvent): Boolean { TvKill.watch(this, ev); return super.dispatchKeyEvent(ev) }   // (v486)
+    override fun dispatchKeyEvent(ev: android.view.KeyEvent): Boolean {
+        TvKill.watch(this, ev)   // (v486)
+        // (v517) تلفزيون: Menu على الريموت = قايمة الملف المتحدد (أو قايمة المجلد لو مفيش ملف متركّز)
+        if (tvMode && ev.action == android.view.KeyEvent.ACTION_DOWN && ev.keyCode == android.view.KeyEvent.KEYCODE_MENU && ev.repeatCount == 0) {
+            val p = try { list.selectedItemPosition } catch (_: Throwable) { -1 }
+            if (list.hasFocus() && p in shown.indices) tvItemMenu(shown[p]) else menu()
+            return true
+        }
+        return super.dispatchKeyEvent(ev)
+    }
+
+    /** (v517) قايمة العنصر على التلفزيون */
+    private fun tvItemMenu(fi: FmItem) {
+        val f = fi.f
+        val labels = ArrayList<String>(); val acts = ArrayList<() -> Unit>()
+        fun add(l: String, a: () -> Unit) { labels.add(l); acts.add(a) }
+        add(if (fi.dir) "📂 فتح المجلد" else "▶ فتح") { if (fi.dir) load(f) else openFile(f, false) }
+        add(if (sel.contains(f.absolutePath)) "☐ شيل التحديد" else "☑ تحديد") { toggleSel(fi) }
+        add("📋 نسخ") { sel.clear(); sel.add(f.absolutePath); setClip(false) }
+        add("✂ نقل") { sel.clear(); sel.add(f.absolutePath); setClip(true) }
+        add("✏ إعادة تسمية") { rename(f) }
+        add("↗ مشاركة") { sel.clear(); sel.add(f.absolutePath); shareSel() }
+        add("ℹ تفاصيل") { details(f) }
+        add("🗑 حذف") { sel.clear(); sel.add(f.absolutePath); deleteSel() }
+        GAlert(this).setTitle(f.name).setItems(labels.toTypedArray()) { _, w -> if (w in acts.indices) acts[w]() }.show()
+    }
     override fun onBackPressed() {
         when {
             sel.isNotEmpty() -> { sel.clear(); refresh() }
@@ -607,18 +656,18 @@ class FileManagerActivity : Activity() {
             val row: View
             if (cv == null) {
                 h = Holder()
-                h.ic = IconTextView(ctx).apply { textSize = 24f; gravity = Gravity.CENTER }
+                h.ic = IconTextView(ctx).apply { textSize = if (tvMode) 30f else 24f; gravity = Gravity.CENTER }
                 h.iv = ImageView(ctx).apply { scaleType = ImageView.ScaleType.CENTER_CROP; visibility = View.GONE }
                 val box = FrameLayout(ctx)
                 box.addView(h.ic, FrameLayout.LayoutParams(-1, -1))
                 box.addView(h.iv, FrameLayout.LayoutParams(-1, -1))
-                h.name = ui.text("", 14f, th.text, true).apply { setSingleLine(); ellipsize = TextUtils.TruncateAt.MIDDLE }
-                h.info = ui.text("", 11f, th.muted).apply { setSingleLine(); ellipsize = TextUtils.TruncateAt.START }
+                h.name = ui.text("", if (tvMode) 19f else 14f, th.text, true).apply { setSingleLine(); ellipsize = TextUtils.TruncateAt.MIDDLE }
+                h.info = ui.text("", if (tvMode) 14f else 11f, th.muted).apply { setSingleLine(); ellipsize = TextUtils.TruncateAt.START }
                 val col = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL; addView(h.name); addView(h.info) }
                 row = LinearLayout(ctx).apply {
                     orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; gravity = Gravity.CENTER_VERTICAL
-                    setPadding(ui.dp(12), ui.dp(8), ui.dp(12), ui.dp(8))
-                    addView(box, LinearLayout.LayoutParams(ui.dp(44), ui.dp(44)))
+                    if (tvMode) setPadding(ui.dp(16), ui.dp(10), ui.dp(16), ui.dp(10)) else setPadding(ui.dp(12), ui.dp(8), ui.dp(12), ui.dp(8))
+                    addView(box, LinearLayout.LayoutParams(ui.dp(if (tvMode) 60 else 44), ui.dp(if (tvMode) 60 else 44)))
                     addView(col, LinearLayout.LayoutParams(0, -2, 1f).apply { setMargins(ui.dp(10), 0, 0, 0) })
                 }
                 row.tag = h
