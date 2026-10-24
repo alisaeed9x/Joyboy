@@ -103,12 +103,73 @@ object VideoLib {
         val hay = norm(v.title + " " + v.folderName)
         return toks.count { hay.contains(it) }
     }
+    // ===== (v521) بحث تقريبي: كلمات زي «مسلسل/فيلم/حلقة/آخر» بتتجاهل · تقارب إملائي · عربي ↔ إنجليزي بالنطق (كود ≈ Kod/Code) =====
+    private val stopW = setOf("مسلسل", "مسلسلات", "فيلم", "افلام", "حلقه", "حلقات", "الحلقه", "اخر", "اخير", "اخره", "الاخيره", "الاخير", "جديد", "الجديد", "كامل", "كامله", "مترجم", "مترجمه", "موسم", "الموسم",
+        "series", "movie", "film", "episode", "latest", "new", "full")
+    /** الكلمات المهمة بس؛ لو الكلام كله كلمات حشو/أرقام نرجع للكلمات الأصلية */
+    fun sigTokens(q: String): List<String> {
+        val all = tokens(q)
+        val k = all.filter { it !in stopW }
+        return if (k.none { t -> t.any { !it.isDigit() } }) all else k
+    }
+    private val ar2lat = mapOf('ب' to "b", 'ت' to "t", 'ث' to "t", 'ج' to "j", 'ح' to "h", 'خ' to "k", 'د' to "d", 'ذ' to "d", 'ر' to "r", 'ز' to "z", 'س' to "s", 'ش' to "s", 'ص' to "s", 'ض' to "d",
+        'ط' to "t", 'ظ' to "z", 'غ' to "g", 'ف' to "f", 'ق' to "k", 'ك' to "k", 'ل' to "l", 'م' to "m", 'ن' to "n", 'ه' to "h")
+    /** هيكل صوتي تقريبي: حروف ساكنة بس بعد توحيد عربي/لاتيني (كود → kd · code → kd · kod → kd) */
+    fun skel(w: String): String {
+        val sb = StringBuilder()
+        for (ch in w.lowercase()) {
+            val m = ar2lat[ch]
+            val s = if (m != null) m else when (ch) {
+                'c', 'q' -> "k"; 'x' -> "ks"; 'p' -> "b"; 'v' -> "f"
+                'a', 'e', 'i', 'o', 'u', 'y', 'w', 'ا', 'و', 'ي', 'ع' -> ""
+                in 'a'..'z', in '0'..'9' -> ch.toString()
+                else -> ""
+            }
+            for (c in s) if (sb.isEmpty() || sb[sb.length - 1] != c) sb.append(c)
+        }
+        return sb.toString()
+    }
+    private fun lev1(a: String, b: String): Boolean {   // المسافة ≤ 1
+        if (a == b) return true
+        if (Math.abs(a.length - b.length) > 1) return false
+        var i = 0; while (i < a.length && i < b.length && a[i] == b[i]) i++
+        if (a.length == b.length) return a.substring(i + 1) == b.substring(i + 1)
+        return if (a.length > b.length) a.substring(i + 1) == b.substring(i) else b.substring(i + 1) == a.substring(i)
+    }
+    private val wordSplit = Regex("[^\\p{L}\\p{N}]+")
+    private fun fuzzyScore(v: VideoItem, toks: List<String>): Int {
+        val words = norm(v.title + " " + v.folderName).split(wordSplit).filter { it.length >= 2 }
+        var n = 0
+        for (t in toks) {
+            val sk = skel(t)
+            val ok = words.any { w ->
+                w.contains(t) ||
+                (t.length >= 4 && w.length >= 3 && lev1(w, t)) ||
+                (sk.length >= 2 && !t.all { it.isDigit() } && skel(w) == sk) ||
+                (sk.length >= 3 && skel(w).startsWith(sk))
+            }
+            if (ok) n++
+        }
+        return n
+    }
+    /** فولدر يطابق الاستعلام (نفس المنطق: كلمات مهمة + تقريبي) */
+    fun nameMatches(name: String, q: String): Boolean {
+        val toks = sigTokens(q); if (toks.isEmpty()) return false
+        val hay = norm(name)
+        if (toks.all { hay.contains(it) }) return true
+        val words = hay.split(wordSplit).filter { it.length >= 2 }
+        return toks.all { t -> val sk = skel(t); words.any { w -> w.contains(t) || (t.length >= 4 && w.length >= 3 && lev1(w, t)) || (sk.length >= 2 && skel(w) == sk) } }
+    }
     fun search(all: List<VideoItem>, q: String): List<VideoItem> {
-        val toks = tokens(q)
+        val toks = sigTokens(q)
         if (toks.isEmpty()) return emptyList()
         val scored = all.map { it to matchScore(it, toks) }.filter { it.second > 0 }
         val full = scored.filter { it.second == toks.size }
-        val pick = if (full.isNotEmpty()) full else scored   // لو مفيش تطابق كامل اعرض الأقرب (الأكتر كلمات)
+        if (full.isNotEmpty()) return full.sortedWith { a, b -> natural(a.first.name, b.first.name) }.map { it.first }
+        // مفيش تطابق كامل بالحرف ← جرّب التقريبي (مرة واحدة بس عشان الأداء)
+        val fz = all.map { it to fuzzyScore(it, toks) }.filter { it.second > 0 }
+        val fzFull = fz.filter { it.second == toks.size }
+        val pick = if (fzFull.isNotEmpty()) fzFull else if (fz.isNotEmpty()) fz else scored
         return pick.sortedWith { a, b -> if (a.second != b.second) b.second - a.second else natural(a.first.name, b.first.name) }.map { it.first }
     }
 

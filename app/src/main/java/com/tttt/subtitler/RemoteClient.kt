@@ -42,6 +42,11 @@ object RemoteClient {
         private set
     @Volatile var lastError = ""
         private set
+    /** (v519) إيه اللي ظاهر على التلفزيون (home/player/browser/app/other) وهل خدمة «إمكانية الوصول» شغّالة عليه */
+    @Volatile var tvCtx = ""
+        private set
+    @Volatile var tvAcc = false
+        private set
 
     private val main = Handler(Looper.getMainLooper())
     private val listeners = CopyOnWriteArrayList<() -> Unit>()
@@ -293,6 +298,7 @@ object RemoteClient {
                     tvVer = j.optLong("ver"); tvVName = j.optString("vname")
                     val nm = j.optString("name")
                     if (nm.isNotBlank() && nm != tv.name) { tv.name = nm; saveTv(tv) }
+                    parseCtx(j)
                 } catch (_: Exception) {}
                 if (state != St.CONNECTED) {
                     state = St.CONNECTED; lastError = ""; fire()
@@ -352,6 +358,63 @@ object RemoteClient {
         return call(tv.ip, tv.port, path, body.toString(), tv.token, 4000)
     }
 
+    private fun parseCtx(j: JSONObject) {
+        val c = j.optString("ctx"); val a = j.optBoolean("acc")
+        if (c.isNotEmpty() && (c != tvCtx || a != tvAcc)) { tvCtx = c; tvAcc = a; fire() }
+    }
+
+    /** (v519) زرار ريموت (up/down/left/right/ok/back/home/menu/recents/ff/rew/next/prev) — من غير ما تستنى */
+    fun key(k: String) {
+        Thread {
+            try {
+                val (c, t) = post("/key", JSONObject().put("k", k).put("cid", UUID.randomUUID().toString()))
+                if (c == 200) try { parseCtx(JSONObject(t)) } catch (_: Exception) {}
+            } catch (_: Throwable) {}
+        }.also { it.isDaemon = true }.start()
+    }
+
+    /** (v520) أمر/استعلام مشغّل الفيديو (blocking). بيرجّع حالة المشغّل، أو null لو مفيش مشغّل/فشل */
+    fun player(a: String, v: Long = 0L): JSONObject? {
+        val (c, t) = post("/player", JSONObject().put("a", a).put("v", v).put("cid", UUID.randomUUID().toString()))
+        if (c != 200) return null
+        return try { JSONObject(t).optJSONObject("st") } catch (_: Exception) { null }
+    }
+
+    // تجميع حركة التاتش باد: بنبعت كل ~15ms مجموع الحركة بدل طلب لكل لمسة
+    private val pMv = FloatArray(2)
+    private val pSc = FloatArray(2)
+    private var pBusy = false
+
+    /** حركة المؤشر (dx/dy نسبة من حجم التاتش باد) */
+    fun ptrMove(dx: Float, dy: Float) { synchronized(pMv) { pMv[0] += dx; pMv[1] += dy }; pump() }
+
+    /** تمرير بإصبعين */
+    fun ptrScroll(dx: Float, dy: Float) { synchronized(pMv) { pSc[0] += dx; pSc[1] += dy }; pump() }
+
+    /** tap / long */
+    fun ptrClick(op: String) {
+        Thread { try { post("/ptr", JSONObject().put("op", op)) } catch (_: Throwable) {} }.also { it.isDaemon = true }.start()
+    }
+
+    private fun pump() {
+        synchronized(pMv) { if (pBusy) return; pBusy = true }
+        Thread {
+            try {
+                while (true) {
+                    var mx = 0f; var my = 0f; var sx = 0f; var sy = 0f
+                    synchronized(pMv) {
+                        mx = pMv[0]; my = pMv[1]; sx = pSc[0]; sy = pSc[1]
+                        pMv[0] = 0f; pMv[1] = 0f; pSc[0] = 0f; pSc[1] = 0f
+                        if (mx == 0f && my == 0f && sx == 0f && sy == 0f) { pBusy = false; return@Thread }
+                    }
+                    if (mx != 0f || my != 0f) post("/ptr", JSONObject().put("op", "mv").put("dx", mx.toDouble()).put("dy", my.toDouble()))
+                    if (sx != 0f || sy != 0f) post("/ptr", JSONObject().put("op", "scroll").put("dx", sx.toDouble()).put("dy", sy.toDouble()))
+                    try { Thread.sleep(12L) } catch (_: InterruptedException) {}
+                }
+            } catch (_: Throwable) { synchronized(pMv) { pBusy = false } }
+        }.also { it.isDaemon = true }.start()
+    }
+
     /** أمر سريع من غير ما تستنى: vol_up / vol_down / mute / playpause */
     fun cmd(c: String) {
         Thread { try { post("/cmd", JSONObject().put("c", c).put("cid", UUID.randomUUID().toString())) } catch (_: Throwable) {} }.start()
@@ -380,8 +443,31 @@ object RemoteClient {
         return if (c == 200) null else if (c < 0) "ما قدرتش أوصل للتلفزيون" else "فشل ($c)"
     }
 
+
+    /** (v521) «📤 ادفع التحديث للتلفزيون» من ⋯ المزيد: بيتصل لو لازم وبعدين يبعت العرض إجباري (من غير مقارنة نسخ) */
+    fun forcePushFlow(act: android.app.Activity) {
+        try { init(act) } catch (_: Throwable) {}
+        if (lastTv() == null && current == null) {
+            Notice.show(act, "مفيش تلفزيون مقترن — افتح 📱 الريموت واقترن الأول", 3500L)
+            try { act.startActivity(android.content.Intent(act, RemoteActivity::class.java)) } catch (_: Throwable) {}
+            return
+        }
+        Notice.show(act, "📺 بوصّل بالتلفزيون وببعت التحديث…", 5000L)
+        Thread {
+            var msg: String
+            try {
+                msg = if (!ensureConnected(act, 9000L)) "⚠ ما قدرتش أوصل للتلفزيون — اتأكد إنه شغّال وعلى نفس الواي فاي"
+                else when (val r = offerUpdate(false, true)) {
+                    "ok" -> "✅ التحديث اتبعت — شوف رسالة التحديث على التلفزيون (افتح اللانشر لو مش ظاهرة)"
+                    else -> "⚠ $r"
+                }
+            } catch (e: Throwable) { LogStore.err("Remote:forcePush", e); msg = "⚠ حصلت مشكلة" }
+            main.post { Notice.show(act, msg, 5000L) }
+        }.also { it.isDaemon = true }.start()
+    }
+
     /** @return "ok" لو التلفزيون استلم العرض، أو رسالة */
-    fun offerUpdate(auto: Boolean): String {
+    fun offerUpdate(auto: Boolean, force: Boolean = false): String {
         val tv = current ?: return "مش متصل بتلفزيون"
         val ai = app().applicationInfo
         val f = File(ai.sourceDir)
@@ -391,11 +477,12 @@ object RemoteClient {
         if (ip.isEmpty()) return "مش عارف عنوان الموبايل على الواي فاي"
         if (!ApkServe.start()) return "ما قدرتش أشغّل سيرفر التحديث"
         val url = "http://$ip:${ApkServe.PORT}/apk?t=${ApkServe.newToken()}"
-        val body = JSONObject().put("ver", LinkVer.code(app())).put("vname", LinkVer.name(app())).put("url", url).put("auto", auto)
+        val body = JSONObject().put("ver", LinkVer.code(app())).put("vname", LinkVer.name(app())).put("url", url).put("auto", auto).put("force", force)
         val (c, t) = post("/offer", body)
         return when {
             c == 200 -> "ok"
             t.contains("not_newer") -> "التلفزيون عنده نفس النسخة أو أحدث"
+            t.contains("older") -> "نسخة الموبايل أقدم من اللي على التلفزيون — أندرويد مش هيسمح بالنزول لنسخة أقدم"
             t.contains("declined") -> "declined"
             c < 0 -> "ما قدرتش أوصل للتلفزيون"
             else -> "فشل ($c)"

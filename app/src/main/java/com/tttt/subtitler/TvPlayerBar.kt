@@ -38,6 +38,7 @@ class TvPlayerBar(private val act: Activity, private val ui: Ui, private val th:
         fun trLabel(): String; fun trColor(): Int; fun translate(anchor: View)
         fun hasQuality(): Boolean; fun quality(anchor: View)
         fun subDialog(); fun more(anchor: View)
+        fun subTracks(anchor: View)   // (v521) 🌐 اختيار مسار/لغة الترجمة (الأصلية اللي في الفيديو + لغة ترجمة البرنامج)
     }
 
     private val h = Handler(Looper.getMainLooper())
@@ -90,6 +91,7 @@ class TvPlayerBar(private val act: Activity, private val ui: Ui, private val th:
             add(btn("⏭") { a.next() })
             trB = btn("▶ ترجم") { v -> a.translate(v) }; add(trB)
             ccB = btn("💬") { a.toggleCc() }; add(ccB)
+            add(btn("🌐") { v -> a.subTracks(v) })   // (v521) مسار/لغة الترجمة جنب زرار الإخفاء
             add(btn("🔤 ⏱") { a.subDialog() })
             qB = btn("HD") { v -> a.quality(v) }; add(qB)
             audB = btn("🔊") { v -> a.audio(v) }; add(audB)
@@ -103,6 +105,7 @@ class TvPlayerBar(private val act: Activity, private val ui: Ui, private val th:
         speedB = btn("⏩ 1x") { a.cycleSpeed() }; add(speedB)
         fitB = btn("⬛") { a.cycleFit() }; add(fitB)
         ccB = btn("💬") { a.toggleCc() }; add(ccB)
+        add(btn("🌐") { v -> a.subTracks(v) })   // (v521)
         add(btn("🔤−") { a.subScale(-10) })
         add(btn("🔤+") { a.subScale(10) })
         add(btn("⏱−") { a.subShift(-250L) })

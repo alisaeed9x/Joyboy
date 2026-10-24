@@ -1446,7 +1446,7 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
         val col = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL }
         col.addView(title, LinearLayout.LayoutParams(-1, -2))
         col.addView(meta, LinearLayout.LayoutParams(-1, -2).apply { topMargin = ui.dp(3) })
-        val more = YtIcon(act, "more").apply { foreground = YtSkin.ripple(true); glyph = 0.8f; contentDescription = "المزيد" }
+        val more = YtIcon(act, "more").apply { foreground = YtSkin.ripple(true); glyph = 0.8f; contentDescription = "المزيد"; if (DeviceUi.isRemote(act)) visibility = View.GONE }   // (v521) تلفزيون: ⋮ بتاعة اللمس اتشالت (Menu بالريموت)
         val info = LinearLayout(act).apply {
             orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; gravity = Gravity.TOP
             setPadding(ui.dp(4), ui.dp(12), ui.dp(12), ui.dp(16))

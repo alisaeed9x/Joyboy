@@ -23,9 +23,11 @@ object YtThumbBtns {
             background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(0xB8000000.toInt()) }
         }
         val aud = btn("headphones", "صوت بس"); val dl = btn("download", "تحميل")
+        val tvUi = try { DeviceUi.isRemote(ctx) } catch (_: Throwable) { false }   // (v521) تلفزيون/تابلت بالريموت: أزرار اللمس دي بتظهر ورا حلقة التركيز — اتشالت (Menu = قايمة الفيديو)
         row.addView(aud, LinearLayout.LayoutParams(ui.dp(sizeDp), ui.dp(sizeDp)))
         row.addView(dl, LinearLayout.LayoutParams(ui.dp(sizeDp), ui.dp(sizeDp)).apply { marginStart = ui.dp(6) })
         box.addView(row, FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.END).apply { setMargins(ui.dp(8), ui.dp(8), ui.dp(8), ui.dp(8)) })
+        if (tvUi) { row.visibility = View.GONE; aud.isFocusable = false; dl.isFocusable = false }
         return Bar(row, aud, dl)
     }
 

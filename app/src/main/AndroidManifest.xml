@@ -103,6 +103,12 @@
             <intent-filter><action android:name="android.intent.action.SEND"/><category android:name="android.intent.category.DEFAULT"/><data android:mimeType="text/plain"/></intent-filter>
         </activity>
         <service android:name=".RemoteService" android:exported="false" android:foregroundServiceType="dataSync"/>
+        <!-- (v519) تحكم ريموت الموبايل في التطبيقات التانية على التلفزيون (أسهم/رجوع/رئيسية/تاتش باد) — بتتفعّل مرة واحدة من إمكانية الوصول -->
+        <service android:name=".TvAccessService" android:exported="true" android:label="Subtitler — تحكم الريموت في التطبيقات"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+            <intent-filter><action android:name="android.accessibilityservice.AccessibilityService"/></intent-filter>
+            <meta-data android:name="android.accessibilityservice" android:resource="@xml/tv_access_config"/>
+        </service>
         <service android:name=".KeepAliveService" android:exported="false" android:foregroundServiceType="dataSync"/>
     </application>
 </manifest>

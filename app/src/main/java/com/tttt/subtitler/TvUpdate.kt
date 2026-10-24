@@ -29,7 +29,7 @@ object TvUpdate {
     fun ask(a: Activity, o: TvLink.Offer, done: (Boolean) -> Unit) {
         try {
             GAlert(a).setTitle("⬆ تحديث من الموبايل")
-                .setMessage("«" + o.from + "» عليه Subtitler " + o.vname + " (أحدث من اللي على التلفزيون: " + LinkVer.name(a) + ").\nتنزّله دلوقتي من الموبايل على الواي فاي؟")
+                .setMessage(if (o.force) "«" + o.from + "» بيدفع تحديث إجباري: Subtitler " + o.vname + " (على التلفزيون دلوقتي: " + LinkVer.name(a) + ").\nتنزّله وتثبّته دلوقتي من الموبايل على الواي فاي؟" else "«" + o.from + "» عليه Subtitler " + o.vname + " (أحدث من اللي على التلفزيون: " + LinkVer.name(a) + ").\nتنزّله دلوقتي من الموبايل على الواي فاي؟")
                 .setPositiveButton("تحديث") { _, _ -> done(true); download(a, o) }
                 .setNegativeButton("لاحقًا") { _, _ -> done(false) }
                 .setOnCancelListener { done(false) }
@@ -132,6 +132,10 @@ object TvLinkUi {
             col.addView(ui.text("افتح Subtitler على الموبايل (أيقونة «ريموت التلفزيون») — هيلاقي التلفزيون لوحده. أول موبايل بيتقرن من غير كود.", 13f, th.text).apply { setPadding(0, ui.dp(8), 0, ui.dp(8)) })
             col.addView(ui.text("كود إقران موبايل جديد (10 دقايق):", 13f, th.muted))
             col.addView(ui.text(code, 30f, th.primary, true).apply { setPadding(0, ui.dp(4), 0, ui.dp(10)) })
+            // (v519) التحكم في التطبيقات التانية (نتفليكس…) محتاج «إمكانية الوصول» مرة واحدة
+            val accOn = TvAccess.connected
+            col.addView(ui.text(if (accOn) "✅ التحكم في التطبيقات التانية شغّال (إمكانية الوصول)" else "⚠ التحكم بالأسهم والتاتش باد في التطبيقات التانية متوقّف — الصوت والتشغيل والرئيسية شغّالين", 13f, if (accOn) th.success else th.danger).apply { setPadding(0, ui.dp(10), 0, ui.dp(4)) })
+            if (!accOn) col.addView(ui.button("♿ فعّل «إمكانية الوصول» لـ Subtitler") { TvAccess.openSettings(a) })
             val list = TvLink.remoteList()
             col.addView(ui.text(if (list.isEmpty()) "لسه مفيش ريموتات مقترنة." else "الريموتات المقترنة (دوس على واحد للفصل أو المسح):", 14f, th.text, true))
             lateinit var dlg: android.app.Dialog

@@ -196,7 +196,51 @@ object YtNp {
 
     /** (v469) C5 بحث بفلاتر: مدة (0 الكل · 1 قصير <4د · 2 متوسط · 3 طويل >20د) وتاريخ رفع (0 الكل · 1 اليوم · 2 الأسبوع · 3 الشهر).
      *  الفلاتر بتتطبق على النتايج (NewPipe مفيهوش باراميتر sp بتاع الويب) وبتتجب صفحات زيادة لو الفلتر صفّى النتايج */
+    // ===== (v521) «آخر حلقة / أحدث / latest»: النتايج بتترتب بتاريخ الرفع (الأحدث الأول) بدل الصلة اللي كانت بتحط الجديد في النص =====
+    private val latestW = setOf("اخر", "احدث", "الاخير", "الاخيره", "جديد", "الجديد", "latest", "newest")
+    private val epW = setOf("حلقه", "الحلقه", "حلقات", "episode", "ep")
+    fun latestIntent(q: String): Boolean = VideoLib.norm(q).split(' ').any { it in latestW }
+    private fun stripLatest(q: String): String {
+        val keep = VideoLib.norm(q).split(' ').filter { it.isNotBlank() && it !in latestW && it !in epW }
+        return keep.joinToString(" ").ifBlank { q }
+    }
+    private fun ageMs(a: String): Long {
+        if (a.isBlank()) return 0L
+        val low = a.lowercase()
+        val unit = when {
+            low.contains("ثاني") || low.contains("second") -> 1000L
+            low.contains("دقيق") || low.contains("minute") -> 60_000L
+            low.contains("ساع") || low.contains("hour") -> 3_600_000L
+            low.contains("يوم") || low.contains("ايام") || low.contains("أيام") || low.contains("day") -> 86_400_000L
+            low.contains("اسبوع") || low.contains("أسبوع") || low.contains("اسابيع") || low.contains("أسابيع") || low.contains("week") -> 7 * 86_400_000L
+            low.contains("شهر") || low.contains("اشهر") || low.contains("أشهر") || low.contains("month") -> 30 * 86_400_000L
+            low.contains("سن") || low.contains("year") -> 365 * 86_400_000L
+            else -> return 0L
+        }
+        val two = low.contains("ساعتين") || low.contains("يومين") || low.contains("اسبوعين") || low.contains("أسبوعين") || low.contains("شهرين") || low.contains("سنتين")
+        val n = if (two) 2L else (Regex("\\d+").find(low)?.value?.toLongOrNull() ?: 1L)
+        return System.currentTimeMillis() - n * unit
+    }
+    private fun effTs(x: NpItem): Long = if (x.ts > 0L) x.ts else ageMs(x.age)
+    fun searchLatest(q: String, filter: String, durF: Int, dateF: Int): YtRes {
+        val core = stripLatest(q)
+        var r = searchFirst(core, filter)
+        var all = r.items
+        var pages = 0
+        while (r.next != null && pages < 2) {
+            val nx = r.next ?: break
+            val m = try { searchMore(core, filter, nx) } catch (_: Throwable) { break }
+            all = all + m.items; r = m; pages++
+        }
+        val toks = VideoLib.sigTokens(core)
+        val rel = all.filter { x -> x.kind != 0 || toks.isEmpty() || VideoLib.norm(x.title + " " + x.channel).let { h -> toks.all { h.contains(it) } } }
+        val base = if (rel.count { it.kind == 0 } >= 3) rel else all
+        val vids = applyF(base.filter { it.kind == 0 }.distinctBy { it.id }, durF, dateF).sortedByDescending { effTs(it) }
+        return YtRes(vids + base.filter { it.kind != 0 }, null)
+    }
+
     fun searchFiltered(q: String, filter: String, durF: Int, dateF: Int): YtRes {
+        if (filter != "channels" && filter != "playlists" && latestIntent(q)) { try { return searchLatest(q, filter, durF, dateF) } catch (_: Throwable) { } }   // (v521)
         var r = searchFirst(q, filter)
         var pages = 0
         while (countOk(r.items, durF, dateF) < 8 && r.next != null && pages < 2) {

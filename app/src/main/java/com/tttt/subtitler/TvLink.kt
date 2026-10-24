@@ -51,7 +51,7 @@ object TvLink {
         fun alive(): Boolean = lastSeen > 0L && System.currentTimeMillis() - lastSeen < ALIVE_MS
     }
 
-    class Offer(val ver: Long, val vname: String, val url: String, val from: String)
+    class Offer(val ver: Long, val vname: String, val url: String, val from: String, val force: Boolean = false)   // (v521) force = دفع إجباري من الموبايل
 
     private val h = Handler(Looper.getMainLooper())
     private lateinit var app: Context
@@ -69,6 +69,10 @@ object TvLink {
     private val seenCmd = LinkedHashSet<String>()
 
     val running: Boolean get() = started
+
+    /** (v519) أكتيفيتي تطبيقنا الظاهرة دلوقتي (null = تطبيق تاني قدّام أو الشاشة مقفولة) */
+    fun topActivity(): Activity? = top?.get()
+    fun appCtx(): Context? = if (started) app else null
 
     // ===== تشغيل =====
     @Synchronized fun start(ctx: Context) {
@@ -219,8 +223,12 @@ object TvLink {
         if (rm.kicked) { if (r.header("x-manual") == "1") rm.kicked = false else return err(409, "kicked") }
         touch(rm, r)
         return when (r.path) {
-            "/ping" -> ok(JSONObject().put("ver", LinkVer.code(app)).put("vname", LinkVer.name(app)).put("name", tvName()).put("tv", tvId()))
+            "/ping" -> ok(JSONObject().put("ver", LinkVer.code(app)).put("vname", LinkVer.name(app)).put("name", tvName()).put("tv", tvId())
+                .put("ctx", TvInput.context()).put("acc", TvAccess.connected))
             "/cmd" -> cmd(r)
+            "/key" -> keyCmd(r)
+            "/ptr" -> ptrCmd(r)
+            "/player" -> playerCmd(r)
             "/open" -> open(r)
             "/type" -> typeText(r)
             "/keys" -> keys(r, rm)
@@ -276,6 +284,47 @@ object TvLink {
         }
         exec(c)
         return ok()
+    }
+
+    private fun dup(cid: String): Boolean {
+        if (cid.isEmpty()) return false
+        synchronized(seenCmd) {
+            if (!seenCmd.add(cid)) return true
+            if (seenCmd.size > 60) { val it = seenCmd.iterator(); it.next(); it.remove() }
+        }
+        return false
+    }
+
+    /** (v519) زرار ريموت: up/down/left/right/ok/back/home/menu/recents/ff/rew/next/prev */
+    private fun keyCmd(r: HttpReq): HttpRes {
+        val j = try { JSONObject(r.bodyText()) } catch (_: Exception) { return err(403, "bad") }
+        val ctx = JSONObject().put("ctx", TvInput.context()).put("acc", TvAccess.connected)
+        if (dup(j.optString("cid"))) return ok(ctx.put("dup", true))
+        val k = j.optString("k")
+        if (k.isEmpty()) return err(403, "empty")
+        TvInput.key(k)
+        return ok(ctx)
+    }
+
+    /** (v520) مشغّل الفيديو: a = state أو أمر (toggle/seek/seekto/prev/next/speed/fit/cc/scale/shift/audio/quality/translate/more) و v = قيمة */
+    private fun playerCmd(r: HttpReq): HttpRes {
+        val j = try { JSONObject(r.bodyText()) } catch (_: Exception) { return err(403, "bad") }
+        val a = j.optString("a")
+        if (a != "state" && a.isNotEmpty()) {
+            if (dup(j.optString("cid"))) return ok(JSONObject().put("dup", true))
+            if (!PlayerActivity.remoteAct(a, j.optLong("v"))) return ok(JSONObject().put("none", true))
+        }
+        val st = PlayerActivity.remoteState() ?: return ok(JSONObject().put("none", true))
+        return ok(JSONObject().put("st", st))
+    }
+
+    /** (v519) تاتش باد: mv / tap / long / scroll (dx, dy نسبة من حجم التاتش باد) */
+    private fun ptrCmd(r: HttpReq): HttpRes {
+        val j = try { JSONObject(r.bodyText()) } catch (_: Exception) { return err(403, "bad") }
+        val op = j.optString("op")
+        if (op.isEmpty()) return err(403, "empty")
+        TvInput.ptr(op, j.optDouble("dx", 0.0).toFloat(), j.optDouble("dy", 0.0).toFloat())
+        return ok(JSONObject().put("ctx", TvInput.context()).put("acc", TvAccess.connected))
     }
 
     /** أوامر الصوت والتشغيل — بتتنفّذ على الـUI thread */
@@ -337,9 +386,11 @@ object TvLink {
         val j = try { JSONObject(r.bodyText()) } catch (_: Exception) { return err(403, "bad") }
         val ver = j.optLong("ver"); val url = j.optString("url"); val vname = j.optString("vname")
         if (!url.startsWith("http://", true)) return err(403, "badurl")
-        if (ver <= LinkVer.code(app)) return err(403, "not_newer")
-        if (j.optBoolean("auto") && ver == declinedVer) return err(403, "declined")
-        pendingOffer = Offer(ver, vname, url, rm.name)
+        val force = j.optBoolean("force")
+        if (force) { if (ver < LinkVer.code(app)) return err(403, "older") }   // (v521) الإجباري بيعدّي نفس النسخة (إعادة تثبيت) بس أندرويد مبيسمحش بنزول لنسخة أقدم
+        else if (ver <= LinkVer.code(app)) return err(403, "not_newer")
+        if (!force && j.optBoolean("auto") && ver == declinedVer) return err(403, "declined")
+        pendingOffer = Offer(ver, vname, url, rm.name, force)
         val a = top?.get()
         h.post { val t = top?.get(); if (t is TvActivity) offerIfAny(t) }
         return ok(JSONObject().put("shown", a is TvActivity))
@@ -348,12 +399,12 @@ object TvLink {
     private fun offerIfAny(a: Activity) {
         val o = pendingOffer ?: return
         if (offerShowing || a.isFinishing || a.isDestroyed) return
-        if (o.ver <= LinkVer.code(app)) { pendingOffer = null; return }
+        if (if (o.force) o.ver < LinkVer.code(app) else o.ver <= LinkVer.code(app)) { pendingOffer = null; return }
         offerShowing = true
         TvUpdate.ask(a, o) { accepted ->
             offerShowing = false
             pendingOffer = null
-            if (!accepted) declinedVer = o.ver
+            if (!accepted && !o.force) declinedVer = o.ver
         }
     }
 }

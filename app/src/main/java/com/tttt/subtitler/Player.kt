@@ -52,6 +52,62 @@ class PlayerActivity : Activity(), Host {
             try { o.runOnUiThread { try { o.togglePlay() } catch (_: Throwable) {} } } catch (_: Throwable) { return false }
             return true
         }
+
+        private fun live(): PlayerActivity? = synchronized(liveList) { liveList.mapNotNull { it.get() }.lastOrNull { !it.isFinishing && !it.isDestroyed } }
+
+        private fun <T> onUi(o: PlayerActivity, f: () -> T): T? {
+            val box = arrayOfNulls<Any>(1)
+            val latch = java.util.concurrent.CountDownLatch(1)
+            try { o.runOnUiThread { try { box[0] = f() } catch (e: Throwable) { LogStore.err("Player:remote", e) }; latch.countDown() } } catch (_: Throwable) { return null }
+            @Suppress("UNCHECKED_CAST")
+            return if (latch.await(900, java.util.concurrent.TimeUnit.MILLISECONDS)) box[0] as T? else null
+        }
+
+        /** (v520) حالة المشغّل للموبايل: عنوان · مكان · مدة · تشغيل · سرعة · احتواء · ترجمة · حجم/إزاحة الترجمة · صوت/جودة. null = مفيش مشغّل */
+        fun remoteState(): org.json.JSONObject? { val o = live() ?: return null; return onUi(o) { o.rState() } }
+
+        /** (v520) أوامر المشغّل من الموبايل. v = قيمة (مللي ثانية / اتجاه) */
+        fun remoteAct(a: String, v: Long): Boolean { val o = live() ?: return false; return onUi(o) { o.rAct(a, v) } == true }
+    }
+
+    private fun rState(): org.json.JSONObject {
+        val j = org.json.JSONObject()
+        j.put("title", try { notifTitle() } catch (_: Throwable) { "" })
+        j.put("pos", try { player.currentPosition } catch (_: Throwable) { 0L })
+        j.put("dur", durMs)
+        j.put("playing", try { player.isPlaying } catch (_: Throwable) { false })
+        j.put("speed", PlayerLogic.speedLabel(speed))
+        j.put("fit", fitNameOf(curFit()))
+        j.put("cc", ccOn)
+        j.put("scale", Cfg.int("sub_scale", 100))
+        j.put("shift", offsetMs)
+        j.put("audio", aTracks.size > 1)
+        j.put("quality", qualPopFn != null && (qOpts.size > 1 || uri == null))
+        j.put("tr", tvTrLabel())
+        return j
+    }
+
+    private fun rAct(a: String, v: Long): Boolean {
+        val anchor = window.decorView
+        when (a) {
+            "toggle" -> togglePlay()
+            "seek" -> tvSeek(v)
+            "seekto" -> player.seekTo(v.coerceIn(0L, if (durMs > 0) durMs else Long.MAX_VALUE))
+            "prev" -> stepEpisode(-1)
+            "next" -> stepEpisode(1)
+            "speed" -> tvCycleSpeed()
+            "fit" -> cycleFitNow()
+            "cc" -> { ccOn = !ccOn; if (!ccOn) sub.show(null) else curIdx = -2 }
+            "scale" -> tvSubScale(v.toInt())
+            "shift" -> tvSubShift(v)
+            "audio" -> audPopFn?.invoke(anchor)
+            "quality" -> qualPopFn?.invoke(anchor)
+            "translate" -> translateMenu(anchor)
+            "more" -> tvMoreDialog(anchor)
+            "subs" -> tvSubTracksDialog(anchor)
+            else -> return false
+        }
+        return true
     }
 
     // ===== (v461) ريموت التلفزيون (وضع 📺 بس): يمين/شمال = تقديم/ترجيع 10ث · فوق/تحت = حجم الترجمة ·
@@ -90,6 +146,7 @@ class PlayerActivity : Activity(), Host {
             override fun quality(anchor: View) { qualPopFn?.invoke(anchor) }
             override fun subDialog() { tvSubDialog() }
             override fun more(anchor: View) { tvMoreDialog(anchor) }
+            override fun subTracks(anchor: View) { tvSubTracksDialog(anchor) }
         })
         frame.addView(b.view, FrameLayout.LayoutParams(-1, -2, Gravity.BOTTOM))
         b.onVis = { tvChromeGate() }
@@ -150,6 +207,35 @@ class PlayerActivity : Activity(), Host {
         d.show()
     }
     /** ⋯ المزيد: الأدوات اللي مش لازمة على الشريط الأساسي */
+    /** (v521) لو اتختار مسار ترجمة أصلي من الفيديو: يتعرض هو حتى لو المحرك عنده ترجمة (لحد ما يرجّع ترجمة البرنامج أو الفيديو يتغيّر) */
+    @Volatile private var preferNative = false
+    /** (v521) زرار 🌐 في شريط التلفزيون: مسارات الترجمة الأصلية في الفيديو (سوفت سب) + لغة/لهجة ترجمة البرنامج + إعداداتها */
+    private fun tvSubTracksDialog(anchor: View) {
+        val labels = ArrayList<String>(); val acts = ArrayList<() -> Unit>()
+        fun add(l: String, a: () -> Unit) { labels.add(l); acts.add(a) }
+        val tc = androidx.media3.common.C.TRACK_TYPE_TEXT
+        val groups = try { player.currentTracks.groups.filter { it.type == tc && it.length > 0 && it.isSupported } } catch (_: Throwable) { emptyList() }
+        val textOff = try { player.trackSelectionParameters.disabledTrackTypes.contains(tc) } catch (_: Throwable) { false }
+        groups.forEachIndexed { i, g ->
+            val f = g.getTrackFormat(0)
+            val lang = (f.language ?: "").let { l -> if (l.isBlank() || l == "und") "" else try { java.util.Locale(l).getDisplayLanguage(java.util.Locale("ar")).ifBlank { l } } catch (_: Throwable) { l } }
+            val name = listOf(f.label ?: "", lang).filter { it.isNotBlank() }.distinct().joinToString(" · ").ifBlank { "مسار " + (i + 1) }
+            val on = g.isSelected && !textOff && preferNative
+            add((if (on) "✓ " else "") + "💬 " + name + " (من الفيديو)") {
+                try {
+                    player.trackSelectionParameters = player.trackSelectionParameters.buildUpon().setTrackTypeDisabled(tc, false)
+                        .setOverrideForType(androidx.media3.common.TrackSelectionOverride(g.mediaTrackGroup, 0)).build()
+                    preferNative = true; ccOn = true; curIdx = -2
+                    Notice.show(this, "💬 " + name, 1500L)
+                } catch (e: Throwable) { LogStore.err("Player:pickText", e) }
+            }
+        }
+        if (groups.isNotEmpty() && preferNative) add("↩ رجّع ترجمة البرنامج") { preferNative = false; ccOn = true; curIdx = -2; Notice.show(this, "↩ ترجمة البرنامج", 1300L) }
+        add("🌐 لغة / لهجة ترجمة البرنامج") { preferNative = false; langPopup(anchor) }
+        add("⚙ إعدادات الترجمة") { modeSettings(anchor) }
+        if (groups.isEmpty()) add("ℹ مفيش ترجمة أصلية في الفيديو ده (لو الترجمة محروقة على الصورة استخدم ▶ ترجم ← بصري/هارد سب)") { }
+        GAlert(this).setTitle("💬 مسار الترجمة").setItems(labels.toTypedArray()) { _, w -> if (w in acts.indices) acts[w]() }.show()
+    }
     private fun tvMoreDialog(anchor: View) {
         val labels = ArrayList<String>(); val acts = ArrayList<() -> Unit>()
         fun add(l: String, a: () -> Unit) { labels.add(l); acts.add(a) }
@@ -3289,14 +3375,14 @@ class PlayerActivity : Activity(), Host {
                 // جملة طويلة واحدة: بتتقسم لأجزاء بتظهر بالتتابع على مدة الجملة (التوقيت الأصلي ثابت)
                 var parts: List<String> = emptyList(); var part = 0
                 val ssn = sub.style
-                val nat = ccOn && gs.isEmpty() && nativeCue.isNotEmpty()   // (v515) ترجمة الفيديو الأصلية لما مفيش ترجمة من المحرك
+                val nat = ccOn && (gs.isEmpty() || preferNative) && nativeCue.isNotEmpty()   // (v515) (v521) preferNative = المستخدم اختار مسار الفيديو الأصلي ترجمة الفيديو الأصلية لما مفيش ترجمة من المحرك
                 if (nat != natShown) { natShown = nat; try { sub.style = natStyle(SubStyle.load { k, d -> Cfg.str(k, d) }) } catch (e: Throwable) { LogStore.err("Player:natStyle", e) } }
                 val key = act.joinToString(",") + ":" + part + (if (nat) "|N:" + nativeCue else "")
                 if (idx != curIdx || key != curKey) {
                     curIdx = idx; curKey = key
                     val shown: Sub? = when {
                         !ccOn -> null
-                        gs.isEmpty() -> if (nat) natSub(nativeCue) else null
+                        gs.isEmpty() || preferNative -> if (nat) natSub(nativeCue) else null
                         parts.size > 1 -> gs[0].copy(translated = parts[part], isContinuation = gs[0].isContinuation && part == parts.size - 1)
                         else -> PlayerLogic.combine(gs)
                     }
@@ -3963,7 +4049,7 @@ class PlayerActivity : Activity(), Host {
         try { player.release() } catch (e: Exception) { LogStore.err("Main:2167", e) }
         uri = newUri; url = null; aurl = null; hdr.clear()
         cur = 0L; durMs = 0L; vidW = 0; vidH = 0; curIdx = -2; curKey = ""; dirty = true
-        nativeCue = ""; textPicked = false; natShown = false; natLast = ""
+        nativeCue = ""; textPicked = false; natShown = false; natLast = ""; preferNative = false
         synchronized(logBuf) { logBuf.setLength(0) }
         status = ""; conf = Cfg.snapshot()
         try { sub.show(null) } catch (e: Exception) { LogStore.err("Main:2172", e) }
