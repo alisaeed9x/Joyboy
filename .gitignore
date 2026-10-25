@@ -1,8 +1,0 @@
-local.properties
-.gradle/
-.kotlin/
-build/
-.idea/
-*.iml
-*.apk
-.DS_Store
