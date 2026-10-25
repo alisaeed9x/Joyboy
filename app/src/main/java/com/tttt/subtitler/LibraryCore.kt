@@ -2,7 +2,7 @@ package com.tttt.subtitler
 
 import org.json.JSONObject
 
-/** (v543 م3) منطق نقي لمكتبة التلفزيون على الموبايل: تحليل ردود /lib/* + ترتيب + تنسيق. من غير Android عشان يتختبر على JVM. */
+/** (v543 م3) منطق نقي لمكتبة التلفزيون على الموبايل: تحليل ردود /lib/ + ترتيب + تنسيق. من غير Android عشان يتختبر على JVM. */
 data class RFolder(val key: String, val name: String, val path: String, val count: Int, val size: Long, val newest: Long)
 
 data class RVideo(

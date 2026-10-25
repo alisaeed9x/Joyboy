@@ -371,7 +371,7 @@ object RemoteClient {
         } catch (e: Exception) { Pair(-1, ByteArray(0)) } finally { try { c?.disconnect() } catch (_: Exception) {} }
     }
 
-    /** (v543 م3) GET نصّي (ردود JSON بتاعة /lib/*) */
+    /** (v543 م3) GET نصّي (ردود JSON بتاعة /lib/) */
     internal fun getText(path: String, ms: Int = 8000): Pair<Int, String> {
         val (c, b) = getBytes(path, ms)
         return Pair(c, String(b, Charsets.UTF_8))
