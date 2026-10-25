@@ -1,0 +1,16 @@
+# Copy this file to local.properties (gitignored) and fill it in.
+
+# Path to the Android SDK. Android Studio installs it here on a Mac; on Windows it's usually
+# C\:\\Users\\<you>\\AppData\\Local\\Android\\Sdk. You can set ANDROID_HOME instead.
+sdk.dir=/Users/<you>/Library/Android/sdk
+
+# Optional: "Trending this week" from TMDB. Free key: themoviedb.org → Settings → API (see README).
+# Leave empty to hide the section. The longer "API Read Access Token" works too.
+tmdb.key=
+
+# Which country's streaming catalogue to match, so the button opens an app that actually has the title
+# there (two-letter code: IN, US, GB, ...). Empty = the TV's own country setting.
+tmdb.region=
+
+# What to show: all (movies + shows), movie or tv
+tmdb.feed=all

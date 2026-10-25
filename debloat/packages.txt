@@ -1,0 +1,3 @@
+# Your TV's removal list: one package name per line, # for comments.
+# Start from examples/xiaomi-tv.txt if you have a Xiaomi TV, or ask your coding agent to audit your TV
+# (`adb shell pm list packages`) and fill this in. Review it before running debloat.sh.
