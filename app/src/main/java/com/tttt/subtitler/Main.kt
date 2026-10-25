@@ -53,10 +53,14 @@ fun filePicker(mime: String, title: String, persist: Boolean): Intent {
 class MainActivity : Activity() {
     lateinit var link: EditText
     private var fromPlayer = false
+    private var ytTvMode = false   // (v532) جاي من زرار «يوتيوب» في الريموت: كل فيديو بيسأل «تشغّله على التلفزيون؟» والرجوع بيرجّع للريموت
+    private var ytTvSent = false
+    private var ytOpenUrlFn: ((String) -> Boolean)? = null   // (v532) لينك يوتيوب مش فيديو (قناة/قايمة) جوه يوتيوب البرنامج
     private var fromTv = false   // (v467) الزيارة دي جاية من واجهة التلفزيون: قفل الإعدادات/الرجوع من الجذر يرجّع لها
     private val baseLangs = listOf("ar" to "العربية", "en" to "English", "fr" to "Français", "es" to "Español", "de" to "Deutsch", "tr" to "Türkçe", "hi" to "हिन्दी", "ko" to "한국어", "ja" to "日本語", "zh" to "中文")   // (v467) اللغة الأساسية
     // (v469) D7 وضع النص الكبير: fontScale على مستوى الـ Context فبيكبّر كل نصوص الواجهة (المقاسة بـ SP) بنسبة ثابتة ٪٢٥
-    override fun attachBaseContext(newBase: android.content.Context) {
+    override fun attachBaseContext(nb0: android.content.Context) {
+        val newBase = TvScale.wrap(nb0)   // (v507)
         val big = try { val sp = newBase.getSharedPreferences("p", 0); try { sp.getBoolean("big_text", false) } catch (_: Throwable) { sp.getString("big_text", "") == "1" } } catch (_: Throwable) { false }
         if (!big) { super.attachBaseContext(newBase); return }
         val cfg = android.content.res.Configuration(newBase.resources.configuration); cfg.fontScale = 1.25f
@@ -79,6 +83,8 @@ class MainActivity : Activity() {
     private var libStarted = false
     private var curTab = 0                       // (v117) 0 = الفيديوهات · 1 = يوتيوب
     private var ytUi: YtProUi? = null
+    private var tvShellOn = false           // (v516) يوتيوب جوه قشرة اللانشر (نفس الشريط والخلفية، من غير انتقال تطبيق جديد)
+    private var tvBar: TvShellBar? = null
     private var navUi: BottomNav? = null
     private var warmView: View? = null   // (v469) D2 طبقة الفلتر الدافئ
     /** (v469) D2 فلتر راحة العين الدافئ: طبقة عنبرية شفافة فوق الشاشة الرئيسية (٠ = مقفول، ١٠٠ = أقصى دفء ≈ ٪٣٣ عتمة) */
@@ -117,14 +123,18 @@ class MainActivity : Activity() {
         NetUse.init()
         fromPlayer = intent?.getBooleanExtra("from_player", false) == true
         fromTv = intent?.getBooleanExtra("from_tv", false) == true
+        ytTvMode = intent?.getBooleanExtra("tv_target", false) == true
         if (fromPlayer) setTheme(android.R.style.Theme_Translucent_NoTitleBar)
         super.onCreate(b)
         if (fromPlayer) requestedOrientation = if (intent?.getBooleanExtra("land", false) == true) ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE else ActivityInfo.SCREEN_ORIENTATION_PORTRAIT   // الإعدادات من المشغّل: بنفس اتجاه المشغّل
         UiWatchdog.start()
         Cfg.init(this); CrashLog.install(this); YtFast.startup();
+        if (!fromPlayer) DeviceUi.applyOrientation(this)   // (v494) وضع التلفزيون/التابلت على موبايل = لاندسكيب تلقائي
+        if (DeviceUi.isTv(this) && !fromPlayer) fromTv = true   // (v482) وضع التلفزيون مختار: أي دخول لـMain (من أي شاشة/إشعار/رجوع من المشغّل) رجوعه للتلفزيون مش للموبايل
         // (v461) وضع التلفزيون: شاشة TV بدال واجهة الموبايل (إلا لو جاي بطلب صريح: تبويب/رابط/فتح من شاشة TV نفسها)
         if (DeviceUi.isTv(this) && intent?.getBooleanExtra("force_phone", false) != true && intent?.getStringExtra("tab") == null &&
-            intent?.action != Intent.ACTION_VIEW && intent?.action != Intent.ACTION_SEND && intent?.getStringExtra("yt_open") == null) {
+            intent?.action != Intent.ACTION_VIEW && intent?.action != Intent.ACTION_SEND && intent?.getStringExtra("yt_open") == null &&
+            intent?.getStringExtra(Links.EX_URL) == null) {   // (v531) لينك جاي من ريموت الموبايل/أي شاشة: ما يتحوّلش للانشر (كان بيتبلع لو Main مش شغّال)
             startActivity(Intent(this, TvActivity::class.java)); finish(); return
         }
         val th = Themes.byId(Cfg.str("theme", "mx"))
@@ -490,6 +500,20 @@ class MainActivity : Activity() {
             ModelWatch.refreshPending(); modelDesc.text = descOf(id)
             refreshChip()
         }
+        // (v529) مفاتيح وصلت من الموبايل والإعدادات مفتوحة: حدّث الخانات من Cfg (وإلا الحفظ التلقائي بيكتب القديم فوق الجديد)
+        KeysSync.reload = {
+            runOnUiThread {
+                try {
+                    val was = noSaveCfg; noSaveCfg = true
+                    keys.setText(Cfg.allMainKeys().joinToString("\n")); backup.setText(""); extra.setText(""); vkeys.setText(Cfg.str("viskeys"))
+                    val m = Cfg.str("model", Models.DEFAULT).trim().ifEmpty { Models.DEFAULT }
+                    model.setText(m); modelSel = m; modelDesc.text = descOf(m)
+                    keyLoadersRef.forEach { it() }
+                    refreshChip()
+                    noSaveCfg = was
+                } catch (e: Throwable) { LogStore.err("Main:keysReload", e) }
+            }
+        }
         val sp = styleParts(ui, th)
         val lk = LockUi(this, ui, th); lockUi = lk
         val lockStatus = ui.text("", 13f, th.text)
@@ -698,7 +722,8 @@ class MainActivity : Activity() {
                         startActivity(Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TASK or Intent.FLAG_ACTIVITY_NEW_TASK).apply { if (m != DeviceUi.TV) putExtra("tab", "settings") })
                         finish()
                     },
-                    ui.button("🔁 بدّل للوضع اللي بعده (موبايل ← تلفزيون ← تابلت)") {
+                    // (v490) زرار «بدّل للوضع اللي بعده» بيحوّل التلفزيون لتابلت فبيبوّظ وضع التلفزيون — مش بيظهر في وضع التلفزيون
+                    if (DeviceUi.isTv(this)) View(this) else ui.button("🔁 بدّل للوضع اللي بعده (موبايل ← تلفزيون ← تابلت)") {
                         val nx = DeviceUi.cycleNext(this); Cfg.put("ui_mode", nx)
                         startActivity(Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TASK or Intent.FLAG_ACTIVITY_NEW_TASK).apply { if (nx != DeviceUi.TV) putExtra("tab", "settings") })
                         finish()
@@ -900,6 +925,7 @@ class MainActivity : Activity() {
         // (v325) بوابة يوتيوب (الخامسة): YtProUi — واجهة أصلية على NewPipeExtractor بدل صفحة الويب؛ بتتبني أول ما تفتحها
         fun ensureYt(): YtProUi {
             ytUi?.let { return it }
+            YtSkin.translucent = tvShellOn   // (v516)
             val yt = YtProUi(this, ui, th,
                 { Recents.parse(try { recentFile.readText() } catch (_: Exception) { "" }).associateBy { it.id } },
                 { id, name, tr -> playYt(id, name, tr) },
@@ -914,7 +940,7 @@ class MainActivity : Activity() {
                     kind == "a" && src == "youtube" -> playYtAudio(ref, title, "", "")
                     else -> {}
                 } } }, onPlayAt = { id, name, tr, ms, pk -> playYt(id, name, tr, tr, ms, pk) })
-            ytUi = yt; yt.root.visibility = View.GONE; ytOpenFn = { vid -> yt.openVideo(vid) }; yt.onTab = { syncNav() }   // (v475) تبويبات يوتيوب في الشريط السفلي
+            ytUi = yt; yt.root.visibility = View.GONE; ytOpenFn = { vid -> yt.openVideo(vid) }; ytOpenUrlFn = { u -> yt.openUrl(u) }; yt.onTab = { syncNav() }   // (v475) تبويبات يوتيوب في الشريط السفلي
             pane.addView(yt.root, 1, FrameLayout.LayoutParams(-1, -1))
             pane.addView(yt.busyView, FrameLayout.LayoutParams(-1, -1))   // (v337) لودينج جلب رابط الفيديو فوق الصفحة
             return yt
@@ -952,7 +978,7 @@ class MainActivity : Activity() {
         }
         musicOpenFn = { showTabFn(1); musicUi?.showFull() }   // (v337)
         val tabletShell = DeviceUi.isTablet(this)   // (v462) قشرة التابلت: ريل جانبي زي يوتيوب التابلت بدل الشريط السفلي
-        val nav = BottomNav(this, ui, th, 0, tabletShell) { i -> if (i >= BottomNav.YT_HOME) { musicReturnTab = -1; val was = curTab == 4; if (!was) showTabFn(4); ytUi?.tapTab(i - BottomNav.YT_HOME, !was) } else if (i == 2) { save(); NavAnim.set(curTab, 2); startActivity(Intent(this, BrowserActivity::class.java)) } else if (i == 3) { save(); NavAnim.set(curTab, 3); startActivity(Intent(this, FileManagerActivity::class.java)) } else if (i == 7) { musicReturnTab = -1; settingsShow?.invoke(null) } else { musicReturnTab = -1; showTabFn(i) } }   // (v310) 4 الملفات = شاشة منفصلة زي المتصفح
+        val nav = BottomNav(this, ui, th, 0, tabletShell) { i -> if (i >= BottomNav.YT_HOME) { musicReturnTab = -1; val was = curTab == 4; if (!was) showTabFn(4); ytUi?.tapTab(i - BottomNav.YT_HOME, !was) } else if (i == 2) { save(); NavAnim.set(curTab, 2); startActivity(Intent(this, BrowserActivity::class.java)) } else if (i == 3) { save(); NavAnim.set(curTab, 3); startActivity(Intent(this, FileManagerActivity::class.java)) } else if (i == 7) { musicReturnTab = -1; settingsShow?.invoke(null) } else if (i == 0 && fromTv && !fromPlayer && TvFocus.goHome(this)) { /* (v482) تلفزيون: «الرئيسية» = شاشة التلفزيون */ } else { musicReturnTab = -1; showTabFn(i) } }   // (v310) 4 الملفات = شاشة منفصلة زي المتصفح
         navUi = nav
         if (!fromPlayer) {
             TaskCenter.listener = { if (!isDestroyed && !isFinishing) { tasksDlgRefresh?.invoke(); runOnUiThread { updateTasksFab() } } }
@@ -972,7 +998,13 @@ class MainActivity : Activity() {
         if (tabletShell) { shell.addView(pane, LinearLayout.LayoutParams(0, -1, 1f)); shell.addView(nav.view, LinearLayout.LayoutParams(ui.dp(80), -1)) }
         else { shell.addView(pane, LinearLayout.LayoutParams(-1, 0, 1f)); shell.addView(nav.view, LinearLayout.LayoutParams(-1, -2)) }
         val frame = FrameLayout(this).apply { setBackgroundColor(th.bg); layoutDirection = View.LAYOUT_DIRECTION_LTR }
-        frame.addView(shell, FrameLayout.LayoutParams(-1, -1))
+        tvShellOn = fromTv && !fromPlayer && DeviceUi.isTv(this)
+        if (tvShellOn) { try { (nav.view.parent as? android.view.ViewGroup)?.removeView(nav.view) } catch (_: Throwable) {} }   // (v524) تلفزيون: الشريط السفلي بتاع الموبايل (6 أزرار) مشال
+        if (tvShellOn) {
+            // (v527) تلفزيون: يوتيوب صفحة كاملة — الشريط العلوي (تطبيقات/ملفات/يوتيوب/متصفح) اتشال. الخلفية بس فضلت، وتابات يوتيوب (الرئيسية · الاشتراكات · أنا) جوه صفحة يوتيوب نفسها. Back = اللانشر.
+            frame.addView(TvShell.backdrop(this, th), FrameLayout.LayoutParams(-1, -1))
+            frame.addView(shell, FrameLayout.LayoutParams(-1, -1))
+        } else frame.addView(shell, FrameLayout.LayoutParams(-1, -1))
         ytLoadUi = YtLoadingPage(this, ui, th) { cancelYtLoad() }.also { frame.addView(it.root, FrameLayout.LayoutParams(-1, -1)) }
         if (fromPlayer) {
             setContentView(FrameLayout(this))
@@ -980,6 +1012,7 @@ class MainActivity : Activity() {
             return
         }
         setContentView(frame)
+        frame.post { YtLink.maybeHandle(this, intent) }   // (v488) فتح التطبيق من رابط QR بتاع التلفزيون
         // (v469) D2 طبقة الفلتر الدافئ فوق محتوى الشاشة (ما بتمنعش اللمس: View عادية من غير مستمعات، والعناصر العائمة فوقها)
         warmView = View(this).apply { isClickable = false; isFocusable = false; importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO }
         frame.addView(warmView, FrameLayout.LayoutParams(-1, -1))
@@ -987,7 +1020,7 @@ class MainActivity : Activity() {
         dockUi = MiniDock(this, frame, ui, th, { musicOpenFn?.invoke() }, { curTab == 1 }) { t -> musicUi?.artBitmap(t) }   // (v344)
         stripUi = StatusStrip(this, frame, ui, th) { showTabFn(5) }   // (v345)
         tasksFabUi = TasksFab(this, frame, ui) { showTasksDialog() }   // (v420) عايم: بيظهر وقت المهام الشغّالة بس
-        if (!fromPlayer && b == null) { frame.alpha = 0f; frame.animate().setStartDelay(0L).alpha(1f).setDuration(160L).start() }   // (v312) بدل السبلاش: ظهور ناعم سريع
+        if (!fromPlayer && b == null && !tvShellOn) { frame.alpha = 0f; frame.animate().setStartDelay(0L).alpha(1f).setDuration(160L).start() }   // (v312) بدل السبلاش: ظهور ناعم سريع
         if (!fromPlayer) {   // (v310) أيقونة «الموسيقى» في اللانشر (alias) أو رجوع من المتصفح/الملفات لتبويب معيّن
             val cn = intent?.component?.className ?: ""
             // (v339) لو الأكتيفيتي اتعمل لها إعادة إنشاء (النظام قتلها وإنت في المشغّل): ارجع لنفس البوابة مش للفيديوهات
@@ -1082,12 +1115,14 @@ class MainActivity : Activity() {
         if (Build.VERSION.SDK_INT >= 30) l += PermStep("allfiles", "إدارة كل الملفات", "عشان تغيّر اسم الفيديو أو تنقله أو تحذفه من غير ما النظام يسألك كل مرة",
             { android.os.Environment.isExternalStorageManager() },
             { startActivityForResult(Intent(android.provider.Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION, Uri.parse("package:$packageName")), 14) })
+        if (!DeviceUi.isTv(this)) {   // (v501) وضع التلفزيون: مفيش PiP ولا تحكم سطوع من الفيديو — الصلاحيتين دول مش بيتطلبوا
         l += PermStep("overlay", "العرض فوق التطبيقات الأخرى", "عشان الترجمة تظهر تحت نافذة الـ PiP لما تخرج بره البرنامج",
             { Build.VERSION.SDK_INT < 23 || android.provider.Settings.canDrawOverlays(this) },
             { startActivityForResult(Intent(android.provider.Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName")), 14) })
         l += PermStep("writesettings", "تعديل إعدادات النظام", "عشان التحكم في السطوع من الفيديو يشتغل",
             { Build.VERSION.SDK_INT < 23 || android.provider.Settings.System.canWrite(this) },
             { startActivityForResult(Intent(android.provider.Settings.ACTION_MANAGE_WRITE_SETTINGS, Uri.parse("package:$packageName")), 14) })
+        }
         l += PermStep("battery", "تجاهل توفير البطارية", "عشان الترجمة في الخلفية ماتتقفلش لما الشاشة تتقفل",
             { (getSystemService(Context.POWER_SERVICE) as android.os.PowerManager).isIgnoringBatteryOptimizations(packageName) },
             { startActivityForResult(Intent(android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, Uri.parse("package:$packageName")), 14) })
@@ -1217,6 +1252,7 @@ class MainActivity : Activity() {
                 id != null -> playYt(id, title, false, false, 0L, null, ret)   // (v467) لينك يوتيوب بيفتح يوتيوب عادي على طول
                 k == Links.Kind.AUDIO -> openMusicLink(u, title)
                 k == Links.Kind.VIDEO -> openVideoLink(u, ret)
+                Links.isYtPage(u) -> openYtPage(u)   // (v532) لينك قناة/قايمة يوتيوب ← يوتيوب البرنامج مش المتصفح
                 else -> web()
             }
         }
@@ -1240,7 +1276,21 @@ class MainActivity : Activity() {
         val how = i.getStringExtra(Links.EX_HOW) ?: Links.AUTO
         val t = i.getStringExtra(Links.EX_TITLE) ?: ""
         val r = i.getStringExtra(Links.EX_RET) ?: ""
-        i.removeExtra(Links.EX_URL)
+        val lref = i.getStringExtra("link_ref") ?: ""; val lua = i.getStringExtra("link_ua") ?: ""; val lck = i.getStringExtra("link_cookie") ?: ""
+        i.removeExtra(Links.EX_URL); i.removeExtra("link_ref"); i.removeExtra("link_ua"); i.removeExtra("link_cookie")
+        val lstart = i.getLongExtra("link_startms", 0L); i.removeExtra("link_startms")   // (v543 م4) يوتيوب من الموبايل ومعاه مكان البداية
+        val lyt = Links.ytId(u)
+        if (lstart > 0L && lyt != null && (how == Links.VIDEO || how == Links.VIDEO_TR || how == Links.AUTO)) {
+            val tr = how == Links.VIDEO_TR
+            playYt(lyt, t, tr, tr, lstart, null, r)
+            return
+        }
+        if ((lref.isNotEmpty() || lua.isNotEmpty() || lck.isNotEmpty()) && Links.ytId(u) == null && (how == Links.VIDEO || how == Links.AUTO)) {
+            // (v533) فيديو مصطاد من المتصفح (لينك مباشر محتاج Referer/Cookie): نشغّله فرجة بنفس الهيدرز
+            try { musicUi?.pause() } catch (_: Throwable) {}
+            startActivity(Intent(this, PlayerActivity::class.java).putExtra("url", u).putExtra("ref", lref).putExtra("ua", lua).putExtra("cookie", lck).putExtra("title", t).putExtra("nosub", true).putExtra("landscape", false).putExtra("fresh", false).putExtra("ask", false))
+            return
+        }
         openLinkAs(u, how, t, r)
     }
     fun play(u: String, uri: Uri?, landscape: Boolean = uri != null, fresh: Boolean = false, noSub: Boolean = false, ask: Boolean = false, ret: String = "") {
@@ -1300,6 +1350,7 @@ class MainActivity : Activity() {
 
     /** (v469) D13 نافذة «إيه الجديد»: بتظهر مرة واحدة لكل إصدار (seen_ver) بملخص التغييرات، ووراها تلميح ميزة يومي صغير قابل للإيقاف من الإعدادات */
     private fun whatsNew() {
+        if (DeviceUi.isTv(this)) return   // (v527) تلفزيون: مفيش نافذة «إيه الجديد» ولا تلميح يومي (بيظهروا فوق يوتيوب/اللانشر بعد كل تحديث)
         try {
             val vn = try { packageManager.getPackageInfo(packageName, 0).versionName ?: "" } catch (_: Throwable) { "" }
             if (vn.isNotEmpty() && Cfg.str("seen_ver", "") != vn) {
@@ -1458,6 +1509,8 @@ class MainActivity : Activity() {
     /** فيديو من سجل «المصطادة»: يفتح بنفس الرابط والهيدرز ويكمّل من آخر مكان وقفت عنده. روابط يوتيوب بتنتهي — فبنفتح صفحة الفيديو */
     fun playWeb(w: WebVid) {
         if (w.kind == "YT") { if (w.id.startsWith("yt:")) playYt(w.id.removePrefix("yt:"), w.title, true, false) else if (w.ref.isNotEmpty()) openLink(w.ref) else Notice.show(this, ("رابط يوتيوب انتهت صلاحيته — افتحه من المتصفح تاني").toString(), 3600L); return }
+        // (v543 م4) وضع التلفزيون: الفيديو المصطاد بيتبعت للتلفزيون بنفس الهيدرز (Referer/UA/Cookie)
+        if (PlayTarget.open(this, MediaSpec(url = w.url, headers = mapOf("ref" to w.ref, "ua" to w.ua, "cookie" to w.cookie), title = w.title, how = Links.VIDEO))) return
         ensureKeys {
             startActivity(Intent(this, PlayerActivity::class.java).apply {
                 putExtra("url", w.url); putExtra("ref", w.ref); putExtra("ua", w.ua); putExtra("cookie", w.cookie)
@@ -1467,8 +1520,53 @@ class MainActivity : Activity() {
     }
     /** (v117) دخول مباشر لفيديو يوتيوب من معرّفه: بيجيب أحسن لينك فيه صوت وصورة ويفتح المشغّل (لو فشل بيفتح صفحته في المتصفح) */
     fun playYt(id: String, title: String, translate: Boolean = true, auto: Boolean = translate, startMs: Long = 0L, handoff: YtPick? = null, retOv: String = "") {
+        // (v543 م4) وضع التلفزيون شغّال: يوتيوب بيتبعت للتلفزيون على طول (ytid + مكان البداية) وبعدين شاشة الريموت — من غير سؤال
+        if (handoff == null && id.length == 11 && PlayTarget.open(this, MediaSpec(ytid = id, title = title, startMs = startMs, how = if (translate) Links.VIDEO_TR else Links.VIDEO))) return
+        if (!translate && handoff == null && startMs <= 0L && askTv(id, title, retOv)) return   // (v532) «تشغّله على التلفزيون؟»
+        playYtHere(id, title, translate, auto, startMs, handoff, retOv)
+    }
+    private fun playYtHere(id: String, title: String, translate: Boolean = true, auto: Boolean = translate, startMs: Long = 0L, handoff: YtPick? = null, retOv: String = "") {
         // (v339) مفتاح الترجمة الأول (لو ناقص بيسأل) وبعدها ندخل صفحة المشغّل فورًا
         if (translate) ensureKeys { ytStart(id, title, translate, auto, startMs, handoff, retOv) } else ytStart(id, title, translate, auto, startMs, handoff, retOv)
+    }
+    /** (v532) على الموبايل ومعاه تلفزيون مقترن: قبل ما فيديو يوتيوب يشتغل يسأل «تشغّله على التلفزيون؟». true = اتعرضت القايمة (والتشغيل هيكمّل من اختيارك) */
+    private fun askTv(id: String, title: String, ret: String): Boolean {
+        if (isFinishing || isDestroyed || fromPlayer || id.length != 11) return false
+        if (DeviceUi.isTv(this)) return false
+        val paired = try { RemoteClient.init(this); RemoteClient.lastTv() != null } catch (_: Throwable) { false }
+        if (!paired) return false
+        if (!ytTvMode && Cfg.str("tv_ask", "1") == "0") return false
+        val b = GAlert(this).setTitle("📺 تشغّله على التلفزيون؟").setMessage(title.ifBlank { "فيديو يوتيوب" })
+            .setPositiveButton("📺 على التلفزيون") { _, _ -> sendYtToTv(id, title, ret) }
+            .setNegativeButton("📱 هنا في الموبايل") { _, _ -> playYtHere(id, title, false, false, 0L, null, ret) }
+        if (!ytTvMode) b.setNeutralButton("📱 هنا ومتسألنيش تاني") { _, _ -> Cfg.put("tv_ask", "0"); playYtHere(id, title, false, false, 0L, null, ret) }
+        b.show()
+        return true
+    }
+    /** (v532) يبعت الفيديو للتلفزيون ويفتح شاشة تحكم مشغّل الفيديو على الموبايل (جودة · لغة · تقديم · صوت…) */
+    private fun sendYtToTv(id: String, title: String, ret: String) {
+        Notice.show(this, "📺 بوصّل بالتلفزيون…", 2500L)
+        Thread {
+            val er: String? = try {
+                if (!RemoteClient.ensureConnected(this, 8000L)) "ما قدرتش أوصل للتلفزيون — اتأكد إنه شغّال وعلى نفس الواي فاي"
+                else RemoteClient.openLink(YtHistory.watchUrl(id), title)
+            } catch (e: Throwable) { LogStore.err("Main:ytToTv", e); "حصلت مشكلة" }
+            runOnUiThread {
+                if (isFinishing || isDestroyed) return@runOnUiThread
+                if (er == null) {
+                    ytTvSent = true
+                    try { startActivity(Intent(this, RemoteActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP).putExtra("open_player", true).putExtra("wait", true)) } catch (e: Throwable) { LogStore.err("Main:openRemote", e) }
+                } else {
+                    GAlert(this).setTitle("⚠ ما اتبعتش للتلفزيون").setMessage(er)
+                        .setPositiveButton("📱 شغّله هنا") { _, _ -> playYtHere(id, title, false, false, 0L, null, ret) }
+                        .setNegativeButton("إغلاق", null).show()
+                }
+            }
+        }.also { it.isDaemon = true }.start()
+    }
+    /** (v532) لينك يوتيوب مش فيديو (قناة / قايمة تشغيل / بحث): بيتفتح في تاب يوتيوب بتاع البرنامج مش في المتصفح */
+    private fun openYtPage(u: String) {
+        try { showTabFn(4); ytOpenUrlFn?.invoke(u) } catch (e: Throwable) { LogStore.err("Main:ytPage", e) }
     }
     private fun cancelYtLoad() { ytLoadTok++; ytLoadLaunched = false; ytLoadUi?.hide() }
     /** (v339) بنفتح «صفحة المشغّل» فورًا (لودينج جواها) وبنجيب رابط الفيديو في الخلفية؛ لو فشل بنقفلها ونطلّع الدايلوج ونفضل في يوتيوب */
@@ -1664,9 +1762,26 @@ class MainActivity : Activity() {
         val th0 = Themes.byId(Cfg.str("theme", "mx")); val ui0 = Ui(this, th0)   // ui/th محليين في onCreate فبنبني نسخة هنا
         YtHistoryUi.show(this, ui0, th0, { id, t -> saveFn(); playYt(id, t, false) }, { id, t, ch -> saveFn(); playYtAudio(id, t, ch, "") })
     }
+    /** (v516) تابات اللانشر من جوه يوتيوب: 0 رئيسية · 1 تطبيقات · 2 يوتيوب · 3 متصفح · 4 فيديوهات · 5 ملفات */
+    private fun tvShellGo(i: Int) {
+        try {
+            when (i) {
+                0 -> tvToLauncher("home")
+                1 -> tvToLauncher("apps")
+                2 -> if (curTab != 4) showTabFn(4)
+                3 -> { saveCfgFn?.invoke(); startActivity(Intent(this, BrowserActivity::class.java).putExtra("from_tv", true)) }
+                4 -> tvToLauncher("videos")   // (v530) صفحة الفيديوهات بقت جوه اللانشر (مش شاشة الموبايل)
+            }
+        } catch (e: Throwable) { LogStore.err("Main:tvShellGo", e) }
+    }
+    private fun tvToLauncher(show: String) {
+        try { startActivity(Intent(this, TvActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP).putExtra("tv_show", show)); finish() }
+        catch (_: Throwable) { showTabFn(0) }
+    }
     fun updateYtBadge() { navUi?.badge(4, YtNotify.badgeCount()) }
     /** (v475) الشريط السفلي: وانت في يوتيوب بيعرض (الرئيسية · الاشتراكات · أنا)؛ اللايت ترتيبه ثابت (الرئيسية · الاشتراكات · محلي · أنا) */
     fun syncNav() {
+        tvBar?.select(if (curTab == 4) 2 else if (curTab == 0) 4 else -1)   // (v516)
         val n = navUi ?: return
         val liteApp = packageName.endsWith(".lite")
         n.mode(curTab == 4)
@@ -1709,7 +1824,7 @@ class MainActivity : Activity() {
         if (!fromPlayer && libStarted) libUi?.let { if (it.hasData) it.render() else scanFn() }
         if (!fromPlayer && curTab == 4) ytUi?.refresh()
     }
-    override fun onDestroy() { try { dockUi?.detach() } catch (_: Throwable) {}; try { ytUi?.destroy() } catch (_: Throwable) {}; try { stripUi?.detach() } catch (_: Throwable) {}; try { tasksFabUi?.detach() } catch (_: Throwable) {}; if (!fromPlayer) TaskCenter.listener = null; try { tasksFabUi?.detach() } catch (_: Throwable) {}; try { musicUi?.destroy() } catch (_: Throwable) {}; super.onDestroy() }
+    override fun onDestroy() { try { KeysSync.reload = null } catch (_: Throwable) {}; try { dockUi?.detach() } catch (_: Throwable) {}; try { ytUi?.destroy() } catch (_: Throwable) {}; try { stripUi?.detach() } catch (_: Throwable) {}; try { tasksFabUi?.detach() } catch (_: Throwable) {}; if (!fromPlayer) TaskCenter.listener = null; try { tasksFabUi?.detach() } catch (_: Throwable) {}; try { musicUi?.destroy() } catch (_: Throwable) {}; super.onDestroy() }
     /** (v327) إشعار فيديو جديد: افتح تفاصيله في بوابة يوتيوب (الدالة بتتركّب أول ما بوابة يوتيوب تتبني؛ showTabFn(4) بتبنيها) */
     private fun openYtFromIntent(i: Intent?) {
         val id = i?.getStringExtra("yt_open") ?: return
@@ -1719,6 +1834,8 @@ class MainActivity : Activity() {
     /** (v117) الرجوع من المتصفح بشريط البوابات: بيفتح البوابة اللي اخترتها */
     override fun onNewIntent(i: Intent?) {
         super.onNewIntent(i)
+        YtLink.maybeHandle(this, i)   // (v488) دخول يوتيوب للتلفزيون بالـQR (subtitler://ytlink)
+        if (DeviceUi.isTv(this) && !fromPlayer) fromTv = true   // (v482)
         i?.getStringExtra("ytaudio")?.let { id ->   // (v343) 🎧 من مشغّل الفيديو: كمّل كصوت من نفس المكان
             try {
                 playYtAudio(id, i?.getStringExtra("ytaudtitle") ?: "", "", "", false, (i?.getLongExtra("ytaudpos", 0L) ?: 0L).toInt(),
@@ -1727,13 +1844,19 @@ class MainActivity : Activity() {
         }
         handleExternal(i); handleLinkIntent(i)   // (v345)
         if (i?.getBooleanExtra("fullmusic", false) == true) musicOpenFn?.invoke()   // (v344) ⤢ من المشغّل المصغّر في المتصفح/الملفات
-        when (i?.getStringExtra("tab")) { "videos" -> showTabFn(0); "music" -> showTabFn(1); "tasks" -> showTabFn(5); "settings" -> settingsShow?.invoke(null); "youtube" -> { showTabFn(4); openYtFromIntent(i) } }
+        if (i?.getStringExtra("tab") != null) ytTvMode = i?.getBooleanExtra("tv_target", false) == true   // (v532)
+        when (i?.getStringExtra("tab")) { "videos" -> if (DeviceUi.isTv(this) && !fromPlayer) tvToLauncher("videos") else showTabFn(0); "music" -> showTabFn(1); "tasks" -> showTabFn(5); "settings" -> settingsShow?.invoke(null); "youtube" -> { showTabFn(4); openYtFromIntent(i) } }
     }
-    override fun dispatchKeyEvent(ev: android.view.KeyEvent): Boolean { if (TvFocus.handleKey(this, ev)) return true; return super.dispatchKeyEvent(ev) }   // (v477) Menu = دوسة طويلة
+    override fun dispatchKeyEvent(ev: android.view.KeyEvent): Boolean { TvKill.watch(this, ev); if (TvFocus.handleKey(this, ev)) return true; return super.dispatchKeyEvent(ev) }   // (v477) Menu = دوسة طويلة
     @Suppress("DEPRECATION")
     override fun onBackPressed() {
         if (!fromPlayer && ytLoadUi?.visible == true) { cancelYtLoad(); return }   // (v339) لسه بنجيب الفيديو: رجوع = إلغاء ونفضل في يوتيوب
-        if (!fromPlayer && curTab == 4 && ytUi?.back() == true) return   // (v118) رجوع جوه يوتيوب الأول
+        if (!fromPlayer && curTab == 4 && ytUi?.back() == true) return
+        if (!fromPlayer && ytTvMode && curTab == 4) {   // (v532) يوتيوب فُتح من ريموت الموبايل: الرجوع للريموت (الفيديو على التلفزيون بيكمّل)
+            ytTvMode = false
+            try { startActivity(Intent(this, RemoteActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP).apply { if (ytTvSent) putExtra("open_player", true) }) } catch (e: Throwable) { LogStore.err("Main:backRemote", e) }
+            return
+        }   // (v118) رجوع جوه يوتيوب الأول
         if (!fromPlayer && curTab == 7) { settingsBack?.invoke(); return }   // (v370)
         if (!fromPlayer && curTab == 5) { showTabFn(if (tabBeforeTasks == 5) 0 else tabBeforeTasks); return }   // (v324) صفحة المهام ← للصفحة اللي جيت منها
         if (!fromPlayer && curTab == 1 && musicUi?.onBack() == true) return   // (v193) يقفل مشغّل الأسطوانة/الفولدر الأول
@@ -1742,6 +1865,6 @@ class MainActivity : Activity() {
         if (!fromPlayer && libUi?.back() == true) return
         super.onBackPressed()
     }
-    override fun startActivity(i: Intent?) { super.startActivity(i); try { if (!NavAnim.take(this)) overridePendingTransition(R.anim.act_enter, R.anim.act_stay) } catch (e: Exception) { LogStore.err("Main:720", e) } }
-    override fun finish() { super.finish(); try { if (fromPlayer) overridePendingTransition(0, 0) else overridePendingTransition(R.anim.act_stay, R.anim.act_exit) } catch (e: Exception) { LogStore.err("Main:721", e) } }
+    override fun startActivity(i: Intent?) { super.startActivity(i); try { if (tvShellOn) { NavAnim.take(this); overridePendingTransition(0, 0) } else if (!NavAnim.take(this)) overridePendingTransition(R.anim.act_enter, R.anim.act_stay) } catch (e: Exception) { LogStore.err("Main:720", e) } }
+    override fun finish() { super.finish(); try { if (fromPlayer || tvShellOn) overridePendingTransition(0, 0) else overridePendingTransition(R.anim.act_stay, R.anim.act_exit) } catch (e: Exception) { LogStore.err("Main:721", e) } }
 }

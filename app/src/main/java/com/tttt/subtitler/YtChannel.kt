@@ -130,7 +130,7 @@ class YtChannelPage(private val act: Activity, private val ui: Ui, private val h
     }
 
     init {
-        visibility = View.GONE; isClickable = true; setBackgroundColor(YtSkin.bg); layoutDirection = View.LAYOUT_DIRECTION_RTL
+        visibility = View.GONE; isClickable = true; setBackgroundColor(YtSkin.bgSolid); layoutDirection = View.LAYOUT_DIRECTION_RTL
         val col = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL }
         // شريط علوي: رجوع + اسم القناة
         val back = YtIcon(act, "back").apply { contentDescription = "رجوع"; foreground = YtSkin.ripple(true); setOnClickListener { close(true) } }
@@ -239,7 +239,7 @@ class YtChannelPage(private val act: Activity, private val ui: Ui, private val h
         gen++; val my = gen
         chan = null; tabLoad = null; tabKey = ""; items = ArrayList(); next = null; more = null; loadingMore = false
         curUrl = url0; curName = name; curAv = avatar0
-        topName.text = name; nameTv.text = name; metaTv.text = ""; descTv.text = ""; descTv.maxLines = 2
+        topName.text = if (tv) "يوتيوب › قناة › " + name else name; nameTv.text = name; metaTv.text = ""; descTv.text = ""; descTv.maxLines = 2
         banner.visibility = View.GONE
         avHost.removeAllViews(); avHost.addView(avatar(name.ifBlank { "؟" }, 76, avatar0), FrameLayout.LayoutParams(-1, -1))
         tabsRow.removeAllViews()
@@ -300,7 +300,7 @@ class YtChannelPage(private val act: Activity, private val ui: Ui, private val h
         try { YtRss.chanId(c.url)?.let { cid -> if (curUrl.isNotBlank() && curUrl != c.url) YtChanId.put(curUrl, cid) } } catch (_: Throwable) {}   // (v469) C2
         chan = c; tabLoad = c.loadTab
         curUrl = c.url.ifBlank { curUrl }; curName = c.name.ifBlank { curName }; if (c.avatar.isNotBlank()) curAv = c.avatar
-        topName.text = curName
+        topName.text = if (tv) "يوتيوب › قناة › " + curName else curName
         nameTv.text = curName + if (c.verified) "  ✓" else ""
         metaTv.text = listOf(if (c.subs >= 0) fmtN(c.subs) + " مشترك" else "").filter { it.isNotBlank() }.joinToString(" · ")
         avHost.removeAllViews(); avHost.addView(avatar(curName.ifBlank { "؟" }, 76, curAv), FrameLayout.LayoutParams(-1, -1))

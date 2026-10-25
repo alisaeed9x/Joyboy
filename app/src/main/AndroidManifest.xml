@@ -3,8 +3,13 @@
     <!-- (v461) تلفزيون/تابلت: Leanback اختياري واللمس مش إلزامي — نفس النسخة بتشتغل على الكل -->
     <uses-feature android:name="android.software.leanback" android:required="false"/>
     <uses-feature android:name="android.hardware.touchscreen" android:required="false"/>
+    <uses-feature android:name="android.hardware.microphone" android:required="false"/>   <!-- (v500) تلفزيونات من غير مايك في الجهاز (الريموت بيسجّل) -->
     <uses-permission android:name="android.permission.INTERNET"/>
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>   <!-- (v516) مواقيت الصلاة بالموقع (اختياري: من غيره بنستخدم موقع تقريبي من الـIP) -->
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE"/>   <!-- (v525) زرار الواي فاي السريع في اللانشر -->
+    <uses-permission android:name="android.permission.CHANGE_WIFI_STATE"/>
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>   <!-- (v525) أندرويد بيشترطه عشان قايمة الشبكات (scanResults) تظهر -->
     <uses-permission android:name="android.permission.READ_MEDIA_AUDIO"/>
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
@@ -20,10 +25,14 @@
     <uses-permission android:name="android.permission.WRITE_SETTINGS"/>
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS"/>
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="28"/>
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES"/>   <!-- (v518) تثبيت التحديث اللي جه من الموبايل -->
+    <uses-permission android:name="android.permission.REQUEST_DELETE_PACKAGES"/>   <!-- (v483) زرار إلغاء تثبيت اللانشر -->
     <uses-permission android:name="android.permission.READ_MEDIA_VIDEO"/>
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32"/>
     <!-- (v476) صفحة «تطبيقاتك» في اللانشر: اكتشاف تطبيقات التلفزيون من غير QUERY_ALL_PACKAGES -->
     <queries>
+        <intent><action android:name="android.speech.RecognitionService"/></intent>   <!-- (v500) من غيرها isRecognitionAvailable بترجّع false على أندرويد 11+ -->
+        <intent><action android:name="android.speech.action.RECOGNIZE_SPEECH"/></intent>
         <intent><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LEANBACK_LAUNCHER"/></intent>
         <intent><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/></intent>
     </queries>
@@ -33,6 +42,7 @@
             android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboardHidden|density">
             <intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/></intent-filter>
             <intent-filter><action android:name="android.intent.action.SEND"/><category android:name="android.intent.category.DEFAULT"/><data android:mimeType="text/plain"/></intent-filter>
+            <intent-filter><action android:name="android.intent.action.VIEW"/><category android:name="android.intent.category.DEFAULT"/><category android:name="android.intent.category.BROWSABLE"/><data android:scheme="subtitler" android:host="ytlink"/></intent-filter>   <!-- (v488) دخول يوتيوب للتلفزيون بالـQR -->
             <intent-filter><action android:name="android.intent.action.VIEW"/><category android:name="android.intent.category.DEFAULT"/><category android:name="android.intent.category.BROWSABLE"/><data android:scheme="https"/><data android:host="www.youtube.com"/><data android:host="m.youtube.com"/><data android:host="youtu.be"/><data android:host="music.youtube.com"/></intent-filter>   <!-- (v345) لينكات يوتيوب تتفتح في Subtitler -->
         </activity>
         <activity android:name=".BrowserActivity" android:exported="false" android:windowSoftInputMode="adjustResize" android:theme="@style/AppSplash"
@@ -86,6 +96,22 @@
         <service android:name=".YtFeedJob" android:exported="false" android:permission="android.permission.BIND_JOB_SERVICE"/>   <!-- (v327) فحص فيديوهات الاشتراكات الجديدة -->
         <service android:name=".MusicService" android:exported="false" android:foregroundServiceType="mediaPlayback"/>
         <service android:name=".TaskService" android:exported="false" android:foregroundServiceType="dataSync" android:stopWithTask="false"/>   <!-- (v420) مهام الترميز في الخلفية -->
+        <!-- (v518) ريموت الموبايل: شاشة التحكم (أيقونة تانية على الموبايل) · هدف مشاركة «ابعت للتلفزيون» · الخدمة الأمامية -->
+        <activity android:name=".RemoteActivity" android:exported="true" android:label="ريموت التلفزيون" android:icon="@mipmap/ic_remote" android:roundIcon="@mipmap/ic_remote" android:launchMode="singleTop"
+            android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboardHidden|density">
+            <intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/></intent-filter>
+        </activity>
+        <activity android:name=".SendToTvActivity" android:exported="true" android:label="📺 ابعت للتلفزيون" android:theme="@android:style/Theme.Translucent.NoTitleBar"
+            android:excludeFromRecents="true" android:taskAffinity="">
+            <intent-filter><action android:name="android.intent.action.SEND"/><category android:name="android.intent.category.DEFAULT"/><data android:mimeType="text/plain"/></intent-filter>
+        </activity>
+        <service android:name=".RemoteService" android:exported="false" android:foregroundServiceType="dataSync"/>
+        <!-- (v519) تحكم ريموت الموبايل في التطبيقات التانية على التلفزيون (أسهم/رجوع/رئيسية/تاتش باد) — بتتفعّل مرة واحدة من إمكانية الوصول -->
+        <service android:name=".TvAccessService" android:exported="true" android:label="Subtitler — تحكم الريموت في التطبيقات"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+            <intent-filter><action android:name="android.accessibilityservice.AccessibilityService"/></intent-filter>
+            <meta-data android:name="android.accessibilityservice" android:resource="@xml/tv_access_config"/>
+        </service>
         <service android:name=".KeepAliveService" android:exported="false" android:foregroundServiceType="dataSync"/>
     </application>
 </manifest>

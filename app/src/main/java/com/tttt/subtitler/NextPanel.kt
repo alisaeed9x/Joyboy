@@ -105,6 +105,7 @@ class NextPanel(
                 if (r == null || r.first.isEmpty()) return@runOnUiThread   // هيتجرّب تاني في الظهور الجاي
                 loaded = true; items = r.first.take(60)
                 if (chromeOn && st == S.HIDDEN) show()
+                if (wantOpen) { wantOpen = false; if (st == S.HIDDEN) show(); expand() }   // (v531) الفيديو خلص: افتح اللوحة أول ما تتحمّل
             }
         }.apply { isDaemon = true }.start()
     }
@@ -116,7 +117,13 @@ class NextPanel(
         val ph = (cardH - ui.dp(54)).coerceAtLeast(ui.dp(48))
         val pw = minOf((ph * 16f / 9f).toInt(), (host.width * 0.62f).toInt().coerceAtLeast(ui.dp(120)))
         for (v in items.filter { it.id != curId }.take(40)) {
-            val card = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL; setOnClickListener { onPick(v) } }
+            val card = LinearLayout(act).apply {
+                orientation = LinearLayout.VERTICAL; setOnClickListener { onPick(v) }
+                if (DeviceUi.isTv(act)) {   // (v531) الريموت: الكارت يتفوكس ويتظلّل
+                    isFocusable = true; isClickable = true
+                    setOnFocusChangeListener { vw, f -> vw.setBackgroundColor(if (f) 0x55FFFFFF else 0) }
+                }
+            }
             val imgBox = FrameLayout(act)
             imgBox.addView(ImageView(act).apply {
                 scaleType = ImageView.ScaleType.CENTER_CROP; setBackgroundColor(Color.BLACK)
@@ -142,6 +149,15 @@ class NextPanel(
     }
 
     private var chromeOn = false
+    private var wantOpen = false
+
+    /** (v531) لما الفيديو يخلص: اظهر لوحة الفيديوهات القريبة مفتوحة (وحمّلها لو لسه) من غير ما تنتظر لمسة */
+    fun reveal() {
+        chromeOn = true
+        if (!loaded) { wantOpen = true; load(); return }
+        if (st == S.HIDDEN) show()
+        if (st == S.PEEK) expand()
+    }
 
     /** بيتنادى من applyChromeFn: الشريط ظهر/اختفى */
     fun onChrome(on: Boolean) {
@@ -184,6 +200,7 @@ class NextPanel(
         handleTv.visibility = View.VISIBLE; handleH(ui.dp(22)); stripScroll.scrollTo(0, 0); stripScroll.visibility = View.VISIBLE
         lift(openH())
         animH(openH())
+        if (DeviceUi.isTv(act)) strip.post { try { strip.getChildAt(0)?.requestFocus() } catch (_: Throwable) {} }   // (v531) تلفزيون: الفوكس على أول كارت
     }
 
     fun collapse() {

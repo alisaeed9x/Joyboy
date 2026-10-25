@@ -34,7 +34,10 @@ object NotifState {
 /** جسر بين الإشعار والمشغّل: الأوامر (السابق/التالي/تشغيل/سيك/ترجمة/خروج) بتروح للمشغّل الحي */
 object PlayerRemote {
     @Volatile var act: WeakReference<PlayerActivity>? = null
-    fun send(cmd: String, arg: Long = 0L) { act?.get()?.remote(cmd, arg) }
+    fun send(cmd: String, arg: Long = 0L) {
+        val a = act?.get()
+        if (a != null) a.remote(cmd, arg) else LinkSession.notifCmd(cmd, arg)
+    }
 }
 
 /** خدمة foreground: بتخلّي العملية شغالة والترجمة تكمّل لما الشاشة تتقفل، وبتعرض إشعار تحكم (اسم الفيديو · الوقت · شريط تقدم · أزرار) */

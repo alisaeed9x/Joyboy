@@ -33,11 +33,19 @@ class TvPlayerBar(private val act: Activity, private val ui: Ui, private val th:
         fun ccOn(): Boolean; fun toggleCc()
         fun subScale(d: Int); fun subShift(dMs: Long)
         fun hasAudio(): Boolean; fun audio(anchor: View)
+        // (v517) الشريط المبسّط للتلفزيون
+        fun slim(): Boolean
+        fun trLabel(): String; fun trColor(): Int; fun translate(anchor: View)
+        fun hasQuality(): Boolean; fun quality(anchor: View)
+        fun subDialog(); fun more(anchor: View)
+        fun subTracks(anchor: View)   // (v521) 🌐 اختيار مسار/لغة الترجمة (الأصلية اللي في الفيديو + لغة ترجمة البرنامج)
     }
 
     private val h = Handler(Looper.getMainLooper())
     val view = LinearLayout(act)
     var visible = false; private set
+    var onVis: ((Boolean) -> Unit)? = null   // (v509) Player يظهر/يخفي العدّادات مع الشريط
+    fun focusMain() { try { playB.requestFocus() } catch (_: Throwable) {} }
     private val hideRun = Runnable { hide() }
     private val tickRun = object : Runnable { override fun run() { if (visible) { refresh(); h.postDelayed(this, 400L) } } }
 
@@ -45,8 +53,10 @@ class TvPlayerBar(private val act: Activity, private val ui: Ui, private val th:
     private val track = SeekTrack(act, th.primary)
     private lateinit var playB: TextView; private lateinit var speedB: TextView; private lateinit var fitB: TextView
     private lateinit var ccB: TextView; private lateinit var audB: TextView
+    private lateinit var trB: TextView; private lateinit var qB: TextView
+    private val slim: Boolean = try { a.slim() } catch (_: Throwable) { false }
 
-    private fun btn(label: String, onClick: (View) -> Unit): TextView = TextView(act).apply {
+    private fun btn(label: String, onClick: (View) -> Unit): TextView = IconTextView(act).apply {   // (v527) IconTextView: ⏸ ▶ ⏮ ⏭ بتترسم أيقونة (خطين متوازيين) بدل رمز الخط اللي على TCL كان بيطلع شكل «i»
         text = label; textSize = 17f; setTextColor(Color.WHITE); gravity = Gravity.CENTER; typeface = Typeface.DEFAULT_BOLD
         setPadding(ui.dp(14), ui.dp(10), ui.dp(14), ui.dp(10))
         background = GradientDrawable().apply { setColor(0x33FFFFFF); cornerRadius = ui.dp(12).toFloat() }
@@ -72,6 +82,21 @@ class TvPlayerBar(private val act: Activity, private val ui: Ui, private val th:
 
         val row = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER; layoutDirection = View.LAYOUT_DIRECTION_LTR }
         fun add(b: View) { row.addView(b, LinearLayout.LayoutParams(-2, -2).apply { setMargins(ui.dp(4), 0, ui.dp(4), 0) }) }
+        if (slim) {
+            // (v517) تلفزيون: الأساسي بس — ⏮ ▶ ⏭ · ترجم (بنسبتها) · 💬 · 🔤⏱ · HD · 🔊 · ⋯ (الباقي: سرعة/احتواء/شخصيات/جمل/لوج/قوايم)
+            // التقديم/التأخير 10ث بالأسهم يمين/شمال، فأزرارهم اتشالت
+            speedB = TextView(act); fitB = TextView(act)
+            add(btn("⏮") { a.prev() })
+            playB = btn("⏸") { a.toggle() }; add(playB)
+            add(btn("⏭") { a.next() })
+            trB = btn("▶ ترجم") { v -> a.translate(v) }; add(trB)
+            ccB = btn("💬") { a.toggleCc() }; add(ccB)
+            add(btn("🌐") { v -> a.subTracks(v) })   // (v521) مسار/لغة الترجمة جنب زرار الإخفاء
+            add(btn("🔤 ⏱") { a.subDialog() })
+            qB = btn("HD") { v -> a.quality(v) }; add(qB)
+            audB = btn("🔊") { v -> a.audio(v) }; add(audB)
+            add(btn("⋯") { v -> a.more(v) })
+        } else {
         add(btn("⏮") { a.prev() })
         add(btn("⏪ 10") { a.seekBy(-10_000L) })
         playB = btn("⏸") { a.toggle() }; add(playB)
@@ -80,11 +105,13 @@ class TvPlayerBar(private val act: Activity, private val ui: Ui, private val th:
         speedB = btn("⏩ 1x") { a.cycleSpeed() }; add(speedB)
         fitB = btn("⬛") { a.cycleFit() }; add(fitB)
         ccB = btn("💬") { a.toggleCc() }; add(ccB)
+        add(btn("🌐") { v -> a.subTracks(v) })   // (v521)
         add(btn("🔤−") { a.subScale(-10) })
         add(btn("🔤+") { a.subScale(10) })
         add(btn("⏱−") { a.subShift(-250L) })
         add(btn("⏱+") { a.subShift(250L) })
         audB = btn("🔊") { v -> a.audio(v) }; add(audB)
+        }
         val hs = HorizontalScrollView(act).apply { isHorizontalScrollBarEnabled = false; isFillViewport = true; addView(row, FrameLayout.LayoutParams(-1, -2)) }
         view.addView(hs, LinearLayout.LayoutParams(-1, -2).apply { topMargin = ui.dp(6) })
     }
@@ -96,11 +123,13 @@ class TvPlayerBar(private val act: Activity, private val ui: Ui, private val th:
         visible = true; view.visibility = View.VISIBLE; refresh()
         h.removeCallbacks(tickRun); h.postDelayed(tickRun, 400L); poke()
         playB.requestFocus()
+        onVis?.invoke(true)
     }
 
     fun hide() {
         visible = false; h.removeCallbacks(hideRun); h.removeCallbacks(tickRun)
         view.clearFocus(); view.visibility = View.GONE
+        onVis?.invoke(false)
     }
 
     fun refresh() {
@@ -109,7 +138,10 @@ class TvPlayerBar(private val act: Activity, private val ui: Ui, private val th:
             cur.text = PlayerLogic.clock(p); total.text = if (d > 0) PlayerLogic.clock(d) else "--:--"
             track.frac = if (d > 0) (p.toFloat() / d).coerceIn(0f, 1f) else 0f; track.invalidate()
             playB.text = if (a.playing()) "⏸" else "▶"
-            speedB.text = "⏩ " + a.speedLabel(); fitB.text = "⬛ " + a.fitLabel()
+            if (slim) {
+                trB.text = a.trLabel(); trB.background = GradientDrawable().apply { setColor(a.trColor()); cornerRadius = ui.dp(12).toFloat() }
+                qB.visibility = if (a.hasQuality()) View.VISIBLE else View.GONE
+            } else { speedB.text = "⏩ " + a.speedLabel(); fitB.text = "⬛ " + a.fitLabel() }
             ccB.alpha = if (a.ccOn()) 1f else 0.4f
             audB.visibility = if (a.hasAudio()) View.VISIBLE else View.GONE
         } catch (_: Throwable) {}

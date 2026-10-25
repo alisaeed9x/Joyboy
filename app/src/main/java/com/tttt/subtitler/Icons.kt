@@ -157,6 +157,13 @@ object Icons {
         "more_v" to arrayOf("F|_|1|M10 5C10 5.53 10.21 6.04 10.59 6.41C10.96 6.79 11.47 7 12 7C12.53 7 13.04 6.79 13.41 6.41C13.79 6.04 14 5.53 14 5C14 4.47 13.79 3.96 13.41 3.59C13.04 3.21 12.53 3 12 3C11.47 3 10.96 3.21 10.59 3.59C10.21 3.96 10 4.47 10 5ZM10 12C10 12.53 10.21 13.04 10.59 13.41C10.96 13.79 11.47 14 12 14C12.53 14 13.04 13.79 13.41 13.41C13.79 13.04 14 12.53 14 12C14 11.47 13.79 10.96 13.41 10.59C13.04 10.21 12.53 10 12 10C11.47 10 10.96 10.21 10.59 10.59C10.21 10.96 10 11.47 10 12ZM10 19C10 19.53 10.21 20.04 10.59 20.41C10.96 20.79 11.47 21 12 21C12.53 21 13.04 20.79 13.41 20.41C13.79 20.04 14 19.53 14 19C14 18.47 13.79 17.96 13.41 17.59C13.04 17.21 12.53 17 12 17C11.47 17 10.96 17.21 10.59 17.59C10.21 17.96 10 18.47 10 19Z"),
         "more_h" to arrayOf("F|_|1|M3 12C3 12.53 3.21 13.04 3.59 13.41C3.96 13.79 4.47 14 5 14C5.53 14 6.04 13.79 6.41 13.41C6.79 13.04 7 12.53 7 12C7 11.47 6.79 10.96 6.41 10.59C6.04 10.21 5.53 10 5 10C4.47 10 3.96 10.21 3.59 10.59C3.21 10.96 3 11.47 3 12ZM10 12C10 12.53 10.21 13.04 10.59 13.41C10.96 13.79 11.47 14 12 14C12.53 14 13.04 13.79 13.41 13.41C13.79 13.04 14 12.53 14 12C14 11.47 13.79 10.96 13.41 10.59C13.04 10.21 12.53 10 12 10C11.47 10 10.96 10.21 10.59 10.59C10.21 10.96 10 11.47 10 12ZM17 12C17 12.53 17.21 13.04 17.59 13.41C17.96 13.79 18.47 14 19 14C19.53 14 20.04 13.79 20.41 13.41C20.79 13.04 21 12.53 21 12C21 11.47 20.79 10.96 20.41 10.59C20.04 10.21 19.53 10 19 10C18.47 10 17.96 10.21 17.59 10.59C17.21 10.96 17 11.47 17 12Z"),
         "rot_screen" to arrayOf("S|_|1|M10.1 6.6L13.9 6.6C14.35 6.6 14.78 6.78 15.1 7.1C15.42 7.42 15.6 7.85 15.6 8.3L15.6 15.7C15.6 16.15 15.42 16.58 15.1 16.9C14.78 17.22 14.35 17.4 13.9 17.4L10.1 17.4C9.65 17.4 9.22 17.22 8.9 16.9C8.58 16.58 8.4 16.15 8.4 15.7L8.4 8.3C8.4 7.85 8.58 7.42 8.9 7.1C9.22 6.78 9.65 6.6 10.1 6.6Z", "F|_|1|M11 14.6L13 14.6C13.11 14.6 13.21 14.64 13.28 14.72C13.36 14.79 13.4 14.89 13.4 15L13.4 15.1C13.4 15.21 13.36 15.31 13.28 15.38C13.21 15.46 13.11 15.5 13 15.5L11 15.5C10.89 15.5 10.79 15.46 10.72 15.38C10.64 15.31 10.6 15.21 10.6 15.1L10.6 15C10.6 14.89 10.64 14.79 10.72 14.72C10.79 14.64 10.89 14.6 11 14.6Z", "S|_|1|M2.94 7.77C4.02 5.46 5.94 3.65 8.31 2.71C10.68 1.77 13.32 1.77 15.69 2.71C18.06 3.65 19.98 5.46 21.06 7.77M22.1 3.29L21.06 7.77L16.96 5.69", "S|_|1|M21.06 16.23C19.98 18.54 18.06 20.35 15.69 21.29C13.32 22.23 10.68 22.23 8.31 21.29C5.94 20.35 4.02 18.54 2.94 16.23M1.9 20.71L2.94 16.23L7.04 18.31"),
+        // (v535) أيقونات الريموت الناقصة
+        "power" to arrayOf("S|_|1|M12 3.5L12 11.5", "S|_|1|M16.9 6.6C18.8 8.1 20 10.4 20 13C20 17.4 16.4 21 12 21C7.6 21 4 17.4 4 13C4 10.4 5.2 8.1 7.1 6.6"),
+        "keyboard" to arrayOf("S|_|1|M4.5 6.5L19.5 6.5C20.6 6.5 21.5 7.4 21.5 8.5L21.5 15.5C21.5 16.6 20.6 17.5 19.5 17.5L4.5 17.5C3.4 17.5 2.5 16.6 2.5 15.5L2.5 8.5C2.5 7.4 3.4 6.5 4.5 6.5Z", "S|_|1|M6.5 10L7.5 10M10 10L11 10M13.5 10L14.5 10M17 10L18 10M7 14L17 14"),
+        "phone" to arrayOf("S|_|1|M8 2.5L16 2.5C16.8 2.5 17.5 3.2 17.5 4L17.5 20C17.5 20.8 16.8 21.5 16 21.5L8 21.5C7.2 21.5 6.5 20.8 6.5 20L6.5 4C6.5 3.2 7.2 2.5 8 2.5Z", "S|_|1|M10.5 18.5L13.5 18.5"),
+        "dot_g" to arrayOf("F|FF4CAF50|1|M7 12C7 13.33 7.53 14.6 8.46 15.54C9.4 16.47 10.67 17 12 17C13.33 17 14.6 16.47 15.54 15.54C16.47 14.6 17 13.33 17 12C17 10.67 16.47 9.4 15.54 8.46C14.6 7.53 13.33 7 12 7C10.67 7 9.4 7.53 8.46 8.46C7.53 9.4 7 10.67 7 12Z"),
+        "dot_y" to arrayOf("F|FFFFB300|1|M7 12C7 13.33 7.53 14.6 8.46 15.54C9.4 16.47 10.67 17 12 17C13.33 17 14.6 16.47 15.54 15.54C16.47 14.6 17 13.33 17 12C17 10.67 16.47 9.4 15.54 8.46C14.6 7.53 13.33 7 12 7C10.67 7 9.4 7.53 8.46 8.46C7.53 9.4 7 10.67 7 12Z"),
+        "dot_w" to arrayOf("S|_|1|M7 12C7 13.33 7.53 14.6 8.46 15.54C9.4 16.47 10.67 17 12 17C13.33 17 14.6 16.47 15.54 15.54C16.47 14.6 17 13.33 17 12C17 10.67 16.47 9.4 15.54 8.46C14.6 7.53 13.33 7 12 7C10.67 7 9.4 7.53 8.46 8.46C7.53 9.4 7 10.67 7 12Z"),
     )
 
     private val CP: Map<Int, String> = mapOf(
@@ -302,6 +309,20 @@ object Icons {
         0x1F9F0 to "toolbox",
         0x1F9F9 to "broom",
         0x1FA7A to "steth",
+        0x1F3A4 to "mic",
+        0x1F634 to "moon",
+        0x25B2 to "chev_u",
+        0x25BC to "chev_d",
+        0x23FB to "power",
+        0x2328 to "keyboard",
+        0x1F4F1 to "phone",
+        0x1F590 to "touch",
+        0x1F502 to "repeat",
+        0x21BA to "rotate",
+        0x1F4C4 to "scroll",
+        0x1F7E2 to "dot_g",
+        0x1F7E1 to "dot_y",
+        0x26AA to "dot_w",
     )
 
     private val SC: Map<String, Float> = mapOf("chev_l" to 1.0f, "chev_r" to 1.0f, "chev_d" to 1.0f, "chev_u" to 1.0f, "dot" to 1.0f, "red_dot" to 1.1f, "box_s" to 1.1f, "plus" to 1.2f, "check" to 1.15f, "cross" to 1.15f, "more_v" to 1.3f, "more_h" to 1.3f, "rot_screen" to 1.3f)
@@ -458,7 +479,7 @@ object A11y {
         "ruler" to "المقاس", "scroll" to "ملخص", "note_edit" to "الجمل", "upload" to "تصدير", "download" to "استيراد", "shuffle" to "عشوائي", "repeat" to "تكرار",
         "mute" to "كتم", "vol_low" to "الصوت", "vol" to "الصوت", "search" to "بحث", "lock" to "قفل", "unlock" to "فتح القفل", "key" to "المفاتيح", "bell_off" to "إشعار مكتوم",
         "link" to "رابط", "text_aa" to "النص", "flame" to "اللهجة", "wrench" to "أدوات", "clock" to "الوقت", "hole" to "سد الفجوات", "folders" to "الترجمات",
-        "trash" to "حذف", "prohibited" to "ممنوع", "shield" to "مانع الإعلانات", "robot" to "الذكاء الاصطناعي", "brain" to "ذكي", "toolbox" to "أدوات", "broom" to "مسح"
+        "power" to "طاقة", "keyboard" to "كيبورد", "phone" to "الموبايل", "trash" to "حذف", "prohibited" to "ممنوع", "shield" to "مانع الإعلانات", "robot" to "الذكاء الاصطناعي", "brain" to "ذكي", "toolbox" to "أدوات", "broom" to "مسح"
     )
     fun label(icon: String): String? = L[icon]
 }
@@ -500,7 +521,32 @@ open class IconTextView(ctx: Context) : TextView(ctx) {
 }
 
 open class IconButton(ctx: Context) : Button(ctx) {
-    override fun setText(text: CharSequence?, type: BufferType?) { super.setText(Icons.convert(text), type) }
+    private var autoCd: String? = null
+    private var icT: CharSequence? = null
+    private var icV: Pair<String, Float>? = null
+    private fun oneIcon(): Pair<String, Float>? {
+        val t: CharSequence? = text
+        if (t === icT) return icV
+        icT = t; icV = Icons.singleIcon(t)
+        return icV
+    }
+    override fun setText(text: CharSequence?, type: BufferType?) {
+        icT = null
+        super.setText(Icons.convert(text), type)
+        val one = Icons.singleIcon(text)
+        if (one != null) { val l = A11y.label(one.first); if (l != null && (contentDescription == null || contentDescription == autoCd)) { contentDescription = l; autoCd = l } }
+        else if (autoCd != null && contentDescription == autoCd) { contentDescription = null; autoCd = null }
+    }
+    /** (v535) زرار نصه رمز واحد (↩ 🏠 ☰ 🎤 ⏻ ▲ ▼ …): بنرسم الأيقونة مباشرة — الـ Span لوحده كان بيطلّعه فاضي في الأزرار */
+    override fun onDraw(canvas: Canvas) {
+        val one = oneIcon()
+        if (one == null || width <= 0 || height <= 0) { super.onDraw(canvas); return }
+        val aw = (width - paddingLeft - paddingRight).toFloat(); val ah = (height - paddingTop - paddingBottom).toFloat()
+        var s = textSize * one.second
+        val cap = minOf(aw, ah) * 0.9f
+        if (cap > 0f && s > cap) s = cap
+        Icons.draw(canvas, one.first, paddingLeft + aw / 2f - s / 2f, paddingTop + ah / 2f - s / 2f, s, currentTextColor)
+    }
 }
 
 @Suppress("DEPRECATION")

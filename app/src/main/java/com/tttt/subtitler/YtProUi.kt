@@ -210,7 +210,7 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
         return if (DeviceUi.isTv(act)) (sw - ui.dp(32) - ui.dp(36)) / 4 else sw
     }
     /** (v477) تلفزيون: التركيز يروح لشبكة الفيديوهات (بيتندهي من Main لما تفتح تبويب يوتيوب) */
-    fun tvFocusList() { if (DeviceUi.isTv(act)) lv.post { try { if (root.visibility == View.VISIBLE && lv.isShown && !watch.isOpen && !chan.isOpen) lv.requestFocus() } catch (_: Throwable) {} } }   // (v479) مايسرقش التركيز وصفحة المشاهدة/القناة مفتوحة
+    fun tvFocusList() { if (DeviceUi.isRemote(act)) lv.post { try { if (root.visibility == View.VISIBLE && lv.isShown && !watch.isOpen && !chan.isOpen) lv.requestFocus() } catch (_: Throwable) {} } }   // (v479) مايسرقش التركيز وصفحة المشاهدة/القناة مفتوحة
     private lateinit var ytDock: YtDock               // (v417) شريط مصغّر سفلي بيكمّل الفيديو لما تنزّل من صفحة المشاهدة
     private lateinit var watch: YtWatchPage          // (v402) صفحة المشاهدة (مشغّل مصغّر + تعليقات + مقترحات)
     private lateinit var chan: YtChannelPage         // (v403) صفحة القناة (بانر + اشتراك + جرس + تابات)
@@ -316,7 +316,11 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
         // (v475) التبويبات (الرئيسية · الاشتراكات · أنا) بقت في الشريط السفلي بتاع البرنامج — فوق بقى عنوان الصفحة + بحث + إعدادات بس
         topTitle = TextView(act).apply { text = "يوتيوب"; textSize = 19f; setTextColor(YtSkin.text); typeface = YtSkin.medium; gravity = Gravity.CENTER_VERTICAL or Gravity.START; setSingleLine(); setPadding(ui.dp(12), 0, ui.dp(8), 0) }
         appBar.addView(topTitle, LinearLayout.LayoutParams(0, ui.dp(46), 1f))
-        if (DeviceUi.isTv(act)) appBar.addView(micBtn(), LinearLayout.LayoutParams(ui.dp(48), ui.dp(44)))
+        if (DeviceUi.isTv(act)) {   // (v527) تلفزيون: تابات يوتيوب (الرئيسية · الاشتراكات · أنا) جوه صفحة يوتيوب نفسها (الشريط السفلي مشال على التلفزيون) — بالأسهم + OK
+            for (k in 0 until tabsBox.childCount) tabsBox.getChildAt(k).apply { isFocusable = true; isClickable = true }
+            appBar.addView(tabsBox, LinearLayout.LayoutParams(ui.dp(360), ui.dp(46)).apply { marginEnd = ui.dp(10) })
+        }
+        if (DeviceUi.isRemote(act)) appBar.addView(micBtn(), LinearLayout.LayoutParams(ui.dp(48), ui.dp(44)))
         appBar.addView(iconBtn("search", "بحث") { enterSearch(true) }, LinearLayout.LayoutParams(ui.dp(44), ui.dp(44)))
         appBar.addView(iconBtn("gear", "إعدادات يوتيوب") { settings() }, LinearLayout.LayoutParams(ui.dp(44), ui.dp(44)))
         val backBtn = iconBtn("back", "رجوع") { exitSearch() }.apply { scaleX = -1f }
@@ -324,7 +328,7 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
         searchBar.setPadding(ui.dp(4), ui.dp(4), ui.dp(8), ui.dp(4))
         searchBar.addView(backBtn, LinearLayout.LayoutParams(ui.dp(44), ui.dp(44)))
         searchBar.addView(search, LinearLayout.LayoutParams(0, ui.dp(40), 1f))
-        if (DeviceUi.isTv(act)) searchBar.addView(micBtn(), LinearLayout.LayoutParams(ui.dp(48), ui.dp(44)))
+        if (DeviceUi.isRemote(act)) searchBar.addView(micBtn(), LinearLayout.LayoutParams(ui.dp(48), ui.dp(44)))
         searchBar.addView(clearBtn, LinearLayout.LayoutParams(ui.dp(44), ui.dp(44)))
         page.addView(appBar, LinearLayout.LayoutParams(-1, -2))
         page.addView(searchBar, LinearLayout.LayoutParams(-1, -2))
@@ -437,7 +441,7 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
         lv.apply {
             setBackgroundColor(YtSkin.bg); selector = GradientDrawable().apply { setColor(Color.TRANSPARENT) }
             numColumns = ytCols(); horizontalSpacing = ui.dp(6); verticalSpacing = ui.dp(6); stretchMode = GridView.STRETCH_COLUMN_WIDTH
-            if (DeviceUi.isTv(act)) {   // (v477) يوتيوب على التلفزيون: تحديد واضح بالريموت + Menu = قايمة الفيديو
+            if (DeviceUi.isRemote(act)) {   // (v477) يوتيوب على التلفزيون: تحديد واضح بالريموت + Menu = قايمة الفيديو
                 selector = GradientDrawable().apply { setColor(0x14FFFFFF); setStroke(ui.dp(3), YtSkin.accent); cornerRadius = ui.dp(10).toFloat() }
                 setDrawSelectorOnTop(true); descendantFocusability = ViewGroup.FOCUS_BLOCK_DESCENDANTS
                 isFocusable = true; isFocusableInTouchMode = false
@@ -522,7 +526,7 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
                 if (f != null) f(id, title, translate, posMs, pick) else onPlay(id, title, translate)
             }
             override fun openChannel(url: String, name: String) { watch.close(false); this@YtProUi.openChannel(url, name, "") }
-            override fun openVideo(v: NpItem) { watchVideo(v, null) }
+            override fun openVideo(v: NpItem) { if (DeviceUi.isTv(act)) play(v, false) else watchVideo(v, null) }   // (v494) تلفزيون: من غير صفحة المشاهدة
             override fun audio(v: NpItem) { playAudio(v) }
             override fun download(anchor: View, v: NpItem) { dlMenu(anchor, v) }
             override fun state(open: Boolean) { if (open) ytDock.dismiss(); setNavHidden(open || chan.isOpen); pillGate(open || chan.isOpen); if (!open) tvFocusList() }   // (v479 م5)
@@ -764,7 +768,7 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
         if (it.url == "ytpl:all") { cur?.let { st -> playAll(st) }; return }   // (v469) C7
         if (it.url.startsWith("ytdm:")) { Notice.show(act, "ده تنزيل شغّال في مدير تنزيلات النظام — لما يخلص هيظهر تحت في القايمة والملف في التنزيلات/Subtitler", 3000L); return }   // (v469) C3
         when (it.kind) {
-            0 -> if (YtOpen.mode() == YtOpen.PAGE && it.id.length == 11) watchVideo(it, srcView) else play(it, false)   // (v337) دوسة على الفيديو = يتشغّل على طول (التفاصيل من الضغطة الطويلة ← ℹ)
+            0 -> if (YtOpen.mode() == YtOpen.PAGE && it.id.length == 11 && !DeviceUi.isTv(act)) watchVideo(it, srcView) else play(it, false)   // (v494) وضع التلفزيون: دايمًا المشغّل على طول   // (v337) دوسة على الفيديو = يتشغّل على طول (التفاصيل من الضغطة الطويلة ← ℹ)
             1 -> openChannel(it.channelUrl, it.title, it.thumb)
             2 -> load("📃 " + it.title, -1, null, null, null, "", true, false) { YtNp.playlist(it.url) }
         }
@@ -780,13 +784,22 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
     // ───────── (v346) حساب جوجل ─────────
     private fun startLogin() {
         val from = navSel
-        YtAccount.login(act, ui, th) { ok ->
+        val after: (Boolean) -> Unit = { ok ->
             act.runOnUiThread {
                 if (act.isFinishing || act.isDestroyed) return@runOnUiThread
                 if (ok) { Notice.show(act, "✅ اتسجّل الدخول", 2200L); syncNow(); openTab(if (from == 2) 4 else from) }
                 else Notice.show(act, "اتقفلت صفحة الدخول من غير ما يتم", 2200L)
             }
         }
+        // (v488) تلفزيون: اختيار بين QR من الموبايل أو الدخول اليدوي
+        if (TvFocus.onCtx(act)) {
+            GAlert(act).setTitle("🔐 تسجيل الدخول بحساب جوجل")
+                .setItems(arrayOf("📱 بالـQR من الموبايل (أسهل)", "⌨ يدوي على التلفزيون")) { _, which ->
+                    if (which == 0) YtLink.showTvQr(act, ui, th, after) else YtAccount.login(act, ui, th, after)
+                }.setNegativeButton("إلغاء", null).show()
+            return
+        }
+        YtAccount.login(act, ui, th, after)
     }
     private fun syncNow() {
         Notice.show(act, "🔄 بجيب اشتراكاتك من يوتيوب…", 2000L)
@@ -889,6 +902,18 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
         val on = !YtNotify.enabled(); YtNotify.setEnabled(act, on); paintNotif()
         Notice.show(act, (if (on) "🔔 هتجيلك إشعارات بالفيديوهات الجديدة (فحص كل ساعة تقريبًا)" else "🔕 الإشعارات اتقفلت").toString(), 2600L)
     }
+    /** (v532) لينك يوتيوب مش فيديو (من الريموت/مشاركة): قناة ← صفحة القناة · قايمة تشغيل ← القايمة · غير كده بيفضل في يوتيوب نفسه */
+    fun openUrl(u: String): Boolean {
+        return try {
+            val low = u.lowercase()
+            when {
+                Regex("youtube\\.com/(@|channel/|c/|user/)").containsMatchIn(low) -> { openChannel(u, "", ""); true }
+                low.contains("list=") -> { load("📃 قايمة تشغيل", -1, null, null, null, "", true, false) { YtNp.playlist(u) }; true }
+                else -> false
+            }
+        } catch (e: Throwable) { LogStore.err("YtProUi:openUrl", e); false }
+    }
+
     /** فتح تفاصيل فيديو من معرّفه (من إشعار مثلًا) */
     fun openVideo(id: String) {
         onPlay(id, "", false)   // (v337) من الإشعار: تشغيل مباشر من غير صفحة التفاصيل
@@ -991,9 +1016,21 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
         chipsScroll.visibility = if (st.tab == 0 && !det && st.chUrl == null) View.VISIBLE else View.GONE
         if (st.q != null) enterSearch(false) else if (!searchTyping) { searchBar.visibility = View.GONE; appBar.visibility = View.VISIBLE }
         adapter.set(st.list()); lv.setSelection(st.pos)
-        if (DeviceUi.isTv(act) && (act.currentFocus == null || (act.currentFocus === search && !searchTyping))) tvFocusList()   // (v477) (v479 م5) بعد البحث التركيز ينتقل لنتايج البحث
+        if (DeviceUi.isRemote(act) && (act.currentFocus == null || (act.currentFocus === search && !searchTyping))) tvFocusList()   // (v477) (v479 م5) بعد البحث التركيز ينتقل لنتايج البحث
         h.postDelayed({ prewarmVisible() }, 450L)   // (v472)
         if (st.tab >= 0) paintTabs(st.tab) else if (det) paintTabs(-1)
+        if (DeviceUi.isTv(act)) tvCrumb(st, det)   // (v527)
+    }
+
+    /** (v527) تلفزيون: «إنت فين» — مسار ثابت فوق: يوتيوب › الاشتراكات › قناة X (أو بحث: كذا / اسم القسم) */
+    private fun tvCrumb(st: St, det: Boolean) {
+        if (!::topTitle.isInitialized) return
+        val sb = StringBuilder("يوتيوب › ").append(when (navSel) { 0 -> "الرئيسية"; 1 -> "الاشتراكات"; else -> "أنا" })
+        if (st.chUrl != null) sb.append(" › قناة ").append(st.chName ?: "")
+        else if (st.q != null) sb.append(" › بحث: ").append(st.q)
+        else if (st.tab >= 2 && st.title.isNotBlank()) sb.append(" › ").append(st.title)
+        else if (det) sb.append(" › تفاصيل")
+        topTitle.text = sb.toString(); topTitle.textSize = 17f
     }
 
     // ───────── (v326) تفاصيل الفيديو ─────────
@@ -1437,7 +1474,7 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
         val col = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL }
         col.addView(title, LinearLayout.LayoutParams(-1, -2))
         col.addView(meta, LinearLayout.LayoutParams(-1, -2).apply { topMargin = ui.dp(3) })
-        val more = YtIcon(act, "more").apply { foreground = YtSkin.ripple(true); glyph = 0.8f; contentDescription = "المزيد" }
+        val more = YtIcon(act, "more").apply { foreground = YtSkin.ripple(true); glyph = 0.8f; contentDescription = "المزيد"; if (DeviceUi.isRemote(act)) visibility = View.GONE }   // (v521) تلفزيون: ⋮ بتاعة اللمس اتشالت (Menu بالريموت)
         val info = LinearLayout(act).apply {
             orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; gravity = Gravity.TOP
             setPadding(ui.dp(4), ui.dp(12), ui.dp(12), ui.dp(16))

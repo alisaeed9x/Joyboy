@@ -38,6 +38,10 @@ object Links {
 
     fun ytId(u: String): String? = YT_RE.find(u)?.groupValues?.get(1)
 
+    private val YT_HOST_RE = Regex("^https?://(?:[a-z0-9-]+\\.)*(?:youtube\\.com|youtube-nocookie\\.com|youtu\\.be)(?:[/:?#]|$)", RegexOption.IGNORE_CASE)
+    /** (v532) أي لينك يوتيوب مش فيديو (قناة @اسم · /channel · /c · /user · قايمة تشغيل · نتايج بحث · الرئيسية): بيتفتح في يوتيوب البرنامج مش في المتصفح */
+    fun isYtPage(u: String): Boolean = ytId(u.trim()) == null && YT_HOST_RE.containsMatchIn(u.trim())
+
     fun kind(u0: String): Kind {
         val u = u0.trim()
         if (ytId(u) != null) return Kind.YT
@@ -91,6 +95,28 @@ object Links {
         } catch (e: Throwable) { LogStore.err("Links:dl", e); Notice.show(act, "التحميل فشل", 2600L) }
     }
 
+    /** (v518) يبعت اللينك للتلفزيون المقترن (يوصّل لو مش متصل) ويشتغل هناك */
+    fun sendToTv(act: Activity, u: String) {
+        Notice.show(act, "📺 بوصّل بالتلفزيون…", 2500L)
+        val k0 = kind(u)
+        Thread {
+            var msg = ""
+            try {
+                msg = if (!RemoteClient.ensureConnected(act, 8000L)) "⚠ ما قدرتش أوصل للتلفزيون — اتأكد إنه شغّال وعلى نفس الواي فاي"
+                else (RemoteClient.openLink(u)?.let { "⚠ $it" } ?: "✅ اتبعت للتلفزيون")
+            } catch (e: Throwable) { LogStore.err("Links:sendToTv", e); msg = "⚠ حصلت مشكلة" }
+            try {
+                act.runOnUiThread {
+                    Notice.show(act, msg, 2600L)
+                    // (v532) اتبعت فيديو للتلفزيون: افتح شاشة تحكم مشغّل الفيديو على الموبايل على طول
+                    if (msg.startsWith("✅") && (k0 == Kind.YT || k0 == Kind.VIDEO)) {
+                        try { act.startActivity(Intent(act, RemoteActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP).putExtra("open_player", true).putExtra("wait", true)) } catch (_: Throwable) {}
+                    }
+                }
+            } catch (_: Throwable) {}
+        }.also { it.isDaemon = true }.start()
+    }
+
     fun copy(act: Activity, u: String) {
         try {
             (act.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager).setPrimaryClip(ClipData.newPlainText("link", u))
@@ -131,6 +157,9 @@ object Links {
         }
         if (showWeb && isHttp(u)) box.addView(ui.button(if (k == Kind.WEB) "🌐 افتح في المتصفح (يصطاد الفيديوهات)" else "🌐 افتحه في المتصفح") { go(WEB) })
         box.addView(ui.button("📋 انسخ اللينك") { d.dismiss(); copy(act, u) })
+        if (isHttp(u) && !DeviceUi.isTv(act)) {   // (v518) ابعت للتلفزيون المقترن (لو فيه واحد)
+            try { RemoteClient.init(act); if (RemoteClient.lastTv() != null) box.addView(ui.button("📺 ابعت للتلفزيون") { d.dismiss(); sendToTv(act, u) }) } catch (_: Throwable) {}
+        }
         d = ui.sheet(act, "افتح بـ…", listOf<View>(box))
         d.show()
     }

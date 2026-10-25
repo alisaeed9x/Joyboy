@@ -93,6 +93,12 @@ class Ui(val ctx: Context, var th: Theme) {
     }
     /** قسم قابل للطي (الموبايل صغير) */
     fun section(title: String, open: Boolean, vararg views: View): LinearLayout {
+        // (v487) تلفزيون: الأقسام مفتوحة دايمًا من غير طي (الريموت مش بيعمل «تكبير/تصغير») — عنوان بس والعناصر تحته
+        if (try { DeviceUi.isTv(ctx) } catch (_: Throwable) { false }) {
+            val c = card(); val body = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL }
+            views.forEach { body.addView(it) }
+            c.addView(text(title, 17f, th.primary, true).apply { setPadding(0, dp(6), 0, dp(8)) }); c.addView(body); return c
+        }
         val c = card(); val body = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL; visibility = if (open) View.VISIBLE else View.GONE }
         views.forEach { body.addView(it) }
         val head = text((if (open) "▾ " else "▸ ") + title, 16f, th.primary, true).apply { setPadding(0, dp(6), 0, dp(6)) }

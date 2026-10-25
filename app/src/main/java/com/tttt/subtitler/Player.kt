@@ -42,7 +42,455 @@ import android.util.Rational
 
 /** مشغّل الفيديو والترجمة (اتنقل من Main.kt في v100 — من غير أي تغيير في الكود) */
 class PlayerActivity : Activity(), Host {
-    companion object { private val liveList = ArrayList<java.lang.ref.WeakReference<PlayerActivity>>() }
+    // (v507) ريزوليوشن ديناميك لوضع التلفزيون
+    override fun attachBaseContext(newBase: android.content.Context) { super.attachBaseContext(TvScale.wrap(newBase)) }
+    companion object {
+        private val liveList = ArrayList<java.lang.ref.WeakReference<PlayerActivity>>()
+        /** (v518) ريموت الموبايل: تشغيل/إيقاف المشغّل الشغّال. بيرجّع false لو مفيش مشغّل فيديو مفتوح */
+        fun remoteToggle(): Boolean {
+            val o = synchronized(liveList) { liveList.mapNotNull { it.get() }.lastOrNull { !it.isFinishing && !it.isDestroyed } } ?: return false
+            try { o.runOnUiThread { try { o.togglePlay() } catch (_: Throwable) {} } } catch (_: Throwable) { return false }
+            return true
+        }
+
+        /** (v531) في مشغّل فيديو (برنامج) مفتوح دلوقتي؟ */
+        fun hasLive(): Boolean = live() != null
+
+        private fun live(): PlayerActivity? = synchronized(liveList) { liveList.mapNotNull { it.get() }.lastOrNull { !it.isFinishing && !it.isDestroyed } }
+
+        private fun <T> onUi(o: PlayerActivity, ms: Long = 900L, f: () -> T): T? {
+            val box = arrayOfNulls<Any>(1)
+            val latch = java.util.concurrent.CountDownLatch(1)
+            try { o.runOnUiThread { try { box[0] = f() } catch (e: Throwable) { LogStore.err("Player:remote", e) }; latch.countDown() } } catch (_: Throwable) { return null }
+            @Suppress("UNCHECKED_CAST")
+            return if (latch.await(ms, java.util.concurrent.TimeUnit.MILLISECONDS)) box[0] as T? else null
+        }
+
+        /** (v520) حالة المشغّل للموبايل: عنوان · مكان · مدة · تشغيل · سرعة · احتواء · ترجمة · حجم/إزاحة الترجمة · صوت/جودة. null = مفيش مشغّل */
+        fun remoteState(): org.json.JSONObject? { val o = live() ?: return null; return onUi(o) { o.rState() } }
+
+        /** (v520) أوامر المشغّل من الموبايل. v = قيمة (مللي ثانية / اتجاه) */
+        fun remoteAct(a: String, v: Long): Boolean { val o = live() ?: return false; return onUi(o) { o.rAct(a, v) } == true }
+
+        /** (v542) م1: RPC للتلفزيون-المخ. عمليات engine.* بتتنفّذ على خيط الطلب (مش الـUI)، والباقي على الـUI بمهلة 3 ثواني. null = مفيش مشغّل */
+        fun brain(op: String, a: org.json.JSONObject): org.json.JSONObject? {
+            val o = live() ?: return null
+            return if (op.startsWith("engine.")) o.rpcBg(op, a) else onUi(o, 3000L) { o.rpc(op, a) }
+        }
+
+        /** (v542) لقطة حية من الفيديو كـJPEG (بتتنادى من خيط خلفي). null = مفيش لقطة (DRM/أسود/مفيش مشغّل) */
+        fun brainFrame(maxDim: Int, q: Int): ByteArray? { val o = live() ?: return null; return o.frameJpeg(maxDim, q) }
+    }
+
+    private fun rState(): org.json.JSONObject {
+        val j = org.json.JSONObject()
+        j.put("title", try { notifTitle() } catch (_: Throwable) { "" })
+        j.put("pos", try { player.currentPosition } catch (_: Throwable) { 0L })
+        j.put("dur", durMs)
+        j.put("playing", try { player.isPlaying } catch (_: Throwable) { false })
+        j.put("speed", PlayerLogic.speedLabel(speed))
+        j.put("fit", fitNameOf(curFit()))
+        j.put("cc", ccOn)
+        j.put("scale", Cfg.int("sub_scale", 100))
+        j.put("shift", offsetMs)
+        j.put("audio", aTracks.size > 1)
+        j.put("quality", qualPopFn != null && (qOpts.size > 1 || uri == null))
+        j.put("tr", tvTrLabel())
+        j.put("sf_side", sfSideName()); j.put("sf_nat", sfNativeCount()); j.put("sf_live", sfLive); j.put("sf_busy", sfBusy)   // (v529)
+        // (v531) شاشة «مشغّل الفيديو» في الريموت = نفس تقسيمة مشغّل الموبايل: كل حالة الأزرار والكبسولات
+        j.put("kind", "player")
+        j.put("vw", vidW); j.put("vh", vidH)   // (v546)
+        j.put("loop", Cfg.str("loop", "0") == "1")
+        j.put("dual", try { SubStyle.load { k, d -> Cfg.str(k, d) }.dual } catch (_: Throwable) { 0 })
+        j.put("bgon", Cfg.bool("ask_bg_exit", true))
+        j.put("nots", try { NoticeLog.list().size } catch (_: Throwable) { 0 })
+        j.put("locked", uiLocked)
+        j.put("font", try { val f0 = SubStyle.load { k, d -> Cfg.str(k, d) }.font; SubStyle.fonts.firstOrNull { it.id == f0 }?.label ?: f0 } catch (_: Throwable) { "" })
+        j.put("eng", try { TrWizard.summaryLine() } catch (_: Throwable) { "" })
+        j.put("cnt", try { PlayerLogic.percent(engine.coveredSec(), durMs / 1000.0).toString() + "% · " + list.size.toString() + " جملة" } catch (_: Throwable) { "" })
+        j.put("trcolor", try { tvTrColor() } catch (_: Throwable) { 0xFFE53935.toInt() })
+        // (v532) قوايم الجودة ولغة الصوت كنصوص + الحالي: الريموت بيعرضها على الموبايل ويختار منها من غير ما يفتح قايمة على شاشة التلفزيون
+        try { val (ql, qc) = rQuals(); j.put("ql", org.json.JSONArray(ql)); j.put("qc", qc) } catch (_: Throwable) {}
+        try { j.put("al", org.json.JSONArray(aTracks.map { it.name })); j.put("ac", aCur) } catch (_: Throwable) {}
+        return j
+    }
+
+    // ===== (v542) م1: التلفزيون = المخ — نشر الحالة + أوامر RPC =====
+    private var brainAt = 0L
+    private var brainSubsRef: List<Sub>? = null
+    private var brainEngAt = 0L
+    private val brainEngBusy = java.util.concurrent.atomic.AtomicBoolean(false)
+    private val brainBusy = java.util.concurrent.atomic.AtomicBoolean(false)
+
+    /** بتتنادى من الـtick (200ms). مفيش شغل خالص لو مفيش ريموت بيسأل (/sync). الحساب التقيل للترجمة على خيط خلفي */
+    private fun brainTick() {
+        if (!BrainBus.active()) return
+        val now = android.os.SystemClock.uptimeMillis()
+        if (now - brainAt < 500L) return
+        brainAt = now
+        try {
+            val st = rState()
+            st.put("vid", vid); st.put("ready", engineReady); st.put("started", engineStarted)
+            BrainBus.setState(st.toString())
+        } catch (_: Throwable) {}
+        try {
+            if (::engine.isInitialized) {
+                val sr = engine.subs
+                if (sr !== brainSubsRef && brainBusy.compareAndSet(false, true)) {
+                    brainSubsRef = sr
+                    Thread {
+                        try { BrainBus.updateSubs(sr) } catch (e: Throwable) { LogStore.err("Player:brainSubs", e) } finally { brainBusy.set(false) }
+                    }.start()
+                }
+            }
+        } catch (_: Throwable) {}
+        try {
+            if (::engine.isInitialized && now - brainEngAt >= 1500L && brainEngBusy.compareAndSet(false, true)) {
+                brainEngAt = now
+                val e = engine
+                Thread {
+                    try {
+                        val snap = BrainEngineJson.Snap(
+                            e.coverageSegs(), e.pendingSegs(), e.refiningSegs.toList(), e.batches(), e.problems(), e.batchRows(),
+                            e.failedCount(), e.fullyDone(), e.offlineBrief(), e.offlineDetail(),
+                            covered = e.coveredSec(), pendingCount = e.pendingCount(), userPaused = e.userPaused, paused = e.paused,
+                            transOnly = e.transOnly, keepGoing = e.keepGoing, convDialect = e.convDialect, toneStyle = e.toneStyle,
+                            toneStrength = e.toneStrength, titleHint = e.titleHint, skipIfBaseLang = e.skipIfBaseLang,
+                            baseSkipped = e.baseSkipped, baseLangCode = e.baseLangCode,
+                            versions = e.versions.map { VerRow(it.name, it.dialect, it.subs.size) }, chars = e.charactersNow()
+                        )
+                        if (engine === e) BrainBus.setEngine(BrainEngineJson.encode(snap))
+                    } catch (ex: Throwable) { LogStore.err("Player:brainEng", ex) } finally { brainEngBusy.set(false) }
+                }.start()
+            }
+        } catch (_: Throwable) {}
+    }
+
+    // ===== (v546 م2-ج) وضع المتحكم: التشغيل والمحرك والترجمة على التلفزيون، والموبايل واجهة المشغّل الكاملة =====
+    // قاعدة ب-1: مفيش شبكة على الـUI. الحالة من LinkSession.mirror، والأوامر async، واللقطة الحية من خيط خلفي.
+    @Volatile private var rmFrames = false
+    private var rmLsn: (() -> Unit)? = null
+    private var rmPlaying = false
+    private var rmLiveSeen = false
+    private var rmLostAt = 0L
+    private var rmDownAt = 0L
+    private var rmOpenAt = 0L
+    private var rmBeginAt = 0L
+    private var rmTitle = ""
+    private var rmFrameErr = 0
+
+    /** الوضع البصري على الموبايل متعطّل في وضع المتحكم (بيشتغل على التلفزيون) */
+    private fun visualStart() {
+        if (remote) { Notice.show(this, "📺 الوضع البصري شغّال على التلفزيون", 2200L); return }
+        visual.start()
+    }
+
+    private fun buildRemotePlayer() {
+        handedOff = false
+        player = RemotePlayback()
+        rmOpenAt = android.os.SystemClock.uptimeMillis()
+        status = "📺 متحكم في التلفزيون"
+        try { LinkSession.start(this) } catch (e: Throwable) { LogStore.err("Player:remoteStart", e) }
+        if (rmLsn == null) { val l: () -> Unit = { onRemoteChange() }; rmLsn = l; LinkSession.addListener(l) }
+        startRemoteFrames()
+        h.post { onRemoteChange() }
+    }
+
+    private fun initRemoteEngine() {
+        vid = LinkSession.mirror.st.optString("vid", "")
+        engineReady = false; pendingBegin = false; engineStarted = false
+        engine = RemoteEngine()
+        visual = VisualMode({ visConfNow() }, { cur / 1000.0 }, { makeRetriever() }, { m -> visLog(m) }, { }, { grabSurface() }, log = { m -> visLog(m) })
+        status = "📺 متحكم في التلفزيون"
+        h.post { onRemoteChange() }
+    }
+
+    /** بتتنادى على الـUI كل ما /sync يجيب تغيير: تحديث زرار التشغيل والعنوان والسرعة وحالة الترجمة */
+    private fun onRemoteChange() {
+        if (!remote || isFinishing || isDestroyed || !::player.isInitialized || !::ctl.isInitialized) return
+        val m = LinkSession.mirror; val st = m.st
+        dirty = true
+        if (m.gotFirst && m.live) { rmLiveSeen = true; rmLostAt = 0L }
+        val ready = m.gotFirst && m.live && st.optLong("dur", 0L) > 0L
+        if (ready && !engineReady) { engineReady = true; vid = st.optString("vid", vid) }
+        val tt = st.optString("title", "")
+        if (tt.isNotEmpty() && tt != rmTitle) { rmTitle = tt; notifTitleOv = tt; try { applyChromeFn() } catch (_: Throwable) {} }
+        val sp = PosExtrap.speedOf(st.optString("speed", "1")).toFloat()
+        if (Math.abs(sp - speed) > 0.01f) { speed = sp; speedBRef?.text = "⏩ " + PlayerLogic.speedLabel(speed) }
+        val started = st.optBoolean("started", false)
+        if (started != engineStarted && System.currentTimeMillis() - rmBeginAt > 3000L) { engineStarted = started; updateTr() }
+        setBuffering(!ready)
+        val pl = player.isPlaying
+        if (pl != rmPlaying) {
+            rmPlaying = pl
+            val tx = if (pl) "▮▮" else "▶"
+            if (!buffering) { ctl.play.text = tx; fsPlayB.text = tx; if (::centerPlay.isInitialized) centerPlay.text = tx }
+        }
+    }
+
+    /** من الـtick (200ms): انقطاع الاتصال، أو التلفزيون قفل الفيديو، أو التلفزيون ما فتحش الفيديو أصلًا */
+    private fun remoteWatch() {
+        val now = android.os.SystemClock.uptimeMillis()
+        val m = LinkSession.mirror
+        if (!LinkSession.connected) {
+            if (rmDownAt == 0L) rmDownAt = now
+            if (now - rmDownAt > 2500L) status = "📺 التلفزيون مش متصل — بحاول أوصّل تاني…"
+            if (!rmLiveSeen && now - rmOpenAt > 30000L && !isFinishing) { Notice.show(this, "📺 ما قدرتش أوصل للتلفزيون", 2800L); finish() }
+            return
+        }
+        if (rmDownAt != 0L) { rmDownAt = 0L; status = "📺 متحكم في التلفزيون" }
+        if (m.gotFirst && !m.live) {
+            if (rmLiveSeen) {
+                if (rmLostAt == 0L) rmLostAt = now
+                else if (now - rmLostAt > 4000L && !isFinishing) { Notice.show(this, "📺 التلفزيون قفل الفيديو", 2500L); finish() }
+            } else if (now - rmOpenAt > 30000L && !isFinishing) { Notice.show(this, "📺 التلفزيون ما فتحش الفيديو", 2800L); finish() }
+        } else rmLostAt = 0L
+    }
+
+    /** لقطة حية من التلفزيون (/frame) — خيط خلفي واحد. بتبطّأ لوحدها لو الشبكة بطيئة، وواقف = لقطة كل 6ث أو بعد seek */
+    private fun startRemoteFrames() {
+        if (rmFrames) return
+        rmFrames = true
+        Thread {
+            var lastSig = ""; var lastAt = 0L; var fails = 0
+            while (rmFrames && !isFinishing && !isDestroyed) {
+                try {
+                    val m = LinkSession.mirror
+                    val now = System.currentTimeMillis()
+                    if (!resumedNow || !m.live || !LinkSession.connected || pipNow()) { Thread.sleep(500L); continue }
+                    val playing = m.st.optBoolean("playing", false)
+                    val sig = m.st.optString("vid", "") + ":" + (m.position(now) / 1500L)
+                    val due = if (playing) now - lastAt >= 600L else ((sig != lastSig && now - lastAt >= 350L) || now - lastAt >= 6000L)
+                    if (!due) { Thread.sleep(120L); continue }
+                    lastAt = now; lastSig = sig
+                    val (c, b) = RemoteClient.getBytes("/frame?w=480&q=60", 6000)
+                    if (c == 200 && b.isNotEmpty()) {
+                        fails = 0
+                        val bmp = android.graphics.BitmapFactory.decodeByteArray(b, 0, b.size)
+                        if (bmp != null) runOnUiThread { drawRemoteFrame(bmp) }
+                    } else if (c == 204) {
+                        Thread.sleep(700L)
+                    } else {
+                        fails += 1; Thread.sleep(minOf(400L * fails, 4000L))
+                    }
+                } catch (_: InterruptedException) { break }
+                catch (e: Throwable) { try { Thread.sleep(800L) } catch (_: InterruptedException) { break } }
+            }
+        }.also { it.isDaemon = true; it.name = "RemoteFrames" }.start()
+    }
+
+    /** بيرسم اللقطة على نفس SurfaceView (من غير ExoPlayer) — مقاس السطح من مقاس اللقطة عشان الشكل يبقى زي التلفزيون */
+    private fun drawRemoteFrame(bmp: android.graphics.Bitmap) {
+        try {
+            if (!remote || isFinishing || isDestroyed || !::svRef.isInitialized) return
+            if (bmp.width != vidW || bmp.height != vidH) { vidW = bmp.width; vidH = bmp.height; applyFit(svRef, videoBoxRef) }
+            val hd = svRef.holder
+            if (!hd.surface.isValid) return
+            val cv = hd.lockCanvas() ?: return
+            try { cv.drawBitmap(bmp, null, android.graphics.Rect(0, 0, cv.width, cv.height), null) } finally { hd.unlockCanvasAndPost(cv) }
+            ytBusy(false)
+        } catch (e: Throwable) { if (rmFrameErr++ < 3) LogStore.err("Player:remoteFrame", e) }
+        finally { try { bmp.recycle() } catch (_: Throwable) {} }
+    }
+
+    /** «▶ ترجمة» في وضع المتحكم = تستأنف/تبدأ ترجمة التلفزيون */
+    private fun remoteBegin(auto: Boolean) {
+        if (auto) return
+        try { if (engine.fullyDone()) { Notice.show(this, "✓ الفيديو ده مترجم 100% على التلفزيون", 3000L); return } } catch (_: Throwable) {}
+        dismissStrip()
+        if (noSub) { noSub = false; if (!ccOn) ccToggleFn() }
+        rmBeginAt = System.currentTimeMillis()
+        engineStarted = true
+        LinkSession.send("engine.resume")
+        updateTr()
+    }
+
+    /** أوامر على الـUI thread (سريعة). النتيجة JSON صغير */
+    private fun rpc(op: String, a: org.json.JSONObject): org.json.JSONObject {
+        val res = org.json.JSONObject()
+        when (op) {
+            "state" -> res.put("st", rState())
+            "act" -> res.put("handled", rAct(a.optString("a"), a.optLong("v")))
+            "play" -> { if (!player.isPlaying) player.play() }
+            "pause" -> player.pause()
+            "seekto" -> player.seekTo(a.optLong("ms").coerceIn(0L, if (durMs > 0) durMs else Long.MAX_VALUE))
+            "volume" -> player.volume = a.optDouble("v", 1.0).toFloat().coerceIn(0f, 1f)
+            "speed.set" -> setSpeedFull(a.optDouble("v", 1.0).toFloat())
+            "task.add" -> {
+                val s = toolSrc()
+                if (s == null) res.put("err", "nosrc")
+                else try {
+                    val q = a.optString("q", "متوسطة")
+                    when (a.optString("kind")) {
+                        "trim" -> Tools.trim(this, s, a.optLong("a"), a.optLong("b"), q)
+                        "audio" -> Tools.audio(this, s, q)
+                        "gif" -> Tools.gif(this, s, a.optLong("a"), a.optLong("b", 5000L), q)
+                        "compress" -> Tools.compress(this, s, a.optInt("h", 480), q)
+                        else -> res.put("err", "kind")
+                    }
+                } catch (e: Throwable) { LogStore.err("Player:task.add", e); res.put("err", e.message ?: "err") }
+            }
+            "track.audio" -> switchAudio(a.optInt("i"))
+            "track.quality" -> rSetQ(a.optInt("i"))
+            "conf.reload" -> {
+                val nc = Cfg.snapshot(); conf = nc
+                if (::engine.isInitialized) {
+                    engine.applyConf(nc)
+                    engine.toneStyle = Cfg.str("tone_style", ""); engine.toneStrength = Cfg.str("tone_strength", "متوسطة")
+                    val cd = Cfg.str("conv_dialect", "")
+                    if (cd != engine.convDialect && !(cd.isNotEmpty() && cd == nc.lang)) engine.setConvDialect(cd, false)
+                }
+            }
+            else -> res.put("unknown", true)
+        }
+        return res
+    }
+
+    /** أوامر المحرك: بتتنفّذ على خيط الطلب (مش الـUI). اللي محتاج الـUI بيتبعت بـrunOnUiThread من غير انتظار */
+    private fun rpcBg(op: String, a: org.json.JSONObject): org.json.JSONObject {
+        val res = org.json.JSONObject()
+        if (!::engine.isInitialized) return res.put("err", "noengine")
+        val e = engine
+        val rep = { m: String -> BrainBus.post("opreport", op + "|" + m) }
+        when (op) {
+            "engine.get" -> {
+                res.put("userPaused", e.userPaused).put("paused", e.paused).put("transOnly", e.transOnly)
+                res.put("convDialect", e.convDialect).put("toneStyle", e.toneStyle).put("toneStrength", e.toneStrength)
+                res.put("covered", e.coveredSec()).put("pending", e.pendingCount()).put("failed", e.failedCount()).put("fullyDone", e.fullyDone())
+                res.put("subs", e.subs.size)
+            }
+            "engine.set" -> {
+                val k = a.optString("name")
+                when (k) {
+                    "transOnly" -> e.transOnly = a.optBoolean("value")
+                    "keepGoing" -> e.keepGoing = a.optBoolean("value")
+                    "toneStyle" -> e.toneStyle = a.optString("value")
+                    "toneStrength" -> e.toneStrength = a.optString("value")
+                    "convDialect" -> e.convDialect = a.optString("value")
+                    "titleHint" -> e.titleHint = a.optString("value")
+                    "paused" -> e.paused = a.optBoolean("value")
+                    "skipIfBaseLang" -> e.skipIfBaseLang = a.optBoolean("value")
+                    "baseSkipped" -> e.baseSkipped = a.optBoolean("value")
+                    "baseLangCode" -> e.baseLangCode = a.optString("value")
+                    else -> res.put("unknown", true)
+                }
+            }
+            "engine.characters" -> res.put("chars", BrainChars.encode(e.charactersNow()))
+            "engine.analyzeChars" -> e.analyzeCharsNow(rep) { l -> BrainBus.post("opdone", op + "|" + BrainChars.encode(l).toString()) }
+            "engine.pause" -> runOnUiThread { pauseTranslate() }
+            "engine.resume" -> runOnUiThread { beginTranslate() }
+            "engine.translateFrom" -> { e.translateFrom(a.optDouble("sec", 0.0)); runOnUiThread { engineKick() } }
+            "engine.translateFromStart" -> { e.translateFromStart(); runOnUiThread { engineKick() } }
+            "engine.redoAll" -> { e.redoAll(a.optBoolean("keep", true)); runOnUiThread { engineKick() } }
+            "engine.redoFrom" -> { e.redoFrom(a.optInt("i"), a.optBoolean("keep", true)); runOnUiThread { engineKick() } }
+            "engine.redoOnly" -> { e.redoOnly(a.optInt("i"), a.optBoolean("keep", true)); runOnUiThread { engineKick() } }
+            "engine.retryProblems" -> { res.put("n", e.retryProblems()); runOnUiThread { engineKick() } }
+            "engine.retryFailed" -> { e.retryFailed(); runOnUiThread { engineKick() } }
+            "engine.removeDuplicates" -> res.put("n", e.removeDuplicates())
+            "engine.saveVersion" -> e.saveVersion(a.optString("name", "نسخة"), a.optString("dialect", ""))
+            "engine.applyVersion" -> res.put("n", e.applyVersion(a.optInt("i")))
+            "engine.setConvDialect" -> e.setConvDialect(a.optString("d"), a.optBoolean("existing", true))
+            "engine.adoptDialect" -> e.adoptDialect(a.optString("d"))
+            "engine.langChanged" -> e.langChanged(a.optString("lang"), a.optDouble("pos", 0.0))
+            "engine.saveNow" -> e.saveNow()
+            "engine.importSubs" -> e.importSubs(SubCodec.arrayFromJson(a.optJSONArray("subs")))
+            "engine.versions" -> {
+                val arr = org.json.JSONArray()
+                for (v in e.versions) arr.put(org.json.JSONObject().put("name", v.name).put("dialect", v.dialect).put("count", v.subs.size))
+                res.put("versions", arr)
+            }
+            "engine.recap" -> e.recap(a.optDouble("upToSec", 0.0), rep) { txt -> BrainBus.post("opdone", op + "|" + txt) }
+            "engine.rewriteAll" -> e.rewriteAll(a.optString("label"), a.optString("instruction"), a.optDouble("fromSec", 0.0), rep) { n -> BrainBus.post("opdone", op + "|" + n) }
+            "engine.refineWholeNow" -> e.refineWholeNow(rep) { n -> BrainBus.post("opdone", op + "|" + n) }
+            "engine.correctPronounsNow" -> e.correctPronounsNow(rep) { n -> BrainBus.post("opdone", op + "|" + n) }
+            "engine.googleTranslateAll" -> e.googleTranslateAll(rep) { n -> BrainBus.post("opdone", op + "|" + n) }
+            else -> res.put("unknown", true)
+        }
+        return res
+    }
+
+    /** لقطة حية JPEG للموبايل (من خيط خلفي — grabSurface بتستنى PixelCopy لحد 1.5ث) */
+    fun frameJpeg(maxDim: Int, q: Int): ByteArray? {
+        val b = try { grabSurface(maxDim) } catch (_: Throwable) { null } ?: return null
+        return try {
+            val bo = java.io.ByteArrayOutputStream()
+            b.compress(android.graphics.Bitmap.CompressFormat.JPEG, q.coerceIn(30, 90), bo)
+            bo.toByteArray()
+        } catch (_: Throwable) { null } finally { try { b.recycle() } catch (_: Throwable) {} }
+    }
+
+    /** (v532) مسارات HLS/DASH بأعلى bitrate لكل ارتفاع (نفس منطق قايمة 🎞 في المشغّل) */
+    private fun rHls(): List<Triple<Int, androidx.media3.common.Tracks.Group, Int>> {
+        val tg = ArrayList<Triple<Int, androidx.media3.common.Tracks.Group, Int>>()
+        for (g in (player.exo()?.currentTracks?.groups ?: emptyList<androidx.media3.common.Tracks.Group>())) if (g.type == androidx.media3.common.C.TRACK_TYPE_VIDEO)
+            for (ti in 0 until g.length) if (g.isTrackSupported(ti)) tg.add(Triple(g.getTrackFormat(ti).height, g, ti))
+        return tg.filter { it.first > 0 }
+            .sortedWith(compareByDescending<Triple<Int, androidx.media3.common.Tracks.Group, Int>> { it.first }.thenByDescending { it.second.getTrackFormat(it.third).bitrate })
+            .distinctBy { it.first }
+    }
+    /** (v532) الجودات المتاحة كنصوص + رقم الحالية (يوتيوب بقايمة جوداته، أو HLS: «تلقائي» ثم الارتفاعات) */
+    private fun rQuals(): Pair<List<String>, Int> {
+        if (qOpts.size > 1) return qOpts.map { it.label } to qCur
+        val hs = rHls()
+        if (hs.size <= 1) return emptyList<String>() to 0
+        val labels = listOf("تلقائي") + hs.map { it.first.toString() + "p" }
+        val cur = if (hlsH == 0) 0 else 1 + hs.indexOfFirst { it.first == hlsH }.coerceAtLeast(0)
+        return labels to cur
+    }
+    /** (v532) اختيار جودة برقمها في القايمة (من ريموت الموبايل) */
+    private fun rSetQ(i: Int) {
+        if (qOpts.size > 1) { switchYt(i); return }
+        if (i == 0) { hlsAuto(); return }
+        val q = rHls().getOrNull(i - 1) ?: return
+        hlsPick(q.second, q.third, q.first)
+    }
+
+    /** (v531) مراجع أزرار شريط المشغّل (بتتسجّل وقت بناء الشريط) عشان ريموت الموبايل يدوس نفس الزرار */
+    private val rcViews = HashMap<String, View>()
+    private fun rcClick(k: String) { try { rcViews[k]?.performClick() } catch (e: Throwable) { LogStore.err("Player:rc:" + k, e) } }
+
+    private fun rAct(a: String, v: Long): Boolean {
+        val anchor = window.decorView
+        when (a) {
+            "toggle" -> togglePlay()
+            "seek" -> tvSeek(v)
+            "seekto" -> player.seekTo(v.coerceIn(0L, if (durMs > 0) durMs else Long.MAX_VALUE))
+            "prev" -> stepEpisode(-1)
+            "next" -> stepEpisode(1)
+            "speed" -> tvCycleSpeed()
+            "fit" -> cycleFitNow()
+            "cc" -> { ccOn = !ccOn; if (!ccOn) sub.show(null) else curIdx = -2 }
+            "scale" -> tvSubScale(v.toInt())
+            "shift" -> tvSubShift(v)
+            "audio" -> audPopFn?.invoke(anchor)
+            "quality" -> qualPopFn?.invoke(anchor)
+            "qset" -> rSetQ(v.toInt())     // (v532) اختيار الجودة من قايمة الموبايل
+            "aset" -> switchAudio(v.toInt())   // (v532) اختيار لغة الصوت من قايمة الموبايل
+            "translate" -> translateMenu(anchor)
+            "more" -> tvMoreDialog(anchor)
+            "subs" -> tvSubTracksDialog(anchor)
+            // (v531) أزرار الشريط الكامل اللي في مشغّل الموبايل
+            "loop" -> { Cfg.put("loop", if (Cfg.str("loop", "0") == "1") "0" else "1"); say(if (Cfg.str("loop", "0") == "1") "🔂 تكرار الفيديو: شغّال" else "🔂 تكرار الفيديو: مقفول") }
+            "log" -> toggleLog()
+            "sent" -> { try { if (::sentDlg.isInitialized) sentDlg.show() } catch (_: Throwable) {} }
+            "chars" -> showChars()
+            "dual" -> rcClick("dual")
+            "bgon" -> rcClick("bgon")
+            "ai" -> rcClick("ai")
+            "lock" -> setLock(!uiLocked)
+            "notice" -> noticePopup(anchor)
+            "visual" -> visualSnap()
+            "menu" -> tvMenuFn?.invoke(anchor)
+            "tools" -> tvToolsFn?.invoke(anchor)
+            "font" -> {
+                val fs = SubStyle.fonts; val cf = SubStyle.load { k, d -> Cfg.str(k, d) }.font
+                val n = fs[(fs.indexOfFirst { it.id == cf } + 1) % fs.size]
+                Cfg.put("sub_font", n.id); try { restyleFn() } catch (_: Throwable) {}; say("🔤 " + n.label)
+            }
+            else -> { if (a.startsWith("subfile:")) sfRemote(a) else return false }   // (v529) 📄 ترجمة ملف الترجمة من الموبايل
+        }
+        return true
+    }
 
     // ===== (v461) ريموت التلفزيون (وضع 📺 بس): يمين/شمال = تقديم/ترجيع 10ث · فوق/تحت = حجم الترجمة ·
     // أرقام = قفز بالوقت (آخر رقمين ثواني، اللي قبلهم دقايق — دوس OK أو استنى ثانيتين) · OK/تشغيل = تشغيل/إيقاف
@@ -62,26 +510,273 @@ class PlayerActivity : Activity(), Host {
             override fun prev() { stepEpisode(-1) }
             override fun next() { stepEpisode(1) }
             override fun speedLabel(): String = PlayerLogic.speedLabel(speed)
-            override fun cycleSpeed() {
-                speed = PlayerLogic.nextSpeed(speed); try { player.setPlaybackSpeed(speed) } catch (_: Throwable) {}
-                Cfg.p.edit().putString("speed", speed.toString()).putString("speed:$vid", speed.toString()).apply()
-                speedBRef?.text = "⏩ " + PlayerLogic.speedLabel(speed)
-            }
+            override fun cycleSpeed() { tvCycleSpeed() }
             override fun fitLabel(): String = fitNameOf(curFit())
             override fun cycleFit() { cycleFitNow() }
             override fun ccOn(): Boolean = ccOn
             override fun toggleCc() { ccOn = !ccOn; if (!ccOn) sub.show(null) else curIdx = -2 }
             override fun subScale(d: Int) { tvSubScale(d) }
-            override fun subShift(dMs: Long) {
-                offsetMs = (offsetMs + dMs).coerceIn(-10000L, 10000L)
-                Cfg.p.edit().putString("sub_offset_ms:$vid", offsetMs.toString()).apply(); srtSoon(); curIdx = -2
-                Notice.show(self, String.format("⏱ إزاحة الترجمة: %+.2fs", offsetMs / 1000.0), 1100L)
-            }
+            override fun subShift(dMs: Long) { tvSubShift(dMs) }
             override fun hasAudio(): Boolean = aTracks.size > 1
             override fun audio(anchor: View) { audPopFn?.invoke(anchor) }
+            // (v517) الشريط المبسّط (تلفزيون بس — التابلت شريطه القديم زي ما هو)
+            override fun slim(): Boolean = DeviceUi.isTv(self)
+            override fun trLabel(): String = tvTrLabel()
+            override fun trColor(): Int = tvTrColor()
+            override fun translate(anchor: View) { translateMenu(anchor) }
+            override fun hasQuality(): Boolean = qualPopFn != null && (qOpts.size > 1 || uri == null)
+            override fun quality(anchor: View) { qualPopFn?.invoke(anchor) }
+            override fun subDialog() { tvSubDialog() }
+            override fun more(anchor: View) { tvMoreDialog(anchor) }
+            override fun subTracks(anchor: View) { tvSubTracksDialog(anchor) }
         })
         frame.addView(b.view, FrameLayout.LayoutParams(-1, -2, Gravity.BOTTOM))
+        b.onVis = { tvChromeGate() }
         tvBar = b
+    }
+    // ===== (v517) شريط التلفزيون المبسّط: دوال الأزرار =====
+    private var tvMenuFn: ((View) -> Unit)? = null
+    private var tvToolsFn: ((View) -> Unit)? = null
+    private fun tvCycleSpeed() {
+        speed = PlayerLogic.nextSpeed(speed); try { player.setPlaybackSpeed(speed) } catch (_: Throwable) {}
+        Cfg.p.edit().putString("speed", speed.toString()).putString("speed:$vid", speed.toString()).apply()
+        speedBRef?.text = "⏩ " + PlayerLogic.speedLabel(speed)
+    }
+    private fun tvSubShift(dMs: Long) {
+        offsetMs = (offsetMs + dMs).coerceIn(-10000L, 10000L)
+        Cfg.p.edit().putString("sub_offset_ms:$vid", offsetMs.toString()).apply(); srtSoon(); curIdx = -2
+        Notice.show(this, String.format("⏱ إزاحة الترجمة: %+.2fs", offsetMs / 1000.0), 1100L)
+    }
+    private fun tvTrLabel(): String = try {
+        if (!engineStarted) "▶ ترجم"
+        else (if (::engine.isInitialized && engine.userPaused) "⏸ " else if (trPct >= 100) "✅ " else "⏳ ") + trPct + "%"
+    } catch (_: Throwable) { "▶ ترجم" }
+    private fun tvTrColor(): Int = try {
+        if (!engineStarted) 0xFFE53935.toInt()
+        else if (::engine.isInitialized && engine.userPaused) 0xFF8D6E00.toInt() else if (trPct >= 100) 0xFF2E7D32.toInt() else 0xFF1F5FBF.toInt()
+    } catch (_: Throwable) { 0xFFE53935.toInt() }
+    /** حجم الترجمة وتوقيتها في نافذة واحدة بتفضل مفتوحة (± من غير ما تتقفل بعد كل دوسة) */
+    private fun tvSubDialog() {
+        val d = android.app.Dialog(this)
+        d.requestWindowFeature(android.view.Window.FEATURE_NO_TITLE)
+        val box = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL
+            setPadding(ui.dp(26), ui.dp(22), ui.dp(26), ui.dp(22)); background = ui.box(0xF2181B20.toInt(), 0x33FFFFFF, 20)
+        }
+        val scaleTv = TextView(this).apply { textSize = 20f; setTextColor(Color.WHITE); gravity = Gravity.CENTER }
+        val shiftTv = TextView(this).apply { textSize = 20f; setTextColor(Color.WHITE); gravity = Gravity.CENTER }
+        fun paint() {
+            scaleTv.text = "🔤 حجم الترجمة: " + Cfg.int("sub_scale", 100) + "%"
+            shiftTv.text = String.format("⏱ توقيت الترجمة: %+.2f ث", offsetMs / 1000.0)
+        }
+        fun pm(t: String, f: () -> Unit): TextView = TextView(this).apply {
+            text = t; textSize = 26f; gravity = Gravity.CENTER; setTextColor(Color.WHITE); typeface = android.graphics.Typeface.DEFAULT_BOLD
+            background = ui.box(0x33FFFFFF, 0x22FFFFFF, 12); isFocusable = true; isClickable = true
+            setPadding(ui.dp(26), ui.dp(8), ui.dp(26), ui.dp(8))
+            setOnClickListener { f(); paint() }
+        }
+        fun line(lbl: TextView, minus: TextView, plus: TextView) {
+            val r = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_LTR; gravity = Gravity.CENTER_VERTICAL }
+            r.addView(minus, LinearLayout.LayoutParams(-2, -2)); r.addView(lbl, LinearLayout.LayoutParams(ui.dp(300), -2)); r.addView(plus, LinearLayout.LayoutParams(-2, -2))
+            box.addView(r, LinearLayout.LayoutParams(-2, -2).apply { setMargins(0, ui.dp(6), 0, ui.dp(6)) })
+        }
+        line(scaleTv, pm("−") { tvSubScale(-10) }, pm("+") { tvSubScale(10) })
+        line(shiftTv, pm("−") { tvSubShift(-250L) }, pm("+") { tvSubShift(250L) })
+        paint()
+        d.setContentView(box)
+        d.window?.apply { setBackgroundDrawable(android.graphics.drawable.ColorDrawable(0)); setGravity(Gravity.BOTTOM); setLayout(-2, -2); attributes = attributes.apply { y = ui.dp(90) } }
+        try { TvFocus.attachDialog(this, d, th.primary) } catch (_: Throwable) {}
+        d.show()
+    }
+    /** ⋯ المزيد: الأدوات اللي مش لازمة على الشريط الأساسي */
+    /** (v521) لو اتختار مسار ترجمة أصلي من الفيديو: يتعرض هو حتى لو المحرك عنده ترجمة (لحد ما يرجّع ترجمة البرنامج أو الفيديو يتغيّر) */
+    @Volatile private var preferNative = false
+    /** (v521) زرار 🌐 في شريط التلفزيون: مسارات الترجمة الأصلية في الفيديو (سوفت سب) + لغة/لهجة ترجمة البرنامج + إعداداتها */
+    private fun tvSubTracksDialog(anchor: View) {
+        val labels = ArrayList<String>(); val acts = ArrayList<() -> Unit>()
+        fun add(l: String, a: () -> Unit) { labels.add(l); acts.add(a) }
+        val tc = androidx.media3.common.C.TRACK_TYPE_TEXT
+        val groups = try { (player.exo()?.currentTracks?.groups ?: emptyList<androidx.media3.common.Tracks.Group>()).filter { it.type == tc && it.length > 0 && it.isSupported } } catch (_: Throwable) { emptyList() }
+        val textOff = try { (player.exo()?.trackSelectionParameters?.disabledTrackTypes?.contains(tc) ?: false) } catch (_: Throwable) { false }
+        groups.forEachIndexed { i, g ->
+            val f = g.getTrackFormat(0)
+            val lang = (f.language ?: "").let { l -> if (l.isBlank() || l == "und") "" else try { java.util.Locale(l).getDisplayLanguage(java.util.Locale("ar")).ifBlank { l } } catch (_: Throwable) { l } }
+            val name = listOf(f.label ?: "", lang).filter { it.isNotBlank() }.distinct().joinToString(" · ").ifBlank { "مسار " + (i + 1) }
+            val on = g.isSelected && !textOff && preferNative
+            add((if (on) "✓ " else "") + "💬 " + name + " (من الفيديو)") {
+                try {
+                    player.exo()?.let { xp -> xp.trackSelectionParameters = xp.trackSelectionParameters.buildUpon().setTrackTypeDisabled(tc, false)
+                        .setOverrideForType(androidx.media3.common.TrackSelectionOverride(g.mediaTrackGroup, 0)).build() }
+                    preferNative = true; ccOn = true; curIdx = -2
+                    Notice.show(this, "💬 " + name, 1500L)
+                } catch (e: Throwable) { LogStore.err("Player:pickText", e) }
+            }
+        }
+        if (groups.isNotEmpty() && preferNative) add("↩ رجّع ترجمة البرنامج") { preferNative = false; ccOn = true; curIdx = -2; Notice.show(this, "↩ ترجمة البرنامج", 1300L) }
+        add("🌐 لغة / لهجة ترجمة البرنامج") { preferNative = false; langPopup(anchor) }
+        add("📄 ترجمة ملف الترجمة (سوفت / هارد سب)") { subFileDialog(anchor) }   // (v529)
+        add("⚙ إعدادات الترجمة") { modeSettings(anchor) }
+        if (groups.isEmpty()) add("ℹ مفيش ترجمة أصلية في الفيديو ده (لو الترجمة محروقة على الصورة استخدم ▶ ترجم ← بصري/هارد سب)") { }
+        GAlert(this).setTitle("💬 مسار الترجمة").setItems(labels.toTypedArray()) { _, w -> if (w in acts.indices) acts[w]() }.show()
+    }
+    // ===== (v529) 📄 ترجمة ملف الترجمة: سوفت سب (ملف جنب الفيديو / ملف تختاره / مسار جوه الفيديو) أو هارد سب (محروق على الصورة) — بجوجل أو جيميناي =====
+    @Volatile private var sfBusy = ""
+    @Volatile private var sfLive = ""   // "" | google | gemini: ترجمة مسار الفيديو الأصلي لحظيًا (لما مفيش استخراج كامل)
+    @Volatile private var sfLiveGen = 0
+    @Volatile private var sfPickEng = "google"
+    private val sfLiveCache = java.util.concurrent.ConcurrentHashMap<String, String>()
+    private val sfLiveAsk = java.util.concurrent.ConcurrentHashMap<String, Boolean>()
+    private val sfLiveCtx = java.util.ArrayDeque<String>()
+    private var sfSideKey = ""; private var sfSideNm = ""
+    private fun sfSidecar(): java.io.File? = try { val u = uri; if (u == null) null else findSidecar(u) } catch (_: Throwable) { null }
+    /** اسم ملف الترجمة اللي جنب الفيديو (متخزّن لكل فيديو عشان الريموت بيسأل كل ثانية) */
+    private fun sfSideName(): String {
+        val k = uri?.toString() ?: ""
+        if (k != sfSideKey) { sfSideKey = k; sfSideNm = try { sfSidecar()?.name ?: "" } catch (_: Throwable) { "" } }
+        return sfSideNm
+    }
+    private fun sfNativeCount(): Int = try { (player.exo()?.currentTracks?.groups ?: emptyList<androidx.media3.common.Tracks.Group>()).count { it.type == androidx.media3.common.C.TRACK_TYPE_TEXT && it.length > 0 && it.isSupported } } catch (_: Throwable) { 0 }
+
+    private fun sfLiveText(t: String): String {
+        if (sfLive.isEmpty()) return t
+        sfLiveCache[t]?.let { return it }
+        if (sfLiveAsk.putIfAbsent(t, true) == null) {
+            val eng = sfLive
+            val ctx = synchronized(sfLiveCtx) { val c = sfLiveCtx.joinToString("\n"); sfLiveCtx.addLast(t.replace("\n", " ")); while (sfLiveCtx.size > 3) sfLiveCtx.removeFirst(); c }
+            Thread {
+                try {
+                    val r = if (eng == "gemini") SubFileTr.geminiOne(t, ctx) else SubFileTr.googleOne(t)
+                    if (!r.isNullOrBlank() && sfLive == eng) { if (sfLiveCache.size > 3000) sfLiveCache.clear(); sfLiveCache[t] = r; sfLiveGen++ }
+                } catch (e: Throwable) { LogStore.err("Player:sfLive", e) }
+                finally { sfLiveAsk.remove(t) }
+            }.also { it.isDaemon = true }.start()
+        }
+        return t
+    }
+    private fun sfStartLive(eng: String) {
+        sfLive = eng; sfLiveCache.clear(); sfLiveAsk.clear(); synchronized(sfLiveCtx) { sfLiveCtx.clear() }
+        try { player.exo()?.let { xp -> xp.trackSelectionParameters = xp.trackSelectionParameters.buildUpon().setTrackTypeDisabled(androidx.media3.common.C.TRACK_TYPE_TEXT, false).build() } } catch (_: Throwable) {}
+        preferNative = true; ccOn = true; curIdx = -2
+        say("💬 بترجم ترجمة الفيديو الأصلية لحظيًا بـ " + (if (eng == "gemini") "جيميناي" else "جوجل") + " — ممكن تتأخر ثانية عن الصوت")
+    }
+    private fun sfStopLive() { sfLive = ""; preferNative = false; curIdx = -2 }
+
+    private fun sfEngineChoice(what: String, then: (String) -> Unit) {
+        val lang = Cfg.str("lang", "فصحى").ifBlank { "فصحى" }
+        val labels = arrayOf("🌐 جوجل ترجمة — من غير مفتاح، سريع (فصحى)", "✨ جيميناي — بمفاتيحك، أدق بالسياق (لهجة $lang)")
+        GAlert(this).setTitle("ترجم $what بإيه؟").setItems(labels) { _, w -> then(if (w == 0) "google" else "gemini") }.show()
+    }
+
+    private fun subFileDialog(anchor: View? = null) {
+        val side = sfSidecar(); val nat = sfNativeCount()
+        val labels = ArrayList<String>(); val acts = ArrayList<() -> Unit>()
+        fun add(l: String, a: () -> Unit) { labels.add(l); acts.add(a) }
+        add("💬 ترجمة السوفت سب" + (if (side != null) " — ملف «" + side.name + "»" else if (nat > 0) " — $nat مسار جوه الفيديو" else " (لو موجودة)")) { sfEngineChoice("السوفت سب") { e -> sfRun("soft", e) } }
+        add("📂 اختار ملف ترجمة من الجهاز (SRT / ASS / VTT)") { sfEngineChoice("الملف") { e -> sfPickFile(e) } }
+        add("🔤 ترجمة الهارد سب (المحروقة على الصورة) — بجيميناي") { sfHard() }
+        if (sfLive.isNotEmpty()) add("⏹ وقّف الترجمة اللحظية للمسار الأصلي") { sfStopLive(); say("⏹ اتوقفت") }
+        add("ℹ الهارد سب بيتقرا من الصورة فمحتاج جيميناي (مفتاح الوضع البصري)؛ جوجل مابيقرأش صور") { }
+        GAlert(this).setTitle("📄 ترجمة ملف الترجمة").setItems(labels.toTypedArray()) { _, w -> if (w in acts.indices) acts[w]() }.show()
+    }
+
+    private fun sfRemote(a: String) {
+        val p = a.split(":")
+        val eng = if (p.getOrNull(2) == "gemini") "gemini" else "google"
+        when (p.getOrNull(1)) {
+            "soft" -> sfRun("soft", eng)
+            "pick" -> sfPickFile(eng)
+            "hard" -> sfHard()
+            "off" -> { sfStopLive(); say("⏹ اتوقفت") }
+            "dlg" -> subFileDialog(window.decorView)
+        }
+    }
+
+    private fun sfPickFile(eng: String) {
+        sfPickEng = eng
+        try { startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT).apply { addCategory(Intent.CATEGORY_OPENABLE); type = "*/*" }, 41) }
+        catch (e: Throwable) { LogStore.err("Player:sfPick", e); say("مش قادر أفتح اختيار الملف") }
+    }
+
+    /** هارد سب: نفس بريست «ترجمة الهارد سب» (الوضع البصري بيقرا الترجمة المحروقة ويترجمها بجيميناي) */
+    private fun sfHard() {
+        try {
+            if (!::visual.isInitialized) { say("الوضع البصري مش جاهز لسه — جرّب بعد ثواني"); return }
+            val pr = TrPresets.byId(TrPresets.HARD_ID) ?: return
+            applyPreset(pr, false, false, true)
+        } catch (e: Throwable) { LogStore.err("Player:sfHard", e); say("⚠ تعذّر تشغيل ترجمة الهارد سب") }
+    }
+
+    private fun sfRun(kind: String, eng: String, picked: Uri? = null) {
+        if (kind == "hard") { sfHard(); return }
+        if (sfBusy.isNotEmpty()) { say("⏳ بترجم دلوقتي: $sfBusy"); return }
+        sfBusy = "بقرا الترجمة…"
+        val engName = if (eng == "gemini") "جيميناي" else "جوجل"
+        val vu = uri
+        Thread {
+            try {
+                var cues: List<SubFileTr.Cue> = emptyList(); var label = ""
+                if (picked != null) {
+                    val b = contentResolver.openInputStream(picked)?.use { it.readBytes() } ?: ByteArray(0)
+                    cues = SubFileTr.parse(SubFileTr.decode(b)); label = "الملف اللي اخترته"
+                    if (cues.isEmpty()) { say("الملف ده مش ترجمة صالحة (SRT / ASS / VTT)"); return@Thread }
+                } else {
+                    val sc = sfSidecar()
+                    if (sc != null) { cues = SubFileTr.parse(SubFileTr.decode(sc.readBytes())); label = sc.name }
+                    if (cues.isEmpty() && vu != null && (vu.scheme == "file" || vu.scheme == "content")) {
+                        SubFileTr.readEmbedded(applicationContext, vu)?.let { cues = it.second; label = "مسار " + it.first + " من الفيديو" }
+                    }
+                }
+                if (cues.isEmpty()) {
+                    if (sfNativeCount() > 0 || nativeCue.isNotEmpty()) { runOnUiThread { sfStartLive(eng) }; return@Thread }   // مش قادر أطلّع المسار كله: ترجمة لحظية
+                    say("مفيش سوفت سب في الفيديو ده (لا ملف جنبه ولا مسار جواه) — لو الترجمة محروقة على الصورة استخدم «ترجمة الهارد سب»")
+                    return@Thread
+                }
+                if (SubFileTr.mostlyArabic(cues)) { say("💬 الترجمة دي عربي أصلًا"); return@Thread }
+                say("📄 بترجم " + cues.size + " جملة من «" + label + "» بـ " + engName + "…")
+                var lastP = 0L
+                val out = SubFileTr.translate(cues, eng, { pr -> sfBusy = pr; val n = System.currentTimeMillis(); if (n - lastP > 6000L) { lastP = n; say(pr) } }, { isFinishing || isDestroyed })
+                if (isFinishing || isDestroyed) return@Thread
+                if (out.error.isNotEmpty()) { say("⚠ " + out.error); return@Thread }
+                var w = 0
+                while ((!::engine.isInitialized || !engineReady) && w++ < 40) { try { Thread.sleep(250L) } catch (_: InterruptedException) {} }
+                sfApply(cues, out, engName)
+            } catch (e: Throwable) { LogStore.err("Player:sfRun", e); say("⚠ فشلت الترجمة: " + (e.message ?: e.javaClass.simpleName).take(80)) }
+            finally { sfBusy = "" }
+        }.also { it.isDaemon = true }.start()
+    }
+
+    private fun sfApply(cues: List<SubFileTr.Cue>, out: SubFileTr.Out, engName: String) {
+        val subs = cues.mapIndexed { i, c ->
+            val tr = out.texts.getOrNull(i) ?: ""
+            Sub(c.start, c.end, c.text, if (tr.isBlank()) c.text else tr, "male", "unknown", "none", emptyList(), emptyList(), false, false)
+        }
+        runOnUiThread {
+            try {
+                if (!::engine.isInitialized || !engineReady) { say("المحرك لسه بيحمّل — جرّب تاني بعد ثواني"); return@runOnUiThread }
+                if (engineStarted && !engine.userPaused) pauseTranslate()
+                if (engine.subs.isNotEmpty()) engine.saveVersion("قبل ترجمة ملف الترجمة")
+                engine.importSubs(subs)
+                sfLive = ""; preferNative = false; ccOn = true; dirty = true; curIdx = -2
+                Thread { try { engine.saveNow() } catch (e: Throwable) { LogStore.err("Player:sfSave", e) } }.start()
+                say("✅ اتترجمت " + subs.size + " جملة بـ " + engName + (if (out.failed > 0) " — " + out.failed + " جملة فضلت بنصها الأصلي" else ""))
+            } catch (e: Throwable) { LogStore.err("Player:sfApply", e); say("⚠ مقدرتش أطبّق الترجمة") }
+        }
+    }
+
+    private fun tvMoreDialog(anchor: View) {
+        val labels = ArrayList<String>(); val acts = ArrayList<() -> Unit>()
+        fun add(l: String, a: () -> Unit) { labels.add(l); acts.add(a) }
+        add("⏩ السرعة: " + PlayerLogic.speedLabel(speed)) { tvCycleSpeed(); Notice.show(this, "⏩ " + PlayerLogic.speedLabel(speed), 1100L) }
+        add("⬛ الاحتواء: " + fitNameOf(curFit())) { cycleFitNow() }
+        add("🧑 الشخصيات") { showChars() }
+        add("📝 الجمل") { try { if (::sentDlg.isInitialized) sentDlg.show() } catch (_: Throwable) {} }
+        add("📜 اللوج") { toggleLog() }
+        add("⚙ إعدادات الترجمة") { modeSettings(anchor) }
+        add("🌐 لغة / لهجة") { langPopup(anchor) }
+        add("📄 ترجمة ملف الترجمة (سوفت / هارد سب)") { subFileDialog(anchor) }   // (v529)
+        add("☰ القائمة الكاملة") { tvMenuFn?.invoke(anchor) }
+        add("🧰 أدوات الفيديو") { tvToolsFn?.invoke(anchor) }
+        GAlert(this).setTitle("المزيد").setItems(labels.toTypedArray()) { _, w -> if (w in acts.indices) acts[w]() }.show()
     }
     private var tvDigitRun: Runnable? = null
     private fun tvSeek(dMs: Long) {
@@ -202,11 +897,24 @@ class PlayerActivity : Activity(), Host {
     }
 
     override fun dispatchKeyEvent(ev: android.view.KeyEvent): Boolean {
+        TvKill.watch(this, ev)   // (v486) 0 لمدة 5 ثواني = إلغاء تثبيت
         // (v469) والقفل شغّال: مفاتيح الصوت الجانبية كمان تتبلع (حماية جيب/أطفال كاملة — اللمس كان محجوب أصلًا)
         if (uiLocked && (ev.keyCode == android.view.KeyEvent.KEYCODE_VOLUME_UP || ev.keyCode == android.view.KeyEvent.KEYCODE_VOLUME_DOWN || ev.keyCode == android.view.KeyEvent.KEYCODE_VOLUME_MUTE)) return true
         // (v477 م4) تلفزيون: شريط تحكم بنمط MX/VLC. الشريط مخفي: ←/→ تقديم وتأخير · OK/↑/↓/Menu = إظهار الشريط. ظاهر: الأسهم بتتنقل بين الأزرار.
-        if (DeviceUi.isTv(this)) {
+        // (v506) عدّاد «الحلقة الجاية»: بالريموت OK = شغّلها دلوقتي، رجوع = ألغي التشغيل التلقائي
+        if (nextUpAt > 0L && DeviceUi.isRemote(this) && (ev.keyCode == android.view.KeyEvent.KEYCODE_BACK || ev.keyCode == android.view.KeyEvent.KEYCODE_DPAD_CENTER || ev.keyCode == android.view.KeyEvent.KEYCODE_ENTER)) {
+            if (ev.action == android.view.KeyEvent.ACTION_DOWN && ev.repeatCount == 0) {
+                if (ev.keyCode == android.view.KeyEvent.KEYCODE_BACK) { cancelNextUp(); say("⏹ اتلغى التشغيل التلقائي") }
+                else { val g = nextUpGo; cancelNextUp(); try { g?.invoke() } catch (e: Throwable) { LogStore.err("Player:nextNow", e) } }
+            }
+            return true
+        }
+        if (DeviceUi.isRemote(this)) {
             val bar = tvBar; val k = ev.keyCode; val down = ev.action == android.view.KeyEvent.ACTION_DOWN
+            if (k == android.view.KeyEvent.KEYCODE_VOLUME_UP || k == android.view.KeyEvent.KEYCODE_VOLUME_DOWN || k == android.view.KeyEvent.KEYCODE_VOLUME_MUTE) {
+                if (down) tvVolume(k)
+                return true
+            }
             val media = k == android.view.KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE || k == android.view.KeyEvent.KEYCODE_MEDIA_PLAY || k == android.view.KeyEvent.KEYCODE_MEDIA_PAUSE
             if (media || k == android.view.KeyEvent.KEYCODE_MEDIA_NEXT || k == android.view.KeyEvent.KEYCODE_MEDIA_PREVIOUS ||
                 k in android.view.KeyEvent.KEYCODE_0..android.view.KeyEvent.KEYCODE_9) {
@@ -220,14 +928,24 @@ class PlayerActivity : Activity(), Host {
                 }
                 return true
             }
-            if (bar != null && bar.visible) { bar.poke() }   // والشريط ظاهر: الأسهم/OK بتتعامل عادي مع التركيز على الأزرار
+            if (bar != null && bar.visible && (k == android.view.KeyEvent.KEYCODE_DPAD_UP || k == android.view.KeyEvent.KEYCODE_DPAD_DOWN)) {
+                // (v509) فوق من الشريط = العدّادات · تحت من العدّادات = رجوع للشريط
+                val f = currentFocus
+                if (k == android.view.KeyEvent.KEYCODE_DPAD_UP && !tvInBadges(f) && ::badgeRowV.isInitialized) {
+                    val l = ArrayList<View>(); badgeRowV.addFocusables(l, View.FOCUS_DOWN)
+                    val t = l.firstOrNull { it.isShown }
+                    if (t != null) { if (down) { t.requestFocus(); bar.poke() }; return true }
+                } else if (k == android.view.KeyEvent.KEYCODE_DPAD_DOWN && tvInBadges(f)) { if (down) { bar.focusMain(); bar.poke() }; return true }
+            }
+            if (bar != null && bar.visible) { bar.poke() }
+            else if (tvOverlayFocused()) { /* (v500) في عنصر مفتوح في لوحة/قايمة جوه المشغّل: سيب الأسهم وOK توصله بدل ما نبلعها */ }   // والشريط ظاهر: الأسهم/OK بتتعامل عادي مع التركيز على الأزرار
             else when (k) {
                 android.view.KeyEvent.KEYCODE_DPAD_RIGHT, android.view.KeyEvent.KEYCODE_DPAD_LEFT -> {
                     if (down) { val step = if (ev.repeatCount > 12) 60_000L else if (ev.repeatCount > 4) 30_000L else 10_000L; tvSeek(if (k == android.view.KeyEvent.KEYCODE_DPAD_RIGHT) step else -step) }
                     return true
                 }
                 android.view.KeyEvent.KEYCODE_DPAD_CENTER, android.view.KeyEvent.KEYCODE_ENTER -> {
-                    if (down) { if (tvDigits.isNotEmpty()) tvJump() else { togglePlay(); bar?.show() } }
+                    if (down) { if (tvDigits.isNotEmpty()) tvJump() else bar?.show() }   // (v509) OK = يظهر الأزرار المخفية (التشغيل/الإيقاف من زرار ▶ في الشريط)
                     return true
                 }
                 android.view.KeyEvent.KEYCODE_DPAD_UP, android.view.KeyEvent.KEYCODE_DPAD_DOWN, android.view.KeyEvent.KEYCODE_MENU -> {
@@ -238,13 +956,44 @@ class PlayerActivity : Activity(), Host {
         }
         return super.dispatchKeyEvent(ev)
     }
+    /** (v509) الأزرار العايمة الدايمة فوق الفيديو (عدّاد الترجمة، 👁، الكبسولات...) مش «لوحة مفتوحة» — كانت بتاخد التركيز وتبلع OK والأسهم */
+    private var tvChrome: Set<View> = emptySet()
+    private fun tvSnapChrome() { try { val b = videoBoxRef; tvChrome = (0 until b.childCount).map { b.getChildAt(it) }.filter { it.tag != "chromeFrame" }.toSet() } catch (_: Throwable) {} }
+    /** (v509) تلفزيون: عدّاد الجمل/النت واللوج مخفيين تمامًا (ولا بياخدوا تركيز) إلا لما شريط التحكم يظهر بـ OK */
+    private fun tvGateClosed(): Boolean = DeviceUi.isRemote(this) && tvBar?.visible != true
+    private fun tvChromeGate() {
+        try {
+            if (!DeviceUi.isRemote(this)) return
+            val on = !tvGateClosed()
+            applyBadgeAlpha()
+            if (::leftCol.isInitialized) { leftCol.visibility = if (on) View.VISIBLE else View.INVISIBLE; if (!on) leftCol.clearFocus() }
+            if (::badgeRowV.isInitialized && !on) badgeRowV.clearFocus()
+        } catch (e: Throwable) { LogStore.err("Tv:gate", e) }
+    }
+    private fun tvInBadges(v: View?): Boolean { var x = v; while (x != null) { if (::badgeRowV.isInitialized && x === badgeRowV) return true; x = x.parent as? View }; return false }
+    private fun tvIsChrome(v: View): Boolean { var x: View? = v; while (x != null) { if (x in tvChrome) return true; x = x.parent as? View }; return false }
+    private fun tvOverlayFocused(): Boolean = try { val f = currentFocus; f != null && f.isShown && (f.isClickable || f is android.widget.EditText) && !tvIsChrome(f) } catch (_: Throwable) { false }
+    /** (v509) الصوت بالريموت: صوت النظام، ولو التلفزيون صوته ثابت نغيّر صوت المشغّل نفسه */
+    private fun tvVolume(k: Int) {
+        try {
+            val am = getSystemService(android.content.Context.AUDIO_SERVICE) as android.media.AudioManager
+            if (k == android.view.KeyEvent.KEYCODE_VOLUME_MUTE) { am.adjustStreamVolume(android.media.AudioManager.STREAM_MUSIC, android.media.AudioManager.ADJUST_TOGGLE_MUTE, android.media.AudioManager.FLAG_SHOW_UI); return }
+            val up = k == android.view.KeyEvent.KEYCODE_VOLUME_UP
+            if (am.isVolumeFixed) {
+                val v = ((player.volume + if (up) 0.1f else -0.1f).coerceIn(0f, 1f)); player.volume = v
+                Notice.show(this, "🔊 " + (v * 100).toInt() + "%", 900L)
+            } else am.adjustStreamVolume(android.media.AudioManager.STREAM_MUSIC, if (up) android.media.AudioManager.ADJUST_RAISE else android.media.AudioManager.ADJUST_LOWER, android.media.AudioManager.FLAG_SHOW_UI)
+        } catch (e: Throwable) { LogStore.err("Tv:vol", e) }
+    }
     override fun finish() { super.finish(); try { overridePendingTransition(R.anim.act_stay, R.anim.act_exit) } catch (e: Exception) { LogStore.err("Main:725", e) } }
     @Volatile var cur = 0L
     @Volatile var durMs = 0L
     @Volatile var status = ""
     @Volatile var dirty = true
     private var lastBatch = 0L
-    lateinit var player: ExoPlayer
+    lateinit var player: PlaybackBackend
+    /** (v546 م2-ج) وضع المتحكم: التشغيل والمحرك والترجمة على التلفزيون، والموبايل واجهة بس (intent extra remote=true) */
+    @Volatile var remote = false
     lateinit var sub: SubtitleView
     lateinit var visual: VisualMode
     lateinit var visOv: VisualOverlay
@@ -270,7 +1019,9 @@ class PlayerActivity : Activity(), Host {
     var logOn = false   // اللوج مخفي افتراضيًا — اللسان ▸ بيفرده
     lateinit var logTv: TextView
     lateinit var logSv: ScrollView
-    lateinit var engine: Engine
+    // (v541) م0-أ: المشغّل بيكلّم واجهة EngineBackend؛ الـ Engine الحقيقي محفوظ في realEngine ويُستخدم جوه initEngine/startEngine/retireEngine/Live بس
+    lateinit var engine: EngineBackend
+    private lateinit var realEngine: Engine
     lateinit var th: Theme
     lateinit var ui: Ui
     val logBuf = StringBuilder()
@@ -331,7 +1082,7 @@ class PlayerActivity : Activity(), Host {
         if (qOpts.size > 1) return qOpts.size
         return try {
             val hs = HashSet<Int>()
-            for (g in player.currentTracks.groups) if (g.type == androidx.media3.common.C.TRACK_TYPE_VIDEO)
+            for (g in (player.exo()?.currentTracks?.groups ?: emptyList<androidx.media3.common.Tracks.Group>())) if (g.type == androidx.media3.common.C.TRACK_TYPE_VIDEO)
                 for (ti in 0 until g.length) if (g.isTrackSupported(ti)) { val ht = g.getTrackFormat(ti).height; if (ht > 0) hs.add(ht) }
             hs.size
         } catch (_: Throwable) { 0 }
@@ -369,7 +1120,7 @@ class PlayerActivity : Activity(), Host {
         sizeBusy = true
         val o = qOpts.getOrNull(qCur); val u = o?.url ?: url!!; val au = o?.audio ?: aurl; val hs = HashMap(hdr)
         val hlsNow = o == null && isHlsUrl()
-        val brEst = try { player.videoFormat?.bitrate ?: -1 } catch (_: Throwable) { -1 }; val dur = durMs
+        val brEst = try { player.exo()?.videoFormat?.bitrate ?: -1 } catch (_: Throwable) { -1 }; val dur = durMs
         Thread {
             var n = -1L; var approx = false
             try {
@@ -424,7 +1175,7 @@ class PlayerActivity : Activity(), Host {
             }
         } else if (isHlsUrl()) {
             val seen = HashSet<Int>(); val tl = ArrayList<Pair<Int, Int>>()   // (الارتفاع، bitrate)
-            for (g in player.currentTracks.groups) if (g.type == androidx.media3.common.C.TRACK_TYPE_VIDEO)
+            for (g in (player.exo()?.currentTracks?.groups ?: emptyList<androidx.media3.common.Tracks.Group>())) if (g.type == androidx.media3.common.C.TRACK_TYPE_VIDEO)
                 for (ti in 0 until g.length) if (g.isTrackSupported(ti)) { val f = g.getTrackFormat(ti); if (f.height > 0 && seen.add(f.height)) tl.add(Pair(f.height, f.bitrate)) }
             if (tl.isEmpty()) addItem("أعلى جودة متاحة", Downloader.Job(nm, u0, null, true, 0, hs), null)
             else for ((hh, br) in tl.sortedByDescending { it.first })
@@ -481,6 +1232,40 @@ class PlayerActivity : Activity(), Host {
             .show()
     }
     var curIdx = -1; var curKey = ""; var lastRefresh = 0L
+    // (v515) ترجمة الفيديو الأصلية (سوفت صب جوه الملف أو ملف ترجمة جنبه): بتظهر بنفس ستايل المشغّل بلون أبيض لما مفيش ترجمة من المحرك
+    @Volatile private var nativeCue = ""
+    private var natShown = false
+    private var textPicked = false
+    private var natStart = 0.0
+    private var natLast = ""
+    private fun natSub(t: String): Sub {
+        if (t != natLast) { natLast = t; natStart = cur / 1000.0 }
+        val tr = sfLiveText(t)   // (v529) ترجمة لحظية لو اتفعّلت من «📄 ترجمة ملف الترجمة»
+        return Sub(natStart, natStart + 3.0, t, tr, "", "", "", emptyList(), emptyList(), false, false)
+    }
+    private fun natStyle(base: SubStyle): SubStyle = if (natShown) base.copy(uniOn = true, uniColor = "#FFFFFF") else base
+    /** ملف ترجمة جنب الفيديو المحلي (نفس الاسم .srt/.ass/.ssa/.vtt/.ttml، أو name.ar.srt)؛ العربي أولًا */
+    private fun findSidecar(u: Uri): java.io.File? = try {
+        var path: String? = null
+        if (u.scheme == "file") path = u.path
+        else if (u.scheme == "content") contentResolver.query(u, arrayOf(android.provider.MediaStore.MediaColumns.DATA), null, null, null)?.use { c -> if (c.moveToFirst()) path = c.getString(0) }
+        val f = path?.let { java.io.File(it) }
+        val dir = f?.parentFile
+        if (f == null || dir == null) null else {
+            val base = f.nameWithoutExtension.lowercase(); val exts = listOf("srt", "ass", "ssa", "vtt", "ttml")
+            val c = dir.listFiles()?.filter { it.isFile && it.extension.lowercase() in exts && it.nameWithoutExtension.lowercase().let { n -> n == base || n.startsWith("$base.") } }.orEmpty()
+            c.sortedWith(compareBy({ x -> val n = x.name.lowercase(); if (n.contains(".ar.") || n.contains("arab") || n.contains(".ara.")) 0 else 1 }, { x -> exts.indexOf(x.extension.lowercase()) }, { it.name })).firstOrNull()
+        }
+    } catch (e: Throwable) { LogStore.err("Player:sidecar", e); null }
+    private fun mediaItemFor(u: Uri): MediaItem {
+        val sc = findSidecar(u) ?: return MediaItem.fromUri(u)
+        return try {
+            val mime = when (sc.extension.lowercase()) { "ass", "ssa" -> androidx.media3.common.MimeTypes.TEXT_SSA; "vtt" -> androidx.media3.common.MimeTypes.TEXT_VTT; "ttml" -> androidx.media3.common.MimeTypes.APPLICATION_TTML; else -> androidx.media3.common.MimeTypes.APPLICATION_SUBRIP }
+            val cfg = MediaItem.SubtitleConfiguration.Builder(Uri.fromFile(sc)).setMimeType(mime).setSelectionFlags(C.SELECTION_FLAG_DEFAULT).build()
+            log("💬 لقيت ملف ترجمة جنب الفيديو: ${sc.name}")
+            MediaItem.Builder().setUri(u).setSubtitleConfigurations(listOf(cfg)).build()
+        } catch (e: Throwable) { LogStore.err("Player:sidecar2", e); MediaItem.fromUri(u) }
+    }
     var offsetMs = 0L; var speed = 1f; var fit = 0; var fsFit = 2; var ccOn = true; var fitFsB: TextView? = null
     fun isLandNow() = resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
     /** أفقي: وضع الشاشة الكاملة (الافتراضي تمديد) — رأسي: وضع منفصل (الافتراضي احتواء) */
@@ -510,7 +1295,7 @@ class PlayerActivity : Activity(), Host {
     private val BADGE_IDLE_A = 0.3f   // (v432) عدّاد الجمل باهت 30% حتى والأزرار مخفية (كان 0.5)
     private fun applyBadgeAlpha() {
         if (!::sentCap.isInitialized || !::netBadge.isInitialized || !::badgeRowV.isInitialized) return
-        val a = if (chromeShown || System.currentTimeMillis() < badgeHotUntil) 1f else BADGE_IDLE_A
+        val a = if (tvGateClosed()) 0f else if (chromeShown || (DeviceUi.isRemote(this) && tvBar?.visible == true) || System.currentTimeMillis() < badgeHotUntil) 1f else BADGE_IDLE_A   // (v509) تلفزيون: العدّادات مخفية خالص لحد ما OK يظهر الشريط
         if (badgeRowV.alpha != a) badgeRowV.alpha = a
         val v = if (a <= 0.01f) View.INVISIBLE else View.VISIBLE   // INVISIBLE = مايستقبلش لمس
         if (badgeRowV.visibility != v) badgeRowV.visibility = v
@@ -660,6 +1445,7 @@ class PlayerActivity : Activity(), Host {
     private val probAuto = Runnable { if (probOn) toggleProb() }  // كبسولة الباتش الفاشل بتتلم لوحدها
     fun updateTr() { applyModeCaps(); trUpdaters.forEach { try { it() } catch (e: Exception) { LogStore.err("Main:866", e) } } }
     fun beginTranslate(auto: Boolean = false) {
+        if (remote) { remoteBegin(auto); return }
         if (Cfg.str("hard_mode", "0") == "1" && !SourceMode.keepHard()) {   // (v291) الهجين بهارد سب محتاج hard_mode=1 والصوت شغّال
             Cfg.put("hard_mode", "0")   // (v240) أي ترجمة صوتية بتطلّعك من وضع الهارد سب
             // (v261) ووقّف الوضع البصري بتاع الهارد سب كمان، وإلا بيفضل شغّال جنب الترجمة الصوتية
@@ -937,6 +1723,7 @@ class PlayerActivity : Activity(), Host {
         col.addView(ui.text(head, 12.5f, Color.WHITE, true).apply { setPadding(ui.dp(8), ui.dp(4), ui.dp(8), ui.dp(2)) })
         if (started) col.addView(ui.text("الوضع: " + modeName(), 11.5f, 0xFF9AA0A6.toInt()).apply { setPadding(ui.dp(8), 0, ui.dp(8), ui.dp(4)) })
         if (started && (Strict.freeText() || Strict.freeGem())) col.addView(ui.text("🆓 موديل FreeLLM الشغّال: " + FreeLlm.liveName(), 11.5f, 0xFFBFD0FF.toInt(), true).apply { setPadding(ui.dp(8), 0, ui.dp(8), ui.dp(4)) })
+        col.addView(item("📄 ترجمة ملف الترجمة (سوفت / هارد سب)") { subFileDialog(anchor) })   // (v529) ملف ترجمة جاهز أو محروق: بجوجل أو جيميناي
         if (!started) {
             // (v444) 3 طرق بس بدل 9: صوت←جيميناي (الأساسي) · وشبر على الجهاز (المترجم بيتختار تحت) + تفريغ بس
             fun grpLbl(t: String) = ui.text(t, 11.5f, 0xFF9AA0A6.toInt(), true).apply { setPadding(ui.dp(8), ui.dp(6), ui.dp(8), ui.dp(2)) }
@@ -1426,7 +2213,7 @@ class PlayerActivity : Activity(), Host {
         val pct = (Cfg.str("vol_boost", "0").toIntOrNull() ?: 0).coerceIn(0, 100)
         try {
             if (!::player.isInitialized) return
-            val sid = player.audioSessionId
+            val sid = player.exo()?.audioSessionId ?: return
             if (sid == androidx.media3.common.C.AUDIO_SESSION_ID_UNSET || sid == 0) return
             if (loud == null) loud = android.media.audiofx.LoudnessEnhancer(sid)
             loud?.setTargetGain(pct * 15)
@@ -1454,6 +2241,7 @@ class PlayerActivity : Activity(), Host {
     // ===== Host =====
     override fun log(s: String) {
         status = s
+        if (BrainBus.active()) BrainBus.post("log", s)
         synchronized(logBuf) {
             logBuf.append(fmtMs(cur)).append("  ").append(s).append('\n')
             if (logBuf.length > 30000) logBuf.delete(0, 10000)
@@ -1551,9 +2339,9 @@ class PlayerActivity : Activity(), Host {
     private var logMode = 0
     override fun onTrimMemory(level: Int) { super.onTrimMemory(level); LogStore.add("⚠ onTrimMemory level=$level · ${LogStore.heapLine()}") }
     override fun onLowMemory() { super.onLowMemory(); LogStore.add("⚠ onLowMemory · ${LogStore.heapLine()}") }
-    override fun status(s: String) { status = s }
+    override fun status(s: String) { status = s; if (BrainBus.active()) BrainBus.post("status", s) }
     override fun changed() { dirty = true; srtSoon() }
-    override fun notice(s: String) { runOnUiThread { try { Notice.show(this, s, 2600L) } catch (e: Throwable) { LogStore.err("Main:1089", e) } } }
+    override fun notice(s: String) { if (BrainBus.active()) BrainBus.post("notice", s); runOnUiThread { try { Notice.show(this, s, 2600L) } catch (e: Throwable) { LogStore.err("Main:1089", e) } } }
     override fun position() = cur / 1000.0
     override fun playerDuration() = durMs / 1000.0
 
@@ -1644,6 +2432,7 @@ class PlayerActivity : Activity(), Host {
 
     /** (v121) أي فيديو جديد يفتح = أي مشغّل قديم لسه حي (PiP / خلفية / تحت في الستاك) يتوقف ويتقفل خالص: صوت + ترجمة */
     fun killForNewVideo() {
+        if (remote) { rmFrames = false; if (!isFinishing) finish(); return }   // (v546) مايوقفش التلفزيون
         try { visual.stop() } catch (_: Throwable) {}
         try { player.pause() } catch (_: Throwable) {}
         try { saveRecent() } catch (_: Throwable) {}
@@ -1793,16 +2582,16 @@ class PlayerActivity : Activity(), Host {
 
     // ================= (v469) التالي تلقائي + لقطة + شريط تزامن + استوديو + بحث النص =================
     /** (v469) B13: بطاقة «التالي بعد…» — أي لمسة عليها تلغي الانتقال، واستنى 6 ثواني بيشتغل لوحده */
-    private fun showNextUp(title: String, go: () -> Unit) {
+    private fun showNextUp(title: String, delayMs: Long = 5000L, go: () -> Unit) {
         cancelNextUp()
-        nextUpGo = go; nextUpAt = System.currentTimeMillis() + 6000L
+        nextUpGo = go; nextUpAt = System.currentTimeMillis() + delayMs
         val card = nextUpCard ?: run {
             val c = LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL
                 setPadding(ui.dp(14), ui.dp(10), ui.dp(14), ui.dp(10)); background = ui.box(0xE61A1C22.toInt(), 0x33FFFFFF, 14); alpha = REST_A
                 val t1 = ui.text("", 13f, Color.WHITE, true); nextUpTitleV = t1; addView(t1)
                 val t2 = ui.text("", 11f, 0xFFBFD0FF.toInt()); nextUpCountV = t2; addView(t2)
-                addView(ui.text("المس البطاقة للإلغاء · أو استنى وهيشتغل لوحده", 10f, 0xFF9AA0A6.toInt()))
+                addView(ui.text(if (DeviceUi.isRemote(this@PlayerActivity)) "OK = شغّل دلوقتي  ·  رجوع = إلغاء" else "دوس على الكارت لإلغاء التشغيل التلقائي", 10f, 0xFF9AA0A6.toInt()))
                 setOnClickListener { cancelNextUp(); say("✖ التشغيل التلقائي للتالي اتلغى") }
             }
             videoBoxRef.addView(c, FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM or Gravity.END).apply { setMargins(0, 0, ui.dp(14), ui.dp(120)) })
@@ -1824,7 +2613,13 @@ class PlayerActivity : Activity(), Host {
         val yid = intent.getStringExtra("ytid")
         if (yid != null) {
             val n = try { YtNext.nextAfter(yid) } catch (_: Throwable) { null }
-            if (n != null) { if (Cfg.str("autoplay_next", "1") == "1") showNextUp(n.title) { playNextYt(n) } else playNextYt(n) }
+            if (n != null) {
+                if (Cfg.str("autoplay_next", "1") == "1") {
+                    // (v531) يوتيوب: يستنى ~20 ثانية (yt_next_delay) وفي الأثناء لوحة الفيديوهات القريبة تتفتح، وبعدها يشغّل التالي لوحده
+                    showNextUp(n.title, Cfg.int("yt_next_delay", 20).coerceIn(3, 120) * 1000L) { playNextYt(n) }
+                    try { nextPanel?.reveal() } catch (_: Throwable) {}
+                } else playNextYt(n)
+            }
             return
         }
         if (!hasNextEpisode()) return
@@ -1832,11 +2627,8 @@ class PlayerActivity : Activity(), Host {
         showNextUp(nextEpisodeTitle()) { stepEpisode(1) }
     }
     private fun nextEpisodeTitle(): String {
-        val curU = uri?.toString() ?: return "الحلقة التالية"
-        val all = VideoScan.cache ?: return "الحلقة التالية"
-        val me = all.firstOrNull { it.uri == curU } ?: return "الحلقة التالية"
-        val sib = VideoLib.sortVideos(all.filter { it.folderKey == me.folderKey }, VideoLib.SORT_NAME)
-        return sib.getOrNull(sib.indexOfFirst { it.uri == curU } + 1)?.title ?: "الحلقة التالية"
+        val p = libSibs() ?: return "الحلقة التالية"
+        return (p.first.getOrNull(p.second + 1) ?: (if (wrapOn()) p.first.firstOrNull() else null))?.title ?: "الحلقة التالية"
     }
 
     /** (v469) B12: لقطة الإطار الحالي — بتتحفظ في صور الجهاز وبتتعرض للمشاركة على طول */
@@ -2012,7 +2804,8 @@ class PlayerActivity : Activity(), Host {
         applyBars(th)
         speed = Cfg.str("speed", "1").toFloatOrNull() ?: 1f; fit = Cfg.int("fit", 0).coerceIn(0, 3); fsFit = Cfg.int("fs_fit", 2).coerceIn(0, 3); offsetMs = 0L   // (v469) الحد بقى 3 عشان وضع 100% الجديد
         uri = intent.data; url = intent.getStringExtra("url")
-        pendingYt = intent.getBooleanExtra("ytpend", false) && url == null && uri == null && intent.getStringExtra("ytid")?.length == 11   // (v351)
+        remote = intent.getBooleanExtra("remote", false)
+        pendingYt = !remote && intent.getBooleanExtra("ytpend", false) && url == null && uri == null && intent.getStringExtra("ytid")?.length == 11   // (v351)
         try { if (!incognito && !hiddenSite) PubHistory.addVideoFrom(intent) } catch (_: Throwable) {}   // (v349) السجل العام
         try { if (!incognito) intent.getStringExtra("ytid")?.let { yid -> if (yid.length == 11) YtHistory.add(this, yid, intent.getStringExtra("title") ?: "") } } catch (_: Throwable) {}   // (v407) سجل يوتيوب المنفصل
         try {
@@ -2176,7 +2969,7 @@ class PlayerActivity : Activity(), Host {
 
         // ---- نفس خطوات الأصل: تحكم الشاشة الكاملة (أزرار الترجمة فوق + كبسولة التقدم تحت) ----
         fun curStyle() = SubStyle.load { k, d -> Cfg.str(k, d) }
-        fun restyle() { sub.style = curStyle(); curIdx = -2 }
+        fun restyle() { sub.style = natStyle(curStyle()); curIdx = -2 }
         restyleFn = { restyle() }
         fun fontLabel(): String { val f = curStyle().font; return SubStyle.fonts.firstOrNull { it.id == f }?.label ?: f }
         fun entLabel(): String { val a = curStyle().anim; return SubStyle.entrances.firstOrNull { it.id == a }?.label ?: "افتراضي" }
@@ -2249,8 +3042,10 @@ class PlayerActivity : Activity(), Host {
                 val avail = (if (goUp) loc[1] - ui.dp(8) else dmP.heightPixels - loc[1] - v.height - ui.dp(8)).coerceAtLeast(ui.dp(120))
                 val popH = minOf(col.measuredHeight, avail)
                 val svP = android.widget.ScrollView(this).apply { overScrollMode = View.OVER_SCROLL_NEVER; isVerticalScrollBarEnabled = false; addView(col) }
-                val pw = android.widget.PopupWindow(svP, maxOf(col.measuredWidth, ui.dp(150)), popH, false)
+                val pw = if (DeviceUi.isTv(this)) TvFocus.pop(this, svP, maxOf(col.measuredWidth, ui.dp(150)), popH, true)   // (v517) تلفزيون: القايمة بتاخد التركيز عشان الريموت يوصل لعناصرها
+                    else android.widget.PopupWindow(svP, maxOf(col.measuredWidth, ui.dp(150)), popH, false)
                 pw.isOutsideTouchable = true; pw.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(0))
+                if (DeviceUi.isTv(this)) pw.setOnDismissListener { if (popup === pw) { popup = null; popupOwner = null } }
                 if (goUp) pw.showAsDropDown(v, 0, -(v.height + popH + ui.dp(2)))
                 else pw.showAsDropDown(v, 0, ui.dp(2))
                 popup = pw; popupOwner = v
@@ -2330,7 +3125,7 @@ class PlayerActivity : Activity(), Host {
                 for ((qi, o) in qOpts.withIndex()) gQ.addView(pd((if (qi == qCur) "✓ " else "") + o.label) { switchYt(qi) })
             } else {
                 val tg = ArrayList<Triple<Int, androidx.media3.common.Tracks.Group, Int>>()
-                for (g in player.currentTracks.groups) if (g.type == androidx.media3.common.C.TRACK_TYPE_VIDEO)
+                for (g in (player.exo()?.currentTracks?.groups ?: emptyList<androidx.media3.common.Tracks.Group>())) if (g.type == androidx.media3.common.C.TRACK_TYPE_VIDEO)
                     for (ti in 0 until g.length) if (g.isTrackSupported(ti)) tg.add(Triple(g.getTrackFormat(ti).height, g, ti))
                 // (v120) أعلى bitrate لكل ارتفاع، والحجم الكلي تقريبي = bitrate × مدة الفيديو (HLS/DASH مفيهوش حجم جاهز)
                 val hs = tg.filter { it.first > 0 }.sortedWith(compareByDescending<Triple<Int, androidx.media3.common.Tracks.Group, Int>> { it.first }.thenByDescending { it.second.getTrackFormat(it.third).bitrate }).distinctBy { it.first }
@@ -2450,6 +3245,7 @@ class PlayerActivity : Activity(), Host {
         gTools.addView(tasksPageB, 1)
         tasksPopFn = { v -> tasksPageB.text = "📋 صفحة المهام (" + taskCount() + ")"; togglePop(v, gTools, true) }
         val toolsB = IconGlyphButton(this, "toolbox").apply { background = ui.box(0xE0141418.toInt(), 0x1FFFFFFF, 12); setOnClickListener { togglePop(this, gTools, false) } }
+        tvMenuFn = { v -> togglePop(v, gTool, true) }; tvToolsFn = { v -> togglePop(v, gTools, true) }   // (v517) ⋯ المزيد على التلفزيون
         // (v151) خيارات متعددة الاختيار + زرار واحد «طبّق المحدد»: بيتنفّذوا ورا بعض (تنقيح ← لهجة+ ← عائلي/صريح ← ضمائر ← دمج مكرر)
         val aiBase = linkedMapOf("refine" to "✍ تنقيح بالسياق", "dial" to "🔥 لهجة +", "family" to "🧹 عائلي", "explicit" to "🔞 صريح", "pron" to "🔧 ضمائر", "dedup" to "🧠 دمج مكرر")
         val aiBtns = HashMap<String, TextView>()
@@ -2515,6 +3311,7 @@ class PlayerActivity : Activity(), Host {
         trAiB = aiB; applyModeCaps()
         val syncB = barPill(tip(grp("⏱", gSub, true), "تزامن الترجمة (تقديم / تأخير)"))   // (v91) مكان Aa — حجم الخط بقى بالقرص (pinch) على الشاشة
         toolR.addView(syncB)
+        rcViews["dual"] = dualB; rcViews["bgon"] = bgOnB; rcViews["ai"] = aiB   // (v531) ريموت الموبايل
         val toolBtns = listOf<TextView>(syncB, tip(logB, "اللوج"), tip(sentB, "الجمل"), tip(ccB, "إظهار/إخفاء الترجمة"), tip(loopB, "تكرار الفيديو"), tip(dualB, "وضع الترجمة"), tip(charsB, "الشخصيات"), tip(voiceB, "فصل صوت الكلام عن الموسيقى"), qualB, nextListB)
         toolBtns.drop(1).filter { it !== voiceB && it !== qualB && it !== nextListB }.forEach { b ->   // (v226) 🔑 اتشال من الشريط العلوي
             toolR.addView(b, LinearLayout.LayoutParams(if (b.text.startsWith("🔑")) ui.dp(42) else ui.dp(30), ui.dp(30)).apply { setMargins(ui.dp(3), 0, ui.dp(3), 0) })
@@ -2718,7 +3515,7 @@ class PlayerActivity : Activity(), Host {
         videoBox.addOnLayoutChangeListener { _, _, t, _, b, _, ot, _, ob -> if (b - t != ob - ot) placeFloatFn() }
         fsBar.addOnLayoutChangeListener { _, _, t, _, b, _, ot, _, ob -> if (b - t != ob - ot) placeFloatFn() }
         applyChromeFn = {
-            val on = fullMode && chromeShown && !pipNow()
+            val on = fullMode && chromeShown && !pipNow() && !DeviceUi.isRemote(this)   // (v524) تلفزيون: طبقة التحكم القديمة (اللمس) مشالة، شريط التلفزيون بس
             try { nextPanel?.onChrome(on) } catch (_: Throwable) {}
             val wasOn = chromeFrame.visibility == View.VISIBLE
             if (on) { chromeFrame.visibility = View.VISIBLE; if (wasOn && chromeFrame.alpha < 1f) { chromeFrame.animate().cancel(); chromeFrame.alpha = 1f; chromeFrame.translationY = 0f } }
@@ -2763,7 +3560,7 @@ class PlayerActivity : Activity(), Host {
         var hScrub = false; var scrubBase = 0L; var scrubTarget = 0L; var fast2x = false
         // ---- تحريك الفيديو لحظيًا مع الصباع (سحب أفقي على الفيديو أو سحب شريط التقدم) ----
         var lastScrub = 0L
-        fun fastSeek(on: Boolean) { try { player.setSeekParameters(if (on) SeekParameters.CLOSEST_SYNC else SeekParameters.EXACT) } catch (e: Exception) { LogStore.err("Main:1623", e) } }
+        fun fastSeek(on: Boolean) { try { player.exo()?.setSeekParameters(if (on) SeekParameters.CLOSEST_SYNC else SeekParameters.EXACT) } catch (e: Exception) { LogStore.err("Main:1623", e) } }
         fun scrubTo(posMs: Long) { val now = System.currentTimeMillis(); if (now - lastScrub >= 90) { lastScrub = now; player.seekTo(posMs) } }
         fun deltaTxt(ms: Long) = (if (ms >= 0) "+" else "−") + PlayerLogic.clock(Math.abs(ms))
         val gd = GestureDetector(this, object : GestureDetector.SimpleOnGestureListener() {
@@ -3038,7 +3835,7 @@ class PlayerActivity : Activity(), Host {
         val rootFrame = FrameLayout(this).apply { layoutDirection = View.LAYOUT_DIRECTION_LTR }
         rootFrame.addView(page, FrameLayout.LayoutParams(-1, -1))
         setContentView(rootFrame)
-        if (DeviceUi.isTv(this)) { TvFocus.attach(this, th.primary); tvInitBar(rootFrame) }   // (v477 م4)
+        if (DeviceUi.isRemote(this)) { TvFocus.attach(this, th.primary); tvInitBar(rootFrame); tvSnapChrome(); tvChromeGate() }   // (v477 م4)
         applyFull(true)   // شاشة كاملة دايمًا (أفقي ورأسي) — الأزرار في الشريط العلوي وزرار ☰ القائمة
         // فيديو اتفتح من فولدرات الجهاز: يشتغل لاندسكيب مباشرة زي MX Player
         // الاتجاه الأولي من شكل الفيديو (من المكتبة) — وبعدها بيتصحح لوحده أول ما الأبعاد الحقيقية تظهر (onVideoSizeChanged)
@@ -3062,17 +3859,18 @@ class PlayerActivity : Activity(), Host {
                 cur = player.currentPosition
                 val d = player.duration
                 if (d > 0) durMs = d
-                v469Tick()   // (v469) حلقة A-B + عدّاد «التالي» + تمييز الفصل الحالي
+                if (!remote) v469Tick() else remoteWatch()   // (v469) حلقة A-B + عدّاد «التالي» + تمييز الفصل الحالي (v546: في وضع المتحكم التلفزيون هو اللي بيعملها)
+                brainTick()   // (v542) نشر الحالة والترجمة للريموت (لو فيه ريموت بيسأل)
                 run {
                     val nowP = System.currentTimeMillis()
-                    if (nowP - lastPosSave >= 3000 && engineReady && !incognito && durMs > 0) {
+                    if (nowP - lastPosSave >= 3000 && engineReady && !incognito && !remote && durMs > 0) {
                         lastPosSave = nowP
                         try {
                             if (cur > 1000 && cur < durMs - 4000) Cfg.p.edit().putString("lastpos", vid + "\t" + cur).apply()
                             else if (cur >= durMs - 4000 && (Cfg.p.getString("lastpos", "") ?: "").startsWith(vid + "\t")) Cfg.p.edit().remove("lastpos").apply()
                         } catch (_: Throwable) {}
                     }
-                    if (nowP - lastRecentSave >= 20000 && player.isPlaying) { lastRecentSave = nowP; Thread { try { saveRecent() } catch (_: Throwable) {} }.apply { isDaemon = true }.start() }
+                    if (nowP - lastRecentSave >= 20000 && !remote && player.isPlaying) { lastRecentSave = nowP; Thread { try { saveRecent() } catch (_: Throwable) {} }.apply { isDaemon = true }.start() }
                 }
                 val frac = if (durMs > 0) (cur.toFloat() / durMs).coerceIn(0f, 1f) else 0f
                 val cov = if (durMs > 0) (engine.coveredSec() * 1000.0 / durMs).toFloat().coerceIn(0f, 1f) else 0f
@@ -3120,11 +3918,14 @@ class PlayerActivity : Activity(), Host {
                 // جملة طويلة واحدة: بتتقسم لأجزاء بتظهر بالتتابع على مدة الجملة (التوقيت الأصلي ثابت)
                 var parts: List<String> = emptyList(); var part = 0
                 val ssn = sub.style
-                val key = act.joinToString(",") + ":" + part
+                val nat = ccOn && (gs.isEmpty() || preferNative) && nativeCue.isNotEmpty()   // (v515) (v521) preferNative = المستخدم اختار مسار الفيديو الأصلي ترجمة الفيديو الأصلية لما مفيش ترجمة من المحرك
+                if (nat != natShown) { natShown = nat; try { sub.style = natStyle(SubStyle.load { k, d -> Cfg.str(k, d) }) } catch (e: Throwable) { LogStore.err("Player:natStyle", e) } }
+                val key = act.joinToString(",") + ":" + part + (if (nat) "|N:" + nativeCue + (if (sfLive.isNotEmpty()) "|L" + sfLiveGen else "") else "")
                 if (idx != curIdx || key != curKey) {
                     curIdx = idx; curKey = key
                     val shown: Sub? = when {
-                        !ccOn || gs.isEmpty() -> null
+                        !ccOn -> null
+                        gs.isEmpty() || preferNative -> if (nat) natSub(nativeCue) else null
                         parts.size > 1 -> gs[0].copy(translated = parts[part], isContinuation = gs[0].isContinuation && part == parts.size - 1)
                         else -> PlayerLogic.combine(gs)
                     }
@@ -3197,7 +3998,7 @@ class PlayerActivity : Activity(), Host {
             val src = if (au != null) { val pf = androidx.media3.exoplayer.source.ProgressiveMediaSource.Factory(f)
                 androidx.media3.exoplayer.source.MergingMediaSource(pf.createMediaSource(MediaItem.fromUri(Uri.parse(o.url))), pf.createMediaSource(MediaItem.fromUri(Uri.parse(au)))) }
             else DefaultMediaSourceFactory(f).createMediaSource(MediaItem.fromUri(Uri.parse(o.url)))
-            player.setMediaSource(src, pos); player.prepare(); player.playWhenReady = play
+            player.exo()?.let { xp -> xp.setMediaSource(src, pos); xp.prepare() }; player.playWhenReady = play
             qCur = i; sizeTxt = ""; setQualLabel(o.h); refreshSize()
             if (ytAudioOnly) { ytAudioOnly = false; paintModePill() }   // (v459) تغيير الجودة بيرجّع الفيديو
             if (!force) { if (intent.getStringExtra("ytid") != null) Cfg.put("yt_maxh", o.h.toString())
@@ -3232,7 +4033,7 @@ class PlayerActivity : Activity(), Host {
                 val pos = player.currentPosition
                 val f = httpDsf ?: DefaultHttpDataSource.Factory().setDefaultRequestProperties(hdr).setAllowCrossProtocolRedirects(true)
                 val src = DefaultMediaSourceFactory(f).createMediaSource(MediaItem.fromUri(Uri.parse(au)))
-                player.setMediaSource(src, pos); player.prepare(); player.playWhenReady = play
+                player.exo()?.let { xp -> xp.setMediaSource(src, pos); xp.prepare() }; player.playWhenReady = play
                 ytAudioOnly = true
                 Notice.show(this, "🎧 وضع الصوت: صوت بس — بيوفّر الداتا والبطارية", 2000L)
             } else {
@@ -3246,29 +4047,30 @@ class PlayerActivity : Activity(), Host {
 
     private fun hlsAuto() {
         hlsH = 0
-        try { player.trackSelectionParameters = player.trackSelectionParameters.buildUpon().clearOverridesOfType(androidx.media3.common.C.TRACK_TYPE_VIDEO).build() } catch (e: Exception) { LogStore.err("Player:hlsAuto", e) }
+        try { player.exo()?.let { xp -> xp.trackSelectionParameters = xp.trackSelectionParameters.buildUpon().clearOverridesOfType(androidx.media3.common.C.TRACK_TYPE_VIDEO).build() } } catch (e: Exception) { LogStore.err("Player:hlsAuto", e) }
         setQualLabel(0); Notice.show(this, "🎞 الجودة: تلقائي", 1800L)
     }
     private fun hlsPick(g: androidx.media3.common.Tracks.Group, i: Int, h: Int) {
         hlsH = h
-        try { player.trackSelectionParameters = player.trackSelectionParameters.buildUpon().setOverrideForType(androidx.media3.common.TrackSelectionOverride(g.mediaTrackGroup, i)).build() } catch (e: Exception) { LogStore.err("Player:hlsPick", e) }
+        try { player.exo()?.let { xp -> xp.trackSelectionParameters = xp.trackSelectionParameters.buildUpon().setOverrideForType(androidx.media3.common.TrackSelectionOverride(g.mediaTrackGroup, i)).build() } } catch (e: Exception) { LogStore.err("Player:hlsPick", e) }
         setQualLabel(h); Notice.show(this, "🎞 الجودة: " + h + "p", 1800L)
     }
 
     private fun buildPlayer() {
+        if (remote) { buildRemotePlayer(); return }
         val sv = svRef; val videoBox = videoBoxRef
         // (v406) تكبير من المشغّل المصغّر في يوتيوب: بناخد نفس المشغّل (شغّال ومحمّل) بدل ما نبني واحد جديد ونحمّل من الأول
         val ho = if (intent.getBooleanExtra("handoff", false) && uri == null) YtHandoff.take() else null
         handedOff = ho != null
         if (ho != null) {
             httpDsf = DefaultHttpDataSource.Factory().setDefaultRequestProperties(hdr).setAllowCrossProtocolRedirects(true)
-            player = ho
+            player = LocalPlayback(ho)
         } else {
         val factory = if (uri != null) DefaultMediaSourceFactory(this)
         else { val f = DefaultHttpDataSource.Factory().setDefaultRequestProperties(hdr).setAllowCrossProtocolRedirects(true); httpDsf = f; DefaultMediaSourceFactory(f) }
         // MKV وغيره: لو الديكودر الأول فشل (HEVC / 10-bit) جرّب اللي بعده بدل شاشة سودا
         val rf = DefaultRenderersFactory(this).setEnableDecoderFallback(true)
-        player = ExoPlayer.Builder(this, rf).setMediaSourceFactory(factory).build()
+        player = LocalPlayback(ExoPlayer.Builder(this, rf).setMediaSourceFactory(factory).build())
         }
         // (v467) دخول الـ handoff (تكبير من مشغّل يوتيوب المصغّر): qOpts/aurl بيبقوا فاضيين فزرار الصوت/فيديو والجودات كانوا ميتين — بنجيب بيانات الستريم في الخلفية من غير ما نلمس التشغيل الشغّال
         if (ho != null && qOpts.isEmpty()) intent.getStringExtra("ytid")?.takeIf { it.length == 11 }?.let { yid ->
@@ -3282,9 +4084,9 @@ class PlayerActivity : Activity(), Host {
             }.apply { isDaemon = true }.start()
         }
         // (v149) المشغّل بيمسك الـ audio focus: أي تطبيق تاني شغّال صوت بيتوقف، ولو حد تاني خد الصوت المشغّل بيقف بدل ما الصوتين يتخلطوا
-        try { player.setAudioAttributes(androidx.media3.common.AudioAttributes.Builder().setUsage(C.USAGE_MEDIA).setContentType(C.AUDIO_CONTENT_TYPE_MOVIE).build(), true); player.setHandleAudioBecomingNoisy(true) } catch (e: Throwable) { LogStore.err("Player:focus", e) }
+        try { player.exo()?.let { xp -> xp.setAudioAttributes(androidx.media3.common.AudioAttributes.Builder().setUsage(C.USAGE_MEDIA).setContentType(C.AUDIO_CONTENT_TYPE_MOVIE).build(), true); xp.setHandleAudioBecomingNoisy(true) } } catch (e: Throwable) { LogStore.err("Player:focus", e) }
         WebMute.pauseAll()
-        player.setVideoSurfaceView(sv)
+        player.exo()?.setVideoSurfaceView(sv)
         applyBoost()
         player.setPlaybackSpeed(speed)
         var firstFrame = false
@@ -3318,10 +4120,33 @@ class PlayerActivity : Activity(), Host {
                     if (sleepEndOfVideo) { sleepEndOfVideo = false; say("😴 مؤقت النوم: الفيديو خلص") }
                     else if (Cfg.str("loop", "0") == "1") { player.seekTo(0); player.play() }
                     else if (hasNextEpisode() || intent.getStringExtra("ytid") != null) h.post { v469AutoNext() }   // (v469) بطاقة «التالي بعد…» بدل الانتقال الفوري
+                    else if (uri != null && VideoScan.cache == null && VideoScan.hasPermission(this@PlayerActivity)) {   // (v531) المكتبة لسه ما اتفحصتش: افحص وكمّل للتالي
+                        Thread {
+                            try { VideoScan.scan(this@PlayerActivity) } catch (_: Throwable) {}
+                            runOnUiThread { if (!isFinishing && !isDestroyed && hasNextEpisode()) v469AutoNext() }
+                        }.also { it.isDaemon = true }.start()
+                    }
                 }
             }
             override fun onRenderedFirstFrame() { firstFrame = true; webFirstFrame = true; ytBusy(false) }
+            override fun onCues(cueGroup: androidx.media3.common.text.CueGroup) {
+                nativeCue = cueGroup.cues.mapNotNull { it.text?.toString()?.trim() }.filter { it.isNotEmpty() }.joinToString("\n")
+            }
             override fun onTracksChanged(t: Tracks) {
+                try {
+                    if (!textPicked) {
+                        val tg = t.groups.filter { it.type == C.TRACK_TYPE_TEXT && it.length > 0 && it.isSupported }
+                        if (tg.isNotEmpty()) {
+                            textPicked = true
+                            if (tg.none { it.isSelected }) {
+                                val pick = tg.firstOrNull { g -> (g.getTrackFormat(0).language ?: "").lowercase().startsWith("ar") } ?: tg.first()
+                                player.exo()?.let { xp -> xp.trackSelectionParameters = xp.trackSelectionParameters.buildUpon().setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
+                                    .setOverrideForType(androidx.media3.common.TrackSelectionOverride(pick.mediaTrackGroup, 0)).build() }
+                            }
+                            log("💬 ترجمة أصلية في الفيديو: ${tg.size} مسار")
+                        }
+                    }
+                } catch (e: Throwable) { LogStore.err("Player:textTrack", e) }
                 paintQual()
                 if (sizeTxt.isEmpty()) refreshSize()
                 for (g in t.groups) {
@@ -3340,11 +4165,11 @@ class PlayerActivity : Activity(), Host {
                 offerLinkRefresh()
             }
         }
-        player.addListener(plst)
+        player.exo()?.addListener(plst)
         if (handedOff) {   // (v406) المشغّل جاهز وشغّال: بنزامن الواجهة (حجم الفيديو/زرار التشغيل/اللودينج) لأن الأحداث دي عدّت قبل ما نسمع
             h.post {
                 try {
-                    plst.onVideoSizeChanged(player.videoSize)
+                    player.exo()?.let { plst.onVideoSizeChanged(it.videoSize) }
                     plst.onIsPlayingChanged(player.isPlaying)
                     plst.onPlaybackStateChanged(player.playbackState)
                     if (player.playbackState == Player.STATE_READY) plst.onRenderedFirstFrame()
@@ -3354,11 +4179,12 @@ class PlayerActivity : Activity(), Host {
         }
         if (pendingYt) return   // (v351) لسه بنجيب الرابط: المشغّل فاضي ولودينج ويندوز بيلف
         val au = aurl
+        val xp0: ExoPlayer = player.exo() ?: return
         if (uri == null && au != null) {
             val pf = androidx.media3.exoplayer.source.ProgressiveMediaSource.Factory(httpDsf ?: DefaultHttpDataSource.Factory().setDefaultRequestProperties(hdr).setAllowCrossProtocolRedirects(true))
-            player.setMediaSource(androidx.media3.exoplayer.source.MergingMediaSource(pf.createMediaSource(MediaItem.fromUri(Uri.parse(url!!))), pf.createMediaSource(MediaItem.fromUri(Uri.parse(au)))))
-        } else player.setMediaItem(MediaItem.fromUri(uri ?: Uri.parse(url!!)))
-        player.prepare(); player.playWhenReady = true
+            xp0.setMediaSource(androidx.media3.exoplayer.source.MergingMediaSource(pf.createMediaSource(MediaItem.fromUri(Uri.parse(url!!))), pf.createMediaSource(MediaItem.fromUri(Uri.parse(au)))))
+        } else xp0.setMediaItem(uri?.let { mediaItemFor(it) } ?: MediaItem.fromUri(Uri.parse(url!!)))
+        xp0.prepare(); xp0.playWhenReady = true
     }
 
     // ===== (v139) عزل كل فيديو عن اللي قبله =====
@@ -3381,6 +4207,7 @@ class PlayerActivity : Activity(), Host {
     private var guard: GuardedHost? = null
     /** أي مكان بيقفل المحرك الحالي لازم يعدّي من هنا: يقطع ندائاته للمشغّل الأول، وبعدين يقفله ويختمه */
     private fun retireEngine() {
+        if (remote) return   // (v546) وضع المتحكم: المحرك بتاع التلفزيون ومايتقفلش من الموبايل
         try { guard?.kill() } catch (_: Throwable) {}
         try { if (::engine.isInitialized) engine.stop() } catch (e: Throwable) { LogStore.err("Player:retire", e) }
     }
@@ -3461,9 +4288,10 @@ class PlayerActivity : Activity(), Host {
     }
     /** يشغّل المحرك. لو الدخول كان «ابدأ من الأول وجديد»: المسح والحفظ على خيط الخلفية قبل ما الحلقة تبدأ (مش على الـ UI) */
     private fun startEngine() {
+        if (remote) return
         val fresh = freshOnce; freshOnce = false
         if (fresh) { try { player.seekTo(0) } catch (e: Exception) { LogStore.err("Main:2041", e) }; cur = 0L }
-        val eng = engine   // (v139) المحرك اللي اتطلب له التشغيل بالذات — مش اللي يبقى في الحقل وقت ما الخيط يشتغل
+        val eng = realEngine   // (v139) المحرك اللي اتطلب له التشغيل بالذات — مش اللي يبقى في الحقل وقت ما الخيط يشتغل
         Thread {
             if (fresh) try { eng.redoAll() } catch (e: Throwable) { val m = "⚠ " + (e.message ?: e.toString()).take(120); log(m); runOnUiThread { say(m) } }
             eng.run()
@@ -3474,6 +4302,7 @@ class PlayerActivity : Activity(), Host {
     @Volatile private var engineReady = false
     private var pendingBegin = false
     private fun initEngine() {
+        if (remote) { initRemoteEngine(); return }
         vid = videoId()
         NetUse.init(); NetUse.online = (uri == null)   // عدّاد النت: فيديو الإنترنت بيتحسب لوحده
         if (uri == null && url != null && !incognito) webRegister()
@@ -3493,7 +4322,10 @@ class PlayerActivity : Activity(), Host {
         val gh = GuardedHost(this); guard = gh
         val eng = Engine(conf, { makeSource(sp) }, store, gh, pb)
         eng.persistBlocked = true
-        engine = eng
+        realEngine = eng
+        engine = LocalEngine(eng)
+        brainSubsRef = null
+        BrainBus.reset()   // (v542) فيديو/محرك جديد: ترجمة الفيديو القديم ما تتبعتش للريموت
         engine.convDialect = Cfg.str("conv_dialect", "")
         engine.toneStyle = Cfg.str("tone_style", ""); engine.toneStrength = Cfg.str("tone_strength", "متوسطة")
         engine.titleHint = run {
@@ -3508,7 +4340,7 @@ class PlayerActivity : Activity(), Host {
             }
             listOf(clean(t), clean(folder)).filter { it.isNotBlank() }.distinct().joinToString(" | ")
         }
-        Live.engine = engine
+        Live.engine = realEngine
         visual = VisualMode({ visConfNow() }, { cur / 1000.0 }, { makeRetriever() }, { m ->   // (v182) cur = نسخة volatile من مكان التشغيل — ExoPlayer بيرمي استثناء لو اتنادى من خيط تاني
             visLog(m)   // (v182) كل رسائل الوضع البصري بتتسجّل في اللوج
             // (v213) الوضع البصري بيشتغل في صمت: حالته بتظهر في شريطه (visBar) تحت شريط الباتش الفاشل، ومفيش إشعارات على الشاشة غير الأخطاء اللي لازم تتصلّح (مفتاح ناقص / مصدر مش مدعوم)
@@ -3520,7 +4352,7 @@ class PlayerActivity : Activity(), Host {
         // (v181) الوضع البصري تلقائي: بيشتغل لوحده مع فتح الفيديو لو فيه مفتاح للوضع البصري (ضغطة 👁 بتقفله/تشغّله، ومن الإعدادات تقدر تقفل التلقائي)
         if (VisualMode.auto() && conf.visKeys.any { it.length > 10 } && !incognito) {
             visAutoRun = true
-            h.postDelayed({ if (!isFinishing && !isDestroyed && !visual.running) { visLog("👁 تشغيل تلقائي مع فتح الفيديو"); visual.mode = "scene"; visual.start() } }, 1200)
+            h.postDelayed({ if (!isFinishing && !isDestroyed && !visual.running) { visLog("👁 تشغيل تلقائي مع فتح الفيديو"); visual.mode = "scene"; visualStart() } }, 1200)
         }
         status = "⏳ بحمّل بيانات الفيديو…"
         val vidNow = vid
@@ -3536,7 +4368,7 @@ class PlayerActivity : Activity(), Host {
             } else 0.0
             eng.persistBlocked = false
             runOnUiThread {
-                if (isFinishing || isDestroyed || engine !== eng) return@runOnUiThread
+                if (isFinishing || isDestroyed || realEngine !== eng) return@runOnUiThread
                 engineReady = true
                 if (pendingYt) return@runOnUiThread   // (v351) لسه مفيش رابط: الاستكمال/السؤال بيحصلوا بعد ما initEngine تتعاد على الرابط الحقيقي
                 val startMs = intent.getLongExtra("startms", 0L)   // (v343) جاي من تحويل صوت→فيديو: كمّل من نفس مكان الصوت
@@ -3576,9 +4408,9 @@ class PlayerActivity : Activity(), Host {
                     val au = aurl
                     if (au != null) {
                         val pf = androidx.media3.exoplayer.source.ProgressiveMediaSource.Factory(httpDsf ?: DefaultHttpDataSource.Factory().setDefaultRequestProperties(hdr).setAllowCrossProtocolRedirects(true))
-                        player.setMediaSource(androidx.media3.exoplayer.source.MergingMediaSource(pf.createMediaSource(MediaItem.fromUri(Uri.parse(got.url))), pf.createMediaSource(MediaItem.fromUri(Uri.parse(au)))))
-                    } else player.setMediaItem(MediaItem.fromUri(Uri.parse(got.url)))
-                    player.prepare(); if (pos > 0L) player.seekTo(pos); player.playWhenReady = true
+                        player.exo()?.setMediaSource(androidx.media3.exoplayer.source.MergingMediaSource(pf.createMediaSource(MediaItem.fromUri(Uri.parse(got.url))), pf.createMediaSource(MediaItem.fromUri(Uri.parse(au)))))
+                    } else player.exo()?.setMediaItem(MediaItem.fromUri(Uri.parse(got.url)))
+                    player.exo()?.prepare(); if (pos > 0L) player.seekTo(pos); player.playWhenReady = true
                     log("✓ (v468) الستريم الفريش اشتغل — كمّلنا من نفس المكان")
                 } catch (ex: Exception) { LogStore.err("Player:ytSilentRetry", ex); offerLinkRefresh() }
             }
@@ -3656,7 +4488,7 @@ class PlayerActivity : Activity(), Host {
         val appCtx = applicationContext; val id = vid; val nu = r.url; val ck = r.cookie
         val refB = intent.getStringExtra("ref") ?: ""; val titleB = intent.getStringExtra("title") ?: ""
         Thread { WebVideos.update(appCtx, id) { it.copy(url = nu, cookie = if (ck.isNotEmpty()) ck else it.cookie, ts = System.currentTimeMillis()) }; if (!incognito) WebIdent.bindLink(id, nu, refB, titleB) }.apply { isDaemon = true }.start()
-        try { val pos = player.currentPosition; player.setMediaItem(MediaItem.fromUri(Uri.parse(r.url)), pos); player.prepare(); player.playWhenReady = true } catch (e: Exception) { LogStore.err("Main:2115", e) }
+        try { val pos = player.currentPosition; player.exo()?.setMediaItem(MediaItem.fromUri(Uri.parse(r.url)), pos); player.exo()?.prepare(); player.playWhenReady = true } catch (e: Exception) { LogStore.err("Main:2115", e) }
     }
 
     // ===== الفيديوهات المصطادة: تسجيل في السجل + لقطة مصغّرة (الاسم من صفحة الموقع) =====
@@ -3735,13 +4567,22 @@ class PlayerActivity : Activity(), Host {
     }
 
     /** (v125) ⏮ ⏭: لو الفيديو من فولدر في المكتبة → الحلقة اللي قبلها/بعدها، وإلا (فيديو إنترنت/ملف لوحده) → الجملة اللي قبلها/بعدها (قبل كده كانت بتطلّع رسالة بس) */
+    /** (v531) إخوات الفيديو الحالي في نفس الفولدر + مكانه. على التلفزيون الترتيب هو ترتيب صفحة «الفيديوهات» (tv_vid_sort، الأحدث افتراضيًا)، وعلى الموبايل بالاسم */
+    private fun libSibs(): Pair<List<VideoItem>, Int>? {
+        val curU = uri?.toString() ?: return null
+        val all = VideoScan.cache ?: return null
+        val me = all.firstOrNull { it.uri == curU } ?: return null
+        val mode = if (DeviceUi.isTv(this)) Cfg.str("tv_vid_sort", VideoLib.SORT_NEW) else VideoLib.SORT_NAME
+        val sib = VideoLib.sortVideos(all.filter { it.folderKey == me.folderKey }, mode)
+        return Pair(sib, sib.indexOfFirst { it.uri == curU })
+    }
+    /** (v531) آخر فيديو في القايمة ← يرجع لأول فيديو (تلفزيون افتراضيًا؛ على الموبايل لو autoplay_wrap=1) */
+    private fun wrapOn(): Boolean = Cfg.str("autoplay_wrap", if (DeviceUi.isTv(this)) "1" else "0") == "1"
+
     fun stepOrSeek(d: Int) {
-        val curU = uri?.toString(); val all = VideoScan.cache
-        val inLib = curU != null && all != null && all.any { it.uri == curU }
-        if (inLib && (if (d > 0) hasNextEpisode() else true)) {
-            val me = all!!.first { it.uri == curU }
-            val sib = VideoLib.sortVideos(all.filter { it.folderKey == me.folderKey }, VideoLib.SORT_NAME)
-            if (sib.getOrNull(sib.indexOfFirst { it.uri == curU } + d) != null) { stepEpisode(d); return }
+        run {
+            val p = libSibs()
+            if (p != null && (p.first.getOrNull(p.second + d) != null || (wrapOn() && p.first.size > 1))) { stepEpisode(d); return }
         }
         val t = player.currentPosition - offsetMs
         if (starts.isNotEmpty()) {
@@ -3752,12 +4593,11 @@ class PlayerActivity : Activity(), Host {
     }
     /** الحلقة اللي بعدها (+1) أو اللي قبلها (-1) من نفس الفولدر: بيوقف ترجمة الحالية ويبدأ ترجمة الجديدة */
     fun stepEpisode(d: Int) {
-        val curU = uri?.toString()
-        val all = VideoScan.cache
-        if (curU == null || all == null) { say("الفيديو ده مش من مكتبة الجهاز"); return }
-        val me = all.firstOrNull { it.uri == curU } ?: run { say("الفيديو ده مش من مكتبة الجهاز"); return }
-        val sib = VideoLib.sortVideos(all.filter { it.folderKey == me.folderKey }, VideoLib.SORT_NAME)
-        val t = sib.getOrNull(sib.indexOfFirst { it.uri == curU } + d) ?: run { say(if (d > 0) "دي آخر حلقة في الفولدر" else "دي أول حلقة في الفولدر"); return }
+        val p = libSibs() ?: run { say("الفيديو ده مش من مكتبة الجهاز"); return }
+        val sib = p.first
+        var t = sib.getOrNull(p.second + d)
+        if (t == null && wrapOn() && sib.size > 1) { t = if (d > 0) sib.first() else sib.last(); say("🔁 رجعنا " + (if (d > 0) "لأول" else "لآخر") + " فيديو في القايمة") }   // (v531)
+        if (t == null) { say(if (d > 0) "دي آخر حلقة في الفولدر" else "دي أول حلقة في الفولدر"); return }
         Cfg.put("lib_last", t.uri); Cfg.put("lib_last_f:" + t.folderKey, t.uri)
         say("▶ " + t.title)
         swapVideo(Uri.parse(t.uri))
@@ -3774,6 +4614,7 @@ class PlayerActivity : Activity(), Host {
         try { player.release() } catch (e: Exception) { LogStore.err("Main:2167", e) }
         uri = newUri; url = null; aurl = null; hdr.clear()
         cur = 0L; durMs = 0L; vidW = 0; vidH = 0; curIdx = -2; curKey = ""; dirty = true
+        nativeCue = ""; textPicked = false; natShown = false; natLast = ""; preferNative = false; sfLive = ""; sfLiveCache.clear(); sfLiveAsk.clear()
         synchronized(logBuf) { logBuf.setLength(0) }
         status = ""; conf = Cfg.snapshot()
         try { sub.show(null) } catch (e: Exception) { LogStore.err("Main:2172", e) }
@@ -3808,15 +4649,13 @@ class PlayerActivity : Activity(), Host {
         if (f) showChrome() else { h.removeCallbacks(hideChrome); chromeShown = false; applyChromeFn() }
         if (::svRef.isInitialized) videoBoxRef.post { applyFit(svRef, videoBoxRef) }   // (v429) بعد ما الـ layout يخلص بالمقاس الجديد (كان بيتحسب على المقاس القديم لفريم)
     }
-    fun showChrome() { if (pipNow() || uiLocked) return; chromeShown = true; applyChromeFn(); h.removeCallbacks(hideChrome); h.postDelayed(hideChrome, 3500) }
+    fun showChrome() { if (pipNow() || uiLocked || DeviceUi.isRemote(this)) return; chromeShown = true; applyChromeFn(); h.removeCallbacks(hideChrome); h.postDelayed(hideChrome, 3500) }
     fun togglePlay() { if (player.isPlaying) player.pause() else { if (player.playbackState == Player.STATE_ENDED) player.seekTo(0); player.play() } }
     /** (v97) في حلقة بعد الحالية في نفس الفولدر؟ (من غير رسالة) */
     private fun hasNextEpisode(): Boolean {
-        val curU = uri?.toString() ?: return false
-        val all = VideoScan.cache ?: return false
-        val me = all.firstOrNull { it.uri == curU } ?: return false
-        val sib = VideoLib.sortVideos(all.filter { it.folderKey == me.folderKey }, VideoLib.SORT_NAME)
-        return sib.getOrNull(sib.indexOfFirst { it.uri == curU } + 1) != null
+        if (remote) return false
+        val p = libSibs() ?: return false
+        return p.first.getOrNull(p.second + 1) != null || (wrapOn() && p.first.size > 1)   // (v531) + اللفّ لأول فيديو
     }
     private var userRot = false
     private var autoRotDone = false
@@ -3837,7 +4676,7 @@ class PlayerActivity : Activity(), Host {
     fun canOverlay() = Build.VERSION.SDK_INT < 23 || android.provider.Settings.canDrawOverlays(this)
     fun enterPip(fromUser: Boolean = true) {
         // شريط الترجمة بره نافذة PiP محتاج إذن "العرض فوق التطبيقات" (مرة واحدة)
-        if (fromUser && !canOverlay() && !Cfg.str("pip_overlay_asked", "0").equals("1")) {
+        if (fromUser && !DeviceUi.isTv(this) && !canOverlay() && !Cfg.str("pip_overlay_asked", "0").equals("1")) {
             Cfg.put("pip_overlay_asked", "1")
             Notice.show(this, ("فعّل «العرض فوق التطبيقات» لـ Subtitler عشان الترجمة تظهر فوق، وارجع دوس ⧉ تاني").toString(), 3600L)
             try { startActivity(Intent(android.provider.Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName"))); return } catch (e: Exception) { LogStore.err("Main:2229", e) }
@@ -3889,7 +4728,7 @@ class PlayerActivity : Activity(), Host {
 
     private var lastFitTag = ""
     private fun applyFit(sv: SurfaceView, box: View) {
-        if ((vidW == 0 || vidH == 0) && ::player.isInitialized) { val vs = player.videoSize; if (vs.width > 0 && vs.height > 0) { vidW = vs.width; vidH = vs.height } }
+        if ((vidW == 0 || vidH == 0) && ::player.isInitialized) { val vs = player.videoSize(); if (vs.first > 0 && vs.second > 0) { vidW = vs.first; vidH = vs.second } }
         if (vidW == 0 || box.width == 0) return
         val mode = if (pipNow()) 0 else curFit()
         // (v469) وضع 100%: مقاس الفيديو الطبيعي 1:1 × عامل الزوم (القرص) — ممكن يعدّي الحاوية وبيتوسّط (FrameLayout بيقصّ الزيادة)
@@ -3983,6 +4822,7 @@ class PlayerActivity : Activity(), Host {
                 Notice.show(this, ("اتستورد ${parsed.size} جملة").toString(), 2300L)
             }
         }
+        if (r == 41 && c == RESULT_OK) d?.data?.let { u -> sfRun("soft", sfPickEng, u) }   // (v529) ملف ترجمة اخترته من الجهاز
         if (r == 32) {
             val t = pendingOrigSrt; pendingOrigSrt = null
             if (c == RESULT_OK && t != null) d?.data?.let { u ->
@@ -4003,7 +4843,7 @@ class PlayerActivity : Activity(), Host {
         }
     }
 
-    private fun saveRecent() { if (!handedOff) saveRecentForce() }
+    private fun saveRecent() { if (!handedOff && !remote) saveRecentForce() }
     private fun saveRecentForce() {
         if (incognito) return
         try { if (!hiddenSite && durMs > 0 && cur > 1000 && cur < durMs - 4000 && vid.isNotEmpty()) Cfg.p.edit().putString("lastpos", vid + "\t" + cur).apply() } catch (_: Throwable) {}
@@ -4020,6 +4860,7 @@ class PlayerActivity : Activity(), Host {
     /** أفقي: يرجع للرأسي من غير ما يقفل. رأسي: يحفظ التقدم ويوقف الفيديو ويقفل. */
     @Suppress("DEPRECATION")
     override fun onBackPressed() {
+        if (DeviceUi.isRemote(this) && miniLog != null) { closeMiniLog(); return }   // (v509) ✕ الصغيرة في لوج الجمل: Back يقفلها
         if (tvBar?.visible == true) { tvBar?.hide(); return }   // (v477 م4) تلفزيون: Back بيقفل شريط التحكم الأول
         if (nextPanel?.consumeBack() == true) return   // (v378)
         if (sideOpen) { closeSide(); return }
@@ -4052,6 +4893,8 @@ class PlayerActivity : Activity(), Host {
         YtNext.show(this, ui, th, cid) { n -> playNextYt(n) }
     }
     private fun playNextYt(n: NpItem) {
+        if (remote) { Notice.show(this, "📺 الفيديو اللي بعده بيتحدد من التلفزيون", 2200L); return }
+        cancelNextUp()   // (v531) اخترت فيديو من اللوحة أثناء العدّاد
         say("⏳ بجيب «" + n.title.take(40) + "»…")
         val ret = intent.getStringExtra("ret") ?: ""; val nosub = intent.getBooleanExtra("nosub", false); val auto = intent.getBooleanExtra("autotr", false)
         Thread {
@@ -4188,7 +5031,9 @@ class PlayerActivity : Activity(), Host {
             if (isDestroyed) return@Thread
             runOnUiThread {
                 if (f == null) { say(if (dubCancel) "اتلغت الدبلجة" else "❌ الدبلجة فشلت — اتأكد إن النت شغّال وجرّب تاني"); return@runOnUiThread }
-                val dp2 = dubPlay ?: DubPlay(player).also { dubPlay = it }
+                val xoD = player.exo()
+                if (xoD == null) { say("📺 الدبلجة مش متاحة وإنت متحكم في التلفزيون"); return@runOnUiThread }
+                val dp2 = dubPlay ?: DubPlay(xoD).also { dubPlay = it }
                 if (dp2.start(f)) say("✅ الدبلجة شغّالة — صوت الفيديو الأصلي اتوطّى") else say("❌ مقدرتش أشغّل ملف الدبلجة")
             }
         }.start()
@@ -4404,7 +5249,7 @@ class PlayerActivity : Activity(), Host {
 
     private fun startVoice(f: File) {
         stopVoice()
-        try { voice = VoiceClean.Playback(this, player, f).also { it.start() }; voiceBtnRef?.text = "🎙✓"; say("🎙 صوت الكلام النضيف شغّال") }
+        try { voice = VoiceClean.Playback(this, player.exo() ?: throw IllegalStateException("remote"), f).also { it.start() }; voiceBtnRef?.text = "🎙✓"; say("🎙 صوت الكلام النضيف شغّال") }
         catch (e: Throwable) { LogStore.err("Player:startVoice", e); stopVoice(); say("تعذّر تشغيل الصوت النضيف") }
     }
 
@@ -4473,7 +5318,7 @@ class PlayerActivity : Activity(), Host {
             if (Strict.noGemKeys()) { say(Strict.NO_VISUAL_MSG); return false }   // (v410)
             if (!conf.visKeys.any { it.length > 10 }) { say("👁 ضيف مفتاح للوضع البصري الأول (الإعدادات ← 🔑 المفاتيح ← مفتاح الوضع البصري)"); return false }
             visAutoRun = false; visual.mode = "scene"
-            if (!visual.running) visual.start()
+            if (!visual.running) visualStart()
             visLog(tag + " اتشغّل")
             return true
         } catch (e: Throwable) { LogStore.err("Player:startVisualNow", e); return false }
@@ -4538,7 +5383,7 @@ class PlayerActivity : Activity(), Host {
                     if (!conf.visKeys.any { it.length > 10 }) { say("🔤 ضيف مفتاح للوضع البصري الأول (الإعدادات ← 🔑 المفاتيح ← مفتاح الوضع البصري)"); return }
                     visAutoRun = false; visual.mode = "scene"
                     if (visual.running) visual.stop()
-                    visual.start(); visLog("🔤 وضع ترجمة الهارد سب اتشغّل")
+                    visualStart(); visLog("🔤 وضع ترجمة الهارد سب اتشغّل")
                 }
             } catch (e: Throwable) { LogStore.err("Player:hardMode", e) }
             say("🔤 وضع ترجمة الهارد سب شغّال — الترجمة الصوتية واقفة")
@@ -4550,7 +5395,7 @@ class PlayerActivity : Activity(), Host {
         try {
             if (::visual.isInitialized) {
                 if (Cfg.str("vis_auto", "1") == "1") {
-                    if (!visual.running && conf.visKeys.any { it.length > 10 } && !incognito) { visAutoRun = true; visual.mode = "scene"; visual.start(); visLog("👁 اتشغّل مع بريست " + pr.name) }
+                    if (!visual.running && conf.visKeys.any { it.length > 10 } && !incognito) { visAutoRun = true; visual.mode = "scene"; visualStart(); visLog("👁 اتشغّل مع بريست " + pr.name) }
                 } else if (visual.running) { visual.stop(); visOv.showBoxes(emptyList()); visAutoRun = false; visLog("👁 اتقفل مع بريست " + pr.name) }
             }
         } catch (e: Throwable) { LogStore.err("Player:presetVis", e) }
@@ -4808,11 +5653,11 @@ class PlayerActivity : Activity(), Host {
         } catch (_: Throwable) {}
     }
     /** (v182) لقطة فريم من سطح الفيديو (PixelCopy) بحجم أقصاه 640 — بتتنادى من خيط الوضع البصري، فيديوهات m3u8 */
-    fun grabSurface(): android.graphics.Bitmap? {
+    fun grabSurface(maxDim: Int = 960): android.graphics.Bitmap? {
         if (!::svRef.isInitialized) return null
         val sw = svRef.width; val sh = svRef.height
         if (sw <= 0 || sh <= 0 || !svRef.holder.surface.isValid) return null
-        val sc = minOf(1f, 960f / maxOf(sw, sh))
+        val sc = minOf(1f, maxDim.toFloat() / maxOf(sw, sh))
         val bmp = android.graphics.Bitmap.createBitmap((sw * sc).toInt().coerceAtLeast(2), (sh * sc).toInt().coerceAtLeast(2), android.graphics.Bitmap.Config.ARGB_8888)
         val latch = java.util.concurrent.CountDownLatch(1); val ok = java.util.concurrent.atomic.AtomicBoolean(false)
         try {
@@ -4853,7 +5698,7 @@ class PlayerActivity : Activity(), Host {
         val toggle = chip("") { }
         fun paintToggle() { toggle.text = if (visual.running) "⏹ إيقاف" else "▶ تشغيل" }
         toggle.setOnClickListener {
-            if (visual.running) { visual.stop(); visLog("👁 الوضع البصري اتقفل (اللوحة)") } else { visual.mode = "scene"; visLog("👁 الوضع البصري اتشغّل (اللوحة)"); visual.start() }
+            if (visual.running) { visual.stop(); visLog("👁 الوضع البصري اتقفل (اللوحة)") } else { visual.mode = "scene"; visLog("👁 الوضع البصري اتشغّل (اللوحة)"); visualStart() }
             paintToggle()
         }
         paintToggle()
@@ -4924,18 +5769,18 @@ class PlayerActivity : Activity(), Host {
         box.addView(st)
         box.addView(ui.button(if (visual.running) "⏹ إيقاف" else "▶ تشغيل", true) {
             if (visual.running) { visual.stop(); visLog("👁 الوضع البصري اتقفل (القايمة)") } else {
-                visLog("👁 الوضع البصري اتشغّل (القايمة)"); visual.start()
+                visLog("👁 الوضع البصري اتشغّل (القايمة)"); visualStart()
             }
             d.dismiss()
         })
         // (v185) إعادة الوضع البصري: من الأول (يمسح كل النتايج المحفوظة) أو من مكان التشغيل وقدّام بس
         box.addView(ui.button("🔁 إعادة الوضع البصري من الأول") {
-            visual.stop(); visual.clear(); visOv.showBoxes(emptyList()); visual.mode = "scene"; visual.start()
+            visual.stop(); visual.clear(); visOv.showBoxes(emptyList()); visual.mode = "scene"; visualStart()
             visLog("👁 إعادة الوضع البصري من الأول (القايمة)"); Notice.show(this, "👁 بيعيد تحليل الفيديو من الأول", 2300L); d.dismiss()
         })
         box.addView(ui.button("↪ إعادة من مكان التشغيل وقدّام") {
             val t = cur / 1000.0
-            visual.stop(); visual.clearFrom(t); visOv.showBoxes(emptyList()); visual.mode = "scene"; visual.start()
+            visual.stop(); visual.clearFrom(t); visOv.showBoxes(emptyList()); visual.mode = "scene"; visualStart()
             visLog("👁 إعادة الوضع البصري من " + fmtMs(cur) + " (القايمة)"); Notice.show(this, "👁 بيعيد التحليل من مكان التشغيل", 2300L); d.dismiss()
         })
         box.addView(ui.button("📸 لقطة واحدة دلوقتي") { d.dismiss(); visualSnap() })
@@ -5013,7 +5858,7 @@ class PlayerActivity : Activity(), Host {
         restyleFn()
         if (resumeAfterSettings) { resumeAfterSettings = false; try { player.play() } catch (e: Exception) { LogStore.err("Main:2576", e) } }
     }
-    override fun onPause() { super.onPause(); LogStore.add("⏸ onPause · ${LogStore.heapLine()}"); resumedNow = false; if (!handedOff) { saveRecent(); Thread { engine.saveNow() }.start() } }
+    override fun onPause() { super.onPause(); LogStore.add("⏸ onPause · ${LogStore.heapLine()}"); resumedNow = false; if (!handedOff && !remote) { saveRecent(); Thread { engine.saveNow() }.start() } }
     override fun onStop() {
         super.onStop(); saveRecent()
         // ✕ على نافذة PiP: النظام بيوقف الأكتيفيتي وهي لسه في وضع PiP — نقفل الفيديو ونخرج (إلا لو الشاشة اتقفلت)
@@ -5031,9 +5876,10 @@ class PlayerActivity : Activity(), Host {
         pipOv?.hide(); pipOv = null
         saveRecent()
         try { visual.stop() } catch (e: Exception) { LogStore.err("Main:2590", e) }
-        if (Live.engine === engine) Live.engine = null
+        rmFrames = false; try { rmLsn?.let { LinkSession.removeListener(it) } } catch (_: Throwable) {}; rmLsn = null
+        if (::realEngine.isInitialized && Live.engine === realEngine) Live.engine = null
         retireEngine()
-        if (!handedOff) try { engine.saveNow() } catch (e: Exception) { LogStore.err("Main:2593", e) }
+        if (!handedOff && !remote) try { engine.saveNow() } catch (e: Exception) { LogStore.err("Main:2593", e) }
         if (incognito && isFinishing) try { File(File(filesDir, "progress"), Store.keyFor(vid) + ".json").delete() } catch (_: Throwable) {}   // (v124) المتخفي: الترجمة المحفوظة بتتمسح أول ما تقفل
         player.release()
         synchronized(liveList) { liveList.removeAll { it.get() == null || it.get() === this } }

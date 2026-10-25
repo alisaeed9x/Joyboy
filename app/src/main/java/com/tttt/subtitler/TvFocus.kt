@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.Intent
 import android.graphics.drawable.Drawable
 import android.graphics.drawable.GradientDrawable
+import android.graphics.drawable.LayerDrawable
 import android.view.KeyEvent
 import android.view.View
 import android.view.ViewGroup
@@ -27,27 +28,46 @@ import java.util.WeakHashMap
  */
 object TvFocus {
     private val saved = WeakHashMap<View, Drawable?>()
+    private val listRinged = WeakHashMap<View, Boolean>()
 
-    fun on(a: Activity): Boolean = try { DeviceUi.isTv(a) } catch (_: Throwable) { false }
+    fun on(a: Activity): Boolean = try { DeviceUi.isRemote(a) } catch (_: Throwable) { false }
 
-    fun onCtx(c: Context): Boolean = try { DeviceUi.isTv(c) } catch (_: Throwable) { false }
+    fun onCtx(c: Context): Boolean = try { DeviceUi.isRemote(c) } catch (_: Throwable) { false }
 
     fun attach(act: Activity, accent: Int) {
         if (!on(act)) return
-        listen(act.window.decorView.viewTreeObserver, accent, act.resources.displayMetrics)
+        listen(act.window.decorView.viewTreeObserver, accent, act.resources.displayMetrics, act.window.decorView)
     }
 
-    private fun listen(vto: ViewTreeObserver, accent: Int, dm: DisplayMetrics) {
+    private fun listen(vto: ViewTreeObserver, accent: Int, dm: DisplayMetrics, root: View? = null) {
         vto.addOnGlobalFocusChangeListener { old, new ->
             if (old != null) unmark(old)
             if (new != null) mark(new, accent, dm)
         }
+        // (v490) لما نافذة تانية (دايلوج/قايمة منبثقة) تاخد التركيز، النافذة اللي ورا تشيل حلقتها،
+        // ولما ترجع لها التركيز ترجّع الحلقة — عشان تعرف الحلقة اللي قدامك دي بتاعت أنهي نافذة
+        if (root != null) vto.addOnWindowFocusChangeListener { has ->
+            val f = try { root.findFocus() } catch (_: Throwable) { null }
+            if (f != null) {
+                if (has) mark(f, accent, dm) else unmark(f)
+                try { f.onFocusChangeListener?.onFocusChange(f, has) } catch (_: Throwable) {}
+            }
+        }
     }
+
+    /** (v490) حلقة تركيز واضحة على أي خلفية: إطار خارجي بلون النص + إطار داخلي بلون التمييز */
+    fun ring(accent: Int, d: Float): Drawable {
+        val outer = GradientDrawable().apply { setColor(0x22FFFFFF); setStroke((6 * d).toInt(), contrast()); cornerRadius = 12 * d }
+        val inner = GradientDrawable().apply { setColor(0x00000000); setStroke((3 * d).toInt(), accent); cornerRadius = 12 * d }
+        return LayerDrawable(arrayOf(outer, inner))
+    }
+
+    private fun contrast(): Int = try { Glass.theme().text } catch (_: Throwable) { 0xFFFFFFFF.toInt() }
 
     /** (v477 م3) نافذة تانية (دايلوج): نفس حلقة التركيز + أول عنصر ياخد التركيز */
     fun attachWindow(ctx: Context, w: Window?, accent: Int) {
         if (w == null || !onCtx(ctx)) return
-        listen(w.decorView.viewTreeObserver, accent, ctx.resources.displayMetrics)
+        listen(w.decorView.viewTreeObserver, accent, ctx.resources.displayMetrics, w.decorView)
         firstFocus(w.decorView)
     }
 
@@ -80,18 +100,28 @@ object TvFocus {
     /** (v477 م3) بديل PopupWindow(...) على التلفزيون: التركيز بالريموت جوه القايمة المنبثقة */
     fun pop(ctx: Context, v: View, w: Int, h: Int, focusable: Boolean): PopupWindow {
         val pw = PopupWindow(v, w, h, focusable)
-        if (focusable && onCtx(ctx)) { listen(v.viewTreeObserver, Glass.theme().primary, ctx.resources.displayMetrics); firstFocus(v) }
+        if (focusable && onCtx(ctx)) { listen(v.viewTreeObserver, Glass.theme().primary, ctx.resources.displayMetrics, v); firstFocus(v) }
         return pw
     }
 
     private fun isContainer(v: View) = v is AbsListView || v is ScrollView || v is HorizontalScrollView || v is WebView
 
     private fun mark(v: View, accent: Int, dm: DisplayMetrics) {
-        if (isContainer(v)) return   // الشبكات/القوايم بترسم تحديدها بنفسها (selector)
+        if (v is AbsListView) {   // (v490) selector القوائم كان شفاف فمكانش باين الصف المحدد — دلوقتي حلقة ظاهرة فوق الصف
+            try {
+                if (!listRinged.containsKey(v)) {
+                    listRinged[v] = true
+                    v.setSelector(ring(accent, dm.density))
+                    v.setDrawSelectorOnTop(true)
+                }
+            } catch (_: Throwable) {}
+            return
+        }
+        if (isContainer(v) || v is TvTileView || v is TvOwnFocus) return   // (v491) كروت اللانشر عندها حلقتها البيضاء وتكبيرها الخاص
         try {
             val d = dm.density
             if (!saved.containsKey(v)) saved[v] = v.foreground
-            v.foreground = GradientDrawable().apply { setColor(0x1AFFFFFF); setStroke((3 * d).toInt(), accent); cornerRadius = 10 * d }
+            v.foreground = ring(accent, d)
             val big = v.width > dm.widthPixels * 0.55f || v.height > dm.heightPixels * 0.45f
             if (!big && v.width > 0) {
                 (v.parent as? ViewGroup)?.clipChildren = false

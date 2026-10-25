@@ -13,22 +13,25 @@ import android.widget.LinearLayout
  *  (v312) مؤشّر بيتزحلق تحت البوابة النشطة + قفزة للأيقونة لما تتفعّل */
 class BottomNav(act: Activity, private val ui: Ui, private val th: Theme, private var active: Int, private val rail: Boolean = false, private val onPick: (Int) -> Unit) {   // (v462) rail = شريط جانبي رأسي لوضع التابلت (زي يوتيوب التابلت)
     companion object { const val MORE = 8
+        /** (v521) زرار «الريموت» (موبايل/تابلت بس) جنب الفيديوهات — بيفتح RemoteActivity مباشرة ومش بوابة عادية */
+        const val REMOTE = 12
         /** (v472) «الذكاء» تبويب اتمسح قديمًا — الرقم 6 محجوز عشان ترقيم البوابات ما يتغيّرش، لكن مش بيظهر في أي حته */
         const val DEAD_AI = 6
         /** (v467) ترتيب الشريط بطلب صاحب التطبيق: الفيديوهات ← يوتيوب ← الموسيقى ← المتصفح ← المزيد.
          *  أي بوابة مش في الشريط بتظهر تلقائيًا جوه «المزيد» — فأي إضافة جديدة هتبان من غير تعديل هنا. */
-        val BAR_ORDER = listOf(0, 4, 1, 2, 8)
+        val BAR_ORDER = listOf(0, REMOTE, 4, 1, 2, 8)
         /** (v475) خلايا يوتيوب الافتراضية (مش بوابات): الرئيسية 9 · الاشتراكات 10 · أنا 11 — بتحل محل خلية «يوتيوب» وانت جواه */
         const val YT_HOME = 9; const val YT_SUBS = 10; const val YT_ME = 11
         val NORMAL_ORDER = BAR_ORDER
         val YT_ORDER = listOf(0, YT_HOME, YT_SUBS, YT_ME, MORE)       // نسخة كاملة وانت في يوتيوب: الموسيقى والمتصفح بيروحوا لـ«المزيد»
         val LITE_ORDER = listOf(YT_HOME, YT_SUBS, 0, YT_ME)           // نسخة اللايت: الرئيسية · الاشتراكات · محلي · أنا
         val DEFS = listOf("🎞" to "الفيديوهات", "🎵" to "الموسيقى", "🌐" to "المتصفح", "📂" to "الملفات", "▶" to "يوتيوب", "📋" to "المهام", "" to "", "⚙️" to "الإعدادات", "⋯" to "المزيد",
-            "🏠" to "الرئيسية", "📺" to "الاشتراكات", "👤" to "أنا")
+            "🏠" to "الرئيسية", "📺" to "الاشتراكات", "👤" to "أنا", "📱" to "الريموت")
     }
     /** البوابات اللي ورا ⋯ المزيد: أي بوابة مش في الشريط (حاليًا: الملفات 3 · المهام 5 · الذكاء 6 · الإعدادات 7) — الزرار بيتلوّن لما واحدة منهم تبقى هي النشطة */
     private val lite = act.packageName.endsWith(".lite")
-    private var order: List<Int> = if (lite) LITE_ORDER else NORMAL_ORDER
+    private val tvDev = try { DeviceUi.isTv(act) } catch (_: Throwable) { false }   // (v521) على التلفزيون زرار الريموت مخفي
+    private var order: List<Int> = if (lite) LITE_ORDER else NORMAL_ORDER.filter { it != REMOTE || !tvDev }
     private fun cellOf(a: Int): Int = if (a in order) a else if (lite) (if (a == 7) YT_ME else -1) else MORE
     private fun moreSheet(act: Activity) {
         val d = android.app.Dialog(act)
@@ -42,6 +45,12 @@ class BottomNav(act: Activity, private val ui: Ui, private val th: Theme, privat
             val row = ui.text(label, 15f, if (id == active) th.primary else th.text, true).apply { setPadding(ui.dp(14), ui.dp(14), ui.dp(14), ui.dp(14)) }
             Glass.pressable(row)
             row.setOnClickListener { d.dismiss(); onPick(id) }
+            box.addView(row, LinearLayout.LayoutParams(-1, -2))
+        }
+        if (!tvDev) {   // (v521) دفع تحديث إجباري للتلفزيون من نسخة الموبايل (حتى لو التلفزيون ما لقاش نسخة أحدث)
+            val row = ui.text("📤  ادفع التحديث للتلفزيون", 15f, th.text, true).apply { setPadding(ui.dp(14), ui.dp(14), ui.dp(14), ui.dp(14)) }
+            Glass.pressable(row)
+            row.setOnClickListener { d.dismiss(); RemoteClient.forcePushFlow(act) }
             box.addView(row, LinearLayout.LayoutParams(-1, -2))
         }
         d.setContentView(box)
@@ -96,7 +105,7 @@ class BottomNav(act: Activity, private val ui: Ui, private val th: Theme, privat
                 addView(box, LinearLayout.LayoutParams(ui.dp(38), ui.dp(20)))
                 addView(lab, LinearLayout.LayoutParams(-2, -2))
                 Glass.pressable(this)
-                setOnClickListener { if (idx == MORE) moreSheet(act) else onPick(idx) }
+                setOnClickListener { if (idx == MORE) moreSheet(act) else if (idx == REMOTE) { try { act.startActivity(android.content.Intent(act, RemoteActivity::class.java)) } catch (e: Throwable) { LogStore.err("Nav:remote", e) } } else onPick(idx) }
             }
             icons.add(icon); labels.add(lab); cells.add(cell)
         }
@@ -132,7 +141,7 @@ class BottomNav(act: Activity, private val ui: Ui, private val th: Theme, privat
     }
     /** (v475) وانت في يوتيوب (نسخة كاملة) الشريط بيعرض الرئيسية/الاشتراكات/أنا بدل «يوتيوب»؛ اللايت ترتيبه ثابت */
     fun mode(inYoutube: Boolean) {
-        val o = if (lite) LITE_ORDER else if (inYoutube) YT_ORDER else NORMAL_ORDER
+        val o = if (lite) LITE_ORDER else if (inYoutube) YT_ORDER else NORMAL_ORDER.filter { it != REMOTE || !tvDev }
         if (o == order) return
         order = o; snap = true; indicator.animate().cancel(); moving = false
         fillRow(); paint(); rowLL.requestLayout()
