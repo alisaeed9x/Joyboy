@@ -1,0 +1,51 @@
+# Bloat removed from a Xiaomi OLED TV (Android TV 11, MediaTek). 32 packages.
+# Hidden with `pm uninstall -k --user 0`, so every one can be restored with restore.sh.
+# Other Xiaomi TVs ship a similar set; check `adb shell pm list packages` before using this as-is.
+#
+# NEVER remove on a TV: Live TV (com.mitv.livetv), anything com.mediatek.*, mitv.service, the remote's
+# Bluetooth service (com.mi.bluetooth), picture/sound settings (com.android.tv.settings), Play Services,
+# the keyboard, the setup wizards. Doing so can break the remote, the inputs or booting.
+
+# Ads and tracking
+com.miui.tv.analytics
+com.xiaomi.statistic
+com.google.android.tvrecommendations
+com.xiaomi.android.tvsetup.partnercustomizer
+com.xm.webcontent
+com.mitv.overseaservice
+
+# Xiaomi home screen (PatchWall) and Mi apps
+com.mitv.tvhome.atv
+com.mitv.tvhome.michannel
+com.mitv.tvhome.mitvplus                      # Mi TV+ (free ad-supported channels)
+com.mitv.videoplayer
+com.mitv.milinkservice
+com.xiaomi.mimusic2
+com.mitv.gallery
+com.xiaomi.mitv.tvmanager                     # "TV Manager" memory cleaner
+fusion.android.tv.demo                        # shop demo mode
+com.mstar.android.tv.disclaimercustomization  # store disclaimer
+com.xiaomo.tv.milegal                         # legal notices viewer
+
+# Updaters and the auto-installer that brings partner apps back
+com.mitv.updater
+com.xiaomi.mitv.updateservice
+android.autoinstalls.config.xiaomi.amelie
+
+# Screen mirroring (Miracast). Chromecast keeps working. Keep these if you mirror from your phone.
+com.xiaomi.mitv.smartshare
+com.xiaomi.wfdsinkhelperservice
+
+# Google extras
+com.google.android.videos                     # Play Movies
+com.google.android.play.games
+com.google.android.youtube.tvmusic
+com.google.android.feedback
+com.android.printspooler
+com.google.android.marvin.talkback            # keep if you use the screen reader
+com.google.android.backdrop                   # Ambient Mode screensaver
+com.android.dreams.basic                      # basic colour screensaver
+
+# Pre-installed apps (keep any you actually use)
+com.sonyliv
+com.internet.tvbrowser

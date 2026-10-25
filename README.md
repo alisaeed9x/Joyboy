@@ -1,169 +1,192 @@
-# Subtitler
+# Android TV: Debloat + Custom Launcher
 
-**An all-in-one Android media app for AI-powered video translation, video playback, music, lyrics, browsing, and media tools.**
+Remove the bloatware and ads from an Android TV, and replace the stock home screen with a clean, Apple TV-style launcher with trending recommendations. No root, no USB cable, and everything is reversible.
 
-Subtitler brings several everyday media workflows together in one Android application: watch videos with AI-assisted subtitles, browse the web, discover and play YouTube content, listen to local music with lyrics, and run useful media-processing tasks without constantly switching apps.
+Written up end to end here: [How I Debloated My Android TV and Built My Own Launcher With Claude Code](https://princejain.me/blogs/debloat-android-tv-custom-launcher-claude-code).
 
-> **Project status:** Under active development. Features can vary by version, Android device, media source, network access, and configured AI services. This README describes capabilities found in the supplied project source; it does not claim that every online source or device is supported.
+![Home screen: frosted glass buttons over a trending title's backdrop, a favourites row running off the screen edge](docs/home.jpg)
 
-## Highlights
+| | |
+|---|---|
+| ![Trending title with a "Watch on Amazon Prime Video" button](docs/trending.jpg) | ![Inputs, Recent and All apps rows](docs/rows.jpg) |
+| **Trending this week**, with a button that opens the app that streams it | **HDMI inputs, Recent and All apps** |
 
-### 🎬 Video player and AI subtitle translation
-- Play supported local videos and supported online video sources.
-- Generate subtitles by transcribing speech and translating it with the configured AI workflow.
-- Display original and translated text with configurable subtitle appearance.
-- Save subtitle/progress data and resume supported translation work.
-- Continue translation tasks in the background where Android permits.
-- Review or retry failed/incomplete translation segments.
-- Support for supported HLS (`.m3u8`) media sources; availability depends on the source and its access restrictions.
-- Picture-in-picture support on compatible Android devices.
-- Subtitle styling options, including font and display customization.
+## Features
 
-### 🧠 AI and speech recognition
-- AI-assisted transcription and translation through configured Gemini-compatible service access.
-- Optional on-device/offline speech recognition using supported Whisper/Sherpa components and downloaded models on compatible devices.
-- A fallback workflow can use online transcription when offline recognition is unavailable or fails, depending on settings and credentials.
-- Translation options for language, dialect, tone, and subtitle presentation.
-- Live-caption/translation overlay functionality on supported Android versions and for audio sources that permit capture.
-- Background translation/task monitoring.
+- **Apple TV-style look.** Frosted glass buttons, rows that run off the screen edge, focus shown by a lift and a glow in the app's colour (no thick borders), and the [Inter](https://rsms.me/inter/) font in text and display sizes.
+- **Trending this week** (optional). Popular movies and shows from [TMDB](https://www.themoviedb.org/) with a full-width backdrop, logo, rating and summary. The button opens **the app that streams the title in your country** (Netflix, Prime Video, Disney+, Hotstar, Apple TV+, Hulu, Paramount+) if you have it installed, otherwise the title's page in Stremio if you have that.
+- **Your apps, your order.** A favourites row and an all-apps row. Long-press any tile to **move it, add it to or remove it from favourites**, or open App info.
+- **Recent** row of your most-used apps (favourites left out, since they're one row up).
+- **HDMI inputs as tiles** on TVs, named after the connected device where the TV reports it (e.g. "Apple TV · HDMI 1"). Hidden on streaming boxes.
+- **Header**: clock, greeting, date and weather ([Open-Meteo](https://open-meteo.com/), no key needed), plus Picture, Sound, Wi-Fi and Settings buttons.
+- **OLED care**: pure black background, the layout drifts a few pixels every two minutes, and the screen dims after a minute of no input and 25% at night. One switch turns it off on LCD TVs.
 
-**Important:** AI features may require a valid API key, internet access, sufficient quota, and appropriate configuration. Offline speech recognition may require downloading a model and a compatible 64-bit device. Live capture can be blocked by apps that restrict audio capture or use DRM.
-
-### 🌐 Built-in web browser
-- Browse websites inside Subtitler.
-- Multiple tabs, including private/incognito tabs.
-- Browsing history and bookmarks/favorites.
-- Search the current page.
-- Desktop-site mode and browser settings.
-- Save/restore tabs when configured.
-- Share or copy links, and download supported files/media.
-- Clear cache, cookies, and browsing history.
-- Ad-blocking option.
-- Detect supported media links from web pages and offer them for playback in the integrated player when detection succeeds.
-
-Private tabs are designed not to save normal browsing history, but this should not be treated as a guarantee of anonymity from websites, networks, or internet providers.
-
-### ▶️ YouTube browsing and video access
-- Open YouTube content from the dedicated YouTube area or browser.
-- Search/open supported video links.
-- Keep a local YouTube viewing history.
-- Manage a list of channel subscriptions and import channel information from supported text/CSV sources.
-- Open supported videos in Subtitler's player, with translation or playback-only options where available.
-
-YouTube's website and media-delivery behavior can change. Sign-in, playback, link detection, and downloads may not work for every video or account.
-
-### 🎵 Music player
-- Scan and play supported local audio files, including common formats such as MP3, M4A, FLAC, OGG, and WAV when supported by Android.
-- Browse music from the device library and folders.
-- Playback queue and next-track controls.
-- Shuffle, playback-speed controls, and sleep timer.
-- Background playback through an Android media service.
-- Music artwork/metadata display where available.
-- Lyrics panel with manual lyric entry and local saved lyric versions.
-- Search supported online lyric sources, including Musixmatch and YouTube Music-based retrieval.
-- Display synchronized (LRC/timed) or plain lyrics when available.
-- Translate foreign-language lyric lines into Arabic through the configured AI workflow.
-- Adjust lyric timing and appearance.
-
-Lyrics availability, timing accuracy, source access, and automatic translation depend on the song metadata, network, and source responses.
-
-### 🧰 Video and media tools
-The player includes a tools menu that can submit processing jobs to the task queue:
-
-- **Trim video:** export a selected time range.
-- **Extract audio:** save audio from a supported video as an audio file.
-- **Create GIF:** generate an animated GIF from a selected part of a video, with duration and resolution/quality choices.
-- **Compress/change resolution:** re-encode supported video to reduce size or change output resolution.
-- **Burn subtitles into video (hard subtitles):** render available original or translated subtitles into the video image, with appearance options.
-
-Processing time and output size depend on the input, chosen quality, device performance, and available storage. Online media may need to be downloaded to a temporary file before processing.
-
-**Video merging:** A dedicated video-merge feature was not confirmed in the supplied source archive, so it is intentionally not advertised here.
-
-### ⏳ Task queue and file library
-- Track media-processing and translation jobs.
-- View progress and task status.
-- Pause, resume, retry, cancel, open, share, or delete completed jobs where supported.
-- Keep translated subtitle files (SRT) alongside supported media workflows.
-- Browse and organize local video files by folders, search, and sorting.
-- Save playback/translation progress for supported items.
-
-### 🎨 Personalization and settings
-- Multiple visual themes.
-- Controls for subtitle typography, colors, animation, and presentation.
-- AI model, language, translation style, and audio-processing settings.
-- Music, lyrics, background-work, and privacy-related browser settings.
-- Backup/restore options for supported application data.
-
-## Requirements
-
-- Android 8.0 (API 26) or newer, based on the current app module configuration.
-- Internet access for online browsing and online AI/lyrics services.
-- An AI service API key for features that use that service.
-- Additional storage and a compatible 64-bit device may be required for offline speech-recognition models.
-
-## Getting started
-
-1. Install a trusted APK from the project's official Releases page when a release is available.
-2. Open Subtitler and grant only the Android permissions needed for the features you want to use.
-3. Configure the required AI credentials for online AI features.
-4. For offline transcription, download a supported model and enable the relevant setting if your device supports it.
-5. Open a local video, supported online video, or local audio file and explore the relevant tools.
-
-Do not install APKs from untrusted third-party sources.
-
-## Build from source
-
-The project uses Kotlin, Gradle, Android SDK tooling, AndroidX Media3/ExoPlayer, WebView, and native components for supported speech/media processing.
-
-Typical local build command:
-
-```bash
-./gradlew assembleDebug
-```
-
-The repository's current Gradle configuration downloads a speech-recognition AAR during configuration/build if the expected local dependency is missing. A working internet connection is therefore needed for a clean build.
-
-The debug APK is normally produced under:
+## What's inside
 
 ```text
-app/build/outputs/apk/debug/
+debloat/
+  debloat.sh                hide every app in a list (reversible)
+  restore.sh                bring one app, or all of them, back
+  packages.txt              your removal list (empty template)
+  examples/xiaomi-tv.txt    the 32 packages removed from a Xiaomi OLED TV
+launcher/                   the home screen (Kotlin + Jetpack Compose for TV)
+  local.properties.example  SDK path and the optional TMDB settings
+  third_party/Inter-OFL.txt licence for the bundled Inter font
 ```
 
-Build configuration and dependency versions may change. Use a compatible JDK/Android SDK setup and inspect the current Gradle files before building.
+## What you need
 
-## Security and privacy
+- An Android TV or Google TV (a TV with Android built in, or a streaming box) on Android 9 or later.
+- A laptop on the same Wi-Fi.
+- [ADB](https://developer.android.com/tools/adb) (`brew install --cask android-platform-tools` on a Mac).
+- For the launcher: [Android Studio](https://developer.android.com/studio) (free), which provides the JDK and Android SDK. You never have to open it.
+- Optional: a free TMDB key for the trending section (steps below).
+- Optional but recommended: a coding agent such as [Claude Code](https://docs.claude.com/en/docs/claude-code/overview) to do all of this for you.
 
-- Never commit API keys, signing credentials, private tokens, or personal data.
-- Use a local, untracked configuration or GitHub Actions secrets for sensitive build values.
-- Review the permissions requested by the app and grant only what is needed.
-- Web pages, audio, and video may be sent to third-party services when online AI features are used. Review those providers' privacy policies before sending sensitive content.
-- Private browsing does not make network activity invisible to websites, employers, network operators, or internet providers.
-- Do not redistribute media unless you have the necessary rights and permissions.
+## The easy way: let a coding agent do it
 
-## Known limitations
+Open your coding agent in this folder and paste:
 
-- Online media detection and playback depend on source websites and can break when those sites change.
-- DRM-protected content and some live streams may not be available for extraction or translation.
-- Offline transcription requires a supported model and compatible hardware.
-- AI-generated transcripts, translations, and lyrics may contain errors and should be reviewed when accuracy matters.
-- A feature appearing in the code does not guarantee flawless behavior on every Android device; releases should be tested before being marked stable.
+```text
+I want to debloat my Android TV and install the custom launcher in this repo. This is a TV I own.
+Developer mode and USB debugging are on. TV IP: <your TV's IP>. Same Wi-Fi as this laptop.
+Apps I use: <e.g. Netflix, Prime Video, YouTube>. My TMDB key: <key, or "none">. Country: <e.g. IN>.
 
-## Releases
+Read README.md and CLAUDE.md first. Connect over ADB, list every installed app grouped by category,
+and mark what's bloat, what's safe to keep and what must never be removed. Ask me before removing
+anything. Then set my favourites, build the launcher, install it and make it the home screen.
+```
 
-Stable builds should be published on the GitHub Releases page with:
-- A version tag such as `v1.0.0`.
-- The installable APK attached as a release asset.
-- A changelog describing new features, fixes, and known issues.
-- A note indicating whether the build is stable, beta, or experimental.
+## The manual way
 
-## License
+### 1. Turn on developer mode (on the TV)
 
-No project license was confirmed in the supplied archive. Until a license is added to the repository, users should not assume that the source code is available for unrestricted reuse or redistribution.
+1. **Settings → Device Preferences → About**, click **Build** seven times.
+2. **Developer options** → turn on **USB debugging**, and **Wireless debugging** if your TV has it.
+3. Note the TV's IP from **Settings → Network**, or from the Wireless debugging screen.
 
-## Developer
+Then connect from your laptop. Which command depends on the TV:
 
-Maintained by [alisaeed9x](https://github.com/alisaeed9x).
+```bash
+# Most Android TVs (Android 9–11): USB debugging also opens network debugging on port 5555
+adb connect <tv-ip>:5555
 
-- **Repository:** https://github.com/alisaeed9x/Subtitler
-- **Issues and feedback:** Use the repository's GitHub Issues page when enabled.
+# TVs with "Wireless debugging" (Google TV, Android 11+): pair once, then connect to the port it shows
+# On the TV: Wireless debugging → "Pair device with pairing code" shows an IP:port and a 6-digit code
+adb pair <tv-ip>:<pairing-port>        # enter the 6-digit code
+adb connect <tv-ip>:<port>             # the port on the main Wireless debugging screen
+```
+
+The first time, the TV asks **"Allow USB debugging?"** (or wireless debugging). Tick **"Always allow from this computer"** and press Allow. If you connected with a port other than 5555, pass `<tv-ip>:<port>` wherever this README says `<tv-ip>`.
+
+### 2. Debloat
+
+See what's installed, then put the packages you want gone in `debloat/packages.txt` (one per line). If you have a Xiaomi TV, start from `debloat/examples/xiaomi-tv.txt`.
+
+```bash
+adb -s <tv-ip>:5555 shell pm list packages        # everything
+adb -s <tv-ip>:5555 shell pm list packages -3     # apps you (or the manufacturer) installed
+
+cd debloat
+./debloat.sh <tv-ip>                              # uses packages.txt
+./debloat.sh <tv-ip> examples/xiaomi-tv.txt       # or any list
+```
+
+Apps are removed with `pm uninstall -k --user 0`, which hides them from your user profile without deleting them from the system. **Never remove** Live TV, chip/vendor services (e.g. `com.mediatek.*`), the remote's Bluetooth service, TV settings, Play Services or the keyboard: doing so can break the remote, the inputs or booting.
+
+### 3. Get a free TMDB key (optional, for "Trending this week")
+
+TMDB (The Movie Database) is a free, community-built film and TV database. Its API is free for personal, non-commercial use.
+
+1. Create an account at [themoviedb.org/signup](https://www.themoviedb.org/signup) and confirm your email.
+2. Open [Settings → API](https://www.themoviedb.org/settings/api) and click **Request an API Key** (choose **Developer** if asked).
+3. Accept the terms and fill in the short form. Personal details are fine; for the app, something like *"Personal Android TV launcher, non-commercial"* and `http://localhost` as the URL.
+4. Copy either the **API Key** or the longer **API Read Access Token**. Both work.
+
+Without a key, the launcher simply hides the trending section.
+
+### 4. Configure and build the launcher
+
+```bash
+cd launcher
+cp local.properties.example local.properties
+```
+
+Edit `local.properties`:
+
+| Setting | What it does |
+|---|---|
+| `sdk.dir` | Path to the Android SDK (or set `ANDROID_HOME` instead) |
+| `tmdb.key` | Your TMDB key. Empty = no trending section |
+| `tmdb.region` | Two-letter country code (`IN`, `US`, `GB`…) used to pick the streaming app for the button. Empty = the TV's country setting. Set it if your TV's locale doesn't match where you live |
+| `tmdb.feed` | `all`, `movie` or `tv` |
+
+`local.properties` is gitignored, so your key never ends up in a commit. Then build:
+
+```bash
+./gradlew assembleRelease
+```
+
+Always use the **release** build: it's optimised with R8, and debug Compose builds are noticeably slow on TV hardware.
+
+### 5. Install
+
+```bash
+S=<tv-ip>:5555                    # or <tv-ip>:<port> if you used Wireless debugging
+adb -s $S install -r app/build/outputs/apk/release/app-release.apk
+adb -s $S shell pm grant me.prince.launcher android.permission.ACCESS_COARSE_LOCATION   # Wi-Fi name + weather
+adb -s $S shell appops set me.prince.launcher GET_USAGE_STATS allow                       # Recent row
+adb -s $S shell cmd package compile -m speed -f me.prince.launcher                       # faster cold start
+adb -s $S shell am start -n me.prince.launcher/.MainActivity                             # try it first
+```
+
+### 6. Make it the home screen
+
+Only once the launcher works:
+
+```bash
+adb -s $S shell cmd package set-home-activity me.prince.launcher/.MainActivity
+adb -s $S shell input keyevent KEYCODE_HOME
+```
+
+If Home still opens the stock launcher, disable it (disabled, not uninstalled, so it can come back). Read the "Ok Google" note in [Gotchas](#gotchas) first.
+
+```bash
+adb -s $S shell pm disable-user --user 0 com.google.android.tvlauncher
+```
+
+## Customise
+
+- **Favourites:** long-press a tile → Move / Add to favourites / Remove. The order is saved on the TV. The defaults for a fresh install are at the top of `Apps.kt`.
+- **OLED care:** set `OLED_CARE = false` at the top of `HomeScreen.kt` on an LCD TV.
+- **Streaming apps for the trending button:** add TMDB provider ids and Android TV package names to `PROVIDER_APPS` in `Trending.kt`.
+- **Font:** replace `res/font/inter.ttf` with any variable font that has `wght` and `opsz` axes.
+
+## Undo everything
+
+```bash
+cd debloat
+./restore.sh <tv-ip> <package>   # bring one app back
+./restore.sh <tv-ip>             # bring back everything in packages.txt and re-enable the stock launcher
+adb -s <tv-ip>:5555 uninstall me.prince.launcher
+```
+
+If the TV ever shows a black screen on Home, `adb -s <tv-ip>:5555 shell pm enable com.google.android.tvlauncher` brings the stock launcher back.
+
+## Gotchas
+
+- **The stock launcher wins Home.** It's a system app with a higher priority than yours, so `set-home-activity` alone often doesn't stick. Disable it, but only after your launcher is installed and tested, or you get a black screen.
+- **Disabling the stock launcher can break "Ok Google"** on TVs with a far-field (hands-free) mic. Android 11+ only lets a background app use the microphone if an app in the foreground lends it that permission, and the stock launcher was doing that for Google Assistant. This repo doesn't include a fix. The voice button on the remote keeps working either way. If hands-free "Ok Google" matters to you, check it after disabling the stock launcher (logcat shows `Request denied by app op: 27` when it's broken), or ask your coding agent to add a microphone-type foreground service that binds the Assistant with `BIND_INCLUDE_CAPABILITIES`.
+- **The Wi-Fi button says "Wi-Fi" instead of your network name**, and **there's no weather.** Both need location permission: run the `pm grant ... ACCESS_COARSE_LOCATION` line above. Weather also needs the TV to know its location; some streaming boxes don't, and then it's simply hidden.
+- **VPN ad blockers.** Apps like AdGuard run as a VPN, which makes the VPN the "active network". The launcher checks every network, so the Wi-Fi label still works.
+- **Firmware updates** can bring removed apps back. Re-run `./debloat.sh <tv-ip>`.
+
+## Credits
+
+- Movie and TV data and images from [TMDB](https://www.themoviedb.org/). This product uses the TMDB API but is not endorsed or certified by TMDB.
+- Weather from [Open-Meteo](https://open-meteo.com/).
+- [Inter](https://rsms.me/inter/) by Rasmus Andersson, under the SIL Open Font License (`launcher/third_party/Inter-OFL.txt`).
+
+## Licence
+
+[MIT](LICENSE) for the code. The bundled Inter font is under the SIL Open Font License.
