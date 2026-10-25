@@ -58,6 +58,42 @@ object TvWifi {
         return "▂▃▄▅▆".take((l + 1).coerceIn(1, 5))
     }
 
+    @Volatile private var busy = false
+
+    /**
+     * (v536) الزرار الأساسي: دوسة واحدة = تشغيل/إيقاف الواي فاي على طول، من غير حوار ولا شاشة نظام ظاهرة.
+     *  1) WifiManager مباشرة (بيشتغل على أندرويد 9 وأقدم).
+     *  2) أندرويد 10+: بإمكانية الوصول (لازم تكون متفعّلة من «🔐 الأذونات») — بتضغط مفتاح الواي فاي في شاشة النظام وترجع للانشر.
+     *  3) من غير إمكانية الوصول: بيفتح شاشة الواي فاي ويقولك تفعّلها.
+     * قايمة الشبكات/الاتصال بشبكة جديدة اتنقلت لدوسة طويلة على الزرار (show).
+     */
+    @Suppress("DEPRECATION")
+    fun quick(a: Activity) {
+        if (busy) return
+        val w = wm(a)
+        val on = try { w.isWifiEnabled } catch (_: Throwable) { false }
+        val want = !on
+        val ok = try { w.setWifiEnabled(want) } catch (_: Throwable) { false }
+        if (ok) { Notice.show(a, if (want) "📶 الواي فاي اشتغل" else "📴 الواي فاي اتقفل", 2200L); return }
+        val svc = TvAccess.svc
+        if (svc == null) {
+            Notice.show(a, "عشان الزرار يشتغل بدوسة واحدة فعّل «إمكانية الوصول» من 🔐 الأذونات", 4500L)
+            TvSetup.open(a)
+            return
+        }
+        busy = true
+        Notice.show(a, if (want) "📶 بشغّل الواي فاي…" else "📴 بقفل الواي فاي…", 2500L)
+        try { a.startActivity(Intent(Settings.ACTION_WIFI_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
+        catch (_: Throwable) { busy = false; openSettings(a, "ما قدرتش أفتح شاشة الواي فاي"); return }
+        val back = Intent(a, TvActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+        svc.wifiToggle(want, back) { good ->
+            busy = false
+            h.postDelayed({
+                if (!a.isDestroyed && !a.isFinishing) Notice.show(a, if (good) (if (want) "📶 الواي فاي اشتغل" else "📴 الواي فاي اتقفل") else "⚠ ما لقيتش مفتاح الواي فاي في شاشة النظام — دوسة طويلة على الزرار تفتحلك الإعدادات", 3500L)
+            }, 900L)
+        }
+    }
+
     @Suppress("DEPRECATION")
     fun show(a: Activity) {
         try { dlg?.dismiss() } catch (_: Throwable) {}

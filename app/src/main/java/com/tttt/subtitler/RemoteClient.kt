@@ -421,15 +421,16 @@ object RemoteClient {
     }
 
     /** @return null لو نجح (والـvisible بتقول لو شاشة اللانشر ظاهرة)، أو رسالة الخطأ */
-    fun openLink(url: String, title: String = ""): String? {
-        val (c, t) = post("/open", JSONObject().put("url", url).put("title", title))
+    fun openLink(url: String, title: String = "", how: String = "", ref: String = "", ua: String = "", cookie: String = ""): String? {
+        val (c, t) = post("/open", JSONObject().put("url", url).put("title", title).put("how", how).put("ref", ref).put("ua", ua).put("cookie", cookie))   // (v533) ref/ua/cookie للينكات المصطادة من المتصفح
         if (c == 200) return null
         if (c == 403) return "اللينك مش مقبول"
         return if (c < 0) "ما قدرتش أوصل للتلفزيون" else "فشل ($c)"
     }
 
-    fun sendText(text: String): String? {
-        val (c, _) = post("/type", JSONObject().put("text", text))
+    /** search=true (v533): التلفزيون يخرج من أي مكان (مشغّل/متصفح/تطبيق) ويفتح الرئيسية ويبحث في شريط البحث */
+    fun sendText(text: String, search: Boolean = false): String? {
+        val (c, _) = post("/type", JSONObject().put("text", text).put("search", search))
         return if (c == 200) null else if (c < 0) "ما قدرتش أوصل للتلفزيون" else "فشل ($c)"
     }
 

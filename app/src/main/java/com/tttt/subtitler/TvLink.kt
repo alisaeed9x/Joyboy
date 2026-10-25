@@ -311,11 +311,15 @@ object TvLink {
     private fun playerCmd(r: HttpReq): HttpRes {
         val j = try { JSONObject(r.bodyText()) } catch (_: Exception) { return err(403, "bad") }
         val a = j.optString("a")
+        // (v531) المتصفح قدّامك (أو مفيش مشغّل برنامج) ← الأوامر والحالة على فيديو الصفحة؛ غير كده ← مشغّل البرنامج
+        val useBr = BrowserActivity.live() != null && (top?.get() is BrowserActivity || !PlayerActivity.hasLive())
         if (a != "state" && a.isNotEmpty()) {
             if (dup(j.optString("cid"))) return ok(JSONObject().put("dup", true))
-            if (!PlayerActivity.remoteAct(a, j.optLong("v"))) return ok(JSONObject().put("none", true))
+            val handled = if (useBr) BrowserActivity.remoteAct(a, j.optLong("v")) else PlayerActivity.remoteAct(a, j.optLong("v"))
+            if (!handled) return ok(JSONObject().put("none", true))
+            if (useBr) try { Thread.sleep(120L) } catch (_: Exception) {}   // الـJS يتنفّذ قبل ما نقرا الحالة
         }
-        val st = PlayerActivity.remoteState() ?: return ok(JSONObject().put("none", true))
+        val st = (if (useBr) BrowserActivity.remoteState() else PlayerActivity.remoteState()) ?: return ok(JSONObject().put("none", true))
         return ok(JSONObject().put("st", st))
     }
 
@@ -415,11 +419,25 @@ object TvLink {
         if (!(u.startsWith("http://", true) || u.startsWith("https://", true))) return err(403, "badurl")
         val title = j.optString("title")
         val visible = top?.get() != null
+        val how = j.optString("how").ifBlank { Links.AUTO }   // (v532) video / video_tr / audio / web (الافتراضي auto)
+        val lref = j.optString("ref"); val lua = j.optString("ua"); val lck = j.optString("cookie")   // (v533)
         h.post {
             try {
-                app.startActivity(Intent(app, MainActivity::class.java)
-                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
-                    .putExtra(Links.EX_URL, u).putExtra(Links.EX_HOW, Links.AUTO).putExtra(Links.EX_TITLE, title))
+                val a = top?.get()
+                // (v532) لو التركيز على خانة بحث (كيبورد ظاهر): نشيل التركيز ونقفل الكيبورد الأول، ونفتح من الأكتيفيتي الظاهرة نفسها بدل context التطبيق
+                if (a != null) {
+                    try {
+                        (a.currentFocus as? android.widget.EditText)?.let { e ->
+                            e.clearFocus()
+                            (a.getSystemService(Context.INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager).hideSoftInputFromWindow(e.windowToken, 0)
+                        }
+                    } catch (_: Throwable) {}
+                }
+                val ni = Intent(a ?: app, MainActivity::class.java)
+                    .addFlags((if (a == null) Intent.FLAG_ACTIVITY_NEW_TASK else 0) or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                    .putExtra(Links.EX_URL, u).putExtra(Links.EX_HOW, how).putExtra(Links.EX_TITLE, title)
+                if (lref.isNotEmpty() || lua.isNotEmpty() || lck.isNotEmpty()) ni.putExtra("link_ref", lref).putExtra("link_ua", lua).putExtra("link_cookie", lck)
+                (a ?: app).startActivity(ni)
             } catch (e: Throwable) { LogStore.err("TvLink:open", e) }
         }
         return ok(JSONObject().put("visible", visible))
@@ -430,6 +448,13 @@ object TvLink {
         val t = j.optString("text")
         if (t.isEmpty()) return err(403, "empty")
         TypeServer.lastText = t; TypeServer.lastAt = System.currentTimeMillis()
+        if (j.optBoolean("search")) {   // (v533) بحث من الريموت: اخرج من أي شاشة وابحث في شريط بحث اللانشر
+            h.post {
+                try { app.startActivity(Intent(app, TvActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP).putExtra("tv_show", "search").putExtra("tv_q", t)) }
+                catch (e: Throwable) { LogStore.err("TvLink:search", e) }
+            }
+            return ok()
+        }
         notice("⌨ وصل نص من الموبايل")
         return ok()
     }

@@ -134,9 +134,20 @@ object TvUpdate {
             layoutDirection = View.LAYOUT_DIRECTION_RTL
             val p = (16 * a.resources.displayMetrics.density).toInt(); setPadding(p, p, p, p)
         }
+        // (v531) شريط تقدّم حقيقي تحت النسبة والميجات (قبل كده كان نص بس)
+        val dd = a.resources.displayMetrics.density
+        val bar = android.widget.ProgressBar(a, null, android.R.attr.progressBarStyleHorizontal).apply {
+            max = 1000; isIndeterminate = true
+            try { progressTintList = android.content.res.ColorStateList.valueOf(Themes.byId(Cfg.str("theme", "mx")).primary) } catch (_: Throwable) {}
+        }
+        val boxV = LinearLayout(a).apply {
+            orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL
+            addView(tv, LinearLayout.LayoutParams(-1, -2))
+            addView(bar, LinearLayout.LayoutParams(-1, (14 * dd).toInt()).apply { setMargins((16 * dd).toInt(), 0, (16 * dd).toInt(), (16 * dd).toInt()) })
+        }
         var cancelled = false
         val dlg = try {
-            GAlert(a).setTitle("⬇ تنزيل التحديث").setView(tv).setCancelable(false)
+            GAlert(a).setTitle("⬇ تنزيل التحديث").setView(boxV).setCancelable(false)
                 .setNegativeButton("إلغاء") { _, _ -> cancelled = true }.create().also { it.show() }
         } catch (e: Throwable) { LogStore.err("TvUpdate:dlg", e); null }
         Thread {
@@ -161,7 +172,10 @@ object TvUpdate {
                             if (now - lastUi > 400L) {
                                 lastUi = now
                                 val g = got
-                                h.post { tv.text = "⬇ " + (if (total > 0) (g * 100 / total).toString() + "%   " else "") + (g / 1048576L) + " / " + (total / 1048576L) + " MB" }
+                                h.post {
+                                    tv.text = "⬇ " + (if (total > 0) (g * 100 / total).toString() + "%   " else "") + (g / 1048576L) + " / " + (total / 1048576L) + " MB"
+                                    if (total > 0) { bar.isIndeterminate = false; bar.progress = (g * 1000L / total).toInt().coerceIn(0, 1000) }
+                                }
                             }
                         }
                     }

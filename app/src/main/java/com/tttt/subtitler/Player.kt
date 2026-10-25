@@ -53,6 +53,9 @@ class PlayerActivity : Activity(), Host {
             return true
         }
 
+        /** (v531) في مشغّل فيديو (برنامج) مفتوح دلوقتي؟ */
+        fun hasLive(): Boolean = live() != null
+
         private fun live(): PlayerActivity? = synchronized(liveList) { liveList.mapNotNull { it.get() }.lastOrNull { !it.isFinishing && !it.isDestroyed } }
 
         private fun <T> onUi(o: PlayerActivity, f: () -> T): T? {
@@ -85,8 +88,52 @@ class PlayerActivity : Activity(), Host {
         j.put("quality", qualPopFn != null && (qOpts.size > 1 || uri == null))
         j.put("tr", tvTrLabel())
         j.put("sf_side", sfSideName()); j.put("sf_nat", sfNativeCount()); j.put("sf_live", sfLive); j.put("sf_busy", sfBusy)   // (v529)
+        // (v531) شاشة «مشغّل الفيديو» في الريموت = نفس تقسيمة مشغّل الموبايل: كل حالة الأزرار والكبسولات
+        j.put("kind", "player")
+        j.put("loop", Cfg.str("loop", "0") == "1")
+        j.put("dual", try { SubStyle.load { k, d -> Cfg.str(k, d) }.dual } catch (_: Throwable) { 0 })
+        j.put("bgon", Cfg.bool("ask_bg_exit", true))
+        j.put("nots", try { NoticeLog.list().size } catch (_: Throwable) { 0 })
+        j.put("locked", uiLocked)
+        j.put("font", try { val f0 = SubStyle.load { k, d -> Cfg.str(k, d) }.font; SubStyle.fonts.firstOrNull { it.id == f0 }?.label ?: f0 } catch (_: Throwable) { "" })
+        j.put("eng", try { TrWizard.summaryLine() } catch (_: Throwable) { "" })
+        j.put("cnt", try { PlayerLogic.percent(engine.coveredSec(), durMs / 1000.0).toString() + "% · " + list.size.toString() + " جملة" } catch (_: Throwable) { "" })
+        j.put("trcolor", try { tvTrColor() } catch (_: Throwable) { 0xFFE53935.toInt() })
+        // (v532) قوايم الجودة ولغة الصوت كنصوص + الحالي: الريموت بيعرضها على الموبايل ويختار منها من غير ما يفتح قايمة على شاشة التلفزيون
+        try { val (ql, qc) = rQuals(); j.put("ql", org.json.JSONArray(ql)); j.put("qc", qc) } catch (_: Throwable) {}
+        try { j.put("al", org.json.JSONArray(aTracks.map { it.name })); j.put("ac", aCur) } catch (_: Throwable) {}
         return j
     }
+
+    /** (v532) مسارات HLS/DASH بأعلى bitrate لكل ارتفاع (نفس منطق قايمة 🎞 في المشغّل) */
+    private fun rHls(): List<Triple<Int, androidx.media3.common.Tracks.Group, Int>> {
+        val tg = ArrayList<Triple<Int, androidx.media3.common.Tracks.Group, Int>>()
+        for (g in player.currentTracks.groups) if (g.type == androidx.media3.common.C.TRACK_TYPE_VIDEO)
+            for (ti in 0 until g.length) if (g.isTrackSupported(ti)) tg.add(Triple(g.getTrackFormat(ti).height, g, ti))
+        return tg.filter { it.first > 0 }
+            .sortedWith(compareByDescending<Triple<Int, androidx.media3.common.Tracks.Group, Int>> { it.first }.thenByDescending { it.second.getTrackFormat(it.third).bitrate })
+            .distinctBy { it.first }
+    }
+    /** (v532) الجودات المتاحة كنصوص + رقم الحالية (يوتيوب بقايمة جوداته، أو HLS: «تلقائي» ثم الارتفاعات) */
+    private fun rQuals(): Pair<List<String>, Int> {
+        if (qOpts.size > 1) return qOpts.map { it.label } to qCur
+        val hs = rHls()
+        if (hs.size <= 1) return emptyList<String>() to 0
+        val labels = listOf("تلقائي") + hs.map { it.first.toString() + "p" }
+        val cur = if (hlsH == 0) 0 else 1 + hs.indexOfFirst { it.first == hlsH }.coerceAtLeast(0)
+        return labels to cur
+    }
+    /** (v532) اختيار جودة برقمها في القايمة (من ريموت الموبايل) */
+    private fun rSetQ(i: Int) {
+        if (qOpts.size > 1) { switchYt(i); return }
+        if (i == 0) { hlsAuto(); return }
+        val q = rHls().getOrNull(i - 1) ?: return
+        hlsPick(q.second, q.third, q.first)
+    }
+
+    /** (v531) مراجع أزرار شريط المشغّل (بتتسجّل وقت بناء الشريط) عشان ريموت الموبايل يدوس نفس الزرار */
+    private val rcViews = HashMap<String, View>()
+    private fun rcClick(k: String) { try { rcViews[k]?.performClick() } catch (e: Throwable) { LogStore.err("Player:rc:" + k, e) } }
 
     private fun rAct(a: String, v: Long): Boolean {
         val anchor = window.decorView
@@ -103,9 +150,29 @@ class PlayerActivity : Activity(), Host {
             "shift" -> tvSubShift(v)
             "audio" -> audPopFn?.invoke(anchor)
             "quality" -> qualPopFn?.invoke(anchor)
+            "qset" -> rSetQ(v.toInt())     // (v532) اختيار الجودة من قايمة الموبايل
+            "aset" -> switchAudio(v.toInt())   // (v532) اختيار لغة الصوت من قايمة الموبايل
             "translate" -> translateMenu(anchor)
             "more" -> tvMoreDialog(anchor)
             "subs" -> tvSubTracksDialog(anchor)
+            // (v531) أزرار الشريط الكامل اللي في مشغّل الموبايل
+            "loop" -> { Cfg.put("loop", if (Cfg.str("loop", "0") == "1") "0" else "1"); say(if (Cfg.str("loop", "0") == "1") "🔂 تكرار الفيديو: شغّال" else "🔂 تكرار الفيديو: مقفول") }
+            "log" -> toggleLog()
+            "sent" -> { try { if (::sentDlg.isInitialized) sentDlg.show() } catch (_: Throwable) {} }
+            "chars" -> showChars()
+            "dual" -> rcClick("dual")
+            "bgon" -> rcClick("bgon")
+            "ai" -> rcClick("ai")
+            "lock" -> setLock(!uiLocked)
+            "notice" -> noticePopup(anchor)
+            "visual" -> visualSnap()
+            "menu" -> tvMenuFn?.invoke(anchor)
+            "tools" -> tvToolsFn?.invoke(anchor)
+            "font" -> {
+                val fs = SubStyle.fonts; val cf = SubStyle.load { k, d -> Cfg.str(k, d) }.font
+                val n = fs[(fs.indexOfFirst { it.id == cf } + 1) % fs.size]
+                Cfg.put("sub_font", n.id); try { restyleFn() } catch (_: Throwable) {}; say("🔤 " + n.label)
+            }
             else -> { if (a.startsWith("subfile:")) sfRemote(a) else return false }   // (v529) 📄 ترجمة ملف الترجمة من الموبايل
         }
         return true
@@ -2194,9 +2261,9 @@ class PlayerActivity : Activity(), Host {
 
     // ================= (v469) التالي تلقائي + لقطة + شريط تزامن + استوديو + بحث النص =================
     /** (v469) B13: بطاقة «التالي بعد…» — أي لمسة عليها تلغي الانتقال، واستنى 6 ثواني بيشتغل لوحده */
-    private fun showNextUp(title: String, go: () -> Unit) {
+    private fun showNextUp(title: String, delayMs: Long = 5000L, go: () -> Unit) {
         cancelNextUp()
-        nextUpGo = go; nextUpAt = System.currentTimeMillis() + 5000L
+        nextUpGo = go; nextUpAt = System.currentTimeMillis() + delayMs
         val card = nextUpCard ?: run {
             val c = LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL
@@ -2225,7 +2292,13 @@ class PlayerActivity : Activity(), Host {
         val yid = intent.getStringExtra("ytid")
         if (yid != null) {
             val n = try { YtNext.nextAfter(yid) } catch (_: Throwable) { null }
-            if (n != null) { if (Cfg.str("autoplay_next", "1") == "1") showNextUp(n.title) { playNextYt(n) } else playNextYt(n) }
+            if (n != null) {
+                if (Cfg.str("autoplay_next", "1") == "1") {
+                    // (v531) يوتيوب: يستنى ~20 ثانية (yt_next_delay) وفي الأثناء لوحة الفيديوهات القريبة تتفتح، وبعدها يشغّل التالي لوحده
+                    showNextUp(n.title, Cfg.int("yt_next_delay", 20).coerceIn(3, 120) * 1000L) { playNextYt(n) }
+                    try { nextPanel?.reveal() } catch (_: Throwable) {}
+                } else playNextYt(n)
+            }
             return
         }
         if (!hasNextEpisode()) return
@@ -2233,11 +2306,8 @@ class PlayerActivity : Activity(), Host {
         showNextUp(nextEpisodeTitle()) { stepEpisode(1) }
     }
     private fun nextEpisodeTitle(): String {
-        val curU = uri?.toString() ?: return "الحلقة التالية"
-        val all = VideoScan.cache ?: return "الحلقة التالية"
-        val me = all.firstOrNull { it.uri == curU } ?: return "الحلقة التالية"
-        val sib = VideoLib.sortVideos(all.filter { it.folderKey == me.folderKey }, VideoLib.SORT_NAME)
-        return sib.getOrNull(sib.indexOfFirst { it.uri == curU } + 1)?.title ?: "الحلقة التالية"
+        val p = libSibs() ?: return "الحلقة التالية"
+        return (p.first.getOrNull(p.second + 1) ?: (if (wrapOn()) p.first.firstOrNull() else null))?.title ?: "الحلقة التالية"
     }
 
     /** (v469) B12: لقطة الإطار الحالي — بتتحفظ في صور الجهاز وبتتعرض للمشاركة على طول */
@@ -2919,6 +2989,7 @@ class PlayerActivity : Activity(), Host {
         trAiB = aiB; applyModeCaps()
         val syncB = barPill(tip(grp("⏱", gSub, true), "تزامن الترجمة (تقديم / تأخير)"))   // (v91) مكان Aa — حجم الخط بقى بالقرص (pinch) على الشاشة
         toolR.addView(syncB)
+        rcViews["dual"] = dualB; rcViews["bgon"] = bgOnB; rcViews["ai"] = aiB   // (v531) ريموت الموبايل
         val toolBtns = listOf<TextView>(syncB, tip(logB, "اللوج"), tip(sentB, "الجمل"), tip(ccB, "إظهار/إخفاء الترجمة"), tip(loopB, "تكرار الفيديو"), tip(dualB, "وضع الترجمة"), tip(charsB, "الشخصيات"), tip(voiceB, "فصل صوت الكلام عن الموسيقى"), qualB, nextListB)
         toolBtns.drop(1).filter { it !== voiceB && it !== qualB && it !== nextListB }.forEach { b ->   // (v226) 🔑 اتشال من الشريط العلوي
             toolR.addView(b, LinearLayout.LayoutParams(if (b.text.startsWith("🔑")) ui.dp(42) else ui.dp(30), ui.dp(30)).apply { setMargins(ui.dp(3), 0, ui.dp(3), 0) })
@@ -3725,6 +3796,12 @@ class PlayerActivity : Activity(), Host {
                     if (sleepEndOfVideo) { sleepEndOfVideo = false; say("😴 مؤقت النوم: الفيديو خلص") }
                     else if (Cfg.str("loop", "0") == "1") { player.seekTo(0); player.play() }
                     else if (hasNextEpisode() || intent.getStringExtra("ytid") != null) h.post { v469AutoNext() }   // (v469) بطاقة «التالي بعد…» بدل الانتقال الفوري
+                    else if (uri != null && VideoScan.cache == null && VideoScan.hasPermission(this@PlayerActivity)) {   // (v531) المكتبة لسه ما اتفحصتش: افحص وكمّل للتالي
+                        Thread {
+                            try { VideoScan.scan(this@PlayerActivity) } catch (_: Throwable) {}
+                            runOnUiThread { if (!isFinishing && !isDestroyed && hasNextEpisode()) v469AutoNext() }
+                        }.also { it.isDaemon = true }.start()
+                    }
                 }
             }
             override fun onRenderedFirstFrame() { firstFrame = true; webFirstFrame = true; ytBusy(false) }
@@ -4159,13 +4236,22 @@ class PlayerActivity : Activity(), Host {
     }
 
     /** (v125) ⏮ ⏭: لو الفيديو من فولدر في المكتبة → الحلقة اللي قبلها/بعدها، وإلا (فيديو إنترنت/ملف لوحده) → الجملة اللي قبلها/بعدها (قبل كده كانت بتطلّع رسالة بس) */
+    /** (v531) إخوات الفيديو الحالي في نفس الفولدر + مكانه. على التلفزيون الترتيب هو ترتيب صفحة «الفيديوهات» (tv_vid_sort، الأحدث افتراضيًا)، وعلى الموبايل بالاسم */
+    private fun libSibs(): Pair<List<VideoItem>, Int>? {
+        val curU = uri?.toString() ?: return null
+        val all = VideoScan.cache ?: return null
+        val me = all.firstOrNull { it.uri == curU } ?: return null
+        val mode = if (DeviceUi.isTv(this)) Cfg.str("tv_vid_sort", VideoLib.SORT_NEW) else VideoLib.SORT_NAME
+        val sib = VideoLib.sortVideos(all.filter { it.folderKey == me.folderKey }, mode)
+        return Pair(sib, sib.indexOfFirst { it.uri == curU })
+    }
+    /** (v531) آخر فيديو في القايمة ← يرجع لأول فيديو (تلفزيون افتراضيًا؛ على الموبايل لو autoplay_wrap=1) */
+    private fun wrapOn(): Boolean = Cfg.str("autoplay_wrap", if (DeviceUi.isTv(this)) "1" else "0") == "1"
+
     fun stepOrSeek(d: Int) {
-        val curU = uri?.toString(); val all = VideoScan.cache
-        val inLib = curU != null && all != null && all.any { it.uri == curU }
-        if (inLib && (if (d > 0) hasNextEpisode() else true)) {
-            val me = all!!.first { it.uri == curU }
-            val sib = VideoLib.sortVideos(all.filter { it.folderKey == me.folderKey }, VideoLib.SORT_NAME)
-            if (sib.getOrNull(sib.indexOfFirst { it.uri == curU } + d) != null) { stepEpisode(d); return }
+        run {
+            val p = libSibs()
+            if (p != null && (p.first.getOrNull(p.second + d) != null || (wrapOn() && p.first.size > 1))) { stepEpisode(d); return }
         }
         val t = player.currentPosition - offsetMs
         if (starts.isNotEmpty()) {
@@ -4176,12 +4262,11 @@ class PlayerActivity : Activity(), Host {
     }
     /** الحلقة اللي بعدها (+1) أو اللي قبلها (-1) من نفس الفولدر: بيوقف ترجمة الحالية ويبدأ ترجمة الجديدة */
     fun stepEpisode(d: Int) {
-        val curU = uri?.toString()
-        val all = VideoScan.cache
-        if (curU == null || all == null) { say("الفيديو ده مش من مكتبة الجهاز"); return }
-        val me = all.firstOrNull { it.uri == curU } ?: run { say("الفيديو ده مش من مكتبة الجهاز"); return }
-        val sib = VideoLib.sortVideos(all.filter { it.folderKey == me.folderKey }, VideoLib.SORT_NAME)
-        val t = sib.getOrNull(sib.indexOfFirst { it.uri == curU } + d) ?: run { say(if (d > 0) "دي آخر حلقة في الفولدر" else "دي أول حلقة في الفولدر"); return }
+        val p = libSibs() ?: run { say("الفيديو ده مش من مكتبة الجهاز"); return }
+        val sib = p.first
+        var t = sib.getOrNull(p.second + d)
+        if (t == null && wrapOn() && sib.size > 1) { t = if (d > 0) sib.first() else sib.last(); say("🔁 رجعنا " + (if (d > 0) "لأول" else "لآخر") + " فيديو في القايمة") }   // (v531)
+        if (t == null) { say(if (d > 0) "دي آخر حلقة في الفولدر" else "دي أول حلقة في الفولدر"); return }
         Cfg.put("lib_last", t.uri); Cfg.put("lib_last_f:" + t.folderKey, t.uri)
         say("▶ " + t.title)
         swapVideo(Uri.parse(t.uri))
@@ -4237,11 +4322,8 @@ class PlayerActivity : Activity(), Host {
     fun togglePlay() { if (player.isPlaying) player.pause() else { if (player.playbackState == Player.STATE_ENDED) player.seekTo(0); player.play() } }
     /** (v97) في حلقة بعد الحالية في نفس الفولدر؟ (من غير رسالة) */
     private fun hasNextEpisode(): Boolean {
-        val curU = uri?.toString() ?: return false
-        val all = VideoScan.cache ?: return false
-        val me = all.firstOrNull { it.uri == curU } ?: return false
-        val sib = VideoLib.sortVideos(all.filter { it.folderKey == me.folderKey }, VideoLib.SORT_NAME)
-        return sib.getOrNull(sib.indexOfFirst { it.uri == curU } + 1) != null
+        val p = libSibs() ?: return false
+        return p.first.getOrNull(p.second + 1) != null || (wrapOn() && p.first.size > 1)   // (v531) + اللفّ لأول فيديو
     }
     private var userRot = false
     private var autoRotDone = false
@@ -4479,6 +4561,7 @@ class PlayerActivity : Activity(), Host {
         YtNext.show(this, ui, th, cid) { n -> playNextYt(n) }
     }
     private fun playNextYt(n: NpItem) {
+        cancelNextUp()   // (v531) اخترت فيديو من اللوحة أثناء العدّاد
         say("⏳ بجيب «" + n.title.take(40) + "»…")
         val ret = intent.getStringExtra("ret") ?: ""; val nosub = intent.getBooleanExtra("nosub", false); val auto = intent.getBooleanExtra("autotr", false)
         Thread {

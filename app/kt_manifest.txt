@@ -163,3 +163,4 @@ com/tttt/subtitler/RemoteActivity.kt
 com/tttt/subtitler/TvShell.kt
 com/tttt/subtitler/TvInput.kt
 com/tttt/subtitler/SubFileTr.kt
+com/tttt/subtitler/TvSetup.kt

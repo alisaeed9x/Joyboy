@@ -43,7 +43,6 @@ class RemoteActivity : Activity() {
     private lateinit var devices: LinearLayout
     private lateinit var connBtnBox: LinearLayout
     private lateinit var input: EditText
-    private lateinit var qBox: EditText
     private lateinit var mainScroll: ScrollView
     private lateinit var pageScroll: ScrollView
     private lateinit var pageTitle: IconTextView
@@ -65,6 +64,17 @@ class RemoteActivity : Activity() {
     private lateinit var pTime: IconTextView
     private lateinit var pSeek: SeekBar
     private lateinit var pPlay: View
+    // (v531) شاشة مشغّل الفيديو بنفس تقسيمة مشغّل الموبايل
+    private lateinit var pEng: IconTextView
+    private lateinit var pCnt: IconTextView
+    private lateinit var pSpeed: IconTextView
+    private lateinit var pTrBtn: IconTextView
+    private lateinit var pDurTv: IconTextView
+    private lateinit var pBlack: FrameLayout
+    private var pKind = "player"
+    private var pTrColor = 0
+    private val pOn = HashMap<String, Boolean>()
+    private var adjRefresh: (() -> Unit)? = null
     private val pBtns = HashMap<String, View>()
     private var pDur = 0L
     private var pDragging = false
@@ -85,6 +95,8 @@ class RemoteActivity : Activity() {
         override fun run() { if (repKey.isNotEmpty()) { RemoteClient.key(repKey); h.postDelayed(this, 110L) } }
     }
     private var pendingLink: String? = null
+    private var wantPlayer = false      // (v532) فتح شاشة مشغّل الفيديو أول ما نتصل
+    private var waitUntil = 0L          // (v532) لحد الوقت ده الفيديو لسه بيفتح على التلفزيون
     private var searching = false
     private var retryOn = true   // (v521) إعادة البحث التلقائي طول ما الشاشة قدّامك ومش متصل
     private val retryRun = Runnable { if (retryOn && !isFinishing && !isDestroyed && !searching && RemoteClient.state != RemoteClient.St.CONNECTED && RemoteClient.state != RemoteClient.St.CONNECTING) search() }
@@ -96,6 +108,8 @@ class RemoteActivity : Activity() {
         th = Themes.byId(Cfg.str("theme", "mx")); ui = Ui(this, th)
         window.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(th.bg))
         pendingLink = intent?.getStringExtra("pending_link")
+        wantPlayer = intent?.getBooleanExtra("open_player", false) == true
+        if (intent?.getBooleanExtra("wait", false) == true) waitUntil = System.currentTimeMillis() + 25000L
 
         val col = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL
@@ -111,7 +125,7 @@ class RemoteActivity : Activity() {
 
         ctrl = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; setPadding(0, ui.dp(10), 0, 0) }
         ctrl.addView(panel(vrow(cmdBtn("⏻", "power"), sleepBtn(), cmdBtn("🔇", "mute"))))
-        ctrl.addView(panel(vrow(wordCmd("▶ يوتيوب", "open_yt"), wordCmd("💾 فلاشة", "open_sd")), vrow(wordCmd("🌐 متصفح", "open_browser"), wordCmd("📱 ذاكرة داخلية", "open_int"))), LinearLayout.LayoutParams(-1, -2).apply { topMargin = ui.dp(10) })
+        ctrl.addView(panel(vrow(bigBtn("🎞 مشغّل الفيديو") { openPage("video") }, ytPhoneBtn(), wordCmd("🌐 متصفح", "open_browser")), vrow(wordCmd("📺 يوتيوب التلفزيون", "open_yt"), wordCmd("💾 فلاشة", "open_sd"), wordCmd("📱 داخلية", "open_int"))), LinearLayout.LayoutParams(-1, -2).apply { topMargin = ui.dp(10) })   // (v533) مشغّل الفيديو · يوتيوب · متصفح فوق
         col.addView(ctrl)
 
         remote = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL }
@@ -124,8 +138,7 @@ class RemoteActivity : Activity() {
         col.addView(devices)
 
         tools = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        tools.addView(ui.text("📤 ابعت للتلفزيون", 15f, th.text, true).apply { setPadding(0, ui.dp(18), 0, ui.dp(4)) })
-        input = EditText(this).apply {
+        input = EditText(this).apply {   // (v533) مخفية (مابتتضافش للشاشة): بتستخدمها اللينكات الجاية من المشاركة/المتصفح
             hint = "الصق لينك (فيديو / يوتيوب / موقع) أو اكتب نص"
             setTextColor(th.text); setHintTextColor(th.muted)
             inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI
@@ -133,10 +146,6 @@ class RemoteActivity : Activity() {
             setPadding(ui.dp(12), ui.dp(10), ui.dp(12), ui.dp(10))
             layoutDirection = View.LAYOUT_DIRECTION_LTR; gravity = Gravity.START
         }
-        tools.addView(input, LinearLayout.LayoutParams(-1, -2))
-        tools.addView(ui.button("📋 الصق من الكليبورد") { pasteClip() })
-        tools.addView(ui.button("▶ افتحه على التلفزيون", true) { sendLink() })
-        tools.addView(ui.button("⌨ ابعته كنص (لخانة البحث)") { sendText() })
         tools.addView(ui.text("🧰 أدوات", 15f, th.text, true).apply { setPadding(0, ui.dp(18), 0, ui.dp(4)) })
         tools.addView(ui.button("🔑 انقل مفاتيح Gemini للتلفزيون") { sendKeys() })
         tools.addView(ui.button("⬆ حدّث التلفزيون من نسخة الموبايل (" + LinkVer.name(this) + ")") { offerUpdate() })
@@ -171,6 +180,11 @@ class RemoteActivity : Activity() {
     override fun onNewIntent(i: Intent?) {
         super.onNewIntent(i)
         i?.getStringExtra("pending_link")?.let { pendingLink = it; refresh() }
+        if (i?.getBooleanExtra("open_player", false) == true) {   // (v532)
+            wantPlayer = true
+            if (i?.getBooleanExtra("wait", false) == true) waitUntil = System.currentTimeMillis() + 25000L
+            refresh()
+        }
     }
 
     override fun onDestroy() { stopRepeat(); RemoteClient.removeListener(lis); super.onDestroy() }
@@ -214,21 +228,108 @@ class RemoteActivity : Activity() {
         }
     }
 
-    private fun buildPlayerCard() {
-        pBtns.clear()
-        playerBox = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; setPadding(0, ui.dp(8), 0, 0) }
-        val card = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL
-            background = ui.box(th.card, th.border, 16); setPadding(ui.dp(12), ui.dp(12), ui.dp(12), ui.dp(8))
+    // ===== (v531) شاشة «مشغّل الفيديو»: نفس تقسيمة مشغّل الموبايل بالظبط — فوق اسم الفيديو وعدّاد الجمل · صف الكبسولات · الصورة (سودا) · شريط التقدّم ·
+    //   ⚙ + زرار «ترجم» الأحمر · الشريط السفلي 🔓 🗣 🌐 ⏮ ▶ ⏭ ▲ 🔄 ⧉ ⛶. كل زرار بيتنفّذ على التلفزيون (مشغّل البرنامج أو فيديو المتصفح) =====
+    private fun tileLp(w: Int, h0: Int, wt: Float = 0f) = LinearLayout.LayoutParams(if (wt > 0f) 0 else ui.dp(w), ui.dp(h0), wt).apply { setMargins(ui.dp(2), ui.dp(2), ui.dp(2), ui.dp(2)) }
+
+    private fun cbtn(t: String, key: String, size: Float, act: () -> Unit): View {
+        val b = ui.button(t) { act() }.skin().apply {
+            textSize = size; gravity = Gravity.CENTER; includeFontPadding = false
+            minimumWidth = 0; minimumHeight = 0; minWidth = 0; minHeight = 0; setPadding(0, 0, 0, 0)
         }
-        pTitle = ui.text("🎞 —", 15f, th.text, true).apply { maxLines = 2 }
-        pTime = ui.text("0:00 / 0:00", 13f, th.muted)
+        pBtns[key] = b
+        return b
+    }
+
+    private fun setOn(key: String, on: Boolean) {
+        if (pOn[key] == on) return
+        pOn[key] = on
+        pBtns[key]?.skin(on)
+    }
+
+    private fun buildPlayerCard() {
+        pBtns.clear(); pOn.clear()
+        val white = 0xFFFFFFFF.toInt()
+        playerBox = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; setPadding(0, ui.dp(8), 0, 0) }
+        val shell = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_LTR
+            background = ui.box(0xFF121317.toInt(), lineCol(), 20, 2); setPadding(ui.dp(8), ui.dp(8), ui.dp(8), ui.dp(8))
+        }
+        // 1) فوق: اسم الفيديو + سطر المحرك (شمال) · عدّاد الجمل (يمين)
+        pTitle = ui.text("🎞 —", 13f, white, true).apply { maxLines = 2; ellipsize = android.text.TextUtils.TruncateAt.END; layoutDirection = View.LAYOUT_DIRECTION_LTR }
+        pEng = ui.text("", 11f, 0xFFB8BEC9.toInt()).apply { maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END }
+        val tCap = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL; setPadding(ui.dp(10), ui.dp(6), ui.dp(10), ui.dp(6)); background = ui.box(0x99000000.toInt(), 0x22FFFFFF, 14)
+            addView(pTitle); addView(pEng)
+        }
+        pCnt = ui.text("", 11f, 0xFFE8EAED.toInt(), true).apply {
+            gravity = Gravity.CENTER; setPadding(ui.dp(10), ui.dp(6), ui.dp(10), ui.dp(6)); background = ui.box(0x99000000.toInt(), 0x22FFFFFF, 14); visibility = View.GONE
+        }
+        val topRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_LTR; gravity = Gravity.CENTER_VERTICAL }
+        topRow.addView(tCap, LinearLayout.LayoutParams(0, -2, 1f).apply { marginEnd = ui.dp(6) })
+        topRow.addView(pCnt, LinearLayout.LayoutParams(-2, -2))
+        shell.addView(topRow, LinearLayout.LayoutParams(-1, -2))
+
+        // 2) صف الكبسولات (نفس ترتيب مشغّل الموبايل، ومتسكرول لآخر اليمين زيه)
+        val chips = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_LTR; gravity = Gravity.CENTER_VERTICAL }
+        chips.addView(cbtn("🔂", "loop", 17f) { pAct("loop") }, tileLp(40, 40))
+        chips.addView(cbtn("📋", "log", 17f) { pAct("log") }, tileLp(40, 40))
+        chips.addView(cbtn("📝", "sent", 17f) { pAct("sent") }, tileLp(40, 40))
+        chips.addView(cbtn("🧑", "chars", 17f) { pAct("chars") }, tileLp(40, 40))
+        chips.addView(cbtn("Aa ▾", "text", 14f) { adjustDialog("text") }, tileLp(54, 40))
+        chips.addView(cbtn("⏱ ▾", "sync", 14f) { adjustDialog("sync") }, tileLp(54, 40))
+        chips.addView(cbtn("🎞 ▾", "qual", 14f) { pickDialog("🎞 الجودة", "ql", "qc", "qset", "مفيش جودات تانية للفيديو ده") }, tileLp(54, 40))   // (v532)
+        chips.addView(cbtn("🔊 ▾", "aud", 14f) { pickDialog("🔊 لغة الصوت", "al", "ac", "aset", "الفيديو ده مفيهوش لغات صوت تانية") }, tileLp(54, 40))   // (v532)
+        chips.addView(cbtn("💬", "dual", 17f) { pAct("dual") }, tileLp(40, 40))
+        chips.addView(cbtn("CC", "cc", 13f) { pAct("cc") }, tileLp(40, 40))
+        chips.addView(cbtn("☑", "bgon", 17f) { pAct("bgon") }, tileLp(40, 40))
+        chips.addView(cbtn("🧰", "tools", 17f) { pAct("tools") }, tileLp(40, 40))
+        chips.addView(cbtn("☰", "menu", 18f) { pAct("menu") }, tileLp(40, 40))
+        val chipsScroll = android.widget.HorizontalScrollView(this).apply {
+            isHorizontalScrollBarEnabled = false; overScrollMode = View.OVER_SCROLL_NEVER; layoutDirection = View.LAYOUT_DIRECTION_LTR
+            addView(chips, FrameLayout.LayoutParams(-2, -2)); post { fullScroll(View.FOCUS_RIGHT) }
+        }
+        shell.addView(chipsScroll, LinearLayout.LayoutParams(-1, -2).apply { topMargin = ui.dp(6) })
+
+        // 3) مكان الصورة: سودا. نفس إيماءات المشغّل: لمسة = تشغيل/إيقاف · دوسة مزدوجة يمين/شمال = ±10ث · سحب أفقي = تقديم/تأخير
+        pBlack = FrameLayout(this).apply { background = ui.box(0xFF000000.toInt(), 0x22FFFFFF, 14) }
+        pBlack.addView(ui.text("اللمسة = تشغيل/إيقاف  ·  دوسة مزدوجة يمين/شمال = ±10 ث  ·  اسحب أفقي = تقديم/تأخير", 11f, 0xFF5E6570.toInt()).apply {
+            gravity = Gravity.CENTER; setPadding(ui.dp(18), 0, ui.dp(18), 0)
+        }, FrameLayout.LayoutParams(-1, -2, Gravity.CENTER))
+        pSpeed = ui.text("1x ⏩", 15f, white, true).apply {
+            gravity = Gravity.CENTER; setPadding(ui.dp(16), ui.dp(8), ui.dp(16), ui.dp(8)); background = ui.box(0x99000000.toInt(), 0x33FFFFFF, 22)
+            setOnClickListener { pAct("speed") }
+        }
+        pBlack.addView(pSpeed, FrameLayout.LayoutParams(-2, -2, Gravity.CENTER_HORIZONTAL or Gravity.BOTTOM).apply { bottomMargin = ui.dp(26) })
+        pBlack.addView(cbtn("👁", "visual", 22f) { pAct("visual") }, FrameLayout.LayoutParams(ui.dp(48), ui.dp(48), Gravity.END or Gravity.CENTER_VERTICAL).apply { marginEnd = ui.dp(8) })
+        val gd = android.view.GestureDetector(this, object : android.view.GestureDetector.SimpleOnGestureListener() {
+            override fun onDown(e: MotionEvent): Boolean = true
+            override fun onSingleTapConfirmed(e: MotionEvent): Boolean { pAct("toggle"); return true }
+            override fun onDoubleTap(e: MotionEvent): Boolean { pAct("seek", if (e.x < pBlack.width / 2f) -10000L else 10000L); return true }
+        })
+        var dX = 0f; var dY = 0f
+        pBlack.setOnTouchListener { v, e ->
+            gd.onTouchEvent(e)
+            when (e.actionMasked) {
+                MotionEvent.ACTION_DOWN -> { dX = e.x; dY = e.y; v.parent?.requestDisallowInterceptTouchEvent(true) }
+                MotionEvent.ACTION_UP -> {
+                    val dx = e.x - dX; val dy = e.y - dY
+                    if (Math.abs(dx) > ui.dp(40) && Math.abs(dx) > Math.abs(dy) * 1.5f) pAct("seek", (dx / v.width.coerceAtLeast(1) * 120000f).toLong())
+                    v.parent?.requestDisallowInterceptTouchEvent(false)
+                }
+                MotionEvent.ACTION_CANCEL -> v.parent?.requestDisallowInterceptTouchEvent(false)
+            }
+            true
+        }
+        shell.addView(pBlack, LinearLayout.LayoutParams(-1, ui.dp(210)).apply { topMargin = ui.dp(6) })
+
+        // 4) شريط التقدّم: الوقت الحالي شمال · المدة يمين
+        pTime = ui.text("0:00", 12f, white, true)
+        pDurTv = ui.text("0:00", 12f, white, true)
         pSeek = SeekBar(this).apply {
             max = 1000
             setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
-                override fun onProgressChanged(sb: SeekBar?, p: Int, fromUser: Boolean) {
-                    if (fromUser && pDur > 0) pTime.text = PlayerLogic.clock(pDur * p / 1000L) + " / " + PlayerLogic.clock(pDur)
-                }
+                override fun onProgressChanged(sb: SeekBar?, p: Int, fromUser: Boolean) { if (fromUser && pDur > 0) pTime.text = PlayerLogic.clock(pDur * p / 1000L) }
                 override fun onStartTrackingTouch(sb: SeekBar?) { pDragging = true }
                 override fun onStopTrackingTouch(sb: SeekBar?) {
                     pDragging = false
@@ -237,16 +338,106 @@ class RemoteActivity : Activity() {
                 }
             })
         }
-        card.addView(pTitle); card.addView(pSeek, LinearLayout.LayoutParams(-1, -2)); card.addView(pTime)
-        playerBox.addView(card, LinearLayout.LayoutParams(-1, -2).apply { setMargins(ui.dp(4), 0, ui.dp(4), ui.dp(4)) })
+        val seekRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_LTR; gravity = Gravity.CENTER_VERTICAL }
+        seekRow.addView(pTime, LinearLayout.LayoutParams(-2, -2).apply { marginStart = ui.dp(4) })
+        seekRow.addView(pSeek, LinearLayout.LayoutParams(0, -2, 1f))
+        seekRow.addView(pDurTv, LinearLayout.LayoutParams(-2, -2).apply { marginEnd = ui.dp(4) })
+        shell.addView(seekRow, LinearLayout.LayoutParams(-1, -2).apply { topMargin = ui.dp(4) })
 
-        pPlay = ui.button("⏯", true) { pAct("toggle") }.skin(true).apply { textSize = 20f }
-        pBtns["toggle"] = pPlay
-        playerBox.addView(row(pBtn("prev", "⏮", "prev"), pBtn("rew", "⏪ 10", "seek", -10000L, true), pPlay, pBtn("ff", "10 ⏩", "seek", 10000L, true), pBtn("next", "⏭", "next")))
-        playerBox.addView(row(pBtn("cc", "💬 ترجمة", "cc"), pBtn("subs", "🌐 مسار", "subs"), pBtn("tr", "▶ ترجم", "translate"), pBtn("more", "⋯", "more")))   // (v521) 🌐 مسار/لغة الترجمة
-        playerBox.addView(row(ui.button("📄 ترجمة ملف الترجمة (سوفت / هارد سب)") { sfDialog() }.skin().apply { textSize = 15f }.also { pBtns["sf"] = it }))   // (v529)
-        playerBox.addView(row(pBtn("sc-", "🔤 −", "scale", -10L, true), pBtn("sc+", "🔤 +", "scale", 10L, true), pBtn("sh-", "⏱ −", "shift", -250L, true), pBtn("sh+", "⏱ +", "shift", 250L, true)))
-        playerBox.addView(row(pBtn("speed", "⏩ 1x", "speed"), pBtn("fit", "📐", "fit"), pBtn("audio", "🔊 صوت", "audio"), pBtn("quality", "HD", "quality")))
+        // 5) ⚙ + زرار «ترجم» الأحمر
+        pTrBtn = ui.text("▶ ترجم ▾", 15f, white, true).apply {
+            gravity = Gravity.CENTER; setPadding(ui.dp(14), 0, ui.dp(14), 0); background = ui.box(0xFFE53935.toInt(), 0x33FFFFFF, 22)
+            setOnClickListener { trMenu() }
+        }
+        pTrColor = 0xFFE53935.toInt()
+        val actRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_LTR; gravity = Gravity.CENTER_VERTICAL }
+        actRow.addView(cbtn("⚙", "gear", 20f) { pAct("more") }, tileLp(48, 46))
+        actRow.addView(pTrBtn, LinearLayout.LayoutParams(0, ui.dp(46), 1f).apply { setMargins(ui.dp(2), ui.dp(2), ui.dp(2), ui.dp(2)) })
+        shell.addView(actRow, LinearLayout.LayoutParams(-1, -2).apply { topMargin = ui.dp(2) })
+
+        // 6) الشريط السفلي: 🔓 🗣▾ 🌐 | ⏮ ▶ ⏭ | ▲ 🔄 ⧉ ⛶
+        val bar = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_LTR; gravity = Gravity.CENTER_VERTICAL }
+        bar.addView(cbtn("🔓", "lock", 17f) { pAct("lock") }, tileLp(0, 44, 1f))
+        bar.addView(cbtn("🗣 ▾", "ai", 15f) { pAct("ai") }, tileLp(0, 44, 1.25f))
+        bar.addView(cbtn("🌐", "subs", 17f) { pAct("subs") }, tileLp(0, 44, 1f))
+        bar.addView(cbtn("⏮", "prev", 18f) { pAct("prev") }, tileLp(0, 44, 1f))
+        pPlay = cbtn("▶", "toggle", 22f) { pAct("toggle") }.skin(true)
+        bar.addView(pPlay, tileLp(0, 52, 1.5f))
+        bar.addView(cbtn("⏭", "next", 18f) { pAct("next") }, tileLp(0, 44, 1f))
+        bar.addView(cbtn("▲", "notice", 13f) { pAct("notice") }, tileLp(0, 44, 1.25f))
+        bar.addView(cbtn(Icons.ROT, "rot", 18f) { Notice.show(this, "الدوران مالوش لازمة على التلفزيون", 1800L) }, tileLp(0, 44, 1f))
+        bar.addView(cbtn("⧉", "pip", 17f) { Notice.show(this, "الصورة المصغّرة مش متاحة على التلفزيون", 1800L) }, tileLp(0, 44, 1f))
+        bar.addView(cbtn("⛶", "fit", 17f) { pAct("fit") }, tileLp(0, 44, 1f))
+        shell.addView(bar, LinearLayout.LayoutParams(-1, -2).apply { topMargin = ui.dp(4) })
+
+        playerBox.addView(shell, LinearLayout.LayoutParams(-1, -2).apply { setMargins(ui.dp(2), 0, ui.dp(2), ui.dp(4)) })
+    }
+
+    /** (v532) 🎞 الجودة / 🔊 لغة الصوت: القايمة بتظهر على الموبايل والاختيار بيتنفّذ على التلفزيون على طول (من غير ما تروح للريموت الفعلي) */
+    private fun pickDialog(titleTxt: String, listKey: String, curKey: String, setAct: String, emptyMsg: String) {
+        val st = lastPSt
+        if (st == null) { Notice.show(this, "مفيش فيديو شغّال على التلفزيون — شغّل فيديو الأول", 2800L); return }
+        if (pKind == "browser") { Notice.show(this, "فيديو المتصفح: الجودة بتتغيّر من جوه الصفحة نفسها", 2800L); return }
+        val arr = st.optJSONArray(listKey)
+        if (arr == null || arr.length() < 2) { Notice.show(this, emptyMsg, 2600L); return }
+        val labels = Array(arr.length()) { arr.optString(it) }
+        AlertDialog.Builder(this).setTitle(titleTxt)
+            .setSingleChoiceItems(labels, st.optInt(curKey, -1)) { d, w -> d.dismiss(); pAct(setAct, w.toLong()) }
+            .setNegativeButton("إلغاء", null).show()
+    }
+
+    /** زرار «▶ ترجم» الأحمر: قايمة على الموبايل (مش على التلفزيون) */
+    private fun trMenu() {
+        if (lastPSt == null) { Notice.show(this, "مفيش فيديو شغّال على التلفزيون — شغّل فيديو الأول", 2800L); return }
+        if (pKind == "browser") { Notice.show(this, "الترجمة بتشتغل في مشغّل البرنامج بس — افتح الفيديو من اللانشر", 3200L); return }
+        AlertDialog.Builder(this).setTitle("▶ ترجم")
+            .setItems(arrayOf("▶ ترجم الفيديو (قايمة الترجمة على التلفزيون)", "📄 ترجمة ملف الترجمة (سوفت / هارد سب)", "🌐 مسار / لغة الترجمة", "⋯ المزيد")) { _, w ->
+                when (w) { 0 -> pAct("translate"); 1 -> sfDialog(); 2 -> pAct("subs"); 3 -> pAct("more") }
+            }.setNegativeButton("إلغاء", null).show()
+    }
+
+    /** Aa ▾ (حجم الترجمة · الخط · السرعة) و ⏱ ▾ (توقيت الترجمة): نافذة على الموبايل بتفضل مفتوحة وتتحدّث لوحدها */
+    private fun adjustDialog(kind: String) {
+        if (lastPSt == null) { Notice.show(this, "مفيش فيديو شغّال على التلفزيون — شغّل فيديو الأول", 2800L); return }
+        if (pKind == "browser") { Notice.show(this, "ده خاص بمشغّل البرنامج مش فيديو المتصفح", 2600L); return }
+        val box = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_LTR; setPadding(ui.dp(16), ui.dp(10), ui.dp(16), ui.dp(4)) }
+        val lbl = ui.text("", 16f, th.text, true).apply { gravity = Gravity.CENTER; layoutDirection = View.LAYOUT_DIRECTION_RTL }
+        val a2 = if (kind == "text") "scale" else "shift"
+        val step = if (kind == "text") 10L else 250L
+        val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_LTR; gravity = Gravity.CENTER_VERTICAL }
+        row.addView(keyLikeRepeat("−", a2, -step).skin(), LinearLayout.LayoutParams(ui.dp(64), ui.dp(50)))
+        row.addView(lbl, LinearLayout.LayoutParams(0, -2, 1f))
+        row.addView(keyLikeRepeat("+", a2, step).skin(), LinearLayout.LayoutParams(ui.dp(64), ui.dp(50)))
+        box.addView(row)
+        val b1 = ui.button("") { }.skin()
+        val b2 = ui.button("") { }.skin()
+        if (kind == "text") {
+            b1.setOnClickListener { pAct("font") }
+            b2.setOnClickListener { pAct("speed") }
+            box.addView(b1, LinearLayout.LayoutParams(-1, -2).apply { topMargin = ui.dp(8) })
+            box.addView(b2, LinearLayout.LayoutParams(-1, -2).apply { topMargin = ui.dp(4) })
+        } else {
+            b1.setOnClickListener { pAct("shift", -(lastPSt?.optLong("shift") ?: 0L)) }
+            box.addView(b1, LinearLayout.LayoutParams(-1, -2).apply { topMargin = ui.dp(8) })
+        }
+        val refresh = {
+            val st = lastPSt
+            if (st != null) {
+                if (kind == "text") {
+                    lbl.text = "🔤 حجم الترجمة: " + st.optInt("scale") + "%"
+                    b1.text = "🔤 الخط: " + st.optString("font") + " — دوس للتبديل"
+                    b2.text = "⏩ السرعة: " + st.optString("speed") + " — دوس للتبديل"
+                } else {
+                    lbl.text = "⏱ توقيت الترجمة: " + String.format("%+.2f", st.optLong("shift") / 1000.0) + " ث"
+                    b1.text = "↺ رجّع التوقيت للصفر"
+                }
+            }
+        }
+        refresh()
+        adjRefresh = refresh
+        val d = AlertDialog.Builder(this).setTitle(if (kind == "text") "Aa — النص" else "⏱ — التوقيت").setView(box).setPositiveButton("تمام", null).create()
+        d.setOnDismissListener { adjRefresh = null }
+        d.show()
     }
 
     // ===== (v529) 📄 ترجمة ملف الترجمة من الموبايل: سوفت سب / ملف على التلفزيون / هارد سب — بجوجل أو جيميناي (بمفاتيح التلفزيون) =====
@@ -282,26 +473,52 @@ class RemoteActivity : Activity() {
     private fun paintPlayer(st: org.json.JSONObject?) {
         if (isFinishing || isDestroyed || !::pTitle.isInitialized) return
         lastPSt = st
-        if (st == null) { pTitle.text = "🎞 مفيش فيديو شغّال على التلفزيون دلوقتي"; return }
-        pTitle.text = "🎞 " + st.optString("title")
+        if (st == null) {
+            pTitle.text = if (System.currentTimeMillis() < waitUntil) "⏳ بنفتح الفيديو على التلفزيون…" else "🎞 مفيش فيديو شغّال على التلفزيون دلوقتي"   // (v532)
+            pEng.text = ""; pCnt.visibility = View.GONE
+            adjRefresh?.invoke()
+            return
+        }
+        pKind = st.optString("kind", "player")
+        val br = pKind == "browser"
+        pTitle.text = "🎞 " + st.optString("title").ifBlank { "فيديو" }
+        pEng.text = if (br) "🌐 فيديو شغّال في المتصفح" else st.optString("eng")
+        pEng.visibility = if (pEng.text.isNullOrBlank()) View.GONE else View.VISIBLE
+        val cnt = st.optString("cnt")
+        pCnt.text = cnt; pCnt.visibility = if (cnt.isBlank() || br) View.GONE else View.VISIBLE
         pDur = st.optLong("dur"); val pos = st.optLong("pos")
         if (!pDragging) {
             pSeek.progress = if (pDur > 0) (pos * 1000L / pDur).toInt().coerceIn(0, 1000) else 0
-            pTime.text = PlayerLogic.clock(pos) + " / " + PlayerLogic.clock(pDur)
+            pTime.text = PlayerLogic.clock(pos)
         }
+        pDurTv.text = PlayerLogic.clock(pDur)
         setTxt("toggle", if (st.optBoolean("playing")) "⏸" else "▶")
-        setTxt("speed", "⏩ " + st.optString("speed"))
-        setTxt("fit", "📐 " + st.optString("fit"))
-        setTxt("tr", st.optString("tr"))
-        setTxt("cc", if (st.optBoolean("cc")) "💬 ترجمة ✓" else "💬 ترجمة ✗")
-        setTxt("sc-", "🔤 −"); setTxt("sc+", "🔤 + (" + st.optInt("scale") + "%)")
-        setTxt("sh-", "⏱ −"); setTxt("sh+", "⏱ + (" + String.format("%+.2f", st.optLong("shift") / 1000.0) + ")")
-        run {   // (v529) حالة «ترجمة ملف الترجمة»
-            val busy = st.optString("sf_busy"); val live = st.optString("sf_live")
-            setTxt("sf", if (busy.isNotEmpty()) "⏳ $busy" else if (live.isNotEmpty()) "💬 ترجمة لحظية بـ " + (if (live == "gemini") "جيميناي" else "جوجل") + " — دوس للتحكم" else "📄 ترجمة ملف الترجمة (سوفت / هارد سب)")
+        pSpeed.text = st.optString("speed") + " ⏩"
+        // فيديو المتصفح: التشغيل/التقديم/السرعة/التالي بس؛ باقي الأزرار (ترجمة/خط/…) خاصة بمشغّل البرنامج فبتبهت
+        val okKeys = setOf("toggle", "prev", "next")
+        for ((k, v) in pBtns) v.alpha = if (br && k !in okKeys) 0.3f else 1f
+        pTrBtn.alpha = if (br) 0.3f else 1f
+        if (!br) {
+            setOn("loop", st.optBoolean("loop"))
+            setOn("dual", st.optInt("dual") != 0)
+            setOn("cc", st.optBoolean("cc"))
+            setOn("lock", st.optBoolean("locked"))
+            setTxt("bgon", if (st.optBoolean("bgon")) "☑" else "☐")
+            setTxt("lock", if (st.optBoolean("locked")) "🔒" else "🔓")
+            val n = st.optInt("nots")
+            setTxt("notice", if (n == 0) "▲" else "▲ $n")
+            pBtns["notice"]?.alpha = if (n == 0) 0.45f else 1f
+            val t = st.optString("tr").ifBlank { "▶ ترجم" }
+            pTrBtn.text = "$t ▾"
+            val col = st.optInt("trcolor", 0xFFE53935.toInt())
+            if (col != pTrColor) { pTrColor = col; pTrBtn.background = ui.box(col, 0x33FFFFFF, 22) }
+            pBtns["audio"]?.visibility = View.VISIBLE
+            pBtns["qual"]?.alpha = if ((st.optJSONArray("ql")?.length() ?: 0) > 1) 1f else 0.4f   // (v532)
+            pBtns["aud"]?.alpha = if ((st.optJSONArray("al")?.length() ?: 0) > 1) 1f else 0.4f
+        } else {
+            pTrBtn.text = "▶ ترجم ▾"
         }
-        pBtns["audio"]?.visibility = if (st.optBoolean("audio")) View.VISIBLE else View.INVISIBLE
-        pBtns["quality"]?.visibility = if (st.optBoolean("quality")) View.VISIBLE else View.INVISIBLE
+        adjRefresh?.invoke()
     }
 
     /** أزرار الصوت الفعلية في الموبايل بتتحكم في صوت التلفزيون وانت في الشاشة دي */
@@ -338,8 +555,7 @@ class RemoteActivity : Activity() {
                 row(menuBtn(), keyBtn("▼", "down", true), cmdBtn("🎤", "mic"))   // قايمة إعدادات البرنامج شمال تحت · ميك يمين تحت
             ), gap())
         }
-        remote.addView(panel(searchRow()), gap())
-        remote.addView(panel(vrow(bigBtn("🎞 مشغّل الفيديو") { openPage("video") }, bigBtn("🎵 مشغّل الموسيقى") { openPage("music") }, h0 = 64)), gap())
+        remote.addView(panel(vrow(bigBtn("🔍 بحث") { showSearchDialog() }, bigBtn("🎵 مشغّل الموسيقى") { openPage("music") }, h0 = 64)), gap())   // (v533) زرار بحث بدل الشريط
     }
 
     // ===== (v522) شكل الريموت: أزرار مصمتة بألوان السمة + لوحات بخطوط فاصلة =====
@@ -463,31 +679,30 @@ class RemoteActivity : Activity() {
         }.also { it.isDaemon = true }.start()
     }
 
-    /** (v522) بحث: اللي تكتبه يتبعت لخانة البحث على التلفزيون */
-    private fun searchRow(): View {
-        if (!::qBox.isInitialized) {
-            qBox = EditText(this).apply {
-                hint = "🔍 ابحث على التلفزيون"
-                setTextColor(th.text); setHintTextColor(th.muted); setSingleLine(true)
-                imeOptions = android.view.inputmethod.EditorInfo.IME_ACTION_SEARCH
-                background = ui.box(btnFill(), lineCol(), 14, 2)
-                setPadding(ui.dp(12), ui.dp(10), ui.dp(12), ui.dp(10))
-                setOnEditorActionListener { _, a, _ -> if (a == android.view.inputmethod.EditorInfo.IME_ACTION_SEARCH) { sendQuery(); true } else false }
-            }
+    /** (v533) زرار «بحث»: بيفتح شريط بحث وكيبورد الموبايل. كلام ← التلفزيون يخرج من أي مكان ويبحث · لينك ← يتفتح على التلفزيون */
+    private fun showSearchDialog() {
+        val et = EditText(this).apply {
+            hint = "🔍 ابحث على التلفزيون أو الصق لينك"
+            setTextColor(th.text); setHintTextColor(th.muted); setSingleLine(true)
+            imeOptions = android.view.inputmethod.EditorInfo.IME_ACTION_SEARCH
+            background = ui.box(btnFill(), lineCol(), 14, 2)
+            setPadding(ui.dp(12), ui.dp(10), ui.dp(12), ui.dp(10))
         }
-        (qBox.parent as? android.view.ViewGroup)?.removeView(qBox)
-        val r = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; gravity = Gravity.CENTER_VERTICAL; setPadding(0, ui.dp(8), 0, 0) }
-        r.addView(qBox, LinearLayout.LayoutParams(0, -2, 1f).apply { marginEnd = ui.dp(6) })
-        r.addView(ui.button("🔍", true) { sendQuery() }.skin(true).apply { textSize = 18f }, LinearLayout.LayoutParams(ui.dp(64), -2))
-        return r
+        val wrap = FrameLayout(this).apply { setPadding(ui.dp(20), ui.dp(8), ui.dp(20), 0); addView(et, FrameLayout.LayoutParams(-1, -2)) }
+        val d = AlertDialog.Builder(this).setTitle("🔍 بحث").setView(wrap).setPositiveButton("بحث", null).setNegativeButton("إلغاء", null).create()
+        fun go() { val t = et.text.toString().trim(); if (t.isEmpty()) return; d.dismiss(); sendQuery(t) }
+        et.setOnEditorActionListener { _, a, _ -> if (a == android.view.inputmethod.EditorInfo.IME_ACTION_SEARCH) { go(); true } else false }
+        d.window?.setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_STATE_VISIBLE)
+        d.setOnShowListener { d.getButton(AlertDialog.BUTTON_POSITIVE)?.setOnClickListener { go() }; et.requestFocus() }
+        d.show()
     }
 
-    private fun sendQuery() {
-        val t = qBox.text.toString().trim()
-        if (t.isEmpty()) return
+    private fun sendQuery(t: String) {
+        val lu = Regex("https?://\\S+").find(t)?.value   // لينك = يتفتح على التلفزيون
         Thread {
-            val er = RemoteClient.sendText(t)
-            h.post { Notice.show(this, if (er == null) "✅ اتبعت لبحث التلفزيون" else "⚠ $er", 2200L) }
+            val ok = try { RemoteClient.ensureConnected(this, 8000L) } catch (_: Throwable) { false }
+            val er = if (!ok) "ما قدرتش أوصل للتلفزيون" else if (lu != null) RemoteClient.openLink(lu) else RemoteClient.sendText(t, true)
+            h.post { Notice.show(this, if (er != null) "⚠ $er" else if (lu != null) "✅ اتبعت للتلفزيون" else "✅ التلفزيون بيبحث عن «${t.take(30)}»", 2600L) }
         }.also { it.isDaemon = true }.start()
     }
 
@@ -519,6 +734,12 @@ class RemoteActivity : Activity() {
                 Notice.show(this, if (mins[i] == 0) "اتلغى مؤقت النوم" else "😴 التلفزيون هيقفل بعد " + opts[i], 2600L)
             }.show()
     }.skin().apply { textSize = 20f }
+
+    /** (v532) ▶ يوتيوب: صفحة يوتيوب على الموبايل (تصفّح واختار)، وأي فيديو تدوس عليه يسألك «تشغّله على التلفزيون؟». لو خرجت منها الفيديو على التلفزيون بيكمّل */
+    private fun ytPhoneBtn(): View = ui.button("▶ يوتيوب") {
+        try { startActivity(Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP).putExtra("tab", "youtube").putExtra("tv_target", true)) }
+        catch (e: Throwable) { LogStore.err("Remote:yt", e) }
+    }.skin().apply { textSize = 15f }
 
     private fun spacer(): View = View(this)
 
@@ -614,6 +835,8 @@ class RemoteActivity : Activity() {
         if (st != RemoteClient.St.IDLE) connBtnBox.addView(ui.button("⏻ فصل") { RemoteClient.disconnect(this) })
         val pl = pendingLink
         if (on && pl != null) { pendingLink = null; input.setText(pl); sendLink() }
+        if (on && wantPlayer) { wantPlayer = false; openPage("video") }   // (v532) فيديو اتبعت للتلفزيون ← شاشة التحكم تفتح لوحدها
+        if (on && pageKind.isNotEmpty()) startPoll()
     }
 
     // ===== البحث والاقتران =====

@@ -182,6 +182,53 @@ class BTab(val id: Long) {
  */
 @SuppressLint("SetJavaScriptEnabled")
 class BrowserActivity : Activity() {
+    // ===== (v531) ريموت الموبايل ← فيديو شغّال في المتصفح (نفس شاشة «مشغّل الفيديو» في الريموت) =====
+    companion object {
+        @Volatile private var curRef: java.lang.ref.WeakReference<BrowserActivity>? = null
+        fun live(): BrowserActivity? = curRef?.get()?.takeIf { !it.isFinishing && !it.isDestroyed }
+        /** حالة أول/أكبر فيديو في الصفحة الحالية، أو null لو مفيش فيديو */
+        fun remoteState(): org.json.JSONObject? { val o = live() ?: return null; return o.rState() }
+        fun remoteAct(a: String, v: Long): Boolean { val o = live() ?: return false; return o.rAct(a, v) }
+        private const val RC_FIND = "var vs=[].slice.call(document.querySelectorAll('video'));var v=vs.filter(function(x){return !x.paused})[0]||vs.sort(function(a,b){return b.videoWidth*b.videoHeight-a.videoWidth*a.videoHeight})[0];if(!v)return '';"
+    }
+
+    private fun rcJs(js: String, waitMs: Long = 900L): String? {
+        val w = wvOrNull ?: return null
+        val box = arrayOfNulls<String>(1)
+        val latch = java.util.concurrent.CountDownLatch(1)
+        try {
+            runOnUiThread { try { w.evaluateJavascript(js) { r -> box[0] = r; latch.countDown() } } catch (_: Throwable) { latch.countDown() } }
+        } catch (_: Throwable) { return null }
+        return if (latch.await(waitMs, java.util.concurrent.TimeUnit.MILLISECONDS)) box[0] else null
+    }
+
+    private fun rState(): org.json.JSONObject? {
+        val raw = rcJs("(function(){" + RC_FIND + "return JSON.stringify({pos:Math.round(v.currentTime*1000),dur:isFinite(v.duration)?Math.round(v.duration*1000):0,playing:!v.paused&&!v.ended,speed:v.playbackRate,title:document.title||''})})()") ?: return null
+        return try {
+            val s = org.json.JSONTokener(raw).nextValue() as? String ?: return null
+            if (s.isEmpty()) return null
+            val o = org.json.JSONObject(s)
+            val sp = o.optDouble("speed", 1.0)
+            org.json.JSONObject().put("kind", "browser").put("title", o.optString("title")).put("pos", o.optLong("pos")).put("dur", o.optLong("dur"))
+                .put("playing", o.optBoolean("playing")).put("speed", (if (sp == Math.floor(sp)) sp.toInt().toString() else sp.toString()) + "x")
+        } catch (_: Throwable) { null }
+    }
+
+    private fun rAct(a: String, v: Long): Boolean {
+        val w = wvOrNull ?: return false
+        fun runJs(js: String) { try { runOnUiThread { try { w.evaluateJavascript(js, null) } catch (_: Throwable) {} } } catch (_: Throwable) {} }
+        when (a) {
+            "toggle" -> runJs(TvPointer.jsToggle())
+            "seek" -> runJs(TvPointer.jsSeek((v / 1000L).toInt()))
+            "seekto" -> runJs("(function(){" + RC_FIND + "v.currentTime=" + (v / 1000.0) + "})()")
+            "speed" -> runJs("(function(){" + RC_FIND + "var r=[0.5,0.75,1,1.25,1.5,2];var i=r.indexOf(v.playbackRate);v.playbackRate=r[i<0?3:(i+1)%r.length]})()")
+            "next" -> runJs("(function(){var b=document.querySelector('.ytp-next-button,[aria-label=\"Next\"],[aria-label=\"التالي\"]');if(b)b.click()})()")
+            "prev" -> runJs("(function(){var b=document.querySelector('.ytp-prev-button');if(b&&b.getAttribute('aria-disabled')!='true'){b.click();return}" + RC_FIND + "v.currentTime=0})()")
+            else -> {}   // باقي أزرار المشغّل (ترجمة/خط/…) خاصة بمشغّل البرنامج — مفيش ليها معنى في المتصفح
+        }
+        return true
+    }
+
     // (v507) ريزوليوشن ديناميك لوضع التلفزيون
     override fun attachBaseContext(newBase: android.content.Context) { super.attachBaseContext(TvScale.wrap(newBase)) }
     private var stripUi: StatusStrip? = null   // (v345)
@@ -225,6 +272,7 @@ class BrowserActivity : Activity() {
     private val holds = ArrayList<PopupGuard.Hold>()              // (v401) بوب-أبات في الحجر
     private val blockedPops = ArrayList<PopupGuard.Blocked>()     // (v401) آخر اللي اتمنع (للعرض و«افتحه»)
     private lateinit var ctl: LinearLayout
+    private lateinit var tvB: IconTextView
     private lateinit var shield: TextView
     private lateinit var frame: FrameLayout
     private lateinit var customBox: FrameLayout
@@ -416,9 +464,15 @@ class BrowserActivity : Activity() {
             background = ui.box(0xCC1E2A3A.toInt(), 0x66FFFFFF, 22); elevation = ui.dp(4).toFloat(); visibility = View.GONE
             setOnClickListener { undoPanic() }
         }
+        tvB = IconTextView(this).apply {   // (v533) «إرسال للتلفزيون»: فوق زرار الإعلانات والطوارئ — يبعت الصفحة الحالية ويفتحها على التلفزيون إجباري
+            text = "📺"; textSize = 20f; gravity = Gravity.CENTER; setTextColor(Color.WHITE)
+            background = ui.box(0xCC1E6FE0.toInt(), 0x66FFFFFF, 22); elevation = ui.dp(4).toFloat()
+            setOnClickListener { sendPageToTv() }
+        }
         ctl = buildControls()   // (v248) زرار مانع الإعلانات 🛡 بقى فوق زرار الطوارئ على طول
         panicCol = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_LTR; gravity = Gravity.CENTER_HORIZONTAL
+            addView(tvB, LinearLayout.LayoutParams(ui.dp(44), ui.dp(44)).apply { bottomMargin = ui.dp(6) })
             addView(ctl, LinearLayout.LayoutParams(-2, -2))
             addView(panicB, LinearLayout.LayoutParams(ui.dp(44), ui.dp(44)))
             addView(undoB, LinearLayout.LayoutParams(ui.dp(44), ui.dp(44)).apply { topMargin = ui.dp(6) })
@@ -481,7 +535,7 @@ class BrowserActivity : Activity() {
     /** (v117) رجوع للشاشة الرئيسية على بوابة معيّنة (videos / yt) */
     private fun goMain(tab: String) {
         persistTabs()
-        if (DeviceUi.isTv(this) && tab == "videos" && TvFocus.goHome(this)) return   // (v482) تلفزيون: الرئيسية = شاشة التلفزيون
+        if (DeviceUi.isTv(this) && tab == "videos") { try { startActivity(Intent(this, TvActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP).putExtra("tv_show", "videos")); finish(); return } catch (_: Throwable) {} }   // (v530)   // (v482) تلفزيون: الرئيسية = شاشة التلفزيون
         startActivity(Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP).putExtra("tab", tab))
         NavAnim.peek(this)
         finish()
@@ -1536,7 +1590,7 @@ class BrowserActivity : Activity() {
     }
     private fun hOf(f: Found): Int = KIND_H.find(f.kind)?.groupValues?.get(1)?.toIntOrNull()
         ?: webGroups.firstNotNullOfOrNull { g -> g.firstOrNull { Sniff.key(it.first) == Sniff.key(f.url) }?.second?.takeIf { it > 0 } }
-        ?: Sniff.heightOf(f.url)
+        ?: Sniff.heightOf(f.url).let { if (it > 0) it else (hCache[Sniff.key(f.url)] ?: 0).coerceAtLeast(0) }   // (v533) لو مش معروف: اللي اتقاس بالفحص
     private fun nameFor(f: Found): String = titleFor(f).ifEmpty { Sniff.nameOf(f.url).substringBeforeLast('.') }
 
     /** (v231) نفس الاسم (من غير الامتداد) في نفس الصفحة = نفس الفيديو بجودة تانية، حتى لو الهيكل مختلف. الأسماء العامة (master/index/video…) مابتتحسبش */
@@ -1574,7 +1628,7 @@ class BrowserActivity : Activity() {
                 for (f in sorted) {
                     val h = if (f.kind == "HLS") 0 else hOf(f)
                     if (h > 0 && !seenH.add(h)) continue       // (v231) جودة واحدة مرة واحدة (لينكين بنفس الارتفاع = نفس الجودة)
-                    val lb = if (f.kind == "HLS") "HLS · جودة تلقائية" else if (h > 0) Sniff.qLabel(h, qs.size + 1, f.size) else "جودة ${qs.size + 1} · " + f.kind + (if (f.size > 0) " · " + Sniff.fmtSize(f.size) else "")
+                    val lb = if (f.kind == "HLS") "HLS · " + ((hCache[Sniff.key(f.url)] ?: 0).takeIf { it > 0 }?.let { "تلقائي (لحد ${it}p)" } ?: "جودة تلقائية") else if (h > 0) Sniff.qLabel(h, qs.size + 1, f.size) else "جودة ${qs.size + 1} · " + f.kind + (if (f.size > 0) " · " + Sniff.fmtSize(f.size) else "")
                     qs.add(Qv(lb, h, f, null))
                 }
             }
@@ -1641,7 +1695,7 @@ class BrowserActivity : Activity() {
         }
         Notice.show(this, "⬇ اتضاف للتحميل — تابعه من تبويب «المهام»", 3000L)
     }
-    private fun dlVideo(g: Grp, q: Qv) = queueDl(Downloader.Job(g.title, q.f.url, q.audio, isHls(q.f), q.h, dlHeaders(q.f)))
+    private fun dlVideo(g: Grp, q: Qv) = queueDl(Downloader.Job(g.title + qTag(q), q.f.url, q.audio, isHls(q.f), q.h, dlHeaders(q.f)))
     private fun dlAudio(g: Grp) {
         // نفس منطق المشغّل: لو فيه صوت لوحده يتحمّل هو بس، وإلا بنسحب أصغر جودة ونستخرج منها الصوت
         val q = g.qs.firstOrNull { it.audio != null } ?: g.qs.filter { it.h > 0 && !isHls(it.f) }.minByOrNull { it.h } ?: g.qs.last()
@@ -1682,14 +1736,45 @@ class BrowserActivity : Activity() {
         box.removeAllViews()
         val gs = groupsOf(vis())
         statusTv?.text = if (gs.isEmpty()) "⏳ بدوّر على فيديوهات… شغّل الفيديو في الصفحة لو ما ظهرش" else "اختار الفيديو اللي عايزه (${gs.size})"
+        if (repairId == null) for (g in gs) for (q in g.qs) if (q.h <= 0 && q.audio == null && !q.f.kind.startsWith("YT")) probeHeight(q.f)   // (v533)
         for (g in gs) box.addView(groupCard(g))
+    }
+    // (v533) الجودة الحقيقية للينكات اللي مفيهاش رقم جودة: HLS ← أعلى RESOLUTION في الماستر · ملف عادي ← MediaMetadataRetriever (بالهيدرز). بيتحفظ والقايمة بتتحدّث
+    private val hCache = java.util.concurrent.ConcurrentHashMap<String, Int>()
+    private val hBusy: MutableSet<String> = java.util.concurrent.ConcurrentHashMap.newKeySet()
+    private fun probeHeight(f: Found) {
+        val k = Sniff.key(f.url)
+        if (hCache.containsKey(k) || !hBusy.add(k)) return
+        val hs = dlHeaders(f); val u = f.url; val hls = isHls(f)
+        Thread {
+            var h = -1
+            try {
+                if (hls) {
+                    val c = java.net.URL(u).openConnection() as java.net.HttpURLConnection
+                    c.connectTimeout = 6000; c.readTimeout = 6000; c.instanceFollowRedirects = true
+                    for ((a, b) in hs) c.setRequestProperty(a, b)
+                    val txt = try { c.inputStream.bufferedReader().use { it.readText().take(300000) } } finally { c.disconnect() }
+                    h = Regex("RESOLUTION=(\\d+)x(\\d+)").findAll(txt).mapNotNull { m -> minOf(m.groupValues[1].toInt(), m.groupValues[2].toInt()).takeIf { it > 0 } }.maxOrNull() ?: -1
+                } else {
+                    val r = android.media.MediaMetadataRetriever()
+                    try {
+                        r.setDataSource(u, hs)
+                        val w = r.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH)?.toIntOrNull() ?: 0
+                        val hh = r.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT)?.toIntOrNull() ?: 0
+                        if (w > 0 && hh > 0) h = minOf(w, hh)   // الضلع الأقصر = رقم الجودة (فيديو طولي 720x1280 = 720p)
+                    } finally { try { r.release() } catch (_: Throwable) {} }
+                }
+            } catch (e: Throwable) { LogStore.err("Browser:probeH", e) }
+            hCache[k] = h
+            if (h > 0) runOnUiThread { if (!dead && dlg?.isShowing == true) renderList() }
+        }.apply { isDaemon = true }.start()
     }
     private val selQ = HashMap<String, Int>()   // (v231) الجودة المختارة لكل اصطياد (مفتاح المجموعة ← رقم الجودة)
 
     /** (v231) اصطياد واحد لكل فيديو: العنوان + اختيار الجودة (لو أكتر من جودة) + زرار أزرق كبير «🌐 شاهد وترجم» وتحته ▶ فرجة · ⬇ تحميل (بحجمه) · 📋 نسخ · 🎧 صوت */
     private fun groupCard(g: Grp): View {
         val c = ui.card()
-        c.addView(ui.text(g.title, 14f, th.text, true).apply { maxLines = 2; ellipsize = TextUtils.TruncateAt.END })
+        c.addView(ui.text(g.title, 14f, th.text, true).apply { maxLines = 2; ellipsize = TextUtils.TruncateAt.END; setOnLongClickListener { g.qs.getOrNull((selQ[g.key] ?: 0).coerceIn(0, g.qs.size - 1))?.let { copyUrl(it.f.url) }; true } })
         if (repairId != null) {   // وضع إصلاح اللينك: اختيار الجودة بس
             if (g.qs.size > 1) c.addView(ui.text("🎞 ${g.qs.size} جودات", 13f, th.primary, true))
             for (q in g.qs) c.addView(ui.button("🔧 استخدم " + q.label, true) { dlg?.dismiss(); applyRepair(q) })
@@ -1704,15 +1789,15 @@ class BrowserActivity : Activity() {
         } else {
             c.addView(ui.text(q.label, 13f, th.primary, true))
         }
-        c.addView(ui.button("🌐 شاهد وترجم", true) { dlg?.dismiss(); openPlayer(q.f, false, q.audio) })
-        val row = LinearLayout(this).apply { layoutDirection = View.LAYOUT_DIRECTION_RTL; gravity = Gravity.CENTER_VERTICAL }
-        fun lp(w: Float) = LinearLayout.LayoutParams(0, -2, w).apply { marginEnd = ui.dp(4) }
-        row.addView(ui.button("▶ فرجة بس") { dlg?.dismiss(); openPlayer(q.f, true, q.audio) }.apply { layoutParams = lp(1.2f) })
+        // (v533) 4 أزرار بس: ترجمة (لونها الأساسي) + مشاهدة فقط · مشاهدة ع التلفزيون · تحميل — الثلاثة بنفس الأزرق. ضغطة طويلة على الاسم = نسخ اللينك · على «تحميل» = صوت بس (M4A)
+        c.addView(ui.button("🌐 ترجمة", true) { dlg?.dismiss(); openPlayer(q.f, false, q.audio) })
+        fun blue(t: String, f: () -> Unit) = ui.button(t) { f() }.apply { setTextColor(Color.WHITE); background = ui.box(BLUE, BLUE, 12) }
+        c.addView(blue("▶ مشاهدة فقط") { dlg?.dismiss(); openPlayer(q.f, true, q.audio) })
+        c.addView(blue("📺 مشاهدة ع التلفزيون") { dlg?.dismiss(); sendToTv(g, q) })
         val hasSz = q.label.contains("MB") || q.label.contains("GB")
-        val dlB = ui.button("⬇ تحميل" + (if (hasSz) "" else szTxt(q))) { dlg?.dismiss(); dlVideo(g, q) }.apply { layoutParams = lp(1.5f) }
-        row.addView(dlB)
-        row.addView(ui.button("📋") { copyUrl(q.f.url) }.apply { layoutParams = lp(0.6f) })
-        c.addView(row)
+        val dlB = blue("⬇ تحميل" + (if (hasSz) "" else szTxt(q))) { dlg?.dismiss(); dlVideo(g, q) }
+        dlB.setOnLongClickListener { dlg?.dismiss(); dlAudio(g); true }
+        c.addView(dlB)
         if (!hasSz && !isHls(q.f) && szCache[q.f.url] == null) {   // الحجم مش معروف: نسأل السيرفر ونحدّث الزرار
             szCache[q.f.url] = -2L
             val hs2 = dlHeaders(q.f); val u1 = q.f.url; val u2 = q.audio
@@ -1723,8 +1808,48 @@ class BrowserActivity : Activity() {
                 runOnUiThread { if (!dead && n > 0) dlB.text = "⬇ تحميل · " + Sniff.fmtSize(n) }
             }.apply { isDaemon = true }.start()
         }
-        c.addView(ui.button("🎧 تحميل كصوت بس (M4A)") { dlg?.dismiss(); dlAudio(g) })
         return c
+    }
+    private val BLUE = 0xFF1E6FE0.toInt()
+    /** (v533) علامة الجودة اللي بتتضاف لاسم التحميل/التشغيل عشان نفس الفيديو بجودات مختلفة مايبقوش بنفس الاسم */
+    private fun qTag(q: Qv): String {
+        val h = if (q.h > 0) q.h else (hCache[Sniff.key(q.f.url)] ?: 0)
+        return if (h > 0) " [${h}p]" else if (isHls(q.f)) " [HLS]" else ""
+    }
+    /** (v533) «مشاهدة ع التلفزيون»: يوتيوب ← لينك الفيديو · غيره ← اللينك المباشر ومعاه Referer/UA/Cookie الصفحة */
+    private fun sendToTv(g: Grp, q: Qv) {
+        try { RemoteClient.init(this) } catch (_: Throwable) {}
+        if (RemoteClient.lastTv() == null) { Notice.show(this, "📺 مفيش تلفزيون مقترن — اقترن من «الريموت» الأول", 3200L); return }
+        val f = q.f
+        val isYt = f.kind.startsWith("YT") || f.url.contains("googlevideo") || f.url.contains("videoplayback")
+        val yid = ytIds[Sniff.key(f.url)] ?: YtExtract.videoId(f.ref) ?: (if (isYt) YtExtract.videoId(wvOrNull?.url ?: "") else null)
+        val url = if (yid != null) "https://www.youtube.com/watch?v=$yid" else f.url
+        val title = g.title + qTag(q)
+        val ref = if (yid != null) "" else f.ref
+        val ua = if (yid != null) "" else f.ua.ifEmpty { uaWeb }
+        val ck = if (yid != null) "" else try { CookieManager.getInstance().getCookie(f.url) ?: "" } catch (_: Throwable) { "" }
+        Notice.show(this, "📺 بوصّل بالتلفزيون…", 2500L)
+        Thread {
+            var msg: String
+            try {
+                msg = if (!RemoteClient.ensureConnected(this, 8000L)) "⚠ ما قدرتش أوصل للتلفزيون — اتأكد إنه شغّال وعلى نفس الواي فاي"
+                else (RemoteClient.openLink(url, title, "video", ref, ua, ck)?.let { "⚠ $it" } ?: "✅ اتبعت للتلفزيون")
+            } catch (e: Throwable) { LogStore.err("Browser:sendToTv", e); msg = "⚠ حصلت مشكلة" }
+            runOnUiThread {
+                if (dead) return@runOnUiThread
+                Notice.show(this, msg, 2600L)
+                if (msg.startsWith("✅")) try { startActivity(Intent(this, RemoteActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP).putExtra("open_player", true).putExtra("wait", true)) } catch (_: Throwable) {}
+            }
+        }.apply { isDaemon = true }.start()
+    }
+
+    /** (v533) الصفحة الحالية تتبعت للتلفزيون وتتفتح هناك إجباري (حتى لو فيه فيديو شغّال: التلفزيون بيقفله ويفتح الجديد) */
+    private fun sendPageToTv() {
+        val u = wvOrNull?.url ?: ""
+        if (!u.startsWith("http", true)) { Notice.show(this, "مفيش صفحة تتبعت للتلفزيون", 2200L); return }
+        try { RemoteClient.init(this) } catch (_: Throwable) {}
+        if (RemoteClient.lastTv() == null) { Notice.show(this, "📺 مفيش تلفزيون مقترن — اقترن من «الريموت» الأول", 3200L); return }
+        Links.sendToTv(this, u)
     }
 
     private fun leaveCustom() {
@@ -1916,12 +2041,13 @@ class BrowserActivity : Activity() {
     }
     // (v149) أول ما تخرج من المتصفح: كل الفيديو/الصوت في كل التبويبات يقف (من غير ما يكمّل في الخلفية)، وكل التبويبات تتجمّد
     override fun onPause() { persistTabs(); WebMute.pauseAll(); for (t in tabs) try { t.wv?.onPause() } catch (_: Throwable) {}; super.onPause() }
-    override fun onResume() { super.onResume(); try { wvOrNull?.onResume() } catch (_: Throwable) {} }
+    override fun onResume() { super.onResume(); curRef = java.lang.ref.WeakReference(this); try { wvOrNull?.onResume() } catch (_: Throwable) {} }
     override fun onDestroy() {
         try { dockUi?.detach() } catch (_: Throwable) {}
         try { stripUi?.detach() } catch (_: Throwable) {}
 
         dead = true; h.removeCallbacksAndMessages(null)
+        if (curRef?.get() === this) curRef = null
         try { tasksFabUi?.detach() } catch (_: Throwable) {}
         try { dlg?.dismiss() } catch (e: Throwable) { LogStore.err("Browser:d1", e) }
         try { tabsDlg?.dismiss() } catch (e: Throwable) { LogStore.err("Browser:d2", e) }

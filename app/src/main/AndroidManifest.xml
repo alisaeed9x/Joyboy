@@ -97,7 +97,7 @@
         <service android:name=".MusicService" android:exported="false" android:foregroundServiceType="mediaPlayback"/>
         <service android:name=".TaskService" android:exported="false" android:foregroundServiceType="dataSync" android:stopWithTask="false"/>   <!-- (v420) مهام الترميز في الخلفية -->
         <!-- (v518) ريموت الموبايل: شاشة التحكم (أيقونة تانية على الموبايل) · هدف مشاركة «ابعت للتلفزيون» · الخدمة الأمامية -->
-        <activity android:name=".RemoteActivity" android:exported="true" android:label="ريموت التلفزيون" android:launchMode="singleTop"
+        <activity android:name=".RemoteActivity" android:exported="true" android:label="ريموت التلفزيون" android:icon="@mipmap/ic_remote" android:roundIcon="@mipmap/ic_remote" android:launchMode="singleTop"
             android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboardHidden|density">
             <intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/></intent-filter>
         </activity>

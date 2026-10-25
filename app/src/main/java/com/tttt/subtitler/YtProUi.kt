@@ -902,6 +902,18 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
         val on = !YtNotify.enabled(); YtNotify.setEnabled(act, on); paintNotif()
         Notice.show(act, (if (on) "🔔 هتجيلك إشعارات بالفيديوهات الجديدة (فحص كل ساعة تقريبًا)" else "🔕 الإشعارات اتقفلت").toString(), 2600L)
     }
+    /** (v532) لينك يوتيوب مش فيديو (من الريموت/مشاركة): قناة ← صفحة القناة · قايمة تشغيل ← القايمة · غير كده بيفضل في يوتيوب نفسه */
+    fun openUrl(u: String): Boolean {
+        return try {
+            val low = u.lowercase()
+            when {
+                Regex("youtube\\.com/(@|channel/|c/|user/)").containsMatchIn(low) -> { openChannel(u, "", ""); true }
+                low.contains("list=") -> { load("📃 قايمة تشغيل", -1, null, null, null, "", true, false) { YtNp.playlist(u) }; true }
+                else -> false
+            }
+        } catch (e: Throwable) { LogStore.err("YtProUi:openUrl", e); false }
+    }
+
     /** فتح تفاصيل فيديو من معرّفه (من إشعار مثلًا) */
     fun openVideo(id: String) {
         onPlay(id, "", false)   // (v337) من الإشعار: تشغيل مباشر من غير صفحة التفاصيل
