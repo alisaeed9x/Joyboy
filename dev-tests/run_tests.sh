@@ -26,7 +26,7 @@ echo "OK (skipped)"
 
 echo "== 2) اختبارات JVM (المنطق بدون Android: Core/Store/AudioCore/Engine)"
 # (v177) القايمة القديمة كانت متأخرة عن الكود. دلوقتي: ملفات المنطق + stubs لـ VisualMode (محتاج ML Kit)
-NOUI="$(for n in Core Store AudioCore Engine Theme SubStyle PlayerLogic Recents Models ExtrasFlags Blur VideoLib Stats KeyVault Speech Coverage AudioEnc LiveLogic ModePrompts; do echo -n "$SRC/$n.kt "; done) $ROOT/dev-tests/logic-stubs/LogicStubs.kt"
+NOUI="$(for n in Core Store AudioCore Engine BrainCore LinkCore LibraryCore Theme SubStyle PlayerLogic Recents Models ExtrasFlags Blur VideoLib Stats KeyVault Speech Coverage AudioEnc LiveLogic ModePrompts; do echo -n "$SRC/$n.kt "; done) $ROOT/dev-tests/logic-stubs/LogicStubs.kt"
 "$KC" -jvm-target 17 -cp "$AJ:$TOOLS/jsonout" -d "$OUT/app" $NOUI 2>&1 | grep -E "error:|^ERROR" && exit 1 || true
 CP="$OUT/app:$TOOLS/jsonout:$STD:$AJ"   # jsonout قبل android.jar عشان org.json الحقيقي يتقدم على الـ stubs
 JOPT="-Dfile.encoding=UTF-8 -Dstdout.encoding=UTF-8"
@@ -38,6 +38,12 @@ export SUBTITLER_ASSETS="$ROOT/app/src/main/assets"
 java $JOPT -cp "$OUT/t1:$CP" EngineTestKt | grep -E "^(PASS|FAIL)|الاختبارات"
 java $JOPT -cp "$OUT/t2:$CP" AudioHlsTestKt | grep -E "^(PASS|FAIL)|الاختبارات"
 java $JOPT -cp "$OUT/t3:$CP" PromptTestKt
+mkdir -p "$OUT/tB"
+"$KC" -jvm-target 17 -cp "$CP" -d "$OUT/tB" "$ROOT/dev-tests/BrainCoreTest.kt" 2>&1 | grep error && exit 1 || true
+java $JOPT -cp "$OUT/tB:$CP" BrainCoreTestKt | grep -E "^(PASS|FAIL)|الاختبارات|فشل"
+mkdir -p "$OUT/tL"
+"$KC" -jvm-target 17 -cp "$CP" -d "$OUT/tL" "$ROOT/dev-tests/RemoteLibTest.kt" 2>&1 | grep error && exit 1 || true
+java $JOPT -cp "$OUT/tL:$CP" RemoteLibTestKt | grep -E "^(PASS|FAIL)|الاختبارات|فشل"
 mkdir -p "$OUT/t4"
 "$KC" -jvm-target 17 -cp "$CP" -d "$OUT/t4" "$ROOT/dev-tests/SubStyleTest.kt" 2>&1 | grep error && exit 1 || true
 java $JOPT -cp "$OUT/t4:$CP" SubStyleTestKt | grep -E "^(PASS|FAIL)|الاختبارات|فشل"

@@ -99,7 +99,9 @@ object TaskCenter {
     private var appCtx: Context? = null
     private var seq = 0
 
-    fun changed() { try { appCtx?.let { TaskStore.save(it); TaskService.sync(it) } } catch (_: Throwable) {}; main.post { try { listener?.invoke() } catch (_: Throwable) {}; for (l in extra) { try { l() } catch (_: Throwable) {} } }; WidgetHub.poke(appCtx) }
+    fun changed() { try { appCtx?.let { TaskStore.save(it); TaskService.sync(it) } } catch (_: Throwable) {}; main.post { try { listener?.invoke() } catch (_: Throwable) {}; for (l in extra) { try { l() } catch (_: Throwable) {} } }; WidgetHub.poke(appCtx); try { if (BrainBus.active()) BrainBus.setTasks(brainJson()) } catch (_: Throwable) {} }
+    /** (v544 م6) لقطة المهام للريموت (بتتبعت في /sync) */
+    fun brainJson(): String = BrainTasksJson.encode(items.map { TaskRow(it.id, it.kind, it.title, it.state, it.pct, it.msg, it.paused, it.outSize) })
     fun active(): Int = items.count { it.state == 0 || it.state == 1 }
     /** (v324) أي حاجة في صفحة المهام (شغّالة أو خالصة) — الزرار العايم بيفضل ظاهر طول ما فيه حاجة تتفتح */
     fun total(): Int = items.size

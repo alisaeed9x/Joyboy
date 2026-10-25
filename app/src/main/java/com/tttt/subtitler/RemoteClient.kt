@@ -355,6 +355,28 @@ object RemoteClient {
     // ===== الإرسال للتلفزيون (كلها blocking — نادّيها من thread خلفي) =====
     internal fun postJson(path: String, body: JSONObject): Pair<Int, String> = post(path, body)
 
+    /** (v543 م3) GET بيرجّع bytes (الصور المصغّرة) — blocking، نادّيها من thread خلفي بس */
+    internal fun getBytes(path: String, ms: Int = 8000): Pair<Int, ByteArray> {
+        val tv = current ?: return Pair(-1, ByteArray(0))
+        var c: HttpURLConnection? = null
+        return try {
+            c = URL("http://" + tv.ip + ":" + tv.port + path).openConnection() as HttpURLConnection
+            c.connectTimeout = ms; c.readTimeout = ms; c.useCaches = false
+            if (tv.token.isNotEmpty()) c.setRequestProperty("X-Token", tv.token)
+            c.setRequestProperty("X-Ver", LinkVer.code(app()).toString())
+            c.setRequestProperty("X-Name", URLEncoder.encode(phoneName(), "UTF-8"))
+            val code = c.responseCode
+            val ins = if (code in 200..299) c.inputStream else c.errorStream
+            Pair(code, if (ins != null) ins.use { it.readBytes() } else ByteArray(0))
+        } catch (e: Exception) { Pair(-1, ByteArray(0)) } finally { try { c?.disconnect() } catch (_: Exception) {} }
+    }
+
+    /** (v543 م3) GET نصّي (ردود JSON بتاعة /lib/*) */
+    internal fun getText(path: String, ms: Int = 8000): Pair<Int, String> {
+        val (c, b) = getBytes(path, ms)
+        return Pair(c, String(b, Charsets.UTF_8))
+    }
+
     private fun post(path: String, body: JSONObject): Pair<Int, String> {
         val tv = current ?: return Pair(-1, "مش متصل بتلفزيون")
         return call(tv.ip, tv.port, path, body.toString(), tv.token, 4000)
@@ -423,8 +445,10 @@ object RemoteClient {
     }
 
     /** @return null لو نجح (والـvisible بتقول لو شاشة اللانشر ظاهرة)، أو رسالة الخطأ */
-    fun openLink(url: String, title: String = "", how: String = "", ref: String = "", ua: String = "", cookie: String = ""): String? {
-        val (c, t) = post("/open", JSONObject().put("url", url).put("title", title).put("how", how).put("ref", ref).put("ua", ua).put("cookie", cookie))   // (v533) ref/ua/cookie للينكات المصطادة من المتصفح
+    fun openLink(url: String, title: String = "", how: String = "", ref: String = "", ua: String = "", cookie: String = "", startMs: Long = 0L): String? {
+        val body = JSONObject().put("url", url).put("title", title).put("how", how).put("ref", ref).put("ua", ua).put("cookie", cookie)   // (v533) ref/ua/cookie للينكات المصطادة من المتصفح
+        if (startMs > 0L) body.put("startms", startMs)   // (v543) كمّل من نفس المكان
+        val (c, t) = post("/open", body)
         if (c == 200) return null
         if (c == 403) return "اللينك مش مقبول"
         return if (c < 0) "ما قدرتش أوصل للتلفزيون" else "فشل ($c)"

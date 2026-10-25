@@ -1895,6 +1895,12 @@ class BrowserActivity : Activity() {
         // (v117) فيديو يوتيوب: بنعرف معرّفه (من لينك الصفحة) عشان يتسجل في بوابة يوتيوب ويتحفظ تقدمه وترجمته على معرّفه
         val isYtStream = f.kind.startsWith("YT") || f.url.contains("googlevideo") || f.url.contains("videoplayback")
         val yid = ytIds[Sniff.key(f.url)] ?: YtExtract.videoId(f.ref) ?: (if (isYtStream) YtExtract.videoId(wvOrNull?.url ?: "") else null) ?: ""
+        // (v543 م4) وضع التلفزيون: يوتيوب ← ytid بس (التلفزيون يستخرج بنفسه)، وغير كده ← اللينك المصطاد بالهيدرز
+        val tvCookie = try { CookieManager.getInstance().getCookie(f.url) ?: "" } catch (_: Throwable) { "" }
+        if (PlayTarget.open(this, MediaSpec(
+                url = if (yid.isEmpty()) f.url else null, ytid = yid.ifEmpty { null },
+                headers = mapOf("ref" to f.ref, "ua" to f.ua.ifEmpty { uaWeb }, "cookie" to tvCookie),
+                title = titleFor(f), how = if (yid.isEmpty() || noSub) Links.VIDEO else Links.VIDEO_TR))) return
         startActivity(Intent(this, PlayerActivity::class.java).apply {
             if (yid.isNotEmpty()) {
                 putExtra("ytid", yid)

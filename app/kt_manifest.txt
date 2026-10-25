@@ -16,7 +16,10 @@ com/tttt/subtitler/CrashLog.kt
 com/tttt/subtitler/DeviceUi.kt
 com/tttt/subtitler/Downloader.kt
 com/tttt/subtitler/Dub.kt
+com/tttt/subtitler/BrainCore.kt
+com/tttt/subtitler/BrainRpc.kt
 com/tttt/subtitler/Engine.kt
+com/tttt/subtitler/EngineBackend.kt
 com/tttt/subtitler/EqView.kt
 com/tttt/subtitler/ExtLlm.kt
 com/tttt/subtitler/ExtTranslate.kt
@@ -164,3 +167,12 @@ com/tttt/subtitler/TvShell.kt
 com/tttt/subtitler/TvInput.kt
 com/tttt/subtitler/SubFileTr.kt
 com/tttt/subtitler/TvSetup.kt
+com/tttt/subtitler/LibraryCore.kt
+com/tttt/subtitler/PlayTarget.kt
+com/tttt/subtitler/RemoteLibrary.kt
+com/tttt/subtitler/TvLibraryUi.kt
+com/tttt/subtitler/LinkCore.kt
+com/tttt/subtitler/LinkSession.kt
+com/tttt/subtitler/RemoteEngine.kt
+com/tttt/subtitler/TvTasksUi.kt
+com/tttt/subtitler/PlaybackBackend.kt

@@ -1278,6 +1278,13 @@ class MainActivity : Activity() {
         val r = i.getStringExtra(Links.EX_RET) ?: ""
         val lref = i.getStringExtra("link_ref") ?: ""; val lua = i.getStringExtra("link_ua") ?: ""; val lck = i.getStringExtra("link_cookie") ?: ""
         i.removeExtra(Links.EX_URL); i.removeExtra("link_ref"); i.removeExtra("link_ua"); i.removeExtra("link_cookie")
+        val lstart = i.getLongExtra("link_startms", 0L); i.removeExtra("link_startms")   // (v543 م4) يوتيوب من الموبايل ومعاه مكان البداية
+        val lyt = Links.ytId(u)
+        if (lstart > 0L && lyt != null && (how == Links.VIDEO || how == Links.VIDEO_TR || how == Links.AUTO)) {
+            val tr = how == Links.VIDEO_TR
+            playYt(lyt, t, tr, tr, lstart, null, r)
+            return
+        }
         if ((lref.isNotEmpty() || lua.isNotEmpty() || lck.isNotEmpty()) && Links.ytId(u) == null && (how == Links.VIDEO || how == Links.AUTO)) {
             // (v533) فيديو مصطاد من المتصفح (لينك مباشر محتاج Referer/Cookie): نشغّله فرجة بنفس الهيدرز
             try { musicUi?.pause() } catch (_: Throwable) {}
@@ -1502,6 +1509,8 @@ class MainActivity : Activity() {
     /** فيديو من سجل «المصطادة»: يفتح بنفس الرابط والهيدرز ويكمّل من آخر مكان وقفت عنده. روابط يوتيوب بتنتهي — فبنفتح صفحة الفيديو */
     fun playWeb(w: WebVid) {
         if (w.kind == "YT") { if (w.id.startsWith("yt:")) playYt(w.id.removePrefix("yt:"), w.title, true, false) else if (w.ref.isNotEmpty()) openLink(w.ref) else Notice.show(this, ("رابط يوتيوب انتهت صلاحيته — افتحه من المتصفح تاني").toString(), 3600L); return }
+        // (v543 م4) وضع التلفزيون: الفيديو المصطاد بيتبعت للتلفزيون بنفس الهيدرز (Referer/UA/Cookie)
+        if (PlayTarget.open(this, MediaSpec(url = w.url, headers = mapOf("ref" to w.ref, "ua" to w.ua, "cookie" to w.cookie), title = w.title, how = Links.VIDEO))) return
         ensureKeys {
             startActivity(Intent(this, PlayerActivity::class.java).apply {
                 putExtra("url", w.url); putExtra("ref", w.ref); putExtra("ua", w.ua); putExtra("cookie", w.cookie)
@@ -1511,6 +1520,8 @@ class MainActivity : Activity() {
     }
     /** (v117) دخول مباشر لفيديو يوتيوب من معرّفه: بيجيب أحسن لينك فيه صوت وصورة ويفتح المشغّل (لو فشل بيفتح صفحته في المتصفح) */
     fun playYt(id: String, title: String, translate: Boolean = true, auto: Boolean = translate, startMs: Long = 0L, handoff: YtPick? = null, retOv: String = "") {
+        // (v543 م4) وضع التلفزيون شغّال: يوتيوب بيتبعت للتلفزيون على طول (ytid + مكان البداية) وبعدين شاشة الريموت — من غير سؤال
+        if (handoff == null && id.length == 11 && PlayTarget.open(this, MediaSpec(ytid = id, title = title, startMs = startMs, how = if (translate) Links.VIDEO_TR else Links.VIDEO))) return
         if (!translate && handoff == null && startMs <= 0L && askTv(id, title, retOv)) return   // (v532) «تشغّله على التلفزيون؟»
         playYtHere(id, title, translate, auto, startMs, handoff, retOv)
     }

@@ -1,3 +1,4 @@
+v543: م3 مكتبة التلفزيون على الموبايل (📚 فولدرات ← فيديوهات بصور مصغّرة ← تشغيل على التلفزيون بـtv://) + م4 «وضع التلفزيون» (يوتيوب/فيديو مصطاد من المتصفح بيتبعتوا للتلفزيون بالهيدرز ومكان البداية؛ التلفزيون مش متصل = إعادة محاولة بس). م2 وم0-ب لسه مش موجودين، فبعد الإرسال بتتفتح شاشة الريموت. ماجرّبتش compile ولا جهاز ولا شغّلت الاختبارات (مفيش compiler/نت في الجلسة). التفاصيل: CHANGES_v543.md.
 v532: ريموت الموبايل — «تشغّله على التلفزيون؟» من يوتيوب الموبايل ومن زرار ▶ يوتيوب في الريموت ← شاشة تحكم المشغّل تفتح لوحدها · 🎞 جودة و🔊 لغة صوت بتتختار على الموبايل وتتنفّذ على التلفزيون · لينكات يوتيوب (قناة/قايمة) بتفتح في يوتيوب مش المتصفح · إصلاح لينك والتركيز على مربع البحث (يقفل الكيبورد ويفتح من الأكتيفيتي الظاهرة). ماجرّبتش compile ولا جهاز. التفاصيل: CHANGES_v532.md.
 v530: تلفزيون — صفحة «الفيديوهات» بقت جوه اللانشر بنفس شكل الرئيسية (فولدرات مترتبة ← جوّاها الفيديوهات؛ عرض مربعات كبيرة/صغيرة/قائمة؛ ترتيب الاسم/الأحدث/الأقدم/الحجم؛ الأحدث فوق جوه الفولدر) بدل شاشة الموبايل المكبّرة · تاب «يوتيوب» رجع ظاهر + صف يوتيوب فوق في الرئيسية (أحدث اشتراكاتك) + البحث العلوي بيطلّع نتايج يوتيوب أوتوماتيك · القايمة العلوية رجعت لشكل v525 (الريل الجانبي على الشاشات الضيقة بس). ماجرّبتش compile ولا جهاز. التفاصيل: CHANGES_v530.md.
 v528: تلفزيون م2 — قايمة جانبية رأسية على كل الشاشات + تابات مخصّصة (➕ تطبيق/فولدر فيديو بدوسة واحدة) + «إنت فين» في صفحتي القناة والمشاهدة. ماجرّبتش compile ولا جهاز. التفاصيل: CHANGES_v528.md.
@@ -1047,3 +1048,14 @@ v473: إصلاح بناء v472 — TaskRing/YtLocale/YtSnap/YtThumbBtns كانو
 v474: APK واحد universal debug لكل بيلد — splits.abi اتقفل وbuild.yml اتبسّط (assembleDebug بس). رفع versionCode/versionName لـ474/4.74. من غير compile.
 
 v526: رفع versionCode/versionName لـ526/5.26 + إضافة تقارير المراجعة الثابتة AUDIT_*.md (من غير أي تغيير في الكود). من غير compile.
+
+v541: م0-أ — EngineBackend + LocalEngine (EngineBackend.kt جديد، Player.kt بيكلّم الواجهة، realEngine للحلقة/Live). من غير تغيير سلوك. compile-check لـEngine+EngineBackend بـkotlinc: صفر أخطاء؛ Player.kt وAPK ماتجرّبوش. versionCode/versionName 541/5.41.
+
+v542: م1 — BrainRpc (التلفزيون=المخ، جانب التلفزيون): /rpc /sync /frame /lib/* /cfg + BrainCore (SubCodec/SubDelta/BrainBus) + brainTick في المشغّل. BrainCoreTest 21 فحص نجحوا على JVM؛ BrainRpc/BrainCore compile بـkotlinc مقابل stubs؛ Player.kt/TvLink.kt/APK ماتجرّبوش. versionCode/versionName 542/5.42.
+
+
+v544: م5+م6 جانب التلفزيون بس — لقطة المحرك (`eng`: batches/problems/coverage…) والمهام (`tasks`) في /sync + BrainEngineJson/BrainTasksJson. شاشات الموبايل لسه (محتاجة م2). من غير compile ولا تشغيل اختبارات. versionCode/versionName 544/5.44.
+
+v545: م5+م6 — جانب التلفزيون: أوامر المهام (task.*) وقيد المتحكّم الأول (control.take) ولقطة محرك موسّعة؛ جانب الموبايل: LinkSession + RemoteEngine + LinkMirror + «مهام التلفزيون» + إشعار يعكس التلفزيون. م0-ب/م2-ج لسه. من غير compile ولا تشغيل اختبارات. versionCode/versionName 545/5.45.
+
+v546: م0-ب (ب1+ب2 مع بعض) + م2-ج — PlaybackBackend.kt جديد (LocalPlayback فوق ExoPlayer · RemotePlayback mirror للتلفزيون)، Player.kt بيكلّم PlaybackBackend، وضع المتحكم في PlayerActivity (remote=true: لقطة /frame على نفس SurfaceView، المحرك RemoteEngine، الصوت مكتوم)، PlayTarget بيفتح PlayerActivity بدل RemoteActivity. من غير compile ولا تشغيل اختبارات (مفيش kotlinc هنا). versionCode/versionName 546/5.46.

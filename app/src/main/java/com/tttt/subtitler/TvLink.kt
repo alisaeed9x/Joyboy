@@ -234,6 +234,13 @@ object TvLink {
             "/type" -> typeText(r)
             "/keys" -> keys(r, rm)
             "/offer" -> offer(r, rm)
+            "/rpc" -> BrainRpc.exec(r)
+            "/sync" -> BrainRpc.sync(r)
+            "/frame" -> BrainRpc.frame(r)
+            "/lib/folders" -> BrainRpc.libFolders(app, r)
+            "/lib/videos" -> BrainRpc.libVideos(app, r)
+            "/lib/thumb" -> BrainRpc.libThumb(app, r)
+            "/cfg" -> BrainRpc.cfg(r)
             "/bye" -> { rm.announced = false; rm.lastSeen = 0L; notice("📱 الريموت «" + rm.name + "» فصل"); ok() }
             else -> err(404, "nf")
         }
@@ -413,9 +420,15 @@ object TvLink {
     }
 
     // ===== فتح لينك على التلفزيون =====
+    /** (v542) فتح رابط من BrainRpc ("load") — نفس مسار /open */
+    fun openJson(j: JSONObject): Boolean =
+        open(HttpReq("POST", "/open", emptyMap(), emptyMap(), j.toString().toByteArray(Charsets.UTF_8), "")).code == 200
+
     private fun open(r: HttpReq): HttpRes {
         val j = try { JSONObject(r.bodyText()) } catch (_: Exception) { return err(403, "bad") }
         val u = j.optString("url").trim()
+        val startMs = j.optLong("startms", 0L)   // (v543) كمّل من نفس المكان
+        if (u.startsWith("tv://", true)) return openLocal(u.substring(5).trim(), startMs)   // (v543 م3) فيديو من مكتبة التلفزيون
         if (!(u.startsWith("http://", true) || u.startsWith("https://", true))) return err(403, "badurl")
         val title = j.optString("title")
         val visible = top?.get() != null
@@ -437,10 +450,29 @@ object TvLink {
                     .addFlags((if (a == null) Intent.FLAG_ACTIVITY_NEW_TASK else 0) or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
                     .putExtra(Links.EX_URL, u).putExtra(Links.EX_HOW, how).putExtra(Links.EX_TITLE, title)
                 if (lref.isNotEmpty() || lua.isNotEmpty() || lck.isNotEmpty()) ni.putExtra("link_ref", lref).putExtra("link_ua", lua).putExtra("link_cookie", lck)
+                if (startMs > 0L) ni.putExtra("link_startms", startMs)
                 (a ?: app).startActivity(ni)
             } catch (e: Throwable) { LogStore.err("TvLink:open", e) }
         }
         return ok(JSONObject().put("visible", visible))
+    }
+
+    /** (v543 م3) tv://<id> ← فيديو من مكتبة التلفزيون نفسه: يفتح المشغّل على ملفه (الترجمة بإيد الشخص، مش أوتوماتيك) */
+    private fun openLocal(key: String, startMs: Long): HttpRes {
+        val item = BrainRpc.findVideo(app, key) ?: return err(404, "nf")
+        val visible = top?.get() != null
+        h.post {
+            try {
+                val a = top?.get()
+                val ni = Intent(a ?: app, PlayerActivity::class.java)
+                    .addFlags((if (a == null) Intent.FLAG_ACTIVITY_NEW_TASK else 0) or Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    .setData(android.net.Uri.parse(item.uri))
+                    .putExtra("landscape", item.landscape).putExtra("fresh", false).putExtra("nosub", false).putExtra("autotr", false).putExtra("ask", false)
+                if (startMs > 0L) ni.putExtra("startms", startMs)
+                (a ?: app).startActivity(ni)
+            } catch (e: Throwable) { LogStore.err("TvLink:openLocal", e) }
+        }
+        return ok(JSONObject().put("visible", visible).put("title", item.title))
     }
 
     private fun typeText(r: HttpReq): HttpRes {

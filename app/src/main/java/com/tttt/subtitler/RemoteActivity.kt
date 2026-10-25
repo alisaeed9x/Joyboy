@@ -105,6 +105,7 @@ class RemoteActivity : Activity() {
     override fun onCreate(b: Bundle?) {
         super.onCreate(b)
         Cfg.init(this); RemoteClient.init(this)
+        try { LinkSession.start(this) } catch (_: Throwable) {}
         th = Themes.byId(Cfg.str("theme", "mx")); ui = Ui(this, th)
         window.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(th.bg))
         pendingLink = intent?.getStringExtra("pending_link")
@@ -126,6 +127,7 @@ class RemoteActivity : Activity() {
         ctrl = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; setPadding(0, ui.dp(10), 0, 0) }
         ctrl.addView(panel(vrow(cmdBtn("⏻", "power"), sleepBtn(), cmdBtn("🔇", "mute"))))
         ctrl.addView(panel(vrow(bigBtn("🎞 مشغّل الفيديو") { openPage("video") }, ytPhoneBtn(), wordCmd("🌐 متصفح", "open_browser")), vrow(wordCmd("📺 يوتيوب التلفزيون", "open_yt"), wordCmd("💾 فلاشة", "open_sd"), wordCmd("📱 داخلية", "open_int"))), LinearLayout.LayoutParams(-1, -2).apply { topMargin = ui.dp(10) })   // (v533) مشغّل الفيديو · يوتيوب · متصفح فوق
+        ctrl.addView(panel(vrow(bigBtn("📚 مكتبة التلفزيون") { TvLibraryUi.show(this) }, bigBtn("🧰 مهام التلفزيون") { TvTasksUi.show(this) }, tvModeBtn())), LinearLayout.LayoutParams(-1, -2).apply { topMargin = ui.dp(10) })   // (v543 م3/م4) فيديوهات التلفزيون + وضع التلفزيون
         col.addView(ctrl)
 
         remote = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL }
@@ -737,6 +739,15 @@ class RemoteActivity : Activity() {
     }.skin().apply { textSize = 20f }
 
     /** (v532) ▶ يوتيوب: صفحة يوتيوب على الموبايل (تصفّح واختار)، وأي فيديو تدوس عليه يسألك «تشغّله على التلفزيون؟». لو خرجت منها الفيديو على التلفزيون بيكمّل */
+    /** (v543 م4) «وضع التلفزيون»: شغّال = أي يوتيوب/فيديو مصطاد من المتصفح بيتبعت للتلفزيون بدل ما يشتغل على الموبايل */
+    private fun tvModeBtn(): View {
+        val b = ui.button("") { }
+        fun paint() { b.text = if (PlayTarget.enabled()) "📺 وضع التلفزيون: شغّال" else "📱 وضع التلفزيون: مقفول" }
+        b.setOnClickListener { Cfg.put(PlayTarget.KEY, if (PlayTarget.enabled()) "0" else "1"); paint() }
+        paint()
+        return b.skin().apply { textSize = 14f }
+    }
+
     private fun ytPhoneBtn(): View = ui.button("▶ يوتيوب") {
         try { startActivity(Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP).putExtra("tab", "youtube").putExtra("tv_target", true)) }
         catch (e: Throwable) { LogStore.err("Remote:yt", e) }
