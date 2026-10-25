@@ -353,6 +353,8 @@ object RemoteClient {
     }
 
     // ===== الإرسال للتلفزيون (كلها blocking — نادّيها من thread خلفي) =====
+    internal fun postJson(path: String, body: JSONObject): Pair<Int, String> = post(path, body)
+
     private fun post(path: String, body: JSONObject): Pair<Int, String> {
         val tv = current ?: return Pair(-1, "مش متصل بتلفزيون")
         return call(tv.ip, tv.port, path, body.toString(), tv.token, 4000)
@@ -498,6 +500,7 @@ object RemoteClient {
 
     /** @return "ok" لو التلفزيون استلم العرض، أو رسالة */
     fun offerUpdate(auto: Boolean, force: Boolean = false): String {
+        ApkServe.custom = null
         val tv = current ?: return "مش متصل بتلفزيون"
         val ai = app().applicationInfo
         val f = File(ai.sourceDir)
@@ -520,12 +523,35 @@ object RemoteClient {
     }
 }
 
+/** (v540) يبعت أي APK (مثلاً اللانشر) للتلفزيون: الحزمة والنسخة بتتقرا من الملف نفسه، والتلفزيون بيقبله بس لو الحزمة بتاعته */
+fun RemoteClient.offerApk(f: File, force: Boolean): String {
+    val tv = current ?: return "مش متصل بتلفزيون"
+    val pi = try { app().packageManager.getPackageArchiveInfo(f.path, 0) } catch (_: Throwable) { null } ?: return "الملف ده مش APK سليم"
+    val ver = if (android.os.Build.VERSION.SDK_INT >= 28) pi.longVersionCode else @Suppress("DEPRECATION") pi.versionCode.toLong()
+    val ip = ipTowards(tv.ip)
+    if (ip.isEmpty()) return "مش عارف عنوان الموبايل على الواي فاي"
+    ApkServe.custom = f
+    if (!ApkServe.start()) return "ما قدرتش أشغّل سيرفر التحديث"
+    val url = "http://$ip:${ApkServe.PORT}/apk?t=${ApkServe.newToken()}"
+    val body = JSONObject().put("ver", ver).put("vname", pi.versionName ?: "").put("pkg", pi.packageName).put("url", url).put("auto", false).put("force", force)
+    val (c, t) = postJson("/offer", body)
+    return when {
+        c == 200 -> "ok"
+        t.contains("wrongapp") -> "الحزمة (${pi.packageName}) مش بتاعة التطبيق اللي على التلفزيون"
+        t.contains("not_newer") -> "التلفزيون عنده نفس النسخة أو أحدث (فعّل الدفع الإجباري لو عايز تعيد التثبيت)"
+        t.contains("older") -> "النسخة أقدم من اللي على التلفزيون — أندرويد مش هيسمح بالنزول"
+        c < 0 -> "ما قدرتش أوصل للتلفزيون"
+        else -> "فشل ($c)"
+    }
+}
+
 /** (v518) الموبايل بيوزّع ملف الـAPK بتاعه للتلفزيون على الواي فاي — بتوكن مؤقت، وبس لحد 20 دقيقة */
 object ApkServe {
     const val PORT = 18772
     private var http: MiniHttp? = null
     @Volatile private var token = ""
     @Volatile private var until = 0L
+    @Volatile var custom: File? = null   // (v540) لو متحدد: بيتوزّع بدل APK التطبيق نفسه
 
     fun start(): Boolean {
         if (http?.running == true) return true
@@ -544,7 +570,7 @@ object ApkServe {
 
     private fun handle(r: HttpReq): HttpRes {
         if (r.path != "/apk" || token.isEmpty() || r.query["t"] != token || System.currentTimeMillis() > until) return HttpRes.text("no", 403)
-        val f = File(RemoteClient.app().applicationInfo.sourceDir)
+        val f = custom ?: File(RemoteClient.app().applicationInfo.sourceDir)
         return if (f.isFile) HttpRes.file(f, "application/vnd.android.package-archive") else HttpRes.text("nf", 404)
     }
 

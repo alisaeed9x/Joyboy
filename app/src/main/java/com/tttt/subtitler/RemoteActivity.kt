@@ -150,6 +150,7 @@ class RemoteActivity : Activity() {
         tools.addView(ui.button("🔑 انقل مفاتيح Gemini للتلفزيون") { sendKeys() })
         tools.addView(ui.button("⬆ حدّث التلفزيون من نسخة الموبايل (" + LinkVer.name(this) + ")") { offerUpdate() })
         tools.addView(ui.button("📤 ادفع التحديث إجباري (حتى لو نفس النسخة)") { offerUpdate(true) })   // (v521)
+        tools.addView(ui.button("📦 ابعت APK للتلفزيون (اللانشر…)") { pickApk() })   // (v540)
         col.addView(tools)
 
         buildPlayerCard(); buildMusicCard()
@@ -942,6 +943,29 @@ class RemoteActivity : Activity() {
                     h.post { Notice.show(this, if (er == null) "✅ المفاتيح وصلت للتلفزيون" else "⚠ $er", 3000L) }
                 }.also { it.isDaemon = true }.start()
             }.setNegativeButton("إلغاء", null).show()
+    }
+
+    // (v540) اختيار ملف APK من الموبايل وإرساله للتلفزيون (اللانشر الجديد بيقبل نفسه بس)
+    private fun pickApk() {
+        try {
+            startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType("*/*"), 5401)
+        } catch (e: Throwable) { Notice.show(this, "⚠ ما قدرتش أفتح اختيار الملفات", 3000L) }
+    }
+
+    @Deprecated("Deprecated in Java")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode != 5401 || resultCode != RESULT_OK) return
+        val u = data?.data ?: return
+        Notice.show(this, "⏳ بجهّز الملف…", 2000L)
+        Thread {
+            val r = try {
+                val f = java.io.File(cacheDir, "push_apk.apk")
+                contentResolver.openInputStream(u)!!.use { ins -> f.outputStream().use { ins.copyTo(it) } }
+                RemoteClient.offerApk(f, true)
+            } catch (e: Throwable) { "فشل قراءة الملف" }
+            h.post { Notice.show(this, if (r == "ok") "✅ التلفزيون بيحمّل الملف — وافق على التثبيت هناك" else "⚠ $r", 4500L) }
+        }.also { it.isDaemon = true }.start()
     }
 
     private fun offerUpdate(force: Boolean = false) {
