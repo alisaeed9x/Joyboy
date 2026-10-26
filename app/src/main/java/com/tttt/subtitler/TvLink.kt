@@ -556,31 +556,25 @@ object TvLink {
         val o = pendingOffer ?: return
         if (offerShowing || a.isFinishing || a.isDestroyed) return
         if (if (o.force) o.ver < LinkVer.code(app) else o.ver <= LinkVer.code(app)) { pendingOffer = null; return }
-        if (o.accepted) { pendingOffer = null; TvUpdate.download(a, o); return }   // (v525) وافقت من النافذة العايمة: كمّل تنزيل من هنا
-        val ready = TvUpdate.readyFile(a, o)   // (v563) الملف نزل كامل قبل كده ← «موجود كامل» + تثبيت على طول من غير تنزيل تاني
-        if (ready != null) { offerShowing = true; TvUpdate.askReady(a, o, ready) { offerShowing = false; pendingOffer = null }; return }
-        offerShowing = true
-        TvUpdate.ask(a, o) { accepted ->
-            offerShowing = false
-            pendingOffer = null
-            if (!accepted && !o.force) declinedVer = o.ver
-        }
+        // (v573) من غير أي سؤال «هل تريد التحديث؟»: الملف موجود كامل ← شاشة التثبيت على طول، غير كده ← شاشة التنزيل على طول ثم التثبيت
+        pendingOffer = null
+        TvUpdate.download(a, o)   // بتبدأ بـreadyFile: لو الملف كامل بتفتح التثبيت من غير تنزيل
     }
+
+    /** (v573) الإلغاء من شاشة التنزيل (غير الإجباري) ← العرض الأوتوماتيك لنفس النسخة ما يرجعش تاني */
+    fun declineOffer(o: Offer) { declinedVer = o.ver }
 
     private fun canOverlay(): Boolean = try { android.os.Build.VERSION.SDK_INT >= 26 && android.provider.Settings.canDrawOverlays(app) } catch (_: Throwable) { false }
 
     /** (v525) تطبيق تاني شغّال قدّام (مفيش شاشة من برنامجنا): نافذة فوق كل حاجة بإمكانية الوصول أو صلاحية العرض فوق التطبيقات */
     private fun offerOverlay() {
+        // (v573) من غير سؤال: علّم العرض «موافَق» وافتح شاشة التلفزيون؛ أول شاشة تفتح (offerIfAny) بتبدأ التنزيل/التثبيت على طول
         val o = pendingOffer ?: return
-        if (offerShowing) return
-        offerShowing = true
-        val ok = try {
-            TvUpdate.askOverlay(app, o) { accepted ->
-                offerShowing = false
-                if (accepted) o.accepted = true   // pendingOffer بتفضل: أول شاشة تفتح (TvActivity) بتكمّل التنزيل
-                else { pendingOffer = null; if (!o.force) declinedVer = o.ver }
-            }
-        } catch (e: Throwable) { LogStore.err("TvLink:overlay", e); false }
-        if (!ok) offerShowing = false
+        if (o.accepted) return
+        if (!(TvAccess.connected || canOverlay())) return
+        o.accepted = true
+        try {
+            app.startActivity(Intent(app, TvActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP))
+        } catch (e: Throwable) { LogStore.err("TvLink:overlayOpen", e) }
     }
 }

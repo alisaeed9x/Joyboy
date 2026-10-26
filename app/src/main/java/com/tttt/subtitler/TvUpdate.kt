@@ -185,6 +185,7 @@ object TvUpdate {
     }
 
     fun download(a: Activity, o: TvLink.Offer) {
+        if (downloading) return   // (v573) تنزيل شغّال بالفعل (دفع تاني أو رجوع الشاشة) ← ما نبدأش واحد تاني
         readyFile(a, o)?.let { install(a, it); return }   // (v563) موجود كامل: من غير تنزيل
         val tv = IconTextView(a).apply {
             text = "⏳ بتواصل مع الموبايل…"; textSize = 16f
@@ -252,7 +253,7 @@ object TvUpdate {
             finally { downloading = false }
             h.post {
                 try { dlg?.dismiss() } catch (_: Throwable) {}
-                if (ok) install(a, f) else if (!cancelled) Notice.show(a, "⚠ التحديث فشل: $msg", 3500L)
+                if (ok) install(a, f) else if (!cancelled) Notice.show(a, "⚠ التحديث فشل: $msg", 3500L) else if (!o.force) TvLink.declineOffer(o)   // (v573) إلغاء التنزيل ← ما يعرضش نفس النسخة أوتوماتيك تاني
             }
         }.also { it.isDaemon = true }.start()
     }

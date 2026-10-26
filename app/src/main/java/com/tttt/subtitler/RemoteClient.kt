@@ -515,7 +515,7 @@ object RemoteClient {
             try {
                 msg = if (!ensureConnected(act, 9000L)) "⚠ ما قدرتش أوصل للتلفزيون — اتأكد إنه شغّال وعلى نفس الواي فاي"
                 else when (val r = offerUpdate(false, true)) {
-                    "ok" -> "✅ التحديث اتبعت — شوف رسالة التحديث على التلفزيون (افتح اللانشر لو مش ظاهرة)"
+                    "ok" -> "✅ التحديث اتبعت — التلفزيون بيحمّله دلوقتي وهيفتح التثبيت لوحده"
                     else -> "⚠ $r"
                 }
             } catch (e: Throwable) { LogStore.err("Remote:forcePush", e); msg = "⚠ حصلت مشكلة" }

@@ -975,7 +975,7 @@ class RemoteActivity : Activity() {
                 contentResolver.openInputStream(u)!!.use { ins -> f.outputStream().use { ins.copyTo(it) } }
                 RemoteClient.offerApk(f, true)
             } catch (e: Throwable) { "فشل قراءة الملف" }
-            h.post { Notice.show(this, if (r == "ok") "✅ التلفزيون بيحمّل الملف — وافق على التثبيت هناك" else "⚠ $r", 4500L) }
+            h.post { Notice.show(this, if (r == "ok") "✅ التلفزيون بيحمّل الملف وهيفتح التثبيت لوحده" else "⚠ $r", 4500L) }
         }.also { it.isDaemon = true }.start()
     }
 
@@ -984,7 +984,7 @@ class RemoteActivity : Activity() {
             val r = RemoteClient.offerUpdate(false, force)
             h.post {
                 Notice.show(this, when (r) {
-                    "ok" -> "✅ ظهرت رسالة التحديث على التلفزيون (افتح اللانشر لو مش ظاهرة)"
+                    "ok" -> "✅ التحديث اتبعت — التلفزيون بيحمّله دلوقتي وهيفتح التثبيت لوحده"
                     else -> "⚠ $r"
                 }, 4000L)
             }
