@@ -224,7 +224,24 @@ class BrowserActivity : Activity() {
             "speed" -> runJs("(function(){" + RC_FIND + "var r=[0.5,0.75,1,1.25,1.5,2];var i=r.indexOf(v.playbackRate);v.playbackRate=r[i<0?3:(i+1)%r.length]})()")
             "next" -> runJs("(function(){var b=document.querySelector('.ytp-next-button,[aria-label=\"Next\"],[aria-label=\"التالي\"]');if(b)b.click()})()")
             "prev" -> runJs("(function(){var b=document.querySelector('.ytp-prev-button');if(b&&b.getAttribute('aria-disabled')!='true'){b.click();return}" + RC_FIND + "v.currentTime=0})()")
-            else -> {}   // باقي أزرار المشغّل (ترجمة/خط/…) خاصة بمشغّل البرنامج — مفيش ليها معنى في المتصفح
+            "close", "exit" -> {
+                runJs("(function(){" + RC_FIND + "v.pause()})()")
+                runOnUiThread {
+                    try {
+                        leaveCustom()
+                    } catch (_: Throwable) {
+                    }
+                    try {
+                        WebMute.pauseAll()
+                    } catch (_: Throwable) {
+                    }
+                    try {
+                        finish()
+                    } catch (_: Throwable) {
+                    }
+                }
+            }
+            else -> {}
         }
         return true
     }
@@ -384,6 +401,7 @@ class BrowserActivity : Activity() {
         fun tbtn(t: String, size: Float = 20f, f: (View) -> Unit): TextView = IconTextView(this).apply {
             text = t; textSize = if (tvOn) size * 1.25f else size; gravity = Gravity.CENTER; setTextColor(th.text)
             layoutParams = LinearLayout.LayoutParams(ui.dp(if (tvOn) 54 else 38), ui.dp(if (tvOn) 52 else 40)); setOnClickListener { f(it) }
+            if (tvOn) background = TvBlur.frostDrawable(12f, resources.displayMetrics.density)
         }
         backB = tbtn("‹", 26f) { wvOrNull?.let { if (it.canGoBack()) it.goBack() } }
         fwdB = tbtn("›", 26f) { wvOrNull?.let { if (it.canGoForward()) it.goForward() } }
@@ -403,7 +421,7 @@ class BrowserActivity : Activity() {
         val menuB = tbtn("⋮", 22f) { showMenu(it) }
         val bar = LinearLayout(this).apply {
             layoutDirection = View.LAYOUT_DIRECTION_LTR; gravity = Gravity.CENTER_VERTICAL; setPadding(ui.dp(2), 0, ui.dp(2), 0)
-            addView(backB); addView(fwdB); addView(addr); addView(reloadB); if (!tvOn) addView(rotB); addView(tabsB); addView(menuB)
+            addView(backB); addView(fwdB); addView(addr); addView(reloadB); if (!tvOn) addView(rotB); if (!tvOn) addView(tabsB); addView(menuB)
         }
         if (tvOn) {   // (v480 م6) زرار تبديل الوضع: 🖱 مؤشر / 🎯 تنقل بالتركيز
             tvPointerMode = Cfg.str("tv_br_mode", "ptr") != "focus"
@@ -412,6 +430,17 @@ class BrowserActivity : Activity() {
             bar.addView(mb, 4)
             // (v517) 🏠 رجوع لشاشة التلفزيون (بدل الشريط السفلي اللي اتشال) — أول زرار في الشريط
             bar.addView(tbtn("🏠", 18f) { persistTabs(); if (!TvFocus.goHome(this)) finish() }, 0)
+            val quickNames = arrayOf("▶ يوتيوب", "🔍 جوجل", "📰 أخبار جوجل")
+            val quickUrls = arrayOf("https://www.youtube.com", "https://www.google.com", "https://news.google.com")
+            bar.addView(tbtn("⭐", 18f) {
+                android.app.AlertDialog.Builder(this)
+                    .setTitle("⭐ مواقع سريعة")
+                    .setItems(quickNames) { _, i ->
+                        load(quickUrls[i])
+                    }
+                    .setNegativeButton("إلغاء", null)
+                    .show()
+            }, 1)
             tvBar = bar
         }
         progV = View(this).apply { setBackgroundColor(th.primary) }
@@ -901,8 +930,12 @@ class BrowserActivity : Activity() {
             panicPurged = panicPurged + BrowserStore.purgeByKey(this, k)
             if (k != SiteBlock.keyOf(GOOGLE) && SiteBlock.add(this, k)) panicKey = k
         }
-        WebMute.pauseAll()                              // أي صوت/فيديو يقف
-        panicCover.visibility = View.VISIBLE            // الصفحة القديمة تختفي في نفس اللحظة
+        WebMute.pauseAll()
+        try {
+            w.evaluateJavascript("(function(){var a=document.querySelectorAll('video,audio');for(var i=0;i<a.length;i++){try{a[i].pause()}catch(e){}}})()", null)
+        } catch (_: Throwable) {
+        }
+        panicCover.visibility = View.VISIBLE
         panicClearId = t.id
         t.thumb = null; t.title = ""; t.errUrl = ""
         // اللقطات المصطادة من الصفحة دي تتمسح (الشريط «🎬 لقيت…» كان هيفضل ظاهر)
@@ -1001,7 +1034,7 @@ class BrowserActivity : Activity() {
             "✕ خروج من المتصفح" to { finish() }
         )
         // (v517) تلفزيون: القايمة بتشيل اللي مش بيتستعمل بالريموت (متخفي · سجل الخصوصية · تدوير · نسخ/مشاركة · وضع القارئ · إحصائيات وسماح الإعلانات)
-        val tvDrop = listOf("🕶", "🔒", "🔄 تدوير", "📋 نسخ", "📤", "📖", "🛡 إحصائيات", "🛡 فعّل", "🛡 عطّل")
+        val tvDrop = listOf("🕶", "🔒", "🔄 تدوير", "📋 نسخ", "📤", "📖", "🛡 إحصائيات", "🛡 فعّل", "🛡 عطّل", "🔍 بحث في الصفحة", "🖥 نسخة الكمبيوتر")
         popupMenu(anchor, if (tvOn) menuItems.filter { m -> tvDrop.none { m.first.startsWith(it) } } else menuItems)
     }
     /** (v469) D11 وضع القارئ: بيستخرج نص المقال (article ← main ← body) وبيعرضه في عرض قراءة نضيف بخط كبير من غير فوضى الصفحة */

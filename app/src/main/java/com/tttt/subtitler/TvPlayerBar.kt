@@ -63,7 +63,7 @@ class TvPlayerBar(private val act: Activity, private val ui: Ui, private val th:
     private fun btn(label: String, onClick: (View) -> Unit): TextView = IconTextView(act).apply {   // (v527) IconTextView: ⏸ ▶ ⏮ ⏭ بتترسم أيقونة (خطين متوازيين) بدل رمز الخط اللي على TCL كان بيطلع شكل «i»
         text = label; textSize = 17f; setTextColor(Color.WHITE); gravity = Gravity.CENTER; typeface = Typeface.DEFAULT_BOLD
         setPadding(ui.dp(14), ui.dp(10), ui.dp(14), ui.dp(10))
-        background = GradientDrawable().apply { setColor(0x33FFFFFF); cornerRadius = ui.dp(12).toFloat() }
+        background = TvBlur.frostDrawable(12f, resources.displayMetrics.density)
         isFocusable = true; isClickable = true
         id = View.generateViewId(); nextFocusUpId = id; nextFocusDownId = id
         setOnClickListener { poke(); onClick(it); refresh() }
@@ -94,11 +94,20 @@ class TvPlayerBar(private val act: Activity, private val ui: Ui, private val th:
             playB = btn("⏸") { a.toggle() }; add(playB)
             add(btn("⏭") { a.next() })
             trB = btn("▶ ترجم") { v -> a.translate(v) }; add(trB)
-            ccB = btn("💬") { a.toggleCc() }; add(ccB)
-            add(btn("🌐") { v -> a.subTracks(v) })   // (v521) مسار/لغة الترجمة جنب زرار الإخفاء
+            ccB = btn("💬") { a.toggleCc() }
+            ccB.setOnLongClickListener { a.subTracks(ccB); true }
+            add(ccB)
             add(btn("🔤 ⏱") { a.subDialog() })
             qB = btn("HD") { v -> a.quality(v) }; add(qB)
             audB = btn("🔊") { v -> a.audio(v) }; add(audB)
+            val sleepMins = intArrayOf(0, 15, 30, 60)
+            val sleepPos = intArrayOf(0)
+            add(btn("😴") { v ->
+                sleepPos[0] = (sleepPos[0] + 1) % sleepMins.size
+                val mins = sleepMins[sleepPos[0]]
+                TvLink.setSleep(mins)
+                (v as TextView).text = if (mins == 0) "😴" else "😴 $mins"
+            })
             add(btn("⋯") { v -> a.more(v) })
         } else {
         add(btn("⏮") { a.prev() })
@@ -109,12 +118,17 @@ class TvPlayerBar(private val act: Activity, private val ui: Ui, private val th:
         speedB = btn("⏩ 1x") { a.cycleSpeed() }; add(speedB)
         fitB = btn("⬛") { a.cycleFit() }; add(fitB)
         ccB = btn("💬") { a.toggleCc() }; add(ccB)
-        add(btn("🌐") { v -> a.subTracks(v) })   // (v521)
-        add(btn("🔤−") { a.subScale(-10) })
-        add(btn("🔤+") { a.subScale(10) })
-        add(btn("⏱−") { a.subShift(-250L) })
-        add(btn("⏱+") { a.subShift(250L) })
+        add(btn("🌐") { v -> a.subTracks(v) })
+        add(btn("🔤 ⏱") { a.subDialog() })
         audB = btn("🔊") { v -> a.audio(v) }; add(audB)
+        val sleepMins = intArrayOf(0, 15, 30, 60)
+        val sleepPos = intArrayOf(0)
+        add(btn("😴") { v ->
+            sleepPos[0] = (sleepPos[0] + 1) % sleepMins.size
+            val mins = sleepMins[sleepPos[0]]
+            TvLink.setSleep(mins)
+            (v as TextView).text = if (mins == 0) "😴" else "😴 $mins"
+        })
         }
         val hs = HorizontalScrollView(act).apply { isHorizontalScrollBarEnabled = false; isFillViewport = true; addView(row, FrameLayout.LayoutParams(-1, -2)) }
         view.addView(hs, LinearLayout.LayoutParams(-1, -2).apply { topMargin = ui.dp(6) })

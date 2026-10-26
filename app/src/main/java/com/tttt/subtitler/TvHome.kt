@@ -1115,7 +1115,8 @@ class TvActivity : Activity() {
     private fun card(wDp: Int, hDp: Int, fill: (LinearLayout) -> Unit, onClick: () -> Unit, onLong: (() -> Unit)? = null): View {
         val c = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL; isFocusable = true; isClickable = true
-            setPadding(ui.dp(10), ui.dp(9), ui.dp(10), ui.dp(9)); background = ui.box(th.surface, th.border, 14)
+            setPadding(ui.dp(10), ui.dp(9), ui.dp(10), ui.dp(9))
+            background = TvBlur.frostDrawable(14f, resources.displayMetrics.density)
         }
         c.setOnFocusChangeListener { v, f ->
             v.background = ui.box(if (f) th.card else th.surface, if (f) th.primary else th.border, 14)
@@ -1254,7 +1255,7 @@ class TvActivity : Activity() {
         val b = LinearLayout(this).apply {
             isFocusable = true; isClickable = true; gravity = Gravity.CENTER
             setPadding(ui.dp(24), ui.dp(12), ui.dp(24), ui.dp(12))
-            background = ui.box(if (primary) th.primary else th.surface, if (primary) th.primary else th.border, 28)
+            background = if (primary) ui.box(th.primary, th.primary, 28) else TvBlur.frostDrawable(28f, resources.displayMetrics.density)
             setOnClickListener { f() }
             setOnFocusChangeListener { v, hasF ->
                 v.background = ui.box(if (primary) th.primary else if (hasF) th.card else th.surface, if (hasF) th.text else if (primary) th.primary else th.border, 28, if (hasF) 3 else 1)
@@ -1311,7 +1312,6 @@ class TvActivity : Activity() {
         tile("🎬", "الفيديوهات") { showVideosPage() },
         tile("🎵", "الموسيقى") { openMain("music") },
         tile("📂", "الملفات") { guardPin { startActivity(Intent(this, FileManagerActivity::class.java)) } },
-        tile("📋", "المهام") { openMain("tasks") },
         tile("⚙️", "الإعدادات") { guardPin { openMain("settings") } }
     )
 
@@ -1418,8 +1418,7 @@ class TvActivity : Activity() {
         val px = ui.dp(iconDp())
         return listOf(
             dockItem(builtinIcon("▶", 0xFFE62117.toInt(), px), "يوتيوب", 0xFFE62117.toInt(), { openMain("youtube") }),
-            dockItem(builtinIcon("🌐", 0xFF2F80ED.toInt(), px), "المتصفح", 0xFF2F80ED.toInt(), { openBrowser() }),
-            dockItem(builtinIcon("🛍", 0xFF34A853.toInt(), px), "Google Play", 0xFF34A853.toInt(), { openPlay() }))   // (v539) أول 3 أيقونات دايمًا: يوتيوب · المتصفح · Google Play
+            dockItem(builtinIcon("🌐", 0xFF2F80ED.toInt(), px), "المتصفح", 0xFF2F80ED.toInt(), { openBrowser() }))
     }
 
     private fun pinnedApps(): List<String> = Cfg.str("tv_pin_apps", "").split("\n").map { it.trim() }.filter { it.isNotEmpty() }
@@ -2432,7 +2431,8 @@ class TvActivity : Activity() {
             addView(pill("⋯ المزيد") { moreMenu() })
             addView(pill("🛠 إعدادات الأندرويد") { openSystemSettings() })
             addView(pill("🌙 نوم") { showSaver() })
-            addView(pill("📶 الواي فاي") { TvWifi.quick(this@TvActivity) })   // (v525) (v536) دوسة = تشغيل/إيقاف
+            addView(pill("📱 ريموت الموبايل") { TvLinkUi.show(this@TvActivity) })
+            addView(pill("📶 الواي فاي") { TvWifi.quick(this@TvActivity) })
         })
         if (!compactUi) content.addView(LinearLayout(this).apply {   // (v530) رجوع v525: على الشاشة الواسعة مفيش ريل جانبي — نفس الأزرار هنا
             gravity = Gravity.CENTER; layoutDirection = View.LAYOUT_DIRECTION_RTL; setPadding(0, ui.dp(8), 0, 0)
@@ -2440,7 +2440,7 @@ class TvActivity : Activity() {
             if (playOn()) addView(pill("🛍 Google Play") { openPlay() })
             addView(pill("🎨 المظهر") { showAppearance() })
         })
-        content.addView(LinearLayout(this).apply { gravity = Gravity.CENTER; layoutDirection = View.LAYOUT_DIRECTION_RTL; setPadding(0, ui.dp(12), 0, ui.dp(24)); addView(pill("🎛 تخصيص") { rowsDialog() }); addView(pill("↕ ترتيب الصفوف") { orderDialog() }); addView(pill("➕ أضف تطبيق") { pickApps() }) })   // (v538)
+        content.addView(LinearLayout(this).apply { gravity = Gravity.CENTER; layoutDirection = View.LAYOUT_DIRECTION_RTL; setPadding(0, ui.dp(12), 0, ui.dp(24)); addView(pill("🎛 تخصيص الرئيسية") { rowsDialog() }) })
         homeCache = (0 until content.childCount).map { content.getChildAt(it) }; homeCacheAt = System.currentTimeMillis()
         homeCacheSig = recentsSig()
         pageEnter()

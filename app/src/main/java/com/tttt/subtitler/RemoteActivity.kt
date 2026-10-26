@@ -350,7 +350,9 @@ class RemoteActivity : Activity() {
         // 5) ⚙ + زرار «ترجم» الأحمر
         pTrBtn = ui.text("▶ ترجم ▾", 15f, white, true).apply {
             gravity = Gravity.CENTER; setPadding(ui.dp(14), 0, ui.dp(14), 0); background = ui.box(0xFFE53935.toInt(), 0x33FFFFFF, 22)
-            setOnClickListener { trMenu() }
+            setOnClickListener {
+                if (pKind == "browser") pAct("close") else trMenu()
+            }
         }
         pTrColor = 0xFFE53935.toInt()
         val actRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_LTR; gravity = Gravity.CENTER_VERTICAL }
@@ -500,7 +502,7 @@ class RemoteActivity : Activity() {
         // فيديو المتصفح: التشغيل/التقديم/السرعة/التالي بس؛ باقي الأزرار (ترجمة/خط/…) خاصة بمشغّل البرنامج فبتبهت
         val okKeys = setOf("toggle", "prev", "next")
         for ((k, v) in pBtns) v.alpha = if (br && k !in okKeys) 0.3f else 1f
-        pTrBtn.alpha = if (br) 0.3f else 1f
+        pTrBtn.alpha = 1f
         if (!br) {
             setOn("loop", st.optBoolean("loop"))
             setOn("dual", st.optInt("dual") != 0)
@@ -519,7 +521,7 @@ class RemoteActivity : Activity() {
             pBtns["qual"]?.alpha = if ((st.optJSONArray("ql")?.length() ?: 0) > 1) 1f else 0.4f   // (v532)
             pBtns["aud"]?.alpha = if ((st.optJSONArray("al")?.length() ?: 0) > 1) 1f else 0.4f
         } else {
-            pTrBtn.text = "▶ ترجم ▾"
+            pTrBtn.text = "✕ اقفل الفيديو واخرج"
         }
         adjRefresh?.invoke()
     }

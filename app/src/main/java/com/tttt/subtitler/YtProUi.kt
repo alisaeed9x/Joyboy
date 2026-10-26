@@ -430,6 +430,7 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
             setOnClickListener { maxLines = if (maxLines == 3) 40 else 3 } }
         dRel = chip("📑 مقترحات") { setMode(false) }
         dCom = chip("💬 تعليقات") { setMode(true) }
+        if (DeviceUi.isTv(act)) dCom.visibility = View.GONE
         val seg = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL }
         listOf(dRel, dCom).forEach { b -> seg.addView(b, LinearLayout.LayoutParams(0, -2, 1f).apply { setMargins(ui.dp(2), 0, ui.dp(2), 0) }) }
         detailBox.addView(r1, LinearLayout.LayoutParams(-1, -2)); detailBox.addView(dChan, LinearLayout.LayoutParams(-1, -2))
@@ -1402,7 +1403,11 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
     private fun menu(anchor: View, it: NpItem) {
         val m = PopupMenu(act, anchor)
         if (it.kind == 0) {
-            m.menu.add(0, 1, 0, "▶ شغّل"); m.menu.add(0, 2, 1, "🌐 شغّل وترجم"); m.menu.add(0, 10, 7, "ℹ التفاصيل"); m.menu.add(0, 11, 8, "🎧 صوت بس (مشغّل الموسيقى)"); m.menu.add(0, 12, 9, "⬇ تحميل صوت"); m.menu.add(0, 13, 10, "⬇ تحميل فيديو")
+            m.menu.add(0, 1, 0, "▶ شغّل"); m.menu.add(0, 2, 1, "🌐 شغّل وترجم"); m.menu.add(0, 10, 7, "ℹ التفاصيل"); m.menu.add(0, 11, 8, "🎧 صوت بس (مشغّل الموسيقى)")
+            if (!DeviceUi.isTv(act)) {
+                m.menu.add(0, 12, 9, "⬇ تحميل صوت")
+                m.menu.add(0, 13, 10, "⬇ تحميل فيديو")
+            }
             m.menu.add(0, 3, 2, if (YtStore.contains(YtStore.SAVED, it)) "❌ شيل من المحفوظات" else "🔖 احفظ")
             if (it.channelUrl.isNotBlank()) m.menu.add(0, 4, 3, "📺 افتح القناة")
             m.menu.add(0, 5, 4, "📋 انسخ اللينك"); m.menu.add(0, 6, 5, "🌐 افتحه في المتصفح")

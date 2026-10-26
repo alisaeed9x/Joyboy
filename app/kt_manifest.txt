@@ -181,3 +181,4 @@ com/tttt/subtitler/CastServer.kt
 com/tttt/subtitler/CastCache.kt
 com/tttt/subtitler/TvScrub.kt
 com/tttt/subtitler/TvDirect.kt
+com/tttt/subtitler/TvBlur.kt
