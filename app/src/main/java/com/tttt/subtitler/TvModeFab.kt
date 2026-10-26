@@ -123,7 +123,7 @@ object TvModeFab {
                 btn.setOnClickListener { val ly = layers[a]; if (ly != null && PlayTarget.enabled()) { if (ly.open) closeFan(ly, true) else openFan(a, ly) } else onTap(a) }
             }
             // setContentView ممكن يكون مسح الـviews: ضيفهم تاني لو اتشالوا
-            if (l.btn.parent == null) root.addView(l.btn, FrameLayout.LayoutParams(dp(a, 56), dp(a, 56), Gravity.RIGHT or Gravity.BOTTOM).apply { bottomMargin = dp(a, 150); rightMargin = dp(a, 12) }   // (v565) RIGHT مش END: التطبيق RTL فـEND = شمال)
+            if (l.btn.parent == null) root.addView(l.btn, FrameLayout.LayoutParams(dp(a, 56), dp(a, 56), Gravity.RIGHT or Gravity.BOTTOM).apply { bottomMargin = dp(a, 150); rightMargin = dp(a, 12) })
             if (l.banner.parent == null) root.addView(l.banner, FrameLayout.LayoutParams(-1, dp(a, 24), Gravity.BOTTOM))   // (v562) تحت: فوق شريط البوابات مش فوق المحتوى
             if (l.cap == null) {   // (v560) كبسولة «▶ اسم الفيديو ✕» فوق: الفيديو شغّال على التلفزيون؛ ✕ بتقفله
                 val tt = TextView(a).apply { setTextColor(Color.WHITE); textSize = 13f; typeface = android.graphics.Typeface.DEFAULT_BOLD; maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END; maxWidth = dp(a, 230) }
