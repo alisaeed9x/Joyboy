@@ -176,3 +176,4 @@ com/tttt/subtitler/LinkSession.kt
 com/tttt/subtitler/RemoteEngine.kt
 com/tttt/subtitler/TvTasksUi.kt
 com/tttt/subtitler/PlaybackBackend.kt
+com/tttt/subtitler/TvModeFab.kt

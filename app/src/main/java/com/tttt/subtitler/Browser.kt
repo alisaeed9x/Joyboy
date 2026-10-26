@@ -1634,7 +1634,12 @@ class BrowserActivity : Activity() {
             }
             out.add(Grp(key, nameFor(first), qs))
         }
-        return out
+        // (v557) نفس الاسم بأكتر من اصطياد: اللي مفيهوش أي جودة معروفة (تلقائية ساكتة / «جودة 1») بيختفي لو فيه اصطياد بنفس الاسم ليه جودات حقيقية
+        // (أكتر من جودة، أو ارتفاع معروف، أو HLS «تلقائي (لحد Np)»). فيديو لوحده بجودة واحدة من غير اسم مكرّر بيفضل زي ما هو.
+        fun rich(g: Grp) = g.qs.size > 1 || g.qs.any { it.h > 0 || (it.f.kind == "HLS" && (hCache[Sniff.key(it.f.url)] ?: 0) > 0) }
+        fun nm(g: Grp) = g.title.trim().lowercase()
+        val richNames = out.filter { nm(it).isNotEmpty() && rich(it) }.map { nm(it) }.toSet()
+        return out.filter { rich(it) || nm(it).isEmpty() || nm(it) !in richNames }
     }
 
     /** (v203) اختيار تلقائي: نفس لينك/هيكل الفيديو القديم لو اتلقط، وإلا أحدث فيديو اتلقط بأقرب جودة للقديمة */
@@ -1838,7 +1843,7 @@ class BrowserActivity : Activity() {
             runOnUiThread {
                 if (dead) return@runOnUiThread
                 Notice.show(this, msg, 2600L)
-                if (msg.startsWith("✅")) try { startActivity(Intent(this, RemoteActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP).putExtra("open_player", true).putExtra("wait", true)) } catch (_: Throwable) {}
+                // (v554) مفيش شاشة تحكم على الموبايل بعد الإرسال
             }
         }.apply { isDaemon = true }.start()
     }

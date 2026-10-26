@@ -125,7 +125,7 @@ class RemoteActivity : Activity() {
         col.addView(connBtnBox)
 
         ctrl = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; setPadding(0, ui.dp(10), 0, 0) }
-        ctrl.addView(panel(vrow(cmdBtn("🔇", "mute"))   // (v551) ⏻ باور أوف اتشال (محتاج إمكانية الوصول وTCL بتمنعها)))   // (v550) زرار 😴 مؤقت النوم اتشال من الشاشة (الدالة sleepBtn() لسه موجودة)
+        ctrl.addView(panel(vrow(cmdBtn("🔇", "mute"))))   // (v551) ⏻ باور أوف اتشال (محتاج إمكانية الوصول وTCL بتمنعها)))   // (v550) زرار 😴 مؤقت النوم اتشال من الشاشة (الدالة sleepBtn() لسه موجودة)
         ctrl.addView(panel(vrow(wordCmd("💾 فلاشة", "open_sd"), wordCmd("📱 داخلية", "open_int"))), LinearLayout.LayoutParams(-1, -2).apply { topMargin = ui.dp(10) })   // (v550) اتشالوا: مشغّل الفيديو · يوتيوب · متصفح · يوتيوب التلفزيون
         ctrl.addView(panel(vrow(bigBtn("📚 تصفّح فيديوهات التلفزيون") { startActivity(Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP).putExtra("tab", "videos").putExtra("lib_tv", true)) }, bigBtn("🧰 مهام التلفزيون") { TvTasksUi.show(this) }, tvModeBtn())), LinearLayout.LayoutParams(-1, -2).apply { topMargin = ui.dp(10) })   // (v543 م3/م4) فيديوهات التلفزيون + وضع التلفزيون
         col.addView(ctrl)

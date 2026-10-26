@@ -1584,7 +1584,7 @@ class MainActivity : Activity() {
         if (DeviceUi.isTv(this)) return false
         val paired = try { RemoteClient.init(this); RemoteClient.lastTv() != null } catch (_: Throwable) { false }
         if (!paired) return false
-        if (!ytTvMode && Cfg.str("tv_ask", "1") == "0") return false
+        if (!ytTvMode) return false   // (v554) مفيش سؤال «تشغّله على التلفزيون؟»: بره وضع التلفزيون = الموبايل، جوّاه PlayTarget بيبعت لوحده
         val b = GAlert(this).setTitle("📺 تشغّله على التلفزيون؟").setMessage(title.ifBlank { "فيديو يوتيوب" })
             .setPositiveButton("📺 على التلفزيون") { _, _ -> sendYtToTv(id, title, ret) }
             .setNegativeButton("📱 هنا في الموبايل") { _, _ -> playYtHere(id, title, false, false, 0L, null, ret) }
@@ -1604,7 +1604,7 @@ class MainActivity : Activity() {
                 if (isFinishing || isDestroyed) return@runOnUiThread
                 if (er == null) {
                     ytTvSent = true
-                    try { startActivity(Intent(this, RemoteActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP).putExtra("open_player", true).putExtra("wait", true)) } catch (e: Throwable) { LogStore.err("Main:openRemote", e) }
+                    Notice.show(this, "📺 اتفتح على التلفزيون", 2800L)   // (v554) مفيش شاشة ريموت
                 } else {
                     GAlert(this).setTitle("⚠ ما اتبعتش للتلفزيون").setMessage(er)
                         .setPositiveButton("📱 شغّله هنا") { _, _ -> playYtHere(id, title, false, false, 0L, null, ret) }
@@ -1861,8 +1861,21 @@ class MainActivity : Activity() {
             }.apply { isDaemon = true; start() }
         }, 3500L)
     }
+    /** (v554) دخول/خروج وضع التلفزيون (الزرار العايم): بدّل مكتبة الفيديوهات بين الموبايل والتلفزيون */
+    private var tvModeSeen = false
+    private val tvModeSync: () -> Unit = {
+        if (!isDestroyed && !isFinishing && !DeviceUi.isTv(this)) {
+            val on = PlayTarget.enabled()
+            if (on != tvModeSeen) {
+                tvModeSeen = on
+                if (on && libBackend !== TvLibrary) libSourceFn?.invoke(true)
+                else if (!on && libBackend === TvLibrary) libSourceFn?.invoke(false)
+            }
+        }
+    }
     override fun onResume() {
         super.onResume()
+        try { tvModeSeen = PlayTarget.enabled(); TvModeFab.listeners.addIfAbsent(tvModeSync) } catch (_: Throwable) {}
         if (!fromPlayer) { updateYtBadge(); ytBackgroundSync() }
         // الرجوع من المشغّل أو من إعدادات الإذن: حدّث العرض (تقدم الترجمة) أو أعد الفحص
         if (!fromPlayer) CrashLog.showIfAny(this)
@@ -1873,7 +1886,7 @@ class MainActivity : Activity() {
         if (!fromPlayer && libStarted) libUi?.let { if (it.hasData) it.render() else scanFn() }
         if (!fromPlayer && curTab == 4) ytUi?.refresh()
     }
-    override fun onDestroy() { try { KeysSync.reload = null } catch (_: Throwable) {}; try { dockUi?.detach() } catch (_: Throwable) {}; try { ytUi?.destroy() } catch (_: Throwable) {}; try { stripUi?.detach() } catch (_: Throwable) {}; try { tasksFabUi?.detach() } catch (_: Throwable) {}; if (!fromPlayer) TaskCenter.listener = null; try { tasksFabUi?.detach() } catch (_: Throwable) {}; try { musicUi?.destroy() } catch (_: Throwable) {}; super.onDestroy() }
+    override fun onDestroy() { try { TvModeFab.listeners.remove(tvModeSync) } catch (_: Throwable) {}; try { KeysSync.reload = null } catch (_: Throwable) {}; try { dockUi?.detach() } catch (_: Throwable) {}; try { ytUi?.destroy() } catch (_: Throwable) {}; try { stripUi?.detach() } catch (_: Throwable) {}; try { tasksFabUi?.detach() } catch (_: Throwable) {}; if (!fromPlayer) TaskCenter.listener = null; try { tasksFabUi?.detach() } catch (_: Throwable) {}; try { musicUi?.destroy() } catch (_: Throwable) {}; super.onDestroy() }
     /** (v327) إشعار فيديو جديد: افتح تفاصيله في بوابة يوتيوب (الدالة بتتركّب أول ما بوابة يوتيوب تتبني؛ showTabFn(4) بتبنيها) */
     private fun openYtFromIntent(i: Intent?) {
         val id = i?.getStringExtra("yt_open") ?: return

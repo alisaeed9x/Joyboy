@@ -31,7 +31,7 @@ class BottomNav(act: Activity, private val ui: Ui, private val th: Theme, privat
     /** البوابات اللي ورا ⋯ المزيد: أي بوابة مش في الشريط (حاليًا: الملفات 3 · المهام 5 · الذكاء 6 · الإعدادات 7) — الزرار بيتلوّن لما واحدة منهم تبقى هي النشطة */
     private val lite = act.packageName.endsWith(".lite")
     private val tvDev = try { DeviceUi.isTv(act) } catch (_: Throwable) { false }   // (v521) على التلفزيون زرار الريموت مخفي
-    private var order: List<Int> = if (lite) LITE_ORDER else NORMAL_ORDER.filter { it != REMOTE || !tvDev }
+    private var order: List<Int> = if (lite) LITE_ORDER else NORMAL_ORDER.filter { it != REMOTE }   // (v554) زرار الريموت اتشال: وضع التلفزيون بزرار عايم
     private fun cellOf(a: Int): Int = if (a in order) a else if (lite) (if (a == 7) YT_ME else -1) else MORE
     private fun moreSheet(act: Activity) {
         val d = android.app.Dialog(act)
@@ -41,6 +41,16 @@ class BottomNav(act: Activity, private val ui: Ui, private val th: Theme, privat
             background = GradientDrawable().apply { setColor(th.card); cornerRadii = floatArrayOf(ui.dp(18).toFloat(), ui.dp(18).toFloat(), ui.dp(18).toFloat(), ui.dp(18).toFloat(), 0f, 0f, 0f, 0f) }
         }
         val items = DEFS.indices.filter { it != MORE && it != DEAD_AI && it < YT_HOME && it !in order && !(it == 4 && YT_HOME in order) }.map { id -> id to (DEFS[id].first + "  " + DEFS[id].second) }   // (v467) ديناميكي: أي بوابة جديدة بره الشريط هتظهر هنا لوحدها
+        if (!tvDev) {   // (v555) وضع التلفزيون: الدخول/الخروج من «المزيد»
+            val row = ui.text(TvModeFab.label(), 15f, th.primary, true).apply { setPadding(ui.dp(14), ui.dp(14), ui.dp(14), ui.dp(14)) }
+            Glass.pressable(row)
+            row.setOnClickListener { d.dismiss(); TvModeFab.toggle(act) }
+            box.addView(row, LinearLayout.LayoutParams(-1, -2))
+            val row2 = ui.text(TvModeFab.alwaysLabel(), 13f, th.text, true).apply { setPadding(ui.dp(14), ui.dp(10), ui.dp(14), ui.dp(14)) }
+            Glass.pressable(row2)
+            row2.setOnClickListener { d.dismiss(); TvModeFab.toggleAlways(act) }
+            box.addView(row2, LinearLayout.LayoutParams(-1, -2))
+        }
         for ((id, label) in items) {
             val row = ui.text(label, 15f, if (id == active) th.primary else th.text, true).apply { setPadding(ui.dp(14), ui.dp(14), ui.dp(14), ui.dp(14)) }
             Glass.pressable(row)
@@ -141,7 +151,7 @@ class BottomNav(act: Activity, private val ui: Ui, private val th: Theme, privat
     }
     /** (v475) وانت في يوتيوب (نسخة كاملة) الشريط بيعرض الرئيسية/الاشتراكات/أنا بدل «يوتيوب»؛ اللايت ترتيبه ثابت */
     fun mode(inYoutube: Boolean) {
-        val o = if (lite) LITE_ORDER else if (inYoutube) YT_ORDER else NORMAL_ORDER.filter { it != REMOTE || !tvDev }
+        val o = if (lite) LITE_ORDER else if (inYoutube) YT_ORDER else NORMAL_ORDER.filter { it != REMOTE }
         if (o == order) return
         order = o; snap = true; indicator.animate().cancel(); moving = false
         fillRow(); paint(); rowLL.requestLayout()

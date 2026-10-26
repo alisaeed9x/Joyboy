@@ -21,7 +21,7 @@ data class MediaSpec(
 /**
  * (v543) «وضع التلفزيون» على الموبايل: لو مفعّل، أي فيديو بيتبعت للتلفزيون بدل ما يشتغل على الموبايل.
  * قرار علي: التلفزيون مش متصل = مفيش تشغيل على الموبايل (إعادة المحاولة بس).
- * (v546) بعد الإرسال بيتفتح PlayerActivity بـremote=true (وضع المتحكم) بدل شاشة الريموت.
+ * (v554) بعد الإرسال بس إشعار — مفيش شاشة تحكم على الموبايل (الريموت اتلغى).
  */
 object PlayTarget {
     const val KEY = "tv_mode"
@@ -46,7 +46,7 @@ object PlayTarget {
         val target = targetUrl(spec) ?: return false
         try { RemoteClient.init(act) } catch (_: Throwable) {}
         if (RemoteClient.lastTv() == null) {
-            Notice.show(act, "📺 وضع التلفزيون شغّال بس مفيش تلفزيون مقترن — اقرنه من «ريموت التلفزيون» أو اقفل وضع التلفزيون من هناك", 4200L)
+            Notice.show(act, "📺 مفيش تلفزيون متصل — دوس الزرار العايم 📺 أو اخرج من وضع التلفزيون", 4200L)
             return true
         }
         send(act, spec, target)
@@ -77,15 +77,8 @@ object PlayTarget {
             act.runOnUiThread {
                 if (act.isFinishing || act.isDestroyed) return@runOnUiThread
                 if (er == null) {
-                    try { LinkSession.start(act) } catch (_: Throwable) {}
-                    try {
-                        // (v546 م2-ج) مشغّل الموبايل الأصلي في وضع المتحكم (remote=true): لا ExoPlayer ولا محرك محلي
-                        act.startActivity(
-                            Intent(act, PlayerActivity::class.java)
-                                .putExtra("remote", true)
-                                .putExtra("title", spec.title)
-                        )
-                    } catch (e: Throwable) { LogStore.err("PlayTarget:openRemote", e) }
+                    // (v554) مفيش شاشة ريموت/متحكم على الموبايل: الفيديو اشتغل على التلفزيون وبتتحكم من ريموت التلفزيون
+                    Notice.show(act, "📺 اتفتح على التلفزيون" + (if (spec.title.isNotBlank()) " — " + spec.title else ""), 3000L)
                 } else {
                     GAlert(act).setTitle("⚠ ما اتبعتش للتلفزيون").setMessage(er)
                         .setPositiveButton("🔄 إعادة المحاولة") { _, _ -> send(act, spec, target) }

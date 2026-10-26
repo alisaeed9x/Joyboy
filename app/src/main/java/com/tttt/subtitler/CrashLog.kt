@@ -19,6 +19,7 @@ object CrashLog {
         installed = true
         val app = c.applicationContext
         LogStore.init(app)
+        try { TvModeFab.install(app) } catch (_: Throwable) {}   // (v554) زرار وضع التلفزيون العايم
         val f = file(app)
         try {
             (app as android.app.Application).registerActivityLifecycleCallbacks(object : android.app.Application.ActivityLifecycleCallbacks {

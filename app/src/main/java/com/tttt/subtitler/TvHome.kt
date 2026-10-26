@@ -394,7 +394,8 @@ class TvActivity : Activity() {
         // 4) الشعار | الساعة على الشمال زي «Google TV | 3:10»
         val tc = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_LTR }
         if (!compactUi) {
-            tc.addView(roundBtn("⚙️", "الإعدادات", 42) { guardPin { openMain("settings") } })   // (v550) كلمة «Subtitler» اتبدّلت بزرار الإعدادات
+            tc.addView(roundBtn("☰", "القايمة", 42) { mainMenu() })   // (v553) زرار القايمة (كل الأزرار اللي تحت) مكان كلمة «Subtitler»
+            tc.addView(roundBtn("⚙️", "الإعدادات", 42) { guardPin { openMain("settings") } })   // (v550) زرار الإعدادات جنب القايمة
             tc.addView(View(this).apply { setBackgroundColor(0x66FFFFFF) }, LinearLayout.LayoutParams(ui.dp(2), ui.dp(20)).apply { setMargins(ui.dp(12), 0, ui.dp(12), 0) })
         }
         tcV = tc
@@ -544,6 +545,39 @@ class TvActivity : Activity() {
         GAlert(this).setTitle("🗑 شيل أنهي تاب؟").setItems(cur.map { (if (it.type == "app") "📱 " else "📁 ") + it.label }.toTypedArray()) { _, i ->
             saveSideTabs(cur.filterIndexed { k, _ -> k != i })
         }.setNegativeButton("إلغاء", null).show()
+    }
+
+    /** (v553) قايمة ☰ الشريط العلوي: تجمّع أزرار الصفحة الرئيسية اللي تحت (وهي فاضلة تحت زي ما هي) + تبديل الخلفية عشوائي */
+    private fun mainMenu() {
+        val items = ArrayList<Pair<String, () -> Unit>>()
+        fun add(t: String, f: () -> Unit) { items.add(t to f) }
+        add("🖼 غيّر الخلفية دلوقتي (عشوائي)") {
+            if (wallMode() == "off") Notice.show(this, "الخلفية مقفولة — شغّلها من «خلفية اللانشر»", 2600L)
+            else { Notice.show(this, "⏳ بنجيب خلفية جديدة…", 1500L); nextWall(true) }
+        }
+        add("🖼 خلفية اللانشر (المصدر / المدة)") { wallDialog() }
+        add("🎨 إعدادات المظهر") { showAppearance() }
+        add("🎛 تخصيص الصفوف") { rowsDialog() }
+        add("↕ ترتيب الصفوف") { orderDialog() }
+        add("➕ أضف تطبيق") { pickApps() }
+        add("🕌 مواقيت الصلاة") { showPrayer() }
+        if (playOn()) add("🛍 Google Play") { openPlay() }
+        add("📶 الواي فاي (تشغيل/إيقاف)") { TvWifi.quick(this) }
+        add("🌙 نوم (شاشة سكون)") { showSaver() }
+        add("📐 حجم الواجهة") { scaleDialog() }
+        add("🛠 إعدادات الأندرويد") { openSystemSettings() }
+        add("⋯ المزيد…") { moreMenu() }
+        GAlert(this).setTitle("☰ القايمة").setItems(items.map { it.first }.toTypedArray()) { _, i -> items.getOrNull(i)?.second?.invoke() }
+            .setNegativeButton("إغلاق", null).show()
+    }
+
+    /** (v553) أنيميشن دخول الصفحة عند التنقل (رئيسية/فيديوهات/تطبيقات/فولدر): تلاشي + طلوع بسيط */
+    private fun pageEnter() {
+        try {
+            content.animate().cancel(); content.scaleX = 1f; content.scaleY = 1f
+            content.alpha = 0f; content.translationY = ui.dp(16).toFloat()
+            content.animate().alpha(1f).translationY(0f).setDuration(Skins.dur(240L)).setInterpolator(DecelerateInterpolator()).start()
+        } catch (e: Throwable) { LogStore.err("TvHome:pageEnter", e); content.alpha = 1f; content.translationY = 0f }
     }
 
     /** قايمة «المزيد»: كل اللي كان في الريل القديم + أزرار اللانشر (إعدادات الأندرويد · تطبيقات السيستم · المشغّل الافتراضي · إلغاء التثبيت) */
@@ -1003,6 +1037,20 @@ class TvActivity : Activity() {
         }
         if (!folder) cap.addView(ui.text(title, 13f, Color.WHITE, true).apply { maxLines = 2 })
         if (sub.isNotBlank()) cap.addView(ui.text(sub, 11f, if (folder) Color.WHITE else th.muted).apply { maxLines = 1 })
+        if (!folder) {
+            // (v553) كارت فيديو شيك: تدريج غامق من تحت + الاسم والتفاصيل جوه الكارت دايمًا (والاسم بيفضل ظاهر وبيكبر لما الكارت يتركّز)
+            val scrim = View(this).apply { background = GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, intArrayOf(0x00000000, 0xB3000000.toInt(), 0xF2000000.toInt())) }
+            t.inner.addView(scrim, FrameLayout.LayoutParams(-1, ui.dp(hDp * 64 / 100), Gravity.BOTTOM))
+            val txt = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL
+                setPadding(ui.dp(11), 0, ui.dp(11), ui.dp(if (pct >= 0) 9 else 7))
+            }
+            val nameTv = ui.text(title, 13.5f, Color.WHITE, true).apply { maxLines = 2; ellipsize = android.text.TextUtils.TruncateAt.END; setShadowLayer(6f, 0f, 1f, Color.BLACK) }
+            txt.addView(nameTv)
+            if (sub.isNotBlank()) txt.addView(ui.text(sub, 11f, 0xFFC9CFDD.toInt()).apply { maxLines = 1; setPadding(0, ui.dp(2), 0, 0) })
+            t.inner.addView(txt, FrameLayout.LayoutParams(-1, -2, Gravity.BOTTOM))
+            t.onFocus = { f -> nameTv.maxLines = if (f) 3 else 2; nameTv.textSize = if (f) 14.5f else 13.5f }
+        }
         val mid = ui.text(if (folder) title.removePrefix("📁 ") else title, if (folder) 21f else 17f, Color.WHITE, true).apply {
             maxLines = if (folder) 3 else 2; gravity = Gravity.CENTER; ellipsize = android.text.TextUtils.TruncateAt.END
             maxWidth = ui.dp(wDp - 30)
@@ -1010,11 +1058,10 @@ class TvActivity : Activity() {
             background = GradientDrawable().apply { setColor(0xCC000000.toInt()); cornerRadius = ui.dp(10).toFloat() }
             visibility = View.VISIBLE
         }
-        t.inner.addView(mid, FrameLayout.LayoutParams(-2, -2, Gravity.CENTER))
-        if (!folder) t.onFocus = { f -> mid.visibility = if (f) View.INVISIBLE else View.VISIBLE }   // (v512) الاسم في النص على كل الفيديوهات ما عدا المتركّز
+        if (folder) t.inner.addView(mid, FrameLayout.LayoutParams(-2, -2, Gravity.CENTER))   // (v553) الاسم في النص للفولدرات بس؛ الفيديو اسمه جوه الكارت تحت (ومابيختفيش مع التركيز)
         val w = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; clipChildren = false; clipToPadding = false }
         w.addView(t, LinearLayout.LayoutParams(ui.dp(wDp + 10), ui.dp(hDp + 10)))
-        w.addView(cap, LinearLayout.LayoutParams(ui.dp(wDp + 10), ui.dp(68)))
+        if (folder) w.addView(cap, LinearLayout.LayoutParams(ui.dp(wDp + 10), ui.dp(68)))   // (v553) الفيديو من غير شريط تحت — الاسم جوه الكارت
         w.layoutParams = LinearLayout.LayoutParams(-2, -2).apply { setMargins(ui.dp(10), ui.dp(6), ui.dp(10), ui.dp(2)) }
         return w
     }
@@ -1879,7 +1926,7 @@ class TvActivity : Activity() {
     /** (v493) كارت فولدر فيديو: 16:9 بصورة أول فيديو، والاسم تحته وهو متركّز */
     private fun folderCard(f: FolderItem, first: Boolean, fh: LinearLayout, mode: String = "grid"): View {
         val thumb: (ImageView) -> Unit = { iv -> f.videos.firstOrNull()?.let { v -> Thumbs.load(this, v) { bmp -> if (bmp != null) runOnUiThread { iv.setImageBitmap(bmp) } } } }
-        val go: () -> Unit = { openFolder = f.key; storageQuery = ""; fillStorageView(fh, true) }
+        val go: () -> Unit = { openFolder = f.key; storageQuery = ""; fillStorageView(fh, true); pageEnter() }
         val c = if (mode == "list") listRow(thumb, "📁 " + f.name, f.videos.size.toString() + " فيديو · " + (if (f.videos.firstOrNull()?.let { isSd(it) } == true) "💾 فلاشة" else "📱 داخلية") + " · " + VideoLib.fmtSize(f.videos.sumOf { it.size }), go)
                 else vTile(thumb, "📁 " + f.name, f.videos.size.toString() + " فيديو", -1, false, go, null, true, wOf(mode))
         c.tag = if (first) "fold:first" else "fold:" + f.key
@@ -1942,7 +1989,7 @@ class TvActivity : Activity() {
             if (sibs.size > 1) body.addView(hrow(sibs.take(60).map { sf ->
                 pill((if (sf.key == open.key) "● " else "") + (if (sf.videos.firstOrNull()?.let { v -> isSd(v) } == true) "💾 " else "📱 ") + sf.name) {
                     storageKind = if (kind == "all") "all" else if (sf.videos.firstOrNull()?.let { v -> isSd(v) } == true) "sd" else "int"
-                    openFolder = sf.key; storageQuery = ""; fillStorageView(fh, true)
+                    openFolder = sf.key; storageQuery = ""; fillStorageView(fh, true); pageEnter()
                 }
             }))
             body.addView(ui.text("📁 ${open.name} · ${open.videos.size} فيديو · الترتيب: " + VideoLib.sortLabelOf(vidSort()), 16f, th.primary, true).apply { setPadding(ui.dp(10), ui.dp(8), 0, ui.dp(2)) })
@@ -2050,6 +2097,7 @@ class TvActivity : Activity() {
         content.removeAllViews(); heroBtn = null; heroImg = null
         val sv = host(); content.addView(sv)
         fillStorageView(sv, focus)
+        pageEnter()
         if (VideoScan.hasPermission(this) && !(scanned && System.currentTimeMillis() - lastScanAt < 20000L)) Thread {   // فحص جديد (مش لو لسه فاحصين من أقل من 20ث — التنقّل بين التابات يفضل سلس)
             val items = try { VideoScan.scan(this) } catch (_: Exception) { null }
             if (items != null) runOnUiThread {
@@ -2134,6 +2182,7 @@ class TvActivity : Activity() {
                 // السجل بس بيتحدّث لو اتغيّر (فيديو اتشغّل)
                 val sig = recentsSig()
                 if (sig != homeCacheSig) { homeCacheSig = sig; histHost?.let { fillHistory(it) } }
+                pageEnter()
                 if (focus) (heroBtn ?: firstRail)?.let { f -> content.post { try { f.requestFocus() } catch (_: Exception) {} } }
                 return
             }
@@ -2201,6 +2250,7 @@ class TvActivity : Activity() {
         content.addView(LinearLayout(this).apply { gravity = Gravity.CENTER; layoutDirection = View.LAYOUT_DIRECTION_RTL; setPadding(0, ui.dp(12), 0, ui.dp(24)); addView(pill("🎛 تخصيص") { rowsDialog() }); addView(pill("↕ ترتيب الصفوف") { orderDialog() }); addView(pill("➕ أضف تطبيق") { pickApps() }) })   // (v538)
         homeCache = (0 until content.childCount).map { content.getChildAt(it) }; homeCacheAt = System.currentTimeMillis()
         homeCacheSig = recentsSig()
+        pageEnter()
         if (focus) (heroBtn ?: firstRail)?.let { f -> content.post { try { f.requestFocus() } catch (_: Exception) {} } }
     }
 
@@ -2214,6 +2264,7 @@ class TvActivity : Activity() {
         val apps = builtinApps() + allLaunchApps().sortedBy { lbl(it).lowercase() }.map { appCircle(it) }   // (v521) يوتيوب + المتصفح أول اتنين
         val wdp = resources.displayMetrics.widthPixels / resources.displayMetrics.density - 68f
         gridInto(content, apps, (wdp / (iconDp() + 56f)).toInt().coerceIn(3, 10))
+        pageEnter()
         if (focus) apps.firstOrNull()?.let { f -> content.post { try { f.requestFocus() } catch (_: Throwable) {} } }
     }
 

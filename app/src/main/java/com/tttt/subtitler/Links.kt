@@ -110,10 +110,7 @@ object Links {
             try {
                 act.runOnUiThread {
                     Notice.show(act, msg, 2600L)
-                    // (v532) اتبعت فيديو للتلفزيون: افتح شاشة تحكم مشغّل الفيديو على الموبايل على طول
-                    if (msg.startsWith("✅") && (k0 == Kind.YT || k0 == Kind.VIDEO)) {
-                        try { act.startActivity(Intent(act, RemoteActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP).putExtra("open_player", true).putExtra("wait", true)) } catch (_: Throwable) {}
-                    }
+                    // (v554) مفيش شاشة تحكم على الموبايل: الإشعار كفاية
                 }
             } catch (_: Throwable) {}
         }.also { it.isDaemon = true }.start()
