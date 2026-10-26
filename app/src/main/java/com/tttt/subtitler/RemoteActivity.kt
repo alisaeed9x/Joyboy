@@ -125,9 +125,9 @@ class RemoteActivity : Activity() {
         col.addView(connBtnBox)
 
         ctrl = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; setPadding(0, ui.dp(10), 0, 0) }
-        ctrl.addView(panel(vrow(cmdBtn("⏻", "power"), sleepBtn(), cmdBtn("🔇", "mute"))))
-        ctrl.addView(panel(vrow(bigBtn("🎞 مشغّل الفيديو") { openPage("video") }, ytPhoneBtn(), wordCmd("🌐 متصفح", "open_browser")), vrow(wordCmd("📺 يوتيوب التلفزيون", "open_yt"), wordCmd("💾 فلاشة", "open_sd"), wordCmd("📱 داخلية", "open_int"))), LinearLayout.LayoutParams(-1, -2).apply { topMargin = ui.dp(10) })   // (v533) مشغّل الفيديو · يوتيوب · متصفح فوق
-        ctrl.addView(panel(vrow(bigBtn("📚 مكتبة التلفزيون") { startActivity(Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP).putExtra("tab", "videos").putExtra("lib_tv", true)) }, bigBtn("🧰 مهام التلفزيون") { TvTasksUi.show(this) }, tvModeBtn())), LinearLayout.LayoutParams(-1, -2).apply { topMargin = ui.dp(10) })   // (v543 م3/م4) فيديوهات التلفزيون + وضع التلفزيون
+        ctrl.addView(panel(vrow(cmdBtn("🔇", "mute"))   // (v551) ⏻ باور أوف اتشال (محتاج إمكانية الوصول وTCL بتمنعها)))   // (v550) زرار 😴 مؤقت النوم اتشال من الشاشة (الدالة sleepBtn() لسه موجودة)
+        ctrl.addView(panel(vrow(wordCmd("💾 فلاشة", "open_sd"), wordCmd("📱 داخلية", "open_int"))), LinearLayout.LayoutParams(-1, -2).apply { topMargin = ui.dp(10) })   // (v550) اتشالوا: مشغّل الفيديو · يوتيوب · متصفح · يوتيوب التلفزيون
+        ctrl.addView(panel(vrow(bigBtn("📚 تصفّح فيديوهات التلفزيون") { startActivity(Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP).putExtra("tab", "videos").putExtra("lib_tv", true)) }, bigBtn("🧰 مهام التلفزيون") { TvTasksUi.show(this) }, tvModeBtn())), LinearLayout.LayoutParams(-1, -2).apply { topMargin = ui.dp(10) })   // (v543 م3/م4) فيديوهات التلفزيون + وضع التلفزيون
         col.addView(ctrl)
 
         remote = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL }
@@ -394,8 +394,8 @@ class RemoteActivity : Activity() {
         if (lastPSt == null) { Notice.show(this, "مفيش فيديو شغّال على التلفزيون — شغّل فيديو الأول", 2800L); return }
         if (pKind == "browser") { Notice.show(this, "الترجمة بتشتغل في مشغّل البرنامج بس — افتح الفيديو من اللانشر", 3200L); return }
         AlertDialog.Builder(this).setTitle("▶ ترجم")
-            .setItems(arrayOf("▶ ترجم الفيديو (قايمة الترجمة على التلفزيون)", "📄 ترجمة ملف الترجمة (سوفت / هارد سب)", "🌐 مسار / لغة الترجمة", "⋯ المزيد")) { _, w ->
-                when (w) { 0 -> pAct("translate"); 1 -> sfDialog(); 2 -> pAct("subs"); 3 -> pAct("more") }
+            .setItems(arrayOf("▶ ترجم الفيديو (قايمة الترجمة على التلفزيون)", "🌐 مسار / لغة الترجمة", "⋯ المزيد")) { _, w ->
+                when (w) { 0 -> pAct("translate"); 1 -> pAct("subs"); 2 -> pAct("more") }   // (v552) «ترجمة ملف الترجمة» اتشالت من القايمة
             }.setNegativeButton("إلغاء", null).show()
     }
 

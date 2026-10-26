@@ -86,6 +86,40 @@ object SubFileTr {
      * مسار ترجمة جوه فيديو محلي عن طريق MediaExtractor (بينجح مع mp4/3gpp وبعض الـ mkv).
      * بيرجّع (اسم المسار، الجمل) أو null لو مفيش/مش مدعوم — ساعتها المشغّل بيترجم لحظيًا أثناء التشغيل.
      */
+    /** (v552) مسارات الترجمة النصية جوه الفيديو من غير ما نقراها: (رقم المسار في MediaExtractor، اسم بالعربي) */
+    fun embeddedTracks(ctx: Context, uri: Uri): List<Pair<Int, String>> {
+        var ex: MediaExtractor? = null
+        val out = ArrayList<Pair<Int, String>>()
+        try {
+            ex = MediaExtractor()
+            if (uri.scheme == "file") ex.setDataSource(uri.path ?: return out) else ex.setDataSource(ctx, uri, null)
+            for (i in 0 until ex.trackCount) {
+                val f = ex.getTrackFormat(i)
+                val mime = f.getString(MediaFormat.KEY_MIME) ?: continue
+                if (!(mime.startsWith("text/") || mime.contains("subrip") || mime.contains("ssa") || mime.contains("vtt") || mime.contains("ttml"))) continue
+                val lang = try { f.getString(MediaFormat.KEY_LANGUAGE) ?: "" } catch (_: Throwable) { "" }
+                val nm = if (lang.isBlank() || lang == "und") "" else try { java.util.Locale(lang).getDisplayLanguage(java.util.Locale("ar")).ifBlank { lang } } catch (_: Throwable) { lang }
+                out.add(i to (nm.ifBlank { "لغة غير معروفة" } + " (مسار " + (out.size + 1) + ")"))
+            }
+        } catch (_: Throwable) {
+        } finally { try { ex?.release() } catch (_: Throwable) {} }
+        return out
+    }
+
+    /** مسار واحد بالرقم (من embeddedTracks) */
+    fun readEmbeddedTrack(ctx: Context, uri: Uri, idx: Int): Pair<String, List<Cue>>? {
+        var ex: MediaExtractor? = null
+        try {
+            ex = MediaExtractor()
+            if (uri.scheme == "file") ex.setDataSource(uri.path ?: return null) else ex.setDataSource(ctx, uri, null)
+            if (idx !in 0 until ex.trackCount) return null
+            val f = ex.getTrackFormat(idx)
+            val mime = f.getString(MediaFormat.KEY_MIME) ?: return null
+            val cues = readTrack(ex, idx, mime)
+            return if (cues.isEmpty()) null else ("مسار " + (idx + 1)) to cues
+        } catch (_: Throwable) { return null } finally { try { ex?.release() } catch (_: Throwable) {} }
+    }
+
     fun readEmbedded(ctx: Context, uri: Uri): Pair<String, List<Cue>>? {
         var ex: MediaExtractor? = null
         try {

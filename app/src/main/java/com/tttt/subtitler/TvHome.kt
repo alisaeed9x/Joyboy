@@ -295,7 +295,7 @@ class TvActivity : Activity() {
     override fun onBackPressed() {
         wake()
         if (storageKind != null && openFolder != null && foldersHost != null) { closeFolder(); return }   // (v490) من جوه فولدر: ارجع لقايمة الفولدرات
-        showHome()   // (v493) من جوه الفلاشة/الذاكرة: ارجع للرئيسية
+        showHome(true, true)   // (v493) من جوه الفلاشة/الذاكرة: ارجع للرئيسية
     }
 
     // ===== (v496) الشريط العلوي على نمط Google TV: [الشعار | الساعة] ... كبسولة أزرار · كبسولة تابات · كبسولة بحث =====
@@ -394,7 +394,7 @@ class TvActivity : Activity() {
         // 4) الشعار | الساعة على الشمال زي «Google TV | 3:10»
         val tc = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_LTR }
         if (!compactUi) {
-            tc.addView(ui.text("Subtitler", 21f, fg, true).apply { setShadowLayer(8f, 0f, 2f, Color.BLACK) })
+            tc.addView(roundBtn("⚙️", "الإعدادات", 42) { guardPin { openMain("settings") } })   // (v550) كلمة «Subtitler» اتبدّلت بزرار الإعدادات
             tc.addView(View(this).apply { setBackgroundColor(0x66FFFFFF) }, LinearLayout.LayoutParams(ui.dp(2), ui.dp(20)).apply { setMargins(ui.dp(12), 0, ui.dp(12), 0) })
         }
         tcV = tc
@@ -451,7 +451,7 @@ class TvActivity : Activity() {
         if (i < 0 || i == curTab || isDestroyed) return@Runnable
         try {
             content.animate().cancel(); content.alpha = 0f; content.translationY = ui.dp(10).toFloat()
-            if (i == 0) showHome(false) else if (i == 1) showVideosPage(false) else if (i == 2) showApps(false)
+            if (i == 0) showHome(false, true) else if (i == 1) showVideosPage(false) else if (i == 2) showApps(false)
             content.animate().alpha(1f).translationY(0f).setDuration(Skins.dur(180L)).setInterpolator(DecelerateInterpolator()).start()
         } catch (e: Throwable) { LogStore.err("TvHome:tabGo", e); content.alpha = 1f; content.translationY = 0f }
     }
@@ -1865,6 +1865,15 @@ class TvActivity : Activity() {
         content.removeAllViews()
         val sv = host(); content.addView(sv)
         fillStorageView(sv, true)
+        // (v550) كان بيفتح من غير فحص: لو الفحص ماخلصش بتفضل رسالة «بقرا الفيديوهات» ومفيش غير مربع البحث يتركّز عليه فمتعرفش تتحرك. دلوقتي بنفحص ونرجّع نملا الصفحة ونركّز على أول فولدر
+        if (VideoScan.hasPermission(this) && !(scanned && System.currentTimeMillis() - lastScanAt < 20000L)) Thread {
+            val items = try { VideoScan.scan(this) } catch (_: Exception) { null }
+            if (items != null) runOnUiThread {
+                if (isDestroyed) return@runOnUiThread
+                lastScan = items; scanned = true; lastScanAt = System.currentTimeMillis()
+                if (storageKind == kind && storageQuery.isBlank()) foldersHost?.let { fillStorageView(it, true) }
+            }
+        }.apply { isDaemon = true }.start()
     }
 
     /** (v493) كارت فولدر فيديو: 16:9 بصورة أول فيديو، والاسم تحته وهو متركّز */
@@ -1885,7 +1894,7 @@ class TvActivity : Activity() {
         fh.removeAllViews()
         val label = if (kind == "sd") "الفلاشة" else if (kind == "all") "الفيديوهات" else "الذاكرة الداخلية"
         val head = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; setPadding(ui.dp(4), ui.dp(10), ui.dp(4), ui.dp(4)) }
-        head.addView(pill("→ رجوع") { if (openFolder != null) closeFolder() else showHome() }.apply { setPadding(ui.dp(14), ui.dp(9), ui.dp(14), ui.dp(9)) })
+        head.addView(pill("→ رجوع") { if (openFolder != null) closeFolder() else showHome(true, true) }.apply { setPadding(ui.dp(14), ui.dp(9), ui.dp(14), ui.dp(9)); tag = "stor:back" })
         val et = EditText(this).apply {
             setText(storageQuery); setSingleLine(); textSize = 16f; setTextColor(th.text); setHintTextColor(th.muted)
             hint = "🔍 ابحث في $label…"; setPadding(ui.dp(16), ui.dp(10), ui.dp(16), ui.dp(10)); background = ui.box(th.surface, th.border, 22)
@@ -1897,7 +1906,10 @@ class TvActivity : Activity() {
         fh.addView(head, LinearLayout.LayoutParams(-1, -2))
         val body = host()
         fh.addView(body)
-        fun msg(t: String) = body.addView(ui.text(t, 13f, th.muted).apply { setPadding(ui.dp(8), ui.dp(10), ui.dp(8), ui.dp(6)) })
+        fun msg(t: String) {
+            body.addView(ui.text(t, 13f, th.muted).apply { setPadding(ui.dp(8), ui.dp(10), ui.dp(8), ui.dp(6)) })
+            if (focusFirst) fh.post { try { fh.findViewWithTag<View>("stor:back")?.requestFocus() } catch (_: Throwable) {} }   // (v550) مفيش كروت: التركيز على «رجوع» مش على مربع البحث
+        }
         fun render(focus: Boolean) {
             body.removeAllViews()
             if (!VideoScan.hasPermission(this)) { msg("محتاج إذن الوصول للفيديوهات — افتح «الفيديوهات» مرة واحدة وادّي الإذن"); return }
@@ -2105,7 +2117,27 @@ class TvActivity : Activity() {
         }
     }
 
-    private fun showHome(focus: Boolean = true) {
+    // (v551) كاش الرئيسية: الرجوع من الفيديوهات/التطبيقات/الفلاشة كان بيبني الصفوف كلها من الأول (يوتيوب بكروتين وبعدين النتايج، فحص جديد، مصغّرات async) فبتحصل نتشة. دلوقتي بنرجّع نفس الـViews المبنية من غير ما نتلمس
+    private var homeCache: List<View>? = null
+    private var homeCacheAt = 0L
+    private var homeCacheSig = ""
+
+    private fun showHome(focus: Boolean = true, reuse: Boolean = false) {
+        if (reuse && !inSearch) {
+            val cache = homeCache
+            if (cache != null && System.currentTimeMillis() - homeCacheAt < 600_000L) {
+                h.removeCallbacks(searchRun)
+                muteSearch = true; searchEt?.setText(""); muteSearch = false; inSearch = false
+                content.removeAllViews(); heroBtn = null; heroImg = null; setTab(0); prayerCd = null
+                storageKind = null; openFolder = null; foldersHost = null
+                for (v in cache) { (v.parent as? ViewGroup)?.removeView(v); content.addView(v) }
+                // السجل بس بيتحدّث لو اتغيّر (فيديو اتشغّل)
+                val sig = recentsSig()
+                if (sig != homeCacheSig) { homeCacheSig = sig; histHost?.let { fillHistory(it) } }
+                if (focus) (heroBtn ?: firstRail)?.let { f -> content.post { try { f.requestFocus() } catch (_: Exception) {} } }
+                return
+            }
+        }
         h.removeCallbacks(searchRun); warmApps()
         muteSearch = true; searchEt?.setText(""); muteSearch = false; inSearch = false
         content.removeAllViews(); heroBtn = null; heroImg = null; setTab(0); prayerCd = null
@@ -2167,6 +2199,8 @@ class TvActivity : Activity() {
             addView(pill("🎨 المظهر") { showAppearance() })
         })
         content.addView(LinearLayout(this).apply { gravity = Gravity.CENTER; layoutDirection = View.LAYOUT_DIRECTION_RTL; setPadding(0, ui.dp(12), 0, ui.dp(24)); addView(pill("🎛 تخصيص") { rowsDialog() }); addView(pill("↕ ترتيب الصفوف") { orderDialog() }); addView(pill("➕ أضف تطبيق") { pickApps() }) })   // (v538)
+        homeCache = (0 until content.childCount).map { content.getChildAt(it) }; homeCacheAt = System.currentTimeMillis()
+        homeCacheSig = recentsSig()
         if (focus) (heroBtn ?: firstRail)?.let { f -> content.post { try { f.requestFocus() } catch (_: Exception) {} } }
     }
 

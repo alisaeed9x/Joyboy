@@ -155,8 +155,8 @@ object BrainRpc {
     }
 
     // ===== الإعدادات (قايمة بيضاء؛ المفاتيح الحساسة عبر /keys بس) =====
-    private val allowedExact = setOf("conv_dialect", "loop", "base_lang", "keepgoing", "chunk", "trstart", "ask_bg_exit")
-    private val allowedPrefix = listOf("sub_", "tone_", "tr_", "stt_", "off_", "wtr")
+    private val allowedExact = setOf("conv_dialect", "loop", "base_lang", "keepgoing", "chunk", "trstart", "ask_bg_exit", "lang", "model", "term_notes", "glossary", "gloss", "refine2pass", "preset_last", "omni_mode", "tx_order")   // (v551) +الترجمة/المحرك
+    private val allowedPrefix = listOf("sub_", "tone_", "tr_", "stt_", "off_", "wtr", "ext_", "rstt_", "ctx_", "conv_")
     fun allowed(k: String): Boolean =
         k.isNotBlank() && !k.contains("key", true) && !k.contains("token", true) && (k in allowedExact || allowedPrefix.any { k.startsWith(it) })
 

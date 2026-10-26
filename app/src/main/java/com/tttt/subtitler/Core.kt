@@ -214,7 +214,10 @@ object Cfg {
     fun keys(k: String) = str(k).lines().map { it.trim() }.filter { it.length > 10 }
     fun int(k: String, d: Int) = CfgCodec.int(raw(k), d)
     /** كتابة بالنوع الصح حسب المفتاح */
+    /** (v551) مستمع الكتابة: مشغّل الموبايل في وضع المتحكّم بيستخدمه عشان يبعت الإعدادات المسموحة للتلفزيون */
+    @Volatile var onPut: ((String, String) -> Unit)? = null
     fun put(k: String, v: String) {
+        try { onPut?.invoke(k, v) } catch (_: Throwable) {}
         val t = CfgCodec.typed(k, v); val e = p.edit()
         snap = snap.toMutableMap().apply { put(k, t) }   // (v458) اللقطة تتحدّث فورًا من غير انتظار المستمع
         when (t) { is Boolean -> e.putBoolean(k, t); is Int -> e.putInt(k, t); else -> e.putString(k, v) }
