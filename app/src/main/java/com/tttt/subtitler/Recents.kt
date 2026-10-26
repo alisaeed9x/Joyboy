@@ -58,6 +58,17 @@ object Recents {
         }
     }
 
+    /** (v558) مسح كل آخر المشغّلة */
+    fun clearAll(ctx: android.content.Context) {
+        synchronized(ioLock) { try { java.io.File(ctx.filesDir, "recent.json").writeText("[]") } catch (_: Exception) {} }
+    }
+    /** (v558) شيل اللي يطابق الشرط (مثلًا فيديوهات المتصفح/يوتيوب = اللي ليها url ومالهاش uri) */
+    fun dropWhere(ctx: android.content.Context, pred: (Recent) -> Boolean) {
+        synchronized(ioLock) {
+            try { val f = java.io.File(ctx.filesDir, "recent.json"); f.writeText(toJson(parse(try { f.readText() } catch (_: Exception) { "" }).filter { !pred(it) })) } catch (_: Exception) {}
+        }
+    }
+
     fun titleOf(videoId: String): String {
         if (videoId.startsWith("yt:")) return "يوتيوب · " + videoId.removePrefix("yt:")
         val raw = videoId.removePrefix("f:").removePrefix("u:")

@@ -46,7 +46,7 @@ object PubHistoryUi {
                 head.addView(ui.text("$name (${items.size})", 15f, th.primary, true), LinearLayout.LayoutParams(0, -2, 1f))
                 if (items.isNotEmpty()) head.addView(ui.text("🗑 مسح القسم", 12f, th.muted, true).apply {
                     setPadding(ui.dp(10), ui.dp(6), ui.dp(10), ui.dp(6))
-                    setOnClickListener { confirm("🗑 مسح القسم", "هتتمسح كل العناصر في «$name».") { PubHistory.clear(kind, src) } }
+                    setOnClickListener { confirm("🗑 مسح القسم", "هتتمسح كل العناصر في «$name».") { PubHistory.clear(kind, src); if (kind == "v" && src == "browser") PlayTarget.clearTvHistory(act, "browser"); if (kind == "v" && src == "youtube") PlayTarget.clearTvHistory(act, "yt") } }
                 })
                 body.addView(head, LinearLayout.LayoutParams(-1, -2))
                 if (items.isEmpty()) { body.addView(ui.text("فاضي", 12f, th.muted), LinearLayout.LayoutParams(-1, -2)); continue }
@@ -71,7 +71,7 @@ object PubHistoryUi {
         head.addView(ui.text("🕘 السجل العام", 19f, th.text, true), LinearLayout.LayoutParams(0, -2, 1f))
         head.addView(ui.text("🗑 مسح الكل", 12f, th.muted, true).apply {
             setPadding(ui.dp(10), ui.dp(8), ui.dp(10), ui.dp(8))
-            setOnClickListener { confirm("🗑 مسح السجل العام", "هيتمسح سجل الفيديوهات والصوتيات كله.") { PubHistory.clearAll() } }
+            setOnClickListener { confirm("🗑 مسح السجل العام", "هيتمسح سجل الفيديوهات والصوتيات كله.") { PubHistory.clearAll(); PlayTarget.clearTvHistory(act, "browser"); PlayTarget.clearTvHistory(act, "yt") } }
         })
         head.addView(ui.text("✕", 18f, th.text, true).apply { setPadding(ui.dp(12), ui.dp(8), ui.dp(12), ui.dp(8)); setOnClickListener { dlg.dismiss() } })
         root.addView(head, LinearLayout.LayoutParams(-1, -2))

@@ -76,6 +76,8 @@ class TvActivity : Activity() {
     private var tabActions: List<() -> Unit> = emptyList()
     private var tabAutoBlock = -1   // (v513) التاب اللي اتفتح بالتركيز: مايتفتحش تاني لما نرجع عليه بـ Back (لحد ما التركيز يروح لتاب تاني)
     private var tcV: View? = null
+    private var wifiTop: View? = null           // (v558) زرار الواي فاي جنب الساعة (بيتخبّى لو الشريط ضاق)
+    private var prayFitHidden = false           // (v558) عدّاد الصلاة اتخبّى عشان الشريط يساع ☰ و⚙️
     private var searchExtras: List<View> = emptyList()
     private var searchExpanded = false
     private val tabViews = ArrayList<TvOwnLinear>()
@@ -89,6 +91,53 @@ class TvActivity : Activity() {
 
     private fun favLoad() { favs = LinkedHashSet(Cfg.str("tv_favs", "").split(",").map { it.trim() }.filter { it.isNotEmpty() }) }
     private fun favSave() { Cfg.put("tv_favs", favs.joinToString(",")) }
+    private var mediaOps: MediaOps? = null
+    private fun ops(): MediaOps = mediaOps ?: MediaOps(this, ui, th) {
+        VideoScan.cache = null; scanned = false; lastScanAt = 0L; refreshView()
+    }.also { mediaOps = it }
+    /** بعد أي تغيير (مفضلة / حذف / إعادة تسمية): ارسم الصفحة اللي واقف فيها من جديد */
+    private fun refreshView() {
+        try { if (storageKind != null) foldersHost?.let { fillStorageView(it) } else if (inSearch) runSearch(searchEt?.text?.toString() ?: "") else showHome() } catch (e: Throwable) { LogStore.err("Tv:refresh", e) }
+    }
+    /** (v558) الموبايل مسح سجل ← ارسم الصفحة من جديد */
+    fun onRemoteCleared() { runOnUiThread { if (!isDestroyed && !isFinishing) refreshView() } }
+    companion object { @Volatile var live: java.lang.ref.WeakReference<TvActivity>? = null }
+
+    override fun onActivityResult(r: Int, c: Int, d: Intent?) {
+        super.onActivityResult(r, c, d)
+        if (mediaOps?.onResult(r, c == RESULT_OK) == true) return
+    }
+
+    /** (v558) ضغطة طويلة (OK مطوّلة) على أي فيديو: تشغيل · مفضلة · إعادة تسمية · شيل من آخر المشغّل · تفاصيل · حذف · مسح كل آخر المشغّل */
+    private fun videoMenu(id: String, title: String, vi: VideoItem?, rec: Recent?) {
+        val items = ArrayList<Pair<String, () -> Unit>>()
+        fun add(t: String, f: () -> Unit) { items.add(t to f) }
+        if (vi != null) add("▶ تشغيل") { playFile(vi.uri, vi.landscape) } else if (rec != null) add("▶ تشغيل") { playRecent(rec) }
+        add(if (favs.contains(id)) "⭐ شيل من المفضلة" else "⭐ ضيف للمفضلة") { favToggle(id, title) }
+        if (vi != null) add("✏️ إعادة تسمية الملف") { ops().rename(vi) }
+        else if (rec != null) add("✏️ إعادة تسمية (في آخر المشغّل)") { renameRecent(rec) }
+        if (rec != null) add("🧹 شيل من آخر المشغّلة") { Recents.drop(this, rec.id); Notice.show(this, "🧹 اتشال من آخر المشغّلة", 1800L); refreshView() }
+        if (vi != null) add("ℹ️ تفاصيل وإعدادات الفيديو") { ops().details(vi, rec) }
+        if (vi != null) add("🗑 احذف الفيديو من الجهاز") { ops().delete(vi) }
+        if (recents().isNotEmpty()) add("🗑 امسح كل آخر المشغّلة") {
+            GAlert(this).setTitle("🗑 مسح آخر المشغّلة").setMessage("هتتمسح كل الفيديوهات من «آخر الفيديوهات المشغّلة» (الملفات نفسها مش هتتمسح). متأكد؟")
+                .setPositiveButton("امسح الكل") { _, _ -> Recents.clearAll(this); Notice.show(this, "🗑 اتمسحت كل آخر المشغّلة", 2200L); refreshView() }
+                .setNegativeButton("إلغاء", null).show()
+        }
+        GAlert(this).setTitle("🎬 " + title.take(48)).setItems(items.map { it.first }.toTypedArray()) { _, i -> items.getOrNull(i)?.second?.invoke() }
+            .setNegativeButton("إغلاق", null).show()
+    }
+
+    private fun renameRecent(r: Recent) {
+        val et = EditText(this).apply { setText(r.title); setSelection(text.length); setSingleLine(); textSize = 16f }
+        GAlert(this).setTitle("✏️ إعادة تسمية").setView(et)
+            .setPositiveButton("تغيير") { _, _ ->
+                val nn = et.text.toString().trim()
+                if (nn.isEmpty()) { Notice.show(this, "الاسم فاضي", 1800L); return@setPositiveButton }
+                Recents.rename(this, r.id, r.id, nn); Notice.show(this, "✅ اتغيّر الاسم", 1800L); refreshView()
+            }.setNegativeButton("إلغاء", null).show()
+    }
+
     private fun favToggle(id: String, title: String) {
         if (!favs.remove(id)) { favs.add(id); Notice.show(this, "⭐ اتضافت للمفضلة: $title", 1600L) } else Notice.show(this, "⭐ اتشالت من المفضلة", 1400L)
         favSave(); if (storageKind != null) foldersHost?.let { fillStorageView(it) } else if (inSearch) runSearch(searchEt?.text?.toString() ?: "") else showHome()
@@ -96,6 +145,7 @@ class TvActivity : Activity() {
 
     override fun onCreate(b: Bundle?) {
         super.onCreate(b)
+        live = java.lang.ref.WeakReference(this)
         Cfg.init(this); favLoad()
         DeviceUi.applyOrientation(this)   // (v494) وضع التلفزيون على موبايل = لاندسكيب تلقائي
         // (v491) الثيم الأساسي على التلفزيون = أسود (أموليد) — مرة واحدة بس، وتقدر تغيّره من الإعدادات بعدها
@@ -404,9 +454,48 @@ class TvActivity : Activity() {
         // (v527) الصلاة الجاية + المتبقي ليها جنب الساعة
         topPrayTv = ui.text("", if (compactUi) 13f else 16f, 0xFFFFD27A.toInt(), true).apply { setShadowLayer(8f, 0f, 2f, Color.BLACK); visibility = View.GONE; setSingleLine(); setPadding(ui.dp(14), 0, 0, 0) }
         tc.addView(topPrayTv)
-        tc.addView(roundBtn("📶", "الواي فاي (دوسة = تشغيل/إيقاف · طويلة = الشبكات)", 40, { TvWifi.show(this) }) { TvWifi.quick(this) }.apply { (layoutParams as? LinearLayout.LayoutParams)?.leftMargin = ui.dp(12) })   // (v525) واي فاي سريع جنب الساعة
+        val wf = roundBtn("📶", "الواي فاي (دوسة = تشغيل/إيقاف · طويلة = الشبكات)", 40, { TvWifi.show(this) }) { TvWifi.quick(this) }.apply { (layoutParams as? LinearLayout.LayoutParams)?.leftMargin = ui.dp(12) }   // (v525) واي فاي سريع جنب الساعة
+        wifiTop = wf
+        tc.addView(wf)
         bar.addView(tc)
+        // (v558) لو الشريط العلوي اتزنق (شاشة/تكبير) ☰ و⚙️ كانوا بيطلعوا بره الشاشة: بنخبّي عدّاد الصلاة الأول، وبعدها الواي فاي، وبعدها نصغّر البحث
+        bar.addOnLayoutChangeListener { _, l, _, r, _, oldL, _, oldR, _ -> if (r - l != oldR - oldL) bar.post { fitTopBar() } }
         return bar
+    }
+
+    /** (v558) يضمن إن ☰ القايمة و⚙️ الإعدادات ظاهرين دايمًا جوه الشريط العلوي */
+    private fun fitTopBar() {
+        if (compactUi || isDestroyed || isFinishing) return
+        val tc = tcV as? ViewGroup ?: return
+        val bar = tc.parent as? ViewGroup ?: return
+        val avail = bar.width - bar.paddingLeft - bar.paddingRight
+        if (avail <= 0) return
+        val sb = searchBox; val tabs = tabsBoxV; val pray = topPrayTv; val wf = wifiTop
+        fun mw(v: View?): Int {
+            if (v == null || v.visibility == View.GONE) return 0
+            v.measure(View.MeasureSpec.UNSPECIFIED, View.MeasureSpec.UNSPECIFIED)
+            val lp = v.layoutParams as? ViewGroup.MarginLayoutParams
+            return v.measuredWidth + (lp?.let { it.leftMargin + it.rightMargin } ?: 0)
+        }
+        fun need(): Int {
+            var n = 0
+            if (sb != null) { val lp = sb.layoutParams as? ViewGroup.MarginLayoutParams; n += (lp?.width?.takeIf { it > 0 } ?: ui.dp(170)) + (lp?.let { it.leftMargin + it.rightMargin } ?: 0) }
+            n += mw(tabs) + mw(tc)
+            // عدّاد الصلاة بيتغيّر عرضه مع الأرقام: احسب بأقصى عرض ليه عشان مايتخبّاش ويظهر كل ثانية
+            if (pray != null && pray.visibility == View.VISIBLE && pray.measuredWidth < ui.dp(210)) n += ui.dp(210) - pray.measuredWidth
+            return n
+        }
+        prayFitHidden = false
+        if (sb != null && !searchExpanded) sb.layoutParams.width = ui.dp(170)
+        if (pray != null && topPrayAt > 0L) pray.visibility = View.VISIBLE
+        wf?.visibility = View.VISIBLE
+        var n = need()
+        if (n > avail && pray != null && pray.visibility == View.VISIBLE) { prayFitHidden = true; pray.visibility = View.GONE; n = need() }
+        if (n > avail && wf != null) { wf.visibility = View.GONE; n = need() }
+        if (n > avail && sb != null && !searchExpanded) {
+            val lp = sb.layoutParams
+            lp.width = (lp.width - (n - avail)).coerceAtLeast(ui.dp(110)); sb.layoutParams = lp
+        }
     }
 
     /** زرار دائري: المتركّز بيبقى أبيض ويكبر شوية، واسمه بيظهر في إشعار صغير */
@@ -1070,12 +1159,12 @@ class TvActivity : Activity() {
         val vi = lastScan.firstOrNull { it.uri == r.uri }
         return vTile({ iv -> if (vi != null) Thumbs.load(this, vi) { bmp -> if (bmp != null) runOnUiThread { iv.setImageBitmap(bmp) } } },
             r.title, "⏸ " + PlayerLogic.clock((r.posSec * 1000).toLong()) + " · " + r.percent + "%", r.percent, favs.contains(r.id),
-            { playRecent(r) }, { favToggle(r.id, r.title) })
+            { playRecent(r) }, { videoMenu(r.id, r.title, vi, r) })
     }
 
     private fun videoCard(v: VideoItem, wDp: Int = 236): View = vTile({ iv -> Thumbs.load(this, v) { bmp -> if (bmp != null) runOnUiThread { iv.setImageBitmap(bmp) } } },
         v.title, "📁 " + v.folderName + if (v.durMs > 0) " · " + PlayerLogic.clock(v.durMs) else "", -1, favs.contains(v.videoId),
-        { playFile(v.uri, v.landscape) }, { favToggle(v.videoId, v.title) }, false, wDp)
+        { playFile(v.uri, v.landscape) }, { videoMenu(v.videoId, v.title, v, recents().firstOrNull { it.id == v.videoId }) }, false, wDp)
 
     // ===== (v530) صفحة الفيديوهات: أشكال العرض (مربعات كبيرة / صغيرة / قائمة) للفولدرات وللفيديوهات =====
     private fun foldView() = Cfg.str("tv_fold_view", "grid")
@@ -1111,7 +1200,7 @@ class TvActivity : Activity() {
     }
     private fun videoItemView(v: VideoItem, mode: String): View =
         if (mode == "list") listRow({ iv -> Thumbs.load(this, v) { bmp -> if (bmp != null) runOnUiThread { iv.setImageBitmap(bmp) } } }, (if (favs.contains(v.videoId)) "⭐ " else "") + v.title,
-            (if (v.durMs > 0) PlayerLogic.clock(v.durMs) + " · " else "") + VideoLib.fmtSize(v.size) + " · 📁 " + v.folderName, { playFile(v.uri, v.landscape) }, { favToggle(v.videoId, v.title) })
+            (if (v.durMs > 0) PlayerLogic.clock(v.durMs) + " · " else "") + VideoLib.fmtSize(v.size) + " · 📁 " + v.folderName, { playFile(v.uri, v.landscape) }, { videoMenu(v.videoId, v.title, v, recents().firstOrNull { it.id == v.videoId }) })
         else videoCard(v, wOf(mode))
 
     // ===== (v476) لانشر قوي: بانر رئيسي + وصول سريع + تطبيقات الجهاز + كروت =====
@@ -1589,7 +1678,7 @@ class TvActivity : Activity() {
         if (left <= 0L) { topPrayAt = 0L; refreshTopPrayer(); return }
         val t = if (left >= 3600L) String.format(Locale.US, "%d:%02d:%02d", left / 3600, (left % 3600) / 60, left % 60) else String.format(Locale.US, "%02d:%02d", left / 60, left % 60)
         tv.text = "🕌 " + topPrayName + " بعد " + t
-        if (tv.visibility != View.VISIBLE) tv.visibility = View.VISIBLE
+        if (tv.visibility != View.VISIBLE && !prayFitHidden) { tv.visibility = View.VISIBLE; tv.post { fitTopBar() } }
     }
 
     private fun prayerTick() {
@@ -1812,7 +1901,7 @@ class TvActivity : Activity() {
         val vi = byUri[r.uri]
         return vTile({ iv -> if (vi != null) Thumbs.load(this, vi) { bmp -> if (bmp != null) runOnUiThread { iv.setImageBitmap(bmp) } } },
             r.title, "⏸ " + PlayerLogic.clock((r.posSec * 1000).toLong()) + " · " + r.percent + "%", r.percent, favs.contains(r.id),
-            { playRecent(r) }, { favToggle(r.id, r.title) })
+            { playRecent(r) }, { videoMenu(r.id, r.title, vi, r) })
     }
 
     /** آخر الفيديوهات المشغّلة (السجل): الأحدث أول واحد، والسهم بيمشي للأقدم فالأقدم */

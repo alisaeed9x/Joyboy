@@ -35,6 +35,63 @@ import java.net.URL
 object TvUpdate {
     private val h = Handler(Looper.getMainLooper())
     @Volatile var pendingApk: File? = null
+    @Volatile private var downloading = false
+    /** (v563) رسالة آخر تنضيف للملفات القديمة (TvModeFab بيعرضها مرة وبيصفّرها) */
+    @Volatile var cleanMsg: String? = null
+
+    private fun vcode(pi: android.content.pm.PackageInfo): Long = if (Build.VERSION.SDK_INT >= 28) pi.longVersionCode else @Suppress("DEPRECATION") pi.versionCode.toLong()
+
+    /** (v563) لو الملف المنزّل قبل كده كامل وسليم (الحجم = حجم الموبايل + بيتقرا كـAPK + نفس الحزمة والنسخة المعروضة) بيرجّعه؛ غير كده null (ناقص/نسخة تانية ← يتنزّل من جديد) */
+    fun readyFile(ctx: Context, o: TvLink.Offer): File? {
+        return try {
+            val f = File(ctx.cacheDir, "tv_update.apk")
+            if (downloading || !f.isFile || f.length() < 100_000L) return null
+            if (o.size > 0L && f.length() != o.size) return null
+            val pi = ctx.packageManager.getPackageArchiveInfo(f.path, 0) ?: return null
+            if (pi.packageName != ctx.packageName || vcode(pi) != o.ver) return null
+            f
+        } catch (_: Throwable) { null }
+    }
+
+    /** (v563) «موجود كامل»: مفيش تنزيل تاني — تثبيت على طول */
+    fun askReady(a: Activity, o: TvLink.Offer, f: File, done: () -> Unit) {
+        try {
+            GAlert(a).setTitle("✅ التحديث موجود كامل")
+                .setMessage("Subtitler " + o.vname + " نازل كامل على التلفزيون (" + (f.length() / 1048576L) + " MB) — مش محتاج تبعته تاني.\nتثبّته دلوقتي؟")
+                .setPositiveButton("📦 تثبيت") { _, _ -> done(); install(a, f) }
+                .setNegativeButton("لاحقًا") { _, _ -> done() }
+                .setOnCancelListener { done() }
+                .show()
+        } catch (e: Throwable) { LogStore.err("TvUpdate:askReady", e); done() }
+    }
+
+    /**
+     * (v563) تنضيف ملفات التحديث القديمة (APK) من مجلدات التطبيق نفسه (الكاش والملفات الداخلية/الخارجية الخاصة بيه) — مفيش وصول لأي مكان تاني.
+     * بيتشال: المتثبّت نسخته (أو أقدم) · الناقص/التالف · ملف حزمة تانية (اللانشر/push_apk). بيفضل: تحديث نسخته أحدث من المتثبّت لسه ما اتثبّتش.
+     * أي ملف أحدث من 30 دقيقة ما بيتلمسش (ممكن لسه بيتنزّل/بيتوزّع). لو مفيش وصول لمجلد أو الملف رفض يتمسح ← بيتخطّى (مابنحاولش بطريقة تانية).
+     */
+    fun cleanOld(ctx: Context) {
+        if (downloading) return
+        try {
+            val installed = LinkVer.code(ctx)
+            var n = 0; var bytes = 0L; var denied = 0
+            val dirs = listOfNotNull(ctx.cacheDir, ctx.filesDir, try { ctx.externalCacheDir } catch (_: Throwable) { null }, try { ctx.getExternalFilesDir(null) } catch (_: Throwable) { null })
+            for (d in dirs) {
+                val fs = (try { d.listFiles() } catch (_: Throwable) { null }) ?: continue
+                for (f in fs) {
+                    val nm = f.name.lowercase()
+                    if (!f.isFile || !nm.endsWith(".apk") || !(nm.startsWith("tv_update") || nm.startsWith("push_apk") || nm.contains("update"))) continue
+                    if (System.currentTimeMillis() - f.lastModified() < 30L * 60000L) continue
+                    val pi = try { ctx.packageManager.getPackageArchiveInfo(f.path, 0) } catch (_: Throwable) { null }
+                    if (pi != null && pi.packageName == ctx.packageName && vcode(pi) > installed) continue   // تحديث لسه مستني التثبيت
+                    val sz = f.length()
+                    if (f.delete()) { n++; bytes += sz } else denied++
+                }
+            }
+            val msg = if (n > 0 || denied > 0) "🧹 ملفات التحديث القديمة: اتمسح " + n + " (" + (bytes / 1048576L) + " MB)" + (if (denied > 0) " — و" + denied + " ما قدرتش أمسحهم (مفيش صلاحية)" else "") else ""
+            if (msg.isNotEmpty()) { LogStore.add(msg); cleanMsg = msg }
+        } catch (e: Throwable) { LogStore.err("TvUpdate:clean", e) }
+    }
 
     fun ask(a: Activity, o: TvLink.Offer, done: (Boolean) -> Unit) {
         try {
@@ -128,6 +185,7 @@ object TvUpdate {
     }
 
     fun download(a: Activity, o: TvLink.Offer) {
+        readyFile(a, o)?.let { install(a, it); return }   // (v563) موجود كامل: من غير تنزيل
         val tv = IconTextView(a).apply {
             text = "⏳ بتواصل مع الموبايل…"; textSize = 16f
             setTextColor(Themes.byId(Cfg.str("theme", "mx")).text)
@@ -153,6 +211,7 @@ object TvUpdate {
         Thread {
             val f = File(a.cacheDir, "tv_update.apk")
             var ok = false; var msg = ""
+            downloading = true
             try {
                 try { f.delete() } catch (_: Exception) {}
                 val c = URL(o.url).openConnection() as HttpURLConnection
@@ -183,6 +242,7 @@ object TvUpdate {
                 if (total > 0 && f.length() != total) throw IOException("الملف ناقص")
                 ok = true
             } catch (e: Exception) { msg = e.message ?: "فشل"; try { f.delete() } catch (_: Exception) {} }
+            finally { downloading = false }
             h.post {
                 try { dlg?.dismiss() } catch (_: Throwable) {}
                 if (ok) install(a, f) else if (!cancelled) Notice.show(a, "⚠ التحديث فشل: $msg", 3500L)

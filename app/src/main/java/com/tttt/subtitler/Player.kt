@@ -490,6 +490,7 @@ class PlayerActivity : Activity(), Host {
             "bgon" -> rcClick("bgon")
             "ai" -> rcClick("ai")
             "lock" -> setLock(!uiLocked)
+            "close" -> { try { player.pause() } catch (_: Throwable) {}; try { saveRecent() } catch (_: Throwable) {}; try { retireEngine() } catch (_: Throwable) {}; finish() }   // (v560) كبسولة «✕» على الموبايل: اقفل الفيديو على التلفزيون
             "notice" -> noticePopup(anchor)
             "visual" -> visualSnap()
             "menu" -> tvMenuFn?.invoke(anchor)

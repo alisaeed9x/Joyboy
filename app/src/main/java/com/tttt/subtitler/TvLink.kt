@@ -51,7 +51,7 @@ object TvLink {
         fun alive(): Boolean = lastSeen > 0L && System.currentTimeMillis() - lastSeen < ALIVE_MS
     }
 
-    class Offer(val ver: Long, val vname: String, val url: String, val from: String, val force: Boolean = false) { @Volatile var accepted = false }   // (v521) force = دفع إجباري من الموبايل
+    class Offer(val ver: Long, val vname: String, val url: String, val from: String, val force: Boolean = false, val size: Long = 0L) { @Volatile var accepted = false }   // (v521) force = دفع إجباري من الموبايل
 
     private val h = Handler(Looper.getMainLooper())
     private lateinit var app: Context
@@ -231,6 +231,7 @@ object TvLink {
             "/player" -> playerCmd(r)
             "/music" -> musicCmd(r)
             "/open" -> open(r)
+            "/clear" -> clearHist(r)
             "/type" -> typeText(r)
             "/keys" -> keys(r, rm)
             "/offer" -> offer(r, rm)
@@ -457,6 +458,27 @@ object TvLink {
         return ok(JSONObject().put("visible", visible))
     }
 
+    /** (v558) الموبايل مسح سجل المتصفح/يوتيوب عنده ← نمسح المقابل على التلفزيون: آخر المشغّلة (اللينكات بس مش ملفات الجهاز) + السجل العام + سجل المتصفح */
+    private fun clearHist(r: HttpReq): HttpRes {
+        val j = try { JSONObject(r.bodyText()) } catch (_: Exception) { return err(403, "bad") }
+        fun isYt(x: Recent) = x.id.startsWith("yt:") || Links.ytId(x.url) != null
+        when (j.optString("what")) {
+            "browser" -> {
+                Recents.dropWhere(app) { it.uri.isEmpty() && it.url.isNotEmpty() && !isYt(it) }
+                PubHistory.clear("v", "browser")
+                try { BrowserStore.clearHistory(app) } catch (e: Throwable) { LogStore.err("TvLink:clearBr", e) }
+            }
+            "yt" -> {
+                Recents.dropWhere(app) { isYt(it) }
+                PubHistory.clear("v", "youtube")
+                try { YtHistory.clear(app) } catch (e: Throwable) { LogStore.err("TvLink:clearYt", e) }
+            }
+            else -> return err(403, "what")
+        }
+        h.post { TvActivity.live?.get()?.onRemoteCleared() }
+        return ok()
+    }
+
     /** (v543 م3) tv://<id> ← فيديو من مكتبة التلفزيون نفسه: يفتح المشغّل على ملفه (الترجمة بإيد الشخص، مش أوتوماتيك) */
     private fun openLocal(key: String, startMs: Long): HttpRes {
         val item = BrainRpc.findVideo(app, key) ?: return err(404, "nf")
@@ -521,7 +543,7 @@ object TvLink {
         if (force) { if (ver < LinkVer.code(app)) return err(403, "older") }   // (v521) الإجباري بيعدّي نفس النسخة (إعادة تثبيت) بس أندرويد مبيسمحش بنزول لنسخة أقدم
         else if (ver <= LinkVer.code(app)) return err(403, "not_newer")
         if (!force && j.optBoolean("auto") && ver == declinedVer) return err(403, "declined")
-        pendingOffer = Offer(ver, vname, url, rm.name, force)
+        pendingOffer = Offer(ver, vname, url, rm.name, force, j.optLong("size", 0L))   // (v563) size = حجم الملف عند الموبايل
         val a = top?.get()
         h.post { val t = top?.get(); if (t != null && t !is RemoteActivity && t !is SendToTvActivity) offerIfAny(t) else offerOverlay() }   // (v525) أي شاشة (مشغّل/متصفح/يوتيوب…) أو تطبيق تاني قدّام
         return ok(JSONObject().put("shown", a != null || TvAccess.connected || canOverlay()))
@@ -532,6 +554,8 @@ object TvLink {
         if (offerShowing || a.isFinishing || a.isDestroyed) return
         if (if (o.force) o.ver < LinkVer.code(app) else o.ver <= LinkVer.code(app)) { pendingOffer = null; return }
         if (o.accepted) { pendingOffer = null; TvUpdate.download(a, o); return }   // (v525) وافقت من النافذة العايمة: كمّل تنزيل من هنا
+        val ready = TvUpdate.readyFile(a, o)   // (v563) الملف نزل كامل قبل كده ← «موجود كامل» + تثبيت على طول من غير تنزيل تاني
+        if (ready != null) { offerShowing = true; TvUpdate.askReady(a, o, ready) { offerShowing = false; pendingOffer = null }; return }
         offerShowing = true
         TvUpdate.ask(a, o) { accepted ->
             offerShowing = false

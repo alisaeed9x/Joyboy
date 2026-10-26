@@ -76,7 +76,7 @@ class BottomNav(act: Activity, private val ui: Ui, private val th: Theme, privat
     private val labels = ArrayList<IconTextView>()
     private val cells = ArrayList<View>()
     private val badges = ArrayList<android.widget.TextView>()   // (v350) عدّاد أحمر فوق الأيقونة
-    val view = LinearLayout(act).apply { orientation = if (rail) LinearLayout.HORIZONTAL else LinearLayout.VERTICAL }
+    val view = LinearLayout(act).apply { orientation = if (rail) LinearLayout.HORIZONTAL else LinearLayout.VERTICAL; tag = "tvfab_nav" }   // (v562) TvModeFab بيلاقيه عشان يحط خط «وضع التلفزيون» فوقه
     private var rowV: View? = null
     private var lineV: View? = null
     private var tinted = false

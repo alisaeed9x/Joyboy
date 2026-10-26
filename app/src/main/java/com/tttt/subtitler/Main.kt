@@ -1570,7 +1570,10 @@ class MainActivity : Activity() {
     /** (v117) دخول مباشر لفيديو يوتيوب من معرّفه: بيجيب أحسن لينك فيه صوت وصورة ويفتح المشغّل (لو فشل بيفتح صفحته في المتصفح) */
     fun playYt(id: String, title: String, translate: Boolean = true, auto: Boolean = translate, startMs: Long = 0L, handoff: YtPick? = null, retOv: String = "") {
         // (v543 م4) وضع التلفزيون شغّال: يوتيوب بيتبعت للتلفزيون على طول (ytid + مكان البداية) وبعدين شاشة الريموت — من غير سؤال
-        if (handoff == null && id.length == 11 && PlayTarget.open(this, MediaSpec(ytid = id, title = title, startMs = startMs, how = if (translate) Links.VIDEO_TR else Links.VIDEO))) return
+        if ((handoff == null || PlayTarget.enabled()) && id.length == 11 && PlayTarget.open(this, MediaSpec(ytid = id, title = title, startMs = startMs, how = if (translate) Links.VIDEO_TR else Links.VIDEO))) {
+            if (handoff != null) { try { YtHandoff.take()?.release() } catch (_: Throwable) {} }   // (v560) المشغّل المصغّر اللي كان شغّال على الموبايل يتقفل — الفيديو راح للتلفزيون
+            return
+        }
         if (!translate && handoff == null && startMs <= 0L && askTv(id, title, retOv)) return   // (v532) «تشغّله على التلفزيون؟»
         playYtHere(id, title, translate, auto, startMs, handoff, retOv)
     }

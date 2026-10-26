@@ -534,7 +534,7 @@ object RemoteClient {
         if (ip.isEmpty()) return "مش عارف عنوان الموبايل على الواي فاي"
         if (!ApkServe.start()) return "ما قدرتش أشغّل سيرفر التحديث"
         val url = "http://$ip:${ApkServe.PORT}/apk?t=${ApkServe.newToken()}"
-        val body = JSONObject().put("ver", LinkVer.code(app())).put("vname", LinkVer.name(app())).put("url", url).put("auto", auto).put("force", force)
+        val body = JSONObject().put("ver", LinkVer.code(app())).put("vname", LinkVer.name(app())).put("url", url).put("auto", auto).put("force", force).put("size", f.length())   // (v563) حجم الملف: التلفزيون يقارنه بالمحمّل قبل كده
         val (c, t) = post("/offer", body)
         return when {
             c == 200 -> "ok"
@@ -557,7 +557,7 @@ fun RemoteClient.offerApk(f: File, force: Boolean): String {
     ApkServe.custom = f
     if (!ApkServe.start()) return "ما قدرتش أشغّل سيرفر التحديث"
     val url = "http://$ip:${ApkServe.PORT}/apk?t=${ApkServe.newToken()}"
-    val body = JSONObject().put("ver", ver).put("vname", pi.versionName ?: "").put("pkg", pi.packageName).put("url", url).put("auto", false).put("force", force)
+    val body = JSONObject().put("ver", ver).put("vname", pi.versionName ?: "").put("pkg", pi.packageName).put("url", url).put("auto", false).put("force", force).put("size", f.length())
     val (c, t) = postJson("/offer", body)
     return when {
         c == 200 -> "ok"

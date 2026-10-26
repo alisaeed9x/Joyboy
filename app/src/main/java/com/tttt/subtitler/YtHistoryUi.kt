@@ -146,7 +146,7 @@ object YtHistoryUi {
             setOnClickListener {
                 if (YtHistory.load(act).isEmpty()) return@setOnClickListener
                 GAlert(act).setTitle("🗑 مسح سجل يوتيوب").setMessage("هيتمسح كل سجل المشاهدة اللي جاي من يوتيوب. (الفيديوهات المصطادة والترجمات المحفوظة مش هتتأثر)")
-                    .setPositiveButton("مسح") { _, _ -> YtHistory.clear(act); render() }.setNegativeButton("إلغاء", null).show()
+                    .setPositiveButton("مسح") { _, _ -> YtHistory.clear(act); PlayTarget.clearTvHistory(act, "yt"); render() }   // (v560) يمسح سجل يوتيوب على التلفزيون كمان.setNegativeButton("إلغاء", null).show()
             }
         })
         head.addView(ui.text("✕", 18f, th.text, true).apply { setPadding(ui.dp(12), ui.dp(8), ui.dp(12), ui.dp(8)); setOnClickListener { dlg.dismiss() } })

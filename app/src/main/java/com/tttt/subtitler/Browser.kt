@@ -457,7 +457,7 @@ class BrowserActivity : Activity() {
         panicB = IconTextView(this).apply {
             text = "🚨"; textSize = 20f; gravity = Gravity.CENTER; setTextColor(Color.WHITE)
             background = ui.box(0xCCD32F2F.toInt(), 0x66FFFFFF, 22); elevation = ui.dp(4).toFloat()
-            setOnClickListener { panic() }
+            setOnClickListener { panic(); PlayTarget.clearTvHistory(this@BrowserActivity, "browser") }   // (v558) الزرار الأحمر يمسح كمان سجل المتصفح على التلفزيون
         }
         undoB = IconTextView(this).apply {
             text = "↩"; textSize = 20f; gravity = Gravity.CENTER; setTextColor(Color.WHITE)
@@ -1205,7 +1205,7 @@ class BrowserActivity : Activity() {
             override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
             override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
         })
-        val clear = ui.button("🗑 امسح السجل كله") { BrowserStore.clearHistory(this); render(); Notice.show(this, "السجل اتمسح", 1800L) }
+        val clear = ui.button("🗑 امسح السجل كله") { BrowserStore.clearHistory(this); PlayTarget.clearTvHistory(this, "browser"); render(); Notice.show(this, "السجل اتمسح", 1800L) }
         d = sheet("🕘 السجل", q, clear, box)
         render(); d.show()
     }
@@ -1285,7 +1285,7 @@ class BrowserActivity : Activity() {
         })
         box.addView(ui.switchRow("🔒 فصل لينكات الكبار في «سجل الخصوصية» المقفول", PrivacyFilter.on()) { Cfg.put("pf_on", if (it) "1" else "0") })
         box.addView(ui.switchRow("🤖 الذكاء الصناعي يصنّف الصفحات (بيبعت الرابط والعنوان بس، مرة لكل موقع)", PrivacyFilter.aiOn()) { Cfg.put("pf_ai", if (it) "1" else "0") })
-        box.addView(ui.button("🕘 امسح السجل") { BrowserStore.clearHistory(this); Notice.show(this, "السجل اتمسح", 1800L) })
+        box.addView(ui.button("🕘 امسح السجل") { BrowserStore.clearHistory(this); PlayTarget.clearTvHistory(this, "browser"); Notice.show(this, "السجل اتمسح", 1800L) })
         sheet("⚙️ إعدادات المتصفح", box).show()
     }
 
@@ -1634,12 +1634,27 @@ class BrowserActivity : Activity() {
             }
             out.add(Grp(key, nameFor(first), qs))
         }
-        // (v557) نفس الاسم بأكتر من اصطياد: اللي مفيهوش أي جودة معروفة (تلقائية ساكتة / «جودة 1») بيختفي لو فيه اصطياد بنفس الاسم ليه جودات حقيقية
-        // (أكتر من جودة، أو ارتفاع معروف، أو HLS «تلقائي (لحد Np)»). فيديو لوحده بجودة واحدة من غير اسم مكرّر بيفضل زي ما هو.
+        // (v558) نفس الاسم بأكتر من اصطياد = فيديو واحد: بنستنى فحص الجودة يخلص (من غير ما نعرض الكروت الأول ونشيلها بعدين):
+        //  - لو فيه اصطياد ليه جودات حقيقية (أكتر من جودة، ارتفاع معروف، أو HLS «تلقائي لحد Np») ← بس هو (أو هما) اللي بيظهر.
+        //  - لو لسه الفحص شغّال ← مفيش حاجة من المجموعة دي بتظهر لحد ما يخلص (أقصى 12 ثانية).
+        //  - لو الفحص خلص ومفيش جودات معروفة ← بيظهر اصطياد واحد بس.
+        // فيديو لوحده من غير اسم مكرّر، أو من غير اسم أصلًا، بيفضل زي ما هو.
+        fun unknownQ(q: Qv) = q.h <= 0 && q.audio == null && !q.f.kind.startsWith("YT")
         fun rich(g: Grp) = g.qs.size > 1 || g.qs.any { it.h > 0 || (it.f.kind == "HLS" && (hCache[Sniff.key(it.f.url)] ?: 0) > 0) }
+        val nowMs = System.currentTimeMillis()
+        fun pending(g: Grp) = !rich(g) && g.qs.any { q -> unknownQ(q) && !hCache.containsKey(Sniff.key(q.f.url)) && nowMs - (hAt[Sniff.key(q.f.url)] ?: nowMs) < PROBE_WAIT_MS }
         fun nm(g: Grp) = g.title.trim().lowercase()
-        val richNames = out.filter { nm(it).isNotEmpty() && rich(it) }.map { nm(it) }.toSet()
-        return out.filter { rich(it) || nm(it).isEmpty() || nm(it) !in richNames }
+        val drop = HashSet<Grp>()
+        for ((_, gs) in out.filter { nm(it).isNotEmpty() }.groupBy { nm(it) }) {
+            if (gs.size < 2) continue
+            val rch = gs.filter { rich(it) }
+            if (rch.isNotEmpty()) { gs.filter { it !in rch }.forEach { drop.add(it) }; continue }
+            if (gs.any { pending(it) }) {
+                if (repairId == null) for (g in gs) for (q in g.qs) if (unknownQ(q)) probeHeight(q.f)
+                gs.forEach { drop.add(it) }
+            } else gs.drop(1).forEach { drop.add(it) }
+        }
+        return out.filter { it !in drop }
     }
 
     /** (v203) اختيار تلقائي: نفس لينك/هيكل الفيديو القديم لو اتلقط، وإلا أحدث فيديو اتلقط بأقرب جودة للقديمة */
@@ -1747,9 +1762,13 @@ class BrowserActivity : Activity() {
     // (v533) الجودة الحقيقية للينكات اللي مفيهاش رقم جودة: HLS ← أعلى RESOLUTION في الماستر · ملف عادي ← MediaMetadataRetriever (بالهيدرز). بيتحفظ والقايمة بتتحدّث
     private val hCache = java.util.concurrent.ConcurrentHashMap<String, Int>()
     private val hBusy: MutableSet<String> = java.util.concurrent.ConcurrentHashMap.newKeySet()
+    private val hAt = java.util.concurrent.ConcurrentHashMap<String, Long>()   // (v558) وقت بداية فحص كل لينك
+    private val PROBE_WAIT_MS = 12000L
     private fun probeHeight(f: Found) {
         val k = Sniff.key(f.url)
         if (hCache.containsKey(k) || !hBusy.add(k)) return
+        hAt[k] = System.currentTimeMillis()
+        try { android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({ if (!dead) refreshBadge() }, PROBE_WAIT_MS + 500L) } catch (_: Throwable) {}
         val hs = dlHeaders(f); val u = f.url; val hls = isHls(f)
         Thread {
             var h = -1
@@ -1771,7 +1790,7 @@ class BrowserActivity : Activity() {
                 }
             } catch (e: Throwable) { LogStore.err("Browser:probeH", e) }
             hCache[k] = h
-            if (h > 0) runOnUiThread { if (!dead && dlg?.isShowing == true) renderList() }
+            runOnUiThread { if (!dead) refreshBadge() }   // (v558) العدّاد والقايمة يتحدّثوا لما الفحص يخلص (حتى لو الجودة ماطلعتش)
         }.apply { isDaemon = true }.start()
     }
     private val selQ = HashMap<String, Int>()   // (v231) الجودة المختارة لكل اصطياد (مفتاح المجموعة ← رقم الجودة)

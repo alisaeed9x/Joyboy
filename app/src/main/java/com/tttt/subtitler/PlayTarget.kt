@@ -28,6 +28,26 @@ object PlayTarget {
 
     fun enabled(): Boolean = Cfg.bool(KEY, false)
 
+    /** (v560) اسم الفيديو اللي شغّال دلوقتي على التلفزيون (اتبعت من الموبايل ده) — الكبسولة «اسم ✕» بتظهر طول ما هو مش null */
+    @Volatile var nowTitle: String? = null
+
+    /** (v560) يرجّع يفتح شاشة التحكم (دوسة على اسم الفيديو في الكبسولة) */
+    fun reopenController(act: Activity) { openController(act, nowTitle ?: "") }
+
+    /** (v560) يقفل الفيديو على التلفزيون (الأمر close) ويشيل الكبسولة فورًا */
+    fun closeOnTv(ctx: android.content.Context, done: (Boolean) -> Unit = {}) {
+        nowTitle = null; TvModeFab.refresh()
+        val app = ctx.applicationContext
+        Thread {
+            var ok = false
+            try {
+                RemoteClient.init(app)
+                if (RemoteClient.lastTv() != null && RemoteClient.ensureConnected(app, 6000L)) { RemoteClient.player("close"); ok = true }
+            } catch (e: Throwable) { LogStore.err("PlayTarget:close", e) }
+            done(ok)
+        }.also { it.isDaemon = true }.start()
+    }
+
     /**
      * @return true = PlayTarget مسك الطلب (اتبعت للتلفزيون أو اتعرض خطأ) وإنت ما تكمّلش محلي؛
      *         false = وضع التلفزيون مقفول (أو الجهاز نفسه تلفزيون/مفيش حاجة تتبعت) — كمّل السلوك المحلي زي ما كان.
@@ -64,6 +84,30 @@ object PlayTarget {
         return null
     }
 
+    /** (v558) يفتح مشغّل الموبايل بوضع المتحكم (remote=true): تحكم في الفيديو اللي شغّال على التلفزيون. لو مفتوح قبل كده مابيتفتحش تاني */
+    private fun openController(act: Activity, title: String) {
+        try {
+            if (PlayerActivity.hasLive()) return
+            act.startActivity(Intent(act, PlayerActivity::class.java).putExtra("remote", true).putExtra("title", title))
+        } catch (e: Throwable) { LogStore.err("PlayTarget:controller", e) }
+    }
+
+    /**
+     * (v558) مسح سجل على التلفزيون (تطبيق التلفزيون منفصل عن الموبايل فبنبعتله أمر /clear). what = "browser" | "yt".
+     * بيشتغل في وضع التلفزيون بس (لازم يكون متصل)، من غير ما يعطّل الواجهة.
+     */
+    fun clearTvHistory(ctx: android.content.Context, what: String) {
+        if (!enabled() || DeviceUi.isTv(ctx)) return
+        val app = ctx.applicationContext
+        Thread {
+            try {
+                RemoteClient.init(app)
+                if (RemoteClient.lastTv() != null && RemoteClient.ensureConnected(app, 6000L))
+                    RemoteClient.postJson("/clear", org.json.JSONObject().put("what", what))
+            } catch (e: Throwable) { LogStore.err("PlayTarget:clearTv", e) }
+        }.also { it.isDaemon = true }.start()
+    }
+
     private fun send(act: Activity, spec: MediaSpec, target: String) {
         Notice.show(act, "📺 بوصّل بالتلفزيون…", 2500L)
         Thread {
@@ -79,6 +123,8 @@ object PlayTarget {
                 if (er == null) {
                     // (v554) مفيش شاشة ريموت/متحكم على الموبايل: الفيديو اشتغل على التلفزيون وبتتحكم من ريموت التلفزيون
                     Notice.show(act, "📺 اتفتح على التلفزيون" + (if (spec.title.isNotBlank()) " — " + spec.title else ""), 3000L)
+                    nowTitle = spec.title.ifBlank { "فيديو على التلفزيون" }; TvModeFab.refresh()   // (v560) كبسولة «اسم ✕»
+                    openController(act, spec.title)   // (v558) شاشة التحكم (مشغّل الفيديو بوضع المتحكم) ترجع تفتح على الموبايل
                 } else {
                     GAlert(act).setTitle("⚠ ما اتبعتش للتلفزيون").setMessage(er)
                         .setPositiveButton("🔄 إعادة المحاولة") { _, _ -> send(act, spec, target) }
