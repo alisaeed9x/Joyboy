@@ -147,6 +147,21 @@ class LibraryUi(
     private var webList: List<WebVid> = emptyList()
     private var webSrc = 0                       // (v337) فولدر المصطادة: 0 الكل · 1 من يوتيوب (اللي اتشغّل من صفحة يوتيوب) · 2 من المتصفح/اللينكات
     private var srcRow: View? = null
+    private val srcBar = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; visibility = View.GONE }
+    /** (v565) المربعين السفليين: ظاهرين في وضع التلفزيون بس، والمصدر الحالي ملوّن */
+    fun updateSourceBar() {
+        try {
+            val on = !audio && PlayTarget.enabled() && !DeviceUi.isTv(act)
+            srcBar.visibility = if (on) View.VISIBLE else View.GONE
+            if (!on) return
+            for (i in 0 until srcBar.childCount) {
+                val b = srcBar.getChildAt(i) as? TextView ?: continue
+                val active = (b.tag as? Boolean) == backend.remote
+                b.background = ui.box(if (active) th.primary else th.card, th.border, 14)
+                b.setTextColor(if (active) (if (th.isLight) Color.WHITE else Color.BLACK) else th.text)
+            }
+        } catch (_: Throwable) {}
+    }
     private val YT_HIST = "🕘 سجل يوتيوب"
     private val WEB_HID = "🔒 المخفي"
     private val WEB_SRC = listOf("الكل", "▶ من يوتيوب", "🌐 من المتصفح", YT_HIST, WEB_HID)
@@ -495,6 +510,18 @@ class LibraryUi(
             }
         }
         root.addView(body, LinearLayout.LayoutParams(-1, 0, 1f))
+        // (v565) مربعين تحت (وانت متصل بالتلفزيون): فيديوهات التلفزيون | فيديوهات الموبايل
+        if (!audio) {
+            fun srcBox(label: String, tv: Boolean): TextView = ui.text(label, 14f, th.text, true).apply {
+                gravity = Gravity.CENTER; isClickable = true
+                setOnClickListener { if (backend.remote != tv) onSource(tv) }
+                tag = tv
+            }
+            val bTv = srcBox("📺 فيديوهات التلفزيون", true); val bPh = srcBox("📱 فيديوهات الموبايل", false)
+            srcBar.addView(bTv, LinearLayout.LayoutParams(0, ui.dp(44), 1f).apply { marginEnd = ui.dp(5) })
+            srcBar.addView(bPh, LinearLayout.LayoutParams(0, ui.dp(44), 1f).apply { marginStart = ui.dp(5) })
+            root.addView(srcBar, LinearLayout.LayoutParams(-1, -2).apply { setMargins(ui.dp(12), ui.dp(4), ui.dp(12), ui.dp(8)) })
+        }
         startAuto()   // (v468) بداية مؤقّت التحديث التلقائي (١٠ ثوانٍ)
     }
 
@@ -589,6 +616,7 @@ class LibraryUi(
     }
 
     fun render() {
+        updateSourceBar()
         resumeBtn.visibility = View.GONE
         recMap = try { recents() } catch (_: Exception) { emptyMap() }
         val sort = sortKey()

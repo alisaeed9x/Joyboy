@@ -1877,6 +1877,7 @@ class MainActivity : Activity() {
     private val tvModeSync: () -> Unit = {
         if (!isDestroyed && !isFinishing && !DeviceUi.isTv(this)) {
             val on = PlayTarget.enabled()
+            try { libUi?.updateSourceBar() } catch (_: Throwable) {}   // (v565)
             if (on != tvModeSeen) {
                 tvModeSeen = on
                 if (on && libBackend !== TvLibrary) libSourceFn?.invoke(true)

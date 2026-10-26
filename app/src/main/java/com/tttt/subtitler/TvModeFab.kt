@@ -123,7 +123,7 @@ object TvModeFab {
                 btn.setOnClickListener { val ly = layers[a]; if (ly != null && PlayTarget.enabled()) { if (ly.open) closeFan(ly, true) else openFan(a, ly) } else onTap(a) }
             }
             // setContentView ممكن يكون مسح الـviews: ضيفهم تاني لو اتشالوا
-            if (l.btn.parent == null) root.addView(l.btn, FrameLayout.LayoutParams(dp(a, 56), dp(a, 56), Gravity.END or Gravity.BOTTOM).apply { bottomMargin = dp(a, 150); marginEnd = dp(a, 12) })
+            if (l.btn.parent == null) root.addView(l.btn, FrameLayout.LayoutParams(dp(a, 56), dp(a, 56), Gravity.RIGHT or Gravity.BOTTOM).apply { bottomMargin = dp(a, 150); rightMargin = dp(a, 12) }   // (v565) RIGHT مش END: التطبيق RTL فـEND = شمال)
             if (l.banner.parent == null) root.addView(l.banner, FrameLayout.LayoutParams(-1, dp(a, 24), Gravity.BOTTOM))   // (v562) تحت: فوق شريط البوابات مش فوق المحتوى
             if (l.cap == null) {   // (v560) كبسولة «▶ اسم الفيديو ✕» فوق: الفيديو شغّال على التلفزيون؛ ✕ بتقفله
                 val tt = TextView(a).apply { setTextColor(Color.WHITE); textSize = 13f; typeface = android.graphics.Typeface.DEFAULT_BOLD; maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END; maxWidth = dp(a, 230) }
@@ -195,8 +195,8 @@ object TvModeFab {
                 }
                 val w = dp(a, 64); val h = csz + lh
                 // مركز الدايرة فوق مركز الزرار بالظبط، وبعدين بتتحرك بالـtranslation
-                val lp = FrameLayout.LayoutParams(w, h, Gravity.END or Gravity.BOTTOM).apply {
-                    marginEnd = lp0.marginEnd + dp(a, 28) - w / 2
+                val lp = FrameLayout.LayoutParams(w, h, Gravity.RIGHT or Gravity.BOTTOM).apply {
+                    rightMargin = lp0.rightMargin + dp(a, 28) - w / 2
                     bottomMargin = lp0.bottomMargin + dp(a, 28) - (h - csz / 2)
                 }
                 root.addView(sat, lp); l.sats.add(sat)
@@ -233,7 +233,7 @@ object TvModeFab {
 
     private fun paint(a: Activity, l: Layer) {
         val on = PlayTarget.enabled()
-        if (!on && l.open) closeFan(l, false)
+        if (l.open && on) closeFan(l, false)
         val list = tvs
         val prompting = System.currentTimeMillis() < promptUntil && list.isNotEmpty()
         l.banner.visibility = if (on) View.VISIBLE else View.GONE
@@ -241,7 +241,7 @@ object TvModeFab {
         val nt = PlayTarget.nowTitle
         l.capTitle?.text = "▶  " + (nt ?: "")
         l.cap?.visibility = if (nt != null) View.VISIBLE else View.GONE
-        l.btn.visibility = if (on || prompting || always()) View.VISIBLE else View.GONE
+        l.btn.visibility = if (!on && (prompting || always())) View.VISIBLE else View.GONE   // (v565) متصل ← العلامة تتشال (الخروج من الخط الأحمر تحت)
         l.btn.text = "📺"
         if (on) { l.btn.background = disc(0xF02E9E5B.toInt()); l.btn.contentDescription = "وضع التلفزيون شغّال — دوس للتنقل السريع، ودوسة طويلة للخروج" }   // أخضر = متصل
         else {
@@ -365,7 +365,7 @@ object TvModeFab {
                 })
             }
             picker = pw
-            pw.showAtLocation(a.window.decorView, Gravity.END or Gravity.BOTTOM, dp(a, 12), dp(a, 210))
+            pw.showAtLocation(a.window.decorView, Gravity.RIGHT or Gravity.BOTTOM, dp(a, 12), dp(a, 210))
         } catch (e: Throwable) { LogStore.err("TvModeFab:picker", e) }
     }
 
