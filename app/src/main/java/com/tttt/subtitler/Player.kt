@@ -1082,7 +1082,7 @@ class PlayerActivity : Activity(), Host {
                 else { SysVol.set(this, 100); setBoostPct(p - 100) }
             }
             try { if (::ctl.isInitialized) ctl.vol.progress = p } catch (_: Throwable) {}
-            giShow(if (p <= 100) "🔊 $p%" else "🔊 $p%  تضخيم ${boostDbText(p - 100)}", Gravity.CENTER)
+            giShowFn(if (p <= 100) "🔊 $p%" else "🔊 $p%  تضخيم ${boostDbText(p - 100)}")
         } catch (e: Throwable) { LogStore.err("Player:applyVolumeP", e) }
     }
     // ===== (v568) وضع المتحكم: الصوت بيتغيّر على التلفزيون (مش على الموبايل) =====
@@ -1092,7 +1092,7 @@ class PlayerActivity : Activity(), Host {
     private fun rmSendVolume(p0: Int) {
         val p = p0.coerceIn(0, 200); rmVolP = p; rmVolAt = System.currentTimeMillis()
         LinkSession.send("volume.set", org.json.JSONObject().put("p", p))
-        try { giShow(if (p <= 100) "📺 🔊 $p%" else "📺 🔊 $p%  تضخيم ${boostDbText(p - 100)}", Gravity.CENTER) } catch (_: Throwable) {}
+        try { giShowFn(if (p <= 100) "📺 🔊 $p%" else "📺 🔊 $p%  تضخيم ${boostDbText(p - 100)}") } catch (_: Throwable) {}
     }
     private fun rmVolumeKey(k: Int) {
         val cur = if (rmVolP >= 0) rmVolP else LinkSession.mirror.st.optInt("vol", 50).let { if (it < 0) 50 else it }
