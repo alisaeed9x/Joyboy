@@ -37,6 +37,8 @@ object TvWifi {
 
     private fun ipStr(i: Int): String = (i and 0xff).toString() + "." + ((i shr 8) and 0xff) + "." + ((i shr 16) and 0xff) + "." + ((i shr 24) and 0xff)
 
+    fun isConnected(a: Activity): Boolean = current(a) != null
+
     /** (اسم الشبكة المتصل بيها، عنوان الـIP) أو null لو مش متصل */
     @Suppress("DEPRECATION")
     private fun current(a: Activity): Pair<String, String>? = try {

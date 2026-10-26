@@ -679,7 +679,6 @@ class MainActivity : Activity() {
                     ui.switchRow("🔠 وضع النص الكبير (تكبير خطوط الواجهة)", Cfg.bool("big_text", false)) { Cfg.put("big_text", if (it) "1" else "0"); recreate() },
                     ui.switchRow("🎞 انتقالات انسيابية بين التبويبات", Cfg.bool("anim_tabs", true)) { Cfg.put("anim_tabs", if (it) "1" else "0") },
                     ui.switchRow("📳 اهتزاز لمسي خفيف عند التنقّل بين التبويبات", Cfg.bool("haptics", true)) { Cfg.put("haptics", if (it) "1" else "0") },
-                    ui.switchRow("💡 تلميح ميزة يومي", Cfg.bool("daily_tip", true)) { Cfg.put("daily_tip", if (it) "1" else "0") }),
                 ui.section("🧩 وضع الواجهة", false,
                     ui.text("شكل الزراير والفولدرات والأنيميشن:", 12f, th.muted), skinChips, skinSoundSwitch),
                 ui.section("🖥 وضع الواجهة (موبايل · تابلت · تلفزيون)", false,
@@ -1035,7 +1034,6 @@ class MainActivity : Activity() {
         frame.post { permFlow { ensureKeysSoft { keys.setText(Cfg.allMainKeys().joinToString("\n")); keyLoadersRef.forEach { it() }; refreshChip(); doScan() } } }
         try { TvSync.install(this) } catch (_: Throwable) {}   // (v568) مزامنة الإعدادات للتلفزيون من أي شاشة
         frame.post { handleLinkIntent(intent) }; frame.post { handleExternal(intent) }
-        frame.post { whatsNew() }   // (v469) D13 نافذة «إيه الجديد» مرة لكل إصدار + تلميح يومي   // (v345) لينك جاي من تطبيق تاني (مشاركة / فتح)
     }
     /** (v345) المرحلة 1 «كتلة واحدة»: أي لينك جاي من برّه (مشاركة أو فتح). لينك يوتيوب ← قايمة «افتحه إزاي؟»، غير كده ← زي زمان */
     private fun ytIdOf(u: String): String? = Regex("(?:youtu\\.be/|youtube\\.com/(?:watch\\?(?:[^\\s#]*&)?v=|shorts/|live/|embed/))([A-Za-z0-9_-]{11})").find(u)?.groupValues?.get(1)
@@ -1377,51 +1375,6 @@ class MainActivity : Activity() {
         })
         run(q0.trim())
         d.show()
-    }
-
-    /** (v469) D13 نافذة «إيه الجديد»: بتظهر مرة واحدة لكل إصدار (seen_ver) بملخص التغييرات، ووراها تلميح ميزة يومي صغير قابل للإيقاف من الإعدادات */
-    private fun whatsNew() {
-        if (DeviceUi.isTv(this)) return   // (v527) تلفزيون: مفيش نافذة «إيه الجديد» ولا تلميح يومي (بيظهروا فوق يوتيوب/اللانشر بعد كل تحديث)
-        try {
-            val vn = try { packageManager.getPackageInfo(packageName, 0).versionName ?: "" } catch (_: Throwable) { "" }
-            if (vn.isNotEmpty() && Cfg.str("seen_ver", "") != vn) {
-                Cfg.put("seen_ver", vn)
-                val thx = Themes.byId(Cfg.str("theme", "mx"))
-                val body = "🎨 استوديو سمات: لون تمييز مخصص + تشبّع وإضاءة بيولّدوا سمتك الخاصة\n" +
-                    "🌡 فلتر دافئ لراحة العين بالليل (من قسم المظهر)\n" +
-                    "🏠 لوحة بداية في المكتبة: أكمل المشاهدة + آخر المضافات + إجراءات سريعة\n" +
-                    "🔎 بحث شامل بيفتّش في المكتبة وسجل يوتيوب وأقسام الإعدادات\n" +
-                    "⭐ مفضلة وتقييم نجوم ومجموعات ذكية (غير مشاهد / قيد المشاهدة / المفضلة)\n" +
-                    "♿ وضع النص الكبير + مفاتيح للانتقالات والاهتزاز اللمسي\n" +
-                    "🎶 قوائم تشغيل للموسيقى (إنشاء وتشغيل بالترتيب أو عشوائي)\n" +
-                    "📖 وضع القارئ في المتصفح + إحصائيات حظر الإعلانات وقائمة سماح لكل موقع\n" +
-                    "💾 نسخة احتياطية شاملة: إعدادات + سجل مشاهدة في ملف واحد"
-                val col = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; setPadding(52, 28, 52, 20); setBackgroundColor(thx.bg) }
-                col.addView(android.widget.TextView(this).apply { text = "✨ إيه الجديد في " + vn; textSize = 18f; setTextColor(thx.primary); setTypeface(typeface, android.graphics.Typeface.BOLD); setPadding(0, 0, 0, 16) })
-                col.addView(android.widget.TextView(this).apply { text = body; textSize = 14f; setTextColor(thx.text); setLineSpacing(6f, 1.2f) })
-                val d = GDialog(this); d.setContentView(col)
-                col.addView(android.widget.Button(this).apply { text = "تمام 👍"; setOnClickListener { d.dismiss() } }, LinearLayout.LayoutParams(-1, -2).apply { topMargin = 20 })
-                d.window?.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(thx.bg))
-                d.show()
-            }
-        } catch (e: Throwable) { LogStore.err("Main:whatsNew", e) }
-        try {
-            if (Cfg.bool("daily_tip", true)) {
-                val today = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US).format(java.util.Date())
-                if (Cfg.str("tip_day", "") != today) {
-                    Cfg.put("tip_day", today)
-                    val tips = listOf(
-                        "دوس ⋮ على أي فيديو واديله نجمة ⭐ — بيظهر بعد كده في «المفضلة» من درج المكتبة",
-                        "من المظهر: «استوديو السمات» بيخليك تصنع ثيمك الخاص بلون تمييز من اختيارك",
-                        "المتصفح بقى فيه «وضع القارئ» 📖 من قايمة ⋮ — قراءة نضيفة من غير إعلانات وفوضى",
-                        "لو الترجمة مش مظبوطة التوقيت، في المشغّل إزاحة ±١٠ ثواني بخطوات ربع ثانية",
-                        "قوائم التشغيل 🎶 في صفحة الموسيقى: اعمل قائمة وشغّلها بالترتيب أو عشوائي",
-                        "الفلتر الدافئ 🌡 من قسم المظهر بيقلل إجهاد عينك بالليل")
-                    val idx = java.util.Calendar.getInstance().get(java.util.Calendar.DAY_OF_YEAR) % tips.size
-                    Notice.show(this, "💡 تلميح اليوم: " + tips[idx], 5000L)
-                }
-            }
-        } catch (e: Throwable) { LogStore.err("Main:tip", e) }
     }
 
     // (v469) D5 نسخة شاملة: كل الإعدادات (Backup.toJson) + ملف سجل المشاهدة/الاستئناف في JSON واحد — المفضلة والتقييمات وقوائم التشغيل والإحصائيات جوّه الإعدادات أصلًا فبتتسافر معاها

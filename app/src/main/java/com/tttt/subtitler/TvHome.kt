@@ -77,6 +77,7 @@ class TvActivity : Activity() {
     private var tabAutoBlock = -1   // (v513) التاب اللي اتفتح بالتركيز: مايتفتحش تاني لما نرجع عليه بـ Back (لحد ما التركيز يروح لتاب تاني)
     private var tcV: View? = null
     private var wifiTop: View? = null           // (v558) زرار الواي فاي جنب الساعة (بيتخبّى لو الشريط ضاق)
+    private var wifiIcons = ArrayList<WifiIconView>()
     private var prayFitHidden = false           // (v558) عدّاد الصلاة اتخبّى عشان الشريط يساع ☰ و⚙️
     private var searchExtras: List<View> = emptyList()
     private var micBox: View? = null   // (v570) كبسولة زرار البحث الصوتي (منفصلة عن مربع البحث)
@@ -300,6 +301,7 @@ class TvActivity : Activity() {
         TvSetup.onResume(this)   // (v536) أول مرة: شاشة الأذونات
         if (resumedOnce && wallMode() != "off") { h.removeCallbacks(wallLoop); h.postDelayed(wallLoop, 1500L) }   // (v527) كمّل دورة الخلفيات بعد الرجوع
         if (resumedOnce) refreshTopPrayer()
+        refreshWifiIcon()
         try { content.animate().cancel(); content.alpha = 1f; content.scaleX = 1f; content.scaleY = 1f; content.translationY = 0f } catch (_: Throwable) { }   // (v513) رجوع من صفحة اتفتحت بالتركيز
         val sig = recentsSig()
         if (resumedOnce && sig != recSig && !inSearch && storageKind == null && curTab == 0) {
@@ -436,7 +438,7 @@ class TvActivity : Activity() {
             sideTabs().forEach { t -> rail.addView(customTab(t)) }
             rail.addView(roundBtn("➕", "أضف تاب (تطبيق / فولدر)", 42) { sideTabsMenu() })
             // (v516) مواقيت الصلاة · Google Play (اختياري) · المظهر
-            rail.addView(roundBtn("📶", "الواي فاي (دوسة = تشغيل/إيقاف · طويلة = الشبكات)", 42, { TvWifi.show(this) }) { TvWifi.quick(this) })   // (v536)
+            rail.addView(wifiBtn(42))
             rail.addView(roundBtn("🕋", "مواقيت الصلاة", 42) { showPrayer() })
             if (playOn()) rail.addView(roundBtn("🛍", "Google Play", 42) { openPlay() })
             rail.addView(roundBtn("🎨", "المظهر", 42) { showAppearance() })
@@ -463,15 +465,59 @@ class TvActivity : Activity() {
         clockTv = ui.text("", 19f, fg, true).apply { setShadowLayer(8f, 0f, 2f, Color.BLACK) }
         tc.addView(clockTv)
         // (v527) الصلاة الجاية + المتبقي ليها جنب الساعة
-        topPrayTv = ui.text("", if (compactUi) 13f else 16f, 0xFFFFD27A.toInt(), true).apply { setShadowLayer(8f, 0f, 2f, Color.BLACK); visibility = View.GONE; setSingleLine(); setPadding(ui.dp(14), 0, 0, 0) }
+        topPrayTv = ui.text("", if (compactUi) 13f else 16f, 0xFFFFD27A.toInt(), true).apply { setShadowLayer(8f, 0f, 2f, Color.BLACK); visibility = View.GONE; setSingleLine(); setPadding(ui.dp(6), 0, 0, 0) }
         tc.addView(topPrayTv)
-        val wf = roundBtn("📶", "الواي فاي (دوسة = تشغيل/إيقاف · طويلة = الشبكات)", 40, { TvWifi.show(this) }) { TvWifi.quick(this) }.apply { (layoutParams as? LinearLayout.LayoutParams)?.leftMargin = ui.dp(12) }   // (v525) واي فاي سريع جنب الساعة
+        val wf = wifiBtn()
         wifiTop = wf
         tc.addView(wf)
         bar.addView(tc)
-        // (v558) لو الشريط العلوي اتزنق (شاشة/تكبير) ☰ و⚙️ كانوا بيطلعوا بره الشاشة: بنخبّي عدّاد الصلاة الأول، وبعدها الواي فاي، وبعدها نصغّر البحث
+        // (v578) لو الشريط العلوي اتزنق: بنخبّي الواي فاي الأول، وبعدها نصغّر البحث، وعداد الصلاة آخر حاجة
         bar.addOnLayoutChangeListener { _, l, _, r, _, oldL, _, oldR, _ -> if (r - l != oldR - oldL) bar.post { fitTopBar() } }
         return bar
+    }
+
+    private fun refreshWifiIcon() {
+        try {
+            val connected = TvWifi.isConnected(this)
+            for (ic in wifiIcons) {
+                ic.disconnected = !connected
+                ic.invalidate()
+            }
+        } catch (_: Throwable) { }
+    }
+
+    private fun wifiBtn(sizeDp: Int = 40): View {
+        val icon = WifiIconView(this, fg)
+        wifiIcons.add(icon)
+        val b = TvOwnLinear(this).apply {
+            gravity = Gravity.CENTER
+            isFocusable = true
+            isClickable = true
+            background = ovalBg(Color.TRANSPARENT)
+            setOnClickListener {
+                TvWifi.quick(this@TvActivity)
+                h.postDelayed({ refreshWifiIcon() }, 1500L)
+            }
+            setOnLongClickListener {
+                TvWifi.show(this@TvActivity)
+                h.postDelayed({ refreshWifiIcon() }, 1500L)
+                true
+            }
+            setOnFocusChangeListener { v, f ->
+                v.background = ovalBg(if (f) Color.WHITE else Color.TRANSPARENT)
+                icon.iconFocused = f
+                icon.invalidate()
+                if (f) {
+                    val state = if (TvWifi.isConnected(this@TvActivity)) "متصل" else "مش متصل"
+                    Notice.show(this@TvActivity, "الواي فاي — " + state, 1100L)
+                }
+            }
+        }
+        b.addView(icon, LinearLayout.LayoutParams(ui.dp(sizeDp - 14), ui.dp(sizeDp - 14)))
+        b.layoutParams = LinearLayout.LayoutParams(ui.dp(sizeDp), ui.dp(sizeDp)).apply { setMargins(ui.dp(2), 0, ui.dp(2), 0) }
+        b.contentDescription = "الواي فاي"
+        refreshWifiIcon()
+        return b
     }
 
     /** (v558) يضمن إن ☰ القايمة و⚙️ الإعدادات ظاهرين دايمًا جوه الشريط العلوي */
@@ -501,12 +547,13 @@ class TvActivity : Activity() {
         if (pray != null && topPrayAt > 0L) pray.visibility = View.VISIBLE
         wf?.visibility = View.VISIBLE
         var n = need()
-        if (n > avail && pray != null && pray.visibility == View.VISIBLE) { prayFitHidden = true; pray.visibility = View.GONE; n = need() }
         if (n > avail && wf != null) { wf.visibility = View.GONE; n = need() }
         if (n > avail && sb != null && !searchExpanded) {
             val lp = sb.layoutParams
             lp.width = (lp.width - (n - avail)).coerceAtLeast(ui.dp(110)); sb.layoutParams = lp
+            n = need()
         }
+        if (n > avail && pray != null && pray.visibility == View.VISIBLE) { prayFitHidden = true; pray.visibility = View.GONE; n = need() }
     }
 
     /** زرار دائري: المتركّز بيبقى أبيض ويكبر شوية، واسمه بيظهر في إشعار صغير */
@@ -557,14 +604,16 @@ class TvActivity : Activity() {
         val exY = if (compactUi) (if (fwd) -d else d) else 0f
         fun swap() {
             try {
-                enterDx = -exX; enterDy = -exY
+                enterDx = -exX
+                enterDy = -exY
+                skipPageAnim = true
                 if (i == 0) showHome(false, true) else if (i == 1) showVideosPage(false) else if (i == 2) showApps(false)
             } catch (e: Throwable) { LogStore.err("TvHome:tabGo", e); content.alpha = 1f; content.translationX = 0f; content.translationY = 0f }
         }
         try {
             content.animate().cancel()
-            content.animate().alpha(0f).translationX(exX).translationY(exY).setDuration(Skins.dur(150L))
-                .setInterpolator(android.view.animation.AccelerateInterpolator(1.3f)).withLayer().withEndAction { swap() }.start()
+            content.animate().alpha(0f).translationX(exX).translationY(exY).setDuration(Skins.dur(100L))
+                .setInterpolator(android.view.animation.AccelerateInterpolator(1.3f)).withEndAction { swap() }.start()
         } catch (e: Throwable) { LogStore.err("TvHome:tabGo2", e); swap() }
     }
     private val tabGoAct = Runnable {
@@ -673,7 +722,7 @@ class TvActivity : Activity() {
         add("➕ أضف تطبيق") { pickApps() }
         add("🕌 مواقيت الصلاة") { showPrayer() }
         if (playOn()) add("🛍 Google Play") { openPlay() }
-        add("📶 الواي فاي (تشغيل/إيقاف)") { TvWifi.quick(this) }
+        add("الواي فاي (تشغيل/إيقاف)") { TvWifi.quick(this) }
         add("🌙 نوم (شاشة سكون)") { showSaver() }
         add("📐 حجم الواجهة") { scaleDialog() }
         add("🛠 إعدادات الأندرويد") { openSystemSettings() }
@@ -683,9 +732,20 @@ class TvActivity : Activity() {
     }
 
     /** (v553) أنيميشن دخول الصفحة عند التنقل (رئيسية/فيديوهات/تطبيقات/فولدر): تلاشي + طلوع بسيط */
-    private var enterDx = 0f; private var enterDy = 0f   // (v570) اتجاه دخول الصفحة (من تنقّل التابات)؛ صفر = طلوع بسيط من تحت
+    private var enterDx = 0f
+    private var enterDy = 0f
+    private var skipPageAnim = false
     private fun pageEnter() {
         try {
+            if (skipPageAnim) {
+                skipPageAnim = false
+                content.alpha = 1f
+                content.translationX = 0f
+                content.translationY = 0f
+                content.scaleX = 1f
+                content.scaleY = 1f
+                return
+            }
             content.animate().cancel(); content.scaleX = 1f; content.scaleY = 1f
             val dx = enterDx; var dy = enterDy; enterDx = 0f; enterDy = 0f
             if (dx == 0f && dy == 0f) dy = ui.dp(16).toFloat()
@@ -695,7 +755,7 @@ class TvActivity : Activity() {
             var started = false
             fun go() {
                 if (started) return; started = true
-                try { content.animate().alpha(1f).translationX(0f).translationY(0f).setDuration(Skins.dur(280L)).setInterpolator(DecelerateInterpolator(1.7f)).withLayer().start() }
+                try { content.animate().alpha(1f).translationX(0f).translationY(0f).setDuration(Skins.dur(170L)).setInterpolator(DecelerateInterpolator(1.7f)).start() }
                 catch (_: Throwable) { content.alpha = 1f; content.translationX = 0f; content.translationY = 0f }
             }
             if (vto.isAlive) vto.addOnPreDrawListener(object : android.view.ViewTreeObserver.OnPreDrawListener {
@@ -2240,12 +2300,17 @@ class TvActivity : Activity() {
      *  لو مفيش اشتراكات/تسجيل دخول: كارت واحد بس للدخول عشان الصف مايفضلش فاضي. */
     private var ytHost: LinearLayout? = null
     private var ytFilling = false
+    private var ytFillGen = 0
+    private var ytLastErr = ""
+    private var ytWantErrNotice = false
 
-    private fun fillYt(yh: LinearLayout) {
+    private fun fillYt(yh: LinearLayout, force: Boolean = false) {
         ytHost = yh
         // (v574) لما مزامنة الاشتراكات تخلص (من الموبايل أو من هنا) الصف يتحدّث لوحده
         YtAccount.onSynced = { runOnUiThread { if (!isDestroyed) ytHost?.let { fillYt(it) } } }
-        if (ytFilling) return
+        if (ytFilling && !force) return
+        ytFillGen++
+        val myGen = ytFillGen
         ytFilling = true
         val firstPaint = yh.childCount == 0
         if (firstPaint && YtAccount.loggedIn() && YtStore.read(YtStore.SUBS).isEmpty()) {
@@ -2266,8 +2331,9 @@ class TvActivity : Activity() {
                 var feedErr = false
                 val items = try {
                     if (subs.isEmpty()) emptyList() else ytRowLoad(subs)
-                } catch (e: Throwable) { feedErr = true; LogStore.err("TvHome:yt", e); emptyList() }
+                } catch (e: Throwable) { feedErr = true; ytLastErr = (e.message ?: e.javaClass.simpleName).take(120); LogStore.err("TvHome:yt", e); emptyList() }
                 runOnUiThread {
+                    if (myGen != ytFillGen) return@runOnUiThread
                     ytFilling = false
                     if (isDestroyed) return@runOnUiThread
                     yh.removeAllViews()
@@ -2279,12 +2345,16 @@ class TvActivity : Activity() {
                             else -> tile("🔄", if (feedErr) "ما قدرتش أجيب الفيديوهات — إعادة" else "مفيش فيديوهات — تحديث") { retryYt(yh) }
                         }
                         yh.addView(hrow(listOf(card)))
+                        if (feedErr && ytWantErrNotice && ytLastErr.isNotBlank()) {
+                            Notice.show(this, "يوتيوب: " + ytLastErr, 3500L)
+                        }
+                        ytWantErrNotice = false
                         return@runOnUiThread
                     }
                     yh.addView(sectionTitle("▶ يوتيوب — اشتراكاتك"))
                     yh.addView(hrow(items.map { ytCard(it) }))
                 }
-            } catch (e: Throwable) { ytFilling = false; LogStore.err("TvHome:fillYt", e) }
+            } catch (e: Throwable) { if (myGen == ytFillGen) ytFilling = false; LogStore.err("TvHome:fillYt", e) }
         }.apply { isDaemon = true }.start()
     }
 
@@ -2317,6 +2387,9 @@ class TvActivity : Activity() {
         if (out.isEmpty()) {
             try { out = YtRss.feed(subs, true, false).items.filter { it.kind == 0 } } catch (e: Throwable) { err = e }
         }
+        if (out.isEmpty()) {
+            try { out = YtRss.sample(subs, 8).filter { it.kind == 0 } } catch (_: Throwable) { }
+        }
         if (out.isEmpty() && err != null) throw err
         out = out.take(60)
         if (out.isNotEmpty()) { ytRowItems = out; ytRowAt = System.currentTimeMillis() }
@@ -2325,11 +2398,14 @@ class TvActivity : Activity() {
 
     private fun retryYt(yh: LinearLayout) {
         ytRowAt = 0L
+        ytRowItems = emptyList()
+        ytFilling = false
+        ytWantErrNotice = true
         Notice.show(this, "🔄 بزامن اشتراكاتك…", 1800L)
         yh.removeAllViews()
         yh.addView(sectionTitle("▶ يوتيوب"))
         yh.addView(hrow(listOf(tile("⏳", "بزامن اشتراكاتك…") { })))
-        fillYt(yh)
+        fillYt(yh, true)
     }
 
     private fun ytCard(v: NpItem): View = vTile({ iv ->
@@ -2432,7 +2508,7 @@ class TvActivity : Activity() {
             addView(pill("🛠 إعدادات الأندرويد") { openSystemSettings() })
             addView(pill("🌙 نوم") { showSaver() })
             addView(pill("📱 ريموت الموبايل") { TvLinkUi.show(this@TvActivity) })
-            addView(pill("📶 الواي فاي") { TvWifi.quick(this@TvActivity) })
+            addView(pill("الواي فاي") { TvWifi.quick(this@TvActivity) })
         })
         if (!compactUi) content.addView(LinearLayout(this).apply {   // (v530) رجوع v525: على الشاشة الواسعة مفيش ريل جانبي — نفس الأزرار هنا
             gravity = Gravity.CENTER; layoutDirection = View.LAYOUT_DIRECTION_RTL; setPadding(0, ui.dp(8), 0, 0)
@@ -2842,6 +2918,43 @@ class TvActivity : Activity() {
             startActivity(Intent(this, MainActivity::class.java)
                 .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP).putExtra("force_phone", true)
                 .putExtra(Links.EX_URL, if (yid != null) YtNp.watchUrl(yid) else r.url).putExtra(Links.EX_HOW, Links.VIDEO).putExtra(Links.EX_TITLE, r.title))
+        }
+    }
+}
+
+class WifiIconView(ctx: android.content.Context, private val normalColor: Int) : android.view.View(ctx) {
+    var disconnected = false
+    var iconFocused = false
+    private val arcPaint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
+    private val dotPaint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
+    private val slashPaint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
+    init {
+        arcPaint.style = android.graphics.Paint.Style.STROKE
+        arcPaint.strokeCap = android.graphics.Paint.Cap.ROUND
+        dotPaint.style = android.graphics.Paint.Style.FILL
+        slashPaint.style = android.graphics.Paint.Style.STROKE
+        slashPaint.strokeCap = android.graphics.Paint.Cap.ROUND
+        slashPaint.color = 0xFFE53935.toInt()
+    }
+    override fun onDraw(c: android.graphics.Canvas) {
+        super.onDraw(c)
+        val d = resources.displayMetrics.density
+        val col = if (iconFocused) android.graphics.Color.BLACK else normalColor
+        arcPaint.color = col
+        arcPaint.strokeWidth = 2.2f * d
+        dotPaint.color = col
+        val cx = width / 2f
+        val cy = height * 0.68f
+        val rect = android.graphics.RectF()
+        val radii = floatArrayOf(6f, 11f, 16f)
+        for (r in radii) {
+            rect.set(cx - r * d, cy - r * d, cx + r * d, cy + r * d)
+            c.drawArc(rect, -135f, 90f, false, arcPaint)
+        }
+        c.drawCircle(cx, cy, 2.2f * d, dotPaint)
+        if (disconnected) {
+            slashPaint.strokeWidth = 3f * d
+            c.drawLine(width * 0.82f, height * 0.18f, width * 0.18f, height * 0.82f, slashPaint)
         }
     }
 }
