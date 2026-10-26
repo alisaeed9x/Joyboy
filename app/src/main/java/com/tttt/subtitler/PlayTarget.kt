@@ -36,7 +36,7 @@ object PlayTarget {
 
     /** (v560) يقفل الفيديو على التلفزيون (الأمر close) ويشيل الكبسولة فورًا */
     fun closeOnTv(ctx: android.content.Context, done: (Boolean) -> Unit = {}) {
-        nowTitle = null; TvModeFab.refresh()
+        nowTitle = null; CastServer.clear(); TvModeFab.refresh()
         val app = ctx.applicationContext
         Thread {
             var ok = false
@@ -63,15 +63,19 @@ object PlayTarget {
      */
     fun force(act: Activity, spec: MediaSpec): Boolean {
         if (DeviceUi.isTv(act)) return false
-        val target = targetUrl(spec) ?: return false
+        val local = isLocal(spec.uri)   // (v564) فيديو من الموبايل نفسه ← الموبايل يقدّمه والتلفزيون يسحبه على دفعات
+        val target = if (local) "cast" else (targetUrl(spec) ?: return false)
         try { RemoteClient.init(act) } catch (_: Throwable) {}
         if (RemoteClient.lastTv() == null) {
             Notice.show(act, "📺 مفيش تلفزيون متصل — دوس الزرار العايم 📺 أو اخرج من وضع التلفزيون", 4200L)
             return true
         }
-        send(act, spec, target)
+        send(act, spec, target, local)
         return true
     }
+
+    /** (v564) ملف على الموبايل (مش tv:// ولا لينك) */
+    fun isLocal(u: String?): Boolean = !u.isNullOrEmpty() && !u.startsWith(LibraryCore.SCHEME, true) && (u.startsWith("content:", true) || u.startsWith("file:", true) || u.startsWith("/"))
 
     /** الرابط اللي هيتبعت للتلفزيون، أو null لو مفيش حاجة تتبعت (مثلًا ملف محلي على الموبايل) */
     internal fun targetUrl(spec: MediaSpec): String? {
@@ -108,15 +112,19 @@ object PlayTarget {
         }.also { it.isDaemon = true }.start()
     }
 
-    private fun send(act: Activity, spec: MediaSpec, target: String) {
+    private fun send(act: Activity, spec: MediaSpec, target0: String, local: Boolean = false) {
         Notice.show(act, "📺 بوصّل بالتلفزيون…", 2500L)
         Thread {
             val er: String? = try {
                 if (!RemoteClient.ensureConnected(act, 8000L)) "ما قدرتش أوصل للتلفزيون — اتأكد إنه شغّال وعلى نفس الواي فاي"
-                else RemoteClient.openLink(
+                else {
+                    val target = if (local) CastServer.publish(act, spec.uri ?: "", spec.title) else target0
+                    if (target == null) "ما قدرتش أجهّز الفيديو للإرسال — اتأكد إن الموبايل على الواي فاي والملف موجود"
+                    else RemoteClient.openLink(
                     target, spec.title, spec.how,
                     spec.headers["ref"] ?: "", spec.headers["ua"] ?: "", spec.headers["cookie"] ?: "", spec.startMs
-                )
+                    )
+                }
             } catch (e: Throwable) { LogStore.err("PlayTarget:send", e); "حصلت مشكلة" }
             act.runOnUiThread {
                 if (act.isFinishing || act.isDestroyed) return@runOnUiThread
@@ -127,7 +135,7 @@ object PlayTarget {
                     openController(act, spec.title)   // (v558) شاشة التحكم (مشغّل الفيديو بوضع المتحكم) ترجع تفتح على الموبايل
                 } else {
                     GAlert(act).setTitle("⚠ ما اتبعتش للتلفزيون").setMessage(er)
-                        .setPositiveButton("🔄 إعادة المحاولة") { _, _ -> send(act, spec, target) }
+                        .setPositiveButton("🔄 إعادة المحاولة") { _, _ -> send(act, spec, target0, local) }
                         .setNegativeButton("إغلاق", null).show()
                 }
             }

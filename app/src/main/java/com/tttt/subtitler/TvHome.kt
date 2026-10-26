@@ -103,9 +103,13 @@ class TvActivity : Activity() {
     fun onRemoteCleared() { runOnUiThread { if (!isDestroyed && !isFinishing) refreshView() } }
     companion object { @Volatile var live: java.lang.ref.WeakReference<TvActivity>? = null }
 
-    override fun onActivityResult(r: Int, c: Int, d: Intent?) {
-        super.onActivityResult(r, c, d)
-        if (mediaOps?.onResult(r, c == RESULT_OK) == true) return
+    override fun onActivityResult(req: Int, res: Int, data: Intent?) {
+        super.onActivityResult(req, res, data)
+        if (mediaOps?.onResult(req, res == RESULT_OK) == true) return
+        if (req == 77 && res == RESULT_OK) {
+            val q = data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)?.firstOrNull() ?: return
+            voiceCb?.invoke(q); voiceCb = null
+        }
     }
 
     /** (v558) ضغطة طويلة (OK مطوّلة) على أي فيديو: تشغيل · مفضلة · إعادة تسمية · شيل من آخر المشغّل · تفاصيل · حذف · مسح كل آخر المشغّل */
@@ -2518,14 +2522,6 @@ class TvActivity : Activity() {
                 putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 3)
             })
         } catch (e: Throwable) { LogStore.err("Tv:voiceIn", e); Notice.show(this, "⚠ البحث الصوتي مش متاح على الجهاز ده", 2600L) }
-    }
-
-    override fun onActivityResult(req: Int, res: Int, data: Intent?) {
-        super.onActivityResult(req, res, data)
-        if (req == 77 && res == RESULT_OK) {
-            val q = data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)?.firstOrNull() ?: return
-            voiceCb?.invoke(q); voiceCb = null
-        }
     }
 
     private fun phoneTypeDialog(apply: (String) -> Unit) {

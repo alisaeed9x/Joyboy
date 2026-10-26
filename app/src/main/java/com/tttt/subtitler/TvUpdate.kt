@@ -222,6 +222,7 @@ object TvUpdate {
                     FileOutputStream(f).use { out ->
                         val buf = ByteArray(65536)
                         var got = 0L; var lastUi = 0L
+                        val t0 = System.currentTimeMillis(); var spT = t0; var spB = 0L; var spd = 0.0   // (v564) سرعة مُلَسَّنة (بايت/ثانية)
                         while (true) {
                             if (cancelled) throw IOException("اتلغى")
                             val n = ins.read(buf)
@@ -231,8 +232,14 @@ object TvUpdate {
                             if (now - lastUi > 400L) {
                                 lastUi = now
                                 val g = got
+                                val dt = now - spT
+                                if (dt >= 800L) { val inst = (g - spB) * 1000.0 / dt; spd = if (spd <= 0.0) inst else spd * 0.6 + inst * 0.4; spT = now; spB = g }
+                                val sp = spd
+                                val etaS = if (sp > 1.0 && total > g) ((total - g) / sp).toLong() else -1L
+                                val elapsedS = (now - t0) / 1000L
+                                val info = "\n⏱ المتبقي: " + (if (etaS >= 0) etaS.toString() + " ثانية" else "بحسب…") + "   •   🚀 السرعة: " + (if (sp > 1.0) String.format(java.util.Locale.US, "%.1f MB/s", sp / 1048576.0) else "…") + "   •   مضى: " + elapsedS + " ث"
                                 h.post {
-                                    tv.text = "⬇ " + (if (total > 0) (g * 100 / total).toString() + "%   " else "") + (g / 1048576L) + " / " + (total / 1048576L) + " MB"
+                                    tv.text = "⬇ " + (if (total > 0) (g * 100 / total).toString() + "%   " else "") + (g / 1048576L) + " / " + (total / 1048576L) + " MB" + info
                                     if (total > 0) { bar.isIndeterminate = false; bar.progress = (g * 1000L / total).toInt().coerceIn(0, 1000) }
                                 }
                             }

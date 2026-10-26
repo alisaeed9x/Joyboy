@@ -4115,11 +4115,14 @@ class PlayerActivity : Activity(), Host {
             httpDsf = DefaultHttpDataSource.Factory().setDefaultRequestProperties(hdr).setAllowCrossProtocolRedirects(true)
             player = LocalPlayback(ho)
         } else {
+        val castSrc = uri == null && CastCache.isCast(url)   // (v564) فيديو جاي من الموبايل: كاش مؤقت بيتمسح لما تخرج
         val factory = if (uri != null) DefaultMediaSourceFactory(this)
-        else { val f = DefaultHttpDataSource.Factory().setDefaultRequestProperties(hdr).setAllowCrossProtocolRedirects(true); httpDsf = f; DefaultMediaSourceFactory(f) }
+        else { val f = DefaultHttpDataSource.Factory().setDefaultRequestProperties(hdr).setAllowCrossProtocolRedirects(true); httpDsf = f; DefaultMediaSourceFactory(if (castSrc) CastCache.factory(this, f) else f) }
         // MKV وغيره: لو الديكودر الأول فشل (HEVC / 10-bit) جرّب اللي بعده بدل شاشة سودا
         val rf = DefaultRenderersFactory(this).setEnableDecoderFallback(true)
-        player = LocalPlayback(ExoPlayer.Builder(this, rf).setMediaSourceFactory(factory).build())
+        val eb = ExoPlayer.Builder(this, rf).setMediaSourceFactory(factory)
+        if (castSrc) eb.setLoadControl(CastCache.loadControl())
+        player = LocalPlayback(eb.build())
         }
         // (v467) دخول الـ handoff (تكبير من مشغّل يوتيوب المصغّر): qOpts/aurl بيبقوا فاضيين فزرار الصوت/فيديو والجودات كانوا ميتين — بنجيب بيانات الستريم في الخلفية من غير ما نلمس التشغيل الشغّال
         if (ho != null && qOpts.isEmpty()) intent.getStringExtra("ytid")?.takeIf { it.length == 11 }?.let { yid ->
@@ -5932,6 +5935,8 @@ class PlayerActivity : Activity(), Host {
         if (!handedOff && !remote) try { engine.saveNow() } catch (e: Exception) { LogStore.err("Main:2593", e) }
         if (incognito && isFinishing) try { File(File(filesDir, "progress"), Store.keyFor(vid) + ".json").delete() } catch (_: Throwable) {}   // (v124) المتخفي: الترجمة المحفوظة بتتمسح أول ما تقفل
         player.release()
+        // (v564) فيديو الموبايل على التلفزيون: امسح الكاش أول ما نخرج (لو مفيش مشغّل تاني بيستخدمه)
+        if (CastCache.isCast(url) && synchronized(liveList) { liveList.none { val a = it.get(); a != null && a !== this && !a.isFinishing && !a.isDestroyed } }) CastCache.purge(applicationContext)
         synchronized(liveList) { liveList.removeAll { it.get() == null || it.get() === this } }
         val cur0 = PlayerRemote.act?.get()
         if (cur0 === this) PlayerRemote.act = null

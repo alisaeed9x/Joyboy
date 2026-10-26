@@ -1312,6 +1312,12 @@ class MainActivity : Activity() {
         val lref = i.getStringExtra("link_ref") ?: ""; val lua = i.getStringExtra("link_ua") ?: ""; val lck = i.getStringExtra("link_cookie") ?: ""
         i.removeExtra(Links.EX_URL); i.removeExtra("link_ref"); i.removeExtra("link_ua"); i.removeExtra("link_cookie")
         val lstart = i.getLongExtra("link_startms", 0L); i.removeExtra("link_startms")   // (v543 م4) يوتيوب من الموبايل ومعاه مكان البداية
+        // (v564) فيديو جاي من موبايل (tvcast=1): شغّله على طول بكاش مؤقت (من غير ترجمة/مفاتيح)
+        if (CastCache.isCast(u)) {
+            try { musicUi?.pause() } catch (_: Throwable) {}
+            startActivity(Intent(this, PlayerActivity::class.java).putExtra("url", u).putExtra("title", t).putExtra("nosub", true).putExtra("landscape", true).putExtra("fresh", false))
+            return
+        }
         // (v547 م4) «وضع التلفزيون» شغّال: يوتيوب/فيديو (حتى المصطاد بهيدرز) يتبعت للتلفزيون بدل ما يشتغل على الموبايل. false = الوضع مقفول فنكمّل محلي زي ما كان
         if (how == Links.VIDEO || how == Links.VIDEO_TR || how == Links.AUTO) {
             val kk = Links.kind(u)
@@ -1350,6 +1356,8 @@ class MainActivity : Activity() {
             if (!PlayTarget.force(this, MediaSpec(uri = v.uri, title = v.title))) Notice.show(this, "📺 ما اتبعتش للتلفزيون", 3000L)
             return
         }
+        // (v564) «وضع التلفزيون» شغّال والفيديو من الموبايل نفسه: يتبعت للتلفزيون (يسحبه على دفعات ويمسح الكاش لما تخرج)
+        if (PlayTarget.enabled() && PlayTarget.isLocal(v.uri) && PlayTarget.force(this, MediaSpec(uri = v.uri, title = v.title))) return
         play("", Uri.parse(v.uri), v.landscape, false, false, !BgJobs.isActive(v.videoId))
     }
     fun startPlayerNow(u: String, uri: Uri?, landscape: Boolean = uri != null, fresh: Boolean = false, noSub: Boolean = false, ask: Boolean = false, ret: String = "") {

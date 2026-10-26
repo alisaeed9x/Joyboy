@@ -84,6 +84,7 @@ object TvLink {
         if (!srv.start()) return
         http = srv
         started = true
+        try { CastCache.purgeStale(app) } catch (_: Throwable) {}   // (v564) بقايا فيديو موبايل لو التطبيق اتقفل فجأة
         trackActivities()
         startUdp()
         startWatcher()
