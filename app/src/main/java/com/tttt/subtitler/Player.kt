@@ -852,7 +852,12 @@ class PlayerActivity : Activity(), Host {
         val t = tvScrubTo; tvScrubTo = -1L
         tvScrubOv?.hide()
         try {
-            if (commit && t >= 0) player.seekTo(t)
+            if (commit && t >= 0) {
+                // (v576) فيديو نت/مبعوت من الموبايل: السبينر يظهر فورًا مع القفزة (مش بعد ما يتأخر)؛ المحلي من غير سبينر
+                if (tvSrcIsNet() && Math.abs(t - player.currentPosition) > 1500L) setBuffering(true)
+                player.seekTo(t)
+                if (tvSrcIsNet()) tvH.postDelayed({ try { if (buffering && player.exo()?.playbackState == Player.STATE_READY) setBuffering(false) } catch (_: Throwable) {} }, 700L)
+            }
             tvBar?.let { if (it.visible) it.refresh() }
         } catch (e: Exception) { LogStore.err("Tv:seek", e) }
     }
@@ -3082,6 +3087,7 @@ class PlayerActivity : Activity(), Host {
             background = glassCircleBg(resources.displayMetrics.density)
             setOnClickListener { togglePlay() }
             Glass.pressable(this)   // (v445)
+            isFocusable = false; isFocusableInTouchMode = false; defaultFocusHighlightEnabled = false   // (v576) تلفزيون: ماياخدش حلقة التركيز (المربع الأزرق) — الريموت بيتحكم في المشغّل من غيره
         }
         videoBox.addView(centerPlay, FrameLayout.LayoutParams(ui.dp(74), ui.dp(74), Gravity.CENTER))
         // (v249) كبسولات العدّادات: صغيرة، التلاتة جنب بعض شمال فوق الفيديو (صوتي · بصري · نت) والشفافية من الإعدادات (badge_alpha)
@@ -5144,7 +5150,15 @@ class PlayerActivity : Activity(), Host {
     // ===== لودينج ويندوز: بدل زرار ⏸/▶ اللي في النص أثناء التحميل (فيديو أونلاين / تنقّل / سيك) =====
     @Volatile private var buffering = false
     private val spinners = HashMap<View, WinSpinnerDrawable>()
-    fun setBuffering(b: Boolean) {
+    /** (v576) المصدر شبكة (يوتيوب/لينك/فيديو من الموبايل متبعوت للتلفزيون) ولا ملف محلي على الجهاز */
+    private fun tvSrcIsNet(): Boolean {
+        if (intent.getStringExtra("ytid") != null) return true
+        val sc = try { player.exo()?.currentMediaItem?.localConfiguration?.uri?.scheme } catch (_: Throwable) { null }
+        if (sc != null) return sc.startsWith("http")
+        return url != null || uri?.scheme?.startsWith("http") == true
+    }
+    fun setBuffering(b0: Boolean) {
+        val b = b0 && !(DeviceUi.isTv(this) && !tvSrcIsNet())   // (v576) تلفزيون + فيديو محلي: مفيش سبينر ولا مربع (القفز سريع)
         if (b == buffering && (b || spinners.isEmpty())) return
         buffering = b
         val targets = listOfNotNull<TextView>(if (::fsPlayB.isInitialized) fsPlayB else null, if (::ctl.isInitialized) ctl.play else null, if (::centerPlay.isInitialized) centerPlay else null)

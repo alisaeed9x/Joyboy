@@ -2266,7 +2266,7 @@ class TvActivity : Activity() {
                 }
                 var feedErr = false
                 val items = try {
-                    if (subs.isEmpty()) emptyList() else (YtRss.cachedFeed(subs) ?: YtRss.feed(subs, false, true)).items.filter { it.kind == 0 }.take(30)
+                    if (subs.isEmpty()) emptyList() else ytRowLoad(subs)
                 } catch (e: Throwable) { feedErr = true; LogStore.err("TvHome:yt", e); emptyList() }
                 runOnUiThread {
                     ytFilling = false
@@ -2277,19 +2277,55 @@ class TvActivity : Activity() {
                         val card = when {
                             !YtAccount.loggedIn() -> tile("👤", "سجّل دخول يوتيوب") { openMain("youtube") }
                             subs.isEmpty() -> tile("🔄", "زامن اشتراكاتك" + if (syncErr.isNotEmpty()) " (فشلت)" else "") { retryYt(yh) }
-                            else -> tile("🔄", if (feedErr) "ما قدرتش أجيب الفيديوهات — إعادة" else "مفيش فيديوهات جديدة — تحديث") { retryYt(yh) }
+                            else -> tile("🔄", if (feedErr) "ما قدرتش أجيب الفيديوهات — إعادة" else "مفيش فيديوهات — تحديث") { retryYt(yh) }
                         }
                         yh.addView(hrow(listOf(card)))
                         return@runOnUiThread
                     }
-                    yh.addView(sectionTitle("▶ يوتيوب — أحدث اشتراكاتك"))
+                    yh.addView(sectionTitle("▶ يوتيوب — اشتراكاتك"))
                     yh.addView(hrow(items.map { ytCard(it) }))
                 }
             } catch (e: Throwable) { ytFilling = false; LogStore.err("TvHome:fillYt", e) }
         }.apply { isDaemon = true }.start()
     }
 
+    // (v576) صف يوتيوب زي تاب الاشتراكات في الموبايل: فيد الاشتراكات الرسمي من حسابك الأول (كل آخر الفيديوهات مش «الجديد بس»)، والـRSS احتياطي
+    private var ytRowItems: List<NpItem> = emptyList()
+    private var ytRowAt = 0L
+
+    private fun ytRowLoad(subs: List<NpItem>): List<NpItem> {
+        if (ytRowItems.isNotEmpty() && System.currentTimeMillis() - ytRowAt < 5 * 60_000L) return ytRowItems
+        var out: List<NpItem> = emptyList()
+        var err: Throwable? = null
+        if (YtAccount.loggedIn() && Cfg.bool("yt_subs_official", true)) {
+            try {
+                val acc = ArrayList<NpItem>()
+                var r = YtAccount.listFirst("FEsubscriptions")
+                acc.addAll(r.items.filter { it.kind == 0 && it.dur !in 1L..60L })
+                var pages = 1
+                while (acc.size < 60 && pages < 4) {
+                    val nx = r.next ?: break
+                    r = YtAccount.listMore(nx)
+                    acc.addAll(r.items.filter { it.kind == 0 && it.dur !in 1L..60L })
+                    pages++
+                }
+                out = acc.distinctBy { it.id }
+            } catch (e: Throwable) { err = e; LogStore.add("⚠ صف يوتيوب: فيد الاشتراكات الرسمي فشل — بجرّب RSS: " + (e.message ?: e.javaClass.simpleName).take(80)) }
+        }
+        if (out.isEmpty()) {
+            try { out = (YtRss.cachedFeed(subs) ?: YtRss.feed(subs, false, true)).items.filter { it.kind == 0 } } catch (e: Throwable) { err = e }
+        }
+        if (out.isEmpty()) {
+            try { out = YtRss.feed(subs, true, false).items.filter { it.kind == 0 } } catch (e: Throwable) { err = e }
+        }
+        if (out.isEmpty() && err != null) throw err
+        out = out.take(60)
+        if (out.isNotEmpty()) { ytRowItems = out; ytRowAt = System.currentTimeMillis() }
+        return out
+    }
+
     private fun retryYt(yh: LinearLayout) {
+        ytRowAt = 0L
         Notice.show(this, "🔄 بزامن اشتراكاتك…", 1800L)
         yh.removeAllViews()
         yh.addView(sectionTitle("▶ يوتيوب"))
