@@ -18,13 +18,6 @@ object ModelWatch {
     }
     private fun gt(a: Pair<Int, Int>, b: Pair<Int, Int>) = a.first > b.first || (a.first == b.first && a.second > b.second)
 
-    /** الأساس اللي بنقارن بيه: 3.1 (المثبّت)، أو إصدار الموديل المختار حاليًا لو أحدث منه */
-    private fun baseline(): Pair<Int, Int> {
-        val pin = ver(Models.DEFAULT) ?: Pair(3, 1)
-        val cur = ver(Cfg.str("model", Models.DEFAULT).trim())
-        return if (cur != null && gt(cur, pin)) cur else pin
-    }
-
     /** موديلات flash-lite أحدث من الأساس (من غير tts/image/live…) */
     fun candidates(ids: List<String>): List<String> = emptyList()   // (v224) إشعار «موديل أحدث» اتلغى — الاعتماد على gemini-flash-lite-latest
 

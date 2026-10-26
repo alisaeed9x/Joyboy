@@ -164,18 +164,3 @@ class YtIcon(ctx: Context, private val kind: String) : View(ctx) {
         c.restore()
     }
 }
-
-/** شعار يوتيوب (مستطيل أحمر بمثلث أبيض) */
-class YtLogo(ctx: Context) : View(ctx) {
-    private val p = Paint(Paint.ANTI_ALIAS_FLAG)
-    override fun onDraw(c: Canvas) {
-        val w = width.toFloat(); val h = height.toFloat()
-        if (w <= 0f || h <= 0f) return
-        p.reset(); p.isAntiAlias = true; p.style = Paint.Style.FILL; p.color = YtSkin.red
-        c.drawRoundRect(RectF(0f, 0f, w, h), h * 0.3f, h * 0.3f, p)
-        p.color = Color.WHITE
-        val t = Path()
-        t.moveTo(w * 0.40f, h * 0.28f); t.lineTo(w * 0.66f, h * 0.5f); t.lineTo(w * 0.40f, h * 0.72f); t.close()
-        c.drawPath(t, p)
-    }
-}

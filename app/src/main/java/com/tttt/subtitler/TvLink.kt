@@ -62,6 +62,7 @@ object TvLink {
     @Volatile private var pairCodeUntil = 0L
     @Volatile private var badTries = 0
     @Volatile private var lockUntil = 0L
+    @Volatile private var lastCodeShown = 0L
     @Volatile var pendingOffer: Offer? = null
     @Volatile private var offerShowing = false
     @Volatile private var declinedVer = 0L
@@ -160,7 +161,7 @@ object TvLink {
 
     private fun hello(): JSONObject = JSONObject()
         .put("app", "subtitler-tv").put("id", tvId()).put("name", tvName()).put("port", PORT)
-        .put("ver", LinkVer.code(app)).put("vname", LinkVer.name(app)).put("needCode", remotes.isNotEmpty())
+        .put("ver", LinkVer.code(app)).put("vname", LinkVer.name(app)).put("needCode", true)
 
     // ===== قايمة الريموتات =====
     private fun loadRemotes() {
@@ -206,9 +207,9 @@ object TvLink {
     fun address(): String { val i = TypeServer.ip(); return if (i.isEmpty()) "" else "$i:$PORT" }
 
     // ===== إشعارات التلفزيون =====
-    fun notice(msg: String) {
+    fun notice(msg: String, ms: Long = 2600L) {
         h.post {
-            try { val a = top?.get(); if (a != null && !a.isFinishing && !a.isDestroyed) Notice.show(a, msg, 2600L) } catch (_: Throwable) {}
+            try { val a = top?.get(); if (a != null && !a.isFinishing && !a.isDestroyed) Notice.show(a, msg, ms) } catch (_: Throwable) {}
         }
     }
 
@@ -270,9 +271,15 @@ object TvLink {
         val id = j.optString("id"); val nm = j.optString("name").ifBlank { "موبايل" }; val code = j.optString("code")
         if (id.isBlank()) return err(403, "bad")
         val codeOk = code.isNotEmpty() && code == pairCode && now < pairCodeUntil
-        val first = remotes.isEmpty()
-        if (!first && !codeOk) {
+        // (v585 / C2) الكود إجباري حتى لأول ريموت: اللي على نفس الشبكة لازم يشوف الكود على شاشة التلفزيون
+        if (!codeOk) {
             if (code.isNotEmpty()) { badTries++; if (badTries >= 8) { badTries = 0; lockUntil = now + 60000L } }
+            else if (now - lastCodeShown > 8000L) {
+                // محاولة من غير كود ← اعرض كود صالح على التلفزيون (من غير ما نغيّر كود لسه صالح عشان محاولة غريبة ما تبوّظش اقتران شغّال)
+                lastCodeShown = now
+                val c = if (pairCode.isNotEmpty() && now < pairCodeUntil) pairCode else newCode()
+                notice("🔐 كود إقران الموبايل: $c", 12000L)
+            }
             return err(403, "need_code")
         }
         badTries = 0

@@ -185,6 +185,9 @@ class YtMiniPlayer(private val act: Activity, private val ui: Ui) : FrameLayout(
     private var exo: ExoPlayer? = null
     private var lastPick: YtPick? = null
     private var resumeMs = 0L
+    /** (v586) اتسلّم للمشغّل الكامل: مكان الاستكمال بعد الرجوع بييجي من تسجيل المشغّل الكامل مش من لحظة التكبير */
+    private var handed = false
+    var idOf: (() -> String?)? = null
     private var vw = 0
     private var vh = 0
     private var dragging = false
@@ -276,7 +279,7 @@ class YtMiniPlayer(private val act: Activity, private val ui: Ui) : FrameLayout(
             if (ho != null) { showCtl(true, false); onExpand(ho.second, ho.first) }
             else {
                 val pos = exo?.currentPosition ?: resumeMs
-                resumeMs = pos
+                resumeMs = pos; handed = true
                 releasePlayer(true)
                 showCtl(true, false)
                 onExpand(pos, null)
@@ -286,7 +289,13 @@ class YtMiniPlayer(private val act: Activity, private val ui: Ui) : FrameLayout(
             val p = exo
             if (p == null) {
                 val lp = lastPick
-                if (lp != null) playPick(lp, true, resumeMs) else onExpand(0L, null)
+                if (lp != null) {
+                    // (v586) رجعنا من المشغّل الكامل: كمّل من اللي سجّله هناك (الأحدث)، مش من لحظة ما كبّرت
+                    val id = try { idOf?.invoke() } catch (_: Throwable) { null }
+                    val rs = if (handed && id != null) (try { YtProg.resumeNow(act.applicationContext, id) } catch (_: Throwable) { 0L }) else resumeMs
+                    handed = false
+                    playPick(lp, true, rs)
+                } else onExpand(0L, null)
             } else if (p.playbackState == androidx.media3.common.Player.STATE_ENDED) { p.seekTo(0L); p.playWhenReady = true }
             else p.playWhenReady = !p.playWhenReady
         }
@@ -334,7 +343,6 @@ class YtMiniPlayer(private val act: Activity, private val ui: Ui) : FrameLayout(
     }
 
     fun togglePlay() { if (exo == null && lastPick == null) return; playB.performClick() }   // لسه بيحمّل: OK ماتفتحش المشغّل الكامل بالغلط
-    fun hasQualities(): Boolean = ents.size > 1
     fun hasLangs(): Boolean = lgs.size > 1
     fun qualityLabel(): String = ents.getOrNull(curEnt)?.label ?: ""
     fun langLabel(): String = lgs.getOrNull(lgIdx)?.name ?: ""
@@ -396,7 +404,7 @@ class YtMiniPlayer(private val act: Activity, private val ui: Ui) : FrameLayout(
 
     fun reset() {
         releasePlayer(false)
-        lastPick = null; curPick = null; resumeMs = 0L; vw = 0; vh = 0
+        lastPick = null; curPick = null; resumeMs = 0L; handed = false; vw = 0; vh = 0
         ents.clear(); lgs.clear(); aq.clear(); audOvr = null; lgIdx = -1; curEnt = 0; qRaw = ""; dubTv.visibility = View.GONE
         msgTv.visibility = View.GONE; seek.progress = 0; timeTv.text = "0:00 / 0:00"
         playG.kind = 0; playG.invalidate()
@@ -521,7 +529,7 @@ class YtMiniPlayer(private val act: Activity, private val ui: Ui) : FrameLayout(
         YtHandoff.put(p)
         thumb.visibility = View.VISIBLE
         playG.kind = 0; playG.invalidate()
-        resumeMs = pos
+        resumeMs = pos; handed = true
         return Pair(YtPick(cp.url, cp.audio, cp.ua, cp.title, cp.h, qlistForHandoff()), pos)
     }
 
@@ -836,6 +844,7 @@ class YtWatchPage(private val act: Activity, private val ui: Ui, private val hos
         body.addView(composer, LinearLayout.LayoutParams(-1, -2))
         body.addView(listBox, LinearLayout.LayoutParams(-1, -2))
 
+        mini.idOf = { item?.id }   // (v586)
         mini.onCollapse = { close(true) }
         mini.onExpand = { pos, pk -> val v = item; if (v != null) host.expand(v.id, titleNow(), pos, false, pk) }
         mini.onEnded = { val nx = YtQueue.next(); if (nx != null) host.openVideo(nx) }   // (v469) C9: التالي من قائمة الانتظار تلقائيًا

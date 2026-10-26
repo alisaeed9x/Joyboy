@@ -259,18 +259,6 @@ object ExtTranslate {
         } finally { try { c.disconnect() } catch (_: Throwable) {} }
     }
 
-    /** تخمين لغة المصدر من الحروف (MyMemory مابيقبلش «auto») */
-    fun guessLang(t: String): String {
-        for (ch in t) {
-            val c = ch.code
-            if (c in 0xAC00..0xD7AF || c in 0x1100..0x11FF) return "ko"
-            if (c in 0x3040..0x30FF) return "ja"
-        }
-        for (ch in t) if (ch.code in 0x4E00..0x9FFF) return "zh-CN"
-        for (ch in t) if (ch.code in 0x0400..0x04FF) return "ru"
-        return "en"
-    }
-
     // ===== (v454) Microsoft Edge Translate: نفس خدمة الترجمة اللي في متصفح Edge — بتاخد توكن مجاني من edge.microsoft.com وبعدها دفعات جمل، من غير مفتاح ولا حد حروف يومي معلن =====
     @Volatile private var edgeTok = ""
     @Volatile private var edgeAt = 0L

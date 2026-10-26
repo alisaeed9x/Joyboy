@@ -683,8 +683,6 @@ object YtNp {
     }
 
     /** فيد الاشتراكات: آخر فيديوهات كل قناة مدموجة بالأحدث أولًا */
-    /** (v327) الفيد بقى RSS (YtRss.feed) — ده للتوافق بس */
-    fun subsFeed(subs: List<NpItem>): YtRes = YtRss.feed(subs)
 }
 
 /** (v325) تخزين محلي: سجل · محفوظات · اشتراكات (في Cfg، سطر لكل عنصر) */
@@ -816,9 +814,18 @@ object YtProg {
     /** موضع الاستكمال بالمللي (0 = من الأول) من مخزننا أو من سجل المشغّل الكامل */
     fun resumeMs(id: String, rec: Recent?): Long {
         val e = get(id)
-        if (e != null && !e.done && e.posMs > 3000L) return e.posMs
-        if (rec != null && rec.durSec > 0) { val f = rec.posSec / rec.durSec; if (f in 0.02..0.92 && rec.posSec > 3.0) return (rec.posSec * 1000).toLong() }
+        val eOk = e != null && !e.done && e.posMs > 3000L
+        val rOk = rec != null && rec.durSec > 0 && (rec.posSec / rec.durSec) in 0.02..0.92 && rec.posSec > 3.0
+        // (v586) الأحدث يكسب: المشغّل المصغّر بيسجّل هنا، والمشغّل الكامل (تكبير الشاشة) بيسجّل في recent.json — قبل كده القديم كان بيغلب الجديد
+        if (e != null && rec != null && rec.ts > e.ts) return if (rOk) (rec.posSec * 1000).toLong() else 0L
+        if (eOk) return e!!.posMs
+        if (rOk) return (rec!!.posSec * 1000).toLong()
         return 0L
+    }
+    /** (v586) نفس resumeMs بس بتقرا recent.json بنفسها (للمشغّل المصغّر والكامل وقت الفتح من غير ما نعتمد على كاش الشاشة) */
+    fun resumeNow(ctx: android.content.Context, id: String): Long {
+        val rec = try { Recents.parse(java.io.File(ctx.filesDir, "recent.json").readText()).firstOrNull { it.id == "yt:" + id } } catch (_: Throwable) { null }
+        return resumeMs(id, rec)
     }
     fun continueItems(recs: Map<String, *>): List<NpItem> {
         val out = LinkedHashMap<String, NpItem>()

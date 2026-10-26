@@ -94,13 +94,6 @@ object LyricsEngine {
         version++
     }
 
-    /** توقيت تقريبي (موزّع بالتساوي) — بنستخدمه بس لو تحديد لحظات الغنا محليًا فشل */
-    private fun estimate(t: Track, lines: List<String>): List<LyricLine> {
-        val tot = (t.durMs / 1000.0).coerceAtLeast(30.0)
-        val step = (tot * 0.85) / lines.size.coerceAtLeast(1); val off = tot * 0.07
-        return lines.mapIndexed { i, x -> LyricLine(off + i * step, off + (i + 1) * step, x) }
-    }
-
     // ===================== النسخ المرشّحة (محفوظة محليًا) =====================
     fun srcLabel(src: String): String = if (src.endsWith("+ai")) srcLabel(src.removeSuffix("+ai")) + " + توقيت ذكاء اصطناعي" else if (src.endsWith("+local")) srcLabel(src.removeSuffix("+local")) + " + توقيت محلي" else when (src) {
         "lrclib" -> "LRCLIB"; "musixmatch" -> "Musixmatch"; "youtube" -> "YouTube Music"; "lyrics.ovh" -> "Lyrics.ovh"; "gemini" -> "Gemini"; "gemini-audio" -> "Gemini (من الصوت)"; else -> src

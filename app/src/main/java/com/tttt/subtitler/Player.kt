@@ -4041,6 +4041,7 @@ class PlayerActivity : Activity(), Host {
                         try {
                             if (cur > 1000 && cur < durMs - 4000) Cfg.p.edit().putString("lastpos", vid + "\t" + cur).apply()
                             else if (cur >= durMs - 4000 && (Cfg.p.getString("lastpos", "") ?: "").startsWith(vid + "\t")) Cfg.p.edit().remove("lastpos").apply()
+                            saveYtProg()   // (v586)
                         } catch (_: Throwable) {}
                     }
                     if (nowP - lastRecentSave >= 20000 && !remote && player.isPlaying) { lastRecentSave = nowP; Thread { try { saveRecent() } catch (_: Throwable) {} }.apply { isDaemon = true }.start() }
@@ -4538,7 +4539,9 @@ class PlayerActivity : Activity(), Host {
             val savedPos0 = try { eng.load() } catch (e: Throwable) { LogStore.err("Player:load", e); 0.0 }
             // (v125) آخر مكان وقوف فعلي (بيتحفظ كل 3 ث، حتى وإنت في PiP) أحدث من اللي في ملف الترجمة
             val lastPosSec = try { val s = Cfg.p.getString("lastpos", "") ?: ""; val i = s.indexOf('\t'); if (i > 0 && s.substring(0, i) == vidNow) (s.substring(i + 1).toLongOrNull() ?: 0L) / 1000.0 else 0.0 } catch (_: Throwable) { 0.0 }
-            val savedPos = if (lastPosSec > 5.0) lastPosSec else savedPos0
+            // (v586) يوتيوب: أحدث موضع من مخزن YtProg/recent.json (المصغّر والكامل بيكتبوا فيه) بيغلب القديم
+            val ytMs = if (vidNow.startsWith("yt:")) try { YtProg.resumeNow(applicationContext, vidNow.removePrefix("yt:")) } catch (_: Throwable) { 0L } else 0L
+            val savedPos = if (ytMs > 5000L) ytMs / 1000.0 else if (lastPosSec > 5.0) lastPosSec else savedPos0
             val rp = if (savedPos <= 5.0 && uri == null) {
                 try { Recents.parse(File(filesDir, "recent.json").readText()).firstOrNull { it.id == vidNow }?.posSec ?: 0.0 } catch (_: Exception) { 0.0 }
             } else 0.0
@@ -5020,8 +5023,18 @@ class PlayerActivity : Activity(), Host {
     }
 
     private fun saveRecent() { if (!handedOff && !remote) saveRecentForce() }
+    /** (v586) يوتيوب: نفس مخزن تقدم المشغّل المصغّر (YtProg) — عشان الخروج من تكبير الشاشة وفتح الفيديو تاني يكمّل من نفس المكان */
+    private fun saveYtProg() {
+        try {
+            if (incognito || remote || hiddenSite) return
+            val yid = intent.getStringExtra("ytid")?.takeIf { it.length == 11 } ?: return
+            if (durMs <= 0 || cur < 1000L) return
+            YtProg.save(yid, cur, durMs, intent.getStringExtra("title")?.takeIf { it.isNotBlank() } ?: Recents.titleOf(vid), "https://i.ytimg.com/vi/$yid/mqdefault.jpg")
+        } catch (_: Throwable) {}
+    }
     private fun saveRecentForce() {
         if (incognito) return
+        saveYtProg()
         try { if (!hiddenSite && durMs > 0 && cur > 1000 && cur < durMs - 4000 && vid.isNotEmpty()) Cfg.p.edit().putString("lastpos", vid + "\t" + cur).apply() } catch (_: Throwable) {}
         if (!::engine.isInitialized || !engineReady) return
         try {

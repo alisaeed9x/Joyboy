@@ -24,7 +24,7 @@ import java.util.concurrent.TimeUnit
 
 /**
  * (v518) جانب الموبايل من «ريموت التلفزيون»:
- *  اكتشاف تلقائي (عنوان محفوظ ← بحث UDP ← مسح الشبكة) · اقتران (أول مرة تلقائي، وبعدها بكود 5 أرقام) ·
+ *  اكتشاف تلقائي (عنوان محفوظ ← بحث UDP ← مسح الشبكة) · اقتران (بكود 5 أرقام يظهر على التلفزيون) ·
  *  اتصال بنبضة كل 4 ثواني وإعادة اتصال تلقائية · أوامر (صوت/تشغيل) · إرسال لينك/نص/مفاتيح Gemini · عرض تحديث (الموبايل بيوزّع الـAPK بتاعه).
  */
 object RemoteClient {
@@ -234,6 +234,12 @@ object RemoteClient {
         }
         try { udp.join(500) } catch (_: InterruptedException) {}
         return found.values.toList()
+    }
+
+    /** (v585 / M1) اتصال مباشر بعنوان IP مكتوب يدويًا (لو البث والمسح مابيلاقوش التلفزيون). بيتنادى من thread خلفي */
+    fun helloAt(ip: String, port: Int = TvLink.PORT): Found? {
+        val (c, t) = call(ip.trim(), port, "/hello", null, "", 2500)
+        return if (c == 200) parseFound(t, ip.trim()) else null
     }
 
     /** فحص سريع للعنوان المحفوظ قبل البحث الكامل */

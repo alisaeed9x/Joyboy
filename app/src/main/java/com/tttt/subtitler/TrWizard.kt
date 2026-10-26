@@ -69,7 +69,6 @@ object TrWizard {
 
     /** (v395) التفريغ السحابي الخارجي اتشال — مفيش مزوّد */
     fun sttCandidate(ext: String): ExtLlm.Preset? = null
-    fun sttFallback(): ExtLlm.Preset? = null
 
     const val NO_NET_MSG = "📵 مفيش نت — ترجمة جوجل محتاجة اتصال بالنت عشان تترجم، اتصل بالنت"
     const val NO_NET_GEMINI = "📵 مفيش نت — جيميناي محتاج اتصال بالنت عشان يترجم، اتصل بالنت"
@@ -362,20 +361,6 @@ object TrWizard {
 
         // ===== الخطوات =====
         // ===== (v291) ⓪ المصدر: 🎙 صوتي بس · 👁 بصري بس · 🎙+👁 هجين — بعده خط الترجمة (للصوتي والهجين) =====
-        var tsrc = SourceMode.get()
-        var tkind = SourceMode.kind()
-        fun stepVisKind() {
-            reset("👁 البصري يترجم إيه؟")
-            note(if (tsrc == "visual") "بصري بس: الترجمة الصوتية هتتقفل." else "هجين: الصوت بيترجم زي ما هتختار بعد كده، والبصري شغّال معاه.")
-            opt("👁 نصوص الشاشة", "لافتات وكلام مكتوب في الصورة. الهارد سب (الترجمة المحروقة) بيتتجاهل.", tkind == "scene") { tkind = "scene"; pickKind() }
-            opt("🔤 هارد سب", "الترجمة المحروقة في الفيديو (وأي نصوص في الصورة).", tkind == "hard") { tkind = "hard"; pickKind() }
-            addBack()
-        }
-        fun pickKind() {
-            TrWizard.pSrc = tsrc; TrWizard.pKind = tkind
-            if (tsrc == "visual") { dlg.dismiss(); TrWizard.commitSource(); TrWizard.sourceHook(edit) }
-            else go(hubL)
-        }
 
         // ===================== (v360) الأوضاع المبسّطة =====================
         // شاشة واحدة بكل الأوضاع ← (للتلاتة الأولانية: لهجة ← أسلوب ← شدة) ← «بصري معاه؟» ← يطبّق ويحفظ ويقفل.
@@ -400,23 +385,6 @@ object TrWizard {
             sync()
             done(plan(), true, !edit)
             dlg.dismiss()
-        }
-
-        fun stepMDeg() {
-            reset("🎚 شدة الأسلوب")
-            note("أسلوب «" + mStyle + "» — بأي درجة؟")
-            for ((d, ds) in listOf("خفيفة" to "لمسة بسيطة في الجمل اللي تستاهل", "متوسطة" to "في معظم الجمل بدرجة معتدلة", "شديدة" to "في كل جملة تقريبًا وبأقصى درجة")) opt(d, ds, mDeg == d) { mDeg = d; finishModes("audio", null) }
-            addBack()
-        }
-
-        fun stepMTone() {
-            reset("🎚 الأسلوب")
-            note("حرفي = ترجمة عادية من غير أسلوب. أي أسلوب تاني بتختار شدته في الخطوة اللي بعدها.")
-            for ((st, sd) in listOf("حرفي" to "ترجمة عادية", "شعبي" to "كلام الشارع والتعبيرات اليومية", "جرئ" to "ألفاظ أجرأ من غير تلطيف زيادة", "+18" to "صريح بلا تلطيف — يطابق الأصل بالظبط")) opt(st, sd, mStyle == st) {
-                mStyle = st
-                if (st == "حرفي") finishModes("audio", null) else go { stepMDeg() }
-            }
-            addBack()
         }
 
 

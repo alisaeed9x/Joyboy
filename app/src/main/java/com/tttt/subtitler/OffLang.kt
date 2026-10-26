@@ -165,38 +165,3 @@ object OffLang {
     /** الدمج شغّال بس في مسار Whisper (نص-أونلاين / أوفلاين / أي تفريغ أوفلاين) — مش في جيميناي الأونلاين */
     fun mergeOn(): Boolean = Strict.noGemKeys() || Offline.configured()
 }
-
-/**
- * (v411) إشعار تحميل موديل اللغة: إشعار نظام بشريط تقدم (خطوة/خطوات) + رسالة جوه التطبيق. ML Kit مابيدّيش بايتات، فالتقدم بالموديلات (لغة المصدر ثم العربي).
- */
-object ModelDl {
-    private const val CH = "mlkit_dl"
-    private const val ID = 7411
-    private fun nm(c: Context) = c.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-
-    fun update(label: String, step: Int, total: Int) {
-        val c = TrWizard.appCtx ?: return
-        try {
-            val m = nm(c)
-            m.createNotificationChannel(NotificationChannel(CH, "تحميل لغات الترجمة", NotificationManager.IMPORTANCE_LOW))
-            val b = Notification.Builder(c, CH).setSmallIcon(R.drawable.ic_stat_sub).setOngoing(true).setOnlyAlertOnce(true)
-                .setContentTitle(Icons.plain("⬇ جاري تحميل لغة: $label"))
-                .setContentText(Icons.plain("موديل ${step + 1} من $total · مرة واحدة بس، وبعدها من غير نت"))
-                .setProgress(total, step, true)
-            m.notify(ID, b.build())
-        } catch (_: Throwable) {}
-    }
-
-    fun finish(ok: Boolean, label: String) {
-        val c = TrWizard.appCtx ?: return
-        try {
-            val m = nm(c)
-            m.cancel(ID)
-            if (!ok) {
-                val b = Notification.Builder(c, CH).setSmallIcon(R.drawable.ic_stat_sub).setAutoCancel(true)
-                    .setContentTitle(Icons.plain("⚠ تحميل لغة $label فشل")).setContentText(Icons.plain("اتأكد من النت وجرّب تاني"))
-                m.notify(ID + 1, b.build())
-            }
-        } catch (_: Throwable) {}
-    }
-}

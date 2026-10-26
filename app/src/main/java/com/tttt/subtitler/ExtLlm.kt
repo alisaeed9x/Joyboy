@@ -23,7 +23,6 @@ object ExtLlm {
     fun sttModel(p: Preset): String = ""
     fun hasAccess(p: Preset): Boolean = false
     fun configured(p: Preset): Boolean = false
-    fun supportsStt(p: Preset): Boolean = false
     fun blockedWhy(p: Preset): String? = null
     fun provs(): List<ExtTranslate.Prov> = emptyList()
     fun convert(p: Preset, orig: List<String>, msa: List<String>, meta: List<String>, tgt: String, rules: String): List<String?> = emptyList()

@@ -360,11 +360,6 @@ object Offline {
     /** (v261) تحرير الموديل بنفس قفل التفريغ: لو باتش بيتفرّغ دلوقتي بيستنى يخلص، وإلا release() كان ممكن يحرّر الموديل وهو شغّال ← كراش native */
     private fun releaseSafe(e: SttEngine) { rw.writeLock().lock(); try { e.release() } finally { rw.writeLock().unlock() } }
 
-    fun deleteSherpa() {
-        for (r in roots()) File(r, SherpaStt.SUB).deleteRecursively()   // (v271) الجديد والقديم
-        Thread { try { releaseSafe(SherpaStt) } catch (_: Throwable) {} }.also { it.isDaemon = true; it.start() }   // (v261) في خيط: مايعلّقش الشاشة لو باتش بيتفرّغ
-    }
-
     fun delete(m: Model = model()) {
         for (r in roots()) File(File(r, "whisper"), m.file).let { it.delete(); File(it.path + ".part").delete() }   // (v271) الجديد والقديم
         Thread { try { releaseSafe(WhisperStt) } catch (_: Throwable) {} }.also { it.isDaemon = true; it.start() }

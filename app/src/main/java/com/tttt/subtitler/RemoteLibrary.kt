@@ -27,9 +27,6 @@ object RemoteLibrary {
     @Volatile private var folderCache: List<RFolder>? = null
     private val videoCache = HashMap<String, List<RVideo>>()
 
-    fun cachedFolders(): List<RFolder>? = folderCache
-    fun cachedVideos(key: String): List<RVideo>? = synchronized(videoCache) { videoCache[key] }
-
     /** فصل الكاش (تلفزيون تاني / تحديث) */
     fun clear() {
         folderCache = null

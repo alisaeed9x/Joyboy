@@ -99,9 +99,6 @@ object LinkSession {
         }
     }
 
-    /** آخر أسطر لوج المحرك اللي جت من التلفزيون */
-    fun logSnapshot(): List<String> = synchronized(logBuf) { ArrayList(logBuf) }
-
     /** تسجيل معالج لأمر طويل (recap / rewriteAll / …) قبل ما يتبعت */
     internal fun onOp(op: String, report: (String) -> Unit, done: (String) -> Unit) { ops[op] = OpH(report, done) }
 

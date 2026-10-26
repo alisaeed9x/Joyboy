@@ -136,6 +136,7 @@ class RemoteActivity : Activity() {
 
         col.addView(ui.text("🔍 التلفزيونات", 15f, th.text, true).apply { setPadding(0, ui.dp(18), 0, ui.dp(4)) })
         col.addView(ui.button("🔍 دوّر على التلفزيون") { search() })
+        col.addView(ui.button("✍ اكتب IP التلفزيون يدويًا") { askManualIp() })   // (v585 / M1)
         devices = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         col.addView(devices)
 
@@ -206,12 +207,6 @@ class RemoteActivity : Activity() {
 
     private fun pAct(a: String, v: Long = 0L) {
         Thread { val st = RemoteClient.player(a, v); h.post { if (st != null) paintPlayer(st) } }.also { it.isDaemon = true }.start()
-    }
-
-    private fun pBtn(key: String, t: String, a: String, v: Long = 0L, repeat: Boolean = false): View {
-        val b = (if (repeat) keyLikeRepeat(t, a, v) else ui.button(t) { pAct(a, v) }.apply { textSize = 17f }).skin()
-        pBtns[key] = b
-        return b
     }
 
     /** زرار بيكرر الأمر مع الضغط المستمر (تقديم/تأخير/حجم/إزاحة الترجمة) */
@@ -447,31 +442,6 @@ class RemoteActivity : Activity() {
 
     // ===== (v529) 📄 ترجمة ملف الترجمة من الموبايل: سوفت سب / ملف على التلفزيون / هارد سب — بجوجل أو جيميناي (بمفاتيح التلفزيون) =====
     private var lastPSt: org.json.JSONObject? = null
-
-    private fun sfEngine(what: String, then: (String) -> Unit) {
-        AlertDialog.Builder(this).setTitle("ترجم $what بإيه؟")
-            .setItems(arrayOf("🌐 جوجل ترجمة — من غير مفتاح، سريع (فصحى)", "✨ جيميناي — بمفاتيح التلفزيون وباللهجة المختارة هناك")) { _, w -> then(if (w == 0) "google" else "gemini") }
-            .setNegativeButton("إلغاء", null).show()
-    }
-
-    private fun sfDialog() {
-        val st = lastPSt
-        if (st == null) { Notice.show(this, "مفيش فيديو شغّال على التلفزيون — شغّل فيديو الأول", 2800L); return }
-        val side = st.optString("sf_side"); val nat = st.optInt("sf_nat"); val live = st.optString("sf_live")
-        val labels = ArrayList<String>(); val acts = ArrayList<() -> Unit>()
-        fun add(l: String, a: () -> Unit) { labels.add(l); acts.add(a) }
-        add("💬 ترجمة السوفت سب" + (if (side.isNotEmpty()) " — ملف «$side»" else if (nat > 0) " — $nat مسار جوه الفيديو" else " (لو موجودة)")) {
-            sfEngine("السوفت سب") { e -> pAct("subfile:soft:$e"); Notice.show(this, "📄 بدأت الترجمة على التلفزيون — التقدّم على الزرار", 3000L) }
-        }
-        add("📂 اختار ملف ترجمة على التلفزيون (SRT / ASS / VTT)") {
-            sfEngine("الملف") { e -> pAct("subfile:pick:$e"); Notice.show(this, "اختار ملف الترجمة من شاشة التلفزيون بالريموت", 3500L) }
-        }
-        add("🔤 ترجمة الهارد سب (المحروقة على الصورة) — بجيميناي") { pAct("subfile:hard"); Notice.show(this, "🔤 بدأ الوضع البصري على التلفزيون (محتاج مفتاح الوضع البصري هناك)", 3500L) }
-        if (live.isNotEmpty()) add("⏹ وقّف الترجمة اللحظية") { pAct("subfile:off") }
-        AlertDialog.Builder(this).setTitle("📄 ترجمة ملف الترجمة")
-            .setItems(labels.toTypedArray()) { _, w -> if (w in acts.indices) acts[w]() }
-            .setNegativeButton("إلغاء", null).show()
-    }
 
     private fun setTxt(key: String, t: String) { (pBtns[key] as? android.widget.TextView)?.text = t }
 
@@ -750,13 +720,6 @@ class RemoteActivity : Activity() {
         return b.skin().apply { textSize = 14f }
     }
 
-    private fun ytPhoneBtn(): View = ui.button("▶ يوتيوب") {
-        try { startActivity(Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP).putExtra("tab", "youtube").putExtra("tv_target", true)) }
-        catch (e: Throwable) { LogStore.err("Remote:yt", e) }
-    }.skin().apply { textSize = 15f }
-
-    private fun spacer(): View = View(this)
-
     private fun row(vararg vs: View): LinearLayout {
         val r = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_LTR }
         for (v in vs) r.addView(v, lp(0, ui.dp(58), 1f))
@@ -869,7 +832,7 @@ class RemoteActivity : Activity() {
                     devices.addView(ui.text("ما لقيتش تلفزيون — هعيد البحث تلقائي كل كام ثانية. اتأكد إن الموبايل والتلفزيون على نفس الواي فاي، وإن Subtitler شغّال على التلفزيون (افتح اللانشر).", 13f, th.muted))
                     if (retryOn && RemoteClient.state != RemoteClient.St.CONNECTED) h.postDelayed(retryRun, 4000L)   // (v521) فشل ← جرّب تاني
                 } else if (res.size == 1 && RemoteClient.state != RemoteClient.St.CONNECTED && RemoteClient.state != RemoteClient.St.CONNECTING) {
-                    choose(res[0])   // (v521) تلفزيون واحد بس ← اتصل بيه على طول (مقترن قبل كده أو أول مرة من غير كود)
+                    choose(res[0])   // (v521) تلفزيون واحد بس ← اتصل بيه على طول (لو مش مقترن هيطلب الكود)
                 } else for (f in res) {
                     val paired = RemoteClient.pairedList().any { it.id == f.id }
                     devices.addView(ui.button((if (paired) "✓ " else "") + f.name + "  (" + f.ip + ")") { choose(f) })
@@ -896,6 +859,35 @@ class RemoteActivity : Activity() {
         }.also { it.isDaemon = true }.start()
     }
 
+    /** (v585 / M1) إدخال IP يدوي (مثلًا 192.168.1.20 أو 192.168.1.20:18770) لو الشبكة بتمنع البث والمسح */
+    private fun askManualIp() {
+        val et = EditText(this).apply {
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI
+            hint = "مثلًا 192.168.1.20"; gravity = Gravity.CENTER; textSize = 20f
+            layoutDirection = View.LAYOUT_DIRECTION_LTR
+            setText(Cfg.str("tvlink_manual_ip", ""))
+        }
+        AlertDialog.Builder(this).setTitle("✍ IP التلفزيون")
+            .setMessage("العنوان بيظهر على التلفزيون: ⋯ المزيد ← 📱 ريموت الموبايل (بعد «عنوان التلفزيون»). تقدر تكتب IP بس، أو IP:بورت.")
+            .setView(et)
+            .setPositiveButton("اتصل") { _, _ ->
+                val raw = et.text.toString().trim()
+                val ip = raw.substringBefore(':').trim()
+                val port = raw.substringAfter(':', "").trim().toIntOrNull() ?: TvLink.PORT
+                if (!Regex("""\d{1,3}(\.\d{1,3}){3}""").matches(ip)) { Notice.show(this, "⚠ العنوان لازم يبقى زي 192.168.1.20", 3000L); return@setPositiveButton }
+                Notice.show(this, "⏳ بجرّب $ip …", 2000L)
+                Thread {
+                    val f = try { RemoteClient.helloAt(ip, port) } catch (e: Throwable) { LogStore.err("Remote:manualIp", e); null }
+                    h.post {
+                        if (isFinishing || isDestroyed) return@post
+                        if (f == null) Notice.show(this, "⚠ ما لقيتش Subtitler على $ip:$port — اتأكد من العنوان وإن التلفزيون شغّال (افتح اللانشر) وعلى نفس الشبكة", 4000L)
+                        else { Cfg.put("tvlink_manual_ip", raw); choose(f) }
+                    }
+                }.also { it.isDaemon = true }.start()
+            }
+            .setNegativeButton("إلغاء", null).show()
+    }
+
     private fun askCode(f: RemoteClient.Found) {
         val et = EditText(this).apply {
             inputType = InputType.TYPE_CLASS_NUMBER; hint = "الكود اللي على شاشة التلفزيون"
@@ -919,14 +911,6 @@ class RemoteActivity : Activity() {
     }
 
     // ===== الإرسال =====
-    private fun pasteClip() {
-        try {
-            val cm = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-            val t = cm.primaryClip?.getItemAt(0)?.coerceToText(this)?.toString() ?: ""
-            if (t.isNotBlank()) input.setText(t) else Notice.show(this, "الكليبورد فاضي", 1800L)
-        } catch (_: Throwable) {}
-    }
-
     private fun sendLink() {
         val raw = input.text.toString()
         val u = Regex("https?://\\S+").find(raw)?.value
