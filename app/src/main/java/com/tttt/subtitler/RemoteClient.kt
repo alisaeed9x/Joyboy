@@ -302,6 +302,7 @@ object RemoteClient {
                 } catch (_: Exception) {}
                 if (state != St.CONNECTED) {
                     state = St.CONNECTED; lastError = ""; fire()
+                    Thread { try { TvSync.pushAllNow() } catch (_: Throwable) {} }.also { it.isDaemon = true }.start()   // (v569) أول ما يتصل: كل إعدادات الموبايل (والمفاتيح) تتطبّق على التلفزيون
                     if (!autoOffered && LinkVer.code(app()) > tvVer) { autoOffered = true; offerUpdate(true) }
                 }
             } else if (c == 401) {

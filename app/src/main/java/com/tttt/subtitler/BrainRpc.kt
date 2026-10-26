@@ -154,11 +154,26 @@ object BrainRpc {
         return HttpRes(200, "image/jpeg", bo.toByteArray())
     }
 
-    // ===== الإعدادات (قايمة بيضاء؛ المفاتيح الحساسة عبر /keys بس) =====
-    private val allowedExact = setOf("conv_dialect", "loop", "base_lang", "keepgoing", "chunk", "trstart", "ask_bg_exit", "lang", "model", "term_notes", "glossary", "gloss", "refine2pass", "preset_last", "omni_mode", "tx_order")   // (v551) +الترجمة/المحرك
-    private val allowedPrefix = listOf("sub_", "tone_", "tr_", "stt_", "off_", "wtr", "ext_", "rstt_", "ctx_", "conv_")
-    fun allowed(k: String): Boolean =
-        k.isNotBlank() && !k.contains("key", true) && !k.contains("token", true) && (k in allowedExact || allowedPrefix.any { k.startsWith(it) })
+    // ===== الإعدادات =====
+    // (v569) بقت قايمة استثناءات بدل القايمة البيضاء: كل إعدادات الموبايل بتتطبّق على التلفزيون (ترجمة، تفريغ، لغة، خط/خلفية الترجمة، محرك، نغمة…)
+    // ما عدا: المظهر والثيم وإعدادات شكل التلفزيون نفسه (tv_*)، والحاجات الخاصة بكل جهاز، والمفاتيح الحساسة (الـ API keys بتتنقل عبر /keys بس).
+    private val denyExact = setOf(
+        "theme", "ui_mode", "big_text", "anim_tabs", "badge_alpha", "warm", "haptics", "side_in_google",   // مظهر
+        "seen_ver", "tip_day", "daily_tip", "exit_seen_ts", "lib_last", "remote_mode", "eq_asked",             // حالة واجهة خاصة بالجهاز
+        "quota", "stats", "cfgv", "vol_boost", "bg_autostart", "papi_at",                                      // عدّادات/صوت/خدمة خاصة بالجهاز
+        "yt_acc_sync", "yt_dock", "yt_mini_auto", "yt_np_auth", "yt_pin", "yt_client_ver", "yt_prewarm",       // يوتيوب: حساب/واجهة
+        "tr_quota", "tv_mode", "keymodes_ui")
+    private val denyPrefix = listOf(
+        "tv_", "tvlink_", "cust_", "skin", "lock_", "lyr_", "mus_", "music_", "ytp_", "perm_", "pip_", "exit_", "seen_", "tip_")
+    private val denyContains = listOf("key", "token", "cookie", "pass", "secret", "hash", "salt", "auth", "session")
+    private val flagRe = Regex(".*_v\\d+$")
+    fun allowed(k: String): Boolean {
+        if (k.isBlank() || k.length > 60 || k.contains(':') || k.contains('/')) return false   // مفاتيح لكل فيديو (speed:ID…) مش بتتزامن
+        if (k in denyExact || denyPrefix.any { k.startsWith(it) }) return false
+        if (k.endsWith("_asked") || k.endsWith("_ts") || flagRe.matches(k)) return false         // علامات «اتسأل/اتعمل مرة»
+        val lk = k.lowercase()
+        return denyContains.none { lk.contains(it) }
+    }
 
     fun cfg(r: HttpReq): HttpRes {
         if (r.method == "POST") {

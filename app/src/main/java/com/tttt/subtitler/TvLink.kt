@@ -448,6 +448,8 @@ object TvLink {
                         }
                     } catch (_: Throwable) {}
                 }
+                // (v570) على التلفزيون: يوتيوب/لينك مصطاد بيفتح المشغّل على طول (من غير صفحة يوتيوب الكبيرة)، والخروج بيرجّع للصفحة اللي كنت فيها
+                if (DeviceUi.isTv(app) && TvDirect.tryOpen(a ?: app, u, how, title, lref, lua, lck, startMs)) return@post
                 val ni = Intent(a ?: app, MainActivity::class.java)
                     .addFlags((if (a == null) Intent.FLAG_ACTIVITY_NEW_TASK else 0) or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
                     .putExtra(Links.EX_URL, u).putExtra(Links.EX_HOW, how).putExtra(Links.EX_TITLE, title)

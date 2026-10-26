@@ -25,6 +25,10 @@ object Recents {
         return a.toString()
     }
     fun remove(l: List<Recent>, id: String): List<Recent> = l.filter { it.id != id }
+    /** (v568) معرّف يوتيوب (11 حرف) لو الفيديو ده يوتيوب — من الـid المحفوظ أو من اللينك. لينك الستريم المحفوظ بيتنتهي، فيوتيوب لازم يتفتح بالمعرّف في قسم يوتيوب مش باللينك */
+    fun ytIdOf(r: Recent): String? =
+        r.id.takeIf { it.startsWith("yt:") }?.removePrefix("yt:")?.takeIf { it.length == 11 } ?: YT_URL_RE.find(r.url)?.groupValues?.get(1)
+    private val YT_URL_RE = Regex("(?:youtu\\.be/|youtube\\.com/(?:watch\\?(?:[^\\s#]*&)?v=|shorts/|live/|embed/))([A-Za-z0-9_-]{11})")
     /** نفس الفيديو بيتحدّث ويطلع فوق؛ والقايمة محدودة */
     fun upsert(l: List<Recent>, r: Recent, max: Int = 15): List<Recent> = (listOf(r) + l.filter { it.id != r.id }).take(max)
 

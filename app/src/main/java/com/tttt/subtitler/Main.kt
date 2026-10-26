@@ -478,7 +478,7 @@ class MainActivity : Activity() {
                         if (r.uri.isNotEmpty()) {
                             if (uriOk(r.uri)) { recentDlg?.dismiss(); play("", Uri.parse(r.uri)) }
                             else Notice.show(this@MainActivity, ("الملف ده مبقاش متاح (الصلاحية اتفقدت) — افتحه تاني من \"فتح فيديو\"").toString(), 3600L)
-                        } else if (r.url.isNotEmpty()) { recentDlg?.dismiss(); play(r.url, null) }
+                        } else if (r.url.isNotEmpty() || Recents.ytIdOf(r) != null) { recentDlg?.dismiss(); reopenRecentLink(r) }   // (v568) يوتيوب يتفتح في يوتيوب بالمعرّف، وأي لينك تاني كفيديو (مش متصفح)
                     }
                 }
                 recentBox.addView(row)
@@ -570,38 +570,7 @@ class MainActivity : Activity() {
             if (!Offline.downloading() && Offline.downloaded()) { Offline.delete(); offProg.text = ""; offRefresh(); true } else false
         }
         offRefresh()
-        // (v257) محرك التفريغ (Whisper / SenseVoice) + الترجمة بعده + الخطة المحفوظة — كانوا في شاشة «▶ ترجمة» بس ومالهمش مكان في الإعدادات
-        val sEng1 = "🎧 Whisper (كل اللغات)"; val sEng2 = "⭐ SenseVoice (إنجليزي · ياباني · كوري · صيني)"
-        val sherpaStatus = ui.text("", 12f, th.muted)
-        val sherpaProg = ui.text("", 12f, th.muted)
-        lateinit var sherpaDlBtn: android.widget.Button
-        fun sherpaRefresh() {
-            val wantS = Cfg.str("stt_engine", "whisper") == "sherpa"
-            val eff = Offline.engine().id
-            sherpaStatus.text = "SenseVoice: " + SherpaStt.status() + "\nالمحرك الفعلي دلوقتي: " + (if (eff == "sherpa") "SenseVoice" else "Whisper" + (if (wantS) " (SenseVoice مش بيفهم لغة الكلام المختارة أو مش شغّال على جهازك)" else ""))
-            sherpaDlBtn.text = if (Offline.downloading()) "⏹ إلغاء التنزيل" else if (SherpaStt.downloaded()) "🗑 مسح موديل SenseVoice (دوسة طويلة)" else "⬇ تنزيل موديل SenseVoice (~" + SherpaStt.MODEL_MB + " ميجا)"
-        }
-        val sttEngChips = ui.chips(listOf(sEng1, sEng2), { if (Cfg.str("stt_engine", "whisper") == "sherpa") sEng2 else sEng1 }) {
-            Cfg.put("stt_engine", if (it == sEng2) "sherpa" else "whisper"); TrWizard.syncSaved("stt_engine", if (it == sEng2) "sherpa" else "whisper")
-            if (it == sEng2 && !SherpaStt.downloaded()) Notice.show(this, "نزّل موديل SenseVoice الأول، وإلا جيميناي هو اللي هينسخ", 2800L)
-            if (it == sEng2 && Offline.lang() == "ar") Notice.show(this, "⚠ (v468) SenseVoice (Sherpa) لا يدعم العربية — هيتحوّل لـ Whisper تلقائيًا للتفريغ العربي", 3200L)  // (v468) بند 10
-            sherpaRefresh()
-        }
-        sherpaDlBtn = ui.button("") {
-            if (Offline.downloading()) { Offline.cancelDownload() }
-            else if (SherpaStt.downloaded()) { Notice.show(this, "دوس دوسة طويلة على الزرار عشان تمسح الموديل", 2300L) }
-            else if (!SherpaStt.supported()) { Notice.show(this, "جهازك مش بيدعم SenseVoice (محتاج معالج 64-bit)", 2600L) }
-            else {
-                sherpaProg.text = "⏳ بيبدأ التنزيل…"
-                Offline.downloadSherpa({ a, t -> runOnUiThread { sherpaProg.text = "⬇ " + (a / 1048576) + " / " + (t / 1048576) + " ميجا" } },
-                    { err -> runOnUiThread { sherpaProg.text = if (err == null) "✅ الموديل نزل" else "❌ $err"; sherpaDlBtn.postDelayed({ sherpaRefresh() }, 500) } })
-                sherpaRefresh()
-            }
-        }
-        sherpaDlBtn.setOnLongClickListener {
-            if (!Offline.downloading() && SherpaStt.downloaded()) { Offline.deleteSherpa(); sherpaProg.text = ""; sherpaRefresh(); true } else false
-        }
-        sherpaRefresh()
+        // (v569) SenseVoice (sherpa-onnx) اتشال من التطبيق — التفريغ على الجهاز Whisper بس
         val savedPlanTxt = ui.text("", 12f, th.muted)
         fun planRefresh() { savedPlanTxt.text = TrWizard.savedPlan()?.let { "المحفوظ لزرار «▶ ترجمة»: " + TrWizard.describe(it).replace("\n", " · ") } ?: "مفيش إعداد محفوظ لزرار «▶ ترجمة» — بيسألك كل مرة." }
         val planBtn = ui.button("⚙ طريقة الترجمة (نفس زرار ⚙ في المشغّل)") {
@@ -674,11 +643,8 @@ class MainActivity : Activity() {
                 ui.section("🔊 الصوت", true, atrack, audioPresetTitle, audioPresetChips, audioPresetDesc, *fl("soundtags", "hitiming")),
                 ui.section("📴 التفريغ على الجهاز (من غير مفتاح)", true,
                     ui.text("اختيار التفريغ (جيميناي / على الجهاز / سحابي) من خط الترجمة. هنا بس تنزيل ومسح الموديلات واختيار المحرك واللغة.", 12f, th.muted),
-                    ui.text("محرك التفريغ:", 12f, th.muted), sttEngChips, sherpaStatus, sherpaDlBtn, sherpaProg,
-                    ui.text("⚠ (v468) SenseVoice (Sherpa) لا يدعم العربية ولا الفرنساوي ولا الإسباني — بيفهم إنجليزي وياباني وكوري وصيني بس. للعربي استخدم Whisper.", 12f, th.muted),
                     ui.text("حجم موديل Whisper:", 12f, th.muted), offModelChips, ui.text("⚡ خانات التفريغ المتوازي:", 12f, th.muted), parChips, parNote, offStatus, offDlBtn, offProg,
                     ui.text("لغة الكلام (لو عارفها بتقلّل أخطاء الاكتشاف التلقائي):", 12f, th.muted), offLangChips,
-                    ui.button("⬇ تنزيل موديل ترجمة اللغة المختارة (ML Kit)") { MlKitTr.downloadAsync(this, Offline.lang()) },
                     ui.text("التفريغ على الجهاز أبطأ من السحابة (بيعتمد على معالج موبايلك) — الترجمة بتظهر جزء ورا جزء. لو سرعته أقل من 1× كبّر الموديل لأصغر (base).", 12f, th.muted)))),
             // ===== 🤖 الموديل والأداء =====
             tab("perf", listOf<View>(
@@ -1067,6 +1033,7 @@ class MainActivity : Activity() {
         intent?.getStringExtra("reopen_tab")?.let { t -> intent?.removeExtra("reopen_tab"); frame.post { if (!isFinishing && !isDestroyed) settingsShow?.invoke(t) } }
         // لو مفيش مفتاح Gemini: القايمة بتظهر مباشرة أول البرنامج، وبعدها الفحص
         frame.post { permFlow { ensureKeysSoft { keys.setText(Cfg.allMainKeys().joinToString("\n")); keyLoadersRef.forEach { it() }; refreshChip(); doScan() } } }
+        try { TvSync.install(this) } catch (_: Throwable) {}   // (v568) مزامنة الإعدادات للتلفزيون من أي شاشة
         frame.post { handleLinkIntent(intent) }; frame.post { handleExternal(intent) }
         frame.post { whatsNew() }   // (v469) D13 نافذة «إيه الجديد» مرة لكل إصدار + تلميح يومي   // (v345) لينك جاي من تطبيق تاني (مشاركة / فتح)
     }
@@ -1289,6 +1256,13 @@ class MainActivity : Activity() {
                 else -> web()
             }
         }
+    }
+    /** (v568) إعادة فتح فيديو من «آخر المشغّلة»: يوتيوب ← قسم يوتيوب بالمعرّف (وفي وضع التلفزيون يتبعت للتلفزيون)؛ لينك مصطاد/مباشر ← مشغّل فيديو، عمره ما يروح للمتصفح */
+    fun reopenRecentLink(r: Recent) {
+        val yid = Recents.ytIdOf(r)
+        if (yid != null) { openLinkAs(YtNp.watchUrl(yid), Links.VIDEO, r.title); return }
+        if (PlayTarget.open(this, MediaSpec(url = r.url, title = r.title, startMs = (r.posSec * 1000).toLong(), how = Links.VIDEO))) return
+        openLinkAs(r.url, Links.VIDEO, r.title)
     }
     private fun openVideoLink(u: String, ret: String) {
         if (u.startsWith("file:", true) || u.startsWith("content:", true)) play("", Uri.parse(u), true, false, false, false, ret)

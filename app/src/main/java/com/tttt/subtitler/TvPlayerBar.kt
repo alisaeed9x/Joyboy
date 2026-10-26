@@ -39,6 +39,7 @@ class TvPlayerBar(private val act: Activity, private val ui: Ui, private val th:
         fun hasQuality(): Boolean; fun quality(anchor: View)
         fun subDialog(); fun more(anchor: View)
         fun subTracks(anchor: View)   // (v521) 🌐 اختيار مسار/لغة الترجمة (الأصلية اللي في الفيديو + لغة ترجمة البرنامج)
+        fun scrubPos(): Long = -1L    // (v569) مكان التقديم المعلّق (لسه ما اتنفّذش) أو -1
     }
 
     private val h = Handler(Looper.getMainLooper())
@@ -46,6 +47,9 @@ class TvPlayerBar(private val act: Activity, private val ui: Ui, private val th:
     var visible = false; private set
     var onVis: ((Boolean) -> Unit)? = null   // (v509) Player يظهر/يخفي العدّادات مع الشريط
     fun focusMain() { try { playB.requestFocus() } catch (_: Throwable) {} }
+    /** (v569) الريموت يوصل لشريط التقدم (فوق من الأزرار) ويسحب عليه يمين/شمال */
+    fun focusTrack() { try { track.requestFocus() } catch (_: Throwable) {} }
+    fun onTrack(v: View?): Boolean = v === track
     private val hideRun = Runnable { hide() }
     private val tickRun = object : Runnable { override fun run() { if (visible) { refresh(); h.postDelayed(this, 400L) } } }
 
@@ -134,7 +138,7 @@ class TvPlayerBar(private val act: Activity, private val ui: Ui, private val th:
 
     fun refresh() {
         try {
-            val d = a.dur(); val p = a.pos()
+            val d = a.dur(); val sp = a.scrubPos(); val p = if (sp >= 0) sp else a.pos()
             cur.text = PlayerLogic.clock(p); total.text = if (d > 0) PlayerLogic.clock(d) else "--:--"
             track.frac = if (d > 0) (p.toFloat() / d).coerceIn(0f, 1f) else 0f; track.invalidate()
             playB.text = if (a.playing()) "⏸" else "▶"

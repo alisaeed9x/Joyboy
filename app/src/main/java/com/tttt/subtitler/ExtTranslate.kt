@@ -36,7 +36,6 @@ object ExtTranslate {
 
     val builtin: List<Prov> = listOf(
         Prov("msedge", "Microsoft Edge Translate (مجاني من غير مفتاح)", listOf("msedge"), 0) { _, _ -> null }.also { pv -> pv.chunk = 40; pv.gapMs = 150L; pv.batch = { texts, sl -> edge(texts, sl) } },   // (v454) بديل MyMemory/Lingva
-        Prov("mlkit", "ML Kit (أوفلاين · فصحى)", listOf("mlkit"), 0) { _, _ -> null }.also { pv -> pv.batch = { texts, sl -> MlKitTr.translate(texts, sl) } }   // (v408)
     )
 
     /** المزوّدين المدمجين + الراوتر (لو فيه مفاتيح) + محركات LLM اللي مفتاحها مضبوط */
@@ -85,7 +84,7 @@ object ExtTranslate {
     fun inRepo(p: Prov): Boolean = PublicApis.listed(p.keys) != null
 
     /** المزوّدين اللي هيتستخدموا فعلًا: مفعّلين، ولو «الريبو بس» شغّال لازم يكونوا في القايمة المسحوبة */
-    fun active(): List<Prov> = all().filter { enabled(it) && (!strict() || inRepo(it) || it.id == "mlkit" || it.id == "free" || it.id == "msedge" || it.id == "libre") }
+    fun active(): List<Prov> = all().filter { enabled(it) && (!strict() || inRepo(it) || it.id == "free" || it.id == "msedge" || it.id == "libre") }
 
     // ===== (v274) إيقاف مؤقت لمزوّد فشل: مفتاح مرفوض (لحد ما المفتاح يتغيّر) / كوتة أو رصيد (دقايق) / رابط أو موديل غلط / سيرفر واقع =====
     private val coolUntil = ConcurrentHashMap<String, Long>()

@@ -8,15 +8,10 @@
 
 # JNI / native
 -keepclasseswithmembernames class * { native <methods>; }
--keep class com.k2fsa.sherpa.onnx.** { *; }
 
 # NewPipeExtractor (انعكاس وخدمات جافا سكريبت)
 -keep class org.schabi.newpipe.** { *; }
 -dontwarn org.schabi.newpipe.**
-
-# ML Kit / Google Play services
--keep class com.google.mlkit.** { *; }
--dontwarn com.google.mlkit.**
 
 # Media3
 -dontwarn androidx.media3.**

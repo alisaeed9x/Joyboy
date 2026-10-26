@@ -79,6 +79,7 @@ class TvActivity : Activity() {
     private var wifiTop: View? = null           // (v558) زرار الواي فاي جنب الساعة (بيتخبّى لو الشريط ضاق)
     private var prayFitHidden = false           // (v558) عدّاد الصلاة اتخبّى عشان الشريط يساع ☰ و⚙️
     private var searchExtras: List<View> = emptyList()
+    private var micBox: View? = null   // (v570) كبسولة زرار البحث الصوتي (منفصلة عن مربع البحث)
     private var searchExpanded = false
     private val tabViews = ArrayList<TvOwnLinear>()
     private var curTab = 0
@@ -389,12 +390,17 @@ class TvActivity : Activity() {
         }
         searchEt = et
         sb.addView(et, LinearLayout.LayoutParams(0, -2, 1f))
-        val mic = roundBtn("🎤", "بحث صوتي", 34) { startVoice { q -> et.setText(q); et.setSelection(et.text.length) } }
-        val ph = roundBtn("📱", "اكتب من الموبايل", 34) { phoneTypeDialog { q -> et.setText(q); et.setSelection(et.text.length) } }
-        mic.visibility = View.GONE; ph.visibility = View.GONE
-        searchExtras = listOf(mic, ph); searchExpanded = false
-        sb.addView(mic); sb.addView(ph)
-        bar.addView(sb, LinearLayout.LayoutParams(if (compactUi) 0 else ui.dp(170), -2).apply { marginEnd = ui.dp(14); if (compactUi) weight = 1f })
+        // (v570) البحث الصوتي بقى زرار منفصل (كبسولة لوحده) جنب مربع البحث وظاهر دايمًا؛ زرار 📱 اتشال
+        val mic = roundBtn("🎤", "بحث صوتي", 38) { startVoice { q -> et.setText(q); et.setSelection(et.text.length) } }
+        val micWrap = LinearLayout(this).apply {
+            gravity = Gravity.CENTER; layoutDirection = View.LAYOUT_DIRECTION_RTL
+            setPadding(ui.dp(3), ui.dp(3), ui.dp(3), ui.dp(3)); background = pillBg(0x99000000.toInt(), 30, 0x33FFFFFF, 1)
+        }
+        micWrap.addView(mic)
+        micBox = micWrap
+        searchExtras = emptyList(); searchExpanded = false
+        bar.addView(sb, LinearLayout.LayoutParams(if (compactUi) 0 else ui.dp(170), -2).apply { marginEnd = ui.dp(8); if (compactUi) weight = 1f })
+        bar.addView(micWrap, LinearLayout.LayoutParams(-2, -2).apply { marginEnd = ui.dp(14) })
         // 2) كبسولة التابات (الصفحة الحالية متظلّلة، والمتركّز أبيض)
         val tabsBox = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL
@@ -430,10 +436,10 @@ class TvActivity : Activity() {
             rail.addView(roundBtn("➕", "أضف تاب (تطبيق / فولدر)", 42) { sideTabsMenu() })
             // (v516) مواقيت الصلاة · Google Play (اختياري) · المظهر
             rail.addView(roundBtn("📶", "الواي فاي (دوسة = تشغيل/إيقاف · طويلة = الشبكات)", 42, { TvWifi.show(this) }) { TvWifi.quick(this) })   // (v536)
-            rail.addView(roundBtn("🕌", "مواقيت الصلاة", 42) { showPrayer() })
+            rail.addView(roundBtn("🕋", "مواقيت الصلاة", 42) { showPrayer() })
             if (playOn()) rail.addView(roundBtn("🛍", "Google Play", 42) { openPlay() })
             rail.addView(roundBtn("🎨", "المظهر", 42) { showAppearance() })
-            rail.addView(roundBtn("⚙️", "إعدادات البرنامج", 42) { guardPin { openMain("settings") } })
+            rail.addView(roundBtn("🔧", "إعدادات البرنامج", 42) { guardPin { openMain("settings") } })
             rail.addView(roundBtn("⋮", "المزيد", 42) { moreMenu() })
             railBox = rail
         } else bar.addView(tabsBox, LinearLayout.LayoutParams(-2, -2).apply { marginEnd = ui.dp(14) })   // (v530) شكل v525
@@ -442,14 +448,14 @@ class TvActivity : Activity() {
             orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL
             setPadding(ui.dp(4), ui.dp(4), ui.dp(4), ui.dp(4)); background = pillBg(0x99000000.toInt(), 30, 0x33FFFFFF, 1)
         }
-        rb.addView(roundBtn("⚙️", "إعدادات البرنامج", 42) { guardPin { openMain("settings") } })
+        rb.addView(roundBtn("🔧", "إعدادات البرنامج", 42) { guardPin { openMain("settings") } })
         rb.addView(roundBtn("⋯", "المزيد", 42) { moreMenu() })
         if (!compactUi) { bar.addView(View(this), LinearLayout.LayoutParams(0, 1, 1f)) }   // (v512) أزرار الإعدادات اتنقلت لصف فوق «🎛 تخصيص» في الرئيسية (كانت بتطلع بره الشاشة)
         // 4) الشعار | الساعة على الشمال زي «Google TV | 3:10»
         val tc = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_LTR }
         if (!compactUi) {
-            tc.addView(roundBtn("☰", "القايمة", 42) { mainMenu() })   // (v553) زرار القايمة (كل الأزرار اللي تحت) مكان كلمة «Subtitler»
-            tc.addView(roundBtn("⚙️", "الإعدادات", 42) { guardPin { openMain("settings") } })   // (v550) زرار الإعدادات جنب القايمة
+            tc.addView(roundBtn("📋", "القايمة", 42) { mainMenu() })   // (v553) زرار القايمة (كل الأزرار اللي تحت) مكان كلمة «Subtitler»
+            tc.addView(roundBtn("🔧", "الإعدادات", 42) { guardPin { openMain("settings") } })   // (v550) زرار الإعدادات جنب القايمة
             tc.addView(View(this).apply { setBackgroundColor(0x66FFFFFF) }, LinearLayout.LayoutParams(ui.dp(2), ui.dp(20)).apply { setMargins(ui.dp(12), 0, ui.dp(12), 0) })
         }
         tcV = tc
@@ -484,7 +490,7 @@ class TvActivity : Activity() {
         fun need(): Int {
             var n = 0
             if (sb != null) { val lp = sb.layoutParams as? ViewGroup.MarginLayoutParams; n += (lp?.width?.takeIf { it > 0 } ?: ui.dp(170)) + (lp?.let { it.leftMargin + it.rightMargin } ?: 0) }
-            n += mw(tabs) + mw(tc)
+            n += mw(tabs) + mw(tc) + mw(micBox)
             // عدّاد الصلاة بيتغيّر عرضه مع الأرقام: احسب بأقصى عرض ليه عشان مايتخبّاش ويظهر كل ثانية
             if (pray != null && pray.visibility == View.VISIBLE && pray.measuredWidth < ui.dp(210)) n += ui.dp(210) - pray.measuredWidth
             return n
@@ -543,11 +549,22 @@ class TvActivity : Activity() {
     private val tabGo = Runnable {
         val i = tabPending; tabPending = -1
         if (i < 0 || i == curTab || isDestroyed) return@Runnable
+        // (v570) أنيميشن تنقّل بين الرئيسية/الفيديوهات/التطبيقات: الصفحة القديمة بتنزلق وتتلاشى، والجديدة بتدخل من الاتجاه التاني بحركة ناعمة
+        val fwd = i > curTab
+        val d = ui.dp(70).toFloat()
+        val exX = if (compactUi) 0f else (if (fwd) d else -d)
+        val exY = if (compactUi) (if (fwd) -d else d) else 0f
+        fun swap() {
+            try {
+                enterDx = -exX; enterDy = -exY
+                if (i == 0) showHome(false, true) else if (i == 1) showVideosPage(false) else if (i == 2) showApps(false)
+            } catch (e: Throwable) { LogStore.err("TvHome:tabGo", e); content.alpha = 1f; content.translationX = 0f; content.translationY = 0f }
+        }
         try {
-            content.animate().cancel(); content.alpha = 0f; content.translationY = ui.dp(10).toFloat()
-            if (i == 0) showHome(false, true) else if (i == 1) showVideosPage(false) else if (i == 2) showApps(false)
-            content.animate().alpha(1f).translationY(0f).setDuration(Skins.dur(180L)).setInterpolator(DecelerateInterpolator()).start()
-        } catch (e: Throwable) { LogStore.err("TvHome:tabGo", e); content.alpha = 1f; content.translationY = 0f }
+            content.animate().cancel()
+            content.animate().alpha(0f).translationX(exX).translationY(exY).setDuration(Skins.dur(150L))
+                .setInterpolator(android.view.animation.AccelerateInterpolator(1.3f)).withEndAction { swap() }.start()
+        } catch (e: Throwable) { LogStore.err("TvHome:tabGo2", e); swap() }
     }
     private val tabGoAct = Runnable {
         val i = tabPending; tabPending = -1
@@ -665,12 +682,15 @@ class TvActivity : Activity() {
     }
 
     /** (v553) أنيميشن دخول الصفحة عند التنقل (رئيسية/فيديوهات/تطبيقات/فولدر): تلاشي + طلوع بسيط */
+    private var enterDx = 0f; private var enterDy = 0f   // (v570) اتجاه دخول الصفحة (من تنقّل التابات)؛ صفر = طلوع بسيط من تحت
     private fun pageEnter() {
         try {
             content.animate().cancel(); content.scaleX = 1f; content.scaleY = 1f
-            content.alpha = 0f; content.translationY = ui.dp(16).toFloat()
-            content.animate().alpha(1f).translationY(0f).setDuration(Skins.dur(240L)).setInterpolator(DecelerateInterpolator()).start()
-        } catch (e: Throwable) { LogStore.err("TvHome:pageEnter", e); content.alpha = 1f; content.translationY = 0f }
+            val dx = enterDx; var dy = enterDy; enterDx = 0f; enterDy = 0f
+            if (dx == 0f && dy == 0f) dy = ui.dp(16).toFloat()
+            content.alpha = 0f; content.translationX = dx; content.translationY = dy
+            content.animate().alpha(1f).translationX(0f).translationY(0f).setDuration(Skins.dur(280L)).setInterpolator(DecelerateInterpolator(1.7f)).start()
+        } catch (e: Throwable) { LogStore.err("TvHome:pageEnter", e); content.alpha = 1f; content.translationX = 0f; content.translationY = 0f }
     }
 
     /** قايمة «المزيد»: كل اللي كان في الريل القديم + أزرار اللانشر (إعدادات الأندرويد · تطبيقات السيستم · المشغّل الافتراضي · إلغاء التثبيت) */
@@ -948,7 +968,7 @@ class TvActivity : Activity() {
             val bar = sb.parent as? ViewGroup; val tb = tabsBoxV; val tcv = tcV
             if (want && bar != null && tb != null && tcv != null && bar.width > 0) {
                 tcv.measure(View.MeasureSpec.UNSPECIFIED, View.MeasureSpec.UNSPECIFIED)
-                val free = bar.width - bar.paddingLeft - bar.paddingRight - tb.width - tcv.measuredWidth - ui.dp(14) * 3
+                val free = bar.width - bar.paddingLeft - bar.paddingRight - tb.width - tcv.measuredWidth - ui.dp(14) * 3 - (micBox?.let { it.width + ui.dp(8) } ?: 0)
                 maxW = free.coerceIn(ui.dp(170), ui.dp(430))
             }
         } catch (_: Throwable) { }
@@ -1161,7 +1181,7 @@ class TvActivity : Activity() {
 
     private fun recentCard(r: Recent): View {
         val vi = lastScan.firstOrNull { it.uri == r.uri }
-        return vTile({ iv -> if (vi != null) Thumbs.load(this, vi) { bmp -> if (bmp != null) runOnUiThread { iv.setImageBitmap(bmp) } } },
+        return vTile({ iv -> if (vi != null) Thumbs.load(this, vi) { bmp -> if (bmp != null) runOnUiThread { iv.setImageBitmap(bmp) } } else if (r.uri.isEmpty()) LinkThumb.into(this, r, iv) },
             r.title, "⏸ " + PlayerLogic.clock((r.posSec * 1000).toLong()) + " · " + r.percent + "%", r.percent, favs.contains(r.id),
             { playRecent(r) }, { videoMenu(r.id, r.title, vi, r) })
     }
@@ -1903,7 +1923,7 @@ class TvActivity : Activity() {
 
     private fun histCard(r: Recent, byUri: Map<String, VideoItem>): View {
         val vi = byUri[r.uri]
-        return vTile({ iv -> if (vi != null) Thumbs.load(this, vi) { bmp -> if (bmp != null) runOnUiThread { iv.setImageBitmap(bmp) } } },
+        return vTile({ iv -> if (vi != null) Thumbs.load(this, vi) { bmp -> if (bmp != null) runOnUiThread { iv.setImageBitmap(bmp) } } else if (r.uri.isEmpty()) LinkThumb.into(this, r, iv) },
             r.title, "⏸ " + PlayerLogic.clock((r.posSec * 1000).toLong()) + " · " + r.percent + "%", r.percent, favs.contains(r.id),
             { playRecent(r) }, { videoMenu(r.id, r.title, vi, r) })
     }
@@ -2202,15 +2222,10 @@ class TvActivity : Activity() {
         }.apply { isDaemon = true }.start()
     }
 
-    /** (v530) صف يوتيوب في الرئيسية: زرار «افتح يوتيوب» دايمًا أول كارت + أحدث فيديوهات اشتراكاتك + «كل الاشتراكات».
-     *  لو مفيش اشتراكات/تسجيل دخول: كارت تسجيل الدخول وكارت بحث يوتيوب بدل ما الصف يختفي. اختار من الصف بالأسهم وOK. */
+    /** (v570) صف يوتيوب في الرئيسية = صف أفقي زي صفوف الفولدرات: أحدث فيديوهات اشتراكاتك أوتوماتيك (من غير زراير «افتح يوتيوب / ابحث / كل الاشتراكات»).
+     *  لو مفيش اشتراكات/تسجيل دخول: كارت واحد بس للدخول عشان الصف مايفضلش فاضي. */
     private fun fillYt(yh: LinearLayout) {
-        fun head(extra: List<View>) {
-            yh.removeAllViews()
-            yh.addView(sectionTitle("▶ يوتيوب"))
-            yh.addView(hrow(extra))
-        }
-        head(listOf(tile("▶", "افتح يوتيوب") { openMain("youtube") }, tile("🔍", "ابحث في يوتيوب") { showSearch() }))
+        yh.removeAllViews()
         Thread {
             val subs = try { YtStore.read(YtStore.SUBS) } catch (e: Throwable) { LogStore.err("TvHome:ytsubs", e); emptyList() }
             val items = try {
@@ -2218,29 +2233,26 @@ class TvActivity : Activity() {
             } catch (e: Throwable) { LogStore.err("TvHome:yt", e); emptyList() }
             runOnUiThread {
                 if (isDestroyed) return@runOnUiThread
+                yh.removeAllViews()
                 if (items.isEmpty()) {
-                    head(listOf(tile("▶", "افتح يوتيوب") { openMain("youtube") }, tile("🔍", "ابحث في يوتيوب") { showSearch() },
-                        tile("👤", if (YtAccount.loggedIn()) "زامن اشتراكاتك" else "سجّل دخول يوتيوب") { openMain("youtube") }))
+                    yh.addView(sectionTitle("▶ يوتيوب"))
+                    yh.addView(hrow(listOf(tile("👤", if (YtAccount.loggedIn()) "زامن اشتراكاتك" else "سجّل دخول يوتيوب") { openMain("youtube") })))
                     return@runOnUiThread
                 }
-                head(listOf(tile("▶", "افتح يوتيوب") { openMain("youtube") }, tile("🔍", "ابحث في يوتيوب") { showSearch() }) +
-                    items.map { ytCard(it) } + listOf(tile("📺", "كل الاشتراكات") { openMain("youtube") }))
-                yh.addView(ui.text("أحدث فيديوهات اشتراكاتك — اختار بالأسهم", 12f, th.muted).apply { setPadding(ui.dp(12), ui.dp(2), 0, 0) })
+                yh.addView(sectionTitle("▶ يوتيوب — أحدث اشتراكاتك"))
+                yh.addView(hrow(items.map { ytCard(it) }))
             }
         }.apply { isDaemon = true }.start()
     }
 
     private fun ytCard(v: NpItem): View = vTile({ iv ->
             if (v.thumb.isNotBlank()) try { com.bumptech.glide.Glide.with(this).load(v.thumb).centerCrop().into(iv) } catch (_: Throwable) { }
-        }, v.title, v.channel + if (v.age.isNotBlank()) " · " + v.age else "", -1, false, { openYt(v.id) })
+        }, v.title, v.channel + if (v.age.isNotBlank()) " · " + v.age else "", -1, false, { openYt(v.id, v.title) })
 
-    private fun openYt(id: String) {
-        try {
-            startActivity(Intent(this, MainActivity::class.java).apply {
-                addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
-                putExtra("force_phone", true); putExtra("from_tv", true); putExtra("tab", "youtube"); putExtra("yt_open", id)
-            })
-        } catch (e: Throwable) { LogStore.err("TvHome:ytopen", e); Notice.show(this, "⚠ ما قدرتش أفتح الفيديو", 2000L) }
+    /** (v570) فيديو يوتيوب من الرئيسية يشتغل على طول في المشغّل (مش صفحة يوتيوب الكبيرة) وبالخروج ترجع لنفس الصفحة */
+    private fun openYt(id: String, title: String = "") {
+        try { TvDirect.playYt(this, id, title) }
+        catch (e: Throwable) { LogStore.err("TvHome:ytopen", e); Notice.show(this, "⚠ ما قدرتش أفتح الفيديو", 2000L) }
     }
 
     /** (v495) صف لكل فولدر ضفته من التخصيص: فيديوهاته بشريط عرضي زي «آخر المشغّل» و«اشتراكات يوتيوب» */
@@ -2719,7 +2731,13 @@ class TvActivity : Activity() {
 
     private fun playRecent(r: Recent) {
         if (r.uri.isNotEmpty()) playFile(r.uri, true)
-        else if (r.url.isNotEmpty()) startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(r.url)).setClass(this, MainActivity::class.java)
-            .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP).putExtra("force_phone", true))
+        else if (r.url.isNotEmpty() || Recents.ytIdOf(r) != null) {   // (v568) كان بيفتح اللينك المحفوظ كصفحة ويب فيروح للمتصفح؛ دلوقتي: يوتيوب بالمعرّف في قسم يوتيوب، والباقي كفيديو
+            val yid = Recents.ytIdOf(r)
+            if (yid != null) { openYt(yid, r.title); return }   // (v570) يوتيوب على طول في المشغّل
+            if (TvDirect.tryOpen(this, r.url, Links.VIDEO, r.title, "", "", "", 0L)) return
+            startActivity(Intent(this, MainActivity::class.java)
+                .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP).putExtra("force_phone", true)
+                .putExtra(Links.EX_URL, if (yid != null) YtNp.watchUrl(yid) else r.url).putExtra(Links.EX_HOW, Links.VIDEO).putExtra(Links.EX_TITLE, r.title))
+        }
     }
 }
