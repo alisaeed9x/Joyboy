@@ -235,6 +235,7 @@ object TvLink {
             "/clear" -> clearHist(r)
             "/type" -> typeText(r)
             "/keys" -> keys(r, rm)
+            "/ytacc" -> ytAcc(r, rm)
             "/offer" -> offer(r, rm)
             "/rpc" -> BrainRpc.exec(r)
             "/sync" -> BrainRpc.sync(r)
@@ -535,6 +536,19 @@ object TvLink {
         h.post { try { KeysSync.reload?.invoke() } catch (_: Throwable) {} }   // (v529) لو شاشة الإعدادات مفتوحة على التلفزيون: تتحدّث بالقيم الجديدة بدل ما تكتب القديم فوقها
         notice("🔑 وصلت مفاتيح Gemini من «" + rm.name + "»")
         return ok(JSONObject().put("n", n))
+    }
+
+    /** (v574) حساب يوتيوب من الموبايل أوتوماتيك أول ما يتصل (من غير QR): بنستقبل الجلسة (لو مختلفة عن اللي عندنا) وبنزامن الاشتراكات في الخلفية */
+    private fun ytAcc(r: HttpReq, rm: Remote): HttpRes {
+        val j = try { JSONObject(r.bodyText()) } catch (_: Exception) { return err(403, "bad") }
+        val ck = j.optString("c")
+        if (ck.isBlank()) return err(403, "empty")
+        try { YtAccount.init(app) } catch (_: Throwable) { }
+        val fresh = !YtAccount.loggedIn() || !YtAccount.sameSession(ck)
+        if (fresh) { if (!YtAccount.importCookie(ck)) return err(403, "bad") }
+        if (fresh || YtAccount.syncDue(30L * 60_000L)) YtAccount.syncAsync(true)
+        if (fresh) notice("▶ حساب يوتيوب وصل من «" + rm.name + "»")
+        return ok(JSONObject().put("fresh", fresh))
     }
 
     // ===== تحديث من الموبايل =====

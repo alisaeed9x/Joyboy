@@ -468,6 +468,18 @@ object RemoteClient {
     val PLACE_FIELDS = listOf("keys", "backup", "extra", "keymodes", "viskeys", "nmain", "nback")
     val KEY_FIELDS = listOf("keys", "backup", "extra", "keymodes", "nmain", "nback", "viskeys", "prefine", "vis_auto", "model", "libre_url", "libre_key", "fl_gem_key", "fl_groq_key", "fl_url", "fl_srv_key", "fl_srv_model", "audd_token", "tx_order", "ext_primary", "ext_strict", "tr_s_model", "vc_model", "off_model")
 
+    /** (v574) يبعت جلسة حساب يوتيوب (كوكيز) للتلفزيون أوتوماتيك لو الموبايل مسجّل دخول — التلفزيون بيزامن الاشتراكات لوحده */
+    fun sendYtAccount(): String? {
+        return try {
+            YtAccount.init(app())
+            if (!YtAccount.loggedIn()) return "الموبايل مش مسجّل دخول يوتيوب"
+            val ck = YtAccount.exportCookie()
+            if (ck.isBlank()) return "مفيش جلسة"
+            val (c, _) = post("/ytacc", JSONObject().put("c", ck))
+            if (c == 200) null else if (c < 0) "ما قدرتش أوصل للتلفزيون" else "فشل ($c)"
+        } catch (e: Throwable) { LogStore.err("RemoteClient:ytacc", e); "خطأ" }
+    }
+
     fun sendKeys(): String? {
         if (!hasKeys()) return "مفيش مفاتيح Gemini على الموبايل"
         val j = JSONObject()

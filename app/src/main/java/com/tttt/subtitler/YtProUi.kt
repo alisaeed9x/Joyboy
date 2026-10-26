@@ -101,6 +101,7 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
     private var pillN = 1
     private fun showPill(n: Int) {
         pillN = n
+        if (DeviceUi.isTv(act)) return   // (v575) تلفزيون: من غير كبسولة «فيديوهات جديدة» — العدّاد بقى جنب تاب «الاشتراكات»
         if (watch.isOpen || chan.isOpen) return   // (v428) الكبسولة بس في الرئيسية/الاشتراكات — مش فوق صفحة مشاهدة أو قناة
         newPill.text = if (n >= 2) "⬆ " + n + " فيديو جديد" else "⬆ فيديوهات جديدة"
         newPill.animate().cancel()
@@ -152,6 +153,7 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
     private val pollRun: Runnable = object : Runnable {
         override fun run() {
             h.postDelayed(this, 4 * 60_000L)
+            if (navSel != 1) tvBadgeRefresh(true)   // (v575)
             if (root.visibility != View.VISIBLE || watch.isOpen || chan.isOpen || bgBusy || loadBusy) return
             val st = cur ?: return
             if (st.vid != null || st.q != null || st.chUrl != null) return
@@ -542,7 +544,7 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
 
     // ───────── واجهة Main ─────────
     fun refresh() { recMemoAt = 0L; if (cur == null) openTab(0) else adapter.notifyDataSetChanged(); startPoll() }
-    fun onHide() { hideKb(); sugBox.visibility = View.GONE; watch.pause(); h.removeCallbacks(pollRun) }
+    fun onHide() { hideKb(); sugBox.visibility = View.GONE; watch.pause(); h.removeCallbacks(pollRun); if (DeviceUi.isTv(act) && navSel == 1) { try { YtNotify.markOpened(act) } catch (_: Throwable) {} } }   // (v575) خرجت من الاشتراكات = العدّ من دلوقتي
     /** (v348) Main.onStop: الشورتس تقف لما التطبيق يروح الخلفية أو يظهر المشغّل فوقه (بترجع في refresh() مع onResume) */
     fun onPause() { watch.pause(); ytDock.pause() }
     fun destroy() { h.removeCallbacks(pollRun); h.removeCallbacks(lineWatch); YtNp.onHome = null; YtRss.onFeed = null; try { ytDock.dismiss() } catch (_: Throwable) {}; watch.release() }
@@ -617,6 +619,11 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
         load("🏠 " + term, 0, null, null, null, "", false, false) { val r = YtNp.searchFirst(term, "videos"); Pair(r, { p: Page -> YtNp.searchMore(term, "videos", p) }) }
     }
 
+    /** (v575) تلفزيون: الرئيسية مالهاش صفحة تالية في يوتيوب نفسها — فبنولّد دفعة جديدة (اشتراكات عشوائية + مقترحات) في كل مرة توصل لآخر الصفحة، من غير توقف */
+    private fun homeFirst(r: YtRes, hh: List<NpItem>, ss: List<NpItem>): Pair<YtRes, ((Page) -> YtRes)?> =
+        if (!DeviceUi.isTv(act)) Pair(r, null)
+        else Pair(YtRes(r.items, Page("ytp:home:more")), { _: Page -> val m = YtNp.homeMore(hh, ss); YtRes(m.items, Page("ytp:home:more")) })
+
     // ───────── تنقّل ─────────
     private fun openTab(i: Int) {
         hideKb(); sugBox.visibility = View.GONE; stack.clear(); paintTabs(i); hidePill()
@@ -632,7 +639,7 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
                 val cached = YtNp.homeStale()?.let { c0 -> YtRes(c0.items.filter { x -> x.id !in seenIds }, null) }?.takeIf { it.items.size >= 6 }
                 if (cached != null) {
                     if (YtNp.homeAgeMs() > 90_000L && YtNp.refreshHomeAsync(hh, ss)) act.runOnUiThread { bgLine(true) }
-                    Pair(cached, null)
+                    homeFirst(cached, hh, ss)
                 }
                 else {
                     // (v389) علاج ذاتي: لو الرئيسية فضيت أو فشلت (كان لازم تدخل «أنت» وتعمل مزامنة) → نعمل نفس المزامنة + نعيد تهيئة NewPipe ونحاول تاني
@@ -645,7 +652,7 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
                         try { r = YtNp.home(hh, ss); err = null } catch (e: Throwable) { err = e }
                     }
                     if (r.items.isEmpty() && err != null) throw err
-                    Pair(r, null)
+                    homeFirst(r, hh, ss)
                 }
             }
             1 -> {
@@ -674,6 +681,23 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
         when (i) { 0 -> openTab(0); 1 -> openTab(1); else -> openTab(4) }
     }
     private fun navTap(i: Int) { tapTab(i) }   // (v351) الشورتس اتشالت
+    /** (v575) تلفزيون: رقم أحمر بين قوسين جنب «الاشتراكات» = فيديوهات جديدة من آخر ما خرجت من الاشتراكات. جوه الاشتراكات بيفصل */
+    private fun tvSubsBadge() {
+        if (!DeviceUi.isTv(act)) return
+        val lab = navLabs.getOrNull(1) ?: return
+        val n = if (navSel == 1) 0 else try { YtNotify.badgeCount() } catch (_: Throwable) { 0 }
+        if (n <= 0) { lab.text = "الاشتراكات"; return }
+        val sb = android.text.SpannableStringBuilder("الاشتراكات ")
+        val st0 = sb.length
+        sb.append("(").append(if (n > 99) "99+" else n.toString()).append(")")
+        sb.setSpan(android.text.style.ForegroundColorSpan(0xFFFF3B30.toInt()), st0, sb.length, android.text.Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
+        sb.setSpan(android.text.style.StyleSpan(android.graphics.Typeface.BOLD), st0, sb.length, android.text.Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
+        lab.text = sb
+    }
+    private fun tvBadgeRefresh(force: Boolean) {
+        if (!DeviceUi.isTv(act)) return
+        try { YtNotify.refreshBadge(act, force) { act.runOnUiThread { tvSubsBadge() } } } catch (_: Throwable) {}
+    }
     private fun paintNav() {
         for (i in navLabs.indices) {
             val on = i == navSel
@@ -1013,7 +1037,7 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
         animRows = true; h.postDelayed({ animRows = false }, 700L)   // (v354) ظهور ناعم: الصفوف الأولى بتطلع بالتتابع
         adapter.grid = false   // (v397) كروت يوتيوب بدل الشبكة
         adapter.cards = st.tab == 0 || st.tab == 1 || st.q != null || st.chUrl != null || det
-        chipsScroll.visibility = if (st.tab == 0 && !det && st.chUrl == null) View.VISIBLE else View.GONE
+        chipsScroll.visibility = if (st.tab == 0 && !det && st.chUrl == null && !DeviceUi.isTv(act)) View.VISIBLE else View.GONE   // (v575) تلفزيون: من غير شرائح (موسيقى/ألعاب/…)
         if (st.q != null) enterSearch(false) else if (!searchTyping) { searchBar.visibility = View.GONE; appBar.visibility = View.VISIBLE }
         adapter.set(st.list()); lv.setSelection(st.pos)
         if (DeviceUi.isRemote(act) && (act.currentFocus == null || (act.currentFocus === search && !searchTyping))) tvFocusList()   // (v477) (v479 م5) بعد البحث التركيز ينتقل لنتايج البحث
@@ -1219,6 +1243,7 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
         }.start()
     }
 
+    private var moreEmpty = 0
     private fun loadMore() {
         val st = cur ?: return; val nx = st.nxt() ?: return; val mf = st.mf() ?: return
         if (loadingMore) return
@@ -1229,15 +1254,17 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
                 val r = mf(nx)
                 act.runOnUiThread {
                     if (cur === st && st.cMode == inC) {
-                        val l = st.list(); val seen = l.map { it.id + it.url + it.title.take(40) }.toHashSet()
+                        val l = st.list(); val before = l.size; val seen = l.map { it.id + it.url + it.title.take(40) }.toHashSet()
                         r.items.forEach { if (seen.add(it.id + it.url + it.title.take(40))) l.add(it) }
                         if (inC) st.cn = r.next else st.next = r.next
                         if (!inC) applyListPrefs(st)   // (v469) C10
                         adapter.notifyDataSetChanged()
+                        // (v575) تلفزيون: لو الدفعة رجعت من غير جديد (كلها مكررة/مفلترة) كمّل لوحدك بدل ما التحميل يقف
+                        if (DeviceUi.isTv(act) && !inC && st.next != null && st.list().size == before && moreEmpty++ < 8) h.postDelayed({ if (cur === st) loadMore() }, 400L) else if (st.list().size != before) moreEmpty = 0
                     }
                     loadingMore = false
                 }
-            } catch (_: Throwable) { act.runOnUiThread { if (inC) st.cn = null else st.next = null; loadingMore = false } }
+            } catch (_: Throwable) { act.runOnUiThread { if (inC) st.cn = null else if (!DeviceUi.isTv(act)) st.next = null; loadingMore = false } }   // (v575) تلفزيون: فشل مؤقت ما يوقفش التحميل — بيتعاد مع السكرول الجاي
         }.start()
     }
 
@@ -1413,8 +1440,12 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
     // ───────── رسم ─────────
     /** sel: 0 رئيسية · 1 اشتراكات · 2/3/4 = «أنت» · غير كده (بحث/قناة) بيسيب التحديد زي ما هو */
     private fun paintTabs(sel: Int) {
+        val prevSel = navSel
         if (sel in 0..1) navSel = sel else if (sel in 2..4) navSel = 2
+        if (DeviceUi.isTv(act) && prevSel == 1 && navSel != 1) { try { YtNotify.markOpened(act) } catch (_: Throwable) {}; tvBadgeRefresh(true) }   // (v575) خرجت من الاشتراكات: العدّ يبدأ من دلوقتي
         paintNav()
+        tvSubsBadge()
+        if (navSel != 1) tvBadgeRefresh(false)   // (v575) تحديث العدّاد (كل 5 دقايق بالكتير)
         if (::topTitle.isInitialized) topTitle.text = when (navSel) { 0 -> "الرئيسية"; 1 -> "الاشتراكات"; else -> "أنا" }
         try { onTab?.invoke(navSel) } catch (_: Throwable) {}
     }

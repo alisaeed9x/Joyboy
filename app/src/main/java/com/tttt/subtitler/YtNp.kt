@@ -567,6 +567,28 @@ object YtNp {
      *  (v407) أسرع بكتير: أول نتيجة بتطلع من RSS (طلب صغير لكل قناة) + التوصيات، من غير ما تستنى أبطأ قناة — كان بيستنى لحد 12 ثانية (وممكن 50)
      *  لحد ما كل خيوط NewPipe التقيلة تخلص. الجلب العميق (فيديوهات قديمة عشوائية + توصيات من الاشتراكات) بيكمّل في الخلفية وبعدين بيتعرض
      *  من كبسولة «فيديوهات جديدة»؛ والنتيجة بتتحفظ في ملف عشان الفتح الجاي (حتى بعد قفل البرنامج) يبقى فوري. */
+    /** (v575) دفعة إضافية للرئيسية (تلفزيون: تحميل من غير توقف): فيديوهات عشوائية من اشتراكاتك + مقترحات من فيديوهات عشوائية من سجلك/اشتراكاتك — من غير ما تلمس كاش الرئيسية */
+    fun homeMore(hist: List<NpItem>, subs: List<NpItem>): YtRes {
+        init()
+        val seen = hist.map { it.id }.toSet()
+        val out = java.util.concurrent.ConcurrentLinkedQueue<NpItem>()
+        val rnd = java.util.Random()
+        val jobs = ArrayList<Thread>()
+        if (subs.isNotEmpty()) {
+            jobs.add(Thread { try { YtRss.sample(subs, 14).filter { it.kind == 0 }.forEach { out.add(it) } } catch (_: Throwable) {} })
+            jobs.add(Thread { try { randomSubVideos(subs).forEach { out.add(it) } } catch (_: Throwable) {} })
+        }
+        val seedPool = (hist.filter { it.kind == 0 && it.id.length == 11 }.shuffled(rnd).take(2) + subs.filter { it.kind == 0 && it.id.length == 11 }.shuffled(rnd).take(2))
+        for (sd in seedPool) jobs.add(Thread { try { relFast(sd.id).forEach { if (it.kind == 0) out.add(it) } } catch (_: Throwable) {} })
+        jobs.forEach { it.isDaemon = true; it.start() }
+        val end = System.currentTimeMillis() + 15_000L
+        for (t in jobs) try { t.join(maxOf(1L, end - System.currentTimeMillis())) } catch (_: Throwable) {}
+        val uniq = LinkedHashMap<String, NpItem>()
+        for (x in out.toList().shuffled(rnd)) if (x.id !in seen) uniq.putIfAbsent(x.id, x)
+        if (uniq.isEmpty()) for (x in out.toList().shuffled(rnd)) uniq.putIfAbsent(x.id, x)
+        return YtRes(uniq.values.toList(), null)
+    }
+
     fun home(hist: List<NpItem>, subs: List<NpItem> = emptyList()): YtRes {
         init()
         homeBusy = true

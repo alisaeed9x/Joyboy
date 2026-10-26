@@ -285,6 +285,7 @@ class TvActivity : Activity() {
     override fun onDestroy() {
         h.removeCallbacks(wallLoop); h.removeCallbacks(tick); muteRun?.let { h.removeCallbacks(it) }
         try { sr?.destroy() } catch (_: Throwable) {}; sr = null
+        YtAccount.onSynced = null; ytHost = null
         super.onDestroy()
     }
 
@@ -563,7 +564,7 @@ class TvActivity : Activity() {
         try {
             content.animate().cancel()
             content.animate().alpha(0f).translationX(exX).translationY(exY).setDuration(Skins.dur(150L))
-                .setInterpolator(android.view.animation.AccelerateInterpolator(1.3f)).withEndAction { swap() }.start()
+                .setInterpolator(android.view.animation.AccelerateInterpolator(1.3f)).withLayer().withEndAction { swap() }.start()
         } catch (e: Throwable) { LogStore.err("TvHome:tabGo2", e); swap() }
     }
     private val tabGoAct = Runnable {
@@ -689,7 +690,21 @@ class TvActivity : Activity() {
             val dx = enterDx; var dy = enterDy; enterDx = 0f; enterDy = 0f
             if (dx == 0f && dy == 0f) dy = ui.dp(16).toFloat()
             content.alpha = 0f; content.translationX = dx; content.translationY = dy
-            content.animate().alpha(1f).translationX(0f).translationY(0f).setDuration(Skins.dur(280L)).setInterpolator(DecelerateInterpolator(1.7f)).start()
+            // (v574) الأنيميشن يبدأ بعد أول رسم للصفحة (مش قبل البناء) — عشان وقت البناء/القياس ما يتحسبش من الأنيميشن فيقفز أول فريمات؛ + طبقة هاردوير بتخلّي الحركة سلسة
+            val vto = content.viewTreeObserver
+            var started = false
+            fun go() {
+                if (started) return; started = true
+                try { content.animate().alpha(1f).translationX(0f).translationY(0f).setDuration(Skins.dur(280L)).setInterpolator(DecelerateInterpolator(1.7f)).withLayer().start() }
+                catch (_: Throwable) { content.alpha = 1f; content.translationX = 0f; content.translationY = 0f }
+            }
+            if (vto.isAlive) vto.addOnPreDrawListener(object : android.view.ViewTreeObserver.OnPreDrawListener {
+                override fun onPreDraw(): Boolean {
+                    try { if (content.viewTreeObserver.isAlive) content.viewTreeObserver.removeOnPreDrawListener(this) } catch (_: Throwable) { }
+                    go(); return true
+                }
+            })
+            h.postDelayed({ go() }, 120L)   // أمان: لو ما حصلش رسم
         } catch (e: Throwable) { LogStore.err("TvHome:pageEnter", e); content.alpha = 1f; content.translationX = 0f; content.translationY = 0f }
     }
 
@@ -2224,25 +2239,62 @@ class TvActivity : Activity() {
 
     /** (v570) صف يوتيوب في الرئيسية = صف أفقي زي صفوف الفولدرات: أحدث فيديوهات اشتراكاتك أوتوماتيك (من غير زراير «افتح يوتيوب / ابحث / كل الاشتراكات»).
      *  لو مفيش اشتراكات/تسجيل دخول: كارت واحد بس للدخول عشان الصف مايفضلش فاضي. */
+    private var ytHost: LinearLayout? = null
+    private var ytFilling = false
+
     private fun fillYt(yh: LinearLayout) {
-        yh.removeAllViews()
+        ytHost = yh
+        // (v574) لما مزامنة الاشتراكات تخلص (من الموبايل أو من هنا) الصف يتحدّث لوحده
+        YtAccount.onSynced = { runOnUiThread { if (!isDestroyed) ytHost?.let { fillYt(it) } } }
+        if (ytFilling) return
+        ytFilling = true
+        val firstPaint = yh.childCount == 0
+        if (firstPaint && YtAccount.loggedIn() && YtStore.read(YtStore.SUBS).isEmpty()) {
+            yh.addView(sectionTitle("▶ يوتيوب"))
+            yh.addView(hrow(listOf(tile("⏳", "بزامن اشتراكاتك…") { })))
+        }
         Thread {
-            val subs = try { YtStore.read(YtStore.SUBS) } catch (e: Throwable) { LogStore.err("TvHome:ytsubs", e); emptyList() }
-            val items = try {
-                if (subs.isEmpty()) emptyList() else (YtRss.cachedFeed(subs) ?: YtRss.feed(subs, false, true)).items.filter { it.kind == 0 }.take(30)
-            } catch (e: Throwable) { LogStore.err("TvHome:yt", e); emptyList() }
-            runOnUiThread {
-                if (isDestroyed) return@runOnUiThread
-                yh.removeAllViews()
-                if (items.isEmpty()) {
-                    yh.addView(sectionTitle("▶ يوتيوب"))
-                    yh.addView(hrow(listOf(tile("👤", if (YtAccount.loggedIn()) "زامن اشتراكاتك" else "سجّل دخول يوتيوب") { openMain("youtube") })))
-                    return@runOnUiThread
+            var syncErr = ""
+            try {
+                var subs = try { YtStore.read(YtStore.SUBS) } catch (e: Throwable) { LogStore.err("TvHome:ytsubs", e); emptyList() }
+                // (v574) مسجّل دخول ولسه مفيش اشتراكات مزامنة = زامن هنا أوتوماتيك (كان بيفضل كارت «زامن اشتراكاتك» لحد ما تدخل صفحة يوتيوب)
+                if (subs.isEmpty() && YtAccount.loggedIn()) {
+                    try { YtAccount.syncSubs(); subs = YtStore.read(YtStore.SUBS) }
+                    catch (e: Throwable) { syncErr = (e.message ?: e.javaClass.simpleName).take(120); LogStore.add("⚠ مزامنة يوتيوب من الرئيسية فشلت: $syncErr") }
+                } else if (subs.isNotEmpty() && YtAccount.loggedIn() && YtAccount.syncDue(30L * 60_000L)) {
+                    try { YtAccount.syncAsync() } catch (_: Throwable) { }   // تحديث هادي في الخلفية؛ لو جاب قنوات جديدة الصف يتحدّث بالـcallback
                 }
-                yh.addView(sectionTitle("▶ يوتيوب — أحدث اشتراكاتك"))
-                yh.addView(hrow(items.map { ytCard(it) }))
-            }
+                var feedErr = false
+                val items = try {
+                    if (subs.isEmpty()) emptyList() else (YtRss.cachedFeed(subs) ?: YtRss.feed(subs, false, true)).items.filter { it.kind == 0 }.take(30)
+                } catch (e: Throwable) { feedErr = true; LogStore.err("TvHome:yt", e); emptyList() }
+                runOnUiThread {
+                    ytFilling = false
+                    if (isDestroyed) return@runOnUiThread
+                    yh.removeAllViews()
+                    if (items.isEmpty()) {
+                        yh.addView(sectionTitle("▶ يوتيوب"))
+                        val card = when {
+                            !YtAccount.loggedIn() -> tile("👤", "سجّل دخول يوتيوب") { openMain("youtube") }
+                            subs.isEmpty() -> tile("🔄", "زامن اشتراكاتك" + if (syncErr.isNotEmpty()) " (فشلت)" else "") { retryYt(yh) }
+                            else -> tile("🔄", if (feedErr) "ما قدرتش أجيب الفيديوهات — إعادة" else "مفيش فيديوهات جديدة — تحديث") { retryYt(yh) }
+                        }
+                        yh.addView(hrow(listOf(card)))
+                        return@runOnUiThread
+                    }
+                    yh.addView(sectionTitle("▶ يوتيوب — أحدث اشتراكاتك"))
+                    yh.addView(hrow(items.map { ytCard(it) }))
+                }
+            } catch (e: Throwable) { ytFilling = false; LogStore.err("TvHome:fillYt", e) }
         }.apply { isDaemon = true }.start()
+    }
+
+    private fun retryYt(yh: LinearLayout) {
+        Notice.show(this, "🔄 بزامن اشتراكاتك…", 1800L)
+        yh.removeAllViews()
+        yh.addView(sectionTitle("▶ يوتيوب"))
+        yh.addView(hrow(listOf(tile("⏳", "بزامن اشتراكاتك…") { })))
+        fillYt(yh)
     }
 
     private fun ytCard(v: NpItem): View = vTile({ iv ->
@@ -2365,13 +2417,29 @@ class TvActivity : Activity() {
         muteSearch = true; searchEt?.setText(""); muteSearch = false; inSearch = false
         storageKind = null; openFolder = null; foldersHost = null; setTab(2)
         content.removeAllViews()
-        content.addView(sectionTitle("📱 كل التطبيقات"))
-        val apps = builtinApps() + allLaunchApps().sortedBy { lbl(it).lowercase() }.map { appCircle(it) }   // (v521) يوتيوب + المتصفح أول اتنين
-        val wdp = resources.displayMetrics.widthPixels / resources.displayMetrics.density - 68f
-        gridInto(content, apps, (wdp / (iconDp() + 56f)).toInt().coerceIn(3, 10))
+        // (v574) كاش صفحة «تطبيقات»: كانت بتبني كل الدواير من الأول في نص الأنيميشن (نتشة) — دلوقتي بنرجّع نفس الـViews لو قايمة التطبيقات ما اتغيّرتش
+        val list = allLaunchApps().sortedBy { lbl(it).lowercase() }
+        val sig = list.joinToString(",") { it.activityInfo.packageName } + "|" + iconDp() + "|" + resources.displayMetrics.widthPixels
+        val cached = appsCache
+        val apps: List<View>
+        if (cached != null && sig == appsCacheSig) {
+            for (v in cached) (v.parent as? ViewGroup)?.removeView(v)
+            for (v in cached) content.addView(v)
+            apps = appsFocusables
+        } else {
+            val title = sectionTitle("📱 كل التطبيقات")
+            content.addView(title)
+            apps = builtinApps() + list.map { appCircle(it) }   // (v521) يوتيوب + المتصفح أول اتنين
+            val wdp = resources.displayMetrics.widthPixels / resources.displayMetrics.density - 68f
+            gridInto(content, apps, (wdp / (iconDp() + 56f)).toInt().coerceIn(3, 10))
+            appsCache = (0 until content.childCount).map { content.getChildAt(it) }; appsCacheSig = sig; appsFocusables = apps
+        }
         pageEnter()
         if (focus) apps.firstOrNull()?.let { f -> content.post { try { f.requestFocus() } catch (_: Throwable) {} } }
     }
+    private var appsCache: List<View>? = null
+    private var appsCacheSig = ""
+    private var appsFocusables: List<View> = emptyList()
 
     // ===== (v495) بحث موحّد جوه الرئيسية: بيتكتب في الشريط العلوي والنتايج بتظهر مكان الصفوف =====
     private fun showSearch(prefill: String = "") {

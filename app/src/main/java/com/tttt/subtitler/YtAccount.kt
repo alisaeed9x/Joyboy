@@ -77,6 +77,13 @@ object YtAccount {
         return true
     }
     fun loggedIn(): Boolean = cv("SAPISID") != null || cv("__Secure-3PAPISID") != null
+    /** (v574) نفس حساب الجلسة المحفوظة؟ (نفس SAPISID) — عشان الموبايل مايفضلش يبعت ونعيد المزامنة من الصفر كل مرة */
+    fun sameSession(ck: String): Boolean {
+        fun sid(t: String): String? = t.split(";").map { it.trim() }.firstOrNull { it.startsWith("__Secure-3PAPISID=") || it.startsWith("SAPISID=") }
+        val a = sid(ck); return a != null && a == sid(cookie())
+    }
+    /** (v574) callback بيتنادى (من thread خلفي) لما مزامنة الاشتراكات تخلص — لانشر التلفزيون بيحدّث صف يوتيوب بيه */
+    @Volatile var onSynced: (() -> Unit)? = null
     fun syncDue(every: Long = SYNC_EVERY_MS): Boolean = System.currentTimeMillis() - (sp?.getLong("sync_at", 0L) ?: 0L) > every
     @Volatile private var syncing = false
     /** (v389) مزامنة في الخلفية (نفس زرار «🔄 مزامنة الاشتراكات») من غير ما المستخدم يدخل صفحة «أنت»؛ مرة واحدة في نفس الوقت */
@@ -85,7 +92,7 @@ object YtAccount {
         if (!force && System.currentTimeMillis() - lastSyncAt() < 60_000L) return   // مش أكتر من مرة في الدقيقة
         syncing = true
         Thread {
-            try { val n = syncSubs(); LogStore.add("🔄 مزامنة تلقائية للاشتراكات: +$n قناة"); onDone(n) }
+            try { val n = syncSubs(); LogStore.add("🔄 مزامنة تلقائية للاشتراكات: +$n قناة"); onDone(n); try { onSynced?.invoke() } catch (_: Throwable) { } }
             catch (e: Throwable) { LogStore.add("⚠ المزامنة التلقائية فشلت: " + (e.message ?: e.javaClass.simpleName).take(120)) }
             finally { syncing = false }
         }.also { it.isDaemon = true; it.start() }

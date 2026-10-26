@@ -192,6 +192,7 @@ object TvSync {
             }
             post()
             if (withKeys && RemoteClient.hasKeys()) RemoteClient.sendKeys()
+            if (withKeys) RemoteClient.sendYtAccount()   // (v574) حساب يوتيوب → التلفزيون (أوتوماتيك)
         } catch (e: Throwable) { LogStore.err("TvSync:push", e) }
     }
 
