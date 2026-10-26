@@ -678,7 +678,7 @@ class MainActivity : Activity() {
                 ui.section("♿ إمكانية الوصول والحركة", false,
                     ui.switchRow("🔠 وضع النص الكبير (تكبير خطوط الواجهة)", Cfg.bool("big_text", false)) { Cfg.put("big_text", if (it) "1" else "0"); recreate() },
                     ui.switchRow("🎞 انتقالات انسيابية بين التبويبات", Cfg.bool("anim_tabs", true)) { Cfg.put("anim_tabs", if (it) "1" else "0") },
-                    ui.switchRow("📳 اهتزاز لمسي خفيف عند التنقّل بين التبويبات", Cfg.bool("haptics", true)) { Cfg.put("haptics", if (it) "1" else "0") },
+                    ui.switchRow("📳 اهتزاز لمسي خفيف عند التنقّل بين التبويبات", Cfg.bool("haptics", true)) { Cfg.put("haptics", if (it) "1" else "0") }),
                 ui.section("🧩 وضع الواجهة", false,
                     ui.text("شكل الزراير والفولدرات والأنيميشن:", 12f, th.muted), skinChips, skinSoundSwitch),
                 ui.section("🖥 وضع الواجهة (موبايل · تابلت · تلفزيون)", false,
