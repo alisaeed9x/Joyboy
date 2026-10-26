@@ -80,6 +80,9 @@ class MainActivity : Activity() {
     private var keyLoadersRef: List<() -> Unit> = emptyList()
     private var permDone: (() -> Unit)? = null
     private var scanFn: () -> Unit = {}
+    /** (v547 م3) مصدر مكتبة الفيديوهات الحالي (الموبايل افتراضيًا) وتبديله (true = التلفزيون) */
+    private var libBackend: LibraryBackend = LocalLibrary
+    private var libSourceFn: ((Boolean) -> Unit)? = null
     private var libStarted = false
     private var curTab = 0                       // (v117) 0 = الفيديوهات · 1 = يوتيوب
     private var ytUi: YtProUi? = null
@@ -810,28 +813,36 @@ class MainActivity : Activity() {
                 libUi?.refreshRows()
             }
         }
-        lib.onBg = { v -> startBg(listOf(v)) }
+        // (v547 م3) فيديو التلفزيون (uri = tv://id): عمليات الملفات/الترجمة بالخلفية ما بتتعملش من الموبايل
+        fun tvItem(v: VideoItem): Boolean {
+            if (!v.uri.startsWith(LibraryCore.SCHEME, true)) return false
+            Notice.show(this, "📺 ده فيديو على التلفزيون — العملية دي مش متاحة من الموبايل", 3200L)
+            return true
+        }
+        lib.onBg = { v -> if (!tvItem(v)) startBg(listOf(v)) }
         lib.onBgStop = { v -> BgJobs.stop(v.videoId); Notice.show(this, ("⏹ وقفت الترجمة في الخلفية (التقدم اتحفظ)").toString(), 2300L); lib.refreshRows() }
         lib.bgJob = { v -> BgJobs.find(v.videoId) }
         lib.onBgFolder = { f ->
+          if (f.videos.firstOrNull()?.let { tvItem(it) } != true) {
             val todo = f.videos.filter { !BgJobs.isActive(it.videoId) }
             GAlert(this).setTitle("🌙 ترجمة الفولدر في الخلفية")
                 .setMessage("هترجم ${todo.size} فيديو ورا بعض (واحد واحد). ده بيستهلك كوتة المفاتيح. تكمّل؟")
                 .setPositiveButton("ابدأ") { _, _ -> startBg(todo) }.setNegativeButton("إلغاء", null).show()
+          }
         }
         val ops = MediaOps(this, ui, th) { VideoScan.cache = null; scanFn(); if (MusicScan.items != null) { MusicScan.invalidate(); musicUi?.reload() } }
         mediaOps = ops
-        lib.onRename = { v -> ops.rename(v) }
-        lib.onMove = { v -> ops.move(v, lib.allFolders()) }
-        lib.onShare = { v -> ops.share(v) }
-        lib.onShareMany = { vs -> ops.shareMany(vs) }
+        lib.onRename = { v -> if (!tvItem(v)) ops.rename(v) }
+        lib.onMove = { v -> if (!tvItem(v)) ops.move(v, lib.allFolders()) }
+        lib.onShare = { v -> if (!tvItem(v)) ops.share(v) }
+        lib.onShareMany = { vs -> if (vs.firstOrNull()?.let { tvItem(it) } != true) ops.shareMany(vs) }
         lib.onPlayWeb = { w -> save(); playWeb(w) }
         saveFn = { save() }
         lib.onYtHistory = { showYtHistory() }   // (v407) شريحة «🕘 سجل يوتيوب» في فولدر المصطادة
-        lib.onDelete = { v -> ops.delete(v) }
-        lib.onRenameFolder = { f -> ops.renameFolder(f) }
-        lib.onDeleteFolder = { f -> ops.deleteFolder(f) }
-        lib.onDetails = { v -> ops.details(v, Recents.parse(try { recentFile.readText() } catch (_: Exception) { "" }).firstOrNull { it.id == v.videoId }) }
+        lib.onDelete = { v -> if (!tvItem(v)) ops.delete(v) }
+        lib.onRenameFolder = { f -> if (f.videos.firstOrNull()?.let { tvItem(it) } != true) ops.renameFolder(f) }
+        lib.onDeleteFolder = { f -> if (f.videos.firstOrNull()?.let { tvItem(it) } != true) ops.deleteFolder(f) }
+        lib.onDetails = { v -> if (!tvItem(v)) ops.details(v, Recents.parse(try { recentFile.readText() } catch (_: Exception) { "" }).firstOrNull { it.id == v.videoId }) }
         val qui = QueueUi(this, ui, th); queueUi = qui; qui0 = qui; settingsDlg0 = settingsDlg; settingsShow = { t -> if (fromPlayer) settingsDlg.show(t) else { showTabFn(7); settingsDlg.showEmbedded(t) } }; settingsBack = { settingsDlg.back() }
         dismissSettings = { try { settingsDlg.dialog.dismiss() } catch (_: Throwable) {} }
         // رجّع الطابور المحفوظ (لو التطبيق اتقفل/اتمسح) وكمّل الترجمة
@@ -845,21 +856,43 @@ class MainActivity : Activity() {
         lib.onLink = { recentDlg?.show() }
         lib.onPick = { save(); pickVideo() }
         lib.onGrant = { requestPermissions(arrayOf(VideoScan.permission()), 11) }
-        fun doScan() {
+        fun doScan(refresh: Boolean = false) {
             libStarted = true
-            if (!VideoScan.hasPermission(this)) { lib.showNoPermission(); return }
-            val cached = VideoScan.cache
+            val be = libBackend
+            if (!be.remote && !VideoScan.hasPermission(this)) { lib.showNoPermission(); return }
+            val cached = be.cached()
             if (cached != null) lib.showVideos(cached) else if (!lib.hasData) lib.showScanning()
-            Thread {
-                val res = try { VideoScan.scan(this) } catch (_: Exception) { emptyList<VideoItem>() }
-                runOnUiThread { if (!isDestroyed && !isFinishing) lib.showVideos(res) }
-            }.apply { isDaemon = true }.start()
+            be.load(this, refresh) { res, err ->
+                if (isDestroyed || isFinishing || be !== libBackend) return@load
+                if (res != null) lib.showVideos(res)
+                else {
+                    Notice.show(this, (err ?: "حصلت مشكلة").toString(), 4200L)
+                    if (!lib.hasData) lib.showVideos(emptyList())
+                }
+            }
         }
         scanFn = { doScan() }
-        // ريفريش: يمسح الفولدرات والصور المصغّرة المحفوظة ويفحص التخزين من الأول
-        lib.onPull = { VideoScan.cache = null; doScan() }
-        lib.onRefresh = { VideoScan.cache = null; Thumbs.clear(); lib.showScanning(); doScan() }
-        lib.onAutoRefresh = { doScan() }   // (v468) تحديث تلقائي كل ١٠ ثوانٍ والقائمة ظاهرة: فحص خلفي صامت (من غير مسح كاش/صور ولا شاشة فحص) و showVideos بتتجاهل النتيجة لو البصمة ما اتغيّرتش
+        // (v547 م3) تبديل مصدر المكتبة (الموبايل / التلفزيون) من القايمة الجانبية أو من شاشة الريموت
+        libSourceFn = { tv ->
+            if (tv && DeviceUi.isTv(this)) Notice.show(this, "الجهاز ده نفسه تلفزيون", 2500L)
+            else {
+                if (tv) { try { RemoteClient.init(this) } catch (_: Throwable) {} }
+                if (tv && RemoteClient.lastTv() == null) Notice.show(this, "📺 مفيش تلفزيون مقترن — اقرنه من «ريموت التلفزيون»", 3800L)
+                else {
+                    libBackend = if (tv) TvLibrary else LocalLibrary
+                    lib.backend = libBackend
+                    lib.resetNav()
+                    if (tv) { TvLibrary.invalidate(); lib.showScanning(); doScan(true) }
+                    else { lib.showScanning(); doScan() }
+                }
+            }
+        }
+        lib.onSource = { tv -> libSourceFn?.invoke(tv) }
+        // ريفريش: يمسح الفولدرات والصور المصغّرة المحفوظة ويفحص من الأول
+        lib.onPull = { libBackend.invalidate(); doScan(true) }
+        lib.onRefresh = { libBackend.invalidate(); libBackend.clearThumbs(); lib.showScanning(); doScan(true) }
+        // (v468) تحديث تلقائي كل ١٠ ثوانٍ والقائمة ظاهرة: فحص خلفي صامت (من غير مسح كاش/صور ولا شاشة فحص) و showVideos بتتجاهل النتيجة لو البصمة ما اتغيّرتش
+        lib.onAutoRefresh = { if (!libBackend.remote) doScan() }
 
         // (v124) الشريط السفلي: بوابتين — الفيديوهات (المكتبة) · المتصفح (تبويب يوتيوب اتشال)
         // (v135) بوابة تالتة: «المهام» (قص · صوت · GIF · ضغط · ترجمة ثابتة)
@@ -1279,6 +1312,17 @@ class MainActivity : Activity() {
         val lref = i.getStringExtra("link_ref") ?: ""; val lua = i.getStringExtra("link_ua") ?: ""; val lck = i.getStringExtra("link_cookie") ?: ""
         i.removeExtra(Links.EX_URL); i.removeExtra("link_ref"); i.removeExtra("link_ua"); i.removeExtra("link_cookie")
         val lstart = i.getLongExtra("link_startms", 0L); i.removeExtra("link_startms")   // (v543 م4) يوتيوب من الموبايل ومعاه مكان البداية
+        // (v547 م4) «وضع التلفزيون» شغّال: يوتيوب/فيديو (حتى المصطاد بهيدرز) يتبعت للتلفزيون بدل ما يشتغل على الموبايل. false = الوضع مقفول فنكمّل محلي زي ما كان
+        if (how == Links.VIDEO || how == Links.VIDEO_TR || how == Links.AUTO) {
+            val kk = Links.kind(u)
+            if (kk == Links.Kind.YT || kk == Links.Kind.VIDEO || lref.isNotEmpty() || lua.isNotEmpty() || lck.isNotEmpty()) {
+                val hd = HashMap<String, String>()
+                if (lref.isNotEmpty()) hd["ref"] = lref
+                if (lua.isNotEmpty()) hd["ua"] = lua
+                if (lck.isNotEmpty()) hd["cookie"] = lck
+                if (PlayTarget.open(this, MediaSpec(url = u, headers = hd, title = t, startMs = lstart, how = if (how == Links.AUTO) "" else how))) return
+            }
+        }
         val lyt = Links.ytId(u)
         if (lstart > 0L && lyt != null && (how == Links.VIDEO || how == Links.VIDEO_TR || how == Links.AUTO)) {
             val tr = how == Links.VIDEO_TR
@@ -1301,6 +1345,11 @@ class MainActivity : Activity() {
     }
     /** (v117) دخول فوري للمشغّل: مفيش قراءة لملف الترجمة هنا خالص — المشغّل بيحمّلها هو في الخلفية واللودنج بيظهر جواه */
     fun playChecked(v: VideoItem) {
+        // (v547 م3) فيديو من مكتبة التلفزيون: يتشغّل على التلفزيون والموبايل يبقى متحكّم (PlayTarget → PlayerActivity remote=true)
+        if (v.uri.startsWith(LibraryCore.SCHEME, true)) {
+            if (!PlayTarget.force(this, MediaSpec(uri = v.uri, title = v.title))) Notice.show(this, "📺 ما اتبعتش للتلفزيون", 3000L)
+            return
+        }
         play("", Uri.parse(v.uri), v.landscape, false, false, !BgJobs.isActive(v.videoId))
     }
     fun startPlayerNow(u: String, uri: Uri?, landscape: Boolean = uri != null, fresh: Boolean = false, noSub: Boolean = false, ask: Boolean = false, ret: String = "") {
@@ -1843,6 +1892,8 @@ class MainActivity : Activity() {
             } catch (e: Throwable) { LogStore.err("Main:ytaudio", e); Notice.show(this, ("ما قدرتش أحوّل لصوت — جرّب تاني").toString(), 3000L) }
         }
         handleExternal(i); handleLinkIntent(i)   // (v345)
+        // (v547 م3) «📚 مكتبة التلفزيون» من شاشة الريموت
+        if (i?.getBooleanExtra("lib_tv", false) == true) { i.removeExtra("lib_tv"); libSourceFn?.invoke(true) }
         if (i?.getBooleanExtra("fullmusic", false) == true) musicOpenFn?.invoke()   // (v344) ⤢ من المشغّل المصغّر في المتصفح/الملفات
         if (i?.getStringExtra("tab") != null) ytTvMode = i?.getBooleanExtra("tv_target", false) == true   // (v532)
         when (i?.getStringExtra("tab")) { "videos" -> if (DeviceUi.isTv(this) && !fromPlayer) tvToLauncher("videos") else showTabFn(0); "music" -> showTabFn(1); "tasks" -> showTabFn(5); "settings" -> settingsShow?.invoke(null); "youtube" -> { showTabFn(4); openYtFromIntent(i) } }

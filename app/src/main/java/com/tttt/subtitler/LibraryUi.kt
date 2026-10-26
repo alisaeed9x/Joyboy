@@ -32,6 +32,12 @@ class LibraryUi(
     private val K = if (audio) "mus_" else ""
     private val noun = if (audio) "أغنية" else "فيديو"
     var onPlayFolder: (FolderItem) -> Unit = {}
+    /** (v547 م3) مصدر القايمة: الموبايل (الافتراضي) أو التلفزيون. Main هو اللي بيبدّله */
+    var backend: LibraryBackend = LocalLibrary
+    /** (v547 م3) المستخدم اختار مصدر من القايمة الجانبية (true = التلفزيون) */
+    var onSource: (Boolean) -> Unit = {}
+    /** (v547 م3) تصفير التنقل لما المصدر يتبدّل (فولدر/مجموعة ذكية/تحديد القديم ما يبقوش موجودين) */
+    fun resetNav() { curFolder = null; inRecents = false; sel.clear(); smartFilter = null; contentFp = Long.MIN_VALUE; query = ""; try { searchEt.setText("") } catch (_: Throwable) {} }
     /** (v344) بحث محلي فاضي: اقتراحات يوتيوب (دوسة = تشغيل) ثم «ابحث في المتصفح» */
     var onYtPick: ((NpItem) -> Unit)? = null
     var onWebSearch: ((String) -> Unit)? = null
@@ -552,6 +558,10 @@ class LibraryUi(
             if (on) r.addView(ui.text("✓", 15f, th.primary, true))
             panel.addView(r, LinearLayout.LayoutParams(-1, -2).apply { setMargins(0, ui.dp(4), 0, ui.dp(4)) })
         }
+        if (!audio) {
+            row("📱", "مكتبة الموبايل", "فيديوهات الجهاز ده", !backend.remote) { if (backend.remote) onSource(false) }
+            row("📺", "مكتبة التلفزيون", "فيديوهات التلفزيون المقترن (بتتشغّل عليه)", backend.remote) { if (!backend.remote) onSource(true) }
+        }
         val d = dist()
         row("📁", "الفولدرات", "تصفح حسب فولدرات الجهاز", d == "folders") { setDist("folders") }
         row("🗂", "الكل", "كل الملفات في قايمة واحدة", d == "flat") { setDist("flat") }
@@ -828,8 +838,8 @@ class LibraryUi(
         val first = f.videos.firstOrNull()
         if (first != null && (!audio || artRows())) {
             c.iv.tag = first.uri
-            val bm = Thumbs.peek(first)
-            if (bm != null) c.iv.setImageBitmap(bm) else Thumbs.load(act, first, audio) { b -> if (b != null && c.iv.tag == first.uri) c.iv.setImageBitmap(b) }
+            val bm = backend.peekThumb(first)
+            if (bm != null) c.iv.setImageBitmap(bm) else backend.thumb(act, first, audio) { b -> if (b != null && c.iv.tag == first.uri) c.iv.setImageBitmap(b) }
         }
         c.dots.setOnClickListener { x -> folderMenu(x, f, false) }
         c.root.setOnClickListener { if (sel.isNotEmpty()) toggleSel(f.key) else { rootPos = listV.firstVisiblePosition; curFolder = f.key; render(); listV.setSelection(0) } }
@@ -858,8 +868,8 @@ class LibraryUi(
         c.tick.visibility = if (r != null && r.percent >= 97) View.VISIBLE else View.GONE
         c.iv.tag = vi.uri
         if (!audio || artRows()) {
-            val bm = Thumbs.peek(vi)
-            if (bm != null) c.iv.setImageBitmap(bm) else Thumbs.load(act, vi, audio) { b -> if (b != null && c.iv.tag == vi.uri) c.iv.setImageBitmap(b) }
+            val bm = backend.peekThumb(vi)
+            if (bm != null) c.iv.setImageBitmap(bm) else backend.thumb(act, vi, audio) { b -> if (b != null && c.iv.tag == vi.uri) c.iv.setImageBitmap(b) }
         }
         c.dots.setOnClickListener { x -> videoMenu(x, vi, false) }
         c.root.setOnLongClickListener { cc -> cc.performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS); if (sel.isNotEmpty()) toggleSel(vi.videoId) else videoMenu(c.dots, vi, true); true }
@@ -957,9 +967,9 @@ class LibraryUi(
             val first = f.videos.firstOrNull(); val iv = t[8] as ImageView
             if (first != null && (!audio || artRows())) {
                 iv.tag = first.uri
-                val bm = Thumbs.peek(first)
+                val bm = backend.peekThumb(first)
                 if (bm != null) { iv.setImageBitmap(bm); iv.visibility = View.VISIBLE }
-                else Thumbs.load(act, first, audio) { b -> if (b != null && iv.tag == first.uri) { iv.setImageBitmap(b); iv.visibility = View.VISIBLE } }
+                else backend.thumb(act, first, audio) { b -> if (b != null && iv.tag == first.uri) { iv.setImageBitmap(b); iv.visibility = View.VISIBLE } }
             }
         }
         (t[2] as TextView).text = f.path
@@ -1090,9 +1100,9 @@ class LibraryUi(
         h.card.setOnLongClickListener { c -> c.performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS); if (sel.isNotEmpty()) toggleSel(vi.videoId) else videoMenu(h.dots, vi, true); true }
         h.iv.tag = vi.uri; h.iv.setImageDrawable(null)
         if (!audio || artRows()) {
-            val c = Thumbs.peek(vi)
+            val c = backend.peekThumb(vi)
             if (c != null) h.iv.setImageBitmap(c)
-            else Thumbs.load(act, vi, audio) { b -> if (b != null && h.iv.tag == vi.uri) h.iv.setImageBitmap(b) }
+            else backend.thumb(act, vi, audio) { b -> if (b != null && h.iv.tag == vi.uri) h.iv.setImageBitmap(b) }
         }
         h.card.setOnClickListener { if (sel.isNotEmpty()) toggleSel(vi.videoId) else { markPlayed(vi); onPlay(vi) } }
     }

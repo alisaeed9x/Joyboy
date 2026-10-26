@@ -97,8 +97,10 @@ object Links {
 
     /** (v518) يبعت اللينك للتلفزيون المقترن (يوصّل لو مش متصل) ويشتغل هناك */
     fun sendToTv(act: Activity, u: String) {
-        Notice.show(act, "📺 بوصّل بالتلفزيون…", 2500L)
         val k0 = kind(u)
+        // (v547 م4) فيديو/يوتيوب: مسار واحد عبر PlayTarget (إرسال + فتح مشغّل المتحكم + إعادة المحاولة). غير كده (أو لو الجهاز نفسه تلفزيون) المسار القديم تحت
+        if ((k0 == Kind.YT || k0 == Kind.VIDEO) && PlayTarget.force(act, MediaSpec(url = u))) return
+        Notice.show(act, "📺 بوصّل بالتلفزيون…", 2500L)
         Thread {
             var msg = ""
             try {

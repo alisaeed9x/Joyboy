@@ -127,7 +127,7 @@ class RemoteActivity : Activity() {
         ctrl = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; setPadding(0, ui.dp(10), 0, 0) }
         ctrl.addView(panel(vrow(cmdBtn("⏻", "power"), sleepBtn(), cmdBtn("🔇", "mute"))))
         ctrl.addView(panel(vrow(bigBtn("🎞 مشغّل الفيديو") { openPage("video") }, ytPhoneBtn(), wordCmd("🌐 متصفح", "open_browser")), vrow(wordCmd("📺 يوتيوب التلفزيون", "open_yt"), wordCmd("💾 فلاشة", "open_sd"), wordCmd("📱 داخلية", "open_int"))), LinearLayout.LayoutParams(-1, -2).apply { topMargin = ui.dp(10) })   // (v533) مشغّل الفيديو · يوتيوب · متصفح فوق
-        ctrl.addView(panel(vrow(bigBtn("📚 مكتبة التلفزيون") { TvLibraryUi.show(this) }, bigBtn("🧰 مهام التلفزيون") { TvTasksUi.show(this) }, tvModeBtn())), LinearLayout.LayoutParams(-1, -2).apply { topMargin = ui.dp(10) })   // (v543 م3/م4) فيديوهات التلفزيون + وضع التلفزيون
+        ctrl.addView(panel(vrow(bigBtn("📚 مكتبة التلفزيون") { startActivity(Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP).putExtra("tab", "videos").putExtra("lib_tv", true)) }, bigBtn("🧰 مهام التلفزيون") { TvTasksUi.show(this) }, tvModeBtn())), LinearLayout.LayoutParams(-1, -2).apply { topMargin = ui.dp(10) })   // (v543 م3/م4) فيديوهات التلفزيون + وضع التلفزيون
         col.addView(ctrl)
 
         remote = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL }
