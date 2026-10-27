@@ -1834,7 +1834,6 @@ class Engine(
      * بنضم الأسطر المتتالية اللي مش واقفة بعلامة نهاية في جملة واحدة، نترجمها، وبعدين نقسم الترجمة على نفس الأسطر (والتوقيتات بتفضل زي ما هي لأن بنرجّع نص كل سطر بس).
      */
     private fun googleItems(src0: List<String>, ctx: List<String> = emptyList()): List<String?> {
-        if (OffLang.mergeOn()) MlKitTr.say = { m -> host.log(m); try { host.notice(m) } catch (_: Throwable) {} }   // رسائل تحميل موديل اللغة
         if (!OffLang.mergeOn() || src0.size < 2) return googleItemsRaw(src0, ctx)
         val clean = src0.map { normAsr(it.replace(Regex("\\s*\n\\s*"), " ")) }   // (v469) A8: تطبيع ترقيم ASR قبل الترجمة
         val groups = OffLang.group(clean)

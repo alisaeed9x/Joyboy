@@ -1,3 +1,5 @@
+v588: تنضيف — حذف PublicApis.pull/lastOk + east_asian.txt؛ StemCore.kt وYoutubeUi.kt اتأكد إنهم مستخدمين (فضلوا). فحص kotlinc: مفيش أخطاء جديدة. ماجرّبتش Gradle ولا جهاز. التفاصيل: CHANGES_v588.md.
+v587: AUDIT_09 — D (شيل stubs بتاعة Sherpa وML Kit + androidx.webkit) + G (job «verify»: manifest + Lint). E وF-C3 مؤجّلين. اتفحصت بـ kotlinc على الشجرة كلها: 650 خطأ قبل وبعد (مكتبات ناقصة بس) = مفيش أخطاء جديدة. ماجرّبتش Gradle ولا جهاز. التفاصيل: CHANGES_v587.md.
 v586: يوتيوب — استكمال الفيديو من نفس المكان (مخزن تقدم واحد: YtProg + recent.json، الأحدث يكسب؛ المشغّل الكامل بيكتب في YtProg). ماجرّبتش compile ولا جهاز. التفاصيل: CHANGES_v586.md.
 v585: B+C — كود الإقران إجباري حتى لأول ريموت (C2) + إدخال IP يدوي (M1) + مسح ~50 عضو ميت (K3) + نقل التوثيق القديم لـ docs/history. ماجرّبتش compile ولا جهاز. التفاصيل: CHANGES_v585.md.
 v584: تنضيف آمن — حذف assets/index.html (2.5MB) + 4 صور قديمة (splash_art ×2، splash_blur، logo) + add_jitpack.sh. من غير تغيير كود. ماجرّبتش compile ولا جهاز. التفاصيل: CHANGES_v584.md.

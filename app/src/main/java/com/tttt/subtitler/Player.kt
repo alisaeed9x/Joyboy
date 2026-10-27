@@ -2957,7 +2957,6 @@ class PlayerActivity : Activity(), Host {
     override fun onCreate(b: Bundle?) {
         super.onCreate(b)
         smoothRotation()   // (v429)
-        MlKitTr.ask = { t -> runOnUiThread { askMlDownload(t) } }   // (v413)
         synchronized(liveList) {
             liveList.removeAll { it.get() == null }
             liveList.toList().forEach { r -> r.get()?.let { o -> if (o !== this) try { o.runOnUiThread { o.killForNewVideo() } } catch (_: Throwable) {} } }
@@ -5362,14 +5361,7 @@ class PlayerActivity : Activity(), Host {
             offBusy = false
             runPlan(pl)
         }
-        fun stepMl() {
-            if (true) { startIt(); return }   // (v425) ML Kit اتشال من الوضع ده
-            MlKitTr.say = { m -> runOnUiThread { say(m) } }
-            Thread {
-                val err = MlKitTr.prepare(lang)
-                runOnUiThread { if (err != null) { offBusy = false; say("⚠ موديل الترجمة ما نزلش: $err") } else startIt() }
-            }.also { it.isDaemon = true }.start()
-        }
+        fun stepMl() { startIt() }   // (v425) ML Kit اتشال
         fun go() {
             if (Offline.downloaded(m)) { stepMl(); return }
             say("⬇ بنحمّل موديل التفريغ " + m.label + " (~" + m.approxMb + " ميجا، مرة واحدة)…")
@@ -5393,26 +5385,6 @@ class PlayerActivity : Activity(), Host {
                     .setOnCancelListener { offBusy = false }.show()
             }
         }.also { it.isDaemon = true }.start()
-    }
-
-    private var mlAsking = false
-    /** (v413) الترجمة محتاجة موديل لغة مش نازل: شاشة صغيرة تسأل (بتتنده من MlKitTr.ask) */
-    private fun askMlDownload(src: String) {
-        if (mlAsking || isFinishing) return
-        mlAsking = true
-        val nm = OffLang.nameOf(src)
-        android.app.AlertDialog.Builder(this).setTitle("⬇ موديل ترجمة اللغة: $nm")
-            .setMessage("الترجمة أوفلاين محتاجة موديل ML Kit للغة $nm (~30 ميجا، مرة واحدة، محتاج نت). تنزّله دلوقتي؟\n(برضو تقدر تنزّله من ⚙ ← لغة الفيديو أو من الإعدادات.)")
-            .setPositiveButton("نزّل") { _, _ ->
-                mlAsking = false
-                say("⬇ بنحمّل موديل ترجمة $nm…")
-                Thread {
-                    val e = try { MlKitTr.ensure(src, true) } catch (t: Throwable) { t.message ?: t.javaClass.simpleName }
-                    runOnUiThread { say(if (e == null) "✅ موديل $nm نزل — الترجمة هتكمّل" else "⚠ تنزيل موديل $nm: $e") }
-                }.also { it.isDaemon = true }.start()
-            }
-            .setNegativeButton("بعدين") { _, _ -> mlAsking = false }
-            .setOnCancelListener { mlAsking = false }.show()
     }
 
     /** (v254) ▶ ترجمة قبل البداية: لو فيه إعداد محفوظ بيشتغل بيه على طول، وإلا بيسأل (أونلاين / أوفلاين ← لغة ← تفريغ ← ترجمة ← حفظ؟) */

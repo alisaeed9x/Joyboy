@@ -52,7 +52,6 @@ com/tttt/subtitler/LyricsNorm.kt
 com/tttt/subtitler/Main.kt
 com/tttt/subtitler/MediaOps.kt
 com/tttt/subtitler/MiniDock.kt
-com/tttt/subtitler/MlKitTr.kt
 com/tttt/subtitler/ModePrompts.kt
 com/tttt/subtitler/ModelWatch.kt
 com/tttt/subtitler/Models.kt
@@ -83,7 +82,6 @@ com/tttt/subtitler/QueueUi.kt
 com/tttt/subtitler/RecentSongs.kt
 com/tttt/subtitler/Recents.kt
 com/tttt/subtitler/Settings.kt
-com/tttt/subtitler/SherpaStt.kt
 com/tttt/subtitler/SiteBlock.kt
 com/tttt/subtitler/Skin.kt
 com/tttt/subtitler/SmartGroup.kt

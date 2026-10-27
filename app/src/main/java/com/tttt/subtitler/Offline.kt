@@ -54,7 +54,7 @@ object Offline {
     fun downloaded(m: Model = model()): Boolean = file(m)?.let { it.isFile && it.length() > m.approxMb * 600_000L } ?: false
     fun lang(): String = Cfg.str("stt_lang", "").trim().let { if (it in langIds) it else "" }
     /** (v255) المحركات المتاحة: Whisper (لكل اللغات) و sherpa-onnx SenseVoice (إنجليزي/ياباني/كوري/صيني) */
-    val engines: List<SttEngine> = listOf(WhisperStt, SherpaStt)
+    val engines: List<SttEngine> = listOf(WhisperStt)
     /** المحرك المختار (مفتاح stt_engine: whisper | sherpa، الافتراضي whisper). لو المختار مش مدعوم على الجهاز أو مش بيفهم اللغة ← whisper */
     fun engine(): SttEngine = engines.firstOrNull { it.id == Cfg.str("stt_engine", "whisper") && it.supported() && it.handles(lang()) } ?: WhisperStt
     /** (v395) التفريغ السحابي الخارجي اتشال — دايمًا false */
@@ -178,14 +178,6 @@ object Offline {
     fun transcribe(wav: ByteArray, durSec: Double, terms: String, log: (String) -> Unit, fallback: () -> Api.Result, warn: (String) -> Unit = {}, sess: Session? = null): Api.Result {
         ranOffline.set(false)
         val eng = engine()
-        if (Cfg.str("stt_engine", "whisper") == "sherpa" && eng.id == "whisper") {   // (v468) تنبيه واضح قبل التحويل الصامت لـ Whisper
-            val reqLang = lang()
-            when {
-                reqLang == "ar" -> { log("⚠ Sherpa/SenseVoice لا يدعم العربية — هيتفرّغ بـ Whisper"); softNotice("⚠ SenseVoice (Sherpa) لا يدعم العربية — تم التحويل لـ Whisper للتفريغ", warn) }
-                reqLang.isNotEmpty() && !SherpaStt.handles(reqLang) -> { log("⚠ Sherpa/SenseVoice لا يدعم لغة الكلام ($reqLang) — هيتفرّغ بـ Whisper"); softNotice("⚠ SenseVoice لا يدعم لغة الكلام دي — تم التحويل لـ Whisper للتفريغ", warn) }
-                else -> softNotice("🔄 فشل SenseVoice (مش بيفهم لغة الكلام أو مش شغّال على جهازك) — تم التحويل لـ Whisper", warn)   // (v257)
-            }
-        }
         val tq = System.currentTimeMillis()
         val slot = acquireSlot()
         slotTl.set(slot)
@@ -214,7 +206,7 @@ object Offline {
             if (manual.isEmpty() && eng.id == "whisper") detectedLang = (sess?.lang.orEmpty()).ifEmpty { sess?.hint.orEmpty() }.ifEmpty { res.lang }
             val outLang = manual.ifEmpty { if (eng.id == "whisper") sess?.lang.orEmpty() else res.lang }   // (v267) لغة غير مضمونة ما بتتبلّغش للمحرك (كانت بتبوّظ srcLang بـ «ru» لفيديو إنجليزي)
             val took = System.currentTimeMillis() - t0
-            log("📴 أوفلاين (${eng.id}${if (eng is SherpaStt) " · VAD=" + SherpaStt.lastVad else ""}): ${"%.0f".format(durSec)}ث صوت ← ${took / 1000}ث (${"%.1f".format(durSec * 1000.0 / took.coerceAtLeast(1))}× سرعة)")
+            log("📴 أوفلاين (${eng.id}): ${"%.0f".format(durSec)}ث صوت ← ${took / 1000}ث (${"%.1f".format(durSec * 1000.0 / took.coerceAtLeast(1))}× سرعة)")
             fails = 0
             ranOffline.set(true)
             return Api.Result(toJson(res, outLang), "STOP")
@@ -345,18 +337,6 @@ object Offline {
         }
     }
 
-    /** (v255) تنزيل موديل SenseVoice (sherpa-onnx): tokens.txt الصغير الأول وبعده الموديل (~239 ميجا) */
-    fun downloadSherpa(progress: (Long, Long) -> Unit, done: (String?) -> Unit) {
-        if (downloading()) return
-        val tk = SherpaStt.tokensFile(); val md = SherpaStt.modelFile()
-        if (tk == null || md == null) { done("مفيش مساحة تخزين"); return }
-        startDl(done) {
-            if (!(tk.isFile && tk.length() > SherpaStt.MIN_TOKENS)) fetch(SherpaStt.BASE + SherpaStt.TOKENS, tk, SherpaStt.MIN_TOKENS, { _, _ -> })
-            if (!(md.isFile && md.length() > SherpaStt.MIN_MODEL)) fetch(SherpaStt.BASE + SherpaStt.MODEL, md, SherpaStt.MIN_MODEL, progress)
-            releaseSafe(SherpaStt)
-        }
-    }
-
     /** (v261) تحرير الموديل بنفس قفل التفريغ: لو باتش بيتفرّغ دلوقتي بيستنى يخلص، وإلا release() كان ممكن يحرّر الموديل وهو شغّال ← كراش native */
     private fun releaseSafe(e: SttEngine) { rw.writeLock().lock(); try { e.release() } finally { rw.writeLock().unlock() } }
 
@@ -376,8 +356,6 @@ object Offline {
             try {
                 val items = ArrayList<Triple<String, Long, SttEngine>>()
                 for (m in models) items.add(Triple("whisper/" + m.file, m.approxMb * 600_000L, WhisperStt))
-                items.add(Triple(SherpaStt.SUB + "/" + SherpaStt.MODEL, SherpaStt.MIN_MODEL, SherpaStt))
-                items.add(Triple(SherpaStt.SUB + "/" + SherpaStt.TOKENS, SherpaStt.MIN_TOKENS, SherpaStt))
                 for ((rel, min, eng) in items) {
                     val src = File(old, rel); val dst = File(nw, rel)
                     if (!src.isFile || src.length() <= min) continue

@@ -47,7 +47,6 @@ dependencies {
     implementation("androidx.media3:media3-database:1.10.1")   // (v564) كاش فيديو الموبايل على التلفزيون
     implementation("androidx.media3:media3-effect:1.10.1")
     implementation("androidx.media3:media3-transformer:1.10.1")
-    implementation("androidx.webkit:webkit:1.11.0")
     implementation("androidx.core:core:1.13.1")   // (v310) FileProvider للفايل مانجر
     implementation("com.github.bumptech.glide:glide:4.16.0")
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs_nio:2.1.5")   // (v327)

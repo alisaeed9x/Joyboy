@@ -16,8 +16,6 @@ object PublicApis {
     class Entry(val name: String, val link: String, val desc: String, val auth: String, val https: String, val category: String)
 
     const val URL_RAW = "https://raw.githubusercontent.com/public-apis/public-apis/master/README.md"
-    private const val MIN_ENTRIES = 200            // أقل من كده = الملف مش شكل القايمة
-    private const val EVERY_MS = 24L * 3600 * 1000
 
     @Volatile var entries: List<Entry> = emptyList(); private set
     /** idle | fetching | ok | fail */
@@ -26,10 +24,8 @@ object PublicApis {
     @Volatile private var fetching = false
     @Volatile var onChange: (() -> Unit)? = null
 
-    private fun cacheFile(): File? = TrWizard.appCtx?.filesDir?.let { File(it, "public_apis.md") }
 
     /** آخر سحب ناجح (ms) أو 0 */
-    fun lastOk(): Long = Cfg.str("papi_at", "0").toLongOrNull() ?: 0L
 
     /** المدخلات اللي ليها علاقة بالترجمة / التفريغ / الكلام */
     fun related(): List<Entry> {
@@ -82,36 +78,6 @@ object PublicApis {
             } catch (e: Exception) { last = e; try { Thread.sleep(1200L * t) } catch (_: InterruptedException) {} }
         }
         throw last ?: java.io.IOException("فشل غير معروف")
-    }
-
-    /** يسحب القايمة في خيط خلفي. [manual] = من الزرار (بيطلّع إشعار حتى لو مفيش نت) */
-    fun pull(act: Activity?, manual: Boolean) {
-        if (fetching) return
-        val ref = WeakReference(act)
-        fun say(msg: String) { ref.get()?.let { try { Notice.show(it, msg, 3200L) } catch (_: Throwable) {} } }
-        if (!TrWizard.online()) {
-            if (manual) { state = "fail"; lastError = "مفيش نت"; fire(); say("❌ مفيش نت — مقدرتش أسحب قايمة الـ APIs") }
-            return
-        }
-        fetching = true; state = "fetching"; fire()
-        say("⏳ بسحب قايمة الـ APIs من الريبو…")
-        Thread {
-            try {
-                val md = download()
-                val l = parse(md)
-                if (l.size < MIN_ENTRIES) throw java.io.IOException("الملف اللي نزل مش شكل القايمة (${l.size} مدخل بس)")
-                entries = l
-                try { cacheFile()?.writeText(md, Charsets.UTF_8) } catch (_: Throwable) {}
-                Cfg.put("papi_at", System.currentTimeMillis().toString())
-                state = "ok"; lastError = ""
-                say("✅ اتسحبت قايمة الـ APIs: ${l.size} API (${related().size} ليها علاقة بالترجمة/الكلام)")
-                LogStore.add("🌐 public-apis: اتسحب ${l.size} مدخل")
-            } catch (e: Throwable) {
-                state = "fail"; lastError = (e.message ?: e.javaClass.simpleName).take(100)
-                say("❌ سحب قايمة الـ APIs فشل: $lastError" + if (entries.isNotEmpty()) " — شغّال بآخر نسخة محفوظة" else "")
-                LogStore.add("🌐 public-apis: فشل السحب — $lastError")
-            } finally { fetching = false; fire() }
-        }.also { it.isDaemon = true; it.start() }
     }
 
     /** عند فتح التطبيق: يحمّل النسخة المحفوظة وبعدين يسحب جديد لو عدّى 24 ساعة (ولو الخيار شغّال). التأخير عشان الإشعار يظهر بعد ما الشاشة تفتح */
