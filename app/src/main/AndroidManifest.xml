@@ -109,10 +109,8 @@
         <service android:name=".YtFeedJob" android:exported="false" android:permission="android.permission.BIND_JOB_SERVICE"/>   <!-- (v327) فحص فيديوهات الاشتراكات الجديدة -->
         <service android:name=".MusicService" android:exported="false" android:foregroundServiceType="mediaPlayback"/>
         <service android:name=".TaskService" android:exported="false" android:foregroundServiceType="dataSync" android:stopWithTask="false"/>   <!-- (v420) مهام الترميز في الخلفية -->
-        <!-- (v518) ريموت الموبايل: شاشة التحكم (أيقونة تانية على الموبايل) · هدف مشاركة «ابعت للتلفزيون» · الخدمة الأمامية -->
-        <activity android:name=".RemoteActivity" android:exported="true" android:label="ريموت التلفزيون" android:icon="@mipmap/ic_remote" android:roundIcon="@mipmap/ic_remote" android:launchMode="singleTop"
-            android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboardHidden|density"/>
-        <!-- (v595) أيقونة الريموت: شاشة شفافة بتفتح RemoteActivity في كل مرة (زي المتصفح/يوتيوب) -->
+        <!-- (v518) هدف مشاركة «ابعت للتلفزيون» · الخدمة الأمامية (v603: الريموت القديم اتمسح، الأيقونة بتفتح الكنترولر الجديد) -->
+        <!-- (v595) أيقونة الريموت: شاشة شفافة بتفتح شاشة الكنترولر الجديد (الجويستيك) في كل مرة -->
         <activity android:name=".LaunchRemoteActivity" android:exported="true" android:taskAffinity="" android:label="ريموت التلفزيون" android:icon="@mipmap/ic_remote" android:roundIcon="@mipmap/ic_remote"
             android:theme="@android:style/Theme.Translucent.NoTitleBar" android:excludeFromRecents="true" android:noHistory="true">
             <intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/></intent-filter>

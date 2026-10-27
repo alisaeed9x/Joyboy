@@ -139,6 +139,7 @@ class TvActivity : Activity() {
                 TvPage.WALLPAPER -> this@TvActivity.wallDialog()
                 TvPage.SCALE -> this@TvActivity.scaleDialog()
                 TvPage.NOTIFICATIONS -> this@TvActivity.showNotifications()
+                TvPage.PRESETS -> TvPresets.show(this)
             }
         }
         override fun page(build: (LinearLayout) -> Unit) { this@TvActivity.skinPage(build) }
@@ -184,6 +185,7 @@ class TvActivity : Activity() {
 
     override fun onActivityResult(req: Int, res: Int, data: Intent?) {
         super.onActivityResult(req, res, data)
+        if (req == TvPresets.REQ_PICK) { TvPresets.onPicked(skinHost, if (res == RESULT_OK) data?.data else null); return }   // (v603 م5) استيراد ثيمات من نظام الملفات
         if (req == IconPackUi.REQ_PICK) { IconPackUi.onPicked(this, if (res == RESULT_OK) data?.data else null) { if (!isFinishing && !isDestroyed && curTab == -1) showAppearance() }; return }
         if (mediaOps?.onResult(req, res == RESULT_OK) == true) return
         if (req == 77 && res == RESULT_OK) {
@@ -352,6 +354,7 @@ class TvActivity : Activity() {
         // (v597) الأزرار الملونة: لو المستخدم مربّطها باختصار فالاختصار أولًا (فوق)، وإلا السكِن الحالي هو اللي يقرر
         if (ev.action == KeyEvent.ACTION_DOWN && ev.repeatCount == 0 && currentFocus !is EditText) {
             val ck = TvKeys.colorOf(ev.keyCode)
+            if (ck != null && TvPresets.onColorKey(skinHost, ck)) return true   // (v603 م5) زرار ملوّن مربوط بثيم = تبديل سريع
             if (ck != null && TvSkins.cur().colorKey(skinHost, ck)) return true
         }
         // (v599 م4) Menu على عنصر مالوش دوسة طويلة (يعني مش قايمة كارت) ← خانة menuKey في السكِن
@@ -1858,6 +1861,7 @@ class TvActivity : Activity() {
         class Grp(val title: String, val opts: List<Opt>)
         val groups = listOf(
             Grp("🎨 الألوان والخلفية", listOf(
+                Opt("🖼 معرض الثيمات (سكِن + أيقونات + ألوان)", { "" }, { h.post { TvPresets.show(skinHost) } }),   // post: بعد ما showAppearance تخلّص رسمها (وإلا كانت هتكتب فوق المعرض)
                 Opt("🎨 السمة (الألوان)", { th.name }, { themeDialog() }),
                 Opt("🖼 خلفية اللانشر", { when (wallMode()) { "off" -> "بدون"; "picsum" -> "صور منوّعة"; "bing" -> "Bing"; else -> "تلقائي (Bing + منوّعة)" } }, { wallDialog() }),
                 Opt("⏱ تبديل الخلفية كل", { wallSecNames[Cfg.str("tv_wall_sec", "60")] ?: "دقيقة" }, { wallIntervalDialog() }),

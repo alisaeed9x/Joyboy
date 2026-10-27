@@ -98,7 +98,7 @@ class RemoteService : Service() {
             RemoteClient.St.LOST -> "بحاول أرجّع الاتصال تلقائي"
             else -> ""
         }
-        val open = PendingIntent.getActivity(this, 0, Intent(this, RemoteActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
+        val open = PendingIntent.getActivity(this, 0, Intent(this, LaunchRemoteActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
         val b = Notification.Builder(this, CH)
             .setSmallIcon(android.R.drawable.ic_media_play)
             .setContentTitle(title).setContentText(sub)
@@ -118,7 +118,7 @@ class RemoteService : Service() {
 
     private fun alert(title: String, text: String) {
         try {
-            val open = PendingIntent.getActivity(this, 9, Intent(this, RemoteActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
+            val open = PendingIntent.getActivity(this, 9, Intent(this, LaunchRemoteActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
             val n = Notification.Builder(this, CH_ALERT).setSmallIcon(android.R.drawable.ic_media_play)
                 .setContentTitle(title).setContentText(text).setAutoCancel(true).setContentIntent(open).build()
             (getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager).notify(NID_ALERT, n)

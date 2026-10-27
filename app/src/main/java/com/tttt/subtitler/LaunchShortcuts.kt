@@ -27,12 +27,12 @@ class LaunchYoutubeActivity : Activity() {
     }
 }
 
-/** (v595) أيقونة «ريموت التلفزيون»: بتفتح RemoteActivity في كل مرة حتى لو التطبيق شغّال على صفحة تانية */
+/** (v603) أيقونة «ريموت التلفزيون»: بتفتح الكنترولر الجديد (الجويستيك) فوق شاشة شفافة وتقفل نفسها لما تقفله. الريموت القديم اتمسح */
 class LaunchRemoteActivity : Activity() {
     override fun onCreate(b: Bundle?) {
         super.onCreate(b)
-        try { startActivity(Intent(this, RemoteActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)) }
-        catch (e: Throwable) { try { LogStore.err("LaunchRemote", e) } catch (_: Throwable) {} }
-        finish()
+        try { Cfg.init(this) } catch (_: Throwable) {}
+        try { ControllerPad.show(this) { if (!isFinishing) finish() } }
+        catch (e: Throwable) { try { LogStore.err("LaunchRemote", e) } catch (_: Throwable) {}; finish() }
     }
 }

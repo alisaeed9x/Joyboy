@@ -23,14 +23,18 @@ import kotlin.math.hypot
 import kotlin.math.min
 
 /**
- * (v590) جويستيك: اسحب في اتجاه ← خطوة فورًا، وكل ما تسحب أكتر السرعة تزيد (سحب خفيف = واحدة واحدة، سحب لآخره = سريع).
- * دوسة سريعة على الحافة = خطوة واحدة بس، ودوسة في النص = OK.
+ * (v603) جويستيك بدايرة OK: حوالين الجويستيك دايرة واضحة (دايرة الـOK).
+ *  - دوسة أو سحبة صغيرة جوه الدايرة (من غير ما تعدّي حدّها بـ50% من نصف قطرها) = زرار OK، وبتتنفّذ لما ترفع صباعك (مهما طالت الدوسة).
+ *  - خروج بره الدايرة بمقدار 50% أو أكتر من نصف قطرها = حركة (فوق/تحت/يمين/شمال) فورًا، وكل ما تبعد أكتر السرعة تزيد.
+ *  - لو اتحرّكت (خطوة اتبعتت) ورجعت جوه الدايرة ورفعت صباعك: مفيش OK (عشان الحركة ما تنقلبش OK بالغلط).
  */
 class JoystickView(ctx: Context, private val onKey: (String) -> Unit) : View(ctx) {
     private val h = Handler(Looper.getMainLooper())
     private val den = resources.displayMetrics.density
     private val pBase = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL; color = 0xFF1A2230.toInt() }
     private val pRing = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeWidth = 3f * den; color = 0x55FFFFFF }
+    private val pOkFill = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
+    private val pOkRing = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeWidth = 3.5f * den }
     private val pArrow = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
     private val pKnob = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL; color = 0xFF1E6BFF.toInt() }
     private val pTxt = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.WHITE; textAlign = Paint.Align.CENTER; isFakeBoldText = true }
@@ -39,8 +43,8 @@ class JoystickView(ctx: Context, private val onKey: (String) -> Unit) : View(ctx
     private var ky = 0f
     private var dir: String? = null
     private var strength = 0f
-    private var fired = false
-    private var downAt = 0L
+    private var fired = false      // اتبعتت حركة في الدوسة دي ← مفيش OK عند الرفع
+    private var down = false
 
     private val repeat = object : Runnable {
         override fun run() {
@@ -51,19 +55,23 @@ class JoystickView(ctx: Context, private val onKey: (String) -> Unit) : View(ctx
     }
 
     private fun rad(): Float = min(width, height) / 2f - 6f * den
+    /** نصف قطر دايرة الـOK */
+    private fun okRad(): Float = rad() * 0.42f
+    /** مسافة بداية الحركة = حد الدايرة + 50% من نصف قطرها */
+    private fun moveAt(): Float = okRad() * 1.5f
 
     override fun onTouchEvent(e: MotionEvent): Boolean {
         when (e.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
                 parent?.requestDisallowInterceptTouchEvent(true)
-                fired = false; downAt = SystemClock.uptimeMillis()
+                fired = false; down = true
                 update(e.x, e.y)
             }
             MotionEvent.ACTION_MOVE -> update(e.x, e.y)
             MotionEvent.ACTION_UP -> {
-                val centerTap = !fired && SystemClock.uptimeMillis() - downAt < 400L
+                val isOk = down && !fired
                 stop()
-                if (centerTap) { performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP); onKey("ok") }
+                if (isOk) { performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP); onKey("ok") }
             }
             MotionEvent.ACTION_CANCEL -> stop()
         }
@@ -71,15 +79,15 @@ class JoystickView(ctx: Context, private val onKey: (String) -> Unit) : View(ctx
     }
 
     private fun stop() {
-        h.removeCallbacks(repeat); dir = null; kx = 0f; ky = 0f; strength = 0f; invalidate()
+        h.removeCallbacks(repeat); dir = null; kx = 0f; ky = 0f; strength = 0f; down = false; invalidate()
     }
 
     private fun update(x: Float, y: Float) {
         val dx = x - width / 2f; val dy = y - height / 2f
-        val dist = hypot(dx, dy); val r = rad(); val dead = r * 0.28f
+        val dist = hypot(dx, dy); val r = rad(); val mv = moveAt()
         if (dist > 0f) { val k = min(dist, r * 0.55f) / dist; kx = dx * k; ky = dy * k } else { kx = 0f; ky = 0f }
-        if (dist < dead) { h.removeCallbacks(repeat); dir = null; strength = 0f; invalidate(); return }
-        strength = ((dist - dead) / (r - dead)).coerceIn(0f, 1f)
+        if (dist < mv) { h.removeCallbacks(repeat); dir = null; strength = 0f; invalidate(); return }   // جوه الدايرة (أو أقل من 50% بره منها) = لسه OK
+        strength = ((dist - mv) / (r - mv).coerceAtLeast(1f)).coerceIn(0f, 1f)
         val d = if (abs(dx) >= abs(dy)) (if (dx > 0f) "right" else "left") else (if (dy > 0f) "down" else "up")
         if (d != dir) {   // أول ما يدخل اتجاه (أو يغيّره): خطوة فورية، وبعد 380ms يبدأ التكرار
             h.removeCallbacks(repeat); dir = d; fired = true
@@ -93,8 +101,14 @@ class JoystickView(ctx: Context, private val onKey: (String) -> Unit) : View(ctx
     override fun onDetachedFromWindow() { h.removeCallbacks(repeat); super.onDetachedFromWindow() }
 
     override fun onDraw(c: Canvas) {
-        val cx = width / 2f; val cy = height / 2f; val r = rad()
+        val cx = width / 2f; val cy = height / 2f; val r = rad(); val ok = okRad()
         c.drawCircle(cx, cy, r, pBase); c.drawCircle(cx, cy, r, pRing)
+        // دايرة الـOK: بتنوّر وهي مدوسة وجوّاها (من غير حركة)
+        val armed = down && dir == null && !fired
+        pOkFill.color = if (armed) 0x552F80FF else 0x222F80FF
+        c.drawCircle(cx, cy, ok, pOkFill)
+        pOkRing.color = if (armed) 0xFFFFFFFF.toInt() else 0xAAFFFFFF.toInt()
+        c.drawCircle(cx, cy, ok, pOkRing)
         val a = r * 0.80f; val s = 14f * den
         fun arrow(name: String, ax: Float, ay: Float, ux: Float, uy: Float) {
             val px = -uy; val py = ux
@@ -114,9 +128,9 @@ class JoystickView(ctx: Context, private val onKey: (String) -> Unit) : View(ctx
     }
 }
 
-/** (v590) شاشة كنترولر التلفزيون: جويستيك + ⚙ إعدادات البرنامج (فوق شمال) · 🏠 رئيسية (فوق يمين) · ↩ رجوع (تحت شمال) · 🎤 بحث صوتي (تحت يمين) */
+/** (v590) شاشة كنترولر التلفزيون (v603: الريموت الوحيد بعد مسح القديم): جويستيك بدايرة OK + ⚙ إعدادات البرنامج (فوق شمال) · 🏠 رئيسية (فوق يمين) · ↩ رجوع (تحت شمال) · 🎤 بحث صوتي (تحت يمين) */
 object ControllerPad {
-    fun show(act: Activity) {
+    fun show(act: Activity, onClose: (() -> Unit)? = null) {
         try {
             try { RemoteClient.init(act) } catch (_: Throwable) {}
             val dm = act.resources.displayMetrics
@@ -151,6 +165,7 @@ object ControllerPad {
             root.addView(close, FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL).apply { bottomMargin = dp(52) })
 
             d.setContentView(root)
+            d.setOnDismissListener { try { onClose?.invoke() } catch (_: Throwable) {} }
             d.window?.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
             d.show()
 

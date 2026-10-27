@@ -94,7 +94,7 @@ object TvLink {
     private fun trackActivities() {
         try {
             (app as? Application)?.registerActivityLifecycleCallbacks(object : Application.ActivityLifecycleCallbacks {
-                override fun onActivityResumed(a: Activity) { top = WeakReference(a); if (a !is RemoteActivity && a !is SendToTvActivity) offerIfAny(a); TvUpdate.resumePending(a) }
+                override fun onActivityResumed(a: Activity) { top = WeakReference(a); if (a !is LaunchRemoteActivity && a !is SendToTvActivity) offerIfAny(a); TvUpdate.resumePending(a) }
                 override fun onActivityPaused(a: Activity) { if (top?.get() === a) top = null }
                 override fun onActivityCreated(a: Activity, b: Bundle?) {}
                 override fun onActivityStarted(a: Activity) {}
@@ -594,7 +594,7 @@ object TvLink {
         if (!force && j.optBoolean("auto") && ver == declinedVer) return err(403, "declined")
         pendingOffer = Offer(ver, vname, url, rm.name, force, j.optLong("size", 0L))   // (v563) size = حجم الملف عند الموبايل
         val a = top?.get()
-        h.post { val t = top?.get(); if (t != null && t !is RemoteActivity && t !is SendToTvActivity) offerIfAny(t) else offerOverlay() }   // (v525) أي شاشة (مشغّل/متصفح/يوتيوب…) أو تطبيق تاني قدّام
+        h.post { val t = top?.get(); if (t != null && t !is LaunchRemoteActivity && t !is SendToTvActivity) offerIfAny(t) else offerOverlay() }   // (v525) أي شاشة (مشغّل/متصفح/يوتيوب…) أو تطبيق تاني قدّام
         return ok(JSONObject().put("shown", a != null || TvAccess.connected || canOverlay()))
     }
 

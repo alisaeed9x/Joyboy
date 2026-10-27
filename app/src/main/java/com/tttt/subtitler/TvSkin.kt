@@ -6,7 +6,8 @@ import android.view.View
 import android.widget.LinearLayout
 
 /** (v599 م4) صفحات الإعدادات اللي السكِن يقدر يفتحها (من غير ما يعرف TvActivity) */
-enum class TvPage { APPEARANCE, THEME, ICON_PACK, LAYOUT, WALLPAPER, SCALE, NOTIFICATIONS }
+/** (v603 م5) PRESETS = معرض الثيمات (سكِن + أيقونات + ألوان) */
+enum class TvPage { APPEARANCE, THEME, ICON_PACK, LAYOUT, WALLPAPER, SCALE, NOTIFICATIONS, PRESETS }
 
 /** (v600 م4) حالات «الفاضي» اللي السكِن يقدر يرسمها بشكله: مفيش صلاحية · مفيش فيديوهات · مفيش إشعارات */
 enum class TvEmpty { NO_PERMISSION, NO_VIDEOS, NO_NOTIFICATIONS }

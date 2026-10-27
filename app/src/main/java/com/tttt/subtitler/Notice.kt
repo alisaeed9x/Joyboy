@@ -41,6 +41,12 @@ object Notice {
         return if (id > 0) a.resources.getDimensionPixelSize(id) else 0
     }
 
+    /** (v603) خلفية كبسولة التلفزيون: لون الكارت شبه شفاف + حد رفيع + نص دايري كامل (بتتحسب على الحجم الفعلي عن طريق cornerRadius كبير) */
+    private fun tvCapsuleBg(th: Theme, radiusPx: Float, strokePx: Int): android.graphics.drawable.GradientDrawable =
+        android.graphics.drawable.GradientDrawable().apply {
+            setColor((th.card and 0x00FFFFFF) or 0xF2000000.toInt()); setStroke(strokePx.coerceAtLeast(1), th.border); cornerRadius = radiusPx
+        }
+
     private fun removeNow() {
         timeout?.let { main.removeCallbacks(it) }; timeout = null
         val r = removeCur; removeCur = null
@@ -72,22 +78,29 @@ object Notice {
             val d = act.resources.displayMetrics.density
             fun dp(v: Int) = (v * d).toInt()
             val onPrimary = if (th.isLight) Color.WHITE else Color.BLACK
-            val maxW = (act.resources.displayMetrics.widthPixels * 0.82f).toInt()
+            // (v603) على التلفزيون: كبسولة كبيرة مقروءة من بعيد (شكل كبسولات One UI) — الموبايل/التابلت زي ما هم بالظبط
+            val tv = try { DeviceUi.isTv(act) } catch (_: Throwable) { false }
+            val maxW = (act.resources.displayMetrics.widthPixels * (if (tv) 0.66f else 0.82f)).toInt()
+            val msgSize = if (tv) 21f else 12.5f
+            val padH = if (tv) 30 else 16
+            val padV = if (tv) 15 else 8
+            val radius = if (tv) 40 else 20
 
             // كبسولة على قد الكلام بس (زي إشعارات سامسونج): بتنزل من فوق في النص وبتطلع تاني
             val pill = LinearLayout(act).apply {
                 orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL
-                background = ui.box(th.card, th.border, 20)
-                setPadding(dp(16), dp(8), dp(16), dp(if (yes != null) 8 else 8))
+                background = if (tv) tvCapsuleBg(th, dp(radius).toFloat(), dp(2)) else ui.box(th.card, th.border, 20)
+                setPadding(dp(padH), dp(padV), dp(padH), dp(padV))
+                if (tv) elevation = dp(8).toFloat()
                 // (v224) الحواف كانت مربعة (ظل/خلفية مستطيلة حوالين الكبسولة): قصّ دايري بنفس نصف القطر وشيل الظل المستطيل
                 outlineProvider = object : android.view.ViewOutlineProvider() {
-                    override fun getOutline(v: View, o: android.graphics.Outline) { o.setRoundRect(0, 0, v.width, v.height, dp(20).toFloat()) }
+                    override fun getOutline(v: View, o: android.graphics.Outline) { o.setRoundRect(0, 0, v.width, v.height, if (tv) v.height / 2f else dp(20).toFloat()) }
                 }
                 clipToOutline = true
             }
             pill.addView(IconTextView(act).apply {
-                text = msg; textSize = 12.5f; setTextColor(th.text); maxLines = 3; ellipsize = TextUtils.TruncateAt.END
-                gravity = Gravity.CENTER; maxWidth = maxW - dp(32)
+                text = msg; textSize = msgSize; setTextColor(th.text); maxLines = if (tv) 2 else 3; ellipsize = TextUtils.TruncateAt.END
+                gravity = Gravity.CENTER; maxWidth = maxW - dp(padH * 2)
             }, LinearLayout.LayoutParams(-2, -2).apply { gravity = Gravity.CENTER_HORIZONTAL })
             var done = false
             lateinit var wrapRef: View
@@ -105,10 +118,10 @@ object Notice {
 
             if (yes != null && no != null) {
                 fun chip(t: String, primary: Boolean, f: () -> Unit) = IconTextView(act).apply {
-                    text = t; textSize = 12.5f; gravity = Gravity.CENTER; minHeight = dp(40)
-                    setPadding(dp(14), dp(6), dp(14), dp(6))
+                    text = t; textSize = if (tv) 19f else 12.5f; gravity = Gravity.CENTER; minHeight = dp(if (tv) 52 else 40)
+                    setPadding(dp(if (tv) 24 else 14), dp(6), dp(if (tv) 24 else 14), dp(6))
                     setTextColor(if (primary) onPrimary else th.text)
-                    background = ui.box(if (primary) th.primary else th.surface, if (primary) th.primary else th.border, 16)
+                    background = ui.box(if (primary) th.primary else th.surface, if (primary) th.primary else th.border, if (tv) 26 else 16)
                     setOnClickListener { f() }
                 }
                 val row = LinearLayout(act).apply { layoutDirection = View.LAYOUT_DIRECTION_RTL; gravity = Gravity.CENTER; setPadding(0, dp(7), 0, dp(6)) }
@@ -125,7 +138,7 @@ object Notice {
                 pill.setOnClickListener { finish(null) }
             }
 
-            val wrap = FrameLayout(act).apply { setPadding(dp(8), dp(6), dp(8), dp(6)); addView(pill, FrameLayout.LayoutParams(-2, -2)) }
+            val wrap = FrameLayout(act).apply { setPadding(dp(8), dp(if (tv) 12 else 6), dp(8), dp(6)); addView(pill, FrameLayout.LayoutParams(-2, -2)) }
             wrapRef = wrap
             wrap.alpha = 0f; wrap.translationY = -dp(60).toFloat()
 
@@ -139,7 +152,7 @@ object Notice {
                         WindowManager.LayoutParams.TYPE_APPLICATION_PANEL,
                         WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
                         PixelFormat.TRANSLUCENT
-                    ).apply { gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL; token = tok; y = statusBarH(act) }
+                    ).apply { gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL; token = tok; y = statusBarH(act) + (if (tv) (act.resources.displayMetrics.heightPixels * 0.04f).toInt() else 0) }
                     wm.addView(wrap, lp)
                     removeCur = { try { wm.removeViewImmediate(wrap) } catch (_: Throwable) {} }
                     added = true
@@ -154,7 +167,7 @@ object Notice {
             }
             wrap.animate().alpha(1f).translationY(0f).setDuration(220).setInterpolator(android.view.animation.DecelerateInterpolator()).start()
             val t = Runnable { finish(onNo) }
-            timeout = t; main.postDelayed(t, ms)
+            timeout = t; main.postDelayed(t, if (tv && yes == null) maxOf(ms, 2600L) else ms)
         }
     }
 }

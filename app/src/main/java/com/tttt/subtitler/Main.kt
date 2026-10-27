@@ -1856,11 +1856,8 @@ class MainActivity : Activity() {
     override fun onBackPressed() {
         if (!fromPlayer && ytLoadUi?.visible == true) { cancelYtLoad(); return }   // (v339) لسه بنجيب الفيديو: رجوع = إلغاء ونفضل في يوتيوب
         if (!fromPlayer && curTab == 4 && ytUi?.back() == true) return
-        if (!fromPlayer && ytTvMode && curTab == 4) {   // (v532) يوتيوب فُتح من ريموت الموبايل: الرجوع للريموت (الفيديو على التلفزيون بيكمّل)
-            ytTvMode = false
-            try { startActivity(Intent(this, RemoteActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP).apply { if (ytTvSent) putExtra("open_player", true) }) } catch (e: Throwable) { LogStore.err("Main:backRemote", e) }
-            return
-        }   // (v118) رجوع جوه يوتيوب الأول
+        if (!fromPlayer && ytTvMode && curTab == 4) { ytTvMode = false }   // (v603) الريموت القديم اتمسح: مفيش «رجوع للريموت»، بيكمّل الرجوع العادي
+
         if (!fromPlayer && curTab == 7) { settingsBack?.invoke(); return }   // (v370)
         if (!fromPlayer && curTab == 5) { showTabFn(if (tabBeforeTasks == 5) 0 else tabBeforeTasks); return }   // (v324) صفحة المهام ← للصفحة اللي جيت منها
         if (!fromPlayer && curTab == 1 && musicUi?.onBack() == true) return   // (v193) يقفل مشغّل الأسطوانة/الفولدر الأول

@@ -92,7 +92,7 @@ object TvFolderCard {
         val pal = TvPalette(h.theme)
         val g = geo(size)
         val sd = h.isSdFolder(f)
-        val t = TvTileView(a, tk.radiusCard)
+        val t = TvTileView(a, tk.radiusCard).styled(tk, pal.primary)
         t.inner.setBackgroundColor(pal.cardFill)
 
         val row = LinearLayout(a).apply {

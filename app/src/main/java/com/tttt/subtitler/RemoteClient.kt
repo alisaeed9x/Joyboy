@@ -527,8 +527,7 @@ object RemoteClient {
     fun forcePushFlow(act: android.app.Activity) {
         try { init(act) } catch (_: Throwable) {}
         if (lastTv() == null && current == null) {
-            Notice.show(act, "مفيش تلفزيون مقترن — افتح 📱 الريموت واقترن الأول", 3500L)
-            try { act.startActivity(android.content.Intent(act, RemoteActivity::class.java)) } catch (_: Throwable) {}
+            Notice.show(act, "مفيش تلفزيون مقترن — دوس زرار 📺 واقترن الأول", 3500L)
             return
         }
         Notice.show(act, "📺 بوصّل بالتلفزيون وببعت التحديث…", 5000L)

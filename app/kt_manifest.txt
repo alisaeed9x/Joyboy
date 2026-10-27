@@ -96,7 +96,7 @@ com/tttt/subtitler/QrCode.kt
 com/tttt/subtitler/QueueUi.kt
 com/tttt/subtitler/RecentSongs.kt
 com/tttt/subtitler/Recents.kt
-com/tttt/subtitler/RemoteActivity.kt
+com/tttt/subtitler/SendToTv.kt
 com/tttt/subtitler/RemoteClient.kt
 com/tttt/subtitler/RemoteEngine.kt
 com/tttt/subtitler/RemoteLibrary.kt
@@ -148,6 +148,7 @@ com/tttt/subtitler/TvLink.kt
 com/tttt/subtitler/TvModeFab.kt
 com/tttt/subtitler/TvPlayerBar.kt
 com/tttt/subtitler/TvPointer.kt
+com/tttt/subtitler/TvPresets.kt
 com/tttt/subtitler/TvScale.kt
 com/tttt/subtitler/TvScrub.kt
 com/tttt/subtitler/TvSetup.kt

@@ -4,15 +4,18 @@ import android.animation.ObjectAnimator
 import android.animation.ValueAnimator
 import android.app.Dialog
 import android.graphics.Color
+import android.graphics.Outline
 import android.graphics.drawable.ColorDrawable
 import android.graphics.drawable.GradientDrawable
 import android.text.TextUtils
 import android.view.Gravity
 import android.view.View
+import android.view.ViewOutlineProvider
 import android.view.Window
 import android.view.WindowManager
 import android.widget.FrameLayout
 import android.widget.HorizontalScrollView
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
@@ -20,7 +23,9 @@ import android.widget.TextView
 /**
  * (v601 م4) السكِن 6 «Glass» (شكل OriginOS): طبقات زجاج عايمة فوق الخلفية.
  *  • التنقل: نفس شريط التابات (رئيسية · إشعارات · سمات) + بانر «كمّل» — لكن كله زجاج شفاف بحواف كبيرة وتركيز متوهّج.
- *  • الفولدرات: كروت زجاجية بحواف كبيرة (كارت الفولدر الموحّد بخلفية زجاج). فتح الفولدر لسه بالعرض المدمج.
+ *  • الفولدرات: «بوسترات متراصّة» — لحد 3 مصغّرات فوق بعض (الأمامية كاملة واللي وراها بتطلّ من فوق) + الاسم والعدد تحتها (v602).
+ *    فتح الفولدر: نافذة زجاج عايمة فيها فيديوهات الفولدر (Back بيقفلها والتركيز بيرجع لنفس الكارت) (v602).
+ *    فولدرات المواسم (فيها فولدرات فرعية) والفاضية بتفتح بالعرض المدمج.
  *  • الإعدادات: لوحة زجاج عايمة في نص الشاشة بزرار Menu.
  *  • الإشعارات: شيت زجاجي بينزل من فوق.
  *  • السمات: معرض بمعاينة حيّة كبيرة — أي سمة بتتركّز عليها بتظهر في المعاينة فورًا، وOK بتطبّقها.
@@ -42,10 +47,182 @@ object TvSkinGlass : TvSkin {
     }
 
     override fun folderCard(h: TvSkinHost, f: FolderItem, size: TvFolderSize, onOpen: () -> Unit): View {
-        val v = TvFolderCard.build(h, f, size, onOpen, tokens)
+        // صفحة «الفيديوهات» بتفتح الفولدر بدالّتها هي (مش openFolderView) — فنفتح النافذة الزجاج من هنا، ولو مش مناسبة (مواسم/فاضي) يكمّل العرض المدمج
+        val open: () -> Unit = { if (!folderView(h, f)) onOpen() }
+        val base = TvFolderCard.build(h, f, size, open, tokens)
         val pal = TvPalette(h.theme)
-        (v as? TvTileView)?.inner?.background = pane(pal.dark, h.ui.dp(tokens.radiusCard).toFloat(), false, h.ui.dp(1))
-        return v
+        // القايمة (اسم طويل بالعرض) والفولدر الفاضي: الكارت الأفقي الموحّد بخلفية زجاج. غير كده: بوسترات متراصّة
+        if (size == TvFolderSize.LIST || f.videos.isEmpty()) {
+            (base as? TvTileView)?.inner?.background = pane(pal.dark, h.ui.dp(tokens.radiusCard).toFloat(), false, h.ui.dp(1))
+            return base
+        }
+        return try { stackCard(h, f, size, open, base, pal) } catch (e: Throwable) {
+            LogStore.err("Glass:stackCard", e)
+            (base as? TvTileView)?.inner?.background = pane(pal.dark, h.ui.dp(tokens.radiusCard).toFloat(), false, h.ui.dp(1))
+            base
+        }
+    }
+
+    /** كارت «بوسترات متراصّة»: لحد 3 مصغّرات (الأمامية كاملة، اللي وراها بتطلّ من فوق بعرض أقل) + اسم (سطرين) + العدد والحجم */
+    private fun stackCard(h: TvSkinHost, f: FolderItem, size: TvFolderSize, onOpen: () -> Unit, base: View, pal: TvPalette): View {
+        val a = h.activity; val ui = h.ui
+        val ph = when (size) { TvFolderSize.SHELF -> 140; TvFolderSize.GRID_S -> 130; else -> 170 }
+        val cnt = minOf(3, f.videos.size)
+        val peek = 10
+        val t = TvTileView(a, tokens.radiusCard).styled(tokens, pal.primary)
+        t.inner.background = pane(pal.dark, ui.dp(tokens.radiusCard).toFloat(), false, ui.dp(1))
+        val col = LinearLayout(a).apply {
+            orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL
+            setPadding(ui.dp(12), ui.dp(12), ui.dp(12), ui.dp(10))
+        }
+        val stack = FrameLayout(a)
+        for (d in cnt - 1 downTo 0) {
+            val iv = ImageView(a).apply {
+                scaleType = ImageView.ScaleType.CENTER_CROP; setBackgroundColor(pal.border); alpha = 1f - 0.22f * d
+                clipToOutline = true
+                outlineProvider = object : ViewOutlineProvider() {
+                    override fun getOutline(v: View, o: Outline) { o.setRoundRect(0, 0, v.width, v.height, ui.dp(tokens.radiusThumb).toFloat()) }
+                }
+            }
+            val top = ui.dp(peek) * (cnt - 1 - d)   // الأمامي (d=0) أنزل واحد، واللي وراه بيطلّ من فوق
+            val side = ui.dp(12) * d
+            stack.addView(iv, FrameLayout.LayoutParams(-1, ui.dp(ph) - top).apply { setMargins(side, top, side, 0) })
+            h.loadThumb(f.videos[d]) { bmp -> iv.setImageBitmap(bmp) }
+        }
+        col.addView(stack, LinearLayout.LayoutParams(-1, ui.dp(ph)))
+        fun TextView.fit(maxL: Int) {
+            maxLines = maxL; ellipsize = TextUtils.TruncateAt.END; minWidth = 0
+            textDirection = View.TEXT_DIRECTION_FIRST_STRONG; textAlignment = View.TEXT_ALIGNMENT_VIEW_START
+        }
+        col.addView(ui.text(f.name, tokens.textBody + 1.5f, pal.fg, true).apply { fit(2); minLines = 2; setPadding(ui.dp(2), ui.dp(8), ui.dp(2), 0) })
+        col.addView(ui.text(f.videos.size.toString() + " فيديو · " + VideoLib.fmtSize(f.totalSize), tokens.textCaption, pal.fgSub).apply { fit(1); setPadding(ui.dp(2), ui.dp(2), ui.dp(2), 0) })
+        t.inner.addView(col, FrameLayout.LayoutParams(-1, -2))
+
+        t.setOnClickListener { onOpen() }
+        t.setOnLongClickListener { base.performLongClick() }   // نفس قايمة الفولدر (افتح · تفاصيل) من الكارت الأصلي
+        t.contentDescription = base.contentDescription
+        val m = ui.dp(tokens.gap / 2)
+        t.layoutParams = (if (size == TvFolderSize.SHELF) LinearLayout.LayoutParams(ui.dp(176), -2) else LinearLayout.LayoutParams(-1, -2)).apply { setMargins(m, m, m, m) }
+        return t
+    }
+
+    // ===== فتح الفولدر كنافذة زجاج =====
+    override fun folderView(h: TvSkinHost, f: FolderItem): Boolean {
+        if (f.kids.isNotEmpty() || f.virtual || f.videos.isEmpty()) return false   // مواسم/فاضي: العرض المدمج
+        try { folderWindow(h, f) } catch (e: Throwable) { LogStore.err("Glass:folderWin", e); return false }
+        return true
+    }
+
+    private fun folderWindow(h: TvSkinHost, f: FolderItem) {
+        val a = h.activity; val ui = h.ui; val pal = TvPalette(h.theme)
+        val dm = a.resources.displayMetrics
+        val dlg = Dialog(a)
+        dlg.requestWindowFeature(Window.FEATURE_NO_TITLE)
+        val vids = VideoLib.sortVideos(f.videos, Cfg.str("tv_vid_sort", VideoLib.SORT_NEW))
+        val winW = (dm.widthPixels * 0.88f).toInt()
+        val cols = (((winW / dm.density) - 48f) / 236f).toInt().coerceIn(2, 5)
+        val page = cols * (36 / cols + 1)
+
+        val root = LinearLayout(a).apply {
+            orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL
+            setPadding(ui.dp(16), ui.dp(14), ui.dp(16), ui.dp(12))
+            background = GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,
+                if (pal.dark) intArrayOf(0xF0262C3C.toInt(), 0xF0121620.toInt()) else intArrayOf(0xF8FFFFFF.toInt(), 0xF0EEF1F6.toInt())).apply {
+                cornerRadius = ui.dp(tokens.radiusCard + 10).toFloat(); setStroke(ui.dp(1), if (pal.dark) 0x66FFFFFF else 0x33000000)
+            }
+        }
+        // الراس: الاسم + العدد والحجم + إغلاق
+        val head = LinearLayout(a).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; setPadding(ui.dp(6), 0, ui.dp(6), ui.dp(8)) }
+        val titles = LinearLayout(a).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL }
+        titles.addView(ui.text("📁 " + f.name, tokens.textTitle + 4f, pal.fg, true).apply {
+            maxLines = 1; ellipsize = TextUtils.TruncateAt.END; textDirection = View.TEXT_DIRECTION_FIRST_STRONG; textAlignment = View.TEXT_ALIGNMENT_VIEW_START
+        })
+        titles.addView(ui.text(vids.size.toString() + " فيديو · " + VideoLib.fmtSize(f.totalSize), tokens.textBody, pal.fgSub).apply { textAlignment = View.TEXT_ALIGNMENT_VIEW_START })
+        head.addView(titles, LinearLayout.LayoutParams(0, -2, 1f))
+        val close = TvOwnLinear(a).apply { gravity = Gravity.CENTER; isFocusable = true; isClickable = true; setPadding(ui.dp(18), ui.dp(8), ui.dp(18), ui.dp(8)) }
+        close.addView(ui.text("✕ إغلاق", tokens.textBody + 1f, pal.fg))
+        close.background = pane(pal.dark, ui.dp(tokens.radiusPill).toFloat(), false, ui.dp(1))
+        close.setOnFocusChangeListener { _, fo -> close.background = pane(pal.dark, ui.dp(tokens.radiusPill).toFloat(), fo, ui.dp(1)) }
+        close.setOnClickListener { dlg.dismiss() }
+        head.addView(close)
+        root.addView(head)
+
+        // الشبكة (بتتحمّل على دفعات عشان الفولدرات الكبيرة)
+        val grid = LinearLayout(a).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; clipChildren = false; clipToPadding = false; setPadding(0, ui.dp(4), 0, ui.dp(8)) }
+        root.addView(ScrollView(a).apply { addView(grid); isVerticalScrollBarEnabled = false; clipChildren = false; clipToPadding = false }, LinearLayout.LayoutParams(-1, 0, 1f))
+        var shown = 0
+        var firstNew: View? = null
+        fun addPage() {
+            val end = minOf(shown + page, vids.size)
+            var k = shown
+            firstNew = null
+            while (k < end) {
+                val row = LinearLayout(a).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; clipChildren = false; clipToPadding = false }
+                for (j in 0 until cols) {
+                    val v = if (k + j < end) vids[k + j] else null
+                    val lp = LinearLayout.LayoutParams(0, if (v != null) -2 else 1, 1f).apply { setMargins(ui.dp(5), ui.dp(5), ui.dp(5), ui.dp(5)) }
+                    if (v != null) { val tile = videoTile(h, v, pal); if (firstNew == null) firstNew = tile; row.addView(tile, lp) } else row.addView(View(a), lp)
+                }
+                grid.addView(row, LinearLayout.LayoutParams(-1, -2))
+                k += cols
+            }
+            shown = end
+            if (shown < vids.size) {
+                val more = TvTileView(a, tokens.radiusCard - 4).styled(tokens, pal.primary)
+                more.inner.background = pane(pal.dark, ui.dp(tokens.radiusCard - 4).toFloat(), false, ui.dp(1))
+                more.inner.addView(ui.text("⬇ عرض المزيد (" + (vids.size - shown) + ")", tokens.textTitle, pal.fg, true).apply { gravity = Gravity.CENTER; setPadding(0, ui.dp(16), 0, ui.dp(16)) }, FrameLayout.LayoutParams(-1, -2))
+                more.setOnClickListener { grid.removeView(more); addPage(); firstNew?.requestFocus() }
+                grid.addView(more, LinearLayout.LayoutParams(-1, -2).apply { setMargins(ui.dp(5), ui.dp(5), ui.dp(5), ui.dp(5)) })
+            }
+        }
+        addPage()
+        val first = firstNew
+
+        dlg.setContentView(root)
+        dlg.window?.let { w ->
+            w.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
+            w.setLayout(winW, (dm.heightPixels * 0.86f).toInt())
+            w.setGravity(Gravity.CENTER)
+            w.setDimAmount(0.5f); w.addFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND)
+        }
+        root.alpha = 0f; root.scaleX = 0.94f; root.scaleY = 0.94f
+        dlg.show()
+        root.animate().alpha(1f).scaleX(1f).scaleY(1f).setDuration(tokens.pageDur()).setInterpolator(android.view.animation.DecelerateInterpolator()).start()
+        root.post { try { (first ?: close).requestFocus() } catch (_: Throwable) {} }
+    }
+
+    /** كارت فيديو جوه نافذة الفولدر: مصغّرة + المدة + الاسم (سطرين) + الحجم. OK = تشغيل */
+    private fun videoTile(h: TvSkinHost, v: VideoItem, pal: TvPalette): View {
+        val a = h.activity; val ui = h.ui
+        val t = TvTileView(a, tokens.radiusCard - 4).styled(tokens, pal.primary)
+        t.inner.background = pane(pal.dark, ui.dp(tokens.radiusCard - 4).toFloat(), false, ui.dp(1))
+        val col = LinearLayout(a).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; setPadding(ui.dp(8), ui.dp(8), ui.dp(8), ui.dp(8)) }
+        val box = FrameLayout(a).apply {
+            setBackgroundColor(pal.border); clipToOutline = true
+            outlineProvider = object : ViewOutlineProvider() {
+                override fun getOutline(vw: View, o: Outline) { o.setRoundRect(0, 0, vw.width, vw.height, ui.dp(tokens.radiusThumb - 4).toFloat()) }
+            }
+        }
+        val iv = ImageView(a).apply { scaleType = ImageView.ScaleType.CENTER_CROP }
+        box.addView(iv, FrameLayout.LayoutParams(-1, -1))
+        if (v.durMs > 0L) {
+            box.addView(ui.text(PlayerLogic.clock(v.durMs), tokens.textCaption, Color.WHITE, true).apply {
+                setPadding(ui.dp(6), ui.dp(2), ui.dp(6), ui.dp(2))
+                background = GradientDrawable().apply { setColor(0x99000000.toInt()); cornerRadius = ui.dp(8).toFloat() }
+            }, FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM or Gravity.END).apply { setMargins(ui.dp(6), ui.dp(6), ui.dp(6), ui.dp(6)) })
+        }
+        col.addView(box, LinearLayout.LayoutParams(-1, ui.dp(112)))
+        col.addView(ui.text(v.title, tokens.textBody, pal.fg, true).apply {
+            maxLines = 2; minLines = 2; ellipsize = TextUtils.TruncateAt.END; minWidth = 0
+            textDirection = View.TEXT_DIRECTION_FIRST_STRONG; textAlignment = View.TEXT_ALIGNMENT_VIEW_START; setPadding(0, ui.dp(8), 0, 0)
+        })
+        col.addView(ui.text(VideoLib.fmtSize(v.size), tokens.textCaption, pal.fgSub).apply { maxLines = 1; textAlignment = View.TEXT_ALIGNMENT_VIEW_START })
+        t.inner.addView(col, FrameLayout.LayoutParams(-1, -2))
+        h.loadThumb(v) { bmp -> iv.setImageBitmap(bmp) }
+        t.setOnClickListener { h.playVideo(v) }
+        t.setOnLongClickListener { h.menu("🎬 " + v.title.take(40), listOf("▶ تشغيل" to { h.playVideo(v) })); true }
+        t.contentDescription = v.title
+        return t
     }
 
     override fun homeHeader(h: TvSkinHost): View? {
@@ -63,7 +240,7 @@ object TvSkinGlass : TvSkin {
         val dlg = Dialog(a)
         dlg.requestWindowFeature(Window.FEATURE_NO_TITLE)
         val rows = listOf(
-            "🎨 السمات (معرض)" to TvPage.THEME, "🔔 الإشعارات" to TvPage.NOTIFICATIONS, "📦 باك الأيقونات" to TvPage.ICON_PACK,
+            "🖼 معرض الثيمات" to TvPage.PRESETS, "🎨 السمات (ألوان)" to TvPage.THEME, "🔔 الإشعارات" to TvPage.NOTIFICATIONS, "📦 باك الأيقونات" to TvPage.ICON_PACK,
             "🧩 تصميم الواجهة" to TvPage.LAYOUT, "🖼 خلفية اللانشر" to TvPage.WALLPAPER, "📐 حجم الواجهة" to TvPage.SCALE,
             "🎛 كل إعدادات المظهر" to TvPage.APPEARANCE)
         val col = LinearLayout(a).apply {
@@ -130,7 +307,7 @@ object TvSkinGlass : TvSkin {
             } else {
                 var first = true
                 for (n in items.take(40)) {
-                    val t = TvTileView(a, tokens.radiusCard - 4)
+                    val t = TvTileView(a, tokens.radiusCard - 4).styled(tokens, pal.primary)
                     t.inner.background = pane(pal.dark, ui.dp(tokens.radiusCard - 4).toFloat(), false, ui.dp(1))
                     if (first) { t.tag = "skin:first"; first = false }
                     val row = LinearLayout(a).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; setPadding(ui.dp(16), ui.dp(12), ui.dp(16), ui.dp(12)) }
@@ -191,7 +368,7 @@ object TvSkinGlass : TvSkin {
             val strip = LinearLayout(a).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; clipChildren = false; clipToPadding = false; setPadding(ui.dp(6), ui.dp(4), ui.dp(6), ui.dp(8)) }
             var shown = h.theme.id
             for (th in Themes.all) {
-                val chip = TvTileView(a, tokens.radiusCard - 6)
+                val chip = TvTileView(a, tokens.radiusCard - 6).styled(tokens, pal.primary)
                 chip.inner.setBackgroundColor(th.bg)
                 if (th.id == h.theme.id) chip.tag = "skin:first"
                 val col = LinearLayout(a).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; setPadding(ui.dp(12), ui.dp(10), ui.dp(12), ui.dp(10)) }

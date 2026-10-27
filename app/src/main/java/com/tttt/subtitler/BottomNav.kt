@@ -13,7 +13,7 @@ import android.widget.LinearLayout
  *  (v312) مؤشّر بيتزحلق تحت البوابة النشطة + قفزة للأيقونة لما تتفعّل */
 class BottomNav(act: Activity, private val ui: Ui, private val th: Theme, private var active: Int, private val rail: Boolean = false, private val onPick: (Int) -> Unit) {   // (v462) rail = شريط جانبي رأسي لوضع التابلت (زي يوتيوب التابلت)
     companion object { const val MORE = 8
-        /** (v521) زرار «الريموت» (موبايل/تابلت بس) جنب الفيديوهات — بيفتح RemoteActivity مباشرة ومش بوابة عادية */
+        /** (v521) زرار «الريموت» (موبايل/تابلت بس) جنب الفيديوهات — بيفتح الكنترولر الجديد (ControllerPad) مباشرة ومش بوابة عادية */
         const val REMOTE = 12
         /** (v472) «الذكاء» تبويب اتمسح قديمًا — الرقم 6 محجوز عشان ترقيم البوابات ما يتغيّرش، لكن مش بيظهر في أي حته */
         const val DEAD_AI = 6
@@ -115,7 +115,7 @@ class BottomNav(act: Activity, private val ui: Ui, private val th: Theme, privat
                 addView(box, LinearLayout.LayoutParams(ui.dp(38), ui.dp(20)))
                 addView(lab, LinearLayout.LayoutParams(-2, -2))
                 Glass.pressable(this)
-                setOnClickListener { if (idx == MORE) moreSheet(act) else if (idx == REMOTE) { try { act.startActivity(android.content.Intent(act, RemoteActivity::class.java)) } catch (e: Throwable) { LogStore.err("Nav:remote", e) } } else onPick(idx) }
+                setOnClickListener { if (idx == MORE) moreSheet(act) else if (idx == REMOTE) { try { ControllerPad.show(act) } catch (e: Throwable) { LogStore.err("Nav:remote", e) } } else onPick(idx) }
             }
             icons.add(icon); labels.add(lab); cells.add(cell)
         }

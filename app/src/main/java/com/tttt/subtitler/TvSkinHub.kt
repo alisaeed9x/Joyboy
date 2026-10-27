@@ -86,7 +86,7 @@ object TvSkinHub : TvSkin {
         val bannerH = if (dm.heightPixels / dm.density < 520f) 150 else 190
         val thumbW = (bannerH * 16 / 9)
 
-        val t = TvTileView(a, tk.radiusCard + 2)
+        val t = TvTileView(a, tk.radiusCard + 2).styled(tk, pal.primary)
         if (glass) t.inner.background = TvSkinGlass.pane(pal.dark, ui.dp(tk.radiusCard).toFloat(), false, ui.dp(1)) else t.inner.setBackgroundColor(pal.cardFill)
         t.tag = "skin:first"
 
@@ -146,6 +146,7 @@ object TvSkinHub : TvSkin {
         val dlg = Dialog(a)
         dlg.requestWindowFeature(Window.FEATURE_NO_TITLE)
         val rows = listOf(
+            "🖼 معرض الثيمات" to TvPage.PRESETS,
             "🎨 السمة (الألوان)" to TvPage.THEME,
             "📦 باك الأيقونات" to TvPage.ICON_PACK,
             "🧩 تصميم الواجهة" to TvPage.LAYOUT,
@@ -222,7 +223,7 @@ object TvSkinHub : TvSkin {
             }
             var first = true
             for (n in items.take(40)) {
-                val t = TvTileView(a, tokens.radiusCard)
+                val t = TvTileView(a, tokens.radiusCard).styled(tokens, pal.primary)
                 t.inner.setBackgroundColor(pal.cardFill)
                 if (first) { t.tag = "skin:first"; first = false }
                 val row = LinearLayout(a).apply {
@@ -268,7 +269,7 @@ object TvSkinHub : TvSkin {
             while (k < all.size) {
                 val row = LinearLayout(a).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; clipChildren = false; clipToPadding = false; setPadding(ui.dp(6), 0, ui.dp(6), 0) }
                 for (th in all.subList(k, minOf(k + per, all.size))) {
-                    val card = TvTileView(a, tokens.radiusCard)
+                    val card = TvTileView(a, tokens.radiusCard).styled(tokens, pal.primary)
                     card.inner.setBackgroundColor(th.bg)
                     if (th.id == h.theme.id) card.tag = "skin:first"
                     val col = LinearLayout(a).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; setPadding(ui.dp(12), ui.dp(10), ui.dp(12), ui.dp(10)) }

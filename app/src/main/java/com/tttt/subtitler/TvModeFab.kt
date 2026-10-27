@@ -104,7 +104,7 @@ object TvModeFab {
     }
 
     private fun skip(a: Activity): Boolean = try {
-        DeviceUi.isTv(a) || a is TvActivity || a is PlayerActivity || a is RemoteActivity || a is SendToTvActivity
+        DeviceUi.isTv(a) || a is TvActivity || a is PlayerActivity || a is LaunchRemoteActivity || a is SendToTvActivity
     } catch (_: Throwable) { true }
 
     private fun always(): Boolean = try { Cfg.str("tv_fab_always", "0") == "1" } catch (_: Throwable) { false }
