@@ -276,7 +276,10 @@ object TvLink {
         if (id.isBlank()) return err(403, "bad")
         val codeOk = code.isNotEmpty() && code == pairCode && now < pairCodeUntil
         // (v585 / C2) الكود إجباري حتى لأول ريموت: اللي على نفس الشبكة لازم يشوف الكود على شاشة التلفزيون
-        if (!codeOk) {
+        // (v598) اقتران من غير كود (الافتراضي): الموبايل بيختار التلفزيون ويتصل. للرجوع للكود الإجباري: Cfg «tvlink_need_code» = 1
+        val strict = Cfg.str("tvlink_need_code", "0") == "1"
+        if (!codeOk && !strict && code.isEmpty()) { /* مقبول */ }
+        else if (!codeOk) {
             if (code.isNotEmpty()) { badTries++; if (badTries >= 8) { badTries = 0; lockUntil = now + 60000L } }
             else if (now - lastCodeShown > 8000L) {
                 // محاولة من غير كود ← اعرض كود صالح على التلفزيون (من غير ما نغيّر كود لسه صالح عشان محاولة غريبة ما تبوّظش اقتران شغّال)

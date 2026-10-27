@@ -224,6 +224,15 @@ object TvLinkUi {
             col.addView(ui.text("افتح Subtitler على الموبايل (أيقونة «ريموت التلفزيون») — هيلاقي التلفزيون لوحده. أي موبايل جديد بيطلب الكود الجاي تحت (أو بيظهر على الشاشة أول ما يحاول).", 13f, th.text).apply { setPadding(0, ui.dp(8), 0, ui.dp(8)) })
             col.addView(ui.text("كود إقران موبايل جديد (10 دقايق):", 13f, th.muted))
             col.addView(ui.text(code, 30f, th.primary, true).apply { setPadding(0, ui.dp(4), 0, ui.dp(10)) })
+            // (v598) QR للاقتران لو الاتصال التلقائي فشل: الموبايل ← ريموت التلفزيون ← «📷 امسح QR»
+            val tvIp = TypeServer.ip()
+            if (tvIp.isNotEmpty()) {
+                val qr = QrCode.bitmap("subtitler://pair?h=" + tvIp + "&p=" + TvLink.PORT + "&c=" + code, ui.dp(200))
+                if (qr != null) {
+                    col.addView(android.widget.ImageView(a).apply { setImageBitmap(qr); setBackgroundColor(Color.WHITE); setPadding(ui.dp(8), ui.dp(8), ui.dp(8), ui.dp(8)) }, LinearLayout.LayoutParams(ui.dp(200), ui.dp(200)).apply { gravity = Gravity.CENTER_HORIZONTAL; bottomMargin = ui.dp(6) })
+                    col.addView(ui.text("أو امسح الكود ده من الموبايل (زرار «📷 امسح QR» في ريموت التلفزيون)", 12.5f, th.muted).apply { setPadding(0, 0, 0, ui.dp(10)) })
+                }
+            }
             // (v519) التحكم في التطبيقات التانية (نتفليكس…) محتاج «إمكانية الوصول» مرة واحدة
             val accOn = TvAccess.connected
             col.addView(ui.text(if (accOn) "✅ التحكم في التطبيقات التانية شغّال (إمكانية الوصول)" else "⚠ التحكم بالأسهم والتاتش باد في التطبيقات التانية متوقّف — الصوت والتشغيل والرئيسية شغّالين", 13f, if (accOn) th.success else th.danger).apply { setPadding(0, ui.dp(10), 0, ui.dp(4)) })

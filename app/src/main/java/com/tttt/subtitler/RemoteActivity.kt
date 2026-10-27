@@ -138,6 +138,7 @@ class RemoteActivity : Activity() {
         col.addView(ui.text("🔍 التلفزيونات", 15f, th.text, true).apply { setPadding(0, ui.dp(18), 0, ui.dp(4)) })
         col.addView(ui.button("🔍 دوّر على التلفزيون") { search() })
         col.addView(ui.button("✍ اكتب IP التلفزيون يدويًا") { askManualIp() })   // (v585 / M1)
+        col.addView(ui.button("📷 امسح QR (اقتران التلفزيون / دخول يوتيوب)") { scanQr() })   // (v598)
         devices = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         col.addView(devices)
 
@@ -874,6 +875,13 @@ class RemoteActivity : Activity() {
                     if (retryOn && RemoteClient.state != RemoteClient.St.CONNECTED) h.postDelayed(retryRun, 4000L)   // (v521) فشل ← جرّب تاني
                 } else if (res.size == 1 && RemoteClient.state != RemoteClient.St.CONNECTED && RemoteClient.state != RemoteClient.St.CONNECTING) {
                     choose(res[0])   // (v521) تلفزيون واحد بس ← اتصل بيه على طول (لو مش مقترن هيطلب الكود)
+                } else if (res.size > 1 && RemoteClient.state != RemoteClient.St.CONNECTED && RemoteClient.state != RemoteClient.St.CONNECTING) {
+                    try {   // (v598) أكتر من تلفزيون ← نافذة اختيار
+                        AlertDialog.Builder(this).setTitle("📺 اختار التلفزيون")
+                            .setItems(res.map { it.name + "  (" + it.ip + ")" }.toTypedArray()) { _, i -> choose(res[i]) }
+                            .setNegativeButton("إلغاء", null).show()
+                    } catch (_: Throwable) {}
+                    for (f in res) devices.addView(ui.button(f.name + "  (" + f.ip + ")") { choose(f) })
                 } else for (f in res) {
                     val paired = RemoteClient.pairedList().any { it.id == f.id }
                     devices.addView(ui.button((if (paired) "✓ " else "") + f.name + "  (" + f.ip + ")") { choose(f) })
@@ -889,13 +897,53 @@ class RemoteActivity : Activity() {
                 saved.ip = f.ip; saved.port = f.port; RemoteClient.saveTv(saved)
                 RemoteClient.connect(this, saved, true); return@Thread
             }
+            // (v598) اتصال أوتوماتيك من غير كود
             val (tv, why) = RemoteClient.pair(f, "")
             h.post {
                 if (isFinishing) return@post
                 if (tv != null) RemoteClient.connect(this, tv, true)
-                else if (why == "need_code") askCode(f)
                 else if (why == "locked") Notice.show(this, "⛔ محاولات كتير غلط — استنى دقيقة", 3000L)
-                else Notice.show(this, "⚠ $why", 3000L)
+                else failedDialog(f, if (why == "need_code") "التلفزيون طالب كود إقران" else why)
+            }
+        }.also { it.isDaemon = true }.start()
+    }
+
+    /** (v598) فشل الاتصال التلقائي ← اتصال بكود: QR من التلفزيون أو كتابة الكود */
+    private fun failedDialog(f: RemoteClient.Found, why: String) {
+        try {
+            AlertDialog.Builder(this).setTitle("⚠ فشل الاتصال التلقائي")
+                .setMessage(why + "\n\nعلى التلفزيون: ⋯ المزيد ← 📱 ريموت الموبايل — هيظهر QR وكود. امسح الـQR أو اكتب الكود.")
+                .setPositiveButton("📷 امسح QR") { _, _ -> scanQr() }
+                .setNeutralButton("🔢 اكتب الكود") { _, _ -> askCode(f) }
+                .setNegativeButton("إلغاء", null).show()
+        } catch (_: Throwable) {}
+    }
+
+    private fun scanQr() {
+        try {
+            com.google.zxing.integration.android.IntentIntegrator(this)
+                .setDesiredBarcodeFormats(com.google.zxing.integration.android.IntentIntegrator.QR_CODE)
+                .setOrientationLocked(false).setBeepEnabled(false).setPrompt("وجّه الكاميرا على QR الموجود على شاشة التلفزيون")
+                .initiateScan()
+        } catch (e: Throwable) { LogStore.err("Remote:scan", e); Notice.show(this, "⚠ ما قدرتش أفتح الكاميرا", 3000L) }
+    }
+
+    /** نتيجة مسح QR: اقتران التلفزيون (subtitler://pair) أو دخول يوتيوب (…/ytlink?pin=) */
+    private fun onScanned(text: String) {
+        if (YtLink.handleScanned(this, text)) return
+        val u = try { android.net.Uri.parse(text.trim()) } catch (_: Throwable) { null }
+        if (u == null || u.scheme != "subtitler" || u.host != "pair") { Notice.show(this, "⚠ الـQR ده مش من Subtitler", 3000L); return }
+        val ip = u.getQueryParameter("h") ?: return
+        val port = u.getQueryParameter("p")?.toIntOrNull() ?: TvLink.PORT
+        val code = u.getQueryParameter("c") ?: ""
+        Notice.show(this, "⏳ باقترن بالتلفزيون…", 2000L)
+        Thread {
+            val f = try { RemoteClient.helloAt(ip, port) } catch (e: Throwable) { LogStore.err("Remote:qrHello", e); null }
+            val (tv, why) = if (f != null) RemoteClient.pair(f, code) else Pair(null, "ما لقيتش التلفزيون على $ip — اتأكد إنهم على نفس الواي فاي")
+            h.post {
+                if (isFinishing) return@post
+                if (tv != null) RemoteClient.connect(this, tv, true)
+                else Notice.show(this, if (why == "need_code") "⚠ الكود انتهى — اعرض كود جديد على التلفزيون" else "⚠ $why", 3500L)
             }
         }.also { it.isDaemon = true }.start()
     }
@@ -937,6 +985,7 @@ class RemoteActivity : Activity() {
         AlertDialog.Builder(this).setTitle("🔐 كود الإقران")
             .setMessage("على التلفزيون: ⋯ المزيد ← 📱 ريموت الموبايل — هتلاقي كود من 5 أرقام.")
             .setView(et)
+            .setNeutralButton("📷 امسح QR") { _, _ -> scanQr() }
             .setPositiveButton("اقترن") { _, _ ->
                 val code = et.text.toString().trim()
                 Thread {
@@ -993,6 +1042,8 @@ class RemoteActivity : Activity() {
     @Deprecated("Deprecated in Java")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
+        val sr = try { com.google.zxing.integration.android.IntentIntegrator.parseActivityResult(requestCode, resultCode, data) } catch (_: Throwable) { null }
+        if (sr != null) { val t = sr.contents; if (!t.isNullOrBlank()) onScanned(t); return }
         if (requestCode == 5402) {   // (v596) ملفات للتلفزيون
             if (resultCode != RESULT_OK || data == null) return
             val uris = ArrayList<android.net.Uri>()

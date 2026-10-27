@@ -37,12 +37,24 @@ object TvWifi {
 
     private fun ipStr(i: Int): String = (i and 0xff).toString() + "." + ((i shr 8) and 0xff) + "." + ((i shr 16) and 0xff) + "." + ((i shr 24) and 0xff)
 
-    fun isConnected(a: Activity): Boolean = current(a) != null
+    fun isConnected(a: Context): Boolean = try {
+        val w = a.applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
+        if (!w.isWifiEnabled) false else (viaCm(a) || current(a) != null)
+    } catch (_: Throwable) { false }
+
+    /** (v598) فيه شبكة واي فاي شغّالة فعلًا؟ (من ConnectivityManager — مش محتاجة إذن الموقع) */
+    private fun viaCm(a: Context): Boolean = try {
+        val cm = a.applicationContext.getSystemService(Context.CONNECTIVITY_SERVICE) as android.net.ConnectivityManager
+        cm.allNetworks.any { n ->
+            val c = cm.getNetworkCapabilities(n)
+            c != null && c.hasTransport(android.net.NetworkCapabilities.TRANSPORT_WIFI) && c.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_INTERNET)
+        }
+    } catch (_: Throwable) { false }
 
     /** (اسم الشبكة المتصل بيها، عنوان الـIP) أو null لو مش متصل */
     @Suppress("DEPRECATION")
-    private fun current(a: Activity): Pair<String, String>? = try {
-        val w = wm(a)
+    private fun current(a: Context): Pair<String, String>? = try {
+        val w = a.applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
         val info = w.connectionInfo
         if (!w.isWifiEnabled || info == null || info.networkId == -1) null
         else {
@@ -63,37 +75,66 @@ object TvWifi {
     @Volatile private var busy = false
 
     /**
-     * (v536) الزرار الأساسي: دوسة واحدة = تشغيل/إيقاف الواي فاي على طول، من غير حوار ولا شاشة نظام ظاهرة.
-     *  1) WifiManager مباشرة (بيشتغل على أندرويد 9 وأقدم).
-     *  2) أندرويد 10+: بإمكانية الوصول (لازم تكون متفعّلة من «🔐 الأذونات») — بتضغط مفتاح الواي فاي في شاشة النظام وترجع للانشر.
-     *  3) من غير إمكانية الوصول: بيفتح شاشة الواي فاي ويقولك تفعّلها.
-     * قايمة الشبكات/الاتصال بشبكة جديدة اتنقلت لدوسة طويلة على الزرار (show).
+     * (v598) الزرار الأساسي — من غير إمكانية الوصول ولا أي إذن:
+     *  1) أندرويد 9 وأقدم: WifiManager بيشغّل/يقفل على طول.
+     *  2) غير كده: بيفتح شاشة الواي فاي بتاعة النظام، وبيراقب الحالة في الخلفية — أول ما الواي فاي يتفعّل ويتصل
+     *     (أو يتقفل لو كنت بتقفله) بيرجّعك للتلفزيون لوحده. (رسالة «توفير الطاقة» اللي بتظهر بتدوس عليها «نعم» بإيدك زي ما هي.)
      */
     @Suppress("DEPRECATION")
     fun quick(a: Activity) {
-        if (busy) return
+        if (busy) { cancelWatch() }
         val w = wm(a)
         val on = try { w.isWifiEnabled } catch (_: Throwable) { false }
-        val want = !on
-        val ok = try { w.setWifiEnabled(want) } catch (_: Throwable) { false }
-        if (ok) { Notice.show(a, if (want) "📶 الواي فاي اشتغل" else "📴 الواي فاي اتقفل", 2200L); return }
-        val svc = TvAccess.svc
-        if (svc == null) {
-            Notice.show(a, "عشان الزرار يشتغل بدوسة واحدة فعّل «إمكانية الوصول» من 🔐 الأذونات", 4500L)
-            TvSetup.open(a)
-            return
+        val connected = isConnected(a)
+        // لو شغّال ومتصل → التبديل = إيقاف؛ غير كده → تشغيل/اتصال
+        val want = !(on && connected)
+        if (Build.VERSION.SDK_INT < 29) {
+            val ok = try { w.setWifiEnabled(want) } catch (_: Throwable) { false }
+            if (ok) { Notice.show(a, if (want) "📶 الواي فاي اشتغل" else "📴 الواي فاي اتقفل", 2200L); return }
         }
-        busy = true
-        Notice.show(a, if (want) "📶 بشغّل الواي فاي…" else "📴 بقفل الواي فاي…", 2500L)
         try { a.startActivity(Intent(Settings.ACTION_WIFI_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
-        catch (_: Throwable) { busy = false; openSettings(a, "ما قدرتش أفتح شاشة الواي فاي"); return }
-        val back = Intent(a, TvActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or Intent.FLAG_ACTIVITY_SINGLE_TOP)
-        svc.wifiToggle(want, back) { good ->
-            busy = false
-            h.postDelayed({
-                if (!a.isDestroyed && !a.isFinishing) Notice.show(a, if (good) (if (want) "📶 الواي فاي اشتغل" else "📴 الواي فاي اتقفل") else "⚠ ما لقيتش مفتاح الواي فاي في شاشة النظام — دوسة طويلة على الزرار تفتحلك الإعدادات", 3500L)
-            }, 900L)
+        catch (_: Throwable) { openSettings(a, "ما قدرتش أفتح شاشة الواي فاي"); return }
+        watch(a.applicationContext, want)
+    }
+
+    @Volatile private var watchGen = 0
+
+    private fun cancelWatch() { watchGen++; busy = false }
+
+    /** مراقبة في الخلفية لحد 4 دقايق: لما الحالة المطلوبة تتحقق ← رجّع التلفزيون قدّام */
+    private fun watch(ctx: Context, wantOn: Boolean) {
+        busy = true
+        val gen = ++watchGen
+        val t0 = System.currentTimeMillis()
+        var away = false
+        var stable = 0
+        val tick = object : Runnable {
+            override fun run() {
+                if (gen != watchGen) return
+                val top = try { TvLink.topActivity() } catch (_: Throwable) { null }
+                if (top == null) away = true
+                else if (top is TvActivity && away) { busy = false; return }   // رجعت بإيدك ← خلاص
+                val done = if (wantOn) isConnected(ctx) else !(try { (ctx.getSystemService(Context.WIFI_SERVICE) as WifiManager).isWifiEnabled } catch (_: Throwable) { false })
+                stable = if (done) stable + 1 else 0
+                if (stable >= 2) {   // ثبات نص ثانية تقريبًا عشان ما نرجّعش على اتصال لحظي
+                    busy = false
+                    bringBack(ctx, wantOn)
+                    return
+                }
+                if (System.currentTimeMillis() - t0 > 4 * 60 * 1000L) { busy = false; return }
+                h.postDelayed(this, 500L)
+            }
         }
+        h.postDelayed(tick, 1200L)
+    }
+
+    private fun bringBack(ctx: Context, wantOn: Boolean) {
+        try {
+            ctx.startActivity(Intent(ctx, TvActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or Intent.FLAG_ACTIVITY_SINGLE_TOP))
+        } catch (e: Throwable) { LogStore.err("TvWifi:back", e) }
+        h.postDelayed({
+            try { val t = TvLink.topActivity(); if (t != null) Notice.show(t, if (wantOn) "📶 الواي فاي اتصل" else "📴 الواي فاي اتقفل", 2200L) } catch (_: Throwable) {}
+        }, 700L)
     }
 
     @Suppress("DEPRECATION")

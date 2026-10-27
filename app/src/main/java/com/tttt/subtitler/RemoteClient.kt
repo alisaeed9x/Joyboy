@@ -555,8 +555,8 @@ object RemoteClient {
         if (ai.splitSourceDirs != null && ai.splitSourceDirs!!.isNotEmpty()) return "التطبيق متثبّت على الموبايل كـ split APK — مش هينفع يتوزّع"
         val ip = ipTowards(tv.ip)
         if (ip.isEmpty()) return "مش عارف عنوان الموبايل على الواي فاي"
-        if (!ApkServe.start()) return "ما قدرتش أشغّل سيرفر التحديث"
-        val url = "http://$ip:${ApkServe.PORT}/apk?t=${ApkServe.newToken()}"
+        if (!ApkServe.start()) return "ما قدرتش أشغّل سيرفر التحديث (كل البورتات من 18772 لـ 18781 مشغولة) — اقفل التطبيق خالص وافتحه تاني"
+        val url = "http://$ip:${ApkServe.port}/apk?t=${ApkServe.newToken()}"
         val body = JSONObject().put("ver", LinkVer.code(app())).put("vname", LinkVer.name(app())).put("url", url).put("auto", auto).put("force", force).put("size", f.length())   // (v563) حجم الملف: التلفزيون يقارنه بالمحمّل قبل كده
         val (c, t) = post("/offer", body)
         return when {
@@ -578,8 +578,8 @@ fun RemoteClient.offerApk(f: File, force: Boolean): String {
     val ip = ipTowards(tv.ip)
     if (ip.isEmpty()) return "مش عارف عنوان الموبايل على الواي فاي"
     ApkServe.custom = f
-    if (!ApkServe.start()) return "ما قدرتش أشغّل سيرفر التحديث"
-    val url = "http://$ip:${ApkServe.PORT}/apk?t=${ApkServe.newToken()}"
+    if (!ApkServe.start()) return "ما قدرتش أشغّل سيرفر التحديث (كل البورتات من 18772 لـ 18781 مشغولة) — اقفل التطبيق خالص وافتحه تاني"
+    val url = "http://$ip:${ApkServe.port}/apk?t=${ApkServe.newToken()}"
     val body = JSONObject().put("ver", ver).put("vname", pi.versionName ?: "").put("pkg", pi.packageName).put("url", url).put("auto", false).put("force", force).put("size", f.length())
     val (c, t) = postJson("/offer", body)
     return when {
@@ -595,6 +595,8 @@ fun RemoteClient.offerApk(f: File, force: Boolean): String {
 /** (v518) الموبايل بيوزّع ملف الـAPK بتاعه للتلفزيون على الواي فاي — بتوكن مؤقت، وبس لحد 20 دقيقة */
 object ApkServe {
     const val PORT = 18772
+    /** (v598) البورت الفعلي: لو 18772 مشغول (تطبيق تاني / نسخة قديمة) بنجرّب اللي بعده */
+    @Volatile var port = PORT
     private var http: MiniHttp? = null
     @Volatile private var token = ""
     @Volatile private var until = 0L
@@ -602,10 +604,13 @@ object ApkServe {
 
     fun start(): Boolean {
         if (http?.running == true) return true
-        val s = MiniHttp(PORT) { r -> handle(r) }
-        if (!s.start()) return false
-        http = s
-        return true
+        try { http?.stop() } catch (_: Throwable) {}
+        http = null
+        for (p in PORT..PORT + 9) {
+            val s = MiniHttp(p) { r -> handle(r) }
+            if (s.start()) { http = s; port = p; return true }
+        }
+        return false
     }
 
     fun newToken(): String {
