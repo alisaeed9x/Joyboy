@@ -459,10 +459,13 @@ class BrowserActivity : Activity() {
 
         hint = ui.text("شغّل الفيديو في الصفحة وهلقطه تلقائي · أو الصق لينك يوتيوب فوق", 12f, th.muted).apply { setPadding(ui.dp(10), ui.dp(2), ui.dp(10), ui.dp(4)) }
         webHolder = FrameLayout(this)
+        // (v594) علامة الاصطياد بقت كبسولة بتطلع من الجنب الشمال بدل الشريط السفلي؛ دوسة عليها بتفتح نافذة عايمة صغيرة
         badge = IconButton(this).apply {
-            isAllCaps = false; textSize = 15f; visibility = View.GONE
-            setTextColor(if (th.isLight) Color.WHITE else Color.BLACK); background = ui.box(th.primary, th.primary, 8)
-            layoutParams = LinearLayout.LayoutParams(-1, -2).apply { setMargins(ui.dp(8), ui.dp(4), ui.dp(8), ui.dp(6)) }
+            isAllCaps = false; textSize = 14f; visibility = View.GONE; minWidth = 0; minimumWidth = 0; stateListAnimator = null
+            setTextColor(if (th.isLight) Color.WHITE else Color.BLACK); setPadding(ui.dp(10), 0, ui.dp(14), 0)
+            val r = ui.dp(20).toFloat()
+            background = android.graphics.drawable.GradientDrawable().apply { setColor(th.primary); cornerRadii = floatArrayOf(0f, 0f, r, r, r, r, 0f, 0f); setStroke(ui.dp(1), 0x66FFFFFF) }
+            elevation = ui.dp(6).toFloat(); alpha = 0.95f
             setOnClickListener { showList() }
         }
         dlTxt = IconTextView(this).apply { textSize = 13f; setTextColor(th.text); maxLines = 2; ellipsize = TextUtils.TruncateAt.END; gravity = Gravity.CENTER }
@@ -513,6 +516,7 @@ class BrowserActivity : Activity() {
             addView(webHolder, FrameLayout.LayoutParams(-1, -1))
             addView(panicCover, FrameLayout.LayoutParams(-1, -1))
             addView(panicCol, FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM or Gravity.RIGHT).apply { setMargins(0, 0, ui.dp(4), ui.dp(8)) })
+            addView(badge, FrameLayout.LayoutParams(-2, ui.dp(40), Gravity.LEFT or Gravity.CENTER_VERTICAL))   // (v594) كبسولة الاصطياد على الجنب
             addView(blockCover, FrameLayout.LayoutParams(-1, -1))   // (v412) فوق كل حاجة
         }
         if (tvOn) {   // (v480 م6) المؤشر فوق الصفحة والغطا والأزرار العايمة
@@ -527,7 +531,7 @@ class BrowserActivity : Activity() {
         // (v336) زرار المهام العايم اتشال — المهام في الشريط السفلي
         //   // (v324) زرار المهام العايم (دايرة حمراء بالعدد) فوق الصفحة
         root.addView(bar); root.addView(progTrack, LinearLayout.LayoutParams(-1, ui.dp(3))); root.addView(findBar); root.addView(hint)
-        root.addView(webWrap, LinearLayout.LayoutParams(-1, 0, 1f)); root.addView(badge)
+        root.addView(webWrap, LinearLayout.LayoutParams(-1, 0, 1f))
         root.addView(dlBar, LinearLayout.LayoutParams(-1, -2).apply { setMargins(ui.dp(8), ui.dp(4), ui.dp(8), ui.dp(6)) })   // (v324)
         // (v117) شريط البوابات: الفيديوهات · الموسيقى · المتصفح (إحنا فيه دلوقتي) · الملفات · (v324) يوتيوب
         val gates = BottomNav(this, ui, th, 2) { i -> if (i != 2) NavAnim.set(2, i); if (i == 0) goMain("videos") else if (i == 1) goMain("music") else if (i == 4) goMain("youtube") else if (i == 5) goMain("tasks") else if (i == 7) goMain("settings") else if (i == 3) { startActivity(Intent(this, FileManagerActivity::class.java)); NavAnim.peek(this); finish() } }   // (v310) الملفات · (v364) الذكاء
@@ -1302,6 +1306,10 @@ class BrowserActivity : Activity() {
             prefs().edit().putBoolean("br_save_tabs", v).apply()
             if (v) persistTabs() else try { java.io.File(filesDir, "br_tabs.json").delete() } catch (_: Throwable) {}
         })
+        box.addView(ui.text("🎞 الجودة التلقائية للفيديو الملقوط (لو فيه جودة أعلى بتختارها إنت من الكبسولة)", 12f, th.muted).apply { setPadding(0, ui.dp(8), 0, ui.dp(2)) })
+        val dqNames = listOf("الأعلى", "لحد 1080p", "لحد 720p", "لحد 480p", "لحد 360p"); val dqVals = listOf("0", "1080", "720", "480", "360")
+        box.addView(ui.chips(dqNames, { dqNames[dqVals.indexOf(prefs().getString("br_defq", "0") ?: "0").coerceAtLeast(0)] }) { pick -> val i = dqNames.indexOf(pick); if (i >= 0) { prefs().edit().putString("br_defq", dqVals[i]).apply(); renderList() } })
+        box.addView(ui.text("بتاخد أعلى جودة لحد الرقم ده؛ ولو مفيش جودة بالحد ده (مثلًا 480 مش موجودة) بتاخد اللي تحتها، ولو كل الجودات أعلى منه بتاخد أقل واحدة. بيشتغل مع مشاهدة/ترجمة/تلفزيون/تحميل.", 11f, th.muted).apply { setPadding(0, 0, 0, ui.dp(4)) })
         box.addView(ui.text("محرك البحث", 12f, th.muted).apply { setPadding(0, ui.dp(8), 0, ui.dp(2)) })
         box.addView(ui.chips(listOf("Google", "DuckDuckGo", "Bing"), { prefs().getString("br_engine", "Google") ?: "Google" }) { prefs().edit().putString("br_engine", it).apply() })
         box.addView(ui.text("الصفحة الرئيسية (فاضي = جوجل)", 12f, th.muted).apply { setPadding(0, ui.dp(8), 0, ui.dp(2)) })
@@ -1600,7 +1608,13 @@ class BrowserActivity : Activity() {
     private fun refreshBadge() {
         val n = groupsOf(vis()).size
         if (n == 0) { badge.visibility = View.GONE; hint.visibility = View.VISIBLE }
-        else { badge.text = "🎬 لقيت $n فيديو — اضغط للاختيار"; badge.visibility = View.VISIBLE; hint.visibility = View.GONE }
+        else {
+            badge.text = "🎬 $n"; hint.visibility = View.GONE
+            if (badge.visibility != View.VISIBLE) {   // بتطلع من الجنب
+                badge.visibility = View.VISIBLE; badge.translationX = -ui.dp(70).toFloat()
+                badge.animate().translationX(0f).setDuration(260L).start()
+            }
+        }
         if (dlg?.isShowing == true) renderList()
     }
 
@@ -1776,12 +1790,39 @@ class BrowserActivity : Activity() {
         }.apply { isDaemon = true }.start()
     }
 
+    /** (v594) نافذة عايمة صغيرة على الجنب (من غير تعتيم) بدل الشيت الكبير */
+    private fun buildFloatList(st: TextView, lb: LinearLayout): Dialog {
+        val dm = resources.displayMetrics
+        val maxH = (dm.heightPixels * 0.62f).toInt()
+        val sv = object : ScrollView(this) {
+            override fun onMeasure(w: Int, h: Int) { super.onMeasure(w, View.MeasureSpec.makeMeasureSpec(maxH, View.MeasureSpec.AT_MOST)) }
+        }.apply { addView(lb); isVerticalScrollBarEnabled = false }
+        val head = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL
+            addView(ui.text("🎬 صيد الفيديو", 14f, th.primary, true), LinearLayout.LayoutParams(0, -2, 1f))
+            addView(ui.text("✕", 16f, th.muted, true).apply { setPadding(ui.dp(12), ui.dp(4), ui.dp(4), ui.dp(4)); setOnClickListener { dlg?.dismiss() } })
+        }
+        val col = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL
+            background = ui.box(th.card, th.border, 16); setPadding(ui.dp(10), ui.dp(8), ui.dp(10), ui.dp(10))
+            addView(head); addView(st); addView(sv, LinearLayout.LayoutParams(-1, -2))
+        }
+        val d = GDialog(this).apply { plain = true }
+        d.setContentView(col)
+        d.window?.apply {
+            setBackgroundDrawable(ColorDrawable(0)); clearFlags(android.view.WindowManager.LayoutParams.FLAG_DIM_BEHIND)
+            setLayout(minOf(ui.dp(320), (dm.widthPixels * 0.88f).toInt()), -2); setGravity(Gravity.LEFT or Gravity.CENTER_VERTICAL)
+            attributes = attributes.apply { x = ui.dp(6); dimAmount = 0f }
+        }
+        d.setCanceledOnTouchOutside(true)
+        return d
+    }
     fun showList() {
         if (dlg == null) {
             val lb = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL }
             val st = ui.text("", 13f, th.muted).apply { setPadding(0, 0, 0, ui.dp(6)) }
             listBox = lb; statusTv = st
-            dlg = ui.sheet(this, "🎬 صيد الفيديو", listOf<View>(st, lb), false)
+            dlg = buildFloatList(st, lb)
         }
         renderList(); dlg?.show()
     }
@@ -1830,40 +1871,57 @@ class BrowserActivity : Activity() {
     private val selQ = HashMap<String, Int>()   // (v231) الجودة المختارة لكل اصطياد (مفتاح المجموعة ← رقم الجودة)
 
     /** (v231) اصطياد واحد لكل فيديو: العنوان + اختيار الجودة (لو أكتر من جودة) + زرار أزرق كبير «🌐 شاهد وترجم» وتحته ▶ فرجة · ⬇ تحميل (بحجمه) · 📋 نسخ · 🎧 صوت */
+    /** (v594) الجودة اللي بتتختار لوحدها لما ما تختارش: الإعداد «الجودة التلقائية» (br_defq): 0 = الأعلى · غير كده = أعلى جودة لحد الرقم، ولو مفيش أقل منه ياخد أقل واحدة موجودة */
+    private fun defIdx(g: Grp): Int {
+        val cap = prefs().getString("br_defq", "0")?.toIntOrNull() ?: 0
+        if (cap <= 0) return 0
+        val known = g.qs.mapIndexed { i, x -> i to x.h }.filter { it.second > 0 }
+        if (known.isEmpty()) return 0
+        val ok = known.filter { it.second <= cap }
+        return (if (ok.isNotEmpty()) ok.maxByOrNull { it.second } else known.minByOrNull { it.second })?.first ?: 0
+    }
+    private fun qIdx(g: Grp): Int = (selQ[g.key] ?: defIdx(g)).coerceIn(0, g.qs.size - 1)
+
+    /** (v594) كارت صغير: العنوان + اختيار الجودة + صف أزرار صغيرة (🌐 ترجمة · ▶ شاهد · 📺 تلفزيون · ⬇ حمّل). ضغطة طويلة على الاسم = نسخ اللينك · على «حمّل» = صوت بس */
     private fun groupCard(g: Grp): View {
         val c = ui.card()
-        c.addView(ui.text(g.title, 14f, th.text, true).apply { maxLines = 2; ellipsize = TextUtils.TruncateAt.END; setOnLongClickListener { g.qs.getOrNull((selQ[g.key] ?: 0).coerceIn(0, g.qs.size - 1))?.let { copyUrl(it.f.url) }; true } })
+        c.addView(ui.text(g.title, 13f, th.text, true).apply { maxLines = 2; ellipsize = TextUtils.TruncateAt.END; setOnLongClickListener { g.qs.getOrNull(qIdx(g))?.let { copyUrl(it.f.url) }; true } })
         if (repairId != null) {   // وضع إصلاح اللينك: اختيار الجودة بس
             if (g.qs.size > 1) c.addView(ui.text("🎞 ${g.qs.size} جودات", 13f, th.primary, true))
             for (q in g.qs) c.addView(ui.button("🔧 استخدم " + q.label, true) { dlg?.dismiss(); applyRepair(q) })
             return c
         }
-        val cur = (selQ[g.key] ?: 0).coerceIn(0, g.qs.size - 1)
+        val cur = qIdx(g)
         val q = g.qs[cur]
         if (g.qs.size > 1) {
-            c.addView(ui.text("🎞 ${g.qs.size} جودات — اختار الجودة", 12f, th.muted).apply { setPadding(0, ui.dp(2), 0, ui.dp(2)) })
             val labels = g.qs.mapIndexed { i, x -> if (x.h > 0) x.h.toString() + "p" else if (isHls(x.f)) "تلقائي" else "جودة " + (i + 1) }
             c.addView(ui.chips(labels, { labels[cur] }) { pick -> val ni = labels.indexOf(pick); if (ni >= 0 && ni != cur) { selQ[g.key] = ni; renderList() } })
-        } else {
-            c.addView(ui.text(q.label, 13f, th.primary, true))
         }
-        // (v533) 4 أزرار بس: ترجمة (لونها الأساسي) + مشاهدة فقط · مشاهدة ع التلفزيون · تحميل — الثلاثة بنفس الأزرق. ضغطة طويلة على الاسم = نسخ اللينك · على «تحميل» = صوت بس (M4A)
-        c.addView(ui.button("🌐 ترجمة", true) { dlg?.dismiss(); openPlayer(q.f, false, q.audio) })
-        fun blue(t: String, f: () -> Unit) = ui.button(t) { f() }.apply { setTextColor(Color.WHITE); background = ui.box(BLUE, BLUE, 12) }
-        c.addView(blue("▶ مشاهدة فقط") { dlg?.dismiss(); openPlayer(q.f, true, q.audio) })
-        c.addView(blue("📺 مشاهدة ع التلفزيون") { dlg?.dismiss(); sendToTv(g, q) })
         val hasSz = q.label.contains("MB") || q.label.contains("GB")
-        val dlB = blue("⬇ تحميل" + (if (hasSz) "" else szTxt(q))) { dlg?.dismiss(); dlVideo(g, q) }
+        val info = ui.text(q.label + (if (hasSz) "" else szTxt(q)), 11f, th.muted).apply { setPadding(0, ui.dp(2), 0, ui.dp(2)) }
+        c.addView(info)
+        fun sb(t: String, fill: Int, txt: Int, f: () -> Unit) = IconTextView(this).apply {
+            text = t; textSize = 11.5f; gravity = Gravity.CENTER; maxLines = 1; setTextColor(txt); typeface = android.graphics.Typeface.DEFAULT_BOLD
+            background = ui.box(fill, fill, 10); setOnClickListener { f() }
+        }
+        val onP = if (th.isLight) Color.WHITE else Color.BLACK
+        val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL }
+        fun add(v: View) { row.addView(v, LinearLayout.LayoutParams(0, ui.dp(38), 1f).apply { setMargins(ui.dp(2), 0, ui.dp(2), 0) }) }
+        add(sb("🌐 ترجمة", th.primary, onP) { dlg?.dismiss(); openPlayer(q.f, false, q.audio) })
+        add(sb("▶ شاهد", BLUE, Color.WHITE) { dlg?.dismiss(); openPlayer(q.f, true, q.audio) })
+        add(sb("📺 تلفزيون", BLUE, Color.WHITE) { dlg?.dismiss(); sendToTv(g, q) })
+        val dlB = sb("⬇ حمّل", BLUE, Color.WHITE) { dlg?.dismiss(); dlVideo(g, q) }
         dlB.setOnLongClickListener { dlg?.dismiss(); dlAudio(g); true }
-        c.addView(dlB)
-        if (!hasSz && !isHls(q.f) && szCache[q.f.url] == null) {   // الحجم مش معروف: نسأل السيرفر ونحدّث الزرار
+        add(dlB)
+        c.addView(row)
+        if (!hasSz && !isHls(q.f) && szCache[q.f.url] == null) {   // الحجم مش معروف: نسأل السيرفر ونحدّث السطر
             szCache[q.f.url] = -2L
             val hs2 = dlHeaders(q.f); val u1 = q.f.url; val u2 = q.audio
             Thread {
                 var n = try { Downloader.sizeOf(u1, hs2) } catch (_: Throwable) { -1L }
                 if (n > 0 && u2 != null) { val a = try { Downloader.sizeOf(u2, hs2) } catch (_: Throwable) { -1L }; if (a > 0) n += a }
                 szCache[u1] = n
-                runOnUiThread { if (!dead && n > 0) dlB.text = "⬇ تحميل · " + Sniff.fmtSize(n) }
+                runOnUiThread { if (!dead && n > 0) info.text = q.label + " · " + Sniff.fmtSize(n) }
             }.apply { isDaemon = true }.start()
         }
         return c

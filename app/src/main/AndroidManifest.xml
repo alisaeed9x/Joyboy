@@ -46,6 +46,15 @@
             <intent-filter><action android:name="android.intent.action.VIEW"/><category android:name="android.intent.category.DEFAULT"/><category android:name="android.intent.category.BROWSABLE"/><data android:scheme="subtitler" android:host="ytlink"/></intent-filter>   <!-- (v488) دخول يوتيوب للتلفزيون بالـQR -->
             <intent-filter><action android:name="android.intent.action.VIEW"/><category android:name="android.intent.category.DEFAULT"/><category android:name="android.intent.category.BROWSABLE"/><data android:scheme="https"/><data android:host="www.youtube.com"/><data android:host="m.youtube.com"/><data android:host="youtu.be"/><data android:host="music.youtube.com"/></intent-filter>   <!-- (v345) لينكات يوتيوب تتفتح في Subtitler -->
         </activity>
+        <!-- (v593) أيقونتين إضافيتين في اللانشر: متصفح + يوتيوب (شاشات شفافة بتفتح الوجهة وتقفل) -->
+        <activity android:name=".LaunchBrowserActivity" android:exported="true" android:label="Joyboy Browser" android:icon="@mipmap/ic_joy_browser" android:roundIcon="@mipmap/ic_joy_browser"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar" android:excludeFromRecents="true" android:noHistory="true">
+            <intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/></intent-filter>
+        </activity>
+        <activity android:name=".LaunchYoutubeActivity" android:exported="true" android:label="Joyboy YouTube" android:icon="@mipmap/ic_joy_yt" android:roundIcon="@mipmap/ic_joy_yt"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar" android:excludeFromRecents="true" android:noHistory="true">
+            <intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/></intent-filter>
+        </activity>
         <activity android:name=".BrowserActivity" android:exported="false" android:windowSoftInputMode="adjustResize" android:theme="@style/AppSplash"
             android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboardHidden|density"/>
         <activity android:name=".PlayerActivity" android:exported="false"

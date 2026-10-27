@@ -18,7 +18,7 @@ jobs:
         run: gradle assembleDebug --stacktrace
       - uses: actions/upload-artifact@v4
         with:
-          name: subtitler-main-universal-debug
+          name: joyboy-main-universal-debug
           path: app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
   verify:
