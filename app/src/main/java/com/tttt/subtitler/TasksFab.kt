@@ -25,13 +25,14 @@ class TasksFab(private val act: Activity, private val parent: FrameLayout, priva
     private val listener: () -> Unit = { if (!act.isDestroyed && !act.isFinishing) main.post { refresh() } }
     private val tick = object : Runnable { override fun run() { if (!act.isDestroyed && !act.isFinishing) { refresh(); main.postDelayed(this, 1000L) } } }
     private var shown = false
+    private var placed = false
     private var downX = 0f; private var downY = 0f; private var startTx = 0f; private var startTy = 0f; private var moved = false
     /** الشاشة اللي فيها الزرار ممكن تخبّيه (صفحة المهام نفسها مثلًا) */
     var hidden = false
         set(v) { field = v; refresh() }
 
     init {
-        view.apply { visibility = View.GONE; elevation = ui.dp(8).toFloat() }
+        view.apply { visibility = View.GONE; elevation = ui.dp(16).toFloat(); translationZ = ui.dp(8).toFloat() }
         view.setOnTouchListener { v, e -> touch(v, e) }
         parent.addView(view, FrameLayout.LayoutParams(size, size, Gravity.TOP or Gravity.LEFT))
         parent.addOnLayoutChangeListener { _, l, t, r, b, ol, ot, or2, ob -> if (r - l != or2 - ol || b - t != ob - ot) place() }
@@ -50,6 +51,7 @@ class TasksFab(private val act: Activity, private val parent: FrameLayout, priva
         val fx = prefs.getFloat("tfab_fx", 0.02f); val fy = prefs.getFloat("tfab_fy", 0.68f)
         view.translationX = (fx * (w - size)).coerceIn(0f, (w - size).toFloat())
         view.translationY = (fy * (h - size)).coerceIn(0f, (h - size).toFloat())
+        placed = true
     }
 
     private fun touch(v: View, e: MotionEvent): Boolean {
@@ -91,6 +93,13 @@ class TasksFab(private val act: Activity, private val parent: FrameLayout, priva
         else view.set(a.frac, pctTxt, "", alive, false)
         if (show && !shown) { view.visibility = View.VISIBLE; Motion.pop(view, 0.5f) }
         if (!show && shown) view.visibility = View.GONE
+        // (v595) علاج ذاتي: لو الحالة بتقول «ظاهر» والـview مش ظاهر (أو اتغطّى بـview اتضافت بعده) نرجّعه ونطلّعه فوق
+        if (show) {
+            if (view.visibility != View.VISIBLE) view.visibility = View.VISIBLE
+            if (view.alpha != 1f) view.alpha = 1f
+            if (view.parent === parent && parent.indexOfChild(view) != parent.childCount - 1) view.bringToFront()
+            if (view.width == 0 || (view.translationX == 0f && view.translationY == 0f && !placed)) place()
+        }
         shown = show
         Motion.breathe(view, show && a.running > 0)
     }

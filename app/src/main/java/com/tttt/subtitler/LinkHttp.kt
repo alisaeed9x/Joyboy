@@ -26,11 +26,19 @@ class HttpReq(
     fun header(k: String): String = headers[k.lowercase()] ?: ""
 }
 
-class HttpRes(val code: Int, val type: String = "application/json; charset=utf-8", val body: ByteArray = ByteArray(0), val file: File? = null) {
+/** (v596) مصدر بيتقرا من أي موضع (Range) — ملفات كبيرة من غير ما تتحمّل في الرام */
+interface RangeSource {
+    val size: Long
+    val name: String
+    fun open(start: Long): InputStream
+}
+
+class HttpRes(val code: Int, val type: String = "application/json; charset=utf-8", val body: ByteArray = ByteArray(0), val file: File? = null, val src: RangeSource? = null) {
     companion object {
         fun json(s: String, code: Int = 200) = HttpRes(code, "application/json; charset=utf-8", s.toByteArray(Charsets.UTF_8))
         fun text(s: String, code: Int = 200) = HttpRes(code, "text/plain; charset=utf-8", s.toByteArray(Charsets.UTF_8))
         fun file(f: File, type: String) = HttpRes(200, type, ByteArray(0), f)
+        fun stream(s: RangeSource, type: String) = HttpRes(200, type, ByteArray(0), null, s)
     }
 }
 
@@ -114,12 +122,46 @@ class MiniHttp(private val port: Int, private val handler: (HttpReq) -> HttpRes)
                 val peer = try { s.inetAddress?.hostAddress ?: "" } catch (_: Exception) { "" }
                 val res = try { handler(HttpReq(method, path, q, hd, if (got == len) body else body.copyOf(got), peer)) }
                 catch (e: Throwable) { LogStore.err("MiniHttp:handler", e); HttpRes.text("ERR", 500) }
-                write(s, res, method == "HEAD")
+                write(s, res, method == "HEAD", hd["range"] ?: "")
             }
         } catch (_: Exception) {}
     }
 
-    private fun write(s: Socket, r: HttpRes, headOnly: Boolean) {
+    private fun writeRange(s: Socket, r: HttpRes, src: RangeSource, headOnly: Boolean, rng: String) {
+        val out = s.getOutputStream()
+        val total = src.size
+        var start = 0L; var end = total - 1; var partial = false
+        if (rng.startsWith("bytes=")) {
+            val q = rng.substring(6).split(",")[0].trim()
+            val a = q.substringBefore('-'); val b = q.substringAfter('-', "")
+            if (a.isEmpty()) { val n = b.toLongOrNull() ?: 0L; start = (total - n).coerceAtLeast(0L) }
+            else { start = a.toLongOrNull() ?: 0L; if (b.isNotEmpty()) end = (b.toLongOrNull() ?: end).coerceAtMost(total - 1) }
+            partial = true
+            if (start > end || start >= total) {
+                out.write(("HTTP/1.1 416 Range Not Satisfiable\r\nContent-Range: bytes */" + total + "\r\nContent-Length: 0\r\nConnection: close\r\n\r\n").toByteArray(Charsets.US_ASCII))
+                out.flush(); return
+            }
+        }
+        val len = end - start + 1
+        out.write(((if (partial) "HTTP/1.1 206 Partial Content\r\nContent-Range: bytes " + start + "-" + end + "/" + total + "\r\n" else "HTTP/1.1 200 OK\r\n") +
+            "Content-Type: " + r.type + "\r\nContent-Length: " + len + "\r\nAccept-Ranges: bytes\r\nConnection: close\r\nCache-Control: no-store\r\n\r\n").toByteArray(Charsets.US_ASCII))
+        if (!headOnly) {
+            src.open(start).use { ins ->
+                val buf = ByteArray(131072)
+                var left = len
+                while (left > 0) {
+                    val n = ins.read(buf, 0, minOf(buf.size.toLong(), left).toInt())
+                    if (n <= 0) break
+                    out.write(buf, 0, n); left -= n
+                }
+            }
+        }
+        out.flush()
+    }
+
+    private fun write(s: Socket, r: HttpRes, headOnly: Boolean, range: String = "") {
+        val rs = r.src
+        if (rs != null) { writeRange(s, r, rs, headOnly, range); return }
         val out = s.getOutputStream()
         val f = r.file
         val len: Long = if (f != null) f.length() else r.body.size.toLong()

@@ -26,8 +26,10 @@ object SplashArt {
         try {
             val decor = act.window.decorView as? ViewGroup ?: return
             val res = act.resources
-            val id = ids[(Math.random() * ids.size).toInt().coerceIn(0, ids.size - 1)]
-            val land = res.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
+            // (v595) التلفزيون: السبلاش العريض بس · الموبايل/التابلت: الطويلة بس (العريضة مابتظهرش على الموبايل)
+            val tv = try { DeviceUi.isTv(act) } catch (_: Throwable) { false }
+            val id = if (tv) R.drawable.splash_wide else ids[(Math.random() * ids.size).toInt().coerceIn(0, ids.size - 1)]
+            val land = tv || res.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
             val box = FrameLayout(act).apply {
                 setBackgroundColor(0xFF2E1609.toInt()); isClickable = true; elevation = 1000f
             }

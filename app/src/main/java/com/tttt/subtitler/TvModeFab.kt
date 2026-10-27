@@ -199,7 +199,7 @@ object TvModeFab {
             l.scrim = scrim
             // (v590) الدواير التلاتة (فيديوهات/متصفح/يوتيوب) اتشالت — فضل زرار الكنترولر بس
             val items = listOf(Triple("🎮", "كنترولر", 0xF0E53935.toInt()))
-            val angles = doubleArrayOf(140.0)
+            val angles = doubleArrayOf(90.0)   // (v595) فوق زرار 📺 مباشرة
             val r = dp(a, 88).toFloat()
             val csz = dp(a, 52); val lh = dp(a, 20)
             val lp0 = l.btn.layoutParams as FrameLayout.LayoutParams
@@ -248,7 +248,7 @@ object TvModeFab {
 
     private fun paint(a: Activity, l: Layer) {
         val on = PlayTarget.enabled()
-        if (l.open && on) closeFan(l, false)
+        if (l.open && !on) closeFan(l, false)   // (v595) كان بيقفل الدايرة فور فتحها وهو متصل ← زرار الكنترولر ما كانش بيظهر
         val list = tvs
         val prompting = System.currentTimeMillis() < promptUntil && list.isNotEmpty()
         l.banner.visibility = if (on) View.VISIBLE else View.GONE

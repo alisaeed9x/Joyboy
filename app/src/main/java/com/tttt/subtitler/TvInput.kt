@@ -212,6 +212,8 @@ object TvAccess {
     fun global(action: Int): Boolean { val s = svc ?: return false; return try { s.performGlobalAction(action) } catch (_: Throwable) { false } }
     fun key(code: Int): Boolean { val s = svc ?: return false; return try { s.key(code) } catch (_: Throwable) { false } }
     fun ptr(op: String, dx: Float, dy: Float): Boolean { val s = svc ?: return false; s.ptr(op, dx, dy); return true }
+    /** (v596) كيبورد الموبايل: بيكتب النص في خانة الكتابة المركّز عليها (أي تطبيق). false = مفيش خانة/الخدمة مش متفعّلة */
+    fun typeText(t: String): Boolean { val s = svc ?: return false; return try { s.typeText(t) } catch (_: Throwable) { false } }
 
     /** متفعّلة في إعدادات السيستم (حتى لو لسه ما اتوصّلتش) */
     fun enabled(ctx: Context): Boolean = try {
@@ -328,6 +330,24 @@ class TvAccessService : AccessibilityService() {
             if (ga != -1) return performGlobalAction(ga)
         }
         return focusMove(code)
+    }
+
+    /** (v596) اكتب [t] في الخانة اللي عليها التركيز (بيستبدل اللي مكتوب) */
+    fun typeText(t: String): Boolean {
+        val root = rootInActiveWindow ?: return false
+        var f: AccessibilityNodeInfo? = root.findFocus(AccessibilityNodeInfo.FOCUS_INPUT)
+        if (f == null || !f.isEditable) f = findEditable(root, 0)
+        val n = f ?: return false
+        val b = android.os.Bundle()
+        b.putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, t)
+        return n.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, b)
+    }
+
+    private fun findEditable(n: AccessibilityNodeInfo, d: Int): AccessibilityNodeInfo? {
+        if (d > 16) return null
+        if (n.isEditable && (n.isFocused || n.isAccessibilityFocused)) return n
+        for (i in 0 until n.childCount) { val c = n.getChild(i) ?: continue; val r = findEditable(c, d + 1); if (r != null) return r }
+        return null
     }
 
     private fun focusMove(code: Int): Boolean {

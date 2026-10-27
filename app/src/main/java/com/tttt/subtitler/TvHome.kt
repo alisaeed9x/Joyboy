@@ -106,6 +106,34 @@ class TvActivity : Activity() {
     fun onRemoteCleared() { runOnUiThread { if (!isDestroyed && !isFinishing) refreshView() } }
     companion object { @Volatile var live: java.lang.ref.WeakReference<TvActivity>? = null }
 
+    // ===== (v597 م1) نظام سكِنز الواجهة: اللي بيقدّمه TvActivity للسكِنز (انظر TvSkin.kt) =====
+    private val skinHost = object : TvSkinHost {
+        override val activity: Activity get() = this@TvActivity
+        override val theme: Theme get() = this@TvActivity.th
+        override val ui: Ui get() = this@TvActivity.ui
+        override val content: LinearLayout get() = this@TvActivity.content
+        override fun loadThumb(v: VideoItem, onBitmap: (Bitmap) -> Unit) {
+            Thumbs.load(this@TvActivity, v) { bmp -> if (bmp != null) this@TvActivity.runOnUiThread { if (!this@TvActivity.isDestroyed) onBitmap(bmp) } }
+        }
+        override fun isSdFolder(f: FolderItem): Boolean = f.videos.firstOrNull()?.let { this@TvActivity.isSd(it) } == true
+        override fun openFolder(f: FolderItem) { this@TvActivity.openFolderView(f) }
+        override fun playVideo(v: VideoItem) { this@TvActivity.playFile(v.uri, v.landscape) }
+        override fun menu(title: String, items: List<Pair<String, () -> Unit>>) {
+            GAlert(this@TvActivity).setTitle(title).setItems(items.map { it.first }.toTypedArray()) { _, i -> items.getOrNull(i)?.second?.invoke() }
+                .setNegativeButton("إغلاق", null).show()
+        }
+        override fun refresh() { this@TvActivity.refreshView() }
+    }
+
+    /** (v597 م1) اختيار سكِن الواجهة (Layout) — تبديل حي من غير ريستارت */
+    private fun tvSkinDialog() {
+        val cur = TvSkins.cur().id
+        val all = TvSkins.all
+        GAlert(this).setTitle("🧩 تصميم الواجهة (Layout)")
+            .setItems(all.map { (if (it.id == cur) "✔ " else "") + it.name }.toTypedArray()) { _, i -> TvSkins.set(all[i].id, skinHost); showAppearance() }
+            .setNegativeButton("إلغاء", null).show()
+    }
+
     override fun onActivityResult(req: Int, res: Int, data: Intent?) {
         super.onActivityResult(req, res, data)
         if (mediaOps?.onResult(req, res == RESULT_OK) == true) return
@@ -131,7 +159,9 @@ class TvActivity : Activity() {
                 .setPositiveButton("امسح الكل") { _, _ -> Recents.clearAll(this); Notice.show(this, "🗑 اتمسحت كل آخر المشغّلة", 2200L); refreshView() }
                 .setNegativeButton("إلغاء", null).show()
         }
-        GAlert(this).setTitle("🎬 " + title.take(48)).setItems(items.map { it.first }.toTypedArray()) { _, i -> items.getOrNull(i)?.second?.invoke() }
+        val mt = "🎬 " + title.take(48)
+        if (TvSkins.cur().contextMenu(skinHost, mt, items)) return   // (v597) خانة ContextMenu
+        GAlert(this).setTitle(mt).setItems(items.map { it.first }.toTypedArray()) { _, i -> items.getOrNull(i)?.second?.invoke() }
             .setNegativeButton("إغلاق", null).show()
     }
 
@@ -269,6 +299,11 @@ class TvActivity : Activity() {
         // (v498) زرار المساعد/البحث في الريموت (لو وصل للبرنامج) = بحث صوتي
         if ((ev.keyCode == KeyEvent.KEYCODE_VOICE_ASSIST || ev.keyCode == KeyEvent.KEYCODE_SEARCH) && ev.action == KeyEvent.ACTION_DOWN && ev.repeatCount == 0) { voiceToSearch(); return true }
         if (shortcutKey(ev)) return true   // (v505) اختصارات الريموت
+        // (v597) الأزرار الملونة: لو المستخدم مربّطها باختصار فالاختصار أولًا (فوق)، وإلا السكِن الحالي هو اللي يقرر
+        if (ev.action == KeyEvent.ACTION_DOWN && ev.repeatCount == 0 && currentFocus !is EditText) {
+            val ck = TvKeys.colorOf(ev.keyCode)
+            if (ck != null && TvSkins.cur().colorKey(skinHost, ck)) return true
+        }
         return super.dispatchKeyEvent(ev)
     }
 
@@ -1038,6 +1073,7 @@ class TvActivity : Activity() {
 
     private fun onFocusMoved(nw: View) {
         if (tabViews.none { it === nw }) { h.removeCallbacks(tabGoAct); tabAutoBlock = -1 }   // (v513) التركيز خرج من التابات
+        try { TvFocusMem.note(if (openFolder != null) "folder" else if (storageKind != null) "videos" else "home", nw) } catch (_: Throwable) {}   // (v597)
         try { focusRows(nw) } catch (e: Throwable) { LogStore.err("TvHome:rows", e) }
         updateSearchExpand(nw); alignScroll(nw)   // (v504) التوهّج بقى ثابت: مبقاش بيتغيّر مع التركيز
     }
@@ -1750,6 +1786,7 @@ class TvActivity : Activity() {
     private fun applyScrim() { if (::wallScrim.isInitialized) wallScrim.setBackgroundColor(TvWall.scrimColor()) }
 
     private fun showAppearance(focusIdx: Int = 0) {
+        if (TvSkins.cur().settings(skinHost)) return   // (v597) خانة Settings
         h.removeCallbacks(searchRun)
         muteSearch = true; searchEt?.setText(""); muteSearch = false; inSearch = false
         storageKind = null; openFolder = null; foldersHost = null; setTab(-1); prayerCd = null
@@ -1783,7 +1820,8 @@ class TvActivity : Activity() {
             Grp("✨ التركيز والحركة", listOf(
                 Opt("⬆ طلوع وتكبير المتركّز", { liftNames[liftLevel()] }, cyc("tv_lift", "2", listOf("0", "1", "2", "3"))),
                 Opt("✨ وهج خلف المتركّز", { onOff("tv_halo", "1") }, tog("tv_halo", "1")),
-                Opt("🎞 وضع الواجهة والحركة", { Skins.cur().name }, { skinDialog() })
+                Opt("🎞 وضع الواجهة والحركة", { Skins.cur().name }, { skinDialog() }),
+                Opt("🧩 تصميم الواجهة (Layout)", { TvSkins.cur().name }, { tvSkinDialog() })
             )),
             Grp("🏠 الرئيسية والتطبيقات", listOf(
                 Opt("🎛 تخصيص الصفوف", { "" }, { rowsDialog() }),
@@ -1834,6 +1872,7 @@ class TvActivity : Activity() {
     }
 
     private fun themeDialog() {
+        if (TvSkins.cur().themes(skinHost)) return   // (v597) خانة Themes
         val all = Themes.all
         GAlert(this).setTitle("🎨 اختار السمة")
             .setItems(all.map { (if (it.id == th.id) "✔ " else "") + it.name }.toTypedArray()) { _, i -> Cfg.put("theme", all[i].id); recreate() }
@@ -2095,11 +2134,9 @@ class TvActivity : Activity() {
         fh.addView(hrow(cards))
     }
 
-    private fun homeFolderTile(f: FolderItem): View {
-        val sd = f.videos.firstOrNull()?.let { isSd(it) } == true
-        return vTile({ iv -> f.videos.firstOrNull()?.let { v -> Thumbs.load(this, v) { bmp -> if (bmp != null) runOnUiThread { iv.setImageBitmap(bmp) } } } },
-            "📁 " + f.name, (if (sd) "💾 فلاشة · " else "📱 داخلية · ") + f.videos.size.toString() + " فيديو", -1, false, { openFolderView(f) }, null, true)
-    }
+    /** (v597 م2) كارت فولدر الرئيسية: الصورة بعرض ثابت والنص في عمود جنبها (من سكِن الواجهة الحالي) */
+    private fun homeFolderTile(f: FolderItem): View =
+        TvSkins.cur().folderCard(skinHost, f, TvFolderSize.SHELF) { openFolderView(f) }.also { it.tag = "fold:" + f.key }
 
     private fun showStorage(kind: String) {
         storageKind = kind; openFolder = null; storageQuery = ""
@@ -2117,14 +2154,18 @@ class TvActivity : Activity() {
         }.apply { isDaemon = true }.start()
     }
 
-    /** (v493) كارت فولدر فيديو: 16:9 بصورة أول فيديو، والاسم تحته وهو متركّز */
+    /** (v597 م2) كارت فولدر فيديو (قايمة / شبكة صغيرة / شبكة كبيرة) — صورة ثابتة العرض + عمود نص: الاسم · العدد · الحجم */
     private fun folderCard(f: FolderItem, first: Boolean, fh: LinearLayout, mode: String = "grid"): View {
-        val thumb: (ImageView) -> Unit = { iv -> f.videos.firstOrNull()?.let { v -> Thumbs.load(this, v) { bmp -> if (bmp != null) runOnUiThread { iv.setImageBitmap(bmp) } } } }
         val go: () -> Unit = { openFolder = f.key; storageQuery = ""; fillStorageView(fh, true); pageEnter() }
-        val c = if (mode == "list") listRow(thumb, "📁 " + f.name, f.videos.size.toString() + " فيديو · " + (if (f.videos.firstOrNull()?.let { isSd(it) } == true) "💾 فلاشة" else "📱 داخلية") + " · " + VideoLib.fmtSize(f.videos.sumOf { it.size }), go)
-                else vTile(thumb, "📁 " + f.name, f.videos.size.toString() + " فيديو", -1, false, go, null, true, wOf(mode))
+        val c = TvSkins.cur().folderCard(skinHost, f, TvFolderSize.fromView(mode), go)
         c.tag = if (first) "fold:first" else "fold:" + f.key
         return c
+    }
+
+    /** (v597 م2) شبكة/قايمة كروت الفولدرات بعدد الأعمدة المناسب لحجم الكارت */
+    private fun addFolderCards(body: LinearLayout, cards: List<View>, mode: String) {
+        val size = TvFolderSize.fromView(mode)
+        if (size == TvFolderSize.LIST) cards.forEach { body.addView(it) } else gridInto(body, cards, TvFolderCard.perRow(size, resources.displayMetrics))
     }
 
     /** (v493 م3) جوه الفلاشة/الذاكرة: شريط بحث فوق، وتحته فولدرات الفيديو بس؛ ولما تدخل فولدر تظهر فيديوهاته */
@@ -2174,7 +2215,7 @@ class TvActivity : Activity() {
                 val fm = foldView()
                 body.addView(ui.text("📁 " + all.size + " فولدر · 🎞 " + vids0.size + " فيديو · الترتيب: " + VideoLib.sortLabelOf(foldSort()) + " · العرض: " + (viewLabels[fm] ?: ""), 13f, th.muted).apply { setPadding(ui.dp(10), ui.dp(4), ui.dp(10), ui.dp(2)) })
                 val cards = all.take(300).mapIndexed { i, f -> folderCard(f, i == 0, fh, fm) }
-                addCards(body, cards, fm)
+                addFolderCards(body, cards, fm)
                 if (focus) body.post { try { cards.firstOrNull()?.requestFocus() } catch (_: Throwable) {} }
                 return
             }
@@ -2216,7 +2257,7 @@ class TvActivity : Activity() {
         if (groups.isEmpty()) { fh.addView(ui.text("مفيش فيديوهات على الفلاشة ولا على الذاكرة الداخلية", 14f, th.muted).apply { setPadding(ui.dp(10), ui.dp(10), ui.dp(10), ui.dp(6)) }); return }
         fh.addView(sectionTitle("📁 الفولدرات (" + groups.size + ")"))
         val dm = resources.displayMetrics
-        val perRow = ((dm.widthPixels / dm.density - 68f) / 230f).toInt().coerceIn(1, 5)
+        val perRow = TvFolderCard.perRow(TvFolderSize.GRID_S, dm)
         val cards = groups.take(120).mapIndexed { i, f -> miniFolder(f, i == 0) }
         var k = 0
         while (k < cards.size) {
@@ -2232,30 +2273,9 @@ class TvActivity : Activity() {
         if (focus) fh.post { try { firstFocusable(fh)?.requestFocus() } catch (_: Throwable) {} }
     }
 
-    /** (v531) فولدر صغير: مربع مصغّر + الاسم وعدد الفيديوهات جنبه */
-    private fun miniFolder(f: FolderItem, first: Boolean): View {
-        val sd = f.videos.firstOrNull()?.let { isSd(it) } == true
-        val c = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL
-            isFocusable = true; isClickable = true; setPadding(ui.dp(8), ui.dp(8), ui.dp(12), ui.dp(8))
-            background = ui.box(th.surface, th.border, 14)
-            setOnClickListener { openFolderView(f) }
-            setOnFocusChangeListener { v, fo -> v.background = ui.box(if (fo) th.card else th.surface, if (fo) th.primary else th.border, 14, if (fo) 3 else 1) }
-        }
-        val iv = ImageView(this).apply {
-            scaleType = ImageView.ScaleType.CENTER_CROP; setBackgroundColor(0xFF000000.toInt())
-            outlineProvider = object : android.view.ViewOutlineProvider() { override fun getOutline(v: View, o: android.graphics.Outline) { o.setRoundRect(0, 0, v.width, v.height, ui.dp(10).toFloat()) } }
-            clipToOutline = true
-        }
-        f.videos.firstOrNull()?.let { v -> Thumbs.load(this, v) { bmp -> if (bmp != null) runOnUiThread { iv.setImageBitmap(bmp) } } }
-        c.addView(iv, LinearLayout.LayoutParams(ui.dp(52), ui.dp(52)))
-        val tc = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; setPadding(ui.dp(10), 0, 0, 0) }
-        tc.addView(ui.text(f.name, 14f, th.text, true).apply { maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END })
-        tc.addView(ui.text(f.videos.size.toString() + " فيديو · " + (if (sd) "💾" else "📱"), 11f, th.muted).apply { maxLines = 1 })
-        c.addView(tc, LinearLayout.LayoutParams(0, -2, 1f))
-        c.tag = if (first) "fold:first" else "fold:" + f.key
-        return c
-    }
+    /** (v597 م2) فولدر صفحة «الفيديوهات»: نفس كارت الفولدر (شبكة صغيرة) — كان الحشو على الناحية الغلط فالاسم العربي بيلزق في الصورة */
+    private fun miniFolder(f: FolderItem, first: Boolean): View =
+        TvSkins.cur().folderCard(skinHost, f, TvFolderSize.GRID_S) { openFolderView(f) }.also { it.tag = if (first) "fold:first" else "fold:" + f.key }
 
     private fun sortMenu(fh: LinearLayout, refill: () -> Unit = { fillStorageView(fh, true) }) {
         fun lab(k: String) = VideoLib.sortLabelOf(k)
@@ -2509,6 +2529,7 @@ class TvActivity : Activity() {
     private var homeCacheSig = ""
 
     private fun showHome(focus: Boolean = true, reuse: Boolean = false) {
+        if (TvSkins.cur().home(skinHost, focus, reuse)) return   // (v597) خانة Home في السكِن
         if (reuse && !inSearch) {
             val cache = homeCache
             if (cache != null && System.currentTimeMillis() - homeCacheAt < 600_000L) {
@@ -2657,6 +2678,7 @@ class TvActivity : Activity() {
     }
 
     private fun openFolderView(f: FolderItem) {
+        if (TvSkins.cur().folderView(skinHost, f)) return   // (v597) خانة FolderView
         muteSearch = true; searchEt?.setText(""); muteSearch = false; inSearch = false
         storageKind = "all"; openFolder = f.key; storageQuery = ""; setTab(1)   // (v530)
         content.removeAllViews()
@@ -2664,8 +2686,8 @@ class TvActivity : Activity() {
         fillStorageView(sv, true)
     }
 
-    private fun folderTile(f: FolderItem): View = vTile({ iv -> f.videos.firstOrNull()?.let { v -> Thumbs.load(this, v) { bmp -> if (bmp != null) runOnUiThread { iv.setImageBitmap(bmp) } } } },
-        "📁 " + f.name, f.videos.size.toString() + " فيديو", -1, false, { openFolderView(f) }, null, true)
+    private fun folderTile(f: FolderItem): View =
+        TvSkins.cur().folderCard(skinHost, f, TvFolderSize.SHELF) { openFolderView(f) }.also { it.tag = "fold:" + f.key }
 
     /** (v531) أول لينك http(s) في نص البحث (null لو مفيش) */
     private fun searchUrl(t: String): String? = Regex("https?://\\S+").find(t.trim())?.value?.trimEnd('.', ',', ')', '،')
@@ -2676,6 +2698,7 @@ class TvActivity : Activity() {
     private fun runSearch(q: String) {
         val ql = q.trim()
         if (ql.isEmpty()) return
+        if (TvSkins.cur().search(skinHost, ql)) return   // (v597) خانة Search
         inSearch = true; storageKind = null; openFolder = null; foldersHost = null
         content.removeAllViews()
         searchUrl(ql)?.let { lu ->   // (v531) نص البحث فيه لينك: كارت «افتح اللينك» أول حاجة (من غير ما تدوّر عليه كبحث)

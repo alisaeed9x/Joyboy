@@ -128,6 +128,7 @@ class RemoteActivity : Activity() {
         ctrl.addView(panel(vrow(cmdBtn("🔇", "mute"))))   // (v551) ⏻ باور أوف اتشال (محتاج إمكانية الوصول وTCL بتمنعها)))   // (v550) زرار 😴 مؤقت النوم اتشال من الشاشة (الدالة sleepBtn() لسه موجودة)
         ctrl.addView(panel(vrow(wordCmd("💾 فلاشة", "open_sd"), wordCmd("📱 داخلية", "open_int"))), LinearLayout.LayoutParams(-1, -2).apply { topMargin = ui.dp(10) })   // (v550) اتشالوا: مشغّل الفيديو · يوتيوب · متصفح · يوتيوب التلفزيون
         ctrl.addView(panel(vrow(bigBtn("📚 تصفّح فيديوهات التلفزيون") { startActivity(Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP).putExtra("tab", "videos").putExtra("lib_tv", true)) }, bigBtn("🧰 مهام التلفزيون") { TvTasksUi.show(this) }, tvModeBtn())), LinearLayout.LayoutParams(-1, -2).apply { topMargin = ui.dp(10) })   // (v543 م3/م4) فيديوهات التلفزيون + وضع التلفزيون
+        ctrl.addView(panel(vrow(bigBtn("📤 ابعت ملف للتلفزيون") { pickFiles() }, bigBtn("📥 هات فيديو من التلفزيون") { XferUi.browseTv(this) }), vrow(privBtn())), LinearLayout.LayoutParams(-1, -2).apply { topMargin = ui.dp(10) })   // (v596) نقل ملفات + سماعة خاصة
         col.addView(ctrl)
 
         remote = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL }
@@ -191,7 +192,7 @@ class RemoteActivity : Activity() {
         }
     }
 
-    override fun onDestroy() { stopRepeat(); RemoteClient.removeListener(lis); super.onDestroy() }
+    override fun onDestroy() { stopRepeat(); RemoteClient.removeListener(lis); PrivateListen.listener = null; super.onDestroy() }
 
     override fun onPause() { stopRepeat(); polling = false; h.removeCallbacks(pollRun); retryOn = false; h.removeCallbacks(retryRun); h.removeCallbacks(pollRun); super.onPause() }
 
@@ -684,17 +685,57 @@ class RemoteActivity : Activity() {
     /** ☰: في المتصفح بتفتح قايمة المتصفح، وغير كده إعدادات برنامج التلفزيون */
     private fun menuBtn(): View = ui.button("☰") { if (RemoteClient.tvCtx == "browser") RemoteClient.key("menu") else RemoteClient.cmd("open_settings") }.skin().apply { textSize = 20f }
 
-    /** كيبورد الموبايل ← أي خانة على التلفزيون */
+    /** كيبورد الموبايل ← أي خانة على التلفزيون (v596: بيكتب وإنت بتكتب، ومش لازم تكون متصل قبلها) */
     private fun askTvText() {
-        val et = EditText(this).apply { hint = "اكتب هنا وهيتبعت لخانة الكتابة على التلفزيون"; setSingleLine(false) }
-        AlertDialog.Builder(this).setTitle("⌨ كيبورد").setView(et)
-            .setPositiveButton("ابعت") { _, _ ->
-                val t = et.text.toString()
-                if (t.isNotEmpty()) Thread {
-                    val er = RemoteClient.sendText(t)
-                    h.post { Notice.show(this, if (er == null) "✅ النص وصل للتلفزيون" else "⚠ $er", 2200L) }
-                }.also { it.isDaemon = true }.start()
-            }.setNegativeButton("إلغاء", null).show()
+        val et = EditText(this).apply { hint = "اكتب هنا — بيظهر في خانة التلفزيون وإنت بتكتب"; setSingleLine(false); minLines = 2 }
+        var lastSent = ""
+        var pending: Runnable? = null
+        fun push(t: String) {
+            lastSent = t
+            Thread {
+                val ok = try { RemoteClient.ensureConnected(this, 8000L) } catch (_: Throwable) { false }
+                val er = if (!ok) "ما قدرتش أوصل للتلفزيون" else RemoteClient.sendText(t)
+                if (er != null) h.post { Notice.show(this, "⚠ $er", 3500L) }
+            }.also { it.isDaemon = true }.start()
+        }
+        et.addTextChangedListener(object : android.text.TextWatcher {
+            override fun afterTextChanged(s: android.text.Editable?) {
+                pending?.let { h.removeCallbacks(it) }
+                val r = Runnable { val t = et.text.toString(); if (t != lastSent) push(t) }
+                pending = r; h.postDelayed(r, 500L)
+            }
+            override fun beforeTextChanged(s: CharSequence?, st: Int, c: Int, a: Int) {}
+            override fun onTextChanged(s: CharSequence?, st: Int, b: Int, c: Int) {}
+        })
+        val d = AlertDialog.Builder(this).setTitle("⌨ كيبورد التلفزيون").setView(et)
+            .setPositiveButton("ابعت ✓") { _, _ -> val t = et.text.toString(); if (t != lastSent) push(t) }
+            .setNegativeButton("إغلاق", null).create()
+        d.setOnDismissListener { pending?.let { h.removeCallbacks(it) } }
+        d.window?.setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_STATE_VISIBLE)
+        d.setOnShowListener { et.requestFocus() }
+        d.show()
+    }
+
+    /** (v596) ابعت ملفات (أي نوع) للتلفزيون على الواي فاي بشريط تقدم */
+    private fun pickFiles() {
+        try {
+            startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType("*/*").putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true), 5402)
+        } catch (e: Throwable) { LogStore.err("Remote:pick", e); Notice.show(this, "⚠ ما قدرتش أفتح اختيار الملفات", 2500L) }
+    }
+
+    /** (v596) «سماعة خاصة»: الصوت على الموبايل والتلفزيون بيتكتم */
+    private fun privBtn(): View {
+        val b = ui.button("") { }
+        fun paint() {
+            b.text = if (PrivateListen.on) (PrivateListen.status.ifEmpty { "🎧 شغّالة" } + "  ·  دوس للإيقاف") else "🎧 سماعة خاصة (الصوت على الموبايل)"
+        }
+        b.setOnClickListener {
+            if (PrivateListen.on) PrivateListen.stop() else { PrivateListen.start(this); Notice.show(this, "🎧 لبّس السماعة — الصوت هيتحوّل للموبايل والتلفزيون هيتكتم", 3500L) }
+            paint()
+        }
+        PrivateListen.listener = { _, _ -> paint() }
+        paint()
+        return b.skin().apply { textSize = 14f }
     }
 
     private fun wordCmd(t: String, c: String): View = ui.button(t) { RemoteClient.cmd(c) }.skin().apply { textSize = 15f }
@@ -952,6 +993,15 @@ class RemoteActivity : Activity() {
     @Deprecated("Deprecated in Java")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == 5402) {   // (v596) ملفات للتلفزيون
+            if (resultCode != RESULT_OK || data == null) return
+            val uris = ArrayList<android.net.Uri>()
+            data.clipData?.let { cd -> for (i in 0 until cd.itemCount) cd.getItemAt(i).uri?.let { uris.add(it) } }
+            if (uris.isEmpty()) data.data?.let { uris.add(it) }
+            for (u in uris) try { contentResolver.takePersistableUriPermission(u, Intent.FLAG_GRANT_READ_URI_PERMISSION) } catch (_: Throwable) {}
+            if (uris.isNotEmpty()) XferUi.sendUris(this, uris)
+            return
+        }
         if (requestCode != 5401 || resultCode != RESULT_OK) return
         val u = data?.data ?: return
         Notice.show(this, "⏳ بجهّز الملف…", 2000L)

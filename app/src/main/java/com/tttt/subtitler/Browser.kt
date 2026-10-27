@@ -462,9 +462,9 @@ class BrowserActivity : Activity() {
         // (v594) علامة الاصطياد بقت كبسولة بتطلع من الجنب الشمال بدل الشريط السفلي؛ دوسة عليها بتفتح نافذة عايمة صغيرة
         badge = IconButton(this).apply {
             isAllCaps = false; textSize = 14f; visibility = View.GONE; minWidth = 0; minimumWidth = 0; stateListAnimator = null
-            setTextColor(if (th.isLight) Color.WHITE else Color.BLACK); setPadding(ui.dp(10), 0, ui.dp(14), 0)
+            setTextColor(if (th.isLight) Color.WHITE else Color.BLACK); setPadding(ui.dp(14), 0, ui.dp(10), 0)
             val r = ui.dp(20).toFloat()
-            background = android.graphics.drawable.GradientDrawable().apply { setColor(th.primary); cornerRadii = floatArrayOf(0f, 0f, r, r, r, r, 0f, 0f); setStroke(ui.dp(1), 0x66FFFFFF) }
+            background = android.graphics.drawable.GradientDrawable().apply { setColor(th.primary); cornerRadii = floatArrayOf(r, r, 0f, 0f, 0f, 0f, r, r); setStroke(ui.dp(1), 0x66FFFFFF) }
             elevation = ui.dp(6).toFloat(); alpha = 0.95f
             setOnClickListener { showList() }
         }
@@ -516,7 +516,7 @@ class BrowserActivity : Activity() {
             addView(webHolder, FrameLayout.LayoutParams(-1, -1))
             addView(panicCover, FrameLayout.LayoutParams(-1, -1))
             addView(panicCol, FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM or Gravity.RIGHT).apply { setMargins(0, 0, ui.dp(4), ui.dp(8)) })
-            addView(badge, FrameLayout.LayoutParams(-2, ui.dp(40), Gravity.LEFT or Gravity.CENTER_VERTICAL))   // (v594) كبسولة الاصطياد على الجنب
+            addView(badge, FrameLayout.LayoutParams(-2, ui.dp(40), Gravity.RIGHT or Gravity.CENTER_VERTICAL))   // (v595) كبسولة الاصطياد على الجنب اليمين
             addView(blockCover, FrameLayout.LayoutParams(-1, -1))   // (v412) فوق كل حاجة
         }
         if (tvOn) {   // (v480 م6) المؤشر فوق الصفحة والغطا والأزرار العايمة
@@ -1611,7 +1611,7 @@ class BrowserActivity : Activity() {
         else {
             badge.text = "🎬 $n"; hint.visibility = View.GONE
             if (badge.visibility != View.VISIBLE) {   // بتطلع من الجنب
-                badge.visibility = View.VISIBLE; badge.translationX = -ui.dp(70).toFloat()
+                badge.visibility = View.VISIBLE; badge.translationX = ui.dp(70).toFloat()
                 badge.animate().translationX(0f).setDuration(260L).start()
             }
         }
@@ -1811,7 +1811,7 @@ class BrowserActivity : Activity() {
         d.setContentView(col)
         d.window?.apply {
             setBackgroundDrawable(ColorDrawable(0)); clearFlags(android.view.WindowManager.LayoutParams.FLAG_DIM_BEHIND)
-            setLayout(minOf(ui.dp(320), (dm.widthPixels * 0.88f).toInt()), -2); setGravity(Gravity.LEFT or Gravity.CENTER_VERTICAL)
+            setLayout(minOf(ui.dp(320), (dm.widthPixels * 0.88f).toInt()), -2); setGravity(Gravity.RIGHT or Gravity.CENTER_VERTICAL)
             attributes = attributes.apply { x = ui.dp(6); dimAmount = 0f }
         }
         d.setCanceledOnTouchOutside(true)

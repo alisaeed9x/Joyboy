@@ -67,6 +67,9 @@ class PlayerActivity : Activity(), Host {
         }
 
         /** (v520) حالة المشغّل للموبايل: عنوان · مكان · مدة · تشغيل · سرعة · احتواء · ترجمة · حجم/إزاحة الترجمة · صوت/جودة. null = مفيش مشغّل */
+        /** (v596) الملف المحلي اللي المشغّل شغّاله (للسماعة الخاصة على الموبايل) */
+        fun curUri(): Uri? = live()?.uri
+
         fun remoteState(): org.json.JSONObject? { val o = live() ?: return null; return onUi(o) { o.rState() } }
 
         /** (v520) أوامر المشغّل من الموبايل. v = قيمة (مللي ثانية / اتجاه) */
@@ -100,6 +103,12 @@ class PlayerActivity : Activity(), Host {
         j.put("sf_side", sfSideName()); j.put("sf_nat", sfNativeCount()); j.put("sf_live", sfLive); j.put("sf_busy", sfBusy)   // (v529)
         // (v531) شاشة «مشغّل الفيديو» في الريموت = نفس تقسيمة مشغّل الموبايل: كل حالة الأزرار والكبسولات
         j.put("kind", "player")
+        // (v596) مصدر الصوت للسماعة الخاصة: لينك http (مع الهيدرز) أو "local" = ملف على التلفزيون بيتقدّم من /file/cur
+        try {
+            val au = aurl ?: url ?: uri?.toString()?.takeIf { it.startsWith("http") }
+            if (au != null && au.startsWith("http")) { j.put("src", au); j.put("hdr", org.json.JSONObject(HashMap<String, String>(hdr) as Map<*, *>)) }
+            else if (uri != null) j.put("src", "local")
+        } catch (_: Throwable) {}
         j.put("vw", vidW); j.put("vh", vidH)   // (v546)
         j.put("loop", Cfg.str("loop", "0") == "1")
         j.put("dual", try { SubStyle.load { k, d -> Cfg.str(k, d) }.dual } catch (_: Throwable) { 0 })

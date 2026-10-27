@@ -135,6 +135,8 @@ com/tttt/subtitler/Trim.kt
 com/tttt/subtitler/TvBlur.kt
 com/tttt/subtitler/TvDirect.kt
 com/tttt/subtitler/TvFocus.kt
+com/tttt/subtitler/TvFocusMem.kt
+com/tttt/subtitler/TvFolderCard.kt
 com/tttt/subtitler/TvHome.kt
 com/tttt/subtitler/TvInput.kt
 com/tttt/subtitler/TvKill.kt
@@ -146,8 +148,11 @@ com/tttt/subtitler/TvScale.kt
 com/tttt/subtitler/TvScrub.kt
 com/tttt/subtitler/TvSetup.kt
 com/tttt/subtitler/TvShell.kt
+com/tttt/subtitler/TvSkin.kt
+com/tttt/subtitler/TvSkinClassic.kt
 com/tttt/subtitler/TvTasksUi.kt
 com/tttt/subtitler/TvTiles.kt
+com/tttt/subtitler/TvTokens.kt
 com/tttt/subtitler/TvUpdate.kt
 com/tttt/subtitler/TvWatchNext.kt
 com/tttt/subtitler/TvWifi.kt
@@ -164,6 +169,7 @@ com/tttt/subtitler/WebIdent.kt
 com/tttt/subtitler/WebMute.kt
 com/tttt/subtitler/WebVideos.kt
 com/tttt/subtitler/Widgets.kt
+com/tttt/subtitler/Xfer.kt
 com/tttt/subtitler/YoutubeUi.kt
 com/tttt/subtitler/YtAccount.kt
 com/tttt/subtitler/YtAudio.kt

@@ -47,11 +47,11 @@
             <intent-filter><action android:name="android.intent.action.VIEW"/><category android:name="android.intent.category.DEFAULT"/><category android:name="android.intent.category.BROWSABLE"/><data android:scheme="https"/><data android:host="www.youtube.com"/><data android:host="m.youtube.com"/><data android:host="youtu.be"/><data android:host="music.youtube.com"/></intent-filter>   <!-- (v345) لينكات يوتيوب تتفتح في Subtitler -->
         </activity>
         <!-- (v593) أيقونتين إضافيتين في اللانشر: متصفح + يوتيوب (شاشات شفافة بتفتح الوجهة وتقفل) -->
-        <activity android:name=".LaunchBrowserActivity" android:exported="true" android:label="Joyboy Browser" android:icon="@mipmap/ic_joy_browser" android:roundIcon="@mipmap/ic_joy_browser"
+        <activity android:name=".LaunchBrowserActivity" android:exported="true" android:taskAffinity="" android:label="Joyboy Browser" android:icon="@mipmap/ic_joy_browser" android:roundIcon="@mipmap/ic_joy_browser"
             android:theme="@android:style/Theme.Translucent.NoTitleBar" android:excludeFromRecents="true" android:noHistory="true">
             <intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/></intent-filter>
         </activity>
-        <activity android:name=".LaunchYoutubeActivity" android:exported="true" android:label="Joyboy YouTube" android:icon="@mipmap/ic_joy_yt" android:roundIcon="@mipmap/ic_joy_yt"
+        <activity android:name=".LaunchYoutubeActivity" android:exported="true" android:taskAffinity="" android:label="Joyboy YouTube" android:icon="@mipmap/ic_joy_yt" android:roundIcon="@mipmap/ic_joy_yt"
             android:theme="@android:style/Theme.Translucent.NoTitleBar" android:excludeFromRecents="true" android:noHistory="true">
             <intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/></intent-filter>
         </activity>
@@ -108,7 +108,10 @@
         <service android:name=".TaskService" android:exported="false" android:foregroundServiceType="dataSync" android:stopWithTask="false"/>   <!-- (v420) مهام الترميز في الخلفية -->
         <!-- (v518) ريموت الموبايل: شاشة التحكم (أيقونة تانية على الموبايل) · هدف مشاركة «ابعت للتلفزيون» · الخدمة الأمامية -->
         <activity android:name=".RemoteActivity" android:exported="true" android:label="ريموت التلفزيون" android:icon="@mipmap/ic_remote" android:roundIcon="@mipmap/ic_remote" android:launchMode="singleTop"
-            android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboardHidden|density">
+            android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboardHidden|density"/>
+        <!-- (v595) أيقونة الريموت: شاشة شفافة بتفتح RemoteActivity في كل مرة (زي المتصفح/يوتيوب) -->
+        <activity android:name=".LaunchRemoteActivity" android:exported="true" android:taskAffinity="" android:label="ريموت التلفزيون" android:icon="@mipmap/ic_remote" android:roundIcon="@mipmap/ic_remote"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar" android:excludeFromRecents="true" android:noHistory="true">
             <intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/></intent-filter>
         </activity>
         <activity android:name=".SendToTvActivity" android:exported="true" android:label="📺 ابعت للتلفزيون" android:theme="@android:style/Theme.Translucent.NoTitleBar"

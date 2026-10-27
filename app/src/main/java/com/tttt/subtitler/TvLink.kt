@@ -244,6 +244,10 @@ object TvLink {
             "/lib/folders" -> BrainRpc.libFolders(app, r)
             "/lib/videos" -> BrainRpc.libVideos(app, r)
             "/lib/thumb" -> BrainRpc.libThumb(app, r)
+            "/file/lib" -> TvXfer.fileLib(app, r)     // (v596) تحميل فيديو من مكتبة التلفزيون على الموبايل (Range)
+            "/file/cur" -> TvXfer.fileCur(app, r)     // (v596) السماعة الخاصة: ملف المشغّل المحلي
+            "/pull" -> TvXfer.pull(app, r)            // (v596) الموبايل يبعت ملف: التلفزيون يسحبه
+            "/priv" -> TvXfer.priv(app, r)            // (v596) كتم التلفزيون وقت السماعة الخاصة
             "/cfg" -> BrainRpc.cfg(r)
             "/bye" -> { rm.announced = false; rm.lastSeen = 0L; notice("📱 الريموت «" + rm.name + "» فصل"); ok() }
             else -> err(404, "nf")
@@ -511,7 +515,7 @@ object TvLink {
     private fun typeText(r: HttpReq): HttpRes {
         val j = try { JSONObject(r.bodyText()) } catch (_: Exception) { return err(403, "bad") }
         val t = j.optString("text")
-        if (t.isEmpty()) return err(403, "empty")
+        if (t.isEmpty() && (j.optBoolean("search") || !j.has("text"))) return err(403, "empty")
         TypeServer.lastText = t; TypeServer.lastAt = System.currentTimeMillis()
         if (j.optBoolean("search")) {   // (v533) بحث من الريموت: اخرج من أي شاشة وابحث في شريط بحث اللانشر
             h.post {
@@ -520,8 +524,26 @@ object TvLink {
             }
             return ok()
         }
-        notice("⌨ وصل نص من الموبايل")
-        return ok()
+        // (v596) كتابة فعلية: خانة في برنامجنا ← بنكتب فيها مباشرة، وغير كده بإمكانية الوصول (أي تطبيق)
+        val typed = typeInApp(t) || TvAccess.typeText(t)
+        if (typed) notice("⌨ " + t.take(40), 1600L) else notice("⌨ وصل نص من الموبايل — مفيش خانة كتابة مفتوحة", 2600L)
+        return ok(JSONObject().put("typed", typed))
+    }
+
+    /** (v596) بيكتب في EditText المركّز عليها في الشاشة الظاهرة من البرنامج (على خيط الواجهة، مهلة 1.5 ثانية) */
+    private fun typeInApp(t: String): Boolean {
+        val a = top?.get() ?: return false
+        val res = BooleanArray(1)
+        val l = java.util.concurrent.CountDownLatch(1)
+        h.post {
+            try {
+                val f = a.currentFocus
+                if (f is android.widget.EditText) { f.setText(t); f.setSelection(f.text.length); res[0] = true }
+            } catch (_: Throwable) {}
+            l.countDown()
+        }
+        try { l.await(1500, java.util.concurrent.TimeUnit.MILLISECONDS) } catch (_: InterruptedException) {}
+        return res[0]
     }
 
     // ===== نقل مفاتيح Gemini من الموبايل =====

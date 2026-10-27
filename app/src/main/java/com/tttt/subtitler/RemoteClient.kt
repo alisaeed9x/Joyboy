@@ -463,7 +463,11 @@ object RemoteClient {
 
     /** search=true (v533): التلفزيون يخرج من أي مكان (مشغّل/متصفح/تطبيق) ويفتح الرئيسية ويبحث في شريط البحث */
     fun sendText(text: String, search: Boolean = false): String? {
-        val (c, _) = post("/type", JSONObject().put("text", text).put("search", search))
+        val (c, body) = post("/type", JSONObject().put("text", text).put("search", search))
+        if (c == 200 && !search) {   // (v596) التلفزيون الجديد بيقول لو النص اتكتب فعلًا في خانة
+            val typed = try { JSONObject(body).optBoolean("typed", true) } catch (_: Exception) { true }
+            if (!typed) return "النص وصل لكن مفيش خانة كتابة مفتوحة — اختار الخانة على التلفزيون الأول (أو فعّل إمكانية الوصول)"
+        }
         return if (c == 200) null else if (c < 0) "ما قدرتش أوصل للتلفزيون" else "فشل ($c)"
     }
 
