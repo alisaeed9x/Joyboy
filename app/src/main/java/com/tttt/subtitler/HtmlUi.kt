@@ -208,7 +208,7 @@ class MaxHeightScroll(ctx: Context, var maxH: Int) : ScrollView(ctx) {
 class Ctl(
     val root: LinearLayout, val prog: DualProgress, val tEl: TextView, val tDur: TextView,
     val prev: TextView, val next: TextView, val play: TextView, val speed: TextView,
-    val vol: SeekBar, val cc: TextView, val exp: TextView, val rot: TextView
+    val vol: TwoStageVol, val cc: TextView, val exp: TextView, val rot: TextView
 )
 
 class MemRow(val root: LinearLayout, val ramTv: TextView, val ramBar: ProgressBar, val cacheTv: TextView, val cacheBar: ProgressBar) {
@@ -414,8 +414,8 @@ fun Ui.controls(): Ctl {
         layoutParams = LinearLayout.LayoutParams(dp(46), dp(46)).apply { setMargins(dp(2), 0, dp(4), 0) }
     }
     val speed = ic("⏩")
-    val vol = DualVolBar(ctx, th.accent, th.border).apply {
-        max = 200; progress = 100; layoutDirection = View.LAYOUT_DIRECTION_LTR   // (v167) 0..100 عادي، 100..200 تضخيم أحمر
+    val vol = TwoStageVol(ctx, th.accent, th.border).apply {
+        layoutDirection = View.LAYOUT_DIRECTION_LTR   // (v604) سلايدرين: الصوت العادي 0..100، ولما يتملي يظهر سلايدر التضخيم 0..100 (أحمر)
         setPadding(dp(8), 0, dp(8), 0)
     }
     val cc = ic("CC").apply { textSize = 14f; setTypeface(typeface, android.graphics.Typeface.BOLD) }
@@ -506,5 +506,88 @@ class DualVolBar(ctx: Context, private val normal: Int, private val trackBg: Int
         if (progress > 100) { pt.color = red; c.drawRoundRect(mid, cy - th / 2, x, cy + th / 2, th, th, pt) }
         pt.color = 0xCCFFFFFF.toInt(); c.drawRect(mid - 0.5f * d, cy - th, mid + 0.5f * d, cy + th, pt)   // علامة 100%
         pt.color = if (progress > 100) red else Color.WHITE; c.drawCircle(x, cy, 8 * d, pt)
+    }
+}
+
+
+/** (v604) شريط واحد من سلايدرَي الصوت: 0..100 بلون واحد، الإبهام أبيض (أو أحمر لو [danger] وفيه قيمة). */
+class StageBar(ctx: Context, private val fillColor: Int, private val trackBg: Int, private val danger: Boolean) : SeekBar(ctx) {
+    private val d = ctx.resources.displayMetrics.density
+    private val pt = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
+    init { max = 100 }
+    // بنرسم المسار والإبهام بنفسنا؛ الـ super بيتحسب منه اللمس والكيبورد بس
+    override fun onDraw(c: android.graphics.Canvas) {
+        val l = paddingLeft.toFloat(); val r = (width - paddingRight).toFloat(); val cy = height / 2f; val th = 4 * d
+        val w = r - l; val x = l + w * progress / max.coerceAtLeast(1)
+        pt.style = android.graphics.Paint.Style.FILL
+        pt.color = trackBg; c.drawRoundRect(l, cy - th / 2, r, cy + th / 2, th, th, pt)
+        pt.color = fillColor; c.drawRoundRect(l, cy - th / 2, x, cy + th / 2, th, th, pt)
+        val ring = if (isFocused) 3 * d else 0f
+        if (ring > 0f) { pt.color = 0x66FFFFFF; c.drawCircle(x, cy, 8 * d + ring, pt) }   // حلقة التركيز (ريموت التلفزيون)
+        pt.color = if (danger && progress > 0) fillColor else Color.WHITE; c.drawCircle(x, cy, 8 * d, pt)
+    }
+}
+
+/**
+ * (v604) سلايدر الصوت على مرحلتين: [normal] 0..100 = صوت النظام، ولما يتملي (100) يظهر [boost] 0..100 = تضخيم (+15dB).
+ * بيحافظ على نفس شكل الـAPI القديم (progress / max / setOnSeekBarChangeListener) بقيمة موحّدة 0..200
+ * عشان بروتوكول الموبايل↔التلفزيون (volume.set / st.vol) ما يتغيّرش.
+ */
+class TwoStageVol(ctx: Context, normalColor: Int, trackBg: Int) : LinearLayout(ctx) {
+    private val normal = StageBar(ctx, normalColor, trackBg, false)
+    private val boost = StageBar(ctx, 0xFFFF3B30.toInt(), trackBg, true)
+    private var l: SeekBar.OnSeekBarChangeListener? = null
+    private var setting = false
+    private var touching = 0
+    /** ثابت 200 (100 عادي + 100 تضخيم) — الـsetter موجود بس عشان الكود القديم اللي بيكتب max = 200 */
+    var max: Int
+        get() = 200
+        set(value) { /* ثابت 200 */ }
+    var progress: Int
+        get() = if (normal.progress >= 100) 100 + boost.progress else normal.progress
+        set(v) {
+            val t = v.coerceIn(0, 200)
+            setting = true
+            try { normal.progress = minOf(t, 100); boost.progress = (t - 100).coerceAtLeast(0) } finally { setting = false }
+            refresh()
+        }
+
+    init {
+        orientation = HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_LTR
+        addView(normal, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+        addView(boost, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 0.45f).apply { marginStart = (6 * ctx.resources.displayMetrics.density).toInt() })
+        boost.visibility = View.GONE
+        normal.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(s: SeekBar?, p: Int, u: Boolean) {
+                if (setting) return
+                if (p < 100 && boost.progress != 0) { setting = true; try { boost.progress = 0 } finally { setting = false } }
+                refresh()
+                l?.onProgressChanged(normal, progress, u)
+            }
+            override fun onStartTrackingTouch(s: SeekBar?) { touching++; l?.onStartTrackingTouch(normal) }
+            override fun onStopTrackingTouch(s: SeekBar?) { touching = (touching - 1).coerceAtLeast(0); refresh(); l?.onStopTrackingTouch(normal) }
+        })
+        boost.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(s: SeekBar?, p: Int, u: Boolean) {
+                if (setting) return
+                if (normal.progress < 100) { setting = true; try { normal.progress = 100 } finally { setting = false } }   // التضخيم مايشتغلش إلا والعادي على الآخر
+                l?.onProgressChanged(boost, progress, u)
+            }
+            override fun onStartTrackingTouch(s: SeekBar?) { touching++; l?.onStartTrackingTouch(boost) }
+            override fun onStopTrackingTouch(s: SeekBar?) { touching = (touching - 1).coerceAtLeast(0); refresh(); l?.onStopTrackingTouch(boost) }
+        })
+    }
+
+    fun setOnSeekBarChangeListener(x: SeekBar.OnSeekBarChangeListener?) { l = x }
+
+    /** سلايدر التضخيم يظهر لما العادي يتملي أو فيه تضخيم؛ ولو الصباع لسه ماسك بنسيبه مكانه (INVISIBLE) عشان العرض ما يقفزش تحت الصباع */
+    private fun refresh() {
+        val want = normal.progress >= 100 || boost.progress > 0
+        val v = when {
+            want -> View.VISIBLE
+            touching > 0 && boost.visibility != View.GONE -> View.INVISIBLE
+            else -> View.GONE
+        }
+        if (boost.visibility != v) boost.visibility = v
     }
 }

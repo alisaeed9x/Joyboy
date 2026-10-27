@@ -284,7 +284,7 @@ class PlayerActivity : Activity(), Host {
                     if (!resumedNow || !m.live || !LinkSession.connected || pipNow()) { Thread.sleep(500L); continue }
                     val playing = m.st.optBoolean("playing", false)
                     val sig = m.st.optString("vid", "") + ":" + (m.position(now) / 1500L)
-                    val due = if (playing) now - lastAt >= 600L else ((sig != lastSig && now - lastAt >= 350L) || now - lastAt >= 6000L)
+                    val due = if (rmFrameForce) { rmFrameForce = false; true } else if (playing) now - lastAt >= 600L else ((sig != lastSig && now - lastAt >= 350L) || now - lastAt >= 6000L)
                     if (!due) { Thread.sleep(120L); continue }
                     lastAt = now; lastSig = sig
                     val (c, b) = RemoteClient.getBytes("/frame?w=480&q=60", 6000)
@@ -304,9 +304,22 @@ class PlayerActivity : Activity(), Host {
     }
 
     /** بيرسم اللقطة على نفس SurfaceView (من غير ExoPlayer) — مقاس السطح من مقاس اللقطة عشان الشكل يبقى زي التلفزيون */
+    private var rmLastBmp: android.graphics.Bitmap? = null
+    @Volatile private var rmFrameForce = false
+    /** (v604) بعد التدوير السطح بيتعمل من جديد فاضي؛ والفيديو لو واقف مفيش فريم جديد جاي — فبنرسم آخر فريم تاني */
+    private fun redrawLastRemoteFrame() {
+        try {
+            val b = rmLastBmp ?: return
+            if (!remote || b.isRecycled || !::svRef.isInitialized) return
+            val hd = svRef.holder; if (!hd.surface.isValid) return
+            val cv = hd.lockCanvas() ?: return
+            try { cv.drawBitmap(b, null, android.graphics.Rect(0, 0, cv.width, cv.height), null) } finally { hd.unlockCanvasAndPost(cv) }
+        } catch (_: Throwable) {}
+    }
     private fun drawRemoteFrame(bmp: android.graphics.Bitmap) {
         try {
             if (!remote || isFinishing || isDestroyed || !::svRef.isInitialized) return
+            val oldB = rmLastBmp; rmLastBmp = bmp; if (oldB != null && oldB !== bmp) { try { oldB.recycle() } catch (_: Throwable) {} }
             if (bmp.width != vidW || bmp.height != vidH) {
                 vidW = bmp.width; vidH = bmp.height; applyFit(svRef, videoBoxRef)
                 // (v551) المتحكّم على الموبايل: الشاشة تتبع شكل فيديو التلفزيون — لاندسكيب لو الفيديو عريض، بورتريه لو طولي (مرة واحدة لكل فيديو، ومالهاش دعوة لو بدّلت بإيدك)
@@ -325,7 +338,7 @@ class PlayerActivity : Activity(), Host {
             try { cv.drawBitmap(bmp, null, android.graphics.Rect(0, 0, cv.width, cv.height), null) } finally { hd.unlockCanvasAndPost(cv) }
             ytBusy(false)
         } catch (e: Throwable) { if (rmFrameErr++ < 3) LogStore.err("Player:remoteFrame", e) }
-        finally { try { bmp.recycle() } catch (_: Throwable) {} }
+        finally { if (rmLastBmp !== bmp) { try { bmp.recycle() } catch (_: Throwable) {} } }
     }
 
     /** (v570) نفس منطق مقاس/اتجاه الشاشة بتاع drawRemoteFrame بس لمعاينة الفيديو المحلي (ExoPlayer) */
@@ -388,7 +401,8 @@ class PlayerActivity : Activity(), Host {
             "conf.reload" -> {
                 val nc = Cfg.snapshot(); conf = nc
                 runOnUiThread { try { fit = Cfg.int("fit", fit).coerceIn(0, 3); fsFit = Cfg.int("fs_fit", fsFit).coerceIn(0, 3); if (::svRef.isInitialized) applyFit(svRef, videoBoxRef) } catch (_: Throwable) {} }   // (v568) ملاءمة الصورة من الموبايل
-                runOnUiThread { try { if (::sub.isInitialized) { sub.style = natStyle(SubStyle.load { k, d -> Cfg.str(k, d) }); curIdx = -2 } } catch (_: Throwable) {} }   // (v551) شكل الترجمة (خط/حجم/شفافية الخلفية) يتطبّق فورًا على شاشة التلفزيون
+                runOnUiThread { try { if (::sub.isInitialized) { sub.style = natStyle(SubStyle.load { k, d -> Cfg.str(k, d) }); curIdx = -2 } } catch (_: Throwable) {} }
+                runOnUiThread { try { applyChromeFn() } catch (_: Throwable) {} }   // (v604) sub_posy (ارتفاع الترجمة) كان بيتخزّن على التلفزيون من غير ما يتطبّق   // (v551) شكل الترجمة (خط/حجم/شفافية الخلفية) يتطبّق فورًا على شاشة التلفزيون
                 if (::engine.isInitialized) {
                     engine.applyConf(nc)
                     engine.toneStyle = Cfg.str("tone_style", ""); engine.toneStrength = Cfg.str("tone_strength", "متوسطة")
@@ -514,6 +528,7 @@ class PlayerActivity : Activity(), Host {
             "next" -> stepEpisode(1)
             "speed" -> tvCycleSpeed()
             "fit" -> cycleFitNow()
+            "rotate" -> runOnUiThread { rotateVideoNow() }   // (v604) تدوير صورة الفيديو من الموبايل
             "cc" -> { ccOn = !ccOn; if (!ccOn) sub.show(null) else curIdx = -2 }
             "scale" -> tvSubScale(v.toInt())
             "shift" -> tvSubShift(v)
@@ -1089,8 +1104,10 @@ class PlayerActivity : Activity(), Host {
         val p = p0.coerceIn(0, 200)
         try {
             val am = getSystemService(android.content.Context.AUDIO_SERVICE) as android.media.AudioManager
-            if (am.isVolumeFixed) { player.volume = (minOf(p, 100) / 100f) }
-            else {
+            if (am.isVolumeFixed) {   // (v604) التلفزيون صوته ثابت: العادي بصوت المشغّل نفسه، والتضخيم لسه شغّال (كان بيتقصّ عند 100)
+                if (p <= 100) { player.volume = p / 100f; if ((Cfg.str("vol_boost", "0").toIntOrNull() ?: 0) != 0) setBoostPct(0) }
+                else { player.volume = 1f; setBoostPct(p - 100) }
+            } else {
                 player.volume = 1f
                 if (p <= 100) { SysVol.set(this, p); if ((Cfg.str("vol_boost", "0").toIntOrNull() ?: 0) != 0) setBoostPct(0) }
                 else { SysVol.set(this, 100); setBoostPct(p - 100) }
@@ -1124,6 +1141,8 @@ class PlayerActivity : Activity(), Host {
             val up = k == android.view.KeyEvent.KEYCODE_VOLUME_UP
             if (am.isVolumeFixed) {
                 val v = ((player.volume + if (up) 0.1f else -0.1f).coerceIn(0f, 1f)); player.volume = v
+                if ((Cfg.str("vol_boost", "0").toIntOrNull() ?: 0) != 0) setBoostPct(0)   // (v604) نزّل الصوت = التضخيم يتصفّر
+                try { if (::ctl.isInitialized) ctl.vol.progress = Math.round(v * 100) } catch (_: Throwable) {}
                 Notice.show(this, "🔊 " + (v * 100).toInt() + "%", 900L)
             } else am.adjustStreamVolume(android.media.AudioManager.STREAM_MUSIC, if (up) android.media.AudioManager.ADJUST_RAISE else android.media.AudioManager.ADJUST_LOWER, android.media.AudioManager.FLAG_SHOW_UI)
         } catch (e: Throwable) { LogStore.err("Tv:vol", e) }
@@ -1551,6 +1570,12 @@ class PlayerActivity : Activity(), Host {
     private var vidZoomF = 1f
     fun fitNameOf(m: Int): String = if (m == 3) "100%" else PlayerLogic.fitNames[m.coerceIn(0, 2)]
     fun cycleFitNow() {
+        if (remote && !rmFitSkip) {   // (v604) الاحتواء/التكبير: موبايل ولا تلفزيون؟
+            rmChoose("📐 شكل الصورة", "📱 على الموبايل بس", "📺 على التلفزيون", { rmFitSkip = true; try { cycleFitNow() } finally { rmFitSkip = false } }, {
+                LinkSession.send("act", org.json.JSONObject().put("a", "fit"))
+            })
+            return
+        }
         if (isLandNow()) { fsFit = (fsFit + 1) % 4; Cfg.p.edit().putString("fs_fit", fsFit.toString()).apply() }
         else { fit = (fit + 1) % 4; Cfg.p.edit().putString("fit", fit.toString()).apply() }
         fitFsB?.text = "⬛ " + fitNameOf(curFit()); applyFit(svRef, videoBoxRef)
@@ -2379,7 +2404,13 @@ class PlayerActivity : Activity(), Host {
 
     // ===== (v167) السلايدر الموحّد للصوت: 0..100% صوت عادي، 100..200% تضخيم (أحمر) — LoudnessEnhancer على جلسة صوت المشغّل (الجزء الزيادة 0..100 = لحد +15dB) =====
     /** (v270) 0..100 = صوت النظام (زراري الفوليوم)، 100..200 = تضخيم والنظام على الآخر */
-    fun volTotal(): Int { val b = (Cfg.str("vol_boost", "0").toIntOrNull() ?: 0).coerceIn(0, 100); val s = SysVol.get(this); return if (b > 0 && s >= 100) 100 + b else s }
+    fun volTotal(): Int {
+        val b = (Cfg.str("vol_boost", "0").toIntOrNull() ?: 0).coerceIn(0, 100)
+        // (v604) على الأجهزة اللي صوتها ثابت، صوت النظام بيرجع دايمًا 100 — فالقيمة الحقيقية هي صوت المشغّل نفسه
+        val fixed = !remote && try { (getSystemService(android.content.Context.AUDIO_SERVICE) as android.media.AudioManager).isVolumeFixed } catch (_: Throwable) { false }
+        val s = if (fixed) Math.round(player.volume * 100f).coerceIn(0, 100) else SysVol.get(this)
+        return if (b > 0 && s >= 100) 100 + b else s
+    }
     private var volWatch: SysVol.Watch? = null
     fun setBoostPct(b: Int) { Cfg.put("vol_boost", b.coerceIn(0, 100).toString()); applyBoost() }
     fun boostDbText(b: Int) = "+" + "%.1f".format(b * 0.15) + " dB"
@@ -2999,6 +3030,11 @@ class PlayerActivity : Activity(), Host {
         val videoBox = FrameLayout(this).apply { background = GradientDrawable().apply { setColor(Color.BLACK); cornerRadius = ui.dp(14).toFloat() }; clipToOutline = true; layoutDirection = View.LAYOUT_DIRECTION_LTR }
         videoBoxRef = videoBox
         val sv = SurfaceView(this); svRef = sv
+        sv.holder.addCallback(object : android.view.SurfaceHolder.Callback {   // (v604) تدوير الموبايل في وضع المتحكم
+            override fun surfaceCreated(h: android.view.SurfaceHolder) { if (remote) redrawLastRemoteFrame() }
+            override fun surfaceChanged(h: android.view.SurfaceHolder, f: Int, w: Int, hh: Int) { if (remote) { redrawLastRemoteFrame(); rmFrameForce = true } }
+            override fun surfaceDestroyed(h: android.view.SurfaceHolder) {}
+        })
         videoBox.addView(sv, FrameLayout.LayoutParams(-1, -1, Gravity.CENTER))
         sub = SubtitleView(this).apply { layoutDirection = View.LAYOUT_DIRECTION_RTL; style = SubStyle.load { k, d -> Cfg.str(k, d) } }
         val subLp = FrameLayout.LayoutParams(-1, -2, Gravity.BOTTOM).apply { bottomMargin = ui.dp(12) }
@@ -3278,6 +3314,7 @@ class PlayerActivity : Activity(), Host {
         ccToggleFn = { toggleCc() }
         if (noSub) { ccOn = false; ccB.alpha = 0.4f; ctl.cc.alpha = 0.4f }
         val fitB = fb("⬛ " + fitNameOf(curFit())) { v ->
+            if (remote) { cycleFitNow(); return@fb }   // (v604) يسأل موبايل/تلفزيون
             if (isLandNow()) { fsFit = (fsFit + 1) % 4; Cfg.p.edit().putString("fs_fit", fsFit.toString()).apply() }
             else { fit = (fit + 1) % 4; Cfg.p.edit().putString("fit", fit.toString()).apply() }
             v.text = "⬛ " + fitNameOf(curFit()); applyFit(sv, videoBox)
@@ -4846,11 +4883,40 @@ class PlayerActivity : Activity(), Host {
     }
     private var userRot = false
     private var autoRotDone = false
+    /** (v604) تدوير صورة الفيديو نفسها (0/90/180/270) — على التلفزيون بس (شاشته مابتلفّش) */
+    private var rotDeg = 0
+    private var rmFitSkip = false
+    /** (v604) في وضع المتحكم: السؤال «على الموبايل ولا على التلفزيون؟» لأي زرار ليه أثر على الاتنين */
+    private fun rmChoose(title: String, phoneLbl: String, tvLbl: String, onPhone: () -> Unit, onTv: () -> Unit) {
+        try {
+            var dlg: android.app.Dialog? = null
+            val col = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(ui.dp(4), ui.dp(2), ui.dp(4), ui.dp(2)) }
+            col.addView(ui.button(phoneLbl) { dlg?.dismiss(); onPhone() }, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = ui.dp(8) })
+            col.addView(ui.button(tvLbl, true) { dlg?.dismiss(); onTv() }, LinearLayout.LayoutParams(-1, -2))
+            dlg = ui.sheet(this, title, listOf<View>(col)); dlg.show()
+        } catch (e: Throwable) { LogStore.err("Player:rmChoose", e); onPhone() }
+    }
+    /** (v604) على التلفزيون: لفّ صورة الفيديو 90° (للفيديوهات المصوّرة على الجنب) */
+    private fun rotateVideoNow(deg: Int = (rotDeg + 90) % 360) {
+        rotDeg = ((deg % 360) + 360) % 360
+        try { if (::svRef.isInitialized && ::videoBoxRef.isInitialized) { applyFit(svRef, videoBoxRef); videoBoxRef.post { applyFit(svRef, videoBoxRef) } } } catch (_: Throwable) {}
+        try { say("🔄 " + rotDeg + "°") } catch (_: Throwable) {}
+    }
     /** (v429) الدوران بين البورتريه والشاشة الكاملة كان بيبان «نتشة»: الشاشة بتلف بأنيميشن النظام والسطح بيتمدّد لحظة بمقاس قديم. كروس-فيد بيخفي ده */
     private fun smoothRotation() {
         try { val a = window.attributes; if (a.rotationAnimation != 1) { a.rotationAnimation = 1; window.attributes = a } } catch (_: Throwable) {}   // ROTATION_ANIMATION_CROSSFADE
     }
     fun toggleFs() {
+        if (remote) {   // (v604) متوصّل بتلفزيون: لفّ إيه بالظبط؟
+            rmChoose("🔄 تدوير", "📱 لفّ شاشة الموبايل", "📺 لفّ الفيديو على التلفزيون (90°)", { toggleFsLocal() }, {
+                LinkSession.send("act", org.json.JSONObject().put("a", "rotate"))
+                try { say("📺 🔄 90°") } catch (_: Throwable) {}   // مابنغيّرش rotDeg هنا: التدوير بيتطبّق على التلفزيون بس (معاينة الموبايل مابتتلفّش عشان ماتتلفّش مرتين)
+            })
+            return
+        }
+        toggleFsLocal()
+    }
+    private fun toggleFsLocal() {
         smoothRotation()
         userRot = true
         requestedOrientation = if (resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE) ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT else ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
@@ -4886,7 +4952,7 @@ class PlayerActivity : Activity(), Host {
     fun doExport() { startActivityForResult(Intent(Intent.ACTION_CREATE_DOCUMENT).apply { addCategory(Intent.CATEGORY_OPENABLE); type = "application/x-subrip"; putExtra(Intent.EXTRA_TITLE, "subtitles.srt") }, 7) }
     fun doImport() { startActivityForResult(filePicker("*/*", "اختار ملف SRT", false), 9) }
     fun doOpen() { startActivityForResult(filePicker("video/*", "اختار فيديو", true), 8) }
-    override fun onConfigurationChanged(c: Configuration) { super.onConfigurationChanged(c); if (!pipNow()) applyFull(true) }
+    override fun onConfigurationChanged(c: Configuration) { super.onConfigurationChanged(c); if (!pipNow()) applyFull(true); if (remote) { rmFrameForce = true; try { h.postDelayed({ redrawLastRemoteFrame() }, 250L) } catch (_: Throwable) {} } }
     override fun onPictureInPictureModeChanged(inPipNow: Boolean, c: Configuration) {
         super.onPictureInPictureModeChanged(inPipNow, c)
         inPip = inPipNow
@@ -4919,10 +4985,13 @@ class PlayerActivity : Activity(), Host {
         if (vidW == 0 || box.width == 0) return
         val mode = if (pipNow()) 0 else curFit()
         // (v469) وضع 100%: مقاس الفيديو الطبيعي 1:1 × عامل الزوم (القرص) — ممكن يعدّي الحاوية وبيتوسّط (FrameLayout بيقصّ الزيادة)
-        val (w, hh) = if (mode == 3) Pair((vidW * vidZoomF).toInt().coerceAtLeast(1), (vidH * vidZoomF).toInt().coerceAtLeast(1)) else PlayerLogic.fitSize(box.width, box.height, vidW, vidH, mode)
+        val r90 = rotDeg % 180 != 0   // (v604) لفّ 90/270: المقاس المرئي بعد اللف هو اللي بيتظبط على الصندوق
+        val (w, hh) = if (mode == 3) Pair((vidW * vidZoomF).toInt().coerceAtLeast(1), (vidH * vidZoomF).toInt().coerceAtLeast(1))
+                      else { val (fa, fb2) = PlayerLogic.fitSize(box.width, box.height, if (r90) vidH else vidW, if (r90) vidW else vidH, mode); if (r90) Pair(fb2, fa) else Pair(fa, fb2) }
+        try { sv.rotation = rotDeg.toFloat() } catch (_: Throwable) {}
         val lp = FrameLayout.LayoutParams(w, hh, Gravity.CENTER)
         sv.layoutParams = lp; sv.requestLayout(); box.requestLayout()
-        val tag = "$mode:${box.width}x${box.height}:${vidW}x$vidH:$vidZoomF"
+        val tag = "$mode:${box.width}x${box.height}:${vidW}x$vidH:$vidZoomF:$rotDeg"
         if (tag != lastFitTag) { lastFitTag = tag; LogStore.add("⬛ احتواء/تمديد: وضع=${fitNameOf(mode)} الحاوية=${box.width}x${box.height} الفيديو=${vidW}x$vidH ← السطح=${w}x$hh") }
     }
 

@@ -167,10 +167,13 @@ object BrainRpc {
         "tv_", "tvlink_", "cust_", "skin", "lock_", "lyr_", "mus_", "music_", "ytp_", "perm_", "pip_", "exit_", "seen_", "tip_")
     private val denyContains = listOf("key", "token", "cookie", "pass", "secret", "hash", "salt", "auth", "session")
     private val flagRe = Regex(".*_v\\d+$")
+    /** (v604) إعدادات عادية اسمها فيه كلمة من denyContains: refine2pass («تحسين تاني») كانت بتتحجب بسبب "pass" ومابتوصلش للتلفزيون */
+    private val allowExact = setOf("refine2pass")
     fun allowed(k: String): Boolean {
         if (k.isBlank() || k.length > 60 || k.contains(':') || k.contains('/')) return false   // مفاتيح لكل فيديو (speed:ID…) مش بتتزامن
         if (k in denyExact || denyPrefix.any { k.startsWith(it) }) return false
         if (k.endsWith("_asked") || k.endsWith("_ts") || flagRe.matches(k)) return false         // علامات «اتسأل/اتعمل مرة»
+        if (k in allowExact) return true   // (v604) استثناءات من فلتر الكلمات الحسّاسة
         val lk = k.lowercase()
         return denyContains.none { lk.contains(it) }
     }
