@@ -123,6 +123,50 @@ class TvActivity : Activity() {
                 .setNegativeButton("إغلاق", null).show()
         }
         override fun refresh() { this@TvActivity.refreshView() }
+        override fun lastRecent(): Recent? = this@TvActivity.recents().firstOrNull()
+        override fun playRecent(r: Recent) { this@TvActivity.playRecent(r) }
+        override fun recentThumbInto(r: Recent, iv: android.widget.ImageView) {
+            val vi = if (r.uri.isNotEmpty()) this@TvActivity.lastScan.firstOrNull { it.uri == r.uri } else null
+            if (vi != null) Thumbs.load(this@TvActivity, vi) { bmp -> if (bmp != null) this@TvActivity.runOnUiThread { if (!this@TvActivity.isDestroyed) iv.setImageBitmap(bmp) } }
+            else if (r.uri.isEmpty()) LinkThumb.into(this@TvActivity, r, iv)
+        }
+        override fun open(page: TvPage) {
+            when (page) {
+                TvPage.APPEARANCE -> this@TvActivity.showAppearance()
+                TvPage.THEME -> this@TvActivity.themeDialog()
+                TvPage.ICON_PACK -> this@TvActivity.iconPackDialog()
+                TvPage.LAYOUT -> this@TvActivity.tvSkinDialog()
+                TvPage.WALLPAPER -> this@TvActivity.wallDialog()
+                TvPage.SCALE -> this@TvActivity.scaleDialog()
+                TvPage.NOTIFICATIONS -> this@TvActivity.showNotifications()
+            }
+        }
+        override fun page(build: (LinearLayout) -> Unit) { this@TvActivity.skinPage(build) }
+        override fun setTheme(id: String) { Cfg.put("theme", id); this@TvActivity.recreate() }
+        override fun goHome() { this@TvActivity.showHome(true, true) }
+        override fun requestVideoPermission() { this@TvActivity.askVideoPermission() }
+    }
+
+    /** (v600 م4) صفحة بيرسمها السكِن (إشعارات/سمات/…): نفس تجهيز الصفحات الفرعية، والرجوع (Back) بيرجّع للرئيسية */
+    private fun skinPage(build: (LinearLayout) -> Unit) {
+        h.removeCallbacks(searchRun)
+        muteSearch = true; searchEt?.setText(""); muteSearch = false; inSearch = false
+        storageKind = null; openFolder = null; foldersHost = null; setTab(-1); prayerCd = null
+        content.removeAllViews(); heroBtn = null; heroImg = null
+        try { build(content) } catch (e: Throwable) { LogStore.err("Tv:skinPage", e) }
+        pageEnter()
+        content.post { try { (content.findViewWithTag<View>("skin:first") ?: firstFocusable(content))?.requestFocus() } catch (_: Throwable) {} }
+    }
+
+    /** (v600 م4) شاشة الإشعارات: السكِن يرسمها (خانة Notifications)، وإلا قايمة بسيطة من سجل الإشعارات */
+    private fun showNotifications() {
+        if (TvSkins.cur().notifications(skinHost)) return
+        skinPage { c ->
+            c.addView(sectionTitle("🔔 الإشعارات"))
+            val items = NoticeLog.list()
+            if (items.isEmpty()) c.addView(ui.text("مفيش إشعارات", 16f, th.muted).apply { setPadding(ui.dp(12), ui.dp(10), ui.dp(12), ui.dp(10)) })
+            for (n in items.take(40)) c.addView(ui.text(n.msg, 15f, fg).apply { setPadding(ui.dp(12), ui.dp(8), ui.dp(12), ui.dp(8)); isFocusable = true })
+        }
     }
 
     /** (v597 م1) اختيار سكِن الواجهة (Layout) — تبديل حي من غير ريستارت */
@@ -134,8 +178,13 @@ class TvActivity : Activity() {
             .setNegativeButton("إلغاء", null).show()
     }
 
+    /** (v598 م3) باك الأيقونات — مستقل عن سكِن الواجهة: التبديل حي وبيتطبّق على أي سكِن */
+    private val iconPackRepaint: () -> Unit = { if (!isDestroyed && !isFinishing) IconPackUi.repaint(this) }
+    private fun iconPackDialog() = IconPackUi.show(this) { if (!isFinishing && !isDestroyed && curTab == -1) showAppearance() }
+
     override fun onActivityResult(req: Int, res: Int, data: Intent?) {
         super.onActivityResult(req, res, data)
+        if (req == IconPackUi.REQ_PICK) { IconPackUi.onPicked(this, if (res == RESULT_OK) data?.data else null) { if (!isFinishing && !isDestroyed && curTab == -1) showAppearance() }; return }
         if (mediaOps?.onResult(req, res == RESULT_OK) == true) return
         if (req == 77 && res == RESULT_OK) {
             val q = data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)?.firstOrNull() ?: return
@@ -184,6 +233,7 @@ class TvActivity : Activity() {
         super.onCreate(b)
         live = java.lang.ref.WeakReference(this)
         Cfg.init(this); favLoad()
+        IconPacks.onChange(iconPackRepaint)   // (v598 م3) تبديل/تحميل باك الأيقونات ← إعادة رسم
         DeviceUi.applyOrientation(this)   // (v494) وضع التلفزيون على موبايل = لاندسكيب تلقائي
         // (v491) الثيم الأساسي على التلفزيون = أسود (أموليد) — مرة واحدة بس، وتقدر تغيّره من الإعدادات بعدها
         if (DeviceUi.isTv(this) && Cfg.str("tv_black_v491", "0") != "1") { Cfg.put("theme", "amoled_w"); Cfg.put("tv_black_v491", "1") }
@@ -304,6 +354,10 @@ class TvActivity : Activity() {
             val ck = TvKeys.colorOf(ev.keyCode)
             if (ck != null && TvSkins.cur().colorKey(skinHost, ck)) return true
         }
+        // (v599 م4) Menu على عنصر مالوش دوسة طويلة (يعني مش قايمة كارت) ← خانة menuKey في السكِن
+        if (ev.keyCode == KeyEvent.KEYCODE_MENU && ev.action == KeyEvent.ACTION_DOWN && ev.repeatCount == 0 && currentFocus !is EditText && currentFocus?.isLongClickable != true) {
+            if (TvSkins.cur().menuKey(skinHost)) return true
+        }
         return super.dispatchKeyEvent(ev)
     }
 
@@ -325,6 +379,7 @@ class TvActivity : Activity() {
         h.removeCallbacks(wallLoop); h.removeCallbacks(tick); muteRun?.let { h.removeCallbacks(it) }
         try { sr?.destroy() } catch (_: Throwable) {}; sr = null
         YtAccount.onSynced = null; ytHost = null
+        IconPacks.removeOnChange(iconPackRepaint)
         super.onDestroy()
     }
 
@@ -1813,6 +1868,7 @@ class TvActivity : Activity() {
             )),
             Grp("⭕ الأيقونات والأسماء", listOf(
                 Opt("⭕ شكل أيقونات التطبيقات", { if (squircle()) "مربع مدوّر" else "دايرة" }, cyc("tv_icon_shape", "circle", listOf("circle", "squircle"))),
+                Opt("📦 باك الأيقونات", { IconPacks.nameOf(IconPacks.activeId()) }, { iconPackDialog() }),
                 Opt("🔎 حجم الأيقونات", { iconDp().toString() }, cyc("tv_icon_px", "86", iconSizes)),
                 Opt("🏷 أسماء التطبيقات", { when (namesMode()) { "always" -> "دايمًا"; "off" -> "مخفية"; else -> "عند التركيز" } }, cyc("tv_names", "always", listOf("focus", "always", "off"))),
                 Opt("📐 حجم الواجهة", { Cfg.str("tv_scale_adj", "100") + "%" }, { scaleDialog() })
@@ -1861,11 +1917,12 @@ class TvActivity : Activity() {
     /** (v537) بيرجّع إعدادات المظهر لقيمها الأصلية (السمة والصفوف والتابات ما بتتمسّحش) */
     private fun resetAppearance() {
         GAlert(this).setTitle("♻ رجّع المظهر للافتراضي؟")
-            .setMessage("الخلفية والتعتيم وحجم الأيقونات والأسماء والحركة والساعة وشاشة التوقف هترجع لأصلها. السمة والصفوف والتابات مش هتتغيّر.")
+            .setMessage("الخلفية والتعتيم وحجم الأيقونات وباك الأيقونات والأسماء والحركة والساعة وشاشة التوقف هترجع لأصلها. السمة والصفوف والتابات مش هتتغيّر.")
             .setPositiveButton("رجّع") { _, _ ->
                 val defs = mapOf("tv_scrim" to "50", "tv_scale_adj" to "100", "tv_icon_shape" to "circle", "tv_icon_px" to "86", "tv_names" to "always",
                     "tv_lift" to "2", "tv_halo" to "1", "tv_clock24" to "0", "tv_saver_min" to "3", "tv_apps_sys" to "0", "tv_wall" to "auto", "tv_wall_sec" to "60", "tv_warm" to "0")
                 for ((k, v) in defs) Cfg.put(k, v)
+                IconPacks.select(IconPacks.DEFAULT)   // (v598 م3)
                 recreate()
             }
             .setNegativeButton("إلغاء", null).show()
@@ -2124,10 +2181,10 @@ class TvActivity : Activity() {
     private fun fillStorageHome(fh: LinearLayout) {
         fh.removeAllViews()
         fh.addView(titleWithBtn("🎬 الفيديوهات", "⇅ ترتيب") { sortMenu(fh) { fillStorageHome(fh) } })   // (v581) زرار الترتيب بقى هنا
-        if (!VideoScan.hasPermission(this)) { fh.addView(hrow(listOf(tile("🔐", "اسمح بالفيديوهات") { askVideoPermission() }))); return }
-        if (!scanned) { fh.addView(ui.text("⏳ بقرا الفيديوهات…", 14f, th.muted).apply { setPadding(ui.dp(10), ui.dp(10), ui.dp(10), ui.dp(6)) }); return }
+        if (!VideoScan.hasPermission(this)) { fh.addView(skinEmpty(TvEmpty.NO_PERMISSION) ?: hrow(listOf(tile("🔐", "اسمح بالفيديوهات") { askVideoPermission() }))); return }
+        if (!scanned) { fh.addView(try { TvSkins.cur().homeSkeleton(skinHost) } catch (_: Throwable) { null } ?: ui.text("⏳ بقرا الفيديوهات…", 14f, th.muted).apply { setPadding(ui.dp(10), ui.dp(10), ui.dp(10), ui.dp(6)) }); return }
         val groups = VideoLib.sortFolders(VideoLib.group(lastScan), foldSort())
-        if (groups.isEmpty()) { fh.addView(ui.text("مفيش فيديوهات على الفلاشة ولا على الذاكرة الداخلية", 14f, th.muted).apply { setPadding(ui.dp(10), ui.dp(10), ui.dp(10), ui.dp(6)) }); return }
+        if (groups.isEmpty()) { fh.addView(skinEmpty(TvEmpty.NO_VIDEOS) ?: ui.text("مفيش فيديوهات على الفلاشة ولا على الذاكرة الداخلية", 14f, th.muted).apply { setPadding(ui.dp(10), ui.dp(10), ui.dp(10), ui.dp(6)) }); return }
         val usb = groups.filter { g -> g.videos.firstOrNull()?.let { v -> isSd(v) } == true }
         val internal = groups.filter { g -> g.videos.firstOrNull()?.let { v -> isSd(v) } != true }
         val cards = (usb + internal).take(60).map { homeFolderTile(it) } + listOf(tile("📂", "كل الفيديوهات") { showVideosPage() })
@@ -2135,6 +2192,8 @@ class TvActivity : Activity() {
     }
 
     /** (v597 م2) كارت فولدر الرئيسية: الصورة بعرض ثابت والنص في عمود جنبها (من سكِن الواجهة الحالي) */
+    private fun skinEmpty(kind: TvEmpty): View? = try { TvSkins.cur().emptyState(skinHost, kind) } catch (e: Throwable) { LogStore.err("Tv:empty", e); null }
+
     private fun homeFolderTile(f: FolderItem): View =
         TvSkins.cur().folderCard(skinHost, f, TvFolderSize.SHELF) { openFolderView(f) }.also { it.tag = "fold:" + f.key }
 
@@ -2528,6 +2587,15 @@ class TvActivity : Activity() {
     private var homeCacheAt = 0L
     private var homeCacheSig = ""
 
+    /** (v599 م4) مضيف ثابت أول الرئيسية للبانر اللي السكِن بيقدّمه (homeHeader). بيتملّى من جديد كل مرة */
+    private var headerHost: LinearLayout? = null
+    private fun fillHomeHeader() {
+        val hh = headerHost?.takeIf { it.parent === content } ?: host().also { it.tag = "rowhost"; headerHost = it; content.addView(it, 0) }
+        hh.removeAllViews()
+        val v = try { TvSkins.cur().homeHeader(skinHost) } catch (e: Throwable) { LogStore.err("Tv:homeHeader", e); null }
+        if (v != null) hh.addView(v)
+    }
+
     private fun showHome(focus: Boolean = true, reuse: Boolean = false) {
         if (TvSkins.cur().home(skinHost, focus, reuse)) return   // (v597) خانة Home في السكِن
         if (reuse && !inSearch) {
@@ -2538,11 +2606,12 @@ class TvActivity : Activity() {
                 content.removeAllViews(); heroBtn = null; heroImg = null; setTab(0); prayerCd = null
                 storageKind = null; openFolder = null; foldersHost = null
                 for (v in cache) { (v.parent as? ViewGroup)?.removeView(v); content.addView(v) }
+                fillHomeHeader()   // (v599 م4) البانر بيتحدّث (التقدّم) حتى لو الرئيسية من الكاش
                 // السجل بس بيتحدّث لو اتغيّر (فيديو اتشغّل)
                 val sig = recentsSig()
                 if (sig != homeCacheSig) { homeCacheSig = sig; histHost?.let { fillHistory(it) } }
                 pageEnter()
-                if (focus) content.post { try { (heroBtn ?: firstFocusable(content))?.requestFocus() } catch (_: Exception) {} }
+                if (focus) content.post { try { (heroBtn ?: content.findViewWithTag<View>("skin:first") ?: firstFocusable(content))?.requestFocus() } catch (_: Exception) {} }
                 return
             }
         }
@@ -2550,6 +2619,7 @@ class TvActivity : Activity() {
         muteSearch = true; searchEt?.setText(""); muteSearch = false; inSearch = false
         content.removeAllViews(); heroBtn = null; heroImg = null; setTab(0); prayerCd = null
         storageKind = null; openFolder = null; foldersHost = null
+        fillHomeHeader()   // (v599 م4) بانر السكِن (لو فيه) فوق الصفوف
         try { YtAccount.init(this); YtRss.attach(this) } catch (_: Throwable) { }
         val hidden = Cfg.str("tv_rows_hide2", "").split(",").map { it.trim() }.filter { it.isNotEmpty() }.toSet()
         // 1) (v519) شريط التطبيقات اتنقل لآخر الصفحة (قبل أزرار الإعدادات والتخصيص) — شوف الكتلة قبل «6) تخصيص»
@@ -2602,7 +2672,7 @@ class TvActivity : Activity() {
         homeCache = (0 until content.childCount).map { content.getChildAt(it) }; homeCacheAt = System.currentTimeMillis()
         homeCacheSig = recentsSig()
         pageEnter()
-        if (focus) content.post { try { (heroBtn ?: firstFocusable(content))?.requestFocus() } catch (_: Exception) {} }
+        if (focus) content.post { try { (heroBtn ?: content.findViewWithTag<View>("skin:first") ?: firstFocusable(content))?.requestFocus() } catch (_: Exception) {} }
     }
 
     /** (v581) إعدادات الرئيسية: 3 مجموعات (الجهاز · الشكل والخلفية · البرنامج) كل واحدة بعنوان وصف كروت بنفس الحجم */

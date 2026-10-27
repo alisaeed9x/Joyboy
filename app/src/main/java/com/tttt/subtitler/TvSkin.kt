@@ -5,6 +5,12 @@ import android.graphics.Bitmap
 import android.view.View
 import android.widget.LinearLayout
 
+/** (v599 م4) صفحات الإعدادات اللي السكِن يقدر يفتحها (من غير ما يعرف TvActivity) */
+enum class TvPage { APPEARANCE, THEME, ICON_PACK, LAYOUT, WALLPAPER, SCALE, NOTIFICATIONS }
+
+/** (v600 م4) حالات «الفاضي» اللي السكِن يقدر يرسمها بشكله: مفيش صلاحية · مفيش فيديوهات · مفيش إشعارات */
+enum class TvEmpty { NO_PERMISSION, NO_VIDEOS, NO_NOTIFICATIONS }
+
 /** الأزرار الملونة في الريموت */
 enum class TvColorKey { RED, GREEN, YELLOW, BLUE }
 
@@ -27,6 +33,20 @@ interface TvSkinHost {
     fun menu(title: String, items: List<Pair<String, () -> Unit>>)
     /** ارسم الصفحة اللي واقف فيها من جديد (بعد تغيير سكِن/إعداد) */
     fun refresh()
+    /** (v599 م4) آخر فيديو/لينك اتشغّل (للبانر «كمّل»)، أو null */
+    fun lastRecent(): Recent?
+    fun playRecent(r: Recent)
+    /** مصغّرة الفيديو/اللينك في ImageView (فيديو محلي من الفحص، أو مصغّرة اللينك) */
+    fun recentThumbInto(r: Recent, iv: android.widget.ImageView)
+    fun open(page: TvPage)
+    /** (v600 م4) صفحة يرسمها السكِن بنفسه: بتمسح المحتوى وتصفّر البحث وتطلّع الأنيميشن وتركّز على أول عنصر (أو اللي tag بتاعه skin:first) */
+    fun page(build: (LinearLayout) -> Unit)
+    /** (v600 م4) غيّر السمة (الألوان) — بيعمل إعادة رسم كاملة */
+    fun setTheme(id: String)
+    /** (v600 م4) ارجع للرئيسية (نفس سلوك Back) */
+    fun goHome()
+    /** (v600 م4) اطلب صلاحية الفيديوهات */
+    fun requestVideoPermission()
 }
 
 /**
@@ -56,6 +76,18 @@ interface TvSkin {
     /** زرار ملوّن في الريموت (بعد اختصارات المستخدم). true = السكِن استهلكه */
     fun colorKey(h: TvSkinHost, key: TvColorKey): Boolean = false
 
+    /** (v599 م4) عنصر بيتحط فوق صفوف الرئيسية (بانر «كمّل» مثلًا) — null = مفيش. بيتنده تاني كل ما الرئيسية تتفتح (التقدّم بيتحدّث) */
+    fun homeHeader(h: TvSkinHost): View? = null
+
+    /** (v599 م4) زرار Menu وهو واقف على عنصر مالوش قايمة (مش دوسة طويلة). true = السكِن استهلكه */
+    fun menuKey(h: TvSkinHost): Boolean = false
+
+    /** (v600 م4) هيكل تحميل (skeleton) بيتعرض مكان صف الفيديوهات لحد ما الفحص يخلص — null = النص العادي */
+    fun homeSkeleton(h: TvSkinHost): View? = null
+
+    /** (v600 م4) شاشة «الفاضي» بشكل السكِن — null = الرسالة العادية */
+    fun emptyState(h: TvSkinHost, kind: TvEmpty): View? = null
+
     fun onSelected(h: TvSkinHost) {}
     fun onDeselected(h: TvSkinHost) {}
 }
@@ -66,7 +98,7 @@ interface TvSkin {
  * لو السكِن المحفوظ مش موجود (اتشال مثلًا) بنرجع لـ«كلاسيك».
  */
 object TvSkins {
-    private val list = ArrayList<TvSkin>().apply { add(TvSkinClassic) }
+    private val list = ArrayList<TvSkin>().apply { add(TvSkinClassic); add(TvSkinHub); add(TvSkinGlass) }
     private val listeners = ArrayList<() -> Unit>()
     @Volatile private var curSkin: TvSkin? = null
 

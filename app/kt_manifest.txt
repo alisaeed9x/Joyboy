@@ -35,6 +35,10 @@ com/tttt/subtitler/GifWriter.kt
 com/tttt/subtitler/Glass.kt
 com/tttt/subtitler/HtmlUi.kt
 com/tttt/subtitler/HybridVis.kt
+com/tttt/subtitler/IconDefs.kt
+com/tttt/subtitler/IconPackCore.kt
+com/tttt/subtitler/IconPackUi.kt
+com/tttt/subtitler/IconPacks.kt
 com/tttt/subtitler/Icons.kt
 com/tttt/subtitler/Karaoke.kt
 com/tttt/subtitler/KeepAliveService.kt
@@ -150,6 +154,8 @@ com/tttt/subtitler/TvSetup.kt
 com/tttt/subtitler/TvShell.kt
 com/tttt/subtitler/TvSkin.kt
 com/tttt/subtitler/TvSkinClassic.kt
+com/tttt/subtitler/TvSkinHub.kt
+com/tttt/subtitler/TvSkinGlass.kt
 com/tttt/subtitler/TvTasksUi.kt
 com/tttt/subtitler/TvTiles.kt
 com/tttt/subtitler/TvTokens.kt

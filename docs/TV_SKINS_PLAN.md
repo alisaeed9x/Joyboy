@@ -9,8 +9,8 @@
 | 0 | فحص الكود | اتعمل ضمنيًا (انظر CHANGES_v597) |
 | 1 | الأساس: Tokens · عقد السكِن · السجل · محرك التركيز · كلاسيك = سكِن 0 | v597 |
 | 2 | كارت الفولدر (صورة ثابتة + عمود نص) | v597 |
-| 3 | محرك Icon Packs (zip + pack.json + SVG، fallback، 4 باكات: Outline/Filled/Duotone/Rounded) | لسه |
-| 4 | السكِنز بالترتيب: Hub (Google TV) ← Rail&Grid (Fire/Roku) ← Ribbon (Tizen) ← Poster Wall (PatchWall) ← Cards (webOS) ← Glass (OriginOS) | لسه |
+| 3 | محرك Icon Packs (zip + pack.json + SVG، fallback، 4 باكات: Outline/Filled/Duotone/Rounded) | ✅ v598 |
+| 4 | السكِنز بالترتيب: Hub (Google TV) ← Rail&Grid (Fire/Roku) ← Ribbon (Tizen) ← Poster Wall (PatchWall) ← Cards (webOS) ← Glass (OriginOS) | Hub ✅ v600، الباقي لسه |
 | 5 | معرض الثيمات: سكِن + أيقونات + ألوان كـpreset، معاينة حية، تصدير/استيراد | لسه |
 | 6 | تلميع وQA: هوامش آمنة 5% · خط ≥ 24px · تركيز واضح · أصوات · تقليل الحركة · أداء TCL · مصفوفة اختبار | لسه |
 
@@ -21,3 +21,8 @@
 1. `object TvSkinHub : TvSkin { … }` — طبّق `folderCard` وأي خانات عايزها (home / folderView / settings / …)؛ اللي ترجّع false بيستخدم الرسم المدمج.
 2. سجّله: `TvSkins.register(TvSkinHub)` (أو أضفه في قايمة `TvSkins`).
 3. بيظهر لوحده في إعدادات ← المظهر ← «تصميم الواجهة (Layout)».
+
+## حالة م4 (v600)
+- ✅ Hub كامل: بانر «كمّل» · كروت فولدر · لوحة Menu سريعة · تاب إشعارات · تاب سمات · هياكل تحميل · شاشات فاضي · الساعة/الحالة (الشريط العلوي الحالي).
+- ⏳ السكِنز 2–6: Rail & Grid ← Ribbon ← Poster Wall ← Cards ← Glass (بعد تجربة Hub على التلفزيون).
+- ملحوظة: v600 = دمج v598 (QR/واي فاي) + v599.

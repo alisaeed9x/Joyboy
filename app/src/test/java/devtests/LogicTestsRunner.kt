@@ -19,6 +19,7 @@ class LogicTestsRunner {
         "devtests.coveragetest.CoverageTestKt",
         "devtests.enginetest.EngineTestKt",
         "devtests.giftest.GifTestKt",
+        "devtests.iconpacktest.IconPackTestKt",
         "devtests.livetest.LiveTestKt",
         "devtests.locktest.LockTestKt",
         "devtests.modepromptstest.ModePromptsTestKt",

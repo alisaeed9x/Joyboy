@@ -176,6 +176,7 @@ object Cfg {
         try { if (int("kmode", 0) != KeyMode.SPLIT_A) put("kmode", KeyMode.SPLIT_A.toString()) } catch (_: Throwable) {}   // (v425) وضع المفاتيح ثابت ٧٥/٢٥ — (v459) اتأكد بطلب صريح من صاحب التطبيق إنه يفضل كده
         try { KeyVault.attach(c.applicationContext) } catch (_: Exception) {}
         try { Backup.attach(c.applicationContext) } catch (_: Exception) {}   // (v215) نسخة احتياطية تلقائية لكل الإعدادات
+        try { IconPacks.attach(c.applicationContext) } catch (e: Throwable) { LogStore.err("Cfg:iconpacks", e) }   // (v598 م3) باك الأيقونات المحفوظ
         
         try { Extras.load() } catch (_: Throwable) {}
         // (v158) مرة واحدة: كل المفاتيح (أساسي/إضافي/احتياطي) تتجمّع في قايمة واحدة والبرنامج بيوزّعها لوحده
