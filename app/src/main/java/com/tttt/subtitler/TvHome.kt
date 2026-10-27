@@ -212,6 +212,7 @@ class TvActivity : Activity() {
         saver.addView(saverCol, FrameLayout.LayoutParams(-2, -2, Gravity.CENTER))
         rootF.addView(saver, FrameLayout.LayoutParams(-1, -1))
         setContentView(rootF)
+        SplashArt.show(this, b)   // (v592) سبلاش Joyboy عشوائي مرة كل تشغيل
         TvFocus.attach(this, th.primary)   // (v490) حلقة تركيز واضحة على كل زرار/كارت في اللانشر
         showHome()
         applyWall()   // (v506)

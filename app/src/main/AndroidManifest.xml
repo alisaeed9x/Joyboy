@@ -37,9 +37,9 @@
         <intent><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/></intent>
         <intent><action android:name="android.intent.action.VIEW"/><data android:scheme="content" android:host="android.media.tv"/></intent>   <!-- (v582) زرار الريسيفر: فتح مدخل HDMI -->
     </queries>
-    <application android:supportsRtl="true" android:label="Subtitler" android:icon="@mipmap/ic_launcher" android:roundIcon="@mipmap/ic_launcher"
+    <application android:supportsRtl="true" android:label="Joyboy" android:icon="@mipmap/ic_launcher" android:roundIcon="@mipmap/ic_launcher"
         android:usesCleartextTraffic="true" android:banner="@mipmap/ic_launcher" android:theme="@android:style/Theme.DeviceDefault.NoActionBar">
-        <activity android:name=".MainActivity" android:exported="true" android:theme="@style/AppSplash"
+        <activity android:name=".MainActivity" android:exported="true" android:theme="@style/AppSplashMain"
             android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboardHidden|density">
             <intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/></intent-filter>
             <intent-filter><action android:name="android.intent.action.SEND"/><category android:name="android.intent.category.DEFAULT"/><data android:mimeType="text/plain"/></intent-filter>
@@ -52,7 +52,7 @@
             android:supportsPictureInPicture="true" android:resizeableActivity="true"
             android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboardHidden|density"/>
         <!-- (v476) اللانشر: HOME + LEANBACK_LAUNCHER — TvActivity هي الشاشة الرئيسية للتلفزيون -->
-        <activity android:name=".TvActivity" android:exported="true" android:launchMode="singleTask" android:stateNotNeeded="true" android:theme="@style/AppSplash"
+        <activity android:name=".TvActivity" android:exported="true" android:launchMode="singleTask" android:stateNotNeeded="true" android:theme="@style/AppSplashMain"
             android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboardHidden|density">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN"/>
@@ -76,7 +76,7 @@
         </receiver>
         <activity android:name=".SongRequestActivity" android:exported="false" android:theme="@android:style/Theme.Translucent.NoTitleBar"/>
         <service android:name=".SongCatchService" android:exported="false" android:foregroundServiceType="mediaProjection"/>
-        <service android:name=".SongNotifListener" android:exported="true" android:label="Subtitler — قراءة اسم الأغنية"
+        <service android:name=".SongNotifListener" android:exported="true" android:label="Joyboy — قراءة اسم الأغنية"
             android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
             <intent-filter><action android:name="android.service.notification.NotificationListenerService"/></intent-filter>
         </service>
@@ -108,7 +108,7 @@
         </activity>
         <service android:name=".RemoteService" android:exported="false" android:foregroundServiceType="dataSync"/>
         <!-- (v519) تحكم ريموت الموبايل في التطبيقات التانية على التلفزيون (أسهم/رجوع/رئيسية/تاتش باد) — بتتفعّل مرة واحدة من إمكانية الوصول -->
-        <service android:name=".TvAccessService" android:exported="true" android:label="Subtitler — تحكم الريموت في التطبيقات"
+        <service android:name=".TvAccessService" android:exported="true" android:label="Joyboy — تحكم الريموت في التطبيقات"
             android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
             <intent-filter><action android:name="android.accessibilityservice.AccessibilityService"/></intent-filter>
             <meta-data android:name="android.accessibilityservice" android:resource="@xml/tv_access_config"/>

@@ -107,6 +107,7 @@ com/tttt/subtitler/SongLinks.kt
 com/tttt/subtitler/SourceMode.kt
 com/tttt/subtitler/Speech.kt
 com/tttt/subtitler/Spinner.kt
+com/tttt/subtitler/SplashArt.kt
 com/tttt/subtitler/SrtWriter.kt
 com/tttt/subtitler/Stats.kt
 com/tttt/subtitler/StatsUi.kt

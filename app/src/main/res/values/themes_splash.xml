@@ -4,4 +4,8 @@
         <item name="android:windowBackground">@drawable/splash_window</item>
         <item name="android:windowAnimationStyle">@null</item>
     </style>
+    <!-- (v592) ثيم MainActivity/TvActivity: خلفية بني غامق بدل الأبيض عشان مفيش وميض أبيض قبل سبلاش Joyboy -->
+    <style name="AppSplashMain" parent="AppSplash">
+        <item name="android:windowBackground">@drawable/splash_window_joy</item>
+    </style>
 </resources>

@@ -731,7 +731,7 @@ class MainActivity : Activity() {
                 ui.button("🗑 إزالة القفل") { lk.remove { refreshLock() } },
                 ui.text("البصمة بتتحقق من بصمات جهازك المسجّلة في إعدادات الأندرويد (التطبيق مابيخزّنش بصمتك). لو نسيت النمط: «نسيت النمط؟» بيطلب قفل شاشة الجهاز.", 12f, th.muted)),
                 ui.section("💾 نسخة احتياطية (مفاتيح · إعدادات · ثيم)", false,
-                    ui.text("البرنامج بيحفظ نسخة كاملة لوحده (مشفّرة) في Android/media/com.tttt.subtitler/settings_backup.json وبتفضل موجودة بعد مسح البرنامج، ولما تثبّته من جديد بترجع لوحدها. وتقدر كمان تحفظ نسخة بإيدك في ملف (Downloads مثلًا) وترجّعها منه — الملف ده مش مشفّر وفيه مفاتيحك فاحتفظ بيه في مكان آمن. قفل المجلد مابيتحفظش (بتعمله من جديد).", 12f, th.muted),
+                    ui.text("البرنامج بيحفظ نسخة كاملة لوحده (مشفّرة) في Android/media/com.tttt.joyboy/settings_backup.json وبتفضل موجودة بعد مسح البرنامج، ولما تثبّته من جديد بترجع لوحدها. وتقدر كمان تحفظ نسخة بإيدك في ملف (Downloads مثلًا) وترجّعها منه — الملف ده مش مشفّر وفيه مفاتيحك فاحتفظ بيه في مكان آمن. قفل المجلد مابيتحفظش (بتعمله من جديد).", 12f, th.muted),
                     ui.text(Backup.autoTime(this).let { t -> if (t > 0) "آخر نسخة تلقائية: " + java.text.SimpleDateFormat("yyyy-MM-dd HH:mm", java.util.Locale.US).format(java.util.Date(t)) else "لسه مفيش نسخة تلقائية" }, 12f, th.text),
                     ui.button("💾 احفظ نسخة في ملف") { backupToFile() },
                     ui.button("📂 استرجع من ملف") { backupFromFile() },
@@ -1010,6 +1010,7 @@ class MainActivity : Activity() {
             return
         }
         setContentView(frame)
+        SplashArt.show(this, b)   // (v592) سبلاش Joyboy عشوائي مرة كل تشغيل
         frame.post { YtLink.maybeHandle(this, intent) }   // (v488) فتح التطبيق من رابط QR بتاع التلفزيون
         // (v469) D2 طبقة الفلتر الدافئ فوق محتوى الشاشة (ما بتمنعش اللمس: View عادية من غير مستمعات، والعناصر العائمة فوقها)
         warmView = View(this).apply { isClickable = false; isFocusable = false; importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO }

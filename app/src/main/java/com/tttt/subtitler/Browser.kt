@@ -416,11 +416,10 @@ class BrowserActivity : Activity() {
             background = ui.box(0x00000000, th.text, 6); layoutParams = LinearLayout.LayoutParams(ui.dp(if (tvOn) 38 else 28), ui.dp(if (tvOn) 38 else 28)).apply { setMargins(ui.dp(5), ui.dp(if (tvOn) 7 else 6), ui.dp(5), ui.dp(6)) }
             setOnClickListener { showTabs() }
         }
-        val rotB = tbtn("🔄", 18f) { toggleRotate() }   // (v494) تدوير الشاشة لاندسكيب ⇄ بورتريه
         val menuB = tbtn("⋮", 22f) { showMenu(it) }
         val bar = LinearLayout(this).apply {
             layoutDirection = View.LAYOUT_DIRECTION_LTR; gravity = Gravity.CENTER_VERTICAL; setPadding(ui.dp(2), 0, ui.dp(2), 0)
-            addView(backB); addView(fwdB); addView(addr); addView(reloadB); if (!tvOn) addView(rotB); if (!tvOn) addView(tabsB); addView(menuB)
+            addView(backB); addView(fwdB); addView(addr); addView(reloadB); if (!tvOn) addView(tabsB); addView(menuB)
         }
         if (tvOn) {   // (v480 م6) زرار تبديل الوضع: 🖱 مؤشر / 🎯 تنقل بالتركيز
             tvPointerMode = Cfg.str("tv_br_mode", "ptr") != "focus"
@@ -493,13 +492,22 @@ class BrowserActivity : Activity() {
             setOnClickListener { undoPanic() }
         }
         ctl = buildControls()   // (v248) زرار مانع الإعلانات 🛡 بقى فوق زرار الطوارئ على طول
+        // (v592) زرار التدوير 🔄 بقى عايم في العمود (بدل ما كان ثابت فوق جنب التابات): من فوق لتحت ← 📺 · 🛡 · 🔄 · 🚨 · ↩
+        val rotFloat = IconTextView(this).apply {
+            text = "🔄"; textSize = 18f; gravity = Gravity.CENTER; setTextColor(Color.WHITE)
+            background = ui.box(0xCC1E2A3A.toInt(), 0x66FFFFFF, 22); elevation = ui.dp(4).toFloat()
+            setOnClickListener { toggleRotate() }
+            if (tvOn) visibility = View.GONE   // التلفزيون ما كانش فيه زرار تدوير
+        }
         panicCol = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_LTR; gravity = Gravity.CENTER_HORIZONTAL
             addView(ctl, LinearLayout.LayoutParams(-2, -2))
+            addView(rotFloat, LinearLayout.LayoutParams(ui.dp(44), ui.dp(44)).apply { bottomMargin = ui.dp(6) })
             addView(panicB, LinearLayout.LayoutParams(ui.dp(44), ui.dp(44)))
             addView(undoB, LinearLayout.LayoutParams(ui.dp(44), ui.dp(44)).apply { topMargin = ui.dp(6) })
         }
         blockCover = buildBlockCover()
+        TvModeFab.dock(this, panicCol)   // (v592) زرار 📺 العايم يقعد فوق العمود ده في المتصفح بس (أصغر ومش فوق 🛡)
         val webWrap = FrameLayout(this).apply {
             layoutDirection = View.LAYOUT_DIRECTION_LTR
             addView(webHolder, FrameLayout.LayoutParams(-1, -1))

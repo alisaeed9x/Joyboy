@@ -52,6 +52,28 @@ object TvModeFab {
     @Volatile private var sessionFresh = true
     @Volatile private var lastPauseAt = 0L
     private var picker: PopupWindow? = null
+    private val docks = HashMap<Activity, View>()   // (v592) المتصفح: العمود اللي زرار 📺 يقعد فوقه
+    /** (v592) الزرار العايم يتحط فوق [stack] مباشرة (بحجم أصغر) بدل مكانه العادي؛ بيتنادى من المتصفح بس */
+    fun dock(a: Activity, stack: View) {
+        docks[a] = stack
+        stack.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> try { layers[a]?.let { placeFab(a, it) } } catch (_: Throwable) {} }
+    }
+    private fun placeFab(a: Activity, l: Layer) {
+        val st = docks[a] ?: return
+        val root = a.findViewById<View>(android.R.id.content) ?: return
+        if (!st.isShown || st.height == 0 || l.btn.parent == null) return
+        val s = IntArray(2); val r = IntArray(2)
+        st.getLocationOnScreen(s); root.getLocationOnScreen(r)
+        val sz = dp(a, 44)
+        val bm = ((r[1] + root.height) - s[1] + dp(a, 6)).coerceAtLeast(0)
+        val rm = ((r[0] + root.width) - (s[0] + st.width / 2) - sz / 2).coerceAtLeast(0)
+        val lp = l.btn.layoutParams as? FrameLayout.LayoutParams ?: return
+        if (lp.width != sz || lp.height != sz || lp.bottomMargin != bm || lp.rightMargin != rm) {
+            lp.width = sz; lp.height = sz; lp.bottomMargin = bm; lp.rightMargin = rm
+            l.btn.textSize = 19f
+            l.btn.layoutParams = lp
+        }
+    }
     /** بيتنادى (على thread الواجهة) كل ما الحالة تتحدّث — Main بيستخدمه يبدّل مكتبة الفيديو */
     val listeners = CopyOnWriteArrayList<() -> Unit>()
 
@@ -72,7 +94,7 @@ object TvModeFab {
                     attach(act); startPoll(); startNowWatch()
                 }
                 override fun onActivityPaused(act: Activity) { if (resumed > 0) resumed--; if (resumed == 0) lastPauseAt = System.currentTimeMillis(); try { picker?.dismiss() } catch (_: Throwable) {}; try { layers[act]?.let { closeFan(it, false) } } catch (_: Throwable) {} }
-                override fun onActivityDestroyed(act: Activity) { layers.remove(act) }
+                override fun onActivityDestroyed(act: Activity) { layers.remove(act); docks.remove(act) }
                 override fun onActivityCreated(act: Activity, b: Bundle?) {}
                 override fun onActivityStarted(act: Activity) {}
                 override fun onActivityStopped(act: Activity) {}
@@ -142,6 +164,7 @@ object TvModeFab {
             if (capV != null && capV.parent == null) root.addView(capV, FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.CENTER_HORIZONTAL).apply { topMargin = dp(a, 34) })
             if (!l.hooked) { l.hooked = true; root.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> placeBanner(root, l) } }
             paint(a, l)
+            placeFab(a, l)
         } catch (e: Throwable) { LogStore.err("TvModeFab:attach", e) }
     }
 

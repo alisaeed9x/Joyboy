@@ -45,7 +45,7 @@ object YtLink {
     fun page(pinQ: String): String {
         val ip = TypeServer.ip()
         val deep = "subtitler://ytlink?h=$ip&p=${TypeServer.PORT}&pin=$pinQ"
-        val intentUri = "intent://ytlink?h=$ip&p=${TypeServer.PORT}&pin=$pinQ#Intent;scheme=subtitler;package=com.tttt.subtitler;end"
+        val intentUri = "intent://ytlink?h=$ip&p=${TypeServer.PORT}&pin=$pinQ#Intent;scheme=subtitler;package=com.tttt.joyboy;end"
         return """<!doctype html><html dir="rtl" lang="ar"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Subtitler — دخول يوتيوب</title><body style="font-family:sans-serif;background:#171512;color:#f3ead8;padding:22px;line-height:1.8"><h3>📺 تسجيل دخول يوتيوب على التلفزيون</h3><p>بيفتح Subtitler لوحده… لو ما اتفتحش دوس الزرار.</p><script>setTimeout(function(){location.href="$intentUri"},250)</script><a href="$intentUri" style="display:block;text-align:center;background:#ffb340;color:#000;padding:14px;border-radius:12px;font-size:19px;text-decoration:none;margin:14px 0">📱 افتح في Subtitler</a><p style="font-size:13px;opacity:.8">لو ما اتفتحش: <a style="color:#ffb340" href="$deep">جرّب الرابط ده</a></p></body></html>"""
     }
 
