@@ -1,3 +1,5 @@
+v590: كنترولر التلفزيون (ControllerPad: جويستيك + ⚙🏠↩🎤) في الزرار العايم 📺 بدل الدواير التلاتة + شيل زرار 📺 من المتصفح. ماجرّبتش Gradle ولا جهاز. التفاصيل: CHANGES_v590.md.
+v589: T4 (اختبارات المنطق اتنقلت لـ app/src/test + job «tests» في CI) + M3 (كبسولة 📺 ▶). T2/T3/C3/M6 مؤجّلين (جهاز/قرار). ماجرّبتش Gradle ولا جهاز. التفاصيل: CHANGES_v589.md.
 v588: تنضيف — حذف PublicApis.pull/lastOk + east_asian.txt؛ StemCore.kt وYoutubeUi.kt اتأكد إنهم مستخدمين (فضلوا). فحص kotlinc: مفيش أخطاء جديدة. ماجرّبتش Gradle ولا جهاز. التفاصيل: CHANGES_v588.md.
 v587: AUDIT_09 — D (شيل stubs بتاعة Sherpa وML Kit + androidx.webkit) + G (job «verify»: manifest + Lint). E وF-C3 مؤجّلين. اتفحصت بـ kotlinc على الشجرة كلها: 650 خطأ قبل وبعد (مكتبات ناقصة بس) = مفيش أخطاء جديدة. ماجرّبتش Gradle ولا جهاز. التفاصيل: CHANGES_v587.md.
 v586: يوتيوب — استكمال الفيديو من نفس المكان (مخزن تقدم واحد: YtProg + recent.json، الأحدث يكسب؛ المشغّل الكامل بيكتب في YtProg). ماجرّبتش compile ولا جهاز. التفاصيل: CHANGES_v586.md.

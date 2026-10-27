@@ -174,11 +174,9 @@ object TvModeFab {
             root.addView(scrim, FrameLayout.LayoutParams(-1, -1))
             scrim.animate().alpha(1f).setDuration(180L).start()
             l.scrim = scrim
-            val items = listOf(
-                Triple("🎞", "فيديوهات", 0xF07B4DFF.toInt()),
-                Triple("🌐", "متصفح", 0xF01E88E5.toInt()),
-                Triple("▶", "يوتيوب", 0xF0E53935.toInt()))
-            val angles = doubleArrayOf(185.0, 140.0, 95.0)
+            // (v590) الدواير التلاتة (فيديوهات/متصفح/يوتيوب) اتشالت — فضل زرار الكنترولر بس
+            val items = listOf(Triple("🎮", "كنترولر", 0xF0E53935.toInt()))
+            val angles = doubleArrayOf(140.0)
             val r = dp(a, 88).toFloat()
             val csz = dp(a, 52); val lh = dp(a, 20)
             val lp0 = l.btn.layoutParams as FrameLayout.LayoutParams
@@ -220,15 +218,9 @@ object TvModeFab {
         sc?.animate()?.alpha(0f)?.setDuration(180L)?.withEndAction { kill(sc) }?.start()
     }
 
-    /** 0 فيديوهات · 1 متصفح · 2 يوتيوب — تنقّل سريع من أي شاشة (وضع التلفزيون شغّال فكله بيتبعت للتلفزيون) */
+    /** (v590) الدايرة الوحيدة: شاشة الكنترولر (جويستيك) — الأوامر بتتبعت للتلفزيون */
     private fun go(a: Activity, which: Int) {
-        try {
-            when (which) {
-                0 -> a.startActivity(android.content.Intent(a, MainActivity::class.java).addFlags(android.content.Intent.FLAG_ACTIVITY_CLEAR_TOP or android.content.Intent.FLAG_ACTIVITY_SINGLE_TOP).putExtra("tab", "videos"))
-                2 -> a.startActivity(android.content.Intent(a, MainActivity::class.java).addFlags(android.content.Intent.FLAG_ACTIVITY_CLEAR_TOP or android.content.Intent.FLAG_ACTIVITY_SINGLE_TOP).putExtra("tab", "youtube"))
-                else -> if (a !is BrowserActivity) a.startActivity(android.content.Intent(a, BrowserActivity::class.java))
-            }
-        } catch (e: Throwable) { LogStore.err("TvModeFab:go", e) }
+        try { ControllerPad.show(a) } catch (e: Throwable) { LogStore.err("TvModeFab:go", e) }
     }
 
     private fun paint(a: Activity, l: Layer) {
@@ -239,9 +231,9 @@ object TvModeFab {
         l.banner.visibility = if (on) View.VISIBLE else View.GONE
         try { placeBanner(a.findViewById<View>(android.R.id.content), l) } catch (_: Throwable) {}
         val nt = PlayTarget.nowTitle
-        l.capTitle?.text = "▶  " + (nt ?: "")
+        l.capTitle?.text = "📺 ▶  " + (nt ?: "")   // (v589 M3) 📺 = الفيديو شغّال على التلفزيون (مش على الموبايل ده)
         l.cap?.visibility = if (nt != null) View.VISIBLE else View.GONE
-        l.btn.visibility = if (!on && (prompting || always())) View.VISIBLE else View.GONE   // (v565) متصل ← العلامة تتشال (الخروج من الخط الأحمر تحت)
+        l.btn.visibility = if (on || prompting || always()) View.VISIBLE else View.GONE   // (v590) وهو متصل الزرار بيفضل ظاهر (أخضر) عشان دوسته تفتح الكنترولر؛ الخروج من الخط الأحمر أو دوسة طويلة   // (v565) متصل ← العلامة تتشال (الخروج من الخط الأحمر تحت)
         l.btn.text = "📺"
         if (on) { l.btn.background = disc(0xF02E9E5B.toInt()); l.btn.contentDescription = "وضع التلفزيون شغّال — دوس للتنقل السريع، ودوسة طويلة للخروج" }   // أخضر = متصل
         else {

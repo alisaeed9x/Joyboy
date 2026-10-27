@@ -289,7 +289,6 @@ class BrowserActivity : Activity() {
     private val holds = ArrayList<PopupGuard.Hold>()              // (v401) بوب-أبات في الحجر
     private val blockedPops = ArrayList<PopupGuard.Blocked>()     // (v401) آخر اللي اتمنع (للعرض و«افتحه»)
     private lateinit var ctl: LinearLayout
-    private lateinit var tvB: IconTextView
     private lateinit var shield: TextView
     private lateinit var frame: FrameLayout
     private lateinit var customBox: FrameLayout
@@ -493,15 +492,9 @@ class BrowserActivity : Activity() {
             background = ui.box(0xCC1E2A3A.toInt(), 0x66FFFFFF, 22); elevation = ui.dp(4).toFloat(); visibility = View.GONE
             setOnClickListener { undoPanic() }
         }
-        tvB = IconTextView(this).apply {   // (v533) «إرسال للتلفزيون»: فوق زرار الإعلانات والطوارئ — يبعت الصفحة الحالية ويفتحها على التلفزيون إجباري
-            text = "📺"; textSize = 20f; gravity = Gravity.CENTER; setTextColor(Color.WHITE)
-            background = ui.box(0xCC1E6FE0.toInt(), 0x66FFFFFF, 22); elevation = ui.dp(4).toFloat()
-            setOnClickListener { sendPageToTv() }
-        }
         ctl = buildControls()   // (v248) زرار مانع الإعلانات 🛡 بقى فوق زرار الطوارئ على طول
         panicCol = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_LTR; gravity = Gravity.CENTER_HORIZONTAL
-            addView(tvB, LinearLayout.LayoutParams(ui.dp(44), ui.dp(44)).apply { bottomMargin = ui.dp(6) })
             addView(ctl, LinearLayout.LayoutParams(-2, -2))
             addView(panicB, LinearLayout.LayoutParams(ui.dp(44), ui.dp(44)))
             addView(undoB, LinearLayout.LayoutParams(ui.dp(44), ui.dp(44)).apply { topMargin = ui.dp(6) })

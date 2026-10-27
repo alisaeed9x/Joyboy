@@ -2,13 +2,17 @@
 # تشغيل: bash dev-tests/run_tests.sh   (من جذر المشروع)
 # بيعمل: (1) compile-check للمشروع كله مقابل android.jar + Media3 stubs  (2) اختبارات JVM للمحرك والصوت وHLS والـ prompts
 # محتاج إنترنت لأول مرة بس (بينزل Kotlin compiler و android.jar و org.json من GitHub) — الباقي بيتخزن في $TOOLS
+# (v589 T4) تنبيه: الاختبارات اتنقلت لـ app/src/test/java/devtests وبتتشغّل في CI (job «tests») بـ: gradle testDebugUnitTest
+# السكريبت ده قديم (Engine/Core بقوا معتمدين على باقي التطبيق فمش بيتعملوا compile لوحدهم) — سيبته للمرجع بس.
 set -e
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 TOOLS="${TOOLS:-$HOME/subtitler-tools}"
 SRC="$ROOT/app/src/main/java/com/tttt/subtitler"
 mkdir -p "$TOOLS" && cd "$TOOLS"
 
-[ -d kotlinc ] || { curl -sL -o k.zip https://github.com/JetBrains/kotlin/releases/download/v1.9.24/kotlin-compiler-1.9.24.zip && unzip -q -o k.zip && rm k.zip; }
+# (v589) نفس نسخة Kotlin بتاعة Gradle (build.gradle.kts) — كانت 1.9.24 ثابتة. تتقرا من هناك لو أمكن.
+KV="${KOTLIN_VERSION:-$(grep -oE 'kotlin.android"\) version "[0-9.]+' "$ROOT/build.gradle.kts" | grep -oE '[0-9.]+$')}"; KV="${KV:-2.4.0}"
+[ -f "kotlinc/.ver-$KV" ] || { rm -rf kotlinc; curl -fsL -o k.zip "https://github.com/JetBrains/kotlin/releases/download/v$KV/kotlin-compiler-$KV.zip" && unzip -q -o k.zip && rm k.zip && touch "kotlinc/.ver-$KV"; }
 [ -f android34.jar ] || curl -sL -o android34.jar https://raw.githubusercontent.com/Reginer/aosp-android-jar/main/android-34/android.jar
 if [ ! -d jsonout ]; then
   mkdir -p json jsonout

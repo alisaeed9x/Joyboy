@@ -10,7 +10,7 @@ android {
     }
     namespace = "com.tttt.subtitler"
     compileSdk = 36
-    defaultConfig { applicationId = "com.tttt.subtitler"; minSdk = 26; targetSdk = 34; versionCode = 586; versionName = "5.86"
+    defaultConfig { applicationId = "com.tttt.subtitler"; minSdk = 26; targetSdk = 34; versionCode = 590; versionName = "5.90"
         ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a") }
         externalNativeBuild { cmake { arguments += listOf("-DCMAKE_BUILD_TYPE=Release"); abiFilters += listOf("arm64-v8a", "armeabi-v7a") } }   // (v253) whisper.cpp + (v307) substem: arm64 بس (armeabi-v7a من غير أوفلاين)   // (v181) معماريات الموبايل بس: بتصغّر مكتبة onnxruntime
     }
@@ -38,6 +38,7 @@ android {
     externalNativeBuild { cmake { path = file("src/main/cpp/CMakeLists.txt"); version = "3.22.1" } }
     compileOptions { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17; isCoreLibraryDesugaringEnabled = true }   // (v327) NewPipeExtractor بيستخدم List.of وغيره
     kotlin { compilerOptions { jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17) } }   // (v421) كوتلن 2.4.0 — نفس نسخة stdlib اللي litertlm بتجيبها (كان 1.9.24 فالبناء بيقع)
+    testOptions { unitTests { isReturnDefaultValues = true } }   // (v589 T4) استدعاءات android.* في اختبارات JVM ترجّع قيم افتراضية بدل ما ترمي
     packaging { resources { excludes += listOf("/META-INF/{AL2.0,LGPL2.1}", "/META-INF/INDEX.LIST", "/META-INF/DEPENDENCIES", "/META-INF/*.version") } }   // (v325) NewPipeExtractor
 }
 dependencies {
@@ -51,6 +52,8 @@ dependencies {
     implementation("com.github.bumptech.glide:glide:4.16.0")
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs_nio:2.1.5")   // (v327)
     implementation("com.squareup.okhttp3:okhttp:4.12.0")   // (v418) WebSocket لـ Edge TTS (دبلجة عربي)
+    testImplementation("junit:junit:4.13.2")            // (v589 T4)
+    testImplementation("org.json:json:20240303")        // org.json الحقيقي بدل stub بتاع android.jar (اللي بيرمي "not mocked")
     implementation("com.github.TeamNewPipe:NewPipeExtractor:v0.26.5")   // (v325) يوتيوب الداخلي — نفس نسخة Flow؛ محتاج jitpack.io في settings
 }
 
@@ -70,3 +73,9 @@ val pruneStaleKt = tasks.register("pruneStaleKt") {
     }
 }
 tasks.matching { it.name == "preBuild" }.configureEach { dependsOn(pruneStaleKt) }
+
+// (v589 T4) اختبارات المنطق محتاجة مسار assets (prompts/fonts) — بتتقرا من متغير بيئة
+tasks.withType(Test::class.java).configureEach {
+    environment("SUBTITLER_ASSETS", "$projectDir/src/main/assets")
+    testLogging { events("failed"); showStandardStreams = true }
+}
