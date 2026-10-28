@@ -421,6 +421,7 @@ class MainActivity : Activity() {
                 ui.chips(listOf("صفحة المشاهدة", "المشغّل مباشرة"), { if (YtOpen.mode() == YtOpen.PLAYER) "المشغّل مباشرة" else "صفحة المشاهدة" }) { n -> Cfg.put("yt_open_mode", if (n == "المشغّل مباشرة") YtOpen.PLAYER else YtOpen.PAGE) },
                 ui.switchRow("▶ شغّل تلقائي في المشغّل المصغّر", YtOpen.autoPlay()) { Cfg.put("yt_mini_auto", if (it) "1" else "0") },
                 ui.switchRow("⬇ لما تنزّل من صفحة المشاهدة: الفيديو يكمّل في شريط صغير تحت (زي يوتيوب)", YtDockCfg.on()) { Cfg.put("yt_dock", if (it) "1" else "0") },
+                ui.switchRow("🪟 لما تخرج من التطبيق والفيديو شغّال: يكمّل في نافذة صغيرة (PiP)", Cfg.str("yt_auto_pip", "1") != "0") { Cfg.put("yt_auto_pip", if (it) "1" else "0") },
                 ui.switchRow("🌐 علامة «مدبلج» على الفيديوهات متعددة اللغات في القوايم", YtDub.enabled()) { Cfg.put("yt_dub_scan", if (it) "1" else "0") },
                 ui.text("صفحة المشاهدة: الفيديو بيكبر بأنيميشن ومعاه الوصف والتعليقات والمقترحات والاشتراك، وزرار التكبير في ركن المشغّل المصغّر بيفتح مشغّلك الكامل من نفس الثانية. المشغّل مباشرة: الدوسة بتفتح المشغّل على طول.", 12f, th.muted)),
             ui.section("🎞 الجودة الافتراضية", true,
@@ -665,40 +666,32 @@ class MainActivity : Activity() {
             tab("look", listOf<View>(
                 ui.section("🔤 الخط والحجم", true, *sp.fonts.toTypedArray()),
                 ui.section("✨ الأنيميشن", false, *sp.anim.toTypedArray()),
-                *sp.look.toTypedArray()), true),
+                *sp.look.toTypedArray(),
+                ui.section("🔘 كبسولات العدّادات (صوتي · بصري · نت)", false,
+                    ui.text("الكبسولات الصغيرة شمال فوق الفيديو في الشاشة الكاملة. الشفافية دي هي حالتها العادية؛ لما تدوس كبسولة بتبقى 100% كام ثانية وترجع. بتتطبّق فورًا في المشغّل.", 12f, th.muted),
+                    ui.slider("الظهور (100 = معتمة، أقل = أشفّ)", Cfg.int("badge_alpha", 55).coerceIn(15, 100), 15, 100, "%") { Cfg.put("badge_alpha", it.toString()) })), true),
+            // (v606) المظهر: 7 أقسام بقوا 3 — الثيم (+ استوديو السمات + راحة العين) · الواجهة (السكِن + نوع الجهاز) · الحركة والوصول
             tab("appearance", listOf<View>(
                 ui.section("🎨 الثيم", true, darkSwitch, themeChips,
-                    ui.text("الثيم بيتغيّر فورًا على كل شاشات البرنامج. شكل نص الترجمة نفسه (خط · لون · خلفية) في قسم 🎬 شكل الترجمة.", 12f, th.muted)),
-                ui.section("🎨 استوديو السمات (جديد)", false,
-                    ui.text("اصنع سمتك بنفسك: اختار لون التمييز وحرّك التشبع والإضاءة — الأساس هو ثيمك الحالي وقت الاختيار، والنتيجة بتتطبق على الواجهة كلها وبتتحفظ. تقدر ترجع لأي ثيم جاهز من فوق في أي وقت.", 12f, th.muted),
-                    ui.text("لون التمييز:", 12f, th.muted), accChips, custSat, custLight, custApply),
-                ui.section("🌡 راحة العين — فلتر دافئ", false,
-                    ui.text("طبقة دافئة فوق الشاشة بتقلّل الضوء الأزرق بالليل (٠ = مقفول). بتتطبّق فورًا على الشاشة الرئيسية وبتتحفظ.", 12f, th.muted),
+                    ui.text("الثيم بيتغيّر فورًا على كل شاشات البرنامج. شكل نص الترجمة نفسه (خط · لون · خلفية) في قسم 🎬 شكل الترجمة.", 12f, th.muted),
+                    ui.text("🎨 استوديو السمات: اصنع سمتك بنفسك — اختار لون التمييز وحرّك التشبع والإضاءة (الأساس هو ثيمك الحالي وقت الاختيار). تقدر ترجع لأي ثيم جاهز من فوق في أي وقت.", 12f, th.muted),
+                    ui.text("لون التمييز:", 12f, th.muted), accChips, custSat, custLight, custApply,
+                    ui.text("🌡 راحة العين — فلتر دافئ: طبقة دافئة فوق الشاشة بتقلّل الضوء الأزرق بالليل (٠ = مقفول).", 12f, th.muted),
                     ui.slider("درجة الدفء", Cfg.int("warm", 0), 0, 100, "%") { Cfg.put("warm", it.toString()); refreshWarm() }),
-                ui.section("♿ إمكانية الوصول والحركة", false,
-                    ui.switchRow("🔠 وضع النص الكبير (تكبير خطوط الواجهة)", Cfg.bool("big_text", false)) { Cfg.put("big_text", if (it) "1" else "0"); recreate() },
-                    ui.switchRow("🎞 انتقالات انسيابية بين التبويبات", Cfg.bool("anim_tabs", true)) { Cfg.put("anim_tabs", if (it) "1" else "0") },
-                    ui.switchRow("📳 اهتزاز لمسي خفيف عند التنقّل بين التبويبات", Cfg.bool("haptics", true)) { Cfg.put("haptics", if (it) "1" else "0") }),
-                ui.section("🧩 وضع الواجهة", false,
-                    ui.text("شكل الزراير والفولدرات والأنيميشن:", 12f, th.muted), skinChips, skinSoundSwitch),
-                ui.section("🖥 وضع الواجهة (موبايل · تابلت · تلفزيون)", false,
-                    ui.text("نفس النسخة بتتحول لواجهة تلفزيون أو تابلت — جرّبهم على موبايلك حتى لو معندكش شاشة كبيرة. التبديل بيطبّق فورًا.", 12f, th.muted),
+                ui.section("🧩 الواجهة", false,
+                    ui.text("وضع الواجهة (شكل الزراير والفولدرات والأنيميشن):", 12f, th.muted), skinChips, skinSoundSwitch,
+                    ui.text("نوع الجهاز (موبايل · تابلت · تلفزيون) — نفس النسخة بتتحول لواجهة تلفزيون أو تابلت، والتبديل بيطبّق فورًا:", 12f, th.muted),
                     ui.chips(listOf("🔄 تلقائي", "📱 موبايل", "📟 تابلت", "📺 تلفزيون"), { DeviceUi.label(DeviceUi.pref()) }) { n ->
                         val m = when (n) { "📱 موبايل" -> DeviceUi.PHONE; "📟 تابلت" -> DeviceUi.TABLET; "📺 تلفزيون" -> DeviceUi.TV; else -> DeviceUi.AUTO }
                         Cfg.put("ui_mode", m)
                         Notice.show(this, "🖥 الواجهة: " + DeviceUi.label(m), 1400L)
                         startActivity(Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TASK or Intent.FLAG_ACTIVITY_NEW_TASK).apply { if (m != DeviceUi.TV) putExtra("tab", "settings") })
                         finish()
-                    },
-                    // (v490) زرار «بدّل للوضع اللي بعده» بيحوّل التلفزيون لتابلت فبيبوّظ وضع التلفزيون — مش بيظهر في وضع التلفزيون
-                    if (DeviceUi.isTv(this)) View(this) else ui.button("🔁 بدّل للوضع اللي بعده (موبايل ← تلفزيون ← تابلت)") {
-                        val nx = DeviceUi.cycleNext(this); Cfg.put("ui_mode", nx)
-                        startActivity(Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TASK or Intent.FLAG_ACTIVITY_NEW_TASK).apply { if (nx != DeviceUi.TV) putExtra("tab", "settings") })
-                        finish()
                     }),
-                ui.section("🔘 كبسولات العدّادات (صوتي · بصري · نت)", false,
-                    ui.text("الكبسولات الصغيرة شمال فوق الفيديو في الشاشة الكاملة. الشفافية دي هي حالتها العادية؛ لما تدوس كبسولة بتبقى 100% كام ثانية وترجع. بتتطبّق فورًا في المشغّل.", 12f, th.muted),
-                    ui.slider("الظهور (100 = معتمة، أقل = أشفّ)", Cfg.int("badge_alpha", 55).coerceIn(15, 100), 15, 100, "%") { Cfg.put("badge_alpha", it.toString()) }))),
+                ui.section("♿ الحركة والوصول", false,
+                    ui.switchRow("🔠 وضع النص الكبير (تكبير خطوط الواجهة)", Cfg.bool("big_text", false)) { Cfg.put("big_text", if (it) "1" else "0"); recreate() },
+                    ui.switchRow("🎞 انتقالات انسيابية بين التبويبات", Cfg.bool("anim_tabs", true)) { Cfg.put("anim_tabs", if (it) "1" else "0") },
+                    ui.switchRow("📳 اهتزاز لمسي خفيف عند التنقّل بين التبويبات", Cfg.bool("haptics", true)) { Cfg.put("haptics", if (it) "1" else "0") }))),
             tab("youtube", ytSettingsViews),
             // ===== 🎵 الموسيقى =====
             TabDef("music", SettingsTabs.label("music"), listOf<View>(
@@ -765,7 +758,7 @@ class MainActivity : Activity() {
         lib.onYtPick = { n -> playYt(n.id, n.title) }   // (v344) بحث الفيديوهات: اقتراح يوتيوب = فيديو
         lib.onWebSearch = { q -> webSearch(q) }
         lib.onUniSearch = { q -> globalSearch(q) }   // (v469) D4 بحث شامل موسّع (مكتبة + موسيقى + سجل يوتيوب + أقسام الإعدادات)
-        lib.onDash = { a -> when (a) { "yt" -> showTabFn(4); "music" -> showTabFn(1); "browser" -> { save(); NavAnim.set(curTab, 2); startActivity(Intent(this, BrowserActivity::class.java)) } } }   // (v469) D3 بلاطات لوحة البداية
+        lib.onDash = { a -> when (a) { "yt" -> showTabFn(4); "music" -> showTabFn(1); "browser" -> { save(); NavAnim.set(curTab, 2); startActivity(Intent(this, BrowserActivity::class.java)) }; "transfer" -> startActivity(Intent(this, TransferActivity::class.java)); "files" -> startActivity(Intent(this, FileManagerActivity::class.java)); "tvfiles" -> startActivity(Intent(this, TvFilesActivity::class.java)); "tvvideos" -> XferUi.browseTv(this) } }   // (v469) D3 بلاطات لوحة البداية · (v607) مركز النقل
         // ===== ترجمة في الخلفية: من ⋮ على الفيديو/الفولدر =====
         fun startBg(vs: List<VideoItem>) {
             ensureKeys {
@@ -976,7 +969,7 @@ class MainActivity : Activity() {
         }
         musicOpenFn = { showTabFn(1); musicUi?.showFull() }   // (v337)
         val tabletShell = DeviceUi.isTablet(this)   // (v462) قشرة التابلت: ريل جانبي زي يوتيوب التابلت بدل الشريط السفلي
-        val nav = BottomNav(this, ui, th, 0, tabletShell) { i -> if (i >= BottomNav.YT_HOME) { musicReturnTab = -1; val was = curTab == 4; if (!was) showTabFn(4); ytUi?.tapTab(i - BottomNav.YT_HOME, !was) } else if (i == 2) { save(); NavAnim.set(curTab, 2); startActivity(Intent(this, BrowserActivity::class.java)) } else if (i == 3) { save(); NavAnim.set(curTab, 3); startActivity(Intent(this, FileManagerActivity::class.java)) } else if (i == 7) { musicReturnTab = -1; settingsShow?.invoke(null) } else if (i == 0 && fromTv && !fromPlayer && TvFocus.goHome(this)) { /* (v482) تلفزيون: «الرئيسية» = شاشة التلفزيون */ } else { musicReturnTab = -1; showTabFn(i) } }   // (v310) 4 الملفات = شاشة منفصلة زي المتصفح
+        val nav = BottomNav(this, ui, th, 0, tabletShell) { i -> if (i >= BottomNav.YT_HOME) { musicReturnTab = -1; val was = curTab == 4; if (!was) showTabFn(4); ytUi?.tapTab(i - BottomNav.YT_HOME, !was) } else if (i == 2) { save(); val ytPip = try { curTab == 4 && android.os.Build.VERSION.SDK_INT >= 26 && !DeviceUi.isTv(this) && ytUi?.leaveForPip() == true } catch (_: Throwable) { false }; NavAnim.set(curTab, 2); if (ytPip) window.decorView.postDelayed({ if (!isFinishing && !isDestroyed) startActivity(Intent(this, BrowserActivity::class.java)) }, 1000L) else startActivity(Intent(this, BrowserActivity::class.java)) } else if (i == 3) { save(); NavAnim.set(curTab, 3); startActivity(Intent(this, FileManagerActivity::class.java)) } else if (i == 7) { musicReturnTab = -1; settingsShow?.invoke(null) } else if (i == 0 && fromTv && !fromPlayer && TvFocus.goHome(this)) { /* (v482) تلفزيون: «الرئيسية» = شاشة التلفزيون */ } else { musicReturnTab = -1; showTabFn(i) } }   // (v310) 4 الملفات = شاشة منفصلة زي المتصفح · (v606) يوتيوب شغّال ← المتصفح: الفيديو يكمّل في PiP والاتنين مع بعض
         navUi = nav
         if (!fromPlayer) {
             TaskCenter.listener = { if (!isDestroyed && !isFinishing) { tasksDlgRefresh?.invoke(); runOnUiThread { updateTasksFab() } } }
@@ -1288,7 +1281,7 @@ class MainActivity : Activity() {
         // (v564) فيديو جاي من موبايل (tvcast=1): شغّله على طول بكاش مؤقت (من غير ترجمة/مفاتيح)
         if (CastCache.isCast(u)) {
             try { musicUi?.pause() } catch (_: Throwable) {}
-            startActivity(Intent(this, PlayerActivity::class.java).putExtra("url", u).putExtra("title", t).putExtra("nosub", true).putExtra("landscape", true).putExtra("fresh", false))
+            startActivity(Intent(this, PlayerActivity::class.java).pipTask(this).putExtra("url", u).putExtra("title", t).putExtra("nosub", true).putExtra("landscape", true).putExtra("fresh", false))
             return
         }
         // (v547 م4) «وضع التلفزيون» شغّال: يوتيوب/فيديو (حتى المصطاد بهيدرز) يتبعت للتلفزيون بدل ما يشتغل على الموبايل. false = الوضع مقفول فنكمّل محلي زي ما كان
@@ -1311,7 +1304,7 @@ class MainActivity : Activity() {
         if ((lref.isNotEmpty() || lua.isNotEmpty() || lck.isNotEmpty()) && Links.ytId(u) == null && (how == Links.VIDEO || how == Links.AUTO)) {
             // (v533) فيديو مصطاد من المتصفح (لينك مباشر محتاج Referer/Cookie): نشغّله فرجة بنفس الهيدرز
             try { musicUi?.pause() } catch (_: Throwable) {}
-            startActivity(Intent(this, PlayerActivity::class.java).putExtra("url", u).putExtra("ref", lref).putExtra("ua", lua).putExtra("cookie", lck).putExtra("title", t).putExtra("nosub", true).putExtra("landscape", false).putExtra("fresh", false).putExtra("ask", false))
+            startActivity(Intent(this, PlayerActivity::class.java).pipTask(this).putExtra("url", u).putExtra("ref", lref).putExtra("ua", lua).putExtra("cookie", lck).putExtra("title", t).putExtra("nosub", true).putExtra("landscape", false).putExtra("fresh", false).putExtra("ask", false))
             return
         }
         openLinkAs(u, how, t, r)
@@ -1334,7 +1327,7 @@ class MainActivity : Activity() {
         play("", Uri.parse(v.uri), v.landscape, false, false, !BgJobs.isActive(v.videoId))
     }
     fun startPlayerNow(u: String, uri: Uri?, landscape: Boolean = uri != null, fresh: Boolean = false, noSub: Boolean = false, ask: Boolean = false, ret: String = "") {
-        startActivity(Intent(this, PlayerActivity::class.java).apply {
+        startActivity(Intent(this, PlayerActivity::class.java).pipTask(this).apply {
             if (uri != null) { data = uri; addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION) } else putExtra("url", u)
             putExtra("landscape", landscape); putExtra("fresh", fresh); putExtra("nosub", noSub); putExtra("ask", ask)
             if (ret.isNotEmpty()) putExtra("ret", ret)   // (v417) الرجوع من المشغّل لنفس الشاشة (متصفح/يوتيوب)
@@ -1476,6 +1469,11 @@ class MainActivity : Activity() {
             try { startActivity(Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$packageName"))) } catch (e: Exception) { LogStore.err("Main:675", e) }
         }
     }
+    /** (v606) PiP من صفحة يوتيوب: لو خرجت (Home/Recents) والفيديو شغّال في صفحة المشاهدة (بورتريه) أو الشريط السفلي، يتسلّم للمشغّل الكامل ويدخل PiP تلقائيًا */
+    override fun onUserLeaveHint() {
+        super.onUserLeaveHint()
+        try { if (!fromPlayer && !isFinishing && curTab == 4 && android.os.Build.VERSION.SDK_INT >= 26 && !DeviceUi.isTv(this)) ytUi?.leaveForPip() } catch (e: Throwable) { LogStore.err("Main:leaveForPip", e) }
+    }
     override fun onStop() { super.onStop(); stoppedAt = System.currentTimeMillis(); WebMute.pauseAll(); try { ytUi?.onPause() } catch (_: Throwable) {}; if (ytLoadLaunched) { ytLoadLaunched = false; ytLoadUi?.hide() } }   // (v339) المشغّل ظهر فوقنا: شيل صفحة اللودينج
     // (v339) الأكتيفيتي بقت بتتحمّل الدوران بنفسها (من غير إعادة إنشاء) — كانت بتتعمل لها إعادة إنشاء لما المشغّل يلفّ الشاشة فنرجع للفيديوهات بدل يوتيوب
     override fun onConfigurationChanged(c: android.content.res.Configuration) {
@@ -1497,7 +1495,7 @@ class MainActivity : Activity() {
         // (v543 م4) وضع التلفزيون: الفيديو المصطاد بيتبعت للتلفزيون بنفس الهيدرز (Referer/UA/Cookie)
         if (PlayTarget.open(this, MediaSpec(url = w.url, headers = mapOf("ref" to w.ref, "ua" to w.ua, "cookie" to w.cookie), title = w.title, how = Links.VIDEO))) return
         ensureKeys {
-            startActivity(Intent(this, PlayerActivity::class.java).apply {
+            startActivity(Intent(this, PlayerActivity::class.java).pipTask(this).apply {
                 putExtra("url", w.url); putExtra("ref", w.ref); putExtra("ua", w.ua); putExtra("cookie", w.cookie)
                 putExtra("title", w.title); putExtra("autotr", false)   // (v157) الترجمة بإيدك بس: زرار «ترجمة» في المشغّل
             })
@@ -1564,16 +1562,17 @@ class MainActivity : Activity() {
         ytLoadLaunched = true
         val ret = if (retOv.isNotEmpty()) retOv else if (curTab == 4) "yt" else ""
         if (handoff != null) {   // (v406) المشغّل المصغّر اتسلّم (YtHandoff): المشغّل الكامل بياخده شغّال من غير ما يجيب الرابط ويحمّل من الأول
-            startActivity(Intent(this, PlayerActivity::class.java).apply {
+            startActivity(Intent(this, PlayerActivity::class.java).pipTask(this).apply {
                 putExtra("handoff", true)
                 putExtra("url", handoff.url); putExtra("aurl", handoff.audio ?: ""); putExtra("ref", "https://www.youtube.com/"); putExtra("ua", handoff.ua)
                 if (handoff.qlist.isNotEmpty()) putExtra("qlist", handoff.qlist)
                 putExtra("title", title.ifBlank { handoff.title }); putExtra("ytid", id)
                 putExtra("nosub", !translate); putExtra("autotr", auto); putExtra("ret", ret); if (startMs > 0L) putExtra("startms", startMs)
+                if (YtHandoff.pipNext) { YtHandoff.pipNext = false; putExtra("pip", true) }   // (v606) الخروج من التطبيق: المشغّل يدخل PiP أول ما يفتح
             })
             return
         }
-        startActivity(Intent(this, PlayerActivity::class.java).apply {
+        startActivity(Intent(this, PlayerActivity::class.java).pipTask(this).apply {
             putExtra("ytpend", true); putExtra("ytid", id); putExtra("title", title)
             putExtra("ref", "https://www.youtube.com/")
             putExtra("nosub", !translate); putExtra("autotr", auto); putExtra("ret", ret); if (startMs > 0L) putExtra("startms", startMs)
@@ -1592,7 +1591,7 @@ class MainActivity : Activity() {
                 if (isFinishing || isDestroyed) return@runOnUiThread
                 if (best == null && np != null) {
                     ytLoadLaunched = true
-                    startActivity(Intent(this, PlayerActivity::class.java).apply {
+                    startActivity(Intent(this, PlayerActivity::class.java).pipTask(this).apply {
                         putExtra("url", np.url); putExtra("aurl", np.audio ?: ""); putExtra("ref", "https://www.youtube.com/"); putExtra("ua", np.ua)
                         if (np.qlist.isNotEmpty()) putExtra("qlist", np.qlist)
                         putExtra("title", title.ifBlank { np.title }); putExtra("ytid", id)
@@ -1613,7 +1612,7 @@ class MainActivity : Activity() {
                 }
                 val ttl = title.ifBlank { best.title }
                 ytLoadLaunched = true
-                startActivity(Intent(this, PlayerActivity::class.java).apply {
+                startActivity(Intent(this, PlayerActivity::class.java).pipTask(this).apply {
                     putExtra("url", best.url); putExtra("aurl", best.audio ?: ""); putExtra("qlist", best.optsJson()); putExtra("ref", "https://www.youtube.com/"); putExtra("ua", best.ua)
                     putExtra("title", ttl); putExtra("ytid", id)
                     putExtra("nosub", !translate); putExtra("autotr", auto); putExtra("ret", ret); if (startMs > 0L) putExtra("startms", startMs)
@@ -1732,7 +1731,7 @@ class MainActivity : Activity() {
     fun playClip(c: ClipVideo) {
         fun go(u: String, ref: String, ua: String) {
             if (ref.isEmpty() && ua.isEmpty()) { play(u, null); return }
-            ensureKeys { startActivity(Intent(this, PlayerActivity::class.java).apply { putExtra("url", u); putExtra("ref", ref); putExtra("ua", ua) }) }
+            ensureKeys { startActivity(Intent(this, PlayerActivity::class.java).pipTask(this).apply { putExtra("url", u); putExtra("ref", ref); putExtra("ua", ua) }) }
         }
         if (c.playUrl.isNotEmpty()) { go(c.playUrl, c.ref, c.ua); return }
         val id = YtExtract.videoId(c.url)

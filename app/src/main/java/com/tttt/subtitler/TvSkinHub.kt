@@ -26,6 +26,7 @@ import android.widget.TextView
 object TvSkinHub : TvSkin {
     override val id = "hub"
     override val name = "Hub (شكل Google TV)"
+    override val themeIds = listOf("default", "mxd", "eye_night", "light", "win11d")
     override val tokens = TvTokens(radiusCard = 18, radiusThumb = 14, radiusPill = 30, gap = 10, pad = 14,
         textTitle = 19f, textBody = 14f, textCaption = 12.5f, focusStyle = TvFocusStyle.LIFT, focusScale = 1.08f, focusMs = 150L, pageMs = 240L)
 
@@ -147,11 +148,8 @@ object TvSkinHub : TvSkin {
         dlg.requestWindowFeature(Window.FEATURE_NO_TITLE)
         val rows = listOf(
             "🖼 معرض الثيمات" to TvPage.PRESETS,
-            "🎨 السمة (الألوان)" to TvPage.THEME,
-            "📦 باك الأيقونات" to TvPage.ICON_PACK,
-            "🧩 تصميم الواجهة" to TvPage.LAYOUT,
-            "🖼 خلفية اللانشر" to TvPage.WALLPAPER,
-            "📐 حجم الواجهة" to TvPage.SCALE,
+            "🧩 التصميم والسمة" to TvPage.LAYOUT,
+            "🖼 الخلفية" to TvPage.WALLPAPER,
             "🎛 كل إعدادات المظهر" to TvPage.APPEARANCE)
         val col = LinearLayout(a).apply {
             orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL

@@ -548,6 +548,13 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
     fun onHide() { hideKb(); sugBox.visibility = View.GONE; watch.pause(); h.removeCallbacks(pollRun); if (DeviceUi.isTv(act) && navSel == 1) { try { YtNotify.markOpened(act) } catch (_: Throwable) {} } }   // (v575) خرجت من الاشتراكات = العدّ من دلوقتي
     /** (v348) Main.onStop: الشورتس تقف لما التطبيق يروح الخلفية أو يظهر المشغّل فوقه (بترجع في refresh() مع onResume) */
     fun onPause() { watch.pause(); ytDock.pause() }
+    /** (v606) خروج من التطبيق (Home/Recents) والفيديو شغّال في صفحة المشاهدة أو الشريط السفلي: يتسلّم للمشغّل الكامل ويدخل PiP. true = اتسلّم */
+    fun leaveForPip(): Boolean {
+        if (Cfg.str("yt_auto_pip", "1") == "0") return false
+        return try {
+            (::watch.isInitialized && watch.pipHandoff()) || (::ytDock.isInitialized && ytDock.pipHandoff())
+        } catch (e: Throwable) { LogStore.err("YtProUi:leaveForPip", e); false }
+    }
     fun destroy() { h.removeCallbacks(pollRun); h.removeCallbacks(lineWatch); YtNp.onHome = null; YtRss.onFeed = null; try { ytDock.dismiss() } catch (_: Throwable) {}; watch.release() }
     /** (v479 م5) بحث صوتي على التلفزيون: النتيجة بترجع من Main.onActivityResult (كود 78) */
     private fun startVoice() {

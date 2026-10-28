@@ -134,9 +134,9 @@ class TvActivity : Activity() {
             when (page) {
                 TvPage.APPEARANCE -> this@TvActivity.showAppearance()
                 TvPage.THEME -> this@TvActivity.themeDialog()
-                TvPage.ICON_PACK -> this@TvActivity.iconPackDialog()
-                TvPage.LAYOUT -> this@TvActivity.tvSkinDialog()
-                TvPage.WALLPAPER -> this@TvActivity.wallDialog()
+                TvPage.ICON_PACK -> this@TvActivity.iconsHub()
+                TvPage.LAYOUT -> this@TvActivity.lookDialog()
+                TvPage.WALLPAPER -> this@TvActivity.wallHub()
                 TvPage.SCALE -> this@TvActivity.scaleDialog()
                 TvPage.NOTIFICATIONS -> this@TvActivity.showNotifications()
                 TvPage.PRESETS -> TvPresets.show(this)
@@ -245,7 +245,7 @@ class TvActivity : Activity() {
             if (Theme.lum(th.bg) < 0.2f) background = GradientDrawable(GradientDrawable.Orientation.TL_BR, intArrayOf(0xFF0A0F22.toInt(), 0xFF150E27.toInt())) else setBackgroundColor(th.bg)
         }
         wallView = ImageView(this).apply { scaleType = ImageView.ScaleType.CENTER_CROP; isFocusable = false; isClickable = false; visibility = View.GONE }
-        wallScrim = View(this).apply { setBackgroundColor(TvWall.scrimColor()); isFocusable = false; isClickable = false; visibility = View.GONE }
+        wallScrim = View(this).apply { setBackgroundColor(TvWall.scrimColor(th)); isFocusable = false; isClickable = false; visibility = View.GONE }
         rootF.addView(wallView, FrameLayout.LayoutParams(-1, -1))
         rootF.addView(wallScrim, FrameLayout.LayoutParams(-1, -1))
         glowDrawable = GradientDrawable().apply { gradientType = GradientDrawable.RADIAL_GRADIENT; gradientRadius = ui.dp(640).toFloat(); setGradientCenter(0.5f, 0.55f); colors = intArrayOf(0x00000000, 0x00000000) }
@@ -893,6 +893,7 @@ class TvActivity : Activity() {
             "int:browser" -> openBrowser()
             "int:videos" -> showVideosPage()
             "int:files" -> guardPin { startActivity(Intent(this, FileManagerActivity::class.java)) }
+            "int:transfer" -> startActivity(Intent(this, TransferActivity::class.java))
             "int:voice" -> voiceToSearch()
             else -> launchApp(t)
         }
@@ -947,7 +948,7 @@ class TvActivity : Activity() {
     /** الخطوة 2: اختار التطبيق */
     private fun pickTarget(id: String) {
         val internals = listOf("int:youtube" to "▶️ يوتيوب (جوه Subtitler)", "int:browser" to "🌐 المتصفح", "int:videos" to "🎬 الفيديوهات",
-            "int:files" to "📁 الملفات", "int:voice" to "🎤 بحث صوتي")
+            "int:files" to "📁 الملفات", "int:transfer" to "📤 نقل الملفات", "int:voice" to "🎤 بحث صوتي")
         val pm = packageManager
         val apps = try { allLaunchApps().sortedBy { it.loadLabel(pm).toString().lowercase() } } catch (_: Throwable) { emptyList() }
         val targets = internals + apps.map { it.activityInfo.packageName to it.loadLabel(pm).toString() }
@@ -1027,6 +1028,7 @@ class TvActivity : Activity() {
                 if (k != "0") Cfg.put("tv_wall_sec_prev", k)
                 Cfg.put("tv_wall_sec", k); restartWallLoop()
                 Notice.show(this, if (k == "0") "📌 الخلفية ثابتة" else "⏱ هتتبدّل كل " + (wallSecNames[k] ?: k), 2000L)
+                refreshAppearance()
             }.setNegativeButton("إغلاق", null).show()
     }
     private var wallN = 0
@@ -1104,6 +1106,7 @@ class TvActivity : Activity() {
                 5 -> wallPinToggle()
                 6 -> wallIntervalDialog()
             }
+            if (i <= 3) refreshAppearance()   // (v606) القيمة الجديدة تظهر في صفحة المظهر
         }.setNegativeButton("إغلاق", null).show()
     }
 
@@ -1841,7 +1844,7 @@ class TvActivity : Activity() {
     }
 
     // ===== (v516) المظهر: كل إعدادات شكل اللانشر في صفحة واحدة =====
-    private fun applyScrim() { if (::wallScrim.isInitialized) wallScrim.setBackgroundColor(TvWall.scrimColor()) }
+    private fun applyScrim() { if (::wallScrim.isInitialized) wallScrim.setBackgroundColor(TvWall.scrimColor(th)) }
 
     private fun showAppearance(focusIdx: Int = 0) {
         if (TvSkins.cur().settings(skinHost)) return   // (v597) خانة Settings
@@ -1859,39 +1862,18 @@ class TvActivity : Activity() {
         val saverNames = mapOf("1" to "دقيقة", "3" to "3 دقايق", "5" to "5 دقايق", "10" to "10 دقايق", "0" to "أبدًا")
         // (v537) الإعدادات متقسّمة لمجموعات بعناوين بدل شبكة واحدة مخلوطة — كل الإعدادات القديمة موجودة، + جديد: مدة تبديل الخلفية · غيّر الخلفية دلوقتي · رجّع للافتراضي
         class Grp(val title: String, val opts: List<Opt>)
+        // (v606) 24 كارت بقوا 8: كل مجموعة إعدادات في كارت واحد بيفتح قايمة فرعية (القيم بتتجدّد بعد كل ضغطة)
         val groups = listOf(
-            Grp("🎨 الألوان والخلفية", listOf(
+            Grp("🎨 الشكل", listOf(
                 Opt("🖼 معرض الثيمات (سكِن + أيقونات + ألوان)", { "" }, { h.post { TvPresets.show(skinHost) } }),   // post: بعد ما showAppearance تخلّص رسمها (وإلا كانت هتكتب فوق المعرض)
-                Opt("🎨 السمة (الألوان)", { th.name }, { themeDialog() }),
-                Opt("🖼 خلفية اللانشر", { when (wallMode()) { "off" -> "بدون"; "picsum" -> "صور منوّعة"; "bing" -> "Bing"; else -> "تلقائي (Bing + منوّعة)" } }, { wallDialog() }),
-                Opt("⏱ تبديل الخلفية كل", { wallSecNames[Cfg.str("tv_wall_sec", "60")] ?: "دقيقة" }, { wallIntervalDialog() }),
-                Opt("📌 تثبيت الخلفية", { if (wallFixed()) "مثبّتة" else "بتتبدّل" }, { wallPinToggle() }),
-                Opt("🔄 غيّر الخلفية دلوقتي", { "" }, { if (wallMode() == "off") { Cfg.put("tv_wall", "auto"); applyWall() } else nextWall(true) }),
-                Opt("🌑 تعتيم الخلفية", { (Cfg.str("tv_scrim", "50")) + "%" }, { cyc("tv_scrim", "50", listOf("0", "25", "40", "50", "65", "80", "90"))(); applyScrim() }),
-                Opt("🌡 دفء ليلي", { if (Cfg.str("tv_warm", "0") == "1") "شغّال" else "مقفول" }, { toggleWarm() })
+                Opt("🧩 التصميم والسمة", { TvSkins.cur().name + " · " + th.name }, { lookDialog() }),
+                Opt("🖼 الخلفية", { wallModeName() }, { wallHub() }),
+                Opt("⭕ الأيقونات والحجم", { IconPacks.nameOf(IconPacks.activeId()) }, { iconsHub() })
             )),
-            Grp("⭕ الأيقونات والأسماء", listOf(
-                Opt("⭕ شكل أيقونات التطبيقات", { if (squircle()) "مربع مدوّر" else "دايرة" }, cyc("tv_icon_shape", "circle", listOf("circle", "squircle"))),
-                Opt("📦 باك الأيقونات", { IconPacks.nameOf(IconPacks.activeId()) }, { iconPackDialog() }),
-                Opt("🔎 حجم الأيقونات", { iconDp().toString() }, cyc("tv_icon_px", "86", iconSizes)),
-                Opt("🏷 أسماء التطبيقات", { when (namesMode()) { "always" -> "دايمًا"; "off" -> "مخفية"; else -> "عند التركيز" } }, cyc("tv_names", "always", listOf("focus", "always", "off"))),
-                Opt("📐 حجم الواجهة", { Cfg.str("tv_scale_adj", "100") + "%" }, { scaleDialog() })
-            )),
-            Grp("✨ التركيز والحركة", listOf(
-                Opt("⬆ طلوع وتكبير المتركّز", { liftNames[liftLevel()] }, cyc("tv_lift", "2", listOf("0", "1", "2", "3"))),
-                Opt("✨ وهج خلف المتركّز", { onOff("tv_halo", "1") }, tog("tv_halo", "1")),
-                Opt("🎞 وضع الواجهة والحركة", { Skins.cur().name }, { skinDialog() }),
-                Opt("🧩 تصميم الواجهة (Layout)", { TvSkins.cur().name }, { tvSkinDialog() })
-            )),
-            Grp("🏠 الرئيسية والتطبيقات", listOf(
-                Opt("🎛 تخصيص الصفوف", { "" }, { rowsDialog() }),
-                Opt("↕ ترتيب الصفوف", { "" }, { orderDialog() }),
-                Opt("📲 تطبيقات السيستم", { if (Cfg.str("tv_apps_sys", "0") == "1") "ظاهرة" else "مخفية" }, tog("tv_apps_sys", "0")),
-                Opt("🛍 اختصار Google Play", { onOff("tv_play", "1") }, { Cfg.put("tv_play", if (playOn()) "0" else "1"); recreate() })
-            )),
-            Grp("🕒 الساعة والشاشة", listOf(
-                Opt("🕒 شكل الساعة", { if (Cfg.str("tv_clock24", "0") == "1") "24 ساعة" else "12 ساعة" }, tog("tv_clock24", "0")),
-                Opt("💤 شاشة التوقف بعد", { saverNames[Cfg.str("tv_saver_min", "3")] ?: "3 دقايق" }, cyc("tv_saver_min", "3", listOf("1", "3", "5", "10", "0")))
+            Grp("✨ الحركة والرئيسية", listOf(
+                Opt("✨ التركيز والحركة", { liftNames[liftLevel()] }, { focusHub() }),
+                Opt("🏠 الرئيسية والتطبيقات", { "" }, { homeHub() }),
+                Opt("🕒 الساعة والشاشة", { if (Cfg.str("tv_clock24", "0") == "1") "24 ساعة" else "12 ساعة" }, { clockHub() })
             )),
             Grp("♻ إعادة الضبط", listOf(
                 Opt("♻ رجّع المظهر للافتراضي", { "" }, { resetAppearance() })
@@ -1908,7 +1890,7 @@ class TvActivity : Activity() {
                     c.addView(ui.text(o.title, 14.5f, th.text, true))
                     val v = o.value()
                     if (v.isNotEmpty()) c.addView(ui.text(v, 13f, th.primary, true).apply { setPadding(0, ui.dp(4), 0, 0) })
-                }, { o.act(); if (!isFinishing && !isDestroyed && curTab == -1) showAppearance(my) })
+                }, { appearIdx = my; o.act(); if (!isFinishing && !isDestroyed && curTab == -1 && !subOpened) showAppearance(my); subOpened = false })
             }
             allCards.addAll(cards)
             gridInto(content, cards, if (compactUi) 2 else 3)
@@ -1930,6 +1912,87 @@ class TvActivity : Activity() {
                 recreate()
             }
             .setNegativeButton("إلغاء", null).show()
+    }
+
+    // ===== (v606) قوايم فرعية للمظهر =====
+    private var appearIdx = 0
+    private var subOpened = false   // الكارت فتح قايمة فرعية: ماترسمش الصفحة لحد ما القايمة تتقفل
+    private fun refreshAppearance() { if (!isFinishing && !isDestroyed && curTab == -1) showAppearance(appearIdx) }
+    private fun cycCfg(key: String, def: String, vals: List<String>) { val i = vals.indexOf(Cfg.str(key, def)); Cfg.put(key, vals[(i + 1).mod(vals.size)]) }
+    private fun togCfg(key: String, def: String) { Cfg.put(key, if (Cfg.str(key, def) == "0") "1" else "0") }
+    private fun onOffTxt(key: String, def: String) = if (Cfg.str(key, def) == "0") "مقفول" else "شغّال"
+    private fun wallModeName(): String = when (wallMode()) { "off" -> "بدون"; "picsum" -> "صور منوّعة"; "bing" -> "Bing"; else -> "تلقائي (Bing + منوّعة)" }
+
+    /** قايمة فرعية: بتتجدّد قيمها بعد كل ضغطة (build بيتنده من جديد) وبتحدّث صفحة المظهر لما تتقفل */
+    private fun hubDialog(title: String, build: () -> List<Pair<String, () -> Unit>>) {
+        subOpened = true
+        val items = build()
+        GAlert(this).setTitle(title)
+            .setItems(items.map { it.first }.toTypedArray()) { _, i -> items[i].second() }
+            .setNegativeButton("رجوع") { _, _ -> refreshAppearance() }
+            .setOnCancelListener(android.content.DialogInterface.OnCancelListener { refreshAppearance() })
+            .show()
+    }
+
+    private fun wallHub() { hubDialog("🖼 الخلفية") { listOf(
+        ("🖼 المصدر: " + wallModeName()) to { wallDialog() },
+        ("⏱ تبديل الخلفية كل: " + (wallSecNames[Cfg.str("tv_wall_sec", "60")] ?: "دقيقة")) to { wallIntervalDialog() },
+        (if (wallFixed()) "▶ إلغاء تثبيت الخلفية" else "📌 ثبّت الخلفية") to { wallPinToggle(); wallHub() },
+        "🔄 غيّر الخلفية دلوقتي" to { if (wallMode() == "off") { Cfg.put("tv_wall", "auto"); applyWall() } else nextWall(true); wallHub() },
+        ("🌑 تعتيم الخلفية: " + Cfg.str("tv_scrim", "50") + "%") to { cycCfg("tv_scrim", "50", listOf("0", "25", "40", "50", "65", "80", "90")); applyScrim(); wallHub() },
+        ("🌡 دفء ليلي: " + (if (Cfg.str("tv_warm", "0") == "1") "شغّال" else "مقفول")) to { toggleWarm(); wallHub() }
+    ) } }
+
+    private fun iconsHub() { hubDialog("⭕ الأيقونات والحجم") { listOf(
+        ("⭕ الشكل: " + (if (squircle()) "مربع مدوّر" else "دايرة")) to { cycCfg("tv_icon_shape", "circle", listOf("circle", "squircle")); iconsHub() },
+        ("🔎 حجم الأيقونات: " + iconDp()) to { cycCfg("tv_icon_px", "86", listOf("64", "76", "86", "100", "116", "132")); iconsHub() },
+        ("🏷 أسماء التطبيقات: " + (when (namesMode()) { "always" -> "دايمًا"; "off" -> "مخفية"; else -> "عند التركيز" })) to { cycCfg("tv_names", "always", listOf("focus", "always", "off")); iconsHub() },
+        ("📦 باك الأيقونات: " + IconPacks.nameOf(IconPacks.activeId())) to { iconPackDialog(); Unit },
+        ("📐 حجم الواجهة: " + Cfg.str("tv_scale_adj", "100") + "%") to { scaleDialog() }
+    ) } }
+
+    private fun focusHub() { hubDialog("✨ التركيز والحركة") { listOf(
+        ("⬆ طلوع وتكبير المتركّز: " + listOf("بدون", "خفيف", "متوسط", "عالي")[liftLevel()]) to { cycCfg("tv_lift", "2", listOf("0", "1", "2", "3")); focusHub() },
+        ("✨ وهج خلف المتركّز: " + onOffTxt("tv_halo", "1")) to { togCfg("tv_halo", "1"); focusHub() },
+        ("🎞 حركة الواجهة: " + Skins.cur().name) to { skinDialog() }
+    ) } }
+
+    private fun homeHub() { hubDialog("🏠 الرئيسية والتطبيقات") { listOf(
+        "🎛 تخصيص الصفوف" to { rowsDialog() },
+        "↕ ترتيب الصفوف" to { orderDialog() },
+        ("📲 تطبيقات السيستم: " + (if (Cfg.str("tv_apps_sys", "0") == "1") "ظاهرة" else "مخفية")) to { togCfg("tv_apps_sys", "0"); homeHub() },
+        ("🛍 اختصار Google Play: " + onOffTxt("tv_play", "1")) to { Cfg.put("tv_play", if (playOn()) "0" else "1"); recreate() }
+    ) } }
+
+    private fun clockHub() { hubDialog("🕒 الساعة والشاشة") { listOf(
+        ("🕒 شكل الساعة: " + (if (Cfg.str("tv_clock24", "0") == "1") "24 ساعة" else "12 ساعة")) to { togCfg("tv_clock24", "0"); clockHub() },
+        ("💤 شاشة التوقف بعد: " + (mapOf("1" to "دقيقة", "3" to "3 دقايق", "5" to "5 دقايق", "10" to "10 دقايق", "0" to "أبدًا")[Cfg.str("tv_saver_min", "3")] ?: "3 دقايق")) to { cycCfg("tv_saver_min", "3", listOf("1", "3", "5", "10", "0")); clockHub() }
+    ) } }
+
+    /** (v606) السمات جوه السكِنز: تختار التصميم (السكِن) وبعدين سمته — السمات المناسبة للسكِن ⭐ فوق، وبتتطبّق الاتنين مع بعض (مفيش لخبطة سكِن غامق + سمة فاتحة) */
+    private fun lookDialog() {
+        subOpened = true
+        val skins = TvSkins.all; val cur = TvSkins.cur().id
+        GAlert(this).setTitle("🧩 التصميم ← السمة")
+            .setItems(skins.map { (if (it.id == cur) "✔ " else "") + it.name }.toTypedArray()) { _, i -> skinThemePicker(skins[i]) }
+            .setNegativeButton("رجوع") { _, _ -> refreshAppearance() }
+            .setOnCancelListener(android.content.DialogInterface.OnCancelListener { refreshAppearance() })
+            .show()
+    }
+    private fun skinThemePicker(sk: TvSkin) {
+        val extra = if (Cfg.str("cust_accent", "").length >= 6) listOf(Themes.custom()) else emptyList()
+        val all = Themes.all + extra
+        val rec = sk.themeIds
+        val ordered = rec.mapNotNull { id -> all.firstOrNull { it.id == id } } + all.filter { it.id !in rec }
+        val sameSkin = sk.id == TvSkins.cur().id
+        val labels = ordered.map { t -> (if (sameSkin && t.id == th.id) "✔ " else "") + (if (t.id in rec) "⭐ " else "") + (if (t.isLight) "☀ " else "🌙 ") + t.name }
+        GAlert(this).setTitle("🎨 سمات «" + sk.name + "»")
+            .setItems(labels.toTypedArray()) { _, i ->
+                if (!sameSkin) TvSkins.set(sk.id, skinHost)
+                Cfg.put("theme", ordered[i].id)
+                recreate()
+            }
+            .setNegativeButton("رجوع") { _, _ -> lookDialog() }.show()
     }
 
     private fun themeDialog() {
@@ -2691,6 +2754,7 @@ class TvActivity : Activity() {
         group("📺 الجهاز والاتصال", listOf(
             tile("📶", "الواي فاي") { TvWifi.quick(this@TvActivity) },
             tile("📱", "ريموت الموبايل") { TvLinkUi.show(this@TvActivity) },
+            tile("📤", "نقل الملفات") { startActivity(Intent(this@TvActivity, TransferActivity::class.java)) },
             tile("🛠", "إعدادات الأندرويد") { openSystemSettings() },
             tile("🌙", "نوم") { showSaver() }))
         group("🎨 الشكل والخلفية", listOf(

@@ -248,6 +248,10 @@ object TvLink {
             "/file/cur" -> TvXfer.fileCur(app, r)     // (v596) السماعة الخاصة: ملف المشغّل المحلي
             "/pull" -> TvXfer.pull(app, r)            // (v596) الموبايل يبعت ملف: التلفزيون يسحبه
             "/priv" -> TvXfer.priv(app, r)            // (v596) كتم التلفزيون وقت السماعة الخاصة
+            "/xfer/list" -> TvCatalogApi.list(app, r)   // (v607) مركز النقل: كتالوج التلفزيون (فيديوهات · صوتيات · صور · APK · تطبيقات · عروض)
+            "/fs/list" -> TvFsApi.list(app, r)           // (v610) تصفح ملفات التلفزيون (الذاكرة + الفلاشات)
+            "/fs/file" -> TvFsApi.file(app, r)           // (v610) تنزيل ملف من التلفزيون بمساره (Range)
+            "/file/any" -> TvCatalogApi.file(app, r)     // (v607) تنزيل عنصر من الكتالوج (Range)
             "/cfg" -> BrainRpc.cfg(r)
             "/bye" -> { rm.announced = false; rm.lastSeen = 0L; notice("📱 الريموت «" + rm.name + "» فصل"); ok() }
             else -> err(404, "nf")

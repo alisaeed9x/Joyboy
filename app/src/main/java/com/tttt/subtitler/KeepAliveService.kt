@@ -97,7 +97,7 @@ class KeepAliveService : Service() {
         val title = st.title.ifBlank { "Subtitler" }
         val trTxt = when (st.trState) { 1 -> "الترجمة ${st.trPct}%"; 2 -> "الترجمة موقوفة ${st.trPct}%"; else -> "الترجمة ماابتدتش" }
         val timeTxt = if (st.durMs > 0) "${clock(st.posMs)} / ${clock(st.durMs)}" else clock(st.posMs)
-        val open = PendingIntent.getActivity(this, 0, Intent(this, PlayerActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT), PendingIntent.FLAG_IMMUTABLE)
+        val open = PendingIntent.getActivity(this, 0, Intent(this, PlayerActivity::class.java).addFlags(if (!DeviceUi.isTv(this)) Intent.FLAG_ACTIVITY_NEW_DOCUMENT or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT else Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT), PendingIntent.FLAG_IMMUTABLE)
         try {
             session?.setMetadata(MediaMetadata.Builder().putString(MediaMetadata.METADATA_KEY_TITLE, title).putLong(MediaMetadata.METADATA_KEY_DURATION, st.durMs.coerceAtLeast(0)).build())
             session?.setPlaybackState(PlaybackState.Builder()

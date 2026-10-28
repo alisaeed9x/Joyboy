@@ -34,6 +34,7 @@ import android.widget.TextView
 object TvSkinGlass : TvSkin {
     override val id = "glass"
     override val name = "Glass (شكل OriginOS)"
+    override val themeIds = listOf("amoled_w", "default", "win11d", "sky", "sakura", "infinix")
     override val tokens = TvTokens(radiusCard = 26, radiusThumb = 20, radiusPill = 34, gap = 12, pad = 16,
         textTitle = 19f, textBody = 14f, textCaption = 12.5f, focusStyle = TvFocusStyle.GLOW, focusScale = 1.06f, focusMs = 200L, pageMs = 320L)
 
@@ -240,9 +241,8 @@ object TvSkinGlass : TvSkin {
         val dlg = Dialog(a)
         dlg.requestWindowFeature(Window.FEATURE_NO_TITLE)
         val rows = listOf(
-            "🖼 معرض الثيمات" to TvPage.PRESETS, "🎨 السمات (ألوان)" to TvPage.THEME, "🔔 الإشعارات" to TvPage.NOTIFICATIONS, "📦 باك الأيقونات" to TvPage.ICON_PACK,
-            "🧩 تصميم الواجهة" to TvPage.LAYOUT, "🖼 خلفية اللانشر" to TvPage.WALLPAPER, "📐 حجم الواجهة" to TvPage.SCALE,
-            "🎛 كل إعدادات المظهر" to TvPage.APPEARANCE)
+            "🖼 معرض الثيمات" to TvPage.PRESETS, "🧩 التصميم والسمة" to TvPage.LAYOUT, "🔔 الإشعارات" to TvPage.NOTIFICATIONS,
+            "🖼 الخلفية" to TvPage.WALLPAPER, "🎛 كل إعدادات المظهر" to TvPage.APPEARANCE)
         val col = LinearLayout(a).apply {
             orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL
             setPadding(ui.dp(18), ui.dp(18), ui.dp(18), ui.dp(18))

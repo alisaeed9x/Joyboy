@@ -31,6 +31,8 @@
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES"/>   <!-- (v518) تثبيت التحديث اللي جه من الموبايل -->
     <uses-permission android:name="android.permission.REQUEST_DELETE_PACKAGES"/>   <!-- (v483) زرار إلغاء تثبيت اللانشر -->
     <uses-permission android:name="android.permission.READ_MEDIA_VIDEO"/>
+    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES"/>   <!-- (v607) مركز النقل: الصور -->
+    <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES"/>   <!-- (v607) مركز النقل: قايمة التطبيقات المثبتة لإرسال APK بتاعها -->
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32"/>
     <!-- (v476) صفحة «تطبيقاتك» في اللانشر: اكتشاف تطبيقات التلفزيون من غير QUERY_ALL_PACKAGES -->
     <queries>
@@ -60,7 +62,7 @@
         </activity>
         <activity android:name=".BrowserActivity" android:exported="false" android:windowSoftInputMode="adjustResize" android:theme="@style/AppSplash"
             android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboardHidden|density"/>
-        <activity android:name=".PlayerActivity" android:exported="false"
+        <activity android:name=".PlayerActivity" android:exported="false" android:autoRemoveFromRecents="true"
             android:supportsPictureInPicture="true" android:resizeableActivity="true"
             android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboardHidden|density"/>
         <!-- (v476) اللانشر: HOME + LEANBACK_LAUNCHER — TvActivity هي الشاشة الرئيسية للتلفزيون -->
@@ -73,6 +75,14 @@
                 <category android:name="android.intent.category.LEANBACK_LAUNCHER"/>
             </intent-filter>
         </activity>
+        <!-- (v607) مركز النقل: إرسال/استقبال ملفات (فيديوهات · صوتيات · صور · APK · تطبيقات) بين الموبايل والتلفزيون وأي تطبيق تاني — وكمان هدف مشاركة «Joyboy نقل» -->
+        <activity android:name=".TransferActivity" android:exported="true" android:label="Joyboy نقل" android:theme="@style/AppSplash"
+            android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboardHidden|density">
+            <intent-filter><action android:name="android.intent.action.SEND"/><category android:name="android.intent.category.DEFAULT"/><data android:mimeType="*/*"/></intent-filter>
+            <intent-filter><action android:name="android.intent.action.SEND_MULTIPLE"/><category android:name="android.intent.category.DEFAULT"/><data android:mimeType="*/*"/></intent-filter>
+        </activity>
+        <activity android:name=".TvFilesActivity" android:exported="false" android:theme="@style/AppSplash"
+            android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboardHidden|density"/>   <!-- (v610) تصفح ملفات التلفزيون من الموبايل -->
         <activity android:name=".FileManagerActivity" android:exported="false" android:theme="@style/AppSplash"
             android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboardHidden|density"/>
         <provider android:name="androidx.core.content.FileProvider" android:authorities="${applicationId}.fmprov"

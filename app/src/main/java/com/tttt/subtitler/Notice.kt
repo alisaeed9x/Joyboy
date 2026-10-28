@@ -47,6 +47,26 @@ object Notice {
             setColor((th.card and 0x00FFFFFF) or 0xF2000000.toInt()); setStroke(strokePx.coerceAtLeast(1), th.border); cornerRadius = radiusPx
         }
 
+    /** (v606) ألوان كبسولة التلفزيون على طريقة One UI: سطح غامق/فاتح شبه شفاف مشتق من السمة + نص بتباين مضمون (فاتح على الغامق وغامق على الفاتح) */
+    private class TvLook(val fill: Int, val stroke: Int, val fg: Int, val sub: Int, val btnFill: Int, val btnFg: Int, val dot: Int)
+    private fun mix(a: Int, b: Int, t: Float): Int {
+        fun ch(x: Int, y: Int) = (x + (y - x) * t).toInt().coerceIn(0, 255)
+        return Color.rgb(ch(Color.red(a), Color.red(b)), ch(Color.green(a), Color.green(b)), ch(Color.blue(a), Color.blue(b)))
+    }
+    private fun tvLook(th: Theme): TvLook {
+        val dark = !th.isLight
+        val base = if (dark) mix(th.card, Color.BLACK, 0.55f) else mix(th.card, Color.WHITE, 0.65f)
+        val fill = (base and 0x00FFFFFF) or (if (dark) 0xF0000000.toInt() else 0xF5000000.toInt())
+        val fg = if (Theme.lum(base) > 0.5) Color.BLACK else Color.WHITE
+        val sub = if (fg == Color.BLACK) 0xFF3A3A3A.toInt() else 0xFFD0D0D0.toInt()
+        val stroke = if (dark) 0x55FFFFFF else 0x33000000
+        val btnFill = th.primary
+        val btnFg = if (Theme.lum(th.primary) > 0.55) Color.BLACK else Color.WHITE
+        return TvLook(fill, stroke, fg, sub, btnFill, btnFg, th.primary)
+    }
+    private fun tvCapsule(look: TvLook, radiusPx: Float, strokePx: Int): android.graphics.drawable.GradientDrawable =
+        android.graphics.drawable.GradientDrawable().apply { setColor(look.fill); setStroke(strokePx.coerceAtLeast(1), look.stroke); cornerRadius = radiusPx }
+
     private fun removeNow() {
         timeout?.let { main.removeCallbacks(it) }; timeout = null
         val r = removeCur; removeCur = null
@@ -80,18 +100,19 @@ object Notice {
             val onPrimary = if (th.isLight) Color.WHITE else Color.BLACK
             // (v603) على التلفزيون: كبسولة كبيرة مقروءة من بعيد (شكل كبسولات One UI) — الموبايل/التابلت زي ما هم بالظبط
             val tv = try { DeviceUi.isTv(act) } catch (_: Throwable) { false }
-            val maxW = (act.resources.displayMetrics.widthPixels * (if (tv) 0.66f else 0.82f)).toInt()
-            val msgSize = if (tv) 21f else 12.5f
-            val padH = if (tv) 30 else 16
-            val padV = if (tv) 15 else 8
-            val radius = if (tv) 40 else 20
+            val maxW = (act.resources.displayMetrics.widthPixels * (if (tv) 0.74f else 0.82f)).toInt()
+            val msgSize = if (tv) 27f else 12.5f
+            val padH = if (tv) 44 else 16
+            val padV = if (tv) 24 else 8
+            val radius = if (tv) 60 else 20
+            val look = tvLook(th)
 
             // كبسولة على قد الكلام بس (زي إشعارات سامسونج): بتنزل من فوق في النص وبتطلع تاني
             val pill = LinearLayout(act).apply {
                 orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL
-                background = if (tv) tvCapsuleBg(th, dp(radius).toFloat(), dp(2)) else ui.box(th.card, th.border, 20)
+                background = if (tv) tvCapsule(look, dp(radius).toFloat(), dp(2)) else ui.box(th.card, th.border, 20)
                 setPadding(dp(padH), dp(padV), dp(padH), dp(padV))
-                if (tv) elevation = dp(8).toFloat()
+                if (tv) elevation = dp(14).toFloat()
                 // (v224) الحواف كانت مربعة (ظل/خلفية مستطيلة حوالين الكبسولة): قصّ دايري بنفس نصف القطر وشيل الظل المستطيل
                 outlineProvider = object : android.view.ViewOutlineProvider() {
                     override fun getOutline(v: View, o: android.graphics.Outline) { o.setRoundRect(0, 0, v.width, v.height, if (tv) v.height / 2f else dp(20).toFloat()) }
@@ -99,8 +120,9 @@ object Notice {
                 clipToOutline = true
             }
             pill.addView(IconTextView(act).apply {
-                text = msg; textSize = msgSize; setTextColor(th.text); maxLines = if (tv) 2 else 3; ellipsize = TextUtils.TruncateAt.END
+                text = msg; textSize = msgSize; setTextColor(if (tv) look.fg else th.text); maxLines = if (tv) 2 else 3; ellipsize = TextUtils.TruncateAt.END
                 gravity = Gravity.CENTER; maxWidth = maxW - dp(padH * 2)
+                if (tv) { typeface = android.graphics.Typeface.DEFAULT_BOLD; setLineSpacing(0f, 1.1f) }
             }, LinearLayout.LayoutParams(-2, -2).apply { gravity = Gravity.CENTER_HORIZONTAL })
             var done = false
             lateinit var wrapRef: View
@@ -118,17 +140,23 @@ object Notice {
 
             if (yes != null && no != null) {
                 fun chip(t: String, primary: Boolean, f: () -> Unit) = IconTextView(act).apply {
-                    text = t; textSize = if (tv) 19f else 12.5f; gravity = Gravity.CENTER; minHeight = dp(if (tv) 52 else 40)
-                    setPadding(dp(if (tv) 24 else 14), dp(6), dp(if (tv) 24 else 14), dp(6))
-                    setTextColor(if (primary) onPrimary else th.text)
-                    background = ui.box(if (primary) th.primary else th.surface, if (primary) th.primary else th.border, if (tv) 26 else 16)
+                    text = t; textSize = if (tv) 24f else 12.5f; gravity = Gravity.CENTER; minHeight = dp(if (tv) 64 else 40)
+                    setPadding(dp(if (tv) 36 else 14), dp(6), dp(if (tv) 36 else 14), dp(6))
+                    if (tv) {
+                        typeface = android.graphics.Typeface.DEFAULT_BOLD
+                        setTextColor(if (primary) look.btnFg else look.fg)
+                        background = android.graphics.drawable.GradientDrawable().apply { cornerRadius = dp(32).toFloat(); if (primary) setColor(look.btnFill) else { setColor(Color.TRANSPARENT); setStroke(dp(2), look.stroke) } }
+                    } else {
+                        setTextColor(if (primary) onPrimary else th.text)
+                        background = ui.box(if (primary) th.primary else th.surface, if (primary) th.primary else th.border, 16)
+                    }
                     setOnClickListener { f() }
                 }
                 val row = LinearLayout(act).apply { layoutDirection = View.LAYOUT_DIRECTION_RTL; gravity = Gravity.CENTER; setPadding(0, dp(7), 0, dp(6)) }
                 row.addView(chip(yes, true) { finish(onYes) }, LinearLayout.LayoutParams(-2, -2).apply { marginEnd = dp(8) })
                 row.addView(chip(no, false) { finish(onNo) }, LinearLayout.LayoutParams(-2, -2))
                 pill.addView(row, LinearLayout.LayoutParams(-2, -2).apply { gravity = Gravity.CENTER_HORIZONTAL })
-                val bar = View(act).apply { setBackgroundColor(th.primary) }
+                val bar = View(act).apply { setBackgroundColor(if (tv) look.dot else th.primary) }
                 pill.addView(bar, LinearLayout.LayoutParams(-1, dp(2)))
                 bar.post {
                     bar.pivotX = bar.width.toFloat()

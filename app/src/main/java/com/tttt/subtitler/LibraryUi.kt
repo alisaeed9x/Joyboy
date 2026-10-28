@@ -739,7 +739,23 @@ class LibraryUi(
         tile("▶ يوتيوب") { onDash?.invoke("yt") }
         tile("🎵 موسيقى") { onDash?.invoke("music") }
         tile("🌐 متصفح") { onDash?.invoke("browser") }
+        tile("📤 نقل") { onDash?.invoke("transfer") }
         dashBox.addView(tiles, LinearLayout.LayoutParams(-1, -2))
+        // (v610) مربعات كبيرة: تصفح الملفات · ملفات التلفزيون · فيديوهات التلفزيون
+        val squares = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL }
+        fun square(emoji: String, t: String, key: String) {
+            val col = LinearLayout(act).apply {
+                orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER; setPadding(ui.dp(4), ui.dp(8), ui.dp(4), ui.dp(8))
+                background = ui.box(th.surface, th.border, 14); isClickable = true; setOnClickListener { onDash?.invoke(key) }
+            }
+            col.addView(IconTextView(act).apply { text = emoji; textSize = 26f; gravity = Gravity.CENTER; includeFontPadding = false })
+            col.addView(ui.text(t, 12f, th.text, true).apply { gravity = Gravity.CENTER; setSingleLine() })
+            squares.addView(col, LinearLayout.LayoutParams(0, ui.dp(84), 1f).apply { setMargins(ui.dp(3), ui.dp(4), ui.dp(3), ui.dp(2)) })
+        }
+        square("📂", "تصفح الملفات", "files")
+        square("📺", "ملفات التلفزيون", "tvfiles")
+        square("🎬", "فيديوهات التلفزيون", "tvvideos")
+        dashBox.addView(squares, LinearLayout.LayoutParams(-1, -2))
     }
 
     /** (v469) D6 تفعيل/إلغاء مرشّح مجموعة ذكية من درج المكتبة */

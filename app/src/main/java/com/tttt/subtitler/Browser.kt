@@ -1731,7 +1731,7 @@ class BrowserActivity : Activity() {
             WebIdent.bindLink(id, f.url, f.ref, ttl)
         }.apply { isDaemon = true }.start()
         Notice.show(this, "✓ اتحدّث لينك الفيديو — برجّعك للمشغّل", 2500L)
-        startActivity(Intent(this, PlayerActivity::class.java).apply {
+        startActivity(Intent(this, PlayerActivity::class.java).pipTask(this).apply {
             putExtra("url", f.url); putExtra("ref", f.ref); putExtra("cookie", ck); putExtra("ua", ua)
             putExtra("title", ttl); putExtra("autotr", false); putExtra("forceid", id)
             if (q.audio != null) putExtra("aurl", q.audio)
@@ -2017,7 +2017,7 @@ class BrowserActivity : Activity() {
                 url = if (yid.isEmpty()) f.url else null, ytid = yid.ifEmpty { null },
                 headers = mapOf("ref" to f.ref, "ua" to f.ua.ifEmpty { uaWeb }, "cookie" to tvCookie),
                 title = titleFor(f), how = if (yid.isEmpty() || noSub) Links.VIDEO else Links.VIDEO_TR))) return
-        startActivity(Intent(this, PlayerActivity::class.java).apply {
+        startActivity(Intent(this, PlayerActivity::class.java).pipTask(this).apply {
             if (yid.isNotEmpty()) {
                 putExtra("ytid", yid)
                 ytPicks[yid]?.let { pk ->

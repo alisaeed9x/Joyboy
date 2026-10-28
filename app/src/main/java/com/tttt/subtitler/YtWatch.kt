@@ -126,6 +126,8 @@ object YtAudioHint {
 
 /** (v406) تسليم المشغّل: زرار التكبير بيدّي نفس الـ ExoPlayer (شغّال ومحمّل) للمشغّل الكامل من غير ما يعيد التحميل. بيتنسى بعد 12 ثانية لو محدّش أخده */
 object YtHandoff {
+    /** (v606) التسليم ده بسبب الخروج من التطبيق (Home) والفيديو شغّال: المشغّل الكامل يدخل PiP أول ما يفتح */
+    @Volatile var pipNext = false
     @Volatile private var p: ExoPlayer? = null
     private val hh = Handler(Looper.getMainLooper())
     private val expire = Runnable { val x = p; p = null; try { x?.release() } catch (_: Throwable) {} }
@@ -582,6 +584,8 @@ class YtMiniPlayer(private val act: Activity, private val ui: Ui) : FrameLayout(
     }
 
     fun position(): Long = exo?.currentPosition ?: resumeMs
+    /** (v606) شغّال فعلًا دلوقتي؟ (لقرار الدخول في PiP عند الخروج من التطبيق) */
+    fun isPlayingNow(): Boolean = try { exo?.isPlaying == true } catch (_: Throwable) { false }
     fun seekToMs(ms: Long) { try { exo?.seekTo(ms.coerceAtLeast(0L)) } catch (_: Throwable) {} }   // (v469) C1/C6
     fun durationMs(): Long = try { exo?.duration?.takeIf { it > 0L } ?: 0L } catch (_: Throwable) { 0L }
 
@@ -1421,6 +1425,16 @@ class YtWatchPage(private val act: Activity, private val ui: Ui, private val hos
 
     fun pause() { mini.pause() }
     fun release() { mini.release() }
+
+    /** (v606) خرجت من التطبيق (Home) والفيديو شغّال في صفحة المشاهدة (بورتريه، من غير ما تدخل شاشة كاملة): سلّمه للمشغّل الكامل ومعاه علامة «ادخل PiP» */
+    fun pipHandoff(): Boolean {
+        val v = item ?: return false
+        if (!isOpen || closing || !mini.isPlayingNow()) return false
+        val ho = mini.handoff() ?: return false
+        YtHandoff.pipNext = true
+        host.expand(v.id, titleNow(), ho.second, false, ho.first)
+        return true
+    }
 }
 
 /** (v417) مشغّل شغّال + الـ pick بتاعه + الموضع — بيتسلّم من المشغّل المصغّر لشريط يوتيوب السفلي */
@@ -1581,6 +1595,15 @@ class YtDock(private val act: Activity, private val ui: Ui, private val onExpand
         YtHandoff.put(p)
         visibility = View.GONE
         onExpand(vid, ttl, pos, pk)
+    }
+
+    /** (v606) خرجت من التطبيق والفيديو شغّال في الشريط السفلي: نفس التسليم لمشغّل الكامل + دخول PiP */
+    fun pipHandoff(): Boolean {
+        val p = exo ?: return false
+        if (visibility != View.VISIBLE || !p.isPlaying) return false
+        YtHandoff.pipNext = true
+        expand()
+        return true
     }
 
     fun pause() { try { exo?.playWhenReady = false } catch (_: Throwable) {}; paintPlay() }

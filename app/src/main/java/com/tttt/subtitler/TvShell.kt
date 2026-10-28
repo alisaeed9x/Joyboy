@@ -23,8 +23,13 @@ import java.io.File
  */
 object TvWall {
     /** تعتيم الخلفية من الأپيرنس (٠..١٠٠٪) — الافتراضي ٥٠٪ زي زمان */
-    fun scrimColor(): Int {
+    fun scrimColor(th: Theme? = null): Int {
         val p = (Cfg.str("tv_scrim", "50").toIntOrNull() ?: 50).coerceIn(0, 100)
+        // (v606) السمة الفاتحة نصها غامق: التعتيم الأسود كان بيخلّي الخلفية غامقة والنص الغامق مايبانش. دلوقتي السمة الفاتحة بتتغطّى بطبقة بيضا (حد أدنى 62%) فالنص والأيقونات يبانوا
+        if (th != null && Theme.lum(th.bg) >= 0.5) {
+            val a = if (p == 0) 0 else maxOf(p, 62)
+            return Color.argb((a * 255 / 100).coerceIn(0, 255), 255, 255, 255)
+        }
         return Color.argb((p * 255 / 100).coerceIn(0, 255), 0, 0, 0)
     }
 
@@ -53,7 +58,7 @@ object TvShell {
         if (Theme.lum(th.bg) < 0.2) f.background = GradientDrawable(GradientDrawable.Orientation.TL_BR, intArrayOf(0xFF0A0F22.toInt(), 0xFF150E27.toInt()))
         else f.background = ColorDrawable(th.bg)
         val iv = ImageView(act).apply { scaleType = ImageView.ScaleType.CENTER_CROP; alpha = 0f; isFocusable = false; isClickable = false }
-        val scrim = View(act).apply { setBackgroundColor(TvWall.scrimColor()); visibility = View.GONE; isFocusable = false; isClickable = false }
+        val scrim = View(act).apply { setBackgroundColor(TvWall.scrimColor(th)); visibility = View.GONE; isFocusable = false; isClickable = false }
         f.addView(iv, FrameLayout.LayoutParams(-1, -1))
         f.addView(scrim, FrameLayout.LayoutParams(-1, -1))
         Thread {

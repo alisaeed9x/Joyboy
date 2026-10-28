@@ -33,6 +33,70 @@ class BottomNav(act: Activity, private val ui: Ui, private val th: Theme, privat
     private val tvDev = try { DeviceUi.isTv(act) } catch (_: Throwable) { false }   // (v521) على التلفزيون زرار الريموت مخفي
     private var order: List<Int> = if (lite) LITE_ORDER else NORMAL_ORDER.filter { it != REMOTE }   // (v554) زرار الريموت اتشال: وضع التلفزيون بزرار عايم
     private fun cellOf(a: Int): Int = if (a in order) a else if (lite) (if (a == 7) YT_ME else -1) else MORE
+    // ===== (v608) «المزيد» = صف تاني بينزلق لفوق جنب الصف الأساسي (بدل قايمة منبثقة). الريل (تابلت) لسه بالقايمة =====
+    private var moreOpen = false
+    private var moreHost: FrameLayout? = null
+    private var moreScroll: android.widget.HorizontalScrollView? = null
+    private var moreAnim: android.animation.ValueAnimator? = null
+    private class MoreItem(val emoji: String, val label: String, val on: Boolean, val longPress: (() -> Unit)? = null, val tap: () -> Unit)
+
+    private fun moreCell(act: Activity, mi: MoreItem, w: Int): View = LinearLayout(act).apply {
+        orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER; setPadding(0, ui.dp(3), 0, ui.dp(2))
+        val ic = IconTextView(act).apply { text = mi.emoji; textSize = 16f; gravity = Gravity.CENTER; includeFontPadding = false }
+        val lb = ui.text(mi.label, 11f, if (mi.on) th.primary else (if (tinted) 0xAAFFFFFF.toInt() else th.text), true).apply { gravity = Gravity.CENTER; setSingleLine() }
+        addView(ic, LinearLayout.LayoutParams(ui.dp(38), ui.dp(20)))
+        addView(lb, LinearLayout.LayoutParams(-2, -2))
+        layoutParams = LinearLayout.LayoutParams(w, ui.dp(56))
+        Glass.pressable(this)
+        setOnClickListener { mi.tap() }
+        val lpress = mi.longPress
+        if (lpress != null) setOnLongClickListener { lpress(); true }
+    }
+
+    /** يبني الصف التاني من جديد (الأعضاء بتتغير حسب الوضع: يوتيوب/عادي/تلفزيون) */
+    private fun rebuildMore(act: Activity) {
+        val sc = moreScroll ?: return
+        val inner = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; gravity = Gravity.CENTER_VERTICAL }
+        val ids = DEFS.indices.filter { it != MORE && it != DEAD_AI && it < YT_HOME && it !in order && !(it == 4 && YT_HOME in order) }
+        val items = ArrayList<MoreItem>()
+        for (id in ids.filter { it != 7 }) items.add(MoreItem(DEFS[id].first, DEFS[id].second, id == active) { collapseMore(); onPick(id) })
+        items.add(MoreItem("📤", "نقل", false) { collapseMore(); try { act.startActivity(android.content.Intent(act, TransferActivity::class.java)) } catch (e: Throwable) { LogStore.err("Nav:transfer", e) } })
+        if (!tvDev) {
+            items.add(MoreItem("📺", "وضع TV", PlayTarget.enabled(), {
+                // دوسة طويلة: باقي خيارات التلفزيون
+                val labels = arrayOf(TvModeFab.alwaysLabel(), "📤  ادفع التحديث للتلفزيون")
+                GAlert(act).setTitle("📺 التلفزيون").setItems(labels) { _, i -> collapseMore(); if (i == 0) TvModeFab.toggleAlways(act) else RemoteClient.forcePushFlow(act) }.setNegativeButton("إغلاق", null).show()
+            }) { collapseMore(); TvModeFab.toggle(act) })
+        }
+        if (7 in ids) items.add(MoreItem(DEFS[7].first, DEFS[7].second, 7 == active) { collapseMore(); onPick(7) })
+        val sw = act.resources.displayMetrics.widthPixels
+        val w = if (items.size <= 5) sw / items.size else (sw / 5.4f).toInt()
+        for (mi in items) inner.addView(moreCell(act, mi, w))
+        sc.removeAllViews()
+        sc.addView(inner, FrameLayout.LayoutParams(-2, ui.dp(56)))
+    }
+
+    private fun animateMore(open: Boolean) {
+        val host = moreHost ?: return
+        moreOpen = open
+        val target = if (open) ui.dp(57) else 0
+        moreAnim?.cancel()
+        val lp0 = host.layoutParams
+        moreAnim = android.animation.ValueAnimator.ofInt(lp0.height, target).apply {
+            duration = 260L; interpolator = android.view.animation.DecelerateInterpolator(1.6f)
+            addUpdateListener { a -> val lp = host.layoutParams; lp.height = a.animatedValue as Int; host.layoutParams = lp }
+            start()
+        }
+        icons.getOrNull(MORE)?.animate()?.rotation(if (open) 90f else 0f)?.setDuration(220L)?.start()
+    }
+
+    private fun toggleMore(act: Activity) {
+        if (moreHost == null || rail) { moreSheet(act); return }
+        if (!moreOpen) rebuildMore(act)
+        animateMore(!moreOpen)
+    }
+    private fun collapseMore() { if (moreOpen) animateMore(false) }
+
     private fun moreSheet(act: Activity) {
         val d = android.app.Dialog(act)
         d.requestWindowFeature(android.view.Window.FEATURE_NO_TITLE)
@@ -115,7 +179,7 @@ class BottomNav(act: Activity, private val ui: Ui, private val th: Theme, privat
                 addView(box, LinearLayout.LayoutParams(ui.dp(38), ui.dp(20)))
                 addView(lab, LinearLayout.LayoutParams(-2, -2))
                 Glass.pressable(this)
-                setOnClickListener { if (idx == MORE) moreSheet(act) else if (idx == REMOTE) { try { ControllerPad.show(act) } catch (e: Throwable) { LogStore.err("Nav:remote", e) } } else onPick(idx) }
+                setOnClickListener { if (idx == MORE) toggleMore(act) else if (idx == REMOTE) { try { ControllerPad.show(act) } catch (e: Throwable) { LogStore.err("Nav:remote", e) } } else { collapseMore(); onPick(idx) } }
             }
             icons.add(icon); labels.add(lab); cells.add(cell)
         }
@@ -126,7 +190,19 @@ class BottomNav(act: Activity, private val ui: Ui, private val th: Theme, privat
         row.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> if (!moving) { place(false); snap = false } }
         rowV = row; lineV = line
         if (rail) { view.addView(wrap, LinearLayout.LayoutParams(0, -1, 1f)); view.addView(line, LinearLayout.LayoutParams(ui.dp(1), -1)) }
-        else { view.addView(line, LinearLayout.LayoutParams(-1, ui.dp(1))); view.addView(wrap, LinearLayout.LayoutParams(-1, -2)) }
+        else {
+            view.addView(line, LinearLayout.LayoutParams(-1, ui.dp(1)))
+            // (v608) الصف التاني (المزيد): ارتفاعه 0 وهو مقفول؛ بيطلع لفوق فوق الصف الأساسي وهو مفتوح
+            val host = FrameLayout(act).apply { clipChildren = true; setBackgroundColor(th.card) }
+            val sc = android.widget.HorizontalScrollView(act).apply { isHorizontalScrollBarEnabled = false; layoutDirection = View.LAYOUT_DIRECTION_RTL; overScrollMode = View.OVER_SCROLL_NEVER }
+            val col = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL }
+            col.addView(sc, LinearLayout.LayoutParams(-1, ui.dp(56)))
+            col.addView(View(act).apply { setBackgroundColor(th.border) }, LinearLayout.LayoutParams(-1, ui.dp(1)))
+            host.addView(col, FrameLayout.LayoutParams(-1, ui.dp(57), Gravity.BOTTOM))
+            moreHost = host; moreScroll = sc
+            view.addView(host, LinearLayout.LayoutParams(-1, 0))
+            view.addView(wrap, LinearLayout.LayoutParams(-1, -2))
+        }
         paint()
         badge(4, YtNotify.badgeCount())
     }
@@ -191,6 +267,7 @@ class BottomNav(act: Activity, private val ui: Ui, private val th: Theme, privat
     fun tint(c: Int?) {
         tinted = c != null
         rowV?.setBackgroundColor(c ?: th.card)
+        moreHost?.setBackgroundColor(c ?: th.card)
         lineV?.setBackgroundColor(if (c != null) 0x22FFFFFF else th.border)
         paint()
     }

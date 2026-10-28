@@ -62,6 +62,8 @@ interface TvSkin {
     val id: String
     val name: String
     val tokens: TvTokens
+    /** (v606) السمات المناسبة للسكِن (بتظهر ⭐ فوق في «التصميم ← السمة»). الأولى = الافتراضية. فاضية = كل السمات */
+    val themeIds: List<String> get() = emptyList()
 
     fun home(h: TvSkinHost, focus: Boolean, reuse: Boolean): Boolean = false
     fun folderView(h: TvSkinHost, f: FolderItem): Boolean = false

@@ -630,6 +630,7 @@ class FileManagerActivity : Activity() {
         add("✂ نقل") { sel.clear(); sel.add(f.absolutePath); setClip(true) }
         add("✏ إعادة تسمية") { rename(f) }
         add("↗ مشاركة") { sel.clear(); sel.add(f.absolutePath); shareSel() }
+        add("📱 اعرض للموبايل") { sel.clear(); sel.add(f.absolutePath); offerSelToPhone() }
         add("ℹ تفاصيل") { details(f) }
         add("🗑 حذف") { sel.clear(); sel.add(f.absolutePath); deleteSel() }
         GAlert(this).setTitle(f.name).setItems(labels.toTypedArray()) { _, w -> if (w in acts.indices) acts[w]() }.show()
@@ -870,7 +871,7 @@ class FileManagerActivity : Activity() {
         if (!external && e in FmUtil.AUDIO) { Links.playAudioHere(this, Uri.fromFile(f).toString(), f.nameWithoutExtension); toast("🎵 " + f.name); return }
         try {
             if (!external && (e in FmUtil.VIDEO || e in FmUtil.AUDIO)) {
-                startActivity(Intent(this, PlayerActivity::class.java).apply {
+                startActivity(Intent(this, PlayerActivity::class.java).pipTask(this).apply {
                     data = Uri.fromFile(f); addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                     putExtra("landscape", e in FmUtil.VIDEO); putExtra("fresh", false); putExtra("nosub", false); putExtra("ask", false)
                 })
@@ -917,6 +918,7 @@ class FileManagerActivity : Activity() {
             toast(if (deepOn) "البحث بيدوّر في المجلدات الفرعية كمان" else "البحث في المجلد الحالي بس")
         }
         add("📊 أكبر الملفات هنا") { bigFiles() }
+        if (!tvMode) add("📺 تصفح ملفات التلفزيون") { startActivity(Intent(this, TvFilesActivity::class.java)) }
         add("📋 نسخ مسار المجلد") { copyText(cur.absolutePath) }
         add("🔄 تحديث") { load(cur) }
         GAlert(this).setTitle("الفايل مانجر").setItems(labels.toTypedArray()) { _, w -> if (w in acts.indices) acts[w]() }.show()
@@ -1015,6 +1017,25 @@ class FileManagerActivity : Activity() {
             }.setNegativeButton("إلغاء", null).show()
     }
 
+    /** (v610) موبايل ← تلفزيون: ابعت المحدد (ملفات أو مجلدات بكل اللي جواها) للتلفزيون المقترن */
+    private fun sendSelToTv() {
+        val paired = try { RemoteClient.lastTv() != null } catch (_: Throwable) { false }
+        if (!paired) { toast("⚠ مفيش تلفزيون مقترن — اقترن من مركز النقل (الرادار)"); try { startActivity(Intent(this, TransferActivity::class.java)) } catch (_: Throwable) {}; return }
+        val files = XExpand.files(selFiles(), 300)
+        if (files.isEmpty()) { toast("مفيش ملفات تتبعت"); return }
+        XferUi.sendUris(this, files.map { Uri.fromFile(it) }, files.map { it.name })
+        sel.clear(); refresh()
+    }
+
+    /** (v610) تلفزيون ← موبايل: اعرض المحدد للموبايل (بيظهر في مركز النقل ← استقبال ← عروض من التلفزيون) */
+    private fun offerSelToPhone() {
+        val files = XExpand.files(selFiles(), 300)
+        if (files.isEmpty()) { toast("مفيش ملفات تتعرض"); return }
+        TvOutbox.add(files.map { FileCatalog.fileEntry(it, XCat.catOf(it.name)) })
+        toast("📱 اتعرض " + files.size + " ملف — افتح مركز النقل على الموبايل ← استقبال")
+        sel.clear(); refresh()
+    }
+
     private fun shareSel() {
         val all = selFiles()
         if (all.isEmpty()) return
@@ -1073,6 +1094,7 @@ class FileManagerActivity : Activity() {
             if (deepMode) add("📂 افتح المجلد اللي فيه") { reveal(f) }
             add("📋 نسخ المسار") { copyText(f.absolutePath) }
         }
+        if (tvMode) add("📱 اعرض للموبايل") { offerSelToPhone() } else add("📺 ابعت للتلفزيون") { sendSelToTv() }
         add("🗜 ضغط ZIP") { zipSel(files) }
         add("☑ تحديد الكل") { shown.forEach { sel.add(it.f.absolutePath) }; refresh() }
         add("↔ عكس التحديد") { shown.forEach { val p = it.f.absolutePath; if (!sel.remove(p)) sel.add(p) }; refresh() }

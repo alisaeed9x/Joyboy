@@ -4934,6 +4934,7 @@ class PlayerActivity : Activity(), Host {
             Notice.show(this, ("فعّل «العرض فوق التطبيقات» لـ Subtitler عشان الترجمة تظهر فوق، وارجع دوس ⧉ تاني").toString(), 3600L)
             try { startActivity(Intent(android.provider.Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName"))); return } catch (e: Exception) { LogStore.err("Main:2229", e) }
         }
+        if ((vidW <= 0 || vidH <= 0) && ::player.isInitialized) { try { val vs = player.videoSize(); if (vs.first > 0 && vs.second > 0) { vidW = vs.first; vidH = vs.second } } catch (_: Throwable) {} }   // (v606) تسليم من يوتيوب: المقاس لسه ماوصلش للـlistener
         if (Build.VERSION.SDK_INT >= 26) try {
             val pb = PictureInPictureParams.Builder()
             if (vidW > 0 && vidH > 0) pb.setAspectRatio(Rational((vidW.toFloat() / vidH).coerceIn(0.45f, 2.3f).times(1000).toInt(), 1000))
@@ -5031,7 +5032,7 @@ class PlayerActivity : Activity(), Host {
             if (old > 30 && Math.abs(old - d) > 5.0) runOnUiThread {
                 if (isFinishing || isDestroyed) return@runOnUiThread
                 Notice.ask(this, "⚠ مدة الفيديو (" + PlayerLogic.clock((d * 1000).toLong()) + ") مختلفة عن الفيديو المحفوظ بنفس الاسم (" + PlayerLogic.clock((old * 1000).toLong()) + ") — ممكن يكون فيديو تاني؟", "افصله", "هو نفسه", 12000L,
-                    { WebIdent.blockKey(via); startActivity(Intent(this, PlayerActivity::class.java).apply { putExtras(intent) }); finish() }, { })
+                    { WebIdent.blockKey(via); startActivity(Intent(this, PlayerActivity::class.java).pipTask(this).apply { putExtras(intent) }); finish() }, { })
             }
         }.apply { isDaemon = true }.start()
     }
@@ -5183,7 +5184,7 @@ class PlayerActivity : Activity(), Host {
                 val url = got?.url
                 if (url == null || got == null) { say("ما قدرتش أجيب الفيديو ده — جرّب غيره"); return@runOnUiThread }
                 try { if (YtStore.histOn()) YtStore.addFront(YtStore.HIST, NpItem(n.id, n.title, n.channel, n.channelUrl, n.thumb, n.dur, n.count, n.age, 0, YtNp.watchUrl(n.id)), 200); YtStore.markApp(n.id) } catch (_: Throwable) {}
-                startActivity(Intent(this, PlayerActivity::class.java).apply {
+                startActivity(Intent(this, PlayerActivity::class.java).pipTask(this).apply {
                     putExtra("url", url); putExtra("aurl", got.audio ?: ""); putExtra("ref", "https://www.youtube.com/"); putExtra("ua", got.ua)
                     got.qlist.takeIf { it.isNotEmpty() }?.let { putExtra("qlist", it) }
                     putExtra("title", n.title.ifBlank { got.title }); putExtra("ytid", n.id)
@@ -5196,7 +5197,7 @@ class PlayerActivity : Activity(), Host {
     /** (v343) 🎧 حوّل لصوت: بنقفل الفيديو (بيحفظ مكانه) ونفتح نفس الفيديو في مشغّل الموسيقى من نفس المكان */
     fun switchToAudio() {
         val id = intent.getStringExtra("ytid") ?: return
-        audioHandoff = Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+        audioHandoff = Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
             .putExtra("ytaudio", id).putExtra("ytaudtitle", intent.getStringExtra("title") ?: "").putExtra("ytaudpos", cur)
         // (v351) رابط الصوت اللي بيشتغل دلوقتي (لو صوت منفصل) بيتبعت جاهز: التحويل فوري من غير ما نجيب الفيديو من الصفر
         try {
@@ -5229,8 +5230,8 @@ class PlayerActivity : Activity(), Host {
         audioHandoff?.let { h -> audioHandoff = null; try { startActivity(h) } catch (e: Throwable) { LogStore.err("Player:audioHandoff", e) }; return }   // (v343)
         try {
             when (intent.getStringExtra("ret")) {
-                "yt" -> startActivity(Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP).putExtra("tab", "youtube"))
-                "browser" -> startActivity(Intent(this, BrowserActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP))
+                "yt" -> startActivity(Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP).putExtra("tab", "youtube"))
+                "browser" -> startActivity(Intent(this, BrowserActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP))
                 // (v570) فيديو اتفتح على التلفزيون من الموبايل/صف يوتيوب: الخروج يرجّعك للصفحة اللي كنت فيها (اللي تحت المشغّل)؛ ولو مفيش حاجة تحته (التطبيق ماكانش شغّال) للرئيسية
                 TvDirect.RET -> if (isTaskRoot) startActivity(Intent(this, TvActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP))
             }
@@ -6126,7 +6127,13 @@ class PlayerActivity : Activity(), Host {
         }
         restyleFn()
         if (resumeAfterSettings) { resumeAfterSettings = false; try { player.play() } catch (e: Exception) { LogStore.err("Main:2576", e) } }
+        // (v606) اتفتحنا بسبب خروج المستخدم من التطبيق والفيديو شغّال (يوتيوب بورتريه): ندخل PiP مرة واحدة أول ما نظهر
+        if (!pipAutoDone && intent.getBooleanExtra("pip", false) && Build.VERSION.SDK_INT >= 26) {
+            pipAutoDone = true
+            h.postDelayed({ try { if (!isFinishing && !isDestroyed && !pipNow()) enterPip(false) } catch (e: Throwable) { LogStore.err("Player:autoPip", e) } }, 300L)
+        }
     }
+    private var pipAutoDone = false
     override fun onPause() { super.onPause(); LogStore.add("⏸ onPause · ${LogStore.heapLine()}"); resumedNow = false; if (!handedOff && !remote) { saveRecent(); Thread { engine.saveNow() }.start() } }
     override fun onStop() {
         super.onStop(); saveRecent()
@@ -6160,4 +6167,16 @@ class PlayerActivity : Activity(), Host {
         if (cur0 == null || cur0 === this) KeepAliveService.stop(this)
         super.onDestroy()
     }
+}
+
+/**
+ * (v606) المشغّل في Task لوحده على الموبايل/التابلت: لما يدخل PiP، نافذة الـPiP بتفضل شغّالة وإنت بتتنقّل في التطبيق والمتصفح (الاتنين مع بعض).
+ * التلفزيون بيفضل زي ما هو (نفس الـTask).
+ */
+fun Intent.pipTask(ctx: android.content.Context): Intent {
+    try {
+        if (android.os.Build.VERSION.SDK_INT >= 21 && !DeviceUi.isTv(ctx))
+            addFlags(Intent.FLAG_ACTIVITY_NEW_DOCUMENT or Intent.FLAG_ACTIVITY_MULTIPLE_TASK)
+    } catch (_: Throwable) {}
+    return this
 }

@@ -44,13 +44,21 @@ object Xfer {
         return if (b.isEmpty()) "file" else b.take(120)
     }
 
-    /** فولدر الملفات الواصلة: Movies/Joyboy (لو متاح الكتابة) وإلا فولدر التطبيق */
-    fun inboxDir(ctx: Context): File {
+    /** (v607) فولدر الملفات الواصلة حسب النوع: فيديوهات Movies/Joyboy · صوتيات Music/Joyboy · صور Pictures/Joyboy · APK Download/Joyboy/APK · غير كده Download/Joyboy. لو مفيش كتابة: فولدر التطبيق */
+    fun inboxDir(ctx: Context, cat: String = XCat.VIDEO): File {
+        val pub: String; val sub: String
+        when (cat) {
+            XCat.AUDIO -> { pub = Environment.DIRECTORY_MUSIC; sub = "Joyboy" }
+            XCat.IMAGE -> { pub = Environment.DIRECTORY_PICTURES; sub = "Joyboy" }
+            XCat.APK, XCat.APP -> { pub = Environment.DIRECTORY_DOWNLOADS; sub = "Joyboy/APK" }
+            XCat.VIDEO -> { pub = Environment.DIRECTORY_MOVIES; sub = "Joyboy" }
+            else -> { pub = Environment.DIRECTORY_DOWNLOADS; sub = "Joyboy" }
+        }
         try {
-            val d = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MOVIES), "Joyboy")
+            val d = File(Environment.getExternalStoragePublicDirectory(pub), sub)
             if ((d.isDirectory || d.mkdirs()) && d.canWrite()) return d
         } catch (_: Throwable) {}
-        val e = ctx.getExternalFilesDir(Environment.DIRECTORY_MOVIES) ?: ctx.filesDir
+        val e = File(ctx.getExternalFilesDir(pub) ?: ctx.filesDir, sub)
         e.mkdirs()
         return e
     }
@@ -83,6 +91,8 @@ object Xfer {
         "mp4", "m4v" -> "video/mp4"; "mkv" -> "video/x-matroska"; "webm" -> "video/webm"; "avi" -> "video/x-msvideo"
         "3gp" -> "video/3gpp"; "ts" -> "video/mp2t"; "mov" -> "video/quicktime"
         "mp3" -> "audio/mpeg"; "m4a", "aac" -> "audio/mp4"; "ogg", "opus" -> "audio/ogg"; "flac" -> "audio/flac"; "wav" -> "audio/wav"
+        "jpg", "jpeg" -> "image/jpeg"; "png" -> "image/png"; "gif" -> "image/gif"; "webp" -> "image/webp"; "bmp" -> "image/bmp"; "heic", "heif" -> "image/heif"
+        "apk" -> "application/vnd.android.package-archive"; "apks", "xapk", "apkm" -> "application/octet-stream"
         else -> "application/octet-stream"
     }
 }
@@ -189,15 +199,16 @@ object TvXfer {
         val url = j.optString("url")
         val name = Xfer.safeName(j.optString("name"))
         val size = j.optLong("size")
+        val cat = j.optString("cat").ifEmpty { XCat.catOf(name) }
         val host = try { Uri.parse(url).host ?: "" } catch (_: Throwable) { "" }
         if (!url.startsWith("http://") || host.isEmpty() || host != r.peer) return err(403, "src")
-        TaskCenter.add(app, "dm", "📥 $name") { t -> download(app, t, url, name, size) }
+        TaskCenter.add(app, "dm", "📥 $name") { t -> download(app, t, url, name, size, cat) }
         TvLink.notice("📥 بيوصل ملف من الموبايل: $name", 3000L)
         return ok()
     }
 
-    private fun download(app: Context, t: TaskItem, url: String, name: String, size0: Long) {
-        val dir = Xfer.inboxDir(app)
+    private fun download(app: Context, t: TaskItem, url: String, name: String, size0: Long, cat: String = XCat.VIDEO) {
+        val dir = Xfer.inboxDir(app, cat)
         val out = Xfer.uniqueFile(dir, name)
         val part = File(dir, out.name + ".part")
         part.delete()
@@ -306,7 +317,17 @@ object XferUi {
 
     private fun toast(act: Activity, m: String) { act.runOnUiThread { Notice.show(act, m, 3200L) } }
 
-    private fun meta(ctx: Context, u: Uri): Pair<String, Long> {
+    /** (v607) أي Dialog لازم يتبني على الـUI thread — الإرسال بيشتغل في خيط خلفي */
+    private fun <T> onUi(act: Activity, f: () -> T): T {
+        if (Looper.myLooper() == Looper.getMainLooper()) return f()
+        var r: Any? = null
+        val l = java.util.concurrent.CountDownLatch(1)
+        act.runOnUiThread { try { r = f() } finally { l.countDown() } }
+        l.await(5, java.util.concurrent.TimeUnit.SECONDS)
+        @Suppress("UNCHECKED_CAST") return r as T
+    }
+
+    internal fun meta(ctx: Context, u: Uri): Pair<String, Long> {
         var name = ""; var size = -1L
         try {
             ctx.contentResolver.query(u, null, null, null, null)?.use { c ->
@@ -328,13 +349,13 @@ object XferUi {
     }
 
     /** موبايل ← تلفزيون: الملفات بتتبعت واحد ورا التاني */
-    fun sendUris(act: Activity, uris: List<Uri>) {
+    fun sendUris(act: Activity, uris: List<Uri>, names: List<String>? = null) {
         val ctx = act.applicationContext
         Thread {
             for ((idx, uri) in uris.withIndex()) {
                 val (n0, size) = meta(ctx, uri)
-                val name = Xfer.safeName(n0)
-                val p = Prog(act, "📤 " + (if (uris.size > 1) "(" + (idx + 1) + "/" + uris.size + ") " else "") + name)
+                val name = Xfer.safeName(names?.getOrNull(idx)?.takeIf { it.isNotBlank() } ?: n0)
+                val p = onUi(act) { Prog(act, "📤 " + (if (uris.size > 1) "(" + (idx + 1) + "/" + uris.size + ") " else "") + name) }
                 var item: XferOut.Item? = null
                 try {
                     if (size <= 0L) { p.close(); toast(act, "⚠ ما قدرتش أعرف حجم «$name»"); continue }
@@ -345,7 +366,7 @@ object XferUi {
                     val it = XferOut.offer(ctx, uri, name, size)
                     if (ip.isEmpty() || it == null) { p.close(); toast(act, "⚠ لازم الموبايل والتلفزيون على نفس الواي فاي"); return@Thread }
                     item = it
-                    val (c, _) = RemoteClient.postJson("/pull", JSONObject().put("url", XferOut.urlFor(it, ip)).put("name", name).put("size", size))
+                    val (c, _) = RemoteClient.postJson("/pull", JSONObject().put("url", XferOut.urlFor(it, ip)).put("name", name).put("size", size).put("cat", XCat.catOf(name)))
                     if (c != 200) { p.close(); toast(act, "⚠ التلفزيون رفض الملف ($c) — حدّث البرنامج على التلفزيون"); return@Thread }
                     val t0 = System.currentTimeMillis()
                     var idle = 0; var lastMax = -1L
@@ -364,7 +385,7 @@ object XferUi {
                 } catch (e: Throwable) { LogStore.err("Xfer:send", e); p.close(); toast(act, "⚠ فشل الإرسال") }
                 finally { item?.let { x -> h.postDelayed({ XferOut.drop(x) }, 60000L) } }
             }
-            toast(act, "✅ خلص الإرسال — الملفات في Movies/Joyboy على التلفزيون")
+            toast(act, "✅ خلص الإرسال — الملفات في فولدراتها على التلفزيون (Joyboy)")
         }.also { it.isDaemon = true }.start()
     }
 
