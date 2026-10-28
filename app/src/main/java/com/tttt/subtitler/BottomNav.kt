@@ -79,7 +79,7 @@ class BottomNav(act: Activity, private val ui: Ui, private val th: Theme, privat
     private fun animateMore(open: Boolean) {
         val host = moreHost ?: return
         moreOpen = open
-        val target = if (open) ui.dp(57) else 0
+        val target = if (open) ui.dp(57) + pushH() else 0   // (v612) + ارتفاع زرار «إرسال التحديث» فوق
         moreAnim?.cancel()
         val lp0 = host.layoutParams
         moreAnim = android.animation.ValueAnimator.ofInt(lp0.height, target).apply {
@@ -89,6 +89,9 @@ class BottomNav(act: Activity, private val ui: Ui, private val th: Theme, privat
         }
         icons.getOrNull(MORE)?.animate()?.rotation(if (open) 90f else 0f)?.setDuration(220L)?.start()
     }
+
+    /** (v612) ارتفاع زرار «إرسال التحديث للتلفزيون» العريض فوق صف المزيد (موبايل بس) */
+    private fun pushH(): Int = if (tvDev) 0 else ui.dp(46)
 
     private fun toggleMore(act: Activity) {
         if (moreHost == null || rail) { moreSheet(act); return }
@@ -196,9 +199,16 @@ class BottomNav(act: Activity, private val ui: Ui, private val th: Theme, privat
             val host = FrameLayout(act).apply { clipChildren = true; setBackgroundColor(th.card) }
             val sc = android.widget.HorizontalScrollView(act).apply { isHorizontalScrollBarEnabled = false; layoutDirection = View.LAYOUT_DIRECTION_RTL; overScrollMode = View.OVER_SCROLL_NEVER }
             val col = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL }
+            if (!tvDev) {   // (v612) زرار «إرسال التحديث للتلفزيون» بالعرض فوق صف المزيد
+                val push = ui.text("📤  إرسال التحديث للتلفزيون", 14f, th.primary, true).apply { gravity = Gravity.CENTER; setSingleLine() }
+                Glass.pressable(push)
+                push.setOnClickListener { collapseMore(); try { RemoteClient.forcePushFlow(act) } catch (e: Throwable) { LogStore.err("Nav:push", e) } }
+                col.addView(push, LinearLayout.LayoutParams(-1, ui.dp(45)))
+                col.addView(View(act).apply { setBackgroundColor(th.border) }, LinearLayout.LayoutParams(-1, ui.dp(1)))
+            }
             col.addView(sc, LinearLayout.LayoutParams(-1, ui.dp(56)))
             col.addView(View(act).apply { setBackgroundColor(th.border) }, LinearLayout.LayoutParams(-1, ui.dp(1)))
-            host.addView(col, FrameLayout.LayoutParams(-1, ui.dp(57), Gravity.BOTTOM))
+            host.addView(col, FrameLayout.LayoutParams(-1, ui.dp(57) + pushH(), Gravity.BOTTOM))
             moreHost = host; moreScroll = sc
             view.addView(host, LinearLayout.LayoutParams(-1, 0))
             view.addView(wrap, LinearLayout.LayoutParams(-1, -2))
