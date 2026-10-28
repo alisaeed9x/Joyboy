@@ -1,4 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- (v618) خلفية نافذة التطبيق = صورة السبلاش نفسها: بتظهر من أول لحظة قبل ما onCreate الثقيلة تخلّص (كان بني سادة) -->
 <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
     <item><shape android:shape="rectangle"><solid android:color="@color/joy_splash_bg"/></shape></item>
+    <item><bitmap android:src="@drawable/splash_1" android:gravity="fill"/></item>
 </layer-list>

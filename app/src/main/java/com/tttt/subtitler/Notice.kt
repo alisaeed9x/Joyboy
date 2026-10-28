@@ -100,11 +100,11 @@ object Notice {
             val onPrimary = if (th.isLight) Color.WHITE else Color.BLACK
             // (v603) على التلفزيون: كبسولة كبيرة مقروءة من بعيد (شكل كبسولات One UI) — الموبايل/التابلت زي ما هم بالظبط
             val tv = try { DeviceUi.isTv(act) } catch (_: Throwable) { false }
-            val maxW = (act.resources.displayMetrics.widthPixels * (if (tv) 0.74f else 0.82f)).toInt()
-            val msgSize = if (tv) 27f else 12.5f
-            val padH = if (tv) 44 else 16
-            val padV = if (tv) 24 else 8
-            val radius = if (tv) 60 else 20
+            val maxW = (act.resources.displayMetrics.widthPixels * (if (tv) 0.5f else 0.82f)).toInt()
+            val msgSize = if (tv) 17f else 12.5f   // (v613) أصغر (كانت 27)
+            val padH = if (tv) 26 else 16
+            val padV = if (tv) 12 else 8
+            val radius = if (tv) 40 else 20
             val look = tvLook(th)
 
             // كبسولة على قد الكلام بس (زي إشعارات سامسونج): بتنزل من فوق في النص وبتطلع تاني
@@ -119,11 +119,27 @@ object Notice {
                 }
                 clipToOutline = true
             }
-            pill.addView(IconTextView(act).apply {
-                text = msg; textSize = msgSize; setTextColor(if (tv) look.fg else th.text); maxLines = if (tv) 2 else 3; ellipsize = TextUtils.TruncateAt.END
-                gravity = Gravity.CENTER; maxWidth = maxW - dp(padH * 2)
-                if (tv) { typeface = android.graphics.Typeface.DEFAULT_BOLD; setLineSpacing(0f, 1.1f) }
-            }, LinearLayout.LayoutParams(-2, -2).apply { gravity = Gravity.CENTER_HORIZONTAL })
+            // (v614) على التلفزيون: كل حاجة في الكبسولة على صف واحد (الكلام + أزرار نعم/لا جنبه)، والحجم ثابت — الكلام الطويل بيتحرك (marquee) ينساب جوه الكبسولة بدل ما تكبر أو تنزل سطر
+            val asking = yes != null && no != null
+            val rowTv = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL }
+            val msgTv = IconTextView(act).apply {
+                text = msg; textSize = msgSize; setTextColor(if (tv) look.fg else th.text)
+                gravity = Gravity.CENTER
+                if (tv) {
+                    typeface = android.graphics.Typeface.DEFAULT_BOLD
+                    setSingleLine(true); ellipsize = TextUtils.TruncateAt.MARQUEE; marqueeRepeatLimit = -1
+                    isSelected = true   // النافذة مش واخدة فوكس فالـ marquee محتاجة selected عشان تتحرك
+                    maxWidth = maxW - dp(padH * 2) - (if (asking) dp(200) else 0)
+                } else {
+                    maxLines = 3; ellipsize = TextUtils.TruncateAt.END; maxWidth = maxW - dp(padH * 2)
+                }
+            }
+            if (tv) {
+                pill.addView(rowTv, LinearLayout.LayoutParams(-2, -2).apply { gravity = Gravity.CENTER_HORIZONTAL })
+                rowTv.addView(msgTv, LinearLayout.LayoutParams(-2, -2))
+            } else {
+                pill.addView(msgTv, LinearLayout.LayoutParams(-2, -2).apply { gravity = Gravity.CENTER_HORIZONTAL })
+            }
             var done = false
             lateinit var wrapRef: View
             fun finish(cb: (() -> Unit)?) {
@@ -140,8 +156,8 @@ object Notice {
 
             if (yes != null && no != null) {
                 fun chip(t: String, primary: Boolean, f: () -> Unit) = IconTextView(act).apply {
-                    text = t; textSize = if (tv) 24f else 12.5f; gravity = Gravity.CENTER; minHeight = dp(if (tv) 64 else 40)
-                    setPadding(dp(if (tv) 36 else 14), dp(6), dp(if (tv) 36 else 14), dp(6))
+                    text = t; textSize = if (tv) 16f else 12.5f; gravity = Gravity.CENTER; minHeight = dp(if (tv) 36 else 40)
+                    setPadding(dp(if (tv) 18 else 14), dp(4), dp(if (tv) 18 else 14), dp(4))
                     if (tv) {
                         typeface = android.graphics.Typeface.DEFAULT_BOLD
                         setTextColor(if (primary) look.btnFg else look.fg)
@@ -152,10 +168,16 @@ object Notice {
                     }
                     setOnClickListener { f() }
                 }
-                val row = LinearLayout(act).apply { layoutDirection = View.LAYOUT_DIRECTION_RTL; gravity = Gravity.CENTER; setPadding(0, dp(7), 0, dp(6)) }
-                row.addView(chip(yes, true) { finish(onYes) }, LinearLayout.LayoutParams(-2, -2).apply { marginEnd = dp(8) })
-                row.addView(chip(no, false) { finish(onNo) }, LinearLayout.LayoutParams(-2, -2))
-                pill.addView(row, LinearLayout.LayoutParams(-2, -2).apply { gravity = Gravity.CENTER_HORIZONTAL })
+                if (tv) {
+                    // نفس الصف: الكلام ثم نعم ثم لا (من غير سطر تاني)
+                    rowTv.addView(chip(yes, true) { finish(onYes) }, LinearLayout.LayoutParams(-2, -2).apply { marginStart = dp(16) })
+                    rowTv.addView(chip(no, false) { finish(onNo) }, LinearLayout.LayoutParams(-2, -2).apply { marginStart = dp(8) })
+                } else {
+                    val row = LinearLayout(act).apply { layoutDirection = View.LAYOUT_DIRECTION_RTL; gravity = Gravity.CENTER; setPadding(0, dp(7), 0, dp(6)) }
+                    row.addView(chip(yes, true) { finish(onYes) }, LinearLayout.LayoutParams(-2, -2).apply { marginEnd = dp(8) })
+                    row.addView(chip(no, false) { finish(onNo) }, LinearLayout.LayoutParams(-2, -2))
+                    pill.addView(row, LinearLayout.LayoutParams(-2, -2).apply { gravity = Gravity.CENTER_HORIZONTAL })
+                }
                 val bar = View(act).apply { setBackgroundColor(if (tv) look.dot else th.primary) }
                 pill.addView(bar, LinearLayout.LayoutParams(-1, dp(2)))
                 bar.post {

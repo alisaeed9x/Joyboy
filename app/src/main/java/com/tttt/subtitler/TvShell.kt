@@ -112,7 +112,7 @@ class TvShellBar(private val act: Activity, private val ui: Ui, private val th: 
                     style(v as TvOwnLinear, i, f)
                     h.removeCallbacks(dwell); pend = -1
                     if (f) {
-                        if (vertical) Notice.show(act, label, 1100L)
+                        // (v613) مفيش إشعار اسم الزرار وانت بتنقل بين الأزرار
                         if (i != cur) { pend = i; h.postDelayed(dwell, 380L) }
                     }
                 }
@@ -132,7 +132,6 @@ class TvShellBar(private val act: Activity, private val ui: Ui, private val th: 
                     v.background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(if (f) Color.WHITE else Color.TRANSPARENT) }
                     tv.setTextColor(if (f) Color.BLACK else fg)
                     v.animate().scaleX(if (f) 1.12f else 1f).scaleY(if (f) 1.12f else 1f).setDuration(Skins.dur(150L)).setInterpolator(DecelerateInterpolator()).start()
-                    if (f) Notice.show(act, label, 1100L)
                 }
                 addView(tv)
                 layoutParams = LinearLayout.LayoutParams(ui.dp(42), ui.dp(42)).apply { setMargins(ui.dp(2), 0, ui.dp(2), 0) }

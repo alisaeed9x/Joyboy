@@ -44,9 +44,13 @@
     </queries>
     <application android:supportsRtl="true" android:label="Joyboy" android:icon="@mipmap/ic_launcher" android:roundIcon="@mipmap/ic_launcher"
         android:usesCleartextTraffic="true" android:banner="@mipmap/ic_launcher" android:theme="@android:style/Theme.DeviceDefault.NoActionBar">
-        <activity android:name=".MainActivity" android:exported="true" android:theme="@style/AppSplashMain"
+        <!-- (v619) بوابة الفتح الخفيفة: صورة السبلاش فورًا ثم MainActivity (أيقونة اللانشر بتفتح دي) -->
+        <activity android:name=".LaunchSplashActivity" android:exported="true" android:theme="@style/AppSplashMain"
             android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboardHidden|density">
             <intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/></intent-filter>
+        </activity>
+        <activity android:name=".MainActivity" android:exported="true" android:theme="@style/AppSplashMain"
+            android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboardHidden|density">
             <intent-filter><action android:name="android.intent.action.SEND"/><category android:name="android.intent.category.DEFAULT"/><data android:mimeType="text/plain"/></intent-filter>
             <intent-filter><action android:name="android.intent.action.VIEW"/><category android:name="android.intent.category.DEFAULT"/><category android:name="android.intent.category.BROWSABLE"/><data android:scheme="subtitler" android:host="ytlink"/></intent-filter>   <!-- (v488) دخول يوتيوب للتلفزيون بالـQR -->
             <intent-filter><action android:name="android.intent.action.VIEW"/><category android:name="android.intent.category.DEFAULT"/><category android:name="android.intent.category.BROWSABLE"/><data android:scheme="https"/><data android:host="www.youtube.com"/><data android:host="m.youtube.com"/><data android:host="youtu.be"/><data android:host="music.youtube.com"/></intent-filter>   <!-- (v345) لينكات يوتيوب تتفتح في Subtitler -->

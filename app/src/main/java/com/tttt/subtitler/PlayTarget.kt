@@ -62,7 +62,7 @@ object PlayTarget {
      * نفس open بس من غير فحص «وضع التلفزيون»: لما الشخص نفسه اختار التلفزيون (مثلًا من «مكتبة التلفزيون»).
      * false = مفيش حاجة تتبعت (الجهاز نفسه تلفزيون، أو مفيش رابط صالح).
      */
-    fun force(act: Activity, spec: MediaSpec): Boolean {
+    fun force(act: Activity, spec: MediaSpec, onSent: (() -> Unit)? = null): Boolean {   // (v619) onSent: بعد ما الفيديو يتفتح على التلفزيون (مشغّل الموبايل بيوقّف نفسه)
         if (DeviceUi.isTv(act)) return false
         val local = isLocal(spec.uri)   // (v564) فيديو من الموبايل نفسه ← الموبايل يقدّمه والتلفزيون يسحبه على دفعات
         val target = if (local) "cast" else (targetUrl(spec) ?: return false)
@@ -71,7 +71,7 @@ object PlayTarget {
             Notice.show(act, "📺 مفيش تلفزيون متصل — دوس الزرار العايم 📺 أو اخرج من وضع التلفزيون", 4200L)
             return true
         }
-        send(act, spec, target, local)
+        send(act, spec, target, local, onSent)
         return true
     }
 
@@ -113,7 +113,7 @@ object PlayTarget {
         }.also { it.isDaemon = true }.start()
     }
 
-    private fun send(act: Activity, spec: MediaSpec, target0: String, local: Boolean = false) {
+    private fun send(act: Activity, spec: MediaSpec, target0: String, local: Boolean = false, onSent: (() -> Unit)? = null) {
         Notice.show(act, "📺 بوصّل بالتلفزيون…", 2500L)
         mirrorLast = if (local) spec.uri else null
         Thread {
@@ -132,13 +132,14 @@ object PlayTarget {
             act.runOnUiThread {
                 if (act.isFinishing || act.isDestroyed) return@runOnUiThread
                 if (er == null) {
+                    try { onSent?.invoke() } catch (_: Throwable) { }
                     // (v554) مفيش شاشة ريموت/متحكم على الموبايل: الفيديو اشتغل على التلفزيون وبتتحكم من ريموت التلفزيون
                     Notice.show(act, "📺 اتفتح على التلفزيون" + (if (spec.title.isNotBlank()) " — " + spec.title else ""), 3000L)
                     nowTitle = spec.title.ifBlank { "فيديو على التلفزيون" }; TvModeFab.refresh()   // (v560) كبسولة «اسم ✕»
                     openController(act, spec.title, if (local) spec.uri else null)   // (v558) شاشة التحكم (مشغّل الفيديو بوضع المتحكم) ترجع تفتح على الموبايل
                 } else {
                     GAlert(act).setTitle("⚠ ما اتبعتش للتلفزيون").setMessage(er)
-                        .setPositiveButton("🔄 إعادة المحاولة") { _, _ -> send(act, spec, target0, local) }
+                        .setPositiveButton("🔄 إعادة المحاولة") { _, _ -> send(act, spec, target0, local, onSent) }
                         .setNegativeButton("إغلاق", null).show()
                 }
             }

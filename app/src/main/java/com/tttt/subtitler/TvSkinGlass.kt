@@ -340,7 +340,7 @@ object TvSkinGlass : TvSkin {
         }
         fun rect(fill: Int, r: Int, stroke: Int = Color.TRANSPARENT) = GradientDrawable().apply { setColor(fill); cornerRadius = ui.dp(r).toFloat(); setStroke(ui.dp(1), stroke) }
         val bar = LinearLayout(a).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; background = rect(th.surface, 18, th.border); setPadding(ui.dp(14), ui.dp(6), ui.dp(14), ui.dp(6)) }
-        for ((i, tab) in listOf("🏠 الرئيسية", "🔔", "🎨").withIndex()) {
+        for ((i, tab) in listOf("🏠").withIndex()) {
             bar.addView(ui.text(tab, 13f, if (i == 0) th.primary else th.muted, i == 0).apply { setPadding(0, 0, ui.dp(14), 0) })
         }
         root.addView(bar, LinearLayout.LayoutParams(-1, -2))

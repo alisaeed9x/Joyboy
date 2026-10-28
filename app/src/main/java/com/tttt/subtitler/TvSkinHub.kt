@@ -42,18 +42,16 @@ object TvSkinHub : TvSkin {
             layoutDirection = View.LAYOUT_DIRECTION_RTL; clipChildren = false; clipToPadding = false
             setPadding(ui.dp(10), ui.dp(6), ui.dp(10), ui.dp(4))
         }
-        val n = try { NoticeLog.list().size } catch (_: Throwable) { 0 }
+        // (v614) بوابة واحدة بس: 🏠 أيقونة من غير كلمة. «الإشعارات» و«السمات» اتشالوا من التابات (لسه بيتفتحوا من اللوحة السريعة / قايمة التصميم)
         val tabs = listOf<Triple<String, Int, () -> Unit>>(
-            Triple("🏠 الرئيسية", 0, { h.goHome() }),
-            Triple(if (n > 0) "🔔 الإشعارات ($n)" else "🔔 الإشعارات", 1, { h.open(TvPage.NOTIFICATIONS) }),
-            Triple("🎨 السمات", 2, { h.open(TvPage.THEME) }))
+            Triple("🏠", 0, { h.goHome() }))
         for ((label, idx, go) in tabs) {
             val pill = TvOwnLinear(a).apply {
                 orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER; isFocusable = true; isClickable = true
-                setPadding(ui.dp(20), ui.dp(9), ui.dp(20), ui.dp(9))
+                setPadding(ui.dp(22), ui.dp(8), ui.dp(22), ui.dp(8))
                 tag = "hub:tab$idx"
             }
-            val tv = ui.text(label, tk.textBody + 2f, if (idx == active) pal.onPrimary else pal.fg, idx == active)
+            val tv = ui.text(label, tk.textBody + 6f, if (idx == active) pal.onPrimary else pal.fg, idx == active)
             pill.addView(tv)
             fun paint(f: Boolean) {
                 val fill = if (idx == active) pal.primary else if (f) 0x33FFFFFF else 0x14FFFFFF

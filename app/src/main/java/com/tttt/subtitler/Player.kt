@@ -1820,6 +1820,8 @@ class PlayerActivity : Activity(), Host {
 
     private var batchPanel: View? = null
     lateinit var batchBtn: View
+    lateinit var tvBtn: TextView   // (v619) 📺 ابعت الفيديو للتلفزيون القريب من نفس الثانية — بيظهر مع الشريط (زي 👁) لو في تلفزيون قريب ومش متصل
+    private val tvNearCb: () -> Unit = { try { applyChromeFn() } catch (_: Throwable) {} }
     private lateinit var audBtn: View   // (v343) 🎧 حوّل لصوت
     private lateinit var modePill: TextView   // (v459) كبسولة عريضة لليوتيوب: «🎧 وضع الصوت / 🎬 وضع الفيديو» — تبديل جوه المشغّل نفسه · (v467) مكانها بقى جوّه صف الكبسولات جنب 👁 مش عايمة لوحدها
     private var badgeRowRef: LinearLayout? = null   // (v467) صف الكبسولات (🔊/👁/النت) — الكبسولة بتتنقل له أول ما يتبني
@@ -3095,6 +3097,10 @@ class PlayerActivity : Activity(), Host {
         // (v343) 🎧 حوّل لصوت: بيكمّل نفس فيديو يوتيوب في مشغّل الموسيقى من نفس المكان (بيوفّر الداتا) — تحت 👁 على طول
         audBtn = ui.fsCircle("🎧") { switchToAudio() }.apply { textSize = 20f; alpha = REST_A; visibility = View.GONE }
         videoBox.addView(audBtn, FrameLayout.LayoutParams(ui.dp(44), ui.dp(44), Gravity.END or Gravity.TOP).apply { setMargins(0, ui.dp(174), ui.dp(8), 0) })
+        // (v619) 📺 تحت 🎧: ابعت اللي شغّال على الموبايل للتلفزيون القريب (بنفس الثانية). مخفي إلا لو في تلفزيون قريب ومش متصل
+        tvBtn = ui.fsCircle("📺") { sendToTv() }.apply { textSize = 20f; alpha = REST_A; visibility = View.GONE; contentDescription = "كمّل على التلفزيون" }
+        videoBox.addView(tvBtn, FrameLayout.LayoutParams(ui.dp(44), ui.dp(44), Gravity.END or Gravity.TOP).apply { setMargins(0, ui.dp(278), ui.dp(8), 0) })
+        TvModeFab.listeners.addIfAbsent(tvNearCb)
         // (v459) كبسولة الوضع العريضة: بتاخد مكان 👁 العايمة (مكانها بيتحسب في placeFloatFn) وبتظهر لفيديوهات يوتيوب بس
         modePill = ui.text("🎧 وضع الصوت", 13.5f, Color.WHITE, true).apply {
             gravity = Gravity.CENTER; includeFontPadding = false
@@ -3718,6 +3724,7 @@ class PlayerActivity : Activity(), Host {
             if (rotLp.topMargin != top) { rotLp.topMargin = top; rotBtn.layoutParams = rotLp }
             if (eyeLp.topMargin != eyeTop) { eyeLp.topMargin = eyeTop; floatBar.layoutParams = eyeLp }
             if (::audBtn.isInitialized) { val al = audBtn.layoutParams as FrameLayout.LayoutParams; val at = eyeTop + ui.dp(52); if (al.topMargin != at) { al.topMargin = at; audBtn.layoutParams = al } }
+            if (::tvBtn.isInitialized) { val tl = tvBtn.layoutParams as FrameLayout.LayoutParams; val tt = eyeTop + ui.dp(52) + (if (::audBtn.isInitialized && audBtn.visibility == View.VISIBLE) ui.dp(52) else 0); if (tl.topMargin != tt) { tl.topMargin = tt; tvBtn.layoutParams = tl } }
             if (::modePill.isInitialized) {   // (v467) الكبسولة انتقلت لصف الكبسولات جنب 👁 (طلب صاحب التطبيق: جنب زرار الوضع البصري مش تحته) — فلا حساب مواضع ولا تغطية من زرار الترجمة بعد كده
                 val br = badgeRowRef
                 // (v471) كان بيتنقّل هنا مباشرة وده بيتنادى من مستمعات onLayoutChange → تعديل شجرة الواجهة جوه مرحلة الـ layout = NullPointerException في FrameLayout.layoutChildren (فورس كلوز بعد ثواني من التشغيل). دلوقتي بيتأجّل بـ post بعد ما الـ layout يخلص
@@ -3755,6 +3762,7 @@ class PlayerActivity : Activity(), Host {
             floatBar.visibility = if (cv && caps().visual) View.VISIBLE else View.GONE   // (v444) البصري في وضع صوت←جيميناي بس · (v427) 👁 مابقاش ظاهر طول الوقت: بيظهر مع الشريط (أو في الوضع العادي)
             batchBtn.visibility = if (cv) View.VISIBLE else View.GONE
             if (::audBtn.isInitialized) audBtn.visibility = if (cv && intent.getStringExtra("ytid")?.length == 11) View.VISIBLE else View.GONE
+            if (::tvBtn.isInitialized) tvBtn.visibility = if (cv && !remote && !DeviceUi.isTv(this) && TvModeFab.nearby()) View.VISIBLE else View.GONE   // (v619)
             if (::modePill.isInitialized) modePill.visibility = if (cv && intent.getStringExtra("ytid")?.length == 11 && ytAudioUrl() != null) View.VISIBLE else View.GONE   // (v459)
             // (v430) في الشاشة الكاملة 👁 (وجنبه 🔄/🎧) مخفي 100% وبيظهر بس مع باقي أدوات المشغّل (لمسة) بوضوح كامل مش باهت
             if (fullMode) {
@@ -3762,6 +3770,7 @@ class PlayerActivity : Activity(), Host {
                 val ta = if (on) 1f else 0f
                 floatBar.alpha = ta; batchBtn.alpha = ta
                 if (::audBtn.isInitialized) { audBtn.animate().cancel(); audBtn.alpha = ta }
+                if (::tvBtn.isInitialized) { tvBtn.animate().cancel(); tvBtn.alpha = ta }
                 if (::modePill.isInitialized) { modePill.animate().cancel(); modePill.alpha = 1f }   // (v467) الكبسولة جوّه صف الكبسولات: شفافيتها من الصف نفسه
             }
             if (!fullMode && ::modePill.isInitialized && modePill.visibility == View.VISIBLE && modePill.alpha < 0.9f) modePill.alpha = 1f   // (v467) ألفا الكبسولة من صفّها
@@ -6147,7 +6156,20 @@ class PlayerActivity : Activity(), Host {
         val interactive = try { (getSystemService(Context.POWER_SERVICE) as android.os.PowerManager).isInteractive } catch (_: Exception) { true }
         if (pipNow() && interactive && !isFinishing && !audioOnlyMode) closeAfterPip()
     }
+    /** (v619) 📺 كمّل على التلفزيون القريب من نفس الثانية: يوصّل (لو مش متصل) ثم يبعت الفيديو بموضعه الحالي ويوقّف الموبايل */
+    private fun sendToTv() {
+        try {
+            val ytid = intent.getStringExtra("ytid")?.takeIf { it.length == 11 }
+            val ttl = intent.getStringExtra("title")?.takeIf { it.isNotBlank() } ?: Recents.titleOf(vid)
+            val hd = mapOf("ref" to (intent.getStringExtra("ref") ?: ""), "ua" to (intent.getStringExtra("ua") ?: ""), "cookie" to (intent.getStringExtra("cookie") ?: ""))
+            val spec = MediaSpec(uri = uri?.toString(), url = url, headers = hd, title = ttl, ytid = ytid, startMs = player.currentPosition.coerceAtLeast(0L))
+            val go = { PlayTarget.force(this, spec) { try { player.pause() } catch (_: Throwable) {} } }
+            if (RemoteClient.state == RemoteClient.St.CONNECTED || PlayTarget.enabled()) go() else TvModeFab.connectAndThen(this) { go() }
+        } catch (e: Throwable) { LogStore.err("Player:toTv", e) }
+    }
+
     override fun onDestroy() {
+        try { TvModeFab.listeners.remove(tvNearCb) } catch (_: Throwable) {}
         dubCancel = true; try { dubPlay?.stop(); dubPlay = null } catch (_: Throwable) {}   // (v418)
         try { volWatch?.stop(); volWatch = null } catch (_: Throwable) {}
         LogStore.add("🔚 onDestroy (isFinishing=$isFinishing)")

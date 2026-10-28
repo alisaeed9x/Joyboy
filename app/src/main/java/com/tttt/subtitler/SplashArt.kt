@@ -28,7 +28,7 @@ object SplashArt {
             val res = act.resources
             // (v595) التلفزيون: السبلاش العريض بس · الموبايل/التابلت: الطويلة بس (العريضة مابتظهرش على الموبايل)
             val tv = try { DeviceUi.isTv(act) } catch (_: Throwable) { false }
-            val id = if (tv) R.drawable.splash_wide else ids[(Math.random() * ids.size).toInt().coerceIn(0, ids.size - 1)]
+            val id = if (tv) R.drawable.splash_wide else R.drawable.splash_1   // (v618) نفس صورة خلفية النافذة (windowBackground) فمفيش قفزة بين الاتنين
             val land = tv || res.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
             val box = FrameLayout(act).apply {
                 setBackgroundColor(0xFF2E1609.toInt()); isClickable = true; elevation = 1000f

@@ -51,6 +51,8 @@ class TvActivity : Activity() {
     private lateinit var saver: FrameLayout
     private lateinit var saverClock: android.widget.TextView
     private lateinit var saverTemp: android.widget.TextView
+    private lateinit var saverDate: android.widget.TextView      // (v617) التاريخ تحت الساعة
+    private lateinit var saverMinMax: android.widget.TextView    // (v617) العظمى والصغرى
     private lateinit var saverPray: LinearLayout       // (v525) مواقيت الصلاة فوق ساعة شاشة السكون
     private var saverCdTv: android.widget.TextView? = null
     private var saverNextAt = 0L
@@ -281,6 +283,8 @@ class TvActivity : Activity() {
         saver.addView(saverBg, FrameLayout.LayoutParams(-1, -1))
         saverClock = ui.text("", 100f, Color.WHITE, true).apply { gravity = Gravity.CENTER; layoutDirection = View.LAYOUT_DIRECTION_LTR; textDirection = View.TEXT_DIRECTION_LTR; includeFontPadding = false }
         saverTemp = ui.text("", 44f, Color.WHITE, true).apply { gravity = Gravity.CENTER; layoutDirection = View.LAYOUT_DIRECTION_LTR; textDirection = View.TEXT_DIRECTION_LTR; setPadding(0, ui.dp(6), 0, 0) }
+        saverDate = ui.text("", 26f, 0xFFE8EBF4.toInt(), true).apply { gravity = Gravity.CENTER; setPadding(0, ui.dp(2), 0, ui.dp(2)) }
+        saverMinMax = ui.text("", 24f, 0xFFE8EBF4.toInt(), true).apply { gravity = Gravity.CENTER; visibility = View.GONE; setPadding(0, ui.dp(2), 0, 0) }
         val saverCol = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER
             setPadding(ui.dp(64), ui.dp(36), ui.dp(64), ui.dp(32))
@@ -289,7 +293,9 @@ class TvActivity : Activity() {
         saverPray = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER; layoutDirection = View.LAYOUT_DIRECTION_RTL; visibility = View.GONE; setPadding(0, 0, 0, ui.dp(14)) }
         saverCol.addView(saverPray, LinearLayout.LayoutParams(-2, -2))
         saverCol.addView(saverClock, LinearLayout.LayoutParams(-2, -2))
+        saverCol.addView(saverDate, LinearLayout.LayoutParams(-2, -2))
         saverCol.addView(saverTemp, LinearLayout.LayoutParams(-2, -2))
+        saverCol.addView(saverMinMax, LinearLayout.LayoutParams(-2, -2))
         saverCol.addView(ui.text("📺 Subtitler — دوس أي زرار عشان تكمل", 15f, 0xFFB8BDC9.toInt()).apply { gravity = Gravity.CENTER; setPadding(0, ui.dp(14), 0, 0) }, LinearLayout.LayoutParams(-2, -2))
         saver.addView(saverCol, FrameLayout.LayoutParams(-2, -2, Gravity.CENTER))
         rootF.addView(saver, FrameLayout.LayoutParams(-1, -1))
@@ -308,7 +314,7 @@ class TvActivity : Activity() {
         override fun run() {
             val t = SimpleDateFormat(if (Cfg.str("tv_clock24", "0") == "1") "HH:mm" else "hh:mm a", Locale.getDefault()).format(Date())   // (v484) نظام 12 ساعة بتوقيت الجهاز (v516: أو 24 من المظهر)
             if (::clockTv.isInitialized) clockTv.text = t
-            if (saver.visibility == View.VISIBLE) { saverClock.text = SimpleDateFormat("hh:mm a", Locale.US).format(Date()); saverPrayTick() } else { idleSec++; if (idleSec >= saverLimit()) showSaver() }
+            if (saver.visibility == View.VISIBLE) { saverClock.text = SimpleDateFormat("hh:mm a", Locale.US).format(Date()); saverDate.text = saverDateStr(); saverPrayTick() } else { idleSec++; if (idleSec >= saverLimit()) showSaver() }
             prayerTick(); topPrayTick()
             if (topPrayAt <= 0L && !topPrayLoading && System.currentTimeMillis() - topPrayLastTry > 60_000L) refreshTopPrayer()   // (v582) لو النت/الموقع فشل: يحاول تاني كل دقيقة بدل ما يختفي العدّاد
             h.postDelayed(this, 1000)
@@ -320,12 +326,19 @@ class TvActivity : Activity() {
             val d = if (::wallView.isInitialized && wallView.visibility == View.VISIBLE) wallView.drawable else null
             saverBg.setImageDrawable(d); saverBg.visibility = if (d != null) View.VISIBLE else View.GONE
             saverClock.text = SimpleDateFormat("hh:mm a", Locale.US).format(Date())
+            saverDate.text = saverDateStr()
+            showMinMax()
             val c = Cfg.str("tv_temp_c", ""); saverTemp.text = if (c.isNotBlank()) "$c°C" else ""
             saverTemp.visibility = if (c.isNotBlank()) View.VISIBLE else View.GONE
-            if (System.currentTimeMillis() - (Cfg.str("tv_temp_ts", "0").toLongOrNull() ?: 0L) > 30 * 60_000L) fetchTemp()
+            if (System.currentTimeMillis() - (Cfg.str("tv_temp_ts", "0").toLongOrNull() ?: 0L) > 30 * 60_000L || Cfg.str("tv_temp_max", "").isBlank()) fetchTemp()
             loadPrayer(false) { res -> fillSaverPrayer(res) }   // (v525) المواقيت من الكاش أو النت
         } catch (e: Throwable) { LogStore.err("TvHome:saver", e) }
         saver.visibility = View.VISIBLE; idleSec = 0
+    }
+    private fun saverDateStr(): String = try { SimpleDateFormat("EEEE، d MMMM yyyy", Locale.getDefault()).format(Date()) } catch (_: Throwable) { "" }
+    private fun showMinMax() {
+        val mx = Cfg.str("tv_temp_max", ""); val mn = Cfg.str("tv_temp_min", "")
+        if (mx.isNotBlank() && mn.isNotBlank()) { saverMinMax.text = "العظمى $mx°  ·  الصغرى $mn°"; saverMinMax.visibility = View.VISIBLE } else saverMinMax.visibility = View.GONE
     }
     /** (v514) درجة الحرارة بالسيليزيوس: موقع تقريبي من IP (ipwho.is) ثم Open-Meteo — بدون مفاتيح، ومتخزنة نص ساعة */
     private fun fetchTemp() {
@@ -334,10 +347,15 @@ class TvActivity : Activity() {
                 fun get(u: String): String { val c = java.net.URL(u).openConnection() as java.net.HttpURLConnection; c.connectTimeout = 6000; c.readTimeout = 6000; return c.inputStream.bufferedReader().use { it.readText() } }
                 val loc = org.json.JSONObject(get("https://ipwho.is/"))
                 val lat = loc.getDouble("latitude"); val lon = loc.getDouble("longitude")
-                val w = org.json.JSONObject(get("https://api.open-meteo.com/v1/forecast?latitude=$lat&longitude=$lon&current=temperature_2m&temperature_unit=celsius"))
+                val w = org.json.JSONObject(get("https://api.open-meteo.com/v1/forecast?latitude=$lat&longitude=$lon&current=temperature_2m&daily=temperature_2m_max,temperature_2m_min&forecast_days=1&timezone=auto&temperature_unit=celsius"))
                 val t = Math.round(w.getJSONObject("current").getDouble("temperature_2m")).toInt().toString()
+                try {
+                    val dly = w.getJSONObject("daily")
+                    Cfg.put("tv_temp_max", Math.round(dly.getJSONArray("temperature_2m_max").getDouble(0)).toInt().toString())
+                    Cfg.put("tv_temp_min", Math.round(dly.getJSONArray("temperature_2m_min").getDouble(0)).toInt().toString())
+                } catch (_: Throwable) { }
                 Cfg.put("tv_temp_c", t); Cfg.put("tv_temp_ts", System.currentTimeMillis().toString())
-                runOnUiThread { try { if (!isDestroyed) { saverTemp.text = "$t°C"; saverTemp.visibility = View.VISIBLE } } catch (_: Throwable) { } }
+                runOnUiThread { try { if (!isDestroyed) { saverTemp.text = "$t°C"; saverTemp.visibility = View.VISIBLE; showMinMax() } } catch (_: Throwable) { } }
             } catch (e: Throwable) { LogStore.err("TvHome:temp", e) }
         }.start()
     }
@@ -474,6 +492,15 @@ class TvActivity : Activity() {
     private fun pillBg(color: Int, rDp: Int = 28, strokeColor: Int = 0, strokeDp: Int = 0): GradientDrawable =
         GradientDrawable().apply { setColor(color); cornerRadius = ui.dp(rDp).toFloat(); if (strokeDp > 0) setStroke(ui.dp(strokeDp), strokeColor) }
     private fun ovalBg(color: Int): GradientDrawable = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(color) }
+    // (v614) كبسولات شفافة متظلّلة ورا كل مكان فيه أزرار/ساعة/صلاة: الكبسولة عكس لون الكلام (غامقة شفافة ← كلام أبيض · بيضا شفافة ← كلام أسود) فمفيش خلفية فاتحة أو غامقة تأثّر عليها
+    private val capDark: Boolean get() = Theme.lum(fg) > 0.5
+    private val capFill: Int get() = if (capDark) 0xB3000000.toInt() else 0xCCFFFFFF.toInt()
+    private val capStroke: Int get() = if (capDark) 0x33FFFFFF else 0x33000000
+    private val capFocusFill: Int get() = if (capDark) Color.WHITE else Color.BLACK
+    private val capFocusInk: Int get() = if (capDark) Color.BLACK else Color.WHITE
+    private val capAccent: Int get() = if (capDark) 0xFFFFD27A.toInt() else 0xFF7A4B00.toInt()
+    private val capHint: Int get() = (fg and 0x00FFFFFF) or 0xAA000000.toInt()
+    private fun capsuleBg(rDp: Int = 30): GradientDrawable = pillBg(capFill, rDp, capStroke, 1)
 
     private fun topBar(): View {
         val bar = LinearLayout(this).apply {
@@ -484,12 +511,12 @@ class TvActivity : Activity() {
         // 1) كبسولة البحث (بتتوسّع لما التركيز يدخلها، ومعاها 🎤 و📱)
         val sb = TvOwnLinear(this).apply {
             orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL
-            setPadding(ui.dp(16), ui.dp(2), ui.dp(8), ui.dp(2)); background = pillBg(0x99000000.toInt(), 28, 0x33FFFFFF, 1)
+            setPadding(ui.dp(16), ui.dp(2), ui.dp(8), ui.dp(2)); background = capsuleBg(28)
         }
         searchBox = sb
         sb.addView(ui.text("🔍", 17f, fg))
         val et = TvOwnEdit(this).apply {
-            setSingleLine(); textSize = 15f; setTextColor(fg); setHintTextColor(0xAAFFFFFF.toInt()); hint = "بحث"
+            setSingleLine(); textSize = 15f; setTextColor(fg); setHintTextColor(capHint); hint = "بحث"
             setBackgroundColor(Color.TRANSPARENT); setPadding(ui.dp(10), ui.dp(9), ui.dp(10), ui.dp(9))
             imeOptions = android.view.inputmethod.EditorInfo.IME_ACTION_SEARCH
             setOnEditorActionListener { v, a, ev ->   // (v531) لصقت لينك في البحث وداست بحث/Enter ← يتفتح
@@ -498,7 +525,7 @@ class TvActivity : Activity() {
                 val u = if (isGo) searchUrl(v.text?.toString() ?: "") else null
                 if (u != null) { openSearchLink(u); true } else false
             }
-            setOnFocusChangeListener { _, f -> sb.background = if (f) pillBg(0xCC000000.toInt(), 28, Color.WHITE, 2) else pillBg(0x99000000.toInt(), 28, 0x33FFFFFF, 1) }
+            setOnFocusChangeListener { _, f -> sb.background = if (f) pillBg(if (capDark) 0xE6000000.toInt() else 0xF2FFFFFF.toInt(), 28, capFocusFill, 2) else capsuleBg(28) }
             addTextChangedListener(object : android.text.TextWatcher {
                 override fun beforeTextChanged(x: CharSequence?, a: Int, b: Int, c: Int) {}
                 override fun onTextChanged(x: CharSequence?, a: Int, b: Int, c: Int) {}
@@ -511,7 +538,7 @@ class TvActivity : Activity() {
         val mic = roundBtn("🎤", "بحث صوتي", 38) { startVoice { q -> et.setText(q); et.setSelection(et.text.length) } }
         val micWrap = LinearLayout(this).apply {
             gravity = Gravity.CENTER; layoutDirection = View.LAYOUT_DIRECTION_RTL
-            setPadding(ui.dp(3), ui.dp(3), ui.dp(3), ui.dp(3)); background = pillBg(0x99000000.toInt(), 30, 0x33FFFFFF, 1)
+            setPadding(ui.dp(3), ui.dp(3), ui.dp(3), ui.dp(3)); background = capsuleBg(30)
         }
         micWrap.addView(mic)
         micBox = micWrap
@@ -527,7 +554,7 @@ class TvActivity : Activity() {
         if (compactUi) {
             val rail = LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER_HORIZONTAL
-                setPadding(ui.dp(4), ui.dp(8), ui.dp(4), ui.dp(8)); background = pillBg(0x99000000.toInt(), 24, 0x33FFFFFF, 1)
+                setPadding(ui.dp(4), ui.dp(8), ui.dp(4), ui.dp(8)); background = capsuleBg(24)
             }
             rail.addView(roundBtn("🏠", "الرئيسية", 42) { showHome() })
             // (v527) تابات مخصّصة (تطبيق أو فولدر فيديو بعينه) + زرار ➕ للإضافة/الشيل
@@ -545,23 +572,23 @@ class TvActivity : Activity() {
         // 3) كبسولة الأزرار الدائرية: إعدادات البرنامج · المزيد (الإعدادات/التطبيقات/المشغّل الافتراضي/إلغاء التثبيت…)
         val rb = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL
-            setPadding(ui.dp(4), ui.dp(4), ui.dp(4), ui.dp(4)); background = pillBg(0x99000000.toInt(), 30, 0x33FFFFFF, 1)
+            setPadding(ui.dp(4), ui.dp(4), ui.dp(4), ui.dp(4)); background = capsuleBg(30)
         }
         rb.addView(roundBtn("🔧", "إعدادات البرنامج", 42) { guardPin { openMain("settings") } })
         rb.addView(roundBtn("⋯", "المزيد", 42) { moreMenu() })
         if (!compactUi) { bar.addView(View(this), LinearLayout.LayoutParams(0, 1, 1f)) }   // (v512) أزرار الإعدادات اتنقلت لصف فوق «🎛 تخصيص» في الرئيسية (كانت بتطلع بره الشاشة)
         // 4) الشعار | الساعة على الشمال زي «Google TV | 3:10»
-        val tc = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_LTR }
+        val tc = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_LTR; background = capsuleBg(30); setPadding(ui.dp(6), ui.dp(4), ui.dp(12), ui.dp(4)) }   // (v614) كبسولة واحدة: القايمة · الإعدادات · الساعة · الصلاة · الواي فاي · الوصول السريع
         if (!compactUi) {
             tc.addView(roundBtn("📋", "القايمة", 42) { mainMenu() })   // (v553) زرار القايمة (كل الأزرار اللي تحت) مكان كلمة «Subtitler»
             tc.addView(roundBtn("🔧", "الإعدادات", 42) { guardPin { openMain("settings") } })   // (v550) زرار الإعدادات جنب القايمة
-            tc.addView(View(this).apply { setBackgroundColor(0x66FFFFFF) }, LinearLayout.LayoutParams(ui.dp(2), ui.dp(20)).apply { setMargins(ui.dp(12), 0, ui.dp(12), 0) })
+            tc.addView(View(this).apply { setBackgroundColor((fg and 0x00FFFFFF) or 0x66000000) }, LinearLayout.LayoutParams(ui.dp(2), ui.dp(20)).apply { setMargins(ui.dp(12), 0, ui.dp(12), 0) })
         }
         tcV = tc
-        clockTv = ui.text("", 19f, fg, true).apply { setShadowLayer(8f, 0f, 2f, Color.BLACK) }
+        clockTv = ui.text("", 19f, fg, true)
         tc.addView(clockTv)
         // (v527) الصلاة الجاية + المتبقي ليها جنب الساعة
-        topPrayTv = ui.text("", if (compactUi) 13f else 16f, 0xFFFFD27A.toInt(), true).apply { setShadowLayer(8f, 0f, 2f, Color.BLACK); visibility = View.GONE; setSingleLine(); setPadding(ui.dp(6), 0, 0, 0) }
+        topPrayTv = ui.text("", if (compactUi) 13f else 16f, capAccent, true).apply { visibility = View.GONE; setSingleLine(); setPadding(ui.dp(8), 0, ui.dp(4), 0) }
         tc.addView(topPrayTv)
         val wf = wifiBtn()
         wifiTop = wf
@@ -603,13 +630,10 @@ class TvActivity : Activity() {
                 true
             }
             setOnFocusChangeListener { v, f ->
-                v.background = ovalBg(if (f) Color.WHITE else Color.TRANSPARENT)
+                v.background = ovalBg(if (f) capFocusFill else Color.TRANSPARENT)
+                icon.focusColor = capFocusInk
                 icon.iconFocused = f
                 icon.invalidate()
-                if (f) {
-                    val state = if (TvWifi.isConnected(this@TvActivity)) "متصل" else "مش متصل"
-                    Notice.show(this@TvActivity, "الواي فاي — " + state, 1100L)
-                }
             }
         }
         b.addView(icon, LinearLayout.LayoutParams(ui.dp(sizeDp - 14), ui.dp(sizeDp - 14)))
@@ -670,10 +694,9 @@ class TvActivity : Activity() {
             setOnClickListener { onClick() }
             if (onLong != null) setOnLongClickListener { onLong(); true }   // (v536)
             setOnFocusChangeListener { v, f ->
-                v.background = ovalBg(if (f) Color.WHITE else Color.TRANSPARENT)
-                tv.setTextColor(if (f) Color.BLACK else fg)
+                v.background = ovalBg(if (f) capFocusFill else Color.TRANSPARENT)
+                tv.setTextColor(if (f) capFocusInk else fg)
                 v.animate().scaleX(if (f) 1.12f else 1f).scaleY(if (f) 1.12f else 1f).setDuration(Skins.dur(150L)).setInterpolator(DecelerateInterpolator()).start()
-                if (f) Notice.show(this@TvActivity, label, 1100L)
             }
         }
         b.addView(tv)
@@ -738,7 +761,7 @@ class TvActivity : Activity() {
             setPadding(ui.dp(8), ui.dp(8), ui.dp(8), ui.dp(8)); contentDescription = t.label
             background = pillBg(Color.TRANSPARENT, 24)
             setOnClickListener { openSideTab(t) }
-            setOnFocusChangeListener { v, f -> v.background = pillBg(if (f) Color.WHITE else Color.TRANSPARENT, 24); if (f) Notice.show(this@TvActivity, t.label, 1100L) }
+            setOnFocusChangeListener { v, f -> v.background = pillBg(if (f) capFocusFill else Color.TRANSPARENT, 24); ((v as ViewGroup).getChildAt(0) as? TextView)?.setTextColor(if (f) capFocusInk else fg) }
         }
         val icon: android.graphics.drawable.Drawable? = if (t.type == "app") try { packageManager.getApplicationIcon(t.id) } catch (_: Throwable) { null } else null
         if (icon != null) b.addView(ImageView(this).apply { setImageDrawable(icon); scaleType = ImageView.ScaleType.FIT_CENTER }, LinearLayout.LayoutParams(ui.dp(30), ui.dp(30)))
@@ -1907,7 +1930,7 @@ class TvActivity : Activity() {
         for (g in groups) {
             for (o in g.opts) {
                 val my = idx++
-                allCards.add(card(if (compactUi) 150 else 218, 84, { c ->
+                allCards.add(card(((resources.displayMetrics.widthPixels / resources.displayMetrics.density - 68f) / 4f).toInt().minus(14).coerceIn(96, if (compactUi) 150 else 218), 84, { c ->   // (v617) على قد الشاشة: 4 في الصف ظاهرين كلهم
                     c.gravity = Gravity.CENTER_VERTICAL
                     c.addView(ui.text(o.title, 13.5f, th.text, true).apply { maxLines = 2 })
                     val v = o.value()
@@ -2767,10 +2790,16 @@ class TvActivity : Activity() {
     private fun fillHomeSettings(sh: LinearLayout, focusPin: Boolean = false) {
         sh.removeAllViews()
         // (v613) صفين بس (كانت 3 مجموعات = 3 صفوف) وزراير أصغر
-        fun stile(icon: String, label: String, f: () -> Unit): View = card(126, 78, { c ->
+        // (v617) عرض الكارت بيتحسب على قد الشاشة: الصفين كلهم ظاهرين من غير ما حاجة تتقص من الجنب
+        val nCards = 12 + (if (playOn()) 1 else 0)
+        val perRowS = (nCards + 1) / 2
+        val usableDp = resources.displayMetrics.widthPixels / resources.displayMetrics.density - 68f
+        val cardW = ((usableDp / perRowS).toInt() - 14).coerceIn(80, 126)
+        val labelSp = if (cardW < 112) 11f else 12f
+        fun stile(icon: String, label: String, f: () -> Unit): View = card(cardW, 78, { c ->
             c.gravity = Gravity.CENTER
             c.addView(ui.text(icon, 22f, th.text).apply { gravity = Gravity.CENTER })
-            c.addView(ui.text(label, 12f, th.text, true).apply { gravity = Gravity.CENTER; setSingleLine(); setPadding(ui.dp(4), ui.dp(2), ui.dp(4), 0) })
+            c.addView(ui.text(label, labelSp, th.text, true).apply { gravity = Gravity.CENTER; setSingleLine(); ellipsize = android.text.TextUtils.TruncateAt.MARQUEE; marqueeRepeatLimit = -1; isSelected = true; setPadding(ui.dp(2), ui.dp(2), ui.dp(2), 0) })
         }, f)
         val pinned = wallFixed()
         val pinTile = stile("📌", if (pinned) "إلغاء التثبيت" else "تثبيت الخلفية") { wallPinToggle(); fillHomeSettings(sh, true) }
@@ -3178,6 +3207,7 @@ class TvActivity : Activity() {
 class WifiIconView(ctx: android.content.Context, private val normalColor: Int) : android.view.View(ctx) {
     var disconnected = false
     var iconFocused = false
+    var focusColor = android.graphics.Color.BLACK
     private val arcPaint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
     private val dotPaint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
     private val slashPaint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
@@ -3192,7 +3222,7 @@ class WifiIconView(ctx: android.content.Context, private val normalColor: Int) :
     override fun onDraw(c: android.graphics.Canvas) {
         super.onDraw(c)
         val d = resources.displayMetrics.density
-        val col = if (iconFocused) android.graphics.Color.BLACK else normalColor
+        val col = if (iconFocused) focusColor else normalColor
         arcPaint.color = col
         arcPaint.strokeWidth = 2.2f * d
         dotPaint.color = col
