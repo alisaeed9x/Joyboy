@@ -31,6 +31,38 @@ object NotifState {
     @Volatile var trState = 0
 }
 
+/**
+ * (v624) صوت التلفزيون من الموبايل: زراري الفوليوم (حتى والشاشة مقفولة) وسلايدر الصوت بتاع النظام بيتحوّلوا لصوت التلفزيون.
+ * الزرار = خطوة 5% وبحد أقصى 100 (التضخيم فوق 100 من سلايدر المشغّل بس) عشان خطوة واحدة ما توصّلش للآخر.
+ */
+object TvVolume {
+    private const val STEP = 5
+    @Volatile private var pend = -1
+    @Volatile private var pendAt = 0L
+
+    /** الصوت الحالي 0..200: القيمة اللي لسه مبعوتة (لحد ما ترجع من التلفزيون) وإلا آخر قيمة جاية منه */
+    fun current(): Int {
+        if (pend >= 0 && System.currentTimeMillis() - pendAt < 1500L) return pend
+        val v = try { LinkSession.mirror.st.optInt("vol", -1) } catch (_: Throwable) { -1 }
+        return if (v >= 0) v else 50
+    }
+
+    /** الصوت بعد ضغطة واحدة (dir = +1 / -1) */
+    fun next(cur: Int, dir: Int): Int =
+        if (dir > 0) (if (cur >= 100) cur else minOf(cur + STEP, 100))
+        else (if (cur > 100) 100 else maxOf(cur - STEP, 0))
+
+    fun step(dir: Int): Int { val cur = current(); val n = next(cur, dir); setTo(n, cur); return n }
+
+    fun setTo(p0: Int, from: Int = current()) {
+        val p = p0.coerceIn(0, 200)
+        pend = p; pendAt = System.currentTimeMillis()
+        LinkSession.send("volume.set", org.json.JSONObject().put("p", p)) { ok, _ ->
+            if (!ok && p != from) RemoteClient.cmd(if (p > from) "vol_up" else "vol_down")   // مفيش مشغّل بيرد على التلفزيون: خطوة نظام عادية
+        }
+    }
+}
+
 /** جسر بين الإشعار والمشغّل: الأوامر (السابق/التالي/تشغيل/سيك/ترجمة/خروج) بتروح للمشغّل الحي */
 object PlayerRemote {
     @Volatile var act: WeakReference<PlayerActivity>? = null
@@ -45,6 +77,7 @@ class KeepAliveService : Service() {
     private val main = Handler(Looper.getMainLooper())
     private var session: MediaSession? = null
     private var recv: BroadcastReceiver? = null
+    private var volProv: android.media.VolumeProvider? = null   // (v624) بيخلّي زراري الفوليوم/سلايدر الصوت يتحكّموا في التلفزيون
 
     override fun onBind(i: Intent?): IBinder? = null
 
@@ -90,7 +123,31 @@ class KeepAliveService : Service() {
         return if (s >= 3600) String.format("%d:%02d:%02d", s / 3600, s / 60 % 60, s % 60) else String.format("%02d:%02d", s / 60, s % 60)
     }
 
+    /** (v624) الموبايل بيتحكم في فيديو على التلفزيون ← الجلسة بقت «صوت بعيد» (الفوليوم بيروح للتلفزيون حتى والشاشة مقفولة) */
+    private fun syncVolume() {
+        val s = session ?: return
+        try {
+            val pa = PlayerRemote.act?.get()
+            val toTv = RemoteClient.state == RemoteClient.St.CONNECTED && (if (pa != null) pa.remote else LinkSession.mirror.live)
+            if (toTv) {
+                val v = TvVolume.current().coerceIn(0, 100)
+                val cur = volProv
+                if (cur == null) {
+                    val p = object : android.media.VolumeProvider(android.media.VolumeProvider.VOLUME_CONTROL_ABSOLUTE, 100, v) {
+                        override fun onSetVolumeTo(vol: Int) { TvVolume.setTo(vol); currentVolume = vol.coerceIn(0, 100) }
+                        override fun onAdjustVolume(direction: Int) { if (direction != 0) currentVolume = TvVolume.step(direction).coerceIn(0, 100) }
+                    }
+                    volProv = p; s.setPlaybackToRemote(p)
+                } else if (cur.currentVolume != v) cur.currentVolume = v
+            } else if (volProv != null) {
+                volProv = null
+                s.setPlaybackToLocal(android.media.AudioAttributes.Builder().setUsage(android.media.AudioAttributes.USAGE_MEDIA).setContentType(android.media.AudioAttributes.CONTENT_TYPE_MUSIC).build())
+            }
+        } catch (e: Throwable) { LogStore.err("notif-vol", e) }
+    }
+
     private fun build(): Notification {
+        syncVolume()
         val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         nm.createNotificationChannel(NotificationChannel(CH, "تحكم المشغّل والترجمة", NotificationManager.IMPORTANCE_LOW).apply { setShowBadge(false) })
         val st = NotifState

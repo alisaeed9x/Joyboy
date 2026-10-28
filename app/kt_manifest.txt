@@ -40,7 +40,6 @@ com/tttt/subtitler/IconPackCore.kt
 com/tttt/subtitler/IconPackUi.kt
 com/tttt/subtitler/IconPacks.kt
 com/tttt/subtitler/Icons.kt
-com/tttt/subtitler/IrTv.kt
 com/tttt/subtitler/Karaoke.kt
 com/tttt/subtitler/KeepAliveService.kt
 com/tttt/subtitler/KeyBrowser.kt
@@ -151,7 +150,6 @@ com/tttt/subtitler/TvInput.kt
 com/tttt/subtitler/TvKill.kt
 com/tttt/subtitler/TvLink.kt
 com/tttt/subtitler/TvModeFab.kt
-com/tttt/subtitler/TvPanic.kt
 com/tttt/subtitler/TvPlayerBar.kt
 com/tttt/subtitler/TvPointer.kt
 com/tttt/subtitler/TvPresets.kt

@@ -138,12 +138,7 @@ object ControllerPad {
             val d = Dialog(act, android.R.style.Theme_Black_NoTitleBar_Fullscreen)
             val root = FrameLayout(act).apply { layoutDirection = View.LAYOUT_DIRECTION_LTR; setBackgroundColor(0xF2101820.toInt()) }
 
-            // (v623) وضع IR: الأزرار بتتبعت بالأشعة تحت الحمراء (بلاستر الموبايل) لتلفزيون TCL بدل الواي فاي. بيتحفظ في Cfg "ctl_ir"
-            var ir = Cfg.bool("ctl_ir", false) && IrTv.available(act)
-            fun sendKey(k: String) {
-                if (ir) { if (!IrTv.send(act, k)) act.runOnUiThread { android.widget.Toast.makeText(act, "⚠ IR: الكود/البلاستر مش شغّال", android.widget.Toast.LENGTH_SHORT).show() } }
-                else RemoteClient.key(k)
-            }
+            fun sendKey(k: String) { RemoteClient.key(k) }
             fun round(txt: String, desc: String, color: Int, gravity: Int, onClick: () -> Unit) {
                 val tv = TextView(act).apply {
                     text = txt; textSize = 28f; setTextColor(Color.WHITE); this.gravity = Gravity.CENTER; includeFontPadding = false
@@ -153,43 +148,17 @@ object ControllerPad {
                 }
                 root.addView(tv, FrameLayout.LayoutParams(dp(68), dp(68), gravity).apply { setMargins(dp(20), dp(40), dp(20), dp(40)) })
             }
-            round("⚙", "إعدادات البرنامج على التلفزيون / منيو التلفزيون (IR)", 0xFF4A5568.toInt(), Gravity.TOP or Gravity.LEFT) { if (ir) sendKey("menu") else RemoteClient.cmd("open_settings") }
+            round("⚙", "إعدادات البرنامج على التلفزيون", 0xFF4A5568.toInt(), Gravity.TOP or Gravity.LEFT) { RemoteClient.cmd("open_settings") }
             round("🏠", "الصفحة الرئيسية", 0xFF2E9E5B.toInt(), Gravity.TOP or Gravity.RIGHT) { sendKey("home") }
             round("↩", "رجوع", 0xFF4A5568.toInt(), Gravity.BOTTOM or Gravity.LEFT) { sendKey("back") }
-            round("🎤", "بحث صوتي", 0xFFE53935.toInt(), Gravity.BOTTOM or Gravity.RIGHT) { if (ir) android.widget.Toast.makeText(act, "البحث الصوتي بالواي فاي بس", android.widget.Toast.LENGTH_SHORT).show() else RemoteClient.cmd("mic") }
+            round("🎤", "بحث صوتي", 0xFFE53935.toInt(), Gravity.BOTTOM or Gravity.RIGHT) { RemoteClient.cmd("mic") }
 
             val size = min(dm.widthPixels - dp(40), dp(340))
             root.addView(JoystickView(act) { k -> sendKey(k) }, FrameLayout.LayoutParams(size, size, Gravity.CENTER))
 
             val st = TextView(act).apply { text = "📺 بتوصّل…"; textSize = 14f; setTextColor(0xFFB0BEC5.toInt()); gravity = Gravity.CENTER }
             root.addView(st, FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.CENTER_HORIZONTAL).apply { topMargin = dp(60) })
-            // (v623) ⏻ تشغيل/إيقاف التلفزيون (IR) — بيظهر في وضع IR بس
-            val pwr = TextView(act).apply {
-                text = "⏻"; textSize = 26f; setTextColor(Color.WHITE); gravity = Gravity.CENTER; includeFontPadding = false; contentDescription = "تشغيل/إيقاف التلفزيون (IR)"
-                background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(0xFFD32F2F.toInt()); setStroke(2, 0x66FFFFFF) }
-                visibility = if (ir) View.VISIBLE else View.GONE
-                setOnClickListener { performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP); sendKey("power") }
-            }
-            root.addView(pwr, FrameLayout.LayoutParams(dp(64), dp(64), Gravity.TOP or Gravity.CENTER_HORIZONTAL).apply { topMargin = dp(96) })
-            // (v623) 📡 تبديل واي فاي ⇄ IR (دوسة طويلة = تعديل أكواد IR)
-            val irBtn = TextView(act).apply {
-                textSize = 14f; setTextColor(Color.WHITE); gravity = Gravity.CENTER; setPadding(dp(16), dp(8), dp(16), dp(8))
-                background = GradientDrawable().apply { setColor(0x33FFFFFF); cornerRadius = dp(20).toFloat() }
-            }
-            root.addView(irBtn, FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.CENTER_HORIZONTAL).apply { topMargin = dp(24) })
             var connectFn: () -> Unit = {}
-            fun paintMode() {
-                irBtn.text = if (ir) "📡 IR  ⇄  واي فاي" else "📶 واي فاي  ⇄  IR"
-                pwr.visibility = if (ir) View.VISIBLE else View.GONE
-                if (ir) { st.text = "📡 IR — وجّه الموبايل ناحية التلفزيون"; st.setTextColor(0xFF64B5F6.toInt()) }
-            }
-            irBtn.setOnClickListener {
-                if (!ir && !IrTv.available(act)) { android.widget.Toast.makeText(act, "الموبايل ده مفيهوش بلاستر IR", android.widget.Toast.LENGTH_LONG).show(); return@setOnClickListener }
-                ir = !ir; Cfg.put("ctl_ir", if (ir) "1" else "0"); paintMode()
-                if (!ir) { st.text = "📺 بتوصّل…"; st.setTextColor(0xFFB0BEC5.toInt()); connectFn() }
-            }
-            irBtn.setOnLongClickListener { IrTv.editor(act); true }
-            paintMode()
             val close = TextView(act).apply {
                 text = "✕ إغلاق"; textSize = 14f; setTextColor(Color.WHITE); gravity = Gravity.CENTER; setPadding(dp(18), dp(10), dp(18), dp(10))
                 background = GradientDrawable().apply { setColor(0x33FFFFFF); cornerRadius = dp(20).toFloat() }
@@ -206,13 +175,13 @@ object ControllerPad {
                 Thread {
                     val ok = try { RemoteClient.lastTv() != null && RemoteClient.ensureConnected(act, 6000L) } catch (_: Throwable) { false }
                     act.runOnUiThread {
-                        if (!d.isShowing || ir) return@runOnUiThread
+                        if (!d.isShowing) return@runOnUiThread
                         st.text = if (ok) "📺 متصل" else "⚠ مش متصل بالتلفزيون"
                         st.setTextColor(if (ok) 0xFF66BB6A.toInt() else 0xFFFFB74D.toInt())
                     }
                 }.also { it.isDaemon = true }.start()
             }
-            if (!ir) connectFn()
+            connectFn()
         } catch (e: Throwable) { LogStore.err("ControllerPad:show", e) }
     }
 }

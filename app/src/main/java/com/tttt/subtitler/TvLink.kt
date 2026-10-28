@@ -234,7 +234,6 @@ object TvLink {
             "/music" -> musicCmd(r)
             "/open" -> open(r)
             "/clear" -> clearHist(r)
-            "/panic" -> { TvPanic.run(app); ok() }   // (v612 م3) وضع الطوارئ من الموبايل
             "/type" -> typeText(r)
             "/keys" -> keys(r, rm)
             "/ytacc" -> ytAcc(r, rm)

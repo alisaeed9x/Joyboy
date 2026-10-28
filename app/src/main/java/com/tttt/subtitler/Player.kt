@@ -53,12 +53,6 @@ class PlayerActivity : Activity(), Host {
             return true
         }
 
-        /** (v612) الطوارئ: اقفل كل مشغّلات الفيديو المفتوحة */
-        fun panicFinishAll() {
-            val l = synchronized(liveList) { liveList.mapNotNull { it.get() } }
-            for (o in l) try { o.runOnUiThread { try { o.finishAndRemoveTask() } catch (_: Throwable) {} } } catch (_: Throwable) {}
-        }
-
         /** (v531) في مشغّل فيديو (برنامج) مفتوح دلوقتي؟ */
         fun hasLive(): Boolean = live() != null
 
@@ -1135,8 +1129,8 @@ class PlayerActivity : Activity(), Host {
         val cur = if (rmVolP >= 0) rmVolP else LinkSession.mirror.st.optInt("vol", 50).let { if (it < 0) 50 else it }
         when (k) {
             android.view.KeyEvent.KEYCODE_VOLUME_MUTE -> { if (cur > 0) { rmMuteBack = cur; rmSendVolume(0) } else rmSendVolume(if (rmMuteBack > 0) rmMuteBack else 50) }
-            android.view.KeyEvent.KEYCODE_VOLUME_UP -> rmSendVolume(cur + 5)
-            else -> rmSendVolume(cur - 5)
+            android.view.KeyEvent.KEYCODE_VOLUME_UP -> rmSendVolume(TvVolume.next(cur, +1))   // (v624) زرار الصوت = خطوة واحدة وبحد 100 (التضخيم من السلايدر بس)
+            else -> rmSendVolume(TvVolume.next(cur, -1))
         }
     }
     /** (v509) الصوت بالريموت: صوت النظام، ولو التلفزيون صوته ثابت نغيّر صوت المشغّل نفسه */

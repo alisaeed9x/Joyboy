@@ -39,6 +39,23 @@ class RemoteService : Service() {
     }
 
     private var lastState = RemoteClient.St.IDLE
+    private var wake: android.os.PowerManager.WakeLock? = null
+    private var wifi: android.net.wifi.WifiManager.WifiLock? = null
+
+    /** (v624) والموبايل مقفول الشاشة: من غير القفلين الواي فاي بينام والاتصال/الأوامر بتقف. بنمسكهم طول ما متصلين بالتلفزيون بس */
+    private fun locks(on: Boolean) {
+        try {
+            if (on) {
+                if (wake == null) wake = (getSystemService(Context.POWER_SERVICE) as android.os.PowerManager).newWakeLock(android.os.PowerManager.PARTIAL_WAKE_LOCK, "subtitler:tvlink").apply { setReferenceCounted(false) }
+                if (wifi == null) wifi = (applicationContext.getSystemService(Context.WIFI_SERVICE) as android.net.wifi.WifiManager).createWifiLock(android.net.wifi.WifiManager.WIFI_MODE_FULL_HIGH_PERF, "subtitler:tvlink").apply { setReferenceCounted(false) }
+                if (wake?.isHeld == false) wake?.acquire(6 * 3600 * 1000L)
+                if (wifi?.isHeld == false) wifi?.acquire()
+            } else {
+                if (wake?.isHeld == true) wake?.release()
+                if (wifi?.isHeld == true) wifi?.release()
+            }
+        } catch (e: Throwable) { LogStore.err("RemoteService:locks", e) }
+    }
     private val lis: () -> Unit = { onChange() }
 
     override fun onBind(i: Intent?): IBinder? = null
@@ -48,8 +65,8 @@ class RemoteService : Service() {
         channels()
         startFg(build())
         lastState = RemoteClient.state
+        locks(lastState != RemoteClient.St.IDLE)
         RemoteClient.addListener(lis)
-        PhonePanic.start(applicationContext)   // (v612 م3) ضغطتين باور = طوارئ
     }
 
     override fun onStartCommand(i: Intent?, flags: Int, startId: Int): Int {
@@ -65,7 +82,7 @@ class RemoteService : Service() {
 
     override fun onDestroy() {
         RemoteClient.removeListener(lis)
-        PhonePanic.stop(applicationContext)
+        locks(false)
         super.onDestroy()
     }
 
@@ -129,6 +146,7 @@ class RemoteService : Service() {
 
     private fun onChange() {
         val st = RemoteClient.state
+        locks(st == RemoteClient.St.CONNECTED || st == RemoteClient.St.CONNECTING || st == RemoteClient.St.LOST)
         val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         if ((lastState == RemoteClient.St.CONNECTED || lastState == RemoteClient.St.CONNECTING) && st == RemoteClient.St.LOST)
             alert("⚠ انقطع الاتصال بالتلفزيون", "بحاول أرجّع تلقائي — لو التلفزيون مقفول أو الواي فاي وقع هيرجع لوحده")

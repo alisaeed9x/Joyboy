@@ -471,8 +471,7 @@ class TvActivity : Activity() {
     /** (v476) لانشر: زر Home وإحنا شغّالين = ارجع للرئيسية. Back عمره ما بيقفل اللانشر (بس بيرجّع للرئيسية). */
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent); setIntent(intent)
-        if (intent.getBooleanExtra("tv_panic", false)) { intent.removeExtra("tv_panic"); showHome(false); showSaver() }   // (v613) الطوارئ: الرئيسية ثم شاشة التوقف (وضع الساعة) أوتوماتيك
-        else if (intent.hasCategory(Intent.CATEGORY_HOME)) { wake(); showHome() } else handleShow(intent)
+        if (intent.hasCategory(Intent.CATEGORY_HOME)) { wake(); showHome() } else handleShow(intent)
     }
     private fun handleShow(i: Intent?) {
         val w = i?.getStringExtra("tv_show") ?: return

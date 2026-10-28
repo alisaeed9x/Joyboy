@@ -64,8 +64,8 @@ class BottomNav(act: Activity, private val ui: Ui, private val th: Theme, privat
         if (!tvDev) {
             items.add(MoreItem("📺", "وضع TV", PlayTarget.enabled(), {
                 // دوسة طويلة: باقي خيارات التلفزيون
-                val labels = arrayOf(TvModeFab.alwaysLabel(), "📤  إرسال التحديث للتلفزيون", PhonePanic.label())
-                GAlert(act).setTitle("📺 التلفزيون").setItems(labels) { _, i -> collapseMore(); if (i == 0) TvModeFab.toggleAlways(act) else if (i == 1) RemoteClient.forcePushFlow(act) else PhonePanic.toggle(act) }.setNegativeButton("إغلاق", null).show()
+                val labels = arrayOf(TvModeFab.alwaysLabel(), "📤  إرسال التحديث للتلفزيون")
+                GAlert(act).setTitle("📺 التلفزيون").setItems(labels) { _, i -> collapseMore(); if (i == 0) TvModeFab.toggleAlways(act) else RemoteClient.forcePushFlow(act) }.setNegativeButton("إغلاق", null).show()
             }) { collapseMore(); TvModeFab.toggle(act) })
         }
         if (7 in ids) items.add(MoreItem(DEFS[7].first, DEFS[7].second, 7 == active) { collapseMore(); onPick(7) })
