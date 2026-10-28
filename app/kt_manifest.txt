@@ -135,9 +135,12 @@ com/tttt/subtitler/TermNotes.kt
 com/tttt/subtitler/Theme.kt
 com/tttt/subtitler/ToolsUi.kt
 com/tttt/subtitler/TrWizard.kt
+com/tttt/subtitler/Transfer.kt
+com/tttt/subtitler/TransferUi.kt
 com/tttt/subtitler/Trim.kt
 com/tttt/subtitler/TvBlur.kt
 com/tttt/subtitler/TvDirect.kt
+com/tttt/subtitler/TvFiles.kt
 com/tttt/subtitler/TvFocus.kt
 com/tttt/subtitler/TvFocusMem.kt
 com/tttt/subtitler/TvFolderCard.kt

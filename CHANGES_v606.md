@@ -45,3 +45,8 @@
 - «تصفح الملفات» (مدير الملفات): حدّد (ضغطة مطوّلة) ← ⋯ ← 📺 ابعت للتلفزيون (ملفات أو مجلدات)، و⋮ ← 📺 تصفح ملفات التلفزيون.
 - على التلفزيون: ملفات/مجلدات ← قايمة ← 📱 اعرض للموبايل (بتظهر في مركز النقل على الموبايل ← استقبال).
 - جديد على التلفزيون: /fs/list و /fs/file (محصورين في الذاكرة والفلاشات، للموبايل المقترن بس). لازم تثبّت النسخة على التلفزيون كمان.
+
+# v611 — إصلاح بناء v610
+- kt_manifest.txt كان ناقص Transfer.kt وTransferUi.kt وTvFiles.kt فـ pruneStaleKt كان بيمسحهم قبل الكومبايل (Unresolved reference: TransferActivity / TvFilesActivity / XCat / XExpand / TvOutbox / FileCatalog / TvCatalogApi / TvFsApi). اتضافوا.
+- RemoteActivity.kt اتشال من v603 — لو لسه موجود في الريبو على GitHub يتمسح (جوب verify بيفشل بسببه).
+- رفع النسخة: versionCode 611 · versionName 6.11.
