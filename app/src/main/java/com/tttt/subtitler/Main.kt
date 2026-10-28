@@ -413,8 +413,8 @@ class MainActivity : Activity() {
         // (v355) إعدادات يوتيوب جوه إعدادات البرنامج (بدل الدايلوج المنفصل)
         val ytQ = listOf("أعلى جودة", "1080p", "720p", "480p", "360p", "240p")
         val ytQv = intArrayOf(0, 1080, 720, 480, 360, 240)
-        val ytLangN = listOf("العربية", "الأصلي", "English", "Français", "Español", "Türkçe", "Deutsch", "Русский", "हिन्दी")
-        val ytLangV = listOf("ar", "orig", "en", "fr", "es", "tr", "de", "ru", "hi")
+        val ytLangN = listOf("🧠 ذكي", "العربية", "الأصلي", "English", "Français", "Español", "Türkçe", "Deutsch", "Русский", "हिन्दी")
+        val ytLangV = listOf("smart", "ar", "orig", "en", "fr", "es", "tr", "de", "ru", "hi")
         var settingsDlg0: TabbedDialog? = null; var qui0: QueueUi? = null
         val ytSettingsViews: List<View> = listOf(
             ui.section("🎬 لما تدوس على فيديو", true,
@@ -429,7 +429,7 @@ class MainActivity : Activity() {
                 ui.text("أعلى جودة بيتفتح بيها الفيديو. على الداتا اختار 360p أو 480p.", 12f, th.muted)),
             ui.section("🔊 لغة صوت الفيديو", true,
                 ui.chips(ytLangN, { ytLangN[ytLangV.indexOf(YtLang.pref()).coerceAtLeast(0)] }) { n -> Cfg.put("yt_alang", ytLangV[ytLangN.indexOf(n).coerceAtLeast(0)]); YtExtract.clearPicks(); YtFast.clearCache() },
-                ui.text("لو الفيديو له أكتر من لغة صوت بيفتح بالعربي، ولو مفيش عربي بيفتح بالصوت الأصلي. وفي المشغّل بيظهر مربع 🔊 جنب الجودة تبدّل بين اللغات.", 12f, th.muted)),
+                ui.text("🧠 ذكي: قناة عربي ← صوت عربي دايمًا (حتى لو الفيديو إنجليزي)، وأي قناة تانية ← صوت بلغة عنوان الفيديو. لو اللغة دي مش موجودة بيفتح بالصوت الأصلي. «العربية» = عربي لكل القنوات. وفي المشغّل بيظهر مربع 🔊 جنب الجودة تبدّل بين اللغات.", 12f, th.muted)),
             ui.section("🌐 لغة المحتوى والحساب", true,
                 ui.chips(YtLocale.names, { YtLocale.names[YtLocale.values.indexOf(Cfg.str("yt_hl", "auto")).coerceAtLeast(0)] }) { n -> Cfg.put("yt_hl", YtLocale.values[YtLocale.names.indexOf(n).coerceAtLeast(0)]); YtNp.reset(); YtFast.clearCache() },
                 ui.switchRow("👤 التعليقات والمقترحات بحسابي (ترتيب ولغة حسابك)", Cfg.bool("yt_np_auth", true)) { Cfg.put("yt_np_auth", if (it) "1" else "0") },

@@ -40,12 +40,14 @@ com/tttt/subtitler/IconPackCore.kt
 com/tttt/subtitler/IconPackUi.kt
 com/tttt/subtitler/IconPacks.kt
 com/tttt/subtitler/Icons.kt
+com/tttt/subtitler/IrTv.kt
 com/tttt/subtitler/Karaoke.kt
 com/tttt/subtitler/KeepAliveService.kt
 com/tttt/subtitler/KeyBrowser.kt
 com/tttt/subtitler/KeyDialog.kt
 com/tttt/subtitler/KeyVault.kt
 com/tttt/subtitler/LaunchShortcuts.kt
+com/tttt/subtitler/LaunchSplashActivity.kt
 com/tttt/subtitler/LibraryBackend.kt
 com/tttt/subtitler/LibraryCore.kt
 com/tttt/subtitler/LibraryUi.kt
@@ -96,11 +98,11 @@ com/tttt/subtitler/QrCode.kt
 com/tttt/subtitler/QueueUi.kt
 com/tttt/subtitler/RecentSongs.kt
 com/tttt/subtitler/Recents.kt
-com/tttt/subtitler/SendToTv.kt
 com/tttt/subtitler/RemoteClient.kt
 com/tttt/subtitler/RemoteEngine.kt
 com/tttt/subtitler/RemoteLibrary.kt
 com/tttt/subtitler/RemoteService.kt
+com/tttt/subtitler/SendToTv.kt
 com/tttt/subtitler/Settings.kt
 com/tttt/subtitler/SiteBlock.kt
 com/tttt/subtitler/Skin.kt
@@ -149,6 +151,7 @@ com/tttt/subtitler/TvInput.kt
 com/tttt/subtitler/TvKill.kt
 com/tttt/subtitler/TvLink.kt
 com/tttt/subtitler/TvModeFab.kt
+com/tttt/subtitler/TvPanic.kt
 com/tttt/subtitler/TvPlayerBar.kt
 com/tttt/subtitler/TvPointer.kt
 com/tttt/subtitler/TvPresets.kt
@@ -158,8 +161,8 @@ com/tttt/subtitler/TvSetup.kt
 com/tttt/subtitler/TvShell.kt
 com/tttt/subtitler/TvSkin.kt
 com/tttt/subtitler/TvSkinClassic.kt
-com/tttt/subtitler/TvSkinHub.kt
 com/tttt/subtitler/TvSkinGlass.kt
+com/tttt/subtitler/TvSkinHub.kt
 com/tttt/subtitler/TvTasksUi.kt
 com/tttt/subtitler/TvTiles.kt
 com/tttt/subtitler/TvTokens.kt
@@ -199,5 +202,3 @@ com/tttt/subtitler/YtSnap.kt
 com/tttt/subtitler/YtThumbBtns.kt
 com/tttt/subtitler/YtTopBar.kt
 com/tttt/subtitler/YtWatch.kt
-com/tttt/subtitler/TvPanic.kt
-com/tttt/subtitler/LaunchSplashActivity.kt

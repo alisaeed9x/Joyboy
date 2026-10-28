@@ -38,7 +38,58 @@ class YtPick(val url: String, val audio: String?, val ua: String, val title: Str
 
 /** (v388) لغة صوت يوتيوب: التفضيل (yt_alang: ar افتراضي · orig = الأصلي · أو كود لغة) + اختيار المسار + اسمه بالعربي */
 object YtLang {
-    fun pref(): String = try { Cfg.str("yt_alang", "ar").trim().lowercase().ifBlank { "ar" } } catch (_: Throwable) { "ar" }
+    /** (v623) «smart» = قناة عربية ← صوت عربي دايمًا · أي قناة تانية ← صوت بلغة عنوان الفيديو. بقى الافتراضي (ومرة واحدة بيحوّل «العربية» القديمة المحفوظة لـ smart) */
+    fun pref(): String = try {
+        val v = Cfg.str("yt_alang", "").trim().lowercase()
+        if (v.isEmpty()) "smart"
+        else if (v == "ar" && Cfg.str("alang_smart_v623", "") != "1") { Cfg.put("alang_smart_v623", "1"); Cfg.put("yt_alang", "smart"); "smart" }
+        else v
+    } catch (_: Throwable) { "smart" }
+
+    private val AR = Regex("[\\u0600-\\u06FF\\u0750-\\u077F]")
+    fun hasArabic(t: String): Boolean = AR.containsMatchIn(t)
+    private val STOP = mapOf(
+        "en" to setOf("the", "and", "of", "to", "in", "is", "for", "with", "how", "you", "this", "that", "what", "on", "my", "your", "from", "are", "was", "his", "her", "each", "other"),
+        "es" to setOf("el", "la", "los", "las", "de", "que", "y", "en", "un", "una", "por", "con", "para", "como", "su", "del", "se", "al", "mi", "más"),
+        "fr" to setOf("le", "la", "les", "des", "de", "et", "un", "une", "pour", "dans", "est", "que", "sur", "avec", "du", "au", "mon", "pas", "comment"),
+        "de" to setOf("der", "die", "das", "und", "ist", "nicht", "ein", "eine", "mit", "für", "auf", "von", "zu", "den", "wie", "ich", "sich"),
+        "pt" to setOf("o", "a", "os", "as", "de", "que", "e", "em", "um", "uma", "para", "com", "não", "do", "da", "no", "na", "como", "meu"),
+        "it" to setOf("il", "lo", "gli", "di", "che", "e", "un", "una", "per", "con", "non", "del", "della", "nel", "come", "sono"),
+        "tr" to setOf("ve", "bir", "bu", "için", "ile", "da", "de", "ne", "nasıl", "çok", "ama", "en", "mi", "ben"),
+        "id" to setOf("yang", "dan", "di", "ini", "itu", "untuk", "dengan", "dari", "ke", "pada", "cara", "apa", "saya"))
+    /** لغة العنوان (كود) من الحروف: عربي/روسي/هندي/ياباني/كوري/صيني/تايلندي/عبري/يوناني، وللاتيني بكلمات شائعة. فاضي = مش متأكد */
+    fun titleLang(t: String): String {
+        var ar = 0; var cy = 0; var dv = 0; var kana = 0; var hang = 0; var han = 0; var th = 0; var he = 0; var el = 0; var lat = 0
+        for (c in t) when (c.code) {
+            in 0x0600..0x06FF, in 0x0750..0x077F -> ar++
+            in 0x0400..0x04FF -> cy++
+            in 0x0900..0x097F -> dv++
+            in 0x3040..0x30FF -> kana++
+            in 0xAC00..0xD7AF, in 0x1100..0x11FF -> hang++
+            in 0x4E00..0x9FFF -> han++
+            in 0x0E00..0x0E7F -> th++
+            in 0x0590..0x05FF -> he++
+            in 0x0370..0x03FF -> el++
+            else -> if (c.isLetter() && c.code < 0x250) lat++
+        }
+        val mx = maxOf(ar, cy, dv, kana, hang, han, th, he, el, lat)
+        if (mx == 0) return ""
+        return when (mx) {
+            ar -> "ar"; cy -> "ru"; dv -> "hi"; kana -> "ja"; hang -> "ko"; han -> if (kana > 0) "ja" else "zh"; th -> "th"; he -> "he"; el -> "el"
+            else -> {
+                val words = t.lowercase().split(Regex("[^\\p{L}]+")).filter { it.isNotEmpty() }
+                val best = STOP.maxByOrNull { (_, st) -> words.count { it in st } }
+                if (best != null && words.count { it in best.value } >= 2) best.key else "en"
+            }
+        }
+    }
+    /** (v623) اختيار مسار الصوت الذكي: قناة عربي ← عربي (لو موجود) · غير كده ← مسار بلغة العنوان (لو موجود) وإلا الأصلي */
+    fun chooseSmart(tr: List<Tr>, title: String, channel: String): Tr? {
+        if (tr.isEmpty()) return null
+        val want = if (hasArabic(channel)) "ar" else titleLang(title).ifEmpty { "orig" }
+        if (want != "orig") tr.firstOrNull { it.lang == want }?.let { return it }
+        return tr.firstOrNull { it.orig } ?: tr.firstOrNull { it.dflt } ?: tr.first()
+    }
     fun code(raw: String): String = raw.substringBefore('.').substringBefore('-').substringBefore('_').trim().lowercase()
     fun name(lang: String, orig: Boolean): String {
         val n = if (lang.isBlank()) "؟" else try { java.util.Locale(lang).getDisplayLanguage(java.util.Locale("ar")).ifBlank { lang } } catch (_: Throwable) { lang }
@@ -50,8 +101,9 @@ object YtLang {
     fun setOverride(id: String, lang: String) { ovr[id] = lang }
     fun takeOverride(id: String): String? = ovr.remove(id)
     /** لغتك المفضّلة لو موجودة، وإلا الأصلي، وإلا الافتراضي، وإلا الأول (الأعلى جودة) */
-    fun choose(tr: List<Tr>, pref: String = pref()): Tr? {
+    fun choose(tr: List<Tr>, pref0: String = pref()): Tr? {
         if (tr.isEmpty()) return null
+        val pref = if (pref0 == "smart") "ar" else pref0   // (v623) بدون سياق (عنوان/قناة) smart = عربي زي القديم
         if (pref != "orig") tr.firstOrNull { it.lang == pref }?.let { return it }
         return tr.firstOrNull { it.orig } ?: tr.firstOrNull { it.dflt } ?: tr.first()
     }
@@ -394,7 +446,7 @@ object YtNp {
         // (v388) مسارات الصوت (لغات): نختار لغتك المفضّلة (عربي افتراضيًا) بدل أعلى bitrate عشوائي (كان بيجيب الدبلجة الإنجليزي أحيانًا)
         val trs = audioTracks(aud)
         val multi = trs.size > 1
-        val chTr = if (multi) YtLang.choose(trs, YtLang.takeOverride(id) ?: YtLang.pref()) else null
+        val chTr = if (multi) { val o = YtLang.takeOverride(id) ?: YtLang.pref(); if (o == "smart") YtLang.chooseSmart(trs, ttl, i.uploaderName ?: "") else YtLang.choose(trs, o) } else null   // (v623) smart: قناة عربي ← عربي · غيرها ← لغة العنوان
         val audUrl: String? = chTr?.url ?: bestAud?.content
         // (v327) كل الجودات المتاحة (نفس شكل YtExtract.Pick.optsJson: l/u/a/h) عشان زرار الجودة في المشغّل يشتغل
         val byH = HashMap<Int, Array<String?>>()   // h -> [label, url, audio]
