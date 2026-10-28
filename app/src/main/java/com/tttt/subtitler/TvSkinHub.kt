@@ -158,11 +158,14 @@ object TvSkinHub : TvSkin {
         }
         col.addView(ui.text("⚙ إعدادات سريعة", tokens.textTitle + 2f, pal.fg, true).apply { setPadding(ui.dp(6), 0, ui.dp(6), ui.dp(12)) })
         var first: View? = null
-        for ((label, page) in rows) {
-            val tv = ui.text(label, tokens.textTitle, pal.fg).apply {
+        var rowLL: LinearLayout? = null   // (v613) صفين بس: 2 في الصف
+        for ((idx, lp) in rows.withIndex()) {
+            val label = lp.first; val page = lp.second
+            val tv = ui.text(label, tokens.textBody + 1f, pal.fg).apply {
+                gravity = Gravity.CENTER; maxLines = 2
                 isFocusable = true; isClickable = true
                 setPadding(ui.dp(14), ui.dp(14), ui.dp(14), ui.dp(14))
-                textAlignment = View.TEXT_ALIGNMENT_VIEW_START
+                textAlignment = View.TEXT_ALIGNMENT_CENTER
                 background = ui.box(Color.TRANSPARENT, Color.TRANSPARENT, tokens.radiusCard)
                 setOnFocusChangeListener { v, f ->
                     v.background = ui.box(if (f) pal.primary else Color.TRANSPARENT, Color.TRANSPARENT, tokens.radiusCard)
@@ -171,13 +174,14 @@ object TvSkinHub : TvSkin {
                 setOnClickListener { dlg.dismiss(); h.open(page) }
             }
             if (first == null) first = tv
-            col.addView(tv, LinearLayout.LayoutParams(-1, -2).apply { setMargins(0, ui.dp(2), 0, ui.dp(2)) })
+            if (idx % 2 == 0) { rowLL = LinearLayout(a).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL }; col.addView(rowLL, LinearLayout.LayoutParams(-1, -2)) }
+            rowLL?.addView(tv, LinearLayout.LayoutParams(0, -2, 1f).apply { setMargins(ui.dp(3), ui.dp(3), ui.dp(3), ui.dp(3)) })
         }
         dlg.setContentView(ScrollView(a).apply { addView(col); isFillViewport = true })
         dlg.window?.let { w ->
             w.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
             val dm = a.resources.displayMetrics
-            w.setLayout((dm.widthPixels * 0.38f).toInt().coerceAtLeast(ui.dp(300)), WindowManager.LayoutParams.MATCH_PARENT)
+            w.setLayout((dm.widthPixels * 0.44f).toInt().coerceAtLeast(ui.dp(380)), WindowManager.LayoutParams.MATCH_PARENT)
             w.setGravity(Gravity.START)   // ناحية بداية الاتجاه (يمين في العربي)
             w.setDimAmount(0.55f)
             w.addFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND)

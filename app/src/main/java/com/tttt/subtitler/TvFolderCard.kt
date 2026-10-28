@@ -128,7 +128,7 @@ object TvFolderCard {
             textDirection = View.TEXT_DIRECTION_FIRST_STRONG      // dir=auto: الاتجاه من أول حرف في الاسم
             textAlignment = View.TEXT_ALIGNMENT_VIEW_START        // دايمًا ناحية الصورة، عربي أو إنجليزي
         }
-        val name = ui.text(f.name, g.nameSp, pal.fg, true).apply { fit(2) }
+        val name = ui.text(f.name, g.nameSp, pal.fg, true).apply { fit(1); setSingleLine(true); ellipsize = android.text.TextUtils.TruncateAt.MARQUEE; marqueeRepeatLimit = -1; isSelected = true }   // (v613) سطر واحد والاسم الطويل بيتحرّك
         val vids = f.videos.size
         val metaA = ui.text(metaCounts(vids, vids), g.metaSp, pal.fgSub).apply { fit(1); setPadding(0, ui.dp(3), 0, 0) }
         val metaB = ui.text(metaSize(f, sd), g.metaSp, pal.fgSub).apply { fit(1); setPadding(0, ui.dp(1), 0, 0) }

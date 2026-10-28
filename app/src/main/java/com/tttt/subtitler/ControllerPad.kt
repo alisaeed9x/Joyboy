@@ -56,9 +56,9 @@ class JoystickView(ctx: Context, private val onKey: (String) -> Unit) : View(ctx
 
     private fun rad(): Float = min(width, height) / 2f - 6f * den
     /** نصف قطر دايرة الـOK */
-    private fun okRad(): Float = rad() * 0.42f
+    private fun okRad(): Float = rad() * 0.30f * 1.3f   // (v613) زرار OK (الدايرة الزرقا) + 30%
     /** مسافة بداية الحركة = حد الدايرة + 50% من نصف قطرها */
-    private fun moveAt(): Float = okRad() * 1.5f
+    private fun moveAt(): Float = okRad()   // (v613) أي لمسة جوه دايرة OK = OK؛ أول ما تعدّي حدّها = حركة/سلايد
 
     override fun onTouchEvent(e: MotionEvent): Boolean {
         when (e.actionMasked) {

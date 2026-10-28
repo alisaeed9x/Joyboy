@@ -64,8 +64,8 @@ class BottomNav(act: Activity, private val ui: Ui, private val th: Theme, privat
         if (!tvDev) {
             items.add(MoreItem("📺", "وضع TV", PlayTarget.enabled(), {
                 // دوسة طويلة: باقي خيارات التلفزيون
-                val labels = arrayOf(TvModeFab.alwaysLabel(), "📤  ادفع التحديث للتلفزيون")
-                GAlert(act).setTitle("📺 التلفزيون").setItems(labels) { _, i -> collapseMore(); if (i == 0) TvModeFab.toggleAlways(act) else RemoteClient.forcePushFlow(act) }.setNegativeButton("إغلاق", null).show()
+                val labels = arrayOf(TvModeFab.alwaysLabel(), "📤  إرسال التحديث للتلفزيون", PhonePanic.label())
+                GAlert(act).setTitle("📺 التلفزيون").setItems(labels) { _, i -> collapseMore(); if (i == 0) TvModeFab.toggleAlways(act) else if (i == 1) RemoteClient.forcePushFlow(act) else PhonePanic.toggle(act) }.setNegativeButton("إغلاق", null).show()
             }) { collapseMore(); TvModeFab.toggle(act) })
         }
         if (7 in ids) items.add(MoreItem(DEFS[7].first, DEFS[7].second, 7 == active) { collapseMore(); onPick(7) })
@@ -79,7 +79,7 @@ class BottomNav(act: Activity, private val ui: Ui, private val th: Theme, privat
     private fun animateMore(open: Boolean) {
         val host = moreHost ?: return
         moreOpen = open
-        val target = if (open) ui.dp(57) + pushH() else 0   // (v612) + ارتفاع زرار «إرسال التحديث» فوق
+        val target = if (open) ui.dp(57) + (if (tvDev) 0 else ui.dp(46)) else 0   // (v612) + صف زرار «إرسال التحديث للتلفزيون»
         moreAnim?.cancel()
         val lp0 = host.layoutParams
         moreAnim = android.animation.ValueAnimator.ofInt(lp0.height, target).apply {
@@ -89,9 +89,6 @@ class BottomNav(act: Activity, private val ui: Ui, private val th: Theme, privat
         }
         icons.getOrNull(MORE)?.animate()?.rotation(if (open) 90f else 0f)?.setDuration(220L)?.start()
     }
-
-    /** (v612) ارتفاع زرار «إرسال التحديث للتلفزيون» العريض فوق صف المزيد (موبايل بس) */
-    private fun pushH(): Int = if (tvDev) 0 else ui.dp(46)
 
     private fun toggleMore(act: Activity) {
         if (moreHost == null || rail) { moreSheet(act); return }
@@ -108,6 +105,12 @@ class BottomNav(act: Activity, private val ui: Ui, private val th: Theme, privat
             background = GradientDrawable().apply { setColor(th.card); cornerRadii = floatArrayOf(ui.dp(18).toFloat(), ui.dp(18).toFloat(), ui.dp(18).toFloat(), ui.dp(18).toFloat(), 0f, 0f, 0f, 0f) }
         }
         val items = DEFS.indices.filter { it != MORE && it != DEAD_AI && it < YT_HOME && it !in order && !(it == 4 && YT_HOME in order) }.map { id -> id to (DEFS[id].first + "  " + DEFS[id].second) }   // (v467) ديناميكي: أي بوابة جديدة بره الشريط هتظهر هنا لوحدها
+        if (!tvDev) {   // (v612) إرسال التحديث للتلفزيون: أول حاجة فوق
+            val row0 = ui.text("📤  إرسال التحديث للتلفزيون", 15f, th.primary, true).apply { setPadding(ui.dp(14), ui.dp(14), ui.dp(14), ui.dp(14)) }
+            Glass.pressable(row0)
+            row0.setOnClickListener { d.dismiss(); RemoteClient.forcePushFlow(act) }
+            box.addView(row0, LinearLayout.LayoutParams(-1, -2))
+        }
         if (!tvDev) {   // (v555) وضع التلفزيون: الدخول/الخروج من «المزيد»
             val row = ui.text(TvModeFab.label(), 15f, th.primary, true).apply { setPadding(ui.dp(14), ui.dp(14), ui.dp(14), ui.dp(14)) }
             Glass.pressable(row)
@@ -122,12 +125,6 @@ class BottomNav(act: Activity, private val ui: Ui, private val th: Theme, privat
             val row = ui.text(label, 15f, if (id == active) th.primary else th.text, true).apply { setPadding(ui.dp(14), ui.dp(14), ui.dp(14), ui.dp(14)) }
             Glass.pressable(row)
             row.setOnClickListener { d.dismiss(); onPick(id) }
-            box.addView(row, LinearLayout.LayoutParams(-1, -2))
-        }
-        if (!tvDev) {   // (v521) دفع تحديث إجباري للتلفزيون من نسخة الموبايل (حتى لو التلفزيون ما لقاش نسخة أحدث)
-            val row = ui.text("📤  ادفع التحديث للتلفزيون", 15f, th.text, true).apply { setPadding(ui.dp(14), ui.dp(14), ui.dp(14), ui.dp(14)) }
-            Glass.pressable(row)
-            row.setOnClickListener { d.dismiss(); RemoteClient.forcePushFlow(act) }
             box.addView(row, LinearLayout.LayoutParams(-1, -2))
         }
         d.setContentView(box)
@@ -199,16 +196,16 @@ class BottomNav(act: Activity, private val ui: Ui, private val th: Theme, privat
             val host = FrameLayout(act).apply { clipChildren = true; setBackgroundColor(th.card) }
             val sc = android.widget.HorizontalScrollView(act).apply { isHorizontalScrollBarEnabled = false; layoutDirection = View.LAYOUT_DIRECTION_RTL; overScrollMode = View.OVER_SCROLL_NEVER }
             val col = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL }
-            if (!tvDev) {   // (v612) زرار «إرسال التحديث للتلفزيون» بالعرض فوق صف المزيد
-                val push = ui.text("📤  إرسال التحديث للتلفزيون", 14f, th.primary, true).apply { gravity = Gravity.CENTER; setSingleLine() }
-                Glass.pressable(push)
-                push.setOnClickListener { collapseMore(); try { RemoteClient.forcePushFlow(act) } catch (e: Throwable) { LogStore.err("Nav:push", e) } }
-                col.addView(push, LinearLayout.LayoutParams(-1, ui.dp(45)))
+            if (!tvDev) {   // (v612) زرار عريض فوق صف «المزيد»: إرسال التحديث للتلفزيون
+                val upd = ui.text("📤  إرسال التحديث للتلفزيون", 15f, th.primary, true).apply { gravity = Gravity.CENTER; setSingleLine() }
+                Glass.pressable(upd)
+                upd.setOnClickListener { collapseMore(); try { RemoteClient.forcePushFlow(act) } catch (e: Throwable) { LogStore.err("Nav:pushUpd", e) } }
+                col.addView(upd, LinearLayout.LayoutParams(-1, ui.dp(45)))
                 col.addView(View(act).apply { setBackgroundColor(th.border) }, LinearLayout.LayoutParams(-1, ui.dp(1)))
             }
             col.addView(sc, LinearLayout.LayoutParams(-1, ui.dp(56)))
             col.addView(View(act).apply { setBackgroundColor(th.border) }, LinearLayout.LayoutParams(-1, ui.dp(1)))
-            host.addView(col, FrameLayout.LayoutParams(-1, ui.dp(57) + pushH(), Gravity.BOTTOM))
+            host.addView(col, FrameLayout.LayoutParams(-1, ui.dp(57) + (if (tvDev) 0 else ui.dp(46)), Gravity.BOTTOM))
             moreHost = host; moreScroll = sc
             view.addView(host, LinearLayout.LayoutParams(-1, 0))
             view.addView(wrap, LinearLayout.LayoutParams(-1, -2))

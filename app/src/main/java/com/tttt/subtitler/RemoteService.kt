@@ -49,6 +49,7 @@ class RemoteService : Service() {
         startFg(build())
         lastState = RemoteClient.state
         RemoteClient.addListener(lis)
+        PhonePanic.start(applicationContext)   // (v612 م3) ضغطتين باور = طوارئ
     }
 
     override fun onStartCommand(i: Intent?, flags: Int, startId: Int): Int {
@@ -64,6 +65,7 @@ class RemoteService : Service() {
 
     override fun onDestroy() {
         RemoteClient.removeListener(lis)
+        PhonePanic.stop(applicationContext)
         super.onDestroy()
     }
 

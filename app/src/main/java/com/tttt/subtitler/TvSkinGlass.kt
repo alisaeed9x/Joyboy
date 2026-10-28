@@ -95,7 +95,7 @@ object TvSkinGlass : TvSkin {
             maxLines = maxL; ellipsize = TextUtils.TruncateAt.END; minWidth = 0
             textDirection = View.TEXT_DIRECTION_FIRST_STRONG; textAlignment = View.TEXT_ALIGNMENT_VIEW_START
         }
-        col.addView(ui.text(f.name, tokens.textBody + 1.5f, pal.fg, true).apply { fit(2); minLines = 2; setPadding(ui.dp(2), ui.dp(8), ui.dp(2), 0) })
+        col.addView(ui.text(f.name, tokens.textBody + 1.5f, pal.fg, true).apply { fit(1); setSingleLine(true); ellipsize = TextUtils.TruncateAt.MARQUEE; marqueeRepeatLimit = -1; isSelected = true; setPadding(ui.dp(2), ui.dp(8), ui.dp(2), 0) })   // (v613) سطر واحد والاسم الطويل بيتحرّك
         col.addView(ui.text(f.videos.size.toString() + " فيديو · " + VideoLib.fmtSize(f.totalSize), tokens.textCaption, pal.fgSub).apply { fit(1); setPadding(ui.dp(2), ui.dp(2), ui.dp(2), 0) })
         t.inner.addView(col, FrameLayout.LayoutParams(-1, -2))
 
@@ -252,10 +252,13 @@ object TvSkinGlass : TvSkin {
         }
         col.addView(ui.text("⚙ إعدادات سريعة", tokens.textTitle + 2f, pal.fg, true).apply { setPadding(ui.dp(8), 0, ui.dp(8), ui.dp(10)) })
         var first: View? = null
-        for ((label, page) in rows) {
-            val tv = ui.text(label, tokens.textTitle, pal.fg).apply {
+        var rowLL: LinearLayout? = null   // (v613) صفين بس: 3 في الصف
+        for ((idx, lp) in rows.withIndex()) {
+            val label = lp.first; val page = lp.second
+            val tv = ui.text(label, tokens.textBody + 1f, pal.fg).apply {
+                gravity = Gravity.CENTER; maxLines = 2
                 isFocusable = true; isClickable = true
-                setPadding(ui.dp(16), ui.dp(12), ui.dp(16), ui.dp(12)); textAlignment = View.TEXT_ALIGNMENT_VIEW_START
+                setPadding(ui.dp(16), ui.dp(12), ui.dp(16), ui.dp(12)); textAlignment = View.TEXT_ALIGNMENT_CENTER
                 background = pane(pal.dark, ui.dp(tokens.radiusPill).toFloat(), false, 0).apply { setColor(Color.TRANSPARENT); setStroke(0, Color.TRANSPARENT) }
                 setOnFocusChangeListener { v, f ->
                     v.background = if (f) pane(pal.dark, ui.dp(tokens.radiusPill).toFloat(), true, ui.dp(1)) else GradientDrawable().apply { setColor(Color.TRANSPARENT); cornerRadius = ui.dp(tokens.radiusPill).toFloat() }
@@ -263,13 +266,14 @@ object TvSkinGlass : TvSkin {
                 setOnClickListener { dlg.dismiss(); h.open(page) }
             }
             if (first == null) first = tv
-            col.addView(tv, LinearLayout.LayoutParams(-1, -2).apply { setMargins(0, ui.dp(2), 0, ui.dp(2)) })
+            if (idx % 3 == 0) { rowLL = LinearLayout(a).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL }; col.addView(rowLL, LinearLayout.LayoutParams(-1, -2)) }
+            rowLL?.addView(tv, LinearLayout.LayoutParams(0, -2, 1f).apply { setMargins(ui.dp(3), ui.dp(3), ui.dp(3), ui.dp(3)) })
         }
         dlg.setContentView(ScrollView(a).apply { addView(col); isFillViewport = false })
         dlg.window?.let { w ->
             w.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
             val dm = a.resources.displayMetrics
-            w.setLayout((dm.widthPixels * 0.46f).toInt().coerceAtLeast(ui.dp(340)), WindowManager.LayoutParams.WRAP_CONTENT)
+            w.setLayout((dm.widthPixels * 0.58f).toInt().coerceAtLeast(ui.dp(460)), WindowManager.LayoutParams.WRAP_CONTENT)
             w.setGravity(Gravity.CENTER)
             w.setDimAmount(0.45f); w.addFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND)
         }

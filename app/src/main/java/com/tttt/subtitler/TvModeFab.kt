@@ -36,7 +36,7 @@ import java.util.concurrent.CopyOnWriteArrayList
  *    ومكتبة الفيديو بتبقى مكتبة التلفزيون. الخروج = قطع الاتصال. مابيظهرش على التلفزيون ولا المشغّل.
  */
 object TvModeFab {
-    private class Layer(val btn: TextView, val banner: TextView) { var scrim: View? = null; val sats = ArrayList<View>(); var open = false; var cap: LinearLayout? = null; var capTitle: TextView? = null; var hooked = false; var pushed = 0; var basePadTop = 0 }   // (v560) scrim + الدواير الـ3 لما الزرار يتفتح
+    private class Layer(val btn: TextView, val banner: TextView) { var scrim: View? = null; val sats = ArrayList<View>(); var open = false; var cap: LinearLayout? = null; var capTitle: TextView? = null; var hooked = false; var padApplied = 0 }   // (v560) scrim + الدواير الـ3 لما الزرار يتفتح
 
     private const val PROMPT_MS = 5000L
     private val main = Handler(Looper.getMainLooper())
@@ -146,7 +146,7 @@ object TvModeFab {
             }
             // setContentView ممكن يكون مسح الـviews: ضيفهم تاني لو اتشالوا
             if (l.btn.parent == null) root.addView(l.btn, FrameLayout.LayoutParams(dp(a, 56), dp(a, 56), Gravity.RIGHT or Gravity.BOTTOM).apply { bottomMargin = dp(a, 150); rightMargin = dp(a, 12) })
-            if (l.banner.parent == null) root.addView(l.banner, FrameLayout.LayoutParams(-1, dp(a, 24), Gravity.TOP))   // (v612) فوق: وبيزق المحتوى لتحت (placeBanner) بدل ما يغطّي عليه
+            if (l.banner.parent == null) root.addView(l.banner, FrameLayout.LayoutParams(-1, dp(a, 24), Gravity.TOP))   // (v612) فوق، والمحتوى بينزل تحتها (placeBanner بتزق الـroot بحشو علوي) — مابقتش بتغطّي الشغل
             if (l.cap == null) {   // (v560) كبسولة «▶ اسم الفيديو ✕» فوق: الفيديو شغّال على التلفزيون؛ ✕ بتقفله
                 val tt = TextView(a).apply { setTextColor(Color.WHITE); textSize = 13f; typeface = android.graphics.Typeface.DEFAULT_BOLD; maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END; maxWidth = dp(a, 230) }
                 val xx = TextView(a).apply { text = "✕"; setTextColor(Color.WHITE); textSize = 15f; typeface = android.graphics.Typeface.DEFAULT_BOLD; gravity = Gravity.CENTER; setPadding(dp(a, 10), dp(a, 8), dp(a, 14), dp(a, 8)); contentDescription = "اقفل الفيديو على التلفزيون" }
@@ -161,7 +161,7 @@ object TvModeFab {
                 l.cap = cap; l.capTitle = tt
             }
             val capV = l.cap
-            if (capV != null && capV.parent == null) root.addView(capV, FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.CENTER_HORIZONTAL).apply { topMargin = dp(a, 6) })   // (v612) الـpadding اللي بيزقّه الخط الأحمر بيضيف ارتفاعه
+            if (capV != null && capV.parent == null) root.addView(capV, FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.CENTER_HORIZONTAL).apply { topMargin = dp(a, 10) })   // (v612) العلامة بتزق المحتوى 24dp، فالكبسولة بتقعد تحتها بنفس المكان القديم تقريبًا
             if (!l.hooked) { l.hooked = true; root.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> placeBanner(root, l) } }
             paint(a, l)
             placeFab(a, l)
@@ -171,18 +171,18 @@ object TvModeFab {
     private fun pill(c: Context, color: Int): GradientDrawable =
         GradientDrawable().apply { setColor(color); cornerRadius = dp(c, 24).toFloat(); setStroke(dp(c, 1), 0x55FFFFFF) }
 
-    /** (v612) الخط الأحمر فوق، ولما يظهر بيزق محتوى الشاشة لتحت (padding على الـroot) فمايغطّيش على حاجة؛ لما يختفي الـpadding يرجع زي ما كان */
+    /** (v612) العلامة الحمرا فوق خالص، ولما تظهر بتزق كل اللي ورا (محتوى الشاشة) لتحت بحشو علوي على الـroot بنفس ارتفاعها — فمابتغطّيش حاجة. لما تختفي الحشو بيتشال. */
     private fun placeBanner(root: View, l: Layer) {
         try {
-            val vg = root as? ViewGroup ?: return
-            val h = if (l.banner.visibility == View.VISIBLE) dp(root.context, 24) else 0
-            if (l.pushed != h) {
-                if (l.pushed == 0) l.basePadTop = vg.paddingTop
-                vg.clipToPadding = false
-                vg.setPadding(vg.paddingLeft, l.basePadTop + h, vg.paddingRight, vg.paddingBottom)
-                l.pushed = h
+            val fl = root as? FrameLayout ?: return
+            val on = l.banner.visibility == View.VISIBLE
+            val h = if (on) dp(fl.context, 24) else 0
+            if (l.padApplied != h) {
+                fl.setPadding(fl.paddingLeft, (fl.paddingTop - l.padApplied + h).coerceAtLeast(0), fl.paddingRight, fl.paddingBottom)
+                l.padApplied = h
             }
-            val ty = -l.pushed.toFloat()
+            if (on && fl.clipToPadding) fl.clipToPadding = false   // عشان العلامة (اللي بترجع بـtranslationY لحد فوق) ماتتقصّش
+            val ty = -h.toFloat()
             if (l.banner.translationY != ty) l.banner.translationY = ty
         } catch (_: Throwable) {}
     }

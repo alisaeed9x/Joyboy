@@ -361,6 +361,22 @@ class TvActivity : Activity() {
         if (ev.keyCode == KeyEvent.KEYCODE_MENU && ev.action == KeyEvent.ACTION_DOWN && ev.repeatCount == 0 && currentFocus !is EditText && currentFocus?.isLongClickable != true) {
             if (TvSkins.cur().menuKey(skinHost)) return true
         }
+        // (v613) الأسهم وانت واقف على مربع البحث: تطلّع منه (بدل ما تحرّك المؤشر جواه) — الكتابة عادي، والخروج بأي اتجاه
+        val fe = currentFocus
+        if (fe is EditText && fe === searchEt) {
+            val dirn = when (ev.keyCode) {
+                KeyEvent.KEYCODE_DPAD_LEFT -> View.FOCUS_LEFT; KeyEvent.KEYCODE_DPAD_RIGHT -> View.FOCUS_RIGHT
+                KeyEvent.KEYCODE_DPAD_UP -> View.FOCUS_UP; KeyEvent.KEYCODE_DPAD_DOWN -> View.FOCUS_DOWN
+                else -> 0
+            }
+            if (dirn != 0) {
+                if (ev.action == KeyEvent.ACTION_DOWN) {
+                    val nx = try { fe.focusSearch(dirn) } catch (_: Throwable) { null }
+                    if (nx != null && nx !== fe) nx.requestFocus()
+                }
+                return true
+            }
+        }
         return super.dispatchKeyEvent(ev)
     }
 
@@ -437,7 +453,8 @@ class TvActivity : Activity() {
     /** (v476) لانشر: زر Home وإحنا شغّالين = ارجع للرئيسية. Back عمره ما بيقفل اللانشر (بس بيرجّع للرئيسية). */
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent); setIntent(intent)
-        if (intent.hasCategory(Intent.CATEGORY_HOME)) { wake(); showHome() } else handleShow(intent)
+        if (intent.getBooleanExtra("tv_panic", false)) { intent.removeExtra("tv_panic"); showHome(false); showSaver() }   // (v613) الطوارئ: الرئيسية ثم شاشة التوقف (وضع الساعة) أوتوماتيك
+        else if (intent.hasCategory(Intent.CATEGORY_HOME)) { wake(); showHome() } else handleShow(intent)
     }
     private fun handleShow(i: Intent?) {
         val w = i?.getStringExtra("tv_show") ?: return
@@ -642,7 +659,12 @@ class TvActivity : Activity() {
 
     /** زرار دائري: المتركّز بيبقى أبيض ويكبر شوية، واسمه بيظهر في إشعار صغير */
     private fun roundBtn(icon: String, label: String, sizeDp: Int, onLong: (() -> Unit)? = null, onClick: () -> Unit): View {
-        val tv = ui.text(icon, if (sizeDp >= 40) 19f else 15f, fg).apply { gravity = Gravity.CENTER }
+        val plus = icon == "＋" || icon == "➕"   // (v613) الزائد كان بيطلع شفاف (الخط مالوش الرمز) ← "+" عادي وعريض
+        val tv = IconTextView(this).apply {
+            text = if (plus) "+" else icon; textSize = if (plus) 24f else if (sizeDp >= 40) 19f else 15f; setTextColor(fg)
+            gravity = Gravity.CENTER; includeFontPadding = false
+            if (plus) typeface = android.graphics.Typeface.DEFAULT_BOLD
+        }
         val b = TvOwnLinear(this).apply {
             gravity = Gravity.CENTER; isFocusable = true; isClickable = true; background = ovalBg(Color.TRANSPARENT)
             setOnClickListener { onClick() }
@@ -1865,7 +1887,7 @@ class TvActivity : Activity() {
         // (v606) 24 كارت بقوا 8: كل مجموعة إعدادات في كارت واحد بيفتح قايمة فرعية (القيم بتتجدّد بعد كل ضغطة)
         val groups = listOf(
             Grp("🎨 الشكل", listOf(
-                Opt("🖼 معرض الثيمات (سكِن + أيقونات + ألوان)", { "" }, { h.post { TvPresets.show(skinHost) } }),   // post: بعد ما showAppearance تخلّص رسمها (وإلا كانت هتكتب فوق المعرض)
+                Opt("🖼 معرض الثيمات", { "" }, { h.post { TvPresets.show(skinHost) } }),   // post: بعد ما showAppearance تخلّص رسمها (وإلا كانت هتكتب فوق المعرض)
                 Opt("🧩 التصميم والسمة", { TvSkins.cur().name + " · " + th.name }, { lookDialog() }),
                 Opt("🖼 الخلفية", { wallModeName() }, { wallHub() }),
                 Opt("⭕ الأيقونات والحجم", { IconPacks.nameOf(IconPacks.activeId()) }, { iconsHub() })
@@ -1879,22 +1901,21 @@ class TvActivity : Activity() {
                 Opt("♻ رجّع المظهر للافتراضي", { "" }, { resetAppearance() })
             ))
         )
+        // (v613) كل البلاطات (8) جنب بعض على صفين (4 في الصف) من غير عناوين مجموعات
         val allCards = ArrayList<View>()
         var idx = 0
         for (g in groups) {
-            content.addView(sectionTitle(g.title))
-            val cards = g.opts.map { o ->
+            for (o in g.opts) {
                 val my = idx++
-                card(if (compactUi) 250 else 270, 84, { c ->
+                allCards.add(card(if (compactUi) 150 else 218, 84, { c ->
                     c.gravity = Gravity.CENTER_VERTICAL
-                    c.addView(ui.text(o.title, 14.5f, th.text, true))
+                    c.addView(ui.text(o.title, 13.5f, th.text, true).apply { maxLines = 2 })
                     val v = o.value()
-                    if (v.isNotEmpty()) c.addView(ui.text(v, 13f, th.primary, true).apply { setPadding(0, ui.dp(4), 0, 0) })
-                }, { appearIdx = my; o.act(); if (!isFinishing && !isDestroyed && curTab == -1 && !subOpened) showAppearance(my); subOpened = false })
+                    if (v.isNotEmpty()) c.addView(ui.text(v, 12f, th.primary, true).apply { setPadding(0, ui.dp(4), 0, 0); setSingleLine() })
+                }, { appearIdx = my; o.act(); if (!isFinishing && !isDestroyed && curTab == -1 && !subOpened) showAppearance(my); subOpened = false }))
             }
-            allCards.addAll(cards)
-            gridInto(content, cards, if (compactUi) 2 else 3)
         }
+        gridInto(content, allCards, 4)
         val cards = allCards
         content.addView(LinearLayout(this).apply { gravity = Gravity.CENTER; setPadding(0, ui.dp(12), 0, ui.dp(24)); addView(pill("→ الرئيسية") { showHome() }) })
         cards.getOrNull(focusIdx.coerceIn(0, cards.size - 1))?.let { c -> c.post { try { c.requestFocus() } catch (_: Throwable) { } } }
@@ -2137,7 +2158,7 @@ class TvActivity : Activity() {
             } catch (_: Throwable) { }
             qa.addView(b)
         }
-        qa.addView(roundBtn("📡", "الريسيفر (دوسة طويلة: اختيار المدخل)", 36, { pickReceiver() }) { openReceiver() })
+   // (v613) زرار 📡 (أيقونة الإشارة القديمة) اتشال من الشريط العلوي
     }
     private fun saveQuick(i: Int, type: String, id: String, label: String) {
         Cfg.put("tv_fa$i", type + "|" + id + "|" + label.replace("|", " ").replace("\n", " ")); fillQuick()
@@ -2745,29 +2766,32 @@ class TvActivity : Activity() {
     /** (v581) إعدادات الرئيسية: 3 مجموعات (الجهاز · الشكل والخلفية · البرنامج) كل واحدة بعنوان وصف كروت بنفس الحجم */
     private fun fillHomeSettings(sh: LinearLayout, focusPin: Boolean = false) {
         sh.removeAllViews()
-        fun group(title: String, cards: List<View>) {
-            sh.addView(ui.text(title, 15.5f, th.muted, true).apply { setPadding(ui.dp(12), ui.dp(12), 0, ui.dp(2)) })
-            sh.addView(hrow(cards))
-        }
+        // (v613) صفين بس (كانت 3 مجموعات = 3 صفوف) وزراير أصغر
+        fun stile(icon: String, label: String, f: () -> Unit): View = card(126, 78, { c ->
+            c.gravity = Gravity.CENTER
+            c.addView(ui.text(icon, 22f, th.text).apply { gravity = Gravity.CENTER })
+            c.addView(ui.text(label, 12f, th.text, true).apply { gravity = Gravity.CENTER; setSingleLine(); setPadding(ui.dp(4), ui.dp(2), ui.dp(4), 0) })
+        }, f)
         val pinned = wallFixed()
-        val pinTile = tile("📌", if (pinned) "الخلفية مثبّتة — إلغاء" else "تثبيت الخلفية") { wallPinToggle(); fillHomeSettings(sh, true) }
-        group("📺 الجهاز والاتصال", listOf(
-            tile("📶", "الواي فاي") { TvWifi.quick(this@TvActivity) },
-            tile("📱", "ريموت الموبايل") { TvLinkUi.show(this@TvActivity) },
-            tile("📤", "نقل الملفات") { startActivity(Intent(this@TvActivity, TransferActivity::class.java)) },
-            tile("🛠", "إعدادات الأندرويد") { openSystemSettings() },
-            tile("🌙", "نوم") { showSaver() }))
-        group("🎨 الشكل والخلفية", listOf(
-            tile("🎨", "المظهر") { showAppearance() },
-            tile("🖼", "الخلفية") { wallDialog() },
-            pinTile,
-            tile("🎛", "تخصيص الرئيسية") { rowsDialog() }))
-        val prog = ArrayList<View>()
-        prog.add(tile("⚙️", "إعدادات البرنامج") { guardPin { openMain("settings") } })
-        prog.add(tile("🕌", "مواقيت الصلاة") { showPrayer() })
-        if (playOn()) prog.add(tile("🛍", "Google Play") { openPlay() })
-        prog.add(tile("⋯", "المزيد") { moreMenu() })
-        group("🧰 البرنامج والأدوات", prog)
+        val pinTile = stile("📌", if (pinned) "إلغاء التثبيت" else "تثبيت الخلفية") { wallPinToggle(); fillHomeSettings(sh, true) }
+        val all = ArrayList<View>()
+        all.add(stile("📶", "الواي فاي") { TvWifi.quick(this@TvActivity) })
+        all.add(stile("📱", "ريموت الموبايل") { TvLinkUi.show(this@TvActivity) })
+        all.add(stile("📤", "نقل الملفات") { startActivity(Intent(this@TvActivity, TransferActivity::class.java)) })
+        all.add(stile("🛠", "إعدادات الأندرويد") { openSystemSettings() })
+        all.add(stile("🌙", "نوم") { showSaver() })
+        all.add(stile("🎨", "المظهر") { showAppearance() })
+        all.add(stile("🖼", "الخلفية") { wallDialog() })
+        all.add(pinTile)
+        all.add(stile("🎛", "تخصيص الرئيسية") { rowsDialog() })
+        all.add(stile("⚙️", "إعدادات البرنامج") { guardPin { openMain("settings") } })
+        all.add(stile("🕌", "مواقيت الصلاة") { showPrayer() })
+        if (playOn()) all.add(stile("🛍", "Google Play") { openPlay() })
+        all.add(stile("⋯", "المزيد") { moreMenu() })
+        sh.addView(ui.text("⚙️ الإعدادات", 15.5f, th.muted, true).apply { setPadding(ui.dp(12), ui.dp(12), 0, ui.dp(2)) })
+        val half = (all.size + 1) / 2
+        sh.addView(hrow(all.subList(0, half).toList()))
+        sh.addView(hrow(all.subList(half, all.size).toList()))
         if (focusPin) pinTile.post { try { pinTile.requestFocus() } catch (_: Throwable) { } }
     }
 

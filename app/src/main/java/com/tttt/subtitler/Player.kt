@@ -53,6 +53,12 @@ class PlayerActivity : Activity(), Host {
             return true
         }
 
+        /** (v612) الطوارئ: اقفل كل مشغّلات الفيديو المفتوحة */
+        fun panicFinishAll() {
+            val l = synchronized(liveList) { liveList.mapNotNull { it.get() } }
+            for (o in l) try { o.runOnUiThread { try { o.finishAndRemoveTask() } catch (_: Throwable) {} } } catch (_: Throwable) {}
+        }
+
         /** (v531) في مشغّل فيديو (برنامج) مفتوح دلوقتي؟ */
         fun hasLive(): Boolean = live() != null
 
