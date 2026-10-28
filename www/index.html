@@ -1,0 +1,680 @@
+<!doctype html>
+<html lang="ar" dir="rtl" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<title>Continuity AI</title>
+<style>
+:root{--bg:#faf9f6;--surface:#fff;--surface2:#f1efe9;--text:#1f1f1e;--muted:#6d6b66;--border:#e4e1d8;--accent:#2f6f6a;--accent-t:#fff;--danger:#b3372f;--warn:#a96a12;--ok:#2d7a45;--r:14px;--shadow:0 1px 3px rgba(0,0,0,.08);--font:system-ui,-apple-system,"Segoe UI",Roboto,Tahoma,"Noto Sans Arabic",sans-serif;--mono:ui-monospace,Menlo,Consolas,monospace}
+[data-theme=dark]{--bg:#1c1c1b;--surface:#262625;--surface2:#30302e;--text:#ecebe7;--muted:#a09e97;--border:#3a3a37;--accent:#5ab3aa;--accent-t:#102220;--danger:#e8776f;--warn:#e0a54f;--ok:#6cc487;--shadow:none}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{height:100%;margin:0}
+body{font-family:var(--font);background:var(--bg);color:var(--text);font-size:16px;line-height:1.6;padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)}
+button,input,select,textarea{font:inherit;color:inherit}
+button{cursor:pointer;border:1px solid var(--border);background:var(--surface);border-radius:10px;padding:8px 14px;min-height:40px}
+button:hover{background:var(--surface2)}
+button.pri{background:var(--accent);color:var(--accent-t);border-color:var(--accent)}
+button.dng{color:var(--danger)}
+button.ghost{border-color:transparent;background:transparent}
+button:disabled{opacity:.45;cursor:not-allowed}
+input,select,textarea{width:100%;background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:9px 12px;min-height:40px}
+textarea{resize:none}
+input:focus,select:focus,textarea:focus,button:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+label{display:block;font-size:13px;color:var(--muted);margin:10px 0 4px}
+#app{display:flex;height:100%}
+#side{width:290px;flex:none;background:var(--surface2);border-inline-end:1px solid var(--border);display:flex;flex-direction:column;padding:12px;gap:8px;overflow:hidden}
+.brand{font-weight:700;font-size:18px;padding:4px 6px}
+.brand small{color:var(--muted);font-weight:400;font-size:12px;display:block}
+#side .nav{display:flex;flex-direction:column;gap:2px}
+#side .nav button{text-align:start;border:0;background:transparent;display:flex;gap:8px;align-items:center}
+#side .nav button.on{background:var(--surface);box-shadow:var(--shadow)}
+#recent{flex:1;overflow:auto;display:flex;flex-direction:column;gap:2px}
+#recent h4{margin:10px 6px 4px;font-size:12px;color:var(--muted);font-weight:600}
+.ci{border:0;background:transparent;text-align:start;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:block;width:100%}
+.ci.on{background:var(--surface)}
+main{flex:1;min-width:0;display:flex;flex-direction:column}
+header{display:flex;align-items:center;gap:8px;padding:8px 12px;border-bottom:1px solid var(--border);min-height:56px}
+header .ttl{flex:1;min-width:0;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sv{font-size:12px;color:var(--muted);white-space:nowrap}
+#menu-btn{display:none}
+#model-btn{max-width:46vw;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#view{flex:1;overflow:auto;padding:16px}
+.wrap{max-width:780px;margin:0 auto}
+.thread{display:flex;flex-direction:column;gap:18px;padding-bottom:12px}
+.msg .bub{background:var(--surface2);border-radius:var(--r);padding:10px 14px;max-width:92%;width:fit-content;margin-inline-start:auto}
+.msg.user .bub{margin-inline-start:0;margin-inline-end:auto}
+html[dir=rtl] .msg.user .bub{margin-inline-start:0}
+.msg.user{display:flex;justify-content:flex-start}
+.msg.asst .meta{font-size:12px;color:var(--muted);margin-bottom:4px}
+.body p{margin:.4em 0}.body h1,.body h2,.body h3{margin:.8em 0 .3em;line-height:1.3}
+.body h1{font-size:1.3em}.body h2{font-size:1.15em}.body h3{font-size:1.05em}
+.body ul,.body ol{margin:.4em 0;padding-inline-start:1.4em}
+.body code{font-family:var(--mono);background:var(--surface2);padding:1px 5px;border-radius:6px;font-size:.9em}
+.code{border:1px solid var(--border);border-radius:10px;margin:.6em 0;overflow:hidden;background:var(--surface)}
+.code .ch{display:flex;justify-content:space-between;align-items:center;padding:2px 10px;background:var(--surface2);font-size:12px;color:var(--muted)}
+.code .ch button{min-height:28px;padding:2px 8px;font-size:12px}
+.code pre{margin:0;padding:10px 12px;overflow:auto;font-family:var(--mono);font-size:13px;line-height:1.5;direction:ltr;text-align:left;white-space:pre}
+.acts{display:flex;gap:6px;margin-top:4px;flex-wrap:wrap}
+.acts button{min-height:32px;padding:2px 10px;font-size:13px}
+.note{font-size:13px;color:var(--warn);background:var(--surface2);border-radius:10px;padding:6px 12px;text-align:center}
+.err{border:1px solid var(--danger);color:var(--danger);border-radius:10px;padding:8px 12px;margin-top:6px;font-size:14px}
+.cur::after{content:"▍";animation:bl 1s infinite;color:var(--accent)}
+@keyframes bl{50%{opacity:0}}
+.empty{text-align:center;color:var(--muted);margin-top:12vh}
+.empty h2{color:var(--text);margin:0 0 6px}
+#composer{border-top:1px solid var(--border);padding:10px 12px;background:var(--bg)}
+#composer .box{max-width:780px;margin:0 auto;border:1px solid var(--border);background:var(--surface);border-radius:18px;padding:8px;box-shadow:var(--shadow)}
+#composer textarea{border:0;background:transparent;max-height:180px;padding:6px 8px}
+#composer textarea:focus{outline:0}
+#composer .row{display:flex;gap:6px;align-items:center;justify-content:space-between}
+#chips{display:flex;gap:6px;flex-wrap:wrap;padding:0 4px}
+.chip{font-size:12px;background:var(--surface2);border-radius:999px;padding:2px 10px;display:inline-flex;gap:6px;align-items:center}
+.chip b{cursor:pointer}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r);padding:14px;margin-bottom:12px;box-shadow:var(--shadow)}
+.card h3{margin:0 0 6px;font-size:16px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.kv{display:flex;justify-content:space-between;gap:10px;padding:5px 0;border-bottom:1px dashed var(--border);font-size:14px}
+.kv:last-of-type{border:0}.kv span:first-child{color:var(--muted)}.kv span:last-child{text-align:end}
+.badge{font-size:11px;border-radius:999px;padding:1px 8px;background:var(--surface2);color:var(--muted);font-weight:500}
+.badge.ok{color:var(--ok)}.badge.bad{color:var(--danger)}.badge.est{color:var(--warn)}
+.row2{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+.page-h{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:0 0 12px}
+.page-h h2{margin:0;font-size:20px}
+.muted{color:var(--muted);font-size:14px}
+#modal{position:fixed;inset:0;background:rgba(0,0,0,.45);display:none;align-items:center;justify-content:center;z-index:50;padding:12px}
+#modal.on{display:flex}
+.sheet{background:var(--bg);border-radius:18px;width:100%;max-width:560px;max-height:88vh;overflow:auto;padding:16px;border:1px solid var(--border)}
+.sheet h3{margin:0 0 8px}
+.chk{display:flex;gap:8px;align-items:center;padding:4px 0}
+.chk input{width:auto;min-height:0}
+.seg{display:flex;gap:4px;flex-wrap:wrap}
+.seg button.on{background:var(--accent);color:var(--accent-t);border-color:var(--accent)}
+#toast{position:fixed;bottom:calc(88px + env(safe-area-inset-bottom));inset-inline:0;display:flex;justify-content:center;pointer-events:none;z-index:60}
+#toast div{background:var(--text);color:var(--bg);padding:8px 16px;border-radius:999px;font-size:14px;opacity:0;transition:opacity .2s}
+#toast.on div{opacity:1}
+#dots{display:none;gap:8px;align-items:center;padding:6px 12px;border-bottom:1px solid var(--border);overflow-x:auto}
+.dot{width:34px;height:34px;min-height:34px;padding:0;border-radius:50%;font-weight:700;flex:none;border:2px solid var(--border);color:var(--muted)}
+.dot.g{background:var(--ok);border-color:var(--ok);color:#fff}
+.dot.r{background:var(--danger);border-color:var(--danger);color:#fff}
+.dot.a{background:var(--warn);border-color:var(--warn);color:#fff}
+.dot.p{animation:bl 1s infinite}
+.dot.act{box-shadow:0 0 0 3px var(--bg),0 0 0 5px var(--accent)}
+details.lg{border:1px solid var(--border);border-radius:10px;margin-bottom:8px;background:var(--surface)}
+details.lg summary{padding:8px 12px;cursor:pointer;font-size:14px}
+details.lg pre{margin:0;padding:8px 12px;white-space:pre-wrap;word-break:break-word;font-family:var(--mono);font-size:12px;border-top:1px dashed var(--border);max-height:40vh;overflow:auto;direction:ltr;text-align:left}
+details.lg h5{margin:8px 12px 0;font-size:12px;color:var(--muted)}
+#b-mic.rec{background:var(--danger);color:#fff;border-color:var(--danger)}
+.thumb{height:64px;border-radius:8px;margin:2px;cursor:pointer}
+.chip img{height:22px;border-radius:4px}
+#scrim{display:none}
+@media(max-width:820px){
+ #menu-btn{display:inline-flex}
+ #side{position:fixed;inset-block:0;inset-inline-start:0;z-index:40;width:84vw;max-width:320px;transform:translateX(-105%);transition:transform .2s;padding-top:calc(12px + env(safe-area-inset-top))}
+ html[dir=rtl] #side{transform:translateX(105%)}
+ #side.open{transform:none!important}
+ #scrim.on{display:block;position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:39}
+ .sheet{align-self:flex-end;border-end-start-radius:0;border-end-end-radius:0}
+ #modal{align-items:flex-end;padding:0}
+}
+</style>
+</head>
+<body>
+<div id="app">
+  <aside id="side"></aside>
+  <div id="scrim" data-act="side"></div>
+  <main>
+    <header id="hdr"></header>
+    <div id="dots"></div>
+    <section id="view"></section>
+    <footer id="composer">
+      <div class="box">
+        <div id="chips"></div>
+        <textarea id="inp" rows="1"></textarea>
+        <div class="row">
+          <div><button class="ghost" data-act="attach" id="b-att">📎</button><button class="ghost" data-act="mic" id="b-mic">🎤</button><input type="file" id="file" accept="image/*,video/*,audio/*,application/pdf,text/*,.txt,.md,.json,.csv,.js,.ts,.py,.html,.css,.xml,.yml,.yaml,.log,.kt,.java,.sql,.sh,.ini" multiple hidden></div>
+          <button class="pri" id="b-send" data-act="send">↑</button>
+        </div>
+      </div>
+    </footer>
+  </main>
+</div>
+<div id="modal"><div class="sheet" id="sheet"></div></div>
+<div id="toast"><div></div></div>
+
+<script>
+'use strict';
+/* ====================== helpers ====================== */
+const $=s=>document.querySelector(s);
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const uid=()=>Math.random().toString(36).slice(2,10)+Date.now().toString(36).slice(-4);
+const last=a=>a&&a.length?a[a.length-1]:undefined;
+const fmtDate=ts=>ts?new Date(ts).toLocaleString(S&&S.lang==='en'?'en-GB':'ar-EG'):'—';
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+
+/* ====================== i18n ====================== */
+const T={
+ar:{newChat:'محادثة جديدة',search:'بحث في المحادثات…',projects:'المشروعات',recent:'الأحدث',connections:'الاتصالات',usage:'الاستخدام',settings:'الإعدادات',send:'إرسال',stop:'إيقاف',ph:'اكتب رسالتك…',saved:'✓ تم الحفظ',saving:'جارٍ الحفظ…',copy:'نسخ',copied:'تم النسخ',regen:'إعادة توليد',retry:'إعادة المحاولة',cancel:'إلغاء',save:'حفظ',del:'حذف',rename:'إعادة تسمية',close:'إغلاق',ok:'تمام',
+emptyT:'ابدأ مهمة جديدة',emptyD:'اختر اتصالًا ونموذجًا ثم اكتب. تُحفظ المحادثة تلقائيًا ويمكنك استكمالها من آخر نقطة بأي اتصال آخر.',
+noConn:'لا توجد اتصالات بعد. أضف اتصالًا من صفحة «الاتصالات».',noUsable:'لا يوجد اتصال صالح للاستخدام الآن (معطّل، أو بدون نموذج مختار، أو في فترة انتظار، أو تجاوز الميزانية).',
+addConn:'إضافة اتصال',editConn:'تعديل الاتصال',label:'اسم الاتصال',provider:'المزوّد',apiKey:'مفتاح API',keepKey:'(اتركه فارغًا للإبقاء على المفتاح الحالي)',baseUrl:'عنوان الـ API',saveTest:'حفظ واختبار',test:'اختبار',enabled:'مفعّل',disable:'تعطيل',enable:'تفعيل',models:'النماذج',defModel:'النموذج الافتراضي لهذا الاتصال',priceIn:'سعر الإدخال لكل مليون توكن (اختياري)',priceOut:'سعر الإخراج لكل مليون توكن (اختياري)',budget:'حد الميزانية بالدولار (اختياري)',
+status:'الحالة',untested:'لم يُختبر',statusOk:'متصل',statusAuth:'مصادقة مرفوضة',statusRate:'حد معدل',statusServer:'خطأ خادم',statusNet:'خطأ شبكة',statusReq:'طلب مرفوض',lastTest:'آخر اختبار',
+unavail:'غير متاح من المزوّد',est:'تقديري',local:'محسوب محليًا',provConf:'مؤكد من المزوّد',resetIn:'إعادة التعيين خلال',resetPassed:'انتهى الموعد — بانتظار تحديث حالة المزوّد',lastUpd:'آخر تحديث',refresh:'تحديث الحالة',reqs:'الطلبات',tokens:'التوكنز',
+session:'استخدام الجلسة',weekly:'الحصة الأسبوعية',modelQuota:'حصة النموذج',plan:'الخطة / الفوترة',tally:'إجمالي الاستخدام عبر هذا التطبيق',cost:'التكلفة التقديرية',succ:'نجاح',fail:'فشل',
+route:'وضع التوجيه',manual:'يدوي',priorityM:'بالأولوية',reliab:'الأكثر موثوقية',costM:'الأقل تكلفة',autoFb:'تحويل تلقائي لاتصال بديل عند الفشل',maxTok:'أقصى طول للرد (توكن)',sys:'تعليمات نظام عامة (اختياري)',lang:'اللغة',theme:'المظهر',light:'فاتح',dark:'داكن',
+project:'المشروع',noProject:'بدون مشروع',newProject:'مشروع جديد',projName:'اسم المشروع',memory:'ذاكرة المشروع',addMem:'أضف معلومة للذاكرة',
+cp:'حفظ نقطة',cpT:'حفظ نقطة استئناف (Checkpoint)',summary:'ملخص ما تم',nextStep:'الخطوة التالية',resume:'استكمال المهمة',cpList:'نقاط الاستئناف',
+ctxExp:'تصدير حزمة السياق',ctxImp:'استيراد حزمة سياق',paste:'ألصق JSON هنا أو اختر ملفًا',doImport:'استيراد',importOk:'تم الاستيراد في محادثة جديدة',importBad:'ملف غير صالح',share:'مشاركة',
+exportMd:'تصدير Markdown',exportJson:'تصدير JSON',delChat:'حذف المحادثة',delWarn:'سيُحذف سجل الرسائل ونقاط الاستئناف الخاصة بهذه المحادثة نهائيًا. ذاكرة المشروع لا تتأثر.',delProj:'حذف المشروع',delProjWarn:'تُحذف ذاكرة المشروع، وتبقى محادثاته بدون مشروع.',delConn:'حذف الاتصال',delConnWarn:'سيُحذف المفتاح المشفر من هذا الجهاز. لإبطال المفتاح نفسه ادخل على لوحة المزوّد.',
+partial:'الرد غير مكتمل',cont:'تابع',switched:'تم التحويل',because:'بسبب',viaRoute:'سبب الاختيار',
+eAuth:'رفض المزوّد المصادقة (401/403). راجع المفتاح والصلاحيات.',eRate:'تم بلوغ حد المعدل (429).',eServer:'خطأ مؤقت من المزوّد.',eNet:'تعذّر الوصول للشبكة أو المزوّد (قد يكون CORS أو انقطاع).',eReq:'رفض المزوّد الطلب.',
+rMan:'اختيارك اليدوي',rPri:'أعلى أولوية متاح',rRel:'الأعلى موثوقية حسب نتائجك',rCost:'الأقل تكلفة حسب أسعارك',rFb:'الاتصال السابق فشل',
+pickModel:'اختر النموذج',autoNote:'عند اختيار نموذج يتحول الوضع إلى «يدوي».',noModels:'لا توجد نماذج مسموحة. افتح «النماذج» في الاتصال.',filter:'تصفية…',addManual:'أضف معرّف نموذج يدويًا',
+wipe:'مسح كل البيانات المحلية',wipeWarn:'سيُحذف كل شيء (محادثات، مشروعات، اتصالات، مفاتيح).',
+limits:'حدود المزوّد',ask:'ملاحظة: قيم الحدود تظهر فقط إن أعادها المزوّد في ترويسات الاستجابة وكانت مكشوفة للمتصفح.',
+notSup:'غير مدعوم في نسخة الأندرويد',notSupD:'بوابة API المحلية، مساحة عمل الملفات/Git، وتشغيل الأوامر — غير منفّذة في هذا الإصدار. الفيديو يُرسل كلقطات (حتى 8) وليس كملف فيديو.',
+attachBig:'الملف أكبر من 200KB',keyErr:'تعذّر تشفير المفتاح على هذا الجهاز',needKey:'أدخل مفتاح API',untitled:'محادثة جديدة',resumeMsg:'استكمل المهمة من آخر نقطة محفوظة. تحقق من الحالة الحالية أولًا ثم تابع الخطوة التالية.',contMsg:'أكمل من حيث توقفت تمامًا دون تكرار.',moveP:'نقل إلى مشروع',ctxPkg:'حزمة السياق (بدون أسرار)',nothing:'لا شيء',
+presetCustom:'OpenAI-compatible مخصص',log:'السجل',testAll:'اختبار كل الاتصالات',dotG:'شغّال',dotR:'الليميت خلصان',dotA:'خطأ (مصادقة/شبكة/خادم)',dotN:'لم يُختبر',useThis:'استخدمه في هذه المحادثة',autoTest:'اختبار الاتصالات تلقائيًا عند فتح التطبيق وعند انتهاء مهلة الانتظار',req:'الطلب (Request)',res:'الرد (Response)',clearLog:'مسح السجل',copyAll:'نسخ كل السجل',noLog:'لا توجد طلبات بعد.',logNote:'كل طلب ورد في صفحة واحدة. المفاتيح لا تُسجَّل أبدًا.',seeAtt:'انظر المرفقات.',micDenied:'تعذّر الوصول للميكروفون (اسمح بالإذن)',transcribing:'جارٍ تفريغ الصوت…',sttTitle:'التفريغ الصوتي',sttConn:'اتصال التفريغ',sttMode:'طريقة التفريغ',sttModel:'نموذج التفريغ (اتركه فارغًا للافتراضي)',auto:'تلقائي',sttNote:'يعمل مع الاتصالات المتوافقة مع OpenAI فقط (Anthropic لا يدعم الصوت). الإعدادات الافتراضية تقديرية وقابلة للتعديل.',noStt:'لا يوجد اتصال يدعم التفريغ الصوتي (أضف اتصال OpenAI/Groq/Gemini)',unsupportedFile:'نوع ملف غير مدعوم',fileBig:'الملف كبير جدًا',imgFail:'تعذّر قراءة الملف',videoWork:'جارٍ استخراج لقطات من الفيديو…',videoNote:'فيديو',viewImg:'عرض',sttFail:'فشل التفريغ',handoff:'تم نقل المحادثة كاملة (كل الرسائل + نقطة الاستئناف) إلى الاتصال التالي'},
+en:{newChat:'New chat',search:'Search chats…',projects:'Projects',recent:'Recent',connections:'Connections',usage:'Usage',settings:'Settings',send:'Send',stop:'Stop',ph:'Type your message…',saved:'✓ Saved',saving:'Saving…',copy:'Copy',copied:'Copied',regen:'Regenerate',retry:'Retry',cancel:'Cancel',save:'Save',del:'Delete',rename:'Rename',close:'Close',ok:'OK',
+emptyT:'Start a new task',emptyD:'Pick a connection and model, then type. Chats auto-save and can be resumed from the last checkpoint with any other connection.',
+noConn:'No connections yet. Add one from the Connections page.',noUsable:'No usable connection right now (disabled, no model selected, cooling down, or over budget).',
+addConn:'Add connection',editConn:'Edit connection',label:'Connection name',provider:'Provider',apiKey:'API key',keepKey:'(leave empty to keep current key)',baseUrl:'API base URL',saveTest:'Save & test',test:'Test',enabled:'Enabled',disable:'Disable',enable:'Enable',models:'Models',defModel:'Default model for this connection',priceIn:'Input price per 1M tokens (optional)',priceOut:'Output price per 1M tokens (optional)',budget:'Budget limit in USD (optional)',
+status:'Status',untested:'Not tested',statusOk:'Connected',statusAuth:'Auth rejected',statusRate:'Rate limited',statusServer:'Server error',statusNet:'Network error',statusReq:'Request rejected',lastTest:'Last test',
+unavail:'Not available from provider',est:'Estimated',local:'Computed locally',provConf:'Provider-confirmed',resetIn:'Resets in',resetPassed:'Reset time passed — waiting for provider status refresh',lastUpd:'Last updated',refresh:'Refresh status',reqs:'Requests',tokens:'Tokens',
+session:'Session usage',weekly:'Weekly quota',modelQuota:'Model quota',plan:'Plan / billing',tally:'Total usage through this app',cost:'Estimated cost',succ:'Success',fail:'Failed',
+route:'Routing mode',manual:'Manual',priorityM:'Priority',reliab:'Reliability',costM:'Cost-aware',autoFb:'Auto-fallback to another connection on failure',maxTok:'Max reply length (tokens)',sys:'Global system instructions (optional)',lang:'Language',theme:'Theme',light:'Light',dark:'Dark',
+project:'Project',noProject:'No project',newProject:'New project',projName:'Project name',memory:'Project memory',addMem:'Add a memory item',
+cp:'Save checkpoint',cpT:'Save resume checkpoint',summary:'What has been done',nextStep:'Next step',resume:'Resume task',cpList:'Checkpoints',
+ctxExp:'Export context package',ctxImp:'Import context package',paste:'Paste JSON here or choose a file',doImport:'Import',importOk:'Imported into a new chat',importBad:'Invalid file',share:'Share',
+exportMd:'Export Markdown',exportJson:'Export JSON',delChat:'Delete chat',delWarn:'Messages and checkpoints of this chat will be permanently deleted. Project memory is not affected.',delProj:'Delete project',delProjWarn:'Project memory is deleted; its chats stay without a project.',delConn:'Delete connection',delConnWarn:'The encrypted key is removed from this device. Revoke the key itself in the provider console.',
+partial:'Reply incomplete',cont:'Continue',switched:'Switched',because:'because',viaRoute:'Why this connection',
+eAuth:'Provider rejected authentication (401/403). Check key and permissions.',eRate:'Rate limit reached (429).',eServer:'Temporary provider error.',eNet:'Could not reach the provider (could be CORS or offline).',eReq:'Provider rejected the request.',
+rMan:'your manual choice',rPri:'highest-priority available',rRel:'best reliability from your history',rCost:'cheapest by your prices',rFb:'previous connection failed',
+pickModel:'Choose model',autoNote:'Picking a model switches routing to Manual.',noModels:'No allowed models. Open “Models” on the connection.',filter:'Filter…',addManual:'Add a model id manually',
+wipe:'Wipe all local data',wipeWarn:'Everything is deleted (chats, projects, connections, keys).',
+limits:'Provider limits',ask:'Note: limits appear only if the provider returns them in response headers and they are exposed to the browser.',
+notSup:'Not supported in the Android build',notSupD:'Local API gateway, file/Git workspace and command execution are not implemented. Video is sent as sampled frames (up to 8), not as a video file.',
+attachBig:'File is larger than 200KB',keyErr:'Could not encrypt the key on this device',needKey:'Enter an API key',untitled:'New chat',resumeMsg:'Resume the task from the last saved checkpoint. Verify the current state first, then continue with the next step.',contMsg:'Continue exactly where you stopped, without repeating.',moveP:'Move to project',ctxPkg:'Context package (no secrets)',nothing:'Nothing',
+presetCustom:'Custom OpenAI-compatible',log:'Log',testAll:'Test all connections',dotG:'Working',dotR:'Limit exhausted',dotA:'Error (auth/network/server)',dotN:'Not tested',useThis:'Use for this chat',autoTest:'Auto-test connections on app start and when a wait period ends',req:'Request',res:'Response',clearLog:'Clear log',copyAll:'Copy whole log',noLog:'No requests yet.',logNote:'Every request/response on one page. API keys are never logged.',seeAtt:'See attachments.',micDenied:'Microphone access denied (grant permission)',transcribing:'Transcribing audio…',sttTitle:'Voice transcription',sttConn:'Transcription connection',sttMode:'Transcription method',sttModel:'Transcription model (empty = default)',auto:'Auto',sttNote:'Works with OpenAI-compatible connections only (Anthropic has no audio). Defaults are best-effort and editable.',noStt:'No connection supports transcription (add OpenAI/Groq/Gemini)',unsupportedFile:'Unsupported file type',fileBig:'File too large',imgFail:'Could not read file',videoWork:'Extracting video frames…',videoNote:'Video',viewImg:'View',sttFail:'Transcription failed',handoff:'Full conversation (all messages + checkpoint) handed to the next connection'}
+};
+const t=k=>(T[S?.lang||'ar'][k]??T.en[k]??k);
+
+/* ====================== storage (IndexedDB) ====================== */
+const idb=(()=>{let p;const open=()=>p||(p=new Promise((res,rej)=>{const r=indexedDB.open('continuity-ai',1);r.onupgradeneeded=()=>r.result.createObjectStore('kv');r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error)}));
+const tx=async(m,f)=>{const d=await open();return new Promise((res,rej)=>{const x=d.transaction('kv',m);const q=f(x.objectStore('kv'));x.oncomplete=()=>res(q&&q.result);x.onerror=()=>rej(x.error)})};
+return{get:k=>tx('readonly',s=>s.get(k)),set:(k,v)=>tx('readwrite',s=>s.put(v,k)),clear:()=>tx('readwrite',s=>s.clear()),del:k=>tx('readwrite',s=>s.delete(k))}})();
+
+/* ====================== secrets (AES-GCM, non-extractable key) ====================== */
+const b64=u=>btoa(String.fromCharCode(...new Uint8Array(u)));
+const unb64=s=>Uint8Array.from(atob(s),c=>c.charCodeAt(0));
+async function aesKey(){let k=await idb.get('aeskey');if(!k){k=await crypto.subtle.generateKey({name:'AES-GCM',length:256},false,['encrypt','decrypt']);await idb.set('aeskey',k)}return k}
+async function encSecret(txt){const k=await aesKey();const iv=crypto.getRandomValues(new Uint8Array(12));const ct=await crypto.subtle.encrypt({name:'AES-GCM',iv},k,new TextEncoder().encode(txt));return{iv:b64(iv),ct:b64(ct)}}
+async function decSecret(o){const k=await aesKey();const pt=await crypto.subtle.decrypt({name:'AES-GCM',iv:unb64(o.iv)},k,unb64(o.ct));return new TextDecoder().decode(pt)}
+
+/* ====================== state ====================== */
+const DEF=()=>({v:1,lang:'ar',theme:matchMedia&&matchMedia('(prefers-color-scheme:dark)').matches?'dark':'light',conns:[],projects:[],chats:[],cur:null,settings:{route:'manual',fallback:true,maxTokens:4096,system:''}});
+let S=null,view='chat',busy=false,ac=null,pending=[],saveT=null,saveState='saved',query='';
+function save(){saveState='saving';paintSave();if(S&&typeof renderDots==='function')renderDots();clearTimeout(saveT);saveT=setTimeout(async()=>{try{await idb.set('state',JSON.parse(JSON.stringify(S)))}catch(e){console.error(e)}saveState='saved';paintSave()},350)}
+function paintSave(){const e=$('#sv');if(e)e.textContent=saveState==='saved'?t('saved'):t('saving')}
+const chat=()=>S.chats.find(c=>c.id===S.cur);
+const conn=id=>S.conns.find(c=>c.id===id);
+const proj=id=>S.projects.find(p=>p.id===id);
+function toast(m){const e=$('#toast');e.firstElementChild.textContent=m;e.classList.add('on');clearTimeout(toast.t);toast.t=setTimeout(()=>e.classList.remove('on'),1800)}
+async function copy(txt){try{await navigator.clipboard.writeText(txt)}catch(e){const a=document.createElement('textarea');a.value=txt;document.body.appendChild(a);a.select();try{document.execCommand('copy')}catch(_){}a.remove()}toast(t('copied'))}
+async function shareText(name,text){const P=window.Capacitor&&window.Capacitor.Plugins;
+ try{if(P&&P.Filesystem&&P.Share){const r=await P.Filesystem.writeFile({path:name,data:text,directory:'CACHE',encoding:'utf8'});await P.Share.share({title:name,url:r.uri});return true}}catch(e){}
+ try{if(navigator.share){await navigator.share({title:name,text});return true}}catch(e){}
+ try{const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([text],{type:'text/plain'}));a.download=name;document.body.appendChild(a);a.click();a.remove();return true}catch(e){}return false}
+
+/* ====================== markdown (safe, minimal) ====================== */
+function md(src){
+ const blocks=[];const blk=(l,c)=>{blocks.push(`<div class="code"><div class="ch"><span>${esc(l||'code')}</span><button data-act="copycode">${t('copy')}</button></div><pre>${esc(c.replace(/\n$/,''))}</pre></div>`);return `\u0000${blocks.length-1}\u0000`};
+ let s=String(src||'').replace(/```([\w+-]*)\n?([\s\S]*?)```/g,(_,l,c)=>blk(l,c)).replace(/```([\w+-]*)\n?([\s\S]*)$/,(_,l,c)=>blk(l,c));
+ s=esc(s);
+ const inl=x=>x.replace(/`([^`\n]+)`/g,'<code>$1</code>').replace(/\*\*([^*\n]+)\*\*/g,'<b>$1</b>').replace(/\[([^\]\n]+)\]\((https?:\/\/[^)\s]+)\)/g,'<a href="$2" target="_blank" rel="noopener">$1</a>');
+ const out=[];let list=null,para=[];
+ const flushP=()=>{if(para.length){out.push('<p>'+inl(para.join('<br>'))+'</p>');para=[]}};
+ const flushL=()=>{if(list){out.push(`<${list.t}>`+list.i.map(i=>'<li>'+inl(i)+'</li>').join('')+`</${list.t}>`);list=null}};
+ for(const ln of s.split('\n')){let m;
+  if(m=ln.match(/^(#{1,3})\s+(.*)$/)){flushP();flushL();out.push(`<h${m[1].length}>${inl(m[2])}</h${m[1].length}>`)}
+  else if(m=ln.match(/^\s*[-*]\s+(.*)$/)){flushP();if(!list||list.t!=='ul'){flushL();list={t:'ul',i:[]}}list.i.push(m[1])}
+  else if(m=ln.match(/^\s*\d+[.)]\s+(.*)$/)){flushP();if(!list||list.t!=='ol'){flushL();list={t:'ol',i:[]}}list.i.push(m[1])}
+  else if(!ln.trim()){flushP();flushL()}
+  else if(/^\u0000\d+\u0000$/.test(ln.trim())){flushP();flushL();out.push(ln.trim())}
+  else{flushL();para.push(ln)}}
+ flushP();flushL();
+ return out.join('').replace(/\u0000(\d+)\u0000/g,(_,i)=>blocks[+i]);
+}
+
+/* ====================== providers ====================== */
+const PRESETS={
+ anthropic:{name:'Anthropic (Claude)',type:'anthropic',base:'https://api.anthropic.com/v1'},
+ openai:{name:'OpenAI',type:'openai',base:'https://api.openai.com/v1'},
+ openrouter:{name:'OpenRouter',type:'openai',base:'https://openrouter.ai/api/v1'},
+ groq:{name:'Groq',type:'openai',base:'https://api.groq.com/openai/v1'},
+ gemini:{name:'Google Gemini (OpenAI-compat)',type:'openai',base:'https://generativelanguage.googleapis.com/v1beta/openai'},
+ local:{name:'Ollama / LM Studio (local)',type:'openai',base:'http://192.168.1.10:11434/v1'},
+ custom:{name:'Custom OpenAI-compatible',type:'openai',base:''}
+};
+class PErr extends Error{constructor(kind,status,msg,ra){super(msg||kind);this.kind=kind;this.status=status;this.ra=ra}}
+function kindOf(st){return st===401||st===403?'auth':st===429?'rate':(st===408||st>=500)?'server':'request'}
+function parseDur(s){if(s==null||s==='')return NaN;if(/^[\d.]+$/.test(s))return parseFloat(s)*1000;let ms=0,m,ok=false;const re=/([\d.]+)(ms|s|m|h|d)/g;const U={ms:1,s:1e3,m:6e4,h:36e5,d:864e5};while(m=re.exec(s)){ms+=parseFloat(m[1])*U[m[2]];ok=true}return ok?ms:NaN}
+function retryAfter(h){const v=h.get('retry-after');if(!v)return null;if(/^\d+$/.test(v))return +v*1000;const d=Date.parse(v);return isNaN(d)?null:Math.max(0,d-Date.now())}
+async function hdrs(c){const h={'content-type':'application/json'};const k=c.enc?await decSecret(c.enc):'';if(c.type==='anthropic'){h['x-api-key']=k;h['anthropic-version']='2023-06-01';h['anthropic-dangerous-direct-browser-access']='true'}else if(k)h.authorization='Bearer '+k;return h}
+function captureLimits(c,h){const L={at:Date.now(),src:'provider'};let any=false;
+ for(const [k,n] of [['requests','req'],['tokens','tok']]){let rem,lim,rs,at;
+  if(c.type==='anthropic'){rem=h.get(`anthropic-ratelimit-${k}-remaining`);lim=h.get(`anthropic-ratelimit-${k}-limit`);rs=h.get(`anthropic-ratelimit-${k}-reset`);at=rs?Date.parse(rs):null}
+  else{rem=h.get(`x-ratelimit-remaining-${k}`);lim=h.get(`x-ratelimit-limit-${k}`);rs=h.get(`x-ratelimit-reset-${k}`);const d=parseDur(rs);at=isNaN(d)?null:Date.now()+d}
+  if(rem!=null||lim!=null||rs){L[n]={rem:rem!=null?+rem:null,lim:lim!=null?+lim:null,resetAt:at&&!isNaN(at)?at:null};any=true}}
+ if(any){c.limits=L;save()}}
+async function pfetch(c,path,opt={}){let r;try{const H=await hdrs(c);if(opt.form)delete H['content-type'];r=await fetch(c.base.replace(/\/+$/,'')+path,{...opt,headers:H})}catch(e){if(e.name==='AbortError')throw e;throw new PErr('network',0,e.message)}
+ captureLimits(c,r.headers);
+ if(!r.ok){let m='';try{const j=await r.json();m=(j.error&&(j.error.message||j.error))||j.message||''}catch(e){}throw new PErr(kindOf(r.status),r.status,String(m).slice(0,300),retryAfter(r.headers))}
+ return r}
+async function listModels(c){const r=await pfetch(c,c.type==='anthropic'?'/models?limit=1000':'/models');const j=await r.json();return(j.data||j.models||[]).map(m=>m.id||m.name).filter(Boolean)}
+async function testConn(c){try{c.models=await listModels(c);c.status={kind:'ok',at:Date.now()};save();return true}catch(e){c.status={kind:e.kind||'request',at:Date.now(),msg:e.message};if(e.kind==='rate'&&e.ra)c.cooldownUntil=Date.now()+e.ra;save();return false}}
+async function* sse(resp){const rd=resp.body.getReader(),dec=new TextDecoder();let buf='';for(;;){const{done,value}=await rd.read();if(done)break;buf=(buf+dec.decode(value,{stream:true})).replace(/\r\n/g,'\n');let i;while((i=buf.indexOf('\n\n'))>=0){yield buf.slice(0,i);buf=buf.slice(i+2)}}if(buf.trim())yield buf}
+async function callStream(c,model,msgs,system,onDelta,signal,maxTok){
+ let path,body;
+ if(c.type==='anthropic'){path='/messages';body={model,max_tokens:maxTok||S.settings.maxTokens,stream:true,messages:msgs};if(system)body.system=system}
+ else{path='/chat/completions';body={model,stream:true,stream_options:{include_usage:true},...(maxTok?{max_tokens:maxTok}:{}),messages:system?[{role:'system',content:system},...msgs]:msgs}}
+ const r=await pfetch(c,path,{method:'POST',body:JSON.stringify(body),signal});
+ const u={in:0,out:0};
+ try{for await(const raw of sse(r)){const d=raw.split('\n').filter(l=>l.startsWith('data:')).map(l=>l.slice(5).trim()).join('');if(!d||d==='[DONE]')continue;let ev;try{ev=JSON.parse(d)}catch(e){continue}
+  if(ev.error)throw new PErr('server',0,ev.error.message||JSON.stringify(ev.error));
+  if(c.type==='anthropic'){if(ev.type==='message_start'&&ev.message&&ev.message.usage)u.in=ev.message.usage.input_tokens||0;else if(ev.type==='content_block_delta'&&ev.delta&&ev.delta.type==='text_delta')onDelta(ev.delta.text);else if(ev.type==='message_delta'&&ev.usage)u.out=ev.usage.output_tokens||0}
+  else{const x=ev.choices&&ev.choices[0]&&ev.choices[0].delta&&ev.choices[0].delta.content;if(x)onDelta(x);if(ev.usage){u.in=ev.usage.prompt_tokens||0;u.out=ev.usage.completion_tokens||0}}}}
+ catch(e){if(e instanceof PErr||e.name==='AbortError')throw e;throw new PErr('network',0,e.message)}
+ return u}
+
+/* ====================== router ====================== */
+const newUsage=()=>({reqs:0,succ:0,fail:0,inTok:0,outTok:0,cost:0});
+function modelFor(c,ch){if(ch&&ch.connId===c.id&&ch.model&&(c.allowed||[]).includes(ch.model))return ch.model;return(c.defModel&&(c.allowed||[]).includes(c.defModel))?c.defModel:(c.allowed||[])[0]}
+function usable(c,ch){return c.enabled&&(c.type!=='anthropic'||c.enc)&&!(c.cooldownUntil>Date.now())&&!(c.status&&c.status.kind==='auth')&&!(c.budget&&c.usage.cost>=c.budget)&&!!modelFor(c,ch)}
+const rel=c=>{const n=c.usage.succ+c.usage.fail;return n?c.usage.succ/n:.5};
+const priceOf=c=>c.price&&(c.price.in||c.price.out)?(+c.price.in||0)+(+c.price.out||0):Infinity;
+function plan(ch,exclude=[]){
+ const all=S.conns.filter(c=>usable(c,ch)&&!exclude.includes(c.id));const mode=S.settings.route;
+ const byPri=[...all].sort((a,b)=>a.priority-b.priority);let list,why;
+ if(mode==='reliability'){list=[...byPri].sort((a,b)=>rel(b)-rel(a));why='rRel'}
+ else if(mode==='cost'){list=[...byPri].sort((a,b)=>priceOf(a)-priceOf(b));why='rCost'}
+ else if(mode==='priority'){list=byPri;why='rPri'}
+ else{const first=all.find(c=>c.id===ch.connId);list=first?[first,...byPri.filter(c=>c!==first)]:byPri;why='rMan'}
+ return list.map((c,i)=>({c,model:modelFor(c,ch),reason:t(i===0?why:'rPri')}))}
+
+/* ====================== log / ping / status dots ====================== */
+const cut=(s,n=30000)=>{s=String(s??'');return s.length>n?s.slice(0,n)+'\n…[truncated]':s};
+function logAdd(e){S.log=S.log||[];e.id=uid();e.at=Date.now();S.log.unshift(e);if(S.log.length>60)S.log.length=60;return e}
+const pinging=new Set();
+async function pingConn(c){
+ if(pinging.has(c.id))return;pinging.add(c.id);renderDots();
+ const model=modelFor(c)||(c.models||[])[0];const t0=Date.now();
+ const ent=logAdd({kind:'test',conn:c.label,model:model||'—',req:{system:'',messages:[{role:'user',content:'ping'}]},res:null});
+ try{if(!model)throw new PErr('request',0,'no model selected');
+  const u=await callStream(c,model,[{role:'user',content:'ping'}],'',()=>{},undefined,8);
+  c.status={kind:'ok',at:Date.now()};c.cooldownUntil=0;c.coolStep=0;ent.res={ok:true,usage:u,ms:Date.now()-t0,limits:c.limits}}
+ catch(e){const k=e.kind||'network';c.status={kind:k,at:Date.now(),msg:e.message};
+  if(k==='rate'){c.coolStep=e.ra?0:Math.min((c.coolStep||30000)*2,1800000);c.cooldownUntil=Date.now()+(e.ra||c.coolStep)}
+  ent.res={ok:false,error:`${k} ${e.status||''} ${e.message||''}`.trim(),ms:Date.now()-t0,limits:c.limits}}
+ pinging.delete(c.id);save();renderDots();if(view==='conns'||view==='usage'||view==='log')renderView()}
+const pingAll=()=>Promise.all(S.conns.filter(c=>c.enabled).map(pingConn));
+function dotState(c){if(pinging.has(c.id))return'p';const k=c.status&&c.status.kind;if(k==='rate'||(c.budget&&c.usage.cost>=c.budget))return'r';if(k==='ok')return'g';return k?'a':'n'}
+function renderDots(){const e=$('#dots');if(!e||!S)return;const l=[...S.conns].sort((a,b)=>a.priority-b.priority);const ch=chat();
+ e.style.display=l.length?'flex':'none';
+ e.innerHTML=l.map((c,i)=>`<button class="dot ${dotState(c)} ${ch&&ch.connId===c.id?'act':''}" data-act="dot" data-id="${c.id}" title="${esc(c.label)}">${i+1}</button>`).join('')+`<button class="ghost" data-act="testall" title="${esc(t('testAll'))}">↻</button>`}
+function dotDialog(id){const c=conn(id);const st=dotState(c);const txt={g:t('dotG'),r:t('dotR'),a:t('dotA'),n:t('dotN'),p:'…'}[st];
+ modal(`<h3>${esc(c.label)}</h3>${row(t('status'),`<b style="color:var(--${st==='g'?'ok':st==='r'?'danger':st==='a'?'warn':'muted'})">${txt}</b>`)}
+ ${c.status&&c.status.msg&&c.status.kind!=='ok'?`<div class="err">${esc(c.status.msg)}</div>`:''}
+ ${c.cooldownUntil>Date.now()?row('Retry-After <span class="badge est">'+t('est')+'</span>',resetSpan(c.cooldownUntil)):''}
+ ${row(t('lastTest'),fmtDate(c.status&&c.status.at))}${row(t('defModel'),`<span dir="ltr">${esc(modelFor(c)||'—')}</span>`)}
+ <div class="row2"><button class="pri" data-act="dotping" data-id="${c.id}">${t('test')}</button>${chat()?`<button data-act="dotuse" data-id="${c.id}">${t('useThis')}</button>`:''}<button data-act="closem">${t('close')}</button></div>`)}
+function logText(){return(S.log||[]).map(e=>`=== ${fmtDate(e.at)} | ${e.kind} | ${e.conn} | ${e.model} | ${e.res?(e.res.ok?'OK':'FAIL'):'…'} ${e.res&&e.res.ms?e.res.ms+'ms':''}\n--- REQUEST\n${e.req.system?'[system]\n'+e.req.system+'\n':''}${e.req.messages.map(m=>`[${m.role}] ${m.content}`).join('\n')}\n--- RESPONSE\n${e.res?(e.res.text||'')+(e.res.error?'\n[ERROR] '+e.res.error:''):''}`).join('\n\n')}
+function logHTML(){const L=S.log||[];return `<div class="page-h"><h2>${t('log')}</h2><div><button data-act="logcopy">${t('copyAll')}</button> <button class="dng" data-act="logclear">${t('clearLog')}</button></div></div><p class="muted">${t('logNote')}</p>
+ ${L.length?L.map(e=>`<details class="lg"><summary>${e.res?(e.res.ok?'✅':'❌'):'⏳'} ${fmtDate(e.at)} · ${esc(e.conn)} · <span dir="ltr">${esc(e.model)}</span> · ${e.kind}${e.res&&e.res.ms?' · '+e.res.ms+'ms':''}${e.res&&e.res.usage?` · ${e.res.usage.in}↑ ${e.res.usage.out}↓`:''}</summary>
+ <h5>${t('req')}</h5><pre>${esc((e.req.system?'[system]\n'+e.req.system+'\n\n':'')+e.req.messages.map(m=>`[${m.role}] ${m.content}`).join('\n\n'))}</pre>
+ <h5>${t('res')}</h5><pre>${esc((e.res&&e.res.text||'')+(e.res&&e.res.error?'\n[ERROR] '+e.res.error:''))}</pre></details>`).join(''):`<p class="muted">${t('noLog')}</p>`}`}
+
+/* ====================== attachments & voice ====================== */
+const readDataUrl=f=>new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(r.result);r.onerror=rej;r.readAsDataURL(f)});
+const isTextFile=f=>f.type.startsWith('text/')||/\.(txt|md|json|csv|js|ts|py|html|css|xml|ya?ml|log|kt|java|sql|ini|sh)$/i.test(f.name);
+function drawScaled(src,w,h,max,q){const k=Math.min(1,max/Math.max(w,h));const cw=Math.round(w*k),ch=Math.round(h*k);const cv=document.createElement('canvas');cv.width=cw;cv.height=ch;const x=cv.getContext('2d');x.fillStyle='#fff';x.fillRect(0,0,cw,ch);x.drawImage(src,0,0,cw,ch);return cv.toDataURL('image/jpeg',q)}
+async function imgAtt(f){const url=URL.createObjectURL(f);try{const im=await new Promise((r,j)=>{const i=new Image();i.onload=()=>r(i);i.onerror=j;i.src=url});
+ return{type:'image',name:f.name,mime:'image/jpeg',dataUrl:drawScaled(im,im.naturalWidth,im.naturalHeight,1600,.85),thumb:drawScaled(im,im.naturalWidth,im.naturalHeight,160,.7)}}finally{URL.revokeObjectURL(url)}}
+async function videoAtts(f,n=8){const url=URL.createObjectURL(f);const v=document.createElement('video');v.muted=true;v.playsInline=true;v.preload='auto';
+ const once=(ev)=>new Promise((res,rej)=>{const to=setTimeout(()=>rej(new Error('timeout')),15000);v.addEventListener(ev,()=>{clearTimeout(to);res()},{once:true});v.addEventListener('error',()=>{clearTimeout(to);rej(new Error('video'))},{once:true})});
+ try{v.src=url;await once('loadedmetadata');const dur=v.duration;if(!isFinite(dur)||dur<=0)throw new Error('dur');const g=uid(),out=[];
+  for(let i=0;i<n;i++){const ts=dur*(i+.5)/n;v.currentTime=ts;await once('seeked');
+   const mm=Math.floor(ts/60),ss=String(Math.floor(ts%60)).padStart(2,'0');
+   out.push({type:'image',g,hidden:true,name:`${f.name} @${mm}:${ss}`,mime:'image/jpeg',dataUrl:drawScaled(v,v.videoWidth,v.videoHeight,1024,.8),thumb:drawScaled(v,v.videoWidth,v.videoHeight,120,.6)})}
+  const d=Math.round(dur);out.unshift({type:'vnote',g,name:f.name,text:`[${t('videoNote')}: "${f.name}" — ${Math.floor(d/60)}:${String(d%60).padStart(2,'0')}, ${n} frames sampled evenly]`});return out}
+ finally{URL.revokeObjectURL(url);v.removeAttribute('src')}}
+async function addFiles(files){for(const f of files){try{
+  if(f.type.startsWith('image/'))pending.push(await imgAtt(f));
+  else if(f.type.startsWith('video/')){toast(t('videoWork'));pending.push(...await videoAtts(f))}
+  else if(f.type.startsWith('audio/')){if(f.size>25e6)toast(t('fileBig'));else await doTranscribe(f)}
+  else if(f.type==='application/pdf'||/\.pdf$/i.test(f.name)){if(f.size>10e6)toast(t('fileBig')+': '+f.name);else pending.push({type:'pdf',name:f.name,mime:'application/pdf',dataUrl:await readDataUrl(f),size:f.size})}
+  else if(isTextFile(f)){if(f.size>500e3)toast(t('fileBig')+': '+f.name);else pending.push({type:'text',name:f.name,text:await f.text()})}
+  else toast(t('unsupportedFile')+': '+f.name)}catch(e){toast(t('imgFail')+': '+f.name)}}
+ renderChips()}
+/* voice: record -> transcribe through an OpenAI-compatible connection */
+let rec=null;
+function paintMic(){const b=$('#b-mic');if(!b)return;if(rec){const s=Math.floor((Date.now()-rec.t0)/1000);b.classList.add('rec');b.textContent='⏹ '+Math.floor(s/60)+':'+String(s%60).padStart(2,'0')}else{b.classList.remove('rec');b.textContent='🎤'}}
+async function micToggle(){
+ if(rec){rec.mr.stop();return}
+ let stream;try{stream=await navigator.mediaDevices.getUserMedia({audio:true})}catch(e){return toast(t('micDenied'))}
+ const mr=new MediaRecorder(stream),chunks=[],t0=Date.now();
+ mr.ondataavailable=e=>{if(e.data.size)chunks.push(e.data)};
+ mr.onstop=async()=>{stream.getTracks().forEach(x=>x.stop());clearInterval(rec.tm);rec=null;paintMic();const blob=new Blob(chunks,{type:mr.mimeType||'audio/webm'});if(blob.size>1500)await doTranscribe(blob)};
+ rec={mr,t0,tm:setInterval(()=>{paintMic();if(Date.now()-t0>300000)mr.stop()},500)};mr.start();paintMic()}
+async function toWavB64(blob){const ctx=new(window.AudioContext||window.webkitAudioContext)();const buf=await ctx.decodeAudioData(await blob.arrayBuffer());if(ctx.close)ctx.close();
+ const sr=16000,off=new OfflineAudioContext(1,Math.max(1,Math.ceil(buf.duration*sr)),sr),s=off.createBufferSource();s.buffer=buf;s.connect(off.destination);s.start();const d=(await off.startRendering()).getChannelData(0);
+ const dv=new DataView(new ArrayBuffer(44+d.length*2)),w=(o,x)=>{for(let i=0;i<x.length;i++)dv.setUint8(o+i,x.charCodeAt(i))};
+ w(0,'RIFF');dv.setUint32(4,36+d.length*2,true);w(8,'WAVEfmt ');dv.setUint32(16,16,true);dv.setUint16(20,1,true);dv.setUint16(22,1,true);dv.setUint32(24,sr,true);dv.setUint32(28,sr*2,true);dv.setUint16(32,2,true);dv.setUint16(34,16,true);w(36,'data');dv.setUint32(40,d.length*2,true);
+ for(let i=0;i<d.length;i++){const x=Math.max(-1,Math.min(1,d[i]));dv.setInt16(44+i*2,x<0?x*0x8000:x*0x7fff,true)}
+ return b64(dv.buffer)}
+function sttPlan(){const s=S.settings.stt||{};const cand=S.conns.filter(c=>c.enabled&&c.type!=='anthropic'&&dotState(c)!=='r');
+ const first=s.connId&&cand.find(c=>c.id===s.connId);const list=first?[first,...cand.filter(c=>c!==first)]:cand;
+ return list.map(c=>{const cfg=c===first;const g=/generativelanguage|gemini/.test(c.base);
+  return{c,mode:cfg&&s.mode&&s.mode!=='auto'?s.mode:(g?'chat':'endpoint'),model:(cfg&&s.model)||(/openai\.com/.test(c.base)?'whisper-1':/groq/.test(c.base)?'whisper-large-v3-turbo':modelFor(c)||'')}})}
+async function transcribeVia(o,blob){const{c,mode,model}=o;
+ if(mode==='endpoint'){const fd=new FormData();fd.append('file',blob,'audio.'+((blob.type||'').includes('mp4')?'m4a':(blob.type||'').includes('wav')?'wav':(blob.type||'').includes('mpeg')?'mp3':'webm'));fd.append('model',model);fd.append('language',S.lang==='ar'?'ar':'en');
+  const r=await pfetch(c,'/audio/transcriptions',{method:'POST',body:fd,form:true});const j=await r.json();return(j.text||'').trim()}
+ const data=await toWavB64(blob);
+ const r=await pfetch(c,'/chat/completions',{method:'POST',body:JSON.stringify({model,messages:[{role:'user',content:[{type:'text',text:'Transcribe this audio verbatim in its original language. Output only the transcript, nothing else.'},{type:'input_audio',input_audio:{data,format:'wav'}}]}]})});
+ const j=await r.json();const m=j.choices&&j.choices[0]&&j.choices[0].message&&j.choices[0].message.content;return(typeof m==='string'?m:Array.isArray(m)?m.map(x=>x.text||'').join(''):'').trim()}
+async function doTranscribe(blob){const list=sttPlan();if(!list.length)return toast(t('noStt'));
+ const b=$('#b-mic');if(b)b.disabled=true;toast(t('transcribing'));let err='';
+ for(const o of list){const ent=logAdd({kind:'stt',conn:o.c.label,model:o.model,req:{system:'',messages:[{role:'user',content:`[audio ${Math.round(blob.size/1024)}KB ${blob.type||''} via ${o.mode}]`}]},res:null});const t0=Date.now();
+  try{const txt=await transcribeVia(o,blob);ent.res={ok:true,text:txt,ms:Date.now()-t0};o.c.status={kind:'ok',at:Date.now()};
+   if(txt){const i=$('#inp');i.value=(i.value?i.value+' ':'')+txt;autosize();i.focus()}save();if(b)b.disabled=false;return}
+  catch(e){err=e.message||String(e);ent.res={ok:false,error:`${e.kind||'error'} ${err}`,ms:Date.now()-t0};if(e.kind==='rate'){o.c.status={kind:'rate',at:Date.now(),msg:err};o.c.cooldownUntil=Date.now()+(e.ra||60000)}}}
+ save();if(b)b.disabled=false;toast(t('sttFail')+(err?': '+err.slice(0,80):''))}
+
+/* ====================== chat engine ====================== */
+function sysFor(ch){const s=[];if(S.settings.system)s.push(S.settings.system);const p=proj(ch.projectId);
+ if(p&&p.memory.length)s.push(`Project memory for "${p.name}":\n`+p.memory.map(m=>'- '+m.text).join('\n'));
+ if(ch.handoff)s.push('Note: this conversation was handed over from another provider/model ('+ch.handoff+'). Earlier assistant replies may come from a different model; continue seamlessly without restarting.');
+ const cp=last(ch.checkpoints);if(cp)s.push(`Latest checkpoint (${fmtDate(cp.at)}):\nDone so far: ${cp.summary}\nNext step: ${cp.next}`);
+ return s.join('\n\n')}
+async function attPart(c,a){let d=null;try{d=await idb.get('att:'+a.id)}catch(e){}
+ if(!d)return{type:'text',text:`[${t('imgFail')}: ${a.name}]`};
+ const b=d.split(',')[1],mt=d.slice(5,d.indexOf(';'));
+ if(c.type==='anthropic')return a.kind==='pdf'?{type:'document',source:{type:'base64',media_type:'application/pdf',data:b}}:{type:'image',source:{type:'base64',media_type:mt,data:b}};
+ return a.kind==='pdf'?{type:'file',file:{filename:a.name,file_data:d}}:{type:'image_url',image_url:{url:d}}}
+async function buildMsgs(ch,m,c){const base=ch.msgs.filter(x=>x!==m&&(x.role==='user'||x.role==='assistant')&&!x.err&&x.content&&x.id!==m.id);
+ const keep=new Set(base.filter(x=>x.atts&&x.atts.length).slice(-6).map(x=>x.id));const a=[];
+ for(const x of base){if(x.atts&&x.atts.length&&keep.has(x.id)){const parts=[{type:'text',text:x.content}];for(const at of x.atts)parts.push(await attPart(c,at));a.push({role:x.role,content:parts})}
+  else a.push({role:x.role,content:x.content+(x.atts&&x.atts.length?'\n'+x.atts.map(z=>'[📎 '+z.name+']').join(' '):'')})}
+ if(m.content){a.push({role:'assistant',content:m.content},{role:'user',content:t('contMsg')})}return a}
+const kindMsg=k=>({auth:t('eAuth'),rate:t('eRate'),server:t('eServer'),network:t('eNet'),request:t('eReq')}[k]||k);
+function paintMsg(m){const el=document.getElementById('m-'+m.id);if(el){const near=$('#view').scrollHeight-$('#view').scrollTop-$('#view').clientHeight<140;el.outerHTML=msgHTML(m,chat());if(near)$('#view').scrollTop=$('#view').scrollHeight}}
+function setBusy(b){busy=b;$('#b-send').textContent=b?'■':'↑';$('#b-send').dataset.act=b?'stop':'send';$('#b-send').title=b?t('stop'):t('send')}
+async function run(ch,resume){
+ if(busy)return;setBusy(true);
+ let m=resume;if(!m){m={id:uid(),role:'assistant',content:'',at:Date.now(),notes:[]};ch.msgs.push(m)}
+ m.err=null;m.streaming=true;m.partial=false;m.notes=m.notes||[];
+ if(view==='chat'&&ch.id===S.cur){if(resume)paintMsg(m);else{renderView();}}
+ const order=plan(ch);
+ if(!order.length){m.streaming=false;m.err={kind:'none',text:t('noUsable')};finish(ch,m);return}
+ const tryList=S.settings.fallback?order:order.slice(0,1);ac=new AbortController();let prev=null,raf=0;
+ for(let i=0;i<tryList.length;i++){const o=tryList[i],c=o.c;
+  if(prev)m.notes.push(`${t('switched')}: ${prev.c.label} → ${c.label} (${o.model}) — ${t('because')}: ${kindMsg(prev.err.kind).replace(/[.]$/,'')} — ${t('handoff')}.`);
+  m.connId=c.id;m.connLabel=c.label;m.model=o.model;m.route=prev?t('rFb'):o.reason;paintMsg(m);
+  const hist=await buildMsgs(ch,m,c),sys=sysFor(ch);let got='';const t0=Date.now();
+  const ent=logAdd({kind:'chat',conn:c.label,model:o.model,req:{system:cut(sys),messages:hist.map(x=>({role:x.role,content:typeof x.content==='string'?cut(x.content,8000):x.content.map(p=>p.type==='text'?p.text:'['+p.type+']').join('\n')}))},res:null});
+  try{c.usage.reqs++;
+   const u=await callStream(c,o.model,hist,sys,d=>{got+=d;m.content+=d;if(!raf)raf=requestAnimationFrame(()=>{raf=0;paintMsg(m)})},ac.signal);
+   c.usage.succ++;c.usage.inTok+=u.in;c.usage.outTok+=u.out;if(c.price)c.usage.cost+=u.in*(+c.price.in||0)/1e6+u.out*(+c.price.out||0)/1e6;
+   c.status={kind:'ok',at:Date.now()};c.cooldownUntil=0;c.coolStep=0;m.streaming=false;m.partial=false;m.err=null;
+   ent.res={ok:true,text:cut(got),usage:u,ms:Date.now()-t0,limits:c.limits};
+   if(prev){ch.connId=c.id;ch.model=o.model;ch.handoff=`${prev.c.label} → ${c.label}`}
+   break}
+  catch(e){
+   if(e.name==='AbortError'){ent.res={ok:false,error:'aborted',text:cut(got),ms:Date.now()-t0};m.streaming=false;m.partial=!!m.content;break}
+   ent.res={ok:false,error:`${e.kind||'network'} ${e.status||''} ${e.message||''}`.trim(),text:cut(got),ms:Date.now()-t0,limits:c.limits};
+   c.usage.fail++;const k=e.kind||'network';c.status={kind:k,at:Date.now(),msg:e.message};
+   if(k==='rate')c.cooldownUntil=Date.now()+(e.ra||30000);
+   prev={c,err:{kind:k,text:e.message}};
+   if(m.content)m.partial=true;
+   if(i===tryList.length-1){m.streaming=false;m.err={kind:k,text:kindMsg(k)+(e.message?` — ${e.message}`:'')+(k==='rate'&&e.ra?` (Retry-After: ${Math.ceil(e.ra/1000)}s)`:'')}}}}
+ if(raf)cancelAnimationFrame(raf);finish(ch,m)}
+function finish(ch,m){m.streaming=false;ac=null;setBusy(false);save();if(view==='chat'&&ch.id===S.cur)paintMsg(m);else renderSide()}
+async function sendMsg(){
+ const inp=$('#inp');let text=inp.value.trim();if((!text&&!pending.length)||busy)return;
+ let ch=chat();if(!ch)ch=newChat();const atts=[];
+ for(const f of pending){
+  if(f.type==='text')text+=`\n\n\`\`\`${f.name}\n${f.text}\n\`\`\``;
+  else if(f.type==='vnote')text+=`\n\n${f.text}`;
+  else{const id=uid();try{await idb.set('att:'+id,f.dataUrl)}catch(e){toast(t('imgFail'));continue}atts.push({id,kind:f.type,name:f.name,mime:f.mime,thumb:f.thumb||null,size:f.size||0})}}
+ if(!text.trim()&&atts.length)text=t('seeAtt');
+ pending=[];inp.value='';autosize();renderChips();
+ if(ch.title===t('untitled')||!ch.title)ch.title=text.replace(/\s+/g,' ').slice(0,42);
+ ch.msgs.push({id:uid(),role:'user',content:text,atts,at:Date.now()});ch.updated=Date.now();
+ if(!ch.connId){const p=plan(ch)[0];if(p){ch.connId=p.c.id;ch.model=p.model}}
+ view='chat';save();await run(ch)}
+function newChat(pid){const ch={id:uid(),title:t('untitled'),projectId:pid||null,connId:null,model:null,msgs:[],checkpoints:[],created:Date.now(),updated:Date.now()};
+ const f=plan(ch)[0];if(f){ch.connId=f.c.id;ch.model=f.model}S.chats.unshift(ch);S.cur=ch.id;view='chat';save();render();return ch}
+
+/* ====================== rendering ====================== */
+function msgHTML(m,ch){
+ if(m.role==='user')return `<div class="msg user" id="m-${m.id}"><div class="bub body">${(m.atts||[]).map(a=>a.thumb?`<img class="thumb" data-act="viewimg" data-id="${a.id}" src="${a.thumb}" alt="${esc(a.name)}">`:`<span class="chip">📄 ${esc(a.name)}</span>`).join('')}${md(m.content)}</div></div>`;
+ const lastA=ch&&last(ch.msgs.filter(x=>x.role==='assistant'))===m;
+ return `<div class="msg asst" id="m-${m.id}">
+ <div class="meta">${esc(m.connLabel||'')} · ${esc(m.model||'')}${m.route?` · <span title="${esc(t('viaRoute'))}">${esc(m.route)}</span>`:''}</div>
+ ${(m.notes||[]).map(n=>`<div class="note">${esc(n)}</div>`).join('')}
+ <div class="body ${m.streaming?'cur':''}">${md(m.content)}</div>
+ ${m.err?`<div class="err">${esc(m.err.text)}<div class="acts"><button data-act="retry" data-id="${m.id}">${t('retry')}</button></div></div>`:''}
+ ${!m.streaming&&m.partial&&!m.err?`<div class="note">${t('partial')} <button data-act="retry" data-id="${m.id}">${t('cont')}</button></div>`:''}
+ ${!m.streaming?`<div class="acts"><button data-act="copymsg" data-id="${m.id}">${t('copy')}</button>${lastA?`<button data-act="regen">${t('regen')}</button>`:''}</div>`:''}</div>`}
+function renderSide(){
+ const q=query.toLowerCase();const chats=S.chats.filter(c=>!q||c.title.toLowerCase().includes(q)||c.msgs.some(m=>(m.content||'').toLowerCase().includes(q)));
+ const nav=[['chat','💬',t('newChat'),'newchat'],['projects','📁',t('projects'),'nav'],['conns','🔌',t('connections'),'nav'],['usage','📊',t('usage'),'nav'],['log','🧾',t('log'),'nav'],['settings','⚙️',t('settings'),'nav']];
+ $('#side').innerHTML=`<div class="brand">Continuity AI<small>${t('ctxPkg').split(' ')[0]==='Context'?'AI workspace':'مساحة عمل الذكاء الاصطناعي'}</small></div>
+ <input id="q" placeholder="${esc(t('search'))}" value="${esc(query)}">
+ <div class="nav">${nav.map(n=>`<button class="${n[3]==='nav'&&view===n[0]?'on':''}" data-act="${n[3]}" data-v="${n[0]}">${n[1]} ${n[2]}</button>`).join('')}</div>
+ <div id="recent"><h4>${t('recent')}</h4>${chats.map(c=>`<button class="ci ${c.id===S.cur&&view==='chat'?'on':''}" data-act="open" data-id="${c.id}">${esc(c.title)}</button>`).join('')}</div>`}
+function renderHdr(){const ch=chat();let title=t(view==='chat'?'untitled':view==='conns'?'connections':view==='usage'?'usage':view==='log'?'log':view==='settings'?'settings':'projects');if(view==='chat'&&ch)title=ch.title;
+ const c=ch&&conn(ch.connId);const ml=S.settings.route!=='manual'?`⚡ ${t({priority:'priorityM',reliability:'reliab',cost:'costM'}[S.settings.route])}`:(c&&ch.model?`${c.label} · ${ch.model}`:t('pickModel'));
+ $('#hdr').innerHTML=`<button class="ghost" id="menu-btn" data-act="side">☰</button><div class="ttl">${esc(title)}</div>${view==='chat'?`<span class="sv" id="sv">${saveState==='saved'?t('saved'):t('saving')}</span><button id="model-btn" data-act="models">${esc(ml)} ▾</button><button class="ghost" data-act="chatmenu">⋯</button>`:''}`;
+ $('#composer').style.display=view==='chat'?'':'none';$('#inp').placeholder=t('ph')}
+function renderView(){const v=$('#view');let h='';
+ if(view==='chat'){const ch=chat();
+  if(!ch||!ch.msgs.length)h=`<div class="empty wrap"><h2>${t('emptyT')}</h2><p>${t('emptyD')}</p>${S.conns.length?'':`<p><button class="pri" data-act="nav" data-v="conns">${t('addConn')}</button></p>`}</div>`;
+  else h=`<div class="wrap thread">${ch.msgs.map(m=>msgHTML(m,ch)).join('')}</div>`;
+  v.innerHTML=h;v.scrollTop=v.scrollHeight;return}
+ if(view==='conns')h=connsHTML();else if(view==='usage')h=usageHTML();else if(view==='log')h=logHTML();else if(view==='settings')h=settingsHTML();else h=projectsHTML();
+ v.innerHTML=`<div class="wrap">${h}</div>`;v.scrollTop=0}
+function render(){document.documentElement.lang=S.lang;document.documentElement.dir=S.lang==='ar'?'rtl':'ltr';document.documentElement.dataset.theme=S.theme;renderSide();renderHdr();renderDots();renderView();$('#b-send').title=t('send')}
+const stKind=c=>c.status?({ok:'statusOk',auth:'statusAuth',rate:'statusRate',server:'statusServer',network:'statusNet',request:'statusReq'}[c.status.kind]||'untested'):'untested';
+function connsHTML(){return `<div class="page-h"><h2>${t('connections')}</h2><button class="pri" data-act="connform">＋ ${t('addConn')}</button></div>
+ ${S.conns.length?'':`<p class="muted">${t('noConn')}</p>`}
+ ${[...S.conns].sort((a,b)=>a.priority-b.priority).map(c=>`<div class="card"><h3>${esc(c.label)} <span class="badge ${c.status&&c.status.kind==='ok'?'ok':c.status?'bad':''}">${t(stKind(c))}</span><span class="badge">${c.type==='anthropic'?'Anthropic':'OpenAI-compat'}</span>${c.enabled?'':`<span class="badge">off</span>`}</h3>
+ <div class="kv"><span>${t('baseUrl')}</span><span dir="ltr">${esc(c.base)}</span></div>
+ <div class="kv"><span>${t('models')}</span><span>${(c.allowed||[]).length}/${(c.models||[]).length}</span></div>
+ <div class="kv"><span>${t('defModel')}</span><span dir="ltr">${esc(modelFor(c)||'—')}</span></div>
+ <div class="kv"><span>${t('lastTest')}</span><span>${fmtDate(c.status&&c.status.at)}</span></div>
+ ${c.status&&c.status.msg&&c.status.kind!=='ok'?`<div class="err">${esc(c.status.msg)}</div>`:''}
+ <div class="row2"><button data-act="conntest" data-id="${c.id}">${t('test')}</button><button data-act="connmodels" data-id="${c.id}">${t('models')}</button><button data-act="connform" data-id="${c.id}">${t('rename')}</button><button data-act="conntoggle" data-id="${c.id}">${c.enabled?t('disable'):t('enable')}</button><button data-act="connup" data-id="${c.id}">▲</button><button data-act="conndown" data-id="${c.id}">▼</button><button class="dng" data-act="conndel" data-id="${c.id}">${t('del')}</button></div></div>`).join('')}`}
+const row=(k,v)=>`<div class="kv"><span>${k}</span><span>${v}</span></div>`;
+const NA=()=>`<span class="badge">${t('unavail')}</span>`;
+function resetSpan(ts){return `<span data-reset="${ts}"></span>`}
+function limitRow(name,L){if(!L)return row(name,NA());const rem=L.rem!=null?L.rem:'?',lim=L.lim!=null?L.lim:'?';return row(name,`${rem} / ${lim} <span class="badge ok">${t('provConf')}</span>`)+(L.resetAt?row(t('resetIn'),resetSpan(L.resetAt)):'')}
+function usageHTML(){return `<div class="page-h"><h2>${t('usage')}</h2></div><p class="muted">${t('ask')}</p>
+ ${S.conns.length?'':`<p class="muted">${t('noConn')}</p>`}
+ ${S.conns.map(c=>{const L=c.limits,u=c.usage;return `<div class="card"><h3>${esc(c.label)} <span class="badge ${c.status&&c.status.kind==='ok'?'ok':c.status?'bad':''}">${t(stKind(c))}</span></h3>
+ ${row(t('plan'),NA())}${row(t('session'),NA())}${row(t('weekly'),NA())}${row(t('modelQuota'),NA())}
+ ${L?limitRow(t('reqs')+' · '+t('limits'),L.req)+limitRow(t('tokens')+' · '+t('limits'),L.tok):row(t('limits'),NA())}
+ ${c.cooldownUntil>Date.now()?row('Retry-After',`<span class="badge est">${t('est')}</span> ${resetSpan(c.cooldownUntil)}`):''}
+ ${row(t('tally')+` <span class="badge est">${t('local')}</span>`,`${u.reqs} ${t('reqs')} · ${u.inTok}↑ ${u.outTok}↓`)}
+ ${row(t('succ')+' / '+t('fail'),`${u.succ} / ${u.fail}`)}
+ ${c.price?row(t('cost')+` <span class="badge est">${t('est')}</span>`,'$'+u.cost.toFixed(4)):''}
+ ${row(t('lastUpd'),fmtDate(L&&L.at||c.status&&c.status.at))}
+ <div class="row2"><button data-act="usagerefresh" data-id="${c.id}">${t('refresh')}</button></div></div>`}).join('')}`}
+function settingsHTML(){const s=S.settings;const stt=s.stt||{},nonA=S.conns.filter(c=>c.type!=='anthropic');const seg=(k,opts,cur)=>`<div class="seg">${opts.map(o=>`<button class="${cur===o[0]?'on':''}" data-act="set" data-k="${k}" data-val="${o[0]}">${o[1]}</button>`).join('')}</div>`;
+ return `<div class="page-h"><h2>${t('settings')}</h2></div><div class="card">
+ <label>${t('lang')}</label>${seg('lang',[['ar','العربية'],['en','English']],S.lang)}
+ <label>${t('theme')}</label>${seg('theme',[['light',t('light')],['dark',t('dark')]],S.theme)}
+ <label>${t('route')}</label>${seg('route',[['manual',t('manual')],['priority',t('priorityM')],['reliability',t('reliab')],['cost',t('costM')]],s.route)}
+ <div class="chk" style="margin-top:12px"><input type="checkbox" id="fb" ${s.fallback?'checked':''}><label for="fb" style="margin:0;color:var(--text)">${t('autoFb')}</label></div>
+ <div class="chk"><input type="checkbox" id="at" ${s.autoTest!==false?'checked':''}><label for="at" style="margin:0;color:var(--text)">${t('autoTest')}</label></div>
+ <label>${t('maxTok')}</label><input type="number" id="mt" value="${s.maxTokens}" min="256" max="64000">
+ <label>${t('sys')}</label><textarea id="sy" rows="4">${esc(s.system)}</textarea></div>
+ <div class="card"><h3>🎤 ${t('sttTitle')}</h3><label>${t('sttConn')}</label><select id="st-c"><option value="">${t('auto')}</option>${nonA.map(c=>`<option value="${c.id}" ${stt.connId===c.id?'selected':''}>${esc(c.label)}</option>`).join('')}</select>
+ <label>${t('sttMode')}</label><select id="st-m">${[['auto',t('auto')],['endpoint','/audio/transcriptions'],['chat','chat + input_audio']].map(o=>`<option value="${o[0]}" ${(stt.mode||'auto')===o[0]?'selected':''}>${o[1]}</option>`).join('')}</select>
+ <label>${t('sttModel')}</label><input id="st-model" dir="ltr" value="${esc(stt.model||'')}" placeholder="whisper-1 / whisper-large-v3-turbo"><p class="muted">${t('sttNote')}</p></div>
+ <div class="card"><h3>${t('notSup')}</h3><p class="muted">${t('notSupD')}</p></div>
+ <div class="card"><button class="dng" data-act="wipe">${t('wipe')}</button></div>`}
+function projectsHTML(){return `<div class="page-h"><h2>${t('projects')}</h2><button class="pri" data-act="projnew">＋ ${t('newProject')}</button></div>
+ ${S.projects.length?'':`<p class="muted">${t('nothing')}</p>`}
+ ${S.projects.map(p=>`<div class="card"><h3>${esc(p.name)}</h3><div class="muted">${p.memory.length} ${t('memory')} · ${S.chats.filter(c=>c.projectId===p.id).length} ${t('recent')}</div>
+ <div class="row2"><button class="pri" data-act="projchat" data-id="${p.id}">${t('newChat')}</button><button data-act="projmem" data-id="${p.id}">${t('memory')}</button><button class="dng" data-act="projdel" data-id="${p.id}">${t('del')}</button></div></div>`).join('')}`}
+function renderChips(){const seen=new Set();$('#chips').innerHTML=pending.map((f,i)=>{if(f.hidden)return'';if(f.g){if(seen.has(f.g))return'';seen.add(f.g)}
+ const n=f.g?pending.filter(x=>x.g===f.g&&x.type==='image').length:0;
+ return `<span class="chip">${f.type==='image'&&f.thumb?`<img src="${f.thumb}">`:f.type==='vnote'?'🎞':'📄'} ${esc(f.name)}${n?' ('+n+')':''} <b data-act="rmchip" data-i="${i}">✕</b></span>`}).join('')}
+function autosize(){const i=$('#inp');i.style.height='auto';i.style.height=Math.min(i.scrollHeight,180)+'px'}
+
+/* countdowns: computed locally from known timestamps, never polling the provider */
+function dur(ms){const s=Math.floor(ms/1000),d=Math.floor(s/86400),h=Math.floor(s%86400/3600),m=Math.floor(s%3600/60),x=s%60;return(d?d+'d ':'')+(h||d?h+'h ':'')+(m||h||d?m+'m ':'')+x+'s'}
+setInterval(()=>{if(S&&S.settings.autoTest!==false)S.conns.forEach(c=>{if(c.enabled&&c.status&&c.status.kind==='rate'&&c.cooldownUntil&&c.cooldownUntil<=Date.now()&&!pinging.has(c.id))pingConn(c)});document.querySelectorAll('[data-reset]').forEach(e=>{const left=+e.dataset.reset-Date.now();e.textContent=left>0?dur(left):t('resetPassed')})},1000);
+
+/* ====================== modal ====================== */
+function modal(html){$('#sheet').innerHTML=html;$('#modal').classList.add('on')}
+function closeModal(){$('#modal').classList.remove('on')}
+$('#modal').addEventListener('click',e=>{if(e.target.id==='modal')closeModal()});
+function confirmBox(title,body,okLabel,fn){modal(`<h3>${esc(title)}</h3><p>${esc(body)}</p><div class="row2"><button class="dng" id="cf-ok">${esc(okLabel)}</button><button data-act="closem">${t('cancel')}</button></div>`);$('#cf-ok').onclick=()=>{closeModal();fn()}}
+function connForm(id){const c=id?conn(id):null;const opts=Object.entries(PRESETS).map(([k,p])=>`<option value="${k}">${esc(k==='custom'?t('presetCustom'):p.name)}</option>`).join('');
+ modal(`<h3>${c?t('editConn'):t('addConn')}</h3>
+ <label>${t('label')}</label><input id="f-label" value="${esc(c?c.label:'')}">
+ ${c?'':`<label>${t('provider')}</label><select id="f-prov">${opts}</select>`}
+ <label>${t('baseUrl')}</label><input id="f-base" dir="ltr" value="${esc(c?c.base:PRESETS.anthropic.base)}">
+ <label>${t('apiKey')} ${c?t('keepKey'):''}</label><input id="f-key" type="password" dir="ltr" autocomplete="off">
+ <label>${t('priceIn')}</label><input id="f-pi" type="number" step="any" value="${c&&c.price?c.price.in||'':''}">
+ <label>${t('priceOut')}</label><input id="f-po" type="number" step="any" value="${c&&c.price?c.price.out||'':''}">
+ <label>${t('budget')}</label><input id="f-bd" type="number" step="any" value="${c&&c.budget||''}">
+ <div class="row2"><button class="pri" id="f-save">${t('saveTest')}</button><button data-act="closem">${t('cancel')}</button></div>`);
+ const sel=$('#f-prov');if(sel)sel.onchange=()=>{const p=PRESETS[sel.value];$('#f-base').value=p.base;if(!$('#f-label').value)$('#f-label').value=sel.value==='custom'?'':p.name};
+ if(sel&&!$('#f-label').value)$('#f-label').value=PRESETS.anthropic.name;
+ $('#f-save').onclick=async()=>{const key=$('#f-key').value.trim();const pk=sel?sel.value:null;const type=c?c.type:PRESETS[pk].type;
+  if(!c&&type==='anthropic'&&!key)return toast(t('needKey'));
+  let nc=c||{id:uid(),type,enabled:true,priority:S.conns.length+1,models:[],allowed:[],defModel:null,usage:newUsage(),status:null,limits:null,enc:null};
+  nc.label=$('#f-label').value.trim()||PRESETS[pk||'custom'].name;nc.base=$('#f-base').value.trim().replace(/\/+$/,'');
+  const pi=parseFloat($('#f-pi').value),po=parseFloat($('#f-po').value);nc.price=(pi||po)?{in:pi||0,out:po||0}:null;nc.budget=parseFloat($('#f-bd').value)||null;
+  if(key){try{nc.enc=await encSecret(key)}catch(e){return toast(t('keyErr'))}}
+  if(!c)S.conns.push(nc);nc.status=null;save();closeModal();view='conns';render();toast('…');
+  const ok=await testConn(nc);render();if(ok&&!(nc.allowed||[]).length)modelsPicker(nc.id)}}
+function modelsPicker(id){const c=conn(id);const all=[...new Set([...(c.allowed||[]),...(c.models||[])])];const sel=new Set(c.allowed||[]);let def=c.defModel;
+ const draw=(f='')=>{const items=all.filter(m=>m.toLowerCase().includes(f.toLowerCase())).sort((a,b)=>(sel.has(b)-sel.has(a))||a.localeCompare(b)).slice(0,250);
+  $('#ml').innerHTML=items.map(m=>`<div class="chk"><input type="checkbox" data-m="${esc(m)}" ${sel.has(m)?'checked':''}><span dir="ltr" style="flex:1;word-break:break-all">${esc(m)}</span><input type="radio" name="def" data-d="${esc(m)}" ${def===m?'checked':''} title="${esc(t('defModel'))}"></div>`).join('')||`<p class="muted">${t('nothing')}</p>`};
+ modal(`<h3>${esc(c.label)} — ${t('models')}</h3><p class="muted">${t('defModel')} ◉</p><input id="mf" placeholder="${esc(t('filter'))}"><div id="ml" style="margin:8px 0;max-height:42vh;overflow:auto"></div>
+ <label>${t('addManual')}</label><div style="display:flex;gap:6px"><input id="mm" dir="ltr"><button id="madd">＋</button></div>
+ <div class="row2"><button class="pri" id="msave">${t('save')}</button><button data-act="closem">${t('cancel')}</button></div>`);draw();
+ $('#mf').oninput=e=>draw(e.target.value);
+ $('#ml').onchange=e=>{const m=e.target.dataset.m,d=e.target.dataset.d;if(m){e.target.checked?sel.add(m):sel.delete(m)}if(d){def=d;sel.add(d)}};
+ $('#madd').onclick=()=>{const v=$('#mm').value.trim();if(v){all.unshift(v);sel.add(v);$('#mm').value='';draw($('#mf').value)}};
+ $('#msave').onclick=()=>{c.allowed=[...sel];c.defModel=def&&sel.has(def)?def:c.allowed[0]||null;save();closeModal();render()}}
+function modelDialog(){const ch=chat();if(!ch)return;const items=[];S.conns.filter(c=>c.enabled).forEach(c=>(c.allowed||[]).forEach(m=>items.push([c,m])));
+ const seg=(k,l)=>`<button class="${S.settings.route===k?'on':''}" data-act="set" data-k="route" data-val="${k}" data-keep="1">${l}</button>`;
+ modal(`<h3>${t('pickModel')}</h3><label>${t('route')}</label><div class="seg">${seg('manual',t('manual'))}${seg('priority',t('priorityM'))}${seg('reliability',t('reliab'))}${seg('cost',t('costM'))}</div><p class="muted">${t('autoNote')}</p>
+ ${items.length?items.map(([c,m])=>`<button class="ci" data-act="pickmodel" data-c="${c.id}" data-m="${esc(m)}" style="padding:10px;${ch.connId===c.id&&ch.model===m?'background:var(--surface2)':''}"><b>${esc(c.label)}</b> · <span dir="ltr">${esc(m)}</span></button>`).join(''):`<p class="muted">${t('noModels')}</p>`}
+ <div class="row2"><button data-act="closem">${t('close')}</button></div>`)}
+function chatMenu(){const ch=chat();if(!ch)return;
+ modal(`<h3>${esc(ch.title)}</h3><div style="display:flex;flex-direction:column;gap:6px">
+ <button data-act="cpform">💾 ${t('cp')}</button><button data-act="resume">▶ ${t('resume')}</button>
+ <button data-act="ctxexp">📦 ${t('ctxExp')}</button><button data-act="ctximp">📥 ${t('ctxImp')}</button>
+ <button data-act="rename">✏️ ${t('rename')}</button><button data-act="moveproj">📁 ${t('moveP')}</button>
+ <button data-act="exportmd">⬇ ${t('exportMd')}</button><button data-act="exportjson">⬇ ${t('exportJson')}</button>
+ <button class="dng" data-act="delchat">🗑 ${t('delChat')}</button></div>
+ ${ch.checkpoints.length?`<h3 style="margin-top:14px">${t('cpList')}</h3>${ch.checkpoints.slice().reverse().map(c=>`<div class="kv"><span>${fmtDate(c.at)}</span><span>${esc(c.summary).slice(0,60)}</span></div>`).join('')}`:''}`)}
+function ctxPackage(ch){const p=proj(ch.projectId);return{format:'continuity-context/1',exportedAt:new Date().toISOString(),project:p?{name:p.name,memory:p.memory.map(m=>m.text)}:null,chat:{title:ch.title,checkpoints:ch.checkpoints.map(({at,summary,next})=>({at,summary,next})),recent:ch.msgs.filter(m=>(m.role==='user'||m.role==='assistant')&&m.content).slice(-30).map(m=>({role:m.role,content:m.content}))}}}
+function chatMd(ch){return `# ${ch.title}\n\n`+ch.msgs.filter(m=>m.role!=='note').map(m=>`## ${m.role==='user'?'User':'Assistant'}${m.model?' ('+m.model+')':''}\n\n${m.content}\n`).join('\n')}
+function exportDialog(name,text,title){modal(`<h3>${esc(title)}</h3><textarea id="ex" rows="10" dir="ltr" readonly style="font-family:var(--mono);font-size:12px">${esc(text)}</textarea><div class="row2"><button class="pri" id="ex-c">${t('copy')}</button><button id="ex-s">${t('share')}</button><button data-act="closem">${t('close')}</button></div>`);$('#ex-c').onclick=()=>copy(text);$('#ex-s').onclick=async()=>{if(!await shareText(name,text))copy(text)}}
+function importDialog(){modal(`<h3>${t('ctxImp')}</h3><textarea id="im" rows="8" dir="ltr" placeholder="${esc(t('paste'))}" style="font-family:var(--mono);font-size:12px"></textarea><input type="file" id="imf" accept=".json,application/json" style="margin-top:8px"><div class="row2"><button class="pri" id="im-go">${t('doImport')}</button><button data-act="closem">${t('cancel')}</button></div>`);
+ $('#imf').onchange=async e=>{const f=e.target.files[0];if(f)$('#im').value=await f.text()};
+ $('#im-go').onclick=()=>{try{const j=JSON.parse($('#im').value);if(j.format!=='continuity-context/1')throw 0;let pid=null;
+  if(j.project){let p=S.projects.find(x=>x.name===j.project.name);if(!p){p={id:uid(),name:j.project.name,memory:[]};S.projects.push(p)}(j.project.memory||[]).forEach(x=>{if(!p.memory.some(m=>m.text===x))p.memory.push({id:uid(),text:String(x)})});pid=p.id}
+  const ch=newChat(pid);ch.title=String(j.chat.title||t('untitled')).slice(0,60);ch.checkpoints=(j.chat.checkpoints||[]).map(c=>({id:uid(),at:+c.at||Date.now(),summary:String(c.summary||''),next:String(c.next||'')}));
+  ch.msgs=(j.chat.recent||[]).filter(m=>m&&(m.role==='user'||m.role==='assistant')&&typeof m.content==='string').map(m=>({id:uid(),role:m.role,content:m.content,at:Date.now(),connLabel:m.role==='assistant'?'imported':undefined}));
+  save();closeModal();render();toast(t('importOk'))}catch(e){toast(t('importBad'))}}}
+function memDialog(id){const p=proj(id);modal(`<h3>${esc(p.name)} — ${t('memory')}</h3>${p.memory.map(m=>`<div class="chk"><span style="flex:1">${esc(m.text)}</span><button class="dng" data-act="memdel" data-p="${p.id}" data-id="${m.id}">✕</button></div>`).join('')||`<p class="muted">${t('nothing')}</p>`}
+ <label>${t('addMem')}</label><textarea id="mem" rows="2"></textarea><div class="row2"><button class="pri" id="mem-add">${t('save')}</button><button data-act="closem">${t('close')}</button></div>`);
+ $('#mem-add').onclick=()=>{const v=$('#mem').value.trim();if(v){p.memory.push({id:uid(),text:v});save();memDialog(id);renderView()}}}
+function promptBox(title,val,fn,multi){modal(`<h3>${esc(title)}</h3>${multi?`<textarea id="pv" rows="3">${esc(val)}</textarea>`:`<input id="pv" value="${esc(val)}">`}<div class="row2"><button class="pri" id="pv-ok">${t('save')}</button><button data-act="closem">${t('cancel')}</button></div>`);$('#pv-ok').onclick=()=>{const v=$('#pv').value.trim();closeModal();fn(v)}}
+
+/* ====================== actions ====================== */
+const A={
+ side(){$('#side').classList.toggle('open');$('#scrim').classList.toggle('on')},
+ closem(){closeModal()},
+ nav(d){view=d.v;render();A._close()},
+ _close(){$('#side').classList.remove('open');$('#scrim').classList.remove('on')},
+ newchat(){newChat();A._close();$('#inp').focus()},
+ open(d){S.cur=d.id;view='chat';render();A._close()},
+ send(){sendMsg()},stop(){if(ac)ac.abort()},
+ attach(){$('#file').click()},
+ rmchip(d){const f=pending[+d.i];pending=f&&f.g?pending.filter(x=>x.g!==f.g):pending.filter((_,k)=>k!==+d.i);renderChips()},
+ mic(){micToggle()},
+ async viewimg(d){const u=await idb.get('att:'+d.id);if(u)modal(`<img src="${u}" style="max-width:100%;border-radius:10px"><div class="row2"><button data-act="closem">${t('close')}</button></div>`)},
+ copycode(d,e){const pre=e.target.closest('.code').querySelector('pre');copy(pre.textContent)},
+ copymsg(d){const m=chat().msgs.find(x=>x.id===d.id);if(m)copy(m.content)},
+ regen(){const ch=chat();while(ch.msgs.length&&last(ch.msgs).role!=='user')ch.msgs.pop();renderView();run(ch)},
+ retry(d){const ch=chat(),m=ch.msgs.find(x=>x.id===d.id);if(m)run(ch,m)},
+ models(){modelDialog()},
+ pickmodel(d){const ch=chat();ch.connId=d.c;ch.model=d.m;S.settings.route='manual';save();closeModal();renderHdr()},
+ set(d){if(d.k==='lang'||d.k==='theme')S[d.k]=d.val;else S.settings[d.k]=d.val;save();if(d.keep){modelDialog();renderHdr()}else render()},
+ chatmenu(){chatMenu()},
+ rename(){const ch=chat();promptBox(t('rename'),ch.title,v=>{if(v){ch.title=v;save();render()}})},
+ moveproj(){const ch=chat();modal(`<h3>${t('moveP')}</h3><button class="ci" data-act="setproj" data-id="">${t('noProject')}</button>${S.projects.map(p=>`<button class="ci" data-act="setproj" data-id="${p.id}">${esc(p.name)}</button>`).join('')}`)},
+ setproj(d){chat().projectId=d.id||null;save();closeModal();toast('✓')},
+ exportmd(){const ch=chat();exportDialog((ch.title||'chat').replace(/[^\w\u0600-\u06FF-]+/g,'_')+'.md',chatMd(ch),t('exportMd'))},
+ exportjson(){const ch=chat();exportDialog('chat.json',JSON.stringify({title:ch.title,messages:ch.msgs.filter(m=>m.role!=='note').map(({role,content,model,connLabel,at})=>({role,content,model,provider:connLabel,at}))},null,2),t('exportJson'))},
+ delchat(){confirmBox(t('delChat'),t('delWarn'),t('del'),()=>{const ch=chat();ch.msgs.forEach(m=>(m.atts||[]).forEach(a=>idb.del('att:'+a.id)));S.chats=S.chats.filter(c=>c.id!==ch.id);S.cur=S.chats[0]?S.chats[0].id:null;save();render()})},
+ cpform(){const ch=chat();const lu=last(ch.msgs.filter(m=>m.role==='user')),la=last(ch.msgs.filter(m=>m.role==='assistant'&&m.content));
+  modal(`<h3>${t('cpT')}</h3><label>${t('summary')}</label><textarea id="cp-s" rows="4">${esc((lu?lu.content.slice(0,200):'')+(la?'\n→ '+la.content.slice(0,300):''))}</textarea><label>${t('nextStep')}</label><textarea id="cp-n" rows="2"></textarea><div class="row2"><button class="pri" id="cp-ok">${t('save')}</button><button data-act="closem">${t('cancel')}</button></div>`);
+  $('#cp-ok').onclick=()=>{ch.checkpoints.push({id:uid(),at:Date.now(),summary:$('#cp-s').value.trim(),next:$('#cp-n').value.trim()});save();closeModal();toast('✓')}},
+ resume(){const ch=chat();closeModal();if(busy)return;ch.msgs.push({id:uid(),role:'user',content:t('resumeMsg'),at:Date.now()});save();renderView();run(ch)},
+ ctxexp(){const ch=chat();exportDialog('context-package.json',JSON.stringify(ctxPackage(ch),null,2),t('ctxPkg'))},
+ ctximp(){importDialog()},
+ connform(d){connForm(d.id)},
+ async conntest(d){const c=conn(d.id);toast('…');await testConn(c);render()},
+ connmodels(d){modelsPicker(d.id)},
+ conntoggle(d){const c=conn(d.id);c.enabled=!c.enabled;save();render()},
+ connup(d){moveConn(d.id,-1)},conndown(d){moveConn(d.id,1)},
+ conndel(d){confirmBox(t('delConn'),t('delConnWarn'),t('del'),()=>{S.conns=S.conns.filter(c=>c.id!==d.id);S.chats.forEach(ch=>{if(ch.connId===d.id){ch.connId=null;ch.model=null}});save();render()})},
+ async usagerefresh(d){const c=conn(d.id);toast('…');await testConn(c);render()},
+ projnew(){promptBox(t('projName'),'',v=>{if(v){S.projects.push({id:uid(),name:v,memory:[]});save();render()}})},
+ projchat(d){newChat(d.id);A._close()},
+ projmem(d){memDialog(d.id)},
+ memdel(d){const p=proj(d.p);p.memory=p.memory.filter(m=>m.id!==d.id);save();memDialog(d.p);renderView()},
+ projdel(d){confirmBox(t('delProj'),t('delProjWarn'),t('del'),()=>{S.projects=S.projects.filter(p=>p.id!==d.id);S.chats.forEach(c=>{if(c.projectId===d.id)c.projectId=null});save();render()})},
+ dot(d){dotDialog(d.id)},testall(){toast('…');pingAll()},dotping(d){const c=conn(d.id);closeModal();pingConn(c)},
+ dotuse(d){const ch=chat(),c=conn(d.id);ch.connId=c.id;ch.model=modelFor(c);S.settings.route='manual';save();closeModal();render()},
+ logcopy(){copy(logText())},logclear(){S.log=[];save();renderView()},
+ wipe(){confirmBox(t('wipe'),t('wipeWarn'),t('del'),async()=>{await idb.clear();S=DEF();await idb.set('state',S);render()})}
+};
+function moveConn(id,dir){const l=[...S.conns].sort((a,b)=>a.priority-b.priority);const i=l.findIndex(c=>c.id===id),j=i+dir;if(j<0||j>=l.length)return;[l[i],l[j]]=[l[j],l[i]];l.forEach((c,k)=>c.priority=k+1);save();render()}
+
+document.addEventListener('click',e=>{const b=e.target.closest('[data-act]');if(!b)return;const f=A[b.dataset.act];if(f)f(b.dataset,e)});
+document.addEventListener('input',e=>{const x=e.target;
+ if(x.id==='q'){query=x.value;renderSide();const q=$('#q');q.focus();q.setSelectionRange(q.value.length,q.value.length)}
+ if(x.id==='inp')autosize()});
+document.addEventListener('change',e=>{const x=e.target;
+ if(x.id==='fb'){S.settings.fallback=x.checked;save()}
+ if(x.id==='st-c'||x.id==='st-m'||x.id==='st-model'){S.settings.stt=S.settings.stt||{};S.settings.stt[x.id==='st-c'?'connId':x.id==='st-m'?'mode':'model']=x.value.trim();save()}
+ if(x.id==='at'){S.settings.autoTest=x.checked;save()}
+ if(x.id==='mt'){S.settings.maxTokens=Math.max(256,parseInt(x.value)||4096);save()}
+ if(x.id==='sy'){S.settings.system=x.value;save()}
+ if(x.id==='file'){const fs=[...x.files];x.value='';addFiles(fs)}});
+$('#inp').addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey&&matchMedia('(pointer:fine)').matches){e.preventDefault();sendMsg()}});
+
+/* ====================== boot ====================== */
+(async function boot(){
+ try{S=await idb.get('state')}catch(e){}
+ if(!S||S.v!==1)S=DEF();
+ S.conns.forEach(c=>{c.usage=c.usage||newUsage();c.allowed=c.allowed||[]});
+ S.chats.forEach(ch=>ch.msgs.forEach(m=>{if(m.streaming){m.streaming=false;m.partial=!!m.content;if(!m.content&&!m.err)m.err={kind:'network',text:t('partial')}}}));
+ if(!S.cur||!chat())S.cur=S.chats[0]?S.chats[0].id:null;
+ S.log=S.log||[];
+ render();
+ if(S.settings.autoTest!==false&&S.conns.length)pingAll();
+})();
+</script>
+</body>
+</html>

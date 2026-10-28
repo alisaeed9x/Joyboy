@@ -1,0 +1,7 @@
+{
+  "appId": "com.alisaeed9x.continuityai",
+  "appName": "Continuity AI",
+  "webDir": "www",
+  "android": { "allowMixedContent": true },
+  "server": { "androidScheme": "https", "cleartext": true }
+}
