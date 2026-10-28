@@ -72,10 +72,8 @@ object TvSkinHub : TvSkin {
 
     // ===== بانر «كمّل» =====
     override fun homeHeader(h: TvSkinHost): View? {
-        val col0 = LinearLayout(h.activity).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; clipChildren = false; clipToPadding = false }
-        col0.addView(tabStrip(h, 0))
-        continueBanner(h)?.let { col0.addView(it) }
-        return col0
+        val b = continueBanner(h) ?: return null
+        return LinearLayout(h.activity).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; clipChildren = false; clipToPadding = false; addView(b) }   // (v622) زرار 🏠 اتشال من الرئيسية (كان بيدوس على نفسه ومش بيعمل حاجة)
     }
 
     internal fun continueBanner(h: TvSkinHost, tk: TvTokens = tokens, glass: Boolean = false): View? {
@@ -92,18 +90,13 @@ object TvSkinHub : TvSkin {
         val row = LinearLayout(a).apply {
             orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL
             layoutDirection = View.LAYOUT_DIRECTION_RTL
-            setPadding(ui.dp(12), ui.dp(10), ui.dp(12), ui.dp(10))
+            setPadding(0, 0, 0, 0)   // (v622) الصورة لازقة في حواف الكارت زي كروت الفيديوهات اللي تحت؛ التقصيص بالزوايا بيتعمل من inner بتاع الكارت نفسه
         }
-        val box = FrameLayout(a).apply {
-            setBackgroundColor(pal.border); clipToOutline = true
-            outlineProvider = object : android.view.ViewOutlineProvider() {
-                override fun getOutline(v: View, o: android.graphics.Outline) { o.setRoundRect(0, 0, v.width, v.height, ui.dp(tk.radiusThumb).toFloat()) }
-            }
-        }
+        val box = FrameLayout(a).apply { setBackgroundColor(pal.border); minimumHeight = ui.dp(bannerH - 10) }
         val iv = ImageView(a).apply { scaleType = ImageView.ScaleType.CENTER_CROP }
         val play = ui.text("▶", bannerH * 0.22f, Color.WHITE).apply { gravity = Gravity.CENTER; setShadowLayer(8f, 0f, 2f, Color.BLACK) }
         box.addView(iv, FrameLayout.LayoutParams(-1, -1)); box.addView(play, FrameLayout.LayoutParams(-2, -2, Gravity.CENTER))
-        row.addView(box, LinearLayout.LayoutParams(ui.dp(thumbW - 20), ui.dp(bannerH - 20)))
+        row.addView(box, LinearLayout.LayoutParams(ui.dp(thumbW - 10), -1))
         h.recentThumbInto(r, iv)
 
         fun TextView.fit(maxL: Int) {
@@ -112,7 +105,7 @@ object TvSkinHub : TvSkin {
         }
         val col = LinearLayout(a).apply {
             orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER_VERTICAL
-            layoutDirection = View.LAYOUT_DIRECTION_RTL; setPadding(ui.dp(18), 0, ui.dp(10), 0)
+            layoutDirection = View.LAYOUT_DIRECTION_RTL; setPadding(ui.dp(18), ui.dp(10), ui.dp(14), ui.dp(10))
         }
         col.addView(ui.text("▶ كمّل المشاهدة", tk.textCaption + 1f, pal.primary, true).apply { fit(1) })
         col.addView(ui.text(r.title, tk.textTitle + 5f, pal.fg, true).apply { fit(2); setPadding(0, ui.dp(4), 0, ui.dp(2)) })
@@ -131,7 +124,8 @@ object TvSkinHub : TvSkin {
 
         t.setOnClickListener { h.playRecent(r) }
         t.contentDescription = "كمّل المشاهدة: " + r.title
-        t.layoutParams = LinearLayout.LayoutParams(-1, ui.dp(bannerH)).apply { setMargins(ui.dp(10), ui.dp(8), ui.dp(10), ui.dp(6)) }
+        t.minimumHeight = ui.dp(bannerH)   // (v622) الكارت بيكبر مع المحتوى (سطر «OK للتشغيل» كان بيتقص من تحت)
+        t.layoutParams = LinearLayout.LayoutParams(-1, -2).apply { setMargins(ui.dp(10), ui.dp(8), ui.dp(10), ui.dp(6)) }
         return t
     }
 

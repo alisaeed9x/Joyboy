@@ -941,6 +941,7 @@ class MainActivity : Activity() {
         showTabFn = { i ->
             if (i == 0 || i == 1 || i == 4 || i == 5 || i == 7) {
                 val prevTab = curTab
+                val prevView: View? = when (prevTab) { 0 -> lib.root; 1 -> musicUi?.root; 4 -> ytUi?.root; 7 -> settingsHostRef; 5 -> tasksUi.root; else -> null }   // (v621) للأنيميشن الخارج
                 if (i == 5 && prevTab != 5) tabBeforeTasks = prevTab
                 if (i == 7 && prevTab != 7) tabBeforeSettings = prevTab
                 if (prevTab == 7 && i != 7) { try { save(); refreshChip() } catch (_: Throwable) {} }
@@ -962,12 +963,22 @@ class MainActivity : Activity() {
                 updateTasksFab()
                 if (prevTab != i) {   // (v312) الصفحة الجديدة بتنزلق من ناحية اتجاه الانتقال (الشريط RTL: رقم أكبر = شمال)
                     val target: View? = when (i) { 0 -> lib.root; 1 -> musicUi?.root; 4 -> ytUi?.root; 7 -> settingsHostRef; else -> tasksUi.root }
-                    if (target != null && Cfg.bool("anim_tabs", true)) Motion.tabEnter(target, if (NavAnim.pos(i) > NavAnim.pos(prevTab)) -1 else 1)   // (v469) D8 مفتاح إيقاف الانتقالات
+                    if (target != null && Cfg.bool("anim_tabs", true)) {
+                        val dir = if (NavAnim.pos(i) > NavAnim.pos(prevTab)) -1 else 1
+                        Motion.tabEnter(target, dir)
+                        if (prevView != null && prevView !== target) Motion.tabExit(prevView, -dir) { curTab == prevTab }   // (v621)
+                    }   // (v469) D8 مفتاح إيقاف الانتقالات
                     if (Cfg.bool("haptics", true)) try { window.decorView.performHapticFeedback(android.view.HapticFeedbackConstants.KEYBOARD_TAP) } catch (_: Throwable) {}   // (v469) D8 اهتزاز لمسي خفيف
                 }
             }
         }
         musicOpenFn = { showTabFn(1); musicUi?.showFull() }   // (v337)
+        // (v621) تسخين: صفحتي يوتيوب والموسيقى بتتبنوا وإنت فاضي بعد ما الشاشة تظهر، بدل ما يتبنوا وقت الدوسة على التبويب (أول فتح كان بيهنّج)
+        if (!fromPlayer && !tvShellOn && !DeviceUi.isTv(this) && Cfg.bool("prewarm_tabs", true)) {
+            val dv = window.decorView
+            dv.postDelayed({ if (!isFinishing && !isDestroyed) android.os.Looper.myQueue().addIdleHandler { if (!isFinishing && !isDestroyed && ytUi == null) { try { ensureYt() } catch (e: Throwable) { LogStore.err("Main:prewarmYt", e) } }; false } }, 1800L)
+            dv.postDelayed({ if (!isFinishing && !isDestroyed) android.os.Looper.myQueue().addIdleHandler { if (!isFinishing && !isDestroyed && musicUi == null) { try { ensureMusic() } catch (e: Throwable) { LogStore.err("Main:prewarmMusic", e) } }; false } }, 2800L)
+        }
         val tabletShell = DeviceUi.isTablet(this)   // (v462) قشرة التابلت: ريل جانبي زي يوتيوب التابلت بدل الشريط السفلي
         val nav = BottomNav(this, ui, th, 0, tabletShell) { i -> if (i >= BottomNav.YT_HOME) { musicReturnTab = -1; val was = curTab == 4; if (!was) showTabFn(4); ytUi?.tapTab(i - BottomNav.YT_HOME, !was) } else if (i == 2) { save(); val ytPip = try { curTab == 4 && android.os.Build.VERSION.SDK_INT >= 26 && !DeviceUi.isTv(this) && ytUi?.leaveForPip() == true } catch (_: Throwable) { false }; NavAnim.set(curTab, 2); if (ytPip) window.decorView.postDelayed({ if (!isFinishing && !isDestroyed) startActivity(Intent(this, BrowserActivity::class.java)) }, 1000L) else startActivity(Intent(this, BrowserActivity::class.java)) } else if (i == 3) { save(); NavAnim.set(curTab, 3); startActivity(Intent(this, FileManagerActivity::class.java)) } else if (i == 7) { musicReturnTab = -1; settingsShow?.invoke(null) } else if (i == 0 && fromTv && !fromPlayer && TvFocus.goHome(this)) { /* (v482) تلفزيون: «الرئيسية» = شاشة التلفزيون */ } else { musicReturnTab = -1; showTabFn(i) } }   // (v310) 4 الملفات = شاشة منفصلة زي المتصفح · (v606) يوتيوب شغّال ← المتصفح: الفيديو يكمّل في PiP والاتنين مع بعض
         navUi = nav

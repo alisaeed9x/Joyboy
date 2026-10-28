@@ -227,10 +227,8 @@ object TvSkinGlass : TvSkin {
     }
 
     override fun homeHeader(h: TvSkinHost): View? {
-        val col = LinearLayout(h.activity).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; clipChildren = false; clipToPadding = false }
-        col.addView(TvSkinHub.tabStrip(h, 0, tokens, true))
-        TvSkinHub.continueBanner(h, tokens, true)?.let { col.addView(it) }
-        return col
+        val b = TvSkinHub.continueBanner(h, tokens, true) ?: return null
+        return LinearLayout(h.activity).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; clipChildren = false; clipToPadding = false; addView(b) }   // (v622) زرار 🏠 اتشال من الرئيسية
     }
 
     // ===== الإعدادات: لوحة زجاج عايمة =====

@@ -68,7 +68,24 @@ object Motion {
 
     /** تبديل تبويب: الصفحة الجديدة بتنزلق من جنب الاتجاه (side = -1 من الشمال، 1 من اليمين) */
     fun tabEnter(v: View, side: Int) {
-        fadeSlideIn(v, side * dp(v, 36f), 0f, 260L, 0L)
+        // (v621) طبقة هاردوير طول الأنيميشن: الصفحة بتتحرك كـ texture واحدة بدل ما الشجرة كلها تتعاد رسمها مع كل فريم (كان ده سبب التهنيج)
+        v.animate().cancel()
+        v.setLayerType(View.LAYER_TYPE_HARDWARE, null)
+        v.alpha = 0f; v.translationX = side * dp(v, 28f); v.translationY = 0f
+        v.animate().setStartDelay(0L).alpha(1f).translationX(0f).setDuration(Skins.dur(230L)).setInterpolator(DecelerateInterpolator(1.8f))
+            .withEndAction { v.setLayerType(View.LAYER_TYPE_NONE, null) }.start()
+    }
+
+    /** (v621) الصفحة اللي خرجت: بتتلاشى وتنزلق شوية في عكس اتجاه الدخول وبعدين تتخفي. stay() = لسه المفروض تبقى ظاهرة؟ */
+    fun tabExit(v: View, side: Int, stay: () -> Boolean) {
+        v.animate().cancel()
+        v.visibility = View.VISIBLE
+        v.setLayerType(View.LAYER_TYPE_HARDWARE, null)
+        v.animate().setStartDelay(0L).alpha(0f).translationX(side * dp(v, 18f)).setDuration(Skins.dur(170L)).setInterpolator(DecelerateInterpolator(1.2f))
+            .withEndAction {
+                v.setLayerType(View.LAYER_TYPE_NONE, null); v.alpha = 1f; v.translationX = 0f
+                if (!stay()) v.visibility = View.GONE
+            }.start()
     }
 
     /** قوايم ListView: كل صف بيدخل بتأخير بسيط عن اللي قبله (بيشتغل مرة عند الجدولة بس، مش مع كل سكرول) */

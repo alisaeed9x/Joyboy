@@ -200,3 +200,4 @@ com/tttt/subtitler/YtThumbBtns.kt
 com/tttt/subtitler/YtTopBar.kt
 com/tttt/subtitler/YtWatch.kt
 com/tttt/subtitler/TvPanic.kt
+com/tttt/subtitler/LaunchSplashActivity.kt

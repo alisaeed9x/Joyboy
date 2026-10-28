@@ -544,8 +544,14 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
     }
 
     // ───────── واجهة Main ─────────
-    fun refresh() { recMemoAt = 0L; if (cur == null) openTab(0) else adapter.notifyDataSetChanged(); startPoll() }
-    fun onHide() { hideKb(); sugBox.visibility = View.GONE; watch.pause(); h.removeCallbacks(pollRun); if (DeviceUi.isTv(act) && navSel == 1) { try { YtNotify.markOpened(act) } catch (_: Throwable) {} } }   // (v575) خرجت من الاشتراكات = العدّ من دلوقتي
+    // (v621) كان refresh() بيعمل notifyDataSetChanged + يمسح كاش الـrecents (قراءة ملف على الـUI thread) في نفس لحظة بداية الأنيميشن ← تهنيج. دلوقتي بعد ما الانزلاق يخلص
+    private val softRefresh = Runnable { recMemoAt = 0L; try { adapter.notifyDataSetChanged() } catch (_: Throwable) {} }
+    fun refresh() {
+        if (cur == null) { recMemoAt = 0L; openTab(0) }
+        else { h.removeCallbacks(softRefresh); h.postDelayed(softRefresh, 280L) }
+        startPoll()
+    }
+    fun onHide() { hideKb(); sugBox.visibility = View.GONE; watch.pause(); h.removeCallbacks(pollRun); h.removeCallbacks(softRefresh); if (DeviceUi.isTv(act) && navSel == 1) { try { YtNotify.markOpened(act) } catch (_: Throwable) {} } }   // (v575) خرجت من الاشتراكات = العدّ من دلوقتي
     /** (v348) Main.onStop: الشورتس تقف لما التطبيق يروح الخلفية أو يظهر المشغّل فوقه (بترجع في refresh() مع onResume) */
     fun onPause() { watch.pause(); ytDock.pause() }
     /** (v606) خروج من التطبيق (Home/Recents) والفيديو شغّال في صفحة المشاهدة أو الشريط السفلي: يتسلّم للمشغّل الكامل ويدخل PiP. true = اتسلّم */
@@ -555,7 +561,7 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
             (::watch.isInitialized && watch.pipHandoff()) || (::ytDock.isInitialized && ytDock.pipHandoff())
         } catch (e: Throwable) { LogStore.err("YtProUi:leaveForPip", e); false }
     }
-    fun destroy() { h.removeCallbacks(pollRun); h.removeCallbacks(lineWatch); YtNp.onHome = null; YtRss.onFeed = null; try { ytDock.dismiss() } catch (_: Throwable) {}; watch.release() }
+    fun destroy() { h.removeCallbacks(pollRun); h.removeCallbacks(softRefresh); h.removeCallbacks(lineWatch); YtNp.onHome = null; YtRss.onFeed = null; try { ytDock.dismiss() } catch (_: Throwable) {}; watch.release() }
     /** (v479 م5) بحث صوتي على التلفزيون: النتيجة بترجع من Main.onActivityResult (كود 78) */
     private fun startVoice() {
         try {

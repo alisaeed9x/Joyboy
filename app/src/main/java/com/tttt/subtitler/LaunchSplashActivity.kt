@@ -16,6 +16,14 @@ class LaunchSplashActivity : Activity() {
 
     override fun onCreate(b: Bundle?) {
         super.onCreate(b)
+        // (v620) التطبيق شغّال أصلًا في الخلفية (جاي من أيقونة يوتيوب/متصفح/كنترولر أو من خدمة): البوابة اتحطت فوق تاسك موجود.
+        // قبل كده كانت بتفتح MainActivity تانية فوق الأولى ← نسختين بيتشاركوا نفس الحالة الثابتة ← كراش. دلوقتي بتقفل نفسها
+        // فيظهر اللي كان قدّام (نفس سلوك الأيقونة قبل v619 بالظبط، حتى لو كان المشغّل مفتوح).
+        if (!isTaskRoot) {
+            finish()
+            overridePendingTransition(0, 0)
+            return
+        }
         val h = Handler(Looper.getMainLooper())
         val ch = Choreographer.getInstance()
         // فريمين: نضمن إن الصورة اترسمت قبل ما نبدأ تحميل Main
@@ -27,7 +35,11 @@ class LaunchSplashActivity : Activity() {
         if (started) return
         started = true
         try {
-            startActivity(Intent(this, MainActivity::class.java).apply { intent?.extras?.let { putExtras(it) } })
+            startActivity(Intent(this, MainActivity::class.java).apply {
+                intent?.extras?.let { putExtras(it) }
+                // (v620) لو Main موجودة في أي تاسك: ارجع لها (onNewIntent) بدل ما تعمل نسخة جديدة — نفس نمط LaunchYoutubeActivity
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+            })
             overridePendingTransition(0, 0)
         } catch (_: Throwable) { }
         finish()
