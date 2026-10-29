@@ -40,6 +40,16 @@ class TvPlayerBar(private val act: Activity, private val ui: Ui, private val th:
         fun subDialog(); fun more(anchor: View)
         fun subTracks(anchor: View)   // (v521) 🌐 اختيار مسار/لغة الترجمة (الأصلية اللي في الفيديو + لغة ترجمة البرنامج)
         fun scrubPos(): Long = -1L    // (v569) مكان التقديم المعلّق (لسه ما اتنفّذش) أو -1
+        // (v640) شريط التلفزيون الذكي: كل زرار يظهر بس لما يكون ليه لازمة
+        fun hasPrevNext(): Boolean = true            // ⏮ ⏭ بس لو الفيديو من مكتبة فيها حلقة قبل/بعد
+        fun pickSpeed(anchor: View) { cycleSpeed() } // ⏩ قايمة السرعات بدوسة واحدة
+        fun subsAvailable(): Boolean = true          // 💬 و🔤⏱ بس لو في ترجمة (برنامج / جوه الفيديو / نسخ محفوظة)
+        fun subSourcesMulti(): Boolean = false       // 🌐 بس لو في أكتر من مصدر ترجمة
+        fun subSources(anchor: View) { subTracks(anchor) }
+        fun hasSentences(): Boolean = false          // 📝 بس لو في جمل مترجمة
+        fun sentences() {}
+        fun sleepLabel(): String = ""                // 😴 بس لو المؤقت شغّال
+        fun sleepPick(anchor: View) {}
     }
 
     private val h = Handler(Looper.getMainLooper())
@@ -58,6 +68,9 @@ class TvPlayerBar(private val act: Activity, private val ui: Ui, private val th:
     private lateinit var playB: TextView; private lateinit var speedB: TextView; private lateinit var fitB: TextView
     private lateinit var ccB: TextView; private lateinit var audB: TextView
     private lateinit var trB: TextView; private lateinit var qB: TextView
+    private lateinit var prevB: TextView; private lateinit var nextB: TextView   // (v640)
+    private lateinit var srcB: TextView; private lateinit var aaB: TextView
+    private lateinit var sentB: TextView; private lateinit var sleepB: TextView
     private val slim: Boolean = try { a.slim() } catch (_: Throwable) { false }
 
     private fun btn(label: String, onClick: (View) -> Unit): TextView = IconTextView(act).apply {   // (v527) IconTextView: ⏸ ▶ ⏮ ⏭ بتترسم أيقونة (خطين متوازيين) بدل رمز الخط اللي على TCL كان بيطلع شكل «i»
@@ -87,27 +100,23 @@ class TvPlayerBar(private val act: Activity, private val ui: Ui, private val th:
         val row = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER; layoutDirection = View.LAYOUT_DIRECTION_LTR }
         fun add(b: View) { row.addView(b, LinearLayout.LayoutParams(-2, -2).apply { setMargins(ui.dp(4), 0, ui.dp(4), 0) }) }
         if (slim) {
-            // (v517) تلفزيون: الأساسي بس — ⏮ ▶ ⏭ · ترجم (بنسبتها) · 💬 · 🔤⏱ · HD · 🔊 · ⋯ (الباقي: سرعة/احتواء/شخصيات/جمل/لوج/قوايم)
-            // التقديم/التأخير 10ث بالأسهم يمين/شمال، فأزرارهم اتشالت
-            speedB = TextView(act); fitB = TextView(act)
-            add(btn("⏮") { a.prev() })
+            // (v640) تلفزيون: ⏮ ▶ ⏭ · ⏩ سرعة (قايمة) · ترجم (بنسبتها) · 💬 · 🌐 مصادر الترجمة · 🔤⏱ شكل/ذكاء · 📝 · HD · 🔊 · 😴 (لو شغّال) · ⋯
+            // كل زرار بيظهر/بيختفي في refresh() حسب حالة الفيديو (ترجمة؟ مسارات؟ نسخ؟) — الباقي كله في ⋯
+            fitB = TextView(act)
+            prevB = btn("⏮") { a.prev() }; add(prevB)
             playB = btn("⏸") { a.toggle() }; add(playB)
-            add(btn("⏭") { a.next() })
+            nextB = btn("⏭") { a.next() }; add(nextB)
+            speedB = btn("⏩ 1x") { v -> a.pickSpeed(v) }; add(speedB)
             trB = btn("▶ ترجم") { v -> a.translate(v) }; add(trB)
             ccB = btn("💬") { a.toggleCc() }
-            ccB.setOnLongClickListener { a.subTracks(ccB); true }
+            ccB.setOnLongClickListener { a.subSources(ccB); true }
             add(ccB)
-            add(btn("🔤 ⏱") { a.subDialog() })
+            srcB = btn("🌐") { v -> a.subSources(v) }; add(srcB)
+            aaB = btn("🔤 ⏱") { a.subDialog() }; add(aaB)
+            sentB = btn("📝") { a.sentences() }; add(sentB)
             qB = btn("HD") { v -> a.quality(v) }; add(qB)
             audB = btn("🔊") { v -> a.audio(v) }; add(audB)
-            val sleepMins = intArrayOf(0, 15, 30, 60)
-            val sleepPos = intArrayOf(0)
-            add(btn("😴") { v ->
-                sleepPos[0] = (sleepPos[0] + 1) % sleepMins.size
-                val mins = sleepMins[sleepPos[0]]
-                TvLink.setSleep(mins)
-                (v as TextView).text = if (mins == 0) "😴" else "😴 $mins"
-            })
+            sleepB = btn("😴") { v -> a.sleepPick(v) }; add(sleepB)
             add(btn("⋯") { v -> a.more(v) })
         } else {
         add(btn("⏮") { a.prev() })
@@ -158,7 +167,15 @@ class TvPlayerBar(private val act: Activity, private val ui: Ui, private val th:
             playB.text = if (a.playing()) "⏸" else "▶"
             if (slim) {
                 trB.text = a.trLabel(); trB.background = GradientDrawable().apply { setColor(a.trColor()); cornerRadius = ui.dp(12).toFloat() }
-                qB.visibility = if (a.hasQuality()) View.VISIBLE else View.GONE
+                speedB.text = "⏩ " + a.speedLabel()
+                fun vis(v: View, on: Boolean) { val n = if (on) View.VISIBLE else View.GONE; if (v.visibility != n) v.visibility = n }
+                val pn = a.hasPrevNext(); vis(prevB, pn); vis(nextB, pn)
+                val subs = a.subsAvailable(); vis(ccB, subs); vis(aaB, subs)
+                vis(srcB, a.subSourcesMulti()); vis(sentB, a.hasSentences())
+                vis(qB, a.hasQuality())
+                val sl = a.sleepLabel(); vis(sleepB, sl.isNotEmpty()); if (sl.isNotEmpty()) sleepB.text = sl
+                // لو الزرار اللي عليه التركيز اختفى → التركيز يرجع لـ ▶
+                try { val f = view.findFocus(); if (f != null && !f.isShown) playB.requestFocus() } catch (_: Throwable) {}
             } else { speedB.text = "⏩ " + a.speedLabel(); fitB.text = "⬛ " + a.fitLabel() }
             ccB.alpha = if (a.ccOn()) 1f else 0.4f
             audB.visibility = if (a.hasAudio()) View.VISIBLE else View.GONE

@@ -120,6 +120,13 @@ object TvSkinGlass : TvSkin {
         val dlg = Dialog(a)
         dlg.requestWindowFeature(Window.FEATURE_NO_TITLE)
         val vids = VideoLib.sortVideos(f.videos, Cfg.str("tv_vid_sort", VideoLib.SORT_NEW))
+        // (v642) بعد حذف/إعادة تسمية/شيل من السجل: اقفل النافذة وافتحها تاني بالبيانات الجديدة
+        val onChanged: () -> Unit = {
+            if (dlg.isShowing) {
+                dlg.dismiss()
+                h.ensureScan { try { h.folders()?.firstOrNull { it.key == f.key }?.let { folderWindow(h, it) } } catch (e: Throwable) { LogStore.err("Glass:reopen", e) } }
+            }
+        }
         val winW = (dm.widthPixels * 0.88f).toInt()
         val cols = (((winW / dm.density) - 48f) / 236f).toInt().coerceIn(2, 5)
         val page = cols * (36 / cols + 1)
@@ -162,7 +169,7 @@ object TvSkinGlass : TvSkin {
                 for (j in 0 until cols) {
                     val v = if (k + j < end) vids[k + j] else null
                     val lp = LinearLayout.LayoutParams(0, if (v != null) -2 else 1, 1f).apply { setMargins(ui.dp(5), ui.dp(5), ui.dp(5), ui.dp(5)) }
-                    if (v != null) { val tile = videoTile(h, v, pal); if (firstNew == null) firstNew = tile; row.addView(tile, lp) } else row.addView(View(a), lp)
+                    if (v != null) { val tile = videoTile(h, v, pal, onChanged); if (firstNew == null) firstNew = tile; row.addView(tile, lp) } else row.addView(View(a), lp)
                 }
                 grid.addView(row, LinearLayout.LayoutParams(-1, -2))
                 k += cols
@@ -193,7 +200,7 @@ object TvSkinGlass : TvSkin {
     }
 
     /** كارت فيديو جوه نافذة الفولدر: مصغّرة + المدة + الاسم (سطرين) + الحجم. OK = تشغيل */
-    private fun videoTile(h: TvSkinHost, v: VideoItem, pal: TvPalette): View {
+    private fun videoTile(h: TvSkinHost, v: VideoItem, pal: TvPalette, onChanged: () -> Unit): View {
         val a = h.activity; val ui = h.ui
         val t = TvTileView(a, tokens.radiusCard - 4).styled(tokens, pal.primary)
         t.inner.background = pane(pal.dark, ui.dp(tokens.radiusCard - 4).toFloat(), false, ui.dp(1))
@@ -221,7 +228,7 @@ object TvSkinGlass : TvSkin {
         t.inner.addView(col, FrameLayout.LayoutParams(-1, -2))
         h.loadThumb(v) { bmp -> iv.setImageBitmap(bmp) }
         t.setOnClickListener { h.playVideo(v) }
-        t.setOnLongClickListener { h.menu("🎬 " + v.title.take(40), listOf("▶ تشغيل" to { h.playVideo(v) })); true }
+        t.setOnLongClickListener { h.videoMenu(v, onChanged); true }   // (v642) القايمة الكاملة بدل «تشغيل» بس
         t.contentDescription = v.title
         return t
     }

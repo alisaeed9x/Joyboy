@@ -37,6 +37,10 @@ interface TvSkinHost {
     /** (v599 م4) آخر فيديو/لينك اتشغّل (للبانر «كمّل»)، أو null */
     fun lastRecent(): Recent?
     fun playRecent(r: Recent)
+    /** (v642) قايمة الفيديو الكاملة (تشغيل · مفضلة · إعادة تسمية · شيل من السجل · تفاصيل · حذف · مسح السجل). onChanged بيتنده لو حصل تغيير فعلي (حذف/إعادة تسمية/شيل من السجل) عشان النافذة تتحدّث */
+    fun videoMenu(v: VideoItem, onChanged: () -> Unit = {})
+    /** (v642) نفس القايمة لعنصر من السجل (كارت «كمّل المشاهدة») */
+    fun recentMenu(r: Recent)
     /** مصغّرة الفيديو/اللينك في ImageView (فيديو محلي من الفحص، أو مصغّرة اللينك) */
     fun recentThumbInto(r: Recent, iv: android.widget.ImageView)
     fun open(page: TvPage)

@@ -128,7 +128,7 @@ class JoystickView(ctx: Context, private val onKey: (String) -> Unit) : View(ctx
     }
 }
 
-/** (v590) شاشة كنترولر التلفزيون (v603: الريموت الوحيد بعد مسح القديم): جويستيك بدايرة OK + ⚙ إعدادات البرنامج (فوق شمال) · 🏠 رئيسية (فوق يمين) · ↩ رجوع (تحت شمال) · 🎤 بحث صوتي (تحت يمين) · (v637) 🔉/🔊 صوت التلفزيون فوق في النص */
+/** (v590) شاشة كنترولر التلفزيون (v603: الريموت الوحيد بعد مسح القديم): جويستيك بدايرة OK + ⚙ إعدادات البرنامج (فوق شمال) · 🏠 رئيسية (فوق يمين) · ↩ رجوع (تحت في النص — v643 مفيش زرار إغلاق، الإغلاق بزرار/إيماءة الرجوع بتاعة الموبايل) · 🎤 بحث صوتي (تحت يمين) · (v637/v643) + فوق − صوت التلفزيون على اليمين تحت 🏠 */
 object ControllerPad {
     fun show(act: Activity, onClose: (() -> Unit)? = null) {
         try {
@@ -150,15 +150,15 @@ object ControllerPad {
             }
             round("⚙", "إعدادات البرنامج على التلفزيون", 0xFF4A5568.toInt(), Gravity.TOP or Gravity.LEFT) { RemoteClient.cmd("open_settings") }
             round("🏠", "الصفحة الرئيسية", 0xFF2E9E5B.toInt(), Gravity.TOP or Gravity.RIGHT) { sendKey("home") }
-            round("↩", "رجوع", 0xFF4A5568.toInt(), Gravity.BOTTOM or Gravity.LEFT) { sendKey("back") }
+            round("↩", "رجوع", 0xFF4A5568.toInt(), Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL) { sendKey("back") }   // (v643) رجوع في النص تحت — مكان زرار الإغلاق القديم
             round("🎤", "بحث صوتي", 0xFFE53935.toInt(), Gravity.BOTTOM or Gravity.RIGHT) { RemoteClient.cmd("mic") }
 
-            // (v637) رفع/خفض صوت التلفزيون: فوق في النص (بين ⚙ و🏠)، والضغط المستمر بيكرّر الخطوة
+            // (v637) رفع/خفض صوت التلفزيون: (v643 على اليمين تحت 🏠)، والضغط المستمر بيكرّر الخطوة
             val volH = Handler(Looper.getMainLooper())
-            val volRow = android.widget.LinearLayout(act).apply { orientation = android.widget.LinearLayout.HORIZONTAL; gravity = Gravity.CENTER }
+            val volRow = android.widget.LinearLayout(act).apply { orientation = android.widget.LinearLayout.VERTICAL; gravity = Gravity.CENTER }   // (v643) + فوق و− تحته
             fun volBtn(txt: String, desc: String, c: String, first: Boolean) {
                 val tv = TextView(act).apply {
-                    text = txt; textSize = 22f; setTextColor(Color.WHITE); this.gravity = Gravity.CENTER; includeFontPadding = false
+                    text = txt; textSize = 26f; isFakeBoldText = true; setTextColor(Color.WHITE); this.gravity = Gravity.CENTER; includeFontPadding = false
                     contentDescription = desc; elevation = dp(6).toFloat()
                     background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(0xFF37474F.toInt()); setStroke(2, 0x66FFFFFF) }
                 }
@@ -170,24 +170,19 @@ object ControllerPad {
                     }
                     true
                 }
-                volRow.addView(tv, android.widget.LinearLayout.LayoutParams(dp(54), dp(54)).apply { if (!first) leftMargin = dp(14) })
+                volRow.addView(tv, android.widget.LinearLayout.LayoutParams(dp(46), dp(46)).apply { if (!first) topMargin = dp(8) })
             }
-            volBtn("🔉", "خفض الصوت", "vol_down", true)
-            volBtn("🔊", "رفع الصوت", "vol_up", false)
-            root.addView(volRow, FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.CENTER_HORIZONTAL).apply { topMargin = dp(92) })
+            volBtn("+", "رفع الصوت", "vol_up", true)
+            volBtn("−", "خفض الصوت", "vol_down", false)
+            root.addView(volRow, FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.RIGHT).apply { topMargin = dp(120); rightMargin = dp(31) })   // (v643) تحت 🏠 على اليمين، متحاذيين مع مركزه
 
-            val size = min(dm.widthPixels - dp(40), dp(340))
+            // (v643) الجويستيك ما يلمسش عمود الصوت (آخره عند ~220dp من فوق)
+            val size = min(min(dm.widthPixels - dp(40), dp(340)), dm.heightPixels - dp(2 * 220)).coerceAtLeast(dp(200))
             root.addView(JoystickView(act) { k -> sendKey(k) }, FrameLayout.LayoutParams(size, size, Gravity.CENTER))
 
             val st = TextView(act).apply { text = "📺 بتوصّل…"; textSize = 14f; setTextColor(0xFFB0BEC5.toInt()); gravity = Gravity.CENTER }
             root.addView(st, FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.CENTER_HORIZONTAL).apply { topMargin = dp(60) })
             var connectFn: () -> Unit = {}
-            val close = TextView(act).apply {
-                text = "✕ إغلاق"; textSize = 14f; setTextColor(Color.WHITE); gravity = Gravity.CENTER; setPadding(dp(18), dp(10), dp(18), dp(10))
-                background = GradientDrawable().apply { setColor(0x33FFFFFF); cornerRadius = dp(20).toFloat() }
-                setOnClickListener { d.dismiss() }
-            }
-            root.addView(close, FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL).apply { bottomMargin = dp(52) })
 
             d.setContentView(root)
             d.setOnDismissListener { try { onClose?.invoke() } catch (_: Throwable) {} }

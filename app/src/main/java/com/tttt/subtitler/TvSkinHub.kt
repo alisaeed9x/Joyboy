@@ -130,6 +130,7 @@ object TvSkinHub : TvSkin {
         t.inner.addView(row, FrameLayout.LayoutParams(-1, -1))
 
         t.setOnClickListener { h.playRecent(r) }
+        t.setOnLongClickListener { h.recentMenu(r); true }   // (v642)
         t.contentDescription = "كمّل المشاهدة: " + r.title
         t.minimumHeight = ui.dp(bannerH)   // (v622) الكارت بيكبر مع المحتوى (سطر «OK للتشغيل» كان بيتقص من تحت)
         t.layoutParams = LinearLayout.LayoutParams(-1, -2).apply { setMargins(ui.dp(10), ui.dp(8), ui.dp(10), ui.dp(6)) }

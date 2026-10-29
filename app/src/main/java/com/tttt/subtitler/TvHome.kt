@@ -102,7 +102,9 @@ class TvActivity : Activity() {
         VideoScan.cache = null; scanned = false; lastScanAt = 0L; refreshView()
     }.also { mediaOps = it }
     /** بعد أي تغيير (مفضلة / حذف / إعادة تسمية): ارسم الصفحة اللي واقف فيها من جديد */
+    private var menuChanged: (() -> Unit)? = null   // (v642) نداء «اتغيّر حاجة» من نافذة فولدر السكِن بعد حذف/إعادة تسمية
     private fun refreshView() {
+        menuChanged?.let { cb -> menuChanged = null; try { cb() } catch (e: Throwable) { LogStore.err("Tv:menuChanged", e) } }
         try { if (storageKind != null) foldersHost?.let { fillStorageView(it) } else if (inSearch) runSearch(searchEt?.text?.toString() ?: "") else showHome() } catch (e: Throwable) { LogStore.err("Tv:refresh", e) }
     }
     /** (v558) الموبايل مسح سجل ← ارسم الصفحة من جديد */
@@ -128,6 +130,14 @@ class TvActivity : Activity() {
         override fun refresh() { this@TvActivity.refreshView() }
         override fun lastRecent(): Recent? = this@TvActivity.recents().firstOrNull()
         override fun playRecent(r: Recent) { this@TvActivity.playRecent(r) }
+        override fun videoMenu(v: VideoItem, onChanged: () -> Unit) {
+            this@TvActivity.menuChanged = onChanged
+            this@TvActivity.videoMenu(v.videoId, v.title, v, this@TvActivity.recents().firstOrNull { it.id == v.videoId })
+        }
+        override fun recentMenu(r: Recent) {
+            val vi = if (r.uri.isNotEmpty()) this@TvActivity.lastScan.firstOrNull { it.uri == r.uri } else null
+            this@TvActivity.videoMenu(r.id, r.title, vi, r)
+        }
         override fun recentThumbInto(r: Recent, iv: android.widget.ImageView) {
             val vi = if (r.uri.isNotEmpty()) this@TvActivity.lastScan.firstOrNull { it.uri == r.uri } else null
             if (vi != null) Thumbs.load(this@TvActivity, vi) { bmp -> if (bmp != null) this@TvActivity.runOnUiThread { if (!this@TvActivity.isDestroyed) iv.setImageBitmap(bmp) } }
@@ -227,15 +237,28 @@ class TvActivity : Activity() {
         if (rec != null) add("🧹 شيل من آخر المشغّلة") { Recents.drop(this, rec.id); Notice.show(this, "🧹 اتشال من آخر المشغّلة", 1800L); refreshView() }
         if (vi != null) add("ℹ️ تفاصيل وإعدادات الفيديو") { ops().details(vi, rec) }
         if (vi != null) add("🗑 احذف الفيديو من الجهاز") { ops().delete(vi) }
-        if (recents().isNotEmpty()) add("🗑 امسح كل آخر المشغّلة") {
-            GAlert(this).setTitle("🗑 مسح آخر المشغّلة").setMessage("هتتمسح كل الفيديوهات من «آخر الفيديوهات المشغّلة» (الملفات نفسها مش هتتمسح). متأكد؟")
-                .setPositiveButton("امسح الكل") { _, _ -> Recents.clearAll(this); Notice.show(this, "🗑 اتمسحت كل آخر المشغّلة", 2200L); refreshView() }
-                .setNegativeButton("إلغاء", null).show()
-        }
+        if (recents().isNotEmpty()) add("🗑 امسح كل آخر المشغّلة") { confirmClearRecents() }
         val mt = "🎬 " + title.take(48)
         if (TvSkins.cur().contextMenu(skinHost, mt, items)) return   // (v597) خانة ContextMenu
         GAlert(this).setTitle(mt).setItems(items.map { it.first }.toTypedArray()) { _, i -> items.getOrNull(i)?.second?.invoke() }
             .setNegativeButton("إغلاق", null).show()
+    }
+
+    /** (v642) مسح سجل المشاهدة كله بعد تأكيد — من قايمة الفيديو ومن الزرار اللي فوق صف السجل (في كل السكنات) */
+    private fun confirmClearRecents() {
+        GAlert(this).setTitle("🗑 مسح سجل المشاهدة").setMessage("هتتمسح كل الفيديوهات من «آخر الفيديوهات المشغّلة» (الملفات نفسها مش هتتمسح). متأكد؟")
+            .setPositiveButton("امسح الكل") { _, _ -> Recents.clearAll(this); Notice.show(this, "🗑 اتمسح سجل المشاهدة", 2200L); refreshView() }
+            .setNegativeButton("إلغاء", null).show()
+    }
+
+    /** (v642) زرار «🗑 مسح السجل» السريع فوق صف آخر المشغّلة */
+    private fun clearHistChip(): View {
+        val chip = TvOwnLinear(this).apply { gravity = Gravity.CENTER; isFocusable = true; isClickable = true; setPadding(ui.dp(16), ui.dp(8), ui.dp(16), ui.dp(8)); contentDescription = "مسح سجل المشاهدة" }
+        chip.addView(ui.text("🗑 مسح السجل", 14f, fg, true))
+        chip.background = ui.box(th.surface, th.border, 18)
+        chip.setOnFocusChangeListener { v, f -> v.background = ui.box(if (f) th.card else th.surface, if (f) th.primary else th.border, 18) }
+        chip.setOnClickListener { confirmClearRecents() }
+        return chip
     }
 
     private fun renameRecent(r: Recent) {
@@ -2144,7 +2167,10 @@ class TvActivity : Activity() {
         val recs = recents().take(40)
         if (recs.isEmpty()) return
         val byUri = lastScan.associateBy { it.uri }
-        hh.addView(sectionTitle("🕘 آخر الفيديوهات المشغّلة"))
+        val head = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; clipChildren = false; clipToPadding = false }
+        head.addView(sectionTitle("🕘 آخر الفيديوهات المشغّلة"), LinearLayout.LayoutParams(0, -2, 1f))
+        head.addView(clearHistChip(), LinearLayout.LayoutParams(-2, -2).apply { setMargins(ui.dp(10), ui.dp(22), ui.dp(10), 0) })
+        hh.addView(head, LinearLayout.LayoutParams(-1, -2))
         hh.addView(hrow(recs.map { histCard(it, byUri) }))
     }
 

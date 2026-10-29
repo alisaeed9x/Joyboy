@@ -169,6 +169,7 @@ private class ManufacturerTvSkin(
         val card = TvTileView(a, tokens.radiusCard + if (style == 1) 4 else 1).styled(tokens, pal.primary).apply {
             tag = "skin:first"; contentDescription = "كمّل المشاهدة: " + recent.title
             setOnClickListener { h.playRecent(recent) }
+            setOnLongClickListener { h.recentMenu(recent); true }   // (v642)
         }
         card.inner.background = shape(h, pal.cardFill, tokens.radiusCard + if (style == 1) 4 else 1, pal.outline)
         if (style == 1) {

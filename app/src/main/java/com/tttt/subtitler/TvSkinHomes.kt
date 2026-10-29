@@ -216,6 +216,7 @@ object TvHomeLayouts {
             card.tag = "skin:first"
             card.contentDescription = "كمّل المشاهدة: " + r.title
             card.setOnClickListener { h.playRecent(r) }
+            card.setOnLongClickListener { h.recentMenu(r); true }   // (v642)
         } else { card.isFocusable = false; card.isClickable = false }
         val img = ImageView(a).apply { scaleType = ImageView.ScaleType.CENTER_CROP; setBackgroundColor(pal.border) }
         if (r != null) h.recentThumbInto(r, img)
