@@ -270,6 +270,7 @@ object SubFileTr {
             val keys = gemKeys()
             if (keys.isEmpty()) return Out(List(n) { "" }, n, "مفيش مفتاح جيميناي — ضيفه من الإعدادات أو اختار جوجل")
             val lang = Cfg.str("lang", "فصحى").ifBlank { "فصحى" }; val style = Cfg.str("style", "حرفي").ifBlank { "حرفي" }
+            if (keys.size >= 2 && n > 0) return translateMulti(cues, keys, lang, style, report, cancel)   // (v638) الملف كامل لمفتاحين + تنقيح بالباقي
             val size = 40
             val batches = (0 until n).chunked(size)
             val next = AtomicInteger(0); val done = AtomicInteger(0); val bad = AtomicInteger(0)
@@ -313,5 +314,142 @@ object SubFileTr {
         }
         failed = res.count { it.isNullOrBlank() }
         return Out(res.map { it ?: "" }, failed, if (failed == n) (if (errMsg.isEmpty()) "جوجل وقف أو النت فاصل" else errMsg) else "")
+    }
+
+    // ===================== (v638) خط الترجمة المتعدد: ترجمة كاملة بمفتاحين ← تنقيح بالباقي =====================
+    private const val MULTI_CHUNK = 200       // جمل في الطلب الواحد (الملف كله بيتبعت معاهم كسياق)
+    private const val MULTI_CTX_ALL = 700     // لحد الرقم ده من الجمل: الملف كله سياق · أكتر: نافذة حواليهم
+
+    /** (مفاتيح الترجمة، مفاتيح التنقيح) حسب عدد المفاتيح: 2 ← 1+1 · 3 ← 2+1 · 4+ ← 2+2 */
+    fun multiPlan(nKeys: Int): Pair<Int, Int> = when {
+        nKeys <= 1 -> Pair(nKeys.coerceAtLeast(0), 0)
+        nKeys == 2 -> Pair(1, 1)
+        nKeys == 3 -> Pair(2, 1)
+        else -> Pair(2, 2)
+    }
+
+    private fun ctxBlock(cues: List<Cue>, from: Int, to: Int): String {
+        val n = cues.size
+        val a = if (n <= MULTI_CTX_ALL) 0 else maxOf(0, from - 250)
+        val b = if (n <= MULTI_CTX_ALL) n else minOf(n, to + 250)
+        val sb = StringBuilder()
+        for (i in a until b) sb.append('#').append(i + 1).append(' ').append(oneLine(cues[i].text)).append('\n')
+        return sb.toString()
+    }
+
+    private fun fullTrPrompt(lang: String, style: String, ctx: String, items: JSONArray): String =
+        "أنت مترجم أفلام ومسلسلات محترف. أمامك ملف الترجمة الأصلي لفيديو واحد (بترتيبه، وأرقام الأسطر #N) — اقرأه كله أولًا وافهم القصة: مين بيتكلم مع مين، العلاقات بينهم، مين ذكر ومين أنثى، والمصطلحات المتكررة.\n" +
+        "ثم ترجم «السطور المطلوبة» فقط إلى العربية بلهجة «$lang» وأسلوب «$style».\n" +
+        "- ترجم بالمعنى الكامل للمشهد مش سطر سطر: السطر الغامض يتحدد بما قبله وبعده في الملف كله.\n" +
+        "- 🔴 الضمائر والأجناس: حدّد كل (هو/هي/أنت/هم/هذا) يعود على مين من السياق، واكتب الضمير والفعل والصفة الصح (مذكر/مؤنث، مفرد/جمع، رسمي/غير رسمي).\n" +
+        "- ثبّت ترجمة الأسماء والألقاب وكلمات القرابة والمصطلحات في الملف كله، وحافظ على نبرة كل شخصية من أول الملف لآخره.\n" +
+        "- كل سطر له ترجمة واحدة بنفس idx: ممنوع الدمج أو الحذف أو إعادة الترتيب، والسطر قصير ومناسب للقراءة على الشاشة.\n" +
+        "- لو السطر وصف صوت أو موسيقى مثل [music] أو ♪ ترجمه بإيجاز بين أقواس.\n" +
+        "- الملف الكامل للفهم فقط: لا تترجم ولا تُرجع منه إلا السطور المطلوبة.\n" +
+        "═══ ملف الترجمة الكامل ═══\n" + ctx +
+        "═══ السطور المطلوبة (idx من 0 إلى " + (items.length() - 1) + "، و«ref» = رقمه #N في الملف) ═══\n" + items.toString() +
+        "\nأخرج JSON فقط وبدون أي نص خارجه: {\"items\":[{\"idx\":0,\"translated\":\"...\"}]} — " + items.length() + " عنصر بالضبط، كل واحد بترجمة عربية غير فاضية."
+
+    private fun refinePrompt(lang: String, style: String, ctx: String, items: JSONArray, cands: Int): String =
+        "أنت منقّح ترجمة أفلام ومسلسلات محترف (لهجة «$lang» وأسلوب «$style»). لكل سطر معاك النص الأصلي" +
+        (if (cands >= 2) " ومعاه ترجمتين مرشّحتين (candidate_1 و candidate_2) من مترجمين مختلفين" else " ومعاه ترجمة مرشّحة (candidate_1)") +
+        ". المطلوب نسخة نهائية واحدة جاهزة للعرض لكل سطر:\n" +
+        "- 🔴 صحّح الضمائر والأجناس والمخاطَب (هو/هي/أنت/هم، مذكر/مؤنث، مفرد/جمع) على حسب من يتكلم ومع مين في الملف كله.\n" +
+        "- ثبّت الأسماء والألقاب والمصطلحات في الملف كله، وصحّح أي ترجمة حرفية أو معنى اتغيّر أو سطر اتحذف منه جزء.\n" +
+        (if (cands >= 2) "- اختار الأدق من المرشحتين أو ادمج الأفضل منهما أو أعد الصياغة لو الاتنين مش مظبوطين.\n" else "") +
+        "- اللهجة «$lang» والأسلوب «$style» بشكل ثابت من أول الملف لآخره، والسطر قصير ومناسب للقراءة على الشاشة.\n" +
+        "- كل سطر بنفس idx: ممنوع الدمج أو الحذف أو إعادة الترتيب. الملف الكامل للفهم فقط.\n" +
+        "═══ الملف الأصلي الكامل ═══\n" + ctx +
+        "═══ السطور للتنقيح (idx من 0 إلى " + (items.length() - 1) + ") ═══\n" + items.toString() +
+        "\nأخرج JSON فقط وبدون أي نص خارجه: {\"items\":[{\"idx\":0,\"translated\":\"...\"}]} — " + items.length() + " عنصر بالضبط، كل واحد بالترجمة النهائية بعد التنقيح."
+
+    /** طلب JSON واحد بمحاولات: بيبدأ بمفتاح primary وبيلف على باقي المفاتيح لو فشل */
+    private fun callItems(prompt: String, keys: List<String>, primary: Int, temp: Double): Map<Int, String> {
+        var lastErr: Exception? = null
+        for (attempt in 0 until 4) {
+            val key = keys[(primary + attempt) % keys.size]
+            try {
+                val r = Api.generate(gemModel(), key, prompt, null, 8192, temp, true, false)
+                val js = Parse.json(r.text) ?: throw Exception("رد جيميناي مش JSON")
+                val a = js.optJSONArray("items") ?: throw Exception("رد جيميناي من غير items")
+                val m = HashMap<Int, String>()
+                for (q in 0 until a.length()) { val o = a.optJSONObject(q) ?: continue; val ix = o.optInt("idx", -1); val tr = o.optString("translated").trim(); if (ix >= 0 && tr.isNotEmpty()) m[ix] = tr }
+                if (m.isNotEmpty()) return m
+                throw Exception("رد جيميناي فاضي")
+            } catch (e: Exception) {
+                lastErr = e
+                val code = (e as? ApiErr)?.code ?: 0
+                try { Thread.sleep(if (code == 429) 4000L * (attempt + 1) else 1500L * (attempt + 1)) } catch (_: InterruptedException) {}
+            }
+        }
+        throw lastErr ?: Exception("فشل جيميناي")
+    }
+
+    /**
+     * (v638) ترجمة ملف السوفت سب بجيميناي بعدة مفاتيح:
+     * ١) مفتاحين (أو واحد) كل واحد بيترجم الملف كامل لوحده بنفس لهجة/أسلوب الإعدادات (الملف كله سياق في كل طلب)،
+     * ٢) باقي المفاتيح (لحد 2) بتاخد الأصل + الترجمتين وتنقّحهم (ضمائر/أجناس/ثبات مصطلحات/اختيار الأدق) والنتيجة النهائية هي المنقّحة،
+     * وأي سطر التنقيح فشل فيه بيرجع للترجمة الأولى ثم التانية ثم الأصل.
+     */
+    fun translateMulti(cues: List<Cue>, keys: List<String>, lang: String, style: String, report: (String) -> Unit, cancel: () -> Boolean = { false }): Out {
+        val n = cues.size
+        val (nt, nr) = multiPlan(keys.size)
+        val trKeys = keys.take(nt); val rfKeys = keys.drop(nt).take(nr)
+        val chunks = (0 until n).chunked(MULTI_CHUNK)
+        val firstErr = arrayOfNulls<String>(1)
+
+        // ===== المرحلة ١: ترجمة كاملة بكل مفتاح ترجمة (بالتوازي) =====
+        val passes = Array(nt) { arrayOfNulls<String>(n) }
+        val doneA = AtomicInteger(0); val totalA = chunks.size * nt
+        val ws = (0 until nt).map { w ->
+            Thread {
+                for (b in chunks) {
+                    if (cancel()) break
+                    val items = JSONArray()
+                    for (i in b) items.put(JSONObject().put("idx", i - b[0]).put("ref", i + 1).put("text", oneLine(cues[i].text)))
+                    try {
+                        val m = callItems(fullTrPrompt(lang, style, ctxBlock(cues, b.first(), b.last() + 1), items), keys, keys.indexOf(trKeys[w]).coerceAtLeast(0), 0.3)
+                        for ((k, tr) in m) { val gi = b[0] + k; if (gi in b) passes[w][gi] = tr }
+                    } catch (e: Exception) { if (firstErr[0] == null) firstErr[0] = (e.message ?: e.javaClass.simpleName).take(100) }
+                    report("✨ ترجمة كاملة " + doneA.incrementAndGet() + "/" + totalA + (if (nt > 1) " (" + nt + " مفاتيح بالتوازي)" else ""))
+                }
+            }.apply { isDaemon = true }
+        }
+        ws.forEach { it.start() }; ws.forEach { try { it.join() } catch (_: InterruptedException) {} }
+        val base = List(n) { i -> passes.map { it[i] }.firstOrNull { !it.isNullOrBlank() } ?: "" }
+        if (base.all { it.isBlank() }) return Out(List(n) { "" }, n, firstErr[0] ?: if (cancel()) "اتوقفت" else "فشل")
+        if (cancel() || rfKeys.isEmpty()) {
+            val failed0 = base.count { it.isBlank() }
+            return Out(base, failed0, "")
+        }
+
+        // ===== المرحلة ٢: تنقيح بالأصل + الترجمتين على المفاتيح الباقية (كل مفتاح بياخد مقاطع) =====
+        val refined = arrayOfNulls<String>(n)
+        val nextB = AtomicInteger(0); val doneB = AtomicInteger(0)
+        val rws = rfKeys.indices.map { w ->
+            Thread {
+                while (!cancel()) {
+                    val bi = nextB.getAndIncrement()
+                    if (bi >= chunks.size) break
+                    val b = chunks[bi]
+                    val items = JSONArray()
+                    for (i in b) {
+                        val o = JSONObject().put("idx", i - b[0]).put("ref", i + 1).put("original", oneLine(cues[i].text))
+                        val c1 = passes[0][i]; val c2 = if (nt > 1) passes[1][i] else null
+                        if (!c1.isNullOrBlank()) o.put("candidate_1", oneLine(c1))
+                        if (!c2.isNullOrBlank()) o.put("candidate_2", oneLine(c2))
+                        items.put(o)
+                    }
+                    try {
+                        val m = callItems(refinePrompt(lang, style, ctxBlock(cues, b.first(), b.last() + 1), items, nt), keys, keys.indexOf(rfKeys[w]).coerceAtLeast(0), 0.2)
+                        for ((k, tr) in m) { val gi = b[0] + k; if (gi in b) refined[gi] = tr }
+                    } catch (e: Exception) { if (firstErr[0] == null) firstErr[0] = (e.message ?: e.javaClass.simpleName).take(100) }
+                    report("🧹 تنقيح وتظبيط الضمائر " + doneB.incrementAndGet() + "/" + chunks.size + (if (rfKeys.size > 1) " (" + rfKeys.size + " مفاتيح بالتوازي)" else ""))
+                }
+            }.apply { isDaemon = true }
+        }
+        rws.forEach { it.start() }; rws.forEach { try { it.join() } catch (_: InterruptedException) {} }
+        val fin = List(n) { i -> refined[i]?.takeIf { it.isNotBlank() } ?: base[i] }
+        return Out(fin, fin.count { it.isBlank() }, "")
     }
 }

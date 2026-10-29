@@ -128,7 +128,7 @@ class JoystickView(ctx: Context, private val onKey: (String) -> Unit) : View(ctx
     }
 }
 
-/** (v590) شاشة كنترولر التلفزيون (v603: الريموت الوحيد بعد مسح القديم): جويستيك بدايرة OK + ⚙ إعدادات البرنامج (فوق شمال) · 🏠 رئيسية (فوق يمين) · ↩ رجوع (تحت شمال) · 🎤 بحث صوتي (تحت يمين) */
+/** (v590) شاشة كنترولر التلفزيون (v603: الريموت الوحيد بعد مسح القديم): جويستيك بدايرة OK + ⚙ إعدادات البرنامج (فوق شمال) · 🏠 رئيسية (فوق يمين) · ↩ رجوع (تحت شمال) · 🎤 بحث صوتي (تحت يمين) · (v637) 🔉/🔊 صوت التلفزيون فوق في النص */
 object ControllerPad {
     fun show(act: Activity, onClose: (() -> Unit)? = null) {
         try {
@@ -152,6 +152,29 @@ object ControllerPad {
             round("🏠", "الصفحة الرئيسية", 0xFF2E9E5B.toInt(), Gravity.TOP or Gravity.RIGHT) { sendKey("home") }
             round("↩", "رجوع", 0xFF4A5568.toInt(), Gravity.BOTTOM or Gravity.LEFT) { sendKey("back") }
             round("🎤", "بحث صوتي", 0xFFE53935.toInt(), Gravity.BOTTOM or Gravity.RIGHT) { RemoteClient.cmd("mic") }
+
+            // (v637) رفع/خفض صوت التلفزيون: فوق في النص (بين ⚙ و🏠)، والضغط المستمر بيكرّر الخطوة
+            val volH = Handler(Looper.getMainLooper())
+            val volRow = android.widget.LinearLayout(act).apply { orientation = android.widget.LinearLayout.HORIZONTAL; gravity = Gravity.CENTER }
+            fun volBtn(txt: String, desc: String, c: String, first: Boolean) {
+                val tv = TextView(act).apply {
+                    text = txt; textSize = 22f; setTextColor(Color.WHITE); this.gravity = Gravity.CENTER; includeFontPadding = false
+                    contentDescription = desc; elevation = dp(6).toFloat()
+                    background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(0xFF37474F.toInt()); setStroke(2, 0x66FFFFFF) }
+                }
+                val rep = object : Runnable { override fun run() { RemoteClient.cmd(c); volH.postDelayed(this, 230L) } }
+                tv.setOnTouchListener { v, e ->
+                    when (e.actionMasked) {
+                        MotionEvent.ACTION_DOWN -> { v.isPressed = true; v.alpha = 0.7f; v.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP); RemoteClient.cmd(c); volH.postDelayed(rep, 420L) }
+                        MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> { v.isPressed = false; v.alpha = 1f; volH.removeCallbacks(rep) }
+                    }
+                    true
+                }
+                volRow.addView(tv, android.widget.LinearLayout.LayoutParams(dp(54), dp(54)).apply { if (!first) leftMargin = dp(14) })
+            }
+            volBtn("🔉", "خفض الصوت", "vol_down", true)
+            volBtn("🔊", "رفع الصوت", "vol_up", false)
+            root.addView(volRow, FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.CENTER_HORIZONTAL).apply { topMargin = dp(92) })
 
             val size = min(dm.widthPixels - dp(40), dp(340))
             root.addView(JoystickView(act) { k -> sendKey(k) }, FrameLayout.LayoutParams(size, size, Gravity.CENTER))

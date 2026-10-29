@@ -268,12 +268,12 @@ object RemoteClient {
     }
 
     // ===== الاتصال والنبضة =====
-    fun connect(ctx: Context, tv: Tv, manual: Boolean = true) {
+    fun connect(ctx: Context, tv: Tv, manual: Boolean = true, autoOffer: Boolean = true) {
         appRef = ctx.applicationContext
         val gen: Int
         synchronized(this) {
             loopGen++; gen = loopGen
-            current = tv; state = St.CONNECTING; lastError = ""; autoOffered = false
+            current = tv; state = St.CONNECTING; lastError = ""; autoOffered = !autoOffer   // (v637) autoOffer=false: دفع التحديث اليدوي هيبعت العرض بنفسه ← ما نبعتش عرض أوتوماتيك قبله
             Cfg.put("tvlink_last", tv.id)
         }
         fire()
@@ -338,17 +338,25 @@ object RemoteClient {
         try { RemoteService.stop(ctx.applicationContext) } catch (_: Throwable) {}
     }
 
-    /** يوصل بآخر تلفزيون (أو الوحيد المقترن): فحص سريع للعنوان ثم بحث تلقائي. بيستنى لحد ما يتصل. (thread خلفي) */
-    fun ensureConnected(ctx: Context, timeoutMs: Long = 7000L): Boolean {
+    /**
+     * يوصل بآخر تلفزيون (أو الوحيد المقترن): فحص سريع للعنوان ثم بحث تلقائي. بيستنى لحد ما يتصل. (thread خلفي)
+     * (v637) لو الحالة «انقطع/بيحاول» (مش بس «مفصول») بيعمل فحص + بحث فورًا ويعيد تشغيل الاتصال بالعنوان الجديد، بدل ما يستنى حلقة الاتصال القديمة (اللي كانت ممكن تتأخر أكتر من المهلة لو عنوان التلفزيون اتغيّر).
+     * autoOffer=false: لو اتصل من هنا ما يبعتش عرض التحديث الأوتوماتيك (اللي بيدفع يدويًا هيبعته بنفسه).
+     */
+    fun ensureConnected(ctx: Context, timeoutMs: Long = 7000L, autoOffer: Boolean = true): Boolean {
         appRef = ctx.applicationContext
         if (state == St.CONNECTED) return true
         val tv = lastTv() ?: return false
-        if (state == St.IDLE || current?.id != tv.id) {
+        val cur = current
+        val needRestart = state == St.IDLE || cur == null || cur.id != tv.id || state == St.LOST
+        if (needRestart) {
             if (!probe(tv)) {
                 val f = discover(3500L).firstOrNull { it.id == tv.id } ?: return false
                 tv.ip = f.ip; tv.port = f.port; saveTv(tv)
             }
-            connect(ctx, tv, true)
+            if (state == St.CONNECTED) return true   // اتوصّل لوحده أثناء الفحص
+            val sameSession = cur != null && cur.id == tv.id && autoOffered   // نفس الجلسة وعرض التحديث اتبعت قبل كده ← مانكررهوش
+            connect(ctx, tv, true, autoOffer && !sameSession)
         }
         val end = System.currentTimeMillis() + timeoutMs
         while (System.currentTimeMillis() < end) {
@@ -523,21 +531,38 @@ object RemoteClient {
     }
 
 
-    /** (v521) «📤 ادفع التحديث للتلفزيون» من ⋯ المزيد: بيتصل لو لازم وبعدين يبعت العرض إجباري (من غير مقارنة نسخ) */
+    /**
+     * (v521) «📤 ادفع التحديث للتلفزيون» من ⋯ المزيد: بيتصل لو لازم وبعدين يبعت العرض إجباري (من غير مقارنة نسخ).
+     * (v637) لو التلفزيون مش متصل: بيحاول يوصله (فحص ← بحث ← اتصال) مرتين، ولو الإرسال فشل بسبب انقطاع (حالة «متصل» قديمة) بيعيد الاتصال ويبعت تاني.
+     */
     fun forcePushFlow(act: android.app.Activity) {
         try { init(act) } catch (_: Throwable) {}
         if (lastTv() == null && current == null) {
             Notice.show(act, "مفيش تلفزيون مقترن — دوس زرار 📺 واقترن الأول", 3500L)
             return
         }
-        Notice.show(act, "📺 بوصّل بالتلفزيون وببعت التحديث…", 5000L)
+        val wasOn = state == St.CONNECTED
+        Notice.show(act, if (wasOn) "📺 ببعت التحديث…" else "📺 التلفزيون مش متصل — بحاول أوصله وأبعت التحديث…", 6000L)
         Thread {
             var msg: String
             try {
-                msg = if (!ensureConnected(act, 9000L)) "⚠ ما قدرتش أوصل للتلفزيون — اتأكد إنه شغّال وعلى نفس الواي فاي"
-                else when (val r = offerUpdate(false, true)) {
-                    "ok" -> "✅ التحديث اتبعت — التلفزيون بيحمّله دلوقتي وهيفتح التثبيت لوحده"
-                    else -> "⚠ $r"
+                var ok = ensureConnected(act, 9000L, false)
+                if (!ok) {   // محاولة تانية بعد بحث أطول (الراوتر ممكن يكون بطيء أو التلفزيون لسه بيصحى)
+                    main.post { Notice.show(act, "📺 لسه بدوّر على التلفزيون…", 6000L) }
+                    ok = ensureConnected(act, 9000L, false)
+                }
+                if (!ok) msg = "⚠ ما قدرتش أوصل للتلفزيون — اتأكد إنه شغّال وعلى نفس الواي فاي"
+                else {
+                    var r = offerUpdate(false, true)
+                    if (r.startsWith("ما قدرتش أوصل")) {   // كانت «متصل» وهو في الحقيقة مقطوع ← أعد الاتصال وابعت تاني
+                        main.post { Notice.show(act, "📺 الاتصال كان مقطوع — برجّعه…", 5000L) }
+                        synchronized(this) { if (state == St.CONNECTED) { loopGen++; state = St.LOST } }
+                        r = if (ensureConnected(act, 9000L, false)) offerUpdate(false, true) else "ما قدرتش أوصل للتلفزيون — اتأكد إنه شغّال وعلى نفس الواي فاي"
+                    }
+                    msg = when (r) {
+                        "ok" -> "✅ التحديث اتبعت — التلفزيون بيحمّله دلوقتي وهيفتح التثبيت لوحده"
+                        else -> "⚠ $r"
+                    }
                 }
             } catch (e: Throwable) { LogStore.err("Remote:forcePush", e); msg = "⚠ حصلت مشكلة" }
             main.post { Notice.show(act, msg, 5000L) }
