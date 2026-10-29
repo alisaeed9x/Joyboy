@@ -11,6 +11,7 @@ import android.graphics.Paint
 import android.graphics.Typeface
 import android.graphics.drawable.Drawable
 import android.graphics.drawable.GradientDrawable
+import org.schabi.newpipe.extractor.Page
 import android.net.Uri
 import android.os.Bundle
 import android.os.Handler
@@ -196,7 +197,7 @@ class TvActivity : Activity() {
         val cur = TvSkins.cur().id
         val all = TvSkins.all
         GAlert(this).setTitle("🧩 تصميم الواجهة (Layout)")
-            .setItems(all.map { (if (it.id == cur) "✔ " else "") + it.name }.toTypedArray()) { _, i -> TvSkins.set(all[i].id, skinHost); showAppearance() }
+            .setItems(all.map { (if (it.id == cur) "✔ " else "") + it.name }.toTypedArray()) { _, i -> TvSkins.set(all[i].id, skinHost); applySkinLive() }
             .setNegativeButton("إلغاء", null).show()
     }
 
@@ -1336,7 +1337,7 @@ class TvActivity : Activity() {
         val c = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL; isFocusable = true; isClickable = true
             setPadding(ui.dp(10), ui.dp(9), ui.dp(10), ui.dp(9))
-            background = TvBlur.frostDrawable(14f, resources.displayMetrics.density)
+            background = ui.box(th.surface, th.border, 14)   // (v634) الفروست كان بيطلع أسود على الخلفية الغامقة والكلام غامق فمايبانش
         }
         c.setOnFocusChangeListener { v, f ->
             v.background = ui.box(if (f) th.card else th.surface, if (f) th.primary else th.border, 14)
@@ -2062,13 +2063,23 @@ class TvActivity : Activity() {
                     else -> {
                         val sk = skins[i - head.size]
                         if (after) skinThemePicker(sk)
-                        else { if (sk.id != cur) TvSkins.set(sk.id, skinHost); recreate() }
+                        else { if (sk.id != cur) TvSkins.set(sk.id, skinHost); applySkinLive() }
                     }
                 }
             }
             .setNegativeButton("رجوع") { _, _ -> refreshAppearance() }
             .setOnCancelListener(android.content.DialogInterface.OnCancelListener { refreshAppearance() })
             .show()
+    }
+    /** (v635) تبديل السكن من غير recreate (كان بيعمل ضغط ذاكرة/كراش على التلفزيون): بنمسح الكاش ونرسم الرئيسية بالسكن الجديد، ولو فشل نرجع للـrecreate */
+    private fun applySkinLive() {
+        try {
+            homeCache = null; ytListCol = null
+            showHome(true, false)
+        } catch (e: Throwable) {
+            LogStore.err("Tv:applySkinLive", e)
+            try { recreate() } catch (_: Throwable) { }
+        }
     }
     private fun skinThemePicker(sk: TvSkin) {
         val extra = if (Cfg.str("cust_accent", "").length >= 6) listOf(Themes.custom()) else emptyList()
@@ -2114,7 +2125,8 @@ class TvActivity : Activity() {
             badge.addView(ui.text(t.substring(0, sp), 14f, fg).apply { gravity = Gravity.CENTER }, FrameLayout.LayoutParams(-1, -1, Gravity.CENTER))
             row.addView(badge, LinearLayout.LayoutParams(ui.dp(30), ui.dp(30)).apply { marginEnd = ui.dp(10) })
         }
-        row.addView(ui.text(if (hasIcon) t.substring(sp + 1) else t, 22f, fg, true).apply { setShadowLayer(8f, 0f, 2f, Color.BLACK) })
+        val titleInk = if (wallMode() != "off") Color.WHITE else fg   // (v634) العنوان فوق صورة الخلفية: أبيض دايمًا (كان بيطلع أسود في السمات الفاتحة)
+        row.addView(ui.text(if (hasIcon) t.substring(sp + 1) else t, 22f, titleInk, true).apply { setShadowLayer(8f, 0f, 2f, Color.BLACK) })
         return row
     }
     private fun host(): LinearLayout = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; clipChildren = false }
@@ -2147,8 +2159,15 @@ class TvActivity : Activity() {
     private var scanned = false
     private var lastScanAt = 0L
 
+    private var folderFromHome = false   // (v634) الفولدر اتفتح من رئيسية السكن ← الرجوع للرئيسية بتاعته مش لصفحة «الفيديوهات» العادية
     private fun closeFolder() {
         val back = openFolder; openFolder = null
+        if (folderFromHome) {
+            folderFromHome = false
+            showHome(true, true)
+            content.post { try { content.findViewWithTag<View>("fold:$back")?.requestFocus() } catch (_: Throwable) {} }
+            return
+        }
         val fh = foldersHost ?: return
         fillStorageView(fh)
         // رجّع التركيز على الفولدر اللي كنت فيه
@@ -2636,6 +2655,7 @@ class TvActivity : Activity() {
                     ytUpdatedAt = System.currentTimeMillis()
                     ytHeader(yh, "▶ يوتيوب — اشتراكاتك")
                     yh.addView(hrow(items.map { ytCard(it) }))
+                    ytListCol?.let { fillYtList(it, true) }   // (v635)
                     if (mode == 2) Notice.show(this, "✔ اتحدّثت فيديوهات اشتراكاتك", 1800L)
                     ytWantErrNotice = false
                     if (hadBtn) yh.post { try { (yh.getChildAt(0) as? ViewGroup)?.getChildAt(1)?.requestFocus() } catch (_: Throwable) { } }
@@ -2652,7 +2672,7 @@ class TvActivity : Activity() {
             try {
                 val yh = ytHost
                 val hiddenYt = Cfg.str("tv_rows_hide2", "").split(",").map { it.trim() }.any { it == "yt" }
-                if (yh != null && yh.isAttachedToWindow && curTab == 0 && !inSearch && storageKind == null && !hiddenYt &&
+                if (yh != null && (yh.isAttachedToWindow || ytListCol?.isAttachedToWindow == true) && curTab == 0 && !inSearch && storageKind == null && !hiddenYt &&
                     YtAccount.loggedIn() && !(::saver.isInitialized && saver.visibility == View.VISIBLE)) fillYt(yh, false, true, 1)
             } catch (_: Throwable) { }
             h.postDelayed(this, 60_000L)
@@ -2679,6 +2699,7 @@ class TvActivity : Activity() {
                     acc.addAll(r.items.filter { it.kind == 0 && it.dur !in 1L..60L })
                     pages++
                 }
+                ytCont = r.next
                 out = acc.distinctBy { it.id }
             } catch (e: Throwable) { err = e; LogStore.add("⚠ صف يوتيوب: فيد الاشتراكات الرسمي فشل — بجرّب RSS: " + (e.message ?: e.javaClass.simpleName).take(80)) }
         }
@@ -2711,6 +2732,79 @@ class TvActivity : Activity() {
         fillYt(yh, true, false, 2)
     }
 
+    // ===== (v635) قايمة يوتيوب العمودية للسكنات اللي يوتيوب فيها تاب لوحده =====
+    private var ytCont: Page? = null
+    private var ytListCol: LinearLayout? = null
+    private var ytListShown = 0
+    private var ytMoreBusy = false
+
+    private fun ytListView(): View {
+        val col = host(); ytListCol = col
+        fillYtList(col, true)
+        return col
+    }
+
+    private fun fillYtList(col: LinearLayout, reset: Boolean) {
+        if (reset) { col.removeAllViews(); ytListShown = 0; col.addView(sectionTitle("▶ يوتيوب — اشتراكاتك")) }
+        if (ytRowItems.isEmpty()) {
+            if (reset) {
+                col.addView(ui.text("⏳ بجيب فيديوهات اشتراكاتك…", 14f, th.muted).apply { tag = "ytwait"; setPadding(ui.dp(10), ui.dp(8), ui.dp(10), ui.dp(8)) })
+                ytHost?.let { if (!ytFilling) fillYt(it) }
+            }
+            return
+        }
+        col.findViewWithTag<View>("ytwait")?.let { col.removeView(it) }
+        appendYtPage(col)
+    }
+
+    /** 3 فيديوهات في كل دفعة؛ لما التركيز يوصل لآخر واحد بنزوّد 3 تانيين (ولو خلصت الـ60 بنجيب صفحة تانية من يوتيوب) */
+    private fun appendYtPage(col: LinearLayout) {
+        val next = ytRowItems.drop(ytListShown).take(3)
+        if (next.isEmpty()) { loadMoreYt(col); return }
+        next.forEach { col.addView(ytListItem(it, col)) }
+        ytListShown += next.size
+    }
+
+    private fun loadMoreYt(col: LinearLayout) {
+        val c = ytCont ?: return
+        if (ytMoreBusy) return
+        ytMoreBusy = true
+        Thread {
+            try {
+                val r = YtAccount.listMore(c)
+                val more = r.items.filter { it.kind == 0 && it.dur !in 1L..60L }
+                runOnUiThread {
+                    ytMoreBusy = false
+                    if (isDestroyed) return@runOnUiThread
+                    ytCont = r.next
+                    ytRowItems = (ytRowItems + more).distinctBy { it.id }
+                    if (col.isAttachedToWindow) appendYtPage(col)
+                }
+            } catch (e: Throwable) { ytMoreBusy = false; LogStore.err("TvHome:ytMore", e) }
+        }.apply { isDaemon = true }.start()
+    }
+
+    private fun ytListItem(v: NpItem, col: LinearLayout): View {
+        val t = TvTileView(this, 12).styled(TvSkins.cur().tokens, th.primary)
+        val row = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; gravity = Gravity.CENTER_VERTICAL
+            background = GradientDrawable().apply { setColor((th.surface and 0x00FFFFFF) or 0xCC000000.toInt()); cornerRadius = ui.dp(12).toFloat(); setStroke(ui.dp(1), if (Theme.lum(th.bg) < 0.35f) 0x77FFFFFF else 0x66000000) }
+            setPadding(ui.dp(8), ui.dp(6), ui.dp(8), ui.dp(6))
+        }
+        val iv = ImageView(this).apply { scaleType = ImageView.ScaleType.CENTER_CROP; setBackgroundColor(th.border) }
+        if (v.thumb.isNotBlank()) try { com.bumptech.glide.Glide.with(this).load(v.thumb).centerCrop().into(iv) } catch (_: Throwable) { }
+        row.addView(iv, LinearLayout.LayoutParams(ui.dp(116), ui.dp(65)))
+        val txt = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(ui.dp(10), 0, ui.dp(6), 0) }
+        txt.addView(ui.text(v.title, 13.5f, th.text, true).apply { maxLines = 2; ellipsize = android.text.TextUtils.TruncateAt.END })
+        txt.addView(ui.text(v.channel + if (v.age.isNotBlank()) " · " + v.age else "", 11.5f, th.muted).apply { maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END; setPadding(0, ui.dp(3), 0, 0) })
+        row.addView(txt, LinearLayout.LayoutParams(0, -2, 1f))
+        t.inner.addView(row, FrameLayout.LayoutParams(-1, -1))
+        t.setOnClickListener { openYt(v.id, v.title) }
+        t.onFocus = { f -> if (f && col.indexOfChild(t) == col.childCount - 1) col.post { appendYtPage(col) } }
+        t.layoutParams = LinearLayout.LayoutParams(-1, ui.dp(88)).apply { setMargins(ui.dp(4), ui.dp(4), ui.dp(4), ui.dp(4)) }
+        return t
+    }
+
     private fun ytCard(v: NpItem): View = vTile({ iv ->
             if (v.thumb.isNotBlank()) try { com.bumptech.glide.Glide.with(this).load(v.thumb).centerCrop().into(iv) } catch (_: Throwable) { }
         }, v.title, v.channel + if (v.age.isNotBlank()) " · " + v.age else "", -1, false, { openYt(v.id, v.title) })
@@ -2740,6 +2834,10 @@ class TvActivity : Activity() {
     private var homeCache: List<View>? = null
     private var homeCacheAt = 0L
     private var homeCacheSig = ""
+    private var homeCacheCfg = ""
+    /** (v633) توقيع كل إعدادات المظهر اللي بتغيّر شكل الرئيسية — لو اتغيّر، الكاش القديم (بتاع السكن/الإعداد السابق) مايتستخدمش */
+    private fun appearanceSig(): String = listOf(TvSkins.cur().id, th.id, IconPacks.activeId(), TvUserPrefs.lift(), TvUserPrefs.halo(), TvUserPrefs.iconPx(),
+        TvUserPrefs.squircle(), TvUserPrefs.names(), Cfg.str("tv_scale_adj", "100"), Cfg.str("tv_apps_sys", "0")).joinToString("|")
 
     /** (v599 م4) مضيف ثابت أول الرئيسية للبانر اللي السكِن بيقدّمه (homeHeader). بيتملّى من جديد كل مرة */
     private var headerHost: LinearLayout? = null
@@ -2753,10 +2851,12 @@ class TvActivity : Activity() {
     }
 
     private fun showHome(focus: Boolean = true, reuse: Boolean = false) {
-        if (TvSkins.cur().home(skinHost, focus, reuse)) return   // (v597) خانة Home في السكِن
+        // (v633) السكن لو رمى استثناء وهو بيرسم الرئيسية ما يقفلش البرنامج: بنسجّل الخطأ ونكمّل بالرسم المدمج
+        val skinDrew = try { TvSkins.cur().home(skinHost, focus, reuse) } catch (e: Throwable) { LogStore.err("Tv:skinHome", e); false }
+        if (skinDrew) return   // (v597) خانة Home في السكِن
         if (reuse && !inSearch) {
             val cache = homeCache
-            if (cache != null && System.currentTimeMillis() - homeCacheAt < 600_000L) {
+            if (cache != null && homeCacheCfg == appearanceSig() && System.currentTimeMillis() - homeCacheAt < 600_000L) {
                 h.removeCallbacks(searchRun)
                 muteSearch = true; searchEt?.setText(""); muteSearch = false; inSearch = false
                 content.removeAllViews(); heroBtn = null; heroImg = null; setTab(0); prayerCd = null
@@ -2837,13 +2937,13 @@ class TvActivity : Activity() {
         val sh = host(); sh.tag = "rowhost"
         fillHomeSettings(sh)
         // (v628) السكِن يقدر يرتّب أقسام الرئيسية بهيكل مختلف (تابات/سايدبار/لوحات)؛ null = الصفوف العمودية المدمجة
-        val arranged = try { TvSkins.cur().arrangeHome(skinHost, TvHomeSections(orderIds, rowHosts, setTitle, sh, homeAppItems)) } catch (e: Throwable) { LogStore.err("Tv:arrange", e); null }
+        val arranged = try { TvSkins.cur().arrangeHome(skinHost, TvHomeSections(orderIds, rowHosts, setTitle, sh, homeAppItems) { ytListView() }) } catch (e: Throwable) { LogStore.err("Tv:arrange", e); null }
         fun addFresh(v: View) { (v.parent as? ViewGroup)?.removeView(v); content.addView(v) }
         if (arranged != null) arranged.forEach { addFresh(it) }
         else { orderIds.forEach { id -> rowHosts[id]?.let { addFresh(it) } }; addFresh(setTitle); addFresh(sh) }
         content.addView(View(this), LinearLayout.LayoutParams(-1, ui.dp(24)))
         homeCache = (0 until content.childCount).map { content.getChildAt(it) }; homeCacheAt = System.currentTimeMillis()
-        homeCacheSig = recentsSig()
+        homeCacheSig = recentsSig(); homeCacheCfg = appearanceSig()
         pageEnter()
         if (focus) content.post { try { (heroBtn ?: content.findViewWithTag<View>("skin:first") ?: firstFocusable(content))?.requestFocus() } catch (_: Exception) {} }
     }
@@ -2931,7 +3031,9 @@ class TvActivity : Activity() {
     }
 
     private fun openFolderView(f: FolderItem) {
-        if (TvSkins.cur().folderView(skinHost, f)) return   // (v597) خانة FolderView
+        // (v636) كل السكنات بتفتح الفولدر بنافذة Glass الزجاجية (الأشيك) — لو السكن ماعندوش فولدر فيو خاص بيه
+        if (TvSkins.cur().folderView(skinHost, f) || TvSkinGlass.folderView(skinHost, f)) return   // (v597) خانة FolderView
+        folderFromHome = storageKind == null && !inSearch && curTab == 0
         muteSearch = true; searchEt?.setText(""); muteSearch = false; inSearch = false
         storageKind = "all"; openFolder = f.key; storageQuery = ""; setTab(1)   // (v530)
         content.removeAllViews()

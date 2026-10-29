@@ -64,7 +64,9 @@ interface TvSkinHost {
  */
 class TvHomeSections(val order: List<String>, val views: Map<String, View>, val settingsTitle: View, val settings: View,
     /** (v630) بيانات التطبيقات الخام — كل سكِن يرسم تطبيقاته بشكله (بانر · مربع · دوك · أيقونة كبيرة) بدل الدواير المشتركة */
-    val appItems: List<TvAppItem> = emptyList())
+    val appItems: List<TvAppItem> = emptyList(),
+    /** (v635) قايمة يوتيوب العمودية (3 فيديوهات تحت بعض، والباقي بيتحمّل لما توصل لآخرها) — للسكنات اللي يوتيوب فيها تاب لوحده */
+    val ytList: (() -> View)? = null)
 
 /** (v630) تطبيق واحد في الرئيسية: الاسم + الأيقونة (Bitmap) + لون الهالة + الفتح + الضغطة الطويلة */
 class TvAppItem(val label: String, val icon: Bitmap?, val glow: Int?, val onClick: () -> Unit, val onLong: (() -> Unit)? = null)
@@ -138,7 +140,7 @@ object TvSkins {
 
     fun cur(): TvSkin {
         curSkin?.let { return it }
-        val storedId = try { Cfg.str("tv_skin", "classic") } catch (_: Throwable) { "classic" }
+        val storedId = try { Cfg.str("tv_skin", "glass") } catch (_: Throwable) { "glass" }
         // v626: Rail was an experimental extra layout. Preserve a safe, supported layout when upgrading.
         val id = if (storedId == "rail") "hub" else storedId
         val s = list.firstOrNull { it.id == id } ?: list.first { it.id == "classic" }

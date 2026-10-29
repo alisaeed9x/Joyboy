@@ -1066,7 +1066,11 @@ class PlayerActivity : Activity(), Host {
             else if (tvOverlayFocused()) { /* (v500) في عنصر مفتوح في لوحة/قايمة جوه المشغّل: سيب الأسهم وOK توصله بدل ما نبلعها */ }   // والشريط ظاهر: الأسهم/OK بتتعامل عادي مع التركيز على الأزرار
             else when (k) {
                 android.view.KeyEvent.KEYCODE_DPAD_RIGHT, android.view.KeyEvent.KEYCODE_DPAD_LEFT -> {
-                    if (down) { val step = if (ev.repeatCount > 12) 60_000L else if (ev.repeatCount > 4) 30_000L else 10_000L; tvSeek(if (k == android.view.KeyEvent.KEYCODE_DPAD_RIGHT) step else -step) }
+                    if (down) {
+                        // (v636) أول ضغطة يمين/شمال بتظهر شريط التحريك بس (من غير ما تحرّك)، والضغطات اللي بعدها هي اللي بتحرّك
+                        if (bar != null && !bar.visible) { bar.show(); bar.focusTrack() }
+                        else { val step = if (ev.repeatCount > 12) 60_000L else if (ev.repeatCount > 4) 30_000L else 10_000L; tvSeek(if (k == android.view.KeyEvent.KEYCODE_DPAD_RIGHT) step else -step) }
+                    }
                     return true
                 }
                 android.view.KeyEvent.KEYCODE_DPAD_CENTER, android.view.KeyEvent.KEYCODE_ENTER -> {
@@ -1093,6 +1097,7 @@ class PlayerActivity : Activity(), Host {
             applyBadgeAlpha()
             if (::leftCol.isInitialized) { leftCol.visibility = if (on) View.VISIBLE else View.INVISIBLE; if (!on) leftCol.clearFocus() }
             if (::badgeRowV.isInitialized && !on) badgeRowV.clearFocus()
+            try { applyChromeFn() } catch (_: Throwable) {}   // (v636) يحدّث ظهور 👁 و⛶ مع الشريط
         } catch (e: Throwable) { LogStore.err("Tv:gate", e) }
     }
     private fun tvInside(v: View?, root: View): Boolean { var x = v; while (x != null) { if (x === root) return true; x = x.parent as? View }; return false }
@@ -1397,6 +1402,7 @@ class PlayerActivity : Activity(), Host {
     // (v515) ترجمة الفيديو الأصلية (سوفت صب جوه الملف أو ملف ترجمة جنبه): بتظهر بنفس ستايل المشغّل بلون أبيض لما مفيش ترجمة من المحرك
     @Volatile private var nativeCue = ""
     private var natShown = false
+    private var natGapSince = 0L
     private var textPicked = false
     private var natStart = 0.0
     private var natLast = ""
@@ -1636,7 +1642,13 @@ class PlayerActivity : Activity(), Host {
                     if (emb.isEmpty() && nat > 0) add("💬 ترجمة مسار الفيديو الأصلي (لحظيًا)") { sfRun("soft", eng) }
                     add("📂 اختار ملف ترجمة من الجهاز") { sfPickFile(eng) }
                     add("🎙 ماترجمش الترجمة — ترجم الصوت") { beginTranslate(false) }
-                    GAlert(this).setTitle("💬 الفيديو ده فيه ترجمة جاهزة").setItems(labels.toTypedArray()) { _, w -> if (w in acts.indices) acts[w]() }.show()
+                    // (v633) الاختيار بيظهر فوق، وبيترجم الملف كله بإعدادات الترجمة الحالية (اللهجة/الأسلوب)، وبيتسأل تاني لو قفلته من غير اختيار
+                    val lg = Cfg.str("lang", "فصحى").ifBlank { "فصحى" }
+                    val dlg = GAlert(this).setTitle("💬 فيه ترجمة سوفت صب — تترجمها؟ (لهجة: $lg)")
+                        .setItems(labels.toTypedArray()) { _, w -> if (w in acts.indices) acts[w]() }
+                        .setOnCancelListener(android.content.DialogInterface.OnCancelListener { softAskedFor = "" })
+                        .show()
+                    try { dlg.window?.let { w -> w.setGravity(android.view.Gravity.TOP or android.view.Gravity.CENTER_HORIZONTAL); w.attributes = w.attributes.also { it.y = ui.dp(24) } } } catch (_: Throwable) {}
                 }
             } catch (e: Throwable) { LogStore.err("Player:softGate", e); runOnUiThread { beginTranslate(false) } }
         }.also { it.isDaemon = true }.start()
@@ -3753,8 +3765,9 @@ class PlayerActivity : Activity(), Host {
             else if (!on && !wasOn) { chromeFrame.animate().cancel(); chromeFrame.alpha = 1f; chromeFrame.translationY = 0f }
             centerPlay.visibility = if (on || pipNow() || uiLocked || busyShown()) View.GONE else if (buffering) View.VISIBLE else if (player.isPlaying) View.GONE else View.VISIBLE   // الشريط ظاهر = فيه زرار تشغيل تحت، فمنشيلش الأوسط فوق الترجمة
             val cv = (!fullMode || chromeShown) && !pipNow()
-            floatBar.visibility = if (cv && caps().visual) View.VISIBLE else View.GONE   // (v444) البصري في وضع صوت←جيميناي بس · (v427) 👁 مابقاش ظاهر طول الوقت: بيظهر مع الشريط (أو في الوضع العادي)
-            batchBtn.visibility = if (cv) View.VISIBLE else View.GONE
+            val tvHide = DeviceUi.isRemote(this) && tvGateClosed()   // (v636) تلفزيون: 👁 و⛶ مخفيين لحد ما شريط التحكم يظهر
+            floatBar.visibility = if (cv && !tvHide && caps().visual) View.VISIBLE else View.GONE   // (v444) البصري في وضع صوت←جيميناي بس · (v427) 👁 مابقاش ظاهر طول الوقت: بيظهر مع الشريط (أو في الوضع العادي)
+            batchBtn.visibility = if (cv && !tvHide) View.VISIBLE else View.GONE
             if (::audBtn.isInitialized) audBtn.visibility = if (cv && intent.getStringExtra("ytid")?.length == 11) View.VISIBLE else View.GONE
             if (::tvBtn.isInitialized) tvBtn.visibility = if (cv && !remote && !DeviceUi.isTv(this) && TvModeFab.nearby()) View.VISIBLE else View.GONE   // (v619)
             if (::modePill.isInitialized) modePill.visibility = if (cv && intent.getStringExtra("ytid")?.length == 11 && ytAudioUrl() != null) View.VISIBLE else View.GONE   // (v459)
@@ -3770,7 +3783,7 @@ class PlayerActivity : Activity(), Host {
             if (!fullMode && ::modePill.isInitialized && modePill.visibility == View.VISIBLE && modePill.alpha < 0.9f) modePill.alpha = 1f   // (v467) ألفا الكبسولة من صفّها
             miniBar.visibility = if (!on && !pipNow()) View.VISIBLE else View.GONE
             updateTrChip(); applyBadgeAlpha()   // (v323) العدّادات بتظهر مع أزرار المشغّل بس
-            fsBtnV.visibility = if (!fullMode) View.VISIBLE else View.GONE   // في الشاشة الكاملة ⛶ جوه الشريط السفلي
+            fsBtnV.visibility = if (!fullMode && !tvHide) View.VISIBLE else View.GONE   // في الشاشة الكاملة ⛶ جوه الشريط السفلي
             subLp.bottomMargin = (if (on) maxOf(ui.dp(128), fsBar.height + ui.dp(12)) else ui.dp(12)) + subPosExtra(); sub.requestLayout()   // (v469) + رفع الاستوديو
             placeFloatFn()
         }
@@ -4146,7 +4159,12 @@ class PlayerActivity : Activity(), Host {
                 // جملة طويلة واحدة: بتتقسم لأجزاء بتظهر بالتتابع على مدة الجملة (التوقيت الأصلي ثابت)
                 var parts: List<String> = emptyList(); var part = 0
                 val ssn = sub.style
-                val nat = ccOn && (gs.isEmpty() || preferNative) && nativeCue.isNotEmpty()   // (v515) (v521) preferNative = المستخدم اختار مسار الفيديو الأصلي ترجمة الفيديو الأصلية لما مفيش ترجمة من المحرك
+                // (v633) مفيش وميض: لو فيه ترجمة للبرنامج (محرك شغّال/جمل مترجمة) ما نعرضش الترجمة الأصلية في الفجوة القصيرة بين جملتين (أو قبل ما جملة المحرك تبدأ بأجزاء من الثانية)
+                //        إلا لو الفجوة فعلًا استمرت. من غير ترجمة برنامج بتظهر الأصلية فورًا زي الأول.
+                val natGap = ccOn && gs.isEmpty() && nativeCue.isNotEmpty()
+                if (!natGap) natGapSince = 0L else if (natGapSince == 0L) natGapSince = now
+                val natHold = !preferNative && natGap && (engineStarted || sfBusy.isNotEmpty() || engine.subs.isNotEmpty()) && now - natGapSince < 900L
+                val nat = ccOn && (gs.isEmpty() || preferNative) && nativeCue.isNotEmpty() && !natHold   // (v515) (v521) preferNative = المستخدم اختار مسار الفيديو الأصلي ترجمة الفيديو الأصلية لما مفيش ترجمة من المحرك
                 if (nat != natShown) { natShown = nat; try { sub.style = natStyle(SubStyle.load { k, d -> Cfg.str(k, d) }) } catch (e: Throwable) { LogStore.err("Player:natStyle", e) } }
                 val key = act.joinToString(",") + ":" + part + (if (nat) "|N:" + nativeCue + (if (sfLive.isNotEmpty()) "|L" + sfLiveGen else "") else "")
                 if (idx != curIdx || key != curKey) {

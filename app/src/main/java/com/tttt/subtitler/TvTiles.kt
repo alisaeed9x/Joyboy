@@ -45,7 +45,8 @@ class TvTileView(ctx: Context, private val radiusDp: Int = 14) : FrameLayout(ctx
     private fun focusBg(): Drawable? = when (focusStyle) {
         TvFocusStyle.RING -> edge(3f, 0xFFFFFFFF.toInt(), 0x00000000, 5)
         // وهج ناعم: هالة شفافة عريضة + حد أبيض رفيع (Glass)
-        TvFocusStyle.GLOW -> LayerDrawable(arrayOf(edge(5f, 0x44FFFFFF, 0x1FFFFFFF, 6), edge(2.5f, 0xFFFFFFFF.toInt(), 0x00000000, 5)))
+        TvFocusStyle.GLOW -> if (!TvUserPrefs.halo()) edge(2.5f, 0xFFFFFFFF.toInt(), 0x00000000, 5)   // (v633) «وهج خلف المتركّز» من الإعدادات
+            else LayerDrawable(arrayOf(edge(5f, 0x44FFFFFF, 0x1FFFFFFF, 6), edge(2.5f, 0xFFFFFFFF.toInt(), 0x00000000, 5)))
         // طلوع: حد أبيض رفيع + ظل عالي (Hub)
         TvFocusStyle.LIFT -> edge(2f, 0xDDFFFFFF.toInt(), 0x00000000, 5)
         // خط تحت الكارت بلون التمييز
@@ -57,8 +58,11 @@ class TvTileView(ctx: Context, private val radiusDp: Int = 14) : FrameLayout(ctx
 
     private fun paint(f: Boolean) {
         background = if (f) focusBg() else null
-        val sc = when (focusStyle) { TvFocusStyle.RING -> 1.07f; TvFocusStyle.UNDERLINE -> 1.03f; else -> focusScale }
-        val z = when (focusStyle) { TvFocusStyle.RING -> 10f; TvFocusStyle.GLOW -> 6f; TvFocusStyle.LIFT -> 22f; TvFocusStyle.UNDERLINE -> 4f }
+        // (v633) «طلوع وتكبير المتركّز» (tv_lift) من إعدادات المظهر بتتطبّق على كل السكنات: 0 = بدون · 1 = خفيف · 2 = عادي · 3 = عالي
+        val k = TvUserPrefs.liftK()
+        val sc0 = when (focusStyle) { TvFocusStyle.RING -> 1.07f; TvFocusStyle.UNDERLINE -> 1.03f; else -> focusScale }
+        val sc = 1f + (sc0 - 1f) * k
+        val z = k * when (focusStyle) { TvFocusStyle.RING -> 10f; TvFocusStyle.GLOW -> 6f; TvFocusStyle.LIFT -> 22f; TvFocusStyle.UNDERLINE -> 4f }
         animate().scaleX(if (f) sc else 1f).scaleY(if (f) sc else 1f).translationZ(if (f) z * d else 0f).setInterpolator(android.view.animation.DecelerateInterpolator())
             .setDuration(Skins.dur(if (focusStyle == TvFocusStyle.RING) 130L else focusMs)).start()
     }

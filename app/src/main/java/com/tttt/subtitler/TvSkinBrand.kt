@@ -95,7 +95,7 @@ private class ManufacturerTvSkin(
     private fun navButton(h: TvSkinHost, icon: String, label: String, action: () -> Unit): View {
         val a = h.activity; val ui = h.ui; val pal = p(h)
         val tile = TvTileView(a, tokens.radiusPill).styled(tokens, pal.primary)
-        tile.inner.background = shape(h, pal.surface, tokens.radiusPill, pal.border)
+        tile.inner.background = shape(h, pal.surface, tokens.radiusPill, pal.outline)
         tile.inner.addView(ui.text("$icon  $label", tokens.textBody + 1f, pal.fg, true).apply {
             gravity = Gravity.CENTER; maxLines = 2
             setPadding(ui.dp(8), ui.dp(8), ui.dp(8), ui.dp(8))
@@ -141,7 +141,7 @@ private class ManufacturerTvSkin(
     private fun welcomeCard(h: TvSkinHost, title: String, message: String): View {
         val a = h.activity; val ui = h.ui; val pal = p(h)
         val card = TvTileView(a, tokens.radiusCard + 2).styled(tokens, pal.primary)
-        card.inner.background = shape(h, pal.cardFill, tokens.radiusCard + 2, pal.border)
+        card.inner.background = shape(h, pal.cardFill, tokens.radiusCard + 2, pal.outline)
         val col = LinearLayout(a).apply {
             orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER_VERTICAL
             layoutDirection = View.LAYOUT_DIRECTION_RTL; setPadding(ui.dp(18), ui.dp(14), ui.dp(18), ui.dp(14))
@@ -170,7 +170,7 @@ private class ManufacturerTvSkin(
             tag = "skin:first"; contentDescription = "كمّل المشاهدة: " + recent.title
             setOnClickListener { h.playRecent(recent) }
         }
-        card.inner.background = shape(h, pal.cardFill, tokens.radiusCard + if (style == 1) 4 else 1, pal.border)
+        card.inner.background = shape(h, pal.cardFill, tokens.radiusCard + if (style == 1) 4 else 1, pal.outline)
         if (style == 1) {
             val col = LinearLayout(a).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL }
             val image = ImageView(a).apply { scaleType = ImageView.ScaleType.CENTER_CROP; setBackgroundColor(pal.border) }
@@ -272,7 +272,7 @@ private class ManufacturerTvSkin(
         val rail = LinearLayout(a).apply {
             orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL
             setPadding(ui.dp(4), ui.dp(8), ui.dp(4), ui.dp(8))
-            background = shape(h, pal.surface, tokens.radiusCard, pal.border)
+            background = shape(h, pal.surface, tokens.radiusCard, pal.outline)
         }
         val items = listOf(
             Triple("⌂", "الرئيسية", { h.goHome() }),
@@ -303,7 +303,7 @@ private class ManufacturerTvSkin(
             TvFolderSize.LIST -> Triple(300, 96, 54)
         }
         val card = TvTileView(a, tokens.radiusCard).styled(tokens, pal.primary)
-        card.inner.background = shape(h, pal.cardFill, tokens.radiusCard, pal.border)
+        card.inner.background = shape(h, pal.cardFill, tokens.radiusCard, pal.outline)
         val col = LinearLayout(a).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL }
         val imageBox = FrameLayout(a).apply { setBackgroundColor(pal.border); clipChildren = true }
         val image = ImageView(a).apply { scaleType = ImageView.ScaleType.CENTER_CROP }

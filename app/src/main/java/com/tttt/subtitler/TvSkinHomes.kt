@@ -211,7 +211,7 @@ object TvHomeLayouts {
         val a = h.activity; val ui = h.ui; val pal = TvPalette(h.theme)
         val radius = when (kind) { HERO_GTV -> 0; HERO_ANDROID -> 8; HERO_TIZEN -> 2; HERO_WEBOS -> 28; else -> 24 }
         val heightDp = when (kind) { HERO_GTV -> 236; HERO_ANDROID -> 150; HERO_TIZEN -> 206; HERO_WEBOS -> 192; else -> 280 }
-        val card = tile(h, t, radius, pal.cardFill, pal.border)
+        val card = tile(h, t, radius, pal.cardFill, pal.outline)
         if (r != null) {
             card.tag = "skin:first"
             card.contentDescription = "كمّل المشاهدة: " + r.title
@@ -298,15 +298,20 @@ object TvHomeLayouts {
     private fun appTile(h: TvSkinHost, t: TvTokens, item: TvAppItem, kind: Int): View {
         val a = h.activity; val ui = h.ui; val pal = TvPalette(h.theme)
         val base = item.glow ?: pal.primary
-        val boxW: Int; val boxH: Int; val radius: Int; val iconDp: Int; val fill: Int
+        val boxW0: Int; val boxH0: Int; val radius0: Int; val iconDp0: Int; val fill: Int
         when (kind) {
-            APP_CIRCLE -> { boxW = 64; boxH = 64; radius = 32; iconDp = 64; fill = 0xFFF1F3F4.toInt() }
-            APP_BANNER -> { boxW = 150; boxH = 86; radius = 8; iconDp = 38; fill = darken(base, 0.55f) }
-            APP_SQUARE -> { boxW = 68; boxH = 68; radius = 8; iconDp = 40; fill = darken(base, 0.5f) }
-            APP_DOCK -> { boxW = 56; boxH = 56; radius = 15; iconDp = 40; fill = 0xEEFFFFFF.toInt() }
-            APP_BIG -> { boxW = 96; boxH = 96; radius = 22; iconDp = 96; fill = 0x00000000 }
-            else -> { boxW = 78; boxH = 78; radius = 12; iconDp = 46; fill = darken(base, 0.5f) }
+            APP_CIRCLE -> { boxW0 = 64; boxH0 = 64; radius0 = 32; iconDp0 = 64; fill = 0xFFF1F3F4.toInt() }
+            APP_BANNER -> { boxW0 = 150; boxH0 = 86; radius0 = 8; iconDp0 = 38; fill = darken(base, 0.55f) }
+            APP_SQUARE -> { boxW0 = 68; boxH0 = 68; radius0 = 8; iconDp0 = 40; fill = darken(base, 0.5f) }
+            APP_DOCK -> { boxW0 = 56; boxH0 = 56; radius0 = 15; iconDp0 = 40; fill = 0xEEFFFFFF.toInt() }
+            APP_BIG -> { boxW0 = 96; boxH0 = 96; radius0 = 22; iconDp0 = 96; fill = 0x00000000 }
+            else -> { boxW0 = 78; boxH0 = 78; radius0 = 12; iconDp0 = 46; fill = darken(base, 0.5f) }
         }
+        // (v633) إعدادات الأيقونات (الحجم · الشكل · الأسماء) والتركيز (طلوع/تكبير) بتتطبّق على كل السكنات
+        val ik = TvUserPrefs.iconK()
+        val boxW = (boxW0 * ik).toInt(); val boxH = (boxH0 * ik).toInt(); val iconDp = (iconDp0 * ik).toInt()
+        val radius = if (kind == APP_BANNER || kind == APP_BIG) (radius0 * ik).toInt() else if (TvUserPrefs.squircle()) (boxW * 0.26f).toInt() else boxW / 2   // (v634) شكل الأيقونة (دايرة/مربع مدوّر) من الإعدادات لكل السكنات
+        val namesMode = TvUserPrefs.names()
         val src = item.icon
         val iconBmp: Bitmap? = if (kind == APP_BIG && src != null) squircle(src, ui.dp(iconDp), base) else src
         val iv = ImageView(a).apply {
@@ -325,11 +330,11 @@ object TvHomeLayouts {
         } else {
             holder.addView(iv, FrameLayout.LayoutParams(ui.dp(iconDp), ui.dp(iconDp), Gravity.CENTER))
         }
-        val showLabel = kind != APP_BANNER && kind != APP_DOCK
+        val showLabel = kind != APP_BANNER && kind != APP_DOCK && namesMode != "off"
         val lab: TextView = ui.text(item.label, if (kind == APP_BIG) t.textBody + 1.5f else t.textCaption, pal.fg, kind == APP_BIG).apply {
             maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END; gravity = Gravity.CENTER
             setPadding(0, ui.dp(6), 0, 0)
-            if (kind == APP_BIG) alpha = 0f else if (kind == APP_SQUARE) alpha = 0.8f
+            if (namesMode == "always") alpha = 1f else if (kind == APP_BIG || namesMode == "focus") alpha = 0f else if (kind == APP_SQUARE) alpha = 0.8f
         }
         val root = TvOwnLinear(a).apply {
             orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER_HORIZONTAL
@@ -343,9 +348,12 @@ object TvHomeLayouts {
         if (showLabel) root.addView(lab, LinearLayout.LayoutParams(ui.dp(boxW + 14), -2))
         fun paint(f: Boolean) {
             holder.background = shape(fill, ui.dp(radius).toFloat(), if (f) Color.WHITE else 0x00000000, if (f) ui.dp(3) else ui.dp(1))
-            val sc = if (f) (if (kind == APP_BIG) 1.18f else if (kind == APP_BANNER) 1.08f else 1.12f) else 1f
-            root.animate().scaleX(sc).scaleY(sc).translationY(if (f && kind == APP_BIG) -ui.dp(8).toFloat() else 0f).setDuration(t.focusDur()).start()
-            if (kind == APP_BIG) lab.animate().alpha(if (f) 1f else 0f).setDuration(t.focusDur()).start()
+            val lk = TvUserPrefs.liftK()
+            val sc0 = if (kind == APP_BIG) 1.18f else if (kind == APP_BANNER) 1.08f else 1.12f
+            val sc = if (f) 1f + (sc0 - 1f) * lk else 1f
+            root.animate().scaleX(sc).scaleY(sc).translationY(if (f && kind == APP_BIG) -ui.dp(8).toFloat() * lk else 0f).setDuration(t.focusDur()).start()
+            if (namesMode == "always") lab.alpha = 1f
+            else if (kind == APP_BIG || namesMode == "focus") lab.animate().alpha(if (f) 1f else 0f).setDuration(t.focusDur()).start()
             else if (kind == APP_SQUARE) lab.alpha = if (f) 1f else 0.8f
         }
         paint(false)
@@ -361,14 +369,18 @@ object TvHomeLayouts {
 
     private fun appGrid(h: TvSkinHost, t: TvTokens, s: TvHomeSections, kind: Int, cols: Int): View {
         if (s.appItems.isEmpty()) return s.views["apps"]?.let { detach(it) } ?: View(h.activity)
-        return grid(h, s.appItems.map { appTile(h, t, it, kind) }, cols)
+        // (v634) عدد الأعمدة بيتحسب على عرض الأيقونة الفعلي (حجمها من الإعدادات + هوامشها) — قبل كده كانت بتتراكب وتطلع بره الشاشة
+        val baseW = when (kind) { APP_CIRCLE -> 64; APP_SQUARE -> 68; APP_BIG -> 96; else -> 78 }
+        val tileW = (baseW * TvUserPrefs.iconK()).toInt() + 30
+        val fit = ((screenDp(h) - 250) / tileW).coerceIn(2, 9)
+        return grid(h, s.appItems.map { appTile(h, t, it, kind) }, minOf(cols, fit))
     }
 
     // ───────────────────────── كروت الفولدرات (3 أنماط نص) ─────────────────────────
     /** mode: 0 = العنوان فوق الصورة (بوستر) · 1 = الصورة فوق والعنوان تحت · 2 = صورة بس والعنوان بيظهر عند التركيز */
     private fun mediaCard(h: TvSkinHost, t: TvTokens, f: FolderItem, wDp: Int, hDp: Int, radius: Int, mode: Int): View {
         val a = h.activity; val ui = h.ui; val pal = TvPalette(h.theme)
-        val card = tile(h, t, radius, pal.cardFill, pal.border)
+        val card = tile(h, t, radius, pal.cardFill, pal.outline)
         val img = ImageView(a).apply { scaleType = ImageView.ScaleType.CENTER_CROP; setBackgroundColor(pal.border) }
         val ph = ui.text(f.icon.ifBlank { "📁" }, 30f, pal.fg).apply { gravity = Gravity.CENTER }
         val first = f.videos.firstOrNull()
@@ -451,7 +463,7 @@ object TvHomeLayouts {
 
     private fun featureCard(h: TvSkinHost, t: TvTokens, glyph: String, title: String, sub: String, fill: Int, fg: Int, action: () -> Unit): View {
         val ui = h.ui; val pal = TvPalette(h.theme)
-        val card = tile(h, t, 22, fill, pal.border)
+        val card = tile(h, t, 22, fill, pal.outline)
         val col = box(h, true).apply { gravity = Gravity.CENTER_VERTICAL; setPadding(ui.dp(16), ui.dp(12), ui.dp(16), ui.dp(12)) }
         col.addView(ui.text(glyph, 28f, fg))
         col.addView(ui.text(title, t.textTitle, fg, true).apply { setPadding(0, ui.dp(8), 0, 0) })
@@ -505,11 +517,11 @@ object TvHomeLayouts {
             out.add(foldersSection(h) { fs -> hscroll(h, fs.map { mediaCard(h, t, it, 264, 190, 16, 1) }) })
         }
         val pair = ArrayList<Pair<View, Float>>()
-        if (has(s, "hist")) pair.add(Pair<View, Float>(panel(h, t, s.views["hist"]!!, fill, pal.border, 10, 26), 1f))
-        if (has(s, "yt")) pair.add(Pair<View, Float>(panel(h, t, s.views["yt"]!!, fill, pal.border, 10, 26), 1f))
-        if (pair.isNotEmpty()) out.add(columns(h, pair).also { it.layoutParams = gapLp(h, 14) })
-        if (has(s, "pin")) out.add(panel(h, t, s.views["pin"]!!, fill, pal.border, 10, 26).also { it.layoutParams = gapLp(h, 14) })
-        out.add(panel(h, t, s.settings, fill, pal.border, 10, 26).also { it.layoutParams = gapLp(h, 14) })
+        if (has(s, "hist")) pair.add(Pair<View, Float>(panel(h, t, s.views["hist"]!!, fill, pal.outline, 10, 26), 1f))
+        if (has(s, "yt")) pair.add(Pair<View, Float>(panel(h, t, s.views["yt"]!!, fill, pal.outline, 10, 26), 1f))
+        pair.forEach { pr -> out.add(pr.first.also { it.layoutParams = gapLp(h, 14) }) }   // (v635) كل صف لوحده — ممنوع اتنين جنب بعض
+        if (has(s, "pin")) out.add(panel(h, t, s.views["pin"]!!, fill, pal.outline, 10, 26).also { it.layoutParams = gapLp(h, 14) })
+        out.add(panel(h, t, s.settings, fill, pal.outline, 10, 26).also { it.layoutParams = gapLp(h, 14) })
         return out
     }
 
@@ -568,16 +580,16 @@ object TvHomeLayouts {
         out.add(columns(h, feats, 124))
         if (has(s, "apps")) {
             out.add(heading(h, t, "قائمة التطبيقات", 1))
-            out.add(panel(h, t, appRow(h, t, s, APP_DOCK), dock, pal.border, 6, 36).also { it.layoutParams = gapLp(h, 2) })
+            out.add(panel(h, t, appRow(h, t, s, APP_DOCK), dock, pal.outline, 6, 36).also { it.layoutParams = gapLp(h, 2) })
         }
         if (has(s, "vids")) {
             out.add(heading(h, t, "مكتبتك", 1))
             out.add(foldersSection(h) { fs -> hscroll(h, fs.map { mediaCard(h, t, it, 220, 210, 28, 1) }) })
         }
         val pair = ArrayList<Pair<View, Float>>()
-        if (has(s, "hist")) pair.add(Pair<View, Float>(panel(h, t, s.views["hist"]!!, card, pal.border, 10, 28), 1f))
-        if (has(s, "yt")) pair.add(Pair<View, Float>(panel(h, t, s.views["yt"]!!, card, pal.border, 10, 28), 1f))
-        if (pair.isNotEmpty()) out.add(columns(h, pair).also { it.layoutParams = gapLp(h, 14) })
+        if (has(s, "hist")) pair.add(Pair<View, Float>(panel(h, t, s.views["hist"]!!, card, pal.outline, 10, 28), 1f))
+        if (has(s, "yt")) pair.add(Pair<View, Float>(panel(h, t, s.views["yt"]!!, card, pal.outline, 10, 28), 1f))
+        pair.forEach { pr -> out.add(pr.first.also { it.layoutParams = gapLp(h, 14) }) }   // (v635) كل صف لوحده — ممنوع اتنين جنب بعض
         out.addAll(pick(s, setOf("pin")))
         out.add(heading(h, t, "الإعدادات", 1)); out.add(detach(s.settings))
         return out
@@ -598,18 +610,18 @@ object TvHomeLayouts {
         if (has(s, "apps")) apps.add(appGrid(h, t, s, APP_CIRCLE, cols(h, 78, 40)))
         val tabs = ArrayList<Pair<String, List<View>>>()
         tabs.add(Pair("الرئيسية", home))
-        tabs.add(Pair("يوتيوب", pick(s, setOf("yt"))))
+        tabs.add(Pair("يوتيوب", s.ytList?.let { listOf(it()) } ?: pick(s, setOf("yt"))))
         tabs.add(Pair("التطبيقات", apps))
         tabs.add(Pair("الإعدادات", listOf(s.settings)))
         val (navView, body) = tabStrip(h, t, tabs.filter { it.second.isNotEmpty() }, style = 3)
         val capsule = FrameLayout(h.activity).apply {
-            background = shape(pal.cardFill, ui.dp(t.radiusPill).toFloat(), pal.border, ui.dp(1))
+            background = shape(pal.cardFill, ui.dp(t.radiusPill).toFloat(), pal.outline, ui.dp(1))
             setPadding(ui.dp(8), ui.dp(6), ui.dp(8), ui.dp(6))
             addView(navView, FrameLayout.LayoutParams(-2, -2))
         }
         val tools = box(h, false).apply {
             gravity = Gravity.CENTER_VERTICAL
-            background = shape(pal.cardFill, ui.dp(t.radiusPill).toFloat(), pal.border, ui.dp(1))
+            background = shape(pal.cardFill, ui.dp(t.radiusPill).toFloat(), pal.outline, ui.dp(1))
             setPadding(ui.dp(8), ui.dp(6), ui.dp(8), ui.dp(6))
         }
         tools.addView(roundButton(h, t, "⚙") { h.open(TvPage.APPEARANCE) })
@@ -637,12 +649,12 @@ object TvHomeLayouts {
         if (has(s, "apps")) apps.add(appGrid(h, t, s, APP_GRID, cols(h, 78, 230)))
         val tabs = ArrayList<Pair<String, List<View>>>()
         tabs.add(Pair("▶ المشاهدة", wall))
-        tabs.add(Pair("📺 يوتيوب", pick(s, setOf("yt"))))
+        tabs.add(Pair("📺 يوتيوب", s.ytList?.let { listOf(it()) } ?: pick(s, setOf("yt"))))
         tabs.add(Pair("🧩 التطبيقات", apps))
         tabs.add(Pair("⚙ الإعدادات", listOf(s.settings)))
         val (navView, body) = tabStrip(h, t, tabs.filter { it.second.isNotEmpty() }, style = 2)
         val side = FrameLayout(h.activity).apply {
-            background = shape(pal.cardFill, ui.dp(t.radiusCard + 4).toFloat(), pal.border, ui.dp(1))
+            background = shape(pal.cardFill, ui.dp(t.radiusCard + 4).toFloat(), pal.outline, ui.dp(1))
             setPadding(ui.dp(8), ui.dp(10), ui.dp(8), ui.dp(10))
             addView(navView, FrameLayout.LayoutParams(-1, -2))
         }
@@ -715,7 +727,7 @@ object TvHomeLayouts {
             5 -> if (selected) ((pal.fg and 0x00FFFFFF) or 0x2E000000) else 0x00000000
             else -> if (selected) pal.primary else pal.surface
         }
-        val stroke: Int = if (focused) pal.fg else if (style == 3 || style == 5) 0x00000000 else pal.border
+        val stroke: Int = if (focused) pal.fg else if (style == 3 || style == 5) 0x00000000 else pal.outline
         c.background = shape(fill, r, stroke, ui.dp(if (focused) 3 else 1))
         val txt: Int = when (style) {
             3 -> if (selected) (if (pal.dark) darkText else Color.WHITE) else pal.fg
