@@ -203,3 +203,6 @@ com/tttt/subtitler/YtSnap.kt
 com/tttt/subtitler/YtThumbBtns.kt
 com/tttt/subtitler/YtTopBar.kt
 com/tttt/subtitler/YtWatch.kt
+com/tttt/subtitler/IrTv.kt
+com/tttt/subtitler/RemoteActivity.kt
+com/tttt/subtitler/TvPanic.kt

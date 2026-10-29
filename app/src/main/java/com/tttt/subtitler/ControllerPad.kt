@@ -158,7 +158,7 @@ object ControllerPad {
             val volRow = android.widget.LinearLayout(act).apply { orientation = android.widget.LinearLayout.VERTICAL; gravity = Gravity.CENTER }   // (v643) + فوق و− تحته
             fun volBtn(txt: String, desc: String, c: String, first: Boolean) {
                 val tv = TextView(act).apply {
-                    text = txt; textSize = 26f; isFakeBoldText = true; setTextColor(Color.WHITE); this.gravity = Gravity.CENTER; includeFontPadding = false
+                    text = txt; textSize = 26f; paint.isFakeBoldText = true; setTextColor(Color.WHITE); this.gravity = Gravity.CENTER; includeFontPadding = false
                     contentDescription = desc; elevation = dp(6).toFloat()
                     background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(0xFF37474F.toInt()); setStroke(2, 0x66FFFFFF) }
                 }
