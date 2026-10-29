@@ -71,7 +71,14 @@ object TvSkinHub : TvSkin {
     }
 
     // ===== بانر «كمّل» =====
-    override fun homeHeader(h: TvSkinHost): View? {
+    /** (v628) هيكل لوحة التحكم: عمود مشاهدة + عمود تطبيقات جانبي */
+    override fun arrangeHome(h: TvSkinHost, s: TvHomeSections): List<View>? = TvHomeLayouts.dashboard(h, tokens, s)
+
+    /** (v629) الهيدر القديم اتشال: الرئيسية بتتبني من arrangeHome */
+    override fun homeHeader(h: TvSkinHost): View? = null
+
+    @Suppress("unused")
+    private fun legacyHomeHeader(h: TvSkinHost): View? {
         val b = continueBanner(h) ?: return null
         return LinearLayout(h.activity).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; clipChildren = false; clipToPadding = false; addView(b) }   // (v622) زرار 🏠 اتشال من الرئيسية (كان بيدوس على نفسه ومش بيعمل حاجة)
     }

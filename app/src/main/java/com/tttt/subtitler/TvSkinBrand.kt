@@ -28,7 +28,19 @@ private class ManufacturerTvSkin(
 
     override fun home(h: TvSkinHost, focus: Boolean, reuse: Boolean): Boolean = false
 
-    override fun homeHeader(h: TvSkinHost): View = when (layout) {
+    /** (v628) كل شركة ليها هيكل رئيسية مختلف فعلًا (تابات / شريط تشغيل / سايدبار) بنفس الأقسام والوظائف */
+    override fun arrangeHome(h: TvSkinHost, s: TvHomeSections): List<View>? = when (layout) {
+        BrandLayout.SAMSUNG -> TvHomeLayouts.iconTabs(h, tokens, s)
+        BrandLayout.LG -> TvHomeLayouts.launcherBand(h, tokens, s)
+        BrandLayout.TCL -> TvHomeLayouts.topTabs(h, tokens, s)
+        BrandLayout.XIAOMI -> TvHomeLayouts.sidebar(h, tokens, s)
+    }
+
+    /** (v629) الهيدر القديم اتشال: الرئيسية كلها بتتبني من arrangeHome بهيكل كل شركة */
+    override fun homeHeader(h: TvSkinHost): View? = null
+
+    @Suppress("unused")
+    private fun legacyHeader(h: TvSkinHost): View = when (layout) {
         BrandLayout.SAMSUNG -> samsungHeader(h)
         BrandLayout.LG -> lgHeader(h)
         BrandLayout.TCL -> tclHeader(h)

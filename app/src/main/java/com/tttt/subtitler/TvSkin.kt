@@ -58,6 +58,18 @@ interface TvSkinHost {
 }
 
 /**
+ * (v628) أقسام الرئيسية الجاهزة والمتملّية (سجل · يوتيوب · فولدرات مثبّتة · فيديوهات · تطبيقات + الإعدادات).
+ * السكِن بيرتّبها في هيكل بتاعه (تابات · سايدبار · لوحات) من غير ما يفقد أي وظيفة.
+ * order = ترتيب المستخدم بعد استبعاد المخفي · views = القسم بالمعرّف (hist/yt/pin/vids/apps).
+ */
+class TvHomeSections(val order: List<String>, val views: Map<String, View>, val settingsTitle: View, val settings: View,
+    /** (v630) بيانات التطبيقات الخام — كل سكِن يرسم تطبيقاته بشكله (بانر · مربع · دوك · أيقونة كبيرة) بدل الدواير المشتركة */
+    val appItems: List<TvAppItem> = emptyList())
+
+/** (v630) تطبيق واحد في الرئيسية: الاسم + الأيقونة (Bitmap) + لون الهالة + الفتح + الضغطة الطويلة */
+class TvAppItem(val label: String, val icon: Bitmap?, val glow: Int?, val onClick: () -> Unit, val onLong: (() -> Unit)? = null)
+
+/**
  * (v597 م1) عقد السكِن. كل سكِن بيطبّق نفس الخانات (slots):
  *  Home · FolderView · Settings · Notifications · Skin-first chooser · Search · ContextMenu + مكوّن كارت الفولدر + الأزرار الملونة.
  *
@@ -89,6 +101,9 @@ interface TvSkin {
 
     /** (v599 م4) عنصر بيتحط فوق صفوف الرئيسية (بانر «كمّل» مثلًا) — null = مفيش. بيتنده تاني كل ما الرئيسية تتفتح (التقدّم بيتحدّث) */
     fun homeHeader(h: TvSkinHost): View? = null
+
+    /** (v628) رتّب أقسام الرئيسية بهيكل السكِن. بترجّع الـViews اللي تتضاف للصفحة بالترتيب، أو null = الترتيب العمودي المدمج */
+    fun arrangeHome(h: TvSkinHost, s: TvHomeSections): List<View>? = null
 
     /** (v599 م4) زرار Menu وهو واقف على عنصر مالوش قايمة (مش دوسة طويلة). true = السكِن استهلكه */
     fun menuKey(h: TvSkinHost): Boolean = false

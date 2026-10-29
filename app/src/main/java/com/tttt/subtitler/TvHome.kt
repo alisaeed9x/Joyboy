@@ -585,6 +585,7 @@ class TvActivity : Activity() {
             rail.addView(roundBtn("🎨", "المظهر", 42) { showAppearance() })
             rail.addView(roundBtn("🔧", "إعدادات البرنامج", 42) { guardPin { openMain("settings") } })
             rail.addView(roundBtn("⋮", "المزيد", 42) { moreMenu() })
+            rail.addView(roundBtn("🔀", "خلفية جديدة", 42) { newWallNow() })   // (v632)
             railBox = rail
         }
         // 3) كبسولة الأزرار الدائرية: إعدادات البرنامج · المزيد (الإعدادات/التطبيقات/المشغّل الافتراضي/إلغاء التثبيت…)
@@ -594,6 +595,7 @@ class TvActivity : Activity() {
         }
         rb.addView(roundBtn("🔧", "إعدادات البرنامج", 42) { guardPin { openMain("settings") } })
         rb.addView(roundBtn("⋯", "المزيد", 42) { moreMenu() })
+        rb.addView(roundBtn("🔀", "خلفية جديدة", 42) { newWallNow() })   // (v632)
         if (!compactUi) { bar.addView(View(this), LinearLayout.LayoutParams(0, 1, 1f)) }   // (v512) أزرار الإعدادات اتنقلت لصف فوق «🎛 تخصيص» في الرئيسية (كانت بتطلع بره الشاشة)
         // 4) الشعار | الساعة على الشمال زي «Google TV | 3:10»
         val tc = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_LTR; background = capsuleBg(30); setPadding(ui.dp(6), ui.dp(4), ui.dp(12), ui.dp(4)) }   // (v614) كبسولة واحدة: القايمة · الإعدادات · الساعة · الصلاة · الواي فاي · الوصول السريع
@@ -1114,15 +1116,22 @@ class TvActivity : Activity() {
     }
 
     /** بينزّل الصورة الجاية (Bing/Picsum بالتبادل) ويعرضها. لو النزول فشل بيفضل على الحالية ويحاول بعد دقيقة */
-    private fun nextWall(force: Boolean) {
+    /** (v632) زرار 🔀: خلفية جديدة دلوقتي ومش اتعرضت قبل كده (Bing اللي ماظهرش لسه، وبعدها صور منوّعة بـseed جديد) */
+    private fun newWallNow() {
+        if (wallMode() == "off") { Cfg.put("tv_wall", "auto"); applyWall() }
+        Notice.show(this, "🔀 بجيب خلفية جديدة…", 1500L)
+        nextWall(true, true)
+    }
+
+    private fun nextWall(force: Boolean, fresh: Boolean = false) {
         val mode = wallMode()
         if (mode == "off" || !wallBusy.compareAndSet(false, true)) return
         val my = wallSeq
-        val useBing = when (mode) { "bing" -> true; "picsum" -> false; else -> (wallN++ % 2 == 0) }
+        val useBing = if (fresh) mode != "picsum" else when (mode) { "bing" -> true; "picsum" -> false; else -> (wallN++ % 2 == 0) }
         Thread {
             try {
                 val f = java.io.File(filesDir, "wall_cur.jpg")
-                if (fetchWall(useBing, f) || fetchWall(!useBing && mode == "auto", f)) showWall(decodeFileScaled(f), my)
+                if (fetchWall(useBing, f, fresh) || fetchWall(if (fresh) false else (!useBing && mode == "auto"), f, fresh)) showWall(decodeFileScaled(f), my)
                 else if (force) runOnUiThread { if (!isDestroyed) Notice.show(this, "⚠ ما قدرتش أنزّل خلفية جديدة (النت؟) — شغّال بآخر صورة", 2800L) }
             } catch (e: Throwable) { LogStore.err("Tv:wallNext", e) } finally { wallBusy.set(false) }
         }.apply { isDaemon = true }.start()
@@ -1136,7 +1145,7 @@ class TvActivity : Activity() {
             if (c.responseCode in 200..299) c.inputStream.use { it.readBytes() } else null
         } finally { try { c.disconnect() } catch (_: Throwable) {} }
     }
-    private fun fetchWall(bing: Boolean, dest: java.io.File): Boolean {
+    private fun fetchWall(bing: Boolean, dest: java.io.File, fresh: Boolean = false): Boolean {
         return try {
             val url = if (bing) {
                 if (bingUrls.isEmpty()) {   // آخر 8 صور من أرشيف Bing (بتتجاب مرة وتتلف عليها عشوائي)
@@ -1144,13 +1153,16 @@ class TvActivity : Activity() {
                     val arr = j.getJSONArray("images")
                     bingUrls = (0 until arr.length()).map { "https://www.bing.com" + arr.getJSONObject(it).getString("url") }
                 }
-                bingUrls.randomOrNull() ?: return false
+                if (fresh) { val seen = Cfg.str("tv_wall_seen", "").split("\n"); bingUrls.firstOrNull { it !in seen } ?: return false }
+                else bingUrls.randomOrNull() ?: return false
             } else "https://picsum.photos/seed/" + System.currentTimeMillis() + "/1920/1080"
             val data = httpBytes(url) ?: return false
             if (data.size < 20_000) return false
             val tmp = java.io.File(dest.path + ".tmp"); tmp.writeBytes(data)
             if (decodeFileScaled(tmp) == null) { tmp.delete(); return false }
-            tmp.renameTo(dest)
+            val ok = tmp.renameTo(dest)
+            if (ok && bing) Cfg.put("tv_wall_seen", (Cfg.str("tv_wall_seen", "").split("\n").filter { it.isNotBlank() } + url).takeLast(40).joinToString("\n"))
+            ok
         } catch (e: Throwable) { LogStore.err("Tv:wallFetch", e); false }
     }
 
@@ -1529,6 +1541,7 @@ class TvActivity : Activity() {
         return c
     }
     private var warmed = false
+    private var homeAppItems: List<TvAppItem> = emptyList()   // (v630) بيانات التطبيقات الخام للسكِنز
     /** يبني أيقونات كل التطبيقات في الخلفية أول ما اللانشر يفتح، فصفحة «تطبيقات» تفتح فورًا */
     private fun warmApps() {
         if (warmed) return; warmed = true
@@ -2035,9 +2048,24 @@ class TvActivity : Activity() {
     private fun lookDialog() {
         subOpened = true
         val skins = TvSkins.all; val cur = TvSkins.cur().id
-        GAlert(this).setTitle("🧩 اختار السكن أولًا")
-            .setMessage("اختار شكل الواجهة وتخطيطها. بعد الاختيار هتختار السمة البصرية اللي تتطبق عليه.")
-            .setItems(skins.map { (if (it.id == cur) "✔ " else "") + it.name }.toTypedArray()) { _, i -> skinThemePicker(skins[i]) }
+        val after = Cfg.str("tv_theme_after_skin", "0") == "1"   // (v631) افتراضي معطّل: السكن هو الأساسي ومفيش سؤال عن السمة بعده
+        val head = listOf(
+            "⚙ اختيار السمة بعد السكن: " + (if (after) "✔ مفعّل" else "✖ معطّل") + "  (اضغط للتبديل)",
+            "🎨 السمات (للسكن الحالي)")
+        val items = head + skins.map { (if (it.id == cur) "✔ " else "") + it.name }
+        GAlert(this).setTitle("🧩 السكنات")
+            .setMessage(if (after) "بعد اختيار السكن هتختار السمة." else "اختيار السكن بيتطبّق على طول بالسمة الحالية.")
+            .setItems(items.toTypedArray()) { _, i ->
+                when {
+                    i == 0 -> { Cfg.put("tv_theme_after_skin", if (after) "0" else "1"); lookDialog() }
+                    i == 1 -> skinThemePicker(TvSkins.cur())
+                    else -> {
+                        val sk = skins[i - head.size]
+                        if (after) skinThemePicker(sk)
+                        else { if (sk.id != cur) TvSkins.set(sk.id, skinHost); recreate() }
+                    }
+                }
+            }
             .setNegativeButton("رجوع") { _, _ -> refreshAppearance() }
             .setOnCancelListener(android.content.DialogInterface.OnCancelListener { refreshAppearance() })
             .show()
@@ -2761,10 +2789,11 @@ class TvActivity : Activity() {
         if ("vids" !in hidden) fillStorageHome(fh)
         // (v538) ترتيب الصفوف من «↕ ترتيب الصفوف» (tv_rows_order) — كان ثابت
         val rowHosts = mapOf("hist" to hh, "yt" to yh, "pin" to ph, "vids" to fh, "apps" to ah)
+        val orderIds = ArrayList<String>()
         for (id in rowsOrder()) {
-            val v = rowHosts[id] ?: continue
+            if (rowHosts[id] == null) continue
             if ((id == "hist" || id == "yt" || id == "vids") && id in hidden) continue
-            content.addView(v)
+            orderIds.add(id)
         }
         if (VideoScan.hasPermission(this) && scanned && System.currentTimeMillis() - lastScanAt < 20000L) {   // (v531) الفحص طازة: املا الصفوف على طول من غير فحص جديد
             fillPinned(ph)
@@ -2789,13 +2818,29 @@ class TvActivity : Activity() {
             circles.add(dockItem(builtinIcon("➕", 0xFF3A3F55.toInt(), px), "أضف تطبيق", 0xFF3A3F55.toInt(), { pickApps() }))   // (v538) إضافة تطبيق للرئيسية من آخر الصف
             ah.addView(sectionTitle("تطبيقاتك"))
             ah.addView(hrow(circles))
+            // (v630) نفس التطبيقات كبيانات خام عشان كل سكِن يرسمها بشكله
+            val items = ArrayList<TvAppItem>()
+            items.add(TvAppItem("يوتيوب", builtinIcon("▶", 0xFFE62117.toInt(), px), 0xFFE62117.toInt(), { openMain("youtube") }))
+            items.add(TvAppItem("المتصفح", builtinIcon("🌐", 0xFF2F80ED.toInt(), px), 0xFF2F80ED.toInt(), { openBrowser() }))
+            if ("apps" !in hidden) essentialApps().forEach { ri ->
+                val pkg = ri.activityInfo.packageName
+                val ic = icoFor(ri, px)
+                items.add(TvAppItem(lbl(ri), ic.bmp, ic.glow, { launchApp(pkg) }, { openAppInfo(pkg) }))
+            }
+            items.add(TvAppItem("كل التطبيقات", builtinIcon("⋯", 0xFF3A3F55.toInt(), px), 0xFF3A3F55.toInt(), { showApps() }))
+            items.add(TvAppItem("أضف تطبيق", builtinIcon("➕", 0xFF3A3F55.toInt(), px), 0xFF3A3F55.toInt(), { pickApps() }))
+            homeAppItems = items
         }
         // (v525) صف «تطبيقات قد تحتاجها» (التطبيقات الأكتر شيوعًا اللي مش متثبتة وبأيقونة حرف) اتشال بالكامل
         // 6) (v581) الإعدادات منظّمة في آخر الصفحة: مجموعات بعناوين وكروت موحّدة بدل أزرار مبعثرة
-        content.addView(sectionTitle("⚙️ الإعدادات"))
+        val setTitle = sectionTitle("⚙️ الإعدادات")
         val sh = host(); sh.tag = "rowhost"
         fillHomeSettings(sh)
-        content.addView(sh)
+        // (v628) السكِن يقدر يرتّب أقسام الرئيسية بهيكل مختلف (تابات/سايدبار/لوحات)؛ null = الصفوف العمودية المدمجة
+        val arranged = try { TvSkins.cur().arrangeHome(skinHost, TvHomeSections(orderIds, rowHosts, setTitle, sh, homeAppItems)) } catch (e: Throwable) { LogStore.err("Tv:arrange", e); null }
+        fun addFresh(v: View) { (v.parent as? ViewGroup)?.removeView(v); content.addView(v) }
+        if (arranged != null) arranged.forEach { addFresh(it) }
+        else { orderIds.forEach { id -> rowHosts[id]?.let { addFresh(it) } }; addFresh(setTitle); addFresh(sh) }
         content.addView(View(this), LinearLayout.LayoutParams(-1, ui.dp(24)))
         homeCache = (0 until content.childCount).map { content.getChildAt(it) }; homeCacheAt = System.currentTimeMillis()
         homeCacheSig = recentsSig()
