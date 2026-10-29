@@ -161,6 +161,7 @@ com/tttt/subtitler/TvSkin.kt
 com/tttt/subtitler/TvSkinClassic.kt
 com/tttt/subtitler/TvSkinGlass.kt
 com/tttt/subtitler/TvSkinHub.kt
+com/tttt/subtitler/TvSkinRail.kt
 com/tttt/subtitler/TvTasksUi.kt
 com/tttt/subtitler/TvTiles.kt
 com/tttt/subtitler/TvTokens.kt

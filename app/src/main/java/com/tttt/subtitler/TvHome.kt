@@ -145,16 +145,34 @@ class TvActivity : Activity() {
             }
         }
         override fun page(build: (LinearLayout) -> Unit) { this@TvActivity.skinPage(build) }
+        override fun homePage(build: (LinearLayout) -> Unit) { this@TvActivity.skinPageImpl(true, build) }
+        override fun folders(): List<FolderItem>? =
+            if (!VideoScan.hasPermission(this@TvActivity) || !this@TvActivity.scanned) null
+            else VideoLib.sortFolders(VideoLib.group(this@TvActivity.lastScan), this@TvActivity.foldSort())
+        override fun hasVideoPermission(): Boolean = VideoScan.hasPermission(this@TvActivity)
+        override fun ensureScan(onDone: () -> Unit) {
+            val a = this@TvActivity
+            if (!VideoScan.hasPermission(a) || (a.scanned && System.currentTimeMillis() - a.lastScanAt < 20000L)) { onDone(); return }
+            Thread {
+                val items = try { VideoScan.scan(a) } catch (_: Exception) { null }
+                a.runOnUiThread {
+                    if (a.isDestroyed) return@runOnUiThread
+                    if (items != null) { a.lastScan = items; a.scanned = true; a.lastScanAt = System.currentTimeMillis() }
+                    onDone()
+                }
+            }.apply { isDaemon = true }.start()
+        }
         override fun setTheme(id: String) { Cfg.put("theme", id); this@TvActivity.recreate() }
         override fun goHome() { this@TvActivity.showHome(true, true) }
         override fun requestVideoPermission() { this@TvActivity.askVideoPermission() }
     }
 
     /** (v600 م4) صفحة بيرسمها السكِن (إشعارات/سمات/…): نفس تجهيز الصفحات الفرعية، والرجوع (Back) بيرجّع للرئيسية */
-    private fun skinPage(build: (LinearLayout) -> Unit) {
+    private fun skinPage(build: (LinearLayout) -> Unit) = skinPageImpl(false, build)
+    private fun skinPageImpl(asHome: Boolean, build: (LinearLayout) -> Unit) {
         h.removeCallbacks(searchRun)
         muteSearch = true; searchEt?.setText(""); muteSearch = false; inSearch = false
-        storageKind = null; openFolder = null; foldersHost = null; setTab(-1); prayerCd = null
+        storageKind = null; openFolder = null; foldersHost = null; setTab(if (asHome) 0 else -1); prayerCd = null
         content.removeAllViews(); heroBtn = null; heroImg = null
         try { build(content) } catch (e: Throwable) { LogStore.err("Tv:skinPage", e) }
         pageEnter()

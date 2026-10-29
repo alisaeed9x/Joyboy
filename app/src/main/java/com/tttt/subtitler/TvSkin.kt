@@ -48,6 +48,13 @@ interface TvSkinHost {
     fun goHome()
     /** (v600 م4) اطلب صلاحية الفيديوهات */
     fun requestVideoPermission()
+    /** (v625 م4) زي page() بس للرئيسية نفسها: التاب الحالي = الرئيسية (فالرجوع من الفيديو بيحدّثها زي الرئيسية المدمجة) */
+    fun homePage(build: (LinearLayout) -> Unit)
+    /** (v625 م4) فولدرات الفيديو مرتّبة بإعداد المستخدم، أو null لو الفحص ماخلصش / مفيش صلاحية */
+    fun folders(): List<FolderItem>?
+    fun hasVideoPermission(): Boolean
+    /** (v625 م4) افحص الفيديوهات لو لازم (في الخلفية) وناد onDone على UI thread (حتى لو الفحص فشل أو مفيش صلاحية) */
+    fun ensureScan(onDone: () -> Unit)
 }
 
 /**
@@ -101,7 +108,7 @@ interface TvSkin {
  * لو السكِن المحفوظ مش موجود (اتشال مثلًا) بنرجع لـ«كلاسيك».
  */
 object TvSkins {
-    private val list = ArrayList<TvSkin>().apply { add(TvSkinClassic); add(TvSkinHub); add(TvSkinGlass) }
+    private val list = ArrayList<TvSkin>().apply { add(TvSkinClassic); add(TvSkinHub); add(TvSkinGlass); add(TvSkinRail) }
     private val listeners = ArrayList<() -> Unit>()
     @Volatile private var curSkin: TvSkin? = null
 
