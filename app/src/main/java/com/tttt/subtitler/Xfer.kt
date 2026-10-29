@@ -3,6 +3,13 @@ package com.tttt.subtitler
 
 import android.app.Activity
 import android.app.AlertDialog
+import android.app.Notification
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.PendingIntent
+import android.content.BroadcastReceiver
+import android.content.Intent
+import android.content.IntentFilter
 import android.content.Context
 import android.net.Uri
 import android.os.Environment
@@ -348,44 +355,114 @@ object XferUi {
         return String.format("%.1f MB/s", bytes / s / 1048576.0)
     }
 
-    /** موبايل ← تلفزيون: الملفات بتتبعت واحد ورا التاني */
+    /** (v652) إشعار تقدم الإرسال في شريط الحالة: نسبة + سرعة + الوقت المتبقي + عداد الملفات، وبيتحوّل لـ«خلص» في الآخر */
+    private class SendNotif(val ctx: Context) {
+        @Volatile var cancelled = false
+        private val nm = ctx.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        private val id = 7311
+        private var lastAt = 0L
+        private val rx = object : BroadcastReceiver() { override fun onReceive(c: Context?, i: Intent?) { cancelled = true } }
+        init {
+            try {
+                nm.createNotificationChannel(NotificationChannel(CH, "إرسال ملفات للتلفزيون", NotificationManager.IMPORTANCE_LOW))
+                nm.createNotificationChannel(NotificationChannel(CH_DONE, "خلص إرسال الملفات", NotificationManager.IMPORTANCE_DEFAULT))
+            } catch (_: Throwable) {}
+            try {
+                val f = IntentFilter(ACT_CANCEL)
+                if (android.os.Build.VERSION.SDK_INT >= 33) ctx.registerReceiver(rx, f, Context.RECEIVER_NOT_EXPORTED) else ctx.registerReceiver(rx, f)
+            } catch (_: Throwable) {}
+        }
+        private fun open(): PendingIntent? = try {
+            PendingIntent.getActivity(ctx, 0, Intent(ctx, TransferActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
+        } catch (_: Throwable) { null }
+        private fun fmtT(sec: Long): String { val s = sec.coerceAtLeast(0L); return if (s >= 3600) String.format("%d:%02d:%02d", s / 3600, (s % 3600) / 60, s % 60) else String.format("%d:%02d", s / 60, s % 60) }
+
+        /** done/total بالبايت لكل الدفعة، t0 بداية الدفعة، file = رقم الملف الحالي من العدد الكلي */
+        fun progress(file: Int, files: Int, name: String, done: Long, total: Long, t0: Long, force: Boolean = false) {
+            val now = System.currentTimeMillis()
+            if (!force && now - lastAt < 350L) return
+            lastAt = now
+            val pct = (done * 100L / total.coerceAtLeast(1L)).toInt().coerceIn(0, 100)
+            val el = ((now - t0) / 1000.0).coerceAtLeast(0.5)
+            val bps = done / el
+            val left = if (bps > 1.0) ((total - done) / bps).toLong() else -1L
+            val txt = "$pct% · " + String.format("%.1f MB/s", bps / 1048576.0) + (if (left >= 0) " · باقي " + fmtT(left) else "") + "  (" + Sniff.fmtSize(done) + " / " + Sniff.fmtSize(total) + ")"
+            val cancel = try { PendingIntent.getBroadcast(ctx, 1, Intent(ACT_CANCEL).setPackage(ctx.packageName), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT) } catch (_: Throwable) { null }
+            try {
+                val b = Notification.Builder(ctx, CH).setSmallIcon(android.R.drawable.stat_sys_upload)
+                    .setContentTitle("📤 إرسال للتلفزيون" + (if (files > 1) " ($file/$files)" else ""))
+                    .setContentText(txt).setSubText(name).setStyle(Notification.BigTextStyle().bigText(txt + "\n" + name))
+                    .setProgress(1000, (done * 1000L / total.coerceAtLeast(1L)).toInt().coerceIn(0, 1000), false)
+                    .setOngoing(true).setOnlyAlertOnce(true).setNumber((files - file + 1).coerceAtLeast(1)).setContentIntent(open())
+                if (cancel != null) b.addAction(Notification.Action.Builder(android.graphics.drawable.Icon.createWithResource(ctx, android.R.drawable.ic_menu_close_clear_cancel), "إلغاء", cancel).build())
+                nm.notify(id, b.build())
+            } catch (_: Throwable) {}
+        }
+        fun connecting(msg: String, file: Int, files: Int) {
+            try {
+                nm.notify(id, Notification.Builder(ctx, CH).setSmallIcon(android.R.drawable.stat_sys_upload).setContentTitle("📤 إرسال للتلفزيون" + (if (files > 1) " ($file/$files)" else "")).setContentText(msg)
+                    .setProgress(0, 0, true).setOngoing(true).setOnlyAlertOnce(true).setContentIntent(open()).build())
+            } catch (_: Throwable) {}
+        }
+        private fun end(icon: Int, title: String, text: String) {
+            try { ctx.unregisterReceiver(rx) } catch (_: Throwable) {}
+            try {
+                nm.cancel(id)
+                nm.notify(id + 1, Notification.Builder(ctx, CH_DONE).setSmallIcon(icon).setContentTitle(title).setContentText(text).setAutoCancel(true).setContentIntent(open()).build())
+            } catch (_: Throwable) {}
+        }
+        fun done(sent: Int, files: Int, bytes: Long, t0: Long) {
+            val sec = ((System.currentTimeMillis() - t0) / 1000L).coerceAtLeast(1L)
+            end(android.R.drawable.stat_sys_upload_done, "✅ خلص الإرسال للتلفزيون", "$sent من $files ملف · " + Sniff.fmtSize(bytes) + " في " + fmtT(sec))
+        }
+        fun fail(msg: String) = end(android.R.drawable.stat_notify_error, "⚠ الإرسال وقف", msg)
+        fun stopped() = end(android.R.drawable.stat_notify_error, "⏹ اتلغى الإرسال", "")
+        companion object { const val CH = "xfer_send"; const val CH_DONE = "xfer_done"; const val ACT_CANCEL = "com.tttt.joyboy.XFER_CANCEL" }
+    }
+
+    /** موبايل ← تلفزيون: الملفات بتتبعت واحد ورا التاني — والتقدم في إشعار شريط الحالة (v652) */
     fun sendUris(act: Activity, uris: List<Uri>, names: List<String>? = null) {
         val ctx = act.applicationContext
+        Notice.show(act, "📤 بدأ الإرسال — التقدم في شريط الإشعارات", 2600L)
         Thread {
+            val nf = SendNotif(ctx)
+            val metas = uris.mapIndexed { i, u ->
+                val (n0, sz) = meta(ctx, u)
+                Pair(Xfer.safeName(names?.getOrNull(i)?.takeIf { it.isNotBlank() } ?: n0), sz)
+            }
+            val totalBytes = metas.sumOf { it.second.coerceAtLeast(0L) }.coerceAtLeast(1L)
+            var doneBytes = 0L; var sent = 0
+            val t0 = System.currentTimeMillis()
             for ((idx, uri) in uris.withIndex()) {
-                val (n0, size) = meta(ctx, uri)
-                val name = Xfer.safeName(names?.getOrNull(idx)?.takeIf { it.isNotBlank() } ?: n0)
-                val p = onUi(act) { Prog(act, "📤 " + (if (uris.size > 1) "(" + (idx + 1) + "/" + uris.size + ") " else "") + name) }
+                val (name, size) = metas[idx]
                 var item: XferOut.Item? = null
                 try {
-                    if (size <= 0L) { p.close(); toast(act, "⚠ ما قدرتش أعرف حجم «$name»"); continue }
-                    p.set("بوصّل بالتلفزيون…", 0f)
-                    if (!RemoteClient.ensureConnected(ctx, 8000L)) { p.close(); toast(act, "⚠ ما قدرتش أوصل للتلفزيون"); return@Thread }
-                    val tv = RemoteClient.current ?: run { p.close(); toast(act, "⚠ مش متصل بالتلفزيون"); return@Thread }
+                    if (size <= 0L) { toast(act, "⚠ ما قدرتش أعرف حجم «$name»"); continue }
+                    nf.connecting("بوصّل بالتلفزيون… $name", idx + 1, uris.size)
+                    if (!RemoteClient.ensureConnected(ctx, 8000L)) { nf.fail("ما قدرتش أوصل للتلفزيون"); return@Thread }
+                    val tv = RemoteClient.current ?: run { nf.fail("مش متصل بالتلفزيون"); return@Thread }
                     val ip = RemoteClient.ipTowards(tv.ip)
                     val it = XferOut.offer(ctx, uri, name, size)
-                    if (ip.isEmpty() || it == null) { p.close(); toast(act, "⚠ لازم الموبايل والتلفزيون على نفس الواي فاي"); return@Thread }
+                    if (ip.isEmpty() || it == null) { nf.fail("لازم الموبايل والتلفزيون على نفس الواي فاي"); return@Thread }
                     item = it
                     val (c, _) = RemoteClient.postJson("/pull", JSONObject().put("url", XferOut.urlFor(it, ip)).put("name", name).put("size", size).put("cat", XCat.catOf(name)))
-                    if (c != 200) { p.close(); toast(act, "⚠ التلفزيون رفض الملف ($c) — حدّث البرنامج على التلفزيون"); return@Thread }
-                    val t0 = System.currentTimeMillis()
+                    if (c != 200) { nf.fail("التلفزيون رفض الملف ($c) — حدّث البرنامج على التلفزيون"); return@Thread }
                     var idle = 0; var lastMax = -1L
-                    while (!p.cancelled) {
+                    while (!nf.cancelled) {
                         val m = it.max
-                        p.set(Sniff.fmtSize(m) + " / " + Sniff.fmtSize(size) + " · " + speed(m, t0), m.toFloat() / size)
+                        nf.progress(idx + 1, uris.size, name, doneBytes + m, totalBytes, t0)
                         if (m >= size) break
                         idle = if (m == lastMax) idle + 1 else 0; lastMax = m
-                        if (idle > 75) { p.close(); toast(act, "⚠ التلفزيون وقف السحب"); return@Thread }   // 30 ثانية من غير تقدم
+                        if (idle > 75) { nf.fail("التلفزيون وقف السحب"); return@Thread }   // 30 ثانية من غير تقدم
                         try { Thread.sleep(400) } catch (_: InterruptedException) {}
                     }
-                    if (p.cancelled) { it.cancelled = true; toast(act, "⏹ اتلغى الإرسال"); return@Thread }
-                    p.set("✅ اتبعت — التلفزيون بيحفظه", 1f)
-                    try { Thread.sleep(900) } catch (_: InterruptedException) {}
-                    p.close()
-                } catch (e: Throwable) { LogStore.err("Xfer:send", e); p.close(); toast(act, "⚠ فشل الإرسال") }
+                    if (nf.cancelled) { it.cancelled = true; nf.stopped(); return@Thread }
+                    doneBytes += size; sent++
+                    nf.progress(idx + 1, uris.size, name, doneBytes, totalBytes, t0, force = true)
+                } catch (e: Throwable) { LogStore.err("Xfer:send", e); nf.fail("فشل الإرسال"); return@Thread }
                 finally { item?.let { x -> h.postDelayed({ XferOut.drop(x) }, 60000L) } }
             }
-            toast(act, "✅ خلص الإرسال — الملفات في فولدراتها على التلفزيون (Joyboy)")
+            if (sent > 0) nf.done(sent, uris.size, doneBytes, t0) else nf.fail("مفيش ملف اتبعت")
         }.also { it.isDaemon = true }.start()
     }
 

@@ -6,6 +6,8 @@ import android.content.ClipData
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.media.MediaMetadataRetriever
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
@@ -57,6 +59,12 @@ class TransferActivity : Activity() {
     private var gen = 0
     private var needAccess = false
     private var infoMsg = ""
+    // (v652) فولدرات مطوية بالافتراضي (دوسة = فتح/قفل · دوسة طويلة أو علامة ☐ = تحديد) + عرض قايمة/شبكة
+    private val expanded = HashSet<String>()
+    private var gridMode = false
+    private class Disp(val header: Row? = null, val item: Row? = null, val cells: List<Row> = emptyList())
+    private var vis: List<Disp> = emptyList()
+    private var viewBtn: TextView? = null
 
     private class Row(
         val key: String, val title: String, val sub: String, val size: Long, val cat: String,
@@ -91,6 +99,7 @@ class TransferActivity : Activity() {
     override fun onCreate(b: Bundle?) {
         super.onCreate(b)
         Cfg.init(this)
+        gridMode = Cfg.str("xfer_grid", "0") == "1"
         try { RemoteClient.init(this) } catch (_: Throwable) {}
         try { DeviceUi.applyOrientation(this) } catch (_: Throwable) {}
         th = Themes.byId(Cfg.str("theme", "mx")); ui = Ui(this, th)
@@ -165,6 +174,9 @@ class TransferActivity : Activity() {
         statusTv = ui.text("", if (tvMode) 15f else 12f, th.muted)
         titleCol.addView(statusTv)
         head.addView(titleCol, lp(0, -2, 1f))
+        val vb = pill(if (gridMode) "☰ قايمة" else "▦ شبكة", false) { setGrid(!gridMode) }
+        viewBtn = vb
+        head.addView(vb, lp(-2, -2).apply { marginEnd = ui.dp(6) })
         head.addView(pill("✕", false) { finish() })
         root.addView(head, lp(-1, -2))
         // (v609) كارت الرادار: بيدوّر على التلفزيونات وتدوس على واحد تتصل بيه (الموبايل بس)
@@ -213,6 +225,7 @@ class TransferActivity : Activity() {
                 addState(intArrayOf(), ColorDrawable(Color.TRANSPARENT))
             }
             setOnItemClickListener { _, _, p, _ -> onRowClick(p) }
+            setOnItemLongClickListener { _, _, p, _ -> val hd = vis.getOrNull(p)?.header; if (hd != null) { toggleGroup(hd.group); true } else false }   // (v652) دوسة طويلة على الفولدر = تحديده
         }
         root.addView(list, lp(-1, 0, 1f))
         // الأزرار
@@ -283,7 +296,8 @@ class TransferActivity : Activity() {
     // ───────── التحميل ─────────
     private fun reload() {
         val my = ++gen
-        sel.clear(); rows = emptyList(); needAccess = false; infoMsg = ""
+        sel.clear(); rows = emptyList(); vis = emptyList(); needAccess = false; infoMsg = ""
+        expanded.clear(); expanded.add("offers")   // (v652) الفولدرات مقفولة، وعروض التلفزيون مفتوحة
         adapter.notifyDataSetChanged()
         renderTabs(); renderCats(); renderActions(); updateStatus()
         when {
@@ -314,7 +328,7 @@ class TransferActivity : Activity() {
         runOnUiThread {
             if (my != gen || isFinishing || isDestroyed) return@runOnUiThread
             rows = built; needAccess = noAccess; infoMsg = msg
-            adapter.notifyDataSetChanged(); updateInfo()
+            rebuildVis(); adapter.notifyDataSetChanged(); updateInfo()
             if (tvMode) list.post { try { list.requestFocus() } catch (_: Throwable) {} }
         }
     }
@@ -362,12 +376,54 @@ class TransferActivity : Activity() {
 
     // ───────── الاختيار ─────────
     private fun onRowClick(p: Int) {
-        val r = rows.getOrNull(p) ?: return
-        if (r.header) {
-            val grp = rows.filter { !it.header && it.group == r.group }.map { it.key }
-            if (grp.all { it in sel }) sel.removeAll(grp.toSet()) else sel.addAll(grp)
-        } else if (!sel.remove(r.key)) sel.add(r.key)
+        val d = vis.getOrNull(p) ?: return
+        val hd = d.header
+        if (hd != null) { toggleExpand(hd.group); return }
+        val r = d.item ?: return
+        if (!sel.remove(r.key)) sel.add(r.key)
         adapter.notifyDataSetChanged(); updateInfo()
+    }
+
+    private fun toggleExpand(g: String) {
+        if (!expanded.remove(g)) expanded.add(g)
+        rebuildVis(); adapter.notifyDataSetChanged()
+    }
+
+    private fun toggleGroup(g: String) {
+        val grp = rows.filter { !it.header && it.group == g }.map { it.key }
+        if (grp.isEmpty()) return
+        if (grp.all { it in sel }) sel.removeAll(grp.toSet()) else sel.addAll(grp)
+        adapter.notifyDataSetChanged(); updateInfo()
+    }
+
+    private fun setGrid(on: Boolean) {
+        gridMode = on
+        Cfg.put("xfer_grid", if (on) "1" else "0")
+        viewBtn?.text = if (on) "☰ قايمة" else "▦ شبكة"
+        rebuildVis(); adapter.notifyDataSetChanged()
+    }
+
+    private fun gridCols(): Int {
+        val w = resources.displayMetrics.widthPixels - 2 * ui.dp(if (tvMode) 28 else 12)
+        return (w / ui.dp(if (tvMode) 150 else 104)).coerceIn(2, 8)
+    }
+
+    /** الصفوف الظاهرة فعلًا: الفولدر المقفول مابيظهرش اللي جواه، وفي الشبكة كل N ملف في صف */
+    private fun rebuildVis() {
+        val hdr = rows.filter { it.header }.map { it.group }.toSet()
+        val cols = gridCols()
+        val out = ArrayList<Disp>()
+        var i = 0
+        while (i < rows.size) {
+            val r = rows[i]
+            if (r.header) { out.add(Disp(header = r)); i++; continue }
+            if (r.group in hdr && r.group !in expanded) { i++; continue }
+            if (!gridMode || r.cat == XCat.APP) { out.add(Disp(item = r)); i++; continue }
+            val cells = ArrayList<Row>()
+            while (i < rows.size && cells.size < cols) { val x = rows[i]; if (x.header || x.group != r.group) break; cells.add(x); i++ }
+            out.add(Disp(cells = cells))
+        }
+        vis = out
     }
 
     private fun toggleAll() {
@@ -641,20 +697,55 @@ class TransferActivity : Activity() {
     }
 
     // ───────── العرض ─────────
-    private fun loadThumb(r: Row, key: String, into: ImageView, tagOf: () -> String) {
-        thumbs.get(key)?.let { into.setImageBitmap(it); return }
-        if (Build.VERSION.SDK_INT < 29) return
+    private fun openIn(r: Row): java.io.InputStream? = try {
+        val f = r.file; val u = r.ent?.uri
+        if (f != null) java.io.FileInputStream(f) else if (u != null) contentResolver.openInputStream(u) else null
+    } catch (_: Throwable) { null }
+
+    private fun small(b: Bitmap?): Bitmap? {
+        if (b == null) return null
+        val m = Math.max(b.width, b.height)
+        return if (m <= 240) b else Bitmap.createScaledBitmap(b, Math.max(1, b.width * 240 / m), Math.max(1, b.height * 240 / m), true)
+    }
+
+    /** (v652) صورة مصغّرة لأندرويد < 10 أو لملف مش content:// */
+    private fun legacyThumb(r: Row): Bitmap? = legacyThumb0(r)
+    private fun legacyThumb0(r: Row): Bitmap? {
+        return when (r.cat) {
+        XCat.IMAGE -> {
+            val o = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            openIn(r)?.use { BitmapFactory.decodeStream(it, null, o) }
+            var sm = 1
+            while (o.outWidth / (sm * 2) >= 200 && o.outHeight / (sm * 2) >= 200) sm *= 2
+            val o2 = BitmapFactory.Options().apply { inSampleSize = sm }
+            small(openIn(r)?.use { BitmapFactory.decodeStream(it, null, o2) })
+        }
+        XCat.VIDEO -> {
+            val m = MediaMetadataRetriever()
+            try {
+                val f = r.file; val u = r.ent?.uri
+                if (f != null) m.setDataSource(f.absolutePath) else if (u != null) m.setDataSource(this, u) else return null
+                small(m.getFrameAtTime(1_000_000L, MediaMetadataRetriever.OPTION_CLOSEST_SYNC))
+            } finally { try { m.release() } catch (_: Throwable) {} }
+        }
+        else -> null
+        }
+    }
+
+    /** (v652) الصورة المصغّرة بتظهر لوحدها من غير أيقونة فوقها؛ الإيموجي بيفضل بس لو مفيش صورة */
+    private fun loadThumb(r: Row, key: String, into: ImageView, emo: View?, tagOf: () -> String) {
+        thumbs.get(key)?.let { into.setImageBitmap(it); emo?.visibility = View.GONE; return }
         val e = r.ent; val f = r.file
         pool.execute {
             val bmp: Bitmap? = try {
                 when {
-                    e?.uri != null && e.uri.scheme == "content" -> contentResolver.loadThumbnail(e.uri, Size(120, 120), null)
-                    f != null && r.cat == XCat.IMAGE -> android.media.ThumbnailUtils.createImageThumbnail(f, Size(120, 120), null)
-                    f != null && r.cat == XCat.VIDEO -> android.media.ThumbnailUtils.createVideoThumbnail(f, Size(120, 120), null)
-                    else -> null
+                    Build.VERSION.SDK_INT >= 29 && e?.uri != null && e.uri.scheme == "content" -> contentResolver.loadThumbnail(e.uri, Size(160, 160), null)
+                    Build.VERSION.SDK_INT >= 29 && f != null && r.cat == XCat.IMAGE -> android.media.ThumbnailUtils.createImageThumbnail(f, Size(160, 160), null)
+                    Build.VERSION.SDK_INT >= 29 && f != null && r.cat == XCat.VIDEO -> android.media.ThumbnailUtils.createVideoThumbnail(f, Size(160, 160), null)
+                    else -> legacyThumb(r)
                 }
-            } catch (_: Throwable) { null }
-            if (bmp != null) { thumbs.put(key, bmp); runOnUiThread { if (tagOf() == key) into.setImageBitmap(bmp) } }
+            } catch (_: Throwable) { try { legacyThumb(r) } catch (_: Throwable) { null } }
+            if (bmp != null) { thumbs.put(key, bmp); runOnUiThread { if (tagOf() == key) { into.setImageBitmap(bmp); emo?.visibility = View.GONE } } }
         }
     }
 
@@ -687,27 +778,95 @@ class TransferActivity : Activity() {
             if (r.cat == XCat.APP && r.ent != null) {
                 try { img.setImageDrawable(packageManager.getApplicationIcon(r.ent.pkg)); emo.visibility = View.GONE } catch (_: Throwable) {}
             } else if (r.cat == XCat.IMAGE || r.cat == XCat.VIDEO) {
-                loadThumb(r, r.key, img) { key }
-                if (thumbs.get(r.key) != null) emo.visibility = View.GONE
+                loadThumb(r, r.key, img, emo) { key }
+            }
+        }
+    }
+
+    /** (v652) فولدر: ▸/▾ + عنوان · دوسة = فتح/قفل · علامة ☐ أو دوسة طويلة = تحديد الفولدر كله */
+    private inner class HeaderView : LinearLayout(this@TransferActivity) {
+        val chk: TextView = ui.text("☐", if (tvMode) 26f else 22f, th.primary).apply { setPadding(ui.dp(10), ui.dp(6), ui.dp(10), ui.dp(6)) }
+        val arrow: TextView = ui.text("▸", if (tvMode) 20f else 16f, th.muted)
+        val title: TextView = ui.text("", if (tvMode) 17f else 14f, th.primary, true).apply { maxLines = 1; ellipsize = TextUtils.TruncateAt.END }
+        var group = ""
+        init {
+            orientation = HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; gravity = Gravity.CENTER_VERTICAL
+            setPadding(ui.dp(4), ui.dp(6), ui.dp(8), ui.dp(2))
+            addView(chk)
+            addView(arrow, LayoutParams(ui.dp(22), -2))
+            addView(title, LayoutParams(0, -2, 1f))
+            chk.isFocusable = false
+            chk.setOnClickListener { toggleGroup(group) }
+        }
+        fun bind(r: Row) {
+            group = r.group
+            val grp = rows.filter { !it.header && it.group == r.group }
+            chk.text = if (grp.isNotEmpty() && grp.all { it.key in sel }) "☑" else "☐"
+            arrow.text = if (r.group in expanded) "▾" else "▸"
+            title.text = r.title
+        }
+    }
+
+    private inner class SquareBox : FrameLayout(this@TransferActivity) {
+        override fun onMeasure(w: Int, h: Int) { super.onMeasure(w, w) }
+    }
+
+    /** (v652) خلية شبكة: صورة مربعة + الاسم تحتها + علامة تحديد فوق */
+    private inner class CellView : LinearLayout(this@TransferActivity) {
+        val img = ImageView(this@TransferActivity).apply { scaleType = ImageView.ScaleType.CENTER_CROP }
+        val emo: TextView = ui.text("", if (tvMode) 32f else 28f, th.text).apply { gravity = Gravity.CENTER }
+        val chk: TextView = ui.text("☐", 18f, Color.WHITE).apply { setShadowLayer(5f, 0f, 0f, Color.BLACK); setPadding(ui.dp(4), ui.dp(2), ui.dp(4), 0) }
+        val t1: TextView = ui.text("", if (tvMode) 13f else 11f, th.text).apply { maxLines = 1; ellipsize = TextUtils.TruncateAt.MIDDLE; gravity = Gravity.CENTER }
+        var key = ""
+        var cur: Row? = null
+        init {
+            orientation = VERTICAL; isFocusable = true; isClickable = true
+            setPadding(ui.dp(3), ui.dp(3), ui.dp(3), ui.dp(3))
+            val box = SquareBox().apply { background = ui.box(th.surface, th.border, 8) }
+            box.addView(img, FrameLayout.LayoutParams(-1, -1))
+            box.addView(emo, FrameLayout.LayoutParams(-1, -1))
+            box.addView(chk, FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.START))
+            addView(box, LayoutParams(-1, -2))
+            addView(t1, LayoutParams(-1, -2).apply { topMargin = ui.dp(2) })
+            setOnClickListener { cur?.let { r -> if (!sel.remove(r.key)) sel.add(r.key); adapter.notifyDataSetChanged(); updateInfo() } }
+        }
+        fun bind(r: Row, on: Boolean) {
+            cur = r; key = r.key
+            chk.text = if (on) "☑" else "☐"
+            t1.text = r.title
+            img.setImageDrawable(null); emo.text = XCat.emoji(r.cat); emo.visibility = View.VISIBLE
+            background = if (on) ui.box(th.surface, th.primary, 10, 2) else StateListDrawable().apply {
+                addState(intArrayOf(android.R.attr.state_focused), ui.box(th.surface, th.accent, 10, 2))
+                addState(intArrayOf(), ColorDrawable(Color.TRANSPARENT))
+            }
+            if (r.cat == XCat.IMAGE || r.cat == XCat.VIDEO) loadThumb(r, r.key, img, emo) { key }
+        }
+    }
+
+    private inner class GridRowView : LinearLayout(this@TransferActivity) {
+        val cells = ArrayList<CellView>()
+        init { orientation = HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; setPadding(ui.dp(2), ui.dp(1), ui.dp(2), ui.dp(1)) }
+        fun bind(rs: List<Row>) {
+            val cols = gridCols()
+            while (cells.size < cols) { val c = CellView(); cells.add(c); addView(c, LayoutParams(0, -2, 1f)) }
+            for (i in cells.indices) {
+                val c = cells[i]
+                if (i < rs.size) { c.visibility = View.VISIBLE; c.bind(rs[i], rs[i].key in sel) } else c.visibility = View.INVISIBLE
             }
         }
     }
 
     private inner class RowAdapter : BaseAdapter() {
-        override fun getCount() = rows.size
-        override fun getItem(position: Int): Any = rows[position]
+        override fun getCount() = vis.size
+        override fun getItem(position: Int): Any = vis[position]
         override fun getItemId(position: Int): Long = position.toLong()
-        override fun getViewTypeCount() = 2
-        override fun getItemViewType(position: Int) = if (rows[position].header) 1 else 0
+        override fun getViewTypeCount() = 3
+        override fun getItemViewType(position: Int): Int { val d = vis[position]; return if (d.header != null) 1 else if (d.cells.isNotEmpty()) 2 else 0 }
         override fun getView(position: Int, convertView: View?, parent: ViewGroup?): View {
-            val r = rows[position]
-            if (r.header) {
-                val v = (convertView as? TextView) ?: ui.text("", if (tvMode) 17f else 14f, th.primary, true).apply { setPadding(ui.dp(8), ui.dp(12), ui.dp(8), ui.dp(4)) }
-                val grp = rows.filter { !it.header && it.group == r.group }
-                val all = grp.isNotEmpty() && grp.all { it.key in sel }
-                v.text = (if (all) "☑ " else "☐ ") + r.title
-                return v
-            }
+            val d = vis[position]
+            d.header?.let { r -> val v = (convertView as? HeaderView) ?: HeaderView(); v.bind(r); return v }
+            if (d.cells.isNotEmpty()) { val v = (convertView as? GridRowView) ?: GridRowView(); v.bind(d.cells); return v }
+            val r = d.item!!
             val v = (convertView as? RowView) ?: RowView()
             v.bind(r, r.key in sel)
             return v

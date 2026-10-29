@@ -234,7 +234,6 @@ object TvLink {
             "/music" -> musicCmd(r)
             "/open" -> open(r)
             "/cosurf" -> coSurf(r)   // (v646) مزامنة المتصفح
-            "/bframe" -> bFrame(r)   // (v647) مرآة معكوسة: لقطة متصفح التلفزيون
             "/clear" -> clearHist(r)
             "/type" -> typeText(r)
             "/keys" -> keys(r, rm)
@@ -396,16 +395,6 @@ object TvLink {
         return ok()
     }
 
-    /** (v647) لقطة JPEG من متصفح التلفزيون للمرآة المعكوسة. ?h=هاش آخر لقطة وصلت → لو ما اتغيّرتش بنرجّع body فاضي (200)، ولو المتصفح مش مفتوح 204 */
-    private fun bFrame(r: HttpReq): HttpRes {
-        val w = (r.query["w"]?.toIntOrNull() ?: 640).coerceIn(240, 1280)
-        val q = (r.query["q"]?.toIntOrNull() ?: 45).coerceIn(20, 90)
-        val last = r.query["h"]?.toIntOrNull()
-        val b = BrowserActivity.frameJpeg(w, q) ?: return HttpRes(204)
-        if (last != null && last == java.util.Arrays.hashCode(b)) return HttpRes(200, "image/jpeg", ByteArray(0))
-        return HttpRes(200, "image/jpeg", b)
-    }
-
     private fun ptrCmd(r: HttpReq): HttpRes {
         val j = try { JSONObject(r.bodyText()) } catch (_: Exception) { return err(403, "bad") }
         val op = j.optString("op")
@@ -504,11 +493,7 @@ object TvLink {
         val j = try { JSONObject(r.bodyText()) } catch (_: Exception) { return err(403, "bad") }
         fun isYt(x: Recent) = x.id.startsWith("yt:") || Links.ytId(x.url) != null
         when (j.optString("what")) {
-            "browser" -> {
-                Recents.dropWhere(app) { it.uri.isEmpty() && it.url.isNotEmpty() && !isYt(it) }
-                PubHistory.clear("v", "browser")
-                try { BrowserStore.clearHistory(app) } catch (e: Throwable) { LogStore.err("TvLink:clearBr", e) }
-            }
+            "browser" -> clearBrowserHist()
             "yt" -> {
                 Recents.dropWhere(app) { isYt(it) }
                 PubHistory.clear("v", "youtube")
@@ -518,6 +503,16 @@ object TvLink {
         }
         h.post { TvActivity.live?.get()?.onRemoteCleared() }
         return ok()
+    }
+
+    /** (v649) مسح سجل المتصفح + الفيديوهات اللي اتشغّلت منه (مشترك بين 🚨 الموبايل وزرار المسح) */
+    fun clearBrowserHist() {
+        try {
+            Recents.dropWhere(app) { it.uri.isEmpty() && it.url.isNotEmpty() && !(it.id.startsWith("yt:") || Links.ytId(it.url) != null) }
+            PubHistory.clear("v", "browser")
+            try { BrowserStore.clearHistory(app) } catch (e: Throwable) { LogStore.err("TvLink:clearBr", e) }
+            h.post { TvActivity.live?.get()?.onRemoteCleared() }
+        } catch (e: Throwable) { LogStore.err("TvLink:clearBrH", e) }
     }
 
     /** (v543 م3) tv://<id> ← فيديو من مكتبة التلفزيون نفسه: يفتح المشغّل على ملفه (الترجمة بإيد الشخص، مش أوتوماتيك) */

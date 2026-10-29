@@ -207,4 +207,3 @@ com/tttt/subtitler/IrTv.kt
 com/tttt/subtitler/RemoteActivity.kt
 com/tttt/subtitler/TvPanic.kt
 com/tttt/subtitler/CoSurf.kt
-com/tttt/subtitler/CoMirror.kt

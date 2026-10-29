@@ -38,6 +38,13 @@ object CoSurf {
         return true
     }
 
+    /** (v649) 🚨 على الموبايل والمزامنة شغّالة: اقفل المزامنة وابعت للتلفزيون يمسح ويخرج */
+    fun panic() {
+        if (!on) return
+        on = false
+        send(JSONObject().put("op", "panic"))
+    }
+
     fun stop() {
         if (!on) return
         on = false
@@ -51,7 +58,22 @@ object CoSurf {
         if (!on || url.isEmpty() || url == lastUrl) return
         if (!(url.startsWith("http://", true) || url.startsWith("https://", true))) return
         lastUrl = url
-        send(JSONObject().put("op", "nav").put("url", url).put("ua", ua))
+        send(JSONObject().put("op", "nav").put("url", url).put("ua", ua).put("ck", cookiesOf(url)))
+    }
+
+    /** (v649) كوكيز الموقع (تسجيل الدخول) من متصفح الموبايل — عشان التلفزيون يدخل بنفس الجلسة */
+    private fun cookiesOf(url: String): String =
+        try { android.webkit.CookieManager.getInstance().getCookie(url) ?: "" } catch (_: Throwable) { "" }
+
+    /** (v649) بعد ما الصفحة تخلص تحميل: لو الكوكيز اتغيّرت (دخلت/خرجت) ابعتها للتلفزيون وهو يعمل ريفريش مرة واحدة */
+    @Volatile private var lastCk = ""
+    fun pageDone(url: String?) {
+        if (!on || url.isNullOrEmpty() || !(url.startsWith("http://", true) || url.startsWith("https://", true))) return
+        val ck = cookiesOf(url)
+        val key = (android.net.Uri.parse(url).host ?: "") + "|" + ck
+        if (key == lastCk) return
+        lastCk = key
+        if (ck.isNotEmpty()) send(JSONObject().put("op", "ck").put("url", url).put("ck", ck))
     }
 
     /** سكرول: أقصى ~14 رسالة في الثانية، والأخيرة دايمًا بتوصل (trailing) */
@@ -99,9 +121,6 @@ object CoSurf {
         }
     }
 
-    /** (v647) للمرآة المعكوسة: ابعت حدث للتلفزيون من غير ما تلزم المزامنة تكون شغّالة */
-    fun post(o: JSONObject) { send(o) }
-
     private fun sendTap(s: String) { send(JSONObject().put("op", "tap").put("sel", s)) }
 
     private fun send(o: JSONObject) {
@@ -131,6 +150,7 @@ object CoSurf {
         when (j.optString("op")) {
             "nav" -> {
                 val u = j.optString("url")
+                setCookies(u, j.optString("ck"))   // (v649) نفس جلسة الموبايل قبل ما الصفحة تتفتح
                 if (b != null) b.coNav(u, j.optString("ua"))
                 else TvLink.openJson(JSONObject().put("url", u).put("how", Links.WEB))
             }
@@ -144,13 +164,28 @@ object CoSurf {
                     "['pointerdown','mousedown','pointerup','mouseup'].forEach(function(t){try{e.dispatchEvent(new MouseEvent(t,o))}catch(_){}});" +
                     "try{e.focus()}catch(_){}e.click()})(" + JSONObject.quote(s) + ")")
             }
-            "end" -> b?.coEnd()
-            "openweb" -> if (b == null) TvLink.showTv("browser")   // (v647) المرآة: افتح المتصفح
-            "mtap" -> b?.coJs("(function(rx,ry){var x=rx*window.innerWidth,y=ry*window.innerHeight;var e=document.elementFromPoint(x,y);if(!e)return;" +
-                "var o={bubbles:true,cancelable:true,view:window,clientX:x,clientY:y};" +
-                "['pointerdown','mousedown','pointerup','mouseup'].forEach(function(t){try{e.dispatchEvent(new MouseEvent(t,o))}catch(_){}});" +
-                "try{e.focus()}catch(_){}e.click()})(" + j.optDouble("rx", 0.0) + "," + j.optDouble("ry", 0.0) + ")")
-            "mscroll" -> b?.coJs("window.scrollBy(0," + j.optDouble("r", 0.0) + "*window.innerHeight)")
+            "ck" -> {   // (v649) الكوكيز اتغيّرت على الموبايل (بعد تسجيل دخول مثلًا): طبّقها وحدّث الصفحة مرة
+                val u = j.optString("url")
+                if (setCookies(u, j.optString("ck"))) b?.coReload(u)
+            }
+            "end" -> if (b != null) { b.coEnd(); b.coExit(false); TvLink.showTv("home") }   // (v649) الموبايل فصل: لو التلفزيون لسه في المتصفح يخرج للرئيسية
+            "panic" -> {   // (v649) 🚨 من الموبايل: امسح الموقع وسجل المتصفح/الفيديوهات منه واخرج للرئيسية
+                if (b != null) b.coExit(true)
+                else try { PlayerActivity.remoteAct("close", 0L) } catch (_: Throwable) {}   // (v651) فيديو شغّال (مشغّل البرنامج): اقفله — قبل المسح عشان «آخر المشغّلات» ما تتسجّلش بعده
+                TvLink.clearBrowserHist(); TvLink.showTv("home")
+            }
         }
+    }
+
+    /** التلفزيون: ركّب كوكيز الموبايل لنفس الموقع. @return true لو في كوكي اتغيّر فعلًا */
+    private fun setCookies(url: String, ck: String): Boolean {
+        if (url.isEmpty() || ck.isEmpty()) return false
+        return try {
+            val cm = android.webkit.CookieManager.getInstance()
+            val before = cm.getCookie(url) ?: ""
+            for (c in ck.split(";")) { val kv = c.trim(); if (kv.contains("=")) cm.setCookie(url, "$kv; Path=/") }
+            cm.flush()
+            (cm.getCookie(url) ?: "") != before
+        } catch (_: Throwable) { false }
     }
 }

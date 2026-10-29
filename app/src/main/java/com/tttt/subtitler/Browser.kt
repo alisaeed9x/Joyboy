@@ -189,12 +189,6 @@ class BrowserActivity : Activity() {
         /** حالة أول/أكبر فيديو في الصفحة الحالية، أو null لو مفيش فيديو */
         fun remoteState(): org.json.JSONObject? { val o = live() ?: return null; return o.rState() }
         fun remoteAct(a: String, v: Long): Boolean { val o = live() ?: return false; return o.rAct(a, v) }
-        /** (v647) لقطة JPEG للصفحة الحالية (مرآة معكوسة) — من thread الشبكة */
-        fun frameJpeg(w: Int, q: Int): ByteArray? {
-            val o = live() ?: return null
-            val bmp = o.captureBmp(w) ?: return null
-            return try { val bo = java.io.ByteArrayOutputStream(); bmp.compress(android.graphics.Bitmap.CompressFormat.JPEG, q, bo); bo.toByteArray() } catch (_: Throwable) { null } finally { bmp.recycle() }
-        }
         private const val RC_FIND = "var vs=[].slice.call(document.querySelectorAll('video'));var v=vs.filter(function(x){return !x.paused})[0]||vs.sort(function(a,b){return b.videoWidth*b.videoHeight-a.videoWidth*a.videoHeight})[0];if(!v)return '';"
     }
 
@@ -493,7 +487,15 @@ class BrowserActivity : Activity() {
         panicB = IconTextView(this).apply {
             text = "🚨"; textSize = 20f; gravity = Gravity.CENTER; setTextColor(Color.WHITE)
             background = ui.box(0xCCD32F2F.toInt(), 0x66FFFFFF, 22); elevation = ui.dp(4).toFloat()
-            setOnClickListener { panic(); PlayTarget.clearTvHistory(this@BrowserActivity, "browser") }   // (v558) الزرار الأحمر يمسح كمان سجل المتصفح على التلفزيون
+            setOnClickListener {
+                val synced = CoSurf.on
+                panic(); PlayTarget.clearTvHistory(this@BrowserActivity, "browser")   // (v558) الزرار الأحمر يمسح كمان سجل المتصفح على التلفزيون
+                if (synced) {   // (v649) المزامنة شغّالة: افصل، التلفزيون يمسح ويخرج للرئيسية، وإنت كمان تخرج من المتصفح
+                    CoSurf.panic(); refreshCoBtns()
+                    if (isTaskRoot) try { startActivity(Intent(this@BrowserActivity, MainActivity::class.java)) } catch (_: Throwable) {}
+                    finish()
+                }
+            }
         }
         undoB = IconTextView(this).apply {
             text = "↩"; textSize = 20f; gravity = Gravity.CENTER; setTextColor(Color.WHITE)
@@ -523,8 +525,7 @@ class BrowserActivity : Activity() {
             addView(panicCover, FrameLayout.LayoutParams(-1, -1))
             addView(panicCol, FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM or Gravity.RIGHT).apply { setMargins(0, 0, ui.dp(4), ui.dp(8)) })
             addView(badge, FrameLayout.LayoutParams(-2, ui.dp(40), Gravity.RIGHT or Gravity.CENTER_VERTICAL))   // (v595) كبسولة الاصطياد على الجنب اليمين
-            if (!tvOn) {   // (v647) المرآة + الأزرار العايمة ①②
-                addView(buildCoMirror(), FrameLayout.LayoutParams(-1, -1))
+            if (!tvOn) {   // (v647) الزرار العايم ①
                 addView(buildCoButtons(), FrameLayout.LayoutParams(-2, -2, Gravity.LEFT or Gravity.CENTER_VERTICAL))   // (v648) لسانين على الجنب الشمال: بعيد عن لسان 📺/الريموت وأزرار المتصفح (يمين)
             }
             addView(blockCover, FrameLayout.LayoutParams(-1, -1))   // (v412) فوق كل حاجة
@@ -707,6 +708,7 @@ class BrowserActivity : Activity() {
                 if (url != null && CoSurf.on && t === tabs.getOrNull(curIdx)) CoSurf.nav(url, v.settings.userAgentString ?: "")   // (v646)
             }
             override fun onPageFinished(v: WebView, url: String?) {
+                if (CoSurf.on && t === tabs.getOrNull(curIdx)) CoSurf.pageDone(url)   // (v649)
                 val hd = t.hold
                 if (hd != null) {   // (v401) بوب-أب في الحجر: نسيبه لحظة يخلّص تحويلاته وبعدين نفحصه
                     if (url != null && !url.startsWith("data:")) { t.url = url; hd.addUrl(url) }
@@ -1028,7 +1030,6 @@ class BrowserActivity : Activity() {
     // ===== (v646) مزامنة المتصفح مع التلفزيون =====
     private fun toggleCoSurf() {
         if (tvOn) return
-        if (mirror?.visibility == View.VISIBLE) stopMirror()   // ① و② مش مع بعض
         if (!CoSurf.toggle(this)) { Notice.show(this, "مش متصل بتلفزيون — اربط الريموت الأول", 2400L); return }
         Notice.show(this, if (CoSurf.on) "📺 المزامنة شغّالة — اللي تعمله هنا بيتعمل على التلفزيون" else "📺 المزامنة اتقفلت", 2400L)
         val w = wvOrNull
@@ -1036,11 +1037,8 @@ class BrowserActivity : Activity() {
         refreshCoBtns()
     }
 
-    // ===== (v647) كاست ① أحداث (CoSurf) · كاست ② مرآة معكوسة (CoMirror) =====
-    private var mirror: CoMirror? = null
+    // ===== (v647) الزرار العايم 📺① (مزامنة الأحداث CoSurf) — (v649) ② المرآة اتشالت =====
     private var coBtn1: TextView? = null
-    private var coBtn2: TextView? = null
-    private fun buildCoMirror(): View { val m = CoMirror(this) { stopMirror() }; mirror = m; return m }
     private val coOff = 0xF2232838.toInt(); private val coOn = 0xFF2E9E5B.toInt()
     /** لسان (كبسولة) طالع من الجنب الشمال — نفس شكل لسان التلفزيون/الكنترولر على اليمين بس مقلوب */
     private fun coTab(t: String, onTap: () -> Unit): TextView = TextView(this).apply {
@@ -1050,51 +1048,38 @@ class BrowserActivity : Activity() {
         background = android.graphics.drawable.GradientDrawable().apply { setColor(coOff); cornerRadii = floatArrayOf(0f, 0f, r, r, r, r, 0f, 0f); setStroke(ui.dp(1), 0x66FFFFFF) }
     }
     private fun buildCoButtons(): View {
-        coBtn1 = coTab("📺\n①") { toggleCoSurf() }
-        coBtn2 = coTab("📺\n②") { toggleMirror() }
+        val b = coTab("📺\n①") { toggleCoSurf() }; coBtn1 = b
         return LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_LTR
-            addView(coBtn1, LinearLayout.LayoutParams(ui.dp(38), ui.dp(50)).apply { bottomMargin = ui.dp(6) })
-            addView(coBtn2, LinearLayout.LayoutParams(ui.dp(38), ui.dp(50)))
+            addView(b, LinearLayout.LayoutParams(ui.dp(38), ui.dp(50)))
+            addView(coTab("🕶") { newTab(home(), true, -1L, true) }, LinearLayout.LayoutParams(ui.dp(38), ui.dp(50)).apply { topMargin = ui.dp(6) })   // (v649) تصفح مخفي
         }
     }
     private fun coTint(b: TextView?, on: Boolean) { (b?.background as? android.graphics.drawable.GradientDrawable)?.setColor(if (on) coOn else coOff) }
-    private fun refreshCoBtns() { coTint(coBtn1, CoSurf.on); coTint(coBtn2, mirror?.visibility == View.VISIBLE) }
-    private fun toggleMirror() {
-        if (tvOn) return
-        val m = mirror ?: return
-        if (m.visibility == View.VISIBLE) { stopMirror(); return }
-        if (RemoteClient.current == null) { Notice.show(this, "مش متصل بتلفزيون — اربط الريموت الأول", 2400L); return }
-        if (CoSurf.on) CoSurf.stop()
-        m.start(); refreshCoBtns()
-        Notice.show(this, "📺② مرآة متصفح التلفزيون — اسحب للسكرول واضغط للفتح", 2400L)
-    }
-    private fun stopMirror() { mirror?.stop(); refreshCoBtns() }
-    /** على التلفزيون: لقطة من الصفحة الظاهرة (بتتعمل على الـUI thread، والضغط JPEG برّه) */
-    private fun captureBmp(w: Int): android.graphics.Bitmap? {
-        val box = arrayOfNulls<android.graphics.Bitmap>(1)
-        val latch = java.util.concurrent.CountDownLatch(1)
-        runOnUiThread {
-            try {
-                val v = wvOrNull
-                if (v != null && v.width > 0 && v.height > 0) {
-                    val sc = w.toFloat() / v.width
-                    val bmp = android.graphics.Bitmap.createBitmap(w, Math.max(1, (v.height * sc).toInt()), android.graphics.Bitmap.Config.RGB_565)
-                    val c = android.graphics.Canvas(bmp); c.scale(sc, sc); v.draw(c)
-                    box[0] = bmp
-                }
-            } catch (_: Throwable) {}
-            latch.countDown()
-        }
-        try { latch.await(700, java.util.concurrent.TimeUnit.MILLISECONDS) } catch (_: InterruptedException) {}
-        return box[0]
-    }
+    private fun refreshCoBtns() { coTint(coBtn1, CoSurf.on) }
     /** على التلفزيون: افتح نفس الرابط في التبويب الحالي (بنفس الـUA بتاع الموبايل عشان الصفحة تطلع بنفس الشكل) */
     fun coNav(u: String, ua: String) {
         val w = wvOrNull ?: return
         if ((w.url ?: tab.url) == u) return
         if (ua.isNotEmpty() && w.settings.userAgentString != ua) w.settings.userAgentString = ua
         loadIn(w, tab, u)
+    }
+    /** (v649) الكوكيز اتحدّثت من الموبايل: حمّل الصفحة تاني مرة واحدة بالجلسة الجديدة */
+    fun coReload(u: String) { val w = wvOrNull ?: return; if ((w.url ?: tab.url) == u) try { w.reload() } catch (_: Throwable) {} }
+    /** (v649) على التلفزيون: اخرج من المتصفح. purge=true (🚨) يمسح الموقع الحالي من السجل ويحجبه زي الموبايل */
+    fun coExit(purge: Boolean) {
+        try {
+            if (purge) {
+                val u = wvOrNull?.url ?: tab.url
+                SiteBlock.keyOf(u)?.let { k ->
+                    BrowserStore.purgeByKey(this, k)
+                    if (k != SiteBlock.keyOf(GOOGLE)) SiteBlock.add(this, k)
+                }
+                try { wvOrNull?.clearHistory() } catch (_: Throwable) {}
+            }
+            WebMute.pauseAll(); coEnd()
+        } catch (e: Throwable) { LogStore.err("Browser:coExit", e) }
+        finish()
     }
     fun coJs(js: String) { try { wvOrNull?.evaluateJavascript(js, null) } catch (_: Throwable) {} }
     /** المزامنة اتقفلت: رجّع الـUA الأصلي */
@@ -2253,11 +2238,9 @@ class BrowserActivity : Activity() {
         super.onBackPressed()
     }
     // (v149) أول ما تخرج من المتصفح: كل الفيديو/الصوت في كل التبويبات يقف (من غير ما يكمّل في الخلفية)، وكل التبويبات تتجمّد
-    override fun onPause() { mirror?.stop(); persistTabs(); WebMute.pauseAll(); for (t in tabs) try { t.wv?.onPause() } catch (_: Throwable) {}; super.onPause() }
+    override fun onPause() { persistTabs(); WebMute.pauseAll(); for (t in tabs) try { t.wv?.onPause() } catch (_: Throwable) {}; super.onPause() }
     override fun onResume() { super.onResume(); refreshCoBtns(); curRef = java.lang.ref.WeakReference(this); try { wvOrNull?.onResume() } catch (_: Throwable) {} }
     override fun onDestroy() {
-        CoSurf.stop()   // (v646)
-        mirror?.stop()   // (v647)
         try { dockUi?.detach() } catch (_: Throwable) {}
         try { stripUi?.detach() } catch (_: Throwable) {}
 
