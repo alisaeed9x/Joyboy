@@ -233,6 +233,8 @@ object TvLink {
             "/player" -> playerCmd(r)
             "/music" -> musicCmd(r)
             "/open" -> open(r)
+            "/cosurf" -> coSurf(r)   // (v646) مزامنة المتصفح
+            "/bframe" -> bFrame(r)   // (v647) مرآة معكوسة: لقطة متصفح التلفزيون
             "/clear" -> clearHist(r)
             "/type" -> typeText(r)
             "/keys" -> keys(r, rm)
@@ -387,6 +389,23 @@ object TvLink {
     }
 
     /** (v519) تاتش باد: mv / tap / long / scroll (dx, dy نسبة من حجم التاتش باد) */
+    /** (v646) مزامنة المتصفح من الموبايل: nav / scroll / tap / end — بتتنفّذ على الـUI thread */
+    private fun coSurf(r: HttpReq): HttpRes {
+        val j = try { JSONObject(r.bodyText()) } catch (_: Exception) { return err(403, "bad") }
+        h.post { try { CoSurf.recv(j) } catch (e: Throwable) { LogStore.err("TvLink:cosurf", e) } }
+        return ok()
+    }
+
+    /** (v647) لقطة JPEG من متصفح التلفزيون للمرآة المعكوسة. ?h=هاش آخر لقطة وصلت → لو ما اتغيّرتش بنرجّع body فاضي (200)، ولو المتصفح مش مفتوح 204 */
+    private fun bFrame(r: HttpReq): HttpRes {
+        val w = (r.query["w"]?.toIntOrNull() ?: 640).coerceIn(240, 1280)
+        val q = (r.query["q"]?.toIntOrNull() ?: 45).coerceIn(20, 90)
+        val last = r.query["h"]?.toIntOrNull()
+        val b = BrowserActivity.frameJpeg(w, q) ?: return HttpRes(204)
+        if (last != null && last == java.util.Arrays.hashCode(b)) return HttpRes(200, "image/jpeg", ByteArray(0))
+        return HttpRes(200, "image/jpeg", b)
+    }
+
     private fun ptrCmd(r: HttpReq): HttpRes {
         val j = try { JSONObject(r.bodyText()) } catch (_: Exception) { return err(403, "bad") }
         val op = j.optString("op")
