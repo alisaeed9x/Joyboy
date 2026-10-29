@@ -1,47 +1,56 @@
-# خطة سكِنز التلفزيون (Joyboy)
+# Joyboy TV — Skin & Theme System (Current Plan)
 
-الهدف: كل سكِن واجهة مختلفة في الهيكل والترتيب والحركة (مش ألوان بس)، على نفس البيانات والمنطق. الأيقونات (Icon Packs) والسمات (Themes) مستقلة عن السكِن.
+## Permanent distinction
 
-القاعدة: ممنوع حذف أي بند من القايمة؛ مسموح بإضافة تحسينات.
+- **Skin**: a TV interface layout and interaction design. It controls navigation placement, content hierarchy, header/toolbar structure, folder-card composition, navigation glyphs, and focus behavior.
+- **Theme**: a visual palette/style applied to the selected Skin. It includes light/dark appearance, colors, surfaces, borders, typography, shadows, glass-like treatments, and compatible visual effects.
+- **Icon Pack**: the user's independent choice for application icons. A Skin may provide its own navigation glyph style, but switching Skin must not silently overwrite the user's selected application icon pack.
+- **Motion style**: the legacy app-wide animation/rounding/sound option (`Skins` in code). Its visible label is now “نمط الحركة” so it is not confused with TV layout Skins.
 
-| م | المحتوى | الحالة |
+## Selectable TV skins
+
+The Skin & Theme Studio contains exactly seven entries in this order:
+
+| Skin ID | Display name | Layout identity |
 |---|---|---|
-| 0 | فحص الكود | اتعمل ضمنيًا (انظر CHANGES_v597) |
-| 1 | الأساس: Tokens · عقد السكِن · السجل · محرك التركيز · كلاسيك = سكِن 0 | v597 |
-| 2 | كارت الفولدر (صورة ثابتة + عمود نص) | v597 |
-| 3 | محرك Icon Packs (zip + pack.json + SVG، fallback، 4 باكات: Outline/Filled/Duotone/Rounded) | ✅ v598 |
-| 4 | السكِنز بالترتيب: Hub (Google TV) ← Rail&Grid (Fire/Roku) ← Ribbon (Tizen) ← Poster Wall (PatchWall) ← Cards (webOS) ← Glass (OriginOS) | Hub ✅ v600، الباقي لسه |
-| 5 | معرض الثيمات: سكِن + أيقونات + ألوان كـpreset، معاينة حية، تبديل بالأزرار الملونة، تصدير/استيراد | ✅ v603 |
-| 6 | تلميع وQA: هوامش آمنة 5% · خط ≥ 24px · تركيز واضح · أصوات · تقليل الحركة · أداء TCL · مصفوفة اختبار | لسه |
+| `hub` | Hub (شكل Google TV) | Existing content-row home, rounder cards, LIFT focus and a continuation banner |
+| `classic` | Original S | Existing classic layout; the stable `classic` ID is retained for settings and saved presets |
+| `glass` | Glass (شكل OriginOS) | Existing translucent surfaces, GLOW focus, and stacked folder posters |
+| `samsung` | Samsung Smart Hub | Wider horizontal navigation strip, horizontal resume card, RING focus |
+| `lg` | LG webOS | Large poster/hero presentation, compact home bar, rounder poster cards and GLOW focus |
+| `tcl` | TCL / Google TV | Compact quick-navigation strip, progress-led resume card, poster-style folder cards and LIFT focus |
+| `xiaomi` | Xiaomi / PatchWall | Side navigation rail, content-wall hierarchy, poster cards and UNDERLINE focus |
 
-## قبول كل سكِن
-«تشغيل آخر فيديو» في ≤ ضغطة OK من أول شاشة · كل الشاشات بالأسهم بس · Back ثابت (خطوة لورا، تأكيد على الرئيسية).
+Manufacturer-inspired skins use original Joyboy components and broad visual/interaction concepts; they do not ship manufacturer artwork or claim to be exact copies. They all preserve the existing embedded launcher content rows and media logic. The new layouts customize the shared home header, navigation, folder cards, focus tokens, and navigation glyph language instead of replacing the home data renderer.
 
-## إزاي تضيف سكِن (م4)
-1. `object TvSkinHub : TvSkin { … }` — طبّق `folderCard` وأي خانات عايزها (home / folderView / settings / …)؛ اللي ترجّع false بيستخدم الرسم المدمج.
-2. سجّله: `TvSkins.register(TvSkinHub)` (أو أضفه في قايمة `TvSkins`).
-3. بيظهر لوحده في إعدادات ← المظهر ← «تصميم الواجهة (Layout)».
+## Themes
 
-## حالة م4 (v600)
-- ✅ Hub كامل: بانر «كمّل» · كروت فولدر · لوحة Menu سريعة · تاب إشعارات · تاب سمات · هياكل تحميل · شاشات فاضي · الساعة/الحالة (الشريط العلوي الحالي).
-- ⏳ السكِنز 2–6: Rail & Grid ← Ribbon ← Poster Wall ← Cards ← Glass (بعد تجربة Hub على التلفزيون).
-- ملحوظة: v600 = دمج v598 (QR/واي فاي) + v599.
+All existing Theme IDs remain. The Theme picker includes the existing Light, Dark/AMOLED, Windows 11 (light/dark), Windows 7/Aero, and other existing styles. Do not duplicate these as Skin entries. `themeIds` on each Skin only determines recommended ordering; it does not delete or block existing compatible Themes.
 
-## حالة م4 (v602)
-- ✅ م3 (Icon Packs) كاملة من v598 (باكات مدمجة + استيراد + فحص أمان + اختبارات).
-- ✅ Glass: بوسترات متراصّة · نافذة زجاج للفولدر · إشعارات شيت · سمات بمعاينة حيّة · هياكل/فاضي.
-- ✅ أسلوب التركيز بيتطبّق فعلًا من رموز السكِن (`TvTileView.styled`): RING (كلاسيك) · LIFT (Hub) · GLOW (Glass) · UNDERLINE (جاهز للسكِنز الجاية).
-- ❌ تغبيش (blur) حقيقي للخلفية: مقصود مانعملوش — قرار TvBlur القديم: خلفية اللانشر ماتتغبّشش (الزجاج بشفافية وتدرّج بس).
-- ⏳ «Back = تأكيد على الرئيسية»: لسه ما اتنفّذش في أي سكِن (محتاج قرار: ده معناه إيه في لانشر؟).
-- ⏳ السكِنز 2–5: Rail & Grid · Ribbon · Poster Wall · Cards.
+## One normal customization flow
 
-## حالة م5 (v603)
-- ✅ معرض الثيمات (`TvPresets.kt`، `TvPage.PRESETS`): 6 جاهزة + حفظ الحالي (حد 40) · معاينة حيّة (مصغّرة بالسكِن والألوان + تبديل فعلي لباك الأيقونات) · OK = تطبيق الثلاثة · ربط بزرار ملوّن 🔴🟢🟡🔵 (دوسة طويلة/Menu) · تصدير/استيراد json بفحص.
-- ⏳ إعادة تسمية الثيمات · الأزرار الملونة جوه المشغّل/المتصفح.
+**Appearance → Skin & Theme Studio → Choose Skin → Choose Theme.**
 
-## حالة م4 (v625)
-- ✅ Rail & Grid: ريل شمال بيتوسّع/يتقفل · شبكة فولدرات عريضة 4×3 · إعدادات متداخلة + breadcrumb · إشعارات وثيمات كعناصر ريل · بانر «كمّل» أول عنصر تركيز · هيكل تحميل + فاضي · تركيز UNDERLINE.
-- ⏳ مكان الساعة/الحالة: الشريط العلوي المدمج زي ما هو (مفيش API للشريط في العقد).
-- ⏳ Back جوه الإعدادات المتداخلة بيرجع للرئيسية مباشرة (الرجوع خطوة خطوة بالـbreadcrumb بس).
-- ⏳ السكِنز 3–5: Ribbon · Poster Wall · Cards.
+- `TvPage.LAYOUT`, legacy `TvPage.THEME`, and legacy `TvPage.PRESETS` route to the Skin-first selector.
+- The selector changes `tv_skin` and `theme` independently and preserves stable IDs.
+- The current Theme is marked in the theme list, including when a different Skin is being selected.
+- Duplicate preset-gallery cards were removed from the primary appearance page and Hub/Glass quick menus.
+- Saved presets are not presented as additional Skins. To preserve import/export, save-current, and color-remote-key bindings, **Appearance → Tools → Saved Combinations** opens the separate manager. `TvPage.PRESET_MANAGER` is reserved for that management surface.
 
+## Backward compatibility and safety
+
+- `tv_skin=classic` remains valid and now displays as **Original S**.
+- A saved `tv_skin=rail` safely migrates to `hub`, because Rail is no longer a selectable option.
+- Existing saved combinations using Rail are migrated to Hub, including old imported preset files.
+- Keep media library, playback history, favorites, folders, playback controls, external-app boundaries, and D-pad behavior intact.
+- `TvSkinBrand.kt` must remain in `app/kt_manifest.txt` or `pruneStaleKt` may delete it.
+
+## Validation status
+
+- `dev-tests/check_tv_skins.sh`: static regression checks for registry, Theme IDs, routing, migration, layout hooks, and manifest.
+- `dev-tests/check_manifest.sh`: manifest validation.
+- Android Gradle build, visual review, and remote navigation testing have **not** been run in this environment because the uploaded ZIP has no wrapper and no configured Gradle/Android SDK is available here.
+
+## Session continuity
+
+Before continuing, read `UI_MASTER_SPEC.md`, `UI_PROJECT_STATE.md`, `UI_IMPLEMENTATION_LOG.md`, and `UI_TEST_MATRIX.md`. Verify the actual source state before assuming previous work is complete. Append a log entry and update the state after each meaningful change.

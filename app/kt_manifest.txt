@@ -158,6 +158,7 @@ com/tttt/subtitler/TvScrub.kt
 com/tttt/subtitler/TvSetup.kt
 com/tttt/subtitler/TvShell.kt
 com/tttt/subtitler/TvSkin.kt
+com/tttt/subtitler/TvSkinBrand.kt
 com/tttt/subtitler/TvSkinClassic.kt
 com/tttt/subtitler/TvSkinGlass.kt
 com/tttt/subtitler/TvSkinHub.kt

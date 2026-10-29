@@ -135,13 +135,14 @@ class TvActivity : Activity() {
         override fun open(page: TvPage) {
             when (page) {
                 TvPage.APPEARANCE -> this@TvActivity.showAppearance()
-                TvPage.THEME -> this@TvActivity.themeDialog()
+                TvPage.THEME -> this@TvActivity.lookDialog()
                 TvPage.ICON_PACK -> this@TvActivity.iconsHub()
                 TvPage.LAYOUT -> this@TvActivity.lookDialog()
                 TvPage.WALLPAPER -> this@TvActivity.wallHub()
                 TvPage.SCALE -> this@TvActivity.scaleDialog()
                 TvPage.NOTIFICATIONS -> this@TvActivity.showNotifications()
-                TvPage.PRESETS -> TvPresets.show(this)
+                TvPage.PRESETS -> this@TvActivity.lookDialog()
+                TvPage.PRESET_MANAGER -> TvPresets.show(skinHost)
             }
         }
         override fun page(build: (LinearLayout) -> Unit) { this@TvActivity.skinPage(build) }
@@ -1927,8 +1928,7 @@ class TvActivity : Activity() {
         // (v606) 24 كارت بقوا 8: كل مجموعة إعدادات في كارت واحد بيفتح قايمة فرعية (القيم بتتجدّد بعد كل ضغطة)
         val groups = listOf(
             Grp("🎨 الشكل", listOf(
-                Opt("🖼 معرض الثيمات", { "" }, { h.post { TvPresets.show(skinHost) } }),   // post: بعد ما showAppearance تخلّص رسمها (وإلا كانت هتكتب فوق المعرض)
-                Opt("🧩 التصميم والسمة", { TvSkins.cur().name + " · " + th.name }, { lookDialog() }),
+                Opt("🧩 السكنات والسمات", { TvSkins.cur().name + " · " + th.name }, { lookDialog() }),
                 Opt("🖼 الخلفية", { wallModeName() }, { wallHub() }),
                 Opt("⭕ الأيقونات والحجم", { IconPacks.nameOf(IconPacks.activeId()) }, { iconsHub() })
             )),
@@ -1937,7 +1937,8 @@ class TvActivity : Activity() {
                 Opt("🏠 الرئيسية والتطبيقات", { "" }, { homeHub() }),
                 Opt("🕒 الساعة والشاشة", { if (Cfg.str("tv_clock24", "0") == "1") "24 ساعة" else "12 ساعة" }, { clockHub() })
             )),
-            Grp("♻ إعادة الضبط", listOf(
+            Grp("🧰 أدوات إضافية", listOf(
+                Opt("🧰 التركيبات المحفوظة", { "حفظ · استيراد · أزرار ملوّنة" }, { TvPresets.show(skinHost) }),
                 Opt("♻ رجّع المظهر للافتراضي", { "" }, { resetAppearance() })
             ))
         )
@@ -2015,7 +2016,7 @@ class TvActivity : Activity() {
     private fun focusHub() { hubDialog("✨ التركيز والحركة") { listOf(
         ("⬆ طلوع وتكبير المتركّز: " + listOf("بدون", "خفيف", "متوسط", "عالي")[liftLevel()]) to { cycCfg("tv_lift", "2", listOf("0", "1", "2", "3")); focusHub() },
         ("✨ وهج خلف المتركّز: " + onOffTxt("tv_halo", "1")) to { togCfg("tv_halo", "1"); focusHub() },
-        ("🎞 حركة الواجهة: " + Skins.cur().name) to { skinDialog() }
+        ("🎞 نمط الحركة: " + Skins.cur().name) to { skinDialog() }
     ) } }
 
     private fun homeHub() { hubDialog("🏠 الرئيسية والتطبيقات") { listOf(
@@ -2034,7 +2035,8 @@ class TvActivity : Activity() {
     private fun lookDialog() {
         subOpened = true
         val skins = TvSkins.all; val cur = TvSkins.cur().id
-        GAlert(this).setTitle("🧩 التصميم ← السمة")
+        GAlert(this).setTitle("🧩 اختار السكن أولًا")
+            .setMessage("اختار شكل الواجهة وتخطيطها. بعد الاختيار هتختار السمة البصرية اللي تتطبق عليه.")
             .setItems(skins.map { (if (it.id == cur) "✔ " else "") + it.name }.toTypedArray()) { _, i -> skinThemePicker(skins[i]) }
             .setNegativeButton("رجوع") { _, _ -> refreshAppearance() }
             .setOnCancelListener(android.content.DialogInterface.OnCancelListener { refreshAppearance() })
@@ -2046,8 +2048,9 @@ class TvActivity : Activity() {
         val rec = sk.themeIds
         val ordered = rec.mapNotNull { id -> all.firstOrNull { it.id == id } } + all.filter { it.id !in rec }
         val sameSkin = sk.id == TvSkins.cur().id
-        val labels = ordered.map { t -> (if (sameSkin && t.id == th.id) "✔ " else "") + (if (t.id in rec) "⭐ " else "") + (if (t.isLight) "☀ " else "🌙 ") + t.name }
-        GAlert(this).setTitle("🎨 سمات «" + sk.name + "»")
+        val labels = ordered.map { t -> (if (t.id == th.id) "✔ " else "") + (if (t.id in rec) "⭐ " else "") + (if (t.isLight) "☀ " else "🌙 ") + t.name }
+        GAlert(this).setTitle("🎨 اختار السمة · " + sk.name)
+            .setMessage("السكن هو تخطيط الواجهة. السمة تغيّر الألوان والمظهر فقط، وتُحافظ على تخطيط السكن المختار.")
             .setItems(labels.toTypedArray()) { _, i ->
                 if (!sameSkin) TvSkins.set(sk.id, skinHost)
                 Cfg.put("theme", ordered[i].id)
@@ -2056,16 +2059,11 @@ class TvActivity : Activity() {
             .setNegativeButton("رجوع") { _, _ -> lookDialog() }.show()
     }
 
-    private fun themeDialog() {
-        if (TvSkins.cur().themes(skinHost)) return   // (v597) خانة Themes
-        val all = Themes.all
-        GAlert(this).setTitle("🎨 اختار السمة")
-            .setItems(all.map { (if (it.id == th.id) "✔ " else "") + it.name }.toTypedArray()) { _, i -> Cfg.put("theme", all[i].id); recreate() }
-            .setNegativeButton("إلغاء", null).show()
-    }
+    /** Compatibility entry point: even legacy calls must select a Skin before choosing its Theme. */
+    private fun themeDialog() { lookDialog() }
     private fun skinDialog() {
         val cur = Skins.cur().id
-        GAlert(this).setTitle("🎞 وضع الواجهة والحركة")
+        GAlert(this).setTitle("🎞 نمط الحركة والتفاعل")
             .setItems(Skins.all.map { (if (it.id == cur) "✔ " else "") + it.name }.toTypedArray()) { _, i -> Cfg.put("skin", Skins.all[i].id); Skins.set(Skins.all[i].id); showAppearance() }
             .setNegativeButton("إلغاء", null).show()
     }
@@ -2721,7 +2719,9 @@ class TvActivity : Activity() {
         val hh = headerHost?.takeIf { it.parent === content } ?: host().also { it.tag = "rowhost"; headerHost = it; content.addView(it, 0) }
         hh.removeAllViews()
         val v = try { TvSkins.cur().homeHeader(skinHost) } catch (e: Throwable) { LogStore.err("Tv:homeHeader", e); null }
-        if (v != null) hh.addView(v)
+        // Always constrain the skin header to the content width; otherwise horizontal launchers can
+        // measure at their full child width and steal the D-pad scroll area.
+        if (v != null) hh.addView(v, LinearLayout.LayoutParams(-1, -2))
     }
 
     private fun showHome(focus: Boolean = true, reuse: Boolean = false) {

@@ -18,8 +18,8 @@ import android.widget.TextView
  * (v599 م4) السكِن 1 «Hub» (شكل Google TV):
  *  • التنقل: تابات فوق + صفوف (نفس هيكل كلاسيك المجرّب) و«كمّل» بانر كبير أول حاجة فوق الصفوف.
  *  • الفولدرات: كروت صفوف (TvFolderCard) برموز Hub (استدارة أكبر · تركيز بطلوع).
- *  • الإعدادات: لوحة سريعة جانبية بزرار Menu (على أي عنصر مالوش قايمة سياق)، وفيها اختصارات: السمة · باك الأيقونات · تصميم الواجهة · الخلفية · حجم الواجهة · كل المظهر.
- *  • الإشعارات والسمات: «تاب» — لسه (محتاجين شاشة إشعارات في اللانشر)؛ السمات بتفتح من اللوحة السريعة.
+ *  • الإعدادات: لوحة سريعة جانبية بزرار Menu (على أي عنصر مالوش قايمة سياق)، فيها مدخل واحد للسكنات والسمات، وباقي اختصارات المظهر.
+ *  • اختيار السكن/السمة موحّد: يبدأ بالسكن ثم يختار المستخدم السمة؛ التركيبات المحفوظة في مدير منفصل.
  *  • «شغّل آخر فيديو»: OK واحدة من أول الشاشة (البانر هو أول عنصر بيتركّز عليه).
  * باقي الخانات false = رسم كلاسيك المدمج؛ فمفيش حاجة اتكسرت.
  */
@@ -139,8 +139,7 @@ object TvSkinHub : TvSkin {
         val dlg = Dialog(a)
         dlg.requestWindowFeature(Window.FEATURE_NO_TITLE)
         val rows = listOf(
-            "🖼 معرض الثيمات" to TvPage.PRESETS,
-            "🧩 التصميم والسمة" to TvPage.LAYOUT,
+            "🧩 السكنات والسمات" to TvPage.LAYOUT,
             "🖼 الخلفية" to TvPage.WALLPAPER,
             "🎛 كل إعدادات المظهر" to TvPage.APPEARANCE)
         val col = LinearLayout(a).apply {
@@ -250,43 +249,7 @@ object TvSkinHub : TvSkin {
 
     // ===== السمات (تاب): شبكة كروت ملوّنة بمعاينة مصغّرة =====
     override fun themes(h: TvSkinHost): Boolean {
-        h.page { c ->
-            val a = h.activity; val ui = h.ui; val pal = TvPalette(h.theme)
-            c.addView(tabStrip(h, 2))
-            c.addView(ui.text("🎨 السمات", tokens.textTitle + 5f, pal.fg, true).apply { setPadding(ui.dp(14), ui.dp(14), ui.dp(14), ui.dp(2)) })
-            c.addView(ui.text("OK على السمة بتطبّقها", tokens.textCaption + 1f, pal.fgSub).apply { setPadding(ui.dp(14), 0, ui.dp(14), ui.dp(8)) })
-            val dm = a.resources.displayMetrics
-            val per = ((dm.widthPixels / dm.density - 40f) / 230f).toInt().coerceIn(2, 5)
-            val all = Themes.all
-            var k = 0
-            var firstCard = true
-            while (k < all.size) {
-                val row = LinearLayout(a).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; clipChildren = false; clipToPadding = false; setPadding(ui.dp(6), 0, ui.dp(6), 0) }
-                for (th in all.subList(k, minOf(k + per, all.size))) {
-                    val card = TvTileView(a, tokens.radiusCard).styled(tokens, pal.primary)
-                    card.inner.setBackgroundColor(th.bg)
-                    if (th.id == h.theme.id) card.tag = "skin:first"
-                    val col = LinearLayout(a).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; setPadding(ui.dp(12), ui.dp(10), ui.dp(12), ui.dp(10)) }
-                    val bar = LinearLayout(a).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; gravity = Gravity.CENTER_VERTICAL; background = ui.box(th.surface, th.border, 8); setPadding(ui.dp(8), ui.dp(6), ui.dp(8), ui.dp(6)) }
-                    for (colr in listOf(th.primary, th.accent, th.success, th.danger)) bar.addView(View(a).apply { background = android.graphics.drawable.GradientDrawable().apply { shape = android.graphics.drawable.GradientDrawable.OVAL; setColor(colr) } }, LinearLayout.LayoutParams(ui.dp(16), ui.dp(16)).apply { marginEnd = ui.dp(6) })
-                    col.addView(bar, LinearLayout.LayoutParams(-1, -2))
-                    col.addView(ui.text((if (th.id == h.theme.id) "✔ " else "") + th.name, tokens.textBody + 1f, th.text, true).apply {
-                        maxLines = 2; ellipsize = TextUtils.TruncateAt.END; textDirection = View.TEXT_DIRECTION_FIRST_STRONG; textAlignment = View.TEXT_ALIGNMENT_VIEW_START; setPadding(0, ui.dp(10), 0, 0)
-                    })
-                    card.inner.addView(col, FrameLayout.LayoutParams(-1, -1))
-                    card.contentDescription = "سمة " + th.name
-                    card.setOnClickListener { if (th.id != h.theme.id) h.setTheme(th.id) }
-                    row.addView(card, LinearLayout.LayoutParams(0, ui.dp(112), 1f).apply { setMargins(ui.dp(4), ui.dp(4), ui.dp(4), ui.dp(4)) })
-                    firstCard = false
-                }
-                // املا الفراغ في آخر صف عشان الكروت تفضل بنفس العرض
-                val missing = per - minOf(per, all.size - k)
-                for (i in 0 until missing) row.addView(View(a), LinearLayout.LayoutParams(0, 1, 1f))
-                c.addView(row, LinearLayout.LayoutParams(-1, -2))
-                k += per
-            }
-            c.addView(View(a), LinearLayout.LayoutParams(-1, ui.dp(24)))
-        }
+        h.open(TvPage.LAYOUT)
         return true
     }
 

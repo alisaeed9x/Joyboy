@@ -54,7 +54,7 @@ object TvSkinRail : TvSkin {
         render(h); return true
     }
     override fun notifications(h: TvSkinHost): Boolean { sec = Sec.NOTIF; railFocus = false; render(h); return true }
-    override fun themes(h: TvSkinHost): Boolean { sec = Sec.THEMES; railFocus = false; render(h); return true }
+    override fun themes(h: TvSkinHost): Boolean { h.open(TvPage.LAYOUT); return true }
     override fun settings(h: TvSkinHost): Boolean {
         if (bypassSettings) { bypassSettings = false; return false }
         sec = Sec.SETTINGS; path = emptyList(); railFocus = false; render(h); return true
@@ -115,7 +115,7 @@ object TvSkinRail : TvSkin {
             }.start()
         }
         val items = listOf(Triple("🏠", "الرئيسية", Sec.HOME), Triple("🎬", "الفيديوهات", Sec.VIDEOS), Triple("🔔", "الإشعارات", Sec.NOTIF),
-            Triple("🎨", "الثيمات", Sec.THEMES), Triple("⚙", "الإعدادات", Sec.SETTINGS))
+            Triple("🧩", "السكنات", Sec.THEMES), Triple("⚙", "الإعدادات", Sec.SETTINGS))
         for ((ic, lb, s) in items) {
             val sel = s == sec
             val row = TvOwnLinear(a).apply {
@@ -136,6 +136,7 @@ object TvSkinRail : TvSkin {
             paint(false)
             row.setOnFocusChangeListener { _, f -> paint(f); if (f) setOpen(true) else rail.post { if (rail.findFocus() == null) setOpen(false) } }
             row.setOnClickListener {
+                if (s == Sec.THEMES) { h.open(TvPage.LAYOUT); return@setOnClickListener }
                 if (s == sec && s != Sec.SETTINGS) { if (s == Sec.HOME) { railFocus = true; render(h) }; return@setOnClickListener }
                 sec = s; path = emptyList(); railFocus = true; scanKicked = false; render(h)
             }
@@ -315,7 +316,7 @@ object TvSkinRail : TvSkin {
 
     private fun themesMain(h: TvSkinHost, m: LinearLayout, pal: TvPalette, cols: Int) {
         val a = h.activity; val ui = h.ui
-        m.addView(title(h, pal, "🎨 الثيمات", "OK على السمة بتطبّقها · «معرض الثيمات» من الإعدادات للسكِن + الأيقونات + الألوان مع بعض"))
+        m.addView(title(h, pal, "🎨 الثيمات", "اختار السكن أولًا، ثم السمة البصرية التي تناسبه"))
         val all = Themes.all
         val per = (cols + 1).coerceAtMost(5)
         var k = 0
@@ -345,8 +346,7 @@ object TvSkinRail : TvSkin {
 
     private val tree: List<Node> = listOf(
         Node("🎨 المظهر", listOf(
-            Node("🖼 معرض الثيمات", page = TvPage.PRESETS),
-            Node("🧩 التصميم والسمة", page = TvPage.LAYOUT),
+            Node("🧩 السكنات والسمات", page = TvPage.LAYOUT),
             Node("🎛 كل إعدادات المظهر", page = TvPage.APPEARANCE, builtin = true))),
         Node("🖼 الخلفية والحجم", listOf(
             Node("🖼 الخلفية", page = TvPage.WALLPAPER),

@@ -8,7 +8,7 @@ import android.view.View
  */
 object TvSkinClassic : TvSkin {
     override val id = "classic"
-    override val name = "كلاسيك (الحالي)"
+    override val name = "Original S"
     override val themeIds = listOf("mx", "default", "light", "mxd", "eye_sepia")
     override val tokens: TvTokens = TvTokens.CLASSIC
 

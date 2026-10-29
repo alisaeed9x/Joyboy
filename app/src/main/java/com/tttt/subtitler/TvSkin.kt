@@ -6,8 +6,8 @@ import android.view.View
 import android.widget.LinearLayout
 
 /** (v599 م4) صفحات الإعدادات اللي السكِن يقدر يفتحها (من غير ما يعرف TvActivity) */
-/** (v603 م5) PRESETS = معرض الثيمات (سكِن + أيقونات + ألوان) */
-enum class TvPage { APPEARANCE, THEME, ICON_PACK, LAYOUT, WALLPAPER, SCALE, NOTIFICATIONS, PRESETS }
+/** PRESETS is a legacy route redirected to Skin-first; PRESET_MANAGER preserves saved-combination import/export and color-key bindings. */
+enum class TvPage { APPEARANCE, THEME, ICON_PACK, LAYOUT, WALLPAPER, SCALE, NOTIFICATIONS, PRESETS, PRESET_MANAGER }
 
 /** (v600 م4) حالات «الفاضي» اللي السكِن يقدر يرسمها بشكله: مفيش صلاحية · مفيش فيديوهات · مفيش إشعارات */
 enum class TvEmpty { NO_PERMISSION, NO_VIDEOS, NO_NOTIFICATIONS }
@@ -59,7 +59,7 @@ interface TvSkinHost {
 
 /**
  * (v597 م1) عقد السكِن. كل سكِن بيطبّق نفس الخانات (slots):
- *  Home · FolderView · Settings · Notifications · Themes · Search · ContextMenu + مكوّن كارت الفولدر + الأزرار الملونة.
+ *  Home · FolderView · Settings · Notifications · Skin-first chooser · Search · ContextMenu + مكوّن كارت الفولدر + الأزرار الملونة.
  *
  * قاعدة الخانات: الدالة بترجّع true لو السكِن رسم الشاشة بنفسه، وfalse = «استخدم الرسم المدمج الحالي».
  * سكِن «كلاسيك» كل خاناته false فبيشتغل بالرسم الحالي بالظبط (من غير أي تغيير سلوك)، وكل سكِن جديد
@@ -76,7 +76,8 @@ interface TvSkin {
     fun folderView(h: TvSkinHost, f: FolderItem): Boolean = false
     fun settings(h: TvSkinHost): Boolean = false
     fun notifications(h: TvSkinHost): Boolean = false
-    fun themes(h: TvSkinHost): Boolean = false
+    /** Any legacy entry labelled Themes must go through the unified Skin-first chooser. */
+    fun themes(h: TvSkinHost): Boolean { h.open(TvPage.LAYOUT); return true }
     fun search(h: TvSkinHost, query: String): Boolean = false
     fun contextMenu(h: TvSkinHost, title: String, items: List<Pair<String, () -> Unit>>): Boolean = false
 
@@ -105,10 +106,14 @@ interface TvSkin {
 /**
  * (v597 م1) سجل السكِنز: القايمة · السكِن الحالي (متحفوظ في Cfg «tv_skin») · التبديل الحي.
  * أي سكِن جديد بيتسجّل بـ register() — ومفيش حاجة تانية في الكود بتتغيّر.
- * لو السكِن المحفوظ مش موجود (اتشال مثلًا) بنرجع لـ«كلاسيك».
+ * لو السكِن المحفوظ مش موجود بنرجع لـOriginal S؛ ومعرّف classic محفوظ للتوافق الخلفي.
  */
 object TvSkins {
-    private val list = ArrayList<TvSkin>().apply { add(TvSkinClassic); add(TvSkinHub); add(TvSkinGlass); add(TvSkinRail) }
+    private val list = ArrayList<TvSkin>().apply {
+        // Keep one entry per actual layout. Old preset combinations no longer appear as duplicate skins.
+        add(TvSkinHub); add(TvSkinClassic); add(TvSkinGlass)
+        add(TvSkinSamsung); add(TvSkinLg); add(TvSkinTcl); add(TvSkinXiaomi)
+    }
     private val listeners = ArrayList<() -> Unit>()
     @Volatile private var curSkin: TvSkin? = null
 
@@ -118,15 +123,18 @@ object TvSkins {
 
     fun cur(): TvSkin {
         curSkin?.let { return it }
-        val id = try { Cfg.str("tv_skin", "classic") } catch (_: Throwable) { "classic" }
-        val s = list.firstOrNull { it.id == id } ?: list[0]
+        val storedId = try { Cfg.str("tv_skin", "classic") } catch (_: Throwable) { "classic" }
+        // v626: Rail was an experimental extra layout. Preserve a safe, supported layout when upgrading.
+        val id = if (storedId == "rail") "hub" else storedId
+        val s = list.firstOrNull { it.id == id } ?: list.first { it.id == "classic" }
+        if (storedId != s.id) try { Cfg.put("tv_skin", s.id) } catch (_: Throwable) {}
         curSkin = s
         return s
     }
 
     /** تبديل حي (من غير ريستارت) — بيحفظ الاختيار وينده المستمعين */
     fun set(id: String, host: TvSkinHost? = null) {
-        val s = list.firstOrNull { it.id == id } ?: list[0]
+        val s = list.firstOrNull { it.id == id } ?: list.first { it.id == "classic" }
         val old = curSkin
         if (old === s) return
         if (host != null) try { old?.onDeselected(host) } catch (_: Throwable) {}

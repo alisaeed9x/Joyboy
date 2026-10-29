@@ -20,18 +20,17 @@ import org.json.JSONObject
 import java.io.File
 
 /**
- * (v603 م5) ثيم جاهز = سكِن الواجهة + باك الأيقونات + سمة الألوان، محفوظ كـ preset.
+ * (v603 م5) تركيبة جاهزة = Skin + Icon Pack + Theme، محفوظة كـ preset منفصل عن قائمة السكنات.
  * [builtin] = جاهز من البرنامج (مايتمسحش)، وغير كده = من المستخدم (حفظ الحالي أو استيراد).
  */
 class TvPreset(val id: String, val name: String, val skin: String, val pack: String, val theme: String, val builtin: Boolean)
 
 /**
- * (v603 م5) معرض الثيمات (Theme Gallery):
- *  - شاشة واحدة لكل السكِنز (TvPage.PRESETS): كروت ثيمات + معاينة حيّة بتتغيّر مع التركيز (شريط + بانر + كروت بشكل السكِن وألوان السمة؛
- *    وباك الأيقونات بيتبدّل فعلًا وقت المعاينة ويرجع لو خرجت من غير OK).
- *  - OK = تطبيق (سكِن + أيقونات + ألوان مع بعض). دوسة طويلة / Menu = قايمة: تطبيق · ربط بزرار ملوّن · فكّ الربط · حذف.
- *  - تبديل سريع بالأزرار الملونة (🔴🟢🟡🔵): كل زرار ممكن يتربط بثيم، ويشتغل من أي شاشة في اللانشر ([onColorKey]).
- *  - 💾 احفظ الحالي كثيم · 📤 تصدير الثيمات (ملف json) · 📥 استيراد (من Download/Movies/Joyboy أو نظام الملفات) بفحص وتنضيف.
+ * (v603 م5) مدير التركيبات المحفوظة (مش معرض اختيار السكن):
+ *  - كل تركيبة تحفظ Skin + Theme + Icon Pack وتوفّر معاينة حيّة؛ باك الأيقونات المؤقت يرجع لو خرج المستخدم من غير تطبيق.
+ *  - OK = تطبيق التركيبة. دوسة طويلة / Menu = ربط بزرار ملوّن · فكّ الربط · حذف.
+ *  - تبديل سريع بالأزرار الملونة (🔴🟢🟡🔵): كل زرار ممكن يتربط بتركيبة ويشتغل من أي شاشة في اللانشر ([onColorKey]).
+ *  - حفظ الحالي · تصدير/استيراد JSON · فحص ودمج التركيبات المحفوظة.
  */
 object TvPresets {
     const val REQ_PICK = 6102
@@ -42,7 +41,7 @@ object TvPresets {
     private val ID_RE = Regex("^[A-Za-z0-9_.-]{1,40}$")
     private val main = Handler(Looper.getMainLooper())
 
-    // ===== الثيمات الجاهزة =====
+    // ===== التركيبات الجاهزة (مدير متقدم، مش قائمة السكنات) =====
     private val BUILTIN = listOf(
         TvPreset("b_classic_room", "كلاسيك — غرفة تحكم", "classic", "default", "default", true),
         TvPreset("b_hub_blue", "Hub — أزرق هادي", "hub", "outline", "mxd", true),
@@ -62,12 +61,25 @@ object TvPresets {
         val out = ArrayList<TvPreset>()
         try {
             val a = JSONArray(Cfg.str(KEY_USER, "[]").ifBlank { "[]" })
+            var migrated = false
             for (i in 0 until a.length()) {
                 val o = a.optJSONObject(i) ?: continue
-                val id = o.optString("id"); val nm = o.optString("name"); val sk = o.optString("skin"); val pk = o.optString("pack"); val th = o.optString("theme")
+                val id = o.optString("id")
+                val nm = o.optString("name")
+                val storedSkin = o.optString("skin")
+                // v626: Rail was retired from the selectable layouts. Preserve old saved presets
+                // and color-key bindings by mapping that legacy layout to the supported Hub skin.
+                val sk = if (storedSkin == "rail") {
+                    o.put("skin", "hub")
+                    migrated = true
+                    "hub"
+                } else storedSkin
+                val pk = o.optString("pack")
+                val th = o.optString("theme")
                 if (!ID_RE.matches(id) || nm.isBlank() || !skinOk(sk) || !themeOk(th) || !ID_RE.matches(pk)) continue
                 out.add(TvPreset(id, nm, sk, pk, th, false))
             }
+            if (migrated) try { Cfg.put(KEY_USER, a.toString()) } catch (_: Throwable) {}
         } catch (_: Throwable) {}
         return out
     }
@@ -78,7 +90,7 @@ object TvPresets {
         try { Cfg.put(KEY_USER, a.toString()) } catch (_: Throwable) {}
     }
 
-    /** كل الثيمات: الجاهزة (اللي سكِنها وسمتها موجودين) + بتاعة المستخدم */
+    /** كل التركيبات المحفوظة: الجاهزة (اللي Skin وTheme بتوعها موجودين) + تركيبات المستخدم */
     fun list(): List<TvPreset> = BUILTIN.filter { skinOk(it.skin) && themeOk(it.theme) } + userList()
 
     private fun bindKey(k: TvColorKey) = KEY_BIND + k.name.lowercase()
@@ -114,12 +126,12 @@ object TvPresets {
         else IconPacks.select(packId) { ok -> if (!ok) Notice.show(a, "⚠ باك الأيقونات ماتحمّلش — اتطبّق الباقي", 2800L); finish() }
     }
 
-    /** الأزرار الملونة: لو الزرار مربوط بثيم بيتبدّل فورًا. false = مش مربوط (السكِن يقرر زي الأول) */
+    /** الأزرار الملونة: لو الزرار مربوط بتركيبة بتتبدّل فورًا. false = مش مربوط (السكِن يقرر زي الأول) */
     fun onColorKey(h: TvSkinHost, k: TvColorKey): Boolean {
         val id = bound(k)
         if (id.isEmpty()) return false
         val p = list().firstOrNull { it.id == id } ?: return false
-        if (same(p, now(h))) { Notice.show(h.activity, "🎨 ده الثيم الحالي: " + p.name, 1800L); return true }
+        if (same(p, now(h))) { Notice.show(h.activity, "🎨 دي التركيبة الحالية: " + p.name, 1800L); return true }
         apply(h, p); return true
     }
 
@@ -150,8 +162,8 @@ object TvPresets {
             val packNames = try { IconPacks.list().associate { it.id to it.name } } catch (_: Throwable) { emptyMap<String, String>() }
             fun packName(id: String) = packNames[id] ?: id
 
-            c.addView(ui.text("🎨 معرض الثيمات", tk.textTitle + 5f, pal.fg, true).apply { setPadding(ui.dp(14), ui.dp(12), ui.dp(14), ui.dp(2)) })
-            c.addView(ui.text("الثيم = سكِن + أيقونات + ألوان. حرّك وشوف المعاينة — OK بتطبّق · دوسة طويلة أو Menu: ربط بزرار ملوّن وغيره", tk.textCaption + 1f, pal.fgSub).apply { setPadding(ui.dp(14), 0, ui.dp(14), ui.dp(8)) })
+            c.addView(ui.text("🧰 التركيبات المحفوظة", tk.textTitle + 5f, pal.fg, true).apply { setPadding(ui.dp(14), ui.dp(12), ui.dp(14), ui.dp(2)) })
+            c.addView(ui.text("دي تركيبات كاملة محفوظة (Skin + Theme + Icon Pack) وإدارة الأزرار الملونة؛ مش قائمة سكنات. الاختيار العادي يبدأ من «السكنات والسمات» ثم تختار السمة.", tk.textCaption + 1f, pal.fgSub).apply { setPadding(ui.dp(14), 0, ui.dp(14), ui.dp(8)) })
 
             val holder = FrameLayout(a)
             holder.addView(preview(h, cur, packName(cur.pack)))
@@ -185,7 +197,7 @@ object TvPresets {
                         previewRun = r; main.postDelayed(r, 350L)
                     }
                 }
-                chip.contentDescription = "ثيم " + p.name
+                chip.contentDescription = "تركيبة محفوظة " + p.name
                 chip.setOnClickListener { apply(h, p) }
                 chip.setOnLongClickListener { itemMenu(h, p); true }
                 strip.addView(chip, LinearLayout.LayoutParams(ui.dp(196), ui.dp(118)).apply { setMargins(ui.dp(5), ui.dp(5), ui.dp(5), ui.dp(5)) })
@@ -202,18 +214,18 @@ object TvPresets {
                 t.setOnClickListener { f() }
                 acts.addView(t, LinearLayout.LayoutParams(ui.dp(210), ui.dp(66)).apply { setMargins(ui.dp(5), ui.dp(3), ui.dp(5), ui.dp(3)) })
             }
-            act("💾 احفظ الحالي كثيم") { saveCurrent(h) }
-            act("📤 تصدير ثيماتي") { exportAll(h) }
-            act("📥 استيراد ثيمات") { importMenu(h) }
+            act("💾 احفظ التركيبة الحالية") { saveCurrent(h) }
+            act("📤 تصدير التركيبات") { exportAll(h) }
+            act("📥 استيراد التركيبات") { importMenu(h) }
             c.addView(HorizontalScrollView(a).apply { isHorizontalScrollBarEnabled = false; clipChildren = false; clipToPadding = false; addView(acts) })
             c.addView(View(a), LinearLayout.LayoutParams(-1, ui.dp(24)))
         }
     }
 
-    /** قايمة الثيم (دوسة طويلة / Menu) */
+    /** قائمة إجراءات التركيبة (دوسة طويلة / Menu) */
     private fun itemMenu(h: TvSkinHost, p: TvPreset) {
         val items = ArrayList<Pair<String, () -> Unit>>()
-        items.add("✅ طبّق الثيم" to { apply(h, p) })
+        items.add("✅ طبّق التركيبة" to { apply(h, p) })
         for (k in TvColorKey.values()) {
             val on = bound(k) == p.id
             items.add(((if (on) "✔ " else "") + "اربطه بالزرار " + keyLabel(k)) to {
@@ -226,7 +238,7 @@ object TvPresets {
             for (k in TvColorKey.values()) if (bound(k) == p.id) try { Cfg.put(bindKey(k), "") } catch (_: Throwable) {}
             show(h)
         })
-        if (!p.builtin) items.add("🗑 احذف الثيم" to {
+        if (!p.builtin) items.add("🗑 احذف التركيبة" to {
             saveUser(userList().filter { it.id != p.id })
             for (k in TvColorKey.values()) if (bound(k) == p.id) try { Cfg.put(bindKey(k), "") } catch (_: Throwable) {}
             Notice.show(h.activity, "🗑 اتحذف: " + p.name, 2200L)
@@ -238,15 +250,15 @@ object TvPresets {
     private fun saveCurrent(h: TvSkinHost) {
         val a = h.activity
         val ul = userList().toMutableList()
-        if (ul.size >= MAX_USER) { Notice.show(a, "⚠ وصلت الحد (" + MAX_USER + " ثيم) — امسح ثيم الأول", 3200L); return }
+        if (ul.size >= MAX_USER) { Notice.show(a, "⚠ وصلت الحد (" + MAX_USER + " تركيبة) — امسح تركيبة الأول", 3200L); return }
         val all = list()
         var n = ul.size + 1
         while (all.any { it.name == "تنسيقي $n" }) n++
         val cur = now(h)
-        if (all.any { same(it, cur) && !it.builtin }) { Notice.show(a, "ℹ الثيم ده محفوظ قبل كده", 2400L); return }
+        if (all.any { same(it, cur) && !it.builtin }) { Notice.show(a, "ℹ التركيبة دي محفوظة قبل كده", 2400L); return }
         val p = TvPreset("u" + System.currentTimeMillis(), "تنسيقي $n", cur.skin, cur.pack, cur.theme, false)
         ul.add(p); saveUser(ul)
-        Notice.show(a, "💾 اتحفظ: " + p.name, 2400L)
+        Notice.show(a, "💾 اتحفظت التركيبة: " + p.name, 2400L)
         show(h)
     }
 
@@ -318,7 +330,7 @@ object TvPresets {
     private fun exportAll(h: TvSkinHost) {
         val a = h.activity
         val ul = userList()
-        if (ul.isEmpty()) { Notice.show(a, "مفيش ثيمات بتاعتك لسه — «💾 احفظ الحالي كثيم» الأول", 3400L); return }
+        if (ul.isEmpty()) { Notice.show(a, "مفيش تركيبات خاصة بيك لسه — احفظ التركيبة الحالية الأول", 3400L); return }
         val arr = JSONArray()
         for (p in ul) arr.put(JSONObject().put("name", p.name).put("skin", p.skin).put("pack", p.pack).put("theme", p.theme))
         val json = JSONObject().put("app", "joyboy-presets").put("v", 1).put("presets", arr).toString(2)
@@ -330,7 +342,7 @@ object TvPresets {
             a.runOnUiThread {
                 if (a.isFinishing || a.isDestroyed) return@runOnUiThread
                 if (saved.isEmpty()) Notice.show(a, "⚠ ماقدرتش أكتب الملف — مفيش مكان تخزين متاح", 3600L)
-                else GAlert(a).setTitle("📤 اتصدّر " + ul.size + " ثيم").setMessage(saved.joinToString("\n") + "\n\nانقله لتلفزيون تاني (ابعته بـ 📤 من الموبايل) وافتح «📥 استيراد ثيمات».").setNegativeButton("تمام", null).show()
+                else GAlert(a).setTitle("📤 اتصدّرت " + ul.size + " تركيبة").setMessage(saved.joinToString("\n") + "\n\nانقله لتلفزيون تاني (ابعته بـ 📤 من الموبايل) وافتح «📥 استيراد التركيبات».").setNegativeButton("تمام", null).show()
             }
         }.also { it.isDaemon = true }.start()
     }
@@ -355,8 +367,8 @@ object TvPresets {
         val rows = ArrayList<String>(); val acts = ArrayList<() -> Unit>()
         for (f in files) { rows.add("📄 " + f.name + "  (" + (f.length() / 1024).coerceAtLeast(1) + " ك.ب)"); acts.add { readFile(h, f) } }
         rows.add("📂 اختار من نظام الملفات…"); acts.add { pick(a) }
-        GAlert(a).setTitle("📥 استيراد ثيمات")
-            .setMessage(if (files.isEmpty()) "مفيش ملفات ثيمات جاهزة. حط ملف joyboy-presets.json في Download أو Movies/Joyboy (أو ابعته من الموبايل بـ 📤) وافتح الشاشة دي تاني، أو اختار من نظام الملفات." else "ملفات لقيتها — اختار:")
+        GAlert(a).setTitle("📥 استيراد التركيبات")
+            .setMessage(if (files.isEmpty()) "مفيش ملفات تركيبات جاهزة. حط ملف joyboy-presets.json في Download أو Movies/Joyboy (أو ابعته من الموبايل بـ 📤) وافتح الشاشة دي تاني، أو اختار من نظام الملفات." else "ملفات لقيتها — اختار:")
             .setItems(rows.toTypedArray()) { _, i -> acts.getOrNull(i)?.invoke() }
             .setNegativeButton("إلغاء", null).show()
     }
@@ -386,7 +398,7 @@ object TvPresets {
 
     private fun clean(s: String): String = s.filter { !it.isISOControl() }.trim().take(40)
 
-    /** فحص + تنضيف + دمج. بيرجّع (عدد المضاف، عدد المتخطّى) أو null لو الملف مش ثيمات Joyboy */
+    /** فحص + تنضيف + دمج. بيرجّع (عدد المضاف، عدد المتخطّى) أو null لو الملف مش تركيبات Joyboy */
     internal fun parseInto(bytes: ByteArray, existing: MutableList<TvPreset>): Pair<Int, Int>? {
         if (bytes.size > MAX_FILE) return null
         val o = try { JSONObject(String(bytes, Charsets.UTF_8)) } catch (_: Throwable) { return null }
@@ -398,9 +410,12 @@ object TvPresets {
             val e = arr.optJSONObject(i)
             if (e == null) { skipped++; continue }
             if (existing.size >= MAX_USER) { skipped += arr.length() - i; break }
-            val sk = e.optString("skin"); val th = e.optString("theme"); val pk = e.optString("pack").ifEmpty { IconPacks.DEFAULT }
+            val storedSkin = e.optString("skin")
+            // Match the on-device migration: older exported Rail combinations now map to Hub.
+            val sk = if (storedSkin == "rail") "hub" else storedSkin
+            val th = e.optString("theme"); val pk = e.optString("pack").ifEmpty { IconPacks.DEFAULT }
             if (!skinOk(sk) || !themeOk(th) || !ID_RE.matches(pk)) { skipped++; continue }
-            val nm = clean(e.optString("name")).ifEmpty { "ثيم مستورد" }
+            val nm = clean(e.optString("name")).ifEmpty { "تركيبة مستوردة" }
             if (existing.any { it.skin == sk && it.pack == pk && it.theme == th }) { skipped++; continue }
             existing.add(TvPreset("u" + System.currentTimeMillis() + "_" + i, nm, sk, pk, th, false)); added++
         }
@@ -411,9 +426,9 @@ object TvPresets {
         val a = h.activity
         val ul = userList().toMutableList()
         val r = parseInto(bytes, ul)
-        if (r == null) { GAlert(a).setTitle("❌ الملف مش ثيمات Joyboy").setMessage("الملف لازم يكون json طالع من «📤 تصدير ثيماتي». مفيش حاجة اتغيّرت.").setNegativeButton("تمام", null).show(); return }
+        if (r == null) { GAlert(a).setTitle("❌ الملف مش تركيبات Joyboy").setMessage("الملف لازم يكون json طالع من «📤 تصدير التركيبات». مفيش حاجة اتغيّرت.").setNegativeButton("تمام", null).show(); return }
         if (r.first > 0) saveUser(ul)
-        val msg = "اتضاف " + r.first + " ثيم" + (if (r.second > 0) " · اتخطّيت " + r.second + " (مكرّر/غير صالح/سكِن أو سمة مش موجودة)" else "")
+        val msg = "اتضاف " + r.first + " تركيبة" + (if (r.second > 0) " · اتخطّيت " + r.second + " (مكرّر/غير صالح/سكِن أو سمة مش موجودة)" else "")
         Notice.show(a, (if (r.first > 0) "📥 " else "ℹ ") + msg, 4200L)
         if (r.first > 0) show(h)
     }

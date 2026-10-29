@@ -22,13 +22,13 @@ import android.widget.TextView
 
 /**
  * (v601 م4) السكِن 6 «Glass» (شكل OriginOS): طبقات زجاج عايمة فوق الخلفية.
- *  • التنقل: نفس شريط التابات (رئيسية · إشعارات · سمات) + بانر «كمّل» — لكن كله زجاج شفاف بحواف كبيرة وتركيز متوهّج.
+ *  • التنقل: بوابة رئيسية بسيطة + بانر «كمّل» — بسطوح زجاجية شفافة بحواف كبيرة وتركيز متوهّج.
  *  • الفولدرات: «بوسترات متراصّة» — لحد 3 مصغّرات فوق بعض (الأمامية كاملة واللي وراها بتطلّ من فوق) + الاسم والعدد تحتها (v602).
  *    فتح الفولدر: نافذة زجاج عايمة فيها فيديوهات الفولدر (Back بيقفلها والتركيز بيرجع لنفس الكارت) (v602).
  *    فولدرات المواسم (فيها فولدرات فرعية) والفاضية بتفتح بالعرض المدمج.
  *  • الإعدادات: لوحة زجاج عايمة في نص الشاشة بزرار Menu.
  *  • الإشعارات: شيت زجاجي بينزل من فوق.
- *  • السمات: معرض بمعاينة حيّة كبيرة — أي سمة بتتركّز عليها بتظهر في المعاينة فورًا، وOK بتطبّقها.
+ *  • «السكنات والسمات» يفتح الاستوديو الموحّد: اختيار السكن أولًا ثم السمة؛ التركيبات المحفوظة لها أداة منفصلة.
  * اللي مش مرسوم هنا بيرجع للرسم المدمج (false/null).
  */
 object TvSkinGlass : TvSkin {
@@ -239,7 +239,7 @@ object TvSkinGlass : TvSkin {
         val dlg = Dialog(a)
         dlg.requestWindowFeature(Window.FEATURE_NO_TITLE)
         val rows = listOf(
-            "🖼 معرض الثيمات" to TvPage.PRESETS, "🧩 التصميم والسمة" to TvPage.LAYOUT, "🔔 الإشعارات" to TvPage.NOTIFICATIONS,
+            "🧩 السكنات والسمات" to TvPage.LAYOUT, "🔔 الإشعارات" to TvPage.NOTIFICATIONS,
             "🖼 الخلفية" to TvPage.WALLPAPER, "🎛 كل إعدادات المظهر" to TvPage.APPEARANCE)
         val col = LinearLayout(a).apply {
             orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL
@@ -359,34 +359,7 @@ object TvSkinGlass : TvSkin {
     }
 
     override fun themes(h: TvSkinHost): Boolean {
-        h.page { c ->
-            val a = h.activity; val ui = h.ui; val pal = TvPalette(h.theme)
-            c.addView(TvSkinHub.tabStrip(h, 2, tokens, true))
-            c.addView(ui.text("🎨 معرض السمات", tokens.textTitle + 5f, pal.fg, true).apply { setPadding(ui.dp(14), ui.dp(12), ui.dp(14), ui.dp(2)) })
-            c.addView(ui.text("حرّك على أي سمة وشوف المعاينة — OK بتطبّقها", tokens.textCaption + 1f, pal.fgSub).apply { setPadding(ui.dp(14), 0, ui.dp(14), ui.dp(8)) })
-            val holder = FrameLayout(a)
-            holder.addView(preview(h, h.theme))
-            c.addView(holder, LinearLayout.LayoutParams(-1, -2).apply { setMargins(ui.dp(10), ui.dp(4), ui.dp(10), ui.dp(8)) })
-            val strip = LinearLayout(a).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; clipChildren = false; clipToPadding = false; setPadding(ui.dp(6), ui.dp(4), ui.dp(6), ui.dp(8)) }
-            var shown = h.theme.id
-            for (th in Themes.all) {
-                val chip = TvTileView(a, tokens.radiusCard - 6).styled(tokens, pal.primary)
-                chip.inner.setBackgroundColor(th.bg)
-                if (th.id == h.theme.id) chip.tag = "skin:first"
-                val col = LinearLayout(a).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; setPadding(ui.dp(12), ui.dp(10), ui.dp(12), ui.dp(10)) }
-                val dots = LinearLayout(a).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL }
-                for (colr in listOf(th.primary, th.accent, th.surface)) dots.addView(View(a).apply { background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(colr); setStroke(ui.dp(1), th.border) } }, LinearLayout.LayoutParams(ui.dp(16), ui.dp(16)).apply { marginEnd = ui.dp(6) })
-                col.addView(dots)
-                col.addView(ui.text((if (th.id == h.theme.id) "✔ " else "") + th.name, tokens.textBody, th.text, true).apply { maxLines = 2; ellipsize = TextUtils.TruncateAt.END; textDirection = View.TEXT_DIRECTION_FIRST_STRONG; textAlignment = View.TEXT_ALIGNMENT_VIEW_START; setPadding(0, ui.dp(8), 0, 0) })
-                chip.inner.addView(col, FrameLayout.LayoutParams(-1, -1))
-                chip.onFocus = { f -> if (f && shown != th.id) { shown = th.id; holder.removeAllViews(); holder.addView(preview(h, th)) } }
-                chip.contentDescription = "سمة " + th.name
-                chip.setOnClickListener { if (th.id != h.theme.id) h.setTheme(th.id) }
-                strip.addView(chip, LinearLayout.LayoutParams(ui.dp(168), ui.dp(100)).apply { setMargins(ui.dp(5), ui.dp(5), ui.dp(5), ui.dp(5)) })
-            }
-            c.addView(HorizontalScrollView(a).apply { isHorizontalScrollBarEnabled = false; clipChildren = false; clipToPadding = false; addView(strip) })
-            c.addView(View(a), LinearLayout.LayoutParams(-1, ui.dp(24)))
-        }
+        h.open(TvPage.LAYOUT)
         return true
     }
 
