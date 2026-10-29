@@ -109,7 +109,7 @@ class TvActivity : Activity() {
     companion object { @Volatile var live: java.lang.ref.WeakReference<TvActivity>? = null }
 
     // ===== (v597 م1) نظام سكِنز الواجهة: اللي بيقدّمه TvActivity للسكِنز (انظر TvSkin.kt) =====
-    private val skinHost = object : TvSkinHost {
+    private val skinHost: TvSkinHost = object : TvSkinHost {
         override val activity: Activity get() = this@TvActivity
         override val theme: Theme get() = this@TvActivity.th
         override val ui: Ui get() = this@TvActivity.ui
