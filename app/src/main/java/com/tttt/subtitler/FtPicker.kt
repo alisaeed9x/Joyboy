@@ -42,13 +42,23 @@ class FtPicker(
     private val title: String = "اختار الملفات", private val onMenu: (() -> Unit)? = null
 ) {
     class PItem(val name: String, val size: Long, val date: Long, val dir: Boolean, val file: File?, val uri: Uri?) {
-        val key: String get() = file?.absolutePath ?: uri.toString()
+        /** (v659) اسم الفولدر الأب (للتجميع) · grp = بطاقة فولدر مجمّعة (cnt ملف، thumb صورة أول ملف) */
+        var folder = ""
+        var grp = false
+        var cnt = 0
+        var thumb: Any? = null
+        val key: String get() = if (grp) "grp:$folder" else (file?.absolutePath ?: uri.toString())
     }
 
     private val h = Handler(Looper.getMainLooper())
     private val sel = LinkedHashMap<String, PItem>()
     private val dirSize = HashMap<String, Long>()
     private var items: List<PItem> = emptyList()
+    private var flat: List<PItem> = emptyList()      // (v659) كل ملفات القسم
+    private var groupKey: String? = null             // (v659) فولدر مفتوح جوه قسم مجمّع (صور/فيديو/موسيقى/مستندات/APK)
+    private fun groupable(sec: String) = sec == "images" || sec == "videos" || sec == "music" || sec == "docs" || sec == "apks"
+    private fun gridNow() = groupable(section) && (groupKey == null || section == "images" || section == "videos")
+    private val cols: Int get() = if (tv) 5 else 3
     private var shown: List<PItem> = emptyList()
     private var section = "recent"
     private var dir: File? = null
@@ -58,7 +68,7 @@ class FtPicker(
     private val fmt = SimpleDateFormat("yyyy/MM/dd HH:mm", Locale.US)
     private val onPrimary: Int get() = if (th.isLight) Color.WHITE else Color.BLACK
 
-    private val sections = listOf("recent" to "🕘 الأحدث", "images" to "🖼 صور", "videos" to "🎬 فيديو", "music" to "🎵 موسيقى", "docs" to "📄 مستندات", "downloads" to "⬇ التنزيلات", "internal" to "📱 الذاكرة الداخلية", "folders" to "📁 المجلدات")
+    private val sections = listOf("recent" to "🕘 آخر الملفات", "internal" to "📁 مدير الملفات", "images" to "🖼 صور", "videos" to "🎬 فيديو", "music" to "🎵 موسيقى", "docs" to "📄 مستندات", "apks" to "🤖 APK", "downloads" to "⬇ التنزيلات", "folders" to "📂 المجلدات")
     private val DOC_EXT = setOf("pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx", "txt", "csv", "zip", "rar", "7z", "epub", "srt", "json", "apk")
     private val chipsBox = LinearLayout(act)
     private val crumbBox = LinearLayout(act)
@@ -126,8 +136,8 @@ class FtPicker(
                 addState(intArrayOf(android.R.attr.state_selected), hi)
                 addState(intArrayOf(), ColorDrawable(Color.TRANSPARENT))
             }
-            setOnItemClickListener { _, _, p, _ -> onRow(p) }
-            setOnItemLongClickListener { _, _, p, _ -> val it = shown.getOrNull(p); if (it != null && it.dir) { toggle(it); true } else false }
+            setOnItemClickListener { _, _, p, _ -> if (!gridNow()) onRow(p) }
+            setOnItemLongClickListener { _, _, p, _ -> if (gridNow()) false else { val it = shown.getOrNull(p); if (it != null && it.dir) { toggle(it); true } else false } }
         }
         root.addView(list, lp(-1, 0, 1f))
 
@@ -169,7 +179,7 @@ class FtPicker(
     }
 
     /** بيتنادى لما الشاشة ترجع (ممكن المستخدم يكون سمح بالصلاحية) */
-    fun refreshIfNeeded() { if (items.isEmpty() && !loading) openSec(section, dir) else access.visibility = if (hasAccess()) View.GONE else View.VISIBLE }
+    fun refreshIfNeeded() { if (flat.isEmpty() && items.isEmpty() && !loading) openSec(section, dir) else access.visibility = if (hasAccess()) View.GONE else View.VISIBLE }
 
     // ───────── الأقسام ─────────
 
@@ -188,7 +198,7 @@ class FtPicker(
         }
     } catch (_: Throwable) { null }
 
-    private fun fromEntry(e: XEntry) = PItem(e.name, e.size, e.date * 1000L, false, e.file, e.uri)
+    private fun fromEntry(e: XEntry) = PItem(e.name, e.size, e.date * 1000L, false, e.file, e.uri).also { it.folder = if (e.sub.isNotBlank()) e.sub else (e.file?.parentFile?.name ?: "") }
 
     private fun browse(d: File): List<PItem> {
         val ls = try { d.listFiles() } catch (_: Throwable) { null } ?: return emptyList()
@@ -207,7 +217,7 @@ class FtPicker(
                 if (out.size >= 800) return
                 if (f.name.startsWith(".")) continue
                 if (f.isDirectory) { if (f.name != "Android") walk(f, depth - 1) }
-                else if (f.extension.lowercase() in DOC_EXT && f.length() > 0L) out.add(PItem(f.name, f.length(), f.lastModified(), false, f, null))
+                else if (f.extension.lowercase() in DOC_EXT && f.extension.lowercase() != "apk" && f.length() > 0L) out.add(PItem(f.name, f.length(), f.lastModified(), false, f, null).also { it.folder = f.parentFile?.name ?: "" })
             }
         }
         try { walk(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOCUMENTS), 3) } catch (_: Throwable) {}
@@ -216,7 +226,7 @@ class FtPicker(
     }
 
     fun openSec(sec: String, d: File?) {
-        section = sec; dir = d; query = ""
+        section = sec; dir = d; query = ""; groupKey = null; flat = emptyList()
         try { search.setText("") } catch (_: Throwable) {}
         renderChips()
         val my = ++gen
@@ -232,6 +242,7 @@ class FtPicker(
                     "videos" -> FileCatalog.list(app, XCat.VIDEO).map { fromEntry(it) }
                     "music" -> FileCatalog.list(app, XCat.AUDIO).map { fromEntry(it) }
                     "docs" -> docs()
+                    "apks" -> FileCatalog.list(app, XCat.APK).map { fromEntry(it) }
                     "downloads", "internal" -> { val r = d ?: rootOf(sec); if (r == null) emptyList() else browse(r) }
                     else -> if (d == null) knownFolders() else browse(d)
                 }
@@ -239,7 +250,7 @@ class FtPicker(
             h.post {
                 if (my != gen) return@post
                 loading = false
-                items = res
+                flat = res; items = res
                 access.visibility = if (hasAccess()) View.GONE else View.VISIBLE
                 applyFilter(); renderCrumbs()
             }
@@ -257,6 +268,13 @@ class FtPicker(
 
     private fun renderCrumbs() {
         crumbBox.removeAllViews()
+        if (groupable(section) && groupKey != null) {   // (v659) جوه فولدر مجمّع: مسار «القسم ‹ الفولدر»
+            crumbScroll.visibility = View.VISIBLE
+            val lbl = sections.firstOrNull { it.first == section }?.second ?: ""
+            crumbBox.addView(pill(lbl, false) { groupKey = null; query = ""; try { search.setText("") } catch (_: Throwable) {}; applyFilter(); renderCrumbs() }, lp(-2, -2).apply { setMargins(ui.dp(2), 0, ui.dp(2), 0) })
+            crumbBox.addView(pill("‹ " + groupKey, true) {}, lp(-2, -2).apply { setMargins(ui.dp(2), 0, ui.dp(2), 0) })
+            return
+        }
         if (!browsing()) { crumbScroll.visibility = View.GONE; return }
         crumbScroll.visibility = View.VISIBLE
         val base: File? = if (section == "folders") null else rootOf(section)
@@ -277,6 +295,7 @@ class FtPicker(
 
     /** زرار الرجوع: بيطلع مجلد لو بنتصفح، وإلا false (الشاشة تقفل) */
     fun back(): Boolean {
+        if (groupable(section) && groupKey != null) { groupKey = null; query = ""; try { search.setText("") } catch (_: Throwable) {}; applyFilter(); renderCrumbs(); return true }
         if (!browsing()) return false
         val cur = dir ?: return false
         val base = if (section == "folders") null else rootOf(section)
@@ -287,10 +306,23 @@ class FtPicker(
         return true
     }
 
+    /** (v659) مستوى العرض الحالي: فولدرات مجمّعة (بصورة مصغّرة وعدد) أو ملفات فولدر مفتوح أو كل ملفات القسم */
+    private fun levelItems(): List<PItem> {
+        if (!groupable(section)) return items
+        if (groupKey != null) return flat.filter { it.folder == groupKey }
+        val out = ArrayList<PItem>()
+        for ((name, ls) in flat.groupBy { it.folder.ifBlank { "غير معروف" } }) {
+            val first = ls.maxByOrNull { it.date } ?: ls.first()
+            out.add(PItem(name, 0L, first.date, true, null, null).also { g -> g.grp = true; g.folder = if (name == "غير معروف") "" else name; g.cnt = ls.size; g.thumb = first.file ?: first.uri })
+        }
+        return out.sortedByDescending { it.date }
+    }
+
     private fun applyFilter() {
+        if (groupable(section)) items = levelItems()
         val q = query.lowercase()
         shown = if (q.isEmpty()) items else items.filter { it.name.lowercase().contains(q) }
-        info.text = if (loading) "⏳ بحمّل…" else if (shown.isEmpty()) (if (!hasAccess()) "محتاج صلاحية الوصول للملفات" else "مفيش ملفات هنا") else shown.size.toString() + " عنصر"
+        info.text = if (loading) "⏳ بحمّل…" else if (shown.isEmpty()) (if (!hasAccess()) "محتاج صلاحية الوصول للملفات" else "مفيش ملفات هنا") else shown.size.toString() + (if (groupable(section) && groupKey == null) " فولدر" else " عنصر")
         adapter.notifyDataSetChanged()
         updateBar()
     }
@@ -310,7 +342,16 @@ class FtPicker(
 
     private fun onRow(p: Int) {
         val it = shown.getOrNull(p) ?: return
+        if (it.grp) { openGroup(it); return }
         if (it.dir) { val f = it.file ?: return; openSec(section, f) } else toggle(it)
+    }
+
+    private fun openGroup(g: PItem) { groupKey = g.folder; query = ""; try { search.setText("") } catch (_: Throwable) {}; applyFilter(); renderCrumbs(); try { list.setSelection(0) } catch (_: Throwable) {} }
+    private fun toggleGroup(g: PItem) {
+        val ls = flat.filter { it.folder == g.folder }
+        val allOn = ls.isNotEmpty() && ls.all { sel.containsKey(it.key) }
+        if (allOn) for (x in ls) sel.remove(x.key) else for (x in ls) sel[x.key] = x
+        adapter.notifyDataSetChanged(); updateBar()
     }
 
     /** (v654) بعد بدء الإرسال: نفضّي التحديد عشان الرجوع للرئيسية يبقى نضيف */
@@ -408,11 +449,84 @@ class FtPicker(
         }
     }
 
+    /** (v659) خلية شبكة: صورة مصغّرة مربّعة + اسم تحتها. فولدر مجمّع = عدد الملفات (+ ✓ المحدد)، ملف = علامة تحديد */
+    private inner class Cell : LinearLayout(act) {
+        val box = FrameLayout(act)
+        val img = ImageView(act).apply { scaleType = ImageView.ScaleType.CENTER_CROP }
+        val ico = TextView(act).apply { gravity = Gravity.CENTER; textSize = 34f }
+        val badge = TextView(act).apply { textSize = 11f; setTextColor(Color.WHITE); setPadding(ui.dp(6), ui.dp(2), ui.dp(6), ui.dp(2)); background = ui.box(0xAA000000.toInt(), 0xAA000000.toInt(), 10) }
+        val chk = TextView(act).apply { gravity = Gravity.CENTER; textSize = 20f }
+        val name = ui.text("", if (tv) 14f else 12f, th.text).apply { maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.MIDDLE; gravity = Gravity.CENTER }
+        var cur: PItem? = null
+        init {
+            orientation = VERTICAL; isFocusable = true; isClickable = true
+            setPadding(ui.dp(3), ui.dp(3), ui.dp(3), ui.dp(3))
+            box.addView(img, FrameLayout.LayoutParams(-1, -1)); box.addView(ico, FrameLayout.LayoutParams(-1, -1))
+            box.addView(badge, FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM or Gravity.END).apply { setMargins(ui.dp(4), ui.dp(4), ui.dp(4), ui.dp(4)) })
+            box.addView(chk, FrameLayout.LayoutParams(ui.dp(34), ui.dp(34), Gravity.TOP or Gravity.START))
+            addView(box, LayoutParams(-1, 0).also { it.height = 0 })
+            addView(name, LayoutParams(-1, -2))
+            setOnClickListener { cur?.let { c -> if (c.grp) openGroup(c) else toggle(c) } }
+            setOnLongClickListener { cur?.let { c -> if (c.grp) toggleGroup(c) else toggle(c) }; true }
+            setOnFocusChangeListener { _, foc -> background = if (foc) ui.box(th.surface, th.accent, 10, 3) else null }
+        }
+        fun bind(it: PItem?, sz: Int) {
+            cur = it
+            if (it == null) { visibility = INVISIBLE; return }
+            visibility = VISIBLE
+            (box.layoutParams as LayoutParams).height = sz
+            box.requestLayout()
+            box.background = ui.box(th.surface, th.border, 10)
+            name.text = it.name
+            val thumbOk = if (it.grp) (section == "images" || section == "videos") else true
+            val src: Any? = if (it.grp) it.thumb else (it.file ?: it.uri)
+            if (thumbOk && src != null) {
+                ico.visibility = View.GONE
+                try { Glide.with(act).load(src).centerCrop().override(ui.dp(160), ui.dp(160)).into(img) } catch (_: Throwable) { ico.visibility = View.VISIBLE }
+            } else {
+                try { Glide.with(act).clear(img) } catch (_: Throwable) {}
+                img.setImageDrawable(null); ico.visibility = View.VISIBLE
+                ico.text = if (it.grp) "📁" else XCat.emoji(XCat.catOf(it.name))
+            }
+            if (it.grp) {
+                val picked = flat.count { x -> x.folder == it.folder && sel.containsKey(x.key) }
+                badge.visibility = VISIBLE; badge.text = "📁 " + it.cnt + (if (picked > 0) "  ✓" + picked else "")
+                chk.visibility = GONE
+            } else {
+                val on = sel.containsKey(it.key)
+                badge.visibility = GONE
+                chk.visibility = VISIBLE; chk.text = if (on) "☑" else "☐"; chk.setTextColor(if (on) th.primary else Color.WHITE)
+                box.foreground = if (on) ui.box(0x33000000 or (th.primary and 0x00FFFFFF), th.primary, 10, 3) else null
+            }
+            if (it.grp) box.foreground = null
+        }
+    }
+
+    private inner class GridRow : LinearLayout(act) {
+        val cells = ArrayList<Cell>()
+        init {
+            orientation = HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL
+            setPadding(ui.dp(2), ui.dp(2), ui.dp(2), ui.dp(2))
+            for (i in 0 until cols) { val c = Cell(); cells.add(c); addView(c, LayoutParams(0, -2, 1f)) }
+        }
+        fun bind(first: Int) {
+            val w = (act.resources.displayMetrics.widthPixels - ui.dp(if (tv) 56 else 24)) / cols - ui.dp(6)
+            for ((i, c) in cells.withIndex()) c.bind(shown.getOrNull(first + i), w)
+        }
+    }
+
     private inner class Adapter : BaseAdapter() {
-        override fun getCount() = shown.size
-        override fun getItem(p: Int): Any = shown[p]
+        override fun getCount() = if (gridNow()) (shown.size + cols - 1) / cols else shown.size
+        override fun getItem(p: Int): Any = if (gridNow()) p else shown[p]
         override fun getItemId(p: Int) = p.toLong()
+        override fun getViewTypeCount() = 2
+        override fun getItemViewType(p: Int) = if (gridNow()) 1 else 0
         override fun getView(p: Int, cv: View?, parent: ViewGroup?): View {
+            if (gridNow()) {
+                val g = (cv as? GridRow) ?: GridRow()
+                g.bind(p * cols)
+                return g
+            }
             val v = (cv as? Row) ?: Row()
             v.bind(shown[p])
             return v

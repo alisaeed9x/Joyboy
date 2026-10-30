@@ -37,8 +37,8 @@ com/tttt/subtitler/FtIdentity.kt
 com/tttt/subtitler/FtModel.kt
 com/tttt/subtitler/FtPeers.kt
 com/tttt/subtitler/FtPicker.kt
-com/tttt/subtitler/FtStore.kt
 com/tttt/subtitler/FtQuick.kt
+com/tttt/subtitler/FtStore.kt
 com/tttt/subtitler/FtUi.kt
 com/tttt/subtitler/FtViews.kt
 com/tttt/subtitler/FtXfer.kt
@@ -85,6 +85,7 @@ com/tttt/subtitler/Models.kt
 com/tttt/subtitler/Motion.kt
 com/tttt/subtitler/MusicService.kt
 com/tttt/subtitler/MusicUi.kt
+com/tttt/subtitler/MusicWidget.kt
 com/tttt/subtitler/NavAnim.kt
 com/tttt/subtitler/NetUse.kt
 com/tttt/subtitler/NextPanel.kt
@@ -99,6 +100,8 @@ com/tttt/subtitler/Player.kt
 com/tttt/subtitler/PlayerLogic.kt
 com/tttt/subtitler/PopupGuard.kt
 com/tttt/subtitler/Poster.kt
+com/tttt/subtitler/PrayerTimes.kt
+com/tttt/subtitler/PrayerWidget.kt
 com/tttt/subtitler/Presets.kt
 com/tttt/subtitler/PrivacyFilter.kt
 com/tttt/subtitler/Prompts.kt
@@ -152,6 +155,7 @@ com/tttt/subtitler/ToolsUi.kt
 com/tttt/subtitler/TrWizard.kt
 com/tttt/subtitler/Transfer.kt
 com/tttt/subtitler/TransferUi.kt
+com/tttt/subtitler/TransferWidget.kt
 com/tttt/subtitler/Trim.kt
 com/tttt/subtitler/TvBlur.kt
 com/tttt/subtitler/TvDirect.kt

@@ -86,7 +86,23 @@ class FileTransferActivity : Activity() {
         val root = FrameLayout(this).apply { setBackgroundColor(th.bg); layoutDirection = View.LAYOUT_DIRECTION_RTL; setPadding(pad, ui.dp(if (tvMode) 20 else 12), pad, ui.dp(8)) }
         content = FrameLayout(this)
         root.addView(content, FrameLayout.LayoutParams(-1, -1))
-        setContentView(root)
+        if (tvMode) setContentView(root)
+        else {   // (v660) المخزن: شريط 📂 الملفات | 📡 نقل فوق + الشريط السفلي زي باقي الصفحات
+            val outer = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_LTR; setBackgroundColor(th.bg) }
+            outer.addView(FilesHub.switchBar(this, ui, th, 1).view, LinearLayout.LayoutParams(-1, -2))
+            outer.addView(root, LinearLayout.LayoutParams(-1, 0, 1f))
+            val gates = BottomNav(this, ui, th, 3) { i ->
+                if (i != 3) {
+                    NavAnim.set(3, i)
+                    if (i == 2) startActivity(Intent(this, BrowserActivity::class.java))
+                    else startActivity(Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP).putExtra("tab", if (i == 0) "videos" else if (i == 1) "music" else if (i == 4) "youtube" else if (i == 7) "settings" else "tasks"))
+                    NavAnim.peek(this)
+                    finish()
+                }
+            }
+            outer.addView(gates.view, LinearLayout.LayoutParams(-1, -2))
+            setContentView(outer)
+        }
         val l: () -> Unit = { onHub() }
         hubL = l; FtHub.listen(l)
         go("home") { buildHome() }
@@ -96,6 +112,21 @@ class FileTransferActivity : Activity() {
     override fun onNewIntent(i: Intent) { super.onNewIntent(i); setIntent(i); handleIntent(i) }
 
     private fun handleIntent(i: Intent?) {
+        // (v658) ملفات جاهزة من مكتبة الفيديوهات/الموسيقى (شريط التحديد ← 📤 إرسال): نروح للرادار على طول
+        val uris = i?.getStringArrayListExtra("ft_uris")
+        if (uris != null && uris.isNotEmpty()) {
+            val names = i.getStringArrayListExtra("ft_names") ?: arrayListOf()
+            val sizes = i.getLongArrayExtra("ft_sizes") ?: LongArray(0)
+            i.removeExtra("ft_uris"); i.removeExtra("ft_names"); i.removeExtra("ft_sizes")
+            val picks = ArrayList<FtPick>()
+            for ((k, u) in uris.withIndex()) {
+                val nm = FtPath.cleanRel(names.getOrNull(k) ?: Uri.parse(u).lastPathSegment ?: "file")
+                if (nm.isEmpty()) continue
+                picks.add(FtPick(nm, sizes.getOrElse(k) { -1L }, Uri.parse(u), u))
+            }
+            if (picks.isNotEmpty()) { presetPicks = picks; radarMode = "all"; go("radar") { buildRadar() } }
+            return
+        }
         val sid = i?.getStringExtra("ft_sid") ?: return
         val s = FtHub.find(sid) ?: return
         i?.removeExtra("ft_sid")

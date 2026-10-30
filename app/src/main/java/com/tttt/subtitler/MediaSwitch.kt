@@ -7,7 +7,7 @@ import android.view.View
 import android.widget.LinearLayout
 
 /** (v654) زرارين فوق صفحة «ميديا»: 🎞 فيديوهات (الأساسي) · 🎵 موسيقى — بيتبدّلوا من غير ما يرجعوا للشريط السفلي */
-class MediaSwitch(private val act: Activity, private val ui: Ui, private val th: Theme, private val onPick: (Int) -> Unit) {
+class MediaSwitch(private val act: Activity, private val ui: Ui, private val th: Theme, private val labels: List<String> = listOf("🎞  فيديوهات", "🎵  موسيقى"), private val onPick: (Int) -> Unit) {
     val view = LinearLayout(act).apply {
         orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; gravity = Gravity.CENTER_VERTICAL
         setPadding(ui.dp(10), ui.dp(6), ui.dp(10), ui.dp(6)); setBackgroundColor(th.bg); visibility = View.GONE
@@ -16,7 +16,7 @@ class MediaSwitch(private val act: Activity, private val ui: Ui, private val th:
     private val onPrimary: Int get() = if (th.isLight) Color.WHITE else Color.BLACK
 
     init {
-        val defs = listOf(0 to "🎞  فيديوهات", 1 to "🎵  موسيقى")
+        val defs = labels.mapIndexed { i, l -> i to l }
         for ((tab, label) in defs) {
             val t = IconTextView(act).apply {
                 text = label; textSize = 14f; gravity = Gravity.CENTER; maxLines = 1; isClickable = true; isFocusable = true
@@ -71,5 +71,30 @@ class SwipeFrame(ctx: android.content.Context) : android.widget.FrameLayout(ctx)
     override fun onTouchEvent(e: android.view.MotionEvent): Boolean {
         if (e.actionMasked == android.view.MotionEvent.ACTION_UP || e.actionMasked == android.view.MotionEvent.ACTION_CANCEL) { val f = fired; fired = false; return f }
         return fired
+    }
+}
+
+/**
+ * (v660) «المخزن» = تبويب واحد في الشريط السفلي بتبويبين فوق: 📂 الملفات (مدير الملفات) · 📡 نقل (نقل الملفات).
+ * بيفتح آخر تبويب استخدمته. التبديل بين الاتنين من الشريط اللي فوق (بيقفل الشاشة الحالية ويفتح التانية من غير أنيميشن).
+ */
+object FilesHub {
+    private const val K = "hub_last"
+    fun intent(ctx: android.content.Context): android.content.Intent =
+        android.content.Intent(ctx, if (Cfg.str(K, "fm") == "ft") FileTransferActivity::class.java else FileManagerActivity::class.java)
+
+    /** cur = 0 ملفات · 1 نقل */
+    fun switchBar(act: Activity, ui: Ui, th: Theme, cur: Int): MediaSwitch {
+        Cfg.put(K, if (cur == 1) "ft" else "fm")
+        val sw = MediaSwitch(act, ui, th, listOf("📂  الملفات", "📡  نقل")) { t ->
+            if (t != cur) {
+                try {
+                    act.startActivity(android.content.Intent(act, if (t == 1) FileTransferActivity::class.java else FileManagerActivity::class.java))
+                    act.finish(); act.overridePendingTransition(0, 0)
+                } catch (e: Throwable) { LogStore.err("FilesHub:switch", e) }
+            }
+        }
+        sw.show(cur)
+        return sw
     }
 }

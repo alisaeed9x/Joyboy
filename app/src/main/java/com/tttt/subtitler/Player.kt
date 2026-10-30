@@ -5061,6 +5061,7 @@ class PlayerActivity : Activity(), Host {
     private fun wrapOn(): Boolean = Cfg.str("autoplay_wrap", if (DeviceUi.isTv(this)) "1" else "0") == "1"
 
     fun stepOrSeek(d: Int) {
+        if (remote && TvQueue.active) { TvQueue.step(this, d); showChrome(); return }   // (v658) قايمة «تشغيل على التلفزيون»: ⏮ ⏭ بينقلوا بين فيديوهاتها
         run {
             val p = libSibs()
             if (p != null && (p.first.getOrNull(p.second + d) != null || (wrapOn() && p.first.size > 1))) { stepEpisode(d); return }

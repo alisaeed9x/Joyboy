@@ -214,6 +214,44 @@ class MediaOps(private val act: Activity, private val ui: Ui, private val th: Th
         access(uri, false, op)
     }
 
+    /** (v658) نقل أكتر من فيديو مرة واحدة: قايمة بأسماء الفولدرات (+ فولدر جديد) ثم نقل الكل بطلب موافقة واحد */
+    fun moveMany(vs: List<VideoItem>, folders: List<FolderItem>) {
+        if (vs.isEmpty()) return
+        if (vs.size == 1) { move(vs[0], folders); return }
+        if (vs.any { busy(it) }) return
+        val curs = vs.mapNotNull { relOf(it.folderKey) }.toSet()
+        val opts = folders.mapNotNull { f -> relOf(f.key)?.let { f.name to it } }.filter { !(curs.size == 1 && it.second == curs.first()) }.distinctBy { it.second }
+        val labels = (opts.map { "📁 " + it.first + "   (" + it.second + ")" } + "➕ مجلد جديد…").toTypedArray()
+        GAlert(act).setTitle("📁 نقل ${vs.size} إلى").setItems(labels) { _, i ->
+            if (i < opts.size) doMoveMany(vs, opts[i].second)
+            else askText("مجلد جديد", "Movies/", "المسار بالنسبة للذاكرة (مثال: Movies/أنمي)", "نقل") { p ->
+                val rel = p.trim().trim('/').replace(Regex("/+"), "/")
+                if (rel.isEmpty() || rel.contains("..")) { toast("مسار غير صالح"); return@askText }
+                doMoveMany(vs, "$rel/")
+            }
+        }.setNegativeButton("إلغاء", null).show()
+    }
+    private fun doMoveMany(vs: List<VideoItem>, rel: String) {
+        val uris = vs.map { Uri.parse(it.uri) }
+        val op = {
+            var n = 0
+            for (v in vs) {
+                if (!fileOps(v)) {
+                    val cv = ContentValues().apply { put(MediaStore.MediaColumns.RELATIVE_PATH, rel) }
+                    if (act.contentResolver.update(Uri.parse(v.uri), cv, null, null) <= 0) throw Exception("النظام ماقدرش ينقل ${v.name}")
+                } else {
+                    val dir = File(Environment.getExternalStorageDirectory(), rel); dir.mkdirs()
+                    val old = File(v.folderKey, v.name); val nw = File(dir, v.name)
+                    if (nw.exists() || !old.renameTo(nw)) throw Exception("ماقدرتش أنقل ${v.name}")
+                    android.media.MediaScannerConnection.scanFile(act, arrayOf(old.path, nw.path), null, null)
+                }
+                n++
+            }
+            toast("✅ اتنقل $n إلى $rel"); onChanged()
+        }
+        accessMany(uris, false, op)
+    }
+
     // ===== مشاركة =====
     fun share(v: VideoItem) {
         try {
@@ -313,5 +351,35 @@ class MediaOps(private val act: Activity, private val ui: Ui, private val th: Th
                     }.show()
             }
         }.apply { isDaemon = true }.start()
+    }
+}
+
+/**
+ * (v658) «تشغيل على التلفزيون» لأكتر من فيديو: الموبايل بيحتفظ بالقايمة وبيبعت فيديو واحد للتلفزيون كل مرة.
+ * ⏮ ⏭ في شاشة التحكم بتنقل بين فيديوهات القايمة (لفّة لا نهائية). مفيش تغيير على كود التلفزيون.
+ */
+object TvQueue {
+    @Volatile var items: List<VideoItem> = emptyList()
+    @Volatile var idx = 0
+    val active: Boolean get() = items.size > 1
+
+    fun start(act: Activity, vs: List<VideoItem>) {
+        if (vs.isEmpty()) return
+        items = vs; idx = 0
+        playCur(act)
+    }
+
+    fun step(act: Activity, d: Int) {
+        if (items.isEmpty()) return
+        idx = (((idx + d) % items.size) + items.size) % items.size
+        playCur(act)
+    }
+
+    fun clear() { items = emptyList(); idx = 0 }
+
+    private fun playCur(act: Activity) {
+        val v = items.getOrNull(idx) ?: return
+        if (!PlayTarget.force(act, MediaSpec(uri = v.uri, title = v.title))) return
+        if (items.size > 1) Notice.show(act, "📺 ${idx + 1}/${items.size} — ${v.title}", 2600L)
     }
 }

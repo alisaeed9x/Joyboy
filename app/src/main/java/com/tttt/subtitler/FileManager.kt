@@ -308,6 +308,7 @@ class FileManagerActivity : Activity() {
             addView(tbtn("⬆") { up() })
             addView(tbtn("⋮") { menu() })
         }
+        if (!tvMode) root.addView(FilesHub.switchBar(this, ui, th, 0).view, LinearLayout.LayoutParams(-1, -2))   // (v660) المخزن: 📂 الملفات | 📡 نقل
         root.addView(head, LinearLayout.LayoutParams(-1, -2))
 
         // (v391) شريط التبويبات

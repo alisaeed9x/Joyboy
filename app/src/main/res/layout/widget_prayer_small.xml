@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/w_p_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:gravity="center_vertical"
+    android:layoutDirection="rtl"
+    android:padding="10dp"
+    android:background="@drawable/widget_bg">
+    <TextView
+        android:id="@+id/w_p_city"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="📍 …"
+        android:textColor="#FF8FB8E8"
+        android:textSize="12sp"
+        android:maxLines="1" />
+    <TextView
+        android:id="@+id/w_p_next"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="الصلاة الجاية: …"
+        android:textColor="#FFFFFFFF"
+        android:textSize="14sp"
+        android:textStyle="bold"
+        android:maxLines="1" />
+    <TextView
+        android:id="@+id/w_p_time"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="–:––"
+        android:textColor="#FF4DA3FF"
+        android:textSize="24sp"
+        android:textStyle="bold"
+        android:maxLines="1" />
+    <TextView
+        android:id="@+id/w_p_cd"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="…"
+        android:textColor="#FFFFFFFF"
+        android:textSize="16sp"
+        android:maxLines="1" />
+    <TextView
+        android:id="@+id/w_p_strip"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="4dp"
+        android:text="بجيب المواقيت…"
+        android:textColor="#FFD5E3F5"
+        android:textSize="11sp"
+        android:maxLines="2" />
+</LinearLayout>

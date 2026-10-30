@@ -1,0 +1,97 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/w_m_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="horizontal"
+    android:gravity="center_vertical"
+    android:layoutDirection="rtl"
+    android:padding="6dp"
+    android:background="@drawable/widget_bg">
+    <TextView
+        android:id="@+id/w_m_prev"
+        android:layout_width="44dp"
+        android:layout_height="match_parent"
+        android:gravity="center"
+        android:text="⏮"
+        android:textColor="#FF4DA3FF"
+        android:textSize="20sp" />
+    <LinearLayout
+        android:id="@+id/w_m_body"
+        android:layout_width="0dp"
+        android:layout_height="match_parent"
+        android:layout_weight="1"
+        android:orientation="vertical"
+        android:gravity="center_vertical"
+        android:paddingStart="2dp"
+        android:paddingEnd="2dp">
+        <TextView
+            android:id="@+id/w_m_title"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="مفيش أغنية شغالة"
+            android:textColor="#FFFFFFFF"
+            android:textSize="14sp"
+            android:textStyle="bold"
+            android:maxLines="1"
+            android:ellipsize="end" />
+        <TextView
+            android:id="@+id/w_m_artist"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="شغّل من مكتبة الموسيقى"
+            android:textColor="#FFD5E3F5"
+            android:textSize="12sp"
+            android:maxLines="1"
+            android:ellipsize="end" />
+        <ProgressBar
+            android:id="@+id/w_m_bar"
+            style="?android:attr/progressBarStyleHorizontal"
+            android:layout_width="match_parent"
+            android:layout_height="6dp"
+            android:layout_marginTop="6dp"
+            android:max="100"
+            android:progress="0"
+            android:progressTint="#FF4DA3FF"
+            android:progressBackgroundTint="#33FFFFFF" />
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:orientation="horizontal">
+            <TextView
+                android:id="@+id/w_m_state"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text=""
+                android:textColor="#FF4DA3FF"
+                android:textSize="11sp"
+                android:maxLines="1" />
+            <TextView
+                android:id="@+id/w_m_time"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text=""
+                android:textColor="#FFD5E3F5"
+                android:textSize="11sp"
+                android:maxLines="1" />
+        </LinearLayout>
+    </LinearLayout>
+    <TextView
+        android:id="@+id/w_m_toggle"
+        android:layout_width="44dp"
+        android:layout_height="match_parent"
+        android:gravity="center"
+        android:text="▶"
+        android:textColor="#FF4DA3FF"
+        android:textSize="20sp" />
+    <TextView
+        android:id="@+id/w_m_next"
+        android:layout_width="44dp"
+        android:layout_height="match_parent"
+        android:gravity="center"
+        android:text="⏭"
+        android:textColor="#FF4DA3FF"
+        android:textSize="20sp" />
+</LinearLayout>

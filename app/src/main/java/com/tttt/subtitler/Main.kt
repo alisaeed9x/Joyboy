@@ -791,6 +791,18 @@ class MainActivity : Activity() {
         }
         val ops = MediaOps(this, ui, th) { VideoScan.cache = null; scanFn(); if (MusicScan.items != null) { MusicScan.invalidate(); musicUi?.reload() } }
         mediaOps = ops
+        // (v658) «📤 إرسال» من شريط التحديد: بيفتح نقل الملفات على الرادار والملفات المحددة جاهزة (من غير ما تختارها تاني)
+        val sendVia: (List<VideoItem>) -> Unit = { vs ->
+            try {
+                startActivity(Intent(this, FileTransferActivity::class.java)
+                    .putStringArrayListExtra("ft_uris", ArrayList(vs.map { it.uri }))
+                    .putStringArrayListExtra("ft_names", ArrayList(vs.map { it.name }))
+                    .putExtra("ft_sizes", vs.map { it.size }.toLongArray()))
+            } catch (e: Throwable) { LogStore.err("Main:sendVia", e); Notice.show(this, "⚠ ما قدرتش أفتح نقل الملفات", 2600L) }
+        }
+        lib.onMoveMany = { vs -> if (vs.firstOrNull()?.let { tvItem(it) } != true) ops.moveMany(vs, lib.allFolders()) }
+        lib.onSendMany = { vs -> if (vs.firstOrNull()?.let { tvItem(it) } != true) sendVia(vs) }
+        lib.onTvPlay = { vs -> if (vs.firstOrNull()?.let { tvItem(it) } != true) TvQueue.start(this, vs) }
         lib.onRename = { v -> if (!tvItem(v)) ops.rename(v) }
         lib.onMove = { v -> if (!tvItem(v)) ops.move(v, lib.allFolders()) }
         lib.onShare = { v -> if (!tvItem(v)) ops.share(v) }
@@ -901,6 +913,8 @@ class MainActivity : Activity() {
             music.lib.onMove = { v -> ops.move(v, music.lib.allFolders()) }
             music.lib.onShare = { v -> ops.share(v) }
             music.lib.onShareMany = { vs -> ops.shareMany(vs) }
+            music.lib.onMoveMany = { vs -> ops.moveMany(vs, music.lib.allFolders()) }   // (v658)
+            music.lib.onSendMany = { vs -> sendVia(vs) }
             music.lib.onDelete = { v -> ops.delete(v) }
             music.lib.onRenameFolder = { f -> ops.renameFolder(f) }
             music.lib.onDeleteFolder = { f -> ops.deleteFolder(f) }
@@ -981,7 +995,7 @@ class MainActivity : Activity() {
             dv.postDelayed({ if (!isFinishing && !isDestroyed) android.os.Looper.myQueue().addIdleHandler { if (!isFinishing && !isDestroyed && musicUi == null) { try { ensureMusic() } catch (e: Throwable) { LogStore.err("Main:prewarmMusic", e) } }; false } }, 2800L)
         }
         val tabletShell = DeviceUi.isTablet(this)   // (v462) قشرة التابلت: ريل جانبي زي يوتيوب التابلت بدل الشريط السفلي
-        val nav = BottomNav(this, ui, th, 0, tabletShell) { i -> if (i >= BottomNav.YT_HOME) { musicReturnTab = -1; val was = curTab == 4; if (!was) showTabFn(4); ytUi?.tapTab(i - BottomNav.YT_HOME, !was) } else if (i == 2) { save(); val ytPip = try { curTab == 4 && android.os.Build.VERSION.SDK_INT >= 26 && !DeviceUi.isTv(this) && ytUi?.leaveForPip() == true } catch (_: Throwable) { false }; NavAnim.set(curTab, 2); if (ytPip) window.decorView.postDelayed({ if (!isFinishing && !isDestroyed) startActivity(Intent(this, BrowserActivity::class.java)) }, 1000L) else startActivity(Intent(this, BrowserActivity::class.java)) } else if (i == 3) { save(); NavAnim.set(curTab, 3); startActivity(Intent(this, FileManagerActivity::class.java)) } else if (i == 7) { musicReturnTab = -1; settingsShow?.invoke(null) } else if (i == 0 && fromTv && !fromPlayer && TvFocus.goHome(this)) { /* (v482) تلفزيون: «الرئيسية» = شاشة التلفزيون */ } else { musicReturnTab = -1; showTabFn(i) } }   // (v310) 4 الملفات = شاشة منفصلة زي المتصفح · (v606) يوتيوب شغّال ← المتصفح: الفيديو يكمّل في PiP والاتنين مع بعض
+        val nav = BottomNav(this, ui, th, 0, tabletShell) { i -> if (i >= BottomNav.YT_HOME) { musicReturnTab = -1; val was = curTab == 4; if (!was) showTabFn(4); ytUi?.tapTab(i - BottomNav.YT_HOME, !was) } else if (i == 2) { save(); val ytPip = try { curTab == 4 && android.os.Build.VERSION.SDK_INT >= 26 && !DeviceUi.isTv(this) && ytUi?.leaveForPip() == true } catch (_: Throwable) { false }; NavAnim.set(curTab, 2); if (ytPip) window.decorView.postDelayed({ if (!isFinishing && !isDestroyed) startActivity(Intent(this, BrowserActivity::class.java)) }, 1000L) else startActivity(Intent(this, BrowserActivity::class.java)) } else if (i == 3) { save(); NavAnim.set(curTab, 3); startActivity(FilesHub.intent(this)) } else if (i == 7) { musicReturnTab = -1; settingsShow?.invoke(null) } else if (i == 0 && fromTv && !fromPlayer && TvFocus.goHome(this)) { /* (v482) تلفزيون: «الرئيسية» = شاشة التلفزيون */ } else { musicReturnTab = -1; showTabFn(i) } }   // (v310) 4 الملفات = شاشة منفصلة زي المتصفح · (v606) يوتيوب شغّال ← المتصفح: الفيديو يكمّل في PiP والاتنين مع بعض
         navUi = nav
         if (!fromPlayer) {
             TaskCenter.listener = { if (!isDestroyed && !isFinishing) { tasksDlgRefresh?.invoke(); runOnUiThread { updateTasksFab() } } }

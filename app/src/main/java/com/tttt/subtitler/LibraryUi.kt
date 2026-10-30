@@ -101,6 +101,9 @@ class LibraryUi(
     private lateinit var queueBtn: TextView
     var onRename: (VideoItem) -> Unit = {}
     var onMove: (VideoItem) -> Unit = {}
+    var onMoveMany: (List<VideoItem>) -> Unit = {}   // (v658) شريط الأزرار السفلي وقت التحديد
+    var onSendMany: (List<VideoItem>) -> Unit = {}
+    var onTvPlay: (List<VideoItem>) -> Unit = {}
     var onDetails: (VideoItem) -> Unit = {}
     var onShare: (VideoItem) -> Unit = {}
     var onDelete: (VideoItem) -> Unit = {}
@@ -127,6 +130,8 @@ class LibraryUi(
     }
 
     val root = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; setBackgroundColor(th.bg) }
+    /** (v658) شريط أزرار سريعة تحت وقت التحديد: تلفزيون · إرسال · تسمية · نقل · حذف */
+    private val selBar = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; gravity = Gravity.CENTER; setPadding(ui.dp(6), ui.dp(4), ui.dp(6), ui.dp(4)); setBackgroundColor(th.surface); visibility = View.GONE }
     private var all: List<VideoItem> = emptyList()
     private var curFolder: String? = null
     private var mode = "scan"            // scan | perm | ready
@@ -510,6 +515,7 @@ class LibraryUi(
             }
         }
         root.addView(body, LinearLayout.LayoutParams(-1, 0, 1f))
+        root.addView(selBar, LinearLayout.LayoutParams(-1, -2))   // (v658)
         // (v565) مربعين تحت (وانت متصل بالتلفزيون): فيديوهات التلفزيون | فيديوهات الموبايل
         if (!audio) {
             fun srcBox(label: String, tv: Boolean): TextView = ui.text(label, 14f, th.text, true).apply {
@@ -1283,6 +1289,30 @@ class LibraryUi(
             titleTv.text = "☑ " + sel.size + (if (fs.isNotEmpty()) " فولدر محدد" else " $noun محدد")
             subTv.text = "▣ تحديد الكل · ⋮ الخيارات · ✕ إلغاء"
         }
+        applySelBar()
+    }
+    private fun selBtn(icon: String, label: String, color: Int, f: () -> Unit): View = LinearLayout(act).apply {
+        orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER; isClickable = true; isFocusable = true
+        setPadding(ui.dp(2), ui.dp(4), ui.dp(2), ui.dp(4))
+        addView(IconTextView(act).apply { text = icon; textSize = 20f; gravity = Gravity.CENTER; setTextColor(color) }, LinearLayout.LayoutParams(-1, -2))
+        addView(IconTextView(act).apply { text = label; textSize = 11f; gravity = Gravity.CENTER; maxLines = 1; setTextColor(color) }, LinearLayout.LayoutParams(-1, -2))
+        setOnClickListener { f() }
+    }
+    /** (v658) بيتبني من جديد مع كل تغيير في التحديد: الأزرار بتتغيّر حسب المحدد (فيديو واحد = تسمية · فولدر = من غير نقل/تسمية) */
+    private fun applySelBar() {
+        val fs = selFolders(); val vs = selVideos()
+        val vids = if (fs.isNotEmpty()) fs.flatMap { it.videos } else vs
+        val show = sel.isNotEmpty() && selWebs().isEmpty() && !backend.remote && !inHidden && vids.isNotEmpty()
+        selBar.removeAllViews()
+        selBar.visibility = if (show) View.VISIBLE else View.GONE
+        if (!show) return
+        val synth = FolderItem("__sel__", if (fs.isNotEmpty()) "المحدد (${fs.size} فولدر)" else "المحدد (${vs.size} $noun)", "", vids)
+        fun add(icon: String, label: String, color: Int, f: () -> Unit) { selBar.addView(selBtn(icon, label, color, f), LinearLayout.LayoutParams(0, -2, 1f)) }
+        if (!audio) add("📺", "تلفزيون", th.primary) { val l = vids; clearSel(); onTvPlay(l) }
+        add("📤", "إرسال", th.text) { val l = vids; clearSel(); onSendMany(l) }
+        if (fs.isEmpty() && vs.size == 1) add("✏", "تسمية", th.text) { val v = vs[0]; clearSel(); onRename(v) }
+        if (fs.isEmpty()) add("📁", "نقل", th.text) { val l = vs; clearSel(); onMoveMany(l) }
+        add("🗑", "حذف", th.danger) { clearSel(); onDeleteFolder(synth) }
     }
     private fun hideMany(vs: List<VideoItem>) {
         vs.forEach { hidden.add(it.videoId) }; saveHidden(); sel.clear(); render()

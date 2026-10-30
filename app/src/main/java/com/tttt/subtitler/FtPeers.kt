@@ -288,6 +288,8 @@ object FtIn {
         s.msg = "طلب استقبال"
         // استقبال تلقائي بس من جهاز المستخدم حدّده «موثوق» بنفسه ولسه بنفس البصمة، ولو فعّل الإعداد ده
         if (FtIdentity.autoTrusted() && FtStore.isTrusted(s.peerId, fp)) { s.decision = 1; s.autoAccepted = true }
+        // (v659) التلفزيون بيستقبل من الموبايل من غير موافقة (موبايل ← موبايل لسه بيطلب موافقة)
+        if (!s.autoAccepted && try { DeviceUi.isTv(app) } catch (_: Throwable) { false } && !s.peerType.equals("tv", true)) { s.decision = 1; s.autoAccepted = true }
         FtHub.add(s)
         if (!s.autoAccepted) FtNotify.incoming(app, s) else FtHub.changed()
 

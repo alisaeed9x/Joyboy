@@ -19,13 +19,13 @@ class BottomNav(act: Activity, private val ui: Ui, private val th: Theme, privat
         const val DEAD_AI = 6
         /** (v467) ترتيب الشريط بطلب صاحب التطبيق: الفيديوهات ← يوتيوب ← الموسيقى ← المتصفح ← المزيد.
          *  أي بوابة مش في الشريط بتظهر تلقائيًا جوه «المزيد» — فأي إضافة جديدة هتبان من غير تعديل هنا. */
-        val BAR_ORDER = listOf(0, REMOTE, 4, 2, 8)   // (v654) 1 (الموسيقى) اتدمجت مع 0 في زرار «ميديا»
+        val BAR_ORDER = listOf(0, REMOTE, 4, 2, 3, 8)   // (v654) 1 (الموسيقى) اتدمجت مع 0 في زرار «ميديا»
         /** (v475) خلايا يوتيوب الافتراضية (مش بوابات): الرئيسية 9 · الاشتراكات 10 · أنا 11 — بتحل محل خلية «يوتيوب» وانت جواه */
         const val YT_HOME = 9; const val YT_SUBS = 10; const val YT_ME = 11
         val NORMAL_ORDER = BAR_ORDER
         val YT_ORDER = listOf(0, YT_HOME, YT_SUBS, YT_ME, MORE)       // نسخة كاملة وانت في يوتيوب: الموسيقى والمتصفح بيروحوا لـ«المزيد»
         val LITE_ORDER = listOf(YT_HOME, YT_SUBS, 0, YT_ME)           // نسخة اللايت: الرئيسية · الاشتراكات · محلي · أنا
-        val DEFS = listOf("🎞" to "الفيديوهات", "🎵" to "الموسيقى", "🌐" to "المتصفح", "📂" to "الملفات", "▶" to "يوتيوب", "📋" to "المهام", "" to "", "⚙️" to "الإعدادات", "⋯" to "المزيد",
+        val DEFS = listOf("🎞" to "الفيديوهات", "🎵" to "الموسيقى", "🌐" to "المتصفح", "🗂" to "المخزن", "▶" to "يوتيوب", "📋" to "المهام", "" to "", "⚙️" to "الإعدادات", "⋯" to "المزيد",
             "🏠" to "الرئيسية", "📺" to "الاشتراكات", "👤" to "أنا", "📱" to "الريموت")
     }
     /** البوابات اللي ورا ⋯ المزيد: أي بوابة مش في الشريط (حاليًا: الملفات 3 · المهام 5 · الذكاء 6 · الإعدادات 7) — الزرار بيتلوّن لما واحدة منهم تبقى هي النشطة */
@@ -60,7 +60,6 @@ class BottomNav(act: Activity, private val ui: Ui, private val th: Theme, privat
         val ids = DEFS.indices.filter { it != MORE && it != DEAD_AI && it < YT_HOME && it !in order && !(it == 4 && YT_HOME in order) && !(it == 1 && !lite && 0 in order) }
         val items = ArrayList<MoreItem>()
         for (id in ids.filter { it != 7 }) items.add(MoreItem(DEFS[id].first, DEFS[id].second, id == active) { collapseMore(); onPick(id) })
-        items.add(MoreItem("📡", "نقل ملفات", false) { collapseMore(); try { act.startActivity(android.content.Intent(act, FileTransferActivity::class.java)) } catch (e: Throwable) { LogStore.err("Nav:ft", e) } })   // (v653) نقل الملفات الذكي
         if (!tvDev) {
             items.add(MoreItem("📺", "وضع TV", PlayTarget.enabled(), {
                 // دوسة طويلة: باقي خيارات التلفزيون

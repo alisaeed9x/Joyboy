@@ -31,7 +31,7 @@ object WidgetHub {
     private class Sample(val t0: Long, val p0: Int)
     private val samples = HashMap<Int, Sample>()
 
-    private fun rid(c: Context, type: String, name: String): Int = c.resources.getIdentifier(name, type, c.packageName)
+    internal fun rid(c: Context, type: String, name: String): Int = c.resources.getIdentifier(name, type, c.packageName)
 
     /** بيتنادى من أي thread. c ممكن يبقى null لو الـ context معروف من قبل */
     fun poke(c: Context? = null) {
@@ -61,6 +61,10 @@ object WidgetHub {
         if (lIds.isNotEmpty()) renderLive(c, mgr, lIds)
         val sIds = mgr.getAppWidgetIds(ComponentName(c, SongWidget::class.java))
         if (sIds.isNotEmpty()) renderSong(c, mgr, sIds)
+        val mIds = mgr.getAppWidgetIds(ComponentName(c, MusicWidget::class.java))
+        if (mIds.isNotEmpty()) MusicWidget.renderAll(c, mgr, mIds)
+        val xIds = mgr.getAppWidgetIds(ComponentName(c, TransferWidget::class.java))
+        if (xIds.isNotEmpty()) TransferWidget.renderAll(c, mgr, xIds)
     }
 
     // ===== المهام =====

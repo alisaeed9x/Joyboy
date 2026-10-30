@@ -398,6 +398,6 @@ class MusicService : Service() {
         @Volatile private var inst: MusicService? = null
         fun start(c: Context) { try { c.startForegroundService(Intent(c, MusicService::class.java)) } catch (_: Exception) {} }
         fun stop(c: Context) { try { c.stopService(Intent(c, MusicService::class.java)) } catch (_: Exception) {} }
-        fun refresh() { val s = inst ?: return; s.main.post { s.refreshNow() } }
+        fun refresh() { val s = inst ?: return; s.main.post { s.refreshNow(); try { WidgetHub.poke(s) } catch (_: Throwable) {} } }
     }
 }

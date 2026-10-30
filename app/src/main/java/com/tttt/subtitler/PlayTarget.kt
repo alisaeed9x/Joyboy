@@ -37,7 +37,7 @@ object PlayTarget {
 
     /** (v560) يقفل الفيديو على التلفزيون (الأمر close) ويشيل الكبسولة فورًا */
     fun closeOnTv(ctx: android.content.Context, done: (Boolean) -> Unit = {}) {
-        nowTitle = null; CastServer.clear(); TvModeFab.refresh()
+        nowTitle = null; TvQueue.clear(); CastServer.clear(); TvModeFab.refresh()
         val app = ctx.applicationContext
         Thread {
             var ok = false

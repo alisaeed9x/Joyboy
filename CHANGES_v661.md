@@ -1,0 +1,11 @@
+# v661 — رجوع ويدجتس v655 (مواقيت الصلاة + مشغل الموسيقى + مركز النقل) فوق v660
+- النسختين 655 (الويدجتس) و656→660 اتفرعوا من v654، فالويدجتس ما كانتش في 660. اتنقلت كما هي من 655:
+  - **ملفات جديدة:** `PrayerWidget.kt` · `PrayerTimes.kt` · `MusicWidget.kt` · `TransferWidget.kt` (+ `kt_manifest.txt`).
+  - **res:** `layout/widget_prayer_{small,medium,large}.xml` · `widget_music.xml` · `widget_transfer.xml` · `xml/widget_{prayer,music,transfer}_info.xml`.
+  - **assets:** `assets/widgets/` (أيقونات SVG + خلفيات المسجد).
+  - **AndroidManifest.xml:** 3 receivers (🕌 مواقيت الصلاة · 🎵 مشغل الموسيقى · 📤 مركز النقل).
+  - **Widgets.kt:** `rid` بقت `internal` + `updateAll` بتحدّث ويدجت الموسيقى والنقل.
+  - **MusicService.kt:** `refresh()` بتنادي `WidgetHub.poke` عشان ويدجت الموسيقى يتحدّث.
+- **اختلاف واحد عن 655:** ويدجت النقل بقى يفتح `FileTransferActivity` (شاشة النقل الجديدة المستخدمة في كل مداخل 660) بدل `TransferActivity` القديمة.
+- مفيش أي تعديل على تغييرات 656–660 (المخزن، شريط التحديد، FtPicker…).
+- المعدّل: build.gradle.kts (6.61). ما اتكومبايلش ولا اتجرّب على جهاز.

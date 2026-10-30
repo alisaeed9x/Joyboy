@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/w_x_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:gravity="center_vertical"
+    android:layoutDirection="rtl"
+    android:padding="10dp"
+    android:background="@drawable/widget_bg">
+    <TextView
+        android:id="@+id/w_x_title"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="📤 مركز النقل"
+        android:textColor="#FFFFFFFF"
+        android:textSize="15sp"
+        android:textStyle="bold"
+        android:maxLines="1" />
+    <TextView
+        android:id="@+id/w_x_status"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="4dp"
+        android:text="…"
+        android:textColor="#FFD5E3F5"
+        android:textSize="13sp"
+        android:maxLines="2" />
+    <TextView
+        android:id="@+id/w_x_hint"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="4dp"
+        android:text="دوس لفتح مركز النقل"
+        android:textColor="#FFD5E3F5"
+        android:textSize="11sp"
+        android:maxLines="1" />
+</LinearLayout>
