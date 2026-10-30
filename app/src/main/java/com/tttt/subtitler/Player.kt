@@ -869,7 +869,7 @@ class PlayerActivity : Activity(), Host {
         add("🌐 لغة / لهجة ترجمة البرنامج") { preferNative = false; tvSubDialog(1) }
         // (v552) «ترجمة ملف الترجمة» اتشالت — السؤال بقى جوه ▶ ترجم لما الفيديو يبقى فيه سوفت صب
         add("⚙ إعدادات الترجمة") { modeSettings(anchor) }
-        if (groups.isEmpty() && !prog) add("ℹ مفيش ترجمة أصلية في الفيديو ده (لو الترجمة محروقة على الصورة استخدم ▶ ترجم ← بصري/هارد سب)") { }
+        if (groups.isEmpty() && !prog) add("ℹ مفيش ترجمة أصلية في الفيديو ده (السوفت صب والهارد صب بيتترجموا أوتوماتيك)") { }
         GAlert(this).setTitle("🌐 مصادر الترجمة").setItems(labels.toTypedArray()) { _, w -> if (w in acts.indices) acts[w]() }.show()
     }
     // ===== (v529) 📄 ترجمة ملف الترجمة: سوفت سب (ملف جنب الفيديو / ملف تختاره / مسار جوه الفيديو) أو هارد سب (محروق على الصورة) — بجوجل أو جيميناي =====
@@ -959,7 +959,7 @@ class PlayerActivity : Activity(), Host {
         } catch (e: Throwable) { LogStore.err("Player:sfHard", e); say("⚠ تعذّر تشغيل ترجمة الهارد سب") }
     }
 
-    private fun sfRun(kind: String, engIn: String, picked: Uri? = null, track: Int = -1) {
+    private fun sfRun(kind: String, engIn: String, picked: Uri? = null, track: Int = -1, auto: Boolean = false) {
         if (kind == "hard") { sfHard(); return }
         // (v661) جيميناي من غير مفتاح كان بيفشل بتنبيه سريع ويختفي (باين إن مفيش ترجمة) ← بنحوّل لجوجل ونقولك
         var eng = engIn
@@ -979,7 +979,11 @@ class PlayerActivity : Activity(), Host {
                 } else {
                     val sc = if (track >= 0) null else sfSidecar()
                     if (sc != null) { cues = SubFileTr.parse(SubFileTr.decode(sc.readBytes())); label = sc.name }
-                    if (track >= 0 && vu != null) { SubFileTr.readEmbeddedTrack(applicationContext, vu, track)?.let { cues = it.second; label = it.first + " من الفيديو" } }
+                    if (track >= 0 && vu != null) {
+                        SubFileTr.readEmbeddedTrack(applicationContext, vu, track)?.let { cues = it.second; label = it.first + " من الفيديو" }
+                        // (v667) أوتوماتيك: المسار فاضي أو عربي أصلًا ← نترجم ملف الترجمة اللي جنب الفيديو
+                        if (auto && (cues.isEmpty() || SubFileTr.mostlyArabic(cues))) { sfSidecar()?.let { sc2 -> val c2 = SubFileTr.parse(SubFileTr.decode(sc2.readBytes())); if (c2.isNotEmpty()) { cues = c2; label = sc2.name } } }
+                    }
                     else if (cues.isEmpty() && vu != null && (vu.scheme == "file" || vu.scheme == "content")) {
                         SubFileTr.readEmbedded(applicationContext, vu)?.let { cues = it.second; label = "مسار " + it.first + " من الفيديو" }
                     }
@@ -989,11 +993,11 @@ class PlayerActivity : Activity(), Host {
                     say("مفيش سوفت سب في الفيديو ده (لا ملف جنبه ولا مسار جواه) — لو الترجمة محروقة على الصورة استخدم «ترجمة الهارد سب»")
                     return@Thread
                 }
-                if (SubFileTr.mostlyArabic(cues)) { say("💬 الترجمة دي عربي أصلًا"); return@Thread }
+                if (!auto && SubFileTr.mostlyArabic(cues)) { say("💬 الترجمة دي عربي أصلًا"); return@Thread }
                 sfBusy = "بترجم 0/" + cues.size; runOnUiThread { updateTr(); try { tvBar?.refresh() } catch (_: Throwable) {} }
                 say("📄 بترجم " + cues.size + " جملة من «" + label + "» بـ " + engName + (if (eng == "gemini") sfPlanNote() else "") + "…")
                 var lastP = 0L
-                val out = SubFileTr.translate(cues, eng, { pr -> sfBusy = pr; runOnUiThread { updateTr(); try { tvBar?.refresh() } catch (_: Throwable) {} }; val n = System.currentTimeMillis(); if (n - lastP > 6000L) { lastP = n; say(pr) } }, { isFinishing || isDestroyed })
+                val out = SubFileTr.translate(cues, eng, { pr -> sfBusy = pr; runOnUiThread { updateTr(); try { tvBar?.refresh() } catch (_: Throwable) {} }; val n = System.currentTimeMillis(); if (n - lastP > 1500L) { lastP = n; say(pr) } }, { isFinishing || isDestroyed })
                 if (isFinishing || isDestroyed) return@Thread
                 if (out.error.isNotEmpty()) { say("⚠ " + out.error); return@Thread }
                 var w = 0
@@ -1016,6 +1020,8 @@ class PlayerActivity : Activity(), Host {
                 if (engine.subs.isNotEmpty()) engine.saveVersion("قبل ترجمة ملف الترجمة")
                 engine.importSubs(subs)
                 sfLive = ""; preferNative = false; ccOn = true; dirty = true; curIdx = -2
+                try { player.exo()?.let { xp -> xp.trackSelectionParameters = xp.trackSelectionParameters.buildUpon().setTrackTypeDisabled(androidx.media3.common.C.TRACK_TYPE_TEXT, true).build() } } catch (_: Throwable) {}   // (v667) ملف الترجمة الأصلي يتفصل والمترجم هو اللي يظهر
+                nativeCue = ""
                 sfDoneUri = uri?.toString() ?: ""
                 Thread { try { engine.saveNow() } catch (e: Throwable) { LogStore.err("Player:sfSave", e) } }.start()
                 say("✅ اتترجمت " + subs.size + " جملة بـ " + engName + (if (out.failed > 0) " — " + out.failed + " جملة فضلت بنصها الأصلي" else ""))
@@ -1682,7 +1688,22 @@ class PlayerActivity : Activity(), Host {
                     files = out
                 } catch (e: Throwable) { LogStore.err("Player:sidecarMS", e) }
             }
-            val c = files.filter { it.isFile && it.extension.lowercase() in exts && matches(it.nameWithoutExtension) }
+            var c = files.filter { it.isFile && it.extension.lowercase() in exts && matches(it.nameWithoutExtension) }
+            // (v667) مفيش تطابق بالاسم: فولدر فيه «1.mp4» و«ترجمة رقم 1.srt» (أو فولدر فرعي اسمه ترجمة/subs) ← نطابق بالرقم الأخير في الاسم
+            if (c.isEmpty()) {
+                fun digits(x: String): String = buildString { for (ch in x) append(if (ch in '\u0660'..'\u0669') ('0' + (ch - '\u0660')) else if (ch in '\u06F0'..'\u06F9') ('0' + (ch - '\u06F0')) else ch) }
+                fun lastNum(x: String): Long? = Regex("\\d+").findAll(digits(x)).lastOrNull()?.value?.toLongOrNull()
+                val vn = lastNum(f.nameWithoutExtension)
+                if (vn != null) {
+                    val pool = ArrayList<java.io.File>(files)
+                    try {
+                        files.filter { it.isDirectory && Regex("ترجم|subs?|subtitle|caption|srt", RegexOption.IGNORE_CASE).containsMatchIn(it.name) }
+                            .forEach { d -> d.listFiles()?.let { pool.addAll(it) } }
+                    } catch (_: Throwable) {}
+                    c = pool.filter { it.isFile && it.extension.lowercase() in exts && lastNum(it.nameWithoutExtension) == vn }
+                    if (c.isNotEmpty()) LogStore.add("💬 سوفت صب: تطابق بالرقم ($vn) ← «" + c.first().name + "»")
+                }
+            }
             val r = c.sortedWith(compareBy({ x -> val n = x.name.lowercase(); if (n.contains(".ar.") || n.contains("arab") || n.contains(".ara.")) 0 else 1 }, { x -> exts.indexOf(x.extension.lowercase()) }, { it.name })).firstOrNull()
             LogStore.add("💬 سوفت صب: فحص ملف جنب الفيديو — الفولدر فيه " + files.size + " ملف، " + (if (r != null) "لقيت «" + r.name + "»" else "مفيش ملف ترجمة بنفس الاسم"))
             r
@@ -1889,14 +1910,52 @@ class PlayerActivity : Activity(), Host {
         val (t, r) = SubFileTr.multiPlan(k)
         if (k >= 2) " · $t يترجموا الملف كامل + $r ينقّحوا" else ""
     } catch (_: Throwable) { "" }
+    @Volatile private var autoSubKey = ""
+    private fun autoEng(): String = try { TrWizard.savedPlan()?.let { if (it.offline) "google" else "gemini" } } catch (_: Throwable) { null } ?: if (TrWizard.hasGeminiKey()) "gemini" else "google"
+    /** (v667) أول ما الفيديو يفتح وملوش ترجمة محفوظة: يدوّر على سوفت صب (جوه الفيديو أو ملف جنبه) ويترجمه لوحده؛ مفيش ← هارد صب (بصري بجيميناي). لغة الأصل مش فارقة حتى لو عربي. إيقاف: Cfg auto_sub=0 */
+    private fun autoSub() {
+        try {
+            val vu = uri ?: return
+            val key = vu.toString()
+            if (remote || autoSubKey == key || noSub || askSaved || Cfg.str("auto_sub", "1") == "0") return
+            if (engineStarted || engine.subs.isNotEmpty() || sfBusy.isNotEmpty()) return
+            autoSubKey = key; softAskedFor = key
+            h.postDelayed({
+                try {
+                    if (isFinishing || isDestroyed || engineStarted || engine.subs.isNotEmpty() || sfBusy.isNotEmpty() || uri?.toString() != key) return@postDelayed
+                    softAuto(vu) { if (Cfg.str("auto_hard", "1") != "0" && (try { TrWizard.hasGeminiKey() } catch (_: Throwable) { false })) sfHard() }
+                } catch (e: Throwable) { LogStore.err("Player:autoSub2", e) }
+            }, 1800L)
+        } catch (e: Throwable) { LogStore.err("Player:autoSub", e) }
+    }
     @Volatile private var softAskedFor = ""
     private fun softGate(): Boolean {
         val vu = uri ?: return false
         val key = vu.toString()
         if (softAskedFor == key || !::engine.isInitialized || engineStarted || engine.subs.isNotEmpty() || sfBusy.isNotEmpty()) return false
         softAskedFor = key
-        softAsk(vu) { beginTranslate(false) }
+        softAuto(vu) { beginTranslate(false) }
         return true
+    }
+    /** (v667) من غير أسئلة: فيه سوفت صب (مسار جوه الفيديو) يترجمه، مفيش ← يترجم ملف الترجمة اللي جنب الفيديو، مفيش خالص ← onNone (ترجمة الصوت) */
+    private fun softAuto(vu: Uri, onNone: () -> Unit) {
+        say("⏳ بفحص ترجمة الفيديو…")
+        Thread {
+            try {
+                val side = sfSidecar()
+                val emb = if (vu.scheme == "file" || vu.scheme == "content") SubFileTr.embeddedTracks(applicationContext, vu) else emptyList()
+                val nat = if (emb.isEmpty()) sfNativeCount() else 0
+                LogStore.add("💬 سوفت صب (أوتوماتيك): ملف جنب الفيديو=" + (side?.name ?: "لا") + " · مسارات جوه=" + emb.size + " · مسارات المشغّل=" + nat)
+                if (side == null && emb.isEmpty() && nat == 0) { runOnUiThread { onNone() }; return@Thread }
+                val eng = try { TrWizard.savedPlan()?.let { if (it.offline) "google" else "gemini" } } catch (_: Throwable) { null } ?: if (TrWizard.hasGeminiKey()) "gemini" else "google"
+                runOnUiThread {
+                    if (isFinishing || isDestroyed) return@runOnUiThread
+                    if (emb.isNotEmpty()) sfRun("soft", eng, null, emb[0].first, true)       // سوفت صب جوه الفيديو (ولو عربي/فاضي بيكمّل على الملف اللي جنبه)
+                    else if (side != null) sfRun("soft", eng, null, -2, true)                // ملف الترجمة اللي جنب الفيديو
+                    else sfRun("soft", eng, null, -1, true)                                  // مسار المشغّل (لحظي لو مش بيتقري)
+                }
+            } catch (e: Throwable) { LogStore.err("Player:softAuto", e); runOnUiThread { onNone() } }
+        }.also { it.isDaemon = true }.start()
     }
     // (v638) كاش فحص السوفت صب (ملف جنب الفيديو / مسارات جواه) عشان زرار «ترجمة السوفت صب» يظهر في قايمة ▶ ترجم من غير تأخير
     @Volatile private var softProbeKey = ""
@@ -2240,11 +2299,7 @@ class PlayerActivity : Activity(), Host {
         if (!started) {
             // (v444) 3 طرق بس بدل 9: صوت←جيميناي (الأساسي) · وشبر على الجهاز (المترجم بيتختار تحت) + تفريغ بس
             fun grpLbl(t: String) = ui.text(t, 11.5f, 0xFF9AA0A6.toInt(), true).apply { setPadding(ui.dp(8), ui.dp(6), ui.dp(8), ui.dp(2)) }
-            // (v638) فيه سوفت صب: أول خيار — بيترجم الملف كله بإعدادات الترجمة (لهجة/أسلوب) وبمفاتيح جيميناي المتعددة (ترجمة ثم تنقيح)
-            if (softAvailable { try { trMenuPop?.let { p -> if (p.isShowing) { p.dismiss(); trMenuPop = null; h.post { translateMenu(anchor) } } } } catch (_: Throwable) {} }) {
-                col.addView(grpLbl("💬 فيه ترجمة سوفت صب — لهجة: " + Cfg.str("lang", "فصحى").ifBlank { "فصحى" }))
-                col.addView(item("💬 ترجمة السوفت صب (الملف كله)" + sfPlanNote()) { val vu = uri; if (vu != null) softAsk(vu) { sfNoneDialog() } })
-            }
+            // (v667) السوفت صب والهارد صب بيتترجموا أوتوماتيك أول ما الفيديو يفتح — مفيش زراير ليهم هنا
             col.addView(grpLbl("🎧 من الصوت مباشرة — أدق · محتاج نت"))
             col.addView(item("⭐ FreeLLM · جيميناي بكل مفاتيحك وموديلاته") { freeGemStart() })
             col.addView(grpLbl("🌗 على الجهاز — وشبر يفرّغ وبعدين مترجم"))
@@ -3714,7 +3769,7 @@ class PlayerActivity : Activity(), Host {
         gSub.addView(pk("⏱ شريط التزامن السريع") { toggleSyncStrip() })   // (v469) B14
         // (v103) قايمة ☰ = قايمة منسدلة صغيرة فيها بس الأزرار اللي مش موجودة في المشغّل نفسه
         gTool.addView(pd("📤 تصدير SRT") { doExport() })
-        gTool.addView(pd("📥 استيراد SRT") { doImport() })
+        gTool.addView(pd("📥 استيراد ملف ترجمة (بيترجم فورًا)") { doImport() })
         gTool.addView(pd("📂 فتح فيديو") { doOpen() })
         gTool.addView(pd("🕳 سد الفجوات") { engine.retryFailed(); Notice.show(this, ("بحاول أسد الفجوات").toString(), 2300L) })
         // (v87) ترجمات الفيديو: قايمة صغيرة منسدلة بالنسخ المحفوظة (دوسة على نسخة ترجّعها)
@@ -4948,7 +5003,7 @@ class PlayerActivity : Activity(), Host {
                 refreshList()
                 LogStore.add("🎬 فتح فيديو $vidNow · ${LogStore.heapLine()}")
                 maybePrompt(wasBg)
-                if (pendingBegin) { pendingBegin = false; beginTranslate() }
+                if (pendingBegin) { pendingBegin = false; beginTranslate() } else autoSub()
             }
         }.apply { isDaemon = true }.start()
     }
@@ -5413,16 +5468,9 @@ class PlayerActivity : Activity(), Host {
             swapVideo(u)
         }
         if (r == 9 && c == RESULT_OK) d?.data?.let { u ->
-            val parsed = try { PlayerLogic.parseSrt(contentResolver.openInputStream(u)?.use { String(it.readBytes(), Charsets.UTF_8) } ?: "") } catch (_: Exception) { emptyList() }
-            if (parsed.isEmpty()) Notice.show(this, ("الملف مش SRT صالح").toString(), 2300L)
-            else if (engine.subs.isNotEmpty()) Notice.show(this, ("فيه ترجمة موجودة بالفعل — الاستيراد بيشتغل على فيديو من غير ترجمة بس").toString(), 3600L)
-            else {
-                engine.importSubs(parsed.map { Sub(it.first, it.second, it.third, it.third, "male", "unknown", "none", emptyList(), emptyList(), false, false) })
-                dirty = true; Thread { engine.saveNow() }.start()
-                Notice.show(this, ("اتستورد ${parsed.size} جملة").toString(), 2300L)
-            }
+            sfRun("soft", autoEng(), u, -1, true)   // (v667) أول ما تستورد ملف ترجمة (SRT/ASS/VTT) بيترجمه فورًا ويشغّله مكان الأصلي
         }
-        if (r == 41 && c == RESULT_OK) d?.data?.let { u -> sfRun("soft", sfPickEng, u) }   // (v529) ملف ترجمة اخترته من الجهاز
+        if (r == 41 && c == RESULT_OK) d?.data?.let { u -> sfRun("soft", sfPickEng, u, -1, true) }   // (v529) ملف ترجمة اخترته من الجهاز
         if (r == 32) {
             val t = pendingOrigSrt; pendingOrigSrt = null
             if (c == RESULT_OK && t != null) d?.data?.let { u ->
