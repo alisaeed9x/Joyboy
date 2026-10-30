@@ -202,14 +202,6 @@ class TvActivity : Activity() {
         }
     }
 
-    /** (v597 م1) اختيار سكِن الواجهة (Layout) — تبديل حي من غير ريستارت */
-    private fun tvSkinDialog() {
-        val cur = TvSkins.cur().id
-        val all = TvSkins.all
-        GAlert(this).setTitle("🧩 تصميم الواجهة (Layout)")
-            .setItems(all.map { (if (it.id == cur) "✔ " else "") + it.name }.toTypedArray()) { _, i -> TvSkins.set(all[i].id, skinHost); applySkinLive() }
-            .setNegativeButton("إلغاء", null).show()
-    }
 
     /** (v598 م3) باك الأيقونات — مستقل عن سكِن الواجهة: التبديل حي وبيتطبّق على أي سكِن */
     private val iconPackRepaint: () -> Unit = { if (!isDestroyed && !isFinishing) IconPackUi.repaint(this) }
@@ -469,6 +461,15 @@ class TvActivity : Activity() {
     private var resumedOnce = false
     override fun onPause() { h.removeCallbacks(wallLoop); h.removeCallbacks(ytLoop); super.onPause() }   // (v527) مفيش تنزيل خلفيات وانت في تطبيق تاني
     private fun recentsSig(): String = try { recents().take(40).joinToString("|") { it.uri + ":" + it.posSec.toInt() + ":" + it.ts } } catch (_: Throwable) { "" }
+    private val histCheck = Runnable { val sg = recentsSig(); if (sg != recSig) { refreshHist(sg); recSig = sg } }
+    private fun refreshHist(sig: String) {
+        homeCacheSig = ""   // كاش الرئيسية يتحدّث السجل في المرة الجاية كمان
+        val hh = histHost ?: return
+        if (Cfg.str("tv_rows_hide2", "").split(",").map { it.trim() }.any { it == "hist" }) return
+        val hadFocus = try { currentFocus?.let { isInside(it, hh) } == true } catch (_: Throwable) { false }
+        fillHistory(hh)
+        if (hadFocus) hh.post { try { (hh.getChildAt(1) as? ViewGroup)?.let { r -> firstFocusable(r)?.requestFocus() } } catch (_: Throwable) {} }
+    }
     override fun onResume() {
         super.onResume(); idleSec = 0
         TvSetup.onResume(this)   // (v536) أول مرة: شاشة الأذونات
@@ -476,16 +477,11 @@ class TvActivity : Activity() {
         if (resumedOnce) refreshTopPrayer()
         refreshWifiIcon()
         try { content.animate().cancel(); content.alpha = 1f; content.scaleX = 1f; content.scaleY = 1f; content.translationY = 0f } catch (_: Throwable) { }   // (v513) رجوع من صفحة اتفتحت بالتركيز
+        // (v675) «آخر المشغّلة» كانت بتتأخر: التحديث كان مشروط (مش في بحث/فولدر/تاب تاني) لكن بصمة السجل بتتحدّث في كل الأحوال، فلو الشرط فشل لحظة الرجوع من الفيديو التحديث ما بيتعادش غير بـBack تاني. دلوقتي بيتحدّث دايمًا لو السجل اتغيّر + إعادة فحص بعد لحظة (لو المشغّل خلّص الحفظ متأخر)
         val sig = recentsSig()
-        if (resumedOnce && sig != recSig && !inSearch && storageKind == null && curTab == 0) {
-            val hh = histHost
-            if (hh != null && Cfg.str("tv_rows_hide2", "").split(",").map { it.trim() }.none { it == "hist" }) {
-                val hadFocus = try { currentFocus?.let { isInside(it, hh) } == true } catch (_: Throwable) { false }
-                fillHistory(hh)
-                if (hadFocus) hh.post { try { (hh.getChildAt(1) as? ViewGroup)?.let { r -> firstFocusable(r)?.requestFocus() } } catch (_: Throwable) {} }
-            }
-        }
+        if (resumedOnce && sig != recSig) refreshHist(sig)
         recSig = sig; resumedOnce = true
+        h.removeCallbacks(histCheck); h.postDelayed(histCheck, 700L); h.postDelayed(histCheck, 2500L)
         h.removeCallbacks(ytLoop); h.postDelayed(ytLoop, 60_000L)   // (v581) تحديث يوتيوب كل دقيقة
     }
     private fun firstFocusable(v: View): View? {
@@ -2121,8 +2117,6 @@ class TvActivity : Activity() {
             .setNegativeButton("رجوع") { _, _ -> lookDialog() }.show()
     }
 
-    /** Compatibility entry point: even legacy calls must select a Skin before choosing its Theme. */
-    private fun themeDialog() { lookDialog() }
     private fun skinDialog() {
         val cur = Skins.cur().id
         GAlert(this).setTitle("🎞 نمط الحركة والتفاعل")

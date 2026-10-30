@@ -2035,14 +2035,6 @@ class BrowserActivity : Activity() {
         }.apply { isDaemon = true }.start()
     }
 
-    /** (v533) الصفحة الحالية تتبعت للتلفزيون وتتفتح هناك إجباري (حتى لو فيه فيديو شغّال: التلفزيون بيقفله ويفتح الجديد) */
-    private fun sendPageToTv() {
-        val u = wvOrNull?.url ?: ""
-        if (!u.startsWith("http", true)) { Notice.show(this, "مفيش صفحة تتبعت للتلفزيون", 2200L); return }
-        try { RemoteClient.init(this) } catch (_: Throwable) {}
-        if (RemoteClient.lastTv() == null) { Notice.show(this, "📺 مفيش تلفزيون مقترن — اقترن من «الريموت» الأول", 3200L); return }
-        Links.sendToTv(this, u)
-    }
 
     private fun leaveCustom() {
         val v = customView ?: return

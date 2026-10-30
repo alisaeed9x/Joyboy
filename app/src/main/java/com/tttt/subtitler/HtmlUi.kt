@@ -491,23 +491,6 @@ class VertInd(ctx: Context, icon: String, private val range: Float = 1f) : Linea
 }
 
 
-/** (v167) سلايدر صوت بقسمين: 0..100 بلون الثيم، 100..200 أحمر (تضخيم). علامة صغيرة عند 100%. */
-class DualVolBar(ctx: Context, private val normal: Int, private val trackBg: Int) : SeekBar(ctx) {
-    private val d = ctx.resources.displayMetrics.density
-    private val pt = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
-    private val red = 0xFFFF3B30.toInt()
-    // بنرسم كل حاجة (المسار + الإبهام) بنفسنا؛ الـ super بيتحسب منه اللمس بس
-    override fun onDraw(c: android.graphics.Canvas) {
-        val l = paddingLeft.toFloat(); val r = (width - paddingRight).toFloat(); val cy = height / 2f; val th = 4 * d
-        val w = r - l; val mx = max.coerceAtLeast(1).toFloat(); val x = l + w * progress / mx; val mid = l + w * 100f / mx
-        pt.style = android.graphics.Paint.Style.FILL
-        pt.color = trackBg; c.drawRoundRect(l, cy - th / 2, r, cy + th / 2, th, th, pt)
-        pt.color = normal; c.drawRoundRect(l, cy - th / 2, minOf(x, mid), cy + th / 2, th, th, pt)
-        if (progress > 100) { pt.color = red; c.drawRoundRect(mid, cy - th / 2, x, cy + th / 2, th, th, pt) }
-        pt.color = 0xCCFFFFFF.toInt(); c.drawRect(mid - 0.5f * d, cy - th, mid + 0.5f * d, cy + th, pt)   // علامة 100%
-        pt.color = if (progress > 100) red else Color.WHITE; c.drawCircle(x, cy, 8 * d, pt)
-    }
-}
 
 
 /** (v604) شريط واحد من سلايدرَي الصوت: 0..100 بلون واحد، الإبهام أبيض (أو أحمر لو [danger] وفيه قيمة). */

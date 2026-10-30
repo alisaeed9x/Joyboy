@@ -2548,36 +2548,6 @@ class Engine(
     // ===== أدوات يدوية من المشغّل (أزرار الشاشة الكاملة في نسخة الـ HTML) =====
     class Version(val name: String, val subs: List<Sub>, val dialect: String = "")
     val versions = java.util.concurrent.CopyOnWriteArrayList<Version>()
-    /**
-     * (v469) A13: إعادة ترجمة سطر واحد منفرد بسياق جيرانه (السابق واللاحق بأصولهم وترجماتهم).
-     * واجهة المشغّل بتندهها برقم السطر في قائمة [subs] الحالية، والنتيجة بتتطبّق على نفس السطر + بتتحفظ + بتتخزن في كاش الأسطر.
-     * @param subIndex رقم السطر في subs (0-based)
-     * @param done بيتنادى في الآخر بـ true لو الترجمة اتغيّرت فعلًا
-     */
-    fun retranslateOne(subIndex: Int, done: (Boolean) -> Unit = {}) {
-        val snap = synchronized(lock) { subs }
-        val s = snap.getOrNull(subIndex)
-        if (s == null || transOnly || isClosed) { try { done(false) } catch (_: Throwable) {}; return }
-        val prev = snap.getOrNull(subIndex - 1); val next = snap.getOrNull(subIndex + 1)
-        try {
-            bg.submit {
-                var ok = false
-                try {
-                    val nt = retranslateLineSync(s, prev, next)
-                    if (!nt.isNullOrBlank() && !isClosed) {
-                        val fixed = enforceGlossary(listOf(s.copy(translated = nt))).first()
-                        synchronized(lock) {
-                            val cur = subs.toMutableList()
-                            val ix = cur.indexOfFirst { it.start == s.start && it.original == s.original }
-                            if (ix >= 0) { cur[ix] = cur[ix].copy(translated = fixed.translated); subs = cur; ok = true }
-                        }
-                        if (ok) { lineCachePut(s.original, fixed.translated); host.changed(); persist(); host.log("🔁 اتعاد ترجمة سطر واحد (${s.start.toInt()}ث) بسياقه") }
-                    }
-                } catch (e: Exception) { LogStore.err("Engine:retranslateOne", e) }
-                try { done(ok) } catch (_: Throwable) {}
-            }
-        } catch (_: Exception) { try { done(false) } catch (_: Throwable) {} }
-    }
 
     fun saveVersion(name: String, dialect: String = convDialect.ifBlank { "فصحى" }) { versions.add(Version(name, subs, dialect)); while (versions.size > 12) versions.removeAt(0) }
     /** يرجّع نص الترجمة (translated) بس من نسخة محفوظة على الجمل المطابقة (نفس البداية والأصل)، والجمل الجديدة بتفضل زي ما هي */

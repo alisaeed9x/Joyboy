@@ -69,31 +69,3 @@ object YtHistory {
     fun clear(ctx: Context) { synchronized(lock) { try { file(ctx).delete() } catch (_: Exception) {} } }
 }
 
-/** صور مصغّرة ليوتيوب (بتتحمّل مرة وتتخزّن في الجهاز) */
-object YtThumbs {
-    private val cache = android.util.LruCache<String, Bitmap>(60)
-    private val main = Handler(Looper.getMainLooper())
-    private fun f(ctx: Context, id: String) = File(File(ctx.filesDir, "ytthumbs"), "$id.jpg")
-    fun peek(id: String): Bitmap? = cache.get(id)
-    fun load(ctx: Context, id: String, cb: (Bitmap?) -> Unit) {
-        val app = ctx.applicationContext
-        Thread {
-            var b: Bitmap? = null
-            try {
-                val file = f(app, id)
-                if (file.exists()) b = BitmapFactory.decodeFile(file.path)
-                if (b == null) {
-                    val c = java.net.URL("https://i.ytimg.com/vi/$id/mqdefault.jpg").openConnection() as java.net.HttpURLConnection
-                    c.connectTimeout = 8000; c.readTimeout = 8000
-                    val bytes = c.inputStream.use { it.readBytes() }
-                    c.disconnect()
-                    b = BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
-                    if (b != null) { file.parentFile?.mkdirs(); file.writeBytes(bytes) }
-                }
-            } catch (e: Throwable) { LogStore.err("YtThumbs", e) }
-            val res = b
-            if (res != null) cache.put(id, res)
-            main.post { cb(res) }
-        }.apply { isDaemon = true }.start()
-    }
-}

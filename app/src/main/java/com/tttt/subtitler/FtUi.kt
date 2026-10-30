@@ -145,7 +145,7 @@ class FileTransferActivity : Activity() {
     }
 
     override fun onBackPressed() {
-        if ((curTag == "picker" || curTag == "home") && picker?.back() == true) return
+        if ((curTag == "picker" || curTag == "files") && picker?.back() == true) return
         if (curTag == "tvbrowse" && backHook?.invoke() == true) return
         pop()
     }
@@ -242,17 +242,112 @@ class FileTransferActivity : Activity() {
         return if (ip.isEmpty()) "📵 مش متصل بشبكة محلية (واي فاي)" else "📶 الشبكة المحلية · $ip"
     }
 
-    private fun typeIcon(t: String) = when (t) { "tv" -> "📺"; "tablet" -> "📱"; else -> "📱" }
 
     // ═════════════ الرئيسية ═════════════
-    // (v654) «نقل الملفات» = مدير ملفات عادي ← دوسة على ملف ← زرار «إرسال» أحمر ← رادار كبير بالأجهزة المتصلة بس
+    // (v672) 4 بطاقات كبيرة زي التصميم: موبايل←موبايل · موبايل←تلفزيون · تلفزيون←موبايل · مدير الملفات
+    // موبايل←X: اختار الملفات (مدير ملفات بشبكة/ترتيب/آخر الملفات) ← زرار إرسال أحمر ← الرادار ← إرسال
     private var homePk: FtPicker? = null
 
-    private fun buildHome(): View {
-        val pk = homePk ?: FtPicker(this, ui, th, tvMode, { picks -> presetPicks = picks; radarMode = "all"; go("radar") { buildRadar() } }, { pop() }, "📤 نقل الملفات", { homeMenu() }).also { homePk = it }
-        picker = pk
-        (pk.view.parent as? ViewGroup)?.removeView(pk.view)
+    /** لون بنفس درجة الثيم مزاح في الـHue (من غير الأخضر عشان راحة العين) */
+    private fun hueShift(c: Int, deg: Float): Int {
+        val hsv = FloatArray(3); Color.colorToHSV(c, hsv)
+        var hh = (hsv[0] + deg + 360f) % 360f
+        if (hh in 75f..170f) hh = (hh + 110f) % 360f
+        hsv[0] = hh; hsv[1] = hsv[1].coerceIn(0.45f, 0.85f); hsv[2] = hsv[2].coerceIn(0.55f, 0.95f)
+        return Color.HSVToColor(hsv)
+    }
+
+    private fun darker(c: Int, f: Float): Int { val hsv = FloatArray(3); Color.colorToHSV(c, hsv); hsv[2] = (hsv[2] * f).coerceIn(0f, 1f); return Color.HSVToColor(hsv) }
+
+    private fun filesFor(mode: String): View {
+        val ttl = when (mode) { "m2m" -> "📱 موبايل ← موبايل"; "m2tv" -> "📺 موبايل ← تلفزيون"; "tv2m" -> "📲 من التلفزيون للموبايل"; else -> "📁 مدير الملفات" }
+        val pk = FtPicker(this, ui, th, tvMode, { picks -> presetPicks = picks; radarMode = if (mode == "all") "all" else mode; go("radar") { buildRadar() } }, { pop() }, ttl, { homeMenu() })
+        picker = pk; homePk = pk
         return pk.view
+    }
+
+    private fun buildFiles(mode: String): View = filesFor(mode)
+
+    private fun buildHome(): View {
+        val root = col()
+        val gear = btn("⚙") { homeMenu() }
+        val logo = TextView(this).apply {
+            text = "📲"; textSize = if (tvMode) 30f else 26f; gravity = Gravity.CENTER
+            background = GradientDrawable(GradientDrawable.Orientation.TL_BR, intArrayOf(th.primary, th.accent)).apply { cornerRadius = ui.dp(16).toFloat() }
+        }
+        val hd = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL }
+        hd.addView(logo, lp(ui.dp(if (tvMode) 64 else 54), ui.dp(if (tvMode) 64 else 54)).apply { marginEnd = ui.dp(10) })
+        val tc = col()
+        tc.addView(ui.text("نقل الملفات", if (tvMode) 28f else 24f, th.text, true))
+        tc.addView(ui.text("بين الموبايل والتلفزيون", if (tvMode) 16f else 13f, th.muted))
+        hd.addView(tc, lp(0, -2, 1f))
+        hd.addView(gear, lp(-2, -2))
+        root.addView(hd, lp(-1, -2))
+
+        val body = col()
+        val live = col()
+        body.addView(live, lp(-1, -2).apply { topMargin = ui.dp(8) })
+        fun fillLive() {
+            live.removeAllViews()
+            for (s in FtHub.sessions.filter { it.active }.take(3)) {
+                val pend = !s.outgoing && s.status == FtSession.WAITING && s.decision == 0
+                val t = if (pend) "📥 طلب من «" + s.peerName + "» — " + s.files.size + " ملف · اضغط للرد"
+                else (if (s.outgoing) "📤 بيتبعت لـ «" else "📥 بيستقبل من «") + s.peerName + "» · " + s.percent() + "%"
+                val v = ui.text(t, if (tvMode) 16f else 13.5f, th.text, true).apply { setPadding(ui.dp(14), ui.dp(12), ui.dp(14), ui.dp(12)) }
+                styleFocus(v, th.card, 14, true)
+                v.setOnClickListener { go("progress") { buildProgress(s) } }
+                live.addView(v, lp(-1, -2).apply { bottomMargin = ui.dp(6) })
+            }
+        }
+        fillLive(); updater = { fillLive() }
+
+        class Card(val icon: String, val title: String, val desc: String, val c: Int, val act: () -> Unit)
+        val cards = ArrayList<Card>()
+        val p0 = th.primary
+        if (tvMode) {
+            cards.add(Card("📲", "من التلفزيون للموبايل", "ابعت ملفات من التلفزيون لموبايل قريب", p0) { homeMode("tv2m") })
+        } else {
+            cards.add(Card("📱", "من الموبايل إلى الموبايل", "ابعت ملفات لموبايل أو تابلت قريب", p0) { homeMode("m2m") })
+            cards.add(Card("📺", "من الموبايل إلى التلفزيون", "ابعت فيديوهات وصور وملفات للتلفزيون", hueShift(p0, 38f)) { homeMode("m2tv") })
+            cards.add(Card("📲", "من التلفزيون إلى الموبايل", "تصفّح ملفات التلفزيون ونزّل منها", hueShift(p0, -42f)) { homeMode("tv2m") })
+        }
+        cards.add(Card("📂", "إدارة الملفات", "استعرض وأدِر الملفات والمجلدات", hueShift(p0, 150f)) { homeMode("all") })
+
+        val per = if (tvMode) 4 else 2
+        var rowL: LinearLayout? = null
+        for ((i, c) in cards.withIndex()) {
+            if (i % per == 0) { rowL = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL }; body.addView(rowL, lp(-1, -2).apply { topMargin = ui.dp(10) }) }
+            val cv = col().apply { setPadding(ui.dp(12), ui.dp(18), ui.dp(12), ui.dp(16)); gravity = Gravity.CENTER_HORIZONTAL; minimumHeight = ui.dp(if (tvMode) 190 else 160) }
+            cv.addView(TextView(this).apply { text = c.icon; textSize = if (tvMode) 40f else 36f; gravity = Gravity.CENTER })
+            cv.addView(ui.text(c.title, if (tvMode) 19f else 15.5f, Color.WHITE, true).apply { gravity = Gravity.CENTER; setPadding(0, ui.dp(10), 0, ui.dp(3)) })
+            cv.addView(ui.text(c.desc, if (tvMode) 14f else 11.5f, 0xCCFFFFFF.toInt()).apply { gravity = Gravity.CENTER })
+            cv.isFocusable = true; cv.isClickable = true
+            fun paint(f: Boolean) {
+                cv.background = GradientDrawable(GradientDrawable.Orientation.TL_BR, intArrayOf(c.c, darker(c.c, 0.62f))).apply {
+                    cornerRadius = ui.dp(22).toFloat(); if (f) setStroke(ui.dp(3), Color.WHITE)
+                }
+                cv.animate().scaleX(if (f) 1.04f else 1f).scaleY(if (f) 1.04f else 1f).setDuration(110).start()
+            }
+            paint(false)
+            cv.setOnFocusChangeListener { _, f -> paint(f) }
+            cv.setOnClickListener { c.act() }
+            rowL!!.addView(cv, lp(0, -2, 1f).apply { setMargins(ui.dp(5), 0, ui.dp(5), 0) })
+        }
+        if (cards.size % per != 0 && !tvMode) rowL?.addView(View(this), lp(0, 1, 1f))
+
+        val bar = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL }
+        bar.addView(btn("🕘 سجل النقل") { go("history") { buildHistory() } }, lp(0, -2, 1f).apply { marginEnd = ui.dp(4) })
+        bar.addView(btn("🪪 الاسم والأجهزة") { go("settings") { buildSettings() } }, lp(0, -2, 1f))
+        body.addView(bar, lp(-1, -2).apply { topMargin = ui.dp(14) })
+        body.addView(ui.text(lanLine(), if (tvMode) 15f else 12f, th.muted).apply { gravity = Gravity.CENTER; setPadding(0, ui.dp(14), 0, 0) })
+        body.addView(ui.text("🔒 الاتصال مشفّر وكل استقبال بيستنى موافقتك — شغّال من غير إنترنت", if (tvMode) 14f else 11.5f, th.muted).apply { gravity = Gravity.CENTER; setPadding(0, ui.dp(4), 0, 0) })
+        root.addView(scroll(body), lp(-1, 0, 1f))
+        return root
+    }
+
+    private fun homeMode(mode: String) {
+        if (mode == "tv2m" && !tvMode) { radarMode = "tv2m"; go("radar") { buildRadar() }; return }
+        go("files") { buildFiles(mode) }
     }
 
     private fun homeMenu() {
@@ -538,6 +633,7 @@ class FileTransferActivity : Activity() {
             ring.setProgress(pct / 100f); ring.label = "$pct%"
             ring.sub = s.doneFiles().toString() + "/" + s.acceptedFiles.size + " ملف"
             ring.failed = s.status == FtSession.FAILED || s.status == FtSession.REJECTED
+            ring.spinning = s.status == FtSession.NEG || s.status == FtSession.WAITING
             val eta = s.etaSec()
             stats.text = Sniff.fmtSize(s.doneBytes()) + " / " + Sniff.fmtSize(s.totalBytes()) +
                 (if (s.active && s.speedBps > 1.0) " · ⚡ " + String.format("%.1f MB/s", s.speedBps / 1048576.0) else "") + (if (s.active && eta >= 0L) " · باقي " + fmtT(eta) else "")

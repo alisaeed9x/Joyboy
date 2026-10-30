@@ -74,18 +74,6 @@ object YtLink {
         dlg.show()
     }
 
-    // ───────── الموبايل ─────────
-    /** (v598) نص QR اتمسح بكاميرا التطبيق: http://IP:PORT/ytlink?pin=… ← نفس مسار الدخول بالـdeep link. بيرجّع true لو كان QR يوتيوب */
-    fun handleScanned(act: Activity, text: String): Boolean {
-        val u = try { Uri.parse(text.trim()) } catch (_: Throwable) { return false }
-        if (u.path?.startsWith("/ytlink") != true) return false
-        val host = u.host ?: return false
-        val pin = u.getQueryParameter("pin") ?: return false
-        val port = if (u.port > 0) u.port else TypeServer.PORT
-        val deep = Uri.parse("subtitler://ytlink?h=" + host + "&p=" + port + "&pin=" + Uri.encode(pin))
-        maybeHandle(act, Intent().setData(deep))
-        return true
-    }
 
     /** ينادى من Main لو الـIntent فيه subtitler://ytlink */
     fun maybeHandle(act: Activity, i: Intent?) {

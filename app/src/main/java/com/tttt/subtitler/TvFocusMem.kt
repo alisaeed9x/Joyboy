@@ -16,7 +16,6 @@ object TvFocusMem {
         if (tag.isNotEmpty()) mem[screen] = tag
     }
 
-    fun recall(screen: String): String? = mem[screen]
 
     /** رجّع التركيز لآخر عنصر محفوظ للشاشة جوه root. true لو لقاه وركّز عليه */
     fun restore(root: View, screen: String): Boolean {

@@ -50,6 +50,7 @@ class TvPlayerBar(private val act: Activity, private val ui: Ui, private val th:
         fun sentences() {}
         fun sleepLabel(): String = ""                // 😴 بس لو المؤقت شغّال
         fun sleepPick(anchor: View) {}
+        fun subPage() { subDialog() }                // (v676) صفحة واحدة لكل أدوات الترجمة (مصادر · شكل وتوقيت · جمل · باتشات · إعدادات…)
     }
 
     private val h = Handler(Looper.getMainLooper())
@@ -69,8 +70,8 @@ class TvPlayerBar(private val act: Activity, private val ui: Ui, private val th:
     private lateinit var ccB: TextView; private lateinit var audB: TextView
     private lateinit var trB: TextView; private lateinit var qB: TextView
     private lateinit var prevB: TextView; private lateinit var nextB: TextView   // (v640)
-    private lateinit var srcB: TextView; private lateinit var aaB: TextView
-    private lateinit var sentB: TextView; private lateinit var sleepB: TextView
+    private lateinit var aaB: TextView
+    private lateinit var sleepB: TextView
     private val slim: Boolean = try { a.slim() } catch (_: Throwable) { false }
 
     private fun btn(label: String, onClick: (View) -> Unit): TextView = IconTextView(act).apply {   // (v527) IconTextView: ⏸ ▶ ⏮ ⏭ بتترسم أيقونة (خطين متوازيين) بدل رمز الخط اللي على TCL كان بيطلع شكل «i»
@@ -111,9 +112,7 @@ class TvPlayerBar(private val act: Activity, private val ui: Ui, private val th:
             ccB = btn("💬") { a.toggleCc() }
             ccB.setOnLongClickListener { a.subSources(ccB); true }
             add(ccB)
-            srcB = btn("🌐") { v -> a.subSources(v) }; add(srcB)
-            aaB = btn("🔤 ⏱") { a.subDialog() }; add(aaB)
-            sentB = btn("📝") { a.sentences() }; add(sentB)
+            aaB = btn("🔤 الترجمة") { a.subPage() }; add(aaB)   // (v676) 🌐 و🔤⏱ و📝 اتجمّعوا في زرار واحد بيفتح صفحة الترجمة
             qB = btn("HD") { v -> a.quality(v) }; add(qB)
             audB = btn("🔊") { v -> a.audio(v) }; add(audB)
             sleepB = btn("😴") { v -> a.sleepPick(v) }; add(sleepB)
@@ -171,8 +170,7 @@ class TvPlayerBar(private val act: Activity, private val ui: Ui, private val th:
                 fitB.text = "⛶ " + a.fitLabel()
                 fun vis(v: View, on: Boolean) { val n = if (on) View.VISIBLE else View.GONE; if (v.visibility != n) v.visibility = n }
                 val pn = a.hasPrevNext(); vis(prevB, pn); vis(nextB, pn)
-                val subs = a.subsAvailable(); vis(ccB, subs); vis(aaB, subs)
-                vis(srcB, a.subSourcesMulti()); vis(sentB, a.hasSentences())
+                val subs = a.subsAvailable(); vis(ccB, subs); vis(aaB, subs || a.hasSentences())
                 vis(qB, a.hasQuality())
                 val sl = a.sleepLabel(); vis(sleepB, sl.isNotEmpty()); if (sl.isNotEmpty()) sleepB.text = sl
                 // لو الزرار اللي عليه التركيز اختفى → التركيز يرجع لـ ▶

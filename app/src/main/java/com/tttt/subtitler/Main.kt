@@ -1783,18 +1783,6 @@ class MainActivity : Activity() {
         val th0 = Themes.byId(Cfg.str("theme", "mx")); val ui0 = Ui(this, th0)   // ui/th محليين في onCreate فبنبني نسخة هنا
         YtHistoryUi.show(this, ui0, th0, { id, t -> saveFn(); playYt(id, t, false) }, { id, t, ch -> saveFn(); playYtAudio(id, t, ch, "") })
     }
-    /** (v516) تابات اللانشر من جوه يوتيوب: 0 رئيسية · 1 تطبيقات · 2 يوتيوب · 3 متصفح · 4 فيديوهات · 5 ملفات */
-    private fun tvShellGo(i: Int) {
-        try {
-            when (i) {
-                0 -> tvToLauncher("home")
-                1 -> tvToLauncher("apps")
-                2 -> if (curTab != 4) showTabFn(4)
-                3 -> { saveCfgFn?.invoke(); startActivity(Intent(this, BrowserActivity::class.java).putExtra("from_tv", true)) }
-                4 -> tvToLauncher("videos")   // (v530) صفحة الفيديوهات بقت جوه اللانشر (مش شاشة الموبايل)
-            }
-        } catch (e: Throwable) { LogStore.err("Main:tvShellGo", e) }
-    }
     private fun tvToLauncher(show: String) {
         try { startActivity(Intent(this, TvActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP).putExtra("tv_show", show)); finish() }
         catch (_: Throwable) { showTabFn(0) }

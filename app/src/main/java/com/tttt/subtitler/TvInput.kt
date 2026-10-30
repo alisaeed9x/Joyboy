@@ -292,26 +292,6 @@ class TvAccessService : AccessibilityService() {
         cur = null
     }
 
-    // ===== (v536) تشغيل/إيقاف الواي فاي بدوسة واحدة: أندرويد 10+ بيمنع التطبيقات من WifiManager.setWifiEnabled،
-    // فبنفتح شاشة الواي فاي ونضغط مفتاحها بإمكانية الوصول ونرجع للانشر على طول (بتوميض لحظة، مش بتفضل ظاهرة) =====
-    fun wifiToggle(want: Boolean, back: Intent?, done: (Boolean) -> Unit) {
-        var tries = 0
-        val r = object : Runnable {
-            override fun run() {
-                tries++
-                val ok: Boolean? = try { clickWifiSwitch(want) } catch (e: Throwable) { LogStore.err("TvAccess:wifi", e); null }
-                if (ok == true) {
-                    h.postDelayed({ try { back?.let { startActivity(it) } } catch (_: Throwable) {}; done(true) }, 450L)
-                } else if (tries < 24) {
-                    h.postDelayed(this, 250L)
-                } else {
-                    try { back?.let { startActivity(it) } } catch (_: Throwable) {}
-                    done(false)
-                }
-            }
-        }
-        h.postDelayed(r, 700L)
-    }
 
     /** true = اتضغط أو كان على الحالة المطلوبة · null = لسه مالقيتش المفتاح (الشاشة لسه بتفتح) */
     private fun clickWifiSwitch(want: Boolean): Boolean? {

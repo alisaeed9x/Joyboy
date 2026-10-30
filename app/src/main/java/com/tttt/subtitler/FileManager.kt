@@ -216,6 +216,8 @@ class FileManagerActivity : Activity() {
     private lateinit var emptyTv: TextView
     private lateinit var permBox: LinearLayout
     private lateinit var selBar: LinearLayout
+    private var selMode = false                       // (v672) وضع التحديد بالدوسة (زرار الإرسال الأحمر العايم)
+    private lateinit var sendFab: TextView
     private lateinit var pasteBar: LinearLayout
     private lateinit var pasteTv: TextView
     private lateinit var chipsRow: LinearLayout
@@ -409,6 +411,17 @@ class FileManagerActivity : Activity() {
         val body = FrameLayout(this)
         body.addView(list, FrameLayout.LayoutParams(-1, -1))
         body.addView(emptyTv, FrameLayout.LayoutParams(-1, -1))
+        // (v672) زرار إرسال أحمر عايم: دوسة ← يدخل وضع التحديد (دوسة على الملفات تحدّدها) ← دوسة تانية ترسل المحدد
+        sendFab = IconTextView(this).apply {
+            text = "📤 إرسال"; textSize = if (tvMode) 18f else 14f; gravity = Gravity.CENTER; setTextColor(android.graphics.Color.WHITE)
+            setTypeface(typeface, android.graphics.Typeface.BOLD); setPadding(ui.dp(18), ui.dp(11), ui.dp(18), ui.dp(11))
+            background = ui.box(th.danger, th.danger, 26); isFocusable = true; elevation = ui.dp(6).toFloat()
+            setOnClickListener {
+                if (sel.isNotEmpty()) sendSelToFt()
+                else { selMode = !selMode; toast(if (selMode) "☑ اضغط على الملفات لتحديدها ثم «إرسال»" else "اتلغى وضع التحديد"); refresh() }
+            }
+        }
+        body.addView(sendFab, FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM or Gravity.START).apply { setMargins(ui.dp(14), 0, 0, ui.dp(14)) })
         root.addView(body, LinearLayout.LayoutParams(-1, 0, 1f))
 
         // شريط اللصق
@@ -428,6 +441,11 @@ class FileManagerActivity : Activity() {
             setBackgroundColor(th.card); setPadding(ui.dp(6), ui.dp(6), ui.dp(6), ui.dp(6))
         }
         fun selBtn(t: String, f: () -> Unit) = selBar.addView(chip(t, f), LinearLayout.LayoutParams(0, -2, 1f).apply { setMargins(ui.dp(2), 0, ui.dp(2), 0) })
+        selBar.addView(IconTextView(this).apply {   // (v672) إرسال أحمر — بيفتح نقل الملفات على الرادار والمحدد جاهز
+            text = "📤 إرسال"; textSize = if (tvMode) 17f else 13.5f; gravity = Gravity.CENTER; setTextColor(android.graphics.Color.WHITE)
+            setTypeface(typeface, android.graphics.Typeface.BOLD); setPadding(ui.dp(12), ui.dp(8), ui.dp(12), ui.dp(8))
+            background = ui.box(th.danger, th.danger, 20); Glass.pressable(this); setOnClickListener { sendSelToFt() }
+        }, LinearLayout.LayoutParams(0, -2, 1.5f).apply { setMargins(ui.dp(2), 0, ui.dp(2), 0) })
         selBtn("📋 نسخ") { setClip(false) }
         selBtn("✂ نقل") { setClip(true) }
         selBtn("↗ مشاركة") { shareSel() }
@@ -598,6 +616,7 @@ class FileManagerActivity : Activity() {
         titleTv.text = if (sel.isNotEmpty()) "✔ ${sel.size} محدد" else if (deepMode) "🔎 ${shown.size} نتيجة" else if (cur.absolutePath == ext) "الذاكرة الداخلية" else cur.name.ifEmpty { "/" }
         pathTv.text = cur.absolutePath
         selBar.visibility = if (sel.isNotEmpty()) View.VISIBLE else View.GONE
+        if (::sendFab.isInitialized) sendFab.text = if (sel.isNotEmpty()) "📤 إرسال (" + sel.size + ")" else if (selMode) "✖ إنهاء التحديد" else "📤 إرسال"
         pasteBar.visibility = if (clip.isNotEmpty()) View.VISIBLE else View.GONE
         pasteTv.text = "${if (clipCut) "✂ نقل" else "📋 نسخ"}: ${clip.size} عنصر"
         if (shown.isEmpty()) {
@@ -631,6 +650,7 @@ class FileManagerActivity : Activity() {
         add("✂ نقل") { sel.clear(); sel.add(f.absolutePath); setClip(true) }
         add("✏ إعادة تسمية") { rename(f) }
         add("↗ مشاركة") { sel.clear(); sel.add(f.absolutePath); shareSel() }
+        add("📤 إرسال (نقل الملفات)") { sel.clear(); sel.add(f.absolutePath); sendSelToFt() }
         add("📱 اعرض للموبايل") { sel.clear(); sel.add(f.absolutePath); offerSelToPhone() }
         add("ℹ تفاصيل") { details(f) }
         add("🗑 حذف") { sel.clear(); sel.add(f.absolutePath); deleteSel() }
@@ -735,7 +755,9 @@ class FileManagerActivity : Activity() {
     private fun onTap(fi: FmItem) {
         showDetail(fi)
         if (sel.isNotEmpty()) { toggleSel(fi); return }
-        if (fi.dir) load(fi.f) else openFile(fi.f, false)
+        if (fi.dir) { load(fi.f); return }
+        if (selMode) { toggleSel(fi); return }   // (v672) وضع التحديد: الدوسة على ملف بتحدّده بدل ما تفتحه
+        openFile(fi.f, false)
     }
 
     // ===== (v391) تبويبات =====
@@ -1016,6 +1038,34 @@ class FileManagerActivity : Activity() {
                     "✓ اتمسح: $ok" + (if (fail > 0) "  ·  فشل: $fail" else "") + (if (cancelled()) "  ·  اتلغى" else "")
                 }
             }.setNegativeButton("إلغاء", null).show()
+    }
+
+    /** (v672) إرسال المحدد (ملفات/فولدرات بالمسارات النسبية) عبر «نقل الملفات»: بيفتح الرادار والملفات جاهزة */
+    private fun sendSelToFt() {
+        val roots = selFiles()
+        if (roots.isEmpty()) { toast("حدّد ملف الأول"); return }
+        toast("⏳ بجهّز القايمة…")
+        Thread {
+            val uris = ArrayList<String>(); val names = ArrayList<String>(); val sizes = ArrayList<Long>()
+            for (r in roots) {
+                if (r.isDirectory) {
+                    val base = r.absolutePath
+                    for (f in XExpand.files(listOf(r), 1500)) { uris.add(Uri.fromFile(f).toString()); names.add(r.name + "/" + f.absolutePath.removePrefix(base).trimStart('/')); sizes.add(f.length()) }
+                } else if (r.isFile) { uris.add(Uri.fromFile(r).toString()); names.add(r.name); sizes.add(r.length()) }
+                if (uris.size > 1500) break
+            }
+            runOnUiThread {
+                if (isDestroyed) return@runOnUiThread
+                if (uris.isEmpty()) toast("مفيش ملفات تتبعت")
+                else if (uris.size > 1500) toast("⚠ لحد 1500 ملف في المرة — قسّمهم على دفعات")
+                else {
+                    try {
+                        startActivity(Intent(this, FileTransferActivity::class.java).putStringArrayListExtra("ft_uris", uris).putStringArrayListExtra("ft_names", names).putExtra("ft_sizes", sizes.toLongArray()))
+                        sel.clear(); selMode = false; refresh()
+                    } catch (e: Throwable) { LogStore.err("FM:sendFt", e); toast("⚠ مش قادر أفتح نقل الملفات") }
+                }
+            }
+        }.also { it.isDaemon = true }.start()
     }
 
     /** (v610) موبايل ← تلفزيون: ابعت المحدد (ملفات أو مجلدات بكل اللي جواها) للتلفزيون المقترن */

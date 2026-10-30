@@ -225,14 +225,6 @@ object FtPeers {
         return out.sortedBy { it.name.lowercase() }
     }
 
-    /** فحص سريع إن الجهاز لسه موجود (blocking) */
-    fun ping(p: FtPeer): Boolean {
-        if (!p.ft) return true
-        val (c, t) = FtNet.call(p.ip, p.port, "/ft/hello", null, 900)
-        if (c != 200) return false
-        val f = parsePeer(t, p.ip, 0) ?: return false
-        return f.id == p.id && f.fp == p.fp
-    }
 
     // ───────── التوجيه ─────────
     private fun route(r: HttpReq): HttpRes {

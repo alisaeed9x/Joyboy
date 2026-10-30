@@ -82,17 +82,6 @@ object TvUpdate {
         }
     }
 
-    /** (v563) «موجود كامل»: مفيش تنزيل تاني — تثبيت على طول */
-    fun askReady(a: Activity, o: TvLink.Offer, f: File, done: () -> Unit) {
-        try {
-            GAlert(a).setTitle("✅ التحديث موجود كامل").setView(flowView(a, LinkVer.name(a), o.vname))
-                .setMessage("Subtitler " + o.vname + " نازل كامل على التلفزيون (" + (f.length() / 1048576L) + " MB) — مش محتاج تبعته تاني.\nتثبّته دلوقتي؟")
-                .setPositiveButton("📦 تثبيت") { _, _ -> done(); install(a, f) }
-                .setNegativeButton("لاحقًا") { _, _ -> done() }
-                .setOnCancelListener { done() }
-                .show()
-        } catch (e: Throwable) { LogStore.err("TvUpdate:askReady", e); done() }
-    }
 
     /**
      * (v563) تنضيف ملفات التحديث القديمة (APK) من مجلدات التطبيق نفسه (الكاش والملفات الداخلية/الخارجية الخاصة بيه) — مفيش وصول لأي مكان تاني.

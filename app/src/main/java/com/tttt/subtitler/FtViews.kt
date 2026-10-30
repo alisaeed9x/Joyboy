@@ -160,6 +160,20 @@ class FtRingView(ctx: Context, private val th: Theme) : View(ctx) {
         set(v) { field = v; invalidate() }
     var failed: Boolean = false
         set(v) { field = v; invalidate() }
+    /** (v672) دايرة بتلف (انتظار موافقة / تجهيز) بدل نسبة ثابتة */
+    var spinning: Boolean = false
+        set(v) {
+            if (field == v) return
+            field = v
+            spinAnim?.cancel()
+            if (v) {
+                val a = ValueAnimator.ofFloat(0f, 360f).apply { duration = 1100L; repeatCount = ValueAnimator.INFINITE; interpolator = android.view.animation.LinearInterpolator(); addUpdateListener { spinAngle = it.animatedValue as Float; invalidate() } }
+                spinAnim = a; a.start()
+            }
+            invalidate()
+        }
+    private var spinAnim: ValueAnimator? = null
+    private var spinAngle = 0f
 
     fun setProgress(f: Float) {
         val t = f.coerceIn(0f, 1f)
@@ -170,7 +184,7 @@ class FtRingView(ctx: Context, private val th: Theme) : View(ctx) {
         anim = a; a.start()
     }
 
-    override fun onDetachedFromWindow() { anim?.cancel(); super.onDetachedFromWindow() }
+    override fun onDetachedFromWindow() { anim?.cancel(); spinAnim?.cancel(); super.onDetachedFromWindow() }
 
     override fun onDraw(c: Canvas) {
         val w = width.toFloat(); val h = height.toFloat()
@@ -181,7 +195,8 @@ class FtRingView(ctx: Context, private val th: Theme) : View(ctx) {
         p.style = Paint.Style.STROKE; p.strokeWidth = sw; p.strokeCap = Paint.Cap.ROUND
         p.color = th.border; c.drawCircle(cx, cy, r, p)
         p.color = if (failed) th.danger else th.primary
-        if (shown > 0.003f) c.drawArc(RectF(cx - r, cy - r, cx + r, cy + r), -90f, 360f * shown, false, p)
+        if (spinning) c.drawArc(RectF(cx - r, cy - r, cx + r, cy + r), spinAngle - 90f, 100f, false, p)
+        else if (shown > 0.003f) c.drawArc(RectF(cx - r, cy - r, cx + r, cy + r), -90f, 360f * shown, false, p)
         p.style = Paint.Style.FILL
         p.textAlign = Paint.Align.CENTER
         p.color = th.text; p.textSize = 30f * d

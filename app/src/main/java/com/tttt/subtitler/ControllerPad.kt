@@ -199,6 +199,7 @@ class PadIcon(ctx: Context, private val kind: String, private val tint: Int = Co
                 if (kind == "ch_up") { ln(12f, 18f, 12f, 12f); poly(false, 9f, 14.8f, 12f, 11.8f, 15f, 14.8f) }
                 else { ln(12f, 11.5f, 12f, 17.5f); poly(false, 9f, 14.7f, 12f, 17.7f, 15f, 14.7f) }
             }
+            "eye" -> { path.reset(); path.moveTo(2f * u, 12f * u); path.quadTo(12f * u, 3f * u, 22f * u, 12f * u); path.quadTo(12f * u, 21f * u, 2f * u, 12f * u); cv.drawPath(path, p); cv.drawCircle(12f * u, 12f * u, 3.2f * u, p) }
             "mic" -> { box(9f, 3f, 15f, 14f, 3f); poly(false, 5.5f, 11f, 5.5f, 12f); path.reset(); path.moveTo(5.5f * u, 11f * u); path.quadTo(5.5f * u, 18f * u, 12f * u, 18f * u); path.quadTo(18.5f * u, 18f * u, 18.5f * u, 11f * u); cv.drawPath(path, p); ln(12f, 18f, 12f, 21f) }
         }
         cv.restore()
@@ -359,9 +360,11 @@ object ControllerPad {
             tabTouch.setOnClickListener { setMode(false) }
             setMode(true)
 
-            // ── ⚙ الإعدادات (عرض كامل) ──
-            col.addView(card("الإعدادات", "gear", 0xFF3B8DFF.toInt(), 0xFF1D4ED8.toInt()) { RemoteClient.cmd("open_settings") },
-                android.widget.LinearLayout.LayoutParams(-1, dp(91)))
+            // ── صف: 👁 الوضع البصري · ⚙ الإعدادات (v676: 👁 يرجّع ثانية-ثانيتين ويترجم اللقطة بأي مفتاح جيميناي) ──
+            col.addView(row(
+                card("الوضع البصري", "eye", 0xFF8B5CF6.toInt(), 0xFF6D28D9.toInt()) { Thread { try { RemoteClient.player("vsnap") } catch (_: Throwable) {} }.also { it.isDaemon = true }.start() },
+                card("الإعدادات", "gear", 0xFF3B8DFF.toInt(), 0xFF1D4ED8.toInt()) { RemoteClient.cmd("open_settings") }
+            ), android.widget.LinearLayout.LayoutParams(-1, -2))
 
             // ── صف: رجوع · الرئيسية · المداخل (من اليمين) ──
             col.addView(row(
@@ -423,55 +426,6 @@ object ControllerPad {
 }
 
 
-/** (v662) سلايدر صوت طويل عمودي: اسحب لفوق يعلّي ولتحت يوطّي. onChange(0..100) بتتنادى أثناء السحب (متخفّفة) وعند الرفع */
-class VolumeSlider(ctx: Context, private val onChange: (Int) -> Unit) : View(ctx) {
-    private val den = resources.displayMetrics.density
-    private val pTrack = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL; color = 0x33FFFFFF }
-    private val pFill = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL; color = 0xFF2F80FF.toInt() }
-    private val pKnob = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL; color = Color.WHITE }
-    private val pTxt = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.WHITE; textAlign = Paint.Align.CENTER; isFakeBoldText = true; textSize = 13f * resources.displayMetrics.density }
-    private val rect = android.graphics.RectF()
-    private var value = 50
-    var dragging = false; private set
-    private var lastSent = 0L
-
-    fun setValue(v: Int) { val n = v.coerceIn(0, 100); if (n != value) { value = n; invalidate() } }
-
-    private fun top() = 34f * den + 6f * den       // فوق: مكان الأيقونة/الرقم
-    private fun bot() = height - 10f * den
-    private fun fromY(y: Float): Int {
-        val t = top(); val b = bot()
-        return Math.round(((b - y) / (b - t).coerceAtLeast(1f)).coerceIn(0f, 1f) * 100f)
-    }
-
-    override fun onTouchEvent(e: MotionEvent): Boolean {
-        when (e.actionMasked) {
-            MotionEvent.ACTION_DOWN -> { parent?.requestDisallowInterceptTouchEvent(true); dragging = true; apply(e.y, true); performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP) }
-            MotionEvent.ACTION_MOVE -> apply(e.y, false)
-            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> { apply(e.y, true); dragging = false; invalidate() }
-        }
-        return true
-    }
-
-    private fun apply(y: Float, force: Boolean) {
-        val v = fromY(y)
-        val changed = v != value
-        value = v; invalidate()
-        val now = SystemClock.uptimeMillis()
-        if (force || (changed && now - lastSent >= 90L)) { lastSent = now; try { onChange(v) } catch (_: Throwable) {} }
-    }
-
-    override fun onDraw(c: Canvas) {
-        val w = width.toFloat(); val cx = w / 2f
-        val tw = 16f * den; val t = top(); val b = bot()
-        c.drawText(if (value == 0) "🔇" else "🔊", cx, 20f * den, pTxt)
-        c.drawText(value.toString(), cx, 38f * den, pTxt)
-        rect.set(cx - tw / 2, t, cx + tw / 2, b); c.drawRoundRect(rect, tw / 2, tw / 2, pTrack)
-        val ky = b - (b - t) * value / 100f
-        rect.set(cx - tw / 2, ky, cx + tw / 2, b); c.drawRoundRect(rect, tw / 2, tw / 2, pFill)
-        c.drawCircle(cx, ky, if (dragging) 15f * den else 12f * den, pKnob)
-    }
-}
 
 
 /** (v672) سلايدر صوت أفقي رفيع: اسحب يمين يعلّي وشمال يوطّي. onChange(0..100) متخفّفة أثناء السحب وعند الرفع */

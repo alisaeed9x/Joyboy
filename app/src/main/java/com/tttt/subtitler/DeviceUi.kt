@@ -53,8 +53,4 @@ object DeviceUi {
         PHONE -> "📱 موبايل"; TABLET -> "📟 تابلت"; TV -> "📺 تلفزيون"; else -> "🔄 تلقائي"
     }
 
-    /** خطوة السويتش الجاية (التلقائي بيتحسب كموبايل على التليفونات) */
-    fun cycleNext(ctx: Context): String = when (mode(ctx)) {
-        PHONE -> TV; TV -> TABLET; else -> PHONE
-    }
 }

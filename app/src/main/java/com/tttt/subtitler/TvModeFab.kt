@@ -261,48 +261,6 @@ object TvModeFab {
 
     private fun disc(color: Int): GradientDrawable = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(color); setStroke(2, 0x66FFFFFF) }
 
-    // ===== (v560) الدواير حوالين الزرار: فيديوهات · متصفح · يوتيوب =====
-    private fun openFan(a: Activity, l: Layer) {
-        try {
-            val root = a.findViewById<ViewGroup>(android.R.id.content) as? FrameLayout ?: return
-            closeFan(l, false)
-            l.open = true
-            val scrim = View(a).apply { setBackgroundColor(0x66000000); alpha = 0f; elevation = dp(a, 8).toFloat(); setOnClickListener { closeFan(l, true) } }
-            root.addView(scrim, FrameLayout.LayoutParams(-1, -1))
-            scrim.animate().alpha(1f).setDuration(180L).start()
-            l.scrim = scrim
-            // (v590) الدواير التلاتة (فيديوهات/متصفح/يوتيوب) اتشالت — فضل زرار الكنترولر بس
-            val items = listOf(Triple("🎮", "كنترولر", 0xF0E53935.toInt()))
-            val angles = doubleArrayOf(90.0)   // (v595) فوق زرار 📺 مباشرة
-            val r = dp(a, 88).toFloat()
-            val csz = dp(a, 52); val lh = dp(a, 20)
-            val lp0 = l.btn.layoutParams as FrameLayout.LayoutParams
-            items.forEachIndexed { i, (ic, name, col) ->
-                val sat = LinearLayout(a).apply {
-                    orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER_HORIZONTAL; elevation = dp(a, 11).toFloat()
-                    alpha = 0f; scaleX = 0.3f; scaleY = 0.3f
-                    addView(TextView(a).apply { text = ic; textSize = 22f; setTextColor(Color.WHITE); gravity = Gravity.CENTER; includeFontPadding = false; background = disc(col) }, LinearLayout.LayoutParams(csz, csz))
-                    addView(TextView(a).apply {
-                        text = name; setTextColor(Color.WHITE); textSize = 11f; typeface = android.graphics.Typeface.DEFAULT_BOLD; gravity = Gravity.CENTER
-                        setShadowLayer(4f, 0f, 1f, Color.BLACK); setPadding(0, dp(a, 2), 0, 0)
-                    }, LinearLayout.LayoutParams(dp(a, 64), lh))
-                    setOnClickListener { closeFan(l, true); go(a, i) }
-                }
-                val w = dp(a, 64); val h = csz + lh
-                // مركز الدايرة فوق مركز الزرار بالظبط، وبعدين بتتحرك بالـtranslation
-                val lp = FrameLayout.LayoutParams(w, h, Gravity.RIGHT or Gravity.BOTTOM).apply {
-                    rightMargin = lp0.rightMargin + dp(a, 28) - w / 2
-                    bottomMargin = lp0.bottomMargin + dp(a, 28) - (h - csz / 2)
-                }
-                root.addView(sat, lp); l.sats.add(sat)
-                val rad = Math.toRadians(angles[i])
-                sat.animate().translationX((r * cos(rad)).toFloat()).translationY((-r * sin(rad)).toFloat()).alpha(1f).scaleX(1f).scaleY(1f)
-                    .setStartDelay(i * 45L).setDuration(300L).setInterpolator(OvershootInterpolator(1.4f)).start()
-            }
-            l.btn.animate().rotation(90f).setDuration(220L).start()
-            paint(a, l)
-        } catch (e: Throwable) { LogStore.err("TvModeFab:openFan", e) }
-    }
 
     private fun closeFan(l: Layer, animate: Boolean) {
         val sats = ArrayList(l.sats); val sc = l.scrim

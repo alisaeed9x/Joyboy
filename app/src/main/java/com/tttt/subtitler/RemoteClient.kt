@@ -238,11 +238,6 @@ object RemoteClient {
         return found.values.toList()
     }
 
-    /** (v585 / M1) اتصال مباشر بعنوان IP مكتوب يدويًا (لو البث والمسح مابيلاقوش التلفزيون). بيتنادى من thread خلفي */
-    fun helloAt(ip: String, port: Int = TvLink.PORT): Found? {
-        val (c, t) = call(ip.trim(), port, "/hello", null, "", 2500)
-        return if (c == 200) parseFound(t, ip.trim()) else null
-    }
 
     /** فحص سريع للعنوان المحفوظ قبل البحث الكامل */
     fun probe(tv: Tv): Boolean {
@@ -427,16 +422,8 @@ object RemoteClient {
     private val pSc = FloatArray(2)
     private var pBusy = false
 
-    /** حركة المؤشر (dx/dy نسبة من حجم التاتش باد) */
-    fun ptrMove(dx: Float, dy: Float) { synchronized(pMv) { pMv[0] += dx; pMv[1] += dy }; pump() }
 
-    /** تمرير بإصبعين */
-    fun ptrScroll(dx: Float, dy: Float) { synchronized(pMv) { pSc[0] += dx; pSc[1] += dy }; pump() }
 
-    /** tap / long */
-    fun ptrClick(op: String) {
-        Thread { try { post("/ptr", JSONObject().put("op", op)) } catch (_: Throwable) {} }.also { it.isDaemon = true }.start()
-    }
 
     private fun pump() {
         synchronized(pMv) { if (pBusy) return; pBusy = true }
@@ -492,15 +479,6 @@ object RemoteClient {
         return if (c < 0) "ما قدرتش أوصل للتلفزيون" else "فشل ($c)"
     }
 
-    /** search=true (v533): التلفزيون يخرج من أي مكان (مشغّل/متصفح/تطبيق) ويفتح الرئيسية ويبحث في شريط البحث */
-    fun sendText(text: String, search: Boolean = false): String? {
-        val (c, body) = post("/type", JSONObject().put("text", text).put("search", search))
-        if (c == 200 && !search) {   // (v596) التلفزيون الجديد بيقول لو النص اتكتب فعلًا في خانة
-            val typed = try { JSONObject(body).optBoolean("typed", true) } catch (_: Exception) { true }
-            if (!typed) return "النص وصل لكن مفيش خانة كتابة مفتوحة — اختار الخانة على التلفزيون الأول (أو فعّل إمكانية الوصول)"
-        }
-        return if (c == 200) null else if (c < 0) "ما قدرتش أوصل للتلفزيون" else "فشل ($c)"
-    }
 
     fun hasKeys(): Boolean = Cfg.keys("keys").isNotEmpty() || Cfg.keys("backup").isNotEmpty() || Cfg.keys("extra").isNotEmpty()
 
@@ -547,11 +525,6 @@ object RemoteClient {
         return try { JSONObject(t).optJSONObject("st") } catch (_: Exception) { null }
     }
 
-    fun musicLyrics(): String? {
-        val (c, t) = post("/music", JSONObject().put("a", "lyrics"))
-        if (c != 200) return null
-        return try { JSONObject(t).optString("lyrics") } catch (_: Exception) { null }
-    }
 
 
     /**
@@ -628,27 +601,6 @@ object RemoteClient {
     }
 }
 
-/** (v540) يبعت أي APK (مثلاً اللانشر) للتلفزيون: الحزمة والنسخة بتتقرا من الملف نفسه، والتلفزيون بيقبله بس لو الحزمة بتاعته */
-fun RemoteClient.offerApk(f: File, force: Boolean): String {
-    val tv = current ?: return "مش متصل بتلفزيون"
-    val pi = try { app().packageManager.getPackageArchiveInfo(f.path, 0) } catch (_: Throwable) { null } ?: return "الملف ده مش APK سليم"
-    val ver = if (android.os.Build.VERSION.SDK_INT >= 28) pi.longVersionCode else @Suppress("DEPRECATION") pi.versionCode.toLong()
-    val ip = ipTowards(tv.ip)
-    if (ip.isEmpty()) return "مش عارف عنوان الموبايل على الواي فاي"
-    ApkServe.custom = f
-    if (!ApkServe.start()) return "ما قدرتش أشغّل سيرفر التحديث (كل البورتات من 18772 لـ 18781 مشغولة) — اقفل التطبيق خالص وافتحه تاني"
-    val url = "http://$ip:${ApkServe.port}/apk?t=${ApkServe.newToken()}"
-    val body = JSONObject().put("ver", ver).put("vname", pi.versionName ?: "").put("pkg", pi.packageName).put("url", url).put("auto", false).put("force", force).put("size", f.length())
-    val (c, t) = postJson("/offer", body)
-    return when {
-        c == 200 -> "ok"
-        t.contains("wrongapp") -> "الحزمة (${pi.packageName}) مش بتاعة التطبيق اللي على التلفزيون"
-        t.contains("not_newer") -> "التلفزيون عنده نفس النسخة أو أحدث (فعّل الدفع الإجباري لو عايز تعيد التثبيت)"
-        t.contains("older") -> "النسخة أقدم من اللي على التلفزيون — أندرويد مش هيسمح بالنزول"
-        c < 0 -> "ما قدرتش أوصل للتلفزيون"
-        else -> "فشل ($c)"
-    }
-}
 
 /** (v518) الموبايل بيوزّع ملف الـAPK بتاعه للتلفزيون على الواي فاي — بتوكن مؤقت، وبس لحد 20 دقيقة */
 object ApkServe {

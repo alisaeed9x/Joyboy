@@ -312,6 +312,8 @@ text_hex: لون النص hex | opacity_pct: شفافية الخلفية 0-100 |
     // ───────────────────────── لقطة واحدة (يدوي / هاردسب) ─────────────────────────
 
     private fun keyList(): List<String> = conf.visKeys.filter { it.length > 10 }.distinct()
+    /** (v676) اللقطة اليدوية (زرار 👁 في الريموت): من غير مفتاح مخصوص — أي مفتاح جيميناي موجود (مفاتيح البصري الأول وبعدها الأساسي/الاحتياطي/الإضافي) */
+    private fun snapKeyList(): List<String> = (conf.visKeys + conf.backup + Cfg.allMainKeys()).filter { it.length > 10 }.distinct()
 
     /** لقطة واحدة: بتتبعت لـ Gemini والنصوص المترجمة بتتعرض على الفيديو في مكانها */
     fun snap(bmp: Bitmap, nowSec: () -> Double, onDone: () -> Unit = {}) {
@@ -321,8 +323,8 @@ text_hex: لون النص hex | opacity_pct: شفافية الخلفية 0-100 |
         }.also { it.isDaemon = true; it.start() }
     }
     private fun snapWork(bmp: Bitmap, nowSec: () -> Double) {
-        val keys = keyList()
-        if (keys.isEmpty()) { say(if (Strict.noGemini()) Strict.NO_VISUAL_MSG else "ضيف مفتاح للوضع البصري (الإعدادات ← 🔑 المفاتيح ← مفتاح الوضع البصري فقط)"); return }
+        val keys = snapKeyList()
+        if (keys.isEmpty()) { say(if (Strict.noGemini()) Strict.NO_VISUAL_MSG else "ضيف أي مفتاح جيميناي (الإعدادات ← 🔑 المفاتيح)"); return }
         val jpeg = toJpeg(bmp); bmp.recycle()
         val prompt = if (mode == "hardsub") PROMPT_HARDSUB.replace("§DIALECT§", "بلهجة ${conf.lang} وأسلوب ${conf.style}")
             .replace("§LANG§", if (hardLang.isBlank()) "لغة الهاردسب: اكتشفها تلقائيًا من السطر المحروق." else "لغة الهاردسب في هذا الفيديو هي: \"$hardLang\" — اقرأ فقط الأسطر المكتوبة بيها.") else PROMPT_SCENE

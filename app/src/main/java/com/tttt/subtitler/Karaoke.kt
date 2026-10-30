@@ -81,12 +81,6 @@ object Karaoke {
         }
     } catch (_: Throwable) { null }
 
-    /** بيرجّع لحظات الغناء — لو مش محسوبة بيحلّل الصوت الأول (بيتنادى من خيط خلفية). فاضية = ماقدرتش/مفيش غناء واضح */
-    fun segments(ctx: Context, t: Track): List<Seg> {
-        cachedSegments(ctx, t)?.let { return it }
-        analyze(ctx, t, false) { }
-        return cachedSegments(ctx, t) ?: emptyList()
-    }
 
     private fun prune(ctx: Context) {
         try {

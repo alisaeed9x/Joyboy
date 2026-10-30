@@ -393,38 +393,6 @@ object SongId {
         } finally { try { src.close() } catch (_: Throwable) {} }
     }
 
-    /**
-     * (v269) خيارات للاختيار بإيدك: لحد 4 مرشحين (أغنية/قارئ/نشيد…) بترتيب الأرجحية. لو فيه توكن AudD ومفيش avoid، نتيجته بتتحط الأولى.
-     * [avoid] = أسماء اتعرضت قبل كده («العنوان — الفنان») فمش هتتكرر. على خيط خلفية.
-     */
-    fun options(ctx: Context, t: Track, startSec: Double, avoid: List<String>, onDone: (List<SongMatch>, String) -> Unit) {
-        val app = ctx.applicationContext
-        Thread {
-            try {
-                val keys = Cfg.allMainKeys()
-                if (keys.isEmpty() && token().isEmpty()) { onDone(emptyList(), "مفيش توكن AudD ولا مفتاح Gemini — ضيف واحد منهم"); return@Thread }
-                val out = ArrayList<SongMatch>()
-                if (token().isNotEmpty() && avoid.isEmpty()) {
-                    val latch = java.util.concurrent.CountDownLatch(1)
-                    recognize(app, t, startSec) { m, _ -> if (m != null && m.title.isNotBlank()) out.add(SongMatch(m.title, m.artist, m.album, 95)); latch.countDown() }
-                    latch.await(50, java.util.concurrent.TimeUnit.SECONDS)
-                }
-                var err = ""
-                if (keys.isNotEmpty()) {
-                    val w = loadWindow(app, t, startSec)
-                    if (w == null) err = "المقطع ده صامت — شغّل الأغنية لحد جزء فيه صوت وجرّب تاني"
-                    else {
-                        val (list, e) = askList(keys, w.bytes, w.durSec, t.title, t.artist, avoid, false, 4, true)
-                        err = e
-                        for (m in list) if (m.conf >= 20 && out.none { it.title.equals(m.title, true) && it.artist.equals(m.artist, true) }) out.add(m)
-                    }
-                }
-                val bad = avoid.map { it.trim().lowercase() }
-                val res = out.filter { m -> val a = (m.title + " — " + m.artist).trim().lowercase(); val b = m.title.trim().lowercase(); a !in bad && b !in bad }
-                onDone(res, if (res.isEmpty()) err.ifBlank { UNSURE + " — مفيش خيارات جديدة، جرّب مقطع تاني أو اكتب الاسم بإيدك" } else "")
-            } catch (e: Throwable) { LogStore.err("songid-options", e); onDone(emptyList(), "فشل: " + (e.message ?: "")) }
-        }.apply { isDaemon = true }.start()
-    }
 
     /** على خيط خلفية. startSec = من أنهي ثانية ناخد المقطع. onDone(نتيجة أو null، رسالة خطأ/عدم تطابق) */
     fun recognize(ctx: Context, t: Track, startSec: Double, onDone: (SongMatch?, String) -> Unit) {

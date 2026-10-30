@@ -239,11 +239,6 @@ object TvSkinGlass : TvSkin {
     /** (v629) الهيدر القديم اتشال: الرئيسية بتتبني من arrangeHome */
     override fun homeHeader(h: TvSkinHost): View? = null
 
-    @Suppress("unused")
-    private fun legacyHomeHeader(h: TvSkinHost): View? {
-        val b = TvSkinHub.continueBanner(h, tokens, true) ?: return null
-        return LinearLayout(h.activity).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; clipChildren = false; clipToPadding = false; addView(b) }   // (v622) زرار 🏠 اتشال من الرئيسية
-    }
 
     // ===== الإعدادات: لوحة زجاج عايمة =====
     override fun menuKey(h: TvSkinHost): Boolean { settingsPanel(h); return true }

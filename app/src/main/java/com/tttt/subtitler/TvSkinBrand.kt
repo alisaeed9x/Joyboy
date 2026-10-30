@@ -39,13 +39,6 @@ private class ManufacturerTvSkin(
     /** (v629) الهيدر القديم اتشال: الرئيسية كلها بتتبني من arrangeHome بهيكل كل شركة */
     override fun homeHeader(h: TvSkinHost): View? = null
 
-    @Suppress("unused")
-    private fun legacyHeader(h: TvSkinHost): View = when (layout) {
-        BrandLayout.SAMSUNG -> samsungHeader(h)
-        BrandLayout.LG -> lgHeader(h)
-        BrandLayout.TCL -> tclHeader(h)
-        BrandLayout.XIAOMI -> xiaomiHeader(h)
-    }
 
     override fun folderCard(h: TvSkinHost, f: FolderItem, size: TvFolderSize, onOpen: () -> Unit): View {
         // Keep the user's list preference and Samsung's familiar landscape folder cards intact.

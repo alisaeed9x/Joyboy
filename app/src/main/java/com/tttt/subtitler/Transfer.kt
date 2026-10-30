@@ -49,7 +49,8 @@ object XCat {
 /** عنصر في الكتالوج (ملف أو تطبيق) */
 class XEntry(
     val cat: String, val key: String, val name: String, val size: Long,
-    val uri: Uri? = null, val file: File? = null, val pkg: String = "", val sub: String = "", val date: Long = 0L, val splits: Boolean = false
+    val uri: Uri? = null, val file: File? = null, val pkg: String = "", val sub: String = "", val date: Long = 0L, val splits: Boolean = false,
+    val path: String = ""   // (v672) المسار الفعلي لو معروف (MediaStore DATA) — لفتح الفولدر الأب في اختيار الملفات
 )
 
 /** ملف جاهز للإرسال (التطبيقات اللي ليها splits بتتحوّل لـ .apks في الكاش) */
@@ -84,9 +85,9 @@ object FileCatalog {
             else -> MediaStore.Images.Media.EXTERNAL_CONTENT_URI
         }
         @Suppress("DEPRECATION") val dataCol = MediaStore.MediaColumns.DATA
-        val proj = arrayOf(MediaStore.MediaColumns._ID, MediaStore.MediaColumns.DISPLAY_NAME, MediaStore.MediaColumns.SIZE, MediaStore.MediaColumns.DATE_MODIFIED, dataCol)
+        val proj = arrayOf(MediaStore.MediaColumns._ID, MediaStore.MediaColumns.DISPLAY_NAME, MediaStore.MediaColumns.SIZE, MediaStore.MediaColumns.DATE_MODIFIED, dataCol, MediaStore.MediaColumns.DATE_ADDED)
         val out = ArrayList<XEntry>()
-        ctx.contentResolver.query(coll, proj, null, null, MediaStore.MediaColumns.DATE_MODIFIED + " DESC")?.use { c ->
+        ctx.contentResolver.query(coll, proj, null, null, MediaStore.MediaColumns.DATE_ADDED + " DESC")?.use { c ->
             while (c.moveToNext() && out.size < 4000) {
                 val id = c.getLong(0)
                 val name = c.getString(1) ?: continue
@@ -94,7 +95,9 @@ object FileCatalog {
                 if (size <= 0L) continue
                 val data = c.getString(4) ?: ""
                 val folder = data.substringBeforeLast('/', "").substringAfterLast('/')
-                out.add(XEntry(cat, "m:$cat:$id", name, size, ContentUris.withAppendedId(coll, id), null, "", folder, c.getLong(3)))
+                // (v672) التاريخ = تاريخ الإضافة للجهاز (DATE_ADDED) لو موجود وإلا تاريخ التعديل
+                val added = c.getLong(5)
+                out.add(XEntry(cat, "m:$cat:$id", name, size, ContentUris.withAppendedId(coll, id), null, "", folder, if (added > 0L) added else c.getLong(3), false, data))
             }
         }
         return out

@@ -204,12 +204,12 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
         else { busyView.visibility = View.GONE; busyDr.stop() }
     }
     /** (v467) يوتيوب بيحترم وضع الواجهة: تابلت/تلفزيون/لاندسكيب = شبكة أعمدة، مش قايمة موبايل ممدودة */
-    private fun ytCols(): Int = when { DeviceUi.isTv(act) -> 4; DeviceUi.isTablet(act) -> 2; act.resources.configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE -> 2; else -> 1 }
+    private fun ytCols(): Int = when { DeviceUi.isTv(act) -> 3; DeviceUi.isTablet(act) -> 2; act.resources.configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE -> 2; else -> 1 }
     private val lv = GridView(act)
     /** (v477) عرض كارت الفيديو: على التلفزيون عرض العمود (4 أعمدة)، وعلى الباقي عرض الشاشة زي ما كان */
     private fun cardW(): Int {
         val sw = act.resources.displayMetrics.widthPixels
-        return if (DeviceUi.isTv(act)) (sw - ui.dp(32) - ui.dp(36)) / 4 else sw
+        return if (DeviceUi.isTv(act)) (sw - ui.dp(32) - ui.dp(24)) / 3 else sw   // (v674) تلفزيون: 3 مربعات في الصف
     }
     /** (v477) تلفزيون: التركيز يروح لشبكة الفيديوهات (بيتندهي من Main لما تفتح تبويب يوتيوب) */
     fun tvFocusList() { if (DeviceUi.isRemote(act)) lv.post { try { if (root.visibility == View.VISIBLE && lv.isShown && !watch.isOpen && !chan.isOpen) lv.requestFocus() } catch (_: Throwable) {} } }   // (v479) مايسرقش التركيز وصفحة المشاهدة/القناة مفتوحة
@@ -305,6 +305,7 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
         fun micBtn(): TextView = TextView(act).apply { text = "🎤"; textSize = 20f; gravity = Gravity.CENTER; foreground = YtSkin.ripple(true); contentDescription = "بحث صوتي"; setOnClickListener { startVoice() } }
         // (v472) تبويبات يوتيوب (الرئيسية · الاشتراكات · أنت) بقت في الصف العلوي نفسه مع البحث والإعدادات — مفيش شريط سفلي تاني فوق شريط البرنامج
         val tabsBox = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; gravity = Gravity.CENTER_VERTICAL }
+        val tabCells = arrayOfNulls<View>(3)
         listOf("الرئيسية", "الاشتراكات", "أنت").forEachIndexed { i, name ->
             val lab = TextView(act).apply { text = name; textSize = 14.5f; gravity = Gravity.CENTER; setSingleLine(); includeFontPadding = false; typeface = YtSkin.medium }
             val bar = View(act).apply { background = GradientDrawable().apply { setColor(YtSkin.accent); cornerRadius = ui.dp(2).toFloat() }; visibility = View.INVISIBLE }
@@ -312,8 +313,9 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
             cell.addView(lab, FrameLayout.LayoutParams(-2, -2, Gravity.CENTER))
             cell.addView(bar, FrameLayout.LayoutParams(ui.dp(26), ui.dp(3), Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL))
             navLabs.add(lab); navBars.add(bar)
-            tabsBox.addView(cell, LinearLayout.LayoutParams(0, -1, 1f))
+            tabCells[i] = cell
         }
+        for (i in intArrayOf(1, 0, 2)) tabsBox.addView(tabCells[i]!!, LinearLayout.LayoutParams(0, -1, 1f))   // (v674) تلفزيون: الاشتراكات أول زرار (الأساسي) ثم الرئيسية ثم أنت — الأرقام الداخلية زي ما هي
         appBar.setPadding(ui.dp(6), ui.dp(2), ui.dp(4), ui.dp(2))
         // (v475) التبويبات (الرئيسية · الاشتراكات · أنا) بقت في الشريط السفلي بتاع البرنامج — فوق بقى عنوان الصفحة + بحث + إعدادات بس
         topTitle = TextView(act).apply { text = "يوتيوب"; textSize = 19f; setTextColor(YtSkin.text); typeface = YtSkin.medium; gravity = Gravity.CENTER_VERTICAL or Gravity.START; setSingleLine(); setPadding(ui.dp(12), 0, ui.dp(8), 0) }
@@ -547,7 +549,7 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
     // (v621) كان refresh() بيعمل notifyDataSetChanged + يمسح كاش الـrecents (قراءة ملف على الـUI thread) في نفس لحظة بداية الأنيميشن ← تهنيج. دلوقتي بعد ما الانزلاق يخلص
     private val softRefresh = Runnable { recMemoAt = 0L; try { adapter.notifyDataSetChanged() } catch (_: Throwable) {} }
     fun refresh() {
-        if (cur == null) { recMemoAt = 0L; openTab(0) }
+        if (cur == null) { recMemoAt = 0L; openTab(if (DeviceUi.isTv(act) && (YtAccount.loggedIn() || YtStore.read(YtStore.SUBS).isNotEmpty())) 1 else 0) }   // (v674) تلفزيون: بيفتح على الاشتراكات
         else { h.removeCallbacks(softRefresh); h.postDelayed(softRefresh, 280L) }
         startPoll()
     }
@@ -917,6 +919,11 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
             if (r.items.isEmpty()) {
                 r = YtRss.feed(subsNow, force, !force)   // (v354) أول عرض فوري من الكاش لو موجود
                 if (!force && r.items.isNotEmpty()) { act.runOnUiThread { bgLine(true) }; YtRss.refreshAsync(subsNow) }   // وبنحدّث في الخلفية للزيارة الجاية (والكبسولة لو فيه جديد)
+            }
+            if (DeviceUi.isTv(act) && more == null && r.items.size > 45 && r.next == null) {   // (v674) تلفزيون: احتياطي RSS على صفحات 45 فيديو عشان التحميل يكمّل مع النزول
+                val all = r.items
+                r = YtRes(all.take(45), Page("ytp:rss:45"))
+                more = { p -> val o = (p.url ?: "").substringAfterLast(':').toIntOrNull() ?: all.size; val e = minOf(all.size, o + 45); YtRes(if (o < e) all.subList(o, e).toList() else emptyList(), if (e < all.size) Page("ytp:rss:" + e) else null) }
             }
             if (r.items.isEmpty() && YtAccount.loggedIn() && !official) {
                 // (v350) بديل: فيد الاشتراكات الرسمي من حسابك مباشرة (من غير RSS)
