@@ -9,9 +9,11 @@ import android.content.Context
 import android.content.Intent
 import android.content.res.Configuration
 import android.graphics.Bitmap
+import android.graphics.BitmapShader
 import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.LinearGradient
+import android.graphics.Matrix
 import android.graphics.Paint
 import android.graphics.Path
 import android.graphics.Rect
@@ -70,6 +72,11 @@ class PrayerWidget : AppWidgetProvider() {
             val dark = (c.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
             val bmp = PrayerCard.render(c, w, h, data, dark, System.currentTimeMillis())
             rv.setImageViewBitmap(WidgetHub.rid(c, "id", "w_p_img"), bmp)
+            // (v666) مؤشر «الودجت شغّالة ولا فاصلة»: عدّاد ثواني بيعدّه النظام نفسه (مش تطبيقنا) من آخر تحديث. شغّالة = بيرجع لـ 00:00 كل دقيقة تقريبًا؛ لو عدّى دقيقتين ← التحديث واقف (دوس على الودجت)
+            val age = WidgetHub.rid(c, "id", "w_p_age")
+            rv.setViewVisibility(age, if (h >= 150) android.view.View.VISIBLE else android.view.View.GONE)
+            rv.setChronometer(age, SystemClock.elapsedRealtime(), "آخر تحديث %s", true)
+            rv.setOnClickPendingIntent(age, bc(c, ACT_REFRESH, 41))
             mgr.updateAppWidget(id, rv)
         }
 
@@ -256,6 +263,26 @@ internal object PrayerCard {
         cv.drawBitmap(bmp, Rect(sx.toInt(), sy.toInt(), (sx + sw).toInt(), (sy + sh).toInt()), RectF(0f, 0f, w, h), Paint(Paint.FILTER_BITMAP_FLAG))
     }
 
+    /** (v666) الخلفية: الجامع بيتحط كله في المنطقة الفاضية (يمين الكارت وفوق الشريط وتحت الهيدر) — الصورة بتتمدّد من حوافها (CLAMP) فالسما والمية بتكمّل الكارت كله */
+    private fun drawBgZone(cv: Canvas, bmp: Bitmap?, w: Float, h: Float, zx0: Float, zx1: Float, zy0: Float, zy1: Float) {
+        val zw = zx1 - zx0
+        val zh = zy1 - zy0
+        if (bmp == null || zw < 60f || zh < 50f) { drawBg(cv, bmp, w, h); return }
+        val iw = bmp.width.toFloat(); val ih = bmp.height.toFloat()
+        var mh = zh
+        var mw = mh * 1.05f
+        if (mw > zw) { mw = zw; mh = mw / 1.05f }
+        val sc = mh / (0.613f * ih)
+        val tx = (zx0 + zw / 2f) - sc * 0.625f * iw
+        val ty = zy1 - sc * 0.778f * ih
+        val shader = BitmapShader(bmp, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP)
+        val m = Matrix(); m.setScale(sc, sc); m.postTranslate(tx, ty)
+        shader.setLocalMatrix(m)
+        val p = Paint(Paint.FILTER_BITMAP_FLAG)
+        p.shader = shader
+        cv.drawRect(0f, 0f, w, h, p)
+    }
+
     fun render(c: Context, wIn: Int, hIn: Int, data: PrayerTimes.Data?, dark: Boolean, now: Long): Bitmap {
         val wDp = wIn.coerceIn(110, 700).toFloat()
         val hDp = hIn.coerceIn(70, 700).toFloat()
@@ -271,15 +298,14 @@ internal object PrayerCard {
 
         val clip = Path(); clip.addRoundRect(RectF(0f, 0f, wDp, hDp), 22f, 22f, Path.Direction.CW)
         cv.save(); cv.clipPath(clip)
-        drawBg(cv, bgBmp, wDp, hDp)
-        val topP = Paint(); topP.shader = LinearGradient(0f, 0f, 0f, minOf(90f, hDp * 0.5f), 0x80000000.toInt(), 0x00000000, Shader.TileMode.CLAMP)
-        cv.drawRect(0f, 0f, wDp, hDp, topP)
         val fadeCol = if (dark) 0xFF0A1226.toInt() else 0xFFEEF0F4.toInt()
-        val botP = Paint()
-        botP.shader = LinearGradient(0f, hDp * 0.40f, 0f, hDp, fadeCol and 0x00FFFFFF, (fadeCol and 0x00FFFFFF) or (if (dark) 0xE6000000.toInt() else 0xF2000000.toInt()), Shader.TileMode.CLAMP)
-        cv.drawRect(0f, 0f, wDp, hDp, botP)
+        val fadeRgb = fadeCol and 0x00FFFFFF
+        val fadeA = if (dark) 0xE6000000.toInt() else 0xF2000000.toInt()
 
         if (data == null || times == null) {
+            drawBg(cv, bgBmp, wDp, hDp)
+            val tp0 = Paint(); tp0.shader = LinearGradient(0f, 0f, 0f, hDp, 0x80000000.toInt(), 0xB0000000.toInt(), Shader.TileMode.CLAMP)
+            cv.drawRect(0f, 0f, wDp, hDp, tp0)
             val p1 = txt(WHITE, 15f, true, Paint.Align.CENTER)
             val p2 = txt(0xFFE3E9F5.toInt(), 11.5f, false, Paint.Align.CENTER)
             cv.drawText(RLM + "⚠ ما قدرتش أجيب المواقيت", wDp / 2f, hDp / 2f - 2f, p1)
@@ -300,45 +326,66 @@ internal object PrayerCard {
 
         val next = PrayerTimes.nextPrayer(times, now)
         val left = next.second - now
-        val tall = hDp >= 185f
+        val tall = hDp >= 150f
         val wide = wDp >= 300f
         val pad = if (wDp < 280f) 10f else 12f
         val ib = if (wDp < 280f) 30f else 34f
 
-        // ---- الهيدر (يمين): أيقونة المسجد + العنوان + المدينة ----
+        // ---------- الحسابات (من غير رسم) ----------
         val title = RLM + "مواقيت الصلاة"
         val tp = txt(WHITE, if (ib > 30f) 15f else 13.5f, true, Paint.Align.RIGHT)
         val cityS = RLM + data.city.ifBlank { "الموقع الحالي" }
         val cp = txt(0xFFFFE9B0.toInt(), 10.5f, false, Paint.Align.RIGHT)
         fit(cp, cityS, if (tall && wide) 170f else wDp * 0.42f)
         val textR = wDp - pad - ib - 8f
+        val headW = maxOf(tp.measureText(title), cp.measureText(cityS) + 13f)
+        val headLeft = textR - headW
+
+        val cal = Calendar.getInstance()
+        val dayName = RLM + DAYS[cal.get(Calendar.DAY_OF_WEEK) - 1]
+        val greg = RLM + String.format(Locale.US, "%d %s %d", cal.get(Calendar.DAY_OF_MONTH), MONTHS[cal.get(Calendar.MONTH)], cal.get(Calendar.YEAR))
+        val hij = if (data.hijri.isNotBlank()) RLM + data.hijri + " هـ" else ""
+        val pd = txt(WHITE, 12f, true, Paint.Align.RIGHT)
+        val pg = txt(WHITE, 10.5f, false, Paint.Align.RIGHT)
+        val ph2 = txt(0xFFFFE9B0.toInt(), 10.5f, false, Paint.Align.RIGHT)
+        val maxLine = maxOf(pd.measureText(dayName), pg.measureText(greg), if (hij.isNotEmpty()) ph2.measureText(hij) else 0f)
+        val dateXr = headLeft - 14f
+        val dateBeside = tall && (dateXr - (pad + 30f) >= maxLine)
+        val dateBelow = if (tall && !dateBeside) 15f else 0f
+
+        val stripH = if (tall) (hDp * 0.28f).coerceIn(62f, 84f) else (hDp * 0.40f).coerceIn(44f, 62f)
+        val sMargin = 8f
+        val sTop = hDp - sMargin - stripH
+
+        val py0 = if (tall) pad + ib + 8f + dateBelow else pad
+        val py1 = sTop - 6f
+        val ph = (py1 - py0).coerceAtLeast(36f)
+        val pw = if (tall) (wDp * 0.46f).coerceIn(120f, 200f) else (headLeft - 8f - pad).coerceIn(96f, 175f)
+        val px = pad
+
+        // ---------- الخلفية: الجامع في المنطقة الفاضية ----------
+        drawBgZone(cv, bgBmp, wDp, hDp, px + pw + 8f, wDp - pad, (if (tall) pad + ib + dateBelow + 2f else pad), sTop - 2f)
+        val topP = Paint(); topP.shader = LinearGradient(0f, 0f, 0f, minOf(90f, hDp * 0.5f), 0x80000000.toInt(), 0x00000000, Shader.TileMode.CLAMP)
+        cv.drawRect(0f, 0f, wDp, hDp, topP)
+        val botP = Paint()
+        botP.shader = LinearGradient(0f, sTop - 26f, 0f, hDp, fadeRgb, fadeRgb or fadeA, Shader.TileMode.CLAMP)
+        cv.drawRect(0f, 0f, wDp, hDp, botP)
+
+        // ---------- الهيدر ----------
         rrect(cv, RectF(wDp - pad - ib, pad, wDp - pad, pad + ib), 9f, 0xCC232D3F.toInt(), 0x33FFFFFF)
         mosque(cv, wDp - pad - ib / 2f, pad + ib / 2f + 1f, ib * 0.62f, WHITE)
         cv.drawText(title, textR, pad + ib * 0.46f, tp)
         pin(cv, textR - 4.5f, pad + ib * 0.80f, 10f, 0xFFFFE9B0.toInt())
         cv.drawText(cityS, textR - 13f, pad + ib * 0.90f, cp)
-        val headW = maxOf(tp.measureText(title), cp.measureText(cityS) + 13f)
-        val headLeft = textR - headW
 
-        // ---- التاريخ + ⚙ (في الوضع الطويل) ----
-        var dateBelow = 0f
+        // ---------- التاريخ + ⚙ (الوضع الطويل) ----------
         if (tall) {
             gear(cv, pad + 10f, pad + 11f, 19f, 0xCCFFFFFF.toInt())
-            val cal = Calendar.getInstance()
-            val dayName = RLM + DAYS[cal.get(Calendar.DAY_OF_WEEK) - 1]
-            val greg = RLM + String.format(Locale.US, "%d %s %d", cal.get(Calendar.DAY_OF_MONTH), MONTHS[cal.get(Calendar.MONTH)], cal.get(Calendar.YEAR))
-            val hij = if (data.hijri.isNotBlank()) RLM + data.hijri + " هـ" else ""
-            val pd = txt(WHITE, 12f, true, Paint.Align.RIGHT)
-            val pg = txt(0xFFFFFFFF.toInt(), 10.5f, false, Paint.Align.RIGHT)
-            val ph2 = txt(0xFFFFE9B0.toInt(), 10.5f, false, Paint.Align.RIGHT)
-            val maxLine = maxOf(pd.measureText(dayName), pg.measureText(greg), if (hij.isNotEmpty()) ph2.measureText(hij) else 0f)
-            val xr = headLeft - 14f
-            if (xr - (pad + 30f) >= maxLine) {
-                cv.drawText(dayName, xr, pad + 12f, pd)
-                cv.drawText(greg, xr, pad + 26f, pg)
-                if (hij.isNotEmpty()) cv.drawText(hij, xr, pad + 40f, ph2)
+            if (dateBeside) {
+                cv.drawText(dayName, dateXr, pad + 12f, pd)
+                cv.drawText(greg, dateXr, pad + 26f, pg)
+                if (hij.isNotEmpty()) cv.drawText(hij, dateXr, pad + 40f, ph2)
             } else {
-                dateBelow = 15f
                 val one = RLM + DAYS[cal.get(Calendar.DAY_OF_WEEK) - 1] + "، " + String.format(Locale.US, "%d %s", cal.get(Calendar.DAY_OF_MONTH), MONTHS[cal.get(Calendar.MONTH)])
                 val po = txt(WHITE, 10.5f, false, Paint.Align.RIGHT)
                 fit(po, one, wDp - 2f * pad)
@@ -346,10 +393,7 @@ internal object PrayerCard {
             }
         }
 
-        // ---- شريط الخمس صلوات (تحت) ----
-        val stripH = if (tall) (hDp * 0.28f).coerceIn(62f, 84f) else (hDp * 0.40f).coerceIn(44f, 62f)
-        val sMargin = 8f
-        val sTop = hDp - sMargin - stripH
+        // ---------- شريط الخمس صلوات ----------
         rrect(cv, RectF(sMargin, sTop, wDp - sMargin, hDp - sMargin), 14f, panelFill, panelStroke)
         val colW = (wDp - 2f * sMargin) / 5f
         val g = (stripH / 62f).coerceIn(0.78f, 1.25f)
@@ -369,12 +413,7 @@ internal object PrayerCard {
             cv.drawText(tm, cx, sTop + stripH * 0.90f, tmp)
         }
 
-        // ---- كارت الصلاة القادمة (شمال): الاسم + الوقت + المتبقي ----
-        val py0 = if (tall) pad + ib + 8f + dateBelow else pad
-        val py1 = sTop - 6f
-        val ph = (py1 - py0).coerceAtLeast(36f)
-        val pw = if (tall) (wDp * 0.46f).coerceIn(120f, 200f) else (headLeft - 8f - pad).coerceIn(96f, 175f)
-        val px = pad
+        // ---------- كارت الصلاة القادمة ----------
         val pr = RectF(px, py0, px + pw, py0 + ph)
         rrect(cv, pr, 13f, 0xCC1B2432.toInt(), 0x40FFFFFF)
         val pcx = px + pw / 2f
