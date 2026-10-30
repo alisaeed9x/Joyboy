@@ -2,6 +2,7 @@ package com.tttt.subtitler
 
 import android.animation.ValueAnimator
 import android.app.Activity
+import android.app.AlertDialog
 import android.content.ClipData
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -29,6 +30,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.view.animation.LinearInterpolator
 import android.widget.BaseAdapter
+import android.widget.Button
 import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.HorizontalScrollView
@@ -259,6 +261,7 @@ class TransferActivity : Activity() {
             0 -> {
                 add("☑ الكل") { toggleAll() }
                 if (tvMode) add("📱 اعرض للموبايل", true) { offerToPhone() } else add("📺 للتلفزيون", true) { sendToTv() }
+                add("📤 اختار ملف وأبعت", true) { pickDocsForSend() }
                 add("↗ لتطبيق تاني") { shareSelected() }
                 add("➕ من الجهاز") { pickDocs() }
             }
@@ -653,12 +656,198 @@ class TransferActivity : Activity() {
     @Suppress("DEPRECATION")
     override fun onActivityResult(req: Int, res: Int, data: Intent?) {
         super.onActivityResult(req, res, data)
-        if (req != 71 || res != RESULT_OK || data == null) return
+        if ((req != 71 && req != 72) || res != RESULT_OK || data == null) return
         val uris = ArrayList<Uri>()
         val cd = data.clipData
         if (cd != null) { for (k in 0 until cd.itemCount) { val u = cd.getItemAt(k).uri; if (u != null) uris.add(u) } }
         else { val u = data.data; if (u != null) uris.add(u) }
-        if (uris.isNotEmpty()) incomingDialog(uris, "اخترت " + uris.size + " ملف")
+        if (uris.isEmpty()) return
+        if (req == 72) sendPage(uris) else incomingDialog(uris, "اخترت " + uris.size + " ملف")
+    }
+
+    // ───────── صفحة الإرسال باتجاه واحد (v654) ─────────
+    // الملف بيتختار الأول من منتقي النظام، وبعدها بتظهر صفحة الإرسال.
+    // الصفحة بتعرض اتجاه واحد بس حسب نوع الجهاز، وده إجباري مش اختياري:
+    // صفحة إرسال التلفزيون للموبايل مش بتظهر على الموبايل أبدًا، والعكس صحيح.
+    private fun pickDocsForSend() {
+        try {
+            startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT).apply { addCategory(Intent.CATEGORY_OPENABLE); type = "*/*"; putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true) }, 72)
+        } catch (e: Throwable) {
+            LogStore.err("Transfer:pickSend", e)
+            Notice.show(this, "⚠ مفيش منتقي ملفات على الجهاز ده", 2600L)
+        }
+    }
+
+    private fun sendPage(uris: List<Uri>) {
+        val names = ArrayList<String>()
+        val sizes = ArrayList<Long>()
+        for (u in uris) {
+            val m = XferUi.meta(this, u)
+            names.add(m.first)
+            sizes.add(m.second)
+        }
+        val root = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            layoutDirection = View.LAYOUT_DIRECTION_RTL
+            setPadding(ui.dp(16), ui.dp(12), ui.dp(16), ui.dp(8))
+        }
+        for (i in names.indices) {
+            val sz = sizes[i]
+            val szTxt = if (sz > 0L) Sniff.fmtSize(sz) else "حجم غير معروف"
+            root.addView(ui.text("• " + names[i] + " — " + szTxt, if (tvMode) 15f else 13f, th.text).apply {
+                setPadding(0, ui.dp(2), 0, ui.dp(2))
+            })
+        }
+        // سطر الاتجاه: اتجاه واحد بس، ومكتوب صراحة عشان ما يحصلش خلط.
+        val dirNote = if (tvMode) {
+            "📱 إرسال من التلفزيون إلى الموبايل — الصفحة دي مش بتعرض إرسال الموبايل للتلفزيون"
+        } else {
+            "📤 إرسال من الموبايل إلى التلفزيون — الصفحة دي مش بتعرض إرسال التلفزيون للموبايل"
+        }
+        root.addView(ui.text(dirNote, if (tvMode) 14f else 12f, th.muted).apply {
+            setPadding(0, ui.dp(10), 0, ui.dp(6))
+        })
+        val targetsTv = ui.text("", if (tvMode) 15f else 13f, th.text).apply {
+            setPadding(0, ui.dp(4), 0, ui.dp(8))
+        }
+        root.addView(targetsTv)
+        val btnRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            layoutDirection = View.LAYOUT_DIRECTION_RTL
+            gravity = Gravity.CENTER
+        }
+        val sendBtn = Button(this).apply {
+            text = if (tvMode) "📱 اعرض للموبايل" else "📺 ابعت للتلفزيون"
+            isFocusable = true
+        }
+        val cancelBtn = Button(this).apply {
+            text = "إلغاء"
+            isFocusable = true
+        }
+        btnRow.addView(sendBtn, lp(-2, -2).apply { marginEnd = ui.dp(8) })
+        if (!tvMode) {
+            val scanBtn = Button(this).apply {
+                text = "🔄 ابحث تاني"
+                isFocusable = true
+            }
+            scanBtn.setOnClickListener { refreshSendTargets(targetsTv) }
+            btnRow.addView(scanBtn, lp(-2, -2).apply { marginEnd = ui.dp(8) })
+        }
+        btnRow.addView(cancelBtn, lp(-2, -2))
+        root.addView(btnRow)
+        val title = if (tvMode) "📱 صفحة الإرسال — تلفزيون ← موبايل" else "📤 صفحة الإرسال — موبايل ← تلفزيون"
+        val dlg = AlertDialog.Builder(this).setTitle(title).setView(root).setCancelable(true).create()
+        sendBtn.setOnClickListener {
+            if (tvMode) {
+                offerPickedToPhone(uris, names, dlg)
+            } else {
+                val paired = try {
+                    RemoteClient.lastTv() != null
+                } catch (_: Throwable) {
+                    false
+                }
+                if (!paired) {
+                    Notice.show(this, "⚠ مفيش تلفزيون مقترن — دوس على التلفزيون في الرادار فوق عشان تقترن", 3600L)
+                    try {
+                        scan()
+                    } catch (_: Throwable) {
+                    }
+                } else {
+                    XferUi.sendUris(this, uris, names)
+                    try {
+                        dlg.dismiss()
+                    } catch (_: Throwable) {
+                    }
+                }
+            }
+        }
+        cancelBtn.setOnClickListener {
+            try {
+                dlg.dismiss()
+            } catch (_: Throwable) {
+            }
+        }
+        if (tvMode) {
+            targetsTv.text = "📱 الموبايل — هيفتح مركز النقل ← 📥 استقبال وينزّل الملفات المعروضة"
+        } else {
+            refreshSendTargets(targetsTv)
+        }
+        dlg.show()
+        if (tvMode) {
+            try {
+                sendBtn.requestFocus()
+            } catch (_: Throwable) {
+            }
+        }
+    }
+
+    // تحديث قايمة الأهداف على الموبايل: المقترن أولًا، وبعدها نتايج البحث الحي.
+    private fun refreshSendTargets(targetsTv: TextView) {
+        targetsTv.text = "🔍 بدوّر على تلفزيونات…"
+        Thread {
+            val paired = try {
+                RemoteClient.lastTv()
+            } catch (_: Throwable) {
+                null
+            }
+            val found = try {
+                RemoteClient.discover(4000L)
+            } catch (_: Throwable) {
+                emptyList()
+            }
+            runOnUiThread {
+                if (isFinishing || isDestroyed) return@runOnUiThread
+                val sb = StringBuilder()
+                if (paired != null) {
+                    sb.append("📺 المقترن: ").append(paired.name).append("\n")
+                }
+                if (found.isEmpty()) {
+                    if (paired == null) {
+                        sb.append("مفيش تلفزيون مقترن — دوس على التلفزيون في الرادار فوق عشان تقترن")
+                    }
+                } else {
+                    for (f in found) {
+                        sb.append("📺 ").append(f.name).append("\n")
+                    }
+                }
+                targetsTv.text = sb.toString().trim()
+            }
+        }.also { it.isDaemon = true }.start()
+    }
+
+    // تلفزيون ← موبايل: الملفات المختارة بتتنسخ لملفات حقيقية وبتتعرض في الـ Outbox،
+    // والموبايل بينزّلها من مركز النقل ← 📥 استقبال. مفيش صفحة إرسال موبايل ← تلفزيون هنا.
+    private fun offerPickedToPhone(uris: List<Uri>, names: List<String>, dlg: AlertDialog) {
+        Thread {
+            val ents = ArrayList<XEntry>()
+            val tmp = File(cacheDir, "xfer_send").also { it.mkdirs() }
+            for (i in uris.indices) {
+                try {
+                    val safe = Xfer.safeName(names[i])
+                    val f = File(tmp, safe)
+                    contentResolver.openInputStream(uris[i])?.use { ins ->
+                        f.outputStream().use { outs -> ins.copyTo(outs) }
+                    }
+                    if (f.length() > 0L) {
+                        ents.add(FileCatalog.fileEntry(f, XCat.catOf(safe)))
+                    }
+                } catch (e: Throwable) {
+                    LogStore.err("Transfer:sendPageTv", e)
+                }
+            }
+            runOnUiThread {
+                if (ents.isEmpty()) {
+                    Notice.show(this, "⚠ ما قدرتش أجهّز الملفات للعرض", 2600L)
+                } else {
+                    TvOutbox.add(ents)
+                    Notice.show(this, "📱 اتعرض " + ents.size + " ملف — افتح مركز النقل على الموبايل ← 📥 استقبال", 4200L)
+                    try {
+                        dlg.dismiss()
+                    } catch (_: Throwable) {
+                    }
+                }
+            }
+        }.also { it.isDaemon = true }.start()
     }
 
     // ───────── الواصل: فتح / حذف ─────────
