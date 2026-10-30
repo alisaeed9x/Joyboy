@@ -285,7 +285,7 @@ class TvActivity : Activity() {
         // (v491) الثيم الأساسي على التلفزيون = أسود (أموليد) — مرة واحدة بس، وتقدر تغيّره من الإعدادات بعدها
         if (DeviceUi.isTv(this) && Cfg.str("tv_black_v491", "0") != "1") { Cfg.put("theme", "amoled_w"); Cfg.put("tv_black_v491", "1") }
         th = Themes.byId(Cfg.str("theme", "mx")); ui = Ui(this, th)
-        TypeServer.start(); TvWatchNext.sync(this); TvLink.start(this)   // (v518) ريموت الموبايل
+        TypeServer.start(); TvWatchNext.sync(this); TvLink.start(this); try { FtPeers.start(this) } catch (_: Throwable) {}   // (v518) ريموت الموبايل · (v653) نقل الملفات الذكي: التلفزيون جاهز للاستقبال
         val rootF = FrameLayout(this).apply {
             if (Theme.lum(th.bg) < 0.2f) background = GradientDrawable(GradientDrawable.Orientation.TL_BR, intArrayOf(0xFF0A0F22.toInt(), 0xFF150E27.toInt())) else setBackgroundColor(th.bg)
         }
@@ -2995,6 +2995,7 @@ class TvActivity : Activity() {
         all.add(stile("📶", "الواي فاي") { TvWifi.quick(this@TvActivity) })
         all.add(stile("📱", "ريموت الموبايل") { TvLinkUi.show(this@TvActivity) })
         all.add(stile("📤", "نقل الملفات") { startActivity(Intent(this@TvActivity, TransferActivity::class.java)) })
+        all.add(stile("📡", "نقل ذكي") { startActivity(Intent(this@TvActivity, FileTransferActivity::class.java)) })   // (v653)
         all.add(stile("🛠", "إعدادات الأندرويد") { openSystemSettings() })
         all.add(stile("🌙", "نوم") { showSaver() })
         all.add(stile("🎨", "المظهر") { showAppearance() })

@@ -14,6 +14,7 @@ com/tttt/subtitler/BrowserDl.kt
 com/tttt/subtitler/CastCache.kt
 com/tttt/subtitler/CastServer.kt
 com/tttt/subtitler/ClipWatch.kt
+com/tttt/subtitler/CoSurf.kt
 com/tttt/subtitler/ControllerPad.kt
 com/tttt/subtitler/Core.kt
 com/tttt/subtitler/Coverage.kt
@@ -31,6 +32,15 @@ com/tttt/subtitler/FastId.kt
 com/tttt/subtitler/FileManager.kt
 com/tttt/subtitler/FlowRow.kt
 com/tttt/subtitler/FreeLlm.kt
+com/tttt/subtitler/FtCrypto.kt
+com/tttt/subtitler/FtIdentity.kt
+com/tttt/subtitler/FtModel.kt
+com/tttt/subtitler/FtPeers.kt
+com/tttt/subtitler/FtPicker.kt
+com/tttt/subtitler/FtStore.kt
+com/tttt/subtitler/FtUi.kt
+com/tttt/subtitler/FtViews.kt
+com/tttt/subtitler/FtXfer.kt
 com/tttt/subtitler/GifWriter.kt
 com/tttt/subtitler/Glass.kt
 com/tttt/subtitler/HtmlUi.kt
@@ -40,6 +50,7 @@ com/tttt/subtitler/IconPackCore.kt
 com/tttt/subtitler/IconPackUi.kt
 com/tttt/subtitler/IconPacks.kt
 com/tttt/subtitler/Icons.kt
+com/tttt/subtitler/IrTv.kt
 com/tttt/subtitler/Karaoke.kt
 com/tttt/subtitler/KeepAliveService.kt
 com/tttt/subtitler/KeyBrowser.kt
@@ -97,6 +108,7 @@ com/tttt/subtitler/QrCode.kt
 com/tttt/subtitler/QueueUi.kt
 com/tttt/subtitler/RecentSongs.kt
 com/tttt/subtitler/Recents.kt
+com/tttt/subtitler/RemoteActivity.kt
 com/tttt/subtitler/RemoteClient.kt
 com/tttt/subtitler/RemoteEngine.kt
 com/tttt/subtitler/RemoteLibrary.kt
@@ -150,6 +162,7 @@ com/tttt/subtitler/TvInput.kt
 com/tttt/subtitler/TvKill.kt
 com/tttt/subtitler/TvLink.kt
 com/tttt/subtitler/TvModeFab.kt
+com/tttt/subtitler/TvPanic.kt
 com/tttt/subtitler/TvPlayerBar.kt
 com/tttt/subtitler/TvPointer.kt
 com/tttt/subtitler/TvPresets.kt
@@ -203,7 +216,3 @@ com/tttt/subtitler/YtSnap.kt
 com/tttt/subtitler/YtThumbBtns.kt
 com/tttt/subtitler/YtTopBar.kt
 com/tttt/subtitler/YtWatch.kt
-com/tttt/subtitler/IrTv.kt
-com/tttt/subtitler/RemoteActivity.kt
-com/tttt/subtitler/TvPanic.kt
-com/tttt/subtitler/CoSurf.kt

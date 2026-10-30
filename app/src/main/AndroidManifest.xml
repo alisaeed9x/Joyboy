@@ -80,6 +80,9 @@
             </intent-filter>
         </activity>
         <!-- (v607) مركز النقل: إرسال/استقبال ملفات (فيديوهات · صوتيات · صور · APK · تطبيقات) بين الموبايل والتلفزيون وأي تطبيق تاني — وكمان هدف مشاركة «Joyboy نقل» -->
+        <!-- (v653) نقل الملفات الذكي: رادار + إرسال/استقبال مشفّر بموافقة + سجل + هوية الجهاز (بجانب مركز النقل القديم من غير ما يتأثر) -->
+        <activity android:name=".FileTransferActivity" android:exported="false" android:label="Joyboy نقل ذكي" android:theme="@style/AppSplash"
+            android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboardHidden|density"/>
         <activity android:name=".TransferActivity" android:exported="true" android:label="Joyboy نقل" android:theme="@style/AppSplash"
             android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboardHidden|density">
             <intent-filter><action android:name="android.intent.action.SEND"/><category android:name="android.intent.category.DEFAULT"/><data android:mimeType="*/*"/></intent-filter>

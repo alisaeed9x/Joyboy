@@ -61,6 +61,7 @@ class BottomNav(act: Activity, private val ui: Ui, private val th: Theme, privat
         val items = ArrayList<MoreItem>()
         for (id in ids.filter { it != 7 }) items.add(MoreItem(DEFS[id].first, DEFS[id].second, id == active) { collapseMore(); onPick(id) })
         items.add(MoreItem("📤", "نقل", false) { collapseMore(); try { act.startActivity(android.content.Intent(act, TransferActivity::class.java)) } catch (e: Throwable) { LogStore.err("Nav:transfer", e) } })
+        items.add(MoreItem("📡", "نقل ذكي", false) { collapseMore(); try { act.startActivity(android.content.Intent(act, FileTransferActivity::class.java)) } catch (e: Throwable) { LogStore.err("Nav:ft", e) } })   // (v653) نقل الملفات الذكي
         if (!tvDev) {
             items.add(MoreItem("📺", "وضع TV", PlayTarget.enabled(), {
                 // دوسة طويلة: باقي خيارات التلفزيون
