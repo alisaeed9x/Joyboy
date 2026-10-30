@@ -888,7 +888,16 @@ class PlayerActivity : Activity(), Host {
         if (k != sfSideKey) { sfSideKey = k; sfSideNm = try { sfSidecar()?.name ?: "" } catch (_: Throwable) { "" } }
         return sfSideNm
     }
-    private fun sfNativeCount(): Int = try { (player.exo()?.currentTracks?.groups ?: emptyList<androidx.media3.common.Tracks.Group>()).count { it.type == androidx.media3.common.C.TRACK_TYPE_TEXT && it.length > 0 && it.isSupported } } catch (_: Throwable) { 0 }
+    private fun sfNativeCountNow(): Int = try { (player.exo()?.currentTracks?.groups ?: emptyList<androidx.media3.common.Tracks.Group>()).count { it.type == androidx.media3.common.C.TRACK_TYPE_TEXT && it.length > 0 && it.isSupported } } catch (_: Throwable) { 0 }
+    /** (v670) ExoPlayer بيرمي استثناء لو اتسأل من خيط تاني — فالنسخة القديمة كانت بترجّع 0 دايمًا لما تتنادى من خيط خلفية (softAuto / sfRun) وده كان بيخلي الترجمة الأصلية «مش موجودة». دلوقتي بنسأل على خيط الواجهة ونستنى الرد */
+    private fun sfNativeCount(): Int {
+        if (Looper.myLooper() == Looper.getMainLooper()) return sfNativeCountNow()
+        val out = java.util.concurrent.atomic.AtomicInteger(0)
+        val latch = java.util.concurrent.CountDownLatch(1)
+        try { runOnUiThread { try { out.set(sfNativeCountNow()) } finally { latch.countDown() } } } catch (_: Throwable) { return 0 }
+        try { latch.await(1500L, java.util.concurrent.TimeUnit.MILLISECONDS) } catch (_: InterruptedException) {}
+        return out.get()
+    }
 
     private fun sfLiveText(t: String): String {
         if (sfLive.isEmpty()) return t
@@ -910,7 +919,7 @@ class PlayerActivity : Activity(), Host {
         sfLive = eng; sfLiveCache.clear(); sfLiveAsk.clear(); synchronized(sfLiveCtx) { sfLiveCtx.clear() }
         try { player.exo()?.let { xp -> xp.trackSelectionParameters = xp.trackSelectionParameters.buildUpon().setTrackTypeDisabled(androidx.media3.common.C.TRACK_TYPE_TEXT, false).build() } } catch (_: Throwable) {}
         preferNative = true; ccOn = true; curIdx = -2
-        say("💬 بترجم ترجمة الفيديو الأصلية لحظيًا بـ " + (if (eng == "gemini") "جيميناي" else "جوجل") + " — ممكن تتأخر ثانية عن الصوت")
+        sfNote("💬 بترجم ترجمة الفيديو الأصلية لحظيًا بـ " + (if (eng == "gemini") "جيميناي" else "جوجل") + " — ممكن تتأخر ثانية عن الصوت", 5000L)
     }
     private fun sfStopLive() { sfLive = ""; preferNative = false; curIdx = -2 }
 
@@ -990,7 +999,7 @@ class PlayerActivity : Activity(), Host {
                 }
                 if (cues.isEmpty()) {
                     if (sfNativeCount() > 0 || nativeCue.isNotEmpty()) { LogStore.add("💬 سوفت صب: المسار مش بيتقري كامل — ترجمة لحظية"); runOnUiThread { sfStartLive(eng) }; return@Thread }   // مش قادر أطلّع المسار كله: ترجمة لحظية
-                    say("مفيش سوفت سب في الفيديو ده (لا ملف جنبه ولا مسار جواه) — لو الترجمة محروقة على الصورة استخدم «ترجمة الهارد سب»")
+                    sfNote("مفيش سوفت سب في الفيديو ده (لا ملف جنبه ولا مسار جواه) — لو الترجمة محروقة على الصورة استخدم «ترجمة الهارد سب»", 5000L)
                     return@Thread
                 }
                 if (!auto && SubFileTr.mostlyArabic(cues)) { say("💬 الترجمة دي عربي أصلًا"); return@Thread }
@@ -999,11 +1008,11 @@ class PlayerActivity : Activity(), Host {
                 var lastP = 0L
                 val out = SubFileTr.translate(cues, eng, { pr -> sfBusy = pr; runOnUiThread { updateTr(); try { tvBar?.refresh() } catch (_: Throwable) {} }; val n = System.currentTimeMillis(); if (n - lastP > 1500L) { lastP = n; say(pr) } }, { isFinishing || isDestroyed })
                 if (isFinishing || isDestroyed) return@Thread
-                if (out.error.isNotEmpty()) { say("⚠ " + out.error); return@Thread }
+                if (out.error.isNotEmpty()) { sfNote("⚠ " + out.error, 6000L); return@Thread }
                 var w = 0
                 while ((!::engine.isInitialized || !engineReady) && w++ < 40) { try { Thread.sleep(250L) } catch (_: InterruptedException) {} }
                 sfApply(cues, out, engName)
-            } catch (e: Throwable) { LogStore.err("Player:sfRun", e); say("⚠ فشلت الترجمة: " + (e.message ?: e.javaClass.simpleName).take(80)) }
+            } catch (e: Throwable) { LogStore.err("Player:sfRun", e); sfNote("⚠ فشلت الترجمة: " + (e.message ?: e.javaClass.simpleName).take(80), 6000L) }
             finally { sfBusy = ""; runOnUiThread { updateTr(); try { tvBar?.refresh() } catch (_: Throwable) {} } }
         }.also { it.isDaemon = true }.start()
     }
@@ -1024,7 +1033,7 @@ class PlayerActivity : Activity(), Host {
                 nativeCue = ""
                 sfDoneUri = uri?.toString() ?: ""
                 Thread { try { engine.saveNow() } catch (e: Throwable) { LogStore.err("Player:sfSave", e) } }.start()
-                say("✅ اتترجمت " + subs.size + " جملة بـ " + engName + (if (out.failed > 0) " — " + out.failed + " جملة فضلت بنصها الأصلي" else ""))
+                sfNote("✅ خلصت ترجمة السوفت صب — " + subs.size + " جملة بـ " + engName + (if (out.failed > 0) " — " + out.failed + " جملة فضلت بنصها الأصلي" else ""), 6000L)   // (v670) إشعار أطول
             } catch (e: Throwable) { LogStore.err("Player:sfApply", e); say("⚠ مقدرتش أطبّق الترجمة") }
         }
     }
@@ -1923,7 +1932,7 @@ class PlayerActivity : Activity(), Host {
             h.postDelayed({
                 try {
                     if (isFinishing || isDestroyed || engineStarted || engine.subs.isNotEmpty() || sfBusy.isNotEmpty() || uri?.toString() != key) return@postDelayed
-                    softAuto(vu) { if (Cfg.str("auto_hard", "1") != "0" && (try { TrWizard.hasGeminiKey() } catch (_: Throwable) { false })) sfHard() }
+                    softAuto(vu, 4000L) { if (onNoneIsHard()) sfHard() }
                 } catch (e: Throwable) { LogStore.err("Player:autoSub2", e) }
             }, 1800L)
         } catch (e: Throwable) { LogStore.err("Player:autoSub", e) }
@@ -1937,19 +1946,37 @@ class PlayerActivity : Activity(), Host {
         softAuto(vu) { beginTranslate(false) }
         return true
     }
-    /** (v667) من غير أسئلة: فيه سوفت صب (مسار جوه الفيديو) يترجمه، مفيش ← يترجم ملف الترجمة اللي جنب الفيديو، مفيش خالص ← onNone (ترجمة الصوت) */
-    private fun softAuto(vu: Uri, onNone: () -> Unit) {
+    /** (v670) أوتوماتيك لقى ترجمة مفيش حاجة تتعمل بيها لسه (المشغّل لسه بيحمّل مساراته): لما المسار يظهر نرجع نجرّب تاني مرة واحدة */
+    @Volatile private var softLateKey = ""
+    /** (v670) إشعار أطول من say() (2.3 ث) عشان تلحق تقراه على التلفزيون */
+    private fun sfNote(m: String, ms: Long = 4500L) = runOnUiThread { try { Notice.show(this, m, ms) } catch (_: Throwable) {} }
+    /** (v667) من غير أسئلة: فيه سوفت صب (مسار جوه الفيديو) يترجمه، مفيش ← يترجم ملف الترجمة اللي جنب الفيديو، مفيش خالص ← onNone (ترجمة الصوت)
+     *  (v670) waitMs: لو مفيش حاجة لسه، نستنى المشغّل يخلّص تحميل مساراته (بيتأخر في الملفات الكبيرة/الشبكة) قبل ما نقول «مفيش» */
+    private fun softAuto(vu: Uri, waitMs: Long = 0L, onNone: () -> Unit) {
         say("⏳ بفحص ترجمة الفيديو…")
         Thread {
             try {
                 val side = sfSidecar()
                 val emb = if (vu.scheme == "file" || vu.scheme == "content") SubFileTr.embeddedTracks(applicationContext, vu) else emptyList()
-                val nat = if (emb.isEmpty()) sfNativeCount() else 0
-                LogStore.add("💬 سوفت صب (أوتوماتيك): ملف جنب الفيديو=" + (side?.name ?: "لا") + " · مسارات جوه=" + emb.size + " · مسارات المشغّل=" + nat)
-                if (side == null && emb.isEmpty() && nat == 0) { runOnUiThread { onNone() }; return@Thread }
+                var nat = if (emb.isEmpty()) sfNativeCount() else 0
+                var waited = 0L
+                while (side == null && emb.isEmpty() && nat == 0 && waited < waitMs && !isFinishing && !isDestroyed) {
+                    try { Thread.sleep(500L) } catch (_: InterruptedException) { break }
+                    waited += 500L
+                    nat = sfNativeCount()
+                }
+                LogStore.add("💬 سوفت صب (أوتوماتيك): ملف جنب الفيديو=" + (side?.name ?: "لا") + " · مسارات جوه=" + emb.size + " · مسارات المشغّل=" + nat + (if (waited > 0) " · استنيت ${waited}ms" else ""))
+                if (side == null && emb.isEmpty() && nat == 0) {
+                    softLateKey = vu.toString()   // لو المسار ظهر بعد كده (onTracksChanged) هنجرّب تاني
+                    sfNote("ℹ مفيش سوفت صب ولا ملف ترجمة للفيديو ده" + (if (onNoneIsHard()) " — هجرّب الهارد صب" else ""), 3800L)
+                    runOnUiThread { onNone() }; return@Thread
+                }
                 val eng = try { TrWizard.savedPlan()?.let { if (it.offline) "google" else "gemini" } } catch (_: Throwable) { null } ?: if (TrWizard.hasGeminiKey()) "gemini" else "google"
+                val what = if (emb.isNotEmpty()) "سوفت صب جوه الفيديو" else if (side != null) "ملف الترجمة «" + side.name + "»" else "ترجمة الفيديو الأصلية"
+                sfNote("💬 لقيت $what — بترجمه تلقائي دلوقتي")
                 runOnUiThread {
                     if (isFinishing || isDestroyed) return@runOnUiThread
+                    if (waited > 0L && engineStarted) return@runOnUiThread   // (v670) استنينا ومعاد ما إنت بدأت ترجمة الصوت بإيدك: ما نلخبطش
                     if (emb.isNotEmpty()) sfRun("soft", eng, null, emb[0].first, true)       // سوفت صب جوه الفيديو (ولو عربي/فاضي بيكمّل على الملف اللي جنبه)
                     else if (side != null) sfRun("soft", eng, null, -2, true)                // ملف الترجمة اللي جنب الفيديو
                     else sfRun("soft", eng, null, -1, true)                                  // مسار المشغّل (لحظي لو مش بيتقري)
@@ -1957,6 +1984,7 @@ class PlayerActivity : Activity(), Host {
             } catch (e: Throwable) { LogStore.err("Player:softAuto", e); runOnUiThread { onNone() } }
         }.also { it.isDaemon = true }.start()
     }
+    private fun onNoneIsHard(): Boolean = Cfg.str("auto_hard", "1") != "0" && (try { TrWizard.hasGeminiKey() } catch (_: Throwable) { false })
     // (v638) كاش فحص السوفت صب (ملف جنب الفيديو / مسارات جواه) عشان زرار «ترجمة السوفت صب» يظهر في قايمة ▶ ترجم من غير تأخير
     @Volatile private var softProbeKey = ""
     @Volatile private var softProbeHas = false
@@ -4763,6 +4791,21 @@ class PlayerActivity : Activity(), Host {
                                     .setOverrideForType(androidx.media3.common.TrackSelectionOverride(pick.mediaTrackGroup, 0)).build() }
                             }
                             log("💬 ترجمة أصلية في الفيديو: ${tg.size} مسار")
+                        }
+                    }
+                    // (v670) الأوتوماتيك كان فحص قبل ما المشغّل يحمّل مساراته وقال «مفيش»: دلوقتي المسار ظهر ← نجرّب مرة واحدة
+                    if (t.groups.any { it.type == C.TRACK_TYPE_TEXT && it.length > 0 && it.isSupported }) {
+                        val lk = softLateKey; val cu = uri?.toString() ?: ""
+                        if (lk.isNotEmpty() && lk == cu) {
+                            softLateKey = ""
+                            runOnUiThread {
+                                try {
+                                    if (!isFinishing && !isDestroyed && ::engine.isInitialized && !engineStarted && engine.subs.isEmpty() && sfBusy.isEmpty() && sfLive.isEmpty() && Cfg.str("auto_sub", "1") != "0" && !noSub && !remote) {
+                                        LogStore.add("💬 سوفت صب: المسار ظهر متأخر — بجرّب الترجمة الأوتوماتيك تاني")
+                                        uri?.let { vu2 -> softAuto(vu2, 0L) { } }
+                                    }
+                                } catch (e: Throwable) { LogStore.err("Player:softLate", e) }
+                            }
                         }
                     }
                 } catch (e: Throwable) { LogStore.err("Player:textTrack", e) }
