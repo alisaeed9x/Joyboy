@@ -68,6 +68,12 @@ object TvInput {
             "prev" -> KeyEvent.KEYCODE_MEDIA_PREVIOUS
             "home" -> KeyEvent.KEYCODE_HOME
             "recents" -> KeyEvent.KEYCODE_APP_SWITCH
+            // (v669) أزرار ريموت الموبايل الجديدة: تشغيل · إيقاف مؤقت · قناة +/− · المداخل
+            "play" -> KeyEvent.KEYCODE_MEDIA_PLAY
+            "pause" -> KeyEvent.KEYCODE_MEDIA_PAUSE
+            "ch_up" -> KeyEvent.KEYCODE_CHANNEL_UP
+            "ch_down" -> KeyEvent.KEYCODE_CHANNEL_DOWN
+            "inputs" -> KeyEvent.KEYCODE_TV_INPUT
             else -> return
         }
         worker.execute { try { dispatchKey(k, code) } catch (e: Throwable) { LogStore.err("TvInput:key", e) } }
@@ -84,6 +90,20 @@ object TvInput {
                 mediaKey(code); return
             }
             "next", "prev" -> { mediaKey(code); return }
+            // (v669) تشغيل / إيقاف مؤقت (منفصلين): مشغّلنا ← الموسيقى بتاعتنا ← أي تطبيق تاني بزراير الميديا
+            "play", "pause" -> {
+                val want = (k == "play")
+                if (PlayerActivity.brain(if (want) "play" else "pause", org.json.JSONObject()) != null) return
+                if (a != null) { if (want) { if (!MusicEngine.isPlaying) MusicEngine.resume() } else { if (MusicEngine.isPlaying) MusicEngine.pause() }; return }
+                mediaKey(code); return
+            }
+            // (v669) المداخل: بنقلب بين مداخل التلفزيون (HDMI وغيره) مدخل ورا مدخل
+            "inputs" -> { nextInput(code); return }
+            // (v669) القنوات: لو نافذتنا قدّام بنحقن الزرار، غير كده زراير الميديا (للتيونر/تطبيقات القنوات)
+            "ch_up", "ch_down" -> {
+                if (a != null && inject(code)) return
+                mediaKey(code); return
+            }
         }
         if (a != null && inject(code)) return
         if (!TvAccess.key(code)) needAccess()
@@ -102,6 +122,23 @@ object TvInput {
             am.dispatchMediaKeyEvent(KeyEvent(t, t, KeyEvent.ACTION_DOWN, code, 0))
             am.dispatchMediaKeyEvent(KeyEvent(t, t + 40L, KeyEvent.ACTION_UP, code, 0))
         } catch (e: Throwable) { LogStore.err("TvInput:media", e) }
+    }
+
+    private var inputIdx = -1
+
+    /** (v669) زرار «المداخل»: بيفتح المدخل اللي بعد الحالي من مداخل التلفزيون (HDMI/AV…). مفيش مداخل ظاهرة ← بيجرّب زرار المداخل بتاع السيستم */
+    private fun nextInput(code: Int) {
+        val c = TvLink.appCtx() ?: return
+        try {
+            val tm = c.getSystemService(Context.TV_INPUT_SERVICE) as android.media.tv.TvInputManager
+            val list = tm.tvInputList.filter { it.isPassthroughInput }.sortedBy { it.id }
+            if (list.isEmpty()) { mediaKey(code); return }
+            inputIdx = (inputIdx + 1) % list.size
+            val t = list[inputIdx]
+            val lab = try { ((t.loadCustomLabel(c) ?: t.loadLabel(c))?.toString() ?: t.id) } catch (_: Throwable) { t.id }
+            c.startActivity(Intent(Intent.ACTION_VIEW, android.media.tv.TvContract.buildChannelUriForPassthroughInput(t.id)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            main.post { try { Toast.makeText(c, "🔌 " + lab, Toast.LENGTH_SHORT).show() } catch (_: Throwable) {} }
+        } catch (e: Throwable) { LogStore.err("TvInput:inputs", e); mediaKey(code) }
     }
 
     private fun goHome() {

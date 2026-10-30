@@ -128,7 +128,7 @@ class JoystickView(ctx: Context, private val onKey: (String) -> Unit) : View(ctx
     }
 }
 
-/** (v590) شاشة كنترولر التلفزيون (v603: الريموت الوحيد بعد مسح القديم): جويستيك بدايرة OK + ⚙ إعدادات البرنامج (فوق شمال) · 🏠 رئيسية (فوق يمين) · ↩ رجوع (تحت في النص — v643 مفيش زرار إغلاق، الإغلاق بزرار/إيماءة الرجوع بتاعة الموبايل) · 🎤 بحث صوتي (تحت يمين) · (v637/v643) + فوق − صوت التلفزيون على اليمين تحت 🏠 */
+/** (v590) شاشة كنترولر التلفزيون (v603: الريموت الوحيد بعد مسح القديم): جويستيك بدايرة OK + ⚙ إعدادات البرنامج (فوق شمال) · 🏠 رئيسية (فوق يمين) · ↩ رجوع (تحت في النص — v643 مفيش زرار إغلاق، الإغلاق بزرار/إيماءة الرجوع بتاعة الموبايل) · 🎤 بحث صوتي (تحت يمين) · (v637/v643) + فوق − صوت التلفزيون على اليمين تحت 🏠 · (v669) عمود أزرار شمال: تشغيل/إيقاف/كتم/قناة±/المداخل */
 object ControllerPad {
     fun show(act: Activity, onClose: (() -> Unit)? = null) {
         try {
@@ -166,6 +166,29 @@ object ControllerPad {
                 }
             }
             volH.post(volSync)
+
+            // (v669) عمود أزرار على الحافة الشمال (قصاد سلايدر الصوت): ▶ تشغيل · ⏸ إيقاف مؤقت · 🔇 كتم · CH+ · CH− · 🔌 المداخل
+            val colTop = dp(130); val colBottom = dp(130)
+            val avail = dm.heightPixels - colTop - colBottom
+            val bs = min(dp(52), avail / 6 - dp(6)).coerceAtLeast(dp(36))
+            val col = android.widget.LinearLayout(act).apply { orientation = android.widget.LinearLayout.VERTICAL; gravity = Gravity.CENTER; layoutDirection = View.LAYOUT_DIRECTION_LTR }
+            fun side(txt: String, desc: String, color: Int, onClick: () -> Unit) {
+                val b = TextView(act).apply {
+                    text = txt; textSize = if (txt.length > 2) 13f else 22f; setTextColor(Color.WHITE); this.gravity = Gravity.CENTER; includeFontPadding = false
+                    typeface = android.graphics.Typeface.DEFAULT_BOLD
+                    contentDescription = desc; elevation = dp(4).toFloat()
+                    background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(color); setStroke(2, 0x66FFFFFF) }
+                    setOnClickListener { performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP); try { onClick() } catch (e: Throwable) { LogStore.err("ControllerPad:side", e) } }
+                }
+                col.addView(b, android.widget.LinearLayout.LayoutParams(bs, bs).apply { setMargins(0, dp(3), 0, dp(3)) })
+            }
+            side("▶", "تشغيل", 0xFF1E9E86.toInt()) { sendKey("play") }
+            side("⏸", "إيقاف مؤقت", 0xFFC98A1B.toInt()) { sendKey("pause") }
+            side("🔇", "كتم الصوت", 0xFFD94A6E.toInt()) { RemoteClient.cmd("mute") }
+            side("CH+", "قناة +", 0xFF5560B8.toInt()) { sendKey("ch_up") }
+            side("CH−", "قناة −", 0xFF5560B8.toInt()) { sendKey("ch_down") }
+            side("🔌", "المداخل", 0xFF7B4FBF.toInt()) { sendKey("inputs") }
+            root.addView(col, FrameLayout.LayoutParams(bs, -1, Gravity.LEFT).apply { topMargin = colTop; bottomMargin = colBottom; leftMargin = dp(20) })
 
             // (v662) الجويستيك متسنتر ومش بيلمس سلايدر الصوت اللي على اليمين
             val size = min(min(dm.widthPixels - dp(2 * 84), dp(340)), dm.heightPixels - dp(2 * 220)).coerceAtLeast(dp(200))   // (v662) عرض بيسيب مكان للسلايدر على اليمين
