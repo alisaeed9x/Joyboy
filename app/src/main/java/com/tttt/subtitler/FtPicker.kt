@@ -38,7 +38,8 @@ import java.util.Locale
  */
 class FtPicker(
     private val act: Activity, private val ui: Ui, private val th: Theme, private val tv: Boolean,
-    private val onSend: (List<FtPick>) -> Unit, private val onBack: () -> Unit
+    private val onSend: (List<FtPick>) -> Unit, private val onBack: () -> Unit,
+    private val title: String = "اختار الملفات", private val onMenu: (() -> Unit)? = null
 ) {
     class PItem(val name: String, val size: Long, val date: Long, val dir: Boolean, val file: File?, val uri: Uri?) {
         val key: String get() = file?.absolutePath ?: uri.toString()
@@ -66,6 +67,7 @@ class FtPicker(
     private lateinit var info: TextView
     private lateinit var access: TextView
     private lateinit var barInfo: TextView
+    private lateinit var sendBar: LinearLayout   // (v654) شريط الإرسال الأحمر — بيظهر بس لما يبقى فيه ملف متحدّد
     private lateinit var list: ListView
     private val adapter = Adapter()
     val view: View
@@ -88,7 +90,8 @@ class FtPicker(
         val root = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL }
         val head = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
         head.addView(pill("→", false) { onBack() }, lp(-2, -2).apply { marginEnd = ui.dp(8) })
-        head.addView(ui.text("اختار الملفات", if (tv) 24f else 19f, th.primary, true), lp(0, -2, 1f))
+        head.addView(ui.text(title, if (tv) 24f else 19f, th.primary, true), lp(0, -2, 1f))
+        if (onMenu != null) head.addView(pill("⋯", false) { onMenu.invoke() }, lp(-2, -2))
         root.addView(head, lp(-1, -2))
 
         val hs = HorizontalScrollView(act).apply { isHorizontalScrollBarEnabled = false; addView(chipsBox, FrameLayout.LayoutParams(-2, -2)) }
@@ -130,10 +133,19 @@ class FtPicker(
 
         barInfo = ui.text("", if (tv) 16f else 13f, th.text, true).apply { setPadding(ui.dp(4), ui.dp(6), ui.dp(4), ui.dp(2)) }
         root.addView(barInfo, lp(-1, -2))
-        val bar = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL }
-        bar.addView(pill("📤 إرسال", true) { send() }, lp(0, -2, 1.3f).apply { marginEnd = ui.dp(4) })
-        bar.addView(pill("☑ الكل", false) { selectAllShown() }, lp(0, -2, 1f).apply { marginEnd = ui.dp(4) })
-        bar.addView(pill("✕ إلغاء التحديد", false) { sel.clear(); adapter.notifyDataSetChanged(); updateBar() }, lp(0, -2, 1.2f))
+        val bar = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; visibility = View.GONE }
+        sendBar = bar
+        val red = IconTextView(act).apply {
+            text = "📤 إرسال"; textSize = if (tv) 19f else 16f; gravity = Gravity.CENTER; maxLines = 1; isFocusable = true; isClickable = true
+            setTypeface(typeface, android.graphics.Typeface.BOLD); setTextColor(Color.WHITE)
+            setPadding(ui.dp(18), ui.dp(if (tv) 14 else 12), ui.dp(18), ui.dp(if (tv) 14 else 12))
+            fun paint(foc: Boolean) { background = ui.box(th.danger, if (foc) th.accent else th.danger, 20, if (foc) 3 else 1) }
+            paint(false)
+            setOnFocusChangeListener { _, foc -> paint(foc) }
+            setOnClickListener { send() }
+        }
+        bar.addView(red, lp(0, -2, 1f).apply { marginEnd = ui.dp(4) })
+        bar.addView(pill("✕", false) { sel.clear(); adapter.notifyDataSetChanged(); updateBar() }, lp(-2, -2))
         root.addView(bar, lp(-1, -2).apply { topMargin = ui.dp(4) })
         view = root
         renderChips()
@@ -301,6 +313,9 @@ class FtPicker(
         if (it.dir) { val f = it.file ?: return; openSec(section, f) } else toggle(it)
     }
 
+    /** (v654) بعد بدء الإرسال: نفضّي التحديد عشان الرجوع للرئيسية يبقى نضيف */
+    fun clearSel() { sel.clear(); try { adapter.notifyDataSetChanged() } catch (_: Throwable) {}; updateBar() }
+
     private fun selectAllShown() {
         val files = shown.filter { !it.dir }
         val allOn = files.isNotEmpty() && files.all { sel.containsKey(it.key) }
@@ -312,7 +327,9 @@ class FtPicker(
         var total = 0L
         var pending = false
         for (x in sel.values) { if (x.dir) { val s = dirSize[x.key]; if (s == null) pending = true else total += s } else total += x.size }
-        barInfo.text = if (sel.isEmpty()) "مفيش ملفات متحدّدة" else "اتحدّد " + sel.size + " · " + Sniff.fmtSize(total) + (if (pending) " …" else "")
+        if (this::sendBar.isInitialized) sendBar.visibility = if (sel.isEmpty()) View.GONE else View.VISIBLE
+        barInfo.visibility = if (sel.isEmpty()) View.GONE else View.VISIBLE
+        barInfo.text = if (sel.isEmpty()) "" else "اتحدّد " + sel.size + " · " + Sniff.fmtSize(total) + (if (pending) " …" else "")
     }
 
     private fun send() {

@@ -114,7 +114,7 @@ class FileTransferActivity : Activity() {
     }
 
     override fun onBackPressed() {
-        if (curTag == "picker" && picker?.back() == true) return
+        if ((curTag == "picker" || curTag == "home") && picker?.back() == true) return
         if (curTag == "tvbrowse" && backHook?.invoke() == true) return
         pop()
     }
@@ -214,69 +214,27 @@ class FileTransferActivity : Activity() {
     private fun typeIcon(t: String) = when (t) { "tv" -> "📺"; "tablet" -> "📱"; else -> "📱" }
 
     // ═════════════ الرئيسية ═════════════
+    // (v654) «نقل الملفات» = مدير ملفات عادي ← دوسة على ملف ← زرار «إرسال» أحمر ← رادار كبير بالأجهزة المتصلة بس
+    private var homePk: FtPicker? = null
+
     private fun buildHome(): View {
-        val root = col()
-        val gear = btn("⚙") { go("settings") { buildSettings() } }
-        root.addView(header("📤 نقل الملفات", "جهازك: " + FtIdentity.name() + " · " + FtIdentity.typeLabel(FtIdentity.type()), gear))
-        val body = col()
-        // جلسات شغّالة / طلبات مستنية
-        val live = col()
-        body.addView(live, lp(-1, -2).apply { topMargin = ui.dp(8) })
-        fun fillLive() {
-            live.removeAllViews()
-            for (s in FtHub.sessions.filter { it.active }.take(4)) {
-                val pend = !s.outgoing && s.status == FtSession.WAITING && s.decision == 0
-                val t = if (pend) "📥 طلب من «" + s.peerName + "» — " + s.files.size + " ملف · اضغط للرد"
-                else (if (s.outgoing) "📤 بيتبعت لـ «" else "📥 بيستقبل من «") + s.peerName + "» · " + s.percent() + "%"
-                val v = ui.text(t, if (tvMode) 16f else 13.5f, th.text, true).apply { setPadding(ui.dp(14), ui.dp(12), ui.dp(14), ui.dp(12)) }
-                styleFocus(v, th.card, 14, true)
-                v.setOnClickListener { go("progress") { buildProgress(s) } }
-                live.addView(v, lp(-1, -2).apply { bottomMargin = ui.dp(6) })
-            }
-        }
-        fillLive(); updater = { fillLive() }
+        val pk = homePk ?: FtPicker(this, ui, th, tvMode, { picks -> presetPicks = picks; radarMode = "all"; go("radar") { buildRadar() } }, { pop() }, "📤 نقل الملفات", { homeMenu() }).also { homePk = it }
+        picker = pk
+        (pk.view.parent as? ViewGroup)?.removeView(pk.view)
+        return pk.view
+    }
 
-        data class Card(val icon: String, val title: String, val desc: String, val go: () -> Unit)
-        val cards = ArrayList<Card>()
-        if (tvMode) {
-            cards.add(Card("📲", "من التلفزيون للموبايل", "ابعت ملفات من التلفزيون لموبايل أو تابلت قريب") { radarMode = "tv2m"; go("radar") { buildRadar() } })
-        } else {
-            cards.add(Card("📱", "موبايل ← موبايل", "ابعت ملفات لموبايل أو تابلت قريب منك") { radarMode = "m2m"; go("radar") { buildRadar() } })
-            cards.add(Card("📺", "موبايل ← تلفزيون", "ابعت فيديوهات وصور وملفات للتلفزيون") { radarMode = "m2tv"; go("radar") { buildRadar() } })
-            cards.add(Card("📲", "تلفزيون ← موبايل", "تصفّح ملفات التلفزيون ونزّل منها") { radarMode = "tv2m"; go("radar") { buildRadar() } })
-        }
-        cards.add(Card("📂", "مدير الملفات", "استعرض وأدِر الملفات والمجلدات") { try { startActivity(Intent(this, FileManagerActivity::class.java)) } catch (e: Throwable) { LogStore.err("FtUi:fm", e) } })
-
-        val per = if (tvMode) 4 else 2
-        var rowL: LinearLayout? = null
-        for ((i, c) in cards.withIndex()) {
-            if (i % per == 0) { rowL = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL }; body.addView(rowL, lp(-1, -2).apply { topMargin = ui.dp(8) }) }
-            val cv = col().apply { setPadding(ui.dp(14), ui.dp(16), ui.dp(14), ui.dp(16)); gravity = Gravity.CENTER_HORIZONTAL }
-            val ic = TextView(this).apply {
-                text = c.icon; textSize = if (tvMode) 34f else 30f; gravity = Gravity.CENTER
-                background = GradientDrawable(GradientDrawable.Orientation.TL_BR, intArrayOf(th.primary, th.accent)).apply { cornerRadius = ui.dp(18).toFloat() }
-            }
-            cv.addView(ic, lp(ui.dp(if (tvMode) 72 else 62), ui.dp(if (tvMode) 72 else 62)))
-            cv.addView(ui.text(c.title, if (tvMode) 19f else 15.5f, th.text, true).apply { gravity = Gravity.CENTER; setPadding(0, ui.dp(10), 0, ui.dp(2)) })
-            cv.addView(ui.text(c.desc, if (tvMode) 14f else 12f, th.muted).apply { gravity = Gravity.CENTER })
-            styleFocus(cv, th.card, 18)
-            cv.setOnClickListener { c.go() }
-            rowL!!.addView(cv, lp(0, -2, 1f).apply { setMargins(ui.dp(4), 0, ui.dp(4), 0) })
-        }
-        if (cards.size % per != 0 && !tvMode) rowL?.addView(View(this), lp(0, 1, 1f))
-        val bar = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL }
-        bar.addView(btn("🕘 سجل النقل") { go("history") { buildHistory() } }, lp(0, -2, 1f).apply { marginEnd = ui.dp(4) })
-        bar.addView(btn("🪪 الهوية والإعدادات") { go("settings") { buildSettings() } }, lp(0, -2, 1f))
-        body.addView(bar, lp(-1, -2).apply { topMargin = ui.dp(14) })
-        body.addView(ui.text(lanLine(), if (tvMode) 15f else 12f, th.muted).apply { gravity = Gravity.CENTER; setPadding(0, ui.dp(12), 0, 0) })
-        body.addView(ui.text("🔒 الاتصال مشفّر وكل استقبال بيستنى موافقتك — شغّال من غير إنترنت", if (tvMode) 14f else 11.5f, th.muted).apply { gravity = Gravity.CENTER; setPadding(0, ui.dp(4), 0, 0) })
-        root.addView(scroll(body), lp(-1, 0, 1f))
-        return root
+    private fun homeMenu() {
+        val labels = ArrayList<String>(); val acts = ArrayList<() -> Unit>()
+        labels.add("🕘 سجل النقل"); acts.add { go("history") { buildHistory() } }
+        labels.add("🪪 الهوية والإعدادات"); acts.add { go("settings") { buildSettings() } }
+        if (!tvMode) { labels.add("📲 ملفات التلفزيون"); acts.add { radarMode = "tv2m"; go("radar") { buildRadar() } } }
+        AlertDialog.Builder(this).setItems(labels.toTypedArray()) { _, i -> acts[i]() }.setNegativeButton("إغلاق", null).show()
     }
 
     // ═════════════ الرادار ═════════════
     private fun modeTitle(): String = when (radarMode) {
-        "m2m" -> "اختار الجهاز المستهدف"; "m2tv" -> "اختار التلفزيون"
+        "all" -> "اختار الجهاز اللي هتبعتله"; "m2m" -> "اختار الجهاز المستهدف"; "m2tv" -> "اختار التلفزيون"
         "tv2m" -> if (tvMode) "اختار الموبايل" else "اختار التلفزيون"
         else -> "اختار الجهاز"
     }
@@ -285,22 +243,23 @@ class FileTransferActivity : Activity() {
         "m2m" -> p.ft && !p.isTv
         "m2tv" -> p.isTv
         "tv2m" -> if (tvMode) p.ft && !p.isTv else p.isTv
-        else -> p.ft || p.link != null
+        else -> p.ft || p.link != null || p.qs
     }
 
     private fun buildRadar(): View {
         val root = col()
         val refresh = btn("🔄") { startScan(true) }
         root.addView(header(modeTitle(), "الأجهزة القريبة على نفس الشبكة", refresh))
-        val rv = FtRadarView(this, th).apply { meName = FtIdentity.name(); meType = FtIdentity.type() }
+        val rv = FtRadarView(this, th).apply { meName = FtIdentity.name(); meType = FtIdentity.type(); onPick = { id -> peers[id]?.let { onPeer(it) } } }
         radar = rv
-        root.addView(rv, lp(-1, ui.dp(if (tvMode) 300 else 250)).apply { topMargin = ui.dp(6) })
+        // (v654) الرادار كبير: على الموبايل ياخد الشاشة كلها والأجهزة بتتدوس عليه مباشرة؛ على التلفزيون القايمة تحته للـD-pad
+        root.addView(rv, if (tvMode) lp(-1, ui.dp(340)).apply { topMargin = ui.dp(6) } else lp(-1, 0, 1f).apply { topMargin = ui.dp(6) })
         val st = ui.text("", if (tvMode) 16f else 13f, th.muted).apply { gravity = Gravity.CENTER; setPadding(0, ui.dp(4), 0, ui.dp(6)) }
         radarStatus = st
         root.addView(st, lp(-1, -2))
         val lst = col()
         radarList = lst
-        root.addView(scroll(lst), lp(-1, 0, 1f))
+        root.addView(scroll(lst), if (tvMode) lp(-1, 0, 1f) else lp(-1, 0, 0f))
         renderPeers()
         startScan(false)
         return root
@@ -342,7 +301,7 @@ class FileTransferActivity : Activity() {
             row.name.text = displayName(p)
             row.glyph.type = p.type; row.glyph.invalidate()
             row.sub.text = FtIdentity.typeLabel(p.type) + " · " + p.ip + qualityOf(p)
-            row.badge.text = if (p.ft) "🔒 آمن" else "🔗 ربط"
+            row.badge.text = if (p.qs) "📡 Quick Share" else if (p.ft) "🔒 آمن" else "🔗 ربط"
         }
         val n = vis.size
         radarStatus?.text = if (scanning && n == 0) "⏳ بدوّر على أجهزة قريبة…" else if (n == 0) "مفيش أجهزة ظاهرة — اتأكد إن الجهاز التاني فاتح «نقل الملفات» وعلى نفس الواي فاي" else if (scanning) "⏳ لقيت $n جهاز — لسه بدوّر…" else "لقيت $n جهاز — اضغط على جهاز للإرسال"
@@ -364,9 +323,9 @@ class FileTransferActivity : Activity() {
                 radar?.scanning = false
                 val ids = res.map { it.id }.toSet()
                 for (p in res) { peers[p.id] = p; miss.remove(p.id) }
-                for (id in peers.keys.toList()) { if (id !in ids) { val m = (miss[id] ?: 0) + 1; if (m >= 2) { peers.remove(id); miss.remove(id) } else miss[id] = m } }
+                for (id in peers.keys.toList()) { if (id !in ids) { val m = (miss[id] ?: 0) + 1; if (m >= 1) { peers.remove(id); miss.remove(id) } else miss[id] = m } }
                 renderPeers()
-                h.postDelayed({ if (curTag == "radar" && !isFinishing && !isDestroyed) startScan(false) }, 9000L)
+                h.postDelayed({ if (curTag == "radar" && !isFinishing && !isDestroyed) startScan(false) }, 4000L)
             }
         }.also { it.isDaemon = true }.start()
     }
@@ -377,11 +336,10 @@ class FileTransferActivity : Activity() {
             else Notice.show(this, "⚠ التلفزيون ده محتاج تحديث — أو ابعت من التلفزيون نفسه (نقل الملفات ← من التلفزيون للموبايل)", 4500L)
             return
         }
-        if (!p.ft && p.link == null) { Notice.show(this, "⚠ الجهاز ده مش بيدعم النقل", 2500L); return }
+        if (!p.ft && p.link == null && !p.qs) { Notice.show(this, "⚠ الجهاز ده مش بيدعم النقل", 2500L); return }
         val pre = presetPicks
         if (pre != null) {
-            AlertDialog.Builder(this).setTitle("إرسال").setMessage("تبعت " + pre.size + " ملف لـ «" + p.name + "»؟")
-                .setPositiveButton("إرسال") { _, _ -> startSend(p, pre) }.setNegativeButton("إلغاء", null).show()
+            if (p.qs) shareQuick(p, pre) else startSend(p, pre)   // (v654) دوسة على الجهاز = إرسال مباشرة
             return
         }
         go("picker") { buildPicker(p) }
@@ -393,12 +351,28 @@ class FileTransferActivity : Activity() {
         return pk.view
     }
 
+    /** (v654) جهاز Quick Share: بنسلّم الملفات لشاشة المشاركة الرسمية (بروتوكول Quick Share مش مدمج في Joyboy) */
+    private fun shareQuick(p: FtPeer, picks: List<FtPick>) {
+        try {
+            val uris = ArrayList<Uri>()
+            for (k in picks) { val u = if (k.uri.scheme == "file") FmUtil.uriFor(this, File(k.uri.path ?: continue)) else k.uri; uris.add(u) }
+            val it = Intent(if (uris.size == 1) Intent.ACTION_SEND else Intent.ACTION_SEND_MULTIPLE).apply {
+                type = "*/*"
+                if (uris.size == 1) putExtra(Intent.EXTRA_STREAM, uris[0]) else putParcelableArrayListExtra(Intent.EXTRA_STREAM, uris)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            Notice.show(this, "📡 اختار Quick Share ثم «" + p.name + "»", 4500L)
+            startActivity(Intent.createChooser(it, "Quick Share"))
+        } catch (e: Throwable) { LogStore.err("FtUi:qs", e); Notice.show(this, "⚠ فشل فتح المشاركة", 2500L) }
+    }
+
     private fun startSend(p: FtPeer, picks: List<FtPick>) {
         val s = try { if (p.ft) FtSend.start(applicationContext, p, picks) else FtLinkSend.start(applicationContext, p, picks) }
         catch (e: Throwable) { LogStore.err("FtUi:send", e); Notice.show(this, "⚠ فشل بدء الإرسال", 2500L); return }
         FtUiState.picks[s.sid] = picks
         FtUiState.peers[s.sid] = p
         presetPicks = null
+        homePk?.clearSel()
         shownSids.add(s.sid)
         while (stack.size > 1) stack.removeAt(stack.size - 1)
         go("progress") { buildProgress(s) }

@@ -95,6 +95,7 @@ class MainActivity : Activity() {
     private var musicUi: MusicUi? = null            // (v189) صفحة الموسيقى
     private var tasksUiRef: TasksUi? = null
     private var showTabFn: (Int) -> Unit = {}
+    private var mediaSw: MediaSwitch? = null   // (v654) زرارين فيديوهات/موسيقى فوق «ميديا»
     private var musicOpenFn: (() -> Unit)? = null   // (v337) يفتح صفحة الموسيقى ومشغّلها الكامل (لتشغيل صوت يوتيوب)
     private var ytOpenFn: ((String) -> Unit)? = null   // (v327) فتح تفاصيل فيديو يوتيوب من إشعار
     private var tasksDlgRefresh: (() -> Unit)? = null
@@ -758,7 +759,7 @@ class MainActivity : Activity() {
         lib.onYtPick = { n -> playYt(n.id, n.title) }   // (v344) بحث الفيديوهات: اقتراح يوتيوب = فيديو
         lib.onWebSearch = { q -> webSearch(q) }
         lib.onUniSearch = { q -> globalSearch(q) }   // (v469) D4 بحث شامل موسّع (مكتبة + موسيقى + سجل يوتيوب + أقسام الإعدادات)
-        lib.onDash = { a -> when (a) { "yt" -> showTabFn(4); "music" -> showTabFn(1); "browser" -> { save(); NavAnim.set(curTab, 2); startActivity(Intent(this, BrowserActivity::class.java)) }; "transfer" -> startActivity(Intent(this, TransferActivity::class.java)); "files" -> startActivity(Intent(this, FileManagerActivity::class.java)); "tvfiles" -> startActivity(Intent(this, TvFilesActivity::class.java)); "tvvideos" -> XferUi.browseTv(this) } }   // (v469) D3 بلاطات لوحة البداية · (v607) مركز النقل
+        lib.onDash = { a -> when (a) { "yt" -> showTabFn(4); "music" -> showTabFn(1); "browser" -> { save(); NavAnim.set(curTab, 2); startActivity(Intent(this, BrowserActivity::class.java)) }; "transfer" -> startActivity(Intent(this, FileTransferActivity::class.java)); "files" -> startActivity(Intent(this, FileManagerActivity::class.java)); "tvfiles" -> startActivity(Intent(this, TvFilesActivity::class.java)); "tvvideos" -> XferUi.browseTv(this) } }   // (v469) D3 بلاطات لوحة البداية · (v607) مركز النقل
         // ===== ترجمة في الخلفية: من ⋮ على الفيديو/الفولدر =====
         fun startBg(vs: List<VideoItem>) {
             ensureKeys {
@@ -874,7 +875,7 @@ class MainActivity : Activity() {
                 }
             } catch (_: Throwable) {}
         }
-        val pane = FrameLayout(this)
+        val pane = SwipeFrame(this)   // (v654) سويب فيديوهات ↔ موسيقى
         // (v310) صفحة الموسيقى بتتبني أول ما تفتحها بس (كانت بتتبني كلها وقت فتح التطبيق وده كان أكتر حاجة بتبطّأ البداية)
         fun ensureMusic(): MusicUi {
             musicUi?.let { return it }
@@ -997,8 +998,16 @@ class MainActivity : Activity() {
         // (v336) الزرار العايم (TasksFab) اتشال مؤقتًا — المهام بقت زرار في الشريط السفلي
         updateTasksFab()
         val shell = LinearLayout(this).apply { orientation = if (tabletShell) LinearLayout.HORIZONTAL else LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_LTR }
-        if (tabletShell) { shell.addView(pane, LinearLayout.LayoutParams(0, -1, 1f)); shell.addView(nav.view, LinearLayout.LayoutParams(ui.dp(80), -1)) }
-        else { shell.addView(pane, LinearLayout.LayoutParams(-1, 0, 1f)); shell.addView(nav.view, LinearLayout.LayoutParams(-1, -2)) }
+        // (v654) «ميديا»: شريط فيديوهات/موسيقى فوق الصفحة (مش في اللايت ولا التلفزيون)
+        val msw = MediaSwitch(this, ui, th) { t -> musicReturnTab = -1; showTabFn(t) }
+        mediaSw = msw
+        pane.enabledSwipe = { !fromPlayer && !tvShellOn && !packageName.endsWith(".lite") && (curTab == 0 || curTab == 1) }
+        pane.onSwipe = { musicReturnTab = -1; showTabFn(if (curTab == 0) 1 else 0) }
+        val paneWrap = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_LTR }
+        if (!packageName.endsWith(".lite") && !DeviceUi.isTv(this)) paneWrap.addView(msw.view, LinearLayout.LayoutParams(-1, -2))
+        paneWrap.addView(pane, LinearLayout.LayoutParams(-1, 0, 1f))
+        if (tabletShell) { shell.addView(paneWrap, LinearLayout.LayoutParams(0, -1, 1f)); shell.addView(nav.view, LinearLayout.LayoutParams(ui.dp(80), -1)) }
+        else { shell.addView(paneWrap, LinearLayout.LayoutParams(-1, 0, 1f)); shell.addView(nav.view, LinearLayout.LayoutParams(-1, -2)) }
         val frame = FrameLayout(this).apply { setBackgroundColor(th.bg); layoutDirection = View.LAYOUT_DIRECTION_LTR }
         tvShellOn = fromTv && !fromPlayer && DeviceUi.isTv(this)
         if (tvShellOn) { try { (nav.view.parent as? android.view.ViewGroup)?.removeView(nav.view) } catch (_: Throwable) {} }   // (v524) تلفزيون: الشريط السفلي بتاع الموبايل (6 أزرار) مشال
@@ -1783,6 +1792,7 @@ class MainActivity : Activity() {
         val n = navUi ?: return
         val liteApp = packageName.endsWith(".lite")
         n.mode(curTab == 4)
+        mediaSw?.show(if (!liteApp && !fromPlayer && !tvShellOn && (curTab == 0 || curTab == 1)) curTab else -1)   // (v654)
         n.set(if (curTab == 4) BottomNav.YT_HOME + (ytUi?.currentTab ?: 0).coerceIn(0, 2) else if (liteApp && curTab == 7) BottomNav.YT_ME else curTab)
     }
     fun openSettingsRoot() { try { settingsShow?.invoke(null) } catch (_: Throwable) {} }

@@ -1020,7 +1020,7 @@ class FileManagerActivity : Activity() {
     /** (v610) موبايل ← تلفزيون: ابعت المحدد (ملفات أو مجلدات بكل اللي جواها) للتلفزيون المقترن */
     private fun sendSelToTv() {
         val paired = try { RemoteClient.lastTv() != null } catch (_: Throwable) { false }
-        if (!paired) { toast("⚠ مفيش تلفزيون مقترن — اقترن من مركز النقل (الرادار)"); try { startActivity(Intent(this, TransferActivity::class.java)) } catch (_: Throwable) {}; return }
+        if (!paired) { toast("⚠ مفيش تلفزيون مقترن — اقترن من مركز النقل (الرادار)"); try { startActivity(Intent(this, FileTransferActivity::class.java)) } catch (_: Throwable) {}; return }
         val files = XExpand.files(selFiles(), 300)
         if (files.isEmpty()) { toast("مفيش ملفات تتبعت"); return }
         XferUi.sendUris(this, files.map { Uri.fromFile(it) }, files.map { it.name })

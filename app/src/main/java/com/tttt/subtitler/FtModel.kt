@@ -21,7 +21,9 @@ object FtState { const val WAIT = 0; const val RUN = 1; const val DONE = 2; cons
 class FtPeer(
     val id: String, val name: String, val type: String, val ip: String, val port: Int,
     val fp: String, val pub: String, val ver: Int, val rtt: Int,
-    val ft: Boolean, val link: RemoteClient.Found? = null
+    val ft: Boolean, val link: RemoteClient.Found? = null,
+    /** (v654) جهاز Quick Share (اتكشف بـ mDNS) — الإرسال ليه عن طريق شاشة المشاركة الرسمية */
+    val qs: Boolean = false
 ) {
     val isTv: Boolean get() = type == "tv"
 }

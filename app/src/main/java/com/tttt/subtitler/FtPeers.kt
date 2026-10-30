@@ -174,6 +174,10 @@ object FtPeers {
         }
         udpT.isDaemon = true; udpT.start()
 
+        // 1.5) (v654) أجهزة Quick Share — mDNS بالتوازي
+        val qsT = Thread { try { FtQuick.discover(a, ms) { p -> if (p.ip != myIp) add(p) } } catch (_: Throwable) {} }
+        qsT.isDaemon = true; qsT.start()
+
         // 2) تلفزيونات الربط القديم (بتشتغل بالتوازي)
         val linkT = Thread {
             try { for (f in RemoteClient.discover(ms)) links[f.ip] = f } catch (_: Throwable) {}
@@ -181,8 +185,8 @@ object FtPeers {
         linkT.isDaemon = true; linkT.start()
 
         // 3) لو البث ما لقاش حاجة في 1.6 ثانية: مسح الشبكة (بيشتغل حتى لو الراوتر بيمنع البث)
-        while (System.currentTimeMillis() - t0 < 1600L && found.isEmpty()) try { Thread.sleep(100) } catch (_: InterruptedException) {}
-        if (found.isEmpty() && base.isNotEmpty()) {
+        while (System.currentTimeMillis() - t0 < 1600L && found.values.none { !it.qs }) try { Thread.sleep(100) } catch (_: InterruptedException) {}
+        if (found.values.none { !it.qs } && base.isNotEmpty()) {
             val ex = Executors.newFixedThreadPool(40)
             for (i in 1..254) {
                 val ip = "$base.$i"
@@ -200,11 +204,14 @@ object FtPeers {
         }
         try { udpT.join(ms + 800L) } catch (_: InterruptedException) {}
         try { linkT.join(1500L) } catch (_: InterruptedException) {}
+        try { qsT.join(1200L) } catch (_: InterruptedException) {}
 
         // دمج: تلفزيون ظاهر بالاتنين = جهاز واحد فيه الاتنين، وتلفزيون قديم = ظاهر بالربط بس
         val out = ArrayList<FtPeer>()
         val usedLinks = HashSet<String>()
+        val ownIps = found.values.filter { !it.qs }.map { it.ip }.toSet() + links.keys
         for (p in found.values) {
+            if (p.qs && p.ip in ownIps) continue   // نفس الجهاز ظاهر ببروتوكول Joyboy أو الربط ← نفضّل ده
             val l = links[p.ip]
             if (l != null) usedLinks.add(p.ip)
             out.add(if (l != null) FtPeer(p.id, p.name, p.type, p.ip, p.port, p.fp, p.pub, p.ver, p.rtt, true, l) else p)

@@ -53,10 +53,39 @@ object TvUpdate {
         } catch (_: Throwable) { null }
     }
 
+    /** (v657) النسخة القديمة (أحمر) ← سهم ← النسخة الجديدة (أخضر) — بتظهر في كل نوافذ التحديث */
+    fun flowView(a: Context, oldName: String, newName: String): View {
+        val th = Glass.theme(); val d = a.resources.displayMetrics.density
+        val big = try { TvFocus.onCtx(a) } catch (_: Throwable) { false }
+        fun box(label: String, v: String, c: Int) = LinearLayout(a).apply {
+            orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER
+            setPadding((14 * d).toInt(), (10 * d).toInt(), (14 * d).toInt(), (10 * d).toInt())
+            background = GradientDrawable().apply { setColor((c and 0x00FFFFFF) or 0x26000000); cornerRadius = 14 * d; setStroke((2 * d).toInt(), c) }
+            addView(TextView(a).apply { text = label; textSize = if (big) 14f else 12f; setTextColor(th.muted); gravity = Gravity.CENTER })
+            addView(TextView(a).apply { text = v.ifEmpty { "?" }; textSize = if (big) 28f else 22f; setTypeface(typeface, android.graphics.Typeface.BOLD); setTextColor(c); gravity = Gravity.CENTER })
+        }
+        val arrow = object : View(a) {
+            private val p = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
+            override fun onDraw(c: android.graphics.Canvas) {
+                val w = width.toFloat(); val cy = height / 2f; val s = 7f * d
+                p.style = android.graphics.Paint.Style.STROKE; p.strokeWidth = 3f * d; p.strokeCap = android.graphics.Paint.Cap.ROUND; p.color = th.text
+                c.drawLine(w - 2f * d, cy, 3f * d, cy, p)          // من اليمين (القديم) لليسار (الجديد)
+                c.drawLine(3f * d, cy, 3f * d + s * 1.4f, cy - s, p); c.drawLine(3f * d, cy, 3f * d + s * 1.4f, cy + s, p)
+            }
+        }
+        return LinearLayout(a).apply {
+            orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; gravity = Gravity.CENTER
+            setPadding(0, (10 * d).toInt(), 0, (6 * d).toInt())
+            addView(box("الحالية", oldName, th.danger))
+            addView(arrow, LinearLayout.LayoutParams((56 * d).toInt(), (40 * d).toInt()).apply { setMargins((6 * d).toInt(), 0, (6 * d).toInt(), 0) })
+            addView(box("الجديدة", newName, th.success))
+        }
+    }
+
     /** (v563) «موجود كامل»: مفيش تنزيل تاني — تثبيت على طول */
     fun askReady(a: Activity, o: TvLink.Offer, f: File, done: () -> Unit) {
         try {
-            GAlert(a).setTitle("✅ التحديث موجود كامل")
+            GAlert(a).setTitle("✅ التحديث موجود كامل").setView(flowView(a, LinkVer.name(a), o.vname))
                 .setMessage("Subtitler " + o.vname + " نازل كامل على التلفزيون (" + (f.length() / 1048576L) + " MB) — مش محتاج تبعته تاني.\nتثبّته دلوقتي؟")
                 .setPositiveButton("📦 تثبيت") { _, _ -> done(); install(a, f) }
                 .setNegativeButton("لاحقًا") { _, _ -> done() }
@@ -95,7 +124,7 @@ object TvUpdate {
 
     fun ask(a: Activity, o: TvLink.Offer, done: (Boolean) -> Unit) {
         try {
-            GAlert(a).setTitle("⬆ تحديث من الموبايل")
+            GAlert(a).setTitle("⬆ تحديث من الموبايل").setView(flowView(a, LinkVer.name(a), o.vname))
                 .setMessage(if (o.force) "«" + o.from + "» بيدفع تحديث إجباري: Subtitler " + o.vname + " (على التلفزيون دلوقتي: " + LinkVer.name(a) + ").\nتنزّله وتثبّته دلوقتي من الموبايل على الواي فاي؟" else "«" + o.from + "» عليه Subtitler " + o.vname + " (أحدث من اللي على التلفزيون: " + LinkVer.name(a) + ").\nتنزّله دلوقتي من الموبايل على الواي فاي؟")
                 .setPositiveButton("تحديث") { _, _ -> done(true); download(a, o) }
                 .setNegativeButton("لاحقًا") { _, _ -> done(false) }

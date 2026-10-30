@@ -19,7 +19,7 @@ class BottomNav(act: Activity, private val ui: Ui, private val th: Theme, privat
         const val DEAD_AI = 6
         /** (v467) ترتيب الشريط بطلب صاحب التطبيق: الفيديوهات ← يوتيوب ← الموسيقى ← المتصفح ← المزيد.
          *  أي بوابة مش في الشريط بتظهر تلقائيًا جوه «المزيد» — فأي إضافة جديدة هتبان من غير تعديل هنا. */
-        val BAR_ORDER = listOf(0, REMOTE, 4, 1, 2, 8)
+        val BAR_ORDER = listOf(0, REMOTE, 4, 2, 8)   // (v654) 1 (الموسيقى) اتدمجت مع 0 في زرار «ميديا»
         /** (v475) خلايا يوتيوب الافتراضية (مش بوابات): الرئيسية 9 · الاشتراكات 10 · أنا 11 — بتحل محل خلية «يوتيوب» وانت جواه */
         const val YT_HOME = 9; const val YT_SUBS = 10; const val YT_ME = 11
         val NORMAL_ORDER = BAR_ORDER
@@ -32,7 +32,7 @@ class BottomNav(act: Activity, private val ui: Ui, private val th: Theme, privat
     private val lite = act.packageName.endsWith(".lite")
     private val tvDev = try { DeviceUi.isTv(act) } catch (_: Throwable) { false }   // (v521) على التلفزيون زرار الريموت مخفي
     private var order: List<Int> = if (lite) LITE_ORDER else NORMAL_ORDER.filter { it != REMOTE }   // (v554) زرار الريموت اتشال: وضع التلفزيون بزرار عايم
-    private fun cellOf(a: Int): Int = if (a in order) a else if (lite) (if (a == 7) YT_ME else -1) else MORE
+    private fun cellOf(a: Int): Int = if (a in order) a else if (a == 1 && !lite && 0 in order) 0 else if (lite) (if (a == 7) YT_ME else -1) else MORE
     // ===== (v608) «المزيد» = صف تاني بينزلق لفوق جنب الصف الأساسي (بدل قايمة منبثقة). الريل (تابلت) لسه بالقايمة =====
     private var moreOpen = false
     private var moreHost: FrameLayout? = null
@@ -57,11 +57,10 @@ class BottomNav(act: Activity, private val ui: Ui, private val th: Theme, privat
     private fun rebuildMore(act: Activity) {
         val sc = moreScroll ?: return
         val inner = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; gravity = Gravity.CENTER_VERTICAL }
-        val ids = DEFS.indices.filter { it != MORE && it != DEAD_AI && it < YT_HOME && it !in order && !(it == 4 && YT_HOME in order) }
+        val ids = DEFS.indices.filter { it != MORE && it != DEAD_AI && it < YT_HOME && it !in order && !(it == 4 && YT_HOME in order) && !(it == 1 && !lite && 0 in order) }
         val items = ArrayList<MoreItem>()
         for (id in ids.filter { it != 7 }) items.add(MoreItem(DEFS[id].first, DEFS[id].second, id == active) { collapseMore(); onPick(id) })
-        items.add(MoreItem("📤", "نقل", false) { collapseMore(); try { act.startActivity(android.content.Intent(act, TransferActivity::class.java)) } catch (e: Throwable) { LogStore.err("Nav:transfer", e) } })
-        items.add(MoreItem("📡", "نقل ذكي", false) { collapseMore(); try { act.startActivity(android.content.Intent(act, FileTransferActivity::class.java)) } catch (e: Throwable) { LogStore.err("Nav:ft", e) } })   // (v653) نقل الملفات الذكي
+        items.add(MoreItem("📡", "نقل ملفات", false) { collapseMore(); try { act.startActivity(android.content.Intent(act, FileTransferActivity::class.java)) } catch (e: Throwable) { LogStore.err("Nav:ft", e) } })   // (v653) نقل الملفات الذكي
         if (!tvDev) {
             items.add(MoreItem("📺", "وضع TV", PlayTarget.enabled(), {
                 // دوسة طويلة: باقي خيارات التلفزيون
@@ -105,7 +104,7 @@ class BottomNav(act: Activity, private val ui: Ui, private val th: Theme, privat
             orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; setPadding(ui.dp(10), ui.dp(10), ui.dp(10), ui.dp(14))
             background = GradientDrawable().apply { setColor(th.card); cornerRadii = floatArrayOf(ui.dp(18).toFloat(), ui.dp(18).toFloat(), ui.dp(18).toFloat(), ui.dp(18).toFloat(), 0f, 0f, 0f, 0f) }
         }
-        val items = DEFS.indices.filter { it != MORE && it != DEAD_AI && it < YT_HOME && it !in order && !(it == 4 && YT_HOME in order) }.map { id -> id to (DEFS[id].first + "  " + DEFS[id].second) }   // (v467) ديناميكي: أي بوابة جديدة بره الشريط هتظهر هنا لوحدها
+        val items = DEFS.indices.filter { it != MORE && it != DEAD_AI && it < YT_HOME && it !in order && !(it == 4 && YT_HOME in order) && !(it == 1 && !lite && 0 in order) }.map { id -> id to (DEFS[id].first + "  " + DEFS[id].second) }   // (v467) ديناميكي: أي بوابة جديدة بره الشريط هتظهر هنا لوحدها
         if (!tvDev) {   // (v612) إرسال التحديث للتلفزيون: أول حاجة فوق
             val row0 = ui.text("📤  إرسال التحديث للتلفزيون", 15f, th.primary, true).apply { setPadding(ui.dp(14), ui.dp(14), ui.dp(14), ui.dp(14)) }
             Glass.pressable(row0)
@@ -163,7 +162,7 @@ class BottomNav(act: Activity, private val ui: Ui, private val th: Theme, privat
         rowLL = row
         defs.forEachIndexed { idx, d ->
             val icon = IconTextView(act).apply { text = d.first; textSize = 16f; gravity = Gravity.CENTER; includeFontPadding = false }
-            val lab = ui.text(if (lite && idx == 0) "محلي" else d.second, 11f, th.muted, true).apply { gravity = Gravity.CENTER; setSingleLine() }   // (v458) كانت 9f صغيرة قوي
+            val lab = ui.text(if (lite && idx == 0) "محلي" else if (!lite && idx == 0) "ميديا" else d.second, 11f, th.muted, true).apply { gravity = Gravity.CENTER; setSingleLine() }   // (v458) كانت 9f صغيرة قوي
             val cell = LinearLayout(act).apply {
                 orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER; setPadding(0, ui.dp(3), 0, ui.dp(2))
                 val bdg = android.widget.TextView(act).apply {

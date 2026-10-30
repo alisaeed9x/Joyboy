@@ -38,6 +38,7 @@ com/tttt/subtitler/FtModel.kt
 com/tttt/subtitler/FtPeers.kt
 com/tttt/subtitler/FtPicker.kt
 com/tttt/subtitler/FtStore.kt
+com/tttt/subtitler/FtQuick.kt
 com/tttt/subtitler/FtUi.kt
 com/tttt/subtitler/FtViews.kt
 com/tttt/subtitler/FtXfer.kt
@@ -76,6 +77,7 @@ com/tttt/subtitler/LyricsApi.kt
 com/tttt/subtitler/LyricsNorm.kt
 com/tttt/subtitler/Main.kt
 com/tttt/subtitler/MediaOps.kt
+com/tttt/subtitler/MediaSwitch.kt
 com/tttt/subtitler/MiniDock.kt
 com/tttt/subtitler/ModePrompts.kt
 com/tttt/subtitler/ModelWatch.kt
