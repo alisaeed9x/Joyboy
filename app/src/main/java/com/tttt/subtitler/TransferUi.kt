@@ -96,8 +96,46 @@ class TransferActivity : Activity() {
     private val pool = Executors.newFixedThreadPool(3) { r -> Thread(r).also { it.isDaemon = true } }
 
     // ───────── دورة الحياة ─────────
+    /** (v661) «مركز النقل» القديم اتشال من الواجهة: أي دخول عليه (مشاركة من تطبيق تاني SEND/SEND_MULTIPLE أو ويدجت قديم) بيتحوّل لشاشة «نقل الملفات» الجديدة والملفات المشاركة بتروح للرادار جاهزة */
+    @Suppress("DEPRECATION")
+    private fun forwardToNew(): Boolean {
+        try {
+            val src = intent
+            val a = src?.action
+            val uris = ArrayList<Uri>()
+            if (src != null && (a == Intent.ACTION_SEND || a == Intent.ACTION_SEND_MULTIPLE)) {
+                try {
+                    if (a == Intent.ACTION_SEND) src.getParcelableExtra<Uri>(Intent.EXTRA_STREAM)?.let { uris.add(it) }
+                    else src.getParcelableArrayListExtra<Uri>(Intent.EXTRA_STREAM)?.let { uris.addAll(it) }
+                } catch (_: Throwable) {}
+                val cd = src.clipData
+                if (uris.isEmpty() && cd != null) { for (k in 0 until cd.itemCount) { cd.getItemAt(k).uri?.let { uris.add(it) } } }
+            }
+            val go = Intent(this, FileTransferActivity::class.java)
+            if (uris.isNotEmpty()) {
+                val names = ArrayList<String>(); val sizes = LongArray(uris.size)
+                for ((k, u) in uris.withIndex()) {
+                    var nm = ""; var sz = -1L
+                    try {
+                        contentResolver.query(u, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME, android.provider.OpenableColumns.SIZE), null, null, null)?.use { c ->
+                            if (c.moveToFirst()) { nm = c.getString(0) ?: ""; sz = if (!c.isNull(1)) c.getLong(1) else -1L }
+                        }
+                    } catch (_: Throwable) {}
+                    names.add(nm.ifBlank { u.lastPathSegment ?: "file" }); sizes[k] = sz
+                }
+                go.putStringArrayListExtra("ft_uris", ArrayList(uris.map { it.toString() })).putStringArrayListExtra("ft_names", names).putExtra("ft_sizes", sizes)
+                val clip = android.content.ClipData.newRawUri("", uris[0])
+                for (k in 1 until uris.size) clip.addItem(android.content.ClipData.Item(uris[k]))
+                go.clipData = clip; go.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            startActivity(go)
+            return true
+        } catch (e: Throwable) { LogStore.err("TransferActivity:forward", e); return false }
+    }
+
     override fun onCreate(b: Bundle?) {
         super.onCreate(b)
+        if (forwardToNew()) { finish(); return }
         Cfg.init(this)
         gridMode = Cfg.str("xfer_grid", "0") == "1"
         try { RemoteClient.init(this) } catch (_: Throwable) {}

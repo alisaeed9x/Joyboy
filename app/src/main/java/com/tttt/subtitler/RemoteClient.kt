@@ -45,6 +45,8 @@ object RemoteClient {
     /** (v519) إيه اللي ظاهر على التلفزيون (home/player/browser/app/other) وهل خدمة «إمكانية الوصول» شغّالة عليه */
     @Volatile var tvCtx = ""
         private set
+    /** (v662) صوت التلفزيون 0..100 (من /ping) أو -1 لو مش معروف */
+    @Volatile var tvVol = -1
     @Volatile var tvAcc = false
         private set
 
@@ -398,6 +400,7 @@ object RemoteClient {
     }
 
     private fun parseCtx(j: JSONObject) {
+        val vv = j.optInt("vol", -1); if (vv >= 0 && !volBusy) tvVol = vv
         val c = j.optString("ctx"); val a = j.optBoolean("acc")
         if (c.isNotEmpty() && (c != tvCtx || a != tvAcc)) { tvCtx = c; tvAcc = a; fire() }
     }
@@ -451,6 +454,26 @@ object RemoteClient {
                     try { Thread.sleep(12L) } catch (_: InterruptedException) {}
                 }
             } catch (_: Throwable) { synchronized(pMv) { pBusy = false } }
+        }.also { it.isDaemon = true }.start()
+    }
+
+    // (v662) صوت مطلق من السلايدر: بنبعت آخر قيمة بس، من خيط واحد (عشان الترتيب ما يتلخبطش وقت السحب)
+    private val volPend = java.util.concurrent.atomic.AtomicInteger(-1)
+    @Volatile private var volBusy = false
+    fun setVolume(p: Int) {
+        val v = p.coerceIn(0, 100); tvVol = v; volPend.set(v)
+        synchronized(volPend) { if (volBusy) return; volBusy = true }
+        Thread {
+            try {
+                while (true) {
+                    val x = volPend.getAndSet(-1)
+                    if (x < 0) break
+                    post("/cmd", JSONObject().put("c", "vol_set:$x").put("cid", UUID.randomUUID().toString()))
+                }
+            } catch (_: Throwable) {} finally {
+                synchronized(volPend) { volBusy = false }
+                if (volPend.get() >= 0) setVolume(volPend.get())
+            }
         }.also { it.isDaemon = true }.start()
     }
 

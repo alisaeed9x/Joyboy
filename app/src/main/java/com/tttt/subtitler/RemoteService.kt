@@ -96,10 +96,10 @@ class RemoteService : Service() {
         if (Build.VERSION.SDK_INT >= 29) startForeground(NID, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC) else startForeground(NID, n)
     }
 
-    private fun act(label: String, action: String, code: Int): Notification.Action {
+    private fun act(icon: Int, label: String, action: String, code: Int): Notification.Action {
         val pi = PendingIntent.getService(this, code, Intent(this, RemoteService::class.java).setAction(action), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
         @Suppress("DEPRECATION")
-        return Notification.Action.Builder(android.R.drawable.ic_media_play, label, pi).build()
+        return Notification.Action.Builder(android.graphics.drawable.Icon.createWithResource(this, icon), label, pi).build()
     }
 
     private fun build(): Notification {
@@ -123,10 +123,10 @@ class RemoteService : Service() {
             .setContentTitle(title).setContentText(sub)
             .setOngoing(true).setShowWhen(false)
             .setContentIntent(open)
-        b.addAction(act("🔉", A_VOL_DOWN, 1))
-        b.addAction(act("🔊", A_VOL_UP, 2))
-        b.addAction(act("⏯", A_PLAY, 3))
-        b.addAction(act("⏻ فصل", A_OFF, 4))
+        b.addAction(act(R.drawable.ic_rc_vol_down, "🔉", A_VOL_DOWN, 1))
+        b.addAction(act(R.drawable.ic_rc_vol_up, "🔊", A_VOL_UP, 2))
+        b.addAction(act(R.drawable.ic_rc_play_pause, "⏯", A_PLAY, 3))
+        b.addAction(act(R.drawable.ic_rc_power, "⏻ فصل", A_OFF, 4))
         b.setStyle(Notification.MediaStyle().setShowActionsInCompactView(0, 1, 2))
         return b.build()
     }

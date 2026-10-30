@@ -121,7 +121,10 @@ class PlayerActivity : Activity(), Host {
         j.put("trcolor", try { tvTrColor() } catch (_: Throwable) { 0xFFE53935.toInt() })
         // (v532) قوايم الجودة ولغة الصوت كنصوص + الحالي: الريموت بيعرضها على الموبايل ويختار منها من غير ما يفتح قايمة على شاشة التلفزيون
         try { val (ql, qc) = rQuals(); j.put("ql", org.json.JSONArray(ql)); j.put("qc", qc) } catch (_: Throwable) {}
-        try { j.put("al", org.json.JSONArray(aTracks.map { it.name })); j.put("ac", aCur) } catch (_: Throwable) {}
+        try {
+            if (aTracks.size > 1 || !audLocalMode()) { j.put("al", org.json.JSONArray(aTracks.map { it.name })); j.put("ac", aCur) }
+            else { val la = localAud(); val ca = try { player.currentAudio() } catch (_: Throwable) { -1 }; j.put("al", org.json.JSONArray(la.map { it.name })); j.put("ac", la.indexOfFirst { it.idx == ca }.coerceAtLeast(0)) }
+        } catch (_: Throwable) {}
         return j
     }
 
@@ -588,7 +591,7 @@ class PlayerActivity : Activity(), Host {
             override fun toggleCc() { ccOn = !ccOn; if (!ccOn) sub.show(null) else curIdx = -2 }
             override fun subScale(d: Int) { tvSubScale(d) }
             override fun subShift(dMs: Long) { tvSubShift(dMs) }
-            override fun hasAudio(): Boolean = aTracks.size > 1
+            override fun hasAudio(): Boolean = aTracks.size > 1 || audLocalMode()
             override fun audio(anchor: View) { audPopFn?.invoke(anchor) }
             // (v517) الشريط المبسّط (تلفزيون بس — التابلت شريطه القديم زي ما هو)
             override fun slim(): Boolean = DeviceUi.isTv(self)
@@ -678,10 +681,14 @@ class PlayerActivity : Activity(), Host {
         Notice.show(this, String.format("⏱ إزاحة الترجمة: %+.2fs", offsetMs / 1000.0), 1100L)
     }
     /** (v641) ترجمة السوفت صب شغّالة (sfRun): الشريط كان فاضل «▶ ترجم» طول ما بتترجم فكان باين إنها ما بدأتش */
-    private fun tvSfShort(): String { val m = Regex("\\d+/\\d+").find(sfBusy); return if (m != null) "⏳ سوفت " + m.value else "⏳ سوفت…" }
+    private fun sfPct(): Int { val m = Regex("(\\d+)/(\\d+)").find(sfBusy) ?: return 0; val d = m.groupValues[1].toIntOrNull() ?: 0; val n = m.groupValues[2].toIntOrNull() ?: 0; return if (n > 0) (d * 100 / n).coerceIn(0, 100) else 0 }
+    /** (v661) نسبة ترجمة السوفت صب بدل «جاري الترجمة…» الثابتة: ⏳ ترجمة السوفت 37% (وفي مرحلة التنقيح: 🧹 تنقيح 12%) */
+    private fun sfChip(): String = (if (sfBusy.startsWith("🧹")) "🧹 تنقيح " else "⏳ ترجمة السوفت ") + sfPct() + "%"
+    private fun tvSfShort(): String = (if (sfBusy.startsWith("🧹")) "🧹 " else "⏳ سوفت ") + sfPct() + "%"
     @Volatile private var sfDoneUri = ""
     private fun tvTrLabel(): String = try {
         if (!engineStarted && sfBusy.isNotEmpty()) tvSfShort()
+        else if (!engineStarted && sfLive.isNotEmpty()) "💬 لحظية"
         else if (!engineStarted && sfDoneUri.isNotEmpty() && sfDoneUri == (uri?.toString() ?: "")) "✅ مترجم"
         else if (!engineStarted) "▶ ترجم"
         else (if (::engine.isInitialized && engine.userPaused) "⏸ " else if (trPct >= 100) "✅ " else "⏳ ") + trPct + "%"
@@ -952,10 +959,13 @@ class PlayerActivity : Activity(), Host {
         } catch (e: Throwable) { LogStore.err("Player:sfHard", e); say("⚠ تعذّر تشغيل ترجمة الهارد سب") }
     }
 
-    private fun sfRun(kind: String, eng: String, picked: Uri? = null, track: Int = -1) {
+    private fun sfRun(kind: String, engIn: String, picked: Uri? = null, track: Int = -1) {
         if (kind == "hard") { sfHard(); return }
+        // (v661) جيميناي من غير مفتاح كان بيفشل بتنبيه سريع ويختفي (باين إن مفيش ترجمة) ← بنحوّل لجوجل ونقولك
+        var eng = engIn
+        if (eng == "gemini" && !(try { TrWizard.hasGeminiKey() } catch (_: Throwable) { true })) { eng = "google"; say("⚠ مفيش مفتاح جيميناي — هترجم بجوجل") }
         if (sfBusy.isNotEmpty()) { say("⏳ بترجم دلوقتي: $sfBusy"); return }
-        sfBusy = "بقرا الترجمة…"; runOnUiThread { updateTr(); try { tvBar?.refresh() } catch (_: Throwable) {} }
+        LogStore.add("💬 سوفت صب: بدأ sfRun kind=$kind eng=$eng track=$track"); sfBusy = "بقرا الترجمة…"; runOnUiThread { updateTr(); try { tvBar?.refresh() } catch (_: Throwable) {} }
         say("⏳ بدأت ترجمة السوفت صب — " + (if (eng == "gemini") "جيميناي" else "جوجل") + " (الشريط هيعرض التقدم)")
         val engName = if (eng == "gemini") "جيميناي" else "جوجل"
         val vu = uri
@@ -975,14 +985,15 @@ class PlayerActivity : Activity(), Host {
                     }
                 }
                 if (cues.isEmpty()) {
-                    if (sfNativeCount() > 0 || nativeCue.isNotEmpty()) { runOnUiThread { sfStartLive(eng) }; return@Thread }   // مش قادر أطلّع المسار كله: ترجمة لحظية
+                    if (sfNativeCount() > 0 || nativeCue.isNotEmpty()) { LogStore.add("💬 سوفت صب: المسار مش بيتقري كامل — ترجمة لحظية"); runOnUiThread { sfStartLive(eng) }; return@Thread }   // مش قادر أطلّع المسار كله: ترجمة لحظية
                     say("مفيش سوفت سب في الفيديو ده (لا ملف جنبه ولا مسار جواه) — لو الترجمة محروقة على الصورة استخدم «ترجمة الهارد سب»")
                     return@Thread
                 }
                 if (SubFileTr.mostlyArabic(cues)) { say("💬 الترجمة دي عربي أصلًا"); return@Thread }
+                sfBusy = "بترجم 0/" + cues.size; runOnUiThread { updateTr(); try { tvBar?.refresh() } catch (_: Throwable) {} }
                 say("📄 بترجم " + cues.size + " جملة من «" + label + "» بـ " + engName + (if (eng == "gemini") sfPlanNote() else "") + "…")
                 var lastP = 0L
-                val out = SubFileTr.translate(cues, eng, { pr -> sfBusy = pr; runOnUiThread { try { tvBar?.refresh() } catch (_: Throwable) {} }; val n = System.currentTimeMillis(); if (n - lastP > 6000L) { lastP = n; say(pr) } }, { isFinishing || isDestroyed })
+                val out = SubFileTr.translate(cues, eng, { pr -> sfBusy = pr; runOnUiThread { updateTr(); try { tvBar?.refresh() } catch (_: Throwable) {} }; val n = System.currentTimeMillis(); if (n - lastP > 6000L) { lastP = n; say(pr) } }, { isFinishing || isDestroyed })
                 if (isFinishing || isDestroyed) return@Thread
                 if (out.error.isNotEmpty()) { say("⚠ " + out.error); return@Thread }
                 var w = 0
@@ -1017,8 +1028,7 @@ class PlayerActivity : Activity(), Host {
         fun add(l: String, a: () -> Unit) { labels.add(l); acts.add(a) }
         val tr = tvProgTr(); val hasSubs = tvHasSentences(); val c = caps()
         val u = uri
-        // (v640) ⏩ و💬 و🌐 و🔤⏱ و📝 و😴 على الشريط نفسه؛ هنا الباقي مرتب حسب الحالة (الشخصيات واللهجات جوه لوحة 🔤⏱ ← ✨)
-        add("⬛ الاحتواء: " + fitNameOf(curFit())) { cycleFitNow() }
+        // (v662) ⬛ حجم الشاشة على الشريط، و👁 الوضع البصري اتشال من هنا. (v640) ⏩ و💬 و🌐 و🔤⏱ و📝 و😴 على الشريط نفسه؛ هنا الباقي مرتب حسب الحالة (الشخصيات واللهجات جوه لوحة 🔤⏱ ← ✨)
         add("🔂 تكرار الفيديو: " + (if (Cfg.str("loop", "0") == "1") "شغّال" else "مقفول")) {
             val on = Cfg.str("loop", "0") != "1"; Cfg.put("loop", if (on) "1" else "0"); Notice.show(this, if (on) "🔂 تكرار الفيديو: شغّال" else "🔂 تكرار الفيديو: مقفول", 1300L)
         }
@@ -1039,7 +1049,6 @@ class PlayerActivity : Activity(), Host {
             add("⚙ إعدادات الترجمة") { modeSettings(anchor) }
             add("🌙 كمّل الترجمة في الخلفية") { translateInBackground() }
             add("📜 اللوج") { toggleLog() }
-            if (c.visual) add("👁 الوضع البصري") { visualDialog() }
         }
         if (hasSubs) {
             add("📜 ذكّرني (ملخص اللي فات)") { recapDialog() }
@@ -1413,12 +1422,48 @@ class PlayerActivity : Activity(), Host {
         } catch (e: Exception) { aTracks = emptyList(); LogStore.err("Player:atracks", e) }
         paintAud()
     }
+    // (v661) لغات صوت الفيديو المحلي (مسارات صوت جوه الملف): زرار 🔊 بيظهر لما يبقى فيه أكتر من مسار، والتبديل في نفس الفيديو (الموبايل والتلفزيون)
+    private class LAud(val idx: Int, val name: String)
+    private val audPills = ArrayList<TextView>()
+    private fun localAud(): List<LAud> {
+        val out = ArrayList<LAud>()
+        try {
+            if (player.exo() == null) {   // وضع المتحكم: القايمة جاية من التلفزيون (al/ac) والتبديل بيتبعت له بنفس الرقم
+                player.audioTracks().forEachIndexed { k, nm -> out.add(LAud(k, nm.ifBlank { "مسار صوت " + (k + 1) })) }
+                return out
+            }
+            var n = 0
+            for (g in (player.exo()?.currentTracks?.groups ?: emptyList<androidx.media3.common.Tracks.Group>())) {
+                if (g.type != androidx.media3.common.C.TRACK_TYPE_AUDIO) continue
+                for (i in 0 until g.length) {
+                    if (g.isTrackSupported(i)) {
+                        val f = g.getTrackFormat(i)
+                        val lg = f.language ?: ""
+                        val ln = if (lg.isBlank() || lg == "und") "" else try { java.util.Locale(lg).getDisplayLanguage(java.util.Locale("ar")).ifBlank { lg } } catch (_: Throwable) { lg }
+                        val ch = when (f.channelCount) { 1 -> "مونو"; 2 -> "ستيريو"; 6 -> "5.1"; 8 -> "7.1"; else -> "" }
+                        val nm = listOf(f.label?.trim().orEmpty().ifBlank { ln }, ch).filter { it.isNotBlank() }.joinToString(" · ")
+                        out.add(LAud(n, nm.ifBlank { "مسار صوت " + (out.size + 1) }))
+                    }
+                    n += 1   // العدّ بيشمل المسارات غير المدعومة عشان يطابق PlaybackBackend.selectAudio
+                }
+            }
+        } catch (_: Throwable) {}
+        return out
+    }
+    private fun audLocalMode(): Boolean = aTracks.size <= 1 && localAud().size > 1
+    private fun switchLocalAudio(t: LAud) {
+        try { player.selectAudio(t.idx); Notice.show(this, "🔊 لغة الصوت: " + t.name, 2000L) } catch (e: Throwable) { LogStore.err("Player:selectAudio", e) }
+        paintAud()
+    }
     private fun paintAud() {
-        val multi = aTracks.size > 1
-        val lbl = "🔊 " + (aTracks.getOrNull(aCur)?.lang?.uppercase() ?: "") + " ▾"
+        val loc = audLocalMode()
+        val multi = aTracks.size > 1 || loc
+        val lbl = if (loc) "🔊 ▾" else "🔊 " + (aTracks.getOrNull(aCur)?.lang?.uppercase() ?: "") + " ▾"
         for (v in audRowRefs) { v.text = lbl; v.setTextColor(0xFF6FCF8A.toInt()); v.visibility = if (multi) View.VISIBLE else View.GONE }
+        for (v in audPills) v.visibility = if (multi) View.VISIBLE else View.GONE
     }
     private fun switchAudio(i: Int) {
+        if (aTracks.size <= 1) { localAud().getOrNull(i)?.let { switchLocalAudio(it); return } }
         val t = aTracks.getOrNull(i) ?: return
         if (i == aCur) return
         val o = qOpts.getOrNull(qCur)
@@ -1616,10 +1661,31 @@ class PlayerActivity : Activity(), Host {
         else if (u.scheme == "content") contentResolver.query(u, arrayOf(android.provider.MediaStore.MediaColumns.DATA), null, null, null)?.use { c -> if (c.moveToFirst()) path = c.getString(0) }
         val f = path?.let { java.io.File(it) }
         val dir = f?.parentFile
-        if (f == null || dir == null) null else {
-            val base = f.nameWithoutExtension.lowercase(); val exts = listOf("srt", "ass", "ssa", "vtt", "ttml")
-            val c = dir.listFiles()?.filter { it.isFile && it.extension.lowercase() in exts && it.nameWithoutExtension.lowercase().let { n -> n == base || n.startsWith("$base.") } }.orEmpty()
-            c.sortedWith(compareBy({ x -> val n = x.name.lowercase(); if (n.contains(".ar.") || n.contains("arab") || n.contains(".ara.")) 0 else 1 }, { x -> exts.indexOf(x.extension.lowercase()) }, { it.name })).firstOrNull()
+        if (f == null || dir == null) { LogStore.add("💬 سوفت صب: مسار الفيديو مش معروف (" + (u.scheme ?: "?") + ") — مش هقدر ألاقي ملف ترجمة جنبه"); null } else {
+            val exts = listOf("srt", "ass", "ssa", "vtt", "ttml")
+            val base = f.nameWithoutExtension.lowercase()
+            fun norm(x: String) = x.lowercase().replace(Regex("[^\\p{L}\\p{N}]+"), "")
+            val nb = norm(base)
+            // (v661) تطابق متسامح: نفس الاسم · name.ar.srt · أو نفس الاسم بعد شيل المسافات/الرموز + لاحقة قصيرة (لغة) — من غير ما «movie1» تلقط «movie10»
+            fun matches(name: String): Boolean {
+                val n = name.lowercase()
+                if (n == base || n.startsWith("$base.")) return true
+                val nn = norm(n)
+                return nb.isNotEmpty() && nn.startsWith(nb) && nn.length - nb.length <= 8
+            }
+            var files: List<java.io.File> = dir.listFiles()?.toList().orEmpty()
+            if (files.isEmpty()) {   // مفيش صلاحية تعدّد الملفات: نجرّب فهرس الميديا
+                try {
+                    val out = ArrayList<java.io.File>()
+                    contentResolver.query(android.provider.MediaStore.Files.getContentUri("external"), arrayOf(android.provider.MediaStore.MediaColumns.DATA),
+                        android.provider.MediaStore.MediaColumns.DATA + " LIKE ?", arrayOf(dir.absolutePath + "/%"), null)?.use { c -> while (c.moveToNext()) { val pth = c.getString(0) ?: continue; val ff = java.io.File(pth); if (ff.parentFile == dir) out.add(ff) } }
+                    files = out
+                } catch (e: Throwable) { LogStore.err("Player:sidecarMS", e) }
+            }
+            val c = files.filter { it.isFile && it.extension.lowercase() in exts && matches(it.nameWithoutExtension) }
+            val r = c.sortedWith(compareBy({ x -> val n = x.name.lowercase(); if (n.contains(".ar.") || n.contains("arab") || n.contains(".ara.")) 0 else 1 }, { x -> exts.indexOf(x.extension.lowercase()) }, { it.name })).firstOrNull()
+            LogStore.add("💬 سوفت صب: فحص ملف جنب الفيديو — الفولدر فيه " + files.size + " ملف، " + (if (r != null) "لقيت «" + r.name + "»" else "مفيش ملف ترجمة بنفس الاسم"))
+            r
         }
     } catch (e: Throwable) { LogStore.err("Player:sidecar", e); null }
     private fun mediaItemFor(u: Uri): MediaItem {
@@ -1850,13 +1916,22 @@ class PlayerActivity : Activity(), Host {
         }.also { it.isDaemon = true }.start()
         return false
     }
+    /** (v661) مفيش سوفت صب اتلقى: بدل تنبيه ثانيتين بيختفي، نافذة بخيارات واضحة */
+    private fun sfNoneDialog() {
+        val eng = try { TrWizard.savedPlan()?.let { if (it.offline) "google" else "gemini" } } catch (_: Throwable) { null } ?: if (TrWizard.hasGeminiKey()) "gemini" else "google"
+        GAlert(this).setTitle("💬 مش لاقي ترجمة سوفت صب أقدر أقراها")
+            .setItems(arrayOf("📂 اختار ملف ترجمة من الجهاز (SRT / ASS / VTT)", "🎙 ترجم الصوت بدل كده")) { _, w -> if (w == 0) sfPickFile(eng) else { softAskedFor = uri?.toString() ?: ""; beginTranslate(false) } }
+            .show()
+    }
     /** يعرض اختيار مصدر السوفت صب (ملف / مسار / ملف من الجهاز) ويترجمه؛ onNone بيتنفّذ لو مفيش سوفت صب خالص */
     private fun softAsk(vu: Uri, onNone: () -> Unit) {
+        say("⏳ بفحص ترجمة الفيديو…")   // (v661) فحص المسارات الداخلية ممكن ياخد ثواني في الفيديوهات الكبيرة — من غير ده باين إن الدوسة ما عملتش حاجة
         Thread {
             try {
                 val side = sfSidecar()
                 val emb = if (vu.scheme == "file" || vu.scheme == "content") SubFileTr.embeddedTracks(applicationContext, vu) else emptyList()
                 val nat = if (emb.isEmpty()) sfNativeCount() else 0
+                LogStore.add("💬 سوفت صب: ملف جنب الفيديو=" + (side?.name ?: "لا") + " · مسارات جوه=" + emb.size + " · مسارات المشغّل=" + nat)
                 if (side == null && emb.isEmpty() && nat == 0) { runOnUiThread { onNone() }; return@Thread }
                 runOnUiThread {
                     if (isFinishing || isDestroyed) return@runOnUiThread
@@ -1999,7 +2074,7 @@ class PlayerActivity : Activity(), Host {
                 pz.text = if (paused) "▶" else "▮▮"
                 pz.background = ui.box(if (paused) 0xFF2E7D32.toInt() else 0xFF455A64.toInt(), 0x33FFFFFF, 8)
                 lgB.visibility = if (caps().dialect) View.VISIBLE else View.GONE   // (v444) بس في الأوضاع اللي فيها لهجات
-                if (!started) { chipB.text = if (sfBusy.isNotEmpty()) "⏳ جاري الترجمة…" else "▶ ترجم · " + modeShort() + " ▾"; chipB.background = ui.box(0xFFE53935.toInt(), 0x33FFFFFF, 12) }
+                if (!started) { chipB.text = if (sfBusy.isNotEmpty()) sfChip() else if (sfLive.isNotEmpty()) "💬 ترجمة لحظية ▾" else "▶ ترجم · " + modeShort() + " ▾"; chipB.background = ui.box(0xFFE53935.toInt(), 0x33FFFFFF, 12) }
                 else {
                     chipB.text = (Offline.liveShort()?.let { "$it · " } ?: modeChipTag()) + (if (paused) "⏸ " else if (trPct >= 100) "✅ " else "⏳ ") + trPct + "%" + " ▾"
                     chipB.background = ui.box(if (paused) 0xFF8D6E00.toInt() else if (trPct >= 100) 0xFF2E7D32.toInt() else 0xFF1F5FBF.toInt(), 0x33FFFFFF, 12)
@@ -2018,7 +2093,7 @@ class PlayerActivity : Activity(), Host {
             trUpdaters.add {
                 val paused = ::engine.isInitialized && engine.userPaused
                                 tr.visibility = View.VISIBLE
-                                tr.text = if (!engineStarted) (if (sfBusy.isNotEmpty()) "⏳ جاري الترجمة…" else "▶ ترجم · " + modeShort() + " ▾") else (Offline.liveShort()?.let { "$it · " } ?: modeChipTag()) + (if (paused) "⏸ " else if (trPct >= 100) "✅ " else "⏳ ") + trPct + "% ▾"
+                                tr.text = if (!engineStarted) (if (sfBusy.isNotEmpty()) sfChip() else if (sfLive.isNotEmpty()) "💬 ترجمة لحظية ▾" else "▶ ترجم · " + modeShort() + " ▾") else (Offline.liveShort()?.let { "$it · " } ?: modeChipTag()) + (if (paused) "⏸ " else if (trPct >= 100) "✅ " else "⏳ ") + trPct + "% ▾"
                 rd2.visibility = if (hasSubsNow()) View.VISIBLE else View.GONE   // (v427)
                 pz2.visibility = if (engineStarted) View.VISIBLE else View.GONE
                 pz2.text = if (paused) "▶" else "▮▮"
@@ -2158,7 +2233,7 @@ class PlayerActivity : Activity(), Host {
             setPadding(ui.dp(6), ui.dp(6), ui.dp(6), ui.dp(6)); background = glassPanelBg()
         }
         fun item(t: String, f: () -> Unit) = ui.fsBtn(t) { _ -> trMenuPop?.dismiss(); f() }.apply { layoutParams = LinearLayout.LayoutParams(-1, ui.dp(42)).apply { setMargins(ui.dp(3), ui.dp(2), ui.dp(3), ui.dp(2)) } }
-        val head = if (!started && sfBusy.isNotEmpty()) "⏳ ترجمة السوفت صب: " + sfBusy else if (!started) "اختار طريقة الترجمة" else (Offline.liveLine() ?: ("الترجمة: " + trPct + "%" + (if (paused) " (واقفة)" else "")))
+        val head = if (!started && sfBusy.isNotEmpty()) "⏳ ترجمة السوفت صب " + sfPct() + "% — " + sfBusy else if (!started) "اختار طريقة الترجمة" else (Offline.liveLine() ?: ("الترجمة: " + trPct + "%" + (if (paused) " (واقفة)" else "")))
         col.addView(ui.text(head, 12.5f, Color.WHITE, true).apply { setPadding(ui.dp(8), ui.dp(4), ui.dp(8), ui.dp(2)) })
         if (started) col.addView(ui.text("الوضع: " + modeName(), 11.5f, 0xFF9AA0A6.toInt()).apply { setPadding(ui.dp(8), 0, ui.dp(8), ui.dp(4)) })
         if (started && (Strict.freeText() || Strict.freeGem())) col.addView(ui.text("🆓 موديل FreeLLM الشغّال: " + FreeLlm.liveName(), 11.5f, 0xFFBFD0FF.toInt(), true).apply { setPadding(ui.dp(8), 0, ui.dp(8), ui.dp(4)) })
@@ -2168,7 +2243,7 @@ class PlayerActivity : Activity(), Host {
             // (v638) فيه سوفت صب: أول خيار — بيترجم الملف كله بإعدادات الترجمة (لهجة/أسلوب) وبمفاتيح جيميناي المتعددة (ترجمة ثم تنقيح)
             if (softAvailable { try { trMenuPop?.let { p -> if (p.isShowing) { p.dismiss(); trMenuPop = null; h.post { translateMenu(anchor) } } } } catch (_: Throwable) {} }) {
                 col.addView(grpLbl("💬 فيه ترجمة سوفت صب — لهجة: " + Cfg.str("lang", "فصحى").ifBlank { "فصحى" }))
-                col.addView(item("💬 ترجمة السوفت صب (الملف كله)" + sfPlanNote()) { val vu = uri; if (vu != null) softAsk(vu) { say("مفيش سوفت صب في الفيديو ده") } })
+                col.addView(item("💬 ترجمة السوفت صب (الملف كله)" + sfPlanNote()) { val vu = uri; if (vu != null) softAsk(vu) { sfNoneDialog() } })
             }
             col.addView(grpLbl("🎧 من الصوت مباشرة — أدق · محتاج نت"))
             col.addView(item("⭐ FreeLLM · جيميناي بكل مفاتيحك وموديلاته") { freeGemStart() })
@@ -3324,6 +3399,7 @@ class PlayerActivity : Activity(), Host {
         // (v185) ضغطة واحدة = لقطة (بتتصوّر وتتترجم وتتحفظ مع الفيديو)؛ مفيش ضغطة مطوّلة، والتلقائي مابيتقفلش من الزرار ده (القايمة من عدّاد 👁 أقصى الشمال)
         floatBar = ui.fsCircle("👁") { flashFloat(floatBar); visualSnap() }.apply {
             textSize = 24f; alpha = REST_A
+            if (DeviceUi.isRemote(this@PlayerActivity)) visibility = View.GONE   // (v663) نفس سبب ⛶: مخفي من البداية على التلفزيون
         }
         videoBox.addView(floatBar, FrameLayout.LayoutParams(ui.dp(44), ui.dp(44), Gravity.END or Gravity.TOP).apply { setMargins(0, ui.dp(120), ui.dp(8), 0) })   // (v95) المكان بيتحسب في placeFloatFn
         // (v95) زرار الروتيشن: شاشة بسهمين دايريين زي MX Player — فوق 👁 على طول؛ بيقلب بين الرأسي والأفقي
@@ -3347,7 +3423,7 @@ class PlayerActivity : Activity(), Host {
         }
         videoBox.addView(modePill, FrameLayout.LayoutParams(-2, ui.dp(44), Gravity.END or Gravity.TOP).apply { setMargins(0, ui.dp(226), ui.dp(8), 0) })
         // 🔄 ترجم باتش معين: دايرة عايمة فوق 👁
-        batchBtn = ui.fsCircle("🔄") { batchDialog() }.apply { textSize = 20f; alpha = REST_A; translationY = -ui.dp(60).toFloat() }
+        batchBtn = ui.fsCircle("🔄") { batchDialog() }.apply { textSize = 20f; alpha = REST_A; translationY = -ui.dp(60).toFloat(); if (DeviceUi.isRemote(this@PlayerActivity)) visibility = View.GONE }
         // (v90) الزرار العايم 🔄 اتشال من الشاشة — «إعادة ترجمة» لسه في 🧰 وفي ☰
         // (v90) كبسولة «▶ ترجمة» الحمرا على الشمال اتشالت — زرار ▶ ترجمة الوحيد في الشريط السفلي
         // كبسولة جانبية للباتشات الفاشلة (زي اللوج): مخفية خالص لحد ما باتش يفشل، وبعدها بيظهر لسان ⚠ على الحافة الشمال — دوس عليه يفرد الكبسولة ودوس تاني يلمّها
@@ -3610,8 +3686,13 @@ class PlayerActivity : Activity(), Host {
         val gA = gCol()
         fun fillA(): Boolean {
             gA.removeAllViews()
-            for ((ai, t) in aTracks.withIndex()) gA.addView(pd((if (ai == aCur) "✓ " else "") + t.name) { switchAudio(ai) })
-            return aTracks.size > 1
+            if (aTracks.size > 1) {
+                for ((ai, t) in aTracks.withIndex()) gA.addView(pd((if (ai == aCur) "✓ " else "") + t.name) { switchAudio(ai) })
+                return true
+            }
+            val la = localAud(); val curA = try { player.currentAudio() } catch (_: Throwable) { -1 }
+            for (t in la) gA.addView(pd((if (t.idx == curA) "✓ " else "") + t.name) { switchLocalAudio(t) })
+            return la.size > 1
         }
         audPopFn = { v -> if (fillA()) togglePop(v, gA, true) else Notice.show(this, "مفيش لغات صوت تانية للفيديو ده", 2300L) }
         setQualLabel(qOpts.getOrNull(qCur)?.h ?: 0)
@@ -3773,6 +3854,8 @@ class PlayerActivity : Activity(), Host {
         trAiB = aiB; applyModeCaps()
         val syncB = barPill(tip(grp("⏱", gSub, true), "تزامن الترجمة (تقديم / تأخير)"))   // (v91) مكان Aa — حجم الخط بقى بالقرص (pinch) على الشاشة
         toolR.addView(syncB)
+        val audPill = barPill(tip(mini("🔊") { v -> audPopFn?.invoke(v) }, "لغة الصوت"))   // (v661) بيظهر بس لو الفيديو فيه أكتر من لغة صوت
+        audPill.visibility = View.GONE; audPills.add(audPill); toolR.addView(audPill)
         rcViews["dual"] = dualB; rcViews["bgon"] = bgOnB; rcViews["ai"] = aiB   // (v531) ريموت الموبايل
         val toolBtns = listOf<TextView>(syncB, tip(logB, "اللوج"), tip(sentB, "الجمل"), tip(ccB, "إظهار/إخفاء الترجمة"), tip(loopB, "تكرار الفيديو"), tip(dualB, "وضع الترجمة"), tip(charsB, "الشخصيات"), tip(voiceB, "فصل صوت الكلام عن الموسيقى"), qualB, nextListB)
         toolBtns.drop(1).filter { it !== voiceB && it !== qualB && it !== nextListB }.forEach { b ->   // (v226) 🔑 اتشال من الشريط العلوي
@@ -3938,7 +4021,7 @@ class PlayerActivity : Activity(), Host {
             if (b - t != ob - ot) { val hh = ((b - t) * 0.025f).toInt().coerceAtLeast(3); val lp = miniBar.layoutParams; if (lp.height != hh) { lp.height = hh; miniBar.layoutParams = lp } }
         }
         // زرار ⛶ (.fullscreen-btn): أسفل يسار الفيديو 10dp في الرأسي، 18dp في الشاشة الكاملة
-        fsBtnV = ui.fsCircle("⛶") { toggleFs(); showChrome() }
+        fsBtnV = ui.fsCircle("⛶") { toggleFs(); showChrome() }.apply { if (DeviceUi.isRemote(this@PlayerActivity)) visibility = View.GONE }   // (v663) تلفزيون/تابلت: مخفي من أول لحظة (كان بيظهر لحد أول OK على الريموت لأن applyChromeFn ماكانتش بتتنادى قبلها)
         fsBtnLp = FrameLayout.LayoutParams(ui.dp(34), ui.dp(34), Gravity.BOTTOM or Gravity.LEFT)
         videoBox.addView(fsBtnV, fsBtnLp)
         // (v95) مكان 👁 والروتيشن: في النص بين الشريط العلوي والشريط السفلي (مش فوق شريحة الترجمة أبدًا)
@@ -3995,7 +4078,7 @@ class PlayerActivity : Activity(), Host {
             else if (!on && !wasOn) { chromeFrame.animate().cancel(); chromeFrame.alpha = 1f; chromeFrame.translationY = 0f }
             centerPlay.visibility = if (on || pipNow() || uiLocked || busyShown()) View.GONE else if (buffering) View.VISIBLE else if (player.isPlaying) View.GONE else View.VISIBLE   // الشريط ظاهر = فيه زرار تشغيل تحت، فمنشيلش الأوسط فوق الترجمة
             val cv = (!fullMode || chromeShown) && !pipNow()
-            val tvHide = DeviceUi.isRemote(this) && tvGateClosed()   // (v636) تلفزيون: 👁 و⛶ مخفيين لحد ما شريط التحكم يظهر
+            val tvHide = DeviceUi.isTv(this) || (DeviceUi.isRemote(this) && tvGateClosed())   // (v662) تلفزيون: 👁 و🔄 و⛶ العايمين مش بيظهروا خالص (الوظايف على شريط التحكم و«⋯») — (v636) تلفزيون: 👁 و⛶ مخفيين لحد ما شريط التحكم يظهر
             floatBar.visibility = if (cv && !tvHide && caps().visual) View.VISIBLE else View.GONE   // (v444) البصري في وضع صوت←جيميناي بس · (v427) 👁 مابقاش ظاهر طول الوقت: بيظهر مع الشريط (أو في الوضع العادي)
             batchBtn.visibility = if (cv && !tvHide) View.VISIBLE else View.GONE
             if (::audBtn.isInitialized) audBtn.visibility = if (cv && intent.getStringExtra("ytid")?.length == 11) View.VISIBLE else View.GONE
@@ -4014,6 +4097,7 @@ class PlayerActivity : Activity(), Host {
             miniBar.visibility = if (!on && !pipNow()) View.VISIBLE else View.GONE
             updateTrChip(); applyBadgeAlpha()   // (v323) العدّادات بتظهر مع أزرار المشغّل بس
             fsBtnV.visibility = if (!fullMode && !tvHide) View.VISIBLE else View.GONE   // في الشاشة الكاملة ⛶ جوه الشريط السفلي
+            if (DeviceUi.isTv(this)) { fsBtnV.visibility = View.GONE; floatBar.visibility = View.GONE; batchBtn.visibility = View.GONE; rotBtn.visibility = View.GONE }   // (v664) تلفزيون: الزراري العايمة دي ممنوعة نهائيًا مهما حصل
             subLp.bottomMargin = (if (on) maxOf(ui.dp(128), fsBar.height + ui.dp(12)) else ui.dp(12)) + subPosExtra(); sub.requestLayout()   // (v469) + رفع الاستوديو
             placeFloatFn()
         }
@@ -4612,6 +4696,7 @@ class PlayerActivity : Activity(), Host {
                 nativeCue = cueGroup.cues.mapNotNull { it.text?.toString()?.trim() }.filter { it.isNotEmpty() }.joinToString("\n")
             }
             override fun onTracksChanged(t: Tracks) {
+                try { runOnUiThread { paintAud() } } catch (_: Throwable) {}
                 try {
                     if (!textPicked) {
                         val tg = t.groups.filter { it.type == C.TRACK_TYPE_TEXT && it.length > 0 && it.isSupported }
@@ -5372,13 +5457,17 @@ class PlayerActivity : Activity(), Host {
         if (incognito) return
         saveYtProg()
         try { if (!hiddenSite && durMs > 0 && cur > 1000 && cur < durMs - 4000 && vid.isNotEmpty()) Cfg.p.edit().putString("lastpos", vid + "\t" + cur).apply() } catch (_: Throwable) {}
-        if (!::engine.isInitialized || !engineReady) return
         try {
-            if (!incognito && !hiddenSite) {
+            if (!incognito && !hiddenSite && vid.isNotEmpty()) {
             val f = File(filesDir, "recent.json")
+            // (v664) كان بيرجع هنا لو المحرك لسه مش جاهز (خروج سريع/فيديو من غير ترجمة) فالفيديو الجديد ما بيتسجّلش ويفضل الأول في «آخر المشغّلة». دلوقتي بيتسجّل دايمًا، وعدد الجمل/التغطية من المحرك لو جاهز وإلا من السجل القديم
+            synchronized(Recents.ioLock) {
             val old = Recents.parse(try { f.readText() } catch (_: Exception) { "" })
-            val r = Recent(vid, (if (uri == null) intent.getStringExtra("title")?.takeIf { it.isNotBlank() } else null) ?: Recents.titleOf(vid), url ?: "", uri?.toString() ?: "", cur / 1000.0, durMs / 1000.0, engine.subs.size, engine.coveredSec(), System.currentTimeMillis())
+            val prev = old.firstOrNull { it.id == vid }
+            val ready = ::engine.isInitialized && engineReady
+            val r = Recent(vid, (if (uri == null) intent.getStringExtra("title")?.takeIf { it.isNotBlank() } else null) ?: Recents.titleOf(vid), url ?: "", uri?.toString() ?: "", cur / 1000.0, durMs / 1000.0, if (ready) engine.subs.size else (prev?.subs ?: 0), if (ready) engine.coveredSec() else (prev?.coverSec ?: 0.0), System.currentTimeMillis())
             f.writeText(Recents.toJson(Recents.upsert(old, r, 300)))
+            }
             // (v570) لينك مش يوتيوب (جاي من المتصفح): نحفظ مصغّرة من الفيديو الشغّال مرة واحدة عشان تظهر في «آخر المشغّلة» (بس من خيط خلفي — PixelCopy)
             if (uri == null && !url.isNullOrEmpty() && intent.getStringExtra("ytid") == null && cur > 3000L && android.os.Looper.myLooper() != android.os.Looper.getMainLooper())
                 LinkThumb.saveIfMissing(applicationContext, vid) {

@@ -63,8 +63,6 @@ object WidgetHub {
         if (sIds.isNotEmpty()) renderSong(c, mgr, sIds)
         val mIds = mgr.getAppWidgetIds(ComponentName(c, MusicWidget::class.java))
         if (mIds.isNotEmpty()) MusicWidget.renderAll(c, mgr, mIds)
-        val xIds = mgr.getAppWidgetIds(ComponentName(c, TransferWidget::class.java))
-        if (xIds.isNotEmpty()) TransferWidget.renderAll(c, mgr, xIds)
     }
 
     // ===== المهام =====
@@ -162,7 +160,7 @@ object WidgetHub {
         val iRoot = rid(c, "id", "w_s_root")
         rv.setTextViewText(rid(c, "id", "w_s_title"), if (on) "🎧 بسمع الأغاني…" else "🎧 تعرّف على الأغنية")
         rv.setTextViewText(rid(c, "id", "w_s_sub"), if (on) "دوس لإيقافه" else "دوس عشان أسمع وأجيبلك لينك")
-        rv.setInt(iRoot, "setBackgroundResource", rid(c, "drawable", if (on) "widget_bg_on" else "widget_bg"))
+        rv.setInt(iRoot, "setBackgroundResource", rid(c, "drawable", if (on) "widget_bg_on" else "widget_bg_song"))
         val pi = if (on)
             PendingIntent.getService(c, 13, Intent(c, SongCatchService::class.java).setAction("stop"), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
         else
@@ -178,7 +176,7 @@ object WidgetHub {
         val iRoot = rid(c, "id", "w_l_root")
         rv.setTextViewText(rid(c, "id", "w_l_title"), if (on) "🔴 الترجمة الحية شغّالة" else "🔴 ترجمة حية")
         rv.setTextViewText(rid(c, "id", "w_l_sub"), if (on) "دوس لإيقافها" else "دوس لتشغيلها فوق أي تطبيق")
-        rv.setInt(iRoot, "setBackgroundResource", rid(c, "drawable", if (on) "widget_bg_on" else "widget_bg"))
+        rv.setInt(iRoot, "setBackgroundResource", rid(c, "drawable", if (on) "widget_bg_on" else "widget_bg_live"))
         val pi = if (on)
             PendingIntent.getService(c, 11, Intent(c, LiveCaptionService::class.java).setAction("stop"), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
         else

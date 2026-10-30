@@ -121,10 +121,6 @@
             <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE"/></intent-filter>
             <meta-data android:name="android.appwidget.provider" android:resource="@xml/widget_music_info"/>
         </receiver>
-        <receiver android:name=".TransferWidget" android:exported="true" android:label="📤 مركز النقل">
-            <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE"/></intent-filter>
-            <meta-data android:name="android.appwidget.provider" android:resource="@xml/widget_transfer_info"/>
-        </receiver>
         <receiver android:name=".TasksWidget" android:exported="true" android:label="📋 مهام الخلفية">
             <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE"/></intent-filter>
             <meta-data android:name="android.appwidget.provider" android:resource="@xml/widget_tasks_info"/>

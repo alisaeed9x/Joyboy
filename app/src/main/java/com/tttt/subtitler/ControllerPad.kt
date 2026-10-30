@@ -153,31 +153,22 @@ object ControllerPad {
             round("↩", "رجوع", 0xFF4A5568.toInt(), Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL) { sendKey("back") }   // (v643) رجوع في النص تحت — مكان زرار الإغلاق القديم
             round("🎤", "بحث صوتي", 0xFFE53935.toInt(), Gravity.BOTTOM or Gravity.RIGHT) { RemoteClient.cmd("mic") }
 
-            // (v637) رفع/خفض صوت التلفزيون: (v643 على اليمين تحت 🏠)، والضغط المستمر بيكرّر الخطوة
+            // (v662) صوت التلفزيون: سلايدر طويل (بدل + و−) على الحافة اليمين بين 🏠 و🎤؛ اسحب لفوق = أعلى، لتحت = أوطى
+            val volSl = VolumeSlider(act) { p -> RemoteClient.setVolume(p) }
+            val slW = dp(54)
+            root.addView(volSl, FrameLayout.LayoutParams(slW, -1, Gravity.RIGHT).apply { topMargin = dp(130); bottomMargin = dp(130); rightMargin = dp(20) })
             val volH = Handler(Looper.getMainLooper())
-            val volRow = android.widget.LinearLayout(act).apply { orientation = android.widget.LinearLayout.VERTICAL; gravity = Gravity.CENTER }   // (v643) + فوق و− تحته
-            fun volBtn(txt: String, desc: String, c: String, first: Boolean) {
-                val tv = TextView(act).apply {
-                    text = txt; textSize = 26f; paint.isFakeBoldText = true; setTextColor(Color.WHITE); this.gravity = Gravity.CENTER; includeFontPadding = false
-                    contentDescription = desc; elevation = dp(6).toFloat()
-                    background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(0xFF37474F.toInt()); setStroke(2, 0x66FFFFFF) }
+            val volSync = object : Runnable {   // لو الصوت اتغيّر من ريموت التلفزيون نفسه: السلايدر يلحق (إلا وإنت ماسكه)
+                override fun run() {
+                    val v = RemoteClient.tvVol
+                    if (v >= 0 && !volSl.dragging) volSl.setValue(v)
+                    volH.postDelayed(this, 1500L)
                 }
-                val rep = object : Runnable { override fun run() { RemoteClient.cmd(c); volH.postDelayed(this, 230L) } }
-                tv.setOnTouchListener { v, e ->
-                    when (e.actionMasked) {
-                        MotionEvent.ACTION_DOWN -> { v.isPressed = true; v.alpha = 0.7f; v.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP); RemoteClient.cmd(c); volH.postDelayed(rep, 420L) }
-                        MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> { v.isPressed = false; v.alpha = 1f; volH.removeCallbacks(rep) }
-                    }
-                    true
-                }
-                volRow.addView(tv, android.widget.LinearLayout.LayoutParams(dp(46), dp(46)).apply { if (!first) topMargin = dp(8) })
             }
-            volBtn("+", "رفع الصوت", "vol_up", true)
-            volBtn("−", "خفض الصوت", "vol_down", false)
-            root.addView(volRow, FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.RIGHT).apply { topMargin = dp(120); rightMargin = dp(31) })   // (v643) تحت 🏠 على اليمين، متحاذيين مع مركزه
+            volH.post(volSync)
 
-            // (v643) الجويستيك ما يلمسش عمود الصوت (آخره عند ~220dp من فوق)
-            val size = min(min(dm.widthPixels - dp(40), dp(340)), dm.heightPixels - dp(2 * 220)).coerceAtLeast(dp(200))
+            // (v662) الجويستيك متسنتر ومش بيلمس سلايدر الصوت اللي على اليمين
+            val size = min(min(dm.widthPixels - dp(2 * 84), dp(340)), dm.heightPixels - dp(2 * 220)).coerceAtLeast(dp(200))   // (v662) عرض بيسيب مكان للسلايدر على اليمين
             root.addView(JoystickView(act) { k -> sendKey(k) }, FrameLayout.LayoutParams(size, size, Gravity.CENTER))
 
             val st = TextView(act).apply { text = "📺 بتوصّل…"; textSize = 14f; setTextColor(0xFFB0BEC5.toInt()); gravity = Gravity.CENTER }
@@ -185,7 +176,7 @@ object ControllerPad {
             var connectFn: () -> Unit = {}
 
             d.setContentView(root)
-            d.setOnDismissListener { try { onClose?.invoke() } catch (_: Throwable) {} }
+            d.setOnDismissListener { volH.removeCallbacks(volSync); try { onClose?.invoke() } catch (_: Throwable) {} }
             d.window?.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
             d.show()
 
@@ -201,5 +192,56 @@ object ControllerPad {
             }
             connectFn()
         } catch (e: Throwable) { LogStore.err("ControllerPad:show", e) }
+    }
+}
+
+
+/** (v662) سلايدر صوت طويل عمودي: اسحب لفوق يعلّي ولتحت يوطّي. onChange(0..100) بتتنادى أثناء السحب (متخفّفة) وعند الرفع */
+class VolumeSlider(ctx: Context, private val onChange: (Int) -> Unit) : View(ctx) {
+    private val den = resources.displayMetrics.density
+    private val pTrack = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL; color = 0x33FFFFFF }
+    private val pFill = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL; color = 0xFF2F80FF.toInt() }
+    private val pKnob = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL; color = Color.WHITE }
+    private val pTxt = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.WHITE; textAlign = Paint.Align.CENTER; isFakeBoldText = true; textSize = 13f * resources.displayMetrics.density }
+    private val rect = android.graphics.RectF()
+    private var value = 50
+    var dragging = false; private set
+    private var lastSent = 0L
+
+    fun setValue(v: Int) { val n = v.coerceIn(0, 100); if (n != value) { value = n; invalidate() } }
+
+    private fun top() = 34f * den + 6f * den       // فوق: مكان الأيقونة/الرقم
+    private fun bot() = height - 10f * den
+    private fun fromY(y: Float): Int {
+        val t = top(); val b = bot()
+        return Math.round(((b - y) / (b - t).coerceAtLeast(1f)).coerceIn(0f, 1f) * 100f)
+    }
+
+    override fun onTouchEvent(e: MotionEvent): Boolean {
+        when (e.actionMasked) {
+            MotionEvent.ACTION_DOWN -> { parent?.requestDisallowInterceptTouchEvent(true); dragging = true; apply(e.y, true); performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP) }
+            MotionEvent.ACTION_MOVE -> apply(e.y, false)
+            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> { apply(e.y, true); dragging = false; invalidate() }
+        }
+        return true
+    }
+
+    private fun apply(y: Float, force: Boolean) {
+        val v = fromY(y)
+        val changed = v != value
+        value = v; invalidate()
+        val now = SystemClock.uptimeMillis()
+        if (force || (changed && now - lastSent >= 90L)) { lastSent = now; try { onChange(v) } catch (_: Throwable) {} }
+    }
+
+    override fun onDraw(c: Canvas) {
+        val w = width.toFloat(); val cx = w / 2f
+        val tw = 16f * den; val t = top(); val b = bot()
+        c.drawText(if (value == 0) "🔇" else "🔊", cx, 20f * den, pTxt)
+        c.drawText(value.toString(), cx, 38f * den, pTxt)
+        rect.set(cx - tw / 2, t, cx + tw / 2, b); c.drawRoundRect(rect, tw / 2, tw / 2, pTrack)
+        val ky = b - (b - t) * value / 100f
+        rect.set(cx - tw / 2, ky, cx + tw / 2, b); c.drawRoundRect(rect, tw / 2, tw / 2, pFill)
+        c.drawCircle(cx, ky, if (dragging) 15f * den else 12f * den, pKnob)
     }
 }

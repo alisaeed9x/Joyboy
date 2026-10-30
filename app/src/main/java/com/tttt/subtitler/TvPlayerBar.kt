@@ -100,13 +100,13 @@ class TvPlayerBar(private val act: Activity, private val ui: Ui, private val th:
         val row = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER; layoutDirection = View.LAYOUT_DIRECTION_LTR }
         fun add(b: View) { row.addView(b, LinearLayout.LayoutParams(-2, -2).apply { setMargins(ui.dp(4), 0, ui.dp(4), 0) }) }
         if (slim) {
-            // (v640) تلفزيون: ⏮ ▶ ⏭ · ⏩ سرعة (قايمة) · ترجم (بنسبتها) · 💬 · 🌐 مصادر الترجمة · 🔤⏱ شكل/ذكاء · 📝 · HD · 🔊 · 😴 (لو شغّال) · ⋯
+            // (v640) تلفزيون: ⏮ ▶ ⏭ · ⏩ سرعة (قايمة) · ⬛ حجم الشاشة · ترجم (بنسبتها) · 💬 · 🌐 مصادر الترجمة · 🔤⏱ شكل/ذكاء · 📝 · HD · 🔊 · 😴 (لو شغّال) · ⋯
             // كل زرار بيظهر/بيختفي في refresh() حسب حالة الفيديو (ترجمة؟ مسارات؟ نسخ؟) — الباقي كله في ⋯
-            fitB = TextView(act)
             prevB = btn("⏮") { a.prev() }; add(prevB)
             playB = btn("⏸") { a.toggle() }; add(playB)
             nextB = btn("⏭") { a.next() }; add(nextB)
             speedB = btn("⏩ 1x") { v -> a.pickSpeed(v) }; add(speedB)
+            fitB = btn("⛶") { a.cycleFit() }; add(fitB)   // (v662) أيقونة ⛶ (نفس أيقونة زرار التكبير القديم) حجم الشاشة (احتواء / ملء / تمديد / 100%) على الشريط نفسه بدل «⋯»
             trB = btn("▶ ترجم") { v -> a.translate(v) }; add(trB)
             ccB = btn("💬") { a.toggleCc() }
             ccB.setOnLongClickListener { a.subSources(ccB); true }
@@ -168,6 +168,7 @@ class TvPlayerBar(private val act: Activity, private val ui: Ui, private val th:
             if (slim) {
                 trB.text = a.trLabel(); trB.background = GradientDrawable().apply { setColor(a.trColor()); cornerRadius = ui.dp(12).toFloat() }
                 speedB.text = "⏩ " + a.speedLabel()
+                fitB.text = "⛶ " + a.fitLabel()
                 fun vis(v: View, on: Boolean) { val n = if (on) View.VISIBLE else View.GONE; if (v.visibility != n) v.visibility = n }
                 val pn = a.hasPrevNext(); vis(prevB, pn); vis(nextB, pn)
                 val subs = a.subsAvailable(); vis(ccB, subs); vis(aaB, subs)

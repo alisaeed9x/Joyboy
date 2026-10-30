@@ -65,6 +65,13 @@ object PrayerTimes {
         return String.format(Locale.US, "%02d:%02d", s / 60, s % 60)
     }
 
+    /** (v662) باقي بالدقيقة (الودجت بيتحدّث كل دقيقة، فمفيش ثواني ثابتة بتبان كأنها واقفة) */
+    fun fmtLeftMin(ms: Long): String {
+        val m = ((ms.coerceAtLeast(0L) + 59_999L) / 60_000L)
+        val h = m / 60; val r = m % 60
+        return if (h > 0) (if (r == 0L) "$h س" else "$h س و$r د") else "$r د"
+    }
+
     // الصلاة الجاية: المفتاح ووقتها. بعد العشاء بترجع فجر بكرة.
     fun nextPrayer(times: Map<String, String>, now: Long): Pair<String, Long> {
         for (k in ORDER) {
@@ -92,10 +99,10 @@ object PrayerTimes {
 
     fun bgFor(key: String): String {
         return when (key) {
-            "Fajr" -> "mosque_dawn.jpg"
-            "Sunrise" -> "mosque_morning.jpg"
+            "Fajr" -> "mosque_fajr.jpg"
+            "Sunrise" -> "mosque_day.jpg"
             "Dhuhr" -> "mosque_day.jpg"
-            "Asr" -> "mosque_day.jpg"
+            "Asr" -> "mosque_asr.jpg"
             "Maghrib" -> "mosque_sunset.jpg"
             else -> "mosque_night.jpg"
         }

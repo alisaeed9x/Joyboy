@@ -32,7 +32,7 @@ object Recents {
     /** نفس الفيديو بيتحدّث ويطلع فوق؛ والقايمة محدودة */
     fun upsert(l: List<Recent>, r: Recent, max: Int = 15): List<Recent> = (listOf(r) + l.filter { it.id != r.id }).take(max)
 
-    private val ioLock = Any()
+    val ioLock = Any()   // (v664) عام: المشغّل بيكتب recent.json بنفس القفل عشان مايحصلش تداخل مع حفظ الخلفية
     /** تحديث تقدم فيديو من الخلفية: بيحافظ على مكان الوقوف القديم ومابيخبّيش باقي الفيديوهات (حد أقصى 300) */
     fun saveProgress(ctx: android.content.Context, id: String, title: String, url: String, uri: String, durSec: Double, subs: Int, coverSec: Double) {
         synchronized(ioLock) {
@@ -40,8 +40,11 @@ object Recents {
                 val f = java.io.File(ctx.filesDir, "recent.json")
                 val old = parse(try { f.readText() } catch (_: Exception) { "" })
                 val prev = old.firstOrNull { it.id == id }
-                val r = Recent(id, title, url, uri, prev?.posSec ?: 0.0, if (durSec > 0) durSec else (prev?.durSec ?: 0.0), subs, coverSec, System.currentTimeMillis())
-                f.writeText(toJson(upsert(old, r, 300)))
+                val idx = old.indexOfFirst { it.id == id }
+                // (v664) تحديث من الخلفية (ترجمة فيديو قديم لسه شغّالة) ما بيرفعش الفيديو لأول القايمة: يتحدّث مكانه بنفس ترتيبه ووقته. كان بيطلّع الفيديو الأول فوق «آخر المشغّلة» كل ٦ ثواني فوق الفيديو الجديد
+                val r = Recent(id, title, url, uri, prev?.posSec ?: 0.0, if (durSec > 0) durSec else (prev?.durSec ?: 0.0), subs, coverSec, prev?.ts ?: System.currentTimeMillis())
+                val out = if (idx >= 0) old.toMutableList().also { it[idx] = r }.toList() else upsert(old, r, 300)
+                f.writeText(toJson(out))
             } catch (_: Exception) {}
         }
     }

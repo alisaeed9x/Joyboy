@@ -226,7 +226,7 @@ object TvLink {
         touch(rm, r)
         return when (r.path) {
             "/ping" -> ok(JSONObject().put("ver", LinkVer.code(app)).put("vname", LinkVer.name(app)).put("name", tvName()).put("tv", tvId())
-                .put("ctx", TvInput.context()).put("acc", TvAccess.connected))
+                .put("ctx", TvInput.context()).put("acc", TvAccess.connected).put("vol", sysVolPct()))
             "/cmd" -> cmd(r)
             "/key" -> keyCmd(r)
             "/ptr" -> ptrCmd(r)
@@ -425,6 +425,13 @@ object TvLink {
         if (min > 0) { h.postDelayed(sleepRun, min * 60_000L); notice("😴 مؤقت النوم: $min دقيقة") } else notice("مؤقت النوم اتلغى")
     }
 
+    /** (v662) صوت التلفزيون الحالي 0..100 (بيتبعت في /ping عشان سلايدر الريموت يبدأ من الصوت الحقيقي) */
+    private fun sysVolPct(): Int = try {
+        val am = app.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+        val mx = am.getStreamMaxVolume(AudioManager.STREAM_MUSIC).coerceAtLeast(1)
+        Math.round(am.getStreamVolume(AudioManager.STREAM_MUSIC) * 100f / mx).coerceIn(0, 100)
+    } catch (_: Throwable) { -1 }
+
     /** أوامر الصوت والتشغيل — بتتنفّذ على الـUI thread */
     fun exec(c: String) {
         h.post {
@@ -443,6 +450,13 @@ object TvLink {
                     "mic" -> showTv("mic")
                     "power" -> { if (!TvAccess.global(android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_POWER_DIALOG)) notice("⚠ زرار الباور محتاج تفعّل «إمكانية الوصول» لـ Subtitler") }
                     else -> if (c.startsWith("sleep:")) setSleep(c.substring(6).toIntOrNull() ?: 0)
+                        else if (c.startsWith("vol_set:")) {   // (v662) سلايدر الصوت في الريموت: نسبة مطلقة 0..100
+                            val p = (c.substring(8).toIntOrNull() ?: -1).coerceIn(-1, 100)
+                            if (p >= 0) {
+                                val mx = am.getStreamMaxVolume(AudioManager.STREAM_MUSIC).coerceAtLeast(1)
+                                am.setStreamVolume(AudioManager.STREAM_MUSIC, Math.round(p * mx / 100f).coerceIn(0, mx), 0)
+                            }
+                        }
                 }
             } catch (e: Throwable) { LogStore.err("TvLink:exec", e) }
         }

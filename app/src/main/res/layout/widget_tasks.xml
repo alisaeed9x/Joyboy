@@ -7,14 +7,14 @@
     android:gravity="center_vertical"
     android:layoutDirection="rtl"
     android:padding="6dp"
-    android:background="@drawable/widget_bg">
+    android:background="@drawable/widget_bg_tasks">
     <TextView
         android:id="@+id/w_prev"
         android:layout_width="40dp"
         android:layout_height="match_parent"
         android:gravity="center"
         android:text="▶"
-        android:textColor="#FF4DA3FF"
+        android:textColor="#FFFFD54F"
         android:textSize="22sp"/>
     <LinearLayout
         android:id="@+id/w_body"
@@ -30,7 +30,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:text="1/2 · 🌙 ترجمة في الخلفية"
-            android:textColor="#FF8FB8E8"
+            android:textColor="#FFFFF3C4"
             android:textSize="11sp"
             android:maxLines="1"/>
         <TextView
@@ -52,7 +52,7 @@
             android:layout_marginTop="6dp"
             android:max="100"
             android:progress="45"
-            android:progressTint="#FF4DA3FF"
+            android:progressTint="#FFFFD54F"
             android:progressBackgroundTint="#33FFFFFF"/>
         <TextView
             android:id="@+id/w_info"
@@ -70,6 +70,6 @@
         android:layout_height="match_parent"
         android:gravity="center"
         android:text="◀"
-        android:textColor="#FF4DA3FF"
+        android:textColor="#FFFFD54F"
         android:textSize="22sp"/>
 </LinearLayout>

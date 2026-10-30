@@ -7,7 +7,7 @@
     android:gravity="center"
     android:layoutDirection="rtl"
     android:padding="10dp"
-    android:background="@drawable/widget_bg">
+    android:background="@drawable/widget_bg_song">
     <TextView
         android:id="@+id/w_s_title"
         android:layout_width="wrap_content"
@@ -23,7 +23,7 @@
         android:layout_height="wrap_content"
         android:layout_marginTop="2dp"
         android:text="دوس عشان أسمع وأجيبلك لينك"
-        android:textColor="#FFB7C4D8"
+        android:textColor="#FFFFFFFF"
         android:textSize="11sp"
         android:maxLines="1"/>
 </LinearLayout>

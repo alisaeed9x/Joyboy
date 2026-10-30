@@ -52,6 +52,7 @@ object TvModeFab {
     @Volatile private var sessionFresh = true
     @Volatile private var lastPauseAt = 0L
     private var picker: PopupWindow? = null
+    private val phoneCtl = HashMap<Activity, TextView>()   // (v662) 🎮 عايم داخل مشغّل الفيديو بتاع الموبايل (thread الواجهة بس)
     private val docks = HashMap<Activity, View>()   // (v592) المتصفح: العمود اللي زرار 📺 يقعد فوقه
     /** (v592) الزرار العايم يتحط فوق [stack] مباشرة (بحجم أصغر) بدل مكانه العادي؛ بيتنادى من المتصفح بس */
     fun dock(a: Activity, stack: View) {
@@ -89,6 +90,7 @@ object TvModeFab {
         val a = ctx.applicationContext
         app = a
         try { Cfg.ensure(a); Cfg.put(PlayTarget.KEY, "0") } catch (_: Throwable) {}
+        try { RemoteClient.addListener { startNowWatch(); refreshAll() } } catch (_: Throwable) {}   // (v662) اتصل/اتقطع/المشغّل ظهر على التلفزيون ← الكبسولة وزرار 🎮 يتحدّثوا
         Thread { try { Thread.sleep(8000L); TvUpdate.cleanOld(a) } catch (_: Throwable) {} }.also { it.isDaemon = true }.start()   // (v563) تنضيف ملفات التحديث القديمة (بعد الفتح بـ8 ثواني)   // كل مرة التطبيق يفتح: وضع التلفزيون مقفول لحد ما تتصل
         try {
             (a as Application).registerActivityLifecycleCallbacks(object : Application.ActivityLifecycleCallbacks {
@@ -96,11 +98,14 @@ object TvModeFab {
                     resumed++
                     if (resumed == 1 && System.currentTimeMillis() - lastPauseAt > 60000L) sessionFresh = true
                     TvUpdate.cleanMsg?.let { m -> TvUpdate.cleanMsg = null; Notice.show(act, m, 4000L) }   // (v563) نتيجة تنضيف ملفات التحديث القديمة (على التلفزيون كمان)
-                    if (skip(act)) { if (act is PlayerActivity && !(try { DeviceUi.isTv(act) } catch (_: Throwable) { true })) startPoll(); return }   // (v619) مشغّل الموبايل: البحث شغّال عشان زرار 📺 بتاعه
+                    if (skip(act)) {
+                        if (act is PlayerActivity && !(try { DeviceUi.isTv(act) } catch (_: Throwable) { true })) { startPoll(); startNowWatch(); attachPhoneCtl(act) }   // (v619) مشغّل الموبايل: البحث شغّال عشان زرار 📺 بتاعه (v662) + 🎮 عايم لو التلفزيون شغّال حاجة
+                        return
+                    }
                     attach(act); startPoll(); startNowWatch()
                 }
                 override fun onActivityPaused(act: Activity) { if (resumed > 0) resumed--; if (resumed == 0) lastPauseAt = System.currentTimeMillis(); try { picker?.dismiss() } catch (_: Throwable) {}; try { layers[act]?.let { closeFan(it, false) } } catch (_: Throwable) {} }
-                override fun onActivityDestroyed(act: Activity) { layers.remove(act); docks.remove(act) }
+                override fun onActivityDestroyed(act: Activity) { layers.remove(act); docks.remove(act); phoneCtl.remove(act) }
                 override fun onActivityCreated(act: Activity, b: Bundle?) {}
                 override fun onActivityStarted(act: Activity) {}
                 override fun onActivityStopped(act: Activity) {}
@@ -194,6 +199,36 @@ object TvModeFab {
             paint(a, l)
             placeFab(a, l)
         } catch (e: Throwable) { LogStore.err("TvModeFab:attach", e) }
+    }
+
+    /**
+     * (v662) مشغّل الفيديو بتاع الموبايل (مش شاشة التحكم): لو متصل بتلفزيون وفيه فيديو شغّال على التلفزيون،
+     * يظهر لسان 🎮 على الحافة اليمين كاختصار للريموت (الجويستيك) من غير ما تخرج من الفيديو.
+     */
+    private fun attachPhoneCtl(a: Activity) {
+        try {
+            if ((a as? PlayerActivity)?.remote == true) { phoneCtl.remove(a)?.let { (it.parent as? ViewGroup)?.removeView(it) }; return }
+            val root = a.findViewById<ViewGroup>(android.R.id.content) as? FrameLayout ?: return
+            var v = phoneCtl[a]
+            if (v == null) {
+                v = TextView(a).apply {
+                    setTextColor(Color.WHITE); textSize = 20f; includeFontPadding = false
+                    gravity = Gravity.CENTER; text = "🎮"; contentDescription = "ريموت التلفزيون"
+                    elevation = dp(a, 10).toFloat(); visibility = View.GONE; alpha = 0.9f
+                    background = tabBg(a, 0xF0E53935.toInt())
+                    setOnClickListener { try { ControllerPad.show(a) } catch (e: Throwable) { LogStore.err("TvModeFab:phoneCtl", e) } }
+                }
+                phoneCtl[a] = v
+            }
+            if (v.parent == null) root.addView(v, FrameLayout.LayoutParams(dp(a, 40), dp(a, 52), Gravity.RIGHT or Gravity.CENTER_VERTICAL).apply { bottomMargin = dp(a, 60) })
+            paintPhoneCtl(a, v)
+        } catch (e: Throwable) { LogStore.err("TvModeFab:attachPhoneCtl", e) }
+    }
+
+    private fun paintPhoneCtl(a: Activity, v: TextView) {
+        val inPip = try { android.os.Build.VERSION.SDK_INT >= 24 && a.isInPictureInPictureMode } catch (_: Throwable) { false }
+        val show = !inPip && RemoteClient.state == RemoteClient.St.CONNECTED && PlayTarget.nowTitle != null
+        v.visibility = if (show) View.VISIBLE else View.GONE
     }
 
     private fun pill(c: Context, color: Int): GradientDrawable =
@@ -317,23 +352,50 @@ object TvModeFab {
             if (a.isDestroyed || a.isFinishing) { layers.remove(a); continue }
             if (l.btn.parent == null || l.banner.parent == null || (l.ctl != null && l.ctl?.parent == null) || (l.cap != null && l.cap?.parent == null)) attach(a) else paint(a, l)
         }
+        for ((a, v) in phoneCtl.toList()) {
+            if (a.isDestroyed || a.isFinishing) { phoneCtl.remove(a); continue }
+            if (v.parent == null) attachPhoneCtl(a) else paintPhoneCtl(a, v)
+        }
         for (cb in listeners) try { cb() } catch (e: Throwable) { LogStore.err("TvModeFab:cb", e) }
     }
 
     // (v560) الفيديو على التلفزيون خلص/اتقفل من عنده ← الكبسولة تختفي (3 ردود فاضية ورا بعض وإحنا متصلين)
+    // (v662) والعكس: متصل والتلفزيون بيشغّل فيديو من عنده (مش مبعوت من الموبايل) ← الكبسولة تظهر بعنوانه، ودوستها تفتح شاشة التحكم
     @Volatile private var watching = false
     @Synchronized private fun startNowWatch() {
-        if (watching || PlayTarget.nowTitle == null) return
+        if (watching) return
+        if (PlayTarget.nowTitle == null && RemoteClient.state != RemoteClient.St.CONNECTED) return
         watching = true
         Thread {
             var miss = 0
+            fun nap(ms: Long) { try { Thread.sleep(ms) } catch (_: InterruptedException) {} }
             try {
-                while (resumed > 0 && PlayTarget.nowTitle != null) {
-                    try { Thread.sleep(6000L) } catch (_: InterruptedException) {}
+                while (resumed > 0) {
+                    val stt = RemoteClient.state
+                    if (stt != RemoteClient.St.CONNECTED) {
+                        if (stt == RemoteClient.St.IDLE) { if (PlayTarget.nowTitle != null) { PlayTarget.nowTitle = null; main.post { refreshAll() } }; break }   // فصلنا نهائيًا
+                        miss = 0; nap(3000L); continue   // بيتصل/انقطع مؤقتًا
+                    }
+                    if (PlayTarget.nowTitle == null) {
+                        // مفيش كبسولة: لو التلفزيون فتح مشغّل فيديو من نفسه (ping بيقول ctx=player) ← هات عنوانه واعرض الكبسولة
+                        if (RemoteClient.tvCtx == "player" && System.currentTimeMillis() >= PlayTarget.noAutoUntil) {
+                            val st = try { RemoteClient.player("state") } catch (_: Throwable) { null }
+                            if (st != null && PlayTarget.nowTitle == null && System.currentTimeMillis() >= PlayTarget.noAutoUntil) {
+                                PlayTarget.nowTitle = st.optString("title").trim().ifBlank { "فيديو على التلفزيون" }
+                                miss = 0; main.post { refreshAll() }
+                            }
+                        }
+                        nap(3000L); continue
+                    }
+                    nap(6000L)
                     if (RemoteClient.state != RemoteClient.St.CONNECTED) { miss = 0; continue }
                     val st = try { RemoteClient.player("state") } catch (_: Throwable) { null }
-                    if (st == null) miss++ else miss = 0
-                    if (miss >= 3) { PlayTarget.nowTitle = null; main.post { refreshAll() }; break }
+                    if (st == null) miss++ else {
+                        miss = 0
+                        val t = st.optString("title").trim()   // الحلقة اللي بعدها اشتغلت ← العنوان يتحدّث
+                        if (t.isNotEmpty() && RemoteClient.tvCtx == "player" && t != PlayTarget.nowTitle) { PlayTarget.nowTitle = t; main.post { refreshAll() } }
+                    }
+                    if (miss >= 3) { PlayTarget.nowTitle = null; main.post { refreshAll() }; miss = 0 }
                 }
             } finally { watching = false }
         }.also { it.isDaemon = true }.start()

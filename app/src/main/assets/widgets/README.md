@@ -19,8 +19,8 @@
 - mosque_sunset_background.svg — مشهد مسجد عند الغروب (عمل فني للخلفية)
 
 ### widgets/prayer-times/backgrounds/ — خلفيات المسجد (من الصور المرفوعة)
-- mosque_night.jpg — ليل وهلال، mosque_dawn.jpg — فجر أزرق
-- mosque_morning.jpg — صباح ذهبي، mosque_day.jpg — نهار ساطع
+- mosque_night.jpg — ليل وهلال (العشاء)، mosque_fajr.jpg — فجر أزرق (الفجر)
+- mosque_asr.jpg — ذهبي (العصر)، mosque_day.jpg — نهار ساطع (الظهر وبعد الشروق)، mosque_sunset.jpg — غروب (المغرب)
 - mosque_sunset.jpg — غروب بنفسجي برتقالي
 - تُختار الخلفية حسب الوقت أو اختيار المستخدم، وتوضع فوقها طبقة تدرج من الثيم
   لتحسين وضوح النص — ولا تُستخدم أي صورة كبديل لبيانات حقيقية.

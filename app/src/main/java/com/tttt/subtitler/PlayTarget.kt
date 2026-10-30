@@ -30,6 +30,8 @@ object PlayTarget {
 
     /** (v560) اسم الفيديو اللي شغّال دلوقتي على التلفزيون (اتبعت من الموبايل ده) — الكبسولة «اسم ✕» بتظهر طول ما هو مش null */
     @Volatile var nowTitle: String? = null
+    /** (v662) بعد ✕ على الكبسولة: ما نكتشفش «فيديو شغّال على التلفزيون» تاني قبل الوقت ده (لحد ما التلفزيون يقفل المشغّل فعلًا) */
+    @Volatile var noAutoUntil = 0L
 
     /** (v560) يرجّع يفتح شاشة التحكم (دوسة على اسم الفيديو في الكبسولة) */
     @Volatile private var mirrorLast: String? = null   // (v570) آخر ملف محلي اتبعت للتلفزيون (عشان إعادة فتح شاشة التحكم تعرض الفيديو بجودته)
@@ -37,7 +39,7 @@ object PlayTarget {
 
     /** (v560) يقفل الفيديو على التلفزيون (الأمر close) ويشيل الكبسولة فورًا */
     fun closeOnTv(ctx: android.content.Context, done: (Boolean) -> Unit = {}) {
-        nowTitle = null; TvQueue.clear(); CastServer.clear(); TvModeFab.refresh()
+        nowTitle = null; noAutoUntil = System.currentTimeMillis() + 10_000L; TvQueue.clear(); CastServer.clear(); TvModeFab.refresh()
         val app = ctx.applicationContext
         Thread {
             var ok = false
