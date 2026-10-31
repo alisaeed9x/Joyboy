@@ -447,11 +447,14 @@ internal object PrayerCard {
         val clkS = RLM + "الساعة " + timeS
         val showLabel = tall && ph >= 84f
         val labelH = if (showLabel) 13f else 0f
-        val nameSz = (if (showLabel) 22f else 12.5f) * f
+        var nameSz = (if (showLabel) 22f else 12.5f) * f
         val cdH = 22f                                   // (v679) العدّاد ثابت 18dp (Chronometer) ← ارتفاعه ~22
         val clkSz = 10.5f * f.coerceIn(0.9f, 1.3f)
         val showClk = ph >= 58f
-        val total = labelH + nameSz * 1.1f + cdH + (if (showClk) clkSz * 1.35f else 0f)
+        // (v680) مسافة تحت اسم الصلاة (نزول حروف زي ب/غ) عشان العدّاد ما يركبش عليه؛ ولو الكارت ضيّق الاسم بيصغر لحد ما الكل يتسع
+        fun totalFor(sz: Float) = labelH + sz * 1.1f + sz * 0.42f + cdH + (if (showClk) clkSz * 1.35f else 0f)
+        while (nameSz > 11f && totalFor(nameSz) > ph - 6f) nameSz -= 1f
+        val total = totalFor(nameSz)
         var y = py0 + (ph - total) / 2f
         if (showLabel) {
             val lp = txt(0xFFD5DEEE.toInt(), 10.5f, false, Paint.Align.RIGHT)
@@ -465,7 +468,7 @@ internal object PrayerCard {
         prayerIcon(cv, next.first, prx - iconR, y - nameSz * 0.34f, iconR, GOLD)
         cv.drawText(nameS, prx - iconR * 2f - 5f, y, np2)
         // (v679) «المتبقي» بقى هو الرقم الكبير (عدّاد ساعات:دقايق:ثواني بيتحط فوق الصورة من PrayerWidget)، والساعة بقت سطر صغير تحته
-        val cdTop = y + nameSz * 0.15f
+        val cdTop = y + nameSz * 0.42f
         if (geo != null) { geo.ok = left > 0L; geo.cx = pcx; geo.top = cdTop; geo.leftMs = left; geo.wDp = wDp; geo.hDp = hDp }
         if (showClk) {
             val cp2 = txt(0xFFE3E9F5.toInt(), clkSz, false, Paint.Align.CENTER)

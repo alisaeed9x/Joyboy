@@ -121,7 +121,8 @@ object TvFocus {
         try {
             val d = dm.density
             if (!saved.containsKey(v)) saved[v] = v.foreground
-            v.foreground = ring(accent, d)
+            v.foreground = if (TvUserPrefs.halo()) TvGlow.under(ring(accent, d), accent, 12, d, 0) else ring(accent, d)   // (v681) هالة بلون التمييز خلف أي زرار/عنصر متركّز
+            TvGlow.refresh(v)
             val big = v.width > dm.widthPixels * 0.55f || v.height > dm.heightPixels * 0.45f
             if (!big && v.width > 0) {
                 (v.parent as? ViewGroup)?.clipChildren = false
@@ -132,7 +133,7 @@ object TvFocus {
 
     private fun unmark(v: View) {
         try {
-            if (saved.containsKey(v)) { v.foreground = saved.remove(v) }
+            if (saved.containsKey(v)) { v.foreground = saved.remove(v); TvGlow.refresh(v) }
             v.animate().cancel()
             v.animate().scaleX(1f).scaleY(1f).translationZ(0f).setDuration(Skins.dur(100L)).start()
         } catch (_: Throwable) {}

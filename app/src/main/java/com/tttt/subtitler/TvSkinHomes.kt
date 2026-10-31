@@ -348,7 +348,10 @@ object TvHomeLayouts {
         root.addView(holder, LinearLayout.LayoutParams(ui.dp(boxW), ui.dp(boxH)))
         if (showLabel) root.addView(lab, LinearLayout.LayoutParams(ui.dp(boxW + 14), -2))
         fun paint(f: Boolean) {
-            holder.background = shape(fill, ui.dp(radius).toFloat(), if (f) Color.WHITE else 0x00000000, if (f) ui.dp(3) else ui.dp(1))
+            val sh = shape(fill, ui.dp(radius).toFloat(), if (f) Color.WHITE else 0x00000000, if (f) ui.dp(3) else ui.dp(1))
+            // (v681) هالة بلون التطبيق خلف المتركّز
+            holder.background = if (f && TvUserPrefs.halo()) TvGlow.under(sh, base, radius, a.resources.displayMetrics.density, 0) else sh
+            TvGlow.refresh(holder)
             val lk = TvUserPrefs.liftK()
             val sc0 = if (kind == APP_BIG) 1.18f else if (kind == APP_BANNER) 1.08f else 1.12f
             val sc = if (f) 1f + (sc0 - 1f) * lk else 1f
@@ -729,7 +732,10 @@ object TvHomeLayouts {
             else -> if (selected) pal.primary else pal.surface
         }
         val stroke: Int = if (focused) pal.fg else if (style == 3 || style == 5) 0x00000000 else pal.outline
-        c.background = shape(fill, r, stroke, ui.dp(if (focused) 3 else 1))
+        val chipShape = shape(fill, r, stroke, ui.dp(if (focused) 3 else 1))
+        // (v681) هالة خلف التاب المتركّز
+        c.background = if (focused && TvUserPrefs.halo()) TvGlow.under(chipShape, pal.primary, when (style) { 2 -> t.radiusCard; 5 -> 16; else -> t.radiusPill }, h.activity.resources.displayMetrics.density, 0) else chipShape
+        TvGlow.refresh(c)
         val txt: Int = when (style) {
             3 -> if (selected) (if (pal.dark) darkText else Color.WHITE) else pal.fg
             5 -> pal.fg

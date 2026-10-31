@@ -533,13 +533,8 @@ object RemoteClient {
      */
     fun forcePushFlow(act: android.app.Activity) {
         try { init(act) } catch (_: Throwable) {}
-        val old = tvVName
-        if (old.isEmpty() || (lastTv() == null && current == null)) { doForcePush(act); return }
-        // (v657) قبل الإرسال: النسخة على التلفزيون (أحمر) ← سهم ← نسخة الموبايل (أخضر)
-        try {
-            GAlert(act).setTitle("📤 تحديث التلفزيون").setView(TvUpdate.flowView(act, old, LinkVer.name(act)))
-                .setPositiveButton("📤 تحديث") { _, _ -> doForcePush(act) }.setNegativeButton("إلغاء", null).show()
-        } catch (e: Throwable) { LogStore.err("Remote:forcePushDlg", e); doForcePush(act) }
+        // (v680) من غير نافذة تأكيد على الموبايل: بيبعت على طول، و«من كذا لكذا» (الإصدار + رقم التحديث) بتظهر على التلفزيون نفسه
+        doForcePush(act)
     }
 
     private fun doForcePush(act: android.app.Activity) {
@@ -567,7 +562,7 @@ object RemoteClient {
                         r = if (ensureConnected(act, 9000L, false)) offerUpdate(false, true) else "ما قدرتش أوصل للتلفزيون — اتأكد إنه شغّال وعلى نفس الواي فاي"
                     }
                     msg = when (r) {
-                        "ok" -> "✅ التحديث اتبعت — التلفزيون بيحمّله دلوقتي وهيفتح التثبيت لوحده"
+                        "ok" -> "✅ التحديث اتبعت — شوف الشاشة على التلفزيون"
                         else -> "⚠ $r"
                     }
                 }

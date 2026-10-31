@@ -423,7 +423,7 @@ object XferUi {
     /** موبايل ← تلفزيون: الملفات بتتبعت واحد ورا التاني — والتقدم في إشعار شريط الحالة (v652) */
     fun sendUris(act: Activity, uris: List<Uri>, names: List<String>? = null) {
         val ctx = act.applicationContext
-        Notice.show(act, "📤 بدأ الإرسال — التقدم في شريط الإشعارات", 2600L)
+        SendPill.update(act, "📤 بجهّز الإرسال للتلفزيون…", 0)   // (v680) كبسولة تقدم فوق — من غير أي كود/موافقة
         Thread {
             val nf = SendNotif(ctx)
             val metas = uris.mapIndexed { i, u ->
@@ -439,30 +439,32 @@ object XferUi {
                 try {
                     if (size <= 0L) { toast(act, "⚠ ما قدرتش أعرف حجم «$name»"); continue }
                     nf.connecting("بوصّل بالتلفزيون… $name", idx + 1, uris.size)
-                    if (!RemoteClient.ensureConnected(ctx, 8000L)) { nf.fail("ما قدرتش أوصل للتلفزيون"); return@Thread }
-                    val tv = RemoteClient.current ?: run { nf.fail("مش متصل بالتلفزيون"); return@Thread }
+                    SendPill.update(act, "📤 بوصّل بالتلفزيون…", 0, name)
+                    if (!RemoteClient.ensureConnected(ctx, 8000L)) { nf.fail("ما قدرتش أوصل للتلفزيون"); SendPill.finish(act, "⚠ ما قدرتش أوصل للتلفزيون", false); return@Thread }
+                    val tv = RemoteClient.current ?: run { nf.fail("مش متصل بالتلفزيون"); SendPill.finish(act, "⚠ مش متصل بالتلفزيون", false); return@Thread }
                     val ip = RemoteClient.ipTowards(tv.ip)
                     val it = XferOut.offer(ctx, uri, name, size)
-                    if (ip.isEmpty() || it == null) { nf.fail("لازم الموبايل والتلفزيون على نفس الواي فاي"); return@Thread }
+                    if (ip.isEmpty() || it == null) { nf.fail("لازم الموبايل والتلفزيون على نفس الواي فاي"); SendPill.finish(act, "⚠ لازم نفس الواي فاي", false); return@Thread }
                     item = it
                     val (c, _) = RemoteClient.postJson("/pull", JSONObject().put("url", XferOut.urlFor(it, ip)).put("name", name).put("size", size).put("cat", XCat.catOf(name)))
-                    if (c != 200) { nf.fail("التلفزيون رفض الملف ($c) — حدّث البرنامج على التلفزيون"); return@Thread }
+                    if (c != 200) { nf.fail("التلفزيون رفض الملف ($c) — حدّث البرنامج على التلفزيون"); SendPill.finish(act, "⚠ التلفزيون رفض الملف ($c) — حدّث البرنامج عليه", false, 5000L); return@Thread }
                     var idle = 0; var lastMax = -1L
                     while (!nf.cancelled) {
                         val m = it.max
                         nf.progress(idx + 1, uris.size, name, doneBytes + m, totalBytes, t0)
+                        SendPill.update(act, "📤 إرسال للتلفزيون" + (if (uris.size > 1) " (" + (idx + 1) + "/" + uris.size + ")" else "") + " — " + (((doneBytes + m) * 100L) / totalBytes).toInt().coerceIn(0, 100) + "%", (((doneBytes + m) * 100L) / totalBytes).toInt().coerceIn(0, 100), name)
                         if (m >= size) break
                         idle = if (m == lastMax) idle + 1 else 0; lastMax = m
-                        if (idle > 75) { nf.fail("التلفزيون وقف السحب"); return@Thread }   // 30 ثانية من غير تقدم
+                        if (idle > 75) { nf.fail("التلفزيون وقف السحب"); SendPill.finish(act, "⚠ التلفزيون وقف السحب", false); return@Thread }   // 30 ثانية من غير تقدم
                         try { Thread.sleep(400) } catch (_: InterruptedException) {}
                     }
-                    if (nf.cancelled) { it.cancelled = true; nf.stopped(); return@Thread }
+                    if (nf.cancelled) { it.cancelled = true; nf.stopped(); SendPill.finish(act, "⏹ اتلغى الإرسال", false); return@Thread }
                     doneBytes += size; sent++
                     nf.progress(idx + 1, uris.size, name, doneBytes, totalBytes, t0, force = true)
-                } catch (e: Throwable) { LogStore.err("Xfer:send", e); nf.fail("فشل الإرسال"); return@Thread }
+                } catch (e: Throwable) { LogStore.err("Xfer:send", e); nf.fail("فشل الإرسال"); SendPill.finish(act, "⚠ فشل الإرسال", false); return@Thread }
                 finally { item?.let { x -> h.postDelayed({ XferOut.drop(x) }, 60000L) } }
             }
-            if (sent > 0) nf.done(sent, uris.size, doneBytes, t0) else nf.fail("مفيش ملف اتبعت")
+            if (sent > 0) { nf.done(sent, uris.size, doneBytes, t0); SendPill.finish(act, "✅ اتبعت للتلفزيون ($sent من ${uris.size})", true) } else { nf.fail("مفيش ملف اتبعت"); SendPill.finish(act, "⚠ مفيش ملف اتبعت", false) }
         }.also { it.isDaemon = true }.start()
     }
 

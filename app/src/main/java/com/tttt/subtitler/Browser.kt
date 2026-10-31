@@ -2084,7 +2084,7 @@ class BrowserActivity : Activity() {
         if (PlayTarget.open(this, MediaSpec(
                 url = if (yid.isEmpty()) f.url else null, ytid = yid.ifEmpty { null },
                 headers = mapOf("ref" to f.ref, "ua" to f.ua.ifEmpty { uaWeb }, "cookie" to tvCookie),
-                title = titleFor(f), how = if (yid.isEmpty() || noSub) Links.VIDEO else Links.VIDEO_TR))) return
+                title = titleFor(f), how = if (yid.isEmpty() || noSub) Links.VIDEO else Links.VIDEO_TR), { openPlayerNow(f, noSub, audio) })) return
         startActivity(Intent(this, PlayerActivity::class.java).pipTask(this).apply {
             if (yid.isNotEmpty()) {
                 putExtra("ytid", yid)

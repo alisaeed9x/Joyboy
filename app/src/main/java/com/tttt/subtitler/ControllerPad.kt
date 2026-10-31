@@ -20,6 +20,7 @@ import android.view.View
 import android.view.WindowManager
 import android.widget.FrameLayout
 import android.widget.LinearLayout
+import android.widget.ImageView
 import android.widget.ScrollView
 import android.widget.TextView
 import kotlin.math.abs
@@ -247,7 +248,8 @@ object ControllerPad {
 
             fun sendKey(k: String) { RemoteClient.key(k) }
             var stRef: TextView? = null
-            fun say(t: String, c: Int = 0xFFB0BEC5.toInt()) { stRef?.let { it.text = t; it.setTextColor(c) } }
+            val sayHide = Runnable { stRef?.visibility = View.GONE }
+            fun say(t: String, c: Int = 0xFFB0BEC5.toInt()) { stRef?.let { it.text = t; it.setTextColor(c); it.visibility = View.VISIBLE; hh.removeCallbacks(sayHide); hh.postDelayed(sayHide, 3500L) } }
             var voice: PadVoice? = null
             /** (v679) بحث صوتي: التسجيل بيبدأ على الموبايل فورًا (مش بيستنى التلفزيون يفتح)، والنص بيتبعت للتلفزيون يبحث بيه */
             fun startVoice() {
@@ -322,15 +324,16 @@ object ControllerPad {
 
             val col = android.widget.LinearLayout(act).apply {
                 orientation = android.widget.LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_LTR
-                setPadding(dp(24), dp(36), dp(24), dp(28))
+                setPadding(dp(24), dp(14), dp(24), dp(16))
             }
 
-            // ── شريط الحالة (v679: زرار 🎤 اتشال — بقى ضغطة طويلة على OK) ──
-            val top = android.widget.LinearLayout(act).apply { orientation = android.widget.LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
-            val st = TextView(act).apply { text = "📺 بتوصّل…"; textSize = 14f; setTextColor(0xFFB0BEC5.toInt()); gravity = Gravity.CENTER_VERTICAL }
+            // ── (v680) شريط الحالة اتشال من فوق (كان بيزق الشاشة وبيخلّي الريموت يسكرول) — بقت كبسولة عايمة بتظهر مع الصوت بس وبتختفي لوحدها ──
+            val st = TextView(act).apply {
+                textSize = 13f; setTextColor(0xFFB0BEC5.toInt()); gravity = Gravity.CENTER; visibility = View.GONE
+                setPadding(dp(14), dp(6), dp(14), dp(6))
+                background = GradientDrawable().apply { shape = GradientDrawable.RECTANGLE; cornerRadius = dpf(16f); setColor(0xE61E2F4D.toInt()) }
+            }
             stRef = st
-            top.addView(st, android.widget.LinearLayout.LayoutParams(0, -2, 1f))
-            col.addView(top, android.widget.LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(10) })
 
             // ── التبديل: أزرار الاتجاهات | لوحة اللمس ──
             val padSize = dp(259)
@@ -433,8 +436,22 @@ object ControllerPad {
                 card("تشغيل", "play", 0xFF14A58A.toInt(), 0xFF0F766E.toInt(), fs = 14f) { sendKey("play") }
             ), android.widget.LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(12) })
 
-            val sc = ScrollView(act).apply { isFillViewport = true; overScrollMode = View.OVER_SCROLL_NEVER; addView(col, FrameLayout.LayoutParams(-1, -2)) }
+            // (v680) الريموت ما بيسكرولش: لو المحتوى أطول من الشاشة بيتصغّر كله بنسبة تلائمها
+            val sc = object : ScrollView(act) {
+                override fun onInterceptTouchEvent(ev: MotionEvent?): Boolean = false
+                override fun onTouchEvent(ev: MotionEvent?): Boolean = false
+            }.apply { isFillViewport = true; overScrollMode = View.OVER_SCROLL_NEVER; isVerticalScrollBarEnabled = false; addView(col, FrameLayout.LayoutParams(-1, -2)) }
             root.addView(sc, FrameLayout.LayoutParams(-1, -1))
+            root.addView(st, FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.CENTER_HORIZONTAL).apply { topMargin = dp(40) })
+            root.post {
+                try {
+                    val avail = root.height.toFloat(); val need = col.height.toFloat()
+                    if (avail > 0f && need > avail) {
+                        val k = avail / need
+                        col.pivotX = col.width / 2f; col.pivotY = 0f; col.scaleX = k; col.scaleY = k
+                    }
+                } catch (_: Throwable) {}
+            }
 
             var connectFn: () -> Unit = {}
 
@@ -448,8 +465,7 @@ object ControllerPad {
                     val ok = try { RemoteClient.lastTv() != null && RemoteClient.ensureConnected(act, 6000L) } catch (_: Throwable) { false }
                     act.runOnUiThread {
                         if (!d.isShowing) return@runOnUiThread
-                        st.text = if (ok) "📺 متصل" else "⚠ مش متصل بالتلفزيون"
-                        st.setTextColor(if (ok) 0xFF66BB6A.toInt() else 0xFFFFB74D.toInt())
+                        // (v680) مفيش نص حالة اتصال فوق الريموت
                     }
                 }.also { it.isDaemon = true }.start()
             }
@@ -538,7 +554,8 @@ class VolumeBar(ctx: Context, private val onChange: (Int) -> Unit) : View(ctx) {
  * وفيديو التلفزيون بيتفتح عنده بنفس دوسة رئيسية التلفزيون (/recent/play).
  */
 object RecentPicker {
-    private class Item(val id: String, val title: String, val pos: Double, val dur: Double, val yt: Boolean, val local: Boolean, val rec: Recent?)
+    private class Item(val id: String, val title: String, val pos: Double, val dur: Double, val yt: Boolean, val local: Boolean, val rec: Recent?, val ytid: String = "", val onTv: Boolean = false)
+    private val thumbPool = java.util.concurrent.Executors.newFixedThreadPool(2)
 
     fun show(act: Activity) {
         try {
@@ -592,26 +609,63 @@ object RecentPicker {
             cols.addView(phBox, LinearLayout.LayoutParams(0, -1, 1f).apply { leftMargin = dp(5) })
             root.addView(cols, LinearLayout.LayoutParams(-1, 0, 1f))
 
+            /** (v680) صورة مصغّرة لكل عنصر: يوتيوب ← من يوتيوب · ملف على الموبايل ← لقطة من الملف · لينك ← اللقطة المحفوظة · عنصر التلفزيون ← بتتجاب من التلفزيون */
+            fun loadThumb(itm: Item, iv: ImageView) {
+                try {
+                    if (itm.ytid.isNotEmpty()) { com.bumptech.glide.Glide.with(act).load(LinkThumb.ytThumb(itm.ytid)).centerCrop().into(iv); return }
+                    val rc = itm.rec
+                    if (rc != null && rc.uri.isEmpty()) { LinkThumb.into(act, rc, iv); return }
+                    thumbPool.execute {
+                        var bmp: android.graphics.Bitmap? = null
+                        try {
+                            if (itm.onTv) {
+                                val (c, b) = RemoteClient.getBytes("/recent/thumb?id=" + java.net.URLEncoder.encode(itm.id, "UTF-8"), 9000)
+                                if (c == 200 && b.isNotEmpty()) bmp = android.graphics.BitmapFactory.decodeByteArray(b, 0, b.size)
+                            } else if (rc != null) {
+                                val u = android.net.Uri.parse(rc.uri)
+                                if (android.os.Build.VERSION.SDK_INT >= 29) { try { bmp = act.contentResolver.loadThumbnail(u, android.util.Size(320, 180), null) } catch (_: Throwable) {} }
+                                if (bmp == null) {
+                                    val mr = android.media.MediaMetadataRetriever()
+                                    try { mr.setDataSource(act, u); bmp = mr.getFrameAtTime(3_000_000L, android.media.MediaMetadataRetriever.OPTION_CLOSEST_SYNC) ?: mr.getFrameAtTime(0L) } catch (_: Throwable) {} finally { try { mr.release() } catch (_: Throwable) {} }
+                                }
+                            }
+                        } catch (_: Throwable) {}
+                        val bb = bmp
+                        if (bb != null) act.runOnUiThread { try { if (!act.isDestroyed) iv.setImageBitmap(bb) } catch (_: Throwable) {} }
+                    }
+                } catch (e: Throwable) { LogStore.err("RecentPicker:thumb", e) }
+            }
+
             fun row(itm: Item, onTap: () -> Unit): View {
                 val r = LinearLayout(act).apply {
-                    orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL
+                    orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; gravity = Gravity.CENTER_VERTICAL
                     background = GradientDrawable().apply { shape = GradientDrawable.RECTANGLE; cornerRadius = dpf(12f); setColor(0xFF1B2C47.toInt()) }
-                    setPadding(dp(9), dp(8), dp(9), dp(8))
+                    setPadding(dp(6), dp(6), dp(8), dp(6))
                     setOnClickListener { performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP); try { onTap() } catch (e: Throwable) { LogStore.err("RecentPicker:tap", e) } }
                 }
+                val iv = ImageView(act).apply {
+                    scaleType = ImageView.ScaleType.CENTER_CROP
+                    background = GradientDrawable().apply { shape = GradientDrawable.RECTANGLE; cornerRadius = dpf(8f); setColor(0xFF0B1426.toInt()) }
+                    clipToOutline = true
+                    outlineProvider = object : android.view.ViewOutlineProvider() { override fun getOutline(v: View, o: android.graphics.Outline) { o.setRoundRect(0, 0, v.width, v.height, dpf(8f)) } }
+                }
+                r.addView(iv, LinearLayout.LayoutParams(dp(64), dp(40)).apply { marginStart = dp(8) })
+                val tx = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL }
                 val ic = if (itm.yt) "▶ " else if (itm.local) "🎞 " else "🌐 "
-                r.addView(TextView(act).apply { text = ic + itm.title; textSize = 13.5f; setTextColor(Color.WHITE); maxLines = 2; ellipsize = android.text.TextUtils.TruncateAt.END; typeface = android.graphics.Typeface.DEFAULT_BOLD })
+                tx.addView(TextView(act).apply { text = ic + itm.title; textSize = 12.5f; setTextColor(Color.WHITE); maxLines = 2; ellipsize = android.text.TextUtils.TruncateAt.END; typeface = android.graphics.Typeface.DEFAULT_BOLD })
                 val sub = if (itm.pos > 1.0) "وقف عند " + PlayerLogic.clock((itm.pos * 1000).toLong()) + (if (itm.dur > 1.0) " من " + PlayerLogic.clock((itm.dur * 1000).toLong()) else "") else ""
-                if (sub.isNotEmpty()) r.addView(TextView(act).apply { text = sub; textSize = 11f; setTextColor(0xFF8FA0BC.toInt()) }, LinearLayout.LayoutParams(-2, -2).apply { topMargin = dp(2) })
+                if (sub.isNotEmpty()) tx.addView(TextView(act).apply { text = sub; textSize = 10.5f; setTextColor(0xFF8FA0BC.toInt()) }, LinearLayout.LayoutParams(-2, -2).apply { topMargin = dp(2) })
+                r.addView(tx, LinearLayout.LayoutParams(0, -2, 1f))
                 val lp = LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(6) }
                 r.layoutParams = lp
+                loadThumb(itm, iv)
                 return r
             }
 
             // ── قايمة الموبايل: recent.json بتاع الموبايل نفسه ──
             val phone: List<Item> = try {
                 Recents.parse(java.io.File(act.filesDir, "recent.json").readText()).take(40)
-                    .map { Item(it.id, it.title.ifBlank { Recents.titleOf(it.id) }, it.posSec, it.durSec, Recents.ytIdOf(it) != null, it.uri.isNotEmpty(), it) }
+                    .map { Item(it.id, it.title.ifBlank { Recents.titleOf(it.id) }, it.posSec, it.durSec, Recents.ytIdOf(it) != null, it.uri.isNotEmpty(), it, Recents.ytIdOf(it) ?: "") }
             } catch (_: Throwable) { emptyList() }
             fun playPhone(r: Recent) {
                 val yid = Recents.ytIdOf(r)
@@ -639,7 +693,7 @@ object RecentPicker {
                         if (c == 200) {
                             val a = org.json.JSONObject(b).optJSONArray("items") ?: org.json.JSONArray()
                             items = (0 until a.length()).mapNotNull { a.optJSONObject(it) }.map {
-                                Item(it.optString("id"), it.optString("title"), it.optDouble("pos", 0.0), it.optDouble("dur", 0.0), it.optBoolean("yt"), it.optBoolean("local"), null)
+                                Item(it.optString("id"), it.optString("title"), it.optDouble("pos", 0.0), it.optDouble("dur", 0.0), it.optBoolean("yt"), it.optBoolean("local"), null, it.optString("ytid").ifEmpty { if (it.optString("id").startsWith("yt:")) it.optString("id").removePrefix("yt:") else "" }, true)
                             }.filter { it.id.isNotEmpty() }
                         } else err = if (c == 404) "⚠ التلفزيون محتاج التحديث الجديد عشان القايمة دي" else "⚠ فشل ($c)"
                     }

@@ -1287,7 +1287,7 @@ class MainActivity : Activity() {
     fun reopenRecentLink(r: Recent) {
         val yid = Recents.ytIdOf(r)
         if (yid != null) { openLinkAs(YtNp.watchUrl(yid), Links.VIDEO, r.title); return }
-        if (PlayTarget.open(this, MediaSpec(url = r.url, title = r.title, startMs = (r.posSec * 1000).toLong(), how = Links.VIDEO))) return
+        if (PlayTarget.open(this, MediaSpec(url = r.url, title = r.title, startMs = (r.posSec * 1000).toLong(), how = Links.VIDEO), { reopenRecentLink(r) })) return
         openLinkAs(r.url, Links.VIDEO, r.title)
     }
     private fun openVideoLink(u: String, ret: String) {
@@ -1318,17 +1318,8 @@ class MainActivity : Activity() {
             startActivity(Intent(this, PlayerActivity::class.java).pipTask(this).putExtra("url", u).putExtra("title", t).putExtra("nosub", true).putExtra("landscape", true).putExtra("fresh", false))
             return
         }
-        // (v547 م4) «وضع التلفزيون» شغّال: يوتيوب/فيديو (حتى المصطاد بهيدرز) يتبعت للتلفزيون بدل ما يشتغل على الموبايل. false = الوضع مقفول فنكمّل محلي زي ما كان
-        if (how == Links.VIDEO || how == Links.VIDEO_TR || how == Links.AUTO) {
-            val kk = Links.kind(u)
-            if (kk == Links.Kind.YT || kk == Links.Kind.VIDEO || lref.isNotEmpty() || lua.isNotEmpty() || lck.isNotEmpty()) {
-                val hd = HashMap<String, String>()
-                if (lref.isNotEmpty()) hd["ref"] = lref
-                if (lua.isNotEmpty()) hd["ua"] = lua
-                if (lck.isNotEmpty()) hd["cookie"] = lck
-                if (PlayTarget.open(this, MediaSpec(url = u, headers = hd, title = t, startMs = lstart, how = if (how == Links.AUTO) "" else how))) return
-            }
-        }
+        // (v680) باقي المسار المحلي (على الموبايل) — اتحوّل لدالة عشان نافذة «تلفزيون ولا موبايل» تقدر تكمّل بيه
+        fun goLocal() {
         val lyt = Links.ytId(u)
         if (lstart > 0L && lyt != null && (how == Links.VIDEO || how == Links.VIDEO_TR || how == Links.AUTO)) {
             val tr = how == Links.VIDEO_TR
@@ -1342,6 +1333,19 @@ class MainActivity : Activity() {
             return
         }
         openLinkAs(u, how, t, r)
+        }
+        // (v547 م4) «وضع التلفزيون» شغّال: يوتيوب/فيديو (حتى المصطاد بهيدرز) يتبعت للتلفزيون بدل ما يشتغل على الموبايل. false = الوضع مقفول فنكمّل محلي زي ما كان
+        if (how == Links.VIDEO || how == Links.VIDEO_TR || how == Links.AUTO) {
+            val kk = Links.kind(u)
+            if (kk == Links.Kind.YT || kk == Links.Kind.VIDEO || lref.isNotEmpty() || lua.isNotEmpty() || lck.isNotEmpty()) {
+                val hd = HashMap<String, String>()
+                if (lref.isNotEmpty()) hd["ref"] = lref
+                if (lua.isNotEmpty()) hd["ua"] = lua
+                if (lck.isNotEmpty()) hd["cookie"] = lck
+                if (PlayTarget.open(this, MediaSpec(url = u, headers = hd, title = t, startMs = lstart, how = if (how == Links.AUTO) "" else how), { goLocal() })) return
+            }
+        }
+        goLocal()
     }
     fun play(u: String, uri: Uri?, landscape: Boolean = uri != null, fresh: Boolean = false, noSub: Boolean = false, ask: Boolean = false, ret: String = "") {
         try { musicUi?.pause() } catch (_: Throwable) {}
@@ -1357,7 +1361,13 @@ class MainActivity : Activity() {
             return
         }
         // (v564) «وضع التلفزيون» شغّال والفيديو من الموبايل نفسه: يتبعت للتلفزيون (يسحبه على دفعات ويمسح الكاش لما تخرج)
-        if (PlayTarget.enabled() && PlayTarget.isLocal(v.uri) && PlayTarget.force(this, MediaSpec(uri = v.uri, title = v.title))) return
+        if (PlayTarget.enabled() && PlayTarget.isLocal(v.uri) && !DeviceUi.isTv(this)) {
+            // (v680) ملف على الموبايل + وضع التلفزيون: نافذة «تلفزيون ولا موبايل» (عشان اللي شغّال على التلفزيون ما يتقطعش)
+            PlayTarget.askWhere(this, v.title,
+                { if (!PlayTarget.force(this, MediaSpec(uri = v.uri, title = v.title))) Notice.show(this, "📺 ما اتبعتش للتلفزيون", 3000L) },
+                { play("", Uri.parse(v.uri), v.landscape, false, false, !BgJobs.isActive(v.videoId)) })
+            return
+        }
         play("", Uri.parse(v.uri), v.landscape, false, false, !BgJobs.isActive(v.videoId))
     }
     fun startPlayerNow(u: String, uri: Uri?, landscape: Boolean = uri != null, fresh: Boolean = false, noSub: Boolean = false, ask: Boolean = false, ret: String = "") {
@@ -1527,7 +1537,7 @@ class MainActivity : Activity() {
     fun playWeb(w: WebVid) {
         if (w.kind == "YT") { if (w.id.startsWith("yt:")) playYt(w.id.removePrefix("yt:"), w.title, true, false) else if (w.ref.isNotEmpty()) openLink(w.ref) else Notice.show(this, ("رابط يوتيوب انتهت صلاحيته — افتحه من المتصفح تاني").toString(), 3600L); return }
         // (v543 م4) وضع التلفزيون: الفيديو المصطاد بيتبعت للتلفزيون بنفس الهيدرز (Referer/UA/Cookie)
-        if (PlayTarget.open(this, MediaSpec(url = w.url, headers = mapOf("ref" to w.ref, "ua" to w.ua, "cookie" to w.cookie), title = w.title, how = Links.VIDEO))) return
+        if (PlayTarget.open(this, MediaSpec(url = w.url, headers = mapOf("ref" to w.ref, "ua" to w.ua, "cookie" to w.cookie), title = w.title, how = Links.VIDEO), { playWeb(w) })) return
         ensureKeys {
             startActivity(Intent(this, PlayerActivity::class.java).pipTask(this).apply {
                 putExtra("url", w.url); putExtra("ref", w.ref); putExtra("ua", w.ua); putExtra("cookie", w.cookie)
@@ -1538,7 +1548,7 @@ class MainActivity : Activity() {
     /** (v117) دخول مباشر لفيديو يوتيوب من معرّفه: بيجيب أحسن لينك فيه صوت وصورة ويفتح المشغّل (لو فشل بيفتح صفحته في المتصفح) */
     fun playYt(id: String, title: String, translate: Boolean = true, auto: Boolean = translate, startMs: Long = 0L, handoff: YtPick? = null, retOv: String = "") {
         // (v543 م4) وضع التلفزيون شغّال: يوتيوب بيتبعت للتلفزيون على طول (ytid + مكان البداية) وبعدين شاشة الريموت — من غير سؤال
-        if ((handoff == null || PlayTarget.enabled()) && id.length == 11 && PlayTarget.open(this, MediaSpec(ytid = id, title = title, startMs = startMs, how = if (translate) Links.VIDEO_TR else Links.VIDEO))) {
+        if ((handoff == null || PlayTarget.enabled()) && id.length == 11 && PlayTarget.open(this, MediaSpec(ytid = id, title = title, startMs = startMs, how = if (translate) Links.VIDEO_TR else Links.VIDEO), if (handoff == null) ({ playYt(id, title, translate, auto, startMs, null, retOv) }) else null)) {
             if (handoff != null) { try { YtHandoff.take()?.release() } catch (_: Throwable) {} }   // (v560) المشغّل المصغّر اللي كان شغّال على الموبايل يتقفل — الفيديو راح للتلفزيون
             return
         }

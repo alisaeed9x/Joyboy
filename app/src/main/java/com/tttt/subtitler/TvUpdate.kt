@@ -53,6 +53,9 @@ object TvUpdate {
         } catch (_: Throwable) { null }
     }
 
+    /** (v680) رقم الإصدار + رقم البناء (التحديث) في سطر: «6.78 · #29123456» */
+    fun verLabel(name: String, code: Long): String = if (code > 0L) "$name · #$code" else name
+
     /** (v657) النسخة القديمة (أحمر) ← سهم ← النسخة الجديدة (أخضر) — بتظهر في كل نوافذ التحديث */
     fun flowView(a: Context, oldName: String, newName: String): View {
         val th = Glass.theme(); val d = a.resources.displayMetrics.density
@@ -113,7 +116,7 @@ object TvUpdate {
 
     fun ask(a: Activity, o: TvLink.Offer, done: (Boolean) -> Unit) {
         try {
-            GAlert(a).setTitle("⬆ تحديث من الموبايل").setView(flowView(a, LinkVer.name(a), o.vname))
+            GAlert(a).setTitle("⬆ تحديث من الموبايل").setView(flowView(a, verLabel(LinkVer.name(a), LinkVer.code(a)), verLabel(o.vname, o.ver)))
                 .setMessage(if (o.force) "«" + o.from + "» بيدفع تحديث إجباري: Subtitler " + o.vname + " (على التلفزيون دلوقتي: " + LinkVer.name(a) + ").\nتنزّله وتثبّته دلوقتي من الموبايل على الواي فاي؟" else "«" + o.from + "» عليه Subtitler " + o.vname + " (أحدث من اللي على التلفزيون: " + LinkVer.name(a) + ").\nتنزّله دلوقتي من الموبايل على الواي فاي؟")
                 .setPositiveButton("تحديث") { _, _ -> done(true); download(a, o) }
                 .setNegativeButton("لاحقًا") { _, _ -> done(false) }
@@ -124,7 +127,18 @@ object TvUpdate {
 
     fun download(a: Activity, o: TvLink.Offer) {
         if (downloading) return   // (v573) تنزيل شغّال بالفعل (دفع تاني أو رجوع الشاشة) ← ما نبدأش واحد تاني
-        readyFile(a, o)?.let { install(a, it); return }   // (v563) موجود كامل: من غير تنزيل
+        readyFile(a, o)?.let { rf ->   // (v563) موجود كامل: من غير تنزيل
+            // (v680) على التلفزيون: من كذا لكذا (الإصدار + رقم التحديث)، والتثبيت يبدأ لوحده بعد ثواني أو بالزرار
+            try {
+                var went = false
+                val go = { if (!went) { went = true; install(a, rf) } }
+                val dlg = GAlert(a).setTitle("✅ التحديث موجود كامل").setView(flowView(a, verLabel(LinkVer.name(a), LinkVer.code(a)), verLabel(o.vname, o.ver)))
+                    .setPositiveButton("تثبيت الآن") { _, _ -> go() }.setNegativeButton("إلغاء") { _, _ -> went = true }.create()
+                dlg.show()
+                h.postDelayed({ try { if (!went) { dlg.dismiss(); go() } } catch (_: Throwable) {} }, 3500L)
+            } catch (e: Throwable) { LogStore.err("TvUpdate:ready", e); install(a, rf) }
+            return
+        }
         val tv = IconTextView(a).apply {
             text = "⏳ بتواصل مع الموبايل…"; textSize = 16f
             setTextColor(Themes.byId(Cfg.str("theme", "mx")).text)
@@ -139,6 +153,8 @@ object TvUpdate {
         }
         val boxV = LinearLayout(a).apply {
             orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL
+            // (v680) من كذا لكذا: إصدار + رقم التحديث الحاليين على التلفزيون ← الجديدين اللي جايين من الموبايل
+            try { addView(flowView(a, verLabel(LinkVer.name(a), LinkVer.code(a)), verLabel(o.vname, o.ver)), LinearLayout.LayoutParams(-1, -2).apply { setMargins((12 * dd).toInt(), (6 * dd).toInt(), (12 * dd).toInt(), 0) }) } catch (_: Throwable) {}
             addView(tv, LinearLayout.LayoutParams(-1, -2))
             addView(bar, LinearLayout.LayoutParams(-1, (14 * dd).toInt()).apply { setMargins((16 * dd).toInt(), 0, (16 * dd).toInt(), (16 * dd).toInt()) })
         }

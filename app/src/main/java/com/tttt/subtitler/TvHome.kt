@@ -2069,26 +2069,53 @@ class TvActivity : Activity() {
         subOpened = true
         val skins = TvSkins.all; val cur = TvSkins.cur().id
         val after = Cfg.str("tv_theme_after_skin", "0") == "1"   // (v631) افتراضي معطّل: السكن هو الأساسي ومفيش سؤال عن السمة بعده
-        val head = listOf(
-            "⚙ اختيار السمة بعد السكن: " + (if (after) "✔ مفعّل" else "✖ معطّل") + "  (اضغط للتبديل)",
-            "🎨 السمات (للسكن الحالي)")
-        val items = head + skins.map { (if (it.id == cur) "✔ " else "") + it.name }
-        GAlert(this).setTitle("🧩 السكنات")
-            .setMessage(if (after) "بعد اختيار السكن هتختار السمة." else "اختيار السكن بيتطبّق على طول بالسمة الحالية.")
-            .setItems(items.toTypedArray()) { _, i ->
-                when {
-                    i == 0 -> { Cfg.put("tv_theme_after_skin", if (after) "0" else "1"); lookDialog() }
-                    i == 1 -> skinThemePicker(TvSkins.cur())
-                    else -> {
-                        val sk = skins[i - head.size]
-                        if (after) skinThemePicker(sk)
-                        else { if (sk.id != cur) TvSkins.set(sk.id, skinHost); applySkinLive() }
-                    }
-                }
+        var dlg: android.app.Dialog? = null
+        fun pill(label: String, onClick: () -> Unit): View = ui.text(label, 15f, th.text).apply {
+            setPadding(ui.dp(14), ui.dp(12), ui.dp(14), ui.dp(12)); background = ui.box(th.surface, th.border, 12)
+            isFocusable = true; isClickable = true
+            setOnClickListener { dlg?.dismiss(); onClick() }
+        }
+        val desc = mapOf(
+            "hub" to "Android TV — تابات فوق · هيرو · بانرات تطبيقات · كروت «التالي»",
+            "classic" to "كلاسيك — هيرو وصفوف أفقية (سجل · يوتيوب · فولدرات · تطبيقات)",
+            "glass" to "Glass — لوحات زجاج متجاورة · أيقونات كبيرة في النص",
+            "samsung" to "Samsung — شريط أيقونات جانبي · هيرو «شاهد الآن» · مربعات",
+            "lg" to "LG webOS — كروت مميزات · دوك تطبيقات زجاجي",
+            "tcl" to "TCL / Google TV — كبسولة تابات · هيرو بنقط · صور 16:9 · دواير",
+            "xiaomi" to "Xiaomi — سايدبار بتسميات · حائط بوسترات · شبكة تطبيقات")
+        val col = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; clipChildren = false; clipToPadding = false }
+        fun gap(v: View) { col.addView(v, LinearLayout.LayoutParams(-1, -2).apply { setMargins(ui.dp(2), ui.dp(4), ui.dp(2), ui.dp(4)) }) }
+        gap(pill("⚙ اختيار السمة بعد السكن: " + (if (after) "✔ مفعّل" else "✖ معطّل") + "  (اضغط للتبديل)") { Cfg.put("tv_theme_after_skin", if (after) "0" else "1"); lookDialog() })
+        gap(pill("🎨 السمات (للسكن الحالي)") { skinThemePicker(TvSkins.cur()) })
+        var curRow: View? = null
+        for (sk in skins) {
+            // (v681) معاينة مصغّرة لترتيب السكن جنب اسمه
+            val row = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; gravity = Gravity.CENTER_VERTICAL
+                setPadding(ui.dp(8), ui.dp(8), ui.dp(10), ui.dp(8))
+                background = ui.box(if (sk.id == cur) (th.primary and 0x00FFFFFF) or 0x33000000 else th.surface, if (sk.id == cur) th.primary else th.border, 12)
+                isFocusable = true; isClickable = true
             }
+            row.addView(TvSkinPreview(this, sk.id, th), LinearLayout.LayoutParams(ui.dp(176), ui.dp(99)))
+            val txt = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(ui.dp(12), 0, ui.dp(4), 0) }
+            txt.addView(ui.text((if (sk.id == cur) "✔ " else "") + sk.name, 17f, th.text, true))
+            txt.addView(ui.text(desc[sk.id] ?: "", 12.5f, th.muted).apply { setPadding(0, ui.dp(4), 0, 0) })
+            row.addView(txt, LinearLayout.LayoutParams(0, -2, 1f))
+            row.setOnClickListener {
+                dlg?.dismiss()
+                if (after) skinThemePicker(sk)
+                else { if (sk.id != cur) TvSkins.set(sk.id, skinHost); applySkinLive() }
+            }
+            if (sk.id == cur) curRow = row
+            gap(row)
+        }
+        dlg = GAlert(this).setTitle("🧩 السكنات")
+            .setMessage(if (after) "بعد اختيار السكن هتختار السمة." else "اختيار السكن بيتطبّق على طول بالسمة الحالية.")
+            .setView(col)
             .setNegativeButton("رجوع") { _, _ -> refreshAppearance() }
             .setOnCancelListener(android.content.DialogInterface.OnCancelListener { refreshAppearance() })
             .show()
+        curRow?.post { try { curRow?.requestFocus() } catch (_: Throwable) {} }
     }
     /** (v635) تبديل السكن من غير recreate (كان بيعمل ضغط ذاكرة/كراش على التلفزيون): بنمسح الكاش ونرسم الرئيسية بالسكن الجديد، ولو فشل نرجع للـrecreate */
     private fun applySkinLive() {
@@ -2777,11 +2804,30 @@ class TvActivity : Activity() {
         appendYtPage(col)
     }
 
-    /** 3 فيديوهات في كل دفعة؛ لما التركيز يوصل لآخر واحد بنزوّد 3 تانيين (ولو خلصت الـ60 بنجيب صفحة تانية من يوتيوب) */
+    /** (v681) عدد الأعمدة في شبكة يوتيوب — نفس منطق شبكة الفيديوهات في الجلاس (عرض الكارت ~236dp)، والسايدبار (شاومي) بيخصم عرضه */
+    private fun ytCols(): Int {
+        val dm = resources.displayMetrics
+        val wDp = dm.widthPixels / dm.density
+        val side = if (TvSkins.cur().id == "xiaomi") 190f else 40f
+        return (((wDp - side - 24f) / 236f).toInt()).coerceIn(2, 5)
+    }
+
+    /** (v681) شبكة صفوف تحت بعض (زي فيديوهات الفولدر): كل دفعة صفين؛ لما التركيز يوصل لآخر صف بنزوّد صفين تانيين (ولو خلصت الـ60 بنجيب صفحة تانية من يوتيوب) */
     private fun appendYtPage(col: LinearLayout) {
-        val next = ytRowItems.drop(ytListShown).take(3)
+        val cols = ytCols()
+        val next = ytRowItems.drop(ytListShown).take(cols * 2)
         if (next.isEmpty()) { loadMoreYt(col); return }
-        next.forEach { col.addView(ytListItem(it, col)) }
+        var i = 0
+        while (i < next.size) {
+            val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; clipChildren = false; clipToPadding = false }
+            for (j in 0 until cols) {
+                val v = next.getOrNull(i + j)
+                val lp = LinearLayout.LayoutParams(0, if (v != null) -2 else 1, 1f).apply { setMargins(ui.dp(5), ui.dp(5), ui.dp(5), ui.dp(5)) }
+                row.addView(if (v != null) ytListItem(v, col, row) else View(this), lp)
+            }
+            col.addView(row, LinearLayout.LayoutParams(-1, -2))
+            i += cols
+        }
         ytListShown += next.size
     }
 
@@ -2804,24 +2850,32 @@ class TvActivity : Activity() {
         }.apply { isDaemon = true }.start()
     }
 
-    private fun ytListItem(v: NpItem, col: LinearLayout): View {
+    /** (v681) كارت فيديو يوتيوب بشكل كارت فيديو الفولدر: صورة 16:9 فوق + العنوان (سطرين) + القناة · العمر تحتها */
+    private fun ytListItem(v: NpItem, col: LinearLayout, row: LinearLayout): View {
         val t = TvTileView(this, 12).styled(TvSkins.cur().tokens, th.primary)
-        val row = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; gravity = Gravity.CENTER_VERTICAL
-            background = GradientDrawable().apply { setColor((th.surface and 0x00FFFFFF) or 0xCC000000.toInt()); cornerRadius = ui.dp(12).toFloat(); setStroke(ui.dp(1), if (Theme.lum(th.bg) < 0.35f) 0x77FFFFFF else 0x66000000) }
-            setPadding(ui.dp(8), ui.dp(6), ui.dp(8), ui.dp(6))
+        t.inner.background = GradientDrawable().apply { setColor((th.surface and 0x00FFFFFF) or 0xCC000000.toInt()); cornerRadius = ui.dp(12).toFloat(); setStroke(ui.dp(1), if (Theme.lum(th.bg) < 0.35f) 0x77FFFFFF else 0x66000000) }
+        val card = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; setPadding(ui.dp(8), ui.dp(8), ui.dp(8), ui.dp(8)) }
+        val box = FrameLayout(this).apply {
+            setBackgroundColor(th.border); clipToOutline = true
+            outlineProvider = object : android.view.ViewOutlineProvider() {
+                override fun getOutline(vw: View, o: android.graphics.Outline) { o.setRoundRect(0, 0, vw.width, vw.height, ui.dp(8).toFloat()) }
+            }
         }
-        val iv = ImageView(this).apply { scaleType = ImageView.ScaleType.CENTER_CROP; setBackgroundColor(th.border) }
+        val iv = ImageView(this).apply { scaleType = ImageView.ScaleType.CENTER_CROP }
         if (v.thumb.isNotBlank()) try { com.bumptech.glide.Glide.with(this).load(v.thumb).centerCrop().into(iv) } catch (_: Throwable) { }
-        row.addView(iv, LinearLayout.LayoutParams(ui.dp(116), ui.dp(65)))
-        val txt = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(ui.dp(10), 0, ui.dp(6), 0) }
-        txt.addView(ui.text(v.title, 13.5f, th.text, true).apply { maxLines = 2; ellipsize = android.text.TextUtils.TruncateAt.END })
-        txt.addView(ui.text(v.channel + if (v.age.isNotBlank()) " · " + v.age else "", 11.5f, th.muted).apply { maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END; setPadding(0, ui.dp(3), 0, 0) })
-        row.addView(txt, LinearLayout.LayoutParams(0, -2, 1f))
-        t.inner.addView(row, FrameLayout.LayoutParams(-1, -1))
+        box.addView(iv, FrameLayout.LayoutParams(-1, -1))
+        card.addView(box, LinearLayout.LayoutParams(-1, ui.dp(112)))
+        card.addView(ui.text(v.title, 13.5f, th.text, true).apply {
+            maxLines = 2; minLines = 2; ellipsize = android.text.TextUtils.TruncateAt.END; minWidth = 0
+            textDirection = View.TEXT_DIRECTION_FIRST_STRONG; textAlignment = View.TEXT_ALIGNMENT_VIEW_START; setPadding(0, ui.dp(8), 0, 0)
+        })
+        card.addView(ui.text(v.channel + if (v.age.isNotBlank()) " · " + v.age else "", 11.5f, th.muted).apply {
+            maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END; textAlignment = View.TEXT_ALIGNMENT_VIEW_START; setPadding(0, ui.dp(2), 0, 0)
+        })
+        t.inner.addView(card, FrameLayout.LayoutParams(-1, -2))
         t.setOnClickListener { openYt(v.id, v.title) }
-        t.onFocus = { f -> if (f && col.indexOfChild(t) == col.childCount - 1) col.post { appendYtPage(col) } }
-        t.layoutParams = LinearLayout.LayoutParams(-1, ui.dp(88)).apply { setMargins(ui.dp(4), ui.dp(4), ui.dp(4), ui.dp(4)) }
+        t.contentDescription = v.title
+        t.onFocus = { f -> if (f && col.indexOfChild(row) == col.childCount - 1) col.post { appendYtPage(col) } }
         return t
     }
 

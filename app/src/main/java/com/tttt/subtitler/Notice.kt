@@ -3,7 +3,10 @@ package com.tttt.subtitler
 import android.app.Activity
 import android.content.Context
 import android.content.ContextWrapper
+import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.Paint
+import android.graphics.RectF
 import android.graphics.PixelFormat
 import android.os.Handler
 import android.os.Looper
@@ -259,4 +262,78 @@ object NoticeLog {
 
     fun list(): List<Item> = synchronized(items) { ArrayList(items) }
     fun clear() { synchronized(items) { items.clear() }; val f = onChange; if (f != null) main.post { try { f() } catch (_: Throwable) {} } }
+}
+
+
+/**
+ * (v680) كبسولة تقدم الإرسال: بتنزل من فوق أول ما تبعت ملفات للتلفزيون (من غير شاشات/أكواد/أرقام) وفيها اسم + شريط تقدم + نسبة،
+ * وبتتحدّث لوحدها وبتختفي بعد ما يخلص. دوسة عليها = onTap (تفاصيل). مرتبطة بالأكتيفيتي اللي بعتنا منها.
+ */
+object SendPill {
+    private val main = Handler(Looper.getMainLooper())
+    private class Pill(val root: LinearLayout, val title: TextView, val sub: TextView, val bar: View, var pct: Int) { var hide: Runnable? = null }
+    private val pills = java.util.WeakHashMap<Activity, Pill>()
+
+    private fun build(act: Activity, onTap: (() -> Unit)?): Pill {
+        val d = act.resources.displayMetrics.density
+        fun dp(v: Int) = (v * d).toInt()
+        val title = TextView(act).apply { textSize = 13f; setTextColor(Color.WHITE); typeface = android.graphics.Typeface.DEFAULT_BOLD; setSingleLine(); ellipsize = android.text.TextUtils.TruncateAt.END }
+        val sub = TextView(act).apply { textSize = 11f; setTextColor(0xFFB8C4DA.toInt()); setSingleLine(); ellipsize = android.text.TextUtils.TruncateAt.END }
+        lateinit var p: Pill
+        val bar = object : View(act) {
+            private val bg = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0x33FFFFFF }
+            private val fg = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0xFF4ADE80.toInt() }
+            private val rc = RectF()
+            override fun onDraw(c: Canvas) {
+                val r = height / 2f
+                rc.set(0f, 0f, width.toFloat(), height.toFloat()); c.drawRoundRect(rc, r, r, bg)
+                val w = width * (p.pct.coerceIn(0, 100) / 100f)
+                if (w > 0f) { rc.set(0f, 0f, maxOf(w, height.toFloat()), height.toFloat()); c.drawRoundRect(rc, r, r, fg) }
+            }
+        }
+        val root = LinearLayout(act).apply {
+            orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL
+            setPadding(dp(18), dp(10), dp(18), dp(12)); elevation = dp(12).toFloat()
+            background = android.graphics.drawable.GradientDrawable().apply { setColor(0xF0151B2B.toInt()); setStroke(dp(1), 0x668FB4FF); cornerRadius = dp(22).toFloat() }
+            addView(title, LinearLayout.LayoutParams(-1, -2))
+            addView(sub, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(1) })
+            addView(bar, LinearLayout.LayoutParams(-1, dp(6)).apply { topMargin = dp(7) })
+            if (onTap != null) setOnClickListener { try { onTap() } catch (_: Throwable) {} }
+        }
+        p = Pill(root, title, sub, bar, 0)
+        return p
+    }
+
+    /** يظهر/يتحدّث. pct < 0 = جاري التجهيز (من غير نسبة) */
+    fun update(act: Activity, titleText: String, pct: Int, subText: String = "", onTap: (() -> Unit)? = null) {
+        main.post {
+            try {
+                if (act.isFinishing || act.isDestroyed) return@post
+                var p = pills[act]
+                if (p == null || p.root.parent == null) {
+                    p = build(act, onTap); pills[act] = p
+                    val host = act.findViewById<ViewGroup>(android.R.id.content) ?: return@post
+                    val d = act.resources.displayMetrics.density
+                    host.addView(p.root, FrameLayout.LayoutParams((minOf(act.resources.displayMetrics.widthPixels - (24 * d).toInt(), (380 * d).toInt())), -2, Gravity.TOP or Gravity.CENTER_HORIZONTAL).apply { topMargin = (34 * d).toInt() })
+                }
+                p.hide?.let { main.removeCallbacks(it) }; p.hide = null
+                p.title.text = titleText; p.sub.text = subText; p.sub.visibility = if (subText.isEmpty()) View.GONE else View.VISIBLE
+                p.pct = pct.coerceAtLeast(0); p.bar.invalidate()
+            } catch (_: Throwable) {}
+        }
+    }
+
+    /** نهاية الإرسال: رسالة أخيرة وبعد [afterMs] تختفي */
+    fun finish(act: Activity, msg: String, ok: Boolean, afterMs: Long = 3500L) {
+        main.post {
+            try {
+                val p = pills[act] ?: return@post
+                p.title.text = msg; p.sub.visibility = View.GONE
+                if (ok) p.pct = 100
+                p.bar.invalidate()
+                val r = Runnable { try { (p.root.parent as? ViewGroup)?.removeView(p.root); pills.remove(act) } catch (_: Throwable) {} }
+                p.hide?.let { main.removeCallbacks(it) }; p.hide = r; main.postDelayed(r, afterMs)
+            } catch (_: Throwable) {}
+        }
+    }
 }

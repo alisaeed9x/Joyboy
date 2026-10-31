@@ -235,6 +235,7 @@ object TvLink {
             "/open" -> open(r)
             "/recent" -> recentList()           // (v678) آخر المشغّلة على التلفزيون (لقايمة الريموت)
             "/recent/play" -> recentPlay(r)     // (v678) تشغيل واحد منها على التلفزيون
+            "/recent/thumb" -> BrainRpc.recentThumb(app, r)   // (v680) الصورة المصغّرة
             "/cosurf" -> coSurf(r)   // (v646) مزامنة المتصفح
             "/clear" -> clearHist(r)
             "/type" -> typeText(r)
@@ -536,7 +537,7 @@ object TvLink {
         val l = try { Recents.parse(java.io.File(app.filesDir, "recent.json").readText()) } catch (_: Exception) { emptyList() }
         val a = JSONArray()
         for (r in l.take(40)) a.put(JSONObject().put("id", r.id).put("title", r.title.ifBlank { Recents.titleOf(r.id) })
-            .put("pos", r.posSec).put("dur", r.durSec).put("yt", Recents.ytIdOf(r) != null).put("local", r.uri.isNotEmpty()))
+            .put("pos", r.posSec).put("dur", r.durSec).put("yt", Recents.ytIdOf(r) != null).put("ytid", Recents.ytIdOf(r) ?: "").put("local", r.uri.isNotEmpty()))
         return ok(JSONObject().put("items", a))
     }
 

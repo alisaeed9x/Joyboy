@@ -501,7 +501,39 @@ class FileTransferActivity : Activity() {
         homePk?.clearSel()
         shownSids.add(s.sid)
         while (stack.size > 1) stack.removeAt(stack.size - 1)
+        if (p.isTv) {
+            // (v680) إرسال للتلفزيون: على طول من غير شاشة تقدم ولا أكواد — كبسولة فوق فيها شريط التقدم، ودوسة عليها بتفتح التفاصيل
+            show()
+            trackPill(s)
+            return
+        }
         go("progress") { buildProgress(s) }
+    }
+
+    /** (v680) كبسولة تقدم لجلسة إرسال (تلفزيون): بتتحدّث كل نص ثانية لحد ما الجلسة تخلص */
+    private fun trackPill(s: FtSession) {
+        val act = this
+        val hh = android.os.Handler(android.os.Looper.getMainLooper())
+        val open: () -> Unit = { go("progress") { buildProgress(s) } }
+        val tick = object : Runnable {
+            override fun run() {
+                try {
+                    if (isFinishing || isDestroyed) return
+                    val pct = s.percent()
+                    when {
+                        s.active -> {
+                            val eta = s.etaSec()
+                            val sub = s.doneFiles().toString() + "/" + s.acceptedFiles.size + " ملف" + (if (s.speedBps > 1.0) " · ⚡ " + String.format("%.1f MB/s", s.speedBps / 1048576.0) else "") + (if (eta >= 0L) " · باقي " + fmtT(eta) else "")
+                            SendPill.update(act, (if (s.status == FtSession.RUNNING) "📤 إرسال للتلفزيون — $pct%" else "📤 " + s.msg.ifBlank { "بوصّل بالتلفزيون…" }), if (s.status == FtSession.RUNNING) pct else 0, sub, open)
+                            hh.postDelayed(this, 500L)
+                        }
+                        s.status == FtSession.DONE -> SendPill.finish(act, "✅ اتبعت للتلفزيون (" + s.doneFiles() + " ملف)", true)
+                        else -> SendPill.finish(act, "⚠ " + s.msg.ifBlank { "الإرسال وقف" }, false, 5000L)
+                    }
+                } catch (_: Throwable) {}
+            }
+        }
+        hh.post(tick)
     }
 
     // ═════════════ الاستقبال / التقدم ═════════════
@@ -638,7 +670,7 @@ class FileTransferActivity : Activity() {
             stats.text = Sniff.fmtSize(s.doneBytes()) + " / " + Sniff.fmtSize(s.totalBytes()) +
                 (if (s.active && s.speedBps > 1.0) " · ⚡ " + String.format("%.1f MB/s", s.speedBps / 1048576.0) else "") + (if (s.active && eta >= 0L) " · باقي " + fmtT(eta) else "")
             msg.text = s.msg
-            if (s.sas.isNotEmpty() && !s.legacy) { sas.text = "🔐 كود التحقق: " + s.sas + " — لازم يطابق الرقم على الجهاز التاني"; sas.visibility = View.VISIBLE } else sas.visibility = View.GONE
+            if (s.sas.isNotEmpty() && !s.legacy && !s.peerType.equals("tv", true)) { sas.text = "🔐 كود التحقق: " + s.sas + " — لازم يطابق الرقم على الجهاز التاني"; sas.visibility = View.VISIBLE } else sas.visibility = View.GONE
             (lv.adapter as BaseAdapter).notifyDataSetChanged()
             if (s.status != lastStatus) { lastStatus = s.status; buttons() }
         }

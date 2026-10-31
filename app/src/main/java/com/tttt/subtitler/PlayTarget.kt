@@ -55,9 +55,32 @@ object PlayTarget {
      * @return true = PlayTarget مسك الطلب (اتبعت للتلفزيون أو اتعرض خطأ) وإنت ما تكمّلش محلي؛
      *         false = وضع التلفزيون مقفول (أو الجهاز نفسه تلفزيون/مفيش حاجة تتبعت) — كمّل السلوك المحلي زي ما كان.
      */
-    fun open(act: Activity, spec: MediaSpec): Boolean {
+    /** (v680) اختيار «على الموبايل» من النافذة: الاستدعاء الجاي لـ open (إعادة تشغيل نفس الطلب) يكمّل محلي */
+    @Volatile private var phoneOnce = false
+
+    /**
+     * (v680) وضع التلفزيون شغّال: بدل ما كل فيديو يروح للتلفزيون غصب (وده كان بيقطع اللي شغّال عليه)، بتظهر نافذة «تشغّله فين؟ 📺 تلفزيون / 📱 موبايل».
+     * [again] = إعادة تنفيذ نفس الطلب من الأول (لو اخترت الموبايل بيتنادى ومعاه open بترجّع false فيكمّل محلي).
+     */
+    fun open(act: Activity, spec: MediaSpec, again: (() -> Unit)? = null): Boolean {
         if (!enabled()) return false
+        if (phoneOnce) { phoneOnce = false; return false }
+        if (again != null && !DeviceUi.isTv(act)) {
+            askWhere(act, spec.title, { force(act, spec) }, { phoneOnce = true; try { again() } finally { phoneOnce = false } })
+            return true
+        }
         return force(act, spec)
+    }
+
+    /** (v680) نافذة «تشغّله فين؟» — إغلاقها من برّه = إلغاء (ما بيحصلش حاجة، واللي شغّال على التلفزيون يكمّل) */
+    fun askWhere(act: Activity, title: String, onTv: () -> Unit, onPhone: () -> Unit) {
+        try {
+            val msg = title.ifBlank { "الفيديو" } + (if (nowTitle != null) "\n\n📺 شغّال دلوقتي على التلفزيون: " + nowTitle else "")
+            GAlert(act).setTitle("تشغّله فين؟").setMessage(msg)
+                .setPositiveButton("📺 على التلفزيون") { _, _ -> try { onTv() } catch (e: Throwable) { LogStore.err("PlayTarget:askTv", e) } }
+                .setNegativeButton("📱 على الموبايل") { _, _ -> try { onPhone() } catch (e: Throwable) { LogStore.err("PlayTarget:askPhone", e) } }
+                .show()
+        } catch (e: Throwable) { LogStore.err("PlayTarget:askWhere", e); onTv() }
     }
 
     /**

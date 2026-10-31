@@ -154,6 +154,28 @@ object BrainRpc {
         return HttpRes(200, "image/jpeg", bo.toByteArray())
     }
 
+    /** (v680) صورة مصغّرة لعنصر من «آخر المشغّلة» على التلفزيون (بالـid): ملف محلي ← من مكتبة التلفزيون · لينك ← اللقطة المحفوظة · يوتيوب ← الموبايل بيجيبها من يوتيوب */
+    fun recentThumb(app: Context, r: HttpReq): HttpRes {
+        val id = r.query["id"] ?: return jerr(403, "bad")
+        val rc = try { Recents.parse(java.io.File(app.filesDir, "recent.json").readText()).firstOrNull { it.id == id } } catch (_: Throwable) { null } ?: return jerr(404, "nf")
+        var bmp: Bitmap? = null
+        if (rc.uri.isNotEmpty()) {
+            val vi = items(app, false)?.firstOrNull { it.uri == rc.uri }
+            if (vi != null) {
+                val latch = CountDownLatch(1)
+                Thumbs.load(app, vi) { b -> bmp = b; latch.countDown() }
+                try { latch.await(8, TimeUnit.SECONDS) } catch (_: InterruptedException) {}
+            }
+        } else {
+            val f = LinkThumb.fileFor(app, rc.id)
+            if (f.exists() && f.length() > 0L) bmp = try { android.graphics.BitmapFactory.decodeFile(f.absolutePath) } catch (_: Throwable) { null }
+        }
+        val b = bmp ?: return HttpRes(204)
+        val bo = ByteArrayOutputStream()
+        b.compress(Bitmap.CompressFormat.JPEG, 70, bo)
+        return HttpRes(200, "image/jpeg", bo.toByteArray())
+    }
+
     // ===== الإعدادات =====
     // (v569) بقت قايمة استثناءات بدل القايمة البيضاء: كل إعدادات الموبايل بتتطبّق على التلفزيون (ترجمة، تفريغ، لغة، خط/خلفية الترجمة، محرك، نغمة…)
     // ما عدا: المظهر والثيم وإعدادات شكل التلفزيون نفسه (tv_*)، والحاجات الخاصة بكل جهاز، والمفاتيح الحساسة (الـ API keys بتتنقل عبر /keys بس).
