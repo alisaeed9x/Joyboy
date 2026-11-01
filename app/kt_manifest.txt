@@ -141,6 +141,7 @@ com/tttt/subtitler/Store.kt
 com/tttt/subtitler/Strict.kt
 com/tttt/subtitler/Stt.kt
 com/tttt/subtitler/SubFileTr.kt
+com/tttt/subtitler/SubPick.kt
 com/tttt/subtitler/SubStyle.kt
 com/tttt/subtitler/SubtitleView.kt
 com/tttt/subtitler/SwipeCard.kt
