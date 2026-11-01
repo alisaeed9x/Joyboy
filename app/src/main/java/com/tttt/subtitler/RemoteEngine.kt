@@ -121,6 +121,7 @@ class RemoteEngine : EngineBackend {
     override fun reopen(): Boolean { LinkSession.send("engine.resume"); return true }
 
     override fun importSubs(l: List<Sub>) = put("engine.importSubs", "subs" to SubCodec.arrayToJson(l))
+    override fun markAllDone(lastEnd: Double) = put("engine.markAllDone", "lastEnd" to lastEnd)   // (v686)
 
     /** العدد الحقيقي بيوصل في اللقطة الجاية (problems/failed)؛ هنا 0 لأن الأمر async */
     override fun retryProblems(): Int { LinkSession.send("engine.retryProblems"); return 0 }

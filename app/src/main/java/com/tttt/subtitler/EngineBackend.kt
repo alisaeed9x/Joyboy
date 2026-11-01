@@ -56,6 +56,7 @@ interface EngineBackend {
     fun awaitStopped(ms: Long)
     fun reopen(): Boolean
     fun importSubs(l: List<Sub>)
+    fun markAllDone(lastEnd: Double)   // (v686)
     fun retryProblems(): Int
     fun retryFailed()
     fun removeDuplicates(): Int
@@ -144,6 +145,7 @@ class LocalEngine(val e: Engine) : EngineBackend {
     override fun awaitStopped(ms: Long) { e.awaitStopped(ms) }
     override fun reopen(): Boolean = e.reopen()
     override fun importSubs(l: List<Sub>) { e.importSubs(l) }
+    override fun markAllDone(lastEnd: Double) { e.markAllDone(lastEnd) }   // (v686)
     override fun retryProblems(): Int = e.retryProblems()
     override fun retryFailed() { e.retryFailed() }
     override fun removeDuplicates(): Int = e.removeDuplicates()

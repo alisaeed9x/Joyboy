@@ -481,6 +481,7 @@ class PlayerActivity : Activity(), Host {
             "engine.langChanged" -> e.langChanged(a.optString("lang"), a.optDouble("pos", 0.0))
             "engine.saveNow" -> e.saveNow()
             "engine.importSubs" -> e.importSubs(SubCodec.arrayFromJson(a.optJSONArray("subs")))
+            "engine.markAllDone" -> e.markAllDone(a.optDouble("lastEnd", 0.0))   // (v686)
             "engine.versions" -> {
                 val arr = org.json.JSONArray()
                 for (v in e.versions) arr.put(org.json.JSONObject().put("name", v.name).put("dialect", v.dialect).put("count", v.subs.size))
