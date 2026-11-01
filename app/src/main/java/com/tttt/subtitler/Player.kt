@@ -78,6 +78,9 @@ class PlayerActivity : Activity(), Host {
         /** (v684) ملف ترجمة جه من الموبايل (TvLink /subup): بيتحفظ ويستنى أمر «ترجم» من الموبايل. false = مفيش مشغّل فيديو شغّال */
         fun remoteSubImport(f: java.io.File, name: String, cues: Int): Boolean { val o = live() ?: return false; return onUi(o) { o.subImported(f, name, cues) } == true }
 
+        /** (v688) جمل مترجمة وصلت من الموبايل (ترجمة مزدوجة). 0 = اتطبّقت · 1 = مفيش مشغّل · 2 = مفيش شغلانة مطابقة · 3 = التلفزيون كسب الأول. من خيط الطلب (مش الـUI) */
+        fun remoteSubTr(jid: String, texts: List<String>, failed: Int, eng: String): Int { val o = live() ?: return 1; return o.subFromPhone(jid, texts, failed, eng) }
+
         /** (v542) م1: RPC للتلفزيون-المخ. عمليات engine.* بتتنفّذ على خيط الطلب (مش الـUI)، والباقي على الـUI بمهلة 3 ثواني. null = مفيش مشغّل */
         fun brain(op: String, a: org.json.JSONObject): org.json.JSONObject? {
             val o = live() ?: return null
@@ -1033,7 +1036,7 @@ class PlayerActivity : Activity(), Host {
                 if (::engine.isInitialized) { engine.convDialect = dia; engine.toneStyle = sty; engine.toneStrength = str }
             } catch (e: Throwable) { LogStore.err("Player:sfGo", e) }
         }
-        sfRun("soft", eng, null, -1, src == "mobile", src == "mobile")
+        sfRun("soft", eng, null, -1, src == "mobile", src == "mobile", p.getOrNull(6) ?: "")   // (v688) p[6] = jid بتاع الترجمة المزدوجة (تلفزيون + موبايل)
     }
 
     private fun sfRemote(a: String) {
@@ -1063,12 +1066,13 @@ class PlayerActivity : Activity(), Host {
         } catch (e: Throwable) { LogStore.err("Player:sfHard", e); say("⚠ تعذّر تشغيل ترجمة الهارد سب") }
     }
 
-    private fun sfRun(kind: String, engIn: String, picked: Uri? = null, track: Int = -1, auto: Boolean = false, useMobile: Boolean = false) {
+    private fun sfRun(kind: String, engIn: String, picked: Uri? = null, track: Int = -1, auto: Boolean = false, useMobile: Boolean = false, jid: String = "") {
         if (kind == "hard") { sfHard(); return }
         // (v661) جيميناي من غير مفتاح كان بيفشل بتنبيه سريع ويختفي (باين إن مفيش ترجمة) ← بنحوّل لجوجل ونقولك
         var eng = engIn
         if (eng == "gemini" && !(try { TrWizard.hasGeminiKey() } catch (_: Throwable) { true })) { eng = "google"; say("⚠ مفيش مفتاح جيميناي — هترجم بجوجل") }
         if (sfBusy.isNotEmpty()) { say("⏳ بترجم دلوقتي: $sfBusy"); return }
+        val myJid = jid.ifBlank { java.util.UUID.randomUUID().toString() }; SfJob.begin(myJid)   // (v688) شغلانة جديدة — الموبايل (لو شغّال) بيتعرّف عليها بنفس الـjid
         LogStore.add("💬 سوفت صب: بدأ sfRun kind=$kind eng=$eng track=$track"); sfBusy = "بقرا الترجمة…"; runOnUiThread { updateTr(); try { tvBar?.refresh() } catch (_: Throwable) {} }
         say("⏳ بدأت ترجمة السوفت صب — " + (if (eng == "gemini") "جيميناي" else "جوجل") + " (الشريط هيعرض التقدم)")
         val engName = if (eng == "gemini") "جيميناي" else "جوجل"
@@ -1099,18 +1103,47 @@ class PlayerActivity : Activity(), Host {
                     return@Thread
                 }
                 if (!auto && SubFileTr.mostlyArabic(cues)) { say("💬 الترجمة دي عربي أصلًا"); return@Thread }
+                SfJob.cues = cues   // (v688) الموبايل يقدر يسحبها ويترجمها بالتوازي
                 sfBusy = "بترجم 0/" + cues.size; runOnUiThread { updateTr(); try { tvBar?.refresh() } catch (_: Throwable) {} }
                 say("📄 بترجم " + cues.size + " جملة من «" + label + "» بـ " + engName + (if (eng == "gemini") sfPlanNote() else "") + "…")
                 var lastP = 0L
-                val out = SubFileTr.translate(cues, eng, { pr -> sfBusy = pr; runOnUiThread { updateTr(); try { tvBar?.refresh() } catch (_: Throwable) {} }; val n = System.currentTimeMillis(); if (n - lastP > 1500L) { lastP = n; say(pr) } }, { isFinishing || isDestroyed })
+                val out = SubFileTr.translate(cues, eng, { pr -> sfBusy = pr; runOnUiThread { updateTr(); try { tvBar?.refresh() } catch (_: Throwable) {} }; val n = System.currentTimeMillis(); if (n - lastP > 1500L) { lastP = n; say(pr) } }, { isFinishing || isDestroyed || SfJob.winner == "phone" })
                 if (isFinishing || isDestroyed) return@Thread
+                if (SfJob.winner == "phone") return@Thread   // (v688) الموبايل خلّص الأول وطبّق ترجمته
+                if ((out.error.isNotEmpty() || out.failed * 2 > cues.size) && SfJob.phoneAlive()) {
+                    // (v688) التلفزيون مفيهوش نت (أو أغلب الجمل فشلت) والموبايل شغّال ← نستنى الموبايل بدل ما نعرض الأصلي من غير ترجمة
+                    SfJob.tvFailed = true
+                    sfNote("📡 مفيش نت على التلفزيون — مستني الموبايل يكمّل الترجمة", 6000L)
+                    var wl = 0; var lastLn = ""
+                    while (SfJob.winner.isEmpty() && SfJob.phoneAlive() && !isFinishing && !isDestroyed && wl++ < 7200) {
+                        val ln = "📱 الموبايل " + SfJob.phoneLine
+                        if (ln != lastLn) { lastLn = ln; sfBusy = ln; runOnUiThread { updateTr(); try { tvBar?.refresh() } catch (_: Throwable) {} } }
+                        try { Thread.sleep(500L) } catch (_: InterruptedException) {}
+                    }
+                    if (SfJob.winner != "phone") sfNote("⚠ الترجمة فشلت على التلفزيون والموبايل اتقطع — جرّب تاني", 6000L)
+                    return@Thread
+                }
                 if (out.error.isNotEmpty()) { sfNote("⚠ " + out.error, 6000L); return@Thread }
+                if (!SfJob.claim(myJid, "tv")) return@Thread   // (v688) الموبايل سبقنا في آخر لحظة
                 var w = 0
                 while ((!::engine.isInitialized || !engineReady) && w++ < 40) { try { Thread.sleep(250L) } catch (_: InterruptedException) {} }
                 sfApply(cues, out, engName)
             } catch (e: Throwable) { LogStore.err("Player:sfRun", e); sfNote("⚠ فشلت الترجمة: " + (e.message ?: e.javaClass.simpleName).take(80), 6000L) }
             finally { sfBusy = ""; runOnUiThread { updateTr(); try { tvBar?.refresh() } catch (_: Throwable) {} } }
         }.also { it.isDaemon = true }.start()
+    }
+
+    /** (v688) الموبايل خلّص ترجمته قبل التلفزيون ← نطبّقها (التلفزيون يوقف ترجمته لوحده من SfJob.winner) */
+    private fun subFromPhone(jid: String, texts: List<String>, failed: Int, eng: String): Int {
+        val cs = SfJob.cues
+        if (SfJob.id != jid || cs == null || texts.size != cs.size) return 2
+        if (!SfJob.claim(jid, "phone")) return 3
+        try {
+            var w = 0
+            while ((!::engine.isInitialized || !engineReady) && w++ < 40) { try { Thread.sleep(250L) } catch (_: InterruptedException) {} }
+            sfApply(cs, SubFileTr.Out(texts, failed, ""), "الموبايل (" + (if (eng == "gemini") "جيميناي" else "جوجل") + ")")
+        } catch (e: Throwable) { LogStore.err("Player:subFromPhone", e); return 2 }
+        return 0
     }
 
     private fun sfApply(cues: List<SubFileTr.Cue>, out: SubFileTr.Out, engName: String) {

@@ -367,6 +367,12 @@ object RemoteClient {
     // ===== الإرسال للتلفزيون (كلها blocking — نادّيها من thread خلفي) =====
     internal fun postJson(path: String, body: JSONObject): Pair<Int, String> = post(path, body)
 
+    /** (v688) نفس postJson بمهلة بنحدّدها (سحب جمل الترجمة / رفع النتيجة أكبر من الأوامر العادية) */
+    internal fun postJsonMs(path: String, body: JSONObject, ms: Int): Pair<Int, String> {
+        val tv = current ?: return Pair(-1, "مش متصل بتلفزيون")
+        return call(tv.ip, tv.port, path, body.toString(), tv.token, ms)
+    }
+
     /** (v543 م3) GET بيرجّع bytes (الصور المصغّرة) — blocking، نادّيها من thread خلفي بس */
     internal fun getBytes(path: String, ms: Int = 8000): Pair<Int, ByteArray> {
         val tv = current ?: return Pair(-1, ByteArray(0))

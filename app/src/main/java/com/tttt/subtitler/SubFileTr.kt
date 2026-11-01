@@ -218,10 +218,12 @@ object SubFileTr {
     fun effLang(): String = Cfg.str("conv_dialect", "").ifBlank { Cfg.str("lang", "فصحى") }.ifBlank { "فصحى" }
 
     /** (v684) الأسلوب + الشدة اللي اتختاروا (شعبي / جرئ / +18 + خفيفة/متوسطة/شديدة)، وإلا أسلوب الإعدادات */
-    fun effStyle(): String {
-        val ts = Cfg.str("tone_style", "")
-        if (ts.isBlank() || ts == "حرفي") return Cfg.str("style", "حرفي").ifBlank { "حرفي" }
-        val dg = Cfg.str("tone_strength", "متوسطة").ifBlank { "متوسطة" }
+    fun effStyle(): String = styleOf(Cfg.str("tone_style", ""), Cfg.str("tone_strength", "متوسطة"), Cfg.str("style", "حرفي").ifBlank { "حرفي" })
+
+    /** (v688) نفس منطق effStyle بس من قيم بنديها (الموبايل بيترجم بإعدادات اتختارت في الورقة من غير ما يغيّر إعداداته) */
+    fun styleOf(ts: String, dg0: String, base: String): String {
+        if (ts.isBlank() || ts == "حرفي") return base
+        val dg = dg0.ifBlank { "متوسطة" }
         val what = when (ts) {
             "شعبي" -> "كلام الشارع الشعبي والتعبيرات اليومية بدل الرسمي"
             "جرئ" -> "أجرأ وأكتر حرية في الألفاظ من غير تلطيف زيادة"
@@ -279,14 +281,14 @@ object SubFileTr {
      * ترجمة كل الجمل. eng = "google" | "gemini". report بيتنادى بنص التقدم. cancel() لو true بيوقف.
      * اللي يفشل بيتسيب فاضي في النتيجة (والمشغّل بيحط مكانه النص الأصلي) وعدّاده في failed.
      */
-    fun translate(cues: List<Cue>, eng: String, report: (String) -> Unit, cancel: () -> Boolean = { false }): Out {
+    fun translate(cues: List<Cue>, eng: String, report: (String) -> Unit, cancel: () -> Boolean = { false }, langOv: String? = null, styleOv: String? = null): Out {
         val n = cues.size
         val res = arrayOfNulls<String>(n)
         var failed = 0
         if (eng == "gemini") {
             val keys = gemKeys()
             if (keys.isEmpty()) return Out(List(n) { "" }, n, "مفيش مفتاح جيميناي — ضيفه من الإعدادات أو اختار جوجل")
-            val lang = effLang(); val style = effStyle()
+            val lang = langOv ?: effLang(); val style = styleOv ?: effStyle()   // (v688) الموبايل بيبعت لهجته/أسلوبه
             if (keys.size >= 2 && n > 0) return translateMulti(cues, keys, lang, style, report, cancel)   // (v638) الملف كامل لمفتاحين + تنقيح بالباقي
             val size = 40
             val batches = (0 until n).chunked(size)

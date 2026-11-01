@@ -140,6 +140,7 @@ com/tttt/subtitler/StemCore.kt
 com/tttt/subtitler/Store.kt
 com/tttt/subtitler/Strict.kt
 com/tttt/subtitler/Stt.kt
+com/tttt/subtitler/SubDual.kt
 com/tttt/subtitler/SubFileTr.kt
 com/tttt/subtitler/SubPick.kt
 com/tttt/subtitler/SubStyle.kt

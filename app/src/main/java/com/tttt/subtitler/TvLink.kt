@@ -232,6 +232,8 @@ object TvLink {
             "/ptr" -> ptrCmd(r)
             "/player" -> playerCmd(r)
             "/subup" -> subUp(r)                // (v684) ملف ترجمة من الموبايل يتترجم على فيديو التلفزيون (على قطع)
+            "/subget" -> subGet(r)              // (v688) الموبايل بيسحب جمل الترجمة / بيسأل مين خلّص (ترجمة مزدوجة تلفزيون + موبايل)
+            "/subtr" -> subTr(r)                // (v688) الموبايل بيبعت الجمل المترجمة (على قطع) لو خلّص قبل التلفزيون
             "/music" -> musicCmd(r)
             "/open" -> open(r)
             "/recent" -> recentList()           // (v678) آخر المشغّلة على التلفزيون (لقايمة الريموت)
@@ -380,6 +382,52 @@ object TvLink {
         } catch (e: Throwable) { LogStore.err("TvLink:subUp", e); return err(500, "write") }
         val handled = PlayerActivity.remoteSubImport(f, nm, cues)
         return ok(JSONObject().put("done", true).put("cues", cues).put("player", handled))
+    }
+
+    /** (v688) الموبايل بيسأل عن شغلانة الترجمة (jid): هل لسه شغّالة، مين كسب، وبيطلب الجمل لو الملف على التلفزيون */
+    private fun subGet(r: HttpReq): HttpRes {
+        val j = try { JSONObject(r.bodyText()) } catch (_: Exception) { return err(403, "bad") }
+        val jid = j.optString("jid")
+        if (jid.isBlank() || SfJob.id != jid) return ok(JSONObject().put("job", false))
+        SfJob.phoneSeen = System.currentTimeMillis()
+        if (j.has("pl")) SfJob.phoneLine = j.optString("pl")
+        val cs = SfJob.cues
+        val o = JSONObject().put("job", true).put("ready", cs != null).put("winner", SfJob.winner).put("tvFailed", SfJob.tvFailed).put("n", cs?.size ?: 0)
+        if (j.optString("a") == "cues" && cs != null) {
+            val arr = org.json.JSONArray()
+            for (c in cs) arr.put(org.json.JSONArray().put(c.start).put(c.end).put(c.text))
+            o.put("cues", arr)
+        }
+        return ok(o)
+    }
+
+    /** (v688) استقبال الجمل المترجمة من الموبايل على قطع. آخر قطعة بتركّب النتيجة وتطبّقها على مشغّل الفيديو (لو التلفزيون ماخلّصش قبلها) */
+    private val subTrParts = HashMap<String, Array<String?>>()
+    private fun subTr(r: HttpReq): HttpRes {
+        val j = try { JSONObject(r.bodyText()) } catch (_: Exception) { return err(403, "bad") }
+        val jid = j.optString("jid")
+        if (jid.isBlank() || SfJob.id != jid) return err(409, "nojob")
+        SfJob.phoneSeen = System.currentTimeMillis()
+        if (SfJob.winner == "tv") return ok(JSONObject().put("lost", true))
+        if (!PlayerActivity.hasLive()) return ok(JSONObject().put("none", true))
+        val t = j.optInt("t", 1).coerceIn(1, 60); val i = j.optInt("i", 0)
+        if (i !in 0 until t) return err(400, "bad")
+        val parts = synchronized(subTrParts) { if (subTrParts.size > 3 && !subTrParts.containsKey(jid)) subTrParts.clear(); subTrParts.getOrPut(jid) { arrayOfNulls(t) } }
+        if (parts.size != t) return err(400, "bad")
+        val full = synchronized(parts) { parts[i] = j.optString("d"); parts.all { it != null } }
+        if (!full) return ok(JSONObject().put("done", false))
+        synchronized(subTrParts) { subTrParts.remove(jid) }
+        val txt = synchronized(parts) { parts.joinToString("") { it ?: "" } }
+        val body = try { JSONObject(txt) } catch (_: Exception) { return err(422, "invalid") }
+        val arr = body.optJSONArray("x") ?: return err(422, "invalid")
+        val texts = ArrayList<String>(arr.length())
+        for (k in 0 until arr.length()) texts.add(arr.optString(k, ""))
+        return when (PlayerActivity.remoteSubTr(jid, texts, body.optInt("f", 0), body.optString("e", "google"))) {
+            0 -> ok(JSONObject().put("done", true).put("applied", true))
+            3 -> ok(JSONObject().put("done", true).put("lost", true))
+            1 -> ok(JSONObject().put("none", true))
+            else -> err(409, "nojob")
+        }
     }
 
     /** (v522) مشغّل الموسيقى: a = state أو أمر (toggle/next/prev/seek/seekto/shuffle/mode/lyrics) */

@@ -73,7 +73,7 @@ class VertVolume(ctx: Context, private val onChange: (Int) -> Unit) : View(ctx) 
         rc.set(x0, 0f, x0 + tw, h); c.drawRoundRect(rc, r, r, p)
         val fh = h * (value / 100f)
         if (fh > 0f) {
-            p.color = if (dragging) 0xFF22C58B.toInt() else 0xFF16A068.toInt()
+            p.color = if (dragging) 0xFF8FB4FF.toInt() else 0xFF5B8DEF.toInt()
             rc.set(x0, h - fh, x0 + tw, h)
             val rr = minOf(r, fh / 2f)
             c.drawRoundRect(rc, rr, rr, p)
@@ -126,9 +126,16 @@ object PlayerPad {
             var qList: List<String> = emptyList(); var qCur = 0
             var aList: List<String> = emptyList(); var aCur = 0
 
-            fun bg(fill: Int, stroke: Int, r: Float) = GradientDrawable().apply {
-                shape = GradientDrawable.RECTANGLE; cornerRadius = dpf(r); setColor(fill); setStroke(dp(1), stroke)
+            /** (v688) تفتيح لون بنسبة f (0..1) — لتدرّج خفيف بدل لون مسطّح */
+            fun lighten(c: Int, f: Float): Int {
+                val a = (c ushr 24) and 0xFF; val r = (c shr 16) and 0xFF; val g = (c shr 8) and 0xFF; val b = c and 0xFF
+                fun m(x: Int) = (x + (255 - x) * f).toInt().coerceIn(0, 255)
+                return (a shl 24) or (m(r) shl 16) or (m(g) shl 8) or m(b)
             }
+            fun bg(fill: Int, stroke: Int, r: Float) = GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, intArrayOf(lighten(fill, 0.07f), fill)).apply {
+                shape = GradientDrawable.RECTANGLE; cornerRadius = dpf(r); setStroke(dp(1), stroke)
+            }
+            fun pill(c: Int, r: Float = 2f) = GradientDrawable().apply { shape = GradientDrawable.RECTANGLE; cornerRadius = dpf(r); setColor(c) }
             fun label(t: String, sp: Float, col: Int = Color.WHITE, bold: Boolean = true): TextView = IconTextView(act).apply {
                 text = t; textSize = sp; setTextColor(col); gravity = Gravity.CENTER; includeFontPadding = false
                 if (bold) typeface = android.graphics.Typeface.DEFAULT_BOLD
@@ -139,6 +146,13 @@ object PlayerPad {
                 setOnClickListener { v ->
                     v.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
                     try { tap(this) } catch (e: Throwable) { LogStore.err("PlayerPad:btn", e) }
+                }
+                setOnTouchListener { v, e ->
+                    when (e.actionMasked) {
+                        MotionEvent.ACTION_DOWN -> v.animate().scaleX(0.96f).scaleY(0.96f).setDuration(60L).start()
+                        MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> v.animate().scaleX(1f).scaleY(1f).setDuration(120L).start()
+                    }
+                    false
                 }
             }
             fun lp(w: Int, h: Int, wt: Float = 0f) = LinearLayout.LayoutParams(w, h, wt)
@@ -163,13 +177,14 @@ object PlayerPad {
                 val panel = LinearLayout(act).apply {
                     orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL
                     setPadding(dp(16), dp(14), dp(16), dp(20))
-                    background = GradientDrawable().apply {
+                    background = GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, intArrayOf(0xFF1C2A4A.toInt(), 0xFF121C34.toInt())).apply {
                         shape = GradientDrawable.RECTANGLE
-                        cornerRadii = floatArrayOf(dpf(22f), dpf(22f), dpf(22f), dpf(22f), 0f, 0f, 0f, 0f)
-                        setColor(0xFF14203A.toInt()); setStroke(dp(1), cLine)
+                        cornerRadii = floatArrayOf(dpf(26f), dpf(26f), dpf(26f), dpf(26f), 0f, 0f, 0f, 0f)
+                        setStroke(dp(1), cLine)
                     }
                 }
-                panel.addView(label(title, 17f), lp(-1, -2))
+                panel.addView(View(act).apply { background = pill(0xFF3A4C73.toInt(), 3f) }, lp(dp(42), dp(5)).apply { gravity = Gravity.CENTER_HORIZONTAL; bottomMargin = dp(12) })
+                panel.addView(label(title, 18f), lp(-1, -2).apply { bottomMargin = dp(2) })
                 val body = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL }
                 val scroll = MaxHeightScroll(act, (dm.heightPixels * 0.72f).toInt()).apply { isVerticalScrollBarEnabled = false; addView(body) }
                 panel.addView(scroll, lp(-1, -2))
@@ -202,10 +217,17 @@ object PlayerPad {
                 if (rem != 0) for (k in 0 until per - rem) row?.addView(View(act), lp(0, dp(46), 1f))
             }
             fun opt(body: LinearLayout, t: String, tap: () -> Unit) {
-                body.addView(btn(t, 15f) { tap() }, lp(-1, dp(48)).apply { topMargin = dp(8) })
+                body.addView(btn(t, 15f) { tap() }.apply { gravity = Gravity.START or Gravity.CENTER_VERTICAL; setPadding(dp(16), dp(8), dp(16), dp(8)) }, lp(-1, dp(52)).apply { topMargin = dp(8) })
             }
             fun grp(body: LinearLayout, t: String) {
-                body.addView(label(t, 12f, cDim).apply { gravity = Gravity.START or Gravity.CENTER_VERTICAL }, lp(-1, -2).apply { topMargin = dp(12) })
+                val row = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; gravity = Gravity.CENTER_VERTICAL }
+                row.addView(View(act).apply { background = pill(cOnLine) }, lp(dp(4), dp(14)))
+                row.addView(label(t, 12.5f, cDim).apply { gravity = Gravity.START or Gravity.CENTER_VERTICAL }, lp(0, -2, 1f).apply { marginStart = dp(8) })
+                body.addView(row, lp(-1, -2).apply { topMargin = dp(14) })
+            }
+            /** (v688) كارت معلومة/حالة جوه الورقة */
+            fun infoCard(body: LinearLayout, t: String, col: Int = 0xFFBBD0FF.toInt(), fill: Int = 0xFF1B2B52.toInt(), line: Int = 0xFF3B5A99.toInt()) {
+                body.addView(label(t, 12.5f, col, false).apply { gravity = Gravity.START or Gravity.CENTER_VERTICAL; background = bg(fill, line, 14f); setPadding(dp(12), dp(10), dp(12), dp(10)) }, lp(-1, -2).apply { topMargin = dp(10) })
             }
 
             fun sheetSpeed() = sheet("⏩ سرعة التشغيل") { body, _, close ->
@@ -223,6 +245,7 @@ object PlayerPad {
             }
             // ── (v684) ترجمة ملف ترجمة: المرفق مع الفيديو، أو ملف من الموبايل ← إعدادات (مترجم/لهجة/أسلوب/شدة) ← زرار «▶ ترجم» ──
             var sfEng = lastSfEng; var sfDia = "فصحى"; var sfSty = "حرفي"; var sfStr = "متوسطة"
+            var sfMobText: String? = null   // (v688) نص الملف اللي اخترته من الموبايل — الموبايل بيترجمه بالتوازي مع التلفزيون
             fun sheetSfSettings(src: String, what: String) = sheet("📄 إعدادات ترجمة الملف") { body, redo, close ->
                 body.addView(label(what, 13f, cDim, false), lp(-1, -2).apply { topMargin = dp(6) })
                 grp(body, "المترجم")
@@ -239,9 +262,12 @@ object PlayerPad {
                 } else {
                     body.addView(label("ℹ جوجل بيترجم فصحى بس — اللهجة والأسلوب والشدة مع جيميناي", 12.5f, 0xFFFFB74D.toInt(), false), lp(-1, -2).apply { topMargin = dp(10) })
                 }
-                body.addView(btn("▶ ترجم", 18f, 0xFF16A068.toInt(), 0xFF22C58B.toInt()) {
-                    go("sfgo:" + src + ":" + sfEng + ":" + sfDia + ":" + sfSty + ":" + sfStr)
-                    note("⏳ بدأت الترجمة على التلفزيون — التقدم على شريط الترجمة")
+                infoCard(body, "🔀 الترجمة هتشتغل على التلفزيون والموبايل مع بعض — أول واحد يخلّص بيتطبّق والتاني بيقف. لو التلفزيون مفيهوش نت الموبايل بيكمّل لوحده.")
+                body.addView(btn("▶ ترجم", 18f, 0xFF4F5BD5.toInt(), 0xFF7C8CF8.toInt()) {
+                    val jid = SubDual.newJid()
+                    go("sfgo:" + src + ":" + sfEng + ":" + sfDia + ":" + sfSty + ":" + sfStr + ":" + jid)
+                    SubDual.start(jid, if (src == "mobile") sfMobText else null, sfEng, sfDia, sfSty, sfStr) { m -> act.runOnUiThread { if (!closed) note(m) } }
+                    note("⏳ بدأت الترجمة على التلفزيون والموبايل مع بعض — أول واحد يخلّص بيظهر")
                     close()
                 }, lp(-1, dp(56)).apply { topMargin = dp(16) })
             }
@@ -257,6 +283,7 @@ object PlayerPad {
                     Thread {
                         val pk = SubPick.read(act, u)
                         if (pk == null) { act.runOnUiThread { note("الملف ده مش ترجمة صالحة (SRT / ASS / VTT) أو كبير زيادة") }; return@Thread }
+                        sfMobText = pk.text
                         act.runOnUiThread { note("⏳ ببعت «" + pk.name + "» (" + pk.cues + " جملة) للتلفزيون…") }
                         val err = SubPick.upload(pk.name, pk.text)
                         act.runOnUiThread {
@@ -271,7 +298,12 @@ object PlayerPad {
                 val live = LinkSession.mirror.live && LinkSession.mirror.gotFirst
                 val side = st.optString("sf_side", ""); val nat = st.optInt("sf_nat", 0); val busy = st.optString("sf_busy", ""); val mob = st.optString("sf_mob", "")
                 if (!live) body.addView(label("⚠ شغّل فيديو في مشغّل التطبيق على التلفزيون الأول", 13f, 0xFFFFB74D.toInt()), lp(-1, -2).apply { topMargin = dp(8) })
-                if (busy.isNotBlank()) body.addView(label("⏳ $busy", 13f, cDim, false), lp(-1, -2).apply { topMargin = dp(8) })
+                if (busy.isNotBlank()) infoCard(body, "📺 التلفزيون: $busy")
+                val dualSt = SubDual.status
+                if (dualSt.isNotBlank()) {
+                    infoCard(body, dualSt)
+                    opt(body, "⏹ إلغاء ترجمة الموبايل") { SubDual.cancel(); close() }
+                }
                 grp(body, "اللي مع الفيديو")
                 opt(body, if (side.isNotBlank()) "💬 ترجم ملف الترجمة المرفق «$side»" else if (nat > 0) "💬 ترجم ترجمة الفيديو الأصلية ($nat مسار جوه الفيديو)" else "💬 ملف الترجمة المرفق مع الفيديو — مفيش") {
                     if (side.isBlank() && nat <= 0) note("مفيش ملف ترجمة مرفق مع الفيديو ده")
@@ -336,10 +368,10 @@ object PlayerPad {
             headRow.addView(ttlTv, lp(0, -2, 1f).apply { leftMargin = dp(10) })
 
             // ── عدّاد الجمل (صوتي أو بصري) — دوسة = لوج الترجمة على التلفزيون ──
-            val cntTv = label("—", 26f)
+            val cntTv = label("—", 28f)
             val modeTv = label("", 12f, 0xFF9FB3D6.toInt(), false)
             val cntCard = LinearLayout(act).apply {
-                orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER; background = bg(cCard, cLine, 20f); setPadding(dp(8), dp(10), dp(8), dp(10))
+                orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER; background = bg(0xFF18284A.toInt(), 0xFF3B5A99.toInt(), 22f); setPadding(dp(8), dp(12), dp(8), dp(12))
                 isClickable = true; setOnClickListener { go("log") }
             }
             cntCard.addView(cntTv, lp(-2, -2)); cntCard.addView(modeTv, lp(-2, -2).apply { topMargin = dp(3) })
@@ -518,7 +550,7 @@ object PlayerPad {
                 bar.durSec = dur / 1000.0; bar.cov = m.eng.coverage; bar.pend = m.eng.pending; bar.refine = m.eng.refining; bar.invalidate()
                 tDur.text = tm(dur)
                 playB.text = if (playing) "⏸" else "▶"
-                ttlTv.text = s.optString("title", "")
+                ttlTv.text = s.optString("title", "").let { if (it.isBlank()) "" else "📺  " + it }
                 val cnt = s.optString("cnt", "")
                 val vc = s.optInt("vcnt", 0)
                 if (!live) {
