@@ -231,6 +231,7 @@ object TvLink {
             "/key" -> keyCmd(r)
             "/ptr" -> ptrCmd(r)
             "/player" -> playerCmd(r)
+            "/subup" -> subUp(r)                // (v684) ملف ترجمة من الموبايل يتترجم على فيديو التلفزيون (على قطع)
             "/music" -> musicCmd(r)
             "/open" -> open(r)
             "/recent" -> recentList()           // (v678) آخر المشغّلة على التلفزيون (لقايمة الريموت)
@@ -353,6 +354,32 @@ object TvLink {
         }
         val st = (if (useBr) BrowserActivity.remoteState() else PlayerActivity.remoteState()) ?: return ok(JSONObject().put("none", true))
         return ok(JSONObject().put("st", st))
+    }
+
+    /** (v684) استقبال ملف ترجمة من الموبايل على قطع (كل قطعة نص ≤ ~50 ألف حرف عشان حد البودي 256KB). آخر قطعة بتركّب الملف وتسلّمه لمشغّل الفيديو */
+    private val subUpParts = HashMap<String, Array<String?>>()
+    private fun subUp(r: HttpReq): HttpRes {
+        val j = try { JSONObject(r.bodyText()) } catch (_: Exception) { return err(403, "bad") }
+        if (!PlayerActivity.hasLive()) return ok(JSONObject().put("none", true))   // مفيش مشغّل فيديو شغّال
+        val id = j.optString("id"); val t = j.optInt("t", 1).coerceIn(1, 60); val i = j.optInt("i", 0)
+        if (id.isBlank() || i !in 0 until t) return err(400, "bad")
+        val parts = synchronized(subUpParts) { if (subUpParts.size > 3 && !subUpParts.containsKey(id)) subUpParts.clear(); subUpParts.getOrPut(id) { arrayOfNulls(t) } }
+        if (parts.size != t) return err(400, "bad")
+        val full = synchronized(parts) { parts[i] = j.optString("d"); parts.all { it != null } }
+        if (!full) return ok(JSONObject().put("done", false))
+        synchronized(subUpParts) { subUpParts.remove(id) }
+        val txt = synchronized(parts) { parts.joinToString("") { it ?: "" } }
+        val cues = try { SubFileTr.parse(txt).size } catch (_: Throwable) { 0 }
+        if (cues == 0) return err(422, "invalid")
+        var nm = j.optString("n", "mobile.srt").replace(Regex("[\\\\/:*?\"<>|]"), "_").trim().take(80)
+        if (nm.isBlank()) nm = "mobile.srt"
+        val f = try {
+            val dir = java.io.File(app.cacheDir, "mobile_sub"); dir.mkdirs()
+            dir.listFiles()?.forEach { try { it.delete() } catch (_: Throwable) {} }
+            java.io.File(dir, nm).also { it.writeText(txt, Charsets.UTF_8) }
+        } catch (e: Throwable) { LogStore.err("TvLink:subUp", e); return err(500, "write") }
+        val handled = PlayerActivity.remoteSubImport(f, nm, cues)
+        return ok(JSONObject().put("done", true).put("cues", cues).put("player", handled))
     }
 
     /** (v522) مشغّل الموسيقى: a = state أو أمر (toggle/next/prev/seek/seekto/shuffle/mode/lyrics) */

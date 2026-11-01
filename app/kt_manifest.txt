@@ -97,6 +97,7 @@ com/tttt/subtitler/PipSubBar.kt
 com/tttt/subtitler/PlayTarget.kt
 com/tttt/subtitler/PlaybackBackend.kt
 com/tttt/subtitler/Player.kt
+com/tttt/subtitler/PlayerPad.kt
 com/tttt/subtitler/PlayerLogic.kt
 com/tttt/subtitler/PopupGuard.kt
 com/tttt/subtitler/Poster.kt

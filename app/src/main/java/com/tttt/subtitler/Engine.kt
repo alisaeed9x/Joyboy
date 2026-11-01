@@ -806,6 +806,8 @@ class Engine(
     fun saveNow() = doPersist(true)
     /** استيراد ترجمة جاهزة (SRT) لفيديو من غير ترجمة */
     fun importSubs(l: List<Sub>) { subs = l }
+    /** (v685) ترجمة جاهزة اتحطت من ملف ترجمة: الفيديو كله يتعلّم «مخلّص» — عشان تتحفظ كاملة وتتحمّل أوفلاين، و«ترجم»/البدء التلقائي ما يعيدوهاش */
+    fun markAllDone(lastEnd: Double) { val d = currentDur(); done.add(0.0, if (d > 0) maxOf(d, lastEnd) else lastEnd + 1.0) }
     fun retryFailed() {
         pool.clear(); gapPass.clear(); gapTried.clear(); lastGapTry = 0L
         for (k in failed.keys) failed[k] = MAX_FAILS

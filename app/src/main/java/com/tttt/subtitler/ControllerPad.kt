@@ -399,7 +399,8 @@ object ControllerPad {
             // ── صف: 👁 الوضع البصري · ⚙ الإعدادات (v676: 👁 يرجّع ثانية-ثانيتين ويترجم اللقطة بأي مفتاح جيميناي) ──
             col.addView(row(
                 card("الوضع البصري", "eye", 0xFF8B5CF6.toInt(), 0xFF6D28D9.toInt()) { Thread { try { RemoteClient.player("vsnap") } catch (_: Throwable) {} }.also { it.isDaemon = true }.start() },
-                card("الإعدادات", "gear", 0xFF3B8DFF.toInt(), 0xFF1D4ED8.toInt()) { RemoteClient.cmd("open_settings") }
+                card("الإعدادات", "gear", 0xFF3B8DFF.toInt(), 0xFF1D4ED8.toInt()) { RemoteClient.cmd("open_settings") },
+                card("المشغّل", "play", 0xFF16A068.toInt(), 0xFF0F7A4F.toInt()) { PlayerPad.show(act) }   // (v682) كل أزرار مشغّل الفيديو الشغّال على التلفزيون
             ), android.widget.LinearLayout.LayoutParams(-1, -2))
 
             // ── صف: رجوع · الرئيسية · آخر المشغّل (من اليمين) ──

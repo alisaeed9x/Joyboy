@@ -214,6 +214,23 @@ object SubFileTr {
     /** جملة واحدة بجوجل (للترجمة اللحظية) */
     fun googleOne(t: String): String? = gtCall(listOf(oneLine(t)))?.firstOrNull()
 
+    /** (v684) اللهجة الفعلية: اللي اتختارت من الموبايل/المشغّل (conv_dialect) وإلا لغة الإعدادات */
+    fun effLang(): String = Cfg.str("conv_dialect", "").ifBlank { Cfg.str("lang", "فصحى") }.ifBlank { "فصحى" }
+
+    /** (v684) الأسلوب + الشدة اللي اتختاروا (شعبي / جرئ / +18 + خفيفة/متوسطة/شديدة)، وإلا أسلوب الإعدادات */
+    fun effStyle(): String {
+        val ts = Cfg.str("tone_style", "")
+        if (ts.isBlank() || ts == "حرفي") return Cfg.str("style", "حرفي").ifBlank { "حرفي" }
+        val dg = Cfg.str("tone_strength", "متوسطة").ifBlank { "متوسطة" }
+        val what = when (ts) {
+            "شعبي" -> "كلام الشارع الشعبي والتعبيرات اليومية بدل الرسمي"
+            "جرئ" -> "أجرأ وأكتر حرية في الألفاظ من غير تلطيف زيادة"
+            "+18" -> "صريح بلا تلطيف: الألفاظ والإيحاءات تطابق صراحة الأصل بالظبط"
+            else -> ""
+        }
+        return ts + (if (what.isEmpty()) "" else " ($what) — الشدة: $dg")
+    }
+
     private fun gemKeys(): List<String> = (Cfg.allMainKeys() + Cfg.keys("viskeys")).distinct().filter { it.length > 10 }
     private fun gemModel(): String = Cfg.str("model", Models.DEFAULT).trim().ifEmpty { Models.DEFAULT }
 
@@ -254,7 +271,7 @@ object SubFileTr {
     fun geminiOne(t: String, ctx: String): String? {
         val keys = gemKeys()
         if (keys.isEmpty()) return null
-        val lang = Cfg.str("lang", "فصحى").ifBlank { "فصحى" }; val style = Cfg.str("style", "حرفي").ifBlank { "حرفي" }
+        val lang = effLang(); val style = effStyle()
         return gemBatch(listOf(0 to t), ctx, lang, style, keys, (System.currentTimeMillis() / 1000L % keys.size).toInt())[0]
     }
 
@@ -269,7 +286,7 @@ object SubFileTr {
         if (eng == "gemini") {
             val keys = gemKeys()
             if (keys.isEmpty()) return Out(List(n) { "" }, n, "مفيش مفتاح جيميناي — ضيفه من الإعدادات أو اختار جوجل")
-            val lang = Cfg.str("lang", "فصحى").ifBlank { "فصحى" }; val style = Cfg.str("style", "حرفي").ifBlank { "حرفي" }
+            val lang = effLang(); val style = effStyle()
             if (keys.size >= 2 && n > 0) return translateMulti(cues, keys, lang, style, report, cancel)   // (v638) الملف كامل لمفتاحين + تنقيح بالباقي
             val size = 40
             val batches = (0 until n).chunked(size)
