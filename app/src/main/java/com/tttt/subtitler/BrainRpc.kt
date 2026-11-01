@@ -160,12 +160,11 @@ object BrainRpc {
         val rc = try { Recents.parse(java.io.File(app.filesDir, "recent.json").readText()).firstOrNull { it.id == id } } catch (_: Throwable) { null } ?: return jerr(404, "nf")
         var bmp: Bitmap? = null
         if (rc.uri.isNotEmpty()) {
-            val vi = items(app, false)?.firstOrNull { it.uri == rc.uri }
-            if (vi != null) {
-                val latch = CountDownLatch(1)
-                Thumbs.load(app, vi) { b -> bmp = b; latch.countDown() }
-                try { latch.await(8, TimeUnit.SECONDS) } catch (_: InterruptedException) {}
-            }
+            val vi = items(app, false)?.firstOrNull { it.uri == rc.uri } ?: LinkThumb.asItem(rc)   // (v690) من برا مكتبة الفحص: لقطة من الفيديو نفسه
+            val latch = CountDownLatch(1)
+            Thumbs.load(app, vi) { b -> bmp = b; latch.countDown() }
+            try { latch.await(8, TimeUnit.SECONDS) } catch (_: InterruptedException) {}
+            if (bmp == null) bmp = LinkThumb.saved(app, rc.id)
         } else {
             val f = LinkThumb.fileFor(app, rc.id)
             if (f.exists() && f.length() > 0L) bmp = try { android.graphics.BitmapFactory.decodeFile(f.absolutePath) } catch (_: Throwable) { null }

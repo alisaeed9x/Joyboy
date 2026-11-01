@@ -53,8 +53,8 @@ object TvUpdate {
         } catch (_: Throwable) { null }
     }
 
-    /** (v680) رقم الإصدار + رقم البناء (التحديث) في سطر: «6.78 · #29123456» */
-    fun verLabel(name: String, code: Long): String = if (code > 0L) "$name · #$code" else name
+    /** (v688) رقم الإصدار بس («6.88») — رقم البناء (#29123456) اتشال من نوافذ التحديث */
+    fun verLabel(name: String, @Suppress("UNUSED_PARAMETER") code: Long): String = name
 
     /** (v657) النسخة القديمة (أحمر) ← سهم ← النسخة الجديدة (أخضر) — بتظهر في كل نوافذ التحديث */
     fun flowView(a: Context, oldName: String, newName: String): View {

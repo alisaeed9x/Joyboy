@@ -95,7 +95,7 @@ object PlayerPad {
     /** (v684) آخر مترجم اتختار لترجمة ملف الترجمة (google / gemini) */
     @Volatile private var lastSfEng = "gemini"
 
-    fun show(act: Activity) {
+    fun show(act: Activity, onLeave: (() -> Unit)? = null) {
         try {
             try { RemoteClient.init(act) } catch (_: Throwable) {}
             val dm = act.resources.displayMetrics
@@ -478,8 +478,39 @@ object PlayerPad {
             val sc = ScrollView(act).apply { isVerticalScrollBarEnabled = false; overScrollMode = View.OVER_SCROLL_NEVER; addView(holder, FrameLayout.LayoutParams(-1, -2)) }
             selectTab(0)
 
+            // ── (v691) مفيش فيديو شغّال: بدل رسالة «مفيش فيديو شغّال» ثلاث أزرار — المكتبة (تلفزيون / موبايل) · يوتيوب · المتصفح ──
+            fun leave() { try { d.dismiss() } catch (_: Throwable) {}; try { onLeave?.invoke() } catch (_: Throwable) {} }
+            fun openLib(tv: Boolean) {
+                try { RemoteClient.init(act) } catch (_: Throwable) {}
+                if (tv && RemoteClient.lastTv() == null) { note("📺 مفيش تلفزيون متصل"); return }
+                try {
+                    act.startActivity(android.content.Intent(act, MainActivity::class.java)
+                        .addFlags(android.content.Intent.FLAG_ACTIVITY_CLEAR_TOP or android.content.Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                        .putExtra("tab", "videos").putExtra(if (tv) "lib_tv" else "lib_phone", true))
+                    leave()
+                } catch (e: Throwable) { LogStore.err("PlayerPad:lib", e) }
+            }
+            fun sheetLib() = sheet("📚 المكتبة") { body, _, close ->
+                body.addView(label("اختار تفتح المكتبة على أنهي شاشة", 13f, cDim, false), lp(-1, -2).apply { topMargin = dp(4) })
+                val pr = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL }
+                pr.addView(btn("📺\nشاشة التلفزيون", 15f, cOn, cOnLine) { close(); openLib(true) }, lp(0, dp(96), 1f).apply { marginStart = dp(4); marginEnd = dp(4) })
+                pr.addView(btn("📱\nشاشة الموبايل", 15f) { close(); openLib(false) }, lp(0, dp(96), 1f).apply { marginStart = dp(4); marginEnd = dp(4) })
+                body.addView(pr, lp(-1, -2).apply { topMargin = dp(12) })
+            }
+            fun idleBtn(icon: String, t: String, fill: Int, line: Int, tap: () -> Unit): TextView =
+                btn(icon + "\n" + t, 12.5f, fill, line) { tap() }.apply { setPadding(dp(2), dp(10), dp(2), dp(10)) }
+            val idleRow = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL }
+            idleRow.addView(idleBtn("📚", "المكتبة", 0xFF2563EB.toInt(), 0xFF5B8DEF.toInt()) { sheetLib() }, lp(0, dp(104), 1f).apply { marginStart = dp(3); marginEnd = dp(3) })
+            idleRow.addView(idleBtn("▶", "يوتيوب", 0xFFD93A36.toInt(), 0xFFFF6F69.toInt()) { ControllerPad.openOnPhone(act, true); leave() }, lp(0, dp(104), 1f).apply { marginStart = dp(3); marginEnd = dp(3) })
+            idleRow.addView(idleBtn("🌐", "المتصفح", 0xFF0B8BC4.toInt(), 0xFF38BDF8.toInt()) { ControllerPad.openOnPhone(act, false); leave() }, lp(0, dp(104), 1f).apply { marginStart = dp(3); marginEnd = dp(3) })
+            idleRow.addView(idleBtn("🕘", "سجل المشاهدة", 0xFF6D4BB8.toInt(), 0xFF9B7BE6.toInt()) { RecentPicker.show(act) }, lp(0, dp(104), 1f).apply { marginStart = dp(3); marginEnd = dp(3) })   // (v692) آخر اللي اتشاف على التلفزيون والموبايل مع بعض
+            val idleNote = label("", 12f, cDim, false)
+            val idleBox = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL; visibility = View.GONE }
+            idleBox.addView(idleRow, lp(-1, -2)); idleBox.addView(idleNote, lp(-1, -2).apply { topMargin = dp(6) })
+
             // ── العمود الشمال: عدّاد + كبسولات + سرعة/لهجة + تابات ──
             val left = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_LTR }
+            left.addView(idleBox, lp(-1, -2))
             left.addView(cntCard, lp(-1, -2))
             left.addView(capRow, lp(-1, -2).apply { topMargin = dp(8) })
             left.addView(quick, lp(-1, -2).apply { topMargin = dp(8) })
@@ -561,7 +592,11 @@ object PlayerPad {
                     modeTv.text = s.optString("mode", "") + (if (vc > 0) "   ·   👁 $vc جملة بصرية" else "")
                 }
                 val al = if (live) 1f else 0.4f
-                mid.alpha = al; tr.alpha = al; trRow.alpha = al; bar.alpha = al
+                cntCard.visibility = if (live) View.VISIBLE else View.GONE
+                idleBox.visibility = if (live) View.GONE else View.VISIBLE
+                idleNote.text = if (RemoteClient.lastTv() == null) "⚠ مفيش تلفزيون متصل" else "📺 مفيش فيديو شغّال — شغّل من هنا"
+                for (k in 0 until left.childCount) { val c = left.getChildAt(k); c.alpha = if (c === idleBox) 1f else al }   // (v691) التعتيم من غير الأزرار التلاتة
+                volCol.alpha = al; tr.alpha = al; trRow.alpha = al; bar.alpha = al
                 speedB.text = "⏩ " + s.optString("speed", "1x")
                 trB.text = s.optString("tr", "▶ ترجم") + " ▾"
                 trB.background = bg(s.optInt("trcolor", 0xFFE53935.toInt()), 0x66FFFFFF, 18f)

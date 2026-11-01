@@ -400,7 +400,7 @@ object ControllerPad {
             col.addView(row(
                 card("الوضع البصري", "eye", 0xFF8B5CF6.toInt(), 0xFF6D28D9.toInt()) { Thread { try { RemoteClient.player("vsnap") } catch (_: Throwable) {} }.also { it.isDaemon = true }.start() },
                 card("الإعدادات", "gear", 0xFF3B8DFF.toInt(), 0xFF1D4ED8.toInt()) { RemoteClient.cmd("open_settings") },
-                card("المشغّل", "play", 0xFF16A068.toInt(), 0xFF0F7A4F.toInt()) { PlayerPad.show(act) }   // (v682) كل أزرار مشغّل الفيديو الشغّال على التلفزيون
+                card("المشغّل", "play", 0xFF16A068.toInt(), 0xFF0F7A4F.toInt()) { PlayerPad.show(act) { d.dismiss() } }   // (v682) كل أزرار مشغّل الفيديو الشغّال على التلفزيون
             ), android.widget.LinearLayout.LayoutParams(-1, -2))
 
             // ── صف: رجوع · الرئيسية · آخر المشغّل (من اليمين) ──
@@ -627,7 +627,7 @@ object RecentPicker {
                                 if (android.os.Build.VERSION.SDK_INT >= 29) { try { bmp = act.contentResolver.loadThumbnail(u, android.util.Size(320, 180), null) } catch (_: Throwable) {} }
                                 if (bmp == null) {
                                     val mr = android.media.MediaMetadataRetriever()
-                                    try { mr.setDataSource(act, u); bmp = mr.getFrameAtTime(3_000_000L, android.media.MediaMetadataRetriever.OPTION_CLOSEST_SYNC) ?: mr.getFrameAtTime(0L) } catch (_: Throwable) {} finally { try { mr.release() } catch (_: Throwable) {} }
+                                    try { mr.setDataSource(act, u); bmp = mr.getFrameAtTime(3_000_000L, android.media.MediaMetadataRetriever.OPTION_CLOSEST_SYNC) ?: mr.getFrameAtTime(0L) ?: mr.getFrameAtTime() } catch (_: Throwable) {} finally { try { mr.release() } catch (_: Throwable) {} }
                                 }
                             }
                         } catch (_: Throwable) {}

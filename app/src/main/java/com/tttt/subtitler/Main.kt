@@ -1056,6 +1056,7 @@ class MainActivity : Activity() {
             else if (t0 == "tasks") frame.post { showTabFn(5) }
             else if (t0 == "settings") frame.post { settingsShow?.invoke(null) }
             else if (t0 == "youtube") frame.post { showTabFn(4); openYtFromIntent(intent) }
+            if (intent?.getBooleanExtra("lib_tv", false) == true) { intent?.removeExtra("lib_tv"); frame.post { libSourceFn?.invoke(true) } }   // (v691) التطبيق ماكانش شغّال: افتح مكتبة التلفزيون
         }
         intent?.getStringExtra("reopen_tab")?.let { t -> intent?.removeExtra("reopen_tab"); frame.post { if (!isFinishing && !isDestroyed) settingsShow?.invoke(t) } }
         // لو مفيش مفتاح Gemini: القايمة بتظهر مباشرة أول البرنامج، وبعدها الفحص
@@ -1879,6 +1880,7 @@ class MainActivity : Activity() {
         handleExternal(i); handleLinkIntent(i)   // (v345)
         // (v547 م3) «📚 مكتبة التلفزيون» من شاشة الريموت
         if (i?.getBooleanExtra("lib_tv", false) == true) { i.removeExtra("lib_tv"); libSourceFn?.invoke(true) }
+        if (i?.getBooleanExtra("lib_phone", false) == true) { i.removeExtra("lib_phone"); libSourceFn?.invoke(false) }   // (v691) «📱 مكتبة الموبايل» من صفحة المشغّل
         if (i?.getBooleanExtra("fullmusic", false) == true) musicOpenFn?.invoke()   // (v344) ⤢ من المشغّل المصغّر في المتصفح/الملفات
         if (i?.getStringExtra("tab") != null) ytTvMode = i?.getBooleanExtra("tv_target", false) == true   // (v532)
         when (i?.getStringExtra("tab")) { "videos" -> if (DeviceUi.isTv(this) && !fromPlayer) tvToLauncher("videos") else showTabFn(0); "music" -> showTabFn(1); "tasks" -> showTabFn(5); "settings" -> settingsShow?.invoke(null); "youtube" -> { showTabFn(4); openYtFromIntent(i) } }

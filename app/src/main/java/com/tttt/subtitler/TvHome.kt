@@ -138,11 +138,7 @@ class TvActivity : Activity() {
             val vi = if (r.uri.isNotEmpty()) this@TvActivity.lastScan.firstOrNull { it.uri == r.uri } else null
             this@TvActivity.videoMenu(r.id, r.title, vi, r)
         }
-        override fun recentThumbInto(r: Recent, iv: android.widget.ImageView) {
-            val vi = if (r.uri.isNotEmpty()) this@TvActivity.lastScan.firstOrNull { it.uri == r.uri } else null
-            if (vi != null) Thumbs.load(this@TvActivity, vi) { bmp -> if (bmp != null) this@TvActivity.runOnUiThread { if (!this@TvActivity.isDestroyed) iv.setImageBitmap(bmp) } }
-            else if (r.uri.isEmpty()) LinkThumb.into(this@TvActivity, r, iv)
-        }
+        override fun recentThumbInto(r: Recent, iv: android.widget.ImageView) { this@TvActivity.recentThumb(r, iv) }
         override fun open(page: TvPage) {
             when (page) {
                 TvPage.APPEARANCE -> this@TvActivity.showAppearance()
@@ -404,6 +400,11 @@ class TvActivity : Activity() {
         // (v498) زرار المساعد/البحث في الريموت (لو وصل للبرنامج) = بحث صوتي
         if ((ev.keyCode == KeyEvent.KEYCODE_VOICE_ASSIST || ev.keyCode == KeyEvent.KEYCODE_SEARCH) && ev.action == KeyEvent.ACTION_DOWN && ev.repeatCount == 0) { voiceToSearch(); return true }
         if (shortcutKey(ev)) return true   // (v505) اختصارات الريموت
+        // (v688) زرار Menu وانت واقف على خانة من الوصول السريع (فوق جنب الواي فاي) = نفس الدوسة الطويلة: غيّر / شيل
+        if (ev.keyCode == KeyEvent.KEYCODE_MENU && ev.action == KeyEvent.ACTION_DOWN && ev.repeatCount == 0) {
+            val cf = currentFocus
+            if (cf != null && cf.isLongClickable && cf.parent === qaBox) { try { if (cf.performLongClick()) return true } catch (_: Throwable) {} }
+        }
         // (v597) الأزرار الملونة: لو المستخدم مربّطها باختصار فالاختصار أولًا (فوق)، وإلا السكِن الحالي هو اللي يقرر
         if (ev.action == KeyEvent.ACTION_DOWN && ev.repeatCount == 0 && currentFocus !is EditText) {
             val ck = TvKeys.colorOf(ev.keyCode)
@@ -729,10 +730,20 @@ class TvActivity : Activity() {
             gravity = Gravity.CENTER; includeFontPadding = false
             if (plus) typeface = android.graphics.Typeface.DEFAULT_BOLD
         }
+        var lastLong = 0L   // (v688) ما نطلّعش القايمة مرتين (دوسة الإطار + التكرار) ولا نفتح التطبيق بعد الدوسة الطويلة
         val b = TvOwnLinear(this).apply {
             gravity = Gravity.CENTER; isFocusable = true; isClickable = true; background = ovalBg(Color.TRANSPARENT)
             setOnClickListener { onClick() }
-            if (onLong != null) setOnLongClickListener { onLong(); true }   // (v536)
+            if (onLong != null) {
+                setOnLongClickListener { val n = System.currentTimeMillis(); if (n - lastLong > 1200L) { lastLong = n; onLong() }; true }   // (v536)
+                setOnKeyListener { _, kc, kev ->
+                    if (kc == KeyEvent.KEYCODE_DPAD_CENTER || kc == KeyEvent.KEYCODE_ENTER || kc == KeyEvent.KEYCODE_NUMPAD_ENTER) {
+                        val n = System.currentTimeMillis()
+                        if (kev.action == KeyEvent.ACTION_DOWN && kev.repeatCount >= 1 && n - lastLong > 1200L) { lastLong = n; onLong(); true }
+                        else kev.action == KeyEvent.ACTION_UP && n - lastLong < 1500L
+                    } else false
+                }
+            }
             setOnFocusChangeListener { v, f ->
                 v.background = ovalBg(if (f) capFocusFill else Color.TRANSPARENT)
                 tv.setTextColor(if (f) capFocusInk else fg)
@@ -2175,9 +2186,18 @@ class TvActivity : Activity() {
     }
     private fun host(): LinearLayout = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; clipChildren = false }
 
+    /** (v690) صورة عنصر في «آخر المشغّلة»: من مكتبة الفحص لو موجود فيها؛ وإلا الصورة المحفوظة أو لقطة من الفيديو نفسه (الملفات اللي من برا المكتبة كانت بتفضل من غير صورة) */
+    private fun recentThumb(r: Recent, iv: android.widget.ImageView, vi0: VideoItem? = null) {
+        val vi = vi0 ?: (if (r.uri.isNotEmpty()) lastScan.firstOrNull { it.uri == r.uri } else null)
+        fun fallback() { if (!isDestroyed) LinkThumb.forRecent(this, r) { b -> if (!isDestroyed) iv.setImageBitmap(b) } }
+        if (vi != null) Thumbs.load(this, vi) { bmp -> if (bmp != null) { if (!isDestroyed) iv.setImageBitmap(bmp) } else fallback() }
+        else if (r.uri.isEmpty()) LinkThumb.into(this, r, iv)
+        else fallback()
+    }
+
     private fun histCard(r: Recent, byUri: Map<String, VideoItem>): View {
         val vi = byUri[r.uri]
-        return vTile({ iv -> if (vi != null) Thumbs.load(this, vi) { bmp -> if (bmp != null) runOnUiThread { iv.setImageBitmap(bmp) } } else if (r.uri.isEmpty()) LinkThumb.into(this, r, iv) },
+        return vTile({ iv -> recentThumb(r, iv, vi) },
             r.title, "⏸ " + PlayerLogic.clock((r.posSec * 1000).toLong()) + " · " + r.percent + "%", r.percent, favs.contains(r.id),
             { playRecent(r) }, { videoMenu(r.id, r.title, vi, r) })
     }
@@ -2294,6 +2314,7 @@ class TvActivity : Activity() {
     }
     private fun saveQuick(i: Int, type: String, id: String, label: String) {
         Cfg.put("tv_fa$i", type + "|" + id + "|" + label.replace("|", " ").replace("\n", " ")); fillQuick()
+        try { Notice.show(this, "ℹ لتغيير الأيقونة دي أو شيلها: دوسة طويلة على OK (أو زرار Menu) وانت واقف عليها", 5000L) } catch (_: Throwable) {}   // (v688)
         qaBox?.post { try { (qaBox?.getChildAt(i))?.requestFocus() } catch (_: Throwable) { } }
     }
     private fun quickMenu(i: Int, label: String) {

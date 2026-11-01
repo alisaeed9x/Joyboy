@@ -5649,7 +5649,7 @@ class PlayerActivity : Activity(), Host {
             f.writeText(Recents.toJson(Recents.upsert(old, r, 300)))
             }
             // (v570) لينك مش يوتيوب (جاي من المتصفح): نحفظ مصغّرة من الفيديو الشغّال مرة واحدة عشان تظهر في «آخر المشغّلة» (بس من خيط خلفي — PixelCopy)
-            if (uri == null && !url.isNullOrEmpty() && intent.getStringExtra("ytid") == null && cur > 3000L && android.os.Looper.myLooper() != android.os.Looper.getMainLooper())
+            if ((uri != null || (!url.isNullOrEmpty() && intent.getStringExtra("ytid") == null)) && cur > 3000L && android.os.Looper.myLooper() != android.os.Looper.getMainLooper())   // (v690) الملفات المحلية كمان (ts / mkv اللي المكتبة مش بتطلّع لها صورة)
                 LinkThumb.saveIfMissing(applicationContext, vid) {
                     val b = grabSurface(640)
                     if (b == null) null else {

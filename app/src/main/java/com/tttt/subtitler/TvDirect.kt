@@ -98,6 +98,40 @@ object LinkThumb {
         } catch (e: Throwable) { LogStore.err("LinkThumb:into", e) }
     }
 
+    /** (v690) الصورة المحفوظة لعنصر (لقطة المشغّل أو اللي اتحفظت قبل كده) — null لو مفيش */
+    fun saved(ctx: Context, id: String): Bitmap? = try {
+        val f = fileFor(ctx, id)
+        if (f.exists() && f.length() > 0L) BitmapFactory.decodeFile(f.absolutePath) else null
+    } catch (_: Throwable) { null }
+
+    /** (v690) عنصر فيديو «صناعي» من سجل آخر المشغّلة — لفيديو جاي من برا مكتبة الفحص (فايل مانجر / USB / …) عشان نطلّع له صورة من الفيديو نفسه */
+    fun asItem(r: Recent): VideoItem = VideoItem(0L, r.uri, r.title, "", "", "", 0L, (r.durSec * 1000.0).toLong(), 0L, 0L)
+
+    /**
+     * (v690) صورة عنصر في «آخر المشغّلة» مش موجود في مكتبة الفحص: الصورة المحفوظة ← لقطة من الفيديو نفسه (وبتتحفظ للمرة الجاية).
+     * كانت الفيديوهات دي بتفضل من غير صورة خالص. onBitmap بيتنادى على خيط الواجهة.
+     */
+    fun forRecent(ctx: Context, r: Recent, onBitmap: (Bitmap) -> Unit) {
+        val app = ctx.applicationContext
+        saved(app, r.id)?.let { onBitmap(it); return }
+        if (r.uri.isEmpty()) return
+        Thumbs.load(app, asItem(r)) { b ->
+            if (b != null) {
+                onBitmap(b)
+                Thread { try { persist(app, r.id, b) } catch (_: Throwable) {} }.also { it.isDaemon = true }.start()
+            }
+        }
+    }
+
+    private fun persist(ctx: Context, id: String, b: Bitmap) {
+        val f = fileFor(ctx, id)
+        if (f.exists() && f.length() > 0L) return
+        val w = 480
+        val s = if (b.width > w) Bitmap.createScaledBitmap(b, w, (b.height * (w.toFloat() / b.width)).toInt().coerceAtLeast(2), true) else b
+        f.outputStream().use { s.compress(Bitmap.CompressFormat.JPEG, 82, it) }
+        if (s !== b) s.recycle()   // النسخة المصغّرة بس — الأصلية ممكن تكون في كاش Thumbs
+    }
+
     /** المشغّل بينادي دي: لقطة من الفيديو الشغّال تتحفظ مرة واحدة (لينك مش يوتيوب) */
     fun saveIfMissing(ctx: Context, id: String, grab: () -> Bitmap?) {
         if (id.isEmpty()) return

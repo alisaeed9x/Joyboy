@@ -143,6 +143,7 @@ object Thumbs {
             }
             val t = if (v.durMs > 6000) 3_000_000L else 0L
             val f = r.getFrameAtTime(t, MediaMetadataRetriever.OPTION_CLOSEST_SYNC) ?: r.getFrameAtTime(0L, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
+                ?: r.getFrameAtTime(1_000_000L, MediaMetadataRetriever.OPTION_CLOSEST) ?: r.getFrameAtTime()   // (v690) ts/mkv: لقطات احتياطية بدل ما الصورة تفضل فاضية
             f?.let { if (it.width > 384) Bitmap.createScaledBitmap(it, 384, (it.height * 384f / it.width).toInt().coerceAtLeast(1), true) else it }
         } catch (_: Exception) { null } finally { try { r.release() } catch (_: Exception) {} }
     }
