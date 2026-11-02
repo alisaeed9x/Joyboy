@@ -1539,7 +1539,7 @@ class Engine(
      * TR_MAX_WAIT_MS أو المشاهد واصل له تقريبًا أو الوضع اتبدّل لـ 1/2. بيرجع true لو بعت مجموعة.
      */
     private fun translateTick(flush: Boolean): Boolean {
-        if (activeMode >= KeyMode.TRANSCRIBE_ALL && !switching) return contextTick()   // (v219) الوضع 4: ترجمة سياقية واحدة بعد ما كل الباتشات تتنسخ
+        if ((activeMode >= KeyMode.TRANSCRIBE_ALL || Strict.mt()) && !switching) return contextTick()   // (v696) أوفلاين كامل: الترجمة بعد ما كل الباتشات تتفرّغ (رام)   // (v219) الوضع 4: ترجمة سياقية واحدة بعد ما كل الباتشات تتنسخ
         if (tHold.isEmpty() || !running || isClosed) return false
         if (trBusy.get() >= maxOf(1, trPool.capacity(1))) return false
         val avail = tHold.keys.filter { it !in tTaken }.sorted()
@@ -1733,7 +1733,7 @@ class Engine(
         val held = tHold.size
         val txN = minOf(tot, doneN + held)
         val cur = inflight.minOrNull(); val trN = trBusy.get()
-        val who = if (TrWizard.googleOn()) (if (ExtTranslate.semiLibre()) "LibreTranslate" else "جوجل") else "جيميناي"
+        val who = if (Strict.mt()) "Hy-MT2 (أوفلاين)" else if (TrWizard.googleOn()) (if (ExtTranslate.semiLibre()) "LibreTranslate" else "جوجل") else "جيميناي"
         offB = "📴 $txN/$tot" + (if (trN > 0) " 🌍" else if (cur != null) " ⏳" else "")
         val sb = StringBuilder("📴 أوفلاين: اتفرّغ $txN من $tot باتش (الباتش ${ch.toInt()}ث)")
         val live = Offline.liveLine()
@@ -1769,7 +1769,7 @@ class Engine(
         val nowT = System.currentTimeMillis()
         val avail = tHold.keys.filter { it !in tTaken && (trRetryAt[it] ?: 0L) <= nowT }.sorted()   // (v399) باتش جوجل فشل: بيستنى شوية قبل المحاولة الجاية
         if (avail.isEmpty()) return false
-        if (!ctxReady() && Offline.configured() && partTick(avail)) return true   // (v253) جزء كامل اتنسخ ← يتترجم فورًا
+        if (!ctxReady() && Offline.configured() && !Strict.mt() && partTick(avail)) return true   // (v253) جزء كامل اتنسخ ← يتترجم فورًا
         if (!ctxReady()) {
             val m = if (Offline.configured()) { offRefresh(); offD.replace("\n", " · ") } else "📝 ترانسكريبشن: ${avail.size} باتش جاهز — الترجمة السياقية بتبدأ لما كل الباتشات تتنسخ"
             if (m != ctxMsg) { ctxMsg = m; host.status(m) }
@@ -1897,6 +1897,25 @@ class Engine(
             host.log("🔀 ${p.label}: ترجم $n/${idx.size} جملة")
             if (n < idx.size && ExtTranslate.lastError.isNotEmpty()) host.log("⚠ ${p.label}: ${ExtTranslate.lastError}")
             ExtTranslate.lastNote.takeIf { it.isNotEmpty() }?.let { ExtTranslate.lastNote = ""; host.log(it); try { host.notice(it) } catch (_: Throwable) {} }   // (v274) مثلًا: الموديل اتغيّر لوحده
+        }
+        // (v696) 📴 أوفلاين كامل: Hy-MT2 على الجهاز بدل السلسلة كلها. Whisper يتحرر الأول، وجملة تفشل تفضل بأصلها (بتفضل null هنا فالباقي بيتعامل معاها)
+        if (Strict.mt()) {
+            val idx = src.indices.filter { src[it].isNotBlank() }
+            if (idx.isNotEmpty() && running && !isClosed) {
+                try {
+                    Offline.releaseWhisper()
+                    host.status("📴 بترجم أوفلاين (${idx.size} جملة)…")
+                    val r = LocalMt.translateAll(idx.map { src[it] }, "", { host.log(it) }) { d, n -> if (d % 10 == 0 || d == n) host.status("📴 ترجمة أوفلاين $d/$n") }
+                    var n = 0
+                    for ((q, k) in idx.withIndex()) { val t = r.getOrNull(q); if (!t.isNullOrBlank() && t != src[k]) { out[k] = t; n++ } }
+                    host.log("📴 Hy-MT2: ترجم $n/${idx.size} جملة")
+                } catch (e: Throwable) {
+                    host.log("⚠ ترجمة أوفلاين فشلت: " + (e.message ?: e.javaClass.simpleName).take(100))
+                    try { LogStore.add("LocalMt: " + (e.message ?: e.javaClass.simpleName).take(120)) } catch (_: Throwable) {}
+                    try { host.notice("⚠ موديل الترجمة الأوفلاين مش جاهز — " + (e.message ?: "").take(60)) } catch (_: Throwable) {}
+                }
+            }
+            return out.toList()
         }
         // (v274) السلسلة: [المحرك الأساسي لو متحدد] ← باقي الخارجيين ← جوجل (حسب سويتش الترتيب) ← (لو كله فشل) الباتش بيتحوّل لجيميناي بمفاتيحك
         val steps = ExtTranslate.chain()   // null = جوجل الداخلي

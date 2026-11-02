@@ -226,3 +226,6 @@ com/tttt/subtitler/YtSnap.kt
 com/tttt/subtitler/YtThumbBtns.kt
 com/tttt/subtitler/YtTopBar.kt
 com/tttt/subtitler/YtWatch.kt
+com/tttt/subtitler/ModelStore.kt
+com/tttt/subtitler/LocalMt.kt
+com/tttt/subtitler/ModelsUi.kt

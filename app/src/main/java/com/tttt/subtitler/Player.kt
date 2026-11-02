@@ -574,6 +574,10 @@ class PlayerActivity : Activity(), Host {
             "sent" -> { try { if (::sentDlg.isInitialized) sentDlg.show() } catch (_: Throwable) {} }
             "chars" -> showChars()
             "dual" -> rcClick("dual")
+            "dualset" -> {   // (v695) وضع عرض الترجمة من ريموت الموبايل: 0 ترجمة فقط · 1 ترجمة+أصلي · 2 إنجليزي · 3 أصلي فقط · 4 أصلي+ترجمة
+                val n = v.toInt().coerceIn(0, 4); Cfg.put("sub_dual", n.toString()); try { restyleFn() } catch (_: Throwable) {}; curIdx = -2
+                say("🔀 " + kotlin.collections.listOf("ترجمة فقط", "ترجمة + الأصلي", "الإنجليزي تحت", "الأصلي فقط", "الأصلي + الترجمة")[n])
+            }
             "bgon" -> rcClick("bgon")
             "ai" -> rcClick("ai")
             "lock" -> setLock(!uiLocked)
@@ -942,7 +946,7 @@ class PlayerActivity : Activity(), Host {
                 if (engine.subs.isNotEmpty()) add("💾 احفظ النسخة الحالية") { engine.saveVersion("نسخة " + PlayerLogic.clock(player.currentPosition)); say("💾 اتحفظت نسخة") }
             }
         } catch (e: Throwable) { LogStore.err("Tv:versions", e) }
-        add("🌐 لغة / لهجة ترجمة البرنامج") { preferNative = false; tvSubDialog(1) }
+        if (!Strict.hideTrOpts()) add("🌐 لغة / لهجة ترجمة البرنامج") { preferNative = false; tvSubDialog(1) }   // (v696) أوفلاين كامل: فصحى بس
         // (v552) «ترجمة ملف الترجمة» اتشالت — السؤال بقى جوه ▶ ترجم لما الفيديو يبقى فيه سوفت صب
         add("⚙ إعدادات الترجمة") { modeSettings(anchor) }
         if (groups.isEmpty() && !prog) add("ℹ مفيش ترجمة أصلية في الفيديو ده (السوفت صب والهارد صب بيتترجموا أوتوماتيك)") { }
@@ -1210,7 +1214,7 @@ class PlayerActivity : Activity(), Host {
         val labels = ArrayList<String>(); val acts = ArrayList<() -> Unit>()
         fun add(l: String, a: () -> Unit) { labels.add(l); acts.add(a) }
         val tr = tvProgTr(); val hasSubs = tvHasSentences()
-        add("🌐 مصادر الترجمة (مسارات · نسخ محفوظة · لغة/لهجة)") { tvSubTracksDialog(anchor) }
+        add(if (Strict.hideTrOpts()) "🌐 مصادر الترجمة (مسارات · نسخ محفوظة)" else "🌐 مصادر الترجمة (مسارات · نسخ محفوظة · لغة/لهجة)") { tvSubTracksDialog(anchor) }
         add("🔤⏱ شكل وتوقيت الترجمة") { tvSubDialog() }
         if (hasSubs) add("📝 الجمل المترجمة") { try { if (::sentDlg.isInitialized) sentDlg.show() } catch (_: Throwable) {} }
         if (tr) {
@@ -2585,7 +2589,7 @@ class PlayerActivity : Activity(), Host {
     }
     private fun modeName(mk: String = curModeKey()): String = when (mk) {
         "fgem" -> "⭐ FreeLLM · صوت ← جيميناي"; "free" -> "🌗 وشبر + FreeLLM"
-        "off" -> "🌗 وشبر + LibreTranslate (فصحى)"; "txg" -> "✍ تفريغ بجيميناي"; else -> "✍ تفريغ بوشبر"
+        "off" -> (if (Strict.mt()) "📴 أوفلاين كامل (فصحى)" else "🌗 وشبر + LibreTranslate (فصحى)"); "txg" -> "✍ تفريغ بجيميناي"; else -> "✍ تفريغ بوشبر"
     }
     private var trAiB: TextView? = null
     private var lastCapsSig = ""
@@ -2630,7 +2634,7 @@ class PlayerActivity : Activity(), Host {
     private fun curModeKey(): String {
         val id = Strict.id()
         if (id == "g_wav" || id == "g_aac") return "fgem"   // (v444) جيميناي المباشر بقى FreeLLM (نفس الوضع)
-        if (id == Strict.SEMI) return "off"
+        if (id == Strict.SEMI || id == Strict.MT) return "off"
         if (id == Strict.FREE_TXT) return "free"
         if (id == Strict.FREE_GEM) return "fgem"
         if (id == "ai_only") return "txg"
@@ -6160,9 +6164,9 @@ class PlayerActivity : Activity(), Host {
         // (v297) اللهجة الفعلية بتتحط على المحرك في كل المسارات (كانت في الأوفلاين والسحابي بس) وبتظهر في إشعار واللوج
         try { if (::engine.isInitialized) engine.convDialect = Cfg.str("conv_dialect", "") } catch (_: Throwable) {}
         try {
-            val eff = Cfg.str("conv_dialect", "").ifBlank { Cfg.str("lang", "فصحى") }.ifBlank { "فصحى" }
+            val eff = if (Strict.hideTrOpts()) "فصحى" else Cfg.str("conv_dialect", "").ifBlank { Cfg.str("lang", "فصحى") }.ifBlank { "فصحى" }   // (v696) أي لهجة محفوظة = فصحى في الأوفلاين الكامل (من غير مسح إعداداتك)
             LogStore.add("🗣 لهجة الترجمة الفعلية: " + eff + " (conv_dialect='" + Cfg.str("conv_dialect", "") + "' · lang='" + Cfg.str("lang", "") + "')")
-            if (!pl.only) h.postDelayed({ try { Notice.show(this, "🗣 لهجة الترجمة: " + eff, 2600L) } catch (_: Throwable) {} }, 500L)
+            if (!pl.only && !Strict.hideTrOpts()) h.postDelayed({ try { Notice.show(this, "🗣 لهجة الترجمة: " + eff, 2600L) } catch (_: Throwable) {} }, 500L)
         } catch (_: Throwable) {}
         try { if (::engine.isInitialized) engine.transOnly = pl.only } catch (e: Throwable) { LogStore.err("Player:transOnly", e) }   // (v280) تفريغ بس
         if (pl.offline) {

@@ -29,9 +29,10 @@ object Offline {
         Model("tiny", "🚀 tiny", "ggml-tiny-q5_1.bin", 31, "الأسرع بكتير — دقة أقل بوضوح، للكلام الواضح بس"),
         Model("base", "⚡ base", "ggml-base-q5_1.bin", 60, "الأسرع — دقة أقل، مناسب لكلام واضح"),
         Model("small", "⚖ small", "ggml-small-q5_1.bin", 185, "متوازن (الافتراضي)"),
-        Model("medium", "🎯 medium", "ggml-medium-q5_0.bin", 520, "الأدق — بطيء وبياخد رام كتير (~1.5GB)، مش لأي موبايل")
+        Model("medium", "🎯 medium", "ggml-medium-q5_0.bin", 520, "الأدق — بطيء وبياخد رام كتير (~1.5GB)، مش لأي موبايل"),
+        Model("turbo", "🏆 large-v3-turbo", "ggml-large-v3-turbo-q5_0.bin", 547, "(v696) الأقوى للياباني والإنجليزي — أسرع من medium بكتير (~574MB ملف). مفيش تفريغ متوازي معاه")
     )
-    private const val BASE_URL = "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/"
+    const val BASE_URL = "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/"
     val langIds = listOf("", "en", "ar", "fr", "es", "tr", "ko", "ja", "zh", "ru", "de", "it", "hi", "fa", "ur")
     val langLabels = listOf("تلقائي", "إنجليزي", "عربي", "فرنساوي", "إسباني", "تركي", "كوري", "ياباني", "صيني", "روسي", "ألماني", "إيطالي", "هندي", "فارسي", "أوردو")   // (v255) بالعربي بس — الاسم بحروفه الأصلية كان بيلخبط
 
@@ -42,6 +43,7 @@ object Offline {
     fun model(): Model = models.firstOrNull { it.id == Cfg.str("off_model", "small") } ?: models[1]
     /** (v271) الملف الكامل لو موجود في أي مكان (الجديد الأول)، وإلا مساره في المكان الجديد (للتنزيل) */
     fun pick(rel: String, minBytes: Long): File? {
+        ModelStore.resolve(rel)?.let { f -> if (f.isFile && f.length() > minBytes) return f }   // (v696) ملف اتختار من الموبايل (SAF) — بيتفتح من غير نسخ
         val n = dir?.let { File(it, rel) }
         if (n != null && n.isFile && n.length() > minBytes) return n
         val o = legacy?.let { File(it, rel) }
@@ -140,9 +142,10 @@ object Offline {
     /** عدد الباتشات المتوازية المسموحة: الافتراضي 2 (base/small)، 1 لـ medium أو لو المحرك مش Whisper. الإعداد stt_par = 1..3 */
     fun par(): Int {
         if (engine().id != "whisper") return 1
-        val d = if (model().id == "medium") 1 else 2
+        val heavy = model().id == "medium" || model().id == "turbo"   // (v696)
+        val d = if (heavy) 1 else 2
         val v = Cfg.int("stt_par", d).coerceIn(1, 2)   // (v450) 3 خانات طلعت أبطأ (≈1.07×) وبتبطّأ استخراج الصوت
-        return if (model().id == "medium") 1 else v
+        return if (heavy) 1 else v
     }
     private fun busyCount(): Int = slotBusy.count { it }
     private fun advanceServe() { tkServe++; while (tkSkip.remove(tkServe)) tkServe++ }
@@ -181,6 +184,7 @@ object Offline {
         val tq = System.currentTimeMillis()
         val slot = acquireSlot()
         slotTl.set(slot)
+        if (LocalMt.isLoaded()) try { LocalMt.release() } catch (_: Throwable) {}   // (v696) رام: التفريغ والترجمة ورا بعض مش مع بعض
         rw.readLock().lock()
         try {
             val waited = System.currentTimeMillis() - tq
@@ -337,7 +341,25 @@ object Offline {
         }
     }
 
+    /** (v696) تنزيل أي موديل (whisper/... أو mt/...) بالاستكمال من التطبيق. [rel] زي مفاتيح ModelStore. بيفحص المساحة الفاضية الأول */
+    fun fetchModel(rel: String, url: String, approxMb: Int, progress: (Long, Long) -> Unit, done: (String?) -> Unit) {
+        if (downloading()) return
+        val d = dir ?: run { done("مفيش مساحة تخزين"); return }
+        val dst = File(d, rel)
+        val have = File(dst.path + ".part").let { if (it.isFile) it.length() else 0L }
+        val need = approxMb * 1_048_576L - have + 100L * 1_048_576L
+        val free = try { d.usableSpace } catch (_: Throwable) { Long.MAX_VALUE }
+        if (free < need) { done("المساحة الفاضية مش كفاية (محتاج ~" + (need / 1_048_576L) + " ميجا)"); return }
+        startDl(done) {
+            fetch(url, dst, approxMb * 600_000L, progress)
+            if (rel.startsWith("whisper/")) releaseSafe(WhisperStt) else LocalMt.release()
+        }
+    }
+    fun whisperUrl(m: Model): String = BASE_URL + m.file
+
     /** (v261) تحرير الموديل بنفس قفل التفريغ: لو باتش بيتفرّغ دلوقتي بيستنى يخلص، وإلا release() كان ممكن يحرّر الموديل وهو شغّال ← كراش native */
+    /** (v696) تحرير Whisper بقفل الكتابة (قبل تحميل موديل الترجمة) */
+    fun releaseWhisper() { try { releaseSafe(WhisperStt) } catch (_: Throwable) {} }
     private fun releaseSafe(e: SttEngine) { rw.writeLock().lock(); try { e.release() } finally { rw.writeLock().unlock() } }
 
     fun delete(m: Model = model()) {

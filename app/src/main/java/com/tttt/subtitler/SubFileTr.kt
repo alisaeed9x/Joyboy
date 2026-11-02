@@ -215,7 +215,7 @@ object SubFileTr {
     fun googleOne(t: String): String? = gtCall(listOf(oneLine(t)))?.firstOrNull()
 
     /** (v684) اللهجة الفعلية: اللي اتختارت من الموبايل/المشغّل (conv_dialect) وإلا لغة الإعدادات */
-    fun effLang(): String = Cfg.str("conv_dialect", "").ifBlank { Cfg.str("lang", "فصحى") }.ifBlank { "فصحى" }
+    fun effLang(): String = if (Strict.hideTrOpts()) "فصحى" else Cfg.str("conv_dialect", "").ifBlank { Cfg.str("lang", "فصحى") }.ifBlank { "فصحى" }
 
     /** (v684) الأسلوب + الشدة اللي اتختاروا (شعبي / جرئ / +18 + خفيفة/متوسطة/شديدة)، وإلا أسلوب الإعدادات */
     fun effStyle(): String = styleOf(Cfg.str("tone_style", ""), Cfg.str("tone_strength", "متوسطة"), Cfg.str("style", "حرفي").ifBlank { "حرفي" })

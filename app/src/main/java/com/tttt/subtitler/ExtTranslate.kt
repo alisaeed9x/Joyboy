@@ -116,7 +116,7 @@ object ExtTranslate {
 
     // ===== LibreTranslate (سيرفرك أو سيرفر بمفتاح): POST {url}/translate بدفعة جمل =====
     /** (v423) 🌗 النص-أونلاين: «libre» (الافتراضي) = وشبر + LibreTranslate بدل جوجل · «google» = زي الأول */
-    fun semiLibre(): Boolean = Strict.semi()   // (v425) ليبرا بس — جوجل اتشال من الوضع ده
+    fun semiLibre(): Boolean = Strict.semi() || Strict.mt()   // (v425) ليبرا بس — جوجل اتشال من الوضع ده
     /** السيرفر الافتراضي لو ما حطيتش سيرفرك. السيرفرات العامة غالبًا بتطلب مفتاح أو بتحط حد — الجزء ده ما اتأكدتش منه، زرار 🧪 جرّب في الإعدادات هو الاختبار */
     const val LIBRE_DEFAULT = "https://libretranslate.com"
     fun libreUrl(): String = Cfg.str("libre_url").trim().trimEnd('/').ifEmpty { if (semiLibre()) LIBRE_DEFAULT else "" }

@@ -245,6 +245,8 @@ object PlayerPad {
             }
             // ── (v684) ترجمة ملف ترجمة: المرفق مع الفيديو، أو ملف من الموبايل ← إعدادات (مترجم/لهجة/أسلوب/شدة) ← زرار «▶ ترجم» ──
             var sfEng = lastSfEng; var sfDia = "فصحى"; var sfSty = "حرفي"; var sfStr = "متوسطة"
+            var dualSel = 0            // (v695) وضع العرض الحالي (من حالة التلفزيون)
+            var appliedVer = -1        // (v695) آخر نسخة طبّقتها من «النسخ» (للتمييز في القايمة)
             var sfMobText: String? = null   // (v688) نص الملف اللي اخترته من الموبايل — الموبايل بيترجمه بالتوازي مع التلفزيون
             fun sheetSfSettings(src: String, what: String) = sheet("📄 إعدادات ترجمة الملف") { body, redo, close ->
                 body.addView(label(what, 13f, cDim, false), lp(-1, -2).apply { topMargin = dp(6) })
@@ -338,6 +340,44 @@ object PlayerPad {
                     opt(body, "🧑 الشخصيات") { go("chars"); close() }
                 }
             }
+            // ───── (v695) وضع عرض الترجمة · نسخ الترجمة ─────
+            val dualNames = kotlin.collections.listOf("ترجمة فقط", "ترجمة + الأصلي تحت", "الإنجليزي تحت", "الأصلي فقط", "الأصلي فوق + الترجمة")
+            fun sheetDual() = sheet("🔀 وضع عرض الترجمة") { body, redo, close ->
+                for ((n, nm) in dualNames.withIndex()) opt(body, (if (n == dualSel) "✓ " else "") + nm) { dualSel = n; go("dualset", n.toLong()); redo() }
+            }
+            fun applyVer(i: Int, saveFirst: Boolean = true) {
+                try {
+                    if (saveFirst && LinkSession.mirror.eng.versions.size < 12) LinkSession.send("engine.saveVersion", org.json.JSONObject().put("name", "نسخة قبل التبديل").put("dialect", ""))   // عشان اللي معروض دلوقتي ما يضيعش
+                    LinkSession.send("engine.applyVersion", org.json.JSONObject().put("i", i)); appliedVer = i
+                } catch (e: Throwable) { LogStore.err("PlayerPad:applyVer", e) }
+            }
+            fun sheetVerTr(i: Int) = sheet("ترجمة النسخة دي") { body, _, close ->
+                infoCard(body, "هتتطبّق النسخة الأول وبعدين الترجمة بتشتغل عليها بالمحرك اللي تختاره (على التلفزيون).")
+                opt(body, "🌐 ترجم بجوجل") {
+                    close(); applyVer(i)
+                    LinkSession.onOp("engine.googleTranslateAll", { r -> act.runOnUiThread { if (!closed) note(r) } }, { n -> act.runOnUiThread { if (!closed) note("✅ ترجمة جوجل خلصت — " + (n.toIntOrNull() ?: 0) + " جملة اتغيّرت") } })
+                    LinkSession.send("engine.googleTranslateAll", org.json.JSONObject())
+                    note("🌐 بترجم بجوجل…")
+                }
+                opt(body, "✨ ترجم بجيميناي") { close(); applyVer(i); try { LinkSession.send("engine.redoAll", org.json.JSONObject().put("keep", true)) } catch (_: Throwable) {}; note("✨ بترجم بجيميناي…") }
+                opt(body, "👁 اعرضها من غير ترجمة") { close(); applyVer(i); note("👁 اتعرضت النسخة") }
+            }
+            fun sheetVersions() = sheet("🗂 نسخ الترجمة") { body, redo, close ->
+                val vs = try { LinkSession.mirror.eng.versions } catch (_: Throwable) { emptyList<VerRow>() }
+                infoCard(body, "كل نسخة ترجمة اتحفظت (سوفت صب · جيميناي · جوجل …). «👁 اعرض» بيطبّقها على الفيديو، و«ترجم» بيطبّقها وبعدين يترجم بالمحرك اللي تختاره.")
+                if (vs.isEmpty()) infoCard(body, "مفيش نسخ محفوظة لسه — بتتحفظ لوحدها قبل أي ترجمة أو تبديل (مثلًا «قبل ترجمة جوجل»).", 0xFFFFD9A0.toInt(), 0xFF3A2A14.toInt(), 0xFF8A6A2A.toInt())
+                for ((i, v) in vs.withIndex()) {
+                    val rowBox = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; gravity = Gravity.CENTER_VERTICAL; background = bg(cCard, if (i == appliedVer) cOnLine else cLine, 14f); setPadding(dp(10), dp(6), dp(6), dp(6)) }
+                    val nm = (i + 1).toString() + ". " + v.name + (if (v.dialect.isNotBlank()) " · " + v.dialect else "") + "\n" + v.count + " جملة" + (if (i == appliedVer) "  ✓ المعروضة" else "")
+                    rowBox.addView(label(nm, 13f, 0xFFFFFFFF.toInt(), false).apply { gravity = Gravity.START or Gravity.CENTER_VERTICAL }, lp(0, -2, 1f))
+                    rowBox.addView(btn("👁 اعرض", 12f) { applyVer(i); note("👁 اتعرضت: " + v.name); redo() }, lp(dp(78), dp(44)).apply { marginStart = dp(6) })
+                    rowBox.addView(btn("ترجم", 12f, 0xFF4F5BD5.toInt(), 0xFF7C8CF8.toInt()) { close(); sheetVerTr(i) }, lp(dp(64), dp(44)).apply { marginStart = dp(6) })
+                    body.addView(rowBox, lp(-1, -2).apply { topMargin = dp(8) })
+                }
+                grp(body, "ترجمة جديدة")
+                opt(body, "➕ إضافة ترجمة (من الموبايل) وترجمتها") { close(); sheetSubFile() }
+            }
+
             fun sheetAi() = sheet("✨ لهجة وإعدادات الترجمة") { body, redo, close ->
                 if (!started) body.addView(label("⚠ ابدأ الترجمة الأول (الزرار الأحمر تحت)", 13f, 0xFFFFB74D.toInt()), lp(-1, -2).apply { topMargin = dp(8) })
                 grp(body, "لهجة الترجمة")
@@ -389,6 +429,14 @@ object PlayerPad {
             capRow.addView(capNet, lp(-2, dp(34)).apply { marginStart = dp(3); marginEnd = dp(3) })
             capRow.addView(capMode, lp(-2, dp(34)).apply { marginStart = dp(3); marginEnd = dp(3) })
 
+            // ── (v695) أزرار الترجمة: إظهار/إخفاء · وضع العرض · النسخ · إضافة ترجمة ──
+            val ccB = btn("💬\nالترجمة", 11.5f) { go("cc") }
+            val dualB = btn("🔀\nالعرض", 11.5f) { sheetDual() }
+            val verB = btn("🗂\nالنسخ", 11.5f) { sheetVersions() }
+            val addTrB = btn("➕\nإضافة ترجمة", 11.5f, 0xFF4F5BD5.toInt(), 0xFF7C8CF8.toInt()) { sheetSubFile() }
+            val subRow = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL }
+            for (b0 in listOf(ccB, dualB, verB, addTrB)) { b0.setPadding(dp(2), dp(4), dp(2), dp(4)); subRow.addView(b0, lp(0, dp(54), 1f).apply { marginStart = dp(2); marginEnd = dp(2) }) }
+
             // ── السرعة · اللهجة وإعدادات الترجمة ──
             val speedB = btn("⏩ 1x", 16f) { sheetSpeed() }
             val aiB = btn("✨ لهجة وترجمة", 14f) { sheetAi() }
@@ -435,7 +483,8 @@ object PlayerPad {
             bodySync.addView(btn("⏱ شريط التزامن السريع", 13f) { go("syncstrip") }, lp(-1, dp(44)).apply { topMargin = dp(8) })
             // 🗣 ذكاء
             val bodyAi = newBody()
-            bodyAi.addView(btn("🗣 لهجة وأسلوب وشدة…", 13f) { sheetAi() }, lp(-1, dp(46)).apply { topMargin = dp(6) })
+            val aiBtnSettings = btn("🗣 لهجة وأسلوب وشدة…", 13f) { sheetAi() }
+            bodyAi.addView(aiBtnSettings, lp(-1, dp(46)).apply { topMargin = dp(6) })
             bodyAi.addView(btn("📄 ترجمة ملف ترجمة…", 13f) { sheetSubFile() }, lp(-1, dp(46)).apply { topMargin = dp(6) })
             bodyAi.addView(label("أدوات الذكاء (دوسة واحدة)", 12f, cDim).apply { gravity = Gravity.START or Gravity.CENTER_VERTICAL }, lp(-1, -2).apply { topMargin = dp(10) })
             val aiTools = kotlin.collections.listOf("✍ تنقيح" to "refine", "🔥 لهجة +" to "dial", "🧹 عائلي" to "family", "🔞 صريح" to "explicit", "🔧 ضمائر" to "pron", "🧠 دمج مكرر" to "dedup")
@@ -516,6 +565,7 @@ object PlayerPad {
             left.addView(idleBox, lp(-1, -2))
             left.addView(cntCard, lp(-1, -2))
             left.addView(capRow, lp(-1, -2).apply { topMargin = dp(8) })
+            left.addView(subRow, lp(-1, -2).apply { topMargin = dp(8) })   // (v695)
             left.addView(quick, lp(-1, -2).apply { topMargin = dp(8) })
             left.addView(tabBar, lp(-1, -2).apply { topMargin = dp(8) })
             left.addView(sc, lp(-1, 0, 1f).apply { topMargin = dp(4) })
@@ -585,6 +635,8 @@ object PlayerPad {
                 tDur.text = tm(dur)
                 playB.text = if (playing) "⏸" else "▶"
                 ttlTv.text = s.optString("title", "").let { if (it.isBlank()) "" else "📺  " + it }
+                ccB.text = if (s.optBoolean("cc", true)) "💬\nالترجمة ظاهرة" else "🚫\nالترجمة مخفية"   // (v695)
+                dualSel = s.optInt("dual", 0).coerceIn(0, 4); dualB.text = "🔀\n" + dualNames[dualSel]
                 val cnt = s.optString("cnt", "")
                 val vc = s.optInt("vcnt", 0)
                 if (!live) {
@@ -619,6 +671,7 @@ object PlayerPad {
                 pzB.text = if (s.optBoolean("tpause", false)) "▶" else "▮▮"
                 rdB.visibility = if (s.optBoolean("hsub", false)) View.VISIBLE else View.GONE
                 lgB.visibility = if (s.optBoolean("cdial", false)) View.VISIBLE else View.GONE
+                aiB.visibility = lgB.visibility; aiBtnSettings.visibility = lgB.visibility   // (v696) نفس قاعدة الوضع: من غير لهجات = الأزرار تختفي
                 bgNow = s.optInt("bgopa", 45)
                 bgTv.text = "◼ شفافية الخلفية: $bgNow%"
                 ccB.text = "💬\n" + (if (s.optBoolean("cc", true)) "الترجمة: شغّالة" else "الترجمة: مقفولة")

@@ -55,6 +55,7 @@ object TrWizard {
 
     /** اللهجة المطلوبة (غير الفصحى) من الإعدادات: «لهجة التحويل» لو متحددة، وإلا لغة الترجمة. "" = فصحى */
     fun dialectWanted(): String {
+        if (Strict.hideTrOpts()) return ""   // (v696) أوفلاين كامل = فصحى دايمًا (الإعداد المحفوظ للأونلاين ما بيتمسحش)
         val d = Cfg.str("conv_dialect", "").ifBlank { Cfg.str("lang", "فصحى") }.trim()
         return if (d.isEmpty() || d == "فصحى") "" else d
     }
@@ -182,7 +183,7 @@ object TrWizard {
                 val flName: String = com.tttt.subtitler.FreeLlm.liveName()   // (v447) برّه الـ when عشان السطر الطويل مابيحلّش المرجع
                 val base = when (id) {
                     "g_wav" -> (if (pl.only) "✍ تفريغ ذكاء صناعي" else "☁ أونلاين · WAV"); "g_aac" -> (if (pl.only) "✍ تفريغ ذكاء صناعي" else "☁ أونلاين · AAC")
-                    "loc_google" -> (if (pl.only) "✍ تفريغ Whisper" else "🌗 وشبر + 🌐 LibreTranslate"); "loc_free" -> "🌗 وشبر + 🆓 FreeLLM · " + flName; "f_gem" -> "🆓 FreeLLM · " + flName
+                    "loc_google" -> (if (pl.only) "✍ تفريغ Whisper" else "🌗 وشبر + 🌐 LibreTranslate"); "loc_mt" -> (if (pl.only) "✍ تفريغ Whisper" else "📴 أوفلاين كامل · وشبر + Hy-MT2"); "loc_free" -> "🌗 وشبر + 🆓 FreeLLM · " + flName; "f_gem" -> "🆓 FreeLLM · " + flName
                     "ai_only" -> "✍ تفريغ ذكاء صناعي"; "w_only" -> "✍ تفريغ Whisper"; "s_only" -> "✍ تفريغ SenseVoice"
                     else -> if (pl.only) "✍ تفريغ بس" else if (pl.offline) "📴 أوفلاين" else if (pl.cloud) "☁ محرك خارجي" else "☁ أونلاين"
                 }
@@ -390,7 +391,7 @@ object TrWizard {
 
         fun afterModePick() {
             // (v410) تفريغ بس: مفيش لهجة ولا أسلوب · نص-أونلاين وأوفلاين: فصحى + صوتي بس (مفيش لهجة ولا بصري)
-            if (onlySw || mId == Strict.SEMI || mId == "ai_only" || mId == "w_only") { finishModes("audio", null); return }   // (v427) وشبر+Libre وتفريغ بس: من غير أسئلة لهجة
+            if (onlySw || mId == Strict.SEMI || mId == Strict.MT || mId == "ai_only" || mId == "w_only") { finishModes("audio", null); return }   // (v427) وشبر+Libre وتفريغ بس: من غير أسئلة لهجة
             // (v435) جيميناي: اللهجة والأسلوب والشدة من الإعدادات زي ما هي — مفيش أسئلة تاني (تتغيّر من ⚙ ← 🌐 اللهجة والأسلوب)
             dia = TrWizard.dialectWanted(); diaSet = true
             finishModes("audio", null)
@@ -402,12 +403,14 @@ object TrWizard {
             when (id) {
                 "g_wav", "g_aac" -> { src = "gemini"; tr = "gemini"; gp = CURRENT }
                 "loc_google" -> { src = "whisper"; tr = "google"; trId = ""; dia = ""; diaSet = true; convId = ""; lang = "" }   // (v410) 🌗 Whisper فقط + لغة تلقائية
+                Strict.MT -> { src = "whisper"; tr = "google"; trId = ""; dia = ""; diaSet = true; convId = ""; lang = "" }   // (v696) 📴 أوفلاين كامل: فصحى + لغة تلقائية
                 "ai_only" -> { src = "gemini"; tr = "none"; trId = "" }
                 "w_only" -> { src = "whisper"; tr = "none"; trId = "" }
             }
-            if (onlySw && id in setOf("g_wav", "g_aac", Strict.SEMI)) tr = "none"   // (v410)
+            if (onlySw && id in setOf("g_wav", "g_aac", Strict.SEMI, Strict.MT)) tr = "none"   // (v410)
             if (src == "whisper") engine = "whisper"
             if (src == "whisper" && !WhisperLib.loaded) { Notice.show(act, "الأوفلاين مش مدعوم على جهازك", 2500L); return }
+            if (id == Strict.MT && !onlySw && !LocalMt.ready()) Notice.show(act, LocalMt.status(), 4000L)   // (v696) الموديل ناقص: التنبيه بس — الاختيار والتنزيل من الإعدادات
             normalize(); sync()
             if (isLocal() && !localReadyNow()) {
                 afterDl = { afterDl = null; afterModePick() }
@@ -430,6 +433,7 @@ object TrWizard {
             note(if (cur.isBlank()) "اختار وضع من التلاتة." else "الحالي: $cur")
             opt("☁ ترجمة بجيميناي", "٧٥٪ من مفاتيحك بتنسخ الكلام (مع مصدر الصوت وشرح المصطلحات والتلميحات فوق) و٢٥٪ بتترجم بالسياق · لهجات + أسلوب + شدة + ضمائر + شخصيات · محتاج مفتاح ونت", mId == "g_wav" || mId == "g_aac") { go { stepOnlineQ() } }
             opt("🌗 أوفلاين — وشبر + LibreTranslate  🔒 من غير مفتاح", "التفريغ بوشبر على جهازك والترجمة بـ LibreTranslate (لو وقف بيكمّل Microsoft Edge) · فصحى بس · جيميناي ممنوع · الترجمة محتاجة نت · اللغة بتتكشف لوحدها", mId == Strict.SEMI) { pickMode(Strict.SEMI) }
+            opt("📴 أوفلاين كامل  🔒 من غير نت ولا مفاتيح", "التفريغ بوشبر turbo والترجمة بـ Hy-MT2 على جهازك · فصحى بس · مفيش لهجات ولا أسلوب · محتاج الموديلات متنزّلة مرة واحدة (~1.7 جيجا) · الأول تفريغ وبعدين ترجمة", mId == Strict.MT) { pickMode(Strict.MT) }
             sec("✍ تفريغ بس (من غير ترجمة)")
             opt("☁ تفريغ بجيميناي", "النص بيظهر بلغته الأصلية · محتاج مفتاح ونت", mId == "ai_only") { pickMode("ai_only") }
             opt("📴 تفريغ أوفلاين بوشبر", "النص بيظهر بلغته الأصلية · من غير مفتاح ولا نت (النت بس لتنزيل الموديل مرة واحدة)", mId == "w_only") { pickMode("w_only") }

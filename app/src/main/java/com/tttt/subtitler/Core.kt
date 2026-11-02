@@ -166,6 +166,7 @@ object Cfg {
             if (persistent != null) { Offline.dir = persistent; Offline.legacy = app.filesDir; Offline.migrateLegacy() }
             else { Offline.dir = app.filesDir; Offline.legacy = null }
         }
+        try { ModelStore.restore(c.applicationContext) } catch (_: Throwable) {}   // (v696) الموديلات اللي اتختارت من الموبايل (SAF) ترجع تتفتح
         TrWizard.appCtx = c.applicationContext   // (v255) فحص النت لإشعار ترجمة جوجل
         try { PromptStore.init(c.applicationContext) } catch (e: Throwable) { LogStore.err("Cfg:prompts", e) }   // (v288) البرومبتات المعدّلة
         Quota.load = { p.getString("quota", "") ?: "" }

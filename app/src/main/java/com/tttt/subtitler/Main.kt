@@ -614,7 +614,7 @@ class MainActivity : Activity() {
                     ui.text("أسلوب الترجمة:", 12f, th.muted),
                     ui.chips(styles, { Cfg.str("tone_style", "").ifBlank { style }.ifBlank { "حرفي" } }) { style = it; save(); Cfg.put("tone_style", if (it == "حرفي") "" else it) },
                     ui.text("الشدة (بتشتغل مع شعبي / جرئ / +18 بس):", 12f, th.muted), toneDegChips,
-                    ui.text("الباتشات الجاية بتتترجم بيهم. «طبّق» على اللي اتترجم فعلًا من زرار اللغة 🌐 جوه المشغّل.", 12f, th.muted)),
+                    ui.text("الباتشات الجاية بتتترجم بيهم. «طبّق» على اللي اتترجم فعلًا من زرار اللغة 🌐 جوه المشغّل.", 12f, th.muted)).apply { if (Strict.hideTrOpts()) visibility = View.GONE },
                 ui.section("🏠 اللغة الأساسية", false,
                     ui.text("لغة الفيديوهات اللي بتتفرج عليها أصلًا. لو فيديو لغته الأصلية هي دي، الترجمة التلقائية مش هتشتغل عليه (بيتفرّغ بس ويظهر بنصه الأصلي) — ولو دوست زرار «ترجم» بنفسك الترجمة هتشتغل عادي.", 12f, th.muted),
                     ui.chips(baseLangs.map { it.second }, { baseLangName() }) { n -> Cfg.put("base_lang", baseLangs.firstOrNull { it.second == n }?.first ?: "ar") }),
@@ -643,6 +643,7 @@ class MainActivity : Activity() {
             tab("audio", listOf<View>(
                 ui.text("التفريغ = تحويل الكلام لنص. محرك الجهاز مجاني وبيشتغل من غير نت (بتنزّل الموديل مرة واحدة). الباقي: مسار الصوت وجودته.", 12f, th.muted),
                 ui.section("🔊 الصوت", true, atrack, audioPresetTitle, audioPresetChips, audioPresetDesc, *fl("soundtags", "hitiming")),
+                ModelsUi.section(this, ui, th),
                 ui.section("📴 التفريغ على الجهاز (من غير مفتاح)", true,
                     ui.text("اختيار التفريغ (جيميناي / على الجهاز / سحابي) من خط الترجمة. هنا بس تنزيل ومسح الموديلات واختيار المحرك واللغة.", 12f, th.muted),
                     ui.text("حجم موديل Whisper:", 12f, th.muted), offModelChips, ui.text("⚡ خانات التفريغ المتوازي:", 12f, th.muted), parChips, parNote, offStatus, offDlBtn, offProg,
@@ -1463,6 +1464,7 @@ class MainActivity : Activity() {
     }
     override fun onActivityResult(r: Int, c: Int, d: Intent?) {
         super.onActivityResult(r, c, d)
+        if (r == ModelsUi.REQ) { ModelsUi.onResult(this, c, d); return }   // (v696) اختيار ملف موديل
         if (r == 61) {
             if (c == RESULT_OK) d?.data?.let { u ->
                 try {

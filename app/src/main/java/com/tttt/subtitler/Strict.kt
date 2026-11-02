@@ -17,7 +17,12 @@ object Strict {
     } catch (_: Throwable) { "" }
     fun semi(): Boolean = id() == SEMI
     /** true = جيميناي ممنوع تمامًا (مفاتيح، تحويل لهجة، بصري، تسليم احتياطي) */
-    fun noGemini(): Boolean = id() == SEMI
+    /** (v696) 📴 أوفلاين كامل: Whisper turbo + ترجمة Hy-MT2 على الجهاز — من غير نت ولا مفاتيح ولا جيميناي · فصحى بس */
+    const val MT = "loc_mt"
+    fun mt(): Boolean = id() == MT
+    /** (v696) الوضع ده بيخفي كل زراير اللهجة والأسلوب وإعدادات الترجمة (helper واحد للكل) */
+    fun hideTrOpts(): Boolean = mt()
+    fun noGemini(): Boolean = id() == SEMI || id() == MT
     /** (v440) 🆓 ترجمة بـ FreeLLM الصوتي: نفس مسار جيميناي (صوت ← موديل) بس على موديلات Gemini المجانية بالتوزيع — مفيش وشبر ولا مفاتيح جيميناي بتاعتك */
     const val FREE_GEM = "f_gem"
     fun freeGem(): Boolean = id() == FREE_GEM
@@ -25,7 +30,7 @@ object Strict {
     /** (v440) 🆓 وشبر + FreeLLM: وضع وشبر بموديلات Gemini/Groq المجانية بمفاتيحها (مفيش جيميناي خالص) */
     const val FREE_TXT = "loc_free"
     fun freeText(): Boolean = id() == FREE_TXT
-    fun noGemKeys(): Boolean = noGemini() || freeText()
+    fun noGemKeys(): Boolean = noGemini() || freeText() || mt()
     const val NO_VISUAL_MSG = "👁 الوضع البصري شغّال في الوضع الأونلاين (جيميناي) بس"
     const val NO_DIALECT_MSG = "🗣 اللهجات في الوضع الأونلاين (جيميناي) بس — الوضع ده فصحى"
 }
