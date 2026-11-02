@@ -122,6 +122,11 @@ object PlayerPad {
             var curDialect = ""
             var curStyle = ""
             var curStrength = ""
+            // (v709) تأثير «الكوباية»: زرار اللهجة/الأدوات بيتملي لحد ما الأداة تخلص
+            val fills = ArrayList<PadFill>()
+            var toolKey = ""; var toolPct = 0; var toolSince = 0L
+            var doneKey = ""; var doneAt = 0L
+            var tapKey = ""; var tapAt = 0L
             var bgNow = 45
             var qList: List<String> = emptyList(); var qCur = 0
             var aList: List<String> = emptyList(); var aCur = 0
@@ -159,6 +164,17 @@ object PlayerPad {
             fun go(a: String, v: Long = 0L) {
                 Thread { try { RemoteClient.player(a, v) } catch (e: Throwable) { LogStore.err("PlayerPad:go", e) } }.also { it.isDaemon = true }.start()
             }
+            /** (v709) يلبّس الزرار طبقة ميه بتطلع من تحت (ClipDrawable) — key = مفتاح الأداة اللي بتملّيه، "*" = أي أداة */
+            fun fillable(b: TextView, key: String): TextView {
+                val water = GradientDrawable().apply { shape = GradientDrawable.RECTANGLE; cornerRadius = dpf(14f); setColor(0xAA22C55E.toInt()) }
+                val clip = android.graphics.drawable.ClipDrawable(water, Gravity.BOTTOM, android.graphics.drawable.ClipDrawable.VERTICAL)
+                clip.level = 0
+                b.background = android.graphics.drawable.LayerDrawable(arrayOf(b.background, clip))
+                fills.add(PadFill(key, b, clip, System.currentTimeMillis()))
+                return b
+            }
+            /** دوسة على أداة: الزرار يبدأ يتملّى فورًا لحد ما التلفزيون يبلّغ إنه شغّال */
+            fun tapFill(k: String) { if (k.isEmpty() || k == "dedup") return; tapKey = k; tapAt = System.currentTimeMillis() }
             fun note(t: String) { try { android.widget.Toast.makeText(act, t, android.widget.Toast.LENGTH_SHORT).show() } catch (_: Throwable) {} }
             fun tm(ms: Long): String {
                 val s = (ms / 1000L).coerceAtLeast(0L); val h = s / 3600L; val m = (s % 3600L) / 60L; val c = s % 60L
@@ -202,7 +218,7 @@ object PlayerPad {
                 sd.show()
             }
             /** صفوف شيبس متساوية العرض (من اليمين) */
-            fun chipRows(body: LinearLayout, labels: List<String>, per: Int, isOn: (String) -> Boolean, tap: (String) -> Unit) {
+            fun chipRows(body: LinearLayout, labels: List<String>, per: Int, isOn: (String) -> Boolean, fk: ((String) -> String?)? = null, tap: (String) -> Unit) {
                 var row: LinearLayout? = null
                 labels.forEachIndexed { i, l ->
                     if (i % per == 0) {
@@ -210,7 +226,9 @@ object PlayerPad {
                         body.addView(row, lp(-1, -2).apply { topMargin = dp(8) })
                     }
                     val on = isOn(l)
-                    row?.addView(btn(l, 15f, if (on) cOn else cCard, if (on) cOnLine else cLine) { tap(l) },
+                    val cb = btn(l, 15f, if (on) cOn else cCard, if (on) cOnLine else cLine) { tap(l) }
+                    fk?.invoke(l)?.let { fillable(cb, it) }
+                    row?.addView(cb,
                         lp(0, dp(46), 1f).apply { marginStart = dp(4); marginEnd = dp(4) })
                 }
                 val rem = labels.size % per
@@ -266,6 +284,23 @@ object PlayerPad {
                 }
                 infoCard(body, "🔀 الترجمة هتشتغل على التلفزيون والموبايل مع بعض — أول واحد يخلّص بيتطبّق والتاني بيقف. لو التلفزيون مفيهوش نت الموبايل بيكمّل لوحده.")
                 body.addView(btn("▶ ترجم", 18f, 0xFF4F5BD5.toInt(), 0xFF7C8CF8.toInt()) {
+                    if (sfEng == "gemini" && !SubFileTr.hasGemKeys()) {   // (v705) مفيش مفتاح جيميناي: وقّف وقول على الموبايل — من غير ما يبدّل لمترجم تاني
+                        try {
+                            GAlert(act).setTitle("⚠ جيميناي لا يحتوي على مفاتيح")
+                                .setMessage("الترجمة ما بدأتش.")
+                                .setPositiveButton("🔑 إضافة مفاتيح") { _, _ ->
+                                    act.showKeyGuide { k ->
+                                        val cur = Cfg.keys("keys")
+                                        if (k in cur || k in Cfg.keys("extra") || k in Cfg.keys("backup")) note("⚠ المفتاح ده موجود قبل كده")
+                                        else { Cfg.p.edit().putString("keys", (cur + k).joinToString("\n")).apply(); note("✓ اتحفظ المفتاح — دوس «ترجم» تاني") }
+                                    }
+                                }
+                                .setNeutralButton("🔀 اختيار وضع آخر") { _, _ -> sfEng = "google"; lastSfEng = sfEng; redo() }
+                                .setNegativeButton("إلغاء") { _, _ -> close() }
+                                .show()
+                        } catch (_: Throwable) { note("⚠ جيميناي لا يحتوي على مفاتيح — الترجمة ما بدأتش") }
+                        return@btn
+                    }
                     val jid = SubDual.newJid()
                     go("sfgo:" + src + ":" + sfEng + ":" + sfDia + ":" + sfSty + ":" + sfStr + ":" + jid)
                     SubDual.start(jid, if (src == "mobile") sfMobText else null, sfEng, sfDia, sfSty, sfStr) { m -> act.runOnUiThread { if (!closed) note(m) } }
@@ -382,8 +417,8 @@ object PlayerPad {
                 if (!started) body.addView(label("⚠ ابدأ الترجمة الأول (الزرار الأحمر تحت)", 13f, 0xFFFFB74D.toInt()), lp(-1, -2).apply { topMargin = dp(8) })
                 grp(body, "لهجة الترجمة")
                 chipRows(body, kotlin.collections.listOf("فصحى", "مصري", "شامي", "لبناني", "خليجي", "مغربي", "عراقي", "سوداني"), 4,
-                    { l -> l == (if (curDialect.isBlank()) "فصحى" else curDialect) }) { l ->
-                    curDialect = if (l == "فصحى") "" else l; go("dialect:$l"); redo()
+                    { l -> l == (if (curDialect.isBlank()) "فصحى" else curDialect) }, { l -> if (l == "فصحى") null else "dialect" }) { l ->
+                    curDialect = if (l == "فصحى") "" else l; if (started && l != "فصحى") tapFill("dialect"); go("dialect:$l"); redo()
                 }
                 grp(body, "الأسلوب")
                 chipRows(body, kotlin.collections.listOf("حرفي", "شعبي", "جرئ", "+18"), 4, { l -> l == curStyle.ifBlank { "حرفي" } }) { l ->
@@ -397,7 +432,7 @@ object PlayerPad {
                 opt(body, "🔁 طبّق الأسلوب على الفيديو كله") { go("tone:" + curStyle.ifBlank { "حرفي" } + "|" + curStrength.ifBlank { "متوسطة" } + "|all"); close() }
                 grp(body, "أدوات الذكاء (دوسة واحدة)")
                 val tools = mapOf("✍ تنقيح" to "refine", "🔥 لهجة +" to "dial", "🧹 عائلي" to "family", "🔞 صريح" to "explicit", "🔧 ضمائر" to "pron", "🧠 دمج مكرر" to "dedup")
-                chipRows(body, tools.keys.toList(), 3, { false }) { l -> go("ai:" + (tools[l] ?: "")); close() }
+                chipRows(body, tools.keys.toList(), 3, { false }, { l -> tools[l] }) { l -> if (started) tapFill(tools[l] ?: ""); go("ai:" + (tools[l] ?: "")); close() }
                 opt(body, "⚙ كل إعدادات الترجمة على التلفزيون") { go("subdlg", 1L); close() }
             }
 
@@ -439,7 +474,7 @@ object PlayerPad {
 
             // ── السرعة · اللهجة وإعدادات الترجمة ──
             val speedB = btn("⏩ 1x", 16f) { sheetSpeed() }
-            val aiB = btn("✨ لهجة وترجمة", 14f) { sheetAi() }
+            val aiB = fillable(btn("✨ لهجة وترجمة", 14f) { sheetAi() }, "*")
             val quick = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_LTR }
             quick.addView(speedB, lp(0, dp(52), 0.8f)); quick.addView(aiB, lp(0, dp(52), 1.3f).apply { marginStart = dp(8) })
 
@@ -483,12 +518,12 @@ object PlayerPad {
             bodySync.addView(btn("⏱ شريط التزامن السريع", 13f) { go("syncstrip") }, lp(-1, dp(44)).apply { topMargin = dp(8) })
             // 🗣 ذكاء
             val bodyAi = newBody()
-            val aiBtnSettings = btn("🗣 لهجة وأسلوب وشدة…", 13f) { sheetAi() }
+            val aiBtnSettings = fillable(btn("🗣 لهجة وأسلوب وشدة…", 13f) { sheetAi() }, "*")
             bodyAi.addView(aiBtnSettings, lp(-1, dp(46)).apply { topMargin = dp(6) })
             bodyAi.addView(btn("📄 ترجمة ملف ترجمة…", 13f) { sheetSubFile() }, lp(-1, dp(46)).apply { topMargin = dp(6) })
             bodyAi.addView(label("أدوات الذكاء (دوسة واحدة)", 12f, cDim).apply { gravity = Gravity.START or Gravity.CENTER_VERTICAL }, lp(-1, -2).apply { topMargin = dp(10) })
             val aiTools = kotlin.collections.listOf("✍ تنقيح" to "refine", "🔥 لهجة +" to "dial", "🧹 عائلي" to "family", "🔞 صريح" to "explicit", "🔧 ضمائر" to "pron", "🧠 دمج مكرر" to "dedup")
-            grid(bodyAi, aiTools.map { pr -> btn(pr.first, 12.5f) { go("ai:" + pr.second) } }, 2, 46)
+            grid(bodyAi, aiTools.map { pr -> fillable(btn(pr.first, 12.5f) { if (started) tapFill(pr.second); go("ai:" + pr.second) }, pr.second) }, 2, 46)
             // 🧰 أدوات
             val bodyTools = newBody()
             val ccB = btn("", 12f) { go("cc") }
@@ -585,7 +620,7 @@ object PlayerPad {
             val pzB = btn("▮▮", 17f) { go(if (paused) "tr_resume" else "tr_pause") }
             val wzB = btn("⚙", 18f) { go("modeset") }
             val rdB = btn("🔁", 18f, 0xFF6A1B9A.toInt(), 0xFF8E3FC4.toInt()) { go("redo") }
-            val lgB = btn("🌐", 18f) { sheetAi() }
+            val lgB = fillable(btn("🌐", 18f) { sheetAi() }, "*")
             val trRow = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_LTR; gravity = Gravity.CENTER_VERTICAL }
             trRow.addView(trB, lp(0, dp(52), 2.6f))
             for (b in kotlin.collections.listOf(pzB, wzB, rdB, lgB)) trRow.addView(b, lp(0, dp(52), 1f).apply { marginStart = dp(6) })
@@ -627,6 +662,25 @@ object PlayerPad {
                 if (!busy) st = s
                 val now = System.currentTimeMillis()
                 val dur = s.optLong("dur", 0L); durNow = dur
+                // (v709) تأثير الكوباية: التلفزيون بيبعت tool (مفتاح الأداة) + toolp (0..100)؛ الزرار بيتملّى لحد النهاية وبعدين ينزل
+                run {
+                    val tk = s.optString("tool", ""); val tp = s.optInt("toolp", 0)
+                    if (tk.isNotEmpty()) { if (toolKey != tk) { toolKey = tk; toolSince = now }; toolPct = tp; tapKey = "" }
+                    else if (toolKey.isNotEmpty()) { doneKey = toolKey; doneAt = now; toolKey = "" }
+                    fills.removeAll { !it.v.isAttachedToWindow && now - it.at > 3000L }
+                    for (f in fills) {
+                        val tgt = when {
+                            toolKey.isNotEmpty() && (f.key == "*" || f.key == toolKey) -> maxOf(toolPct / 100f, 0.9f * (1f - Math.exp(-(now - toolSince) / 20000.0).toFloat())).coerceIn(0.04f, 0.97f)
+                            doneKey.isNotEmpty() && now - doneAt < 800L && (f.key == "*" || f.key == doneKey) -> 1f
+                            tapKey.isNotEmpty() && now - tapAt < 6000L && (f.key == "*" || f.key == tapKey) -> 0.05f + 0.2f * ((now - tapAt) / 6000f)
+                            else -> 0f
+                        }
+                        f.cur += (tgt - f.cur) * 0.35f
+                        if (Math.abs(tgt - f.cur) < 0.005f) f.cur = tgt
+                        f.clip.level = (f.cur * 10000f).toInt().coerceIn(0, 10000)
+                    }
+                    aiB.text = if (toolKey.isNotEmpty()) "✨ لهجة وترجمة · " + (if (toolPct > 0) "$toolPct%" else "⏳") else "✨ لهجة وترجمة"
+                }
                 val playing = s.optBoolean("playing", false)
                 val spd = PosExtrap.speedOf(s.optString("speed", "1x"))
                 val pos = PosExtrap.pos(s.optLong("pos", 0L), m.stStamp, now, spd, playing, dur)
@@ -720,3 +774,6 @@ object PlayerPad {
         } catch (e: Throwable) { LogStore.err("PlayerPad:show", e) }
     }
 }
+
+/** (v709) زرار فيه طبقة «ميه» بتطلع من تحت: cur = المستوى الحالي المتنعّم (0..1) */
+private class PadFill(val key: String, val v: android.widget.TextView, val clip: android.graphics.drawable.ClipDrawable, val at: Long) { var cur = 0f }

@@ -129,7 +129,7 @@ class PlayerActivity : Activity(), Host {
         j.put("cnt", try { PlayerLogic.percent(engine.coveredSec(), durMs / 1000.0).toString() + "% · " + list.size.toString() + " جملة" } catch (_: Throwable) { "" })
         j.put("trcolor", try { tvTrColor() } catch (_: Throwable) { 0xFFE53935.toInt() })
         // (v682) صفحة «المشغّل» في الريموت: وضع الترجمة · حالة المحرك · عدد جمل الوضع البصري · شفافية الخلفية
-        j.put("mode", try { modeName() } catch (_: Throwable) { "" })
+        j.put("mode", modeLabelNow())
         j.put("tstart", engineStarted)
         j.put("tpause", try { ::engine.isInitialized && engine.userPaused } catch (_: Throwable) { false })
         j.put("vcnt", try { if (::visual.isInitialized) visual.count else 0 } catch (_: Throwable) { 0 })
@@ -140,6 +140,7 @@ class PlayerActivity : Activity(), Host {
         j.put("posy", Cfg.int("sub_posy", 0))
         j.put("hsub", try { hasSubsNow() } catch (_: Throwable) { false })
         j.put("cdial", try { caps().dialect } catch (_: Throwable) { false })
+        try { val ts = if (::engine.isInitialized) engine.toolState() else Pair("", 0f); j.put("tool", ts.first); j.put("toolp", (ts.second * 100f).toInt().coerceIn(0, 100)) } catch (_: Throwable) {}   // (v709) تأثير «الكوباية» على أزرار الريموت
         // (v532) قوايم الجودة ولغة الصوت كنصوص + الحالي: الريموت بيعرضها على الموبايل ويختار منها من غير ما يفتح قايمة على شاشة التلفزيون
         try { val (ql, qc) = rQuals(); j.put("ql", org.json.JSONArray(ql)); j.put("qc", qc) } catch (_: Throwable) {}
         try {
@@ -556,7 +557,7 @@ class PlayerActivity : Activity(), Host {
             "prev" -> stepEpisode(-1)
             "next" -> stepEpisode(1)
             "speed" -> tvCycleSpeed()
-            "fit" -> cycleFitNow()
+            "fit" -> runOnUiThread { try { cycleFitNow() } catch (e: Throwable) { LogStore.err("Player:fit", e) } }   // (v707) الأمر بييجي من خيط الشبكة: تغيير حجم السطح لازم على خيط الواجهة
             "rotate" -> runOnUiThread { rotateVideoNow() }   // (v604) تدوير صورة الفيديو من الموبايل
             "cc" -> { ccOn = !ccOn; if (!ccOn) sub.show(null) else curIdx = -2 }
             "scale" -> tvSubScale(v.toInt())
@@ -766,6 +767,11 @@ class PlayerActivity : Activity(), Host {
     private fun sfChip(): String = (if (sfBusy.startsWith("🧹")) "🧹 تنقيح " else "⏳ ترجمة السوفت ") + sfPct() + "%"
     private fun tvSfShort(): String = (if (sfBusy.startsWith("🧹")) "🧹 " else "⏳ سوفت ") + sfPct() + "%"
     @Volatile private var sfDoneUri = ""
+    /** (v703) وصف اللي اترجم بيه ملف الترجمة فعلًا (مترجم · لهجة · أسلوب) — بيتعرض مكان «وشبر + LibreTranslate» (ده وضع محرك الصوت المحفوظ مش ملف الترجمة) */
+    @Volatile private var sfDoneLabel = ""
+    private fun modeLabelNow(): String = try {
+        if (!engineStarted && sfDoneLabel.isNotEmpty() && sfDoneUri.isNotEmpty() && sfDoneUri == (uri?.toString() ?: "")) sfDoneLabel else modeName()
+    } catch (_: Throwable) { "" }
     private fun tvTrLabel(): String = try {
         if (!engineStarted && sfBusy.isNotEmpty()) tvSfShort()
         else if (!engineStarted && sfLive.isNotEmpty()) "💬 لحظية"
@@ -1046,6 +1052,7 @@ class PlayerActivity : Activity(), Host {
                 if (::engine.isInitialized) { engine.convDialect = dia; engine.toneStyle = sty; engine.toneStrength = str }
             } catch (e: Throwable) { LogStore.err("Player:sfGo", e) }
         }
+        LogStore.add("💬 سوفت صب: sfgo eng=$eng لهجة=" + (p.getOrNull(3) ?: "") + " أسلوب=" + (p.getOrNull(4) ?: "") + " شدة=" + (p.getOrNull(5) ?: ""))
         sfRun("soft", eng, null, -1, src == "mobile", src == "mobile", p.getOrNull(6) ?: "")   // (v688) p[6] = jid بتاع الترجمة المزدوجة (تلفزيون + موبايل)
     }
 
@@ -1080,7 +1087,7 @@ class PlayerActivity : Activity(), Host {
         if (kind == "hard") { sfHard(); return }
         // (v661) جيميناي من غير مفتاح كان بيفشل بتنبيه سريع ويختفي (باين إن مفيش ترجمة) ← بنحوّل لجوجل ونقولك
         var eng = engIn
-        if (eng == "gemini" && !(try { TrWizard.hasGeminiKey() } catch (_: Throwable) { true })) { eng = "google"; say("⚠ مفيش مفتاح جيميناي — هترجم بجوجل") }
+        if (eng == "gemini" && !SubFileTr.hasGemKeys()) { sfNote("⚠ مفيش مفتاح جيميناي على التلفزيون — ضيفه من الإعدادات أو اختار جوجل (ما حوّلتش لجوجل لوحدي عشان اللهجة)", 8000L); return }   // (v703) كان بيحوّل لجوجل بصمت فتطلع فصحى
         if (sfBusy.isNotEmpty()) { say("⏳ بترجم دلوقتي: $sfBusy"); return }
         val myJid = jid.ifBlank { java.util.UUID.randomUUID().toString() }; SfJob.begin(myJid)   // (v688) شغلانة جديدة — الموبايل (لو شغّال) بيتعرّف عليها بنفس الـjid
         LogStore.add("💬 سوفت صب: بدأ sfRun kind=$kind eng=$eng track=$track"); sfBusy = "بقرا الترجمة…"; runOnUiThread { updateTr(); try { tvBar?.refresh() } catch (_: Throwable) {} }
@@ -1202,6 +1209,12 @@ class PlayerActivity : Activity(), Host {
                 try { player.exo()?.let { xp -> xp.trackSelectionParameters = xp.trackSelectionParameters.buildUpon().setTrackTypeDisabled(androidx.media3.common.C.TRACK_TYPE_TEXT, true).build() } } catch (_: Throwable) {}   // (v667) ملف الترجمة الأصلي يتفصل والمترجم هو اللي يظهر
                 nativeCue = ""
                 sfDoneUri = uri?.toString() ?: ""
+                sfDoneLabel = try {
+                    if (engName.contains("جيميناي")) {
+                        val d = Cfg.str("conv_dialect", "").ifBlank { "فصحى" }; val sy = Cfg.str("tone_style", "").ifBlank { "حرفي" }; val st = Cfg.str("tone_strength", "متوسطة")
+                        "📄 ملف ترجمة · ✨ جيميناي · " + d + " · " + sy + (if (sy != "حرفي") " · " + st else "")
+                    } else "📄 ملف ترجمة · 🌐 جوجل (فصحى)"
+                } catch (_: Throwable) { "📄 ملف ترجمة · " + engName }
                 Thread { try { engine.saveNow() } catch (e: Throwable) { LogStore.err("Player:sfSave", e) } }.start()
                 sfNote("✅ خلصت ترجمة السوفت صب — " + subs.size + " جملة بـ " + engName + (if (out.failed > 0) " — " + out.failed + " جملة فضلت بنصها الأصلي" else ""), 6000L)   // (v670) إشعار أطول
             } catch (e: Throwable) { LogStore.err("Player:sfApply", e); say("⚠ مقدرتش أطبّق الترجمة") }
@@ -1844,6 +1857,7 @@ class PlayerActivity : Activity(), Host {
     private var textPicked = false
     private var natStart = 0.0
     private var natLast = ""
+    private var natWaitCue = ""; private var natWaitSince = 0L   // (v703) استنى الترجمة اللحظية بدل ما تعرض الأصل ثانية
     private fun natSub(t: String): Sub {
         if (t != natLast) { natLast = t; natStart = cur / 1000.0 }
         val tr = sfLiveText(t)   // (v529) ترجمة لحظية لو اتفعّلت من «📄 ترجمة ملف الترجمة»
@@ -1864,7 +1878,7 @@ class PlayerActivity : Activity(), Host {
     var offsetMs = 0L; var speed = 1f; var fit = 0; var fsFit = 2; var ccOn = true; var fitFsB: TextView? = null
     fun isLandNow() = resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
     /** أفقي: وضع الشاشة الكاملة (الافتراضي تمديد) — رأسي: وضع منفصل (الافتراضي احتواء) */
-    fun curFit() = if (isLandNow()) fsFit else fit
+    fun curFit(): Int { val m = if (isLandNow()) fsFit else fit; return if (m == 3 && DeviceUi.isTv(this)) 0 else m }   // (v707) «100%» محتاج قرص بصباعين — مش بيشتغل بالريموت فعلى التلفزيون متشال
     lateinit var svRef: android.view.SurfaceView
     @Volatile var visNow = 0.0
     var vidW = 0; var vidH = 0
@@ -2009,8 +2023,9 @@ class PlayerActivity : Activity(), Host {
             })
             return
         }
-        if (isLandNow()) { fsFit = (fsFit + 1) % 4; Cfg.p.edit().putString("fs_fit", fsFit.toString()).apply() }
-        else { fit = (fit + 1) % 4; Cfg.p.edit().putString("fit", fit.toString()).apply() }
+        val nFit = if (DeviceUi.isTv(this)) 3 else 4
+        if (isLandNow()) { fsFit = (fsFit % nFit + 1) % nFit; Cfg.p.edit().putString("fs_fit", fsFit.toString()).apply() }
+        else { fit = (fit % nFit + 1) % nFit; Cfg.p.edit().putString("fit", fit.toString()).apply() }
         fitFsB?.text = "⬛ " + fitNameOf(curFit()); applyFit(svRef, videoBoxRef)
         say("⬛ " + fitNameOf(curFit()) + (if (curFit() == 3) " — اقرص بصباعين للتكبير/التصغير" else ""))
     }
@@ -4694,12 +4709,14 @@ class PlayerActivity : Activity(), Host {
                 val natHold = !preferNative && natGap && (engineStarted || sfBusy.isNotEmpty() || engine.subs.isNotEmpty()) && now - natGapSince < 900L
                 val nat = ccOn && (gs.isEmpty() || preferNative) && nativeCue.isNotEmpty() && !natHold   // (v515) (v521) preferNative = المستخدم اختار مسار الفيديو الأصلي ترجمة الفيديو الأصلية لما مفيش ترجمة من المحرك
                 if (nat != natShown) { natShown = nat; try { sub.style = natStyle(SubStyle.load { k, d -> Cfg.str(k, d) }) } catch (e: Throwable) { LogStore.err("Player:natStyle", e) } }
-                val key = act.joinToString(",") + ":" + part + (if (nat) "|N:" + nativeCue + (if (sfLive.isNotEmpty()) "|L" + sfLiveGen else "") else "")
+                if (nativeCue != natWaitCue) { natWaitCue = nativeCue; natWaitSince = now }
+                val liveWait = nat && sfLive.isNotEmpty() && sfLiveCache[nativeCue] == null && now - natWaitSince < 2500L   // (v703) لسه الترجمة ماجتش: ما نعرضش الأصل
+                val key = act.joinToString(",") + ":" + part + (if (liveWait) "|W" else "") + (if (nat) "|N:" + nativeCue + (if (sfLive.isNotEmpty()) "|L" + sfLiveGen else "") else "")
                 if (idx != curIdx || key != curKey) {
                     curIdx = idx; curKey = key
                     val shown: Sub? = when {
                         !ccOn -> null
-                        gs.isEmpty() || preferNative -> if (nat) natSub(nativeCue) else null
+                        gs.isEmpty() || preferNative -> if (nat && !liveWait) natSub(nativeCue) else null
                         parts.size > 1 -> gs[0].copy(translated = parts[part], isContinuation = gs[0].isContinuation && part == parts.size - 1)
                         else -> PlayerLogic.combine(gs)
                     }

@@ -168,7 +168,10 @@ object SubSidecar {
                 val n = name.lowercase()
                 if (n == base || n.startsWith("$base.")) return true
                 val nn = norm(n)
-                return nb.isNotEmpty() && nn.startsWith(nb) && nn.length - nb.length <= 8
+                if (nb.isEmpty() || !nn.startsWith(nb)) return false
+                // (v703) اللاحقة لازم تكون علامة لغة/نوع بس (ar · eng · sub · forced…) — مفيش أرقام ولا كلام تاني، عشان «1» ما تلقطش «10» ولا «movie» تلقط «movies2»
+                val rest = nn.substring(nb.length)
+                return rest.isEmpty() || Regex("^(?:ar|ara|arb|arabic|عربي|عربى|en|eng|english|fr|fre|de|ger|es|spa|tr|tur|hi|ja|jpn|ko|kor|ru|rus|it|ita|pt|por|sub|subs|subtitle|subtitles|cc|sdh|forced|default|translated|ترجمه|ترجمة)+$").matches(rest)
             }
             var files: List<java.io.File> = dir.listFiles()?.toList().orEmpty()
             if (files.isEmpty()) {   // مفيش صلاحية تعدّد الملفات: نجرّب فهرس الميديا
@@ -191,7 +194,10 @@ object SubSidecar {
                         files.filter { it.isDirectory && Regex("ترجم|subs?|subtitle|caption|srt", RegexOption.IGNORE_CASE).containsMatchIn(it.name) }
                             .forEach { d -> d.listFiles()?.let { pool.addAll(it) } }
                     } catch (_: Throwable) {}
-                    c = pool.filter { it.isFile && it.extension.lowercase() in exts && lastNum(it.nameWithoutExtension) == vn }
+                    // (v703) الرقم لوحده مش كفاية: الفيديو اسمه رقم بس، أو حروف الاتنين متشابهة (غير كده كان بياخد ملف فيلم تاني)
+                    val vl = norm(f.nameWithoutExtension.filter { !it.isDigit() })
+                    c = pool.filter { it.isFile && it.extension.lowercase() in exts && lastNum(it.nameWithoutExtension) == vn &&
+                        (vl.isEmpty() || norm(it.nameWithoutExtension.filter { ch -> !ch.isDigit() }).let { sl -> sl.isNotEmpty() && (sl.contains(vl) || vl.contains(sl)) }) }
                     if (c.isNotEmpty()) LogStore.add("💬 سوفت صب: تطابق بالرقم ($vn) ← «" + c.first().name + "»")
                 }
             }

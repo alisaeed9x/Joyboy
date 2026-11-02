@@ -683,7 +683,7 @@ class Engine(
         val span = todo.maxOf { it.end } - todo.minOf { it.start }
         if (!force && span < ch * 0.5) return
         if (!convBusy.compareAndSet(false, true)) return
-        try { bg.submit { try { convertSubs(tgt) } finally { convBusy.set(false) } } } catch (e: Exception) { LogStore.err("Engine:convSubmit", e); convBusy.set(false) }   // (v468) تسجيل الأخطاء الصامتة
+        try { bg.submit { try { convertSubs(tgt) } finally { convPct = 0f; convBusy.set(false) } } } catch (e: Exception) { LogStore.err("Engine:convSubmit", e); convBusy.set(false) }   // (v468) تسجيل الأخطاء الصامتة
     }
     /** (v281) محرك LLM اللي اخترته لتحويل اللهجة (Cfg conv_via = id بريست)، لو جاهز ومش موقوف. null = جيميناي */
     private fun convLlm(): ExtLlm.Preset? = null   // (v395) المحركات الخارجية اتشالت — جيميناي بس
@@ -709,6 +709,7 @@ class Engine(
         val batches = idx.chunked(40)
         host.log("🌐 تحويل ${idx.size} جملة للهجة $tgt (من ${(focus / 60).toInt()}:%02d وللقدّام الأول)…".format(focus.toInt() % 60))
         batches.forEachIndexed { bi, batch ->
+            convPct = bi.toFloat() / batches.size
             if (!running) return@forEachIndexed
             val list = JSONArray()
             for (k in batch) { val s = snap[k]; list.put(JSONObject().put("idx", k).put("original", s.original).put("translated", s.translated).put("speaker_gender", s.gender).put("addressee_gender", s.addressee)) }
@@ -2589,6 +2590,19 @@ class Engine(
 
     @Volatile var toolBusy: String? = null
         private set
+    /** (v709) تقدّم الأداة الشغّالة (0..1) وتقدّم تحويل اللهجة — الريموت بيملّي بيهم الزرار زي الكوباية */
+    @Volatile var toolPct = 0f
+    @Volatile var convPct = 0f
+    /** (v709) مفتاح الأداة الشغّالة (pron/refine/dial/family/explicit/tone/other/dialect) + نسبتها 0..1، أو "" لو مفيش */
+    fun toolState(): Pair<String, Float> {
+        val l = toolBusy
+        if (l != null) {
+            val k = when { l == "تصحيح الضمائر" -> "pron"; l == "تنقيح بالسياق" -> "refine"; l == "زيادة شدة اللهجة" -> "dial"; l == "عائلي" -> "family"; l == "صريح" -> "explicit"; l.startsWith("أسلوب") -> "tone"; else -> "other" }
+            return Pair(k, toolPct)
+        }
+        if (convBusy.get()) return Pair("dialect", convPct)
+        return Pair("", 0f)
+    }
 
     /** 🔧 تصحيح الضمائر لكل الجمل (من جدول الشخصيات + جنس الصوت) */
     fun correctPronounsNow(report: (String) -> Unit, done: (Int) -> Unit) {
@@ -2607,12 +2621,12 @@ class Engine(
                 val batches = all.chunked(40)
                 batches.forEachIndexed { bi, batch ->
                     if (!running) return@forEachIndexed
-                    report("🔧 ضمائر ${bi + 1}/${batches.size}")
+                    toolPct = bi.toFloat() / batches.size; report("🔧 ضمائر ${bi + 1}/${batches.size}")
                     fixed += try { runPronounCorrection(snap, batch, cs) } catch (e: Exception) { host.log("⚠ ضمائر: " + (e.message ?: "").take(80)); 0 }
                     for (k in batch) pend.remove(pk(snap[k]))
                 }
                 if (fixed > 0) { host.changed(); persist() }
-            } finally { pend.removeAll(mine); toolBusy = null }
+            } finally { pend.removeAll(mine); toolPct = 0f; toolBusy = null }
             done(fixed)
         }.start()
     }
@@ -2633,7 +2647,7 @@ class Engine(
                 val batches = idx.chunked(40)
                 batches.forEachIndexed { bi, batch ->
                     if (!running) return@forEachIndexed
-                    report("$label ${bi + 1}/${batches.size}")
+                    toolPct = bi.toFloat() / batches.size; report("$label ${bi + 1}/${batches.size}")
                     val list = JSONArray()
                     for (k in batch) { val s = snap[k]; list.put(JSONObject().put("idx", k).put("original", s.original).put("translated", s.translated).put("speaker_gender", s.gender).put("addressee_gender", s.addressee)) }
                     val prompt = "أنت محرر ترجمة محترف. اللغة/اللهجة الحالية: ${conf.lang} — الأسلوب: ${conf.style}.\n" +
@@ -2661,7 +2675,7 @@ class Engine(
                     finally { for (k in batch) pend.remove(pk(snap[k])) }
                 }
                 if (changed > 0) persist()
-            } finally { pend.removeAll(mine); toolBusy = null }
+            } finally { pend.removeAll(mine); toolPct = 0f; toolBusy = null }
             done(changed)
         }.start()
     }
@@ -2684,7 +2698,7 @@ class Engine(
                     val roster = pb.rosterText(effectiveChars(), effectiveGloss())
                     val parts = snap.chunked(3000)
                     for ((pi, part) in parts.withIndex()) {
-                        report("✍ تنقيح ${pi + 1}/${parts.size} — ${part.size} جملة في طلب واحد")
+                        toolPct = pi.toFloat() / parts.size; report("✍ تنقيح ${pi + 1}/${parts.size} — ${part.size} جملة في طلب واحد")
                         val arr = JSONArray()
                         for ((k, q) in part.withIndex()) arr.put(JSONArray().put(k).put(q.original).put(q.translated).put(q.gender))
                         val prompt = "أنت مراجع ترجمة محترف. دي كل جمل فيلم/مسلسل/فيديو بالترتيب. كل عنصر: [رقم، الأصل، الترجمة الحالية، جنس المتكلم]. الترجمة الحالية اتعملت على مقاطع صوتية منفصلة من غير ما كل مقطع يشوف باقي الفيديو، فغالبًا فيها جمل حرفية أو غلط في السياق.\n" +
@@ -2734,7 +2748,7 @@ class Engine(
                 }
             } catch (e: Exception) {
                 host.log("⚠ التنقيح بالسياق فشل: " + (e.message ?: e.toString()).take(120)); report("التنقيح فشل: " + (e.message ?: "").take(80))
-            } finally { toolBusy = null; refiningSegs = emptyList() }
+            } finally { toolPct = 0f; toolBusy = null; refiningSegs = emptyList() }
             done(fixed)
         }.apply { isDaemon = true }.start()
     }

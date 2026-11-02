@@ -105,7 +105,8 @@ object SubDual {
                 if (cues.isEmpty()) { status = ""; say("⚠ مقدرتش أجيب جمل الترجمة من التلفزيون"); return@Thread }
 
                 // 2) الترجمة على الموبايل (النت بتاع الموبايل)
-                val eng = if (engIn == "gemini" && (try { TrWizard.hasGeminiKey() } catch (_: Throwable) { false })) "gemini" else "google"
+                val eng = if (engIn == "gemini" && SubFileTr.hasGemKeys()) "gemini" else "google"
+                if (engIn == "gemini" && eng == "google") { say("⚠ مفيش مفتاح جيميناي على الموبايل — الموبايل مش هيترجم (ما حوّلتش لجوجل عشان اللهجة) والتلفزيون بيكمّل"); status = ""; return@Thread }
                 val lang = dia.ifBlank { "فصحى" }
                 val style = SubFileTr.styleOf(if (sty == "حرفي") "" else sty, str, Cfg.str("style", "حرفي").ifBlank { "حرفي" })
                 val engName = if (eng == "gemini") "جيميناي" else "جوجل"

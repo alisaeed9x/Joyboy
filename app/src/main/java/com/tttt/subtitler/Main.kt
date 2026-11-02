@@ -1533,7 +1533,7 @@ class MainActivity : Activity() {
     /** أندرويد 10+ مابيسمحش بقراءة الكليبورد غير والتطبيق عليه الفوكس — فالفحص بيتعمل هنا */
     override fun onWindowFocusChanged(hasFocus: Boolean) {
         super.onWindowFocusChanged(hasFocus)
-        if (hasFocus && !fromPlayer) window.decorView.postDelayed({ if (!isFinishing && !isDestroyed) checkClipboard { playClip(it) } }, 900)
+        if (hasFocus && !fromPlayer) window.decorView.postDelayed({ if (!isFinishing && !isDestroyed) checkClipboard({ playClip(it) }, { a, c -> clipAction(a, c) }) }, 900)
     }
     /** لمسة على دايرة الكليبورد: فيديو مباشر يشتغل على طول، يوتيوب يتفتح عن طريق يوتيوب، وغير كده شاشة الصيد */
     /** فيديو من سجل «المصطادة»: يفتح بنفس الرابط والهيدرز ويكمّل من آخر مكان وقفت عنده. روابط يوتيوب بتنتهي — فبنفتح صفحة الفيديو */
@@ -1784,6 +1784,58 @@ class MainActivity : Activity() {
         val id = YtExtract.videoId(c.url)
         if (id == null) { openLink(c.url); return }   // مش يوتيوب ومفيش رابط مباشر: شاشة الصيد في المتصفح
         playYt(id, c.title.takeIf { it.isNotBlank() && it != c.url } ?: "", true, false)   // (v358) لينك يوتيوب: بيتفتح عن طريق يوتيوب
+    }
+    /** (v708) أزرار دواير الكليبورد بعد ما الفيديو يتلقط في الخلفية: tv أحمر · dl أزرق · tr أخضر (شاهد وترجم) · watch أصفر (شاهد بس). أي نوع فيديو (يوتيوب/فيسبوك/لينك مباشر/صفحة) */
+    fun clipAction(act: String, c: ClipVideo) {
+        if (isFinishing || isDestroyed) return
+        val yid = if (c.kind == "YT") YtExtract.videoId(c.url) else null
+        val title = c.title.takeIf { it.isNotBlank() && it != c.url } ?: ""
+        val direct = c.playUrl.isNotEmpty()
+        when (act) {
+            "watch" -> if (yid != null) playYt(yid, title, false, false) else if (direct) clipPlay(c, true) else openLink(c.url)
+            "tr" -> if (yid != null) playYt(yid, title, true, true) else if (direct) clipPlay(c, false) else openLink(c.url)
+            "tv" -> {
+                val ok = when {
+                    yid != null -> PlayTarget.force(this, MediaSpec(ytid = yid, title = title, how = Links.VIDEO))
+                    direct -> PlayTarget.force(this, MediaSpec(url = c.playUrl, headers = mapOf("ref" to c.ref, "ua" to c.ua, "cookie" to (try { android.webkit.CookieManager.getInstance().getCookie(c.playUrl) ?: "" } catch (_: Throwable) { "" })), title = title, how = Links.VIDEO))
+                    else -> { Links.sendToTv(this, c.url); true }
+                }
+                if (!ok) Notice.show(this, "📺 ما اتبعتش للتلفزيون", 3000L)
+            }
+            "dl" -> when {
+                yid != null -> ytDownload(NpItem(yid, title.ifBlank { yid }, "", "", "https://i.ytimg.com/vi/$yid/hqdefault.jpg", 0L, -1L, "", 0, c.url), false)
+                direct -> clipDownload(c, title)
+                else -> openLink(c.url)
+            }
+        }
+    }
+    /** (v708) تشغيل فيديو مباشر من دايرة الكليبورد بنفس الهيدرز (Referer/UA)؛ noSub = شاهد بس من غير ترجمة */
+    private fun clipPlay(c: ClipVideo, noSub: Boolean) {
+        val u = c.playUrl
+        if (c.ref.isEmpty() && c.ua.isEmpty()) { play(u, null, false, false, noSub); return }
+        val go = { startActivity(Intent(this, PlayerActivity::class.java).pipTask(this).apply { putExtra("url", u); putExtra("ref", c.ref); putExtra("ua", c.ua); putExtra("title", c.title); putExtra("nosub", noSub); putExtra("autotr", !noSub) }) }
+        if (noSub) go() else ensureKeys { go() }
+    }
+    /** (v708) تحميل فيديو مباشر (mp4/HLS) — مهمة في تبويب «المهام» زي تحميل المتصفح */
+    private fun clipDownload(c: ClipVideo, title: String) {
+        val app = applicationContext
+        val nm = title.ifBlank { Sniff.nameOf(c.playUrl) }.take(90)
+        val hd = HashMap<String, String>()
+        if (c.ua.isNotEmpty()) hd["User-Agent"] = c.ua
+        if (c.ref.isNotEmpty()) hd["Referer"] = c.ref
+        val ck = try { android.webkit.CookieManager.getInstance().getCookie(c.playUrl) ?: "" } catch (_: Throwable) { "" }
+        if (ck.isNotEmpty()) hd["Cookie"] = ck
+        val job = Downloader.Job(nm, c.playUrl, null, c.kind == "HLS" || c.playUrl.contains(".m3u8", true), 0, hd)
+        TaskCenter.add(app, "download", "⬇ " + job.name) { t ->
+            job.ctl.cancelled = false; job.ctl.paused = false
+            job.ctl.ext = { t.cancelled }
+            t.onCancel = { job.ctl.cancelled = true }
+            t.onPause = { p -> job.ctl.paused = p }
+            val res = Downloader.run(app, job) { what, pct -> t.pct = pct.coerceIn(0, 99); t.msg = what; TaskCenter.changed() }
+            if (!res.first) throw java.io.IOException(res.second)
+            t.msg = ""; t.outPath = res.second
+        }
+        Notice.show(this, "⬇ اتضاف للتحميل — تابعه من تبويب «المهام»", 3000L)
     }
     /** (v350) عدّاد الفيديوهات الجديدة على أيقونة يوتيوب */
     /** (v355) فتح قسم من إعدادات البرنامج من أي شاشة (مثلًا ⚙ يوتيوب) */

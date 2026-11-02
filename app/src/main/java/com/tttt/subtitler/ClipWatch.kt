@@ -212,7 +212,7 @@ class ClipOrb(ctx: Context) : View(ctx) {
             p.reset(); p.isAntiAlias = true; p.style = Paint.Style.FILL; p.color = (col and 0x00FFFFFF) or 0x55000000
             c.drawCircle(cx, cy, ra, p)
             p.color = Color.WHITE; p.textAlign = Paint.Align.CENTER; p.textSize = ra * 1.0f
-            c.drawText("🔗", cx, cy + ra * 0.34f, p)
+            c.drawText(if (found) "🎬" else "🔗", cx, cy + ra * 0.34f, p)
         }
         // مسار رفيع + قوس الوقت المتبقي
         box.set(cx - rt, cy - rt, cx + rt, cy + rt)
@@ -227,6 +227,13 @@ class ClipOrb(ctx: Context) : View(ctx) {
         c.drawCircle(ox, oy, 6.5f * d, p)
         p.color = col; c.drawCircle(ox, oy, 4f * d, p)
         p.color = Color.WHITE; c.drawCircle(ox, oy, 1.6f * d, p)
+        // (v708) لقى فيديو والصورة ظاهرة: علامة 🎬 صغيرة تحت الشمال
+        if (found && b != null && !b.isRecycled) {
+            val bx = cx - ro * 0.68f; val by = cy + ro * 0.68f
+            p.reset(); p.isAntiAlias = true; p.style = Paint.Style.FILL; p.color = 0xFF34C759.toInt(); c.drawCircle(bx, by, 9f * d, p)
+            p.color = Color.WHITE; p.textAlign = Paint.Align.CENTER; p.textSize = 10f * d
+            c.drawText("🎬", bx, by + 3.6f * d, p)
+        }
         // عدّاد لو فيه أكتر من لينك
         if (count > 1) {
             val bx = cx + ro * 0.72f; val by = cy - ro * 0.72f
@@ -237,13 +244,29 @@ class ClipOrb(ctx: Context) : View(ctx) {
     }
 }
 
+/** (v708) دايرة زرار ملوّنة بعلامة في نصها — بتظهر تحت دايرة اللينك لما يتلقط فيديو */
+class ClipDot(ctx: Context, private val glyph: String, private val fill: Int, private val glyphColor: Int = Color.WHITE) : View(ctx) {
+    private val d = resources.displayMetrics.density
+    private val p = Paint(Paint.ANTI_ALIAS_FLAG)
+    override fun onDraw(c: Canvas) {
+        val cx = width / 2f; val cy = height / 2f; val r = minOf(width, height) / 2f - 2f * d
+        p.reset(); p.isAntiAlias = true; p.style = Paint.Style.FILL; p.color = fill
+        c.drawCircle(cx, cy, r, p)
+        p.style = Paint.Style.STROKE; p.strokeWidth = 1.5f * d; p.color = 0x99FFFFFF.toInt()
+        c.drawCircle(cx, cy, r, p)
+        p.reset(); p.isAntiAlias = true; p.style = Paint.Style.FILL; p.color = glyphColor; p.textAlign = Paint.Align.CENTER
+        p.textSize = r * 0.95f; p.typeface = android.graphics.Typeface.DEFAULT_BOLD
+        c.drawText(glyph, cx, cy + r * 0.33f, p)
+    }
+}
+
 /**
  * أول ما البرنامج يفتح (أو يرجع له الفوكس): لو في الكليبورد لينك جديد، بتظهر دايرة عايمة صغيرة (ClipOrb) بدل الإشعار اللي فوق.
  * الفحص بيشتغل في الخلفية بالتوازي: أول ما الصورة تجهز بتظهر جوه الدايرة. المهلة 10 ثواني وبعدها تختفي لوحدها.
  * لمسة على الدايرة: فيديو مباشر يشتغل على طول، لينك يوتيوب بيفتح عن طريق يوتيوب، وغير كده بتفتح شاشة الصيد في المتصفح.
  * ضغطة طويلة: اللينك اللي بعده (لو فيه أكتر من واحد) أو إخفاء. مفيش بوب-أب ولا توست.
  */
-fun Activity.checkClipboard(onPlay: (ClipVideo) -> Unit) {
+fun Activity.checkClipboard(onPlay: (ClipVideo) -> Unit, onAct: (String, ClipVideo) -> Unit = { _, _ -> }) {
     if (ClipWatch.busy) return
     val text = try { (getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager).primaryClip?.getItemAt(0)?.coerceToText(this)?.toString() ?: "" } catch (_: Throwable) { "" }
     if (text.isBlank() || ClipWatch.isSeen(this, text)) return
@@ -264,34 +287,86 @@ fun Activity.checkClipboard(onPlay: (ClipVideo) -> Unit) {
     val d = resources.displayMetrics.density
     val size = (64 * d).toInt()
     val main = Handler(Looper.getMainLooper())
-    val life = 10_000L
-    val orb = ClipOrb(this).apply { count = links.size; elevation = 10 * d; alpha = 0f }
-    root.addView(orb, FrameLayout.LayoutParams(size, size, Gravity.TOP or Gravity.LEFT))
+    var life = 10_000L
+    val orb = ClipOrb(this).apply { count = links.size }
+    // (v708) العمود: الدايرة فوق، وتحتها دواير الأزرار (تلفزيون · تحميل · شاهد وترجم · شاهد · إلغاء) لما يتلقط فيديو
+    val btns = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_LTR; visibility = View.GONE }
+    val col = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_LTR; elevation = 10 * d; alpha = 0f }
+    col.addView(orb, LinearLayout.LayoutParams(size, size).apply { gravity = Gravity.END })
+    col.addView(btns, LinearLayout.LayoutParams(-2, -2).apply { gravity = Gravity.END })
+    root.addView(col, FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.RIGHT).apply { rightMargin = (10 * d).toInt() })
     root.post {
-        orb.translationX = (root.width - size - 10 * d).coerceAtLeast(0f)
-        orb.translationY = (root.height * 0.58f).coerceAtLeast(0f)
-        orb.scaleX = 0.4f; orb.scaleY = 0.4f
-        orb.animate().alpha(1f).scaleX(1f).scaleY(1f).setDuration(220).start()
+        col.translationY = (root.height * 0.58f).coerceAtLeast(0f)
+        col.scaleX = 0.4f; col.scaleY = 0.4f; col.pivotX = col.width.toFloat(); col.pivotY = 0f
+        col.animate().alpha(1f).scaleX(1f).scaleY(1f).setDuration(220).start()
     }
-    var idx = 0; var t0 = System.currentTimeMillis(); var closed = false
+    var idx = 0; var t0 = System.currentTimeMillis(); var closed = false; var tIdx = t0; var revealed = false
     lateinit var ticker: Runnable
     fun close() {
         if (closed) return; closed = true
         main.removeCallbacks(ticker); ClipWatch.busy = false
-        orb.animate().alpha(0f).scaleX(0.3f).scaleY(0.3f).setDuration(200).withEndAction { try { root.removeView(orb) } catch (_: Throwable) {} }.start()
+        col.animate().alpha(0f).scaleX(0.3f).scaleY(0.3f).setDuration(200).withEndAction { try { root.removeView(col) } catch (_: Throwable) {} }.start()
+    }
+    fun lift() {   // لو الأزرار هتعدّي أسفل الشاشة: ارفع العمود لفوق
+        col.post {
+            val y = minOf(root.height * 0.58f, root.height - col.height - 96 * d).coerceAtLeast(24 * d)
+            col.animate().translationY(y).setDuration(220).start()
+        }
+    }
+    val bs = (46 * d).toInt()
+    fun addBtn(label: String, glyph: String, fill: Int, gc: Int, act: String) {
+        val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_LTR; gravity = Gravity.CENTER_VERTICAL; alpha = 0f }
+        val tv = TextView(this).apply {
+            text = label; setTextColor(Color.WHITE); textSize = 12f; typeface = android.graphics.Typeface.DEFAULT_BOLD
+            setPadding((10 * d).toInt(), (5 * d).toInt(), (10 * d).toInt(), (5 * d).toInt())
+            background = android.graphics.drawable.GradientDrawable().apply { setColor(0xCC101418.toInt()); cornerRadius = 14 * d }
+        }
+        row.addView(tv, LinearLayout.LayoutParams(-2, -2).apply { marginEnd = (8 * d).toInt() })
+        row.addView(ClipDot(this, glyph, fill, gc), LinearLayout.LayoutParams(bs, bs))
+        row.setOnClickListener {
+            val r = synchronized(results) { results[links[idx]] }
+            close()
+            if (act != "cancel" && r != null) onAct(act, r)
+        }
+        btns.addView(row, LinearLayout.LayoutParams(-2, -2).apply { gravity = Gravity.END; topMargin = (8 * d).toInt() })
+    }
+    addBtn("مشاهدة ع التلفزيون", "📺", 0xFFE53935.toInt(), Color.WHITE, "tv")
+    addBtn("تحميل", "⬇", 0xFF1E6FE0.toInt(), Color.WHITE, "dl")
+    addBtn("مشاهدة وترجمة", "🌐", 0xFF34C759.toInt(), Color.WHITE, "tr")
+    addBtn("مشاهدة بس", "▶", 0xFFFFC107.toInt(), 0xFF202020.toInt(), "watch")
+    addBtn("إلغاء", "✕", 0xFF757575.toInt(), Color.WHITE, "cancel")
+    fun reveal() {
+        if (revealed) return; revealed = true
+        life = 30_000L; t0 = System.currentTimeMillis()
+        btns.visibility = View.VISIBLE
+        for (i in 0 until btns.childCount) { val v = btns.getChildAt(i); v.translationY = -10 * d; v.animate().alpha(1f).translationY(0f).setStartDelay(60L * i).setDuration(180).start() }
+        lift()
+    }
+    fun unreveal() {
+        if (!revealed) return; revealed = false
+        life = 10_000L
+        btns.visibility = View.GONE
+        for (i in 0 until btns.childCount) btns.getChildAt(i).alpha = 0f
+        col.animate().translationY(root.height * 0.58f).setDuration(200).start()
     }
     fun sync() {
         val u = links[idx]
         val r = synchronized(results) { results[u] }
         val fin = synchronized(results) { u in doneSet }
         if (fin) { orb.found = r != null; if (r?.thumb != null && orb.thumb !== r.thumb) orb.thumb = r.thumb }
+        if (fin && r != null) reveal()
     }
     ticker = Runnable {
         if (closed) return@Runnable
         if (isFinishing || isDestroyed) { close(); return@Runnable }
         orb.elapsed = (System.currentTimeMillis() - t0).toFloat() / life
         sync()
-        if (orb.elapsed >= 1f) close() else main.postDelayed(ticker, 80L)
+        if (orb.elapsed >= 1f) {
+            val fin = synchronized(results) { links[idx] in doneSet }
+            if (fin || System.currentTimeMillis() - tIdx >= 26_000L) { close(); return@Runnable }
+            t0 = System.currentTimeMillis() - (life * 0.97).toLong()   // (v708) لسه بيفحص اللينك في الخلفية: كمّل استنى (لحد 26 ثانية)
+        }
+        main.postDelayed(ticker, 80L)
     }
     main.postDelayed(ticker, 80L)
     orb.setOnClickListener {
@@ -301,7 +376,7 @@ fun Activity.checkClipboard(onPlay: (ClipVideo) -> Unit) {
         onPlay(r ?: ClipVideo(u, u, null, "", "WEB"))   // لسه مش معروف/مفيش فيديو ثابت: playClip بيفتح شاشة الصيد (أو يوتيوب)
     }
     orb.setOnLongClickListener {
-        if (idx + 1 < links.size) { idx++; orb.count = links.size - idx; orb.thumb = null; orb.found = false; t0 = System.currentTimeMillis(); orb.elapsed = 0f; sync() } else close()
+        if (idx + 1 < links.size) { unreveal(); idx++; tIdx = System.currentTimeMillis(); orb.count = links.size - idx; orb.thumb = null; orb.found = false; t0 = System.currentTimeMillis(); orb.elapsed = 0f; sync() } else close()
         true
     }
 }
