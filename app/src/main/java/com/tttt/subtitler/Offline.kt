@@ -54,7 +54,10 @@ object Offline {
     fun roots(): List<File> = listOfNotNull(dir, legacy).distinctBy { it.path }
     fun file(m: Model = model()): File? = pick("whisper/" + m.file, m.approxMb * 600_000L)
     fun downloaded(m: Model = model()): Boolean = file(m)?.let { it.isFile && it.length() > m.approxMb * 600_000L } ?: false
-    fun lang(): String = Cfg.str("stt_lang", "").trim().let { if (it in langIds) it else "" }
+    /** (v698) الموبايل وهو بيفرّغ لصالح التلفزيون بيستخدم لغة التلفزيون اليدوية (على الخيط ده بس) */
+    val langOv = ThreadLocal<String?>()
+    fun txReady(): Boolean = engine().ready()
+    fun lang(): String { langOv.get()?.let { return if (it in langIds) it else "" }; return Cfg.str("stt_lang", "").trim().let { if (it in langIds) it else "" } }
     /** (v255) المحركات المتاحة: Whisper (لكل اللغات) و sherpa-onnx SenseVoice (إنجليزي/ياباني/كوري/صيني) */
     val engines: List<SttEngine> = listOf(WhisperStt)
     /** المحرك المختار (مفتاح stt_engine: whisper | sherpa، الافتراضي whisper). لو المختار مش مدعوم على الجهاز أو مش بيفهم اللغة ← whisper */
@@ -64,7 +67,7 @@ object Offline {
     /** true = الترانسكريبشن بيتعمل أوفلاين (مفعّل + الموديل نازل + المكتبة موجودة) والوضع بيبقى «نسخ ثم ترجمة سياقية» */
     fun on(): Boolean = configured() && System.currentTimeMillis() >= coolUntil
     /** (v262) الأوفلاين متظبّط (مفعّل + الموديل نازل) بغض النظر عن فترة الراحة بعد الأعطال. بيحدد وضع الترجمة (سياقية / جوجل)، أما on() فبيحدد مين بينسخ دلوقتي — قبل كده فترة الراحة كانت بتحوّل الترجمة من جوجل لجيميناي وسط الشغل */
-    fun configured(): Boolean = Cfg.bool("stt_offline", false) && engine().ready()
+    fun configured(): Boolean = Cfg.bool("stt_offline", false) && (engine().ready() || Offload.wanted())   // (v698) المعالجة على الموبايل: مفيش موديلات هنا
     /** حالة الأوفلاين للعرض في الإعدادات */
     fun status(): String = when {
         !WhisperLib.loaded -> "⛔ الأوفلاين مش مدعوم على جهازك (محتاج معالج 64-bit)."
@@ -179,6 +182,7 @@ object Offline {
 
     /** ينسخ [wav] (PCM16 mono 16kHz بهيدر 44 بايت) على الجهاز بالمحرك المختار. أي فشل ← [fallback] (طلب جيميناي الأصلي) */
     fun transcribe(wav: ByteArray, durSec: Double, terms: String, log: (String) -> Unit, fallback: () -> Api.Result, warn: (String) -> Unit = {}, sess: Session? = null): Api.Result {
+        if (Offload.wanted()) return Offload.transcribe(wav, durSec, terms, log, sess)   // (v698) م7: الموبايل هو اللي بيفرّغ
         ranOffline.set(false)
         val eng = engine()
         val tq = System.currentTimeMillis()
@@ -249,6 +253,7 @@ object Offline {
     fun whyOff(): String? = when {
         !Cfg.bool("stt_offline", false) -> null
         System.currentTimeMillis() < coolUntil -> "📴 الأوفلاين مرتاح لحد ما تعدّي 5 دقايق بعد الأعطال — جيميناي هو اللي بينسخ دلوقتي"
+        Offload.wanted() -> null
         !engine().ready() -> "📴 الأوفلاين مفعّل بس موديل التفريغ مش نازل — جيميناي هو اللي بينسخ. نزّله من الإعدادات ← 🎙 التفريغ والصوت"
         else -> null
     }

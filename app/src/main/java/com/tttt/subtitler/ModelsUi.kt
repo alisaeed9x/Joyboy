@@ -49,6 +49,16 @@ object ModelsUi {
         fun build() {
             box.removeAllViews(); progTv.clear()
             box.addView(ui.text(Offline.status() + "\n" + LocalMt.status(), 12f, th.muted), lp())
+            // (v698 م7) مصدر المعالجة: الموبايل (التلفزيون يبعت الصوت والموبايل يفرّغ ويترجم) أو الجهاز ده
+            val srcMobile = "📱 الموبايل"; val srcHere = "📍 الجهاز ده"
+            box.addView(ui.text("⚙ مصدر المعالجة (التفريغ + الترجمة):", 12f, th.muted), lp().apply { topMargin = 14 })
+            box.addView(ui.chips(listOf(srcMobile, srcHere), { if (Cfg.str(Offload.KEY, "") == "phone") srcMobile else srcHere }) { l ->
+                val v = if (l == srcMobile) "phone" else ""
+                Cfg.put(Offload.KEY, v)
+                try { if (LinkSession.connected) LinkSession.setCfg(mapOf(Offload.KEY to v)) } catch (_: Throwable) {}   // التلفزيون هو اللي بيقرا القيمة
+                build()
+            }, lp())
+            (Offload.status() + (Offload.workerStatus().let { if (it.isEmpty()) "" else "\n$it" })).trim().let { if (it.isNotEmpty()) box.addView(ui.text(it, 11.5f, th.muted), lp()) }
             box.addView(ui.text("الموديلات برّه التطبيق. اختار الملف من الموبايل، أو نزّله من هنا، أو نزّله من المتصفح وانسخه لـ Android/media/" + act.packageName + "/models/ (whisper أو mt) والتطبيق يلاقيه بالاسم.", 11f, th.muted), lp())
             box.addView(ui.text("🌍 موديل الترجمة:", 12f, th.muted), lp())
             box.addView(ui.chips(LocalMt.models.map { it.label }, { LocalMt.model().label }) { l ->

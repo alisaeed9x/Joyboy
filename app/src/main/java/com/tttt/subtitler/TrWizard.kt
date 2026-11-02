@@ -410,7 +410,7 @@ object TrWizard {
             if (onlySw && id in setOf("g_wav", "g_aac", Strict.SEMI, Strict.MT)) tr = "none"   // (v410)
             if (src == "whisper") engine = "whisper"
             if (src == "whisper" && !WhisperLib.loaded) { Notice.show(act, "الأوفلاين مش مدعوم على جهازك", 2500L); return }
-            if (id == Strict.MT && !onlySw && !LocalMt.ready()) Notice.show(act, LocalMt.status(), 4000L)   // (v696) الموديل ناقص: التنبيه بس — الاختيار والتنزيل من الإعدادات
+            if (id == Strict.MT && !onlySw && !Offload.wanted() && !LocalMt.ready()) Notice.show(act, LocalMt.status(), 4000L)   // (v696) الموديل ناقص: التنبيه بس — الاختيار والتنزيل من الإعدادات
             normalize(); sync()
             if (isLocal() && !localReadyNow()) {
                 afterDl = { afterDl = null; afterModePick() }

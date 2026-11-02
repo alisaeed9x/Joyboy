@@ -1905,7 +1905,8 @@ class Engine(
                 try {
                     Offline.releaseWhisper()
                     host.status("📴 بترجم أوفلاين (${idx.size} جملة)…")
-                    val r = LocalMt.translateAll(idx.map { src[it] }, "", { host.log(it) }) { d, n -> if (d % 10 == 0 || d == n) host.status("📴 ترجمة أوفلاين $d/$n") }
+                    val r = if (Offload.wanted()) Offload.translate(idx.map { src[it] }, "", { host.log(it) }) { d, n -> host.status("📱 ترجمة على الموبايل $d/$n") }   // (v698) م7
+                    else LocalMt.translateAll(idx.map { src[it] }, "", { host.log(it) }) { d, n -> if (d % 10 == 0 || d == n) host.status("📴 ترجمة أوفلاين $d/$n") }
                     var n = 0
                     for ((q, k) in idx.withIndex()) { val t = r.getOrNull(q); if (!t.isNullOrBlank() && t != src[k]) { out[k] = t; n++ } }
                     host.log("📴 Hy-MT2: ترجم $n/${idx.size} جملة")

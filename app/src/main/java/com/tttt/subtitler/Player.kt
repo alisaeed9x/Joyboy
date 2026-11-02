@@ -884,14 +884,14 @@ class PlayerActivity : Activity(), Host {
             bodyHolder.addView(if (i == 0) buildLook() else buildAi())
             bodyHolder.layoutParams?.let { it.height = if (i == 0) -2 else ui.dp(330); bodyHolder.layoutParams = it }
         }
-        for ((i, t) in listOf("🔤 الشكل", "✨ الذكاء").withIndex()) {
+        for ((i, t) in listOf("🔤 الشكل", "✨ الذكاء").let { if (Strict.hideTrOpts()) it.take(1) else it }.withIndex()) {   // (v699) أوفلاين كامل: تبويب اللهجة/الأسلوب/الأدوات يختفي
             val tv = btn(t, 20f, i == 0 || aiWhy.isEmpty()) { _ -> show(i) }
             tv.setOnFocusChangeListener { _, f -> if (f) show(i) }   // يمين/شمال بيبدّل
             tabViews.add(tv); tabRow.addView(tv, lp(6))
         }
         box.addView(tabRow, LinearLayout.LayoutParams(-1, -2))
         box.addView(bodyHolder, LinearLayout.LayoutParams(-2, -2).apply { gravity = Gravity.CENTER_HORIZONTAL; setMargins(0, ui.dp(8), 0, 0) })
-        show(startTab.coerceIn(0, 1))
+        show(startTab.coerceIn(0, (tabViews.size - 1).coerceAtLeast(0)))
         d.setContentView(box)
         d.window?.apply { setBackgroundDrawable(android.graphics.drawable.ColorDrawable(0)); setGravity(Gravity.BOTTOM); setLayout(-2, -2); attributes = attributes.apply { y = ui.dp(90) } }
         try { TvFocus.attachDialog(this, d, th.primary) } catch (_: Throwable) {}

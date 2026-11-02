@@ -115,7 +115,7 @@ class MiniHttp(private val port: Int, private val handler: (HttpReq) -> HttpRes)
                     val l = lines[i]; val c = l.indexOf(':')
                     if (c > 0) hd[l.substring(0, c).trim().lowercase()] = l.substring(c + 1).trim()
                 }
-                val len = (hd["content-length"]?.toIntOrNull() ?: 0).coerceIn(0, 262144)
+                val len = (hd["content-length"]?.toIntOrNull() ?: 0).coerceIn(0, 3145728)
                 val body = ByteArray(len)
                 var got = 0
                 while (got < len) { val r = ins.read(body, got, len - got); if (r < 0) break; got += r }

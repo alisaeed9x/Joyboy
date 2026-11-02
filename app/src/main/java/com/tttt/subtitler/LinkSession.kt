@@ -46,12 +46,14 @@ object LinkSession {
         gen += 1
         val g = gen
         Thread { loop(ctx.applicationContext, g) }.also { it.isDaemon = true; it.name = "LinkSession" }.start()
+        try { Offload.startWorker(ctx) } catch (_: Throwable) {}   // (v698) م7: الموبايل يعالج لصالح التلفزيون
     }
 
     @Synchronized
     fun stop() {
         running = false
         gen += 1
+        try { Offload.stopWorker() } catch (_: Throwable) {}
         if (connected) { connected = false; fire() }
         val a = appRef
         if (notifOn && a != null) { try { KeepAliveService.stop(a) } catch (_: Throwable) {}; notifOn = false }

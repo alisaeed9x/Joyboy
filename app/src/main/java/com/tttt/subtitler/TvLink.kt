@@ -248,6 +248,8 @@ object TvLink {
             "/ytacc" -> ytAcc(r, rm)
             "/offer" -> offer(r, rm)
             "/rpc" -> BrainRpc.exec(r)
+            "/oj/next" -> Offload.next(r)    // (v698) الموبايل يسحب باتش تفريغ/شريحة ترجمة
+            "/oj/done" -> Offload.done(r)    // (v698) الموبايل يرجّع النتيجة
             "/sync" -> BrainRpc.sync(r)
             "/frame" -> BrainRpc.frame(r)
             "/lib/folders" -> BrainRpc.libFolders(app, r)
