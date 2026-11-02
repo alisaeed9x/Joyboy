@@ -1986,6 +1986,7 @@ class BrowserActivity : Activity() {
         add(sb("🌐 ترجمة", th.primary, onP) { dlg?.dismiss(); openPlayer(q.f, false, q.audio) })
         add(sb("▶ شاهد", BLUE, Color.WHITE) { dlg?.dismiss(); openPlayer(q.f, true, q.audio) })
         add(sb("📺 تلفزيون", BLUE, Color.WHITE) { dlg?.dismiss(); sendToTv(g, q) })
+        add(sb("🎞 طابور", BLUE, Color.WHITE) { dlg?.dismiss(); queueAdd(g, q) })   // (v694)
         val dlB = sb("⬇ حمّل", BLUE, Color.WHITE) { dlg?.dismiss(); dlVideo(g, q) }
         dlB.setOnLongClickListener { dlg?.dismiss(); dlAudio(g); true }
         add(dlB)
@@ -2008,6 +2009,14 @@ class BrowserActivity : Activity() {
         val h = if (q.h > 0) q.h else (hCache[Sniff.key(q.f.url)] ?: 0)
         return if (h > 0) " [${h}p]" else if (isHls(q.f)) " [HLS]" else ""
     }
+    /** (v694) «🎞 طابور»: يوتيوب ← لينك المشاهدة · غيره ← اللينك المباشر */
+    private fun queueAdd(g: Grp, q: Qv) {
+        val f = q.f
+        val isYt = f.kind.startsWith("YT") || f.url.contains("googlevideo") || f.url.contains("videoplayback")
+        val yid = ytIds[Sniff.key(f.url)] ?: YtExtract.videoId(f.ref) ?: (if (isYt) YtExtract.videoId(wvOrNull?.url ?: "") else null)
+        PlayQueueUi.add(this, if (yid != null) "https://www.youtube.com/watch?v=$yid" else f.url, g.title + qTag(q))
+    }
+
     /** (v533) «مشاهدة ع التلفزيون»: يوتيوب ← لينك الفيديو · غيره ← اللينك المباشر ومعاه Referer/UA/Cookie الصفحة */
     private fun sendToTv(g: Grp, q: Qv) {
         try { RemoteClient.init(this) } catch (_: Throwable) {}

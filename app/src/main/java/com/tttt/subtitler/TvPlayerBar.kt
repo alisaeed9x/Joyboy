@@ -51,6 +51,10 @@ class TvPlayerBar(private val act: Activity, private val ui: Ui, private val th:
         fun sleepLabel(): String = ""                // 😴 بس لو المؤقت شغّال
         fun sleepPick(anchor: View) {}
         fun subPage() { subDialog() }                // (v676) صفحة واحدة لكل أدوات الترجمة (مصادر · شكل وتوقيت · جمل · باتشات · إعدادات…)
+        // (v693) خطوط الترجمة على شريط التقدّم: أخضر = مترجم · كهرماني = لسه هيتغيّر · أزرق = بيتنقّح (مجالات [بداية,نهاية] بالثواني)
+        fun covSegs(): List<DoubleArray> = emptyList()
+        fun pendSegs(): List<DoubleArray> = emptyList()
+        fun refineSegs(): List<DoubleArray> = emptyList()
     }
 
     private val h = Handler(Looper.getMainLooper())
@@ -92,7 +96,7 @@ class TvPlayerBar(private val act: Activity, private val ui: Ui, private val th:
         for (t in listOf(cur, total)) t.apply { textSize = 15f; setTextColor(Color.WHITE); typeface = Typeface.DEFAULT_BOLD; text = "0:00" }
         val tr = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
         tr.addView(cur, LinearLayout.LayoutParams(ui.dp(64), -2))
-        tr.addView(track, LinearLayout.LayoutParams(0, ui.dp(30), 1f))
+        tr.addView(track, LinearLayout.LayoutParams(0, ui.dp(36), 1f))   // (v693) أطول شوية عشان خطوط الترجمة
         tr.addView(total, LinearLayout.LayoutParams(ui.dp(64), -2).apply { marginStart = ui.dp(8) })
         track.id = View.generateViewId(); track.nextFocusUpId = track.id
         track.onKey = { dir, rep -> a.seekBy(dir * (if (rep > 12) 60_000L else if (rep > 4) 30_000L else 10_000L)); poke(); refresh() }
@@ -162,7 +166,9 @@ class TvPlayerBar(private val act: Activity, private val ui: Ui, private val th:
         try {
             val d = a.dur(); val sp = a.scrubPos(); val p = if (sp >= 0) sp else a.pos()
             cur.text = PlayerLogic.clock(p); total.text = if (d > 0) PlayerLogic.clock(d) else "--:--"
-            track.frac = if (d > 0) (p.toFloat() / d).coerceIn(0f, 1f) else 0f; track.invalidate()
+            track.frac = if (d > 0) (p.toFloat() / d).coerceIn(0f, 1f) else 0f
+            track.durSec = d / 1000.0; track.cov = a.covSegs(); track.pend = a.pendSegs(); track.refine = a.refineSegs()   // (v693)
+            track.invalidate()
             playB.text = if (a.playing()) "⏸" else "▶"
             if (slim) {
                 trB.text = a.trLabel(); trB.background = GradientDrawable().apply { setColor(a.trColor()); cornerRadius = ui.dp(12).toFloat() }
@@ -185,7 +191,23 @@ class TvPlayerBar(private val act: Activity, private val ui: Ui, private val th:
     private class SeekTrack(ctx: Context, private val accent: Int) : View(ctx) {
         var frac = 0f
         var onKey: ((Int, Int) -> Unit)? = null
+        /** (v693) مدة الفيديو + مجالات الترجمة (ثواني): أخضر = مترجم · كهرماني = لسه هيتغيّر · أزرق = بيتنقّح */
+        var durSec = 0.0
+        var cov: List<DoubleArray> = emptyList()
+        var pend: List<DoubleArray> = emptyList()
+        var refine: List<DoubleArray> = emptyList()
         private val p = Paint(Paint.ANTI_ALIAS_FLAG)
+        private fun strip(c: Canvas, w: Float, y: Float, hh: Float, segs: List<DoubleArray>, color: Int, trackColor: Int?) {
+            val rad = hh / 2f
+            if (trackColor != null) { p.color = trackColor; c.drawRoundRect(RectF(0f, y, w, y + hh), rad, rad, p) }
+            if (durSec <= 0.0) return
+            p.color = color
+            for (s in segs) {
+                val a = (w * (s[0] / durSec)).toFloat().coerceIn(0f, w)
+                val b = (w * (s[1] / durSec)).toFloat().coerceIn(0f, w)
+                c.drawRoundRect(RectF(a, y, maxOf(b, a + 2f).coerceAtMost(w), y + hh), rad, rad, p)
+            }
+        }
         init { isFocusable = true; isClickable = true }
         override fun onKeyDown(k: Int, e: KeyEvent): Boolean {
             if (k == KeyEvent.KEYCODE_DPAD_LEFT) { onKey?.invoke(-1, e.repeatCount); return true }
@@ -197,6 +219,11 @@ class TvPlayerBar(private val act: Activity, private val ui: Ui, private val th:
             val th = (if (isFocused) 10f else 6f) * d; val cy = height / 2f; val w = width.toFloat()
             p.color = 0x55FFFFFF; c.drawRoundRect(RectF(0f, cy - th / 2, w, cy + th / 2), th / 2, th / 2, p)
             p.color = accent; c.drawRoundRect(RectF(0f, cy - th / 2, w * frac, cy + th / 2), th / 2, th / 2, p)
+            if (durSec > 0.0) {   // (v693) علامات الترجمة: تحت الخط أخضر = مترجم، وفوقه كهرماني/أزرق = لسه هيتغيّر / بيتنقّح
+                strip(c, w, cy + th / 2 + 3f * d, 4f * d, cov, 0xFF22C55E.toInt(), 0x33FFFFFF)
+                if (pend.isNotEmpty()) strip(c, w, cy - th / 2 - 7f * d, 3f * d, pend, 0xFFF59E0B.toInt(), null)
+                if (refine.isNotEmpty()) strip(c, w, cy - th / 2 - 7f * d, 3f * d, refine, 0xFF3B82F6.toInt(), null)
+            }
             if (isFocused) { p.color = Color.WHITE; c.drawCircle((w * frac).coerceIn(th, w - th), cy, 9f * d, p) }
         }
     }

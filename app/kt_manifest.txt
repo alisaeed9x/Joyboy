@@ -94,6 +94,8 @@ com/tttt/subtitler/OffLang.kt
 com/tttt/subtitler/Offline.kt
 com/tttt/subtitler/OrbPlayer.kt
 com/tttt/subtitler/PipSubBar.kt
+com/tttt/subtitler/PlayQueue.kt
+com/tttt/subtitler/PlayQueueUi.kt
 com/tttt/subtitler/PlayTarget.kt
 com/tttt/subtitler/PlaybackBackend.kt
 com/tttt/subtitler/Player.kt

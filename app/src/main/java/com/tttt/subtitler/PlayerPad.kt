@@ -366,6 +366,9 @@ object PlayerPad {
             val headRow = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_LTR; gravity = Gravity.CENTER_VERTICAL }
             headRow.addView(btn("✕", 18f) { d.dismiss() }, lp(dp(48), dp(44)))
             headRow.addView(ttlTv, lp(0, -2, 1f).apply { leftMargin = dp(10) })
+            val handoffB = btn("📱", 18f, 0xFF2563EB.toInt(), 0xFF5B8DEF.toInt()) { PlayQueueUi.handoffToPhone(act) { try { d.dismiss() } catch (_: Throwable) {}; try { onLeave?.invoke() } catch (_: Throwable) {} } }.apply { visibility = View.GONE }   // (v694) كمّل الفيديو ده على الموبايل من نفس الثانية
+            headRow.addView(handoffB, lp(dp(48), dp(44)).apply { leftMargin = dp(6) })
+            headRow.addView(btn("🎞", 18f) { PlayQueueUi.show(act) }, lp(dp(48), dp(44)).apply { leftMargin = dp(6) })   // (v694) طابور التشغيل
 
             // ── عدّاد الجمل (صوتي أو بصري) — دوسة = لوج الترجمة على التلفزيون ──
             val cntTv = label("—", 28f)
@@ -593,6 +596,7 @@ object PlayerPad {
                 }
                 val al = if (live) 1f else 0.4f
                 cntCard.visibility = if (live) View.VISIBLE else View.GONE
+                handoffB.visibility = if (live) View.VISIBLE else View.GONE
                 idleBox.visibility = if (live) View.GONE else View.VISIBLE
                 idleNote.text = if (RemoteClient.lastTv() == null) "⚠ مفيش تلفزيون متصل" else "📺 مفيش فيديو شغّال — شغّل من هنا"
                 for (k in 0 until left.childCount) { val c = left.getChildAt(k); c.alpha = if (c === idleBox) 1f else al }   // (v691) التعتيم من غير الأزرار التلاتة

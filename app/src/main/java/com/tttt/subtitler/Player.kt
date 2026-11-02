@@ -78,6 +78,9 @@ class PlayerActivity : Activity(), Host {
         /** (v684) ملف ترجمة جه من الموبايل (TvLink /subup): بيتحفظ ويستنى أمر «ترجم» من الموبايل. false = مفيش مشغّل فيديو شغّال */
         fun remoteSubImport(f: java.io.File, name: String, cues: Int): Boolean { val o = live() ?: return false; return onUi(o) { o.subImported(f, name, cues) } == true }
 
+        /** (v694) وصف الفيديو الشغّال (ref/title/pos…) لتحويله للموبايل. null = مفيش مشغّل شغّال */
+        fun remoteHandoff(): org.json.JSONObject? { val o = live() ?: return null; return onUi(o) { o.handoffInfo() } }
+
         /** (v688) جمل مترجمة وصلت من الموبايل (ترجمة مزدوجة). 0 = اتطبّقت · 1 = مفيش مشغّل · 2 = مفيش شغلانة مطابقة · 3 = التلفزيون كسب الأول. من خيط الطلب (مش الـUI) */
         fun remoteSubTr(jid: String, texts: List<String>, failed: Int, eng: String): Int { val o = live() ?: return 1; return o.subFromPhone(jid, texts, failed, eng) }
 
@@ -647,6 +650,9 @@ class PlayerActivity : Activity(), Host {
             override fun pos(): Long = try { player.currentPosition } catch (_: Throwable) { 0L }
             override fun dur(): Long = durMs
             override fun playing(): Boolean = try { player.isPlaying } catch (_: Throwable) { false }
+            override fun covSegs(): List<DoubleArray> = segCov   // (v693) خطوط الترجمة على شريط التلفزيون
+            override fun pendSegs(): List<DoubleArray> = segPend
+            override fun refineSegs(): List<DoubleArray> = try { engine.refiningSegs } catch (_: Throwable) { emptyList() }
             override fun toggle() { togglePlay() }
             override fun seekBy(ms: Long) { tvSeek(ms) }
             override fun seekTo(ms: Long) { try { player.seekTo(ms.coerceIn(0L, if (durMs > 0) durMs else Long.MAX_VALUE)) } catch (_: Throwable) {} }
@@ -1131,6 +1137,36 @@ class PlayerActivity : Activity(), Host {
             } catch (e: Throwable) { LogStore.err("Player:sfRun", e); sfNote("⚠ فشلت الترجمة: " + (e.message ?: e.javaClass.simpleName).take(80), 6000L) }
             finally { sfBusy = ""; runOnUiThread { updateTr(); try { tvBar?.refresh() } catch (_: Throwable) {} } }
         }.also { it.isDaemon = true }.start()
+    }
+
+    /** (v694) يضيف الفيديو الشغّال للطابور: يوتيوب ← لينك المشاهدة · لينك ← نفسه · ملف ← مساره */
+    private fun queueCurrent() {
+        val ytid = intent.getStringExtra("ytid")?.takeIf { it.length == 11 }
+        val ttl = intent.getStringExtra("title")?.takeIf { it.isNotBlank() } ?: Recents.titleOf(vid)
+        val u0 = url
+        val ref = when {
+            ytid != null -> YtHistory.watchUrl(ytid)
+            !u0.isNullOrEmpty() -> u0
+            else -> uri?.toString() ?: ""
+        }
+        if (ref.isEmpty()) { say("مفيش فيديو شغّال"); return }
+        PlayQueueUi.add(this, ref, ttl)
+    }
+
+    /** (v694) «كمّل على الموبايل»: وصف الفيديو الحالي — يوتيوب ← لينك المشاهدة · لينك/كاست ← اللينك نفسه · ملف جوه التلفزيون ← ref فاضي (مش ينفع يتنقل). بيوقّف التشغيل لو ينفع يتنقل */
+    private fun handoffInfo(): org.json.JSONObject {
+        val ytid = intent.getStringExtra("ytid")?.takeIf { it.length == 11 }
+        val ttl = intent.getStringExtra("title")?.takeIf { it.isNotBlank() } ?: Recents.titleOf(vid)
+        val pos = try { player.currentPosition.coerceAtLeast(0L) } catch (_: Throwable) { 0L }
+        val u0 = url
+        val ref = when {
+            ytid != null -> YtHistory.watchUrl(ytid)
+            !u0.isNullOrEmpty() && u0.startsWith("http", true) -> u0
+            else -> ""
+        }
+        if (ref.isNotEmpty()) { try { player.pause() } catch (_: Throwable) {} }
+        return org.json.JSONObject().put("ref", ref).put("title", ttl).put("pos", pos)
+            .put("hdr_ref", intent.getStringExtra("ref") ?: "").put("hdr_ua", intent.getStringExtra("ua") ?: "").put("hdr_cookie", intent.getStringExtra("cookie") ?: "")
     }
 
     /** (v688) الموبايل خلّص ترجمته قبل التلفزيون ← نطبّقها (التلفزيون يوقف ترجمته لوحده من SfJob.winner) */
@@ -3935,6 +3971,8 @@ class PlayerActivity : Activity(), Host {
         gTools.addView(pd("🎞 عمل GIF") { withSrc { toolsUi.gif(it) } })
         gTools.addView(pd("📦 ضغط / تغيير الدقة") { withSrc { toolsUi.compress(it) } })
         gTools.addView(pd("🎬 ترجمة ثابتة (هارد ساب)") { withSrc { toolsUi.hardsub(it) } })
+        gTools.addView(pd("🎞 ضيف الفيديو ده للطابور") { queueCurrent() })   // (v694)
+        gTools.addView(pd("🎞 طابور التشغيل") { PlayQueueUi.show(this) })
         gTools.addView(ui.text("النتيجة بتظهر في «📋 صفحة المهام» (زرار ⏳ جنب الترجمة)", 10f, 0xFF9AA0A6.toInt()).apply { setPadding(ui.dp(10), ui.dp(6), ui.dp(10), ui.dp(2)) })
         // (v188) صفحة المهام (التقدم + الناتج) في نافذة فوق المشغّل — الأدوات جواها بتشتغل على الفيديو الشغّال
         fun openTasksDialog() {
@@ -4854,6 +4892,7 @@ class PlayerActivity : Activity(), Host {
                 if (st == Player.STATE_ENDED && !isFinishing) {
                     if (sleepEndOfVideo) { sleepEndOfVideo = false; say("😴 مؤقت النوم: الفيديو خلص") }
                     else if (Cfg.str("loop", "0") == "1") { player.seekTo(0); player.play() }
+                    else if (!remote && PlayQueue.hasNext(this@PlayerActivity)) h.post { if (PlayQueue.playNext(this@PlayerActivity)) h.postDelayed({ if (!isFinishing) finish() }, 700L) }   // (v694) طابور التشغيل: التالي لوحده (له الأولوية على الحلقة اللي بعدها)
                     else if (hasNextEpisode() || intent.getStringExtra("ytid") != null) h.post { v469AutoNext() }   // (v469) بطاقة «التالي بعد…» بدل الانتقال الفوري
                     else if (uri != null && VideoScan.cache == null && VideoScan.hasPermission(this@PlayerActivity)) {   // (v531) المكتبة لسه ما اتفحصتش: افحص وكمّل للتالي
                         Thread {

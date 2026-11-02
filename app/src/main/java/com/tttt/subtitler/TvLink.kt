@@ -232,6 +232,8 @@ object TvLink {
             "/ptr" -> ptrCmd(r)
             "/player" -> playerCmd(r)
             "/subup" -> subUp(r)                // (v684) ملف ترجمة من الموبايل يتترجم على فيديو التلفزيون (على قطع)
+            "/queue" -> queueRpc(r)             // (v694) طابور التشغيل بتاع التلفزيون (الموبايل بيعدّله عن بعد)
+            "/handoff" -> handoff()             // (v694) الفيديو الشغّال على التلفزيون يكمّل على الموبايل من نفس الثانية
             "/subget" -> subGet(r)              // (v688) الموبايل بيسحب جمل الترجمة / بيسأل مين خلّص (ترجمة مزدوجة تلفزيون + موبايل)
             "/subtr" -> subTr(r)                // (v688) الموبايل بيبعت الجمل المترجمة (على قطع) لو خلّص قبل التلفزيون
             "/music" -> musicCmd(r)
@@ -382,6 +384,25 @@ object TvLink {
         } catch (e: Throwable) { LogStore.err("TvLink:subUp", e); return err(500, "write") }
         val handled = PlayerActivity.remoteSubImport(f, nm, cues)
         return ok(JSONObject().put("done", true).put("cues", cues).put("player", handled))
+    }
+
+    /** (v694) طابور التلفزيون: a = get / add / set / clear / next / play (id). بيرجّع الطابور بعد التعديل */
+    private fun queueRpc(r: HttpReq): HttpRes {
+        val j = try { JSONObject(r.bodyText()) } catch (_: Exception) { return err(403, "bad") }
+        when (j.optString("a")) {
+            "add" -> PlayQueue.add(app, j.optString("ref"), j.optString("title"))
+            "set" -> PlayQueue.setAll(app, PlayQueue.fromJson(j.optJSONArray("items")))
+            "clear" -> PlayQueue.clear(app)
+            "next" -> { val q = PlayQueue.take(app); if (q != null) h.post { PlayQueue.playHere(app, q) } }
+            "play" -> { val q = PlayQueue.takeId(app, j.optString("id")); if (q != null) h.post { PlayQueue.playHere(app, q) } }
+        }
+        return ok(JSONObject().put("items", PlayQueue.toJson(PlayQueue.list(app))))
+    }
+
+    /** (v694) وصف الفيديو الشغّال دلوقتي (لينك / يوتيوب / فيديو الموبايل) + مكانه — والتلفزيون بيوقّفه مؤقتًا. 404 = مفيش مشغّل */
+    private fun handoff(): HttpRes {
+        val o = PlayerActivity.remoteHandoff() ?: return err(404, "noplayer")
+        return ok(o)
     }
 
     /** (v688) الموبايل بيسأل عن شغلانة الترجمة (jid): هل لسه شغّالة، مين كسب، وبيطلب الجمل لو الملف على التلفزيون */

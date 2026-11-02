@@ -1432,6 +1432,7 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
             if (it.channelUrl.isNotBlank()) m.menu.add(0, 4, 3, "📺 افتح القناة")
             m.menu.add(0, 5, 4, "📋 انسخ اللينك"); m.menu.add(0, 6, 5, "🌐 افتحه في المتصفح")
             m.menu.add(0, 15, 11, "⏭ شغّل بعده (قائمة الانتظار)"); m.menu.add(0, 16, 12, "↗ مشاركة")   // (v469) C9/C11
+            m.menu.add(0, 17, 13, "🎞 ضيف لطابور التشغيل")   // (v694)
             if (cur?.tab == 2) m.menu.add(0, 7, 6, "🗑 شيل من السجل")
         } else {
             m.menu.add(0, 8, 0, "فتح"); m.menu.add(0, 5, 1, "📋 انسخ اللينك")
@@ -1453,6 +1454,7 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
                 7 -> { YtStore.remove(YtStore.HIST, it); showLocal(2, false) }
                 15 -> { YtQueue.addNext(it); Notice.show(act, "⏭ اتضاف لقائمة الانتظار — هيتشغّل بعد الحالي", 2200L) }
                 16 -> shareItem(it)
+                17 -> PlayQueueUi.add(act, YtNp.watchUrl(it.id), it.title)   // (v694)
                 8 -> open(it)
                 14 -> { pendingPlayAll = true; open(it) }
                 9 -> { val on = YtStore.toggle(YtStore.SUBS, it); Notice.show(act, (if (on) "✅ اشتركت" else "اتشال الاشتراك").toString(), 1800L) }
