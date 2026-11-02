@@ -19,16 +19,19 @@ class MainActivity : Activity() {
     private lateinit var ir: ConsumerIrManager
     private lateinit var status: TextView
     private lateinit var searchBtn: TextView
-    private var extraViews: List<View> = emptyList()
-    private fun setExtras(v: Int) { for (x in extraViews) x.visibility = v }
+    private enum class Phase { IDLE, BATCH, ASK, PICK, STEP, READY }
+    private var phase = Phase.IDLE
+    private lateinit var actions: LinearLayout
     private val h = Handler(Looper.getMainLooper())
     private val addrs = intArrayOf(0, 128, 1, 2, 4, 8, 16, 32, 64, 247, 239, 255)
-    private var ai = 0
-    private var cmd = 0
-    private var lastA = -1
-    private var lastC = -1
-    private var scanning = false
-    private var inSearch = false
+    private val total = addrs.size * 256
+    private val BATCH_SIZE = 10
+    private var pos = 0              // الموضع الحالي في كل الأكواد
+    private var batchStart = 0
+    private val batch = ArrayList<Pair<Int, Int>>()
+    private var stepIdx = 0
+    private var pickedKey = ""
+    private var pickedName = ""
     private val circles = HashMap<String, TextView>()
     private val prefs by lazy { getSharedPreferences("codes", MODE_PRIVATE) }
     private val roles = listOf(
@@ -52,23 +55,94 @@ class MainActivity : Activity() {
         ir.transmit(38000, p.toIntArray())
     }
 
-    private fun sendScan(a: Int, c: Int) {
-        lastA = a; lastC = c
-        nec(a, c)
-        status.text = "🔍 بجرّب… (${ai + 1}/${addrs.size}) كود $c"
+    private fun pill(text: String, fill: Int, onClick: () -> Unit) = TextView(this).apply {
+        this.text = text; textSize = 16f; gravity = Gravity.CENTER; setTextColor(Color.WHITE)
+        setPadding(dp(12), dp(14), dp(12), dp(14))
+        background = GradientDrawable().apply { cornerRadius = dp(14).toFloat(); setColor(fill) }
+        layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { topMargin = dp(8) }
+        setOnClickListener { onClick() }
     }
 
-    private val tick = object : Runnable {
-        override fun run() {
-            if (!scanning) return
-            sendScan(addrs[ai], cmd)
-            cmd++
-            if (cmd > 255) { cmd = 0; ai = (ai + 1) % addrs.size }
-            h.postDelayed(this, 700)
+    private fun setActions(vararg v: View) { actions.removeAllViews(); for (x in v) actions.addView(x) }
+
+    private fun stopAll() { h.removeCallbacksAndMessages(null) }
+
+    private fun toIdle() {
+        stopAll(); phase = Phase.IDLE; actions.removeAllViews(); status.text = "جاهز"
+        searchBtn.text = "🔍"
+    }
+
+    // ---------- دفعة بحث: 10 أكواد وتقف ----------
+    private fun startBatch() {
+        stopAll()
+        if (pos >= total) {
+            phase = Phase.IDLE; status.text = "خلصت كل الأكواد ومفيش حاجة. دوس 🔍 تبدأ من الأول"
+            pos = 0; setActions(pill("✔ خلصت", 0xFF2E7D32.toInt()) { toIdle() }); return
         }
+        phase = Phase.BATCH; batch.clear(); batchStart = pos
+        searchBtn.text = "⏸"
+        setActions(pill("⏸ وقّف", 0xFF555560.toInt()) { toIdle() })
+        h.post(object : Runnable {
+            override fun run() {
+                if (phase != Phase.BATCH) return
+                if (batch.size >= BATCH_SIZE || pos >= total) { askChanged(); return }
+                val a = addrs[pos / 256]; val c = pos % 256
+                batch.add(Pair(a, c)); pos++
+                nec(a, c)
+                status.text = "🔍 بجرّب ${batch.size}/$BATCH_SIZE — (عنوان ${a}) كود $c\nإجمالي: $pos من $total"
+                h.postDelayed(this, 700)
+            }
+        })
     }
 
-    private fun pause() { scanning = false; h.removeCallbacks(tick); searchBtn.text = "🔍" }
+    private fun askChanged() {
+        phase = Phase.ASK; searchBtn.text = "🔍"
+        status.text = "اتبعت ${batch.size} أكواد ($batchStart → ${batchStart + batch.size - 1}).\nاللمبة اتغيرت؟"
+        setActions(
+            pill("✅ أيوه اتغيرت", 0xFF2E7D32.toInt()) { askWhat() },
+            pill("➡ لأ، العشرة اللي بعدها", 0xFFC9A24A.toInt()) { startBatch() },
+            pill("🔁 أعيد نفس العشرة", 0xFF2A2A33.toInt()) { pos = batchStart; startBatch() },
+            pill("↩ العشرة اللي فاتت", 0xFF2A2A33.toInt()) { pos = (batchStart - BATCH_SIZE).coerceAtLeast(0); startBatch() },
+            pill("✔ خلصت", 0xFF555560.toInt()) { toIdle() }
+        )
+    }
+
+    private fun askWhat() {
+        phase = Phase.PICK
+        status.text = "اللمبة عملت إيه؟ دوس على الزر اللي يطابق اللي حصل (تشغيل، أقوى، أبيض…)"
+        setActions(pill("↩ رجوع", 0xFF555560.toInt()) { askChanged() })
+    }
+
+    // ---------- تجربة العشرة واحد واحد ----------
+    private fun startStep(key: String, name: String) {
+        pickedKey = key; pickedName = name; stepIdx = 0; phase = Phase.STEP
+        sendStep()
+    }
+
+    private fun sendStep() {
+        val (a, c) = batch[stepIdx]
+        nec(a, c)
+        status.text = "🎯 $pickedName — كود ${stepIdx + 1}/${batch.size} (عنوان $a / كود $c)\nاللمبة استجابت؟"
+        setActions(
+            pill("✔ ده هو — احفظه", 0xFF2E7D32.toInt()) { saveStep() },
+            pill("⏭ اللي بعده", 0xFFC9A24A.toInt()) { if (stepIdx < batch.size - 1) { stepIdx++; sendStep() } else status.text = "ده آخر كود في العشرة" },
+            pill("⏮ اللي قبله", 0xFF2A2A33.toInt()) { if (stepIdx > 0) { stepIdx--; sendStep() } },
+            pill("🔁 ابعت تاني", 0xFF2A2A33.toInt()) { sendStep() },
+            pill("↩ مش لاقيه — رجوع", 0xFF555560.toInt()) { askChanged() }
+        )
+    }
+
+    private fun saveStep() {
+        val (a, c) = batch[stepIdx]
+        prefs.edit().putString(pickedKey, "$a:$c").apply()
+        mark(pickedKey)
+        phase = Phase.READY
+        status.text = "✅ اتسجل: $pickedName\nدوس ▶ تدوّر على الزر اللي بعده"
+        setActions(
+            pill("▶ ابحث عن الزر اللي بعده", 0xFFC9A24A.toInt()) { startBatch() },
+            pill("✔ خلصت", 0xFF2E7D32.toInt()) { toIdle() }
+        )
+    }
 
     private fun circle(sym: String, label: String, size: Int, fill: Int, onClick: () -> Unit): Pair<LinearLayout, TextView> {
         val t = TextView(this).apply {
@@ -90,13 +164,8 @@ class MainActivity : Activity() {
     }
 
     private fun roleTap(key: String, name: String) {
-        if (inSearch && lastC >= 0) {
-            pause()
-            prefs.edit().putString(key, "$lastA:$lastC").apply()
-            mark(key)
-            status.text = "✅ اتسجل: $name — دوس 🔍 تكمل أو ✔ لو خلصت"
-            return
-        }
+        if (phase == Phase.PICK) { startStep(key, name); return }
+        if (phase == Phase.BATCH || phase == Phase.STEP) return
         val v = prefs.getString(key, null)
         if (v == null) { Toast.makeText(this, "الزرار ده لسه ما اتعلّمش — دوس 🔍", Toast.LENGTH_SHORT).show(); return }
         val (a, c) = v.split(":").map { it.toInt() }
@@ -133,27 +202,15 @@ class MainActivity : Activity() {
         root.addView(row(btn["dim"]!!))
 
         val (sBox, sT) = circle("🔍", "بحث", 72, 0xFFC9A24A.toInt()) {
-            inSearch = true; setExtras(View.VISIBLE)
-            if (scanning) pause() else {
-                scanning = true; searchBtn.text = "⏸"
-                status.text = "قرّب الموبايل من الكلوب… ولما يستجيب دوس على الرمز اللي عمله"
-                h.post(tick)
-            }
+            if (phase == Phase.IDLE) {
+                status.text = "قرّب الموبايل من الكلوب وراقب اللمبة…"
+                startBatch()
+            } else toIdle()
         }
         searchBtn = sT
-        val (bBox, _) = circle("↩", "رجّع", 56, 0xFF2A2A33.toInt()) {
-            pause(); cmd = if (lastC <= 0) 0 else lastC - 1; sendScan(lastA.coerceAtLeast(0), cmd); cmd++
-        }
-        val (aBox, _) = circle("🔁", "تاني", 56, 0xFF2A2A33.toInt()) { pause(); if (lastC >= 0) sendScan(lastA, lastC) }
-        val (dBox, _) = circle("✔", "خلصت", 56, 0xFF2E7D32.toInt()) {
-            pause(); inSearch = false; setExtras(View.GONE); status.text = "جاهز"
-        }
-        extraViews = listOf(bBox, aBox, dBox)
-        setExtras(View.GONE)
-        root.addView(LinearLayout(this).apply {
-            setPadding(0, dp(24), 0, 0); gravity = Gravity.CENTER
-            addView(bBox); addView(sBox); addView(aBox); addView(dBox)
-        })
+        root.addView(LinearLayout(this).apply { setPadding(0, dp(24), 0, 0); gravity = Gravity.CENTER; addView(sBox) })
+        actions = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(8), dp(8), dp(8), 0) }
+        root.addView(actions)
 
         for ((k, _, _) in roles) if (prefs.getString(k, null) != null) mark(k)
         setContentView(ScrollView(this).apply { setBackgroundColor(0xFF141418.toInt()); addView(root) })
