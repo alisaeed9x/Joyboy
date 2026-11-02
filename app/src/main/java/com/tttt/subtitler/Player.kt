@@ -140,7 +140,7 @@ class PlayerActivity : Activity(), Host {
         j.put("posy", Cfg.int("sub_posy", 0))
         j.put("hsub", try { hasSubsNow() } catch (_: Throwable) { false })
         j.put("cdial", try { caps().dialect } catch (_: Throwable) { false })
-        try { val ts = if (::engine.isInitialized) engine.toolState() else Pair("", 0f); j.put("tool", ts.first); j.put("toolp", (ts.second * 100f).toInt().coerceIn(0, 100)) } catch (_: Throwable) {}   // (v709) تأثير «الكوباية» على أزرار الريموت
+        try { val ts = if (::engine.isInitialized) (engine as? LocalEngine)?.e?.toolState() ?: Pair("", 0f) else Pair("", 0f); j.put("tool", ts.first); j.put("toolp", (ts.second * 100f).toInt().coerceIn(0, 100)) } catch (_: Throwable) {}   // (v709) تأثير «الكوباية» على أزرار الريموت
         // (v532) قوايم الجودة ولغة الصوت كنصوص + الحالي: الريموت بيعرضها على الموبايل ويختار منها من غير ما يفتح قايمة على شاشة التلفزيون
         try { val (ql, qc) = rQuals(); j.put("ql", org.json.JSONArray(ql)); j.put("qc", qc) } catch (_: Throwable) {}
         try {
@@ -1141,6 +1141,8 @@ class PlayerActivity : Activity(), Host {
                     return@Thread
                 }
                 if (out.error.isNotEmpty()) { sfNote("⚠ " + out.error, 6000L); return@Thread }
+                // (v711) أغلب الجمل فشلت: ما نطبّقش (الجمل الفاشلة بتتعرض بنصها الأصلي فبيبان إن مفيش ترجمة)
+                if (out.failed * 2 > cues.size) { LogStore.add("💬 سوفت صب: فشل " + out.failed + "/" + cues.size + " على التلفزيون (" + eng + ")"); sfNote("⚠ أغلب الجمل فشلت (" + out.failed + "/" + cues.size + ") — ما طبّقتش الترجمة عشان ماتظهرش بلغتها الأصلية. جرّب تاني", 7000L); return@Thread }
                 if (!SfJob.claim(myJid, "tv")) return@Thread   // (v688) الموبايل سبقنا في آخر لحظة
                 var w = 0
                 while ((!::engine.isInitialized || !engineReady) && w++ < 40) { try { Thread.sleep(250L) } catch (_: InterruptedException) {} }
@@ -1184,6 +1186,7 @@ class PlayerActivity : Activity(), Host {
     private fun subFromPhone(jid: String, texts: List<String>, failed: Int, eng: String): Int {
         val cs = SfJob.cues
         if (SfJob.id != jid || cs == null || texts.size != cs.size) return 2
+        if (failed * 2 > cs.size) { LogStore.add("💬 سوفت صب: رفضت نتيجة الموبايل — فشل " + failed + "/" + cs.size); return 2 }   // (v711)
         if (!SfJob.claim(jid, "phone")) return 3
         try {
             var w = 0

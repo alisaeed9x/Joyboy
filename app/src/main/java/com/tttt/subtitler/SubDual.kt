@@ -118,6 +118,8 @@ object SubDual {
                 }, { run.cancel }, lang, style)
                 if (run.cancel) return@Thread
                 if (out.error.isNotEmpty()) { status = ""; say("⚠ ترجمة الموبايل فشلت: " + out.error); return@Thread }
+                // (v711) أغلب الجمل فشلت: ما نبعتهاش — التلفزيون كان بيحط مكانها النص الأصلي ويعرضه كإنه مترجم
+                if (out.failed * 2 > cues.size) { status = ""; LogStore.add("📱 سوفت صب: فشل " + out.failed + "/" + cues.size + " على الموبايل (" + eng + ")"); say("⚠ ترجمة الموبايل فشل أغلبها (" + out.failed + "/" + cues.size + ") — ما بعتّهاش للتلفزيون"); return@Thread }
 
                 // 3) نبعت النتيجة للتلفزيون على قطع
                 status = "📤 ببعت الترجمة للتلفزيون…"

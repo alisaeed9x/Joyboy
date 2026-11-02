@@ -317,7 +317,7 @@ fun Activity.checkClipboard(onPlay: (ClipVideo) -> Unit, onAct: (String, ClipVid
     fun addBtn(label: String, glyph: String, fill: Int, gc: Int, act: String) {
         val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_LTR; gravity = Gravity.CENTER_VERTICAL; alpha = 0f }
         val tv = TextView(this).apply {
-            text = label; setTextColor(Color.WHITE); textSize = 12f; typeface = android.graphics.Typeface.DEFAULT_BOLD
+            this.text = label; setTextColor(Color.WHITE); textSize = 12f; typeface = android.graphics.Typeface.DEFAULT_BOLD
             setPadding((10 * d).toInt(), (5 * d).toInt(), (10 * d).toInt(), (5 * d).toInt())
             background = android.graphics.drawable.GradientDrawable().apply { setColor(0xCC101418.toInt()); cornerRadius = 14 * d }
         }
