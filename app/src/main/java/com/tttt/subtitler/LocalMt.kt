@@ -50,7 +50,8 @@ object LocalMt {
         if (h != 0L && loadedFile == f.path) return@synchronized
         releaseLocked()
         val t0 = System.currentTimeMillis()
-        h = LlmLib.nInit(f.path, 2048)
+        Offline.loadBegin(model().id, model().approxMb, "Hy-MT2")   // (v700) مؤشر تحميل موديل الترجمة
+        try { h = LlmLib.nInit(f.path, 2048) } finally { Offline.loadEnd(h != 0L) }
         if (h == 0L) throw SttInitFail("موديل الترجمة ما اتحمّلش")
         loadedFile = f.path
         log("📴 موديل الترجمة اتحمّل في ${System.currentTimeMillis() - t0}ms")

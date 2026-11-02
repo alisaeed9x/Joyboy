@@ -92,10 +92,27 @@ object Offline {
     @Volatile var runIdx = -1
     @Volatile var runStart = 0L
     private fun pctTxt(): String = if (engine().id == "whisper") (try { WhisperLib.nProgress().coerceIn(0, 99) } catch (_: Throwable) { 0 }).toString() + "%" else "شغّال"
-    /** نسبة Whisper الحالية (-1 = مفيش تفريغ شغّال) */
-    fun livePct(): Int = if (runIdx < 0 || engine().id != "whisper") -1 else try { WhisperLib.nProgress().coerceIn(0, 99) } catch (_: Throwable) { 0 }
-    fun liveShort(): String? = if (runIdx < 0) null else "🎙 باتش ${runIdx + 1} · " + pctTxt()
-    fun liveLine(): String? = if (runIdx < 0) null else "🎙 ${engName()} شغّال — باتش ${runIdx + 1}: " + pctTxt() + " · من ${(System.currentTimeMillis() - runStart) / 1000}ث"
+    // (v700) مرحلة تحميل الموديل في الرام (Whisper الكبير بياخد ثواني كتير قبل أول %): نسبة تقديرية من وقت آخر تحميل لنفس الموديل
+    @Volatile var loadStart = 0L
+    @Volatile var loadId = ""
+    @Volatile var loadWhat = "Whisper"
+    @Volatile private var loadExpMs = 1L
+    fun loadBegin(id: String, approxMb: Int, what: String = "Whisper") {
+        loadWhat = what
+        val prev = Cfg.str("whload_" + what + id, "").toLongOrNull() ?: 0L
+        loadExpMs = if (prev > 300L) prev else (approxMb * 14L).coerceAtLeast(1500L)
+        loadId = id; loadStart = System.currentTimeMillis()
+    }
+    fun loadEnd(ok: Boolean) {
+        val took = System.currentTimeMillis() - loadStart
+        if (ok && loadStart > 0L && took > 300L) try { Cfg.put("whload_" + loadWhat + loadId, took.toString()) } catch (_: Throwable) {}
+        loadStart = 0L
+    }
+    private fun loadPct(): Int = if (loadStart == 0L) -1 else ((System.currentTimeMillis() - loadStart) * 100L / loadExpMs).toInt().coerceIn(0, 99)
+    /** نسبة Whisper الحالية (-1 = مفيش تفريغ ولا تحميل شغّال). أثناء تحميل الموديل = نسبة التحميل التقديرية */
+    fun livePct(): Int = if (loadStart != 0L) loadPct() else if (runIdx < 0 || engine().id != "whisper") -1 else try { WhisperLib.nProgress().coerceIn(0, 99) } catch (_: Throwable) { 0 }
+    fun liveShort(): String? = if (loadStart != 0L) "⏳ تحميل الموديل · ~" + loadPct() + "%" else if (runIdx < 0) null else "🎙 باتش ${runIdx + 1} · " + pctTxt()
+    fun liveLine(): String? = if (loadStart != 0L) "⏳ بيحمّل موديل ${loadWhat} ${loadId} في الرام — ~" + loadPct() + "% (تقديري) · من ${(System.currentTimeMillis() - loadStart) / 1000}ث" else if (runIdx < 0) null else "🎙 ${engName()} شغّال — باتش ${runIdx + 1}: " + pctTxt() + " · من ${(System.currentTimeMillis() - runStart) / 1000}ث"
     /** (v413) اللغة اللي Whisper كشفها فعلًا في آخر باتش على الخيط ده */
     val gotLang = ThreadLocal<String>()
     /** (v413) آخر لغة كشفها Whisper للفيديو الجاري (بتتعرض تحت اسم الفيديو) — بتتصفّر مع كل إنجن جديد */

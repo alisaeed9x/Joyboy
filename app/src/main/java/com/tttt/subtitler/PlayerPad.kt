@@ -404,7 +404,7 @@ object PlayerPad {
             // ── فوق: إغلاق + عنوان الفيديو ──
             val ttlTv = label("", 14f, 0xFFB0BEC5.toInt(), false).apply { maxLines = 1; ellipsize = TextUtils.TruncateAt.END }
             val headRow = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_LTR; gravity = Gravity.CENTER_VERTICAL }
-            headRow.addView(btn("✕", 18f) { d.dismiss() }, lp(dp(48), dp(44)))
+            headRow.addView(btn("→ رجوع", 14f, 0xFF2563EB.toInt(), 0xFF5B8DEF.toInt()) { d.dismiss() }, lp(dp(92), dp(44)))   // (v700) زرار رجوع واضح للريموت
             headRow.addView(ttlTv, lp(0, -2, 1f).apply { leftMargin = dp(10) })
             val handoffB = btn("📱", 18f, 0xFF2563EB.toInt(), 0xFF5B8DEF.toInt()) { PlayQueueUi.handoffToPhone(act) { try { d.dismiss() } catch (_: Throwable) {}; try { onLeave?.invoke() } catch (_: Throwable) {} } }.apply { visibility = View.GONE }   // (v694) كمّل الفيديو ده على الموبايل من نفس الثانية
             headRow.addView(handoffB, lp(dp(48), dp(44)).apply { leftMargin = dp(6) })
@@ -649,8 +649,9 @@ object PlayerPad {
                 val al = if (live) 1f else 0.4f
                 cntCard.visibility = if (live) View.VISIBLE else View.GONE
                 handoffB.visibility = if (live) View.VISIBLE else View.GONE
-                idleBox.visibility = if (live) View.GONE else View.VISIBLE
-                idleNote.text = if (RemoteClient.lastTv() == null) "⚠ مفيش تلفزيون متصل" else "📺 مفيش فيديو شغّال — شغّل من هنا"
+                idleBox.visibility = View.VISIBLE   // (v702) أزرار المكتبة/يوتيوب/المتصفح/السجل ظاهرة دايمًا أول ما الريموت يتربط، حتى لو فيه فيديو شغّال
+                idleNote.text = if (RemoteClient.lastTv() == null) "⚠ مفيش تلفزيون متصل" else if (!live) "📺 مفيش فيديو شغّال — شغّل من هنا" else ""
+                idleNote.visibility = if (idleNote.text.isEmpty()) View.GONE else View.VISIBLE
                 for (k in 0 until left.childCount) { val c = left.getChildAt(k); c.alpha = if (c === idleBox) 1f else al }   // (v691) التعتيم من غير الأزرار التلاتة
                 volCol.alpha = al; tr.alpha = al; trRow.alpha = al; bar.alpha = al
                 speedB.text = "⏩ " + s.optString("speed", "1x")
@@ -703,6 +704,7 @@ object PlayerPad {
                 try { act.requestedOrientation = oldOri } catch (_: Throwable) {}
                 if (startedHere) { try { LinkSession.stop() } catch (_: Throwable) {} }
             }
+            d.setCancelable(true)   // (v700) زرار رجوع الموبايل بيقفل الصفحة
             d.window?.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
             d.show()
             hh.post(tick)

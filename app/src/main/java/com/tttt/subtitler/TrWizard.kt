@@ -412,8 +412,8 @@ object TrWizard {
             if (src == "whisper" && !WhisperLib.loaded) { Notice.show(act, "الأوفلاين مش مدعوم على جهازك", 2500L); return }
             if (id == Strict.MT && !onlySw && !Offload.wanted() && !LocalMt.ready()) Notice.show(act, LocalMt.status(), 4000L)   // (v696) الموديل ناقص: التنبيه بس — الاختيار والتنزيل من الإعدادات
             normalize(); sync()
-            if (isLocal() && !localReadyNow()) {
-                afterDl = { afterDl = null; afterModePick() }
+            if (isLocal()) {   // (v700) اختيار موديل وشبر بيظهر كل مرة (قبل كده كان بيتخطّى لو في موديل نازل)
+                afterDl = { afterDl = null; if (id == Strict.MT && !onlySw) go { stepMt() } else afterModePick() }
                 go { stepStt() }
             } else afterModePick()
         }
@@ -557,7 +557,7 @@ object TrWizard {
 
         fun stepStt() {
             reset("📴 التفريغ على الجهاز")
-            note("Whisper بيشتغل على موبايلك. النت بس لتنزيل الموديل مرة واحدة.")
+            note("اختار حجم موديل Whisper (tiny · base · small · medium · large-v3-turbo). بيشتغل على موبايلك، والنت بس لتنزيل الموديل مرة واحدة.")
             val st = ui.text("", 13f, th.text).apply { setLineSpacing(0f, 1.15f); setPadding(0, ui.dp(8), 0, ui.dp(2)) }
             val pr = ui.text("", 12f, th.muted)
             val dl = ui.button("", false) { }
@@ -594,6 +594,50 @@ object TrWizard {
                 if (!WhisperLib.loaded) Notice.show(act, "جهازك مش بيدعم الأوفلاين", 2500L)
                 else if (!Offline.downloaded(cur())) Notice.show(act, "نزّل الموديل الأول", 2500L)
                 else { val a = afterDl; if (a != null) { afterDl = null; a() } else go { if (hubFlow) toHub() else if (presetFlow) stepSave() else stepMethod() } }
+            }
+            addBack()
+        }
+
+        /** (v700) اختيار موديل الترجمة Hy-MT2 (Q4 / Q6) + حالته وتنزيله — بيظهر بعد اختيار موديل وشبر في «أوفلاين كامل» */
+        fun stepMt() {
+            reset("🌍 موديل الترجمة (Hy-MT2)")
+            note("الترجمة بتتم على جهازك بالموديل ده. اختار النسخة، ونزّلها مرة واحدة لو مش موجودة (أو اختار الملف من الإعدادات ← 📦 الموديلات الأوفلاين).")
+            val st = ui.text("", 13f, th.text).apply { setLineSpacing(0f, 1.15f); setPadding(0, ui.dp(8), 0, ui.dp(2)) }
+            val pr = ui.text("", 12f, th.muted)
+            val dl = ui.button("", false) { }
+            fun cur() = LocalMt.model()
+            fun refresh() {
+                val m = cur(); val have = LocalMt.downloaded(m)
+                st.text = when {
+                    !LocalMt.supported() -> "⛔ مكتبة الترجمة على الجهاز مش متاحة"
+                    have -> "✅ الموديل موجود وجاهز — " + m.note
+                    Offline.downloading() -> "⏳ بينزّل…"
+                    else -> "⬇ مش موجود (~" + m.approxMb + " ميجا) — " + m.note
+                }
+                dl.text = if (Offline.downloading()) "⏹ إلغاء التنزيل" else if (have) "✓ الموديل موجود" else "⬇ تنزيل (~" + m.approxMb + " ميجا)"
+                dl.isEnabled = LocalMt.supported() && (Offline.downloading() || !have)
+            }
+            dl.setOnClickListener {
+                val m = cur()
+                if (Offline.downloading()) Offline.cancelDownload()
+                else if (!LocalMt.downloaded(m)) {
+                    pr.text = "⏳ بيبدأ التنزيل…"
+                    Offline.fetchModel("mt/" + m.file, LocalMt.url(m), m.approxMb,
+                        { a, t -> act.runOnUiThread { pr.text = "⬇ " + (a / 1048576) + " / " + (if (t > a) (t / 1048576).toString() else "~" + m.approxMb) + " ميجا" } },
+                        { err -> act.runOnUiThread { pr.text = if (err == null) "✅ الموديل نزل" else "❌ $err"; refresh() } })
+                    refresh()
+                }
+            }
+            body.addView(ui.chips(LocalMt.models.map { it.label }, { cur().label }) { l ->
+                LocalMt.models.firstOrNull { m -> m.label == l }?.let { m -> Cfg.put("mt_model", m.id); LocalMt.release() }
+                pr.text = ""; refresh()
+            })
+            body.addView(st); body.addView(dl); body.addView(pr)
+            refresh()
+            footBtn("التالي ←", true) {
+                if (!LocalMt.supported()) Notice.show(act, "مكتبة الترجمة مش متاحة على جهازك", 2500L)
+                else if (!LocalMt.downloaded(cur()) && !Offload.wanted()) Notice.show(act, "نزّل موديل الترجمة الأول", 2500L)
+                else afterModePick()
             }
             addBack()
         }

@@ -51,7 +51,8 @@ object WhisperStt : SttEngine {
         val s = slot()
         if (ctxs[s] == 0L) {
             val t0 = System.currentTimeMillis()
-            ctxs[s] = WhisperLib.nInit(f.path); ctxFile = f.path
+            Offline.loadBegin(Offline.model().id, Offline.model().approxMb)   // (v700) مؤشر تحميل الموديل
+            try { ctxs[s] = WhisperLib.nInit(f.path); ctxFile = f.path } finally { Offline.loadEnd(ctxs[s] != 0L) }
             if (ctxs[s] == 0L) throw SttInitFail("الموديل ما اتحمّلش")
             log("📴 الأوفلاين: الموديل اتحمّل (خانة ${s + 1}) في ${System.currentTimeMillis() - t0}ms")
         }
