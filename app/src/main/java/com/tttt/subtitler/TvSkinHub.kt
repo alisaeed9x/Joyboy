@@ -60,7 +60,7 @@ object TvSkinHub : TvSkin {
                     setColor(fill); cornerRadius = ui.dp(tk.radiusPill).toFloat()
                     if (f) setStroke(ui.dp(3), Color.WHITE) else if (idx != active) setStroke(ui.dp(1), pal.border)
                 }
-                pill.animate().scaleX(if (f) tk.focusScale else 1f).scaleY(if (f) tk.focusScale else 1f).setDuration(tk.focusDur()).start()
+                pill.animate().scaleX(if (f) TvGlow.fit(pill, tk.focusScale) else 1f).scaleY(if (f) TvGlow.fit(pill, tk.focusScale) else 1f).setDuration(tk.focusDur()).start()
             }
             paint(false)
             pill.setOnFocusChangeListener { _, f -> paint(f) }
@@ -300,7 +300,7 @@ object TvSkinHub : TvSkin {
             btn.addView(ui.text("اسمح بالفيديوهات", tokens.textBody + 2f, pal.onPrimary, true))
             fun paint(f: Boolean) { btn.background = android.graphics.drawable.GradientDrawable().apply { setColor(pal.primary); cornerRadius = ui.dp(tokens.radiusPill).toFloat(); if (f) setStroke(ui.dp(3), Color.WHITE) } }
             paint(false)
-            btn.setOnFocusChangeListener { _, f -> paint(f); btn.animate().scaleX(if (f) tokens.focusScale else 1f).scaleY(if (f) tokens.focusScale else 1f).setDuration(tokens.focusDur()).start() }
+            btn.setOnFocusChangeListener { _, f -> paint(f); btn.animate().scaleX(if (f) TvGlow.fit(btn, tokens.focusScale) else 1f).scaleY(if (f) TvGlow.fit(btn, tokens.focusScale) else 1f).setDuration(tokens.focusDur()).start() }
             btn.setOnClickListener { h.requestVideoPermission() }
             col.addView(btn, LinearLayout.LayoutParams(-2, -2).apply { topMargin = ui.dp(16) })
         }

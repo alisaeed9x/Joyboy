@@ -747,7 +747,7 @@ class TvActivity : Activity() {
             setOnFocusChangeListener { v, f ->
                 v.background = ovalBg(if (f) capFocusFill else Color.TRANSPARENT)
                 tv.setTextColor(if (f) capFocusInk else fg)
-                v.animate().scaleX(if (f) 1.12f else 1f).scaleY(if (f) 1.12f else 1f).setDuration(Skins.dur(150L)).setInterpolator(DecelerateInterpolator()).start()
+                v.animate().scaleX(if (f) TvGlow.fit(v, 1.12f) else 1f).scaleY(if (f) TvGlow.fit(v, 1.12f) else 1f).setDuration(Skins.dur(150L)).setInterpolator(DecelerateInterpolator()).start()
             }
         }
         b.addView(tv)
@@ -1371,7 +1371,7 @@ class TvActivity : Activity() {
         }
         c.setOnFocusChangeListener { v, f ->
             v.background = ui.box(if (f) th.card else th.surface, if (f) th.primary else th.border, 14)
-            v.animate().scaleX(if (f) 1.05f else 1f).scaleY(if (f) 1.05f else 1f).setDuration(130).start()
+            v.animate().scaleX(if (f) TvGlow.fit(v, 1.05f) else 1f).scaleY(if (f) TvGlow.fit(v, 1.05f) else 1f).setDuration(130).start()
             v.elevation = if (f) ui.dp(8).toFloat() else 0f
         }
         c.setOnClickListener { onClick() }
@@ -1494,7 +1494,7 @@ class TvActivity : Activity() {
             setOnClickListener { f() }
             setOnFocusChangeListener { v, hasF ->
                 v.background = ui.box(if (primary) th.primary else if (hasF) th.card else th.surface, if (hasF) th.text else if (primary) th.primary else th.border, 28, if (hasF) 3 else 1)
-                v.animate().scaleX(if (hasF) 1.07f else 1f).scaleY(if (hasF) 1.07f else 1f).setDuration(120).start()
+                v.animate().scaleX(if (hasF) TvGlow.fit(v, 1.07f) else 1f).scaleY(if (hasF) TvGlow.fit(v, 1.07f) else 1f).setDuration(120).start()
             }
         }
         b.addView(ui.text(t, 15f, if (primary) onPrimary() else th.text, true))
@@ -1708,7 +1708,7 @@ class TvActivity : Activity() {
             setOnFocusChangeListener { v, f ->
                 frame.background = ring(f)
                 val d = Skins.dur(230L)
-                frame.animate().scaleX(if (f) big else 1f).scaleY(if (f) big else 1f).translationY(if (f) -up else 0f).setDuration(d)
+                frame.animate().scaleX(if (f) TvGlow.fit(frame, big) else 1f).scaleY(if (f) TvGlow.fit(frame, big) else 1f).translationY(if (f) -up else 0f).setDuration(d)
                     .setInterpolator(if (f) android.view.animation.OvershootInterpolator(1.1f) else DecelerateInterpolator()).start()
                 halo.animate().alpha(if (f && haloOn) 1f else 0f).scaleX(if (f) 2.1f else 1f).scaleY(if (f) 2.1f else 1f).setDuration(d + 60L).start()
                 if (mode != "off") name.animate().alpha(if (f) 1f else if (mode == "always") 1f else 0f).translationY(if (f) -up * 0.4f else 0f).setDuration(d).start()

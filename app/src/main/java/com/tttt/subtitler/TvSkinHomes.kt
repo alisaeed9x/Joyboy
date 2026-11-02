@@ -349,12 +349,12 @@ object TvHomeLayouts {
         if (showLabel) root.addView(lab, LinearLayout.LayoutParams(ui.dp(boxW + 14), -2))
         fun paint(f: Boolean) {
             val sh = shape(fill, ui.dp(radius).toFloat(), if (f) Color.WHITE else 0x00000000, if (f) ui.dp(3) else ui.dp(1))
-            // (v681) هالة بلون التطبيق خلف المتركّز
-            holder.background = if (f && TvUserPrefs.halo()) TvGlow.under(sh, base, radius, a.resources.displayMetrics.density, 0) else sh
-            TvGlow.refresh(holder)
             val lk = TvUserPrefs.liftK()
             val sc0 = if (kind == APP_BIG) 1.18f else if (kind == APP_BANNER) 1.08f else 1.12f
-            val sc = if (f) 1f + (sc0 - 1f) * lk else 1f
+            val sc = if (f) TvGlow.fit(root, 1f + (sc0 - 1f) * lk) else 1f   // (v696) التكبير بقدر المساحة المتاحة
+            // (v681) هالة بلون التطبيق خلف المتركّز · (v696) الحلقة جوه الحدود والهالة بتقصر جنب الحواف
+            holder.background = if (f && TvUserPrefs.halo()) TvGlow.under(TvGlow.inside(sh, ui.dp(3)), base, radius, a.resources.displayMetrics.density, 0, TvGlow.haloRoom(holder, sc)) else if (f) TvGlow.inside(sh, ui.dp(3)) else sh
+            TvGlow.refresh(holder)
             root.animate().scaleX(sc).scaleY(sc).translationY(if (f && kind == APP_BIG) -ui.dp(8).toFloat() * lk else 0f).setDuration(t.focusDur()).start()
             if (namesMode == "always") lab.alpha = 1f
             else if (kind == APP_BIG || namesMode == "focus") lab.animate().alpha(if (f) 1f else 0f).setDuration(t.focusDur()).start()
@@ -734,7 +734,7 @@ object TvHomeLayouts {
         val stroke: Int = if (focused) pal.fg else if (style == 3 || style == 5) 0x00000000 else pal.outline
         val chipShape = shape(fill, r, stroke, ui.dp(if (focused) 3 else 1))
         // (v681) هالة خلف التاب المتركّز
-        c.background = if (focused && TvUserPrefs.halo()) TvGlow.under(chipShape, pal.primary, when (style) { 2 -> t.radiusCard; 5 -> 16; else -> t.radiusPill }, h.activity.resources.displayMetrics.density, 0) else chipShape
+        c.background = if (focused && TvUserPrefs.halo()) TvGlow.under(TvGlow.inside(chipShape, ui.dp(3)), pal.primary, when (style) { 2 -> t.radiusCard; 5 -> 16; else -> t.radiusPill }, h.activity.resources.displayMetrics.density, 0, TvGlow.haloRoom(c, 1f)) else if (focused) TvGlow.inside(chipShape, ui.dp(3)) else chipShape
         TvGlow.refresh(c)
         val txt: Int = when (style) {
             3 -> if (selected) (if (pal.dark) darkText else Color.WHITE) else pal.fg

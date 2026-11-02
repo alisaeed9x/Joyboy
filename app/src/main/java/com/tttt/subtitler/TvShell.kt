@@ -131,7 +131,7 @@ class TvShellBar(private val act: Activity, private val ui: Ui, private val th: 
                 setOnFocusChangeListener { v, f ->
                     v.background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(if (f) Color.WHITE else Color.TRANSPARENT) }
                     tv.setTextColor(if (f) Color.BLACK else fg)
-                    v.animate().scaleX(if (f) 1.12f else 1f).scaleY(if (f) 1.12f else 1f).setDuration(Skins.dur(150L)).setInterpolator(DecelerateInterpolator()).start()
+                    v.animate().scaleX(if (f) TvGlow.fit(v, 1.12f) else 1f).scaleY(if (f) TvGlow.fit(v, 1.12f) else 1f).setDuration(Skins.dur(150L)).setInterpolator(DecelerateInterpolator()).start()
                 }
                 addView(tv)
                 layoutParams = LinearLayout.LayoutParams(ui.dp(42), ui.dp(42)).apply { setMargins(ui.dp(2), 0, ui.dp(2), 0) }

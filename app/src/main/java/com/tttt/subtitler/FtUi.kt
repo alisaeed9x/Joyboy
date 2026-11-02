@@ -179,7 +179,7 @@ class FileTransferActivity : Activity() {
         v.isFocusable = true; v.isClickable = true
         fun paint(f: Boolean) {
             v.background = ui.box(fill, if (f) th.accent else if (on) th.primary else th.border, r, if (f) 3 else 1)
-            v.animate().scaleX(if (f) 1.03f else 1f).scaleY(if (f) 1.03f else 1f).setDuration(110).start()
+            v.animate().scaleX(if (f) TvGlow.fit(v, 1.03f) else 1f).scaleY(if (f) TvGlow.fit(v, 1.03f) else 1f).setDuration(110).start()
         }
         paint(false)
         v.setOnFocusChangeListener { _, f -> paint(f) }

@@ -430,12 +430,12 @@ object PlayerPad {
             capRow.addView(capMode, lp(-2, dp(34)).apply { marginStart = dp(3); marginEnd = dp(3) })
 
             // ── (v695) أزرار الترجمة: إظهار/إخفاء · وضع العرض · النسخ · إضافة ترجمة ──
-            val ccB = btn("💬\nالترجمة", 11.5f) { go("cc") }
-            val dualB = btn("🔀\nالعرض", 11.5f) { sheetDual() }
+            val ccTop = btn("💬\nالترجمة", 11.5f) { go("cc") }
+            val dualTop = btn("🔀\nالعرض", 11.5f) { sheetDual() }
             val verB = btn("🗂\nالنسخ", 11.5f) { sheetVersions() }
             val addTrB = btn("➕\nإضافة ترجمة", 11.5f, 0xFF4F5BD5.toInt(), 0xFF7C8CF8.toInt()) { sheetSubFile() }
             val subRow = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL }
-            for (b0 in listOf(ccB, dualB, verB, addTrB)) { b0.setPadding(dp(2), dp(4), dp(2), dp(4)); subRow.addView(b0, lp(0, dp(54), 1f).apply { marginStart = dp(2); marginEnd = dp(2) }) }
+            for (b0 in listOf(ccTop, dualTop, verB, addTrB)) { b0.setPadding(dp(2), dp(4), dp(2), dp(4)); subRow.addView(b0, lp(0, dp(54), 1f).apply { marginStart = dp(2); marginEnd = dp(2) }) }
 
             // ── السرعة · اللهجة وإعدادات الترجمة ──
             val speedB = btn("⏩ 1x", 16f) { sheetSpeed() }
@@ -635,8 +635,8 @@ object PlayerPad {
                 tDur.text = tm(dur)
                 playB.text = if (playing) "⏸" else "▶"
                 ttlTv.text = s.optString("title", "").let { if (it.isBlank()) "" else "📺  " + it }
-                ccB.text = if (s.optBoolean("cc", true)) "💬\nالترجمة ظاهرة" else "🚫\nالترجمة مخفية"   // (v695)
-                dualSel = s.optInt("dual", 0).coerceIn(0, 4); dualB.text = "🔀\n" + dualNames[dualSel]
+                ccTop.text = if (s.optBoolean("cc", true)) "💬\nالترجمة ظاهرة" else "🚫\nالترجمة مخفية"   // (v695)
+                dualSel = s.optInt("dual", 0).coerceIn(0, 4); dualTop.text = "🔀\n" + dualNames[dualSel]
                 val cnt = s.optString("cnt", "")
                 val vc = s.optInt("vcnt", 0)
                 if (!live) {

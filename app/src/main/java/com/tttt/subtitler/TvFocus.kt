@@ -59,7 +59,10 @@ object TvFocus {
     fun ring(accent: Int, d: Float): Drawable {
         val outer = GradientDrawable().apply { setColor(0x22FFFFFF); setStroke((6 * d).toInt(), contrast()); cornerRadius = 12 * d }
         val inner = GradientDrawable().apply { setColor(0x00000000); setStroke((3 * d).toInt(), accent); cornerRadius = 12 * d }
-        return LayerDrawable(arrayOf(outer, inner))
+        val ld = LayerDrawable(arrayOf(outer, inner))
+        val h = (3 * d).toInt()   // (v696) السمك كله جوه حدود العنصر (قبل كده نصه برّه فبيتقصّ عند حواف الأب/الشاشة)
+        ld.setLayerInset(0, h, h, h, h); ld.setLayerInset(1, h, h, h, h)
+        return ld
     }
 
     private fun contrast(): Int = try { Glass.theme().text } catch (_: Throwable) { 0xFFFFFFFF.toInt() }
@@ -121,13 +124,12 @@ object TvFocus {
         try {
             val d = dm.density
             if (!saved.containsKey(v)) saved[v] = v.foreground
-            v.foreground = if (TvUserPrefs.halo()) TvGlow.under(ring(accent, d), accent, 12, d, 0) else ring(accent, d)   // (v681) هالة بلون التمييز خلف أي زرار/عنصر متركّز
-            TvGlow.refresh(v)
             val big = v.width > dm.widthPixels * 0.55f || v.height > dm.heightPixels * 0.45f
-            if (!big && v.width > 0) {
-                (v.parent as? ViewGroup)?.clipChildren = false
-                v.animate().scaleX(1.05f).scaleY(1.05f).translationZ(8 * d).setDuration(Skins.dur(120L)).start()
-            }
+            if (!big && v.width > 0) (v.parent as? ViewGroup)?.clipChildren = false
+            val sc = if (!big && v.width > 0) TvGlow.fit(v, 1.05f) else 1f   // (v696) التكبير بقدر المساحة المتاحة
+            v.foreground = if (TvUserPrefs.halo()) TvGlow.under(ring(accent, d), accent, 12, d, 0, TvGlow.haloRoom(v, sc)) else ring(accent, d)   // (v681) هالة · (v696) بتقصر جنب الحواف
+            TvGlow.refresh(v)
+            if (!big && v.width > 0) v.animate().scaleX(sc).scaleY(sc).translationZ(8 * d).setDuration(Skins.dur(120L)).start()
         } catch (_: Throwable) {}
     }
 
