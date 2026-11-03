@@ -71,6 +71,8 @@ class TaskItem(val id: Int, val kind: String, val title: String) {
     @Volatile var work: ((TaskItem) -> Unit)? = null
     /** (v137) نسخة من الشغل للإعادة بعد فشل/إلغاء، وإيقاف مؤقت للتحميلات */
     @Volatile var workKeep: ((TaskItem) -> Unit)? = null
+    @Volatile var dlDone = 0L; @Volatile var dlTotal = 0L; @Volatile var dlSpeed = 0L   // (v723) حجم/سرعة التحميل الحي
+    @Volatile var partPath = ""   // (v723) الملف الجزئي (للتشغيل أثناء التحميل)
     @Volatile var paused = false
     @Volatile var onPause: ((Boolean) -> Unit)? = null
     /** (v147) إيقاف ⏹ (بيفضل في القايمة ويتعاد بعدين) · إيقاف مؤقت للي مالوش استكمال حقيقي · إلغاء بيشيله · إعادة وهو شغّال */
@@ -87,6 +89,8 @@ class TaskCancelled : RuntimeException("اتلغت")
 
 /** طابور المهام: مهمة واحدة في المرة (الترميز تقيل)، والناتج بيتحفظ لوحده في Movies / Music / Pictures ← Subtitler */
 object TaskCenter {
+    /** (v723) المهمة اللي الخيط الحالي بينفّذها (عشان Downloader يبلّغ بالحجم والسرعة) */
+    val cur = ThreadLocal<TaskItem?>()
     val items = CopyOnWriteArrayList<TaskItem>()
     @Volatile var listener: (() -> Unit)? = null
     /** (v188) مستمعين إضافيين (عداد زرار المهام في المشغّل + صفحة المهام المفتوحة جواه) من غير ما نلمس listener بتاع الشاشة الرئيسية */
@@ -154,7 +158,9 @@ object TaskCenter {
         if (t.cancelled) { aborted(t); afterEnd(t); changed(); return }
         t.state = 1; changed()
         try {
-            t.work?.invoke(t)
+            t.partPath = ""; t.dlDone = 0L; t.dlTotal = 0L; t.dlSpeed = 0L
+            cur.set(t)
+            try { t.work?.invoke(t) } finally { cur.set(null) }
             if (t.cancelled) aborted(t)
             else {
                 t.state = 2; t.pct = 100

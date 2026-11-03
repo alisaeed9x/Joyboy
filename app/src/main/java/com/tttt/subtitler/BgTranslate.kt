@@ -309,7 +309,7 @@ class BgService : Service() {
         }
         val lg: (String) -> Unit = {}
         val uri = job.uri?.let { Uri.parse(it) }
-        NetUse.init(); NetUse.online = (job.uri == null)
+        NetLedger.setVideo("bg:" + job.vid, job.title); NetUse.init(); NetUse.online = (job.uri == null)
         val engine = Engine(conf, {
             val u = job.url
             AudioSources.make(app, uri, u, job.hdr, conf.audioTrack, lg)

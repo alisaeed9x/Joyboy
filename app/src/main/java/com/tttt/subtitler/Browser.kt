@@ -387,6 +387,7 @@ class BrowserActivity : Activity() {
 
     // ===== بناء الشاشة =====
     override fun onCreate(b: Bundle?) {
+        NetLedger.start(this); NetGate.apply(this)
         super.onCreate(b)
         Cfg.ensure(this)   // (v310) المتصفح ممكن يتفتح من أيقونة اللانشر قبل Main
         DeviceUi.applyOrientation(this)   // (v494) وضع التلفزيون/التابلت على موبايل = لاندسكيب تلقائي
@@ -691,6 +692,7 @@ class BrowserActivity : Activity() {
                 return false
             }
             override fun onPageStarted(v: WebView, url: String?, f: android.graphics.Bitmap?) {
+                NetLedger.web(url)
                 val hd = t.hold
                 if (hd != null) {   // (v401) بوب-أب في الحجر
                     if (url != null && !url.startsWith("data:")) { t.url = url; hd.addUrl(url); h.post { popDecide(hd, false) } }

@@ -66,12 +66,28 @@ object Downloader {
     }
 
     /** (v137) تنزيل بيستكمل من نفس المكان (Range) بعد الإيقاف المؤقت أو قطع الاتصال */
+    /** (v723) تقدّم حي للمهمة: حجم + سرعة (متوسط متحرّك) + الملف الجزئي */
+    private class Prog(val tk: TaskItem?) {
+        var lt = System.nanoTime(); var lb = 0L
+        fun part(f: File) { val t = tk ?: return; if (t.partPath.isEmpty()) t.partPath = f.absolutePath }
+        fun reset(done: Long) { lt = System.nanoTime(); lb = done }
+        fun upd(done: Long, total: Long) {
+            val t = tk ?: return; val nw = System.nanoTime()
+            if (nw - lt < 700_000_000L) return
+            val sp = (done - lb).coerceAtLeast(0L) * 1_000_000_000L / (nw - lt).coerceAtLeast(1L)
+            t.dlSpeed = if (t.dlSpeed == 0L) sp else (t.dlSpeed * 6 + sp * 4) / 10
+            lt = nw; lb = done; t.dlDone = done; t.dlTotal = total; TaskCenter.changed()
+        }
+    }
+
     private fun copyTo(url: String, headers: Map<String, String>, out: File, ctl: Ctl, onPct: (Int) -> Unit) {
         try { out.delete() } catch (_: Throwable) {}
         var done = 0L; var total = -1L; var last = -1; var fails = 0
+        val pg = Prog(TaskCenter.cur.get()); pg.part(out)
         while (true) {
             if (ctl.stop()) throw TaskCancelled()
             waitIfPaused(ctl)
+            pg.reset(done); pg.tk?.dlSpeed = 0L
             var interrupted = false
             val c = open(url, headers, "GET", if (done > 0) "bytes=$done-" else null)
             try {
@@ -88,7 +104,7 @@ object Downloader {
                             if (ctl.stop()) throw TaskCancelled()
                             if (ctl.paused) { interrupted = true; break }
                             val n = ins.read(buf); if (n < 0) break
-                            os.write(buf, 0, n); done += n; NetUse.media(n.toLong())
+                            os.write(buf, 0, n); done += n; NetUse.media(n.toLong()); pg.upd(done, total)
                             if (total > 0) { val p = (done * 100 / total).toInt().coerceIn(0, 100); if (p != last) { last = p; onPct(p) } }
                         }
                     }
@@ -152,6 +168,7 @@ object Downloader {
         out.outputStream().buffered().use { os ->
             if (mu != null) { val b = fetchBytes(mu); os.write(b); NetUse.media(b.size.toLong()) }
             var last = -1
+            val pg = Prog(TaskCenter.cur.get()); pg.part(out)
             for ((k, s) in segs.withIndex()) {
                 if (ctl.stop()) throw TaskCancelled()
                 waitIfPaused(ctl)
@@ -173,6 +190,7 @@ object Downloader {
                 }
                 val dd = data!!; os.write(dd); NetUse.media(dd.size.toLong())
                 val p = (k + 1) * 100 / segs.size; if (p != last) { last = p; onPct(p) }
+                run { val ol = out.length(); pg.upd(ol, ol * segs.size / (k + 1)) }
             }
         }
         return null
@@ -321,7 +339,8 @@ object Downloader {
     }
 
     /** بيرجّع (نجح؟, رسالة). استدعيه من خيط خلفي. onPct: 0..100 */
-    fun run(ctx: Context, job: Job, onPct: (String, Int) -> Unit): Pair<Boolean, String> {
+    fun run(ctx: Context, job: Job, onPct: (String, Int) -> Unit): Pair<Boolean, String> = NetLedger.inFile(job.name) { run0(ctx, job, onPct) }
+    private fun run0(ctx: Context, job: Job, onPct: (String, Int) -> Unit): Pair<Boolean, String> {
         val tmpDir = File(File(ctx.cacheDir, "dl"), java.util.UUID.randomUUID().toString().take(8)); tmpDir.mkdirs()   // (v472) مجلد لكل تحميل: ينفع أكتر من تحميل في نفس الوقت
         val base = safeName(job.name)
         try {

@@ -124,7 +124,7 @@ class MainActivity : Activity() {
     private var pendingTool = ""
     private var pendingSrc: ToolSrc? = null
     override fun onCreate(b: Bundle?) {
-        NetUse.init()
+        NetUse.init(); NetLedger.start(this); NetGate.apply(this)
         fromPlayer = intent?.getBooleanExtra("from_player", false) == true
         fromTv = intent?.getBooleanExtra("from_tv", false) == true
         ytTvMode = intent?.getBooleanExtra("tv_target", false) == true
@@ -637,6 +637,7 @@ class MainActivity : Activity() {
                     }
                 },
                 ui.button("📊 إحصائية الاستهلاك والكوتة") { StatsUi(this, ui, th).show() },
+                ui.button("📶 استهلاك الداتا (واي فاي / موبايل)") { NetStatsUi(this, ui, th).show() },
                                 ui.section("🔑 كل المفاتيح", true,
                     ui.text("حط مفاتيحك الأساسية هنا — البرنامج بيوزّعها لوحده: مفاتيح للترجمة (أغلبها)، ومفتاح أو اتنين للتنقيح الجزئي أثناء الترجمة، ومفتاح احتياطي لو مفتاح اتعطّل (من 6 مفاتيح). التنقيح الجزئي بيبدأ من 3 مفاتيح. القايمتين اللي تحت اختياري: إضافية بتتزود على الأساسية، واحتياطية لأي باتش يفشل.", 12f, th.muted), keysUi, backupUi, extraUi)))),
             // ===== 🎙 التفريغ والصوت: موديلات الجهاز + إعدادات الصوت =====
@@ -971,6 +972,7 @@ class MainActivity : Activity() {
                 if (i == 7 && prevTab != 7) tabBeforeSettings = prevTab
                 if (prevTab == 7 && i != 7) { try { save(); refreshChip() } catch (_: Throwable) {} }
                 curTab = i
+                NetLedger.tab(when (i) { 0 -> "فيديوهات"; 1 -> "يوتيوب"; 5 -> "المهام"; 7 -> "الإعدادات"; else -> "تبويب $i" })
                 dockUi?.refresh()   // (v344) المشغّل المصغّر بيختفي
                 stripUi?.hidden = (curTab == 5)   // (v345) في صفحة الموسيقى وبيظهر في الباقي
                 lib.root.visibility = if (i == 0) View.VISIBLE else View.GONE
@@ -1799,7 +1801,7 @@ class MainActivity : Activity() {
     }
     /** (v472) دوسة على مهمة خالصة في صفحة المهام = افتح الفيديو/الصوت اللي طلع منها في مشغّل البرنامج */
     fun openTaskOutput(t: TaskItem) {
-        val u: Uri? = t.outUri ?: (if (t.outPath.startsWith("/") && java.io.File(t.outPath).isFile) Uri.fromFile(java.io.File(t.outPath)) else null)
+        val u: Uri? = t.outUri ?: (if (t.outPath.startsWith("/") && java.io.File(t.outPath).isFile) Uri.fromFile(java.io.File(t.outPath)) else if (t.state != 2 && t.partPath.isNotEmpty() && java.io.File(t.partPath).isFile) Uri.fromFile(java.io.File(t.partPath)) else null)
         if (u == null) { Notice.show(this, ("الملف مش متاح للفتح من هنا — موجود في: " + t.outPath.take(60)).toString(), 3400L); return }
         play("", u, !t.mime.startsWith("audio"))
     }

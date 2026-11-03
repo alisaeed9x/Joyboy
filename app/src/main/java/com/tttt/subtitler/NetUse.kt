@@ -28,11 +28,12 @@ object NetUse {
 
     /** طلب API: up = اللي اترفع، down = الرد */
     fun api(up: Long, down: Long) {
+        NetLedger.explicit("طلبات الترجمة", up, down)
         if (online) { onUp.addAndGet(up); onDown.addAndGet(down) } else { locUp.addAndGet(up); locDown.addAndGet(down) }
     }
     fun api(up: Long, reply: String) = api(up, try { reply.toByteArray(Charsets.UTF_8).size.toLong() } catch (_: Throwable) { reply.length.toLong() })
     /** تحميل صوت/فيديو من لينك (دايمًا بيتحسب على فيديوهات الإنترنت) */
-    fun media(n: Long) { if (n > 0) mediaDl.addAndGet(n) }
+    fun media(n: Long) { if (n > 0) { mediaDl.addAndGet(n); NetLedger.explicit("تحميل", 0L, n) } }
 
     fun localTotal() = locUp.get() + locDown.get()
     fun onlineTotal() = onUp.get() + onDown.get() + mediaDl.get()

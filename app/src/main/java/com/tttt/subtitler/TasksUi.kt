@@ -52,9 +52,19 @@ class TasksUi(private val act: Activity, private val ui: Ui, private val th: The
         refresh()
     }
 
+    private fun dlInfo(t: TaskItem): String {
+        if (t.dlDone <= 0L) return ""
+        val sp = if (t.dlSpeed > 0L && !t.paused) t.dlSpeed else 0L
+        var s = "\n💾 " + NetUse.fmt(t.dlDone) + (if (t.dlTotal > 0L) " / " + NetUse.fmt(t.dlTotal) else "")
+        if (sp > 0L) s += "  ·  ⚡ " + NetUse.fmt(sp) + "/ث"
+        if (sp > 0L && t.dlTotal > t.dlDone) { val r = (t.dlTotal - t.dlDone) / sp; s += "  ·  ⏱ باقي " + (if (r >= 3600L) String.format("%d:%02d:%02d", r / 3600, r % 3600 / 60, r % 60) else String.format("%d:%02d", r / 60, r % 60)) }
+        return s
+    }
+    private fun canPlayPart(t: TaskItem): Boolean = (t.state == 1 || t.state == 6) && t.partPath.isNotEmpty() && java.io.File(t.partPath).let { it.isFile && it.length() > 300_000L }
+
     private fun statusOf(t: TaskItem): String = when (t.state) {
         0 -> "⏳ في الانتظار"
-        1 -> (if (t.paused) "⏸ واقف مؤقتًا… " else "⚙ شغّال… ") + t.pct + "%" + (if (t.msg.isNotBlank()) "  ·  " + t.msg else "")
+        1 -> (if (t.paused) "⏸ واقف مؤقتًا… " else "⚙ شغّال… ") + t.pct + "%" + (if (t.msg.isNotBlank()) "  ·  " + t.msg else "") + dlInfo(t) + (if (canPlayPart(t)) "\n▶ دوس عشان تتفرج على اللي اتحمّل" else "")
         2 -> "✅ خلصت وتحفظت" + (if (t.outUri != null || t.outPath.isNotBlank()) "  ·  دوس عشان تفتحه" else "") + (if (t.outPath.isNotBlank()) "\n" + t.outPath else "") + (if (t.outSize > 0) "  ·  " + Sniff.fmtSize(t.outSize) else "")
         3 -> "❌ فشلت: " + t.msg
         5 -> "⏹ " + t.msg
@@ -96,8 +106,9 @@ class TasksUi(private val act: Activity, private val ui: Ui, private val th: The
     private fun paint(t: TaskItem, r: Row) {
         r.status.text = statusOf(t)
         val openable = t.state == 2 && (t.outUri != null || t.outPath.isNotBlank())   // (v472) المهمة الخالصة كلها قابلة للدوس = فتح الفيديو
-        r.card.setOnClickListener(if (openable) View.OnClickListener { openOut(t) } else null)
-        r.card.isClickable = openable
+        val playPart = canPlayPart(t)
+        r.card.setOnClickListener(if (openable || playPart) View.OnClickListener { openOut(t) } else null)
+        r.card.isClickable = openable || playPart
         r.bar.visibility = if (t.state == 1 || t.state == 0) View.VISIBLE else View.GONE
         r.bar.progress = t.pct
         r.btns.removeAllViews()
@@ -110,6 +121,11 @@ class TasksUi(private val act: Activity, private val ui: Ui, private val th: The
         act4(four, "✕ إلغاء", t.state != 2) { TaskCenter.cancel(t) }
         act4(four, "🔁 إعادة", t.workKeep != null) { TaskCenter.retry(t) }
         r.btns.addView(four, LinearLayout.LayoutParams(-1, -2))
+        if (playPart) {
+            val one = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL }
+            act4(one, "▶ شغّل اللي اتحمّل لحد دلوقتي", true) { openOut(t) }
+            r.btns.addView(one, LinearLayout.LayoutParams(-1, -2).apply { topMargin = ui.dp(2) })
+        }
         if (t.state == 2) {
             val two = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL }
             if (t.outUri != null) { act4(two, "▶ فتح", true) { openOut(t) }; act4(two, "📤 مشاركة", true) { open(t, true) } }

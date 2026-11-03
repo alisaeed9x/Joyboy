@@ -3553,6 +3553,7 @@ class PlayerActivity : Activity(), Host {
         say("🔎 مفيش جملة فيها «" + t.take(20) + "»")
     }
     override fun onCreate(b: Bundle?) {
+        NetLedger.start(this); NetGate.apply(this)
         super.onCreate(b)
         smoothRotation()   // (v429)
         synchronized(liveList) {
@@ -5129,7 +5130,7 @@ class PlayerActivity : Activity(), Host {
     private fun initEngine() {
         if (remote) { initRemoteEngine(); return }
         vid = videoId()
-        NetUse.init(); NetUse.online = (uri == null)   // عدّاد النت: فيديو الإنترنت بيتحسب لوحده
+        NetLedger.setVideo("player", try { notifTitle() } catch (_: Throwable) { null }); NetUse.init(); NetUse.online = (uri == null)   // عدّاد النت: فيديو الإنترنت بيتحسب لوحده
         if (uri == null && url != null && !incognito) webRegister()
         offsetMs = (Cfg.str("sub_offset_ms:$vid", "0").toLongOrNull() ?: 0L).coerceIn(-10000L, 10000L)   // (v468) قص القيم المحفوظة القديمة لحد ±10ث
         runCatching { offFsB?.text = String.format("%+.2fs", offsetMs / 1000.0) }
