@@ -350,7 +350,9 @@ object PlayerPad {
                 opt(body, "📂 اختار ملف ترجمة من الموبايل (SRT / ASS / VTT)") { close(); pickSubFromPhone() }
                 if (mob.isNotBlank()) opt(body, "📄 ترجم الملف المستورد «$mob»") { close(); openSfSettings("mobile", "📄 الملف المستورد: «$mob»") }
             }
-            fun sheetTr() = sheet("🔤 الترجمة") { body, _, close ->
+            var wtSel = ""
+            fun sheetTr() = sheet("🔤 الترجمة") { body, redo, close ->
+                if (wtSel.isEmpty()) wtSel = st.optString("wtr", "free")
                 body.addView(label(st.optString("tr", "▶ ترجم") + "   ·   " + st.optString("mode", ""), 13f, cDim, false), lp(-1, -2).apply { topMargin = dp(6) })
                 opt(body, "📄 ترجمة ملف ترجمة (المرفق مع الفيديو أو من الموبايل)") { close(); sheetSubFile() }
                 if (!started && st.optBoolean("tpart", false)) {
@@ -362,12 +364,17 @@ object PlayerPad {
                 if (!started) {
                     grp(body, "🎧 من الصوت مباشرة — أدق · محتاج نت")
                     opt(body, "⭐ FreeLLM · جيميناي بكل مفاتيحك") { go("tr_free"); close() }
-                    grp(body, "🌗 على الجهاز — وشبر يفرّغ وبعدين مترجم")
-                    opt(body, "🌗 وشبر + مترجم") { go("tr_whisper"); close() }
+                    grp(body, "🌗 على الجهاز — وشبر يفرّغ وبعدين مترجم (اختار الوضع)")
+                    opt(body, (if (wtSel == "free") "✓ " else "") + "🆓 وضع 1: وشبر + FreeLLM — لهجات وعربي أدق") { wtSel = "free"; go("wtr:free"); redo() }
+                    opt(body, (if (wtSel == "google") "✓ " else "") + "🌐 وضع 2: وشبر + مترجم عادي — فصحى") { wtSel = "google"; go("wtr:google"); redo() }
+                    opt(body, "▶ ابدأ وشبر بالوضع المختار") { go("tr_whisper"); close() }
                     grp(body, "✍ تفريغ بس (من غير ترجمة)")
                     opt(body, "☁ بجيميناي (من الصوت)") { go("tr_gtx"); close() }
                     opt(body, "📴 على الجهاز بوشبر") { go("tr_wtx"); close() }
                 } else {
+                    grp(body, "🌗 مترجم وضع وشبر (من الباتش الجاي)")
+                    opt(body, (if (wtSel == "free") "✓ " else "") + "🆓 وشبر + FreeLLM (لهجات)") { wtSel = "free"; go("wtr:free"); redo() }
+                    opt(body, (if (wtSel == "google") "✓ " else "") + "🌐 وشبر + مترجم عادي (فصحى)") { wtSel = "google"; go("wtr:google"); redo() }
                     opt(body, if (paused) "▶ كمّل الترجمة" else "⏸ إيقاف مؤقت") { go(if (paused) "tr_resume" else "tr_pause"); close() }
                     opt(body, "🔀 غيّر الوضع (بيفتح على التلفزيون)") { go("tr_wiz"); close() }
                     opt(body, "🌙 كمّل الترجمة في الخلفية") { go("tr_bg"); close() }
@@ -439,11 +446,13 @@ object PlayerPad {
             // ── فوق: إغلاق + عنوان الفيديو ──
             val ttlTv = label("", 14f, 0xFFB0BEC5.toInt(), false).apply { maxLines = 1; ellipsize = TextUtils.TruncateAt.END }
             val headRow = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_LTR; gravity = Gravity.CENTER_VERTICAL }
-            headRow.addView(btn("→ رجوع", 14f, 0xFF2563EB.toInt(), 0xFF5B8DEF.toInt()) { d.dismiss() }, lp(dp(92), dp(44)))   // (v700) زرار رجوع واضح للريموت
+            headRow.addView(btn("→ رجوع", 13f, 0xFF2563EB.toInt(), 0xFF5B8DEF.toInt()) { d.dismiss() }, lp(dp(78), dp(44)))   // (v700) زرار رجوع واضح للريموت
             headRow.addView(ttlTv, lp(0, -2, 1f).apply { leftMargin = dp(10) })
             val handoffB = btn("📱", 18f, 0xFF2563EB.toInt(), 0xFF5B8DEF.toInt()) { PlayQueueUi.handoffToPhone(act) { try { d.dismiss() } catch (_: Throwable) {}; try { onLeave?.invoke() } catch (_: Throwable) {} } }.apply { visibility = View.GONE }   // (v694) كمّل الفيديو ده على الموبايل من نفس الثانية
             headRow.addView(handoffB, lp(dp(48), dp(44)).apply { leftMargin = dp(6) })
-            headRow.addView(btn("🎞", 18f) { PlayQueueUi.show(act) }, lp(dp(48), dp(44)).apply { leftMargin = dp(6) })   // (v694) طابور التشغيل
+            val speedTop = btn("⏩ 1x", 13f) { sheetSpeed() }   // (v712) زرار السرعة (1x / 2x …) ظاهر دايمًا فوق
+            headRow.addView(speedTop, lp(dp(66), dp(44)).apply { leftMargin = dp(6) })
+            headRow.addView(btn("🕘", 18f) { RecentPicker.show(act) }, lp(dp(48), dp(44)).apply { leftMargin = dp(6) })   // (v712) سجل المشاهدة (التلفزيون + الموبايل) — الطابور اتنقل لتاب 🧰 أدوات
 
             // ── عدّاد الجمل (صوتي أو بصري) — دوسة = لوج الترجمة على التلفزيون ──
             val cntTv = label("—", 28f)
@@ -476,7 +485,7 @@ object PlayerPad {
             val speedB = btn("⏩ 1x", 16f) { sheetSpeed() }
             val aiB = fillable(btn("✨ لهجة وترجمة", 14f) { sheetAi() }, "*")
             val quick = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_LTR }
-            quick.addView(speedB, lp(0, dp(52), 0.8f)); quick.addView(aiB, lp(0, dp(52), 1.3f).apply { marginStart = dp(8) })
+            quick.addView(aiB, lp(0, dp(52), 1f))   // (v712) السرعة فوق جنب 🕘 — شلت المكرر هنا
 
             // ── تابات الإعدادات: 🔤 نص · ⏱ تزامن · 🗣 ذكاء · 🧰 أدوات ──
             fun newBody(): LinearLayout = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; visibility = View.GONE }
@@ -518,9 +527,7 @@ object PlayerPad {
             bodySync.addView(btn("⏱ شريط التزامن السريع", 13f) { go("syncstrip") }, lp(-1, dp(44)).apply { topMargin = dp(8) })
             // 🗣 ذكاء
             val bodyAi = newBody()
-            val aiBtnSettings = fillable(btn("🗣 لهجة وأسلوب وشدة…", 13f) { sheetAi() }, "*")
-            bodyAi.addView(aiBtnSettings, lp(-1, dp(46)).apply { topMargin = dp(6) })
-            bodyAi.addView(btn("📄 ترجمة ملف ترجمة…", 13f) { sheetSubFile() }, lp(-1, dp(46)).apply { topMargin = dp(6) })
+            val aiBtnSettings = fillable(btn("🗣 لهجة وأسلوب وشدة…", 13f) { sheetAi() }, "*")   // (v712) بقى مش في الصفحة (مكرر مع ✨ لهجة وترجمة) — بيفضل متعرّف عشان render
             bodyAi.addView(label("أدوات الذكاء (دوسة واحدة)", 12f, cDim).apply { gravity = Gravity.START or Gravity.CENTER_VERTICAL }, lp(-1, -2).apply { topMargin = dp(10) })
             val aiTools = kotlin.collections.listOf("✍ تنقيح" to "refine", "🔥 لهجة +" to "dial", "🧹 عائلي" to "family", "🔞 صريح" to "explicit", "🔧 ضمائر" to "pron", "🧠 دمج مكرر" to "dedup")
             grid(bodyAi, aiTools.map { pr -> fillable(btn(pr.first, 12.5f) { if (started) tapFill(pr.second); go("ai:" + pr.second) }, pr.second) }, 2, 46)
@@ -545,7 +552,13 @@ object PlayerPad {
             val killB = btn("⏹\nإغلاق الفيديو", 12f, 0xFF3B1A22.toInt(), 0xFF7A2B3A.toInt()) {
                 android.app.AlertDialog.Builder(act).setMessage("أقفل الفيديو على التلفزيون؟").setPositiveButton("اقفل") { _, _ -> go("close") }.setNegativeButton("لأ", null).show()
             }
-            grid(bodyTools, kotlin.collections.listOf(ccB, fitB, rotB, dualB, loopB, visB, sentB, charsB, subsB, qB, aB, lockB, notB, menuB, toolsB, moreB, killB), 2, 60)
+                        val pipB = btn("⧉\nنافذة صغيرة", 12f) { go("pip") }   // (v712) كانت ناقصة من الريموت
+            val voiceB = btn("🎙\nفصل صوت الكلام", 12f) { go("voice") }
+            val bgB = btn("◼\nخلفية الترجمة", 12f) { go("bgon") }
+            val logB = btn("📜\nاللوج", 12f) { go("log") }
+            val nextB = btn("📃\nالفيديوهات الجاية", 12f) { go("nextlist") }
+            val queueB = btn("🎞\nطابور التشغيل", 12f) { PlayQueueUi.show(act) }
+            grid(bodyTools, kotlin.collections.listOf(fitB, rotB, loopB, visB, sentB, charsB, subsB, qB, aB, pipB, voiceB, bgB, nextB, queueB, lockB, notB, menuB, toolsB, moreB, killB), 2, 60)
             val bodies = kotlin.collections.listOf(bodyText, bodySync, bodyAi, bodyTools)
             val tabNames = kotlin.collections.listOf("🔤 نص", "⏱ تزامن", "🗣 ذكاء", "🧰 أدوات")
             val tabBtns = ArrayList<TextView>()
@@ -606,8 +619,17 @@ object PlayerPad {
             left.addView(sc, lp(-1, 0, 1f).apply { topMargin = dp(4) })
 
             // ── الصوت: سلايدر رأسي طولي = 60% من طول الصفحة، على الجنب + كتم ──
-            val vol = VertVolume(act) { p -> RemoteClient.setVolume(p) }
-            val muteB = btn("🔇", 20f) { RemoteClient.cmd("mute") }
+            var volTouchAt = 0L; var muteBack = -1
+            fun liveNow() = LinkSession.mirror.live && LinkSession.mirror.gotFirst
+            /** (v712) فيديو شغّال على التلفزيون ← نفس مسار إشعار القفل (volume.set: بيراعي الصوت الثابت والتضخيم)؛ غير كده صوت النظام */
+            fun sendVol(p: Int) { volTouchAt = System.currentTimeMillis(); if (liveNow()) TvVolume.setTo(p) else RemoteClient.setVolume(p) }
+            val vol = VertVolume(act) { p -> sendVol(p) }
+            val muteB = btn("🔇", 20f) {
+                if (liveNow()) {
+                    val c = vol.value
+                    if (c > 0) { muteBack = c; vol.setValue(0); sendVol(0) } else { val b = if (muteBack > 0) muteBack else 50; vol.setValue(b); sendVol(b) }
+                } else RemoteClient.cmd("mute")
+            }
             val volH = minOf((dm.heightPixels * 0.60f).toInt(), dm.heightPixels - dp(330)).coerceAtLeast(dp(180))
             val volCol = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER_HORIZONTAL or Gravity.CENTER_VERTICAL }
             volCol.addView(muteB, lp(-1, dp(46)))
@@ -623,7 +645,7 @@ object PlayerPad {
             val lgB = fillable(btn("🌐", 18f) { sheetAi() }, "*")
             val trRow = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_LTR; gravity = Gravity.CENTER_VERTICAL }
             trRow.addView(trB, lp(0, dp(52), 2.6f))
-            for (b in kotlin.collections.listOf(pzB, wzB, rdB, lgB)) trRow.addView(b, lp(0, dp(52), 1f).apply { marginStart = dp(6) })
+            for (b in kotlin.collections.listOf(pzB, wzB, rdB)) trRow.addView(b, lp(0, dp(52), 1f).apply { marginStart = dp(6) })
 
             // ── أزرار التحكم ──
             val playB = btn("▶", 28f, 0xFF2563EB.toInt(), 0xFF3B82F6.toInt()) { go("toggle") }
@@ -709,6 +731,8 @@ object PlayerPad {
                 for (k in 0 until left.childCount) { val c = left.getChildAt(k); c.alpha = if (c === idleBox) 1f else al }   // (v691) التعتيم من غير الأزرار التلاتة
                 volCol.alpha = al; tr.alpha = al; trRow.alpha = al; bar.alpha = al
                 speedB.text = "⏩ " + s.optString("speed", "1x")
+                speedTop.text = "⏩ " + s.optString("speed", "1x")
+                if (!busy) wtSel = s.optString("wtr", wtSel.ifEmpty { "free" })
                 trB.text = s.optString("tr", "▶ ترجم") + " ▾"
                 trB.background = bg(s.optInt("trcolor", 0xFFE53935.toInt()), 0x66FFFFFF, 18f)
                 fontTv.text = "🔠 الخط: " + s.optString("font", "—")
@@ -746,7 +770,7 @@ object PlayerPad {
             val tick = object : Runnable {
                 override fun run() {
                     if (closed) return
-                    try { render(); val v = RemoteClient.tvVol; if (v >= 0 && !vol.dragging) vol.setValue(v) } catch (e: Throwable) { LogStore.err("PlayerPad:tick", e) }
+                    try { render(); val v = if (liveNow()) TvVolume.current().coerceAtMost(100) else RemoteClient.tvVol; if (v >= 0 && !vol.dragging && System.currentTimeMillis() - volTouchAt > 1500L) vol.setValue(v) } catch (e: Throwable) { LogStore.err("PlayerPad:tick", e) }
                     hh.postDelayed(this, 250L)
                 }
             }
@@ -757,6 +781,15 @@ object PlayerPad {
                 try { LinkSession.removeListener(lsn) } catch (_: Throwable) {}
                 try { act.requestedOrientation = oldOri } catch (_: Throwable) {}
                 if (startedHere) { try { LinkSession.stop() } catch (_: Throwable) {} }
+            }
+            d.setOnKeyListener { _, code, ev ->   // (v712) زراري الفوليوم بتاعة الموبايل وانت جوه الصفحة: بيتحكموا في صوت التلفزيون والسلايدر يتحرك معاهم
+                if (code == android.view.KeyEvent.KEYCODE_VOLUME_UP || code == android.view.KeyEvent.KEYCODE_VOLUME_DOWN) {
+                    if (ev.action == android.view.KeyEvent.ACTION_DOWN) {
+                        val n = TvVolume.next(vol.value, if (code == android.view.KeyEvent.KEYCODE_VOLUME_UP) 1 else -1).coerceIn(0, 100)
+                        vol.setValue(n); sendVol(n)
+                    }
+                    true
+                } else false
             }
             d.setCancelable(true)   // (v700) زرار رجوع الموبايل بيقفل الصفحة
             d.window?.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)

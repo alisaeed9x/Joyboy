@@ -665,7 +665,7 @@ object RecentPicker {
 
             // ── قايمة الموبايل: recent.json بتاع الموبايل نفسه ──
             val phone: List<Item> = try {
-                Recents.parse(java.io.File(act.filesDir, "recent.json").readText()).take(40)
+                Recents.merged(act, 60)
                     .map { Item(it.id, it.title.ifBlank { Recents.titleOf(it.id) }, it.posSec, it.durSec, Recents.ytIdOf(it) != null, it.uri.isNotEmpty(), it, Recents.ytIdOf(it) ?: "") }
             } catch (_: Throwable) { emptyList() }
             fun playPhone(r: Recent) {

@@ -101,6 +101,7 @@ class PlayerActivity : Activity(), Host {
         j.put("dur", durMs)
         j.put("playing", try { player.isPlaying } catch (_: Throwable) { false })
         j.put("speed", PlayerLogic.speedLabel(speed))
+        j.put("wtr", try { wTr() } catch (_: Throwable) { "free" })   // (v712) مترجم وضع وشبر الحالي
         j.put("fit", fitNameOf(curFit()))
         j.put("cc", ccOn)
         j.put("scale", Cfg.int("sub_scale", 100))
@@ -608,6 +609,9 @@ class PlayerActivity : Activity(), Host {
             "redo" -> redoDialog(anchor)
             "modeset" -> modeSettings(anchor)
             "posy" -> { val n = (Cfg.int("sub_posy", 0) + v.toInt()).coerceIn(0, 240); Cfg.put("sub_posy", n.toString()); try { restyleFn() } catch (_: Throwable) {}; curIdx = -2; say("↕ موضع الترجمة: $n") }
+            "pip" -> runOnUiThread { try { enterPip() } catch (e: Throwable) { LogStore.err("Player:rpip", e) } }   // (v712) نافذة صغيرة من الريموت
+            "voice" -> runOnUiThread { try { voiceMenu() } catch (e: Throwable) { LogStore.err("Player:rvoice", e) } }   // (v712) فصل صوت الكلام
+            "nextlist" -> runOnUiThread { try { openNextSheet() } catch (e: Throwable) { LogStore.err("Player:rnext", e) } }   // (v712) 📃 التالي (يوتيوب)
             "tr_free" -> freeGemStart()
             "tr_whisper" -> whisperStart()
             "tr_gtx" -> startGeminiTranscribe()
@@ -623,7 +627,8 @@ class PlayerActivity : Activity(), Host {
                 Cfg.put("sub_font", n.id); try { restyleFn() } catch (_: Throwable) {}; say("🔤 " + n.label)
             }
             else -> {   // (v529) 📄 ترجمة ملف الترجمة من الموبايل · (v682) لهجة / أسلوب / أدوات الذكاء من صفحة المشغّل
-                if (a.startsWith("subfile:")) sfRemote(a)
+                if (a.startsWith("wtr:")) runOnUiThread { try { setWhisperTr(a.substring(4)) } catch (e: Throwable) { LogStore.err("Player:rwtr", e) } }   // (v712) اختيار مترجم وضع وشبر من الريموت (free / google)
+                else if (a.startsWith("subfile:")) sfRemote(a)
                 else if (a.startsWith("sfgo:")) sfGo(a)
                 else if (a.startsWith("dialect:") || a.startsWith("tone:") || a.startsWith("ai:")) {
                     if (!(::engine.isInitialized && engineStarted)) say("✨ ابدأ الترجمة الأول")
@@ -1614,6 +1619,10 @@ class PlayerActivity : Activity(), Host {
     var url: String? = null
     var aurl: String? = null
     private var qOpts: List<YtExtract.Opt> = emptyList()   // (v118) جودات يوتيوب
+        set(v) {   // (v713) أي ما تتحمّل جودات يوتيوب (غالبًا في الخلفية بعد رسم الشريط) زرار الجودة يتعاد رسمه — كان بيفضل مخفي
+            field = v
+            try { window.decorView.post { try { setQualLabel(qOpts.getOrNull(qCur)?.h ?: 0) } catch (_: Throwable) {} } } catch (_: Throwable) {}
+        }
     private var qCur = -1
     private var hlsH = 0                                   // جودة HLS المثبّتة (0 = تلقائي)
     private var qualBRef: TextView? = null
@@ -4885,6 +4894,8 @@ class PlayerActivity : Activity(), Host {
         WebMute.pauseAll()
         player.exo()?.setVideoSurfaceView(sv)
         applyBoost()
+        // (v714) الجودة اللي مختارها في الإعدادات (yt_maxh) هي الحد الأقصى لفيديوهات المتصفح/HLS: أعلى جودة لحد الحد ده، ولو مفيش ينزل تحتها — وما يطلعش فوقه إلا لما تختار بإيدك من زرار الجودة
+        try { val mh = Cfg.int("yt_maxh", 0); if (mh > 0 && uri == null) player.exo()?.let { xp -> xp.trackSelectionParameters = xp.trackSelectionParameters.buildUpon().setMaxVideoSize(Int.MAX_VALUE, mh).build() } } catch (e: Throwable) { LogStore.err("Player:maxh", e) }
         player.setPlaybackSpeed(speed)
         var firstFrame = false
         val plst = object : Player.Listener {
@@ -4931,7 +4942,7 @@ class PlayerActivity : Activity(), Host {
                 nativeCue = cueGroup.cues.mapNotNull { it.text?.toString()?.trim() }.filter { it.isNotEmpty() }.joinToString("\n")
             }
             override fun onTracksChanged(t: Tracks) {
-                try { runOnUiThread { paintAud() } } catch (_: Throwable) {}
+                try { runOnUiThread { paintAud(); paintQual() } } catch (_: Throwable) {}   // (v714) جودات HLS بتظهر هنا — زرار الجودة يظهر أول ما تتعرف
                 try {
                     if (!textPicked) {
                         val tg = t.groups.filter { it.type == C.TRACK_TYPE_TEXT && it.length > 0 && it.isSupported }

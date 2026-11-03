@@ -60,8 +60,12 @@ object ExtTranslate {
         prim?.let { steps.add(it) }
         if (semiLibre()) {   // (v423) 🌗 وشبر + LibreTranslate بدل جوجل: ليبرا أول واحد بعد محركات الـLLM، وبعده Edge/ML Kit — جوجل الداخلي مش في السلسلة خالص
             val lb = rest.firstOrNull { it.id == "libre" }
-            lb?.let { steps.add(it) }
-            steps.addAll(rest.filter { it.id != "libre" })
+            val ed = rest.firstOrNull { it.id == "msedge" }
+            // (v712) ليبرا العام بيترجم عربي «لزق» (كلمة بكلمة): إلا لو ضبطت سيرفرك بنفسك، Edge الأول وبعده ليبرا، وجوجل الداخلي ملاذ أخير
+            if (Cfg.str("libre_url").isNotBlank()) { lb?.let { steps.add(it) }; ed?.let { steps.add(it) } }
+            else { ed?.let { steps.add(it) }; lb?.let { steps.add(it) } }
+            steps.addAll(rest.filter { it.id != "libre" && it.id != "msedge" })
+            steps.add(null)
             return steps
         }
         if (externalFirst()) { steps.addAll(rest); steps.add(null) } else { steps.add(null); steps.addAll(rest) }

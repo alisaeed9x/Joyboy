@@ -76,6 +76,25 @@ object Recents {
         }
     }
 
+    /** (v712) سجل المشاهدة الكامل: آخر المشغّلة (recent.json) + سجل المشاهدة (PubHistory: متصفح / يوتيوب / ملفات) — مرتّب بالأحدث ومن غير تكرار */
+    fun merged(ctx: android.content.Context, max: Int = 60): List<Recent> {
+        val base = try { parse(java.io.File(ctx.filesDir, "recent.json").readText()) } catch (_: Exception) { emptyList() }
+        val out = ArrayList<Recent>(base)
+        val seen = HashSet<String>(); for (r in base) { seen.add(r.id); ytIdOf(r)?.let { seen.add("yt:" + it) }; if (r.uri.isNotEmpty()) seen.add(r.uri); if (r.url.isNotEmpty()) seen.add(r.url) }
+        try {
+            for (src in listOf("youtube", "browser", "local")) for (x in PubHistory.list("v", src)) {
+                val ref = x.ref
+                val r: Recent = when (src) {
+                    "youtube" -> { if ("yt:" + ref in seen) continue; Recent("yt:" + ref, x.title, "", "", 0.0, 0.0, 0, 0.0, x.ts) }
+                    "local" -> { if (ref in seen) continue; Recent(ref, x.title, "", ref, 0.0, 0.0, 0, 0.0, x.ts) }
+                    else -> { if (ref in seen) continue; Recent(ref, x.title, ref, "", 0.0, 0.0, 0, 0.0, x.ts) }
+                }
+                seen.add(if (src == "youtube") "yt:" + ref else ref); out.add(r)
+            }
+        } catch (_: Throwable) {}
+        return out.sortedByDescending { it.ts }.take(max)
+    }
+
     fun titleOf(videoId: String): String {
         if (videoId.startsWith("yt:")) return "يوتيوب · " + videoId.removePrefix("yt:")
         val raw = videoId.removePrefix("f:").removePrefix("u:")

@@ -462,11 +462,12 @@ class BrowserActivity : Activity() {
         // (v594) علامة الاصطياد بقت كبسولة بتطلع من الجنب الشمال بدل الشريط السفلي؛ دوسة عليها بتفتح نافذة عايمة صغيرة
         badge = IconButton(this).apply {
             isAllCaps = false; textSize = 14f; visibility = View.GONE; minWidth = 0; minimumWidth = 0; stateListAnimator = null
-            setTextColor(if (th.isLight) Color.WHITE else Color.BLACK); setPadding(ui.dp(14), 0, ui.dp(10), 0)
-            val r = ui.dp(20).toFloat()
-            background = android.graphics.drawable.GradientDrawable().apply { setColor(th.primary); cornerRadii = floatArrayOf(r, r, 0f, 0f, 0f, 0f, r, r); setStroke(ui.dp(1), 0x66FFFFFF) }
+            setTextColor(if (th.isLight) Color.WHITE else Color.BLACK); setPadding(0, 0, 0, 0); gravity = Gravity.CENTER
+            // (v715) علامة الاصطياد: دايرة صغيرة؛ دوسة واحدة = يلقط الفيديو ويحمّله (لو أكتر من فيديو بتفتح القايمة)
+            background = android.graphics.drawable.GradientDrawable().apply { shape = android.graphics.drawable.GradientDrawable.OVAL; setColor(th.primary); setStroke(ui.dp(1), 0x66FFFFFF) }
             elevation = ui.dp(6).toFloat(); alpha = 0.95f
-            setOnClickListener { showList() }
+            setOnClickListener { badgeTap() }
+            setOnLongClickListener { showList(); true }
         }
         dlTxt = IconTextView(this).apply { textSize = 13f; setTextColor(th.text); maxLines = 2; ellipsize = TextUtils.TruncateAt.END; gravity = Gravity.CENTER }
         dlLine = View(this).apply { setBackgroundColor(th.primary) }
@@ -524,7 +525,7 @@ class BrowserActivity : Activity() {
             addView(webHolder, FrameLayout.LayoutParams(-1, -1))
             addView(panicCover, FrameLayout.LayoutParams(-1, -1))
             addView(panicCol, FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM or Gravity.RIGHT).apply { setMargins(0, 0, ui.dp(4), ui.dp(8)) })
-            addView(badge, FrameLayout.LayoutParams(-2, ui.dp(40), Gravity.RIGHT or Gravity.CENTER_VERTICAL))   // (v595) كبسولة الاصطياد على الجنب اليمين
+            addView(badge, FrameLayout.LayoutParams(ui.dp(52), ui.dp(52), Gravity.RIGHT or Gravity.CENTER_VERTICAL).apply { rightMargin = ui.dp(6) })   // (v595) كبسولة الاصطياد على الجنب اليمين
             if (!tvOn) {   // (v647) الزرار العايم ①
                 addView(buildCoButtons(), FrameLayout.LayoutParams(-2, -2, Gravity.LEFT or Gravity.CENTER_VERTICAL))   // (v648) لسانين على الجنب الشمال: بعيد عن لسان 📺/الريموت وأزرار المتصفح (يمين)
             }
@@ -1560,8 +1561,8 @@ class BrowserActivity : Activity() {
         if (t !== tabs.getOrNull(curIdx)) return
         refreshBadge()
         if (repairId != null && !repairPending) { repairPending = true; h.postDelayed({ repairPending = false; autoRepair() }, 2000L) }   // نستنى ثانيتين عشان باقي الجودات توصل
-        if (autoOpen && !autoShown) { autoShown = true; showList() }
-        else if (dlg?.isShowing != true && vis().size == 1) Notice.show(this, "🎬 لقيت فيديو", 2300L)
+        // (v715) من غير فتح القايمة لوحدها: العلامة الدايرة بتظهر وإنت تدوس عليها
+        if (dlg?.isShowing != true && vis().size == 1) Notice.show(this, "🎬 لقيت فيديو", 2300L)
     }
 
     // ===== (v401) مانع البوب-أب الذكي =====
@@ -1681,6 +1682,17 @@ class BrowserActivity : Activity() {
     }
     /** اللقطات الحالية للتبويب اللي قدامك (صفحته الحالية بس) */
     private fun vis(): List<Found> { val t = tabs.getOrNull(curIdx) ?: return emptyList(); return items.filter { it.tabId == t.id && it.gen == t.gen } }
+    /** (v715) دوسة على الدايرة: فيديو واحد ← يتحمّل على طول بالجودة المختارة (yt_maxh أو أقرب أقل منها)، غير كده ← القايمة */
+    private fun badgeTap() {
+        try {
+            val gs = groupsOf(vis())
+            if (gs.size == 1 && gs[0].qs.isNotEmpty()) {
+                val g = gs[0]; val mh = Cfg.int("yt_maxh", 0)
+                val q = if (mh > 0) (g.qs.filter { it.h in 1..mh }.maxByOrNull { it.h } ?: g.qs.filter { it.h > 0 }.minByOrNull { it.h } ?: g.qs.first()) else g.qs.first()
+                dlVideo(g, q)
+            } else showList()
+        } catch (e: Throwable) { LogStore.err("Browser:badgeTap", e); showList() }
+    }
     private fun refreshBadge() {
         val n = groupsOf(vis()).size
         if (n == 0) { badge.visibility = View.GONE; hint.visibility = View.VISIBLE }
@@ -2102,8 +2114,23 @@ class BrowserActivity : Activity() {
                     if (pk.url == f.url || o != null) { putExtra("aurl", audio ?: o?.audio ?: (if (pk.url == f.url) pk.audio else null) ?: ""); putExtra("qlist", pk.optsJson()) }
                 }
             }
-            if (yid.isEmpty()) try { webQlist(f)?.let { putExtra("qlist", it) } } catch (e: Throwable) { LogStore.err("Browser:wq", e) }
-            putExtra("url", f.url); putExtra("ref", f.ref)
+            var openUrl = f.url
+            if (yid.isEmpty()) try {
+                val ql = webQlist(f)
+                ql?.let { putExtra("qlist", it) }
+                // (v714) فيه كذا جودة: افتح على الجودة اللي مختارها (yt_maxh) — أعلى واحدة لحد الحد ده، ولو مفيش ينزل لأقل واحدة؛ مش أعلى القايمة
+                val mh = Cfg.int("yt_maxh", 0)
+                if (ql != null && mh > 0) {
+                    val qa = JSONArray(ql); var best: JSONObject? = null; var low: JSONObject? = null; var cur = 0
+                    for (i in 0 until qa.length()) { val q = qa.getJSONObject(i); val h = q.optInt("h"); if (Sniff.key(q.optString("u")) == Sniff.key(f.url)) cur = h
+                        if (h <= 0) continue
+                        if (h <= mh && (best == null || h > best.optInt("h"))) best = q
+                        if (low == null || h < low.optInt("h")) low = q }
+                    val pk = best ?: low
+                    if (pk != null && cur > mh && pk.optString("u").isNotEmpty()) openUrl = pk.optString("u")
+                }
+            } catch (e: Throwable) { LogStore.err("Browser:wq", e) }
+            putExtra("url", openUrl); putExtra("ref", f.ref)
             putExtra("cookie", try { CookieManager.getInstance().getCookie(f.url) ?: "" } catch (_: Throwable) { "" })
             putExtra("ua", f.ua.ifEmpty { uaWeb }); putExtra("title", titleFor(f)); putExtra("nosub", noSub); putExtra("autotr", !noSub); putExtra("incognito", tabs.getOrNull(curIdx)?.let { it.priv && !it.auto } == true); putExtra("hsite", tabs.getOrNull(curIdx)?.let { SiteBlock.keyOf(it.url)?.let { k -> SiteBlock.has(this@BrowserActivity, k) } } == true); putExtra("ret", "browser")
         })

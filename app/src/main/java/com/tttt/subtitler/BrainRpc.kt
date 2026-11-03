@@ -157,7 +157,7 @@ object BrainRpc {
     /** (v680) صورة مصغّرة لعنصر من «آخر المشغّلة» على التلفزيون (بالـid): ملف محلي ← من مكتبة التلفزيون · لينك ← اللقطة المحفوظة · يوتيوب ← الموبايل بيجيبها من يوتيوب */
     fun recentThumb(app: Context, r: HttpReq): HttpRes {
         val id = r.query["id"] ?: return jerr(403, "bad")
-        val rc = try { Recents.parse(java.io.File(app.filesDir, "recent.json").readText()).firstOrNull { it.id == id } } catch (_: Throwable) { null } ?: return jerr(404, "nf")
+        val rc = try { Recents.merged(app, 80).firstOrNull { it.id == id } } catch (_: Throwable) { null } ?: return jerr(404, "nf")
         var bmp: Bitmap? = null
         if (rc.uri.isNotEmpty()) {
             val vi = items(app, false)?.firstOrNull { it.uri == rc.uri } ?: LinkThumb.asItem(rc)   // (v690) من برا مكتبة الفحص: لقطة من الفيديو نفسه

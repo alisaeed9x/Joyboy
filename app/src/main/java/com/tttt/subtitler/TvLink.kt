@@ -632,9 +632,9 @@ object TvLink {
 
     /** (v678) آخر الفيديوهات المشغّلة على التلفزيون (نفس ترتيب رئيسية التلفزيون) — الموبايل بيعرضها جنب قايمته */
     private fun recentList(): HttpRes {
-        val l = try { Recents.parse(java.io.File(app.filesDir, "recent.json").readText()) } catch (_: Exception) { emptyList() }
+        val l = try { Recents.merged(app, 60) } catch (_: Exception) { emptyList() }   // (v712) + سجل المشاهدة
         val a = JSONArray()
-        for (r in l.take(40)) a.put(JSONObject().put("id", r.id).put("title", r.title.ifBlank { Recents.titleOf(r.id) })
+        for (r in l.take(60)) a.put(JSONObject().put("id", r.id).put("title", r.title.ifBlank { Recents.titleOf(r.id) })
             .put("pos", r.posSec).put("dur", r.durSec).put("yt", Recents.ytIdOf(r) != null).put("ytid", Recents.ytIdOf(r) ?: "").put("local", r.uri.isNotEmpty()))
         return ok(JSONObject().put("items", a))
     }
@@ -643,7 +643,7 @@ object TvLink {
     private fun recentPlay(r: HttpReq): HttpRes {
         val j = try { JSONObject(r.bodyText()) } catch (_: Exception) { return err(403, "bad") }
         val id = j.optString("id")
-        val found: Recent? = try { Recents.parse(java.io.File(app.filesDir, "recent.json").readText()).firstOrNull { x -> x.id == id } } catch (_: Exception) { null }
+        val found: Recent? = try { Recents.merged(app, 80).firstOrNull { x -> x.id == id } } catch (_: Exception) { null }
         val rc: Recent = found ?: return err(404, "nf")
         val yid = Recents.ytIdOf(rc)
         when {
