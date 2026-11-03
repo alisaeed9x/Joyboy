@@ -106,6 +106,7 @@ object Downloader {
 
     /** HLS غير مشفّر (مقاطع TS): بيختار أقرب جودة للمطلوب وبيضم المقاطع. بيرجّع رسالة خطأ أو null */
     private fun hlsFetch(url: String, headers: Map<String, String>, targetH: Int, out: File, ctl: Ctl, onPct: (Int) -> Unit): String? {
+        lastFmp4.set(false)
         var base = url; var pl = readText(url, headers)
         if (pl.contains("#EXT-X-STREAM-INF")) {
             val lines = pl.lines(); var best: String? = null; var bestScore = Long.MAX_VALUE
@@ -123,26 +124,93 @@ object Downloader {
             val v = best ?: return "ما لقيتش مسار فيديو في اللينك ده"
             base = resolve(url, v); pl = readText(base, headers)
         }
-        if (pl.contains("#EXT-X-KEY") && !pl.contains("METHOD=NONE")) return "الفيديو ده مشفّر — التحميل مش مدعوم"
-        if (pl.contains("#EXT-X-MAP")) return "الفيديو ده بصيغة fMP4 HLS — التحميل مش مدعوم"
-        val segs = pl.lines().map { it.trim() }.filter { it.isNotEmpty() && !it.startsWith("#") }.map { resolve(base, it) }
+        if (pl.contains("#EXT-X-BYTERANGE")) return "الفيديو ده مقسّم بـ byte-range — التحميل مش مدعوم"
+        // (v716) AES-128 + fMP4 (EXT-X-MAP) بقوا مدعومين
+        class HSeg(val url: String, val key: String?, val iv: ByteArray?, val seq: Long)
+        var seq = Regex("#EXT-X-MEDIA-SEQUENCE:(\\d+)").find(pl)?.groupValues?.get(1)?.toLongOrNull() ?: 0L
+        var keyUri: String? = null; var keyIv: ByteArray? = null; var mapUrl: String? = null
+        val segs = ArrayList<HSeg>()
+        for (raw in pl.lines()) {
+            val l = raw.trim(); if (l.isEmpty()) continue
+            if (l.startsWith("#EXT-X-KEY")) {
+                val m = Regex("METHOD=([A-Z0-9-]+)").find(l)?.groupValues?.get(1) ?: "NONE"
+                if (m == "NONE") { keyUri = null; keyIv = null }
+                else if (m == "AES-128") {
+                    keyUri = Regex("URI=\"([^\"]+)\"").find(l)?.groupValues?.get(1)?.let { resolve(base, it) }
+                    keyIv = Regex("IV=0[xX]([0-9A-Fa-f]+)").find(l)?.groupValues?.get(1)?.let { hex ->
+                        val h = hex.padStart(32, '0'); ByteArray(16) { i -> h.substring(i * 2, i * 2 + 2).toInt(16).toByte() } }
+                } else return "الفيديو ده مشفّر ($m) — التحميل مش مدعوم"
+            } else if (l.startsWith("#EXT-X-MAP")) {
+                mapUrl = Regex("URI=\"([^\"]+)\"").find(l)?.groupValues?.get(1)?.let { resolve(base, it) }
+            } else if (!l.startsWith("#")) { segs.add(HSeg(resolve(base, l), keyUri, keyIv, seq)); seq++ }
+        }
         if (segs.isEmpty()) return "مفيش مقاطع تتحمّل في اللينك ده"
+        lastFmp4.set(mapUrl != null)
+        val mu = mapUrl
+        val keys = HashMap<String, ByteArray>()
+        fun fetchBytes(u: String): ByteArray { val c = open(u, headers); try { return c.inputStream.use { it.readBytes() } } finally { c.disconnect() } }
         out.outputStream().buffered().use { os ->
+            if (mu != null) { val b = fetchBytes(mu); os.write(b); NetUse.media(b.size.toLong()) }
             var last = -1
             for ((k, s) in segs.withIndex()) {
                 if (ctl.stop()) throw TaskCancelled()
                 waitIfPaused(ctl)
                 var tries = 0
-                while (true) {
-                    val c = open(s, headers)
-                    try { c.inputStream.use { ins -> val buf = ByteArray(64 * 1024); while (true) { val n = ins.read(buf); if (n < 0) break; os.write(buf, 0, n); NetUse.media(n.toLong()) } }; break }
-                    catch (e: java.io.IOException) { if (++tries > 3) throw e; Thread.sleep(1200) }
-                    finally { c.disconnect() }
+                var data: ByteArray? = null
+                while (data == null) {
+                    try {
+                        var b = fetchBytes(s.url)
+                        val ku = s.key
+                        if (ku != null) {
+                            val kb = keys.getOrPut(ku) { fetchBytes(ku) }
+                            val ivb = s.iv ?: ByteArray(16).also { a -> var v = s.seq; for (i in 15 downTo 8) { a[i] = (v and 0xFF).toByte(); v = v shr 8 } }
+                            val ci = javax.crypto.Cipher.getInstance("AES/CBC/PKCS5Padding")
+                            ci.init(javax.crypto.Cipher.DECRYPT_MODE, javax.crypto.spec.SecretKeySpec(kb, "AES"), javax.crypto.spec.IvParameterSpec(ivb))
+                            b = ci.doFinal(b)
+                        }
+                        data = b
+                    } catch (e: java.io.IOException) { if (++tries > 3) throw e; Thread.sleep(1200) }
                 }
+                val dd = data!!; os.write(dd); NetUse.media(dd.size.toLong())
                 val p = (k + 1) * 100 / segs.size; if (p != last) { last = p; onPct(p) }
             }
         }
         return null
+    }
+
+    /** (v716) HLS اتحمّل بصيغة fMP4 ← الملف mp4 مش ts */
+    private val lastFmp4 = ThreadLocal<Boolean>()
+    /** (v716) جودات الـ HLS (ماستر بلاي ليست): ارتفاع + ريت + لينك قائمة الجودة دي. فاضية لو اللينك قائمة وسيطة مش ماستر */
+    class Variant(val h: Int, val bw: Long, val url: String)
+    fun variants(url: String, headers: Map<String, String>): List<Variant> {
+        val pl = readText(url, headers)
+        if (!pl.contains("#EXT-X-STREAM-INF")) return emptyList()
+        val lines = pl.lines(); val out = ArrayList<Variant>()
+        for (i in lines.indices) {
+            val l = lines[i].trim(); if (!l.startsWith("#EXT-X-STREAM-INF")) continue
+            val m = Regex("RESOLUTION=(\\d+)x(\\d+)").find(l)
+            val h = if (m != null) minOf(m.groupValues[1].toInt(), m.groupValues[2].toInt()) else 0
+            val bw = Regex("BANDWIDTH=(\\d+)").find(l)?.groupValues?.get(1)?.toLongOrNull() ?: 0L
+            var j = i + 1
+            while (j < lines.size && (lines[j].isBlank() || lines[j].startsWith("#"))) j++
+            if (j >= lines.size) continue
+            out.add(Variant(h, bw, resolve(url, lines[j].trim())))
+        }
+        val use = out.filter { it.h > 0 }.ifEmpty { out }
+        return use.groupBy { it.h }.map { (_, v) -> v.maxByOrNull { it.bw }!! }.sortedWith(compareByDescending<Variant> { it.h }.thenByDescending { it.bw })
+    }
+
+    /** (v716) تحميل ملف عادي (أي نوع) بنفس الكوكيز/الـ UA/الـ Referer ويتحفظ في التنزيلات — بديل لما DownloadManager يفشل. بيرجّع المسار */
+    fun fileTo(ctx: Context, url: String, headers: Map<String, String>, display: String, mime: String?, ctl: Ctl, onPct: (Int) -> Unit): String {
+        val tmpDir = File(File(ctx.cacheDir, "dl"), java.util.UUID.randomUUID().toString().take(8)); tmpDir.mkdirs()
+        try {
+            val f = File(tmpDir, "f.bin")
+            copyTo(url, headers, f, ctl, onPct)
+            val nm = display.replace(Regex("[\\\\/:*?\"<>|\\n\\r]"), " ").trim().take(120).ifBlank { "download" }
+            val mt = mime?.takeIf { it.isNotBlank() && it != "application/octet-stream" }
+                ?: android.webkit.MimeTypeMap.getSingleton().getMimeTypeFromExtension(nm.substringAfterLast('.', "").lowercase()) ?: "application/octet-stream"
+            return publish(ctx, f, nm, mt)
+        } finally { try { tmpDir.deleteRecursively() } catch (_: Throwable) {} }
     }
 
     /** دمج ملف صورة وملف صوت (mp4 / m4a) في mp4 واحد */
@@ -270,7 +338,7 @@ object Downloader {
                 val t = File(tmpDir, "h.ts")
                 val err = hlsFetch(job.url, job.headers, job.targetH, t, job.ctl) { onPct("⬇ تحميل", it) }
                 if (err != null) { t.delete(); return Pair(false, err) }
-                return Pair(true, publish(ctx, t, "$base.ts", "video/mp2t"))
+                return if (lastFmp4.get() == true) Pair(true, publish(ctx, t, "$base.mp4", "video/mp4")) else Pair(true, publish(ctx, t, "$base.ts", "video/mp2t"))
             }
             val v = File(tmpDir, "v.bin")
             if (job.audio == null) {

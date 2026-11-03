@@ -1745,13 +1745,15 @@ class MainActivity : Activity() {
         return true
     }
     /** (v337) ⬇ تحميل فيديو يوتيوب (صوت بس أو فيديو بالجودة الافتراضية) — مهمة في تبويب المهام، والملف في التنزيلات/Subtitler، ومعلوماته بتتسجّل (إعدادات يوتيوب ← التحميلات المسجّلة) */
-    fun ytDownload(n: NpItem, audioOnly: Boolean) {
+    /** (v716) فيديو (مش صوت) من غير جودة محدّدة ← بيسأل عن الجودة الأول (قايمة الجودات الحقيقية للفيديو). maxH >= 0 = الجودة اتحدّدت (0 = الأعلى) */
+    fun ytDownload(n: NpItem, audioOnly: Boolean, maxH: Int = -1) {
+        if (!audioOnly && maxH < 0) { ytDownloadAsk(n); return }
         val app = applicationContext
-        val nm = n.title.ifBlank { n.id }
+        val nm = n.title.ifBlank { n.id } + (if (!audioOnly && maxH > 0) " [${maxH}p]" else "")
         TaskCenter.add(app, "download", (if (audioOnly) "🎧 " else "⬇ ") + nm) { t ->
             t.msg = "بجيب الرابط…"; TaskCenter.changed()
             YtNp.init()
-            val p = (if (audioOnly) YtNp.pickAudio(n.id) else YtNp.pick(n.id, Cfg.int("yt_maxh", 0))) ?: throw java.io.IOException("ما قدرتش أجيب رابط التحميل")
+            val p = (if (audioOnly) YtNp.pickAudio(n.id) else YtNp.pick(n.id, maxH.coerceAtLeast(0))) ?: throw java.io.IOException("ما قدرتش أجيب رابط التحميل")
             val hs = mapOf("User-Agent" to p.ua, "Referer" to "https://www.youtube.com/")
             val job = if (audioOnly) Downloader.Job(nm, p.url, null, false, 1, hs, true)
                       else Downloader.Job(nm, p.url, p.audio, p.url.contains(".m3u8", true), p.h, hs)
@@ -1768,6 +1770,18 @@ class MainActivity : Activity() {
             } catch (_: Throwable) {}
         }
         Notice.show(this, ("⬇ اتضاف للتحميل — تابعه من تبويب «المهام»").toString(), 3000L)
+    }
+    /** (v716) بيجيب جودات الفيديو ويعرض قايمة الاختيار؛ لو جودة واحدة بس أو الجلب فشل بيحمّل على طول */
+    fun ytDownloadAsk(n: NpItem) {
+        Notice.show(this, "⏳ بجيب الجودات…", 1500L)
+        Thread {
+            val opts = try { YtNp.init(); DlQuality.fromQlist(YtNp.pick(n.id, 0)?.qlist ?: "") } catch (_: Throwable) { emptyList() }
+            runOnUiThread {
+                if (isFinishing || isDestroyed) return@runOnUiThread
+                if (opts.size <= 1) ytDownload(n, false, opts.firstOrNull()?.h ?: 0)
+                else DlQuality.show(this, "⬇ اختار جودة التحميل", opts, { ytDownload(n, true) }) { o -> ytDownload(n, false, o.h) }
+            }
+        }.apply { isDaemon = true }.start()
     }
     /** (v472) دوسة على مهمة خالصة في صفحة المهام = افتح الفيديو/الصوت اللي طلع منها في مشغّل البرنامج */
     fun openTaskOutput(t: TaskItem) {
@@ -1817,15 +1831,35 @@ class MainActivity : Activity() {
         if (noSub) go() else ensureKeys { go() }
     }
     /** (v708) تحميل فيديو مباشر (mp4/HLS) — مهمة في تبويب «المهام» زي تحميل المتصفح */
-    private fun clipDownload(c: ClipVideo, title: String) {
-        val app = applicationContext
-        val nm = title.ifBlank { Sniff.nameOf(c.playUrl) }.take(90)
+    private fun clipHeaders(c: ClipVideo): HashMap<String, String> {
         val hd = HashMap<String, String>()
         if (c.ua.isNotEmpty()) hd["User-Agent"] = c.ua
         if (c.ref.isNotEmpty()) hd["Referer"] = c.ref
         val ck = try { android.webkit.CookieManager.getInstance().getCookie(c.playUrl) ?: "" } catch (_: Throwable) { "" }
         if (ck.isNotEmpty()) hd["Cookie"] = ck
-        val job = Downloader.Job(nm, c.playUrl, null, c.kind == "HLS" || c.playUrl.contains(".m3u8", true), 0, hd)
+        return hd
+    }
+    /** (v716) HLS: بيجيب الجودات من الماستر ويسأل تحمّل بأنهي واحدة (جودة واحدة بس ← بيحمّل على طول) */
+    private fun clipAskHls(c: ClipVideo, title: String) {
+        Notice.show(this, "⏳ بجيب الجودات…", 1500L)
+        val hd = clipHeaders(c)
+        Thread {
+            val vs = try { Downloader.variants(c.playUrl, hd) } catch (_: Throwable) { emptyList() }
+            runOnUiThread {
+                if (isFinishing || isDestroyed) return@runOnUiThread
+                if (vs.size <= 1) clipDownload(c, title, vs.firstOrNull()?.url ?: c.playUrl, vs.firstOrNull()?.h ?: 0)
+                else DlQuality.show(this, "⬇ اختار جودة التحميل",
+                    vs.map { v -> DlQuality.Opt((if (v.h > 0) "${v.h}p" else "جودة") + (if (v.bw > 0) " · " + String.format("%.1f", v.bw / 1_000_000.0) + " Mbps" else ""), v.h, v.url, null, true) }, null) { o -> clipDownload(c, title, o.url, o.h) }
+            }
+        }.apply { isDaemon = true }.start()
+    }
+    private fun clipDownload(c: ClipVideo, title: String, u0: String = "", h0: Int = -1) {
+        val hls = c.kind == "HLS" || c.playUrl.contains(".m3u8", true)
+        if (hls && u0.isEmpty()) { clipAskHls(c, title); return }
+        val app = applicationContext
+        val nm = title.ifBlank { Sniff.nameOf(c.playUrl) }.take(90) + (if (h0 > 0) " [${h0}p]" else "")
+        val hd = clipHeaders(c)
+        val job = Downloader.Job(nm, u0.ifEmpty { c.playUrl }, null, hls, maxOf(h0, 0), hd)
         TaskCenter.add(app, "download", "⬇ " + job.name) { t ->
             job.ctl.cancelled = false; job.ctl.paused = false
             job.ctl.ext = { t.cancelled }

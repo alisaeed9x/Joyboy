@@ -210,6 +210,7 @@ object TvXfer {
         val host = try { Uri.parse(url).host ?: "" } catch (_: Throwable) { "" }
         if (!url.startsWith("http://") || host.isEmpty() || host != r.peer) return err(403, "src")
         TaskCenter.add(app, "dm", "📥 $name") { t -> download(app, t, url, name, size, cat) }
+        TvRecvPill.watch(app)   // (v718) كبسولة تقدم الاستقبال على التلفزيون
         TvLink.notice("📥 بيوصل ملف من الموبايل: $name", 3000L)
         return ok()
     }

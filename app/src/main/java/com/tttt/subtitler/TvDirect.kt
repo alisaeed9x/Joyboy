@@ -40,11 +40,11 @@ object TvDirect {
         })
     }
 
-    fun playLink(ctx: Context, url: String, title: String, ref: String, ua: String, cookie: String, startMs: Long = 0L) {
+    fun playLink(ctx: Context, url: String, title: String, ref: String, ua: String, cookie: String, startMs: Long = 0L, translate: Boolean = false) {   // (v717) translate: لينك مباشر على التلفزيون بترجمة
         ctx.startActivity(base(ctx).apply {
             putExtra("url", url); putExtra("title", title)
             if (ref.isNotEmpty()) putExtra("ref", ref); if (ua.isNotEmpty()) putExtra("ua", ua); if (cookie.isNotEmpty()) putExtra("cookie", cookie)
-            putExtra("nosub", true); putExtra("landscape", true); putExtra("ask", false)
+            putExtra("nosub", !translate); putExtra("autotr", translate); putExtra("landscape", true); putExtra("ask", false)
             if (startMs > 0L) putExtra("startms", startMs)
         })
     }
@@ -61,7 +61,8 @@ object TvDirect {
                 closeOldPlayer(ctx); playYt(ctx, yid, title, startMs, tr); return true
             }
             if (Links.kind(u) == Links.Kind.VIDEO || ref.isNotEmpty() || ua.isNotEmpty() || ck.isNotEmpty()) {
-                closeOldPlayer(ctx); playLink(ctx, u, title, ref, ua, ck, startMs); return true
+                if (tr && Cfg.allMainKeys().isEmpty()) return false   // (v717) الترجمة محتاجة مفتاح: المسار القديم بيسأل عليه
+                closeOldPlayer(ctx); playLink(ctx, u, title, ref, ua, ck, startMs, tr); return true
             }
         } catch (e: Throwable) { LogStore.err("TvDirect:open", e) }
         return false

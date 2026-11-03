@@ -27,7 +27,7 @@ object FtSend {
         val s = FtSession(FtCrypto.randHex(16), true, peer.id, peer.name, peer.type, peer.ip, peer.port, peer.fp, files)
         s.retry = retry
         FtHub.add(s)
-        TaskCenter.add(a, "dm", "📤 " + peer.name) { t -> work(a, t, s, peer) }
+        TaskCenter.add(a, "dm", "📤 " + peer.name) { t -> work(a, t, s, peer, picks) }
         return s
     }
 
@@ -44,7 +44,7 @@ object FtSend {
         try { FtNet.call(s.peerIp, s.peerPort, "/ft/x", JSONObject().put("sid", s.sid).toString(), 2500, hd) } catch (_: Throwable) {}
     }
 
-    private fun work(app: Context, t: TaskItem, s: FtSession, peer: FtPeer) {
+    private fun work(app: Context, t: TaskItem, s: FtSession, peer: FtPeer, picks: List<FtPick>) {
         if (s.ended) { t.msg = s.msg; return }
         t.onCancel = { s.cancelled = true }
         try {
@@ -67,9 +67,17 @@ object FtSend {
             var resp: Pair<Int, String> = Pair(-1, "")
             val th = Thread { resp = FtNet.call(peer.ip, peer.port, "/ft/offer", body, 105_000) }
             th.isDaemon = true; th.start()
+            val tw = System.currentTimeMillis(); var viaLink = false
             while (th.isAlive) {
                 if (s.cancelled || t.cancelled) { s.cancelled = true; postCancel(s); failAll(s, FtSession.CANCELLED, "ألغيت الإرسال"); throw TaskCancelled() }
+                // (v718) تلفزيون مش بيرد على الطلب (نسخة قديمة بتستنى «موافق» على التلفزيون): بعد 7 ثواني نلغي الطلب ونكمّل بالربط المباشر من غير موافقة
+                if (peer.isTv && peer.link != null && System.currentTimeMillis() - tw > 7000L) { viaLink = true; postCancel(s); break }
                 th.join(300)
+            }
+            if (viaLink) {
+                s.msg = "التلفزيون بيطلب موافقة — بكمّل بالربط المباشر…"; t.msg = s.msg; FtHub.changed()
+                FtLinkSend.fallback(app, t, s, peer, picks)
+                return
             }
             val code = resp.first
             if (code == 409) throw IOException("«" + peer.name + "» مشغول بطلبات تانية — جرّب كمان شوية")
@@ -326,6 +334,9 @@ object FtLinkSend {
         }
         return "ما قدرتش أوصل للتلفزيون — اتأكد إنه شغّال وعلى نفس الواي فاي"
     }
+
+    /** (v718) بديل لما النقل الذكي يستنى موافقة من التلفزيون: نفس الجلسة بتكمّل بالربط المباشر */
+    fun fallback(app: Context, t: TaskItem, s: FtSession, peer: FtPeer, picks: List<FtPick>) { work(app, t, s, peer, picks) }
 
     fun start(app: Context, peer: FtPeer, picks: List<FtPick>): FtSession {
         val a = app.applicationContext

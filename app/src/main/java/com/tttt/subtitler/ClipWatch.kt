@@ -175,6 +175,9 @@ class ClipOrb(ctx: Context) : View(ctx) {
     var count = 1
     var found = false
         set(v) { if (field != v) { field = v; invalidate() } }
+    /** (v716) علامة مخصّصة في النص (المتصفح: 🔍 وهو بيدوّر) */
+    var glyph: String? = null
+        set(v) { if (field != v) { field = v; invalidate() } }
     var thumb: Bitmap? = null
         set(v) { field = v; shader = null; invalidate() }
     /** 0 → 1 مع الوقت؛ القوس بيتحسب منه */
@@ -187,8 +190,10 @@ class ClipOrb(ctx: Context) : View(ctx) {
     private val mx = Matrix()
     private val t0 = System.nanoTime()
     private var running = false
-    private val tick = object : Runnable { override fun run() { invalidate(); if (running && isAttachedToWindow) postOnAnimation(this) else running = false } }
+    private val tick = object : Runnable { override fun run() { invalidate(); if (running && isAttachedToWindow && isShown) postOnAnimation(this) else running = false } }
     override fun onAttachedToWindow() { super.onAttachedToWindow(); if (!running) { running = true; postOnAnimation(tick) } }
+    /** (v716) الدايرة في المتصفح بتتخفي وتظهر: الأنيميشن بيقف وهي مخفية وبيرجع لما تظهر */
+    override fun onVisibilityChanged(changedView: View, visibility: Int) { super.onVisibilityChanged(changedView, visibility); if (visibility == View.VISIBLE && isAttachedToWindow && !running) { running = true; postOnAnimation(tick) } }
     override fun onDetachedFromWindow() { running = false; removeCallbacks(tick); super.onDetachedFromWindow() }
 
     override fun onDraw(c: Canvas) {
@@ -212,7 +217,7 @@ class ClipOrb(ctx: Context) : View(ctx) {
             p.reset(); p.isAntiAlias = true; p.style = Paint.Style.FILL; p.color = (col and 0x00FFFFFF) or 0x55000000
             c.drawCircle(cx, cy, ra, p)
             p.color = Color.WHITE; p.textAlign = Paint.Align.CENTER; p.textSize = ra * 1.0f
-            c.drawText(if (found) "🎬" else "🔗", cx, cy + ra * 0.34f, p)
+            c.drawText(glyph ?: (if (found) "🎬" else "🔗"), cx, cy + ra * 0.34f, p)
         }
         // مسار رفيع + قوس الوقت المتبقي
         box.set(cx - rt, cy - rt, cx + rt, cy + rt)
@@ -258,6 +263,35 @@ class ClipDot(ctx: Context, private val glyph: String, private val fill: Int, pr
         p.textSize = r * 0.95f; p.typeface = android.graphics.Typeface.DEFAULT_BOLD
         c.drawText(glyph, cx, cy + r * 0.33f, p)
     }
+}
+
+/**
+ * (v716) عمود دواير الأزرار الملوّنة (تلفزيون · تحميل · شاهد وترجم · شاهد بس · إلغاء) — نفس اللي بيظهر تحت دايرة الكليبورد،
+ * ومستخدم كمان تحت دايرة الاصطياد في المتصفح. onPick بيستلم: tv · dl · tr · watch · cancel
+ */
+fun Activity.clipDots(onPick: (String) -> Unit): LinearLayout {
+    val d = resources.displayMetrics.density
+    val bs = (46 * d).toInt()
+    val col = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_LTR }
+    fun add(label: String, glyph: String, fill: Int, gc: Int, act: String) {
+        val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_LTR; gravity = Gravity.CENTER_VERTICAL; isFocusable = true; alpha = 0f }
+        val tv = TextView(this).apply {
+            this.text = label; setTextColor(Color.WHITE); textSize = 12f; typeface = android.graphics.Typeface.DEFAULT_BOLD
+            setPadding((10 * d).toInt(), (5 * d).toInt(), (10 * d).toInt(), (5 * d).toInt())
+            background = android.graphics.drawable.GradientDrawable().apply { setColor(0xCC101418.toInt()); cornerRadius = 14 * d }
+        }
+        row.addView(tv, LinearLayout.LayoutParams(-2, -2).apply { marginEnd = (8 * d).toInt() })
+        row.addView(ClipDot(this, glyph, fill, gc), LinearLayout.LayoutParams(bs, bs))
+        row.setOnClickListener { onPick(act) }
+        col.addView(row, LinearLayout.LayoutParams(-2, -2).apply { gravity = Gravity.END; topMargin = (8 * d).toInt() })
+    }
+    add("مشاهدة ع التلفزيون", "📺", 0xFFE53935.toInt(), Color.WHITE, "tv")
+    add("تحميل", "⬇", 0xFF1E6FE0.toInt(), Color.WHITE, "dl")
+    add("مشاهدة وترجمة", "🌐", 0xFF34C759.toInt(), Color.WHITE, "tr")
+    add("مشاهدة بس", "▶", 0xFFFFC107.toInt(), 0xFF202020.toInt(), "watch")
+    add("إلغاء", "✕", 0xFF757575.toInt(), Color.WHITE, "cancel")
+    col.post { for (i in 0 until col.childCount) { val v = col.getChildAt(i); v.translationY = -10 * d; v.animate().alpha(1f).translationY(0f).setStartDelay(60L * i).setDuration(180).start() } }
+    return col
 }
 
 /**

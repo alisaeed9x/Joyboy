@@ -252,7 +252,8 @@ class BrowserActivity : Activity() {
     private var dockUi: MiniDock? = null   // (v344)
     override fun finish() { super.finish(); try { if (!NavAnim.take(this)) overridePendingTransition(R.anim.act_stay, R.anim.act_exit) } catch (e: Exception) { LogStore.err("Browser:finish", e) } }
 
-    lateinit var badge: Button
+    private lateinit var vidMark: VidMark   // (v717) إطار أزرق حوالين مربع الفيديو في الصفحة + كبسولة «اتلقط · دوس للخيارات»
+    lateinit var badge: ClipOrb   // (v716) دايرة الاصطياد: نفس شكل دايرة الكليبورد (حلقة + نقطة بتلف)
     // (v324) شريط «تحميل؟» اللي بيظهر تحت الصفحة (زي شريط «لقيت فيديو»): تحميل · إلغاء، بيختفي بعد 9 ثواني (كان 6) أو بلمسة برّاه = مش عايز أحمّل
     private lateinit var dlBar: LinearLayout
     private lateinit var dlTxt: IconTextView
@@ -460,12 +461,12 @@ class BrowserActivity : Activity() {
         hint = ui.text("شغّل الفيديو في الصفحة وهلقطه تلقائي · أو الصق لينك يوتيوب فوق", 12f, th.muted).apply { setPadding(ui.dp(10), ui.dp(2), ui.dp(10), ui.dp(4)) }
         webHolder = FrameLayout(this)
         // (v594) علامة الاصطياد بقت كبسولة بتطلع من الجنب الشمال بدل الشريط السفلي؛ دوسة عليها بتفتح نافذة عايمة صغيرة
-        badge = IconButton(this).apply {
-            isAllCaps = false; textSize = 14f; visibility = View.GONE; minWidth = 0; minimumWidth = 0; stateListAnimator = null
-            setTextColor(if (th.isLight) Color.WHITE else Color.BLACK); setPadding(0, 0, 0, 0); gravity = Gravity.CENTER
-            // (v715) علامة الاصطياد: دايرة صغيرة؛ دوسة واحدة = يلقط الفيديو ويحمّله (لو أكتر من فيديو بتفتح القايمة)
-            background = android.graphics.drawable.GradientDrawable().apply { shape = android.graphics.drawable.GradientDrawable.OVAL; setColor(th.primary); setStroke(ui.dp(1), 0x66FFFFFF) }
-            elevation = ui.dp(6).toFloat(); alpha = 0.95f
+        // (v716) دايرة الاصطياد بنفس شكل/أنيميشن دايرة لينك الكليبورد: 🔍 وهي بتدوّر (بعد ما تدوس في الصفحة) ← 🎬 أخضر لما يتلقط فيديو؛
+        // دوسة = لوحة الأزرار (تلفزيون · تحميل · شاهد وترجم · شاهد · إلغاء)، ضغطة طويلة = قايمة الاصطياد
+        badge = ClipOrb(this).apply {
+            visibility = View.GONE; accent = th.primary; elevation = ui.dp(6).toFloat()
+            isFocusable = true; isClickable = true
+            setOnFocusChangeListener { v, f -> v.animate().scaleX(if (f) 1.15f else 1f).scaleY(if (f) 1.15f else 1f).setDuration(120).start() }
             setOnClickListener { badgeTap() }
             setOnLongClickListener { showList(); true }
         }
@@ -520,12 +521,14 @@ class BrowserActivity : Activity() {
         }
         blockCover = buildBlockCover()
         TvModeFab.dock(this, panicCol)   // (v592) زرار 📺 العايم يقعد فوق العمود ده في المتصفح بس (أصغر ومش فوق 🛡)
+        vidMark = VidMark(this) { act -> markAct(act) }
         val webWrap = FrameLayout(this).apply {
             layoutDirection = View.LAYOUT_DIRECTION_LTR
             addView(webHolder, FrameLayout.LayoutParams(-1, -1))
+            if (!tvOn) addView(vidMark, FrameLayout.LayoutParams(-1, -1))   // (v717) فوق الصفحة وتحت الغطا والأزرار العايمة؛ اللمس بيعدّي للصفحة
             addView(panicCover, FrameLayout.LayoutParams(-1, -1))
             addView(panicCol, FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM or Gravity.RIGHT).apply { setMargins(0, 0, ui.dp(4), ui.dp(8)) })
-            addView(badge, FrameLayout.LayoutParams(ui.dp(52), ui.dp(52), Gravity.RIGHT or Gravity.CENTER_VERTICAL).apply { rightMargin = ui.dp(6) })   // (v595) كبسولة الاصطياد على الجنب اليمين
+            addView(badge, FrameLayout.LayoutParams(ui.dp(60), ui.dp(60), Gravity.RIGHT or Gravity.CENTER_VERTICAL).apply { rightMargin = ui.dp(4) })   // (v595) كبسولة الاصطياد على الجنب اليمين
             if (!tvOn) {   // (v647) الزرار العايم ①
                 addView(buildCoButtons(), FrameLayout.LayoutParams(-2, -2, Gravity.LEFT or Gravity.CENTER_VERTICAL))   // (v648) لسانين على الجنب الشمال: بعيد عن لسان 📺/الريموت وأزرار المتصفح (يمين)
             }
@@ -785,7 +788,7 @@ class BrowserActivity : Activity() {
         curIdx = i
         if (prevIdx != i && tabs.size > 1) Motion.slideIn(webHolder, if (i > prevIdx) -1 else 1, 230L)   // (v313) تبديل التبويب بانزلاق
         val t = tabs[i]
-        webGroups.clear(); openKey = null; refreshBadge()   // (v203) الاصطياد بتاع التبويب ده بس
+        webGroups.clear(); openKey = null; markHidden = false; if (::vidMark.isInitialized) vidMark.clear(); refreshBadge()   // (v203) الاصطياد بتاع التبويب ده بس
         val first = t.wv == null
         if (first) t.wv = makeWebView(t)
         val w = t.wv!!
@@ -1472,6 +1475,9 @@ class BrowserActivity : Activity() {
     /** لمسة في أي حتة برّا شريط التحميل = «مش عايز أحمّل» (اللمسة نفسها بتكمّل لحد الصفحة عادي) */
     override fun dispatchTouchEvent(ev: android.view.MotionEvent): Boolean {
         if (ev.actionMasked == android.view.MotionEvent.ACTION_DOWN || ev.actionMasked == android.view.MotionEvent.ACTION_UP) lastTouchAt = android.os.SystemClock.uptimeMillis()
+        if (ev.actionMasked == android.view.MotionEvent.ACTION_UP && ev.eventTime - ev.downTime < 450L && actScrim == null) {   // (v716) دوسة في الصفحة نفسها = الدايرة تدوّر على فيديو
+            try { val r = android.graphics.Rect(); if (webHolder.getGlobalVisibleRect(r) && r.contains(ev.rawX.toInt(), ev.rawY.toInt())) kickScan() } catch (_: Throwable) {}
+        }
         if (ev.actionMasked == android.view.MotionEvent.ACTION_DOWN && ::dlBar.isInitialized && dlBar.visibility == View.VISIBLE && dlBar.isLaidOut) {
             val r = android.graphics.Rect()
             if (dlBar.getGlobalVisibleRect(r) && !r.contains(ev.rawX.toInt(), ev.rawY.toInt())) hideDl()
@@ -1675,35 +1681,162 @@ class BrowserActivity : Activity() {
         val u = (url ?: return).substringBefore('#').replace(NOISE, "")
         if (u.isEmpty() || u.startsWith("data:") || u == t.capUrl) return
         if (panicUrl != null && t.id == panicTabId && !u.contains("google.")) { panicUrl = null; if (::undoB.isInitialized) undoB.visibility = View.GONE }   // (v231) مشيت لصفحة تانية: مفيش تراجع
-        t.capUrl = u; t.gen++
+        t.capUrl = u; t.gen++; markHidden = false
         items.removeAll { it.tabId == t.id && it.gen != t.gen }
         keys.removeAll { it.startsWith("${t.id}:") && !it.startsWith("${t.id}:${t.gen}:") }
         if (t === tabs.getOrNull(curIdx)) { webGroups.clear(); autoShown = false; openKey = null; refreshBadge() }
     }
     /** اللقطات الحالية للتبويب اللي قدامك (صفحته الحالية بس) */
     private fun vis(): List<Found> { val t = tabs.getOrNull(curIdx) ?: return emptyList(); return items.filter { it.tabId == t.id && it.gen == t.gen } }
-    /** (v715) دوسة على الدايرة: فيديو واحد ← يتحمّل على طول بالجودة المختارة (yt_maxh أو أقرب أقل منها)، غير كده ← القايمة */
+    /** (v716) دوسة على الدايرة: فيديو واحد ← لوحة الأزرار (تلفزيون · تحميل · شاهد وترجم · شاهد · إلغاء)، غير كده ← القايمة. «تحميل» بيسأل عن الجودة */
     private fun badgeTap() {
         try {
             val gs = groupsOf(vis())
-            if (gs.size == 1 && gs[0].qs.isNotEmpty()) {
-                val g = gs[0]; val mh = Cfg.int("yt_maxh", 0)
-                val q = if (mh > 0) (g.qs.filter { it.h in 1..mh }.maxByOrNull { it.h } ?: g.qs.filter { it.h > 0 }.minByOrNull { it.h } ?: g.qs.first()) else g.qs.first()
-                dlVideo(g, q)
-            } else showList()
+            if (gs.size == 1 && gs[0].qs.isNotEmpty()) showActions(gs[0]) else showList()
         } catch (e: Throwable) { LogStore.err("Browser:badgeTap", e); showList() }
+    }
+
+    // ===== (v716) لوحة الأزرار تحت الدايرة =====
+    private var actScrim: View? = null
+    private fun closeActions() {
+        val v = actScrim ?: return; actScrim = null
+        try { (v.parent as? ViewGroup)?.removeView(v) } catch (_: Throwable) {}
+    }
+    private fun showActions(g: Grp) {
+        closeActions()
+        val root = findViewById<FrameLayout>(android.R.id.content) ?: run { showList(); return }
+        val scrim = FrameLayout(this).apply { setBackgroundColor(0x66000000); isClickable = true; setOnClickListener { closeActions() } }
+        val col = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_LTR; elevation = ui.dp(12).toFloat() }
+        col.addView(TextView(this).apply {
+            text = g.title.ifBlank { "فيديو" }; setTextColor(Color.WHITE); textSize = 12f; maxLines = 2; ellipsize = TextUtils.TruncateAt.END; maxWidth = ui.dp(230)
+            setPadding(ui.dp(10), ui.dp(5), ui.dp(10), ui.dp(5)); gravity = Gravity.END
+            background = android.graphics.drawable.GradientDrawable().apply { setColor(0xCC101418.toInt()); cornerRadius = ui.dp(14).toFloat() }
+        }, LinearLayout.LayoutParams(-2, -2).apply { gravity = Gravity.END; bottomMargin = ui.dp(6) })
+        col.addView(ClipOrb(this).apply { accent = th.primary; found = true; count = 1 }, LinearLayout.LayoutParams(ui.dp(60), ui.dp(60)).apply { gravity = Gravity.END })
+        col.addView(clipDots { act -> closeActions(); doAct(act, g) }, LinearLayout.LayoutParams(-2, -2).apply { gravity = Gravity.END })
+        scrim.addView(col, FrameLayout.LayoutParams(-2, -2, Gravity.RIGHT or Gravity.CENTER_VERTICAL).apply { rightMargin = ui.dp(10) })
+        root.addView(scrim, FrameLayout.LayoutParams(-1, -1))
+        actScrim = scrim
+        scrim.alpha = 0f; scrim.animate().alpha(1f).setDuration(160).start()
+    }
+    private fun doAct(act: String, g: Grp) {
+        val q = g.qs.getOrNull(qIdx(g)) ?: return
+        when (act) {
+            "tv" -> sendToTv(g, q)
+            "dl" -> askQuality(g)
+            "tr" -> openPlayer(q.f, false, q.audio)
+            "watch" -> openPlayer(q.f, true, q.audio)
+        }
+    }
+    /** (v716) اختيار جودة التحميل: كل جودات الاصطياد (+ جودات HLS من الماستر) + «🎧 صوت بس». جودة واحدة بس = تحميل على طول */
+    private fun askQuality(g: Grp, only: Qv? = null) {
+        val src = if (only != null) listOf(only) else g.qs
+        if (src.any { isHls(it.f) }) Notice.show(this, "⏳ بجيب الجودات…", 1500L)
+        Thread {
+            val opts = ArrayList<DlQuality.Opt>()
+            for (q in src) {
+                if (isHls(q.f)) {
+                    val vs = try { Downloader.variants(q.f.url, dlHeaders(q.f)) } catch (_: Throwable) { emptyList() }
+                    if (vs.isNotEmpty()) {
+                        for (v in vs) opts.add(DlQuality.Opt((if (v.h > 0) "${v.h}p" else "جودة") + " · HLS" + (if (v.bw > 0) " · " + String.format("%.1f", v.bw / 1_000_000.0) + " Mbps" else ""), v.h, v.url, null, true, q))
+                        continue
+                    }
+                }
+                val h = if (q.h > 0) q.h else (hCache[Sniff.key(q.f.url)] ?: 0)
+                opts.add(DlQuality.Opt(q.label + (if (q.label.contains("MB") || q.label.contains("GB")) "" else szTxt(q)), h, q.f.url, q.audio, isHls(q.f), q))
+            }
+            runOnUiThread {
+                if (dead || opts.isEmpty()) return@runOnUiThread
+                if (opts.size == 1) dlOpt(g, opts[0])
+                else DlQuality.show(this, "⬇ اختار جودة التحميل", opts, { dlAudio(g) }) { o -> dlOpt(g, o) }
+            }
+        }.apply { isDaemon = true }.start()
+    }
+    private fun dlOpt(g: Grp, o: DlQuality.Opt) {
+        val q = o.tag as? Qv ?: return
+        queueDl(Downloader.Job(g.title + (if (o.h > 0) " [${o.h}p]" else qTag(q)), o.url, o.audio, o.hls, o.h, dlHeaders(q.f)))
+    }
+
+    // (v716) بعد أي دوسة في الصفحة: الدايرة تظهر بتدوّر (🔍) 5 ثواني لحد ما يتلقط فيديو
+    private var scanUntil = 0L
+    private var lastKick = 0L
+    private fun kickScan() {
+        val now = android.os.SystemClock.uptimeMillis()
+        if (dead || now - lastKick < 1200L) return
+        lastKick = now; scanUntil = now + 5000L
+        h.post { if (!dead) refreshBadge() }
+        h.postDelayed({ if (!dead) refreshBadge() }, 5100L)
+    }
+    private fun showBadge() {
+        if (badge.visibility != View.VISIBLE) {   // بتطلع من الجنب
+            badge.visibility = View.VISIBLE; badge.translationX = ui.dp(70).toFloat()
+            badge.animate().translationX(0f).setDuration(260L).start()
+        }
     }
     private fun refreshBadge() {
         val n = groupsOf(vis()).size
-        if (n == 0) { badge.visibility = View.GONE; hint.visibility = View.VISIBLE }
-        else {
-            badge.text = "🎬 $n"; hint.visibility = View.GONE
-            if (badge.visibility != View.VISIBLE) {   // بتطلع من الجنب
-                badge.visibility = View.VISIBLE; badge.translationX = ui.dp(70).toFloat()
-                badge.animate().translationX(0f).setDuration(260L).start()
-            }
+        if (n == 0) {
+            if (android.os.SystemClock.uptimeMillis() < scanUntil) { badge.found = false; badge.glyph = "🔍"; badge.count = 1; showBadge() }
+            else badge.visibility = View.GONE
+            hint.visibility = View.VISIBLE
+        } else {
+            val first = !badge.found || badge.visibility != View.VISIBLE
+            badge.found = true; badge.glyph = null; badge.count = n; hint.visibility = View.GONE
+            showBadge()
+            if (first) badge.animate().scaleX(1.25f).scaleY(1.25f).setDuration(120).withEndAction { badge.animate().scaleX(1f).scaleY(1f).setDuration(140).start() }.start()
         }
         if (dlg?.isShowing == true) renderList()
+        updateMark()
+    }
+
+    // ===== (v717) علامة مربع الفيديو =====
+    private var markGen = 0
+    private var markLoop = false
+    private var markHidden = false   // ✕ على اللوحة: مخفية لحد صفحة/تبويب جديد
+    /** بتشتغل لما فيه اصطياد في الصفحة: بتسأل الصفحة كل ~⅓ ثانية عن مكان الفيديو وتحط الإطار عليه؛ مفيش اصطياد = بتقف وتخفي الإطار */
+    private fun updateMark() {
+        if (dead || !::vidMark.isInitialized || tvOn) return
+        val has = try { groupsOf(vis()).any { it.qs.isNotEmpty() } } catch (_: Throwable) { false }
+        if (!has) { markGen++; markLoop = false; vidMark.clear(); return }
+        if (markLoop) return
+        markLoop = true; val gen = ++markGen
+        h.post { markStep(gen) }
+    }
+    private fun markStep(gen: Int) {
+        if (dead || gen != markGen) return
+        val wv = wvOrNull
+        val wanted = !markHidden && customView == null && actScrim == null && dlg?.isShowing != true && panicCover.visibility != View.VISIBLE
+        if (wv == null || !wanted) vidMark.clear()
+        else try {
+            wv.evaluateJavascript(VidMark.RECT_JS) { r ->
+                try {
+                    if (dead || gen != markGen || actScrim != null) return@evaluateJavascript
+                    if (r.isNullOrBlank() || r == "null") { vidMark.clear(); return@evaluateJavascript }
+                    val a = JSONArray(r)
+                    if (a.length() < 5) { vidMark.clear(); return@evaluateJavascript }
+                    val k = wv.width.toFloat() / a.getDouble(4).toFloat().coerceAtLeast(1f)
+                    vidMark.place(a.getDouble(0).toFloat() * k, a.getDouble(1).toFloat() * k, a.getDouble(2).toFloat() * k, a.getDouble(3).toFloat() * k)
+                } catch (_: Throwable) { vidMark.clear() }
+            }
+        } catch (_: Throwable) {}
+        h.postDelayed({ markStep(gen) }, 350L)
+    }
+    /** أزرار اللوحة الزرقا: mw/mt = موبايل (من غير/بالترجمة) · tw/tt = تلفزيون (من غير/بالترجمة) · dl = تحميل · close. أكتر من فيديو ملقوط ← القايمة */
+    private fun markAct(act: String) {
+        try {
+            if (act == "close") { markHidden = true; vidMark.clear(); return }
+            val gs = groupsOf(vis())
+            val g = gs.singleOrNull()
+            val q = g?.qs?.getOrNull(qIdx(g))
+            if (g == null || q == null) { showList(); return }
+            when (act) {
+                "mw" -> openPlayer(q.f, true, q.audio)
+                "mt" -> openPlayer(q.f, false, q.audio)
+                "tw" -> sendToTv(g, q, false)
+                "tt" -> ensureKeys { sendToTv(g, q, true) }
+                "dl" -> askQuality(g)
+            }
+        } catch (e: Throwable) { LogStore.err("Browser:markAct", e) }
     }
 
     // ===== (v203) تجميع الجودات: كل لينكات نفس الفيديو = اصطياد واحد =====
@@ -1999,7 +2132,7 @@ class BrowserActivity : Activity() {
         add(sb("▶ شاهد", BLUE, Color.WHITE) { dlg?.dismiss(); openPlayer(q.f, true, q.audio) })
         add(sb("📺 تلفزيون", BLUE, Color.WHITE) { dlg?.dismiss(); sendToTv(g, q) })
         add(sb("🎞 طابور", BLUE, Color.WHITE) { dlg?.dismiss(); queueAdd(g, q) })   // (v694)
-        val dlB = sb("⬇ حمّل", BLUE, Color.WHITE) { dlg?.dismiss(); dlVideo(g, q) }
+        val dlB = sb("⬇ حمّل", BLUE, Color.WHITE) { dlg?.dismiss(); if (isHls(q.f)) askQuality(g, q) else dlVideo(g, q) }   // (v716) HLS: اختيار الجودة من الماستر
         dlB.setOnLongClickListener { dlg?.dismiss(); dlAudio(g); true }
         add(dlB)
         c.addView(row)
@@ -2030,7 +2163,7 @@ class BrowserActivity : Activity() {
     }
 
     /** (v533) «مشاهدة ع التلفزيون»: يوتيوب ← لينك الفيديو · غيره ← اللينك المباشر ومعاه Referer/UA/Cookie الصفحة */
-    private fun sendToTv(g: Grp, q: Qv) {
+    private fun sendToTv(g: Grp, q: Qv, translate: Boolean = false) {
         try { RemoteClient.init(this) } catch (_: Throwable) {}
         if (RemoteClient.lastTv() == null) { Notice.show(this, "📺 مفيش تلفزيون مقترن — اقترن من «الريموت» الأول", 3200L); return }
         val f = q.f
@@ -2041,12 +2174,12 @@ class BrowserActivity : Activity() {
         val ref = if (yid != null) "" else f.ref
         val ua = if (yid != null) "" else f.ua.ifEmpty { uaWeb }
         val ck = if (yid != null) "" else try { CookieManager.getInstance().getCookie(f.url) ?: "" } catch (_: Throwable) { "" }
-        Notice.show(this, "📺 بوصّل بالتلفزيون…", 2500L)
+        Notice.show(this, if (translate) "📺🌐 بوصّل بالتلفزيون (بالترجمة)…" else "📺 بوصّل بالتلفزيون…", 2500L)
         Thread {
             var msg: String
             try {
                 msg = if (!RemoteClient.ensureConnected(this, 8000L)) "⚠ ما قدرتش أوصل للتلفزيون — اتأكد إنه شغّال وعلى نفس الواي فاي"
-                else (RemoteClient.openLink(url, title, "video", ref, ua, ck)?.let { "⚠ $it" } ?: "✅ اتبعت للتلفزيون")
+                else (RemoteClient.openLink(url, title, if (translate) Links.VIDEO_TR else Links.VIDEO, ref, ua, ck)?.let { "⚠ $it" } ?: (if (translate) "✅ اتبعت للتلفزيون — هيترجم" else "✅ اتبعت للتلفزيون"))
             } catch (e: Throwable) { LogStore.err("Browser:sendToTv", e); msg = "⚠ حصلت مشكلة" }
             runOnUiThread {
                 if (dead) return@runOnUiThread
@@ -2255,6 +2388,7 @@ class BrowserActivity : Activity() {
 
     @Suppress("DEPRECATION")
     override fun onBackPressed() {
+        if (actScrim != null) { closeActions(); return }   // (v716)
         if (customView != null) { leaveCustom(); return }
         if (::dlBar.isInitialized && dlBar.visibility == View.VISIBLE) { hideDl(); return }   // (v324)
         if (findBar.visibility == View.VISIBLE) { closeFind(); return }

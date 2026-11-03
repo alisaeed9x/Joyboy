@@ -283,6 +283,7 @@ object FtIn {
         // (v659) التلفزيون بيستقبل من الموبايل من غير موافقة (موبايل ← موبايل لسه بيطلب موافقة)
         if (!s.autoAccepted && try { DeviceUi.isTv(app) } catch (_: Throwable) { false } && !s.peerType.equals("tv", true)) { s.decision = 1; s.autoAccepted = true }
         FtHub.add(s)
+        TvRecvPill.watch(app)   // (v718) على التلفزيون: كبسولة تقدم الاستقبال فوق أي شاشة
         if (!s.autoAccepted) FtNotify.incoming(app, s) else FtHub.changed()
 
         val until = System.currentTimeMillis() + FtPeers.OFFER_WAIT_MS
