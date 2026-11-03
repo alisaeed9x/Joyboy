@@ -92,6 +92,9 @@ com/tttt/subtitler/MusicService.kt
 com/tttt/subtitler/MusicUi.kt
 com/tttt/subtitler/MusicWidget.kt
 com/tttt/subtitler/NavAnim.kt
+com/tttt/subtitler/NetGate.kt
+com/tttt/subtitler/NetLedger.kt
+com/tttt/subtitler/NetStatsUi.kt
 com/tttt/subtitler/NetUse.kt
 com/tttt/subtitler/NextPanel.kt
 com/tttt/subtitler/Notice.kt
@@ -169,6 +172,7 @@ com/tttt/subtitler/TransferUi.kt
 com/tttt/subtitler/Trim.kt
 com/tttt/subtitler/TvBlur.kt
 com/tttt/subtitler/TvDirect.kt
+com/tttt/subtitler/TvEdit.kt
 com/tttt/subtitler/TvFiles.kt
 com/tttt/subtitler/TvFocus.kt
 com/tttt/subtitler/TvFocusMem.kt

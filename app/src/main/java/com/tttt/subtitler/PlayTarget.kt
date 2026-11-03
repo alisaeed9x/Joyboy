@@ -204,7 +204,7 @@ object TvSync {
         if (DeviceUi.isTv(ctx)) return
         Cfg.onPut = { k, v ->
             if (live()) {
-                if (syncable(k)) { synchronized(pend) { pend[k] = v }; h.removeCallbacks(flush); h.postDelayed(flush, 350L) }   // مجمّع 350ms عشان السلايدرز
+                if (syncable(k) && (Cfg.tvOv != null || Cfg.str("tv_sync_off", "0") != "1")) { synchronized(pend) { pend[k] = v }; h.removeCallbacks(flush); h.postDelayed(flush, 350L) }   // مجمّع 350ms عشان السلايدرز
                 else if (k in RemoteClient.KEY_FIELDS) { h.removeCallbacks(keysRun); h.postDelayed(keysRun, 1500L) }          // تغيير في المفاتيح ← يتبعت مرة واحدة بعد ما تسكت
             }
         }
@@ -216,6 +216,7 @@ object TvSync {
             var set = org.json.JSONObject(); var size = 0
             fun post() { if (set.length() > 0) RemoteClient.postJson("/cfg", org.json.JSONObject().put("set", set)); set = org.json.JSONObject(); size = 0 }
             for ((k, v) in Cfg.p.all) {
+                if (Cfg.str("tv_sync_off", "0") == "1") break   // (v727) المزامنة التلقائية للتلفزيون مقفولة
                 if (v == null || !(v is String || v is Boolean || v is Int || v is Long || v is Float)) continue
                 if (!syncable(k)) continue
                 val sv = CfgCodec.str(v, "")

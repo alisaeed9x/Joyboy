@@ -2035,11 +2035,27 @@ class TvActivity : Activity() {
         "tv_halo" to listOf("0", "1"),
         "tv_clock24" to listOf("0", "1"),
         "tv_saver_min" to listOf("1", "3", "5", "10", "0"),
-        "tv_apps_sys" to listOf("0", "1"))
+        "tv_apps_sys" to listOf("0", "1"),
+        // (v725) باقي إعدادات التلفزيون في شاشة موبايل واحدة
+        "tv_play" to listOf("0", "1"),
+        "tv_theme_after_skin" to listOf("0", "1"),
+        "tv_fold_sort" to listOf("name", "new", "old", "size"),
+        "tv_vid_sort" to listOf("name", "new", "old", "size"),
+        "tv_fold_view" to listOf("grid", "dense", "list"),
+        "tv_vid_view" to listOf("grid", "dense", "list"),
+        "tv_br_mode" to listOf("ptr", "focus"),
+        "tv_pray_method" to listOf("5", "4", "3", "2", "1", "8", "9", "10", "13", "12"),
+        "tv_ask_home" to listOf("0", "1"))
+    /** (v725) مفاتيح «رجّع المظهر للافتراضي» (الأصلية بس — الترتيب والعرض وغيرهم ما بيترجعوش) */
+    private val lookAppearKeys = setOf("tv_wall", "tv_wall_sec", "tv_scrim", "tv_warm", "tv_icon_shape", "tv_icon_px", "tv_names", "tv_scale_adj",
+        "tv_lift", "tv_halo", "tv_clock24", "tv_saver_min", "tv_apps_sys")
+    private val rowIds = listOf("apps" to "📲 دواير التطبيقات", "hist" to "🕘 آخر الفيديوهات المشغّلة", "vids" to "🎬 الفيديوهات (الفلاشة + الذاكرة الداخلية)", "yt" to "▶ اشتراكات يوتيوب")
     private val lookDefs: Map<String, String> = mapOf(
         "tv_wall" to "auto", "tv_wall_sec" to "60", "tv_scrim" to "50", "tv_warm" to "0", "tv_icon_shape" to "circle",
         "tv_icon_px" to "86", "tv_names" to "always", "tv_scale_adj" to "100", "tv_lift" to "2", "tv_halo" to "1",
-        "tv_clock24" to "0", "tv_saver_min" to "3", "tv_apps_sys" to "0")
+        "tv_clock24" to "0", "tv_saver_min" to "3", "tv_apps_sys" to "0",
+        "tv_play" to "1", "tv_theme_after_skin" to "0", "tv_fold_sort" to "name", "tv_vid_sort" to "new", "tv_fold_view" to "grid", "tv_vid_view" to "grid",
+        "tv_br_mode" to "ptr", "tv_pray_method" to "5", "tv_ask_home" to "1")
 
     /** بيتنادى على الـ UI thread. j = التغييرات (set / skin / theme / wallnext / reset) أو null للقراءة بس. بيرجّع الحالة الحالية. */
     fun remoteLook(j: org.json.JSONObject?): org.json.JSONObject {
@@ -2060,7 +2076,8 @@ class TvActivity : Activity() {
                         "tv_wall_sec" -> wallSecChg = true
                         "tv_scrim" -> scrimChg = true
                         "tv_warm" -> warmChg = true
-                        "tv_scale_adj" -> recreateNow = true
+                        "tv_scale_adj", "tv_play" -> recreateNow = true
+                        "tv_theme_after_skin", "tv_fold_sort", "tv_vid_sort", "tv_fold_view", "tv_vid_view", "tv_br_mode", "tv_pray_method", "tv_ask_home" -> { }   // (v725) بتتقري وقت الاستخدام
                         else -> rebuild = true
                     }
                 }
@@ -2069,8 +2086,26 @@ class TvActivity : Activity() {
             if (sk.isNotEmpty() && sk != TvSkins.cur().id && TvSkins.all.any { it.id == sk }) { TvSkins.set(sk, skinHost); rebuild = true }
             val tm = j.optString("theme")
             if (tm.isNotEmpty() && tm != Cfg.str("theme", th.id) && Themes.all.any { it.id == tm }) { Cfg.put("theme", tm); recreateNow = true }
+            // (v725) نمط الحركة · باك الأيقونات · إظهار/إخفاء صفوف الرئيسية
+            val mo = j.optString("motion")
+            if (mo.isNotEmpty() && mo != Skins.cur().id && Skins.all.any { it.id == mo }) { Cfg.put("skin", mo); Skins.set(mo); rebuild = true }
+            val ip = j.optString("iconpack")
+            if (ip.isNotEmpty() && ip != IconPacks.activeId() && IconPacks.list().any { it.id == ip }) {
+                try { IconPacks.select(ip) } catch (e: Throwable) { LogStore.err("Tv:remoteLook:iconpack", e) }
+                rebuild = true
+            }
+            val rw = j.optString("row")
+            if (rw.isNotEmpty()) {
+                if (rw == "sys") Cfg.put("tv_apps_sys", if (Cfg.str("tv_apps_sys", "0") == "1") "0" else "1")
+                else if (rowIds.any { it.first == rw }) {
+                    val hid = Cfg.str("tv_rows_hide2", "").split(",").map { it.trim() }.filter { it.isNotEmpty() }.toMutableSet()
+                    if (!hid.remove(rw)) hid.add(rw)
+                    Cfg.put("tv_rows_hide2", hid.joinToString(","))
+                }
+                rebuild = true
+            }
             if (j.optBoolean("reset")) {
-                for ((k, v) in lookDefs) Cfg.put(k, v)
+                for ((k, v) in lookDefs) if (k in lookAppearKeys) Cfg.put(k, v)
                 try { IconPacks.select(IconPacks.DEFAULT) } catch (_: Throwable) { }
                 recreateNow = true
             }
@@ -2096,6 +2131,19 @@ class TvActivity : Activity() {
         val themes = org.json.JSONArray()
         for (t in Themes.all) themes.put(org.json.JSONObject().put("id", t.id).put("name", t.name).put("bg", t.bg).put("primary", t.primary).put("light", t.isLight))
         o.put("themes", themes)
+        val motions = org.json.JSONArray()
+        for (m in Skins.all) motions.put(org.json.JSONObject().put("id", m.id).put("name", m.name))
+        o.put("motions", motions); o.put("motion", Skins.cur().id)
+        try {
+            val packs = org.json.JSONArray()
+            for (pk in IconPacks.list()) packs.put(org.json.JSONObject().put("id", pk.id).put("name", pk.name))
+            o.put("iconpacks", packs); o.put("iconpack", IconPacks.activeId())
+        } catch (_: Throwable) { }
+        val hidRows = Cfg.str("tv_rows_hide2", "").split(",").map { it.trim() }.filter { it.isNotEmpty() }.toSet()
+        val rows = org.json.JSONArray()
+        for ((rid, rn) in rowIds) rows.put(org.json.JSONObject().put("id", rid).put("name", rn).put("on", rid !in hidRows))
+        rows.put(org.json.JSONObject().put("id", "sys").put("name", "⚙ إظهار تطبيقات السيستم كمان").put("on", Cfg.str("tv_apps_sys", "0") == "1"))
+        o.put("rows", rows)
         val c = org.json.JSONObject()
         for ((k, d) in lookDefs) c.put(k, Cfg.str(k, d))
         c.put("tv_wall", wallMode())

@@ -154,7 +154,14 @@ object Cfg {
     // (290 موقع نداء، منها مسارات 60fps) — اللقطة بتتحدّث بمستمع التغيير وبكتابة put() فورًا.
     @Volatile private var snap: Map<String, Any?> = emptyMap()
     private val snapListener = SharedPreferences.OnSharedPreferenceChangeListener { sp, _ -> snap = sp.all }
-    private fun raw(k: String): Any? = if (snap.isNotEmpty()) snap[k] else p.all[k]
+    /** (v727) وضع «تعديل إعدادات التلفزيون»: لو مش null، القراءة/الكتابة للإعدادات المشتركة بتروح لنسخة التلفزيون بس
+     *  (إعدادات الموبايل الحقيقية ما بتتلمسش — وفي الذاكرة بس: لو البرنامج اتقفل بيرجع لإعدادات الموبايل لوحده) */
+    @Volatile var tvOv: java.util.concurrent.ConcurrentHashMap<String, String>? = null
+    private fun raw(k: String): Any? {
+        val ov = tvOv
+        if (ov != null && BrainRpc.allowed(k)) return ov[k]
+        return if (snap.isNotEmpty()) snap[k] else p.all[k]
+    }
 
     fun init(c: Context) {
         p = c.getSharedPreferences("p", 0)
@@ -220,6 +227,8 @@ object Cfg {
     @Volatile var onPut: ((String, String) -> Unit)? = null
     fun put(k: String, v: String) {
         try { onPut?.invoke(k, v) } catch (_: Throwable) {}
+        val ov = tvOv
+        if (ov != null && BrainRpc.allowed(k)) { ov[k] = v; return }   // (v727) تعديل التلفزيون: الكتابة للتلفزيون بس (اتبعتت فوق بالمستمع)
         val t = CfgCodec.typed(k, v); val e = p.edit()
         snap = snap.toMutableMap().apply { put(k, t) }   // (v458) اللقطة تتحدّث فورًا من غير انتظار المستمع
         when (t) { is Boolean -> e.putBoolean(k, t); is Int -> e.putInt(k, t); else -> e.putString(k, v) }

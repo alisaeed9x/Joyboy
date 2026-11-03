@@ -390,13 +390,6 @@ class MainActivity : Activity() {
             if (!fromPlayer) intent?.putExtra("reopen_tab", "appearance")
             recreate()
         }
-        val skinChips = ui.chips(Skins.all.map { it.name }, { Skins.cur().name }) { n ->
-            val id = Skins.all.first { it.name == n }.id
-            Cfg.p.edit().putString("skin", id).apply(); Skins.set(id)
-            if (!fromPlayer) intent?.putExtra("reopen_tab", "appearance")
-            recreate()
-        }
-        val skinSoundSwitch = ui.switchRow("🔊 أصوات اللمس (حسب الوضع)", Skins.soundOn()) { on -> Cfg.p.edit().putString("skin_sound", if (on) "1" else "0").apply() }
         // (v469) D1 استوديو السمات: منتقي لون تمييز من لوحة جاهزة (من غير أخضر) + منزلقا تشبّع/إضاءة — السمة بتتبني في Themes.custom() وبتتطبّق على الواجهة كلها
         val accNames = listOf("🧡 عنبري", "🟠 نحاسي", "🌹 وردي", "🟣 بنفسجي", "🔵 سماوي", "🤎 إسبريسو", "🔴 قرمزي", "🪻 لافندر")
         val accHex = listOf("C65D21", "B07B4F", "D4697E", "8E7CC3", "4C8DCE", "8B5E34", "B5483A", "9B8BD0")
@@ -603,7 +596,7 @@ class MainActivity : Activity() {
                 ui.button("▶ شغّل الترجمة الحية") { startActivity(Intent(this, LiveRequestActivity::class.java)) }))
         // (v235) نفس ترتيب الأقسام في كل أشكال الإعدادات (SettingsTabs): المفاتيح والمحرك · الترجمة وشكلها · الصوت والصورة · عام · الموسيقى. المسرد اتشال.
         fun tab(id: String, content: List<View>, preview: Boolean = false) = TabDef(id, SettingsTabs.label(id), content, preview, SettingsTabs.sub(id), SettingsTabs.group(id))
-        val settingsDlg = TabbedDialog(this, ui, "⚙️ الإعدادات", listOf(
+        val settingsDlg = TabbedDialog(this, ui, if (Cfg.tvOv != null) "📺 إعدادات التلفزيون المشتركة (مش الموبايل)" else "⚙️ الإعدادات", listOf(
             // ===== 🚀 خط الترجمة: الخطة (تفريغ ← ترجمة ← لهجة) + اللهجة والأسلوب + البرومبتات =====
             tab("general", listOf<View>(
                 ui.text("اختار إيه اللي يترجم واللهجة والأسلوب هنا. المفاتيح في 🔑، والتفريغ في 🎙، والموديل والسرعة في 🤖.", 12f, th.muted),
@@ -691,7 +684,7 @@ class MainActivity : Activity() {
                     ui.slider("تعتيم الخلفية (زوّده لو الأزرار مش باينة)", Cfg.int("app_wall_scrim", 55).coerceIn(0, 95), 0, 95, "%") { Cfg.put("app_wall_scrim", it.toString()); AppWall.refreshScrim() },
                     ui.button("غيّر الخلفية دلوقتي") { AppWall.nextNow(this) }),
                 ui.section("🧩 الواجهة", false,
-                    ui.text("وضع الواجهة (شكل الزراير والفولدرات والأنيميشن):", 12f, th.muted), skinChips, skinSoundSwitch,
+                    ui.button("📺 إعدادات التلفزيون (كلها في مكان واحد)") { TvLookPad.show(this) },
                     ui.text("نوع الجهاز (موبايل · تابلت · تلفزيون) — نفس النسخة بتتحول لواجهة تلفزيون أو تابلت، والتبديل بيطبّق فورًا:", 12f, th.muted),
                     ui.chips(listOf("🔄 تلقائي", "📱 موبايل", "📟 تابلت", "📺 تلفزيون"), { DeviceUi.label(DeviceUi.pref()) }) { n ->
                         val m = when (n) { "📱 موبايل" -> DeviceUi.PHONE; "📟 تابلت" -> DeviceUi.TABLET; "📺 تلفزيون" -> DeviceUi.TV; else -> DeviceUi.AUTO }
@@ -706,6 +699,14 @@ class MainActivity : Activity() {
                     ui.switchRow("📳 اهتزاز لمسي خفيف عند التنقّل بين التبويبات", Cfg.bool("haptics", true)) { Cfg.put("haptics", if (it) "1" else "0") }))),
             tab("youtube", ytSettingsViews),
             // ===== 🎵 الموسيقى =====
+            // (v726) 📺 قسم التلفزيون في إعدادات البرنامج: نفس شاشة «إعدادات التلفزيون» اللي في الريموت
+            tab("tvset", listOf<View>(
+                ui.text(if (Cfg.tvOv != null) "✏️ أنت دلوقتي بتعدّل نسخة التلفزيون من الإعدادات المشتركة (الترجمة · شكل الترجمة · الصوت…): كل حاجة بتغيّرها في أي قسم بتتحفظ على التلفزيون بس ومابتأثرش على الموبايل. لما تخلّص دوس «ارجع لإعدادات الموبايل»." else "الإعدادات المشتركة (الترجمة · شكل الترجمة · الصوت…) موجودة على الموبايل والتلفزيون. تقدر تعدّل نسخة التلفزيون لوحدها من غير ما نسخة الموبايل تتغيّر.", 12f, if (Cfg.tvOv != null) th.primary else th.muted),
+                if (Cfg.tvOv != null) ui.button("↩ ارجع لإعدادات الموبايل", true) { TvEdit.exit(this) } else ui.button("✏️ عدّل إعدادات التلفزيون المشتركة (على التلفزيون بس)", true) { TvEdit.enter(this) },
+                ui.switchRow("زامن تغييرات إعدادات الموبايل للتلفزيون تلقائياً (قفّله لو عايز كل جهاز بإعداداته)", Cfg.str("tv_sync_off", "0") != "1") { on -> Cfg.put("tv_sync_off", if (on) "0" else "1") },
+                ui.text("كل إعدادات التلفزيون (الشكل · الخلفية · الأيقونات · الرئيسية · الفيديوهات · المتصفح · الصلاة) في شاشة واحدة، وبتتغيّر على التلفزيون فوراً وهو متصل. التلفزيون لازم يكون شغّال ومتوصل بنفس الواي فاي.", 12f, th.muted),
+                ui.button("📺 افتح إعدادات التلفزيون", true) { TvLookPad.show(this) },
+                ui.button("🔧 افتح إعدادات البرنامج على شاشة التلفزيون") { try { RemoteClient.cmd("open_settings") } catch (_: Throwable) {} })),
             TabDef("music", SettingsTabs.label("music"), listOf<View>(
                 ui.section("📝 الكلمات", true,
                                         ui.text("📝 الكلمات: جيميناي يجيب الكلمات الكاملة بالاسم، والتطبيق نفسه يحدّد من الصوت امتى المغني بيبدأ يغني ويوزّع السطور على لحظات الغنا (بيتخطى المقدمة والفواصل). 🎤 زرار «صوت / موسيقى / الكل» في المشغّل يفصل الصوت عن الموسيقى (تقريبي، للاستريو بس).", 12f, th.muted),
@@ -1078,7 +1079,8 @@ class MainActivity : Activity() {
         intent?.getStringExtra("reopen_tab")?.let { t -> intent?.removeExtra("reopen_tab"); frame.post { if (!isFinishing && !isDestroyed) settingsShow?.invoke(t) } }
         // لو مفيش مفتاح Gemini: القايمة بتظهر مباشرة أول البرنامج، وبعدها الفحص
         frame.post { permFlow { ensureKeysSoft { keys.setText(Cfg.allMainKeys().joinToString("\n")); keyLoadersRef.forEach { it() }; refreshChip(); doScan() } } }
-        try { TvSync.install(this) } catch (_: Throwable) {}   // (v568) مزامنة الإعدادات للتلفزيون من أي شاشة
+        try { TvSync.install(this) } catch (_: Throwable) {}
+        try { if (!DeviceUi.isTv(this) && Cfg.str("skin", "classic") != "classic") { Cfg.p.edit().putString("skin", "classic").apply(); Skins.set("classic") } } catch (_: Throwable) {}   // (v727) «وضع الواجهة» القديم اتشال من الموبايل: نرجّعه للأصلي من غير مزامنة   // (v568) مزامنة الإعدادات للتلفزيون من أي شاشة
         frame.post { handleLinkIntent(intent) }; frame.post { handleExternal(intent) }
     }
     /** (v345) المرحلة 1 «كتلة واحدة»: أي لينك جاي من برّه (مشاركة أو فتح). لينك يوتيوب ← قايمة «افتحه إزاي؟»، غير كده ← زي زمان */

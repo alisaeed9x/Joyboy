@@ -16,7 +16,8 @@ import android.widget.TextView
 import org.json.JSONObject
 
 /**
- * (v720) إعدادات التلفزيون من الموبايل: كل إعدادات المظهر (الشكل، الثيم، الخلفية، الأيقونات، التركيز، الساعة)
+ * (v720) إعدادات التلفزيون من الموبايل — (v725) شاشة واحدة بكل المجموعات: الشكل والسمات والحركة وباك الأيقونات · الخلفية · الأيقونات والتركيز ·
+ * الرئيسية والصفوف · الساعة · الفيديوهات (ترتيب/عرض) · المتصفح والصلاة · أدوات الموبايل.
  * بتتغيّر من هنا وتظهر على التلفزيون فوراً (عن طريق /look على التلفزيون).
  * ألوان هادية للعين (أزرق/عنبري) وبدون أخضر.
  */
@@ -138,10 +139,45 @@ object TvLookPad {
                 body.addView(grid(opts.map { (v, l) -> chip(l, v == cur) { setKey(key, v) } }, perRow), LinearLayout.LayoutParams(-1, -2))
             }
 
-            fun toggle(label: String, key: String) {
-                body.addView(TextView(act).apply { text = label; textSize = 14f; setTextColor(Color.WHITE) }, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(8) })
+            fun label(t: String) {
+                body.addView(TextView(act).apply { text = t; textSize = 14f; setTextColor(Color.WHITE) }, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(10) })
+            }
+
+            fun toggle(t: String, key: String) {
+                label(t)
                 optChips(key, listOf("1" to "شغّال", "0" to "مقفول"), 2)
             }
+
+            // (v725) كل المجموعات في شاشة واحدة، كل مجموعة بتتفتح وتتقفل بدوسة على عنوانها
+            val opened = HashSet<String>().apply { add("look") }
+            fun sec(key: String, title: String): Boolean {
+                val on = key in opened
+                body.addView(TextView(act).apply {
+                    text = (if (on) "▾  " else "◂  ") + title; textSize = 16f; setTextColor(TITLE); typeface = Typeface.DEFAULT_BOLD
+                    setPadding(dp(12), dp(12), dp(12), dp(12))
+                    background = GradientDrawable().apply { cornerRadius = dpf(14f); setColor(CHIP); setStroke(dp(1), CHIP_LINE) }
+                    isClickable = true; isFocusable = true
+                    setOnClickListener { if (key in opened) opened.remove(key) else opened.add(key); render() }
+                }, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(12) })
+                return on
+            }
+
+            fun pickList(s: JSONObject, arrKey: String, curKey: String, reqKey: String, perRow: Int) {
+                val arr = s.optJSONArray(arrKey) ?: return
+                val cur = s.optString(curKey)
+                val vs = ArrayList<View>()
+                for (i in 0 until arr.length()) {
+                    val o = arr.optJSONObject(i) ?: continue
+                    val id = o.optString("id")
+                    vs.add(chip(o.optString("name"), id == cur) { s.put(curKey, id); render(); send(JSONObject().put(reqKey, id)) })
+                }
+                body.addView(grid(vs, perRow), LinearLayout.LayoutParams(-1, -2))
+            }
+
+            val sortOpts = listOf("name" to "🔤 الاسم", "new" to "🕒 الأحدث", "old" to "⏳ الأقدم", "size" to "📦 الحجم")
+            val viewOpts = listOf("grid" to "▦ كبيرة", "dense" to "▪ صغيرة", "list" to "☰ قائمة")
+            val prayOpts = listOf("5" to "الهيئة المصرية", "4" to "أم القرى (مكة)", "3" to "رابطة العالم الإسلامي", "2" to "أمريكا الشمالية",
+                "1" to "كراتشي", "8" to "الخليج", "9" to "الكويت", "10" to "قطر", "13" to "تركيا (ديانت)", "12" to "فرنسا")
 
             render = {
                 body.removeAllViews()
@@ -157,72 +193,132 @@ object TvLookPad {
                     body.addView(chip("جرّب تاني", false) { statusMsg = "بتّصل بالتلفزيون…"; render(); send(JSONObject()) },
                         LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(12) })
                 } else {
-                    // ----- الشكل -----
-                    section("شكل الواجهة", "بيتغيّر على التلفزيون في نفس اللحظة")
-                    val curSkin = s.optString("skin")
-                    val skins = s.optJSONArray("skins")
-                    val skinViews = ArrayList<View>()
-                    if (skins != null) for (i in 0 until skins.length()) {
-                        val o = skins.optJSONObject(i) ?: continue
-                        val id = o.optString("id")
-                        skinViews.add(chip(o.optString("name"), id == curSkin) {
-                            s.put("skin", id); render(); send(JSONObject().put("skin", id))
-                        })
+                    // ----- 🎨 الشكل -----
+                    if (sec("look", "🎨 الشكل والسمات")) {
+                        section("شكل الواجهة (السكن)", "بيتغيّر على التلفزيون في نفس اللحظة")
+                        val curSkin = s.optString("skin")
+                        val skins = s.optJSONArray("skins")
+                        val skinViews = ArrayList<View>()
+                        if (skins != null) for (i in 0 until skins.length()) {
+                            val o = skins.optJSONObject(i) ?: continue
+                            val id = o.optString("id")
+                            skinViews.add(chip(o.optString("name"), id == curSkin) {
+                                s.put("skin", id); render(); send(JSONObject().put("skin", id))
+                            })
+                        }
+                        body.addView(grid(skinViews, 2), LinearLayout.LayoutParams(-1, -2))
+                        toggle("اختيار السمة بعد السكن (مقفول = السكن بس ومفيش سؤال)", "tv_theme_after_skin")
+
+                        section("الثيم (الألوان)", "الشاشة بتعيد تشغيل نفسها ثواني بعد تغيير الثيم")
+                        val curTheme = s.optString("theme")
+                        val themes = s.optJSONArray("themes")
+                        val themeViews = ArrayList<View>()
+                        if (themes != null) for (i in 0 until themes.length()) {
+                            val o = themes.optJSONObject(i) ?: continue
+                            val id = o.optString("id")
+                            val bg = o.optInt("bg"); val pr = o.optInt("primary")
+                            themeViews.add(chip(o.optString("name"), id == curTheme, fill = bg, fg = pr, line = pr) {
+                                s.put("theme", id); render(); send(JSONObject().put("theme", id))
+                            })
+                        }
+                        body.addView(grid(themeViews, 3), LinearLayout.LayoutParams(-1, -2))
+
+                        section("نمط الحركة والتفاعل")
+                        pickList(s, "motions", "motion", "motion", 2)
+                        section("باك الأيقونات")
+                        pickList(s, "iconpacks", "iconpack", "iconpack", 2)
                     }
-                    body.addView(grid(skinViews, 2), LinearLayout.LayoutParams(-1, -2))
 
-                    section("الثيم (الألوان)", "الشاشة بتعيد تشغيل نفسها ثواني بعد تغيير الثيم")
-                    val curTheme = s.optString("theme")
-                    val themes = s.optJSONArray("themes")
-                    val themeViews = ArrayList<View>()
-                    if (themes != null) for (i in 0 until themes.length()) {
-                        val o = themes.optJSONObject(i) ?: continue
-                        val id = o.optString("id")
-                        val bg = o.optInt("bg"); val pr = o.optInt("primary")
-                        themeViews.add(chip(o.optString("name"), id == curTheme, fill = bg, fg = pr, line = pr) {
-                            s.put("theme", id); render(); send(JSONObject().put("theme", id))
-                        })
+                    // ----- 🖼 الخلفية -----
+                    if (sec("wall", "🖼 الخلفية")) {
+                        optChips("tv_wall", listOf("auto" to "تلقائي (Bing + صور)", "bing" to "Bing", "picsum" to "صور عشوائية", "off" to "بدون خلفية"), 2)
+                        body.addView(chip("غيّر الخلفية دلوقتي", false, fill = 0xFF2B4B80.toInt()) { send(JSONObject().put("wallnext", true)) },
+                            LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(6) })
+                        label("بتتغيّر كل:")
+                        optChips("tv_wall_sec", listOf("30" to "30 ثانية", "60" to "دقيقة", "300" to "5 دقايق", "900" to "15 دقيقة", "3600" to "ساعة", "0" to "ثابتة"), 3)
+                        label("تعتيم الخلفية:")
+                        optChips("tv_scrim", listOf("0" to "0%", "25" to "25%", "40" to "40%", "50" to "50%", "65" to "65%", "80" to "80%", "90" to "90%"), 4)
+                        toggle("فلتر دافي مريح للعين", "tv_warm")
                     }
-                    body.addView(grid(themeViews, 3), LinearLayout.LayoutParams(-1, -2))
 
-                    // ----- الخلفية -----
-                    section("الخلفية")
-                    optChips("tv_wall", listOf("auto" to "تلقائي (Bing + صور)", "bing" to "Bing", "picsum" to "صور عشوائية", "off" to "بدون خلفية"), 2)
-                    body.addView(chip("غيّر الخلفية دلوقتي", false, fill = 0xFF2B4B80.toInt()) { send(JSONObject().put("wallnext", true)) },
-                        LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(6) })
-                    body.addView(TextView(act).apply { text = "بتتغيّر كل:"; textSize = 14f; setTextColor(Color.WHITE) }, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(10) })
-                    optChips("tv_wall_sec", listOf("30" to "30 ثانية", "60" to "دقيقة", "300" to "5 دقايق", "900" to "15 دقيقة", "3600" to "ساعة", "0" to "ثابتة"), 3)
-                    body.addView(TextView(act).apply { text = "تعتيم الخلفية:"; textSize = 14f; setTextColor(Color.WHITE) }, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(10) })
-                    optChips("tv_scrim", listOf("0" to "0%", "25" to "25%", "40" to "40%", "50" to "50%", "65" to "65%", "80" to "80%", "90" to "90%"), 4)
-                    toggle("فلتر دافي مريح للعين", "tv_warm")
+                    // ----- ⭕ الأيقونات -----
+                    if (sec("icons", "⭕ الأيقونات والحجم")) {
+                        optChips("tv_icon_shape", listOf("circle" to "دايرة", "squircle" to "مربع مدوّر"), 2)
+                        label("حجم الأيقونة:")
+                        optChips("tv_icon_px", listOf("64" to "64", "76" to "76", "86" to "86", "100" to "100", "116" to "116", "132" to "132"), 3)
+                        label("أسماء التطبيقات:")
+                        optChips("tv_names", listOf("focus" to "عند التركيز", "always" to "دايماً", "off" to "مخفية"), 3)
+                        label("حجم الواجهة كلها:")
+                        optChips("tv_scale_adj", listOf("50" to "50%", "70" to "70%", "85" to "85%", "100" to "100%", "115" to "115%", "130" to "130%", "160" to "160%", "200" to "200%"), 4)
+                        section("التركيز على العناصر")
+                        optChips("tv_lift", listOf("0" to "بدون", "1" to "خفيف", "2" to "متوسط", "3" to "كبير"), 4)
+                        toggle("هالة حوالين العنصر", "tv_halo")
+                    }
 
-                    // ----- الأيقونات -----
-                    section("الأيقونات")
-                    optChips("tv_icon_shape", listOf("circle" to "دايرة", "squircle" to "مربع مدوّر"), 2)
-                    body.addView(TextView(act).apply { text = "حجم الأيقونة:"; textSize = 14f; setTextColor(Color.WHITE) }, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(10) })
-                    optChips("tv_icon_px", listOf("64" to "64", "76" to "76", "86" to "86", "100" to "100", "116" to "116", "132" to "132"), 3)
-                    body.addView(TextView(act).apply { text = "أسماء التطبيقات:"; textSize = 14f; setTextColor(Color.WHITE) }, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(10) })
-                    optChips("tv_names", listOf("focus" to "عند التركيز", "always" to "دايماً", "off" to "مخفية"), 3)
-                    body.addView(TextView(act).apply { text = "حجم الواجهة كلها:"; textSize = 14f; setTextColor(Color.WHITE) }, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(10) })
-                    optChips("tv_scale_adj", listOf("50" to "50%", "70" to "70%", "85" to "85%", "100" to "100%", "115" to "115%", "130" to "130%", "160" to "160%", "200" to "200%"), 4)
-                    toggle("عرض تطبيقات النظام", "tv_apps_sys")
+                    // ----- 🏠 الرئيسية -----
+                    if (sec("home", "🏠 الرئيسية والصفوف")) {
+                        section("الصفوف الظاهرة في الرئيسية", "دوسة تظهّر / تخفّي")
+                        val rows = s.optJSONArray("rows")
+                        val rowViews = ArrayList<View>()
+                        if (rows != null) for (i in 0 until rows.length()) {
+                            val o = rows.optJSONObject(i) ?: continue
+                            val id = o.optString("id"); val on = o.optBoolean("on")
+                            rowViews.add(chip((if (on) "✔  " else "✖  ") + o.optString("name"), on) { o.put("on", !on); render(); send(JSONObject().put("row", id)) })
+                        }
+                        body.addView(grid(rowViews, 1), LinearLayout.LayoutParams(-1, -2))
+                        toggle("اختصار Google Play", "tv_play")
+                    }
 
-                    // ----- التركيز -----
-                    section("التركيز على العناصر")
-                    optChips("tv_lift", listOf("0" to "بدون", "1" to "خفيف", "2" to "متوسط", "3" to "كبير"), 4)
-                    toggle("هالة حوالين العنصر", "tv_halo")
+                    // ----- 🕒 الساعة -----
+                    if (sec("clock", "🕒 الساعة وشاشة التوقف")) {
+                        optChips("tv_clock24", listOf("0" to "12 ساعة", "1" to "24 ساعة"), 2)
+                        label("شاشة التوقف بعد:")
+                        optChips("tv_saver_min", listOf("1" to "دقيقة", "3" to "3 دقايق", "5" to "5 دقايق", "10" to "10 دقايق", "0" to "أبداً"), 3)
+                    }
 
-                    // ----- الساعة -----
-                    section("الساعة وشاشة التوقف")
-                    optChips("tv_clock24", listOf("0" to "12 ساعة", "1" to "24 ساعة"), 2)
-                    body.addView(TextView(act).apply { text = "شاشة التوقف بعد:"; textSize = 14f; setTextColor(Color.WHITE) }, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(10) })
-                    optChips("tv_saver_min", listOf("1" to "دقيقة", "3" to "3 دقايق", "5" to "5 دقايق", "10" to "10 دقايق", "0" to "أبداً"), 3)
+                    // ----- 🎬 الفيديوهات -----
+                    if (sec("vids", "🎬 الفيديوهات (ترتيب وعرض)")) {
+                        label("ترتيب الفولدرات:")
+                        optChips("tv_fold_sort", sortOpts, 2)
+                        label("ترتيب الفيديوهات جوه الفولدر:")
+                        optChips("tv_vid_sort", sortOpts, 2)
+                        label("عرض الفولدرات:")
+                        optChips("tv_fold_view", viewOpts, 3)
+                        label("عرض الفيديوهات جوه الفولدر:")
+                        optChips("tv_vid_view", viewOpts, 3)
+                    }
 
-                    // ----- رجوع للافتراضي -----
+                    // ----- 🌐 المتصفح والصلاة وغيره -----
+                    if (sec("misc", "🌐 المتصفح · مواقيت الصلاة · عام")) {
+                        label("متصفح التلفزيون:")
+                        optChips("tv_br_mode", listOf("ptr" to "مؤشر (ماوس)", "focus" to "تركيز (أسهم)"), 2)
+                        label("طريقة حساب مواقيت الصلاة:")
+                        optChips("tv_pray_method", prayOpts, 2)
+                        toggle("سؤال «خلّي البرنامج هو الرئيسي؟» على التلفزيون", "tv_ask_home")
+                    }
+                }
+
+                // ----- 📱 الموبايل + أدوات (من غير اتصال كمان) -----
+                if (sec("phone", "📱 على الموبايل وأدوات")) {
+                    body.addView(chip(TvModeFab.alwaysLabel(), false) { try { TvModeFab.toggleAlways(act) } catch (_: Throwable) {}; render() },
+                        LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(8) })
+                    val syncOn = Cfg.str("tv_sync_off", "0") != "1"
+                    body.addView(chip(if (syncOn) "🔄 مزامنة إعدادات الموبايل للتلفزيون: شغّالة (دوس تقفلها)" else "⛔ مزامنة إعدادات الموبايل للتلفزيون: مقفولة (دوس تشغّلها)", syncOn) {
+                        Cfg.put("tv_sync_off", if (syncOn) "1" else "0"); render()
+                    }, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(8) })
+                    body.addView(chip(if (TvEdit.active()) "↩ ارجع لإعدادات الموبايل (بتعدّل التلفزيون دلوقتي)" else "✏️ عدّل إعدادات التلفزيون المشتركة (ترجمة · شكل الترجمة · صوت) على التلفزيون بس", false, fill = 0xFF2B4B80.toInt()) {
+                        d.dismiss(); if (TvEdit.active()) TvEdit.exit(act) else TvEdit.enter(act)
+                    }, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(8) })
+                    body.addView(chip("🔧 افتح إعدادات البرنامج على شاشة التلفزيون", false, fill = 0xFF2B4B80.toInt()) { try { RemoteClient.cmd("open_settings") } catch (_: Throwable) {} },
+                        LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(8) })
+                }
+
+                // ----- رجوع للافتراضي -----
+                if (s != null) {
                     body.addView(chip("رجّع المظهر للوضع الافتراضي", false, fill = 0xFF5A2B2B.toInt(), fg = Color.WHITE, line = 0xFF8A4A4A.toInt()) {
                         android.app.AlertDialog.Builder(act)
                             .setTitle("رجوع للافتراضي")
-                            .setMessage("هيرجّع إعدادات المظهر على التلفزيون كلها للوضع الافتراضي.")
+                            .setMessage("هيرجّع إعدادات المظهر (الخلفية والأيقونات والتركيز والساعة) على التلفزيون للوضع الافتراضي.")
                             .setPositiveButton("أيوه") { _, _ -> send(JSONObject().put("reset", true)) }
                             .setNegativeButton("لأ", null).show()
                     }, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(26) })

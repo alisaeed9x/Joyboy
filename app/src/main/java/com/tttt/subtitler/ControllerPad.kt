@@ -399,7 +399,7 @@ object ControllerPad {
             // ── صف: 👁 الوضع البصري · ⚙ الإعدادات (v676: 👁 يرجّع ثانية-ثانيتين ويترجم اللقطة بأي مفتاح جيميناي) ──
             col.addView(row(
                 card("الوضع البصري", "eye", 0xFF8B5CF6.toInt(), 0xFF6D28D9.toInt()) { Thread { try { RemoteClient.player("vsnap") } catch (_: Throwable) {} }.also { it.isDaemon = true }.start() },
-                card("الإعدادات", "gear", 0xFF3B8DFF.toInt(), 0xFF1D4ED8.toInt()) { RemoteClient.cmd("open_settings") },
+                card("إعدادات التلفزيون", "gear", 0xFF3B8DFF.toInt(), 0xFF1D4ED8.toInt(), fs = 13f) { TvLookPad.show(act) },   // (v725) كل إعدادات التلفزيون في مكان واحد (وفيها زرار فتح إعدادات البرنامج على التلفزيون)
                 card("المشغّل", "play", 0xFF16A068.toInt(), 0xFF0F7A4F.toInt()) { PlayerPad.show(act) { d.dismiss() } }   // (v682) كل أزرار مشغّل الفيديو الشغّال على التلفزيون
             ), android.widget.LinearLayout.LayoutParams(-1, -2))
 
@@ -438,11 +438,6 @@ object ControllerPad {
             ), android.widget.LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(12) })
 
             // (v680) الريموت ما بيسكرولش: لو المحتوى أطول من الشاشة بيتصغّر كله بنسبة تلائمها
-            //  (v720) إعدادات التلفزيون: تحكم في المظهر كله من الموبايل
-            col.addView(row(
-                card("إعدادات التلفزيون", "gear", 0xFFB7791F.toInt(), 0xFF8A5A12.toInt(), fs = 15f) { TvLookPad.show(act) }
-            ), android.widget.LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(12) })
-
             val sc = object : ScrollView(act) {
                 override fun onInterceptTouchEvent(ev: MotionEvent?): Boolean = false
                 override fun onTouchEvent(ev: MotionEvent?): Boolean = false
