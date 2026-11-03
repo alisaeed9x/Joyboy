@@ -14,7 +14,7 @@ import android.widget.TextView
  * عمودين: الموبايل (▶ مشاهدة · 🌐 مشاهدة بالترجمة) | التلفزيون (▶ مشاهدة · 🌐 مشاهدة بالترجمة)، وتحتهم زرار «⬇ تحميل» عريض، و✕ صغير يقفلها.
  * onAct بيستلم: mw · mt · tw · tt · dl · close. الإحداثيات (place) بكسل نفس منطقة الصفحة. اللمس برّا اللوحة بيعدّي للصفحة.
  */
-class VidMark(ctx: Context, private val onAct: (String) -> Unit) : FrameLayout(context) {
+class VidMark(ctx: Context, private val onAct: (String) -> Unit) : FrameLayout(ctx) {
     companion object {
         /**
          * بيرجّع [يسار, فوق, عرض, ارتفاع, عرض-الشاشة-بوحدات-CSS] لأكبر فيديو ظاهر في الصفحة (الشغّال أو اللي فيه صورة أولًا)،

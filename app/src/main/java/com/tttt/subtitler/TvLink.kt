@@ -263,10 +263,25 @@ object TvLink {
             "/fs/list" -> TvFsApi.list(app, r)           // (v610) تصفح ملفات التلفزيون (الذاكرة + الفلاشات)
             "/fs/file" -> TvFsApi.file(app, r)           // (v610) تنزيل ملف من التلفزيون بمساره (Range)
             "/file/any" -> TvCatalogApi.file(app, r)     // (v607) تنزيل عنصر من الكتالوج (Range)
+            "/look" -> look(r)                // (v720) تحكم في مظهر التلفزيون من الموبايل
             "/cfg" -> BrainRpc.cfg(r)
             "/bye" -> { rm.announced = false; rm.lastSeen = 0L; notice("📱 الريموت «" + rm.name + "» فصل"); ok() }
             else -> err(404, "nf")
         }
+    }
+
+    /** (v720) مظهر التلفزيون عن بُعد: POST {} = قراءة الحالة، POST {set:{..}, skin, theme, wallnext, reset} = تطبيق وإرجاع الحالة */
+    private fun look(r: HttpReq): HttpRes {
+        val j = try { JSONObject(r.bodyText().ifBlank { "{}" }) } catch (_: Exception) { return err(403, "bad") }
+        val act = TvActivity.live?.get() ?: return err(404, "notv")
+        val box = arrayOfNulls<JSONObject>(1)
+        val latch = java.util.concurrent.CountDownLatch(1)
+        h.post {
+            try { box[0] = act.remoteLook(j) } catch (e: Throwable) { LogStore.err("TvLink:look", e) } finally { latch.countDown() }
+        }
+        try { latch.await(4, java.util.concurrent.TimeUnit.SECONDS) } catch (_: InterruptedException) { }
+        val st = box[0] ?: return err(500, "fail")
+        return ok(JSONObject().put("st", st))
     }
 
     private fun authOf(r: HttpReq): Remote? {

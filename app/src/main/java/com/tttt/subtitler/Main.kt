@@ -680,6 +680,15 @@ class MainActivity : Activity() {
                     ui.text("لون التمييز:", 12f, th.muted), accChips, custSat, custLight, custApply,
                     ui.text("🌡 راحة العين — فلتر دافئ: طبقة دافئة فوق الشاشة بتقلّل الضوء الأزرق بالليل (٠ = مقفول).", 12f, th.muted),
                     ui.slider("درجة الدفء", Cfg.int("warm", 0), 0, 100, "%") { Cfg.put("warm", it.toString()); refreshWarm() }),
+                ui.section("الخلفية المتغيّرة (تجربة)", false,
+                    ui.text("خلفية بتتغيّر لوحدها ورا الواجهة (Bing وصور) في الموبايل والتابلت. لو الأزرار أو الكلام مش باينين زوّد التعتيم. التغيير التلقائي بيوقف على النت المحدود.", 12f, th.muted),
+                    ui.switchRow("شغّال", AppWall.enabled()) { on -> Cfg.put("app_wall", if (on) "auto" else "off"); AppWall.reapply(this) },
+                    ui.chips(listOf("تلقائي", "Bing", "صور عشوائية"), { when (AppWall.mode()) { "bing" -> "Bing"; "picsum" -> "صور عشوائية"; else -> "تلقائي" } }) { n ->
+                        Cfg.put("app_wall", when (n) { "Bing" -> "bing"; "صور عشوائية" -> "picsum"; else -> "auto" }); AppWall.reapply(this) },
+                    ui.text("بتتغيّر كل:", 12f, th.muted),
+                    ui.chips(listOf("30 ثانية", "دقيقة", "5 دقايق", "15 دقيقة", "ساعة", "ثابتة"), { AppWall.secLabel() }) { n -> Cfg.put("app_wall_sec", AppWall.secOf(n)); AppWall.reapply(this) },
+                    ui.slider("تعتيم الخلفية (زوّده لو الأزرار مش باينة)", Cfg.int("app_wall_scrim", 55).coerceIn(0, 95), 0, 95, "%") { Cfg.put("app_wall_scrim", it.toString()); AppWall.refreshScrim() },
+                    ui.button("غيّر الخلفية دلوقتي") { AppWall.nextNow(this) }),
                 ui.section("🧩 الواجهة", false,
                     ui.text("وضع الواجهة (شكل الزراير والفولدرات والأنيميشن):", 12f, th.muted), skinChips, skinSoundSwitch,
                     ui.text("نوع الجهاز (موبايل · تابلت · تلفزيون) — نفس النسخة بتتحول لواجهة تلفزيون أو تابلت، والتبديل بيطبّق فورًا:", 12f, th.muted),
@@ -1001,8 +1010,10 @@ class MainActivity : Activity() {
         if (!fromPlayer) {
             TaskCenter.listener = { if (!isDestroyed && !isFinishing) { tasksDlgRefresh?.invoke(); runOnUiThread { updateTasksFab() } } }
         }
+        if (!DeviceUi.isTv(this)) lib.root.setBackgroundColor(android.graphics.Color.TRANSPARENT)   // (v721) الخلفية المتغيّرة تظهر ورا المكتبة
         pane.addView(lib.root, FrameLayout.LayoutParams(-1, -1))
         tasksUi.root.visibility = View.GONE
+        if (!DeviceUi.isTv(this)) tasksUi.root.setBackgroundColor(android.graphics.Color.TRANSPARENT)
         pane.addView(tasksUi.root, FrameLayout.LayoutParams(-1, -1))   // (v231) صفحة المهام
         if (!fromPlayer) {   // (v370) الإعدادات صفحة كاملة (تبويب ⚙️) بدل الدايلوج — الدايلوج بيفضل بس لما الإعدادات تتفتح من المشغّل
             val host = FrameLayout(this).apply { visibility = View.GONE }
@@ -1030,7 +1041,10 @@ class MainActivity : Activity() {
             // (v527) تلفزيون: يوتيوب صفحة كاملة — الشريط العلوي (تطبيقات/ملفات/يوتيوب/متصفح) اتشال. الخلفية بس فضلت، وتابات يوتيوب (الرئيسية · الاشتراكات · أنا) جوه صفحة يوتيوب نفسها. Back = اللانشر.
             frame.addView(TvShell.backdrop(this, th), FrameLayout.LayoutParams(-1, -1))
             frame.addView(shell, FrameLayout.LayoutParams(-1, -1))
-        } else frame.addView(shell, FrameLayout.LayoutParams(-1, -1))
+        } else {
+            if (!DeviceUi.isTv(this) && !fromPlayer) { try { AppWall.attach(this, frame, th) } catch (e: Throwable) { LogStore.err("Main:appWall", e) } }   // (v721) خلفية متغيّرة للموبايل/التابلت
+            frame.addView(shell, FrameLayout.LayoutParams(-1, -1))
+        }
         ytLoadUi = YtLoadingPage(this, ui, th) { cancelYtLoad() }.also { frame.addView(it.root, FrameLayout.LayoutParams(-1, -1)) }
         if (fromPlayer) {
             setContentView(FrameLayout(this))

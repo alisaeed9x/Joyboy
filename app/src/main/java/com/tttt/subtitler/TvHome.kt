@@ -2021,6 +2021,88 @@ class TvActivity : Activity() {
     }
 
     // ===== (v606) قوايم فرعية للمظهر =====
+    // ===== (v720) تحكم عن بُعد في مظهر التلفزيون من الموبايل (/look) =====
+    private val lookOpts: Map<String, List<String>> = linkedMapOf(
+        "tv_wall" to listOf("auto", "bing", "picsum", "off"),
+        "tv_wall_sec" to listOf("30", "60", "300", "900", "3600", "0"),
+        "tv_scrim" to listOf("0", "25", "40", "50", "65", "80", "90"),
+        "tv_warm" to listOf("0", "1"),
+        "tv_icon_shape" to listOf("circle", "squircle"),
+        "tv_icon_px" to listOf("64", "76", "86", "100", "116", "132"),
+        "tv_names" to listOf("focus", "always", "off"),
+        "tv_scale_adj" to listOf("50", "70", "85", "100", "115", "130", "160", "200"),
+        "tv_lift" to listOf("0", "1", "2", "3"),
+        "tv_halo" to listOf("0", "1"),
+        "tv_clock24" to listOf("0", "1"),
+        "tv_saver_min" to listOf("1", "3", "5", "10", "0"),
+        "tv_apps_sys" to listOf("0", "1"))
+    private val lookDefs: Map<String, String> = mapOf(
+        "tv_wall" to "auto", "tv_wall_sec" to "60", "tv_scrim" to "50", "tv_warm" to "0", "tv_icon_shape" to "circle",
+        "tv_icon_px" to "86", "tv_names" to "always", "tv_scale_adj" to "100", "tv_lift" to "2", "tv_halo" to "1",
+        "tv_clock24" to "0", "tv_saver_min" to "3", "tv_apps_sys" to "0")
+
+    /** بيتنادى على الـ UI thread. j = التغييرات (set / skin / theme / wallnext / reset) أو null للقراءة بس. بيرجّع الحالة الحالية. */
+    fun remoteLook(j: org.json.JSONObject?): org.json.JSONObject {
+        if (j != null && !isFinishing && !isDestroyed) {
+            var wallModeChg = false; var wallSecChg = false; var scrimChg = false; var warmChg = false
+            var rebuild = false; var recreateNow = false
+            val set = j.optJSONObject("set")
+            if (set != null) {
+                val ks = set.keys()
+                while (ks.hasNext()) {
+                    val k = ks.next(); val v = set.optString(k)
+                    val okVals = lookOpts[k] ?: continue
+                    if (v !in okVals) continue
+                    if (Cfg.str(k, lookDefs[k] ?: "") == v) continue
+                    Cfg.put(k, v)
+                    when (k) {
+                        "tv_wall" -> wallModeChg = true
+                        "tv_wall_sec" -> wallSecChg = true
+                        "tv_scrim" -> scrimChg = true
+                        "tv_warm" -> warmChg = true
+                        "tv_scale_adj" -> recreateNow = true
+                        else -> rebuild = true
+                    }
+                }
+            }
+            val sk = j.optString("skin")
+            if (sk.isNotEmpty() && sk != TvSkins.cur().id && TvSkins.all.any { it.id == sk }) { TvSkins.set(sk, skinHost); rebuild = true }
+            val tm = j.optString("theme")
+            if (tm.isNotEmpty() && tm != Cfg.str("theme", th.id) && Themes.all.any { it.id == tm }) { Cfg.put("theme", tm); recreateNow = true }
+            if (j.optBoolean("reset")) {
+                for ((k, v) in lookDefs) Cfg.put(k, v)
+                try { IconPacks.select(IconPacks.DEFAULT) } catch (_: Throwable) { }
+                recreateNow = true
+            }
+            val next = j.optBoolean("wallnext")
+            try {
+                if (recreateNow) recreate()
+                else {
+                    if (wallModeChg) applyWall()
+                    if (wallSecChg) restartWallLoop()
+                    if (scrimChg) applyScrim()
+                    if (warmChg && ::warmView.isInitialized) warmView.visibility = if (Cfg.str("tv_warm", "0") == "1") View.VISIBLE else View.GONE
+                    if (next) { if (wallMode() == "off") { Cfg.put("tv_wall", "auto"); applyWall() } else nextWall(true) }
+                    if (rebuild) applySkinLive()
+                }
+            } catch (e: Throwable) { LogStore.err("Tv:remoteLook", e) }
+        }
+        val o = org.json.JSONObject()
+        o.put("skin", TvSkins.cur().id)
+        o.put("theme", Cfg.str("theme", th.id))
+        val skins = org.json.JSONArray()
+        for (s in TvSkins.all) skins.put(org.json.JSONObject().put("id", s.id).put("name", s.name))
+        o.put("skins", skins)
+        val themes = org.json.JSONArray()
+        for (t in Themes.all) themes.put(org.json.JSONObject().put("id", t.id).put("name", t.name).put("bg", t.bg).put("primary", t.primary).put("light", t.isLight))
+        o.put("themes", themes)
+        val c = org.json.JSONObject()
+        for ((k, d) in lookDefs) c.put(k, Cfg.str(k, d))
+        c.put("tv_wall", wallMode())
+        o.put("cfg", c)
+        return o
+    }
+
     private var appearIdx = 0
     private var subOpened = false   // الكارت فتح قايمة فرعية: ماترسمش الصفحة لحد ما القايمة تتقفل
     private fun refreshAppearance() { if (!isFinishing && !isDestroyed && curTab == -1) showAppearance(appearIdx) }

@@ -438,6 +438,11 @@ object ControllerPad {
             ), android.widget.LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(12) })
 
             // (v680) الريموت ما بيسكرولش: لو المحتوى أطول من الشاشة بيتصغّر كله بنسبة تلائمها
+            //  (v720) إعدادات التلفزيون: تحكم في المظهر كله من الموبايل
+            col.addView(row(
+                card("إعدادات التلفزيون", "gear", 0xFFB7791F.toInt(), 0xFF8A5A12.toInt(), fs = 15f) { TvLookPad.show(act) }
+            ), android.widget.LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(12) })
+
             val sc = object : ScrollView(act) {
                 override fun onInterceptTouchEvent(ev: MotionEvent?): Boolean = false
                 override fun onTouchEvent(ev: MotionEvent?): Boolean = false
