@@ -1,3 +1,4 @@
+com/tttt/subtitler/AppWall.kt
 com/tttt/subtitler/AudioCore.kt
 com/tttt/subtitler/AudioEnc.kt
 com/tttt/subtitler/AudioIO.kt
@@ -20,6 +21,7 @@ com/tttt/subtitler/Core.kt
 com/tttt/subtitler/Coverage.kt
 com/tttt/subtitler/CrashLog.kt
 com/tttt/subtitler/DeviceUi.kt
+com/tttt/subtitler/DlQuality.kt
 com/tttt/subtitler/Downloader.kt
 com/tttt/subtitler/Dub.kt
 com/tttt/subtitler/Engine.kt
@@ -69,6 +71,7 @@ com/tttt/subtitler/LinkSession.kt
 com/tttt/subtitler/Links.kt
 com/tttt/subtitler/LiveCaption.kt
 com/tttt/subtitler/LiveLogic.kt
+com/tttt/subtitler/LocalMt.kt
 com/tttt/subtitler/Lock.kt
 com/tttt/subtitler/LockCore.kt
 com/tttt/subtitler/LogStore.kt
@@ -80,8 +83,10 @@ com/tttt/subtitler/MediaOps.kt
 com/tttt/subtitler/MediaSwitch.kt
 com/tttt/subtitler/MiniDock.kt
 com/tttt/subtitler/ModePrompts.kt
+com/tttt/subtitler/ModelStore.kt
 com/tttt/subtitler/ModelWatch.kt
 com/tttt/subtitler/Models.kt
+com/tttt/subtitler/ModelsUi.kt
 com/tttt/subtitler/Motion.kt
 com/tttt/subtitler/MusicService.kt
 com/tttt/subtitler/MusicUi.kt
@@ -92,6 +97,7 @@ com/tttt/subtitler/NextPanel.kt
 com/tttt/subtitler/Notice.kt
 com/tttt/subtitler/OffLang.kt
 com/tttt/subtitler/Offline.kt
+com/tttt/subtitler/Offload.kt
 com/tttt/subtitler/OrbPlayer.kt
 com/tttt/subtitler/PipSubBar.kt
 com/tttt/subtitler/PlayQueue.kt
@@ -99,8 +105,8 @@ com/tttt/subtitler/PlayQueueUi.kt
 com/tttt/subtitler/PlayTarget.kt
 com/tttt/subtitler/PlaybackBackend.kt
 com/tttt/subtitler/Player.kt
-com/tttt/subtitler/PlayerPad.kt
 com/tttt/subtitler/PlayerLogic.kt
+com/tttt/subtitler/PlayerPad.kt
 com/tttt/subtitler/PopupGuard.kt
 com/tttt/subtitler/Poster.kt
 com/tttt/subtitler/PrayerTimes.kt
@@ -171,11 +177,13 @@ com/tttt/subtitler/TvHome.kt
 com/tttt/subtitler/TvInput.kt
 com/tttt/subtitler/TvKill.kt
 com/tttt/subtitler/TvLink.kt
+com/tttt/subtitler/TvLookPad.kt
 com/tttt/subtitler/TvModeFab.kt
 com/tttt/subtitler/TvPanic.kt
 com/tttt/subtitler/TvPlayerBar.kt
 com/tttt/subtitler/TvPointer.kt
 com/tttt/subtitler/TvPresets.kt
+com/tttt/subtitler/TvRecvPill.kt
 com/tttt/subtitler/TvScale.kt
 com/tttt/subtitler/TvScrub.kt
 com/tttt/subtitler/TvSetup.kt
@@ -197,6 +205,7 @@ com/tttt/subtitler/TypeServer.kt
 com/tttt/subtitler/Ui.kt
 com/tttt/subtitler/UiWatchdog.kt
 com/tttt/subtitler/UniSearch.kt
+com/tttt/subtitler/VidMark.kt
 com/tttt/subtitler/VideoLib.kt
 com/tttt/subtitler/VideoPicker.kt
 com/tttt/subtitler/VideoScan.kt
@@ -226,7 +235,3 @@ com/tttt/subtitler/YtSnap.kt
 com/tttt/subtitler/YtThumbBtns.kt
 com/tttt/subtitler/YtTopBar.kt
 com/tttt/subtitler/YtWatch.kt
-com/tttt/subtitler/ModelStore.kt
-com/tttt/subtitler/LocalMt.kt
-com/tttt/subtitler/ModelsUi.kt
-com/tttt/subtitler/Offload.kt
