@@ -77,11 +77,11 @@ class LinkWatchTile : JoyTile() {
     override val tileLabel = "مراقب اللينكات"
     override fun stateNow(): Int {
         try { Cfg.ensure(applicationContext) } catch (_: Throwable) {}
-        return if (!LinkWatch.enabled(this)) Tile.STATE_UNAVAILABLE else if (Cfg.bool("lw_clip_off", false)) Tile.STATE_INACTIVE else Tile.STATE_ACTIVE
+        return if (!LinkWatch.enabled(this) && !LinkHub.overlayOk(this)) Tile.STATE_UNAVAILABLE else if (Cfg.bool("lw_clip_off", false)) Tile.STATE_INACTIVE else Tile.STATE_ACTIVE
     }
     override fun onTap() {
         try { Cfg.ensure(applicationContext) } catch (_: Throwable) {}
-        if (!LinkWatch.enabled(this)) { launch(Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS)); return }
+        if (!LinkWatch.enabled(this) && !LinkHub.overlayOk(this)) { launch(Intent(android.provider.Settings.ACTION_MANAGE_OVERLAY_PERMISSION, android.net.Uri.parse("package:$packageName"))); return }   // (v735) الإذن الأساسي = العرض فوق التطبيقات
         Cfg.put("lw_clip_off", if (Cfg.bool("lw_clip_off", false)) "0" else "1")   // إيقاف/تشغيل لقط اللينكات (الدايرة)؛ حفظ السجل مستقل
     }
 }

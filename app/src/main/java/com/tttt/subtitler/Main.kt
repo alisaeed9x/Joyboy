@@ -730,15 +730,19 @@ class MainActivity : Activity() {
                     ui.button("2) السماح بالتشغيل التلقائي / الخلفية للتطبيق") { openAutoStartSettings() },
                     ui.text("وكمان: في قايمة التطبيقات الأخيرة اعمل «قفل 🔒» للتطبيق لو جهازك فيه الخيار ده.", 12f, th.muted)),
                 ui.section("🔗 مراقب اللينكات والكليبورد (شغّال في الخلفية)", true,
-                    ui.text("أول ما تنسخ لينك فيديو (من أي تطبيق) بتظهر دايرة بتلف وتدوّر، ولما تلقى الفيديو بتظهر أزرار: تلفزيون · تحميل · شاهد وترجم · شاهد بس. وكمان لما تفتح صفحة فيديو في المتصفح بتظهر دايرة حمراء. الأزرار بتختفي لوحدها بعد 5 ثواني لو ما دوستش حاجة، وكل حاجة بتنسخها بتتحفظ في سجل البرنامج.", 12f, th.muted),
-                    ui.text(if (LinkWatch.enabled(this)) "✅ الخدمة متفعّلة" else "⚠ الخدمة لسه متفعّلتش — دوس الزرار اللي تحت وفعّل «Joyboy — مراقب اللينكات»", 12f, th.text),
-                    ui.button("⚙ فعّل الخدمة (إمكانية الوصول)") { LinkWatch.openSettings(this) },
-                    ui.switchRow("لقط اللينكات من الكليبورد", !Cfg.bool("lw_clip_off", false)) { Cfg.put("lw_clip_off", if (it) "0" else "1") },
+                    ui.text("أي حاجة تنسخها من أي تطبيق بتتحفظ في سجل Joyboy ويطلع إشعار صغير «اتحفظ». ولو نسخت لينك بتظهر دايرة فوق التطبيق: لو فيديو ← تلفزيون · تحميل · شاهد وترجم · شاهد بس، ولو صفحة عادية ← «افتح في متصفح Joyboy». الأزرار بتختفي لوحدها بعد 5 ثواني. وكمان لما تفتح صفحة فيديو في المتصفح بتظهر دايرة حمراء (ده بيحتاج خدمة إمكانية الوصول).", 12f, th.muted),
+                    ui.text((if (LinkHub.overlayOk(this)) "✅ العرض فوق التطبيقات: مسموح" else "⚠ العرض فوق التطبيقات: مش مسموح — ده الإذن الأساسي، دوس الزرار اللي تحت") + "\n" +
+                        (if (ClipOverlay.running) "✅ خدمة الكليبورد شغّالة" else "⏸ خدمة الكليبورد واقفة (بتشتغل لوحدها أول ما الإذن يتفعّل)") + "\n" +
+                        (if (LinkWatch.enabled(this)) "✅ إمكانية الوصول: متفعّلة (للمتصفحات + معرفة مصدر النسخ)" else "ℹ إمكانية الوصول: مش متفعّلة (اختيارية — للمتصفحات بس)"), 12f, th.text),
+                    ui.button("🖼 اسمح بالعرض فوق التطبيقات (الأساسي)") { try { startActivityForResult(Intent(android.provider.Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName")), 14) } catch (_: Throwable) {} },
+                    ui.button("🧪 جرّب الدايرة دلوقتي") { if (!ClipOverlay.test(this)) Notice.show(this, "اسمح بالعرض فوق التطبيقات الأول", 3000L) },
+                    ui.switchRow("لقط اللينكات من الكليبورد (الدايرة)", !Cfg.bool("lw_clip_off", false)) { Cfg.put("lw_clip_off", if (it) "0" else "1"); ClipOverlay.ensure(this) },
+                    ui.switchRow("إشعار «اتحفظ» لما تنسخ", !Cfg.bool("lw_toast_off", false)) { Cfg.put("lw_toast_off", if (it) "0" else "1") },
+                    ui.switchRow("حفظ كل اللي بتنسخه في سجل الكليبورد", !Cfg.bool("lw_hist_off", false)) { Cfg.put("lw_hist_off", if (it) "0" else "1"); ClipOverlay.ensure(this) },
                     ui.switchRow("لقط صفحات الفيديو في المتصفحات", !Cfg.bool("lw_web_off", false)) { Cfg.put("lw_web_off", if (it) "0" else "1") },
-                    ui.switchRow("حفظ كل اللي بتنسخه في سجل الكليبورد", !Cfg.bool("lw_hist_off", false)) { Cfg.put("lw_hist_off", if (it) "0" else "1") },
                     ui.button("📋 افتح سجل الكليبورد") { ClipHistory.show(this, ui, th) },
-                    ui.button("🖼 اسمح بالعرض فوق التطبيقات (يساعد في قراءة الكليبورد من الخلفية)") { try { startActivityForResult(Intent(android.provider.Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName")), 14) } catch (_: Throwable) {} },
-                    ui.text("لو أندرويد منع تفعيل الخدمة (تطبيق متثبّت من برّه): من معلومات التطبيق اضغط ⋮ ← «السماح بالإعدادات المقيّدة» وبعدين فعّلها.", 12f, th.muted)),
+                    ui.button("⚙ إمكانية الوصول (اختياري — للمتصفحات)") { LinkWatch.openSettings(this) },
+                    ui.text("لو أندرويد منع الإذن أو تفعيل الخدمة (تطبيق متثبّت من برّه): من معلومات التطبيق اضغط ⋮ ← «السماح بالإعدادات المقيّدة» وبعدين فعّل. وعلى شاومي/أوبو/فيفو/سامسونج اسمح للتطبيق بالتشغيل التلقائي واستثنيه من توفير البطارية (قسم «🔋» اللي فوق) وإلا النظام بيقتل الخدمة.", 12f, th.muted)),
                 watchViews[1])),   // (v458) الترجمة الحية
             tab("security", listOf<View>(
                             ui.section("🔒 الأمان", false, lockStatus,
@@ -1104,6 +1108,7 @@ class MainActivity : Activity() {
         i.removeExtra("clip_act")
         val url = i.getStringExtra("clip_url") ?: ""
         if (url.isEmpty()) return
+        if (act == "web") { try { openLinkAs(url, Links.WEB) } catch (e: Throwable) { LogStore.err("Main:clipWeb", e) }; return }   // (v735) لينك عادي ← متصفح Joyboy
         val c = ClipVideo(url, i.getStringExtra("clip_title") ?: "", null, i.getStringExtra("clip_play") ?: "", i.getStringExtra("clip_kind") ?: "WEB",
             i.getStringExtra("clip_ref") ?: "", i.getStringExtra("clip_ua") ?: "")
         try { if (act == "orb") playClip(c) else clipAction(act, c) } catch (e: Throwable) { LogStore.err("Main:clipBubble", e) }
@@ -1981,6 +1986,7 @@ class MainActivity : Activity() {
         if (!fromPlayer) { updateYtBadge(); ytBackgroundSync() }
         // الرجوع من المشغّل أو من إعدادات الإذن: حدّث العرض (تقدم الترجمة) أو أعد الفحص
         if (!fromPlayer) CrashLog.showIfAny(this)
+        if (!fromPlayer) ClipOverlay.ensure(this)   // (v735) مراقب الكليبورد بإذن العرض فوق التطبيقات (بيشتغل لوحده أول ما الإذن يتفعّل)
         if (!fromPlayer) ModelWatch.maybeCheck(this)   // (v141) فحص يومي لموديل flash-lite أحدث
         // المخفي بيتقفل تاني لو التطبيق قعد في الخلفية أكتر من دقيقة
         if (stoppedAt > 0 && System.currentTimeMillis() - stoppedAt > 60_000) { libUi?.relock(); musicUi?.lib?.relock() }

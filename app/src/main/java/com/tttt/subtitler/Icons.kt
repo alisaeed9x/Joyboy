@@ -32,6 +32,10 @@ object Icons {
     private val DEF: Map<String, Array<String>> get() = IconDefs.DEF
 
     private val CP: Map<Int, String> = mapOf(
+        0x2039 to "chev_l",   // (v735) ‹ › ← → كانوا بيظهروا حرف «ʼn» في زراير الرجوع على بعض الخطوط ← بقوا أيقونات مرسومة
+        0x203A to "chev_r",
+        0x2190 to "chev_l",
+        0x2192 to "chev_r",
         0x2139 to "info",
         0x2194 to "swap_h",
         0x2195 to "swap_v",
@@ -317,7 +321,7 @@ object Icons {
         var i = 0; val n = cs.length
         while (i < n) {
             val ch = cs[i]
-            if (ch.code >= 0x2139) { val cp = Character.codePointAt(cs, i); if (CP.containsKey(cp)) return true; i += Character.charCount(cp) } else i++
+            if (ch.code >= 0x2039) { val cp = Character.codePointAt(cs, i); if (CP.containsKey(cp)) return true; i += Character.charCount(cp) } else i++
         }
         return false
     }
@@ -347,7 +351,7 @@ object Icons {
         val sb = StringBuilder(); var i = 0
         while (i < s.length) {
             val cp = s.codePointAt(i); val cc = Character.charCount(cp)
-            if (!CP.containsKey(cp) && cp != 0xFE0F && cp != 0xFE0E) sb.appendCodePoint(cp)
+            if ((!CP.containsKey(cp) || cp == 0x2039 || cp == 0x203A || cp == 0x2190 || cp == 0x2192) && cp != 0xFE0F && cp != 0xFE0E) sb.appendCodePoint(cp)   // (v735) الأسهم النصية تفضل زي ما هي في الإشعارات
             i += cc
         }
         return sb.toString().replace(Regex("[ ]{2,}"), " ").trim()

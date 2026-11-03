@@ -19,6 +19,7 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION"/>
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE"/>
     <uses-permission android:name="android.permission.RECORD_AUDIO"/>
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
     <uses-permission android:name="android.permission.WAKE_LOCK"/>
@@ -196,5 +197,9 @@
             <meta-data android:name="android.accessibilityservice" android:resource="@xml/link_watch_config"/>
         </service>
         <service android:name=".KeepAliveService" android:exported="false" android:foregroundServiceType="dataSync"/>
+        <!-- (v735) مراقب الكليبورد بإذن العرض فوق التطبيقات -->
+        <service android:name=".ClipOverlayService" android:exported="false" android:foregroundServiceType="specialUse" android:stopWithTask="false">
+            <property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE" android:value="clipboard_link_overlay"/>
+        </service>
     </application>
 </manifest>

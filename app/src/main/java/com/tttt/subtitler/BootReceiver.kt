@@ -9,6 +9,7 @@ class BootReceiver : BroadcastReceiver() {
     override fun onReceive(c: Context, i: Intent) {
         if (i.action != Intent.ACTION_BOOT_COMPLETED && i.action != Intent.ACTION_MY_PACKAGE_REPLACED) return
         Cfg.init(c.applicationContext)
+        try { ClipOverlay.ensure(c) } catch (_: Exception) {}   // (v735) مراقب الكليبورد بعد الريستارت/التحديث
         if (!Cfg.bool("bg_autostart", true)) return
         // أندرويد 14/15 ممكن يمنع تشغيل خدمة dataSync من BOOT_COMPLETED — ماننهارش لو اترفض
         try { LogStore.init(c.applicationContext) } catch (_: Exception) {}
