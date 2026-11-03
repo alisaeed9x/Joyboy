@@ -25,15 +25,25 @@ abstract class JoyTile : TileService() {
     protected abstract val tileLabel: String
     /** الحالة وقت ما القايمة تتفتح */
     protected open fun stateNow(): Int = Tile.STATE_INACTIVE
+    /** (v734) اسم وسطر تحته بيتغيّروا (عدّاد تنازلي مثلًا). تحت أندرويد 10 مفيش سطر تاني فبيتضم للاسم */
+    protected open fun labelNow(): String = tileLabel
+    protected open fun subtitleNow(): String? = null
+    protected val handler = android.os.Handler(android.os.Looper.getMainLooper())
+    /** لو true: البلاطة بتتحدّث كل ثانية وهي ظاهرة (عدّاد تنازلي) */
+    protected open val ticking = false
+    private val tickR = object : Runnable { override fun run() { refreshTile(); if (ticking) handler.postDelayed(this, 1000L) } }
     protected abstract fun onTap()
 
-    override fun onStartListening() { refreshTile() }
+    override fun onStartListening() { refreshTile(); handler.removeCallbacks(tickR); if (ticking) handler.postDelayed(tickR, 1000L) }
+    override fun onStopListening() { handler.removeCallbacks(tickR) }
     override fun onTileAdded() { refreshTile() }
     override fun onClick() { try { onTap() } catch (e: Throwable) { try { LogStore.err("Tile:" + tileLabel, e) } catch (_: Throwable) {} }; refreshTile() }
 
     protected fun refreshTile() {
         val t = qsTile ?: return
-        t.label = tileLabel
+        val sub = try { subtitleNow() } catch (_: Throwable) { null }
+        t.label = if (Build.VERSION.SDK_INT >= 29 || sub.isNullOrEmpty()) labelNow() else labelNow() + " · " + sub
+        if (Build.VERSION.SDK_INT >= 29) t.subtitle = sub
         t.icon = Icon.createWithResource(this, iconRes)
         t.state = stateNow()
         try { t.updateTile() } catch (_: Throwable) {}
@@ -58,6 +68,7 @@ class QrTile : JoyTile() {
 class ClipTile : JoyTile() {
     override val iconRes = R.drawable.ic_tile_clip
     override val tileLabel = "سجل الكليبورد"
+    override fun subtitleNow(): String? = try { ClipHistory.list(this).firstOrNull()?.text?.replace('\n', ' ')?.take(26) } catch (_: Throwable) { null }
     override fun onTap() = launch(main("clip_history"))
 }
 
@@ -80,7 +91,7 @@ class MusicTile : JoyTile() {
     override val tileLabel = "الموسيقى"
     override fun stateNow(): Int = if (MusicEngine.current != null && MusicEngine.isPlaying) Tile.STATE_ACTIVE else Tile.STATE_INACTIVE
     override fun onTap() { if (MusicEngine.current != null) MusicEngine.toggle() else launch(main("tab", "music")) }
-    override fun onStartListening() { super.onStartListening(); if (Build.VERSION.SDK_INT >= 29) { qsTile?.subtitle = MusicEngine.current?.title ?: ""; try { qsTile?.updateTile() } catch (_: Throwable) {} } }
+    override fun subtitleNow(): String? = MusicEngine.current?.title
 }
 
 class BrowserTile : JoyTile() {
@@ -145,5 +156,77 @@ class QrScanActivity : Activity() {
             ab.setNeutralButton("🔗 فتح") { _, _ -> try { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(txt.trim())).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) } catch (_: Throwable) {}; finish() }
         }
         ab.show()
+    }
+}
+
+/** (v734) 🕌 الصلاة الجاية: اسمها + عدّاد تنازلي بالثانية (بيتحدّث وهي ظاهرة). بتنوّر لما يفضل ربع ساعة أو أقل. دوسة = تحديث المواقيت */
+class PrayerTile : JoyTile() {
+    companion object { @Volatile var data: PrayerTimes.Data? = null }
+    override val iconRes = R.drawable.ic_tile_prayer
+    override val tileLabel = "الصلاة الجاية"
+    override val ticking = true
+    private fun next(): Pair<String, Long>? { val d = data ?: return null; return try { PrayerTimes.nextPrayer(d.times, System.currentTimeMillis()) } catch (_: Throwable) { null } }
+    override fun labelNow(): String { val n = next() ?: return "الصلاة الجاية"; return PrayerTimes.ar(n.first) }
+    override fun subtitleNow(): String? {
+        val n = next() ?: return "بحمّل المواقيت…"
+        val left = ((n.second - System.currentTimeMillis()) / 1000L).coerceAtLeast(0L)
+        return "%d:%02d:%02d".format(left / 3600, (left % 3600) / 60, left % 60)
+    }
+    override fun stateNow(): Int { val n = next() ?: return Tile.STATE_INACTIVE; return if (n.second - System.currentTimeMillis() <= 15 * 60_000L) Tile.STATE_ACTIVE else Tile.STATE_INACTIVE }
+    private fun load(force: Boolean) { PrayerTimes.loadData(applicationContext, force) { d -> if (d != null) { data = d; handler.post { refreshTile() } } } }
+    override fun onStartListening() { super.onStartListening(); load(false) }
+    override fun onTap() { load(true) }
+}
+
+/** (v734) ⏲ مؤقت نوم الموسيقى: كل دوسة بتغيّر (15 د ← 30 د ← ساعة ← آخر الأغنية ← إيقاف) والوقت المتبقي بيعدّ تنازلي تحت الاسم */
+class SleepTile : JoyTile() {
+    override val iconRes = R.drawable.ic_tile_sleep
+    override val tileLabel = "مؤقت نوم الموسيقى"
+    override val ticking = true
+    private fun on() = MusicEngine.sleepLeftMs() > 0L || MusicEngine.sleepEndOfTrack
+    override fun stateNow(): Int = if (on()) Tile.STATE_ACTIVE else Tile.STATE_INACTIVE
+    override fun subtitleNow(): String? {
+        val l = MusicEngine.sleepLeftMs()
+        return if (l > 0L) "%d:%02d".format(l / 60000L, (l / 1000L) % 60L) else if (MusicEngine.sleepEndOfTrack) "آخر الأغنية" else "مقفول"
+    }
+    override fun onTap() {
+        if (MusicEngine.current == null) { android.widget.Toast.makeText(this, "مفيش موسيقى شغّالة", android.widget.Toast.LENGTH_SHORT).show(); return }
+        try { Cfg.ensure(applicationContext) } catch (_: Throwable) {}
+        val steps = intArrayOf(15, 30, 60, -1, 0)
+        val i = if (!on()) 0 else ((Cfg.str("tile_sleep_i", "0").toIntOrNull() ?: 0) + 1) % steps.size
+        Cfg.put("tile_sleep_i", i.toString())
+        MusicEngine.setSleep(steps[i])
+    }
+}
+
+/** (v734) 📺 وضع التلفزيون: تشغيل/خروج (منوّرة = متصل) */
+class TvModeTile : JoyTile() {
+    override val iconRes = R.drawable.ic_tile_tv
+    override val tileLabel = "وضع التلفزيون"
+    override fun stateNow(): Int { try { Cfg.ensure(applicationContext) } catch (_: Throwable) {}; return if (PlayTarget.enabled()) Tile.STATE_ACTIVE else Tile.STATE_INACTIVE }
+    override fun subtitleNow(): String? = if (stateNow() == Tile.STATE_ACTIVE) "متصل" else "مقفول"
+    override fun onTap() = launch(main("tv_toggle"))
+}
+
+/** (v734) 📋 المهام: عدد المهام الشغّالة (ترجمة · تحميل · ترميز…) · دوسة = صفحة المهام */
+class TasksTile : JoyTile() {
+    override val iconRes = R.drawable.ic_tile_tasks
+    override val tileLabel = "المهام"
+    private fun n(): Int = try { TaskCenter.active() } catch (_: Throwable) { 0 }
+    override fun stateNow(): Int = if (n() > 0) Tile.STATE_ACTIVE else Tile.STATE_INACTIVE
+    override fun subtitleNow(): String? = n().let { if (it > 0) "$it شغّالة" else "مفيش" }
+    override fun onTap() = launch(main("tab", "tasks"))
+}
+
+/** (v734) ▶ آخر لينك نسخته: بيفتحه في Joyboy بنفس منطق دايرة الكليبورد (يلاقي الفيديو ويسألك تعمل إيه) */
+class LastLinkTile : JoyTile() {
+    override val iconRes = R.drawable.ic_tile_play
+    override val tileLabel = "آخر لينك نسخته"
+    private fun last(): String? = try { ClipHistory.list(this).firstNotNullOfOrNull { ClipWatch.extract(it.text).firstOrNull() } } catch (_: Throwable) { null }
+    override fun subtitleNow(): String? = last()?.removePrefix("https://")?.removePrefix("http://")?.removePrefix("www.")?.take(26) ?: "مفيش"
+    override fun onTap() {
+        val u = last()
+        if (u == null) { android.widget.Toast.makeText(this, "مفيش لينك في السجل", android.widget.Toast.LENGTH_SHORT).show(); return }
+        launch(main().putExtra("clip_act", "orb").putExtra("clip_url", u))
     }
 }

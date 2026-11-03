@@ -1098,6 +1098,7 @@ class MainActivity : Activity() {
     /** (v729) أزرار ويدجت اللينكات العايمة (LinkWatchService): نفس أزرار دايرة الكليبورد اللي جوه البرنامج، بس جاية من فوق أي تطبيق */
     private fun handleClipBubbleIntent(i: Intent?) {
         if (i == null || isFinishing || isDestroyed) return
+        if (i.getBooleanExtra("tv_toggle", false)) { i.removeExtra("tv_toggle"); try { TvModeFab.toggle(this) } catch (e: Throwable) { LogStore.err("Main:tvToggle", e) }; return }   // (v734) بلاطة «وضع التلفزيون»
         if (i.getBooleanExtra("clip_history", false)) { i.removeExtra("clip_history"); try { val th2 = Themes.byId(Cfg.str("theme", "mx")); ClipHistory.show(this, Ui(this, th2), th2) } catch (e: Throwable) { LogStore.err("Main:clipHistory", e) }; return }   // (v733) بلاطة «سجل الكليبورد»
         val act = i.getStringExtra("clip_act") ?: return
         i.removeExtra("clip_act")
