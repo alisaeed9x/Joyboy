@@ -729,6 +729,16 @@ class MainActivity : Activity() {
                     ui.button("1) استثناء من توفير البطارية") { requestBatteryExemption() },
                     ui.button("2) السماح بالتشغيل التلقائي / الخلفية للتطبيق") { openAutoStartSettings() },
                     ui.text("وكمان: في قايمة التطبيقات الأخيرة اعمل «قفل 🔒» للتطبيق لو جهازك فيه الخيار ده.", 12f, th.muted)),
+                ui.section("🔗 مراقب اللينكات والكليبورد (شغّال في الخلفية)", true,
+                    ui.text("أول ما تنسخ لينك فيديو (من أي تطبيق) بتظهر دايرة بتلف وتدوّر، ولما تلقى الفيديو بتظهر أزرار: تلفزيون · تحميل · شاهد وترجم · شاهد بس. وكمان لما تفتح صفحة فيديو في المتصفح بتظهر دايرة حمراء. الأزرار بتختفي لوحدها بعد 5 ثواني لو ما دوستش حاجة، وكل حاجة بتنسخها بتتحفظ في سجل البرنامج.", 12f, th.muted),
+                    ui.text(if (LinkWatch.enabled(this)) "✅ الخدمة متفعّلة" else "⚠ الخدمة لسه متفعّلتش — دوس الزرار اللي تحت وفعّل «Joyboy — مراقب اللينكات»", 12f, th.text),
+                    ui.button("⚙ فعّل الخدمة (إمكانية الوصول)") { LinkWatch.openSettings(this) },
+                    ui.switchRow("لقط اللينكات من الكليبورد", !Cfg.bool("lw_clip_off", false)) { Cfg.put("lw_clip_off", if (it) "0" else "1") },
+                    ui.switchRow("لقط صفحات الفيديو في المتصفحات", !Cfg.bool("lw_web_off", false)) { Cfg.put("lw_web_off", if (it) "0" else "1") },
+                    ui.switchRow("حفظ كل اللي بتنسخه في سجل الكليبورد", !Cfg.bool("lw_hist_off", false)) { Cfg.put("lw_hist_off", if (it) "0" else "1") },
+                    ui.button("📋 افتح سجل الكليبورد") { ClipHistory.show(this, ui, th) },
+                    ui.button("🖼 اسمح بالعرض فوق التطبيقات (يساعد في قراءة الكليبورد من الخلفية)") { try { startActivityForResult(Intent(android.provider.Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName")), 14) } catch (_: Throwable) {} },
+                    ui.text("لو أندرويد منع تفعيل الخدمة (تطبيق متثبّت من برّه): من معلومات التطبيق اضغط ⋮ ← «السماح بالإعدادات المقيّدة» وبعدين فعّلها.", 12f, th.muted)),
                 watchViews[1])),   // (v458) الترجمة الحية
             tab("security", listOf<View>(
                             ui.section("🔒 الأمان", false, lockStatus,
@@ -1081,10 +1091,22 @@ class MainActivity : Activity() {
         frame.post { permFlow { ensureKeysSoft { keys.setText(Cfg.allMainKeys().joinToString("\n")); keyLoadersRef.forEach { it() }; refreshChip(); doScan() } } }
         try { TvSync.install(this) } catch (_: Throwable) {}
         try { if (!DeviceUi.isTv(this) && Cfg.str("skin", "classic") != "classic") { Cfg.p.edit().putString("skin", "classic").apply(); Skins.set("classic") } } catch (_: Throwable) {}   // (v727) «وضع الواجهة» القديم اتشال من الموبايل: نرجّعه للأصلي من غير مزامنة   // (v568) مزامنة الإعدادات للتلفزيون من أي شاشة
-        frame.post { handleLinkIntent(intent) }; frame.post { handleExternal(intent) }
+        frame.post { handleLinkIntent(intent) }; frame.post { handleExternal(intent) }; frame.post { handleClipBubbleIntent(intent) }
     }
     /** (v345) المرحلة 1 «كتلة واحدة»: أي لينك جاي من برّه (مشاركة أو فتح). لينك يوتيوب ← قايمة «افتحه إزاي؟»، غير كده ← زي زمان */
     private fun ytIdOf(u: String): String? = Regex("(?:youtu\\.be/|youtube\\.com/(?:watch\\?(?:[^\\s#]*&)?v=|shorts/|live/|embed/))([A-Za-z0-9_-]{11})").find(u)?.groupValues?.get(1)
+    /** (v729) أزرار ويدجت اللينكات العايمة (LinkWatchService): نفس أزرار دايرة الكليبورد اللي جوه البرنامج، بس جاية من فوق أي تطبيق */
+    private fun handleClipBubbleIntent(i: Intent?) {
+        if (i == null || isFinishing || isDestroyed) return
+        if (i.getBooleanExtra("clip_history", false)) { i.removeExtra("clip_history"); try { val th2 = Themes.byId(Cfg.str("theme", "mx")); ClipHistory.show(this, Ui(this, th2), th2) } catch (e: Throwable) { LogStore.err("Main:clipHistory", e) }; return }   // (v733) بلاطة «سجل الكليبورد»
+        val act = i.getStringExtra("clip_act") ?: return
+        i.removeExtra("clip_act")
+        val url = i.getStringExtra("clip_url") ?: ""
+        if (url.isEmpty()) return
+        val c = ClipVideo(url, i.getStringExtra("clip_title") ?: "", null, i.getStringExtra("clip_play") ?: "", i.getStringExtra("clip_kind") ?: "WEB",
+            i.getStringExtra("clip_ref") ?: "", i.getStringExtra("clip_ua") ?: "")
+        try { if (act == "orb") playClip(c) else clipAction(act, c) } catch (e: Throwable) { LogStore.err("Main:clipBubble", e) }
+    }
     private fun handleExternal(i: Intent?) {
         if (i == null || isFinishing || isDestroyed) return
         val raw = when (i.action) { Intent.ACTION_SEND -> i.getStringExtra(Intent.EXTRA_TEXT) ?: ""; Intent.ACTION_VIEW -> i.dataString ?: ""; else -> return }
@@ -1984,6 +2006,7 @@ class MainActivity : Activity() {
             } catch (e: Throwable) { LogStore.err("Main:ytaudio", e); Notice.show(this, ("ما قدرتش أحوّل لصوت — جرّب تاني").toString(), 3000L) }
         }
         handleExternal(i); handleLinkIntent(i)   // (v345)
+        handleClipBubbleIntent(i)   // (v729) أزرار الدايرة العايمة (LinkWatch) من فوق أي تطبيق
         // (v547 م3) «📚 مكتبة التلفزيون» من شاشة الريموت
         if (i?.getBooleanExtra("lib_tv", false) == true) { i.removeExtra("lib_tv"); libSourceFn?.invoke(true) }
         if (i?.getBooleanExtra("lib_phone", false) == true) { i.removeExtra("lib_phone"); libSourceFn?.invoke(false) }   // (v691) «📱 مكتبة الموبايل» من صفحة المشغّل

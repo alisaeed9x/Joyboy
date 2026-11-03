@@ -135,6 +135,29 @@
         <service android:name=".MusicService" android:exported="false" android:foregroundServiceType="mediaPlayback"/>
         <service android:name=".TaskService" android:exported="false" android:foregroundServiceType="dataSync" android:stopWithTask="false"/>   <!-- (v420) مهام الترميز في الخلفية -->
         <!-- (v518) هدف مشاركة «ابعت للتلفزيون» · الخدمة الأمامية (v603: الريموت القديم اتمسح، الأيقونة بتفتح الكنترولر الجديد) -->
+        <!-- (v733) بلاطات الإعدادات السريعة -->
+        <service android:name=".QrTile" android:exported="true" android:label="Joyboy — ماسح QR" android:icon="@drawable/ic_tile_qr" android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter><action android:name="android.service.quicksettings.action.QS_TILE"/></intent-filter>
+        </service>
+        <service android:name=".ClipTile" android:exported="true" android:label="Joyboy — سجل الكليبورد" android:icon="@drawable/ic_tile_clip" android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter><action android:name="android.service.quicksettings.action.QS_TILE"/></intent-filter>
+        </service>
+        <service android:name=".LinkWatchTile" android:exported="true" android:label="Joyboy — مراقب اللينكات" android:icon="@drawable/ic_tile_link" android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter><action android:name="android.service.quicksettings.action.QS_TILE"/></intent-filter>
+        </service>
+        <service android:name=".MusicTile" android:exported="true" android:label="Joyboy — الموسيقى" android:icon="@drawable/ic_tile_music" android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter><action android:name="android.service.quicksettings.action.QS_TILE"/></intent-filter>
+        </service>
+        <service android:name=".BrowserTile" android:exported="true" android:label="Joyboy — المتصفح" android:icon="@drawable/ic_tile_browser" android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter><action android:name="android.service.quicksettings.action.QS_TILE"/></intent-filter>
+        </service>
+        <service android:name=".YoutubeTile" android:exported="true" android:label="Joyboy — يوتيوب" android:icon="@drawable/ic_tile_yt" android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter><action android:name="android.service.quicksettings.action.QS_TILE"/></intent-filter>
+        </service>
+        <service android:name=".RemoteTile" android:exported="true" android:label="Joyboy — ريموت التلفزيون" android:icon="@drawable/ic_tile_remote" android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter><action android:name="android.service.quicksettings.action.QS_TILE"/></intent-filter>
+        </service>
+        <activity android:name=".QrScanActivity" android:exported="false" android:taskAffinity="" android:theme="@android:style/Theme.Translucent.NoTitleBar" android:excludeFromRecents="true"/>
         <!-- (v595) أيقونة الريموت: شاشة شفافة بتفتح شاشة الكنترولر الجديد (الجويستيك) في كل مرة -->
         <activity android:name=".LaunchRemoteActivity" android:exported="true" android:taskAffinity="" android:label="ريموت التلفزيون" android:icon="@mipmap/ic_remote" android:roundIcon="@mipmap/ic_remote"
             android:theme="@android:style/Theme.Translucent.NoTitleBar" android:excludeFromRecents="true" android:noHistory="true">
@@ -150,6 +173,12 @@
             android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
             <intent-filter><action android:name="android.accessibilityservice.AccessibilityService"/></intent-filter>
             <meta-data android:name="android.accessibilityservice" android:resource="@xml/tv_access_config"/>
+        </service>
+        <!-- (v729) ويدجت اللينكات العايمة فوق أي تطبيق (كليبورد + صفحات فيديو في المتصفحات) — خدمة إمكانية وصول مستقلة بتتفعّل مرة واحدة -->
+        <service android:name=".LinkWatchService" android:exported="true" android:label="Joyboy — مراقب اللينكات"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+            <intent-filter><action android:name="android.accessibilityservice.AccessibilityService"/></intent-filter>
+            <meta-data android:name="android.accessibilityservice" android:resource="@xml/link_watch_config"/>
         </service>
         <service android:name=".KeepAliveService" android:exported="false" android:foregroundServiceType="dataSync"/>
     </application>

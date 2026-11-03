@@ -98,7 +98,7 @@ object ClipWatch {
     private fun niceName(u: String) = try { java.net.URLDecoder.decode(Sniff.nameOf(u), "UTF-8") } catch (_: Throwable) { Sniff.nameOf(u) }
 
     /** يشتغل على thread خلفي. بيرجّع null لو اللينك مفيهوش فيديو */
-    fun resolve(act: Activity, u: String): ClipVideo? {
+    fun resolve(act: Context, u: String): ClipVideo? {
         if (Sniff.isDirect(u)) return ClipVideo(u, niceName(u), frame(u), u, Sniff.kindOf(u))
         YtExtract.videoId(u)?.let { id ->
             val h = http("https://www.youtube.com/oembed?format=json&url=" + java.net.URLEncoder.encode("https://www.youtube.com/watch?v=$id", "UTF-8"), 100_000)
@@ -124,11 +124,11 @@ object ClipWatch {
 
     /** متصفح مخفي: بيحمّل الصفحة ويستنى أي طلب فيديو (بيشتغل مع المواقع اللي بتشغّل الفيديو أوتوماتيك) */
     @SuppressLint("SetJavaScriptEnabled")
-    private fun probe(act: Activity, u: String): ClipVideo? {
+    private fun probe(act: Context, u: String): ClipVideo? {
         val latch = CountDownLatch(1); val found = AtomicReference<String?>(null); val info = AtomicReference("")
         val ref = AtomicReference<WebView?>(null); val ua = AtomicReference(UA)
         val hh = Handler(Looper.getMainLooper())
-        act.runOnUiThread {
+        hh.post {
             try {
                 val wv = WebView(act); ref.set(wv); WebMute.register(wv); WebMute.mute(wv)
                 wv.settings.apply { javaScriptEnabled = true; domStorageEnabled = true; mediaPlaybackRequiresUserGesture = false; mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW }
@@ -151,7 +151,7 @@ object ClipWatch {
         latch.await(10, TimeUnit.SECONDS)
         val f = found.get()
         val j = try { JSONObject(info.get()) } catch (_: Throwable) { JSONObject() }
-        act.runOnUiThread { try { ref.get()?.stopLoading(); ref.get()?.destroy() } catch (_: Throwable) {} }
+        hh.post { try { ref.get()?.stopLoading(); ref.get()?.destroy() } catch (_: Throwable) {} }
         if (f == null) return null
         val img = j.optString("i").takeIf { it.startsWith("http") }
         return ClipVideo(u, j.optString("t").ifEmpty { Sniff.nameOf(u) }, bitmap(img) ?: frame(f), f, Sniff.kindOf(f), u, ua.get())

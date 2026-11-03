@@ -68,6 +68,7 @@ com/tttt/subtitler/LinkCore.kt
 com/tttt/subtitler/LinkHttp.kt
 com/tttt/subtitler/LinkRefresh.kt
 com/tttt/subtitler/LinkSession.kt
+com/tttt/subtitler/LinkWatch.kt
 com/tttt/subtitler/Links.kt
 com/tttt/subtitler/LiveCaption.kt
 com/tttt/subtitler/LiveLogic.kt
@@ -239,3 +240,5 @@ com/tttt/subtitler/YtSnap.kt
 com/tttt/subtitler/YtThumbBtns.kt
 com/tttt/subtitler/YtTopBar.kt
 com/tttt/subtitler/YtWatch.kt
+com/tttt/subtitler/ClipHistory.kt
+com/tttt/subtitler/QuickTiles.kt

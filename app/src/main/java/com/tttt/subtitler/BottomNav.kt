@@ -15,18 +15,20 @@ class BottomNav(act: Activity, private val ui: Ui, private val th: Theme, privat
     companion object { const val MORE = 8
         /** (v521) زرار «الريموت» (موبايل/تابلت بس) جنب الفيديوهات — بيفتح الكنترولر الجديد (ControllerPad) مباشرة ومش بوابة عادية */
         const val REMOTE = 12
+        /** (v732) زرار «الكليبورد»: بيفتح سجل الكليبورد الدائم مباشرة (مش بوابة) */
+        const val CLIP = 13
         /** (v472) «الذكاء» تبويب اتمسح قديمًا — الرقم 6 محجوز عشان ترقيم البوابات ما يتغيّرش، لكن مش بيظهر في أي حته */
         const val DEAD_AI = 6
         /** (v467) ترتيب الشريط بطلب صاحب التطبيق: الفيديوهات ← يوتيوب ← الموسيقى ← المتصفح ← المزيد.
          *  أي بوابة مش في الشريط بتظهر تلقائيًا جوه «المزيد» — فأي إضافة جديدة هتبان من غير تعديل هنا. */
-        val BAR_ORDER = listOf(0, REMOTE, 4, 2, 3, 8)   // (v654) 1 (الموسيقى) اتدمجت مع 0 في زرار «ميديا»
+        val BAR_ORDER = listOf(0, REMOTE, 4, 2, 3, CLIP, 8)   // (v654) 1 (الموسيقى) اتدمجت مع 0 في زرار «ميديا»
         /** (v475) خلايا يوتيوب الافتراضية (مش بوابات): الرئيسية 9 · الاشتراكات 10 · أنا 11 — بتحل محل خلية «يوتيوب» وانت جواه */
         const val YT_HOME = 9; const val YT_SUBS = 10; const val YT_ME = 11
         val NORMAL_ORDER = BAR_ORDER
         val YT_ORDER = listOf(0, YT_HOME, YT_SUBS, YT_ME, MORE)       // نسخة كاملة وانت في يوتيوب: الموسيقى والمتصفح بيروحوا لـ«المزيد»
         val LITE_ORDER = listOf(YT_HOME, YT_SUBS, 0, YT_ME)           // نسخة اللايت: الرئيسية · الاشتراكات · محلي · أنا
         val DEFS = listOf("🎞" to "الفيديوهات", "🎵" to "الموسيقى", "🌐" to "المتصفح", "🗂" to "المخزن", "▶" to "يوتيوب", "📋" to "المهام", "" to "", "⚙️" to "الإعدادات", "⋯" to "المزيد",
-            "🏠" to "الرئيسية", "📺" to "الاشتراكات", "👤" to "أنا", "📱" to "الريموت")
+            "🏠" to "الرئيسية", "📺" to "الاشتراكات", "👤" to "أنا", "📱" to "الريموت", "📎" to "الكليبورد")
     }
     /** البوابات اللي ورا ⋯ المزيد: أي بوابة مش في الشريط (حاليًا: الملفات 3 · المهام 5 · الذكاء 6 · الإعدادات 7) — الزرار بيتلوّن لما واحدة منهم تبقى هي النشطة */
     private val lite = act.packageName.endsWith(".lite")
@@ -178,7 +180,7 @@ class BottomNav(act: Activity, private val ui: Ui, private val th: Theme, privat
                 addView(box, LinearLayout.LayoutParams(ui.dp(38), ui.dp(20)))
                 addView(lab, LinearLayout.LayoutParams(-2, -2))
                 Glass.pressable(this)
-                setOnClickListener { if (idx == MORE) toggleMore(act) else if (idx == REMOTE) { try { ControllerPad.show(act) } catch (e: Throwable) { LogStore.err("Nav:remote", e) } } else { collapseMore(); onPick(idx) } }
+                setOnClickListener { if (idx == MORE) toggleMore(act) else if (idx == CLIP) { collapseMore(); try { ClipHistory.show(act, ui, th) } catch (e: Throwable) { LogStore.err("Nav:clip", e) } } else if (idx == REMOTE) { try { ControllerPad.show(act) } catch (e: Throwable) { LogStore.err("Nav:remote", e) } } else { collapseMore(); onPick(idx) } }
             }
             icons.add(icon); labels.add(lab); cells.add(cell)
         }

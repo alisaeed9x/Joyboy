@@ -13,6 +13,9 @@ import java.util.concurrent.ConcurrentHashMap
  * لو البرنامج اتقفل وهو في الوضع ده: الوضع في الذاكرة بس فبيرجع لإعدادات الموبايل لوحده.
  */
 object TvEdit {
+    /** (v728) true لو بنعدّل إعدادات التلفزيون دلوقتي (Cfg.tvOv مفعّل) */
+    fun active(): Boolean = Cfg.tvOv != null
+
     private fun reopenSettings(act: Activity) {
         try {
             act.startActivity(Intent(act, MainActivity::class.java)
