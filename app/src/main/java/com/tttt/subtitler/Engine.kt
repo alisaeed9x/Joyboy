@@ -1662,7 +1662,7 @@ class Engine(
         }
         if (released > 0 && TrWizard.googleOn()) {   // (v274) المحركات الخارجية وجوجل ماكمّلوش: الباتشات دي بترجع كطلب كامل (احتياطي ثم صوت ← ترجمة) بمفاتيح جيميناي
             // (v389) إشعار واحد «فشل ← اتحوّل» وبس؛ لو مفيش تحويل (مفيش مفتاح جيميناي) مفيش إشعار (اللوج بس)
-            if (keyless) host.log("⚠ محركات الترجمة وقفت ومفيش مفتاح جيميناي — $released باتش هيتعاد لما تشتغل")
+            if (keyless) { host.log("⚠ محركات الترجمة وقفت ومفيش مفتاح جيميناي — $released باتش هيتعاد لما تشتغل"); swapNotice("⚠ محركات الترجمة وقفت ومفيش مفتاح جيميناي يكمّل — $released باتش مستنيين (ضيف مفتاح أو شغّل محرك تاني)") }   // (v741) كان في اللوج بس
             else if (!Strict.noGemKeys()) swapNotice("🔄 فشلت محركات الترجمة (${ExtTranslate.chainLabel().substringBeforeLast(" ← ")}) — تم التحويل لجيميناي ($released باتش)")
         }
     }
@@ -1699,18 +1699,28 @@ class Engine(
         whoKind = kind; whoAt = n
         try { host.notice(kind + detail) } catch (_: Throwable) {}
     }
-    private val quietFailKeys = setOf("conv", "ctx", "part", "refine")
+    private val quietFailKeys = setOf("conv", "refine")   // (v741) ctx/part شالناهم: فشل الترجمة السياقية لازم يظهر (مرة/دقيقة بالكتير) مش في اللوج بس
     @Volatile private var swapNoticeAt = 0L   // (v274) آخر إشعار «محرك وقف ← التاني كمّل» (مرة كل 20 ث بالكتير)
     private val skipNoted = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()   // (v274) مزوّدين اتقال إنهم موقوفين (بيتشالوا لما يرجعوا)
     /** (v274) إشعار تبديل محرك الترجمة + سطر في اللوج */
     /** (v286) بديل تلقائي: جيميناي وقف في الترجمة النصية (كوتة / مفاتيح / رد غلط) ← الجمل الناقصة بتتترجم بسلسلة المترجمين (المحرك الخارجي/LLM ← جوجل) بدل ما تستنى. بيتقفل من «⋯ أكتر». مش بيشتغل في مسار جوجل (هو أصلًا بالسلسلة) */
     private fun autoSwapOn(): Boolean = Cfg.str("tr_autoswap", "on") != "off" && !transOnly && !TrWizard.googleOn() && TrWizard.online()
     private fun swapTranslate(items: List<Sub>, missing: List<Int>, tr: Array<String?>, pv: Array<String?>): Int {
-        if (!autoSwapOn() || missing.isEmpty() || !running || isClosed) return 0
-        val g = googleItems(items.map { it.original })
+        if (missing.isEmpty() || !running || isClosed) return 0
+        if (!autoSwapOn()) {
+            // (v741) البديل مقفول بإيدك: بلّغ بدل ما الجمل تفضل من غير ترجمة بصمت
+            if (Cfg.str("tr_autoswap", "on") == "off" && !transOnly && !TrWizard.googleOn() && TrWizard.online())
+                swapNotice("⚠ جيميناي فشل في " + missing.size + " جملة — البديل التلقائي مقفول (⚙ إعدادات الترجمة ← 🔄 بديل تلقائي)")
+            return 0
+        }
+        val g = try { googleItems(items.map { it.original }) } catch (e: Throwable) { host.log("⚠ البديل التلقائي رمى خطأ: " + (e.message ?: e.javaClass.simpleName).take(100)); emptyList<String?>() }
         var n = 0
         for ((q, o) in missing.withIndex()) g.getOrNull(q)?.takeIf { it.isNotBlank() }?.let { tr[o] = it.trim(); pv[o] = ""; n++ }
-        if (n > 0) swapNotice("🔄 فشل جيميناي في الترجمة — تم التحويل لـ " + ExtTranslate.chainLabel().substringBeforeLast(" ← ") + " ($n جملة، فصحى؛ اللهجة بتتحوّل بعدين)")
+        val chain = ExtTranslate.chainLabel().substringBeforeLast(" ← ")
+        // (v741) الفول باك كان بيفشل بصمت لو البديل ماترجمش حاجة (مفيش إشعار) — دلوقتي بيقول إيه اللي حصل
+        if (n >= missing.size) swapNotice("🔄 فشل جيميناي في الترجمة — تم التحويل لـ " + chain + " ($n جملة، فصحى؛ اللهجة بتتحوّل بعدين)")
+        else if (n > 0) swapNotice("⚠ فشل جيميناي — البديل (" + chain + ") ترجم " + n + " من " + missing.size + " جملة، والباقي من غير ترجمة لحد ما يتعاد")
+        else swapNotice("⚠ فشل جيميناي والبديل (" + chain + ") فشل كمان — " + missing.size + " جملة من غير ترجمة، هتتعاد تلقائي")
         return n
     }
 
