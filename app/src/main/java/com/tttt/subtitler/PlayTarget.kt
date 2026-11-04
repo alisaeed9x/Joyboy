@@ -167,8 +167,8 @@ object PlayTarget {
                     try { onSent?.invoke() } catch (_: Throwable) { }
                     // (v554) مفيش شاشة ريموت/متحكم على الموبايل: الفيديو اشتغل على التلفزيون وبتتحكم من ريموت التلفزيون
                     Notice.show(act, "📺 اتفتح على التلفزيون" + (if (spec.title.isNotBlank()) " — " + spec.title else ""), 3000L)
-                    nowTitle = spec.title.ifBlank { "فيديو على التلفزيون" }; TvModeFab.refresh()   // (v560) كبسولة «اسم ✕»
-                    openController(act, spec.title, if (local) spec.uri else null)   // (v558) شاشة التحكم (مشغّل الفيديو بوضع المتحكم) ترجع تفتح على الموبايل
+                    TvModeFab.miniReset(spec.startMs); nowTitle = spec.title.ifBlank { "فيديو على التلفزيون" }; TvModeFab.refresh()   // (v560) كبسولة «اسم ✕» · (v761) بقت مشغّل مصغّر بشريط بيتحرك
+                    // (v761) ما بقاش بيفتح صفحة المشغّل على الموبايل — التحكم من الريموت (🎮) أو من المشغّل المصغّر
                 } else {
                     GAlert(act).setTitle("⚠ ما اتبعتش للتلفزيون").setMessage(er)
                         .setPositiveButton("🔄 إعادة المحاولة") { _, _ -> send(act, spec, target0, local, onSent) }

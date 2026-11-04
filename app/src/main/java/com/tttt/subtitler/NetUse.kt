@@ -29,11 +29,36 @@ object NetUse {
     /** طلب API: up = اللي اترفع، down = الرد */
     fun api(up: Long, down: Long) {
         NetLedger.explicit("طلبات الترجمة", up, down)
+        bumpTr(up.coerceAtLeast(0L) + down.coerceAtLeast(0L))   // (v759)
         if (online) { onUp.addAndGet(up); onDown.addAndGet(down) } else { locUp.addAndGet(up); locDown.addAndGet(down) }
     }
     fun api(up: Long, reply: String) = api(up, try { reply.toByteArray(Charsets.UTF_8).size.toLong() } catch (_: Throwable) { reply.length.toLong() })
     /** تحميل صوت/فيديو من لينك (دايمًا بيتحسب على فيديوهات الإنترنت) */
-    fun media(n: Long) { if (n > 0) { mediaDl.addAndGet(n); NetLedger.explicit("تحميل", 0L, n) } }
+    fun media(n: Long) { if (n > 0) { mediaDl.addAndGet(n); NetLedger.explicit("تحميل", 0L, n); bumpTr(n) } }
+
+    // (v759) عدّاد استهلاك الترجمة اللي بيظهر في الريموت: «الفيديو ده» (بيتصفّر لما فيديو يتفتح) و«النهارده» (بيتحفظ ويتصفّر مع تغيّر اليوم)
+    private val vidTr = AtomicLong()
+    private val dayTr = AtomicLong()
+    @Volatile private var dayKey = ""
+    @Volatile private var daySavedAt = 0L
+    private fun todayKey(): String = java.text.SimpleDateFormat("yyyy-MM-dd", Locale.US).format(java.util.Date())
+    @Synchronized private fun rollDay() {
+        val t = todayKey()
+        if (t == dayKey) return
+        dayKey = t
+        val saved = try { if (Cfg.str("netuse_day", "") == t) (Cfg.str("netuse_day_b", "0").toLongOrNull() ?: 0L) else 0L } catch (_: Throwable) { 0L }
+        dayTr.set(saved)
+    }
+    private fun bumpTr(n: Long) {
+        if (n <= 0L) return
+        rollDay(); vidTr.addAndGet(n); dayTr.addAndGet(n)
+        val now = System.currentTimeMillis()
+        if (now - daySavedAt > 5000L) { daySavedAt = now; saveDay() }
+    }
+    fun saveDay() { try { Cfg.put("netuse_day", dayKey); Cfg.put("netuse_day_b", dayTr.get().toString()) } catch (_: Throwable) {} }
+    fun videoReset() { vidTr.set(0L) }
+    fun trVideo(): Long = vidTr.get()
+    fun trToday(): Long { rollDay(); return dayTr.get() }
 
     fun localTotal() = locUp.get() + locDown.get()
     fun onlineTotal() = onUp.get() + onDown.get() + mediaDl.get()

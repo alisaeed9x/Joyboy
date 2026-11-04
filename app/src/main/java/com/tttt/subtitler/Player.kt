@@ -114,6 +114,8 @@ class PlayerActivity : Activity(), Host {
         // (v531) شاشة «مشغّل الفيديو» في الريموت = نفس تقسيمة مشغّل الموبايل: كل حالة الأزرار والكبسولات
         j.put("kind", "player")
         j.put("net_busy", netBusy); j.put("net_more", netSess?.remaining() ?: 0)   // (v746)
+        try { j.put("net_v", NetUse.trVideo()); j.put("net_d", NetUse.trToday()) } catch (_: Throwable) {}   // (v759) استهلاك نت الترجمة: الفيديو ده / النهارده
+        try { j.put("sblur", Cfg.int("sub_blur", 0)); j.put("suni_on", Cfg.str("sub_uni_on", "0") == "1"); j.put("suni", Cfg.str("sub_uni_color", "#FFFFFF")) } catch (_: Throwable) {}   // (v759) حالة استوديو الترجمة على الموبايل
         try { val vn = vidNamesCached(); j.put("vname", vn.first); j.put("vfolder", vn.second) } catch (_: Throwable) {}
         // (v596) مصدر الصوت للسماعة الخاصة: لينك http (مع الهيدرز) أو "local" = ملف على التلفزيون بيتقدّم من /file/cur
         try {
@@ -610,7 +612,7 @@ class PlayerActivity : Activity(), Host {
             "ab_x" -> abClear()
             "redo" -> redoDialog(anchor)
             "modeset" -> modeSettings(anchor)
-            "posy" -> { val n = (Cfg.int("sub_posy", 0) + v.toInt()).coerceIn(0, 240); Cfg.put("sub_posy", n.toString()); try { restyleFn() } catch (_: Throwable) {}; curIdx = -2; say("↕ موضع الترجمة: $n") }
+            "posy" -> { val n = (Cfg.int("sub_posy", 0) + v.toInt()).coerceIn(-60, 240); Cfg.put("sub_posy", n.toString()); runOnUiThread { try { restyleFn(); applyChromeFn() } catch (_: Throwable) {}; curIdx = -2 }; say("↕ موضع الترجمة: $n") }   // (v759) كان بيحفظ القيمة من غير ما يطبّق الهامش (applyChromeFn) — ودلوقتي بينزل تحت كمان (-60)
             "pip" -> runOnUiThread { try { enterPip() } catch (e: Throwable) { LogStore.err("Player:rpip", e) } }   // (v712) نافذة صغيرة من الريموت
             "voice" -> runOnUiThread { try { voiceMenu() } catch (e: Throwable) { LogStore.err("Player:rvoice", e) } }   // (v712) فصل صوت الكلام
             "nextlist" -> runOnUiThread { try { openNextSheet() } catch (e: Throwable) { LogStore.err("Player:rnext", e) } }   // (v712) 📃 التالي (يوتيوب)
@@ -619,6 +621,7 @@ class PlayerActivity : Activity(), Host {
             "tr_gtx" -> startGeminiTranscribe()
             "tr_wtx" -> offlineQuick(true)
             "tr_pause" -> pauseTranslate()
+            "tr_cancel" -> runOnUiThread { try { cancelTranslate() } catch (e: Throwable) { LogStore.err("Player:rcancel", e) } }   // (v759) إلغاء الترجمة (مش مؤقت) من الريموت — التأكيد بيتعمل على الموبايل
             "tr_resume" -> { trAsked = true; beginTranslate() }
             "tr_bg" -> translateInBackground()
             "tr_wiz" -> translateMenu(anchor)   // (v743) المعالج القديم اتشال
@@ -629,7 +632,28 @@ class PlayerActivity : Activity(), Host {
                 Cfg.put("sub_font", n.id); try { restyleFn() } catch (_: Throwable) {}; say("🔤 " + n.label)
             }
             else -> {   // (v529) 📄 ترجمة ملف الترجمة من الموبايل · (v682) لهجة / أسلوب / أدوات الذكاء من صفحة المشغّل
-                if (a.startsWith("subnet:")) subNet(a.substring(7))   // (v746)
+                if (a.startsWith("cfgset:")) {   // (v759) استوديو الترجمة على الموبايل: «cfgset:المفتاح|القيمة» — بيتطبّق على الفور على التلفزيون
+                    val kv = a.substring(7); val ix = kv.indexOf('|')
+                    if (ix > 0) {
+                        val k = kv.substring(0, ix); val vv = kv.substring(ix + 1)
+                        val fixed: String? = when (k) {
+                            "sub_scale" -> (vv.toIntOrNull() ?: 100).coerceIn(60, 200).toString()
+                            "sub_blur" -> (vv.toIntOrNull() ?: 0).coerceIn(0, 20).toString()
+                            "sub_posy" -> (vv.toIntOrNull() ?: 0).coerceIn(-60, 240).toString()
+                            "sub_uni_on" -> if (vv == "1") "1" else "0"
+                            "sub_uni_color" -> if (Regex("#[0-9A-Fa-f]{6}").matches(vv)) vv else null
+                            "sub_font" -> if (SubStyle.fonts.any { it.id == vv }) vv else null
+                            "sub_fontstyle" -> if (SubStyle.fontStyles.any { it.first == vv }) vv else null
+                            else -> null
+                        }
+                        if (fixed != null) {
+                            Cfg.put(k, fixed)
+                            if (k == "sub_uni_color") Cfg.put("sub_uni_on", "1")
+                            runOnUiThread { try { restyleFn(); applyChromeFn() } catch (_: Throwable) {}; curIdx = -2 }
+                        }
+                    }
+                }
+                else if (a.startsWith("subnet:")) subNet(a.substring(7))   // (v746)
                 else if (a.startsWith("subhunt:")) subHunt(a.substring(8).toIntOrNull() ?: 0)
                 else if (a == "subalign") subAlignRun(false)
                 else if (a.startsWith("wtr:")) runOnUiThread { try { setWhisperTr(a.substring(4)) } catch (e: Throwable) { LogStore.err("Player:rwtr", e) } }   // (v712) اختيار مترجم وضع وشبر من الريموت (free / google)
@@ -3737,7 +3761,7 @@ class PlayerActivity : Activity(), Host {
     }
 
     /** (v469) B6: رفع الترجمة الإضافي (dp) من استوديو الترجمة — بيتركّب على هامش الأساس جوه applyChromeFn */
-    fun subPosExtra(): Int = ui.dp(Cfg.int("sub_posy", 0).coerceIn(0, 240))
+    fun subPosExtra(): Int = ui.dp(Cfg.int("sub_posy", 0).coerceIn(-60, 240))   // (v759) سالب = ينزل تحت
 
     /** (v469) نداء واحد من حلقة العرض (كل 200ms): حلقة A-B + عدّاد بطاقة التالي + تمييز الفصل الحالي */
     fun v469Tick() {
@@ -4749,7 +4773,7 @@ class PlayerActivity : Activity(), Host {
             updateTrChip(); applyBadgeAlpha()   // (v323) العدّادات بتظهر مع أزرار المشغّل بس
             fsBtnV.visibility = if (!fullMode && !tvHide) View.VISIBLE else View.GONE   // في الشاشة الكاملة ⛶ جوه الشريط السفلي
             if (DeviceUi.isTv(this)) { fsBtnV.visibility = View.GONE; floatBar.visibility = View.GONE; batchBtn.visibility = View.GONE; rotBtn.visibility = View.GONE }   // (v664) تلفزيون: الزراري العايمة دي ممنوعة نهائيًا مهما حصل
-            subLp.bottomMargin = (if (on) maxOf(ui.dp(128), fsBar.height + ui.dp(12)) else ui.dp(12)) + subPosExtra(); sub.requestLayout()   // (v469) + رفع الاستوديو
+            subLp.bottomMargin = ((if (on) maxOf(ui.dp(128), fsBar.height + ui.dp(12)) else ui.dp(12)) + subPosExtra()).coerceAtLeast(0); sub.requestLayout()   // (v469) + رفع الاستوديو
             placeFloatFn()
         }
 
@@ -5540,7 +5564,7 @@ class PlayerActivity : Activity(), Host {
     private fun initEngine() {
         if (remote) { initRemoteEngine(); return }
         vid = videoId()
-        NetLedger.setVideo("player", try { notifTitle() } catch (_: Throwable) { null }); NetUse.init(); NetUse.online = (uri == null)   // عدّاد النت: فيديو الإنترنت بيتحسب لوحده
+        NetLedger.setVideo("player", try { notifTitle() } catch (_: Throwable) { null }, try { uri?.toString() ?: intent.getStringExtra("page")?.takeIf { it.isNotBlank() } ?: url } catch (_: Throwable) { null }); NetUse.init(); NetUse.videoReset(); NetUse.online = (uri == null)   // عدّاد النت: فيديو الإنترنت بيتحسب لوحده
         if (uri == null && url != null && !incognito) webRegister()
         offsetMs = (Cfg.str("sub_offset_ms:$vid", "0").toLongOrNull() ?: 0L).coerceIn(-10000L, 10000L)   // (v468) قص القيم المحفوظة القديمة لحد ±10ث
         runCatching { offFsB?.text = String.format("%+.2fs", offsetMs / 1000.0) }

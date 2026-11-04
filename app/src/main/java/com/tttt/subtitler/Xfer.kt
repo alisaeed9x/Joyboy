@@ -215,7 +215,8 @@ object TvXfer {
         return ok()
     }
 
-    private fun download(app: Context, t: TaskItem, url: String, name: String, size0: Long, cat: String = XCat.VIDEO) {
+    private fun download(app: Context, t: TaskItem, url: String, name: String, size0: Long, cat: String = XCat.VIDEO) { NetLedger.inFile(name) { download0(app, t, url, name, size0, cat) } }   // (v760)
+    private fun download0(app: Context, t: TaskItem, url: String, name: String, size0: Long, cat: String) {
         val dir = Xfer.inboxDir(app, cat)
         val out = Xfer.uniqueFile(dir, name)
         val part = File(dir, out.name + ".part")
@@ -266,7 +267,7 @@ object TvXfer {
             } finally { try { c?.disconnect() } catch (_: Throwable) {} }
         }
         if (!part.renameTo(out)) throw IOException("ما قدرتش أحفظ الملف")
-        t.outPath = out.absolutePath; t.outSize = out.length(); t.msg = ""
+        t.outPath = out.absolutePath; t.outSize = out.length(); t.msg = ""; NetLedger.fileRef(out.absolutePath, FmUtil.mime(out))
         try { android.media.MediaScannerConnection.scanFile(app, arrayOf(out.absolutePath), null, null) } catch (_: Throwable) {}
         try { VideoScan.cache = null } catch (_: Throwable) {}
         TvLink.notice("✅ وصل ملف من الموبايل: " + out.name, 3500L)

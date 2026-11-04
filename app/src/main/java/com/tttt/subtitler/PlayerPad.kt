@@ -222,7 +222,7 @@ object PlayerPad {
                 var row: LinearLayout? = null
                 labels.forEachIndexed { i, l ->
                     if (i % per == 0) {
-                        row = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL }
+                        row = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; isBaselineAligned = false; layoutDirection = View.LAYOUT_DIRECTION_RTL }
                         body.addView(row, lp(-1, -2).apply { topMargin = dp(8) })
                     }
                     val on = isOn(l)
@@ -238,7 +238,7 @@ object PlayerPad {
                 body.addView(btn(t, 15f) { tap() }.apply { gravity = Gravity.START or Gravity.CENTER_VERTICAL; setPadding(dp(16), dp(8), dp(16), dp(8)) }, lp(-1, dp(52)).apply { topMargin = dp(8) })
             }
             fun grp(body: LinearLayout, t: String) {
-                val row = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; gravity = Gravity.CENTER_VERTICAL }
+                val row = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; isBaselineAligned = false; layoutDirection = View.LAYOUT_DIRECTION_RTL; gravity = Gravity.CENTER_VERTICAL }
                 row.addView(View(act).apply { background = pill(cOnLine) }, lp(dp(4), dp(14)))
                 row.addView(label(t, 12.5f, cDim).apply { gravity = Gravity.START or Gravity.CENTER_VERTICAL }, lp(0, -2, 1f).apply { marginStart = dp(8) })
                 body.addView(row, lp(-1, -2).apply { topMargin = dp(14) })
@@ -383,6 +383,11 @@ object PlayerPad {
                 if (mob.isNotBlank()) opt(body, "📄 ترجم الملف المستورد «$mob»") { close(); openSfSettings("mobile", "📄 الملف المستورد: «$mob»") }
             }
             var wtSel = ""
+            fun confirmCancelTr() {   // (v759) تأكيد على الموبايل بعدين الأمر للتلفزيون
+                android.app.AlertDialog.Builder(act).setTitle("⏹ إلغاء الترجمة؟")
+                    .setMessage("هيوقف الترجمة خالص (مش مؤقت). اللي اتترجم لحد دلوقتي هيفضل محفوظ، وتقدر تبدأ تاني بـ «▶ ترجم».")
+                    .setPositiveButton("إلغاء الترجمة") { _, _ -> go("tr_cancel") }.setNegativeButton("لأ، كمّل", null).show()
+            }
             fun sheetTr() = sheet("🔤 الترجمة") { body, redo, close ->
                 if (wtSel.isEmpty()) wtSel = st.optString("wtr", "free")
                 body.addView(label(st.optString("tr", "▶ ترجم") + "   ·   " + st.optString("mode", ""), 13f, cDim, false), lp(-1, -2).apply { topMargin = dp(6) })
@@ -402,6 +407,7 @@ object PlayerPad {
                     opt(body, "📴 على الجهاز بوشبر") { go("tr_wtx"); close() }
                 } else {
                     opt(body, if (paused) "▶ كمّل الترجمة" else "⏸ إيقاف مؤقت") { go(if (paused) "tr_resume" else "tr_pause"); close() }
+                    opt(body, "⏹ إلغاء الترجمة (مش مؤقت)") { close(); confirmCancelTr() }
                     opt(body, "🔀 غيّر الوضع (بيفتح على التلفزيون)") { go("tr_wiz"); close() }
                     opt(body, "🌙 كمّل الترجمة في الخلفية") { go("tr_bg"); close() }
                     opt(body, "📋 الجمل") { go("sent"); close() }
@@ -412,6 +418,54 @@ object PlayerPad {
             val dualNames = kotlin.collections.listOf("ترجمة فقط", "ترجمة + الأصلي تحت", "الإنجليزي تحت", "الأصلي فقط", "الأصلي فوق + الترجمة")
             fun sheetDual() = sheet("🔀 وضع عرض الترجمة") { body, redo, close ->
                 for ((n, nm) in dualNames.withIndex()) opt(body, (if (n == dualSel) "✓ " else "") + nm) { dualSel = n; go("dualset", n.toLong()); redo() }
+            }
+            // ───── (v759) استوديو الترجمة على الموبايل: كل تعديل بيتبعت للتلفزيون على طول (cfgset) ومعاينة حية هنا ─────
+            fun cfgSet(k: String, v: String) { go("cfgset:" + k + "|" + v) }
+            fun sheetStudio() = sheet("🎨 استوديو الترجمة") { body, _, _ ->
+                val s0 = st
+                var pvScale = s0.optInt("scale", 100); var pvBg = s0.optInt("bgopa", 45)
+                var pvCol = if (s0.optBoolean("suni_on", false)) (try { Color.parseColor(s0.optString("suni", "#FFFFFF")) } catch (_: Throwable) { Color.WHITE }) else Color.WHITE
+                val prev = label("الترجمة بالعربي — معاينة حية", 15f).apply { setPadding(dp(10), dp(12), dp(10), dp(12)) }
+                fun paintPv() {
+                    prev.setTextColor(pvCol); prev.textSize = 15f * pvScale / 100f
+                    prev.background = bg(Color.argb((pvBg * 255 / 100).coerceIn(0, 255), 0, 0, 0), 0x33FFFFFF, 10f)
+                }
+                paintPv()
+                body.addView(prev, lp(-1, -2).apply { topMargin = dp(8) })
+                fun seekRow(title: String, mx: Int, init: Int, shown: (Int) -> String, onVal: (Int) -> Unit) {
+                    val tv = label(title + ": " + shown(init), 12.5f, cDim, false).apply { gravity = Gravity.START or Gravity.CENTER_VERTICAL }
+                    body.addView(tv, lp(-1, -2).apply { topMargin = dp(12) })
+                    val sb = android.widget.SeekBar(act).apply {
+                        max = mx; progress = init.coerceIn(0, mx); layoutDirection = View.LAYOUT_DIRECTION_LTR
+                        setOnSeekBarChangeListener(object : android.widget.SeekBar.OnSeekBarChangeListener {
+                            var lastAt = 0L
+                            override fun onProgressChanged(b: android.widget.SeekBar?, p: Int, u: Boolean) {
+                                tv.text = title + ": " + shown(p)
+                                if (u) { val n = System.currentTimeMillis(); if (n - lastAt > 120L) { lastAt = n; onVal(p) } }
+                            }
+                            override fun onStartTrackingTouch(b: android.widget.SeekBar?) { b?.parent?.requestDisallowInterceptTouchEvent(true) }
+                            override fun onStopTrackingTouch(b: android.widget.SeekBar?) { if (b != null) onVal(b.progress) }
+                        })
+                    }
+                    body.addView(sb, lp(-1, dp(40)))
+                }
+                seekRow("📏 حجم الخط", 140, s0.optInt("scale", 100) - 60, { p -> (p + 60).toString() + "%" }) { p -> pvScale = p + 60; paintPv(); cfgSet("sub_scale", (p + 60).toString()) }
+                grp(body, "🎨 لون النص")
+                val pal = kotlin.collections.listOf("#FFFFFF" to "أبيض", "#FFE600" to "أصفر", "#FF9F1C" to "برتقالي", "#00CFFF" to "سماوي", "#AEE2FF" to "أزرق فاتح", "#FBC9E0" to "وردي", "#CE93D8" to "بنفسجي", "#FFAB91" to "مرجاني")
+                val prow = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; isBaselineAligned = false; layoutDirection = View.LAYOUT_DIRECTION_RTL }
+                for ((hex, nm) in pal) prow.addView(btn("", 12f, Color.parseColor(hex), 0x66FFFFFF) { pvCol = Color.parseColor(hex); paintPv(); cfgSet("sub_uni_color", hex); note("🎨 " + nm) }, lp(0, dp(40), 1f).apply { marginStart = dp(2); marginEnd = dp(2) })
+                body.addView(prow, lp(-1, -2).apply { topMargin = dp(6) })
+                opt(body, "🎭 ألوان المتحدثين (بدل لون موحّد)") { pvCol = Color.WHITE; paintPv(); cfgSet("sub_uni_on", "0"); note("🎭 ألوان المتحدثين") }
+                seekRow("🌫 عتامة خلفية النص", 100, s0.optInt("bgopa", 45), { p -> p.toString() + "%" }) { p -> pvBg = p; paintPv(); go("bgopa", p.toLong()) }
+                seekRow("✨ هالة/حدود حول النص", 20, s0.optInt("sblur", 0), { p -> p.toString() }) { p -> cfgSet("sub_blur", p.toString()) }
+                seekRow("↕ موضع الترجمة (فوق / تحت)", 300, s0.optInt("posy", 0) + 60, { p -> (p - 60).toString() }) { p -> cfgSet("sub_posy", (p - 60).toString()) }
+                grp(body, "🔤 نوع الخط")
+                val fontOpts = SubStyle.fonts.take(10)
+                chipRows(body, fontOpts.map { it.label }, 3, { false }) { l -> fontOpts.firstOrNull { it.label == l }?.let { cfgSet("sub_font", it.id); note("🔤 " + l) } }
+                grp(body, "نمط الخط")
+                chipRows(body, SubStyle.fontStyles.map { it.second }, 2, { false }) { l -> SubStyle.fontStyles.firstOrNull { it.second == l }?.let { cfgSet("sub_fontstyle", it.first); note("🔤 " + l) } }
+                grp(body, "💬 وضع عرض الترجمة")
+                chipRows(body, dualNames, 2, { l -> dualNames.indexOf(l) == dualSel }) { l -> val n = dualNames.indexOf(l).coerceAtLeast(0); dualSel = n; go("dualset", n.toLong()); note("🔀 " + l) }
             }
             fun applyVer(i: Int, saveFirst: Boolean = true) {
                 try {
@@ -435,7 +489,7 @@ object PlayerPad {
                 infoCard(body, "كل نسخة ترجمة اتحفظت (سوفت صب · جيميناي · جوجل …). «👁 اعرض» بيطبّقها على الفيديو، و«ترجم» بيطبّقها وبعدين يترجم بالمحرك اللي تختاره.")
                 if (vs.isEmpty()) infoCard(body, "مفيش نسخ محفوظة لسه — بتتحفظ لوحدها قبل أي ترجمة أو تبديل (مثلًا «قبل ترجمة جوجل»).", 0xFFFFD9A0.toInt(), 0xFF3A2A14.toInt(), 0xFF8A6A2A.toInt())
                 for ((i, v) in vs.withIndex()) {
-                    val rowBox = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; gravity = Gravity.CENTER_VERTICAL; background = bg(cCard, if (i == appliedVer) cOnLine else cLine, 14f); setPadding(dp(10), dp(6), dp(6), dp(6)) }
+                    val rowBox = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; isBaselineAligned = false; layoutDirection = View.LAYOUT_DIRECTION_RTL; gravity = Gravity.CENTER_VERTICAL; background = bg(cCard, if (i == appliedVer) cOnLine else cLine, 14f); setPadding(dp(10), dp(6), dp(6), dp(6)) }
                     val nm = (i + 1).toString() + ". " + v.name + (if (v.dialect.isNotBlank()) " · " + v.dialect else "") + "\n" + v.count + " جملة" + (if (i == appliedVer) "  ✓ المعروضة" else "")
                     rowBox.addView(label(nm, 13f, 0xFFFFFFFF.toInt(), false).apply { gravity = Gravity.START or Gravity.CENTER_VERTICAL }, lp(0, -2, 1f))
                     rowBox.addView(btn("👁 اعرض", 12f) { applyVer(i); note("👁 اتعرضت: " + v.name); redo() }, lp(dp(78), dp(44)).apply { marginStart = dp(6) })
@@ -471,14 +525,13 @@ object PlayerPad {
 
             // ── فوق: إغلاق + عنوان الفيديو ──
             val ttlTv = label("", 14f, 0xFFB0BEC5.toInt(), false).apply { maxLines = 1; ellipsize = TextUtils.TruncateAt.END }
-            val headRow = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_LTR; gravity = Gravity.CENTER_VERTICAL }
+            val headRow = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; isBaselineAligned = false; layoutDirection = View.LAYOUT_DIRECTION_LTR; gravity = Gravity.CENTER_VERTICAL }
             headRow.addView(btn("→ رجوع", 13f, 0xFF2563EB.toInt(), 0xFF5B8DEF.toInt()) { d.dismiss() }, lp(dp(78), dp(44)))   // (v700) زرار رجوع واضح للريموت
             headRow.addView(ttlTv, lp(0, -2, 1f).apply { leftMargin = dp(10) })
             val handoffB = btn("📱", 18f, 0xFF2563EB.toInt(), 0xFF5B8DEF.toInt()) { PlayQueueUi.handoffToPhone(act) { try { d.dismiss() } catch (_: Throwable) {}; try { onLeave?.invoke() } catch (_: Throwable) {} } }.apply { visibility = View.GONE }   // (v694) كمّل الفيديو ده على الموبايل من نفس الثانية
             headRow.addView(handoffB, lp(dp(48), dp(44)).apply { leftMargin = dp(6) })
             val speedTop = btn("⏩ 1x", 13f) { sheetSpeed() }   // (v712) زرار السرعة (1x / 2x …) ظاهر دايمًا فوق
             headRow.addView(speedTop, lp(dp(66), dp(44)).apply { leftMargin = dp(6) })
-            headRow.addView(btn("🕘", 18f) { RecentPicker.show(act) }, lp(dp(48), dp(44)).apply { leftMargin = dp(6) })   // (v712) سجل المشاهدة (التلفزيون + الموبايل) — الطابور اتنقل لتاب 🧰 أدوات
 
             // ── عدّاد الجمل (صوتي أو بصري) — دوسة = لوج الترجمة على التلفزيون ──
             val cntTv = label("—", 28f)
@@ -492,11 +545,10 @@ object PlayerPad {
             // ── كبسولات زي المشغّل: 👁 بصري · 🌐 النت · 🎧/🎬 وضع يوتيوب ──
             fun cap(t: String, tap: () -> Unit): TextView = btn(t, 12f) { tap() }.apply { setPadding(dp(8), dp(4), dp(8), dp(4)); background = bg(cCard, cLine, 18f) }
             val capVis = cap("👁 0") { go("visdlg") }
-            val capNet = cap("🌐 النت") { go("netdlg") }
+            val netLine = label("", 11f, cDim, false).apply { maxLines = 3; setPadding(dp(8), dp(2), dp(8), dp(2)) }   // (v759) بدل كبسولة 🌐 النت: عدّاد استهلاك نت الترجمة (التلفزيون + الموبايل)
             val capMode = cap("🎧") { go("ytmode") }
-            val capRow = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; gravity = Gravity.CENTER }
+            val capRow = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; isBaselineAligned = false; layoutDirection = View.LAYOUT_DIRECTION_RTL; gravity = Gravity.CENTER }
             capRow.addView(capVis, lp(-2, dp(34)).apply { marginStart = dp(3); marginEnd = dp(3) })
-            capRow.addView(capNet, lp(-2, dp(34)).apply { marginStart = dp(3); marginEnd = dp(3) })
             capRow.addView(capMode, lp(-2, dp(34)).apply { marginStart = dp(3); marginEnd = dp(3) })
 
             // ── (v695) أزرار الترجمة: إظهار/إخفاء · وضع العرض · النسخ · إضافة ترجمة ──
@@ -504,19 +556,19 @@ object PlayerPad {
             val dualTop = btn("🔀\nالعرض", 11.5f) { sheetDual() }
             val verB = btn("🗂\nالنسخ", 11.5f) { sheetVersions() }
             val addTrB = btn("➕\nإضافة ترجمة", 11.5f, 0xFF4F5BD5.toInt(), 0xFF7C8CF8.toInt()) { sheetSubFile() }
-            val subRow = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL }
-            for (b0 in listOf(ccTop, dualTop, verB, addTrB)) { b0.setPadding(dp(2), dp(4), dp(2), dp(4)); subRow.addView(b0, lp(0, dp(54), 1f).apply { marginStart = dp(2); marginEnd = dp(2) }) }
+            val subRow = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; isBaselineAligned = false; layoutDirection = View.LAYOUT_DIRECTION_RTL }
+            for (b0 in listOf(ccTop, dualTop, verB, addTrB)) { b0.setPadding(dp(2), dp(4), dp(2), dp(4)); subRow.addView(b0, lp(0, dp(62), 1f).apply { marginStart = dp(2); marginEnd = dp(2) }) }
 
             // ── السرعة · اللهجة وإعدادات الترجمة ──
             val speedB = btn("⏩ 1x", 16f) { sheetSpeed() }
             val aiB = fillable(btn("✨ لهجة وترجمة", 14f) { sheetAi() }, "*")
-            val quick = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_LTR }
+            val quick = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; isBaselineAligned = false; layoutDirection = View.LAYOUT_DIRECTION_LTR }
             quick.addView(aiB, lp(0, dp(52), 1f))   // (v712) السرعة فوق جنب 🕘 — شلت المكرر هنا
 
             // ── تابات الإعدادات: 🔤 نص · ⏱ تزامن · 🗣 ذكاء · 🧰 أدوات ──
             fun newBody(): LinearLayout = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; visibility = View.GONE }
             fun stepRow(body: LinearLayout, minus: () -> Unit, plus: () -> Unit): TextView {
-                val row = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_LTR; gravity = Gravity.CENTER_VERTICAL; background = bg(cCard, cLine, 16f) }
+                val row = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; isBaselineAligned = false; layoutDirection = View.LAYOUT_DIRECTION_LTR; gravity = Gravity.CENTER_VERTICAL; background = bg(cCard, cLine, 16f) }
                 val v = label("", 13f).apply { maxLines = 1 }
                 row.addView(btn("−", 22f) { minus() }, lp(dp(50), dp(46)))
                 row.addView(v, lp(0, -2, 1f))
@@ -528,7 +580,7 @@ object PlayerPad {
                 var gr: LinearLayout? = null
                 cs.forEachIndexed { i, c ->
                     if (i % per == 0) {
-                        gr = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL }
+                        gr = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; isBaselineAligned = false; layoutDirection = View.LAYOUT_DIRECTION_RTL }
                         body.addView(gr, lp(-1, -2).apply { topMargin = dp(6) })
                     }
                     gr?.addView(c, lp(0, dp(h), 1f).apply { marginStart = dp(3); marginEnd = dp(3) })
@@ -542,7 +594,7 @@ object PlayerPad {
             val sizeTv = stepRow(bodyText, { go("scale", -10L) }, { go("scale", 10L) })
             val posTv = stepRow(bodyText, { go("posy", -10L) }, { go("posy", 10L) })
             val bgTv = stepRow(bodyText, { go("bgopa", (bgNow - 10).coerceIn(0, 100).toLong()) }, { go("bgopa", (bgNow + 10).coerceIn(0, 100).toLong()) })
-            bodyText.addView(btn("🎨 استوديو الترجمة (على التلفزيون)", 13f) { go("studio") }, lp(-1, dp(46)).apply { topMargin = dp(6) })
+            bodyText.addView(btn("🎨 استوديو الترجمة", 13f) { sheetStudio() }, lp(-1, dp(46)).apply { topMargin = dp(6) })
             // ⏱ تزامن
             val bodySync = newBody()
             val timeTv = stepRow(bodySync, { go("shift", -250L) }, { go("shift", 250L) })
@@ -595,7 +647,7 @@ object PlayerPad {
                 bodies.forEachIndexed { k, b -> b.visibility = if (k == i) View.VISIBLE else View.GONE }
                 tabBtns.forEachIndexed { k, b -> b.background = bg(if (k == i) cOn else cCard, if (k == i) cOnLine else cLine, 12f) }
             }
-            val tabBar = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL }
+            val tabBar = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; isBaselineAligned = false; layoutDirection = View.LAYOUT_DIRECTION_RTL }
             tabNames.forEachIndexed { k, n ->
                 val tb = btn(n, 11.5f) { selectTab(k) }.apply { setPadding(dp(2), dp(6), dp(2), dp(6)) }
                 tabBtns.add(tb); tabBar.addView(tb, lp(0, dp(38), 1f).apply { marginStart = dp(2); marginEnd = dp(2) })
@@ -619,14 +671,14 @@ object PlayerPad {
             }
             fun sheetLib() = sheet("📚 المكتبة") { body, _, close ->
                 body.addView(label("اختار تفتح المكتبة على أنهي شاشة", 13f, cDim, false), lp(-1, -2).apply { topMargin = dp(4) })
-                val pr = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL }
+                val pr = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; isBaselineAligned = false; layoutDirection = View.LAYOUT_DIRECTION_RTL }
                 pr.addView(btn("📺\nشاشة التلفزيون", 15f, cOn, cOnLine) { close(); openLib(true) }, lp(0, dp(96), 1f).apply { marginStart = dp(4); marginEnd = dp(4) })
                 pr.addView(btn("📱\nشاشة الموبايل", 15f) { close(); openLib(false) }, lp(0, dp(96), 1f).apply { marginStart = dp(4); marginEnd = dp(4) })
                 body.addView(pr, lp(-1, -2).apply { topMargin = dp(12) })
             }
             fun idleBtn(icon: String, t: String, fill: Int, line: Int, tap: () -> Unit): TextView =
                 btn(icon + "\n" + t, 12.5f, fill, line) { tap() }.apply { setPadding(dp(2), dp(10), dp(2), dp(10)) }
-            val idleRow = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL }
+            val idleRow = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; isBaselineAligned = false; layoutDirection = View.LAYOUT_DIRECTION_RTL }
             idleRow.addView(idleBtn("📚", "المكتبة", 0xFF2563EB.toInt(), 0xFF5B8DEF.toInt()) { sheetLib() }, lp(0, dp(104), 1f).apply { marginStart = dp(3); marginEnd = dp(3) })
             idleRow.addView(idleBtn("▶", "يوتيوب", 0xFFD93A36.toInt(), 0xFFFF6F69.toInt()) { ControllerPad.openOnPhone(act, true); leave() }, lp(0, dp(104), 1f).apply { marginStart = dp(3); marginEnd = dp(3) })
             idleRow.addView(idleBtn("🌐", "المتصفح", 0xFF0B8BC4.toInt(), 0xFF38BDF8.toInt()) { ControllerPad.openOnPhone(act, false); leave() }, lp(0, dp(104), 1f).apply { marginStart = dp(3); marginEnd = dp(3) })
@@ -640,6 +692,7 @@ object PlayerPad {
             left.addView(idleBox, lp(-1, -2))
             left.addView(cntCard, lp(-1, -2))
             left.addView(capRow, lp(-1, -2).apply { topMargin = dp(8) })
+            left.addView(netLine, lp(-1, -2).apply { topMargin = dp(6) })
             left.addView(subRow, lp(-1, -2).apply { topMargin = dp(8) })   // (v695)
             left.addView(quick, lp(-1, -2).apply { topMargin = dp(8) })
             left.addView(tabBar, lp(-1, -2).apply { topMargin = dp(8) })
@@ -661,22 +714,23 @@ object PlayerPad {
             val volCol = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER_HORIZONTAL or Gravity.CENTER_VERTICAL }
             volCol.addView(muteB, lp(-1, dp(46)))
             volCol.addView(vol, lp(-1, volH - dp(54)).apply { topMargin = dp(8) })
-            val mid = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_LTR }
+            val mid = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; isBaselineAligned = false; layoutDirection = View.LAYOUT_DIRECTION_LTR }
             mid.addView(left, lp(0, -1, 1f)); mid.addView(volCol, lp(dp(76), -1).apply { leftMargin = dp(12) })
 
             // ── صف الترجمة (فوق أزرار التحكم): [▶ ترجم / نسبة] ▮▮ ⚙ 🔁 🌐 ──
             val trB = btn("▶ ترجم ▾", 16f, 0xFFE53935.toInt(), 0xFFFF6F69.toInt()) { sheetTr() }
             val pzB = btn("▮▮", 17f) { go(if (paused) "tr_resume" else "tr_pause") }
+            val cxB = btn("⏹", 17f, 0xFF3B1A22.toInt(), 0xFF7A2B3A.toInt()) { confirmCancelTr() }   // (v759) إلغاء الترجمة خالص (مش مؤقت)
             val wzB = btn("⚙", 18f) { go("modeset") }
             val rdB = btn("🔁", 18f, 0xFF6A1B9A.toInt(), 0xFF8E3FC4.toInt()) { go("redo") }
             val lgB = fillable(btn("🌐", 18f) { sheetAi() }, "*")
-            val trRow = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_LTR; gravity = Gravity.CENTER_VERTICAL }
+            val trRow = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; isBaselineAligned = false; layoutDirection = View.LAYOUT_DIRECTION_LTR; gravity = Gravity.CENTER_VERTICAL }
             trRow.addView(trB, lp(0, dp(52), 2.6f))
-            for (b in kotlin.collections.listOf(pzB, wzB, rdB)) trRow.addView(b, lp(0, dp(52), 1f).apply { marginStart = dp(6) })
+            for (b in kotlin.collections.listOf(pzB, cxB, wzB, rdB)) trRow.addView(b, lp(0, dp(52), 1f).apply { marginStart = dp(6) })
 
             // ── أزرار التحكم ──
             val playB = btn("▶", 28f, 0xFF2563EB.toInt(), 0xFF3B82F6.toInt()) { go("toggle") }
-            val tr = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_LTR; gravity = Gravity.CENTER_VERTICAL }
+            val tr = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; isBaselineAligned = false; layoutDirection = View.LAYOUT_DIRECTION_LTR; gravity = Gravity.CENTER_VERTICAL }
             tr.addView(btn("⏮", 22f) { go("prev") }, lp(0, dp(58), 1f).apply { marginEnd = dp(6) })
             tr.addView(btn("⏪ 10", 14f) { go("seek", -10000L) }, lp(0, dp(58), 1f).apply { marginEnd = dp(6) })
             tr.addView(playB, lp(0, dp(70), 1.3f).apply { marginEnd = dp(6) })
@@ -688,7 +742,7 @@ object PlayerPad {
             val tPos = label("00:00", 13f, 0xFFB8C4DA.toInt(), false); val tDur = label("00:00", 13f, 0xFFB8C4DA.toInt(), false)
             bar.onScrub = { f -> tPos.text = tm((f * durNow).toLong()) }
             bar.onSeek = { f -> val ms = (f * durNow).toLong(); holdUntil = System.currentTimeMillis() + 1300L; tPos.text = tm(ms); go("seekto", ms) }
-            val times = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_LTR }
+            val times = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; isBaselineAligned = false; layoutDirection = View.LAYOUT_DIRECTION_LTR }
             times.addView(tPos, lp(0, -2, 1f)); times.addView(tDur, lp(-2, -2))
             tPos.gravity = Gravity.START or Gravity.CENTER_VERTICAL
 
@@ -768,6 +822,11 @@ object PlayerPad {
                 posTv.text = "↕ موضع الترجمة: " + s.optInt("posy", 0)
                 val ab = s.optString("ab", "")
                 abTv.text = if (ab.isBlank()) "حلقة A-B: مش متحددة" else "حلقة A-B: $ab"
+                run {   // (v759) عدّاد نت الترجمة: التلفزيون (من حالته) + الموبايل (من العدّاد المحلي)
+                    fun mb(b: Long): String = if (b < 0L) "—" else NetUse.fmt(b)
+                    netLine.text = "📺 تلفزيون: الفيديو ده " + mb(s.optLong("net_v", -1L)) + " · النهارده " + mb(s.optLong("net_d", -1L)) +
+                        "\n📱 موبايل: الفيديو ده " + mb(NetUse.trVideo()) + " · النهارده " + mb(NetUse.trToday())
+                }
                 capVis.visibility = if (vc > 0) View.VISIBLE else View.GONE
                 capVis.text = "👁 $vc"
                 val ym = s.optString("ytmode", "")
@@ -775,6 +834,7 @@ object PlayerPad {
                 capMode.text = ym
                 pzB.visibility = if (s.optBoolean("tstart", false)) View.VISIBLE else View.GONE
                 pzB.text = if (s.optBoolean("tpause", false)) "▶" else "▮▮"
+                cxB.visibility = pzB.visibility
                 rdB.visibility = if (s.optBoolean("hsub", false)) View.VISIBLE else View.GONE
                 lgB.visibility = if (s.optBoolean("cdial", false)) View.VISIBLE else View.GONE
                 aiB.visibility = lgB.visibility; aiBtnSettings.visibility = lgB.visibility   // (v696) نفس قاعدة الوضع: من غير لهجات = الأزرار تختفي

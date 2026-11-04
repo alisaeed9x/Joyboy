@@ -34,6 +34,8 @@ object NetLedger {
     class Rec(val kind: String, val name: String, val day: String) {
         var first = 0L
         var last = 0L
+        var ref = ""    // (v760) مسار/Uri/لينك بيفتح العنصر
+        var mime = ""
         val dn = LongArray(3)
         val up = LongArray(3)
         fun add(t: Int, d: Long, u: Long, now: Long) {
@@ -45,6 +47,8 @@ object NetLedger {
 
     /** صف جاهز للعرض (مجمّع على كذا يوم) */
     class Row(val name: String, var first: Long, var last: Long) {
+        var ref = ""
+        var mime = ""
         val dn = LongArray(3)
         val up = LongArray(3)
         fun wifi() = dn[WIFI] + up[WIFI]
@@ -68,7 +72,11 @@ object NetLedger {
     // سياق النسب
     @Volatile private var resumedName: String? = null
     @Volatile private var webHost: String? = null
-    private val videos = LinkedHashMap<String, String>()
+    private class Vid(val name: String, val ref: String?)
+    private val videos = LinkedHashMap<String, Vid>()
+    private val files = LinkedHashMap<Long, String>()                    // (v760) خيط التحميل ← اسم الملف الجاري
+    private val fileRefs = HashMap<String, Pair<String, String>>()       // اسم الملف ← (مرجع، mime) — بيتقري تحت lock
+    @Volatile private var webRef: String? = null
     @Volatile private var tabName: String? = null
     private val fileScope = ThreadLocal<String?>()
 
@@ -96,7 +104,7 @@ object NetLedger {
                 lastRx = rx; lastTx = tx
                 if (gapBase != null && rx >= gapBase.first && tx >= gapBase.second) {
                     val dr = rx - gapBase.first; val dt = tx - gapBase.second
-                    if (dr + dt > 0) addLocked(transport(), dr, dt, now, GAP_PAGE, null)
+                    if (dr + dt > 0) addLocked(transport(), dr, dt, now, GAP_PAGE, null, null, null)
                 }
             }
             try {
@@ -126,23 +134,41 @@ object NetLedger {
     // ===================== ضبط السياق =====================
     /** اسم المتصفح الحالي (دومين الصفحة) */
     fun web(url: String?) {
+        webRef = if (url.isNullOrBlank() || !url.startsWith("http", true)) null else url
         webHost = try { if (url.isNullOrBlank()) null else (java.net.URI(url).host ?: url.take(40)).removePrefix("www.") } catch (_: Throwable) { url?.take(40) }
     }
     /** تبويب الشاشة الرئيسية (فيديوهات / يوتيوب / ...) */
     fun tab(name: String?) { tabName = name }
     /** الفيديو الشغّال دلوقتي (owner = مين فاتحه: "player" أو "bg:<id>")؛ null = اتقفل */
-    fun setVideo(owner: String, name: String?) {
+    fun setVideo(owner: String, name: String?, ref: String? = null) {
         synchronized(videos) {
             videos.remove(owner)
-            if (!name.isNullOrBlank()) videos[owner] = name.trim().take(90)
+            if (!name.isNullOrBlank()) videos[owner] = Vid(name.trim().take(90), ref?.takeIf { it.isNotBlank() })
         }
     }
-    private fun curVideo(): String? = synchronized(videos) { videos.values.lastOrNull() }
+    private fun curVid(): Vid? = synchronized(videos) { videos.values.lastOrNull() }
+    private fun curFile(): String? = synchronized(files) { files.values.lastOrNull() }
     /** كل شبكة بتتعمل في الخيط ده جوه الكتلة دي بتتسجل على الملف ده */
     fun <T> inFile(name: String, f: () -> T): T {
-        val old = fileScope.get()
-        fileScope.set(name.take(90))
-        try { return f() } finally { fileScope.set(old) }
+        val old = fileScope.get(); val nm = name.take(90); val tid = Thread.currentThread().id
+        fileScope.set(nm)
+        synchronized(files) { files[tid] = nm }
+        try { return f() } finally {
+            fileScope.set(old)
+            synchronized(files) { if (old != null) files[tid] = old else files.remove(tid) }
+        }
+    }
+    /** (v760) مرجع الملف الجاري تحميله/استلامه في الخيط ده (مسار أو Uri) عشان صفحة الداتا تفتحه */
+    fun fileRef(ref: String, mime: String) {
+        try {
+            val nm = fileScope.get() ?: return
+            val now = System.currentTimeMillis()
+            synchronized(lock) {
+                fileRefs[nm] = Pair(ref, mime)
+                val rc = rec("file", dayOf(now), nm); rc.ref = ref; rc.mime = mime
+                dirty = true
+            }
+        } catch (_: Throwable) {}
     }
 
     private fun pageName(): String {
@@ -207,32 +233,42 @@ object NetLedger {
         if (dr > 200_000L) { lastBps = if (lastBps <= 0L) dr else (lastBps * 0.6 + dr * 0.4).toLong(); if (++bpsN % 10 == 0) try { Cfg.put("last_dl_bps", lastBps.toString()) } catch (_: Throwable) {} }   // (v754) آخر سرعة (بايت/ث، التيك كل ثانية)
         if (dr == 0L && dt == 0L) return
         val t = transport(); val now = System.currentTimeMillis()
-        synchronized(lock) { addLocked(t, dr, dt, now, pageName(), curVideo()) }
+        val vd = curVid(); val fn = curFile(); val pr = if (resumedName == "BrowserActivity") webRef else null
+        synchronized(lock) { addLocked(t, dr, dt, now, pageName(), pr, vd, fn) }
     }
 
     private fun rec(kind: String, day: String, name: String): Rec {
         val k = "$kind|$day|$name"
         return recs.getOrPut(k) { Rec(kind, name, day) }
     }
-    private fun addLocked(t: Int, d: Long, u: Long, now: Long, page: String, video: String?) {
+    /** (v760) كل بايت بيتحسب في قسم واحد بس: ملف شغّال ← «ملفات»، وإلا فيديو مفتوح ← «فيديوهات»، وإلا ← «صفحات» (متصفح/واجهة/خلفية) */
+    private fun addLocked(t: Int, d: Long, u: Long, now: Long, page: String, pref: String?, video: Vid?, file: String?) {
         val day = dayOf(now)
         rec("day", day, day).add(t, d, u, now)
         rec("ses", day, sesName).add(t, d, u, now)
-        rec("page", day, page).add(t, d, u, now)
-        if (video != null) rec("vid", day, video).add(t, d, u, now)
+        when {
+            file != null -> {
+                rec("cat", day, "file").add(t, d, u, now)
+                val rc = rec("file", day, file); rc.add(t, d, u, now)
+                if (rc.ref.isEmpty()) fileRefs[file]?.let { rc.ref = it.first; rc.mime = it.second }
+            }
+            video != null -> {
+                rec("cat", day, "video").add(t, d, u, now)
+                val rc = rec("vid", day, video.name); rc.add(t, d, u, now)
+                if (rc.ref.isEmpty() && video.ref != null) rc.ref = video.ref
+            }
+            else -> {
+                rec("cat", day, "page").add(t, d, u, now)
+                val rc = rec("page", day, page); rc.add(t, d, u, now)
+                if (pref != null) rc.ref = pref
+            }
+        }
         dirty = true
     }
 
-    /** تسجيل صريح من أماكن التحميل/الـAPI: category مثل «تحميل» أو «طلبات الترجمة». حجم المحتوى (تقريبي). */
-    fun explicit(category: String, up: Long, down: Long) {
-        try {
-            if (!started || (up <= 0L && down <= 0L)) return
-            val base = fileScope.get() ?: curVideo() ?: "بدون فيديو"
-            val label = if (fileScope.get() != null) base else "$base · $category"
-            val t = transport(); val now = System.currentTimeMillis()
-            synchronized(lock) { rec("file", dayOf(now), label).add(t, down.coerceAtLeast(0L), up.coerceAtLeast(0L), now); dirty = true }
-        } catch (_: Throwable) {}
-    }
+    /** (v760) ما بقاش بيسجّل حاجة: كل الترافيك بيتحسب من عدّاد النظام وبيتصنّف تلقائي (فيديو/ملف/صفحة) — كان بيعمل عدّ مزدوج. */
+    @Suppress("UNUSED_PARAMETER")
+    fun explicit(category: String, up: Long, down: Long) {}
 
     // ===================== الاستعلام =====================
     private fun daySet(days: Int): Set<String> {
@@ -249,11 +285,42 @@ object NetLedger {
                 if (r.kind != kind || r.day !in ds) continue
                 val row = m.getOrPut(r.name) { Row(r.name, r.first, r.last) }
                 for (i in 0..2) { row.dn[i] += r.dn[i]; row.up[i] += r.up[i] }
+                if (r.ref.isNotEmpty()) { row.ref = r.ref; row.mime = r.mime }
                 if (r.first in 1 until row.first || row.first == 0L) row.first = r.first
                 if (r.last > row.last) row.last = r.last
             }
         }
         return m.values.sortedWith(compareByDescending<Row> { it.mobile() }.thenByDescending { it.total() })
+    }
+
+    /** (v760) تقسيم الاستهلاك لـ3 أقسام متنافية [فيديوهات، ملفات، صفحات] — الأيام القديمة (قبل v760) بتتقدّر: فيديو = سجل الفيديوهات والباقي صفحات */
+    fun catRows(days: Int): List<Row> {
+        val ds = daySet(days)
+        val out = arrayOf(Row("video", 0L, 0L), Row("file", 0L, 0L), Row("page", 0L, 0L))
+        synchronized(lock) {
+            val withCat = HashSet<String>()
+            for (r in recs.values) if (r.kind == "cat" && r.day in ds) withCat.add(r.day)
+            val dayTot = HashMap<String, Row>(); val vidTot = HashMap<String, Row>()
+            for (r in recs.values) {
+                if (r.day !in ds) continue
+                if (r.kind == "cat") {
+                    val t = when (r.name) { "video" -> out[0]; "file" -> out[1]; else -> out[2] }
+                    for (i in 0..2) { t.dn[i] += r.dn[i]; t.up[i] += r.up[i] }
+                } else if (r.day !in withCat) {
+                    val t = when (r.kind) { "day" -> dayTot.getOrPut(r.day) { Row(r.day, 0L, 0L) }; "vid" -> vidTot.getOrPut(r.day) { Row(r.day, 0L, 0L) }; else -> null }
+                    if (t != null) for (i in 0..2) { t.dn[i] += r.dn[i]; t.up[i] += r.up[i] }
+                }
+            }
+            for ((d, dr) in dayTot) {
+                val vr = vidTot[d]
+                for (i in 0..2) {
+                    val vd = vr?.dn?.get(i) ?: 0L; val vu = vr?.up?.get(i) ?: 0L
+                    out[0].dn[i] += vd; out[0].up[i] += vu
+                    out[2].dn[i] += (dr.dn[i] - vd).coerceAtLeast(0L); out[2].up[i] += (dr.up[i] - vu).coerceAtLeast(0L)
+                }
+            }
+        }
+        return out.toList()
     }
 
     /** إجمالي كل الأيام في المدى (من سجل «day») */
@@ -290,6 +357,7 @@ object NetLedger {
                 if (r.day !in keep) continue
                 r.first = o.getLong(3); r.last = o.getLong(4)
                 for (k in 0..2) { r.dn[k] = o.getLong(5 + k * 2); r.up[k] = o.getLong(6 + k * 2) }
+                r.ref = o.optString(11, ""); r.mime = o.optString(12, "")
                 recs["${r.kind}|${r.day}|${r.name}"] = r
             }
             val boot = j.optLong("boot", 0L); val lrx = j.optLong("lrx", -1L); val ltx = j.optLong("ltx", -1L)
@@ -310,12 +378,13 @@ object NetLedger {
             // سقف الحجم: لو كتر، نشيل الأصغر في الأيام القديمة
             if (recs.size > 3500) {
                 val today = dayOf(System.currentTimeMillis())
-                val drop = recs.values.filter { it.day != today && it.kind != "day" }.sortedBy { it.dn.sum() + it.up.sum() }.take(recs.size - 3000)
+                val drop = recs.values.filter { it.day != today && it.kind != "day" && it.kind != "cat" }.sortedBy { it.dn.sum() + it.up.sum() }.take(recs.size - 3000)
                 for (r in drop) recs.remove("${r.kind}|${r.day}|${r.name}")
             }
             for (r in recs.values) {
                 val o = JSONArray().put(r.kind).put(r.day).put(r.name).put(r.first).put(r.last)
                 for (k in 0..2) { o.put(r.dn[k]); o.put(r.up[k]) }
+                o.put(r.ref).put(r.mime)
                 arr.put(o)
             }
             dirty = false

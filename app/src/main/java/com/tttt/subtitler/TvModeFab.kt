@@ -53,6 +53,36 @@ object TvModeFab {
     @Volatile private var lastPauseAt = 0L
     private var picker: PopupWindow? = null
     private val phoneCtl = HashMap<Activity, TextView>()   // (v662) 🎮 عايم داخل مشغّل الفيديو بتاع الموبايل (thread الواجهة بس)
+    // (v761) حالة المشغّل على التلفزيون (آخر فحص) + عدّاد محلي بيحرّك الشريط كل نص ثانية بين الفحصات
+    private class Mini(val bar: android.widget.ProgressBar, val tm: TextView, val pp: TextView)
+    private val minis = HashMap<Activity, Mini>()
+    @Volatile private var stPos = 0L
+    @Volatile private var stDur = 0L
+    @Volatile private var stPlaying = true
+    @Volatile private var stAt = 0L
+    private var tickOn = false
+    private fun curPos(): Long {
+        val p = stPos + (if (stPlaying) android.os.SystemClock.elapsedRealtime() - stAt else 0L)
+        return p.coerceIn(0L, if (stDur > 0L) stDur else Long.MAX_VALUE)
+    }
+    /** بعد ما فيديو يتبعت للتلفزيون: العدّاد يبدأ من نقطة البداية لحد أول فحص حقيقي */
+    fun miniReset(startMs: Long) { stPos = startMs.coerceAtLeast(0L); stDur = 0L; stPlaying = true; stAt = android.os.SystemClock.elapsedRealtime() }
+    private fun applyState(st: org.json.JSONObject) {
+        stPos = st.optLong("pos", 0L); stDur = st.optLong("dur", 0L); stPlaying = st.optBoolean("playing", true); stAt = android.os.SystemClock.elapsedRealtime()
+    }
+    private fun paintMini() {
+        for ((a, m) in minis.toList()) {
+            if (a.isDestroyed || a.isFinishing) { minis.remove(a); continue }
+            val d = stDur; val p = curPos()
+            m.bar.progress = if (d > 0L) (p * 1000L / d).toInt().coerceIn(0, 1000) else 0
+            m.tm.text = PlayerLogic.clock(p) + (if (d > 0L) " / " + PlayerLogic.clock(d) else "")
+            m.pp.text = if (stPlaying) "⏸" else "▶"
+        }
+    }
+    private val tick = object : Runnable {
+        override fun run() { paintMini(); if (PlayTarget.nowTitle != null) main.postDelayed(this, 500L) else tickOn = false }
+    }
+    private fun startTick() { if (tickOn) return; tickOn = true; main.post(tick) }
     private val docks = HashMap<Activity, View>()   // (v592) المتصفح: العمود اللي زرار 📺 يقعد فوقه
     /** (v592) الزرار العايم يتحط فوق [stack] مباشرة (بحجم أصغر) بدل مكانه العادي؛ بيتنادى من المتصفح بس */
     fun dock(a: Activity, stack: View) {
@@ -105,7 +135,7 @@ object TvModeFab {
                     attach(act); startPoll(); startNowWatch()
                 }
                 override fun onActivityPaused(act: Activity) { if (resumed > 0) resumed--; if (resumed == 0) lastPauseAt = System.currentTimeMillis(); try { picker?.dismiss() } catch (_: Throwable) {}; try { layers[act]?.let { closeFan(it, false) } } catch (_: Throwable) {} }
-                override fun onActivityDestroyed(act: Activity) { layers.remove(act); docks.remove(act); phoneCtl.remove(act) }
+                override fun onActivityDestroyed(act: Activity) { layers.remove(act); docks.remove(act); phoneCtl.remove(act); minis.remove(act) }
                 override fun onActivityCreated(act: Activity, b: Bundle?) {}
                 override fun onActivityStarted(act: Activity) {}
                 override fun onActivityStopped(act: Activity) {}
@@ -180,17 +210,45 @@ object TvModeFab {
             if (l.btn.parent == null) root.addView(l.btn, FrameLayout.LayoutParams(dp(a, 40), dp(a, 52), Gravity.RIGHT or Gravity.BOTTOM).apply { bottomMargin = dp(a, 150); rightMargin = 0 })
             l.ctl?.let { c -> if (c.parent == null) root.addView(c, FrameLayout.LayoutParams(dp(a, 40), dp(a, 52), Gravity.RIGHT or Gravity.BOTTOM).apply { bottomMargin = dp(a, 150) + dp(a, 52) + dp(a, 6); rightMargin = 0 }) }
             if (l.banner.parent == null) root.addView(l.banner, FrameLayout.LayoutParams(-1, dp(a, 24), Gravity.TOP))   // (v612) فوق، والمحتوى بينزل تحتها (placeBanner بتزق الـroot بحشو علوي) — مابقتش بتغطّي الشغل
-            if (l.cap == null) {   // (v560) كبسولة «▶ اسم الفيديو ✕» فوق: الفيديو شغّال على التلفزيون؛ ✕ بتقفله
-                val tt = TextView(a).apply { setTextColor(Color.WHITE); textSize = 13f; typeface = android.graphics.Typeface.DEFAULT_BOLD; maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END; maxWidth = dp(a, 230) }
+            if (l.cap == null) {   // (v761) مشغّل مصغّر: ⏯ + اسم الفيديو (دوسة = الريموت) + ✕ ، وتحتها شريط تقدّم بيتحرك (دوسة عليه = تقديم/ترجيع)
+                val tt = TextView(a).apply { setTextColor(Color.WHITE); textSize = 13f; typeface = android.graphics.Typeface.DEFAULT_BOLD; maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END; maxWidth = dp(a, 200) }
                 val xx = TextView(a).apply { text = "✕"; setTextColor(Color.WHITE); textSize = 15f; typeface = android.graphics.Typeface.DEFAULT_BOLD; gravity = Gravity.CENTER; setPadding(dp(a, 10), dp(a, 8), dp(a, 14), dp(a, 8)); contentDescription = "اقفل الفيديو على التلفزيون" }
-                val cap = LinearLayout(a).apply {
+                val pp = TextView(a).apply { text = "⏸"; setTextColor(Color.WHITE); textSize = 17f; gravity = Gravity.CENTER; setPadding(dp(a, 14), dp(a, 6), dp(a, 4), dp(a, 6)); contentDescription = "إيقاف / تشغيل على التلفزيون" }
+                val row = LinearLayout(a).apply {
                     orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; gravity = Gravity.CENTER_VERTICAL
-                    background = pill(a, 0xF0232838.toInt()); elevation = dp(a, 12).toFloat(); visibility = View.GONE
-                    addView(tt); addView(xx)
+                    addView(pp); addView(tt); addView(xx)
                 }
-                tt.setPadding(dp(a, 14), dp(a, 8), dp(a, 8), dp(a, 8))
-                tt.setOnClickListener { try { PlayTarget.reopenController(a) } catch (e: Throwable) { LogStore.err("TvModeFab:cap", e) } }
+                val bar = android.widget.ProgressBar(a, null, android.R.attr.progressBarStyleHorizontal).apply {
+                    max = 1000; progress = 0; progressTintList = android.content.res.ColorStateList.valueOf(0xFF4FC3F7.toInt())
+                    progressBackgroundTintList = android.content.res.ColorStateList.valueOf(0x44FFFFFF)
+                }
+                val tm = TextView(a).apply { setTextColor(0xFFB8BDC9.toInt()); textSize = 10.5f; text = ""; setPadding(dp(a, 8), 0, 0, 0) }
+                val barRow = LinearLayout(a).apply {
+                    orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_LTR; gravity = Gravity.CENTER_VERTICAL
+                    setPadding(dp(a, 14), 0, dp(a, 14), dp(a, 8))
+                    addView(bar, LinearLayout.LayoutParams(dp(a, 170), dp(a, 14))); addView(tm)
+                }
+                val cap = LinearLayout(a).apply {
+                    orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER_HORIZONTAL
+                    background = pill(a, 0xF0232838.toInt()); elevation = dp(a, 12).toFloat(); visibility = View.GONE
+                    addView(row); addView(barRow)
+                }
+                tt.setPadding(dp(a, 8), dp(a, 8), dp(a, 8), dp(a, 8))
+                tt.setOnClickListener { try { ControllerPad.show(a) } catch (e: Throwable) { LogStore.err("TvModeFab:cap", e) } }   // (v761) الريموت بدل صفحة المشغّل
                 xx.setOnClickListener { PlayTarget.closeOnTv(a) { ok -> if (!ok) a.runOnUiThread { Notice.show(a, "⚠ ما قدرتش أوصل للتلفزيون — اقفل الفيديو منه", 3200L) } } }
+                pp.setOnClickListener {
+                    stPos = curPos(); stAt = android.os.SystemClock.elapsedRealtime(); stPlaying = !stPlaying; paintMini()   // رد فعل فوري، والفحص الدوري بيصحّحه
+                    Thread { try { RemoteClient.player("toggle") } catch (e: Throwable) { LogStore.err("TvModeFab:toggle", e) } }.also { it.isDaemon = true }.start()
+                }
+                bar.setOnTouchListener { v, e ->
+                    if (e.action == android.view.MotionEvent.ACTION_UP && v.width > 0 && stDur > 0L) {
+                        val ms = (e.x / v.width * stDur).toLong().coerceIn(0L, stDur)
+                        stPos = ms; stAt = android.os.SystemClock.elapsedRealtime(); paintMini()
+                        Thread { try { RemoteClient.player("seekto", ms) } catch (ex: Throwable) { LogStore.err("TvModeFab:seek", ex) } }.also { it.isDaemon = true }.start()
+                    }
+                    true
+                }
+                minis[a] = Mini(bar, tm, pp)
                 l.cap = cap; l.capTitle = tt
             }
             val capV = l.cap
@@ -288,6 +346,7 @@ object TvModeFab {
         val nt = PlayTarget.nowTitle
         l.capTitle?.text = "📺 ▶  " + (nt ?: "")   // (v589 M3) 📺 = الفيديو شغّال على التلفزيون (مش على الموبايل ده)
         l.cap?.visibility = if (nt != null) View.VISIBLE else View.GONE
+        if (nt != null) startTick()
         l.btn.visibility = if (on || prompting || list.isNotEmpty()) View.VISIBLE else View.GONE   // (v614) بيظهر بس لما يلاقي تلفزيون (أو وهو متصل)   // (v590) وهو متصل الزرار بيفضل ظاهر (أخضر) عشان دوسته تفتح الكنترولر؛ الخروج من الخط الأحمر أو دوسة طويلة   // (v565) متصل ← العلامة تتشال (الخروج من الخط الأحمر تحت)
         l.btn.text = "📺"
         l.ctl?.let { c -> c.visibility = if (on) View.VISIBLE else View.GONE; c.background = tabBg(a, 0xF0E53935.toInt()) }   // (v614) الكنترولر ظاهر دايمًا وهو متصل
@@ -339,21 +398,22 @@ object TvModeFab {
                         if (RemoteClient.tvCtx == "player" && System.currentTimeMillis() >= PlayTarget.noAutoUntil) {
                             val st = try { RemoteClient.player("state") } catch (_: Throwable) { null }
                             if (st != null && PlayTarget.nowTitle == null && System.currentTimeMillis() >= PlayTarget.noAutoUntil) {
+                                applyState(st)
                                 PlayTarget.nowTitle = st.optString("title").trim().ifBlank { "فيديو على التلفزيون" }
                                 miss = 0; main.post { refreshAll() }
                             }
                         }
                         nap(3000L); continue
                     }
-                    nap(6000L)
+                    nap(2500L)   // (v761) كان 6 ثواني: الشريط بيتصحّح أسرع
                     if (RemoteClient.state != RemoteClient.St.CONNECTED) { miss = 0; continue }
                     val st = try { RemoteClient.player("state") } catch (_: Throwable) { null }
                     if (st == null) miss++ else {
-                        miss = 0
+                        miss = 0; applyState(st)
                         val t = st.optString("title").trim()   // الحلقة اللي بعدها اشتغلت ← العنوان يتحدّث
                         if (t.isNotEmpty() && RemoteClient.tvCtx == "player" && t != PlayTarget.nowTitle) { PlayTarget.nowTitle = t; main.post { refreshAll() } }
                     }
-                    if (miss >= 3) { PlayTarget.nowTitle = null; main.post { refreshAll() }; miss = 0 }
+                    if (miss >= 6) { PlayTarget.nowTitle = null; main.post { refreshAll() }; miss = 0 }
                 }
             } finally { watching = false }
         }.also { it.isDaemon = true }.start()

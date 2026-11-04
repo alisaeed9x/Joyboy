@@ -223,7 +223,8 @@ object FtRecv {
         } catch (_: Throwable) {}
     }
 
-    private fun recvFile(app: Context, t: TaskItem, s: FtSession, f: FtFile, key: ByteArray, progress: () -> Unit) {
+    private fun recvFile(app: Context, t: TaskItem, s: FtSession, f: FtFile, key: ByteArray, progress: () -> Unit) { NetLedger.inFile(f.name) { recvFile0(app, t, s, f, key, progress) } }   // (v760) استلام ملف من جهاز تاني بيتحسب في «ملفات»
+    private fun recvFile0(app: Context, t: TaskItem, s: FtSession, f: FtFile, key: ByteArray, progress: () -> Unit) {
         val dir = destDir(app, s, f)
         val tag = FtCrypto.hex(FtCrypto.sha256((s.peerId + "|" + f.rel + "|" + f.size).toByteArray(Charsets.UTF_8))).take(10)
         val part = File(dir, Xfer.safeName(f.name) + "." + tag + ".ftpart")
@@ -282,7 +283,7 @@ object FtRecv {
 
         val outFile = Xfer.uniqueFile(dir, Xfer.safeName(f.name))   // مابنكتبش فوق ملف موجود أبدًا
         if (!part.renameTo(outFile)) throw IOException("ما قدرتش أحفظ الملف")
-        f.outPath = outFile.absolutePath
+        f.outPath = outFile.absolutePath; NetLedger.fileRef(outFile.absolutePath, FmUtil.mime(outFile))
         try { MediaScannerConnection.scanFile(app, arrayOf(outFile.absolutePath), null, null) } catch (_: Throwable) {}
         try { VideoScan.cache = null } catch (_: Throwable) {}
     }

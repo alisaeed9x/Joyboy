@@ -550,7 +550,7 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
     // (v621) كان refresh() بيعمل notifyDataSetChanged + يمسح كاش الـrecents (قراءة ملف على الـUI thread) في نفس لحظة بداية الأنيميشن ← تهنيج. دلوقتي بعد ما الانزلاق يخلص
     private val softRefresh = Runnable { recMemoAt = 0L; try { adapter.notifyDataSetChanged() } catch (_: Throwable) {} }
     fun refresh() {
-        if (cur == null) { recMemoAt = 0L; openTab(if (DeviceUi.isTv(act) && (YtAccount.loggedIn() || YtStore.read(YtStore.SUBS).isNotEmpty())) 1 else 0) }   // (v674) تلفزيون: بيفتح على الاشتراكات
+        if (cur == null) { recMemoAt = 0L; openTab(if (YtAccount.loggedIn() || YtStore.read(YtStore.SUBS).isNotEmpty()) 1 else 0) }   // (v674) تلفزيون: بيفتح على الاشتراكات · (v761) الموبايل كمان: أول ما تدخل يوتيوب تجيب الاشتراكات الأول مش الرئيسية
         else { h.removeCallbacks(softRefresh); h.postDelayed(softRefresh, 280L) }
         startPoll()
     }

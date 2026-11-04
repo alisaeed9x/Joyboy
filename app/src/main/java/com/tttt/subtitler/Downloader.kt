@@ -322,12 +322,12 @@ object Downloader {
             val uri = ctx.contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, cv) ?: throw java.io.IOException("ما قدرتش أكتب في التنزيلات")
             ctx.contentResolver.openOutputStream(uri)?.use { os -> f.inputStream().use { it.copyTo(os) } }
             f.delete()
-            lastOut.set(Pair(uri, mime))
+            lastOut.set(Pair(uri, mime)); NetLedger.fileRef(uri.toString(), mime)
             return "Download/Subtitler/$display"
         }
         val dir = ctx.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS) ?: ctx.filesDir
         val dst = File(dir, display); f.copyTo(dst, true); f.delete()
-        lastOut.set(Pair(android.net.Uri.fromFile(dst), mime))
+        lastOut.set(Pair(android.net.Uri.fromFile(dst), mime)); NetLedger.fileRef(dst.absolutePath, mime)
         return dst.absolutePath
     }
 
