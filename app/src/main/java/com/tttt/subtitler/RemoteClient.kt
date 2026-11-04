@@ -408,12 +408,18 @@ object RemoteClient {
 
     /** (v519) زرار ريموت (up/down/left/right/ok/back/home/menu/recents/ff/rew/next/prev) — من غير ما تستنى */
     fun key(k: String) {
-        Thread {
-            try {
-                val (c, t) = post("/key", JSONObject().put("k", k).put("cid", UUID.randomUUID().toString()))
-                if (c == 200) try { parseCtx(JSONObject(t)) } catch (_: Exception) {}
-            } catch (_: Throwable) {}
-        }.also { it.isDaemon = true }.start()
+        enqueueCmd {
+            val (c, t) = post("/key", JSONObject().put("k", k).put("cid", UUID.randomUUID().toString()))
+            if (c == 200) try { parseCtx(JSONObject(t)) } catch (_: Exception) {}
+        }
+    }
+
+    // (v737) أوامر الريموت السريعة (أزرار + vol_up/mute/playpause) من طابور واحد بالترتيب: Thread لكل دوسة كان ممكن يوصّل «ok» قبل «down» اللي قبله.
+    // أمر استنّى أكتر من 2.5 ث في الطابور (التلفزيون مش بيرد) بيتسيب بدل ما يتنفّذ متأخر ويلخبط الشاشة.
+    private val cmdQ = Executors.newSingleThreadExecutor { r -> Thread(r, "rc-cmd").apply { isDaemon = true } }
+    private fun enqueueCmd(job: () -> Unit) {
+        val t0 = System.currentTimeMillis()
+        try { cmdQ.execute { if (System.currentTimeMillis() - t0 <= 2500L) try { job() } catch (_: Throwable) {} } } catch (_: Throwable) {}
     }
 
     /** (v520) أمر/استعلام مشغّل الفيديو (blocking). بيرجّع حالة المشغّل، أو null لو مفيش مشغّل/فشل */
@@ -472,7 +478,7 @@ object RemoteClient {
 
     /** أمر سريع من غير ما تستنى: vol_up / vol_down / mute / playpause */
     fun cmd(c: String) {
-        Thread { try { post("/cmd", JSONObject().put("c", c).put("cid", UUID.randomUUID().toString())) } catch (_: Throwable) {} }.start()
+        enqueueCmd { post("/cmd", JSONObject().put("c", c).put("cid", UUID.randomUUID().toString())) }
     }
 
     /** @return null لو نجح (والـvisible بتقول لو شاشة اللانشر ظاهرة)، أو رسالة الخطأ */

@@ -321,7 +321,7 @@ object FtLinkSend {
         var tv = try { RemoteClient.pairedList().firstOrNull { it.id == f.id } } catch (_: Throwable) { null }
         if (tv == null) {
             val (p, m) = RemoteClient.pair(f, "")
-            if (p == null) return if (m == "need_code") "التلفزيون محتاج كود إقران — اقترن بيه الأول من مركز النقل القديم (الرادار) وبعدين ارجع" else if (m == "locked") "التلفزيون قافل الاقتران دلوقتي — جرّب بعد شوية" else m
+            if (p == null) return if (m == "need_code") "التلفزيون محتاج كود إقران — اقترن بيه الأول من زرار التلفزيون العايم 📺 (هيطلب الكود) وبعدين ارجع" else if (m == "locked") "التلفزيون قافل الاقتران دلوقتي — جرّب بعد شوية" else m
             tv = p
         }
         tv.ip = f.ip; tv.port = f.port

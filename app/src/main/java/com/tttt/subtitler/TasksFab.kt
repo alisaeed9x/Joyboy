@@ -27,6 +27,9 @@ class TasksFab(private val act: Activity, private val parent: FrameLayout, priva
     private var shown = false
     private var placed = false
     private var downX = 0f; private var downY = 0f; private var startTx = 0f; private var startTy = 0f; private var moved = false
+    // (v736) سحب الدايرة على ✕ = تتخبّى؛ بترجع لوحدها أول ما تبدأ مهمة جديدة
+    private val trash = DragTrash(act, parent, ui)
+    private var dismissed = false; private var dismissedAt = 0
     /** الشاشة اللي فيها الزرار ممكن تخبّيه (صفحة المهام نفسها مثلًا) */
     var hidden = false
         set(v) { field = v; refresh() }
@@ -63,22 +66,25 @@ class TasksFab(private val act: Activity, private val parent: FrameLayout, priva
             }
             MotionEvent.ACTION_MOVE -> {
                 val dx = e.rawX - downX; val dy = e.rawY - downY
-                if (!moved && Math.abs(dx) + Math.abs(dy) > ui.dp(8)) moved = true
+                if (!moved && Math.abs(dx) + Math.abs(dy) > ui.dp(8)) { moved = true; trash.show() }
                 if (moved) {
                     val w = parent.width; val h = parent.height
                     v.translationX = (startTx + dx).coerceIn(0f, (w - size).coerceAtLeast(0).toFloat())
                     v.translationY = (startTy + dy).coerceIn(0f, (h - size).coerceAtLeast(0).toFloat())
+                    trash.update(v)
                 }
                 return true
             }
             MotionEvent.ACTION_UP -> {
                 if (moved) {
+                    val hit = trash.near(v); trash.hide()
+                    if (hit) { val a = TaskAgg.snap(); dismissedAt = a.running + a.paused; dismissed = true; place(); refresh(); return true }
                     val w = parent.width - size; val h = parent.height - size
                     if (w > 0 && h > 0) prefs.edit().putFloat("tfab_fx", v.translationX / w).putFloat("tfab_fy", v.translationY / h).apply()
                 } else onOpen()
                 return true
             }
-            MotionEvent.ACTION_CANCEL -> return true
+            MotionEvent.ACTION_CANCEL -> { if (moved) { trash.hide(); place() }; return true }
         }
         return false
     }
@@ -86,7 +92,8 @@ class TasksFab(private val act: Activity, private val parent: FrameLayout, priva
     fun refresh() {
         val a = TaskAgg.snap()   // (v472) إجمالي المهام الشغّالة (الواقفة مؤقتًا مش بتتحسب في النسبة والوقت)
         val alive = a.running + a.paused
-        val show = alive > 0 && !hidden   // (v420) بيظهر وقت الشغل بس؛ بعد ما يخلص بيختفي (الناتج في ⋯ المزيد ← المهام)
+        if (alive == 0 || alive > dismissedAt) dismissed = false
+        val show = alive > 0 && !hidden && !dismissed   // (v420) بيظهر وقت الشغل بس؛ بعد ما يخلص بيختفي (الناتج في ⋯ المزيد ← المهام)
         val pctTxt = (a.frac * 100f).toInt().coerceIn(0, 100).toString() + "%"
         if (a.running == 0) view.set(a.frac, "⏸", pctTxt, a.paused, true)
         else if (a.etaSec >= 0L) view.set(a.frac, TaskAgg.fmt(a.etaSec), pctTxt, alive, false)

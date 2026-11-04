@@ -298,6 +298,9 @@ class Engine(
         s = s.replace(Regex("\\.{3,}"), "…").replace(Regex("\\.{2}"), ".")
         s = s.replace(Regex("!{2,}"), "!").replace(Regex("؟{2,}"), "؟").replace(Regex("\\?{2,}"), "?")
         s = s.replace(Regex("([!?؟،,])\\1+"), "$1")
+        // (v739) هلوسة وشبر الصغير: نفس الكلمة/الجملة 4 مرات فأكتر ورا بعض (زي «يلا يلا يلا…») بتتقص لتلات مرات في النسخة المبعوتة للترجمة بس (الأصل المحفوظ زي ما هو)
+        s = s.replace(Regex("([^\\s,،、，.。!?؟]{2,24})(?:[\\s,،、，.。!?؟]+\\1){3,}"), "$1 $1 $1")
+        s = s.replace(Regex("(\\S{3,24}?)\\1{4,}"), "$1$1$1")
         return s.trim()
     }
 
@@ -1793,14 +1796,22 @@ class Engine(
      * (v253) الأوفلاين بطيء (دقايق للفيلم)، فمش بنستنى الفيلم كله: أول ما k باتش ورا بعض (= 5/10/20 دقيقة) يتنسخوا وماحدش قبلهم لسه شغّال
      * بيتبعتوا لجيميناي يترجمهم. الباقي (اللي أقل من جزء) بيتترجم لما كل الباتشات تخلص زي الوضع 4 العادي.
      */
-    private fun partTick(avail: List<Int>): Boolean {
+    private fun partTick(avail0: List<Int>): Boolean {
         val k = ctxBatches().takeIf { it > 0 } ?: if (Offline.live() || (TrWizard.googleOn() && Cfg.str("ctx_min", "").isEmpty())) 1 else maxOf(1, (Offline.partMin() * 60.0 / ch).toInt())   // (v399) جوجل: باتش بباتش · (v400) وضع السياق: 2–3 باتشات
-        if (avail.size < k) return false
-        val head = avail.take(k)
-        if (head.last() - head.first() != k - 1) return false      // فيه باتش ناقص في النص (لسه بيتنسخ أو متأخر)
-        if (inflight.any { it < head.last() }) return false
+        // (v739) الترجمة بتبدأ من مكان المشاهد ومن بعده (مش من أقدم باتش في الفيديو): قبل كده الجزء كان بيتاخد من الأقدم، فلو التفريغ ماشي عند مكانك والجزء ده مستني جاره
+        // كان المحرك يترجم جزء قديم/بعيد الأول وبعدين يرجع لمكانك. ولو الباتش اللي المشاهد واصله جاهز بيتترجم على طول من غير ما يستنى يكمّل الجزء.
+        val viewer = if (headless) -1 else (host.position() / ch).toInt()
+        val fromViewer = if (viewer >= 0) avail0.filter { it >= viewer - 1 } else emptyList()
+        val avail = if (fromViewer.isNotEmpty()) fromViewer else avail0
+        val first = avail.first()
+        var run = 1
+        while (run < k && (first + run) in avail) run++
+        val urgent = viewer >= 0 && first <= viewer + 1
+        if (run < k && !urgent) return false      // فيه باتش ناقص في النص (لسه بيتنسخ أو متأخر) ومفيش مشاهد مستني
+        val head = (first until first + run).toList()
+        if (inflight.any { it < head.last() && it >= head.first() - 1 }) return false   // الباتش اللي قبله مباشرة لسه بيتنسخ: استنى عشان السياق
         val group = head.mapNotNull { tHold[it] }
-        if (group.size != k) return false
+        if (group.size != head.size) return false
         tTaken.addAll(head); trBusy.incrementAndGet()
         try {
             trEx.submit {
@@ -1809,7 +1820,7 @@ class Engine(
                 finally { tTaken.removeAll(head.toSet()); trBusy.decrementAndGet(); host.changed() }
             }
         } catch (_: RejectedExecutionException) { tTaken.removeAll(head.toSet()); trBusy.decrementAndGet(); return false }
-        host.log("📴 جزء جاهز (${k} باتش" + (if (k > 1 && ctxBatches() == 0) " ≈ ${Offline.partMin()} دقيقة" else "") + ") — اتبعت " + (if (TrWizard.googleOn()) (if (ExtTranslate.semiLibre()) "لـ LibreTranslate" else "لجوجل") else "لجيميناي") + " يترجمه")
+        host.log("📴 جزء جاهز (${head.size} باتش" + (if (k > 1 && ctxBatches() == 0) " ≈ ${Offline.partMin()} دقيقة" else "") + ") — اتبعت " + (if (TrWizard.googleOn()) (if (ExtTranslate.semiLibre()) "لـ LibreTranslate" else "لجوجل") else "لجيميناي") + " يترجمه")
         return true
     }
 

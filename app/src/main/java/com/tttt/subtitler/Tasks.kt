@@ -83,6 +83,8 @@ class TaskItem(val id: Int, val kind: String, val title: String) {
     /** (v457) وصف المهمة بالـ JSON عشان تتحفظ على القرص وتتكمّل لو العملية اتقتلت */
     @Volatile var spec = ""
     @Volatile var tries = 0
+    /** (v736) المهمة ماسكة خانة من خانات التحميل الـ3 (الواقفة مؤقتًا بتسيب خانتها للي مستني) */
+    @Volatile var holdsSlot = false
 }
 
 class TaskCancelled : RuntimeException("اتلغت")
@@ -97,9 +99,9 @@ object TaskCenter {
     val extra = CopyOnWriteArrayList<() -> Unit>()
     private val main = Handler(Looper.getMainLooper())
     private val q = LinkedBlockingQueue<TaskItem>()
-    private val qd = LinkedBlockingQueue<TaskItem>()   // (v137) التحميلات في طابور لوحدها عشان ما تستناش الترميز
     private var worker: Thread? = null
-    private val workersD = ArrayList<Thread>()   // (v472) لحد 3 تحميلات متوازية
+    /** (v736) 3 خانات تحميل متوازية بالدور (FIFO). كل تحميل في خيط لوحده بيستنى خانة؛ لما واحد يخلص/يقف مؤقتًا/يفشل خانته بتروح للي بعده فورًا */
+    private val dlSlots = java.util.concurrent.Semaphore(3, true)
     private var appCtx: Context? = null
     private var seq = 0
 
@@ -119,16 +121,39 @@ object TaskCenter {
             val ctx = app.applicationContext
             Thread { runOne(ctx, t) }.apply { isDaemon = true; start() }
         } else {
-            val dl = kind == "download"
-            (if (dl) qd else q).add(t); ensureWorker(app.applicationContext, dl)
+            if (kind == "download") {
+                val ctx = app.applicationContext
+                Thread { runDownload(ctx, t) }.apply { isDaemon = true; start() }
+            } else { q.add(t); ensureWorker(app.applicationContext) }
         }
         changed()
         return t
     }
 
-    private fun ensureWorker(app: Context, dl: Boolean) {
-        if (dl) synchronized(workersD) { workersD.removeAll { !it.isAlive }; if (workersD.size < 3) workersD.add(Thread { loop(app, qd) }.apply { isDaemon = true; start() }) }
-        else { if (worker?.isAlive == true) return; worker = Thread { loop(app, q) }.apply { isDaemon = true; start() } }
+    private fun ensureWorker(app: Context) {
+        if (worker?.isAlive == true) return; worker = Thread { loop(app, q) }.apply { isDaemon = true; start() }
+    }
+
+    /** (v736) تحميل: يستنى خانة (state 0 «في الانتظار») وبعدين يشتغل؛ الخانة بترجع في أي حالة (خلص/فشل/اتلغى) */
+    private fun runDownload(app: Context, t: TaskItem) {
+        while (true) {
+            if (t.cancelled) { aborted(t); afterEnd(t); changed(); return }
+            val ok = try { dlSlots.tryAcquire(300, java.util.concurrent.TimeUnit.MILLISECONDS) } catch (_: InterruptedException) { return }
+            if (ok) break
+        }
+        synchronized(t) { t.holdsSlot = true }
+        try { runOne(app, t) } finally { releaseSlot(t) }
+    }
+    fun releaseSlot(t: TaskItem) { synchronized(t) { if (t.holdsSlot) { t.holdsSlot = false; dlSlots.release() } } }
+    /** (v736) بعد الإيقاف المؤقت: ارجع خانة (لو كلها مشغولة استنى دورك). false = اتلغت وانت مستني */
+    fun reacquireSlot(t: TaskItem): Boolean {
+        var shown = false
+        while (true) {
+            if (t.cancelled) return false
+            val ok = try { dlSlots.tryAcquire(300, java.util.concurrent.TimeUnit.MILLISECONDS) } catch (_: InterruptedException) { return false }
+            if (ok) { synchronized(t) { t.holdsSlot = true }; if (shown) { t.msg = ""; changed() }; return true }
+            if (!shown) { shown = true; t.msg = "⏳ مستني دوره (3 تحميلات شغّالة)"; changed() }
+        }
     }
 
     private fun aborted(t: TaskItem) {

@@ -244,3 +244,4 @@ com/tttt/subtitler/ClipHistory.kt
 com/tttt/subtitler/QuickTiles.kt
 com/tttt/subtitler/LinkBubble.kt
 com/tttt/subtitler/ClipOverlay.kt
+com/tttt/subtitler/DragTrash.kt

@@ -61,7 +61,14 @@ object Downloader {
     private fun resolve(base: String, ref: String): String = URL(URL(base), ref).toString()
 
     private fun waitIfPaused(ctl: Ctl) {
-        while (ctl.paused && !ctl.stop()) Thread.sleep(200)
+        if (ctl.paused && !ctl.stop()) {
+            // (v736) التحميل الواقف مؤقتًا بيسيب خانته (من الـ3) للي مستني، ولما يكمّل بياخد دوره
+            val t = TaskCenter.cur.get()
+            val yielded = t != null && t.holdsSlot
+            if (yielded) TaskCenter.releaseSlot(t!!)
+            while (ctl.paused && !ctl.stop()) Thread.sleep(200)
+            if (yielded && !ctl.stop() && !TaskCenter.reacquireSlot(t!!)) throw TaskCancelled()
+        }
         if (ctl.stop()) throw TaskCancelled()
     }
 

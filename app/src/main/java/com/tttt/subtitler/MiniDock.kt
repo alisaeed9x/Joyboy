@@ -52,6 +52,9 @@ class MiniDock(
     private val btnPlay = btn("▮▮") { MusicEngine.toggle() }
     private val btnNext = btn("⏭") { MusicEngine.step(1) }
     private val btnStop = btn("✕") { MusicEngine.stopAll() }
+    // (v736) تصغير (يرجّع الدايرة) وتكبير (المشغّل الكامل) — زراير صريحة بدل الاعتماد على دوسة الصورة
+    private val btnMin = btn("—") { collapse() }
+    private val btnMax = btn("⤢") { collapse(); onOpenFull() }
     private val capsule = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; visibility = View.GONE; layoutDirection = View.LAYOUT_DIRECTION_LTR }
 
     private fun btn(sym: String, f: () -> Unit): TextView = ui.text(sym, 18f, Color.WHITE).apply {
@@ -71,7 +74,10 @@ class MiniDock(
     private val timeL = ui.text("0:00", 11f, muted)
     private val timeR = ui.text("0:00", 11f, muted)
     private val queueBox = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL }
-    private val queueScroll = ScrollView(act).apply { addView(queueBox, ViewGroup.LayoutParams(-1, -2)) }
+    // (v736) القايمة على قد عدد الأغاني (لحد 4 صفوف تقريبًا وبعدها سكرول) — مش طول ثابت حتى لو فاضية
+    private val queueScroll = object : ScrollView(act) {
+        override fun onMeasure(w: Int, h: Int) { super.onMeasure(w, View.MeasureSpec.makeMeasureSpec(ui.dp(140), View.MeasureSpec.AT_MOST)) }
+    }.apply { addView(queueBox, ViewGroup.LayoutParams(-1, -2)) }
     private val panel = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL; visibility = View.GONE; layoutDirection = View.LAYOUT_DIRECTION_LTR; setPadding(ui.dp(8), ui.dp(2), ui.dp(8), ui.dp(6)) }
     private val topRow = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_LTR }
     private val trash = ui.text("✕", 24f, Color.WHITE, true).apply {
@@ -97,7 +103,7 @@ class MiniDock(
         if (key == queueKey) return
         queueKey = key
         queueBox.removeAllViews()
-        if (i < 0 || i + 1 >= q.size) { queueBox.addView(ui.text("مفيش أغاني بعد دي", 12f, muted).apply { setPadding(ui.dp(4), ui.dp(6), ui.dp(4), ui.dp(6)) }); return }
+        if (i < 0 || i + 1 >= q.size) { queueBox.addView(ui.text("مفيش أغاني بعد دي", 12f, muted).apply { setPadding(ui.dp(4), ui.dp(4), ui.dp(4), ui.dp(4)) }); dock.post { place(false) }; return }
         for (k in i + 1 until minOf(q.size, i + 1 + 40)) {
             val t = q[k]
             val r = ui.text((k - i).toString() + ".  " + t.title + (if (t.artist.isBlank()) "" else "  —  " + t.artist), 12.5f, Color.WHITE).apply {
@@ -107,6 +113,7 @@ class MiniDock(
             }
             queueBox.addView(r, LinearLayout.LayoutParams(-1, -2))
         }
+        dock.post { place(false) }
     }
     private fun showTrash() {
         trash.visibility = View.VISIBLE; trash.alpha = 0f; trash.scaleX = 0.6f; trash.scaleY = 0.6f
@@ -175,10 +182,12 @@ class MiniDock(
         art.setOnClickListener { if (!expanded) expand() else { bump(); collapse(); onOpenFull() } }
         title.setOnClickListener { bump(); collapse(); onOpenFull() }
         sub.setOnClickListener { bump(); collapse(); onOpenFull() }
-        val tc = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL; setPadding(ui.dp(8), 0, ui.dp(4), 0) }
-        tc.addView(title); tc.addView(sub)
-        capsule.addView(tc, LinearLayout.LayoutParams(-2, -2))
-        for (b in listOf(btnPrev, btnPlay, btnNext, btnStop)) capsule.addView(b, LinearLayout.LayoutParams(ui.dp(38), ui.dp(40)))
+        for (b in listOf(btnPrev, btnPlay, btnNext, btnStop, btnMin, btnMax)) capsule.addView(b, LinearLayout.LayoutParams(ui.dp(38), ui.dp(40)))
+        // (v736) اسم الأغنية (والمغني) مكتوب تحت الصورة والأزرار
+        title.gravity = Gravity.CENTER_HORIZONTAL; sub.gravity = Gravity.CENTER_HORIZONTAL
+        title.maxWidth = ui.dp(290); sub.maxWidth = ui.dp(290)
+        panel.addView(title, LinearLayout.LayoutParams(-1, -2).apply { topMargin = ui.dp(2) })
+        panel.addView(sub, LinearLayout.LayoutParams(-1, -2))
         topRow.addView(capsule, LinearLayout.LayoutParams(-2, -2))
         dock.addView(topRow, LinearLayout.LayoutParams(-2, -2))
         // لوحة التقدّم والصوت والقايمة
@@ -193,7 +202,7 @@ class MiniDock(
         panel.addView(seekRow, LinearLayout.LayoutParams(-1, -2))
         panel.addView(volRow, LinearLayout.LayoutParams(-1, -2))
         panel.addView(ui.text("الأغاني اللي جاية", 11f, muted, true).apply { setPadding(ui.dp(4), ui.dp(4), ui.dp(4), ui.dp(2)); layoutDirection = View.LAYOUT_DIRECTION_RTL; gravity = Gravity.START }, LinearLayout.LayoutParams(-1, -2))
-        panel.addView(queueScroll, LinearLayout.LayoutParams(-1, ui.dp(150)))
+        panel.addView(queueScroll, LinearLayout.LayoutParams(-1, -2))
         dock.addView(panel, LinearLayout.LayoutParams(ui.dp(304), -2))
         noIntercept(seek); noIntercept(volBar); noIntercept(queueScroll)
         seek.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {

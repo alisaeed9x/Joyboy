@@ -20,6 +20,7 @@ import android.text.Editable
 import android.text.TextUtils
 import android.text.TextWatcher
 import android.view.Gravity
+import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
 import android.view.inputmethod.EditorInfo
@@ -253,6 +254,7 @@ class BrowserActivity : Activity() {
     override fun finish() { super.finish(); try { if (!NavAnim.take(this)) overridePendingTransition(R.anim.act_stay, R.anim.act_exit) } catch (e: Exception) { LogStore.err("Browser:finish", e) } }
 
     private lateinit var vidMark: VidMark   // (v717) إطار أزرق حوالين مربع الفيديو في الصفحة + كبسولة «اتلقط · دوس للخيارات»
+    private var badgeTrash: DragTrash? = null   // (v736) سلة ✕ لدايرة الاصطياد
     lateinit var badge: ClipOrb   // (v716) دايرة الاصطياد: نفس شكل دايرة الكليبورد (حلقة + نقطة بتلف)
     // (v324) شريط «تحميل؟» اللي بيظهر تحت الصفحة (زي شريط «لقيت فيديو»): تحميل · إلغاء، بيختفي بعد 9 ثواني (كان 6) أو بلمسة برّاه = مش عايز أحمّل
     private lateinit var dlBar: LinearLayout
@@ -470,6 +472,36 @@ class BrowserActivity : Activity() {
             setOnFocusChangeListener { v, f -> v.animate().scaleX(if (f) 1.15f else 1f).scaleY(if (f) 1.15f else 1f).setDuration(120).start() }
             setOnClickListener { badgeTap() }
             setOnLongClickListener { showList(); true }
+            // (v736) الدايرة تتسحب لأي مكان، وسيبها على ✕ تحت = تتخبّى (بترجع لوحدها لما يتلقط فيديو جديد)
+            setOnTouchListener(object : View.OnTouchListener {
+                var dx = 0f; var dy = 0f; var sx = 0f; var sy = 0f; var drag = false
+                override fun onTouch(v: View, e: MotionEvent): Boolean {
+                    when (e.actionMasked) {
+                        MotionEvent.ACTION_DOWN -> { dx = e.rawX; dy = e.rawY; sx = v.translationX; sy = v.translationY; drag = false }
+                        MotionEvent.ACTION_MOVE -> {
+                            if (!drag && Math.abs(e.rawX - dx) + Math.abs(e.rawY - dy) > ui.dp(10)) {
+                                drag = true; v.parent?.requestDisallowInterceptTouchEvent(true); v.cancelLongPress(); v.isPressed = false
+                                (badgeTrash ?: DragTrash(this@BrowserActivity, frame, ui).also { badgeTrash = it }).show()
+                            }
+                            if (drag) {
+                                val pw = (v.parent as? View)?.width ?: 0; val ph = (v.parent as? View)?.height ?: 0
+                                v.translationX = (sx + e.rawX - dx).coerceIn(-v.left.toFloat(), (pw - v.left - v.width).coerceAtLeast(0).toFloat())
+                                v.translationY = (sy + e.rawY - dy).coerceIn(-v.top.toFloat(), (ph - v.top - v.height).coerceAtLeast(0).toFloat())
+                                badgeTrash?.update(v)
+                                return true
+                            }
+                        }
+                        MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> if (drag) {
+                            drag = false
+                            val hit = badgeTrash?.near(v) == true
+                            badgeTrash?.hide()
+                            if (hit) { v.visibility = View.GONE; v.translationX = 0f; v.translationY = 0f }
+                            return true
+                        }
+                    }
+                    return false
+                }
+            })
         }
         dlTxt = IconTextView(this).apply { textSize = 13f; setTextColor(th.text); maxLines = 2; ellipsize = TextUtils.TruncateAt.END; gravity = Gravity.CENTER }
         dlLine = View(this).apply { setBackgroundColor(th.primary) }

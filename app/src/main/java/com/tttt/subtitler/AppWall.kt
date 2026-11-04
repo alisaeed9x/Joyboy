@@ -76,7 +76,10 @@ object AppWall {
         applyNow(a)
     }
 
-    fun detach() { h.removeCallbacks(loop); iv = null; scrim = null; actRef = null }
+    fun detach() { seq++; h.removeCallbacks(loop); iv = null; scrim = null; actRef = null }   // (v737) seq++: أي تحميل/بدل صورة شغّال ييجي بعد الفصل يتجاهل نفسه
+
+    /** (v737) من onDestroy: يفصل بس لو الأكتفيتي دي هي اللي ماسكاها — نسخة جديدة اتعملها attach قبل ما القديمة تتدمّر ما تتمسحش. الـImageView/الطبقة بيمسكوا الأكتفيتي (Context) فلازم يتشالوا هنا وإلا الأوبجكت بيحتفظ بيها لحد الـattach الجاي. */
+    fun detach(a: Activity) { if (actRef?.get() === a) detach() }
 
     /** بيطبّق الإعدادات الحالية (تشغيل/إيقاف/نوع/مدة). */
     fun applyNow(a: Activity) {
