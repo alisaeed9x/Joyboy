@@ -31,8 +31,31 @@ object CastServer {
     /** إجمالي اللي اتبعت للتلفزيون (للعرض/التشخيص) */
     @Volatile var sentBytes = 0L
 
+    // (v767) والشاشة مقفولة: من غير القفلين المعالج/الواي فاي بينام وسحب التلفزيون بيتقطّع ← بنمسكهم طول ما فيه فيديو منشور بس
+    private var wake: android.os.PowerManager.WakeLock? = null
+    private var wifi: android.net.wifi.WifiManager.WifiLock? = null
+    @Suppress("DEPRECATION")
+    private fun locks(on: Boolean) {
+        val c = appCtx ?: return
+        try {
+            synchronized(this) {
+                if (on) {
+                    if (wake == null) wake = (c.getSystemService(Context.POWER_SERVICE) as android.os.PowerManager).newWakeLock(android.os.PowerManager.PARTIAL_WAKE_LOCK, "joyboy:cast").apply { setReferenceCounted(false) }
+                    if (wifi == null) wifi = (c.getSystemService(Context.WIFI_SERVICE) as android.net.wifi.WifiManager).createWifiLock(android.net.wifi.WifiManager.WIFI_MODE_FULL_HIGH_PERF, "joyboy:cast").apply { setReferenceCounted(false) }
+                    wake?.acquire(4 * 3600 * 1000L)   // بيتجدّد مع كل طلب من التلفزيون
+                    if (wifi?.isHeld == false) wifi?.acquire()
+                } else {
+                    if (wake?.isHeld == true) wake?.release()
+                    if (wifi?.isHeld == true) wifi?.release()
+                }
+            }
+        } catch (e: Throwable) { LogStore.err("CastServer:locks", e) }
+    }
+
     private fun ensure(ctx: Context): Boolean {
         appCtx = ctx.applicationContext
+        // (v767) السوكت اتقفل/مات من غير ما نحس ← نبنيه من جديد بدل ما نفضل نعتبره شغّال
+        srv?.let { if (it.isClosed || !it.isBound) srv = null }
         if (srv != null) return true
         return try {
             val s = ServerSocket()
@@ -41,7 +64,12 @@ object CastServer {
             srv = s
             Thread {
                 while (srv === s) {
-                    try { val c = s.accept(); pool.execute { serve(c) } } catch (_: Exception) { if (srv !== s) break }
+                    try { val c = s.accept(); pool.execute { serve(c) } }
+                    catch (_: Exception) {
+                        if (srv !== s) break
+                        if (s.isClosed) { srv = null; break }   // مات ← publish الجاية تبنيه تاني
+                        try { Thread.sleep(200) } catch (_: InterruptedException) {}   // خطأ مؤقت (ملفات كتير مفتوحة…) من غير لف سريع
+                    }
                 }
             }.also { it.isDaemon = true }.start()
             true
@@ -75,10 +103,11 @@ object CastServer {
         val app = ctx.applicationContext
         Thread { try { item.srt = SubSidecar.prepareSrt(app, u) } catch (e: Throwable) { LogStore.err("CastServer:sub", e) } finally { item.subDone.countDown() } }.also { it.isDaemon = true }.start()   // (v676)
         sentBytes = 0L
+        locks(true)   // (v767)
         return "http://$ip:$PORT/cast/$tok/video.$ext?tvcast=1"
     }
 
-    fun clear() { synchronized(items) { items.clear() } }
+    fun clear() { synchronized(items) { items.clear() }; locks(false) }   // (v767) مفيش فيديو منشور ← نفك القفلين
 
     /** يفتح الملف ويفضّل الـ ParcelFileDescriptor حيّ طول القراءة (لو اتقفل/اتجمّع الـfd بيتقفل معاه) */
     private fun <T> withFile(it: Item, body: (FileInputStream) -> T): T? {
@@ -93,6 +122,7 @@ object CastServer {
             sock.use { s ->
                 s.soTimeout = 20000
                 s.tcpNoDelay = true
+                s.keepAlive = true   // (v767) لو التلفزيون اختفى من غير ما يقفل الاتصال، السوكت يموت بدل ما يفضل معلّق
                 val ins = s.getInputStream()
                 val head = StringBuilder()
                 while (head.length < 8192) { val b = ins.read(); if (b < 0) return; head.append(b.toChar()); if (head.endsWith("\r\n\r\n")) break }
@@ -105,6 +135,7 @@ object CastServer {
                 fun fail(code: Int, m: String) { out.write("HTTP/1.1 $code $m\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".toByteArray()); out.flush() }
                 if (parts.size < 4 || parts[1] != "cast") { fail(404, "Not Found"); return }
                 val it = synchronized(items) { items[parts[2]] } ?: run { fail(404, "Not Found"); return }
+                try { if (wake?.isHeld == true) wake?.acquire(4 * 3600 * 1000L) } catch (_: Throwable) {}   // (v767) تجديد القفل مع كل طلب
                 // (v676) ترجمة الفيديو للتلفزيون: بنستنى لحد ما الموبايل يخلّص تجهيزها (ملف جنب الفيديو أو استخراج مسار جواه)؛ مفيش ترجمة ← 404
                 if (parts[3].startsWith("sub")) {
                     try { it.subDone.await(60, java.util.concurrent.TimeUnit.SECONDS) } catch (_: InterruptedException) {}

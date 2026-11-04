@@ -25,6 +25,8 @@ object LinkSession {
     @Volatile private var appRef: Context? = null
     @Volatile private var lastEv = 0L
     private val logBuf = ArrayList<String>()
+    /** (v770) سطور لوج التلفزيون اللي وصلت للموبايل (بتتعرض في زرار 📜 فوق الريموت) */
+    fun logLines(): List<String> = synchronized(logBuf) { ArrayList(logBuf) }
 
     private class OpH(val report: (String) -> Unit, val done: (String) -> Unit)
     private val ops = ConcurrentHashMap<String, OpH>()
@@ -94,7 +96,7 @@ object LinkSession {
             lastEv = v
             val t = e.optString("t"); val s = e.optString("s")
             when (t) {
-                "log" -> synchronized(logBuf) { logBuf.add(s); while (logBuf.size > 300) logBuf.removeAt(0) }
+                "log" -> synchronized(logBuf) { logBuf.add(s); while (logBuf.size > 800) logBuf.removeAt(0) }
                 "opreport" -> { val (op, m) = PosExtrap.splitOp(s); val h = ops[op]; if (h != null) main.post { h.report(m) } }
                 "opdone" -> { val (op, m) = PosExtrap.splitOp(s); val h = ops.remove(op); if (h != null) main.post { h.done(m) } }
             }

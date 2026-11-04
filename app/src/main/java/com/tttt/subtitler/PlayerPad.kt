@@ -248,6 +248,28 @@ object PlayerPad {
                 body.addView(label(t, 12.5f, col, false).apply { gravity = Gravity.START or Gravity.CENTER_VERTICAL; background = bg(fill, line, 14f); setPadding(dp(12), dp(10), dp(12), dp(10)) }, lp(-1, -2).apply { topMargin = dp(10) })
             }
 
+            var logSrc = 0; var logDiag = true   // (v770) 0 = لوج التلفزيون · 1 = لوج الموبايل
+            fun sheetLog() = sheet("📜 اللوج") { body, redo, _ ->
+                val raw = if (logSrc == 0) LinkSession.logLines().joinToString("\n") else LogStore.lastLines(LogStore.currentText(), 400)
+                val lines = raw.lines().filter { it.isNotBlank() && (!logDiag || it.contains("🔬") || it.contains("Player:tick") || it.contains("⚠") || it.contains("❌")) }.takeLast(150)
+                val txt = lines.joinToString("\n")
+                val r1 = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; isBaselineAligned = false; layoutDirection = View.LAYOUT_DIRECTION_RTL }
+                r1.addView(btn("📺 التلفزيون", 14f, if (logSrc == 0) cOn else cCard, if (logSrc == 0) cOnLine else cLine) { logSrc = 0; redo() }, lp(0, dp(46), 1f).apply { marginEnd = dp(4) })
+                r1.addView(btn("📱 الموبايل", 14f, if (logSrc == 1) cOn else cCard, if (logSrc == 1) cOnLine else cLine) { logSrc = 1; redo() }, lp(0, dp(46), 1f).apply { marginStart = dp(4) })
+                body.addView(r1, lp(-1, -2).apply { topMargin = dp(10) })
+                val r2 = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; isBaselineAligned = false; layoutDirection = View.LAYOUT_DIRECTION_RTL }
+                r2.addView(btn("🔬 تشخيص بس", 13f, if (logDiag) cOn else cCard, if (logDiag) cOnLine else cLine) { logDiag = !logDiag; redo() }, lp(0, dp(46), 1f).apply { marginEnd = dp(4) })
+                r2.addView(btn("🔄 تحديث", 13f) { redo() }, lp(0, dp(46), 1f).apply { marginStart = dp(4); marginEnd = dp(4) })
+                r2.addView(btn("📋 نسخ", 13f) {
+                    try { (act.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager).setPrimaryClip(android.content.ClipData.newPlainText("log", txt)); note("📋 اتنسخ " + lines.size + " سطر") } catch (_: Throwable) { note("⚠ فشل النسخ") }
+                }, lp(0, dp(46), 1f).apply { marginStart = dp(4) })
+                body.addView(r2, lp(-1, -2).apply { topMargin = dp(8) })
+                if (logSrc == 0 && !LinkSession.connected) infoCard(body, "مفيش اتصال بالتلفزيون دلوقتي — سطور التلفزيون بتوصل وانت متصل بس.")
+                body.addView(label(if (txt.isEmpty()) "مفيش سطور لسه" + (if (logSrc == 0) " — شغّل فيديو على التلفزيون وسيبه يشتغل وارجع دوس 🔄" else "") else txt, 11f, 0xFFD6E2FF.toInt(), false).apply {
+                    typeface = android.graphics.Typeface.MONOSPACE; setTextIsSelectable(true); gravity = Gravity.START; textDirection = View.TEXT_DIRECTION_ANYRTL
+                    background = bg(0xFF0F1830.toInt(), 0xFF2B3F6E.toInt(), 14f); setPadding(dp(10), dp(8), dp(10), dp(8))
+                }, lp(-1, -2).apply { topMargin = dp(10) })
+            }
             fun sheetSpeed() = sheet("⏩ سرعة التشغيل") { body, _, close ->
                 val cur = PosExtrap.speedOf(st.optString("speed", "1x"))
                 chipRows(body, PlayerLogic.speeds.map { PlayerLogic.speedLabel(it) }, 3, { l -> Math.abs(PosExtrap.speedOf(l) - cur) < 0.01 }) { l ->
@@ -580,8 +602,8 @@ object PlayerPad {
             headRow.addView(ttlTv, lp(0, -2, 1f).apply { leftMargin = dp(10) })
             val handoffB = btn("📱", 18f, 0xFF2563EB.toInt(), 0xFF5B8DEF.toInt()) { PlayQueueUi.handoffToPhone(act) { try { d.dismiss() } catch (_: Throwable) {}; try { onLeave?.invoke() } catch (_: Throwable) {} } }.apply { visibility = View.GONE }   // (v694) كمّل الفيديو ده على الموبايل من نفس الثانية
             headRow.addView(handoffB, lp(dp(48), dp(44)).apply { leftMargin = dp(6) })
-            val speedTop = btn("⏩ 1x", 13f) { sheetSpeed() }   // (v712) زرار السرعة (1x / 2x …) ظاهر دايمًا فوق
-            headRow.addView(speedTop, lp(dp(66), dp(44)).apply { leftMargin = dp(6) })
+            val logTop = btn("📜 لوج", 13f) { sheetLog() }   // (v770) مكان زرار السرعة فوق: لوج التلفزيون (وتشخيص الترجمة 🔬) على الموبايل. السرعة لسه تحت وفي ⚙
+            headRow.addView(logTop, lp(dp(66), dp(44)).apply { leftMargin = dp(6) })
 
             // ── عدّاد الجمل (صوتي أو بصري) — دوسة = لوج الترجمة على التلفزيون ──
             val cntTv = label("—", 28f)
@@ -877,7 +899,7 @@ object PlayerPad {
                 for (k in 0 until left.childCount) { val c = left.getChildAt(k); c.alpha = if (c === idleBox) 1f else al }   // (v691) التعتيم من غير الأزرار التلاتة
                 volCol.alpha = al; tr.alpha = al; trRow.alpha = al; bar.alpha = al
                 speedB.text = "⏩ " + s.optString("speed", "1x")
-                speedTop.text = "⏩ " + s.optString("speed", "1x"); speedBot.text = "⏩\n" + s.optString("speed", "1x")
+                speedBot.text = "⏩\n" + s.optString("speed", "1x")
                 if (!busy) wtSel = s.optString("wtr", wtSel.ifEmpty { "free" })
                 trB.text = s.optString("tr", "▶ ترجم") + " ▾"
                 trB.background = bg(s.optInt("trcolor", 0xFFE53935.toInt()), 0x66FFFFFF, 18f)

@@ -3639,15 +3639,35 @@ class PlayerActivity : Activity(), Host {
     }
 
     /** (v763) عرض احتياطي للترجمة: لو حلقة العرض الأساسية وقعت في استثناء قبل ما توصل لسطر الترجمة (كان بيسيب الجملة واقفة والجمل اللي بعدها ما بتظهرش)، الحلقة دي بتحسب الجملة الحالية وتعرضها لوحدها */
+    // (v769) تشخيص «الترجمة مش بتظهر»: بيفرّق بين (الجمل مش واصلة للمشغّل) و(واصلة بس مش معروضة) و(حلقة العرض بتقع)
+    private var diagCueN = 0; private var diagCueLast = ""; private var diagN = 0; private var diagAt = 0L
+    /** (v770) سطر تشخيص: يروح اللوج + يوصل لموبايل الريموت (زرار 📜) من غير ما يغيّر نص الحالة */
+    private fun diagLog(s: String) {
+        try { if (BrainBus.active()) BrainBus.post("log", s) } catch (_: Throwable) {}
+        synchronized(logBuf) { logBuf.append(fmtMs(cur)).append("  ").append(s).append('\n'); if (logBuf.length > 30000) logBuf.delete(0, 10000) }
+        LogStore.add(fmtMs(cur) + "  " + s)
+    }
+    private fun subDiag(bad: Boolean, errN: Int) {
+        val now = System.currentTimeMillis()
+        if (now - diagAt < 4000L || diagN >= 120 || !::sub.isInitialized || !::engine.isInitialized || !player.isPlaying) return
+        diagAt = now; diagN++
+        val txtOff = try { player.exo()?.trackSelectionParameters?.disabledTrackTypes?.contains(C.TRACK_TYPE_TEXT) == true } catch (_: Throwable) { false }
+        diagLog("🔬 عرض @" + fmtMs(cur) + " · حلقة_وقعت=" + bad + "(" + errN + ") · cc=" + ccOn + " · أصلية=" + nativeCue.length + "ح · مسارات_نص=" + sfNativeCountNow() + " · نص_مقفول=" + txtOff +
+            " · hide=" + sfHideNative + " · ترجمة_شغالة=" + sfBusy.isNotEmpty() + " · جمل_المحرك=" + engine.subs.size + " · ظاهر=" + (sub.visibility == View.VISIBLE) + "/" + sub.height + " · curIdx=" + curIdx)
+    }
+
     private fun subSafeTick() {
         if (!::sub.isInitialized || !::engine.isInitialized) return
         if (dirty) { try { refreshList() } catch (_: Throwable) {} }
         val c = try { player.currentPosition } catch (_: Throwable) { cur }
         val act = PlayerLogic.activeIndices(spStarts, spEnds, c, offsetMs, 400L, 1).map { spMap[it] }
         val gs = PlayerLogic.orderSpeakers(act.map { list[it] })
-        val shown: Sub? = if (!ccOn || gs.isEmpty()) null else PlayerLogic.combine(gs)
+        // (v768) العرض الاحتياطي كان بيمسح ترجمة الملف الأصلية (السوفت صب) أثناء ترجمتها: مفيش جملة من المحرك ← null. دلوقتي لو مفيش جملة مترجمة بيعرض الأصلية
+        val nat = ccOn && !sfHideNative && gs.isEmpty() && nativeCue.isNotEmpty()
+        if (nat != natShown) { natShown = nat; try { sub.style = natStyle(SubStyle.load { k, d -> Cfg.str(k, d) }) } catch (_: Throwable) {} }
+        val shown: Sub? = if (!ccOn) null else if (gs.isNotEmpty()) PlayerLogic.combine(gs) else if (nat) natSub(nativeCue) else null
         val idx = act.lastOrNull() ?: -1
-        curIdx = idx; curKey = "safe:" + act.joinToString(",")
+        curIdx = idx; curKey = "safe:" + act.joinToString(",") + (if (nat) "|N:" + nativeCue else "")
         sub.show(shown, gs)
     }
 
@@ -5264,7 +5284,7 @@ class PlayerActivity : Activity(), Host {
                         if (atBottom) logSv.post { logSv.fullScroll(View.FOCUS_DOWN) }
                     }
                 }
-                } catch (e: Throwable) { tickBad = true; if (tickErrN++ < 5) { try { LogStore.err("Player:tick", e) } catch (_: Throwable) {} } } finally { if (tickBad) { try { subSafeTick() } catch (_: Throwable) {} }; h.postDelayed(this, 200) }   // (v471) أي استثناء في حلقة العرض كان بيقفل التطبيق — دلوقتي بيتسجّل في اللوج والحلقة تكمل
+                } catch (e: Throwable) { tickBad = true; if (tickErrN++ < 5) { try { LogStore.err("Player:tick", e) } catch (_: Throwable) {} } } finally { if (tickBad) { try { subSafeTick() } catch (_: Throwable) {} }; try { subDiag(tickBad, tickErrN) } catch (_: Throwable) {}; h.postDelayed(this, 200) }   // (v471) أي استثناء في حلقة العرض كان بيقفل التطبيق — دلوقتي بيتسجّل في اللوج والحلقة تكمل
             }
         })
         engineStarted = false; updateTr()
@@ -5354,7 +5374,7 @@ class PlayerActivity : Activity(), Host {
         } else {
         val castSrc = uri == null && CastCache.isCast(url)   // (v564) فيديو جاي من الموبايل: كاش مؤقت بيتمسح لما تخرج
         val factory = if (uri != null) DefaultMediaSourceFactory(this)
-        else { val f = DefaultHttpDataSource.Factory().setDefaultRequestProperties(hdr).setAllowCrossProtocolRedirects(true); httpDsf = f; DefaultMediaSourceFactory(if (castSrc) CastCache.factory(this, f) else f) }
+        else { val f = DefaultHttpDataSource.Factory().setDefaultRequestProperties(hdr).setAllowCrossProtocolRedirects(true).apply { if (castSrc) { setConnectTimeoutMs(15_000); setReadTimeoutMs(30_000) } }; httpDsf = f; DefaultMediaSourceFactory(if (castSrc) CastCache.factory(this, f) else f).apply { if (castSrc) setLoadErrorHandlingPolicy(androidx.media3.exoplayer.upstream.DefaultLoadErrorHandlingPolicy(60)) } }   // (v767) فيديو الموبايل: مهلة قراءة 30ث + 60 محاولة (بدل 8ث و3) — الموبايل ممكن يتأخر لما شاشته تتقفل
         // MKV وغيره: لو الديكودر الأول فشل (HEVC / 10-bit) جرّب اللي بعده بدل شاشة سودا
         val rf = DefaultRenderersFactory(this).setEnableDecoderFallback(true)
         val eb = ExoPlayer.Builder(this, rf).setMediaSourceFactory(factory)
@@ -5403,7 +5423,7 @@ class PlayerActivity : Activity(), Host {
             }
             override fun onPlaybackStateChanged(st: Int) {
                 setBuffering(st == Player.STATE_BUFFERING)
-                if (st == Player.STATE_READY) ytBusy(false)   // (v362)
+                if (st == Player.STATE_READY) { ytBusy(false); castRecover = 0 }   // (v362) · (v767)
                 else if (st == Player.STATE_BUFFERING && !firstFrame && intent.getStringExtra("ytid") != null) ytBusy(true, "⏳ بيحمّل الفيديو…")
                 if (st == Player.STATE_READY) h.postDelayed({ checkIdentityDuration() }, 1500)
                 // (v97) الفيديو خلص: لو اللوب شغّال يعيد من الأول، وإلا يروح للحلقة اللي بعدها (لو في)
@@ -5422,7 +5442,9 @@ class PlayerActivity : Activity(), Host {
             }
             override fun onRenderedFirstFrame() { firstFrame = true; webFirstFrame = true; ytBusy(false) }
             override fun onCues(cueGroup: androidx.media3.common.text.CueGroup) {
-                nativeCue = if (sfHideNative) "" else cueGroup.cues.mapNotNull { it.text?.toString()?.trim() }.filter { it.isNotEmpty() }.joinToString("\n")   // (v762) الأصلية مقفولة بعد ترجمة الملف
+                val rawCue = cueGroup.cues.mapNotNull { it.text?.toString()?.trim() }.filter { it.isNotEmpty() }.joinToString("\n")
+                nativeCue = if (sfHideNative) "" else rawCue   // (v762) الأصلية مقفولة بعد ترجمة الملف
+                if (diagCueN < 120 && rawCue != diagCueLast) { diagCueLast = rawCue; diagCueN++; diagLog("🔬 cue وصل من المشغّل @" + fmtMs(cur) + (if (sfHideNative) " (مخفي)" else "") + ": " + (if (rawCue.isEmpty()) "(فاضي)" else rawCue.take(25))) }   // (v769) تشخيص
             }
             override fun onTracksChanged(t: Tracks) {
                 try { runOnUiThread { paintAud(); paintQual() } } catch (_: Throwable) {}   // (v714) جودات HLS بتظهر هنا — زرار الجودة يظهر أول ما تتعرف
@@ -5469,6 +5491,7 @@ class PlayerActivity : Activity(), Host {
             override fun onPlayerError(e: PlaybackException) {
                 if (pendingYt) return   // (v351)
                 log("❌ خطأ في التشغيل: ${e.errorCodeName} — ${e.cause?.message ?: e.message}")
+                if (castRecoverOnce()) return   // (v767) فيديو من الموبايل: يعيد الاتصال ويكمّل من نفس المكان
                 if (ytSilentRetryOnce()) return   // (v468) يوتيوب: محاولة صامتة واحدة بستريم فريش قبل أي ديالوج يدوي
                 say("خطأ في تشغيل الفيديو — التفاصيل في 📜 اللوجز")
                 offerLinkRefresh()
@@ -5700,6 +5723,25 @@ class PlayerActivity : Activity(), Host {
 
     // ===== فشل لينك التحميل: تحديثه في الخلفية من صفحة الفيديو المحفوظة =====
     private var ytErrRetried = false   // (v468) محاولة يوتيوب الصامتة مرة واحدة لكل فتح
+
+    // (v767) فيديو جاي من الموبايل (CastServer): لو الاتصال بالموبايل وقع (شاشته اتقفلت / الواي فاي نام) المشغّل كان بيدخل في خطأ ويقف نهائي.
+    // دلوقتي بيعيد التحضير من نفس المكان لحد 12 مرة بفاصل متزايد، ولو وقف فدوسة تشغيل بتعيد المحاولة.
+    private var castRecover = 0
+    private fun isCastSrc(): Boolean = uri == null && CastCache.isCast(url)
+    private fun castRecoverOnce(): Boolean {
+        if (!isCastSrc() || isFinishing || isDestroyed || castRecover >= 12) return false
+        val xp = player.exo() ?: return false
+        castRecover++
+        val n = castRecover
+        val pos = try { xp.currentPosition } catch (_: Throwable) { 0L }
+        log("🔁 (v767) الاتصال بالموبايل وقع — محاولة $n/12 من ${fmtMs(pos)}…")
+        if (n == 1) say("🔄 الاتصال بالموبايل وقع — برجّعه…")
+        h.postDelayed({
+            if (isFinishing || isDestroyed) return@postDelayed
+            try { xp.prepare(); if (pos > 0L) xp.seekTo(pos) } catch (ex: Throwable) { LogStore.err("Player:castRecover", ex) }
+        }, minOf(n * 1500L, 8000L))
+        return true
+    }
     /** (v468) خطأ تشغيل يوتيوب أثناء المشاهدة: بنجيب ستريم فريش بصمت (fresh=true) وبنكمّل من نفس المكان؛ true = اتعاملنا ولسه بنحاول، false = مش يوتيوب/اتجربت خلاص فيقع للمسار اليدوي */
     private fun ytSilentRetryOnce(): Boolean {
         val yid = intent.getStringExtra("ytid")?.takeIf { it.length == 11 } ?: return false
@@ -5930,7 +5972,7 @@ class PlayerActivity : Activity(), Host {
         try { player.release() } catch (e: Exception) { LogStore.err("Main:2167", e) }
         uri = newUri; url = null; aurl = null; hdr.clear()
         cur = 0L; durMs = 0L; vidW = 0; vidH = 0; curIdx = -2; curKey = ""; dirty = true
-        nativeCue = ""; sfHideNative = false; textPicked = false; natShown = false; natLast = ""; preferNative = false; sfLive = ""; sfLiveCache.clear(); sfLiveAsk.clear()
+        nativeCue = ""; sfHideNative = false; textPicked = false; natShown = false; natLast = ""; diagCueN = 0; diagCueLast = ""; diagN = 0; preferNative = false; sfLive = ""; sfLiveCache.clear(); sfLiveAsk.clear()
         synchronized(logBuf) { logBuf.setLength(0) }
         status = ""; conf = Cfg.snapshot()
         try { sub.show(null) } catch (e: Exception) { LogStore.err("Main:2172", e) }
@@ -5966,7 +6008,7 @@ class PlayerActivity : Activity(), Host {
         if (::svRef.isInitialized) videoBoxRef.post { applyFit(svRef, videoBoxRef) }   // (v429) بعد ما الـ layout يخلص بالمقاس الجديد (كان بيتحسب على المقاس القديم لفريم)
     }
     fun showChrome() { if (pipNow() || uiLocked || DeviceUi.isRemote(this)) return; chromeShown = true; applyChromeFn(); h.removeCallbacks(hideChrome); h.postDelayed(hideChrome, 3500) }
-    fun togglePlay() { if (player.isPlaying) player.pause() else { if (player.playbackState == Player.STATE_ENDED) player.seekTo(0); player.play() } }
+    fun togglePlay() { if (player.isPlaying) player.pause() else { if (player.playbackState == Player.STATE_ENDED) player.seekTo(0); if (player.playbackState == Player.STATE_IDLE && isCastSrc()) { castRecover = 0; try { player.exo()?.prepare() } catch (_: Throwable) {} }; player.play() } }   // (v767) واقف بعد خطأ في فيديو الموبايل: ▶ بيعيد المحاولة
     /** (v97) في حلقة بعد الحالية في نفس الفولدر؟ (من غير رسالة) */
     private fun hasNextEpisode(): Boolean {
         if (remote) return false
