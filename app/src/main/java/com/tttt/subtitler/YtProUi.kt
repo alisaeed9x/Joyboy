@@ -103,6 +103,7 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
         pillN = n
         if (DeviceUi.isTv(act)) return   // (v575) تلفزيون: من غير كبسولة «فيديوهات جديدة» — العدّاد بقى جنب تاب «الاشتراكات»
         if (watch.isOpen || chan.isOpen) return   // (v428) الكبسولة بس في الرئيسية/الاشتراكات — مش فوق صفحة مشاهدة أو قناة
+        if (true) return   // (v758) الكبسولة اتشالت
         newPill.text = if (n >= 2) "⬆ " + n + " فيديو جديد" else "⬆ فيديوهات جديدة"
         newPill.animate().cancel()
         if (newPill.visibility != View.VISIBLE) { newPill.visibility = View.VISIBLE; newPill.translationY = -ui.dp(12).toFloat(); newPill.alpha = 0f }
@@ -910,7 +911,13 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
                 try {
                     val a = YtAccount.listFirst("FEsubscriptions")
                     val vids = a.items.filter { it.kind == 0 && it.dur !in 1L..60L }
-                    if (vids.isNotEmpty()) { r = YtRes(vids, a.next); more = { p -> val x = YtAccount.listMore(p); YtRes(x.items.filter { it.kind == 0 && it.dur !in 1L..60L }, x.next) } }
+                    if (vids.isNotEmpty()) {
+                        // (v754) نجيب أول 3 صفحات من الفيد الرسمي (كان صفحة واحدة بس) عشان الفيديوهات الجديدة كلها تيجي قبل القديمة
+                        val acc = ArrayList<NpItem>(vids); val seen0 = HashSet<String>(); acc.removeAll { !seen0.add(it.id) }
+                        var nx = a.next; var pg = 0
+                        while (nx != null && pg < 2) { pg++; try { val x = YtAccount.listMore(nx); for (v in x.items) if (v.kind == 0 && v.dur !in 1L..60L && seen0.add(v.id)) acc.add(v); nx = x.next } catch (_: Throwable) { break } }
+                        r = YtRes(acc, nx); more = { p -> val x = YtAccount.listMore(p); YtRes(x.items.filter { it.kind == 0 && it.dur !in 1L..60L }, x.next) }
+                    }
                 } catch (e: Throwable) {
                     if (syncErr == null) syncErr = e.message ?: e.javaClass.simpleName
                     LogStore.add("⚠ فيد الاشتراكات الرسمي فشل — بجرّب RSS: " + (e.message ?: e.javaClass.simpleName).take(80))
@@ -918,9 +925,14 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
             }
             if (official && r.items.isNotEmpty()) {   // (v751) ترتيب بالأحدث بوقت رفع دقيق من RSS + فيديوهات جديدة فاتت الصفحة الرسمية
                 try {
-                    val rssItems = (YtRss.cachedFeed(subsNow) ?: (if (force) YtRss.feed(subsNow, true, false) else null))?.items.orEmpty().filter { it.kind == 0 }
+                    val ex = java.util.concurrent.Executors.newSingleThreadExecutor()
+                    val fut = ex.submit(java.util.concurrent.Callable<List<NpItem>> { YtRss.feed(subsNow, force, false).items })
+                    val live: List<NpItem> = try { fut.get(if (force) 40L else 7L, java.util.concurrent.TimeUnit.SECONDS) } catch (_: Throwable) {
+                        // (v757) الفحص الحي أبطأ من 7 ثواني: نعرض اللي جاهز دلوقتي والباقي يكمّل في الخلفية وتطلع كبسولة «⬆ فيديوهات جديدة»
+                        YtRss.refreshAsync(subsNow); YtRss.cachedFeed(subsNow)?.items.orEmpty()
+                    } finally { ex.shutdown() }
+                    val rssItems = live.filter { it.kind == 0 }   // (v754) فحص حي بدل كاش قديم
                     r = YtRes(YtRss.mergeLatest(r.items, rssItems), r.next)
-                    if (!force) YtRss.refreshAsync(subsNow)
                     val m0 = more
                     if (m0 != null) { val shown = HashSet<String>(); r.items.forEach { shown.add(it.id) }; more = { p -> val x = m0(p); YtRes(x.items.filter { shown.add(it.id) }, x.next) } }
                 } catch (_: Throwable) {}

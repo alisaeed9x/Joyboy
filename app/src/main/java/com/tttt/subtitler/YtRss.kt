@@ -30,7 +30,7 @@ import java.util.concurrent.Executors
  */
 object YtRss {
     const val TTL_MS = 15 * 60 * 1000L
-    private const val MAX_CH = 120
+    private const val MAX_CH = 1000   // (v756) كان 300 (و120 قبلها) ← اشتراكات كتير كانت بتتقصّ
     private const val PER_CH = 8
     private val RX = Regex("/channel/(UC[A-Za-z0-9_-]{22})")
 
@@ -231,7 +231,7 @@ object YtRss {
                 if (ts > 0L && (r != null || o.age.isBlank())) ageOf(ts) else o.age, o.kind, o.url, ts, o.avatar)
         }
         val ids = fixed.map { it.id }.toHashSet()
-        val cutoff = fixed.filter { it.ts > 0L }.minOfOrNull { it.ts } ?: return fixed
+        val cutoff = minOf(fixed.filter { it.ts > 0L }.minOfOrNull { it.ts } ?: return fixed, System.currentTimeMillis() - 3 * 86_400_000L)   // (v754) دايمًا آخر 3 أيام على الأقل من RSS
         val extra = rss.filter { it.kind == 0 && it.id !in ids && it.ts >= cutoff && !it.title.contains("#short", true) }
         return (fixed + extra).sortedByDescending { it.ts }
     }
