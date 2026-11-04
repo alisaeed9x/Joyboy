@@ -119,7 +119,7 @@ class NetStatsUi(private val act: Activity, private val ui: Ui, private val th: 
         add(split, 6)
 
         // الدواير التلاتة
-        val row = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; baselineAligned = false }
+        val row = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; setBaselineAligned(false) }
         val specs = listOf(Triple("vid", "🎞 فيديوهات", cVideo), Triple("file", "📄 ملفات", cFile), Triple("page", "🖥 صفحات", cPage))
         for ((i, sp) in specs.withIndex()) {
             row.addView(catColumn(sp.first, sp.second, sp.third, cats[i], denom), LinearLayout.LayoutParams(0, -2, 1f).apply { marginStart = ui.dp(3); marginEnd = ui.dp(3) })
