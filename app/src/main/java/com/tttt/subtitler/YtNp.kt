@@ -256,7 +256,7 @@ object YtNp {
         val keep = VideoLib.norm(q).split(' ').filter { it.isNotBlank() && it !in latestW && it !in epW }
         return keep.joinToString(" ").ifBlank { q }
     }
-    private fun ageMs(a: String): Long {
+    fun ageMs(a: String): Long {
         if (a.isBlank()) return 0L
         val low = a.lowercase()
         val unit = when {
@@ -273,7 +273,7 @@ object YtNp {
         val n = if (two) 2L else (Regex("\\d+").find(low)?.value?.toLongOrNull() ?: 1L)
         return System.currentTimeMillis() - n * unit
     }
-    private fun effTs(x: NpItem): Long = if (x.ts > 0L) x.ts else ageMs(x.age)
+    fun effTs(x: NpItem): Long = if (x.ts > 0L) x.ts else ageMs(x.age)
     fun searchLatest(q: String, filter: String, durF: Int, dateF: Int): YtRes {
         val core = stripLatest(q)
         var r = searchFirst(core, filter)
@@ -538,6 +538,55 @@ object YtNp {
     }
 
     /** (v378) فيديوهات عشوائية من قنوات اشتراكاتك: بنختار لحد 10 قنوات عشوائي، ومن كل قناة صفحة عشوائية (الأحدث أو أقدم) وناخد منها 4 فيديوهات عشوائي */
+    /** (v751) «قنوات شبه اشتراكاتك»: بنختار كام قناة من اشتراكاتك، ناخد فيديو من كل واحدة، ونشوف مقترحاته؛ القنوات اللي بتتكرر في المقترحات
+     *  (ومش مشترك فيها) هي اللي جمهور اشتراكاتك بيتابعها غالبًا → بنجيب منها آخر فيديوهاتها + كام فيديو أقدم (من RSS، طلب صغير لكل قناة) */
+    fun similarChannelVideos(subs: List<NpItem>): List<NpItem> {
+        val rnd = java.util.Random()
+        val mine = HashSet<String>(); val myNames = HashSet<String>()
+        for (s in subs) { YtRss.chanId(s.channelUrl)?.let { mine.add(it) }; if (s.title.isNotBlank()) myNames.add(s.title.trim().lowercase()) }
+        val seeds = subs.filter { YtRss.chanId(it.channelUrl) != null }.shuffled(rnd).take(4)
+        if (seeds.isEmpty()) return emptyList()
+        val counts = java.util.concurrent.ConcurrentHashMap<String, Int>()
+        val urls = java.util.concurrent.ConcurrentHashMap<String, String>()
+        val names = java.util.concurrent.ConcurrentHashMap<String, String>()
+        val ths = seeds.map { sd ->
+            Thread {
+                try {
+                    val cid = YtRss.chanId(sd.channelUrl) ?: return@Thread
+                    val vid = YtRss.channelVideos(cid, sd.channelUrl).firstOrNull()?.id ?: return@Thread
+                    for (x in relFast(vid)) {
+                        if (x.kind != 0) continue
+                        val c2 = YtRss.chanId(x.channelUrl)
+                        if (c2 != null && c2 in mine) continue
+                        if (x.channel.isNotBlank() && x.channel.trim().lowercase() in myNames) continue
+                        val key = c2 ?: (if (x.channel.isNotBlank()) "n:" + x.channel.trim() else continue)
+                        counts.merge(key, 1) { a, b -> a + b }
+                        if (c2 != null) urls[key] = x.channelUrl else names[key] = x.channel.trim()
+                    }
+                } catch (_: Throwable) {}
+            }.also { it.isDaemon = true; it.start() }
+        }
+        val end = System.currentTimeMillis() + 12_000L
+        ths.forEach { try { it.join(maxOf(1L, end - System.currentTimeMillis())) } catch (_: Throwable) {} }
+        val top = counts.entries.toList().shuffled(rnd).sortedByDescending { it.value }.take(6)
+        val out = java.util.concurrent.ConcurrentLinkedQueue<NpItem>()
+        val jobs = top.map { e ->
+            Thread {
+                try {
+                    val u = urls[e.key] ?: names[e.key]?.let { findChannelUrl(it) } ?: return@Thread
+                    val cid = YtRss.chanId(u) ?: return@Thread
+                    if (cid in mine) return@Thread
+                    val l = YtRss.channelVideos(cid, u).filter { it.kind == 0 }
+                    l.take(2).forEach { out.add(it) }
+                    l.drop(2).shuffled(rnd).take(2).forEach { out.add(it) }
+                } catch (_: Throwable) {}
+            }.also { it.isDaemon = true; it.start() }
+        }
+        val end2 = System.currentTimeMillis() + 10_000L
+        jobs.forEach { try { it.join(maxOf(1L, end2 - System.currentTimeMillis())) } catch (_: Throwable) {} }
+        return out.toList().distinctBy { it.id }.shuffled(rnd)
+    }
+
     private fun randomSubVideos(subs: List<NpItem>): List<NpItem> {
         val rnd = java.util.Random()
         val chans = subs.filter { it.channelUrl.isNotBlank() }.shuffled(rnd).take(6)   // (v407) 6 بدل 10: الجلب العميق بقى في الخلفية
@@ -629,6 +678,7 @@ object YtNp {
         if (subs.isNotEmpty()) {
             jobs.add(Thread { try { YtRss.sample(subs, 14).filter { it.kind == 0 }.forEach { out.add(it) } } catch (_: Throwable) {} })
             jobs.add(Thread { try { randomSubVideos(subs).forEach { out.add(it) } } catch (_: Throwable) {} })
+            jobs.add(Thread { try { similarChannelVideos(subs).forEach { out.add(it) } } catch (_: Throwable) {} })   // (v751)
         }
         val seedPool = (hist.filter { it.kind == 0 && it.id.length == 11 }.shuffled(rnd).take(2) + subs.filter { it.kind == 0 && it.id.length == 11 }.shuffled(rnd).take(2))
         for (sd in seedPool) jobs.add(Thread { try { relFast(sd.id).forEach { if (it.kind == 0) out.add(it) } } catch (_: Throwable) {} })
@@ -650,8 +700,19 @@ object YtNp {
             val seen = hist.map { it.id }.toSet()
             val fast = java.util.concurrent.atomic.AtomicReference<List<NpItem>>(emptyList())   // RSS: سريع
             val deep = java.util.concurrent.atomic.AtomicReference<List<NpItem>>(emptyList())   // NewPipe: قديم عشوائي (بطيء)
+            val sim = java.util.concurrent.atomic.AtomicReference<List<NpItem>>(emptyList())   // (v751) فيديوهات من قنوات شبه اشتراكاتك
             val fastTh = Thread {
-                try { if (subs.isNotEmpty()) fast.set(YtRss.sample(subs, 14).filter { it.kind == 0 }.shuffled()) } catch (_: Throwable) {}
+                try {
+                    if (subs.isNotEmpty()) {
+                        // (v751) أحدث فيديوهات كل الاشتراكات (من كاش RSS، مرتّبة بالأحدث) + عينة طازة من 20 قناة — بدل عينة عشوائية 14 قناة بس
+                        val newest = try { YtRss.cachedFeed(subs)?.items.orEmpty().filter { it.kind == 0 }.take(60) } catch (_: Throwable) { emptyList() }
+                        val sampled = YtRss.sample(subs, 20).filter { it.kind == 0 }
+                        fast.set((newest + sampled).distinctBy { it.id })
+                    }
+                } catch (_: Throwable) {}
+            }.also { it.isDaemon = true; it.start() }
+            val simTh = Thread {
+                try { if (subs.isNotEmpty()) sim.set(similarChannelVideos(subs)) } catch (_: Throwable) {}
             }.also { it.isDaemon = true; it.start() }
             val deepTh = Thread {
                 try {
@@ -680,13 +741,19 @@ object YtNp {
                 // توصيات: تقليب بين نتايج كل فيديو للتنوّع (بدون المشاهَد)
                 val rec = ArrayList<NpItem>(); var k = 0
                 while (recLists.any { k < it.size }) { for (l in recLists) if (k < l.size) { val v = l[k]; if (v.id !in seen) rec.add(v) }; k++ }
-                // اشتراكات: غير المشاهَد الأول (عشوائي)، وبعدها المشاهَد في الآخر
-                val subsOrdered = subsItems.filter { it.id !in seen }.shuffled() + subsItems.filter { it.id in seen }.shuffled()
-                // دمج: اثنين من الاشتراكات ثم اثنين توصيات … من غير تكرار
+                // (v751) اشتراكات: الحديث الأول بترتيب الأحدث (غير المشاهَد)، وبعده الأقدم عشوائي للتنويع، والمشاهَد في الآخر
+                val weekAgo = System.currentTimeMillis() - 7L * 86_400_000L
+                val unseen = subsItems.filter { it.id !in seen }
+                val recent = unseen.filter { YtNp.effTs(it) >= weekAgo }.sortedByDescending { YtNp.effTs(it) }
+                val older = unseen.filter { YtNp.effTs(it) < weekAgo }.shuffled()
+                val subsOrdered = recent + older + subsItems.filter { it.id in seen }.shuffled()
+                val simItems = sim.get().filter { it.id !in seen }
+                // دمج: اثنين من الاشتراكات ثم واحد من قنوات شبه اشتراكاتك ثم اثنين توصيات … من غير تكرار
                 val out = LinkedHashMap<String, NpItem>()
-                var i = 0; var j = 0
-                while ((i < subsOrdered.size || j < rec.size) && out.size < 90) {
+                var i = 0; var j = 0; var q = 0
+                while ((i < subsOrdered.size || j < rec.size || q < simItems.size) && out.size < 90) {
                     var c = 0; while (c < 2 && i < subsOrdered.size) { subsOrdered[i].let { out.putIfAbsent(it.id, it) }; i++; c++ }
+                    if (q < simItems.size) { simItems[q].let { out.putIfAbsent(it.id, it) }; q++ }
                     c = 0; while (c < 2 && j < rec.size) { rec[j].let { out.putIfAbsent(it.id, it) }; j++; c++ }
                 }
                 return YtRes(out.values.toList(), null)
@@ -716,7 +783,7 @@ object YtNp {
             if (partial.items.isEmpty() && YtAccount.loggedIn()) {   // (v389) آخر بديل: رئيسية حسابك الرسمية
                 try { val v = YtAccount.listFirst("FEwhat_to_watch").items.filter { it.kind == 0 }; if (v.isNotEmpty()) partial = YtRes(v, null) } catch (_: Throwable) {}
             }
-            val stillBusy = fastTh.isAlive || deepTh.isAlive || ths.any { it.isAlive }
+            val stillBusy = fastTh.isAlive || deepTh.isAlive || simTh.isAlive || ths.any { it.isAlive }
             LogStore.add("⏱ يوتيوب الرئيسية: " + (System.currentTimeMillis() - t0) + "ms · " + partial.items.size + " فيديو" + (if (stillBusy) " (الباقي بيكمّل في الخلفية)" else ""))
             if (partial.items.isNotEmpty()) setHome(partial)
             if (stillBusy) {
@@ -724,7 +791,7 @@ object YtNp {
                 Thread {
                     try {
                         val end = System.currentTimeMillis() + 60_000L
-                        for (t in listOf(fastTh, deepTh) + ths) try { t.join(maxOf(1L, end - System.currentTimeMillis())) } catch (_: Throwable) {}
+                        for (t in listOf(fastTh, deepTh, simTh) + ths) try { t.join(maxOf(1L, end - System.currentTimeMillis())) } catch (_: Throwable) {}
                         val full = assemble(true)
                         if (full.items.isNotEmpty()) { setHome(full); try { onHome?.invoke(full) } catch (_: Throwable) {} }
                     } catch (_: Throwable) {} finally { homeBusy = false }

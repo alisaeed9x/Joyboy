@@ -671,8 +671,8 @@ class PlayerActivity : Activity(), Host {
             override fun toggle() { togglePlay() }
             override fun seekBy(ms: Long) { tvSeek(ms) }
             override fun seekTo(ms: Long) { try { player.seekTo(ms.coerceIn(0L, if (durMs > 0) durMs else Long.MAX_VALUE)) } catch (_: Throwable) {} }
-            override fun prev() { stepEpisode(-1) }
-            override fun next() { stepEpisode(1) }
+            override fun prev() { stepOrSeek(-1) }
+            override fun next() { stepOrSeek(1) }
             override fun speedLabel(): String = PlayerLogic.speedLabel(speed)
             override fun cycleSpeed() { tvCycleSpeed() }
             override fun fitLabel(): String = fitNameOf(curFit())
@@ -695,7 +695,7 @@ class PlayerActivity : Activity(), Host {
             override fun subTracks(anchor: View) { tvSubTracksDialog(anchor) }
             override fun scrubPos(): Long = tvScrubTo
             // (v640) شريط التلفزيون الذكي
-            override fun hasPrevNext(): Boolean = tvHasPrevNext()
+            override fun hasPrevNext(): Boolean = true   // (v749) كانت بتختفي لو المكتبة مش متحمّلة؛ ⏮⏭ بيرجعوا لتقديم/ترجيع لو مفيش حلقة
             override fun pickSpeed(anchor: View) { tvSpeedDialog() }
             override fun subsAvailable(): Boolean = tvSubsAvailable()
             override fun subSourcesMulti(): Boolean = tvSubSourcesMulti()
@@ -2724,6 +2724,17 @@ class PlayerActivity : Activity(), Host {
 
     // ===================== (v740) نظام تصميم موحّد لقوايم الترجمة (شيت) =====================
     // كل القوايم (ترجم · الإعدادات · الإعادة) بتتبني من نفس القطع: عنوان · قسم · صف · زرار · شريحة، ونفس مكان/شكل الظهور
+    /** (v749) تلفزيون: حلقة تركيز على العنصر بنفسه (من غير الاعتماد على مراقب التركيز العام) */
+    private fun <T : View> tvRing(v: T): T {
+        try {
+            if (DeviceUi.isRemote(this)) {
+                val d = resources.displayMetrics.density; val ac = Glass.theme().primary
+                val old = v.onFocusChangeListener
+                v.onFocusChangeListener = View.OnFocusChangeListener { x, f -> try { x.foreground = if (f) TvFocus.ring(ac, d) else null } catch (_: Throwable) { }; old?.onFocusChange(x, f) }
+            }
+        } catch (_: Throwable) { }
+        return v
+    }
     private fun shHead(title: String, sub: String = ""): View = LinearLayout(this).apply {
         orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL
         setPadding(ui.dp(10), ui.dp(8), ui.dp(10), ui.dp(6))
@@ -2745,10 +2756,12 @@ class PlayerActivity : Activity(), Host {
         if (chev) addView(ui.text("‹", 18f, 0xFF9AA0A6.toInt()).apply { setPadding(ui.dp(8), 0, 0, 0) })
         isFocusable = true; setOnClickListener { f() }
         layoutParams = LinearLayout.LayoutParams(-1, ui.dp(46)).apply { setMargins(ui.dp(4), ui.dp(2), ui.dp(4), ui.dp(2)) }
+        tvRing(this)
     }
     /** زرار إجراء ملوّن (بيتحط اتنين جنب بعض بـ shDuo) */
     private fun shBtn(t: String, fill: Int, f: () -> Unit): View = ui.text(t, 13.5f, Color.WHITE, true).apply {
         gravity = Gravity.CENTER; isFocusable = true; background = ui.box(fill, 0x33FFFFFF, 12); setOnClickListener { f() }
+        tvRing(this)
     }
     private fun shDuo(a: View, b: View): View = LinearLayout(this).apply {
         orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL
@@ -2760,6 +2773,7 @@ class PlayerActivity : Activity(), Host {
     private fun shChip(label: String, on: Boolean = false, f: () -> Unit): View = ui.text(label, 12.5f, Color.WHITE, on).apply {
         gravity = Gravity.CENTER; isFocusable = true; setPadding(ui.dp(12), 0, ui.dp(12), 0)
         background = ui.box(if (on) 0xFF1F5FBF.toInt() else 0x1AFFFFFF, if (on) 0x55FFFFFF else 0x22FFFFFF, 10); setOnClickListener { f() }
+        tvRing(this)
     }
     private fun shChipLp() = ViewGroup.MarginLayoutParams(-2, ui.dp(36)).apply { setMargins(ui.dp(3), ui.dp(2), ui.dp(3), ui.dp(2)) }
     private fun shFlow() = FlowRow(this).apply { layoutDirection = View.LAYOUT_DIRECTION_RTL }
@@ -2806,6 +2820,7 @@ class PlayerActivity : Activity(), Host {
             win.setDimAmount(0.55f)
             win.setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
         }
+        try { TvFocus.attachDialog(this, dlg, Glass.theme().primary) } catch (_: Throwable) { }   // (v749) تلفزيون: حلقة تركيز + أول زرار ياخد التركيز
         try { if (!isFinishing && !isDestroyed) dlg.show() } catch (e: Throwable) { LogStore.err("Player:shDialog", e) }
         return dlg
     }
@@ -2821,6 +2836,7 @@ class PlayerActivity : Activity(), Host {
         setTextColor(Color.WHITE); setHintTextColor(0xFF7F8790.toInt()); layoutDirection = View.LAYOUT_DIRECTION_RTL
         setPadding(ui.dp(12), 0, ui.dp(12), 0); background = ui.box(0x1AFFFFFF, 0x33FFFFFF, 10)
         layoutParams = LinearLayout.LayoutParams(-1, ui.dp(44)).apply { setMargins(ui.dp(4), ui.dp(3), ui.dp(4), ui.dp(3)) }
+        tvRing(this)   // (v749)
     }
     /** (v741) زرار ⏹ مرسوم باليد (مربع أبيض على الأحمر) — مش بيعتمد على باك الأيقونات اللي كان بيطلّعه فاضي */
     private fun stopBtn(radius: Int): View = StopSquareView(this).apply {
@@ -2871,8 +2887,6 @@ class PlayerActivity : Activity(), Host {
             col.addView(shRow("☁ ١ · جيميناي", if (mk == "gem") "✓ " + listenName() else listenName()) { close(); h.post { geminiAsk() } })
             col.addView(shNote("هتختار: ٧٥/٢٥ (سماع واحد، أسرع وأرخص) أو 🎯 السماع الأدق (مفتاحين + حكم) · لهجات + أسلوب + بصري · محتاج نت"))
             col.addView(shRow("📴 ٢ · وشبر + ترجمة أوفلاين (HY-MT1.5)", if (mk == "off") "✓ الحالي" else setVal) { close(); whisperStart() })
-            col.addView(shNote("من غير نت ولا مفاتيح · فصحى بس · التفريغ بوشبر والترجمة بموديل على الجهاز (~" + LocalMt.model().approxMb + " ميجا مرة واحدة)"))
-            try { whisperAdvice(Offline.lang())?.let { col.addView(shNote(it.first, true)) } } catch (_: Throwable) {}   // (v739)
             col.addView(shSection("✍ تفريغ بس (من غير ترجمة) — نظامين"))
             col.addView(shRow("☁ بجيميناي (من الصوت)", if (mk == "txg") "✓ الحالي" else "") { close(); startGeminiTranscribe() })
             col.addView(shRow("📴 على الجهاز بوشبر", if (mk == "txw") "✓ الحالي" else "") { close(); askVideoLang { offlineQuick(true) } })
@@ -2902,13 +2916,15 @@ class PlayerActivity : Activity(), Host {
     private fun geminiAsk() {
         if (!TrWizard.hasGeminiKey()) { say("☁ جيميناي محتاج مفتاح — ضيفه من الإعدادات ← 🔑 المفاتيح"); return }
         val n = try { Cfg.snapshot().let { c -> (c.keys + c.backup + c.refine).filter { it.length > 10 }.distinct().size } } catch (_: Throwable) { 0 }
-        val dualNote = if (n < 2) "\n\n⚠ عندك مفتاح واحد بس — 🎯 الأدق محتاج مفتاحين على الأقل، ومن غيرهم هيشتغل كسماع واحد." else ""
-        shConfirm("☁ جيميناي — اختار السماع",
-            "⚡ ٧٥/٢٥: كل باتش بيتسمع مرة واحدة (المفاتيح موزّعة بين النسخ والترجمة) — أسرع وأرخص.\n\n🎯 الأدق: مفتاح تاني يسمع نفس الباتش، والجمل المختلفة بيحكم فيها سماع تالت — طلبات أكتر (لحد ٨ للباتش) بس أدق في الكلام الصعب.\n\nالحالي: " + listenName() + dualNote,
-            listOf(
-                ShBtn("🎯 السماع الأدق (تسميع مزدوج)", SH_BLUE) { Cfg.put("dual_listen", "2"); geminiStart() },
-                ShBtn("⚡ ٧٥/٢٥ — سماع واحد", SH_GRAY) { Cfg.put("dual_listen", "0"); geminiStart() },
-                ShBtn("إلغاء", SH_GRAY) { }))
+        val dm = Cfg.int("dual_listen", 1)
+        // (v749) الوضعين صفّين ظاهرين فوق بعض (من غير رسالة طويلة تزقّ الأزرار برّه الشاشة على التلفزيون)
+        shDialog(330) { col, close ->
+            col.addView(shHead("☁ جيميناي — اختار الوضع", "الحالي: " + listenName()))
+            col.addView(shRow("🎯 السماع الأدق", if (dm == 2) "✓ الحالي" else "مفتاحين + حكم") { close(); h.post { Cfg.put("dual_listen", "2"); geminiStart() } })
+            col.addView(shRow("⚡ ٧٥/٢٥ — سماع واحد", if (dm == 0) "✓ الحالي" else "أسرع وأرخص") { close(); h.post { Cfg.put("dual_listen", "0"); geminiStart() } })
+            if (n < 2) col.addView(shNote("عندك مفتاح واحد بس — 🎯 الأدق محتاج مفتاحين، ومن غيرهم هيشتغل كسماع واحد.", true))
+            col.addView(shRow("إلغاء") { close() })
+        }
     }
 
     /** (v741) ☁ ترجمة جيميناي لوحده: الصوت بيتبعت باتشات لجيميناي بإعداداته (WAV/AAC + مفاتيحك) — من غير FreeLLM ولا وشبر */
@@ -4186,7 +4202,7 @@ class PlayerActivity : Activity(), Host {
         dismissPopFn = { dismissPop() }
         fun after(keep: Boolean) { if (!keep) dismissPop(); showChrome(); if (popup != null) h.removeCallbacks(hideChrome) }
         fun pk(t: String, f: (TextView) -> Unit): TextView = ui.fsBtn(t) { v -> f(v); after(true) }.apply { minimumWidth = ui.dp(150) }
-        fun pd(t: String, f: (TextView) -> Unit): TextView = ui.fsBtn(t) { v -> f(v); after(false) }.apply { minimumWidth = ui.dp(150) }
+        fun pd(t: String, f: (TextView) -> Unit): TextView = ui.fsBtn(t) { v -> f(v); after(false) }.apply { minimumWidth = ui.dp(150); isFocusable = true; tvRing(this) }
         fun gCol() = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; setPadding(ui.dp(6), ui.dp(6), ui.dp(6), ui.dp(6)); background = glassPanelBg() }
         val gText = gCol(); val gAi = gCol(); val gTool = gCol()
         // الأزرار العلوية في صف واحد بس (في الرأسي الصف بيتسحب أفقيًا لو الأزرار أكتر من العرض بدل ما تنزل لسطر تاني)
@@ -5647,10 +5663,13 @@ class PlayerActivity : Activity(), Host {
         val appCtx = applicationContext; val id = vid
         Thread {
             val w = WebVideos.find(appCtx, id)
-            val page = (w?.page?.takeIf { it.isNotEmpty() } ?: hdr["Referer"] ?: "")
+            // (v750) من غير مربع لصق: الصفحة المحفوظة ← صفحة التاب وقت الاصطياد ← الـReferer المحدد ← أي Referer
+            val ex = intent.getStringExtra("page") ?: ""
+            val cands = listOf(w?.page ?: "", ex, hdr["Referer"] ?: "", w?.ref ?: "")
+            val page = cands.firstOrNull { WebIdent.specific(it) } ?: cands.firstOrNull { it.startsWith("http") } ?: ""
             runOnUiThread {
                 if (isFinishing || isDestroyed) return@runOnUiThread
-                if (!page.startsWith("http")) { askPageLink(); return@runOnUiThread }
+                if (!page.startsWith("http")) { say("⚠ مفيش صفحة محفوظة للفيديو ده — افتحه تاني من المتصفح مرة واحدة وهتتحفظ"); refreshAsked = false; return@runOnUiThread }
                 if (++refreshTries > 2) { refreshAsked = false; return@runOnUiThread }   // (v142) محاولتين بس في الجلسة عشان مايدخلش في لف
                 startLinkRefresh(page)   // (v142) بيجيب اللينك لوحده من غير ما يسألك
             }
@@ -5723,7 +5742,8 @@ class PlayerActivity : Activity(), Host {
         val siteTitle = intent.getStringExtra("title")?.takeIf { it.isNotBlank() }
         val t0 = siteTitle ?: Sniff.nameOf(u)
         val kind = if (u.contains("videoplayback")) "YT" else Sniff.kindOf(u)
-        val page = if (WebIdent.specific(ref)) ref else ""   // (v142) صفحة الفيديو بتتحفظ لوحدها (من الصفحة اللي اتصاد منها) عشان تحديث اللينك يشتغل من غير ما تدخلها بإيدك
+        val pageX = intent.getStringExtra("page") ?: ""
+        val page = if (WebIdent.specific(pageX)) pageX else if (WebIdent.specific(ref)) ref else ""   // (v750) صفحة التاب الأصلية أولًا · (v142) صفحة الفيديو بتتحفظ لوحدها (من الصفحة اللي اتصاد منها) عشان تحديث اللينك يشتغل من غير ما تدخلها بإيدك
         Thread { WebVideos.register(appCtx, id, u, ref, ua, ck, t0, kind, siteTitle != null, page, hiddenSite) }.apply { isDaemon = true }.start()
         h.postDelayed({ webSnap() }, 9000)
     }

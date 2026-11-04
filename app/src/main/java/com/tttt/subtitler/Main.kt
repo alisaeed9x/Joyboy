@@ -1589,6 +1589,7 @@ class MainActivity : Activity() {
         ensureKeys {
             startActivity(Intent(this, PlayerActivity::class.java).pipTask(this).apply {
                 putExtra("url", w.url); putExtra("ref", w.ref); putExtra("ua", w.ua); putExtra("cookie", w.cookie)
+                if (w.page.isNotEmpty()) putExtra("page", w.page)   // (v750)
                 putExtra("title", w.title); putExtra("autotr", false)   // (v157) الترجمة بإيدك بس: زرار «ترجمة» في المشغّل
             })
         }

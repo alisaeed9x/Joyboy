@@ -2304,6 +2304,7 @@ class BrowserActivity : Activity() {
                 }
             } catch (e: Throwable) { LogStore.err("Browser:wq", e) }
             putExtra("url", openUrl); putExtra("ref", f.ref)
+            try { (wvOrNull?.url ?: tabs.getOrNull(curIdx)?.url)?.takeIf { WebIdent.specific(it) }?.let { putExtra("page", it) } } catch (_: Throwable) { }   // (v750) صفحة الفيديو اللي اتصاد منها — بتتحفظ في السجل عشان تتفتح لوحدها لو اللينك بوظ
             putExtra("cookie", try { CookieManager.getInstance().getCookie(f.url) ?: "" } catch (_: Throwable) { "" })
             putExtra("ua", f.ua.ifEmpty { uaWeb }); putExtra("title", titleFor(f)); putExtra("nosub", noSub); putExtra("autotr", !noSub); putExtra("incognito", tabs.getOrNull(curIdx)?.let { it.priv && !it.auto } == true); putExtra("hsite", tabs.getOrNull(curIdx)?.let { SiteBlock.keyOf(it.url)?.let { k -> SiteBlock.has(this@BrowserActivity, k) } } == true); putExtra("ret", "browser")
         })

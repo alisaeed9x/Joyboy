@@ -219,6 +219,23 @@ object YtRss {
         } finally { pool.shutdownNow() }
     }
 
+    /** (v751) فيد الاشتراكات الرسمي بيرجّع أعمار نصية («منذ 3 أيام») وترتيبه مش دايمًا بالأحدث (فيديو حديث وبعده قديم). هنا: وقت الرفع الدقيق من RSS لو موجود،
+     *  والترتيب بالأحدث، وبنضيف أي فيديو جديد من RSS الصفحة الرسمية فوّتته (أحدث من أقدم فيديو في الصفحة). الشورتس بتتشال بالعنوان/المدة بقدر الإمكان. */
+    fun mergeLatest(official: List<NpItem>, rss: List<NpItem>): List<NpItem> {
+        if (official.isEmpty()) return rss
+        val byId = HashMap<String, NpItem>(); for (x in rss) byId[x.id] = x
+        val fixed = official.map { o ->
+            val r = byId[o.id]
+            val ts = when { r != null && r.ts > 0L -> r.ts; o.ts > 0L -> o.ts; else -> YtNp.ageMs(o.age) }
+            NpItem(o.id, o.title, o.channel.ifBlank { r?.channel ?: "" }, o.channelUrl.ifBlank { r?.channelUrl ?: "" }, o.thumb, o.dur, if (o.count >= 0L) o.count else (r?.count ?: -1L),
+                if (ts > 0L && (r != null || o.age.isBlank())) ageOf(ts) else o.age, o.kind, o.url, ts, o.avatar)
+        }
+        val ids = fixed.map { it.id }.toHashSet()
+        val cutoff = fixed.filter { it.ts > 0L }.minOfOrNull { it.ts } ?: return fixed
+        val extra = rss.filter { it.kind == 0 && it.id !in ids && it.ts >= cutoff && !it.title.contains("#short", true) }
+        return (fixed + extra).sortedByDescending { it.ts }
+    }
+
     fun feed(subs: List<NpItem>, force: Boolean = false, staleOk: Boolean = false): YtRes {
         if (staleOk && !force) cachedFeed(subs)?.let { return it }
         return feedLocked(subs, force, staleOk)

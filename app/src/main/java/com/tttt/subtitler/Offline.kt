@@ -28,9 +28,9 @@ object WhisperLib {
 object Offline {
     class Model(val id: String, val label: String, val file: String, val approxMb: Int, val note: String)
     val models = listOf(
-        Model("tiny", "🚀 tiny", "ggml-tiny-q5_1.bin", 31, "الأسرع بكتير — ضعيف في غير الإنجليزي (ياباني/كوري/عربي…) وبيكرر كلام. للإنجليزي الواضح بس"),
-        Model("base", "⚡ base", "ggml-base-q5_1.bin", 60, "⭐ الأساسي (v748) — سريع وخفيف. ضعيف في غير الإنجليزي (ياباني/كوري/عربي…): للغات التانية اختار small"),
-        Model("small", "⚖ small", "ggml-small-q5_1.bin", 185, "أدق ومتوازن في كل اللغات — أبطأ من base بحوالي 3 أضعاف"),
+        Model("tiny", "🚀 tiny", "ggml-tiny-q5_1.bin", 31, "الأسرع بكتير"),
+        Model("base", "⚡ base", "ggml-base-q5_1.bin", 60, "⭐ الأساسي — سريع وخفيف"),
+        Model("small", "⚖ small", "ggml-small-q5_1.bin", 185, "أدق ومتوازن"),
         Model("medium", "🎯 medium", "ggml-medium-q5_0.bin", 520, "الأدق — بطيء وبياخد رام كتير (~1.5GB)، مش لأي موبايل"),
         Model("turbo", "🏆 large-v3-turbo", "ggml-large-v3-turbo-q5_0.bin", 547, "(v696) الأقوى للياباني والإنجليزي — أسرع من medium بكتير (~574MB ملف). مفيش تفريغ متوازي معاه")
     )

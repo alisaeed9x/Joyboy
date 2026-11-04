@@ -916,6 +916,15 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
                     LogStore.add("⚠ فيد الاشتراكات الرسمي فشل — بجرّب RSS: " + (e.message ?: e.javaClass.simpleName).take(80))
                 }
             }
+            if (official && r.items.isNotEmpty()) {   // (v751) ترتيب بالأحدث بوقت رفع دقيق من RSS + فيديوهات جديدة فاتت الصفحة الرسمية
+                try {
+                    val rssItems = (YtRss.cachedFeed(subsNow) ?: (if (force) YtRss.feed(subsNow, true, false) else null))?.items.orEmpty().filter { it.kind == 0 }
+                    r = YtRes(YtRss.mergeLatest(r.items, rssItems), r.next)
+                    if (!force) YtRss.refreshAsync(subsNow)
+                    val m0 = more
+                    if (m0 != null) { val shown = HashSet<String>(); r.items.forEach { shown.add(it.id) }; more = { p -> val x = m0(p); YtRes(x.items.filter { shown.add(it.id) }, x.next) } }
+                } catch (_: Throwable) {}
+            }
             if (r.items.isEmpty()) {
                 r = YtRss.feed(subsNow, force, !force)   // (v354) أول عرض فوري من الكاش لو موجود
                 if (!force && r.items.isNotEmpty()) { act.runOnUiThread { bgLine(true) }; YtRss.refreshAsync(subsNow) }   // وبنحدّث في الخلفية للزيارة الجاية (والكبسولة لو فيه جديد)
