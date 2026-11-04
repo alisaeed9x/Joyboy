@@ -358,7 +358,8 @@ class BrowserActivity : Activity() {
     private fun titleFor(f: Found): String = f.title.ifEmpty { Sniff.cleanTitle(pageTitles[f.ref] ?: if (f.ref == wvOrNull?.url) wvOrNull?.title else null) }
 
     private val JS = "(function(){var o=[];function a(x){try{if(x)o.push(new URL(x,location.href).href)}catch(e){}}" +
-        "document.querySelectorAll('video,source').forEach(function(v){a(v.currentSrc);a(v.src)});" +
+        "function ad(v){var e=v;for(var i=0;e&&e.nodeType===1&&i<7;i++,e=e.parentElement){var c=(typeof e.className==='string'?e.className:'')+' '+(e.id||'');if(/(?:^|[^A-Za-z0-9])(?:ads?|adv|advert|advertisement|adslot|adbox|preroll|vast|vpaid|sponsored)(?![A-Za-z0-9])/i.test(c))return true}return false}" +
+        "document.querySelectorAll('video,source').forEach(function(v){if(ad(v))return;a(v.currentSrc);a(v.src)});" +
         "document.querySelectorAll('meta[property^=\"og:video\"],meta[name=\"twitter:player:stream\"]').forEach(function(m){a(m.content)});" +
         "document.querySelectorAll('a[href]').forEach(function(l){if(/\\.(mp4|m3u8|webm|mkv|mov|m4v)([?#]|\$)/i.test(l.href))a(l.href)});" +
         "return JSON.stringify(o)})()"
@@ -686,6 +687,9 @@ class BrowserActivity : Activity() {
             override fun shouldInterceptRequest(v: WebView, r: WebResourceRequest): WebResourceResponse? {
                 val u = r.url.toString()
                 val g0 = t.gen
+                // (v722) فحص الإعلانات الأول (كان الصيّاد بيشتغل قبله فيلقط فيديو الإعلان) + طلب جاي من صفحة/إطار شبكة إعلانات = إعلان برضه
+                val rf = if (r.isForMainFrame) null else try { r.requestHeaders?.get("Referer") } catch (_: Throwable) { null }
+                if (adFor(u) && (AdBlock.blocked(u) || (rf != null && AdBlock.blocked(rf)))) { blockedN++; countAd(u); h.post { if (!dead) shield.text = "🛡 $blockedN" }; return WebResourceResponse("text/plain", "utf-8", java.io.ByteArrayInputStream(ByteArray(0))) }
                 Sniff.accept(u)?.let { a ->
                     val hd = t.hold
                     if (hd != null) {   // (v401) فيديو في بوب-أب = دليل إنه صفحة مشاهدة
@@ -696,7 +700,6 @@ class BrowserActivity : Activity() {
                     }
                     Unit
                 }
-                if (adFor(u) && AdBlock.blocked(u)) { blockedN++; countAd(u); h.post { if (!dead) shield.text = "🛡 $blockedN" }; return WebResourceResponse("text/plain", "utf-8", java.io.ByteArrayInputStream(ByteArray(0))) }
                 return null
             }
             override fun shouldOverrideUrlLoading(v: WebView, r: WebResourceRequest): Boolean {
@@ -792,7 +795,7 @@ class BrowserActivity : Activity() {
             }
             Sniff.accept(url)?.let { a -> addFound(Found(a, Sniff.kindOf(a), "", t.url, ua ?: uaOf(t)), t) }
             val name = URLUtil.guessFileName(url, cd, mime)
-            showDl(name) { startDownload(url, ua, name, mime) }   // (v324) شريط تحت الصفحة بدل إشعار فوق
+            dlDialog(name, url, ua ?: uaOf(t), mime)   // (v754) نافذة تحميل: الاسم · الحجم · المدة · تنبيه الداتا
         }
         w.setOnLongClickListener { v -> longPress(v as WebView) }
         // (v646) مزامنة المتصفح مع التلفزيون: سكرول + ضغطة (من غير ما نبلع الحدث)
@@ -1491,6 +1494,40 @@ class BrowserActivity : Activity() {
         } catch (e: Throwable) { LogStore.err("Browser:download", e); Notice.show(this, "التحميل فشل: " + (e.message ?: "").take(60), 3000L) }
     }
 
+    // ===== (v754) نافذة التحميل (زي داونلود مانجر) =====
+    private fun dlDialog(name: String, url: String, ua: String?, mime: String?) {
+        if (dead) return
+        try {
+            val onData = NetLedger.transport() == NetLedger.MOBILE
+            val box = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL }
+            val nameV = ui.text("📄 $name", 15f, th.text)
+            val sizeV = ui.text("📦 الحجم: بيتحسب…", 13f, th.muted)
+            val etaV = ui.text("⏱ المدة: —", 13f, th.muted)
+            box.addView(nameV); box.addView(sizeV); box.addView(etaV)
+            if (onData) box.addView(ui.text("⚠ التحميل ده هيتحمّل على داتا الموبايل. تكمّل؟", 14f, 0xFFD32F2F.toInt()))
+            var d: android.app.Dialog? = null
+            val row = LinearLayout(this).apply { layoutDirection = View.LAYOUT_DIRECTION_RTL; gravity = Gravity.CENTER; setPadding(0, ui.dp(8), 0, 0) }
+            row.addView(ui.button(if (onData) "آه، حمّل على الداتا" else "⬇ تحميل", true) { d?.dismiss(); startDownload(url, ua, name, mime) }, LinearLayout.LayoutParams(0, ui.dp(46), 1f).apply { marginEnd = ui.dp(6) })
+            row.addView(ui.button(if (onData) "لا" else "✕ إلغاء") { d?.dismiss() }, LinearLayout.LayoutParams(0, ui.dp(46), 1f))
+            box.addView(row)
+            d = sheet("⬇ تحميل", box)
+            if (onData) d.setCancelable(false)   // على الداتا: لازم ترد آه أو لا
+            d.show()
+            Thread {
+                val hdr = HashMap<String, String>()
+                if (!ua.isNullOrEmpty()) hdr["User-Agent"] = ua
+                try { CookieManager.getInstance().getCookie(url)?.let { hdr["Cookie"] = it } } catch (_: Throwable) {}
+                if (tab.url.isNotEmpty()) hdr["Referer"] = tab.url
+                val sz = try { Downloader.sizeOf(url, hdr) } catch (_: Throwable) { -1L }
+                val bps = NetLedger.lastSpeed()
+                h.post {
+                    sizeV.text = if (sz > 0) "📦 الحجم: " + Sniff.fmtSize(sz) else "📦 الحجم: مش معروف"
+                    etaV.text = if (sz > 0 && bps > 0) { val s = sz / bps; "⏱ المدة: حوالي " + (if (s >= 3600) "${s / 3600} س ${(s % 3600) / 60} د" else if (s >= 60) "${s / 60} د ${s % 60} ث" else "${maxOf(s, 1)} ث") + " (حسب آخر سرعة: " + String.format("%.1f", bps * 8 / 1_000_000.0) + " Mbps)" } else "⏱ المدة: مش معروفة"
+                }
+            }.also { it.isDaemon = true }.start()
+        } catch (e: Throwable) { LogStore.err("Browser:dlDialog", e); showDl(name) { startDownload(url, ua, name, mime) } }
+    }
+
     // ===== (v324) شريط «تحميل؟» =====
     private fun showDl(name: String, go: () -> Unit) {
         if (dead) return
@@ -1592,6 +1629,7 @@ class BrowserActivity : Activity() {
     fun addUrl(u: String) = addFound(Found(u, Sniff.kindOf(u), "", wvOrNull?.url ?: "", if (tabs.isNotEmpty()) uaOf(tab) else uaWeb))
     fun addFound(f: Found, t: BTab? = tabs.getOrNull(curIdx), g: Int = t?.gen ?: 0) {
         if (t == null) return
+        if (adOn && AdBlock.blocked(f.url)) return   // (v722) فيديو إعلان (شبكة إعلانات/مراهنات) مش بيتحسب لقطة
         f.tabId = t.id; f.gen = g
         if (g != t.gen) return   // لقطة من صفحة قديمة
         if (!keys.add("${t.id}:$g:" + Sniff.key(f.url))) return

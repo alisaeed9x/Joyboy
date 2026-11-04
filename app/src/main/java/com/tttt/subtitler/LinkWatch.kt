@@ -129,6 +129,7 @@ class LinkWatchService : AccessibilityService() {
     private fun appLabel(pkg: String): String = try { packageManager.getApplicationLabel(packageManager.getApplicationInfo(pkg, 0)).toString() } catch (_: Throwable) { pkg }
 
     private fun onClipChanged() {
+        if (true) return   // (v754) اتشال لقط الكليبورد
         val src = fgPkg   // نلتقط المصدر لحظة النسخ (قبل ما نافذة الالتقاط الشفافة تاخد الفوكس)
         val page = if (src in BROWSERS && lastUrl.isNotBlank()) (if (lastUrl.startsWith("http", true)) lastUrl else "https://$lastUrl") else ""
         if (Cfg.bool("lw_clip_off", false) && Cfg.bool("lw_hist_off", false)) return

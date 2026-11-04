@@ -21,7 +21,7 @@ class BottomNav(act: Activity, private val ui: Ui, private val th: Theme, privat
         const val DEAD_AI = 6
         /** (v467) ترتيب الشريط بطلب صاحب التطبيق: الفيديوهات ← يوتيوب ← الموسيقى ← المتصفح ← المزيد.
          *  أي بوابة مش في الشريط بتظهر تلقائيًا جوه «المزيد» — فأي إضافة جديدة هتبان من غير تعديل هنا. */
-        val BAR_ORDER = listOf(0, REMOTE, 4, 2, 3, CLIP, 8)   // (v654) 1 (الموسيقى) اتدمجت مع 0 في زرار «ميديا»
+        val BAR_ORDER = listOf(0, REMOTE, 4, 2, 3, 8)   // (v654) 1 (الموسيقى) اتدمجت مع 0 في زرار «ميديا»
         /** (v475) خلايا يوتيوب الافتراضية (مش بوابات): الرئيسية 9 · الاشتراكات 10 · أنا 11 — بتحل محل خلية «يوتيوب» وانت جواه */
         const val YT_HOME = 9; const val YT_SUBS = 10; const val YT_ME = 11
         val NORMAL_ORDER = BAR_ORDER
@@ -69,6 +69,7 @@ class BottomNav(act: Activity, private val ui: Ui, private val th: Theme, privat
                 GAlert(act).setTitle("📺 التلفزيون").setItems(labels) { _, i -> collapseMore(); if (i == 0) TvModeFab.toggleAlways(act) else RemoteClient.forcePushFlow(act) }.setNegativeButton("إغلاق", null).show()
             }) { collapseMore(); TvModeFab.toggle(act) })
         }
+        items.add(MoreItem("📶", "الداتا", false) { collapseMore(); try { NetStatsUi(act, ui, th).show() } catch (_: Throwable) {} })   // (v753) استهلاك الداتا واي فاي/موبايل
         if (7 in ids) items.add(MoreItem(DEFS[7].first, DEFS[7].second, 7 == active) { collapseMore(); onPick(7) })
         val sw = act.resources.displayMetrics.widthPixels
         val w = if (items.size <= 5) sw / items.size else (sw / 5.4f).toInt()
@@ -121,6 +122,12 @@ class BottomNav(act: Activity, private val ui: Ui, private val th: Theme, privat
             Glass.pressable(row2)
             row2.setOnClickListener { d.dismiss(); TvModeFab.toggleAlways(act) }
             box.addView(row2, LinearLayout.LayoutParams(-1, -2))
+        }
+        run {   // (v753) استهلاك الداتا
+            val rowN = ui.text("📶  استهلاك الداتا (واي فاي / موبايل)", 15f, th.text, true).apply { setPadding(ui.dp(14), ui.dp(14), ui.dp(14), ui.dp(14)) }
+            Glass.pressable(rowN)
+            rowN.setOnClickListener { d.dismiss(); try { NetStatsUi(act, ui, th).show() } catch (_: Throwable) {} }
+            box.addView(rowN, LinearLayout.LayoutParams(-1, -2))
         }
         for ((id, label) in items) {
             val row = ui.text(label, 15f, if (id == active) th.primary else th.text, true).apply { setPadding(ui.dp(14), ui.dp(14), ui.dp(14), ui.dp(14)) }
@@ -180,7 +187,7 @@ class BottomNav(act: Activity, private val ui: Ui, private val th: Theme, privat
                 addView(box, LinearLayout.LayoutParams(ui.dp(38), ui.dp(20)))
                 addView(lab, LinearLayout.LayoutParams(-2, -2))
                 Glass.pressable(this)
-                setOnClickListener { if (idx == MORE) toggleMore(act) else if (idx == CLIP) { collapseMore(); try { ClipHistory.show(act, ui, th) } catch (e: Throwable) { LogStore.err("Nav:clip", e) } } else if (idx == REMOTE) { try { ControllerPad.show(act) } catch (e: Throwable) { LogStore.err("Nav:remote", e) } } else { collapseMore(); onPick(idx) } }
+                setOnClickListener { if (idx == MORE) toggleMore(act) else if (idx == REMOTE) { try { ControllerPad.show(act) } catch (e: Throwable) { LogStore.err("Nav:remote", e) } } else { collapseMore(); onPick(idx) } }
             }
             icons.add(icon); labels.add(lab); cells.add(cell)
         }

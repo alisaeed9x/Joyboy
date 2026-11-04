@@ -728,18 +728,12 @@ class MainActivity : Activity() {
                     ui.button("1) استثناء من توفير البطارية") { requestBatteryExemption() },
                     ui.button("2) السماح بالتشغيل التلقائي / الخلفية للتطبيق") { openAutoStartSettings() },
                     ui.text("وكمان: في قايمة التطبيقات الأخيرة اعمل «قفل 🔒» للتطبيق لو جهازك فيه الخيار ده.", 12f, th.muted)),
-                ui.section("🔗 مراقب اللينكات والكليبورد (شغّال في الخلفية)", true,
-                    ui.text("أي حاجة تنسخها من أي تطبيق بتتحفظ في سجل Joyboy ويطلع إشعار صغير «اتحفظ». ولو نسخت لينك بتظهر دايرة فوق التطبيق: لو فيديو ← تلفزيون · تحميل · شاهد وترجم · شاهد بس، ولو صفحة عادية ← «افتح في متصفح Joyboy». الأزرار بتختفي لوحدها بعد 5 ثواني. وكمان لما تفتح صفحة فيديو في المتصفح بتظهر دايرة حمراء (ده بيحتاج خدمة إمكانية الوصول).", 12f, th.muted),
+                ui.section("🔗 مراقب صفحات الفيديو في المتصفحات", true,
+                    ui.text("الدايرة بتظهر بس لما تفتح صفحة فيديو في متصفح (ده بيحتاج خدمة إمكانية الوصول). مفيش مراقبة للكليبورد ولا خدمة شغّالة طول اليوم.", 12f, th.muted),
                     ui.text((if (LinkHub.overlayOk(this)) "✅ العرض فوق التطبيقات: مسموح" else "⚠ العرض فوق التطبيقات: مش مسموح — ده الإذن الأساسي، دوس الزرار اللي تحت") + "\n" +
-                        (if (ClipOverlay.running) "✅ خدمة الكليبورد شغّالة" else "⏸ خدمة الكليبورد واقفة (بتشتغل لوحدها أول ما الإذن يتفعّل)") + "\n" +
                         (if (LinkWatch.enabled(this)) "✅ إمكانية الوصول: متفعّلة (للمتصفحات + معرفة مصدر النسخ)" else "ℹ إمكانية الوصول: مش متفعّلة (اختيارية — للمتصفحات بس)"), 12f, th.text),
                     ui.button("🖼 اسمح بالعرض فوق التطبيقات (الأساسي)") { try { startActivityForResult(Intent(android.provider.Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName")), 14) } catch (_: Throwable) {} },
-                    ui.button("🧪 جرّب الدايرة دلوقتي") { if (!ClipOverlay.test(this)) Notice.show(this, "اسمح بالعرض فوق التطبيقات الأول", 3000L) },
-                    ui.switchRow("لقط اللينكات من الكليبورد (الدايرة)", !Cfg.bool("lw_clip_off", false)) { Cfg.put("lw_clip_off", if (it) "0" else "1"); ClipOverlay.ensure(this) },
-                    ui.switchRow("إشعار «اتحفظ» لما تنسخ", !Cfg.bool("lw_toast_off", false)) { Cfg.put("lw_toast_off", if (it) "0" else "1") },
-                    ui.switchRow("حفظ كل اللي بتنسخه في سجل الكليبورد", !Cfg.bool("lw_hist_off", false)) { Cfg.put("lw_hist_off", if (it) "0" else "1"); ClipOverlay.ensure(this) },
                     ui.switchRow("لقط صفحات الفيديو في المتصفحات", !Cfg.bool("lw_web_off", false)) { Cfg.put("lw_web_off", if (it) "0" else "1") },
-                    ui.button("📋 افتح سجل الكليبورد") { ClipHistory.show(this, ui, th) },
                     ui.button("⚙ إمكانية الوصول (اختياري — للمتصفحات)") { LinkWatch.openSettings(this) },
                     ui.text("لو أندرويد منع الإذن أو تفعيل الخدمة (تطبيق متثبّت من برّه): من معلومات التطبيق اضغط ⋮ ← «السماح بالإعدادات المقيّدة» وبعدين فعّل. وعلى شاومي/أوبو/فيفو/سامسونج اسمح للتطبيق بالتشغيل التلقائي واستثنيه من توفير البطارية (قسم «🔋» اللي فوق) وإلا النظام بيقتل الخدمة.", 12f, th.muted)),
                 watchViews[1])),   // (v458) الترجمة الحية
@@ -1102,7 +1096,7 @@ class MainActivity : Activity() {
     private fun handleClipBubbleIntent(i: Intent?) {
         if (i == null || isFinishing || isDestroyed) return
         if (i.getBooleanExtra("tv_toggle", false)) { i.removeExtra("tv_toggle"); try { TvModeFab.toggle(this) } catch (e: Throwable) { LogStore.err("Main:tvToggle", e) }; return }   // (v734) بلاطة «وضع التلفزيون»
-        if (i.getBooleanExtra("clip_history", false)) { i.removeExtra("clip_history"); try { val th2 = Themes.byId(Cfg.str("theme", "mx")); ClipHistory.show(this, Ui(this, th2), th2) } catch (e: Throwable) { LogStore.err("Main:clipHistory", e) }; return }   // (v733) بلاطة «سجل الكليبورد»
+        if (i.getBooleanExtra("clip_history", false)) { i.removeExtra("clip_history"); return }   // (v733) بلاطة «سجل الكليبورد»
         val act = i.getStringExtra("clip_act") ?: return
         i.removeExtra("clip_act")
         val url = i.getStringExtra("clip_url") ?: ""

@@ -28,7 +28,7 @@ object ClipOverlay {
     fun canRun(ctx: Context): Boolean = LinkHub.overlayOk(ctx)
 
     /** لازم يشتغل: الإذن متاح ومش كل السويتشات مقفولة ومش موقوف يدويًا */
-    fun wanted(ctx: Context): Boolean = canRun(ctx) && !Cfg.bool("lw_ovl_off", false) && !(Cfg.bool("lw_clip_off", false) && Cfg.bool("lw_hist_off", false))
+    fun wanted(ctx: Context): Boolean = false   // (v754) اتشال: مفيش مراقبة كليبورد ولا خدمة/إشعار شغّال 24 ساعة
 
     fun ensure(ctx: Context) {
         try {

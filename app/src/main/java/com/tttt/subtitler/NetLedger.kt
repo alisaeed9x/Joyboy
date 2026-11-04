@@ -191,6 +191,10 @@ object NetLedger {
     fun transportLabel(t: Int = transport()) = when (t) { WIFI -> "📶 واي فاي"; MOBILE -> "📱 داتا الموبايل"; else -> "⛔ مفيش نت / أخرى" }
 
     // ===================== العدّ =====================
+    @Volatile var lastBps = 0L
+    private var bpsN = 0
+    fun lastSpeed(): Long = if (lastBps > 0L) lastBps else (try { Cfg.str("last_dl_bps", "0").toLongOrNull() ?: 0L } catch (_: Throwable) { 0L })
+
     private fun tick() {
         if (app == null) return
         val uid = android.os.Process.myUid()
@@ -200,6 +204,7 @@ object NetLedger {
         if (lastRx < 0) { lastRx = rx; lastTx = tx; return }
         val dr = (rx - lastRx).coerceAtLeast(0L); val dt = (tx - lastTx).coerceAtLeast(0L)
         lastRx = rx; lastTx = tx
+        if (dr > 200_000L) { lastBps = if (lastBps <= 0L) dr else (lastBps * 0.6 + dr * 0.4).toLong(); if (++bpsN % 10 == 0) try { Cfg.put("last_dl_bps", lastBps.toString()) } catch (_: Throwable) {} }   // (v754) آخر سرعة (بايت/ث، التيك كل ثانية)
         if (dr == 0L && dt == 0L) return
         val t = transport(); val now = System.currentTimeMillis()
         synchronized(lock) { addLocked(t, dr, dt, now, pageName(), curVideo()) }
