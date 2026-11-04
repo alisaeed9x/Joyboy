@@ -27,7 +27,7 @@ object ModelsUi {
     private fun items(): List<Item> {
         val l = ArrayList<Item>()
         Offline.models.firstOrNull { it.id == "turbo" }?.let { l.add(Item("whisper/" + it.file, "🎙 Whisper large-v3-turbo (q5_0)", it.approxMb, Offline.whisperUrl(it), "التفريغ — الأقوى للياباني والإنجليزي")) }
-        for (m in LocalMt.models) l.add(Item("mt/" + m.file, "🌍 Hy-MT2-1.8B " + m.label, m.approxMb, LocalMt.url(m), if (m.id == "q6") "الترجمة — أدق شوية (1.47GB)" else "الترجمة — الافتراضي"))
+        for (m in LocalMt.models) l.add(Item("mt/" + m.file, "🌍 " + m.label, m.approxMb, LocalMt.url(m), "الترجمة — " + m.note))
         return l
     }
 
@@ -65,6 +65,12 @@ object ModelsUi {
                 LocalMt.models.firstOrNull { it.label == l }?.let { Cfg.put("mt_model", it.id); LocalMt.release() }
                 build()
             }, lp())
+            // (v747) 🪶 أصغر حجم: Whisper base (~60 ميجا) + موديل الترجمة 1.25-bit (~440 ميجا)
+            box.addView(ui.button("🪶 أصغر حجم (Whisper base + ترجمة 1.25-bit ≈ 500 ميجا)") {
+                Cfg.put("off_model", "base"); Cfg.put("tr_s_model", "base"); Cfg.put("mt_model", "q125"); LocalMt.release()
+                Notice.show(act, if (LlmLib.stq) "اتظبط: base + 1.25-bit — نزّل الموديلين من تحت" else "اتظبط، بس البيلد ده من غير kernel الـ1.25-bit (JOY_STQ=1) — الترجمة مش هتشتغل بيه", 4500L)
+                build()
+            }, lp().apply { topMargin = 10 })
             for (it in items()) {
                 box.addView(ui.text(it.title + "\n" + stateOf(it) + "\n" + it.note, 12.5f, th.text), lp().apply { topMargin = 18 })
                 val prog = ui.text("", 11f, th.muted); progTv[it.rel] = prog

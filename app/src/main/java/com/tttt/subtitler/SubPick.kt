@@ -66,7 +66,7 @@ object SubPick {
     }
 
     /** رفع النص للتلفزيون على قطع. بيرجّع "" لو نجح، وإلا رسالة الخطأ. blocking — من خيط خلفي */
-    fun upload(name: String, text: String): String {
+    fun upload(name: String, text: String, show: Boolean = false): String {
         if (text.length > 2_800_000) return "الملف كبير زيادة"
         val id = UUID.randomUUID().toString()
         val parts = ArrayList<String>()
@@ -79,7 +79,7 @@ object SubPick {
         if (parts.isEmpty()) return "الملف فاضي"
         var done = false
         for ((i, p) in parts.withIndex()) {
-            val (c, t) = try { RemoteClient.postJson("/subup", JSONObject().put("id", id).put("i", i).put("t", parts.size).put("n", name).put("d", p)) } catch (e: Throwable) { Pair(-1, e.message ?: "") }
+            val (c, t) = try { RemoteClient.postJson("/subup", JSONObject().put("id", id).put("i", i).put("t", parts.size).put("n", name).put("d", p).put("m", if (show) "show" else "")) } catch (e: Throwable) { Pair(-1, e.message ?: "") }
             if (c == -1) return "مش متصل بالتلفزيون"
             if (c == 422) return "التلفزيون شاف الملف مش ترجمة صالحة"
             if (c != 200) return "فشل الإرسال للتلفزيون (كود $c)"

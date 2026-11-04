@@ -603,7 +603,11 @@ class BrowserActivity : Activity() {
             hint.text = "🔧 بتحدّث لينك «" + repairTitle.ifEmpty { "الفيديو" } + "» — دوس تشغيل في الصفحة وأنا ألقط اللينك الجديد وأرجّعك للمشغّل بنفس الترجمة"
             h.postDelayed({ if (!dead) Notice.show(this, "🔧 شغّل الفيديو في الصفحة وأنا هلقطه", 4000L) }, 800L)
         }
-        if (tvOn && repairId == null) { hint.text = "🖱 الأسهم = مؤشر · OK = دوسة · Menu = الشريط · OK طويلة = تبديل الوضع · شغّل الفيديو وأنا هلقطه"; h.postDelayed({ if (!dead && repairId == null) hint.visibility = View.GONE }, 12000L) }   // (v517) التلميحة بتختفي بعد 12 ثانية
+        if (SubHunt.active) {   // (v746) وضع صيد الترجمة
+            hint.text = "🔎 بدوّر على ترجمة «" + (SubHunt.info?.label() ?: "") + "» — دوس تحميل على أي ملف ترجمة أو ZIP وأنا أضيفه للفيديو علطول"
+            h.postDelayed({ if (!dead) Notice.show(this, "🔎 دوس تحميل على ملف الترجمة وهتتضاف على الفيديو", 4500L) }, 800L)
+        }
+        if (tvOn && repairId == null && !SubHunt.active) { hint.text = "🖱 الأسهم = مؤشر · OK = دوسة · Menu = الشريط · OK طويلة = تبديل الوضع · شغّل الفيديو وأنا هلقطه"; h.postDelayed({ if (!dead && repairId == null) hint.visibility = View.GONE }, 12000L) }   // (v517) التلميحة بتختفي بعد 12 ثانية
         val keep = prefs().getBoolean("br_save_tabs", true)
         val saved = if (keep) BrowserStore.loadTabs(this) else (emptyList<BrowserStore.SavedTab>() to 0)
         for (s in saved.first) tabs.add(BTab(nextId++).also { it.url = s.url; it.title = s.title; it.desktop = s.desktop })
@@ -707,7 +711,8 @@ class BrowserActivity : Activity() {
                     if (adFor(u) && AdBlock.blocked(u)) { h.post { popKill(hd, u, listOf("شبكة إعلانات معروفة")) }; return true }
                     return false
                 }
-                if (r.isForMainFrame && u.startsWith("http") && gateBlocked(t, u)) return true   // (v412) موقع محجوب
+                if (r.isForMainFrame && u.startsWith("http") && gateBlocked(t, u)) return true
+                if (SubHunt.active && r.isForMainFrame && u.startsWith("http") && SubHunt.urlLooksSub(u)) { huntCapture(u, uaOf(t), null, v.url ?: t.url); return true }   // (v746) لينك مباشر لملف ترجمة   // (v412) موقع محجوب
                 if (r.isForMainFrame && !r.hasGesture() && popMode() != PopupGuard.OFF && android.os.SystemClock.uptimeMillis() - lastTouchAt > 1500L) {
                     // (v401) تحويل تلقائي للصفحة نفسها من غير لمسة لينك شكله إعلان
                     val why = ArrayList<String>()
@@ -779,6 +784,7 @@ class BrowserActivity : Activity() {
             }
         }
         w.setDownloadListener { url, ua, cd, mime, _ ->
+            if (SubHunt.active && SubHunt.looksLikeSub(url, cd, mime)) { huntCapture(url, ua ?: uaOf(t), cd, t.url); return@setDownloadListener }   // (v746)
             // (v203) وضع إصلاح اللينك: زرار «تحميل» في الصفحة حتى لو اللينك من غير .mp4 = ده لينك الفيديو
             if (repairId != null && url.startsWith("http", true) && (mime?.startsWith("video") == true || mime == "application/octet-stream" || Sniff.accept(url) != null)) {
                 addFound(Found(url, Sniff.kindOf(url), "", t.url, ua ?: uaOf(t)), t)
@@ -2436,7 +2442,21 @@ class BrowserActivity : Activity() {
     // (v149) أول ما تخرج من المتصفح: كل الفيديو/الصوت في كل التبويبات يقف (من غير ما يكمّل في الخلفية)، وكل التبويبات تتجمّد
     override fun onPause() { persistTabs(); WebMute.pauseAll(); for (t in tabs) try { t.wv?.onPause() } catch (_: Throwable) {}; super.onPause() }
     override fun onResume() { super.onResume(); refreshCoBtns(); curRef = java.lang.ref.WeakReference(this); try { wvOrNull?.onResume() } catch (_: Throwable) {} }
+    /** (v746) صيد الترجمة: تحميل الملف بكوكيز الصفحة وفكه وإضافته للفيديو */
+    private fun huntCapture(url: String, ua: String, cd: String?, referer: String?) {
+        val ck = try { CookieManager.getInstance().getCookie(url) } catch (_: Throwable) { null }
+        Notice.show(this, "⬇ بنزّل ملف الترجمة…", 2500L)
+        SubHunt.capture(applicationContext, url, ua, ck, referer, cd) { ok, msg ->
+            runOnUiThread {
+                if (dead) return@runOnUiThread
+                Notice.show(this, msg, if (ok) 5000L else 7000L)
+                if (ok && Cfg.bool("subhunt_close", true) && PlayerActivity.hasLive()) h.postDelayed({ if (!dead) finish() }, 1800L)
+            }
+        }
+    }
+
     override fun onDestroy() {
+        SubHunt.stop()   // (v746)
         try { dockUi?.detach() } catch (_: Throwable) {}
         try { stripUi?.detach() } catch (_: Throwable) {}
 

@@ -399,7 +399,7 @@ object TvLink {
             dir.listFiles()?.forEach { try { it.delete() } catch (_: Throwable) {} }
             java.io.File(dir, nm).also { it.writeText(txt, Charsets.UTF_8) }
         } catch (e: Throwable) { LogStore.err("TvLink:subUp", e); return err(500, "write") }
-        val handled = PlayerActivity.remoteSubImport(f, nm, cues)
+        val handled = PlayerActivity.remoteSubImport(f, nm, cues, j.optString("m") == "show")
         return ok(JSONObject().put("done", true).put("cues", cues).put("player", handled))
     }
 

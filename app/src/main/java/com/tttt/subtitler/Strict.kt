@@ -9,7 +9,8 @@ package com.tttt.subtitler
 object Strict {
     const val SEMI = "loc_google"
     /** (v425) الأوضاع المشالة وبديلها: أوفلاين ML Kit / لينجو ← وشبر + LibreTranslate · وشبر + جيميناي (محلي/سياق) ← جيميناي */
-    private val REMOVED = mapOf("off_ml" to SEMI, "off_vl" to SEMI, "vl_gemini" to SEMI, "loc_ai" to "g_wav", "loc_ctx" to "g_wav", "s_only" to "w_only", "visual" to "g_wav", "loc_beat" to SEMI, "b_gem" to "g_wav")   // (v452) Beat اتشال   // (v427) SenseVoice/بصري اتشالوا
+    private val REMOVED = mapOf("off_ml" to MT, "off_vl" to MT, "vl_gemini" to MT, "loc_ai" to "g_wav", "loc_ctx" to "g_wav", "s_only" to "w_only", "visual" to "g_wav", "loc_beat" to MT, "b_gem" to "g_wav",
+        SEMI to MT, FREE_TXT to MT, FREE_GEM to "g_wav")   // (v743) وشبر+Libre / وشبر+FreeLLM ← 📴 أوفلاين كامل (Hy-MT2) · FreeLLM الصوتي ← جيميناي   // (v452) Beat اتشال   // (v427) SenseVoice/بصري اتشالوا
     fun id(): String = try {
         var i = Cfg.str("tr_mode_id", "")
         REMOVED[i]?.let { m -> Cfg.put("tr_mode_id", m); Cfg.put("tr_saved", "0"); i = m }   // الإعداد المحفوظ بيتمسح عشان يسأل من جديد

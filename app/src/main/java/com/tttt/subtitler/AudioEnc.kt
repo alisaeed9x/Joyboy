@@ -16,25 +16,34 @@ object AudioEnc {
 
     /**
      * (v167) بريسيت الصوت (من الإعدادات ← الترجمة والمحرك ← الصوت والتوقيت):
-     *  • سريع (الافتراضي): AAC بمعدل 32kbps — أصغر ~8 مرات، الرفع أسرع.
+     *  • سريع (الافتراضي): AAC بمعدل 64kbps (v742: كان 32 — الكلام الضعيف في اللغات غير الإنجليزي كان بيتسمع غلط) — أصغر ~4 مرات من WAV. لو الجهاز رفض 64 بيجرّب 48 ثم 32.
      *  • نورمال: WAV خام 16kHz من غير ضغط (≈32KB/ث) — أعلى جودة، والرفع أبطأ.
      */
     const val PRESET_KEY = "audio_preset"
     const val FAST = "fast"
     const val NORMAL = "normal"
-    const val BITRATE = 32000
+    const val BITRATE = 64000
+    private val LADDER = intArrayOf(64000, 48000, 32000)
+    @Volatile private var goodBr = 0
+    /** (v742) على الخيط ده بس: ابعت WAV خام مهما كان البريسيت (مقاطع التدقيق القصيرة — مفيش سبب نضغطها) */
+    val lossless = ThreadLocal<Boolean>()
     fun preset(): String = if (Cfg.str(PRESET_KEY, FAST) == NORMAL) NORMAL else FAST
 
     private val cache: MutableMap<ByteArray, Packed> = Collections.synchronizedMap(WeakHashMap<ByteArray, Packed>())
     @Volatile private var fails = 0
 
     fun pack(wav: ByteArray): Packed {
-        if (preset() == NORMAL) return Packed(wav, "audio/wav", wav.size)   // نورمال: WAV خام
+        if (preset() == NORMAL || lossless.get() == true) return Packed(wav, "audio/wav", wav.size)   // نورمال: WAV خام
         cache[wav]?.let { return it }
         var p: Packed? = null
         if (fails < 3 && isWav(wav)) {
-            try { p = aac(wav)?.takeIf { it.bytes.size < wav.size * 0.8 } }
-            catch (_: Throwable) { fails++ }
+            val tries = if (goodBr > 0) intArrayOf(goodBr) else LADDER
+            var threw = 0
+            for (br in tries) {
+                try { p = aac(wav, br)?.takeIf { it.bytes.size < wav.size * 0.8 }; if (p != null) { goodBr = br; break } }
+                catch (_: Throwable) { threw++ }
+            }
+            if (p == null && threw == tries.size) fails++
         }
         val r = p ?: Packed(wav, "audio/wav", wav.size)
         cache[wav] = r
@@ -61,14 +70,14 @@ object AudioEnc {
         out.write(h)
     }
 
-    private fun aac(wav: ByteArray): Packed? {
+    private fun aac(wav: ByteArray, bitrate: Int): Packed? {
         val rate = (wav[24].toInt() and 255) or ((wav[25].toInt() and 255) shl 8) or ((wav[26].toInt() and 255) shl 16) or ((wav[27].toInt() and 255) shl 24)
         val fi = freqIdx(rate); if (fi < 0) return null
         val total = wav.size - 44
         if (total < rate / 5) return null    // أقل من 0.1ث مش مستاهل
         val fmt = MediaFormat.createAudioFormat(MediaFormat.MIMETYPE_AUDIO_AAC, rate, 1)
         fmt.setInteger(MediaFormat.KEY_AAC_PROFILE, MediaCodecInfo.CodecProfileLevel.AACObjectLC)
-        fmt.setInteger(MediaFormat.KEY_BIT_RATE, BITRATE)
+        fmt.setInteger(MediaFormat.KEY_BIT_RATE, bitrate)
         fmt.setInteger(MediaFormat.KEY_MAX_INPUT_SIZE, 16384)
         val codec = MediaCodec.createEncoderByType(MediaFormat.MIMETYPE_AUDIO_AAC)
         val out = java.io.ByteArrayOutputStream(total / 6 + 1024)

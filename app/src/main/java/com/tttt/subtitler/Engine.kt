@@ -1234,7 +1234,8 @@ class Engine(
                 runs[i] = KeyRun(keyNo(key), mdl, took, gemCalled)
                 if (tx && fresh.isNotEmpty()) {
                     // (v210) الباتش ما بيتطبّقش دلوقتي: بيتحط في المجمّع لحد ما يتترجم (applyChunk + سدّ الثغرات بيحصلوا بعد الترجمة)
-                    holdTranscript(i, p, j, relistenLow(i, fresh, key), prior, key, partial)   // (v331) الجمل واطية الثقة بتتسمع تاني قبل الترجمة
+                    val xc = crossCheck(i, w, fresh, key)   // (v742) تسميع مزدوج: مفتاح تاني يسمع نفس الباتش وأي اختلاف يتحسم بسماع تالت على الجملة
+                    holdTranscript(i, p, j, relistenLow(i, xc.first, key, xc.second), prior, key, partial)   // (v331) الجمل واطية الثقة بتتسمع تاني قبل الترجمة
                     startedAt[i]?.let { recentMs.addLast(System.currentTimeMillis() - it); while (recentMs.size > 8) recentMs.pollFirst() }
                     if (hedge) { inflight.remove(i); host.log("⚡ باتش ${i + 1}: النسخة الاحتياطية خلصت الأول") }
                     return
@@ -1344,7 +1345,23 @@ class Engine(
     /** لهجة الباتش اللي بيتبعت: لو اتختارت لهجة، الباتش بيتترجم بيها مباشرة (من غير فصحى ثم تحويل — توفير على المفاتيح) */
     private val dialOf = ConcurrentHashMap<Int, String>()
     private val dialConf = ConcurrentHashMap<String, Conf>()
-    private fun buildPrompt(durSec: Double, start: Double, strict: Boolean = false, chunk: Int = -1, hole: Boolean = false, holeNear: Boolean = false, tx: Boolean = false): String {
+    /** (v742) كل طلب صوت لجيميناي بياخد بلوك «دقة السماع» في الآخر (لغات غير الإنجليزي بتتسمع غلط كتير بالصوت المضغوط) */
+    private fun buildPrompt(durSec: Double, start: Double, strict: Boolean = false, chunk: Int = -1, hole: Boolean = false, holeNear: Boolean = false, tx: Boolean = false): String =
+        buildPromptCore(durSec, start, strict, chunk, hole, holeNear, tx) + listenBlock()
+
+    private fun listenBlock(): String {
+        val lang = if (detDone && srcLang.isNotBlank()) " The spoken language is $srcLang (the language name is written in Arabic)." else ""
+        return "\n\n═══ LISTENING ACCURACY (applies to every \"original\") ═══\n" +
+            "- 🔴 The audio is compressed speech: weak consonants, word endings and short function words are easy to lose. Listen to each phrase as a whole and use the grammar of the spoken language and the neighbouring sentences to choose between similar-sounding words.$lang\n" +
+            "- 🔴 Write words that really exist in the spoken language and match the sounds. Never replace an unfamiliar word with a more common or English-sounding one, and never write English for non-English speech.\n" +
+            "- 🔴 Names: use the spelling from the names list above when it is given; otherwise one consistent spelling for the whole segment.\n" +
+            "- If a word is truly unclear, write your best phonetic reading and set low_confidence=true on that sentence. Never leave a gap and never invent words that were not said.\n"
+    }
+
+    /** (v742) المصدر مش إنجليزي (بعد ما اللغة اتحددت — الاسم بالعربي) */
+    private fun nonEnglishSrc(): Boolean = detDone && srcLang.isNotBlank() && !srcLang.contains("إنجليز") && !srcLang.contains("english", ignoreCase = true)
+
+    private fun buildPromptCore(durSec: Double, start: Double, strict: Boolean = false, chunk: Int = -1, hole: Boolean = false, holeNear: Boolean = false, tx: Boolean = false): String {
         val dl = convDialect.let { if (it.isBlank() || it == "فصحى") "" else it }
         if (chunk >= 0) { if (dl.isEmpty()) dialOf.remove(chunk) else dialOf[chunk] = dl }
         val c = if (dl.isEmpty() || dl == conf.lang) conf else dialConf.getOrPut(dl) { conf.withLang(dl) }
@@ -1401,6 +1418,8 @@ class Engine(
     private class TItem(val i: Int, val p: Prep, val j: JSONObject?, val fresh: List<Sub>, val prior: List<Sub>, val key: String, val partial: Boolean, val at: Long)
     private val tHold = ConcurrentHashMap<Int, TItem>()
     private val tTaken = ConcurrentHashMap.newKeySet<Int>()
+    /** (v748) عدد الأجزاء اللي اتبعتت للترجمة؛ أول جزء بيتبعت بعد باتش واحد */
+    private val partsSent = java.util.concurrent.atomic.AtomicInteger(0)
     private val fullChunks = ConcurrentHashMap.newKeySet<Int>()
     private val trBusy = AtomicInteger(0)
     private val trEx = Executors.newFixedThreadPool(4) { r -> Thread(r).also { it.isDaemon = true; it.name = "translate-group" } }
@@ -1466,13 +1485,131 @@ class Engine(
     /** مفيش طلب ترانسكريبشن شغال ومفيش باتش منسوخ مستني الترجمة */
     private fun txIdle() = inflight.isEmpty() && tHold.isEmpty()
 
+    // ===== (v742) التسميع المزدوج =====
+    private class XcCand(val ix: Int, val a: Sub?, val b: Sub?, val score: Double)
+
+    private fun tnorm(t: String): String { val sb = StringBuilder(t.length); for (ch in t.lowercase()) if (ch.isLetterOrDigit()) sb.append(ch); return sb.toString() }
+
+    /** تشابه 0..1 بين نصين (Levenshtein على الحروف بعد التطبيع) */
+    private fun tsim(a: String, b: String): Double {
+        val x = tnorm(a); val y = tnorm(b)
+        if (x.isEmpty() && y.isEmpty()) return 1.0
+        if (x.isEmpty() || y.isEmpty()) return 0.0
+        var prev = IntArray(y.length + 1) { it }; var cur = IntArray(y.length + 1)
+        for (r in 1..x.length) {
+            cur[0] = r
+            for (c in 1..y.length) cur[c] = minOf(prev[c] + 1, cur[c - 1] + 1, prev[c - 1] + (if (x[r - 1] == y[c - 1]) 0 else 1))
+            val t = prev; prev = cur; cur = t
+        }
+        return 1.0 - prev[y.length].toDouble() / maxOf(x.length, y.length)
+    }
+
+    /** أ موجودة جوه ب؟ (أقل تعديل بين أ وأي جزء متصل من ب) — بتمنع علامة اختلاف كدابة لما التاني دمج جملتين */
+    private fun tcontain(a: String, b: String): Double {
+        val x = tnorm(a); val y = tnorm(b)
+        if (x.isEmpty()) return 1.0
+        if (y.isEmpty()) return 0.0
+        var prev = IntArray(y.length + 1); var cur = IntArray(y.length + 1)
+        for (r in 1..x.length) {
+            cur[0] = r
+            for (c in 1..y.length) cur[c] = minOf(prev[c] + 1, cur[c - 1] + 1, prev[c - 1] + (if (x[r - 1] == y[c - 1]) 0 else 1))
+            val t = prev; prev = cur; cur = t
+        }
+        return 1.0 - (prev.minOrNull() ?: x.length).toDouble() / x.length
+    }
+
+    /**
+     * (v742) مفتاحين يسمعوا نفس الباتش: المفتاح التاني بيفرّغه تاني (حرارة 0.3 عشان ما يكررش نفس الغلطة)، وبنقارن الجمل بالتوقيت.
+     * اتفقوا ← تمام (والثقة بتزيد). اختلفوا / واحد سمع جملة التاني ما سمعهاش ← سماع تالت على مقطع الجملة بس (WAV خام ±1.8ث) والحكم بيشوف القراءتين.
+     * بيشتغل مع جيميناي بس (مش الأوفلاين). الإعداد dual_listen: 0 مقفول · 1 ذكي (لغة غير إنجليزي — الافتراضي) · 2 دايمًا.
+     * بيرجّع (الجمل، توقيتات الجمل اللي اتحكم فيها — relistenLow بيتخطّاها).
+     */
+    private fun crossCheck(i: Int, w: WavChunk, fresh: List<Sub>, key0: String): Pair<List<Sub>, Set<Double>> {
+        val none: Pair<List<Sub>, Set<Double>> = fresh to emptySet()
+        val mode = try { Cfg.int("dual_listen", 1) } catch (_: Throwable) { 1 }
+        if (mode == 0 || Offline.on() || !running || isClosed || w.silent || fresh.isEmpty()) return none
+        if (mode == 1 && !nonEnglishSrc()) return none
+        if (pool.usableCount() < 2) return none
+        val keyB = pool.pickFree(key0, rr.getAndIncrement()) ?: return none
+        if (keyB == key0) return none
+        val t0 = System.currentTimeMillis()
+        val rB = try {
+            pool.begin(keyB)
+            try { Api.generate(curModel(), keyB, buildPrompt(w.durSec, w.startSec, false, i, tx = true), w.bytes, maxTokens = Api.outTokens(w.durSec), temp = 0.3).also { pool.end(keyB, System.currentTimeMillis() - t0, true) } }
+            catch (e: Throwable) { pool.end(keyB, 0, false); throw e }
+        } catch (e: ApiErr) {
+            if (e.code == 429) pool.block(keyB, 60_000)
+            host.log("🎯 باتش ${i + 1}: التسميع المزدوج اتخطّى (${e.code})"); return none
+        } catch (e: Throwable) { LogStore.err("Engine:dual", e); return none }
+        if (isClosed || !running) return none
+        if (rB.finish.isNotEmpty() && rB.finish != "STOP") return none   // رد ناقص: المقارنة هتبقى كدابة
+        val jB = if (rB.text.isBlank()) null else Parse.json(rB.text)
+        val hearB = if (jB == null) emptyList() else TParse.transcript(jB, w.startSec, w.durSec).filter { !it.isSound && it.original.isNotBlank() }
+        if (hearB.isEmpty()) return none
+
+        fun ov(a: Sub, b: Sub): Double { val o = minOf(a.end, b.end) - maxOf(a.start, b.start); return if (o <= 0.0) 0.0 else o / maxOf(0.2, minOf(a.end - a.start, b.end - b.start)) }
+        val out = fresh.toMutableList()
+        val cands = ArrayList<XcCand>()
+        var agreeN = 0
+        for (ix in fresh.indices) {
+            val a = fresh[ix]
+            if (a.isSound || a.isSong || a.original.isBlank()) continue
+            val mates = hearB.filter { ov(a, it) >= 0.35 }
+            val bt = mates.joinToString(" ") { it.original }
+            val s = if (bt.isBlank()) 0.0 else maxOf(tsim(a.original, bt), tcontain(a.original, bt))
+            if (s >= 0.78) { agreeN++; if (s >= 0.85 && a.lowConf) out[ix] = a.copy(lowConf = false) }
+            else cands.add(XcCand(ix, a, mates.firstOrNull()?.copy(original = bt), s))
+        }
+        for (b in hearB) if (!b.isSong && fresh.none { ov(it, b) >= 0.35 }) cands.add(XcCand(-1, null, b, 0.0))   // جملة سمعها التاني بس
+        if (cands.isEmpty()) { host.log("🎯 باتش ${i + 1}: تسميع مزدوج — المفتاحين اتفقوا في $agreeN جملة"); return out to emptySet() }
+
+        var keyJ = pool.pickFree(keyB, rr.getAndIncrement()) ?: keyB
+        val gl = effectiveGloss().joinToString(", ") { it.term }.take(400)
+        val lang = if (detDone && srcLang.isNotBlank()) " in $srcLang" else ""
+        val adj = HashSet<Double>(); var fixed = 0; var added = 0
+        for (c in cands.sortedBy { it.score }.take(6)) {
+            if (!running || isClosed) break
+            val ref = c.a ?: c.b ?: continue
+            try {
+                val wv = src().wav(maxOf(0.0, ref.start - 1.8), ref.end + 1.8) ?: continue
+                if (wv.silent) continue
+                val heard = (if (c.a != null) "Listener 1 heard: «${c.a.original}». " else "Listener 1 heard nothing here. ") +
+                    (if (c.b != null) "Listener 2 heard: «${c.b.original}». " else "Listener 2 heard nothing here. ")
+                val pr = "You are a meticulous verbatim transcriber acting as the final judge between two independent listeners. This short audio contains one spoken sentence (with a little context before and after). $heard" +
+                    "They disagree. Listen again very carefully and write exactly the words that are said$lang, using the sound only (never what the story would suggest). You may keep one reading, combine them, or write a different one if the sound says so. Keep it one sentence. " +
+                    (if (gl.isNotBlank()) "Names and terms that appear in this video: $gl. " else "") +
+                    "If it stays unclear, give your best reading and set low_confidence=true. If you hear no speech at all, return an empty original. " +
+                    "Return JSON only: {\"original\":\"\",\"low_confidence\":false}"
+                AudioEnc.lossless.set(true)
+                val r = try { Api.generate(curModel(), keyJ, pr, wv.bytes, 512, 0.0) } finally { AudioEnc.lossless.set(false) }
+                val j2 = if (r.text.isBlank()) null else Parse.json(r.text)
+                val nt = j2?.optString("original", "")?.trim().orEmpty()
+                val low = j2?.optBoolean("low_confidence", false) ?: false
+                val ca = c.a; val cb = c.b
+                if (ca != null) {
+                    adj.add(ca.start)
+                    if (nt.isEmpty()) { out[c.ix] = ca.copy(lowConf = true); continue }   // الحكم ما سمعش حاجة: منمسحش الجملة، بس نعلّم عليها
+                    if (nt.length > ca.original.length * 2 + 20) continue
+                    out[c.ix] = ca.copy(original = nt, lowConf = low)
+                    if (nt != ca.original) fixed++
+                } else if (cb != null && nt.isNotEmpty() && nt.length <= cb.original.length * 2 + 20 && tsim(nt, cb.original) >= 0.5) {
+                    out.add(cb.copy(original = nt, lowConf = low)); added++   // جملة الأول فاتته والحكم أكّدها
+                }
+            } catch (e: ApiErr) {
+                if (e.code == 429) { pool.block(keyJ, 60_000); keyJ = pool.pickFree(keyJ, rr.getAndIncrement()) ?: break } else break
+            } catch (e: Throwable) { LogStore.err("Engine:dualJudge", e) }
+        }
+        host.log("🎯 باتش ${i + 1}: تسميع مزدوج بمفتاحين — اتفقوا في $agreeN جملة · اختلفوا في ${cands.size} · اتصحّح $fixed · اتضاف $added")
+        return (if (added > 0) out.sortedBy { it.start } else out) to adj
+    }
+
     /**
      * (v331) الجمل اللي جيميناي علّم عليها low_confidence: سماع تاني لنافذة ضيقة حواليها (±1.2ث) بمفتاح تاني، ومعاها قراءة المرة الأولى كمرجع.
      * بنستبدل النص بس لو الرد منطقي (مش فاضي ولا أطول بكتير)؛ التوقيت والباقي زي ما هو. أقصى 4 جمل للباتش. مش بيشتغل مع التفريغ الأوفلاين.
      */
-    private fun relistenLow(i: Int, fresh: List<Sub>, key0: String): List<Sub> {
+    private fun relistenLow(i: Int, fresh: List<Sub>, key0: String, skip: Set<Double> = emptySet()): List<Sub> {
         if (Offline.on() || !running || isClosed) return fresh
-        val idx = fresh.indices.filter { fresh[it].lowConf && !fresh[it].isSound && !fresh[it].isSong && fresh[it].original.isNotBlank() }.take(4)
+        val idx = fresh.indices.filter { fresh[it].lowConf && !fresh[it].isSound && !fresh[it].isSong && fresh[it].original.isNotBlank() && fresh[it].start !in skip }.take(if (nonEnglishSrc()) 8 else 4)   // (v742) 8 للغات غير الإنجليزي · اللي اتحكم فيه بالتسميع المزدوج بيتخطّى
         if (idx.isEmpty()) return fresh
         val out = fresh.toMutableList()
         var key = pool.pick(key0, rr.getAndIncrement()) ?: key0
@@ -1481,16 +1618,19 @@ class Engine(
             if (!running || isClosed) break
             val s = fresh[ix]
             try {
-                val wv = src().wav(maxOf(0.0, s.start - 1.2), s.end + 1.2) ?: continue
+                val wv = src().wav(maxOf(0.0, s.start - 1.8), s.end + 1.8) ?: continue   // (v742) ±1.8ث بدل ±1.2 (سياق أوسع)
                 if (wv.silent) continue
                 val lang = if (detDone && srcLang.isNotBlank()) " in $srcLang" else ""
+                val nb = listOfNotNull(fresh.getOrNull(ix - 1)?.original?.takeIf { it.isNotBlank() }?.let { "before: «$it»" }, fresh.getOrNull(ix + 1)?.original?.takeIf { it.isNotBlank() }?.let { "after: «$it»" }).joinToString(" · ")
                 val gl = effectiveGloss().joinToString(", ") { it.term }.take(400)
                 val pr = "You are a meticulous verbatim transcriber. This short audio contains one spoken sentence (with a little context before and after). A first pass heard it as: «${s.original}» but was NOT sure. " +
                     "Listen again very carefully and write exactly the words that are said$lang, using the sound only (never what the story would suggest). Keep it one sentence. " +
                     (if (gl.isNotBlank()) "Names and terms that appear in this video: $gl. " else "") +
+                    (if (nb.isNotBlank()) "Neighbouring sentences, for context only (do not transcribe them): $nb. " else "") +
                     "If it stays unclear, give your best reading and set low_confidence=true. If you hear no speech at all, return an empty original. " +
                     "Return JSON only: {\"original\":\"\",\"low_confidence\":false}"
-                val r = Api.generate(curModel(), key, pr, wv.bytes, 512, 0.0)
+                AudioEnc.lossless.set(true)   // (v742) المقطع قصير: WAV خام بدل AAC
+                val r = try { Api.generate(curModel(), key, pr, wv.bytes, 512, 0.0) } finally { AudioEnc.lossless.set(false) }
                 val j = if (r.text.isBlank()) null else Parse.json(r.text)
                 val nt = j?.optString("original", "")?.trim().orEmpty()
                 if (nt.isEmpty() || nt.length > s.original.length * 2 + 20) continue
@@ -1742,12 +1882,13 @@ class Engine(
         if (now - offAt < 800L) return
         offAt = now
         val d = currentDur(); val tot = if (d > 0) Math.ceil(d / ch).toInt() else 0
-        val k = ctxBatches().takeIf { it > 0 } ?: if (Offline.live() || (TrWizard.googleOn() && Cfg.str("ctx_min", "").isEmpty())) 1 else maxOf(1, (Offline.partMin() * 60.0 / ch).toInt())
+        val k0 = ctxBatches().takeIf { it > 0 } ?: if (Offline.live() || (TrWizard.googleOn() && Cfg.str("ctx_min", "").isEmpty())) 1 else maxOf(1, (Offline.partMin() * 60.0 / ch).toInt())
+        val k = if (partsSent.get() == 0) 1 else k0   // (v748) أول جزء باتش واحد (الترجمة تظهر بدري)
         val doneN = if (tot > 0) (0 until tot).count { isDone(it, d) } else 0
         val held = tHold.size
         val txN = minOf(tot, doneN + held)
         val cur = inflight.minOrNull(); val trN = trBusy.get()
-        val who = if (Strict.mt()) "Hy-MT2 (أوفلاين)" else if (TrWizard.googleOn()) (if (ExtTranslate.semiLibre()) "LibreTranslate" else "جوجل") else "جيميناي"
+        val who = if (Strict.mt()) "HY-MT1.5 (أوفلاين)" else if (TrWizard.googleOn()) (if (ExtTranslate.semiLibre()) "LibreTranslate" else "جوجل") else "جيميناي"
         offB = "📴 $txN/$tot" + (if (trN > 0) " 🌍" else if (cur != null) " ⏳" else "")
         val sb = StringBuilder("📴 أوفلاين: اتفرّغ $txN من $tot باتش (الباتش ${ch.toInt()}ث)")
         val live = Offline.liveLine()
@@ -1807,7 +1948,8 @@ class Engine(
      * بيتبعتوا لجيميناي يترجمهم. الباقي (اللي أقل من جزء) بيتترجم لما كل الباتشات تخلص زي الوضع 4 العادي.
      */
     private fun partTick(avail0: List<Int>): Boolean {
-        val k = ctxBatches().takeIf { it > 0 } ?: if (Offline.live() || (TrWizard.googleOn() && Cfg.str("ctx_min", "").isEmpty())) 1 else maxOf(1, (Offline.partMin() * 60.0 / ch).toInt())   // (v399) جوجل: باتش بباتش · (v400) وضع السياق: 2–3 باتشات
+        val k0 = ctxBatches().takeIf { it > 0 } ?: if (Offline.live() || (TrWizard.googleOn() && Cfg.str("ctx_min", "").isEmpty())) 1 else maxOf(1, (Offline.partMin() * 60.0 / ch).toInt())   // (v399) جوجل: باتش بباتش · (v400) وضع السياق: 2–3 باتشات
+        val k = if (partsSent.get() == 0) 1 else k0   // (v748) أول جزء باتش واحد (الترجمة تظهر بدري)
         // (v739) الترجمة بتبدأ من مكان المشاهد ومن بعده (مش من أقدم باتش في الفيديو): قبل كده الجزء كان بيتاخد من الأقدم، فلو التفريغ ماشي عند مكانك والجزء ده مستني جاره
         // كان المحرك يترجم جزء قديم/بعيد الأول وبعدين يرجع لمكانك. ولو الباتش اللي المشاهد واصله جاهز بيتترجم على طول من غير ما يستنى يكمّل الجزء.
         val viewer = if (headless) -1 else (host.position() / ch).toInt()
@@ -1822,7 +1964,7 @@ class Engine(
         if (inflight.any { it < head.last() && it >= head.first() - 1 }) return false   // الباتش اللي قبله مباشرة لسه بيتنسخ: استنى عشان السياق
         val group = head.mapNotNull { tHold[it] }
         if (group.size != head.size) return false
-        tTaken.addAll(head); trBusy.incrementAndGet()
+        tTaken.addAll(head); trBusy.incrementAndGet(); partsSent.incrementAndGet()
         try {
             trEx.submit {
                 try { translateContextual(group) }
@@ -1927,11 +2069,11 @@ class Engine(
                 try {
                     Offline.releaseWhisper()
                     host.status("📴 بترجم أوفلاين (${idx.size} جملة)…")
-                    val r = if (Offload.wanted()) Offload.translate(idx.map { src[it] }, "", { host.log(it) }) { d, n -> host.status("📱 ترجمة على الموبايل $d/$n") }   // (v698) م7
-                    else LocalMt.translateAll(idx.map { src[it] }, "", { host.log(it) }) { d, n -> if (d % 10 == 0 || d == n) host.status("📴 ترجمة أوفلاين $d/$n") }
+                    val r = if (Offload.wanted()) Offload.translate(idx.map { src[it] }, Offline.lang(), { host.log(it) }) { d, n -> host.status("📱 ترجمة على الموبايل $d/$n") }   // (v698) م7
+                    else LocalMt.translateAll(idx.map { src[it] }, Offline.lang(), { host.log(it) }) { d, n -> if (d % 10 == 0 || d == n) host.status("📴 ترجمة أوفلاين $d/$n") }
                     var n = 0
                     for ((q, k) in idx.withIndex()) { val t = r.getOrNull(q); if (!t.isNullOrBlank() && t != src[k]) { out[k] = t; n++ } }
-                    host.log("📴 Hy-MT2: ترجم $n/${idx.size} جملة")
+                    host.log("📴 HY-MT1.5: ترجم $n/${idx.size} جملة")
                 } catch (e: Throwable) {
                     host.log("⚠ ترجمة أوفلاين فشلت: " + (e.message ?: e.javaClass.simpleName).take(100))
                     try { LogStore.add("LocalMt: " + (e.message ?: e.javaClass.simpleName).take(120)) } catch (_: Throwable) {}

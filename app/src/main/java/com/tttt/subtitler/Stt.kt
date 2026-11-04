@@ -37,7 +37,7 @@ object WhisperStt : SttEngine {
     override val id = "whisper"
     // (v420) كل خانة تفريغ ليها context مستقل من نفس الملف (الأوزان بتتكرر في الرام: base ~60MB · small ~185MB؛ medium خانة واحدة بس)
     private val ctxs = LongArray(Offline.MAX_PAR)
-    @Volatile private var ctxFile = ""
+    private val ctxFiles = Array(Offline.MAX_PAR) { "" }   // (v742) الملف اللي كل خانة محمّلاه: تبديل الموديل بيحرر خانة الخيط ده بس (قبل كده prepare() كان بيحرر كل الخانات وفي خانة تانية شغّالة ← كراش native)
     private fun slot(): Int = (Offline.slotTl.get() ?: 0).coerceIn(0, Offline.MAX_PAR - 1)
 
     override fun supported() = WhisperLib.loaded
@@ -47,12 +47,13 @@ object WhisperStt : SttEngine {
     @Synchronized
     override fun prepare(log: (String) -> Unit) {
         val f = Offline.file() ?: throw SttInitFail("مفيش مساحة تخزين")
-        if (ctxFile != f.path) { releaseAll() }
+        try { WhisperLib.nVad(Offline.vadPath()) } catch (_: Throwable) {}   // (v748) VAD: يتخطّى الصمت (أسرع)
         val s = slot()
+        if (ctxs[s] != 0L && ctxFiles[s] != f.path) { WhisperLib.nFree(ctxs[s]); ctxs[s] = 0L; ctxFiles[s] = "" }   // الخانة دي بتاعة الخيط ده لوحده (acquireSlot) — آمن
         if (ctxs[s] == 0L) {
             val t0 = System.currentTimeMillis()
             Offline.loadBegin(Offline.model().id, Offline.model().approxMb)   // (v700) مؤشر تحميل الموديل
-            try { ctxs[s] = WhisperLib.nInit(f.path); ctxFile = f.path } finally { Offline.loadEnd(ctxs[s] != 0L) }
+            try { ctxs[s] = WhisperLib.nInit(f.path); if (ctxs[s] != 0L) ctxFiles[s] = f.path } finally { Offline.loadEnd(ctxs[s] != 0L) }
             if (ctxs[s] == 0L) throw SttInitFail("الموديل ما اتحمّلش")
             log("📴 الأوفلاين: الموديل اتحمّل (خانة ${s + 1}) في ${System.currentTimeMillis() - t0}ms")
         }
@@ -68,8 +69,7 @@ object WhisperStt : SttEngine {
 
     @Synchronized
     private fun releaseAll() {
-        for (i in ctxs.indices) if (ctxs[i] != 0L) { WhisperLib.nFree(ctxs[i]); ctxs[i] = 0L }
-        ctxFile = ""
+        for (i in ctxs.indices) { if (ctxs[i] != 0L) { WhisperLib.nFree(ctxs[i]); ctxs[i] = 0L }; ctxFiles[i] = "" }
     }
 
     /** بيتنده من Offline.releaseSafe تحت قفل الكتابة (مفيش تفريغ شغّال) */

@@ -85,7 +85,7 @@ class PcmSink(expectedSec: Double = 60.0, private val outRate: Int = 16000) {
     private fun closeWindow() {
         if (winN == 0) return
         val rms = Math.sqrt(winSq / winN)
-        winTotal++; if (rms > 0.012) winActive++
+        winTotal++; if (rms > 0.005) winActive++   // (v743) كان 0.012: كلام واطي (قبل التضخيم) كان بيتعدّ صمت
         winN = 0; winSq = 0.0
     }
 
@@ -184,7 +184,7 @@ class PcmSink(expectedSec: Double = 60.0, private val outRate: Int = 16000) {
         val out = ByteArray(44 + pcm)
         System.arraycopy(Wav.header(pcm, outRate), 0, out, 0, 44)
         System.arraycopy(buf, 0, out, 44, pcm)
-        val silent = winTotal > 0 && winActive.toDouble() / winTotal < 0.06
+        val silent = winTotal > 0 && winActive.toDouble() / winTotal < 0.04   // (v743) كان 0.06
         return WavChunk(out, startSec, (pcm / 2).toDouble() / outRate, silent, appliedGain)
     }
 }

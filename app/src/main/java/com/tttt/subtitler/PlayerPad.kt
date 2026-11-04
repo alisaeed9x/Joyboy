@@ -331,6 +331,32 @@ object PlayerPad {
                     }.also { it.isDaemon = true }.start()
                 }
             }
+            // ── (v746) ترجمة أونلاين / متصفح / ضبط توقيت تلقائي ──
+            fun sheetSites() = sheet("🌐 موقع الترجمة") { body, _, close ->
+                body.addView(label("بيفتح متصفح البرنامج على البحث باسم الفيديو، ودوس «تحميل» على ملف الترجمة (أو ZIP) وهيتضاف علطول", 12.5f, cDim, false), lp(-1, -2).apply { topMargin = dp(6) })
+                SubHunt.siteNames.forEachIndexed { i, n -> opt(body, n) { go("subhunt:$i"); note("🌐 بيفتح المتصفح على التلفزيون…"); close() } }
+            }
+            fun fetchFromPhone() {
+                if (!(LinkSession.mirror.live && LinkSession.mirror.gotFirst)) { note("شغّل فيديو على التلفزيون الأول"); return }
+                val vn = st.optString("vname", ""); val vf = st.optString("vfolder", "")
+                if (vn.isBlank()) { note("مش عارف اسم الفيديو"); return }
+                note("⏳ بدوّر من الموبايل…")
+                Thread {
+                    try {
+                        val info = SubName.build(vn, vf); val langs = SubOnline.prefLangs()
+                        val rep: (String) -> Unit = { m -> act.runOnUiThread { if (!closed) note(m) } }
+                        var g = SubOnline.cacheFind(act.applicationContext, info, langs)
+                        if (g == null || g.lang != langs[0]) {
+                            val s = SubOnline.Session(info, langs, SubOnline.search(info, langs, rep))
+                            val g2 = SubOnline.fetchNext(act.applicationContext, s, rep)
+                            if (g2 != null) g = g2
+                        }
+                        if (g == null) { act.runOnUiThread { if (!closed) note("⚠ مالقيتش ترجمة — جرّب المتصفح") }; return@Thread }
+                        val err = SubPick.upload(g.fileName, g.text, true)
+                        act.runOnUiThread { if (!closed) note(if (err.isEmpty()) "✅ اتبعتت للتلفزيون: " + g.source.take(40) else "⚠ $err") }
+                    } catch (e: Throwable) { LogStore.err("PlayerPad:fetch", e); act.runOnUiThread { if (!closed) note("⚠ فشل البحث من الموبايل") } }
+                }.also { it.isDaemon = true }.start()
+            }
             fun sheetSubFile() = sheet("📄 ترجمة ملف الترجمة") { body, _, close ->
                 val live = LinkSession.mirror.live && LinkSession.mirror.gotFirst
                 val side = st.optString("sf_side", ""); val nat = st.optInt("sf_nat", 0); val busy = st.optString("sf_busy", ""); val mob = st.optString("sf_mob", "")
@@ -346,6 +372,12 @@ object PlayerPad {
                     if (side.isBlank() && nat <= 0) note("مفيش ملف ترجمة مرفق مع الفيديو ده")
                     else { close(); openSfSettings("side", if (side.isNotBlank()) "📄 ملف الترجمة المرفق: «$side»" else "📄 ترجمة الفيديو الأصلية ($nat مسار)") }
                 }
+                grp(body, "من النت (من غير مفتاح)")
+                opt(body, "🌍 جيب ترجمة أونلاين تلقائي (باسم الفيديو/الفولدر)") { go("subnet:auto"); note("⏳ بدأ البحث على التلفزيون…"); close() }
+                if (st.optInt("net_more", 0) > 0) opt(body, "⏭ جرّب نتيجة تانية (" + st.optInt("net_more", 0) + " متبقية)") { go("subnet:next"); close() }
+                opt(body, "📱 ابحث من الموبايل (لو التلفزيون مفيهوش نت)") { close(); fetchFromPhone() }
+                opt(body, "🌐 افتح المتصفح على موقع ترجمة (بحث + sub file)") { close(); sheetSites() }
+                opt(body, "🎯 ضبط توقيت الترجمة تلقائي") { go("subalign"); note("🎯 بسمع الفيديو بجيميناي…"); close() }
                 grp(body, "من الموبايل")
                 opt(body, "📂 اختار ملف ترجمة من الموبايل (SRT / ASS / VTT)") { close(); pickSubFromPhone() }
                 if (mob.isNotBlank()) opt(body, "📄 ترجم الملف المستورد «$mob»") { close(); openSfSettings("mobile", "📄 الملف المستورد: «$mob»") }
@@ -362,19 +394,13 @@ object PlayerPad {
                     opt(body, "🔁 ترجم من الأول وجديد (القديمة تتحفظ)") { go("tr_fresh"); close() }
                 }
                 if (!started) {
-                    grp(body, "🎧 من الصوت مباشرة — أدق · محتاج نت")
-                    opt(body, "⭐ FreeLLM · جيميناي بكل مفاتيحك") { go("tr_free"); close() }
-                    grp(body, "🌗 على الجهاز — وشبر يفرّغ وبعدين مترجم (اختار الوضع)")
-                    opt(body, (if (wtSel == "free") "✓ " else "") + "🆓 وضع 1: وشبر + FreeLLM — لهجات وعربي أدق") { wtSel = "free"; go("wtr:free"); redo() }
-                    opt(body, (if (wtSel == "google") "✓ " else "") + "🌐 وضع 2: وشبر + مترجم عادي — فصحى") { wtSel = "google"; go("wtr:google"); redo() }
-                    opt(body, "▶ ابدأ وشبر بالوضع المختار") { go("tr_whisper"); close() }
+                    grp(body, "🔤 ترجمة")
+                    opt(body, "☁ جيميناي — اختار ٧٥/٢٥ أو السماع الأدق") { go("tr_gem"); close() }
+                    opt(body, "📴 وشبر + ترجمة أوفلاين (HY-MT1.5 · فصحى)") { go("tr_whisper"); close() }
                     grp(body, "✍ تفريغ بس (من غير ترجمة)")
                     opt(body, "☁ بجيميناي (من الصوت)") { go("tr_gtx"); close() }
                     opt(body, "📴 على الجهاز بوشبر") { go("tr_wtx"); close() }
                 } else {
-                    grp(body, "🌗 مترجم وضع وشبر (من الباتش الجاي)")
-                    opt(body, (if (wtSel == "free") "✓ " else "") + "🆓 وشبر + FreeLLM (لهجات)") { wtSel = "free"; go("wtr:free"); redo() }
-                    opt(body, (if (wtSel == "google") "✓ " else "") + "🌐 وشبر + مترجم عادي (فصحى)") { wtSel = "google"; go("wtr:google"); redo() }
                     opt(body, if (paused) "▶ كمّل الترجمة" else "⏸ إيقاف مؤقت") { go(if (paused) "tr_resume" else "tr_pause"); close() }
                     opt(body, "🔀 غيّر الوضع (بيفتح على التلفزيون)") { go("tr_wiz"); close() }
                     opt(body, "🌙 كمّل الترجمة في الخلفية") { go("tr_bg"); close() }
@@ -521,6 +547,7 @@ object PlayerPad {
             val bodySync = newBody()
             val timeTv = stepRow(bodySync, { go("shift", -250L) }, { go("shift", 250L) })
             bodySync.addView(btn("⟲ تصفير فرق التوقيت", 13f) { go("shift0") }, lp(-1, dp(44)).apply { topMargin = dp(6) })
+            bodySync.addView(btn("🎯 ضبط توقيت الترجمة تلقائي", 13f, 0xFF2E7D32.toInt(), 0xFF43A047.toInt()) { go("subalign"); note("🎯 بسمع الفيديو بجيميناي…") }, lp(-1, dp(46)).apply { topMargin = dp(6) })
             val abTv = label("حلقة A-B: مش متحددة", 12f, cDim, false)
             bodySync.addView(abTv, lp(-1, -2).apply { topMargin = dp(10) })
             grid(bodySync, kotlin.collections.listOf(btn("🅰 نقطة أ", 12.5f) { go("ab_a") }, btn("🅱 نقطة ب", 12.5f) { go("ab_b") }, btn("✖ إلغاء", 12.5f) { go("ab_x") }), 3, 46)

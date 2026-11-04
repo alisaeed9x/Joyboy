@@ -14,6 +14,8 @@ object WhisperLib {
     init { try { System.loadLibrary("subwhisper"); loaded = true } catch (_: Throwable) {} }
     @JvmStatic external fun nInit(path: String): Long
     @JvmStatic external fun nFree(h: Long)
+    /** (v748) مسار موديل VAD (Silero) أو "" لإيقافه — بيتطبّق على التفريغات الجاية */
+    @JvmStatic external fun nVad(path: String)
     @JvmStatic external fun nProgress(): Int   // (v415) تقدم التفريغ الحالي 0..100
     @JvmStatic external fun nRun(h: Long, pcm: FloatArray, threads: Int, lang: String, prompt: String, slot: Int): ByteArray   // (v420) slot: خانة التفريغ المتوازي
 }
@@ -26,9 +28,9 @@ object WhisperLib {
 object Offline {
     class Model(val id: String, val label: String, val file: String, val approxMb: Int, val note: String)
     val models = listOf(
-        Model("tiny", "🚀 tiny", "ggml-tiny-q5_1.bin", 31, "الأسرع بكتير — دقة أقل بوضوح، للكلام الواضح بس"),
-        Model("base", "⚡ base", "ggml-base-q5_1.bin", 60, "الأسرع — دقة أقل، مناسب لكلام واضح"),
-        Model("small", "⚖ small", "ggml-small-q5_1.bin", 185, "متوازن (الافتراضي)"),
+        Model("tiny", "🚀 tiny", "ggml-tiny-q5_1.bin", 31, "الأسرع بكتير — ضعيف في غير الإنجليزي (ياباني/كوري/عربي…) وبيكرر كلام. للإنجليزي الواضح بس"),
+        Model("base", "⚡ base", "ggml-base-q5_1.bin", 60, "⭐ الأساسي (v748) — سريع وخفيف. ضعيف في غير الإنجليزي (ياباني/كوري/عربي…): للغات التانية اختار small"),
+        Model("small", "⚖ small", "ggml-small-q5_1.bin", 185, "أدق ومتوازن في كل اللغات — أبطأ من base بحوالي 3 أضعاف"),
         Model("medium", "🎯 medium", "ggml-medium-q5_0.bin", 520, "الأدق — بطيء وبياخد رام كتير (~1.5GB)، مش لأي موبايل"),
         Model("turbo", "🏆 large-v3-turbo", "ggml-large-v3-turbo-q5_0.bin", 547, "(v696) الأقوى للياباني والإنجليزي — أسرع من medium بكتير (~574MB ملف). مفيش تفريغ متوازي معاه")
     )
@@ -40,7 +42,18 @@ object Offline {
     @Volatile var dir: File? = null   // بيتظبط من Cfg.init
     /** (v271) مكان الموديلات القديم (filesDir) — بنقرا منه لو الموديل لسه مانتقلش، وبينتقل لوحده في الخلفية */
     @Volatile var legacy: File? = null
-    fun model(): Model = models.firstOrNull { it.id == Cfg.str("off_model", "small") } ?: models[1]
+    /** (v742) small هو الأساسي: الافتراضي والبديل لو الاختيار مجهول. مرة واحدة بس (علم off_small_primary) أي إعداد قديم على tiny/base بيتحوّل لـ small؛ بعدها اختيارك يتحترم */
+    fun model(): Model {
+        var id = Cfg.str("off_model", "base")
+        // (v748) base هو الأساسي: مرة واحدة بس (علم off_base_primary) small بيتحوّل لـ base؛ بعدها اختيارك (حتى small) بيتحترم. (v742 كان العكس — العلم القديم بيتقفل هنا)
+        if (Cfg.str("off_base_primary", "") != "1") {
+            try {
+                Cfg.put("off_base_primary", "1"); Cfg.put("off_small_primary", "1")
+                if (id == "small") { Cfg.put("off_model", "base"); Cfg.put("tr_s_model", "base"); id = "base" }
+            } catch (_: Throwable) {}
+        }
+        return models.firstOrNull { it.id == id } ?: models.first { it.id == "base" }
+    }
     /** (v271) الملف الكامل لو موجود في أي مكان (الجديد الأول)، وإلا مساره في المكان الجديد (للتنزيل) */
     fun pick(rel: String, minBytes: Long): File? {
         ModelStore.resolve(rel)?.let { f -> if (f.isFile && f.length() > minBytes) return f }   // (v696) ملف اتختار من الموبايل (SAF) — بيتفتح من غير نسخ
@@ -52,6 +65,23 @@ object Offline {
     }
     /** (v271) كل الأماكن اللي ممكن الموديل يكون فيها (للمسح) */
     fun roots(): List<File> = listOfNotNull(dir, legacy).distinctBy { it.path }
+    // ===== (v748) VAD (Silero) — ملف صغير (~0.9 ميجا) بيتنزّل لوحده في الخلفية؛ لو مش موجود التفريغ بيشتغل زي الأول =====
+    private const val VAD_REL = "whisper/ggml-silero-v5.1.2.bin"
+    private const val VAD_URL = "https://huggingface.co/ggml-org/whisper-vad/resolve/main/ggml-silero-v5.1.2.bin"
+    @Volatile private var vadTry = 0L
+    fun vadOn(): Boolean = Cfg.bool("stt_vad", true)
+    /** مسار موديل VAD لو موجود وشغّال، وإلا "" (وبيحاول ينزّله في الخلفية كل 10 دقايق) */
+    fun vadPath(): String {
+        if (!vadOn()) return ""
+        val f = pick(VAD_REL, 500_000L)
+        if (f != null && f.isFile && f.length() > 500_000L) return f.path
+        val now = System.currentTimeMillis()
+        if (f != null && now - vadTry > 600_000L) {
+            vadTry = now
+            Thread { try { fetch(VAD_URL, f, 500_000L) { _, _ -> } } catch (_: Throwable) {} }.also { it.isDaemon = true; it.start() }
+        }
+        return ""
+    }
     fun file(m: Model = model()): File? = pick("whisper/" + m.file, m.approxMb * 600_000L)
     fun downloaded(m: Model = model()): Boolean = file(m)?.let { it.isFile && it.length() > m.approxMb * 600_000L } ?: false
     /** (v698) الموبايل وهو بيفرّغ لصالح التلفزيون بيستخدم لغة التلفزيون اليدوية (على الخيط ده بس) */

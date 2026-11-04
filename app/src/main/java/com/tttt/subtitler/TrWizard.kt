@@ -158,7 +158,7 @@ object TrWizard {
     fun savedPlan(): Plan? {
         if (!saved()) return null
         return when (Cfg.str("tr_mode", "")) {
-            "offline" -> Plan("offline", "", Cfg.str("tr_s_lang", ""), Cfg.str("tr_s_model", "small").ifBlank { "small" }, if (Cfg.str("tr_s_method", "gemini") == "google") "google" else "gemini", if (Cfg.str("tr_s_engine", "whisper") == "sherpa") "sherpa" else "whisper", Cfg.str("tr_s_dialect", ""), Cfg.bool("tr_s_live", false), free = Cfg.str("tr_s_free", ""), only = Cfg.bool("tr_s_only", false), conv = Cfg.str("tr_s_conv", ""))
+            "offline" -> Plan("offline", "", Cfg.str("tr_s_lang", ""), Cfg.str("tr_s_model", "base").ifBlank { "base" }, if (Cfg.str("tr_s_method", "gemini") == "google") "google" else "gemini", if (Cfg.str("tr_s_engine", "whisper") == "sherpa") "sherpa" else "whisper", Cfg.str("tr_s_dialect", ""), Cfg.bool("tr_s_live", false), free = Cfg.str("tr_s_free", ""), only = Cfg.bool("tr_s_only", false), conv = Cfg.str("tr_s_conv", ""))
             "online" -> Plan("online", Cfg.str("tr_online", CURRENT).ifBlank { CURRENT }, "", "", "gemini", ext = Cfg.str("tr_online_ext", ""), dia = Cfg.str("tr_online_dia", "-").let { if (it == "-") null else it }, only = Cfg.bool("tr_s_only", false), conv = Cfg.str("tr_s_conv", ""))
             else -> null
         }
@@ -183,7 +183,7 @@ object TrWizard {
                 val flName: String = com.tttt.subtitler.FreeLlm.liveName()   // (v447) برّه الـ when عشان السطر الطويل مابيحلّش المرجع
                 val base = when (id) {
                     "g_wav" -> (if (pl.only) "✍ تفريغ ذكاء صناعي" else "☁ أونلاين · WAV"); "g_aac" -> (if (pl.only) "✍ تفريغ ذكاء صناعي" else "☁ أونلاين · AAC")
-                    "loc_google" -> (if (pl.only) "✍ تفريغ Whisper" else "🌗 وشبر + 🌐 LibreTranslate"); "loc_mt" -> (if (pl.only) "✍ تفريغ Whisper" else "📴 أوفلاين كامل · وشبر + Hy-MT2"); "loc_free" -> "🌗 وشبر + 🆓 FreeLLM · " + flName; "f_gem" -> "🆓 FreeLLM · " + flName
+                    "loc_google" -> (if (pl.only) "✍ تفريغ Whisper" else "🌗 وشبر + 🌐 LibreTranslate"); "loc_mt" -> (if (pl.only) "✍ تفريغ Whisper" else "📴 أوفلاين كامل · وشبر + HY-MT1.5"); "loc_free" -> "🌗 وشبر + 🆓 FreeLLM · " + flName; "f_gem" -> "🆓 FreeLLM · " + flName
                     "ai_only" -> "✍ تفريغ ذكاء صناعي"; "w_only" -> "✍ تفريغ Whisper"; "s_only" -> "✍ تفريغ SenseVoice"
                     else -> if (pl.only) "✍ تفريغ بس" else if (pl.offline) "📴 أوفلاين" else if (pl.cloud) "☁ محرك خارجي" else "☁ أونلاين"
                 }
@@ -433,7 +433,7 @@ object TrWizard {
             note(if (cur.isBlank()) "اختار وضع من التلاتة." else "الحالي: $cur")
             opt("☁ ترجمة بجيميناي", "٧٥٪ من مفاتيحك بتنسخ الكلام (مع مصدر الصوت وشرح المصطلحات والتلميحات فوق) و٢٥٪ بتترجم بالسياق · لهجات + أسلوب + شدة + ضمائر + شخصيات · محتاج مفتاح ونت", mId == "g_wav" || mId == "g_aac") { go { stepOnlineQ() } }
             opt("🌗 أوفلاين — وشبر + LibreTranslate  🔒 من غير مفتاح", "التفريغ بوشبر على جهازك والترجمة بـ LibreTranslate (لو وقف بيكمّل Microsoft Edge) · فصحى بس · جيميناي ممنوع · الترجمة محتاجة نت · اللغة بتتكشف لوحدها", mId == Strict.SEMI) { pickMode(Strict.SEMI) }
-            opt("📴 أوفلاين كامل  🔒 من غير نت ولا مفاتيح", "التفريغ بوشبر turbo والترجمة بـ Hy-MT2 على جهازك · فصحى بس · مفيش لهجات ولا أسلوب · محتاج الموديلات متنزّلة مرة واحدة (~1.7 جيجا) · الأول تفريغ وبعدين ترجمة", mId == Strict.MT) { pickMode(Strict.MT) }
+            opt("📴 أوفلاين كامل  🔒 من غير نت ولا مفاتيح", "التفريغ بوشبر turbo والترجمة بـ HY-MT1.5 على جهازك · فصحى بس · مفيش لهجات ولا أسلوب · محتاج الموديلات متنزّلة مرة واحدة (~1.7 جيجا) · الأول تفريغ وبعدين ترجمة", mId == Strict.MT) { pickMode(Strict.MT) }
             sec("✍ تفريغ بس (من غير ترجمة)")
             opt("☁ تفريغ بجيميناي", "النص بيظهر بلغته الأصلية · محتاج مفتاح ونت", mId == "ai_only") { pickMode("ai_only") }
             opt("📴 تفريغ أوفلاين بوشبر", "النص بيظهر بلغته الأصلية · من غير مفتاح ولا نت (النت بس لتنزيل الموديل مرة واحدة)", mId == "w_only") { pickMode("w_only") }
@@ -483,8 +483,8 @@ object TrWizard {
             }
             val fastEng = "whisper"
             opt("⚡ لحظي", "الأسرع: باتشات قصيرة (20-30ث) وكل باتش يتفرّغ يتترجم فورًا بجوجل. " + "Whisper base (~60 ميجا).", live && presetFlow && method == "google") { pick(fastEng, "base", "google", true, "") }
-            opt("⚖ متوازن", "Whisper small + ترجمة جوجل كل 3 دقايق.", false) { pick("whisper", "small", "google", false, "") }
-            if (free.isBlank()) opt("🎯 دقيق", "Whisper small + ترجمة جيميناي بالسياق (ضمائر وأجناس أدق).", false) { pick("whisper", "small", "gemini", false, TrWizard.dialectWanted()) }
+            opt("⚖ متوازن", "Whisper base + ترجمة جوجل كل 3 دقايق.", false) { pick("whisper", "base", "google", false, "") }
+            if (free.isBlank()) opt("🎯 دقيق", "Whisper base + ترجمة جيميناي بالسياق (ضمائر وأجناس أدق).", false) { pick("whisper", "base", "gemini", false, TrWizard.dialectWanted()) }
             opt("✏ مخصص", "اختار اللغة والمحرك والموديل والترجمة واللهجة بنفسك.", false) { presetFlow = false; live = false; go { stepLang() } }
             addBack()
         }
@@ -600,7 +600,7 @@ object TrWizard {
 
         /** (v700) اختيار موديل الترجمة Hy-MT2 (Q4 / Q6) + حالته وتنزيله — بيظهر بعد اختيار موديل وشبر في «أوفلاين كامل» */
         fun stepMt() {
-            reset("🌍 موديل الترجمة (Hy-MT2)")
+            reset("🌍 موديل الترجمة (HY-MT1.5)")
             note("الترجمة بتتم على جهازك بالموديل ده. اختار النسخة، ونزّلها مرة واحدة لو مش موجودة (أو اختار الملف من الإعدادات ← 📦 الموديلات الأوفلاين).")
             val st = ui.text("", 13f, th.text).apply { setLineSpacing(0f, 1.15f); setPadding(0, ui.dp(8), 0, ui.dp(2)) }
             val pr = ui.text("", 12f, th.muted)
@@ -610,12 +610,13 @@ object TrWizard {
                 val m = cur(); val have = LocalMt.downloaded(m)
                 st.text = when {
                     !LocalMt.supported() -> "⛔ مكتبة الترجمة على الجهاز مش متاحة"
+                    !LocalMt.usable(m) -> "⛔ النسخة الصغيرة (1.25-bit) محتاجة بيلد خاص (JOY_STQ=1) — النسخة دي من غيره. اختار 1.8B العادية."
                     have -> "✅ الموديل موجود وجاهز — " + m.note
                     Offline.downloading() -> "⏳ بينزّل…"
                     else -> "⬇ مش موجود (~" + m.approxMb + " ميجا) — " + m.note
                 }
                 dl.text = if (Offline.downloading()) "⏹ إلغاء التنزيل" else if (have) "✓ الموديل موجود" else "⬇ تنزيل (~" + m.approxMb + " ميجا)"
-                dl.isEnabled = LocalMt.supported() && (Offline.downloading() || !have)
+                dl.isEnabled = LocalMt.usable(m) && (Offline.downloading() || !have)
             }
             dl.setOnClickListener {
                 val m = cur()
@@ -636,6 +637,7 @@ object TrWizard {
             refresh()
             footBtn("التالي ←", true) {
                 if (!LocalMt.supported()) Notice.show(act, "مكتبة الترجمة مش متاحة على جهازك", 2500L)
+                else if (!LocalMt.usable(cur())) Notice.show(act, "النسخة الصغيرة محتاجة بيلد خاص — اختار 1.8B", 3000L)
                 else if (!LocalMt.downloaded(cur()) && !Offload.wanted()) Notice.show(act, "نزّل موديل الترجمة الأول", 2500L)
                 else afterModePick()
             }
@@ -820,29 +822,29 @@ object TrWizard {
             QP("acc", "🎯 دقيق", "جيميناي يسمع ويترجم: مقاطع 30ث + تنقيح + أصوات الخلفية. أدق نتيجة وبياكل كوتا عالية.") { src = "gemini"; gp = "accurate"; true },
             QP("fast", "⚡ سريع", "جيميناي بكل المفاتيح بالتوازي، مقاطع 90ث من غير تنقيح. بياكل كوتا عالية.") { src = "gemini"; gp = "fast"; true },
             QP("full", "👁 شاملة", "صوت بدقة + تنقيح + الوضع البصري للنص اللي في الصورة (بمفتاح الوضع البصري).") { src = "gemini"; gp = "full"; true },
-            QP("ctx", "📝 محلي + سياق", "Whisper small على جهازك يفرّغ، وجيميناي يترجم بالسياق (ضمائر وأجناس أدق). كوتا نص بس — أقل بكتير من الصوت.") { useLocal("small", false); tr = "gemini"; true },
-            QP("only", "✍ تفريغ بس", "النص الأصلي يظهر على طول من غير أي ترجمة. تفريغ على جهازك — من غير كوتا خالص.") { useLocal("small", false); tr = "none"; true }
+            QP("ctx", "📝 محلي + سياق", "Whisper base على جهازك يفرّغ، وجيميناي يترجم بالسياق (ضمائر وأجناس أدق). كوتا نص بس — أقل بكتير من الصوت.") { useLocal("base", false); tr = "gemini"; true },
+            QP("only", "✍ تفريغ بس", "النص الأصلي يظهر على طول من غير أي ترجمة. تفريغ على جهازك — من غير كوتا خالص.") { useLocal("base", false); tr = "none"; true }
         ) else listOf(
-            QP("free", "💰 مجاني بالكامل", "تفريغ على الجهاز + ترجمة جوجل من غير مفتاح ولا كوتة. فصحى.") { useLocal("small", false); tr = "google"; dia = ""; diaSet = true; true },
-            QP("freeDia", "🗣 مجاني + لهجة", "نفس المجاني، وبعدها اللهجة بتتحوّل بجيميناي (نص بس، كوتا قليلة جدًا).") { useLocal("small", false); tr = "google"; dia = TrWizard.dialectWanted().ifBlank { "مصري" }; diaSet = true; convId = ""; true },
+            QP("free", "💰 مجاني بالكامل", "تفريغ على الجهاز + ترجمة جوجل من غير مفتاح ولا كوتة. فصحى.") { useLocal("base", false); tr = "google"; dia = ""; diaSet = true; true },
+            QP("freeDia", "🗣 مجاني + لهجة", "نفس المجاني، وبعدها اللهجة بتتحوّل بجيميناي (نص بس، كوتا قليلة جدًا).") { useLocal("base", false); tr = "google"; dia = TrWizard.dialectWanted().ifBlank { "مصري" }; diaSet = true; convId = ""; true },
             QP("live", "⚡ لحظي", "باتشات قصيرة، وكل باتش يتفرّغ ويتترجم فورًا بجوجل. من غير كوتا.") { useLocal("base", true); tr = "google"; live = true; dia = ""; diaSet = true; true },
-            QP("repo", "🌐 مترجم الريبو", "تفريغ على الجهاز + Microsoft Edge Translate (من غير مفتاح ولا حد يومي معلن).") { useLocal("small", false); tr = "free"; trId = "msedge"; dia = ""; diaSet = true; true },
-            QP("only", "✍ تفريغ بس", "النص الأصلي يظهر على طول من غير أي ترجمة. تفريغ على جهازك — من غير كوتا.") { useLocal("small", false); tr = "none"; true }
+            QP("repo", "🌐 مترجم الريبو", "تفريغ على الجهاز + Microsoft Edge Translate (من غير مفتاح ولا حد يومي معلن).") { useLocal("base", false); tr = "free"; trId = "msedge"; dia = ""; diaSet = true; true },
+            QP("only", "✍ تفريغ بس", "النص الأصلي يظهر على طول من غير أي ترجمة. تفريغ على جهازك — من غير كوتا.") { useLocal("base", false); tr = "none"; true }
         )
 
         /** (v287) ترتيب البريستات بالنتيجة: الجاهز على جهازك الأول (موديل نازل / مفتاح موجود)، والناقص آخر الصف بسبب مكتوب. الترتيب الأصلي بيكسر التعادل */
         fun qScore(id: String): Pair<Int, String> {
-            val localOk = try { WhisperLib.loaded && Offline.downloaded(Offline.models.firstOrNull { it.id == "small" } ?: Offline.model()) } catch (_: Throwable) { false }
+            val localOk = try { WhisperLib.loaded && Offline.downloaded(Offline.models.firstOrNull { it.id == "base" } ?: Offline.model()) } catch (_: Throwable) { false }
             val baseOk = try { WhisperLib.loaded && Offline.downloaded(Offline.models.firstOrNull { it.id == "base" } ?: Offline.model()) } catch (_: Throwable) { false }
             val gem = TrWizard.hasGeminiKey()
             return when (id) {
                 "acc", "fast", "full" -> if (gem) 100 to "" else 20 to "محتاج مفتاح جيميناي"
-                "ctx" -> if (!gem) 20 to "محتاج مفتاح جيميناي" else if (!localOk) 60 to "هتنزّل Whisper small" else 100 to ""
-                "free" -> if (localOk) 100 to "" else 60 to "هتنزّل Whisper small"
-                "freeDia" -> if (!localOk) 60 to "هتنزّل Whisper small" else if (gem) 90 to "" else 70 to "اللهجة محتاجة مفتاح جيميناي"
+                "ctx" -> if (!gem) 20 to "محتاج مفتاح جيميناي" else if (!localOk) 60 to "هتنزّل Whisper base" else 100 to ""
+                "free" -> if (localOk) 100 to "" else 60 to "هتنزّل Whisper base"
+                "freeDia" -> if (!localOk) 60 to "هتنزّل Whisper base" else if (gem) 90 to "" else 70 to "اللهجة محتاجة مفتاح جيميناي"
                 "live" -> if (baseOk) 100 to "" else 60 to "هتنزّل موديل التفريغ"
-                "repo" -> if (localOk) 95 to "" else 60 to "هتنزّل Whisper small"
-                "only" -> if (localOk) 90 to "" else 60 to "هتنزّل Whisper small"
+                "repo" -> if (localOk) 95 to "" else 60 to "هتنزّل Whisper base"
+                "only" -> if (localOk) 90 to "" else 60 to "هتنزّل Whisper base"
                 else -> 50 to ""
             }
         }

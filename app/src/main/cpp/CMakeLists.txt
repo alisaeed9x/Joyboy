@@ -5,6 +5,10 @@ project(subwhisper LANGUAGES C CXX)
 # فوق نفس الـggml. قبل كده كانوا هيتبنوا بنسختين ggml متضاربتين. الاتنين جوه نفس المكتبة subwhisper (jni.cpp + llm_jni.cpp).
 # التوافق اتفحص syntax-level على جهاز التطوير (whisper v1.9.5 فوق headers بتاعة llama b12034) — لسه ما اتعملش بناء أندرويد حقيقي.
 
+# (v747) خيار بيلد خاص: JOY_STQ=ON ← llama.cpp من PR #22836 (kernel STQ1_0 بتاع Tencent) عشان موديل HY-MT1.5 1.25-bit (~440 ميجا) يشتغل.
+# الافتراضي OFF: نفس llama.cpp المثبّت (b12034) والموديل الصغير مش هيتحمّل. لسه ما اتجرّبش بيلد الخيار ده (ممكن يحتاج تعديل في llm_jni.cpp لو الـAPI اختلف).
+option(JOY_STQ "Build llama.cpp from the STQ1_0 PR (1.25-bit HY-MT)" OFF)
+
 # مكتبة صغيرة فاضية على كل المعماريات عشان الـAPK يتثبّت على أي جهاز (زي v572)
 add_library(subabi SHARED stub.cpp)
 
@@ -25,10 +29,17 @@ if(ANDROID_ABI STREQUAL "arm64-v8a")
     set(LLAMA_OPENSSL OFF CACHE BOOL "" FORCE)
     set(LLAMA_BUILD_IS_DEV OFF CACHE BOOL "" FORCE)
 
-    FetchContent_Declare(llama_src
-        GIT_REPOSITORY https://github.com/ggml-org/llama.cpp.git
-        GIT_TAG b12034
-        GIT_SHALLOW TRUE)
+    if(JOY_STQ)
+        FetchContent_Declare(llama_src
+            GIT_REPOSITORY https://github.com/ggml-org/llama.cpp.git
+            GIT_TAG refs/pull/22836/head
+            GIT_SHALLOW FALSE)
+    else()
+        FetchContent_Declare(llama_src
+            GIT_REPOSITORY https://github.com/ggml-org/llama.cpp.git
+            GIT_TAG b12034
+            GIT_SHALLOW TRUE)
+    endif()
     FetchContent_Declare(whisper_src
         GIT_REPOSITORY https://github.com/ggml-org/whisper.cpp.git
         GIT_TAG v1.9.5
@@ -52,4 +63,7 @@ if(ANDROID_ABI STREQUAL "arm64-v8a")
     add_library(subwhisper SHARED jni.cpp llm_jni.cpp)
     target_compile_features(subwhisper PRIVATE cxx_std_17)
     target_link_libraries(subwhisper whisper_core llama log)
+    if(JOY_STQ)
+        target_compile_definitions(subwhisper PRIVATE JOY_STQ=1)
+    endif()
 endif()

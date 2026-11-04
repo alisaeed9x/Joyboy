@@ -45,6 +45,15 @@ JNIEXPORT jlong JNICALL Java_com_tttt_subtitler_LlmLib_nInit(JNIEnv *env, jclass
     return reinterpret_cast<jlong>(h);
 }
 
+// (v747) البيلد ده فيه kernel STQ1_0 (موديل 1.25-bit)؟
+JNIEXPORT jboolean JNICALL Java_com_tttt_subtitler_LlmLib_nStq(JNIEnv *, jclass) {
+#ifdef JOY_STQ
+    return JNI_TRUE;
+#else
+    return JNI_FALSE;
+#endif
+}
+
 JNIEXPORT void JNICALL Java_com_tttt_subtitler_LlmLib_nFree(JNIEnv *, jclass, jlong hh) {
     auto *h = reinterpret_cast<LlmH *>(hh);
     if (!h) return;
@@ -95,6 +104,75 @@ JNIEXPORT jbyteArray JNICALL Java_com_tttt_subtitler_LlmLib_nTranslate(JNIEnv *e
 
                 bool fail = false;
                 // البرومبت على دفعات n_batch
+                for (int i = 0; i < nt && !fail; i += 512) {
+                    int c = std::min(512, nt - i);
+                    llama_batch b = llama_batch_get_one(toks.data() + i, c);
+                    if (llama_decode(h->ctx, b) != 0) fail = true;
+                }
+                if (fail) {
+                    out = err("decode-prompt");
+                } else {
+                    for (int k = 0; k < budget; k++) {
+                        llama_token t = llama_sampler_sample(smpl, h->ctx, -1);
+                        if (llama_vocab_is_eog(h->vocab, t)) break;
+                        char pc[256];
+                        int pl = llama_token_to_piece(h->vocab, t, pc, (int32_t) sizeof(pc), 0, false);
+                        if (pl > 0) out.append(pc, (size_t) pl);
+                        llama_batch b = llama_batch_get_one(&t, 1);
+                        if (llama_decode(h->ctx, b) != 0) { fail = true; break; }
+                    }
+                    if (fail && out.empty()) out = err("decode");
+                }
+                llama_sampler_free(smpl);
+            }
+        }
+    }
+    jbyteArray res = env->NewByteArray((jsize) out.size());
+    env->SetByteArrayRegion(res, 0, (jsize) out.size(), reinterpret_cast<const jbyte *>(out.data()));
+    return res;
+}
+
+// (v744) طريقة SubMaster: رسالة system + user بقالب الموديل نفسه (HY-MT1.5)، وفك حتمي greedy (temp 0 · top-k 1 · من غير repeat penalty).
+// الرد: UTF-8 للناتج بس، أو "ERR\t<سبب>". مستدعي واحد في المرة (القفل في Kotlin).
+JNIEXPORT jbyteArray JNICALL Java_com_tttt_subtitler_LlmLib_nChat(JNIEnv *env, jclass, jlong hh, jstring sys, jstring user, jint threads, jint maxNew) {
+    auto *h = reinterpret_cast<LlmH *>(hh);
+    std::string out;
+    if (!h) {
+        out = err("no-context");
+    } else {
+        const char *su = sys ? env->GetStringUTFChars(sys, nullptr) : nullptr;
+        std::string sysS = su ? su : "";
+        if (su) env->ReleaseStringUTFChars(sys, su);
+        const char *u = env->GetStringUTFChars(user, nullptr);
+        std::string userS = u ? u : "";
+        env->ReleaseStringUTFChars(user, u);
+
+        std::vector<llama_chat_message> msgs;
+        if (!sysS.empty()) msgs.push_back({"system", sysS.c_str()});
+        msgs.push_back({"user", userS.c_str()});
+        const char *tmpl = "hunyuan-dense";
+        std::vector<char> buf((sysS.size() + userS.size()) * 2 + 512);
+        int n = llama_chat_apply_template(tmpl, msgs.data(), msgs.size(), true, buf.data(), (int32_t) buf.size());
+        if (n > (int) buf.size()) { buf.resize(n + 16); n = llama_chat_apply_template(tmpl, msgs.data(), msgs.size(), true, buf.data(), (int32_t) buf.size()); }
+        if (n < 0) {
+            out = err("chat-template");
+        } else {
+            std::string prompt(buf.data(), (size_t) n);
+            std::vector<llama_token> toks(prompt.size() + 16);
+            int nt = llama_tokenize(h->vocab, prompt.c_str(), (int32_t) prompt.size(), toks.data(), (int32_t) toks.size(), true, true);
+            if (nt < 0) { toks.resize((size_t) -nt); nt = llama_tokenize(h->vocab, prompt.c_str(), (int32_t) prompt.size(), toks.data(), (int32_t) toks.size(), true, true); }
+            if (nt <= 0) {
+                out = err("tokenize");
+            } else if (nt >= h->n_ctx - 8) {
+                out = err("too-long");
+            } else {
+                toks.resize((size_t) nt);
+                int budget = std::min((int) maxNew, h->n_ctx - nt - 4);
+                llama_set_n_threads(h->ctx, threads, threads);
+                llama_memory_clear(llama_get_memory(h->ctx), true);
+                llama_sampler *smpl = llama_sampler_chain_init(llama_sampler_chain_default_params());
+                llama_sampler_chain_add(smpl, llama_sampler_init_greedy());
+                bool fail = false;
                 for (int i = 0; i < nt && !fail; i += 512) {
                     int c = std::min(512, nt - i);
                     llama_batch b = llama_batch_get_one(toks.data() + i, c);

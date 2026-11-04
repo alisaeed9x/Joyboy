@@ -569,8 +569,7 @@ class MainActivity : Activity() {
         val savedPlanTxt = ui.text("", 12f, th.muted)
         fun planRefresh() { savedPlanTxt.text = TrWizard.savedPlan()?.let { "المحفوظ لزرار «▶ ترجمة»: " + TrWizard.describe(it).replace("\n", " · ") } ?: "مفيش إعداد محفوظ لزرار «▶ ترجمة» — بيسألك كل مرة." }
         val planBtn = ui.button("⚙ طريقة الترجمة (نفس زرار ⚙ في المشغّل)") {
-            try { TrWizard.show(this, true) { pl, save, _ -> if (save) { TrWizard.save(pl); planRefresh() } } }
-            catch (e: Throwable) { LogStore.err("Main:trWizard", e); Notice.show(this, "تعذّر فتح شاشة طريقة الترجمة", 2300L) }
+            Notice.show(this, "اختار النظام (جيميناي / وشبر + ترجمة أوفلاين) من زرار «▶ ترجم» جوه المشغّل", 3200L)   // (v743) المعالج القديم اتشال
         }
         planRefresh()
         val offLangChips = ui.chips(Offline.langLabels, { Offline.langLabels[Offline.langIds.indexOf(Offline.lang()).coerceAtLeast(0)] }) { val lid = Offline.langIds[Offline.langLabels.indexOf(it).coerceAtLeast(0)]; Cfg.put("stt_lang", lid); TrWizard.syncSaved("stt_lang", lid) ; if (lid == "ar" && Cfg.str("stt_engine", "whisper") == "sherpa") Notice.show(this, "⚠ (v468) SenseVoice (Sherpa) لا يدعم العربية — التفريغ العربي هيتعمل بـ Whisper تلقائيًا", 3200L) }

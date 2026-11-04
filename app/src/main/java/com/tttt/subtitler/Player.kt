@@ -76,7 +76,7 @@ class PlayerActivity : Activity(), Host {
         fun remoteAct(a: String, v: Long): Boolean { val o = live() ?: return false; return onUi(o) { o.rAct(a, v) } == true }
 
         /** (v684) ملف ترجمة جه من الموبايل (TvLink /subup): بيتحفظ ويستنى أمر «ترجم» من الموبايل. false = مفيش مشغّل فيديو شغّال */
-        fun remoteSubImport(f: java.io.File, name: String, cues: Int): Boolean { val o = live() ?: return false; return onUi(o) { o.subImported(f, name, cues) } == true }
+        fun remoteSubImport(f: java.io.File, name: String, cues: Int, show: Boolean = false): Boolean { val o = live() ?: return false; return onUi(o) { o.subImported(f, name, cues, show) } == true }
 
         /** (v694) وصف الفيديو الشغّال (ref/title/pos…) لتحويله للموبايل. null = مفيش مشغّل شغّال */
         fun remoteHandoff(): org.json.JSONObject? { val o = live() ?: return null; return onUi(o) { o.handoffInfo() } }
@@ -113,6 +113,8 @@ class PlayerActivity : Activity(), Host {
         j.put("sf_side", sfSideName()); j.put("sf_nat", sfNativeCount()); j.put("sf_live", sfLive); j.put("sf_busy", sfBusy); j.put("tpart", try { ::engine.isInitialized && !engineStarted && engine.subs.isNotEmpty() && !engine.fullyDone() } catch (_: Throwable) { false }); j.put("sf_mob", try { mobileSub?.takeIf { it.exists() }?.name ?: "" } catch (_: Throwable) { "" })   // (v529) (v684 sf_mob)
         // (v531) شاشة «مشغّل الفيديو» في الريموت = نفس تقسيمة مشغّل الموبايل: كل حالة الأزرار والكبسولات
         j.put("kind", "player")
+        j.put("net_busy", netBusy); j.put("net_more", netSess?.remaining() ?: 0)   // (v746)
+        try { val vn = vidNamesCached(); j.put("vname", vn.first); j.put("vfolder", vn.second) } catch (_: Throwable) {}
         // (v596) مصدر الصوت للسماعة الخاصة: لينك http (مع الهيدرز) أو "local" = ملف على التلفزيون بيتقدّم من /file/cur
         try {
             val au = aurl ?: url ?: uri?.toString()?.takeIf { it.startsWith("http") }
@@ -612,14 +614,14 @@ class PlayerActivity : Activity(), Host {
             "pip" -> runOnUiThread { try { enterPip() } catch (e: Throwable) { LogStore.err("Player:rpip", e) } }   // (v712) نافذة صغيرة من الريموت
             "voice" -> runOnUiThread { try { voiceMenu() } catch (e: Throwable) { LogStore.err("Player:rvoice", e) } }   // (v712) فصل صوت الكلام
             "nextlist" -> runOnUiThread { try { openNextSheet() } catch (e: Throwable) { LogStore.err("Player:rnext", e) } }   // (v712) 📃 التالي (يوتيوب)
-            "tr_free" -> freeGemStart()
+            "tr_free", "tr_gem" -> geminiAsk()   // (v743) FreeLLM اتشال — الزرارين القدام بيفتحوا اختيار جيميناي
             "tr_whisper" -> whisperStart()
             "tr_gtx" -> startGeminiTranscribe()
             "tr_wtx" -> offlineQuick(true)
             "tr_pause" -> pauseTranslate()
             "tr_resume" -> { trAsked = true; beginTranslate() }
             "tr_bg" -> translateInBackground()
-            "tr_wiz" -> trWizard(true)
+            "tr_wiz" -> translateMenu(anchor)   // (v743) المعالج القديم اتشال
             "subdlg" -> tvSubDialog(v.toInt())
             "font" -> {
                 val fs = SubStyle.fonts; val cf = SubStyle.load { k, d -> Cfg.str(k, d) }.font
@@ -627,7 +629,10 @@ class PlayerActivity : Activity(), Host {
                 Cfg.put("sub_font", n.id); try { restyleFn() } catch (_: Throwable) {}; say("🔤 " + n.label)
             }
             else -> {   // (v529) 📄 ترجمة ملف الترجمة من الموبايل · (v682) لهجة / أسلوب / أدوات الذكاء من صفحة المشغّل
-                if (a.startsWith("wtr:")) runOnUiThread { try { setWhisperTr(a.substring(4)) } catch (e: Throwable) { LogStore.err("Player:rwtr", e) } }   // (v712) اختيار مترجم وضع وشبر من الريموت (free / google)
+                if (a.startsWith("subnet:")) subNet(a.substring(7))   // (v746)
+                else if (a.startsWith("subhunt:")) subHunt(a.substring(8).toIntOrNull() ?: 0)
+                else if (a == "subalign") subAlignRun(false)
+                else if (a.startsWith("wtr:")) runOnUiThread { try { setWhisperTr(a.substring(4)) } catch (e: Throwable) { LogStore.err("Player:rwtr", e) } }   // (v712) اختيار مترجم وضع وشبر من الريموت (free / google)
                 else if (a.startsWith("subfile:")) sfRemote(a)
                 else if (a.startsWith("sfgo:")) sfGo(a)
                 else if (a.startsWith("dialect:") || a.startsWith("tone:") || a.startsWith("ai:")) {
@@ -1030,13 +1035,173 @@ class PlayerActivity : Activity(), Host {
         add("📂 اختار ملف ترجمة من الجهاز (SRT / ASS / VTT)") { sfEngineChoice("الملف") { e -> sfPickFile(e) } }
         add("🔤 ترجمة الهارد سب (المحروقة على الصورة) — بجيميناي") { sfHard() }
         if (sfLive.isNotEmpty()) add("⏹ وقّف الترجمة اللحظية للمسار الأصلي") { sfStopLive(); say("⏹ اتوقفت") }
+        netEntries { l, a -> add(l, a) }   // (v746)
         add("ℹ الهارد سب بيتقرا من الصورة فمحتاج جيميناي (مفتاح الوضع البصري)؛ جوجل مابيقرأش صور") { }
         GAlert(this).setTitle("📄 ترجمة ملف الترجمة").setItems(labels.toTypedArray()) { _, w -> if (w in acts.indices) acts[w]() }.show()
     }
 
+    // ===== (v746) ترجمة أونلاين + صيد من المتصفح + ضبط توقيت تلقائي =====
+    @Volatile private var netBusy = ""
+    @Volatile private var netSess: SubOnline.Session? = null
+    @Volatile private var alignBusy = false
+    private var vnKey = ""; private var vnVal = Pair("", "")
+
+    /** (اسم الفيديو، اسم الفولدر) من الملف/الـURI؛ للنت العنوان بس */
+    private fun vidNames(): Pair<String, String> {
+        var name = ""; var folder = ""
+        try {
+            val u = uri
+            if (u != null) {
+                if (u.scheme == "file") { val f = java.io.File(u.path ?: ""); name = f.name; folder = f.parentFile?.name ?: "" }
+                else if (u.scheme == "content") {
+                    try { contentResolver.query(u, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)?.use { c -> if (c.moveToFirst()) name = c.getString(0) ?: "" } } catch (_: Throwable) {}
+                    try { contentResolver.query(u, arrayOf(android.provider.MediaStore.MediaColumns.DATA), null, null, null)?.use { c -> if (c.moveToFirst()) { val pth = c.getString(0); if (!pth.isNullOrBlank()) folder = java.io.File(pth).parentFile?.name ?: "" } } } catch (_: Throwable) {}
+                    if (folder.isBlank()) try {
+                        val parts = android.provider.DocumentsContract.getDocumentId(u).substringAfter(':').split('/')
+                        if (parts.size >= 2) { folder = parts[parts.size - 2]; if (name.isBlank()) name = parts.last() }
+                    } catch (_: Throwable) {}
+                    if (name.isBlank()) name = u.lastPathSegment?.substringAfterLast('/') ?: ""
+                }
+            }
+        } catch (_: Throwable) {}
+        if (name.isBlank()) name = notifTitle()
+        return Pair(name, folder)
+    }
+    private fun vidNamesCached(): Pair<String, String> {
+        val k = uri?.toString() ?: ("t:" + notifTitle())
+        if (k != vnKey) { vnKey = k; vnVal = vidNames() }
+        return vnVal
+    }
+
+    private fun netEntries(add: (String, () -> Unit) -> Unit) {
+        add("🌍 جيب ترجمة أونلاين تلقائي (باسم الفيديو/الفولدر)") { subNet("auto") }
+        if ((netSess?.remaining() ?: 0) > 0) add("⏭ جرّب نتيجة تانية (" + netSess!!.remaining() + " متبقية)") { subNet("next") }
+        add("🌐 افتح المتصفح على موقع ترجمة (بيبحث + sub file ويضيف أول تحميل)") {
+            GAlert(this).setTitle("🌐 اختار الموقع").setItems(SubHunt.siteNames.toTypedArray()) { _, w -> subHunt(w) }.show()
+        }
+        add("🎯 ضبط توقيت الترجمة تلقائي (بسمع الفيديو بجيميناي)") { subAlignRun(false) }
+    }
+
+    /** ترجمة جاهزة (أونلاين / متصفح / موبايل) ← تتحط على الفيديو زي ملف ترجمة مستورد، وتفضل «المرفقة» عشان تتترجم بعدها */
+    private fun subAddGot(g: SubOnline.Got, how: String): Boolean {
+        val f = try {
+            val dir = java.io.File(cacheDir, "net_sub"); dir.mkdirs()
+            dir.listFiles()?.forEach { try { it.delete() } catch (_: Throwable) {} }
+            val ext = g.fileName.substringAfterLast('.', "srt").lowercase().let { if (it == "ass" || it == "ssa" || it == "vtt") it else "srt" }
+            java.io.File(dir, "net_sub.$ext").also { it.writeText(g.text, Charsets.UTF_8) }
+        } catch (e: Throwable) { LogStore.err("Player:subAddGot", e); return false }
+        castSubFile = f
+        val subs = g.cues.map { c -> Sub(c.start, c.end, c.text, c.text, "male", "unknown", "none", emptyList(), emptyList(), false, false) }
+        runOnUiThread {
+            try {
+                if (!::engine.isInitialized || !engineReady) { say("المحرك لسه بيحمّل — جرّب تاني بعد ثواني"); return@runOnUiThread }
+                if (engineStarted && !engine.userPaused) pauseTranslate()
+                if (engine.subs.isNotEmpty()) engine.saveVersion("قبل إضافة ترجمة أونلاين")
+                engine.importSubs(subs)
+                try { engine.markAllDone(g.cues.maxOfOrNull { it.end } ?: 0.0) } catch (_: Throwable) {}
+                sfLive = ""; preferNative = false; ccOn = true; dirty = true; curIdx = -2
+                try { player.exo()?.let { xp -> xp.trackSelectionParameters = xp.trackSelectionParameters.buildUpon().setTrackTypeDisabled(androidx.media3.common.C.TRACK_TYPE_TEXT, true).build() } } catch (_: Throwable) {}
+                nativeCue = ""
+                sfDoneUri = uri?.toString() ?: ""
+                sfDoneLabel = "🌍 ترجمة أونلاين · " + g.source.take(40)
+                Thread { try { engine.saveNow() } catch (e: Throwable) { LogStore.err("Player:subAddSave", e) } }.start()
+                val lgN = if (g.lang == "ar") "عربي" else g.lang
+                sfNote("✅ اتضافت ترجمة ($lgN) — " + g.cues.size + " جملة · " + g.source.take(40) + (if (g.lang != "ar") " — لو عايزها عربي: «ترجم ملف الترجمة المرفق»" else ""), 7000L)
+                if (Cfg.bool("subnet_autosync", true)) subAlignRun(true)
+            } catch (e: Throwable) { LogStore.err("Player:subAddGot2", e); say("⚠ مقدرتش أطبّق الترجمة") }
+        }
+        return true
+    }
+
+    /** mode: auto (كاش ← بحث ← أحسن نتيجة) · next (النتيجة اللي بعدها) */
+    private fun subNet(mode: String) {
+        if (netBusy.isNotEmpty()) { say("⏳ $netBusy"); return }
+        val nm = vidNames(); val info = SubName.build(nm.first, nm.second); val langs = SubOnline.prefLangs()
+        netBusy = "بدوّر على ترجمة…"
+        Thread {
+            try {
+                val rep: (String) -> Unit = { m -> netBusy = m; sfNote(m, 2500L) }
+                var got: SubOnline.Got? = null
+                if (mode == "next") {
+                    val s = netSess
+                    if (s == null || s.remaining() <= 0) { sfNote("مفيش نتايج تانية — ادوس «جيب ترجمة» تاني أو افتح المتصفح", 5000L); return@Thread }
+                    got = SubOnline.fetchNext(applicationContext, s, rep)
+                } else {
+                    val cached = SubOnline.cacheFind(applicationContext, info, langs)
+                    if (cached != null && cached.lang == langs[0]) got = cached
+                    else {
+                        val hits = SubOnline.search(info, langs, rep)
+                        val s = SubOnline.Session(info, langs, hits); netSess = s
+                        if (hits.isNotEmpty()) got = SubOnline.fetchNext(applicationContext, s, rep)
+                        if (got == null) got = cached
+                        if (hits.isEmpty() && got == null) { sfNote("🌍 مفيش نتايج لـ «" + info.label() + "» — جرّب المتصفح (🌐) أو اسم تاني", 7000L); return@Thread }
+                    }
+                }
+                if (got == null) { sfNote("⚠ ما قدرتش أنزّل ترجمة مناسبة — جرّب «⏭ نتيجة تانية» أو المتصفح", 7000L); return@Thread }
+                subAddGot(got, "online")
+            } catch (e: Throwable) { LogStore.err("Player:subNet", e); sfNote("⚠ فشل جلب الترجمة: " + (e.message ?: "").take(60), 6000L) }
+            finally { netBusy = "" }
+        }.also { it.isDaemon = true }.start()
+    }
+
+    private fun subHunt(site: Int) {
+        val nm = vidNames(); val info = SubName.build(nm.first, nm.second)
+        runOnUiThread {
+            try { SubHunt.start(this, info, site.coerceIn(0, SubHunt.siteNames.size - 1)) { g -> subAddGot(g, "browser") } }
+            catch (e: Throwable) { LogStore.err("Player:subHunt", e); say("⚠ مقدرتش أفتح المتصفح") }
+        }
+    }
+
+    /** ضبط توقيت الترجمة الحالية على صوت الفيديو (جيميناي) — auto = من غير شكوى لو مفيش حاجة */
+    private fun subAlignRun(auto: Boolean) {
+        if (alignBusy) { if (!auto) say("⏳ بضبط التوقيت دلوقتي"); return }
+        val sp = spec
+        if (sp == null || !::engine.isInitialized || engine.subs.isEmpty()) { if (!auto) say("مفيش ترجمة على الفيديو لضبط توقيتها"); return }
+        if (engineStarted && !engine.fullyDone()) { if (!auto) say("الترجمة دي بتتعمل من الصوت نفسه — مش محتاجة ضبط"); return }
+        val snap = engine.subs.toList()
+        val cues = snap.map { SubFileTr.Cue(it.start, it.end, if (it.original.isNotBlank()) it.original else it.translated) }
+        val dur = durMs / 1000.0
+        alignBusy = true; netBusy = "🎯 ضبط التوقيت…"
+        Thread {
+            var src: AudioSource? = null
+            try {
+                val s2 = makeSource(sp); src = s2
+                val out = SubAlign.run(s2, dur, cues, { m -> netBusy = m; sfNote(m, 3000L) }, { isFinishing || isDestroyed })
+                val f = out.fit
+                if (f == null) { if (!auto || out.windows > 0) sfNote("🎯 ضبط التوقيت: " + out.msg, 7000L); return@Thread }
+                if (SubAlign.isNoop(f)) { sfNote("🎯 توقيت الترجمة سليم ✓ (" + f.inliers + " جملة متطابقة)", 5000L); return@Thread }
+                runOnUiThread {
+                    try {
+                        if (engine.subs.size != snap.size) { say("الترجمة اتغيّرت أثناء الضبط — جرّب تاني"); return@runOnUiThread }
+                        engine.saveVersion("قبل ضبط التوقيت التلقائي")
+                        engine.importSubs(SubAlign.shiftSubs(engine.subs, f))
+                        try { engine.markAllDone(engine.subs.maxOfOrNull { it.end } ?: 0.0) } catch (_: Throwable) {}
+                        dirty = true; curIdx = -2
+                        try {   // ملف «المرفقة» كمان يتظبط عشان الترجمة منه تطلع بنفس التوقيت
+                            val cf = castSubFile
+                            if (cf != null && cf.exists()) {
+                                val sc = SubAlign.shiftCues(SubFileTr.parse(SubFileTr.decode(cf.readBytes())), f)
+                                java.io.File(cf.parentFile, "net_sub_synced.srt").also { it.writeText(SubSidecar.toSrt(sc), Charsets.UTF_8); castSubFile = it }
+                            }
+                        } catch (_: Throwable) {}
+                        Thread { try { engine.saveNow() } catch (e: Throwable) { LogStore.err("Player:alignSave", e) } }.start()
+                        sfNote("✅ اتظبط توقيت الترجمة: " + SubAlign.describe(f) + " — " + f.inliers + " جملة متطابقة من " + out.windows + " عينة (النسخة القديمة محفوظة في «النسخ»)", 9000L)
+                    } catch (e: Throwable) { LogStore.err("Player:align", e); say("⚠ مقدرتش أطبّق التوقيت") }
+                }
+            } catch (e: Throwable) { LogStore.err("Player:subAlign", e); sfNote("⚠ فشل ضبط التوقيت: " + (e.message ?: "").take(60), 6000L) }
+            finally { try { src?.close() } catch (_: Throwable) {}; alignBusy = false; netBusy = "" }
+        }.also { it.isDaemon = true }.start()
+    }
+
     /** (v684) ملف ترجمة مستورد من الموبايل — بيستنى أمر sfgo (ترجم) بعد ما تظبط الإعدادات */
     @Volatile private var mobileSub: java.io.File? = null
-    private fun subImported(f: java.io.File, nm: String, cues: Int): Boolean {
+    private fun subImported(f: java.io.File, nm: String, cues: Int, show: Boolean = false): Boolean {
+        if (show) {   // (v746) ترجمة جاية من بحث الموبايل أونلاين: تتضاف علطول
+            return try {
+                val txt = f.readText(Charsets.UTF_8); val cs = SubFileTr.parse(txt)
+                subAddGot(SubOnline.Got(nm, txt, cs, if (SubFileTr.mostlyArabic(cs)) "ar" else "en", "الموبايل", 1), "phone")
+            } catch (e: Throwable) { LogStore.err("Player:subShow", e); false }
+        }
         mobileSub = f
         sfNote("📄 وصل ملف ترجمة من الموبايل: «$nm» ($cues جملة) — ظبّط الإعدادات من الموبايل واضغط «▶ ترجم»", 6000L)
         return true
@@ -1236,6 +1401,7 @@ class PlayerActivity : Activity(), Host {
         fun add(l: String, a: () -> Unit) { labels.add(l); acts.add(a) }
         val tr = tvProgTr(); val hasSubs = tvHasSentences()
         add(if (Strict.hideTrOpts()) "🌐 مصادر الترجمة (مسارات · نسخ محفوظة)" else "🌐 مصادر الترجمة (مسارات · نسخ محفوظة · لغة/لهجة)") { tvSubTracksDialog(anchor) }
+        netEntries { l, a -> add(l, a) }   // (v746) جلب ترجمة أونلاين + متصفح + ضبط توقيت
         add("🔤⏱ شكل وتوقيت الترجمة") { tvSubDialog() }
         if (hasSubs) add("📝 الجمل المترجمة") { try { if (::sentDlg.isInitialized) sentDlg.show() } catch (_: Throwable) {} }
         if (tr) {
@@ -2696,19 +2862,16 @@ class PlayerActivity : Activity(), Host {
         val col = LinearLayout(this)
         fun close() { trMenuPop?.dismiss() }
         val mk = curModeKey()
-        val whisperish = mk == "free" || mk == "off" || mk == "txw"
+        val whisperish = mk == "off" || mk == "txw"
         val setVal = try { if (whisperish) TrWizard.langLabel(Offline.lang()) + " · " + Offline.model().id else "" } catch (_: Throwable) { "" }
         if (!started) {
             col.addView(shHead(if (sfBusy.isNotEmpty()) "⏳ ترجمة السوفت صب " + sfPct() + "% — " + sfBusy else "ترجمة الفيديو", "اختار النظام"))
             // (v667) السوفت صب والهارد صب بيتترجموا أوتوماتيك أول ما الفيديو يفتح — مفيش زراير ليهم هنا
-            col.addView(shSection("🔤 ترجمة — 3 أنظمة"))
-            col.addView(shRow("☁ ١ · جيميناي لوحده", if (mk == "gem") "✓ الحالي" else (if (AudioEnc.preset() == AudioEnc.NORMAL) "WAV" else "AAC")) { close(); geminiStart() })
-            col.addView(shNote("الصوت بيتبعت باتشات لجيميناي بإعداداته (AAC/WAV · المفاتيح) · لهجات + أسلوب + بصري · محتاج نت"))
-            col.addView(shRow("🆓 ٢ · FreeLLM · جيميناي بكل مفاتيحك وموديلاته", if (mk == "fgem") "✓ الحالي" else "") { close(); freeGemStart() })
-            col.addView(shRow("🌗 ٣ · وشبر + " + wTrLabel(), setVal) { close(); whisperStart() })
-            val wr = shFlow()
-            for ((id, lb) in listOf("free" to "🆓 FreeLLM · لهجات", "google" to "🌐 Libre · فصحى")) wr.addView(shChip(lb, id == wTr()) { Cfg.put("wtr", id); close(); h.post { translateMenu(anchor) } }, shChipLp())
-            col.addView(wr, LinearLayout.LayoutParams(-1, -2))
+            col.addView(shSection("🔤 ترجمة"))
+            col.addView(shRow("☁ ١ · جيميناي", if (mk == "gem") "✓ " + listenName() else listenName()) { close(); h.post { geminiAsk() } })
+            col.addView(shNote("هتختار: ٧٥/٢٥ (سماع واحد، أسرع وأرخص) أو 🎯 السماع الأدق (مفتاحين + حكم) · لهجات + أسلوب + بصري · محتاج نت"))
+            col.addView(shRow("📴 ٢ · وشبر + ترجمة أوفلاين (HY-MT1.5)", if (mk == "off") "✓ الحالي" else setVal) { close(); whisperStart() })
+            col.addView(shNote("من غير نت ولا مفاتيح · فصحى بس · التفريغ بوشبر والترجمة بموديل على الجهاز (~" + LocalMt.model().approxMb + " ميجا مرة واحدة)"))
             try { whisperAdvice(Offline.lang())?.let { col.addView(shNote(it.first, true)) } } catch (_: Throwable) {}   // (v739)
             col.addView(shSection("✍ تفريغ بس (من غير ترجمة) — نظامين"))
             col.addView(shRow("☁ بجيميناي (من الصوت)", if (mk == "txg") "✓ الحالي" else "") { close(); startGeminiTranscribe() })
@@ -2731,6 +2894,21 @@ class PlayerActivity : Activity(), Host {
                 listOf(ShBtn("أوقف واختار", SH_BLUE) { cancelTranslate { translateMenu(anchor) } }, ShBtn("لأ، كمّل", SH_GRAY) { })) }
         })
         trMenuPop = showSheet(anchor, col, 320, "trMenu") { pw -> if (trMenuPop === pw) trMenuPop = null }
+    }
+
+    /** (v743) اسم نظام السماع الحالي لجيميناي */
+    private fun listenName(): String = when (Cfg.int("dual_listen", 1)) { 0 -> "٧٥/٢٥"; 2 -> "🎯 الأدق"; else -> "🎯 ذكي" }
+    /** (v743) دوس جيميناي ← اختار: ٧٥/٢٥ (سماع واحد) أو 🎯 السماع الأدق (تسميع مزدوج بمفتاحين + حكم) — الاتنين موجودين */
+    private fun geminiAsk() {
+        if (!TrWizard.hasGeminiKey()) { say("☁ جيميناي محتاج مفتاح — ضيفه من الإعدادات ← 🔑 المفاتيح"); return }
+        val n = try { Cfg.snapshot().let { c -> (c.keys + c.backup + c.refine).filter { it.length > 10 }.distinct().size } } catch (_: Throwable) { 0 }
+        val dualNote = if (n < 2) "\n\n⚠ عندك مفتاح واحد بس — 🎯 الأدق محتاج مفتاحين على الأقل، ومن غيرهم هيشتغل كسماع واحد." else ""
+        shConfirm("☁ جيميناي — اختار السماع",
+            "⚡ ٧٥/٢٥: كل باتش بيتسمع مرة واحدة (المفاتيح موزّعة بين النسخ والترجمة) — أسرع وأرخص.\n\n🎯 الأدق: مفتاح تاني يسمع نفس الباتش، والجمل المختلفة بيحكم فيها سماع تالت — طلبات أكتر (لحد ٨ للباتش) بس أدق في الكلام الصعب.\n\nالحالي: " + listenName() + dualNote,
+            listOf(
+                ShBtn("🎯 السماع الأدق (تسميع مزدوج)", SH_BLUE) { Cfg.put("dual_listen", "2"); geminiStart() },
+                ShBtn("⚡ ٧٥/٢٥ — سماع واحد", SH_GRAY) { Cfg.put("dual_listen", "0"); geminiStart() },
+                ShBtn("إلغاء", SH_GRAY) { }))
     }
 
     /** (v741) ☁ ترجمة جيميناي لوحده: الصوت بيتبعت باتشات لجيميناي بإعداداته (WAV/AAC + مفاتيحك) — من غير FreeLLM ولا وشبر */
@@ -2826,7 +3004,7 @@ class PlayerActivity : Activity(), Host {
     }
     private fun modeName(mk: String = curModeKey()): String = when (mk) {
         "gem" -> "☁ جيميناي لوحده (" + (if (AudioEnc.preset() == AudioEnc.NORMAL) "WAV" else "AAC") + ")"; "fgem" -> "⭐ FreeLLM · صوت ← جيميناي"; "free" -> "🌗 وشبر + FreeLLM"
-        "off" -> (if (Strict.mt()) "📴 أوفلاين كامل (فصحى)" else "🌗 وشبر + LibreTranslate (فصحى)"); "txg" -> "✍ تفريغ بجيميناي"; else -> "✍ تفريغ بوشبر"
+        "off" -> "📴 وشبر + ترجمة أوفلاين (فصحى)"; "txg" -> "✍ تفريغ بجيميناي"; else -> "✍ تفريغ بوشبر"
     }
     private var trAiB: TextView? = null
     private var lastCapsSig = ""
@@ -2848,7 +3026,7 @@ class PlayerActivity : Activity(), Host {
         return if (FreeLlm.ready()) "free" else "google"
     }
     private fun wTrLabel(id: String = wTr()): String = when (id) { "free" -> "FreeLLM · لهجات"; else -> "LibreTranslate · فصحى" }
-    private fun whisperStart() { askVideoLang { when (wTr()) { "free" -> freeStart(); else -> offlineQuick() } } }
+    private fun whisperStart() { askVideoLang { offlineQuick() } }
     /** تبديل مترجم وضع وشبر والمحرك شغّال: بيتطبّق على الباتشات الجاية بنفس لغة الفيديو وموديل وشبر */
     private fun setWhisperTr(kind: String) {
         if (kind == "free" && !FreeLlm.ready()) { say("🆓 FreeLLM محتاج مفتاح جيميناي (أو Groq) — ضيفه من الإعدادات ← 🔑 المفاتيح"); return }
@@ -2872,8 +3050,6 @@ class PlayerActivity : Activity(), Host {
         val id = Strict.id()
         if (id == "g_wav" || id == "g_aac") return "gem"   // (v741) جيميناي لوحده رجع نظام مستقل (v444 كان دمجه مع FreeLLM)
         if (id == Strict.SEMI || id == Strict.MT) return "off"
-        if (id == Strict.FREE_TXT) return "free"
-        if (id == Strict.FREE_GEM) return "fgem"
         if (id == "ai_only") return "txg"
         if (id == "w_only") return "txw"
         val sp = TrWizard.savedPlan()
@@ -2957,6 +3133,15 @@ class PlayerActivity : Activity(), Host {
                 say("🎧 جودة الصوت: AAC (داتا أقل) — الباتشات الجاية هتترفع بيها")
             }, cLp())
             col.addView(r, LinearLayout.LayoutParams(-1, -2))
+            // (v742) تسميع مزدوج: مفتاح تاني يسمع نفس الباتش وأي اختلاف يتحسم بسماع تالت على الجملة
+            col.addView(shHead("🎯 تدقيق السماع بمفتاحين", "مفتاح تاني بيسمع نفس الباتش، والجمل اللي اختلفوا فيها بتتسمع تالت"))
+            val dl = Cfg.int("dual_listen", 1)
+            val r2 = shFlow()
+            r2.addView(shChip("⛔ مقفول", dl == 0) { setPop?.dismiss(); Cfg.put("dual_listen", "0"); say("🎯 التسميع المزدوج: مقفول") }, cLp())
+            r2.addView(shChip("🌍 ذكي (غير الإنجليزي)", dl == 1) { setPop?.dismiss(); Cfg.put("dual_listen", "1"); say("🎯 التسميع المزدوج: شغّال للغات غير الإنجليزي") }, cLp())
+            r2.addView(shChip("🔁 دايمًا", dl == 2) { setPop?.dismiss(); Cfg.put("dual_listen", "2"); say("🎯 التسميع المزدوج: شغّال لكل الباتشات") }, cLp())
+            col.addView(r2, LinearLayout.LayoutParams(-1, -2))
+            col.addView(shNote("بيستهلك طلبات جيميناي أكتر (باتش واحد = طلبين + سماعات قصيرة للخلافات). محتاج مفتاحين على الأقل."))
         }
         fun keysSection() {
             col.addView(shHead("🔑 مفاتيح جيميناي", "$keysN مفتاح" + (if (mk == "fgem") " · كل مفتاح بيلف على كل الموديلات · ٧٥٪ بتنسخ و٢٥٪ بتترجم بالسياق" else if (mk == "gem") " · ٧٥٪ بتنسخ و٢٥٪ بتترجم بالسياق" else "")))
@@ -3041,9 +3226,10 @@ class PlayerActivity : Activity(), Host {
                 "fgem" -> { hAudio(); hKeys(); hFree(); swapRow() }
                 "free" -> { hTr(); hLang(); hModel(); hFree(); termRow() }
                 "off" -> {
-                    hTr(); hLang(); hModel()
-                    col.addView(shRow("🌐 سيرفر LibreTranslate", Cfg.str("libre_url").ifBlank { "الافتراضي" }, true) { setPop?.dismiss(); libreDialog() })
-                    termRow()
+                    hLang(); hModel()
+                    col.addView(shSection("📴 موديل الترجمة الأوفلاين (للعربي بس)"))
+                    col.addView(shNote(LocalMt.status()))
+                    if (!LocalMt.downloaded()) col.addView(shRow("⬇ نزّل موديل الترجمة", "~" + LocalMt.model().approxMb + " ميجا") { setPop?.dismiss(); mtDownload { } })
                 }
                 "txg" -> { hAudio(); hKeys() }
                 else -> { hLang(); hModel() }
@@ -6230,12 +6416,12 @@ class PlayerActivity : Activity(), Host {
         if (Offline.downloading()) { say("⬇ فيه تنزيل موديل شغّال — استنى يخلص وادوس تاني"); return }
         offBusy = true
         val lang = Offline.lang()   // (v411) "" = تلقائي: Whisper بيكتشف اللغة، وموديل ML Kit بيتنزّل أول ما اللغة تتأكد (مع إشعار تقدم)
-        val order = listOf(Offline.model()) + listOf("small", "base", "medium").mapNotNull { id -> Offline.models.firstOrNull { it.id == id } }
-        val m = order.firstOrNull { Offline.downloaded(it) } ?: Offline.models.first { it.id == "small" }
+        val order = listOf(Offline.model()) + listOf("base", "small", "medium").mapNotNull { id -> Offline.models.firstOrNull { it.id == id } }
+        val m = order.firstOrNull { Offline.downloaded(it) } ?: Offline.models.first { it.id == "base" }
         fun startIt() {
-            val fr = free && !only   // (v440) وشبر + FreeLLM (free="free")
-            val pl = TrWizard.Plan("offline", "", lang, m.id, "google", "whisper", if (only) "" else if (fr) TrWizard.dialectWanted().ifBlank { "فصحى" } else "فصحى", false, free = if (fr) "free" else "", only = only)   // (v425) وشبر + LibreTranslate · (v427) only = تفريغ بس بوشبر
-            Cfg.put("tr_mode_id", if (only) "w_only" else if (fr) Strict.FREE_TXT else Strict.SEMI); SourceMode.set(SourceMode.AUDIO)
+            if (!only && !LocalMt.ready()) { offBusy = false; askMtModel(only, free, m); return }   // (v743) موديل الترجمة الأوفلاين لازم يكون نازل
+            val pl = TrWizard.Plan("offline", "", lang, m.id, "google", "whisper", if (only) "" else "فصحى", false, free = "", only = only)   // (v743) وشبر + Hy-MT2 أوفلاين · (v427) only = تفريغ بس بوشبر
+            Cfg.put("tr_mode_id", if (only) "w_only" else Strict.MT); SourceMode.set(SourceMode.AUDIO)
             try { TrWizard.save(pl) } catch (e: Throwable) { LogStore.err("Player:offQuickSave", e) }
             offBusy = false
             runPlan(pl)
@@ -6272,6 +6458,24 @@ class PlayerActivity : Activity(), Host {
                 else pickWhisperModel(r)   // مش نازل: بيسأل ينزّله ويطبّقه، وبعدها دوس «ترجم» تاني
             },
             { offBusy = false })
+    }
+
+    /** (v743) موديل ترجمة Hy-MT2 مش نازل / مش مدعوم: نزّله من هنا أو فرّغ بس */
+    private fun askMtModel(only: Boolean, free: Boolean, m: Offline.Model) {
+        if (!LocalMt.supported()) { shConfirm("📴 الترجمة الأوفلاين مش مدعومة", "جهازك مش بيدعم موديل الترجمة (محتاج معالج 64-bit). تقدر تفرّغ بوشبر بس، أو تترجم بجيميناي.", listOf(ShBtn("✍ فرّغ بس", SH_BLUE) { offlineQuick(true) }, ShBtn("إلغاء", SH_GRAY) { })); return }
+        val mm = LocalMt.model()
+        shConfirm("⬇ موديل الترجمة الأوفلاين", "HY-MT1.5 " + mm.label + " (~" + mm.approxMb + " ميجا، مرة واحدة، محتاج نت للتنزيل بس) — بعدها الترجمة بتشتغل من غير نت.",
+            listOf(ShBtn("⬇ نزّل وكمّل", SH_BLUE) { mtDownload { offlineQuick(only, free) } },
+                ShBtn("✍ فرّغ بس دلوقتي", SH_GRAY) { offlineQuick(true) }, ShBtn("إلغاء", SH_GRAY) { }))
+    }
+    private fun mtDownload(after: () -> Unit) {
+        val mm = LocalMt.model()
+        say("⬇ بنحمّل موديل الترجمة…")
+        try {
+            Offline.fetchModel("mt/" + mm.file, LocalMt.url(mm), mm.approxMb,
+                { a, t -> runOnUiThread { Notice.show(this, "⬇ موديل الترجمة: " + (a / 1048576) + " / " + (if (t > a) (t / 1048576).toString() else "~" + mm.approxMb) + " ميجا", 900L) } },
+                { err -> runOnUiThread { if (err != null) say("⚠ تنزيل موديل الترجمة فشل: $err") else { say("✅ موديل الترجمة نزل"); after() } } })
+        } catch (e: Throwable) { LogStore.err("Player:mtFetch", e); say("⚠ تعذّر بدء التنزيل") }
     }
 
     /** (v254) ▶ ترجمة قبل البداية: لو فيه إعداد محفوظ بيشتغل بيه على طول، وإلا بيسأل (أونلاين / أوفلاين ← لغة ← تفريغ ← ترجمة ← حفظ؟) */
