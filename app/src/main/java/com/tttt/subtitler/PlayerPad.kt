@@ -383,6 +383,7 @@ object PlayerPad {
                 if (mob.isNotBlank()) opt(body, "📄 ترجم الملف المستورد «$mob»") { close(); openSfSettings("mobile", "📄 الملف المستورد: «$mob»") }
             }
             var wtSel = ""
+            var msLang: String? = null; var msModel: String? = null; var msWav: Boolean? = null; var msDual: Int? = null; var msSwap: Boolean? = null; var msTerm: Boolean? = null   // (v762) قيم مؤقتة لحد ما حالة التلفزيون ترجع
             fun confirmCancelTr() {   // (v759) تأكيد على الموبايل بعدين الأمر للتلفزيون
                 android.app.AlertDialog.Builder(act).setTitle("⏹ إلغاء الترجمة؟")
                     .setMessage("هيوقف الترجمة خالص (مش مؤقت). اللي اتترجم لحد دلوقتي هيفضل محفوظ، وتقدر تبدأ تاني بـ «▶ ترجم».")
@@ -521,6 +522,55 @@ object PlayerPad {
                 val tools = mapOf("✍ تنقيح" to "refine", "🔥 لهجة +" to "dial", "🧹 عائلي" to "family", "🔞 صريح" to "explicit", "🔧 ضمائر" to "pron", "🧠 دمج مكرر" to "dedup")
                 chipRows(body, tools.keys.toList(), 3, { false }, { l -> tools[l] }) { l -> if (started) tapFill(tools[l] ?: ""); go("ai:" + (tools[l] ?: "")); close() }
                 opt(body, "⚙ كل إعدادات الترجمة على التلفزيون") { go("subdlg", 1L); close() }
+            }
+
+            // ───── (v762) ⚙ إعدادات الترجمة على الموبايل (كانت بتفتح على شاشة التلفزيون) — كل ضغطة بتتبعت للتلفزيون وبتتطبّق فورًا ─────
+            fun sheetSet() = sheet("⚙ إعدادات الترجمة") { body, redo, close ->
+                val mk = st.optString("ms_mk", "")
+                var lang = msLang ?: st.optString("ms_lang", "")
+                var model = msModel ?: st.optString("ms_model", "")
+                val wav = msWav ?: st.optBoolean("ms_wav", true)
+                val dualL = msDual ?: st.optInt("ms_dual", 1)
+                val swapOn = msSwap ?: st.optBoolean("ms_swap", true)
+                val termOn = msTerm ?: st.optBoolean("ms_term", false)
+                fun mset(c: String) { go("mset:$c") }
+                body.addView(label(st.optString("mode", "") + "   ·   بتتطبّق على التلفزيون فورًا", 13f, cDim, false), lp(-1, -2).apply { topMargin = dp(6) })
+                if (st.optBoolean("cdial", false)) opt(body, "🌐 اللهجة والأسلوب وأدوات الذكاء  ›") { close(); sheetAi() }
+                fun langSec() {
+                    grp(body, "🌍 لغة كلام الفيديو (بتتفرّغ بيها)")
+                    val ids = Offline.langIds; val lbs = Offline.langLabels
+                    chipRows(body, lbs, 3, { l -> ids.getOrNull(lbs.indexOf(l)) == lang }) { l ->
+                        val id = ids.getOrNull(lbs.indexOf(l)) ?: ""; lang = id; msLang = id; mset("lang:$id"); redo()
+                    }
+                }
+                fun modelSec() {
+                    grp(body, "🎧 موديل وشبر (الأكبر أدق وأبطأ · ⬇ = مش نازل على التلفزيون)")
+                    chipRows(body, Offline.models.map { it.label }, 2, { l -> Offline.models.firstOrNull { it.label == l }?.id == model }) { l ->
+                        Offline.models.firstOrNull { it.label == l }?.let { m -> model = m.id; msModel = m.id; mset("model:" + m.id); redo() }
+                    }
+                }
+                fun audioSec() {
+                    grp(body, "🎧 جودة الصوت المرفوع لجيميناي")
+                    chipRows(body, kotlin.collections.listOf("🧠 عادي (WAV)", "💾 توفير داتا (AAC)"), 2, { l -> (l.contains("WAV")) == wav }) { l ->
+                        val w = l.contains("WAV"); msWav = w; mset("aud:" + (if (w) "wav" else "aac")); redo()
+                    }
+                }
+                fun dualSec() {
+                    grp(body, "🎯 تدقيق السماع بمفتاحين (بيستهلك طلبات أكتر)")
+                    val names = kotlin.collections.listOf("⛔ مقفول", "🌍 ذكي", "🔁 دايمًا")
+                    chipRows(body, names, 3, { l -> names.indexOf(l) == dualL }) { l -> val n = names.indexOf(l); msDual = n; mset("dual:$n"); redo() }
+                }
+                fun swapRow() = opt(body, "🔄 بديل تلقائي لو جيميناي وقف:  " + (if (swapOn) "✅ شغّال" else "⏸ مقفول")) { msSwap = !swapOn; mset("swap"); redo() }
+                fun termRow() = opt(body, "📖 نبذة المصطلحات الطبية:  " + (if (termOn) "✅ شغّال" else "⏸ مقفول")) { msTerm = !termOn; mset("term"); redo() }
+                fun keysNote() = body.addView(label("🔑 مفاتيح جيميناي على التلفزيون: " + st.optInt("ms_keys", 0), 13f, cDim, false), lp(-1, -2).apply { topMargin = dp(10) })
+                when (mk) {
+                    "gem" -> { audioSec(); dualSec(); keysNote(); swapRow(); termRow() }
+                    "fgem" -> { audioSec(); keysNote(); swapRow() }
+                    "free" -> { langSec(); modelSec(); termRow() }
+                    "txg" -> { audioSec(); keysNote() }
+                    else -> { langSec(); modelSec() }
+                }
+                opt(body, "🖥 باقي الإعدادات (بتفتح على التلفزيون)") { go("modeset"); close() }
             }
 
             // ── فوق: إغلاق + عنوان الفيديو ──
@@ -721,12 +771,14 @@ object PlayerPad {
             val trB = btn("▶ ترجم ▾", 16f, 0xFFE53935.toInt(), 0xFFFF6F69.toInt()) { sheetTr() }
             val pzB = btn("▮▮", 17f) { go(if (paused) "tr_resume" else "tr_pause") }
             val cxB = btn("⏹", 17f, 0xFF3B1A22.toInt(), 0xFF7A2B3A.toInt()) { confirmCancelTr() }   // (v759) إلغاء الترجمة خالص (مش مؤقت)
-            val wzB = btn("⚙", 18f) { go("modeset") }
+            val wzB = btn("⚙", 18f) { sheetSet() }   // (v762) بتفتح على الموبايل مش التلفزيون
             val rdB = btn("🔁", 18f, 0xFF6A1B9A.toInt(), 0xFF8E3FC4.toInt()) { go("redo") }
+            // (v765) 🎞 الجودة جنب ⚙: بتفتح قايمة الجودات (يوتيوب / أي فيديو ليه جودات)؛ لو مفيش جودة بتفضل باهتة ومش شغّالة
+            val qkB = btn("🎞", 18f) { if (qList.size > 1) sheetList("🎞 الجودة", qList, qCur, "qset") else if (st.optBoolean("quality", false)) go("quality") else note("مفيش جودات للفيديو ده") }
             val lgB = fillable(btn("🌐", 18f) { sheetAi() }, "*")
             val trRow = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; isBaselineAligned = false; layoutDirection = View.LAYOUT_DIRECTION_LTR; gravity = Gravity.CENTER_VERTICAL }
             trRow.addView(trB, lp(0, dp(52), 2.6f))
-            for (b in kotlin.collections.listOf(pzB, cxB, wzB, rdB)) trRow.addView(b, lp(0, dp(52), 1f).apply { marginStart = dp(6) })
+            for (b in kotlin.collections.listOf(pzB, cxB, wzB, qkB, rdB)) trRow.addView(b, lp(0, dp(52), 1f).apply { marginStart = dp(6) })
 
             // ── أزرار التحكم ──
             val playB = btn("▶", 28f, 0xFF2563EB.toInt(), 0xFF3B82F6.toInt()) { go("toggle") }
@@ -735,7 +787,9 @@ object PlayerPad {
             tr.addView(btn("⏪ 10", 14f) { go("seek", -10000L) }, lp(0, dp(58), 1f).apply { marginEnd = dp(6) })
             tr.addView(playB, lp(0, dp(70), 1.3f).apply { marginEnd = dp(6) })
             tr.addView(btn("10 ⏩", 14f) { go("seek", 10000L) }, lp(0, dp(58), 1f).apply { marginEnd = dp(6) })
-            tr.addView(btn("⏭", 22f) { go("next") }, lp(0, dp(58), 1f))
+            tr.addView(btn("⏭", 22f) { go("next") }, lp(0, dp(58), 1f).apply { marginEnd = dp(6) })
+            val speedBot = btn("1x", 14f) { sheetSpeed() }   // (v766) السرعة تحت جنب السابق/التالي
+            tr.addView(speedBot, lp(0, dp(58), 1f))
 
             // ── شريط التقدم تحت خالص: نفس DualProgress بتاع المشغّل (أخضر = مترجم · كهرماني = لسه هيتغيّر · أزرق = تنقيح) ──
             val bar = DualProgress(act, th).apply { mini = true }
@@ -800,9 +854,20 @@ object PlayerPad {
                     cntTv.text = "📺 مفيش فيديو شغّال"
                     modeTv.text = if (RemoteClient.lastTv() == null) "⚠ مفيش تلفزيون متصل" else "شغّل فيديو في مشغّل التطبيق على التلفزيون وهيظهر هنا"
                 } else {
-                    cntTv.text = if (cnt.isNotBlank()) cnt else s.optString("tr", "—")
-                    modeTv.text = s.optString("mode", "") + (if (vc > 0) "   ·   👁 $vc جملة بصرية" else "")
+                    val sfDone = s.optBoolean("sf_done", false)
+                    val hasInt = s.optInt("sf_nat", 0) > 0 || s.optString("sf_side", "").isNotBlank()
+                    if (sfDone) {   // (v765) ترجمة داخلية/ملف خلصت: «تمت» وعدد الجمل بس — من غير عدّادات جيميناي/صوتي/وشبر
+                        cntTv.text = "✅ تمت ترجمة الترجمة الداخلية"
+                        modeTv.text = s.optInt("sf_n", 0).toString() + " جملة"
+                    } else if (!s.optBoolean("tstart", false) && hasInt && s.optInt("sf_n", 0) == 0) {   // فيه ترجمة داخلية لسه ماتترجمتش
+                        cntTv.text = "💬 فيه ترجمة داخلية في الفيديو"
+                        modeTv.text = "دوس ▶ ترجم عشان تترجمها"
+                    } else {
+                        cntTv.text = if (cnt.isNotBlank()) cnt else s.optString("tr", "—")
+                        modeTv.text = s.optString("mode", "") + (if (vc > 0) "   ·   👁 $vc جملة بصرية" else "")
+                    }
                 }
+                qkB.alpha = if (live && (qList.size > 1 || s.optBoolean("quality", false))) 1f else 0.35f   // (v765) ثابت/باهت لو مفيش جودة
                 val al = if (live) 1f else 0.4f
                 cntCard.visibility = if (live) View.VISIBLE else View.GONE
                 handoffB.visibility = if (live) View.VISIBLE else View.GONE
@@ -812,7 +877,7 @@ object PlayerPad {
                 for (k in 0 until left.childCount) { val c = left.getChildAt(k); c.alpha = if (c === idleBox) 1f else al }   // (v691) التعتيم من غير الأزرار التلاتة
                 volCol.alpha = al; tr.alpha = al; trRow.alpha = al; bar.alpha = al
                 speedB.text = "⏩ " + s.optString("speed", "1x")
-                speedTop.text = "⏩ " + s.optString("speed", "1x")
+                speedTop.text = "⏩ " + s.optString("speed", "1x"); speedBot.text = "⏩\n" + s.optString("speed", "1x")
                 if (!busy) wtSel = s.optString("wtr", wtSel.ifEmpty { "free" })
                 trB.text = s.optString("tr", "▶ ترجم") + " ▾"
                 trB.background = bg(s.optInt("trcolor", 0xFFE53935.toInt()), 0x66FFFFFF, 18f)

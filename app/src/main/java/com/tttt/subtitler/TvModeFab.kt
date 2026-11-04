@@ -36,7 +36,7 @@ import java.util.concurrent.CopyOnWriteArrayList
  *    ومكتبة الفيديو بتبقى مكتبة التلفزيون. الخروج = قطع الاتصال. مابيظهرش على التلفزيون ولا المشغّل.
  */
 object TvModeFab {
-    private class Layer(val btn: TextView, val banner: TextView) { var scrim: View? = null; val sats = ArrayList<View>(); var open = false; var cap: LinearLayout? = null; var capTitle: TextView? = null; var hooked = false; var padApplied = 0; var ctl: TextView? = null }   // (v614) ctl = لسان الكنترولر (ظاهر دايمًا وهو متصل)   // (v560) scrim + الدواير الـ3 لما الزرار يتفتح
+    private class Layer(val btn: TextView, val banner: TextView) { var scrim: View? = null; val sats = ArrayList<View>(); var open = false; var cap: LinearLayout? = null; var capTitle: TextView? = null; var hooked = false; var padApplied = 0; var ctl: TextView? = null; var capTab: TextView? = null }   // (v614) ctl = لسان الكنترولر (ظاهر دايمًا وهو متصل)   // (v560) scrim + الدواير الـ3 لما الزرار يتفتح
 
     private const val PROMPT_MS = 5000L
     private val main = Handler(Looper.getMainLooper())
@@ -83,6 +83,31 @@ object TvModeFab {
         override fun run() { paintMini(); if (PlayTarget.nowTitle != null) main.postDelayed(this, 500L) else tickOn = false }
     }
     private fun startTick() { if (tickOn) return; tickOn = true; main.post(tick) }
+    @Volatile private var capWanted = false   // (v764) المشغّل المصغّر: false = زرار على الحافة جنب 📺 🎮 · true = كبسولة مفتوحة ناحية الشمال
+    /** (v764) فتح/تصغير الكبسولة: بتتفرد من الحافة اليمين ناحية الشمال، والتصغير بيرجّعها زرار جنب 🎮 */
+    private fun setCap(a: Activity, l: Layer, open: Boolean) {
+        capWanted = open
+        val cap = l.cap ?: return; val tab = l.capTab ?: return
+        if (PlayTarget.nowTitle == null) { cap.visibility = View.GONE; tab.visibility = View.GONE; return }
+        if (open) {
+            tab.visibility = View.GONE
+            cap.animate().cancel(); cap.visibility = View.VISIBLE; cap.scaleX = 0.05f; cap.alpha = 0f
+            cap.animate().scaleX(1f).alpha(1f).setDuration(220L).setInterpolator(android.view.animation.DecelerateInterpolator()).start()
+        } else {
+            cap.animate().cancel()
+            cap.animate().scaleX(0.05f).alpha(0f).setDuration(180L).withEndAction {
+                cap.visibility = View.GONE; cap.scaleX = 1f; cap.alpha = 1f
+                if (PlayTarget.nowTitle != null && !capWanted) { tab.visibility = View.VISIBLE; tab.scaleX = 0.4f; tab.scaleY = 0.4f; tab.animate().scaleX(1f).scaleY(1f).setDuration(160L).start() }
+            }.start()
+        }
+    }
+    /** (v764) مكان زرار/كبسولة المشغّل المصغّر: فوق لسان 🎮 مباشرة بنفس الحجم */
+    private fun placeCap(a: Activity, l: Layer) {
+        val cl = l.ctl?.layoutParams as? FrameLayout.LayoutParams ?: return
+        val bm = cl.bottomMargin + cl.height + dp(a, 6)
+        (l.capTab?.layoutParams as? FrameLayout.LayoutParams)?.let { lp -> if (lp.bottomMargin != bm || lp.width != cl.width || lp.height != cl.height) { lp.bottomMargin = bm; lp.width = cl.width; lp.height = cl.height; lp.rightMargin = 0; l.capTab?.layoutParams = lp } }
+        (l.cap?.layoutParams as? FrameLayout.LayoutParams)?.let { lp -> if (lp.bottomMargin != bm) { lp.bottomMargin = bm; lp.rightMargin = 0; l.cap?.layoutParams = lp } }
+    }
     private val docks = HashMap<Activity, View>()   // (v592) المتصفح: العمود اللي زرار 📺 يقعد فوقه
     /** (v592) الزرار العايم يتحط فوق [stack] مباشرة (بحجم أصغر) بدل مكانه العادي؛ بيتنادى من المتصفح بس */
     fun dock(a: Activity, stack: View) {
@@ -110,6 +135,7 @@ object TvModeFab {
             l.ctl?.textSize = 18f
             l.ctl?.layoutParams = cl
         }
+        placeCap(a, l)
     }
     /** بيتنادى (على thread الواجهة) كل ما الحالة تتحدّث — Main بيستخدمه يبدّل مكتبة الفيديو */
     val listeners = CopyOnWriteArrayList<() -> Unit>()
@@ -211,13 +237,15 @@ object TvModeFab {
             l.ctl?.let { c -> if (c.parent == null) root.addView(c, FrameLayout.LayoutParams(dp(a, 40), dp(a, 52), Gravity.RIGHT or Gravity.BOTTOM).apply { bottomMargin = dp(a, 150) + dp(a, 52) + dp(a, 6); rightMargin = 0 }) }
             if (l.banner.parent == null) root.addView(l.banner, FrameLayout.LayoutParams(-1, dp(a, 24), Gravity.TOP))   // (v612) فوق، والمحتوى بينزل تحتها (placeBanner بتزق الـroot بحشو علوي) — مابقتش بتغطّي الشغل
             if (l.cap == null) {   // (v761) مشغّل مصغّر: ⏯ + اسم الفيديو (دوسة = الريموت) + ✕ ، وتحتها شريط تقدّم بيتحرك (دوسة عليه = تقديم/ترجيع)
-                val tt = TextView(a).apply { setTextColor(Color.WHITE); textSize = 13f; typeface = android.graphics.Typeface.DEFAULT_BOLD; maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END; maxWidth = dp(a, 200) }
+                val tt = TextView(a).apply { setTextColor(Color.WHITE); textSize = 13f; typeface = android.graphics.Typeface.DEFAULT_BOLD; maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END; maxWidth = dp(a, 150) }
                 val xx = TextView(a).apply { text = "✕"; setTextColor(Color.WHITE); textSize = 15f; typeface = android.graphics.Typeface.DEFAULT_BOLD; gravity = Gravity.CENTER; setPadding(dp(a, 10), dp(a, 8), dp(a, 14), dp(a, 8)); contentDescription = "اقفل الفيديو على التلفزيون" }
                 val pp = TextView(a).apply { text = "⏸"; setTextColor(Color.WHITE); textSize = 17f; gravity = Gravity.CENTER; setPadding(dp(a, 14), dp(a, 6), dp(a, 4), dp(a, 6)); contentDescription = "إيقاف / تشغيل على التلفزيون" }
+                val mn = TextView(a).apply { text = "›"; setTextColor(Color.WHITE); textSize = 24f; typeface = android.graphics.Typeface.DEFAULT_BOLD; includeFontPadding = false; gravity = Gravity.CENTER; setPadding(dp(a, 10), dp(a, 4), dp(a, 6), dp(a, 4)); contentDescription = "تصغير المشغّل المصغّر" }   // (v764)
                 val row = LinearLayout(a).apply {
                     orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; gravity = Gravity.CENTER_VERTICAL
-                    addView(pp); addView(tt); addView(xx)
+                    addView(mn); addView(pp); addView(tt); addView(xx)
                 }
+                mn.setOnClickListener { layers[a]?.let { setCap(a, it, false) } }
                 val bar = android.widget.ProgressBar(a, null, android.R.attr.progressBarStyleHorizontal).apply {
                     max = 1000; progress = 0; progressTintList = android.content.res.ColorStateList.valueOf(0xFF4FC3F7.toInt())
                     progressBackgroundTintList = android.content.res.ColorStateList.valueOf(0x44FFFFFF)
@@ -226,12 +254,13 @@ object TvModeFab {
                 val barRow = LinearLayout(a).apply {
                     orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_LTR; gravity = Gravity.CENTER_VERTICAL
                     setPadding(dp(a, 14), 0, dp(a, 14), dp(a, 8))
-                    addView(bar, LinearLayout.LayoutParams(dp(a, 170), dp(a, 14))); addView(tm)
+                    addView(bar, LinearLayout.LayoutParams(dp(a, 150), dp(a, 14))); addView(tm)
                 }
                 val cap = LinearLayout(a).apply {
                     orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER_HORIZONTAL
-                    background = pill(a, 0xF0232838.toInt()); elevation = dp(a, 12).toFloat(); visibility = View.GONE
+                    background = capBg(a, 0xF0232838.toInt()); elevation = dp(a, 12).toFloat(); visibility = View.GONE
                     addView(row); addView(barRow)
+                    addOnLayoutChangeListener { v, _, _, _, _, _, _, _, _ -> v.pivotX = v.width.toFloat(); v.pivotY = v.height / 2f }   // (v764) بتتفرد من الحافة اليمين
                 }
                 tt.setPadding(dp(a, 8), dp(a, 8), dp(a, 8), dp(a, 8))
                 tt.setOnClickListener { try { ControllerPad.show(a) } catch (e: Throwable) { LogStore.err("TvModeFab:cap", e) } }   // (v761) الريموت بدل صفحة المشغّل
@@ -252,10 +281,20 @@ object TvModeFab {
                 l.cap = cap; l.capTitle = tt
             }
             val capV = l.cap
-            if (capV != null && capV.parent == null) root.addView(capV, FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.CENTER_HORIZONTAL).apply { topMargin = dp(a, 10) })   // (v612) العلامة بتزق المحتوى 24dp، فالكبسولة بتقعد تحتها بنفس المكان القديم تقريبًا
+            if (capV != null && capV.parent == null) root.addView(capV, FrameLayout.LayoutParams(-2, -2, Gravity.RIGHT or Gravity.BOTTOM).apply { bottomMargin = dp(a, 150) + 2 * (dp(a, 52) + dp(a, 6)) })   // (v764) على الحافة اليمين فوق 🎮 (مش فوق في النص)
+            if (l.capTab == null) {   // (v764) زرار المشغّل المصغّر: لسان جنب 📺 🎮، دوسة = الكبسولة تتفرد
+                l.capTab = TextView(a).apply {
+                    setTextColor(Color.WHITE); textSize = 18f; includeFontPadding = false; gravity = Gravity.CENTER; text = "▶"
+                    contentDescription = "المشغّل المصغّر للفيديو على التلفزيون"; elevation = dp(a, 10).toFloat(); visibility = View.GONE
+                    background = tabBg(a, 0xF07B1FA2.toInt())
+                    setOnClickListener { layers[a]?.let { setCap(a, it, true) } }
+                }
+            }
+            l.capTab?.let { t -> if (t.parent == null) root.addView(t, FrameLayout.LayoutParams(dp(a, 40), dp(a, 52), Gravity.RIGHT or Gravity.BOTTOM).apply { bottomMargin = dp(a, 150) + 2 * (dp(a, 52) + dp(a, 6)) }) }
             if (!l.hooked) { l.hooked = true; root.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> placeBanner(root, l) } }
             paint(a, l)
             placeFab(a, l)
+            placeCap(a, l)
         } catch (e: Throwable) { LogStore.err("TvModeFab:attach", e) }
     }
 
@@ -289,6 +328,11 @@ object TvModeFab {
         v.visibility = if (show) View.VISIBLE else View.GONE
     }
 
+    /** (v764) كبسولة ملزوقة في الحافة اليمين: الشمال مدوّر واليمين مسطّح */
+    private fun capBg(c: Context, color: Int): GradientDrawable {
+        val r = dp(c, 24).toFloat()
+        return GradientDrawable().apply { setColor(color); cornerRadii = floatArrayOf(r, r, 0f, 0f, 0f, 0f, r, r); setStroke(dp(c, 1), 0x55FFFFFF) }
+    }
     private fun pill(c: Context, color: Int): GradientDrawable =
         GradientDrawable().apply { setColor(color); cornerRadius = dp(c, 24).toFloat(); setStroke(dp(c, 1), 0x55FFFFFF) }
 
@@ -345,7 +389,11 @@ object TvModeFab {
         try { placeBanner(a.findViewById<View>(android.R.id.content), l) } catch (_: Throwable) {}
         val nt = PlayTarget.nowTitle
         l.capTitle?.text = "📺 ▶  " + (nt ?: "")   // (v589 M3) 📺 = الفيديو شغّال على التلفزيون (مش على الموبايل ده)
-        l.cap?.visibility = if (nt != null) View.VISIBLE else View.GONE
+        if (nt == null) { l.cap?.visibility = View.GONE; l.capTab?.visibility = View.GONE }
+        else {   // (v764) زرار على الحافة أو كبسولة مفتوحة حسب آخر اختيار
+            l.cap?.visibility = if (capWanted) View.VISIBLE else View.GONE
+            l.capTab?.visibility = if (capWanted) View.GONE else View.VISIBLE
+        }
         if (nt != null) startTick()
         l.btn.visibility = if (on || prompting || list.isNotEmpty()) View.VISIBLE else View.GONE   // (v614) بيظهر بس لما يلاقي تلفزيون (أو وهو متصل)   // (v590) وهو متصل الزرار بيفضل ظاهر (أخضر) عشان دوسته تفتح الكنترولر؛ الخروج من الخط الأحمر أو دوسة طويلة   // (v565) متصل ← العلامة تتشال (الخروج من الخط الأحمر تحت)
         l.btn.text = "📺"
@@ -367,7 +415,7 @@ object TvModeFab {
     private fun refreshAll() {
         for ((a, l) in layers.toList()) {
             if (a.isDestroyed || a.isFinishing) { layers.remove(a); continue }
-            if (l.btn.parent == null || l.banner.parent == null || (l.ctl != null && l.ctl?.parent == null) || (l.cap != null && l.cap?.parent == null)) attach(a) else paint(a, l)
+            if (l.btn.parent == null || l.banner.parent == null || (l.ctl != null && l.ctl?.parent == null) || (l.cap != null && l.cap?.parent == null) || (l.capTab != null && l.capTab?.parent == null)) attach(a) else paint(a, l)
         }
         for ((a, v) in phoneCtl.toList()) {
             if (a.isDestroyed || a.isFinishing) { phoneCtl.remove(a); continue }

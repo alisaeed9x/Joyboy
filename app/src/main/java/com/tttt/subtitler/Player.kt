@@ -143,6 +143,14 @@ class PlayerActivity : Activity(), Host {
         j.put("ytmode", try { if (::modePill.isInitialized && modePill.visibility == View.VISIBLE) modePill.text.toString() else "" } catch (_: Throwable) { "" })
         j.put("ab", if (abA < 0L) "" else if (abB <= abA) "A " + PlayerLogic.clock(abA) else "A " + PlayerLogic.clock(abA) + " ← B " + PlayerLogic.clock(abB))
         j.put("posy", Cfg.int("sub_posy", 0))
+        try { j.put("sf_done", !engineStarted && sfDoneUri.isNotEmpty() && sfDoneUri == (uri?.toString() ?: "")); j.put("sf_n", if (::engine.isInitialized) engine.subs.size else 0) } catch (_: Throwable) {}   // (v765) ترجمة داخلية/ملف اتترجمت: عدّاد الريموت يعرض «تمت» بدل عدّادات جيميناي
+        // (v762) حالة ورقة ⚙ إعدادات الترجمة على الموبايل (بدل ما كانت بتفتح على التلفزيون)
+        try {
+            j.put("ms_mk", curModeKey()); j.put("ms_lang", Offline.lang()); j.put("ms_model", Offline.model().id)
+            j.put("ms_wav", AudioEnc.preset() == AudioEnc.NORMAL); j.put("ms_dual", Cfg.int("dual_listen", 1))
+            j.put("ms_swap", Cfg.str("tr_autoswap", "on") != "off"); j.put("ms_term", TermNotes.enabled())
+            j.put("ms_keys", Cfg.keys("keys").size + Cfg.keys("extra").size + Cfg.keys("backup").size)
+        } catch (_: Throwable) {}
         j.put("hsub", try { hasSubsNow() } catch (_: Throwable) { false })
         j.put("cdial", try { caps().dialect } catch (_: Throwable) { false })
         try { val ts = if (::engine.isInitialized) (engine as? LocalEngine)?.e?.toolState() ?: Pair("", 0f) else Pair("", 0f); j.put("tool", ts.first); j.put("toolp", (ts.second * 100f).toInt().coerceIn(0, 100)) } catch (_: Throwable) {}   // (v709) تأثير «الكوباية» على أزرار الريموت
@@ -653,6 +661,7 @@ class PlayerActivity : Activity(), Host {
                         }
                     }
                 }
+                else if (a.startsWith("mset:")) runOnUiThread { try { remoteMset(a.substring(5)) } catch (e: Throwable) { LogStore.err("Player:rmset", e) } }   // (v762) ⚙ إعدادات الترجمة من الموبايل: «mset:lang:en» / model / aud / dual / swap / term
                 else if (a.startsWith("subnet:")) subNet(a.substring(7))   // (v746)
                 else if (a.startsWith("subhunt:")) subHunt(a.substring(8).toIntOrNull() ?: 0)
                 else if (a == "subalign") subAlignRun(false)
@@ -971,7 +980,7 @@ class PlayerActivity : Activity(), Host {
                 try {
                     player.exo()?.let { xp -> xp.trackSelectionParameters = xp.trackSelectionParameters.buildUpon().setTrackTypeDisabled(tc, false)
                         .setOverrideForType(androidx.media3.common.TrackSelectionOverride(g.mediaTrackGroup, 0)).build() }
-                    preferNative = true; ccOn = true; curIdx = -2
+                    sfHideNative = false; preferNative = true; ccOn = true; curIdx = -2   // (v762) اختيار مسار أصلي بإيدك = يفتح الأصلية تاني
                     Notice.show(this, "💬 " + name, 1500L)
                 } catch (e: Throwable) { LogStore.err("Player:pickText", e) }
             }
@@ -1040,7 +1049,7 @@ class PlayerActivity : Activity(), Host {
     private fun sfStartLive(eng: String) {
         sfLive = eng; sfLiveCache.clear(); sfLiveAsk.clear(); synchronized(sfLiveCtx) { sfLiveCtx.clear() }
         try { player.exo()?.let { xp -> xp.trackSelectionParameters = xp.trackSelectionParameters.buildUpon().setTrackTypeDisabled(androidx.media3.common.C.TRACK_TYPE_TEXT, false).build() } } catch (_: Throwable) {}
-        preferNative = true; ccOn = true; curIdx = -2
+        sfHideNative = false; preferNative = true; ccOn = true; curIdx = -2   // (v762)
         sfNote("💬 بترجم ترجمة الفيديو الأصلية لحظيًا بـ " + (if (eng == "gemini") "جيميناي" else "جوجل") + " — ممكن تتأخر ثانية عن الصوت", 5000L)
     }
     private fun sfStopLive() { sfLive = ""; preferNative = false; curIdx = -2 }
@@ -1124,7 +1133,7 @@ class PlayerActivity : Activity(), Host {
                 engine.importSubs(subs)
                 try { engine.markAllDone(g.cues.maxOfOrNull { it.end } ?: 0.0) } catch (_: Throwable) {}
                 sfLive = ""; preferNative = false; ccOn = true; dirty = true; curIdx = -2
-                try { player.exo()?.let { xp -> xp.trackSelectionParameters = xp.trackSelectionParameters.buildUpon().setTrackTypeDisabled(androidx.media3.common.C.TRACK_TYPE_TEXT, true).build() } } catch (_: Throwable) {}
+                sfHideNative = true; sfKillNative()   // (v762)
                 nativeCue = ""
                 sfDoneUri = uri?.toString() ?: ""
                 sfDoneLabel = "🌍 ترجمة أونلاين · " + g.source.take(40)
@@ -1403,7 +1412,7 @@ class PlayerActivity : Activity(), Host {
                 engine.importSubs(subs)
                 try { engine.markAllDone(cues.maxOfOrNull { it.end } ?: 0.0) } catch (_: Throwable) {}   // (v685)
                 sfLive = ""; preferNative = false; ccOn = true; dirty = true; curIdx = -2
-                try { player.exo()?.let { xp -> xp.trackSelectionParameters = xp.trackSelectionParameters.buildUpon().setTrackTypeDisabled(androidx.media3.common.C.TRACK_TYPE_TEXT, true).build() } } catch (_: Throwable) {}   // (v667) ملف الترجمة الأصلي يتفصل والمترجم هو اللي يظهر
+                sfHideNative = true; sfKillNative()   // (v762)   // (v667) ملف الترجمة الأصلي يتفصل والمترجم هو اللي يظهر
                 nativeCue = ""
                 sfDoneUri = uri?.toString() ?: ""
                 sfDoneLabel = try {
@@ -2054,6 +2063,12 @@ class PlayerActivity : Activity(), Host {
     var curIdx = -1; var curKey = ""; var lastRefresh = 0L
     // (v515) ترجمة الفيديو الأصلية (سوفت صب جوه الملف أو ملف ترجمة جنبه): بتظهر بنفس ستايل المشغّل بلون أبيض لما مفيش ترجمة من المحرك
     @Volatile private var nativeCue = ""
+    /** (v762) ترجمة ملف الترجمة (سوفت/هارد) خلصت واتطبّقت: مسار الترجمة الأصلي بتاع الفيديو/الملف المرفق يتقفل خالص ومايظهرش — اللي يظهر ترجمة البرنامج بس. بيتفتح تاني لو اخترت مسار أصلي بإيدك أو ترجمة لحظية */
+    @Volatile private var sfHideNative = false
+    private fun sfKillNative() {
+        nativeCue = ""
+        try { player.exo()?.let { xp -> if (!xp.trackSelectionParameters.disabledTrackTypes.contains(androidx.media3.common.C.TRACK_TYPE_TEXT)) xp.trackSelectionParameters = xp.trackSelectionParameters.buildUpon().setTrackTypeDisabled(androidx.media3.common.C.TRACK_TYPE_TEXT, true).build() } } catch (_: Throwable) {}
+    }
     private var natShown = false
     private var natGapSince = 0L
     private var textPicked = false
@@ -3151,6 +3166,24 @@ class PlayerActivity : Activity(), Host {
         }
     }
 
+    /** (v762) أوامر ورقة ⚙ إعدادات الترجمة اللي على الموبايل — بتتطبّق هنا من غير ما تفتح أي قايمة على شاشة التلفزيون */
+    private fun remoteMset(c: String) {
+        val k = c.substringBefore(':'); val v = c.substringAfter(':', "")
+        when (k) {
+            "lang" -> if (v in Offline.langIds && v != Offline.lang()) liveOffline(v, null)
+            "model" -> Offline.models.firstOrNull { it.id == v }?.let { m -> if (m.id != Offline.model().id) pickWhisperModel(m) }
+            "aud" -> {
+                val wav = v == "wav"
+                Cfg.put(AudioEnc.PRESET_KEY, if (wav) AudioEnc.NORMAL else AudioEnc.FAST)
+                if (wav && Strict.id() == "g_aac") Cfg.put("tr_mode_id", "g_wav") else if (!wav && Strict.id() == "g_wav") Cfg.put("tr_mode_id", "g_aac")
+                say("🎧 جودة الصوت: " + (if (wav) "WAV" else "AAC (داتا أقل)") + " — الباتشات الجاية")
+            }
+            "dual" -> { val n = (v.toIntOrNull() ?: 1).coerceIn(0, 2); Cfg.put("dual_listen", n.toString()); say("🎯 التسميع المزدوج: " + kotlin.collections.listOf("مقفول", "ذكي (غير الإنجليزي)", "دايمًا")[n]) }
+            "swap" -> { val on = Cfg.str("tr_autoswap", "on") != "off"; Cfg.put("tr_autoswap", if (on) "off" else "on"); say("🔄 البديل التلقائي: " + (if (on) "اتقفل" else "اتفتح")) }
+            "term" -> { val on = TermNotes.enabled(); Cfg.put("term_notes", if (on) "off" else "on"); say("📖 نبذة المصطلحات: " + (if (on) "اتقفلت" else "اتفتحت")) }
+        }
+    }
+
     /** (v740) ⚙ إعدادات الترجمة: صفحة رئيسية (صف لكل قسم بقيمته الحالية) + صفحة لكل قسم. كل تغيير بيتطبّق فورًا من غير إعادة */
     fun modeSettings(anchor: View, page: String? = null) {
         setPop?.let { if (it.isShowing) { it.dismiss(); setPop = null; return } }
@@ -3603,6 +3636,19 @@ class PlayerActivity : Activity(), Host {
             pendingSentTxt = txt
             try { startActivityForResult(Intent(Intent.ACTION_CREATE_DOCUMENT).apply { addCategory(Intent.CATEGORY_OPENABLE); type = "text/plain"; putExtra(Intent.EXTRA_TITLE, "sentences.txt") }, 31) } catch (_: Exception) { pendingSentTxt = null }
         }
+    }
+
+    /** (v763) عرض احتياطي للترجمة: لو حلقة العرض الأساسية وقعت في استثناء قبل ما توصل لسطر الترجمة (كان بيسيب الجملة واقفة والجمل اللي بعدها ما بتظهرش)، الحلقة دي بتحسب الجملة الحالية وتعرضها لوحدها */
+    private fun subSafeTick() {
+        if (!::sub.isInitialized || !::engine.isInitialized) return
+        if (dirty) { try { refreshList() } catch (_: Throwable) {} }
+        val c = try { player.currentPosition } catch (_: Throwable) { cur }
+        val act = PlayerLogic.activeIndices(spStarts, spEnds, c, offsetMs, 400L, 1).map { spMap[it] }
+        val gs = PlayerLogic.orderSpeakers(act.map { list[it] })
+        val shown: Sub? = if (!ccOn || gs.isEmpty()) null else PlayerLogic.combine(gs)
+        val idx = act.lastOrNull() ?: -1
+        curIdx = idx; curKey = "safe:" + act.joinToString(",")
+        sub.show(shown, gs)
     }
 
     private fun refreshList() {
@@ -5082,8 +5128,10 @@ class PlayerActivity : Activity(), Host {
         KeepAliveService.start(this)
 
         var tickErrN = 0
+        var tickBad = false   // (v763) لو حلقة العرض وقعت في استثناء، العرض الاحتياطي يكمّل الترجمة
         h.post(object : Runnable {
             override fun run() {
+                tickBad = false
                 try {
                 cur = player.currentPosition
                 val d = player.duration
@@ -5154,7 +5202,7 @@ class PlayerActivity : Activity(), Host {
                 val natGap = ccOn && gs.isEmpty() && nativeCue.isNotEmpty()
                 if (!natGap) natGapSince = 0L else if (natGapSince == 0L) natGapSince = now
                 val natHold = !preferNative && natGap && (engineStarted || sfBusy.isNotEmpty() || engine.subs.isNotEmpty()) && now - natGapSince < 900L
-                val nat = ccOn && (gs.isEmpty() || preferNative) && nativeCue.isNotEmpty() && !natHold   // (v515) (v521) preferNative = المستخدم اختار مسار الفيديو الأصلي ترجمة الفيديو الأصلية لما مفيش ترجمة من المحرك
+                val nat = ccOn && !sfHideNative && (gs.isEmpty() || preferNative) && nativeCue.isNotEmpty() && !natHold   // (v515) (v521) preferNative = المستخدم اختار مسار الفيديو الأصلي ترجمة الفيديو الأصلية لما مفيش ترجمة من المحرك
                 if (nat != natShown) { natShown = nat; try { sub.style = natStyle(SubStyle.load { k, d -> Cfg.str(k, d) }) } catch (e: Throwable) { LogStore.err("Player:natStyle", e) } }
                 if (nativeCue != natWaitCue) { natWaitCue = nativeCue; natWaitSince = now }
                 val liveWait = nat && sfLive.isNotEmpty() && sfLiveCache[nativeCue] == null && now - natWaitSince < 2500L   // (v703) لسه الترجمة ماجتش: ما نعرضش الأصل
@@ -5216,7 +5264,7 @@ class PlayerActivity : Activity(), Host {
                         if (atBottom) logSv.post { logSv.fullScroll(View.FOCUS_DOWN) }
                     }
                 }
-                } catch (e: Throwable) { if (tickErrN++ < 5) { try { LogStore.err("Player:tick", e) } catch (_: Throwable) {} } } finally { h.postDelayed(this, 200) }   // (v471) أي استثناء في حلقة العرض كان بيقفل التطبيق — دلوقتي بيتسجّل في اللوج والحلقة تكمل
+                } catch (e: Throwable) { tickBad = true; if (tickErrN++ < 5) { try { LogStore.err("Player:tick", e) } catch (_: Throwable) {} } } finally { if (tickBad) { try { subSafeTick() } catch (_: Throwable) {} }; h.postDelayed(this, 200) }   // (v471) أي استثناء في حلقة العرض كان بيقفل التطبيق — دلوقتي بيتسجّل في اللوج والحلقة تكمل
             }
         })
         engineStarted = false; updateTr()
@@ -5374,12 +5422,13 @@ class PlayerActivity : Activity(), Host {
             }
             override fun onRenderedFirstFrame() { firstFrame = true; webFirstFrame = true; ytBusy(false) }
             override fun onCues(cueGroup: androidx.media3.common.text.CueGroup) {
-                nativeCue = cueGroup.cues.mapNotNull { it.text?.toString()?.trim() }.filter { it.isNotEmpty() }.joinToString("\n")
+                nativeCue = if (sfHideNative) "" else cueGroup.cues.mapNotNull { it.text?.toString()?.trim() }.filter { it.isNotEmpty() }.joinToString("\n")   // (v762) الأصلية مقفولة بعد ترجمة الملف
             }
             override fun onTracksChanged(t: Tracks) {
                 try { runOnUiThread { paintAud(); paintQual() } } catch (_: Throwable) {}   // (v714) جودات HLS بتظهر هنا — زرار الجودة يظهر أول ما تتعرف
                 try {
-                    if (!textPicked) {
+                    if (sfHideNative) { textPicked = true; sfKillNative() }   // (v762) مفيش تفعيل تلقائي لمسار الترجمة الأصلي بعد ترجمة الملف
+                    else if (!textPicked) {
                         val tg = t.groups.filter { it.type == C.TRACK_TYPE_TEXT && it.length > 0 && it.isSupported }
                         if (tg.isNotEmpty()) {
                             textPicked = true
@@ -5881,7 +5930,7 @@ class PlayerActivity : Activity(), Host {
         try { player.release() } catch (e: Exception) { LogStore.err("Main:2167", e) }
         uri = newUri; url = null; aurl = null; hdr.clear()
         cur = 0L; durMs = 0L; vidW = 0; vidH = 0; curIdx = -2; curKey = ""; dirty = true
-        nativeCue = ""; textPicked = false; natShown = false; natLast = ""; preferNative = false; sfLive = ""; sfLiveCache.clear(); sfLiveAsk.clear()
+        nativeCue = ""; sfHideNative = false; textPicked = false; natShown = false; natLast = ""; preferNative = false; sfLive = ""; sfLiveCache.clear(); sfLiveAsk.clear()
         synchronized(logBuf) { logBuf.setLength(0) }
         status = ""; conf = Cfg.snapshot()
         try { sub.show(null) } catch (e: Exception) { LogStore.err("Main:2172", e) }
