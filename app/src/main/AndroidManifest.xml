@@ -31,6 +31,7 @@
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="28"/>
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES"/>   <!-- (v518) تثبيت التحديث اللي جه من الموبايل -->
     <uses-permission android:name="android.permission.REQUEST_DELETE_PACKAGES"/>   <!-- (v483) زرار إلغاء تثبيت اللانشر -->
+    <uses-permission android:name="android.permission.KILL_BACKGROUND_PROCESSES"/>   <!-- (v772) زرار تنضيف الرام في لانشر الموبايل -->
     <uses-permission android:name="android.permission.READ_MEDIA_VIDEO"/>
     <uses-permission android:name="android.permission.READ_MEDIA_IMAGES"/>   <!-- (v607) مركز النقل: الصور -->
     <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES"/>   <!-- (v607) مركز النقل: قايمة التطبيقات المثبتة لإرسال APK بتاعها -->
@@ -80,6 +81,25 @@
                 <category android:name="android.intent.category.LEANBACK_LAUNCHER"/>
             </intent-filter>
         </activity>
+        <!-- (v772) لانشر الموبايل (Joyboy Launcher جوه التطبيق): شاشة رئيسية HOME للموبايل/التابلت — متعطّل على التلفزيون (res/values-television/bools_phonehome.xml)
+             والتلفزيون لسه رئيسيته TvActivity. taskAffinity فاضي عشان تفضل في تاسك لوحدها وما تتلخبطش مع تاسك Joyboy. -->
+        <activity android:name=".phonehome.PhoneHomeActivity" android:exported="true" android:enabled="@bool/phone_home_enabled"
+            android:label="Joyboy Launcher" android:icon="@mipmap/ic_launcher" android:theme="@style/PhoneHomeTheme"
+            android:launchMode="singleTask" android:taskAffinity="" android:stateNotNeeded="true" android:excludeFromRecents="true"
+            android:screenOrientation="portrait"
+            android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboardHidden|density|uiMode">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN"/>
+                <category android:name="android.intent.category.HOME"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+            </intent-filter>
+        </activity>
+        <!-- (v772) إيماءات الشاشة الكاملة + الأخيرة للانشر (إمكانية الوصول — اختيارية، بتتفعّل من إعدادات اللانشر) -->
+        <service android:name=".phonehome.GestureService" android:exported="true" android:label="Joyboy Launcher Gestures"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+            <intent-filter><action android:name="android.accessibilityservice.AccessibilityService"/></intent-filter>
+            <meta-data android:name="android.accessibilityservice" android:resource="@xml/phonehome_gestures"/>
+        </service>
         <!-- (v607) مركز النقل: إرسال/استقبال ملفات (فيديوهات · صوتيات · صور · APK · تطبيقات) بين الموبايل والتلفزيون وأي تطبيق تاني — وكمان هدف مشاركة «Joyboy نقل» -->
         <!-- (v653) نقل الملفات الذكي: رادار + إرسال/استقبال مشفّر بموافقة + سجل + هوية الجهاز (بجانب مركز النقل القديم من غير ما يتأثر) -->
         <activity android:name=".FileTransferActivity" android:exported="false" android:label="Joyboy نقل ذكي" android:theme="@style/AppSplash"

@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- (v772) على التلفزيون الرئيسية هي TvActivity بس — لانشر الموبايل متعطّل -->
+    <bool name="phone_home_enabled">false</bool>
+</resources>

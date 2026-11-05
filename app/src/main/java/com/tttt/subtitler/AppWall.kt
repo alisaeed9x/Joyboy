@@ -97,6 +97,9 @@ object AppWall {
 
     fun reapply(a: Activity) { applyNow(a) }
 
+    /** (v772) هل الأكتفيتي دي هي اللي ماسكة الخلفية دلوقتي؟ (لانشر الموبايل بيرجّعها لنفسه لما Main/المتصفح يمسكوها وبعدين نرجع للرئيسية) */
+    fun ownedBy(a: Activity): Boolean = actRef?.get() === a
+
     /** زرار "غيّر الخلفية دلوقتي". */
     fun nextNow(a: Activity) {
         if (!enabled()) { Cfg.put("app_wall", "auto"); applyNow(a) }

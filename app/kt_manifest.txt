@@ -249,3 +249,12 @@ com/tttt/subtitler/SubAlign.kt
 com/tttt/subtitler/SubHunt.kt
 com/tttt/subtitler/SubName.kt
 com/tttt/subtitler/SubOnline.kt
+com/tttt/subtitler/phonehome/Adapters.kt
+com/tttt/subtitler/phonehome/Apps.kt
+com/tttt/subtitler/phonehome/GestureService.kt
+com/tttt/subtitler/phonehome/HomeClock.kt
+com/tttt/subtitler/phonehome/HomeTools.kt
+com/tttt/subtitler/phonehome/Model.kt
+com/tttt/subtitler/phonehome/PhoneHomeActivity.kt
+com/tttt/subtitler/phonehome/Recents.kt
+com/tttt/subtitler/phonehome/Ui.kt
