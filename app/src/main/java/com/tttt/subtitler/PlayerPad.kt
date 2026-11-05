@@ -266,7 +266,7 @@ object PlayerPad {
                 body.addView(r2, lp(-1, -2).apply { topMargin = dp(8) })
                 if (logSrc == 0 && !LinkSession.connected) infoCard(body, "مفيش اتصال بالتلفزيون دلوقتي — سطور التلفزيون بتوصل وانت متصل بس.")
                 body.addView(label(if (txt.isEmpty()) "مفيش سطور لسه" + (if (logSrc == 0) " — شغّل فيديو على التلفزيون وسيبه يشتغل وارجع دوس 🔄" else "") else txt, 11f, 0xFFD6E2FF.toInt(), false).apply {
-                    typeface = android.graphics.Typeface.MONOSPACE; setTextIsSelectable(true); gravity = Gravity.START; textDirection = View.TEXT_DIRECTION_ANYRTL
+                    typeface = android.graphics.Typeface.MONOSPACE; setTextIsSelectable(true); gravity = Gravity.START; textDirection = View.TEXT_DIRECTION_ANY_RTL
                     background = bg(0xFF0F1830.toInt(), 0xFF2B3F6E.toInt(), 14f); setPadding(dp(10), dp(8), dp(10), dp(8))
                 }, lp(-1, -2).apply { topMargin = dp(10) })
             }
