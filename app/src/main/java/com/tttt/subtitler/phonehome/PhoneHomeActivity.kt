@@ -8,8 +8,10 @@ import android.graphics.BitmapFactory
 import android.app.WallpaperManager
 import android.content.*
 import android.graphics.Color
+import android.graphics.drawable.ColorDrawable
 import android.graphics.drawable.GradientDrawable
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -95,6 +97,10 @@ class PhoneHomeActivity : Activity() {
     private var popupFolder: Entry.Folder? = null
     private var popupTitle: EditText? = null
     private var recents: FrameLayout? = null
+    private lateinit var widgets: HomeWidgets          // (v773)
+    private lateinit var studio: ThemeStudio            // (v775) ستور الثيمات + التوليد العشوائي + المعاينة
+    private var themeWallViews: List<View> = emptyList()   // (v775) خلفية الثيم (صورة/تدرّج + تعتيم)
+    private var homeMenu: PopupWindow? = null          // (v773) قايمة الضغطة الطويلة
 
     // (v772) الساعة + المواقيت + الخلفية + الرام
     private lateinit var clock: HomeClock
@@ -121,6 +127,7 @@ class PhoneHomeActivity : Activity() {
     override fun onCreate(b: Bundle?) {
         super.onCreate(b)
         Cfg.ensure(this)
+        HomeThemeStore.cur = HomeThemeStore.load(prefs)   // (v773) ثيم الذكاء قبل بناء الواجهة
         WindowCompat.setDecorFitsSystemWindows(window, false)
         buildUi()
         reload()
@@ -130,6 +137,7 @@ class PhoneHomeActivity : Activity() {
     override fun onBackPressed() {
         // لانشر: زرار الرجوع مابيخرّجش من الشاشة الرئيسية — بيقفل اللي مفتوح بس
         when {
+            widgets.isOpen -> widgets.close()
             recents != null -> closeRecents(true)
             popup != null -> closeFolder(true)
             progress > 0.01f -> animateTo(0f)
@@ -143,9 +151,10 @@ class PhoneHomeActivity : Activity() {
             addAction(Intent.ACTION_PACKAGE_CHANGED); addDataScheme("package")
         }
         registerReceiver(pkgReceiver, f)
+        widgets.start()
     }
 
-    override fun onStop() { super.onStop(); try { unregisterReceiver(pkgReceiver) } catch (_: Exception) {} }
+    override fun onStop() { super.onStop(); widgets.stop(); try { unregisterReceiver(pkgReceiver) } catch (_: Exception) {} }
 
     override fun onPause() { super.onPause(); ui.removeCallbacks(tick) }
 
@@ -161,16 +170,24 @@ class PhoneHomeActivity : Activity() {
         ui.removeCallbacks(tick); tick.run()
         loadPrayer(false)
         updateRamLabel()
+        maybeAskDefault()
     }
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         if (intent.action == Intent.ACTION_MAIN) {
+            if (widgets.isOpen) { widgets.close(); return }
             if (RecentsStore.openRequested) { RecentsStore.openRequested = false; root.post { openRecents() }; return }
             if (recents != null) { closeRecents(true); return }
             closeFolder(false)
             if (progress > 0.01f) animateTo(0f) else pager.setCurrentItem(0, true)
         }
+    }
+
+    @Suppress("OVERRIDE_DEPRECATION", "DEPRECATION")
+    override fun onActivityResult(req: Int, res: Int, data: Intent?) {
+        super.onActivityResult(req, res, data)
+        widgets.onResult(req, res, data)
     }
 
     // ───────── touch (drag & drop lives here) ─────────
@@ -192,20 +209,19 @@ class PhoneHomeActivity : Activity() {
     // ───────── UI ─────────
     private fun buildUi() {
         root = FrameLayout(this)
+        widgets = HomeWidgets(this, prefs, root)
+        studio = ThemeStudio(this, prefs, { pages.firstOrNull()?.filter { it !== Entry.Placeholder } ?: emptyList() }) { recreate() }
         attachWall()   // (v772) خلفية Joyboy المتغيّرة تحت الواجهة كلها
+        attachThemeWall()   // (v775) لو الثيم الشغّال له خلفية: بتتحط فوق خلفية Joyboy وتحت الواجهة
         stage = FrameLayout(this)
         root.addView(stage, -1, -1)
 
         content = SwipeFrame(this)
         val col = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        pagesAdapter = PagesAdapter(pages, ::onWorkspaceClick, ::onWorkspaceLong)
+        pagesAdapter = PagesAdapter(pages, ::onWorkspaceClick, ::onWorkspaceLong) { showHomeMenu() }
         pager = ViewPager2(this).apply {
             adapter = pagesAdapter
-            setPageTransformer { page, pos ->
-                val a = abs(pos).coerceAtMost(1f)
-                page.alpha = 1f - a * .5f
-                page.scaleX = 1f - a * .1f; page.scaleY = 1f - a * .1f
-            }
+            setPageTransformer(pageTransformer(HomeThemeStore.cur?.transition ?: ""))
             registerOnPageChangeCallback(object : ViewPager2.OnPageChangeCallback() {
                 override fun onPageSelected(p: Int) = updateDots(p)
                 override fun onPageScrolled(p: Int, off: Float, px: Int) {
@@ -218,11 +234,12 @@ class PhoneHomeActivity : Activity() {
             })
         }
         dots = LinearLayout(this).apply { gravity = Gravity.CENTER; setPadding(0, dp(8), 0, dp(8)) }
-        dots.setOnLongClickListener { showSettings(); true }
+        dots.setOnLongClickListener { showHomeMenu(); true }
         hotseat = LinearLayout(this).apply {
             gravity = Gravity.CENTER; setPadding(dp(8), dp(10), dp(8), dp(10))
-            background = GradientDrawable().apply { cornerRadius = dp(32).toFloat(); setColor(0x33FFFFFF) }
+            background = dockBg()
         }
+        hotseat.setOnLongClickListener { showHomeMenu(); true }
         // (v772) الصفحة بتاخد المساحة اللي فاضلة تحت الساعة: ارتفاع الصف بيتظبط عشان الـ4 صفوف يبانوا كلهم
         pager.addOnLayoutChangeListener { _, _, t, _, bt, _, _, _, _ ->
             val rows = PAGE_CAP / 4
@@ -230,7 +247,9 @@ class PhoneHomeActivity : Activity() {
             if (rh != pagesAdapter.rowH) { pagesAdapter.rowH = rh; pagesAdapter.notifyDataSetChanged() }
         }
         val compact = resources.configuration.screenHeightDp < 720
-        clock = HomeClock(this, compact, { AppWall.nextNow(this) }, { cleanRam() }, { loadPrayer(true) })
+        clock = HomeClock(this, compact, { nextWall() }, { cleanRam() }, { loadPrayer(true) }, { studio.openStore() })
+        HomeThemeStore.cur?.let { clock.applyTheme(it) }
+        clock.view.setOnLongClickListener { showHomeMenu(); true }
         col.addView(clock.view, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(8) })
         col.addView(pager, LinearLayout.LayoutParams(-1, 0, 1f))
         col.addView(dots, LinearLayout.LayoutParams(-1, -2))
@@ -243,7 +262,7 @@ class PhoneHomeActivity : Activity() {
         drawer = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL; visibility = View.INVISIBLE
             background = GradientDrawable().apply {
-                val r = dp(28).toFloat()
+                val r = dp(HomeThemeStore.cur?.drawerRadius ?: 28).toFloat()
                 cornerRadii = floatArrayOf(r, r, r, r, 0f, 0f, 0f, 0f)
                 setColor(surfaceColor())
             }
@@ -362,22 +381,68 @@ class PhoneHomeActivity : Activity() {
         }.distinctBy { it.cn.packageName }
     }
 
+    /** (v773) الدوك: اللي اختاره المستخدم، أو الافتراضي (اتصال/رسائل/متصفح/كاميرا) لو لسه ما خصّصش */
+    private fun dockApps(apps: List<AppItem>): List<AppItem> {
+        if (!HomeDock.customized(prefs)) return hotseatDefaults(apps)
+        val map = apps.associateBy { it.cn.flattenToString() }
+        return HomeDock.get(prefs).mapNotNull { map[it] }.take(HomeDock.MAX)
+    }
+
+    private fun toggleDock(a: AppItem) {
+        if (!HomeDock.customized(prefs)) HomeDock.save(prefs, hotseatDefaults(allApps).map { it.cn.flattenToString() })
+        if (HomeDock.has(prefs, a.cn)) HomeDock.remove(prefs, a.cn)
+        else if (!HomeDock.add(prefs, a.cn)) {
+            Toast.makeText(this, "الدوك مليان (" + HomeDock.MAX + " تطبيقات) — شيل واحد الأول", Toast.LENGTH_SHORT).show()
+            return
+        }
+        reload()
+    }
+
+    private fun pageTransformer(kind: String) = ViewPager2.PageTransformer { page, pos ->
+        val a = abs(pos).coerceAtMost(1f)
+        when (kind) {
+            "none" -> { page.alpha = 1f; page.scaleX = 1f; page.scaleY = 1f }
+            "slide" -> { page.alpha = 1f - a * .3f; page.scaleX = 1f; page.scaleY = 1f }
+            "zoom" -> { page.alpha = 1f - a; page.scaleX = 1f - a * .3f; page.scaleY = 1f - a * .3f }
+            "fade" -> { page.alpha = 1f - a; page.scaleX = 1f; page.scaleY = 1f }
+            else -> { page.alpha = 1f - a * .5f; page.scaleX = 1f - a * .1f; page.scaleY = 1f - a * .1f }
+        }
+    }
+
+    private fun accent(): Int = HomeThemeStore.cur?.accent ?: Color.WHITE
+    private fun dockBg() = GradientDrawable().apply { cornerRadius = dp(HomeThemeStore.cur?.dockRadius ?: 32).toFloat(); setColor(HomeThemeStore.cur?.dock ?: 0x33FFFFFF) }
+
     private fun bind(apps: List<AppItem>) {
         allApps = apps
-        val hot = hotseatDefaults(apps)
+        val hot = dockApps(apps)
         pages = LayoutStore.restore(prefs, apps, hot.map { it.cn }.toSet())
         pagesAdapter.pages = pages
         pagesAdapter.notifyDataSetChanged()
         drawerAdapter.items = apps.map { Entry.App(it) as Entry }.toMutableList()
         drawerAdapter.notifyDataSetChanged()
         hotseat.removeAllViews()
+        hotseat.visibility = if (hot.isEmpty()) View.GONE else View.VISIBLE
+        val th = HomeThemeStore.cur
         hot.forEach { a ->
-            val iv = ImageView(this).apply {
-                setImageDrawable(a.copyIcon()); pressEffect()
-                setOnClickListener { launch(a, this) }
-                setOnLongClickListener { showMenu(a, this); true }
+            if (th == null || !HomeIcons.shaped(th)) {
+                val iv = ImageView(this).apply {
+                    setImageDrawable(a.copyIcon()); pressEffect()
+                    setOnClickListener { launch(a, this) }
+                    setOnLongClickListener { showMenu(a, this); true }
+                }
+                hotseat.addView(iv, LinearLayout.LayoutParams(0, dp(58), 1f))
+            } else {
+                // (v775) أيقونة الدوك بشكل الثيم: خلية بالعرض + أيقونة مربّعة في النص (عشان الشكل ما يتمطّش)
+                val px = dp(if (th.iconDp > 0) th.iconDp.coerceIn(44, 60) else 56)
+                val iv = HomeIcons.make(this, th, px).apply {
+                    setImageDrawable(a.copyIcon()); pressEffect()
+                    setOnClickListener { launch(a, this) }
+                    setOnLongClickListener { showMenu(a, this); true }
+                }
+                val cell = FrameLayout(this)
+                cell.addView(iv, FrameLayout.LayoutParams(px, px, Gravity.CENTER))
+                hotseat.addView(cell, LinearLayout.LayoutParams(0, dp(58), 1f))
             }
-            hotseat.addView(iv, LinearLayout.LayoutParams(0, dp(58), 1f))
         }
         LayoutStore.save(prefs, pages)
         updateDots(pager.currentItem)
@@ -390,7 +455,7 @@ class PhoneHomeActivity : Activity() {
         for (i in 0 until n) {
             val d = View(this).apply {
                 background = GradientDrawable().apply {
-                    cornerRadius = dp(3).toFloat(); setColor(if (i == sel) Color.WHITE else 0x66FFFFFF)
+                    cornerRadius = dp(3).toFloat(); setColor(if (i == sel) accent() else ColorUtils.setAlphaComponent(accent(), 0x66))
                 }
             }
             dots.addView(d, LinearLayout.LayoutParams(if (i == sel) dp(16) else dp(6), dp(6)).apply { setMargins(dp(3), 0, dp(3), 0) })
@@ -450,15 +515,18 @@ class PhoneHomeActivity : Activity() {
     }
 
     private fun showMenu(a: AppItem, v: View) {
+        val inDock = dockApps(allApps).any { it.cn == a.cn }
         PopupMenu(this, v).apply {
             menu.add(0, 1, 0, "معلومات التطبيق")
             menu.add(0, 2, 1, "إلغاء التثبيت")
-            menu.add(0, 3, 2, "إعدادات اللانشر")
+            menu.add(0, 4, 2, if (inDock) "شيله من الدوك" else "ثبّته في الدوك")
+            menu.add(0, 3, 3, "إعدادات اللانشر")
             setOnMenuItemClickListener {
                 when (it.itemId) {
                     1 -> startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:${a.cn.packageName}")))
                     2 -> startActivity(Intent(Intent.ACTION_DELETE, Uri.parse("package:${a.cn.packageName}")))
                     3 -> showSettings()
+                    4 -> toggleDock(a)
                 }
                 true
             }
@@ -838,35 +906,110 @@ class PhoneHomeActivity : Activity() {
 
     private fun showSettings() {
         val gState = if (!gestureServiceOn()) "غير مفعّلة" else if (prefs.getBoolean("gestures", true)) "شغّالة" else "مقفولة"
-        val items = arrayOf(
-            "🖼 غيّر الخلفية دلوقتي",
-            "🧹 تنضيف الرام",
-            "حزمة الأيقونات (ثيم ستور)",
-            "أيقونات Material You: " + if (prefs.getBoolean("themed", true)) "شغّال" else "مقفول",
-            "خلفية النظام (اختيار من الجهاز)",
-            "إيماءات الشاشة الكاملة: $gState",
-            "فتح الأخيرة"
-        )
-        AlertDialog.Builder(this).setItems(items) { _, w ->
-            when (w) {
-                0 -> AppWall.nextNow(this)
-                1 -> cleanRam()
-                2 -> pickPack()
-                3 -> { prefs.edit().putBoolean("themed", !prefs.getBoolean("themed", true)).apply(); reload() }
-                4 -> startActivity(Intent.createChooser(Intent(Intent.ACTION_SET_WALLPAPER), "الخلفية"))
-                6 -> root.post { openRecents() }
-                5 -> if (!gestureServiceOn()) {
+        val rows = listOf<Pair<String, () -> Unit>>(
+            "🖼 غيّر الخلفية دلوقتي" to { nextWall() },
+            "🧹 تنضيف الرام" to { cleanRam() },
+            "🧩 الودجت" to { widgets.open() },
+            "🎨 ستور الثيمات" to { studio.openStore() },
+            "حزمة الأيقونات (المثبّتة على الجهاز)" to { pickPack() },
+            "تحميل حزم أيقونات من Google Play" to { openPlayPacks() },
+            ("أيقونات Material You: " + if (prefs.getBoolean("themed", true)) "شغّال" else "مقفول") to {
+                prefs.edit().putBoolean("themed", !prefs.getBoolean("themed", true)).apply(); reload()
+            },
+            "خلفية النظام (اختيار من الجهاز)" to { startActivity(Intent.createChooser(Intent(Intent.ACTION_SET_WALLPAPER), "الخلفية")) },
+            ("إيماءات الشاشة الكاملة: $gState") to {
+                if (!gestureServiceOn()) {
                     Toast.makeText(this, "فعّل «Joyboy Launcher Gestures» من إمكانية الوصول", Toast.LENGTH_LONG).show()
                     startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
                 } else prefs.edit().putBoolean("gestures", !prefs.getBoolean("gestures", true)).apply()
+            },
+            "فتح الأخيرة" to { root.post { openRecents() } },
+            (if (isDefaultHome()) "✅ ده التطبيق الافتراضي للشاشة الرئيسية" else "⭐ خليه التطبيق الافتراضي") to { askDefault() }
+        )
+        AlertDialog.Builder(this).setItems(rows.map { it.first }.toTypedArray()) { _, w -> rows[w].second() }.show()
+    }
+
+    // ───────── (v773) قايمة الضغطة الطويلة · ثيم الذكاء · الافتراضي · حزم Play ─────────
+    private fun showHomeMenu() {
+        homeMenu?.dismiss()
+        val box = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            background = GradientDrawable().apply { cornerRadius = dp(18).toFloat(); setColor(0xF2242428.toInt()); setStroke(dp(1), 0x33FFFFFF) }
+            setPadding(dp(6), dp(6), dp(6), dp(6))
+        }
+        fun row(t: String, f: () -> Unit) {
+            box.addView(TextView(this).apply {
+                text = t; textSize = 15f; setTextColor(Color.WHITE)
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(dp(18), dp(12), dp(18), dp(12))
+                pressEffect()
+                setOnClickListener { homeMenu?.dismiss(); f() }
+            }, LinearLayout.LayoutParams(-1, -2))
+        }
+        row("⚙️  الإعدادات") { showSettings() }
+        row("🧩  الودجت") { widgets.open() }
+        row("🎨  ستور الثيمات") { studio.openStore() }
+        row("🖼  تغيير الخلفية") { nextWall() }
+        val w = dp(210)
+        box.measure(View.MeasureSpec.makeMeasureSpec(w, View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED))
+        val h = box.measuredHeight
+        val x = (lastX - w / 2f).toInt().coerceIn(dp(8), (root.width - w - dp(8)).coerceAtLeast(dp(8)))
+        val y = (lastY - h - dp(12)).toInt().coerceIn(dp(48), (root.height - h - dp(48)).coerceAtLeast(dp(48)))
+        val pw = PopupWindow(box, w, -2, true).apply {
+            elevation = dp(8).toFloat(); isOutsideTouchable = true
+            setBackgroundDrawable(ColorDrawable(0))
+        }
+        pw.showAtLocation(root, Gravity.NO_GRAVITY, x, y)
+        homeMenu = pw
+    }
+
+    private fun openPlayPacks() {
+        try {
+            startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("market://search?q=icon%20pack&c=apps")))
+        } catch (_: Throwable) {
+            try { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://play.google.com/store/search?q=icon%20pack&c=apps"))) } catch (_: Throwable) {}
+        }
+    }
+
+    private fun isDefaultHome(): Boolean {
+        val ri = packageManager.resolveActivity(Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME), PackageManager.MATCH_DEFAULT_ONLY)
+        return ri?.activityInfo?.packageName == packageName && ri?.activityInfo?.name == PhoneHomeActivity::class.java.name
+    }
+
+    @Suppress("DEPRECATION")
+    private fun askDefault() {
+        if (isDefaultHome()) { Toast.makeText(this, "هو التطبيق الافتراضي بالفعل", Toast.LENGTH_SHORT).show(); return }
+        try {
+            if (Build.VERSION.SDK_INT >= 29) {
+                val rm = getSystemService(android.app.role.RoleManager::class.java)
+                if (rm != null && rm.isRoleAvailable(android.app.role.RoleManager.ROLE_HOME)) {
+                    startActivityForResult(rm.createRequestRoleIntent(android.app.role.RoleManager.ROLE_HOME), REQ_ROLE)
+                    return
+                }
             }
-        }.show()
+            startActivity(Intent(Settings.ACTION_HOME_SETTINGS))
+        } catch (_: Throwable) {
+            Toast.makeText(this, "افتح إعدادات الأندرويد ← التطبيقات الافتراضية ← الشاشة الرئيسية", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    /** مرة واحدة بس: لو اللانشر اتفتح وهو مش الافتراضي */
+    private fun maybeAskDefault() {
+        if (isDefaultHome() || prefs.getBoolean("asked_default", false) || isFinishing) return
+        prefs.edit().putBoolean("asked_default", true).apply()
+        AlertDialog.Builder(this).setTitle("خليه التطبيق الافتراضي؟")
+            .setMessage("Joyboy Launcher مش هو الشاشة الرئيسية دلوقتي.")
+            .setPositiveButton("أيوه") { _, _ -> askDefault() }
+            .setNegativeButton("بعدين", null).show()
     }
 
     // ───────── (v772) الخلفية · المواقيت · الرام ─────────
     private fun attachWall() {
         try {
             for (v in wallViews) root.removeView(v)
+            wallViews = emptyList()
+            // (v775) الثيم له خلفيته الخاصة ← مفيش داعي لتحميل خلفية Joyboy تحتها
+            if (HomeThemeStore.cur?.hasWall == true) { AppWall.detach(this); return }
             val before = root.childCount
             AppWall.attach(this, root, Themes.byId(Cfg.str("theme", "mx")))
             wallViews = (before until root.childCount).map { root.getChildAt(it) }
@@ -879,6 +1022,29 @@ class PhoneHomeActivity : Activity() {
         attachWall()
         // الصورة + طبقة التعتيم لازم يرجعوا تحت الواجهة
         for (v in wallViews.reversed()) { root.removeView(v); root.addView(v, 0) }
+    }
+
+    /** (v775) خلفية الثيم: صورة Bing اللي اتحفظت معاه (أو تدرّج ألوانه) + طبقة تعتيم خفيفة */
+    private fun attachThemeWall() {
+        try {
+            for (v in themeWallViews) root.removeView(v)
+            themeWallViews = emptyList()
+            val t = HomeThemeStore.cur ?: return
+            if (!t.hasWall) return
+            val bg = ImageView(this).apply { scaleType = ImageView.ScaleType.CENTER_CROP }
+            val bmp = HomeThemeStore.wallFile(this, t)?.let { ThemeWall.decodeFile(it, 1920) }
+            if (bmp != null) bg.setImageBitmap(bmp) else bg.setImageDrawable(ThemeWall.gradient(t))
+            val scrim = View(this).apply { setBackgroundColor(0x59000000) }
+            root.addView(bg, 0, FrameLayout.LayoutParams(-1, -1))
+            root.addView(scrim, 1, FrameLayout.LayoutParams(-1, -1))
+            themeWallViews = listOf(bg, scrim)
+        } catch (e: Throwable) { LogStore.err("PhoneHome:themewall", e) }
+    }
+
+    /** زرار «غيّر الخلفية»: لو للثيم خلفية يجيب صورة تانية بنفس كلماته، وإلا خلفية Joyboy العادية */
+    private fun nextWall() {
+        val t = HomeThemeStore.cur
+        if (t != null && t.hasWall) studio.nextWall(t) { attachThemeWall() } else AppWall.nextNow(this)
     }
 
     private fun loadPrayer(force: Boolean) {
@@ -921,6 +1087,8 @@ class PhoneHomeActivity : Activity() {
             }
         }.apply { isDaemon = true }.start()
     }
+
+    private val REQ_ROLE = 7703
 
     private fun pickPack() {
         val packs = IconPack.installed(this)

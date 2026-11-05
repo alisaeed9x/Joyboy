@@ -253,6 +253,7 @@ com/tttt/subtitler/phonehome/Adapters.kt
 com/tttt/subtitler/phonehome/Apps.kt
 com/tttt/subtitler/phonehome/GestureService.kt
 com/tttt/subtitler/phonehome/HomeClock.kt
+com/tttt/subtitler/phonehome/HomeExtras.kt
 com/tttt/subtitler/phonehome/HomeTools.kt
 com/tttt/subtitler/phonehome/Model.kt
 com/tttt/subtitler/phonehome/PhoneHomeActivity.kt

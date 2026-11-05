@@ -7,6 +7,7 @@ import android.view.View
 import android.view.VelocityTracker
 import android.view.ViewConfiguration
 import android.widget.FrameLayout
+import androidx.core.graphics.ColorUtils
 import androidx.dynamicanimation.animation.DynamicAnimation
 import androidx.dynamicanimation.animation.SpringAnimation
 import androidx.dynamicanimation.animation.SpringForce
@@ -17,9 +18,18 @@ fun Context.dp(v: Int) = (v * resources.displayMetrics.density).toInt()
 // (v772) من غير Material/AppCompat: ألوان السطح ثابتة حسب وضع النظام (فاتح/داكن)
 fun Context.isNight(): Boolean =
     (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
-fun Context.surfaceColor(): Int = if (isNight()) 0xFF1F1F24.toInt() else 0xFFFBF8FD.toInt()
-fun Context.onSurfaceColor(): Int = if (isNight()) 0xFFE6E1E6.toInt() else 0xFF1B1B1F.toInt()
-fun Context.surfaceVariantColor(): Int = if (isNight()) 0xFF3A3A42.toInt() else 0xFFE8E0EB.toInt()
+// (v773) لو فيه ثيم بالذكاء شغّال، الدرج بياخد ألوانه (والنص بيتحدد بالتباين مع لون الدرج)
+fun Context.surfaceColor(): Int = HomeThemeStore.cur?.drawer ?: if (isNight()) 0xFF1F1F24.toInt() else 0xFFFBF8FD.toInt()
+fun Context.onSurfaceColor(): Int {
+    val t = HomeThemeStore.cur
+    if (t != null) return if (ColorUtils.calculateLuminance(t.drawer) > .5) 0xFF1B1B1F.toInt() else 0xFFE6E1E6.toInt()
+    return if (isNight()) 0xFFE6E1E6.toInt() else 0xFF1B1B1F.toInt()
+}
+fun Context.surfaceVariantColor(): Int {
+    val t = HomeThemeStore.cur
+    if (t != null) return ColorUtils.blendARGB(t.drawer, onSurfaceColor(), .12f)
+    return if (isNight()) 0xFF3A3A42.toInt() else 0xFFE8E0EB.toInt()
+}
 
 fun View.springTo(
     prop: DynamicAnimation.ViewProperty, target: Float,

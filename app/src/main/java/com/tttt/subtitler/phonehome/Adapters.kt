@@ -1,9 +1,12 @@
 package com.tttt.subtitler.phonehome
 
 import android.graphics.Color
+import android.graphics.Outline
 import android.view.Gravity
+import android.view.HapticFeedbackConstants
 import android.view.View
 import android.view.ViewGroup
+import android.view.ViewOutlineProvider
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
@@ -26,19 +29,25 @@ class AppAdapter(
     override fun onCreateViewHolder(p: ViewGroup, t: Int): VH {
         val c = p.context
         val rh = if (rowH > 0) rowH else c.dp(96)
-        val ic = if (rh >= c.dp(88)) c.dp(56) else (rh - c.dp(34)).coerceAtLeast(c.dp(36))
+        val th = HomeThemeStore.cur
+        val ic0 = if (rh >= c.dp(88)) c.dp(56) else (rh - c.dp(34)).coerceAtLeast(c.dp(36))
+        val ic = if (th != null && th.iconDp > 0) c.dp(th.iconDp).coerceAtMost((rh - c.dp(20)).coerceAtLeast(c.dp(36))) else ic0
         val ll = LinearLayout(c).apply {
             orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER_HORIZONTAL
             layoutParams = RecyclerView.LayoutParams(-1, rh)
             setPadding(0, c.dp(if (rh >= c.dp(88)) 8 else 4), 0, 0)
         }
-        val img = ImageView(c).apply { layoutParams = LinearLayout.LayoutParams(ic, ic) }
+        val img = HomeIcons.make(c, th, ic)   // (v775) شكل + أوتلاين الثيم
         val tv = TextView(c).apply {
             textSize = 11f; maxLines = 1; gravity = Gravity.CENTER
             ellipsize = android.text.TextUtils.TruncateAt.END
             setPadding(c.dp(4), c.dp(6), c.dp(4), 0)
             if (onSurface) setTextColor(c.onSurfaceColor())
-            else { setTextColor(Color.WHITE); setShadowLayer(4f, 0f, 1f, 0x99000000.toInt()) }
+            else { setTextColor(HomeThemeStore.cur?.text ?: Color.WHITE); setShadowLayer(4f, 0f, 1f, 0x99000000.toInt()) }
+        }
+        if (th != null) {
+            tv.textSize = th.labelSp
+            if (!th.labels) tv.visibility = View.GONE
         }
         ll.addView(img); ll.addView(tv)
         return VH(ll, img, tv)
@@ -65,7 +74,8 @@ class AppAdapter(
 class PagesAdapter(
     var pages: List<MutableList<Entry>>,
     private val click: (Entry, View) -> Unit,
-    private val longClick: (Entry, View) -> Unit
+    private val longClick: (Entry, View) -> Unit,
+    private val emptyLong: () -> Unit = {}   // (v773) ضغطة طويلة على مكان فاضي في الصفحة
 ) : RecyclerView.Adapter<PagesAdapter.PH>() {
 
     var rowH = 0   // (v772) بيتظبط من النشاط بعد قياس الصفحة
@@ -80,6 +90,7 @@ class PagesAdapter(
             overScrollMode = RecyclerView.OVER_SCROLL_NEVER
             setPadding(c.dp(12), c.dp(16), c.dp(12), 0); clipToPadding = false
             (itemAnimator as? SimpleItemAnimator)?.supportsChangeAnimations = false
+            setOnLongClickListener { performHapticFeedback(HapticFeedbackConstants.LONG_PRESS); emptyLong(); true }
         }
         return PH(rv)
     }

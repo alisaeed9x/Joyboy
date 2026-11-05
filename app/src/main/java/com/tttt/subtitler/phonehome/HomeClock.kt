@@ -11,6 +11,7 @@ import android.view.View
 import android.widget.LinearLayout
 import android.widget.TextClock
 import android.widget.TextView
+import androidx.core.graphics.ColorUtils
 import com.tttt.subtitler.PrayerTimes
 
 /**
@@ -23,7 +24,8 @@ class HomeClock(
     private val compact: Boolean,
     private val onWall: () -> Unit,
     private val onRam: () -> Unit,
-    private val onPrayerTap: () -> Unit
+    private val onPrayerTap: () -> Unit,
+    private val onThemes: () -> Unit = {}   // (v775) أيقونة ستور الثيمات
 ) {
     val view = LinearLayout(act)
     private var data: PrayerTimes.Data? = null
@@ -68,6 +70,7 @@ class HomeClock(
 
     private val wallBtn = pill("🖼 غيّر الخلفية") { onWall() }
     private val ramBtn = pill("🧹 تنضيف الرام") { onRam() }
+    private val themeBtn = pill("🎨") { onThemes() }
 
     private fun pill(text: String, click: () -> Unit) = TextView(act).apply {
         this.text = text
@@ -116,6 +119,7 @@ class HomeClock(
         val btnRow = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER }
         btnRow.addView(wallBtn, LinearLayout.LayoutParams(-2, -2).apply { setMargins(dp(6), 0, dp(6), 0) })
         btnRow.addView(ramBtn, LinearLayout.LayoutParams(-2, -2).apply { setMargins(dp(6), 0, dp(6), 0) })
+        btnRow.addView(themeBtn, LinearLayout.LayoutParams(-2, -2).apply { setMargins(dp(6), 0, dp(6), 0) })
 
         view.addView(timeTv, LinearLayout.LayoutParams(-2, -2))
         view.addView(dateTv, LinearLayout.LayoutParams(-2, -2))
@@ -126,6 +130,19 @@ class HomeClock(
     }
 
     fun setRamLabel(s: String) { ramBtn.text = s }
+
+    /** (v774) ثيم بالذكاء: ألوان + حجم وخط الساعة */
+    fun applyTheme(t: HomeTheme) {
+        val soft = ColorUtils.setAlphaComponent(t.text, 0xCC)
+        timeTv.setTextColor(t.text); dateTv.setTextColor(t.text); nextTv.setTextColor(t.text); infoTv.setTextColor(soft)
+        for ((_, tv) in cellTime) tv.setTextColor(t.text)
+        for (i in 0 until strip.childCount) ((strip.getChildAt(i) as? LinearLayout)?.getChildAt(0) as? TextView)?.setTextColor(soft)
+        for (bt in listOf(wallBtn, ramBtn, themeBtn)) bt.background = GradientDrawable().apply {
+            cornerRadius = dp(22).toFloat(); setColor(0x55000000); setStroke(dp(1), ColorUtils.setAlphaComponent(t.accent, 0x99))
+        }
+        if (t.clockSp > 0) timeTv.textSize = (if (compact) minOf(t.clockSp, 64) else t.clockSp).toFloat()
+        if (t.clockFont.isNotBlank()) timeTv.typeface = Typeface.create(t.clockFont, Typeface.NORMAL)
+    }
 
     /** مواقيت جديدة (من الـAPI أو الكاش) */
     fun setData(d: PrayerTimes.Data) {

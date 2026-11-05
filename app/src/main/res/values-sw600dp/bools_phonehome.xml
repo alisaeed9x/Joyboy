@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- (v773) لانشر الموبايل للموبايل بس — التابلت (أصغر عرض 600dp فأكتر) رئيسيته TvActivity زي ما كانت -->
+    <bool name="phone_home_enabled">false</bool>
+</resources>

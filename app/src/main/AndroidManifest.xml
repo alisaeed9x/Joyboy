@@ -93,6 +93,11 @@
                 <category android:name="android.intent.category.HOME"/>
                 <category android:name="android.intent.category.DEFAULT"/>
             </intent-filter>
+            <!-- (v773) أيقونة تفتحه عادي من درج التطبيقات (عشان تقدر تخليه الافتراضي) — بتظهر على الموبايل بس (phone_home_enabled) -->
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN"/>
+                <category android:name="android.intent.category.LAUNCHER"/>
+            </intent-filter>
         </activity>
         <!-- (v772) إيماءات الشاشة الكاملة + الأخيرة للانشر (إمكانية الوصول — اختيارية، بتتفعّل من إعدادات اللانشر) -->
         <service android:name=".phonehome.GestureService" android:exported="true" android:label="Joyboy Launcher Gestures"
