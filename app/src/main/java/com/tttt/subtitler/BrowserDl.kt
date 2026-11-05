@@ -59,6 +59,11 @@ object DmTasks {
 
     private fun runBody(app: Context, t: TaskItem, url: String, name0: String, mime: String?, ua: String, cookie: String?, referer: String) {
         val name = name0.replace(Regex("[\\\\/:*?\"<>|\\n\\r]"), "_").trim().take(120).ifBlank { "download" }
+        // (v783) تحميل قابل للإيقاف المؤقت والاستكمال لو السيرفر بيدعم Range؛ غير كده DownloadManager زي الأول
+        if (app.getSharedPreferences("p", 0).getBoolean("sv_dl_own", true)) {
+            val sz = ResumableDl.probe(url, ua, cookie, referer)
+            if (sz >= 512 * 1024L) { ResumableDl.run(app, t, url, name, mime, ua, cookie, referer, sz); return }
+        }
         val dm = app.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
         fun enq(): Long {
             val rq = DownloadManager.Request(Uri.parse(url))
@@ -127,5 +132,119 @@ object DmTasks {
             TaskCenter.changed()
             try { Thread.sleep(700) } catch (_: InterruptedException) { throw TaskCancelled() }
         }
+    }
+}
+
+/**
+ * (v783) تحميل ملفات المتصفح قابل للإيقاف المؤقت والاستكمال: HTTP Range + ملف .part في مساحة التطبيق.
+ * بيشتغل بس لو السيرفر بيدعم Range وحجم الملف معروف (≥ 512KB)؛ غير كده التحميل بيكمّل بـDownloadManager زي الأول.
+ * النت قطع / اتبدّل بين خلوي وواي فاي = بيكمّل من آخر بايت لوحده (لحد 12 محاولة).
+ */
+object ResumableDl {
+    private fun conn(url: String, ua: String, cookie: String?, referer: String, range: String): java.net.HttpURLConnection {
+        var u = url
+        for (hop in 0..5) {
+            val c = java.net.URL(u).openConnection() as java.net.HttpURLConnection
+            c.instanceFollowRedirects = false; c.connectTimeout = 15000; c.readTimeout = 20000
+            if (ua.isNotEmpty()) c.setRequestProperty("User-Agent", ua)
+            if (!cookie.isNullOrEmpty()) c.setRequestProperty("Cookie", cookie)
+            if (referer.isNotBlank()) c.setRequestProperty("Referer", referer)
+            c.setRequestProperty("Accept-Encoding", "identity")
+            c.setRequestProperty("Range", range)
+            val code = c.responseCode
+            if (code in 300..399) {
+                val loc = c.getHeaderField("Location") ?: throw IOException("redirect من غير Location")
+                u = java.net.URL(java.net.URL(u), loc).toString(); c.disconnect(); continue
+            }
+            return c
+        }
+        throw IOException("تحويلات كتير")
+    }
+
+    /** حجم الملف لو Range مدعوم، وإلا -1 */
+    fun probe(url: String, ua: String, cookie: String?, referer: String): Long {
+        var c: java.net.HttpURLConnection? = null
+        return try {
+            c = conn(url, ua, cookie, referer, "bytes=0-0")
+            if (c.responseCode != 206) -1L
+            else (c.getHeaderField("Content-Range") ?: "").substringAfter('/', "").trim().toLongOrNull() ?: -1L
+        } catch (_: Throwable) { -1L } finally { try { c?.disconnect() } catch (_: Throwable) {} }
+    }
+
+    private fun publish(app: Context, f: java.io.File, name: String, mime: String?): Pair<Uri?, String> {
+        val m = mime?.takeIf { it.isNotBlank() } ?: "application/octet-stream"
+        if (android.os.Build.VERSION.SDK_INT >= 29) {
+            val cv = android.content.ContentValues().apply {
+                put(android.provider.MediaStore.MediaColumns.DISPLAY_NAME, name)
+                put(android.provider.MediaStore.MediaColumns.MIME_TYPE, m)
+                put(android.provider.MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS)
+                put(android.provider.MediaStore.MediaColumns.IS_PENDING, 1)
+            }
+            val uri = app.contentResolver.insert(android.provider.MediaStore.Downloads.EXTERNAL_CONTENT_URI, cv) ?: throw IOException("مش قادر أكتب في مجلد التنزيلات")
+            (app.contentResolver.openOutputStream(uri) ?: throw IOException("مش قادر أفتح الملف للكتابة")).use { out -> f.inputStream().use { it.copyTo(out, 65536) } }
+            val done = android.content.ContentValues().apply { put(android.provider.MediaStore.MediaColumns.IS_PENDING, 0) }
+            app.contentResolver.update(uri, done, null, null)
+            f.delete()
+            return uri to (Environment.DIRECTORY_DOWNLOADS + "/" + name)
+        }
+        val dir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS); dir.mkdirs()
+        var dst = java.io.File(dir, name); var n = 1
+        while (dst.exists()) { dst = java.io.File(dir, name.substringBeforeLast('.', name) + " ($n)" + (if (name.contains('.')) "." + name.substringAfterLast('.') else "")); n++ }
+        f.inputStream().use { i -> dst.outputStream().use { o -> i.copyTo(o, 65536) } }
+        f.delete()
+        return Uri.fromFile(dst) to (Environment.DIRECTORY_DOWNLOADS + "/" + dst.name)
+    }
+
+    fun run(app: Context, t: TaskItem, url: String, name: String, mime: String?, ua: String, cookie: String?, referer: String, total: Long) {
+        val dir = java.io.File(app.getExternalFilesDir(null) ?: app.filesDir, "dl"); dir.mkdirs()
+        val key = java.security.MessageDigest.getInstance("SHA-1").digest((url + "|" + name).toByteArray()).joinToString("") { "%02x".format(it) }.take(16)
+        val part = java.io.File(dir, "$key.part")
+        val paused = java.util.concurrent.atomic.AtomicBoolean(false)
+        t.onPause = { p -> paused.set(p) }
+        var fails = 0
+        var lastUi = 0L
+        while (part.length() < total) {
+            if (t.cancelled) { part.delete(); throw TaskCancelled() }
+            if (paused.get()) { t.msg = "⏸ متوقف مؤقتًا — " + Sniff.fmtSize(part.length()) + " / " + Sniff.fmtSize(total); TaskCenter.changed(); try { Thread.sleep(300) } catch (_: InterruptedException) { throw TaskCancelled() }; continue }
+            var c: java.net.HttpURLConnection? = null
+            try {
+                val from = part.length()
+                c = conn(url, ua, cookie, referer, "bytes=$from-")
+                val code = c.responseCode
+                if (!(code == 206 || (code == 200 && from == 0L))) throw IOException("السيرفر رد بكود $code")
+                if (code == 200 && from > 0L) throw IOException("السيرفر وقف الاستكمال")
+                c.inputStream.use { ins ->
+                    java.io.RandomAccessFile(part, "rw").use { raf ->
+                        raf.seek(from)
+                        val buf = ByteArray(32768)
+                        while (true) {
+                            if (t.cancelled) { part.delete(); throw TaskCancelled() }
+                            if (paused.get()) break
+                            val n = ins.read(buf); if (n < 0) break
+                            raf.write(buf, 0, n); fails = 0
+                            val now = System.currentTimeMillis()
+                            if (now - lastUi > 500L) {
+                                lastUi = now
+                                val got = raf.filePointer
+                                t.pct = ((got * 100) / total).toInt().coerceIn(0, 99)
+                                t.msg = Sniff.fmtSize(got) + " / " + Sniff.fmtSize(total)
+                                TaskCenter.changed()
+                            }
+                        }
+                    }
+                }
+            } catch (e: TaskCancelled) { throw e }
+            catch (e: IOException) {
+                if (t.cancelled) { part.delete(); throw TaskCancelled() }
+                fails++
+                if (fails > 12) throw IOException("التحميل وقف بعد محاولات كتير — " + (e.message ?: "").take(60) + " (اللي اتحمّل محفوظ، اضغط إعادة)")
+                t.msg = "↻ النت قطع — هكمّل من " + Sniff.fmtSize(part.length()) + " (محاولة $fails)"; TaskCenter.changed()
+                try { Thread.sleep(minOf(1500L * fails, 12000L)) } catch (_: InterruptedException) { throw TaskCancelled() }
+            } finally { try { c?.disconnect() } catch (_: Throwable) {} }
+        }
+        if (part.length() != total) { part.delete(); throw IOException("الحجم النهائي مش مطابق — اتمسح الملف الناقص") }
+        t.msg = "بحفظ الملف…"; t.pct = 99; TaskCenter.changed()
+        val saved = publish(app, part, name, mime)
+        t.outUri = saved.first; t.mime = mime?.takeIf { it.isNotBlank() } ?: "*/*"; t.outPath = saved.second; t.outSize = total; t.msg = ""
     }
 }

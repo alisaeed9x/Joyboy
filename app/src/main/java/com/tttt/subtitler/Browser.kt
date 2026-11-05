@@ -174,6 +174,7 @@ class BTab(val id: Long) {
     var capUrl = ""
     var blockedUrl: String? = null      // (v412) موقع محجوب مستني قرارك (🚨 طوارئ / ▶ كمّل) — غطا أسود فوق الصفحة
     var allowKey: String? = null        // (v412) «كمّل» اتداس على الموقع ده في التبويب ده (بيتشال أول ما تسيب الموقع)
+    var frozen: android.os.Bundle? = null   // (v783) تبويب خلفي مجمّد: حالة الـWebView محفوظة والـWebView نفسه اتمسح (رام أقل)
     var hold: PopupGuard.Hold? = null   // (v401) بوب-أب في الحجر: مش في قايمة التبويبات لحد ما نحكم عليه
 }
 
@@ -219,8 +220,8 @@ class BrowserActivity : Activity() {
         val w = wvOrNull ?: return false
         fun runJs(js: String) { try { runOnUiThread { try { w.evaluateJavascript(js, null) } catch (_: Throwable) {} } } catch (_: Throwable) {} }
         when (a) {
-            "toggle" -> runJs(TvPointer.jsToggle())
-            "seek" -> runJs(TvPointer.jsSeek((v / 1000L).toInt()))
+            "toggle" -> runJs("window.__jbT=Date.now();" + TvPointer.jsToggle())   // (v783) حارس التشغيل التلقائي يعرف إنه أمر منك
+            "seek" -> runJs("window.__jbT=Date.now();" + TvPointer.jsSeek((v / 1000L).toInt()))
             "seekto" -> runJs("(function(){" + RC_FIND + "v.currentTime=" + (v / 1000.0) + "})()")
             "speed" -> runJs("(function(){" + RC_FIND + "var r=[0.5,0.75,1,1.25,1.5,2];var i=r.indexOf(v.playbackRate);v.playbackRate=r[i<0?3:(i+1)%r.length]})()")
             "next" -> runJs("(function(){var b=document.querySelector('.ytp-next-button,[aria-label=\"Next\"],[aria-label=\"التالي\"]');if(b)b.click()})()")
@@ -264,6 +265,7 @@ class BrowserActivity : Activity() {
     private var dlAct: (() -> Unit)? = null
     private val DL_PROMPT_MS = 9000L
     private var tasksFabUi: TasksFab? = null
+    private lateinit var saver: BrowserSaver   // (v783) توفير الداتا + الكبسولة + تجميد التبويبات + أوفلاين
     lateinit var hint: TextView
     lateinit var th: Theme
     lateinit var ui: Ui
@@ -407,7 +409,7 @@ class BrowserActivity : Activity() {
             layoutParams = LinearLayout.LayoutParams(ui.dp(if (tvOn) 54 else 38), ui.dp(if (tvOn) 52 else 40)); setOnClickListener { f(it) }
             if (tvOn) background = TvBlur.frostDrawable(12f, resources.displayMetrics.density)
         }
-        backB = tbtn("‹", 26f) { wvOrNull?.let { if (it.canGoBack()) it.goBack() } }
+        backB = tbtn("‹", 26f) { wvOrNull?.let { if (it.canGoBack()) saver.back(it, tab) } }   // (v783) رجوع سريع من الكاش
         fwdB = tbtn("›", 26f) { wvOrNull?.let { if (it.canGoForward()) it.goForward() } }
         addr = ui.input("رابط الموقع / كلمة بحث", "").apply {
             layoutParams = LinearLayout.LayoutParams(0, ui.dp(if (tvOn) 52 else 40), 1f).apply { setMargins(ui.dp(2), 0, ui.dp(2), 0) }
@@ -594,6 +596,15 @@ class BrowserActivity : Activity() {
         dockUi = MiniDock(this, frame, ui, th, { startActivity(Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP).putExtra("fullmusic", true)) })   // (v344)
         stripUi = StatusStrip(this, frame, ui, th) { goMain("tasks") }   // (v345)
         tasksFabUi = TasksFab(this, frame, ui) { goMain("tasks") }   // (v420)
+        saver = BrowserSaver(this, frame, object : BrowserSaver.Host {   // (v783)
+            override fun wv(): WebView? = wvOrNull
+            override fun tab(): BTab? = tabs.getOrNull(curIdx)
+            override fun tabs(): List<BTab> = tabs
+            override fun adsBlocked(): Int = blockedN
+            override fun fullscreen(): Boolean = customView != null
+            override fun reloadCur() { try { wvOrNull?.reload() } catch (_: Throwable) {} }
+        })
+        saver.attach()
 
         // التبويبات: رجّع المحفوظة (لو مفعّل) وبعدها لو جاي بلينك افتحه في تبويب جديد
         val start = intent?.getStringExtra("start")?.trim() ?: ""
@@ -646,6 +657,7 @@ class BrowserActivity : Activity() {
         if (t.priv) { w.settings.cacheMode = WebSettings.LOAD_NO_CACHE; @Suppress("DEPRECATION") w.settings.saveFormData = false }
         CookieManager.getInstance().setAcceptThirdPartyCookies(w, true)
         w.setBackgroundColor(Color.WHITE)
+        if (::saver.isInitialized) saver.applyTo(w, t, t.url)   // (v783)
         w.webChromeClient = object : WebChromeClient() {
             override fun onCreateWindow(v: WebView?, isDialog: Boolean, isUserGesture: Boolean, resultMsg: Message?): Boolean {
                 // (v401) المانع الذكي: البوب-أب بيتفتح في الحجر وبنحكم عليه (إعلان = يتقفل · صفحة مشاهدة = تبويب)
@@ -700,6 +712,8 @@ class BrowserActivity : Activity() {
                     }
                     Unit
                 }
+                val svRes = saver.intercept(u, t)   // (v783) بعد فحص الإعلانات دايمًا: طوارئ الداتا بتمنع الخطوط بس
+                if (svRes != null) return svRes
                 return null
             }
             override fun shouldOverrideUrlLoading(v: WebView, r: WebResourceRequest): Boolean {
@@ -744,6 +758,7 @@ class BrowserActivity : Activity() {
                 if (t === tabs.getOrNull(curIdx)) { showUrl(url); updateNav() }
                 if (url != null && CoSurf.on && t === tabs.getOrNull(curIdx)) CoSurf.nav(url, v.settings.userAgentString ?: "")   // (v646)
                 if (adFor(url)) v.evaluateJavascript(adJs(), null)
+                if (url != null) saver.pageStarted(t, v, url)   // (v783) بعد حقن مانع الإعلانات
             }
             override fun doUpdateVisitedHistory(v: WebView, url: String?, isReload: Boolean) {
                 val hd = t.hold
@@ -767,12 +782,13 @@ class BrowserActivity : Activity() {
                     t.url = url
                     val ti = v.title?.takeIf { it.isNotBlank() } ?: ""
                     if (ti.isNotEmpty()) { t.title = ti; pageTitles[url] = ti }
-                    if (!t.priv && !(t.id == panicClearId && SiteBlock.keyOf(url) == lastPurgeKey)) BrowserStore.recordVisit(this@BrowserActivity, url, ti)   // (v412) صفحة جوجل بعد الطوارئ ماتتسجّلش لو هي نفسها اللي اتمسحت
+                    if (!t.priv && !BrowserSaver.isArchive(url) && !(t.id == panicClearId && SiteBlock.keyOf(url) == lastPurgeKey)) BrowserStore.recordVisit(this@BrowserActivity, url, ti)   // (v412) صفحة جوجل بعد الطوارئ ماتتسجّلش لو هي نفسها اللي اتمسحت
                     noteYt(url, ti)
                 }
                 if (t.id == panicClearId && (url ?: "").contains("google.")) { try { v.clearHistory() } catch (_: Throwable) {}; endPanicCover(); updateNav() }   // (v231) الرجوع مايرجّعش الصفحة اللي اتمسحت
                 if (t === tabs.getOrNull(curIdx)) { showUrl(url); updateNav(); updateStar(); scanOnce() }
                 if (adFor(url)) v.evaluateJavascript(adJs(), null)
+                saver.pageFinished(t, v, url)   // (v783)
                 saveAdStats()
                 persistTabs()
             }
@@ -780,6 +796,7 @@ class BrowserActivity : Activity() {
                 if (!r.isForMainFrame) return
                 if (t.hold != null) return   // (v401) بوب-أب في الحجر: المهلة هتحكم
                 val u = r.url.toString()
+                if (u.startsWith("http") && saver.onError(t, v, u, e.errorCode)) return   // (v783) أوفلاين: كاش ثم نسخة محفوظة قبل صفحة الخطأ
                 if (u.startsWith("data:") || t.errUrl == u) return
                 t.errUrl = u
                 v.loadDataWithBaseURL(u, errHtml(u, e.description?.toString() ?: ""), "text/html", "utf-8", u)
@@ -831,6 +848,7 @@ class BrowserActivity : Activity() {
         curIdx = i
         if (prevIdx != i && tabs.size > 1) Motion.slideIn(webHolder, if (i > prevIdx) -1 else 1, 230L)   // (v313) تبديل التبويب بانزلاق
         val t = tabs[i]
+        saver.touch(t)   // (v783)
         webGroups.clear(); openKey = null; markHidden = false; if (::vidMark.isInitialized) vidMark.clear(); refreshBadge()   // (v203) الاصطياد بتاع التبويب ده بس
         val first = t.wv == null
         if (first) t.wv = makeWebView(t)
@@ -838,7 +856,9 @@ class BrowserActivity : Activity() {
         (w.parent as? ViewGroup)?.removeView(w)
         webHolder.addView(w, FrameLayout.LayoutParams(-1, -1))
         try { w.onResume() } catch (_: Throwable) {}
-        if (!t.loaded) { t.loaded = true; if (t.url.isNotBlank()) loadIn(w, t, t.url) }
+        val fz = t.frozen   // (v783) تبويب كان مجمّد: رجّع حالته (الصفحة من الكاش لو متاحة)
+        if (fz != null) { t.frozen = null; t.loaded = true; val ok = try { w.restoreState(fz) != null } catch (_: Throwable) { false }; if (!ok && t.url.isNotBlank()) loadIn(w, t, t.url) }
+        else if (!t.loaded) { t.loaded = true; if (t.url.isNotBlank()) loadIn(w, t, t.url) }
         showUrl(t.url, true); updateNav(); updateProgress(); updateStar(); refreshTabsCount(); closeFind()
         addr.hint = if (t.priv) "🕶 متخفي — رابط الموقع / كلمة بحث" else "رابط الموقع / كلمة بحث"
         tabsB.setTextColor(if (t.priv) 0xFFE53935.toInt() else th.text)
@@ -880,7 +900,9 @@ class BrowserActivity : Activity() {
         t.url = u; t.errUrl = ""
         if (gateBlocked(t, u)) return   // (v412) موقع محجوب: غطا أسود وبلاش تحميل
         t.blockedUrl = null; refreshBlockCover()
-        w.loadUrl(u)
+        saver.beforeLoad(w, t, u)   // (v783)
+        val hdr = saver.headersFor(u)
+        if (hdr != null && u.startsWith("http")) w.loadUrl(u, hdr) else w.loadUrl(u)   // Save-Data: on لما التوفير شغّال
     }
 
     // ===== (v412) المواقع المحجوبة بزرار 🚨: غطا أسود قبل ما الصفحة تتحمّل · 🚨 طوارئ ← جوجل · ▶ كمّل ← افتح الموقع =====
@@ -1156,6 +1178,8 @@ class BrowserActivity : Activity() {
             "🎞 تحكم الفيديو" to { showVideoControls() },
             "🎬 الفيديوهات الملقوطة (${groupsOf(vis()).size})" to { showList() },
             "📖 وضع القارئ" to { readerMode() },
+            "📶 توفير الداتا والسرعة" to { saver.showPanel() },
+            "📊 استهلاك الداتا" to { saver.showStats() },
             "🛡 إحصائيات حظر الإعلانات" to { adStatsDialog() },
             (if (hostOf(url) in adWhite) "🛡 فعّل حظر الإعلانات للموقع ده" else "🛡 عطّل حظر الإعلانات للموقع ده") to { toggleAdWhite(url) },
             "⚙️ الإعدادات" to { showSettings() },
@@ -2472,15 +2496,16 @@ class BrowserActivity : Activity() {
         if (::dlBar.isInitialized && dlBar.visibility == View.VISIBLE) { hideDl(); return }   // (v324)
         if (findBar.visibility == View.VISIBLE) { closeFind(); return }
         val w = wvOrNull
-        if (w != null && w.canGoBack()) { w.goBack(); return }
+        if (w != null && w.canGoBack()) { saver.back(w, tab); return }   // (v783)
         // تبويب اتفتح من تبويب تاني: الرجوع يقفله ويرجّعك للأصلي
         if (tabs.size > 1 && tab.opener >= 0 && tabs.any { it.id == tab.opener }) { closeTab(curIdx); return }
         persistTabs()
         super.onBackPressed()
     }
     // (v149) أول ما تخرج من المتصفح: كل الفيديو/الصوت في كل التبويبات يقف (من غير ما يكمّل في الخلفية)، وكل التبويبات تتجمّد
-    override fun onPause() { persistTabs(); WebMute.pauseAll(); for (t in tabs) try { t.wv?.onPause() } catch (_: Throwable) {}; super.onPause() }
-    override fun onResume() { super.onResume(); refreshCoBtns(); curRef = java.lang.ref.WeakReference(this); try { wvOrNull?.onResume() } catch (_: Throwable) {} }
+    override fun onTrimMemory(level: Int) { super.onTrimMemory(level); if (::saver.isInitialized) try { saver.onTrim(level) } catch (_: Throwable) {} }   // (v783)
+    override fun onPause() { if (::saver.isInitialized) saver.stop(); persistTabs(); WebMute.pauseAll(); for (t in tabs) try { t.wv?.onPause() } catch (_: Throwable) {}; super.onPause() }
+    override fun onResume() { super.onResume(); if (::saver.isInitialized) saver.start(); refreshCoBtns(); curRef = java.lang.ref.WeakReference(this); try { wvOrNull?.onResume() } catch (_: Throwable) {} }
     /** (v746) صيد الترجمة: تحميل الملف بكوكيز الصفحة وفكه وإضافته للفيديو */
     private fun huntCapture(url: String, ua: String, cd: String?, referer: String?) {
         val ck = try { CookieManager.getInstance().getCookie(url) } catch (_: Throwable) { null }
@@ -2496,6 +2521,7 @@ class BrowserActivity : Activity() {
 
     override fun onDestroy() {
         SubHunt.stop()   // (v746)
+        try { if (::saver.isInitialized) saver.destroy() } catch (_: Throwable) {}   // (v783)
         try { dockUi?.detach() } catch (_: Throwable) {}
         try { stripUi?.detach() } catch (_: Throwable) {}
 
