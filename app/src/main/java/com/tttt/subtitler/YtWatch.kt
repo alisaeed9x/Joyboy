@@ -806,7 +806,8 @@ class YtWatchPage(private val act: Activity, private val ui: Ui, private val hos
             chip("🎧 صوت") { val v = item; if (v != null) { try { mini.audioHint()?.let { YtAudioHint.put(v.id, it.first, it.second, it.third) } } catch (_: Throwable) {}; mini.pause(); host.audio(saveItem()) } },
             chip("⬇ تحميل") { a -> val v = item; if (v != null) host.download(a, saveItem()) },
             chip("📋 نسخ") { val v = item; if (v != null) copy(YtNp.watchUrl(v.id)) },
-            chip("↗ مشاركة") { val v = item; if (v != null) { val sec = mini.position() / 1000L; share(YtNp.watchUrl(v.id) + if (sec > 5) "&t=" + sec + "s" else "") } })) {   // (v469) C11: مشاركة من الموضع الحالي
+            chip("↗ مشاركة") { val v = item; if (v != null) { val sec = mini.position() / 1000L; share(YtNp.watchUrl(v.id) + if (sec > 5) "&t=" + sec + "s" else "") } },
+            chip("➕ إضافة للليستة") { val v = item; if (v != null) PlayQueueUi.add(act, YtNp.watchUrl(v.id), titleNow()) })) {   // (v469) C11: مشاركة من الموضع الحالي · (v779) إضافة للليستة
             chipsRow.addView(c, LinearLayout.LayoutParams(-2, -2).apply { setMargins(ui.dp(4), 0, ui.dp(4), 0) })
         }
 

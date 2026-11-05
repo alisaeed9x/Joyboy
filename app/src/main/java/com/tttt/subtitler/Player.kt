@@ -81,6 +81,9 @@ class PlayerActivity : Activity(), Host {
         /** (v694) وصف الفيديو الشغّال (ref/title/pos…) لتحويله للموبايل. null = مفيش مشغّل شغّال */
         fun remoteHandoff(): org.json.JSONObject? { val o = live() ?: return null; return onUi(o) { o.handoffInfo() } }
 
+        /** (v779) ➕ من ريموت الموبايل: وصف الفيديو الشغّال للليستة (ref/title) من غير ما يوقّفه. null = مفيش مشغّل */
+        fun remoteQueueCur(): org.json.JSONObject? { val o = live() ?: return null; return onUi(o) { o.queueInfo() } }
+
         /** (v688) جمل مترجمة وصلت من الموبايل (ترجمة مزدوجة). 0 = اتطبّقت · 1 = مفيش مشغّل · 2 = مفيش شغلانة مطابقة · 3 = التلفزيون كسب الأول. من خيط الطلب (مش الـUI) */
         fun remoteSubTr(jid: String, texts: List<String>, failed: Int, eng: String): Int { val o = live() ?: return 1; return o.subFromPhone(jid, texts, failed, eng) }
 
@@ -125,6 +128,7 @@ class PlayerActivity : Activity(), Host {
         } catch (_: Throwable) {}
         j.put("vw", vidW); j.put("vh", vidH)   // (v546)
         j.put("loop", Cfg.str("loop", "0") == "1")
+        j.put("lm", loopMode())   // (v781) 0 عادي · 1 نفس الفيديو · 2 كل فيديوهات الفولدر
         j.put("dual", try { SubStyle.load { k, d -> Cfg.str(k, d) }.dual } catch (_: Throwable) { 0 })
         j.put("bgon", Cfg.bool("ask_bg_exit", true))
         j.put("nots", try { NoticeLog.list().size } catch (_: Throwable) { 0 })
@@ -583,7 +587,7 @@ class PlayerActivity : Activity(), Host {
             "more" -> tvMoreDialog(anchor)
             "subs" -> tvSubTracksDialog(anchor)
             // (v531) أزرار الشريط الكامل اللي في مشغّل الموبايل
-            "loop" -> { Cfg.put("loop", if (Cfg.str("loop", "0") == "1") "0" else "1"); say(if (Cfg.str("loop", "0") == "1") "🔂 تكرار الفيديو: شغّال" else "🔂 تكرار الفيديو: مقفول") }
+            "loop" -> loopCycle()   // (v781) عادي ← نفس الفيديو ← كل الفولدر
             "log" -> toggleLog()
             "sent" -> { try { if (::sentDlg.isInitialized) sentDlg.show() } catch (_: Throwable) {} }
             "chars" -> showChars()
@@ -1370,6 +1374,19 @@ class PlayerActivity : Activity(), Host {
     }
 
     /** (v694) «كمّل على الموبايل»: وصف الفيديو الحالي — يوتيوب ← لينك المشاهدة · لينك/كاست ← اللينك نفسه · ملف جوه التلفزيون ← ref فاضي (مش ينفع يتنقل). بيوقّف التشغيل لو ينفع يتنقل */
+    /** (v779) نفس مرجع queueCurrent() بس بيرجّعه للريموت (من غير توقيف) */
+    private fun queueInfo(): org.json.JSONObject {
+        val ytid = intent.getStringExtra("ytid")?.takeIf { it.length == 11 }
+        val ttl = intent.getStringExtra("title")?.takeIf { it.isNotBlank() } ?: Recents.titleOf(vid)
+        val u0 = url
+        val ref = when {
+            ytid != null -> YtHistory.watchUrl(ytid)
+            !u0.isNullOrEmpty() -> u0
+            else -> uri?.toString() ?: ""
+        }
+        return org.json.JSONObject().put("ref", ref).put("title", ttl)
+    }
+
     private fun handoffInfo(): org.json.JSONObject {
         val ytid = intent.getStringExtra("ytid")?.takeIf { it.length == 11 }
         val ttl = intent.getStringExtra("title")?.takeIf { it.isNotBlank() } ?: Recents.titleOf(vid)
@@ -4502,8 +4519,8 @@ class PlayerActivity : Activity(), Host {
         gTools.addView(pd("🎞 عمل GIF") { withSrc { toolsUi.gif(it) } })
         gTools.addView(pd("📦 ضغط / تغيير الدقة") { withSrc { toolsUi.compress(it) } })
         gTools.addView(pd("🎬 ترجمة ثابتة (هارد ساب)") { withSrc { toolsUi.hardsub(it) } })
-        gTools.addView(pd("🎞 ضيف الفيديو ده للطابور") { queueCurrent() })   // (v694)
-        gTools.addView(pd("🎞 طابور التشغيل") { PlayQueueUi.show(this) })
+        gTools.addView(pd("➕ إضافة للليستة") { queueCurrent() })   // (v694)
+        gTools.addView(pd("📋 الليستة") { PlayQueueUi.show(this) })
         gTools.addView(ui.text("النتيجة بتظهر في «📋 صفحة المهام» (زرار ⏳ جنب الترجمة)", 10f, 0xFF9AA0A6.toInt()).apply { setPadding(ui.dp(10), ui.dp(6), ui.dp(10), ui.dp(2)) })
         // (v188) صفحة المهام (التقدم + الناتج) في نافذة فوق المشغّل — الأدوات جواها بتشتغل على الفيديو الشغّال
         fun openTasksDialog() {
@@ -5934,6 +5951,13 @@ class PlayerActivity : Activity(), Host {
         return Pair(sib, sib.indexOfFirst { it.uri == curU })
     }
     /** (v531) آخر فيديو في القايمة ← يرجع لأول فيديو (تلفزيون افتراضيًا؛ على الموبايل لو autoplay_wrap=1) */
+    /** (v781) وضع التكرار: 0 عادي (التالي لو فيه وبعدها يقف) · 1 يعيد نفس الفيديو · 2 يكمّل الفولدر ولما يخلص يرجع لأول فيديو */
+    private fun loopMode(): Int = if (Cfg.str("loop", "0") == "1") 1 else if (wrapOn()) 2 else 0
+    private fun loopCycle() {
+        val n = (loopMode() + 1) % 3
+        Cfg.put("loop", if (n == 1) "1" else "0"); Cfg.put("autoplay_wrap", if (n == 2) "1" else "0")
+        say(when (n) { 1 -> "🔂 تكرار نفس الفيديو"; 2 -> "🔁 تكرار كل فيديوهات الفولدر"; else -> "➡ تشغيل عادي" })
+    }
     private fun wrapOn(): Boolean = Cfg.str("autoplay_wrap", if (DeviceUi.isTv(this)) "1" else "0") == "1"
 
     fun stepOrSeek(d: Int) {

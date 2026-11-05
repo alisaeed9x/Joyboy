@@ -35,14 +35,14 @@ object PlayQueueUi {
     // ───────────────────────── إضافة ─────────────────────────
 
     /** يضيف للطابور. على التلفزيون نفسه ← طابوره؛ على الموبايل: وضع التلفزيون ← التلفزيون، مفيش تلفزيون ← الموبايل، غير كده بيسأل */
-    fun add(act: Activity, ref0: String, title: String) {
+    fun add(act: Activity, ref0: String, title: String, forceTv: Boolean? = null) {
         val ref = ref0.trim()
         if (ref.isEmpty()) return
         val isTv = DeviceUi.isTv(act)
         fun toPhone() {
-            if (ref.startsWith(LibraryCore.SCHEME, true)) { Notice.show(act, "⚠ ده فيديو في مكتبة التلفزيون — ضيفه لطابور التلفزيون", 3500L); return }
+            if (ref.startsWith(LibraryCore.SCHEME, true)) { Notice.show(act, "⚠ ده فيديو في مكتبة التلفزيون — ضيفه لليستة التلفزيون", 3500L); return }
             PlayQueue.add(act, ref, title)
-            Notice.show(act, "🎞 اتضاف لطابور " + (if (isTv) "التلفزيون" else "الموبايل") + " (" + PlayQueue.size(act) + ")" + (if (title.isNotBlank()) " — " + title.take(40) else ""), 2800L)
+            Notice.show(act, "➕ اتضاف للليستة — " + (if (isTv) "التلفزيون" else "الموبايل") + " (" + PlayQueue.size(act) + ")" + (if (title.isNotBlank()) " — " + title.take(40) else ""), 2800L)
         }
         fun toTv() {
             Thread {
@@ -55,7 +55,7 @@ object PlayQueueUi {
                         if (r == null) msg = "⚠ ما قدرتش أجهّز الملف للتلفزيون"
                         else {
                             val (c, _) = RemoteClient.postJson("/queue", JSONObject().put("a", "add").put("ref", r).put("title", title))
-                            msg = if (c == 200) "🎞 اتضاف لطابور التلفزيون" + (if (title.isNotBlank()) " — " + title.take(40) else "") else "⚠ فشل الإضافة (كود $c)"
+                            msg = if (c == 200) "➕ اتضاف لليستة التلفزيون" + (if (title.isNotBlank()) " — " + title.take(40) else "") else "⚠ فشل الإضافة (كود $c)"
                         }
                     }
                 } catch (e: Throwable) { LogStore.err("PlayQueueUi:addTv", e); msg = "⚠ حصلت مشكلة" }
@@ -63,12 +63,15 @@ object PlayQueueUi {
             }.also { it.isDaemon = true }.start()
         }
         if (isTv) { toPhone(); return }
+        // (v779) من ريموت الموبايل (➕) أو فيديو من مكتبة التلفزيون ← ليستة التلفزيون على طول من غير سؤال
+        if (forceTv == true || ref.startsWith(LibraryCore.SCHEME, true)) { toTv(); return }
+        if (forceTv == false) { toPhone(); return }
         try { RemoteClient.init(act) } catch (_: Throwable) {}
         when {
             PlayTarget.enabled() -> toTv()
             RemoteClient.lastTv() == null -> toPhone()
             else -> try {
-                GAlert(act).setTitle("🎞 ضيفه لطابور فين؟").setMessage(title.ifBlank { short(ref) })
+                GAlert(act).setTitle("➕ ضيفه لأنهي ليستة؟").setMessage(title.ifBlank { short(ref) })
                     .setPositiveButton("📺 التلفزيون") { _, _ -> toTv() }
                     .setNegativeButton("📱 الموبايل") { _, _ -> toPhone() }.show()
             } catch (_: Throwable) { toPhone() }
@@ -136,7 +139,7 @@ object PlayQueueUi {
         fun bg(fill: Int, stroke: Int, r: Int) = GradientDrawable().apply { shape = GradientDrawable.RECTANGLE; cornerRadius = dp(r).toFloat(); setColor(fill); setStroke(dp(1), stroke) }
 
         val head = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL }
-        head.addView(tv("🎞 طابور التشغيل", 19f, Color.WHITE, true).apply { gravity = Gravity.START or Gravity.CENTER_VERTICAL }, LinearLayout.LayoutParams(0, -2, 1f))
+        head.addView(tv("📋 الليستة", 19f, Color.WHITE, true).apply { gravity = Gravity.START or Gravity.CENTER_VERTICAL }, LinearLayout.LayoutParams(0, -2, 1f))
         head.addView(tv("✕", 20f, DIM).apply { background = bg(CARD, LINE, 20); setOnClickListener { d.dismiss() } }, LinearLayout.LayoutParams(dp(42), dp(42)))
         root.addView(head, LinearLayout.LayoutParams(-1, -2))
 
@@ -199,7 +202,7 @@ object PlayQueueUi {
             list.removeAllViews()
             clearB.alpha = if (items.isEmpty()) 0.4f else 1f
             if (items.isEmpty()) {
-                list.addView(tv("الطابور فاضي.\nدوس «🎞 ضيف للطابور» من يوتيوب أو المتصفح أو المشغّل أو المكتبة.", 14f, DIM).apply { setPadding(dp(8), dp(40), dp(8), dp(40)) })
+                list.addView(tv("الليستة فاضية.\nدوس ➕ في الريموت، أو «➕ إضافة للليستة» على أي فيديو في يوتيوب أو المتصفح أو المكتبة.", 14f, DIM).apply { setPadding(dp(8), dp(40), dp(8), dp(40)) })
             } else {
                 val gap = dp(6); val rowH = dp(62)
                 for ((i, q) in items.withIndex()) {
@@ -240,7 +243,7 @@ object PlayQueueUi {
         clearB.setOnClickListener {
             if (items.isEmpty()) return@setOnClickListener
             try {
-                GAlert(act).setTitle("🗑 مسح الطابور كله؟").setMessage("هيتمسح " + items.size + " فيديو من طابور " + (if (tvTab) "التلفزيون" else "الموبايل") + ".")
+                GAlert(act).setTitle("🗑 مسح الليستة كلها؟").setMessage("هيتمسح " + items.size + " فيديو من ليستة " + (if (tvTab) "التلفزيون" else "الموبايل") + ".")
                     .setPositiveButton("امسح الكل") { _, _ -> push(emptyList()); render() }
                     .setNegativeButton("إلغاء", null).show()
             } catch (_: Throwable) { push(emptyList()); render() }

@@ -2209,7 +2209,7 @@ class BrowserActivity : Activity() {
         add(sb("🌐 ترجمة", th.primary, onP) { dlg?.dismiss(); openPlayer(q.f, false, q.audio) })
         add(sb("▶ شاهد", BLUE, Color.WHITE) { dlg?.dismiss(); openPlayer(q.f, true, q.audio) })
         add(sb("📺 تلفزيون", BLUE, Color.WHITE) { dlg?.dismiss(); sendToTv(g, q) })
-        add(sb("🎞 طابور", BLUE, Color.WHITE) { dlg?.dismiss(); queueAdd(g, q) })   // (v694)
+        add(sb("➕ إضافة للليستة", BLUE, Color.WHITE) { dlg?.dismiss(); queueAdd(g, q) })   // (v694)
         val dlB = sb("⬇ حمّل", BLUE, Color.WHITE) { dlg?.dismiss(); if (isHls(q.f)) askQuality(g, q) else dlVideo(g, q) }   // (v716) HLS: اختيار الجودة من الماستر
         dlB.setOnLongClickListener { dlg?.dismiss(); dlAudio(g); true }
         add(dlB)

@@ -408,6 +408,12 @@ object TvLink {
         val j = try { JSONObject(r.bodyText()) } catch (_: Exception) { return err(403, "bad") }
         when (j.optString("a")) {
             "add" -> PlayQueue.add(app, j.optString("ref"), j.optString("title"))
+            "addcur" -> {   // (v779) ➕ من الريموت: ضيف الفيديو الشغّال دلوقتي على التلفزيون
+                val o = PlayerActivity.remoteQueueCur() ?: return err(404, "noplayer")
+                val rf = o.optString("ref")
+                if (rf.isEmpty()) return err(409, "noref")
+                PlayQueue.add(app, rf, o.optString("title"))
+            }
             "set" -> PlayQueue.setAll(app, PlayQueue.fromJson(j.optJSONArray("items")))
             "clear" -> PlayQueue.clear(app)
             "next" -> { val q = PlayQueue.take(app); if (q != null) h.post { PlayQueue.playHere(app, q) } }

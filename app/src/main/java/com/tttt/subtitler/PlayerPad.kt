@@ -105,8 +105,11 @@ object PlayerPad {
             val hh = Handler(Looper.getMainLooper())
             val oldOri = act.requestedOrientation
             try { act.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT } catch (_: Throwable) {}
-            val d = Dialog(act, android.R.style.Theme_Black_NoTitleBar_Fullscreen)
-            val root = FrameLayout(act).apply { layoutDirection = View.LAYOUT_DIRECTION_LTR; setBackgroundColor(0xFF0F1830.toInt()) }
+            val d = Dialog(act, android.R.style.Theme_Translucent_NoTitleBar)   // (v782) ورقة بتطلع من تحت فوق الريموت بدل صفحة كاملة
+            val root = FrameLayout(act).apply {
+                layoutDirection = View.LAYOUT_DIRECTION_LTR
+                background = GradientDrawable().apply { shape = GradientDrawable.RECTANGLE; cornerRadii = floatArrayOf(dpf(28f), dpf(28f), dpf(28f), dpf(28f), 0f, 0f, 0f, 0f); setColor(0xFF0F1830.toInt()); setStroke(dp(1), 0xFF2B3C60.toInt()) }
+            }
 
             val cCard = 0xFF14203A.toInt(); val cLine = 0xFF2B3C60.toInt(); val cOn = 0xFF2563EB.toInt(); val cOnLine = 0xFF3B82F6.toInt()
             val cDim = 0xFF8FA0BC.toInt()
@@ -186,6 +189,12 @@ object PlayerPad {
                 return out
             }
 
+            /** (v779) رقم الجودة الحالية على الزرار (720p…) بدل أيقونة 🎞؛ لو مفيش جودات بتفضل الأيقونة */
+            fun qShort(): String {
+                val l = qList.getOrNull(qCur) ?: return "🎞"
+                val m = Regex("(\\d{3,4})\\s*[pPiI]?").find(l)
+                return if (m != null) m.groupValues[1] + "p" else l.take(7)
+            }
             // ── ورقة سفلية عامة: sheet(عنوان) { جسم, إعادة بناء, إغلاق -> ... } ──
             fun sheet(title: String, fill: (LinearLayout, () -> Unit, () -> Unit) -> Unit) {
                 val sd = Dialog(act)
@@ -597,11 +606,13 @@ object PlayerPad {
 
             // ── فوق: إغلاق + عنوان الفيديو ──
             val ttlTv = label("", 14f, 0xFFB0BEC5.toInt(), false).apply { maxLines = 1; ellipsize = TextUtils.TruncateAt.END }
+            var plusTap: () -> Unit = {}   // (v779) بتتملّي بعد تعريف ورقة ➕ الليستة تحت
             val headRow = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; isBaselineAligned = false; layoutDirection = View.LAYOUT_DIRECTION_LTR; gravity = Gravity.CENTER_VERTICAL }
             headRow.addView(btn("→ رجوع", 13f, 0xFF2563EB.toInt(), 0xFF5B8DEF.toInt()) { d.dismiss() }, lp(dp(78), dp(44)))   // (v700) زرار رجوع واضح للريموت
             headRow.addView(ttlTv, lp(0, -2, 1f).apply { leftMargin = dp(10) })
             val handoffB = btn("📱", 18f, 0xFF2563EB.toInt(), 0xFF5B8DEF.toInt()) { PlayQueueUi.handoffToPhone(act) { try { d.dismiss() } catch (_: Throwable) {}; try { onLeave?.invoke() } catch (_: Throwable) {} } }.apply { visibility = View.GONE }   // (v694) كمّل الفيديو ده على الموبايل من نفس الثانية
             headRow.addView(handoffB, lp(dp(48), dp(44)).apply { leftMargin = dp(6) })
+            headRow.addView(btn("➕", 20f, 0xFF15803D.toInt(), 0xFF4ADE80.toInt()) { plusTap() }, lp(dp(48), dp(44)).apply { leftMargin = dp(6) })   // (v779) ➕ الليستة
             val logTop = btn("📜 لوج", 13f) { sheetLog() }   // (v770) مكان زرار السرعة فوق: لوج التلفزيون (وتشخيص الترجمة 🔬) على الموبايل. السرعة لسه تحت وفي ⚙
             headRow.addView(logTop, lp(dp(66), dp(44)).apply { leftMargin = dp(6) })
 
@@ -708,7 +719,7 @@ object PlayerPad {
             val bgB = btn("◼\nخلفية الترجمة", 12f) { go("bgon") }
             val logB = btn("📜\nاللوج", 12f) { go("log") }
             val nextB = btn("📃\nالفيديوهات الجاية", 12f) { go("nextlist") }
-            val queueB = btn("🎞\nطابور التشغيل", 12f) { PlayQueueUi.show(act) }
+            val queueB = btn("📋\nالليستة", 12f) { PlayQueueUi.show(act) }
             grid(bodyTools, kotlin.collections.listOf(fitB, rotB, loopB, visB, sentB, charsB, subsB, qB, aB, pipB, voiceB, bgB, nextB, queueB, lockB, notB, menuB, toolsB, moreB, killB), 2, 60)
             val bodies = kotlin.collections.listOf(bodyText, bodySync, bodyAi, bodyTools)
             val tabNames = kotlin.collections.listOf("🔤 نص", "⏱ تزامن", "🗣 ذكاء", "🧰 أدوات")
@@ -759,6 +770,52 @@ object PlayerPad {
             val idleBox = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL; visibility = View.GONE }
             idleBox.addView(idleRow, lp(-1, -2)); idleBox.addView(idleNote, lp(-1, -2).apply { topMargin = dp(6) })
 
+            // ── (v779) ➕ الليستة: ورقة فيها 3 حاجات — الليستة نفسها · إضافة الفيديو الشغّال · إضافة فيديوهات من (موبايل / تلفزيون / يوتيوب / متصفح) ──
+            fun queueCurOnTv() {
+                val ttl = st.optString("title", "")
+                Thread {
+                    var msg = ""
+                    try {
+                        RemoteClient.init(act)
+                        if (!RemoteClient.ensureConnected(act, 8000L)) msg = "⚠ مش متصل بالتلفزيون"
+                        else {
+                            val (c, _) = RemoteClient.postJson("/queue", org.json.JSONObject().put("a", "addcur"))
+                            msg = when (c) {
+                                200 -> "➕ اتضاف للليستة" + (if (ttl.isNotBlank()) " — " + ttl.take(40) else "")
+                                404 -> "⚠ مفيش فيديو شغّال على التلفزيون"
+                                409 -> "⚠ الفيديو ده مينفعش يتضاف للليستة"
+                                else -> "⚠ فشل الإضافة (كود $c)"
+                            }
+                        }
+                    } catch (e: Throwable) { LogStore.err("PlayerPad:addcur", e); msg = "⚠ حصلت مشكلة" }
+                    try { act.runOnUiThread { note(msg) } } catch (_: Throwable) {}
+                }.also { it.isDaemon = true }.start()
+            }
+            fun pickPhoneForList() {   // بيفضل يفتح بعد كل اختيار عشان تضيف كذا فيديو ورا بعض (رجوع = خلاص)
+                VideoPicker.show(act, "➕ اختار فيديو من الموبايل للليستة", { v ->
+                    PlayQueueUi.add(act, v.uri, v.title, true)
+                    pickPhoneForList()
+                }, { note("الفيديوهات بتظهر هنا من مكتبة الموبايل") })
+            }
+            fun sheetPlus() = sheet("➕ الليستة") { body, _, close ->
+                body.addView(btn("📋  الليستة (اعرضها · رتّبها · شغّل منها)", 15f, cOn, cOnLine) { close(); PlayQueueUi.show(act) }, lp(-1, dp(54)).apply { topMargin = dp(6) })
+                body.addView(btn("➕  إضافة الفيديو الشغّال للليستة", 15f) { close(); queueCurOnTv() }, lp(-1, dp(54)).apply { topMargin = dp(8) })
+                body.addView(label("➕ إضافة فيديوهات من:", 13f, cDim, false), lp(-1, -2).apply { topMargin = dp(14) })
+                fun rowOf(a: TextView, b: TextView) = LinearLayout(act).apply {
+                    orientation = LinearLayout.HORIZONTAL; isBaselineAligned = false; layoutDirection = View.LAYOUT_DIRECTION_RTL
+                    addView(a, lp(0, dp(78), 1f).apply { marginStart = dp(4); marginEnd = dp(4) })
+                    addView(b, lp(0, dp(78), 1f).apply { marginStart = dp(4); marginEnd = dp(4) })
+                }
+                body.addView(rowOf(
+                    btn("📱\nالموبايل", 15f) { close(); pickPhoneForList() },
+                    btn("📺\nالتلفزيون", 15f) { close(); openLib(true) }), lp(-1, -2).apply { topMargin = dp(8) })
+                body.addView(rowOf(
+                    btn("▶\nيوتيوب", 15f, 0xFFD93A36.toInt(), 0xFFFF6F69.toInt()) { close(); ControllerPad.openOnPhone(act, true); leave() },
+                    btn("🌐\nالمتصفح", 15f, 0xFF0B8BC4.toInt(), 0xFF38BDF8.toInt()) { close(); ControllerPad.openOnPhone(act, false); leave() }), lp(-1, -2).apply { topMargin = dp(8) })
+                body.addView(label("في يوتيوب والمتصفح والمكتبة هتلاقي «➕ إضافة للليستة» على كل فيديو.", 12f, cDim, false), lp(-1, -2).apply { topMargin = dp(10) })
+            }
+            plusTap = { sheetPlus() }
+
             // ── العمود الشمال: عدّاد + كبسولات + سرعة/لهجة + تابات ──
             val left = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_LTR }
             left.addView(idleBox, lp(-1, -2))
@@ -784,8 +841,11 @@ object PlayerPad {
             }
             val volH = minOf((dm.heightPixels * 0.60f).toInt(), dm.heightPixels - dp(330)).coerceAtLeast(dp(180))
             val volCol = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER_HORIZONTAL or Gravity.CENTER_VERTICAL }
-            volCol.addView(muteB, lp(-1, dp(46)))
-            volCol.addView(vol, lp(-1, volH - dp(54)).apply { topMargin = dp(8) })
+            val loopTop = btn("➡", 20f) { go("loop") }   // (v781) تكرار: عادي ← نفس الفيديو 🔂 ← كل الفولدر 🔁 (بدل زرار التدوير اللي كان هنا في v780)
+            volCol.addView(loopTop, lp(-1, dp(46)))
+            volCol.addView(muteB, lp(-1, dp(46)).apply { topMargin = dp(8) })
+            volCol.addView(vol, lp(-1, volH - dp(108)).apply { topMargin = dp(8) })
+            vol.visibility = View.GONE; muteB.visibility = View.GONE   // (v782) الصوت بقى في الصفحة الرئيسية للريموت (مفيش تكرار)
             val mid = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; isBaselineAligned = false; layoutDirection = View.LAYOUT_DIRECTION_LTR }
             mid.addView(left, lp(0, -1, 1f)); mid.addView(volCol, lp(dp(76), -1).apply { leftMargin = dp(12) })
 
@@ -889,11 +949,13 @@ object PlayerPad {
                         modeTv.text = s.optString("mode", "") + (if (vc > 0) "   ·   👁 $vc جملة بصرية" else "")
                     }
                 }
-                qkB.alpha = if (live && (qList.size > 1 || s.optBoolean("quality", false))) 1f else 0.35f   // (v765) ثابت/باهت لو مفيش جودة
+                qkB.alpha = if (live && (qList.size > 1 || s.optBoolean("quality", false))) 1f else 0.35f
+                qkB.text = qShort(); qkB.textSize = if (qList.isNotEmpty()) 13f else 18f   // (v779) رقم الجودة مكتوب على الزرار
+                qB.text = "🎞\nالجودة" + (if (qList.isNotEmpty()) ": " + qShort() else "")   // (v765) ثابت/باهت لو مفيش جودة
                 val al = if (live) 1f else 0.4f
                 cntCard.visibility = if (live) View.VISIBLE else View.GONE
                 handoffB.visibility = if (live) View.VISIBLE else View.GONE
-                idleBox.visibility = View.VISIBLE   // (v702) أزرار المكتبة/يوتيوب/المتصفح/السجل ظاهرة دايمًا أول ما الريموت يتربط، حتى لو فيه فيديو شغّال
+                idleBox.visibility = View.GONE   // (v782) المكتبة/يوتيوب/المتصفح/السجل بقوا في الصفحة الرئيسية للريموت · (v702) أزرار المكتبة/يوتيوب/المتصفح/السجل ظاهرة دايمًا أول ما الريموت يتربط، حتى لو فيه فيديو شغّال
                 idleNote.text = if (RemoteClient.lastTv() == null) "⚠ مفيش تلفزيون متصل" else if (!live) "📺 مفيش فيديو شغّال — شغّل من هنا" else ""
                 idleNote.visibility = if (idleNote.text.isEmpty()) View.GONE else View.VISIBLE
                 for (k in 0 until left.childCount) { val c = left.getChildAt(k); c.alpha = if (c === idleBox) 1f else al }   // (v691) التعتيم من غير الأزرار التلاتة
@@ -930,7 +992,9 @@ object PlayerPad {
                 ccB.text = "💬\n" + (if (s.optBoolean("cc", true)) "الترجمة: شغّالة" else "الترجمة: مقفولة")
                 fitB.text = "🔳\nالعرض: " + s.optString("fit", "—")
                 dualB.text = "🌐\n" + (if (s.optInt("dual", 0) != 0) "ثنائي: شغّال" else "ثنائي اللغة")
-                loopB.text = "🔂\n" + (if (s.optBoolean("loop", false)) "التكرار: شغّال" else "تكرار الفيديو")
+                val lmN = s.optInt("lm", if (s.optBoolean("loop", false)) 1 else 0)
+                loopTop.text = when (lmN) { 1 -> "🔂"; 2 -> "🔁"; else -> "➡" }
+                loopB.text = "🔂\n" + when (lmN) { 1 -> "التكرار: نفس الفيديو"; 2 -> "التكرار: كل الفولدر"; else -> "التكرار: مقفول" }
                 lockB.text = "🔒\n" + (if (s.optBoolean("locked", false)) "مقفول" else "قفل الشاشة")
                 if (!busy) {
                     started = s.optBoolean("tstart", false); paused = s.optBoolean("tpause", false)
@@ -949,7 +1013,15 @@ object PlayerPad {
                 }
             }
             var startedHere = false
+            root.addView(View(act).apply { background = GradientDrawable().apply { shape = GradientDrawable.RECTANGLE; cornerRadius = dpf(3f); setColor(0x66FFFFFF) }; setOnClickListener { d.dismiss() } },
+                FrameLayout.LayoutParams(dp(48), dp(6), Gravity.TOP or Gravity.CENTER_HORIZONTAL).apply { topMargin = dp(8) })   // (v782) مقبض الورقة
             d.setContentView(root)
+            d.setCanceledOnTouchOutside(true)
+            d.window?.apply {
+                setBackgroundDrawable(android.graphics.drawable.ColorDrawable(0)); setGravity(Gravity.BOTTOM)
+                setLayout(-1, (dm.heightPixels * 0.92f).toInt()); addFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND); setDimAmount(0.55f)
+                attributes = attributes.also { it.windowAnimations = android.R.style.Animation_InputMethod }
+            }
             d.setOnDismissListener {
                 closed = true; hh.removeCallbacksAndMessages(null)
                 try { LinkSession.removeListener(lsn) } catch (_: Throwable) {}

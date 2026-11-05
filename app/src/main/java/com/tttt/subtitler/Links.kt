@@ -155,7 +155,7 @@ object Links {
             }
         }
         if (showWeb && isHttp(u)) box.addView(ui.button(if (k == Kind.WEB) "🌐 افتح في المتصفح (يصطاد الفيديوهات)" else "🌐 افتحه في المتصفح") { go(WEB) })
-        if (k == Kind.YT || k == Kind.VIDEO) box.addView(ui.button("🎞 ضيف للطابور") { d.dismiss(); PlayQueueUi.add(act, u, title) })   // (v694)
+        if (k == Kind.YT || k == Kind.VIDEO) box.addView(ui.button("➕ إضافة للليستة") { d.dismiss(); PlayQueueUi.add(act, u, title) })   // (v694)
         box.addView(ui.button("📋 انسخ اللينك") { d.dismiss(); copy(act, u) })
         if (isHttp(u) && !DeviceUi.isTv(act)) {   // (v518) ابعت للتلفزيون المقترن (لو فيه واحد)
             try { RemoteClient.init(act); if (RemoteClient.lastTv() != null) box.addView(ui.button("📺 ابعت للتلفزيون") { d.dismiss(); sendToTv(act, u) }) } catch (_: Throwable) {}

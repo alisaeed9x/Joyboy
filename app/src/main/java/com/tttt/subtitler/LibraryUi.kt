@@ -1101,7 +1101,7 @@ class LibraryUi(
         if (withSel) { items += "☑ تحديد" to { toggleSel(vi.videoId) }; items += "☑ تحديد الكل" to { selectAll() } }
         if (!audio) items += (if (running) "⏹ إيقاف الترجمة في الخلفية" else if (bj?.state == "stopped") "▶ استئناف الترجمة في الخلفية (من مكان ما وقفت)" else "🌙 نقل لمجلد الترجمة في الخلفية") to { if (running) onBgStop(vi) else onBg(vi) }
         items += "▶ تشغيل" to { markPlayed(vi); onPlay(vi) }
-        items += "🎞 ضيف للطابور" to { PlayQueueUi.add(act, vi.uri, vi.title) }   // (v694)
+        items += "➕ إضافة للليستة" to { PlayQueueUi.add(act, vi.uri, vi.title) }   // (v694)
         items += (if (vi.videoId in favs) "⭐ شيل من المفضلة" else "⭐ ضيف للمفضلة") to { if (vi.videoId in favs) favs.remove(vi.videoId) else favs.add(vi.videoId); saveFavs(); render() }
         items += "🌟 قيّم: ★★★★★" to { rates[vi.videoId] = 5; saveRates(); render() }
         items += "🌟 قيّم: ★★★★" to { rates[vi.videoId] = 4; saveRates(); render() }

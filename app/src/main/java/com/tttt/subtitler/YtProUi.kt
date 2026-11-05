@@ -1453,7 +1453,7 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
             if (it.channelUrl.isNotBlank()) m.menu.add(0, 4, 3, "📺 افتح القناة")
             m.menu.add(0, 5, 4, "📋 انسخ اللينك"); m.menu.add(0, 6, 5, "🌐 افتحه في المتصفح")
             m.menu.add(0, 15, 11, "⏭ شغّل بعده (قائمة الانتظار)"); m.menu.add(0, 16, 12, "↗ مشاركة")   // (v469) C9/C11
-            m.menu.add(0, 17, 13, "🎞 ضيف لطابور التشغيل")   // (v694)
+            m.menu.add(0, 17, 13, "➕ إضافة للليستة")   // (v694)
             if (cur?.tab == 2) m.menu.add(0, 7, 6, "🗑 شيل من السجل")
         } else {
             m.menu.add(0, 8, 0, "فتح"); m.menu.add(0, 5, 1, "📋 انسخ اللينك")
