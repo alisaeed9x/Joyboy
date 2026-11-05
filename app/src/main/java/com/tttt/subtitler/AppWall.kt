@@ -19,7 +19,8 @@ import java.util.concurrent.atomic.AtomicBoolean
 /**
  * (v721) خلفية متغيّرة لنسخة الموبايل والتابلت (زي خلفية التلفزيون): Bing + صور عشوائية، بتتغيّر لوحدها ورا الواجهة.
  * فوق الصورة طبقة تعتيم بلون الثيم (قابلة للتحكم) عشان الأزرار والكلام يفضلوا باينين.
- * الإعدادات: app_wall (auto/bing/picsum/off) · app_wall_sec (30/60/300/900/3600/0=ثابتة) · app_wall_scrim (0..95)
+ * (v776) مصادر: Bing اليومية · Wallhaven · Picsum (مش Bing بس) + متجر الخلفيات (WallStore) بيثبّت صورة ثابتة.
+ * الإعدادات: app_wall (auto/bing/wallhaven/picsum/off) · app_wall_sec (30/60/300/900/3600/0=ثابتة) · app_wall_scrim (0..95)
  * التغيير التلقائي بيوقف على النت المحدود (باقة الموبايل)؛ زرار "غيّر دلوقتي" بيشتغل دايماً.
  */
 object AppWall {
@@ -35,7 +36,7 @@ object AppWall {
 
     private val secNames = linkedMapOf("30" to "30 ثانية", "60" to "دقيقة", "300" to "5 دقايق", "900" to "15 دقيقة", "3600" to "ساعة", "0" to "ثابتة")
 
-    fun mode(): String { val m = Cfg.str("app_wall", "auto"); return if (m == "off" || m == "bing" || m == "picsum") m else "auto" }
+    fun mode(): String { val m = Cfg.str("app_wall", "auto"); return if (m == "off" || m == "bing" || m == "picsum" || m == "wallhaven") m else "auto" }
     fun enabled(): Boolean = mode() != "off"
     private fun fixed(): Boolean = Cfg.str("app_wall_sec", "300") == "0"
     private fun everyMs(): Long = (Cfg.str("app_wall_sec", "300").toLongOrNull() ?: 300L).coerceIn(15L, 3600L) * 1000L
@@ -107,19 +108,41 @@ object AppWall {
         next(a, true, true)
     }
 
+    /** ترتيب المصادر اللي هنجرّبها (لو واحد فشل بنكمّل بالتاني) */
+    private fun sources(mode: String): List<String> = when (mode) {
+        "bing" -> listOf("bing", "wallhaven")
+        "wallhaven" -> listOf("wallhaven", "bing")
+        "picsum" -> listOf("picsum", "wallhaven")
+        else -> { val all = listOf("bing", "wallhaven", "picsum"); val k = (n++ % all.size); all.drop(k) + all.take(k) }
+    }
+
     private fun next(a: Activity, force: Boolean, fresh: Boolean) {
         val mode = mode()
         if (mode == "off" || !busy.compareAndSet(false, true)) return
         val my = seq
-        val useBing = if (fresh) mode != "picsum" else when (mode) { "bing" -> true; "picsum" -> false; else -> (n++ % 2 == 0) }
+        val order = sources(mode)
         Thread {
             try {
                 val f = file(a)
-                val ok = fetch(a, useBing, f, fresh) || fetch(a, if (fresh) false else (!useBing && mode == "auto"), f, fresh)
+                var ok = false
+                for (src in order) { if (fetch(a, src, f, fresh)) { ok = true; break } }
                 if (ok) show(a, decode(f), my)
                 else if (force) a.runOnUiThread { if (!a.isDestroyed) Notice.show(a, "مقدرتش أنزّل خلفية جديدة (اتأكد من النت)", 2400L) }
             } catch (e: Throwable) { LogStore.err("AppWall:next", e) } finally { busy.set(false) }
         }.apply { isDaemon = true }.start()
+    }
+
+    /** (v776) من متجر الخلفيات: صورة معيّنة تبقى الخلفية الافتراضية (ثابتة — مبتتغيّرش لوحدها لحد ما تدوس «غيّر الخلفية» أو ترجّع المدة) */
+    fun setFixed(a: Activity, bmp: Bitmap): Boolean {
+        return try {
+            val tmp = File(file(a).path + ".tmp")
+            tmp.outputStream().use { bmp.compress(Bitmap.CompressFormat.JPEG, 92, it) }
+            if (!tmp.renameTo(file(a))) { file(a).delete(); if (!tmp.renameTo(file(a))) return false }
+            if (!enabled()) Cfg.put("app_wall", "auto")
+            Cfg.put("app_wall_sec", "0")
+            a.runOnUiThread { try { if (!a.isDestroyed) applyNow(a) } catch (_: Throwable) {} }
+            true
+        } catch (e: Throwable) { LogStore.err("AppWall:setFixed", e); false }
     }
 
     private fun show(a: Activity, bmp: Bitmap?, my: Int) {
@@ -157,23 +180,29 @@ object AppWall {
         } finally { try { c.disconnect() } catch (_: Throwable) {} }
     }
 
-    private fun fetch(a: Activity, bing: Boolean, dest: File, fresh: Boolean): Boolean {
+    private fun fetch(a: Activity, src: String, dest: File, fresh: Boolean): Boolean {
         return try {
-            val url = if (bing) {
-                if (bingUrls.isEmpty()) {
-                    val j = org.json.JSONObject(String(httpBytes("https://www.bing.com/HPImageArchive.aspx?format=js&idx=0&n=8&mkt=en-US") ?: return false))
-                    val arr = j.getJSONArray("images")
-                    bingUrls = (0 until arr.length()).map { "https://www.bing.com" + arr.getJSONObject(it).getString("url") }
+            val dm = a.resources.displayMetrics
+            val portrait = dm.heightPixels >= dm.widthPixels
+            val bing = src == "bing"
+            val url = when (src) {
+                "bing" -> {
+                    if (bingUrls.isEmpty()) {
+                        val j = org.json.JSONObject(String(httpBytes("https://www.bing.com/HPImageArchive.aspx?format=js&idx=0&n=8&mkt=en-US") ?: return false))
+                        val arr = j.getJSONArray("images")
+                        bingUrls = (0 until arr.length()).map { "https://www.bing.com" + arr.getJSONObject(it).getString("url") }
+                    }
+                    if (fresh) { val seen = Cfg.str("app_wall_seen", "").split("\n"); bingUrls.firstOrNull { it !in seen } ?: bingUrls.randomOrNull() ?: return false }
+                    else bingUrls.randomOrNull() ?: return false
                 }
-                if (fresh) { val seen = Cfg.str("app_wall_seen", "").split("\n"); bingUrls.firstOrNull { it !in seen } ?: return false }
-                else bingUrls.randomOrNull() ?: return false
-            } else {
-                val dm = a.resources.displayMetrics
-                val w = minOf(dm.widthPixels, 1600).coerceAtLeast(480)
-                val hh = (w.toLong() * dm.heightPixels / dm.widthPixels.coerceAtLeast(1)).toInt().coerceIn(480, 2400)
-                "https://picsum.photos/seed/" + System.currentTimeMillis() + "/" + w + "/" + hh
+                "wallhaven" -> WallSources.wallhavenRandom(portrait) ?: return false
+                else -> {
+                    val w = minOf(dm.widthPixels, 1600).coerceAtLeast(480)
+                    val hh = (w.toLong() * dm.heightPixels / dm.widthPixels.coerceAtLeast(1)).toInt().coerceIn(480, 2400)
+                    "https://picsum.photos/seed/" + System.currentTimeMillis() + "/" + w + "/" + hh
+                }
             }
-            val data = httpBytes(url) ?: return false
+            val data = (if (src == "wallhaven") WallSources.http(url, 12_000_000) else httpBytes(url)) ?: return false
             if (data.size < 20_000) return false
             val tmp = File(dest.path + ".tmp"); tmp.writeBytes(data)
             if (decode(tmp) == null) { tmp.delete(); return false }

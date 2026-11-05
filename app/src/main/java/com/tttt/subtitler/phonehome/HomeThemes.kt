@@ -31,6 +31,7 @@ import android.widget.Toast
 import androidx.core.graphics.ColorUtils
 import com.tttt.subtitler.FreeLlm
 import com.tttt.subtitler.LogStore
+import com.tttt.subtitler.WallSources
 import org.json.JSONArray
 import org.json.JSONException
 import org.json.JSONObject
@@ -278,19 +279,24 @@ object ThemeWall {
         return out.sortedBy { if (it.startsWith("https")) 0 else 1 }
     }
 
-    /** بيجيب صورة خلفية عمودية من Bing بكلمات [query]؛ null لو فشل (والمتصل بيستخدم تدرّج الألوان بدلها) */
+    /** بيجيب صورة خلفية عمودية بكلمات [query] من أكتر من مصدر (Wallhaven + بحث Bing — بترتيب عشوائي)؛ null لو فشل (والمتصفح بيستخدم تدرّج الألوان بدلها) */
     fun fetch(query: String): Bitmap? {
         if (query.isBlank()) return null
-        val all = urls(query)
-        val cands = all.take(8).shuffled() + all.drop(8)
         val t0 = System.currentTimeMillis()
         var tries = 0
-        for (u in cands) {
-            if (tries >= 6 || System.currentTimeMillis() - t0 > 30_000L) break
-            tries++
-            val data = http(u, 5_000_000) ?: continue
-            val bmp = decode(data) ?: continue
-            return bmp
+        val order = if (kotlin.random.Random.nextBoolean()) listOf("wh", "bing") else listOf("bing", "wh")
+        for (src in order) {
+            val cands: List<String> = try {
+                if (src == "wh") WallSources.wallhaven(WallSources.toEnglish(query), 1, true).mapNotNull { it.fulls.firstOrNull() }.shuffled()
+                else urls(query).let { all -> all.take(8).shuffled() + all.drop(8) }
+            } catch (_: Throwable) { emptyList() }
+            for (u in cands) {
+                if (tries >= 8 || System.currentTimeMillis() - t0 > 40_000L) return null
+                tries++
+                val data = http(u, 8_000_000) ?: continue
+                val bmp = decode(data) ?: continue
+                return bmp
+            }
         }
         return null
     }
@@ -625,6 +631,9 @@ class ThemeStudio(
         val gen = btn("🎲 توليد ثيم عشوائي", 0xFF7C4DFF.toInt()) { generate() }
         genBtn = gen
         col.addView(gen, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(14) })
+        // (v776) متجر الخلفيات: بحث + أحدث الخلفيات (مش Bing بس)
+        col.addView(btn("🖼 متجر الخلفيات (بحث + أحدث الخلفيات)", 0xFF2A6F6F.toInt()) { d.dismiss(); WallStore(act, prefs) { onChanged() }.open() },
+            LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(8) })
         col.addView(TextView(act).apply {
             text = "↩ رجوع للثيم الافتراضي"; textSize = 13f; setTextColor(0xCCFFFFFF.toInt()); gravity = Gravity.CENTER
             setPadding(dp(12), dp(12), dp(12), dp(12)); pressEffect()

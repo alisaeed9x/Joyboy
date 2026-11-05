@@ -7,6 +7,7 @@ import android.app.AlertDialog
 import android.graphics.BitmapFactory
 import android.app.WallpaperManager
 import android.content.*
+import android.content.pm.PackageManager
 import android.graphics.Color
 import android.graphics.drawable.ColorDrawable
 import android.graphics.drawable.GradientDrawable
@@ -98,6 +99,7 @@ class PhoneHomeActivity : Activity() {
     private var popupTitle: EditText? = null
     private var recents: FrameLayout? = null
     private lateinit var widgets: HomeWidgets          // (v773)
+    private lateinit var wallStore: WallStore             // (v776) متجر الخلفيات (بحث + أحدث الخلفيات)
     private lateinit var studio: ThemeStudio            // (v775) ستور الثيمات + التوليد العشوائي + المعاينة
     private var themeWallViews: List<View> = emptyList()   // (v775) خلفية الثيم (صورة/تدرّج + تعتيم)
     private var homeMenu: PopupWindow? = null          // (v773) قايمة الضغطة الطويلة
@@ -210,6 +212,7 @@ class PhoneHomeActivity : Activity() {
     private fun buildUi() {
         root = FrameLayout(this)
         widgets = HomeWidgets(this, prefs, root)
+        wallStore = WallStore(this, prefs) { attachThemeWall(); AppWall.reapply(this) }
         studio = ThemeStudio(this, prefs, { pages.firstOrNull()?.filter { it !== Entry.Placeholder } ?: emptyList() }) { recreate() }
         attachWall()   // (v772) خلفية Joyboy المتغيّرة تحت الواجهة كلها
         attachThemeWall()   // (v775) لو الثيم الشغّال له خلفية: بتتحط فوق خلفية Joyboy وتحت الواجهة
@@ -911,6 +914,8 @@ class PhoneHomeActivity : Activity() {
             "🧹 تنضيف الرام" to { cleanRam() },
             "🧩 الودجت" to { widgets.open() },
             "🎨 ستور الثيمات" to { studio.openStore() },
+            "🖼 متجر الخلفيات (بحث + أحدث الخلفيات)" to { wallStore.open() },
+            "🚫 قفل اللانشر (استعمل Joyboy كتطبيق عادي)" to { confirmCloseLauncher() },
             "حزمة الأيقونات (المثبّتة على الجهاز)" to { pickPack() },
             "تحميل حزم أيقونات من Google Play" to { openPlayPacks() },
             ("أيقونات Material You: " + if (prefs.getBoolean("themed", true)) "شغّال" else "مقفول") to {
@@ -950,6 +955,8 @@ class PhoneHomeActivity : Activity() {
         row("🧩  الودجت") { widgets.open() }
         row("🎨  ستور الثيمات") { studio.openStore() }
         row("🖼  تغيير الخلفية") { nextWall() }
+        row("🖼  متجر الخلفيات") { wallStore.open() }
+        row("🚫  قفل اللانشر") { confirmCloseLauncher() }
         val w = dp(210)
         box.measure(View.MeasureSpec.makeMeasureSpec(w, View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED))
         val h = box.measuredHeight
@@ -963,6 +970,16 @@ class PhoneHomeActivity : Activity() {
         homeMenu = pw
     }
 
+    /** (v776) قفل اللانشر: Joyboy يرجع تطبيق عادي (بأيقوناته التلاتة). التفعيل تاني من إعدادات التطبيق ← «تفعيل اللانشر» */
+    private fun confirmCloseLauncher() {
+        AlertDialog.Builder(this)
+            .setTitle("قفل اللانشر؟")
+            .setMessage("هيتقفل اللانشر وJoyboy هيشتغل كتطبيق فيديوهات عادي (الأيقونات التلاتة: الرئيسي · المتصفح · يوتيوب). تقدر ترجّعه من إعدادات التطبيق ← تفعيل اللانشر.")
+            .setPositiveButton("اقفله") { _, _ -> com.tttt.subtitler.LauncherMode.disableAndOpenApp(this, true) }
+            .setNegativeButton("إلغاء", null)
+            .show()
+    }
+
     private fun openPlayPacks() {
         try {
             startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("market://search?q=icon%20pack&c=apps")))
@@ -972,8 +989,9 @@ class PhoneHomeActivity : Activity() {
     }
 
     private fun isDefaultHome(): Boolean {
-        val ri = packageManager.resolveActivity(Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME), PackageManager.MATCH_DEFAULT_ONLY)
-        return ri?.activityInfo?.packageName == packageName && ri?.activityInfo?.name == PhoneHomeActivity::class.java.name
+        val ri: android.content.pm.ResolveInfo? = packageManager.resolveActivity(Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME), PackageManager.MATCH_DEFAULT_ONLY)
+        val ai: android.content.pm.ActivityInfo? = ri?.activityInfo
+        return ai != null && ai.packageName == packageName && ai.name == PhoneHomeActivity::class.java.name
     }
 
     @Suppress("DEPRECATION")

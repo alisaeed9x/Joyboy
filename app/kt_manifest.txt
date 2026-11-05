@@ -259,3 +259,7 @@ com/tttt/subtitler/phonehome/Model.kt
 com/tttt/subtitler/phonehome/PhoneHomeActivity.kt
 com/tttt/subtitler/phonehome/Recents.kt
 com/tttt/subtitler/phonehome/Ui.kt
+com/tttt/subtitler/phonehome/HomeThemes.kt
+com/tttt/subtitler/LauncherMode.kt
+com/tttt/subtitler/WallSources.kt
+com/tttt/subtitler/phonehome/WallStore.kt

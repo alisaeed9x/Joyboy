@@ -73,6 +73,7 @@ object Apps {
         val pm = ctx.packageManager
         val q = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
         return pm.queryIntentActivities(q, 0)
+            .filter { !(it.activityInfo.packageName == ctx.packageName && it.activityInfo.name == PhoneHomeActivity::class.java.name) }   // (v776) اللانشر ما يظهرش كأيقونة جواه نفسه
             .map { ri ->
                 val cn = ComponentName(ri.activityInfo.packageName, ri.activityInfo.name)
                 val base = ri.loadIcon(pm)
