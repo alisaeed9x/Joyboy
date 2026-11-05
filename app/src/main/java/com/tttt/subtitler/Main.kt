@@ -666,7 +666,14 @@ class MainActivity : Activity() {
                     ui.text("الكبسولات الصغيرة شمال فوق الفيديو في الشاشة الكاملة. الشفافية دي هي حالتها العادية؛ لما تدوس كبسولة بتبقى 100% كام ثانية وترجع. بتتطبّق فورًا في المشغّل.", 12f, th.muted),
                     ui.slider("الظهور (100 = معتمة، أقل = أشفّ)", Cfg.int("badge_alpha", 55).coerceIn(15, 100), 15, 100, "%") { Cfg.put("badge_alpha", it.toString()) })), true),
             // (v606) المظهر: 7 أقسام بقوا 3 — الثيم (+ استوديو السمات + راحة العين) · الواجهة (السكِن + نوع الجهاز) · الحركة والوصول
-            tab("appearance", listOf<View>(
+            tab("appearance", listOfNotNull<View>(
+                // (v777) قسم اللانشر فوق خالص ومفتوح (قبل كده كان مدفون جوه «الواجهة» المقفولة)
+                if (LauncherMode.available(this)) ui.section("🏠 اللانشر", true,
+                    ui.switchRow("تفعيل اللانشر (Joyboy يبقى شاشة رئيسية بأيقوناته جواه) — مقفول = تطبيق عادي", LauncherMode.enabled(this)) { on ->
+                        if (on) LauncherMode.enableWithPrompt(this) else LauncherMode.set(this, false) },
+                    ui.text("اللانشر بيتقفل ويتفتح من هنا، أو من الضغطة الطويلة جوه اللانشر ← «قفل اللانشر».", 12f, th.muted),
+                    ui.button("⚙️ إعدادات اللانشر (خلفية · ثيمات · ودجت · أيقونات · إيماءات)") { LauncherMode.openSettings(this) },
+                    ui.button("⭐ افتح إعدادات الشاشة الرئيسية (اختار Joyboy الافتراضي)") { LauncherMode.openHomeSettings(this) }) else null,
                 ui.section("🎨 الثيم", true, darkSwitch, themeChips,
                     ui.text("الثيم بيتغيّر فورًا على كل شاشات البرنامج. شكل نص الترجمة نفسه (خط · لون · خلفية) في قسم 🎬 شكل الترجمة.", 12f, th.muted),
                     ui.text("🎨 استوديو السمات: اصنع سمتك بنفسك — اختار لون التمييز وحرّك التشبع والإضاءة (الأساس هو ثيمك الحالي وقت الاختيار). تقدر ترجع لأي ثيم جاهز من فوق في أي وقت.", 12f, th.muted),
@@ -685,11 +692,6 @@ class MainActivity : Activity() {
                     ui.slider("تعتيم الخلفية (زوّده لو الأزرار مش باينة)", Cfg.int("app_wall_scrim", 55).coerceIn(0, 95), 0, 95, "%") { Cfg.put("app_wall_scrim", it.toString()); AppWall.refreshScrim() },
                     ui.button("غيّر الخلفية دلوقتي") { AppWall.nextNow(this) }),
                 ui.section("🧩 الواجهة", false,
-                    *(if (LauncherMode.available(this)) arrayOf<View>(
-                        ui.switchRow("🏠 تفعيل اللانشر (Joyboy يبقى شاشة رئيسية بأيقوناته جواه) — مقفول = تطبيق عادي", LauncherMode.enabled(this)) { on ->
-                            if (on) LauncherMode.enableWithPrompt(this) else LauncherMode.set(this, false) },
-                        ui.text("اللانشر بيتقفل ويتفتح من هنا، أو من الضغطة الطويلة جوه اللانشر ← «قفل اللانشر».", 12f, th.muted)
-                    ) else emptyArray<View>()),
                     ui.button("📺 إعدادات التلفزيون (كلها في مكان واحد)") { TvLookPad.show(this) },
                     ui.text("نوع الجهاز (موبايل · تابلت · تلفزيون) — نفس النسخة بتتحول لواجهة تلفزيون أو تابلت، والتبديل بيطبّق فورًا:", 12f, th.muted),
                     ui.chips(listOf("🔄 تلقائي", "📱 موبايل", "📟 تابلت", "📺 تلفزيون"), { DeviceUi.label(DeviceUi.pref()) }) { n ->
@@ -1987,6 +1989,7 @@ class MainActivity : Activity() {
         if (!fromPlayer) { updateYtBadge(); ytBackgroundSync() }
         // الرجوع من المشغّل أو من إعدادات الإذن: حدّث العرض (تقدم الترجمة) أو أعد الفحص
         if (!fromPlayer) CrashLog.showIfAny(this)
+        if (!fromPlayer && !DeviceUi.isTv(this)) try { LauncherMode.askFirstRun(this) } catch (_: Throwable) {}   // (v777) أول تشغيل: بلانشر ولا من غير؟
         if (!fromPlayer) ClipOverlay.ensure(this)   // (v735) مراقب الكليبورد بإذن العرض فوق التطبيقات (بيشتغل لوحده أول ما الإذن يتفعّل)
         if (!fromPlayer) ModelWatch.maybeCheck(this)   // (v141) فحص يومي لموديل flash-lite أحدث
         // المخفي بيتقفل تاني لو التطبيق قعد في الخلفية أكتر من دقيقة

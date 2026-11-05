@@ -132,6 +132,7 @@ class PhoneHomeActivity : Activity() {
         HomeThemeStore.cur = HomeThemeStore.load(prefs)   // (v773) ثيم الذكاء قبل بناء الواجهة
         WindowCompat.setDecorFitsSystemWindows(window, false)
         buildUi()
+        if (intent?.getBooleanExtra("open_settings", false) == true) root.post { showSettings() }   // (v778)
         reload()
     }
 
@@ -177,6 +178,7 @@ class PhoneHomeActivity : Activity() {
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
+        if (intent.getBooleanExtra("open_settings", false)) { root.post { showSettings() }; return }   // (v778) جاي من إعدادات Joyboy ← ⚙️ إعدادات اللانشر
         if (intent.action == Intent.ACTION_MAIN) {
             if (widgets.isOpen) { widgets.close(); return }
             if (RecentsStore.openRequested) { RecentsStore.openRequested = false; root.post { openRecents() }; return }

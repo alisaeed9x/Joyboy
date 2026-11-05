@@ -76,11 +76,19 @@
             android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboardHidden|density">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN"/>
-                <category android:name="android.intent.category.HOME"/>
                 <category android:name="android.intent.category.DEFAULT"/>
                 <category android:name="android.intent.category.LEANBACK_LAUNCHER"/>
             </intent-filter>
         </activity>
+        <!-- (v777) HOME بتاع التلفزيون بقى alias متفعّل على التلفزيون بس (res/values-television/bools_tvhome.xml).
+             قبل كده TvActivity كانت HOME على الموبايل كمان فكانت بتظهر في «التطبيقات الافتراضية ← الشاشة الرئيسية» وتفتح لانشر التلفزيون على الموبايل -->
+        <activity-alias android:name=".TvHomeAlias" android:targetActivity=".TvActivity" android:exported="true" android:enabled="@bool/tv_home_enabled" android:label="Joyboy">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN"/>
+                <category android:name="android.intent.category.HOME"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+            </intent-filter>
+        </activity-alias>
         <!-- (v772) لانشر الموبايل (Joyboy Launcher جوه التطبيق): شاشة رئيسية HOME للموبايل/التابلت — متعطّل على التلفزيون (res/values-television/bools_phonehome.xml)
              والتلفزيون لسه رئيسيته TvActivity. taskAffinity فاضي عشان تفضل في تاسك لوحدها وما تتلخبطش مع تاسك Joyboy. -->
         <activity android:name=".phonehome.PhoneHomeActivity" android:exported="true" android:enabled="@bool/phone_home_enabled"

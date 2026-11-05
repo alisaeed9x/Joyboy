@@ -68,4 +68,33 @@ object LauncherMode {
         Toast.makeText(a, "اللانشر اتقفل — Joyboy بقى تطبيق عادي. تفعّله تاني من الإعدادات ← تفعيل اللانشر", Toast.LENGTH_LONG).show()
         if (finishIt) a.finish()
     }
+
+    fun openHomeSettings(a: Activity) {
+        try { a.startActivity(Intent(Settings.ACTION_HOME_SETTINGS)) } catch (_: Throwable) {
+            Toast.makeText(a, "افتح إعدادات الأندرويد ← التطبيقات الافتراضية ← الشاشة الرئيسية", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    /** (v777) أول مرة (بعد التثبيت/التحديث) على الموبايل/التابلت: يسأل «بلانشر ولا من غير؟» مرة واحدة بس */
+    fun askFirstRun(a: Activity) {
+        try {
+            if (!available(a) || Cfg.str("launcher_asked", "0") == "1" || a.isFinishing || a.isDestroyed) return
+            Cfg.put("launcher_asked", "1")
+            AlertDialog.Builder(a)
+                .setTitle("تشغّل Joyboy بلانشر؟")
+                .setMessage("• بلانشر: Joyboy يبقى شاشة رئيسية للموبايل (ساعة · أيقونات · ثيمات · خلفيات) وأيقوناته التلاتة جواه.\n• من غير لانشر: يشتغل كتطبيق فيديوهات عادي بأيقوناته التلاتة (الرئيسي · المتصفح · يوتيوب).\n\nتقدر تغيّر اختيارك في أي وقت من الإعدادات ← المظهر ← اللانشر.")
+                .setCancelable(false)
+                .setPositiveButton("🏠 بلانشر") { _, _ -> enableWithPrompt(a) }
+                .setNegativeButton("📱 من غير لانشر") { _, _ -> set(a, false) }
+                .show()
+        } catch (e: Throwable) { LogStore.err("LauncherMode:ask", e) }
+    }
+
+    /** (v778) «⚙️ إعدادات اللانشر» من إعدادات Joyboy: بيفتح لانشر الموبايل على قايمة إعداداته (خلفية · ثيمات · ودجت · حزم أيقونات · إيماءات · افتراضي…) */
+    fun openSettings(a: Activity) {
+        if (!enabled(a)) { Toast.makeText(a, "فعّل اللانشر الأول", Toast.LENGTH_SHORT).show(); return }
+        try {
+            a.startActivity(Intent().setClassName(a.packageName, CLS).putExtra("open_settings", true).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        } catch (e: Throwable) { LogStore.err("LauncherMode:settings", e); Toast.makeText(a, "مقدرتش أفتح إعدادات اللانشر", Toast.LENGTH_SHORT).show() }
+    }
 }
