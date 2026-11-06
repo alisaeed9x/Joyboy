@@ -29,6 +29,35 @@ import java.util.WeakHashMap
 object TvFocus {
     private val saved = WeakHashMap<View, Drawable?>()
     private val listRinged = WeakHashMap<View, Boolean>()
+    private val selfRung = WeakHashMap<View, Boolean>()   // (v803) عناصر ليها حلقتها الخاصة (tvRing) — المراقب العام يسيبها
+
+    /** (v803) حلقة تركيز قوية للعنصر نفسه (قوايم/دايلوجات مشغّل التلفزيون): خلفية ملوّنة شفافة + إطار أبيض سميك + إطار تمييز + تكبير بسيط.
+     *  قبل كده tvRing والمراقب العام كانوا بيتخانقوا على foreground فكانت الحلقة بتفضل عالقة على العناصر اللي عدّيت عليها وماتعرفش الريموت واقف فين. */
+    fun selfRing(v: View, accent: Int, d: Float) {
+        selfRung[v] = true
+        val old = v.onFocusChangeListener
+        v.onFocusChangeListener = View.OnFocusChangeListener { x, f ->
+            try {
+                if (f) {
+                    x.foreground = strongRing(accent, d)
+                    (x.parent as? ViewGroup)?.clipChildren = false
+                    x.animate().cancel(); x.animate().scaleX(1.04f).scaleY(1.04f).translationZ(8 * d).setDuration(Skins.dur(110L)).start()
+                } else {
+                    x.foreground = null
+                    x.animate().cancel(); x.animate().scaleX(1f).scaleY(1f).translationZ(0f).setDuration(Skins.dur(90L)).start()
+                }
+            } catch (_: Throwable) {}
+            old?.onFocusChange(x, f)
+        }
+    }
+
+    private fun strongRing(accent: Int, d: Float): Drawable {
+        val fill = GradientDrawable().apply { setColor((accent and 0x00FFFFFF) or 0x73000000); setStroke((6 * d).toInt(), contrast()); cornerRadius = 12 * d }
+        val inner = GradientDrawable().apply { setColor(0x00000000); setStroke((3 * d).toInt(), accent); cornerRadius = 12 * d }
+        val ld = LayerDrawable(arrayOf(fill, inner))
+        val h = (3 * d).toInt(); ld.setLayerInset(0, h, h, h, h); ld.setLayerInset(1, h, h, h, h)
+        return ld
+    }
 
     fun on(a: Activity): Boolean = try { DeviceUi.isRemote(a) } catch (_: Throwable) { false }
 
@@ -120,6 +149,7 @@ object TvFocus {
             } catch (_: Throwable) {}
             return
         }
+        if (selfRung.containsKey(v)) return   // (v803) عنصر ليه حلقته الخاصة
         if (isContainer(v) || v is TvTileView || v is TvOwnFocus) return   // (v491) كروت اللانشر عندها حلقتها البيضاء وتكبيرها الخاص
         try {
             val d = dm.density
@@ -127,13 +157,14 @@ object TvFocus {
             val big = v.width > dm.widthPixels * 0.55f || v.height > dm.heightPixels * 0.45f
             if (!big && v.width > 0) (v.parent as? ViewGroup)?.clipChildren = false
             val sc = if (!big && v.width > 0) TvGlow.fit(v, 1.05f) else 1f   // (v696) التكبير بقدر المساحة المتاحة
-            v.foreground = if (TvUserPrefs.halo()) TvGlow.under(ring(accent, d), accent, 12, d, 0, TvGlow.haloRoom(v, sc)) else ring(accent, d)   // (v681) هالة · (v696) بتقصر جنب الحواف
+            v.foreground = if (TvUserPrefs.halo()) TvGlow.under(strongRing(accent, d), accent, 12, d, 0, TvGlow.haloRoom(v, sc)) else strongRing(accent, d)   // (v803) حلقة أقوى (خلفية ملوّنة) عشان يبان الريموت واقف فين   // (v681) هالة · (v696) بتقصر جنب الحواف
             TvGlow.refresh(v)
             if (!big && v.width > 0) v.animate().scaleX(sc).scaleY(sc).translationZ(8 * d).setDuration(Skins.dur(120L)).start()
         } catch (_: Throwable) {}
     }
 
     private fun unmark(v: View) {
+        if (selfRung.containsKey(v)) return   // (v803)
         try {
             if (saved.containsKey(v)) { v.foreground = saved.remove(v); TvGlow.refresh(v) }
             v.animate().cancel()

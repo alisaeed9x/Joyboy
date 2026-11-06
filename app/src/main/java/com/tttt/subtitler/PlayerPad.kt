@@ -99,6 +99,9 @@ class PadParts(
     val mk: (String, Float, Int, Int, () -> Unit) -> TextView
 )
 
+/** (v804) اختيار جودة للتحميل من ريموت الموبايل */
+private class DlPick(val label: String, val url: String, val audio: String?, val hls: Boolean, val h: Int, val size: Long, val approx: Boolean)
+
 object PlayerPad {
     /** (v684) آخر مترجم اتختار لترجمة ملف الترجمة (google / gemini) */
     @Volatile private var lastSfEng = "gemini"
@@ -463,6 +466,7 @@ object PlayerPad {
             }
             // ───── (v695) وضع عرض الترجمة · نسخ الترجمة ─────
             val dualNames = kotlin.collections.listOf("ترجمة فقط", "ترجمة + الأصلي تحت", "الإنجليزي تحت", "الأصلي فقط", "الأصلي فوق + الترجمة")
+            val dualShort = kotlin.collections.listOf("ترجمة\nفقط", "ترجمة +\nالأصلي", "إنجليزي\nتحت", "الأصلي\nفقط", "الأصلي\nفوق")   // (v806) أسماء الأزرار الصغيرة
             fun sheetDual() = sheet("🔀 وضع عرض الترجمة") { body, redo, close ->
                 for ((n, nm) in dualNames.withIndex()) opt(body, (if (n == dualSel) "✓ " else "") + nm) { dualSel = n; go("dualset", n.toLong()); redo() }
             }
@@ -694,7 +698,7 @@ object PlayerPad {
             val posTv = stepRow(hiddenBody, { go("posy", -10L) }, { go("posy", 10L) })
             val bgTv = stepRow(hiddenBody, { go("bgopa", (bgNow - 10).coerceIn(0, 100).toLong()) }, { go("bgopa", (bgNow + 10).coerceIn(0, 100).toLong()) })
             bodyText.addView(btn("🎨 استوديو الترجمة", 13f) { sheetStudio() }, lp(-1, dp(46)).apply { topMargin = dp(6) })
-            val studioBtn = btn("🎚 تحكم الترجمة (حجم · موضع · شفافية · خط)", 15f) { sheetStudio() }
+            val studioBtn = btn("🎚\nتحكم\nترجمة", 9.5f) { sheetStudio() }   // (v806) الاسم بس — من غير الشرح
             // ⏱ تزامن
             val bodySync = newBody()
             val timeTv = stepRow(bodySync, { go("shift", -250L) }, { go("shift", 250L) })
@@ -786,7 +790,7 @@ object PlayerPad {
             idleRow.addView(idleBtn("📚", "المكتبة", 0xFF2563EB.toInt(), 0xFF5B8DEF.toInt()) { sheetLib() }, lp(0, idleH, 1f).apply { marginStart = dp(3); marginEnd = dp(3) })
             idleRow.addView(idleBtn("▶", "يوتيوب", 0xFFD93A36.toInt(), 0xFFFF6F69.toInt()) { ControllerPad.openOnPhone(act, true); leave() }, lp(0, idleH, 1f).apply { marginStart = dp(3); marginEnd = dp(3) })
             idleRow.addView(idleBtn("🌐", "المتصفح", 0xFF0B8BC4.toInt(), 0xFF38BDF8.toInt()) { ControllerPad.openOnPhone(act, false); leave() }, lp(0, idleH, 1f).apply { marginStart = dp(3); marginEnd = dp(3) })
-            idleRow.addView(idleBtn("🕘", "سجل المشاهدة", 0xFF6D4BB8.toInt(), 0xFF9B7BE6.toInt()) { RecentPicker.show(act) }, lp(0, idleH, 1f).apply { marginStart = dp(3); marginEnd = dp(3) })   // (v692) آخر اللي اتشاف على التلفزيون والموبايل مع بعض
+            idleRow.addView(idleBtn("🕘", "السجل", 0xFF6D4BB8.toInt(), 0xFF9B7BE6.toInt()) { RecentPicker.show(act) }, lp(0, idleH, 1f).apply { marginStart = dp(3); marginEnd = dp(3) })   // (v692) آخر اللي اتشاف على التلفزيون والموبايل مع بعض
             val idleNote = label("", 12f, cDim, false)
             val idleBox = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL; visibility = View.GONE }
             idleBox.addView(idleRow, lp(-1, -2)); idleBox.addView(idleNote, lp(-1, -2).apply { topMargin = dp(6) })
@@ -843,6 +847,129 @@ object PlayerPad {
             val rotTop = btn("🔄\nتدوير الفيديو", 11f) { go("rotate") }
             val repCyc = btn("➡\nبدون تكرار", 11f) { go("loop") }   // (v797) زرار واحد بدل «تكرار واحد» + «تكرار الكل»: بدون ← نفس الفيديو ← كل الفولدر
             val plTop = btn("📋\nقائمة التشغيل", 11f) { plusTap() }
+
+            // ── (v804) ⬇ تحميل الفيديو الشغّال: ملف على التلفزيون ← الموبايل · لينك/يوتيوب ← جودات بحجمها ← (موبايل / تلفزيون) ──
+            fun dlHdr(j: JSONObject?): HashMap<String, String> { val m = HashMap<String, String>(); if (j != null) for (k in j.keys()) m[k] = j.optString(k); return m }
+            fun isOwnHost(u: String): Boolean {
+                try {
+                    val host = java.net.URI(u).host ?: return false
+                    val nis = java.net.NetworkInterface.getNetworkInterfaces() ?: return false
+                    for (ni in java.util.Collections.list(nis)) for (a in java.util.Collections.list(ni.inetAddresses)) if (a.hostAddress == host) return true
+                } catch (_: Throwable) {}
+                return false
+            }
+            fun dlSize(u: String, a: String?, hs: Map<String, String>): Long {
+                val x = Downloader.sizeOf(u, hs)
+                if (x <= 0L) return -1L
+                return if (a.isNullOrEmpty()) x else x + maxOf(0L, Downloader.sizeOf(a, hs))
+            }
+            fun sizeTxt(n: Long, approx: Boolean) = if (n > 0L) (if (approx) "≈ " else "") + Sniff.fmtSize(n) else "مش معروف"
+            fun dlOnPhone(name: String, pk: DlPick, hs: HashMap<String, String>) {
+                val app = act.applicationContext
+                val job = Downloader.Job(name, pk.url, pk.audio, pk.hls, pk.h, hs)
+                TaskCenter.add(app, "download", "⬇ " + job.name) { t ->
+                    job.ctl.cancelled = false; job.ctl.paused = false
+                    job.ctl.ext = { t.cancelled }
+                    t.onCancel = { job.ctl.cancelled = true }
+                    t.onPause = { p -> job.ctl.paused = p }
+                    val res = Downloader.run(app, job) { what, pct -> t.pct = pct.coerceIn(0, 99); t.msg = what; TaskCenter.changed() }
+                    if (!res.first) throw java.io.IOException(res.second)
+                    t.msg = ""; t.outPath = res.second
+                }
+                note("⬇ اتضاف للتحميل على الموبايل — تابعه من «المهام»")
+            }
+            fun dlOnTv(name: String, pk: DlPick, hs: HashMap<String, String>) {
+                val args = JSONObject().put("name", name).put("url", pk.url).put("audio", pk.audio ?: "").put("hls", pk.hls).put("h", pk.h).put("hdr", JSONObject(hs as Map<*, *>))
+                LinkSession.send("dl.start", args) { ok, r ->
+                    val started = r.optJSONObject("res")?.optBoolean("started", false) ?: false
+                    note(if (ok && started) "⬇ التحميل بدأ على التلفزيون" else if (r.optString("err") == "readonly") "⚠ ريموت تاني ماسك التحكم" else "⚠ التلفزيون ما قدرش يبدأ التحميل")
+                }
+            }
+            /** الخطوة الأخيرة: الحجم + «تحمّله فين؟» */
+            fun sheetDlWhere(name: String, pk: DlPick, hs: HashMap<String, String>, own: Boolean) = sheet("⬇ تحميل") { body, _, close ->
+                body.addView(label(name, 13f, cDim, false).apply { maxLines = 2; ellipsize = TextUtils.TruncateAt.END }, lp(-1, -2).apply { topMargin = dp(4) })
+                val szTv = label("📦 الحجم: " + (if (pk.size > 0L) sizeTxt(pk.size, pk.approx) else "⏳ بحسبه…"), 16f, 0xFFFDE68A.toInt(), true)
+                body.addView(szTv.apply { background = bg(0xFF3A2A12.toInt(), 0xFFF59E0B.toInt(), 14f); setPadding(dp(12), dp(12), dp(12), dp(12)) }, lp(-1, -2).apply { topMargin = dp(10) })
+                if (pk.size <= 0L) Thread {
+                    val n = try { dlSize(pk.url, pk.audio, hs) } catch (_: Throwable) { -1L }
+                    try { act.runOnUiThread { szTv.text = "📦 الحجم: " + sizeTxt(n, false) } } catch (_: Throwable) {}
+                }.also { it.isDaemon = true }.start()
+                grp(body, "تحمّله فين؟")
+                if (!own) opt(body, "📱  على الموبايل") { close(); dlOnPhone(name, pk, hs) }
+                opt(body, "📺  على التلفزيون") { close(); dlOnTv(name, pk, hs) }
+                if (own) body.addView(label("الفيديو ده أصلًا جاي من الموبايل — فالتحميل متاح للتلفزيون بس.", 12f, cDim, false), lp(-1, -2).apply { topMargin = dp(8) })
+            }
+            fun sheetDlNet(info: JSONObject) {
+                val name = info.optString("name", "video").ifBlank { "video" }
+                val hs = dlHdr(info.optJSONObject("hdr")); val dur = info.optLong("dur", 0L)
+                val picks = ArrayList<DlPick>()
+                val ql = info.optJSONArray("qlist")
+                if (ql != null && ql.length() > 0) {
+                    for (i in 0 until ql.length()) { val o = ql.getJSONObject(i); picks.add(DlPick(o.optString("l").ifEmpty { o.optInt("h").toString() + "p" }, o.optString("u"), o.optString("a").ifEmpty { null }, false, o.optInt("h"), -1L, false)) }
+                } else {
+                    val u = info.optString("url"); val au = info.optString("aurl").ifEmpty { null }
+                    if (info.optBoolean("hls", false)) {
+                        val hq = info.optJSONArray("hlsq")
+                        if (hq == null || hq.length() == 0) picks.add(DlPick("أعلى جودة متاحة", u, null, true, 0, -1L, false))
+                        else {
+                            val l = ArrayList<JSONObject>(); for (i in 0 until hq.length()) l.add(hq.getJSONObject(i))
+                            for (o in l.sortedByDescending { it.optInt("h") }) { val br = o.optLong("br"); picks.add(DlPick(o.optInt("h").toString() + "p", u, null, true, o.optInt("h"), if (br > 0L && dur > 0L) br / 8L * (dur / 1000L) else -1L, true)) }
+                        }
+                    } else {
+                        val ht = info.optInt("ht", 0)
+                        picks.add(DlPick("الجودة الحالية" + (if (ht > 0) " (${ht}p)" else ""), u, au, false, ht, -1L, false))
+                    }
+                }
+                if (picks.isEmpty() || picks[0].url.isBlank()) { note("⚠ مفيش لينك قابل للتحميل للفيديو ده"); return }
+                val own = isOwnHost(picks[0].url)
+                if (picks.size == 1) { sheetDlWhere(name, picks[0], hs, own); return }
+                sheet("🎞 اختار الجودة") { body, _, close ->
+                    body.addView(label("الحجم بيظهر جنب كل جودة", 12f, cDim, false), lp(-1, -2).apply { topMargin = dp(4) })
+                    for (pk in picks) {
+                        val b = btn(pk.label + (if (pk.size > 0L) "   ·   " + sizeTxt(pk.size, pk.approx) else "   ·   ⏳"), 15f) { close(); sheetDlWhere(name, pk, hs, own) }
+                        body.addView(b, lp(-1, dp(52)).apply { topMargin = dp(8) })
+                        if (pk.size <= 0L) Thread {
+                            val n = try { dlSize(pk.url, pk.audio, hs) } catch (_: Throwable) { -1L }
+                            try { act.runOnUiThread { b.text = pk.label + "   ·   " + sizeTxt(n, false) } } catch (_: Throwable) {}
+                        }.also { it.isDaemon = true }.start()
+                    }
+                }
+            }
+            fun sheetDlLocal(info: JSONObject) {
+                val fn = info.optString("file", "video.mp4"); val sz = info.optLong("size", -1L)
+                sheet("⬇ تحميل") { body, _, close ->
+                    body.addView(label(fn, 13f, cDim, false).apply { maxLines = 2; ellipsize = TextUtils.TruncateAt.END }, lp(-1, -2).apply { topMargin = dp(4) })
+                    body.addView(label("📦 الحجم: " + sizeTxt(sz, false), 16f, 0xFFFDE68A.toInt(), true).apply { background = bg(0xFF3A2A12.toInt(), 0xFFF59E0B.toInt(), 14f); setPadding(dp(12), dp(12), dp(12), dp(12)) }, lp(-1, -2).apply { topMargin = dp(10) })
+                    infoCard(body, "الفيديو ملف على التلفزيون — هيتحمّل على الموبايل.")
+                    opt(body, "📱  حمّل على الموبايل") {
+                        close()
+                        val tv = RemoteClient.current
+                        if (tv == null) { note("📺 مفيش تلفزيون متصل"); return@opt }
+                        val app = act.applicationContext
+                        val url = "http://" + tv.ip + ":" + tv.port + "/file/cur"
+                        val hd = mapOf("X-Token" to tv.token, "X-Ver" to LinkVer.code(app).toString())
+                        val nm = Xfer.safeName(fn)
+                        TaskCenter.add(app, "dm", "📥 $nm") { t -> XNet.download(app, t, url, hd, nm, sz, XCat.VIDEO) }
+                        note("📥 اتضاف للتحميل على الموبايل — تابعه من «المهام»")
+                    }
+                }
+            }
+            fun startDownloadFlow() {
+                if (RemoteClient.lastTv() == null) { note("📺 مفيش تلفزيون متصل"); return }
+                note("⏳ بجيب بيانات الفيديو…")
+                LinkSession.send("dl.info") { ok, r ->
+                    val info = r.optJSONObject("res")?.optJSONObject("info")
+                    when {
+                        !ok && r.optString("err") == "noplayer" -> note("📺 مفيش فيديو شغّال في مشغّل التلفزيون")
+                        !ok -> note("⚠ ما قدرتش أوصل للتلفزيون (" + r.optString("err") + ")")
+                        info == null -> note("التلفزيون محتاج تحديث للنسخة دي")
+                        info.optString("kind") == "local" -> sheetDlLocal(info)
+                        info.optString("kind") == "net" -> sheetDlNet(info)
+                        else -> note("الفيديو ده مش قابل للتحميل")
+                    }
+                }
+            }
+            val dlTop = btn("⬇\nتحميل", 11f) { startDownloadFlow() }
             val fitTop = btn("⛶", 20f) { go("fit") }
             var dimExtra: List<View> = kotlin.collections.emptyList()
             val left = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_LTR }
@@ -927,12 +1054,12 @@ object PlayerPad {
                 idleBox.removeView(idleRow); left.removeView(subRow); left.removeView(tabBar); left.removeView(sc)
                 quick.removeView(aiB); bodyAi.addView(aiB, 0, lp(-1, dp(46)))   // ✨ لهجة وترجمة جوه تاب «ذكاء»
                 headRow.removeView(logTop)
-                for (i0 in 0 until subRow.childCount) { (subRow.getChildAt(i0) as? TextView)?.textSize = 10f }
+                for (i0 in 0 until subRow.childCount) { (subRow.getChildAt(i0) as? TextView)?.textSize = 9.5f }
+                addTrB.text = "➕\nإضافة\nترجمة"   // (v806) 6 أزرار في صف واحد: الكلام على سطور عشان ما يتاكلش
                 trRow.addView(fitTop, lp(0, dp(46), 1f).apply { marginStart = dp(6) })
                 bodyTools.addView(btn("📱  كمّل الفيديو على الموبايل", 13f) { PlayQueueUi.handoffToPhone(act) { leave() } }, lp(-1, dp(46)).apply { topMargin = dp(6) })
                 val repeatRow = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; isBaselineAligned = false; layoutDirection = View.LAYOUT_DIRECTION_LTR }
-                val rb = kotlin.collections.listOf(rotTop, repCyc, plTop)
-                idleRow.removeViewAt(idleRow.childCount - 1)   // (v797) «سجل المشاهدة» مكرر مع «آخر المشغّل» (نفس الشاشة) — فضل «آخر المشغّل» جنب الدايرة
+                val rb = kotlin.collections.listOf(rotTop, repCyc, plTop, dlTop)
                 for (i0 in rb.indices) repeatRow.addView(rb[i0], lp(0, dp(48), 1f).apply { if (i0 > 0) marginStart = dp(6) })
                 dimExtra = kotlin.collections.listOf(subRow, tabBar, sc, repeatRow)
                 embedInto(PadParts(idleRow, subRow, tabBar, sc, trRow, tr, bar, times, logTop, repeatRow, infoLine, studioBtn) { t, sp, f, st0, tp -> btn(t, sp, f, st0) { tp() } })
@@ -975,8 +1102,14 @@ object PlayerPad {
                 tDur.text = durTxt(dur)
                 playB.text = if (playing) "⏸" else "▶"
                 ttlTv.text = s.optString("title", "").let { if (it.isBlank()) "" else "📺  " + it }
-                ccTop.text = if (s.optBoolean("cc", true)) "💬\nالترجمة ظاهرة" else "🚫\nالترجمة مخفية"   // (v695)
-                dualSel = s.optInt("dual", 0).coerceIn(0, 4); dualTop.text = "🔀\n" + dualNames[dualSel]
+                dualSel = s.optInt("dual", 0).coerceIn(0, 4)
+                if (embedInto != null) {   // (v806) الريموت: 6 أزرار في صف — أسماء قصيرة على سطرين
+                    ccTop.text = if (s.optBoolean("cc", true)) "💬\nترجمة\nظاهرة" else "🚫\nترجمة\nمخفية"
+                    dualTop.text = "🔀\n" + dualShort[dualSel]
+                } else {
+                    ccTop.text = if (s.optBoolean("cc", true)) "💬\nالترجمة ظاهرة" else "🚫\nالترجمة مخفية"   // (v695)
+                    dualTop.text = "🔀\n" + dualNames[dualSel]
+                }
                 val cnt = s.optString("cnt", "")
                 val vc = s.optInt("vcnt", 0)
                 if (!live) {

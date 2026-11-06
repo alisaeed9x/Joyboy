@@ -26,7 +26,7 @@ object BrainRpc {
     }
 
     /** أوامر قراءة بس (مسموحة لأي متحكّم حتى لو مش المالك) */
-    private val readOps = setOf("state", "engine.get", "engine.versions", "control.take")
+    private val readOps = setOf("state", "engine.get", "engine.versions", "control.take", "dl.info")
 
     private fun taskOp(op: String, a: JSONObject): JSONObject {
         if (op == "task.clear") { TaskCenter.clearFinished(); return JSONObject().put("ok", true) }

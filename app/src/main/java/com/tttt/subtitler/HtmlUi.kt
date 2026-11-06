@@ -71,7 +71,7 @@ class DualProgress(ctx: Context, val th: Theme) : View(ctx) {
     }
 
     override fun onMeasure(w: Int, h: Int) {
-        setMeasuredDimension(MeasureSpec.getSize(w), if (thin) MeasureSpec.getSize(h).coerceAtLeast(3) else ((if (mini) (if (big) 60 else 30) else 34) * d).toInt())
+        setMeasuredDimension(MeasureSpec.getSize(w), if (thin) MeasureSpec.getSize(h).coerceAtLeast(3) else ((if (mini) (if (big) 50 else 30) else 34) * d).toInt())
     }
 
     private fun strip(c: Canvas, w: Float, y0: Float, hh: Float, segs: List<DoubleArray>, color: Int, trackColor: Int?) {
@@ -116,9 +116,16 @@ class DualProgress(ctx: Context, val th: Theme) : View(ctx) {
                 c.drawRoundRect(RectF(0f, cy - tr, px, cy + tr), 3f * d, 3f * d, p)
                 p.shader = null
             }
-            // الشريط التاني (تحت): أخضر = فيه جملة ترجمة فعلًا (بيتقطع عند الفجوات)
-            strip(c, w, cy + tr + 3f * d * kk, 4f * d * kk, cov, 0xFF22C55E.toInt(), th.border)
-            if (vis.isNotEmpty()) strip(c, w, cy + tr + 8.5f * d * kk, 3f * d * kk, vis, 0xFF3B82F6.toInt(), null)
+            if (big) {
+                // (v804) شريط واحد: تقدم الترجمة (أخضر) خط رفيع جوه نفس الشريط من تحت، وعلامات الوضع البصري (أزرق فاتح) من فوق
+                val ih = (tr * 0.7f).coerceAtLeast(2f * d)
+                strip(c, w, cy + tr - ih - 1f * d, ih, cov, 0xFF22C55E.toInt(), null)
+                if (vis.isNotEmpty()) strip(c, w, cy - tr + 1f * d, ih * 0.8f, vis, 0xFF93C5FD.toInt(), null)
+            } else {
+                // الشريط التاني (تحت): أخضر = فيه جملة ترجمة فعلًا (بيتقطع عند الفجوات)
+                strip(c, w, cy + tr + 3f * d * kk, 4f * d * kk, cov, 0xFF22C55E.toInt(), th.border)
+                if (vis.isNotEmpty()) strip(c, w, cy + tr + 8.5f * d * kk, 3f * d * kk, vis, 0xFF3B82F6.toInt(), null)
+            }
             val r = (if (dragging) 5.5f else 3.5f) * d * (if (big) 2.4f else 1f)
             val tcx = px.coerceIn(r, w - r)
             p.style = Paint.Style.FILL; p.shader = null; p.color = Color.WHITE

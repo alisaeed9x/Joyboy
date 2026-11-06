@@ -384,11 +384,13 @@ object ControllerPad {
                 orientation = android.widget.LinearLayout.VERTICAL; gravity = Gravity.CENTER; contentDescription = "موافق"; elevation = dpf(6f)
                 background = GradientDrawable().apply { shape = GradientDrawable.RECTANGLE; cornerRadius = dpf(26f); setColor(0xFF0C2A44.toInt()); setStroke(dp(1), 0xFF3B82F6.toInt()) }
             }
+            okB.contentDescription = "موافق"
             okB.addView(PadIcon(act, "check", 0xFF8EEBFF.toInt()), android.widget.LinearLayout.LayoutParams(dp(26), dp(26)))
             okB.addView(TextView(act).apply { text = "موافق"; textSize = 20f; setTextColor(Color.WHITE); typeface = android.graphics.Typeface.DEFAULT_BOLD; gravity = Gravity.CENTER; includeFontPadding = false },
                 android.widget.LinearLayout.LayoutParams(-2, -2).apply { topMargin = dp(2) })
             bind(okB, false) { sendKey("ok") }
-            okB.setOnLongClickListener { okB.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS); startVoice(); true }   // (v679) ضغطة واحدة = موافق · ضغطة طويلة = ميكروفون
+            // (v807) دوسة = موافق · ضغطة طويلة = ضغطة طويلة على OK في التلفزيون نفسه (مش ميكروفون)
+            okB.setOnLongClickListener { okB.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS); sendKey("ok_long"); true }
             dpad.addView(okB, FrameLayout.LayoutParams(dp(69), dp(69), Gravity.CENTER))
 
             val joy = JoystickView(act, { k -> sendKey(k) }, { startVoice() })
@@ -440,7 +442,7 @@ object ControllerPad {
             val padWrap = FrameLayout(act).apply { clipChildren = false }
             val cBack = cardS("رجوع", "back", 0xFF2563EB.toInt(), 0xFF5B8DEF.toInt(), false, 10.5f, 22) { sendKey("back") }
             val cHome = cardS("الرئيسية", "home", 0xFF0FA3B1.toInt(), 0xFF0B7285.toInt(), false, 10.5f, 22) { sendKey("home") }
-            val cGear = cardS("إعدادات التلفزيون", "gear", 0xFF3B8DFF.toInt(), 0xFF1D4ED8.toInt(), false, 9.5f, 22) { TvLookPad.show(act) }
+            val cGear = cardS("بحث صوتي", "mic", 0xFFF59E0B.toInt(), 0xFFD97706.toInt(), false, 10.5f, 22) { startVoice() }   // (v807) مكان «إعدادات التلفزيون»
             val cRecent = cardS("آخر المشغّل", "recent", 0xFF7C4DBB.toInt(), 0xFF5B3A9B.toInt(), false, 10.5f, 22) { RecentPicker.show(act) }
             padWrap.addView(padBox, FrameLayout.LayoutParams(padSize, padSize, Gravity.CENTER))
             padWrap.addView(cBack, FrameLayout.LayoutParams(cornerW, cornerW, Gravity.BOTTOM or Gravity.RIGHT))
@@ -473,7 +475,7 @@ object ControllerPad {
 
             // ── باقي الأزرار (مكتبة/يوتيوب/متصفح/ترجمة/نص…): كلها فوق، والمنطقة اللي تحت للتنقل (الدايرة) + الصوت ──
             plDispose = PlayerPad.show(act, { d.dismiss() }) { P ->
-                val eyeB = cardS("الوضع البصري", "eye", 0xFF8B5CF6.toInt(), 0xFF6D28D9.toInt()) { Thread { try { val n = RemoteClient.player("vsnap")?.optString("note", "") ?: ""; if (n.isNotEmpty()) act.runOnUiThread { Notice.show(act, n, 2200L) } } catch (_: Throwable) {} }.also { it.isDaemon = true }.start() }   // (v799) الرسالة على الموبايل بس
+                val eyeB = cardS("الوضع\nالبصري", "eye", 0xFF8B5CF6.toInt(), 0xFF6D28D9.toInt(), false, 9.5f, 20) { Thread { try { val n = RemoteClient.player("vsnap")?.optString("note", "") ?: ""; if (n.isNotEmpty()) act.runOnUiThread { Notice.show(act, n, 2200L) } } catch (_: Throwable) {} }.also { it.isDaemon = true }.start() }   // (v799) الرسالة على الموبايل بس
                 val top = android.widget.LinearLayout(act).apply { orientation = android.widget.LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_LTR; gravity = Gravity.CENTER_VERTICAL }
                 top.addView(sw, android.widget.LinearLayout.LayoutParams(0, dp(46), 1f).apply { rightMargin = dp(8) })
                 top.addView(P.logBtn, android.widget.LinearLayout.LayoutParams(dp(66), dp(46)))
@@ -482,8 +484,20 @@ object ControllerPad {
 
                 col.addView(top, android.widget.LinearLayout.LayoutParams(-1, dp(46)))
                 col.addView(P.info, android.widget.LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(4) })
-                col.addView(rowC(dp(50), dp(8), eyeB, P.studio), android.widget.LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(6) })
-                col.addView(P.sub, android.widget.LinearLayout.LayoutParams(-1, dp(48)).apply { topMargin = dp(5) })
+                // (v806) 6 أزرار في صف واحد: تحكم ترجمة · ترجمة ظاهرة/مخفية · العرض (ترجمة فقط…) · النسخ · إضافة ترجمة · الوضع البصري
+                run {
+                    val six = android.widget.LinearLayout(act).apply { orientation = android.widget.LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; isBaselineAligned = false }
+                    val kids = ArrayList<View>()
+                    (P.sub as? android.view.ViewGroup)?.let { g -> for (i in 0 until g.childCount) kids.add(g.getChildAt(i)); g.removeAllViews() }
+                    val cells = ArrayList<View>(); cells.add(P.studio); cells.addAll(kids); cells.add(eyeB)
+                    for ((i, c) in cells.withIndex()) {
+                        (c as? TextView)?.apply { textSize = 9.5f; setPadding(dp(1), dp(3), dp(1), dp(3)) }
+                        six.addView(c, android.widget.LinearLayout.LayoutParams(0, -1, 1f).apply { if (i > 0) marginStart = dp(3) })
+                    }
+                    col.addView(six, android.widget.LinearLayout.LayoutParams(-1, dp(62)).apply { topMargin = dp(6) })
+                }
+                // (v804) رجّعنا صف المكتبة · يوتيوب · المتصفح · السجل تحت صف الوضع البصري
+                col.addView(P.quick, android.widget.LinearLayout.LayoutParams(-1, dp(50)).apply { topMargin = dp(6) })
                 col.addView(P.tabs, android.widget.LinearLayout.LayoutParams(-1, dp(34)).apply { topMargin = dp(5) })
                 // (v800) التزامن/الذكاء/الأدوات: الدوسة بتفتح صفحة منبثقة صغيرة فيها أدوات التاب — مفيش مساحة فاضية تحت التابات
                 run {
@@ -517,14 +531,15 @@ object ControllerPad {
 
                 // تحت صف الترجمة: يسار = التشغيل + التكرار + الدايرة الكبيرة · يمين = سلايدر الصوت بطول المساحة
                 val leftCol = android.widget.LinearLayout(act).apply { orientation = android.widget.LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_LTR }
-                leftCol.addView(P.transport, android.widget.LinearLayout.LayoutParams(-1, dp(62)).apply { topMargin = dp(5) })
-                leftCol.addView(P.repeatRow, android.widget.LinearLayout.LayoutParams(-1, dp(48)).apply { topMargin = dp(5) })
                 leftCol.addView(padHolder, android.widget.LinearLayout.LayoutParams(-1, dp(150), 1f).apply { topMargin = dp(6) })
                 val lower = android.widget.LinearLayout(act).apply { orientation = android.widget.LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_LTR }
                 lower.addView(leftCol, android.widget.LinearLayout.LayoutParams(0, -1, 1f))
                 lower.addView(volCol, android.widget.LinearLayout.LayoutParams(stripW, -1).apply { leftMargin = gapP; topMargin = dp(5) })
                 col.addView(lower, android.widget.LinearLayout.LayoutParams(-1, dp(276), 1f))
-                col.addView(P.bar, android.widget.LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(6) })
+                // (v804) أزرار التشغيل (⏮ ⏪ ▶ ⏩ ⏭ 1x) + (تدوير · تكرار · قائمة التشغيل) نزلوا فوق شريط التقدم بالظبط
+                col.addView(P.transport, android.widget.LinearLayout.LayoutParams(-1, dp(62)).apply { topMargin = dp(6) })
+                col.addView(P.repeatRow, android.widget.LinearLayout.LayoutParams(-1, dp(48)).apply { topMargin = dp(5) })
+                col.addView(P.bar, android.widget.LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(8) })
                 col.addView(P.times, android.widget.LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(2) })
             }
 

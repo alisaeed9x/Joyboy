@@ -431,6 +431,8 @@ class PlayerActivity : Activity(), Host {
             "volume" -> player.volume = a.optDouble("v", 1.0).toFloat().coerceIn(0f, 1f)
             "speed.set" -> setSpeedFull(a.optDouble("v", 1.0).toFloat())
             "volume.set" -> applyVolumeP(a.optInt("p", 50))   // (v568) صوت التلفزيون من الموبايل
+            "dl.info" -> res.put("info", dlInfo())   // (v804) زرار ⬇ في الريموت: وصف الفيديو الشغّال (ملف محلي / لينك + جودات)
+            "dl.start" -> res.put("started", dlStart(a))   // (v804) الريموت اختار «حمّل على التلفزيون»
             "task.add" -> {
                 val s = toolSrc()
                 if (s == null) res.put("err", "nosrc")
@@ -1991,6 +1993,48 @@ class PlayerActivity : Activity(), Host {
             }
         }.start()
     }
+    /** (v804) وصف الفيديو الشغّال للريموت: kind = local (ملف على التلفزيون) · net (لينك / يوتيوب / HLS) · none */
+    private fun dlInfo(): org.json.JSONObject {
+        val j = org.json.JSONObject()
+        val nm = try { dlName() } catch (_: Throwable) { "video" }
+        j.put("name", nm).put("dur", durMs).put("kind", "none")
+        try { j.put("hdr", org.json.JSONObject(HashMap<String, String>(hdr) as Map<*, *>)) } catch (_: Throwable) {}
+        val u0 = url ?: uri?.toString()?.takeIf { it.startsWith("http", true) }
+        if (qOpts.isNotEmpty()) {
+            val arr = org.json.JSONArray()
+            for (o in qOpts) arr.put(org.json.JSONObject().put("l", o.label).put("u", o.url).put("a", o.audio ?: "").put("h", o.h))
+            j.put("kind", "net").put("qlist", arr)
+        } else if (u0 != null && u0.startsWith("http", true)) {
+            j.put("kind", "net").put("url", u0).put("aurl", aurl ?: "")
+            if (isHlsUrl()) {
+                j.put("hls", true)
+                val arr = org.json.JSONArray(); val seen = HashSet<Int>()
+                try {
+                    for (g in (player.exo()?.currentTracks?.groups ?: emptyList<androidx.media3.common.Tracks.Group>())) if (g.type == androidx.media3.common.C.TRACK_TYPE_VIDEO)
+                        for (ti in 0 until g.length) if (g.isTrackSupported(ti)) { val f = g.getTrackFormat(ti); if (f.height > 0 && seen.add(f.height)) arr.put(org.json.JSONObject().put("h", f.height).put("br", f.bitrate)) }
+                } catch (_: Throwable) {}
+                j.put("hlsq", arr)
+            } else j.put("ht", if (vidW > 0 && vidH > 0) minOf(vidW, vidH) else 0)
+        } else {
+            val u = uri
+            if (u != null) {
+                val fn = (u.lastPathSegment ?: "video.mp4").substringAfterLast('/')
+                val sz = try { Xfer.sizeOf(this, u) } catch (_: Throwable) { -1L }
+                j.put("kind", "local").put("file", fn).put("size", sz)
+            }
+        }
+        return j
+    }
+    /** (v804) تحميل على التلفزيون نفسه بطلب من الريموت (نفس مهمة «⬇» في المشغّل) */
+    private fun dlStart(a: org.json.JSONObject): Boolean {
+        val u = a.optString("url")
+        if (!u.startsWith("http", true)) return false
+        val hm = HashMap<String, String>()
+        a.optJSONObject("hdr")?.let { hj -> for (k in hj.keys()) hm[k] = hj.optString(k) }
+        val au = a.optString("audio").ifEmpty { null }
+        startDownload(Downloader.Job(a.optString("name", "video").ifBlank { "video" }, u, au, a.optBoolean("hls"), a.optInt("h"), hm, a.optBoolean("audioOnly")))
+        return true
+    }
     private fun startDownload(job: Downloader.Job) {
         val app = applicationContext
         // (v137) التحميل بقى مهمة في تبويب «المهام»: إيقاف مؤقت / استكمال / إلغاء / إعادة، وممكن أكتر من تحميل ورا بعض
@@ -2791,11 +2835,7 @@ class PlayerActivity : Activity(), Host {
     /** (v749) تلفزيون: حلقة تركيز على العنصر بنفسه (من غير الاعتماد على مراقب التركيز العام) */
     private fun <T : View> tvRing(v: T): T {
         try {
-            if (DeviceUi.isRemote(this)) {
-                val d = resources.displayMetrics.density; val ac = Glass.theme().primary
-                val old = v.onFocusChangeListener
-                v.onFocusChangeListener = View.OnFocusChangeListener { x, f -> try { x.foreground = if (f) TvFocus.ring(ac, d) else null } catch (_: Throwable) { }; old?.onFocusChange(x, f) }
-            }
+            if (DeviceUi.isRemote(this)) TvFocus.selfRing(v, Glass.theme().primary, resources.displayMetrics.density)   // (v803) حلقة قوية + المراقب العام يسيبها
         } catch (_: Throwable) { }
         return v
     }
@@ -4316,7 +4356,7 @@ class PlayerActivity : Activity(), Host {
         fun dismissPop() { try { popup?.dismiss() } catch (e: Exception) { LogStore.err("Main:1353", e) }; popup = null; popupOwner = null }
         dismissPopFn = { dismissPop() }
         fun after(keep: Boolean) { if (!keep) dismissPop(); showChrome(); if (popup != null) h.removeCallbacks(hideChrome) }
-        fun pk(t: String, f: (TextView) -> Unit): TextView = ui.fsBtn(t) { v -> f(v); after(true) }.apply { minimumWidth = ui.dp(150) }
+        fun pk(t: String, f: (TextView) -> Unit): TextView = ui.fsBtn(t) { v -> f(v); after(true) }.apply { minimumWidth = ui.dp(150); if (DeviceUi.isRemote(this@PlayerActivity)) { isFocusable = true; tvRing(this) } }   // (v803) أزرار قايمة النص قابلة للتركيز بالريموت
         fun pd(t: String, f: (TextView) -> Unit): TextView = ui.fsBtn(t) { v -> f(v); after(false) }.apply { minimumWidth = ui.dp(150); isFocusable = true; tvRing(this) }
         fun gCol() = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; setPadding(ui.dp(6), ui.dp(6), ui.dp(6), ui.dp(6)); background = glassPanelBg() }
         val gText = gCol(); val gAi = gCol(); val gTool = gCol()
@@ -4350,6 +4390,9 @@ class PlayerActivity : Activity(), Host {
                 if (goUp) pw.showAsDropDown(v, 0, -(v.height + popH + ui.dp(2)))
                 else pw.showAsDropDown(v, 0, ui.dp(2))
                 popup = pw; popupOwner = v
+                if (col === gQ && DeviceUi.isRemote(this)) col.post {   // (v803) قايمة الجودات: التركيز يبدأ على الجودة الشغّالة دلوقتي (✓) مش أول واحدة
+                    try { for (i in 0 until col.childCount) { val c = col.getChildAt(i); if ((c as? TextView)?.text?.startsWith("✓") == true) { c.requestFocus(); break } } } catch (_: Throwable) {}
+                }
             }
             showChrome(); if (popup != null) h.removeCallbacks(hideChrome)
         }

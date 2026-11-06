@@ -209,6 +209,7 @@ class GAlert(private val ctx: Context) {
                 col.addView(tv, LinearLayout.LayoutParams(-1, -2).apply { setMargins(0, ui.dp(3), 0, ui.dp(3)) })
             }
             itemsCol = col
+            if (tvk) col.post { try { for (k in 0 until col.childCount) { val c = col.getChildAt(k); if ((c as? TextView)?.text?.startsWith("✓") == true) { c.requestFocus(); break } } } catch (_: Throwable) {} }   // (v803) تلفزيون: التركيز يبدأ على الاختيار الحالي (✓)
             root.addView(MaxHeightScroll(ctx, (dm.heightPixels * 0.6f).toInt()).apply { addView(col) }, LinearLayout.LayoutParams(-1, -2).apply { topMargin = ui.dp(8) })
         }
         multiItems?.let { arr ->

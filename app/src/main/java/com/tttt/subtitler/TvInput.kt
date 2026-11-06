@@ -60,6 +60,7 @@ object TvInput {
             "left" -> KeyEvent.KEYCODE_DPAD_LEFT
             "right" -> KeyEvent.KEYCODE_DPAD_RIGHT
             "ok" -> KeyEvent.KEYCODE_DPAD_CENTER
+            "ok_long" -> KeyEvent.KEYCODE_DPAD_CENTER   // (v807) ضغطة طويلة على OK من الريموت
             "back" -> KeyEvent.KEYCODE_BACK
             "menu" -> KeyEvent.KEYCODE_MENU
             "ff" -> KeyEvent.KEYCODE_MEDIA_FAST_FORWARD
@@ -99,6 +100,7 @@ object TvInput {
             }
             // (v669) المداخل: بنقلب بين مداخل التلفزيون (HDMI وغيره) مدخل ورا مدخل
             "inputs" -> { nextInput(code); return }
+            "ok_long" -> { longOk(a != null); return }
             // (v669) القنوات: لو نافذتنا قدّام بنحقن الزرار، غير كده زراير الميديا (للتيونر/تطبيقات القنوات)
             "ch_up", "ch_down" -> {
                 if (a != null && inject(code)) return
@@ -107,6 +109,24 @@ object TvInput {
         }
         if (a != null && inject(code)) return
         if (!TvAccess.key(code)) needAccess()
+    }
+
+    /** (v807) ضغطة طويلة على OK: في نافذتنا بنحقن نزول + تكرار بعلامة LONG_PRESS + رفع؛ في تطبيق تاني بنعمل لمسة طويلة عند المؤشر */
+    private fun longOk(ours: Boolean) {
+        val code = KeyEvent.KEYCODE_DPAD_CENTER
+        if (ours) {
+            try {
+                val ins = Instrumentation(); val t = SystemClock.uptimeMillis()
+                ins.sendKeySync(KeyEvent(t, t, KeyEvent.ACTION_DOWN, code, 0))
+                Thread.sleep(600L)
+                ins.sendKeySync(KeyEvent(t, SystemClock.uptimeMillis(), KeyEvent.ACTION_DOWN, code, 1, 0, 0, 0, KeyEvent.FLAG_LONG_PRESS))
+                Thread.sleep(60L)
+                ins.sendKeySync(KeyEvent(t, SystemClock.uptimeMillis(), KeyEvent.ACTION_UP, code, 0))
+                return
+            } catch (_: SecurityException) {
+            } catch (e: Throwable) { LogStore.err("TvInput:okLong", e); return }
+        }
+        if (!TvAccess.ptr("long", 0f, 0f)) needAccess()
     }
 
     /** حقن زرار في نافذتنا. false = فيه نافذة تطبيق تاني في الواجهة (أندرويد بيرفض) */
