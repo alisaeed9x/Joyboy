@@ -226,6 +226,7 @@ object TvLink {
         touch(rm, r)
         return when (r.path) {
             "/ping" -> ok(JSONObject().put("ver", LinkVer.code(app)).put("vname", LinkVer.name(app)).put("name", tvName()).put("tv", tvId())
+                .put("mfr", try { android.os.Build.MANUFACTURER ?: "" } catch (_: Throwable) { "" }).put("model", try { android.os.Build.MODEL ?: "" } catch (_: Throwable) { "" })   // (v809) لريموت IR
                 .put("ctx", TvInput.context()).put("acc", TvAccess.connected).put("vol", sysVolPct()))
             "/cmd" -> cmd(r)
             "/key" -> keyCmd(r)

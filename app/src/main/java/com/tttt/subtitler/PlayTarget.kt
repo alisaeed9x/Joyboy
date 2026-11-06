@@ -30,6 +30,9 @@ object PlayTarget {
 
     /** (v560) اسم الفيديو اللي شغّال دلوقتي على التلفزيون (اتبعت من الموبايل ده) — الكبسولة «اسم ✕» بتظهر طول ما هو مش null */
     @Volatile var nowTitle: String? = null
+    /** (v809) مصدر الفيديو الشغّال (ملف/رابط) عشان لقطات المعاينة على شريط التقدم في الريموت */
+    @Volatile var nowSrc: String? = null
+    @Volatile var nowHeaders: Map<String, String> = emptyMap()
     /** (v662) بعد ✕ على الكبسولة: ما نكتشفش «فيديو شغّال على التلفزيون» تاني قبل الوقت ده (لحد ما التلفزيون يقفل المشغّل فعلًا) */
     @Volatile var noAutoUntil = 0L
 
@@ -39,7 +42,7 @@ object PlayTarget {
 
     /** (v560) يقفل الفيديو على التلفزيون (الأمر close) ويشيل الكبسولة فورًا */
     fun closeOnTv(ctx: android.content.Context, done: (Boolean) -> Unit = {}) {
-        nowTitle = null; noAutoUntil = System.currentTimeMillis() + 10_000L; TvQueue.clear(); CastServer.clear(); TvModeFab.refresh()
+        nowTitle = null; nowSrc = null; noAutoUntil = System.currentTimeMillis() + 10_000L; TvQueue.clear(); CastServer.clear(); TvModeFab.refresh()
         val app = ctx.applicationContext
         Thread {
             var ok = false
@@ -167,7 +170,7 @@ object PlayTarget {
                     try { onSent?.invoke() } catch (_: Throwable) { }
                     // (v554) مفيش شاشة ريموت/متحكم على الموبايل: الفيديو اشتغل على التلفزيون وبتتحكم من ريموت التلفزيون
                     Notice.show(act, "📺 اتفتح على التلفزيون" + (if (spec.title.isNotBlank()) " — " + spec.title else ""), 3000L)
-                    TvModeFab.miniReset(spec.startMs); nowTitle = spec.title.ifBlank { "فيديو على التلفزيون" }; TvModeFab.refresh()   // (v560) كبسولة «اسم ✕» · (v761) بقت مشغّل مصغّر بشريط بيتحرك
+                    TvModeFab.miniReset(spec.startMs); nowTitle = spec.title.ifBlank { "فيديو على التلفزيون" }; nowSrc = (if (local) spec.uri else (spec.url ?: target0)); nowHeaders = spec.headers; TvModeFab.refresh()   // (v560) كبسولة «اسم ✕» · (v761) بقت مشغّل مصغّر بشريط بيتحرك
                     // (v761) ما بقاش بيفتح صفحة المشغّل على الموبايل — التحكم من الريموت (🎮) أو من المشغّل المصغّر
                 } else {
                     GAlert(act).setTitle("⚠ ما اتبعتش للتلفزيون").setMessage(er)

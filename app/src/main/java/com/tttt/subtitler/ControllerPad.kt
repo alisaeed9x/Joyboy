@@ -247,10 +247,19 @@ object ControllerPad {
             val root = FrameLayout(act).apply { layoutDirection = View.LAYOUT_DIRECTION_LTR; setBackgroundColor(0xFF0F1830.toInt()) }
             val hh = Handler(Looper.getMainLooper())
 
-            fun sendKey(k: String) { RemoteClient.key(k) }
             var stRef: TextView? = null
             val sayHide = Runnable { stRef?.visibility = View.GONE }
             fun say(t: String, c: Int = 0xFFB0BEC5.toInt()) { stRef?.let { it.text = t; it.setTextColor(c); it.visibility = View.VISIBLE; hh.removeCallbacks(sayHide); hh.postDelayed(sayHide, 3500L) } }
+            // (v809) سويتش واي فاي 📶 / IR 📡: على IR أزرار التنقل والرجوع بتتبعت بالبلاستر بدل الواي فاي
+            var irOn = IrTv.irMode(act) && IrTv.available(act)
+            fun irKey(k: String): String? = when (k) { "up" -> "UP"; "down" -> "DOWN"; "left" -> "LEFT"; "right" -> "RIGHT"; "ok", "ok_long" -> "OK"; "back" -> "BACK"; "home" -> "HOME"; "menu" -> "MENU"; else -> null }
+            fun sendKey(k: String) {
+                if (irOn) {
+                    val ik = irKey(k)
+                    if (ik != null) { if (!IrTv.press(act, ik)) say("⚠ 📡 الزرار ده مش في ريموت IR المختار (اضغط مطوّلًا على 📡 تغيّر الريموت)", 0xFFFFB74D.toInt()); return }
+                }
+                RemoteClient.key(k)
+            }
             var voice: PadVoice? = null
             /** (v679) بحث صوتي: التسجيل بيبدأ على الموبايل فورًا (مش بيستنى التلفزيون يفتح)، والنص بيتبعت للتلفزيون يبحث بيه */
             fun startVoice() {
@@ -471,7 +480,7 @@ object ControllerPad {
             val muteH = dp(44)
             val volCol = android.widget.LinearLayout(act).apply { orientation = android.widget.LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_LTR }
             volCol.addView(volBar, android.widget.LinearLayout.LayoutParams(-1, 0, 1f))
-            volCol.addView(miniBtn("mute", 0xFFE8456F.toInt(), 0xFFBE185D.toInt(), "كتم الصوت", false) { RemoteClient.cmd("mute") }, android.widget.LinearLayout.LayoutParams(-1, muteH).apply { topMargin = gapP })
+            volCol.addView(miniBtn("mute", 0xFFE8456F.toInt(), 0xFFBE185D.toInt(), "كتم الصوت", false) { if (irOn) IrTv.press(act, "MUTE") else RemoteClient.cmd("mute") }, android.widget.LinearLayout.LayoutParams(-1, muteH).apply { topMargin = gapP })
 
             // ── باقي الأزرار (مكتبة/يوتيوب/متصفح/ترجمة/نص…): كلها فوق، والمنطقة اللي تحت للتنقل (الدايرة) + الصوت ──
             plDispose = PlayerPad.show(act, { d.dismiss() }) { P ->
@@ -482,6 +491,42 @@ object ControllerPad {
                 // ⛶ (تكبير الشاشة) آخر زرار في صف الترجمة: بعرض عمود الصوت بالظبط عشان السلايدر يكمّل تحته على نفس الخط
                 (P.tr as? android.view.ViewGroup)?.let { g -> if (g.childCount > 0) g.getChildAt(g.childCount - 1).layoutParams = android.widget.LinearLayout.LayoutParams(stripW, dp(46)).apply { marginStart = dp(6) } }
 
+                col.addView(P.netTop, android.widget.LinearLayout.LayoutParams(-1, dp(16)).apply { bottomMargin = dp(2) })   // (v810) عدّاد النت: سطر صغير لوحده فوق كل حاجة
+                // (v809) سويتش فوق: 📶 واي فاي (الريموت الحالي) | 📡 IR (بلاستر الموبايل) + ⏻ باور بيظهر في وضع IR بس. ضغطة طويلة على 📡 = اختيار الماركة/الريموت
+                run {
+                    fun seg(t: String) = TextView(act).apply { text = t; textSize = 15f; gravity = Gravity.CENTER; includeFontPadding = false; typeface = android.graphics.Typeface.DEFAULT_BOLD }
+                    val sWifi = seg("📶"); val sIr = seg("📡")
+                    val pill = android.widget.LinearLayout(act).apply {
+                        orientation = android.widget.LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_LTR; setPadding(dp(3), dp(3), dp(3), dp(3))
+                        background = GradientDrawable().apply { shape = GradientDrawable.RECTANGLE; cornerRadius = dpf(18f); setColor(0xFF1E2F4D.toInt()); setStroke(dp(1), 0xFF34507A.toInt()) }
+                    }
+                    pill.addView(sWifi, android.widget.LinearLayout.LayoutParams(dp(46), -1)); pill.addView(sIr, android.widget.LinearLayout.LayoutParams(dp(46), -1))
+                    val pwr = TextView(act).apply {
+                        text = "⏻"; textSize = 18f; gravity = Gravity.CENTER; setTextColor(Color.WHITE); includeFontPadding = false; typeface = android.graphics.Typeface.DEFAULT_BOLD
+                        background = GradientDrawable().apply { shape = GradientDrawable.RECTANGLE; cornerRadius = dpf(16f); setColor(0xFFC62828.toInt()); setStroke(dp(1), 0x66FFFFFF) }
+                        contentDescription = "باور IR"
+                        setOnClickListener { if (!IrTv.press(act, "POWER")) say("⚠ 📡 اختار الماركة/الريموت الأول (ضغطة طويلة على 📡)", 0xFFFFB74D.toInt()) }
+                    }
+                    fun paint() {
+                        for ((v, on) in listOf(sWifi to !irOn, sIr to irOn)) {
+                            v.background = if (on) GradientDrawable().apply { shape = GradientDrawable.RECTANGLE; cornerRadius = dpf(15f); setColor(0xFF2563EB.toInt()) } else null
+                            v.alpha = if (on) 1f else 0.6f
+                        }
+                        pwr.visibility = if (irOn) View.VISIBLE else View.GONE
+                    }
+                    sWifi.setOnClickListener { irOn = false; IrTv.setIrMode(act, false); paint() }
+                    sIr.setOnClickListener {
+                        if (!IrTv.available(act)) { IrTv.show(act); return@setOnClickListener }   // بيشرح إن مفيش بلاستر
+                        irOn = true; IrTv.setIrMode(act, true); paint()
+                        if (IrTv.current(act) == null) IrTv.show(act)   // الماركة مش معروفة: اختارها
+                    }
+                    sIr.setOnLongClickListener { IrTv.show(act); true }
+                    paint()
+                    val irRow = android.widget.LinearLayout(act).apply { orientation = android.widget.LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_LTR; gravity = Gravity.CENTER }
+                    irRow.addView(pill, android.widget.LinearLayout.LayoutParams(-2, dp(36)))
+                    irRow.addView(pwr, android.widget.LinearLayout.LayoutParams(dp(44), dp(36)).apply { leftMargin = dp(10) })
+                    col.addView(irRow, android.widget.LinearLayout.LayoutParams(-1, dp(36)).apply { bottomMargin = dp(4) })
+                }
                 col.addView(top, android.widget.LinearLayout.LayoutParams(-1, dp(46)))
                 col.addView(P.info, android.widget.LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(4) })
                 // (v806) 6 أزرار في صف واحد: تحكم ترجمة · ترجمة ظاهرة/مخفية · العرض (ترجمة فقط…) · النسخ · إضافة ترجمة · الوضع البصري

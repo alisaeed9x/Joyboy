@@ -125,6 +125,7 @@ class PlayerActivity : Activity(), Host {
         j.put("kind", "player")
         j.put("net_busy", netBusy); j.put("net_more", netSess?.remaining() ?: 0)   // (v746)
         try { j.put("net_v", NetUse.trVideo()); j.put("net_d", NetUse.trToday()) } catch (_: Throwable) {}   // (v759) استهلاك نت الترجمة: الفيديو ده / النهارده
+        try { val u = android.os.Process.myUid(); val rx = android.net.TrafficStats.getUidRxBytes(u); val tx = android.net.TrafficStats.getUidTxBytes(u); if (rx >= 0L && tx >= 0L) j.put("net_tv", rx + tx) } catch (_: Throwable) {}   // (v810) إجمالي نت التطبيق على التلفزيون (الريموت بيطرح منه أساس الفيديو)
         try { j.put("sblur", Cfg.int("sub_blur", 0)); j.put("suni_on", Cfg.str("sub_uni_on", "0") == "1"); j.put("suni", Cfg.str("sub_uni_color", "#FFFFFF")) } catch (_: Throwable) {}   // (v759) حالة استوديو الترجمة على الموبايل
         try { val vn = vidNamesCached(); j.put("vname", vn.first); j.put("vfolder", vn.second) } catch (_: Throwable) {}
         // (v596) مصدر الصوت للسماعة الخاصة: لينك http (مع الهيدرز) أو "local" = ملف على التلفزيون بيتقدّم من /file/cur

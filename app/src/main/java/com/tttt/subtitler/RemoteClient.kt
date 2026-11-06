@@ -302,6 +302,7 @@ object RemoteClient {
                     val nm = j.optString("name")
                     if (nm.isNotBlank() && nm != tv.name) { tv.name = nm; saveTv(tv) }
                     parseCtx(j)
+                    val mf = j.optString("mfr"); if (mf.isNotBlank()) try { IrTv.saveTvInfo(app(), mf, j.optString("model")) } catch (_: Throwable) {}   // (v809) ماركة وموديل التلفزيون لريموت IR
                 } catch (_: Exception) {}
                 if (state != St.CONNECTED) {
                     state = St.CONNECTED; lastError = ""; fire()

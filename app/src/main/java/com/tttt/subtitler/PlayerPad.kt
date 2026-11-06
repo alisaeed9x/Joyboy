@@ -96,6 +96,7 @@ class PadParts(
     val quick: View, val sub: View, val tabs: View, val tabBody: View,
     val tr: View, val transport: View, val bar: View, val times: View,
     val logBtn: View, val repeatRow: View, val info: View, val studio: View,   // (v795) studio = زرار واحد لكل تحكمات الترجمة (سلايدرات)
+    val netTop: View,   // (v810) عدّاد النت الصغير فوق الريموت
     val mk: (String, Float, Int, Int, () -> Unit) -> TextView
 )
 
@@ -647,6 +648,7 @@ object PlayerPad {
             // ── كبسولات زي المشغّل: 👁 بصري · 🌐 النت · 🎧/🎬 وضع يوتيوب ──
             fun cap(t: String, tap: () -> Unit): TextView = btn(t, 12f) { tap() }.apply { setPadding(dp(8), dp(4), dp(8), dp(4)); background = bg(cCard, cLine, 18f) }
             val capVis = cap("👁 0") { go("visdlg") }
+            val netTop = label("", 10.5f, cDim, false).apply { gravity = Gravity.CENTER; maxLines = 1; includeFontPadding = false }   // (v810) عدّاد النت: استهلاك الفيديو الشغّال (التلفزيون + الموبايل) والنهارده
             val netLine = label("", 11f, cDim, false).apply { maxLines = 3; setPadding(dp(8), dp(2), dp(8), dp(2)) }   // (v759) بدل كبسولة 🌐 النت: عدّاد استهلاك نت الترجمة (التلفزيون + الموبايل)
             val capMode = cap("🎧") { go("ytmode") }
             val capRow = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; isBaselineAligned = false; layoutDirection = View.LAYOUT_DIRECTION_RTL; gravity = Gravity.CENTER }
@@ -969,6 +971,49 @@ object PlayerPad {
                     }
                 }
             }
+            // (v810) حجم الجودة الحالية تحت زرار الجودة: لو في جودات = حجم الجودة المختارة · لو مفيش = حجم الفيديو من اللينك/الملف
+            var qSzKey = ""; var qSzTxt = "⏳"; var qSzAt = 0L; var qSzBusy = false
+            fun qDigits(l: String): Int = Regex("(\\d{3,4})").find(l)?.groupValues?.get(1)?.toIntOrNull() ?: 0
+            fun qSizeRefresh(key: String, wantH: Int) {
+                if (qSzBusy) return
+                val now = System.currentTimeMillis()
+                if (key == qSzKey && now - qSzAt < 60_000L) return
+                if (key != qSzKey) { qSzTxt = "⏳" }
+                qSzKey = key; qSzAt = now; qSzBusy = true
+                LinkSession.send("dl.info") { ok, r ->
+                    val info = r.optJSONObject("res")?.optJSONObject("info")
+                    if (!ok || info == null) { qSzTxt = "—"; qSzBusy = false; return@send }
+                    Thread {
+                        var txt = "—"
+                        try {
+                            if (info.optString("kind") == "local") {
+                                val n = info.optLong("size", -1L); if (n > 0L) txt = Sniff.fmtSize(n)
+                            } else {
+                                val hs = dlHdr(info.optJSONObject("hdr")); val dur = info.optLong("dur", 0L)
+                                val ql = info.optJSONArray("qlist"); val hq = info.optJSONArray("hlsq")
+                                var n = -1L; var approx = false
+                                if (ql != null && ql.length() > 0) {
+                                    var pick: JSONObject? = null
+                                    for (i in 0 until ql.length()) { val o = ql.getJSONObject(i); if (wantH > 0 && o.optInt("h") == wantH) { pick = o; break } }
+                                    if (pick == null) pick = ql.getJSONObject(0)
+                                    n = dlSize(pick!!.optString("u"), pick.optString("a").ifEmpty { null }, hs)
+                                } else if (info.optBoolean("hls", false) && hq != null && hq.length() > 0) {
+                                    var pick: JSONObject? = null
+                                    for (i in 0 until hq.length()) { val o = hq.getJSONObject(i); if (wantH > 0 && o.optInt("h") == wantH) { pick = o; break } }
+                                    val br = pick?.optLong("br") ?: 0L
+                                    if (br > 0L && dur > 0L) { n = br / 8L * (dur / 1000L); approx = true }
+                                } else {
+                                    n = dlSize(info.optString("url"), info.optString("aurl").ifEmpty { null }, hs)
+                                }
+                                if (n > 0L) txt = (if (approx) "≈" else "") + Sniff.fmtSize(n)
+                            }
+                        } catch (_: Throwable) {}
+                        qSzTxt = txt; qSzBusy = false
+                    }.also { it.isDaemon = true }.start()
+                }
+            }
+            // (v810) عدّاد النت: أساس القياس بيتصفّر لما الفيديو يتغيّر
+            var nvKey = ""; var nvTvBase = -1L; var nvCellBase = 0L; var nvWifiBase = 0L
             val dlTop = btn("⬇\nتحميل", 11f) { startDownloadFlow() }
             val fitTop = btn("⛶", 20f) { go("fit") }
             var dimExtra: List<View> = kotlin.collections.emptyList()
@@ -1035,8 +1080,10 @@ object PlayerPad {
             fun durTxt(ms: Long) = "⏱ المدة  " + tm(ms)
             val tPos = label(nowTxt(0L), 13f, 0xFFBFDBFE.toInt(), true).apply { setPadding(dp(10), dp(3), dp(10), dp(3)); background = bg(0xFF12305A.toInt(), 0xFF3B82F6.toInt(), 12f) }
             val tDur = label(durTxt(0L), 13f, 0xFFFDE68A.toInt(), true).apply { setPadding(dp(10), dp(3), dp(10), dp(3)); background = bg(0xFF3A2A12.toInt(), 0xFFF59E0B.toInt(), 12f) }
-            bar.onScrub = { f -> tPos.text = nowTxt((f * durNow).toLong()) }
-            bar.onSeek = { f -> val ms = (f * durNow).toLong(); holdUntil = System.currentTimeMillis() + 1300L; tPos.text = nowTxt(ms); go("seekto", ms) }
+            val thumbs = ScrubThumbs(act)   // (v809) لقطة معاينة فوق الشريط وقت السحب
+            bar.onScrub = { f -> val ms = (f * durNow).toLong(); tPos.text = nowTxt(ms); thumbs.update(bar, f, ms) }
+            bar.onSeek = { f -> val ms = (f * durNow).toLong(); thumbs.hide(); holdUntil = System.currentTimeMillis() + 1300L; tPos.text = nowTxt(ms); go("seekto", ms) }
+            bar.addOnAttachStateChangeListener(object : View.OnAttachStateChangeListener { override fun onViewAttachedToWindow(v: View) {}; override fun onViewDetachedFromWindow(v: View) { thumbs.close() } })
             val times = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; isBaselineAligned = false; layoutDirection = View.LAYOUT_DIRECTION_LTR }
             times.addView(tPos, lp(-2, -2)); times.addView(View(act), lp(0, 1, 1f)); times.addView(tDur, lp(-2, -2))
 
@@ -1062,7 +1109,7 @@ object PlayerPad {
                 val rb = kotlin.collections.listOf(rotTop, repCyc, plTop, dlTop)
                 for (i0 in rb.indices) repeatRow.addView(rb[i0], lp(0, dp(48), 1f).apply { if (i0 > 0) marginStart = dp(6) })
                 dimExtra = kotlin.collections.listOf(subRow, tabBar, sc, repeatRow)
-                embedInto(PadParts(idleRow, subRow, tabBar, sc, trRow, tr, bar, times, logTop, repeatRow, infoLine, studioBtn) { t, sp, f, st0, tp -> btn(t, sp, f, st0) { tp() } })
+                embedInto(PadParts(idleRow, subRow, tabBar, sc, trRow, tr, bar, times, logTop, repeatRow, infoLine, studioBtn, netTop) { t, sp, f, st0, tp -> btn(t, sp, f, st0) { tp() } })
             }
 
             // ── رسم الحالة (من LinkSession.mirror) ──
@@ -1130,7 +1177,28 @@ object PlayerPad {
                     }
                 }
                 qkB.alpha = if (live && (qList.size > 1 || s.optBoolean("quality", false))) 1f else 0.35f
-                qkB.text = qShort(); qkB.textSize = if (qList.isNotEmpty()) 13f else 18f   // (v779) رقم الجودة مكتوب على الزرار
+                qkB.textSize = if (qList.isNotEmpty()) 13f else 18f   // (v779) رقم الجودة مكتوب على الزرار
+                run {   // (v810) تحته بخط صغير حجم الفيديو في الجودة دي (أو حجم الفيديو من اللينك لو مفيش جودات)
+                    val q1 = qShort()
+                    val wantH = qDigits(q1).let { if (it > 0) it else s.optInt("vh", 0) }
+                    val vk = s.optString("title", "") + "|" + qList.joinToString(",") + "|" + qCur
+                    if (live) qSizeRefresh(vk, wantH)
+                    val line2 = if (live) qSzTxt else ""
+                    val sp = android.text.SpannableString(if (line2.isEmpty()) q1 else q1 + "\n" + line2)
+                    if (line2.isNotEmpty()) sp.setSpan(android.text.style.RelativeSizeSpan(0.62f), q1.length + 1, sp.length, 0)
+                    qkB.maxLines = 2; qkB.includeFontPadding = false
+                    if (qkB.text.toString() != sp.toString()) qkB.text = sp
+                }
+                run {   // (v810) عدّاد النت الصغير فوق: الفيديو ده (التلفزيون + الموبايل) · النهارده على الموبايل
+                    try { DataMeter.ensureLoaded(act) } catch (_: Throwable) {}
+                    val tvNow = s.optLong("net_tv", -1L)
+                    val k = s.optString("title", "")
+                    if (k != nvKey || (nvTvBase < 0L && tvNow >= 0L)) { nvKey = k; nvTvBase = tvNow; nvCellBase = DataMeter.sCell; nvWifiBase = DataMeter.sWifi }
+                    val tvV = if (tvNow >= 0L && nvTvBase >= 0L) NetUse.fmt((tvNow - nvTvBase).coerceAtLeast(0L)) else "—"
+                    val phV = NetUse.fmt((DataMeter.sCell - nvCellBase).coerceAtLeast(0L) + (DataMeter.sWifi - nvWifiBase).coerceAtLeast(0L))
+                    val day = NetUse.fmt(DataMeter.dCell + DataMeter.dWifi)
+                    netTop.text = "🌐 الفيديو ده: 📺 $tvV · 📱 $phV   |   النهارده 📱 $day"
+                }
                 qB.text = "🎞\nالجودة" + (if (qList.isNotEmpty()) ": " + qShort() else "")   // (v765) ثابت/باهت لو مفيش جودة
                 val al = if (live) 1f else 0.4f
                 cntCard.visibility = if (live) View.VISIBLE else View.GONE
