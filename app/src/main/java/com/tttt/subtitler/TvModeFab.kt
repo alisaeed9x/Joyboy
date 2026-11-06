@@ -103,12 +103,28 @@ object TvModeFab {
     }
     /** (v764) مكان زرار/كبسولة المشغّل المصغّر: فوق لسان 🎮 مباشرة بنفس الحجم */
     private fun placeCap(a: Activity, l: Layer) {
+        val st = strips[a]
+        if (st != null) {   // (v801) الكبسولة المفتوحة تقعد فوق الشريط على اليمين
+            val root = a.findViewById<View>(android.R.id.content) ?: return
+            if (st.height == 0) return
+            val s = IntArray(2); val r = IntArray(2); st.getLocationOnScreen(s); root.getLocationOnScreen(r)
+            val bm = ((r[1] + root.height) - s[1] + dp(a, 6)).coerceAtLeast(0)
+            (l.cap?.layoutParams as? FrameLayout.LayoutParams)?.let { lp -> if (lp.bottomMargin != bm || lp.rightMargin != 0) { lp.bottomMargin = bm; lp.rightMargin = 0; l.cap?.layoutParams = lp } }
+            return
+        }
         val cl = l.ctl?.layoutParams as? FrameLayout.LayoutParams ?: return
         val bm = cl.bottomMargin + cl.height + dp(a, 6)
         (l.capTab?.layoutParams as? FrameLayout.LayoutParams)?.let { lp -> if (lp.bottomMargin != bm || lp.width != cl.width || lp.height != cl.height) { lp.bottomMargin = bm; lp.width = cl.width; lp.height = cl.height; lp.rightMargin = 0; l.capTab?.layoutParams = lp } }
         (l.cap?.layoutParams as? FrameLayout.LayoutParams)?.let { lp -> if (lp.bottomMargin != bm) { lp.bottomMargin = bm; lp.rightMargin = 0; l.cap?.layoutParams = lp } }
     }
     private val docks = HashMap<Activity, View>()   // (v592) المتصفح: العمود اللي زرار 📺 يقعد فوقه
+    private val strips = HashMap<Activity, LinearLayout>()   // (v801) المتصفح (موبايل): الشريط الأفقي اللي ألسنة 📺 🎮 ▶ بتتحط جواه بدل ما تعوم على الحافة
+    /** (v801) ألسنة التلفزيون (📺 · 🎮 · ▶) تبقى أزرار جوه [strip] (فوق الشريط السفلي) مش عايمة على الحافة اليمين */
+    fun dockStrip(a: Activity, strip: LinearLayout) {
+        strips[a] = strip
+        strip.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> try { layers[a]?.let { placeCap(a, it) } } catch (_: Throwable) {} }
+    }
+    private fun inStrip(c: Context): Boolean = (c as? Activity)?.let { strips.containsKey(it) } == true
     /** (v592) الزرار العايم يتحط فوق [stack] مباشرة (بحجم أصغر) بدل مكانه العادي؛ بيتنادى من المتصفح بس */
     fun dock(a: Activity, stack: View) {
         docks[a] = stack
@@ -161,7 +177,7 @@ object TvModeFab {
                     attach(act); startPoll(); startNowWatch()
                 }
                 override fun onActivityPaused(act: Activity) { if (resumed > 0) resumed--; if (resumed == 0) lastPauseAt = System.currentTimeMillis(); try { picker?.dismiss() } catch (_: Throwable) {}; try { layers[act]?.let { closeFan(it, false) } } catch (_: Throwable) {} }
-                override fun onActivityDestroyed(act: Activity) { layers.remove(act); docks.remove(act); phoneCtl.remove(act); minis.remove(act) }
+                override fun onActivityDestroyed(act: Activity) { layers.remove(act); docks.remove(act); strips.remove(act); phoneCtl.remove(act); minis.remove(act) }
                 override fun onActivityCreated(act: Activity, b: Bundle?) {}
                 override fun onActivityStarted(act: Activity) {}
                 override fun onActivityStopped(act: Activity) {}
@@ -233,8 +249,10 @@ object TvModeFab {
                 }
             }
             // setContentView ممكن يكون مسح الـviews: ضيفهم تاني لو اتشالوا
-            if (l.btn.parent == null) root.addView(l.btn, FrameLayout.LayoutParams(dp(a, 40), dp(a, 52), Gravity.RIGHT or Gravity.BOTTOM).apply { bottomMargin = dp(a, 150); rightMargin = 0 })
-            l.ctl?.let { c -> if (c.parent == null) root.addView(c, FrameLayout.LayoutParams(dp(a, 40), dp(a, 52), Gravity.RIGHT or Gravity.BOTTOM).apply { bottomMargin = dp(a, 150) + dp(a, 52) + dp(a, 6); rightMargin = 0 }) }
+            val strip = strips[a]
+            fun stripLp() = LinearLayout.LayoutParams(dp(a, 40), dp(a, 38)).apply { setMargins(dp(a, 3), 0, dp(a, 3), 0) }
+            if (l.btn.parent == null) { if (strip != null) { l.btn.textSize = 18f; strip.addView(l.btn, stripLp()) } else root.addView(l.btn, FrameLayout.LayoutParams(dp(a, 40), dp(a, 52), Gravity.RIGHT or Gravity.BOTTOM).apply { bottomMargin = dp(a, 150); rightMargin = 0 }) }
+            l.ctl?.let { c -> if (c.parent == null) { if (strip != null) { c.textSize = 18f; strip.addView(c, stripLp()) } else root.addView(c, FrameLayout.LayoutParams(dp(a, 40), dp(a, 52), Gravity.RIGHT or Gravity.BOTTOM).apply { bottomMargin = dp(a, 150) + dp(a, 52) + dp(a, 6); rightMargin = 0 }) } }
             if (l.banner.parent == null) root.addView(l.banner, FrameLayout.LayoutParams(-1, dp(a, 24), Gravity.TOP))   // (v612) فوق، والمحتوى بينزل تحتها (placeBanner بتزق الـroot بحشو علوي) — مابقتش بتغطّي الشغل
             if (l.cap == null) {   // (v761) مشغّل مصغّر: ⏯ + اسم الفيديو (دوسة = الريموت) + ✕ ، وتحتها شريط تقدّم بيتحرك (دوسة عليه = تقديم/ترجيع)
                 val tt = TextView(a).apply { setTextColor(Color.WHITE); textSize = 13f; typeface = android.graphics.Typeface.DEFAULT_BOLD; maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END; maxWidth = dp(a, 150) }
@@ -290,7 +308,7 @@ object TvModeFab {
                     setOnClickListener { layers[a]?.let { setCap(a, it, true) } }
                 }
             }
-            l.capTab?.let { t -> if (t.parent == null) root.addView(t, FrameLayout.LayoutParams(dp(a, 40), dp(a, 52), Gravity.RIGHT or Gravity.BOTTOM).apply { bottomMargin = dp(a, 150) + 2 * (dp(a, 52) + dp(a, 6)) }) }
+            l.capTab?.let { t -> if (t.parent == null) { if (strip != null) { t.textSize = 18f; strip.addView(t, stripLp()) } else root.addView(t, FrameLayout.LayoutParams(dp(a, 40), dp(a, 52), Gravity.RIGHT or Gravity.BOTTOM).apply { bottomMargin = dp(a, 150) + 2 * (dp(a, 52) + dp(a, 6)) }) } }
             if (!l.hooked) { l.hooked = true; root.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> placeBanner(root, l) } }
             paint(a, l)
             placeFab(a, l)
@@ -355,6 +373,7 @@ object TvModeFab {
     /** (v614) لسان طالع من حافة اليمين (زي علامة الاصطياد في المتصفح): الشمال مدوّر والحافة مسطّحة */
     private fun tabBg(c: Context, color: Int): GradientDrawable {
         val r = dp(c, 18).toFloat()
+        if (inStrip(c)) return GradientDrawable().apply { setColor(color); cornerRadius = dp(c, 19).toFloat(); setStroke(dp(c, 1), 0x66FFFFFF) }   // (v801) كبسولة كاملة في الشريط
         return GradientDrawable().apply { setColor(color); cornerRadii = floatArrayOf(r, r, 0f, 0f, 0f, 0f, r, r); setStroke(dp(c, 1), 0x66FFFFFF) }
     }
     private fun askExit(a: Activity) {

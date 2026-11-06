@@ -38,6 +38,7 @@ import android.webkit.WebViewClient
 import android.widget.Button
 import android.widget.EditText
 import android.widget.FrameLayout
+import android.widget.HorizontalScrollView
 import android.widget.LinearLayout
 import android.widget.PopupWindow
 import android.widget.ScrollView
@@ -315,6 +316,10 @@ class BrowserActivity : Activity() {
     private lateinit var panicCover: View
     private lateinit var panicB: TextView
     private lateinit var undoB: TextView
+    private var actStrip: LinearLayout? = null            // (v801) الشريط فوق الشريط السفلي (موبايل بس)
+    private lateinit var toolsInner: LinearLayout        // (v801) صف الأدوات جوه الشريط (🕶 ① 🕘 🛡 🔄 + ألسنة التلفزيون)
+    private lateinit var navBackB: TextView
+    private lateinit var navFwdB: TextView
     private lateinit var panicCol: LinearLayout
     private var panicUrl: String? = null        // الصفحة اللي اتمسحت (للتراجع)
     private var panicTabId = -1L
@@ -476,7 +481,8 @@ class BrowserActivity : Activity() {
             setOnClickListener { badgeTap() }
             setOnLongClickListener { showList(); true }
             // (v736) الدايرة تتسحب لأي مكان، وسيبها على ✕ تحت = تتخبّى (بترجع لوحدها لما يتلقط فيديو جديد)
-            setOnTouchListener(object : View.OnTouchListener {
+            // (v801) على الموبايل الدايرة ثابتة في نص الشريط اللي فوق الشريط السفلي — مفيش سحب (التلفزيون زي ما هو)
+            if (tvOn) setOnTouchListener(object : View.OnTouchListener {
                 var dx = 0f; var dy = 0f; var sx = 0f; var sy = 0f; var drag = false
                 override fun onTouch(v: View, e: MotionEvent): Boolean {
                     when (e.actionMasked) {
@@ -550,23 +556,25 @@ class BrowserActivity : Activity() {
         }
         panicCol = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_LTR; gravity = Gravity.CENTER_HORIZONTAL
-            addView(ctl, LinearLayout.LayoutParams(-2, -2))
-            addView(rotFloat, LinearLayout.LayoutParams(ui.dp(44), ui.dp(44)).apply { bottomMargin = ui.dp(6) })
-            addView(panicB, LinearLayout.LayoutParams(ui.dp(44), ui.dp(44)))
-            addView(undoB, LinearLayout.LayoutParams(ui.dp(44), ui.dp(44)).apply { topMargin = ui.dp(6) })
+            if (tvOn) {   // (v801) التلفزيون: العمود العايم زي ما هو. الموبايل: كل الأزرار في actStrip (شريط فوق الشريط السفلي)
+                addView(ctl, LinearLayout.LayoutParams(-2, -2))
+                addView(rotFloat, LinearLayout.LayoutParams(ui.dp(44), ui.dp(44)).apply { bottomMargin = ui.dp(6) })
+                addView(panicB, LinearLayout.LayoutParams(ui.dp(44), ui.dp(44)))
+                addView(undoB, LinearLayout.LayoutParams(ui.dp(44), ui.dp(44)).apply { topMargin = ui.dp(6) })
+            }
         }
+        if (!tvOn) buildActStrip(rotFloat)
         blockCover = buildBlockCover()
-        TvModeFab.dock(this, panicCol)   // (v592) زرار 📺 العايم يقعد فوق العمود ده في المتصفح بس (أصغر ومش فوق 🛡)
+        if (tvOn) TvModeFab.dock(this, panicCol) else TvModeFab.dockStrip(this, toolsInner)   // (v592) زرار 📺 العايم يقعد فوق العمود ده · (v801) على الموبايل جوه شريط الأدوات
         vidMark = VidMark(this) { act -> markAct(act) }
         val webWrap = FrameLayout(this).apply {
             layoutDirection = View.LAYOUT_DIRECTION_LTR
             addView(webHolder, FrameLayout.LayoutParams(-1, -1))
             if (!tvOn) addView(vidMark, FrameLayout.LayoutParams(-1, -1))   // (v717) فوق الصفحة وتحت الغطا والأزرار العايمة؛ اللمس بيعدّي للصفحة
             addView(panicCover, FrameLayout.LayoutParams(-1, -1))
-            addView(panicCol, FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM or Gravity.RIGHT).apply { setMargins(0, 0, ui.dp(4), ui.dp(8)) })
-            addView(badge, FrameLayout.LayoutParams(ui.dp(60), ui.dp(60), Gravity.RIGHT or Gravity.CENTER_VERTICAL).apply { rightMargin = ui.dp(4) })   // (v595) كبسولة الاصطياد على الجنب اليمين
-            if (!tvOn) {   // (v647) الزرار العايم ①
-                addView(buildCoButtons(), FrameLayout.LayoutParams(-2, -2, Gravity.LEFT or Gravity.CENTER_VERTICAL))   // (v648) لسانين على الجنب الشمال: بعيد عن لسان 📺/الريموت وأزرار المتصفح (يمين)
+            if (tvOn) {   // (v801) على الموبايل: العمود والدايرة والألسنة اتنقلوا لشريط actStrip فوق الشريط السفلي
+                addView(panicCol, FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM or Gravity.RIGHT).apply { setMargins(0, 0, ui.dp(4), ui.dp(8)) })
+                addView(badge, FrameLayout.LayoutParams(ui.dp(60), ui.dp(60), Gravity.RIGHT or Gravity.CENTER_VERTICAL).apply { rightMargin = ui.dp(4) })   // (v595) كبسولة الاصطياد على الجنب اليمين
             }
             addView(blockCover, FrameLayout.LayoutParams(-1, -1))   // (v412) فوق كل حاجة
         }
@@ -586,6 +594,7 @@ class BrowserActivity : Activity() {
         root.addView(dlBar, LinearLayout.LayoutParams(-1, -2).apply { setMargins(ui.dp(8), ui.dp(4), ui.dp(8), ui.dp(6)) })   // (v324)
         // (v117) شريط البوابات: الفيديوهات · الموسيقى · المتصفح (إحنا فيه دلوقتي) · الملفات · (v324) يوتيوب
         val gates = BottomNav(this, ui, th, 2) { i -> if (i != 2) NavAnim.set(2, i); if (i == 0) goMain("videos") else if (i == 1) goMain("music") else if (i == 4) goMain("youtube") else if (i == 5) goMain("tasks") else if (i == 7) goMain("settings") else if (i == 3) { startActivity(FilesHub.intent(this)); NavAnim.peek(this); finish() } }   // (v310) الملفات · (v364) الذكاء
+        if (!tvOn) actStrip?.let { root.addView(it, LinearLayout.LayoutParams(-1, -2)) }   // (v801) الشريط فوق الشريط السفلي مباشرة
         if (!tvOn) root.addView(gates.view, LinearLayout.LayoutParams(-1, -2))   // (v517) تلفزيون: الشريط السفلي اتشال — 🏠 في شريط العنوان
         content = root
         frame = FrameLayout(this); frame.setBackgroundColor(th.bg)
@@ -988,6 +997,10 @@ class BrowserActivity : Activity() {
         val w = wvOrNull
         backB.alpha = if (w?.canGoBack() == true) 1f else 0.35f
         fwdB.alpha = if (w?.canGoForward() == true) 1f else 0.35f
+        if (::navBackB.isInitialized) {   // (v801) سهمي الشريط السفلي: الباك يظهر لو ينفع ترجع، والفوروورد لو رجعت قبل كده
+            navBackB.visibility = if (w?.canGoBack() == true) View.VISIBLE else View.GONE
+            navFwdB.visibility = if (w?.canGoForward() == true) View.VISIBLE else View.GONE
+        }
     }
     private fun updateProgress() {
         val p = tab.progress
@@ -1576,6 +1589,15 @@ class BrowserActivity : Activity() {
     /** لمسة في أي حتة برّا شريط التحميل = «مش عايز أحمّل» (اللمسة نفسها بتكمّل لحد الصفحة عادي) */
     override fun dispatchTouchEvent(ev: android.view.MotionEvent): Boolean {
         if (ev.actionMasked == android.view.MotionEvent.ACTION_DOWN || ev.actionMasked == android.view.MotionEvent.ACTION_UP) lastTouchAt = android.os.SystemClock.uptimeMillis()
+        if (ev.actionMasked == android.view.MotionEvent.ACTION_DOWN && fanViews.isNotEmpty()) {   // (v801) دوسة في أي مكان برّا الأزرار = تتصغّر لعلامة البحث بس (والدوسة بتكمّل عادي)
+            val rx = ev.rawX.toInt(); val ry = ev.rawY.toInt(); var inside = false
+            val r = android.graphics.Rect()
+            for (v in fanViews + listOf<View>(badge)) { try { if (v.getGlobalVisibleRect(r) && r.contains(rx, ry)) { inside = true; break } } catch (_: Throwable) {} }
+            if (!inside) closeFan()
+        }
+        if (ev.actionMasked == android.view.MotionEvent.ACTION_UP && ev.eventTime - ev.downTime < 450L && !tvOn && fanViews.isEmpty() && actScrim == null) {   // (v801) دوسة على الفيديو نفسه = الأزرار تفتح تلقائي حوالين الدايرة
+            try { val r = android.graphics.Rect(); if (webHolder.getGlobalVisibleRect(r) && r.contains(ev.rawX.toInt(), ev.rawY.toInt())) tapMaybeVideo(ev.rawX, ev.rawY) } catch (_: Throwable) {}
+        }
         if (ev.actionMasked == android.view.MotionEvent.ACTION_UP && ev.eventTime - ev.downTime < 450L && actScrim == null) {   // (v716) دوسة في الصفحة نفسها = الدايرة تدوّر على فيديو
             try { val r = android.graphics.Rect(); if (webHolder.getGlobalVisibleRect(r) && r.contains(ev.rawX.toInt(), ev.rawY.toInt())) kickScan() } catch (_: Throwable) {}
         }
@@ -1793,9 +1815,117 @@ class BrowserActivity : Activity() {
     /** (v716) دوسة على الدايرة: فيديو واحد ← لوحة الأزرار (تلفزيون · تحميل · شاهد وترجم · شاهد · إلغاء)، غير كده ← القايمة. «تحميل» بيسأل عن الجودة */
     private fun badgeTap() {
         try {
+            if (fanViews.isNotEmpty()) { closeFan(); return }   // (v801) الدايرة والأزرار مفتوحة حواليها: دوسة عليها = تصغير
             val gs = groupsOf(vis())
-            if (gs.size == 1 && gs[0].qs.isNotEmpty()) showActions(gs[0]) else showList()
+            if (gs.size == 1 && gs[0].qs.isNotEmpty()) { if (tvOn) showActions(gs[0]) else openFan(gs[0]) } else showList()
         } catch (e: Throwable) { LogStore.err("Browser:badgeTap", e); showList() }
+    }
+
+
+    // ===== (v801) الشريط فوق الشريط السفلي (موبايل): كل الأزرار العايمة اتجمّعت هنا =====
+    private fun panelOn(): Boolean = try { Cfg.str("vid_panel", "0") == "1" } catch (_: Throwable) { false }
+    private fun stripBtn(t: String, sp: Float = 18f, w: Int = 40, onTap: () -> Unit): TextView = IconTextView(this).apply {
+        text = t; textSize = sp; gravity = Gravity.CENTER; setTextColor(Color.WHITE); includeFontPadding = false
+        background = ui.box(0xCC1E2A3A.toInt(), 0x66FFFFFF, 20)
+        setOnClickListener { onTap() }
+        layoutParams = LinearLayout.LayoutParams(ui.dp(w), ui.dp(38)).apply { setMargins(ui.dp(3), 0, ui.dp(3), 0) }
+    }
+    private fun coPill(t: String, onTap: () -> Unit): TextView = TextView(this).apply {
+        text = t; textSize = 13f; setTextColor(Color.WHITE); gravity = Gravity.CENTER; includeFontPadding = false
+        setOnClickListener { onTap() }
+        background = android.graphics.drawable.GradientDrawable().apply { setColor(coOff); cornerRadius = ui.dp(19).toFloat(); setStroke(ui.dp(1), 0x66FFFFFF) }
+        layoutParams = LinearLayout.LayoutParams(ui.dp(46), ui.dp(38)).apply { setMargins(ui.dp(3), 0, ui.dp(3), 0) }
+    }
+    /** صفين فوق الشريط السفلي: فوق = أدوات (🕶 · 📺① · 🕘 · 🛡 · 🔄 · ألسنة التلفزيون 📺 🎮 ▶) · تحت = ‹ › (شمال) · دايرة الاصطياد (نص) · 🚨 (يمين) */
+    private fun buildActStrip(rotFloat: TextView) {
+        // صف الأدوات
+        toolsInner = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_LTR; gravity = Gravity.CENTER; setPadding(ui.dp(4), ui.dp(3), ui.dp(4), ui.dp(3)) }
+        toolsInner.addView(stripBtn("🕶") { newTab(home(), true, -1L, true) })   // تصفح مخفي
+        val co = coPill("📺①") { toggleCoSurf() }; coBtn1 = co; toolsInner.addView(co)   // مزامنة المتصفح مع التلفزيون (يعرض من صفحة التلفزيون)
+        toolsInner.addView(stripBtn("🕘") { showHistory() })   // السجل — دخول سريع
+        ctl.setPadding(0, 0, 0, 0); (shield.layoutParams as? LinearLayout.LayoutParams)?.let { it.setMargins(0, 0, 0, 0); it.height = ui.dp(38) }
+        shield.gravity = Gravity.CENTER; shield.setPadding(ui.dp(6), 0, ui.dp(6), 0)
+        toolsInner.addView(ctl, LinearLayout.LayoutParams(-2, ui.dp(38)).apply { setMargins(ui.dp(3), 0, ui.dp(3), 0) })   // 🛡 عدّاد الإعلانات
+        (rotFloat.parent as? ViewGroup)?.removeView(rotFloat)
+        rotFloat.layoutParams = LinearLayout.LayoutParams(ui.dp(38), ui.dp(38)).apply { setMargins(ui.dp(3), 0, ui.dp(3), 0) }
+        toolsInner.addView(rotFloat)   // 🔄
+        val tools = HorizontalScrollView(this).apply { isHorizontalScrollBarEnabled = false; isFillViewport = true; addView(toolsInner, FrameLayout.LayoutParams(-1, -2)) }
+
+        // الصف التحتاني: سهمين · الدايرة · 🚨
+        navBackB = stripBtn("‹", 26f) { wvOrNull?.let { if (it.canGoBack()) saver.back(it, tab) } }.apply { visibility = View.GONE }
+        navFwdB = stripBtn("›", 26f) { wvOrNull?.let { if (it.canGoForward()) it.goForward() } }.apply { visibility = View.GONE }
+        val left = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_LTR; gravity = Gravity.CENTER_VERTICAL
+            addView(undoB, LinearLayout.LayoutParams(ui.dp(40), ui.dp(40)).apply { setMargins(ui.dp(3), 0, ui.dp(3), 0) })   // ↩ تراجع الطوارئ: بيظهر بس بعد 🚨
+            addView(navBackB); addView(navFwdB)
+        }
+        val bottom = FrameLayout(this).apply {
+            layoutDirection = View.LAYOUT_DIRECTION_LTR
+            addView(left, FrameLayout.LayoutParams(-2, -1, Gravity.LEFT or Gravity.CENTER_VERTICAL).apply { leftMargin = ui.dp(4) })
+            addView(badge, FrameLayout.LayoutParams(ui.dp(56), ui.dp(56), Gravity.CENTER))
+            addView(panicB, FrameLayout.LayoutParams(ui.dp(44), ui.dp(44), Gravity.RIGHT or Gravity.CENTER_VERTICAL).apply { rightMargin = ui.dp(6) })
+        }
+        actStrip = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_LTR
+            setBackgroundColor(th.bg)
+            addView(tools, LinearLayout.LayoutParams(-1, -2))
+            addView(bottom, LinearLayout.LayoutParams(-1, ui.dp(60)))
+        }
+    }
+
+    // ===== (v801) أزرار الفيديو حوالين الدايرة (بدل العمود تحتها): بتفتح تلقائي لما تدوس على الفيديو، ودوسة في أي مكان تاني = تتصغّر =====
+    private val fanViews = ArrayList<View>()
+    private fun closeFan() {
+        if (fanViews.isEmpty()) return
+        for (v in fanViews.toList()) try { (v.parent as? ViewGroup)?.removeView(v) } catch (_: Throwable) {}
+        fanViews.clear()
+    }
+    private fun openFan(g: Grp) {
+        if (dead || !::frame.isInitialized || badge.visibility != View.VISIBLE || badge.width == 0) return
+        closeFan(); closeActions()
+        val bl = IntArray(2); badge.getLocationOnScreen(bl)
+        val fl = IntArray(2); frame.getLocationOnScreen(fl)
+        val cx = bl[0] - fl[0] + badge.width / 2f; val cy = bl[1] - fl[1] + badge.height / 2f
+        // الترتيب من اليمين لليسار (قراءة عربي): مشاهدة موبايل · بالترجمة موبايل · مشاهدة تلفزيون · بالترجمة تلفزيون · تحميل
+        val acts = listOf(
+            Triple("mw", "📱\nمشاهدة", 0xFF2E9E5B.toInt()), Triple("mt", "📱🌐\nبالترجمة", 0xFF1E6BFF.toInt()),
+            Triple("tw", "📺\nمشاهدة", 0xFFE53935.toInt()), Triple("tt", "📺🌐\nبالترجمة", 0xFF7B1FA2.toInt()),
+            Triple("dl", "⬇\nتحميل", 0xFF455A64.toInt()))
+        val rad = ui.dp(108).toFloat(); val sz = ui.dp(58)
+        acts.forEachIndexed { i, (act, label, fill) ->
+            val ang = Math.toRadians(-20.0 - 35.0 * i)
+            val x = cx + rad * Math.cos(ang).toFloat(); val y = cy + rad * Math.sin(ang).toFloat()
+            val b = TextView(this).apply {
+                text = label; setTextColor(Color.WHITE); textSize = 10.5f; typeface = android.graphics.Typeface.DEFAULT_BOLD; gravity = Gravity.CENTER; includeFontPadding = false
+                maxLines = 2; setPadding(ui.dp(2), 0, ui.dp(2), 0); elevation = ui.dp(14).toFloat()
+                background = android.graphics.drawable.GradientDrawable().apply { shape = android.graphics.drawable.GradientDrawable.OVAL; setColor(fill); setStroke(ui.dp(2), 0xCCFFFFFF.toInt()) }
+                setOnClickListener { closeFan(); markAct(act) }
+            }
+            val lp = FrameLayout.LayoutParams(sz, sz, Gravity.TOP or Gravity.LEFT).apply { leftMargin = (x - sz / 2f).toInt(); topMargin = (y - sz / 2f).toInt() }
+            frame.addView(b, lp); fanViews.add(b)
+            b.translationX = cx - x; b.translationY = cy - y; b.scaleX = 0.2f; b.scaleY = 0.2f; b.alpha = 0f
+            b.animate().translationX(0f).translationY(0f).scaleX(1f).scaleY(1f).alpha(1f).setStartDelay(i * 25L).setDuration(190L).start()
+        }
+    }
+    /** دوسة على الفيديو في الصفحة: لو الدايرة لقت فيديو واحد والدوسة جوه مربعه ← الأزرار تفتح حوالين الدايرة */
+    private fun tapMaybeVideo(rx: Float, ry: Float) {
+        if (tvOn || dead || fanViews.isNotEmpty() || badge.visibility != View.VISIBLE) return
+        val wv = wvOrNull ?: return
+        val g = try { groupsOf(vis()).singleOrNull() } catch (_: Throwable) { null } ?: return
+        if (g.qs.isEmpty()) return
+        val loc = IntArray(2); wv.getLocationOnScreen(loc)
+        try {
+            wv.evaluateJavascript(VidMark.RECT_JS) { r ->
+                try {
+                    if (dead || fanViews.isNotEmpty() || r.isNullOrBlank() || r == "null") return@evaluateJavascript
+                    val a = JSONArray(r); if (a.length() < 5) return@evaluateJavascript
+                    val k = wv.width.toFloat() / a.getDouble(4).toFloat().coerceAtLeast(1f)
+                    val l = a.getDouble(0).toFloat() * k + loc[0]; val t = a.getDouble(1).toFloat() * k + loc[1]
+                    val w = a.getDouble(2).toFloat() * k; val hh = a.getDouble(3).toFloat() * k
+                    if (rx >= l && rx <= l + w && ry >= t && ry <= t + hh) openFan(g)
+                } catch (_: Throwable) {}
+            }
+        } catch (_: Throwable) {}
     }
 
     // ===== (v716) لوحة الأزرار تحت الدايرة =====
@@ -1871,13 +2001,15 @@ class BrowserActivity : Activity() {
     }
     private fun showBadge() {
         if (badge.visibility != View.VISIBLE) {   // بتطلع من الجنب
-            badge.visibility = View.VISIBLE; badge.translationX = ui.dp(70).toFloat()
-            badge.animate().translationX(0f).setDuration(260L).start()
+            badge.visibility = View.VISIBLE
+            if (tvOn) { badge.translationX = ui.dp(70).toFloat(); badge.animate().translationX(0f).setDuration(260L).start() }
+            else { badge.scaleX = 0.3f; badge.scaleY = 0.3f; badge.animate().scaleX(1f).scaleY(1f).setDuration(220L).start() }   // (v801) في نص الشريط: بتكبر مكانها
         }
     }
     private fun refreshBadge() {
         val n = groupsOf(vis()).size
         if (n == 0) {
+            closeFan()
             if (android.os.SystemClock.uptimeMillis() < scanUntil) { badge.found = false; badge.glyph = "🔍"; badge.count = 1; showBadge() }
             else badge.visibility = View.GONE
             hint.visibility = View.VISIBLE
@@ -1897,7 +2029,7 @@ class BrowserActivity : Activity() {
     private var markHidden = false   // ✕ على اللوحة: مخفية لحد صفحة/تبويب جديد
     /** بتشتغل لما فيه اصطياد في الصفحة: بتسأل الصفحة كل ~⅓ ثانية عن مكان الفيديو وتحط الإطار عليه؛ مفيش اصطياد = بتقف وتخفي الإطار */
     private fun updateMark() {
-        if (dead || !::vidMark.isInitialized || tvOn) return
+        if (dead || !::vidMark.isInitialized || tvOn || !panelOn()) return   // (v801) اللوحة الزرقا على الفيديو متقفلة افتراضيًا — الأزرار بقت حوالين الدايرة (Cfg vid_panel=1 يرجّعها)
         val has = try { groupsOf(vis()).any { it.qs.isNotEmpty() } } catch (_: Throwable) { false }
         if (!has) { markGen++; markLoop = false; vidMark.clear(); return }
         if (markLoop) return
@@ -1907,7 +2039,7 @@ class BrowserActivity : Activity() {
     private fun markStep(gen: Int) {
         if (dead || gen != markGen) return
         val wv = wvOrNull
-        val wanted = !markHidden && customView == null && actScrim == null && dlg?.isShowing != true && panicCover.visibility != View.VISIBLE
+        val wanted = !markHidden && customView == null && actScrim == null && fanViews.isEmpty() && dlg?.isShowing != true && panicCover.visibility != View.VISIBLE
         if (wv == null || !wanted) vidMark.clear()
         else try {
             wv.evaluateJavascript(VidMark.RECT_JS) { r ->
