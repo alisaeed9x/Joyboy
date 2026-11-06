@@ -649,7 +649,7 @@ object PlayerPad {
             val verB = btn("🗂\nالنسخ", 11.5f) { sheetVersions() }
             val addTrB = btn("➕\nإضافة ترجمة", 11.5f, 0xFF4F5BD5.toInt(), 0xFF7C8CF8.toInt()) { sheetSubFile() }
             val subRow = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; isBaselineAligned = false; layoutDirection = View.LAYOUT_DIRECTION_RTL }
-            for (b0 in listOf(ccTop, dualTop, verB, addTrB)) { b0.setPadding(dp(2), dp(4), dp(2), dp(4)); subRow.addView(b0, lp(0, dp(62), 1f).apply { marginStart = dp(2); marginEnd = dp(2) }) }
+            for (b0 in listOf(ccTop, dualTop, verB, addTrB)) { b0.setPadding(dp(2), dp(4), dp(2), dp(4)); subRow.addView(b0, lp(0, if (embedInto != null) dp(48) else dp(62), 1f).apply { marginStart = dp(2); marginEnd = dp(2) }) }
 
             // ── السرعة · اللهجة وإعدادات الترجمة ──
             val speedB = btn("⏩ 1x", 16f) { sheetSpeed() }
@@ -731,9 +731,12 @@ object PlayerPad {
             val logB = btn("📜\nاللوج", 12f) { go("log") }
             val nextB = btn("📃\nالفيديوهات الجاية", 12f) { go("nextlist") }
             val queueB = btn("📋\nالليستة", 12f) { PlayQueueUi.show(act) }
-            grid(bodyTools, kotlin.collections.listOf(fitB, rotB, loopB, visB, sentB, charsB, subsB, qB, aB, pipB, voiceB, bgB, nextB, queueB, lockB, notB, menuB, toolsB, moreB, killB), 2, 60)
-            val bodies = kotlin.collections.listOf(bodyText, bodySync, bodyAi, bodyTools)
-            val tabNames = kotlin.collections.listOf("🔤 نص", "⏱ تزامن", "🗣 ذكاء", "🧰 أدوات")
+            // (v797) في الريموت الموحّد: شلت اللي مكرر في الصفحة الرئيسية (العرض ⛶ · التدوير · التكرار · اللقطة البصرية · الجودة 🎞 · الليستة 📋)
+            val toolsAll = kotlin.collections.listOf(fitB, rotB, loopB, visB, sentB, charsB, subsB, qB, aB, pipB, voiceB, bgB, nextB, queueB, lockB, notB, menuB, toolsB, moreB, killB)
+            val toolsDup = kotlin.collections.setOf<View>(fitB, rotB, loopB, visB, qB, queueB)
+            grid(bodyTools, if (embedInto != null) toolsAll.filter { it !in toolsDup } else toolsAll, 2, 60)
+            val bodies = if (embedInto != null) kotlin.collections.listOf(bodySync, bodyAi, bodyTools) else kotlin.collections.listOf(bodyText, bodySync, bodyAi, bodyTools)   // (v797) «نص» كان فيه زرار واحد مكرر مع «تحكم الترجمة»
+            val tabNames = if (embedInto != null) kotlin.collections.listOf("⏱ تزامن", "🗣 ذكاء", "🧰 أدوات") else kotlin.collections.listOf("🔤 نص", "⏱ تزامن", "🗣 ذكاء", "🧰 أدوات")
             val tabBtns = ArrayList<TextView>()
             var curTab = 0
             fun selectTab(i: Int) {
@@ -744,7 +747,7 @@ object PlayerPad {
             val tabBar = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; isBaselineAligned = false; layoutDirection = View.LAYOUT_DIRECTION_RTL }
             tabNames.forEachIndexed { k, n ->
                 val tb = btn(n, 11.5f) { selectTab(k) }.apply { setPadding(dp(2), dp(6), dp(2), dp(6)) }
-                tabBtns.add(tb); tabBar.addView(tb, lp(0, dp(38), 1f).apply { marginStart = dp(2); marginEnd = dp(2) })
+                tabBtns.add(tb); tabBar.addView(tb, lp(0, if (embedInto != null) dp(34) else dp(38), 1f).apply { marginStart = dp(2); marginEnd = dp(2) })
             }
             val holder = FrameLayout(act)
             bodies.forEach { holder.addView(it, FrameLayout.LayoutParams(-1, -2)) }
@@ -770,7 +773,7 @@ object PlayerPad {
                 pr.addView(btn("📱\nشاشة الموبايل", 15f) { close(); openLib(false) }, lp(0, dp(96), 1f).apply { marginStart = dp(4); marginEnd = dp(4) })
                 body.addView(pr, lp(-1, -2).apply { topMargin = dp(12) })
             }
-            val idleH = if (embedInto != null) dp(84) else dp(104)   // (v787) في الصفحة الموحّدة الكروت أصغر
+            val idleH = if (embedInto != null) dp(50) else dp(104)   // (v787) في الصفحة الموحّدة الكروت أصغر
             fun idleBtn(icon: String, t: String, fill: Int, line: Int, tap: () -> Unit): TextView =
                 btn(icon + "\n" + t, if (embedInto != null) 10f else 12.5f, fill, line) { tap() }.apply { if (embedInto != null) setPadding(dp(1), dp(4), dp(1), dp(4)) else setPadding(dp(2), dp(10), dp(2), dp(10)) }
             val idleRow = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; isBaselineAligned = false; layoutDirection = View.LAYOUT_DIRECTION_RTL }
@@ -832,8 +835,7 @@ object PlayerPad {
             // ── (v787) أزرار الصفحة الموحّدة: سطر معلومة + صف (تدوير · تكرار واحد · تكرار الكل · قائمة التشغيل) + ⛶ العرض ──
             val infoLine = label("", 11.5f, cDim, false).apply { maxLines = 1; ellipsize = TextUtils.TruncateAt.END }
             val rotTop = btn("🔄\nتدوير الفيديو", 11f) { go("rotate") }
-            val repOne = btn("🔂\nتكرار واحد", 11f) { go("loopset", 1L) }
-            val repAll = btn("🔁\nتكرار الكل", 11f) { go("loopset", 2L) }
+            val repCyc = btn("➡\nبدون تكرار", 11f) { go("loop") }   // (v797) زرار واحد بدل «تكرار واحد» + «تكرار الكل»: بدون ← نفس الفيديو ← كل الفولدر
             val plTop = btn("📋\nقائمة التشغيل", 11f) { plusTap() }
             val fitTop = btn("⛶", 20f) { go("fit") }
             var dimExtra: List<View> = kotlin.collections.emptyList()
@@ -879,19 +881,19 @@ object PlayerPad {
             val qkB = btn("🎞", 18f) { if (qList.size > 1) sheetList("🎞 الجودة", qList, qCur, "qset") else if (st.optBoolean("quality", false)) go("quality") else note("مفيش جودات للفيديو ده") }
             val lgB = fillable(btn("🌐", 18f) { sheetAi() }, "*")
             val trRow = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; isBaselineAligned = false; layoutDirection = View.LAYOUT_DIRECTION_LTR; gravity = Gravity.CENTER_VERTICAL }
-            trRow.addView(trB, lp(0, dp(52), 2.6f))
-            for (b in kotlin.collections.listOf(pzB, cxB, wzB, qkB, rdB)) trRow.addView(b, lp(0, dp(52), 1f).apply { marginStart = dp(6) })
+            trRow.addView(trB, lp(0, if (embedInto != null) dp(46) else dp(52), 2.6f))
+            for (b in kotlin.collections.listOf(pzB, cxB, wzB, qkB, rdB)) trRow.addView(b, lp(0, if (embedInto != null) dp(46) else dp(52), 1f).apply { marginStart = dp(6) })
 
             // ── أزرار التحكم ──
             val playB = btn("▶", 28f, 0xFF2563EB.toInt(), 0xFF3B82F6.toInt()) { go("toggle") }
             val tr = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; isBaselineAligned = false; layoutDirection = View.LAYOUT_DIRECTION_LTR; gravity = Gravity.CENTER_VERTICAL }
-            tr.addView(btn("⏮", 22f) { go("prev") }, lp(0, dp(58), 1f).apply { marginEnd = dp(6) })
-            tr.addView(btn("⏪ 10", 14f) { go("seek", -10000L) }, lp(0, dp(58), 1f).apply { marginEnd = dp(6) })
-            tr.addView(playB, lp(0, dp(70), 1.3f).apply { marginEnd = dp(6) })
-            tr.addView(btn("10 ⏩", 14f) { go("seek", 10000L) }, lp(0, dp(58), 1f).apply { marginEnd = dp(6) })
-            tr.addView(btn("⏭", 22f) { go("next") }, lp(0, dp(58), 1f).apply { marginEnd = dp(6) })
+            tr.addView(btn("⏮", 22f) { go("prev") }, lp(0, if (embedInto != null) dp(50) else dp(58), 1f).apply { marginEnd = dp(6) })
+            tr.addView(btn("⏪ 10", 14f) { go("seek", -10000L) }, lp(0, if (embedInto != null) dp(50) else dp(58), 1f).apply { marginEnd = dp(6) })
+            tr.addView(playB, lp(0, if (embedInto != null) dp(58) else dp(70), 1.3f).apply { marginEnd = dp(6) })
+            tr.addView(btn("10 ⏩", 14f) { go("seek", 10000L) }, lp(0, if (embedInto != null) dp(50) else dp(58), 1f).apply { marginEnd = dp(6) })
+            tr.addView(btn("⏭", 22f) { go("next") }, lp(0, if (embedInto != null) dp(50) else dp(58), 1f).apply { marginEnd = dp(6) })
             val speedBot = btn("1x", 14f) { sheetSpeed() }   // (v766) السرعة تحت جنب السابق/التالي
-            tr.addView(speedBot, lp(0, dp(58), 1f))
+            tr.addView(speedBot, lp(0, if (embedInto != null) dp(50) else dp(58), 1f))
 
             // ── شريط التقدم تحت خالص: نفس DualProgress بتاع المشغّل (أخضر = مترجم · كهرماني = لسه هيتغيّر · أزرق = تنقيح) ──
             val bar = DualProgress(act, th).apply { mini = true; big = embedInto != null }   // (v796)
@@ -917,11 +919,12 @@ object PlayerPad {
                 quick.removeView(aiB); bodyAi.addView(aiB, 0, lp(-1, dp(46)))   // ✨ لهجة وترجمة جوه تاب «ذكاء»
                 headRow.removeView(logTop)
                 for (i0 in 0 until subRow.childCount) { (subRow.getChildAt(i0) as? TextView)?.textSize = 10f }
-                trRow.addView(fitTop, lp(0, dp(52), 1f).apply { marginStart = dp(6) })
+                trRow.addView(fitTop, lp(0, dp(46), 1f).apply { marginStart = dp(6) })
                 bodyTools.addView(btn("📱  كمّل الفيديو على الموبايل", 13f) { PlayQueueUi.handoffToPhone(act) { leave() } }, lp(-1, dp(46)).apply { topMargin = dp(6) })
                 val repeatRow = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; isBaselineAligned = false; layoutDirection = View.LAYOUT_DIRECTION_LTR }
-                val rb = kotlin.collections.listOf(rotTop, repOne, repAll, plTop)
-                for (i0 in rb.indices) repeatRow.addView(rb[i0], lp(0, dp(58), 1f).apply { if (i0 > 0) marginStart = dp(6) })
+                val rb = kotlin.collections.listOf(rotTop, repCyc, plTop)
+                idleRow.removeViewAt(idleRow.childCount - 1)   // (v797) «سجل المشاهدة» مكرر مع «آخر المشغّل» (نفس الشاشة) — فضل «آخر المشغّل» جنب الدايرة
+                for (i0 in rb.indices) repeatRow.addView(rb[i0], lp(0, dp(48), 1f).apply { if (i0 > 0) marginStart = dp(6) })
                 dimExtra = kotlin.collections.listOf(subRow, tabBar, sc, repeatRow)
                 embedInto(PadParts(idleRow, subRow, tabBar, sc, trRow, tr, bar, times, logTop, repeatRow, infoLine, studioBtn) { t, sp, f, st0, tp -> btn(t, sp, f, st0) { tp() } })
             }
@@ -1030,8 +1033,8 @@ object PlayerPad {
                 dualB.text = "🌐\n" + (if (s.optInt("dual", 0) != 0) "ثنائي: شغّال" else "ثنائي اللغة")
                 val lmN = s.optInt("lm", if (s.optBoolean("loop", false)) 1 else 0)
                 loopTop.text = when (lmN) { 1 -> "🔂"; 2 -> "🔁"; else -> "➡" }
-                repOne.background = bg(if (lmN == 1) cOn else cCard, if (lmN == 1) cOnLine else cLine, 14f)
-                repAll.background = bg(if (lmN == 2) cOn else cCard, if (lmN == 2) cOnLine else cLine, 14f)
+                repCyc.text = when (lmN) { 1 -> "🔂\nتكرار واحد"; 2 -> "🔁\nتكرار الكل"; else -> "➡\nبدون تكرار" }
+                repCyc.background = bg(if (lmN != 0) cOn else cCard, if (lmN != 0) cOnLine else cLine, 14f)
                 infoLine.text = (if (!live) cntTv.text.toString() + "  ·  " + modeTv.text else cntTv.text.toString() + (if (modeTv.text.isNotBlank()) "  ·  " + modeTv.text else ""))
                 loopB.text = "🔂\n" + when (lmN) { 1 -> "التكرار: نفس الفيديو"; 2 -> "التكرار: كل الفولدر"; else -> "التكرار: مقفول" }
                 lockB.text = "🔒\n" + (if (s.optBoolean("locked", false)) "مقفول" else "قفل الشاشة")
