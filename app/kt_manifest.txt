@@ -12,6 +12,7 @@ com/tttt/subtitler/BrainCore.kt
 com/tttt/subtitler/BrainRpc.kt
 com/tttt/subtitler/Browser.kt
 com/tttt/subtitler/BrowserDl.kt
+com/tttt/subtitler/BrowserSaver.kt
 com/tttt/subtitler/CastCache.kt
 com/tttt/subtitler/CastServer.kt
 com/tttt/subtitler/ClipWatch.kt
