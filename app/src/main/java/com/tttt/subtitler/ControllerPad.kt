@@ -243,6 +243,7 @@ object ControllerPad {
             fun dp(v: Int) = (v * dm.density).toInt()
             fun dpf(v: Float) = v * dm.density
             val d = Dialog(act, android.R.style.Theme_Black_NoTitleBar_Fullscreen)
+            var plDispose: (() -> Unit)? = null   // (v787) تنضيف صفحة المشغّل المدمجة عند قفل الريموت
             val root = FrameLayout(act).apply { layoutDirection = View.LAYOUT_DIRECTION_LTR; setBackgroundColor(0xFF0F1830.toInt()) }
             val hh = Handler(Looper.getMainLooper())
 
@@ -289,12 +290,12 @@ object ControllerPad {
                 shape = GradientDrawable.RECTANGLE; cornerRadius = dpf(22f); setColor(if (dashed) 0xFF1B2C47.toInt() else 0xFF14203A.toInt())
                 if (dashed) setStroke(dp(1), 0xFF3A5278.toInt(), dpf(5f), dpf(4f)) else setStroke(dp(1), 0xFF2B3C60.toInt())
             }
-            fun iconBox(kind: String, c1: Int, c2: Int, dim: Boolean): View {
+            fun iconBox(kind: String, c1: Int, c2: Int, dim: Boolean, ic: Int = 40): View {
                 val box = FrameLayout(act).apply {
                     background = GradientDrawable(GradientDrawable.Orientation.TL_BR, intArrayOf(c1, c2)).apply { shape = GradientDrawable.RECTANGLE; cornerRadius = dpf(15f) }
                     if (dim) alpha = 0.6f
                 }
-                box.addView(PadIcon(act, kind, if (dim) 0xFFC9CFE6.toInt() else Color.WHITE), FrameLayout.LayoutParams(dp(24), dp(24), Gravity.CENTER))
+                box.addView(PadIcon(act, kind, if (dim) 0xFFC9CFE6.toInt() else Color.WHITE), FrameLayout.LayoutParams(dp((ic * 0.6f).toInt()), dp((ic * 0.6f).toInt()), Gravity.CENTER))
                 return box
             }
             /** كارت: مربع أيقونة ملوّن 40dp + الاسم تحته (زي الصورة) */
@@ -303,10 +304,10 @@ object ControllerPad {
                     orientation = android.widget.LinearLayout.VERTICAL; gravity = Gravity.CENTER; background = cardBg(dashed)
                     contentDescription = label; setPadding(dp(2), if (ic < 40) dp(4) else dp(8), dp(2), if (ic < 40) dp(4) else dp(8))
                 }
-                cd.addView(iconBox(kind, c1, c2, dashed), android.widget.LinearLayout.LayoutParams(dp(ic), dp(ic)))
+                cd.addView(iconBox(kind, c1, c2, dashed, ic), android.widget.LinearLayout.LayoutParams(dp(ic), dp(ic)))
                 val tv = TextView(act).apply {
                     text = label; textSize = fs; setTextColor(if (dashed) 0xFF8FA0BC.toInt() else Color.WHITE); gravity = Gravity.CENTER
-                    typeface = android.graphics.Typeface.DEFAULT_BOLD; includeFontPadding = false; maxLines = 1
+                    typeface = android.graphics.Typeface.DEFAULT_BOLD; includeFontPadding = false; maxLines = if (ic < 40) 2 else 1
                     layoutDirection = View.LAYOUT_DIRECTION_RTL
                 }
                 cd.addView(tv, android.widget.LinearLayout.LayoutParams(-1, -2).apply { topMargin = if (ic < 40) dp(3) else dp(8) })
@@ -324,10 +325,10 @@ object ControllerPad {
 
             val col = android.widget.LinearLayout(act).apply {
                 orientation = android.widget.LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_LTR
-                setPadding(dp(12), dp(14), dp(12), dp(66))
+                setPadding(dp(10), dp(8), dp(10), dp(10))
             }
 
-            // ── (v680) شريط الحالة اتشال من فوق (كان بيزق الشاشة وبيخلّي الريموت يسكرول) — بقت كبسولة عايمة بتظهر مع الصوت بس وبتختفي لوحدها ──
+            // ── (v680) شريط الحالة اتشال من فوق — كبسولة عايمة بتظهر مع الصوت/البحث الصوتي وبتختفي لوحدها ──
             val st = TextView(act).apply {
                 textSize = 13f; setTextColor(0xFFB0BEC5.toInt()); gravity = Gravity.CENTER; visibility = View.GONE
                 setPadding(dp(14), dp(6), dp(14), dp(6))
@@ -335,51 +336,32 @@ object ControllerPad {
             }
             stRef = st
 
-            // ── التبديل: أزرار الاتجاهات | لوحة اللمس ──
+            // ── (v787) صفحة واحدة بشكل الصورة: يمين = الدايرة + الإعدادات + الصوت + تشغيل · شمال = الوصول السريع + الترجمة + التابات · تحت = المشغّل ──
+            val inner = dm.widthPixels - dp(20)
+            val colGap = dp(8)
+            val rightW = (inner * 0.385f).toInt()
             val padFull = dp(259)
-            val sideW = dp(60)
-            val padSize = minOf(padFull, dm.widthPixels - 2 * (sideW + dp(8)) - dp(24))   // (v782) الدايرة بتصغّر على قد الشاشة عشان الأزرار تتحط حواليها
-            val padK = padSize.toFloat() / padFull.toFloat()
+            val padSize = rightW
+            val padK = padSize.toFloat() / padFull.toFloat()   // الدايرة بتتصغّر على قد العمود اليمين
+
+            // ── التبديل: أزرار الاتجاهات | لوحة اللمس ──
             val sw = android.widget.LinearLayout(act).apply {
-                orientation = android.widget.LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_LTR; setPadding(dp(6), dp(6), dp(6), dp(6))
+                orientation = android.widget.LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_LTR; setPadding(dp(4), dp(4), dp(4), dp(4))
                 background = GradientDrawable().apply { shape = GradientDrawable.RECTANGLE; cornerRadius = dpf(20f); setColor(0xFF1E2F4D.toInt()); setStroke(dp(1), 0xFF34507A.toInt()) }
             }
             fun tab(txt: String) = TextView(act).apply {
-                text = txt; textSize = 17f; gravity = Gravity.CENTER; typeface = android.graphics.Typeface.DEFAULT_BOLD
+                text = txt; textSize = 13.5f; gravity = Gravity.CENTER; typeface = android.graphics.Typeface.DEFAULT_BOLD; maxLines = 1
                 layoutDirection = View.LAYOUT_DIRECTION_RTL
             }
             val tabTouch = tab("لوحة اللمس"); val tabDpad = tab("أزرار الاتجاهات")
             sw.addView(tabTouch, android.widget.LinearLayout.LayoutParams(0, -1, 1f))
             sw.addView(tabDpad, android.widget.LinearLayout.LayoutParams(0, -1, 1f))
-            col.addView(sw, android.widget.LinearLayout.LayoutParams(-1, dp(56)))
 
-            // ── منطقة الاتجاهات: دايرة كبيرة (أزرار 4 + موافق) أو الجويستيك (لوحة اللمس) ──
+            // ── الدايرة (أزرار 4 + موافق) أو الجويستيك (لوحة اللمس) ──
             val padBox = FrameLayout(act)
             padBox.clipChildren = false
-            // (v782) الدايرة في النص والأزرار حواليها: يمين = تنقّل (رجوع · الرئيسية · آخر المشغّل) · شمال = الصوت (+ · كتم · −)
-            fun cardMini(label: String, kind: String, c1: Int, c2: Int, repeat: Boolean = false, fire: () -> Unit): View = card(label, kind, c1, c2, false, repeat, 11f, 30, fire)
-            fun sideCol(vararg cells: View): android.widget.LinearLayout {
-                val c = android.widget.LinearLayout(act).apply { orientation = android.widget.LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_LTR; gravity = Gravity.CENTER_VERTICAL }
-                val h = (padSize - 2 * dp(8)) / 3
-                cells.forEachIndexed { i, v -> c.addView(v, android.widget.LinearLayout.LayoutParams(-1, h).apply { if (i > 0) topMargin = dp(8) }) }
-                return c
-            }
-            val mid = android.widget.LinearLayout(act).apply { orientation = android.widget.LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_LTR; gravity = Gravity.CENTER }
-            mid.addView(sideCol(
-                cardMini("صوت +", "vol_plus", 0xFF16A068.toInt(), 0xFF0F7A4F.toInt(), true) { RemoteClient.cmd("vol_up") },
-                cardMini("كتم", "mute", 0xFFE8456F.toInt(), 0xFFBE185D.toInt()) { RemoteClient.cmd("mute") },
-                cardMini("صوت −", "vol_minus", 0xFF16A068.toInt(), 0xFF0F7A4F.toInt(), true) { RemoteClient.cmd("vol_down") }
-            ), android.widget.LinearLayout.LayoutParams(sideW, padSize))
-            mid.addView(padBox, android.widget.LinearLayout.LayoutParams(padSize, padSize).apply { marginStart = dp(8); marginEnd = dp(8) })
-            mid.addView(sideCol(
-                cardMini("آخر مشغّل", "recent", 0xFF7C4DBB.toInt(), 0xFF5B3A9B.toInt()) { RecentPicker.show(act) },
-                cardMini("الرئيسية", "home", 0xFF0FA3B1.toInt(), 0xFF0B7285.toInt()) { sendKey("home") },
-                cardMini("رجوع", "back", 0xFFF97316.toInt(), 0xFFC2410C.toInt()) { sendKey("back") }
-            ), android.widget.LinearLayout.LayoutParams(sideW, padSize))
-            col.addView(mid, android.widget.LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(16); bottomMargin = dp(12) })
-
             val dpad = FrameLayout(act).apply {
-                background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(0xFF0F3441.toInt()); setStroke(dp(1), 0xFF2C7A82.toInt()) }
+                background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(0xFF0F3441.toInt()); setStroke(dp(2), 0xFF2CC4D2.toInt()) }
             }
             fun dBtn(kind: String, tx: Int, ty: Int) {
                 val b = FrameLayout(act).apply {
@@ -397,7 +379,7 @@ object ControllerPad {
                 background = GradientDrawable().apply { shape = GradientDrawable.RECTANGLE; cornerRadius = dpf(26f); setColor(0xFF0C2A44.toInt()); setStroke(dp(1), 0xFF3B82F6.toInt()) }
             }
             okB.addView(PadIcon(act, "check", 0xFF8EEBFF.toInt()), android.widget.LinearLayout.LayoutParams(dp(26), dp(26)))
-            okB.addView(TextView(act).apply { text = "موافق"; textSize = 17f; setTextColor(Color.WHITE); typeface = android.graphics.Typeface.DEFAULT_BOLD; gravity = Gravity.CENTER; includeFontPadding = false },
+            okB.addView(TextView(act).apply { text = "موافق"; textSize = 20f; setTextColor(Color.WHITE); typeface = android.graphics.Typeface.DEFAULT_BOLD; gravity = Gravity.CENTER; includeFontPadding = false },
                 android.widget.LinearLayout.LayoutParams(-2, -2).apply { topMargin = dp(2) })
             bind(okB, false) { sendKey("ok") }
             okB.setOnLongClickListener { okB.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS); startVoice(); true }   // (v679) ضغطة واحدة = موافق · ضغطة طويلة = ميكروفون
@@ -421,25 +403,8 @@ object ControllerPad {
             tabTouch.setOnClickListener { setMode(false) }
             setMode(true)
 
-            // ── (v782) تحكم الفيديو على طول (⏮ ⏪10 ▶/⏸ 10⏩ ⏭) — لو مفيش فيديو بيتجاهله التلفزيون ──
-            fun pl(a: String, v: Long = 0L) { Thread { try { RemoteClient.player(a, v) } catch (e: Throwable) { LogStore.err("ControllerPad:pl", e) } }.also { it.isDaemon = true }.start() }
-            fun tbtn(t: String, sp: Float, big: Boolean, fire: () -> Unit): View = IconTextView(act).apply {
-                text = t; textSize = sp; setTextColor(Color.WHITE); gravity = Gravity.CENTER; includeFontPadding = false
-                typeface = android.graphics.Typeface.DEFAULT_BOLD; layoutDirection = View.LAYOUT_DIRECTION_RTL
-                background = if (big) GradientDrawable().apply { shape = GradientDrawable.RECTANGLE; cornerRadius = dpf(22f); setColor(0xFF2563EB.toInt()); setStroke(dp(1), 0xFF3B82F6.toInt()) } else cardBg(false)
-                bind(this, false, fire)
-            }
-            val tr = android.widget.LinearLayout(act).apply { orientation = android.widget.LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_LTR; gravity = Gravity.CENTER_VERTICAL }
-            tr.addView(tbtn("⏮", 22f, false) { pl("prev") }, android.widget.LinearLayout.LayoutParams(0, dp(54), 1f).apply { marginEnd = dp(6) })
-            tr.addView(tbtn("⏪ 10", 14f, false) { pl("seek", -10000L) }, android.widget.LinearLayout.LayoutParams(0, dp(54), 1f).apply { marginEnd = dp(6) })
-            tr.addView(tbtn("▶ / ⏸", 18f, true) { pl("toggle") }, android.widget.LinearLayout.LayoutParams(0, dp(62), 1.5f).apply { marginEnd = dp(6) })
-            tr.addView(tbtn("10 ⏩", 14f, false) { pl("seek", 10000L) }, android.widget.LinearLayout.LayoutParams(0, dp(54), 1f).apply { marginEnd = dp(6) })
-            tr.addView(tbtn("⏭", 22f, false) { pl("next") }, android.widget.LinearLayout.LayoutParams(0, dp(54), 1f))
-            col.addView(tr, android.widget.LinearLayout.LayoutParams(-1, dp(62)).apply { topMargin = dp(4) })
-
             // ── (v672) سلايدر الصوت بالعرض — (v678) اسحب شمال = أعلى، يمين = أوطى ──
             val volBar = VolumeBar(act) { p -> RemoteClient.setVolume(p) }
-            col.addView(volBar, android.widget.LinearLayout.LayoutParams(-1, dp(46)).apply { topMargin = dp(10) })
             val volSync = object : Runnable {   // لو الصوت اتغيّر من ريموت التلفزيون نفسه: السلايدر يلحق (إلا وإنت ماسكه)
                 override fun run() {
                     val v = RemoteClient.tvVol
@@ -449,44 +414,63 @@ object ControllerPad {
             }
             hh.post(volSync)
 
-            fun cardE(label: String, emoji: String, c1: Int, c2: Int, fire: () -> Unit): View {
-                val cd = android.widget.LinearLayout(act).apply {
-                    orientation = android.widget.LinearLayout.VERTICAL; gravity = Gravity.CENTER; background = cardBg(false)
-                    contentDescription = label; setPadding(dp(2), dp(6), dp(2), dp(6))
-                }
-                val box = FrameLayout(act).apply { background = GradientDrawable(GradientDrawable.Orientation.TL_BR, intArrayOf(c1, c2)).apply { shape = GradientDrawable.RECTANGLE; cornerRadius = dpf(13f) } }
-                box.addView(TextView(act).apply { text = emoji; textSize = 20f; gravity = Gravity.CENTER; includeFontPadding = false }, FrameLayout.LayoutParams(-1, -1, Gravity.CENTER))
-                cd.addView(box, android.widget.LinearLayout.LayoutParams(dp(36), dp(36)))
-                cd.addView(TextView(act).apply { text = label; textSize = 12.5f; setTextColor(Color.WHITE); gravity = Gravity.CENTER; typeface = android.graphics.Typeface.DEFAULT_BOLD; includeFontPadding = false; maxLines = 1; layoutDirection = View.LAYOUT_DIRECTION_RTL },
-                    android.widget.LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(6) })
-                bind(cd, false, fire)
-                return cd
-            }
-            fun row2(vararg cells: View): View {
+            fun cardS(label: String, kind: String, c1: Int, c2: Int, repeat: Boolean = false, fs: Float = 10.5f, ic: Int = 26, fire: () -> Unit): View =
+                card(label, kind, c1, c2, false, repeat, fs, ic, fire)
+            fun rowC(h: Int, gp: Int, vararg cells: View): View {
                 val r = android.widget.LinearLayout(act).apply { orientation = android.widget.LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_LTR }
-                cells.forEachIndexed { i, c -> r.addView(c, android.widget.LinearLayout.LayoutParams(0, dp(76), 1f).apply { if (i > 0) leftMargin = dp(8) }) }
+                cells.forEachIndexed { i, c -> r.addView(c, android.widget.LinearLayout.LayoutParams(0, h, 1f).apply { if (i > 0) leftMargin = gp }) }
                 return r
             }
-            fun openLibrary() {
-                try {
-                    val tv = RemoteClient.lastTv() != null
-                    act.startActivity(Intent(act, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
-                        .putExtra("tab", "videos").putExtra(if (tv) "lib_tv" else "lib_phone", true))
-                    d.dismiss()
-                } catch (e: Throwable) { LogStore.err("ControllerPad:lib", e) }
-            }
-            // ── الوصول السريع: المكتبة · يوتيوب · المتصفح · الليستة ──
-            col.addView(row2(
-                cardE("الليستة", "➕", 0xFF16A34A.toInt(), 0xFF15803D.toInt()) { PlayQueueUi.show(act) },
-                card("متصفح", "globe", 0xFF0EA5E9.toInt(), 0xFF0369A1.toInt(), fs = 12.5f) { d.dismiss(); openOnPhone(act, false) },
-                card("يوتيوب", "youtube", 0xFFE53935.toInt(), 0xFFB71C1C.toInt(), fs = 12.5f) { d.dismiss(); openOnPhone(act, true) },
-                cardE("المكتبة", "📚", 0xFF2563EB.toInt(), 0xFF1D4ED8.toInt()) { openLibrary() }
-            ), android.widget.LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(10) })
-            // ── 👁 الوضع البصري · ⚙ إعدادات التلفزيون ──
-            col.addView(row2(
-                card("إعدادات التلفزيون", "gear", 0xFF3B8DFF.toInt(), 0xFF1D4ED8.toInt(), fs = 12.5f) { TvLookPad.show(act) },
-                card("الوضع البصري", "eye", 0xFF8B5CF6.toInt(), 0xFF6D28D9.toInt(), fs = 12.5f) { Thread { try { RemoteClient.player("vsnap") } catch (_: Throwable) {} }.also { it.isDaemon = true }.start() }
+
+            // ── العمود اليمين: الدايرة · (بصري | إعدادات التلفزيون) · (آخر المشغّل | الرئيسية) · سلايدر الصوت · (+ كتم −) · (متصفح يوتيوب إيقاف تشغيل) ──
+            val rightCol = android.widget.LinearLayout(act).apply { orientation = android.widget.LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_LTR }
+            rightCol.addView(padBox, android.widget.LinearLayout.LayoutParams(padSize, padSize))
+            rightCol.addView(rowC(dp(64), dp(6),
+                cardS("الوضع البصري", "eye", 0xFF8B5CF6.toInt(), 0xFF6D28D9.toInt()) { Thread { try { RemoteClient.player("vsnap") } catch (_: Throwable) {} }.also { it.isDaemon = true }.start() },
+                cardS("إعدادات التلفزيون", "gear", 0xFF3B8DFF.toInt(), 0xFF1D4ED8.toInt()) { TvLookPad.show(act) }
             ), android.widget.LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(8) })
+            rightCol.addView(rowC(dp(64), dp(6),
+                cardS("آخر المشغّل", "recent", 0xFF7C4DBB.toInt(), 0xFF5B3A9B.toInt()) { RecentPicker.show(act) },
+                cardS("الرئيسية", "home", 0xFF0FA3B1.toInt(), 0xFF0B7285.toInt()) { sendKey("home") }
+            ), android.widget.LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(6) })
+            rightCol.addView(volBar, android.widget.LinearLayout.LayoutParams(-1, dp(40)).apply { topMargin = dp(6) })
+            rightCol.addView(rowC(dp(62), dp(5),
+                cardS("رفع الصوت", "vol_plus", 0xFF16A068.toInt(), 0xFF0F7A4F.toInt(), true, 9.5f, 24) { RemoteClient.cmd("vol_up") },
+                cardS("كتم الصوت", "mute", 0xFFE8456F.toInt(), 0xFFBE185D.toInt(), false, 9.5f, 24) { RemoteClient.cmd("mute") },
+                cardS("خفض الصوت", "vol_minus", 0xFF16A068.toInt(), 0xFF0F7A4F.toInt(), true, 9.5f, 24) { RemoteClient.cmd("vol_down") }
+            ), android.widget.LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(6) })
+            rightCol.addView(rowC(dp(62), dp(4),
+                cardS("متصفح", "globe", 0xFF0EA5E9.toInt(), 0xFF0369A1.toInt(), false, 8.5f, 22) { d.dismiss(); openOnPhone(act, false) },
+                cardS("يوتيوب", "youtube", 0xFFE53935.toInt(), 0xFFB71C1C.toInt(), false, 8.5f, 22) { d.dismiss(); openOnPhone(act, true) },
+                cardS("إيقاف مؤقت", "pause", 0xFFD99A12.toInt(), 0xFFB45309.toInt(), false, 8.5f, 22) { sendKey("pause") },
+                cardS("تشغيل", "play", 0xFF14A58A.toInt(), 0xFF0F766E.toInt(), false, 8.5f, 22) { sendKey("play") }
+            ), android.widget.LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(6) })
+
+            // ── العمود الشمال + الصف التحتاني: من صفحة المشغّل (PlayerPad) بنفس أزرارها ونفس أوامرها ──
+            plDispose = PlayerPad.show(act, { d.dismiss() }) { P ->
+                val leftCol = android.widget.LinearLayout(act).apply { orientation = android.widget.LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_LTR }
+                leftCol.addView(P.quick, android.widget.LinearLayout.LayoutParams(-1, dp(84)))
+                leftCol.addView(P.sub, android.widget.LinearLayout.LayoutParams(-1, dp(62)).apply { topMargin = dp(6) })
+                leftCol.addView(P.tabs, android.widget.LinearLayout.LayoutParams(-1, dp(40)).apply { topMargin = dp(6) })
+                leftCol.addView(P.tabBody, android.widget.LinearLayout.LayoutParams(-1, dp(268)).apply { topMargin = dp(4) })
+                val bodyRow = android.widget.LinearLayout(act).apply { orientation = android.widget.LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_LTR }
+                bodyRow.addView(leftCol, android.widget.LinearLayout.LayoutParams(0, -2, 1f))
+                bodyRow.addView(rightCol, android.widget.LinearLayout.LayoutParams(rightW, -2).apply { leftMargin = colGap })
+
+                val top = android.widget.LinearLayout(act).apply { orientation = android.widget.LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_LTR; gravity = Gravity.CENTER_VERTICAL }
+                top.addView(P.mk("‹  رجوع", 13f, 0xFF2563EB.toInt(), 0xFF5B8DEF.toInt()) { sendKey("back") }, android.widget.LinearLayout.LayoutParams(dp(78), dp(46)))   // رجوع التلفزيون (مكان كارت «رجوع» القديم)
+                top.addView(sw, android.widget.LinearLayout.LayoutParams(0, dp(46), 1f).apply { leftMargin = dp(8); rightMargin = dp(8) })
+                top.addView(P.logBtn, android.widget.LinearLayout.LayoutParams(dp(66), dp(46)))
+
+                col.addView(top, android.widget.LinearLayout.LayoutParams(-1, dp(46)))
+                col.addView(P.info, android.widget.LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(4) })
+                col.addView(bodyRow, android.widget.LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(6) })
+                col.addView(P.tr, android.widget.LinearLayout.LayoutParams(-1, dp(52)).apply { topMargin = dp(8) })
+                col.addView(P.transport, android.widget.LinearLayout.LayoutParams(-1, dp(72)).apply { topMargin = dp(6) })
+                col.addView(P.repeatRow, android.widget.LinearLayout.LayoutParams(-1, dp(58)).apply { topMargin = dp(4) })
+                col.addView(P.bar, android.widget.LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(8) })
+                col.addView(P.times, android.widget.LinearLayout.LayoutParams(-1, -2))
+            }
 
             // (v680) الريموت ما بيسكرولش: لو المحتوى أطول من الشاشة بيتصغّر كله بنسبة تلائمها
             val sc = object : ScrollView(act) {
@@ -495,32 +479,6 @@ object ControllerPad {
             }.apply { isFillViewport = true; overScrollMode = View.OVER_SCROLL_NEVER; isVerticalScrollBarEnabled = false; addView(col, FrameLayout.LayoutParams(-1, -2)) }
             root.addView(sc, FrameLayout.LayoutParams(-1, -1))
             root.addView(st, FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.CENTER_HORIZONTAL).apply { topMargin = dp(40) })
-            // ── (v782) لو فيه فيديو شغّال على التلفزيون: مقبض ▲ من تحت — دوسة أو اسحب لفوق ← كل تحكمات المشغّل (ترجمة · نص · تزامن · ذكاء · أدوات) ──
-            val handle = android.widget.LinearLayout(act).apply {
-                orientation = android.widget.LinearLayout.VERTICAL; gravity = Gravity.CENTER; visibility = View.GONE
-                background = GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, intArrayOf(0xFF2B4A85.toInt(), 0xFF1B2F5C.toInt())).apply {
-                    shape = GradientDrawable.RECTANGLE; cornerRadii = floatArrayOf(dpf(26f), dpf(26f), dpf(26f), dpf(26f), 0f, 0f, 0f, 0f); setStroke(dp(1), 0xFF3B82F6.toInt())
-                }
-            }
-            handle.addView(TextView(act).apply { text = "▲"; textSize = 15f; setTextColor(0xFF8EEBFF.toInt()); gravity = Gravity.CENTER; includeFontPadding = false })
-            handle.addView(TextView(act).apply { text = "تحكّم في الفيديو الشغّال"; textSize = 14f; setTextColor(Color.WHITE); typeface = android.graphics.Typeface.DEFAULT_BOLD; gravity = Gravity.CENTER; includeFontPadding = false; layoutDirection = View.LAYOUT_DIRECTION_RTL })
-            root.addView(handle, FrameLayout.LayoutParams(-1, dp(58), Gravity.BOTTOM).apply { leftMargin = dp(24); rightMargin = dp(24) })
-            var hy = 0f
-            handle.setOnTouchListener { _, e ->
-                when (e.actionMasked) {
-                    MotionEvent.ACTION_DOWN -> hy = e.rawY
-                    MotionEvent.ACTION_UP -> if (hy - e.rawY > dp(24) || Math.abs(e.rawY - hy) < dp(10)) safe("ControllerPad:drawer") { PlayerPad.show(act) { d.dismiss() } }
-                }
-                true
-            }
-            val handleSync = object : Runnable {
-                override fun run() {
-                    val live = try { LinkSession.mirror.live && LinkSession.mirror.gotFirst } catch (_: Throwable) { false }
-                    handle.visibility = if (live) View.VISIBLE else View.GONE
-                    hh.postDelayed(this, 1000L)
-                }
-            }
-            hh.post(handleSync)
             root.post {
                 try {
                     val avail = root.height.toFloat(); val need = col.height.toFloat()
@@ -534,7 +492,7 @@ object ControllerPad {
             var connectFn: () -> Unit = {}
 
             d.setContentView(root)
-            d.setOnDismissListener { try { voice?.stop() } catch (_: Throwable) {}; hh.removeCallbacksAndMessages(null); try { onClose?.invoke() } catch (_: Throwable) {} }
+            d.setOnDismissListener { try { voice?.stop() } catch (_: Throwable) {}; try { plDispose?.invoke() } catch (_: Throwable) {}; hh.removeCallbacksAndMessages(null); try { onClose?.invoke() } catch (_: Throwable) {} }
             d.window?.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
             d.show()
 

@@ -91,11 +91,20 @@ class VertVolume(ctx: Context, private val onChange: (Int) -> Unit) : View(ctx) 
  * الحالة (عنوان · عدّاد الجمل · سرعة · ترجمة · تغطية الشريط) بتيجي من LinkSession.mirror (نفس /sync بتاع وضع المتحكم)،
  * والأوامر بتروح PlayerActivity.rAct على التلفزيون عن طريق RemoteClient.player(...).
  */
+/** (v787) أجزاء صفحة المشغّل اللي الريموت بيرصّها في صفحته الواحدة (PlayerPad.show بـ embedInto) */
+class PadParts(
+    val quick: View, val sub: View, val tabs: View, val tabBody: View,
+    val tr: View, val transport: View, val bar: View, val times: View,
+    val logBtn: View, val repeatRow: View, val info: View,
+    val mk: (String, Float, Int, Int, () -> Unit) -> TextView
+)
+
 object PlayerPad {
     /** (v684) آخر مترجم اتختار لترجمة ملف الترجمة (google / gemini) */
     @Volatile private var lastSfEng = "gemini"
 
-    fun show(act: Activity, onLeave: (() -> Unit)? = null) {
+    fun show(act: Activity, onLeave: (() -> Unit)? = null, embedInto: ((PadParts) -> Unit)? = null): (() -> Unit)? {
+        var outDispose: (() -> Unit)? = null
         try {
             try { RemoteClient.init(act) } catch (_: Throwable) {}
             val dm = act.resources.displayMetrics
@@ -104,7 +113,7 @@ object PlayerPad {
             val th = Themes.byId(Cfg.str("theme", "mx"))
             val hh = Handler(Looper.getMainLooper())
             val oldOri = act.requestedOrientation
-            try { act.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT } catch (_: Throwable) {}
+            if (embedInto == null) { try { act.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT } catch (_: Throwable) {} }
             val d = Dialog(act, android.R.style.Theme_Translucent_NoTitleBar)   // (v782) ورقة بتطلع من تحت فوق الريموت بدل صفحة كاملة
             val root = FrameLayout(act).apply {
                 layoutDirection = View.LAYOUT_DIRECTION_LTR
@@ -759,13 +768,14 @@ object PlayerPad {
                 pr.addView(btn("📱\nشاشة الموبايل", 15f) { close(); openLib(false) }, lp(0, dp(96), 1f).apply { marginStart = dp(4); marginEnd = dp(4) })
                 body.addView(pr, lp(-1, -2).apply { topMargin = dp(12) })
             }
+            val idleH = if (embedInto != null) dp(84) else dp(104)   // (v787) في الصفحة الموحّدة الكروت أصغر
             fun idleBtn(icon: String, t: String, fill: Int, line: Int, tap: () -> Unit): TextView =
-                btn(icon + "\n" + t, 12.5f, fill, line) { tap() }.apply { setPadding(dp(2), dp(10), dp(2), dp(10)) }
+                btn(icon + "\n" + t, if (embedInto != null) 10f else 12.5f, fill, line) { tap() }.apply { if (embedInto != null) setPadding(dp(1), dp(4), dp(1), dp(4)) else setPadding(dp(2), dp(10), dp(2), dp(10)) }
             val idleRow = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; isBaselineAligned = false; layoutDirection = View.LAYOUT_DIRECTION_RTL }
-            idleRow.addView(idleBtn("📚", "المكتبة", 0xFF2563EB.toInt(), 0xFF5B8DEF.toInt()) { sheetLib() }, lp(0, dp(104), 1f).apply { marginStart = dp(3); marginEnd = dp(3) })
-            idleRow.addView(idleBtn("▶", "يوتيوب", 0xFFD93A36.toInt(), 0xFFFF6F69.toInt()) { ControllerPad.openOnPhone(act, true); leave() }, lp(0, dp(104), 1f).apply { marginStart = dp(3); marginEnd = dp(3) })
-            idleRow.addView(idleBtn("🌐", "المتصفح", 0xFF0B8BC4.toInt(), 0xFF38BDF8.toInt()) { ControllerPad.openOnPhone(act, false); leave() }, lp(0, dp(104), 1f).apply { marginStart = dp(3); marginEnd = dp(3) })
-            idleRow.addView(idleBtn("🕘", "سجل المشاهدة", 0xFF6D4BB8.toInt(), 0xFF9B7BE6.toInt()) { RecentPicker.show(act) }, lp(0, dp(104), 1f).apply { marginStart = dp(3); marginEnd = dp(3) })   // (v692) آخر اللي اتشاف على التلفزيون والموبايل مع بعض
+            idleRow.addView(idleBtn("📚", "المكتبة", 0xFF2563EB.toInt(), 0xFF5B8DEF.toInt()) { sheetLib() }, lp(0, idleH, 1f).apply { marginStart = dp(3); marginEnd = dp(3) })
+            idleRow.addView(idleBtn("▶", "يوتيوب", 0xFFD93A36.toInt(), 0xFFFF6F69.toInt()) { ControllerPad.openOnPhone(act, true); leave() }, lp(0, idleH, 1f).apply { marginStart = dp(3); marginEnd = dp(3) })
+            idleRow.addView(idleBtn("🌐", "المتصفح", 0xFF0B8BC4.toInt(), 0xFF38BDF8.toInt()) { ControllerPad.openOnPhone(act, false); leave() }, lp(0, idleH, 1f).apply { marginStart = dp(3); marginEnd = dp(3) })
+            idleRow.addView(idleBtn("🕘", "سجل المشاهدة", 0xFF6D4BB8.toInt(), 0xFF9B7BE6.toInt()) { RecentPicker.show(act) }, lp(0, idleH, 1f).apply { marginStart = dp(3); marginEnd = dp(3) })   // (v692) آخر اللي اتشاف على التلفزيون والموبايل مع بعض
             val idleNote = label("", 12f, cDim, false)
             val idleBox = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL; visibility = View.GONE }
             idleBox.addView(idleRow, lp(-1, -2)); idleBox.addView(idleNote, lp(-1, -2).apply { topMargin = dp(6) })
@@ -817,6 +827,14 @@ object PlayerPad {
             plusTap = { sheetPlus() }
 
             // ── العمود الشمال: عدّاد + كبسولات + سرعة/لهجة + تابات ──
+            // ── (v787) أزرار الصفحة الموحّدة: سطر معلومة + صف (تدوير · تكرار واحد · تكرار الكل · قائمة التشغيل) + ⛶ العرض ──
+            val infoLine = label("", 11.5f, cDim, false).apply { maxLines = 1; ellipsize = TextUtils.TruncateAt.END }
+            val rotTop = btn("🔄\nتدوير الفيديو", 11f) { go("rotate") }
+            val repOne = btn("🔂\nتكرار واحد", 11f) { go("loopset", 1L) }
+            val repAll = btn("🔁\nتكرار الكل", 11f) { go("loopset", 2L) }
+            val plTop = btn("📋\nقائمة التشغيل", 11f) { plusTap() }
+            val fitTop = btn("⛶", 20f) { go("fit") }
+            var dimExtra: List<View> = kotlin.collections.emptyList()
             val left = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_LTR }
             left.addView(idleBox, lp(-1, -2))
             left.addView(cntCard, lp(-1, -2))
@@ -883,13 +901,28 @@ object PlayerPad {
             tPos.gravity = Gravity.START or Gravity.CENTER_VERTICAL
 
             val col = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_LTR; setPadding(dp(16), dp(26), dp(16), dp(12)) }
-            col.addView(headRow, lp(-1, dp(48)))
-            col.addView(mid, lp(-1, 0, 1f).apply { topMargin = dp(6) })
-            col.addView(trRow, lp(-1, dp(52)).apply { topMargin = dp(8) })
-            col.addView(tr, lp(-1, dp(72)).apply { topMargin = dp(8) })
-            col.addView(bar, lp(-1, -2).apply { topMargin = dp(8) })
-            col.addView(times, lp(-1, -2))
-            root.addView(col, FrameLayout.LayoutParams(-1, -1))
+            if (embedInto == null) {
+                col.addView(headRow, lp(-1, dp(48)))
+                col.addView(mid, lp(-1, 0, 1f).apply { topMargin = dp(6) })
+                col.addView(trRow, lp(-1, dp(52)).apply { topMargin = dp(8) })
+                col.addView(tr, lp(-1, dp(72)).apply { topMargin = dp(8) })
+                col.addView(bar, lp(-1, -2).apply { topMargin = dp(8) })
+                col.addView(times, lp(-1, -2))
+                root.addView(col, FrameLayout.LayoutParams(-1, -1))
+            } else {
+                // (v787) الريموت هو اللي بيرصّ الأجزاء دي في صفحته الواحدة: نفكّها من أماكنها هنا الأول
+                idleBox.removeView(idleRow); left.removeView(subRow); left.removeView(tabBar); left.removeView(sc)
+                quick.removeView(aiB); bodyAi.addView(aiB, 0, lp(-1, dp(46)))   // ✨ لهجة وترجمة جوه تاب «ذكاء»
+                headRow.removeView(logTop)
+                for (i0 in 0 until subRow.childCount) { (subRow.getChildAt(i0) as? TextView)?.textSize = 10f }
+                trRow.addView(fitTop, lp(0, dp(52), 1f).apply { marginStart = dp(6) })
+                bodyTools.addView(btn("📱  كمّل الفيديو على الموبايل", 13f) { PlayQueueUi.handoffToPhone(act) { leave() } }, lp(-1, dp(46)).apply { topMargin = dp(6) })
+                val repeatRow = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; isBaselineAligned = false; layoutDirection = View.LAYOUT_DIRECTION_LTR }
+                val rb = kotlin.collections.listOf(rotTop, repOne, repAll, plTop)
+                for (i0 in rb.indices) repeatRow.addView(rb[i0], lp(0, dp(58), 1f).apply { if (i0 > 0) marginStart = dp(6) })
+                dimExtra = kotlin.collections.listOf(subRow, tabBar, sc, repeatRow)
+                embedInto(PadParts(idleRow, subRow, tabBar, sc, trRow, tr, bar, times, logTop, repeatRow, infoLine) { t, sp, f, st0, tp -> btn(t, sp, f, st0) { tp() } })
+            }
 
             // ── رسم الحالة (من LinkSession.mirror) ──
             fun render() {
@@ -960,6 +993,7 @@ object PlayerPad {
                 idleNote.visibility = if (idleNote.text.isEmpty()) View.GONE else View.VISIBLE
                 for (k in 0 until left.childCount) { val c = left.getChildAt(k); c.alpha = if (c === idleBox) 1f else al }   // (v691) التعتيم من غير الأزرار التلاتة
                 volCol.alpha = al; tr.alpha = al; trRow.alpha = al; bar.alpha = al
+                for (v0 in dimExtra) v0.alpha = al
                 speedB.text = "⏩ " + s.optString("speed", "1x")
                 speedBot.text = "⏩\n" + s.optString("speed", "1x")
                 if (!busy) wtSel = s.optString("wtr", wtSel.ifEmpty { "free" })
@@ -994,6 +1028,9 @@ object PlayerPad {
                 dualB.text = "🌐\n" + (if (s.optInt("dual", 0) != 0) "ثنائي: شغّال" else "ثنائي اللغة")
                 val lmN = s.optInt("lm", if (s.optBoolean("loop", false)) 1 else 0)
                 loopTop.text = when (lmN) { 1 -> "🔂"; 2 -> "🔁"; else -> "➡" }
+                repOne.background = bg(if (lmN == 1) cOn else cCard, if (lmN == 1) cOnLine else cLine, 14f)
+                repAll.background = bg(if (lmN == 2) cOn else cCard, if (lmN == 2) cOnLine else cLine, 14f)
+                infoLine.text = (if (!live) cntTv.text.toString() + "  ·  " + modeTv.text else cntTv.text.toString() + (if (modeTv.text.isNotBlank()) "  ·  " + modeTv.text else ""))
                 loopB.text = "🔂\n" + when (lmN) { 1 -> "التكرار: نفس الفيديو"; 2 -> "التكرار: كل الفولدر"; else -> "التكرار: مقفول" }
                 lockB.text = "🔒\n" + (if (s.optBoolean("locked", false)) "مقفول" else "قفل الشاشة")
                 if (!busy) {
@@ -1013,6 +1050,13 @@ object PlayerPad {
                 }
             }
             var startedHere = false
+            fun cleanupEmbed() {   // (v787) تنضيف وضع الصفحة الموحّدة (نفس اللي كان بيحصل عند قفل الورقة)
+                closed = true; hh.removeCallbacksAndMessages(null)
+                try { LinkSession.removeListener(lsn) } catch (_: Throwable) {}
+                if (startedHere) { try { LinkSession.stop() } catch (_: Throwable) {} }
+            }
+            if (embedInto != null) outDispose = { cleanupEmbed() }
+            if (embedInto == null) {
             root.addView(View(act).apply { background = GradientDrawable().apply { shape = GradientDrawable.RECTANGLE; cornerRadius = dpf(3f); setColor(0x66FFFFFF) }; setOnClickListener { d.dismiss() } },
                 FrameLayout.LayoutParams(dp(48), dp(6), Gravity.TOP or Gravity.CENTER_HORIZONTAL).apply { topMargin = dp(8) })   // (v782) مقبض الورقة
             d.setContentView(root)
@@ -1040,6 +1084,7 @@ object PlayerPad {
             d.setCancelable(true)   // (v700) زرار رجوع الموبايل بيقفل الصفحة
             d.window?.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
             d.show()
+            }
             hh.post(tick)
             Thread {
                 val ok = try { RemoteClient.lastTv() != null && RemoteClient.ensureConnected(act.applicationContext, 6000L) } catch (_: Throwable) { false }
@@ -1051,6 +1096,7 @@ object PlayerPad {
                 }
             }.also { it.isDaemon = true }.start()
         } catch (e: Throwable) { LogStore.err("PlayerPad:show", e) }
+        return outDispose
     }
 }
 

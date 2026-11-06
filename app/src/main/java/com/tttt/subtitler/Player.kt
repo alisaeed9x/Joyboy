@@ -588,6 +588,7 @@ class PlayerActivity : Activity(), Host {
             "subs" -> tvSubTracksDialog(anchor)
             // (v531) أزرار الشريط الكامل اللي في مشغّل الموبايل
             "loop" -> loopCycle()   // (v781) عادي ← نفس الفيديو ← كل الفولدر
+            "loopset" -> loopSet(v.toInt())   // (v787) زرار «تكرار واحد» (1) / «تكرار الكل» (2) في الريموت: دوسة تانية على نفس الوضع = يقفله
             "log" -> toggleLog()
             "sent" -> { try { if (::sentDlg.isInitialized) sentDlg.show() } catch (_: Throwable) {} }
             "chars" -> showChars()
@@ -5955,6 +5956,12 @@ class PlayerActivity : Activity(), Host {
     private fun loopMode(): Int = if (Cfg.str("loop", "0") == "1") 1 else if (wrapOn()) 2 else 0
     private fun loopCycle() {
         val n = (loopMode() + 1) % 3
+        Cfg.put("loop", if (n == 1) "1" else "0"); Cfg.put("autoplay_wrap", if (n == 2) "1" else "0")
+        say(when (n) { 1 -> "🔂 تكرار نفس الفيديو"; 2 -> "🔁 تكرار كل فيديوهات الفولدر"; else -> "➡ تشغيل عادي" })
+    }
+    /** (v787) ضبط وضع التكرار مباشرة: 1 نفس الفيديو · 2 كل الفولدر؛ لو هو الوضع الحالي أصلًا يرجع عادي */
+    private fun loopSet(n0: Int) {
+        val n = if (n0 == loopMode()) 0 else n0.coerceIn(0, 2)
         Cfg.put("loop", if (n == 1) "1" else "0"); Cfg.put("autoplay_wrap", if (n == 2) "1" else "0")
         say(when (n) { 1 -> "🔂 تكرار نفس الفيديو"; 2 -> "🔁 تكرار كل فيديوهات الفولدر"; else -> "➡ تشغيل عادي" })
     }
