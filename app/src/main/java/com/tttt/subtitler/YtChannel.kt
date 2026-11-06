@@ -393,7 +393,7 @@ class YtChannelPage(private val act: Activity, private val ui: Ui, private val h
         for (v in sortedItems()) listBox.addView(rowFor(v), LinearLayout.LayoutParams(-1, -2))
     }
 
-    private fun rowFor(v: NpItem): View = if (v.kind == 2) playlistRow(v) else videoCard(v)
+    private fun rowFor(v: NpItem): View = if (v.kind == 3) postRow(v) else if (v.kind == 2) playlistRow(v) else videoCard(v)   // (v793) kind 3 = بوست
 
     // ───────── (v479 م5) تلفزيون: شبكة 4 أعمدة — كل صف 4 كروت متركّزة، OK = فتح، Menu = (شغّل · صوت · تحميل) ─────────
     private fun tvCw(): Int = (sw - ui.dp(32) - cols * ui.dp(12)) / cols
@@ -493,4 +493,21 @@ class YtChannelPage(private val act: Activity, private val ui: Ui, private val h
         return row
     }
 
+
+    /** (v793) بوست مجتمع (من مكتبة Innertube): نص + صورة اختيارية + إعجابات/وقت */
+    private fun postRow(v: NpItem): View {
+        val txt = TextView(act).apply { text = v.title; textSize = 14f; setTextColor(YtSkin.text); maxLines = 8; ellipsize = TextUtils.TruncateAt.END; setLineSpacing(0f, 1.2f) }
+        val meta = TextView(act).apply { text = listOf(v.age, if (v.count > 0) "👍 " + v.count else "").filter { it.isNotBlank() }.joinToString(" · "); textSize = 12f; setTextColor(YtSkin.sub) }
+        val col = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL; setPadding(ui.dp(14), ui.dp(12), ui.dp(14), ui.dp(12)); foreground = YtSkin.ripple()
+            background = GradientDrawable().apply { setColor(YtSkin.surface); cornerRadius = ui.dp(12).toFloat() }
+            setOnClickListener { try { act.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(v.url))) } catch (_: Throwable) {} } }
+        col.addView(txt, LinearLayout.LayoutParams(-1, -2))
+        if (v.thumb.isNotBlank()) {
+            val img = ImageView(act).apply { scaleType = ImageView.ScaleType.CENTER_CROP; setBackgroundColor(YtSkin.chip) }
+            try { Glide.with(act).load(v.thumb).centerCrop().into(img) } catch (_: Throwable) {}
+            col.addView(img, LinearLayout.LayoutParams(-1, ui.dp(190)).apply { topMargin = ui.dp(8) })
+        }
+        col.addView(meta, LinearLayout.LayoutParams(-1, -2).apply { topMargin = ui.dp(8) })
+        return FrameLayout(act).apply { setPadding(ui.dp(12), ui.dp(6), ui.dp(12), ui.dp(6)); addView(col, FrameLayout.LayoutParams(-1, -2)) }
+    }
 }

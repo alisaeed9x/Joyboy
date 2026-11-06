@@ -29,7 +29,7 @@ import java.util.concurrent.Executors
  * القناة اللي مالهاش معرّف UC… أو فشل الـ RSS بتاعها ومفيش كاش → بنرجع للطريقة البطيئة (NewPipe channel()).
  */
 object YtRss {
-    const val TTL_MS = 15 * 60 * 1000L
+    const val TTL_MS = 30 * 60 * 1000L   // (v792) 15->30 دقيقة: نص الطلبات عند فتح التطبيق
     private const val MAX_CH = 1000   // (v756) كان 300 (و120 قبلها) ← اشتراكات كتير كانت بتتقصّ
     private const val PER_CH = 8
     private val RX = Regex("/channel/(UC[A-Za-z0-9_-]{22})")
@@ -96,12 +96,41 @@ object YtRss {
     }
 
     // ───────── تحميل وتحليل RSS ─────────
-    private fun http(url: String): String {
-        val c = URL(url).openConnection() as HttpURLConnection
-        c.connectTimeout = 6000; c.readTimeout = 9000   // (v354) أقصر: القناة البطيئة ما تعطّلش الفيد كله
-        c.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 Chrome/124.0 Mobile Safari/537.36")
+    // (v792) GET شرطي: ETag/Last-Modified محفوظين على القرص → لو مفيش جديد السيرفر يرد 304 (~300 بايت بدل ~15 ك.ب لكل قناة)
+    private class NotModified : RuntimeException("304")
+    private val valid = HashMap<String, Pair<String, String>>()   // url -> (etag, lastModified)
+    @Volatile private var validLoaded = false
+    @Synchronized private fun loadValid() {
+        if (validLoaded) return
+        validLoaded = true
         try {
-            if (c.responseCode != 200) throw RuntimeException("RSS " + c.responseCode)
+            val f = File(dir ?: return, "yt_rss_v.json"); if (!f.isFile) return
+            val o = JSONObject(f.readText())
+            for (k in o.keys()) { val a = o.getJSONArray(k); valid[k] = Pair(a.optString(0), a.optString(1)) }
+        } catch (_: Throwable) {}
+    }
+    @Synchronized private fun saveValid(keepIds: Set<String>) {
+        try {
+            val d = dir ?: return
+            val o = JSONObject()
+            for ((k, v) in valid) { if (keepIds.none { k.contains(it) || k.contains("UU" + it.substring(2)) }) continue; o.put(k, JSONArray().put(v.first).put(v.second)) }
+            val tmp = File(d, "yt_rss_v.json.tmp"); tmp.writeText(o.toString()); tmp.renameTo(File(d, "yt_rss_v.json"))
+        } catch (_: Throwable) {}
+    }
+    private fun http(url: String, cond: Boolean = false): String {
+        val c = URL(url).openConnection() as HttpURLConnection
+        c.connectTimeout = 6000; c.readTimeout = 9000   // (v354) ????: ?????? ??????? ?? ?????? ????? ???
+        c.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 Chrome/124.0 Mobile Safari/537.36")
+        if (cond) synchronized(this) { valid[url] }?.let { v ->
+            if (v.first.isNotEmpty()) c.setRequestProperty("If-None-Match", v.first)
+            if (v.second.isNotEmpty()) c.setRequestProperty("If-Modified-Since", v.second)
+        }
+        try {
+            val code = c.responseCode
+            if (code == 304) throw NotModified()
+            if (code != 200) throw RuntimeException("RSS " + code)
+            val et = c.getHeaderField("ETag") ?: ""; val lm = c.getHeaderField("Last-Modified") ?: ""
+            if (et.isNotEmpty() || lm.isNotEmpty()) synchronized(this) { valid[url] = Pair(et, lm) }
             return c.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
         } finally { c.disconnect() }
     }
@@ -142,12 +171,14 @@ object YtRss {
 
     /** (v471) RSS يوتيوب بيرجّع 404/500 عشوائي لقنوات سليمة — كان فشل واحد = القناة تختفي من الفيد. دلوقتي: لو فشل رابط القناة بنجرّب رابط قايمة «الرفع» (UU…)
      *  وبنعيد مرة واحدة؛ وأخطاء الشبكة (مفيش نت/مهلة) ما بنكرّرهاش عشان ما نعلّقش. */
-    private fun getFeed(cid: String, chUrl: String): List<NpItem> {
+    private fun getFeed(cid: String, chUrl: String, cond: Boolean = false): List<NpItem> {
+        loadValid()
         val urls = listOf("https://www.youtube.com/feeds/videos.xml?channel_id=$cid", "https://www.youtube.com/feeds/videos.xml?playlist_id=UU" + cid.substring(2))
         var last: Throwable? = null
         for (round in 0..1) {
             for (u in urls) {
-                try { return parse(http(u), chUrl).take(PER_CH) }
+                try { return parse(http(u, cond), chUrl).take(PER_CH) }
+                catch (t: NotModified) { throw t }
                 catch (t: java.net.UnknownHostException) { throw t }
                 catch (t: java.net.ConnectException) { throw t }
                 catch (t: java.net.SocketTimeoutException) { last = t; break }
@@ -163,9 +194,11 @@ object YtRss {
         val e = synchronized(this) { mem[cid] }
         if (!force && e != null && (staleOk || now - e.t < TTL_MS)) return e.items   // (v354) staleOk: اعرض الكاش فورًا حتى لو قديم
         return try {
-            val l = getFeed(cid, chUrl)
+            val l = getFeed(cid, chUrl, e != null)
             synchronized(this) { mem[cid] = Entry(now, l) }
             l
+        } catch (n: NotModified) {   // (v792) مفيش جديد: جدّد التوقيت وارجع للمحفوظ
+            if (e != null) { synchronized(this) { mem[cid] = Entry(now, e.items) }; e.items } else throw n
         } catch (t: Throwable) { e?.items ?: throw t }   // فشل → آخر كاش لو موجود
     }
 
@@ -263,6 +296,7 @@ object YtRss {
             // العمر بيتحسب من جديد (الكاش ممكن يكون قديم)
             val fresh = all.distinctBy { it.id }.map { if (it.ts > 0L) NpItem(it.id, it.title, it.channel, it.channelUrl, it.thumb, it.dur, it.count, ageOf(it.ts), it.kind, it.url, it.ts) else it }
             saveDisk(list.mapNotNull { chanId(it.channelUrl) }.toSet())
+            saveValid(list.mapNotNull { chanId(it.channelUrl) }.toSet())
             YtRes(fresh.sortedByDescending { it.ts }.take(200), null)
         } finally { pool.shutdown() }
     }

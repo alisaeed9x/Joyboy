@@ -37,6 +37,8 @@ class DualProgress(ctx: Context, val th: Theme) : View(ctx) {
     var dragging = false
     /** mini = شكل شريط التقدم الرئيسي في الأصل (.progress-bar-bg: خط 4dp بتدرج كهرماني→سماوي + خريطة التغطية تحته) */
     var mini = false
+    /** (v796) نسخة أسمك وأطول للريموت: مسار وإبهام أكبر + منطقة لمس أعلى */
+    var big = false
     /** (v104) شريط رفيع جدًا دايم تحت الفيديو: 3 خطوط (برتقالي/تقدم/أخضر) من غير لمس */
     var thin = false
     var onSeek: ((Float) -> Unit)? = null
@@ -69,7 +71,7 @@ class DualProgress(ctx: Context, val th: Theme) : View(ctx) {
     }
 
     override fun onMeasure(w: Int, h: Int) {
-        setMeasuredDimension(MeasureSpec.getSize(w), if (thin) MeasureSpec.getSize(h).coerceAtLeast(3) else ((if (mini) 30 else 34) * d).toInt())
+        setMeasuredDimension(MeasureSpec.getSize(w), if (thin) MeasureSpec.getSize(h).coerceAtLeast(3) else ((if (mini) (if (big) 60 else 30) else 34) * d).toInt())
     }
 
     private fun strip(c: Canvas, w: Float, y0: Float, hh: Float, segs: List<DoubleArray>, color: Int, trackColor: Int?) {
@@ -99,12 +101,13 @@ class DualProgress(ctx: Context, val th: Theme) : View(ctx) {
             return
         }
         if (mini) {
-            val cy = height / 2f - 3f * d
-            val tr = 2f * d
+            val kk = if (big) 2.6f else 1f
+            val cy = height / 2f - 3f * d * kk
+            val tr = 2f * d * kk
             // الشريط التالت (فوق): الجمل اللي لسه هتتغير — بيظهر بس لما فيه تغيير شغال
-            if (buf.isNotEmpty()) strip(c, w, 3f * d, 3f * d, buf, 0xFF22D3EE.toInt(), 0x3322D3EE)
-            if (pend.isNotEmpty()) strip(c, w, 3f * d, 3f * d, pend, 0xFFF59E0B.toInt(), if (buf.isEmpty()) 0x33F59E0B else null)
-            if (refine.isNotEmpty()) strip(c, w, 3f * d, 3f * d, refine, 0xFF3B82F6.toInt(), null)
+            if (buf.isNotEmpty()) strip(c, w, 3f * d, 3f * d * kk, buf, 0xFF22D3EE.toInt(), 0x3322D3EE)
+            if (pend.isNotEmpty()) strip(c, w, 3f * d, 3f * d * kk, pend, 0xFFF59E0B.toInt(), if (buf.isEmpty()) 0x33F59E0B else null)
+            if (refine.isNotEmpty()) strip(c, w, 3f * d, 3f * d * kk, refine, 0xFF3B82F6.toInt(), null)
             p.color = th.border
             c.drawRoundRect(RectF(0f, cy - tr, w, cy + tr), 3f * d, 3f * d, p)
             val px = w * played.coerceIn(0f, 1f)
@@ -114,9 +117,9 @@ class DualProgress(ctx: Context, val th: Theme) : View(ctx) {
                 p.shader = null
             }
             // الشريط التاني (تحت): أخضر = فيه جملة ترجمة فعلًا (بيتقطع عند الفجوات)
-            strip(c, w, cy + tr + 3f * d, 4f * d, cov, 0xFF22C55E.toInt(), th.border)
-            if (vis.isNotEmpty()) strip(c, w, cy + tr + 8.5f * d, 3f * d, vis, 0xFF3B82F6.toInt(), null)
-            val r = (if (dragging) 5.5f else 3.5f) * d
+            strip(c, w, cy + tr + 3f * d * kk, 4f * d * kk, cov, 0xFF22C55E.toInt(), th.border)
+            if (vis.isNotEmpty()) strip(c, w, cy + tr + 8.5f * d * kk, 3f * d * kk, vis, 0xFF3B82F6.toInt(), null)
+            val r = (if (dragging) 5.5f else 3.5f) * d * (if (big) 2.4f else 1f)
             val tcx = px.coerceIn(r, w - r)
             p.style = Paint.Style.FILL; p.shader = null; p.color = Color.WHITE
             c.drawCircle(tcx, cy, r, p)

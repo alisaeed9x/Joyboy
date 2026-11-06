@@ -95,7 +95,7 @@ class VertVolume(ctx: Context, private val onChange: (Int) -> Unit) : View(ctx) 
 class PadParts(
     val quick: View, val sub: View, val tabs: View, val tabBody: View,
     val tr: View, val transport: View, val bar: View, val times: View,
-    val logBtn: View, val repeatRow: View, val info: View,
+    val logBtn: View, val repeatRow: View, val info: View, val studio: View,   // (v795) studio = زرار واحد لكل تحكمات الترجمة (سلايدرات)
     val mk: (String, Float, Int, Int, () -> Unit) -> TextView
 )
 
@@ -682,11 +682,13 @@ object PlayerPad {
             }
             // 🔤 نص
             val bodyText = newBody()
-            val fontTv = stepRow(bodyText, { go("fontprev") }, { go("font") })
-            val sizeTv = stepRow(bodyText, { go("scale", -10L) }, { go("scale", 10L) })
-            val posTv = stepRow(bodyText, { go("posy", -10L) }, { go("posy", 10L) })
-            val bgTv = stepRow(bodyText, { go("bgopa", (bgNow - 10).coerceIn(0, 100).toLong()) }, { go("bgopa", (bgNow + 10).coerceIn(0, 100).toLong()) })
+            val hiddenBody = newBody()   // (v795) الصفوف القديمة (+/−) مخفية: التحكم بقى بسلايدرات في الاستوديو
+            val fontTv = stepRow(hiddenBody, { go("fontprev") }, { go("font") })
+            val sizeTv = stepRow(hiddenBody, { go("scale", -10L) }, { go("scale", 10L) })
+            val posTv = stepRow(hiddenBody, { go("posy", -10L) }, { go("posy", 10L) })
+            val bgTv = stepRow(hiddenBody, { go("bgopa", (bgNow - 10).coerceIn(0, 100).toLong()) }, { go("bgopa", (bgNow + 10).coerceIn(0, 100).toLong()) })
             bodyText.addView(btn("🎨 استوديو الترجمة", 13f) { sheetStudio() }, lp(-1, dp(46)).apply { topMargin = dp(6) })
+            val studioBtn = btn("🎚 تحكم الترجمة (حجم · موضع · شفافية · خط)", 15f) { sheetStudio() }
             // ⏱ تزامن
             val bodySync = newBody()
             val timeTv = stepRow(bodySync, { go("shift", -250L) }, { go("shift", 250L) })
@@ -892,7 +894,7 @@ object PlayerPad {
             tr.addView(speedBot, lp(0, dp(58), 1f))
 
             // ── شريط التقدم تحت خالص: نفس DualProgress بتاع المشغّل (أخضر = مترجم · كهرماني = لسه هيتغيّر · أزرق = تنقيح) ──
-            val bar = DualProgress(act, th).apply { mini = true }
+            val bar = DualProgress(act, th).apply { mini = true; big = embedInto != null }   // (v796)
             val tPos = label("00:00", 13f, 0xFFB8C4DA.toInt(), false); val tDur = label("00:00", 13f, 0xFFB8C4DA.toInt(), false)
             bar.onScrub = { f -> tPos.text = tm((f * durNow).toLong()) }
             bar.onSeek = { f -> val ms = (f * durNow).toLong(); holdUntil = System.currentTimeMillis() + 1300L; tPos.text = tm(ms); go("seekto", ms) }
@@ -921,7 +923,7 @@ object PlayerPad {
                 val rb = kotlin.collections.listOf(rotTop, repOne, repAll, plTop)
                 for (i0 in rb.indices) repeatRow.addView(rb[i0], lp(0, dp(58), 1f).apply { if (i0 > 0) marginStart = dp(6) })
                 dimExtra = kotlin.collections.listOf(subRow, tabBar, sc, repeatRow)
-                embedInto(PadParts(idleRow, subRow, tabBar, sc, trRow, tr, bar, times, logTop, repeatRow, infoLine) { t, sp, f, st0, tp -> btn(t, sp, f, st0) { tp() } })
+                embedInto(PadParts(idleRow, subRow, tabBar, sc, trRow, tr, bar, times, logTop, repeatRow, infoLine, studioBtn) { t, sp, f, st0, tp -> btn(t, sp, f, st0) { tp() } })
             }
 
             // ── رسم الحالة (من LinkSession.mirror) ──

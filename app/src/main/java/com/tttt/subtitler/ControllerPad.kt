@@ -341,7 +341,8 @@ object ControllerPad {
             val colGap = dp(8)
             val rightW = (inner * 0.385f).toInt()
             val padFull = dp(259)
-            val padSize = rightW
+            val volW = dp(70)   // (v796) شريط الصوت عمودي على الحافة اليمين
+            val padSize = ((inner - volW - dp(8)) * 0.52f).toInt()   // (v795) الدايرة في النص وأكبر
             val padK = padSize.toFloat() / padFull.toFloat()   // الدايرة بتتصغّر على قد العمود اليمين
 
             // ── التبديل: أزرار الاتجاهات | لوحة اللمس ──
@@ -422,49 +423,48 @@ object ControllerPad {
                 return r
             }
 
-            // ── العمود اليمين: الدايرة · (بصري | إعدادات التلفزيون) · (آخر المشغّل | الرئيسية) · سلايدر الصوت · (+ كتم −) · (متصفح يوتيوب إيقاف تشغيل) ──
-            val rightCol = android.widget.LinearLayout(act).apply { orientation = android.widget.LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_LTR }
-            rightCol.addView(padBox, android.widget.LinearLayout.LayoutParams(padSize, padSize))
-            rightCol.addView(rowC(dp(64), dp(6),
-                cardS("الوضع البصري", "eye", 0xFF8B5CF6.toInt(), 0xFF6D28D9.toInt()) { Thread { try { RemoteClient.player("vsnap") } catch (_: Throwable) {} }.also { it.isDaemon = true }.start() },
-                cardS("إعدادات التلفزيون", "gear", 0xFF3B8DFF.toInt(), 0xFF1D4ED8.toInt()) { TvLookPad.show(act) }
+            // ── (v795) ترتيب جديد: الدايرة في النص + 4 أزرار في الأركان (رجوع/هوم تحت، إعدادات/آخر مشغّل فوق) + صوت كبير + باقي الأزرار مفرودة بالعرض ──
+            val cw = dp(70)
+            val padWrap = FrameLayout(act).apply { clipChildren = false }
+            padWrap.addView(padBox, FrameLayout.LayoutParams(padSize, padSize, Gravity.CENTER))
+            padWrap.addView(cardS("رجوع", "back", 0xFF2563EB.toInt(), 0xFF5B8DEF.toInt(), false, 12f, 30) { sendKey("back") }, FrameLayout.LayoutParams(cw, cw, Gravity.BOTTOM or Gravity.RIGHT))
+            padWrap.addView(cardS("الرئيسية", "home", 0xFF0FA3B1.toInt(), 0xFF0B7285.toInt(), false, 12f, 30) { sendKey("home") }, FrameLayout.LayoutParams(cw, cw, Gravity.BOTTOM or Gravity.LEFT))
+            padWrap.addView(cardS("إعدادات التلفزيون", "gear", 0xFF3B8DFF.toInt(), 0xFF1D4ED8.toInt(), false, 10.5f, 28) { TvLookPad.show(act) }, FrameLayout.LayoutParams(cw, cw, Gravity.TOP or Gravity.RIGHT))
+            padWrap.addView(cardS("آخر المشغّل", "recent", 0xFF7C4DBB.toInt(), 0xFF5B3A9B.toInt(), false, 11f, 28) { RecentPicker.show(act) }, FrameLayout.LayoutParams(cw, cw, Gravity.TOP or Gravity.LEFT))
+
+            val midL = android.widget.LinearLayout(act).apply { orientation = android.widget.LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_LTR }
+            val mid = android.widget.LinearLayout(act).apply { orientation = android.widget.LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_LTR }
+            volBar.vertical = true
+            mid.addView(midL, android.widget.LinearLayout.LayoutParams(0, -2, 1f))
+            mid.addView(volBar, android.widget.LinearLayout.LayoutParams(volW, -1).apply { leftMargin = dp(8) })   // عمودي بطول الشاشة (بطول الدايرة + الأزرار)
+            midL.addView(padWrap, android.widget.LinearLayout.LayoutParams(-1, padSize))
+            midL.addView(rowC(dp(76), dp(8),
+                cardS("رفع الصوت", "vol_plus", 0xFF16A068.toInt(), 0xFF0F7A4F.toInt(), true, 12f, 30) { RemoteClient.cmd("vol_up") },
+                cardS("كتم الصوت", "mute", 0xFFE8456F.toInt(), 0xFFBE185D.toInt(), false, 12f, 30) { RemoteClient.cmd("mute") },
+                cardS("خفض الصوت", "vol_minus", 0xFF16A068.toInt(), 0xFF0F7A4F.toInt(), true, 12f, 30) { RemoteClient.cmd("vol_down") }
             ), android.widget.LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(8) })
-            rightCol.addView(rowC(dp(64), dp(6),
-                cardS("آخر المشغّل", "recent", 0xFF7C4DBB.toInt(), 0xFF5B3A9B.toInt()) { RecentPicker.show(act) },
-                cardS("الرئيسية", "home", 0xFF0FA3B1.toInt(), 0xFF0B7285.toInt()) { sendKey("home") }
-            ), android.widget.LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(6) })
-            rightCol.addView(volBar, android.widget.LinearLayout.LayoutParams(-1, dp(40)).apply { topMargin = dp(6) })
-            rightCol.addView(rowC(dp(62), dp(5),
-                cardS("رفع الصوت", "vol_plus", 0xFF16A068.toInt(), 0xFF0F7A4F.toInt(), true, 9.5f, 24) { RemoteClient.cmd("vol_up") },
-                cardS("كتم الصوت", "mute", 0xFFE8456F.toInt(), 0xFFBE185D.toInt(), false, 9.5f, 24) { RemoteClient.cmd("mute") },
-                cardS("خفض الصوت", "vol_minus", 0xFF16A068.toInt(), 0xFF0F7A4F.toInt(), true, 9.5f, 24) { RemoteClient.cmd("vol_down") }
-            ), android.widget.LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(6) })
-            rightCol.addView(rowC(dp(62), dp(4),
-                cardS("متصفح", "globe", 0xFF0EA5E9.toInt(), 0xFF0369A1.toInt(), false, 8.5f, 22) { d.dismiss(); openOnPhone(act, false) },
-                cardS("يوتيوب", "youtube", 0xFFE53935.toInt(), 0xFFB71C1C.toInt(), false, 8.5f, 22) { d.dismiss(); openOnPhone(act, true) },
-                cardS("إيقاف مؤقت", "pause", 0xFFD99A12.toInt(), 0xFFB45309.toInt(), false, 8.5f, 22) { sendKey("pause") },
-                cardS("تشغيل", "play", 0xFF14A58A.toInt(), 0xFF0F766E.toInt(), false, 8.5f, 22) { sendKey("play") }
-            ), android.widget.LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(6) })
+            midL.addView(rowC(dp(76), dp(8),
+                cardS("متصفح", "globe", 0xFF0EA5E9.toInt(), 0xFF0369A1.toInt(), false, 12f, 30) { d.dismiss(); openOnPhone(act, false) },
+                cardS("يوتيوب", "youtube", 0xFFE53935.toInt(), 0xFFB71C1C.toInt(), false, 12f, 30) { d.dismiss(); openOnPhone(act, true) },
+                cardS("إيقاف مؤقت", "pause", 0xFFD99A12.toInt(), 0xFFB45309.toInt(), false, 12f, 30) { sendKey("pause") },
+                cardS("تشغيل", "play", 0xFF14A58A.toInt(), 0xFF0F766E.toInt(), false, 12f, 30) { sendKey("play") }
+            ), android.widget.LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(8) })
 
-            // ── العمود الشمال + الصف التحتاني: من صفحة المشغّل (PlayerPad) بنفس أزرارها ونفس أوامرها ──
+            // ── باقي الأزرار (مكتبة/يوتيوب/متصفح/ترجمة/نص…): مفرودة بعرض الشاشة (مش في عمود ضيق) ──
             plDispose = PlayerPad.show(act, { d.dismiss() }) { P ->
-                val leftCol = android.widget.LinearLayout(act).apply { orientation = android.widget.LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_LTR }
-                leftCol.addView(P.quick, android.widget.LinearLayout.LayoutParams(-1, dp(84)))
-                leftCol.addView(P.sub, android.widget.LinearLayout.LayoutParams(-1, dp(62)).apply { topMargin = dp(6) })
-                leftCol.addView(P.tabs, android.widget.LinearLayout.LayoutParams(-1, dp(40)).apply { topMargin = dp(6) })
-                leftCol.addView(P.tabBody, android.widget.LinearLayout.LayoutParams(-1, dp(268)).apply { topMargin = dp(4) })
-                val bodyRow = android.widget.LinearLayout(act).apply { orientation = android.widget.LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_LTR }
-                bodyRow.addView(leftCol, android.widget.LinearLayout.LayoutParams(0, -2, 1f))
-                bodyRow.addView(rightCol, android.widget.LinearLayout.LayoutParams(rightW, -2).apply { leftMargin = colGap })
-
+                val eyeB = cardS("الوضع البصري", "eye", 0xFF8B5CF6.toInt(), 0xFF6D28D9.toInt()) { Thread { try { RemoteClient.player("vsnap") } catch (_: Throwable) {} }.also { it.isDaemon = true }.start() }
                 val top = android.widget.LinearLayout(act).apply { orientation = android.widget.LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_LTR; gravity = Gravity.CENTER_VERTICAL }
-                top.addView(P.mk("‹  رجوع", 13f, 0xFF2563EB.toInt(), 0xFF5B8DEF.toInt()) { sendKey("back") }, android.widget.LinearLayout.LayoutParams(dp(78), dp(46)))   // رجوع التلفزيون (مكان كارت «رجوع» القديم)
-                top.addView(sw, android.widget.LinearLayout.LayoutParams(0, dp(46), 1f).apply { leftMargin = dp(8); rightMargin = dp(8) })
+                top.addView(sw, android.widget.LinearLayout.LayoutParams(0, dp(46), 1f).apply { rightMargin = dp(8) })
                 top.addView(P.logBtn, android.widget.LinearLayout.LayoutParams(dp(66), dp(46)))
 
                 col.addView(top, android.widget.LinearLayout.LayoutParams(-1, dp(46)))
                 col.addView(P.info, android.widget.LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(4) })
-                col.addView(bodyRow, android.widget.LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(6) })
+                col.addView(mid, android.widget.LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(6) })
+                col.addView(rowC(dp(64), dp(8), eyeB, P.studio), android.widget.LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(8) })
+                col.addView(P.quick, android.widget.LinearLayout.LayoutParams(-1, dp(84)).apply { topMargin = dp(8) })
+                col.addView(P.sub, android.widget.LinearLayout.LayoutParams(-1, dp(62)).apply { topMargin = dp(6) })
+                col.addView(P.tabs, android.widget.LinearLayout.LayoutParams(-1, dp(40)).apply { topMargin = dp(6) })
+                col.addView(P.tabBody, android.widget.LinearLayout.LayoutParams(-1, dp(220)).apply { topMargin = dp(4) })
                 col.addView(P.tr, android.widget.LinearLayout.LayoutParams(-1, dp(52)).apply { topMargin = dp(8) })
                 col.addView(P.transport, android.widget.LinearLayout.LayoutParams(-1, dp(72)).apply { topMargin = dp(6) })
                 col.addView(P.repeatRow, android.widget.LinearLayout.LayoutParams(-1, dp(58)).apply { topMargin = dp(4) })
@@ -543,6 +543,8 @@ class VolumeBar(ctx: Context, private val onChange: (Int) -> Unit) : View(ctx) {
     private var value = 50
     var dragging = false; private set
     private var lastSent = 0L
+    /** (v796) عمودي: فوق = أعلى صوت، تحت = صفر (بطول الشاشة) */
+    var vertical = false
 
     fun setValue(v: Int) { val n = v.coerceIn(0, 100); if (n != value) { value = n; invalidate() } }
 
@@ -553,17 +555,23 @@ class VolumeBar(ctx: Context, private val onChange: (Int) -> Unit) : View(ctx) {
         return Math.round((1f - ((x - l) / (r - l).coerceAtLeast(1f)).coerceIn(0f, 1f)) * 100f)
     }
 
+    private fun fromY(y: Float): Int {
+        val t = 52f * den; val b = (height - 52f * den).coerceAtLeast(t + 1f)
+        return Math.round((1f - ((y - t) / (b - t)).coerceIn(0f, 1f)) * 100f)
+    }
+
     override fun onTouchEvent(e: MotionEvent): Boolean {
+        val pos = if (vertical) e.y else e.x
         when (e.actionMasked) {
-            MotionEvent.ACTION_DOWN -> { parent?.requestDisallowInterceptTouchEvent(true); dragging = true; apply(e.x, true); performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP) }
-            MotionEvent.ACTION_MOVE -> apply(e.x, false)
-            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> { apply(e.x, true); dragging = false; invalidate() }
+            MotionEvent.ACTION_DOWN -> { parent?.requestDisallowInterceptTouchEvent(true); dragging = true; apply(pos, true); performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP) }
+            MotionEvent.ACTION_MOVE -> apply(pos, false)
+            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> { apply(pos, true); dragging = false; invalidate() }
         }
         return true
     }
 
     private fun apply(x: Float, force: Boolean) {
-        val v = fromX(x)
+        val v = if (vertical) fromY(x) else fromX(x)
         val changed = v != value
         value = v; invalidate()
         val now = SystemClock.uptimeMillis()
@@ -572,6 +580,17 @@ class VolumeBar(ctx: Context, private val onChange: (Int) -> Unit) : View(ctx) {
 
     override fun onDraw(c: Canvas) {
         val w = width.toFloat(); val h = height.toFloat(); val cy = h / 2f
+        if (vertical) {
+            rect.set(den, den, w - den, h - den); c.drawRoundRect(rect, 22f * den, 22f * den, pBg); c.drawRoundRect(rect, 22f * den, 22f * den, pStroke)
+            c.drawText(if (value == 0) "🔇" else value.toString(), w / 2f, 34f * den, pTxt)
+            c.drawText("🔊", w / 2f, h - 20f * den, pTxt)
+            val t = 52f * den; val b = h - 52f * den; val th = 16f * den; val cx = w / 2f
+            rect.set(cx - th / 2, t, cx + th / 2, b); c.drawRoundRect(rect, th / 2, th / 2, pTrack)
+            val ky = t + (b - t) * (100 - value) / 100f
+            rect.set(cx - th / 2, ky, cx + th / 2, b); c.drawRoundRect(rect, th / 2, th / 2, pFill)
+            c.drawCircle(cx, ky, if (dragging) 20f * den else 16f * den, pKnob)
+            return
+        }
         rect.set(den, den, w - den, h - den); c.drawRoundRect(rect, 22f * den, 22f * den, pBg); c.drawRoundRect(rect, 22f * den, 22f * den, pStroke)
         c.drawText("🔊", 24f * den, cy + 5f * den, pTxt)   // (v678) طرف الصوت العالي = شمال
         c.drawText(if (value == 0) "🔇" else value.toString(), w - 25f * den, cy + 5f * den, pTxt)

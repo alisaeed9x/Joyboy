@@ -218,10 +218,10 @@ object YtNp {
         is StreamInfoItem -> {
             val id = idOf(i.url)
             // (v351) الشورتس مش بتظهر خالص: رابط /shorts/ أو مدة ≤ 60 ثانية
-            if (id.isEmpty() || i.url.contains("/shorts/") || i.duration in 1L..60L) null else {
+            if (id.isEmpty() || (!YtBackends.shortsAsVideos() && (i.url.contains("/shorts/") || i.duration in 1L..60L))) null else {   // (v793) الشورتس تظهر كفيديوهات عادية
                 val ts = try { i.uploadDate?.offsetDateTime()?.toInstant()?.toEpochMilli() ?: 0L } catch (_: Throwable) { 0L }
                 NpItem(id, i.name ?: "", i.uploaderName ?: "", i.uploaderUrl ?: "", thumb(i), i.duration, i.viewCount,
-                    i.textualUploadDate ?: "", 0, i.url, ts, avatarOf(i))
+                    i.textualUploadDate ?: "", 0, if (i.url.contains("/shorts/")) watchUrl(id) else i.url, ts, avatarOf(i))
             }
         }
         is ChannelInfoItem -> NpItem("", i.name ?: "", "", i.url, thumb(i), -1L, i.subscriberCount, "", 1, i.url)
@@ -236,12 +236,14 @@ object YtNp {
 
     /** filter: videos / channels / playlists / "" (الكل) */
     fun searchFirst(q: String, filter: String): YtRes {
+        YtBackends.alt()?.let { b -> try { b.searchFirst(q, filter)?.let { return it } } catch (_: Throwable) {} }   // (v793) مكتبة بديلة → وإلا NewPipe
         init()
         val qh = YT.searchQHFactory.fromQuery(q, if (filter.isEmpty()) emptyList() else listOf(filter), "")
         val si = SearchInfo.getInfo(YT, qh)
         return YtRes(si.relatedItems.mapNotNull { conv(it) }, if (si.hasNextPage()) si.nextPage else null)
     }
     fun searchMore(q: String, filter: String, p: Page): YtRes {
+        if (YtBackends.alt() != null && p.url == null && p.id != null) YtBackends.alt()?.let { b -> try { b.searchMore(q, filter, p)?.let { return it } } catch (_: Throwable) {} }
         val qh = YT.searchQHFactory.fromQuery(q, if (filter.isEmpty()) emptyList() else listOf(filter), "")
         return res(SearchInfo.getMoreItems(YT, qh, p))
     }
@@ -316,6 +318,7 @@ object YtNp {
     private fun countOk(l: List<NpItem>, durF: Int, dateF: Int) = applyF(l, durF, dateF).size
 
     fun channel(url: String): NpChan {
+        YtBackends.alt()?.let { b -> try { b.channel(url)?.let { return it } } catch (_: Throwable) {} }   // (v793)
         init()
         val ci = ChannelInfo.getInfo(YT, url)
         val tab = ci.tabs.firstOrNull { it.contentFilters.contains("videos") } ?: ci.tabs.first()
@@ -340,6 +343,7 @@ object YtNp {
     } catch (_: Throwable) { null }
 
     fun channelFull(url: String): NpChanFull {
+        YtBackends.alt()?.let { b -> try { b.channelFull(url)?.let { return it } } catch (_: Throwable) {} }   // (v793)
         init()
         val ci = ChannelInfo.getInfo(YT, url)
         val byKey = LinkedHashMap<String, org.schabi.newpipe.extractor.linkhandler.ListLinkHandler>()
