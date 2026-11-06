@@ -78,8 +78,18 @@ object Notice {
 
     fun dismiss() { if (Looper.myLooper() == Looper.getMainLooper()) removeNow() else main.post { removeNow() } }
 
+    /**
+     * (v799) أثناء تنفيذ أمر جاي من ريموت الموبايل: الإشعارات ما تظهرش على التلفزيون — بتتجمّع هنا وبتترجع للموبايل يعرضها هو.
+     * بيلتقط بس الإشعارات اللي بتتنده من خيط الواجهة جوه نافذة الأمر نفسه.
+     */
+    @Volatile private var capture: StringBuilder? = null
+    fun beginCapture() { capture = StringBuilder() }
+    fun endCapture(): String { val c = capture; capture = null; return c?.toString()?.trim() ?: "" }
+
     /** إشعار عادي صغير */
     fun show(c: Context, msg: String, ms: Long = 2400L) {
+        val cap = capture
+        if (cap != null && Looper.myLooper() == Looper.getMainLooper()) { if (cap.isNotEmpty()) cap.append(" · "); cap.append(msg); return }
         NoticeLog.add(msg)
         if (NoticeLog.sinkFor(c)) return   // (v217) المشغّل فاتح: الإشعار بيتسجّل في مثلث ▲ فوق اليمين بدل ما يطلع عايم
         present(c, msg, null, null, ms, null, null)

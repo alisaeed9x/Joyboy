@@ -174,7 +174,13 @@ object PlayerPad {
             }
             fun lp(w: Int, h: Int, wt: Float = 0f) = LinearLayout.LayoutParams(w, h, wt)
             fun go(a: String, v: Long = 0L) {
-                Thread { try { RemoteClient.player(a, v) } catch (e: Throwable) { LogStore.err("PlayerPad:go", e) } }.also { it.isDaemon = true }.start()
+                Thread {
+                    try {
+                        val r = RemoteClient.player(a, v)
+                        val n = r?.optString("note", "") ?: ""   // (v799) رسالة الزرار بتظهر على الموبايل بس (مش على التلفزيون)
+                        if (n.isNotEmpty()) try { act.runOnUiThread { if (!act.isFinishing && !act.isDestroyed) Notice.show(act, n, 2200L) } } catch (_: Throwable) {}
+                    } catch (e: Throwable) { LogStore.err("PlayerPad:go", e) }
+                }.also { it.isDaemon = true }.start()
             }
             /** (v709) يلبّس الزرار طبقة ميه بتطلع من تحت (ClipDrawable) — key = مفتاح الأداة اللي بتملّيه، "*" = أي أداة */
             fun fillable(b: TextView, key: String): TextView {
@@ -897,12 +903,15 @@ object PlayerPad {
 
             // ── شريط التقدم تحت خالص: نفس DualProgress بتاع المشغّل (أخضر = مترجم · كهرماني = لسه هيتغيّر · أزرق = تنقيح) ──
             val bar = DualProgress(act, th).apply { mini = true; big = embedInto != null }   // (v796)
-            val tPos = label("00:00", 13f, 0xFFB8C4DA.toInt(), false); val tDur = label("00:00", 13f, 0xFFB8C4DA.toInt(), false)
-            bar.onScrub = { f -> tPos.text = tm((f * durNow).toLong()) }
-            bar.onSeek = { f -> val ms = (f * durNow).toLong(); holdUntil = System.currentTimeMillis() + 1300L; tPos.text = tm(ms); go("seekto", ms) }
+            // (v799) الوقتين اتفصلوا بوضوح: «الآن» (اللحظة الحالية) شمال بالأزرق · «المدة» (طول الفيديو) يمين بالكهرماني — كل واحد بكبسولة وعنوان
+            fun nowTxt(ms: Long) = "▶ الآن  " + tm(ms)
+            fun durTxt(ms: Long) = "⏱ المدة  " + tm(ms)
+            val tPos = label(nowTxt(0L), 13f, 0xFFBFDBFE.toInt(), true).apply { setPadding(dp(10), dp(3), dp(10), dp(3)); background = bg(0xFF12305A.toInt(), 0xFF3B82F6.toInt(), 12f) }
+            val tDur = label(durTxt(0L), 13f, 0xFFFDE68A.toInt(), true).apply { setPadding(dp(10), dp(3), dp(10), dp(3)); background = bg(0xFF3A2A12.toInt(), 0xFFF59E0B.toInt(), 12f) }
+            bar.onScrub = { f -> tPos.text = nowTxt((f * durNow).toLong()) }
+            bar.onSeek = { f -> val ms = (f * durNow).toLong(); holdUntil = System.currentTimeMillis() + 1300L; tPos.text = nowTxt(ms); go("seekto", ms) }
             val times = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; isBaselineAligned = false; layoutDirection = View.LAYOUT_DIRECTION_LTR }
-            times.addView(tPos, lp(0, -2, 1f)); times.addView(tDur, lp(-2, -2))
-            tPos.gravity = Gravity.START or Gravity.CENTER_VERTICAL
+            times.addView(tPos, lp(-2, -2)); times.addView(View(act), lp(0, 1, 1f)); times.addView(tDur, lp(-2, -2))
 
             val col = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_LTR; setPadding(dp(16), dp(26), dp(16), dp(12)) }
             if (embedInto == null) {
@@ -961,9 +970,9 @@ object PlayerPad {
                 val playing = s.optBoolean("playing", false)
                 val spd = PosExtrap.speedOf(s.optString("speed", "1x"))
                 val pos = PosExtrap.pos(s.optLong("pos", 0L), m.stStamp, now, spd, playing, dur)
-                if (!bar.dragging && now > holdUntil) { bar.played = if (dur > 0L) (pos.toFloat() / dur).coerceIn(0f, 1f) else 0f; tPos.text = tm(pos) }
+                if (!bar.dragging && now > holdUntil) { bar.played = if (dur > 0L) (pos.toFloat() / dur).coerceIn(0f, 1f) else 0f; tPos.text = nowTxt(pos) }
                 bar.durSec = dur / 1000.0; bar.cov = m.eng.coverage; bar.pend = m.eng.pending; bar.refine = m.eng.refining; bar.invalidate()
-                tDur.text = tm(dur)
+                tDur.text = durTxt(dur)
                 playB.text = if (playing) "⏸" else "▶"
                 ttlTv.text = s.optString("title", "").let { if (it.isBlank()) "" else "📺  " + it }
                 ccTop.text = if (s.optBoolean("cc", true)) "💬\nالترجمة ظاهرة" else "🚫\nالترجمة مخفية"   // (v695)

@@ -342,10 +342,12 @@ object ControllerPad {
             val inner = dm.widthPixels - dp(20)
             val gapP = dp(6)
             val stripW = dp(46)
-            val availG = inner - 2 * (stripW + gapP)           // العرض اللي بيتقسم بين الدايرة والأزرار الأربعة
-            val cornerW = (availG * 0.21f).toInt().coerceAtLeast(dp(56))
+            // (v799) الدايرة بقت أكبر بكتير: مساحتها = الشاشة كلها ناقص عمود الصوت (يمين) — والمقاس الفعلي بيتظبط بعد الرسم على المساحة الفاضية (fitPad)
+            val availG = inner - (stripW + gapP)
+            val s0 = minOf(availG, (dm.heightPixels - dp(540)).coerceAtLeast(dp(170)))
+            val cornerW = (s0 * 0.22f).toInt().coerceAtLeast(dp(48))
             val padFull = dp(259)
-            val padSize = (availG - 2 * cornerW - 2 * gapP).coerceAtLeast(dp(110))
+            val padSize = (s0 * 0.78f).toInt().coerceAtLeast(dp(110))
             val padK = padSize.toFloat() / padFull.toFloat()   // الدايرة بتتصغّر على قد المساحة
 
             // ── التبديل: أزرار الاتجاهات | لوحة اللمس ──
@@ -427,52 +429,103 @@ object ControllerPad {
             }
 
             // ── (v797) الدايرة في نص الشاشة + 4 أزرار في الأركان + صوت متماثل (شمال أزرار · يمين سلايدر) ──
-            val cw = cornerW
             fun miniBtn(kind: String, c1: Int, c2: Int, desc: String, repeat: Boolean, fire: () -> Unit): View {
                 val bx = FrameLayout(act).apply { background = cardBg(false); contentDescription = desc }
                 bx.addView(iconBox(kind, c1, c2, false, 32), FrameLayout.LayoutParams(dp(32), dp(32), Gravity.CENTER))
                 bind(bx, repeat, fire)
                 return bx
             }
+            // (v799) الدايرة + الأربع أزرار حواليها = مربع واحد بيتحط في نص المساحة الفاضية تحت وبياخدها كلها (مقاسه بيتظبط في fitPad)
+            val padHolder = FrameLayout(act).apply { clipChildren = false }
             val padWrap = FrameLayout(act).apply { clipChildren = false }
+            val cBack = cardS("رجوع", "back", 0xFF2563EB.toInt(), 0xFF5B8DEF.toInt(), false, 10.5f, 22) { sendKey("back") }
+            val cHome = cardS("الرئيسية", "home", 0xFF0FA3B1.toInt(), 0xFF0B7285.toInt(), false, 10.5f, 22) { sendKey("home") }
+            val cGear = cardS("إعدادات التلفزيون", "gear", 0xFF3B8DFF.toInt(), 0xFF1D4ED8.toInt(), false, 9.5f, 22) { TvLookPad.show(act) }
+            val cRecent = cardS("آخر المشغّل", "recent", 0xFF7C4DBB.toInt(), 0xFF5B3A9B.toInt(), false, 10.5f, 22) { RecentPicker.show(act) }
             padWrap.addView(padBox, FrameLayout.LayoutParams(padSize, padSize, Gravity.CENTER))
-            padWrap.addView(cardS("رجوع", "back", 0xFF2563EB.toInt(), 0xFF5B8DEF.toInt(), false, 10.5f, 22) { sendKey("back") }, FrameLayout.LayoutParams(cw, cw, Gravity.BOTTOM or Gravity.RIGHT))
-            padWrap.addView(cardS("الرئيسية", "home", 0xFF0FA3B1.toInt(), 0xFF0B7285.toInt(), false, 10.5f, 22) { sendKey("home") }, FrameLayout.LayoutParams(cw, cw, Gravity.BOTTOM or Gravity.LEFT))
-            padWrap.addView(cardS("إعدادات التلفزيون", "gear", 0xFF3B8DFF.toInt(), 0xFF1D4ED8.toInt(), false, 9.5f, 22) { TvLookPad.show(act) }, FrameLayout.LayoutParams(cw, cw, Gravity.TOP or Gravity.RIGHT))
-            padWrap.addView(cardS("آخر المشغّل", "recent", 0xFF7C4DBB.toInt(), 0xFF5B3A9B.toInt(), false, 10.5f, 22) { RecentPicker.show(act) }, FrameLayout.LayoutParams(cw, cw, Gravity.TOP or Gravity.LEFT))
+            padWrap.addView(cBack, FrameLayout.LayoutParams(cornerW, cornerW, Gravity.BOTTOM or Gravity.RIGHT))
+            padWrap.addView(cHome, FrameLayout.LayoutParams(cornerW, cornerW, Gravity.BOTTOM or Gravity.LEFT))
+            padWrap.addView(cGear, FrameLayout.LayoutParams(cornerW, cornerW, Gravity.TOP or Gravity.RIGHT))
+            padWrap.addView(cRecent, FrameLayout.LayoutParams(cornerW, cornerW, Gravity.TOP or Gravity.LEFT))
+            padHolder.addView(padWrap, FrameLayout.LayoutParams(s0, s0, Gravity.CENTER))
+            var lastFit = 0
+            fun fitPad(w: Int, h: Int) {
+                val sq = minOf(w, h)
+                if (sq <= dp(120) || sq == lastFit) return
+                lastFit = sq
+                val cwN = (sq * 0.22f).toInt()          // الأزرار الأربعة في أركان المربع
+                val dN = (sq * 0.78f).toInt()           // الدايرة: بتدخل بين الأركان من غير ما تتغطّى
+                (padWrap.layoutParams as FrameLayout.LayoutParams).apply { width = sq; height = sq }
+                (padBox.layoutParams as FrameLayout.LayoutParams).apply { width = dN; height = dN }
+                for (v0 in listOf(cBack, cHome, cGear, cRecent)) (v0.layoutParams as FrameLayout.LayoutParams).apply { width = cwN; height = cwN }
+                (joy.layoutParams as FrameLayout.LayoutParams).apply { width = dN; height = dN }
+                dpad.scaleX = dN.toFloat() / padFull.toFloat(); dpad.scaleY = dpad.scaleX
+                padWrap.requestLayout()
+            }
+            padHolder.addOnLayoutChangeListener { _, l, t, r, b, _, _, _, _ -> fitPad(r - l, b - t) }
 
-            // (v797b) يمين: سلايدر الصوت العمودي + الكتم تحته · شمال: فاضي (عشان الدايرة تفضل في نص الشاشة)
+            // (v799) سلايدر الصوت العمودي على اليمين: بيبدأ من تحت زرار ⛶ (تكبير الشاشة) ويكمّل بطول المساحة لحد الكتم
             volBar.vertical = true
             val muteH = dp(44)
-            val blockH = padSize + dp(34)
             val volCol = android.widget.LinearLayout(act).apply { orientation = android.widget.LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_LTR }
-            volCol.addView(volBar, android.widget.LinearLayout.LayoutParams(-1, blockH - muteH - gapP))
+            volCol.addView(volBar, android.widget.LinearLayout.LayoutParams(-1, 0, 1f))
             volCol.addView(miniBtn("mute", 0xFFE8456F.toInt(), 0xFFBE185D.toInt(), "كتم الصوت", false) { RemoteClient.cmd("mute") }, android.widget.LinearLayout.LayoutParams(-1, muteH).apply { topMargin = gapP })
-            val mid = android.widget.LinearLayout(act).apply { orientation = android.widget.LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_LTR }
-            mid.addView(View(act), android.widget.LinearLayout.LayoutParams(stripW, blockH))
-            mid.addView(padWrap, android.widget.LinearLayout.LayoutParams(0, blockH, 1f).apply { leftMargin = gapP; rightMargin = gapP })
-            mid.addView(volCol, android.widget.LinearLayout.LayoutParams(stripW, blockH))
 
-            // ── باقي الأزرار (مكتبة/يوتيوب/متصفح/ترجمة/نص…): مفرودة بعرض الشاشة (مش في عمود ضيق) ──
+            // ── باقي الأزرار (مكتبة/يوتيوب/متصفح/ترجمة/نص…): كلها فوق، والمنطقة اللي تحت للتنقل (الدايرة) + الصوت ──
             plDispose = PlayerPad.show(act, { d.dismiss() }) { P ->
-                val eyeB = cardS("الوضع البصري", "eye", 0xFF8B5CF6.toInt(), 0xFF6D28D9.toInt()) { Thread { try { RemoteClient.player("vsnap") } catch (_: Throwable) {} }.also { it.isDaemon = true }.start() }
+                val eyeB = cardS("الوضع البصري", "eye", 0xFF8B5CF6.toInt(), 0xFF6D28D9.toInt()) { Thread { try { val n = RemoteClient.player("vsnap")?.optString("note", "") ?: ""; if (n.isNotEmpty()) act.runOnUiThread { Notice.show(act, n, 2200L) } } catch (_: Throwable) {} }.also { it.isDaemon = true }.start() }   // (v799) الرسالة على الموبايل بس
                 val top = android.widget.LinearLayout(act).apply { orientation = android.widget.LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_LTR; gravity = Gravity.CENTER_VERTICAL }
                 top.addView(sw, android.widget.LinearLayout.LayoutParams(0, dp(46), 1f).apply { rightMargin = dp(8) })
                 top.addView(P.logBtn, android.widget.LinearLayout.LayoutParams(dp(66), dp(46)))
+                // ⛶ (تكبير الشاشة) آخر زرار في صف الترجمة: بعرض عمود الصوت بالظبط عشان السلايدر يكمّل تحته على نفس الخط
+                (P.tr as? android.view.ViewGroup)?.let { g -> if (g.childCount > 0) g.getChildAt(g.childCount - 1).layoutParams = android.widget.LinearLayout.LayoutParams(stripW, dp(46)).apply { marginStart = dp(6) } }
 
                 col.addView(top, android.widget.LinearLayout.LayoutParams(-1, dp(46)))
                 col.addView(P.info, android.widget.LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(4) })
-                col.addView(mid, android.widget.LinearLayout.LayoutParams(-1, blockH).apply { topMargin = dp(4) })
                 col.addView(rowC(dp(50), dp(8), eyeB, P.studio), android.widget.LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(6) })
-                col.addView(P.quick, android.widget.LinearLayout.LayoutParams(-1, dp(50)).apply { topMargin = dp(6) })
                 col.addView(P.sub, android.widget.LinearLayout.LayoutParams(-1, dp(48)).apply { topMargin = dp(5) })
                 col.addView(P.tabs, android.widget.LinearLayout.LayoutParams(-1, dp(34)).apply { topMargin = dp(5) })
-                col.addView(P.tabBody, android.widget.LinearLayout.LayoutParams(-1, dp(80), 1f).apply { topMargin = dp(4) })   // (v797) بياخد أي مساحة فاضية (مفيش فراغ)
+                // (v800) التزامن/الذكاء/الأدوات: الدوسة بتفتح صفحة منبثقة صغيرة فيها أدوات التاب — مفيش مساحة فاضية تحت التابات
+                run {
+                    val sheetBox = FrameLayout(act).apply {
+                        background = GradientDrawable().apply { shape = GradientDrawable.RECTANGLE; cornerRadii = floatArrayOf(dpf(24f), dpf(24f), dpf(24f), dpf(24f), 0f, 0f, 0f, 0f); setColor(0xFF0F1830.toInt()); setStroke(dp(1), 0xFF2B3C60.toInt()) }
+                        setPadding(dp(12), dp(14), dp(12), dp(12))
+                    }
+                    var sheet: Dialog? = null
+                    fun openSheet() {
+                        try {
+                            if (sheet?.isShowing == true) return
+                            (P.tabBody.parent as? android.view.ViewGroup)?.removeView(P.tabBody)
+                            sheetBox.removeAllViews()
+                            sheetBox.addView(P.tabBody, FrameLayout.LayoutParams(-1, -1))
+                            val dlg = Dialog(act, android.R.style.Theme_Translucent_NoTitleBar)
+                            dlg.setContentView(sheetBox)
+                            dlg.setCanceledOnTouchOutside(true)
+                            dlg.window?.apply {
+                                setBackgroundDrawable(android.graphics.drawable.ColorDrawable(0)); setGravity(Gravity.BOTTOM)
+                                setLayout(-1, (dm.heightPixels * 0.55f).toInt()); addFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND); setDimAmount(0.45f)
+                            }
+                            dlg.setOnDismissListener { sheetBox.removeAllViews() }
+                            sheet = dlg; dlg.show()
+                        } catch (e: Throwable) { LogStore.err("ControllerPad:tabSheet", e) }
+                    }
+                    (P.tabs as? android.view.ViewGroup)?.let { g ->
+                        for (k in 0 until g.childCount) g.getChildAt(k).setOnTouchListener { _, ev -> if (ev.actionMasked == MotionEvent.ACTION_UP) hh.post { openSheet() }; false }   // false = الدوسة تكمّل وتختار التاب الأول
+                    }
+                }
                 col.addView(P.tr, android.widget.LinearLayout.LayoutParams(-1, dp(46)).apply { topMargin = dp(6) })
-                col.addView(P.transport, android.widget.LinearLayout.LayoutParams(-1, dp(62)).apply { topMargin = dp(5) })
-                col.addView(P.repeatRow, android.widget.LinearLayout.LayoutParams(-1, dp(48)).apply { topMargin = dp(5) })
-                col.addView(P.bar, android.widget.LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(8) })
-                col.addView(P.times, android.widget.LinearLayout.LayoutParams(-1, -2))
+
+                // تحت صف الترجمة: يسار = التشغيل + التكرار + الدايرة الكبيرة · يمين = سلايدر الصوت بطول المساحة
+                val leftCol = android.widget.LinearLayout(act).apply { orientation = android.widget.LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_LTR }
+                leftCol.addView(P.transport, android.widget.LinearLayout.LayoutParams(-1, dp(62)).apply { topMargin = dp(5) })
+                leftCol.addView(P.repeatRow, android.widget.LinearLayout.LayoutParams(-1, dp(48)).apply { topMargin = dp(5) })
+                leftCol.addView(padHolder, android.widget.LinearLayout.LayoutParams(-1, dp(150), 1f).apply { topMargin = dp(6) })
+                val lower = android.widget.LinearLayout(act).apply { orientation = android.widget.LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_LTR }
+                lower.addView(leftCol, android.widget.LinearLayout.LayoutParams(0, -1, 1f))
+                lower.addView(volCol, android.widget.LinearLayout.LayoutParams(stripW, -1).apply { leftMargin = gapP; topMargin = dp(5) })
+                col.addView(lower, android.widget.LinearLayout.LayoutParams(-1, dp(276), 1f))
+                col.addView(P.bar, android.widget.LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(6) })
+                col.addView(P.times, android.widget.LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(2) })
             }
 
             // (v680) الريموت ما بيسكرولش: لو المحتوى أطول من الشاشة بيتصغّر كله بنسبة تلائمها

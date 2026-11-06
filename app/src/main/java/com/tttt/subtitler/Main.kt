@@ -1969,8 +1969,10 @@ class MainActivity : Activity() {
             }
         }
     }
+    override fun onPause() { try { DataCapsule.detach(this) } catch (_: Throwable) {}; super.onPause() }   // (v799) كبسولة الداتا في كل التبويبات
     override fun onResume() {
         super.onResume()
+        try { DataCapsule.attach(this) } catch (_: Throwable) {}   // (v799)
         try { tvModeSeen = PlayTarget.enabled(); TvModeFab.listeners.addIfAbsent(tvModeSync) } catch (_: Throwable) {}
         if (!fromPlayer) { updateYtBadge(); ytBackgroundSync() }
         // الرجوع من المشغّل أو من إعدادات الإذن: حدّث العرض (تقدم الترجمة) أو أعد الفحص

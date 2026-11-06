@@ -73,7 +73,14 @@ class PlayerActivity : Activity(), Host {
         fun remoteState(): org.json.JSONObject? { val o = live() ?: return null; return onUi(o) { o.rState() } }
 
         /** (v520) أوامر المشغّل من الموبايل. v = قيمة (مللي ثانية / اتجاه) */
-        fun remoteAct(a: String, v: Long): Boolean { val o = live() ?: return false; return onUi(o) { o.rAct(a, v) } == true }
+        fun remoteAct(a: String, v: Long): Boolean {
+            val o = live() ?: return false
+            // (v799) إشعارات الأمر دي (ضغطة من ريموت الموبايل) ما تظهرش على التلفزيون — بتتجمّع وبتترجع للموبايل (lastRemoteNote)
+            return onUi(o) { Notice.beginCapture(); try { o.rAct(a, v) } finally { lastRemoteNote = Notice.endCapture() } } == true
+        }
+        /** (v799) آخر رسالة اتجمّعت من أمر ريموت (للموبايل) — بتتسحب مرة واحدة */
+        @Volatile private var lastRemoteNote = ""
+        fun takeRemoteNote(): String { val n = lastRemoteNote; lastRemoteNote = ""; return n }
 
         /** (v684) ملف ترجمة جه من الموبايل (TvLink /subup): بيتحفظ ويستنى أمر «ترجم» من الموبايل. false = مفيش مشغّل فيديو شغّال */
         fun remoteSubImport(f: java.io.File, name: String, cues: Int, show: Boolean = false): Boolean { val o = live() ?: return false; return onUi(o) { o.subImported(f, name, cues, show) } == true }

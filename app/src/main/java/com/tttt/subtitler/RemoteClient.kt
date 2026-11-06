@@ -426,7 +426,13 @@ object RemoteClient {
     fun player(a: String, v: Long = 0L): JSONObject? {
         val (c, t) = post("/player", JSONObject().put("a", a).put("v", v).put("cid", UUID.randomUUID().toString()))
         if (c != 200) return null
-        return try { JSONObject(t).optJSONObject("st") } catch (_: Exception) { null }
+        return try {
+            val j = JSONObject(t)
+            val st = j.optJSONObject("st")
+            val n = j.optString("note", "")
+            if (st != null && n.isNotEmpty()) st.put("note", n)   // (v799) رسالة التلفزيون لأمر الزرار — الموبايل يعرضها
+            st
+        } catch (_: Exception) { null }
     }
 
     // تجميع حركة التاتش باد: بنبعت كل ~15ms مجموع الحركة بدل طلب لكل لمسة

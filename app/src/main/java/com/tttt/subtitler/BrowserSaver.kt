@@ -418,8 +418,12 @@ class BrowserSaver(private val act: BrowserActivity, private val frame: FrameLay
     private var running = false
     private var lastRx = -1L; private var lastTx = -1L; private var lastTickAt = 0L
     private var supported = true
-    private var sCell = 0L; private var sWifi = 0L
-    private var dCell = 0L; private var dWifi = 0L; private var dSaved = 0L
+    // (v799) الأرقام الأربعة دي بقت في DataMeter (مصدر واحد مع كبسولة باقي الشاشات)
+    private var sCell: Long get() = DataMeter.sCell; set(v) { DataMeter.sCell = v }
+    private var sWifi: Long get() = DataMeter.sWifi; set(v) { DataMeter.sWifi = v }
+    private var dCell: Long get() = DataMeter.dCell; set(v) { DataMeter.dCell = v }
+    private var dWifi: Long get() = DataMeter.dWifi; set(v) { DataMeter.dWifi = v }
+    private var dSaved = 0L
     private var vidBytes = 0L; private var videoOn = false
     private var speed = 0.0
     private var tickN = 0
@@ -581,8 +585,8 @@ class BrowserSaver(private val act: BrowserActivity, private val frame: FrameLay
     }
     private var bgBlocked = false
     private fun setBgBlock(on: Boolean) { for (t in host.tabs()) { try { t.wv?.settings?.blockNetworkLoads = on } catch (_: Throwable) {} }; bgBlocked = on }
-    fun start() { if (bgBlocked) setBgBlock(false); if (running) return; running = true; lastRx = -1L; lastTickAt = 0L; netChanged(); h.post(tickR) }
-    fun stop() { running = false; h.removeCallbacks(tickR); persist(); if (bgRestrict()) setBgBlock(true) }   // (v785) قيود الخلفية: الصفحات ماتطلبش شبكة وإحنا برّه الشاشة (بترجع في onResume)
+    fun start() { if (bgBlocked) setBgBlock(false); DataMeter.saverOwns = true; DataMeter.rebase(); if (running) return; running = true; lastRx = -1L; lastTickAt = 0L; netChanged(); h.post(tickR) }
+    fun stop() { running = false; DataMeter.saverOwns = false; h.removeCallbacks(tickR); persist(); if (bgRestrict()) setBgBlock(true) }   // (v785) قيود الخلفية: الصفحات ماتطلبش شبكة وإحنا برّه الشاشة (بترجع في onResume)
     fun destroy() { stop(); try { netCb?.let { cm.unregisterNetworkCallback(it) } } catch (_: Throwable) {}; netCb = null }
     private val tickR = object : Runnable { override fun run() { if (!running) return; try { tick() } catch (e: Throwable) { LogStore.err("Saver:tick", e) }; h.postDelayed(this, 1000L) } }
 
@@ -591,48 +595,33 @@ class BrowserSaver(private val act: BrowserActivity, private val frame: FrameLay
     private val shown = LongArray(4); private val tgt = LongArray(4)     // [جلسة خلوي، جلسة واي فاي، اليوم خلوي، اليوم واي فاي]
     private var anim: android.animation.ValueAnimator? = null
     private var lastCol = 0
-    private var dX = 0f; private var dY = 0f; private var bX = 0f; private var bY = 0f; private var moved = false
     private val sessId = System.currentTimeMillis()
 
-    private fun clampCap() {
-        val c = cap ?: return; val w = frame.width; val h = frame.height
-        if (w == 0 || h == 0 || c.width == 0) return
-        val minY = -c.top.toFloat(); val maxY = maxOf(minY, (h - c.bottom).toFloat())
-        c.translationX = 0f; c.translationY = c.translationY.coerceIn(minY, maxY)   // (v791) كبسولة جنبية: حركة رأسية بس
-    }
-    private val capTouch = View.OnTouchListener { v, e ->
-        when (e.actionMasked) {
-            android.view.MotionEvent.ACTION_DOWN -> { dX = e.rawX; dY = e.rawY; bX = v.translationX; bY = v.translationY; moved = false }
-            android.view.MotionEvent.ACTION_MOVE -> {
-                val ddx = e.rawX - dX; val ddy = e.rawY - dY
-                if (!moved && Math.abs(ddy) > ui.dp(8)) moved = true
-                if (moved) { v.translationY = bY + ddy; clampCap() }
-            }
-            android.view.MotionEvent.ACTION_UP -> {
-                if (moved) p.edit().putFloat("sv_cap_ly", v.translationY).apply()
-                else if (e.eventTime - e.downTime > 600L) showStats()
-                else {
-                    val tv = v as TextView; val ly = tv.layout
-                    val onWho = capOpen && ly != null && ly.getLineForVertical((e.y - tv.totalPaddingTop).toInt().coerceAtLeast(0)) >= ly.lineCount - 1   // (v789) آخر سطر = زرار «إيه اللي بياكل النت؟»
-                    if (onWho) showWho() else { capOpen = !capOpen; render(); v.post { clampCap() } }
-                }
-            }
-        }
-        true
-    }
-    private fun capBg(color: Int): android.graphics.drawable.GradientDrawable {
-        val r = ui.dp(14).toFloat()
-        return android.graphics.drawable.GradientDrawable().apply { setColor(color); cornerRadii = floatArrayOf(0f, 0f, r, r, r, r, 0f, 0f); setStroke(ui.dp(1), 0x55FFFFFF) }
-    }
+    private var capMover: CapMover? = null
+    private fun clampCap() { capMover?.clampIdle() }
+    private fun capBg(color: Int): android.graphics.drawable.GradientDrawable = CapMover.bg(color, capMover?.side ?: 0, act.resources.displayMetrics.density)   // (v799) الدايري على الجنب اللي ناحية الحافة (شمال/يمين)
     private fun buildCap() {
+        val den = act.resources.displayMetrics.density
         val c = TextView(act).apply {
             textSize = 10.5f; setTextColor(0xFFFFFFFF.toInt()); gravity = Gravity.CENTER; layoutDirection = View.LAYOUT_DIRECTION_LTR
-            setPadding(ui.dp(7), ui.dp(6), ui.dp(10), ui.dp(6)); background = capBg(0xE61E2A3A.toInt()); elevation = ui.dp(5).toFloat()
+            elevation = ui.dp(5).toFloat()
             isFocusable = false; visibility = View.GONE
-            setOnTouchListener(capTouch)
         }
         cap = c
-        frame.addView(c, FrameLayout.LayoutParams(-2, -2, Gravity.LEFT or Gravity.CENTER_VERTICAL))   // (v791) كبسولة جنبية على الشمال زي كبسولة الريموت/التلفزيون
+        // (v799) الكبسولة بتتسحب بحرية يمين/شمال/فوق/تحت وتلزق في أقرب حافة؛ الجنب والارتفاع محفوظين ومشتركين مع كبسولة باقي الشاشات
+        val mv = CapMover(c, frame, p,
+            onSide = { s -> CapMover.pad(c, s, den); lastCol = 0; render() },
+            onTap = { e ->
+                val ly = c.layout
+                val onWho = capOpen && ly != null && ly.getLineForVertical((e.y - c.totalPaddingTop).toInt().coerceAtLeast(0)) >= ly.lineCount - 1   // (v789) آخر سطر = زرار «إيه اللي بياكل النت؟»
+                if (onWho) showWho() else { capOpen = !capOpen; render(); c.post { clampCap() } }
+            },
+            onLong = { showStats() })
+        capMover = mv
+        CapMover.pad(c, mv.side, den)
+        c.background = capBg(0xE61E2A3A.toInt())
+        c.setOnTouchListener(mv)
+        frame.addView(c, FrameLayout.LayoutParams(-2, -2, mv.gravity()))
         c.translationX = 0f; c.translationY = p.getFloat("sv_cap_ly", 0f)
         c.post { clampCap() }
     }

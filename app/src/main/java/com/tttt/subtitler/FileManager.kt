@@ -482,8 +482,10 @@ class FileManagerActivity : Activity() {
         stripUi = StatusStrip(this, host, ui, th) { startActivity(Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP).putExtra("tab", "tasks")) }   // (v345)
     }
 
+    override fun onPause() { try { DataCapsule.detach(this) } catch (_: Throwable) {}; super.onPause() }   // (v799)
     override fun onResume() {
         super.onResume()
+        try { DataCapsule.attach(this) } catch (_: Throwable) {}   // (v799)
         if (hasAccess()) {
             permBox.visibility = View.GONE
             if (!loaded) { loaded = true; load(cur) }

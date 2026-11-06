@@ -133,8 +133,8 @@ class FileTransferActivity : Activity() {
         if (shownSids.add(sid) || curTag != "progress") go("progress") { buildProgress(s) }
     }
 
-    override fun onResume() { super.onResume(); FtHub.uiVisible = true; picker?.refreshIfNeeded(); onHub() }
-    override fun onPause() { FtHub.uiVisible = false; super.onPause() }
+    override fun onResume() { super.onResume(); FtHub.uiVisible = true; picker?.refreshIfNeeded(); onHub(); try { DataCapsule.attach(this) } catch (_: Throwable) {} }   // (v799)
+    override fun onPause() { FtHub.uiVisible = false; try { DataCapsule.detach(this) } catch (_: Throwable) {}; super.onPause() }
 
     override fun onDestroy() {
         scanGen++
