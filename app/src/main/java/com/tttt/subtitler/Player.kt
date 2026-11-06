@@ -4371,6 +4371,7 @@ class PlayerActivity : Activity(), Host {
         var tbScrolled = false
         tb.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> if (!tbScrolled && tbRow.width > 0) { tbScrolled = true; tb.post { tb.scrollTo(tbRow.width, 0) } } }
         var textAtBottom = false
+        var qualCol: LinearLayout? = null   // (v808) مرجع متقدّم لقايمة الجودات — gQ بيتعرّف بعد togglePop
         fun togglePop(v: View, col: LinearLayout, above: Boolean) {
             val had = popupOwner === v; dismissPop()
             if (!had) {
@@ -4390,7 +4391,7 @@ class PlayerActivity : Activity(), Host {
                 if (goUp) pw.showAsDropDown(v, 0, -(v.height + popH + ui.dp(2)))
                 else pw.showAsDropDown(v, 0, ui.dp(2))
                 popup = pw; popupOwner = v
-                if (col === gQ && DeviceUi.isRemote(this)) col.post {   // (v803) قايمة الجودات: التركيز يبدأ على الجودة الشغّالة دلوقتي (✓) مش أول واحدة
+                if (col === qualCol && DeviceUi.isRemote(this)) col.post {   // (v803) قايمة الجودات: التركيز يبدأ على الجودة الشغّالة دلوقتي (✓) مش أول واحدة
                     try { for (i in 0 until col.childCount) { val c = col.getChildAt(i); if ((c as? TextView)?.text?.startsWith("✓") == true) { c.requestFocus(); break } } } catch (_: Throwable) {}
                 }
             }
@@ -4463,7 +4464,7 @@ class PlayerActivity : Activity(), Host {
             setOnLongClickListener { giShow("اسألني عند الخروج: أكمّل الترجمة في الخلفية؟", Gravity.CENTER); true }
         }
         // (v118) زرار الجودة: يوتيوب بقايمة جودات (بحجمها التقريبي) · روابط HLS/DASH بمساراتها — للفرجة بداتا أقل
-        val gQ = gCol()
+        val gQ = gCol(); qualCol = gQ
         fun fillQ(): Boolean {
             gQ.removeAllViews()
             if (qOpts.size > 1) {

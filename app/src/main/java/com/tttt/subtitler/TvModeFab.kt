@@ -118,10 +118,11 @@ object TvModeFab {
         (l.cap?.layoutParams as? FrameLayout.LayoutParams)?.let { lp -> if (lp.bottomMargin != bm) { lp.bottomMargin = bm; lp.rightMargin = 0; l.cap?.layoutParams = lp } }
     }
     private val docks = HashMap<Activity, View>()   // (v592) المتصفح: العمود اللي زرار 📺 يقعد فوقه
+    private val stripItems = HashMap<Activity, LinearLayout>()   // (v808)
     private val strips = HashMap<Activity, LinearLayout>()   // (v801) المتصفح (موبايل): الشريط الأفقي اللي ألسنة 📺 🎮 ▶ بتتحط جواه بدل ما تعوم على الحافة
     /** (v801) ألسنة التلفزيون (📺 · 🎮 · ▶) تبقى أزرار جوه [strip] (فوق الشريط السفلي) مش عايمة على الحافة اليمين */
-    fun dockStrip(a: Activity, strip: LinearLayout) {
-        strips[a] = strip
+    fun dockStrip(a: Activity, strip: LinearLayout, items: LinearLayout = strip) {
+        strips[a] = strip; stripItems[a] = items   // (v808) strip = اللي منه بنحسب المكان · items = اللي بنضيف فيه الألسنة
         strip.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> try { layers[a]?.let { placeCap(a, it) } } catch (_: Throwable) {} }
     }
     private fun inStrip(c: Context): Boolean = (c as? Activity)?.let { strips.containsKey(it) } == true
@@ -177,7 +178,7 @@ object TvModeFab {
                     attach(act); startPoll(); startNowWatch()
                 }
                 override fun onActivityPaused(act: Activity) { if (resumed > 0) resumed--; if (resumed == 0) lastPauseAt = System.currentTimeMillis(); try { picker?.dismiss() } catch (_: Throwable) {}; try { layers[act]?.let { closeFan(it, false) } } catch (_: Throwable) {} }
-                override fun onActivityDestroyed(act: Activity) { layers.remove(act); docks.remove(act); strips.remove(act); phoneCtl.remove(act); minis.remove(act) }
+                override fun onActivityDestroyed(act: Activity) { layers.remove(act); docks.remove(act); strips.remove(act); stripItems.remove(act); phoneCtl.remove(act); minis.remove(act) }
                 override fun onActivityCreated(act: Activity, b: Bundle?) {}
                 override fun onActivityStarted(act: Activity) {}
                 override fun onActivityStopped(act: Activity) {}
@@ -249,8 +250,8 @@ object TvModeFab {
                 }
             }
             // setContentView ممكن يكون مسح الـviews: ضيفهم تاني لو اتشالوا
-            val strip = strips[a]
-            fun stripLp() = LinearLayout.LayoutParams(dp(a, 40), dp(a, 38)).apply { setMargins(dp(a, 3), 0, dp(a, 3), 0) }
+            val strip = stripItems[a]
+            fun stripLp() = LinearLayout.LayoutParams(dp(a, 40), dp(a, 38)).apply { setMargins(dp(a, 3), dp(a, 3), dp(a, 3), dp(a, 3)) }
             if (l.btn.parent == null) { if (strip != null) { l.btn.textSize = 18f; strip.addView(l.btn, stripLp()) } else root.addView(l.btn, FrameLayout.LayoutParams(dp(a, 40), dp(a, 52), Gravity.RIGHT or Gravity.BOTTOM).apply { bottomMargin = dp(a, 150); rightMargin = 0 }) }
             l.ctl?.let { c -> if (c.parent == null) { if (strip != null) { c.textSize = 18f; strip.addView(c, stripLp()) } else root.addView(c, FrameLayout.LayoutParams(dp(a, 40), dp(a, 52), Gravity.RIGHT or Gravity.BOTTOM).apply { bottomMargin = dp(a, 150) + dp(a, 52) + dp(a, 6); rightMargin = 0 }) } }
             if (l.banner.parent == null) root.addView(l.banner, FrameLayout.LayoutParams(-1, dp(a, 24), Gravity.TOP))   // (v612) فوق، والمحتوى بينزل تحتها (placeBanner بتزق الـroot بحشو علوي) — مابقتش بتغطّي الشغل

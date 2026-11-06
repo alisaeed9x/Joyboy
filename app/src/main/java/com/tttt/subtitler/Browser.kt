@@ -316,7 +316,8 @@ class BrowserActivity : Activity() {
     private lateinit var panicCover: View
     private lateinit var panicB: TextView
     private lateinit var undoB: TextView
-    private var actStrip: LinearLayout? = null            // (v801) الشريط فوق الشريط السفلي (موبايل بس)
+    private var actStrip: FrameLayout? = null               // (v808) طبقة شفافة فوق أسفل الصفحة (موبايل بس): الصف التحتاني + زرار الأدوات
+    private lateinit var toolsHost: LinearLayout        // (v808) عمود الأدوات + زرار ☰ (لـ TvModeFab يحسب مكان الكبسولة)
     private lateinit var toolsInner: LinearLayout        // (v801) صف الأدوات جوه الشريط (🕶 ① 🕘 🛡 🔄 + ألسنة التلفزيون)
     private lateinit var navBackB: TextView
     private lateinit var navFwdB: TextView
@@ -565,7 +566,7 @@ class BrowserActivity : Activity() {
         }
         if (!tvOn) buildActStrip(rotFloat)
         blockCover = buildBlockCover()
-        if (tvOn) TvModeFab.dock(this, panicCol) else TvModeFab.dockStrip(this, toolsInner)   // (v592) زرار 📺 العايم يقعد فوق العمود ده · (v801) على الموبايل جوه شريط الأدوات
+        if (tvOn) TvModeFab.dock(this, panicCol) else TvModeFab.dockStrip(this, toolsHost, toolsInner)   // (v592) زرار 📺 العايم يقعد فوق العمود ده · (v801) على الموبايل جوه شريط الأدوات
         vidMark = VidMark(this) { act -> markAct(act) }
         val webWrap = FrameLayout(this).apply {
             layoutDirection = View.LAYOUT_DIRECTION_LTR
@@ -577,6 +578,7 @@ class BrowserActivity : Activity() {
                 addView(badge, FrameLayout.LayoutParams(ui.dp(60), ui.dp(60), Gravity.RIGHT or Gravity.CENTER_VERTICAL).apply { rightMargin = ui.dp(4) })   // (v595) كبسولة الاصطياد على الجنب اليمين
             }
             addView(blockCover, FrameLayout.LayoutParams(-1, -1))   // (v412) فوق كل حاجة
+            if (!tvOn) actStrip?.let { addView(it, FrameLayout.LayoutParams(-1, -1)) }   // (v808) شفافة فوق أسفل الصفحة (مش صف منفصل بخلفية)
         }
         if (tvOn) {   // (v480 م6) المؤشر فوق الصفحة والغطا والأزرار العايمة
             val ptr = TvPointer(this, webWrap, th.primary)
@@ -594,7 +596,6 @@ class BrowserActivity : Activity() {
         root.addView(dlBar, LinearLayout.LayoutParams(-1, -2).apply { setMargins(ui.dp(8), ui.dp(4), ui.dp(8), ui.dp(6)) })   // (v324)
         // (v117) شريط البوابات: الفيديوهات · الموسيقى · المتصفح (إحنا فيه دلوقتي) · الملفات · (v324) يوتيوب
         val gates = BottomNav(this, ui, th, 2) { i -> if (i != 2) NavAnim.set(2, i); if (i == 0) goMain("videos") else if (i == 1) goMain("music") else if (i == 4) goMain("youtube") else if (i == 5) goMain("tasks") else if (i == 7) goMain("settings") else if (i == 3) { startActivity(FilesHub.intent(this)); NavAnim.peek(this); finish() } }   // (v310) الملفات · (v364) الذكاء
-        if (!tvOn) actStrip?.let { root.addView(it, LinearLayout.LayoutParams(-1, -2)) }   // (v801) الشريط فوق الشريط السفلي مباشرة
         if (!tvOn) root.addView(gates.view, LinearLayout.LayoutParams(-1, -2))   // (v517) تلفزيون: الشريط السفلي اتشال — 🏠 في شريط العنوان
         content = root
         frame = FrameLayout(this); frame.setBackgroundColor(th.bg)
@@ -1838,20 +1839,42 @@ class BrowserActivity : Activity() {
     }
     /** صفين فوق الشريط السفلي: فوق = أدوات (🕶 · 📺① · 🕘 · 🛡 · 🔄 · ألسنة التلفزيون 📺 🎮 ▶) · تحت = ‹ › (شمال) · دايرة الاصطياد (نص) · 🚨 (يمين) */
     private fun buildActStrip(rotFloat: TextView) {
-        // صف الأدوات
-        toolsInner = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_LTR; gravity = Gravity.CENTER; setPadding(ui.dp(4), ui.dp(3), ui.dp(4), ui.dp(3)) }
-        toolsInner.addView(stripBtn("🕶") { newTab(home(), true, -1L, true) })   // تصفح مخفي
-        val co = coPill("📺①") { toggleCoSurf() }; coBtn1 = co; toolsInner.addView(co)   // مزامنة المتصفح مع التلفزيون (يعرض من صفحة التلفزيون)
-        toolsInner.addView(stripBtn("🕘") { showHistory() })   // السجل — دخول سريع
+        // (v808) الأدوات كلها (🕶 · 📺① · 🕘 · 🛡 · 🔄 · ألسنة التلفزيون) بقت عمود رأسي مقفول، بيفتح لفوق بزرار واحد فوق زرار الرجوع
+        fun vm(v: View) { (v.layoutParams as? LinearLayout.LayoutParams)?.setMargins(ui.dp(3), ui.dp(3), ui.dp(3), ui.dp(3)) }
+        toolsInner = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_LTR; gravity = Gravity.CENTER_HORIZONTAL; visibility = View.GONE }
+        val bTab = stripBtn("🕶") { newTab(home(), true, -1L, true) }   // تصفح مخفي
+        toolsInner.addView(bTab); vm(bTab)
+        val co = coPill("📺①") { toggleCoSurf() }; coBtn1 = co; toolsInner.addView(co); vm(co)   // مزامنة المتصفح مع التلفزيون
+        val bHist = stripBtn("🕘") { showHistory() }   // السجل — دخول سريع
+        toolsInner.addView(bHist); vm(bHist)
         ctl.setPadding(0, 0, 0, 0); (shield.layoutParams as? LinearLayout.LayoutParams)?.let { it.setMargins(0, 0, 0, 0); it.height = ui.dp(38) }
         shield.gravity = Gravity.CENTER; shield.setPadding(ui.dp(6), 0, ui.dp(6), 0)
-        toolsInner.addView(ctl, LinearLayout.LayoutParams(-2, ui.dp(38)).apply { setMargins(ui.dp(3), 0, ui.dp(3), 0) })   // 🛡 عدّاد الإعلانات
+        toolsInner.addView(ctl, LinearLayout.LayoutParams(-2, ui.dp(38)).apply { setMargins(ui.dp(3), ui.dp(3), ui.dp(3), ui.dp(3)) })   // 🛡 عدّاد الإعلانات
         (rotFloat.parent as? ViewGroup)?.removeView(rotFloat)
-        rotFloat.layoutParams = LinearLayout.LayoutParams(ui.dp(38), ui.dp(38)).apply { setMargins(ui.dp(3), 0, ui.dp(3), 0) }
+        rotFloat.layoutParams = LinearLayout.LayoutParams(ui.dp(38), ui.dp(38)).apply { setMargins(ui.dp(3), ui.dp(3), ui.dp(3), ui.dp(3)) }
         toolsInner.addView(rotFloat)   // 🔄
-        val tools = HorizontalScrollView(this).apply { isHorizontalScrollBarEnabled = false; isFillViewport = true; addView(toolsInner, FrameLayout.LayoutParams(-1, -2)) }
 
-        // الصف التحتاني: سهمين · الدايرة · 🚨
+        // الزرار الواحد: دوسة = العمود يتفرد لفوق · دوسة تانية = يتقفل
+        var toolsOpen = false
+        lateinit var toolsToggle: TextView
+        toolsToggle = stripBtn("☰", 20f) {
+            toolsOpen = !toolsOpen
+            toolsToggle.text = if (toolsOpen) "✕" else "☰"
+            toolsInner.animate().cancel()
+            if (toolsOpen) {
+                toolsInner.visibility = View.VISIBLE; toolsInner.alpha = 0f; toolsInner.translationY = ui.dp(16).toFloat()
+                toolsInner.animate().alpha(1f).translationY(0f).setDuration(170L).start()
+            } else {
+                toolsInner.animate().alpha(0f).translationY(ui.dp(16).toFloat()).setDuration(130L).withEndAction { if (!toolsOpen) toolsInner.visibility = View.GONE }.start()
+            }
+        }
+        toolsToggle.layoutParams = LinearLayout.LayoutParams(ui.dp(40), ui.dp(40)).apply { setMargins(ui.dp(3), ui.dp(3), ui.dp(3), ui.dp(3)) }
+        val toolsPanel = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_LTR; gravity = Gravity.CENTER_HORIZONTAL
+            addView(toolsInner, LinearLayout.LayoutParams(-2, -2)); addView(toolsToggle)
+        }
+
+        // الصف التحتاني: سهمين · الدايرة · 🚨 — بدون خلفية خالص (الأزرار نفسها موجودة والصفحة باينة وراها)
         navBackB = stripBtn("‹", 26f) { wvOrNull?.let { if (it.canGoBack()) saver.back(it, tab) } }.apply { visibility = View.GONE }
         navFwdB = stripBtn("›", 26f) { wvOrNull?.let { if (it.canGoForward()) it.goForward() } }.apply { visibility = View.GONE }
         val left = LinearLayout(this).apply {
@@ -1865,12 +1888,12 @@ class BrowserActivity : Activity() {
             addView(badge, FrameLayout.LayoutParams(ui.dp(56), ui.dp(56), Gravity.CENTER))
             addView(panicB, FrameLayout.LayoutParams(ui.dp(44), ui.dp(44), Gravity.RIGHT or Gravity.CENTER_VERTICAL).apply { rightMargin = ui.dp(6) })
         }
-        actStrip = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_LTR
-            setBackgroundColor(th.bg)
-            addView(tools, LinearLayout.LayoutParams(-1, -2))
-            addView(bottom, LinearLayout.LayoutParams(-1, ui.dp(60)))
+        actStrip = FrameLayout(this).apply {   // شفافة تمامًا وبتعدّي اللمس للصفحة إلا على الأزرار نفسها
+            layoutDirection = View.LAYOUT_DIRECTION_LTR
+            addView(toolsPanel, FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM or Gravity.LEFT).apply { leftMargin = ui.dp(4); bottomMargin = ui.dp(60) })
+            addView(bottom, FrameLayout.LayoutParams(-1, ui.dp(60), Gravity.BOTTOM))
         }
+        toolsHost = toolsPanel
     }
 
     // ===== (v801) أزرار الفيديو حوالين الدايرة (بدل العمود تحتها): بتفتح تلقائي لما تدوس على الفيديو، ودوسة في أي مكان تاني = تتصغّر =====
