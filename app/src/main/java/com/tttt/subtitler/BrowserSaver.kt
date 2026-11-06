@@ -597,20 +597,19 @@ class BrowserSaver(private val act: BrowserActivity, private val frame: FrameLay
     private fun clampCap() {
         val c = cap ?: return; val w = frame.width; val h = frame.height
         if (w == 0 || h == 0 || c.width == 0) return
-        val minX = -c.left.toFloat(); val maxX = maxOf(minX, (w - c.right).toFloat())
         val minY = -c.top.toFloat(); val maxY = maxOf(minY, (h - c.bottom).toFloat())
-        c.translationX = c.translationX.coerceIn(minX, maxX); c.translationY = c.translationY.coerceIn(minY, maxY)
+        c.translationX = 0f; c.translationY = c.translationY.coerceIn(minY, maxY)   // (v791) كبسولة جنبية: حركة رأسية بس
     }
     private val capTouch = View.OnTouchListener { v, e ->
         when (e.actionMasked) {
             android.view.MotionEvent.ACTION_DOWN -> { dX = e.rawX; dY = e.rawY; bX = v.translationX; bY = v.translationY; moved = false }
             android.view.MotionEvent.ACTION_MOVE -> {
                 val ddx = e.rawX - dX; val ddy = e.rawY - dY
-                if (!moved && (Math.abs(ddx) > ui.dp(8) || Math.abs(ddy) > ui.dp(8))) moved = true
-                if (moved) { v.translationX = bX + ddx; v.translationY = bY + ddy; clampCap() }
+                if (!moved && Math.abs(ddy) > ui.dp(8)) moved = true
+                if (moved) { v.translationY = bY + ddy; clampCap() }
             }
             android.view.MotionEvent.ACTION_UP -> {
-                if (moved) p.edit().putFloat("sv_cap_dx", v.translationX).putFloat("sv_cap_dy", v.translationY).apply()
+                if (moved) p.edit().putFloat("sv_cap_ly", v.translationY).apply()
                 else if (e.eventTime - e.downTime > 600L) showStats()
                 else {
                     val tv = v as TextView; val ly = tv.layout
@@ -621,16 +620,20 @@ class BrowserSaver(private val act: BrowserActivity, private val frame: FrameLay
         }
         true
     }
+    private fun capBg(color: Int): android.graphics.drawable.GradientDrawable {
+        val r = ui.dp(14).toFloat()
+        return android.graphics.drawable.GradientDrawable().apply { setColor(color); cornerRadii = floatArrayOf(0f, 0f, r, r, r, r, 0f, 0f); setStroke(ui.dp(1), 0x55FFFFFF) }
+    }
     private fun buildCap() {
         val c = TextView(act).apply {
             textSize = 10.5f; setTextColor(0xFFFFFFFF.toInt()); gravity = Gravity.CENTER; layoutDirection = View.LAYOUT_DIRECTION_LTR
-            setPadding(ui.dp(10), ui.dp(5), ui.dp(10), ui.dp(5)); background = ui.box(0xE61E2A3A.toInt(), 0x66FFFFFF, 14); elevation = ui.dp(5).toFloat()
+            setPadding(ui.dp(7), ui.dp(6), ui.dp(10), ui.dp(6)); background = capBg(0xE61E2A3A.toInt()); elevation = ui.dp(5).toFloat()
             isFocusable = false; visibility = View.GONE
             setOnTouchListener(capTouch)
         }
         cap = c
-        frame.addView(c, FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.CENTER_HORIZONTAL).apply { topMargin = ui.dp(84) })
-        c.translationX = p.getFloat("sv_cap_dx", 0f); c.translationY = p.getFloat("sv_cap_dy", 0f)
+        frame.addView(c, FrameLayout.LayoutParams(-2, -2, Gravity.LEFT or Gravity.CENTER_VERTICAL))   // (v791) كبسولة جنبية على الشمال زي كبسولة الريموت/التلفزيون
+        c.translationX = 0f; c.translationY = p.getFloat("sv_cap_ly", 0f)
         c.post { clampCap() }
     }
     private fun updateCap() {
@@ -650,7 +653,7 @@ class BrowserSaver(private val act: BrowserActivity, private val frame: FrameLay
     private fun render() {
         val c = cap ?: return
         val sb = StringBuilder()
-        if (!capOpen) sb.append("📶 ").append(fmt(shown[0])).append("  🛜 ").append(fmt(shown[1]))
+        if (!capOpen) sb.append("📶 ").append(fmt(shown[0])).append("\n🛜 ").append(fmt(shown[1]))
         else {
             sb.append("الجلسة  Σ ").append(fmt(shown[0] + shown[1])).append('\n').append("📶 ").append(fmt(shown[0])).append("   🛜 ").append(fmt(shown[1])).append('\n')
             sb.append("اليوم  Σ ").append(fmt(shown[2] + shown[3])).append('\n').append("📶 ").append(fmt(shown[2])).append("   🛜 ").append(fmt(shown[3])).append('\n')
@@ -661,7 +664,7 @@ class BrowserSaver(private val act: BrowserActivity, private val frame: FrameLay
             if (videoOn) parts.add("🎬 " + fmt(vidBytes) + vqLabel().let { if (it.isEmpty()) "" else " · $it" })
             val sv = savedEst(); if (sv > 0) parts.add("💚≈" + fmt(sv))
             if (parts.isNotEmpty()) sb.append('\n').append(parts.joinToString("  "))
-            sb.append("\nضغطة طويلة = التفاصيل · اسحبها لتحريكها")
+            sb.append("\nضغطة طويلة = التفاصيل · اسحبها فوق/تحت")
             sb.append("\n🔍 إيه اللي بياكل النت؟")
         }
         c.text = sb.toString()
@@ -673,7 +676,7 @@ class BrowserSaver(private val act: BrowserActivity, private val frame: FrameLay
             net == N_CELL -> 0xE61E2A3A.toInt()
             else -> 0xE6244A36.toInt()
         }
-        if (col != lastCol) { lastCol = col; try { c.background = ui.box(col, 0x66FFFFFF, 14) } catch (_: Throwable) {} }
+        if (col != lastCol) { lastCol = col; try { c.background = capBg(col) } catch (_: Throwable) {} }
     }
 
     // ===== (v785) قياس النظام الاختياري + مسح الإحصائيات =====
@@ -777,8 +780,24 @@ class BrowserSaver(private val act: BrowserActivity, private val frame: FrameLay
     private fun countReq(u: String, t: BTab) {
         try {
             val hs = hostOf(u); if (hs.isEmpty()) return
+            NetLog.web(hs)   // (v791) لوج النت العام
             if (reqCnt.size > 600) reqCnt.clear()
             reqCnt.compute(t.id.toString() + "|" + hs) { _, v -> (v ?: 0) + 1 }
+        } catch (_: Throwable) {}
+    }
+
+    /** (v790) عيّنة من خيوط التطبيق اللي واقفة على قراءة من الشبكة (سوكت) ← بتكشف أنهي كلاس جوه البرنامج بيسحب داتا (غير صفحات المتصفح) */
+    private fun sampleNetThreads(into: HashMap<String, Int>) {
+        try {
+            for ((_, st) in Thread.getAllStackTraces()) {
+                if (st.isEmpty()) continue
+                val top = st.take(16)
+                val inNet = top.any { f -> val c = f.className; val m = f.methodName; m.startsWith("socketRead") || m == "SSL_read" || c.contains("NativeCrypto") || c.contains("ConscryptFileDescriptorSocket") || c.contains("SocketInputStream") || (c.contains("okhttp") && m == "read") }
+                if (!inNet) continue
+                val mine = st.firstOrNull { it.className.startsWith("com.tttt.subtitler") && !it.className.contains("BrowserSaver") } ?: continue
+                val k = mine.className.substringAfterLast('.') + "." + mine.methodName
+                into[k] = (into[k] ?: 0) + 1
+            }
         } catch (_: Throwable) {}
     }
 
@@ -814,10 +833,11 @@ class BrowserSaver(private val act: BrowserActivity, private val frame: FrameLay
             val rx0 = TrafficStats.getUidRxBytes(uid); val tx0 = TrafficStats.getUidTxBytes(uid)
             val c0 = HashMap<String, Int>(reqCnt)
             var left = 10
+            val thr = HashMap<String, Int>(); sampleNetThreads(thr)
             val step = object : Runnable {
                 override fun run() {
                     if (d?.isShowing != true) { busy = false; return }
-                    if (left > 0) { res.text = "⏳ بقيس… " + left; left--; h.postDelayed(this, 1000L); return }
+                    if (left > 0) { res.text = "⏳ بقيس… " + left; left--; sampleNetThreads(thr); h.postDelayed(this, 1000L); return }
                     busy = false
                     val dr = (TrafficStats.getUidRxBytes(uid) - rx0).coerceAtLeast(0L); val dt = (TrafficStats.getUidTxBytes(uid) - tx0).coerceAtLeast(0L)
                     val total = dr + dt
@@ -838,6 +858,13 @@ class BrowserSaver(private val act: BrowserActivity, private val frame: FrameLay
                             }
                         } else if (!videoOn) sb.append("⚙ الصفحات ماطلبتش حاجة — الاستهلاك جاي من برّه صفحات المتصفح (تحميل أو ترجمة أو خدمة خلفية في التطبيق).\n")
                     }
+                    val topThr = thr.entries.sortedByDescending { it.value }.take(5)
+                    if (topThr.isNotEmpty()) {
+                        sb.append("\n🧵 أكتر حاجة جوه البرنامج كانت واقفة على الشبكة (عيّنات من 11):\n")
+                        for ((k, n) in topThr) sb.append("  • ").append(k).append(" — ").append(n).append('\n')
+                    }
+                    val svcs = try { @Suppress("DEPRECATION") (act.getSystemService(Context.ACTIVITY_SERVICE) as android.app.ActivityManager).getRunningServices(60).filter { it.service.packageName == act.packageName }.map { it.service.shortClassName.removePrefix(".") } } catch (_: Throwable) { emptyList<String>() }
+                    if (svcs.isNotEmpty()) sb.append("\n⚙ خدمات التطبيق الشغّالة: ").append(svcs.joinToString("، ")).append('\n')
                     val bg = tabs.count { it !== cur && it.wv != null }
                     if (bg > 0) sb.append("\n🗂 تبويبات شغّالة في الخلفية: ").append(bg)
                     res.text = sb.toString().trimEnd()

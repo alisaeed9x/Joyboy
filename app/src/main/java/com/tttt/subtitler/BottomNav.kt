@@ -70,6 +70,7 @@ class BottomNav(act: Activity, private val ui: Ui, private val th: Theme, privat
             }) { collapseMore(); TvModeFab.toggle(act) })
         }
         items.add(MoreItem("📶", "الداتا", false) { collapseMore(); try { NetStatsUi(act, ui, th).show() } catch (_: Throwable) {} })   // (v753) استهلاك الداتا واي فاي/موبايل
+        items.add(MoreItem("📡", "لوج النت", false) { collapseMore(); try { NetLog.show(act, ui, th) } catch (_: Throwable) {} })   // (v791) لوج كل اتصال بالنت وحجمه
         if (7 in ids) items.add(MoreItem(DEFS[7].first, DEFS[7].second, 7 == active) { collapseMore(); onPick(7) })
         val sw = act.resources.displayMetrics.widthPixels
         val w = if (items.size <= 5) sw / items.size else (sw / 5.4f).toInt()
@@ -128,6 +129,12 @@ class BottomNav(act: Activity, private val ui: Ui, private val th: Theme, privat
             Glass.pressable(rowN)
             rowN.setOnClickListener { d.dismiss(); try { NetStatsUi(act, ui, th).show() } catch (_: Throwable) {} }
             box.addView(rowN, LinearLayout.LayoutParams(-1, -2))
+        }
+        run {   // (v791) لوج النت العام
+            val rowL = ui.text("📡  لوج النت (مين بيتصل وبياخد كام)", 15f, th.text, true).apply { setPadding(ui.dp(14), ui.dp(14), ui.dp(14), ui.dp(14)) }
+            Glass.pressable(rowL)
+            rowL.setOnClickListener { d.dismiss(); try { NetLog.show(act, ui, th) } catch (_: Throwable) {} }
+            box.addView(rowL, LinearLayout.LayoutParams(-1, -2))
         }
         for ((id, label) in items) {
             val row = ui.text(label, 15f, if (id == active) th.primary else th.text, true).apply { setPadding(ui.dp(14), ui.dp(14), ui.dp(14), ui.dp(14)) }

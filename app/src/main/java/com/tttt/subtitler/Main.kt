@@ -124,7 +124,7 @@ class MainActivity : Activity() {
     private var pendingTool = ""
     private var pendingSrc: ToolSrc? = null
     override fun onCreate(b: Bundle?) {
-        NetUse.init(); NetLedger.start(this); NetGate.apply(this)
+        NetUse.init(); NetLedger.start(this); NetLog.start(this); NetGate.apply(this)
         fromPlayer = intent?.getBooleanExtra("from_player", false) == true
         fromTv = intent?.getBooleanExtra("from_tv", false) == true
         ytTvMode = intent?.getBooleanExtra("tv_target", false) == true

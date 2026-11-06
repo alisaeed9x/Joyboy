@@ -96,6 +96,7 @@ com/tttt/subtitler/MusicWidget.kt
 com/tttt/subtitler/NavAnim.kt
 com/tttt/subtitler/NetGate.kt
 com/tttt/subtitler/NetLedger.kt
+com/tttt/subtitler/NetLog.kt
 com/tttt/subtitler/NetStatsUi.kt
 com/tttt/subtitler/NetUse.kt
 com/tttt/subtitler/NextPanel.kt

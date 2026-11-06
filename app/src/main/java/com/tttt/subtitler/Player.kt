@@ -4064,7 +4064,7 @@ class PlayerActivity : Activity(), Host {
         say("🔎 مفيش جملة فيها «" + t.take(20) + "»")
     }
     override fun onCreate(b: Bundle?) {
-        NetLedger.start(this); NetGate.apply(this)
+        NetLedger.start(this); NetLog.start(this); NetGate.apply(this)
         super.onCreate(b)
         smoothRotation()   // (v429)
         synchronized(liveList) {
