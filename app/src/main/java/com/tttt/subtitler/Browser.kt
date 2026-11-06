@@ -842,7 +842,7 @@ class BrowserActivity : Activity() {
     private fun select(i: Int) {
         if (i !in tabs.indices) return
         tabs.getOrNull(curIdx)?.let { snapTab(it) }
-        wvOrNull?.let { try { it.onPause() } catch (_: Throwable) {} }
+        wvOrNull?.let { try { it.evaluateJavascript(BrowserSaver.JS_STOPMEDIA, null) } catch (_: Throwable) {}; try { it.onPause() } catch (_: Throwable) {} }   // (v788) الفيديو في التبويب اللي سبته يقف فورًا (onPause لوحدها مش بتوقّف التحميل)
         webHolder.removeAllViews()
         val prevIdx = curIdx
         curIdx = i

@@ -673,17 +673,6 @@ class MainActivity : Activity() {
                     ui.text("لون التمييز:", 12f, th.muted), accChips, custSat, custLight, custApply,
                     ui.text("🌡 راحة العين — فلتر دافئ: طبقة دافئة فوق الشاشة بتقلّل الضوء الأزرق بالليل (٠ = مقفول).", 12f, th.muted),
                     ui.slider("درجة الدفء", Cfg.int("warm", 0), 0, 100, "%") { Cfg.put("warm", it.toString()); refreshWarm() }),
-                ui.section("الخلفية المتغيّرة (تجربة)", false,
-                    ui.text("خلفية بتتغيّر لوحدها ورا الواجهة (Bing وصور) في الموبايل والتابلت. لو الأزرار أو الكلام مش باينين زوّد التعتيم. التغيير التلقائي بيوقف على النت المحدود.", 12f, th.muted),
-                    ui.switchRow("شغّال", AppWall.enabled()) { on -> Cfg.put("app_wall", if (on) "auto" else "off"); AppWall.reapply(this) },
-                    ui.text("المصدر (تلقائي = كل المصادر بالتناوب):", 12f, th.muted),
-                    ui.chips(listOf("تلقائي", "Bing", "Wallhaven", "صور عشوائية"), { when (AppWall.mode()) { "bing" -> "Bing"; "wallhaven" -> "Wallhaven"; "picsum" -> "صور عشوائية"; else -> "تلقائي" } }) { n ->
-                        Cfg.put("app_wall", when (n) { "Bing" -> "bing"; "Wallhaven" -> "wallhaven"; "صور عشوائية" -> "picsum"; else -> "auto" }); AppWall.reapply(this) },
-                    ui.button("🖼 متجر الخلفيات (بحث + أحدث الخلفيات)") { WallStore(this) { AppWall.reapply(this) }.open() },
-                    ui.text("بتتغيّر كل:", 12f, th.muted),
-                    ui.chips(listOf("30 ثانية", "دقيقة", "5 دقايق", "15 دقيقة", "ساعة", "ثابتة"), { AppWall.secLabel() }) { n -> Cfg.put("app_wall_sec", AppWall.secOf(n)); AppWall.reapply(this) },
-                    ui.slider("تعتيم الخلفية (زوّده لو الأزرار مش باينة)", Cfg.int("app_wall_scrim", 55).coerceIn(0, 95), 0, 95, "%") { Cfg.put("app_wall_scrim", it.toString()); AppWall.refreshScrim() },
-                    ui.button("غيّر الخلفية دلوقتي") { AppWall.nextNow(this) }),
                 ui.section("🧩 الواجهة", false,
                     ui.button("📺 إعدادات التلفزيون (كلها في مكان واحد)") { TvLookPad.show(this) },
                     ui.text("نوع الجهاز (موبايل · تابلت · تلفزيون) — نفس النسخة بتتحول لواجهة تلفزيون أو تابلت، والتبديل بيطبّق فورًا:", 12f, th.muted),
@@ -1054,7 +1043,7 @@ class MainActivity : Activity() {
             frame.addView(TvShell.backdrop(this, th), FrameLayout.LayoutParams(-1, -1))
             frame.addView(shell, FrameLayout.LayoutParams(-1, -1))
         } else {
-            if (!DeviceUi.isTv(this) && !fromPlayer) { try { AppWall.attach(this, frame, th) } catch (e: Throwable) { LogStore.err("Main:appWall", e) } }   // (v721) خلفية متغيّرة للموبايل/التابلت
+            // (v789) الخلفية المتغيّرة (AppWall) اتشالت من الموبايل/التابلت (كانت بتنزّل صور من النت كل فترة) — خلفية التلفزيون ليها نظامها الخاص في TvHome
             frame.addView(shell, FrameLayout.LayoutParams(-1, -1))
         }
         ytLoadUi = YtLoadingPage(this, ui, th) { cancelYtLoad() }.also { frame.addView(it.root, FrameLayout.LayoutParams(-1, -1)) }

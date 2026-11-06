@@ -81,6 +81,8 @@ class BrowserSaver(private val act: BrowserActivity, private val frame: FrameLay
             "fullstory.com", "mouseflow.com", "crazyegg.com", "nr-data.net", "adobedtm.com", "omtrdc.net")
         private const val JS_NOPRE = "(function(){if(window.__jbP)return;window.__jbP=1;function f(){try{document.querySelectorAll('video:not([data-jbp]),audio:not([data-jbp])').forEach(function(m){m.setAttribute('data-jbp','1');if(m.paused)m.preload='none'});document.querySelectorAll('link[rel=prefetch],link[rel=prerender],link[rel=preload][as=video],link[rel=preload][as=fetch]').forEach(function(l){if(l.parentNode)l.parentNode.removeChild(l)})}catch(e){}}f();try{new MutationObserver(f).observe(document.documentElement,{childList:true,subtree:true})}catch(e){}})();"
         private const val JS_IMGS = "(function(){var n=0;document.querySelectorAll('img').forEach(function(i){if(!i.complete||!i.naturalWidth)n++});return n})()"
+        /** (v788) إيقاف أي فيديو/صوت في تبويب خلفي ومنعه من التحميل المسبق — ده اللي كان بيفضل ينزّل مقاطع (≈ميجا/10ث) بعد ما تسيب التبويب */
+        const val JS_STOPMEDIA = "(function(){try{document.querySelectorAll('video,audio').forEach(function(v){try{if(!v.paused)v.pause();v.preload='none'}catch(e){}})}catch(e){}})();"
         private const val JS_STOPVID = "(function(){document.querySelectorAll('video').forEach(function(v){try{v.pause();v.preload='none'}catch(e){}})})();"
     }
 
@@ -318,6 +320,7 @@ class BrowserSaver(private val act: BrowserActivity, private val frame: FrameLay
 
     /** وضع الطوارئ: بيمنع الخطوط بس (الصور بتتمنع بإعداد blockNetworkImage والفيديو بالحارس)؛ بيتنفذ بعد فحص الإعلانات */
     fun intercept(u: String, t: BTab): WebResourceResponse? {
+        countReq(u, t)   // (v789) عدّ طلبات كل تبويب/موقع لزرار «إيه اللي بياكل النت؟»
         if (level < SMART) return null
         val hs = hostOf(t.url)
         if (siteMode(hs) == 2) return null
@@ -358,6 +361,15 @@ class BrowserSaver(private val act: BrowserActivity, private val frame: FrameLay
             } catch (_: Throwable) {}
         }
         return n
+    }
+    /** (v788) التبويبات اللي مش قدامك ما تفضلش تشغّل/تحمّل فيديو: بنوقف أي ميديا فيها كل ~4 ثواني (من غير ما نلمس التبويب الحالي) */
+    private fun quietBg() {
+        val cur = host.tab()
+        for (t in host.tabs()) {
+            if (t === cur) continue
+            val w = t.wv ?: continue
+            try { w.evaluateJavascript(JS_STOPMEDIA, null) } catch (_: Throwable) {}
+        }
     }
     fun frozenCount(): Int = host.tabs().count { it.frozen != null && it.wv == null }
     fun onTrim(level: Int) { if (level >= 10) freezeIdle(true) }   // TRIM_MEMORY_RUNNING_LOW وأعلى
@@ -470,6 +482,7 @@ class BrowserSaver(private val act: BrowserActivity, private val frame: FrameLay
         }
         if (tickN % 2 == 0) pollVideo()
         if (tickN % 15 == 0 && tickN > 0) freezeIdle()
+        if (tickN % 4 == 0) quietBg()
         if (tickN % 10 == 0 && tickN > 0) { persist(); checkLimits() }
         tickN++
         updateCap()
@@ -599,7 +612,11 @@ class BrowserSaver(private val act: BrowserActivity, private val frame: FrameLay
             android.view.MotionEvent.ACTION_UP -> {
                 if (moved) p.edit().putFloat("sv_cap_dx", v.translationX).putFloat("sv_cap_dy", v.translationY).apply()
                 else if (e.eventTime - e.downTime > 600L) showStats()
-                else { capOpen = !capOpen; render(); v.post { clampCap() } }
+                else {
+                    val tv = v as TextView; val ly = tv.layout
+                    val onWho = capOpen && ly != null && ly.getLineForVertical((e.y - tv.totalPaddingTop).toInt().coerceAtLeast(0)) >= ly.lineCount - 1   // (v789) آخر سطر = زرار «إيه اللي بياكل النت؟»
+                    if (onWho) showWho() else { capOpen = !capOpen; render(); v.post { clampCap() } }
+                }
             }
         }
         true
@@ -644,7 +661,8 @@ class BrowserSaver(private val act: BrowserActivity, private val frame: FrameLay
             if (videoOn) parts.add("🎬 " + fmt(vidBytes) + vqLabel().let { if (it.isEmpty()) "" else " · $it" })
             val sv = savedEst(); if (sv > 0) parts.add("💚≈" + fmt(sv))
             if (parts.isNotEmpty()) sb.append('\n').append(parts.joinToString("  "))
-            sb.append("\nاضغط مطوّلًا للتفاصيل · اسحبها لتحريكها")
+            sb.append("\nضغطة طويلة = التفاصيل · اسحبها لتحريكها")
+            sb.append("\n🔍 إيه اللي بياكل النت؟")
         }
         c.text = sb.toString()
         val lim = (p.getString("sv_lim_day", "0")?.toLongOrNull() ?: 0L) * 1048576L
@@ -743,13 +761,94 @@ class BrowserSaver(private val act: BrowserActivity, private val frame: FrameLay
         }
         col.addView(ui.text("🧊 تبويبات مجمّدة: " + frozenCount() + " · 📴 صفحات محفوظة: " + offIdx().length(), 12f, th.muted).apply { setPadding(0, ui.dp(8), 0, ui.dp(6)) })
         var d: android.app.Dialog? = null
-        col.addView(ui.button("⚙ إعدادات التوفير", true) { d?.dismiss(); showPanel() })
+        col.addView(ui.button("🔍 إيه اللي بياكل النت؟", true) { d?.dismiss(); showWho() })
+        col.addView(ui.button("⚙ إعدادات التوفير") { d?.dismiss(); showPanel() })
         col.addView(ui.button("🗑 مسح الإحصائيات") {
             android.app.AlertDialog.Builder(act).setTitle("مسح إحصائيات الداتا؟")
                 .setMessage("هيتمسح عدّاد الجلسة واليوم والتاريخ والمواقع والتبويبات والتوفير المقدّر. الكاش والكوكيز والإعدادات مش هتتأثر.")
                 .setPositiveButton("امسح") { _, _ -> resetStats(); d?.dismiss(); showStats() }.setNegativeButton("إلغاء", null).show()
         })
         d = ui.sheet(act, "📶 استهلاك الداتا", listOf<View>(ScrollView(act).apply { addView(col) })); d.show()
+    }
+
+
+    // ===== (v789) إيه اللي بياكل النت؟ =====
+    private val reqCnt = java.util.concurrent.ConcurrentHashMap<String, Int>()   // "idالتبويب|الموقع" ← عدد الطلبات
+    private fun countReq(u: String, t: BTab) {
+        try {
+            val hs = hostOf(u); if (hs.isEmpty()) return
+            if (reqCnt.size > 600) reqCnt.clear()
+            reqCnt.compute(t.id.toString() + "|" + hs) { _, v -> (v ?: 0) + 1 }
+        } catch (_: Throwable) {}
+    }
+
+    fun showWho() {
+        persist()
+        val col = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; setPadding(ui.dp(16), ui.dp(10), ui.dp(16), ui.dp(12)) }
+        var d: android.app.Dialog? = null
+        col.addView(ui.text("📊 النهارده — مين استهلك (التطبيق كله)", 14f, th.primary, true))
+        try {
+            val items = ArrayList<Pair<String, Long>>()
+            for (r in NetLedger.rows("page", 1)) items.add(r.name to r.total())
+            for (r in NetLedger.rows("vid", 1)) items.add(("🎬 " + r.name) to r.total())
+            for (r in NetLedger.rows("file", 1)) items.add(("📁 " + r.name) to r.total())
+            items.sortByDescending { it.second }
+            val tot = NetLedger.totalOf(1).total()
+            col.addView(ui.text("الإجمالي: " + fmt(tot) + "   (📶 " + fmt(dCell) + " · 🛜 " + fmt(dWifi) + " في المتصفح)", 12.5f, th.text).apply { setPadding(0, ui.dp(4), 0, ui.dp(4)) })
+            if (items.none { it.second > 0L }) col.addView(ui.text("لسه مفيش استهلاك مسجّل النهارده.", 12f, th.muted))
+            for ((nm, b) in items.filter { it.second > 0L }.take(8)) {
+                val pc = if (tot > 0L) " (" + (b * 100 / tot) + "%)" else ""
+                col.addView(ui.text("• " + nm.take(44) + " — " + fmt(b) + pc, 12.5f, th.text))
+            }
+            if (items.any { it.first.startsWith("⚙") && it.second > 1_000_000L })
+                col.addView(ui.text("⚠ فيه استهلاك «من غير شاشة»: حاجة بتنزّل والتطبيق في الخلفية (تحميل/ترجمة/خدمة).", 12f, 0xFFE65100.toInt()).apply { setPadding(0, ui.dp(4), 0, 0) })
+        } catch (e: Throwable) { col.addView(ui.text("مقدرتش أقرا سجل الاستهلاك.", 12f, th.muted)) }
+
+        col.addView(ui.text("🔬 قياس لحظي (10 ثواني)", 14f, th.primary, true).apply { setPadding(0, ui.dp(12), 0, ui.dp(2)) })
+        col.addView(ui.text("سيب الشاشة زي ما هي (من غير ما تلمس حاجة) وأنا هقيس اللي بينزل ومين بيطلبه.", 11.5f, th.muted))
+        val res = ui.text("", 12.5f, th.text).apply { setPadding(0, ui.dp(6), 0, ui.dp(4)) }
+        var busy = false
+        col.addView(ui.button("▶ ابدأ القياس") {
+            if (busy) return@button
+            busy = true
+            val rx0 = TrafficStats.getUidRxBytes(uid); val tx0 = TrafficStats.getUidTxBytes(uid)
+            val c0 = HashMap<String, Int>(reqCnt)
+            var left = 10
+            val step = object : Runnable {
+                override fun run() {
+                    if (d?.isShowing != true) { busy = false; return }
+                    if (left > 0) { res.text = "⏳ بقيس… " + left; left--; h.postDelayed(this, 1000L); return }
+                    busy = false
+                    val dr = (TrafficStats.getUidRxBytes(uid) - rx0).coerceAtLeast(0L); val dt = (TrafficStats.getUidTxBytes(uid) - tx0).coerceAtLeast(0L)
+                    val total = dr + dt
+                    val tabs = host.tabs(); val cur = host.tab()
+                    val diff = reqCnt.entries.map { it.key to (it.value - (c0[it.key] ?: 0)) }.filter { it.second > 0 }.sortedByDescending { it.second }.take(5)
+                    val sb = StringBuilder()
+                    sb.append("اللي نزل/اتبعت في 10 ثواني: ").append(fmt(total)).append("  (≈ ").append(fmt(total / 10)).append("/ث)\n")
+                    if (total < 30_000L) sb.append("✅ هادي — مفيش استهلاك يُذكر دلوقتي.")
+                    else {
+                        if (videoOn) sb.append("🎬 فيه فيديو شغّال في الصفحة الحالية — ده غالبًا السبب.\n")
+                        if (cur != null && cur.progress < 100) sb.append("⏳ الصفحة الحالية لسه بتحمّل.\n")
+                        if (diff.isNotEmpty()) {
+                            sb.append("🌐 طلبات الصفحات في الـ10 ثواني:\n")
+                            for ((k, n) in diff) {
+                                val id = k.substringBefore('|'); val hs = k.substringAfter('|')
+                                val tt = tabs.firstOrNull { it.id.toString() == id }
+                                sb.append("  • ").append(hs).append(" — ").append(n).append(" طلب").append(if (tt == null) "" else if (tt === cur) " (التبويب الحالي)" else " (تبويب خلفي: " + (tt.title.ifBlank { hostOf(tt.url) }).take(24) + ")").append('\n')
+                            }
+                        } else if (!videoOn) sb.append("⚙ الصفحات ماطلبتش حاجة — الاستهلاك جاي من برّه صفحات المتصفح (تحميل أو ترجمة أو خدمة خلفية في التطبيق).\n")
+                    }
+                    val bg = tabs.count { it !== cur && it.wv != null }
+                    if (bg > 0) sb.append("\n🗂 تبويبات شغّالة في الخلفية: ").append(bg)
+                    res.text = sb.toString().trimEnd()
+                }
+            }
+            h.post(step)
+        })
+        col.addView(res)
+        col.addView(ui.button("🧊 جمّد التبويبات الخلفية دلوقتي") { val n = freezeIdle(true); Notice.show(act, if (n > 0) "🧊 اتجمّد $n تبويب" else "مفيش تبويبات خلفية تتجمّد (لازم تكون ساكتة 20 ثانية)", 2600L) })
+        col.addView(ui.button("📶 كل التفاصيل") { d?.dismiss(); showStats() })
+        d = ui.sheet(act, "🔍 إيه اللي بياكل النت؟", listOf<View>(ScrollView(act).apply { addView(col) })); d.show()
     }
 
     // ===== لوحة الإعدادات =====
