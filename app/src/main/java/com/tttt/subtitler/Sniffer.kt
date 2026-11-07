@@ -140,6 +140,7 @@ object AdBlock {
         val host = try { Uri.parse(url).host?.lowercase() } catch (_: Throwable) { null } ?: return false
         val parts = host.split('.')
         for (i in 0 until parts.size - 1) if (parts.subList(i, parts.size).joinToString(".") in HOSTS) return true
+        if (PopupGuard.isLearned(host)) return true   // (v816) دومين إعلانات اتعلّم من بوب-أب اتمنع
         if (BET_HOST.containsMatchIn(host)) return true
         if (BET_URL.containsMatchIn(url.substringBefore('?'))) return true
         return PATH.containsMatchIn(url)

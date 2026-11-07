@@ -28,10 +28,14 @@ object Themes {
         Theme("mxd", "MX داكن", 0xFF121212.toInt(), 0xFF1B1B1B.toInt(), 0xFF1E1E1E.toInt(), 0xFF2E2E2E.toInt(), 0xFF4FA3F7.toInt(), 0xFF2196F3.toInt(), 0xFFEDEDED.toInt(), 0xFF9AA0A6.toInt(), 0xFFFF6B6B.toInt(), 0xFF4FA3F7.toInt()),
         Theme("win11d", "ويندوز 11 داكن", 0xFF202020.toInt(), 0xFF282828.toInt(), 0xFF2C2C2C.toInt(), 0xFF3D3D3D.toInt(), 0xFF60CDFF.toInt(), 0xFF4CC2FF.toInt(), 0xFFFFFFFF.toInt(), 0xFFA0A0A0.toInt(), 0xFFFF99A4.toInt(), 0xFF60CDFF.toInt()),
         Theme("winxp", "ويندوز XP", 0xFFECE9D8.toInt(), 0xFFF5F4EC.toInt(), 0xFFFFFFFF.toInt(), 0xFF7F9DB9.toInt(), 0xFF0054E3.toInt(), 0xFF7A9CC6.toInt(), 0xFF000000.toInt(), 0xFF4A4A4A.toInt(), 0xFFC83232.toInt(), 0xFF2A66C8.toInt()),
-        Theme("win7", "ويندوز 7 (إيرو)", 0xFFD6E4F0.toInt(), 0xFFEAF2FA.toInt(), 0xFFFFFFFF.toInt(), 0xFF8FA8BF.toInt(), 0xFF1F6FB2.toInt(), 0xFF57A7D8.toInt(), 0xFF10222E.toInt(), 0xFF33424F.toInt(), 0xFFC42B1C.toInt(), 0xFF1F6FB2.toInt())
+        Theme("win7", "ويندوز 7 (إيرو)", 0xFFD6E4F0.toInt(), 0xFFEAF2FA.toInt(), 0xFFFFFFFF.toInt(), 0xFF8FA8BF.toInt(), 0xFF1F6FB2.toInt(), 0xFF57A7D8.toInt(), 0xFF10222E.toInt(), 0xFF33424F.toInt(), 0xFFC42B1C.toInt(), 0xFF1F6FB2.toInt()),
+        // (v816) سمات سكن iOS (ألوان نظام iOS: أزرق 007AFF/0A84FF · خلفية مجمّعة F2F2F7 / أسود · كروت بيضا / 1C1C1E)
+        Theme("ios", "iOS فاتح", 0xFFF2F2F7.toInt(), 0xFFFFFFFF.toInt(), 0xFFFFFFFF.toInt(), 0xFFD1D1D6.toInt(), 0xFF007AFF.toInt(), 0xFF5856D6.toInt(), 0xFF000000.toInt(), 0xFF6C6C70.toInt(), 0xFFFF3B30.toInt(), 0xFF34C759.toInt()),
+        Theme("iosd", "iOS داكن", 0xFF000000.toInt(), 0xFF1C1C1E.toInt(), 0xFF1C1C1E.toInt(), 0xFF38383A.toInt(), 0xFF0A84FF.toInt(), 0xFF5E5CE6.toInt(), 0xFFFFFFFF.toInt(), 0xFF98989F.toInt(), 0xFFFF453A.toInt(), 0xFF30D158.toInt())
     )
     // (v475) السمات الفاتحة نصها أسود بالكامل، والغامقة نصها أبيض — بدون درجات رمادي باهتة؛ والـ muted بقى قريب من اللون الأساسي
     private fun hard(t: Theme): Theme {
+        if (t.id == "ios" || t.id == "iosd") return t   // (v816) ألوان iOS ثابتة
         val light = t.isLight
         return Theme(t.id, t.name, t.bg, t.surface, t.card, t.border, t.primary, t.accent,
             if (light) 0xFF000000.toInt() else 0xFFFFFFFF.toInt(),
@@ -40,7 +44,7 @@ object Themes {
     val all: List<Theme> = raw.map { hard(it) }
 
     /** (v810) السمات اللي بتظهر في إعدادات المظهر على الموبايل (الباقي فاضل موجود للتلفزيون والسكِنز بس): MX الفاتح · أموليد · إنفينكس · ويندوز 11 (فاتح/داكن) · ويندوز XP · الرملي (سيبيا) */
-    val phoneIds: List<String> = listOf("mx", "amoled_w", "infinix", "win11", "win11d", "winxp", "eye_sepia")
+    val phoneIds: List<String> = listOf("ios", "iosd", "mx", "amoled_w", "infinix", "win11", "win11d", "winxp", "eye_sepia")
     val phone: List<Theme> get() = phoneIds.mapNotNull { id -> all.firstOrNull { it.id == id } }
 
     fun byId(id: String?): Theme = if (id == "custom") custom() else all.firstOrNull { it.id == id } ?: all[0]   // all[0] = mx
@@ -64,7 +68,46 @@ object Themes {
     }
     private val PAIRS = mapOf("mx" to "amoled_w", "win11" to "win11d", "light" to "default", "eye_sepia" to "infinix", "eye_night" to "sky",
         "sky" to "eye_night", "sakura" to "amoled_w", "amoled_w" to "mx", "infinix" to "mx", "winxp" to "win11d", "win7" to "win11d",
-        "mxd" to "mx", "win11d" to "win11", "default" to "light", "eye_dusk" to "eye_sepia")   // (v810) mx ↔ أموليد (مفيش MX داكن على الموبايل) · سيبيا ↔ إنفينكس
+        "mxd" to "mx", "ios" to "iosd", "iosd" to "ios", "win11d" to "win11", "default" to "light", "eye_dusk" to "eye_sepia")   // (v810) mx ↔ أموليد (مفيش MX داكن على الموبايل) · سيبيا ↔ إنفينكس
     /** (v352) سويتش داكن/فاتح: الثيم المقابل للحالي (فاتح ↔ داكن) */
     fun partner(id: String): String = PAIRS[id] ?: if (byId(id).isLight) "amoled_w" else "mx"
+}
+
+/**
+ * (v815) مربع معاينة سمة: بتشوف شكل السمة قبل ما تدوس — الخلفية + كارت بنقطة اللون الأساسي وسطرين نص + 3 نقط ألوان (أساسي · تمييز · نص) + الاسم تحتها.
+ * المختارة: إطار سميك بلون السمة نفسها + علامة ✔.
+ */
+class ThemeTile(ctx: android.content.Context, private val bg: Int, private val card: Int, private val primary: Int, private val accent: Int,
+                private val text: Int, private val muted: Int, private val name: String, var on: Boolean) : android.view.View(ctx) {
+    private val d = ctx.resources.displayMetrics.density
+    private val p = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
+    private val tp = android.text.TextPaint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply { textSize = 11.5f * d; isFakeBoldText = true; textAlign = android.graphics.Paint.Align.CENTER; color = text }
+    init { isClickable = true; isFocusable = true; contentDescription = "سمة $name" + if (on) " (مختارة)" else "" }
+    override fun onMeasure(w: Int, h: Int) { setMeasuredDimension(android.view.View.getDefaultSize(0, w), (92f * d).toInt()) }
+    override fun onDraw(c: android.graphics.Canvas) {
+        val w = width.toFloat(); val h = height.toFloat()
+        val r = 12f * d
+        p.style = android.graphics.Paint.Style.FILL; p.color = bg
+        c.drawRoundRect(0f, 0f, w, h, r, r, p)
+        // الكارت
+        p.color = card; c.drawRoundRect(8f * d, 8f * d, w - 8f * d, 36f * d, 8f * d, 8f * d, p)
+        p.color = primary; c.drawCircle(w - 20f * d, 22f * d, 6.5f * d, p)
+        p.color = text; c.drawRoundRect(14f * d, 16f * d, w * 0.52f, 20f * d, 2f * d, 2f * d, p)
+        p.color = muted; c.drawRoundRect(14f * d, 25f * d, w * 0.38f, 28f * d, 2f * d, 2f * d, p)
+        // 3 نقط ألوان
+        val cy = 47f * d; var cx = w / 2f - 16f * d
+        for (col in intArrayOf(primary, accent, text)) {
+            p.color = col; c.drawCircle(cx, cy, 5f * d, p)
+            p.style = android.graphics.Paint.Style.STROKE; p.strokeWidth = d; p.color = (muted and 0x00FFFFFF) or 0x88000000.toInt(); c.drawCircle(cx, cy, 5f * d, p); p.style = android.graphics.Paint.Style.FILL
+            cx += 16f * d
+        }
+        // الاسم
+        val nm = android.text.TextUtils.ellipsize((if (on) "✔ " else "") + name, tp, w - 10f * d, android.text.TextUtils.TruncateAt.END).toString()
+        tp.color = text; c.drawText(nm, w / 2f, h - 10f * d, tp)
+        // الإطار
+        p.style = android.graphics.Paint.Style.STROKE
+        if (on) { p.strokeWidth = 3f * d; p.color = primary; c.drawRoundRect(1.5f * d, 1.5f * d, w - 1.5f * d, h - 1.5f * d, r, r, p) }
+        else { p.strokeWidth = 1f * d; p.color = (muted and 0x00FFFFFF) or 0x66000000.toInt(); c.drawRoundRect(0.5f * d, 0.5f * d, w - 0.5f * d, h - 0.5f * d, r, r, p) }
+        p.style = android.graphics.Paint.Style.FILL
+    }
 }

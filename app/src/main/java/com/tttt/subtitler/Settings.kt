@@ -21,18 +21,20 @@ object SettingsTabs {
     class Sec(val id: String, val label: String, val sub: String, val group: String)
     /** (v235) ترتيب واحد لكل أشكال الإعدادات (شاشة الإعدادات · قايمة ⚙️ في المكتبة · قايمة ⚙️ في المشغّل): كل حاجة جنب أخواتها */
     val sections = listOf(
+        // (v815) 5 مجموعات واضحة — كل حاجة شبه بعضها جنب بعضها، ومكان كل إعداد واحد بس
         Sec("general", "🚀 خط الترجمة", "اللهجة · الأسلوب · الشدة · الخطة (تفريغ ← ترجمة ← لهجة) · 📝 البرومبتات", "🚀 الترجمة والمحرك"),
         Sec("keys", "🔑 المفاتيح", "مفاتيح جيميناي · الاستهلاك والكوتة", "🚀 الترجمة والمحرك"),
         Sec("audio", "🎙 التفريغ والصوت", "موديلات التفريغ على الجهاز · لغة الكلام · مسار الصوت · جودة الصوت · الأصوات الخلفية · دقة التوقيت", "🚀 الترجمة والمحرك"),
         Sec("perf", "🤖 الموديل والأداء", "الموديل الواحد (Gemini Flash-Lite) · اختبار السرعة · طول المقطع · المقاطع قدّام التشغيل · التنقيح", "🚀 الترجمة والمحرك"),
         Sec("visual", "👁 الصورة (الوضع البصري)", "مفتاح الوضع البصري · تلقائي أو يدوي · المسافة قدّام التشغيل", "🚀 الترجمة والمحرك"),
-        Sec("look", "🎬 شكل الترجمة", "الخط والحجم · الأنيميشن · وضع العرض · اللون · الخلفية · كبسولات العدّادات", "🎬 الشكل"),
-        Sec("appearance", "🎨 المظهر", "الثيم · استوديو السمات · راحة العين · وضع الواجهة · نوع الجهاز · الحركة والوصول", "🎬 الشكل"),
-        Sec("youtube", "▶ يوتيوب", "الجودة · السجل · الإشعارات · الحساب · التحميلات", "▶ يوتيوب"),
+        Sec("look", "🎬 شكل الترجمة", "الخط والحجم · الأنيميشن · وضع العرض · اللون · الخلفية · كبسولات العدّادات", "🎨 الشكل"),
+        Sec("appearance", "🎨 المظهر", "الثيم · استوديو السمات · راحة العين · نوع الجهاز · الحركة والوصول", "🎨 الشكل"),
         Sec("tvset", "📺 التلفزيون", "كل إعدادات التلفزيون في مكان واحد: الشكل والسمات · الخلفية · الأيقونات · الرئيسية والصفوف · الفيديوهات · المتصفح · الصلاة", "📺 التلفزيون"),
-        Sec("music", "🎵 مشغّل الموسيقى", "الكلمات (جيميناي) · الخط والحجم · الكلمات التلقائية · فحص الأغاني", "🎵 الموسيقى"),
-        Sec("more", "🔋 الخلفية والتشغيل", "الخروج من المشغّل · الطابور · البطارية · الترجمة الحية", "🛠 عام"),
-        Sec("security", "🔒 الأمان والنسخ", "القفل بالنمط والبصمة · النسخة الاحتياطية والاسترجاع", "🛠 عام"))
+        Sec("youtube", "▶ يوتيوب", "الجودة · السجل · الإشعارات · الحساب · التحميلات", "▶ يوتيوب والموسيقى"),
+        Sec("music", "🎵 مشغّل الموسيقى", "الكلمات (جيميناي) · الخط والحجم · الكلمات التلقائية · فحص الأغاني", "▶ يوتيوب والموسيقى"),
+        Sec("more", "🔋 الخلفية والتشغيل", "الخروج من المشغّل · الطابور · البطارية (عشان الجهاز ما يقتلش الخدمة)", "🛠 النظام"),
+        Sec("capture", "🔗 الاصطياد والترجمة الحية", "مراقب صفحات الفيديو في المتصفحات · الترجمة الحية فوق أي تطبيق", "🛠 النظام"),
+        Sec("security", "🔒 الأمان والنسخ", "القفل بالنمط والبصمة · النسخة الاحتياطية والاسترجاع", "🛠 النظام"))
     val video = sections.filter { it.id != "music" }.map { it.id to it.label }
     val all = sections.map { it.id to it.label }
     private fun sec(id: String) = sections.first { it.id == id }
@@ -113,9 +115,10 @@ class TabbedDialog(val act: Activity, val ui: Ui, val title: String, val tabs: L
                 if (tvMode) setOnFocusChangeListener { _, f -> if (f && cur != i) { directEntry = false; select(i, true) } }
             }
             row.addView(IconTextView(act).apply {   // (v454) الأيقونة جوه دايرة بلون الثيم الخفيف
-                text = iconOf(t.label); textSize = 20f; gravity = Gravity.CENTER
-                background = android.graphics.drawable.GradientDrawable().apply { shape = android.graphics.drawable.GradientDrawable.OVAL; setColor((th.primary and 0x00FFFFFF) or (0x26 shl 24)) }
-            }, LinearLayout.LayoutParams(ui.dp(44), ui.dp(44)))
+                text = iconOf(t.label); textSize = if (IosSkin.on()) 17f else 20f; gravity = Gravity.CENTER
+                if (IosSkin.on()) { setTextColor(android.graphics.Color.WHITE); background = android.graphics.drawable.GradientDrawable().apply { setColor(IosSkin.TILE[i % IosSkin.TILE.size]); cornerRadius = ui.dp(9).toFloat() } }   // (v816) مربع ملوّن زي إعدادات iOS
+                else background = android.graphics.drawable.GradientDrawable().apply { shape = android.graphics.drawable.GradientDrawable.OVAL; setColor((th.primary and 0x00FFFFFF) or (0x26 shl 24)) }
+            }, LinearLayout.LayoutParams(ui.dp(if (IosSkin.on()) 34 else 44), ui.dp(if (IosSkin.on()) 34 else 44)))
             val col = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL }
             col.addView(ui.text(nameOf(t.label), if (tvMode) 17f else 15.5f, th.text, true))
             if (t.sub.isNotBlank()) col.addView(ui.text(t.sub, 11.5f, th.muted).apply { maxLines = 2; setPadding(0, ui.dp(2), 0, 0) })

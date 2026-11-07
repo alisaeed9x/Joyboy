@@ -51,6 +51,7 @@ com/tttt/subtitler/FtViews.kt
 com/tttt/subtitler/FtXfer.kt
 com/tttt/subtitler/GifWriter.kt
 com/tttt/subtitler/Glass.kt
+com/tttt/subtitler/IosSkin.kt
 com/tttt/subtitler/HtmlUi.kt
 com/tttt/subtitler/HybridVis.kt
 com/tttt/subtitler/IconDefs.kt

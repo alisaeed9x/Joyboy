@@ -22,6 +22,22 @@ object PopupGuard {
     const val WAIT = 2
     const val MAX_WAIT_MS = 9000L
 
+    /** (v816) دومينات إعلانات اتعلّمت من بوب-أبات اتمنعت بنقاط عالية (reg host) — بتتمنع فورًا في أي بوب-أب/طلب بعد كده. «افتحه» بيشيل الدومين منها */
+    val learned: MutableSet<String> = java.util.concurrent.ConcurrentHashMap.newKeySet()
+    fun isLearned(host: String): Boolean = host.isNotEmpty() && learned.isNotEmpty() && reg(host) in learned
+    /** بيرجّع الدومينات الجديدة اللي اتعلّمت (عشان تتحفظ) — مش بيتعلّم موقع الفتح ولا موثوق ولا مسموح */
+    fun learn(h: Hold, score: Int, allowed: Set<String>): List<String> {
+        if (score < 5) return emptyList()
+        val me = reg(hostOf(h.openerUrl)); val out = ArrayList<String>()
+        for (u in h.chain) {
+            val x = hostOf(u); if (x.isEmpty() || x.all { it.isDigit() || it == '.' || it == ':' }) continue
+            val r = reg(x)
+            if (r == me || isTrusted(x) || allowed.any { sameReg(it, x) } || r.length < 5) continue
+            if (learned.size < 400 && learned.add(r)) out.add(r)
+        }
+        return out
+    }
+
     fun modeOf(s: String?): Int = when (s) { "صارم" -> STRICT; "مقفول" -> OFF; else -> SMART }
 
     class Verdict(val action: Int, val score: Int, val why: List<String>)
@@ -129,6 +145,9 @@ object PopupGuard {
         var evidence = false
         val finHost = hostOf(fin); val opHost = hostOf(h.openerUrl)
 
+        // 0) (v816) دومين اتعلّم إنه إعلان قبل كده (إلا لو سمحت بيه)
+        for (u in h.chain) { val x = hostOf(u); if (isLearned(x) && allowed.none { sameReg(it, x) }) { why.add("دومين إعلانات اتعلّم قبل كده"); return Verdict(BLOCK, 10, why) } }
+
         // 1) سلسلة اللينكات: أسوأ لينك فيها
         var worst = 0; val wr = ArrayList<String>()
         for (u in h.chain) { val w = ArrayList<String>(); val x = urlScore(u, w); if (x > worst) { worst = x; wr.clear(); wr.addAll(w) } }
@@ -142,6 +161,8 @@ object PopupGuard {
             if (h.touchAgo > 2500L) { s += 6; why.add("من غير ضغطة منك") } else { s += 2; why.add("مش من ضغطة مباشرة") }
         }
         val ck = h.click
+        // (v816) ضغطة «حقيقية» (gesture) بس مفيش أثر ليها في الصفحة الرئيسية = اتعملت جوه iframe مشغّل (أشهر مصدر لبوب-أب أول ضغطة على مشغّل الفيديو)
+        if (h.gesture && ck == null) { s += 2; why.add("فتح من ضغطة جوه مشغّل/إطار") }
         if (ck != null) {
             val ov = ck.optBoolean("ov"); val isA = ck.optBoolean("a")
             val href = ck.optString("href"); val txt = ck.optString("x")
@@ -150,6 +171,8 @@ object PopupGuard {
                 val first = h.chain.firstOrNull() ?: ""
                 if (isA && href.isNotEmpty() && sameReg(hostOf(href), hostOf(first))) { s -= 4; evidence = true }
                 if (WATCH.containsMatchIn(txt)) { s -= 2; evidence = true }
+                // (v816) الضغطة كانت على عنصر مش لينك (مشغّل/صورة/خلفية) وفتحت صفحة = غالبًا إعلان أول ضغطة
+                if (!isA && !WATCH.containsMatchIn(txt)) { s += 2; why.add("الضغطة مكانتش على لينك") }
             }
         }
 

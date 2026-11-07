@@ -140,6 +140,8 @@ class BottomNav(act: Activity, private val ui: Ui, private val th: Theme, privat
         d.show()
     }
 
+    /** (v816) iOS: شريط التبويب شبه شفاف (زي tab bar) */
+    private fun navBg(): Int = if (IosSkin.on()) Glass.alpha(th.card, 0xF0) else th.card
     private val icons = ArrayList<IconTextView>()
     private val labels = ArrayList<IconTextView>()
     private val cells = ArrayList<View>()
@@ -159,14 +161,14 @@ class BottomNav(act: Activity, private val ui: Ui, private val th: Theme, privat
         val line = View(act).apply { setBackgroundColor(th.border) }
         val row = LinearLayout(act).apply {
             orientation = if (rail) LinearLayout.VERTICAL else LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; gravity = Gravity.CENTER_VERTICAL
-            setBackgroundColor(th.card)
+            setBackgroundColor(navBg())
         }
         // (v336) الأرقام ثابتة (0 فيديوهات · 1 موسيقى · 2 متصفح · 3 ملفات · 4 يوتيوب · 5 مهام) لكن ترتيب العرض: يوتيوب قبل الملفات، والمهام رجعت زرار في الشريط
         val defs = DEFS
         rowLL = row
         defs.forEachIndexed { idx, d ->
-            val icon = IconTextView(act).apply { text = d.first; textSize = 16f; gravity = Gravity.CENTER; includeFontPadding = false }
-            val lab = ui.text(if (lite && idx == 0) "محلي" else if (!lite && idx == 0) "ميديا" else d.second, 11f, th.muted, true).apply { gravity = Gravity.CENTER; setSingleLine() }   // (v458) كانت 9f صغيرة قوي
+            val icon = IconTextView(act).apply { text = d.first; textSize = if (IosSkin.on()) 18.5f else 16f; gravity = Gravity.CENTER; includeFontPadding = false }
+            val lab = ui.text(if (lite && idx == 0) "محلي" else if (!lite && idx == 0) "ميديا" else d.second, if (IosSkin.on()) 10f else 11f, th.muted, true).apply { gravity = Gravity.CENTER; setSingleLine() }   // (v458) كانت 9f صغيرة قوي
             val cell = LinearLayout(act).apply {
                 orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER; setPadding(0, ui.dp(3), 0, ui.dp(2))
                 val bdg = android.widget.TextView(act).apply {
@@ -177,10 +179,10 @@ class BottomNav(act: Activity, private val ui: Ui, private val th: Theme, privat
                 }
                 badges.add(bdg)
                 val box = FrameLayout(act).apply {
-                    addView(icon, if (idx == NET) FrameLayout.LayoutParams(ui.dp(54), ui.dp(30), Gravity.CENTER) else FrameLayout.LayoutParams(ui.dp(24), ui.dp(20), Gravity.CENTER))
+                    addView(icon, if (idx == NET) FrameLayout.LayoutParams(ui.dp(54), ui.dp(30), Gravity.CENTER) else FrameLayout.LayoutParams(ui.dp(if (IosSkin.on()) 28 else 24), ui.dp(if (IosSkin.on()) 25 else 20), Gravity.CENTER))
                     addView(bdg, FrameLayout.LayoutParams(-2, ui.dp(14), Gravity.TOP or Gravity.END))
                 }
-                addView(box, if (idx == NET) LinearLayout.LayoutParams(ui.dp(54), ui.dp(30)) else LinearLayout.LayoutParams(ui.dp(38), ui.dp(20)))
+                addView(box, if (idx == NET) LinearLayout.LayoutParams(ui.dp(54), ui.dp(30)) else LinearLayout.LayoutParams(ui.dp(38), ui.dp(if (IosSkin.on()) 25 else 20)))
                 addView(lab, LinearLayout.LayoutParams(-2, -2))
                 Glass.pressable(this)
                 setOnClickListener { if (idx == MORE) toggleMore(act) else if (idx == REMOTE) { try { ControllerPad.show(act) } catch (e: Throwable) { LogStore.err("Nav:remote", e) } } else if (idx == NET) { collapseMore(); try { NetStatsUi(act, ui, th).show() } catch (e: Throwable) { LogStore.err("Nav:net", e) } } else { collapseMore(); onPick(idx) } }
@@ -197,7 +199,7 @@ class BottomNav(act: Activity, private val ui: Ui, private val th: Theme, privat
         else {
             view.addView(line, LinearLayout.LayoutParams(-1, ui.dp(1)))
             // (v608) الصف التاني (المزيد): ارتفاعه 0 وهو مقفول؛ بيطلع لفوق فوق الصف الأساسي وهو مفتوح
-            val host = FrameLayout(act).apply { clipChildren = true; setBackgroundColor(th.card) }
+            val host = FrameLayout(act).apply { clipChildren = true; setBackgroundColor(navBg()) }
             val sc = android.widget.HorizontalScrollView(act).apply { isHorizontalScrollBarEnabled = false; layoutDirection = View.LAYOUT_DIRECTION_RTL; overScrollMode = View.OVER_SCROLL_NEVER }
             val col = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL }
             if (!tvDev) {   // (v612) زرار عريض فوق صف «المزيد»: إرسال التحديث للتلفزيون
@@ -285,7 +287,7 @@ class BottomNav(act: Activity, private val ui: Ui, private val th: Theme, privat
     }
 
     private fun place(animate: Boolean) {
-        indicator.visibility = if (cellOf(active) in cells.indices) View.VISIBLE else View.INVISIBLE
+        indicator.visibility = if (!IosSkin.on() && cellOf(active) in cells.indices) View.VISIBLE else View.INVISIBLE   // (v816) iOS: من غير مؤشّر
         val c = cells.getOrNull(cellOf(active)) ?: return
         if (rail) {   // (v462) المؤشر شريط رأسي بيتحرك على Y
             if (c.height == 0) return
@@ -317,8 +319,8 @@ class BottomNav(act: Activity, private val ui: Ui, private val th: Theme, privat
     /** (v198) لون الشريط وهو مشغّل الموسيقى مفتوح (بيتبع لون الغلاف)؛ null = رجّعه للثيم */
     fun tint(c: Int?) {
         tinted = c != null
-        rowV?.setBackgroundColor(c ?: th.card)
-        moreHost?.setBackgroundColor(c ?: th.card)
+        rowV?.setBackgroundColor(c ?: navBg())
+        moreHost?.setBackgroundColor(c ?: navBg())
         lineV?.setBackgroundColor(if (c != null) 0x22FFFFFF else th.border)
         paint()
     }

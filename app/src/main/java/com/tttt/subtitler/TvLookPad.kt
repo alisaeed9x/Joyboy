@@ -217,14 +217,12 @@ object TvLookPad {
                             val o = themes.optJSONObject(i) ?: continue
                             val id = o.optString("id")
                             val bg = o.optInt("bg"); val pr = o.optInt("primary")
-                            themeViews.add(chip(o.optString("name"), id == curTheme, fill = bg, fg = pr, line = pr) {
-                                s.put("theme", id); render(); send(JSONObject().put("theme", id))
-                            })
+                            val tile = ThemeTile(act, bg, o.optInt("card", bg), pr, o.optInt("accent", pr), o.optInt("text", Color.WHITE), o.optInt("muted", Color.GRAY), o.optString("name"), id == curTheme)
+                            tile.setOnClickListener { s.put("theme", id); render(); send(JSONObject().put("theme", id)) }
+                            themeViews.add(tile)
                         }
                         body.addView(grid(themeViews, 3), LinearLayout.LayoutParams(-1, -2))
 
-                        section("نمط الحركة والتفاعل")
-                        pickList(s, "motions", "motion", "motion", 2)
                         section("باك الأيقونات")
                         pickList(s, "iconpacks", "iconpack", "iconpack", 2)
                     }

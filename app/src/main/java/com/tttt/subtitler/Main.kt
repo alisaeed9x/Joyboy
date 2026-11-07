@@ -376,17 +376,41 @@ class MainActivity : Activity() {
             e.apply()
         }
         saveCfgFn = { save() }
-        val themeChips = ui.chips(Themes.phone.map { it.name }, { Themes.byId(themeId).name }) { n ->   // (v810) سمات الموبايل المختارة بس
-            themeId = Themes.phone.first { it.name == n }.id; save()
-            Cfg.p.edit().putString("theme", themeId).apply()
-            if (!fromPlayer) intent?.putExtra("reopen_tab", "appearance")
-            recreate()
+        // (v815) الثيمات مربعات معاينة (لون الخلفية · الكارت · الأساسي · التمييز · النص) عشان تختار وانت شايف الشكل
+        val themeChips: View = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL
+            val list = Themes.phone
+            var k = 0
+            while (k < list.size) {
+                val row = LinearLayout(this@MainActivity).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL }
+                for (t in list.subList(k, minOf(k + 3, list.size))) {
+                    val tile = ThemeTile(this@MainActivity, t.bg, t.card, t.primary, t.accent, t.text, t.muted, t.name, t.id == themeId)
+                    tile.setOnClickListener {
+                        if (t.id == themeId) return@setOnClickListener
+                        themeId = t.id; save()
+                        Cfg.p.edit().putString("theme", themeId).apply()
+                        if (!fromPlayer) intent?.putExtra("reopen_tab", "appearance")
+                        recreate()
+                    }
+                    row.addView(tile, LinearLayout.LayoutParams(0, -2, 1f).apply { setMargins(ui.dp(3), ui.dp(3), ui.dp(3), ui.dp(3)) })
+                }
+                for (m in 0 until 3 - minOf(3, list.size - k)) row.addView(View(this@MainActivity), LinearLayout.LayoutParams(0, 1, 1f))
+                addView(row, LinearLayout.LayoutParams(-1, -2))
+                k += 3
+            }
         }
         // (v352) سويتش داكن/فاتح + أوضاع الواجهة (شكل الزراير والفولدرات والأنيميشن والأصوات)
         val darkSwitch = ui.switchRow("🌙 الوضع الداكن (سويتش داكن / فاتح)", !Themes.byId(themeId).isLight) { dark ->
             if (dark == !Themes.byId(themeId).isLight) return@switchRow
             themeId = Themes.partner(themeId)
             Cfg.p.edit().putString("theme", themeId).apply()
+            if (!fromPlayer) intent?.putExtra("reopen_tab", "appearance")
+            recreate()
+        }
+        // (v816) سكن iOS للواجهة كلها: كروت/أزرار/تبويبات/أيقونات/إعدادات بشكل iOS + سمات iOS فاتح/داكن (الإيقاف بيرجّع الثيم وباك الأيقونات)
+        val iosSwitch = ui.switchRow("🍎 سكن iOS (آيفون) — الواجهة كلها", Skins.cur().ios) { on ->
+            if (on == Skins.cur().ios) return@switchRow
+            IosSkin.enable(on); themeId = Cfg.str("theme", "mx")
             if (!fromPlayer) intent?.putExtra("reopen_tab", "appearance")
             recreate()
         }
@@ -633,7 +657,6 @@ class MainActivity : Activity() {
                     }
                 },
                 ui.button("📊 إحصائية الاستهلاك والكوتة") { StatsUi(this, ui, th).show() },
-                ui.button("📶 استهلاك الداتا (واي فاي / موبايل)") { NetStatsUi(this, ui, th).show() },
                                 ui.section("🔑 كل المفاتيح", true,
                     ui.text("حط مفاتيحك الأساسية هنا — البرنامج بيوزّعها لوحده: مفاتيح للترجمة (أغلبها)، ومفتاح أو اتنين للتنقيح الجزئي أثناء الترجمة، ومفتاح احتياطي لو مفتاح اتعطّل (من 6 مفاتيح). التنقيح الجزئي بيبدأ من 3 مفاتيح. القايمتين اللي تحت اختياري: إضافية بتتزود على الأساسية، واحتياطية لأي باتش يفشل.", 12f, th.muted), keysUi, backupUi, extraUi)))),
             // ===== 🎙 التفريغ والصوت: موديلات الجهاز + إعدادات الصوت =====
@@ -671,14 +694,13 @@ class MainActivity : Activity() {
                     ui.slider("الظهور (100 = معتمة، أقل = أشفّ)", Cfg.int("badge_alpha", 55).coerceIn(15, 100), 15, 100, "%") { Cfg.put("badge_alpha", it.toString()) })), true),
             // (v606) المظهر: 7 أقسام بقوا 3 — الثيم (+ استوديو السمات + راحة العين) · الواجهة (السكِن + نوع الجهاز) · الحركة والوصول
             tab("appearance", listOfNotNull<View>(
-                ui.section("🎨 الثيم", true, darkSwitch, themeChips,
+                ui.section("🎨 الثيم", true, iosSwitch, darkSwitch, themeChips,
                     ui.text("الثيم بيتغيّر فورًا على كل شاشات البرنامج. شكل نص الترجمة نفسه (خط · لون · خلفية) في قسم 🎬 شكل الترجمة.", 12f, th.muted),
                     ui.text("🎨 استوديو السمات: اصنع سمتك بنفسك — اختار لون التمييز وحرّك التشبع والإضاءة (الأساس هو ثيمك الحالي وقت الاختيار). تقدر ترجع لأي ثيم جاهز من فوق في أي وقت.", 12f, th.muted),
                     ui.text("لون التمييز:", 12f, th.muted), accChips, custSat, custLight, custApply,
                     ui.text("🌡 راحة العين — فلتر دافئ: طبقة دافئة فوق الشاشة بتقلّل الضوء الأزرق بالليل (٠ = مقفول).", 12f, th.muted),
                     ui.slider("درجة الدفء", Cfg.int("warm", 0), 0, 100, "%") { Cfg.put("warm", it.toString()); refreshWarm() }),
-                ui.section("🧩 الواجهة", false,
-                    ui.button("📺 إعدادات التلفزيون (كلها في مكان واحد)") { TvLookPad.show(this) },
+                ui.section("📱 نوع الجهاز (موبايل · تابلت · تلفزيون)", false,
                     ui.text("نوع الجهاز (موبايل · تابلت · تلفزيون) — نفس النسخة بتتحول لواجهة تلفزيون أو تابلت، والتبديل بيطبّق فورًا:", 12f, th.muted),
                     ui.chips(listOf("🔄 تلقائي", "📱 موبايل", "📟 تابلت", "📺 تلفزيون"), { DeviceUi.label(DeviceUi.pref()) }) { n ->
                         val m = when (n) { "📱 موبايل" -> DeviceUi.PHONE; "📟 تابلت" -> DeviceUi.TABLET; "📺 تلفزيون" -> DeviceUi.TV; else -> DeviceUi.AUTO }
@@ -691,9 +713,6 @@ class MainActivity : Activity() {
                     ui.switchRow("🔠 وضع النص الكبير (تكبير خطوط الواجهة)", Cfg.bool("big_text", false)) { Cfg.put("big_text", if (it) "1" else "0"); recreate() },
                     ui.switchRow("🎞 انتقالات انسيابية بين التبويبات", Cfg.bool("anim_tabs", true)) { Cfg.put("anim_tabs", if (it) "1" else "0") },
                     ui.switchRow("📳 اهتزاز لمسي خفيف عند التنقّل بين التبويبات", Cfg.bool("haptics", true)) { Cfg.put("haptics", if (it) "1" else "0") }))),
-            tab("youtube", ytSettingsViews),
-            // ===== 🎵 الموسيقى =====
-            // (v726) 📺 قسم التلفزيون في إعدادات البرنامج: نفس شاشة «إعدادات التلفزيون» اللي في الريموت
             tab("tvset", listOf<View>(
                 ui.text(if (Cfg.tvOv != null) "✏️ أنت دلوقتي بتعدّل نسخة التلفزيون من الإعدادات المشتركة (الترجمة · شكل الترجمة · الصوت…): كل حاجة بتغيّرها في أي قسم بتتحفظ على التلفزيون بس ومابتأثرش على الموبايل. لما تخلّص دوس «ارجع لإعدادات الموبايل»." else "الإعدادات المشتركة (الترجمة · شكل الترجمة · الصوت…) موجودة على الموبايل والتلفزيون. تقدر تعدّل نسخة التلفزيون لوحدها من غير ما نسخة الموبايل تتغيّر.", 12f, if (Cfg.tvOv != null) th.primary else th.muted),
                 if (Cfg.tvOv != null) ui.button("↩ ارجع لإعدادات الموبايل", true) { TvEdit.exit(this) } else ui.button("✏️ عدّل إعدادات التلفزيون المشتركة (على التلفزيون بس)", true) { TvEdit.enter(this) },
@@ -701,6 +720,9 @@ class MainActivity : Activity() {
                 ui.text("كل إعدادات التلفزيون (الشكل · الخلفية · الأيقونات · الرئيسية · الفيديوهات · المتصفح · الصلاة) في شاشة واحدة، وبتتغيّر على التلفزيون فوراً وهو متصل. التلفزيون لازم يكون شغّال ومتوصل بنفس الواي فاي.", 12f, th.muted),
                 ui.button("📺 افتح إعدادات التلفزيون", true) { TvLookPad.show(this) },
                 ui.button("🔧 افتح إعدادات البرنامج على شاشة التلفزيون") { try { RemoteClient.cmd("open_settings") } catch (_: Throwable) {} })),
+            tab("youtube", ytSettingsViews),
+            // ===== 🎵 الموسيقى =====
+            
             TabDef("music", SettingsTabs.label("music"), listOf<View>(
                 ui.section("📝 الكلمات", true,
                                         ui.text("📝 الكلمات: جيميناي يجيب الكلمات الكاملة بالاسم، والتطبيق نفسه يحدّد من الصوت امتى المغني بيبدأ يغني ويوزّع السطور على لحظات الغنا (بيتخطى المقدمة والفواصل). 🎤 زرار «صوت / موسيقى / الكل» في المشغّل يفصل الصوت عن الموسيقى (تقريبي، للاستريو بس).", 12f, th.muted),
@@ -723,6 +745,8 @@ class MainActivity : Activity() {
                     ui.button("1) استثناء من توفير البطارية") { requestBatteryExemption() },
                     ui.button("2) السماح بالتشغيل التلقائي / الخلفية للتطبيق") { openAutoStartSettings() },
                     ui.text("وكمان: في قايمة التطبيقات الأخيرة اعمل «قفل 🔒» للتطبيق لو جهازك فيه الخيار ده.", 12f, th.muted)),
+                )),   // (v815) الاصطياد والترجمة الحية بقوا قسم لوحده (🔗) تحت
+            tab("capture", listOf<View>(
                 ui.section("🔗 مراقب صفحات الفيديو في المتصفحات", true,
                     ui.text("الدايرة بتظهر بس لما تفتح صفحة فيديو في متصفح (ده بيحتاج خدمة إمكانية الوصول). مفيش مراقبة للكليبورد ولا خدمة شغّالة طول اليوم.", 12f, th.muted),
                     ui.text((if (LinkHub.overlayOk(this)) "✅ العرض فوق التطبيقات: مسموح" else "⚠ العرض فوق التطبيقات: مش مسموح — ده الإذن الأساسي، دوس الزرار اللي تحت") + "\n" +
@@ -730,7 +754,7 @@ class MainActivity : Activity() {
                     ui.button("🖼 اسمح بالعرض فوق التطبيقات (الأساسي)") { try { startActivityForResult(Intent(android.provider.Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName")), 14) } catch (_: Throwable) {} },
                     ui.switchRow("لقط صفحات الفيديو في المتصفحات", !Cfg.bool("lw_web_off", false)) { Cfg.put("lw_web_off", if (it) "0" else "1") },
                     ui.button("⚙ إمكانية الوصول (اختياري — للمتصفحات)") { LinkWatch.openSettings(this) },
-                    ui.text("لو أندرويد منع الإذن أو تفعيل الخدمة (تطبيق متثبّت من برّه): من معلومات التطبيق اضغط ⋮ ← «السماح بالإعدادات المقيّدة» وبعدين فعّل. وعلى شاومي/أوبو/فيفو/سامسونج اسمح للتطبيق بالتشغيل التلقائي واستثنيه من توفير البطارية (قسم «🔋» اللي فوق) وإلا النظام بيقتل الخدمة.", 12f, th.muted)),
+                    ui.text("لو أندرويد منع الإذن أو تفعيل الخدمة (تطبيق متثبّت من برّه): من معلومات التطبيق اضغط ⋮ ← «السماح بالإعدادات المقيّدة» وبعدين فعّل. وعلى شاومي/أوبو/فيفو/سامسونج اسمح للتطبيق بالتشغيل التلقائي واستثنيه من توفير البطارية (قسم «🔋 الخلفية والتشغيل») وإلا النظام بيقتل الخدمة.", 12f, th.muted)),
                 watchViews[1])),   // (v458) الترجمة الحية
             tab("security", listOf<View>(
                             ui.section("🔒 الأمان", false, lockStatus,
@@ -1082,7 +1106,7 @@ class MainActivity : Activity() {
         // لو مفيش مفتاح Gemini: القايمة بتظهر مباشرة أول البرنامج، وبعدها الفحص
         frame.post { permFlow { ensureKeysSoft { keys.setText(Cfg.allMainKeys().joinToString("\n")); keyLoadersRef.forEach { it() }; refreshChip(); doScan() } } }
         try { TvSync.install(this) } catch (_: Throwable) {}
-        try { if (!DeviceUi.isTv(this) && Cfg.str("skin", "classic") != "classic") { Cfg.p.edit().putString("skin", "classic").apply(); Skins.set("classic") } } catch (_: Throwable) {}   // (v727) «وضع الواجهة» القديم اتشال من الموبايل: نرجّعه للأصلي من غير مزامنة   // (v568) مزامنة الإعدادات للتلفزيون من أي شاشة
+        try { if (!DeviceUi.isTv(this) && Cfg.str("skin", "classic") !in listOf("classic", "ios")) { Cfg.p.edit().putString("skin", "classic").apply(); Skins.set("classic") } } catch (_: Throwable) {}   // (v727) «وضع الواجهة» القديم اتشال من الموبايل: نرجّعه للأصلي من غير مزامنة   // (v568) مزامنة الإعدادات للتلفزيون من أي شاشة
         frame.post { handleLinkIntent(intent) }; frame.post { handleExternal(intent) }; frame.post { handleClipBubbleIntent(intent) }
     }
     /** (v345) المرحلة 1 «كتلة واحدة»: أي لينك جاي من برّه (مشاركة أو فتح). لينك يوتيوب ← قايمة «افتحه إزاي؟»، غير كده ← زي زمان */

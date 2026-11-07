@@ -655,6 +655,7 @@ class BrowserActivity : Activity() {
 
     // ===== إنشاء WebView لتبويب =====
     private fun makeWebView(t: BTab): WebView {
+        if (PopupGuard.learned.isEmpty()) try { PopupGuard.learned.addAll(prefs().getStringSet("pop_learned", emptySet()) ?: emptySet()) } catch (_: Throwable) {}   // (v816)
         val w = WebView(this); WebMute.register(w)
         w.settings.apply {
             javaScriptEnabled = true; domStorageEnabled = true; mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
@@ -1740,7 +1741,13 @@ class BrowserActivity : Activity() {
         when (v.action) {
             PopupGuard.WAIT -> return
             PopupGuard.ALLOW -> popPromote(hd)
-            else -> popKill(hd, fin, v.why)
+            else -> {
+                try {
+                    val nw = PopupGuard.learn(hd, v.score, allowedHosts())
+                    if (nw.isNotEmpty()) prefs().edit().putStringSet("pop_learned", HashSet(PopupGuard.learned)).apply()
+                } catch (_: Throwable) {}
+                popKill(hd, fin, v.why)
+            }
         }
     }
 
@@ -1779,6 +1786,7 @@ class BrowserActivity : Activity() {
     }
 
     private fun allowHost(host: String) {
+        try { if (PopupGuard.learned.remove(PopupGuard.reg(host))) prefs().edit().putStringSet("pop_learned", HashSet(PopupGuard.learned)).apply() } catch (_: Throwable) {}   // (v816)
         try { val cur = HashSet(allowedHosts()); cur.add(PopupGuard.reg(host)); prefs().edit().putStringSet("pop_allow", cur).apply() } catch (_: Throwable) {}
     }
 
@@ -1796,7 +1804,7 @@ class BrowserActivity : Activity() {
             row.addView(ui.button("افتح") { allowHost(host); newTab(b.url, true, tab.id) }, LinearLayout.LayoutParams(ui.dp(76), ui.dp(40)))
             box.addView(row)
         }
-        box.addView(ui.button("🧹 امسح المواقع اللي سمحت بيها") { prefs().edit().remove("pop_allow").apply(); Notice.show(this, "اتمسحت", 1800L) }, LinearLayout.LayoutParams(-1, ui.dp(46)).apply { topMargin = ui.dp(10) })
+        box.addView(ui.button("🧹 امسح المسموح والمتعلَّم") { prefs().edit().remove("pop_allow").remove("pop_learned").apply(); PopupGuard.learned.clear(); Notice.show(this, "اتمسحت", 1800L) }, LinearLayout.LayoutParams(-1, ui.dp(46)).apply { topMargin = ui.dp(10) })
         sheet("🚫 مانع البوب-أب", box).show()
     }
 

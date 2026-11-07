@@ -21,12 +21,14 @@ import java.util.WeakHashMap
  */
 object Motion {
     private fun dp(v: View, n: Float): Float = n * v.resources.displayMetrics.density
+    /** (v816) iOS: منحنى «سبرينج» ناعم (سريع في الأول وبيهدى) بدل الـ Decelerate */
+    private fun ease(def: android.view.animation.Interpolator): android.view.animation.Interpolator = if (Skins.cur().ios) android.view.animation.PathInterpolator(0.2f, 0.9f, 0.25f, 1f) else def
 
     /** (v445) ظهور القوايم المنسدلة: فيد + تكبير خفيف + انزلاق ناحية الزرار */
     fun popIn(v: View, up: Boolean) {
         v.animate().cancel()
         v.alpha = 0f; v.scaleX = 0.94f; v.scaleY = 0.94f; v.translationY = dp(v, if (up) 12f else -12f)
-        v.animate().setStartDelay(0L).alpha(1f).scaleX(1f).scaleY(1f).translationY(0f).setDuration(Skins.dur(220L)).setInterpolator(DecelerateInterpolator(1.7f)).start()
+        v.animate().setStartDelay(0L).alpha(1f).scaleX(1f).scaleY(1f).translationY(0f).setDuration(Skins.dur(if (Skins.cur().ios) 280L else 220L)).setInterpolator(if (Skins.cur().ios) OvershootInterpolator(0.9f) else DecelerateInterpolator(1.7f)).start()
     }
 
     /** نطّة: العنصر بيكبر من حجم أصغر بارتداد خفيف (اختيار chip، ظهور زرار عائم، تبديل سويتش) */
@@ -39,6 +41,11 @@ object Motion {
     /** قفزة صغيرة لفوق وبعدين استقرار (أيقونة الشريط السفلي لما تتفعّل) */
     fun bounce(v: View) {
         v.animate().cancel()
+        if (Skins.cur().ios) {   // (v816) iOS: الأيقونة بتصغر وبتنط لحجمها بنطّة سبرينج (زي symbol bounce)
+            v.scaleX = 0.8f; v.scaleY = 0.8f
+            v.animate().setStartDelay(0L).scaleX(1f).scaleY(1f).setDuration(Skins.dur(420L)).setInterpolator(OvershootInterpolator(3.2f)).start()
+            return
+        }
         v.animate().setStartDelay(0L).translationY(-dp(v, 3f)).scaleX(if (Skins.cur().overshoot <= 0f) 1.08f else 1.2f).scaleY(if (Skins.cur().overshoot <= 0f) 1.08f else 1.2f).setDuration(Skins.dur(110L)).setInterpolator(DecelerateInterpolator())
             .withEndAction {
                 v.animate().setStartDelay(0L).translationY(0f).scaleX(1f).scaleY(1f).setDuration(Skins.dur(280L)).setInterpolator(Skins.interp(3f)).start()
@@ -49,21 +56,21 @@ object Motion {
     fun fadeSlideIn(v: View, dx: Float = 0f, dy: Float = 0f, dur: Long = 240L, delay: Long = 0L) {
         v.animate().cancel()
         v.alpha = 0f; v.translationX = dx; v.translationY = dy
-        v.animate().setStartDelay(delay).alpha(1f).translationX(0f).translationY(0f).setDuration(Skins.dur(dur)).setInterpolator(DecelerateInterpolator(1.6f)).start()
+        v.animate().setStartDelay(delay).alpha(1f).translationX(0f).translationY(0f).setDuration(Skins.dur(dur)).setInterpolator(ease(DecelerateInterpolator(1.6f))).start()
     }
 
     /** انزلاق أفقي من غير تلاشي (للقوايم والـ WebView: التلاشي على الـ WebView بيعمل وميض) */
     fun slideIn(v: View, side: Int, dur: Long = 240L) {
         v.animate().cancel()
         v.translationX = side * dp(v, 40f)
-        v.animate().setStartDelay(0L).translationX(0f).setDuration(Skins.dur(dur)).setInterpolator(DecelerateInterpolator(1.6f)).start()
+        v.animate().setStartDelay(0L).translationX(0f).setDuration(Skins.dur(dur)).setInterpolator(ease(DecelerateInterpolator(1.6f))).start()
     }
 
     /** أول N عناصر في الحاوية بتدخل ورا بعض */
     fun stagger(group: ViewGroup, max: Int = 10, step: Long = 40L) {
         val d = group.resources.displayMetrics.density
         val n = minOf(group.childCount, max)
-        for (i in 0 until n) fadeSlideIn(group.getChildAt(i), 0f, 16f * d, 240L, i * step)
+        for (i in 0 until n) fadeSlideIn(group.getChildAt(i), 0f, (if (Skins.cur().ios) 22f else 16f) * d, if (Skins.cur().ios) 360L else 240L, i * step)
     }
 
     /** تبديل تبويب: الصفحة الجديدة بتنزلق من جنب الاتجاه (side = -1 من الشمال، 1 من اليمين) */
@@ -71,8 +78,8 @@ object Motion {
         // (v621) طبقة هاردوير طول الأنيميشن: الصفحة بتتحرك كـ texture واحدة بدل ما الشجرة كلها تتعاد رسمها مع كل فريم (كان ده سبب التهنيج)
         v.animate().cancel()
         v.setLayerType(View.LAYER_TYPE_HARDWARE, null)
-        v.alpha = 0f; v.translationX = side * dp(v, 28f); v.translationY = 0f
-        v.animate().setStartDelay(0L).alpha(1f).translationX(0f).setDuration(Skins.dur(230L)).setInterpolator(DecelerateInterpolator(1.8f))
+        v.alpha = 0f; v.translationX = side * (if (Skins.cur().ios) maxOf(dp(v, 56f), v.width * 0.24f) else dp(v, 28f)); v.translationY = 0f   // (v816) iOS: دفعة أطول زي push
+        v.animate().setStartDelay(0L).alpha(1f).translationX(0f).setDuration(Skins.dur(if (Skins.cur().ios) 360L else 230L)).setInterpolator(ease(DecelerateInterpolator(1.8f)))
             .withEndAction { v.setLayerType(View.LAYER_TYPE_NONE, null) }.start()
     }
 
@@ -81,7 +88,7 @@ object Motion {
         v.animate().cancel()
         v.visibility = View.VISIBLE
         v.setLayerType(View.LAYER_TYPE_HARDWARE, null)
-        v.animate().setStartDelay(0L).alpha(0f).translationX(side * dp(v, 18f)).setDuration(Skins.dur(170L)).setInterpolator(DecelerateInterpolator(1.2f))
+        v.animate().setStartDelay(0L).alpha(0f).translationX(side * dp(v, if (Skins.cur().ios) 36f else 18f)).setDuration(Skins.dur(if (Skins.cur().ios) 220L else 170L)).setInterpolator(ease(DecelerateInterpolator(1.2f)))
             .withEndAction {
                 v.setLayerType(View.LAYER_TYPE_NONE, null); v.alpha = 1f; v.translationX = 0f
                 if (!stay()) v.visibility = View.GONE

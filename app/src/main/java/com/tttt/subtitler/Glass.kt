@@ -34,6 +34,7 @@ object Glass {
 
     /** كارت زجاجي: تدرّج خفيف من فوق لتحت + حد. الفاتح بيميل لون الثيم، الغامق بيلمّع من فوق */
     fun drawable(th: Theme, radiusPx: Float, strokePx: Int, stroke: Int, a: Int = 255): GradientDrawable {
+        if (Skins.cur().ios) return GradientDrawable().apply { setColor(alpha(th.card, a)); cornerRadius = radiusPx }   // (v816) iOS: مسطّح من غير حد
         val cols = if (th.isLight) intArrayOf(alpha(th.card, a), alpha(blend(th.card, th.primary, 0.05f), a))
         else intArrayOf(alpha(blend(th.card, Color.WHITE, 0.08f), a), alpha(th.card, a))
         return GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, cols).apply { cornerRadius = radiusPx; setStroke(strokePx, stroke) }
@@ -41,7 +42,7 @@ object Glass {
 
     /** زرار أساسي بتدرّج لون الثيم */
     fun primaryFill(th: Theme, radiusPx: Float): GradientDrawable =
-        GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT, intArrayOf(th.primary, blend(th.primary, Color.BLACK, 0.22f))).apply { cornerRadius = radiusPx }
+        if (Skins.cur().ios) GradientDrawable().apply { setColor(th.primary); cornerRadius = radiusPx } else GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT, intArrayOf(th.primary, blend(th.primary, Color.BLACK, 0.22f))).apply { cornerRadius = radiusPx }
 
     /** أي نافذة جذرها له خلفية مدوّرة (box) بيتحوّل لزجاجي — بيتنده تلقائي من GDialog */
     fun restyle(v: View) {
@@ -58,10 +59,10 @@ object Glass {
         val w = d.window ?: return
         try {
             w.addFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND)
-            w.setDimAmount(0.40f)
+            w.setDimAmount(if (Skins.cur().ios) 0.32f else 0.40f)
             if (Build.VERSION.SDK_INT >= 31) {
                 w.addFlags(WindowManager.LayoutParams.FLAG_BLUR_BEHIND)
-                val lp = w.attributes; lp.blurBehindRadius = 26; w.attributes = lp
+                val lp = w.attributes; lp.blurBehindRadius = if (Skins.cur().ios) 44 else 26; w.attributes = lp
             }
         } catch (_: Throwable) {}
     }
@@ -73,9 +74,10 @@ object Glass {
         val g = d.window?.attributes?.gravity ?: 0
         val bottom = ((g and Gravity.VERTICAL_GRAVITY_MASK) == Gravity.BOTTOM)
         val dens = c.resources.displayMetrics.density
+        if (Skins.cur().ios) SkinSound.event(c.context, 3)   // (v816) «ووش» iOS
         c.animate().cancel()
         c.alpha = 0f; c.scaleX = 0.93f; c.scaleY = 0.93f; c.translationY = (if (bottom) 56f else 14f) * dens
-        c.animate().alpha(1f).scaleX(1f).scaleY(1f).translationY(0f).setDuration(240).setInterpolator(DecelerateInterpolator(1.6f)).start()
+        c.animate().alpha(1f).scaleX(1f).scaleY(1f).translationY(0f).setDuration(if (Skins.cur().ios) 330L else 240L).setInterpolator(if (Skins.cur().ios) OvershootInterpolator(0.7f) else DecelerateInterpolator(1.6f)).start()
     }
 
     fun exit(d: Dialog, done: () -> Unit) {
@@ -89,10 +91,10 @@ object Glass {
     fun pressable(v: View) {
         v.setOnTouchListener { view, ev ->
             when (ev.actionMasked) {
-                MotionEvent.ACTION_DOWN -> { val ps = Skins.cur().press; view.animate().setStartDelay(0L).scaleX(ps).scaleY(ps).alpha(0.88f).setDuration(Skins.dur(90)).start() }
+                MotionEvent.ACTION_DOWN -> { val ps = Skins.cur().press; view.animate().setStartDelay(0L).scaleX(ps).scaleY(ps).alpha(if (Skins.cur().ios) 0.55f else 0.88f).setDuration(Skins.dur(90)).start() }
                 MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
                     view.animate().setStartDelay(0L).scaleX(1f).scaleY(1f).alpha(1f).setDuration(Skins.dur(200)).setInterpolator(Skins.interp(2.4f)).start()
-                    if (ev.actionMasked == MotionEvent.ACTION_UP) SkinSound.event(view.context, 0)
+                    if (ev.actionMasked == MotionEvent.ACTION_UP) { SkinSound.event(view.context, 0); if (Skins.cur().ios) try { Haptic.tap(view) } catch (_: Throwable) {} }
                 }
             }
             false
