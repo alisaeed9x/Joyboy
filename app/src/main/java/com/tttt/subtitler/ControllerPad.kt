@@ -55,7 +55,7 @@ class JoystickView(ctx: Context, private val onKey: (String) -> Unit, private va
     private var longDone = false   // (v679) ضغطة طويلة على دايرة OK = ميكروفون (مش OK)
     private val longRun = Runnable {
         if (down && !fired && dir == null && onLong != null) {
-            longDone = true; performHapticFeedback(HapticFeedbackConstants.LONG_PRESS); invalidate()
+            longDone = true; Haptic.tap(this, true); invalidate()
             try { onLong.invoke() } catch (_: Throwable) {}
         }
     }
@@ -87,7 +87,7 @@ class JoystickView(ctx: Context, private val onKey: (String) -> Unit, private va
             MotionEvent.ACTION_UP -> {
                 val isOk = down && !fired && !longDone
                 stop()
-                if (isOk) { performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP); onKey("ok") }
+                if (isOk) { Haptic.tap(this); onKey("ok") }
             }
             MotionEvent.ACTION_CANCEL -> stop()
         }
@@ -107,7 +107,7 @@ class JoystickView(ctx: Context, private val onKey: (String) -> Unit, private va
         val d = if (abs(dx) >= abs(dy)) (if (dx > 0f) "right" else "left") else (if (dy > 0f) "down" else "up")
         if (d != dir) {   // أول ما يدخل اتجاه (أو يغيّره): خطوة فورية، وبعد 380ms يبدأ التكرار
             h.removeCallbacks(repeat); dir = d; fired = true
-            performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+            Haptic.tap(this)
             onKey(d)
             h.postDelayed(repeat, 380L)
         }
@@ -200,6 +200,11 @@ class PadIcon(ctx: Context, private val kind: String, private val tint: Int = Co
             "vol_plus" -> { speaker(); ln(16.5f, 12f, 22f, 12f); ln(19.25f, 9.25f, 19.25f, 14.75f) }
             "vol_minus" -> { speaker(); ln(16.5f, 12f, 22f, 12f) }
             "mute" -> { speaker(); ln(16f, 9f, 21.5f, 15f); ln(21.5f, 9f, 16f, 15f) }
+            "headphone" -> {   // (v811) مصدر الصوت
+                rc.set(4f * u, 3f * u, 20f * u, 19f * u); cv.drawArc(rc, 180f, 180f, false, p)
+                ln(4f, 11f, 4f, 14f); ln(20f, 11f, 20f, 14f)
+                box(3f, 13f, 7.5f, 20f, 2f); box(16.5f, 13f, 21f, 20f, 2f)
+            }
             "play" -> poly(true, 7f, 4f, 20f, 12f, 7f, 20f)
             "pause" -> {
                 rc.set(6f * u, 4f * u, 10.2f * u, 20f * u); cv.drawRoundRect(rc, u, u, f)
@@ -251,12 +256,13 @@ object ControllerPad {
             val sayHide = Runnable { stRef?.visibility = View.GONE }
             fun say(t: String, c: Int = 0xFFB0BEC5.toInt()) { stRef?.let { it.text = t; it.setTextColor(c); it.visibility = View.VISIBLE; hh.removeCallbacks(sayHide); hh.postDelayed(sayHide, 3500L) } }
             // (v809) سويتش واي فاي 📶 / IR 📡: على IR أزرار التنقل والرجوع بتتبعت بالبلاستر بدل الواي فاي
-            var irOn = IrTv.irMode(act) && IrTv.available(act)
+            var irKind = if (IrTv.available(act)) IrTv.irKind(act) else ""   // (v810) "" واي فاي · "tv" IR تلفزيون · "sat" IR ساتلايت
+            var irOn = irKind.isNotEmpty()
             fun irKey(k: String): String? = when (k) { "up" -> "UP"; "down" -> "DOWN"; "left" -> "LEFT"; "right" -> "RIGHT"; "ok", "ok_long" -> "OK"; "back" -> "BACK"; "home" -> "HOME"; "menu" -> "MENU"; else -> null }
             fun sendKey(k: String) {
                 if (irOn) {
                     val ik = irKey(k)
-                    if (ik != null) { if (!IrTv.press(act, ik)) say("⚠ 📡 الزرار ده مش في ريموت IR المختار (اضغط مطوّلًا على 📡 تغيّر الريموت)", 0xFFFFB74D.toInt()); return }
+                    if (ik != null) { if (!IrTv.press(act, ik)) say("⚠ 📡 الزرار ده مش في ريموت IR المختار (اضغط مطوّلًا على 📺/🛰 تغيّر الريموت)", 0xFFFFB74D.toInt()); return }
                 }
                 RemoteClient.key(k)
             }
@@ -277,14 +283,14 @@ object ControllerPad {
             /** دوسة عادية، أو (repeat=true) دوسة بتتكرر وإنت ماسك */
             fun bind(v: View, repeat: Boolean, fire: () -> Unit) {
                 if (!repeat) {
-                    v.setOnClickListener { v.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP); safe("ControllerPad:btn", fire) }
+                    v.setOnClickListener { Haptic.tap(v); safe("ControllerPad:btn", fire) }
                     return
                 }
                 var rep: Runnable? = null
                 v.setOnTouchListener { _, e ->
                     when (e.actionMasked) {
                         MotionEvent.ACTION_DOWN -> {
-                            v.alpha = 0.7f; v.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                            v.alpha = 0.7f; Haptic.tap(v)
                             safe("ControllerPad:hold", fire)
                             val r = object : Runnable { override fun run() { safe("ControllerPad:hold", fire); hh.postDelayed(this, 110L) } }
                             rep = r; hh.postDelayed(r, 450L)
@@ -399,7 +405,7 @@ object ControllerPad {
                 android.widget.LinearLayout.LayoutParams(-2, -2).apply { topMargin = dp(2) })
             bind(okB, false) { sendKey("ok") }
             // (v807) دوسة = موافق · ضغطة طويلة = ضغطة طويلة على OK في التلفزيون نفسه (مش ميكروفون)
-            okB.setOnLongClickListener { okB.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS); sendKey("ok_long"); true }
+            okB.setOnLongClickListener { Haptic.tap(okB, true); sendKey("ok_long"); true }
             dpad.addView(okB, FrameLayout.LayoutParams(dp(69), dp(69), Gravity.CENTER))
 
             val joy = JoystickView(act, { k -> sendKey(k) }, { startVoice() })
@@ -416,8 +422,8 @@ object ControllerPad {
                 }
                 style(tabDpad, dpadMode); style(tabTouch, !dpadMode)
             }
-            tabDpad.setOnClickListener { setMode(true) }
-            tabTouch.setOnClickListener { setMode(false) }
+            tabDpad.setOnClickListener { Haptic.tap(it); setMode(true) }
+            tabTouch.setOnClickListener { Haptic.tap(it); setMode(false) }
             setMode(true)
 
             // ── (v672) سلايدر الصوت بالعرض — (v678) اسحب شمال = أعلى، يمين = أوطى ──
@@ -480,6 +486,7 @@ object ControllerPad {
             val muteH = dp(44)
             val volCol = android.widget.LinearLayout(act).apply { orientation = android.widget.LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_LTR }
             volCol.addView(volBar, android.widget.LinearLayout.LayoutParams(-1, 0, 1f))
+            volCol.addView(miniBtn("headphone", 0xFF0EA5E9.toInt(), 0xFF2563EB.toInt(), "مصدر الصوت", false) { AudioBridge.showMenu(act) }, android.widget.LinearLayout.LayoutParams(-1, muteH).apply { topMargin = gapP })   // (v811) مصدر الصوت: تلفزيون / موبايل
             volCol.addView(miniBtn("mute", 0xFFE8456F.toInt(), 0xFFBE185D.toInt(), "كتم الصوت", false) { if (irOn) IrTv.press(act, "MUTE") else RemoteClient.cmd("mute") }, android.widget.LinearLayout.LayoutParams(-1, muteH).apply { topMargin = gapP })
 
             // ── باقي الأزرار (مكتبة/يوتيوب/متصفح/ترجمة/نص…): كلها فوق، والمنطقة اللي تحت للتنقل (الدايرة) + الصوت ──
@@ -495,36 +502,48 @@ object ControllerPad {
                 // (v809) سويتش فوق: 📶 واي فاي (الريموت الحالي) | 📡 IR (بلاستر الموبايل) + ⏻ باور بيظهر في وضع IR بس. ضغطة طويلة على 📡 = اختيار الماركة/الريموت
                 run {
                     fun seg(t: String) = TextView(act).apply { text = t; textSize = 15f; gravity = Gravity.CENTER; includeFontPadding = false; typeface = android.graphics.Typeface.DEFAULT_BOLD }
-                    val sWifi = seg("📶"); val sIr = seg("📡")
+                    val sWifi = seg("📶"); val sTv = seg("📺"); val sSat = seg("🛰")
                     val pill = android.widget.LinearLayout(act).apply {
                         orientation = android.widget.LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_LTR; setPadding(dp(3), dp(3), dp(3), dp(3))
                         background = GradientDrawable().apply { shape = GradientDrawable.RECTANGLE; cornerRadius = dpf(18f); setColor(0xFF1E2F4D.toInt()); setStroke(dp(1), 0xFF34507A.toInt()) }
                     }
-                    pill.addView(sWifi, android.widget.LinearLayout.LayoutParams(dp(46), -1)); pill.addView(sIr, android.widget.LinearLayout.LayoutParams(dp(46), -1))
-                    val pwr = TextView(act).apply {
-                        text = "⏻"; textSize = 18f; gravity = Gravity.CENTER; setTextColor(Color.WHITE); includeFontPadding = false; typeface = android.graphics.Typeface.DEFAULT_BOLD
-                        background = GradientDrawable().apply { shape = GradientDrawable.RECTANGLE; cornerRadius = dpf(16f); setColor(0xFFC62828.toInt()); setStroke(dp(1), 0x66FFFFFF) }
-                        contentDescription = "باور IR"
-                        setOnClickListener { if (!IrTv.press(act, "POWER")) say("⚠ 📡 اختار الماركة/الريموت الأول (ضغطة طويلة على 📡)", 0xFFFFB74D.toInt()) }
+                    pill.addView(sWifi, android.widget.LinearLayout.LayoutParams(dp(42), -1)); pill.addView(sTv, android.widget.LinearLayout.LayoutParams(dp(42), -1)); pill.addView(sSat, android.widget.LinearLayout.LayoutParams(dp(42), -1))
+                    fun irBtn(t: String, fill: Int, desc: String, tap: () -> Unit) = TextView(act).apply {
+                        text = t; textSize = 18f; gravity = Gravity.CENTER; setTextColor(Color.WHITE); includeFontPadding = false; typeface = android.graphics.Typeface.DEFAULT_BOLD
+                        background = GradientDrawable().apply { shape = GradientDrawable.RECTANGLE; cornerRadius = dpf(16f); setColor(fill); setStroke(dp(1), 0x66FFFFFF) }
+                        contentDescription = desc
+                        setOnClickListener { Haptic.tap(it); tap() }
+                    }
+                    val pwr = irBtn("⏻", 0xFFC62828.toInt(), "باور IR") { if (!IrTv.press(act, "POWER")) say("⚠ اختار الماركة/الريموت الأول (ضغطة طويلة على 📺 أو 🛰)", 0xFFFFB74D.toInt()) }
+                    lateinit var paintFn: () -> Unit
+                    // «الريموت الكامل»: صفحة بكل أزرار الريموت المختار؛ «رجوع» فيها بيرجّعك للريموت الأساسي (واي فاي)
+                    val fullB = irBtn("🎛", 0xFF1E2F4D.toInt(), "الريموت الكامل") {
+                        IrTv.show(act, irKind) { irKind = ""; irOn = false; IrTv.setIrKind(act, ""); paintFn() }
                     }
                     fun paint() {
-                        for ((v, on) in listOf(sWifi to !irOn, sIr to irOn)) {
+                        for ((v, on) in listOf(sWifi to (irKind == ""), sTv to (irKind == "tv"), sSat to (irKind == "sat"))) {
                             v.background = if (on) GradientDrawable().apply { shape = GradientDrawable.RECTANGLE; cornerRadius = dpf(15f); setColor(0xFF2563EB.toInt()) } else null
                             v.alpha = if (on) 1f else 0.6f
                         }
                         pwr.visibility = if (irOn) View.VISIBLE else View.GONE
+                        fullB.visibility = if (irOn) View.VISIBLE else View.GONE
                     }
-                    sWifi.setOnClickListener { irOn = false; IrTv.setIrMode(act, false); paint() }
-                    sIr.setOnClickListener {
-                        if (!IrTv.available(act)) { IrTv.show(act); return@setOnClickListener }   // بيشرح إن مفيش بلاستر
-                        irOn = true; IrTv.setIrMode(act, true); paint()
-                        if (IrTv.current(act) == null) IrTv.show(act)   // الماركة مش معروفة: اختارها
+                    paintFn = { paint() }
+                    fun pick(k: String) {
+                        if (!IrTv.available(act)) { IrTv.show(act, k) { }; return }   // بيشرح إن مفيش بلاستر
+                        irKind = k; irOn = true; IrTv.setIrKind(act, k); paint()
+                        if (IrTv.current(act, k) == null) IrTv.show(act, k) { irKind = ""; irOn = false; IrTv.setIrKind(act, ""); paint() }   // الماركة مش معروفة: اختارها
                     }
-                    sIr.setOnLongClickListener { IrTv.show(act); true }
+                    sWifi.setOnClickListener { Haptic.tap(it); irKind = ""; irOn = false; IrTv.setIrKind(act, ""); paint() }
+                    sTv.setOnClickListener { Haptic.tap(it); pick("tv") }
+                    sSat.setOnClickListener { Haptic.tap(it); pick("sat") }
+                    sTv.setOnLongClickListener { Haptic.tap(it, true); IrTv.show(act, "tv") { irKind = ""; irOn = false; IrTv.setIrKind(act, ""); paint() }; true }
+                    sSat.setOnLongClickListener { Haptic.tap(it, true); IrTv.show(act, "sat") { irKind = ""; irOn = false; IrTv.setIrKind(act, ""); paint() }; true }
                     paint()
                     val irRow = android.widget.LinearLayout(act).apply { orientation = android.widget.LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_LTR; gravity = Gravity.CENTER }
                     irRow.addView(pill, android.widget.LinearLayout.LayoutParams(-2, dp(36)))
                     irRow.addView(pwr, android.widget.LinearLayout.LayoutParams(dp(44), dp(36)).apply { leftMargin = dp(10) })
+                    irRow.addView(fullB, android.widget.LinearLayout.LayoutParams(dp(44), dp(36)).apply { leftMargin = dp(6) })
                     col.addView(irRow, android.widget.LinearLayout.LayoutParams(-1, dp(36)).apply { bottomMargin = dp(4) })
                 }
                 col.addView(top, android.widget.LinearLayout.LayoutParams(-1, dp(46)))
@@ -679,7 +698,7 @@ class VolumeBar(ctx: Context, private val onChange: (Int) -> Unit) : View(ctx) {
     override fun onTouchEvent(e: MotionEvent): Boolean {
         val pos = if (vertical) e.y else e.x
         when (e.actionMasked) {
-            MotionEvent.ACTION_DOWN -> { parent?.requestDisallowInterceptTouchEvent(true); dragging = true; apply(pos, true); performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP) }
+            MotionEvent.ACTION_DOWN -> { parent?.requestDisallowInterceptTouchEvent(true); dragging = true; apply(pos, true); Haptic.tap(this) }
             MotionEvent.ACTION_MOVE -> apply(pos, false)
             MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> { apply(pos, true); dragging = false; invalidate() }
         }
@@ -744,7 +763,7 @@ object RecentPicker {
             val close = TextView(act).apply {
                 text = "✕"; textSize = 20f; setTextColor(Color.WHITE); gravity = Gravity.CENTER; contentDescription = "إغلاق"
                 background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(0xFF1E2F4D.toInt()) }
-                setOnClickListener { d.dismiss() }
+                setOnClickListener { Haptic.tap(it); d.dismiss() }
             }
             head.addView(close, LinearLayout.LayoutParams(dp(40), dp(40)))
             head.addView(TextView(act).apply {
@@ -812,7 +831,7 @@ object RecentPicker {
                     orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; gravity = Gravity.CENTER_VERTICAL
                     background = GradientDrawable().apply { shape = GradientDrawable.RECTANGLE; cornerRadius = dpf(12f); setColor(0xFF1B2C47.toInt()) }
                     setPadding(dp(6), dp(6), dp(8), dp(6))
-                    setOnClickListener { performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP); try { onTap() } catch (e: Throwable) { LogStore.err("RecentPicker:tap", e) } }
+                    setOnClickListener { Haptic.tap(this); try { onTap() } catch (e: Throwable) { LogStore.err("RecentPicker:tap", e) } }
                 }
                 val iv = ImageView(act).apply {
                     scaleType = ImageView.ScaleType.CENTER_CROP

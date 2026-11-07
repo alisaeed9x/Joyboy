@@ -10,6 +10,7 @@ import android.graphics.drawable.GradientDrawable
 import android.hardware.ConsumerIrManager
 import android.view.Gravity
 import android.view.View
+import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.TextView
 
@@ -21,7 +22,7 @@ import android.widget.TextView
  */
 object IrTv {
     class Sig(val proto: String, val a: Long, val b: Long, val freq: Int, val raw: IntArray?)
-    class Remote(val brand: String, val name: String, val keys: Map<String, Sig>)
+    class Remote(val brand: String, val name: String, val keys: Map<String, Sig>, val kind: String = "tv")  // (v810) kind: tv | sat
 
     @Volatile private var all: List<Remote>? = null
     private var toggle = 0
@@ -30,14 +31,18 @@ object IrTv {
         (c.getSystemService(Context.CONSUMER_IR_SERVICE) as? ConsumerIrManager)?.hasIrEmitter() == true
     } catch (_: Throwable) { false }
 
-    @Synchronized
-    fun db(c: Context): List<Remote> {
-        all?.let { return it }
-        val out = ArrayList<Remote>()
+    /** (v810) تشخيص: حالة البلاستر وترددات الموبايل المدعومة (لو 38000 برّه المدى الإرسال بيفشل) */
+    fun irInfo(c: Context): String = try {
+        val m = c.getSystemService(Context.CONSUMER_IR_SERVICE) as? ConsumerIrManager
+        if (m == null || !m.hasIrEmitter()) "البلاستر: ❌ مش موجود"
+        else "البلاستر: ✅ موجود · " + (m.carrierFrequencies?.joinToString(" / ") { "${it.minFrequency / 1000}-${it.maxFrequency / 1000}kHz" } ?: "")
+    } catch (t: Throwable) { "البلاستر: ⚠ " + (t.message ?: "") }
+
+    private fun loadFile(c: Context, asset: String, kind: String, out: ArrayList<Remote>) {
         try {
             var brand = ""; var name = ""; var keys = LinkedHashMap<String, Sig>()
-            fun flush() { if (name.isNotEmpty() && keys.isNotEmpty()) out.add(Remote(brand, name, keys)); keys = LinkedHashMap() }
-            c.assets.open("irdb_tv.txt").bufferedReader(Charsets.UTF_8).useLines { seq ->
+            fun flush() { if (name.isNotEmpty() && keys.isNotEmpty()) out.add(Remote(brand, name, keys, kind)); keys = LinkedHashMap() }
+            c.assets.open(asset).bufferedReader(Charsets.UTF_8).useLines { seq ->
                 for (line in seq) {
                     if (line.isEmpty()) continue
                     val p = line.split('|', limit = 4)
@@ -52,17 +57,27 @@ object IrTv {
                 }
             }
             flush()
-        } catch (e: Throwable) { LogStore.err("IrTv:db", e) }
+        } catch (e: Throwable) { LogStore.err("IrTv:db:" + asset, e) }
+    }
+
+    /** (v810) القاعدتين: تلفزيونات (irdb_tv.txt) + ساتلايت/ريسيفرات (irdb_sat.txt — من Mi Remote DB: Set-top box + Cable/Satellite box) */
+    @Synchronized
+    fun db(c: Context): List<Remote> {
+        all?.let { return it }
+        val out = ArrayList<Remote>()
+        loadFile(c, "irdb_tv.txt", "tv", out)
+        loadFile(c, "irdb_tv_mi.txt", "tv", out)   // (v810) تلفزيونات إضافية من Mi Remote DB (1272 ريموت · 557 ماركة، بينها TCL بأكواد مختلفة عن Roku)
+        loadFile(c, "irdb_sat.txt", "sat", out)
         all = out
         return out
     }
 
-    fun brands(c: Context): List<String> = db(c).map { it.brand }.distinct().sortedBy { it.lowercase() }
+    fun brands(c: Context, kind: String = "tv"): List<String> = db(c).filter { it.kind == kind }.map { it.brand }.distinct().sortedBy { it.lowercase() }
 
     private fun brandOf(c: Context, mfr: String): String {
         val m = mfr.trim().lowercase()
         if (m.isEmpty()) return ""
-        val bs = brands(c)
+        val bs = brands(c, "tv")
         bs.firstOrNull { it.lowercase() == m }?.let { return it }
         val alias = mapOf("redmi" to "Xiaomi", "mi" to "Xiaomi", "mitv" to "Xiaomi", "samsung electronics" to "Samsung", "lge" to "LG", "lg electronics" to "LG")
         alias[m]?.let { a -> if (bs.contains(a)) return a }
@@ -70,9 +85,9 @@ object IrTv {
     }
 
     /** ريموتات الماركة مترتبة: الأقرب لاسم الموديل الأول، وبعدها الأكتر أزرارًا */
-    fun candidates(c: Context, brand: String, model: String): List<Remote> {
+    fun candidates(c: Context, kind: String, brand: String, model: String): List<Remote> {
         val toks = model.lowercase().split(Regex("[^a-z0-9]+")).filter { it.length >= 3 }
-        return db(c).filter { it.brand == brand }.sortedWith(
+        return db(c).filter { it.kind == kind && it.brand == brand }.sortedWith(
             compareByDescending<Remote> { r -> val n = r.name.lowercase(); toks.count { n.contains(it) } }
                 .thenByDescending { it.keys.size }
                 .thenBy { it.name })
@@ -156,108 +171,180 @@ object IrTv {
 
     // ===== حفظ الاختيار =====
     private fun prefs(c: Context) = c.getSharedPreferences("irtv", Context.MODE_PRIVATE)
-    fun savedBrand(c: Context): String = prefs(c).getString("brand", "") ?: ""
-    fun savedRemote(c: Context): String = prefs(c).getString("remote", "") ?: ""
-    fun save(c: Context, brand: String, remote: String) { prefs(c).edit().putString("brand", brand).putString("remote", remote).apply() }
+    private fun sfx(kind: String) = if (kind == "sat") "_sat" else ""
+    fun savedBrand(c: Context, kind: String = "tv"): String = prefs(c).getString("brand" + sfx(kind), "") ?: ""
+    fun savedRemote(c: Context, kind: String = "tv"): String = prefs(c).getString("remote" + sfx(kind), "") ?: ""
+    fun save(c: Context, kind: String, brand: String, remote: String) { prefs(c).edit().putString("brand" + sfx(kind), brand).putString("remote" + sfx(kind), remote).apply() }
     /** (v809) من /ping التلفزيون: الماركة والموديل */
     fun saveTvInfo(c: Context, mfr: String, model: String) { prefs(c).edit().putString("tv_mfr", mfr).putString("tv_model", model).apply() }
     fun tvMfr(c: Context): String = prefs(c).getString("tv_mfr", "") ?: ""
     fun tvModel(c: Context): String = prefs(c).getString("tv_model", "") ?: ""
-    /** (v809) سويتش الريموت: false = واي فاي (الأساسي) · true = IR (بلاستر الموبايل) */
-    fun irMode(c: Context): Boolean = prefs(c).getBoolean("ir_mode", false)
-    fun setIrMode(c: Context, on: Boolean) { prefs(c).edit().putBoolean("ir_mode", on).apply() }
-    /** الريموت المختار (المحفوظ، وإلا الأقرب لماركة وموديل التلفزيون)؛ null لو الماركة مش معروفة لسه */
-    fun current(c: Context): Remote? {
-        val b = savedBrand(c).ifEmpty { brandOf(c, tvMfr(c)) }
+    /** (v810) سويتش الريموت: "" = واي فاي (الأساسي) · "tv" = IR تلفزيون · "sat" = IR ساتلايت. (قيمة v809 القديمة ir_mode=true بتتقرا "tv") */
+    fun irKind(c: Context): String {
+        val k = prefs(c).getString("ir_kind", null)
+        if (k != null) return k
+        return if (prefs(c).getBoolean("ir_mode", false)) "tv" else ""
+    }
+    fun setIrKind(c: Context, kind: String) { prefs(c).edit().putString("ir_kind", kind).apply() }
+    fun irMode(c: Context): Boolean = irKind(c).isNotEmpty()
+    /** الريموت المختار للنوع [kind] (المحفوظ، وإلا للتلفزيون الأقرب لماركة وموديل التلفزيون)؛ null لو الماركة مش معروفة لسه */
+    fun current(c: Context, kind: String = irKind(c).ifEmpty { "tv" }): Remote? {
+        val b = savedBrand(c, kind).ifEmpty { if (kind == "tv") brandOf(c, tvMfr(c)) else "" }
         if (b.isEmpty()) return null
-        val l = candidates(c, b, tvModel(c))
-        val sv = savedRemote(c)
+        val l = candidates(c, kind, b, if (kind == "tv") tvModel(c) else "")
+        val sv = savedRemote(c, kind)
         return l.firstOrNull { it.name == sv } ?: l.firstOrNull()
     }
-    /** يبعت [key] (POWER/UP/DOWN/LEFT/RIGHT/OK/BACK/HOME/MENU/MUTE/VOLUP/VOLDN/SRC) من الريموت المختار */
-    fun press(c: Context, key: String): Boolean { val r = current(c) ?: return false; return send(c, r, key) }
+    private fun aliasKeys(key: String): List<String> = when (key) {
+        "BACK" -> listOf("EXIT"); "EXIT" -> listOf("BACK"); "OK" -> listOf("SEL", "ENTER"); "HOME" -> listOf("MENU")
+        "UP" -> listOf("CHUP"); "DOWN" -> listOf("CHDN"); "LEFT" -> listOf("VOLDN"); "RIGHT" -> listOf("VOLUP")   // ريسيفرات كتير مفيهاش أسهم: القنوات/الصوت بيتحركوا في القوايم
+        else -> emptyList()
+    }
+    /** يبعت [key] (POWER/UP/DOWN/LEFT/RIGHT/OK/BACK/HOME/MENU/MUTE/VOLUP/VOLDN/SRC…) من الريموت المختار؛ لو الزرار مش فيه بيجرّب بديله (رجوع↔خروج…) */
+    fun press(c: Context, key: String): Boolean {
+        val r = current(c) ?: return false
+        if (r.keys.containsKey(key)) return send(c, r, key)
+        for (a in aliasKeys(key)) if (r.keys.containsKey(a)) return send(c, r, a)
+        return false
+    }
 
-    // ===== الواجهة =====
-    fun show(act: Activity) {
+    // ===== الواجهة: «الريموت الكامل» (صفحة كاملة بكل أزرار الريموت المختار) =====
+    private val LABELS = mapOf(
+        "POWER" to "⏻", "UP" to "▲", "DOWN" to "▼", "LEFT" to "◀", "RIGHT" to "▶", "OK" to "OK",
+        "BACK" to "رجوع", "EXIT" to "خروج", "MENU" to "قايمة", "HOME" to "رئيسية", "MUTE" to "🔇",
+        "VOLUP" to "🔊 +", "VOLDN" to "🔉 −", "CHUP" to "CH +", "CHDN" to "CH −", "SRC" to "المصدر",
+        "INFO" to "ℹ", "GUIDE" to "دليل", "FAV" to "★ مفضلة", "RADIO" to "راديو", "PGUP" to "صفحة ▲", "PGDN" to "صفحة ▼",
+        "AUDIO" to "صوت", "REC" to "⏺ تسجيل", "PAUSE" to "⏸", "STOP" to "⏹", "PLAY" to "▶ تشغيل",
+        "RED" to "", "GREEN" to "", "YELLOW" to "", "BLUE" to "")
+
+    /**
+     * (v810) صفحة الريموت الكامل للريموت المختار (تلفزيون أو ساتلايت): كل الأزرار اللي في الريموت ده مترتبة (باور · أرقام · اتجاهات · صوت/قنوات · ألوان · باقي الأزرار).
+     * [onBack] بيتنده لما تدوس «رجوع» ← بترجع لشكل الريموت الأساسي (واي فاي).
+     */
+    fun show(act: Activity, kind: String, onBack: () -> Unit) {
         val dm = act.resources.displayMetrics
         fun dp(v: Int) = (v * dm.density).toInt()
         if (!available(act)) {
-            AlertDialog.Builder(act).setTitle("📡 ريموت IR").setMessage("الموبايل ده مفيهوش بلاستر أشعة تحت الحمراء، فمش هينفع نتحكم في التلفزيون بيه. (الريموت العادي بالواي فاي شغّال زي ما هو.)").setPositiveButton("تمام", null).show()
+            AlertDialog.Builder(act).setTitle("📡 ريموت IR").setMessage("الموبايل ده مفيهوش بلاستر أشعة تحت الحمراء، فمش هينفع نتحكم بيه. (الريموت العادي بالواي فاي شغّال زي ما هو.)").setPositiveButton("تمام", null).show()
             return
         }
-        var brand = savedBrand(act).ifEmpty { brandOf(act, tvMfr(act)) }
+        var brand = savedBrand(act, kind).ifEmpty { if (kind == "tv") brandOf(act, tvMfr(act)) else "" }
         var list: List<Remote> = emptyList()
         var idx = 0
         fun reload() {
-            list = if (brand.isEmpty()) emptyList() else candidates(act, brand, tvModel(act))
-            val sv = savedRemote(act)
+            list = if (brand.isEmpty()) emptyList() else candidates(act, kind, brand, if (kind == "tv") tvModel(act) else "")
+            val sv = savedRemote(act, kind)
             idx = list.indexOfFirst { it.name == sv }.let { if (it < 0) 0 else it }
         }
         reload()
 
+        val d = Dialog(act, android.R.style.Theme_Black_NoTitleBar_Fullscreen)
         val root = LinearLayout(act).apply {
-            orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_LTR; gravity = Gravity.CENTER_HORIZONTAL
-            setPadding(dp(14), dp(14), dp(14), dp(14))
-            background = GradientDrawable().apply { setColor(0xFF0F1830.toInt()); cornerRadius = dp(22).toFloat(); setStroke(dp(1), 0xFF2B3C60.toInt()) }
+            orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_LTR
+            setBackgroundColor(0xFF0F1830.toInt()); setPadding(dp(10), dp(10), dp(10), dp(10))
         }
         fun txt(t: String, sp: Float, col: Int = Color.WHITE, bold: Boolean = false) = TextView(act).apply {
             text = t; textSize = sp; setTextColor(col); gravity = Gravity.CENTER; if (bold) typeface = Typeface.DEFAULT_BOLD
         }
-        fun btn(t: String, w: Int, h: Int, fill: Int = 0xFF1E2A44.toInt(), sp: Float = 18f, onTap: () -> Unit) = TextView(act).apply {
+        fun mkBtn(t: String, fill: Int = 0xFF1E2A44.toInt(), sp: Float = 15f, onTap: () -> Unit) = TextView(act).apply {
             text = t; textSize = sp; setTextColor(Color.WHITE); gravity = Gravity.CENTER; typeface = Typeface.DEFAULT_BOLD; includeFontPadding = false
             background = GradientDrawable().apply { setColor(fill); cornerRadius = dp(14).toFloat(); setStroke(dp(1), 0x44FFFFFF) }
-            layoutParams = LinearLayout.LayoutParams(dp(w), dp(h)).apply { setMargins(dp(3), dp(3), dp(3), dp(3)) }
-            setOnClickListener { onTap() }
+            setOnClickListener { Haptic.tap(it); onTap() }
         }
-        fun spacer() = View(act).apply { layoutParams = LinearLayout.LayoutParams(dp(70), dp(56)).apply { setMargins(dp(3), dp(3), dp(3), dp(3)) } }
         fun row(vararg v: View) = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER; layoutDirection = View.LAYOUT_DIRECTION_LTR; for (x in v) addView(x) }
 
-        val brandB = btn("", 260, 40, 0xFF22304F.toInt(), 13f) {}
-        val modelB = btn("", 260, 40, 0xFF22304F.toInt(), 13f) {}
+        // الشريط العلوي: رجوع للريموت الأساسي (واي فاي) + العنوان
+        val backB = mkBtn("↩ رجوع للريموت", 0xFF2563EB.toInt(), 14f) { try { d.dismiss() } catch (_: Throwable) {}; onBack() }
+        val titleT = txt(if (kind == "sat") "🛰 الريموت الكامل — ساتلايت" else "📺 الريموت الكامل — تلفزيون", 15f, Color.WHITE, true)
+        root.addView(row(backB.also { it.layoutParams = LinearLayout.LayoutParams(dp(140), dp(42)) }, titleT.also { it.layoutParams = LinearLayout.LayoutParams(0, dp(42), 1f) }))
+        val brandB = mkBtn("", 0xFF22304F.toInt(), 13f) {}
+        val modelB = mkBtn("", 0xFF22304F.toInt(), 13f) {}
         val info = txt("", 12f, 0xFFB8BDC9.toInt())
-        root.addView(txt("📡 ريموت IR", 17f, Color.WHITE, true))
-        root.addView(brandB); root.addView(modelB)
-        root.addView(info, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(2) })
+        root.addView(brandB, LinearLayout.LayoutParams(-1, dp(40)).apply { topMargin = dp(8) })
+        root.addView(modelB, LinearLayout.LayoutParams(-1, dp(40)).apply { topMargin = dp(4) })
+        root.addView(info, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(4) })
+
+        val body = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_LTR; gravity = Gravity.CENTER_HORIZONTAL }
+        val sc = android.widget.ScrollView(act).apply { isVerticalScrollBarEnabled = false; addView(body, FrameLayout.LayoutParams(-1, -2)) }
+        root.addView(sc, LinearLayout.LayoutParams(-1, 0, 1f).apply { topMargin = dp(6) })
 
         fun cur(): Remote? = list.getOrNull(idx)
-        fun press(key: String) {
+        fun fire(v: View, key: String) {
             val r = cur()
             if (r == null) { Notice.show(act, "اختار الماركة الأول", 1800L); return }
-            if (!send(act, r, key)) Notice.show(act, "الزرار ده مش موجود في الريموت ده", 1500L)
+            Haptic.tap(v)
+            if (!send(act, r, key)) Notice.show(act, "الزرار ده مش شغّال في الريموت ده", 1500L)
+        }
+        fun fillOf(k: String): Int = when (k) {
+            "POWER" -> 0xFFC62828.toInt(); "OK" -> 0xFF1D4ED8.toInt(); "RED" -> 0xFFD32F2F.toInt(); "GREEN" -> 0xFF2E7D32.toInt()
+            "YELLOW" -> 0xFFF9A825.toInt(); "BLUE" -> 0xFF1565C0.toInt(); else -> 0xFF1E2A44.toInt()
+        }
+        fun keyBtn(k: String): TextView {
+            val lb = LABELS[k] ?: k.replace('_', ' ').lowercase()
+            return mkBtn(lb, fillOf(k), if (lb.length > 6) 12f else 16f) {}.also { b -> b.setOnClickListener { fire(b, k) } }
+        }
+        fun cell(k: String?, r: Remote): View =
+            if (k != null && r.keys.containsKey(k)) keyBtn(k).also { it.layoutParams = LinearLayout.LayoutParams(0, dp(52), 1f).apply { setMargins(dp(3), dp(3), dp(3), dp(3)) } }
+            else View(act).apply { layoutParams = LinearLayout.LayoutParams(0, dp(52), 1f).apply { setMargins(dp(3), dp(3), dp(3), dp(3)) } }
+        fun rowOf(r: Remote, keys: List<String?>) { if (keys.any { it != null && r.keys.containsKey(it) }) body.addView(row(*keys.map { cell(it, r) }.toTypedArray()).also { it.layoutParams = LinearLayout.LayoutParams(-1, -2) }) }
+        fun section(t: String) = body.addView(txt(t, 11f, 0xFF8FA3C7.toInt()), LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(8) })
+
+        fun rebuild() {
+            body.removeAllViews()
+            val r = cur()
+            if (r == null) { body.addView(txt("اختار الماركة والريموت من فوق", 14f, 0xFFB8BDC9.toInt()), LinearLayout.LayoutParams(-1, dp(80))); return }
+            val used = HashSet<String>()
+            fun mark(vararg ks: String?) { for (k in ks) if (k != null) used.add(k) }
+            rowOf(r, listOf("POWER", "SRC", "MUTE", "INFO")); mark("POWER", "SRC", "MUTE", "INFO")
+            val digits = (1..9).map { it.toString() }
+            if (digits.any { r.keys.containsKey(it) }) {
+                section("الأرقام")
+                for (i in 0 until 3) rowOf(r, digits.subList(i * 3, i * 3 + 3))
+                rowOf(r, listOf(null, "0", null)); mark(*digits.toTypedArray(), "0")
+            }
+            section("التنقل")
+            rowOf(r, listOf("BACK", "UP", "EXIT")); rowOf(r, listOf("LEFT", "OK", "RIGHT")); rowOf(r, listOf("HOME", "DOWN", "MENU")); mark("BACK", "UP", "EXIT", "LEFT", "OK", "RIGHT", "HOME", "DOWN", "MENU")
+            if (listOf("VOLUP", "VOLDN", "CHUP", "CHDN").any { r.keys.containsKey(it) }) {
+                section("الصوت والقنوات")
+                rowOf(r, listOf("VOLUP", "CHUP")); rowOf(r, listOf("VOLDN", "CHDN")); mark("VOLUP", "VOLDN", "CHUP", "CHDN")
+            }
+            if (listOf("RED", "GREEN", "YELLOW", "BLUE").any { r.keys.containsKey(it) }) {
+                section("الألوان"); rowOf(r, listOf("RED", "GREEN", "YELLOW", "BLUE")); mark("RED", "GREEN", "YELLOW", "BLUE")
+            }
+            val rest = r.keys.keys.filter { it !in used }
+            if (rest.isNotEmpty()) {
+                section("باقي الأزرار (${rest.size})")
+                for (ch in rest.chunked(4)) rowOf(r, ch + List(4 - ch.size) { null })
+            }
         }
         fun refresh() {
             brandB.text = "الماركة: " + (if (brand.isEmpty()) "اختار ▾" else "$brand ▾")
             val r = cur()
-            modelB.text = if (r == null) "الريموت: —" else "الريموت: ${r.name.take(28)} (${idx + 1}/${list.size}) ▾"
-            info.text = if (tvModel(act).isNotEmpty()) "التلفزيون: ${tvMfr(act)} ${tvModel(act)}" else "جرّب ⏻ — لو التلفزيون ما استجابش دوس «الكود اللي بعده»"
+            modelB.text = if (r == null) "الريموت: —" else "الريموت: ${r.name.take(30)} (${idx + 1}/${list.size}) ▾"
+            info.text = (if (kind == "tv" && tvModel(act).isNotEmpty()) "التلفزيون: ${tvMfr(act)} ${tvModel(act)}\n" else "") + irInfo(act) + "\nجرّب ⏻ — لو الجهاز ما استجابش جرّب «الكود اللي بعده»"
+            rebuild()
         }
         brandB.setOnClickListener {
-            val bs = brands(act)
-            AlertDialog.Builder(act).setTitle("الماركة").setItems(bs.toTypedArray()) { _, i -> brand = bs[i]; reload(); save(act, brand, cur()?.name ?: ""); refresh() }.show()
+            Haptic.tap(it)
+            val bs = brands(act, kind)
+            AlertDialog.Builder(act).setTitle("الماركة").setItems(bs.toTypedArray()) { _, i -> brand = bs[i]; reload(); save(act, kind, brand, cur()?.name ?: ""); refresh() }.show()
         }
         modelB.setOnClickListener {
+            Haptic.tap(it)
             if (list.isEmpty()) return@setOnClickListener
             val names = list.map { it.name }.toTypedArray()
-            AlertDialog.Builder(act).setTitle("الريموت").setItems(names) { _, i -> idx = i; save(act, brand, list[i].name); refresh() }.show()
+            AlertDialog.Builder(act).setTitle("الريموت").setItems(names) { _, i -> idx = i; save(act, kind, brand, list[i].name); refresh() }.show()
         }
-
-        root.addView(row(btn("⏻", 70, 48, 0xFFC62828.toInt(), 22f) { press("POWER") }, btn("المصدر", 70, 48, sp = 12f) { press("SRC") }, btn("🔇", 70, 48) { press("MUTE") }),
-            LinearLayout.LayoutParams(-2, -2).apply { topMargin = dp(8) })
-        root.addView(row(spacer(), btn("▲", 70, 56) { press("UP") }, spacer()))
-        root.addView(row(btn("◀", 70, 56) { press("LEFT") }, btn("OK", 70, 56, 0xFF1D4ED8.toInt(), 16f) { press("OK") }, btn("▶", 70, 56) { press("RIGHT") }))
-        root.addView(row(spacer(), btn("▼", 70, 56) { press("DOWN") }, spacer()))
-        root.addView(row(btn("رجوع", 70, 48, sp = 13f) { press("BACK") }, btn("رئيسية", 70, 48, sp = 13f) { press("HOME") }, btn("قايمة", 70, 48, sp = 13f) { press("MENU") }))
-        root.addView(row(btn("🔉 −", 100, 48) { press("VOLDN") }, btn("🔊 +", 100, 48) { press("VOLUP") }))
-        root.addView(btn("⏭ الكود اللي بعده", 220, 44, 0xFF7C4DBB.toInt(), 14f) {
-            if (list.isEmpty()) { Notice.show(act, "اختار الماركة الأول", 1800L) }
-            else { idx = (idx + 1) % list.size; save(act, brand, list[idx].name); refresh(); press("POWER") }
-        }, LinearLayout.LayoutParams(-2, -2).apply { topMargin = dp(6) })
+        val nextB = mkBtn("⏭ الكود اللي بعده (يجرّب ⏻)", 0xFF7C4DBB.toInt(), 14f) {
+            if (list.isEmpty()) Notice.show(act, "اختار الماركة الأول", 1800L)
+            else { idx = (idx + 1) % list.size; save(act, kind, brand, list[idx].name); refresh(); cur()?.let { send(act, it, "POWER") } }
+        }
+        root.addView(nextB, LinearLayout.LayoutParams(-1, dp(44)).apply { topMargin = dp(6) })
         refresh()
 
-        val d = Dialog(act, android.R.style.Theme_Translucent_NoTitleBar)
         d.setContentView(root)
-        d.setCanceledOnTouchOutside(true)
-        d.window?.apply { setBackgroundDrawable(android.graphics.drawable.ColorDrawable(0)); setLayout((dm.widthPixels * 0.94f).toInt(), -2); setGravity(Gravity.CENTER) }
+        d.setCancelable(true)
+        d.window?.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         d.show()
     }
 }

@@ -534,7 +534,7 @@ class BrowserActivity : Activity() {
             background = ui.box(0xCCD32F2F.toInt(), 0x66FFFFFF, 22); elevation = ui.dp(4).toFloat()
             setOnClickListener {
                 val synced = CoSurf.on
-                panic(); PlayTarget.clearTvHistory(this@BrowserActivity, "browser")   // (v558) الزرار الأحمر يمسح كمان سجل المتصفح على التلفزيون
+                panic(); PlayTarget.clearTvHistory(this@BrowserActivity, "all"); PlayTarget.wipeWatchHistory(this@BrowserActivity)   // (v558) الزرار الأحمر يمسح سجل التلفزيون · (v810) وبقى يمسح سجل المشاهدة كله (آخر المشغّلة + السجل + المصطادة حتى المخفي) على الموبايل والتلفزيون
                 if (synced) {   // (v649) المزامنة شغّالة: افصل، التلفزيون يمسح ويخرج للرئيسية، وإنت كمان تخرج من المتصفح
                     CoSurf.panic(); refreshCoBtns()
                     if (isTaskRoot) try { startActivity(Intent(this@BrowserActivity, MainActivity::class.java)) } catch (_: Throwable) {}

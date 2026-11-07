@@ -165,7 +165,7 @@ object PlayerPad {
             fun btn(t: String, sp: Float = 14f, fill: Int = cCard, stroke: Int = cLine, tap: (TextView) -> Unit): TextView = label(t, sp).apply {
                 background = bg(fill, stroke, 14f); setPadding(dp(6), dp(8), dp(6), dp(8)); isClickable = true
                 setOnClickListener { v ->
-                    v.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                    Haptic.tap(v)
                     try { tap(this) } catch (e: Throwable) { LogStore.err("PlayerPad:btn", e) }
                 }
                 setOnTouchListener { v, e ->
@@ -641,7 +641,7 @@ object PlayerPad {
             val modeTv = label("", 12f, 0xFF9FB3D6.toInt(), false)
             val cntCard = LinearLayout(act).apply {
                 orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER; background = bg(0xFF18284A.toInt(), 0xFF3B5A99.toInt(), 22f); setPadding(dp(8), dp(12), dp(8), dp(12))
-                isClickable = true; setOnClickListener { go("log") }
+                isClickable = true; setOnClickListener { Haptic.tap(it); go("log") }
             }
             cntCard.addView(cntTv, lp(-2, -2)); cntCard.addView(modeTv, lp(-2, -2).apply { topMargin = dp(3) })
 

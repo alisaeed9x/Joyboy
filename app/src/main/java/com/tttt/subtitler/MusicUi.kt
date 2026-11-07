@@ -987,6 +987,9 @@ class MusicUi(private val act: Activity, private val ui: Ui, private val th: The
         ytVidBtn = ui.text("🎬", 20f, Color.WHITE).apply { gravity = Gravity.CENTER; visibility = View.GONE
             setOnClickListener { YtAudio.itemOf(MusicEngine.current)?.let { onYtVideo?.invoke(it, MusicEngine.posMs) } } }
         top.addView(ytVidBtn, FrameLayout.LayoutParams(ui.dp(56), ui.dp(48), Gravity.END or Gravity.CENTER_VERTICAL).apply { marginEnd = ui.dp(168) })
+        // (v811) 🎧 مصدر الصوت: سماعة التلفزيون / سماعة الموبايل (بجنب زرار الإغلاق)
+        top.addView(ui.text("🎧", 20f, Color.WHITE).apply { gravity = Gravity.CENTER; setOnClickListener { AudioBridge.showMenu(act) } },
+            FrameLayout.LayoutParams(ui.dp(56), ui.dp(48), Gravity.START or Gravity.CENTER_VERTICAL).apply { marginStart = ui.dp(56) })
         attachSwipeDown(top)
 
         liveReset(); liveStatus.visibility = View.GONE

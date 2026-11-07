@@ -6,6 +6,7 @@
     <uses-feature android:name="android.hardware.microphone" android:required="false"/>   <!-- (v500) تلفزيونات من غير مايك في الجهاز (الريموت بيسجّل) -->
     <uses-feature android:name="android.hardware.camera" android:required="false"/>
     <uses-feature android:name="android.hardware.camera.autofocus" android:required="false"/>
+    <uses-permission android:name="android.permission.VIBRATE" />
     <uses-permission android:name="android.permission.CAMERA"/>   <!-- (v598) مسح QR على الموبايل -->
     <uses-permission android:name="android.permission.INTERNET"/>
     <uses-permission android:name="android.permission.TRANSMIT_IR"/>   <!-- (v809) ريموت IR بالبلاستر -->
@@ -46,7 +47,7 @@
         <intent><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/></intent>
         <intent><action android:name="android.intent.action.VIEW"/><data android:scheme="content" android:host="android.media.tv"/></intent>   <!-- (v582) زرار الريسيفر: فتح مدخل HDMI -->
     </queries>
-    <application android:supportsRtl="true" android:label="Joyboy" android:icon="@mipmap/ic_launcher" android:roundIcon="@mipmap/ic_launcher"
+    <application android:allowAudioPlaybackCapture="true" android:supportsRtl="true" android:label="Joyboy" android:icon="@mipmap/ic_launcher" android:roundIcon="@mipmap/ic_launcher"
         android:usesCleartextTraffic="true" android:banner="@mipmap/ic_launcher" android:theme="@android:style/Theme.DeviceDefault.NoActionBar">
         <!-- (v619) بوابة الفتح الخفيفة: صورة السبلاش فورًا ثم MainActivity (أيقونة اللانشر بتفتح دي) -->
         <activity android:name=".LaunchSplashActivity" android:exported="true" android:theme="@style/AppSplashMain"
@@ -109,6 +110,10 @@
             <meta-data android:name="android.support.FILE_PROVIDER_PATHS" android:resource="@xml/fm_paths"/>
         </provider>
         <activity android:name=".LiveRequestActivity" android:exported="false" android:theme="@android:style/Theme.Translucent.NoTitleBar"/>
+        <!-- (v811) جسر الصوت: مرسل (التقاط صوت الجهاز) + مستقبل (تشغيل صوت الجهاز التاني) + شاشة الموافقة -->
+        <service android:name=".AbSendService" android:exported="false" android:foregroundServiceType="mediaProjection"/>
+        <service android:name=".AbRecvService" android:exported="false" android:foregroundServiceType="mediaPlayback"/>
+        <activity android:name=".AbAskActivity" android:exported="false" android:excludeFromRecents="true" android:taskAffinity="" android:theme="@android:style/Theme.Translucent.NoTitleBar"/>
         <service android:name=".LiveCaptionService" android:exported="false" android:foregroundServiceType="mediaProjection"/>
         <service android:name=".BgService" android:exported="false" android:foregroundServiceType="dataSync" android:stopWithTask="false"/>
         <receiver android:name=".LiveWidget" android:exported="true" android:label="🔴 ترجمة حية">

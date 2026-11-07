@@ -4663,6 +4663,7 @@ class PlayerActivity : Activity(), Host {
         fun barPill(b: TextView): TextView = b.apply { layoutParams = LinearLayout.LayoutParams(-2, ui.dp(30)).apply { setMargins(ui.dp(3), 0, ui.dp(3), 0) }; minimumWidth = ui.dp(30); setPadding(ui.dp(8), 0, ui.dp(8), 0); textSize = 12f }
         val aiB = barPill(tip(grp("🗣", gAi, true), "لهجة (عائلي/صريح)"))
         trAiB = aiB; applyModeCaps()
+        val audRouteB = mini("🎧") { AudioBridge.showMenu(this) }   // (v811) مصدر الصوت (تلفزيون/موبايل) — الشريط السفلي جنب أيقونات اللهجة
         val syncB = barPill(tip(grp("⏱", gSub, true), "تزامن الترجمة (تقديم / تأخير)"))   // (v91) مكان Aa — حجم الخط بقى بالقرص (pinch) على الشاشة
         toolR.addView(syncB)
         val audPill = barPill(tip(mini("🔊") { v -> audPopFn?.invoke(v) }, "لغة الصوت"))   // (v661) بيظهر بس لو الفيديو فيه أكتر من لغة صوت
@@ -4685,7 +4686,7 @@ class PlayerActivity : Activity(), Host {
             (v.parent as? ViewGroup)?.removeView(v); v.textSize = 15f; v.setPadding(0, 0, 0, 0)
             leftB.addView(v, LinearLayout.LayoutParams(ui.dp(34), ui.dp(34)).apply { marginStart = ui.dp(3) })
         }
-        leftB.addView(lockB, lockLp()); leftB.addView(aiB); smallIcon(lgIcon)
+        leftB.addView(lockB, lockLp()); leftB.addView(aiB); smallIcon(lgIcon); smallIcon(audRouteB)
         btnRow.addView(leftB, LinearLayout.LayoutParams(0, -2, 1f))
         val pillBg = { ui.box(0xE00F0F12.toInt(), 0x29FFFFFF, 24) }
         val prevB = ui.fsCircle("⏮") { stepOrSeek(-1); showChrome() }.apply { textSize = 20f; background = pillBg() }
@@ -4719,7 +4720,7 @@ class PlayerActivity : Activity(), Host {
             leftB.removeAllViews(); rightB.removeAllViews(); tbRow.removeAllViews()
             // toolBtns = [⏱ توقيت, 📋 لوج, 📝 جمل, CC, 🔁 تكرار, 💬 وضع الترجمة, 🧑 شخصيات]
             fun lp(i: Int) = LinearLayout.LayoutParams(if (i == 0) -2 else ui.dp(38), ui.dp(38)).apply { setMargins(ui.dp(3), ui.dp(3), ui.dp(3), ui.dp(3)) }
-            leftB.addView(lockB, lockLp()); leftB.addView(aiB); smallIcon(lgIcon)
+            leftB.addView(lockB, lockLp()); leftB.addView(aiB); smallIcon(lgIcon); smallIcon(audRouteB)
             (noticeBtn.parent as? ViewGroup)?.removeView(noticeBtn)
             rightB.addView(noticeBtn, LinearLayout.LayoutParams(-2, ui.dp(34)).apply { marginEnd = ui.dp(8) })
             rightB.addView(rotBarB, LinearLayout.LayoutParams(ui.dp(40), ui.dp(40)).apply { marginEnd = ui.dp(8) })

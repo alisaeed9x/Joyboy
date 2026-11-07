@@ -39,6 +39,10 @@ object Themes {
     }
     val all: List<Theme> = raw.map { hard(it) }
 
+    /** (v810) السمات اللي بتظهر في إعدادات المظهر على الموبايل (الباقي فاضل موجود للتلفزيون والسكِنز بس): MX الفاتح · أموليد · إنفينكس · ويندوز 11 (فاتح/داكن) · ويندوز XP · الرملي (سيبيا) */
+    val phoneIds: List<String> = listOf("mx", "amoled_w", "infinix", "win11", "win11d", "winxp", "eye_sepia")
+    val phone: List<Theme> get() = phoneIds.mapNotNull { id -> all.firstOrNull { it.id == id } }
+
     fun byId(id: String?): Theme = if (id == "custom") custom() else all.firstOrNull { it.id == id } ?: all[0]   // all[0] = mx
 
     // (v469) D1 استوديو السمات: سمة مخصصة بتتولّد من سمة أساس + لون تمييز مختار + إزاحة تشبّع/إضاءة — بتتحفظ في Cfg وبتتطبّق من byId("custom") على الواجهة كلها
@@ -58,9 +62,9 @@ object Themes {
         return Theme("custom", "🎨 سمتي المخصصة", base.bg, base.surface, base.card, base.border,
             shift(base.primary, s * 0.6f, l * 0.6f), shift(acc, s, l), base.text, base.muted, base.danger, base.success)
     }
-    private val PAIRS = mapOf("mx" to "mxd", "win11" to "win11d", "light" to "default", "eye_sepia" to "eye_dusk", "eye_night" to "sky",
+    private val PAIRS = mapOf("mx" to "amoled_w", "win11" to "win11d", "light" to "default", "eye_sepia" to "infinix", "eye_night" to "sky",
         "sky" to "eye_night", "sakura" to "amoled_w", "amoled_w" to "mx", "infinix" to "mx", "winxp" to "win11d", "win7" to "win11d",
-        "mxd" to "mx", "win11d" to "win11", "default" to "light", "eye_dusk" to "eye_sepia")
+        "mxd" to "mx", "win11d" to "win11", "default" to "light", "eye_dusk" to "eye_sepia")   // (v810) mx ↔ أموليد (مفيش MX داكن على الموبايل) · سيبيا ↔ إنفينكس
     /** (v352) سويتش داكن/فاتح: الثيم المقابل للحالي (فاتح ↔ داكن) */
-    fun partner(id: String): String = PAIRS[id] ?: if (byId(id).isLight) "eye_night" else "mx"
+    fun partner(id: String): String = PAIRS[id] ?: if (byId(id).isLight) "amoled_w" else "mx"
 }

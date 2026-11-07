@@ -266,6 +266,7 @@ object TvLink {
             "/file/any" -> TvCatalogApi.file(app, r)     // (v607) تنزيل عنصر من الكتالوج (Range)
             "/look" -> look(r)                // (v720) تحكم في مظهر التلفزيون من الموبايل
             "/cfg" -> BrainRpc.cfg(r)
+            "/abridge" -> AudioBridge.rpc(app, r)     // (v811) جسر الصوت: تلفزيون ↔ موبايل
             "/bye" -> { rm.announced = false; rm.lastSeen = 0L; notice("📱 الريموت «" + rm.name + "» فصل"); ok() }
             else -> err(404, "nf")
         }
@@ -632,6 +633,7 @@ object TvLink {
         fun isYt(x: Recent) = x.id.startsWith("yt:") || Links.ytId(x.url) != null
         when (j.optString("what")) {
             "browser" -> clearBrowserHist()
+            "all" -> { PlayTarget.wipeWatchHistory(app); clearBrowserHist() }   // (v810) 🚨 من الموبايل: سجل المشاهدة كله على التلفزيون
             "yt" -> {
                 Recents.dropWhere(app) { isYt(it) }
                 PubHistory.clear("v", "youtube")

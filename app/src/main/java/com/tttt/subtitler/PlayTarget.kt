@@ -132,6 +132,14 @@ object PlayTarget {
         } catch (e: Throwable) { LogStore.err("PlayTarget:controller", e) }
     }
 
+    /** (v810) 🚨: مسح سجل المشاهدة كله على الجهاز ده: آخر المشغّلة + سجل المشاهدة (متصفح/يوتيوب/ملفات) + سجل يوتيوب + الفيديوهات المصطادة (حتى المخفي). مابيمسحش الفيديوهات نفسها ولا الترجمة المحفوظة */
+    fun wipeWatchHistory(ctx: android.content.Context) {
+        try { Recents.clearAll(ctx) } catch (e: Throwable) { LogStore.err("PlayTarget:wipeRecents", e) }
+        try { PubHistory.clear("v", null) } catch (e: Throwable) { LogStore.err("PlayTarget:wipePub", e) }
+        try { YtHistory.clear(ctx) } catch (e: Throwable) { LogStore.err("PlayTarget:wipeYt", e) }
+        try { WebVideos.removeMany(ctx, WebVideos.load(ctx).map { it.id }.toSet()) } catch (e: Throwable) { LogStore.err("PlayTarget:wipeWeb", e) }
+    }
+
     /**
      * (v558) مسح سجل على التلفزيون (تطبيق التلفزيون منفصل عن الموبايل فبنبعتله أمر /clear). what = "browser" | "yt".
      * بيشتغل في وضع التلفزيون بس (لازم يكون متصل)، من غير ما يعطّل الواجهة.

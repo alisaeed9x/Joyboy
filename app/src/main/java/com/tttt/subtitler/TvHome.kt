@@ -463,8 +463,16 @@ class TvActivity : Activity() {
     override fun onPause() { h.removeCallbacks(wallLoop); h.removeCallbacks(ytLoop); super.onPause() }   // (v527) مفيش تنزيل خلفيات وانت في تطبيق تاني
     private fun recentsSig(): String = try { recents().take(40).joinToString("|") { it.uri + ":" + it.posSec.toInt() + ":" + it.ts } } catch (_: Throwable) { "" }
     private val histCheck = Runnable { val sg = recentsSig(); if (sg != recSig) { refreshHist(sg); recSig = sg } }
+    /** (v810) الرئيسية المبنية (بالكارت الكبير فوق) هي اللي معروضة دلوقتي؟ */
+    private fun homeVisible(): Boolean { val hc = homeCache ?: return false; return hc.isNotEmpty() && !inSearch && storageKind == null && hc.all { it.parent === content } }
     private fun refreshHist(sig: String) {
         homeCacheSig = ""   // كاش الرئيسية يتحدّث السجل في المرة الجاية كمان
+        if (homeVisible()) {   // (v810) الكارت الكبير فوق + باقي الرئيسية بيتبنوا من آخر فيديو: كانوا بيفضلوا قديمين لحد ما أعمل Back تاني. دلوقتي الرئيسية كلها بتتبني من جديد (والتركيز بيرجع لو كان عليها)
+            val hadF = try { currentFocus != null } catch (_: Throwable) { false }
+            homeCache = null
+            try { showHome(hadF, false) } catch (e: Throwable) { LogStore.err("Tv:refreshHome", e) }
+            return
+        }
         val hh = histHost ?: return
         if (Cfg.str("tv_rows_hide2", "").split(",").map { it.trim() }.any { it == "hist" }) return
         val hadFocus = try { currentFocus?.let { isInside(it, hh) } == true } catch (_: Throwable) { false }
@@ -482,7 +490,7 @@ class TvActivity : Activity() {
         val sig = recentsSig()
         if (resumedOnce && sig != recSig) refreshHist(sig)
         recSig = sig; resumedOnce = true
-        h.removeCallbacks(histCheck); h.postDelayed(histCheck, 700L); h.postDelayed(histCheck, 2500L)
+        h.removeCallbacks(histCheck); h.postDelayed(histCheck, 700L); h.postDelayed(histCheck, 2500L); h.postDelayed(histCheck, 6000L)   // (v810) لو المشغّل خلّص حفظ السجل متأخر
         h.removeCallbacks(ytLoop); h.postDelayed(ytLoop, 60_000L)   // (v581) تحديث يوتيوب كل دقيقة
     }
     private fun firstFocusable(v: View): View? {
@@ -3081,7 +3089,7 @@ class TvActivity : Activity() {
         if (skinDrew) return   // (v597) خانة Home في السكِن
         if (reuse && !inSearch) {
             val cache = homeCache
-            if (cache != null && homeCacheCfg == appearanceSig() && System.currentTimeMillis() - homeCacheAt < 600_000L) {
+            if (cache != null && homeCacheCfg == appearanceSig() && homeCacheSig == recentsSig() && System.currentTimeMillis() - homeCacheAt < 600_000L) {   // (v810) + السجل ما اتغيّرش: الكارت الكبير فوق («كمّل المشاهدة») بيتبني من آخر فيديو وكان بيفضل قديم من الكاش
                 h.removeCallbacks(searchRun)
                 muteSearch = true; searchEt?.setText(""); muteSearch = false; inSearch = false
                 content.removeAllViews(); heroBtn = null; heroImg = null; setTab(0); prayerCd = null

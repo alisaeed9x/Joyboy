@@ -376,8 +376,8 @@ class MainActivity : Activity() {
             e.apply()
         }
         saveCfgFn = { save() }
-        val themeChips = ui.chips(Themes.all.map { it.name }, { Themes.byId(themeId).name }) { n ->
-            themeId = Themes.all.first { it.name == n }.id; save()
+        val themeChips = ui.chips(Themes.phone.map { it.name }, { Themes.byId(themeId).name }) { n ->   // (v810) سمات الموبايل المختارة بس
+            themeId = Themes.phone.first { it.name == n }.id; save()
             Cfg.p.edit().putString("theme", themeId).apply()
             if (!fromPlayer) intent?.putExtra("reopen_tab", "appearance")
             recreate()
