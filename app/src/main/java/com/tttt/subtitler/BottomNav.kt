@@ -1,6 +1,7 @@
 package com.tttt.subtitler
 
 import android.app.Activity
+import android.graphics.Color
 import android.graphics.drawable.GradientDrawable
 import android.view.Gravity
 import android.view.View
@@ -141,7 +142,17 @@ class BottomNav(act: Activity, private val ui: Ui, private val th: Theme, privat
     }
 
     /** (v816) iOS: شريط التبويب شبه شفاف (زي tab bar) */
-    private fun navBg(): Int = if (IosSkin.on()) Glass.alpha(th.card, 0xF0) else th.card
+    private fun navBg(): Int = when {
+        IosSkin.on() -> Glass.alpha(th.card, 0xF0)
+        Skins.cur().look == "w11" -> Glass.alpha(th.surface, 0xF2)         // (v817) ويندوز 11: Mica شبه شفاف
+        Skins.cur().look == "xp" -> if (th.isLight) 0xFF245EDC.toInt() else 0xFF1E1E26.toInt()   // XP: شريط مهام Luna
+        Skins.cur().look == "amoled" -> th.bg                              // أموليد: أسود خالص
+        else -> th.card
+    }
+    /** (v817) XP: شريط المهام بتدرّج أزرق؛ الباقي لون ثابت */
+    private fun navBgD(): android.graphics.drawable.Drawable =
+        if (Skins.cur().look == "xp") GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, if (th.isLight) intArrayOf(0xFF3C80F0.toInt(), 0xFF245EDC.toInt(), 0xFF1D4FBF.toInt()) else intArrayOf(0xFF2E2E38.toInt(), 0xFF1E1E26.toInt()))
+        else android.graphics.drawable.ColorDrawable(navBg())
     private val icons = ArrayList<IconTextView>()
     private val labels = ArrayList<IconTextView>()
     private val cells = ArrayList<View>()
@@ -161,7 +172,7 @@ class BottomNav(act: Activity, private val ui: Ui, private val th: Theme, privat
         val line = View(act).apply { setBackgroundColor(th.border) }
         val row = LinearLayout(act).apply {
             orientation = if (rail) LinearLayout.VERTICAL else LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; gravity = Gravity.CENTER_VERTICAL
-            setBackgroundColor(navBg())
+            background = navBgD()
         }
         // (v336) الأرقام ثابتة (0 فيديوهات · 1 موسيقى · 2 متصفح · 3 ملفات · 4 يوتيوب · 5 مهام) لكن ترتيب العرض: يوتيوب قبل الملفات، والمهام رجعت زرار في الشريط
         val defs = DEFS
@@ -287,7 +298,7 @@ class BottomNav(act: Activity, private val ui: Ui, private val th: Theme, privat
     }
 
     private fun place(animate: Boolean) {
-        indicator.visibility = if (!IosSkin.on() && cellOf(active) in cells.indices) View.VISIBLE else View.INVISIBLE   // (v816) iOS: من غير مؤشّر
+        indicator.visibility = if (!IosSkin.on() && Skins.cur().look != "xp" && cellOf(active) in cells.indices) View.VISIBLE else View.INVISIBLE   // (v816) iOS: من غير مؤشّر · (v817) XP: الزرار المضغوط هو المؤشّر
         val c = cells.getOrNull(cellOf(active)) ?: return
         if (rail) {   // (v462) المؤشر شريط رأسي بيتحرك على Y
             if (c.height == 0) return
@@ -319,17 +330,20 @@ class BottomNav(act: Activity, private val ui: Ui, private val th: Theme, privat
     /** (v198) لون الشريط وهو مشغّل الموسيقى مفتوح (بيتبع لون الغلاف)؛ null = رجّعه للثيم */
     fun tint(c: Int?) {
         tinted = c != null
-        rowV?.setBackgroundColor(c ?: navBg())
+        rowV?.background = if (c != null) android.graphics.drawable.ColorDrawable(c) else navBgD()
         moreHost?.setBackgroundColor(c ?: navBg())
         lineV?.setBackgroundColor(if (c != null) 0x22FFFFFF else th.border)
         paint()
     }
     private fun paint() {
+        val xp = Skins.cur().look == "xp"
         for (i in icons.indices) {
             val on = i == cellOf(active)
-            val off = if (tinted) 0xAAFFFFFF.toInt() else th.muted
-            icons[i].setTextColor(if (on) th.primary else off)
-            labels[i].setTextColor(if (on) th.primary else off)
+            val off = if (tinted) 0xAAFFFFFF.toInt() else if (xp) 0xCCFFFFFF.toInt() else th.muted
+            val onC = if (xp && !tinted) Color.WHITE else th.primary
+            icons[i].setTextColor(if (on) onC else off)
+            labels[i].setTextColor(if (on) onC else off)
+            if (xp) cells.getOrNull(i)?.background = if (on && !tinted) GradientDrawable().apply { setColor(0x55000000); cornerRadius = ui.dp(3).toFloat(); setStroke(ui.dp(1), 0x66FFFFFF) } else null   // (v817) XP: زرار شريط المهام «مضغوط»
         }
         (indicator.background as? GradientDrawable)?.setColor(if (tinted) 0xFFFFFFFF.toInt() else th.primary)
     }

@@ -227,7 +227,8 @@ object TvLink {
         return when (r.path) {
             "/ping" -> ok(JSONObject().put("ver", LinkVer.code(app)).put("vname", LinkVer.name(app)).put("name", tvName()).put("tv", tvId())
                 .put("mfr", try { android.os.Build.MANUFACTURER ?: "" } catch (_: Throwable) { "" }).put("model", try { android.os.Build.MODEL ?: "" } catch (_: Throwable) { "" })   // (v809) لريموت IR
-                .put("ctx", TvInput.context()).put("acc", TvAccess.connected).put("vol", sysVolPct()))
+                .put("ctx", TvInput.context()).put("acc", TvAccess.connected).put("vol", sysVolPct())
+                .put("bri", try { TvBright.get(app) } catch (_: Throwable) { -1 }).put("brim", TvBright.mode).put("brisoft", TvBright.softOn()))   // (v817) سطوع التلفزيون
             "/cmd" -> cmd(r)
             "/key" -> keyCmd(r)
             "/ptr" -> ptrCmd(r)
@@ -575,6 +576,14 @@ object TvLink {
                     "mic" -> showTv("mic")
                     "power" -> { if (!TvAccess.global(android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_POWER_DIALOG)) notice("⚠ زرار الباور محتاج تفعّل «إمكانية الوصول» لـ Subtitler") }
                     else -> if (c.startsWith("sleep:")) setSleep(c.substring(6).toIntOrNull() ?: 0)
+                        else if (c.startsWith("bri_set:")) {   // (v817) سلايدر السطوع في الريموت: نسبة مطلقة 0..100 — سطوع النظام الحقيقي (+ تعتيم برمجي لو متفعّل/الإذن ناقص)
+                            val p = (c.substring(8).toIntOrNull() ?: -1).coerceIn(-1, 100)
+                            if (p >= 0) {
+                                val m = TvBright.set(app, p)
+                                if (m == "none") notice("⚠ السطوع محتاج إذن «تعديل إعدادات النظام» (أو العرض فوق التطبيقات) لـ Joyboy على التلفزيون", 4500L)
+                            }
+                        }
+                        else if (c.startsWith("bri_soft:")) TvBright.setSoft(app, c.substring(9) == "1")   // (v817) زرار 🌙
                         else if (c.startsWith("vol_set:")) {   // (v662) سلايدر الصوت في الريموت: نسبة مطلقة 0..100
                             val p = (c.substring(8).toIntOrNull() ?: -1).coerceIn(-1, 100)
                             if (p >= 0) {

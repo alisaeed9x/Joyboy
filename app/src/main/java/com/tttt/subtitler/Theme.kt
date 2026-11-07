@@ -28,6 +28,8 @@ object Themes {
         Theme("mxd", "MX داكن", 0xFF121212.toInt(), 0xFF1B1B1B.toInt(), 0xFF1E1E1E.toInt(), 0xFF2E2E2E.toInt(), 0xFF4FA3F7.toInt(), 0xFF2196F3.toInt(), 0xFFEDEDED.toInt(), 0xFF9AA0A6.toInt(), 0xFFFF6B6B.toInt(), 0xFF4FA3F7.toInt()),
         Theme("win11d", "ويندوز 11 داكن", 0xFF202020.toInt(), 0xFF282828.toInt(), 0xFF2C2C2C.toInt(), 0xFF3D3D3D.toInt(), 0xFF60CDFF.toInt(), 0xFF4CC2FF.toInt(), 0xFFFFFFFF.toInt(), 0xFFA0A0A0.toInt(), 0xFFFF99A4.toInt(), 0xFF60CDFF.toInt()),
         Theme("winxp", "ويندوز XP", 0xFFECE9D8.toInt(), 0xFFF5F4EC.toInt(), 0xFFFFFFFF.toInt(), 0xFF7F9DB9.toInt(), 0xFF0054E3.toInt(), 0xFF7A9CC6.toInt(), 0xFF000000.toInt(), 0xFF4A4A4A.toInt(), 0xFFC83232.toInt(), 0xFF2A66C8.toInt()),
+        // (v817) ويندوز XP داكن (Royale Noir) — للسكن XP لما تدوس سويتش الوضع الداكن
+        Theme("winxpd", "ويندوز XP داكن (Royale Noir)", 0xFF17171C.toInt(), 0xFF202027.toInt(), 0xFF26262E.toInt(), 0xFF44527A.toInt(), 0xFF3A8CF5.toInt(), 0xFF7AA7E8.toInt(), 0xFFFFFFFF.toInt(), 0xFFB5BDD0.toInt(), 0xFFFF6B6B.toInt(), 0xFF3A8CF5.toInt()),
         Theme("win7", "ويندوز 7 (إيرو)", 0xFFD6E4F0.toInt(), 0xFFEAF2FA.toInt(), 0xFFFFFFFF.toInt(), 0xFF8FA8BF.toInt(), 0xFF1F6FB2.toInt(), 0xFF57A7D8.toInt(), 0xFF10222E.toInt(), 0xFF33424F.toInt(), 0xFFC42B1C.toInt(), 0xFF1F6FB2.toInt()),
         // (v816) سمات سكن iOS (ألوان نظام iOS: أزرق 007AFF/0A84FF · خلفية مجمّعة F2F2F7 / أسود · كروت بيضا / 1C1C1E)
         Theme("ios", "iOS فاتح", 0xFFF2F2F7.toInt(), 0xFFFFFFFF.toInt(), 0xFFFFFFFF.toInt(), 0xFFD1D1D6.toInt(), 0xFF007AFF.toInt(), 0xFF5856D6.toInt(), 0xFF000000.toInt(), 0xFF6C6C70.toInt(), 0xFFFF3B30.toInt(), 0xFF34C759.toInt()),
@@ -44,7 +46,7 @@ object Themes {
     val all: List<Theme> = raw.map { hard(it) }
 
     /** (v810) السمات اللي بتظهر في إعدادات المظهر على الموبايل (الباقي فاضل موجود للتلفزيون والسكِنز بس): MX الفاتح · أموليد · إنفينكس · ويندوز 11 (فاتح/داكن) · ويندوز XP · الرملي (سيبيا) */
-    val phoneIds: List<String> = listOf("ios", "iosd", "mx", "amoled_w", "infinix", "win11", "win11d", "winxp", "eye_sepia")
+    val phoneIds: List<String> = listOf("ios", "iosd", "mx", "amoled_w", "infinix", "win11", "win11d", "winxp", "winxpd", "eye_sepia")
     val phone: List<Theme> get() = phoneIds.mapNotNull { id -> all.firstOrNull { it.id == id } }
 
     fun byId(id: String?): Theme = if (id == "custom") custom() else all.firstOrNull { it.id == id } ?: all[0]   // all[0] = mx
@@ -67,7 +69,7 @@ object Themes {
             shift(base.primary, s * 0.6f, l * 0.6f), shift(acc, s, l), base.text, base.muted, base.danger, base.success)
     }
     private val PAIRS = mapOf("mx" to "amoled_w", "win11" to "win11d", "light" to "default", "eye_sepia" to "infinix", "eye_night" to "sky",
-        "sky" to "eye_night", "sakura" to "amoled_w", "amoled_w" to "mx", "infinix" to "mx", "winxp" to "win11d", "win7" to "win11d",
+        "sky" to "eye_night", "sakura" to "amoled_w", "amoled_w" to "mx", "infinix" to "mx", "winxp" to "winxpd", "winxpd" to "winxp", "win7" to "win11d",
         "mxd" to "mx", "ios" to "iosd", "iosd" to "ios", "win11d" to "win11", "default" to "light", "eye_dusk" to "eye_sepia")   // (v810) mx ↔ أموليد (مفيش MX داكن على الموبايل) · سيبيا ↔ إنفينكس
     /** (v352) سويتش داكن/فاتح: الثيم المقابل للحالي (فاتح ↔ داكن) */
     fun partner(id: String): String = PAIRS[id] ?: if (byId(id).isLight) "amoled_w" else "mx"

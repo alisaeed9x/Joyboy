@@ -407,13 +407,17 @@ class MainActivity : Activity() {
             if (!fromPlayer) intent?.putExtra("reopen_tab", "appearance")
             recreate()
         }
-        // (v816) سكن iOS للواجهة كلها: كروت/أزرار/تبويبات/أيقونات/إعدادات بشكل iOS + سمات iOS فاتح/داكن (الإيقاف بيرجّع الثيم وباك الأيقونات)
-        val iosSwitch = ui.switchRow("🍎 سكن iOS (آيفون) — الواجهة كلها", Skins.cur().ios) { on ->
-            if (on == Skins.cur().ios) return@switchRow
-            IosSkin.enable(on); themeId = Cfg.str("theme", "mx")
+        // (v816) سكن iOS للواجهة كلها · (v817) + ويندوز 11 / ويندوز XP / أموليد: كروت/أزرار/تبويبات/أيقونات/إعدادات/دايلوج/حركة/صوت + ثيم وباك أيقونات جاهزين (الرجوع للأصلي بيرجّع باك الأيقونات)
+        val skinLabel = ui.text("🎛 سكن الواجهة (كامل — مش سمة بس)", 13f, th.muted, true).apply { setPadding(0, ui.dp(6), 0, ui.dp(2)) }
+        val skinNames = SkinKit.CHOICES.map { it.second }
+        val skinPick = ui.chips(skinNames, { SkinKit.CHOICES.firstOrNull { it.first == Skins.cur().id }?.second ?: skinNames[0] }) { n ->
+            val id = SkinKit.CHOICES.firstOrNull { it.second == n }?.first ?: return@chips
+            if (id == Skins.cur().id) return@chips
+            SkinKit.apply(id); themeId = Cfg.str("theme", "mx")
             if (!fromPlayer) intent?.putExtra("reopen_tab", "appearance")
             recreate()
         }
+        val iosSwitch = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; addView(skinLabel); addView(skinPick) }
         // (v469) D1 استوديو السمات: منتقي لون تمييز من لوحة جاهزة (من غير أخضر) + منزلقا تشبّع/إضاءة — السمة بتتبني في Themes.custom() وبتتطبّق على الواجهة كلها
         val accNames = listOf("🧡 عنبري", "🟠 نحاسي", "🌹 وردي", "🟣 بنفسجي", "🔵 سماوي", "🤎 إسبريسو", "🔴 قرمزي", "🪻 لافندر")
         val accHex = listOf("C65D21", "B07B4F", "D4697E", "8E7CC3", "4C8DCE", "8B5E34", "B5483A", "9B8BD0")
@@ -1106,7 +1110,7 @@ class MainActivity : Activity() {
         // لو مفيش مفتاح Gemini: القايمة بتظهر مباشرة أول البرنامج، وبعدها الفحص
         frame.post { permFlow { ensureKeysSoft { keys.setText(Cfg.allMainKeys().joinToString("\n")); keyLoadersRef.forEach { it() }; refreshChip(); doScan() } } }
         try { TvSync.install(this) } catch (_: Throwable) {}
-        try { if (!DeviceUi.isTv(this) && Cfg.str("skin", "classic") !in listOf("classic", "ios")) { Cfg.p.edit().putString("skin", "classic").apply(); Skins.set("classic") } } catch (_: Throwable) {}   // (v727) «وضع الواجهة» القديم اتشال من الموبايل: نرجّعه للأصلي من غير مزامنة   // (v568) مزامنة الإعدادات للتلفزيون من أي شاشة
+        try { if (!DeviceUi.isTv(this) && Cfg.str("skin", "classic") !in SkinKit.IDS) { Cfg.p.edit().putString("skin", "classic").apply(); Skins.set("classic") } } catch (_: Throwable) {}   // (v727) «وضع الواجهة» القديم اتشال من الموبايل: نرجّعه للأصلي من غير مزامنة   // (v568) مزامنة الإعدادات للتلفزيون من أي شاشة
         frame.post { handleLinkIntent(intent) }; frame.post { handleExternal(intent) }; frame.post { handleClipBubbleIntent(intent) }
     }
     /** (v345) المرحلة 1 «كتلة واحدة»: أي لينك جاي من برّه (مشاركة أو فتح). لينك يوتيوب ← قايمة «افتحه إزاي؟»، غير كده ← زي زمان */

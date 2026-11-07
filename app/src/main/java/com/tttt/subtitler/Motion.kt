@@ -22,7 +22,8 @@ import java.util.WeakHashMap
 object Motion {
     private fun dp(v: View, n: Float): Float = n * v.resources.displayMetrics.density
     /** (v816) iOS: منحنى «سبرينج» ناعم (سريع في الأول وبيهدى) بدل الـ Decelerate */
-    private fun ease(def: android.view.animation.Interpolator): android.view.animation.Interpolator = if (Skins.cur().ios) android.view.animation.PathInterpolator(0.2f, 0.9f, 0.25f, 1f) else def
+    private fun ease(def: android.view.animation.Interpolator): android.view.animation.Interpolator = if (Skins.cur().ios) android.view.animation.PathInterpolator(0.2f, 0.9f, 0.25f, 1f)
+        else if (Skins.cur().look == "w11") android.view.animation.PathInterpolator(0.1f, 0.9f, 0.2f, 1f) else def   // (v817) Fluent: decelerate سريع
 
     /** (v445) ظهور القوايم المنسدلة: فيد + تكبير خفيف + انزلاق ناحية الزرار */
     fun popIn(v: View, up: Boolean) {
@@ -41,6 +42,12 @@ object Motion {
     /** قفزة صغيرة لفوق وبعدين استقرار (أيقونة الشريط السفلي لما تتفعّل) */
     fun bounce(v: View) {
         v.animate().cancel()
+        if (Skins.cur().look == "xp") { v.scaleX = 1f; v.scaleY = 1f; v.translationY = 0f; return }   // (v817) XP: من غير حركة
+        if (Skins.cur().look == "w11") {   // (v817) Fluent: الأيقونة بتصغر شوية وترجع بمنحنى decelerate
+            v.scaleX = 0.86f; v.scaleY = 0.86f
+            v.animate().setStartDelay(0L).scaleX(1f).scaleY(1f).setDuration(Skins.dur(240L)).setInterpolator(android.view.animation.PathInterpolator(0.1f, 0.9f, 0.2f, 1f)).start()
+            return
+        }
         if (Skins.cur().ios) {   // (v816) iOS: الأيقونة بتصغر وبتنط لحجمها بنطّة سبرينج (زي symbol bounce)
             v.scaleX = 0.8f; v.scaleY = 0.8f
             v.animate().setStartDelay(0L).scaleX(1f).scaleY(1f).setDuration(Skins.dur(420L)).setInterpolator(OvershootInterpolator(3.2f)).start()
@@ -68,6 +75,7 @@ object Motion {
 
     /** أول N عناصر في الحاوية بتدخل ورا بعض */
     fun stagger(group: ViewGroup, max: Int = 10, step: Long = 40L) {
+        if (Skins.cur().look == "xp") return   // (v817) XP: العناصر تظهر مرة واحدة من غير تتابع
         val d = group.resources.displayMetrics.density
         val n = minOf(group.childCount, max)
         for (i in 0 until n) fadeSlideIn(group.getChildAt(i), 0f, (if (Skins.cur().ios) 22f else 16f) * d, if (Skins.cur().ios) 360L else 240L, i * step)
@@ -78,7 +86,7 @@ object Motion {
         // (v621) طبقة هاردوير طول الأنيميشن: الصفحة بتتحرك كـ texture واحدة بدل ما الشجرة كلها تتعاد رسمها مع كل فريم (كان ده سبب التهنيج)
         v.animate().cancel()
         v.setLayerType(View.LAYER_TYPE_HARDWARE, null)
-        v.alpha = 0f; v.translationX = side * (if (Skins.cur().ios) maxOf(dp(v, 56f), v.width * 0.24f) else dp(v, 28f)); v.translationY = 0f   // (v816) iOS: دفعة أطول زي push
+        v.alpha = 0f; v.translationX = side * (if (Skins.cur().ios) maxOf(dp(v, 56f), v.width * 0.24f) else if (Skins.cur().look == "xp") 0f else if (Skins.cur().look == "amoled") dp(v, 14f) else dp(v, 28f)); v.translationY = 0f   // (v816) iOS: دفعة أطول زي push
         v.animate().setStartDelay(0L).alpha(1f).translationX(0f).setDuration(Skins.dur(if (Skins.cur().ios) 360L else 230L)).setInterpolator(ease(DecelerateInterpolator(1.8f)))
             .withEndAction { v.setLayerType(View.LAYER_TYPE_NONE, null) }.start()
     }

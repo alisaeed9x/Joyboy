@@ -47,6 +47,9 @@ object RemoteClient {
         private set
     /** (v662) صوت التلفزيون 0..100 (من /ping) أو -1 لو مش معروف */
     @Volatile var tvVol = -1
+    @Volatile var tvBri = -1          // (v817) سطوع التلفزيون الحالي 0..100
+    @Volatile var tvBriMode = ""      // sys / soft / sys+soft / none
+    @Volatile var tvBriSoft = false   // التعتيم البرمجي الإضافي شغّال؟
     @Volatile var tvAcc = false
         private set
 
@@ -403,6 +406,8 @@ object RemoteClient {
 
     private fun parseCtx(j: JSONObject) {
         val vv = j.optInt("vol", -1); if (vv >= 0 && !volBusy) tvVol = vv
+        val bb = j.optInt("bri", -1); if (bb >= 0 && !briBusy) tvBri = bb
+        if (j.has("brim")) { tvBriMode = j.optString("brim"); tvBriSoft = j.optBoolean("brisoft") }
         val c = j.optString("ctx"); val a = j.optBoolean("acc")
         if (c.isNotEmpty() && (c != tvCtx || a != tvAcc)) { tvCtx = c; tvAcc = a; fire() }
         try { DeskPush.handle(j) } catch (_: Throwable) {}   // (v814) ملفات اللابتوب «ابعت للموبايل»
@@ -480,6 +485,26 @@ object RemoteClient {
             } catch (_: Throwable) {} finally {
                 synchronized(volPend) { volBusy = false }
                 if (volPend.get() >= 0) setVolume(volPend.get())
+            }
+        }.also { it.isDaemon = true }.start()
+    }
+
+    // (v817) سطوع مطلق من السلايدر: نفس نمط الصوت — آخر قيمة بس من خيط واحد
+    private val briPend = java.util.concurrent.atomic.AtomicInteger(-1)
+    @Volatile private var briBusy = false
+    fun setBrightness(p: Int) {
+        val v = p.coerceIn(0, 100); tvBri = v; briPend.set(v)
+        synchronized(briPend) { if (briBusy) return; briBusy = true }
+        Thread {
+            try {
+                while (true) {
+                    val x = briPend.getAndSet(-1)
+                    if (x < 0) break
+                    post("/cmd", JSONObject().put("c", "bri_set:$x").put("cid", UUID.randomUUID().toString()))
+                }
+            } catch (_: Throwable) {} finally {
+                synchronized(briPend) { briBusy = false }
+                if (briPend.get() >= 0) setBrightness(briPend.get())
             }
         }.also { it.isDaemon = true }.start()
     }

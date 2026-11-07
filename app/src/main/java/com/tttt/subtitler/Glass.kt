@@ -35,6 +35,8 @@ object Glass {
     /** كارت زجاجي: تدرّج خفيف من فوق لتحت + حد. الفاتح بيميل لون الثيم، الغامق بيلمّع من فوق */
     fun drawable(th: Theme, radiusPx: Float, strokePx: Int, stroke: Int, a: Int = 255): GradientDrawable {
         if (Skins.cur().ios) return GradientDrawable().apply { setColor(alpha(th.card, a)); cornerRadius = radiusPx }   // (v816) iOS: مسطّح من غير حد
+        // (v817) ويندوز 11 (Mica مسطّح) · XP (Luna) · أموليد: كارت مسطّح بلون واحد وحد رفيع من غير تدرّج زجاجي
+        if (Skins.cur().look.isNotEmpty()) return GradientDrawable().apply { setColor(alpha(th.card, a)); cornerRadius = radiusPx; setStroke(maxOf(1, strokePx), stroke) }
         val cols = if (th.isLight) intArrayOf(alpha(th.card, a), alpha(blend(th.card, th.primary, 0.05f), a))
         else intArrayOf(alpha(blend(th.card, Color.WHITE, 0.08f), a), alpha(th.card, a))
         return GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, cols).apply { cornerRadius = radiusPx; setStroke(strokePx, stroke) }
@@ -42,7 +44,9 @@ object Glass {
 
     /** زرار أساسي بتدرّج لون الثيم */
     fun primaryFill(th: Theme, radiusPx: Float): GradientDrawable =
-        if (Skins.cur().ios) GradientDrawable().apply { setColor(th.primary); cornerRadius = radiusPx } else GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT, intArrayOf(th.primary, blend(th.primary, Color.BLACK, 0.22f))).apply { cornerRadius = radiusPx }
+        if (Skins.cur().look == "xp") GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, intArrayOf(blend(th.primary, Color.WHITE, 0.32f), th.primary, blend(th.primary, Color.BLACK, 0.14f))).apply {   // (v817) XP: زرار مجسّم بحد غامق
+            cornerRadius = radiusPx; setStroke(maxOf(1, android.content.res.Resources.getSystem().displayMetrics.density.toInt()), blend(th.primary, Color.BLACK, 0.5f)) }
+        else if (Skins.cur().ios || Skins.cur().look.isNotEmpty()) GradientDrawable().apply { setColor(th.primary); cornerRadius = radiusPx } else GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT, intArrayOf(th.primary, blend(th.primary, Color.BLACK, 0.22f))).apply { cornerRadius = radiusPx }
 
     /** أي نافذة جذرها له خلفية مدوّرة (box) بيتحوّل لزجاجي — بيتنده تلقائي من GDialog */
     fun restyle(v: View) {
@@ -51,7 +55,9 @@ object Glass {
         if (r0 < 1f) return
         val th = theme(); val d = v.resources.displayMetrics.density
         val r = Skins.radF(r0, d)   // (v352)
-        v.background = drawable(th, r, maxOf(1, d.toInt()), if (th.isLight) th.border else alpha(Color.WHITE, 0x2E), 0xF2)
+        val xp = Skins.cur().look == "xp"
+        v.background = if (xp) drawable(th, r, (2 * d).toInt(), th.primary, 0xFF)   // (v817) XP: إطار نافذة أزرق سميك
+            else drawable(th, r, maxOf(1, d.toInt()), if (th.isLight) th.border else alpha(Color.WHITE, 0x2E), if (Skins.cur().look == "amoled") 0xFF else 0xF2)
     }
 
     /** تعتيم خفيف + بلور للخلفية (أندرويد 12+). على الأقدم: تعتيم بس */
@@ -59,10 +65,11 @@ object Glass {
         val w = d.window ?: return
         try {
             w.addFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND)
-            w.setDimAmount(if (Skins.cur().ios) 0.32f else 0.40f)
-            if (Build.VERSION.SDK_INT >= 31) {
+            val lk = Skins.cur().look
+            w.setDimAmount(if (Skins.cur().ios) 0.32f else if (lk == "xp") 0.22f else if (lk == "amoled") 0.68f else if (lk == "w11") 0.34f else 0.40f)
+            if (Build.VERSION.SDK_INT >= 31 && lk != "xp" && lk != "amoled") {   // (v817) XP/أموليد: من غير بلور
                 w.addFlags(WindowManager.LayoutParams.FLAG_BLUR_BEHIND)
-                val lp = w.attributes; lp.blurBehindRadius = if (Skins.cur().ios) 44 else 26; w.attributes = lp
+                val lp = w.attributes; lp.blurBehindRadius = if (Skins.cur().ios) 44 else if (lk == "w11") 32 else 26; w.attributes = lp
             }
         } catch (_: Throwable) {}
     }
@@ -74,17 +81,26 @@ object Glass {
         val g = d.window?.attributes?.gravity ?: 0
         val bottom = ((g and Gravity.VERTICAL_GRAVITY_MASK) == Gravity.BOTTOM)
         val dens = c.resources.displayMetrics.density
-        if (Skins.cur().ios) SkinSound.event(c.context, 3)   // (v816) «ووش» iOS
+        if (Skins.cur().dlgSound) SkinSound.event(c.context, 3)   // (v816) «ووش» iOS · (v817) «دينج» XP
         c.animate().cancel()
-        c.alpha = 0f; c.scaleX = 0.93f; c.scaleY = 0.93f; c.translationY = (if (bottom) 56f else 14f) * dens
-        c.animate().alpha(1f).scaleX(1f).scaleY(1f).translationY(0f).setDuration(if (Skins.cur().ios) 330L else 240L).setInterpolator(if (Skins.cur().ios) OvershootInterpolator(0.7f) else DecelerateInterpolator(1.6f)).start()
+        val lk = Skins.cur().look
+        if (lk == "xp") {   // (v817) XP: النافذة بتظهر فورًا تقريبًا من غير تكبير/انزلاق
+            c.alpha = 0f; c.scaleX = 1f; c.scaleY = 1f; c.translationY = 0f
+            c.animate().alpha(1f).setDuration(70L).start(); return
+        }
+        val s0 = if (lk == "amoled") 0.98f else if (lk == "w11") 0.95f else 0.93f
+        c.alpha = 0f; c.scaleX = s0; c.scaleY = s0; c.translationY = (if (bottom) (if (lk == "w11") 36f else 56f) else (if (lk == "amoled") 6f else 14f)) * dens
+        c.animate().alpha(1f).scaleX(1f).scaleY(1f).translationY(0f)
+            .setDuration(if (Skins.cur().ios) 330L else if (lk == "w11") 230L else if (lk == "amoled") 170L else 240L)
+            .setInterpolator(if (Skins.cur().ios) OvershootInterpolator(0.7f) else if (lk == "w11") android.view.animation.PathInterpolator(0.1f, 0.9f, 0.2f, 1f) else DecelerateInterpolator(1.6f)).start()
     }
 
     fun exit(d: Dialog, done: () -> Unit) {
         val c = content(d)
         if (c == null) { done(); return }
         c.animate().cancel()
-        c.animate().alpha(0f).scaleX(0.95f).scaleY(0.95f).setDuration(140).withEndAction { done() }.start()
+        val xp = Skins.cur().look == "xp"
+        c.animate().alpha(0f).scaleX(if (xp) 1f else 0.95f).scaleY(if (xp) 1f else 0.95f).setDuration(if (xp) 50L else 140L).withEndAction { done() }.start()
     }
 
     /** تأثير ضغطة: بيصغّر العنصر وهو مضغوط ويرجّعه بنطّة خفيفة. مابيعترضش الـ click */
@@ -189,6 +205,15 @@ class GAlert(private val ctx: Context) {
             orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL
             setPadding(ui.dp(20), ui.dp(18), ui.dp(20), ui.dp(14)); background = ui.box(th.card, th.border, 22)
         }
+        if (Skins.cur().look == "xp") {   // (v817) XP: شريط عنوان أزرق متدرّج بعرض النافذة (بيطلع على أطرافها) + نص أبيض
+            title?.let {
+                val bar = ui.text(it.toString(), if (tvk) 20f else 16f, Color.WHITE, true).apply {
+                    setPadding(ui.dp(12), ui.dp(8), ui.dp(12), ui.dp(8)); gravity = Gravity.CENTER_VERTICAL or Gravity.START
+                    background = GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, intArrayOf(Glass.blend(th.primary, Color.WHITE, 0.30f), th.primary, Glass.blend(th.primary, Color.BLACK, 0.18f)))
+                }
+                root.addView(bar, LinearLayout.LayoutParams(-1, -2).apply { setMargins(-ui.dp(20), -ui.dp(18), -ui.dp(20), ui.dp(6)) })
+            }
+        } else
         title?.let { root.addView(ui.text(it.toString(), if (tvk) 22f else 18f, th.primary, true), LinearLayout.LayoutParams(-1, -2)) }
         msg?.let { m ->
             val tv = ui.text(m.toString(), if (tvk) 17f else 14f, th.text).apply { setLineSpacing(0f, 1.2f); setPadding(0, ui.dp(10), 0, ui.dp(4)); setTextIsSelectable(!tvk) }
@@ -241,8 +266,8 @@ class GAlert(private val ctx: Context) {
                 val b = IconTextView(ctx).apply {
                     text = t; textSize = if (tvk) 17f else 14f; gravity = Gravity.CENTER; typeface = Typeface.DEFAULT_BOLD
                     setPadding(ui.dp(8), ui.dp(12), ui.dp(8), ui.dp(12))
-                    setTextColor(if (main) (if (th.isLight) Color.WHITE else Color.BLACK) else th.text)
-                    background = if (main) Glass.primaryFill(th, ui.dp(12).toFloat()) else ui.box(th.surface, th.border, 12)
+                    setTextColor(if (main) (if (th.isLight || Skins.cur().look == "xp") Color.WHITE else Color.BLACK) else th.text)
+                    background = if (main) Glass.primaryFill(th, ui.dp(Skins.rad(12)).toFloat()) else ui.box(th.surface, th.border, 12)
                 }
                 Glass.pressable(b)
                 b.setOnClickListener { d.dismiss(); cb?.onClick(d, which) }

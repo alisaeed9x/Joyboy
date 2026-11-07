@@ -144,6 +144,7 @@ com/tttt/subtitler/SendToTv.kt
 com/tttt/subtitler/Settings.kt
 com/tttt/subtitler/SiteBlock.kt
 com/tttt/subtitler/Skin.kt
+com/tttt/subtitler/SkinKit.kt
 com/tttt/subtitler/SmartGroup.kt
 com/tttt/subtitler/Sniffer.kt
 com/tttt/subtitler/SongCatch.kt
@@ -185,6 +186,7 @@ com/tttt/subtitler/Transfer.kt
 com/tttt/subtitler/TransferUi.kt
 com/tttt/subtitler/Trim.kt
 com/tttt/subtitler/TvBlur.kt
+com/tttt/subtitler/TvBright.kt
 com/tttt/subtitler/TvDirect.kt
 com/tttt/subtitler/TvEdit.kt
 com/tttt/subtitler/TvFiles.kt

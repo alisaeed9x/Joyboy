@@ -116,9 +116,13 @@ class TabbedDialog(val act: Activity, val ui: Ui, val title: String, val tabs: L
             }
             row.addView(IconTextView(act).apply {   // (v454) الأيقونة جوه دايرة بلون الثيم الخفيف
                 text = iconOf(t.label); textSize = if (IosSkin.on()) 17f else 20f; gravity = Gravity.CENTER
+                val lk = Skins.cur().look
                 if (IosSkin.on()) { setTextColor(android.graphics.Color.WHITE); background = android.graphics.drawable.GradientDrawable().apply { setColor(IosSkin.TILE[i % IosSkin.TILE.size]); cornerRadius = ui.dp(9).toFloat() } }   // (v816) مربع ملوّن زي إعدادات iOS
+                else if (lk == "w11") { textSize = 19f; setTextColor(th.primary); background = null }   // (v817) ويندوز 11: أيقونة بلون التمييز من غير خلفية
+                else if (lk == "xp") { textSize = 17f; background = android.graphics.drawable.GradientDrawable().apply { setColor(if (th.isLight) android.graphics.Color.WHITE else th.surface); cornerRadius = ui.dp(3).toFloat(); setStroke(ui.dp(1), th.border) } }   // XP: أيقونة جوه إطار مربع زي لوحة التحكم
+                else if (lk == "amoled") { textSize = 18f; setTextColor(th.primary); background = android.graphics.drawable.GradientDrawable().apply { shape = android.graphics.drawable.GradientDrawable.OVAL; setColor(android.graphics.Color.TRANSPARENT); setStroke(ui.dp(1), Glass.alpha(th.primary, 0x88)) } }   // أموليد: دايرة بحد رفيع
                 else background = android.graphics.drawable.GradientDrawable().apply { shape = android.graphics.drawable.GradientDrawable.OVAL; setColor((th.primary and 0x00FFFFFF) or (0x26 shl 24)) }
-            }, LinearLayout.LayoutParams(ui.dp(if (IosSkin.on()) 34 else 44), ui.dp(if (IosSkin.on()) 34 else 44)))
+            }, LinearLayout.LayoutParams(ui.dp(if (IosSkin.on()) 34 else if (Skins.cur().look == "w11" || Skins.cur().look == "xp") 36 else 44), ui.dp(if (IosSkin.on()) 34 else if (Skins.cur().look == "w11" || Skins.cur().look == "xp") 36 else 44)))
             val col = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL }
             col.addView(ui.text(nameOf(t.label), if (tvMode) 17f else 15.5f, th.text, true))
             if (t.sub.isNotBlank()) col.addView(ui.text(t.sub, 11.5f, th.muted).apply { maxLines = 2; setPadding(0, ui.dp(2), 0, 0) })

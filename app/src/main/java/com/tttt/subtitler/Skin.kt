@@ -22,16 +22,24 @@ class Skin(val id: String, val name: String,
            val press: Float,         // مقياس الضغطة (0.95 = الأصلي)
            val sound: String,        // none / fluent / pop / tick / soft
            val folder: Int,          // 0 = الأصلي، 1 = فولدر أصفر ويندوز 11، 2 = فولدر أزرق iOS
-           val ios: Boolean = false) // (v816) سكن iOS للموبايل (IosSkin.kt)
+           val ios: Boolean = false, // (v816) سكن iOS للموبايل (IosSkin.kt)
+           val look: String = "") {  // (v817) سكن كامل: "w11" ويندوز 11 · "xp" ويندوز XP (Luna) · "amoled" أسود خالص (SkinKit.kt)
+    /** أي سكن كامل (iOS/ويندوز 11/XP/أموليد) */
+    val full: Boolean get() = ios || look.isNotEmpty()
+    /** «ووش/دينج» عند فتح أي دايلوج */
+    val dlgSound: Boolean get() = ios || look == "xp"
+}
 
 object Skins {
     val all: List<Skin> = listOf(
         Skin("classic", "الأصلي", 1f, 1f, 1f, 0.95f, "none", 0),
-        Skin("win11", "ويندوز 11 (Fluent)", 0.6f, 1.15f, 0f, 0.97f, "fluent", 1),
+        Skin("win11", "ويندوز 11 (Fluent) — سكن كامل", 0.5f, 1.1f, 0f, 0.97f, "fluent", 1, false, "w11"),
         Skin("bubble", "فقاعي مرح", 1.6f, 1.1f, 1.8f, 0.9f, "pop", 0),
         Skin("sharp", "حاد وسريع", 0.2f, 0.7f, 0f, 0.98f, "tick", 0),
         Skin("calm", "هادئ ناعم", 1.2f, 1.5f, 0f, 0.98f, "soft", 0),
-        Skin("ios", "iOS (آيفون)", 1.5f, 1.25f, 1f, 0.97f, "ios", 2, true)
+        Skin("ios", "iOS (آيفون)", 1.5f, 1.25f, 1f, 0.97f, "ios", 2, true),
+        Skin("xp", "ويندوز XP (Luna) — سكن كامل", 0.2f, 0.45f, 0f, 1f, "xp", 3, false, "xp"),
+        Skin("amoled", "أموليد — أسود خالص", 0.8f, 0.85f, 0f, 0.98f, "tick", 0, false, "amoled")
     )
     @Volatile private var curSkin: Skin? = null
     fun cur(): Skin {
@@ -50,7 +58,7 @@ object Skins {
         return if (o <= 0f) android.view.animation.DecelerateInterpolator(1.8f) else android.view.animation.OvershootInterpolator(tension * o)
     }
     /** اسم الأيقونة بعد تطبيق الوضع (فولدرات ويندوز 11) */
-    fun icon(name: String): String = if (cur().folder != 0 && (name == "folder" || name == "folder_open")) (if (cur().folder == 2) "$name@ios" else "$name@w11") else name
+    fun icon(name: String): String = if (cur().folder != 0 && (name == "folder" || name == "folder_open")) (when (cur().folder) { 2 -> "$name@ios"; 3 -> "$name@xp"; else -> "$name@w11" }) else name
 }
 
 /** أصوات لمس قصيرة بتتولّد بالكود (من غير ملفات) وبتتشغّل بـ SoundPool — مابتاخدش audio focus فمابتوقّفش الموسيقى */
@@ -92,6 +100,9 @@ object SkinSound {
             // (v816) iOS: نقرة كيبورد خشبية قصيرة (ضغطة/سويتش/تبويب بنفس النقرة بدرجات مختلفة) + event 3 = «ووش» فتح الشيت/الدايلوج
             "ios" -> if (event == 3) { var lp = 0.0; tone(170) { _, p -> lp += ((Math.random() - 0.5) - lp) * 0.12; lp * sin(PI * p) * 1.6 } }
                 else tone(26) { t, p -> (sin(2 * PI * 1250 * f * t) * 0.5 + sin(2 * PI * 2500 * f * t) * 0.18 + (Math.random() - 0.5) * 0.45) * exp(-p * 9.0) * minOf(1.0, p * 90) }
+            // (v817) ويندوز XP: نقرة جافة قصيرة (ضغطة/سويتش/تبويب) + event 3 = «دينج» نغمتين عند فتح أي دايلوج
+            "xp" -> if (event == 3) tone(200) { t, p -> (sin(2 * PI * 1175 * t) * 0.55 + sin(2 * PI * 1760 * t) * 0.3) * exp(-p * 6.0) * minOf(1.0, p * 60) }
+                else tone(38) { t, p -> (sin(2 * PI * 780 * f * t) * 0.35 + (Math.random() - 0.5) * 0.6) * exp(-p * 7.0) * minOf(1.0, p * 120) }
             "fluent" -> tone(95) { t, p -> (sin(2 * PI * 880 * f * t) * 0.55 + sin(2 * PI * 1318 * f * t) * 0.35) * exp(-p * 5.5) * minOf(1.0, p * 40) }
             "pop" -> tone(85) { t, p -> sin(2 * PI * (320 + 700 * p) * f * t) * exp(-p * 4.0) * minOf(1.0, p * 60) }
             "tick" -> tone(24) { t, p -> (sin(2 * PI * 2100 * f * t) * 0.8 + (Math.random() - 0.5) * 0.25) * exp(-p * 7.0) }

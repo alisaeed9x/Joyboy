@@ -358,7 +358,7 @@ object ControllerPad {
             val gapP = dp(6)
             val stripW = dp(46)
             // (v799) الدايرة بقت أكبر بكتير: مساحتها = الشاشة كلها ناقص عمود الصوت (يمين) — والمقاس الفعلي بيتظبط بعد الرسم على المساحة الفاضية (fitPad)
-            val availG = inner - (stripW + gapP)
+            val availG = inner - 2 * (stripW + gapP)   // (v817) عمود السطوع شمال + عمود الصوت يمين
             val s0 = minOf(availG, (dm.heightPixels - dp(540)).coerceAtLeast(dp(170)))
             val cornerW = (s0 * 0.22f).toInt().coerceAtLeast(dp(48))
             val padFull = dp(259)
@@ -489,6 +489,47 @@ object ControllerPad {
             volCol.addView(miniBtn("headphone", 0xFF0EA5E9.toInt(), 0xFF2563EB.toInt(), "مصدر الصوت", false) { AudioBridge.showMenu(act) }, android.widget.LinearLayout.LayoutParams(-1, muteH).apply { topMargin = gapP })   // (v811) مصدر الصوت: تلفزيون / موبايل
             volCol.addView(miniBtn("mute", 0xFFE8456F.toInt(), 0xFFBE185D.toInt(), "كتم الصوت", false) { if (irOn) IrTv.press(act, "MUTE") else RemoteClient.cmd("mute") }, android.widget.LinearLayout.LayoutParams(-1, muteH).apply { topMargin = gapP })
 
+            // (v817) سلايدر السطوع العمودي على الشمال (مقابل سلايدر الصوت): بيغيّر سطوع التلفزيون الحقيقي. تحته: 🌙 تعتيم برمجي إضافي · ☀ أقصى سطوع
+            val briBar = VolumeBar(act) { p -> RemoteClient.setBrightness(p) }
+            briBar.vertical = true; briBar.icon = "🔆"; briBar.zeroIcon = "0"; briBar.setFillColor(0xFFF59E0B.toInt())
+            val briSync = object : Runnable {   // لو السطوع اتغيّر من التلفزيون نفسه: السلايدر يلحق (إلا وإنت ماسكه)
+                override fun run() {
+                    val v = RemoteClient.tvBri
+                    if (v >= 0 && !briBar.dragging) briBar.setValue(v)
+                    hh.postDelayed(this, 1500L)
+                }
+            }
+            hh.post(briSync)
+            var briWarned = false
+            // الأمر اتبعت بس التلفزيون مارد بـ«none» = مفيش إذن: نبّه مرة واحدة على الموبايل
+            val briWatch = object : Runnable {
+                override fun run() {
+                    if (!briWarned && RemoteClient.tvBriMode == "none" && briBar.dragging.not() && RemoteClient.tvBri >= 0) {
+                        briWarned = true
+                        Notice.show(act, "⚠ التلفزيون مش واخد إذن «تعديل إعدادات النظام» — السطوع مش هيتغيّر. فعّله من إعدادات التلفزيون (أو بالـadb)", 6000L)
+                    }
+                    hh.postDelayed(this, 2000L)
+                }
+            }
+            hh.postDelayed(briWatch, 4000L)
+            fun txtMini(t: String, desc: String, fire: () -> Unit): View {
+                val bx = FrameLayout(act).apply { background = cardBg(false); contentDescription = desc }
+                bx.addView(TextView(act).apply { text = t; textSize = 20f; gravity = Gravity.CENTER; includeFontPadding = false }, FrameLayout.LayoutParams(-1, -1, Gravity.CENTER))
+                bind(bx, false, fire)
+                return bx
+            }
+            val softBtn = txtMini("🌙", "تعتيم برمجي إضافي") {
+                val on = !RemoteClient.tvBriSoft
+                RemoteClient.tvBriSoft = on
+                RemoteClient.cmd("bri_soft:" + (if (on) "1" else "0"))
+                Notice.show(act, if (on) "🌙 التعتيم البرمجي اشتغل (فوق سطوع النظام)" else "🌙 التعتيم البرمجي اتقفل", 1800L)
+            }
+            val maxBtn = txtMini("☀", "أقصى سطوع") { briBar.setValue(100); RemoteClient.setBrightness(100) }
+            val briCol = android.widget.LinearLayout(act).apply { orientation = android.widget.LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_LTR }
+            briCol.addView(briBar, android.widget.LinearLayout.LayoutParams(-1, 0, 1f))
+            briCol.addView(softBtn, android.widget.LinearLayout.LayoutParams(-1, dp(44)).apply { topMargin = gapP })
+            briCol.addView(maxBtn, android.widget.LinearLayout.LayoutParams(-1, dp(44)).apply { topMargin = gapP })
+
             // ── باقي الأزرار (مكتبة/يوتيوب/متصفح/ترجمة/نص…): كلها فوق، والمنطقة اللي تحت للتنقل (الدايرة) + الصوت ──
             plDispose = PlayerPad.show(act, { d.dismiss() }) { P ->
                 val eyeB = cardS("الوضع\nالبصري", "eye", 0xFF8B5CF6.toInt(), 0xFF6D28D9.toInt(), false, 9.5f, 20) { Thread { try { val n = RemoteClient.player("vsnap")?.optString("note", "") ?: ""; if (n.isNotEmpty()) act.runOnUiThread { Notice.show(act, n, 2200L) } } catch (_: Throwable) {} }.also { it.isDaemon = true }.start() }   // (v799) الرسالة على الموبايل بس
@@ -598,6 +639,7 @@ object ControllerPad {
                 val leftCol = android.widget.LinearLayout(act).apply { orientation = android.widget.LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_LTR }
                 leftCol.addView(padHolder, android.widget.LinearLayout.LayoutParams(-1, dp(150), 1f).apply { topMargin = dp(6) })
                 val lower = android.widget.LinearLayout(act).apply { orientation = android.widget.LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_LTR }
+                lower.addView(briCol, android.widget.LinearLayout.LayoutParams(stripW, -1).apply { rightMargin = gapP; topMargin = dp(5) })   // (v817) سطوع التلفزيون
                 lower.addView(leftCol, android.widget.LinearLayout.LayoutParams(0, -1, 1f))
                 lower.addView(volCol, android.widget.LinearLayout.LayoutParams(stripW, -1).apply { leftMargin = gapP; topMargin = dp(5) })
                 col.addView(lower, android.widget.LinearLayout.LayoutParams(-1, dp(276), 1f))
@@ -681,6 +723,9 @@ class VolumeBar(ctx: Context, private val onChange: (Int) -> Unit) : View(ctx) {
     private var lastSent = 0L
     /** (v796) عمودي: فوق = أعلى صوت، تحت = صفر (بطول الشاشة) */
     var vertical = false
+    /** (v817) نفس السلايدر بيتستخدم للسطوع: أيقونة تحت + لون الملى + أيقونة الصفر */
+    var icon = "🔊"; var zeroIcon = "🔇"
+    fun setFillColor(c: Int) { pFill.color = c; invalidate() }
 
     fun setValue(v: Int) { val n = v.coerceIn(0, 100); if (n != value) { value = n; invalidate() } }
 
@@ -718,8 +763,8 @@ class VolumeBar(ctx: Context, private val onChange: (Int) -> Unit) : View(ctx) {
         val w = width.toFloat(); val h = height.toFloat(); val cy = h / 2f
         if (vertical) {
             rect.set(den, den, w - den, h - den); c.drawRoundRect(rect, 22f * den, 22f * den, pBg); c.drawRoundRect(rect, 22f * den, 22f * den, pStroke)
-            c.drawText(if (value == 0) "🔇" else value.toString(), w / 2f, 26f * den, pTxt)
-            c.drawText("🔊", w / 2f, h - 9f * den, pTxt)
+            c.drawText(if (value == 0) zeroIcon else value.toString(), w / 2f, 26f * den, pTxt)
+            c.drawText(icon, w / 2f, h - 9f * den, pTxt)
             val t = 36f * den; val b = h - 28f * den; val th = 14f * den; val cx = w / 2f
             rect.set(cx - th / 2, t, cx + th / 2, b); c.drawRoundRect(rect, th / 2, th / 2, pTrack)
             val ky = t + (b - t) * (100 - value) / 100f

@@ -18,20 +18,6 @@ object IosSkin {
         0xFF5AC8FA.toInt(), 0xFFFF2D55.toInt(), 0xFF8E8E93.toInt(), 0xFF5856D6.toInt(), 0xFFFFCC00.toInt())
     val bold: Typeface by lazy { Typeface.create("sans-serif-medium", Typeface.NORMAL) }
 
-    private fun put(k: String, v: String) { try { Cfg.p.edit().putString(k, v).apply() } catch (_: Throwable) {} }
-
-    /** تشغيل/إيقاف السكن: بيبدّل الثيم وباك الأيقونات وبيرجّعهم لما كانوا لما تقفله. اندهه وبعدها recreate() */
-    fun enable(on: Boolean) {
-        val th = Glass.theme()
-        put("skin", if (on) ID else "classic"); Skins.set(if (on) ID else "classic")
-        if (on) {
-            val cur = IconPacks.activeId()
-            if (cur != "outline") put("ios_prev_pack", cur)
-            IconPacks.select("outline")
-            if (th.id != "ios" && th.id != "iosd") put("theme", if (th.isLight) "ios" else "iosd")
-        } else {
-            IconPacks.select(Cfg.str("ios_prev_pack", IconPacks.DEFAULT).ifBlank { IconPacks.DEFAULT })
-            if (th.id == "ios") put("theme", "mx") else if (th.id == "iosd") put("theme", "amoled_w")
-        }
-    }
+    /** تشغيل/إيقاف السكن (متوافق مع v816): بيتفوّض لـ SkinKit — اندهه وبعدها recreate() */
+    fun enable(on: Boolean) = SkinKit.apply(if (on) ID else "classic")
 }
