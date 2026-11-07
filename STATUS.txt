@@ -1,3 +1,4 @@
+v812: إصلاح فشل البيلد — AudioBridge.kt و Haptic.kt اتسجّلوا في kt_manifest.txt (Unresolved reference AudioBridge/Haptic). لم يتم compile. التفاصيل: CHANGES_v812.md.
 v803: تركيز واضح بالريموت — حلقة قوية (selfRing) + حل تعارض tvRing/المراقب العام + بداية التركيز على الجودة الشغّالة (✓). لم يتم compile. التفاصيل: CHANGES_v803.md.
 v802: إصلاح فشل البيلد — DataCapsule.kt اتسجّل في kt_manifest.txt (Unresolved DataMeter/DataCapsule/CapMover). + تعديلات v801 (شريط المتصفح). لم يتم compile. التفاصيل: CHANGES_v802.md.
 v801: المتصفح (موبايل) — شريط واحد فوق الشريط السفلي: فوق (🕶 · 📺① · 🕘 السجل · 🛡 · 🔄 · ألسنة التلفزيون) وتحت (‹ › · دايرة الاصطياد في النص · 🚨) + أزرار الفيديو بتفتح حوالين الدايرة تلقائي لما تدوس على الفيديو وبتتصغّر بدوسة برّا. لم يتم compile. التفاصيل: CHANGES_v801.md.
