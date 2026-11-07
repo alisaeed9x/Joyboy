@@ -206,49 +206,26 @@ class CapMover(
 }
 
 /**
- * (v799) كبسولة استهلاك الداتا في كل شاشات التطبيق (مش المتصفح بس): تتنده من onResume/onPause.
- * بتتحط فوق محتوى الشاشة (android.R.id.content)، بتتسحب بحرية وتلزق في أقرب حافة، ودوسة = توسّع/تصغّر.
- * المتصفح ليه كبسولته (BrowserSaver) بنفس المكان والأرقام؛ التلفزيون مفيهوش كبسولة.
+ * (v815) الكبسولة العايمة اتشالت من كل الشاشات — اللي بيعرض السرعة والداتا دلوقتي زرار «النت» الحي في الشريط السفلي (BottomNav.NET).
+ * الـobject ده فضل بنفس الاسم والدوال (attach/detach) عشان مكالمات onResume/onPause تفضل شغّالة، وبقى بيشغّل عدّاد DataMeter بس (من غير أي View).
  */
 object DataCapsule {
     private val main = Handler(Looper.getMainLooper())
-    private var cur: TextView? = null
     private var curAct: Activity? = null
-    private var mover: CapMover? = null
-    private var expanded = false
-    private var lastCol = 0
     private var ticker: Runnable? = null
 
     fun attach(act: Activity) {
         try {
-            if (act is BrowserActivity) return   // المتصفح عنده كبسولته الخاصة
+            if (act is BrowserActivity) return   // المتصفح عنده عدّاده (BrowserSaver) وبيكتب في نفس DataMeter
             if (try { DeviceUi.isTv(act) } catch (_: Throwable) { false }) return
-            val p = act.getSharedPreferences("p", 0)
-            if (!p.getBoolean("sv_cap", true)) { detach(act); return }
-            val content = act.findViewById<FrameLayout>(android.R.id.content) ?: return
-            detach(curAct)   // شاشة واحدة بس في المقدمة
+            detach(curAct)
             DataMeter.ensureLoaded(act)
             DataMeter.rebase()
-            val den = act.resources.displayMetrics.density
-            val t = TextView(act).apply {
-                textSize = 10.5f; setTextColor(0xFFFFFFFF.toInt()); gravity = Gravity.CENTER; layoutDirection = View.LAYOUT_DIRECTION_LTR
-                elevation = 5f * den; isFocusable = false
-            }
-            val mv = CapMover(t, content, p,
-                onSide = { s -> CapMover.pad(t, s, den); lastCol = 0; paint(act) },
-                onTap = { _ -> expanded = !expanded; paint(act); t.post { mover?.clampIdle() } },
-                onLong = { expanded = !expanded; paint(act); t.post { mover?.clampIdle() } })
-            CapMover.pad(t, mv.side, den)
-            t.setOnTouchListener(mv)
-            content.addView(t, FrameLayout.LayoutParams(-2, -2, mv.gravity()))
-            t.translationY = p.getFloat("sv_cap_ly", 0f)
-            cur = t; curAct = act; mover = mv; lastCol = 0
-            paint(act)
-            t.post { mv.clampIdle() }
+            curAct = act
             val r = object : Runnable {
                 override fun run() {
-                    if (cur !== t) return
-                    try { DataMeter.tick(act); paint(act) } catch (e: Throwable) { LogStore.err("DataCapsule:tick", e) }
+                    if (curAct !== act) return
+                    try { DataMeter.tick(act) } catch (e: Throwable) { LogStore.err("DataCapsule:tick", e) }
                     main.postDelayed(this, 1000L)
                 }
             }
@@ -256,37 +233,11 @@ object DataCapsule {
         } catch (e: Throwable) { LogStore.err("DataCapsule:attach", e) }
     }
 
-    /** بتتنده من onPause — بتشيل الكبسولة وتحفظ الأرقام (عشان المتصفح لو اتفتح يكمّل من نفس الرقم) */
     fun detach(act: Activity?) {
         try {
-            val t = cur
             ticker?.let { main.removeCallbacks(it) }; ticker = null
             if (act != null) DataMeter.persist(act)
-            if (t != null) (t.parent as? android.view.ViewGroup)?.removeView(t)
         } catch (_: Throwable) {}
-        cur = null; curAct = null; mover = null
-    }
-
-    private fun paint(act: Activity) {
-        val t = cur ?: return
-        val sb = StringBuilder()
-        val sc = DataMeter.sCell; val sw = DataMeter.sWifi; val dc = DataMeter.dCell; val dw = DataMeter.dWifi
-        if (!expanded) sb.append("📶 ").append(DataMeter.fmt(sc)).append("\n🛜 ").append(DataMeter.fmt(sw))
-        else {
-            sb.append("الجلسة  Σ ").append(DataMeter.fmt(sc + sw)).append('\n').append("📶 ").append(DataMeter.fmt(sc)).append("   🛜 ").append(DataMeter.fmt(sw)).append('\n')
-            sb.append("اليوم  Σ ").append(DataMeter.fmt(dc + dw)).append('\n').append("📶 ").append(DataMeter.fmt(dc)).append("   🛜 ").append(DataMeter.fmt(dw)).append('\n')
-            sb.append("⬇ ").append(DataMeter.fmt(DataMeter.speed.toLong())).append("/s")
-            sb.append("\nاسحبها لأي مكان · دوسة = تصغير")
-        }
-        t.text = sb.toString()
-        val p = act.getSharedPreferences("p", 0)
-        val lim = (p.getString("sv_lim_day", "0")?.toLongOrNull() ?: 0L) * 1048576L
-        val col = when {
-            lim > 0 && dc >= lim -> 0xE6B71C1C.toInt()
-            lim > 0 && dc >= lim * 8 / 10 -> 0xE6E65100.toInt()
-            DataMeter.isCell(act) -> 0xE61E2A3A.toInt()
-            else -> 0xE6244A36.toInt()
-        }
-        if (col != lastCol) { lastCol = col; try { t.background = CapMover.bg(col, mover?.side ?: 0, act.resources.displayMetrics.density) } catch (_: Throwable) {} }
+        curAct = null
     }
 }

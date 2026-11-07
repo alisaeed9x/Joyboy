@@ -471,6 +471,7 @@ class BrowserSaver(private val act: BrowserActivity, private val frame: FrameLay
             else if (loading) { pageBytes += d; if (curHost.isNotEmpty()) siteBytes[curHost] = (siteBytes[curHost] ?: 0L) + d; if (cur != null) tabBytes[cur.id] = (tabBytes[cur.id] ?: 0L) + d }
         }
         speed = speed * 0.6 + (dRx / dt) * 0.4
+        DataMeter.speed = speed   // (v815) زرار النت الحي في الشريط السفلي بيقرا السرعة من هنا
         if (videoOn) { val bw = dRx / dt; vqBw = if (bw > vqBw) bw else vqBw * 0.995 + bw * 0.005 }
         // اتصال ضعيف: سرعة قياس تحت 25KB/ث وإحنا بنحمّل ≥6 ثواني ← ضعيف؛ فوق 150KB/ث ≥3 ثواني ← رجع
         if (loading && net != N_NONE) {
@@ -627,7 +628,7 @@ class BrowserSaver(private val act: BrowserActivity, private val frame: FrameLay
     }
     private fun updateCap() {
         val c = cap ?: return
-        if (!p.getBoolean("sv_cap", true) || host.fullscreen()) { c.visibility = View.GONE; anim?.cancel(); return }
+        if (true || !p.getBoolean("sv_cap", true) || host.fullscreen()) { c.visibility = View.GONE; anim?.cancel(); return }   // (v815) الكبسولة العايمة اتشالت — بقت زرار النت في الشريط السفلي
         if (c.visibility != View.VISIBLE) c.visibility = View.VISIBLE
         val n = longArrayOf(sCell, sWifi, dCell, dWifi)
         if (n.contentEquals(tgt)) { render(); return }

@@ -17,23 +17,26 @@ class BottomNav(act: Activity, private val ui: Ui, private val th: Theme, privat
         const val REMOTE = 12
         /** (v732) زرار «الكليبورد»: بيفتح سجل الكليبورد الدائم مباشرة (مش بوابة) */
         const val CLIP = 13
+        /** (v815) زرار «النت» الحي: مكان «المخزن» في الشريط السفلي — بيعرض سرعة التحميل لايف، ودوسة = صفحة الداتا (جواها لوج النت). «المخزن» راح لـ«المزيد» */
+        const val NET = 14
         /** (v472) «الذكاء» تبويب اتمسح قديمًا — الرقم 6 محجوز عشان ترقيم البوابات ما يتغيّرش، لكن مش بيظهر في أي حته */
         const val DEAD_AI = 6
         /** (v467) ترتيب الشريط بطلب صاحب التطبيق: الفيديوهات ← يوتيوب ← الموسيقى ← المتصفح ← المزيد.
          *  أي بوابة مش في الشريط بتظهر تلقائيًا جوه «المزيد» — فأي إضافة جديدة هتبان من غير تعديل هنا. */
-        val BAR_ORDER = listOf(0, REMOTE, 4, 2, 3, 8)   // (v654) 1 (الموسيقى) اتدمجت مع 0 في زرار «ميديا»
+        val BAR_ORDER = listOf(0, REMOTE, 4, 2, NET, 8)   // (v654) 1 (الموسيقى) اتدمجت مع 0 في زرار «ميديا»
         /** (v475) خلايا يوتيوب الافتراضية (مش بوابات): الرئيسية 9 · الاشتراكات 10 · أنا 11 — بتحل محل خلية «يوتيوب» وانت جواه */
         const val YT_HOME = 9; const val YT_SUBS = 10; const val YT_ME = 11
         val NORMAL_ORDER = BAR_ORDER
         val YT_ORDER = listOf(0, YT_HOME, YT_SUBS, YT_ME, MORE)       // نسخة كاملة وانت في يوتيوب: الموسيقى والمتصفح بيروحوا لـ«المزيد»
         val LITE_ORDER = listOf(YT_HOME, YT_SUBS, 0, YT_ME)           // نسخة اللايت: الرئيسية · الاشتراكات · محلي · أنا
         val DEFS = listOf("🎞" to "الفيديوهات", "🎵" to "الموسيقى", "🌐" to "المتصفح", "🗂" to "المخزن", "▶" to "يوتيوب", "📋" to "المهام", "" to "", "⚙️" to "الإعدادات", "⋯" to "المزيد",
-            "🏠" to "الرئيسية", "📺" to "الاشتراكات", "👤" to "أنا", "📱" to "الريموت", "📎" to "الكليبورد")
+            "🏠" to "الرئيسية", "📺" to "الاشتراكات", "👤" to "أنا", "📱" to "الريموت", "📎" to "الكليبورد", "📶" to "")
     }
     /** البوابات اللي ورا ⋯ المزيد: أي بوابة مش في الشريط (حاليًا: الملفات 3 · المهام 5 · الذكاء 6 · الإعدادات 7) — الزرار بيتلوّن لما واحدة منهم تبقى هي النشطة */
     private val lite = act.packageName.endsWith(".lite")
     private val tvDev = try { DeviceUi.isTv(act) } catch (_: Throwable) { false }   // (v521) على التلفزيون زرار الريموت مخفي
-    private var order: List<Int> = if (lite) LITE_ORDER else NORMAL_ORDER.filter { it != REMOTE }   // (v554) زرار الريموت اتشال: وضع التلفزيون بزرار عايم
+    private fun normalOrder(): List<Int> = NORMAL_ORDER.filter { it != REMOTE }.map { if (it == NET && tvDev) 3 else it }   // (v815) على التلفزيون «المخزن» يفضل مكانه
+    private var order: List<Int> = if (lite) LITE_ORDER else normalOrder()   // (v554) زرار الريموت اتشال: وضع التلفزيون بزرار عايم
     private fun cellOf(a: Int): Int = if (a in order) a else if (a == 1 && !lite && 0 in order) 0 else if (lite) (if (a == 7) YT_ME else -1) else MORE
     // ===== (v608) «المزيد» = صف تاني بينزلق لفوق جنب الصف الأساسي (بدل قايمة منبثقة). الريل (تابلت) لسه بالقايمة =====
     private var moreOpen = false
@@ -69,8 +72,6 @@ class BottomNav(act: Activity, private val ui: Ui, private val th: Theme, privat
                 GAlert(act).setTitle("📺 التلفزيون").setItems(labels) { _, i -> collapseMore(); if (i == 0) TvModeFab.toggleAlways(act) else RemoteClient.forcePushFlow(act) }.setNegativeButton("إغلاق", null).show()
             }) { collapseMore(); TvModeFab.toggle(act) })
         }
-        items.add(MoreItem("📶", "الداتا", false) { collapseMore(); try { NetStatsUi(act, ui, th).show() } catch (_: Throwable) {} })   // (v753) استهلاك الداتا واي فاي/موبايل
-        items.add(MoreItem("📡", "لوج النت", false) { collapseMore(); try { NetLog.show(act, ui, th) } catch (_: Throwable) {} })   // (v791) لوج كل اتصال بالنت وحجمه
         if (7 in ids) items.add(MoreItem(DEFS[7].first, DEFS[7].second, 7 == active) { collapseMore(); onPick(7) })
         val sw = act.resources.displayMetrics.widthPixels
         val w = if (items.size <= 5) sw / items.size else (sw / 5.4f).toInt()
@@ -124,18 +125,6 @@ class BottomNav(act: Activity, private val ui: Ui, private val th: Theme, privat
             row2.setOnClickListener { d.dismiss(); TvModeFab.toggleAlways(act) }
             box.addView(row2, LinearLayout.LayoutParams(-1, -2))
         }
-        run {   // (v753) استهلاك الداتا
-            val rowN = ui.text("📶  استهلاك الداتا (واي فاي / موبايل)", 15f, th.text, true).apply { setPadding(ui.dp(14), ui.dp(14), ui.dp(14), ui.dp(14)) }
-            Glass.pressable(rowN)
-            rowN.setOnClickListener { d.dismiss(); try { NetStatsUi(act, ui, th).show() } catch (_: Throwable) {} }
-            box.addView(rowN, LinearLayout.LayoutParams(-1, -2))
-        }
-        run {   // (v791) لوج النت العام
-            val rowL = ui.text("📡  لوج النت (مين بيتصل وبياخد كام)", 15f, th.text, true).apply { setPadding(ui.dp(14), ui.dp(14), ui.dp(14), ui.dp(14)) }
-            Glass.pressable(rowL)
-            rowL.setOnClickListener { d.dismiss(); try { NetLog.show(act, ui, th) } catch (_: Throwable) {} }
-            box.addView(rowL, LinearLayout.LayoutParams(-1, -2))
-        }
         for ((id, label) in items) {
             val row = ui.text(label, 15f, if (id == active) th.primary else th.text, true).apply { setPadding(ui.dp(14), ui.dp(14), ui.dp(14), ui.dp(14)) }
             Glass.pressable(row)
@@ -188,13 +177,13 @@ class BottomNav(act: Activity, private val ui: Ui, private val th: Theme, privat
                 }
                 badges.add(bdg)
                 val box = FrameLayout(act).apply {
-                    addView(icon, FrameLayout.LayoutParams(ui.dp(24), ui.dp(20), Gravity.CENTER))
+                    addView(icon, if (idx == NET) FrameLayout.LayoutParams(ui.dp(54), ui.dp(30), Gravity.CENTER) else FrameLayout.LayoutParams(ui.dp(24), ui.dp(20), Gravity.CENTER))
                     addView(bdg, FrameLayout.LayoutParams(-2, ui.dp(14), Gravity.TOP or Gravity.END))
                 }
-                addView(box, LinearLayout.LayoutParams(ui.dp(38), ui.dp(20)))
+                addView(box, if (idx == NET) LinearLayout.LayoutParams(ui.dp(54), ui.dp(30)) else LinearLayout.LayoutParams(ui.dp(38), ui.dp(20)))
                 addView(lab, LinearLayout.LayoutParams(-2, -2))
                 Glass.pressable(this)
-                setOnClickListener { if (idx == MORE) toggleMore(act) else if (idx == REMOTE) { try { ControllerPad.show(act) } catch (e: Throwable) { LogStore.err("Nav:remote", e) } } else { collapseMore(); onPick(idx) } }
+                setOnClickListener { if (idx == MORE) toggleMore(act) else if (idx == REMOTE) { try { ControllerPad.show(act) } catch (e: Throwable) { LogStore.err("Nav:remote", e) } } else if (idx == NET) { collapseMore(); try { NetStatsUi(act, ui, th).show() } catch (e: Throwable) { LogStore.err("Nav:net", e) } } else { collapseMore(); onPick(idx) } }
             }
             icons.add(icon); labels.add(lab); cells.add(cell)
         }
@@ -227,6 +216,46 @@ class BottomNav(act: Activity, private val ui: Ui, private val th: Theme, privat
         }
         paint()
         badge(4, YtNotify.badgeCount())
+        startLiveNet(act)
+    }
+
+    /** (v815) زرار النت = الكبسولة نفسها: سطرين زي الكبسولة المصغّرة (📶 داتا الجلسة · 🛜 واي فاي الجلسة) بخلفيتها الملوّنة (أزرق = موبايل · أخضر = واي فاي · برتقالي/أحمر = قرّب/عدّى حد اليوم) + تحتها سرعة التحميل لايف. بيتحدّث كل ثانية وهو ظاهر */
+    private fun netSpeed(b: Double): String = when {
+        b < 1024.0 -> "0 K/s"
+        b < 1048576.0 -> String.format(java.util.Locale.US, "%.0fK/s", b / 1024.0)
+        else -> String.format(java.util.Locale.US, "%.1fM/s", b / 1048576.0)
+    }
+    private fun startLiveNet(act: Activity) {
+        if (NET !in icons.indices) return
+        val h = android.os.Handler(android.os.Looper.getMainLooper())
+        val den = act.resources.displayMetrics.density
+        val bg = GradientDrawable().apply { cornerRadius = 9f * den }
+        var lastCol = 0
+        icons[NET].apply { textSize = 9.5f; setLineSpacing(0f, 0.95f); maxLines = 2; background = bg; setTextColor(0xFFFFFFFF.toInt()); layoutDirection = View.LAYOUT_DIRECTION_LTR }
+        labels[NET].textSize = 10f
+        val r = object : Runnable {
+            override fun run() {
+                try {
+                    val i = icons[NET]; val l = labels[NET]
+                    i.text = "📶 " + DataMeter.fmt(DataMeter.sCell) + "\n🛜 " + DataMeter.fmt(DataMeter.sWifi)
+                    i.setTextColor(0xFFFFFFFF.toInt())
+                    l.text = "⬇ " + netSpeed(DataMeter.speed)
+                    val lim = (act.getSharedPreferences("p", 0).getString("sv_lim_day", "0")?.toLongOrNull() ?: 0L) * 1048576L
+                    val col = when {
+                        lim > 0 && DataMeter.dCell >= lim -> 0xFFB71C1C.toInt()
+                        lim > 0 && DataMeter.dCell >= lim * 8 / 10 -> 0xFFE65100.toInt()
+                        DataMeter.isCell(act) -> 0xFF1E2A3A.toInt()
+                        else -> 0xFF244A36.toInt()
+                    }
+                    if (col != lastCol) { lastCol = col; bg.setColor(col) }
+                } catch (_: Throwable) {}
+                if (view.isAttachedToWindow) h.postDelayed(this, 1000L)
+            }
+        }
+        view.addOnAttachStateChangeListener(object : View.OnAttachStateChangeListener {
+            override fun onViewAttachedToWindow(v: View) { h.removeCallbacks(r); h.post(r) }
+            override fun onViewDetachedFromWindow(v: View) { h.removeCallbacks(r) }
+        })
     }
 
     /** (v350) عدّاد أحمر فوق أيقونة البوابة؛ 0 = مخفي */
@@ -249,7 +278,7 @@ class BottomNav(act: Activity, private val ui: Ui, private val th: Theme, privat
     }
     /** (v475) وانت في يوتيوب (نسخة كاملة) الشريط بيعرض الرئيسية/الاشتراكات/أنا بدل «يوتيوب»؛ اللايت ترتيبه ثابت */
     fun mode(inYoutube: Boolean) {
-        val o = if (lite) LITE_ORDER else if (inYoutube) YT_ORDER else NORMAL_ORDER.filter { it != REMOTE }
+        val o = if (lite) LITE_ORDER else if (inYoutube) YT_ORDER else normalOrder()
         if (o == order) return
         order = o; snap = true; indicator.animate().cancel(); moving = false
         fillRow(); paint(); rowLL.requestLayout()

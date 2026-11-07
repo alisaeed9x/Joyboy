@@ -1,9 +1,7 @@
-# انسخ الملف ده إلى .github/workflows/build-windows.yml في الـrepo (جنب workflow الـAPK)
 name: Build Windows EXE
 on:
   workflow_dispatch:
   push:
-    paths: ['desktop/**']
 jobs:
   build:
     runs-on: windows-latest

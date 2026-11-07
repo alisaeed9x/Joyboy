@@ -103,7 +103,7 @@ class NetStatsUi(private val act: Activity, private val ui: Ui, private val th: 
         val sum = cats.fold(0L) { a, r -> a + r.total() }
         val denom = if (sum > 0L) sum.toFloat() else 1f
 
-        add(chipRow(chip("النهارده", days == 1) { days = 1; render() }, chip("آخر 7 أيام", days == 7) { days = 7; render() }, chip("الكل", days == 45) { days = 45; render() }))
+        add(chipRow(chip("النهارده", days == 1) { days = 1; render() }, chip("آخر 7 أيام", days == 7) { days = 7; render() }, chip("الكل", days == 45) { days = 45; render() }, chip("📡 لوج النت", false) { try { NetLog.show(act, ui, th) } catch (_: Throwable) {} }))   // (v815) لوج النت جوه صفحة الداتا
 
         // الدايرة الكبيرة: الإجمالي مقسّم بألوان الأقسام التلاتة
         val (bv, bu) = vu(tot.total())
