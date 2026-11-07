@@ -1,0 +1,29 @@
+# انسخ الملف ده إلى .github/workflows/build-windows.yml في الـrepo (جنب workflow الـAPK)
+name: Build Windows EXE
+on:
+  workflow_dispatch:
+  push:
+    paths: ['desktop/**']
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: '17' }
+      - uses: gradle/actions/setup-gradle@v4
+        with: { gradle-version: '8.7' }
+      - name: Build jar + libs
+        run: gradle -p desktop installDist --no-daemon
+      - name: Package EXE (portable app-image)
+        shell: bash
+        run: |
+          jpackage --type app-image --name JoyboyDesk --dest dist \
+            --input desktop/build/install/JoyboyDesk/lib \
+            --main-jar JoyboyDesk.jar --main-class com.tttt.joyboy.desk.MainKt \
+            --java-options "-Dfile.encoding=UTF-8"
+      - name: Zip
+        shell: pwsh
+        run: Compress-Archive -Path dist/JoyboyDesk -DestinationPath JoyboyDesk-windows.zip
+      - uses: actions/upload-artifact@v4
+        with: { name: JoyboyDesk-windows, path: JoyboyDesk-windows.zip }

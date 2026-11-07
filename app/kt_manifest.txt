@@ -257,3 +257,5 @@ com/tttt/subtitler/YtTopBar.kt
 com/tttt/subtitler/YtWatch.kt
 com/tttt/subtitler/AudioBridge.kt
 com/tttt/subtitler/Haptic.kt
+com/tttt/subtitler/DeskPush.kt
+com/tttt/subtitler/PhoneHotspot.kt

@@ -405,6 +405,7 @@ object RemoteClient {
         val vv = j.optInt("vol", -1); if (vv >= 0 && !volBusy) tvVol = vv
         val c = j.optString("ctx"); val a = j.optBoolean("acc")
         if (c.isNotEmpty() && (c != tvCtx || a != tvAcc)) { tvCtx = c; tvAcc = a; fire() }
+        try { DeskPush.handle(j) } catch (_: Throwable) {}   // (v814) ملفات اللابتوب «ابعت للموبايل»
     }
 
     /** (v519) زرار ريموت (up/down/left/right/ok/back/home/menu/recents/ff/rew/next/prev) — من غير ما تستنى */

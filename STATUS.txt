@@ -1,3 +1,5 @@
+v814: الويندوز مرحلة 2 — مكتبة اللابتوب على الموبايل + ابعت للموبايل (DeskPush) + هوت سبوت (Hotspot.kt / PhoneHotspot). لم يتم compile كامل. التفاصيل: CHANGES_v814.md.
+v813: نسخة الويندوز Joyboy Desk (مجلد desktop/، بروتوكول TvLink، تشغيل VLC، نقل ملفات، تحميل). لم يتم compile كامل. التفاصيل: CHANGES_v813.md + desktop/README.md.
 v812: إصلاح فشل البيلد — AudioBridge.kt و Haptic.kt اتسجّلوا في kt_manifest.txt (Unresolved reference AudioBridge/Haptic). لم يتم compile. التفاصيل: CHANGES_v812.md.
 v803: تركيز واضح بالريموت — حلقة قوية (selfRing) + حل تعارض tvRing/المراقب العام + بداية التركيز على الجودة الشغّالة (✓). لم يتم compile. التفاصيل: CHANGES_v803.md.
 v802: إصلاح فشل البيلد — DataCapsule.kt اتسجّل في kt_manifest.txt (Unresolved DataMeter/DataCapsule/CapMover). + تعديلات v801 (شريط المتصفح). لم يتم compile. التفاصيل: CHANGES_v802.md.

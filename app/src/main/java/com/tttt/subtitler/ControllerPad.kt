@@ -535,6 +535,7 @@ object ControllerPad {
                         if (IrTv.current(act, k) == null) IrTv.show(act, k) { irKind = ""; irOn = false; IrTv.setIrKind(act, ""); paint() }   // الماركة مش معروفة: اختارها
                     }
                     sWifi.setOnClickListener { Haptic.tap(it); irKind = ""; irOn = false; IrTv.setIrKind(act, ""); paint() }
+                    sWifi.setOnLongClickListener { Haptic.tap(it, true); PhoneHotspot.show(act); true }   // (v814) هوت سبوت للابتوب
                     sTv.setOnClickListener { Haptic.tap(it); pick("tv") }
                     sSat.setOnClickListener { Haptic.tap(it); pick("sat") }
                     sTv.setOnLongClickListener { Haptic.tap(it, true); IrTv.show(act, "tv") { irKind = ""; irOn = false; IrTv.setIrKind(act, ""); paint() }; true }
