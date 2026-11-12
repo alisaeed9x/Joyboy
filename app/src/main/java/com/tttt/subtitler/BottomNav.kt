@@ -434,7 +434,7 @@ class BottomNav(act: Activity, private val ui: Ui, private val th: Theme, privat
     fun tint(c: Int?) {
         tinted = c != null
         // (v923) الشريط العايم: كان بيتلوّن بمربع صلب (ColorDrawable) فوق كبسولة الزجاج = شكل مربع بنفسجي غير منتظم. دلوقتي كبسولة مدوّرة شبه شفافة بنفس استدارة الزجاج
-        val soft = if (c != null) (c and 0x00FFFFFF) or 0xB0000000.toInt() else 0
+        val soft = if (c != null) (c and 0x00FFFFFF) or 0x55000000.toInt() else 0   // (v927) أشفّ: نفس شفافية الزجاج في باقي الصفحات
         rowV?.background = if (c != null) { if (floatMode) GradientDrawable().apply { setColor(soft); cornerRadius = ui.dp(28).toFloat() } else android.graphics.drawable.ColorDrawable(c) } else navBgD()
         moreHost?.setBackgroundColor(if (c != null) (if (floatMode) soft else c) else if (floatMode) 0 else navBg())
         lineV?.setBackgroundColor(if (c != null) 0x22FFFFFF else if (MtGlass.on()) MtGlass.rim(th) else th.border)

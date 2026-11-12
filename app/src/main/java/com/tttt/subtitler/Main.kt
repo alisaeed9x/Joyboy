@@ -388,14 +388,14 @@ class MainActivity : Activity() {
         com.newtube.mobile.ui.common.ThemeMode.set(this, when (n) { "☀️ فاتح" -> com.newtube.mobile.ui.common.ThemeMode.LIGHT; "🌙 داكن" -> com.newtube.mobile.ui.common.ThemeMode.DARK; else -> com.newtube.mobile.ui.common.ThemeMode.SYSTEM })
         recreate()
     },
-    ui.text("الألوان والجلاس والحركة كلها من MeeTube — نفس الاختيار بيغيّر يوتيوب والبرنامج مع بعض. باقي خيارات الشكل في إعدادات MeeTube.", 12f, th.muted)),
+    ui.noHint()),
             ui.section("▶ MeeTube (يوتيوب البرنامج)", true,
                 ui.button("▶ افتح يوتيوب") { settingsDlg0?.dialog?.dismiss(); MeeTubeLink.open(this) },
                 ui.button("⚙ إعدادات MeeTube الكاملة (المشغّل · الشكل · الحساب · التحميل)") { settingsDlg0?.dialog?.dismiss(); MeeTubeLink.openSettings(this) },
-                ui.text("يوتيوب في البرنامج هو MeeTube: نفس الجلاس والأنيميشن وكله من اليمين للشمال. إعداداته بتتفتح من هنا أو من جواه.", 12f, th.muted)),
+                ui.noHint()),
             ui.section("🎞 الجودة الافتراضية", true,
                 ui.chips(ytQ, { ytQ[ytQv.indexOf(Cfg.int("yt_maxh", 0)).coerceAtLeast(0)] }) { n -> Cfg.put("yt_maxh", ytQv[ytQ.indexOf(n).coerceAtLeast(0)].toString()) },
-                ui.text("أعلى جودة بيتفتح بيها الفيديو في مشغّل الترجمة. على الداتا اختار 360p أو 480p.", 12f, th.muted))) }
+                ui.noHint())) }
         // ===== الواجهة بشكل نسخة الـ HTML: دوائر علوية + كارت فيديو + كبسولة + شبكة أزرار + زرار الترجمة =====
         var recentDlg: android.app.Dialog? = null
         val recentFile = File(filesDir, "recent.json")
@@ -408,7 +408,7 @@ class MainActivity : Activity() {
             recents.forEach { r ->
                 val info = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL }
                 info.addView(ui.text(r.title, 14f, th.text, true))
-                info.addView(ui.text("جمل ${r.subs} · تغطية ${r.percent}% · وقف عند ${PlayerLogic.clock((r.posSec * 1000).toLong())}", 11f, th.muted))
+                info.addView(ui.noHint())
                 val del = IconTextView(this).apply {
                     text = "🗑"; textSize = 18f; gravity = Gravity.CENTER; setPadding(ui.dp(10), ui.dp(4), ui.dp(10), ui.dp(4))
                     setOnClickListener {
@@ -502,7 +502,7 @@ class MainActivity : Activity() {
         }
         // (v420) عدد خانات التفريغ المتوازي (باتشات Whisper في نفس الوقت)
         val parOpts = listOf("خانة 1", "خانتين")
-        val parNote = ui.text("الخانات أكتر = تفريغ أسرع لكن رام وحرارة أكتر. medium دايمًا خانة واحدة. الافتراضي خانتين.", 11f, th.muted)
+        val parNote = ui.noHint()
         val parChips = ui.chips(parOpts, { parOpts[(Offline.par()).coerceIn(1, 2) - 1] }) { l -> Cfg.put("stt_par", (parOpts.indexOf(l) + 1).toString()); parNote.text = if (Offline.model().id == "medium" && parOpts.indexOf(l) > 0) "⚠ موديل medium بيشتغل بخانة واحدة بغض النظر عن الاختيار (الرام)." else "الخانات أكتر = تفريغ أسرع لكن رام وحرارة أكتر. الافتراضي خانتين." }
         offDlBtn = ui.button("") {
             if (Offline.downloading()) { Offline.cancelDownload() }
@@ -544,7 +544,7 @@ class MainActivity : Activity() {
             ui.section("🌙 الخروج من المشغّل", false,
                 fxSwitch("اسألني لما أخرج: أكمّل الترجمة في الخلفية؟ (لو مقفول: الخروج بيقفل الترجمة خالص)", "ask_bg_exit", true)),
             ui.section("🔴 ترجمة حية فوق أي تطبيق", false,
-                ui.text("بيلقط صوت الجهاز ويعرض ترجمة عايمة. محتاج أندرويد 10+ وإذن العرض فوق التطبيقات، وبعض التطبيقات (نتفليكس وغيره) بتمنع التقاط الصوت.", 12f, th.muted),
+                ui.noHint(),
                 ui.button("▶ شغّل الترجمة الحية") { startActivity(Intent(this, LiveRequestActivity::class.java)) }))
         // (v235) نفس ترتيب الأقسام في كل أشكال الإعدادات (SettingsTabs): المفاتيح والمحرك · الترجمة وشكلها · الصوت والصورة · عام · الموسيقى. المسرد اتشال.
         // (v836) محتوى الأقسام lazy: بيتبني أول مرة القسم يتفتح بس (مش في onCreate) — TabDef بياخد دالة مش قايمة
@@ -552,7 +552,7 @@ class MainActivity : Activity() {
         val settingsDlg = TabbedDialog(this, ui, if (Cfg.tvOv != null) "📺 إعدادات التلفزيون المشتركة (مش الموبايل)" else "⚙️ الإعدادات", listOf(
             // ===== 🚀 خط الترجمة: الخطة (تفريغ ← ترجمة ← لهجة) + اللهجة والأسلوب + البرومبتات =====
             tab("general", { listOf<View>(
-                ui.text("اختار إيه اللي يترجم واللهجة والأسلوب هنا. المفاتيح في 🔑، والتفريغ في 🎙، والموديل والسرعة في 🤖.", 12f, th.muted),
+                ui.noHint(),
                 savedPlanTxt, planBtn,
                 ui.section("🗣 اللهجة والأسلوب والشدة", true,
                     ui.text("لهجة الترجمة (فصحى = من غير تحويل):", 12f, th.muted),
@@ -560,13 +560,13 @@ class MainActivity : Activity() {
                     ui.text("أسلوب الترجمة:", 12f, th.muted),
                     ui.chips(styles, { Cfg.str("tone_style", "").ifBlank { style }.ifBlank { "حرفي" } }) { style = it; save(); Cfg.put("tone_style", if (it == "حرفي") "" else it) },
                     ui.text("الشدة (بتشتغل مع شعبي / جرئ / +18 بس):", 12f, th.muted), toneDegChips,
-                    ui.text("الباتشات الجاية بتتترجم بيهم. «طبّق» على اللي اتترجم فعلًا من زرار اللغة 🌐 جوه المشغّل.", 12f, th.muted)).apply { if (Strict.hideTrOpts()) visibility = View.GONE },
+                    ui.noHint()).apply { if (Strict.hideTrOpts()) visibility = View.GONE },
                 ui.section("🏠 اللغة الأساسية", false,
-                    ui.text("لغة الفيديوهات اللي بتتفرج عليها أصلًا. لو فيديو لغته الأصلية هي دي، الترجمة التلقائية مش هتشتغل عليه (بيتفرّغ بس ويظهر بنصه الأصلي) — ولو دوست زرار «ترجم» بنفسك الترجمة هتشتغل عادي.", 12f, th.muted),
+                    ui.noHint(),
                     ui.chips(baseLangs.map { it.second }, { baseLangName() }) { n -> Cfg.put("base_lang", baseLangs.firstOrNull { it.second == n }?.first ?: "ar") }),
                 ui.button("📝 البرومبتات (شوف · انسخ · عدّل · استبدل)") { PromptsUi.show(this, ui) },
                 ui.section("📖 مسرد المصطلحات الثابت", false,
-                    ui.text("كل سطر: الكلمة = ترجمتها. بيتبعت للمحرك مع كل باتش فالمصطلحات دي بتتترجم بنفس الشكل دايمًا.", 12f, th.muted), gloss)) }),
+                    ui.noHint(), gloss)) }),
             // ===== 🔑 المفاتيح: جيميناي · الوضع البصري · محركات خارجية =====
             tab("keys", { listOf<View>(
                 ui.section("🆓 من غير مفتاح؟ تمام", true,
@@ -584,39 +584,39 @@ class MainActivity : Activity() {
                 },
                 ui.button("📊 إحصائية الاستهلاك والكوتة") { StatsUi(this, ui, th).show() },
                                 ui.section("🔑 كل المفاتيح", true,
-                    ui.text("حط مفاتيحك الأساسية هنا — البرنامج بيوزّعها لوحده: مفاتيح للترجمة (أغلبها)، ومفتاح أو اتنين للتنقيح الجزئي أثناء الترجمة، ومفتاح احتياطي لو مفتاح اتعطّل (من 6 مفاتيح). التنقيح الجزئي بيبدأ من 3 مفاتيح. القايمتين اللي تحت اختياري: إضافية بتتزود على الأساسية، واحتياطية لأي باتش يفشل.", 12f, th.muted), keysUi, backupUi, extraUi))) }),
+                    ui.noHint(), keysUi, backupUi, extraUi))) }),
             // ===== 🎙 التفريغ والصوت: موديلات الجهاز + إعدادات الصوت =====
             tab("audio", { listOf<View>(
-                ui.text("التفريغ = تحويل الكلام لنص. محرك الجهاز مجاني وبيشتغل من غير نت (بتنزّل الموديل مرة واحدة). الباقي: مسار الصوت وجودته.", 12f, th.muted),
+                ui.noHint(),
                 ui.section("🔊 الصوت", true, atrack, audioPresetTitle, audioPresetChips, audioPresetDesc, *fl("soundtags", "hitiming")),
                 ModelsUi.section(this, ui, th),
                 ui.section("📴 التفريغ على الجهاز (من غير مفتاح)", true,
-                    ui.text("اختيار التفريغ (جيميناي / على الجهاز / سحابي) من خط الترجمة. هنا بس تنزيل ومسح الموديلات واختيار المحرك واللغة.", 12f, th.muted),
+                    ui.noHint(),
                     ui.text("حجم موديل Whisper:", 12f, th.muted), offModelChips, ui.text("⚡ خانات التفريغ المتوازي:", 12f, th.muted), parChips, parNote, offStatus, offDlBtn, offProg,
                     ui.text("لغة الكلام (لو عارفها بتقلّل أخطاء الاكتشاف التلقائي):", 12f, th.muted), offLangChips,
-                    ui.text("التفريغ على الجهاز أبطأ من السحابة (بيعتمد على معالج موبايلك) — الترجمة بتظهر جزء ورا جزء. لو سرعته أقل من 1× كبّر الموديل لأصغر (base).", 12f, th.muted))) }),
+                    ui.noHint())) }),
             // ===== 🤖 الموديل والأداء =====
             tab("perf", { listOf<View>(
-                ui.text("القيم دي بتتظبط لوحدها لما تختار بريست من ▶ ترجمة. اللي هنا هو اللي بيمشي لما تبدأ «بالإعدادات الحالية».", 12f, th.muted),
+                ui.noHint(),
                                 ui.section("🤖 الموديل والسرعة", true, modelChips, fetchModelsBtn, model, modelDesc,
-                    ui.text("🏎 اختبار السرعة: بيبعت طلب صغير على كل مفتاح بالموديل المختار وflash-lite-latest ويوريك زمن الرد والأسرع (🏆). بيستهلك طلبات قليلة.", 12f, th.muted), speedBtn, speedOut, speedUseBtn),
+                    ui.noHint(), speedBtn, speedOut, speedUseBtn),
                 ui.section("⏱ التقطيع والتنقيح", false, chunk, ahead, hlsAhead,
-                    ui.text("طول الجزء اللي بيتفرّغ على الجهاز ويتبعت للترجمة أول ما يجهز:", 12f, th.muted), offPartChips,
+                    ui.noHint(), offPartChips,
                     ui.switchRow("كمّل ترجمة باقي الفيديو بعد ما توصل لمكان التشغيل (بيرجع للأول لو فيه جزء ناقص)", Cfg.bool("keepgoing", true)) { Cfg.put("keepgoing", if (it) "1" else "0") },
                     *fl("prefine"))) }),
             tab("visual", { listOf<View>(
                 ui.section("🔑 مفتاح الوضع البصري فقط", true,
-                    ui.text("الوضع البصري (👁) بيشتغل بالمفاتيح اللي هنا بس، ومش بياخد أبدًا من مفاتيح الترجمة. لو سبتها فاضية الوضع البصري مش هيشتغل. ولما الوضع البصري مايكونش شغّال المفتاح ده بيشتغل كمفتاح احتياطي للترجمة والتنقيح.", 12f, th.muted), visKeysUi),
+                    ui.noHint(), visKeysUi),
                                 ui.section("👁 محرك الوضع البصري", false, visAutoChips,
                     ui.slider("المسافة اللي الوضع البصري بيفحصها قدّام مكان التشغيل", Cfg.int("vis_ahead", 180).coerceIn(30, 900), 30, 900, "ث") { Cfg.put("vis_ahead", it.toString()) },
-                    ui.text("الوضع البصري بيعتمد على Gemini فقط (مفتاحه الخاص في أول القسم ده). بيلقط فريم كل ثانية، بيتخطّى اللي مفيهوش تغيير أو نص، وبيبعت الباقي دفعات (30 فريم) في شبكات من 6 فريمات بالتوازي. النتايج بتتحفظ مع الفيديو، وبين الطلبات راحة تلقائية لو جيميناي رفض (429). بيتطبق من أول تشغيل جديد.\n(v249) الوضع البصري ما بيشتغلش لوحده لما تدخل فيديو — بيشتغل من البريسيتس اللي فيها بصري (شاملة / هارد سب) أو من زرار 👁، إلا لو اخترت «تلقائي مع كل فيديو» فوق.", 12f, th.muted))) }),
+                    ui.noHint())) }),
             // ===== 🎬 شكل الترجمة =====
             tab("look", { listOf<View>(
                 ui.section("🔤 الخط والحجم", true, *sp.fonts.toTypedArray()),
                 ui.section("✨ الأنيميشن", false, *sp.anim.toTypedArray()),
                 *sp.look.toTypedArray(),
                 ui.section("🔘 كبسولات العدّادات (صوتي · بصري · نت)", false,
-                    ui.text("الكبسولات الصغيرة شمال فوق الفيديو في الشاشة الكاملة. الشفافية دي هي حالتها العادية؛ لما تدوس كبسولة بتبقى 100% كام ثانية وترجع. بتتطبّق فورًا في المشغّل.", 12f, th.muted),
+                    ui.noHint(),
                     ui.slider("الظهور (100 = معتمة، أقل = أشفّ)", Cfg.int("badge_alpha", 55).coerceIn(15, 100), 15, 100, "%") { Cfg.put("badge_alpha", it.toString()) })) }, true),
             // (v606) المظهر: 7 أقسام بقوا 3 — الثيم (+ استوديو السمات + راحة العين) · الواجهة (السكِن + نوع الجهاز) · الحركة والوصول
             tab("appearance", { listOfNotNull<View>(
@@ -625,26 +625,19 @@ class MainActivity : Activity() {
         com.newtube.mobile.ui.common.ThemeMode.set(this, when (n) { "☀️ فاتح" -> com.newtube.mobile.ui.common.ThemeMode.LIGHT; "🌙 داكن" -> com.newtube.mobile.ui.common.ThemeMode.DARK; else -> com.newtube.mobile.ui.common.ThemeMode.SYSTEM })
         recreate()
     },
-    ui.text("الألوان والجلاس والحركة كلها من MeeTube — نفس الاختيار بيغيّر يوتيوب والبرنامج مع بعض. باقي خيارات الشكل في إعدادات MeeTube.", 12f, th.muted)),
-                ui.section("🪟 الجلاس (Glass UI)", true,
-                    ui.switchRow("🪟 جلاس كامل في كل البرنامج (خلفية متحركة + كروت وأسطح زجاجية)", Cfg.bool("glass_all", true)) { Cfg.put("glass_all", if (it) "1" else "0"); recreate() },
-                    ui.switchRow("🌊 حركة الخلفية الزجاجية (أضواء بتتحرك ببطء)", Cfg.bool("glass_anim", !MtSkin.lowEnd(this))) { Cfg.put("glass_anim", if (it) "1" else "0"); recreate() },
-                    ui.switchRow("🔮 عدسة الشريط السفلي (انتقال سائل بين التبويبات زي MeeTube)", Cfg.bool("glass_lens", true)) { Cfg.put("glass_lens", if (it) "1" else "0"); recreate() },
-                    ui.slider("شدة ألوان الخلفية", Cfg.int("glass_aurora", 70).coerceIn(0, 100), 0, 100, "%") { Cfg.put("glass_aurora", it.toString()) },
-                    ui.button("🔄 طبّق الشدة دلوقتي") { recreate() },
-                    ui.text("الجلاس بيشتغل على الموبايل والتابلت بس (التلفزيون زي ما هو). البلور الحي تحت الشريط محتاج أندرويد 12+، والعدسة أندرويد 13+. على الأجهزة الضعيفة الحركة بتتقفل لوحدها، وبتتقفل كمان مع توفير الطاقة.", 12f, th.muted)),
+    ui.noHint()),
                 if (MtGlass.on()) ui.section("🎬 مظهر المشغّل (MeeTube)", false,
-                    ui.text("🔘 شكل أزرار المشغّل: شفاف مصبوغ · مفروست · مينيمال (أيقونات من غير دوائر).", 12f, th.muted),
+                    ui.noHint(),
                     ui.chips(listOf("🫧 شفاف", "🧊 مفروست", "▫️ مينيمال"), { when (MtGlass.playerBtnLook()) { 1 -> "🧊 مفروست"; 2 -> "▫️ مينيمال"; else -> "🫧 شفاف" } }) { n ->
                         Cfg.put("player_btn_look", when (n) { "🧊 مفروست" -> "1"; "▫️ مينيمال" -> "2"; else -> "0" })
                     },
                     *MtLook.views(this, ui, th).toTypedArray()) else null,
                 ui.section("🎨 الشكل", false,
-                    ui.text("شكل نص الترجمة نفسه (خط · لون · خلفية) في قسم 🎬 شكل الترجمة.", 12f, th.muted),
-                    ui.text("🌡 راحة العين — فلتر دافئ: طبقة دافئة فوق الشاشة بتقلّل الضوء الأزرق بالليل (٠ = مقفول).", 12f, th.muted),
+                    ui.noHint(),
+                    ui.noHint(),
                     ui.slider("درجة الدفء", Cfg.int("warm", 0), 0, 100, "%") { Cfg.put("warm", it.toString()); refreshWarm() }),
                 ui.section("📱 نوع الجهاز (موبايل · تابلت · تلفزيون)", false,
-                    ui.text("نوع الجهاز (موبايل · تابلت · تلفزيون) — نفس النسخة بتتحول لواجهة تلفزيون أو تابلت، والتبديل بيطبّق فورًا:", 12f, th.muted),
+                    ui.noHint(),
                     ui.chips(listOf("🔄 تلقائي", "📱 موبايل", "📟 تابلت", "📺 تلفزيون"), { DeviceUi.label(DeviceUi.pref()) }) { n ->
                         val m = when (n) { "📱 موبايل" -> DeviceUi.PHONE; "📟 تابلت" -> DeviceUi.TABLET; "📺 تلفزيون" -> DeviceUi.TV; else -> DeviceUi.AUTO }
                         Cfg.put("ui_mode", m)
@@ -660,7 +653,7 @@ class MainActivity : Activity() {
                 ui.text(if (Cfg.tvOv != null) "✏️ أنت دلوقتي بتعدّل نسخة التلفزيون من الإعدادات المشتركة (الترجمة · شكل الترجمة · الصوت…): كل حاجة بتغيّرها في أي قسم بتتحفظ على التلفزيون بس ومابتأثرش على الموبايل. لما تخلّص دوس «ارجع لإعدادات الموبايل»." else "الإعدادات المشتركة (الترجمة · شكل الترجمة · الصوت…) موجودة على الموبايل والتلفزيون. تقدر تعدّل نسخة التلفزيون لوحدها من غير ما نسخة الموبايل تتغيّر.", 12f, if (Cfg.tvOv != null) th.primary else th.muted),
                 if (Cfg.tvOv != null) ui.button("↩ ارجع لإعدادات الموبايل", true) { TvEdit.exit(this) } else ui.button("✏️ عدّل إعدادات التلفزيون المشتركة (على التلفزيون بس)", true) { TvEdit.enter(this) },
                 ui.switchRow("زامن تغييرات إعدادات الموبايل للتلفزيون تلقائياً (قفّله لو عايز كل جهاز بإعداداته)", Cfg.str("tv_sync_off", "0") != "1") { on -> Cfg.put("tv_sync_off", if (on) "0" else "1") },
-                ui.text("كل إعدادات التلفزيون (الشكل · الخلفية · الأيقونات · الرئيسية · الفيديوهات · المتصفح · الصلاة) في شاشة واحدة، وبتتغيّر على التلفزيون فوراً وهو متصل. التلفزيون لازم يكون شغّال ومتوصل بنفس الواي فاي.", 12f, th.muted),
+                ui.noHint(),
                 ui.button("📺 افتح إعدادات التلفزيون", true) { TvLookPad.show(this) },
                 ui.button("🔧 افتح إعدادات البرنامج على شاشة التلفزيون") { try { RemoteClient.cmd("open_settings") } catch (_: Throwable) {} }) }),
             tab("youtube", ytSettingsViews),
@@ -668,7 +661,7 @@ class MainActivity : Activity() {
             
             TabDef("music", SettingsTabs.label("music"), { listOf<View>(
                 ui.section("📝 الكلمات", true,
-                                        ui.text("📝 الكلمات: جيميناي يجيب الكلمات الكاملة بالاسم، والتطبيق نفسه يحدّد من الصوت امتى المغني بيبدأ يغني ويوزّع السطور على لحظات الغنا (بيتخطى المقدمة والفواصل). 🎤 زرار «صوت / موسيقى / الكل» في المشغّل يفصل الصوت عن الموسيقى (تقريبي، للاستريو بس).", 12f, th.muted),
+                                        ui.noHint(),
                     ui.switchRow("جيب الكلمات تلقائيًا لما أفتح المشغّل", Cfg.str("music_auto_lyr", "1") != "0") { Cfg.put("music_auto_lyr", if (it) "1" else "0") }),
                 ui.section("🔤 شكل الكلمات", false,
                     ui.text("الخط:", 12f, th.muted), lyrFontChips,
@@ -681,32 +674,32 @@ class MainActivity : Activity() {
                 watchViews[0],   // (v458) بعد شيل القسمين الميتين: الخروج من المشغّل
                                 ui.section("▶ التشغيل", true,
                     ui.switchRow("كمّل الطابور تلقائيًا بعد إعادة تشغيل الجهاز", Cfg.bool("bg_autostart", true)) { Cfg.put("bg_autostart", if (it) "1" else "0") },
-                    ui.text("الطابور بيتحفظ، وبيكمّل حتى لو قفلت البرنامج أو مسحته من الأخيرة. الفيديو اللي فوق في «مجلد الترجمة في الخلفية» بيترجم الأول.", 12f, th.muted),
+                    ui.noHint(),
                     ui.button("📋 افتح مجلد الترجمة في الخلفية") { settingsDlg0?.dialog?.dismiss(); qui0?.show() }),
                                 ui.section("🔋 عشان الجهاز ما يقتلش الخدمة", true,
-                    ui.text("أجهزة شاومي / أوبو / فيفو / سامسونج / هواوي بتقتل الخدمات الخلفية. اعمل الخطوتين دول مرة واحدة:", 12f, th.muted),
+                    ui.noHint(),
                     ui.button("1) استثناء من توفير البطارية") { requestBatteryExemption() },
                     ui.button("2) السماح بالتشغيل التلقائي / الخلفية للتطبيق") { openAutoStartSettings() },
-                    ui.text("وكمان: في قايمة التطبيقات الأخيرة اعمل «قفل 🔒» للتطبيق لو جهازك فيه الخيار ده.", 12f, th.muted)),
+                    ui.noHint()),
                 ) }),   // (v815) الاصطياد والترجمة الحية بقوا قسم لوحده (🔗) تحت
             tab("capture", { listOf<View>(
                 ui.section("🔗 مراقب صفحات الفيديو في المتصفحات", true,
-                    ui.text("الدايرة بتظهر بس لما تفتح صفحة فيديو في متصفح (ده بيحتاج خدمة إمكانية الوصول). مفيش مراقبة للكليبورد ولا خدمة شغّالة طول اليوم.", 12f, th.muted),
+                    ui.noHint(),
                     ui.text((if (LinkHub.overlayOk(this)) "✅ العرض فوق التطبيقات: مسموح" else "⚠ العرض فوق التطبيقات: مش مسموح — ده الإذن الأساسي، دوس الزرار اللي تحت") + "\n" +
                         (if (LinkWatch.enabled(this)) "✅ إمكانية الوصول: متفعّلة (للمتصفحات + معرفة مصدر النسخ)" else "ℹ إمكانية الوصول: مش متفعّلة (اختيارية — للمتصفحات بس)"), 12f, th.text),
                     ui.button("🖼 اسمح بالعرض فوق التطبيقات (الأساسي)") { try { startActivityForResult(Intent(android.provider.Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName")), 14) } catch (_: Throwable) {} },
                     ui.switchRow("لقط صفحات الفيديو في المتصفحات", !Cfg.bool("lw_web_off", false)) { Cfg.put("lw_web_off", if (it) "0" else "1") },
                     ui.button("⚙ إمكانية الوصول (اختياري — للمتصفحات)") { LinkWatch.openSettings(this) },
-                    ui.text("لو أندرويد منع الإذن أو تفعيل الخدمة (تطبيق متثبّت من برّه): من معلومات التطبيق اضغط ⋮ ← «السماح بالإعدادات المقيّدة» وبعدين فعّل. وعلى شاومي/أوبو/فيفو/سامسونج اسمح للتطبيق بالتشغيل التلقائي واستثنيه من توفير البطارية (قسم «🔋 الخلفية والتشغيل») وإلا النظام بيقتل الخدمة.", 12f, th.muted)),
+                    ui.noHint()),
                 watchViews[1]) }),   // (v458) الترجمة الحية
             tab("security", { listOf<View>(
                             ui.section("🔒 الأمان", false, lockStatus,
-                ui.text("القفل بيحمي المجلد المخفي. لفتحه: اسحب لتحت في قايمة الفيديوهات وكمّل السحب لحد 🔒 وسيب.", 12f, th.muted),
+                ui.noHint(),
                 ui.button("🔑 تعيين / تغيير النمط") { lk.change { refreshLock() } }, bioBtn,
                 ui.button("🗑 إزالة القفل") { lk.remove { refreshLock() } },
-                ui.text("البصمة بتتحقق من بصمات جهازك المسجّلة في إعدادات الأندرويد (التطبيق مابيخزّنش بصمتك). لو نسيت النمط: «نسيت النمط؟» بيطلب قفل شاشة الجهاز.", 12f, th.muted)),
+                ui.noHint()),
                 ui.section("💾 نسخة احتياطية (مفاتيح · إعدادات · ثيم)", false,
-                    ui.text("البرنامج بيحفظ نسخة كاملة لوحده (مشفّرة) في Android/media/com.tttt.joyboy/settings_backup.json وبتفضل موجودة بعد مسح البرنامج، ولما تثبّته من جديد بترجع لوحدها. وتقدر كمان تحفظ نسخة بإيدك في ملف (Downloads مثلًا) وترجّعها منه — الملف ده مش مشفّر وفيه مفاتيحك فاحتفظ بيه في مكان آمن. قفل المجلد مابيتحفظش (بتعمله من جديد).", 12f, th.muted),
+                    ui.noHint(),
                     ui.text(Backup.autoTime(this).let { t -> if (t > 0) "آخر نسخة تلقائية: " + java.text.SimpleDateFormat("yyyy-MM-dd HH:mm", java.util.Locale.US).format(java.util.Date(t)) else "لسه مفيش نسخة تلقائية" }, 12f, th.text),
                     ui.button("💾 احفظ نسخة في ملف") { backupToFile() },
                     ui.button("📂 استرجع من ملف") { backupFromFile() },
@@ -1076,7 +1069,7 @@ class MainActivity : Activity() {
         fun put(k: String, v: String) { Cfg.put(k, v); prev.style = st(); prev.show(null); showDemo() }
         fun slider(label: String, k: String, d: Int, lo: Int, hi: Int, unit: String): LinearLayout {
             val tv = ui.text("$label: ${Cfg.int(k, d)}$unit", 13f, th.text)
-            val sb = (if (MtGlass.on()) com.newtube.mobile.ui.common.GlassSlider(this) else SeekBar(this)).apply {   // (v905)
+            val sb = (if (MtGlass.on()) com.newtube.mobile.ui.common.GlassSlider(this) else SeekBar(this)).apply { layoutDirection = android.view.View.LAYOUT_DIRECTION_LTR;   // (v905)
                 max = hi - lo; progress = Cfg.int(k, d).coerceIn(lo, hi) - lo
                 setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
                     override fun onProgressChanged(s: SeekBar?, p: Int, u: Boolean) { tv.text = "$label: ${p + lo}$unit"; if (u) put(k, (p + lo).toString()) }

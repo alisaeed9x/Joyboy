@@ -528,7 +528,7 @@ class VertInd(ctx: Context, icon: String, private val range: Float = 1f) : Linea
 class StageBar(ctx: Context, private val fillColor: Int, private val trackBg: Int, private val danger: Boolean) : SeekBar(ctx) {
     private val d = ctx.resources.displayMetrics.density
     private val pt = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
-    init { max = 100 }
+    init { max = 100; layoutDirection = android.view.View.LAYOUT_DIRECTION_LTR }   // (v927)
     // بنرسم المسار والإبهام بنفسنا؛ الـ super بيتحسب منه اللمس والكيبورد بس
     override fun onDraw(c: android.graphics.Canvas) {
         val l = paddingLeft.toFloat(); val r = (width - paddingRight).toFloat(); val cy = height / 2f; val th = 4 * d

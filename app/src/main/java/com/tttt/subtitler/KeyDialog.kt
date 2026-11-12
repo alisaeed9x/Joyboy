@@ -45,7 +45,7 @@ fun Activity.showKeyGuide(onKey: (String) -> Unit) {
         "لو جوجل رفضت تسجيل الدخول جوه البرنامج، دوس «Chrome» فوق في الصفحة (أو الزرار اللي تحت) وانسخ المفتاح من هناك وارجع."
     )
     for (s in steps) box.addView(ui.text(s, 13f, th.text).apply { setPadding(0, ui.dp(3), 0, ui.dp(3)) })
-    box.addView(ui.text("• كل مفتاح ليه حد استخدام يومي مجاني. لو عايز ترجمة أسرع أو أكتر، اعمل أكتر من مفتاح (من حسابات/مشاريع مختلفة) وضيفهم كلهم.\n• ماتشاركش مفتاحك مع حد.\n• لو الحساب تبع مدرسة أو شركة ممكن يمنع إنشاء المفاتيح — جرّب حساب شخصي.", 11f, th.muted).apply { setPadding(0, ui.dp(8), 0, ui.dp(4)) })
+    box.addView(ui.noHint().apply { setPadding(0, ui.dp(8), 0, ui.dp(4)) })
     fun pill(t: String, bg: Int, fg: Int, f: () -> Unit) = IconTextView(this).apply {
         text = t; textSize = 14f; setTextColor(fg); gravity = Gravity.CENTER; typeface = android.graphics.Typeface.DEFAULT_BOLD
         background = ui.box(bg, th.border, 12); setOnClickListener { f() }
@@ -124,7 +124,7 @@ private fun Activity.ensureKeysUi(onDone: () -> Unit) {
         setPadding(ui.dp(16), ui.dp(16), ui.dp(16), ui.dp(16)); background = ui.box(th.card, th.border, 18)
     }
     box.addView(ui.text("🔑 ضيف مفتاح Gemini", 17f, th.primary, true))
-    box.addView(ui.text("المفتاح اختياري: بيخلّي الترجمة أدق وأسرع. تقدر تكمّل من غيره بتفريغ على الجهاز + ترجمة جوجل المجانية.", 12f, th.muted).apply { setPadding(0, ui.dp(4), 0, ui.dp(8)) })
+    box.addView(ui.noHint().apply { setPadding(0, ui.dp(4), 0, ui.dp(8)) })
     box.addView(pill("🆓 كمّل من غير مفتاح", th.surface, th.primary) {
         Cfg.p.edit().putString("key_later", "1").putString("tr_method", "google").apply(); d.dismiss()
         try { (this as? MainActivity)?.openSettingsTab("audio") } catch (_: Throwable) {}

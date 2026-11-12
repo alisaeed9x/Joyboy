@@ -4,7 +4,11 @@ import android.app.Activity
 import android.app.Application
 import android.graphics.Bitmap
 import android.graphics.Canvas
+import android.os.Build
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
+import android.view.PixelCopy
 import android.os.SystemClock
 import android.view.Choreographer
 import android.view.View
@@ -29,7 +33,29 @@ object NavSnap : Application.ActivityLifecycleCallbacks {
     private val EASE = PathInterpolator(0.2f, 0f, 0f, 1f)
 
     /** بيتنده من NavAnim.set لما انتقال تبويب يبدأ — اللقطة بتتاخد في الثانيتين الجايين بس */
-    fun arm() { armedUntil = SystemClock.uptimeMillis() + 2000L }
+    private var cur: WeakReference<Activity>? = null
+
+    /**
+     * (v927) اللقطة بقت بـPixelCopy (نسخ GPU غير متزامن، تلت المقاس) وبتتاخد هنا — قبل ما الشاشة الجديدة تبدأ — بدل decor.draw() المتزامن
+     * اللي كان بيتنفّذ على الـUI thread في نص الانتقال (ده اللي كان بيهنّج الدوسة). أندرويد أقدم من 8 بيرجع للطريقة القديمة في onActivityPaused.
+     */
+    fun arm() {
+        armedUntil = SystemClock.uptimeMillis() + 2000L
+        if (Build.VERSION.SDK_INT < 26) return
+        try {
+            val a = cur?.get() ?: return
+            val w = a.window ?: return
+            val decor = w.decorView
+            if (decor.width <= 0 || decor.height <= 0) return
+            val k = 0.33f
+            val bmp = Bitmap.createBitmap((decor.width * k).toInt().coerceAtLeast(1), (decor.height * k).toInt().coerceAtLeast(1), Bitmap.Config.ARGB_8888)
+            PixelCopy.request(w, bmp, { res ->
+                if (res == PixelCopy.SUCCESS) {
+                    shot?.recycle(); shot = bmp; shotAt = SystemClock.uptimeMillis(); from = WeakReference(a); armedUntil = 0L
+                } else bmp.recycle()
+            }, Handler(Looper.getMainLooper()))
+        } catch (_: Throwable) {}
+    }
 
     fun install(app: Application) { try { app.registerActivityLifecycleCallbacks(this) } catch (_: Throwable) {} }
 
@@ -39,6 +65,7 @@ object NavSnap : Application.ActivityLifecycleCallbacks {
 
     override fun onActivityPaused(a: Activity) {
         try {
+            if (Build.VERSION.SDK_INT >= 26) return   // (v927) اللقطة اتاخدت في arm() بـPixelCopy
             if (SystemClock.uptimeMillis() > armedUntil) return
             val decor = a.window?.decorView ?: return
             if (decor.width <= 0 || decor.height <= 0) return
@@ -84,7 +111,7 @@ object NavSnap : Application.ActivityLifecycleCallbacks {
     }
 
     override fun onActivityCreated(a: Activity, b: Bundle?) {}
-    override fun onActivityResumed(a: Activity) {}
+    override fun onActivityResumed(a: Activity) { cur = WeakReference(a) }
     override fun onActivityStopped(a: Activity) {}
     override fun onActivitySaveInstanceState(a: Activity, b: Bundle) {}
     override fun onActivityDestroyed(a: Activity) {}

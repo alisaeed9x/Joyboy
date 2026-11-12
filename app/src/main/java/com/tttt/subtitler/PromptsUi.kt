@@ -67,7 +67,7 @@ object PromptsUi {
 
         render = {
             box.removeAllViews()
-            box.addView(ui.text("دوس على أي برومبت: تشوفه · تنسخه · تلصق بدله نص تاني · تحفظ. اللي تحفظه بيشتغل من الطلب الجاي من غير ريستارت. اللي علامته ✏ معدّل.", 12f, th.muted))
+            box.addView(ui.noHint())
             val n = PromptStore.count()
             if (n > 0) {
                 box.addView(ui.button("↩ رجّع كل البرومبتات للأصلي ($n معدّل)") {

@@ -245,7 +245,7 @@ object AudioBridge {
     private fun showLatency(act: Activity) {
         val dp = act.resources.displayMetrics.density
         val lab = TextView(act).apply { textSize = 16f; gravity = Gravity.CENTER; setPadding(0, (8 * dp).toInt(), 0, (8 * dp).toInt()) }
-        val sb = SeekBar(act).apply { max = 280; progress = latMs() - 20 }
+        val sb = SeekBar(act).apply { layoutDirection = android.view.View.LAYOUT_DIRECTION_LTR; max = 280; progress = latMs() - 20 }
         fun upd() { lab.text = "${sb.progress + 20} ms" }
         upd()
         sb.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {

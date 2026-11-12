@@ -69,8 +69,8 @@ class MiniDock(
     private var seeking = false
     private var queueKey = ""
     private val muted = 0xFFB8BCC8.toInt()
-    private val seek = SeekBar(act).apply { max = 1000 }
-    private val volBar = SeekBar(act).apply { max = 100 }
+    private val seek = SeekBar(act).apply { layoutDirection = android.view.View.LAYOUT_DIRECTION_LTR; max = 1000 }
+    private val volBar = SeekBar(act).apply { layoutDirection = android.view.View.LAYOUT_DIRECTION_LTR; max = 100 }
     private val timeL = ui.text("0:00", 11f, muted)
     private val timeR = ui.text("0:00", 11f, muted)
     private val queueBox = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL }

@@ -265,7 +265,7 @@ class MusicUi(private val act: Activity, private val ui: Ui, private val th: The
     private fun navCol(c: Int) = blend(c, BLACK, 0.80f)
     fun applyNavTint() { onNavTint(if (fullOn) navCol(bgColor) else null) }
     // شريط التقدم الطولي (v198): الوقت الحالي · السلايدر · مدة الأغنية
-    private val seekBar = SeekBar(act).apply {
+    private val seekBar = SeekBar(act).apply { layoutDirection = android.view.View.LAYOUT_DIRECTION_LTR;
         max = 1000; layoutDirection = View.LAYOUT_DIRECTION_LTR; splitTrack = false
         progressTintList = android.content.res.ColorStateList.valueOf(BLUE)
         progressBackgroundTintList = android.content.res.ColorStateList.valueOf(0x40FFFFFF)
@@ -457,7 +457,7 @@ class MusicUi(private val act: Activity, private val ui: Ui, private val th: The
         for ((tx, ms) in listOf("−0.5" to -500, "−0.1" to -100, "+0.1" to 100, "+0.5" to 500))
             row.addView(btn(tx, ms), LinearLayout.LayoutParams(0, ui.dp(48), 1f).apply { setMargins(ui.dp(3), 0, ui.dp(3), 0) })
         val col = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL; setPadding(ui.dp(6), ui.dp(4), ui.dp(6), ui.dp(4)) }
-        col.addView(ui.text("الكلمات متأخرة عن المغني؟ دوس + (تظهر أبكر). متقدمة؟ دوس − (تظهر أتأخر). بيتحفظ للأغنية دي بس.", 12f, th.muted))
+        col.addView(ui.noHint())
         col.addView(lbl, LinearLayout.LayoutParams(-1, ui.dp(44)))
         col.addView(row, LinearLayout.LayoutParams(-1, -2))
         col.addView(btn("↺ صفّر", 0), LinearLayout.LayoutParams(-1, ui.dp(44)).apply { topMargin = ui.dp(8) })
@@ -472,7 +472,7 @@ class MusicUi(private val act: Activity, private val ui: Ui, private val th: The
         val etA = ui.input("اسم الفنان", n.second)
         val etAl = ui.input("اسم الألبوم (بيتدوّر بيه على البوستر)", SongId.albumOf(t.id))
         val col = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL; setPadding(ui.dp(4), ui.dp(2), ui.dp(4), ui.dp(2)) }
-        col.addView(ui.text("الاسم الصح بيحسّن الكلمات والبوستر. بعد الحفظ بيجيب الكلمات من الأول.", 12f, th.muted))
+        col.addView(ui.noHint())
         col.addView(etT); col.addView(etA); col.addView(etAl)
         // (v251) Generate: جيميناي يسمع مقطع من الأغنية ويكتب الاسم والفنان في الخانتين
         var gen: TextView? = null
@@ -510,7 +510,7 @@ class MusicUi(private val act: Activity, private val ui: Ui, private val th: The
         val col = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL; setPadding(ui.dp(2), 0, ui.dp(2), 0) }
         val list = LyricsEngine.candidates(act, t)
         val picked = LyricsEngine.pickedId(act, t)
-        col.addView(ui.text("نسخ الكلمات اللي اتلقت للأغنية دي (محفوظة على الجهاز). دوس على نسخة عشان تستخدمها.", 12f, th.muted).apply { setPadding(ui.dp(6), ui.dp(4), ui.dp(6), ui.dp(8)) })
+        col.addView(ui.noHint().apply { setPadding(ui.dp(6), ui.dp(4), ui.dp(6), ui.dp(8)) })
         if (list.isEmpty()) col.addView(ui.text("لسه مفيش نسخ محفوظة. دوس «🔎 دوّر على نسخ تانية» تحت.", 13.5f, th.text).apply { setPadding(ui.dp(8), ui.dp(6), ui.dp(8), ui.dp(10)) })
         for (c in list) {
             val on = c.key() == picked
@@ -1545,7 +1545,7 @@ class MusicUi(private val act: Activity, private val ui: Ui, private val th: The
         val t = MusicEngine.current ?: run { quiet("شغّل أغنية الأول", 1500L); return }
         val col = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; setPadding(ui.dp(4), ui.dp(2), ui.dp(4), ui.dp(2)) }
         val n = nameOf(t); val al = SongId.albumOf(t.id)
-        col.addView(ui.text("علّم على اللي غلط. اللي مش معلّم بعتبره صح وببني عليه تصحيح الباقي بجيميناي:", 12.5f, th.muted).apply { setPadding(ui.dp(4), 0, ui.dp(4), ui.dp(4)) })
+        col.addView(ui.noHint().apply { setPadding(ui.dp(4), 0, ui.dp(4), ui.dp(4)) })
         col.addView(ui.text(n.first + (if (n.second.isNotBlank()) " — " + n.second else "") + (if (al.isNotBlank()) "\n💿 " + al else ""), 12f, th.text).apply { setPadding(ui.dp(4), 0, ui.dp(4), ui.dp(6)) })
         fun box(label: String) = android.widget.CheckBox(act).apply {
             text = label; textSize = 15f; setTextColor(th.text); minHeight = ui.dp(44)
@@ -1554,7 +1554,7 @@ class MusicUi(private val act: Activity, private val ui: Ui, private val th: The
         }
         val cName = box("🎵 اسم الأغنية غلط"); val cSinger = box("🎤 المغني غلط"); val cAlbum = box("💿 الألبوم غلط"); val cPoster = box("🖼 البوستر (الكفر) غلط"); val cLyr = box("📝 الكلمات غلط")
         for (c in listOf(cName, cSinger, cAlbum, cPoster, cLyr)) col.addView(c, LinearLayout.LayoutParams(-1, -2))
-        col.addView(ui.text("الألبوم هو اللي بيتدوّر بيه على البوستر، فتصحيحه بيصلّح البوستر لوحده.", 11.5f, th.muted).apply { setPadding(ui.dp(4), ui.dp(6), ui.dp(4), 0) })
+        col.addView(ui.noHint().apply { setPadding(ui.dp(4), ui.dp(6), ui.dp(4), 0) })
         GAlert(act).setTitle("⚠ المعلومات غلط").setView(col)
             .setPositiveButton("🔄 Regenerate") { _, _ ->
                 if (!cName.isChecked && !cSinger.isChecked && !cAlbum.isChecked && !cPoster.isChecked && !cLyr.isChecked) { quiet("علّم على حاجة واحدة على الأقل", 1800L); return@setPositiveButton }

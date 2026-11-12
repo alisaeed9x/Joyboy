@@ -261,7 +261,7 @@ async function up(){
             else "1) وصّل الآيفون بنفس الواي فاي\n2) افتح كاميرا الآيفون وامسح الكود (أو اكتب الرابط في Safari)\n3) دوس على الملف في الصفحة ينزل عند الآيفون (" + picks.size + " ملف) — وتقدر كمان ترفع ملفات من الآيفون"
             col.addView(ui.text(how, 14f, th.text))
             col.addView(ui.text(url, 11.5f, th.muted).apply { setPadding(0, ui.dp(8), 0, 0); setTextIsSelectable(true) })
-            col.addView(ui.text("🔒 الرابط فيه كود سري مؤقت وبيقفل أول ما تقفل النافذة دي.", 12f, th.muted).apply { setPadding(0, ui.dp(4), 0, 0) })
+            col.addView(ui.noHint().apply { setPadding(0, ui.dp(4), 0, 0) })
         }
         col.addView(status)
         fun refresh() {

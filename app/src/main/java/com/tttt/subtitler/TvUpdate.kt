@@ -264,7 +264,7 @@ object TvLinkUi {
                 val qr = QrCode.bitmap("subtitler://pair?h=" + tvIp + "&p=" + TvLink.PORT + "&c=" + code, ui.dp(200))
                 if (qr != null) {
                     col.addView(android.widget.ImageView(a).apply { setImageBitmap(qr); setBackgroundColor(Color.WHITE); setPadding(ui.dp(8), ui.dp(8), ui.dp(8), ui.dp(8)) }, LinearLayout.LayoutParams(ui.dp(200), ui.dp(200)).apply { gravity = Gravity.CENTER_HORIZONTAL; bottomMargin = ui.dp(6) })
-                    col.addView(ui.text("أو امسح الكود ده من الموبايل (زرار «📷 امسح QR» في ريموت التلفزيون)", 12.5f, th.muted).apply { setPadding(0, 0, 0, ui.dp(10)) })
+                    col.addView(ui.noHint().apply { setPadding(0, 0, 0, ui.dp(10)) })
                 }
             }
             // (v519) التحكم في التطبيقات التانية (نتفليكس…) محتاج «إمكانية الوصول» مرة واحدة

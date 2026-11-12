@@ -157,7 +157,7 @@ object TvWifi {
             if (on) {
                 col.addView(ui.button("🔄 بحث عن شبكات") { scan(a) })
                 if (!hasLoc(a)) {
-                    col.addView(ui.text("عشان تظهر قايمة الشبكات أندرويد محتاج إذن «الموقع» (مش بنستخدمه غير للبحث عن الواي فاي).", 13f, th.muted).apply { setPadding(0, ui.dp(6), 0, ui.dp(4)) })
+                    col.addView(ui.noHint().apply { setPadding(0, ui.dp(6), 0, ui.dp(4)) })
                     col.addView(ui.button("📍 اسمح بالموقع", true) {
                         close()
                         try { a.requestPermissions(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION), RC_LOC) } catch (e: Throwable) { LogStore.err("TvWifi:perm", e) }

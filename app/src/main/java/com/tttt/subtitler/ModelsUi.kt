@@ -59,7 +59,7 @@ object ModelsUi {
                 build()
             }, lp())
             (Offload.status() + (Offload.workerStatus().let { if (it.isEmpty()) "" else "\n$it" })).trim().let { if (it.isNotEmpty()) box.addView(ui.text(it, 11.5f, th.muted), lp()) }
-            box.addView(ui.text("الموديلات برّه التطبيق. اختار الملف من الموبايل، أو نزّله من هنا، أو نزّله من المتصفح وانسخه لـ Android/media/" + act.packageName + "/models/ (whisper أو mt) والتطبيق يلاقيه بالاسم.", 11f, th.muted), lp())
+            box.addView(ui.noHint(), lp())
             box.addView(ui.text("🌍 موديل الترجمة:", 12f, th.muted), lp())
             box.addView(ui.chips(LocalMt.models.map { it.label }, { LocalMt.model().label }) { l ->
                 LocalMt.models.firstOrNull { it.label == l }?.let { Cfg.put("mt_model", it.id); LocalMt.release() }

@@ -37,7 +37,7 @@ class QueueUi(private val act: Activity, private val ui: Ui, private val th: The
         top.addView(chip(if (BgJobs.allPaused()) "▶ استئناف الكل" else "⏸ إيقاف الكل مؤقتًا") { if (BgJobs.allPaused()) BgJobs.resumeAll(act) else BgJobs.pauseAll() }); top.addView(chip("✕ إلغاء الكل") { BgJobs.stopAll() }); top.addView(chip("🧹 مسح المنتهي") { BgJobs.clearFinished() })
         top.addView(chip("📊 الاستهلاك") { StatsUi(act, ui, th).show() }); top.addView(chip("📶 الداتا") { NetStatsUi(act, ui, th).show() })
         col.addView(top, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = ui.dp(6) })
-        if (jobs.isEmpty()) { col.addView(ui.text("مجلد الترجمة في الخلفية فاضي.\nدوس ⋮ أو اضغط ضغطة مطولة على أي فيديو واختار «نقل لمجلد الترجمة في الخلفية».", 13f, th.muted).apply { setPadding(0, ui.dp(16), 0, ui.dp(16)) }); return }
+        if (jobs.isEmpty()) { col.addView(ui.noHint().apply { setPadding(0, ui.dp(16), 0, ui.dp(16)) }); return }
         for (j in jobs) {
             val pos = if (j.state == "queued") BgJobs.position(j) else 0
             val title = ui.text((if (pos > 0) "#$pos  " else if (j.state == "running") "🌙  " else "") + j.title, 14f, th.text, true).apply { maxLines = 2 }

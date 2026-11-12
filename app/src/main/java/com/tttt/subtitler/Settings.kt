@@ -129,7 +129,7 @@ class TabbedDialog(val act: Activity, val ui: Ui, val title: String, val tabs: L
             }, LinearLayout.LayoutParams(ui.dp(44), ui.dp(44)))
             val col = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL }
             col.addView(ui.text(nameOf(t.label), if (tvMode) 17f else 15.5f, th.text, true))
-            if (t.sub.isNotBlank()) col.addView(ui.text(t.sub, 11.5f, th.muted).apply { maxLines = 2; setPadding(0, ui.dp(2), 0, 0) })
+            // (v927) وصف القسم اتشال (نص شارح)
             row.addView(col, LinearLayout.LayoutParams(0, -2, 1f).apply { marginStart = ui.dp(6) })
             row.addView(IconTextView(act).apply { text = "‹"; textSize = 20f; setTextColor(th.muted); gravity = Gravity.CENTER })
             rowViews.add(row)

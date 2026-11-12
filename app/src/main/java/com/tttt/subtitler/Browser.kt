@@ -495,7 +495,7 @@ class BrowserActivity : Activity() {
             override fun onTextChanged(s: CharSequence?, a: Int, b2: Int, c: Int) {}
         })
 
-        hint = ui.text("بفحص الصفحة لوحدي: أي فيديو أو ملف أو برنامج حقيقي هيظهر على الدايرة · أو الصق لينك يوتيوب فوق", 12f, th.muted).apply { setPadding(ui.dp(10), ui.dp(2), ui.dp(10), ui.dp(4)) }
+        hint = ui.noHint().apply { setPadding(ui.dp(10), ui.dp(2), ui.dp(10), ui.dp(4)) }
         webHolder = FrameLayout(this)
         // (v594) علامة الاصطياد بقت كبسولة بتطلع من الجنب الشمال بدل الشريط السفلي؛ دوسة عليها بتفتح نافذة عايمة صغيرة
         // (v716) دايرة الاصطياد بنفس شكل/أنيميشن دايرة لينك الكليبورد: 🔍 وهي بتدوّر (بعد ما تدوس في الصفحة) ← 🎬 أخضر لما يتلقط فيديو؛
@@ -1597,7 +1597,7 @@ class BrowserActivity : Activity() {
         protDesc = ui.text(protDescOf(protLevel()), 11f, th.muted).apply { setPadding(0, ui.dp(2), 0, ui.dp(6)) }
         tgt.addView(protDesc)
         tgt.addView(ui.switchRow("🔎 فحص الصفحة أوتوماتيك (فيديوهات · ملفات · برامج · لينكات رفع)", autoScanOn()) { v -> Cfg.put("auto_scan", if (v) "1" else "0") })
-        tgt.addView(ui.text("بيفحص كل صفحة من غير ما تدوس: بيلقط الفيديوهات، وبيتأكد (من غير تحميل) إن الملفات والبرامج ولينكات الرفع ملفات حقيقية مش صفحات ولا تحويلات، وبيعدّها على الدايرة.", 11f, th.muted).apply { setPadding(0, 0, 0, ui.dp(6)) })
+        tgt.addView(ui.noHint().apply { setPadding(0, 0, 0, ui.dp(6)) })
         tgt.addView(ui.switchRow("🔒 فصل لينكات الكبار في «سجل الخصوصية» المقفول", PrivacyFilter.on()) { Cfg.put("pf_on", if (it) "1" else "0") })
         tgt.addView(ui.switchRow("🤖 الذكاء الصناعي يصنّف الصفحات (بيبعت الرابط والعنوان بس، مرة لكل موقع)", PrivacyFilter.aiOn()) { Cfg.put("pf_ai", if (it) "1" else "0") })
         tgt.addView(ui.switchRow("🕶 اقفل كل التبويبات المتخفية لما أخرج من التطبيق (هوم / ريسنت)", prefs().getBoolean("br_priv_close", false)) { v -> prefs().edit().putBoolean("br_priv_close", v).apply() })
@@ -1623,10 +1623,10 @@ class BrowserActivity : Activity() {
         tgt.addView(homeEt)
         // ---- الفيديو ----
         sec("🎞 الفيديو")
-        tgt.addView(ui.text("🎞 الجودة التلقائية للفيديو الملقوط (لو فيه جودة أعلى بتختارها إنت من الكبسولة)", 12f, th.muted).apply { setPadding(0, ui.dp(8), 0, ui.dp(2)) })
+        tgt.addView(ui.noHint().apply { setPadding(0, ui.dp(8), 0, ui.dp(2)) })
         val dqNames = listOf("الأعلى", "لحد 1080p", "لحد 720p", "لحد 480p", "لحد 360p"); val dqVals = listOf("0", "1080", "720", "480", "360")
         tgt.addView(ui.chips(dqNames, { dqNames[dqVals.indexOf(prefs().getString("br_defq", "0") ?: "0").coerceAtLeast(0)] }) { pick -> val i = dqNames.indexOf(pick); if (i >= 0) { prefs().edit().putString("br_defq", dqVals[i]).apply(); renderList() } })
-        tgt.addView(ui.text("بتاخد أعلى جودة لحد الرقم ده؛ ولو مفيش جودة بالحد ده (مثلًا 480 مش موجودة) بتاخد اللي تحتها، ولو كل الجودات أعلى منه بتاخد أقل واحدة. بيشتغل مع مشاهدة/ترجمة/تلفزيون/تحميل.", 11f, th.muted).apply { setPadding(0, 0, 0, ui.dp(4)) })
+        tgt.addView(ui.noHint().apply { setPadding(0, 0, 0, ui.dp(4)) })
         // ---- البيانات والخصوصية ----
         sec("🧹 البيانات والخصوصية")
         tgt.addView(ui.button("🧹 امسح الكاش") { try { tabs.forEach { it.wv?.clearCache(true) } } catch (_: Throwable) {}; Notice.show(this, "الكاش اتمسح", 1800L) })
@@ -2241,7 +2241,7 @@ class BrowserActivity : Activity() {
     /** ضغطة طويلة على 🛡: الوضع + آخر اللي اتمنع */
     private fun showPopupSheet() {
         val box = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL }
-        box.addView(ui.text("بيفتح أي نافذة منبثقة في الخفا الأول ويفحصها: لينكها · ضغطتك · فيها فيديو؟ · نفس اسم الفيلم؟ — لو إعلان بيقفلها، ولو صفحة تحويل لمشاهدة الفيديو بيفتحها تبويب عادي.", 12f, th.muted).apply { setPadding(0, 0, 0, ui.dp(8)) })
+        box.addView(ui.noHint().apply { setPadding(0, 0, 0, ui.dp(8)) })
         box.addView(ui.chips(listOf("ذكي", "صارم", "مقفول"), { prefs().getString("pop_mode", "ذكي") ?: "ذكي" }) { setPopMode(it) })
         box.addView(ui.text("اللي اتمنع في الجلسة دي", 12f, th.muted).apply { setPadding(0, ui.dp(10), 0, ui.dp(2)) })
         if (blockedPops.isEmpty()) box.addView(ui.text("مفيش بوب-أب اتمنع لسه", 13f, th.muted))

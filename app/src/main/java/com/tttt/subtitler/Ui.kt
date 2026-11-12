@@ -34,9 +34,11 @@ class Ui(val ctx: Context, var th: Theme) {
             plex?.let { typeface = it } ?: setTypeface(typeface, android.graphics.Typeface.BOLD)
         }
     }
+    /** (v927) نص شرح اتشال: مكانه View مخفي (عشان نداءات القوايم تفضل تتكومبايل) */
+    fun noHint(): IconTextView = IconTextView(ctx).apply { visibility = View.GONE }
     fun slider(label: String, init: Int, lo: Int, hi: Int, unit: String, onChange: (Int) -> Unit): LinearLayout {
         val tv = text("$label: ${init.coerceIn(lo, hi)}$unit", 13f, th.text)
-        val sb = (if (MtGlass.on()) com.newtube.mobile.ui.common.GlassSlider(ctx) else SeekBar(ctx)).apply {   // (v909) GlassSlider الأصلي من MeeTube
+        val sb = (if (MtGlass.on()) com.newtube.mobile.ui.common.GlassSlider(ctx) else SeekBar(ctx)).apply { layoutDirection = android.view.View.LAYOUT_DIRECTION_LTR;   // (v909) GlassSlider الأصلي من MeeTube
             max = hi - lo; progress = init.coerceIn(lo, hi) - lo
             setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
                 override fun onProgressChanged(s: SeekBar?, p: Int, u: Boolean) { tv.text = "$label: ${p + lo}$unit"; if (u) onChange(p + lo) }

@@ -24,6 +24,14 @@ public class SplashActivity extends MotherActivity implements SplashView {
             return;
         }
 
+        // (v927) فتح البرنامج من أيقونة اللانشر = صفحة الميديا (Joyboy MainActivity) مش يوتيوب. يوتيوب بيتفتح من الشريط
+        // السفلي / اللينكات (Intent من غير MAIN+LAUNCHER) فمش متأثرين.
+        if (openJoyboyFromLauncher(mNewIntent)) {
+            finish();
+            overridePendingTransition(0, 0);
+            return;
+        }
+
         mPresenter = SplashPresenter.instance(this);
         mPresenter.setView(this);
         mPresenter.onViewInitialized();
@@ -67,6 +75,28 @@ public class SplashActivity extends MotherActivity implements SplashView {
         } catch (NullPointerException e) {
             // NullPointerException: Attempt to invoke virtual method 'void com.android.server.wm.DisplayContent.moveStack(com.android.server.wm.TaskStack, boolean)'
             e.printStackTrace();
+        }
+    }
+
+    private boolean openJoyboyFromLauncher(Intent intent) {
+        try {
+            if (intent == null || !isTaskRoot() || !Intent.ACTION_MAIN.equals(intent.getAction())
+                    || !intent.hasCategory(Intent.CATEGORY_LAUNCHER) || intent.getData() != null) {
+                return false;
+            }
+            Intent main = new Intent();
+            main.setClassName(getPackageName(), "com.tttt.subtitler.MainActivity");
+            if (main.resolveActivity(getPackageManager()) == null) {
+                return false;
+            }
+            main.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+            if (intent.getExtras() != null) {
+                main.putExtras(intent.getExtras());
+            }
+            startActivity(main);
+            return true;
+        } catch (Throwable e) {
+            return false;
         }
     }
 

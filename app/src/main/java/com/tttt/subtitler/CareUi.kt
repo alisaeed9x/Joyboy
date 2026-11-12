@@ -198,6 +198,7 @@ class CareUi(private val act: Activity, private val ui: Ui, private val th: Them
         page.action("🔄", "تحديث القياسات") { snap = CareMetrics.read(act); page.redraw() }
         page.onResume = { if (!scanning) { snap = CareMetrics.read(act); page.redraw() } }
         page.onClose = { closed = true; token++; scanning = false; h.removeCallbacksAndMessages(null) }
+        page.withNav()   // (v927) الشريط السفلي في صفحة العناية
         page.render { render() }
         page.show()
     }

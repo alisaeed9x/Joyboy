@@ -136,7 +136,8 @@ object MtFloat {
         val wrap = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL }
         if (mswBar != null) wrap.addView(mswBar, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = ui.dp(8) })
         wrap.addView(bar, LinearLayout.LayoutParams(-1, -2))
-        if (reserve) wrap.background = android.graphics.drawable.GradientDrawable().apply { setColor((th.bg and 0x00FFFFFF) or 0xC8000000.toInt()); cornerRadius = 34f * d }   // (v923) من غير بلور: خلفية شبه معتمة عشان الصفحة ما تبانش تحت الأزرار
+        // (v927) المتصفح: الشريط بنفس شفافية باقي التبويبات (اتشالت الخلفية شبه المعتمة اللي كانت مضافة هنا)
+        // if (reserve) wrap.background = ...   // (v923) من غير بلور: خلفية شبه معتمة عشان الصفحة ما تبانش تحت الأزرار
         bars[act] = wrap   // الارتفاع الكلي (كبسولة الميديا + الشريط) — PageSettings/⚙️ بتقعد فوقه كله
         if (skin) {
             val groundAurora = MtSkin.aurora(act, th)

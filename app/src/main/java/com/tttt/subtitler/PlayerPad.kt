@@ -487,7 +487,7 @@ object PlayerPad {
                 fun seekRow(title: String, mx: Int, init: Int, shown: (Int) -> String, onVal: (Int) -> Unit) {
                     val tv = label(title + ": " + shown(init), 12.5f, cDim, false).apply { gravity = Gravity.START or Gravity.CENTER_VERTICAL }
                     body.addView(tv, lp(-1, -2).apply { topMargin = dp(12) })
-                    val sb = android.widget.SeekBar(act).apply {
+                    val sb = android.widget.SeekBar(act).apply { layoutDirection = android.view.View.LAYOUT_DIRECTION_LTR;
                         max = mx; progress = init.coerceIn(0, mx); layoutDirection = View.LAYOUT_DIRECTION_LTR
                         setOnSeekBarChangeListener(object : android.widget.SeekBar.OnSeekBarChangeListener {
                             var lastAt = 0L

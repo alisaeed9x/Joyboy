@@ -957,7 +957,7 @@ object TrWizard {
             for (q in list) row.addView(pill(q.label, q.id == lastQp) { applyQp(q) }, LinearLayout.LayoutParams(-2, -2).apply { setMargins(ui.dp(3), 0, ui.dp(3), 0) })
             hs.addView(row)
             body.addView(hs, LinearLayout.LayoutParams(-1, -2))
-            body.addView(ui.text(list.firstOrNull { it.id == lastQp }?.desc ?: (if (hi) "هاي كوتا: الدقة والسرعة أهم من توفير الكوتا — دوس على بريست." else "لو كوتا: توفير الكوتا أهم — التفريغ والترجمة على الجهاز أو بمفاتيح خارجية. دوس على بريست."), 12f, th.muted).apply { setLineSpacing(0f, 1.15f); setPadding(ui.dp(4), ui.dp(6), ui.dp(4), ui.dp(8)) })
+            body.addView(ui.noHint().apply { setLineSpacing(0f, 1.15f); setPadding(ui.dp(4), ui.dp(6), ui.dp(4), ui.dp(8)) })
             // شريط الملخص
             body.addView(ui.text("① " + srcName() + "  ←  ② " + trName() + "  ←  ③ " + diaName(), 12.5f, th.text, true).apply {
                 setLineSpacing(0f, 1.2f); gravity = Gravity.CENTER

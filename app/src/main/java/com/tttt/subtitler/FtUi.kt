@@ -553,7 +553,7 @@ class FileTransferActivity : Activity() {
             body.addView(btn("🍎  من آيفون / أي جهاز بمتصفح (QR)") { FtWeb.showDialog(this, ui, th, emptyList()) }, lp(-1, -2).apply { bottomMargin = ui.dp(6) })
             if (BtScan.available(this)) body.addView(btn("\uE001  خلّي البلوتوث ظاهر (للاستقبال بالبلوتوث)") { btDiscoverable() }, lp(-1, -2).apply { bottomMargin = ui.dp(6) })
             body.addView(btn("🪪  اسم الجهاز والأجهزة الموثوقة") { go("settings") { buildSettings() } }, lp(-1, -2).apply { bottomMargin = ui.dp(6) })
-            body.addView(ui.text("• من موبايل/تلفزيون/كمبيوتر عليه Joyboy: هيلاقيك لوحده على نفس الواي فاي.\n• من أندرويد بـ Quick Share: افتح Quick Share عندك واختار «الكل».", 12f, th.muted).apply { setPadding(ui.dp(4), ui.dp(8), ui.dp(4), 0) })
+            body.addView(ui.noHint().apply { setPadding(ui.dp(4), ui.dp(8), ui.dp(4), 0) })
         }
         body.addView(ui.text("🔒 كل استقبال بيستنى موافقتك — ومفيش ملف بيتكتب فوق ملف موجود", if (tvMode) 14f else 11.5f, th.muted).apply { gravity = Gravity.CENTER; setPadding(0, ui.dp(12), 0, 0) })
         root.addView(scroll(body), lp(-1, 0, 1f))

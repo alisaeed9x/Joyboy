@@ -126,7 +126,7 @@ class NetStatsUi(private val act: Activity, private val ui: Ui, private val th: 
         }
         add(row, 16)
 
-        add(ui.text("كل ميجا بتتحسب في قسم واحد بس (ملف شغّال ← ملفات، وإلا فيديو مفتوح ← فيديوهات، وإلا ← صفحات/واجهة/خلفية). التصنيف ده بيبدأ من الإصدار ده — الأيام القديمة تقريبية.", 10f, th.muted), 10)
+        add(ui.noHint(), 10)
 
         val wo = NetGate.enabled(act)
         add(ui.button(if (wo) "🔒 واي فاي بس: شغّال — دوس للسماح بداتا الموبايل" else "🔓 واي فاي بس: واقف — دوس لمنع داتا الموبايل") {

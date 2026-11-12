@@ -127,12 +127,12 @@ class MtAurora(private val th: Theme, private val animated: Boolean, private val
 
 object MtSkin {
     /** شغّال؟ موبايل/تابلت + مش مقفول من الإعدادات */
-    fun on(): Boolean = try { MtGlass.on() && Cfg.bool("glass_all", true) } catch (_: Throwable) { false }
+    /** (v927) الصفحات صلبة: أبيض في الفاتح · أسود في الداكن (من ثيم MeeTube). الشفاف = الشريط والنوافذ المنبثقة بس — فمفيش خلفية متحركة ولا مسح خلفيات */
+    fun on(): Boolean = false
 
     /** الحركة: مقفولة لو المستخدم قفلها، أو توفير الطاقة، أو إعدادات النظام مقفّلة الأنيميشن، أو جهاز ضعيف (من غير ما يختار بإيده) */
     fun animated(ctx: Context): Boolean = try {
-        if (!Cfg.bool("glass_anim", !lowEnd(ctx))) false
-        else {
+        run {   // (v927) حركة الخلفية دايمًا مفتوحة (بتقف لوحدها مع توفير الطاقة/الأنيميشن المقفول)
             val pm = ctx.getSystemService(Context.POWER_SERVICE) as? PowerManager
             val scale = android.provider.Settings.Global.getFloat(ctx.contentResolver, android.provider.Settings.Global.ANIMATOR_DURATION_SCALE, 1f)
             !(pm?.isPowerSaveMode ?: false) && scale > 0f
@@ -146,7 +146,7 @@ object MtSkin {
     } catch (_: Throwable) { false }
 
     /** «شدة الزجاج» 0..100 (افتراضي 70) */
-    fun intensity(): Float = try { Cfg.int("glass_aurora", 70).coerceIn(0, 100) / 70f } catch (_: Throwable) { 1f }
+    fun intensity(): Float = 35f / 70f   // (v927) شدة ألوان الخلفية ثابتة 35
 
     fun aurora(ctx: Context, th: Theme): MtAurora = MtAurora(th, animated(ctx), intensity())
 

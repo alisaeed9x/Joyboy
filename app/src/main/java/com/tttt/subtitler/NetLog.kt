@@ -303,7 +303,7 @@ object NetLog {
             body.removeAllViews()
             val rs = rows(range)
             body.addView(ui.text("📡 مين بيتصل بالنت وبياخد كام", 15f, th.primary, true))
-            body.addView(ui.text("الاتصالات حقيقية (سيرفر + مين فتحه). الأحجام تقريبية: عدّاد النظام للتطبيق متوزّع على اللي كان بيقرا من الشبكة وقتها.", 11f, th.muted).apply { setPadding(0, ui.dp(2), 0, ui.dp(6)) })
+            body.addView(ui.noHint().apply { setPadding(0, ui.dp(2), 0, ui.dp(6)) })
             body.addView(ui.button(if (range == 1) "📅 النهارده — دوس لآخر 7 أيام" else "📅 آخر 7 أيام — دوس للنهارده") { range = if (range == 1) 7 else 1; render() })
             body.addView(ui.text("الإجمالي: " + NetUse.fmt(rs.sumOf { it.bytes }) + "   (📶 موبايل " + NetUse.fmt(rs.sumOf { it.mob }) + ")", 13f, th.text, true).apply { setPadding(0, ui.dp(8), 0, ui.dp(4)) })
             if (rs.isEmpty()) body.addView(ui.text("لسه مفيش اتصالات مسجّلة. استنى شوية واستعمل التطبيق وارجع.", 12f, th.muted))

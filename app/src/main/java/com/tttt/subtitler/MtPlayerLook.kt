@@ -145,14 +145,14 @@ object MtLook {
     }
 
     fun views(ctx: Context, ui: Ui, th: Theme): List<View> = listOf(
-        ui.text("🎬 مظهر المشغّل — خيارات MeeTube الفعلية (موبايل/تابلت). بتتطبّق عند فتح المشغّل التالي.", 12f, th.muted),
+        ui.noHint(),
         ui.text("⭕ اللودر (بيظهر في كل لودينج: التحميل · الترجمة · البافرنج)", 13f, th.text, true),
         ui.switchRow("استخدم لودر MeeTube (قفله = النقط القديمة)", Cfg.bool("mt_loader_on", true)) { Cfg.put("mt_loader_on", if (it) "1" else "0") },
         loaderPicker(ctx, th),
         ui.text("✨ شريط التقدّم ومقبض السيك", 13f, th.text, true),
         ui.switchRow("توهّج رأس شريط التقدّم", glowOn()) { Cfg.put("progress_glow", if (it) "1" else "0") },
         ui.chips(listOf("⚪ نقطة", "🖼 صورة"), { if (thumbIsPicture(ctx)) "🖼 صورة" else "⚪ نقطة" }) { n -> if (n == "🖼 صورة") pickThumbPicture(ctx) else setThumbDot(ctx) },
-        ui.text("«صورة»: بتفتح اختيار صورة (GIF/WebP المتحرك يتحرك) حد أقصى 5MB وتبقى مقبض شريط التقدّم.", 11.5f, th.muted),
+        ui.noHint(),
         ui.text("👆 إيماءات المشغّل", 13f, th.text, true),
         ui.switchRow("سحب الصوت/السطوع على جانبي الفيديو", levelSwipes()) { Cfg.put("gest_levels", if (it) "1" else "0") },
         ui.switchRow("سحب أفقي للتقديم/الترجيع", seekSwipe()) { Cfg.put("gest_seek", if (it) "1" else "0") },

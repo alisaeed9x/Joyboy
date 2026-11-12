@@ -3805,7 +3805,7 @@ class PlayerActivity : Activity(), Host {
         val col = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; setPadding(ui.dp(14), ui.dp(10), ui.dp(14), ui.dp(12)) }
         val lbl = ui.text("⏩ " + PlayerLogic.speedLabel(speed), 16f, th.primary, true).apply { gravity = Gravity.CENTER }
         col.addView(lbl, LinearLayout.LayoutParams(-1, -2))
-        val sb = SeekBar(this).apply {
+        val sb = SeekBar(this).apply { layoutDirection = android.view.View.LAYOUT_DIRECTION_LTR;
             max = 275; progress = (speed * 100 - 25).toInt().coerceIn(0, 275)
             setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
                 override fun onProgressChanged(s: SeekBar?, p: Int, fromUser: Boolean) { if (fromUser) { setSpeedFull((p + 25) / 100f); lbl.text = "⏩ " + PlayerLogic.speedLabel(speed) } }
@@ -3819,7 +3819,7 @@ class PlayerActivity : Activity(), Host {
             row.addView(ui.fsBtn(PlayerLogic.speedLabel(p)) { _ -> setSpeedFull(p); sb.progress = (p * 100 - 25).toInt().coerceIn(0, 275); lbl.text = "⏩ " + PlayerLogic.speedLabel(speed) }.apply { minimumWidth = ui.dp(58) }, ViewGroup.MarginLayoutParams(-2, ui.dp(38)).apply { setMargins(ui.dp(3), ui.dp(3), ui.dp(3), ui.dp(3)) })
         }
         col.addView(row, LinearLayout.LayoutParams(-1, -2))
-        col.addView(ui.text("السرعة بتتحفظ للفيديو ده وبتتطبّق تلقائيًا لما تفتحه تاني", 11f, th.muted), LinearLayout.LayoutParams(-1, -2).apply { topMargin = ui.dp(6) })
+        col.addView(ui.noHint(), LinearLayout.LayoutParams(-1, -2).apply { topMargin = ui.dp(6) })
         ui.sheet(this, "⏩ سرعة التشغيل", listOf<View>(col))?.show()
     }
 
@@ -4042,7 +4042,7 @@ class PlayerActivity : Activity(), Host {
         }
         col.addView(prev, LinearLayout.LayoutParams(-1, -2))
         col.addView(lbl("📏 حجم الخط"))
-        val sizeSb = SeekBar(this).apply { max = 140; progress = (Cfg.int("sub_scale", 100) - 60).coerceIn(0, 140)
+        val sizeSb = SeekBar(this).apply { layoutDirection = android.view.View.LAYOUT_DIRECTION_LTR; max = 140; progress = (Cfg.int("sub_scale", 100) - 60).coerceIn(0, 140)
             setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
                 override fun onProgressChanged(s: SeekBar?, p: Int, u: Boolean) { if (u) { Cfg.put("sub_scale", (p + 60).toString()); apply(); paintPrev() } }
                 override fun onStartTrackingTouch(s: SeekBar?) {}
@@ -4062,7 +4062,7 @@ class PlayerActivity : Activity(), Host {
         colorRow.addView(ui.fsBtn("🎭 ألوان المتحدثين") { _ -> Cfg.put("sub_uni_on", "0"); apply(); paintPrev() }, ViewGroup.MarginLayoutParams(-2, ui.dp(36)).apply { setMargins(ui.dp(3), ui.dp(3), ui.dp(3), ui.dp(3)) })
         col.addView(colorRow, LinearLayout.LayoutParams(-1, -2))
         col.addView(lbl("🌫 عتامة خلفية النص"))
-        val bgSb = SeekBar(this).apply { max = 100; progress = if (Cfg.str("sub_nobg", "0") == "1") 0 else Cfg.int("sub_bgopa", 45)
+        val bgSb = SeekBar(this).apply { layoutDirection = android.view.View.LAYOUT_DIRECTION_LTR; max = 100; progress = if (Cfg.str("sub_nobg", "0") == "1") 0 else Cfg.int("sub_bgopa", 45)
             setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
                 override fun onProgressChanged(s: SeekBar?, p: Int, u: Boolean) { if (u) { Cfg.put("sub_bgopa", p.toString()); Cfg.put("sub_nobg", "0"); apply(); paintPrev() } }
                 override fun onStartTrackingTouch(s: SeekBar?) {}
@@ -4070,7 +4070,7 @@ class PlayerActivity : Activity(), Host {
             }) }
         col.addView(bgSb, LinearLayout.LayoutParams(-1, -2))
         col.addView(lbl("✨ هالة/حدود حول النص (بتوضّحه على أي خلفية)"))
-        val blurSb = SeekBar(this).apply { max = 20; progress = Cfg.int("sub_blur", 0)
+        val blurSb = SeekBar(this).apply { layoutDirection = android.view.View.LAYOUT_DIRECTION_LTR; max = 20; progress = Cfg.int("sub_blur", 0)
             setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
                 override fun onProgressChanged(s: SeekBar?, p: Int, u: Boolean) { if (u) { Cfg.put("sub_blur", p.toString()); apply() } }
                 override fun onStartTrackingTouch(s: SeekBar?) {}
@@ -4078,7 +4078,7 @@ class PlayerActivity : Activity(), Host {
             }) }
         col.addView(blurSb, LinearLayout.LayoutParams(-1, -2))
         col.addView(lbl("↕ موضع الترجمة (رفعها عن أسفل الشاشة)"))
-        val posSb = SeekBar(this).apply { max = 240; progress = Cfg.int("sub_posy", 0).coerceIn(0, 240)
+        val posSb = SeekBar(this).apply { layoutDirection = android.view.View.LAYOUT_DIRECTION_LTR; max = 240; progress = Cfg.int("sub_posy", 0).coerceIn(0, 240)
             setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
                 override fun onProgressChanged(s: SeekBar?, p: Int, u: Boolean) { if (u) { Cfg.put("sub_posy", p.toString()); try { applyChromeFn() } catch (_: Throwable) {} } }
                 override fun onStartTrackingTouch(s: SeekBar?) {}
@@ -4430,7 +4430,7 @@ class PlayerActivity : Activity(), Host {
             fun bgLabel(p: Int) = "🌫 غمقان الخلفية: " + (if (p == 0) "شفافة" else "$p%")
             val p0 = if (cs.noBg) 0 else cs.bgOpa
             bgTv.text = bgLabel(p0)
-            val bgSb = SeekBar(this).apply {
+            val bgSb = SeekBar(this).apply { layoutDirection = android.view.View.LAYOUT_DIRECTION_LTR;
                 max = 100; progress = p0
                 setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
                     override fun onProgressChanged(sb: SeekBar?, p: Int, u: Boolean) {
@@ -6996,7 +6996,7 @@ class PlayerActivity : Activity(), Host {
         fun curStyle() = toneStyles[stI]
         fun curDeg() = toneDegrees[dgI]
         val styleLbl = lbl(""); val degLbl = lbl("")
-        fun mkSb(max: Int, p: Int) = android.widget.SeekBar(this).apply {
+        fun mkSb(max: Int, p: Int) = android.widget.SeekBar(this).apply { layoutDirection = android.view.View.LAYOUT_DIRECTION_LTR;
             this.max = max; progress = p; layoutDirection = View.LAYOUT_DIRECTION_RTL
             setPadding(ui.dp(16), ui.dp(6), ui.dp(16), ui.dp(6))
             val tint = android.content.res.ColorStateList.valueOf(th.primary)
@@ -7109,7 +7109,7 @@ class PlayerActivity : Activity(), Host {
         val d = GDialog(this); d.requestWindowFeature(android.view.Window.FEATURE_NO_TITLE)
         val box = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; setPadding(ui.dp(14), ui.dp(12), ui.dp(14), ui.dp(14)); background = ui.box(th.card, th.border, 18) }
         box.addView(ui.text("🗂 ترجمات الفيديو (نسخ محفوظة في الجلسة)", 16f, th.primary, true))
-        box.addView(ui.text("أي إعادة صياغة بتحفظ نسخة قبلها تلقائيًا. اضغط على نسخة عشان ترجّع نص الترجمة بتاعها.", 12f, th.muted))
+        box.addView(ui.noHint())
         box.addView(ui.button("💾 احفظ النسخة الحالية") { engine.saveVersion("نسخة " + fmtMs(player.currentPosition).substring(3)); d.dismiss(); versionsDialog() })
         val vs = engine.versions.toList()
         if (vs.isEmpty()) box.addView(ui.text("مفيش نسخ محفوظة لسه", 13f, th.muted))
@@ -7300,7 +7300,7 @@ class PlayerActivity : Activity(), Host {
         val d = GDialog(this); d.requestWindowFeature(android.view.Window.FEATURE_NO_TITLE)
         val box = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; setPadding(ui.dp(14), ui.dp(12), ui.dp(14), ui.dp(14)); background = ui.box(th.card, th.border, 18) }
         box.addView(ui.text("👁 الوضع البصري", 17f, th.primary, true))
-        box.addView(ui.text("☁ Gemini: بيلقط فريم كل ثانية، بيتخطّى اللي مفيهوش تغيير أو نص، وبيجمّع الباقي في دفعات (30 فريم) تتقسم لمجموعات من 6 فريمات في صورة شبكة واحدة وتتبعت لجيميناي بالتوازي. الترجمة بتتعرض في مكان النص الأصلي، والترجمة الصوتية بتطلع فوق النص البصري لحد ما يختفي.\nبيشتغل تلقائي مع فتح الفيديو، والنتايج بتتحفظ مع الفيديو وترجع لما تفتحه تاني. ضغطة على 👁 = لقطة واحدة وتتحفظ.\nm3u8: بيلقط فريمات من الشاشة وقت التشغيل (النتيجة بتتأخر شوية).", 12f, th.muted))
+        box.addView(ui.noHint())
         visual.mode = "scene"
         val st = ui.text(if (visual.running) "الحالة: شغّال — " + visual.status else "الحالة: واقف", 13f, th.text)
         box.addView(st)

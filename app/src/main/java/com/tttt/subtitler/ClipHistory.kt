@@ -130,7 +130,7 @@ object ClipHistory {
                 body.addView(row, LinearLayout.LayoutParams(-1, -2).apply { topMargin = ui.dp(5) })
             }
             if (items.size > 300) body.addView(ui.text("بيظهر أحدث 300 نتيجة — استخدم البحث للباقي", 11f, th.muted).apply { setPadding(0, ui.dp(10), 0, 0) })
-            else if (items.isNotEmpty()) body.addView(ui.text("لمسة على النص = نسخ تاني · ↗ افتح المصدر = ترجع للتطبيق/الصفحة · ضغطة طويلة = حذف العنصر", 11f, th.muted).apply { setPadding(0, ui.dp(12), 0, 0) })
+            else if (items.isNotEmpty()) body.addView(ui.noHint().apply { setPadding(0, ui.dp(12), 0, 0) })
         }
         val head = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; setPadding(ui.dp(14), ui.dp(14), ui.dp(8), ui.dp(6)) }
         head.addView(ui.text("📋 سجل الكليبورد", 19f, th.text, true), LinearLayout.LayoutParams(0, -2, 1f))

@@ -704,8 +704,8 @@ class BrowserSaver(private val act: BrowserActivity, private val frame: FrameLay
         persist()
         val col = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; setPadding(ui.dp(16), ui.dp(10), ui.dp(16), ui.dp(12)) }
         col.addView(ui.text(netName() + " — " + levelName(), 15f, th.primary, true).apply { setPadding(0, 0, 0, ui.dp(6)) })
-        if (!supported) col.addView(ui.text("⚠ النظام مش بيدّي عدّاد الشبكة على الجهاز ده — القياس مش متاح", 12f, 0xFFD32F2F.toInt()))
-        col.addView(ui.text("القياس = عدّاد النظام لتطبيق Joyboy وقت ما المتصفح مفتوح (أي داتا تانية للتطبيق في الوقت ده بتتحسب). التحميلات اللي بيعملها «نظام التحميل» مش بتتعد هنا. التقدير ≈ بيتعرض لوحده ومش بيتجمع مع القياس.", 11f, th.muted))
+        if (!supported) col.addView(ui.noHint())
+        col.addView(ui.noHint())
         col.addView(row("الجلسة 📶 خلوي", fmt(sCell), "قياس")); col.addView(row("الجلسة 🛜 واي فاي", fmt(sWifi), "قياس"))
         col.addView(row("النهارده 📶 خلوي", fmt(dCell), "قياس")); col.addView(row("النهارده 🛜 واي فاي", fmt(dWifi), "قياس"))
         val ch = hostOf(host.tab()?.url)
@@ -743,10 +743,10 @@ class BrowserSaver(private val act: BrowserActivity, private val frame: FrameLay
                 act.runOnUiThread { tv.text = "النهارده (تطبيق Joyboy كله): 📶 " + (if (m >= 0) fmt(m) else "غير متاح") + " · 🛜 " + (if (w >= 0) fmt(w) else "غير متاح") + "  [قياس النظام — للمقارنة بس، مش بيتجمّع مع الأرقام اللي فوق]" }
             }.start()
         } else {
-            col.addView(ui.text("اختياري: بيدّي رقم أدق من النظام لتطبيق Joyboy كله. محتاج تدّي إذن «الوصول لبيانات الاستخدام» بإيدك — مش بنطلبه من نفسنا.", 11.5f, th.muted))
+            col.addView(ui.noHint())
             col.addView(ui.button("📏 فعّل قياس النظام") { try { act.startActivity(android.content.Intent(android.provider.Settings.ACTION_USAGE_ACCESS_SETTINGS)) } catch (_: Throwable) { Notice.show(act, "الجهاز مش بيدعم شاشة الإذن دي", 3000L) } })
         }
-        col.addView(ui.text("ℹ️ مفيش عدّ مزدوج: كل الأرقام من مصدر واحد (عدّاد النظام لتطبيق Joyboy) — الموقع والتبويب والفيديو مجرد توزيع لنفس الفرق مش عدّ تاني. التحميلات من جوه البرنامج (القابلة للاستكمال) بتتحسب مرة واحدة في الإجمالي (مش في المواقع)؛ واللي بينزّله مدير تنزيلات النظام بره عدّاد التطبيق فمش بتتحسب. الأرقام المكتوب جنبها «تقدير» متوسطات ثابتة ومابتتجمعش مع القياس.", 11f, th.muted).apply { setPadding(0, ui.dp(8), 0, ui.dp(4)) })
+        col.addView(ui.noHint().apply { setPadding(0, ui.dp(8), 0, ui.dp(4)) })
         val top = siteBytes.entries.sortedByDescending { it.value }.take(5)
         if (top.isNotEmpty()) {
             col.addView(ui.text("🌐 أثقل المواقع في الجلسة (قياس تقريبي)", 13f, th.primary, true).apply { setPadding(0, ui.dp(10), 0, ui.dp(2)) })
@@ -810,11 +810,11 @@ class BrowserSaver(private val act: BrowserActivity, private val frame: FrameLay
                 col.addView(ui.text("• " + nm.take(44) + " — " + fmt(b) + pc, 12.5f, th.text))
             }
             if (items.any { it.first.startsWith("⚙") && it.second > 1_000_000L })
-                col.addView(ui.text("⚠ فيه استهلاك «من غير شاشة»: حاجة بتنزّل والتطبيق في الخلفية (تحميل/ترجمة/خدمة).", 12f, 0xFFE65100.toInt()).apply { setPadding(0, ui.dp(4), 0, 0) })
+                col.addView(ui.noHint().apply { setPadding(0, ui.dp(4), 0, 0) })
         } catch (e: Throwable) { col.addView(ui.text("مقدرتش أقرا سجل الاستهلاك.", 12f, th.muted)) }
 
         col.addView(ui.text("🔬 قياس لحظي (10 ثواني)", 14f, th.primary, true).apply { setPadding(0, ui.dp(12), 0, ui.dp(2)) })
-        col.addView(ui.text("سيب الشاشة زي ما هي (من غير ما تلمس حاجة) وأنا هقيس اللي بينزل ومين بيطلبه.", 11.5f, th.muted))
+        col.addView(ui.noHint())
         val res = ui.text("", 12.5f, th.text).apply { setPadding(0, ui.dp(6), 0, ui.dp(4)) }
         var busy = false
         col.addView(ui.button("▶ ابدأ القياس") {
@@ -882,11 +882,11 @@ class BrowserSaver(private val act: BrowserActivity, private val frame: FrameLay
         val col = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; setPadding(ui.dp(16), ui.dp(10), ui.dp(16), ui.dp(12)) }
         var d: android.app.Dialog? = null
         col.addView(ui.text(netName() + " — " + levelName(), 15f, th.primary, true))
-        col.addView(ui.text("🛡 مانع الإعلانات شغّال في كل الأوضاع — التوفير ماله أي علاقة بيه ومابيعدّلش فيه.", 11.5f, th.muted).apply { setPadding(0, ui.dp(2), 0, ui.dp(4)) })
+        col.addView(ui.noHint().apply { setPadding(0, ui.dp(2), 0, ui.dp(4)) })
         col.addView(lab("وضع التوفير"))
         val mn = listOf("تلقائي", "دايمًا توفير", "مقفول"); val mv = listOf("auto", "always", "off")
         col.addView(ui.chips(mn, { mn[mv.indexOf(p.getString("sv_mode", "auto") ?: "auto").coerceAtLeast(0)] }) { pick -> val i = mn.indexOf(pick); if (i >= 0) { p.edit().putString("sv_mode", mv[i]).apply(); netChanged(true) } })
-        col.addView(ui.text("تلقائي: داتا الموبايل = توفير أقصى · واي فاي محدود = ذكي · واي فاي مفتوح = متوازن (مفيش تغيير) · اتصال ضعيف = ذكي على الأقل.", 11f, th.muted))
+        col.addView(ui.noHint())
         col.addView(ui.switchRow("🚨 وضع طوارئ الداتا (نص أولًا + خطوط وفيديو موقوفين)", p.getBoolean("sv_emerg", false)) { v -> p.edit().putBoolean("sv_emerg", v).apply(); netChanged(true) })
         col.addView(ui.switchRow("🅰 نص أولًا على داتا الموبايل (الصور بالضغط)", p.getBoolean("sv_text_cell", false)) { v -> p.edit().putBoolean("sv_text_cell", v).apply(); netChanged(true) })
         col.addView(ui.switchRow("🛜 اعتبر الواي فاي محدود دايمًا", p.getBoolean("sv_wifi_metered", false)) { v -> p.edit().putBoolean("sv_wifi_metered", v).apply(); netChanged(true) })
@@ -908,7 +908,7 @@ class BrowserSaver(private val act: BrowserActivity, private val frame: FrameLay
         col.addView(lab("أقصى جودة فيديو — اختيارك بيغلب التلقائي (الطوارئ بس بتنزّلها)"))
         val xn = listOf("تلقائي", "240p", "360p", "480p", "720p", "1080p"); val xv = listOf("0", "240", "360", "480", "720", "1080")
         col.addView(ui.chips(xn, { xn[xv.indexOf(p.getString("sv_qmax", "0") ?: "0").coerceAtLeast(0)] }) { pick -> val i = xn.indexOf(pick); if (i >= 0) { p.edit().putString("sv_qmax", xv[i]).apply(); host.wv()?.let { w -> vqCap = -1; vqReeval(w) } } })
-        col.addView(ui.text("التحكم بيشتغل في يوتيوب بس (من خلال مشغّله). أي موقع تاني مفيش طريقة موثوقة من WebView تجبر جودته — الكبسولة هتكتب «مش متاح هنا». الفيديو المحمي (DRM) مابنلمسوش.", 11f, th.muted).apply { setPadding(0, ui.dp(2), 0, ui.dp(4)) })
+        col.addView(ui.noHint().apply { setPadding(0, ui.dp(2), 0, ui.dp(4)) })
         col.addView(lab("حد داتا الموبايل (MB — صفر = من غير حد)"))
         val limRow = LinearLayout(act).apply { layoutDirection = View.LAYOUT_DIRECTION_RTL }
         val e1 = ui.input("يوميًا", p.getString("sv_lim_day", "") ?: "").apply { inputType = android.text.InputType.TYPE_CLASS_NUMBER }
@@ -936,7 +936,7 @@ class BrowserSaver(private val act: BrowserActivity, private val frame: FrameLay
         watch(e3) { p.edit().putString("sv_lim_ses", it).apply() }; watch(e4) { p.edit().putString("sv_lim_wifi", it).apply() }
         limRow2.addView(e3, LinearLayout.LayoutParams(0, -2, 1f).apply { marginEnd = ui.dp(6) }); limRow2.addView(e4, LinearLayout.LayoutParams(0, -2, 1f))
         col.addView(limRow2)
-        col.addView(ui.text("تنبيهات عند 50% (معلومة) · 80% (تحذير) · 95% (حرج) · 100% (توفير أقصى تلقائي لو السويتش اللي فوق شغّال). النت مابيتقطعش أبدًا.", 11f, th.muted).apply { setPadding(0, ui.dp(2), 0, ui.dp(4)) })
+        col.addView(ui.noHint().apply { setPadding(0, ui.dp(2), 0, ui.dp(4)) })
         col.addView(ui.button("▶ كمّل تصفح بعد الحد (قفل الطوارئ لباقي اليوم)") { p.edit().putBoolean("sv_emerg", false).putString("sv_snooze", dayKey).apply(); netChanged(true); Notice.show(act, "تمام — كمّل عادي لباقي النهارده", 2500L) })
         col.addView(ui.switchRow("🧊 جمّد التبويبات الخلفية الخاملة", p.getBoolean("sv_freeze", true)) { v -> p.edit().putBoolean("sv_freeze", v).apply() })
         col.addView(ui.switchRow("⏸ تحميل الملفات قابل للإيقاف المؤقت والاستكمال", p.getBoolean("sv_dl_own", true)) { v -> p.edit().putBoolean("sv_dl_own", v).apply() })
@@ -986,7 +986,7 @@ class BrowserSaver(private val act: BrowserActivity, private val frame: FrameLay
             col.addView(ui.text((if (b) "✅ محظور" else "⚪ مش محظور") + (if (reg) "  ⚠ كان محظور قبل كده!" else "") + " — " + hostOf(u), 12.5f, if (reg) 0xFFD32F2F.toInt() else th.text))
         }
         col.addView(ui.text("المحظور: $blocked من " + urls.size + (if (base.length() == 0) " — ده أول فحص، اتسجّل كمرجع للمقارنة بعد كده" else if (regress == 0) " — مفيش أي تراجع عن آخر فحص ✓" else " — ⚠ تراجع في $regress رابط"), 13f, if (regress > 0) 0xFFD32F2F.toInt() else th.primary, true).apply { setPadding(0, ui.dp(8), 0, ui.dp(4)) })
-        col.addView(ui.text("الفحص بيسأل مانع الإعلانات الحقيقي (AdBlock.blocked) عن روابط معروفة. «مش محظور» لروابط التحليلات ممكن يكون طبيعي حسب قوايمك.", 11f, th.muted))
+        col.addView(ui.noHint())
         // المرجع بيتحدّث بس لو مفيش تراجع (عشان التراجع ما يبقاش هو الطبيعي)
         if (regress == 0) { val m = JSONObject(base.toString()); val kk = nb.keys(); while (kk.hasNext()) { val k = kk.next(); if (nb.optBoolean(k) || !m.has(k)) m.put(k, nb.optBoolean(k) || m.optBoolean(k)) }; p.edit().putString("sv_adbase", m.toString()).apply() }
         ui.sheet(act, "🧪 فحص مانع الإعلانات", listOf<View>(ScrollView(act).apply { addView(col) })).show()
