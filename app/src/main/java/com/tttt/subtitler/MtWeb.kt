@@ -135,7 +135,7 @@ object MtWeb {
             val s = src ?: return false
             snapKey = null
             val m = metas[s] ?: return false
-            if (!a.isFinishing || a.isChangingConfigurations) return false
+            if (!a.isFinishing || a.isDestroyed || a.isChangingConfigurations) return false
             metas.remove(s)
             val flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
             when (m.ret) {

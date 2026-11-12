@@ -2696,6 +2696,21 @@ public class MobilePlaybackActivity extends MobileActivity
         if (!mIsInPip && !mPipEnterPending
                 && layoutOrientation() == Configuration.ORIENTATION_LANDSCAPE) {
             mBackPreview = false;
+            // JOYBOY(v941): Back out of fullscreen for a non-YouTube source goes straight to a small
+            // paused PiP (or closes outright if PiP is refused) — never the watch page.
+            if (JoyboyPlayerHost.onMinimize(this)) {
+                setPlayWhenReady(false);
+                enterPipMode();
+                if (mPipEnterPending) {
+                    return;
+                }
+                if (mPresenter != null) {
+                    mPresenter.onFinish();
+                }
+                finish();
+                overridePendingTransition(0, 0);
+                return;
+            }
             toggleFullscreen();
             return;
         }
@@ -7752,6 +7767,31 @@ public class MobilePlaybackActivity extends MobileActivity
             settleFullscreenPull();
             return;
         }
+        // JOYBOY(v941): exiting fullscreen for a non-YouTube source (Media/browser/local/direct) never
+        // lands on the watch page — it goes straight to a small paused PiP, or closes outright (back to
+        // the origin) if the system refuses PiP. YouTube keeps the old fullscreen-exit behaviour.
+        if (mFullscreenSwipe == SWIPE_EXIT_FULLSCREEN && JoyboyPlayerHost.onMinimize(this)) {
+            if (mFullscreenSettle != null) {
+                mFullscreenSettle.cancel();
+            }
+            if (mVideoArea != null) {
+                mVideoArea.setScaleX(1f);
+                mVideoArea.setScaleY(1f);
+                mVideoArea.setTranslationY(0f);
+            }
+            mFullscreenSwipe = 0;
+            setPlayWhenReady(false);
+            enterPipMode();
+            if (mPipEnterPending) {
+                return;
+            }
+            if (mPresenter != null) {
+                mPresenter.onFinish();
+            }
+            finish();
+            overridePendingTransition(0, 0);
+            return;
+        }
         // The pull stays as it is through the rotation (its snapshot is the first frame), and the
         // new orientation's layout puts the video back at rest (onFullscreenSwipeConfigured).
         if (BuildConfig.DEBUG) {
@@ -8462,10 +8502,18 @@ public class MobilePlaybackActivity extends MobileActivity
         // JOYBOY(v939): مصدر مش يوتيوب (متصفح/واتساب/ملف محلي/رابط مباشر) — التصغير يروح PiP بتاع النظام فوق التطبيق
         // الأصلي بدل ما يدوّر على مضيف مصغّر بتاع MeeTube ويقع على يوتيوب. يوتيوب بيكمل على الدوك الأصلي بتاعه.
         if (JoyboyPlayerHost.onMinimize(this)) {
+            // JOYBOY(v941): الفيديو بيوقف أول ما يصغّر، ولو النظام رفض الـPiP بيتقفل ويرجع للمصدر بدل ما يقع على دوك يوتيوب.
+            setPlayWhenReady(false);
             enterPipMode();
             if (mPipEnterPending) {
                 return;
             }
+            if (mPresenter != null) {
+                mPresenter.onFinish();
+            }
+            finish();
+            overridePendingTransition(0, 0);
+            return;
         }
 
         if (!prepareMiniPlayerHandoff(false)) {

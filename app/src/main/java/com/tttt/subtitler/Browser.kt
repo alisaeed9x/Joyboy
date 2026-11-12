@@ -2445,15 +2445,21 @@ class BrowserActivity : Activity() {
         closeActions()
         val root = findViewById<FrameLayout>(android.R.id.content) ?: run { showList(); return }
         val scrim = FrameLayout(this).apply { setBackgroundColor(0x66000000); isClickable = true; setOnClickListener { closeActions() } }
-        val col = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_LTR; elevation = ui.dp(12).toFloat() }
-        col.addView(TextView(this).apply {
-            text = g.title.ifBlank { "فيديو" }; setTextColor(Color.WHITE); textSize = 12f; maxLines = 2; ellipsize = TextUtils.TruncateAt.END; maxWidth = ui.dp(230)
-            setPadding(ui.dp(10), ui.dp(5), ui.dp(10), ui.dp(5)); gravity = Gravity.END
-            background = android.graphics.drawable.GradientDrawable().apply { setColor(0xCC101418.toInt()); cornerRadius = ui.dp(14).toFloat() }
-        }, LinearLayout.LayoutParams(-2, -2).apply { gravity = Gravity.END; bottomMargin = ui.dp(6) })
-        col.addView(ClipOrb(this).apply { accent = th.primary; found = true; count = 1 }, LinearLayout.LayoutParams(ui.dp(60), ui.dp(60)).apply { gravity = Gravity.END })
-        col.addView(clipDots { act -> closeActions(); doAct(act, g) }, LinearLayout.LayoutParams(-2, -2).apply { gravity = Gravity.END })
-        scrim.addView(col, FrameLayout.LayoutParams(-2, -2, Gravity.RIGHT or Gravity.CENTER_VERTICAL).apply { rightMargin = ui.dp(10) })
+        // (v941) كارت في نص الشاشة بأزرار بعرض كامل بدل العمود الضيق اللي كان على اليمين
+        val card = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            layoutDirection = View.LAYOUT_DIRECTION_RTL
+            setPadding(ui.dp(16), ui.dp(14), ui.dp(16), ui.dp(12))
+            background = ui.box(th.card, th.border, 16)
+            elevation = ui.dp(12).toFloat()
+        }
+        card.addView(ui.text(g.title.ifBlank { "فيديو" }, 14f, th.text, true).apply { maxLines = 2; ellipsize = TextUtils.TruncateAt.END }, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = ui.dp(8) })
+        card.addView(ui.button("▶  مشاهدة بس", true) { closeActions(); doAct("watch", g) })
+        card.addView(ui.button("🌐  مشاهدة وترجمة") { closeActions(); doAct("tr", g) })
+        card.addView(ui.button("⬇  تحميل") { closeActions(); doAct("dl", g) })
+        card.addView(ui.button("📺  مشاهدة ع التلفزيون") { closeActions(); doAct("tv", g) })
+        card.addView(ui.button("✕  إلغاء") { closeActions() })
+        scrim.addView(card, FrameLayout.LayoutParams(-1, -2, Gravity.CENTER).apply { leftMargin = ui.dp(20); rightMargin = ui.dp(20) })
         root.addView(scrim, FrameLayout.LayoutParams(-1, -1))
         actScrim = scrim
         scrim.alpha = 0f; scrim.animate().alpha(1f).setDuration(160).start()
@@ -2560,7 +2566,8 @@ class BrowserActivity : Activity() {
             closeFan()
             if (android.os.SystemClock.uptimeMillis() < scanUntil) { badge.found = false; badge.glyph = "🔍"; badge.count = 1; showBadge() }
             else badge.visibility = View.GONE
-            hint.visibility = View.VISIBLE
+            // (v941) التلميحة تظهر بس لو فيها نص حقيقي (إصلاح/صيد ترجمة/يوتيوب) — الشريط الأبيض الفاضي اتشال
+            hint.visibility = if (hint.text.isNullOrEmpty()) View.GONE else View.VISIBLE
         } else if (n == 0) {   // (v838) مفيش فيديو بس فيه ملفات/لينكات حقيقية اتلقطت
             closeFan()
             val first = !badge.found || badge.visibility != View.VISIBLE

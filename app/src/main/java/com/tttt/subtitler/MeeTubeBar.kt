@@ -65,6 +65,14 @@ object MeeTubeBar {
     }
 
     private fun toMain(act: Activity, tab: String) {
+        // (v941) قبل ما نرجّع لـMain: لو فيه مصغّر MeeTube شغّال نوقّفه الأول، ونعلّم إن الرجوع بدأ
+        // عشان onDetach بتاع المشغّل ما يضربش تنقّل تاني لـMain في نص تفكيك الـCLEAR_TOP (كان بيعمل force close)
+        try {
+            MtOrigin.markReturnStarted()
+            if (com.newtube.mobile.ui.playback.MiniPlayerBridge.isActive()) {
+                com.newtube.mobile.ui.playback.MiniPlayerBridge.close()
+            }
+        } catch (_: Throwable) {}
         val intent = Intent(act, MainActivity::class.java)
         intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
         intent.putExtra("tab", tab)

@@ -265,7 +265,7 @@ class BottomNav(act: Activity, private val ui: Ui, private val th: Theme, privat
                 addView(box, if (idx == NET) LinearLayout.LayoutParams(ui.dp(54), ui.dp(30)) else LinearLayout.LayoutParams(ui.dp(38), ui.dp(20)))
                 addView(lab, LinearLayout.LayoutParams(-2, -2))
                 Glass.pressable(this)
-                setOnClickListener { if (idx == MORE) toggleMore(act) else if (idx == REMOTE) { try { ControllerPad.show(act) } catch (e: Throwable) { LogStore.err("Nav:remote", e) } } else if (idx == CARE) { collapseMore(); try { CareUi(act, ui, th).show() } catch (e: Throwable) { LogStore.err("Nav:care", e) } } else if (idx == IR) { collapseMore(); try { IrCatalogUi.show(act) } catch (e: Throwable) { LogStore.err("Nav:ir", e) } } else if (idx == NET) { collapseMore(); try { NetStatsUi(act, ui, th).show() } catch (e: Throwable) { LogStore.err("Nav:net", e) } } else { collapseMore(); val leaves = act !is MainActivity || idx == 2 || idx == 3 || idx == 4   // (v911) كل اللي بيفتح شاشة تانية (متصفح/مخزن/يوتيوب)؛ التبويبات الداخلية في Main عندها أنيميشنها
+                setOnClickListener { if (idx == MORE) { set(idx); toggleMore(act) } else if (idx == REMOTE) { set(idx); try { ControllerPad.show(act) } catch (e: Throwable) { LogStore.err("Nav:remote", e) } } else if (idx == CARE) { set(idx); collapseMore(); try { CareUi(act, ui, th).show() } catch (e: Throwable) { LogStore.err("Nav:care", e) } } else if (idx == IR) { set(idx); collapseMore(); try { IrCatalogUi.show(act) } catch (e: Throwable) { LogStore.err("Nav:ir", e) } } else if (idx == NET) { set(idx); collapseMore(); try { NetStatsUi(act, ui, th).show() } catch (e: Throwable) { LogStore.err("Nav:net", e) } } else { collapseMore(); val leaves = act !is MainActivity || idx == 2 || idx == 3 || idx == 4   // (v911) كل اللي بيفتح شاشة تانية (متصفح/مخزن/يوتيوب)؛ التبويبات الداخلية في Main عندها أنيميشنها
                     if (leaves && !rail && cellOf(idx) != cellOf(active) && !navPending) {   // (v911) الشاشات التانية Activity لوحدها: كانت بتتفتح/تتقفل لحظة الدوسة فمفيش عدسة ولا انزلاق ولا ضغطة، والفتح الثقيل كان بيتزامن مع الأنيميشن فيقطّع. دلوقتي الأنيميشن بيخلّص الأول وبعدها الانتقال
                         val prev = active; val inMain = act is MainActivity
                         navPending = true; set(idx)
@@ -309,6 +309,8 @@ class BottomNav(act: Activity, private val ui: Ui, private val th: Theme, privat
         }
         paint()
         badge(4, 0)
+        // (v941) وضع الكبسولة أول مرة تحت الخلية النشطة: الشريط اللي بيتبني في شاشة تانية (متصفح/ملفات/يوتيوب) كان بيسيب الكبسولة على الحافة
+        rowLL.post { place(false) }
         startLiveNet(act)
     }
 

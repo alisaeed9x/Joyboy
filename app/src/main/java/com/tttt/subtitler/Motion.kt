@@ -91,7 +91,13 @@ object Motion {
         if (MtGlass.on()) {   // (v893) خروج سريع: فيد 90ms
             v.setLayerType(View.LAYER_TYPE_HARDWARE, null)
             v.animate().setStartDelay(0L).alpha(0f).translationX(side * dp(v, 8f)).setDuration(Skins.dur(MtGlass.FADE_OUT_MS)).setInterpolator(MtGlass.STANDARD)
-                .withEndAction { v.setLayerType(View.LAYER_TYPE_NONE, null); v.alpha = 1f; v.translationX = 0f; if (!stay()) v.visibility = View.INVISIBLE   // (v940) INVISIBLE: الصفحة تفضل متقاسة وجاهزة }.start()
+                .withEndAction {
+                    v.setLayerType(View.LAYER_TYPE_NONE, null)
+                    v.alpha = 1f
+                    v.translationX = 0f
+                    // (v940) INVISIBLE: الصفحة تفضل متقاسة وجاهزة
+                    if (!stay()) v.visibility = View.INVISIBLE
+                }.start()
             return
         }
         v.setLayerType(View.LAYER_TYPE_HARDWARE, null)

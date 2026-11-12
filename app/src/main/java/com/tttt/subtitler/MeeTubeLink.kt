@@ -31,6 +31,8 @@ object MeeTubeLink {
         return try {
             if (incognito) MtTranslate.privIds.add(id)   // (v936)
             if (autoTranslate) MtTranslate.autoFor = id   // (v890) الترجمة تبدأ لوحدها أول ما الفيديو يشتغل في مشغّل MeeTube
+            // (v941) سجّل المصدر يوتيوب: من غيرها MtOrigin بيفضل ماسك مصدر الجلسة اللي قبله (محلي مثلاً) والتصغير اللي بعده بيغلط
+            MtOrigin.record(Intent(), null, id, "")
             bindBar()
             MobileMainApplication.boot(act.application)
             MtTvRoute.bypassed { com.liskovsoft.smartyoutubetv2.common.app.presenters.PlaybackPresenter.instance(act.applicationContext).openVideo(id, false, if (startMs > 0L) startMs else -1L, incognito) }   // (v928) السؤال «تشغّله فين؟» اتسأل قبل كده في Main.playYt
@@ -45,6 +47,8 @@ object MeeTubeLink {
     fun playYtOnTv(ctx: android.content.Context, id: String, startMs: Long): Boolean {
         if (id.length != 11) return false
         return try {
+            // (v941) سجّل المصدر يوتيوب (نفس سبب playYt)
+            MtOrigin.record(Intent(), null, id, "")
             bindBar()
             MobileMainApplication.boot(ctx.applicationContext as android.app.Application)
             com.liskovsoft.smartyoutubetv2.common.app.presenters.PlaybackPresenter.instance(ctx.applicationContext).openVideo(id, false, if (startMs > 0L) startMs else -1L, false)

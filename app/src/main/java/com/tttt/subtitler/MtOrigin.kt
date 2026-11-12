@@ -35,6 +35,13 @@ object MtOrigin {
 
     @Volatile private var current: Origin? = null
 
+    // (v941) الرجوع لـMain بدأ فعلاً من الشريط (MeeTubeBar.toMain): onDetach ما يضربش تنقّل تاني في نص التفكيك
+    @Volatile private var returnStarted = false
+
+    fun markReturnStarted() {
+        returnStarted = true
+    }
+
     fun current(): Origin? = current
 
     fun clear(src: String?) {
@@ -96,6 +103,7 @@ object MtOrigin {
     /** بيتنده من MtPlay.openMt قبل openVideo: يسجّل مصدر الجلسة دي. */
     fun record(i: Intent, src: String?, yt: String?, title: String) {
         try {
+            returnStarted = false
             val kind = classify(i, src, yt)
             val ret = i.getStringExtra("ret") ?: ""
             val page = i.getStringExtra("page") ?: ""
@@ -120,8 +128,13 @@ object MtOrigin {
      */
     fun onDetach(a: Activity, src: String?): Boolean {
         try {
-            if (!a.isFinishing || a.isChangingConfigurations) return false
+            if (!a.isFinishing || a.isDestroyed || a.isChangingConfigurations) return false
             val o = current ?: return false
+            if (returnStarted) {
+                returnStarted = false
+                current = null
+                return false
+            }
             if (src != null && o.src != src && o.src.isNotEmpty()) return false
             val dest = destination(o)
             if (dest == ReturnTo.NONE) {
