@@ -240,7 +240,7 @@ object MtTvPlayer {
         if (!live()) return null
         return try {
             val vv = findVideoView(a.window.decorView) ?: return null
-            val bmp0: Bitmap? = when (vv) {
+            val bmp0: Bitmap = when (vv) {
                 is TextureView -> try { vv.bitmap } catch (_: Throwable) { null }
                 is SurfaceView -> {
                     if (vv.width <= 0 || vv.height <= 0) return null

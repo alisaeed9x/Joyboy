@@ -869,7 +869,7 @@ class MainActivity : Activity() {
         // (v310) صفحة الموسيقى بتتبني أول ما تفتحها بس (كانت بتتبني كلها وقت فتح التطبيق وده كان أكتر حاجة بتبطّأ البداية)
         fun ensureMusic(): MusicUi {
             musicUi?.let { return it }
-            val music = MusicUi(this, ui, th); musicUi = music; music.root.visibility = View.GONE
+            val music = MusicUi(this, ui, th); musicUi = music; music.root.visibility = View.INVISIBLE
             music.onNavTint = { c -> setNavTint(c) }
             music.onYtDownload = { n -> ytDownload(n, true) }
             music.onArt = { dockUi?.refresh() }
@@ -920,11 +920,11 @@ class MainActivity : Activity() {
                 NetLedger.tab(when (i) { 0 -> "فيديوهات"; 1 -> "يوتيوب"; 5 -> "المهام"; 7 -> "الإعدادات"; else -> "تبويب $i" })
                 dockUi?.refresh()   // (v344) المشغّل المصغّر بيختفي
                 stripUi?.hidden = (curTab == 5)   // (v345) في صفحة الموسيقى وبيظهر في الباقي
-                lib.root.visibility = if (i == 0) View.VISIBLE else View.GONE
+                lib.root.visibility = if (i == 0) View.VISIBLE else View.INVISIBLE   // (v940) كل التبويبات متقاسة ورا بعض: التبديل من غير layout تقيل
                 if (i == 1) ensureMusic()
-                musicUi?.root?.visibility = if (i == 1) View.VISIBLE else View.GONE
-                tasksUi.root.visibility = if (i == 5) View.VISIBLE else View.GONE
-                settingsHostRef?.visibility = if (i == 7) View.VISIBLE else View.GONE
+                musicUi?.root?.visibility = if (i == 1) View.VISIBLE else View.INVISIBLE
+                tasksUi.root.visibility = if (i == 5) View.VISIBLE else View.INVISIBLE
+                settingsHostRef?.visibility = if (i == 7) View.VISIBLE else View.INVISIBLE
                 tasksDlgRefresh = if (i == 5) ({ tasksUi.refresh() }) else null
                 syncNav()   // (v475)
                 if (i == 1) { musicUi?.ensureLoaded(); musicUi?.applyNavTint() } else setNavTint(null)
@@ -946,7 +946,7 @@ class MainActivity : Activity() {
         // (v621) تسخين: صفحتي يوتيوب والموسيقى بتتبنوا وإنت فاضي بعد ما الشاشة تظهر، بدل ما يتبنوا وقت الدوسة على التبويب (أول فتح كان بيهنّج)
         if (!fromPlayer && !tvShellOn && !DeviceUi.isTv(this) && Cfg.bool("prewarm_tabs", true)) {
             val dv = window.decorView
-            dv.postDelayed({ if (!isFinishing && !isDestroyed) android.os.Looper.myQueue().addIdleHandler { if (!isFinishing && !isDestroyed && musicUi == null) { try { ensureMusic() } catch (e: Throwable) { LogStore.err("Main:prewarmMusic", e) } }; false } }, 2800L)
+            dv.postDelayed({ if (!isFinishing && !isDestroyed) android.os.Looper.myQueue().addIdleHandler { if (!isFinishing && !isDestroyed) { try { ensureMusic(); musicUi?.ensureLoaded() } catch (e: Throwable) { LogStore.err("Main:prewarmMusic", e) } }; false } }, 1500L)   // (v940) الموسيقى تتبني وتتحمّل ورا الستار بدري
         }
         val tabletShell = DeviceUi.isTablet(this)   // (v462) قشرة التابلت: ريل جانبي زي يوتيوب التابلت بدل الشريط السفلي
         val nav = BottomNav(this, ui, th, 0, tabletShell) { i -> if (i >= BottomNav.YT_HOME) { MeeTubeLink.open(this) /* (v888) MeeTube */ } else if (i == 2) { save(); NavAnim.set(curTab, 2); startActivity(Intent(this, BrowserActivity::class.java)) } else if (i == 3) { save(); NavAnim.set(curTab, 3); startActivity(FilesHub.intent(this)) } else if (i == 7) { musicReturnTab = -1; settingsShow?.invoke(null) } else if (i == 0 && fromTv && !fromPlayer && TvFocus.goHome(this)) { /* (v482) تلفزيون: «الرئيسية» = شاشة التلفزيون */ } else { musicReturnTab = -1; showTabFn(i) } }   // (v310) 4 الملفات = شاشة منفصلة زي المتصفح · (v606) يوتيوب شغّال ← المتصفح: الفيديو يكمّل في PiP والاتنين مع بعض
@@ -957,11 +957,11 @@ class MainActivity : Activity() {
         }
         if (!DeviceUi.isTv(this)) lib.root.setBackgroundColor(android.graphics.Color.TRANSPARENT)   // (v721) الخلفية المتغيّرة تظهر ورا المكتبة
         pane.addView(lib.root, FrameLayout.LayoutParams(-1, -1))
-        tasksUi.root.visibility = View.GONE
+        tasksUi.root.visibility = View.INVISIBLE
         if (!DeviceUi.isTv(this)) tasksUi.root.setBackgroundColor(android.graphics.Color.TRANSPARENT)
         pane.addView(tasksUi.root, FrameLayout.LayoutParams(-1, -1))   // (v231) صفحة المهام
         if (!fromPlayer) {   // (v370) الإعدادات صفحة كاملة (تبويب ⚙️) بدل الدايلوج — الدايلوج بيفضل بس لما الإعدادات تتفتح من المشغّل
-            val host = FrameLayout(this).apply { visibility = View.GONE }
+            val host = FrameLayout(this).apply { visibility = View.INVISIBLE }
             settingsDlg.embedClose = { if (fromTv) { try { startActivity(Intent(this, TvActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)); finish() } catch (_: Throwable) { showTabFn(0) } } else showTabFn(if (tabBeforeSettings == 7) 0 else tabBeforeSettings) }   // (v467) جاي من التلفزيون: قفل صفحة الإعدادات يرجّع لواجهة التلفزيون مش لتبويب الفيديوهات
             settingsDlg.embedInto(host)
             pane.addView(host, FrameLayout.LayoutParams(-1, -1)); settingsHostRef = host
