@@ -129,6 +129,7 @@ com/tttt/subtitler/Models.kt
 com/tttt/subtitler/ModelsUi.kt
 com/tttt/subtitler/Motion.kt
 com/tttt/subtitler/MtGlass.kt
+com/tttt/subtitler/MtMedia.kt
 com/tttt/subtitler/MtPlay.kt
 com/tttt/subtitler/MtGlassView.kt
 com/tttt/subtitler/MtHeader.kt

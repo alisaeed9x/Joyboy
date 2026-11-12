@@ -33,6 +33,10 @@ public final class JoyboyPlayerHost {
         }
         /** JOYBOY(v930): HTTP headers (ref/ua/cookie) the source needs; empty until the Activity supplies them (phase 2). */
         default Map<String, String> headers() { return Collections.emptyMap(); }
+        /** JOYBOY(v935): separate audio track URL of a direct link, or null. */
+        default String audioUrl() { return null; }
+        /** JOYBOY(v937): true while the sleep timer is set to "end of this video" (the add-on must not auto-advance). */
+        default boolean endOfVideoSleep() { return false; }
     }
 
     /** Implemented on the Joyboy side (MtTranslate). */
@@ -57,6 +61,9 @@ public final class JoyboyPlayerHost {
 
         /** Phase 2/4: lets the add-on put its own buttons into the player's control bar. */
         default void extraControls(Activity activity, ViewGroup bar) { }
+
+        /** JOYBOY(v937) phase 3: previous (-1) / next (+1) pressed; true = the add-on opened another episode itself. */
+        default boolean onStep(Activity activity, int dir) { return false; }
     }
 
     private static volatile Provider sProvider;
@@ -106,6 +113,16 @@ public final class JoyboyPlayerHost {
         try {
             Provider p = sProvider;
             return p != null && activity != null && event != null && p.onKey(activity, event);
+        } catch (RuntimeException e) {
+            return false;
+        }
+    }
+
+    /** JOYBOY(v937): previous/next goes to the add-on first. true = handled. Never throws. */
+    public static boolean onStep(Activity activity, int dir) {
+        try {
+            Provider p = sProvider;
+            return p != null && activity != null && p.onStep(activity, dir);
         } catch (RuntimeException e) {
             return false;
         }

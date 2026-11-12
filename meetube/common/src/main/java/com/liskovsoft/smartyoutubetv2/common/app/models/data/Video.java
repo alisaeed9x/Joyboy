@@ -113,6 +113,9 @@ public final class Video {
      * network formats. Never serialized: a downloaded item is recreated from the download registry.
      */
     public String localUri;
+    /** JOYBOY(v934): HTTP headers (Referer/User-Agent/Cookie) a direct link needs, and its separate audio track (null = none). */
+    public java.util.Map<String, String> headers;
+    public String audioUrl;
     /**
      * NEWTUBE(downloads): the download registry entry this card stands for (set only on the
      * Downloads section's items). Part of the identity so two downloads of one video - say the
@@ -215,6 +218,8 @@ public final class Video {
         video.mediaItem = item.mediaItem;
         video.group = item.group;
         video.localUri = item.localUri;
+        video.headers = item.headers; // JOYBOY(v934)
+        video.audioUrl = item.audioUrl;
         video.downloadId = item.downloadId;
 
         return video;

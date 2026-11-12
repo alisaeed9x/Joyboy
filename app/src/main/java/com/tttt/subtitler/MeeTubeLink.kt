@@ -26,13 +26,14 @@ object MeeTubeLink {
     }
 
     /** (v887) فيديو يوتيوب عادي (من غير ترجمة) على الموبايل/التابلت ← مشغّل MeeTube نفسه (أسرع، والتكبير من غير إعادة تحميل). false = كمّل بمشغّل Joyboy. */
-    fun playYt(act: Activity, id: String, startMs: Long, autoTranslate: Boolean = false): Boolean {
+    fun playYt(act: Activity, id: String, startMs: Long, autoTranslate: Boolean = false, incognito: Boolean = false): Boolean {   // (v936) incognito: بدون تاريخ MeeTube ولا ترجمة محفوظة
         if (DeviceUi.isTv(act) || id.length != 11) return false
         return try {
+            if (incognito) MtTranslate.privIds.add(id)   // (v936)
             if (autoTranslate) MtTranslate.autoFor = id   // (v890) الترجمة تبدأ لوحدها أول ما الفيديو يشتغل في مشغّل MeeTube
             bindBar()
             MobileMainApplication.boot(act.application)
-            MtTvRoute.bypassed { com.liskovsoft.smartyoutubetv2.common.app.presenters.PlaybackPresenter.instance(act.applicationContext).openVideo(id, false, if (startMs > 0L) startMs else -1L, false) }   // (v928) السؤال «تشغّله فين؟» اتسأل قبل كده في Main.playYt
+            MtTvRoute.bypassed { com.liskovsoft.smartyoutubetv2.common.app.presenters.PlaybackPresenter.instance(act.applicationContext).openVideo(id, false, if (startMs > 0L) startMs else -1L, incognito) }   // (v928) السؤال «تشغّله فين؟» اتسأل قبل كده في Main.playYt
             true
         } catch (e: Throwable) {
             LogStore.err("MeeTubeLink:playYt", e)

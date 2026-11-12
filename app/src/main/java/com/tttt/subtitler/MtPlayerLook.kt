@@ -159,5 +159,6 @@ object MtLook {
         ui.slider("مدة الضغطتين للتقديم/الترجيع", Cfg.int("gest_dbl_ms", 10).coerceIn(5, 60), 5, 60, " ث") { Cfg.put("gest_dbl_ms", it.toString()) },
         ui.text("🎞 الحركة والأزرار", 13f, th.text, true),
         ui.switchRow("حركة فتح/قفل المشغّل (من MeeTube: تكبير ناعم + تلاشي)", Cfg.bool("mt_player_anim", true)) { Cfg.put("mt_player_anim", if (it) "1" else "0") },
-        ui.switchRow("إخفاء زرار ⬇ تحميل من شريط المشغّل", hideDl()) { Cfg.put("hide_btn_dl", if (it) "1" else "0") })
+        ui.switchRow("إخفاء زرار ⬇ تحميل من شريط المشغّل", hideDl()) { Cfg.put("hide_btn_dl", if (it) "1" else "0") },
+        ui.switchRow("مشغّل MeeTube لكل الملفات واللينكات (قفله = مشغّل Joyboy القديم)", MtPlay.enabled()) { Cfg.put(MtPlay.KEY, if (it) "1" else "0") })
 }

@@ -1415,7 +1415,7 @@ public class MobilePlaybackActivity extends MobileActivity
         if (mPrevButton != null) {
             mPrevButton.setOnClickListener(v -> {
                 if (mPresenter != null) {
-                    mPresenter.onPreviousClicked();
+                    stepVideo(-1); // JOYBOY(v937)
                 }
                 armAutoHide();
             });
@@ -1423,7 +1423,7 @@ public class MobilePlaybackActivity extends MobileActivity
         if (mNextButton != null) {
             mNextButton.setOnClickListener(v -> {
                 if (mPresenter != null) {
-                    mPresenter.onNextClicked();
+                    stepVideo(1); // JOYBOY(v937)
                 }
                 armAutoHide();
             });
@@ -1984,6 +1984,9 @@ public class MobilePlaybackActivity extends MobileActivity
             @Override public String videoId() { Video v = getVideo(); return v != null ? v.videoId : null; }
             @Override public String title() { Video v = getVideo(); return v != null ? v.title : null; }
             @Override public String localUri() { Video v = getVideo(); return v != null ? v.localUri : null; }
+            @Override public java.util.Map<String, String> headers() { Video v = getVideo(); return v != null && v.headers != null ? v.headers : java.util.Collections.<String, String>emptyMap(); } // JOYBOY(v934)
+            @Override public String audioUrl() { Video v = getVideo(); return v != null ? v.audioUrl : null; } // JOYBOY(v935)
+            @Override public boolean endOfVideoSleep() { return SleepTimer.isEndOfVideo(); } // JOYBOY(v937)
         });
 
         // Persistent surface: PlayerView owns no surface (surface_type="none"); hand the
@@ -3853,10 +3856,10 @@ public class MobilePlaybackActivity extends MobileActivity
                     updatePipActions();
                 } else if (intent != null && ACTION_PIP_PREV.equals(intent.getAction()) && mPresenter != null) {
                     logPip("action prev");
-                    mPresenter.onPreviousClicked();
+                    stepVideo(-1); // JOYBOY(v937)
                 } else if (intent != null && ACTION_PIP_NEXT.equals(intent.getAction()) && mPresenter != null) {
                     logPip("action next");
-                    mPresenter.onNextClicked();
+                    stepVideo(1); // JOYBOY(v937)
                 } else if (intent != null && intent.getBooleanExtra(EXTRA_AUDIO_TOGGLE, false)) {
                     setAudioOnly(!mAudioOnly); // the mini card's headphones
                 } else if (intent != null && ACTION_PIP_AUDIO.equals(intent.getAction()) && mIsInPip) {
@@ -4198,9 +4201,9 @@ public class MobilePlaybackActivity extends MobileActivity
                 togglePlayPause();
             } else if (first && mPresenter != null) {
                 if (code == KeyEvent.KEYCODE_DPAD_DOWN) {
-                    mPresenter.onNextClicked();
+                    stepVideo(1); // JOYBOY(v937)
                 } else {
-                    mPresenter.onPreviousClicked();
+                    stepVideo(-1); // JOYBOY(v937)
                 }
             }
             return true;
@@ -4716,6 +4719,7 @@ public class MobilePlaybackActivity extends MobileActivity
             return;
         }
         mControlsVisible = true;
+        JoyboyPlayerHost.onControlsVisibility(this, true); // JOYBOY(v934)
         mControlsRoot.setVisibility(View.VISIBLE);
         mControlsRoot.animate().cancel();
         if (animate) {
@@ -4748,6 +4752,7 @@ public class MobilePlaybackActivity extends MobileActivity
         }
 
         mControlsVisible = false;
+        JoyboyPlayerHost.onControlsVisibility(this, false); // JOYBOY(v934): subtitle margin follows the controls
         cancelAutoHide();
         // NEWTUBE(perf): controls hidden -> the progress loop stops; in portrait the seek bar's line
         // keeps a slower one (startProgressUpdates picks).
@@ -4933,6 +4938,9 @@ public class MobilePlaybackActivity extends MobileActivity
             return;
         }
         mVideoShapePending = false;
+        if (autoLandscapeIfLocal()) { // JOYBOY(v933): local file / direct link -> landscape fullscreen on open
+            return;
+        }
         boolean upright = mLayoutOverride == Configuration.ORIENTATION_LANDSCAPE
                 && getResources().getConfiguration().orientation == Configuration.ORIENTATION_PORTRAIT;
         if (!upright || isVerticalVideo() || mIsInPip || mPipEnterPending || isFinishing()
@@ -4980,6 +4988,17 @@ public class MobilePlaybackActivity extends MobileActivity
             armAutoHide();
             return;
         }
+        requestOrientationFullscreen(toLandscape, target, windowOrientation);
+        armAutoHide();
+    }
+
+    /**
+     * JOYBOY(v933): the "ask for the orientation" half of {@link #toggleFullscreen()}, pulled out
+     * unchanged so the fullscreen button and the local-file auto-landscape
+     * ({@link #autoLandscapeIfLocal()}) take the very same path (tablet / multi-window / TV layout
+     * override, else a forced orientation + hand-back + rotation fallback).
+     */
+    private void requestOrientationFullscreen(boolean toLandscape, int target, int windowOrientation) {
         if (areOrientationRequestsIgnored()) {
             // NEWTUBE(tablet): Android 16 ignores orientation requests on large screens (sw >=
             // 600dp, targetSdk 36+), and every Android ignores them in multi-window. Asking for
@@ -4988,7 +5007,6 @@ public class MobilePlaybackActivity extends MobileActivity
             // of the current window instead.
             releaseFullscreenRequest();
             setLayoutOverride(target);
-            armAutoHide();
             return;
         }
         setRequestedOrientation(toLandscape
@@ -5002,7 +5020,42 @@ public class MobilePlaybackActivity extends MobileActivity
         if (mContainer != null) {
             mContainer.postDelayed(mRotationFallback, FULLSCREEN_ROTATION_WAIT_MS);
         }
-        armAutoHide();
+    }
+
+    /**
+     * JOYBOY(v933, merge plan phase 1): a local file / direct link (Video.localUri, or anything the
+     * Joyboy add-on asks for) opens landscape fullscreen by itself at its first frame, once the
+     * shape is known. YouTube keeps its portrait page + fullscreen button; a vertical video keeps
+     * MeeTube's upright fullscreen (issue #69), never landscape. Returns true if it asked for one.
+     */
+    private boolean autoLandscapeIfLocal() {
+        try {
+            Video v = getVideo();
+            boolean local = v != null && v.localUri != null && !v.localUri.isEmpty();
+            boolean tv = com.newtube.mobile.ui.common.FocusRing.isTv(this);
+            if (!(local || tv || JoyboyPlayerHost.wantsLandscape(this))) {
+                return false;
+            }
+            if (isFinishing() || mIsInPip || mPipEnterPending || isShortsMode() || mPortraitFull
+                    || isVerticalVideo() || layoutOrientation() == Configuration.ORIENTATION_LANDSCAPE) {
+                return false;
+            }
+            float aspect = mVideoAspect;
+            if (mPlayer != null && mPlayer.getVideoSize().width > 0 && mPlayer.getVideoSize().height > 0) {
+                aspect = (float) mPlayer.getVideoSize().width / mPlayer.getVideoSize().height;
+            }
+            if (!(aspect >= 1f) && !tv) {
+                return false; // shape still unknown: leave it as it is
+            }
+            if (BuildConfig.DEBUG) {
+                NetPath.log("fullscreen auto-landscape local=" + local + " tv=" + tv + " aspect=" + aspect);
+            }
+            requestOrientationFullscreen(true, Configuration.ORIENTATION_LANDSCAPE,
+                    getResources().getConfiguration().orientation);
+            return true;
+        } catch (RuntimeException e) {
+            return false; // never break the player over a convenience
+        }
     }
 
     /**
@@ -10008,6 +10061,24 @@ public class MobilePlaybackActivity extends MobileActivity
         }
     }
 
+    /**
+     * JOYBOY(v937, merge plan phase 3): previous/next first goes to the add-on (episodes of the local
+     * library folder); when it does not handle it, MeeTube's own previous/next runs as before.
+     */
+    private void stepVideo(int dir) {
+        if (JoyboyPlayerHost.onStep(this, dir)) {
+            return;
+        }
+        if (mPresenter == null) {
+            return;
+        }
+        if (dir > 0) {
+            mPresenter.onNextClicked();
+        } else {
+            mPresenter.onPreviousClicked();
+        }
+    }
+
     private String sleepTimerLabel() {
         int picked = SleepTimer.picked();
         return picked == SleepTimer.END_OF_VIDEO ? getString(R.string.mobile_sleep_end_of_video)
@@ -11954,6 +12025,12 @@ public class MobilePlaybackActivity extends MobileActivity
     @Override
     public void openUrlList(List<String> urlList) {
         mExoPlayerController.openUrlList(urlList);
+    }
+
+    // JOYBOY(v934): direct link with headers / separate audio
+    @Override
+    public void openUrlList(List<String> urlList, java.util.Map<String, String> headers, String audioUrl) {
+        mExoPlayerController.openUrlList(urlList, headers, audioUrl);
     }
 
     @Override

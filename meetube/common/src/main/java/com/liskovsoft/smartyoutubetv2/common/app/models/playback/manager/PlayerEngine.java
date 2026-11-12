@@ -35,6 +35,8 @@ public interface PlayerEngine extends PlayerConstants {
     void openDashUrl(String dashManifestUrl);
     void openHlsUrl(String hlsPlaylistUrl);
     void openUrlList(List<String> urlList);
+    /** JOYBOY(v934): a direct link with its own headers and/or a separate audio URL; engines that don't know it open the plain list. */
+    default void openUrlList(List<String> urlList, java.util.Map<String, String> headers, String audioUrl) { openUrlList(urlList); }
     /**
      * NEWTUBE(delivery): a VOD answer with no usable adaptive formats, over its HLS manifest
      * ({@link MediaItemFormatInfo#isHlsVodSelected()}). Engines that do not know it open the URL.

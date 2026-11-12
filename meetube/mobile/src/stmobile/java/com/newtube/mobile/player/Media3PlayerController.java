@@ -521,6 +521,18 @@ public class Media3PlayerController implements Player.Listener {
         openMediaSource(mMediaSourceFactory.fromUrlList(urlList), "progressive");
     }
 
+    /** JOYBOY(v934): direct link with its own headers (Referer/UA/Cookie) and/or a separate audio URL. */
+    public void openUrlList(List<String> urlList, java.util.Map<String, String> headers, String audioUrl) {
+        boolean noHeaders = headers == null || headers.isEmpty();
+        boolean noAudio = audioUrl == null || audioUrl.isEmpty();
+        if (noHeaders && noAudio) {
+            openUrlList(urlList);
+            return;
+        }
+        mReadinessAnswer = null;
+        openMediaSource(mMediaSourceFactory.fromUrlWithHeaders(urlList, headers, audioUrl), "progressive-hdr");
+    }
+
     /**
      * NEWTUBE(delivery): a VOD answer with no usable adaptive formats, over its HLS manifest
      * (VodDelivery), behind the answer's readiness gate like generated DASH.

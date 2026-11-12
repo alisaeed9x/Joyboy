@@ -1,0 +1,11 @@
+# v936 — تكملة المرحلة 2 (الاستثناءات): يوتيوب · المتخفي · الموقع المحجوب · forceid · لينك من غير امتداد جوه مشغّل MeeTube
+- **تصحيح فهم:** `incognito` و`hsite` معناهم «ما تسجّلش» (مش «محتاج استخراج» زي ما الخطة كانت كاتبة) — فاتفتحوا دلوقتي في MeeTube.
+- **يوتيوب (`ytid`/`ytpend`):** `MtPlay.decide` بترجّع `yt` و`reroute` بتفتح `MeeTubeLink.playYt` (MeeTube بيستخرج بنفسه؛ `url/qlist/aurl` بتاعة Joyboy بتتجاهل). الترجمة التلقائية من `autotr`/`nosub`، والاستكمال من `startms`. `handoff` (تسليم من مصغّر شغّال) لسه على Joyboy.
+- **المتخفي + الموقع المحجوب:** `Video.incognito=true` (تاريخ/استكمال MeeTube مقفولين) · `MtTranslate.privIds` ← الترجمة المحفوظة `progress/<key>.json` بتتمسح بعد الحفظ النهائي لما المحرك يقف (زي Player v124) · `PubHistory` بيتخطّى. الموقع المحجوب بيتعرف من extra `hsite` أو من `SiteBlock` على `url`/`ref` (نفس شرط `Player.hiddenSite`).
+- **`forceid`:** `MtTranslate.idOverride["L:<لينك>"]` ← الترجمة والتقدم على الهوية القديمة بدل `f:<لينك>`.
+- **لينك من غير امتداد ميديا:** فحص في خيط خلفي (`MtPlay.probeMedia`: `Range 0-15` بنفس الهيدرز + Content-Type + sniff لـ MP4/MKV/TS/HLS/AVI/FLV). ميديا ← MeeTube · غير كده ← نفس الـintent يرجع لمشغّل Joyboy بـextra `mt_probed`. فيه لحظة شاشة فاضية أثناء الفحص (لحد ~7ث لو السيرفر بطيء).
+- **إصلاح جانبي:** `PubHistory.addVideoFrom` كان بيتخطّى لأي فيديو اتوجّه لـMeeTube (لأنه بيتنده بعد `reroute` في `Player.onCreate`) ← بقى بيتنده من `MtPlay` لغير المتخفي. `startms` اتوصّل بـ`Video.pendingPosMs` للملفات/اللينكات.
+- **لسه على Joyboy عن قصد:** `mirror_uri` (م4 تلفزيون) · `.part` (ملف تحميل شغّال — MeeTube مش بيعرض الجزء المحمّل) · `handoff` · التلفزيون.
+- **فجوات معروفة (مش اتعملت):** (1) تسجيل الفيديوهات المصطادة في «فيديوهات الإنترنت المحفوظة» (`WebVideos.register`/`WebIdent`) + المصغّرة — Joyboy بيعملها في `webRegister` وده مش متنقل لمسار MeeTube (من v934)؛ (2) extra `ret` (الرجوع لصفحة المتصفح/يوتيوب) مش بيتحترم في MeeTube؛ (3) `lastpos`/`recent.json` («آخر المشغّلة») مش بيتكتبوا من مسار MeeTube — الاستكمال من تاريخ MeeTube بس.
+- معدّل: `MtPlay.kt` · `MtTranslate.kt` · `MeeTubeLink.kt` (باراميتر `incognito` في `playYt`). مفيش ملف `.kt` جديد (`kt_manifest.txt` زي ما هو).
+- لم يتم compile ولا اتجرّب. تحقق ثابت: توازن الأقواس في الملفات التلاتة، وأسماء الـAPIs (`SiteBlock.keyOf/has`، `PubHistory.addVideoFrom`، `Store.keyFor`، `Video.incognito/pendingPosMs`).

@@ -1220,6 +1220,52 @@ public class Media3SourceFactory {
                 .createMediaSource(MediaItem.fromUri(uri));
     }
 
+    /**
+     * JOYBOY(v934): a direct link that needs its own headers (Referer / User-Agent / Cookie) and/or a
+     * separate audio track. Uses a plain DefaultHttpDataSource with those headers (no shared cache tier,
+     * so a header-gated URL never poisons the cache); DefaultMediaSourceFactory picks mp4 / HLS / DASH
+     * by the URL. Local files fall back to {@link #fromUrlList(List)}.
+     */
+    @Nullable
+    MediaSource fromUrlWithHeaders(List<String> urlList, @Nullable java.util.Map<String, String> headers, @Nullable String audioUrl) {
+        if (urlList == null || urlList.isEmpty()) {
+            return null;
+        }
+        Uri uri = Uri.parse(urlList.get(0));
+        if (isLocalUri(uri)) {
+            return fromUrlList(urlList);
+        }
+        java.util.HashMap<String, String> props = new java.util.HashMap<>();
+        String ua = USER_AGENT;
+        if (headers != null) {
+            for (java.util.Map.Entry<String, String> e : headers.entrySet()) {
+                if (e.getKey() == null || e.getValue() == null || e.getValue().isEmpty()) {
+                    continue;
+                }
+                if ("User-Agent".equalsIgnoreCase(e.getKey())) {
+                    ua = e.getValue();
+                } else {
+                    props.put(e.getKey(), e.getValue());
+                }
+            }
+        }
+        DefaultHttpDataSource.Factory http = new DefaultHttpDataSource.Factory()
+                .setUserAgent(ua)
+                .setAllowCrossProtocolRedirects(true)
+                .setConnectTimeoutMs(DefaultHttpDataSource.DEFAULT_CONNECT_TIMEOUT_MILLIS)
+                .setReadTimeoutMs(READ_TIMEOUT_MS)
+                .setDefaultRequestProperties(props)
+                .setTransferListener(mBandwidthMeter);
+        androidx.media3.exoplayer.source.DefaultMediaSourceFactory f =
+                new androidx.media3.exoplayer.source.DefaultMediaSourceFactory(new DefaultDataSource.Factory(mContext, http));
+        MediaSource video = f.createMediaSource(MediaItem.fromUri(uri));
+        if (audioUrl == null || audioUrl.isEmpty()) {
+            return video;
+        }
+        MediaSource audio = f.createMediaSource(MediaItem.fromUri(Uri.parse(audioUrl)));
+        return new MergingMediaSource(video, audio);
+    }
+
     private static boolean isLocalUri(Uri uri) {
         String scheme = uri.getScheme();
         return "content".equals(scheme) || "file".equals(scheme);

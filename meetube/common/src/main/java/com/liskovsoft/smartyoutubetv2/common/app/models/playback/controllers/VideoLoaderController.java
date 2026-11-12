@@ -509,7 +509,7 @@ public class VideoLoaderController extends BasePlayerController {
         if (video.isLocal()) {
             mPreMediaRetry.clear();
             getPlayer().showProgressBar(false);
-            getPlayer().openUrlList(java.util.Collections.singletonList(video.localUri));
+            getPlayer().openUrlList(java.util.Collections.singletonList(video.localUri), video.headers, video.audioUrl); // JOYBOY(v934)
             return;
         }
 
