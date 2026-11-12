@@ -69,6 +69,9 @@ public final class JoyboyPlayerHost {
 
         /** JOYBOY(v939): the player is being minimized (drag-down / pinch / minimize button). The add-on records the source-aware restore target (MtOrigin) and returns false so MeeTube minimizes as before; return true only if the add-on consumed the gesture itself. */
         default boolean onMinimize(Activity activity) { return false; }
+
+        // JOYBOY(v942): a named Joyboy action for MeeTube's own internals (fit, pip, lock, rotate, prev/next, speed, cc, quality, audio, sleep, chapters, download, audio_only, playpause). true = handled.
+        default boolean onJoyboyAction(Activity activity, String action) { return false; }
     }
 
     private static volatile Provider sProvider;
@@ -138,6 +141,22 @@ public final class JoyboyPlayerHost {
         try {
             Provider p = sProvider;
             return p != null && activity != null && p.onMinimize(activity);
+        } catch (RuntimeException e) {
+            return false;
+        }
+    }
+
+    // JOYBOY(v942): a named Joyboy action goes to the add-on first, then to the Activity's own handler. true = handled. Never throws.
+    public static boolean onJoyboyAction(Activity activity, String action) {
+        try {
+            Provider p = sProvider;
+            if (p != null && activity != null && action != null && p.onJoyboyAction(activity, action)) {
+                return true;
+            }
+            if (activity instanceof MobilePlaybackActivity) {
+                return ((MobilePlaybackActivity) activity).handleJoyboyAction(action);
+            }
+            return false;
         } catch (RuntimeException e) {
             return false;
         }

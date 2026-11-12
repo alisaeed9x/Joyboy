@@ -138,6 +138,7 @@ com/tttt/subtitler/MtPlayerLook.kt
 com/tttt/subtitler/MtSkin.kt
 com/tttt/subtitler/MtFeed.kt
 com/tttt/subtitler/MtTranslate.kt
+com/tttt/subtitler/MtBar.kt
 com/tttt/subtitler/MtTvPlayer.kt
 com/tttt/subtitler/MtTvRoute.kt
 com/tttt/subtitler/MtYt.kt

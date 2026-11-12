@@ -10,8 +10,16 @@
 | 2 | محرك الترجمة الكامل + قلب `mt_main_player` + معالجة الاستثناءات | v934+v935+v936 | ✓ اتكتبت (لم تُكومبايل) — باقي بس: `mirror_uri` · `.part` · `handoff` · التلفزيون |
 | 3 | أدوات الميديا (A-B · تكرار · boost · نوم · حلقات · استكمال) | v937 | ✓ اتكتبت (لم تُكومبايل) — النوم والتضخيم من MeeTube نفسه |
 | 2/3+ | قفل فجوات: هوية النت · المصطادة · لقطة · `ret` | v938 | ✓ اتكتبت (لم تُكومبايل) |
-| 4 | التلفزيون والريموت (D-pad + `MtTvPlayer` كامل + flag `mt_tv_player`) | v939 (جزء 1) | ◐ جزء 1 اتكتب (لم يُكومبايل) — ربط TvPlayerBar الكامل + جسر engine.* + SfJob لسه |
-| 5 | تنظيف: شيل مشغّل Joyboy القديم | — | ✗ |
+| 4 | التلفزيون والريموت (D-pad + `MtTvPlayer` كامل + flag `mt_tv_player`) | v939 (جزء 1) + v942 (جزء 2) | ✓ جزء 1 + جزء 2 اتكتبوا (لم يُكومبايلوا) — `act()` 36/78 + `state()` كل الـ72 + جسر `engine.*` + SfJob + D-pad كامل؛ لسه صادق كاذب: `qset`/`aset`/`visdlg`/`netdlg`/`subalign`/`subfile:`/`sfgo:`/`tr_free`/`tr_bg` |
+| 5 | تنظيف: شيل مشغّل Joyboy القديم | — | ✗ محظورة لحد ما م4 تتجرّب على TCL + موافقة علي |
+
+## v942 — شريط Joyboy الكامل + إكمال المحرك + م4 جزء 2 + بواقي م3
+- `MtBar.kt` (جديد، 1371 سطر): شريط Joyboy الكامل جوه مشغّل MeeTube عبر `Provider.extraControls` — صف ترجمة (▶ ترجم ▾ + ▮▮ + ✕ + 🌐 + جودة + 🔊 + ⬇) · صف أدوات (لهجة/مزامنة/لوج/جمل/CC/تكرار/مزدوج/شخصيات/فصل صوت/HD/التالية/صوت/لغة) · صف رئيسي (قفل/قفز جمل/تشغيل/PiP/ملاءمة 4 أوضاع/تدوير) · صف علوي (☰/🧰/🔤/⏩) · دواير عايمة بخفوت 25% (👁 لقطة بصرية/🎧 صوت/📺 تلفزيون/⚠ دفعات فاشلة/🔒 قفل) · كبسولة عمودية (تصدير + سلايدر صوت 0–200 + تضخيم). الشريط في `mControlsRoot` فبيختفي ويظهر مع أزرار MeeTube. الحبوب 🌐/⚙ اللي فوق زي ما هي.
+- الجسر: `JoyboyPlayerHost.onJoyboyAction` (default + static dispatcher) + `MobilePlaybackActivity.handleJoyboyAction` (fit→`setResizeMode` · pip→`enterPipMode` · lock→`setPlayerLocked` · rotate→`toggleFullscreen` · prev/next→`stepVideo` · speed→دورة `SPEED_PRESETS` · cc→`toggleCaptions` · quality/audio/sleep/chapters/download→الشيتات الأصلية · audio_only→`setAudioOnly` · playpause→`togglePlayPause`)؛ استدعاء `extraControls` بعد `attach` (~1995). من غير الجسر ده البناء يفشل — `MtTvPlayer` بينده `onJoyboyAction` من v942.
+- `MtTranslate.kt` (612 ← 1345): قايمة اختيار المحرك bottom-sheet (`mt_tr_mode` جديد) · بحث سبتايتل أونلاين · بحث جمل · مسارات صوت وسبتايتل ناعمة أصلية · تصدير `.srt` · استيراد سبتايتل · SfJob · جسر `rpc` لـ`engine.*` · `showMenu` بقت bottom-sheet.
+- م4 جزء 2: `MtTvPlayer.act()` 36/78 + `state()` كل الـ72 + `rpc()`/`brain()` · `BrainRpc.exec` fallback · `BrainBus.engineJson` من `MtTranslate` · `TvLink.subUp`/`subTr` ← `MtTranslate` · `onKey` موسّع (ميديا/أرقام/MENU/Back) · تضخيم ريموت 0–200 · أمر نوم ريموت جديد. علم `mt_tv_player` لسه `false`.
+- بواقي م3: `MtMedia` تضخيم (`LoudnessEnhancer`) + نوم بخفوت 10ث + استكمال write-through (و`lastpos` لسه احتياطي).
+- **لسه:** م5 (محظورة لحد ما م4 تتجرّب على TCL + موافقة علي) · «استمرار في الخلفية» مش قابل للنقل · `qset`/`aset`/`visdlg`/`netdlg`/`subalign`/`subfile:`/`sfgo:`/`tr_free`/`tr_bg` (مفيش مقابل في MeeTube).
 
 ## v939 — دمج المشغّل: أصل مصدر-واعي + تصغير PiP + كبسولة + لانشر + م4 جزء 1
 - `MtOrigin.kt` (جديد): جلسة تشغيل مصدر-واعية (نوع/رابط/`ret`/صفحة/جلسة/هيدرز) — `MtPlay.openMt`

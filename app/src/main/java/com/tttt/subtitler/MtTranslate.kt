@@ -1,10 +1,13 @@
 package com.tttt.subtitler
 
 import android.app.Activity
+import android.content.ContentValues
 import android.graphics.Color
 import android.graphics.drawable.GradientDrawable
+import android.os.Build
 import android.os.Handler
 import android.os.Looper
+import android.provider.MediaStore
 import android.view.Gravity
 import android.view.KeyEvent
 import android.view.View
@@ -12,9 +15,14 @@ import android.view.ViewGroup
 import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.TextView
+import androidx.media3.common.C
+import androidx.media3.common.TrackSelectionOverride
 import androidx.media3.exoplayer.ExoPlayer
 import com.newtube.mobile.ui.playback.JoyboyPlayerHost
 import java.io.File
+import java.util.UUID
+import org.json.JSONArray
+import org.json.JSONObject
 
 /**
  * (v890) محرك الترجمة بتاع Joyboy فوق مشغّل MeeTube — المشغّل نفسه (media3 + SABR) بتاع MeeTube من غير أي تعديل في التشغيل.
@@ -24,6 +32,8 @@ import java.io.File
  *  • مصدر الصوت للمحرك: روابط MtYt (MeeTube MediaItemService) — مش من مشغّل MeeTube نفسه (SABR مالوش رابط مباشر).
  *  • (v923) الملفات المحلية واللينكات المباشرة بتتفتح في مشغّل MeeTube (MtPlay) وبتتترجم برضه: مصدر الصوت = الملف/اللينك نفسه، ومفتاح الترجمة المحفوظة = نفس هوية مشغّل Joyboy (f:الاسم:الحجم).
  *  • (v923) زرار ⚙ جنب 🌐: إزاحة توقيت الترجمة · إبعت للتلفزيون · إعدادات محرك الترجمة.
+ *  • (v942) قوايم bottom-sheet بـ Ui.sheet (HtmlUi.kt:313) بدل GAlert لقايمة الأدوات وقايمة النظام؛ GAlert لسه مستخدمة لقوايم الجمل/النسخ/الستايل.
+ *  • (v942) شريط أزرار Joyboy الكامل (MtBar.kt) — بيتوصل عبر Provider.extraControls؛ دوال مساعدة للريموت: jumpSentence/shiftOffset/restyle/stopTranslate/exportSrt/applyPhoneSubs.
  */
 object MtTranslate : JoyboyPlayerHost.Provider {
     private const val TAG_BTN = "joy_tr_btn"
@@ -37,14 +47,18 @@ object MtTranslate : JoyboyPlayerHost.Provider {
     private var overlay: ViewGroup? = null
     private var btn: TextView? = null
     private var btn2: TextView? = null
-    @Volatile private var offsetMs = 0L   // (v923) إزاحة توقيت الترجمة (+ = تظهر بدري)
+    @Volatile private var offsetMs = 0L
     private var sv: SubtitleView? = null
-    @Volatile private var sideSubs: List<Sub>? = null   // (v935) سبتايتل جانبي (ملف .srt/.vtt) معروض من غير محرك
+    @Volatile private var sideSubs: List<Sub>? = null
     private var engKey = ""
     private var dubPlay: DubPlay? = null
     @Volatile private var dubBusy = false
     @Volatile private var dubCancel = false
-    private var ctlVisible = true   // (v934) أزرار المشغّل ظاهرة؟ — السبتايتل بيطلع فوقها
+    private var ctlVisible = true
+    @Volatile private var nativeCcOn = false
+    private var lastEngFeed = 0L
+    @Volatile private var netBusy = ""
+    private var netSess: SubOnline.Session? = null
 
     private var eng: Engine? = null
     private var engVid = ""
@@ -71,11 +85,10 @@ object MtTranslate : JoyboyPlayerHost.Provider {
 
     override fun attach(activity: Activity, player: ExoPlayer, overlay: ViewGroup, options: ViewGroup?, info: JoyboyPlayerHost.VideoInfo) {
         try {
-            if (act !== activity) { stopEngine(); offsetMs = 0L }   // أكتفيتي جديدة = جلسة جديدة
+            if (act !== activity) { stopEngine(); offsetMs = 0L; nativeCcOn = false }
             this.act = activity; this.player = player; this.info = info; this.overlay = overlay
-            try { MtTvPlayer.set(activity, player, try { info.title() ?: "" } catch (_: Throwable) { "" }) } catch (_: Throwable) {}   // (v928) ريموت الموبايل يتحكم في مشغّل MeeTube على التلفزيون
+            try { MtTvPlayer.set(activity, player, try { info.title() ?: "" } catch (_: Throwable) { "" }) } catch (_: Throwable) {}
             Cfg.ensure(activity.applicationContext)
-            // شيل أي نسخة قديمة من الزرار/السبتايتل (المشغّل بيتبني تاني مع كل فيديو/تغيير سطح)
             for (t in listOf(TAG_SUB)) overlay.findViewWithTag<View>(t)?.let { overlay.removeView(it) }
             options?.findViewWithTag<View>(TAG_BTN)?.let { options.removeView(it) }
             options?.findViewWithTag<View>(TAG_BTN2)?.let { options.removeView(it) }
@@ -83,18 +96,19 @@ object MtTranslate : JoyboyPlayerHost.Provider {
             overlay.addView(s, FrameLayout.LayoutParams(-1, -2, Gravity.BOTTOM).apply { bottomMargin = subMargin(activity) })
             sv = s; cached = null
             btn = null; btn2 = null
-            // (v934 م2) زرار 🌐 (ترجم / نسبة %) + ⚙ (قايمة الترجمة) في صف أزرار الأعلى، بنفس شكل زجاج MeeTube
             if (options != null) {
                 val b1 = pill(activity, TAG_BTN, "🌐 ترجم") { toggle() }
                 val b2 = pill(activity, TAG_BTN2, "⚙") { showMenu() }
                 options.addView(b2, 0); options.addView(b1, 0)
                 btn = b1; btn2 = b2
             }
-            // فيديو تاني (التالي/قايمة): المحرك القديم يتقفل، والترجمة تفضل شغّالة لو كانت شغّالة
             try { listenedOn?.removeListener(trans) } catch (_: Throwable) {}
             player.addListener(trans); listenedOn = player
             refreshBtn(); maybeAuto()
-            MtMedia.attach(activity, player, options, info)   // (v937 م3) A-B · تكرار · حلقات · استكمال
+            MtMedia.attach(activity, player, options, info)
+            try {
+                MtBar.attachCircles(activity, player, overlay, info)
+            } catch (_: Throwable) {}
             if (!tickOn) { tickOn = true; ui.post(tick) }
         } catch (e: Throwable) { LogStore.err("MtTranslate:attach", e) }
     }
@@ -102,7 +116,10 @@ object MtTranslate : JoyboyPlayerHost.Provider {
     override fun detach(activity: Activity) {
         try {
             try { MtTvPlayer.clear(activity) } catch (_: Throwable) {}
-            try { MtMedia.detach(activity) } catch (_: Throwable) {}   // (v937 م3)
+            try { MtMedia.detach(activity) } catch (_: Throwable) {}
+            try {
+                MtBar.detach(activity)
+            } catch (_: Throwable) {}
             if (act !== activity) return
             ui.removeCallbacks(tick); tickOn = false
             overlay?.let { o -> sv?.let { v -> o.removeView(v) } }
@@ -110,6 +127,7 @@ object MtTranslate : JoyboyPlayerHost.Provider {
             (btn2?.parent as? ViewGroup)?.removeView(btn2)
             try { listenedOn?.removeListener(trans) } catch (_: Throwable) {}; listenedOn = null
             sv = null; btn = null; btn2 = null; overlay = null; player = null
+            nativeCcOn = false; netSess = null; netBusy = ""
             dubCancel = true; try { dubPlay?.stop() } catch (_: Throwable) {}; dubPlay = null; sideSubs = null
             stopEngine()
             act = null
@@ -126,10 +144,70 @@ object MtTranslate : JoyboyPlayerHost.Provider {
     private var tvDigits = ""
     private var tvDigitRun: Runnable? = null
 
+    /** (v942) مفاتيح ميديا على التلفزيون بس: تشغيل/إيقاف · تقديم/ترجيع 10ث · التالي/السابق · MENU يفتح قايمة التلفزيون · BACK يقفل أعلى طبقة */
     override fun onKey(activity: Activity, event: KeyEvent): Boolean {
         return try {
             if (!DeviceUi.isTv(activity)) return false
             if (event.action != KeyEvent.ACTION_DOWN) return false
+            when (event.keyCode) {
+                KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE -> {
+                    val p = player ?: return false
+                    if (act !== activity) return false
+                    try {
+                        if (p.isPlaying) p.pause() else p.play()
+                    } catch (_: Throwable) {}
+                    return true
+                }
+                KeyEvent.KEYCODE_MEDIA_PLAY -> {
+                    val p = player ?: return false
+                    if (act !== activity) return false
+                    try { p.play() } catch (_: Throwable) {}
+                    return true
+                }
+                KeyEvent.KEYCODE_MEDIA_PAUSE -> {
+                    val p = player ?: return false
+                    if (act !== activity) return false
+                    try { p.pause() } catch (_: Throwable) {}
+                    return true
+                }
+                KeyEvent.KEYCODE_MEDIA_FAST_FORWARD -> {
+                    val p = player ?: return false
+                    if (act !== activity) return false
+                    try {
+                        val dur = try { p.duration } catch (_: Throwable) { 0L }
+                        val pos = try { p.currentPosition } catch (_: Throwable) { 0L }
+                        p.seekTo((pos + 10000L).coerceIn(0L, if (dur > 0L) dur else Long.MAX_VALUE))
+                    } catch (_: Throwable) {}
+                    return true
+                }
+                KeyEvent.KEYCODE_MEDIA_REWIND -> {
+                    val p = player ?: return false
+                    if (act !== activity) return false
+                    try {
+                        val dur = try { p.duration } catch (_: Throwable) { 0L }
+                        val pos = try { p.currentPosition } catch (_: Throwable) { 0L }
+                        p.seekTo((pos - 10000L).coerceIn(0L, if (dur > 0L) dur else Long.MAX_VALUE))
+                    } catch (_: Throwable) {}
+                    return true
+                }
+                KeyEvent.KEYCODE_MEDIA_NEXT -> {
+                    if (act !== activity) return false
+                    return MtMedia.onStep(activity, 1)
+                }
+                KeyEvent.KEYCODE_MEDIA_PREVIOUS -> {
+                    if (act !== activity) return false
+                    return MtMedia.onStep(activity, -1)
+                }
+                KeyEvent.KEYCODE_MENU -> {
+                    if (act !== activity) return false
+                    MtBar.showTvMenu(activity)
+                    return true
+                }
+                KeyEvent.KEYCODE_BACK -> {
+                    if (act !== activity) return false
+                    MtBar.closeTopLayer(activity)
+                }
+            }
             val d = when (event.keyCode) {
                 KeyEvent.KEYCODE_0 -> 0
                 KeyEvent.KEYCODE_1 -> 1
@@ -209,6 +287,18 @@ object MtTranslate : JoyboyPlayerHost.Provider {
         } catch (_: Throwable) {}
     }
 
+    /** (v942) شريط أزرار Joyboy الكامل (MtBar) — بيتحط في شريط تحكم MeeTube */
+    override fun extraControls(activity: Activity, bar: ViewGroup) {
+        try {
+            val p = player ?: return
+            val i = info ?: return
+            if (act !== activity) return
+            MtBar.attachBar(activity, p, bar, i)
+        } catch (e: Throwable) {
+            LogStore.err("MtTranslate:extraControls", e)
+        }
+    }
+
     private fun pill(a: Activity, t: String, label: String, click: () -> Unit): TextView = TextView(a).apply {
         tag = t; text = label; setTextColor(Color.WHITE); textSize = 13f; gravity = Gravity.CENTER
         setPadding(dp(a, 12), 0, dp(a, 12), 0)
@@ -237,15 +327,164 @@ object MtTranslate : JoyboyPlayerHost.Provider {
 
     private fun onVideoChanged() {
         val id = curId()
-        sideSubs = null; try { dubPlay?.stop() } catch (_: Throwable) {}   // (v935) السبتايتل الجانبي والدبلجة مخصوصين للفيديو اللي كان شغّال
+        sideSubs = null; nativeCcOn = false
+        try { dubPlay?.stop() } catch (_: Throwable) {}
         if (autoFor != null && id == autoFor) { stopEngine(); sv?.show(null); maybeAuto(); return }
         if (id != engVid) { val was = on; stopEngine(); sv?.show(null); if (was && id != null) start() else refreshBtn() }
     }
 
-    private fun toggle() {
+    fun toggle() {
         val a = act ?: return
         if (on) { stopEngine(); sv?.show(null); refreshBtn(); Notice.show(a, "الترجمة اتقفلت", 1600L); return }
         start()
+    }
+
+    /** (v942) نفس اسم toggle بوضوح — MtBar بيناديها */
+    fun toggleTranslate() { toggle() }
+
+    /** (v942) إيقاف مؤقت للترجمة (زي Player.pauseTranslate): المحرك مايبعتش مقاطع جديدة لحد ما يتكمّل */
+    fun pauseTranslate(): Boolean {
+        val e = eng
+        if (!on || e == null) return false
+        e.userPaused = true
+        ui.post { refreshBtn() }
+        return true
+    }
+
+    /** (v942) كمّل الترجمة بعد إيقاف مؤقت */
+    fun resumeTranslate(): Boolean {
+        val e = eng
+        if (!on || e == null) return false
+        if (!e.userPaused) return false
+        e.userPaused = false
+        ui.post { refreshBtn() }
+        return true
+    }
+
+    /** (v942) الترجمة شغّالة دلوقتي؟ */
+    fun isTranslating(): Boolean = on
+
+    /** (v942) الترجمة واقفة مؤقتًا؟ — لزرار ▮▮/▶ في MtBar */
+    fun isPaused(): Boolean = on && eng?.userPaused == true
+
+    /** (v942) إيقاف الترجمة نهائي (زرار ✕ في شريط MtBar) — غير toggle اللي بيبدأ لو كانت واقفة */
+    fun stopTranslate() {
+        val a = act
+        stopEngine()
+        try {
+            sv?.show(null)
+        } catch (_: Throwable) {}
+        ui.post { refreshBtn() }
+        if (a != null) Notice.show(a, "الترجمة اتوقفت", 1600L)
+    }
+
+    /** (v942) قفز لجملة الترجمة اللي قبلها/اللي بعدها — زي ⏮ ⏭ في مشغّل Joyboy */
+    fun jumpSentence(dir: Int): Boolean {
+        val p = player ?: return false
+        val list = eng?.subs ?: sideSubs ?: return false
+        if (list.isEmpty()) return false
+        val pos = try {
+            p.currentPosition
+        } catch (_: Throwable) {
+            return false
+        }
+        val cur = list.indexOfFirst { it.end * 1000 > pos }.coerceAtLeast(0)
+        val target = if (dir > 0) (cur + 1).coerceAtMost(list.size - 1) else (cur - 1).coerceAtLeast(0)
+        if (target == cur) return false
+        return try {
+            p.seekTo((list[target].start * 1000).toLong())
+            true
+        } catch (_: Throwable) {
+            false
+        }
+    }
+
+    /** (v942) إزاحة الترجمة بمقدار — للريموت (shift) وشريط التزامن */
+    fun shiftOffset(d: Long) {
+        val a = act ?: return
+        setOffset(a, offsetMs + d)
+    }
+
+    /** (v942) صفّر إزاحة الترجمة */
+    fun resetOffset() {
+        val a = act ?: return
+        setOffset(a, 0L)
+    }
+
+    /** (v942) إزاحة الترجمة الحالية (مللي ثانية) — لشريط التزامن في MtBar */
+    fun offsetMs(): Long = offsetMs
+
+    /** (v942) أعد تحميل ستايل السبتايتل فورًا (بعد أوامر ريموت بتغيّر Cfg) */
+    fun restyle() {
+        try {
+            sv?.style = SubStyle.load { k, d -> Cfg.str(k, d) }
+        } catch (_: Throwable) {}
+    }
+
+    /** (v942) تصدير الترجمة الحالية .srt في «تنزيلات/Subtitler» */
+    fun exportSrt(): Boolean {
+        val a = act ?: return false
+        val list = eng?.subs ?: sideSubs ?: return false
+        if (list.isEmpty()) return false
+        val sb = StringBuilder()
+        fun fmtSrt(sec: Double): String {
+            val ms = (sec * 1000).toLong().coerceAtLeast(0L)
+            val h = ms / 3600000L
+            val m = (ms % 3600000L) / 60000L
+            val s = (ms % 60000L) / 1000L
+            val r = ms % 1000L
+            return String.format("%02d:%02d:%02d,%03d", h, m, s, r)
+        }
+        for ((i, q) in list.withIndex()) {
+            sb.append(i + 1).append('\n')
+            sb.append(fmtSrt(q.start)).append(" --> ").append(fmtSrt(q.end)).append('\n')
+            sb.append(q.translated.ifBlank { q.original }).append("\n\n")
+        }
+        val name = "joyboy_" + System.currentTimeMillis() + ".srt"
+        return try {
+            val uriOut = if (Build.VERSION.SDK_INT >= 29) {
+                val cv = ContentValues().apply {
+                    put(MediaStore.MediaColumns.DISPLAY_NAME, name)
+                    put(MediaStore.MediaColumns.MIME_TYPE, "application/x-subrip")
+                    put(MediaStore.MediaColumns.RELATIVE_PATH, "Download/Subtitler")
+                }
+                a.contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, cv)
+            } else {
+                null
+            }
+            if (uriOut != null) {
+                a.contentResolver.openOutputStream(uriOut)?.use { it.write(sb.toString().toByteArray(Charsets.UTF_8)) }
+                Notice.show(a, "📄 اتصدّرت الترجمة: تنزيلات/Subtitler/" + name, 3000L)
+                true
+            } else {
+                val dir = java.io.File(android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOWNLOADS), "Subtitler")
+                dir.mkdirs()
+                val f = java.io.File(dir, name)
+                f.writeText(sb.toString(), Charsets.UTF_8)
+                Notice.show(a, "📄 اتصدّرت الترجمة: تنزيلات/Subtitler/" + name, 3000L)
+                true
+            }
+        } catch (t: Throwable) {
+            LogStore.err("MtTranslate:exportSrt", t)
+            Notice.show(a, "❌ التصدير فشل", 2400L)
+            false
+        }
+    }
+
+    /** (v942) نتيجة ترجمة جايّة من الموبايل (SfJob) — زي Player.subFromPhone: 0 اتطبّقت · 1 مفيش مشغّل · 2 مرفوضة · 3 خسر السباق */
+    fun applyPhoneSubs(jid: String, texts: List<String>, failed: Int, eng: String): Int {
+        val a = act ?: return 1
+        val cs = SfJob.cues
+        if (SfJob.id != jid || cs == null || texts.size != cs.size) return 2
+        if (failed * 2 > cs.size) {
+            LogStore.add("💬 سوفت صب: رفضت نتيجة الموبايل — فشل " + failed + "/" + cs.size)
+            return 2
+        }
+        if (!SfJob.claim(jid, "phone")) return 3
+        val name = "الموبايل (" + (if (eng == "gemini") "جيميناي" else "جوجل") + ")"
+        val subs = subsFromCues(cs, texts)
+        ui.post { applySide(a, subs, name) }
+        return 0
     }
 
     private fun stopEngine() {
@@ -253,10 +492,26 @@ object MtTranslate : JoyboyPlayerHost.Provider {
         val e = eng; val wasId: String? = engVid.ifEmpty { null }; val wasKey = engKey; val ctx0 = act?.applicationContext; eng = null; engVid = ""
         if (e != null) Thread {
             try { e.saveNow() } catch (_: Throwable) {}; try { e.stop() } catch (_: Throwable) {}
-            // (v936) متخفي: امسح الترجمة المحفوظة بعد الحفظ النهائي
             if (wasId != null && privIds.contains(wasId) && wasKey.isNotEmpty()) try { ctx0?.let { c -> File(File(c.filesDir, "progress"), Store.keyFor(wasKey) + ".json").delete() } } catch (_: Throwable) {}
         }.apply { isDaemon = true }.start()
         cached = null
+    }
+
+    /** (v942) وضع محرك الترجمة المحفوظ: gemini | google | whisper | transcribe — مفتاح Cfg جديد mt_tr_mode (مفيش مفتاح موجود بيخزّن القيم دي؛ tr_mode_id بتاع Player بيخزّن معرّفات بريست) */
+    fun curEngineMode(): String {
+        val m = try { Cfg.str("mt_tr_mode", "gemini") } catch (_: Throwable) { "gemini" }
+        return if (m == "google" || m == "whisper" || m == "transcribe") m else "gemini"
+    }
+
+    /** (v942) غيّر وضع محرك الترجمة — بيتطبّق على الترجمة الجاية (أو بعد إيقاف/تشغيل) */
+    fun setEngineMode(mode: String) {
+        val m = mode.trim().lowercase()
+        if (m != "gemini" && m != "google" && m != "whisper" && m != "transcribe") {
+            act?.let { Notice.show(it, "وضع ترجمة مش معروف: $mode", 2000L) }
+            return
+        }
+        try { Cfg.put("mt_tr_mode", m) } catch (t: Throwable) { LogStore.err("MtTranslate:engMode", t) }
+        if (m == "google") act?.let { Notice.show(it, "جوجل للملفات بس — الترجمة الحية هنا بجيميناي", 2600L) }
     }
 
     private fun start() {
@@ -265,6 +520,17 @@ object MtTranslate : JoyboyPlayerHost.Provider {
         if (id == null) { Notice.show(a, "مش قادر أعرف الفيديو ده للترجمة", 2600L); return }
         val conf0 = try { Cfg.snapshot() } catch (e: Throwable) { LogStore.err("MtTranslate:conf", e); return }
         if (conf0.keys.isEmpty()) { Notice.show(a, "ضيف مفتاح جيميناي من إعدادات Joyboy الأول", 3000L); return }
+        val mode = curEngineMode()
+        if (mode == "google") {
+            Notice.show(a, "جوجل للملفات بس — الترجمة الحية هنا بجيميناي", 3000L)
+        }
+        if (mode == "whisper") {
+            if (Offline.configured()) {
+                try { Cfg.put("stt_offline", "1") } catch (_: Throwable) {}
+            } else {
+                Notice.show(a, "وشبر مش متظبط على الجهاز — الترجمة الحية بجيميناي", 3000L)
+            }
+        }
         stopEngine()
         on = true; engVid = id
         val my = ++token
@@ -276,9 +542,9 @@ object MtTranslate : JoyboyPlayerHost.Provider {
             val hdr: HashMap<String, String> = HashMap()
             var src: String? = null
             val vid: String
-            if (lu != null) {   // (v923) ملف محلي أو لينك مباشر: الصوت من نفس المصدر اللي المشغّل بيشغّله
-                try { info?.headers()?.let { hdr.putAll(it) } } catch (_: Throwable) {}   // (v934 م2) Referer/UA/Cookie بتاع اللينك
-                vid = idOverride[id] ?: localId ?: "f:$lu"   // (v936) forceid
+            if (lu != null) {
+                try { info?.headers()?.let { hdr.putAll(it) } } catch (_: Throwable) {}
+                vid = idOverride[id] ?: localId ?: "f:$lu"
             } else {
                 val got = try { MtYt.video(id, 0, false) } catch (_: Throwable) { null }
                 src = got?.audio?.takeIf { it.isNotEmpty() } ?: got?.url
@@ -318,6 +584,7 @@ object MtTranslate : JoyboyPlayerHost.Provider {
                     it.convDialect = Cfg.str("conv_dialect", "")
                     it.toneStyle = Cfg.str("tone_style", ""); it.toneStrength = Cfg.str("tone_strength", "متوسطة")
                     it.titleHint = (try { info?.title() } catch (_: Throwable) { null } ?: "")
+                    if (mode == "transcribe") it.transOnly = true
                 }
             } catch (t: Throwable) {
                 LogStore.err("MtTranslate:engine", t)
@@ -331,7 +598,6 @@ object MtTranslate : JoyboyPlayerHost.Provider {
             ui.post {
                 if (my != token) return@post
                 refreshBtn()
-                // الترجمة من مكان التشغيل الحالي (مش من الأول) — زي «ترجم» في مشغّل Joyboy
                 try { e.translateFrom(posSec) } catch (t: Throwable) { LogStore.err("MtTranslate:from", t) }
             }
             try { e.run() } catch (t: Throwable) { LogStore.err("MtTranslate:run", t) }
@@ -339,7 +605,7 @@ object MtTranslate : JoyboyPlayerHost.Provider {
     }
 
     /** (v924) يبعت الفيديو الشغّال للتلفزيون (من نفس المكان) */
-    private fun sendToTv() {
+    fun sendToTv() {
         val a = act ?: return
         val lu = localUri()
         val pos = try { player?.currentPosition ?: 0L } catch (_: Throwable) { 0L }
@@ -356,7 +622,7 @@ object MtTranslate : JoyboyPlayerHost.Provider {
     private val dualShort = mapOf(0 to "فردي", 3 to "أصلي", 1 to "مزدوج", 4 to "مزدوج (أصلي فوق)", 2 to "إنجليزي")
     private fun curDual(): Int = try { Cfg.int("sub_dual", 0) } catch (_: Throwable) { 0 }
 
-    private fun cycleDual() {
+    fun cycleDual() {
         val a = act ?: return
         val n = dualCycle[(dualCycle.indexOf(curDual()) + 1) % dualCycle.size]
         Cfg.put("sub_dual", n.toString())
@@ -367,7 +633,7 @@ object MtTranslate : JoyboyPlayerHost.Provider {
     private fun fmtT(sec: Double): String { val t = sec.toInt().coerceAtLeast(0); return String.format("%d:%02d", t / 60, t % 60) }
 
     /** (v934) قايمة الجمل: اختار جملة ← المشغّل يروح لوقتها */
-    private fun showSentences() {
+    fun showSentences() {
         val a = act ?: return
         val list = eng?.subs
         if (list == null || list.isEmpty()) { Notice.show(a, "مفيش جمل مترجمة لسه", 2000L); return }
@@ -378,7 +644,7 @@ object MtTranslate : JoyboyPlayerHost.Provider {
             .setNegativeButton("إغلاق", null).show()
     }
 
-    private fun setOffset(a: Activity, v: Long) {
+    fun setOffset(a: Activity, v: Long) {
         offsetMs = v.coerceIn(-10000L, 10000L)
         Notice.show(a, "إزاحة الترجمة: " + String.format("%+.2f", offsetMs / 1000.0) + "ث", 1400L)
     }
@@ -386,7 +652,7 @@ object MtTranslate : JoyboyPlayerHost.Provider {
     // ===================== (v935 م2) باقي أدوات Joyboy فوق مشغّل MeeTube =====================
 
     /** 🗂 النسخ المحفوظة (لهجات الترجمة): احفظ الحالية / بدّل لنسخة */
-    private fun showVersions() {
+    fun showVersions() {
         val a = act ?: return
         val e = eng
         if (e == null) { Notice.show(a, "ابدأ الترجمة الأول", 1800L); return }
@@ -412,7 +678,7 @@ object MtTranslate : JoyboyPlayerHost.Provider {
     /** 🎨 ستايل السبتايتل: حجم · خلفية · خط · حركة دخول · لون موحّد (نفس مفاتيح Cfg بتاعة مشغّل Joyboy) */
     private fun putStyle(k: String, v: String) { Cfg.put(k, v); sv?.style = SubStyle.load { kk, d -> Cfg.str(kk, d) } }
 
-    private fun showStyle() {
+    fun showStyle() {
         val a = act ?: return
         val st = sv?.style ?: return
         val bgLabel = if (st.noBg) "من غير خلفية" else st.bgOpa.toString() + "%"
@@ -447,8 +713,16 @@ object MtTranslate : JoyboyPlayerHost.Provider {
         }.setNegativeButton("إغلاق", null).show()
     }
 
+    /** (v942) Sub من cues ملف ترجمة + ترجمات اختيارية (مشترك بين sideSubMenu وsearchOnlineSubs وimportSub) */
+    private fun subsFromCues(cues: List<SubFileTr.Cue>, texts: List<String>?): List<Sub> {
+        return cues.mapIndexed { i, c ->
+            val tr = texts?.getOrNull(i) ?: ""
+            Sub(c.start, c.end, c.text, if (tr.isBlank()) c.text else tr, "male", "unknown", "none", emptyList(), emptyList(), false, false)
+        }
+    }
+
     /** 📄 سبتايتل جانبي: ملف .srt/.vtt — عربي يتعرض علطول، غير كده يتترجم (جيميناي لو في مفتاح وإلا جوجل) */
-    private fun sideSubMenu() {
+    fun sideSubMenu() {
         val a = act ?: return
         if (sideSubs != null) { sideSubs = null; sv?.show(null); cached = null; Notice.show(a, "اتشال السبتايتل الجانبي", 1600L); return }
         SubPick.pick(a) { uri ->
@@ -457,16 +731,29 @@ object MtTranslate : JoyboyPlayerHost.Provider {
                 val pk = SubPick.read(a.applicationContext, uri)
                 if (pk == null) { ui.post { Notice.show(a, "الملف مش ملف ترجمة مقروء", 2400L) }; return@Thread }
                 val cues = SubFileTr.parse(pk.text)
-                fun toSubs(texts: List<String>?) = cues.mapIndexed { i, c ->
-                    val tr = texts?.getOrNull(i) ?: ""
-                    Sub(c.start, c.end, c.text, if (tr.isBlank()) c.text else tr, "male", "unknown", "none", emptyList(), emptyList(), false, false)
-                }
-                if (SubFileTr.mostlyArabic(cues)) { ui.post { applySide(a, toSubs(null), pk.name) }; return@Thread }
+                if (SubFileTr.mostlyArabic(cues)) { ui.post { applySide(a, subsFromCues(cues, null), pk.name) }; return@Thread }
                 val engName = if (SubFileTr.hasGemKeys()) "gemini" else "google"
+                val tvJob = try { DeviceUi.isTv(a) } catch (_: Throwable) { false }
+                val jid = if (tvJob) UUID.randomUUID().toString() else ""
+                if (tvJob) SfJob.begin(jid)
+                if (tvJob) SfJob.cues = cues
                 ui.post { Notice.show(a, "📄 بترجم «" + pk.name + "» (" + cues.size + " جملة) بـ" + (if (engName == "gemini") "جيميناي" else "جوجل") + "…", 2600L) }
                 var last = 0L
-                val out = try { SubFileTr.translate(cues, engName, { pr -> val n = System.currentTimeMillis(); if (n - last > 2500L) { last = n; ui.post { act?.let { Notice.show(it, pr, 1500L) } } } }, { act == null }) } catch (t: Throwable) { LogStore.err("MtTranslate:side", t); null }
-                ui.post { if (out == null) Notice.show(a, "❌ ترجمة الملف فشلت", 2600L) else applySide(a, toSubs(out.texts), pk.name) }
+                val out = try { SubFileTr.translate(cues, engName, { pr -> val n = System.currentTimeMillis(); if (n - last > 2500L) { last = n; ui.post { act?.let { Notice.show(it, pr, 1500L) } } } }, { act == null || (tvJob && SfJob.winner == "phone") }) } catch (t: Throwable) { LogStore.err("MtTranslate:side", t); null }
+                if (tvJob && (out == null || out.failed * 2 > cues.size) && SfJob.phoneAlive()) {
+                    SfJob.tvFailed = true
+                    var wl = 0
+                    while (SfJob.winner.isEmpty() && SfJob.phoneAlive() && act != null && wl++ < 3600) {
+                        try { Thread.sleep(500L) } catch (_: InterruptedException) {}
+                    }
+                }
+                ui.post {
+                    if (tvJob && SfJob.winner == "phone") { Notice.show(a, "📱 الموبايل خلّص الترجمة الأول", 2600L); return@post }
+                    if (out == null) { Notice.show(a, "❌ ترجمة الملف فشلت", 2600L); return@post }
+                    if (out.failed * 2 > cues.size) { Notice.show(a, "⚠ أغلب الجمل فشلت — ما طبّقتش الترجمة", 2600L); return@post }
+                    if (tvJob && !SfJob.claim(jid, "tv")) return@post
+                    applySide(a, subsFromCues(cues, out.texts), pk.name)
+                }
             }.apply { isDaemon = true }.start()
         }
     }
@@ -479,7 +766,7 @@ object MtTranslate : JoyboyPlayerHost.Provider {
     }
 
     /** 🎙 دبلجة بصوت Edge (سلمى/شاكر) من الجمل المترجمة */
-    private fun dubToggle() {
+    fun dubToggle() {
         val a = act ?: return
         val e = eng; val p = player ?: return
         val dp = dubPlay
@@ -508,14 +795,14 @@ object MtTranslate : JoyboyPlayerHost.Provider {
         }.apply { isDaemon = true }.start()
     }
 
-    private fun dubVoiceSwap() {
+    fun dubVoiceSwap() {
         val a = act ?: return
         val v = Dub.toggleVoice(); dubPlay?.stop()
         Notice.show(a, "🗣 الصوت دلوقتي: " + Dub.voiceLabel(v) + " — دوس دبلجة تاني عشان تتبنى بالصوت الجديد", 3000L)
     }
 
     /** ⬇ تحميل اللينك المباشر الشغّال (بنفس هيدرزه وصوته المنفصل) كمهمة في تبويب «المهام» */
-    private fun downloadCur() {
+    fun downloadCur() {
         val a = act ?: return
         val lu = localUri()
         if (lu == null || !(lu.startsWith("http://", true) || lu.startsWith("https://", true))) {
@@ -539,14 +826,41 @@ object MtTranslate : JoyboyPlayerHost.Provider {
         Notice.show(a, "⬇ اتضاف للتحميل — تابعه من تبويب «المهام»", 3000L)
     }
 
-    /** (v935 م2) قايمة أدوات الترجمة فوق مشغّل MeeTube (حوار زجاجي GAlert) */
-    private fun showMenu() {
+    // ===================== (v942) قوايم bottom-sheet =====================
+
+    /** (v942) صفوف شيت: Pair(العنوان، الفعل) — فعل null = عنوان قسم مش clickable */
+    private fun openSheet(a: Activity, title: String, items: List<Pair<String, (() -> Unit)?>>) {
+        val views = ArrayList<View>()
+        val u = Ui(a, Themes.current())
+        var d: android.app.Dialog? = null
+        for ((label, f) in items) {
+            if (f == null) {
+                views.add(u.text(label, 15f, u.th.primary, true).apply { setPadding(u.dp(4), u.dp(12), u.dp(4), u.dp(2)) })
+            } else {
+                views.add(u.button(label) { d?.dismiss(); f() })
+            }
+        }
+        d = u.sheet(a, title, views)
+        d.show()
+    }
+
+    /** (v942) شيت من Views جاهزة (نصوص/أزرار) */
+    private fun openSheetViews(a: Activity, title: String, views: List<View>) {
+        val u = Ui(a, Themes.current())
+        val d = u.sheet(a, title, views)
+        d.show()
+    }
+
+    /** (v935 م2) قايمة أدوات الترجمة فوق مشغّل MeeTube — (v942) بقت bottom-sheet */
+    fun showMenu() {
         val a = act ?: return
-        val items = ArrayList<Pair<String, () -> Unit>>()
+        val items = ArrayList<Pair<String, (() -> Unit)?>>()
         fun m(label: String, f: () -> Unit) { items.add(Pair(label, f)) }
         m((if (on) "⏹ وقّف الترجمة" else "🌐 ابدأ الترجمة")) { toggle() }
+        m("⚙ نظام الترجمة (جيميناي / وشبر / تفريغ…)") { translateMenu() }
         m(("💬 وضع الترجمة: " + (dualShort[curDual()] ?: "فردي") + "  (اضغط للتبديل)")) { cycleDual() }
         m("📝 قايمة الجمل") { showSentences() }
+        m("🔎 ابحث في الجمل") { searchSentences() }
         m("🗂 النسخ المحفوظة (اللهجات)") { showVersions() }
         m("🎨 ستايل السبتايتل") { showStyle() }
         m((if (sideSubs != null) "✖ شيل السبتايتل الجانبي" else "📄 سبتايتل جانبي (.srt / .vtt)")) { sideSubMenu() }
@@ -555,9 +869,12 @@ object MtTranslate : JoyboyPlayerHost.Provider {
         m("↺ صفّر إزاحة الترجمة") { setOffset(a, 0L) }
         m((if (dubPlay?.active == true) "🎙 وقّف الدبلجة" else "🎙 دبلجة بصوت " + Dub.voiceLabel())) { dubToggle() }
         m("🗣 بدّل صوت الدبلجة (سلمى/شاكر)") { dubVoiceSwap() }
+        m("🔊 مسارات الصوت") { showAudioTracks() }
+        m("💬 سوفت سب أصلي (جوه الفيديو)") { showSoftSubs() }
+        m("🌍 ترجمة أونلاين") { searchOnlineSubs() }
         m("⬇ حمّل الفيديو") { downloadCur() }
         m("📺 ابعت للتلفزيون") { sendToTv() }
-        if (localUri() != null) {   // (v937 م3) أدوات الميديا للملفات/اللينكات (مش يوتيوب)
+        if (localUri() != null) {
             m(MtMedia.abLabel()) { MtMedia.abNext() }
             m(("🔁 وضع التكرار: " + MtMedia.loopLabel() + "  (اضغط للتبديل)")) { MtMedia.loopCycle() }
             m("⏮ الحلقة اللي قبلها") { MtMedia.step(-1) }
@@ -565,7 +882,413 @@ object MtTranslate : JoyboyPlayerHost.Provider {
             m("📃 الليستة (طابور التشغيل)") { PlayQueueUi.show(a) }
         }
         m("⚙ إعدادات محرك الترجمة") { MeeTubeLink.openSettings(a, "tr_engine") }
-        GAlert(a).setTitle("🌐 أدوات الترجمة والميديا").setItems(items.map { it.first }.toTypedArray()) { _, i -> items.getOrNull(i)?.second?.invoke() }.setNegativeButton("إغلاق", null).show()
+        openSheet(a, "🌐 أدوات الترجمة والميديا", items)
+    }
+
+    /** (v942) قايمة نظام الترجمة — نفس بنود Player.translateMenu بس bottom-sheet: جيميناي ٧٥/٢٥ مقابل الأدق، وشبر أوفلاين، تفريغ بس، إيقاف/كمّل، إعادة ترجمة، تقدم الباتشات، تغيير النظام */
+    fun translateMenu() {
+        val a = act ?: return
+        val items = ArrayList<Pair<String, (() -> Unit)?>>()
+        fun m(label: String, f: () -> Unit) { items.add(Pair(label, f)) }
+        fun h(label: String) { items.add(Pair(label, null)) }
+        val e = eng
+        val pct = if (on && e != null && durSec > 0) PlayerLogic.percent(e.coveredSec(), durSec).toString() + "%" else "—"
+        val paused = e?.userPaused == true
+        h("الترجمة: " + (if (!on) "واقفة" else pct + (if (paused) " (واقفة مؤقتًا)" else "")) + " · الوضع: " + curEngineMode())
+        h("🔤 نظام الترجمة")
+        val dm = try { Cfg.int("dual_listen", 1) } catch (_: Throwable) { 1 }
+        m("☁ جيميناي — ٧٥/٢٥ (سماع واحد)" + (if (dm == 0) " ✓ الحالي" else "")) {
+            Cfg.put("dual_listen", "0")
+            Notice.show(a, "☁ جيميناي ٧٥/٢٥ — هيتطبق على الباتشات الجاية", 2200L)
+        }
+        m("🎯 جيميناي — السماع الأدق (مفتاحين + حكم)" + (if (dm == 2) " ✓ الحالي" else "")) {
+            Cfg.put("dual_listen", "2")
+            Notice.show(a, "🎯 السماع الأدق — هيتطبق على الباتشات الجاية", 2200L)
+        }
+        m("📴 وشبر + ترجمة أوفلاين" + (if (curEngineMode() == "whisper") " ✓ الحالي" else "")) {
+            if (!Offline.configured()) { Notice.show(a, "📴 وشبر مش متظبط على الجهاز — ظبّطه من إعدادات الترجمة الأول", 3000L); return@m }
+            setEngineMode("whisper")
+            Notice.show(a, "📴 وشبر — هيتطبق لما تعيد الترجمة (أو دوس «🔀 غيّر النظام»)", 3000L)
+        }
+        m("✍ تفريغ بس — جيميناي (من غير ترجمة)" + (if (curEngineMode() == "transcribe") " ✓ الحالي" else "")) {
+            setEngineMode("transcribe")
+            Notice.show(a, "✍ تفريغ بس — هيتطبق لما تعيد الترجمة", 2600L)
+        }
+        m("🌐 جوجل — من غير مفتاح (للملفات بس)") {
+            setEngineMode("google")
+        }
+        if (on && e != null) {
+            h("🛠 أدوات")
+            if (paused) m("▶ كمّل الترجمة") { resumeTranslate() } else m("⏸ إيقاف مؤقت") { pauseTranslate() }
+            m("🔁 إعادة ترجمة الجملة الحالية") {
+                try { e.redoFrom(e.chunkOfSec(posSec)) } catch (t: Throwable) { LogStore.err("MtTranslate:redoCur", t) }
+            }
+            m("🔁 إعادة ترجمة الفيديو كله") {
+                try { e.redoAll(true) } catch (t: Throwable) { LogStore.err("MtTranslate:redoAll", t) }
+                Notice.show(a, "🔁 بيعيد ترجمة الفيديو كله", 2000L)
+            }
+            m("📊 تقدم الباتشات") { showBatches() }
+        }
+        h("⚙ الإعدادات")
+        m("🔀 غيّر نظام الترجمة (إيقاف + اختيار)") {
+            stopEngine(); sv?.show(null); refreshBtn()
+            translateMenu()
+        }
+        m("⚙ إعدادات الترجمة") { MeeTubeLink.openSettings(a, "tr_engine") }
+        openSheet(a, "⚙ نظام الترجمة", items)
+    }
+
+    /** (v942) تقدم الباتشات — نفس بيانات Player.batchDialog بس شيت نصوص */
+    private fun showBatches() {
+        val a = act ?: return
+        val e = eng
+        if (e == null) { Notice.show(a, "ابدأ الترجمة الأول", 1800L); return }
+        val u = Ui(a, Themes.current())
+        val views = ArrayList<View>()
+        val rows = try { e.batches() } catch (_: Throwable) { emptyList() }
+        if (rows.isEmpty()) {
+            views.add(u.text("مفيش باتشات لسه", 14f, u.th.muted))
+        } else {
+            for (b in rows) {
+                views.add(u.text("باتش ${b.idx + 1}  ${fmtT(b.start)}–${fmtT(b.end)}  ${b.mark}  (${b.count} جملة)", 14f, u.th.text))
+            }
+        }
+        openSheetViews(a, "📊 تقدم الباتشات", views)
+    }
+
+    // ===================== (v942) مسارات الصوت والسوفت سب الأصلية =====================
+
+    /** (v942) مسارات الصوت بتاعة ExoPlayer (ملفات/لينكات متعددة المسارات) — parseATracks/switchAudio بتوع Player مش قابلين للنقل هنا: مفيش qlist على مشغّل MeeTube */
+    fun showAudioTracks() {
+        val a = act ?: return
+        val p = player ?: return
+        val items = ArrayList<Triple<androidx.media3.common.Tracks.Group, Int, String>>()
+        try {
+            for (g in p.currentTracks.groups) {
+                if (g.type != C.TRACK_TYPE_AUDIO) continue
+                for (i in 0 until g.length) {
+                    if (!g.isTrackSupported(i)) continue
+                    val f = g.getTrackFormat(i)
+                    val lg = f.language ?: ""
+                    val ln = if (lg.isBlank() || lg == "und") "" else try { java.util.Locale(lg).getDisplayLanguage(java.util.Locale("ar")).ifBlank { lg } } catch (_: Throwable) { lg }
+                    val ch = when (f.channelCount) { 1 -> "مونو"; 2 -> "ستيريو"; 6 -> "5.1"; 8 -> "7.1"; else -> "" }
+                    val nm = listOf(f.label?.trim().orEmpty().ifBlank { ln }, ch).filter { it.isNotBlank() }.joinToString(" · ")
+                    items.add(Triple(g, i, nm.ifBlank { "مسار صوت " + (items.size + 1) }))
+                }
+            }
+        } catch (t: Throwable) { LogStore.err("MtTranslate:audTracks", t) }
+        if (items.isEmpty()) { Notice.show(a, "مفيش غير مسار صوت واحد في الفيديو ده", 2200L); return }
+        val rows = ArrayList<Pair<String, (() -> Unit)?>>()
+        rows.add(Pair("🔊 مسارات الصوت (${items.size})", null))
+        for ((g, i, nm) in items) {
+            rows.add(Pair(nm, {
+                try {
+                    p.trackSelectionParameters = p.trackSelectionParameters.buildUpon()
+                        .setTrackTypeDisabled(C.TRACK_TYPE_AUDIO, false)
+                        .setOverrideForType(TrackSelectionOverride(g.mediaTrackGroup, i)).build()
+                    Notice.show(a, "🔊 لغة الصوت: $nm", 2000L)
+                } catch (t: Throwable) { LogStore.err("MtTranslate:audPick", t) }
+            }))
+        }
+        rows.add(Pair("🔊 تلقائي (اختيار المشغّل)", {
+            try {
+                p.trackSelectionParameters = p.trackSelectionParameters.buildUpon()
+                    .clearOverridesOfType(C.TRACK_TYPE_AUDIO).build()
+            } catch (t: Throwable) { LogStore.err("MtTranslate:audAuto", t) }
+        }))
+        openSheet(a, "🔊 مسارات الصوت", rows)
+    }
+
+    /** (v942) مسارات السوفت سب الأصلية جوه الفيديو (ExoPlayer text tracks) — العرض في SubtitleView بتاعة MeeTube نفسها (Media3SubtitleManager)، وسبتايتل Joyboy بيتكتم وهي شغّالة */
+    fun showSoftSubs() {
+        val a = act ?: return
+        val p = player ?: return
+        val items = ArrayList<Triple<androidx.media3.common.Tracks.Group, Int, String>>()
+        try {
+            for (g in p.currentTracks.groups) {
+                if (g.type != C.TRACK_TYPE_TEXT) continue
+                for (i in 0 until g.length) {
+                    if (!g.isTrackSupported(i)) continue
+                    val f = g.getTrackFormat(i)
+                    val lg = f.language ?: ""
+                    val ln = if (lg.isBlank() || lg == "und") "" else try { java.util.Locale(lg).getDisplayLanguage(java.util.Locale("ar")).ifBlank { lg } } catch (_: Throwable) { lg }
+                    val nm = (f.label?.trim().orEmpty().ifBlank { ln }).ifBlank { "مسار ترجمة " + (items.size + 1) }
+                    items.add(Triple(g, i, nm))
+                }
+            }
+        } catch (t: Throwable) { LogStore.err("MtTranslate:softTracks", t) }
+        if (items.isEmpty() && !nativeCcOn) { Notice.show(a, "مفيش سوفت سب جوه الفيديو ده", 2200L); return }
+        val rows = ArrayList<Pair<String, (() -> Unit)?>>()
+        rows.add(Pair("💬 سوفت سب أصلي (${items.size})", null))
+        for ((g, i, nm) in items) {
+            rows.add(Pair(nm, {
+                try {
+                    p.trackSelectionParameters = p.trackSelectionParameters.buildUpon()
+                        .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
+                        .setOverrideForType(TrackSelectionOverride(g.mediaTrackGroup, i)).build()
+                    nativeCcOn = true
+                    sv?.show(null)
+                    Notice.show(a, "💬 سوفت سب: $nm", 2000L)
+                } catch (t: Throwable) { LogStore.err("MtTranslate:softPick", t) }
+            }))
+        }
+        rows.add(Pair("✖ اقفل السوفت سب الأصلي", {
+            try {
+                p.trackSelectionParameters = p.trackSelectionParameters.buildUpon()
+                    .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true).build()
+            } catch (t: Throwable) { LogStore.err("MtTranslate:softOff", t) }
+            nativeCcOn = false
+        }))
+        openSheet(a, "💬 سوفت سب أصلي", rows)
+    }
+
+    // ===================== (v942) ترجمة أونلاين + بحث الجمل =====================
+
+    private fun vidFolder(): String {
+        return try {
+            val u = localUri() ?: return ""
+            val uri = android.net.Uri.parse(u)
+            if (uri.scheme == "file") File(uri.path ?: "").parentFile?.name ?: "" else ""
+        } catch (_: Throwable) { "" }
+    }
+
+    /** (v942) ترجمة أونلاين: بحث تلقائي باسم الفيديو + نتيجة تانية + صيد من المتصفح (زي Player.subNet/subHunt) */
+    fun searchOnlineSubs() {
+        val a = act ?: return
+        val title = try { info?.title() ?: "" } catch (_: Throwable) { "" }
+        if (title.isBlank() && localUri() == null) { Notice.show(a, "مش قادر أعرف اسم الفيديو للبحث", 2400L); return }
+        val rows = ArrayList<Pair<String, (() -> Unit)?>>()
+        rows.add(Pair("🌍 جيب ترجمة أونلاين تلقائي (باسم الفيديو)", {
+            subNet(a, "auto")
+        }))
+        if ((netSess?.remaining() ?: 0) > 0) {
+            rows.add(Pair("⏭ جرّب نتيجة تانية (" + netSess!!.remaining() + " متبقية)", {
+                subNet(a, "next")
+            }))
+        }
+        rows.add(Pair("🌐 افتح المتصفح على موقع ترجمة", null))
+        SubHunt.siteNames.forEachIndexed { w, name ->
+            rows.add(Pair(name, {
+                try {
+                    val info2 = SubName.build(title.ifBlank { localUri() ?: "" }, vidFolder())
+                    SubHunt.start(a, info2, w) { g -> applyGot(a, g) }
+                } catch (t: Throwable) { LogStore.err("MtTranslate:subHunt", t) }
+            }))
+        }
+        openSheet(a, "🌍 ترجمة أونلاين", rows)
+    }
+
+    private fun subNet(a: Activity, mode: String) {
+        if (netBusy.isNotEmpty()) { Notice.show(a, "⏳ $netBusy", 2000L); return }
+        val title = try { info?.title() ?: "" } catch (_: Throwable) { "" }
+        val info2 = SubName.build(title.ifBlank { localUri() ?: "" }, vidFolder())
+        val langs = SubOnline.prefLangs()
+        netBusy = "بدوّر على ترجمة…"
+        val appCtx = a.applicationContext
+        Thread {
+            try {
+                val rep: (String) -> Unit = { m -> netBusy = m }
+                var got: SubOnline.Got? = null
+                if (mode == "next") {
+                    val s = netSess
+                    if (s == null || s.remaining() <= 0) { ui.post { Notice.show(a, "مفيش نتايج تانية", 3000L) }; return@Thread }
+                    got = SubOnline.fetchNext(appCtx, s, rep)
+                } else {
+                    val cached = SubOnline.cacheFind(appCtx, info2, langs)
+                    if (cached != null && cached.lang == langs[0]) got = cached
+                    else {
+                        val hits = SubOnline.search(info2, langs, rep)
+                        val s = SubOnline.Session(info2, langs, hits); netSess = s
+                        if (hits.isNotEmpty()) got = SubOnline.fetchNext(appCtx, s, rep)
+                        if (got == null) got = cached
+                        if (hits.isEmpty() && got == null) { ui.post { Notice.show(a, "🌍 مفيش نتايج لـ «" + info2.label() + "» — جرّب المتصفح (🌐)", 5000L) }; return@Thread }
+                    }
+                }
+                if (got == null) { ui.post { Notice.show(a, "⚠ ما قدرتش أنزّل ترجمة مناسبة — جرّب «⏭ نتيجة تانية» أو المتصفح", 5000L) }; return@Thread }
+                applyGot(a, got)
+            } catch (t: Throwable) {
+                LogStore.err("MtTranslate:subNet", t)
+                ui.post { Notice.show(a, "⚠ فشل جلب الترجمة", 3000L) }
+            } finally {
+                netBusy = ""
+            }
+        }.apply { isDaemon = true }.start()
+    }
+
+    /** (v942) ترجمة جاهزة (أونلاين/متصفح) ← تتحط كسبتايتل جانبي؛ عربي يتعرض علطول وإلا تتترجم زي sideSubMenu */
+    private fun applyGot(a: Activity, g: SubOnline.Got): Boolean {
+        val cues = g.cues
+        if (cues.isEmpty()) return false
+        if (SubFileTr.mostlyArabic(cues)) {
+            ui.post { applySide(a, subsFromCues(cues, null), g.fileName) }
+            return true
+        }
+        val engName = if (SubFileTr.hasGemKeys()) "gemini" else "google"
+        Thread {
+            val out = try { SubFileTr.translate(cues, engName, {}, { act == null }) } catch (t: Throwable) { LogStore.err("MtTranslate:netTr", t); null }
+            ui.post {
+                if (out == null) { Notice.show(a, "❌ ترجمة الملف فشلت", 2600L); return@post }
+                applySide(a, subsFromCues(cues, out.texts), g.fileName)
+            }
+        }.apply { isDaemon = true }.start()
+        return true
+    }
+
+    /** (v942) بحث في الجمل المترجمة/الجانبية: اكتب ← النتايج تحت، دوسة = قفز لوقت الجملة */
+    fun searchSentences() {
+        val a = act ?: return
+        val list = eng?.subs ?: sideSubs
+        if (list == null || list.isEmpty()) { Notice.show(a, "مفيش جمل مترجمة لسه", 2000L); return }
+        val u = Ui(a, Themes.current())
+        val box = u.input("ابحث في الجمل…", "")
+        val results = LinearLayout(a).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL }
+        var d: android.app.Dialog? = null
+        fun rebuild(q: String) {
+            results.removeAllViews()
+            val qq = q.trim()
+            val hits = list.withIndex().filter { qq.isEmpty() || it.value.translated.contains(qq, true) || it.value.original.contains(qq, true) }.take(60)
+            if (hits.isEmpty()) {
+                results.addView(u.text("مفيش نتايج", 14f, u.th.muted))
+                return
+            }
+            for ((i, s) in hits) {
+                val label = "${i + 1}. [" + fmtT(s.start) + "] " + s.translated.ifBlank { s.original }.replace('\n', ' ').take(90)
+                results.addView(u.button(label) {
+                    d?.dismiss()
+                    try { player?.seekTo((s.start * 1000).toLong()) } catch (_: Throwable) {}
+                })
+            }
+        }
+        box.addTextChangedListener(object : android.text.TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
+            override fun afterTextChanged(s: android.text.Editable?) { rebuild(s?.toString() ?: "") }
+        })
+        rebuild("")
+        d = u.sheet(a, "🔎 ابحث في الجمل (${list.size})", listOf(box, results))
+        d.show()
+    }
+
+    // ===================== (v942) حالة المحرك كـ JSON + جسر RPC =====================
+
+    /** (v942) حالة المحرك كـ JSON — نفس الحقول اللي BrainRpc «eng» بيحطها في /sync (BrainRpc.kt:100) */
+    fun engineJson(): String {
+        return try {
+            val e = eng
+            val subs = e?.subs ?: sideSubs ?: emptyList()
+            val cur = subs.firstOrNull { posSec >= it.start && posSec <= it.end }
+            val curTxt = cur?.translated?.ifBlank { cur.original } ?: ""
+            val pct = if (durSec > 0 && e != null) PlayerLogic.percent(e.coveredSec(), durSec) else 0
+            JSONObject()
+                .put("on", on)
+                .put("vid", engVid.ifEmpty { curId() ?: "" })
+                .put("pct", pct)
+                .put("covered", e?.coveredSec() ?: 0.0)
+                .put("dur", durSec)
+                .put("subs", subs.size)
+                .put("cur", curTxt)
+                .put("dialect", e?.convDialect ?: Cfg.str("conv_dialect", ""))
+                .put("userPaused", e?.userPaused ?: false)
+                .put("paused", e?.paused ?: false)
+                .put("mode", curEngineMode())
+                .put("title", try { info?.title() ?: "" } catch (_: Throwable) { "" })
+                .toString()
+        } catch (_: Throwable) { "{}" }
+    }
+
+    /** (v942) جسر RPC للمحرك — بيناديه MtBar/TvLink لما الريموت يبعت engine.* (BrainRpc.exec بيوصل engine.* لـ PlayerActivity.brain؛ التوصيلة للمشغّل Mt لسه على منسّق v942) */
+    fun rpc(op: String, args: JSONObject): JSONObject {
+        return try {
+            when (op) {
+                "engine.get" -> {
+                    val e = eng ?: return JSONObject().put("ok", false).put("err", "noengine")
+                    JSONObject().put("ok", true)
+                        .put("on", on)
+                        .put("userPaused", e.userPaused)
+                        .put("paused", e.paused)
+                        .put("transOnly", e.transOnly)
+                        .put("convDialect", e.convDialect)
+                        .put("toneStyle", e.toneStyle)
+                        .put("toneStrength", e.toneStrength)
+                        .put("covered", e.coveredSec())
+                        .put("pending", e.pendingCount())
+                        .put("failed", e.failedCount())
+                        .put("fullyDone", e.fullyDone())
+                        .put("subs", e.subs.size)
+                        .put("vid", engVid)
+                        .put("pct", if (durSec > 0) PlayerLogic.percent(e.coveredSec(), durSec) else 0)
+                }
+                "engine.versions" -> {
+                    val e = eng ?: return JSONObject().put("ok", false).put("err", "noengine")
+                    val arr = JSONArray()
+                    for (v in e.versions) arr.put(JSONObject().put("name", v.name).put("dialect", v.dialect).put("count", v.subs.size))
+                    JSONObject().put("ok", true).put("versions", arr)
+                }
+                "engine.pause" -> JSONObject().put("ok", pauseTranslate())
+                "engine.resume" -> JSONObject().put("ok", resumeTranslate())
+                "engine.cancel" -> {
+                    stopTranslate()
+                    JSONObject().put("ok", true)
+                }
+                "engine.retranslate" -> {
+                    val e = eng ?: return JSONObject().put("ok", false).put("err", "noengine")
+                    e.redoAll(true)
+                    JSONObject().put("ok", true)
+                }
+                "engine.translateFrom" -> {
+                    val e = eng ?: return JSONObject().put("ok", false).put("err", "noengine")
+                    e.translateFrom(args.optDouble("sec", posSec))
+                    JSONObject().put("ok", true)
+                }
+                "engine.dialect" -> {
+                    val e = eng ?: return JSONObject().put("ok", false).put("err", "noengine")
+                    val d = args.optString("d", "")
+                    e.setConvDialect(d, true)
+                    try { Cfg.put("conv_dialect", d) } catch (_: Throwable) {}
+                    JSONObject().put("ok", true)
+                }
+                "engine.tone" -> {
+                    val e = eng ?: return JSONObject().put("ok", false).put("err", "noengine")
+                    if (args.has("style")) e.toneStyle = args.optString("style")
+                    if (args.has("strength")) e.toneStrength = args.optString("strength")
+                    JSONObject().put("ok", true)
+                }
+                "engine.mode" -> {
+                    setEngineMode(args.optString("mode", "gemini"))
+                    JSONObject().put("ok", true).put("mode", curEngineMode())
+                }
+                "engine.batches" -> {
+                    val e = eng ?: return JSONObject().put("ok", false).put("err", "noengine")
+                    val arr = JSONArray()
+                    for (b in e.batches()) arr.put(JSONObject().put("i", b.idx).put("s", b.start).put("e", b.end).put("c", b.count).put("m", b.mark))
+                    JSONObject().put("ok", true).put("batches", arr)
+                }
+                "engine.chars" -> {
+                    val e = eng ?: return JSONObject().put("ok", false).put("err", "noengine")
+                    JSONObject().put("ok", true).put("chars", BrainChars.encode(e.charactersNow()))
+                }
+                else -> JSONObject().put("ok", false).put("err", "unknown")
+            }
+        } catch (t: Throwable) {
+            try { JSONObject().put("ok", false).put("err", t.message ?: "err") } catch (_: Throwable) { JSONObject() }
+        }
+    }
+
+    /** (v942) استيراد ملف ترجمة (.srt/.vtt) كسبتايتل جانبي — بيتطبّق على خيط الواجهة، فـ true معناها الملف اتقري والجمل اتبعتت للتطبيق */
+    fun importSub(uri: android.net.Uri): Boolean {
+        val a = act ?: return false
+        return try {
+            val bytes = a.contentResolver.openInputStream(uri)?.use { it.readBytes() } ?: return false
+            val cues = SubFileTr.parse(SubFileTr.decode(bytes))
+            if (cues.isEmpty()) return false
+            val name = try { uri.lastPathSegment?.substringAfterLast('/') ?: "sub.srt" } catch (_: Throwable) { "sub.srt" }
+            val subs = subsFromCues(cues, null)
+            ui.post { applySide(a, subs, name) }
+            true
+        } catch (t: Throwable) {
+            LogStore.err("MtTranslate:importSub", t)
+            false
+        }
     }
 
     private fun refreshBtn(state: String? = null) {
@@ -574,6 +1297,7 @@ object MtTranslate : JoyboyPlayerHost.Provider {
         b.text = when {
             state != null -> "🌐 $state"
             !on -> "🌐 ترجم"
+            e?.userPaused == true -> "🌐 ⏸"
             e != null && durSec > 0 -> "🌐 " + PlayerLogic.percent(e.coveredSec(), durSec) + "%"
             else -> "🌐 …"
         }
@@ -592,7 +1316,7 @@ object MtTranslate : JoyboyPlayerHost.Provider {
                     val e = eng
                     val v = sv
                     val side = sideSubs
-                    if (v != null && ((on && e != null) || side != null)) {
+                    if (v != null && !nativeCcOn && ((on && e != null) || side != null)) {
                         val list: List<Sub> = if (on && e != null) e.subs else side!!
                         if (list !== cached) {
                             cached = list
@@ -603,6 +1327,15 @@ object MtTranslate : JoyboyPlayerHost.Provider {
                         val shown = PlayerLogic.combine(idx.mapNotNull { list.getOrNull(it) })
                         v.show(shown, if (idx.size > 1) idx.mapNotNull { list.getOrNull(it) } else emptyList())
                         if (on && ++tickN % 8 == 0) refreshBtn()
+                    }
+                    if (on) {
+                        val now = System.currentTimeMillis()
+                        if (now - lastEngFeed >= 2000L) {
+                            lastEngFeed = now
+                            try {
+                                if (BrainBus.active()) BrainBus.setEngine(engineJson())
+                            } catch (_: Throwable) {}
+                        }
                     }
                 }
             } catch (t: Throwable) { LogStore.err("MtTranslate:tick", t) }

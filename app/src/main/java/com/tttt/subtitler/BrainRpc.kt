@@ -67,7 +67,18 @@ object BrainRpc {
                 if (TvLink.openJson(args)) JSONObject().put("ok", true) else JSONObject().put("ok", false).put("err", "badurl")
             } else {
                 val res = PlayerActivity.brain(op, args)
-                if (res == null) JSONObject().put("ok", false).put("err", "noplayer") else JSONObject().put("ok", true).put("res", res)
+                if (res != null) {
+                    JSONObject().put("ok", true).put("res", res)
+                } else {
+                    val mt = try { MtTvPlayer.rpc(op, args) } catch (_: Throwable) { null }
+                    if (mt == null) {
+                        JSONObject().put("ok", false).put("err", "noplayer")
+                    } else if (mt.optBoolean("ok", false)) {
+                        JSONObject().put("ok", true).put("res", mt)
+                    } else {
+                        JSONObject().put("ok", false).put("err", mt.optString("err", "unknown"))
+                    }
+                }
             }
         } catch (e: Throwable) {
             LogStore.err("BrainRpc:$op", e)

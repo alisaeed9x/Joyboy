@@ -3,6 +3,7 @@ package com.tttt.subtitler
 import android.app.Activity
 import android.graphics.Color
 import android.graphics.drawable.GradientDrawable
+import android.media.audiofx.LoudnessEnhancer
 import android.os.Handler
 import android.os.Looper
 import android.view.Gravity
@@ -10,12 +11,15 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.LinearLayout
 import android.widget.TextView
+import androidx.media3.common.C
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import com.liskovsoft.smartyoutubetv2.common.app.models.data.Video
+import com.liskovsoft.smartyoutubetv2.common.app.models.playback.service.VideoStateService
 import com.liskovsoft.smartyoutubetv2.common.app.presenters.PlaybackPresenter
 import com.newtube.mobile.ui.playback.JoyboyPlayerHost
 import java.io.File
+import kotlin.math.roundToInt
 
 /**
  * (v937، المرحلة 3 من دمج المشغّل) أدوات الميديا فوق مشغّل MeeTube للملفات/اللينكات المحلية:
@@ -23,8 +27,10 @@ import java.io.File
  *  - وضع التكرار (عادي / نفس الفيديو / كل فولدر المكتبة) — بنفس مفاتيح Cfg بتاعة مشغّل Joyboy (loop / autoplay_wrap)
  *  - الحلقات: ⏮ ⏭ والتالي عند النهاية من فولدر المكتبة (VideoScan.cache) + طابور التشغيل (PlayQueue)
  *  - الاستكمال: lastpos + «آخر المشغّلة» (recent.json) بنفس صيغة مشغّل Joyboy
- * اللي MeeTube عنده أصلاً ومش متكرر هنا: مؤقت النوم (SleepTimer) · تضخيم الصوت فوق 100% (AudioEffects) · أوضاع التكرار بتاعته.
- * كله خامل لو الفيديو يوتيوب (localUri == null) ومابيعملش حاجة للمتخفي (تاريخ/استكمال).
+ * (v942) تضخيم الصوت فوق 100% (LoudnessEnhancer على جلسة الصوت، Cfg vol_boost) ومؤقت نوم Joyboy
+ * بخفوت 10 ثوانٍ (MeeTube عنده SleepTimer من غير خفوت) والاستكمال بيتكتب كمان في VideoStateService
+ * بتاع MeeTube بنفس مفتاح joy_local_ — وlastpos وrecent.json لسه المصدر الاحتياطي.
+ * الأزرار والاستكمال خاملة لو الفيديو يوتيوب (localUri == null) ومابتعملش حاجة للمتخفي (تاريخ/استكمال) — بس الصوت والتضخيم ومؤقت النوم بيشتغلوا على أي مشغّل.
  * بيتنده من MtTranslate.attach/detach (نفس دورة حياة المشغّل) و Provider.onStep.
  */
 object MtMedia {
@@ -43,6 +49,13 @@ object MtMedia {
     private var ticking = false
     private var lastPosSave = 0L
     private var lastRecentSave = 0L
+    private var loud: LoudnessEnhancer? = null
+    private var sleepAtMs = 0L
+    private var sleepEndOfVideo = false
+    private var fading = false
+    private var fadeStartVol = 1f
+    private var fadeStartMs = 0L
+    private var preFadeVol = 1f
     @Volatile private var scanning = false
 
     /** «L:<لينك>» لفيديوهات اتفتحت بـstartms صريح (ما نكمّلش من الاستكمال بتاعنا) */
@@ -65,6 +78,7 @@ object MtMedia {
             pill = null
             refreshPill()
             applyLoop(false)
+            applyBoost()
             if (!ticking) { ticking = true; ui.post(tick) }
             if (p.playbackState == Player.STATE_READY) tryResume()
             try { if (!priv()) MtWeb.attach(a, p, lu()) } catch (_: Throwable) {}   // (v938) لقطة مصغّرة للمصطادة
@@ -78,6 +92,8 @@ object MtMedia {
             val wasLu = lu()
             ui.removeCallbacks(tick); ticking = false
             try { player?.removeListener(listener) } catch (_: Throwable) {}
+            releaseBoost()
+            // (v942) مؤقت النوم بيفضل شغال وبيكمّل على المشغّل الجديد — التضخيم بس اللي بيتفك لأنه مربوط بجلسة الصوت القديمة
             (pill?.parent as? ViewGroup)?.removeView(pill)
             pill = null; player = null; options = null; info = null; act = null; key = null
             abA = -1L; abB = -1L
@@ -94,9 +110,23 @@ object MtMedia {
         override fun onPlaybackStateChanged(state: Int) {
             if (state != Player.STATE_ENDED) ended = false
             if (state == Player.STATE_READY) tryResume()
-            if (state == Player.STATE_ENDED) onEnded()
+            if (state == Player.STATE_ENDED) {
+                // (v942) نوم «آخر الفيديو» لفيديو مش محلي: onEnded بيرجع بدري لما localUri فاضي فبنوقّف هنا
+                if (sleepEndOfVideo && lu() == null) {
+                    sleepEndOfVideo = false
+                    sleepAtMs = 0L
+                    try { player?.pause() } catch (_: Throwable) {}
+                    act?.let { Notice.show(it, "😴 مؤقت النوم: الفيديو وقف", 2200L) }
+                }
+                onEnded()
+            }
         }
         override fun onIsPlayingChanged(isPlaying: Boolean) { if (!isPlaying) saveNow(false) }
+        override fun onAudioSessionIdChanged(audioSessionId: Int) {
+            try { loud?.release() } catch (_: Throwable) {}
+            loud = null
+            applyBoost()
+        }
     }
 
     private val tick = object : Runnable {
@@ -106,6 +136,7 @@ object MtMedia {
                 val p = player
                 if (p != null) {
                     if (abA >= 0L && abB > abA && p.isPlaying && p.currentPosition >= abB) p.seekTo(abA)
+                    if (sleepAtMs > 0L || fading) sleepStep(p)
                     if (p.isPlaying) {
                         val now = System.currentTimeMillis()
                         if (now - lastPosSave >= 3000L) { lastPosSave = now; saveNow(false) }
@@ -197,6 +228,117 @@ object MtMedia {
         } catch (_: Throwable) {}
     }
 
+    // ===================== الصوت: تضخيم + سلايدر 0..200 =====================
+
+    /** التضخيم الحالي من Cfg vol_boost (0..100) — نفس مفتاح مشغّل Joyboy */
+    fun boostPct(): Int = try { (Cfg.str("vol_boost", "0").toIntOrNull() ?: 0).coerceIn(0, 100) } catch (_: Throwable) { 0 }
+
+    fun setBoostPct(b: Int) {
+        try { Cfg.put("vol_boost", b.coerceIn(0, 100).toString()) } catch (_: Throwable) {}
+        applyBoost()
+    }
+
+    /** بيعيد تطبيق التضخيم من Cfg على جلسة الصوت الحالية */
+    fun applyBoost() {
+        val pct = boostPct()
+        try {
+            val p = player ?: return
+            val sid = try { p.audioSessionId } catch (_: Throwable) { return }
+            if (sid == C.AUDIO_SESSION_ID_UNSET || sid == 0) return
+            if (loud == null) loud = LoudnessEnhancer(sid)
+            loud?.setTargetGain(pct * 15)
+            loud?.enabled = pct > 0
+        } catch (e: Throwable) { LogStore.err("MtMedia:boost", e) }
+    }
+
+    private fun releaseBoost() {
+        try { loud?.release() } catch (_: Throwable) {}
+        loud = null
+    }
+
+    /** سلايدر موحّد 0..200: لحد 100 صوت عادي، وفوق 100 التضخيم (والصوت على الآخر) — نفس فكرة Player.volTotal */
+    fun setVolumePct(v: Int) {
+        val p = player ?: return
+        val vv = v.coerceIn(0, 200)
+        try {
+            if (vv <= 100) {
+                p.volume = vv / 100f
+                if (boostPct() != 0) setBoostPct(0)
+            } else {
+                p.volume = 1f
+                setBoostPct(vv - 100)
+            }
+        } catch (e: Throwable) { LogStore.err("MtMedia:volume", e) }
+    }
+
+    /** القيمة الحالية المجمّعة: صوت المشغّل × 100 + التضخيم */
+    fun volumePct(): Int {
+        val vol = try { player?.volume } catch (_: Throwable) { null } ?: return boostPct()
+        return (vol * 100f).roundToInt().coerceIn(0, 100) + boostPct()
+    }
+
+    // ===================== مؤقت النوم =====================
+
+    /** min > 0 = بعد كذا دقيقة (5/10/15/30/45/60) · -1 = لما الفيديو يخلص · 0 = إلغاء — نفس واجهة Player.setSleepTimer */
+    fun setSleep(min: Int) {
+        val a = act
+        val hadSleep = sleepAtMs > 0L || sleepEndOfVideo || fading
+        sleepAtMs = 0L
+        sleepEndOfVideo = false
+        if (fading) {
+            fading = false
+            try { player?.volume = preFadeVol } catch (_: Throwable) {}
+        }
+        if (min == 0) {
+            if (hadSleep) a?.let { Notice.show(it, "😴 مؤقت النوم اتلغى", 1800L) }
+            return
+        }
+        if (min < 0) {
+            sleepEndOfVideo = true
+            a?.let { Notice.show(it, "😴 الفيديو هيقف لما يخلص (من غير ما يكمّل اللي بعده)", 2200L) }
+            return
+        }
+        sleepAtMs = System.currentTimeMillis() + min * 60_000L
+        a?.let { Notice.show(it, "😴 الفيديو هيقف بعد $min دقيقة (والصوت بينزل بهدوء)", 2200L) }
+    }
+
+    fun cancelSleep() { setSleep(0) }
+
+    fun sleepLabel(): String = when {
+        sleepEndOfVideo -> "آخر الفيديو"
+        sleepAtMs > 0L -> {
+            val left = ((sleepAtMs - System.currentTimeMillis() + 59_999L) / 60_000L).toInt().coerceAtLeast(1)
+            "$left دقيقة"
+        }
+        else -> "مقفول"
+    }
+
+    /** بيتنده من الـtick كل 250ms: لما المعاد ييجي، الصوت بينزل من قيمته الحالية لصفر في 10 ثوانٍ وبعدها إيقاف */
+    private fun sleepStep(p: ExoPlayer) {
+        try {
+            if (!fading) {
+                val left = sleepAtMs - System.currentTimeMillis()
+                if (left > 0L) return
+                fading = true
+                fadeStartMs = System.currentTimeMillis()
+                fadeStartVol = try { p.volume } catch (_: Throwable) { 1f }
+                preFadeVol = fadeStartVol
+            }
+            val el = System.currentTimeMillis() - fadeStartMs
+            if (el >= 10_000L) {
+                fading = false
+                sleepAtMs = 0L
+                try { p.volume = 0f } catch (_: Throwable) {}
+                try { p.pause() } catch (_: Throwable) {}
+                try { p.volume = preFadeVol } catch (_: Throwable) {}
+                act?.let { Notice.show(it, "😴 مؤقت النوم: الفيديو وقف", 2200L) }
+                return
+            }
+            val frac = 1f - el / 10_000f
+            try { p.volume = (fadeStartVol * frac).coerceIn(0f, 1f) } catch (_: Throwable) {}
+        } catch (t: Throwable) { LogStore.err("MtMedia:sleep", t) }
+    }
+
     // ===================== الحلقات =====================
 
     private fun sibs(): Pair<List<VideoItem>, Int>? {
@@ -262,6 +404,14 @@ object MtMedia {
         if (lu() == null || ended) return
         ended = true
         saveNow(true)
+        // (v942) نوم «آخر الفيديو» بتاع Joyboy: إيقاف من غير ما يكمّل اللي بعده — زي فحص endOfVideoSleep بتاع MeeTube اللي تحته
+        if (sleepEndOfVideo) {
+            sleepEndOfVideo = false
+            sleepAtMs = 0L
+            try { player?.pause() } catch (_: Throwable) {}
+            Notice.show(a, "😴 مؤقت النوم: الفيديو وقف", 2200L)
+            return
+        }
         try { if (info?.endOfVideoSleep() == true) return } catch (_: Throwable) {}   // مؤقت النوم «آخر الفيديو» — MeeTube بيوقف لوحده
         try {
             val pm = info?.playbackMode() ?: 2
@@ -321,6 +471,20 @@ object MtMedia {
         return 0L
     }
 
+    /** (v942) write-through للاستكمال في VideoStateService بتاع MeeTube (مخزنه المحلي اللي VideoStateController بيقراه في restorePosition) */
+    private fun writeMtState(a: Activity, id: String, pos: Long, dur: Long) {
+        try {
+            if (pos <= 1000L || pos >= dur - 4000L) return
+            val v = Video()
+            v.videoId = id
+            v.title = (try { info?.title() } catch (_: Throwable) { null })?.takeIf { it.isNotBlank() } ?: Recents.titleOf(id)
+            val lu = lu()
+            if (lu != null) v.localUri = lu
+            val speed = try { player?.playbackParameters?.speed ?: 1f } catch (_: Throwable) { 1f }
+            VideoStateService.instance(a.applicationContext)?.save(VideoStateService.State(v, pos, dur, speed))
+        } catch (t: Throwable) { LogStore.err("MtMedia:mtstate", t) }
+    }
+
     /** على الـUI thread بس. recent=true بيكتب كمان «آخر المشغّلة» (recent.json) بنفس صيغة Player.saveRecentForce */
     private fun saveNow(recent: Boolean) {
         val a = act ?: return
@@ -335,6 +499,8 @@ object MtMedia {
             if (pos > 1000L && pos < dur - 4000L) Cfg.p.edit().putString("lastpos", id + "\t" + pos).apply()
             else if (pos >= dur - 4000L && (Cfg.p.getString("lastpos", "") ?: "").startsWith(id + "\t")) Cfg.p.edit().remove("lastpos").apply()
         } catch (_: Throwable) {}
+        // (v942) write-through للاستكمال في مخزن MeeTube المحلي بنفس المفتاح — وlastpos لسه المصدر الاحتياطي
+        try { writeMtState(a, id, pos, dur) } catch (_: Throwable) {}
         if (!recent || pos <= 1000L) return
         val title = (try { info?.title() } catch (_: Throwable) { null })?.takeIf { it.isNotBlank() } ?: Recents.titleOf(id)
         val st = MtTranslate.coverStats()

@@ -386,7 +386,7 @@ object TvLink {
     private val subUpParts = HashMap<String, Array<String?>>()
     private fun subUp(r: HttpReq): HttpRes {
         val j = try { JSONObject(r.bodyText()) } catch (_: Exception) { return err(403, "bad") }
-        if (!PlayerActivity.hasLive()) return ok(JSONObject().put("none", true))   // مفيش مشغّل فيديو شغّال
+        if (!PlayerActivity.hasLive() && !MtTvPlayer.live()) return ok(JSONObject().put("none", true))   // مفيش مشغّل فيديو شغّال
         val id = j.optString("id"); val t = j.optInt("t", 1).coerceIn(1, 60); val i = j.optInt("i", 0)
         if (id.isBlank() || i !in 0 until t) return err(400, "bad")
         val parts = synchronized(subUpParts) { if (subUpParts.size > 3 && !subUpParts.containsKey(id)) subUpParts.clear(); subUpParts.getOrPut(id) { arrayOfNulls(t) } }
@@ -404,7 +404,10 @@ object TvLink {
             dir.listFiles()?.forEach { try { it.delete() } catch (_: Throwable) {} }
             java.io.File(dir, nm).also { it.writeText(txt, Charsets.UTF_8) }
         } catch (e: Throwable) { LogStore.err("TvLink:subUp", e); return err(500, "write") }
-        val handled = PlayerActivity.remoteSubImport(f, nm, cues, j.optString("m") == "show")
+        var handled = PlayerActivity.remoteSubImport(f, nm, cues, j.optString("m") == "show")
+        if (!handled) {
+            try { handled = MtTranslate.importSub(android.net.Uri.fromFile(f)) } catch (_: Throwable) { handled = false }
+        }
         return ok(JSONObject().put("done", true).put("cues", cues).put("player", handled))
     }
 
@@ -458,7 +461,7 @@ object TvLink {
         if (jid.isBlank() || SfJob.id != jid) return err(409, "nojob")
         SfJob.phoneSeen = System.currentTimeMillis()
         if (SfJob.winner == "tv") return ok(JSONObject().put("lost", true))
-        if (!PlayerActivity.hasLive()) return ok(JSONObject().put("none", true))
+        if (!PlayerActivity.hasLive() && !MtTvPlayer.live()) return ok(JSONObject().put("none", true))
         val t = j.optInt("t", 1).coerceIn(1, 60); val i = j.optInt("i", 0)
         if (i !in 0 until t) return err(400, "bad")
         val parts = synchronized(subTrParts) { if (subTrParts.size > 3 && !subTrParts.containsKey(jid)) subTrParts.clear(); subTrParts.getOrPut(jid) { arrayOfNulls(t) } }
@@ -471,7 +474,15 @@ object TvLink {
         val arr = body.optJSONArray("x") ?: return err(422, "invalid")
         val texts = ArrayList<String>(arr.length())
         for (k in 0 until arr.length()) texts.add(arr.optString(k, ""))
-        return when (PlayerActivity.remoteSubTr(jid, texts, body.optInt("f", 0), body.optString("e", "google"))) {
+        if (PlayerActivity.hasLive()) {
+            return when (PlayerActivity.remoteSubTr(jid, texts, body.optInt("f", 0), body.optString("e", "google"))) {
+                0 -> ok(JSONObject().put("done", true).put("applied", true))
+                3 -> ok(JSONObject().put("done", true).put("lost", true))
+                1 -> ok(JSONObject().put("none", true))
+                else -> err(409, "nojob")
+            }
+        }
+        return when (MtTranslate.applyPhoneSubs(jid, texts, body.optInt("f", 0), body.optString("e", "google"))) {
             0 -> ok(JSONObject().put("done", true).put("applied", true))
             3 -> ok(JSONObject().put("done", true).put("lost", true))
             1 -> ok(JSONObject().put("none", true))

@@ -1990,6 +1990,11 @@ public class MobilePlaybackActivity extends MobileActivity
             @Override public int playbackMode() { return PlayerData.instance(MobilePlaybackActivity.this).getPlaybackMode(); } // JOYBOY(v939): stored end-of-video mode so the add-on never auto-advances over PAUSE/CLOSE/ONE
         });
 
+        // JOYBOY(v942): the add-on's full button bar (MtBar) lives in the bottom controls container, so it hides/shows with MeeTube's controls.
+        if (mControlsRoot instanceof ViewGroup) {
+            JoyboyPlayerHost.extraControls(this, (ViewGroup) mControlsRoot);
+        }
+
         // Persistent surface: PlayerView owns no surface (surface_type="none"); hand the
         // session-long Surface to each new player instance. On the very first open the texture
         // may not exist yet - the SurfaceTextureListener attaches it on availability.
@@ -12318,6 +12323,115 @@ public class MobilePlaybackActivity extends MobileActivity
     @Override
     public float getVolume() {
         return mExoPlayerController.getVolume();
+    }
+
+    // JOYBOY(v942): named Joyboy actions (from MtBar / MtTvPlayer) mapped onto MeeTube's own internals. Called via JoyboyPlayerHost.onJoyboyAction; true = handled.
+    public boolean handleJoyboyAction(String action) {
+        if (action == null) {
+            return false;
+        }
+        try {
+            if (action.startsWith("fit:")) {
+                int n = 0;
+                try {
+                    n = Integer.parseInt(action.substring(4));
+                } catch (NumberFormatException e) {
+                    n = 0;
+                }
+                switch (n) {
+                    case 1:
+                        setResizeMode(androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FILL);
+                        break;
+                    case 2:
+                        setResizeMode(androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_ZOOM);
+                        break;
+                    case 3:
+                        setResizeMode(androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FIXED_WIDTH);
+                        break;
+                    default:
+                        setResizeMode(androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FIT);
+                        break;
+                }
+                return true;
+            }
+            switch (action) {
+                case "fit":
+                    int cur = getResizeMode();
+                    int next;
+                    if (cur == androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FILL) {
+                        next = 2;
+                    } else if (cur == androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_ZOOM) {
+                        next = 3;
+                    } else if (cur == androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FIXED_WIDTH) {
+                        next = 0;
+                    } else {
+                        next = 1;
+                    }
+                    return handleJoyboyAction("fit:" + next);
+                case "pip":
+                    enterPipMode();
+                    return true;
+                case "lock":
+                    setPlayerLocked(!mPlayerLocked);
+                    return true;
+                case "rotate":
+                    toggleFullscreen();
+                    return true;
+                case "prev":
+                    stepVideo(-1);
+                    return true;
+                case "next":
+                    stepVideo(1);
+                    return true;
+                case "speed":
+                    float curSpeed = getSpeed();
+                    float nextSpeed = SPEED_PRESETS[SPEED_PRESETS.length - 1];
+                    for (float preset : SPEED_PRESETS) {
+                        if (preset > curSpeed + 0.001f) {
+                            nextSpeed = preset;
+                            break;
+                        }
+                    }
+                    setSpeed(nextSpeed);
+                    return true;
+                case "cc":
+                    toggleCaptions();
+                    return true;
+                case "quality":
+                    openPlayerMenu();
+                    return true;
+                case "audio":
+                    showAudioTrackSheet();
+                    return true;
+                case "sleep":
+                    showSleepTimerSheet();
+                    return true;
+                case "chapters":
+                    showChaptersSheet();
+                    return true;
+                case "download":
+                    onDownloadTapped();
+                    return true;
+                case "audio_only":
+                    setAudioOnly(!mAudioOnly);
+                    return true;
+                case "playpause":
+                    togglePlayPause();
+                    return true;
+                default:
+                    if (action.startsWith("speed:")) {
+                        try {
+                            setSpeed(Float.parseFloat(action.substring(6)));
+                            return true;
+                        } catch (NumberFormatException e) {
+                            return false;
+                        }
+                    }
+                    return false;
+            }
+        } catch (RuntimeException e) {
+            return false;
+        }
     }
 
     @Override
