@@ -121,6 +121,11 @@ object MtTranslate : JoyboyPlayerHost.Provider {
     /** (v937 م3) ⏮ ⏭ في MeeTube ← حلقات فولدر المكتبة */
     override fun onStep(activity: Activity, dir: Int): Boolean = try { MtMedia.onStep(activity, dir) } catch (_: Throwable) { false }
 
+    /** JOYBOY(v939): Browser-origin streams minimize to Android PiP so the Joyboy Browser remains underneath. */
+    override fun preferSystemPip(activity: Activity): Boolean = try {
+        MtWeb.preferSystemPip(try { info?.localUri() } catch (_: Throwable) { null }, try { info?.videoId() } catch (_: Throwable) { null })
+    } catch (_: Throwable) { false }
+
     /** (v937 م3) هوية الفيديو للاستكمال/«آخر المشغّلة» (نفس مفتاح مشغّل Joyboy، مع forceid) */
     internal fun joyVid(a: Activity, lu: String): String = idOverride["L:$lu"] ?: localVid(a, lu)
 

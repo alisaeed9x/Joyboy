@@ -8435,6 +8435,18 @@ public class MobilePlaybackActivity extends MobileActivity
      * player. Called once the release animation has landed on the mini-card rectangle.
      */
     private void minimizeByDrag() {
+        // JOYBOY(v939): Browser-origin streams have no MeeTube MiniHost. Use system PiP instead of
+        // the BrowseView fallback, keeping the original Joyboy Browser visible underneath.
+        if (JoyboyPlayerHost.preferSystemPip(this)) {
+            resetMorph();
+            enterPipMode();
+            if (mPipEnterPending) {
+                return;
+            }
+            // If the OEM refuses PiP, restore the player rather than navigating to an unrelated feed.
+            logPip("browser-origin-minimize-refused");
+            return;
+        }
         if (MiniSize.type(this) == MiniSize.DISABLED) { // MEETUBE(issue #188): no mini player, minimizing closes
             if (mPresenter != null) {
                 mPresenter.onFinish();

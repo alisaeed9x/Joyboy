@@ -31,7 +31,7 @@ object MtPlay {
     fun decide(act: Activity, i: Intent): Decision {
         Cfg.ensure(act.applicationContext)
         if (!enabled()) return Decision.skip(R_OFF)
-        if (DeviceUi.isTv(act)) return Decision.skip(R_TV)
+        if (DeviceUi.isTv(act)) return Decision.skip(R_TV)   // JOYBOY(v939): flag mt_tv_player متسجل false، لكن التوجيه يفضل legacy لحد اكتمال D-pad وRPC في م4
         if (i.getBooleanExtra("remote", false)) return Decision.skip("extra remote (ريموت — م4)")
         // (v936) لسه على مشغّل Joyboy: mirror_uri (م4 — تلفزيون) بس. يوتيوب/المتخفي/hsite/forceid/لينك من غير امتداد اتحلّوا.
         if (i.hasExtra("mirror_uri")) return Decision.skip("extra mirror_uri (م4 — تلفزيون)")
@@ -149,6 +149,7 @@ object MtPlay {
     private fun openMt(act: Activity, app: android.content.Context, i: Intent, d: Decision): Boolean {
         val startMs = i.getIntExtra("startms", 0).toLong().takeIf { it > 0L } ?: i.getLongExtra("startms", 0L)
         d.yt?.let { yid ->   // (v936) يوتيوب
+            try { MtWeb.onOpenYoutube(i, yid) } catch (_: Throwable) {}   // JOYBOY(v939): احتفظ بأصل فيديو يوتيوب لو اتفتح من المتصفح
             val tr = i.getBooleanExtra("autotr", false) && !i.getBooleanExtra("nosub", false)
             if (!d.priv) try { PubHistory.addVideoFrom(i) } catch (_: Throwable) {}
             return MeeTubeLink.playYt(act, yid, startMs, tr, d.priv)

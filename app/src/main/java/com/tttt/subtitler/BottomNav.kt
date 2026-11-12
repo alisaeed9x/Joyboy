@@ -423,7 +423,7 @@ class BottomNav(act: Activity, private val ui: Ui, private val th: Theme, privat
                     lensOn = hook(from, to) { indicator.animate().cancel(); indicator.animate().setStartDelay(0L).alpha(1f).setDuration(180L).start() }
                 } catch (e: Throwable) { lensOn = false; LogStore.err("Nav:lens", e) }
             }
-            if (lensOn) { indicator.animate().cancel(); indicator.alpha = 0f; place(false) }   // الكبسولة تستنى لحد ما العدسة تهدى
+            if (lensOn) { indicator.animate().cancel(); indicator.alpha = 0.45f; place(false) }   // JOYBOY(v939): خليك مظهر الكبسولة أثناء العدسة؛ ما تختفيش لو callback اتأخر/اتلغى
             else { indicator.alpha = 1f; place(true) }
             icons.getOrNull(cellOf(i))?.let { Motion.bounce(it) }
         }

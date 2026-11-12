@@ -56,6 +56,9 @@ public final class JoyboyPlayerHost {
         /** Phase 4: a key the add-on wants first (TV remote layer). true = consumed. */
         default boolean onKey(Activity activity, KeyEvent event) { return false; }
 
+        /** JOYBOY(v939): true when this source must minimize to system PiP over its originating app (e.g. Joyboy Browser). */
+        default boolean preferSystemPip(Activity activity) { return false; }
+
         /** Phase 2: controls shown/hidden, so the subtitle bottom margin can follow them. */
         default void onControlsVisibility(Activity activity, boolean visible) { }
 
@@ -103,6 +106,16 @@ public final class JoyboyPlayerHost {
         try {
             Provider p = sProvider;
             return p != null && activity != null && p.wantsLandscape(activity);
+        } catch (RuntimeException e) {
+            return false;
+        }
+    }
+
+    /** JOYBOY(v939): source-aware minimize policy. Never throws; false preserves MeeTube's native Browse mini-card. */
+    public static boolean preferSystemPip(Activity activity) {
+        try {
+            Provider p = sProvider;
+            return p != null && activity != null && p.preferSystemPip(activity);
         } catch (RuntimeException e) {
             return false;
         }

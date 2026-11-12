@@ -14,6 +14,10 @@ import java.util.concurrent.TimeUnit
  * الأوامر المدعومة: toggle · seek (±ms) · seekto · speedset · close. أي أمر تاني = مايتعملش حاجة (من غير ما الريموت يفتكر إن مفيش مشغّل).
  */
 object MtTvPlayer {
+    /** JOYBOY(v939): experimental TV player routing remains opt-in until physical TCL validation. */
+    const val KEY_TV_PLAYER = "mt_tv_player"
+    fun enabled(context: android.content.Context): Boolean = try { Cfg.bool(KEY_TV_PLAYER, false) } catch (_: Throwable) { false }
+
     private val ui = Handler(Looper.getMainLooper())
     @Volatile private var act: Activity? = null
     @Volatile private var player: ExoPlayer? = null

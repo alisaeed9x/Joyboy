@@ -76,12 +76,13 @@ object MtMedia {
             if (act !== a) return
             saveNow(true)
             val wasLu = lu()
+            val wasVideoId = try { info?.videoId() } catch (_: Throwable) { null }
             ui.removeCallbacks(tick); ticking = false
             try { player?.removeListener(listener) } catch (_: Throwable) {}
             (pill?.parent as? ViewGroup)?.removeView(pill)
             pill = null; player = null; options = null; info = null; act = null; key = null
             abA = -1L; abB = -1L
-            try { MtWeb.onDetach(a, wasLu) } catch (_: Throwable) {}   // (v938) extra ret: رجوع للمتصفح/يوتيوب عند الإغلاق الفعلي
+            try { MtWeb.onDetach(a, wasLu, wasVideoId) } catch (_: Throwable) {}   // (v939): ret يدعم مصدر يوتيوب كمان
         } catch (e: Throwable) { LogStore.err("MtMedia:detach", e) }
     }
 
