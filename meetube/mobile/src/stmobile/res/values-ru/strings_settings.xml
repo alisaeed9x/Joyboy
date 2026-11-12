@@ -1,0 +1,458 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Phone Settings (issue #2): titles and one-line summaries of the settings tree
+     (com.newtube.mobile.ui.settings). Spanish in values-es. -->
+<resources>
+    <!-- Shared -->
+    <string name="mobile_settings_restart_needed">Перезапустите MeeTube, чтобы применить это изменение</string>
+    <string name="mobile_settings_restart">Перезапустить</string>
+    <string name="mobile_settings_off">Выкл.</string>
+    <string name="mobile_settings_more">Ещё</string>
+    <string name="mobile_settings_default_value">%1$s (по умолчанию)</string>
+    <string name="mobile_settings_clear">Очистить</string>
+    <string name="mobile_settings_cleared">Очищено</string>
+    <string name="mobile_settings_unavailable">Недоступно на этом телефоне</string>
+    <plurals name="mobile_settings_minutes">
+        <item quantity="one">%d минута</item>
+        <item quantity="few">%d минуты</item>
+        <item quantity="many">%d минут</item>
+        <item quantity="other">%d минуты</item>
+    </plurals>
+    <plurals name="mobile_settings_hours">
+        <item quantity="one">%d час</item>
+        <item quantity="few">%d часа</item>
+        <item quantity="many">%d часов</item>
+        <item quantity="other">%d часа</item>
+    </plurals>
+    <string name="mobile_settings_hours_minutes">%1$d ч %2$d мин</string>
+
+    <!-- Top level -->
+    <string name="mobile_settings_account">Аккаунт</string>
+    <string name="mobile_settings_account_signed_out">Вход не выполнен · Войдите, чтобы увидеть подписки</string>
+    <string name="mobile_settings_account_switch">Сменить аккаунт или управлять аккаунтами</string>
+    <string name="mobile_settings_group_app">Приложение</string>
+    <string name="mobile_settings_group_video">Видео и звук</string>
+    <string name="mobile_settings_group_other">Другое</string>
+    <string name="mobile_settings_general">Общие</string>
+    <string name="mobile_settings_general_summary">Язык, регион, голосовой поиск и часы</string>
+    <string name="mobile_settings_customize">Настройка интерфейса</string>
+    <string name="mobile_settings_customize_summary">Тема, вкладки, макет главной страницы и меню видео</string>
+    <string name="mobile_settings_customize_summary_value">Тема «%1$s», вкладки, макет главной страницы и меню видео</string>
+    <string name="mobile_settings_theme_system_short">Системная</string>
+    <string name="mobile_settings_theme_light_short">Светлая</string>
+    <string name="mobile_settings_theme_dark_short">Тёмная</string>
+    <string name="mobile_settings_feeds">Ленты</string>
+    <string name="mobile_settings_feeds_summary">Скрытые видео, заголовки и порядок каналов</string>
+    <string name="mobile_settings_privacy">История и конфиденциальность</string>
+    <string name="mobile_settings_privacy_summary">История просмотров и поиска</string>
+    <string name="mobile_settings_playback">Воспроизведение</string>
+    <string name="mobile_settings_playback_summary">Автовоспроизведение, фоновое воспроизведение и скорость</string>
+    <string name="mobile_settings_quality">Качество видео</string>
+    <string name="mobile_settings_audio_quality">Качество звука</string>
+    <string name="mobile_settings_audio_quality_summary">Стабильная громкость, усиление звука и эквалайзер</string>
+    <string name="mobile_settings_captions">Субтитры</string>
+    <string name="mobile_settings_captions_summary">Стиль, размер и положение</string>
+    <string name="mobile_settings_sponsorblock_on">Вкл. · пропуск спонсорских вставок и заставок</string>
+    <string name="mobile_settings_dearrow_both">Улучшенные заголовки и миниатюры</string>
+    <string name="mobile_settings_dearrow_titles_only">Улучшенные заголовки</string>
+    <string name="mobile_settings_dearrow_thumbnails_only">Улучшенные миниатюры</string>
+    <string name="mobile_settings_backup">Резервное копирование и восстановление</string>
+    <string name="mobile_settings_backup_summary">Сохранить настройки в файл</string>
+    <string name="mobile_settings_advanced">Дополнительно</string>
+    <string name="mobile_settings_advanced_summary">Потоковая передача, сеть и исправления</string>
+    <string name="mobile_settings_about">О приложении</string>
+    <string name="mobile_settings_coffee">Угостить разработчика кофе</string>
+    <string name="mobile_settings_coffee_summary">Поддержите MeeTube, если вам нравится приложение</string>
+
+    <!-- General -->
+    <string name="mobile_settings_language">Язык</string>
+    <string name="mobile_settings_country">Регион</string>
+    <string name="mobile_settings_start_screen">Стартовый экран</string>
+    <string name="mobile_settings_interface_size">Размер интерфейса</string>
+    <string name="mobile_settings_voice_search">Сразу включать голосовой поиск</string>
+    <string name="mobile_settings_voice_search_summary">При открытии поиска сразу начинается прослушивание</string>
+    <string name="mobile_settings_24_hour">24-часовой формат времени</string>
+    <string name="mobile_settings_24_hour_summary">Для времени начала премьер и прямых трансляций</string>
+    <string name="mobile_settings_liquid_glass">Эффект жидкого стекла</string>
+    <string name="mobile_settings_liquid_glass_summary">Блики, свечение и зернистость на стеклянных панелях. При выключении используется обычное матовое размытие, которое меньше расходует заряд батареи</string>
+    <string name="mobile_settings_indian_counts">Индийская система чисел</string>
+    <string name="mobile_settings_indian_counts_summary">Показывать просмотры и отметки «Нравится» в лакхах и крорах, например 2,5 лакха и 1,2 крора, вместо 250 тыс. и 12 млн</string>
+
+    <!-- Tabs and feeds -->
+    <string name="mobile_settings_tabs">Вкладки</string>
+    <string name="mobile_settings_tabs_summary">Выберите, что показывать на нижней панели и во вкладке «Вы»</string>
+    <string name="mobile_settings_tabs_bottom_bar">Нижняя панель</string>
+    <string name="mobile_settings_nav_labels">Названия вкладок</string>
+    <string name="mobile_settings_nav_labels_summary">Показывать название каждой вкладки под её значком на нижней панели</string>
+    <string name="mobile_settings_brand_name">Название приложения на верхней панели</string>
+    <string name="mobile_settings_brand_name_summary">Показывать MeeTube рядом со значком вверху. При выключении остаётся только значок</string>
+    <string name="mobile_settings_top_bar">Всегда показывать верхнюю панель</string>
+    <string name="mobile_settings_top_bar_summary">Оставлять верхнюю панель на экране при прокрутке ленты, а не скрывать её</string>
+    <string name="mobile_settings_search_fab">Кнопка поиска при скрытой панели</string>
+    <string name="mobile_settings_search_fab_right">Внизу справа</string>
+    <string name="mobile_settings_search_fab_left">Внизу слева</string>
+    <string name="mobile_settings_tabs_you">Вы</string>
+    <string name="mobile_settings_tabs_none">Нет</string>
+    <string name="mobile_settings_tabs_bar_note">Перетащите элемент за значок или удерживайте его, чтобы изменить порядок панели. Перетащите «Поиск» вверх, чтобы переместить его на верхнюю панель. Нажмите вкладку, чтобы изменить её содержимое.</string>
+    <string name="mobile_settings_bar_top">Верхняя панель</string>
+    <string name="mobile_settings_bar_tab">Вкладка</string>
+    <string name="mobile_settings_bar_tab_summary">Нажмите, чтобы изменить</string>
+    <string name="mobile_settings_bar_empty">Пусто</string>
+    <string name="mobile_settings_bar_empty_summary">Нажмите, чтобы выбрать вкладку</string>
+    <string name="mobile_settings_bar_first">Всегда первой</string>
+    <string name="mobile_settings_bar_last">Всегда последней</string>
+    <string name="mobile_settings_bar_search_up">Перетащите вверх, чтобы переместить на верхнюю панель</string>
+    <string name="mobile_settings_bar_search_down">Перетащите вниз, чтобы вернуть на нижнюю панель</string>
+    <string name="mobile_settings_search_place">Поиск</string>
+    <string name="mobile_settings_search_place_bottom">На нижней панели</string>
+    <string name="mobile_settings_search_place_top">На верхней панели</string>
+    <string name="mobile_settings_tabs_note">Также можно удерживать вкладку или раздел во вкладке «Вы», чтобы переместить, переименовать или скрыть его.</string>
+    <string name="mobile_settings_hidden">Скрытые видео</string>
+    <string name="mobile_settings_hidden_none">Ничего не скрыто</string>
+    <plurals name="mobile_settings_hidden_count">
+        <item quantity="one">Скрыт %d тип видео</item>
+        <item quantity="few">Скрыто %d типа видео</item>
+        <item quantity="many">Скрыто %d типов видео</item>
+        <item quantity="other">Скрыто %d типа видео</item>
+    </plurals>
+    <string name="mobile_settings_hidden_watched">Просмотренные видео</string>
+    <string name="mobile_settings_hidden_watched_home">Скрывать просмотренные видео на главной</string>
+    <string name="mobile_settings_hidden_watched_subscriptions">Скрывать просмотренные видео в подписках</string>
+    <string name="mobile_settings_hidden_watched_later">Удалять просмотренные видео из плейлиста «Смотреть позже»</string>
+    <string name="mobile_settings_hidden_watched_later_summary">Удалять видео из плейлиста «Смотреть позже» после его просмотра</string>
+    <string name="mobile_settings_hidden_watched_note">Используется история просмотров YouTube, поэтому необходимо войти в аккаунт.</string>
+    <string name="mobile_settings_hidden_upcoming">Предстоящие премьеры и трансляции</string>
+    <string name="mobile_settings_hidden_upcoming_home">Скрывать на главной</string>
+    <string name="mobile_settings_hidden_upcoming_subscriptions">Скрывать в подписках</string>
+    <string name="mobile_settings_hidden_upcoming_channels">Скрывать на страницах каналов</string>
+    <string name="mobile_settings_hidden_live">Прямые трансляции</string>
+    <string name="mobile_settings_hidden_live_subscriptions">Скрывать прямые трансляции в подписках</string>
+    <string name="mobile_settings_video_menu">Меню видео</string>
+    <string name="mobile_settings_video_menu_summary">Настройте содержимое меню ⋮</string>
+    <string name="mobile_settings_video_menu_note">Содержимое меню ⋮ у видео и меню, открываемого долгим нажатием на вкладку. Пункт показывается только там, где он применим.</string>
+    <string name="mobile_settings_menu_play">Воспроизведение</string>
+    <string name="mobile_settings_menu_queue_add">Добавить в очередь</string>
+    <string name="mobile_settings_menu_save">Сохранение</string>
+    <string name="mobile_settings_menu_recent_playlist">Сохранить в последний использованный плейлист</string>
+    <string name="mobile_settings_menu_save_playlist">Сохранить или удалить плейлист</string>
+    <string name="mobile_settings_menu_channel">Канал и рекомендации</string>
+    <string name="mobile_settings_menu_hide_subscriptions">Скрыть из подписок</string>
+    <string name="mobile_settings_menu_share">Поделиться и сведения</string>
+    <string name="mobile_settings_menu_playlists">Плейлисты</string>
+    <string name="mobile_settings_menu_tabs">Меню вкладки</string>
+    <string name="mobile_settings_menu_move_section">Переместить вверх или вниз</string>
+    <string name="mobile_settings_menu_usual_order">Обычный порядок</string>
+    <string name="mobile_settings_menu_usual_order_summary">Вернуть пункты меню на привычные места</string>
+    <string name="mobile_settings_menu_usual_order_done">Порядок меню восстановлен</string>
+    <string name="mobile_settings_thumbnails">Миниатюры</string>
+    <string name="mobile_settings_thumbnails_default">Миниатюра автора видео</string>
+    <string name="mobile_settings_thumbnails_start">Кадр из начала видео</string>
+    <string name="mobile_settings_thumbnails_middle">Кадр из середины видео</string>
+    <string name="mobile_settings_thumbnails_end">Кадр из конца видео</string>
+    <string name="mobile_settings_original_titles">Оригинальные названия</string>
+    <string name="mobile_settings_original_titles_summary">Показывать названия на языке оригинала, а не в переводе YouTube</string>
+    <string name="mobile_settings_channels_order">Порядок каналов во вкладке «Вы»</string>
+    <string name="mobile_settings_channels_order_recent">Сначала недавно просмотренные</string>
+    <string name="mobile_settings_channels_order_name">По алфавиту</string>
+    <string name="mobile_settings_channels_order_new">Сначала каналы с новыми видео</string>
+    <string name="mobile_settings_pinned_channels">Что показывать у закреплённых каналов</string>
+    <string name="mobile_settings_pinned_channels_all">Главную страницу канала</string>
+    <string name="mobile_settings_pinned_channels_uploads">Только его видео</string>
+    <string name="mobile_settings_playlists_style">Плейлисты во вкладке «Вы»</string>
+    <string name="mobile_settings_playlists_style_grid">Каждый плейлист</string>
+    <string name="mobile_settings_playlists_style_rows">Все видео из них подряд</string>
+
+    <!-- History and privacy -->
+    <string name="mobile_settings_watch_history">История просмотров</string>
+    <string name="mobile_settings_watch_history_auto">Следовать настройке YouTube</string>
+    <string name="mobile_settings_watch_history_auto_desc">Сохранять историю, если она включена в аккаунте YouTube</string>
+    <string name="mobile_settings_watch_history_on">Всегда сохранять</string>
+    <string name="mobile_settings_watch_history_on_desc">При каждом запуске MeeTube снова включает историю просмотров YouTube</string>
+    <string name="mobile_settings_watch_history_off">Не сохранять</string>
+    <string name="mobile_settings_watch_history_off_desc">MeeTube перестаёт передавать YouTube информацию о просмотренных видео</string>
+    <string name="mobile_settings_clear_watch_history">Очистить историю просмотров</string>
+    <string name="mobile_settings_clear_watch_history_summary">Удаляет просмотренные видео из истории YouTube</string>
+    <string name="mobile_settings_clear_watch_history_confirm">Очистить историю просмотров?</string>
+    <string name="mobile_settings_clear_watch_history_body">Вся история просмотров YouTube будет удалена. Это действие нельзя отменить.</string>
+    <string name="mobile_settings_search_history_off">Не сохранять историю поиска</string>
+    <string name="mobile_settings_search_history_off_summary">Предыдущие запросы не сохраняются и не предлагаются</string>
+    <string name="mobile_settings_clear_search_history">Очистить историю поиска</string>
+    <string name="mobile_settings_clear_search_history_summary">Удаляет поисковые запросы, сохранённые на этом телефоне</string>
+    <string name="mobile_settings_clear_search_history_confirm">Очистить историю поиска?</string>
+    <string name="mobile_settings_clear_search_history_body">Поисковые запросы, сохранённые MeeTube на этом телефоне, будут удалены. Это действие нельзя отменить.</string>
+
+    <!-- Backup -->
+    <string name="mobile_settings_backup_now">Создать резервную копию</string>
+    <string name="mobile_settings_backup_now_summary">Сохраняет настройки в %1$s</string>
+    <string name="mobile_settings_backup_done">Резервная копия сохранена</string>
+    <string name="mobile_settings_restore">Восстановить</string>
+    <string name="mobile_settings_restore_summary">Из резервной копии в %1$s</string>
+    <string name="mobile_settings_auto_backup">Автоматическое резервное копирование</string>
+    <string name="mobile_settings_auto_backup_off">Никогда</string>
+    <string name="mobile_settings_backup_note">Резервная копия содержит все ваши настройки MeeTube. Данные аккаунта YouTube, например подписки и история просмотров, остаются в аккаунте.</string>
+
+    <!-- MEETUBE(home-rows): General > Home layout (issue #4). -->
+    <string name="mobile_settings_home_layout">Макет главной страницы</string>
+    <string name="mobile_settings_app_icon">Значок приложения</string>
+    <string name="mobile_app_icon_default">Классический (по умолчанию)</string>
+    <string name="mobile_app_icon_classic">Чёрное сердце</string>
+    <string name="mobile_app_icon_fantasy">Фэнтези</string>
+    <string name="mobile_app_icon_glass_heart">Стеклянное сердце</string>
+    <string name="mobile_app_icon_ruby">Оригинальное стекло</string>
+    <string name="mobile_app_icon_play">Оригинальный Play</string>
+    <string name="mobile_app_icon_play_dark">Оригинальный неон</string>
+    <string name="mobile_app_icon_blaze">Пламенный</string>
+    <string name="mobile_settings_loader">Индикатор загрузки</string>
+    <string name="mobile_loader_neon">Неоновое кольцо</string>
+    <string name="mobile_loader_frosted">Матированное стекло</string>
+    <string name="mobile_loader_cookie">Печенье</string>
+    <string name="mobile_loader_frosted_cookie">Матовое печенье</string>
+    <string name="mobile_loader_liquid_ring">Жидкое кольцо</string>
+    <string name="mobile_loader_glass_orb">Стеклянная сфера</string>
+    <string name="mobile_loader_morphing_blob">Жидкая капля</string>
+    <string name="mobile_loader_glass_orbit">Стеклянная орбита</string>
+    <string name="mobile_app_icon_pending">Перезапустите MeeTube, чтобы новый значок отображался везде. Иначе он изменится после выхода из приложения</string>
+    <string name="mobile_settings_home_layout_feed">Лента</string>
+    <string name="mobile_settings_home_layout_feed_desc">Единый список видео, как в YouTube</string>
+    <string name="mobile_settings_home_layout_rows">Ряды</string>
+    <string name="mobile_settings_home_layout_rows_desc">Отдельный горизонтально прокручиваемый ряд для каждой темы, как в SmartTube</string>
+    <string name="mobile_settings_home_shorts">Shorts на главной</string>
+    <string name="mobile_settings_home_shorts_summary">Горизонтальный ряд Shorts, как в приложении YouTube</string>
+    <!-- MEETUBE(glass, issue #80; minimal buttons) -->
+    <string name="mobile_settings_player_buttons_look">Стиль кнопок плеера</string>
+    <string name="mobile_settings_player_buttons_see_through">Полупрозрачный</string>
+    <string name="mobile_settings_player_buttons_see_through_desc">Полупрозрачный стеклянный круг за каждой кнопкой поверх видео, Shorts и мини-плеера</string>
+    <string name="mobile_settings_player_buttons_frosted">Матовое стекло</string>
+    <string name="mobile_settings_player_buttons_frosted_desc">Круги размывают изображение под ними. Расход батареи выше, а на медленных телефонах возможны подтормаживания</string>
+    <string name="mobile_settings_player_buttons_minimal">Минималистичный</string>
+    <string name="mobile_settings_player_buttons_minimal_desc">Без кругов — только значки с лёгкой тенью, как в YouTube</string>
+    <!-- MEETUBE(performance) -->
+    <string name="mobile_settings_performance">Производительность</string>
+    <string name="mobile_settings_high_refresh">Режим высокой производительности</string>
+    <string name="mobile_settings_high_refresh_summary">Поддерживает частоту обновления приложения на уровне %1$d Гц для максимально плавной анимации. Расходует больше заряда; Android может снизить частоту при перегреве телефона или включённом энергосбережении</string>
+    <!-- MEETUBE(nav lens, issue #46) -->
+    <string name="mobile_settings_tab_motion">Анимация переключения вкладок</string>
+    <string name="mobile_settings_tab_motion_summary">Стеклянный блик перемещается к вкладке, а панель слегка покачивается. На медленных телефонах функция выключена, пока вы не включите её</string>
+    <!-- MEETUBE(bar reset) -->
+    <string name="mobile_settings_tabs_reset">Сбросить панель к настройкам по умолчанию</string>
+    <string name="mobile_settings_tabs_reset_summary">Главная, Shorts, Поиск, Подписки, Вы</string>
+    <!-- MEETUBE(list layout, issue #82) -->
+    <string name="mobile_settings_video_layout">Макет видео</string>
+    <string name="mobile_settings_video_layout_cards">Карточки</string>
+    <string name="mobile_settings_video_layout_cards_desc">Большая миниатюра для каждого видео</string>
+    <string name="mobile_settings_video_layout_list">Список</string>
+    <string name="mobile_settings_video_layout_list_desc">Небольшая миниатюра рядом с названием; на экране помещается больше видео</string>
+
+    <!-- Playback -->
+    <!-- MEETUBE(background): the battery-optimization exemption row (Playback). -->
+    <string name="mobile_settings_screen_off">Продолжать воспроизведение при выключенном экране</string>
+    <string name="mobile_settings_screen_off_on">Разрешено: режим энергосбережения не будет останавливать звук</string>
+    <string name="mobile_settings_screen_off_off">Режим энергосбережения может остановить звук. Нажмите, чтобы разрешить MeeTube работать в фоне</string>
+    <string name="mobile_settings_auto_pip">Картинка в картинке</string>
+    <string name="mobile_settings_auto_pip_summary">При выходе из приложения воспроизводимое видео сворачивается в небольшое окно. При выключении продолжает воспроизводиться только звук</string>
+    <string name="mobile_settings_video_ends">Когда видео закончится</string>
+    <string name="mobile_settings_video_ends_next">Воспроизвести следующее видео</string>
+    <string name="mobile_settings_video_ends_repeat">Повторять видео</string>
+    <string name="mobile_settings_video_ends_shuffle">Перемешать плейлист</string>
+    <string name="mobile_settings_video_ends_list">Досмотреть плейлист и остановиться</string>
+    <string name="mobile_settings_video_ends_reverse">Воспроизводить плейлист в обратном порядке</string>
+    <string name="mobile_settings_video_ends_pause">Остановить</string>
+    <string name="mobile_settings_video_ends_close">Закрыть плеер</string>
+    <string name="mobile_settings_background">При выходе из приложения</string>
+    <string name="mobile_settings_background_pip_desc">Видео продолжит воспроизводиться в небольшом окне</string>
+    <string name="mobile_settings_background_audio_desc">Продолжит воспроизводиться только звук</string>
+    <string name="mobile_settings_remember_speed">Запоминать скорость воспроизведения</string>
+    <string name="mobile_settings_remember_speed_channel">Для каждого канала</string>
+    <string name="mobile_settings_remember_speed_video">Для каждого видео</string>
+    <string name="mobile_settings_remember_speed_all">Одинаковая для всех видео</string>
+    <string name="mobile_settings_remember_speed_none">Не запоминать</string>
+    <string name="mobile_settings_remember_speed_none_desc">При каждом запуске MeeTube скорость сбрасывается до 1×</string>
+    <string name="mobile_settings_speed_list">Скорости в разделе «Другие скорости»</string>
+    <string name="mobile_settings_speed_list_basic">Краткий список</string>
+    <string name="mobile_settings_speed_list_fine">Точные шаги</string>
+    <string name="mobile_settings_speed_list_finest">С шагом 0,05×</string>
+    <string name="mobile_settings_natural_voice">Сохранять естественный голос при другой скорости</string>
+    <string name="mobile_settings_natural_voice_summary">Сохраняет обычную высоту голоса при ускорении или замедлении видео</string>
+    <string name="mobile_settings_sleep_timer">Таймер сна</string>
+    <string name="mobile_settings_sleep_timer_summary">Приостанавливает воспроизведение через %1$s после открытия видео</string>
+    <string name="mobile_settings_audio_focus">Приостанавливать при других звуках</string>
+    <string name="mobile_settings_audio_focus_summary">Приостанавливает воспроизведение во время звонков и при звуке из других приложений. Применяется к следующему открытому видео</string>
+    <string name="mobile_settings_resume">Возобновление</string>
+    <string name="mobile_settings_resume_short">Продолжать просмотр коротких видео</string>
+    <string name="mobile_settings_resume_short_summary">Видео короче 6 минут начинаются с начала, если эта функция выключена</string>
+    <string name="mobile_settings_resume_live">Возобновлять прямые трансляции</string>
+    <string name="mobile_settings_resume_live_summary">Продолжать трансляцию с того места, где вы остановились, а не с текущего момента эфира</string>
+    <string name="mobile_settings_watch_page">Под видео</string>
+    <string name="mobile_settings_ambient">Атмосферный режим</string>
+    <string name="mobile_settings_ambient_summary">Цвета видео подсвечивают область под плеером и заполняют чёрные полосы в вертикальном полноэкранном режиме</string>
+    <string name="mobile_settings_hide_related">Скрыть раздел «Далее»</string>
+    <string name="mobile_settings_hide_related_summary">Скрывает похожие видео под плеером</string>
+    <string name="mobile_settings_dislikes">Показывать количество дизлайков</string>
+    <string name="mobile_settings_dislikes_summary">Данные предоставляет Return YouTube Dislike; сервис получает идентификатор видео</string>
+    <string name="mobile_settings_paid_promotion">Уведомлять о платной рекламе</string>
+    <string name="mobile_settings_paid_promotion_summary">Показывать краткое сообщение, если в видео указано наличие платной рекламы</string>
+
+    <!-- Video quality -->
+    <string name="mobile_settings_quality_intro">Качество, с которого запускаются видео. Для отдельного видео его можно изменить в настройках плеера.</string>
+    <string name="mobile_settings_default_quality">Качество по умолчанию</string>
+    <!-- MEETUBE(quality-network): one default per network; "%1$s" are the two picks' labels. -->
+    <string name="mobile_settings_quality_wifi">По Wi-Fi</string>
+    <string name="mobile_settings_quality_mobile">По мобильной сети</string>
+    <string name="mobile_settings_quality_same">Как по Wi-Fi</string>
+    <!-- MEETUBE(shorts-quality): issue #26. -->
+    <string name="mobile_settings_quality_shorts">Shorts</string>
+    <string name="mobile_settings_quality_both">Wi-Fi: %1$s · Мобильная сеть: %2$s</string>
+    <string name="mobile_settings_quality_auto">Авто (до %1$dp)</string>
+    <string name="mobile_settings_quality_auto_desc">Рекомендуется. Максимальное качество, доступное при вашем подключении</string>
+    <string name="mobile_settings_quality_up_to">До %1$s</string>
+    <string name="mobile_settings_quality_more_data">Расходует больше трафика</string>
+    <string name="mobile_settings_quality_less_data">Расходует меньше трафика</string>
+    <string name="mobile_settings_quality_data_saver">Экономия трафика</string>
+    <string name="mobile_settings_hdr">Видео HDR</string>
+    <string name="mobile_settings_hdr_summary">Воспроизводит HDR-видео с более яркими и насыщенными цветами. Расходует больше трафика. Применяется к следующему открытому видео</string>
+    <string name="mobile_settings_loudness">Выравнивать громкость</string>
+    <string name="mobile_settings_loudness_summary">Снижает громкость слишком громких видео до обычного уровня YouTube</string>
+    <string name="mobile_settings_player_volume">Громкость плеера</string>
+    <string name="mobile_settings_quality_data_saver_note">При включённой системной экономии трафика MeeTube использует меньший буфер при работе через мобильную сеть.</string>
+
+    <!-- Captions -->
+    <string name="mobile_settings_caption_style">Стиль</string>
+    <string name="mobile_settings_caption_size">Размер</string>
+    <string name="mobile_settings_caption_position">Расстояние от нижнего края</string>
+    <string name="mobile_settings_caption_per_channel">Запоминать субтитры для каждого канала</string>
+    <string name="mobile_settings_caption_per_channel_summary">Включённые субтитры сохраняются только для этого канала. При выключении последний выбранный язык субтитров применяется ко всем видео</string>
+    <string name="mobile_settings_caption_system">Настройки субтитров Android</string>
+    <string name="mobile_settings_caption_system_summary">Используются системным стилем</string>
+    <string name="mobile_settings_captions_note">Включайте субтитры и выбирайте их язык с помощью кнопки CC в плеере.</string>
+
+    <!-- SponsorBlock -->
+    <string name="mobile_settings_sponsorblock_summary">Пропускает фрагменты видео, отмеченные сообществом</string>
+    <string name="mobile_settings_sponsorblock_segments">Когда начинается фрагмент</string>
+    <string name="mobile_settings_segment_skip">Пропустить</string>
+    <string name="mobile_settings_segment_skip_notify">Пропустить и уведомить</string>
+    <string name="mobile_settings_segment_ask">Спрашивать меня</string>
+    <string name="mobile_settings_segment_nothing">Не пропускать</string>
+    <string name="mobile_settings_segment_marks">Метки на шкале прокрутки</string>
+    <string name="mobile_settings_segment_marks_summary">Отмечено типов: %1$d из %2$d</string>
+    <string name="mobile_settings_segment_marks_note">Цветные метки на шкале прокрутки показывают расположение фрагментов каждого типа, даже если их пропуск выключен.</string>
+    <string name="mobile_settings_segment_min">Не пропускать фрагменты короче</string>
+    <string name="mobile_settings_segment_once">Пропускать каждый фрагмент только один раз</string>
+    <string name="mobile_settings_segment_once_summary">Если вернуться к уже пропущенному фрагменту, он будет воспроизведён</string>
+    <string name="mobile_settings_segment_alt_server_summary">Попробуйте, если сегменты перестали загружаться</string>
+    <string name="mobile_settings_segment_alt_server">Использовать альтернативный сервер</string>
+
+    <!-- DeArrow -->
+    <string name="mobile_settings_dearrow_titles">Улучшенные заголовки</string>
+    <string name="mobile_settings_dearrow_titles_summary">Заменяет кликбейтные заголовки на варианты, предложенные сообществом</string>
+    <string name="mobile_settings_dearrow_thumbnails">Улучшенные миниатюры</string>
+    <string name="mobile_settings_dearrow_thumbnails_summary">Заменяет миниатюры кадрами, выбранными сообществом</string>
+    <string name="mobile_settings_dearrow_note">DeArrow получает идентификаторы видео, которые вы видите в списках.</string>
+
+    <!-- Advanced -->
+    <string name="mobile_settings_advanced_note">Эти настройки обычно не нужны. Они меняют способ потоковой передачи данных и подключения MeeTube.</string>
+    <string name="mobile_settings_streaming">Потоковая передача</string>
+    <string name="mobile_settings_buffer">Буфер</string>
+    <string name="mobile_settings_buffer_low_desc">Примерно 25 секунд вперёд. Использует минимум памяти</string>
+    <string name="mobile_settings_buffer_med_desc">Примерно 50 секунд вперёд</string>
+    <string name="mobile_settings_buffer_high_desc">До 75 секунд вперёд</string>
+    <string name="mobile_settings_buffer_highest_desc">До 2 минут вперёд. Использует больше всего памяти</string>
+    <string name="mobile_settings_stall_quality">Снижать качество при постоянной буферизации</string>
+    <string name="mobile_settings_stall_quality_summary">Снижает качество на один уровень после примерно 20 секунд буферизации. Отключение может помочь при использовании VPN</string>
+    <string name="mobile_settings_high_bitrate">Форматы с высоким битрейтом</string>
+    <string name="mobile_settings_high_bitrate_summary">Добавляет потоки YouTube 1080p с более высоким битрейтом, если они доступны для видео. Требует дополнительного запроса</string>
+    <string name="mobile_settings_sabr">Использовать потоковую передачу SABR (экспериментально)</string>
+    <string name="mobile_settings_sabr_summary">Новый протокол потоковой передачи YouTube, начиная со следующего видео. Если он не сработает, видео будет воспроизведено обычным способом</string>
+    <string name="mobile_settings_legacy_codecs">Потоки в одном файле</string>
+    <string name="mobile_settings_legacy_codecs_summary">Воспроизводит старый поток в одном файле (обычно 360p) без смены качества. Только для очень медленных телефонов</string>
+    <string name="mobile_settings_live">Прямые трансляции</string>
+    <string name="mobile_settings_live_edge">Начинать с текущего момента эфира</string>
+    <string name="mobile_settings_live_edge_summary">Воспроизводит трансляцию максимально близко к прямому эфиру, без 15-секундной задержки</string>
+    <string name="mobile_settings_live_hls">Воспроизводить прямые трансляции через HLS</string>
+    <string name="mobile_settings_live_hls_summary">Может работать плавнее на медленных телефонах. Нельзя перематывать назад, максимальное качество — 1080p</string>
+    <string name="mobile_settings_player">Плеер</string>
+    <string name="mobile_settings_controls_on_next">Показывать элементы управления при запуске следующего видео</string>
+    <string name="mobile_settings_controls_on_next_summary">Элементы управления появляются при запуске следующего видео</string>
+    <string name="mobile_settings_list_queue">Воспроизводить исходный список</string>
+    <string name="mobile_settings_list_queue_summary">Видео, открытое из плейлиста, продолжит воспроизводить остальные видео в исходном порядке</string>
+    <string name="mobile_settings_queue_mode">Очередь следует настройке «Когда видео закончится»</string>
+    <string name="mobile_settings_queue_mode_summary">При выборе «Остановить» или «Закрыть плеер» воспроизведение очереди тоже прекращается</string>
+    <string name="mobile_settings_chapter_popup">Всплывающие названия глав</string>
+    <string name="mobile_settings_chapter_popup_summary">Показывает название каждой главы при её начале. Нажмите, чтобы перейти к следующей</string>
+    <string name="mobile_settings_network">Сеть</string>
+    <string name="mobile_settings_proxy">Веб-прокси</string>
+    <string name="mobile_settings_proxy_summary">Перенаправляет трафик MeeTube через HTTP- или SOCKS-прокси</string>
+    <string name="mobile_settings_dns">Поиск серверов YouTube</string>
+    <string name="mobile_settings_dns_ipv4">Сначала IPv4</string>
+    <string name="mobile_settings_dns_ipv4_desc">Вариант по умолчанию. Помогает при проблемах с IPv6 в сети</string>
+    <string name="mobile_settings_dns_system">DNS-сервер телефона</string>
+    <string name="mobile_settings_dns_google">DNS Google</string>
+    <string name="mobile_settings_conscrypt">Conscrypt</string>
+    <string name="mobile_settings_conscrypt_summary">Встроенная библиотека безопасности сетевых подключений. Может помочь при блокировке YouTube в сетях, где используются приложения вроде ByeByeDPI</string>
+    <string name="mobile_settings_accounts">Аккаунты</string>
+    <string name="mobile_settings_multi_profiles">Отдельные настройки для каждого аккаунта</string>
+    <string name="mobile_settings_multi_profiles_summary">У каждого аккаунта будут свои настройки, начиная со значений по умолчанию</string>
+    <string name="mobile_settings_legacy_feeds">Старый формат лент</string>
+    <string name="mobile_settings_legacy_feeds_summary">Загружает подписки, каналы и плейлисты так же, как приложение YouTube для ТВ. Попробуйте, если они отображаются пустыми</string>
+
+    <!-- About -->
+    <string name="mobile_settings_version">Версия</string>
+    <string name="mobile_settings_update_notify_summary">Сообщает о выходе новой версии</string>
+    <!-- MEETUBE(customize): the Customization page's groups and its tiles' short names -->
+    <string name="mobile_settings_customize_look">Внешний вид</string>
+    <string name="mobile_settings_customize_layout">Макет</string>
+    <string name="mobile_settings_customize_effects">Стекло и анимация</string>
+    <string name="mobile_settings_customize_tabs_menus">Вкладки и меню</string>
+    <string name="mobile_settings_thumbnails_default_short">Исходная</string>
+    <string name="mobile_settings_thumbnails_start_short">Начало</string>
+    <string name="mobile_settings_thumbnails_middle_short">Середина</string>
+    <string name="mobile_settings_thumbnails_end_short">Конец</string>
+    <string name="mobile_settings_playlists_style_grid_short">Плейлисты</string>
+    <string name="mobile_settings_playlists_style_rows_short">Видео</string>
+    <string name="mobile_settings_interface_size_sample">Так выглядит название видео при этом размере</string>
+    <string name="mobile_settings_interface_size_sample_meta">MeeTube · 1,2 млн просмотров · 2 дня назад</string>
+    <string name="mobile_settings_tab_glow">Свечение вкладки</string>
+    <string name="mobile_settings_tab_glow_white">Белое</string>
+    <string name="mobile_settings_tab_glow_white_desc">Обычное белое свечение (серое в светлой теме)</string>
+    <string name="mobile_settings_tab_glow_grey">Серое</string>
+    <string name="mobile_settings_tab_glow_grey_desc">Обычное серое свечение (белое в тёмной теме)</string>
+    <string name="mobile_settings_tab_glow_tabs">Цвета вкладок</string>
+    <string name="mobile_settings_tab_glow_tabs_desc">Каждая вкладка светится своим цветом</string>
+    <string name="mobile_settings_tab_glow_accent">Акцентный цвет</string>
+    <string name="mobile_settings_tab_glow_accent_desc">Каждая вкладка светится красным цветом MeeTube</string>
+    <string name="mobile_settings_tab_glow_off">Выкл.</string>
+    <string name="mobile_settings_progress_glow">Свечение прогресса</string>
+    <string name="mobile_settings_progress_glow_summary">Мягкое свечение в конце шкалы прокрутки и на полосе просмотренного видео</string>
+    <string name="mobile_settings_search_glow">Свечение поиска</string>
+    <string name="mobile_settings_search_glow_summary">При открытии поиска края экрана подсвечиваются цветами Siri</string>
+    <string name="mobile_settings_typing_glow">Свечение при вводе</string>
+    <string name="mobile_settings_typing_glow_summary">Поисковый запрос подсвечивается цветами Siri во время ввода</string>
+    <string name="mobile_settings_short_ends">Когда Shorts заканчивается</string>
+    <string name="mobile_settings_short_ends_loop">Повторить</string>
+    <string name="mobile_settings_short_ends_next">Перейти к следующему Shorts</string>
+    <string name="mobile_settings_watched_bar">Красная полоса просмотра на миниатюрах</string>
+    <string name="mobile_settings_watched_bar_summary">Показывает под миниатюрой, какую часть видео вы посмотрели</string>
+    <string name="mobile_settings_refresh_sound">Звук обновления</string>
+    <string name="mobile_settings_refresh_sound_summary">Ненавязчивый звук при потягивании страницы вниз для обновления</string>
+    <!-- MEETUBE(settings-transfer): Backup > Share or move your settings. -->
+    <string name="mobile_settings_transfer">Поделиться настройками или перенести их</string>
+    <string name="mobile_settings_transfer_export">Сохранить настройки в файл</string>
+    <string name="mobile_settings_transfer_export_summary">Оставить на будущее или перенести на другой телефон</string>
+    <string name="mobile_settings_transfer_share">Поделиться настройками с другом</string>
+    <string name="mobile_settings_transfer_share_summary">Отправить файл настроек в чате или по почте</string>
+    <string name="mobile_settings_transfer_share_text">Мои настройки MeeTube. В MeeTube: Настройки &gt; Резервное копирование &gt; Импорт настроек из файла</string>
+    <string name="mobile_settings_transfer_import">Импортировать настройки из файла</string>
+    <string name="mobile_settings_transfer_import_summary">Загрузить файл настроек, который вы сохранили или получили от друга</string>
+    <string name="mobile_settings_transfer_import_confirm">Настройки будут заменены данными из файла, а MeeTube перезапустится. Аккаунты, история просмотров, загрузки и пароли останутся без изменений.</string>
+    <string name="mobile_settings_transfer_import_button">Импортировать</string>
+    <string name="mobile_settings_transfer_saved">Настройки сохранены</string>
+    <string name="mobile_settings_transfer_imported">Настройки импортированы. MeeTube перезапускается</string>
+    <string name="mobile_settings_transfer_failed">Не удалось сохранить файл настроек</string>
+    <string name="mobile_settings_transfer_not_settings">Это не файл настроек MeeTube</string>
+    <!-- MEETUBE(issue #177): phone player audio. -->
+    <string name="mobile_settings_stable_volume">Стабильная громкость</string>
+    <string name="mobile_settings_stable_volume_summary">Позволяет смягчать перепады громкости в сжатом аудио YouTube. Применяется к следующему открытому видео</string>
+    <string name="mobile_settings_equalizer">Эквалайзер</string>
+    <string name="mobile_settings_equalizer_enable">Использовать эквалайзер</string>
+    <string name="mobile_settings_equalizer_custom">Пользовательский</string>
+    <string name="mobile_settings_equalizer_reset">Сбросить</string>
+    <string name="mobile_settings_equalizer_unavailable">Эквалайзер недоступен на этом устройстве</string>
+</resources>

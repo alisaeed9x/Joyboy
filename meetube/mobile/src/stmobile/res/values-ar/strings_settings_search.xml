@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="mobile_settings_search_hint">البحث في الإعدادات</string>
+    <string name="mobile_settings_search_none">لا توجد إعدادات تطابق “%1$s”</string>
+    <string name="mobile_settings_search_kw_account">تسجيل دخول خروج Google حساب ملف شخصي تبديل</string>
+    <string name="mobile_settings_search_kw_theme">داكن فاتح وضع ليلي مظهر ألوان</string>
+    <string name="mobile_settings_search_kw_customize">تخصيص تعديل مظهر شكل نمط تنسيق</string>
+    <string name="mobile_settings_search_kw_country">بلد دولة منطقة</string>
+    <string name="mobile_settings_search_kw_start_screen">تشغيل بدء فتح افتراضي تبويب رئيسية صفحة</string>
+    <string name="mobile_settings_search_kw_interface_size">واجهة مقياس تكبير خط نص حجم كثافة أكبر أصغر</string>
+    <string name="mobile_settings_search_kw_tabs">شريط سفلي أقسام تنقل استكشاف</string>
+    <string name="mobile_settings_search_kw_hidden">إخفاء مشاهدة فلتر قادم عروض أولى مباشر</string>
+    <string name="mobile_settings_search_kw_video_menu">قائمة سياق ثلاث نقاط ضغط مطوّل خيارات</string>
+    <string name="mobile_settings_search_kw_channels_order">اشتراكات ترتيب قنوات</string>
+    <string name="mobile_settings_search_kw_watch_history">إيقاف مؤقت سجل تخفي</string>
+    <string name="mobile_settings_search_kw_video_ends">تشغيل تلقائي تكرار حلقة عشوائي فيديو تالي</string>
+    <string name="mobile_settings_search_kw_background">خلفية تشغيل نافذة ضمن النافذة PiP صوت فقط تصغير</string>
+    <string name="mobile_settings_search_kw_natural_voice">طبقة صوت تمديد وقت صوت حاد</string>
+    <string name="mobile_settings_search_kw_audio_focus">مكالمات إشعارات تطبيقات أخرى مقاطعات</string>
+    <string name="mobile_settings_search_kw_hide_related">اقتراحات صلة توصيات</string>
+    <string name="mobile_settings_search_kw_dislikes">Return YouTube Dislike عدم إعجاب ryd</string>
+    <string name="mobile_settings_search_kw_home_layout">صفوف رفوف شرائح خلاصة شبكة SmartTube</string>
+    <string name="mobile_settings_search_kw_app_icon">مشغّل شعار شاشة رئيسية قديم كلاسيكي خيالي أبيض زجاج قلب ياقوت تشغيل داكن لهب نار</string>
+    <string name="mobile_settings_search_kw_quality">دقة 4k 1080p 720p hd توفير بيانات جوّال</string>
+    <string name="mobile_settings_search_kw_loudness">مستوى صوت توحيد تلقائي منخفض مرتفع</string>
+    <string name="mobile_settings_search_kw_player_volume">منخفض مرتفع صوت تعزيز كسب تضخيم 125 150 175 200</string>
+    <string name="mobile_settings_search_kw_captions">ترجمة cc شرح مكتوب</string>
+    <string name="mobile_settings_search_kw_sponsorblock">تخطي رعاية إعلانات أجزاء مقدمات</string>
+    <string name="mobile_settings_search_kw_dearrow">مضللة نقرات عناوين صور مصغرة</string>
+    <string name="mobile_settings_search_kw_backup">تصدير استيراد حفظ إعدادات</string>
+    <string name="mobile_settings_search_kw_buffer">تخزين مؤقت ذاكرة</string>
+    <string name="mobile_settings_search_kw_dns">dns ipv4 ipv6 خوادم</string>
+    <string name="mobile_settings_search_kw_conscrypt">ssl tls شهادات أمان رقابة حجب ByeByeDPI</string>
+    <string name="mobile_settings_search_kw_multi_profiles">ملفات شخصية لكل حساب خاص مختلف</string>
+    <string name="mobile_settings_search_kw_updates">تحديث نسخة جديد إصدار</string>
+    <string name="mobile_settings_search_kw_diagnostic_log">خطأ بلاغ سجلات تصحيح</string>
+    <string name="mobile_settings_search_kw_gesture_levels">إيماءات سطوع مستوى صوت</string>
+    <string name="mobile_settings_search_kw_gesture_seek">إيماءات سحب تخطي تقديم ترجيع</string>
+    <string name="mobile_settings_search_kw_double_tap_seek">نقر مرتين تقديم ترجيع تخطي ثواني قفز فاصل</string>
+    <string name="mobile_settings_search_kw_loader">مؤشر تحميل دوران تقدم نيون مصنفر زجاج بسكويت سائل حلقة كرة كتلة مدار</string>
+    <string name="mobile_settings_search_kw_watched_bar">مشاهدة تقدم أحمر خط شريط سجل صورة مصغرة</string>
+    <string name="mobile_settings_search_kw_refresh_sound">تحديث صوت فرقعة سحب تمرير ضجيج كتم</string>
+    <string name="mobile_settings_search_kw_short_ends">Shorts حلقة تكرار تمرير تلقائي تالي سحب</string>
+    <string name="mobile_settings_search_kw_stable_volume">ثبات مستوى صوت drc ضغط نطاق ديناميكي مرتفع منخفض</string>
+    <string name="mobile_settings_search_kw_equalizer">معادل eq صوت جهير حاد ترددات نطاقات إعدادات مسبقة مخصص</string>
+</resources>

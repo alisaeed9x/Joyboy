@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- MEETUBE(search chips): one chip of the row over the results (MobileSearchActivity.setupChips),
+     a glass pill like the Home feed strip's (FeedStrip); its background is set from code. -->
+<TextView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="wrap_content"
+    android:layout_height="36dp"
+    android:layout_marginEnd="8dp"
+    android:elevation="4dp"
+    android:fontFamily="sans-serif-medium"
+    android:gravity="center"
+    android:minHeight="34dp"
+    android:paddingHorizontal="14dp"
+    android:textColor="#FFFFFFFF"
+    android:textSize="14sp" />

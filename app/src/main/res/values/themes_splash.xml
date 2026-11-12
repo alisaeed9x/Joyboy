@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- (v908) الأساس = Theme.NewTube بتاع MeeTube (styles_mobile.xml): سويتشات/لودر/دايلوجات/سكرول/شريط النظام/الألوان كلها منه -->
+    <style name="AppSplash" parent="Theme.NewTube">
+        <item name="android:windowBackground">@drawable/splash_window</item>
+        <item name="android:windowAnimationStyle">@null</item>
+    </style>
+    <!-- (v592) ثيم MainActivity/TvActivity: خلفية بني غامق بدل الأبيض عشان مفيش وميض أبيض قبل سبلاش Joyboy -->
+    <style name="AppSplashMain" parent="AppSplash">
+        <item name="android:windowBackground">@drawable/splash_window_joy</item>
+    </style>
+    <!-- (v922) ثيم MainActivity: نافذة سادة (لون الثيم) بدل صورة السبلاش — الدخول من شريط MeeTube/المتصفح/الملفات بقى ينقل على طول من غير ما تظهر صورة (اللانشر بقى MeeTube) -->
+    <style name="AppMainPlain" parent="AppSplash">
+        <item name="android:windowBackground">@drawable/splash_window</item>
+    </style>
+</resources>

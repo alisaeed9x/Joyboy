@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- MEETUBE(settings back): a physical button - it sinks while held and springs back up past
+     its rest height when let go. -->
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:state_pressed="true">
+        <set>
+            <objectAnimator android:duration="90" android:interpolator="@android:interpolator/decelerate_quad"
+                android:propertyName="scaleX" android:valueTo="0.82" android:valueType="floatType" />
+            <objectAnimator android:duration="90" android:interpolator="@android:interpolator/decelerate_quad"
+                android:propertyName="scaleY" android:valueTo="0.82" android:valueType="floatType" />
+            <objectAnimator android:duration="90" android:interpolator="@android:interpolator/decelerate_quad"
+                android:propertyName="translationY" android:valueTo="2dp" android:valueType="floatType" />
+            <objectAnimator android:duration="90" android:propertyName="alpha" android:valueTo="0.8"
+                android:valueType="floatType" />
+        </set>
+    </item>
+    <item>
+        <set>
+            <objectAnimator android:duration="280" android:interpolator="@android:anim/overshoot_interpolator"
+                android:propertyName="scaleX" android:valueTo="1" android:valueType="floatType" />
+            <objectAnimator android:duration="280" android:interpolator="@android:anim/overshoot_interpolator"
+                android:propertyName="scaleY" android:valueTo="1" android:valueType="floatType" />
+            <objectAnimator android:duration="280" android:interpolator="@android:anim/overshoot_interpolator"
+                android:propertyName="translationY" android:valueTo="0dp" android:valueType="floatType" />
+            <objectAnimator android:duration="150" android:propertyName="alpha" android:valueTo="1"
+                android:valueType="floatType" />
+        </set>
+    </item>
+</selector>

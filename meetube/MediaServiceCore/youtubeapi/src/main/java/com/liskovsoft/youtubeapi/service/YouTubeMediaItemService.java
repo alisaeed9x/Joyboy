@@ -1,0 +1,1102 @@
+package com.liskovsoft.youtubeapi.service;
+
+import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
+
+import com.liskovsoft.mediaserviceinterfaces.MediaItemService;
+import com.liskovsoft.mediaserviceinterfaces.data.DeArrowData;
+import com.liskovsoft.mediaserviceinterfaces.data.DislikeData;
+import com.liskovsoft.mediaserviceinterfaces.data.FeedbackEndpoint;
+import com.liskovsoft.mediaserviceinterfaces.data.FeedbackReasons;
+import com.liskovsoft.mediaserviceinterfaces.data.FeedbackResult;
+import com.liskovsoft.mediaserviceinterfaces.data.MediaItem;
+import com.liskovsoft.mediaserviceinterfaces.data.MediaItemFormatInfo;
+import com.liskovsoft.mediaserviceinterfaces.data.MediaItemMetadata;
+import com.liskovsoft.mediaserviceinterfaces.data.MediaItemStoryboard;
+import com.liskovsoft.mediaserviceinterfaces.data.PlaylistInfo;
+import com.liskovsoft.mediaserviceinterfaces.data.SponsorSegment;
+import com.liskovsoft.sharedutils.helpers.Helpers;
+import com.liskovsoft.sharedutils.mylogger.Log;
+import com.liskovsoft.sharedutils.rx.RxHelper;
+import com.liskovsoft.youtubeapi.actions.ActionsService;
+import com.liskovsoft.youtubeapi.actions.ActionsServiceWrapper;
+import com.liskovsoft.youtubeapi.block.SponsorBlockService;
+import com.liskovsoft.youtubeapi.block.data.SegmentList;
+import com.liskovsoft.youtubeapi.common.helpers.MediaHostPreconnect;
+import com.liskovsoft.youtubeapi.common.models.impl.mediaitem.BaseMediaItem;
+import com.liskovsoft.youtubeapi.dearrow.DeArrowService;
+import com.liskovsoft.youtubeapi.feedback.FeedbackService;
+import com.liskovsoft.youtubeapi.next.v2.WatchNextService;
+import com.liskovsoft.youtubeapi.next.v2.WatchNextServiceWrapper;
+import com.liskovsoft.youtubeapi.panel.PanelService;
+import com.liskovsoft.youtubeapi.playlist.PlaylistService;
+import com.liskovsoft.youtubeapi.playlist.PlaylistServiceWrapper;
+import com.liskovsoft.youtubeapi.playlistgroups.PlaylistGroupServiceImpl;
+import com.liskovsoft.youtubeapi.service.data.YouTubeMediaItem;
+import com.liskovsoft.youtubeapi.service.data.YouTubeMediaItemFormatInfo;
+import com.liskovsoft.youtubeapi.service.data.YouTubeSponsorSegment;
+import com.liskovsoft.youtubeapi.track.TrackingService;
+import com.liskovsoft.youtubeapi.videoinfo.V2.VideoInfoService;
+import com.liskovsoft.youtubeapi.videoinfo.models.VideoInfo;
+import io.reactivex.rxjava3.core.Observable;
+
+import java.util.List;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicBoolean;
+
+
+import com.liskovsoft.mediaserviceinterfaces.data.MediaFormat;
+
+
+public class YouTubeMediaItemService implements MediaItemService {
+    private static final String TAG = YouTubeMediaItemService.class.getSimpleName();
+    private static volatile YouTubeMediaItemService sInstance;
+    private MediaItemFormatInfo mCachedFormatInfo;
+
+    // Mobile single-flight for format info. When enabled, concurrent getFormatInfo() calls for the SAME
+    // videoId collapse into ONE network fetch (the first caller fetches; the rest block on a per-videoId
+    // lock and then read the freshly cached result). This is what makes the mobile "prefetch at tap" win
+    // real: the tap-time prefetch and the player's own end-of-onCreate fetch share a single round-trip
+    // instead of racing into two. Off by default -> TV keeps the exact original single-fetch path.
+    private static volatile boolean sSingleFlightEnabled;
+    private final ConcurrentHashMap<String, FormatFlight> mFormatInfoFlights =
+            new ConcurrentHashMap<>();
+
+    private static final class FormatFlight {
+        private final AtomicBoolean mCanceled = new AtomicBoolean();
+
+        boolean cancel() {
+            return mCanceled.compareAndSet(false, true);
+        }
+
+        boolean isCanceled() {
+            return mCanceled.get();
+        }
+    }
+    // The original one-slot cache is easily overwritten by Home's next-video prefetch while the
+    // current video is still playing. A later history/storyboard lookup then remints identical
+    // signed URLs and spends two more /player calls. Mobile keeps a tiny access-ordered working set
+    // (current + a few prefetched neighbors); TV continues to use mCachedFormatInfo unchanged.
+    private static final int MOBILE_FORMAT_CACHE_MAX = 4;
+    private static final long MOBILE_FORMAT_CACHE_TTL_MS = 5 * 60_000L;
+    private final java.util.Map<String, CachedFormatEntry> mMobileFormatInfoCache =
+            java.util.Collections.synchronizedMap(
+                    new java.util.LinkedHashMap<String, CachedFormatEntry>(
+                            MOBILE_FORMAT_CACHE_MAX + 1, 0.75f, true) {
+                        @Override
+                        protected boolean removeEldestEntry(
+                                java.util.Map.Entry<String, CachedFormatEntry> eldest) {
+                            return size() > MOBILE_FORMAT_CACHE_MAX;
+                        }
+                    });
+
+    // NEWTUBE(history-ping): watch-time pings need the playback's tracking ids (eventId,
+    // visitorMonitoringData, ofParam, length), not its media URLs. The playback cache above expires
+    // after 5 min because its URLs go stale, so every history save for a video watched longer than
+    // that re-walked the /player ring (plus a TV-auth /player when signed in) mid-playback - and on a
+    // video switch that walk shares VideoInfoService's lock with the NEW video's open. Official clients
+    // keep one cpn/ei for the whole playback, so a tracking lookup accepts entries for hours.
+    private static final int MOBILE_TRACKING_CACHE_MAX = 8;
+    private static final long MOBILE_TRACKING_CACHE_TTL_MS = 6 * 60 * 60_000L;
+    private final java.util.Map<String, CachedFormatEntry> mMobileTrackingCache =
+            java.util.Collections.synchronizedMap(
+                    new java.util.LinkedHashMap<String, CachedFormatEntry>(
+                            MOBILE_TRACKING_CACHE_MAX + 1, 0.75f, true) {
+                        @Override
+                        protected boolean removeEldestEntry(
+                                java.util.Map.Entry<String, CachedFormatEntry> eldest) {
+                            return size() > MOBILE_TRACKING_CACHE_MAX;
+                        }
+                    });
+
+    private static final class CachedFormatEntry {
+        final MediaItemFormatInfo formatInfo;
+        final long timeMs = android.os.SystemClock.elapsedRealtime();
+        // NEWTUBE(botwall): the attachment the URLs were minted on (null off-device / unknown).
+        final String networkKey = VideoInfoService.currentNetworkKey();
+
+        CachedFormatEntry(MediaItemFormatInfo formatInfo) {
+            this.formatInfo = formatInfo;
+        }
+
+        boolean isActual() {
+            return android.os.SystemClock.elapsedRealtime() - timeMs <= MOBILE_FORMAT_CACHE_TTL_MS
+                    && formatInfo.isCacheActual()
+                    && isSameAttachment(networkKey, VideoInfoService.currentNetworkKey());
+        }
+    }
+
+    /**
+     * NEWTUBE(botwall): googlevideo URLs carry the public IP they were issued to, so an entry minted
+     * on Wi-Fi is not a working answer on LTE even inside its 5 minutes - replaying it bought a
+     * media 403, a reload and the /player it tried to save. Unknown on either side = no opinion.
+     */
+    static boolean isSameAttachment(String mintedOn, String current) {
+        return mintedOn == null || current == null || mintedOn.equals(current);
+    }
+
+    // Mobile dedupe for UNPLAYABLE results (age-gated/removed videos). An unplayable result contains
+    // no media, so isCacheActual() can never accept it: the tap-time prefetch walks the whole client
+    // failover ring, stores the result, and then the player's own (sequential, so single-flight can't
+    // collapse it) fetch misses the cache and re-walks the entire ring a second time (measured: 16
+    // /player calls per age-gated open instead of 8). Remember the unplayable result in its OWN
+    // one-slot negative cache (videoId + timestamp + result) and serve it to same-videoId callers
+    // for a short window. A dedicated slot is essential: a first cut rode the single positive slot
+    // (mCachedFormatInfo) and was measured inert cross-open - the auto-skip TARGET video caches over
+    // that slot ~5s after the gated failure, evicting the entry, so a re-open at +8s re-walked the
+    // whole ring. Positive caching of other videos must never evict this entry; only expiry,
+    // invalidateCache() (sign-in/account seams) and a playable re-fetch of the same videoId end it.
+    // The auto-skip-on-unplayable UX is unchanged: repeat callers get the identical unplayable
+    // object they would have re-fetched. Gated on sSingleFlightEnabled -> TV path byte-for-byte intact.
+    // Deliberately NOT applied to "future live translation" results (no media but not unplayable):
+    // those must keep being re-polled. Total failures (null result) aren't cached either.
+    private static final long UNPLAYABLE_REUSE_MS = 30_000;
+    private volatile UnplayableEntry mUnplayableEntry;
+    /** NEWTUBE(walk-role): videos whose cached answer a speculative walk fetched. */
+    private final java.util.Set<String> mSpeculativeResults =
+            java.util.concurrent.ConcurrentHashMap.newKeySet();
+
+    /** Immutable (videoId, time, result) triple so a torn multi-field read can't mix entries. */
+    private static final class UnplayableEntry {
+        final String videoId;
+        final long timeMs = android.os.SystemClock.elapsedRealtime();
+        final MediaItemFormatInfo formatInfo;
+        // NEWTUBE(botwall): a bot-check verdict was observed on that network attachment; it says
+        // nothing about the video, nor about another network.
+        final String networkKey = VideoInfoService.currentNetworkKey();
+
+        UnplayableEntry(String videoId, MediaItemFormatInfo formatInfo) {
+            this.videoId = videoId;
+            this.formatInfo = formatInfo;
+        }
+
+        boolean isActual(String videoId) {
+            return videoId.equals(this.videoId)
+                    && android.os.SystemClock.elapsedRealtime() - timeMs <= UNPLAYABLE_REUSE_MS
+                    && (!formatInfo.isBotCheckRequired()
+                            || isSameAttachment(networkKey, VideoInfoService.currentNetworkKey()));
+        }
+    }
+
+    public static void setSingleFlightEnabled(boolean enabled) {
+        sSingleFlightEnabled = enabled;
+    }
+
+    /**
+     * Mobile TTFF: warm the per-video googlevideo host so the first media chunk does not pay a
+     * TLS/QUIC handshake. Mechanics and the timing rationale live in {@link MediaHostPreconnect},
+     * which is also called earlier - straight off the parsed /player response, before the
+     * signature transform - because warming only at this point left the handshake unfinished when
+     * the first init segment went out. Off by default, so the TV path is unchanged.
+     */
+    public static void setPreconnectMediaHost(boolean enabled) {
+        MediaHostPreconnect.setEnabled(enabled);
+    }
+
+    private static void preconnectMediaHost(MediaItemFormatInfo formatInfo) {
+        if (formatInfo != null) {
+            MediaHostPreconnect.warmUrl(firstStreamUrl(formatInfo));
+        }
+    }
+
+    private static String firstStreamUrl(MediaItemFormatInfo formatInfo) {
+        List<MediaFormat> adaptive = formatInfo.getAdaptiveFormats();
+        if (adaptive != null && !adaptive.isEmpty() && adaptive.get(0).getUrl() != null) {
+            return adaptive.get(0).getUrl();
+        }
+        if (formatInfo.getServerAbrStreamingUrl() != null) {
+            return formatInfo.getServerAbrStreamingUrl();
+        }
+        List<MediaFormat> regular = formatInfo.getUrlFormats();
+        if (regular != null && !regular.isEmpty() && regular.get(0).getUrl() != null) {
+            return regular.get(0).getUrl();
+        }
+        return formatInfo.getDashManifestUrl();
+    }
+
+    private YouTubeMediaItemService() {
+    }
+
+    public static YouTubeMediaItemService instance() {
+        YouTubeMediaItemService result = sInstance;
+        if (result == null) {
+            synchronized (YouTubeMediaItemService.class) {
+                result = sInstance;
+                if (result == null) {
+                    result = new YouTubeMediaItemService();
+                    sInstance = result;
+                }
+            }
+        }
+
+        return result;
+    }
+
+    /**
+     * Format info is cached because it's supposed to run in multiple methods
+     */
+    @Override
+    public MediaItemFormatInfo getFormatInfo(MediaItem item) {
+        return getFormatInfo(item.getVideoId(), item.getClickTrackingParams());
+    }
+
+    @Override
+    public MediaItemFormatInfo getFormatInfo(String videoId) {
+        return getFormatInfo(videoId, null);
+    }
+
+    @Override
+    public MediaItemFormatInfo getFormatInfo(String videoId, String clickTrackingParams) {
+        return getFormatInfo(videoId, clickTrackingParams, null);
+    }
+
+    /**
+     * NEWTUBE(walk-role): a video the user has not opened (the next-video preload, a touch preload,
+     * the warmup). Cached and single-flighted like any other; its walk leaves the watched video's
+     * routing state alone (VideoInfoService.WalkRole).
+     */
+    @Override
+    public MediaItemFormatInfo getSpeculativeFormatInfo(String videoId) {
+        return getFormatInfo(videoId, null, null, VideoInfoService.WalkRole.SPECULATIVE);
+    }
+
+    @Override
+    public Observable<MediaItemFormatInfo> getSpeculativeFormatInfoObserve(String videoId) {
+        return getFormatInfoObserve(videoId, null, false, VideoInfoService.WalkRole.SPECULATIVE);
+    }
+
+    private MediaItemFormatInfo getFormatInfo(String videoId, String clickTrackingParams,
+            @Nullable FormatFlight suppliedFlight) {
+        return getFormatInfo(videoId, clickTrackingParams, suppliedFlight, VideoInfoService.WalkRole.ACTIVE);
+    }
+
+    private MediaItemFormatInfo getFormatInfo(String videoId, String clickTrackingParams,
+            @Nullable FormatFlight suppliedFlight, VideoInfoService.WalkRole role) {
+        MediaItemFormatInfo cachedFormatInfo = getCachedFormatInfo(videoId);
+
+        if (cachedFormatInfo != null) {
+            adoptIfSpeculative(videoId, cachedFormatInfo, role);
+            if (suppliedFlight != null) {
+                mFormatInfoFlights.remove(videoId, suppliedFlight);
+            }
+            // NEWTUBE(preconnect): a revisit served from this cache skips fetchFormatInfo, so the
+            // googlevideo host was never warmed and the first chunk paid a fresh handshake (QUIC
+            // idles out after ~30 s). The gate dedupes this against the warm the fetch just did.
+            if (sSingleFlightEnabled) {
+                preconnectMediaHost(cachedFormatInfo);
+            }
+            return cachedFormatInfo;
+        }
+
+        // TV path: unchanged single fetch.
+        if (!sSingleFlightEnabled || videoId == null) {
+            return fetchFormatInfo(videoId, clickTrackingParams, null, role);
+        }
+
+        // Mobile path: collapse concurrent fetches for the same videoId into one round-trip.
+        FormatFlight flight = suppliedFlight != null
+                ? suppliedFlight : getFormatInfoFlight(videoId);
+        synchronized (flight) {
+            try {
+                if (flight.isCanceled()) {
+                    android.util.Log.d("NetPath", "format-flight canceled video=" + videoId
+                            + " stage=entry");
+                    return null;
+                }
+
+                // Another caller for this videoId may have just populated the cache while we waited.
+                MediaItemFormatInfo cached = getCachedFormatInfo(videoId);
+                if (cached != null) {
+                    adoptIfSpeculative(videoId, cached, role);
+                    return cached;
+                }
+
+                return fetchFormatInfo(videoId, clickTrackingParams, flight, role);
+            } finally {
+                // Only remove our own flight so a newer request for this video isn't disturbed.
+                mFormatInfoFlights.remove(videoId, flight);
+            }
+        }
+    }
+
+    @Override
+    public void cancelStaleFormatInfoRequests(String keepVideoId) {
+        if (!sSingleFlightEnabled) {
+            return;
+        }
+
+        for (java.util.Map.Entry<String, FormatFlight> entry : mFormatInfoFlights.entrySet()) {
+            if (!Helpers.equals(entry.getKey(), keepVideoId) && entry.getValue().cancel()) {
+                android.util.Log.d("NetPath", "format-flight cancel stale=" + entry.getKey()
+                        + " next=" + keepVideoId);
+                // A disposed Rx task may never enter getFormatInfo's finally block. Remove the
+                // canceled reservation now so revisiting this video creates a fresh flight; an
+                // already-running worker retains its own canceled object and still exits safely.
+                mFormatInfoFlights.remove(entry.getKey(), entry.getValue());
+            }
+        }
+    }
+
+    private MediaItemFormatInfo fetchFormatInfo(String videoId, String clickTrackingParams,
+            @Nullable FormatFlight flight, VideoInfoService.WalkRole role) {
+        checkSigned();
+
+        VideoInfo videoInfo = getVideoInfoService().getVideoInfo(videoId, clickTrackingParams,
+                flight != null ? flight::isCanceled : null, role);
+
+        MediaItemFormatInfo formatInfo = YouTubeMediaItemFormatInfo.from(videoInfo);
+
+        setCachedFormatInfo(videoId, formatInfo, clickTrackingParams);
+        // NEWTUBE(walk-role): an open that reuses this answer adopts it (see adoptIfSpeculative).
+        if (videoId != null) {
+            if (role == VideoInfoService.WalkRole.SPECULATIVE && formatInfo != null) {
+                if (mSpeculativeResults.size() >= 32) {
+                    mSpeculativeResults.clear(); // preloads nobody opened; bounded, not precious
+                }
+                mSpeculativeResults.add(videoId);
+            } else {
+                mSpeculativeResults.remove(videoId);
+            }
+        }
+
+        // Mobile negative cache (see UNPLAYABLE_REUSE_MS). Keyed on the REQUESTED videoId (some
+        // unplayable responses lack videoDetails, so the result's own getVideoId() can be null).
+        // NEWTUBE(walk-role): not a preload's bot-check answer - it may be the circuit's cooldown
+        // verdict, and the user's open of that video must still be able to take the probe.
+        if (sSingleFlightEnabled && videoId != null && !(role == VideoInfoService.WalkRole.SPECULATIVE
+                && formatInfo != null && formatInfo.isBotCheckRequired())) {
+            if (formatInfo != null && formatInfo.isUnplayable()) {
+                mUnplayableEntry = new UnplayableEntry(videoId, formatInfo);
+            } else {
+                UnplayableEntry entry = mUnplayableEntry;
+                if (entry != null && videoId.equals(entry.videoId)) {
+                    mUnplayableEntry = null; // a playable/empty re-fetch supersedes the negative entry
+                }
+            }
+        }
+
+        // Mobile: warm the media host while the player is still preparing (no-op unless enabled).
+        preconnectMediaHost(formatInfo);
+
+        return formatInfo;
+    }
+
+    /**
+     * NEWTUBE(walk-role): an ACTIVE caller got an answer a speculative walk fetched - it joined the
+     * preload's flight or read its cache entry - so the engine takes it as the watched video's.
+     */
+    private void adoptIfSpeculative(String videoId, MediaItemFormatInfo formatInfo,
+            VideoInfoService.WalkRole role) {
+        if (role == VideoInfoService.WalkRole.ACTIVE && videoId != null && mSpeculativeResults.remove(videoId)) {
+            getVideoInfoService().adoptSpeculativeResult(videoId, formatInfo.isUnplayable(), formatInfo.isLive());
+        }
+    }
+
+    private FormatFlight getFormatInfoFlight(String videoId) {
+        FormatFlight flight = mFormatInfoFlights.get(videoId);
+        if (flight == null) {
+            FormatFlight created = new FormatFlight();
+            FormatFlight previous = mFormatInfoFlights.putIfAbsent(videoId, created);
+            flight = previous != null ? previous : created;
+        }
+        return flight;
+    }
+
+    //@Override
+    //public MediaItemFormatInfo getFormatInfo(String videoId, String clickTrackingParams) {
+    //    //videoId = "K04WmBtVsOs"; // the testing video: Memories of Memories
+    //
+    //    MediaItemFormatInfo cachedFormatInfo = getCachedFormatInfo(videoId);
+    //
+    //    if (cachedFormatInfo != null) {
+    //        return cachedFormatInfo;
+    //    }
+    //
+    //    checkSigned();
+    //
+    //    MediaItemFormatInfo formatInfo = InnertubeService.createFormatInfo(videoId);
+    //
+    //    setCachedFormatInfo(formatInfo, clickTrackingParams);
+    //
+    //    return formatInfo;
+    //}
+
+    @Override
+    public Observable<MediaItemFormatInfo> getFormatInfoObserve(MediaItem item) {
+        if (item == null) {
+            return RxHelper.fromCallable(() -> getFormatInfo(item));
+        }
+        return getFormatInfoObserve(item.getVideoId(), item.getClickTrackingParams(), false);
+    }
+
+    @Override
+    public Observable<MediaItemFormatInfo> getFormatInfoObserve(String videoId) {
+        return getFormatInfoObserve(videoId, null, false);
+    }
+
+    @Override
+    public Observable<MediaItemFormatInfo> getFormatInfoObserve(String videoId, String clickTrackingParams) {
+        return getFormatInfoObserve(videoId, clickTrackingParams, false);
+    }
+
+    @Override
+    public Observable<MediaItemFormatInfo> getLatestFormatInfoObserve(String videoId) {
+        return getFormatInfoObserve(videoId, null, true);
+    }
+
+    private Observable<MediaItemFormatInfo> getFormatInfoObserve(String videoId,
+            String clickTrackingParams, boolean latestRequest) {
+        return getFormatInfoObserve(videoId, clickTrackingParams, latestRequest,
+                VideoInfoService.WalkRole.ACTIVE);
+    }
+
+    private Observable<MediaItemFormatInfo> getFormatInfoObserve(String videoId,
+            String clickTrackingParams, boolean latestRequest, VideoInfoService.WalkRole role) {
+        if (!sSingleFlightEnabled || videoId == null) {
+            return RxHelper.fromCallable(() -> getFormatInfo(videoId, clickTrackingParams, null, role));
+        }
+
+        // Reserve the flight NOW, before Rx schedules the blocking callable. A newer tap can then
+        // cancel it even if the old task has not started running yet. Regular player consumers also
+        // reserve/join here, so every observer attached to the stale flight completes consistently.
+        FormatFlight flight = getFormatInfoFlight(videoId);
+        return RxHelper.create(emitter -> {
+            MediaItemFormatInfo result = getFormatInfo(videoId, clickTrackingParams, flight, role);
+            if (result != null) {
+                emitter.onNext(result);
+                emitter.onComplete();
+            } else if (flight.isCanceled()) {
+                android.util.Log.d("NetPath", "format-flight complete=canceled video=" + videoId
+                        + " latest=" + (latestRequest ? "y" : "n"));
+                emitter.onComplete();
+            } else {
+                RxHelper.onError(emitter, "fromNullable result is null");
+                Log.e(TAG, "fromNullable result is null");
+            }
+        });
+    }
+
+    @Override
+    public MediaItemStoryboard getStoryboard(MediaItem item) {
+        return getStoryboard(item.getVideoId());
+    }
+
+    @Override
+    public MediaItemStoryboard getStoryboard(String videoId) {
+        MediaItemFormatInfo format = getFormatInfo(videoId);
+        return format != null ? format.createStoryboard() : null;
+    }
+
+    @Override
+    public Observable<MediaItemStoryboard> getStoryboardObserve(MediaItem item) {
+        return RxHelper.fromCallable(() -> getStoryboard(item));
+    }
+
+    @Override
+    public Observable<MediaItemStoryboard> getStoryboardObserve(String videoId) {
+        return RxHelper.fromCallable(() -> getStoryboard(videoId));
+    }
+
+    @Override
+    public MediaItemMetadata getMetadata(MediaItem item) {
+        return getMetadata(item.getVideoId(), item.getPlaylistId(), item.getPlaylistIndex(), item.getParams());
+    }
+
+    @Override
+    public MediaItemMetadata getMetadata(String videoId, String playlistId, int playlistIndex, String playlistParams) {
+        return getWatchNextService().getMetadata(videoId, playlistId, playlistIndex, playlistParams);
+    }
+
+    @Override
+    public MediaItemMetadata getMetadata(String videoId) {
+        return getWatchNextService().getMetadata(videoId);
+    }
+
+    @Override
+    public Observable<MediaItemMetadata> getMetadataObserve(MediaItem item) {
+        return RxHelper.create(emitter -> {
+            MediaItemMetadata metadata = getMetadata(item);
+
+            if (metadata != null) {
+                syncItem(item, metadata);
+                emitter.onNext(metadata);
+                emitter.onComplete();
+            } else {
+                RxHelper.onError(emitter, "getMetadataObserve result is null");
+            }
+        });
+    }
+
+    @Override
+    public Observable<MediaItemMetadata> getMetadataObserve(String videoId) {
+        return RxHelper.fromCallable(() -> getMetadata(videoId));
+    }
+
+    @Override
+    public Observable<MediaItemMetadata> getMetadataObserve(String videoId, String playlistId, int playlistIndex, String playlistParams) {
+        return RxHelper.fromCallable(() -> getMetadata(videoId, playlistId, playlistIndex, playlistParams));
+    }
+
+    @Override
+    public void updateHistoryPosition(MediaItem item, float positionSec) {
+        checkSigned();
+
+        updateHistoryPosition(item.getVideoId(), positionSec);
+    }
+
+    @Override
+    public void updateHistoryPosition(String videoId, float positionSec) {
+        checkSigned();
+
+        MediaItemFormatInfo formatInfo = getTrackingFormatInfo(videoId);
+
+        if (formatInfo == null) {
+            formatInfo = getFormatInfo(videoId);
+        }
+
+        if (formatInfo == null) {
+            Log.e(TAG, "Can't update history for video id %s. formatInfo == null", videoId);
+            return;
+        }
+
+        // Improve the performance by fetching the history data on the second run
+        syncWithAuthFormatIfNeeded(formatInfo);
+
+        // NEWTUBE(bench): blocked after the reads, not before them, so a benchmark on the account
+        // still sees whether the ping would carry the account's tracking data: an anonymous winner
+        // (VISIONOS, most signed-in opens) is credited through the TV answer fetched just above.
+        if (AccountWrites.blocked("history-position")) {
+            boolean complete = !shouldBeSynced(formatInfo) && !Helpers.anyNull(formatInfo.getEventId(),
+                    formatInfo.getVisitorMonitoringData(), formatInfo.getOfParam());
+            android.util.Log.d("NetPath", "history-ping dry-run video=" + videoId
+                    + " auth=" + (formatInfo.isAuth() ? "y" : "n")
+                    + " tracking=" + (complete ? "complete" : "missing"));
+            return;
+        }
+
+        if (shouldBeSynced(formatInfo)) {
+            throw new IllegalStateException("Update history error: the format should be synced first");
+        }
+
+        getTrackingService().updateWatchTime(
+                formatInfo.getVideoId(), positionSec, Helpers.parseFloat(formatInfo.getLengthSeconds()), formatInfo.getEventId(),
+                formatInfo.getVisitorMonitoringData(), formatInfo.getOfParam());
+    }
+
+    @Override
+    public Observable<Void> updateHistoryPositionObserve(MediaItem item, float positionSec) {
+        return RxHelper.fromRunnable(() -> updateHistoryPosition(item, positionSec));
+    }
+
+    @Override
+    public Observable<Void> updateHistoryPositionObserve(String videoId, float positionSec) {
+        return RxHelper.fromRunnable(() -> updateHistoryPosition(videoId, positionSec));
+    }
+
+    @Override
+    public Observable<Void> subscribeObserve(MediaItem item) {
+        return RxHelper.fromRunnable(() -> subscribe(item));
+    }
+
+    @Override
+    public Observable<Void> subscribeObserve(String channelId) {
+        return RxHelper.fromRunnable(() -> subscribe(channelId));
+    }
+
+    @Override
+    public Observable<Void> unsubscribeObserve(MediaItem item) {
+        return RxHelper.fromRunnable(() -> unsubscribe(item));
+    }
+
+    @Override
+    public Observable<Void> unsubscribeObserve(String channelId) {
+        return RxHelper.fromRunnable(() -> unsubscribe(channelId));
+    }
+
+    @Override
+    public Observable<Void> setLikeObserve(MediaItem item) {
+        return RxHelper.fromRunnable(() -> setLike(item));
+    }
+
+    @Override
+    public Observable<Void> removeLikeObserve(MediaItem item) {
+        return RxHelper.fromRunnable(() -> removeLike(item));
+    }
+
+    @Override
+    public Observable<Void> setDislikeObserve(MediaItem item) {
+        return RxHelper.fromRunnable(() -> setDislike(item));
+    }
+
+    @Override
+    public Observable<Void> removeDislikeObserve(MediaItem item) {
+        return RxHelper.fromRunnable(() -> removeDislike(item));
+    }
+
+    @Override
+    public void setLike(MediaItem item) {
+        checkSigned();
+
+        getActionsService().setLike(item.getVideoId());
+    }
+
+    @Override
+    public void removeLike(MediaItem item) {
+        checkSigned();
+
+        getActionsService().removeLike(item.getVideoId());
+    }
+
+    @Override
+    public void setDislike(MediaItem item) {
+        checkSigned();
+
+        getActionsService().setDislike(item.getVideoId());
+    }
+
+    @Override
+    public void removeDislike(MediaItem item) {
+        checkSigned();
+
+        getActionsService().removeDislike(item.getVideoId());
+    }
+
+    @Override
+    public void subscribe(MediaItem item) {
+        subscribe(item.getChannelId(), item.getParams());
+    }
+
+    @Override
+    public void subscribe(String channelId) {
+        subscribe(channelId, null);
+    }
+
+    private void subscribe(String channelId, String params) {
+        checkSigned();
+
+        getActionsService().subscribe(channelId, params);
+    }
+
+    @Override
+    public void unsubscribe(MediaItem item) {
+        unsubscribe(item.getChannelId());
+    }
+
+    @Override
+    public void unsubscribe(String channelId) {
+        checkSigned();
+
+        getActionsService().unsubscribe(channelId);
+    }
+
+    @Override
+    public void markAsNotInterested(String feedbackToken) {
+        checkSigned();
+
+        getFeedbackService().markAsNotInterested(feedbackToken);
+    }
+
+    @Override
+    public Observable<Void> markAsNotInterestedObserve(String feedbackToken) {
+        return RxHelper.fromRunnable(() -> markAsNotInterested(feedbackToken));
+    }
+
+    @Override
+    public FeedbackReasons getFeedbackReasons(String feedbackToken) {
+        checkSigned();
+
+        return getFeedbackService().getReasons(feedbackToken);
+    }
+
+    @Override
+    public Observable<FeedbackReasons> getFeedbackReasonsObserve(String feedbackToken) {
+        return RxHelper.fromCallable(() -> getFeedbackReasons(feedbackToken));
+    }
+
+    @Override
+    public List<String> getFeedbackTokens(FeedbackEndpoint endpoint) {
+        checkSigned();
+
+        return getPanelService().getFeedbackTokens(endpoint);
+    }
+
+    @Override
+    public Observable<List<String>> getFeedbackTokensObserve(FeedbackEndpoint endpoint) {
+        return RxHelper.fromCallable(() -> getFeedbackTokens(endpoint));
+    }
+
+    @Override
+    public Observable<FeedbackResult> sendFeedbackObserve(String feedbackToken) {
+        return RxHelper.fromCallable(() -> {
+            checkSigned();
+
+            return getFeedbackService().sendFeedback(feedbackToken);
+        });
+    }
+
+    @Override
+    public List<PlaylistInfo> getPlaylistsInfo(String videoId) {
+        // NEWTUBE(request-hygiene): /playlist/get_add_to_playlist requires auth - signed-out it
+        // 401s on EVERY watch-page open (the player UI polls it for the add-to-playlist button
+        // state). No playlists exist without an account, so return empty instead of firing a
+        // guaranteed-failing request. All consumers (button state, video menu, playlist dialogs)
+        // handle an empty list as "not in any playlist".
+        if (!getSignInService().isSigned()) {
+            return java.util.Collections.emptyList();
+        }
+
+        checkSigned();
+
+        return getPlaylistService().getPlaylistsInfo(videoId);
+    }
+
+    private void addToPlaylist(String playlistId, String videoId) {
+        checkSigned();
+
+        getPlaylistService().addToPlaylist(playlistId, videoId);
+    }
+
+    private void addToPlaylist(String playlistId, MediaItem item) {
+        checkSigned();
+
+        PlaylistGroupServiceImpl.cachedItem = item;
+        getPlaylistService().addToPlaylist(playlistId, item.getVideoId());
+    }
+
+    @Override
+    public void removeFromPlaylist(String playlistId, String videoId) {
+        checkSigned();
+
+        getPlaylistService().removeFromPlaylist(playlistId, videoId);
+    }
+
+    @Override
+    public void renamePlaylist(String playlistId, String newName) {
+        checkSigned();
+
+        getPlaylistService().renamePlaylist(playlistId, newName);
+    }
+
+    @Override
+    public void setPlaylistOrder(String playlistId, int playlistOrder) {
+        checkSigned();
+
+        getPlaylistService().setPlaylistOrder(playlistId, playlistOrder);
+    }
+
+    private void savePlaylist(String playlistId) {
+        checkSigned();
+
+        getPlaylistService().savePlaylist(playlistId);
+    }
+
+    private void savePlaylist(MediaItem item) {
+        checkSigned();
+
+        PlaylistGroupServiceImpl.cachedItem = item;
+        getPlaylistService().savePlaylist(item.getPlaylistId());
+    }
+
+    @Override
+    public void removePlaylist(String playlistId) {
+        checkSigned();
+
+        getPlaylistService().removePlaylist(playlistId);
+    }
+
+    private void createPlaylist(String playlistName, String videoId) {
+        checkSigned();
+
+        getPlaylistService().createPlaylist(playlistName, videoId);
+    }
+
+    private void createPlaylist(String playlistName, @Nullable MediaItem item) {
+        checkSigned();
+
+        PlaylistGroupServiceImpl.cachedItem = item;
+        getPlaylistService().createPlaylist(playlistName, item != null ? item.getVideoId() : null);
+    }
+
+    @Override
+    public List<SponsorSegment> getSponsorSegments(String videoId) {
+        SegmentList segmentList = getSponsorBlockService().getSegmentList(videoId);
+
+        return YouTubeSponsorSegment.from(segmentList);
+    }
+
+    @Override
+    public List<SponsorSegment> getSponsorSegments(String videoId, Set<String> categories) {
+        SegmentList segmentList = getSponsorBlockService().getSegmentList(videoId, categories);
+
+        return YouTubeSponsorSegment.from(segmentList);
+    }
+
+    @Override
+    public Observable<List<PlaylistInfo>> getPlaylistsInfoObserve(String videoId) {
+        return RxHelper.fromCallable(() -> getPlaylistsInfo(videoId));
+    }
+
+    @Override
+    public Observable<Void> addToPlaylistObserve(String playlistId, String videoId) {
+        return RxHelper.fromRunnable(() -> addToPlaylist(playlistId, videoId));
+    }
+
+    @Override
+    public Observable<Void> addToPlaylistObserve(String playlistId, MediaItem item) {
+        return RxHelper.fromRunnable(() -> addToPlaylist(playlistId, item));
+    }
+
+    @Override
+    public Observable<Void> removeFromPlaylistObserve(String playlistId, String videoId) {
+        return RxHelper.fromRunnable(() -> removeFromPlaylist(playlistId, videoId));
+    }
+
+    @Override
+    public Observable<Void> renamePlaylistObserve(String playlistId, String newName) {
+        return RxHelper.fromRunnable(() -> renamePlaylist(playlistId, newName));
+    }
+
+    @Override
+    public Observable<Void> setPlaylistOrderObserve(String playlistId, int playlistOrder) {
+        return RxHelper.fromRunnable(() -> setPlaylistOrder(playlistId, playlistOrder));
+    }
+
+    @Override
+    public Observable<Void> savePlaylistObserve(String playlistId) {
+        return RxHelper.fromRunnable(() -> savePlaylist(playlistId));
+    }
+
+    @Override
+    public Observable<Void> savePlaylistObserve(MediaItem item) {
+        return RxHelper.fromRunnable(() -> savePlaylist(item));
+    }
+
+    @Override
+    public Observable<Void> removePlaylistObserve(String playlistId) {
+        return RxHelper.fromRunnable(() -> removePlaylist(playlistId));
+    }
+
+    @Override
+    public Observable<Void> createPlaylistObserve(String playlistName, String videoId) {
+        return RxHelper.fromRunnable(() -> createPlaylist(playlistName, videoId));
+    }
+
+    @Override
+    public Observable<Void> createPlaylistObserve(String playlistName, MediaItem item) {
+        return RxHelper.fromRunnable(() -> createPlaylist(playlistName, item));
+    }
+
+    @Override
+    public Observable<List<SponsorSegment>> getSponsorSegmentsObserve(String videoId) {
+        return RxHelper.fromCallable(() -> getSponsorSegments(videoId));
+    }
+
+    @Override
+    public Observable<List<SponsorSegment>> getSponsorSegmentsObserve(String videoId, Set<String> categories) {
+        return RxHelper.fromCallable(() -> getSponsorSegments(videoId, categories));
+    }
+
+    @Override
+    public Observable<DeArrowData> getDeArrowDataObserve(String videoId) {
+        return RxHelper.fromCallable(() -> getDeArrowData(videoId));
+    }
+
+    @Override
+    public Observable<DeArrowData> getDeArrowDataObserve(List<String> videoIds) {
+        return RxHelper.create(emitter -> {
+            int done = 0;
+            for (String videoId : videoIds) {
+                // NEWTUBE(dispose-stop): one request per card; a scrolled-away/closed screen disposes
+                // this mid-list and the rest of the batch used to be fetched anyway.
+                if (emitter.isDisposed()) {
+                    android.util.Log.d("NetPath", "dearrow-stop disposed remaining=" + (videoIds.size() - done));
+                    return;
+                }
+                done++;
+                DeArrowData result = getDeArrowData(videoId);
+                if (result != null) {
+                    emitter.onNext(result);
+                }
+            }
+            emitter.onComplete();
+        });
+    }
+
+    private DeArrowData getDeArrowData(String videoId) {
+        return DeArrowService.getData(videoId);
+    }
+
+    @Override
+    public Observable<DislikeData> getDislikeDataObserve(String videoId) {
+        return RxHelper.fromCallable(() -> getWatchNextService().getDislikeData(videoId));
+    }
+
+    @Override
+    public Observable<String> getUnlocalizedTitleObserve(String videoId) {
+        return RxHelper.fromCallable(() -> getWatchNextService().getUnlocalizedTitle(videoId));
+    }
+
+    public void invalidateCache() {
+        mCachedFormatInfo = null;
+        mMobileFormatInfoCache.clear();
+        mMobileTrackingCache.clear(); // an account switch must not credit the old identity
+        mUnplayableEntry = null; // also ends the unplayable-reuse window
+    }
+
+    /** Stale-URL-tolerant lookup for watch-time pings only; never hand this to the player. */
+    private MediaItemFormatInfo getTrackingFormatInfo(String videoId) {
+        if (!sSingleFlightEnabled || videoId == null) {
+            return null;
+        }
+
+        CachedFormatEntry entry = mMobileTrackingCache.get(videoId);
+        if (entry == null) {
+            return null;
+        }
+
+        if (android.os.SystemClock.elapsedRealtime() - entry.timeMs > MOBILE_TRACKING_CACHE_TTL_MS) {
+            mMobileTrackingCache.remove(videoId);
+            return null;
+        }
+
+        android.util.Log.d("NetPath", "history-ping tracking-cache hit video=" + videoId
+                + " ageMs=" + (android.os.SystemClock.elapsedRealtime() - entry.timeMs));
+        return entry.formatInfo;
+    }
+
+    private MediaItemFormatInfo getCachedFormatInfo(String videoId) {
+        if (videoId == null) {
+            return null;
+        }
+
+        // Mobile-only (see UNPLAYABLE_REUSE_MS): a just-fetched unplayable result answers repeat
+        // requests for the same videoId briefly, so prefetch-then-load doesn't walk the failover
+        // ring twice per age-gated open. Consulted BEFORE the positive slot: the auto-skip target
+        // caching positively over that slot must not evict this entry mid-window.
+        if (sSingleFlightEnabled) {
+            UnplayableEntry unplayable = mUnplayableEntry;
+            if (unplayable != null && unplayable.isActual(videoId)) {
+                android.util.Log.d("NetPath", "format-cache hit=negative video=" + videoId);
+                return unplayable.formatInfo;
+            }
+
+            CachedFormatEntry mobileCached = mMobileFormatInfoCache.get(videoId);
+            if (mobileCached != null) {
+                if (mobileCached.isActual()) {
+                    android.util.Log.d("NetPath", "format-cache hit=positive video=" + videoId
+                            + " entries=" + mMobileFormatInfoCache.size());
+                    return mobileCached.formatInfo;
+                }
+                mMobileFormatInfoCache.remove(videoId);
+                android.util.Log.d("NetPath", "format-cache evict=stale video=" + videoId);
+            }
+
+            // NEWTUBE(recovery): the legacy one-slot cache below only checks isCacheActual(), which
+            // has no notion of age or attachment, so falling through to it handed back exactly the
+            // entry the 5-minute TTL (or a network change) just rejected. On mobile it never holds
+            // anything the working set above would not, so a miss there is a miss.
+            return null;
+        }
+
+        MediaItemFormatInfo cached = mCachedFormatInfo;
+
+        if (cached == null) {
+            return null;
+        }
+
+        if (videoId.equals(cached.getVideoId()) && cached.isCacheActual()) {
+            return cached;
+        }
+
+        return null;
+    }
+
+    private void setCachedFormatInfo(String requestedVideoId, MediaItemFormatInfo formatInfo,
+            String clickTrackingParams) {
+        mCachedFormatInfo = formatInfo;
+
+        if (formatInfo != null) {
+            formatInfo.setClickTrackingParams(clickTrackingParams);
+            if (sSingleFlightEnabled && requestedVideoId != null && !formatInfo.isUnplayable()
+                    && formatInfo.containsMedia()) {
+                mMobileFormatInfoCache.put(requestedVideoId, new CachedFormatEntry(formatInfo));
+                mMobileTrackingCache.put(requestedVideoId, new CachedFormatEntry(formatInfo));
+                android.util.Log.d("NetPath", "format-cache store video=" + requestedVideoId
+                        + " entries=" + mMobileFormatInfoCache.size());
+            }
+        }
+    }
+
+    private void checkSigned() {
+        getSignInService().checkAuth();
+    }
+
+    @NonNull
+    private static YouTubeSignInService getSignInService() {
+        return YouTubeSignInService.instance();
+    }
+
+    @NonNull
+    private static SponsorBlockService getSponsorBlockService() {
+        return SponsorBlockService.instance();
+    }
+
+    @NonNull
+    private static TrackingService getTrackingService() {
+        return TrackingService.instance();
+    }
+
+    @NonNull
+    private static VideoInfoService getVideoInfoService() {
+        return VideoInfoService.instance();
+    }
+
+    @NonNull
+    private static ActionsService getActionsService() {
+        return ActionsServiceWrapper.instance();
+    }
+
+    @NonNull
+    private static PlaylistService getPlaylistService() {
+        return PlaylistServiceWrapper.instance();
+    }
+
+    @NonNull
+    private static FeedbackService getFeedbackService() {
+        return FeedbackService.instance();
+    }
+
+    @NonNull
+    private static PanelService getPanelService() {
+        return PanelService.INSTANCE;
+    }
+
+    @NonNull
+    private static WatchNextService getWatchNextService() {
+        return WatchNextServiceWrapper.INSTANCE;
+    }
+
+    private static void syncWithAuthFormatIfNeeded(MediaItemFormatInfo formatInfo) {
+        if (formatInfo == null) {
+            return;
+        }
+
+        if (shouldBeSynced(formatInfo) && !formatInfo.isSynced()) {
+            VideoInfo videoInfo = getVideoInfoService().getAuthVideoInfo(formatInfo.getVideoId(), formatInfo.getClickTrackingParams());
+            formatInfo.sync(YouTubeMediaItemFormatInfo.from(videoInfo));
+        }
+    }
+
+    private static boolean shouldBeSynced(MediaItemFormatInfo formatInfo) {
+        return !formatInfo.isAuth() && !formatInfo.isUnplayable() && getSignInService().isSigned();
+    }
+
+    private static void syncItem(MediaItem item, MediaItemMetadata metadata) {
+        if (item instanceof BaseMediaItem) {
+            ((BaseMediaItem) item).sync(metadata);
+        } else if (item instanceof YouTubeMediaItem) {
+            ((YouTubeMediaItem) item).sync(metadata);
+        }
+    }
+}

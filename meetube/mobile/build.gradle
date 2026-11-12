@@ -1,0 +1,90 @@
+apply from: gradle.ext.sharedModulesConstants
+
+apply plugin: 'com.android.library'
+
+// (v878) كان تطبيق (io.yash.meetube) — بقى مكتبة جوه Joyboy. الـApplication بتاعه (MobileMainApplication) بيتشغّل Lazy
+// أول ما تفتح MeeTube من بوابة يوتيوب (MobileMainApplication.boot) مش مع فتح Joyboy.
+android {
+    // R package اللي الكود بيستورده (زي ما هو من أيام التلفزيون)
+    namespace = 'com.liskovsoft.smartyoutubetv2.tv'
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    buildFeatures {
+        buildConfig = true
+    }
+
+    compileSdk = project.ext.compileSdkVersion
+
+    defaultConfig {
+        minSdk = 24
+        buildConfigField "long", "TIMESTAMP", System.currentTimeMillis() + "L"
+        buildConfigField "boolean", "BENCHMARK", "false"
+        // التحديث مع Joyboy؛ محدّث MeeTube الذاتي (GitHub بتاعه) مقفول
+        buildConfigField "boolean", "IN_APP_UPDATES", "false"
+    }
+
+    lint {
+        abortOnError = false
+        disable 'UnsafeOptInUsageError'
+    }
+
+    flavorDimensions "default"
+    productFlavors {
+        stmobile {
+            minSdk = 24
+        }
+    }
+}
+
+dependencies {
+    implementation fileTree(include: ['*.jar'], dir: 'libs')
+
+    implementation 'androidx.annotation:annotation:' + annotationXVersion
+    implementation 'androidx.work:work-runtime:' + workVersion
+    implementation 'androidx.activity:activity:' + activityXVersion
+    implementation 'androidx.lifecycle:lifecycle-runtime:' + liveDataVersion
+    implementation 'androidx.recyclerview:recyclerview:' + recyclerviewXVersion
+    implementation 'androidx.media:media:' + mediaXVersion
+    implementation 'androidx.constraintlayout:constraintlayout:' + constraintLayoutXVersion
+    implementation 'com.google.android.material:material:' + materialVersion
+    implementation 'androidx.swiperefreshlayout:swiperefreshlayout:1.2.0'
+    implementation 'androidx.dynamicanimation:dynamicanimation:1.1.0'
+
+    implementation 'com.github.bumptech.glide:glide:' + glideVersion
+    implementation 'com.github.bumptech.glide:annotations:' + glideVersion
+    annotationProcessor 'com.github.bumptech.glide:compiler:' + glideVersion
+    implementation 'com.github.zjupure:webpdecoder:' + webpDecoderVersion
+
+    //////// BEGIN PLAYER ENGINE /////////
+    stmobileImplementation 'androidx.media3:media3-exoplayer:' + media3Version
+    stmobileImplementation 'androidx.media3:media3-exoplayer-dash:' + media3Version
+    stmobileImplementation 'androidx.media3:media3-exoplayer-hls:' + media3Version
+    stmobileImplementation 'androidx.media3:media3-datasource-okhttp:' + media3Version
+    stmobileImplementation 'androidx.media3:media3-ui:' + media3Version
+    stmobileImplementation 'org.chromium.net:cronet-api:' + cronetApiVersion
+    stmobileCompileOnly 'com.google.errorprone:error_prone_annotations:2.48.0'
+    stmobileCompileOnly 'org.checkerframework:checker-qual:3.43.0'
+    stmobileImplementation dependencies.project(':doubletapplayerview-media3')
+    stmobileImplementation dependencies.project(':sabr-media3')
+    stmobileImplementation dependencies.project(':appupdatechecker2')
+    //////// END PLAYER ENGINE //////////
+
+    implementation dependencies.project(':common')
+    implementation dependencies.project(':sharedutils')
+    implementation dependencies.project(':mediaserviceinterfaces')
+    implementation dependencies.project(':youtubeapi')
+
+    implementation 'io.reactivex.rxjava3:rxandroid:' + rxAndroidVersion
+    implementation 'io.reactivex.rxjava3:rxjava:' + rxJavaVersion
+    implementation 'com.squareup.okhttp3:okhttp:' + okhttpVersion
+
+    // MEETUBE(tv install): ADB over Wi-Fi لتثبيت MeeTube TV من الموبايل
+    implementation 'dev.mobile:dadb:2.0.0'
+
+    // ByeByeDPI fix
+    implementation 'org.conscrypt:conscrypt-android:' + conscryptVersion
+}

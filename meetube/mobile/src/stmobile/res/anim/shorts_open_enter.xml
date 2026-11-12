@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The Shorts tab's player: fades in while rising from the bottom of the screen. -->
+<set xmlns:android="http://schemas.android.com/apk/res/android"
+    android:interpolator="@android:anim/decelerate_interpolator">
+    <alpha
+        android:fromAlpha="0.0"
+        android:toAlpha="1.0"
+        android:duration="260" />
+    <translate
+        android:fromYDelta="18%"
+        android:toYDelta="0"
+        android:duration="280" />
+</set>

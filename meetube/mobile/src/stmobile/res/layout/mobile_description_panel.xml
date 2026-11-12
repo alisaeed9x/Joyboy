@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- MEETUBE(description-panel): the description slides over the watch page, under the video. -->
+<com.newtube.mobile.ui.playback.CommentsPanelLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:id="@+id/mobile_description_panel"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:visibility="invisible"
+    tools:visibility="visible">
+
+    <View
+        android:id="@+id/comments_scrim"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:alpha="0"
+        android:background="@android:color/black" />
+
+    <LinearLayout
+        android:id="@+id/comments_sheet"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="@drawable/bg_page_sheet"
+        android:clickable="true"
+        android:focusable="false"
+        android:orientation="vertical">
+
+        <!-- MEETUBE(issue #218): the drag handle, as on the sheets; part of the header's drag zone. -->
+        <View
+            android:layout_width="36dp"
+            android:layout_height="4dp"
+            android:layout_gravity="center_horizontal"
+            android:layout_marginTop="8dp"
+            android:background="@drawable/bg_mobile_sheet_handle"
+            android:importantForAccessibility="no" />
+
+        <LinearLayout
+            android:id="@+id/comments_header"
+            android:layout_width="match_parent"
+            android:layout_height="52dp"
+            android:gravity="center_vertical"
+            android:orientation="horizontal"
+            android:paddingStart="16dp"
+            android:paddingEnd="4dp">
+
+            <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:maxLines="1"
+                android:text="@string/mobile_watch_description"
+                android:textColor="@color/mobile_color_on_surface"
+                android:textSize="18sp"
+                android:textStyle="bold" />
+
+            <ImageButton
+                android:id="@+id/description_sheet_close"
+                android:layout_width="48dp"
+                android:layout_height="48dp"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:contentDescription="@string/mobile_sheet_close"
+                android:src="@drawable/ic_sheet_close" />
+
+        </LinearLayout>
+
+        <include
+            layout="@layout/mobile_description_body"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1" />
+
+    </LinearLayout>
+
+</com.newtube.mobile.ui.playback.CommentsPanelLayout>

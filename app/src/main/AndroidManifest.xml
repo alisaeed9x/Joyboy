@@ -1,0 +1,228 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android" xmlns:tools="http://schemas.android.com/tools">
+    <!-- (v461) تلفزيون/تابلت: Leanback اختياري واللمس مش إلزامي — نفس النسخة بتشتغل على الكل -->
+    <uses-feature android:name="android.software.leanback" android:required="false"/>
+    <uses-feature android:name="android.hardware.touchscreen" android:required="false"/>
+    <uses-feature android:name="android.hardware.microphone" android:required="false"/>   <!-- (v500) تلفزيونات من غير مايك في الجهاز (الريموت بيسجّل) -->
+    <uses-feature android:name="android.hardware.camera" android:required="false"/>
+    <uses-feature android:name="android.hardware.bluetooth" android:required="false"/>
+    <uses-feature android:name="android.hardware.camera.autofocus" android:required="false"/>
+    <uses-permission android:name="android.permission.VIBRATE" />
+    <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30"/>   <!-- (v824) بلوتوث في رادار نقل الملفات -->
+    <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" android:maxSdkVersion="30"/>
+    <uses-permission android:name="android.permission.BLUETOOTH_SCAN" android:usesPermissionFlags="neverForLocation" tools:targetApi="31"/>
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT"/>
+    <uses-permission android:name="android.permission.CAMERA"/>   <!-- (v598) مسح QR على الموبايل -->
+    <uses-permission android:name="android.permission.INTERNET"/>
+    <uses-permission android:name="android.permission.TRANSMIT_IR"/>   <!-- (v809) ريموت IR بالبلاستر -->
+    <uses-feature android:name="android.hardware.consumerir" android:required="false"/>
+    <uses-permission android:name="android.permission.PACKAGE_USAGE_STATS" tools:ignore="ProtectedPermissions"/>   <!-- (v785) اختياري: قياس NetworkStatsManager — المستخدم بيدّيه بإيده من إعدادات النظام -->
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>   <!-- (v516) مواقيت الصلاة بالموقع (اختياري: من غيره بنستخدم موقع تقريبي من الـIP) -->
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE"/>   <!-- (v525) زرار الواي فاي السريع في اللانشر -->
+    <uses-permission android:name="android.permission.CHANGE_WIFI_STATE"/>
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
+    <uses-permission android:name="android.permission.NEARBY_WIFI_DEVICES" android:usesPermissionFlags="neverForLocation" tools:targetApi="33"/>   <!-- (v814) هوت سبوت محلي للابتوب -->   <!-- (v525) أندرويد بيشترطه عشان قايمة الشبكات (scanResults) تظهر -->
+    <uses-permission android:name="android.permission.READ_MEDIA_AUDIO"/>
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW"/>
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC"/>
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"/>
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION"/>
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE"/>
+    <uses-permission android:name="android.permission.RECORD_AUDIO"/>
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+    <uses-permission android:name="android.permission.WAKE_LOCK"/>
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
+    <uses-permission android:name="android.permission.USE_BIOMETRIC"/>
+    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE"/>
+    <uses-permission android:name="android.permission.WRITE_SETTINGS"/>
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS"/>
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="28"/>
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES"/>   <!-- (v518) تثبيت التحديث اللي جه من الموبايل -->
+    <uses-permission android:name="android.permission.REQUEST_DELETE_PACKAGES"/>   <!-- (v483) زرار إلغاء تثبيت اللانشر -->
+    <uses-permission android:name="android.permission.READ_MEDIA_VIDEO"/>
+    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES"/>   <!-- (v607) مركز النقل: الصور -->
+    <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES"/>   <!-- (v607) مركز النقل: قايمة التطبيقات المثبتة لإرسال APK بتاعها -->
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32"/>
+    <!-- (v476) صفحة «تطبيقاتك» في اللانشر: اكتشاف تطبيقات التلفزيون من غير QUERY_ALL_PACKAGES -->
+    <queries>
+        <intent><action android:name="android.speech.RecognitionService"/></intent>   <!-- (v500) من غيرها isRecognitionAvailable بترجّع false على أندرويد 11+ -->
+        <intent><action android:name="android.speech.action.RECOGNIZE_SPEECH"/></intent>
+        <intent><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LEANBACK_LAUNCHER"/></intent>
+        <intent><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/></intent>
+        <intent><action android:name="android.intent.action.VIEW"/><data android:scheme="content" android:host="android.media.tv"/></intent>   <!-- (v582) زرار الريسيفر: فتح مدخل HDMI -->
+        <intent><action android:name="android.intent.action.SEND"/><data android:mimeType="*/*"/></intent>   <!-- (v831) نلاقي شاشة Quick Share ونفتحها مباشرة -->
+    </queries>
+    <application android:name=".JoyApp" android:allowAudioPlaybackCapture="true" android:largeHeap="true" android:supportsRtl="true" android:label="Joyboy" android:icon="@mipmap/ic_launcher" android:roundIcon="@mipmap/ic_launcher"
+        android:usesCleartextTraffic="true" android:banner="@mipmap/ic_launcher" android:theme="@style/Theme.NewTube">
+        <!-- (v619) بوابة الفتح الخفيفة: صورة السبلاش فورًا ثم MainActivity (أيقونة اللانشر بتفتح دي) -->
+        <!-- (v920) اللانشر بقى SplashActivity بتاع MeeTube — دي لسه موجودة كبوابة لـMainActivity بس من غير فلتر لانشر -->
+        <activity android:name=".LaunchSplashActivity" android:exported="true" android:theme="@style/AppSplashMain"
+            android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboardHidden|density">
+        </activity>
+        <activity android:name=".MainActivity" android:exported="true" android:theme="@style/AppMainPlain"
+            android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboardHidden|density">
+            <intent-filter><action android:name="android.intent.action.SEND"/><category android:name="android.intent.category.DEFAULT"/><data android:mimeType="text/plain"/></intent-filter>
+            <intent-filter><action android:name="android.intent.action.VIEW"/><category android:name="android.intent.category.DEFAULT"/><category android:name="android.intent.category.BROWSABLE"/><data android:scheme="https"/><data android:host="www.youtube.com"/><data android:host="m.youtube.com"/><data android:host="youtu.be"/><data android:host="music.youtube.com"/></intent-filter>   <!-- (v345) لينكات يوتيوب تتفتح في Subtitler -->
+        </activity>
+        <!-- (v593) أيقونتين إضافيتين في اللانشر: متصفح + يوتيوب (شاشات شفافة بتفتح الوجهة وتقفل) -->
+        <activity android:name=".LaunchBrowserActivity" android:exported="true" android:taskAffinity="" android:label="Joyboy Browser" android:icon="@mipmap/ic_joy_browser" android:roundIcon="@mipmap/ic_joy_browser"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar" android:excludeFromRecents="true" android:noHistory="true">
+            <intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/></intent-filter>
+        </activity>
+        <activity android:name=".LaunchYoutubeActivity" android:exported="true" android:taskAffinity="" android:label="Joyboy YouTube" android:icon="@mipmap/ic_joy_yt" android:roundIcon="@mipmap/ic_joy_yt"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar" android:excludeFromRecents="true" android:noHistory="true">
+            <intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/></intent-filter>
+        </activity>
+        <activity android:name=".BrowserActivity" android:exported="false" android:windowSoftInputMode="adjustResize" android:theme="@style/AppSplash"
+            android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboardHidden|density"/>
+        <activity android:name=".PlayerActivity" android:exported="false" android:autoRemoveFromRecents="true"
+            android:supportsPictureInPicture="true" android:resizeableActivity="true"
+            android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboardHidden|density"/>
+        <!-- (v476) اللانشر: HOME + LEANBACK_LAUNCHER — TvActivity هي الشاشة الرئيسية للتلفزيون -->
+        <activity android:name=".TvActivity" android:exported="true" android:launchMode="singleTask" android:stateNotNeeded="true" android:theme="@style/AppSplashMain"
+            android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboardHidden|density">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <category android:name="android.intent.category.LEANBACK_LAUNCHER"/>
+            </intent-filter>
+        </activity>
+        <!-- (v777) HOME بتاع التلفزيون بقى alias متفعّل على التلفزيون بس (res/values-television/bools_tvhome.xml).
+             قبل كده TvActivity كانت HOME على الموبايل كمان فكانت بتظهر في «التطبيقات الافتراضية ← الشاشة الرئيسية» وتفتح لانشر التلفزيون على الموبايل -->
+        <activity-alias android:name=".TvHomeAlias" android:targetActivity=".TvActivity" android:exported="true" android:enabled="@bool/tv_home_enabled" android:label="Joyboy">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN"/>
+                <category android:name="android.intent.category.HOME"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+            </intent-filter>
+        </activity-alias>
+        <!-- (v607) مركز النقل: إرسال/استقبال ملفات (فيديوهات · صوتيات · صور · APK · تطبيقات) بين الموبايل والتلفزيون وأي تطبيق تاني — وكمان هدف مشاركة «Joyboy نقل» -->
+        <!-- (v653) نقل الملفات الذكي: رادار + إرسال/استقبال مشفّر بموافقة + سجل + هوية الجهاز (بجانب مركز النقل القديم من غير ما يتأثر) -->
+        <activity android:name=".FileTransferActivity" android:exported="false" android:label="Joyboy نقل ذكي" android:theme="@style/AppSplash"
+            android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboardHidden|density"/>
+        <activity android:name=".TransferActivity" android:exported="true" android:label="Joyboy نقل" android:theme="@style/AppSplash"
+            android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboardHidden|density">
+            <intent-filter><action android:name="android.intent.action.SEND"/><category android:name="android.intent.category.DEFAULT"/><data android:mimeType="*/*"/></intent-filter>
+            <intent-filter><action android:name="android.intent.action.SEND_MULTIPLE"/><category android:name="android.intent.category.DEFAULT"/><data android:mimeType="*/*"/></intent-filter>
+        </activity>
+        <activity android:name=".TvFilesActivity" android:exported="false" android:theme="@style/AppSplash"
+            android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboardHidden|density"/>   <!-- (v610) تصفح ملفات التلفزيون من الموبايل -->
+        <activity android:name=".FileManagerActivity" android:exported="false" android:theme="@style/AppSplash"
+            android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboardHidden|density"/>
+        <!-- (v880) كلاس مستقل: MeeTube (appupdatechecker2) عنده FileProvider بنفس الاسم وبيتعارض في الدمج -->
+        <provider android:name=".FmFileProvider" android:authorities="${applicationId}.fmprov"
+            android:exported="false" android:grantUriPermissions="true">
+            <meta-data android:name="android.support.FILE_PROVIDER_PATHS" android:resource="@xml/fm_paths"/>
+        </provider>
+        <activity android:name=".LiveRequestActivity" android:exported="false" android:theme="@android:style/Theme.Translucent.NoTitleBar"/>
+        <!-- (v811) جسر الصوت: مرسل (التقاط صوت الجهاز) + مستقبل (تشغيل صوت الجهاز التاني) + شاشة الموافقة -->
+        <service android:name=".AbSendService" android:exported="false" android:foregroundServiceType="mediaProjection"/>
+        <service android:name=".AbRecvService" android:exported="false" android:foregroundServiceType="mediaPlayback"/>
+        <activity android:name=".AbAskActivity" android:exported="false" android:excludeFromRecents="true" android:taskAffinity="" android:theme="@android:style/Theme.Translucent.NoTitleBar"/>
+        <service android:name=".LiveCaptionService" android:exported="false" android:foregroundServiceType="mediaProjection"/>
+        <service android:name=".BgService" android:exported="false" android:foregroundServiceType="dataSync" android:stopWithTask="false"/>
+        <receiver android:name=".LiveWidget" android:exported="true" android:label="🔴 ترجمة حية">
+            <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE"/></intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/widget_live_info"/>
+        </receiver>
+        <activity android:name=".SongRequestActivity" android:exported="false" android:theme="@android:style/Theme.Translucent.NoTitleBar"/>
+        <service android:name=".SongCatchService" android:exported="false" android:foregroundServiceType="mediaProjection"/>
+        <service android:name=".SongNotifListener" android:exported="true" android:label="Joyboy — قراءة اسم الأغنية"
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
+            <intent-filter><action android:name="android.service.notification.NotificationListenerService"/></intent-filter>
+        </service>
+        <receiver android:name=".SongWidget" android:exported="true" android:label="🎧 تعرّف على الأغنية">
+            <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE"/></intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/widget_song_info"/>
+        </receiver>
+        <receiver android:name=".PrayerWidget" android:exported="true" android:label="🕌 مواقيت الصلاة">
+            <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE"/></intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/widget_prayer_info"/>
+        </receiver>
+        <receiver android:name=".MusicWidget" android:exported="true" android:label="🎵 مشغل الموسيقى">
+            <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE"/></intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/widget_music_info"/>
+        </receiver>
+        <receiver android:name=".TasksWidget" android:exported="true" android:label="📋 مهام الخلفية">
+            <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE"/></intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/widget_tasks_info"/>
+        </receiver>
+        <receiver android:name=".BootReceiver" android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED"/>
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED"/>
+            </intent-filter>
+        </receiver>
+        <service android:name=".GhCiJob" android:exported="false" android:permission="android.permission.BIND_JOB_SERVICE"/>   <!-- (v856) فحص GitHub Actions + التحديث -->
+        <service android:name=".MusicService" android:exported="false" android:foregroundServiceType="mediaPlayback"/>
+        <service android:name=".TaskService" android:exported="false" android:foregroundServiceType="dataSync" android:stopWithTask="false"/>   <!-- (v420) مهام الترميز في الخلفية -->
+        <!-- (v518) هدف مشاركة «ابعت للتلفزيون» · الخدمة الأمامية (v603: الريموت القديم اتمسح، الأيقونة بتفتح الكنترولر الجديد) -->
+        <!-- (v733) بلاطات الإعدادات السريعة -->
+        <service android:name=".QrTile" android:exported="true" android:label="Joyboy — ماسح QR" android:icon="@drawable/ic_tile_qr" android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter><action android:name="android.service.quicksettings.action.QS_TILE"/></intent-filter>
+        </service>
+        <service android:name=".ClipTile" android:exported="true" android:label="Joyboy — سجل الكليبورد" android:icon="@drawable/ic_tile_clip" android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter><action android:name="android.service.quicksettings.action.QS_TILE"/></intent-filter>
+        </service>
+        <service android:name=".LinkWatchTile" android:exported="true" android:label="Joyboy — مراقب اللينكات" android:icon="@drawable/ic_tile_link" android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter><action android:name="android.service.quicksettings.action.QS_TILE"/></intent-filter>
+        </service>
+        <service android:name=".MusicTile" android:exported="true" android:label="Joyboy — الموسيقى" android:icon="@drawable/ic_tile_music" android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter><action android:name="android.service.quicksettings.action.QS_TILE"/></intent-filter>
+        </service>
+        <service android:name=".BrowserTile" android:exported="true" android:label="Joyboy — المتصفح" android:icon="@drawable/ic_tile_browser" android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter><action android:name="android.service.quicksettings.action.QS_TILE"/></intent-filter>
+        </service>
+        <service android:name=".YoutubeTile" android:exported="true" android:label="Joyboy — يوتيوب" android:icon="@drawable/ic_tile_yt" android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter><action android:name="android.service.quicksettings.action.QS_TILE"/></intent-filter>
+        </service>
+        <service android:name=".RemoteTile" android:exported="true" android:label="Joyboy — ريموت التلفزيون" android:icon="@drawable/ic_tile_remote" android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter><action android:name="android.service.quicksettings.action.QS_TILE"/></intent-filter>
+        </service>
+        <service android:name=".PrayerTile" android:exported="true" android:label="Joyboy — الصلاة الجاية" android:icon="@drawable/ic_tile_prayer" android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter><action android:name="android.service.quicksettings.action.QS_TILE"/></intent-filter>
+        </service>
+        <service android:name=".SleepTile" android:exported="true" android:label="Joyboy — مؤقت نوم الموسيقى" android:icon="@drawable/ic_tile_sleep" android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter><action android:name="android.service.quicksettings.action.QS_TILE"/></intent-filter>
+        </service>
+        <service android:name=".TvModeTile" android:exported="true" android:label="Joyboy — وضع التلفزيون" android:icon="@drawable/ic_tile_tv" android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter><action android:name="android.service.quicksettings.action.QS_TILE"/></intent-filter>
+        </service>
+        <service android:name=".TasksTile" android:exported="true" android:label="Joyboy — المهام" android:icon="@drawable/ic_tile_tasks" android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter><action android:name="android.service.quicksettings.action.QS_TILE"/></intent-filter>
+        </service>
+        <service android:name=".LastLinkTile" android:exported="true" android:label="Joyboy — آخر لينك نسخته" android:icon="@drawable/ic_tile_play" android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter><action android:name="android.service.quicksettings.action.QS_TILE"/></intent-filter>
+        </service>
+        <activity android:name=".QrScanActivity" android:exported="false" android:taskAffinity="" android:theme="@android:style/Theme.Translucent.NoTitleBar" android:excludeFromRecents="true"/>
+        <!-- (v595) أيقونة الريموت: شاشة شفافة بتفتح شاشة الكنترولر الجديد (الجويستيك) في كل مرة -->
+        <activity android:name=".LaunchRemoteActivity" android:exported="true" android:taskAffinity="" android:label="ريموت التلفزيون" android:icon="@mipmap/ic_remote" android:roundIcon="@mipmap/ic_remote"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar" android:excludeFromRecents="true" android:noHistory="true">
+            <intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/></intent-filter>
+        </activity>
+        <activity android:name=".SendToTvActivity" android:exported="true" android:label="📺 ابعت للتلفزيون" android:theme="@android:style/Theme.Translucent.NoTitleBar"
+            android:excludeFromRecents="true" android:taskAffinity="">
+            <intent-filter><action android:name="android.intent.action.SEND"/><category android:name="android.intent.category.DEFAULT"/><data android:mimeType="text/plain"/></intent-filter>
+        </activity>
+        <service android:name=".RemoteService" android:exported="false" android:foregroundServiceType="dataSync"/>
+        <!-- (v519) تحكم ريموت الموبايل في التطبيقات التانية على التلفزيون (أسهم/رجوع/رئيسية/تاتش باد) — بتتفعّل مرة واحدة من إمكانية الوصول -->
+        <service android:name=".TvAccessService" android:exported="true" android:label="Joyboy — تحكم الريموت في التطبيقات"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+            <intent-filter><action android:name="android.accessibilityservice.AccessibilityService"/></intent-filter>
+            <meta-data android:name="android.accessibilityservice" android:resource="@xml/tv_access_config"/>
+        </service>
+        <!-- (v729) ويدجت اللينكات العايمة فوق أي تطبيق (كليبورد + صفحات فيديو في المتصفحات) — خدمة إمكانية وصول مستقلة بتتفعّل مرة واحدة -->
+        <service android:name=".LinkWatchService" android:exported="true" android:label="Joyboy — مراقب اللينكات"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+            <intent-filter><action android:name="android.accessibilityservice.AccessibilityService"/></intent-filter>
+            <meta-data android:name="android.accessibilityservice" android:resource="@xml/link_watch_config"/>
+        </service>
+        <service android:name=".KeepAliveService" android:exported="false" android:foregroundServiceType="dataSync"/>
+        <!-- (v735) مراقب الكليبورد بإذن العرض فوق التطبيقات -->
+        <service android:name=".ClipOverlayService" android:exported="false" android:foregroundServiceType="specialUse" android:stopWithTask="false">
+            <property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE" android:value="clipboard_link_overlay"/>
+        </service>
+    </application>
+</manifest>

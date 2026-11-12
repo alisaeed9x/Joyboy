@@ -1,0 +1,89 @@
+project.ext {
+    // NEWTUBE(phone-only): minSdk 24 - media3 1.10.x floor is 23, and 24 gives native
+    // multidex + default interface methods without desugaring the min-api warning away.
+    minSdkVersion = 24
+    // Fix AppSettingsActivity crash: "Only fullscreen opaque activities can request orientation".
+    // Error happen only on Android 8.0 (api 26) when you set activity orientation in manifest.
+    // Possible fix is to set targetSdkVersion to 26.
+    // More info: https://stackoverflow.com/questions/48072438/java-lang-illegalstateexception-only-fullscreen-opaque-activities-can-request-o
+    // NOTE: target sdk >= 28 cause weird behavior on Android 9 (slow text scroll speed etc)
+    // NOTE: target sdk >= 30 needed to support manifest queries tag
+    // NOTE: api 26 orientation error fix: https://stackoverflow.com/a/52426009/1279056
+    // NOTE: set api to 26 to fix text scroll speed and crashes on samsung
+    // NOTE: api 26 triggers PlayProtect warning (dangerous)
+    //targetSdkVersion = 26 // set target api = 26 to fix Android 8.0 error: "Only fullscreen opaque activities can request orientation"
+    // NOTE: targetSdk 26 eleminates those bugs:
+    // - "Code loading..." bug when trying to pair with a phone
+    // - Card's title scrolling speed
+    // - No popup notifications
+    // - Backup/restore can access to the external directory
+    // - Disabled auto start of the background service (e.g. remote control service)
+    // NEWTUBE(phone-only): stay on the current stable Android SDK behavior contract.
+    targetSdkVersion = 37
+    compileSdkVersion = 37
+    // buildToolsVersion is gone - AGP 8 auto-selects its own build-tools.
+    //gradleVersion = '6.9.1' // https://developer.android.com/studio/releases/gradle-plugin#updating-gradle
+    //androidGradleVersion = '4.0.0+' // last version compatible with IntellJ 2020.3
+
+    testXSupportVersion = '1.7.0'
+    testExtJunitVersion = '1.3.0'
+    testExtTruthVersion = '1.7.0'
+    // AGP 9.2's built-in Kotlin compiler accepts metadata through Kotlin 2.3.
+    // 2.3.21 is the newest stable runtime on that compatible metadata line.
+    kotlinVersion = '2.3.21'
+    kotlinxVersion = '1.11.0'
+    kotlinCoreXVersion = '1.19.0'
+    appCompatXVersion = '1.7.1'
+    fragmentXVersion = '1.8.9'
+    activityXVersion = '1.13.0'
+    cardviewXVersion = '1.0.0'
+    legacySupportV4XVersion = '1.0.0'
+    annotationXVersion = '1.10.0'
+    recyclerviewXVersion = '1.4.0'
+    preferenceXVersion = '1.2.1'
+    mediaXVersion = '1.8.0'
+    constraintLayoutXVersion = '2.2.1'
+    mockitoVersion = '5.23.0'
+    // Robolectric 4.16.x requires the JUnit 4.13 runner contract.
+    junitVersion = '4.13.2'
+    retromockVersion = '1.2.1'
+    hamcrestVersion = '3.0'
+    // SDK 36 support; also compatible with the project's JDK 21 test runtime.
+    robolectricVersion = '4.16.1'
+    materialVersion = '1.14.0'
+
+    cronetApiVersion = '143.7445.0'
+    cronetOkHttpVersion = '0.1.1'
+    media3Version = '1.10.1'
+    
+    espressoVersion = '3.7.0'
+    retrofitVersion = '3.0.0'
+    gsonVersion = '2.14.0'
+    jsonPathVersion = '3.0.0'
+    
+    okhttpVersion = '5.4.0'
+    okhttpBrotliVersion = '5.4.0'
+
+    // Glide 5 is binary-compatible with the registry surface used by the WebP extension. Keep
+    // the extension for animated WebP on API 24-27; Glide handles it natively from API 28.
+    glideVersion = '5.0.9'
+    webpDecoderVersion = '2.7.4.16.0'
+    rxAndroidVersion = '3.0.2'
+    rxJavaVersion = '3.1.12'
+    diskLruCacheVersion = '2.0.2'
+    dnsjavaVersion = '3.6.5'
+    commonsIOVersion = '2.22.0'
+
+    workVersion = '2.11.2'
+    guavaVersion = '33.6.0-android'
+    liveDataVersion = '2.11.0'
+    browserXVersion = '1.10.0'
+
+    phoenixVersion = '3.0.0'
+    netcipherVersion = '2.1.0'
+    
+    florianingerlRegexVersion = '1.1.11'
+    webkitVersion = '1.16.0'
+    nanojsonVersion = '1.10'
+    conscryptVersion = '2.6.1'
+}

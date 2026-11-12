@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- (v729) مراقب اللينكات: بتلقط لينك الكليبورد وصفحات الفيديو في المتصفحات. (v732) الخدمة بتستلم أحداث كل التطبيقات عشان تعرف مصدر النسخ (اسم التطبيق اللي كان فاتح)، لكن الكود بيقرا شريط العنوان في المتصفحات بس. -->
+<accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"
+    android:accessibilityEventTypes="typeWindowContentChanged|typeWindowStateChanged"
+    android:accessibilityFeedbackType="feedbackGeneric"
+    android:accessibilityFlags="flagDefault|flagReportViewIds"
+    android:canRetrieveWindowContent="true"
+    android:notificationTimeout="500"
+    android:description="@string/link_watch_desc"/>

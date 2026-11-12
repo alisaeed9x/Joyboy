@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Search in the phone Settings (SettingsSearch, SettingsSearchController). -->
+<resources>
+    <string name="mobile_settings_search_hint">Поиск настроек</string>
+    <string name="mobile_settings_search_none">Настройки по запросу «%1$s» не найдены</string>
+
+    <!-- Words people search with that a setting's title doesn't contain. Space-separated; each
+         word matches as a word start. Translate them as the words people would type. -->
+    <string name="mobile_settings_search_kw_account">sign in log in sign out google profile switch аккаунт войти вход выход гугл профиль переключить сменить управлять</string>
+    <string name="mobile_settings_search_kw_theme">dark mode light mode night appearance colors colours тёмная темная светлая тема ночной режим внешний вид цвет цвета оформление</string>
+    <string name="mobile_settings_search_kw_customize">customise personalize personalise appearance look style layout настройка персонализация внешний вид оформление стиль макет расположение</string>
+    <string name="mobile_settings_search_kw_country">country region страна регион местоположение</string>
+    <string name="mobile_settings_search_kw_start_screen">launch startup opens on default tab home page запуск стартовый экран открывается вкладка главная страница</string>
+    <string name="mobile_settings_search_kw_interface_size">ui scale zoom font text size density bigger smaller размер интерфейса масштаб увеличение уменьшение шрифт текст плотность крупнее мельче</string>
+    <string name="mobile_settings_search_kw_tabs">bottom bar sections navigation explore вкладки нижняя панель разделы навигация обзор</string>
+    <string name="mobile_settings_search_kw_hidden">hide watched filter upcoming premieres live скрыть просмотренные фильтр предстоящие премьеры трансляции эфир</string>
+    <string name="mobile_settings_search_kw_video_menu">context menu three dots long press options меню контекстное три точки долгое нажатие параметры</string>
+    <string name="mobile_settings_search_kw_channels_order">subscriptions sort channels подписки сортировка каналы порядок</string>
+    <string name="mobile_settings_search_kw_watch_history">pause history incognito история просмотров приостановить пауза инкогнито</string>
+    <string name="mobile_settings_search_kw_video_ends">autoplay repeat loop shuffle next video автовоспроизведение повтор цикл перемешать следующее видео окончание</string>
+    <string name="mobile_settings_search_kw_background">background play picture in picture pip audio only minimize фоновое воспроизведение картинка в картинке звук только свернуть</string>
+    <string name="mobile_settings_search_kw_natural_voice">pitch time stretching chipmunk высота тона растяжение времени голос тембр естественный звук</string>
+    <string name="mobile_settings_search_kw_audio_focus">calls notifications other apps interruptions звонки уведомления другие приложения прерывания аудиофокус звук</string>
+    <string name="mobile_settings_search_kw_hide_related">suggestions related recommendations рекомендации похожие скрыть далее следующее</string>
+    <string name="mobile_settings_search_kw_dislikes">return youtube dislike ryd дизлайки не нравится количество оценок</string>
+    <string name="mobile_settings_search_kw_home_layout">rows shelves carousel feed grid smarttube главная макет лента ряды полки карусель сетка smarttube</string>
+    <string name="mobile_settings_search_kw_app_icon">launcher logo home screen old classic fantasy white glass heart ruby play dark blaze fire значок иконка приложения лаунчер логотип главный экран классический фэнтези белый стекло сердце рубин воспроизведение неон огонь</string>
+    <string name="mobile_settings_search_kw_quality">resolution 4k 1080p 720p hd data saver mobile data разрешение качество экономия трафика мобильная сеть</string>
+    <string name="mobile_settings_search_kw_loudness">volume normalization auto volume quiet loud громкость нормализация выравнивание автоматически тихо громко</string>
+    <string name="mobile_settings_search_kw_player_volume">quiet loud sound boost gain amplify 125 150 175 200 громкость плеера усиление звука прибавить увеличить</string>
+    <string name="mobile_settings_search_kw_captions">subtitles cc closed captions субтитры подписи скрытые субтитры</string>
+    <string name="mobile_settings_search_kw_sponsorblock">skip sponsors ads segments пропуск спонсоры реклама сегменты вставки</string>
+    <string name="mobile_settings_search_kw_dearrow">clickbait titles thumbnails кликбейт заголовки миниатюры обложки</string>
+    <string name="mobile_settings_search_kw_backup">export import save settings резервное копирование экспорт импорт сохранить настройки восстановить</string>
+    <string name="mobile_settings_search_kw_buffer">buffering cache memory буфер буферизация кэш память</string>
+    <string name="mobile_settings_search_kw_dns">dns ipv4 ipv6 servers днс серверы</string>
+    <string name="mobile_settings_search_kw_conscrypt">ssl tls certificates security censorship blocked byebyedpi сертификаты безопасность блокировка заблокировано</string>
+    <string name="mobile_settings_search_kw_multi_profiles">profiles per account own different профили для каждого аккаунта отдельные разные</string>
+    <string name="mobile_settings_search_kw_updates">update version new release обновление версия новый релиз</string>
+    <string name="mobile_settings_search_kw_diagnostic_log">bug report logs debug ошибка отчёт журнал логи диагностика отладка</string>
+    <string name="mobile_settings_search_kw_gesture_levels">gestures brightness volume жесты яркость громкость</string>
+    <string name="mobile_settings_search_kw_gesture_seek">gestures scrub skip forward rewind жесты перемотка вперёд назад пропуск</string>
+    <string name="mobile_settings_search_kw_double_tap_seek">double tap seek skip forward rewind seconds jump interval двойное касание перемотка пропустить вперёд назад секунды интервал прыжок</string>
+    <string name="mobile_settings_search_kw_loader">loader loading spinner progress neon frosted glass cookie liquid ring orb blob orbit загрузка индикатор прогресс неон матовое стекло печенье жидкое кольцо сфера капля орбита</string>
+    <string name="mobile_settings_search_kw_watched_bar">watched progress red line bar history seen thumbnail просмотрено прогресс красная полоса линия история миниатюра</string>
+    <string name="mobile_settings_search_kw_refresh_sound">refresh sound pop audio pull swipe noise mute обновление звук щелчок аудио потянуть свайп шум без звука</string>
+    <string name="mobile_settings_search_kw_short_ends">shorts loop repeat autoscroll auto scroll next swipe shorts короткие видео цикл повтор автопрокрутка прокрутка следующее свайп</string>
+    <string name="mobile_settings_search_kw_stable_volume">stable volume drc compression dynamic range audio loud quiet стабильная громкость сжатие динамический диапазон звук громко тихо выравнивание</string>
+    <string name="mobile_settings_search_kw_equalizer">equalizer eq audio bass treble frequencies bands presets custom sound эквалайзер звук бас высокие частоты полосы пресеты пользовательский</string>
+</resources>

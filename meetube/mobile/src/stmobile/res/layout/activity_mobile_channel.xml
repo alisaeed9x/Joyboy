@@ -1,0 +1,234 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Touch Channel page (Wave 4a; tabbed 2026-07-09).
+
+  YouTube-style but pure Material: the channel's sections (Videos / Live / Playlists /
+  Shorts / ...) are Material TABS, and the selected section renders below as the standard
+  full-width card feed (same VideoCardAdapter as Home/Search). No nested horizontal
+  carousels (TV MultipleRowsFragment) and no interleaved mega-list (the pre-tab design).
+-->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:id="@+id/mobile_channel_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent">
+
+    <!-- MEETUBE(glass): the page is a GlassSource; the top bar and the tabs float over it as frosted
+         glass (Glass.blur), so the header and the cards scroll under them. -->
+    <com.newtube.mobile.ui.common.GlassSource
+        android:id="@+id/mobile_channel_glass_source"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="@color/mobile_color_background">
+
+    <!-- MEETUBE(channel header, issue #10): the header scrolls away with the cards; the tabs stay.
+         The page starts under the top bar (padding, not clipped) and the cards run up under the
+         bar and the tabs: -104dp = bar 56dp + tabs 48dp, given back as the grids' top padding, so
+         the first card still starts right under the tabs. -->
+    <androidx.coordinatorlayout.widget.CoordinatorLayout
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:clipToPadding="false"
+        android:paddingTop="@dimen/mobile_title_bar_height">
+
+    <FrameLayout
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:layout_marginTop="-104dp"
+        app:layout_behavior="@string/appbar_scrolling_view_behavior">
+
+        <!-- Pull-to-refresh reloads the channel (ChannelPresenter.reload), like Home; the rows on
+             screen stay until fresh ones land. Also the retry gesture over the failure state,
+             which doesn't consume touches. -->
+        <com.newtube.mobile.ui.common.HapticSwipeRefreshLayout
+            android:id="@+id/mobile_channel_swipe"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent">
+
+            <androidx.recyclerview.widget.RecyclerView
+                android:id="@+id/mobile_channel_grid"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:clipToPadding="false"
+                android:paddingHorizontal="@dimen/mobile_card_spacing"
+                android:paddingTop="104dp"
+                android:paddingBottom="@dimen/mobile_card_spacing"
+                android:scrollbars="none"
+                tools:listitem="@layout/item_video_card" />
+
+        </com.newtube.mobile.ui.common.HapticSwipeRefreshLayout>
+
+        <!-- Sideways swipe: the neighbouring tab's cards, slid in beside the grid (opaque, so it
+             also covers the grid while the grid swaps to that tab). -->
+        <androidx.recyclerview.widget.RecyclerView
+            android:id="@+id/mobile_channel_peek"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:background="@color/mobile_color_background"
+            android:clipToPadding="false"
+            android:importantForAccessibility="noHideDescendants"
+            android:paddingHorizontal="@dimen/mobile_card_spacing"
+            android:paddingTop="104dp"
+            android:paddingBottom="@dimen/mobile_card_spacing"
+            android:visibility="gone" />
+
+        <!-- First page failed / came back empty: message + Try again (PageLoadState). -->
+        <include layout="@layout/mobile_page_load_state" />
+
+        <ProgressBar
+            style="@style/Widget.MeeTube.GlassSpinner"
+            android:id="@+id/mobile_channel_progress"
+            android:layout_gravity="center"
+            android:visibility="gone" />
+
+    </FrameLayout>
+
+    <!-- After the cards, so it draws (and takes taps) over the strip of them that runs under it. -->
+    <com.google.android.material.appbar.AppBarLayout
+        android:id="@+id/mobile_channel_appbar"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="@android:color/transparent"
+        android:outlineProvider="none"
+        android:stateListAnimator="@null"
+        app:elevation="0dp"
+        app:liftOnScroll="false">
+
+        <include layout="@layout/mobile_channel_header" />
+
+        <!-- Where the tabs sit: they float above the page (mobile_channel_tabs_bar), following
+             this as it scrolls up and pins under the top bar. -->
+        <View
+            android:id="@+id/mobile_channel_tabs_space"
+            android:layout_width="match_parent"
+            android:layout_height="48dp"
+            android:visibility="gone" />
+
+    </com.google.android.material.appbar.AppBarLayout>
+
+    </androidx.coordinatorlayout.widget.CoordinatorLayout>
+
+    </com.newtube.mobile.ui.common.GlassSource>
+
+    <com.newtube.mobile.ui.common.GlassView
+        android:id="@+id/mobile_channel_bar"
+        android:layout_width="match_parent"
+        android:layout_height="@dimen/mobile_title_bar_height"
+        app:glassCornerRadius="0dp"
+        app:glassLiquid="false"
+        app:glassTint="@color/meetube_glass_tint">
+
+    <LinearLayout
+        android:id="@+id/mobile_channel_toolbar"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:gravity="center_vertical"
+        android:orientation="horizontal">
+
+        <ImageButton
+            android:id="@+id/mobile_channel_back"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:layout_marginStart="4dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:contentDescription="@string/mobile_back"
+            android:padding="12dp"
+            android:src="@drawable/ic_mobile_back_arrow" />
+
+        <TextView
+            android:id="@+id/mobile_channel_title"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:ellipsize="end"
+            android:maxLines="1"
+            android:paddingEnd="16dp"
+            android:text="@string/header_channels"
+            android:textColor="@color/mobile_color_on_surface"
+            android:textSize="18sp"
+            android:textStyle="bold"
+            tools:text="Some Channel" />
+
+        <!-- MEETUBE(channel sort, issue #5): Latest / Popular / Oldest for the open tab. -->
+        <ImageButton
+            android:id="@+id/mobile_channel_sort"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:layout_marginEnd="4dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:contentDescription="@string/search_sorting"
+            android:padding="12dp"
+            android:src="@drawable/ic_mobile_tune" />
+
+    </LinearLayout>
+
+    </com.newtube.mobile.ui.common.GlassView>
+
+    <!-- One tab per channel section, in delivery order. Hidden until sections arrive.
+         tabMaxWidth=0 lifts Material's 264dp cap (it wrapped long section names such as
+         "WING IT! Production Logs (Pet Projects)" onto two lines); with 0 a scrollable tab
+         takes its text's width, up to the screen width minus 56dp, like YouTube's tabs. -->
+    <com.newtube.mobile.ui.common.GlassView
+        android:id="@+id/mobile_channel_tabs_bar"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="@dimen/mobile_title_bar_height"
+        app:glassCornerRadius="0dp"
+        app:glassLiquid="false"
+        app:glassTint="@color/meetube_glass_tint">
+
+        <com.google.android.material.tabs.TabLayout
+            android:id="@+id/mobile_channel_tabs"
+            android:layout_width="match_parent"
+            android:layout_height="48dp"
+            android:background="@null"
+            android:visibility="gone"
+            app:tabIndicatorColor="@color/mobile_color_on_surface"
+            app:tabMaxWidth="0dp"
+            app:tabMode="scrollable"
+            app:tabSelectedTextColor="@color/mobile_color_on_surface"
+            app:tabTextColor="@color/mobile_color_on_surface_secondary"
+            tools:visibility="visible" />
+
+    </com.newtube.mobile.ui.common.GlassView>
+
+    <!-- MEETUBE(channel nav): Browse's floating nav pill over the channel, the tab it came from lit
+         (MobileBrowseActivity.copyNavTabs); slides away as the page scrolls down. -->
+    <com.newtube.mobile.ui.common.GlassView
+        android:id="@+id/mobile_nav_glass"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom|center_horizontal"
+        android:layout_marginHorizontal="16dp"
+        android:layout_marginBottom="12dp"
+        android:elevation="6dp"
+        android:padding="6dp"
+        android:visibility="gone"
+        app:glassCornerRadius="34dp"
+        app:glassMaxWidth="@dimen/meetube_nav_max_width"
+        app:glassTint="@color/meetube_glass_tint">
+
+        <com.google.android.material.bottomnavigation.BottomNavigationView
+            android:id="@+id/mobile_bottom_nav"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:background="@android:color/transparent"
+            app:elevation="0dp"
+            app:itemBackground="@drawable/bg_nav_item"
+            app:itemIconSize="24dp"
+            app:itemIconTint="@color/mobile_bottom_nav_item"
+            app:itemRippleColor="@android:color/transparent"
+            app:itemTextAppearanceActive="@style/MobileBottomNavText"
+            app:itemTextAppearanceActiveBoldEnabled="false"
+            app:itemTextAppearanceInactive="@style/MobileBottomNavText"
+            app:itemTextColor="@color/mobile_bottom_nav_item"
+            app:labelVisibilityMode="labeled"
+            app:paddingBottomSystemWindowInsets="false" />
+
+    </com.newtube.mobile.ui.common.GlassView>
+
+    <!-- Channel navigation from the watch page keeps playback alive in this overlay. -->
+    <include layout="@layout/mobile_mini_player_overlay" />
+
+</FrameLayout>

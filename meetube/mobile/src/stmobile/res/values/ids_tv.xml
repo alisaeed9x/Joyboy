@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- MEETUBE(tv): a window's FocusRing, kept on its decor view. -->
+    <item name="focus_ring" type="id" />
+    <!-- MEETUBE(bounce): a window or list that has BounceOverscroll. -->
+    <item name="bounce_overscroll" type="id" />
+</resources>

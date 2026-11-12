@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- MEETUBE(fullscreen): the fullscreen button's dark ring. The button clips to its circle, so
+     half of this 2dp stroke shows: 1dp. -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="oval">
+    <stroke
+        android:width="2dp"
+        android:color="@color/mobile_watch_fab_ring" />
+</shape>

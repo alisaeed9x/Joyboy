@@ -1,0 +1,30 @@
+// (v878) الجذر: Joyboy (:app) + مودولات MeeTube. الإعدادات المشتركة (إصدارات المكتبات) من meetube/SharedModules/constants.gradle
+apply from: gradle.ext.sharedModulesConstants
+
+buildscript {
+    apply from: gradle.ext.sharedModulesConstants
+    repositories {
+        google()
+        mavenCentral()
+    }
+    dependencies {
+        // AGP 9.2 فيه كومبايلر كوتلن مدمج — مفيش بلجن kotlin-android منفصل (نفس بناء MeeTube)
+        classpath 'com.android.tools.build:gradle:9.2.1'
+    }
+}
+
+allprojects {
+    repositories {
+        google()
+        mavenCentral()
+        maven { url = uri('https://jitpack.io') }
+    }
+    configurations.all {
+        resolutionStrategy.force 'com.squareup.okhttp3:okhttp:' + okhttpVersion
+        resolutionStrategy.force 'org.jetbrains.kotlin:kotlin-stdlib-jdk8:' + kotlinVersion
+        resolutionStrategy.force 'org.jetbrains.kotlin:kotlin-stdlib-jdk7:' + kotlinVersion
+        resolutionStrategy.force 'org.jetbrains.kotlin:kotlin-stdlib:' + kotlinVersion
+        resolutionStrategy.force 'org.jetbrains.kotlinx:kotlinx-coroutines-android:' + kotlinxVersion
+        resolutionStrategy.force 'org.chromium.net:cronet-api:' + cronetApiVersion
+    }
+}

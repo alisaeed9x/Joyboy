@@ -1,0 +1,58 @@
+apply from: '../constants.gradle'
+apply plugin: 'com.android.library'
+
+android {
+    namespace = 'com.liskovsoft.appupdatechecker2'
+
+    // FIX: Default interface methods are only supported starting with Android N (--min-api 24)
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    // allow other modules import debug/release configurations
+    //publishNonDefault true
+
+    compileSdk = project.ext.compileSdkVersion
+
+    defaultConfig {
+        minSdk = project.ext.minSdkVersion
+        targetSdk = project.ext.targetSdkVersion
+        versionCode 10
+        versionName "1.0.1"
+
+        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+    }
+
+    lint {
+        abortOnError = true
+        disable 'MissingTranslation'
+        //lintConfig rootProject.file('lint.xml')
+    }
+}
+
+dependencies {
+    androidTestImplementation 'androidx.test.espresso:espresso-core:' + espressoVersion
+    testImplementation 'junit:junit:' + junitVersion
+    // NEWTUBE(update-flow): the real org.json for UpdateManifestTest (android.jar only has stubs)
+    testImplementation 'org.json:json:20240303'
+
+    // Removed melautils.jar - only StreamUtils was used, now provided as source
+    // See: src/main/java/edu/mit/mobile/android/utils/StreamUtils.java
+
+    implementation dependencies.project(':sharedutils')
+
+    implementation 'androidx.appcompat:appcompat:' + appCompatXVersion
+
+    implementation 'dnsjava:dnsjava:' + dnsjavaVersion
+
+    implementation 'com.squareup.okhttp3:okhttp:' + okhttpVersion
+}

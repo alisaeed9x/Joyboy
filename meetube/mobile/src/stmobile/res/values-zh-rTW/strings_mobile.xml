@@ -1,0 +1,634 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="mobile_player_back">返回</string>
+    <string name="mobile_player_minimize">最小化</string>
+    <string name="mobile_player_audio_only">僅音訊</string>
+    <string name="mobile_player_audio_off">開啟視訊</string>
+    <string name="mobile_player_play">播放</string>
+    <string name="mobile_player_pause">暫停</string>
+    <string name="mobile_player_replay">重播</string>
+    <string name="mobile_player_fullscreen">切換全螢幕</string>
+    <string name="mobile_player_quality">畫質</string>
+    <string name="mobile_player_audio_track">音軌</string>
+    <string name="mobile_player_subtitles">字幕</string>
+    <string name="mobile_player_speed">播放速度</string>
+    <string name="mobile_player_chapter_button">章節：%1$s。顯示所有章節</string>
+    <string name="mobile_player_release_to_cancel">放開即可取消</string>
+    <string name="mobile_player_pip">子母畫面</string>
+    <string name="mobile_player_previous">上一支</string>
+    <string name="mobile_player_next">下一支</string>
+    <string name="mobile_playlist_play_all">全部播放</string>
+    <string name="mobile_playlist_shuffle">隨機播放</string>
+    <string name="mobile_player_zoom_fill">放大至填滿</string>
+    <string name="mobile_player_zoom_original">原始大小</string>
+    <string name="mobile_player_more">更多選項</string>
+    <string name="mobile_menu_more">更多</string>
+    <string name="mobile_menu_watch_regular">在一般播放器中觀看</string>
+    <string name="mobile_player_skip_segment">跳過</string>
+    <string name="mobile_shorts_rest_title">孩子，你贏麻了嗎？？</string>
+    <string name="mobile_shorts_rest_message">已經滑了 30 分鐘 Shorts，休息一下吧 :)</string>
+    <string name="mobile_shorts_rest_ok">好啦好啦</string>
+    <string name="mobile_quality_auto_current">自動（%1$s）</string>
+    <string name="mobile_quality_auto_short">自動</string>
+    <string name="mobile_menu_repeat">重複播放模式</string>
+    <string name="mobile_menu_shuffle">隨機播放</string>
+    <string name="mobile_menu_zoom">縮放</string>
+    <string name="mobile_menu_background">在背景播放</string>
+    <string name="mobile_menu_stats">進階統計資料</string>
+    <string name="mobile_menu_playlist_add">儲存至播放清單</string>
+    <string name="mobile_menu_queue">播放佇列</string>
+    <string name="mobile_menu_on">開</string>
+    <string name="mobile_menu_off">關</string>
+    <string name="mobile_playback_channel_name">播放</string>
+    <string name="mobile_playback_channel_desc">背景播放的媒體控制</string>
+    <string name="mobile_watch_like">讚</string>
+    <string name="mobile_watch_dislike">倒讚</string>
+    <string name="mobile_watch_share">分享</string>
+    <string name="mobile_lyrics">
+        歌詞
+    </string>
+    <string name="mobile_lyrics_none">
+        這首歌沒有歌詞
+    </string>
+    <string name="mobile_lyrics_source">
+        來源：%1$s
+    </string>
+    <string name="mobile_lyrics_provider_description">
+        歌詞提供者：%1$s
+    </string>
+    <string name="mobile_lyrics_provider_choose">
+        選擇歌詞提供者
+    </string>
+    <string name="mobile_lyrics_provider_current">
+        目前使用的提供者
+    </string>
+    <string name="mobile_lyrics_provider_found">
+        已找到歌詞 · 輕觸即可使用
+    </string>
+    <string name="mobile_lyrics_provider_fetching">
+        正在取得歌詞…
+    </string>
+    <string name="mobile_lyrics_provider_not_fetched">
+        輕觸即可取得
+    </string>
+    <string name="mobile_lyrics_provider_not_found">
+        找不到歌詞
+    </string>
+    <string name="mobile_watch_save">儲存</string>
+    <string name="mobile_watch_saved">已儲存</string>
+    <string name="mobile_watch_subscribe">訂閱</string>
+    <string name="mobile_watch_subscribed">已訂閱</string>
+    <string name="mobile_watch_related">即將播放</string>
+    <string name="mobile_watch_chip_all">全部</string>
+    <string name="mobile_watch_chip_channel">來自 %1$s</string>
+    <string name="mobile_watch_chip_new">未看過</string>
+    <string name="mobile_watch_chip_watched">繼續觀看</string>
+    <string name="mobile_settings_watch_style">影片頁</string>
+    <string name="mobile_settings_watch_style_compact">精簡</string>
+    <string name="mobile_settings_watch_style_compact_desc">操作按鈕在訂閱旁，熱門留言逐則顯示</string>
+    <string name="mobile_settings_watch_style_classic">經典</string>
+    <string name="mobile_settings_watch_style_classic_desc">附文字的按鈕和頻道列</string>
+    <string name="mobile_settings_player_buttons">播放器按鈕</string>
+    <string name="mobile_settings_player_buttons_summary">顯示或隱藏影片上的按鈕</string>
+    <string name="mobile_settings_player_buttons_note">隱藏的按鈕在所有影片上都不顯示。變更會在下次開啟播放器時生效。</string>
+    <string name="mobile_settings_player_buttons_top">頂部列</string>
+    <string name="mobile_settings_player_buttons_center">中間</string>
+    <string name="mobile_settings_player_buttons_fullscreen">全螢幕操作</string>
+    <string name="mobile_settings_player_prev_next">上一部和下一部</string>
+    <string name="mobile_player_lock">鎖定畫面</string>
+    <string name="mobile_player_locked">已鎖定 · 輕觸解鎖</string>
+    <string name="mobile_transcript">轉錄稿</string>
+    <string name="mobile_transcript_follow">透過轉錄稿跟著看。</string>
+    <string name="mobile_transcript_show">顯示轉錄稿</string>
+    <string name="mobile_transcript_search">搜尋轉錄稿</string>
+    <string name="mobile_transcript_none">這部影片沒有轉錄稿。</string>
+    <string name="mobile_transcript_failed">無法載入轉錄稿。</string>
+    <string name="mobile_description_details">影片詳細資料</string>
+    <string name="mobile_description_date">日期</string>
+    <string name="mobile_player_more_videos">更多影片</string>
+    <string name="mobile_watch_offline">目前離線</string>
+    <string name="mobile_watch_queue_from">正在從%1$s播放</string>
+    <string name="mobile_watch_queue_fallback">佇列</string>
+    <string name="mobile_watch_queue_now_playing">播放中</string>
+    <string name="mobile_watch_description">說明</string>
+    <string name="mobile_watch_share_subject">觀看這支影片</string>
+    <string name="mobile_watch_share_at">從 %1$s 開始分享</string>
+    <string name="mobile_comments_entry">留言</string>
+    <string name="mobile_comments_title">留言</string>
+    <string name="mobile_comments_replies_title">回覆</string>
+    <string name="mobile_comments_none">還沒有留言</string>
+    <string name="mobile_comments_load_error">無法載入留言。</string>
+    <string name="mobile_comments_replies_load_error">無法載入回覆。</string>
+    <string name="mobile_comments_sort_top">最熱門</string>
+    <string name="mobile_comments_sort_top_hint">依按讚數排序</string>
+    <string name="mobile_comments_sort_newest">最新</string>
+    <string name="mobile_comments_sort_newest_hint">可能包含垃圾留言</string>
+    <string name="mobile_comments_sort_description">留言排序：%1$s</string>
+    <string name="mobile_comments_close">關閉留言</string>
+    <string name="mobile_comments_back">返回留言</string>
+    <string name="mobile_comments_read_more">展開</string>
+    <string name="mobile_comments_show_less">收合</string>
+    <string name="mobile_comments_open_replies">開啟回覆</string>
+    <string name="mobile_comments_copy">複製留言</string>
+    <string name="mobile_comments_copied">已複製留言</string>
+    <string name="mobile_comments_like">讚此留言</string>
+    <string name="mobile_comments_unlike">取消按讚</string>
+    <string name="mobile_comments_liked">已按讚</string>
+    <string name="mobile_comments_sign_in_to_like">登入後才能為留言按讚</string>
+    <string name="mobile_comments_add_hint">新增留言&#8230;</string>
+    <string name="mobile_comments_reply_hint">新增回覆&#8230;</string>
+    <string name="mobile_comments_reply">回覆</string>
+    <string name="mobile_comments_post">發布</string>
+    <string name="mobile_comments_posted">已發布留言</string>
+    <string name="mobile_comments_reply_posted">已發布回覆</string>
+    <string name="mobile_comments_view_reply">查看</string>
+    <string name="mobile_comments_post_failed">無法發布你的留言</string>
+    <string name="mobile_comments_post_failed_reason">無法發布：%1$s</string>
+    <string name="mobile_comments_try_again">再試一次</string>
+    <string name="mobile_comments_sign_in_to_comment">登入後才能留言</string>
+    <string name="mobile_comments_more">更多動作</string>
+    <string name="mobile_comments_delete">刪除</string>
+    <string name="mobile_comments_delete_title">刪除留言？</string>
+    <string name="mobile_comments_delete_reply_title">刪除回覆？</string>
+    <string name="mobile_comments_delete_message">所有人都會看不到它。</string>
+    <string name="mobile_comments_delete_cancel">取消</string>
+    <string name="mobile_comments_deleted">已刪除留言</string>
+    <string name="mobile_comments_delete_failed">無法刪除留言</string>
+    <plurals name="mobile_comments_replies">
+        <item quantity="one">%1$d 則回覆</item>
+        <item quantity="other">%1$d 則回覆</item>
+    </plurals>
+    <string name="mobile_live_chat_entry">即時聊天</string>
+    <string name="mobile_live_chat_title">即時聊天</string>
+    <string name="mobile_live_chat_empty">正在等待訊息&#8230;</string>
+    <string name="mobile_sheet_close">關閉</string>
+    <string name="mobile_dialog_back">返回</string>
+    <string name="mobile_dialog_unavailable">手機版尚未支援此項目。</string>
+    <string name="mobile_back">返回</string>
+    <string name="mobile_search_hint">搜尋影片</string>
+    <string name="mobile_search_button">搜尋</string>
+    <string name="mobile_search_voice">語音搜尋</string>
+    <string name="mobile_search_insert">改用此關鍵字搜尋</string>
+    <string name="mobile_search_clear">清除搜尋</string>
+    <string name="mobile_search_filters">
+        搜尋篩選條件
+    </string>
+    <string name="mobile_search_filter_type">
+        類型
+    </string>
+    <string name="mobile_search_filter_all">
+        全部
+    </string>
+    <string name="mobile_search_filter_videos">
+        影片
+    </string>
+    <string name="mobile_search_filter_channels">
+        頻道
+    </string>
+    <string name="mobile_search_filter_playlists">
+        播放清單
+    </string>
+    <string name="mobile_search_filter_movies">
+        電影
+    </string>
+    <string name="mobile_search_filter_duration">
+        時間長度
+    </string>
+    <string name="mobile_search_filter_any">
+        不限
+    </string>
+    <string name="mobile_search_filter_under_3">
+        3 分鐘以下
+    </string>
+    <string name="mobile_search_filter_3_20">
+        3 - 20 分鐘
+    </string>
+    <string name="mobile_search_filter_over_20">
+        20 分鐘以上
+    </string>
+    <string name="mobile_search_filter_upload_date">
+        上傳日期
+    </string>
+    <string name="mobile_search_filter_anytime">
+        任何時間
+    </string>
+    <string name="mobile_search_filter_today">
+        今天
+    </string>
+    <string name="mobile_search_filter_this_week">
+        本週
+    </string>
+    <string name="mobile_search_filter_recent">最近上傳</string>
+    <string name="mobile_search_filter_this_month">
+        本月
+    </string>
+    <string name="mobile_search_filter_this_year">
+        今年
+    </string>
+    <string name="mobile_search_filter_prioritize">
+        排序偏好
+    </string>
+    <string name="mobile_search_filter_relevance">
+        相關程度
+    </string>
+    <string name="mobile_search_filter_popularity">
+        熱門程度
+    </string>
+    <string name="mobile_search_filter_features">
+        功能
+    </string>
+    <string name="mobile_search_filter_live">
+        直播
+    </string>
+    <string name="mobile_search_filter_subtitles">
+        字幕/CC
+    </string>
+    <string name="mobile_search_filter_creative_commons">
+        Creative Commons
+    </string>
+    <string name="mobile_search_filter_location">
+        位置
+    </string>
+    <string name="mobile_search_filter_purchased">
+        已購買
+    </string>
+    <string name="mobile_search_filter_apply">
+        套用
+    </string>
+    <string name="mobile_search_no_results">找不到「%1$s」相關結果</string>
+    <string name="mobile_search_error">無法載入結果。</string>
+    <string name="mobile_channel_tab_videos">影片</string>
+    <string name="mobile_channel_tab_more">
+        更多
+    </string>
+    <string name="mobile_nav_you">你的頻道</string>
+    <string name="mobile_nav_subs">訂閱</string>
+    <string name="mobile_you_explore">探索</string>
+    <string name="mobile_you_library">媒體庫</string>
+    <string name="mobile_no_browser">找不到可開啟此連結的應用程式</string>
+    <string name="mobile_add_device_title">配對裝置</string>
+    <string name="mobile_add_device_done">完成</string>
+    <string name="mobile_quality_title">畫質</string>
+    <string name="mobile_quality_auto">自動（建議）</string>
+    <string name="mobile_audio_default">預設</string>
+    <string name="mobile_audio_role_original">原始語音</string>
+    <string name="mobile_audio_role_dubbed">配音</string>
+    <string name="mobile_audio_role_auto_dubbed">自動配音</string>
+    <string name="mobile_audio_role_descriptive">口述影像</string>
+    <string name="mobile_audio_track_toast">音軌：%1$s</string>
+    <string name="mobile_captions_off">關閉字幕</string>
+    <string name="mobile_captions_empty">這支影片沒有可用的字幕</string>
+    <string name="mobile_captions_style">字幕樣式與大小</string>
+    <string name="mobile_captions_on_toast">字幕已開啟（%1$s）</string>
+    <string name="mobile_captions_off_toast">字幕已關閉</string>
+    <string name="mobile_speed_normal">正常</string>
+    <string name="mobile_speed_more">更多速度</string>
+    <string name="mobile_speed_toast">播放速度：%1$s</string>
+    <string name="mobile_signin_title">登入</string>
+    <string name="mobile_signin_lead">連結你的 Google 帳號，即可取回訂閱、播放清單與觀看紀錄。</string>
+    <string name="mobile_signin_step1_title">點一下「使用 Google 繼續」</string>
+    <string name="mobile_signin_step1_caption">Google 的登入頁面會直接在這裡開啟。</string>
+    <string name="mobile_signin_step2_title">選擇你的帳號並允許存取</string>
+    <string name="mobile_signin_step2_caption">頁面可能提到電視或其他裝置，這是正常的：MeeTube 的登入方式跟電視一樣，你的密碼不會經過這個應用程式。</string>
+    <string name="mobile_signin_step3_title">回到 MeeTube</string>
+    <string name="mobile_signin_step3_caption">登入會自己完成，不需要再做其他事。</string>
+    <string name="mobile_signin_code_label">Google 會顯示這組代碼，請確認內容相符：</string>
+    <string name="mobile_signin_copy_hint">點一下代碼即可複製</string>
+    <string name="mobile_signin_code_copied">已複製代碼</string>
+    <string name="mobile_signin_open_button">使用 Google 繼續</string>
+    <string name="mobile_signin_manual_hint">按鈕沒反應？改用任何瀏覽器開啟這個網址並輸入代碼：</string>
+    <string name="mobile_signin_notification">正在透過 Google 登入…</string>
+    <string name="mobile_signin_waiting_title">等待 Google…</string>
+    <string name="mobile_signin_waiting_caption">請在 Google 頁面完成：選擇帳號並允許存取。完成後這裡會自動登入。</string>
+    <string name="mobile_signin_reopen_button">重新開啟登入頁面</string>
+    <string name="mobile_signin_success">已成功登入！</string>
+    <string name="mobile_signin_error">無法完成登入。請檢查網路後再試一次，你會拿到一組新代碼。</string>
+    <string name="mobile_signin_retry_button">再試一次</string>
+    <string name="mobile_accounts_title">帳號</string>
+    <string name="mobile_accounts_signed_out">不使用帳號</string>
+    <string name="mobile_accounts_sign_out">登出</string>
+    <string name="mobile_accounts_sign_out_title">要登出嗎？</string>
+    <string name="mobile_accounts_sign_out_confirm">%1$s 會從這台裝置移除。你隨時可以重新登入。</string>
+    <string name="mobile_empty_signin_section">登入後才能看到你的%1$s</string>
+    <string name="mobile_empty_signin_generic">登入後才能看到此內容</string>
+    <string name="mobile_empty_signin_subscriptions">登入後才能看到你的訂閱</string>
+    <string name="mobile_empty_signin_channels">登入後才能看到你追蹤的頻道</string>
+    <string name="mobile_empty_signin_playlists">登入後才能看到你的播放清單</string>
+    <string name="mobile_empty_signin_my_videos">登入後才能看到你的影片</string>
+    <string name="mobile_empty_signin_history">登入後才能看到你的觀看紀錄</string>
+    <string name="mobile_empty_signin_notifications">登入後才能看到你的通知</string>
+    <string name="action_signin">登入</string>
+    <string name="mobile_empty_generic">這裡還沒有內容</string>
+    <string name="mobile_empty_subscriptions">你訂閱的頻道之影片會顯示在這裡</string>
+    <string name="mobile_empty_no_connection">沒有連線。請檢查網路後再試一次。</string>
+    <string name="mobile_page_load_error">無法載入這個頁面。</string>
+    <string name="mobile_load_more_error">無法載入更多。</string>
+    <string name="mobile_refresh_error">無法更新。</string>
+    <string name="mobile_mini_play_pause">播放或暫停</string>
+    <string name="mobile_mini_expand">展開播放器</string>
+    <string name="pin_playlist">將播放清單釘選到「你的頻道」</string>
+    <string name="pin_channel">將頻道釘選到「你的頻道」</string>
+    <string name="pinned_to_sidebar">已釘選到「你的頻道」</string>
+    <string name="unpin_from_sidebar">從「你的頻道」取消釘選</string>
+    <string name="unpinned_from_sidebar">已從「你的頻道」取消釘選</string>
+    <string name="subscribe_to_channel">訂閱</string>
+    <string name="unsubscribe_from_channel">取消訂閱</string>
+    <string name="subscribe_unsubscribe_from_channel">訂閱或取消訂閱</string>
+    <string name="share_link">分享</string>
+    <string name="mobile_you_pinned">已釘選</string>
+    <string name="pin_unpin_from_sidebar">釘選到「你的頻道」</string>
+    <string name="mobile_settings_experimental">實驗功能</string>
+    <string name="mobile_settings_gestures">手勢</string>
+    <string name="mobile_settings_gesture_levels">滑動調整亮度與音量</string>
+    <string name="mobile_settings_gesture_levels_summary">在全螢幕影片的左側或右側上下滑動</string>
+    <string name="mobile_settings_gesture_seek">滑動快進倒退</string>
+    <string name="mobile_settings_gesture_seek_summary">在影片上左右滑動</string>
+    <string name="subscribed_to_channel">已訂閱</string>
+    <string name="unsubscribed_from_channel">已取消訂閱</string>
+    <string name="mobile_player_settings">設定</string>
+    <string name="mobile_more_options_for">%1$s 的更多選項</string>
+    <string name="mobile_comment_likes">%1$s 則讚</string>
+    <string name="mobile_mini_close">關閉播放器</string>
+    <string name="mobile_first_run_setup">一次性設定 — 正在準備 YouTube…</string>
+    <string name="mobile_cast_button">傳送到電視</string>
+    <string name="mobile_cast_picker_title">傳送到</string>
+    <string name="mobile_cast_searching">正在尋找裝置…</string>
+    <string name="mobile_cast_empty">在這個 Wi-Fi 網路中找不到裝置</string>
+    <string name="mobile_cast_subtitle_no_ads">用手機控制畫質</string>
+    <string name="mobile_cast_subtitle_youtube_app">電視上的 YouTube 或 MeeTube TV / SmartTube TV</string>
+    <string name="mobile_cast_chooser_title">傳送到%1$s</string>
+    <string name="mobile_cast_option_direct_title">直接投放</string>
+    <string name="mobile_cast_option_direct_subtitle">用手機控制畫質・不支援字幕</string>
+    <string name="mobile_cast_option_app_title">透過電視應用程式播放</string>
+    <string name="mobile_cast_option_app_subtitle">直播與字幕需要它・畫質用遙控器控制</string>
+    <string name="mobile_cast_connecting_youtube_app">正在連線到電視上的 YouTube 應用程式…</string>
+    <string name="mobile_cast_direct_live_unsupported">直播內容需要電視上的 YouTube 或 MeeTube TV / SmartTube TV</string>
+    <string name="mobile_cast_direct_incompatible">這支影片無法直接投放（沒有電視能播放的格式）</string>
+    <string name="mobile_cast_direct_load_failed">無法為直接投放準備這支影片</string>
+    <string name="mobile_cast_direct_no_wifi">直接投放需要手機與電視連同一個 Wi-Fi</string>
+    <string name="mobile_cast_link_code">用電視代碼連結</string>
+    <string name="mobile_cast_link_code_subtitle">適用於 YouTube 與 MeeTube TV / SmartTube TV</string>
+    <string name="mobile_cast_code_hint">12 位數代碼</string>
+    <string name="mobile_cast_code_title">連結電視</string>
+    <string name="mobile_cast_code_app_label">電視應用程式</string>
+    <string name="mobile_cast_code_choose_app">選擇電視上開啟的應用程式。</string>
+    <string name="mobile_cast_code_open_smarttube">在電視的 MeeTube TV / SmartTube TV 中開啟：</string>
+    <string name="mobile_cast_code_open_youtube">在電視的 YouTube 中開啟：</string>
+    <string name="mobile_cast_code_find">在任一電視應用程式中找到代碼：</string>
+    <string name="mobile_cast_code_youtube_path">設定 → 用電視代碼連結</string>
+    <string name="mobile_cast_code_smarttube_path">設定 → 遙控器</string>
+    <string name="mobile_cast_code_helper">可以包含破折號和空格</string>
+    <string name="mobile_cast_code_smarttube_benefit">提示：用 MeeTube TV / SmartTube TV 就能在電視上控制畫質與字幕。</string>
+    <string name="mobile_cast_code_positive">連結</string>
+    <string name="mobile_cast_code_invalid">代碼應為 12 位數</string>
+    <string name="mobile_cast_pairing">正在與電視連結…</string>
+    <string name="mobile_cast_pair_failed">無法用該代碼連結。請確認後再試一次。</string>
+    <string name="mobile_cast_connecting">正在連線到%1$s…</string>
+    <string name="mobile_cast_launch_failed">無法連到電視上的 YouTube 應用程式。請改用「用電視代碼連結」。</string>
+    <string name="mobile_cast_unavailable">這個版本尚未支援投放</string>
+    <string name="mobile_cast_playing_on">正在%1$s上播放</string>
+    <string name="mobile_cast_disconnect">中斷連線</string>
+    <string name="mobile_cast_channel_name">投放</string>
+    <string name="mobile_cast_channel_desc">電視投放工作階段控制</string>
+    <string name="mobile_cast_fallback_switching">正在改用電視上的 YouTube…</string>
+    <string name="mobile_cast_trying_smarttube">正在改用電視上的 MeeTube TV / SmartTube TV…</string>
+    <string name="mobile_cast_trying_direct">正在改用直接投放…</string>
+    <string name="mobile_cast_trying_saved">正在改用已儲存的電視應用程式…</string>
+    <string name="mobile_cast_checking_ad_free">正在檢查電視…</string>
+    <string name="mobile_cast_smarttube_title">MeeTube TV / SmartTube TV</string>
+    <string name="mobile_cast_smarttube_subtitle">MeeTube TV / SmartTube TV・手機可以離開</string>
+    <string name="mobile_cast_youtube_title">YouTube</string>
+    <string name="mobile_cast_youtube_subtitle">YouTube・備援方式</string>
+    <string name="mobile_cast_unknown_title">已儲存的電視應用程式</string>
+    <string name="mobile_cast_unknown_subtitle">未能辨識電視應用程式・點 ⋮ 設定</string>
+    <string name="mobile_cast_identify_app">這組代碼來自哪個電視應用程式？</string>
+    <string name="mobile_cast_onboarding_title">你的電視有 MeeTube TV / SmartTube TV？</string>
+    <string name="mobile_cast_onboarding_body">配對一次之後，你投放的影片會在 MeeTube TV / SmartTube TV 中開啟。</string>
+    <string name="mobile_cast_pair_smarttube">配對 MeeTube TV / SmartTube TV</string>
+    <string name="mobile_cast_receiver_no_playback">電視應用程式沒有開始播放</string>
+    <string name="mobile_cast_switching_tv_app">正在電視上開啟 YouTube 控制介面…</string>
+    <string name="mobile_cast_choose_method">選擇投放方式</string>
+    <string name="mobile_cast_more_options">電視播放選項</string>
+    <string name="mobile_cast_controls_title">電視播放選項</string>
+    <string name="mobile_cast_direct_summary">直接投放・用這支手機控制畫質・字幕需要電視應用程式</string>
+    <string name="mobile_cast_app_summary">電視應用程式・字幕由這支手機控制・畫質用遙控器</string>
+    <string name="mobile_cast_quality_auto_1080">自動（最高 1080p）</string>
+    <string name="mobile_cast_quality_cap">最高 %1$dp</string>
+    <string name="mobile_cast_quality_tv_remote">使用遙控器</string>
+    <string name="mobile_cast_subtitles_need_tv_app">改用電視應用程式</string>
+    <string name="mobile_cast_quality_receiver_help">請在電視的播放器設定中選擇畫質。</string>
+    <string name="mobile_cast_subtitles_sent">已將字幕選擇送到電視</string>
+    <string name="mobile_cast_subtitles_failed">無法在這台接收裝置上變更字幕</string>
+    <string name="mobile_cast_switch_subtitles_title">要用電視應用程式看字幕嗎？</string>
+    <string name="mobile_cast_switch_subtitles_message">電視應用程式支援字幕，畫質則由遙控器控制。我們會先試已配對的 MeeTube TV / SmartTube TV，再試 YouTube。</string>
+    <string name="mobile_cast_switch_subtitles_positive">切換</string>
+    <string name="mobile_cast_tv_volume_label">電視音量</string>
+    <string name="mobile_sign_in_to_rate">登入後才能為影片按讚或倒讚</string>
+    <string name="mobile_subscribed_to">已訂閱 %1$s</string>
+    <string name="mobile_unsubscribed_from">已取消訂閱 %1$s</string>
+    <string name="mobile_subscribed">已訂閱</string>
+    <string name="mobile_unsubscribed">已取消訂閱</string>
+    <string name="mobile_undo">復原</string>
+    <string name="mobile_liked">已加入「我喜歡的影片」</string>
+    <string name="mobile_like_removed">已從「我喜歡的影片」移除</string>
+    <string name="mobile_disliked">你已對這支影片倒讚</string>
+    <string name="mobile_dislike_removed">已取消倒讚</string>
+    <string name="mobile_rate_not_ready">這支影片還在載入。請稍後再試。</string>
+    <string name="mobile_rating_not_saved">無法儲存你的評價。請檢查網路後再試一次。</string>
+    <string name="mobile_download_started">已開始下載</string>
+    <string name="mobile_download_started_size">已開始下載・%1$s</string>
+    <string name="mobile_download_done">下載完成</string>
+    <string name="mobile_download_done_size">下載完成・%1$s</string>
+    <string name="mobile_download_already_here">已下載過</string>
+    <string name="mobile_download_view">查看</string>
+    <string name="mobile_download_preparing">正在準備下載…</string>
+    <string name="mobile_download_unavailable">這支影片無法下載</string>
+    <string name="mobile_download_unavailable_live">直播內容無法下載</string>
+    <string name="mobile_download_audio_only">僅音訊</string>
+    <string name="mobile_download_already">已下載</string>
+    <string name="mobile_download_state_queued">等待下載</string>
+    <string name="mobile_download_state_downloading">下載中・%1$d%%・%2$s／%3$s</string>
+    <string name="mobile_download_state_downloading_bytes">下載中・%1$s</string>
+    <string name="mobile_download_state_processing">即將完成…</string>
+    <string name="mobile_download_error_generic">下載失敗。點一下可重試。</string>
+    <string name="mobile_download_error_link">下載連結已過期。點一下可重試。</string>
+    <string name="mobile_download_done_title">下載完成</string>
+    <string name="mobile_download_retry">重試下載</string>
+    <string name="mobile_download_cancel">取消下載</string>
+    <string name="mobile_download_delete">刪除下載</string>
+    <string name="mobile_download_file_missing">這台裝置上已找不到下載的檔案</string>
+    <string name="mobile_download_pill_downloaded">已下載</string>
+    <string name="mobile_downloads_empty">你下載的影片會顯示在這裡。\n可在影片的選單或觀看頁面中使用「下載」。</string>
+    <string name="mobile_download_badge_queued">排隊中</string>
+    <string name="mobile_download_badge_downloading">下載中</string>
+    <string name="mobile_download_badge_failed">失敗</string>
+    <string name="mobile_download_pause">暫停下載</string>
+    <string name="mobile_download_resume">繼續下載</string>
+    <string name="mobile_download_action_pause">暫停</string>
+    <string name="mobile_download_state_paused">已暫停・%1$d%%・%2$s／%3$s</string>
+    <string name="mobile_download_badge_paused">已暫停</string>
+    <string name="mobile_download_channel_name">下載</string>
+    <string name="mobile_download_channel_desc">影片下載進度</string>
+    <string name="mobile_update_checking">
+        正在檢查更新…
+    </string>
+    <string name="mobile_update_up_to_date">
+        MeeTube 已是最新版本
+    </string>
+    <string name="mobile_update_version">
+        版本 %1$s
+    </string>
+    <string name="mobile_update_check_failed_title">
+        無法檢查更新
+    </string>
+    <string name="mobile_update_check_failed_body">
+        請檢查網路連線後再試一次。
+    </string>
+    <string name="mobile_update_available_title">
+        有可用的更新
+    </string>
+    <string name="mobile_update_app_version">
+        MeeTube %1$s
+    </string>
+    <string name="mobile_update_app_version_size">
+        MeeTube %1$s · %2$s
+    </string>
+    <string name="mobile_update_metered">
+        你正在使用行動數據。
+    </string>
+    <string name="mobile_update_whats_new_in">
+        %1$s 的新功能
+    </string>
+    <string name="mobile_update_release_notes">
+        完整版本資訊
+    </string>
+    <string name="mobile_update_later">
+        稍後
+    </string>
+    <string name="mobile_update_update">
+        更新
+    </string>
+    <string name="mobile_update_downloading_title">
+        正在下載更新
+    </string>
+    <string name="mobile_update_progress">
+        %1$s（共 %2$s）
+    </string>
+    <string name="mobile_update_cancel">
+        取消
+    </string>
+    <string name="mobile_update_download_failed_title">
+        下載未完成
+    </string>
+    <string name="mobile_update_download_failed_body">
+        請再試一次，或改從 GitHub 取得 MeeTube %1$s。
+    </string>
+    <string name="mobile_update_install_failed_title">
+        無法開啟安裝程式
+    </string>
+    <string name="mobile_update_github">
+        開啟 GitHub
+    </string>
+    <string name="mobile_update_try_again">
+        再試一次
+    </string>
+    <string name="mobile_update_ready_title">
+        可供安裝
+    </string>
+    <string name="mobile_update_install">
+        安裝
+    </string>
+    <string name="mobile_update_permission_title">
+        允許 MeeTube 安裝更新
+    </string>
+    <string name="mobile_update_permission_body">
+        Android 只會問這一次。在下一個畫面開啟「允許來自這個來源」，然後回到這裡：更新會立即安裝。
+    </string>
+    <string name="mobile_update_open_settings">
+        開啟設定
+    </string>
+    <string name="mobile_update_not_now">
+        暫時不要
+    </string>
+    <string name="mobile_update_done">
+        完成
+    </string>
+    <string name="mobile_update_whats_new">
+        新功能
+    </string>
+    <string name="mobile_update_updated">
+        已更新為 MeeTube %1$s
+    </string>
+    <string name="mobile_update_downloaded">
+        更新已下載完成
+    </string>
+    <string name="mobile_update_row_available">
+        有可用的更新
+    </string>
+    <string name="mobile_update_row_downloading">
+        正在下載更新
+    </string>
+    <string name="mobile_update_row_downloading_percent">
+        MeeTube %1$s · %2$d%%
+    </string>
+    <string name="mobile_update_row_ready">
+        更新可供安裝
+    </string>
+    <string name="mobile_update_channel_name">
+        應用程式更新
+    </string>
+    <string name="mobile_update_channel_desc">
+        正在下載 MeeTube 更新
+    </string>
+    <string name="mobile_theme">主題</string>
+    <string name="mobile_theme_system">跟隨系統</string>
+    <string name="mobile_theme_light">淺色</string>
+    <string name="mobile_theme_dark">深色</string>
+    <string name="mobile_about_star">在 GitHub 上給 MeeTube 加星</string>
+    <string name="mobile_about_star_desc">免費且開放原始碼。加顆星能讓更多人找到它</string>
+    <string name="mobile_about_share">分享 MeeTube</string>
+    <string name="mobile_about_share_desc">把連結發給需要的人</string>
+    <string name="mobile_about_share_text">MeeTube — 建於 SmartTube 之上的手機 YouTube 客戶端：%1$s</string>
+    <string name="sabr_vod_option">即使連結可用也偏好 SABR（實驗功能；下一支點播影片生效）</string>
+    <string name="sabr_vod_stopped">已停止實驗性 SABR 播放。點播放可重試，或在設定中關閉 SABR。</string>
+    <string name="mobile_next_in">%1$d 秒後播放下一支</string>
+    <string name="mobile_next_play">立即播放</string>
+    <string name="mobile_next_cancel">取消</string>
+    <string name="app_name">MeeTube</string>
+    <string name="mobile_player_time_default">0:00</string>
+    <string name="mobile_player_live">直播</string>
+    <string name="mobile_player_sleep_timer">睡眠計時器</string>
+    <string name="mobile_feed_all">全部</string>
+    <string name="mobile_feed_show_filters">顯示篩選器</string>
+    <string name="mobile_player_autoplay">自動播放</string>
+    <string name="mobile_sleep_end_of_video">影片結束時</string>
+    <string name="mobile_sleep_left">剩 %1$d 分鐘</string>
+    <string name="mobile_sleep_toast_minutes">影片將於 %1$s 後暫停</string>
+    <string name="mobile_sleep_toast_end">影片結束時將暫停</string>
+    <string name="mobile_sleep_toast_off">睡眠計時器已關閉</string>
+    <string name="mobile_player_duration">\u0020/ %1$s</string>
+    <string name="mobile_player_chapter_title">·\u0020%1$s</string>
+    <string name="mobile_player_hold_speed">2x</string>
+    <string name="mobile_watch_queue_position">%1$d / %2$d</string>
+    <string name="mobile_description_likes">讚</string>
+    <string name="mobile_description_views">觀看次數</string>
+    <string name="mobile_watch_count_placeholder">–</string>
+    <string name="mobile_search_filter_shorts">Shorts</string>
+    <string name="mobile_search_filter_4k">4K</string>
+    <string name="mobile_search_filter_hd">HD</string>
+    <string name="mobile_search_filter_360">360°</string>
+    <string name="mobile_search_filter_vr180">VR180</string>
+    <string name="mobile_search_filter_3d">3D</string>
+    <string name="mobile_search_filter_hdr">HDR</string>
+    <string name="mobile_settings_double_tap_seek">輕觸兩下跳轉</string>
+    <string name="mobile_cast_code_youtube">YouTube</string>
+    <string name="mobile_cast_code_smarttube">MeeTube TV / SmartTube TV</string>
+    <string name="mobile_update_dont_ask">不要再詢問</string>
+    <string name="mobile_update_dont_ask_done">知道了。之後可從「你」分頁或「設定 › 關於」更新。</string>
+    <string name="mobile_settings_update_prompt">更新提示</string>
+    <string name="mobile_settings_update_prompt_summary">有新版本時詢問是否更新</string>
+    <string name="mobile_about_repo_url">https://github.com/yashoncode/meetube</string>
+    <string name="mobile_about_site_url">https://github.com/yashoncode/meetube</string>
+    <string name="mobile_shorts_mute">靜音</string>
+    <string name="mobile_shorts_unmute">取消靜音</string>
+</resources>

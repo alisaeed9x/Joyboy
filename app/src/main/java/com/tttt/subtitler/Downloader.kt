@@ -1,0 +1,431 @@
+package com.tttt.subtitler
+
+import android.content.ContentValues
+import android.content.Context
+import android.media.MediaCodec
+import android.media.MediaExtractor
+import android.media.MediaFormat
+import android.media.MediaMuxer
+import android.os.Build
+import android.os.Environment
+import android.provider.MediaStore
+import java.io.File
+import java.net.HttpURLConnection
+import java.net.URL
+import java.nio.ByteBuffer
+
+/**
+ * (v134) تحميل الفيديوهات اللي جاية من النت:
+ *  - لينك مباشر (mp4 …) → تنزيل عادي
+ *  - يوتيوب/مواقع بصورة + صوت منفصلين → تنزيل الاتنين ودمجهم في mp4 (MediaMuxer)
+ *  - HLS (m3u8) غير مشفّر بمقاطع TS → ضم المقاطع في ملف .ts
+ * كله بيشتغل على خيط خلفي (استدعيه من Thread).
+ */
+object Downloader {
+    /** (v137) تحكم في التحميل: إيقاف مؤقت / إلغاء (ext = إلغاء جاي من مهمة المهام) */
+    class Ctl {
+        @Volatile var paused = false
+        /** (v819) الاتصالات الجارية دلوقتي — الإلغاء بيقطعها فورًا بدل ما يستنى readTimeout (30 ث) */
+        val live = java.util.concurrent.CopyOnWriteArraySet<HttpURLConnection>()
+        @Volatile var cancelled = false
+            set(v) { field = v; if (v) kill() }
+        @Volatile var ext: () -> Boolean = { false }
+        fun kill() { for (c in live) { try { c.disconnect() } catch (_: Throwable) {} } }
+        fun stop(): Boolean = cancelled || ext()
+    }
+    class Job(val name: String, val url: String, val audio: String?, val hls: Boolean, val targetH: Int, val headers: Map<String, String>, val audioOnly: Boolean = false, val ctl: Ctl = Ctl())
+
+    private const val UA = "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Mobile Safari/537.36"
+
+    internal fun open(url: String, headers: Map<String, String>, method: String = "GET", range: String? = null): HttpURLConnection {
+        val c = URL(url).openConnection() as HttpURLConnection
+        c.connectTimeout = 15000; c.readTimeout = 30000; c.instanceFollowRedirects = true; c.requestMethod = method
+        c.setRequestProperty("User-Agent", headers["User-Agent"] ?: UA)
+        for ((k, v) in headers) if (!k.equals("User-Agent", true)) c.setRequestProperty(k, v)
+        if (range != null) c.setRequestProperty("Range", range)
+        return c
+    }
+
+    /** حجم الملف بالبايت (HEAD، وبعدها Range 0-0) أو -1 لو مش معروف */
+    fun sizeOf(url: String, headers: Map<String, String>): Long {
+        try {
+            val c = open(url, headers, "HEAD")
+            val n = c.contentLengthLong; c.disconnect()
+            if (n > 0) return n
+        } catch (_: Throwable) {}
+        try {
+            val c = open(url, headers, "GET", "bytes=0-0")
+            val cr = c.getHeaderField("Content-Range"); c.disconnect()
+            val t = cr?.substringAfter('/', "")?.trim()?.toLongOrNull()
+            if (t != null && t > 0) return t
+        } catch (_: Throwable) {}
+        return -1L
+    }
+
+    private fun readText(url: String, headers: Map<String, String>): String {
+        val c = open(url, headers); try { return c.inputStream.bufferedReader().use { it.readText() } } finally { c.disconnect() }
+    }
+
+    private fun resolve(base: String, ref: String): String = URL(URL(base), ref).toString()
+
+    private fun waitIfPaused(ctl: Ctl) {
+        if (ctl.paused && !ctl.stop()) {
+            // (v736) التحميل الواقف مؤقتًا بيسيب خانته (من الـ3) للي مستني، ولما يكمّل بياخد دوره
+            val t = TaskCenter.cur.get()
+            val yielded = t != null && t.holdsSlot
+            if (yielded) TaskCenter.releaseSlot(t!!)
+            while (ctl.paused && !ctl.stop()) Thread.sleep(200)
+            if (yielded && !ctl.stop() && !TaskCenter.reacquireSlot(t!!)) throw TaskCancelled()
+        }
+        if (ctl.stop()) throw TaskCancelled()
+    }
+
+    /** (v137) تنزيل بيستكمل من نفس المكان (Range) بعد الإيقاف المؤقت أو قطع الاتصال */
+    /** (v723) تقدّم حي للمهمة: حجم + سرعة (متوسط متحرّك) + الملف الجزئي */
+    internal class Prog(val tk: TaskItem?) {
+        var lt = System.nanoTime(); var lb = 0L
+        fun part(f: File) { val t = tk ?: return; if (t.partPath.isEmpty()) t.partPath = f.absolutePath }
+        fun reset(done: Long) { lt = System.nanoTime(); lb = done }
+        fun upd(done: Long, total: Long) {
+            val t = tk ?: return; val nw = System.nanoTime()
+            if (nw - lt < 700_000_000L) return
+            val sp = (done - lb).coerceAtLeast(0L) * 1_000_000_000L / (nw - lt).coerceAtLeast(1L)
+            t.dlSpeed = if (t.dlSpeed == 0L) sp else (t.dlSpeed * 6 + sp * 4) / 10
+            lt = nw; lb = done; t.dlDone = done; t.dlTotal = total; TaskCenter.changed()
+        }
+    }
+
+    /** (v819) تحميل بأكتر من مسار + استكمال من الملف الجزئي. بيرجّع true لو اتعمل، false لو السيرفر/الحجم مش مناسب (يرجع للتحميل العادي) */
+    private fun segCopy(url: String, headers: Map<String, String>, out: File, ctl: Ctl, onPct: (Int) -> Unit): Boolean {
+        val n = SegDl.conns(); if (n <= 1) return false
+        val tk = TaskCenter.cur.get()
+        val pr = SegDl.probe(url, headers)
+        if (!pr.ranges || pr.total < SegDl.MIN_SIZE) return false
+        val ctx = TaskCenter.appContext() ?: return false
+        val part = File(SegDl.dir(ctx), SegDl.key(url) + ".part")
+        tk?.partFiles?.add(part.absolutePath)
+        val pg = Prog(tk); pg.reset(0L); tk?.dlSpeed = 0L
+        var last = -1
+        SegDl.fetch(url, headers, part, pr.total, n, ctl, { waitIfPaused(ctl) }) { d ->
+            pg.upd(d, pr.total)
+            val p = (d * 100 / pr.total).toInt().coerceIn(0, 100); if (p != last) { last = p; onPct(p) }
+        }
+        try { out.delete() } catch (_: Throwable) {}
+        if (!part.renameTo(out)) { part.copyTo(out, true); part.delete() }
+        try { File(part.path + ".meta").delete() } catch (_: Throwable) {}
+        tk?.partFiles?.remove(part.absolutePath)
+        return true
+    }
+
+    private fun copyTo(url: String, headers: Map<String, String>, out: File, ctl: Ctl, onPct: (Int) -> Unit) {
+        if (segCopy(url, headers, out, ctl, onPct)) return
+        try { out.delete() } catch (_: Throwable) {}
+        var done = 0L; var total = -1L; var last = -1; var fails = 0
+        val pg = Prog(TaskCenter.cur.get()); pg.part(out)
+        while (true) {
+            if (ctl.stop()) throw TaskCancelled()
+            waitIfPaused(ctl)
+            pg.reset(done); pg.tk?.dlSpeed = 0L
+            var interrupted = false
+            val c = open(url, headers, "GET", if (done > 0) "bytes=$done-" else null)
+            ctl.live.add(c)
+            try {
+                val code = c.responseCode
+                if (code !in 200..299) throw java.io.IOException("HTTP $code")
+                val partial = code == 206
+                if (done > 0 && !partial) { done = 0; try { out.delete() } catch (_: Throwable) {} }
+                val len = c.contentLengthLong
+                if (total < 0 && len > 0) total = if (partial) done + len else len
+                c.inputStream.use { ins ->
+                    java.io.FileOutputStream(out, true).use { os ->
+                        val buf = ByteArray(64 * 1024)
+                        while (true) {
+                            if (ctl.stop()) throw TaskCancelled()
+                            if (ctl.paused) { interrupted = true; break }
+                            val n = ins.read(buf); if (n < 0) break
+                            os.write(buf, 0, n); done += n; NetUse.media(n.toLong()); pg.upd(done, total)
+                            if (total > 0) { val p = (done * 100 / total).toInt().coerceIn(0, 100); if (p != last) { last = p; onPct(p) } }
+                        }
+                    }
+                }
+            } catch (e: TaskCancelled) { throw e
+            } catch (e: java.io.IOException) {
+                if (ctl.stop()) throw TaskCancelled()
+                if (++fails > 4) throw e
+                Thread.sleep(1500); continue
+            } finally { ctl.live.remove(c); c.disconnect() }
+            if (interrupted) continue
+            if (total > 0 && done < total) { if (++fails > 4) throw java.io.IOException("الاتصال اتقطع"); Thread.sleep(1500); continue }
+            return
+        }
+    }
+
+    /** HLS غير مشفّر (مقاطع TS): بيختار أقرب جودة للمطلوب وبيضم المقاطع. بيرجّع رسالة خطأ أو null */
+    private fun hlsFetch(url: String, headers: Map<String, String>, targetH: Int, out: File, ctl: Ctl, onPct: (Int) -> Unit): String? {
+        lastFmp4.set(false)
+        var base = url; var pl = readText(url, headers)
+        if (pl.contains("#EXT-X-STREAM-INF")) {
+            val lines = pl.lines(); var best: String? = null; var bestScore = Long.MAX_VALUE
+            for (i in lines.indices) {
+                val l = lines[i].trim()
+                if (!l.startsWith("#EXT-X-STREAM-INF")) continue
+                val h = Regex("RESOLUTION=(\\d+)x(\\d+)").find(l)?.groupValues?.get(2)?.toIntOrNull() ?: 0
+                val bw = Regex("BANDWIDTH=(\\d+)").find(l)?.groupValues?.get(1)?.toLongOrNull() ?: 0L
+                var j = i + 1
+                while (j < lines.size && (lines[j].isBlank() || lines[j].startsWith("#"))) j++
+                if (j >= lines.size) continue
+                val score = (if (targetH > 0) Math.abs(h - targetH).toLong() * 1_000_000_000L else 0L) - bw
+                if (score < bestScore) { bestScore = score; best = lines[j].trim() }
+            }
+            val v = best ?: return "ما لقيتش مسار فيديو في اللينك ده"
+            base = resolve(url, v); pl = readText(base, headers)
+        }
+        if (pl.contains("#EXT-X-BYTERANGE")) return "الفيديو ده مقسّم بـ byte-range — التحميل مش مدعوم"
+        // (v716) AES-128 + fMP4 (EXT-X-MAP) بقوا مدعومين
+        class HSeg(val url: String, val key: String?, val iv: ByteArray?, val seq: Long)
+        var seq = Regex("#EXT-X-MEDIA-SEQUENCE:(\\d+)").find(pl)?.groupValues?.get(1)?.toLongOrNull() ?: 0L
+        var keyUri: String? = null; var keyIv: ByteArray? = null; var mapUrl: String? = null
+        val segs = ArrayList<HSeg>()
+        for (raw in pl.lines()) {
+            val l = raw.trim(); if (l.isEmpty()) continue
+            if (l.startsWith("#EXT-X-KEY")) {
+                val m = Regex("METHOD=([A-Z0-9-]+)").find(l)?.groupValues?.get(1) ?: "NONE"
+                if (m == "NONE") { keyUri = null; keyIv = null }
+                else if (m == "AES-128") {
+                    keyUri = Regex("URI=\"([^\"]+)\"").find(l)?.groupValues?.get(1)?.let { resolve(base, it) }
+                    keyIv = Regex("IV=0[xX]([0-9A-Fa-f]+)").find(l)?.groupValues?.get(1)?.let { hex ->
+                        val h = hex.padStart(32, '0'); ByteArray(16) { i -> h.substring(i * 2, i * 2 + 2).toInt(16).toByte() } }
+                } else return "الفيديو ده مشفّر ($m) — التحميل مش مدعوم"
+            } else if (l.startsWith("#EXT-X-MAP")) {
+                mapUrl = Regex("URI=\"([^\"]+)\"").find(l)?.groupValues?.get(1)?.let { resolve(base, it) }
+            } else if (!l.startsWith("#")) { segs.add(HSeg(resolve(base, l), keyUri, keyIv, seq)); seq++ }
+        }
+        if (segs.isEmpty()) return "مفيش مقاطع تتحمّل في اللينك ده"
+        lastFmp4.set(mapUrl != null)
+        val mu = mapUrl
+        val keys = HashMap<String, ByteArray>()
+        fun fetchBytes(u: String): ByteArray { val c = open(u, headers); try { return c.inputStream.use { it.readBytes() } } finally { c.disconnect() } }
+        out.outputStream().buffered().use { os ->
+            if (mu != null) { val b = fetchBytes(mu); os.write(b); NetUse.media(b.size.toLong()) }
+            var last = -1
+            val pg = Prog(TaskCenter.cur.get()); pg.part(out)
+            for ((k, s) in segs.withIndex()) {
+                if (ctl.stop()) throw TaskCancelled()
+                waitIfPaused(ctl)
+                var tries = 0
+                var data: ByteArray? = null
+                while (data == null) {
+                    try {
+                        var b = fetchBytes(s.url)
+                        val ku = s.key
+                        if (ku != null) {
+                            val kb = keys.getOrPut(ku) { fetchBytes(ku) }
+                            val ivb = s.iv ?: ByteArray(16).also { a -> var v = s.seq; for (i in 15 downTo 8) { a[i] = (v and 0xFF).toByte(); v = v shr 8 } }
+                            val ci = javax.crypto.Cipher.getInstance("AES/CBC/PKCS5Padding")
+                            ci.init(javax.crypto.Cipher.DECRYPT_MODE, javax.crypto.spec.SecretKeySpec(kb, "AES"), javax.crypto.spec.IvParameterSpec(ivb))
+                            b = ci.doFinal(b)
+                        }
+                        data = b
+                    } catch (e: java.io.IOException) { if (++tries > 3) throw e; Thread.sleep(1200) }
+                }
+                val dd = data!!; os.write(dd); NetUse.media(dd.size.toLong())
+                val p = (k + 1) * 100 / segs.size; if (p != last) { last = p; onPct(p) }
+                run { val ol = out.length(); pg.upd(ol, ol * segs.size / (k + 1)) }
+            }
+        }
+        return null
+    }
+
+    /** (v716) HLS اتحمّل بصيغة fMP4 ← الملف mp4 مش ts */
+    private val lastFmp4 = ThreadLocal<Boolean>()
+    /** (v716) جودات الـ HLS (ماستر بلاي ليست): ارتفاع + ريت + لينك قائمة الجودة دي. فاضية لو اللينك قائمة وسيطة مش ماستر */
+    class Variant(val h: Int, val bw: Long, val url: String)
+    fun variants(url: String, headers: Map<String, String>): List<Variant> {
+        val pl = readText(url, headers)
+        if (!pl.contains("#EXT-X-STREAM-INF")) return emptyList()
+        val lines = pl.lines(); val out = ArrayList<Variant>()
+        for (i in lines.indices) {
+            val l = lines[i].trim(); if (!l.startsWith("#EXT-X-STREAM-INF")) continue
+            val m = Regex("RESOLUTION=(\\d+)x(\\d+)").find(l)
+            val h = if (m != null) minOf(m.groupValues[1].toInt(), m.groupValues[2].toInt()) else 0
+            val bw = Regex("BANDWIDTH=(\\d+)").find(l)?.groupValues?.get(1)?.toLongOrNull() ?: 0L
+            var j = i + 1
+            while (j < lines.size && (lines[j].isBlank() || lines[j].startsWith("#"))) j++
+            if (j >= lines.size) continue
+            out.add(Variant(h, bw, resolve(url, lines[j].trim())))
+        }
+        val use = out.filter { it.h > 0 }.ifEmpty { out }
+        return use.groupBy { it.h }.map { (_, v) -> v.maxByOrNull { it.bw }!! }.sortedWith(compareByDescending<Variant> { it.h }.thenByDescending { it.bw })
+    }
+
+    /** (v716) تحميل ملف عادي (أي نوع) بنفس الكوكيز/الـ UA/الـ Referer ويتحفظ في التنزيلات — بديل لما DownloadManager يفشل. بيرجّع المسار */
+    fun fileTo(ctx: Context, url: String, headers: Map<String, String>, display: String, mime: String?, ctl: Ctl, onPct: (Int) -> Unit): String {
+        val tmpDir = File(File(ctx.cacheDir, "dl"), java.util.UUID.randomUUID().toString().take(8)); tmpDir.mkdirs()
+        try {
+            val f = File(tmpDir, "f.bin")
+            copyTo(url, headers, f, ctl, onPct)
+            val nm = display.replace(Regex("[\\\\/:*?\"<>|\\n\\r]"), " ").trim().take(120).ifBlank { "download" }
+            val mt = mime?.takeIf { it.isNotBlank() && it != "application/octet-stream" }
+                ?: android.webkit.MimeTypeMap.getSingleton().getMimeTypeFromExtension(nm.substringAfterLast('.', "").lowercase()) ?: "application/octet-stream"
+            return publish(ctx, f, nm, mt)
+        } finally { try { tmpDir.deleteRecursively() } catch (_: Throwable) {} }
+    }
+
+    /** دمج ملف صورة وملف صوت (mp4 / m4a) في mp4 واحد */
+    private fun mux(v: File, a: File, out: File) {
+        val muxer = MediaMuxer(out.absolutePath, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
+        val exs = ArrayList<MediaExtractor>()
+        try {
+            val map = ArrayList<Pair<MediaExtractor, Int>>()
+            for (f in listOf(v, a)) {
+                val ex = MediaExtractor(); ex.setDataSource(f.absolutePath); exs.add(ex)
+                for (i in 0 until ex.trackCount) {
+                    val fmt = ex.getTrackFormat(i); val mime = fmt.getString(MediaFormat.KEY_MIME) ?: continue
+                    val want = if (f === v) mime.startsWith("video/") else mime.startsWith("audio/")
+                    if (!want) continue
+                    ex.selectTrack(i); map.add(Pair(ex, muxer.addTrack(fmt))); break
+                }
+            }
+            muxer.start()
+            val buf = ByteBuffer.allocate(4 * 1024 * 1024); val info = MediaCodec.BufferInfo()
+            for ((ex, ti) in map) {
+                while (true) {
+                    buf.clear(); val n = ex.readSampleData(buf, 0); if (n < 0) break
+                    val flags = if ((ex.sampleFlags and MediaExtractor.SAMPLE_FLAG_SYNC) != 0) MediaCodec.BUFFER_FLAG_KEY_FRAME else 0
+                    info.set(0, n, ex.sampleTime, flags)
+                    muxer.writeSampleData(ti, buf, info); ex.advance()
+                }
+            }
+            muxer.stop()
+        } finally {
+            try { muxer.release() } catch (_: Throwable) {}
+            for (e in exs) try { e.release() } catch (_: Throwable) {}
+        }
+    }
+
+    /** استخراج مسار الصوت من أي ملف (mp4 / m4a / ts / webm) لملف صوت لوحده */
+    private fun extractAudio(src: File, out: File, outFmt: Int) {
+        val ex = MediaExtractor()
+        try {
+            ex.setDataSource(src.absolutePath)
+            var ti = -1; var fmt: MediaFormat? = null
+            for (i in 0 until ex.trackCount) {
+                val f = ex.getTrackFormat(i)
+                if ((f.getString(MediaFormat.KEY_MIME) ?: "").startsWith("audio/")) { ti = i; fmt = f; break }
+            }
+            if (ti < 0 || fmt == null) throw java.io.IOException("مفيش مسار صوت في الفيديو ده")
+            ex.selectTrack(ti)
+            val muxer = MediaMuxer(out.absolutePath, outFmt)
+            try {
+                val mt = muxer.addTrack(fmt); muxer.start()
+                val buf = ByteBuffer.allocate(1024 * 1024); val info = MediaCodec.BufferInfo()
+                while (true) {
+                    buf.clear(); val n = ex.readSampleData(buf, 0); if (n < 0) break
+                    info.set(0, n, ex.sampleTime, MediaCodec.BUFFER_FLAG_KEY_FRAME)
+                    muxer.writeSampleData(mt, buf, info); ex.advance()
+                }
+                muxer.stop()
+            } finally { try { muxer.release() } catch (_: Throwable) {} }
+        } finally { try { ex.release() } catch (_: Throwable) {} }
+    }
+
+    /** صوت فقط: M4A (AAC) — ولو الصيغة opus/vorbis بيطلع .webm صوت */
+    private fun finishAudio(ctx: Context, raw: File, base: String, tmpDir: File): Pair<Boolean, String> {
+        val o1 = File(tmpDir, "o.m4a")
+        try { extractAudio(raw, o1, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4); raw.delete(); return Pair(true, publish(ctx, o1, "$base.m4a", "audio/mp4")) }
+        catch (_: Throwable) { try { o1.delete() } catch (_: Throwable) {} }
+        val o2 = File(tmpDir, "o.webm")
+        try { extractAudio(raw, o2, MediaMuxer.OutputFormat.MUXER_OUTPUT_WEBM); raw.delete(); return Pair(true, publish(ctx, o2, "$base.webm", "audio/webm")) }
+        catch (_: Throwable) { try { o2.delete() } catch (_: Throwable) {} }
+        try { raw.delete() } catch (_: Throwable) {}
+        return Pair(false, "ما قدرتش أستخرج الصوت من الصيغة دي")
+    }
+
+    /** ينقل الملف لمجلد التنزيلات (MediaStore على أندرويد 10+) وبيرجّع المسار/الوصف */
+    /** (v472) آخر ملف اتحفظ على الخيط ده (uri + mime) — صفحة المهام بتفتحه بدوسة بعد ما التحميل يخلص */
+    private val lastOut = ThreadLocal<Pair<android.net.Uri, String>?>()
+    fun takeLastOut(): Pair<android.net.Uri, String>? { val x = lastOut.get(); lastOut.set(null); return x }
+    private fun publish(ctx: Context, f: File, display: String, mime: String): String {
+        lastOut.set(null)
+        if (Build.VERSION.SDK_INT >= 29) {
+            val cv = ContentValues().apply {
+                put(MediaStore.MediaColumns.DISPLAY_NAME, display); put(MediaStore.MediaColumns.MIME_TYPE, mime)
+                put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS + "/Subtitler")
+            }
+            val uri = ctx.contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, cv) ?: throw java.io.IOException("ما قدرتش أكتب في التنزيلات")
+            ctx.contentResolver.openOutputStream(uri)?.use { os -> f.inputStream().use { it.copyTo(os) } }
+            f.delete()
+            lastOut.set(Pair(uri, mime)); NetLedger.fileRef(uri.toString(), mime)
+            return "Download/Subtitler/$display"
+        }
+        val dir = ctx.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS) ?: ctx.filesDir
+        val dst = File(dir, display); f.copyTo(dst, true); f.delete()
+        lastOut.set(Pair(android.net.Uri.fromFile(dst), mime)); NetLedger.fileRef(dst.absolutePath, mime)
+        return dst.absolutePath
+    }
+
+    private fun safeName(s: String): String = s.replace(Regex("[\\\\/:*?\"<>|\\n\\r]"), " ").trim().take(80).ifBlank { "video" }
+
+    /** (v137) تنزيل لملف مؤقت للأدوات (قص/ضغط/هارد ساب…): لينك مباشر / صورة+صوت (بيتدمجوا) / HLS. بيرمي استثناء لو فشل */
+    fun toCache(url: String, audio: String?, hls: Boolean, targetH: Int, headers: Map<String, String>, out: File, ctl: Ctl, onPct: (Int) -> Unit) {
+        if (hls) { val err = hlsFetch(url, headers, targetH, out, ctl, onPct); if (err != null) throw java.io.IOException(err); return }
+        if (audio == null) { copyTo(url, headers, out, ctl, onPct); return }
+        val v = File(out.parentFile, out.name + ".v"); val a = File(out.parentFile, out.name + ".a")
+        try {
+            copyTo(url, headers, v, ctl) { onPct(it / 2) }
+            copyTo(audio, headers, a, ctl) { onPct(50 + it / 2) }
+            mux(v, a, out)
+        } finally { try { v.delete() } catch (_: Throwable) {}; try { a.delete() } catch (_: Throwable) {} }
+    }
+
+    /** بيرجّع (نجح؟, رسالة). استدعيه من خيط خلفي. onPct: 0..100 */
+    fun run(ctx: Context, job: Job, onPct: (String, Int) -> Unit): Pair<Boolean, String> = NetLedger.inFile(job.name) { run0(ctx, job, onPct) }
+    private fun run0(ctx: Context, job: Job, onPct: (String, Int) -> Unit): Pair<Boolean, String> {
+        val tmpDir = File(File(ctx.cacheDir, "dl"), java.util.UUID.randomUUID().toString().take(8)); tmpDir.mkdirs()   // (v472) مجلد لكل تحميل: ينفع أكتر من تحميل في نفس الوقت
+        val base = safeName(job.name)
+        try {
+            if (job.audioOnly) {
+                val raw = File(tmpDir, "raw.bin")
+                if (job.hls) {
+                    val err = hlsFetch(job.url, job.headers, job.targetH, raw, job.ctl) { onPct("⬇ تحميل", it) }
+                    if (err != null) { raw.delete(); return Pair(false, err) }
+                } else copyTo(job.audio ?: job.url, job.headers, raw, job.ctl) { onPct("⬇ تحميل الصوت", it) }
+                onPct("🎧 استخراج الصوت", 99)
+                return finishAudio(ctx, raw, base, tmpDir)
+            }
+            if (job.hls) {
+                val t = File(tmpDir, "h.ts")
+                val err = hlsFetch(job.url, job.headers, job.targetH, t, job.ctl) { onPct("⬇ تحميل", it) }
+                if (err != null) { t.delete(); return Pair(false, err) }
+                return if (lastFmp4.get() == true) Pair(true, publish(ctx, t, "$base.mp4", "video/mp4")) else Pair(true, publish(ctx, t, "$base.ts", "video/mp2t"))
+            }
+            val v = File(tmpDir, "v.bin")
+            if (job.audio == null) {
+                copyTo(job.url, job.headers, v, job.ctl) { onPct("⬇ تحميل", it) }
+                val ext = job.url.substringBefore('?').substringAfterLast('.', "mp4").lowercase().let { if (it.length in 2..4) it else "mp4" }
+                val mime = if (ext == "webm") "video/webm" else if (ext == "mkv") "video/x-matroska" else "video/mp4"
+                return Pair(true, publish(ctx, v, "$base.$ext", mime))
+            }
+            val a = File(tmpDir, "a.bin")
+            copyTo(job.url, job.headers, v, job.ctl) { onPct("⬇ الصورة", it / 2) }
+            copyTo(job.audio, job.headers, a, job.ctl) { onPct("⬇ الصوت", 50 + it / 2) }
+            onPct("🔧 دمج الصوت والصورة", 99)
+            val out = File(tmpDir, "m.mp4")
+            return try {
+                mux(v, a, out); v.delete(); a.delete()
+                Pair(true, publish(ctx, out, "$base.mp4", "video/mp4"))
+            } catch (e: Throwable) {
+                // الدمج فشل (صيغة مش مدعومة): نحفظ الملفين منفصلين بدل ما نضيّع التحميل
+                try { out.delete() } catch (_: Throwable) {}
+                val p1 = publish(ctx, v, "$base (صورة).mp4", "video/mp4"); val p2 = publish(ctx, a, "$base (صوت).m4a", "audio/mp4")
+                Pair(true, "الدمج مدعمش الصيغة دي — اتحفظ ملفين: $p1 + $p2")
+            }
+        } catch (e: Throwable) {
+            if (e is TaskCancelled) throw e
+            LogStore.err("Downloader", e)
+            return Pair(false, "التحميل فشل: " + (e.message ?: e.javaClass.simpleName).take(80))
+        } finally {
+            try { tmpDir.deleteRecursively() } catch (_: Throwable) {}
+        }
+    }
+}

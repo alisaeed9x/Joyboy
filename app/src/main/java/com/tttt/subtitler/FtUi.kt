@@ -1,0 +1,1171 @@
+package com.tttt.subtitler
+
+import android.app.Activity
+import android.app.AlertDialog
+import android.content.Context
+import android.content.Intent
+import android.graphics.Canvas
+import android.graphics.Color
+import android.graphics.Paint
+import android.graphics.drawable.ColorDrawable
+import android.graphics.drawable.GradientDrawable
+import android.graphics.drawable.StateListDrawable
+import android.net.Uri
+import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
+import android.view.Gravity
+import android.view.View
+import android.view.ViewGroup
+import android.widget.BaseAdapter
+import android.widget.FrameLayout
+import android.widget.HorizontalScrollView
+import android.widget.LinearLayout
+import android.widget.ListView
+import android.widget.ScrollView
+import android.widget.TextView
+import org.json.JSONObject
+import java.io.File
+import java.net.URLEncoder
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+import java.util.concurrent.ConcurrentHashMap
+
+/** حالة بسيطة مشتركة بين الشاشات (الملفات المختارة والجهاز لكل جلسة — لإعادة المحاولة) */
+object FtUiState {
+    val picks = ConcurrentHashMap<String, List<FtPick>>()
+    val peers = ConcurrentHashMap<String, FtPeer>()
+}
+
+/**
+ * (v653) نقل الملفات الذكي — الشاشة الرئيسية. بنفس نظام الواجهات والثيم الحالي (Views برمجية + Theme + Ui) من غير أي ألوان ثابتة.
+ * الرئيسية (4 بطاقات) ← الرادار ← اختيار الملفات ← الإرسال / الاستقبال ← السجل ← الهوية.
+ * D-pad: كل العناصر قابلة للتركيز بحد واضح، والرادار بيحدّث الصفوف في مكانها من غير ما يسرق التركيز.
+ */
+class FileTransferActivity : Activity() {
+    private lateinit var th: Theme
+    private lateinit var ui: Ui
+    private val h = Handler(Looper.getMainLooper())
+    private val tvMode: Boolean by lazy { try { DeviceUi.isTv(this) } catch (_: Throwable) { false } }
+    private lateinit var content: FrameLayout
+    private val stack = ArrayList<Pair<String, () -> View>>()
+    private var curTag = ""
+    private var picker: FtPicker? = null
+    private var radar: FtRadarView? = null
+    private var updater: (() -> Unit)? = null
+    private val onPrimary: Int get() = if (th.isLight) Color.WHITE else Color.BLACK
+
+    // الرادار
+    private val peers = LinkedHashMap<String, FtPeer>()
+    private val miss = HashMap<String, Int>()
+    private var scanning = false
+    private var btMsg = ""                       // (v824) حالة البلوتوث تحت الرادار (مقفول / محتاج صلاحية)
+    private var pairCancel: (() -> Unit)? = null
+    private var pairDlg: AlertDialog? = null
+    private var scanGen = 0
+    private var radarMode = "m2m"
+    private var presetPicks: List<FtPick>? = null
+    private var radarStatus: TextView? = null
+    private var radarList: LinearLayout? = null
+    private class PeerRow(val root: View, val name: TextView, val sub: TextView, val glyph: GlyphView, val badge: TextView)
+    private val peerRows = HashMap<String, PeerRow>()
+    private val shownSids = HashSet<String>()
+    private var hubL: (() -> Unit)? = null
+
+    private val fmt = SimpleDateFormat("yyyy/MM/dd HH:mm", Locale.US)
+
+    // ───────── دورة الحياة ─────────
+    override fun onCreate(b: Bundle?) {
+        super.onCreate(b)
+        Cfg.init(this)
+        try { RemoteClient.init(this) } catch (_: Throwable) {}
+        try { DeviceUi.applyOrientation(this) } catch (_: Throwable) {}
+        th = Themes.current(); ui = Ui(this, th)
+        try { window.setBackgroundDrawable(ColorDrawable(th.bg)); window.statusBarColor = th.bg; window.navigationBarColor = th.bg } catch (_: Throwable) {}
+        FtIdentity.init(this); FtStore.init(this)
+        FtPeers.start(this)
+        val pad = ui.dp(if (tvMode) 28 else 12)
+        val root = FrameLayout(this).apply { setBackgroundColor(th.bg); layoutDirection = View.LAYOUT_DIRECTION_RTL; setPadding(pad, ui.dp(if (tvMode) 20 else 12), pad, ui.dp(8)) }
+        content = FrameLayout(this)
+        root.addView(content, FrameLayout.LayoutParams(-1, -1))
+        if (tvMode) setContentView(root)
+        else {   // (v660) المخزن: شريط 📂 الملفات | 📡 نقل فوق + الشريط السفلي زي باقي الصفحات
+            val outer = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_LTR; setBackgroundColor(th.bg) }
+            outer.addView(FilesHub.switchBar(this, ui, th, 1).view, LinearLayout.LayoutParams(-1, -2))
+            val floatNav = MtFloat.eligible(this)   // (v900)
+            val body = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_LTR }
+            body.addView(root, LinearLayout.LayoutParams(-1, 0, 1f))
+            val gates = BottomNav(this, ui, th, 3) { i ->
+                if (i != 3) {
+                    NavAnim.set(3, i)
+                    if (i == 2) startActivity(Intent(this, BrowserActivity::class.java))
+                    else startActivity(Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP).putExtra("tab", if (i == 0) "videos" else if (i == 1) "music" else if (i == 4) "youtube" else if (i == 7) "settings" else "tasks"))
+                    NavAnim.peek(this)
+                    finish()
+                }
+            }
+            if (floatNav) outer.addView(MtFloat.build(this, th, ui, body, gates, null), LinearLayout.LayoutParams(-1, 0, 1f))
+            else { outer.addView(body, LinearLayout.LayoutParams(-1, 0, 1f)); outer.addView(gates.view, LinearLayout.LayoutParams(-1, -2)) }
+            setContentView(outer)
+        }
+        val l: () -> Unit = { onHub() }
+        hubL = l; FtHub.listen(l)
+        go("home") { buildHome() }
+        handleIntent(intent)
+    }
+
+    override fun onNewIntent(i: Intent) { super.onNewIntent(i); setIntent(i); handleIntent(i) }
+
+    private fun handleIntent(i: Intent?) {
+        // (v855) فتح مباشر من شبكة «المزيد»: send = اختار ملفات وابعت · recv = استقبال · bt = اقتران بلوتوث
+        val openTo = i?.getStringExtra("ft_open")
+        if (openTo != null) {
+            i?.removeExtra("ft_open")
+            when (openTo) {
+                "send" -> go("files") { buildFiles("send") }
+                "recv" -> go("recv") { buildReceive() }
+                "bt" -> go("btpair") { buildBtPair() }
+            }
+        }
+        // (v658) ملفات جاهزة من مكتبة الفيديوهات/الموسيقى (شريط التحديد ← 📤 إرسال): نروح للرادار على طول
+        val uris = i?.getStringArrayListExtra("ft_uris")
+        if (uris != null && uris.isNotEmpty()) {
+            val names = i.getStringArrayListExtra("ft_names") ?: arrayListOf()
+            val sizes = i.getLongArrayExtra("ft_sizes") ?: LongArray(0)
+            i.removeExtra("ft_uris"); i.removeExtra("ft_names"); i.removeExtra("ft_sizes")
+            val picks = ArrayList<FtPick>()
+            for ((k, u) in uris.withIndex()) {
+                val nm = FtPath.cleanRel(names.getOrNull(k) ?: Uri.parse(u).lastPathSegment ?: "file")
+                if (nm.isEmpty()) continue
+                picks.add(FtPick(nm, sizes.getOrElse(k) { -1L }, Uri.parse(u), u))
+            }
+            if (picks.isNotEmpty()) { presetPicks = picks; radarMode = "all"; go("radar") { buildRadar() } }
+            return
+        }
+        val sid = i?.getStringExtra("ft_sid") ?: return
+        val s = FtHub.find(sid) ?: return
+        i?.removeExtra("ft_sid")
+        if (shownSids.add(sid) || curTag != "progress") go("progress") { buildProgress(s) }
+    }
+
+    override fun onResume() { super.onResume(); FtHub.uiVisible = true; picker?.refreshIfNeeded(); onHub(); try { DataCapsule.attach(this) } catch (_: Throwable) {} }   // (v799)
+    override fun onPause() { FtHub.uiVisible = false; try { DataCapsule.detach(this) } catch (_: Throwable) {}; super.onPause() }
+
+    override fun onDestroy() {
+        scanGen++
+        try { BtScan.stop(); pairCancel?.invoke() } catch (_: Throwable) {}
+        try { FtWeb.stop() } catch (_: Throwable) {}
+        h.removeCallbacksAndMessages(null)
+        hubL?.let { FtHub.unlisten(it) }
+        if (!tvMode && !FtIdentity.keepReady() && FtHub.sessions.none { it.active }) FtPeers.stop()
+        super.onDestroy()
+    }
+
+    override fun onBackPressed() {
+        if ((curTag == "picker" || curTag == "files") && picker?.back() == true) return
+        if (curTag == "tvbrowse" && backHook?.invoke() == true) return
+        pop()
+    }
+
+    private fun onHub() {
+        if (isFinishing || isDestroyed) return
+        try { updater?.invoke() } catch (e: Throwable) { LogStore.err("FtUi:upd", e) }
+        for (s in FtHub.pendingIncoming()) { if (shownSids.add(s.sid)) { go("progress") { buildProgress(s) }; break } }
+    }
+
+    // ───────── التنقل ─────────
+    private fun go(tag: String, b: () -> View) { stack.add(Pair(tag, b)); show() }
+
+    private fun pop() { if (stack.size > 1) { stack.removeAt(stack.size - 1); show() } else finish() }
+
+    private fun show() {
+        val (tag, b) = stack.last()
+        if ((curTag == "radar" && tag != "radar") || (curTag == "btpair" && tag != "btpair")) { scanGen++; BtScan.stop() }
+        if (tag == "home") presetPicks = null
+        curTag = tag; picker = null; radar = null; updater = null; backHook = null; progRefresh = null; radarStatus = null; radarList = null; btList = null; btStatus = null; recvPulse = null; peerRows.clear()
+        content.removeAllViews()
+        val v = b()
+        content.addView(v, FrameLayout.LayoutParams(-1, -1))
+        if (tvMode) v.post { v.requestFocus() }
+    }
+
+    // ───────── مكوّنات ─────────
+    private fun lp(w: Int, hh: Int, wt: Float = 0f) = LinearLayout.LayoutParams(w, hh, wt)
+
+    private fun styleFocus(v: View, fill: Int, r: Int, on: Boolean = false) {
+        v.isFocusable = true; v.isClickable = true
+        fun paint(f: Boolean) {
+            v.background = ui.box(fill, if (f) th.accent else if (on) th.primary else th.border, r, if (f) 3 else 1)
+            v.animate().scaleX(if (f) TvGlow.fit(v, 1.03f) else 1f).scaleY(if (f) TvGlow.fit(v, 1.03f) else 1f).setDuration(110).start()
+        }
+        paint(false)
+        v.setOnFocusChangeListener { _, f -> paint(f) }
+    }
+
+    private fun btn(label: String, primary: Boolean = false, f: () -> Unit): TextView = IconTextView(this).apply {
+        text = label; textSize = if (tvMode) 18f else 14f; gravity = Gravity.CENTER; maxLines = 1
+        setPadding(ui.dp(if (tvMode) 20 else 14), ui.dp(if (tvMode) 13 else 11), ui.dp(if (tvMode) 20 else 14), ui.dp(if (tvMode) 13 else 11))
+        isFocusable = true; isClickable = true
+        fun paint(foc: Boolean) {
+            setTextColor(if (primary) onPrimary else th.text)
+            background = ui.box(if (primary) th.primary else th.surface, if (foc) th.accent else if (primary) th.primary else th.border, 18, if (foc) 3 else 1)
+        }
+        paint(false)
+        setOnFocusChangeListener { _, foc -> paint(foc) }
+        setOnClickListener { f() }
+    }
+
+    private fun header(title: String, sub: String = "", right: View? = null): LinearLayout {
+        if (MtGlass.on() && !tvMode) return MtHeader.bar(this, ui, th, title, sub, if (stack.size > 1) ({ pop() }) else null, right)   // (v909) هيدر MeeTube
+        val hd = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL }
+        if (stack.size > 1) hd.addView(btn("→") { pop() }, lp(-2, -2).apply { marginEnd = ui.dp(8) })
+        val col = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        col.addView(ui.text(title, if (tvMode) 26f else 20f, th.primary, true))
+        if (sub.isNotEmpty()) col.addView(ui.text(sub, if (tvMode) 15f else 12f, th.muted))
+        hd.addView(col, lp(0, -2, 1f))
+        if (right != null) hd.addView(right, lp(-2, -2))
+        return hd
+    }
+
+    private fun scroll(inner: View): ScrollView = ScrollView(this).apply { isFillViewport = false; addView(inner, FrameLayout.LayoutParams(-1, -2)) }
+
+    private fun col(): LinearLayout = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL }
+
+    private fun listSelector(): StateListDrawable {
+        val hi = ui.box(th.surface, th.accent, 12, 2)
+        return StateListDrawable().apply {
+            addState(intArrayOf(android.R.attr.state_pressed), hi)
+            addState(intArrayOf(android.R.attr.state_focused), hi)
+            addState(intArrayOf(android.R.attr.state_selected), hi)
+            addState(intArrayOf(), ColorDrawable(Color.TRANSPARENT))
+        }
+    }
+
+    /** أيقونة نوع الجهاز مرسومة بالألوان من الثيم */
+    private inner class GlyphView(var type: String) : View(this@FileTransferActivity) {
+        private val p = Paint(Paint.ANTI_ALIAS_FLAG)
+        override fun onDraw(c: Canvas) {
+            val s = minOf(width, height).toFloat()
+            FtDraw.glyph(c, p, type, width / 2f, height / 2f, s * 0.62f, th.primary)
+        }
+    }
+
+    private fun chip(type: String, size: Int): GlyphView = GlyphView(type).apply {
+        background = GradientDrawable().apply { setColor(th.surface); cornerRadius = ui.dp(14).toFloat(); setStroke(ui.dp(1), th.border) }
+        layoutParams = LinearLayout.LayoutParams(ui.dp(size), ui.dp(size))
+    }
+
+    private fun lanLine(): String {
+        val ip = try { RemoteClient.ipTowards("") } catch (_: Throwable) { "" }
+        return if (ip.isEmpty()) "📵 مش متصل بشبكة محلية (واي فاي)" else "📶 الشبكة المحلية · $ip"
+    }
+
+
+    // ═════════════ الرئيسية ═════════════
+    // (v672) 4 بطاقات كبيرة زي التصميم: موبايل←موبايل · موبايل←تلفزيون · تلفزيون←موبايل · مدير الملفات
+    // موبايل←X: اختار الملفات (مدير ملفات بشبكة/ترتيب/آخر الملفات) ← زرار إرسال أحمر ← الرادار ← إرسال
+    private var homePk: FtPicker? = null
+
+    /** لون بنفس درجة الثيم مزاح في الـHue (من غير الأخضر عشان راحة العين) */
+    private fun hueShift(c: Int, deg: Float): Int {
+        val hsv = FloatArray(3); Color.colorToHSV(c, hsv)
+        var hh = (hsv[0] + deg + 360f) % 360f
+        if (hh in 75f..170f) hh = (hh + 110f) % 360f
+        hsv[0] = hh; hsv[1] = hsv[1].coerceIn(0.45f, 0.85f); hsv[2] = hsv[2].coerceIn(0.55f, 0.95f)
+        return Color.HSVToColor(hsv)
+    }
+
+    private fun darker(c: Int, f: Float): Int { val hsv = FloatArray(3); Color.colorToHSV(c, hsv); hsv[2] = (hsv[2] * f).coerceIn(0f, 1f); return Color.HSVToColor(hsv) }
+
+    private fun filesFor(mode: String): View {
+        val ttl = when (mode) { "send" -> "📤 إرسال — اختار الملفات"; "m2m" -> "📱 موبايل ← موبايل"; "m2tv" -> "📺 موبايل ← تلفزيون"; "tv2m" -> "📲 من التلفزيون للموبايل"; else -> "📁 مدير الملفات" }
+        val pk = FtPicker(this, ui, th, tvMode, { picks -> presetPicks = picks; radarMode = if (mode == "all" || mode == "send") "all" else mode; go("radar") { buildRadar() } }, { pop() }, ttl, { homeMenu() })
+        picker = pk; homePk = pk
+        return pk.view
+    }
+
+    private fun buildFiles(mode: String): View = filesFor(mode)
+
+    private fun buildHome(): View {
+        val root = col()
+        val gear = btn("⚙") { homeMenu() }
+        val logo = TextView(this).apply {
+            text = "📲"; textSize = if (tvMode) 30f else 26f; gravity = Gravity.CENTER
+            background = GradientDrawable(GradientDrawable.Orientation.TL_BR, intArrayOf(th.primary, th.accent)).apply { cornerRadius = ui.dp(16).toFloat() }
+        }
+        val hd = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL }
+        hd.addView(logo, lp(ui.dp(if (tvMode) 64 else 54), ui.dp(if (tvMode) 64 else 54)).apply { marginEnd = ui.dp(10) })
+        val tc = col()
+        tc.addView(ui.text("مركز إرسال واستقبال البيانات", if (tvMode) 28f else 20f, th.text, true))
+        tc.addView(ui.text(if (tvMode) "بين التلفزيون والموبايل" else "موبايل · تلفزيون · كمبيوتر · آيفون · بلوتوث", if (tvMode) 16f else 12.5f, th.muted))
+        hd.addView(tc, lp(0, -2, 1f))
+        hd.addView(gear, lp(-2, -2))
+        root.addView(hd, lp(-1, -2))
+
+        val body = col()
+        val live = col()
+        body.addView(live, lp(-1, -2).apply { topMargin = ui.dp(8) })
+        fun fillLive() {
+            live.removeAllViews()
+            for (s in FtHub.sessions.filter { it.active }.take(3)) {
+                val pend = !s.outgoing && s.status == FtSession.WAITING && s.decision == 0
+                val t = if (pend) "📥 طلب من «" + s.peerName + "» — " + s.files.size + " ملف · اضغط للرد"
+                else (if (s.outgoing) "📤 بيتبعت لـ «" else "📥 بيستقبل من «") + s.peerName + "» · " + s.percent() + "%"
+                val v = ui.text(t, if (tvMode) 16f else 13.5f, th.text, true).apply { setPadding(ui.dp(14), ui.dp(12), ui.dp(14), ui.dp(12)) }
+                styleFocus(v, th.card, 14, true)
+                v.setOnClickListener { go("progress") { buildProgress(s) } }
+                live.addView(v, lp(-1, -2).apply { bottomMargin = ui.dp(6) })
+            }
+        }
+        fillLive(); updater = { fillLive() }
+
+        class Card(val icon: String, val title: String, val desc: String, val c: Int, val act: () -> Unit)
+        val cards = ArrayList<Card>()
+        val p0 = th.primary
+        if (tvMode) {
+            cards.add(Card("📤", "إرسال", "ابعت ملفات من التلفزيون لموبايل قريب", p0) { homeMode("tv2m") })
+            cards.add(Card("📥", "استقبال", "استقبل ملفات من موبايل قريب", hueShift(p0, 38f)) { go("recv") { buildReceive() } })
+        } else {
+            // (v855) زرارين بس: إرسال (بيلقط الأجهزة المناسبة للي اخترته لوحده) + استقبال، وزرار اقتران بلوتوث
+            cards.add(Card("📤", "إرسال", "اختار الملفات والأجهزة المناسبة بتظهر لوحدها — موبايل · تلفزيون · كمبيوتر · آيفون", p0) { homeMode("send") })
+            cards.add(Card("📥", "استقبال", "جاهز تستقبل من أي جهاز — وكمان من الآيفون", hueShift(p0, 38f)) { go("recv") { buildReceive() } })
+            cards.add(Card("\uE001", "اقتران جهاز بلوتوث", "عربية · سماعة · ساعة · سبيكر · أي جهاز", hueShift(p0, -42f)) { go("btpair") { buildBtPair() } })
+        }
+
+        val per = if (tvMode) 4 else 2
+        var rowL: LinearLayout? = null
+        for ((i, c) in cards.withIndex()) {
+            if (i % per == 0) { rowL = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL }; body.addView(rowL, lp(-1, -2).apply { topMargin = ui.dp(10) }) }
+            val cv = col().apply { setPadding(ui.dp(12), ui.dp(18), ui.dp(12), ui.dp(16)); gravity = Gravity.CENTER_HORIZONTAL; minimumHeight = ui.dp(if (tvMode) 190 else 160) }
+            cv.addView(TextView(this).apply { text = c.icon; textSize = if (tvMode) 40f else 36f; gravity = Gravity.CENTER })
+            cv.addView(ui.text(c.title, if (tvMode) 19f else 15.5f, Color.WHITE, true).apply { gravity = Gravity.CENTER; setPadding(0, ui.dp(10), 0, ui.dp(3)) })
+            cv.addView(ui.text(c.desc, if (tvMode) 14f else 11.5f, 0xCCFFFFFF.toInt()).apply { gravity = Gravity.CENTER })
+            cv.isFocusable = true; cv.isClickable = true
+            fun paint(f: Boolean) {
+                cv.background = GradientDrawable(GradientDrawable.Orientation.TL_BR, intArrayOf(c.c, darker(c.c, 0.62f))).apply {
+                    cornerRadius = ui.dp(22).toFloat(); if (f) setStroke(ui.dp(3), Color.WHITE)
+                }
+                cv.animate().scaleX(if (f) 1.04f else 1f).scaleY(if (f) 1.04f else 1f).setDuration(110).start()
+            }
+            paint(false)
+            cv.setOnFocusChangeListener { _, f -> paint(f) }
+            cv.setOnClickListener { c.act() }
+            rowL!!.addView(cv, lp(0, -2, 1f).apply { setMargins(ui.dp(5), 0, ui.dp(5), 0) })
+        }
+        if (cards.size % per != 0 && !tvMode) rowL?.addView(View(this), lp(0, 1, 1f))
+
+        val bar = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL }
+        bar.addView(btn("🕘 سجل النقل") { go("history") { buildHistory() } }, lp(0, -2, 1f).apply { marginEnd = ui.dp(4) })
+        bar.addView(btn("🪪 الاسم والأجهزة") { go("settings") { buildSettings() } }, lp(0, -2, 1f))
+        body.addView(bar, lp(-1, -2).apply { topMargin = ui.dp(14) })
+        body.addView(ui.text(lanLine(), if (tvMode) 15f else 12f, th.muted).apply { gravity = Gravity.CENTER; setPadding(0, ui.dp(14), 0, 0) })
+        body.addView(ui.text("🔒 الاتصال مشفّر وكل استقبال بيستنى موافقتك — شغّال من غير إنترنت", if (tvMode) 14f else 11.5f, th.muted).apply { gravity = Gravity.CENTER; setPadding(0, ui.dp(4), 0, 0) })
+        root.addView(scroll(body), lp(-1, 0, 1f))
+        return root
+    }
+
+    private fun homeMode(mode: String) {
+        if (mode == "tv2m" && !tvMode) { radarMode = "tv2m"; go("radar") { buildRadar() }; return }
+        go("files") { buildFiles(mode) }
+    }
+
+    private fun homeMenu() {
+        val labels = ArrayList<String>(); val acts = ArrayList<() -> Unit>()
+        labels.add("🕘 سجل النقل"); acts.add { go("history") { buildHistory() } }
+        labels.add("🪪 الهوية والإعدادات"); acts.add { go("settings") { buildSettings() } }
+        if (!tvMode) { labels.add("📲 ملفات التلفزيون"); acts.add { radarMode = "tv2m"; go("radar") { buildRadar() } } }
+        GAlert(this).setItems(labels.toTypedArray()) { _, i -> acts[i]() }.setNegativeButton("إغلاق", null).show()
+    }
+
+    // ═════════════ الرادار ═════════════
+    private fun modeTitle(): String = when (radarMode) {
+        "all" -> "اختار الجهاز اللي هتبعتله"; "m2m" -> "اختار الجهاز المستهدف"; "m2tv" -> "اختار التلفزيون"
+        "tv2m" -> if (tvMode) "اختار الموبايل" else "اختار التلفزيون"
+        else -> "اختار الجهاز"
+    }
+
+    /** (v831) بلوتوث له اسم أو متزاوج (من غير اسم = إشارات BLE عشوائية بتزحم الرادار) */
+    private fun btNamed(p: FtPeer) = p.bt != null && !(p.name == BtScan.NO_NAME && !p.btBonded)
+    /** (v831) بلوتوث يقدر يستقبل ملفات: موبايل/تابلت/كمبيوتر (سماعة/ساعة/ماوس/تلفزيون مش بيستقبلوا ملفات) */
+    private fun btFileCapable(p: FtPeer) = btNamed(p) && (p.type == "phone" || p.type == "tablet" || p.type == "pc" || (p.type == "unk" && p.btBonded))
+
+    private fun visibleFor(p: FtPeer): Boolean = when (radarMode) {
+        "m2m" -> (p.ft && !p.isTv) || btFileCapable(p)
+        "m2tv" -> p.isTv
+        "tv2m" -> if (tvMode) p.ft && !p.isTv else p.isTv
+        else -> p.ft || p.link != null || p.qs || (if (presetPicks != null) btFileCapable(p) else btNamed(p))
+    }
+
+    private fun buildRadar(): View {
+        val root = col()
+        val refresh = btn("🔄") { startScan(true) }
+        root.addView(header(modeTitle(), "الأجهزة القريبة على نفس الشبكة", refresh))
+        val rv = FtRadarView(this, th).apply { meName = FtIdentity.name(); meType = FtIdentity.type(); onPick = { id -> peers[id]?.let { onPeer(it) } } }
+        radar = rv
+        // (v654) الرادار كبير: على الموبايل ياخد الشاشة كلها والأجهزة بتتدوس عليه مباشرة؛ على التلفزيون القايمة تحته للـD-pad
+        root.addView(rv, if (tvMode) lp(-1, ui.dp(340)).apply { topMargin = ui.dp(6) } else lp(-1, 0, 1f).apply { topMargin = ui.dp(6) })
+        val st = ui.text("", if (tvMode) 16f else 13f, th.muted).apply { gravity = Gravity.CENTER; setPadding(0, ui.dp(4), 0, ui.dp(6)) }
+        radarStatus = st
+        root.addView(st, lp(-1, -2))
+        val pkWeb = presetPicks
+        if (!tvMode && pkWeb != null && pkWeb.any { !XCat.isApk(it.rel) }) {   // (v855) آيفون/أي متصفح: بيظهر بس لما الملفات تنفع تتفتح عنده (مش APK)
+            root.addView(btn("🍎  آيفون / أي جهاز بمتصفح (QR)") { FtWeb.showDialog(this, ui, th, pkWeb) }, lp(-1, -2).apply { bottomMargin = ui.dp(6) })
+        }
+        val lst = col()
+        radarList = lst
+        root.addView(scroll(lst), if (tvMode) lp(-1, 0, 1f) else lp(-1, 0, 0f))
+        renderPeers()
+        startScan(false)
+        startBt()
+        return root
+    }
+
+    private fun qualityOf(p: FtPeer): String = when {
+        p.rtt <= 0 -> ""
+        p.rtt <= 20 -> " · اتصال ممتاز"
+        p.rtt <= 80 -> " · اتصال كويس"
+        else -> " · اتصال ضعيف"
+    }
+
+    private fun displayName(p: FtPeer): String =
+        if (peers.values.count { it.name == p.name } > 1) p.name + " #" + p.id.takeLast(3) else p.name
+
+    private fun renderPeers() {
+        val lst = radarList ?: return
+        val vis = peers.values.filter { visibleFor(it) }
+        radar?.setPeers(vis)
+        val ids = vis.map { it.id }.toSet()
+        for (id in peerRows.keys.toList()) { if (id !in ids) { peerRows.remove(id)?.let { lst.removeView(it.root) } } }
+        for (p in vis) {
+            var row = peerRows[p.id]
+            if (row == null) {
+                val g = chip(p.type, if (tvMode) 56 else 46)
+                val name = ui.text("", if (tvMode) 19f else 15.5f, th.text, true)
+                val sub = ui.text("", if (tvMode) 14f else 11.5f, th.muted)
+                val badge = ui.text("", if (tvMode) 13f else 11f, th.primary, true)
+                val c = col(); c.addView(name); c.addView(sub)
+                val r = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; setPadding(ui.dp(10), ui.dp(8), ui.dp(12), ui.dp(8)) }
+                r.addView(g); r.addView(c, lp(0, -2, 1f).apply { marginStart = ui.dp(10); marginEnd = ui.dp(6) }); r.addView(badge)
+                styleFocus(r, th.card, 14)
+                val pid = p.id
+                r.setOnClickListener { peers[pid]?.let { onPeer(it) } }
+                lst.addView(r, lp(-1, -2).apply { bottomMargin = ui.dp(6) })
+                row = PeerRow(r, name, sub, g, badge)
+                peerRows[p.id] = row
+            }
+            row.name.text = displayName(p)
+            row.glyph.type = p.type; row.glyph.invalidate()
+            if (p.bt != null) {   // (v824) بلوتوث: النوع + متزاوج ولا لأ
+                row.sub.text = FtIdentity.typeLabel(p.type) + (if (p.btNote.isNotEmpty()) " (" + p.btNote + ")" else "") + " · " + (if (p.btBonded) "متزاوج ✓" else "مش متزاوج")
+                row.badge.text = "🔵 بلوتوث"
+            } else {
+                row.sub.text = FtIdentity.typeLabel(p.type) + (if (p.qs) " · Quick Share" else "") + " · " + p.ip + qualityOf(p)
+                row.badge.text = if (p.qs) "📡 Quick Share" else if (p.ft) "🔒 آمن" else "🔗 ربط"
+            }
+        }
+        val n = vis.size
+        radarStatus?.text = if (scanning && n == 0) "⏳ بدوّر على أجهزة قريبة…" else if (n == 0) "مفيش أجهزة ظاهرة — اتأكد إن الجهاز التاني فاتح «نقل الملفات» وعلى نفس الواي فاي" else if (scanning) "⏳ لقيت $n جهاز — لسه بدوّر…" else "لقيت $n جهاز — اضغط على جهاز للإرسال"
+        if (n > 0 && !tvMode) radarStatus?.text = radarStatus?.text.toString() + "\nBT بلوتوث · QS Quick Share · JB Joyboy"
+        if (btMsg.isNotEmpty()) radarStatus?.text = radarStatus?.text.toString() + "\n" + btMsg
+    }
+
+    private fun startScan(manual: Boolean) {
+        if (scanning) { if (manual) Notice.show(this, "⏳ البحث شغّال", 1500L); return }
+        scanning = true; radar?.scanning = true
+        val my = ++scanGen
+        val app = applicationContext
+        renderPeers()
+        Thread {
+            val res = try {
+                FtPeers.discover(app, 3800L) { p -> h.post { if (my == scanGen && !isFinishing && !isDestroyed) { peers[p.id] = p; miss.remove(p.id); renderPeers() } } }
+            } catch (e: Throwable) { LogStore.err("FtUi:scan", e); emptyList() }
+            h.post {
+                scanning = false
+                if (my != scanGen || isFinishing || isDestroyed) return@post
+                // (v822) الرادار يفضل لافّ طول ما الشاشة مفتوحة (كان بيقف بعد كل مسح ~3.8 ث ويرجع يلف بعد 4 ث)
+                val ids = res.map { it.id }.toSet()
+                for (p in res) { peers[p.id] = p; miss.remove(p.id) }
+                for (id in peers.keys.toList()) { if (id.startsWith("bt:")) { if (!BtScan.fresh(id)) peers.remove(id); continue }; if (id !in ids) { val m = (miss[id] ?: 0) + 1; if (m >= 1) { peers.remove(id); miss.remove(id) } else miss[id] = m } }
+                renderPeers()
+                h.postDelayed({ if (curTag == "radar" && !isFinishing && !isDestroyed) startScan(false) }, 4000L)
+            }
+        }.also { it.isDaemon = true }.start()
+    }
+
+    private fun onPeer(p: FtPeer) {
+        if (radarMode == "tv2m" && !tvMode) {
+            if (p.link != null) go("tvbrowse") { buildTvBrowse(p) }
+            else Notice.show(this, "⚠ التلفزيون ده محتاج تحديث — أو ابعت من التلفزيون نفسه (نقل الملفات ← من التلفزيون للموبايل)", 4500L)
+            return
+        }
+        if (p.bt != null) { btPeerDialog(p); return }   // (v824)
+        if (!p.ft && p.link == null && !p.qs) { Notice.show(this, "⚠ الجهاز ده مش بيدعم النقل", 2500L); return }
+        val pre = presetPicks
+        if (pre != null) {
+            if (p.qs) shareQuick(p, pre) else startSend(p, pre)   // (v654) دوسة على الجهاز = إرسال مباشرة
+            return
+        }
+        go("picker") { buildPicker(p) }
+    }
+
+    private fun buildPicker(p: FtPeer): View {
+        val pk = FtPicker(this, ui, th, tvMode, { picks -> startSend(p, picks) }, { pop() })
+        picker = pk
+        return pk.view
+    }
+
+    // ═════════════ (v855) الاستقبال ═════════════
+    private var recvPulse: View? = null
+    private var btList: LinearLayout? = null
+    private var btStatus: TextView? = null
+
+    private fun fillLiveInto(live: LinearLayout) {
+        live.removeAllViews()
+        for (s in FtHub.sessions.filter { it.active }.take(3)) {
+            val pend = !s.outgoing && s.status == FtSession.WAITING && s.decision == 0
+            val t = if (pend) "📥 طلب من «" + s.peerName + "» — " + s.files.size + " ملف · اضغط للرد"
+            else (if (s.outgoing) "📤 بيتبعت لـ «" else "📥 بيستقبل من «") + s.peerName + "» · " + s.percent() + "%"
+            val v = ui.text(t, if (tvMode) 16f else 13.5f, th.text, true).apply { setPadding(ui.dp(14), ui.dp(12), ui.dp(14), ui.dp(12)) }
+            styleFocus(v, th.card, 14, true)
+            v.setOnClickListener { go("progress") { buildProgress(s) } }
+            live.addView(v, lp(-1, -2).apply { bottomMargin = ui.dp(6) })
+        }
+    }
+
+    private fun buildReceive(): View {
+        val root = col()
+        root.addView(header("📥 استقبال", "جاهز — الأجهزة القريبة بتشوفك باسم «" + FtIdentity.name() + "»"))
+        val body = col()
+        val card = col().apply { gravity = Gravity.CENTER_HORIZONTAL; setPadding(ui.dp(14), ui.dp(22), ui.dp(14), ui.dp(18)); background = ui.box(th.card, th.border, 20) }
+        val pulse = chip(FtIdentity.type(), if (tvMode) 110 else 96)
+        recvPulse = pulse
+        card.addView(pulse, lp(ui.dp(if (tvMode) 110 else 96), ui.dp(if (tvMode) 110 else 96)))
+        card.addView(ui.text(FtIdentity.name(), if (tvMode) 24f else 19f, th.text, true).apply { gravity = Gravity.CENTER; setPadding(0, ui.dp(10), 0, ui.dp(2)) })
+        card.addView(ui.text("📡 مستني أي جهاز يبعتلك…", if (tvMode) 16f else 13.5f, th.primary, true).apply { gravity = Gravity.CENTER })
+        card.addView(ui.text(lanLine(), if (tvMode) 14f else 12f, th.muted).apply { gravity = Gravity.CENTER; setPadding(0, ui.dp(4), 0, 0) })
+        body.addView(card, lp(-1, -2).apply { topMargin = ui.dp(10) })
+        val live = col()
+        body.addView(live, lp(-1, -2).apply { topMargin = ui.dp(10) })
+        fillLiveInto(live); updater = { fillLiveInto(live) }
+        if (!tvMode) {
+            body.addView(ui.text("إزاي الأجهزة تبعتلك؟", 14f, th.text, true).apply { setPadding(ui.dp(4), ui.dp(14), 0, ui.dp(4)) })
+            body.addView(btn("🍎  من آيفون / أي جهاز بمتصفح (QR)") { FtWeb.showDialog(this, ui, th, emptyList()) }, lp(-1, -2).apply { bottomMargin = ui.dp(6) })
+            if (BtScan.available(this)) body.addView(btn("\uE001  خلّي البلوتوث ظاهر (للاستقبال بالبلوتوث)") { btDiscoverable() }, lp(-1, -2).apply { bottomMargin = ui.dp(6) })
+            body.addView(btn("🪪  اسم الجهاز والأجهزة الموثوقة") { go("settings") { buildSettings() } }, lp(-1, -2).apply { bottomMargin = ui.dp(6) })
+            body.addView(ui.text("• من موبايل/تلفزيون/كمبيوتر عليه Joyboy: هيلاقيك لوحده على نفس الواي فاي.\n• من أندرويد بـ Quick Share: افتح Quick Share عندك واختار «الكل».", 12f, th.muted).apply { setPadding(ui.dp(4), ui.dp(8), ui.dp(4), 0) })
+        }
+        body.addView(ui.text("🔒 كل استقبال بيستنى موافقتك — ومفيش ملف بيتكتب فوق ملف موجود", if (tvMode) 14f else 11.5f, th.muted).apply { gravity = Gravity.CENTER; setPadding(0, ui.dp(12), 0, 0) })
+        root.addView(scroll(body), lp(-1, 0, 1f))
+        // نبض خفيف على الأيقونة طول ما الشاشة مفتوحة
+        val tick = object : Runnable {
+            var big = false
+            override fun run() {
+                if (isFinishing || isDestroyed || curTag != "recv" || recvPulse !== pulse) return
+                big = !big
+                pulse.animate().scaleX(if (big) 1.12f else 1f).scaleY(if (big) 1.12f else 1f).setDuration(900L).start()
+                h.postDelayed(this, 950L)
+            }
+        }
+        h.postDelayed(tick, 400L)
+        return root
+    }
+
+    private fun btDiscoverable() {
+        try { startActivity(Intent(android.bluetooth.BluetoothAdapter.ACTION_REQUEST_DISCOVERABLE).putExtra(android.bluetooth.BluetoothAdapter.EXTRA_DISCOVERABLE_DURATION, 300)) }
+        catch (e: Throwable) { LogStore.err("FtUi:disc", e); Notice.show(this, "⚠ مقدرتش أفتح ظهور البلوتوث", 2500L) }
+    }
+
+    private fun btSettings() {
+        try { startActivity(Intent(android.provider.Settings.ACTION_BLUETOOTH_SETTINGS)) }
+        catch (e: Throwable) { LogStore.err("FtUi:btset", e); Notice.show(this, "⚠ مقدرتش أفتح إعدادات البلوتوث", 2500L) }
+    }
+
+    // ═════════════ (v855) اقتران بلوتوث (أي جهاز: عربية · سماعة · ساعة · سبيكر · موبايل…) ═════════════
+    private fun buildBtPair(): View {
+        val root = col()
+        val refresh = btn("🔄") { startBtPage() }
+        root.addView(header("\uE001 اقتران جهاز بلوتوث", "عربية · سماعة · ساعة · سبيكر · أي جهاز", refresh))
+        val st = ui.text("", 13f, th.muted).apply { gravity = Gravity.CENTER; setPadding(0, ui.dp(8), 0, ui.dp(6)) }
+        btStatus = st
+        root.addView(st, lp(-1, -2))
+        val lst = col()
+        btList = lst
+        root.addView(scroll(lst), lp(-1, 0, 1f))
+        val bar = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL }
+        bar.addView(btn("⚙ إعدادات البلوتوث") { btSettings() }, lp(0, -2, 1f).apply { marginEnd = ui.dp(4) })
+        bar.addView(btn("👁 خلّي جهازي ظاهر") { btDiscoverable() }, lp(0, -2, 1f))
+        root.addView(bar, lp(-1, -2).apply { topMargin = ui.dp(8) })
+        renderBt()
+        startBtPage()
+        return root
+    }
+
+    private fun startBtPage() {
+        btMsg = ""
+        peers.keys.toList().filter { it.startsWith("bt:") }.forEach { peers.remove(it) }
+        if (!BtScan.available(this)) { btMsg = "🔵 الجهاز ده مفيهوش بلوتوث"; renderBt(); return }
+        if (!BtScan.granted(this)) { btMsg = "🔵 اسمح بصلاحية البلوتوث عشان تظهر الأجهزة"; try { requestPermissions(BtScan.perms(), BtScan.REQ) } catch (_: Throwable) {}; renderBt(); return }
+        if (!BtScan.enabled(this)) { btMsg = "🔵 البلوتوث مقفول — شغّله وبعدين دوس 🔄"; renderBt(); return }
+        val ok = BtScan.start(this) { p -> if (curTag == "btpair" && !isFinishing && !isDestroyed) { peers[p.id] = p; renderBt() } }
+        if (!ok) btMsg = "🔵 مقدرتش أبدأ بحث البلوتوث"
+        renderBt()
+    }
+
+    private fun renderBt() {
+        val lst = btList ?: return
+        val vis = peers.values.filter { it.bt != null && btNamed(it) }.sortedWith(compareByDescending<FtPeer> { it.btBonded }.thenBy { it.name })
+        lst.removeAllViews()
+        for (p in vis) {
+            val g = chip(p.type, if (tvMode) 56 else 46)
+            val name = ui.text(p.name, 15.5f, th.text, true)
+            val sub = ui.text(FtIdentity.typeLabel(p.type) + (if (p.btNote.isNotEmpty()) " (" + p.btNote + ")" else "") + " · " + (if (p.btBonded) "متزاوج ✓" else "مش متزاوج"), 11.5f, th.muted)
+            val badge = ui.text(if (p.btBonded) "✓" else "🔗 اقتران", 12f, th.primary, true)
+            val c = col(); c.addView(name); c.addView(sub)
+            val r = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; setPadding(ui.dp(10), ui.dp(8), ui.dp(12), ui.dp(8)) }
+            r.addView(g); r.addView(c, lp(0, -2, 1f).apply { marginStart = ui.dp(10); marginEnd = ui.dp(6) }); r.addView(badge)
+            styleFocus(r, th.card, 14)
+            r.setOnClickListener { btPageTap(p) }
+            lst.addView(r, lp(-1, -2).apply { bottomMargin = ui.dp(6) })
+        }
+        btStatus?.text = if (btMsg.isNotEmpty()) btMsg
+            else if (vis.isEmpty()) "⏳ بدوّر على أجهزة بلوتوث قريبة…\nخلّي الجهاز التاني (العربية/السماعة/الساعة) في وضع الاقتران"
+            else "لقيت " + vis.size + " جهاز — اضغط على جهاز عشان تقترن بيه"
+    }
+
+    private fun btPageTap(p: FtPeer) {
+        val labels = ArrayList<String>(); val acts = ArrayList<() -> Unit>()
+        val audioLike = p.type == "audio" || p.type == "tv"
+        if (!p.btBonded) { labels.add("🔗 اقتران مع الجهاز"); acts.add { btPair(p, null) } }
+        else {
+            if (audioLike) { labels.add("🔊 وصّل الصوت على الجهاز ده"); acts.add { btConnectAudio(p) } }
+            labels.add("⚙ إعدادات البلوتوث (فصل / نسيان الجهاز)"); acts.add { btSettings() }
+        }
+        GAlert(this).setTitle("🔵 " + p.name + " · " + FtIdentity.typeLabel(p.type)).setItems(labels.toTypedArray()) { _, i -> acts[i]() }.setNegativeButton("إغلاق", null).show()
+    }
+
+    // ═════════════ (v824) بلوتوث ═════════════
+    private fun startBt() {
+        if (tvMode) return
+        btMsg = ""
+        peers.keys.toList().filter { it.startsWith("bt:") }.forEach { peers.remove(it) }
+        if (!BtScan.available(this)) return
+        if (!BtScan.granted(this)) { btMsg = "🔵 اسمح بصلاحية البلوتوث عشان تظهر أجهزته"; try { requestPermissions(BtScan.perms(), BtScan.REQ) } catch (_: Throwable) {}; return }
+        if (!BtScan.enabled(this)) { btMsg = "🔵 البلوتوث مقفول — شغّله عشان تظهر أجهزته"; return }
+        val ok = BtScan.start(this) { p -> if (curTag == "radar" && !isFinishing && !isDestroyed) { peers[p.id] = p; renderPeers() } }
+        if (!ok) btMsg = "🔵 مقدرتش أبدأ بحث البلوتوث"
+    }
+
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == BtScan.REQ && curTag == "radar") { startBt(); renderPeers() }
+        else if (requestCode == BtScan.REQ && curTag == "btpair") startBtPage()
+    }
+
+    private fun btPeerDialog(p: FtPeer) {
+        val pre = presetPicks
+        val labels = ArrayList<String>(); val acts = ArrayList<() -> Unit>()
+        val audioLike = p.type == "audio" || p.type == "tv"
+        val fileLike = p.type == "phone" || p.type == "tablet" || p.type == "pc" || p.type == "unk"
+        if (!p.btBonded) { labels.add("🔗 اقتران مع الجهاز"); acts.add { btPair(p, null) } }
+        else if (audioLike) { labels.add("🔊 وصّل الصوت على الجهاز ده"); acts.add { btConnectAudio(p) } }
+        if (pre != null && fileLike) {
+            labels.add("📤 إرسال الملفات بالبلوتوث")
+            acts.add { if (p.btBonded) btShare(pre) else btPair(p) { btShare(pre) } }
+        }
+        if (labels.isEmpty()) { Notice.show(this, "🔵 " + p.name + " · " + FtIdentity.typeLabel(p.type) + " · متزاوج ✓", 2800L); return }
+        GAlert(this).setTitle("🔵 " + p.name + " · " + FtIdentity.typeLabel(p.type)).setItems(labels.toTypedArray()) { _, i -> acts[i]() }.setNegativeButton("إغلاق", null).show()
+    }
+
+    private fun btCodeText(variant: Int, code: String): String = when (variant) {
+        2 -> "🔢 الكود: $code\nاتأكد إنه نفس الكود على الجهاز التاني ووافق هناك.\n(لو ظهرت نافذة تأكيد من النظام وافق عليها كمان)"
+        4, 5 -> "🔢 اكتب الكود ده على الجهاز التاني:\n$code"
+        0 -> "🔢 بجرّب الرقم السري: $code"
+        1 -> "🔢 اكتب الكود اللي ظاهر على الجهاز التاني (في نافذة النظام)"
+        else -> "وافق على طلب الاقتران اللي ظهر على الجهاز التاني"
+    }
+
+    private fun btPair(p: FtPeer, after: (() -> Unit)?) {
+        val addr = p.bt ?: return
+        try { pairDlg?.dismiss() } catch (_: Throwable) {}
+        val dlg = AlertDialog.Builder(this).setTitle("🔗 اقتران مع " + p.name)
+            .setMessage("⏳ بدأت الاقتران…\nلو الجهاز التاني طلب تأكيد، وافق عليه.")
+            .setNegativeButton("إلغاء") { _, _ -> pairCancel?.invoke() }.setCancelable(false).create()
+        dlg.show(); pairDlg = dlg
+        pairCancel = BtScan.pair(this, addr,
+            { v, code -> h.post { try { dlg.setMessage(btCodeText(v, code)) } catch (_: Throwable) {} } },
+            { ok, msg -> h.post {
+                try { dlg.dismiss() } catch (_: Throwable) {}
+                pairDlg = null; pairCancel = null
+                Notice.show(this, (if (ok) "✅ " else "⚠ ") + msg, 3500L)
+                if (ok) { BtScan.peerOf(this, addr)?.let { peers[it.id] = it; renderPeers(); renderBt() }; after?.invoke() }
+            } })
+    }
+
+    private fun btConnectAudio(p: FtPeer) {
+        val addr = p.bt ?: return
+        Notice.show(this, "⏳ بوصّل الصوت…", 1800L)
+        BtScan.connectAudio(this, addr) { ok ->
+            Notice.show(this, if (ok) "✅ الصوت متوصّل على " + p.name else "⚠ مقدرتش أوصّل الصوت من هنا — شغّل الجهاز وهيتوصّل لوحده، أو وصّله من إعدادات البلوتوث مرة", 4500L)
+        }
+    }
+
+    private fun btShare(picks: List<FtPick>) {
+        try {
+            val uris = ArrayList<Uri>()
+            for (k in picks) { val u = if (k.uri.scheme == "file") FmUtil.uriFor(this, File(k.uri.path ?: continue)) else k.uri; uris.add(u) }
+            Notice.show(this, "🔵 اختار الجهاز من شاشة البلوتوث", 3500L)
+            if (!BtScan.shareFiles(this, uris)) Notice.show(this, "⚠ مفيش تطبيق بلوتوث للإرسال", 2500L)
+        } catch (e: Throwable) { LogStore.err("FtUi:btShare", e); Notice.show(this, "⚠ فشل فتح إرسال البلوتوث", 2500L) }
+    }
+
+    /** (v654) جهاز Quick Share: بنسلّم الملفات لشاشة المشاركة الرسمية (بروتوكول Quick Share مش مدمج في Joyboy) */
+    private fun shareQuick(p: FtPeer, picks: List<FtPick>) {
+        try {
+            val uris = ArrayList<Uri>()
+            for (k in picks) { val u = if (k.uri.scheme == "file") FmUtil.uriFor(this, File(k.uri.path ?: continue)) else k.uri; uris.add(u) }
+            val it = Intent(if (uris.size == 1) Intent.ACTION_SEND else Intent.ACTION_SEND_MULTIPLE).apply {
+                type = "*/*"
+                if (uris.size == 1) putExtra(Intent.EXTRA_STREAM, uris[0]) else putParcelableArrayListExtra(Intent.EXTRA_STREAM, uris)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            // (v831) نفتح شاشة Quick Share نفسها على طول (من غير قايمة التطبيقات) لو لقيناها
+            val qa = try { packageManager.queryIntentActivities(it, 0).map { r -> r.activityInfo }.firstOrNull { a -> a.name.contains("nearby.sharing", true) || a.name.contains("sharelive", true) || a.packageName.contains("quickshare", true) } } catch (_: Throwable) { null }
+            Notice.show(this, "📡 اختار «" + p.name + "» من شاشة Quick Share — لازم شاشته مفتوحة وQuick Share عنده على «الكل»", 5000L)
+            if (qa != null) {
+                try { startActivity(Intent(it).setClassName(qa.packageName, qa.name)); return } catch (_: Throwable) {}
+            }
+            startActivity(Intent.createChooser(it, "Quick Share"))
+        } catch (e: Throwable) { LogStore.err("FtUi:qs", e); Notice.show(this, "⚠ فشل فتح المشاركة", 2500L) }
+    }
+
+    private fun startSend(p: FtPeer, picks: List<FtPick>) {
+        val s = try { if (p.ft) FtSend.start(applicationContext, p, picks) else FtLinkSend.start(applicationContext, p, picks) }
+        catch (e: Throwable) { LogStore.err("FtUi:send", e); Notice.show(this, "⚠ فشل بدء الإرسال", 2500L); return }
+        FtUiState.picks[s.sid] = picks
+        FtUiState.peers[s.sid] = p
+        presetPicks = null
+        homePk?.clearSel()
+        shownSids.add(s.sid)
+        while (stack.size > 1) stack.removeAt(stack.size - 1)
+        if (p.isTv) {
+            // (v680) إرسال للتلفزيون: على طول من غير شاشة تقدم ولا أكواد — كبسولة فوق فيها شريط التقدم، ودوسة عليها بتفتح التفاصيل
+            show()
+            trackPill(s)
+            return
+        }
+        go("progress") { buildProgress(s) }
+    }
+
+    /** (v680) كبسولة تقدم لجلسة إرسال (تلفزيون): بتتحدّث كل نص ثانية لحد ما الجلسة تخلص */
+    private fun trackPill(s: FtSession) {
+        val act = this
+        val hh = android.os.Handler(android.os.Looper.getMainLooper())
+        val open: () -> Unit = { go("progress") { buildProgress(s) } }
+        val tick = object : Runnable {
+            override fun run() {
+                try {
+                    if (isFinishing || isDestroyed) return
+                    val pct = s.percent()
+                    when {
+                        s.active -> {
+                            val eta = s.etaSec()
+                            val sub = s.doneFiles().toString() + "/" + s.acceptedFiles.size + " ملف" + (if (s.speedBps > 1.0) " · ⚡ " + String.format("%.1f MB/s", s.speedBps / 1048576.0) else "") + (if (eta >= 0L) " · باقي " + fmtT(eta) else "")
+                            SendPill.update(act, (if (s.status == FtSession.RUNNING) "📤 إرسال للتلفزيون — $pct%" else "📤 " + s.msg.ifBlank { "بوصّل بالتلفزيون…" }), if (s.status == FtSession.RUNNING) pct else 0, sub, open)
+                            hh.postDelayed(this, 500L)
+                        }
+                        s.status == FtSession.DONE -> SendPill.finish(act, "✅ اتبعت للتلفزيون (" + s.doneFiles() + " ملف)", true)
+                        else -> SendPill.finish(act, "⚠ " + s.msg.ifBlank { "الإرسال وقف" }, false, 5000L)
+                    }
+                } catch (_: Throwable) {}
+            }
+        }
+        hh.post(tick)
+    }
+
+    // ═════════════ الاستقبال / التقدم ═════════════
+    private var progRefresh: (() -> Unit)? = null
+    private var backHook: (() -> Boolean)? = null
+
+    private fun fmtT(sec: Long): String { val s = sec.coerceAtLeast(0L); return if (s >= 3600) String.format("%d:%02d:%02d", s / 3600, (s % 3600) / 60, s % 60) else String.format("%d:%02d", s / 60, s % 60) }
+
+    private fun buildProgress(s: FtSession): View {
+        val box = FrameLayout(this)
+        var mode = ""
+        fun render() {
+            val pending = !s.outgoing && s.status == FtSession.WAITING && s.decision == 0 && !s.cancelled
+            val want = if (pending) "req" else "prog"
+            if (want != mode) {
+                mode = want; box.removeAllViews(); progRefresh = null
+                val v = if (pending) requestView(s) else progressView(s)
+                box.addView(v, FrameLayout.LayoutParams(-1, -1))
+                if (tvMode) v.post { v.requestFocus() }
+            }
+            progRefresh?.invoke()
+        }
+        updater = { render() }
+        render()
+        return box
+    }
+
+    private fun requestView(s: FtSession): View {
+        val root = col()
+        root.addView(header("📥 طلب استقبال", "من «" + s.peerName + "»"))
+        val body = col()
+        val total = s.files.sumOf { it.size }
+        val top = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; setPadding(ui.dp(12), ui.dp(12), ui.dp(12), ui.dp(12)); background = ui.box(th.card, th.border, 14) }
+        top.addView(chip(s.peerType, if (tvMode) 64 else 52))
+        val tc = col()
+        tc.addView(ui.text(s.peerName, if (tvMode) 21f else 17f, th.text, true))
+        tc.addView(ui.text(FtIdentity.typeLabel(s.peerType) + " · " + s.peerIp, if (tvMode) 14f else 12f, th.muted))
+        val summary = ui.text("", if (tvMode) 16f else 13.5f, th.primary, true)
+        tc.addView(summary)
+        top.addView(tc, lp(0, -2, 1f).apply { marginStart = ui.dp(10) })
+        body.addView(top, lp(-1, -2).apply { topMargin = ui.dp(8) })
+        fun upd() { val a = s.acceptedFiles; summary.text = a.size.toString() + " من " + s.files.size + " ملف · " + Sniff.fmtSize(a.sumOf { it.size }) }
+        upd()
+        if (s.retry) body.addView(ui.text("🔁 إعادة محاولة لملفات فشلت قبل كده", if (tvMode) 14f else 12f, th.muted).apply { setPadding(ui.dp(4), ui.dp(6), ui.dp(4), 0) })
+        val tr = FtStore.isTrusted(s.peerId, s.peerFp)
+        body.addView(ui.text("🪪 بصمة هويته: " + FtCrypto.fpPretty(s.peerFp) + (if (tr) " · جهاز موثوق" else ""), if (tvMode) 14f else 11.5f, th.muted).apply { setPadding(ui.dp(4), ui.dp(6), ui.dp(4), 0) })
+        body.addView(ui.text("المعاينة مش متاحة قبل النقل — كل ملف بيتفحص بالهاش بعد ما يوصل، ومفيش ملف بيتكتب فوق ملف موجود.", if (tvMode) 13.5f else 11.5f, th.muted).apply { setPadding(ui.dp(4), ui.dp(2), ui.dp(4), ui.dp(6)) })
+        // قايمة الملفات (دوسة = استبعاد/إضافة)
+        val shownMax = 150
+        for (f in s.files.take(shownMax)) {
+            val tvr = ui.text("", if (tvMode) 16f else 13.5f, th.text).apply { setPadding(ui.dp(12), ui.dp(10), ui.dp(12), ui.dp(10)); maxLines = 2 }
+            fun paint() { tvr.text = (if (f.accepted) "☑ " else "☐ ") + XCat.emoji(f.cat) + " " + f.rel + " · " + Sniff.fmtSize(f.size); tvr.alpha = if (f.accepted) 1f else 0.55f }
+            paint()
+            styleFocus(tvr, th.surface, 10)
+            tvr.setOnClickListener { f.accepted = !f.accepted; paint(); upd() }
+            body.addView(tvr, lp(-1, -2).apply { bottomMargin = ui.dp(3) })
+        }
+        if (s.files.size > shownMax) body.addView(ui.text("… و " + (s.files.size - shownMax) + " ملف كمان (هيتقبلوا مع الباقي)", if (tvMode) 14f else 12f, th.muted).apply { setPadding(ui.dp(6), ui.dp(4), 0, ui.dp(4)) })
+        body.addView(ui.text("📂 مكان الحفظ", if (tvMode) 16f else 13.5f, th.text, true).apply { setPadding(ui.dp(4), ui.dp(10), 0, ui.dp(2)) })
+        val l0 = "حسب النوع (Movies · Music · Pictures)"; val l1 = "Download/Joyboy"
+        body.addView(ui.chips(listOf(l0, l1), { if (s.saveMode == 0) l0 else l1 }, { s.saveMode = if (it == l0) 0 else 1 }))
+        body.addView(ui.switchRow("🤝 ثق في الجهاز ده (استقبال تلقائي منه بعد كده لو فعّلت الإعداد)", s.trustAfter) { s.trustAfter = it })
+        root.addView(scroll(body), lp(-1, 0, 1f))
+        val bar = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL }
+        bar.addView(btn("✅ قبول الكل", true) { for (f in s.files) f.accepted = true; s.decision = 1; FtHub.changed() }, lp(0, -2, 1f).apply { marginEnd = ui.dp(4) })
+        bar.addView(btn("✔ قبول المحدد") { if (s.acceptedFiles.isEmpty()) Notice.show(this, "اختار ملف واحد على الأقل", 2000L) else { s.decision = 1; FtHub.changed() } }, lp(0, -2, 1f).apply { marginEnd = ui.dp(4) })
+        bar.addView(btn("⛔ رفض") { s.decision = 2; FtHub.changed(); pop() }, lp(0, -2, 1f))
+        root.addView(bar, lp(-1, -2).apply { topMargin = ui.dp(6) })
+        return root
+    }
+
+    private fun stIcon(f: FtFile, out: Boolean): String = when (f.state) {
+        FtState.WAIT -> "⏳"; FtState.RUN -> if (out) "⬆" else "⬇"; FtState.DONE -> "✅"; FtState.FAIL -> "❌"; else -> "⏹"
+    }
+    private fun stLabel(f: FtFile): String = when (f.state) {
+        FtState.WAIT -> "في الانتظار"; FtState.RUN -> "بيتنقل"; FtState.DONE -> "اكتمل"; FtState.FAIL -> "فشل"; else -> "اتلغى"
+    }
+
+    private fun progressView(s: FtSession): View {
+        val root = col()
+        root.addView(header((if (s.outgoing) "📤 إرسال إلى «" else "📥 استقبال من «") + s.peerName + "»", if (s.legacy) "عبر ربط التلفزيون" else "🔒 مشفّر من طرف لطرف"))
+        val top = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER_HORIZONTAL }
+        top.addView(chip(s.peerType, if (tvMode) 56 else 44))
+        val ring = FtRingView(this, th)
+        top.addView(ring, lp(ui.dp(if (tvMode) 190 else 160), ui.dp(if (tvMode) 190 else 160)).apply { topMargin = ui.dp(6) })
+        val stats = ui.text("", if (tvMode) 16f else 13f, th.text, true).apply { gravity = Gravity.CENTER }
+        val msg = ui.text("", if (tvMode) 15f else 12.5f, th.muted).apply { gravity = Gravity.CENTER }
+        val sas = ui.text("", if (tvMode) 15f else 12.5f, th.primary, true).apply { gravity = Gravity.CENTER; setPadding(ui.dp(10), ui.dp(6), ui.dp(10), ui.dp(6)); background = ui.box(th.surface, th.border, 10); visibility = View.GONE }
+        top.addView(stats); top.addView(msg); top.addView(sas, lp(-2, -2).apply { topMargin = ui.dp(4) })
+        root.addView(top, lp(-1, -2))
+        val lv = ListView(this).apply { divider = null; dividerHeight = ui.dp(2); isFocusable = true; cacheColorHint = Color.TRANSPARENT; selector = listSelector() }
+        lv.adapter = object : BaseAdapter() {
+            override fun getCount() = s.files.size
+            override fun getItem(p: Int): Any = s.files[p]
+            override fun getItemId(p: Int) = p.toLong()
+            override fun getView(p: Int, cv: View?, parent: ViewGroup?): View {
+                val f = s.files[p]
+                val t = (cv as? TextView) ?: ui.text("", if (tvMode) 15f else 12.5f, th.text).apply { setPadding(ui.dp(10), ui.dp(7), ui.dp(10), ui.dp(7)); maxLines = 3 }
+                val detail = when (f.state) {
+                    FtState.RUN -> Sniff.fmtSize(f.done.coerceAtMost(f.size)) + " / " + Sniff.fmtSize(f.size)
+                    FtState.FAIL -> f.err
+                    FtState.CANCEL -> if (f.err.isNotEmpty()) f.err else stLabel(f)
+                    else -> Sniff.fmtSize(f.size)
+                }
+                t.text = stIcon(f, s.outgoing) + " " + f.rel + "\n    " + stLabel(f) + " · " + detail
+                t.setTextColor(if (f.state == FtState.FAIL) th.danger else if (!f.accepted) th.muted else th.text)
+                return t
+            }
+        }
+        root.addView(lv, lp(-1, 0, 1f).apply { topMargin = ui.dp(6) })
+        val bar = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL }
+        root.addView(bar, lp(-1, -2).apply { topMargin = ui.dp(6) })
+        var lastStatus = -1
+        fun buttons() {
+            bar.removeAllViews()
+            if (s.active) {
+                bar.addView(btn("⏹ إلغاء النقل", false) { s.cancelled = true; s.msg = "بيلغي…"; FtHub.changed() }, lp(0, -2, 1f))
+            } else {
+                val failed = s.failedFiles()
+                if (s.outgoing && failed.isNotEmpty() && FtUiState.picks.containsKey(s.sid) && FtUiState.peers.containsKey(s.sid))
+                    bar.addView(btn("🔁 إعادة محاولة الفاشل (" + failed.size + ")", true) { retryFailed(s) }, lp(0, -2, 1f).apply { marginEnd = ui.dp(4) })
+                bar.addView(btn("🕘 السجل") { go("history") { buildHistory() } }, lp(0, -2, 1f).apply { marginEnd = ui.dp(4) })
+                bar.addView(btn("✔ تم", failed.isEmpty() || !s.outgoing) { while (stack.size > 1) stack.removeAt(stack.size - 1); show() }, lp(0, -2, 1f))
+            }
+            if (tvMode) bar.post { bar.requestFocus() }
+        }
+        progRefresh = {
+            val pct = s.percent()
+            ring.setProgress(pct / 100f); ring.label = "$pct%"
+            ring.sub = s.doneFiles().toString() + "/" + s.acceptedFiles.size + " ملف"
+            ring.failed = s.status == FtSession.FAILED || s.status == FtSession.REJECTED
+            ring.spinning = s.status == FtSession.NEG || s.status == FtSession.WAITING
+            val eta = s.etaSec()
+            stats.text = Sniff.fmtSize(s.doneBytes()) + " / " + Sniff.fmtSize(s.totalBytes()) +
+                (if (s.active && s.speedBps > 1.0) " · ⚡ " + String.format("%.1f MB/s", s.speedBps / 1048576.0) else "") + (if (s.active && eta >= 0L) " · باقي " + fmtT(eta) else "")
+            msg.text = s.msg
+            if (s.sas.isNotEmpty() && !s.legacy && !s.peerType.equals("tv", true)) { sas.text = "🔐 كود التحقق: " + s.sas + " — لازم يطابق الرقم على الجهاز التاني"; sas.visibility = View.VISIBLE } else sas.visibility = View.GONE
+            (lv.adapter as BaseAdapter).notifyDataSetChanged()
+            if (s.status != lastStatus) { lastStatus = s.status; buttons() }
+        }
+        return root
+    }
+
+    private fun retryFailed(s: FtSession) {
+        val rel = s.failedFiles().map { it.rel }.toSet()
+        val picks = FtUiState.picks[s.sid]?.filter { it.rel in rel } ?: emptyList()
+        val peer = FtUiState.peers[s.sid]
+        if (picks.isEmpty() || peer == null) { Notice.show(this, "⚠ مش قادر أعيد المحاولة — ابعت الملفات تاني", 3000L); return }
+        val ns = try { if (peer.ft) FtSend.start(applicationContext, peer, picks, true) else FtLinkSend.start(applicationContext, peer, picks) }
+        catch (e: Throwable) { LogStore.err("FtUi:retry", e); Notice.show(this, "⚠ فشلت إعادة المحاولة", 2500L); return }
+        FtUiState.picks[ns.sid] = picks; FtUiState.peers[ns.sid] = peer; shownSids.add(ns.sid)
+        if (stack.size > 1) stack.removeAt(stack.size - 1)
+        go("progress") { buildProgress(ns) }
+    }
+
+    // ═════════════ تصفّح ملفات التلفزيون (ربط) ═════════════
+    private class RE(val name: String, val dir: Boolean, val size: Long, val path: String)
+
+    private fun buildTvBrowse(p: FtPeer): View {
+        val root = col()
+        root.addView(header("📺 ملفات " + p.name, "اختار ملفات أو مجلدات ونزّلها على الموبايل"))
+        val info = ui.text("⏳ بوصّل…", if (tvMode) 15f else 12.5f, th.muted).apply { setPadding(ui.dp(4), ui.dp(6), ui.dp(4), ui.dp(4)) }
+        root.addView(info)
+        var items: List<RE> = emptyList()
+        var parent = ""
+        var cur = ""
+        val sel = LinkedHashMap<String, RE>()
+        val lv = ListView(this).apply { divider = null; dividerHeight = ui.dp(2); isFocusable = true; cacheColorHint = Color.TRANSPARENT; selector = listSelector() }
+        val bottom = ui.text("", if (tvMode) 16f else 13f, th.text, true).apply { setPadding(ui.dp(4), ui.dp(6), ui.dp(4), ui.dp(2)) }
+        fun bar() { bottom.text = if (sel.isEmpty()) "مفيش ملفات متحدّدة" else "اتحدّد " + sel.size + " عنصر" }
+        fun toggle(e: RE) { if (sel.remove(e.path) == null) sel[e.path] = e; (lv.adapter as BaseAdapter).notifyDataSetChanged(); bar() }
+        lv.adapter = object : BaseAdapter() {
+            override fun getCount() = items.size
+            override fun getItem(i: Int): Any = items[i]
+            override fun getItemId(i: Int) = i.toLong()
+            override fun getView(i: Int, cv: View?, par: ViewGroup?): View {
+                val e = items[i]
+                val t = (cv as? TextView) ?: ui.text("", if (tvMode) 17f else 14f, th.text).apply { setPadding(ui.dp(12), ui.dp(11), ui.dp(12), ui.dp(11)); maxLines = 1 }
+                t.text = (if (sel.containsKey(e.path)) "☑ " else "☐ ") + (if (e.dir) "📁 " else XCat.emoji(XCat.catOf(e.name)) + " ") + e.name + (if (e.dir) "" else " · " + Sniff.fmtSize(e.size))
+                return t
+            }
+        }
+        fun load(path: String) {
+            info.text = "⏳ بحمّل…"
+            val app = applicationContext
+            Thread {
+                var er: String? = null
+                if (RemoteClient.state != RemoteClient.St.CONNECTED || RemoteClient.current?.id != p.link?.id) { val lf = p.link; er = if (lf == null) "التلفزيون مش بيدعم الربط" else FtLinkSend.connect(app, lf) }
+                var list: List<RE> = emptyList(); var par = ""; var noAcc = false; var curP = path
+                if (er == null) {
+                    val (c, t) = RemoteClient.getText("/fs/list?path=" + URLEncoder.encode(path, "UTF-8"), 25000)
+                    if (c == 404) er = "التلفزيون محتاج تحديث للنسخة دي" else if (c != 200) er = "ما قدرتش أجيب القايمة ($c)" else {
+                        try {
+                            val j = JSONObject(t)
+                            noAcc = !j.optBoolean("access", true); par = j.optString("parent"); curP = j.optString("path")
+                            val a = j.optJSONArray("items")
+                            val out = ArrayList<RE>()
+                            if (a != null) for (i in 0 until a.length()) { val o = a.getJSONObject(i); out.add(RE(o.optString("n"), o.optBoolean("d"), o.optLong("s"), o.optString("p"))) }
+                            list = out
+                        } catch (e: Throwable) { er = "رد التلفزيون مش مفهوم" }
+                    }
+                }
+                h.post {
+                    if (isFinishing || isDestroyed || curTag != "tvbrowse") return@post
+                    if (er != null) { info.text = "⚠ $er"; return@post }
+                    items = list; parent = par; cur = curP
+                    info.text = (if (cur.isEmpty()) "الذاكرة" else cur) + " · " + list.size + " عنصر" + (if (noAcc) " · ⚠ التلفزيون محتاج صلاحية «كل الملفات»" else "")
+                    (lv.adapter as BaseAdapter).notifyDataSetChanged(); bar()
+                }
+            }.also { it.isDaemon = true }.start()
+        }
+        lv.setOnItemClickListener { _, _, i, _ -> val e = items.getOrNull(i) ?: return@setOnItemClickListener; if (e.dir) load(e.path) else toggle(e) }
+        lv.setOnItemLongClickListener { _, _, i, _ -> val e = items.getOrNull(i); if (e != null && e.dir) { toggle(e); true } else false }
+        backHook = { if (cur.isNotEmpty()) { load(parent); true } else false }
+        root.addView(lv, lp(-1, 0, 1f))
+        root.addView(bottom)
+        val bt = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL }
+        bt.addView(btn("⬇ نزّل المحدد", true) { downloadFromTv(p, sel.values.toList()) }, lp(0, -2, 1.4f).apply { marginEnd = ui.dp(4) })
+        bt.addView(btn("✕ إلغاء التحديد") { sel.clear(); (lv.adapter as BaseAdapter).notifyDataSetChanged(); bar() }, lp(0, -2, 1f))
+        root.addView(bt, lp(-1, -2).apply { topMargin = ui.dp(4) })
+        bar(); load("")
+        return root
+    }
+
+    private fun downloadFromTv(p: FtPeer, chosen: List<RE>) {
+        if (chosen.isEmpty()) { Notice.show(this, "اختار ملف أو مجلد الأول", 2200L); return }
+        val app = applicationContext
+        Notice.show(this, "⏳ بجهّز القايمة…", 1500L)
+        Thread {
+            val jobs = ArrayList<XRemote.PathJob>()
+            fun walk(path: String, rel: String, depth: Int) {
+                if (jobs.size > FtOut.MAX_FILES || depth > 6) return
+                val (c, t) = RemoteClient.getText("/fs/list?path=" + URLEncoder.encode(path, "UTF-8"), 25000)
+                if (c != 200) return
+                val a = try { JSONObject(t).optJSONArray("items") } catch (_: Throwable) { null } ?: return
+                for (i in 0 until a.length()) {
+                    val o = a.optJSONObject(i) ?: continue
+                    val n = o.optString("n"); val pa = o.optString("p")
+                    if (o.optBoolean("d")) walk(pa, "$rel/$n", depth + 1) else if (jobs.size <= FtOut.MAX_FILES) jobs.add(XRemote.PathJob(pa, n, o.optLong("s"), rel))
+                }
+            }
+            for (e in chosen) { if (e.dir) walk(e.path, FtPath.cleanRel(e.name), 0) else jobs.add(XRemote.PathJob(e.path, e.name, e.size, "")) }
+            h.post {
+                if (jobs.isEmpty()) Notice.show(this, "⚠ مفيش ملفات صالحة", 2500L)
+                else if (jobs.size > FtOut.MAX_FILES) Notice.show(this, "⚠ لحد " + FtOut.MAX_FILES + " ملف في المرة — قسّمهم على دفعات", 3500L)
+                else if (XRemote.downloadPaths(app, p.name, jobs)) Notice.show(this, "⬇ بدأ تنزيل " + jobs.size + " ملف — التقدم في صفحة المهام", 3500L)
+                else Notice.show(this, "⚠ مش متصل بالتلفزيون", 2500L)
+            }
+        }.also { it.isDaemon = true }.start()
+    }
+
+    // ═════════════ السجل ═════════════
+    private var histDir = "out"
+    private var histFilter = "all"
+    private class HRow(val title: String, val sub: String, val state: String, val h: FtHist?, val s: FtSession?)
+
+    private fun buildHistory(): View {
+        val root = col()
+        root.addView(header("🕘 سجل النقل", "الملفات اللي اتبعتت واللي اتستلمت"))
+        val tabs = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL }
+        val flt = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL }
+        root.addView(tabs, lp(-1, -2).apply { topMargin = ui.dp(8) })
+        root.addView(HorizontalScrollView(this).apply { isHorizontalScrollBarEnabled = false; addView(flt, FrameLayout.LayoutParams(-2, -2)) }, lp(-1, -2).apply { topMargin = ui.dp(6) })
+        val empty = ui.text("", if (tvMode) 16f else 13f, th.muted).apply { gravity = Gravity.CENTER; setPadding(0, ui.dp(16), 0, ui.dp(16)) }
+        root.addView(empty, lp(-1, -2))
+        var rows: List<HRow> = emptyList()
+        val lv = ListView(this).apply { divider = null; dividerHeight = ui.dp(2); isFocusable = true; cacheColorHint = Color.TRANSPARENT; selector = listSelector() }
+        val ad = object : BaseAdapter() {
+            override fun getCount() = rows.size
+            override fun getItem(i: Int): Any = rows[i]
+            override fun getItemId(i: Int) = i.toLong()
+            override fun getView(i: Int, cv: View?, par: ViewGroup?): View {
+                val r = rows[i]
+                val t = (cv as? TextView) ?: ui.text("", if (tvMode) 16f else 13.5f, th.text).apply { setPadding(ui.dp(12), ui.dp(9), ui.dp(12), ui.dp(9)); maxLines = 3 }
+                val ic = when (r.state) { "ok" -> "✅"; "run" -> "⏳"; "fail" -> "❌"; else -> "⏹" }
+                t.text = ic + " " + r.title + "\n    " + r.sub
+                t.setTextColor(if (r.state == "fail") th.danger else th.text)
+                return t
+            }
+        }
+        lv.adapter = ad
+        fun rebuild() {
+            val out = histDir == "out"
+            val live = FtHub.sessions.filter { it.active && it.outgoing == out }.map { s ->
+                HRow(s.files.size.toString() + " ملف · " + s.percent() + "%", (if (out) "إلى " else "من ") + s.peerName + " · " + Sniff.fmtSize(s.totalBytes()), "run", null, s)
+            }
+            val hist = FtStore.history().filter { it.dir == histDir }.map { x ->
+                HRow(x.name, x.peerName + " · " + Sniff.fmtSize(x.size) + " · " + fmt.format(Date(x.ts)) + (if (x.note.isNotEmpty()) " · " + x.note else ""), x.state, x, null)
+            }
+            rows = (live + hist).filter { when (histFilter) { "all" -> true; "ok" -> it.state == "ok"; "run" -> it.state == "run"; else -> it.state == "fail" || it.state == "cancel" } }
+            ad.notifyDataSetChanged()
+            empty.text = if (rows.isEmpty()) "مفيش عمليات هنا" else ""
+        }
+        fun pills() {
+            tabs.removeAllViews(); flt.removeAllViews()
+            tabs.addView(btn("📤 المُرسَلة", histDir == "out") { histDir = "out"; pills(); rebuild() }, lp(0, -2, 1f).apply { marginEnd = ui.dp(4) })
+            tabs.addView(btn("📥 المُستلَمة", histDir == "in") { histDir = "in"; pills(); rebuild() }, lp(0, -2, 1f))
+            for ((k, l) in listOf("all" to "الكل", "ok" to "اكتملت", "run" to "جارية", "fail" to "فشلت"))
+                flt.addView(btn(l, histFilter == k) { histFilter = k; pills(); rebuild() }, lp(-2, -2).apply { setMargins(ui.dp(3), 0, ui.dp(3), 0) })
+        }
+        lv.setOnItemClickListener { _, _, i, _ ->
+            val r = rows.getOrNull(i) ?: return@setOnItemClickListener
+            val ss = r.s
+            if (ss != null) { go("progress") { buildProgress(ss) }; return@setOnItemClickListener }
+            val hh = r.h ?: return@setOnItemClickListener
+            val f = File(hh.path)
+            val exists = hh.path.startsWith("/") && f.isFile
+            val labels = ArrayList<String>(); val acts = ArrayList<() -> Unit>()
+            if (exists) {
+                labels.add("▶ فتح الملف"); acts.add { openFile(f) }
+                labels.add("↻ إعادة إرسال"); acts.add { resend(f) }
+            }
+            labels.add("🗑 حذف من السجل"); acts.add { FtStore.remove(hh); rebuild() }
+            GAlert(this).setTitle(hh.name).setItems(labels.toTypedArray()) { _, k -> acts[k]() }.setNegativeButton("إغلاق", null).show()
+        }
+        root.addView(lv, lp(-1, 0, 1f).apply { topMargin = ui.dp(6) })
+        pills(); rebuild()
+        updater = { rebuild() }
+        return root
+    }
+
+    private fun openFile(f: File) {
+        try {
+            startActivity(Intent(Intent.ACTION_VIEW).setDataAndType(FmUtil.uriFor(this, f), FmUtil.mime(f)).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION))
+        } catch (e: Throwable) { LogStore.err("FtUi:open", e); Notice.show(this, "⚠ مفيش تطبيق يفتح الملف ده", 2500L) }
+    }
+
+    private fun resend(f: File) {
+        presetPicks = listOf(FtPick(f.name, f.length(), Uri.fromFile(f), f.absolutePath))
+        radarMode = "any"
+        go("radar") { buildRadar() }
+    }
+
+    // ═════════════ الهوية والإعدادات ═════════════
+    private fun buildSettings(): View {
+        val root = col()
+        root.addView(header("🪪 الهوية والإعدادات", "اسم جهازك اللي بيظهر للأجهزة التانية"))
+        val body = col()
+        val card = col().apply { setPadding(ui.dp(14), ui.dp(14), ui.dp(14), ui.dp(14)); background = ui.box(th.card, th.border, 14) }
+        val nameTv = ui.text("", if (tvMode) 28f else 24f, th.primary, true)
+        val metaTv = ui.text("", if (tvMode) 15f else 12.5f, th.muted)
+        val fp = try { FtCrypto.fpPretty(FtCrypto.fingerprint(FtCrypto.identity(this).public.encoded)) } catch (_: Throwable) { "—" }
+        fun refresh() { nameTv.text = FtIdentity.name(); metaTv.text = "النوع: " + FtIdentity.typeLabel(FtIdentity.type()) + (if (FtIdentity.isCustom()) " · اسم معدّل" else " · اسم تلقائي") }
+        refresh()
+        card.addView(nameTv); card.addView(metaTv)
+        card.addView(ui.text("🪪 بصمة هويتك: $fp", if (tvMode) 14f else 11.5f, th.muted).apply { setPadding(0, ui.dp(6), 0, 0) })
+        card.addView(ui.text("الاسم بيتحفظ تلقائي. مفيش أسماء أشخاص ولا أرقام موبايل بتتاخد.", if (tvMode) 14f else 11.5f, th.muted).apply { setPadding(0, ui.dp(4), 0, 0) })
+        body.addView(card, lp(-1, -2).apply { topMargin = ui.dp(8) })
+        val r1 = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL }
+        r1.addView(btn("✏ تعديل الاسم") {
+            val et = ui.input("اسم الجهاز", FtIdentity.name())
+            GAlert(this).setTitle("✏ اسم الجهاز").setView(et)
+                .setPositiveButton("حفظ") { _, _ -> if (FtIdentity.setName(et.text.toString())) { refresh(); Notice.show(this, "✅ اتحفظ", 1500L) } else Notice.show(this, "اكتب اسم صالح", 2000L) }
+                .setNegativeButton("إلغاء", null).show()
+        }, lp(0, -2, 1f).apply { marginEnd = ui.dp(4) })
+        r1.addView(btn("🎲 اسم عشوائي") { FtIdentity.regenerate(peers.values.map { it.name }.toSet()); refresh() }, lp(0, -2, 1f))
+        body.addView(r1, lp(-1, -2).apply { topMargin = ui.dp(8) })
+        body.addView(btn("↩ استعادة الاسم الافتراضي") { FtIdentity.resetDefault(); refresh() }, lp(-1, -2).apply { topMargin = ui.dp(6) })
+
+        body.addView(ui.section("🔒 الاستقبال", true,
+            ui.switchRow("استقبال تلقائي من الأجهزة الموثوقة بس (اللي حدّدتها بنفسك وبنفس البصمة)", FtIdentity.autoTrusted()) { FtIdentity.setAutoTrusted(it) },
+            ui.switchRow("فضّل جاهز للاستقبال بعد قفل شاشة النقل (طول ما التطبيق شغّال)", FtIdentity.keepReady()) { FtIdentity.setKeepReady(it) },
+            ui.text("من غير الإعدادين دول: أي طلب استقبال لازم توافق عليه بإيدك.", if (tvMode) 14f else 11.5f, th.muted)))
+
+        val tr = FtStore.trusted()
+        val trBox = col()
+        fun fillTrusted() {
+            trBox.removeAllViews()
+            val l = FtStore.trusted()
+            if (l.isEmpty()) trBox.addView(ui.text("مفيش أجهزة موثوقة", if (tvMode) 15f else 12.5f, th.muted))
+            for (t in l) {
+                val row = btn("✕ " + t.name + " · " + FtCrypto.fpPretty(t.fp).take(9)) { FtStore.untrust(t.id); fillTrusted() }
+                trBox.addView(row, lp(-1, -2).apply { bottomMargin = ui.dp(4) })
+            }
+        }
+        fillTrusted()
+        body.addView(ui.section("🤝 الأجهزة الموثوقة (" + tr.size + ")", true, trBox))
+
+        val net = ui.text(lanLine() + "\nمنافذ النقل: TCP " + FtPeers.PORT + " · UDP " + FtPeers.UDP_PORT + "\nالخدمة: " + (if (FtPeers.running) "شغّالة" else "واقفة"), if (tvMode) 14f else 11.5f, th.muted)
+        body.addView(ui.section("📡 الشبكة", false, net))
+        body.addView(btn("🗑 مسح سجل النقل") {
+            GAlert(this).setTitle("مسح السجل؟").setMessage("هيتمسح سجل العمليات بس — الملفات نفسها مش هتتأثر.")
+                .setPositiveButton("مسح") { _, _ -> FtStore.clear(); Notice.show(this, "اتمسح", 1500L) }.setNegativeButton("إلغاء", null).show()
+        }, lp(-1, -2).apply { topMargin = ui.dp(8) })
+        root.addView(scroll(body), lp(-1, 0, 1f))
+        return root
+    }
+}

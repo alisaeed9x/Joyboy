@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- MEETUBE(frost): the running blur of Motion.frostIn, on the view it frosts. -->
+    <item name="mobile_frost_animator" type="id" />
+    <!-- MEETUBE(nav lens): the running wiggle of NavLens.jiggle, on the bar it wiggles. -->
+    <item name="mobile_jiggle_animator" type="id" />
+    <!-- MEETUBE(glass): the lit rim SheetGlass puts on a frosted sheet, so it is put on once. -->
+    <item name="mobile_sheet_rim" type="id" />
+</resources>

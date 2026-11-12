@@ -1,0 +1,42 @@
+apply from: '../constants.gradle'
+apply plugin: 'com.android.library'
+
+android {
+    namespace = 'com.liskovsoft.sharedtests'
+
+    compileSdk = project.ext.compileSdkVersion
+    testOptions.unitTests.includeAndroidResources = true
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    defaultConfig {
+        minSdk = project.ext.minSdkVersion
+        targetSdk = project.ext.targetSdkVersion
+        versionCode 1
+        versionName "1.0"
+
+        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+    }
+
+    lint {
+        abortOnError = true
+    }
+}
+
+dependencies {
+    implementation fileTree(dir: 'libs', include: ['*.jar'])
+
+    testImplementation 'junit:junit:' + junitVersion
+    testImplementation 'org.robolectric:robolectric:' + robolectricVersion
+}

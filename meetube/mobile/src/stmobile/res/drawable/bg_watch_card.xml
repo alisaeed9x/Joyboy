@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Rounded surface card with ripple for tappable watch-page rows (Comments / Live chat),
+     matching YouTube's raised comment-entry card. minSdk for the mobile flavors is 21+. -->
+<ripple xmlns:android="http://schemas.android.com/apk/res/android"
+    android:color="?android:attr/colorControlHighlight">
+    <item>
+        <shape android:shape="rectangle">
+            <!-- MEETUBE(glass) -->
+            <solid android:color="@color/meetube_watch_card" />
+            <stroke android:width="0.5dp" android:color="@color/meetube_glass_stroke" />
+            <corners android:radius="22dp" />
+        </shape>
+    </item>
+</ripple>
