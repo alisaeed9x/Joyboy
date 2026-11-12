@@ -20,7 +20,7 @@ import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.SeekBar
 import android.widget.TextView
-import androidx.media3.common.Player as ExoPlayer
+import androidx.media3.exoplayer.ExoPlayer
 import com.newtube.mobile.ui.playback.JoyboyPlayerHost
 import org.json.JSONArray
 import org.json.JSONObject
@@ -160,7 +160,7 @@ object MtBar {
             setPadding(dp(activity, 14), 0, dp(activity, 14), 0)
             background = android.graphics.drawable.GradientDrawable(
                 android.graphics.drawable.GradientDrawable.Orientation.TOP_BOTTOM,
-                intArrayOf(0x00000000, 0x66000000, 0xCC000000)
+                intArrayOf(0x00000000, 0x66000000, 0xCC000000.toInt())
             )
         }
         root.addView(topRow(activity))
@@ -375,7 +375,7 @@ object MtBar {
 
     private fun failedBatchCount(): Int {
         return try {
-            val o = MtTranslate.rpc("engine.batches")
+            val o = MtTranslate.rpc("engine.batches", JSONObject())
             val arr = o.optJSONArray("batches") ?: return 0
             var n = 0
             for (i in 0 until arr.length()) {
@@ -389,7 +389,7 @@ object MtBar {
         }
     }
 
-    private fun topRow(a: Activity): LinearLayout {
+    private fun topRow(a: Activity): ViewGroup {
         val u = uiHelper!!
         val row = FlowRow(a).apply {
             layoutDirection = View.LAYOUT_DIRECTION_RTL
@@ -401,7 +401,7 @@ object MtBar {
         return row
     }
 
-    private fun trRow(a: Activity): LinearLayout {
+    private fun trRow(a: Activity): ViewGroup {
         val u = uiHelper!!
         val row = FlowRow(a).apply {
             layoutDirection = View.LAYOUT_DIRECTION_RTL
@@ -427,7 +427,7 @@ object MtBar {
         return row
     }
 
-    private fun toolRow(a: Activity): LinearLayout {
+    private fun toolRow(a: Activity): ViewGroup {
         val u = uiHelper!!
         val row = FlowRow(a).apply {
             layoutDirection = View.LAYOUT_DIRECTION_RTL
@@ -668,11 +668,9 @@ object MtBar {
 
     private fun exportSub(a: Activity) {
         try {
-            val f = MtTranslate.exportSrt()
-            if (f == null) {
+            val ok = MtTranslate.exportSrt()
+            if (!ok) {
                 Notice.show(a, "📄 مفيش ترجمة تتصدّر لسه", 2200L)
-            } else {
-                Notice.show(a, "📄 اتصدّرت: " + f.name, 2600L)
             }
         } catch (t: Throwable) {
             LogStore.err("MtBar:exportSub", t)
@@ -1006,7 +1004,7 @@ object MtBar {
         val u = uiHelper ?: Ui(a, Themes.current())
         val rows = ArrayList<View>()
         try {
-            val o = MtTranslate.rpc("engine.chars")
+            val o = MtTranslate.rpc("engine.chars", JSONObject())
             val arr = o.optJSONArray("chars")
             if (arr == null || arr.length() == 0) {
                 Notice.show(a, "🧑 مفيش شخصيات مكتشفة في الترجمة الحالية", 2200L)
@@ -1033,7 +1031,7 @@ object MtBar {
         val u = uiHelper ?: Ui(a, Themes.current())
         val rows = ArrayList<View>()
         try {
-            val o = MtTranslate.rpc("engine.batches")
+            val o = MtTranslate.rpc("engine.batches", JSONObject())
             val arr = o.optJSONArray("batches")
             if (arr == null || arr.length() == 0) {
                 Notice.show(a, "📄 مفيش دفعات ترجمة لسه", 2200L)
@@ -1104,7 +1102,7 @@ object MtBar {
 
     private fun shiftSync(a: Activity, d: Int) {
         try {
-            MtTranslate.shiftOffset(d)
+            MtTranslate.shiftOffset(d.toLong())
         } catch (_: Throwable) {}
         refreshSyncVal()
     }
