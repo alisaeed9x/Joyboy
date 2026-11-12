@@ -62,6 +62,7 @@ object MtTranslate : JoyboyPlayerHost.Provider {
         try {
             if (act !== activity) { stopEngine(); offsetMs = 0L }   // أكتفيتي جديدة = جلسة جديدة
             this.act = activity; this.player = player; this.info = info; this.overlay = overlay
+            try { MtTvPlayer.set(activity, player, try { info.title() ?: "" } catch (_: Throwable) { "" }) } catch (_: Throwable) {}   // (v928) ريموت الموبايل يتحكم في مشغّل MeeTube على التلفزيون
             Cfg.ensure(activity.applicationContext)
             // شيل أي نسخة قديمة من الزرار/السبتايتل (المشغّل بيتبني تاني مع كل فيديو/تغيير سطح)
             for (t in listOf(TAG_SUB)) overlay.findViewWithTag<View>(t)?.let { overlay.removeView(it) }
@@ -70,18 +71,7 @@ object MtTranslate : JoyboyPlayerHost.Provider {
             val s = SubtitleView(activity).apply { tag = TAG_SUB; layoutDirection = View.LAYOUT_DIRECTION_RTL; style = SubStyle.load { k, d -> Cfg.str(k, d) } }
             overlay.addView(s, FrameLayout.LayoutParams(-1, -2, Gravity.BOTTOM).apply { bottomMargin = dp(activity, 40) })
             sv = s; cached = null
-            if (options != null) {
-                // (v924) زرار «ترجم» اتشال من مشغّل MeeTube (الترجمة في مشغّل Joyboy القديم) — مكانه «تشغيل على التلفزيون»
-                val b = TextView(activity).apply {
-                    tag = TAG_BTN; gravity = Gravity.CENTER; textSize = 13f; setTextColor(Color.WHITE); text = "📺 تشغيل على التلفزيون"
-                    setPadding(dp(activity, 10), 0, dp(activity, 10), 0)
-                    background = GradientDrawable().apply { cornerRadius = dp(activity, 18).toFloat(); setColor(0x66000000) }
-                    setOnClickListener { sendToTv() }
-                    visibility = if (try { PlayTarget.enabled() } catch (_: Throwable) { false }) View.GONE else View.VISIBLE   // وضع التلفزيون شغّال = بيتبعت لوحده
-                }
-                options.addView(b, 0, LinearLayout.LayoutParams(-2, dp(activity, 36)).apply { marginEnd = dp(activity, 6) })
-                btn = b; btn2 = null
-            } else { btn = null; btn2 = null }
+            btn = null; btn2 = null   // (v928) زرار «📺 تشغيل على التلفزيون» اتشال — الاختيار بيتم في نافذة «تشغّله فين؟» (MtTvRoute)
             // فيديو تاني (التالي/قايمة): المحرك القديم يتقفل، والترجمة تفضل شغّالة لو كانت شغّالة
             try { listenedOn?.removeListener(trans) } catch (_: Throwable) {}
             player.addListener(trans); listenedOn = player
@@ -92,6 +82,7 @@ object MtTranslate : JoyboyPlayerHost.Provider {
 
     override fun detach(activity: Activity) {
         try {
+            try { MtTvPlayer.clear(activity) } catch (_: Throwable) {}
             if (act !== activity) return
             ui.removeCallbacks(tick); tickOn = false
             overlay?.let { o -> sv?.let { v -> o.removeView(v) } }

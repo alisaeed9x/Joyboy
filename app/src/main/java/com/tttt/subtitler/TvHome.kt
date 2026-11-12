@@ -460,6 +460,7 @@ class TvActivity : Activity() {
         h.removeCallbacks(wallLoop); h.removeCallbacks(tick); muteRun?.let { h.removeCallbacks(it) }
         try { sr?.destroy() } catch (_: Throwable) {}; sr = null
         ytHost = null
+        if (YtFeedStore.onChange === ytFeedCb) YtFeedStore.onChange = null
         IconPacks.removeOnChange(iconPackRepaint)
         super.onDestroy()
     }
@@ -489,6 +490,7 @@ class TvActivity : Activity() {
     }
     override fun onResume() {
         super.onResume(); idleSec = 0
+        try { YtFeedStore.load(this); YtFeedStore.onChange = ytFeedCb } catch (_: Throwable) {}   // (v929) قوايم يوتيوب من الموبايل
         TvSetup.onResume(this)   // (v536) أول مرة: شاشة الأذونات
         if (resumedOnce && wallMode() != "off") { h.removeCallbacks(wallLoop); h.postDelayed(wallLoop, 1500L) }   // (v527) كمّل دورة الخلفيات بعد الرجوع
         if (resumedOnce) refreshTopPrayer()
@@ -532,7 +534,7 @@ class TvActivity : Activity() {
     private fun handleShow(i: Intent?) {
         val w = i?.getStringExtra("tv_show") ?: return
         i.removeExtra("tv_show")
-        when (w) { "apps" -> showApps(); "home" -> showHome(); "youtube" -> openMain("youtube"); "browser" -> openBrowser(); "sd" -> showStorage("sd"); "int" -> showStorage("int"); "settings" -> guardPin { openMain("settings") }; "mic" -> voiceToSearch(); "videos" -> showVideosPage()
+        when (w) { "apps" -> showApps(); "home" -> showHome(); "youtube" -> showYtPage(); "browser" -> openBrowser(); "sd" -> showStorage("sd"); "int" -> showStorage("int"); "settings" -> guardPin { openMain("settings") }; "mic" -> voiceToSearch(); "videos" -> showVideosPage()
             "search" -> { val q = i.getStringExtra("tv_q") ?: ""; i.removeExtra("tv_q"); wake(); if (q.isNotBlank()) h.post { showSearch(q) } } }   // (v522) اختصارات الريموت · (v533) بحث من الموبايل
     }
     private fun saverLimit(): Int { val m = Cfg.str("tv_saver_min", "3").toIntOrNull() ?: 3; return if (m <= 0) Int.MAX_VALUE else m * 60 }
@@ -1001,7 +1003,7 @@ class TvActivity : Activity() {
     }
     private fun runTarget(t: String) {
         when (t) {
-            "int:youtube" -> openMain("youtube")
+            "int:youtube" -> showYtPage()
             "int:browser" -> openBrowser()
             "int:videos" -> showVideosPage()
             "int:files" -> guardPin { startActivity(Intent(this, FileManagerActivity::class.java)) }
@@ -1652,7 +1654,7 @@ class TvActivity : Activity() {
     private fun builtinApps(): List<View> {
         val px = ui.dp(iconDp())
         return listOf(
-            dockItem(builtinIcon("▶", 0xFFE62117.toInt(), px), "يوتيوب", 0xFFE62117.toInt(), { openMain("youtube") }),
+            dockItem(builtinIcon("▶", 0xFFE62117.toInt(), px), "يوتيوب", 0xFFE62117.toInt(), { showYtPage() }),
             dockItem(builtinIcon("🌐", 0xFF2F80ED.toInt(), px), "المتصفح", 0xFF2F80ED.toInt(), { openBrowser() }))
     }
 
@@ -2812,19 +2814,58 @@ class TvActivity : Activity() {
     private fun ytRefreshNow() {
         val yh = ytHost ?: return
         ytWantErrNotice = true
-        Notice.show(this, "🔄 بحدّث فيديوهات اشتراكاتك…", 1500L)
+        YtFeedStore.requestRefresh()   // (v929) الموبايل يجيب أحدث فيديوهات MeeTube ويبعتها (لازم يكون متصل)
+        Notice.show(this, "🔄 بطلب أحدث الفيديوهات من الموبايل…", 2200L)
         fillYt(yh, true, false, 2)
     }
 
     /** mode: 0 = عادي (من الكاش لو لسه طازة) · 1 = تحديث تلقائي كل دقيقة (هادي، بيحافظ على اللي ظاهر) · 2 = تحديث بالزرار */
     private fun fillYt(yh: LinearLayout, force: Boolean = false, silent: Boolean = false, mode: Int = 0) {
-        // (v889) صف يوتيوب القديم (فيد الاشتراكات بتاعي) اتمسح — بقى كارت واحد بيفتح MeeTube
+        // (v929) صف يوتيوب: أحدث فيديوهات الاشتراكات — القايمة بتتجاب من MeeTube على الموبايل (YtFeedStore). ماله علاقة بمشغّل MeeTube.
         ytHost = yh
         if (silent && yh.childCount > 0) return
         yh.removeAllViews()
+        ytUpdatedAt = YtFeedStore.at
         ytHeader(yh, "▶ يوتيوب")
-        yh.addView(hrow(listOf(tile("▶", "افتح يوتيوب (MeeTube)") { MeeTubeLink.open(this) })))
+        val items = YtFeedStore.subs.ifEmpty { YtFeedStore.home }
+        if (items.isEmpty()) yh.addView(hrow(listOf(ytStateTile())))
+        else yh.addView(hrow(items.take(24).map { ytCard(it) } + listOf(tile("▶", "كل الفيديوهات") { showYtPage() })))
         ytFilling = false
+    }
+
+    /** (v929) كارت الحالة لما مفيش فيديوهات: مش مسجّل دخول ← دوسة تطلب من الموبايل · لسه ماوصلش حاجة ← مستني الموبايل */
+    private fun ytStateTile(): View = when (YtFeedStore.signed) {
+        false -> tile("🔐", "سجّل الدخول من MeeTube (على الموبايل)") { askYtLogin() }
+        null -> tile("📱", "وصّل الموبايل (وضع التلفزيون) عشان تظهر اشتراكاتك") { }
+        else -> tile("▶", "مفيش فيديوهات — جرّب 🔄 تحديث") { ytRefreshNow() }
+    }
+
+    private fun askYtLogin() {
+        YtFeedStore.requestLogin()
+        Notice.show(this, "📱 بعتّ الطلب للموبايل — افتح الموبايل وكمّل تسجيل الدخول (لازم يكون متصل بالتلفزيون)", 5000L)
+    }
+
+    /** (v929) فيديوهات جديدة وصلت من الموبايل ← حدّث الصف والصفحة */
+    private val ytFeedCb: () -> Unit = {
+        runOnUiThread {
+            try {
+                if (!isDestroyed && !isFinishing) {
+                    ytHost?.let { fillYt(it, true, false, 2) }
+                    ytListCol?.let { if (it.isAttachedToWindow) fillYtList(it, true) }
+                }
+            } catch (e: Throwable) { LogStore.err("TvHome:ytfeed", e) }
+        }
+    }
+
+    /** (v929) صفحة «يوتيوب» على التلفزيون: شبكة أحدث الاشتراكات ثم الصفحة الرئيسية — من MeeTube على الموبايل */
+    private fun showYtPage() {
+        h.removeCallbacks(searchRun)
+        muteSearch = true; searchEt?.setText(""); muteSearch = false; inSearch = false
+        storageKind = null; openFolder = null; foldersHost = null
+        setTab(-2)
+        content.removeAllViews(); heroBtn = null; heroImg = null
+        content.addView(ytListView())
+        pageEnter()
     }
 
     /** (v581) تحديث تلقائي لصف يوتيوب كل دقيقة وإنت في الرئيسية (بيجيب أحدث فيديوهات اشتراكاتك من غير ما يلمس اللي ظاهر لو مفيش جديد) */
@@ -2842,7 +2883,7 @@ class TvActivity : Activity() {
     }
 
     // (v576) صف يوتيوب زي تاب الاشتراكات في الموبايل: فيد الاشتراكات الرسمي من حسابك الأول (كل آخر الفيديوهات مش «الجديد بس»)، والـRSS احتياطي
-    private var ytRowItems: List<NpItem> = emptyList()
+    private val ytRowItems: List<NpItem> get() = YtFeedStore.subs + YtFeedStore.home   // (v929) اشتراكات ثم رئيسية — من MeeTube على الموبايل
     private var ytRowAt = 0L
 
     @Suppress("UNUSED_PARAMETER")
@@ -2863,9 +2904,9 @@ class TvActivity : Activity() {
     }
 
     private fun fillYtList(col: LinearLayout, reset: Boolean) {
-        if (reset) { col.removeAllViews(); ytListShown = 0; col.addView(sectionTitle("▶ يوتيوب — اشتراكاتك")) }
+        if (reset) { col.removeAllViews(); ytListShown = 0; col.addView(sectionTitle("▶ يوتيوب — أحدث الاشتراكات ثم الرئيسية")) }
         if (ytRowItems.isEmpty()) {
-            if (reset) col.addView(hrow(listOf(tile("▶", "افتح يوتيوب (MeeTube)") { MeeTubeLink.open(this) })))   // (v889)
+            if (reset) col.addView(hrow(listOf(ytStateTile())))   // (v929)
             return
         }
         col.findViewWithTag<View>("ytwait")?.let { col.removeView(it) }
@@ -3055,7 +3096,7 @@ class TvActivity : Activity() {
             }
             // (v630) نفس التطبيقات كبيانات خام عشان كل سكِن يرسمها بشكله
             val items = ArrayList<TvAppItem>()
-            items.add(TvAppItem("يوتيوب", builtinIcon("▶", 0xFFE62117.toInt(), px), 0xFFE62117.toInt(), { openMain("youtube") }))
+            items.add(TvAppItem("يوتيوب", builtinIcon("▶", 0xFFE62117.toInt(), px), 0xFFE62117.toInt(), { showYtPage() }))
             items.add(TvAppItem("المتصفح", builtinIcon("🌐", 0xFF2F80ED.toInt(), px), 0xFF2F80ED.toInt(), { openBrowser() }))
             ess.forEach { ri ->
                 val pkg = ri.activityInfo.packageName

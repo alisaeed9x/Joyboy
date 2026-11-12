@@ -26,6 +26,7 @@ class JoyApp : Application() {
         MtYt.app = this
         NavSnap.install(this)   // (v923) انتقال موحّد بين الشاشات (لقطة + فيد)
         MeeTubeLink.bindBar()
+        MtTvRoute.install(this)   // (v928) «تشغّله فين؟» لفيديوهات MeeTube لما وضع التلفزيون شغّال
         try { MtSkin.install(this) } catch (_: Throwable) {}   // (v897) الجلاس في البرنامج كله: خلفية متحركة + مسح الخلفيات الصلبة
         followMeeTubeTheme()
     }

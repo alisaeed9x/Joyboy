@@ -225,7 +225,7 @@ object TvLink {
         if (rm.kicked) { if (r.header("x-manual") == "1") rm.kicked = false else return err(409, "kicked") }
         touch(rm, r)
         return when (r.path) {
-            "/ping" -> ok(JSONObject().put("ver", LinkVer.code(app)).put("vname", LinkVer.name(app)).put("name", tvName()).put("tv", tvId())
+            "/ping" -> ok(JSONObject().put("ytlogin", YtFeedStore.loginRequested()).put("ytrefresh", YtFeedStore.refreshRequested()).put("ver", LinkVer.code(app)).put("vname", LinkVer.name(app)).put("name", tvName()).put("tv", tvId())
                 .put("mfr", try { android.os.Build.MANUFACTURER ?: "" } catch (_: Throwable) { "" }).put("model", try { android.os.Build.MODEL ?: "" } catch (_: Throwable) { "" })   // (v809) لريموت IR
                 .put("ctx", TvInput.context()).put("acc", TvAccess.connected).put("vol", sysVolPct())
                 .put("bri", try { TvBright.get(app) } catch (_: Throwable) { -1 }).put("brim", TvBright.mode).put("brisoft", TvBright.softOn()))   // (v817) سطوع التلفزيون
@@ -240,6 +240,7 @@ object TvLink {
             "/subtr" -> subTr(r)                // (v688) الموبايل بيبعت الجمل المترجمة (على قطع) لو خلّص قبل التلفزيون
             "/music" -> musicCmd(r)
             "/open" -> open(r)
+            "/ytfeed" -> { val j = try { JSONObject(r.bodyText()) } catch (_: Exception) { return err(403, "bad") }; YtFeedStore.put(app, j); ok(JSONObject().put("n", YtFeedStore.subs.size + YtFeedStore.home.size)) }   // (v929) قوايم يوتيوب من MeeTube على الموبايل
             "/recent" -> recentList()           // (v678) آخر المشغّلة على التلفزيون (لقايمة الريموت)
             "/recent/play" -> recentPlay(r)     // (v678) تشغيل واحد منها على التلفزيون
             "/recent/thumb" -> BrainRpc.recentThumb(app, r)   // (v680) الصورة المصغّرة
@@ -369,14 +370,15 @@ object TvLink {
         val a = j.optString("a")
         // (v531) المتصفح قدّامك (أو مفيش مشغّل برنامج) ← الأوامر والحالة على فيديو الصفحة؛ غير كده ← مشغّل البرنامج
         val useBr = BrowserActivity.live() != null && (top?.get() is BrowserActivity || !PlayerActivity.hasLive())
+        val useMt = !useBr && !PlayerActivity.hasLive() && MtTvPlayer.live()   // (v928) فيديو يوتيوب شغّال في مشغّل MeeTube على التلفزيون
         if (a != "state" && a.isNotEmpty()) {
             if (dup(j.optString("cid"))) return ok(JSONObject().put("dup", true))
-            val handled = if (useBr) BrowserActivity.remoteAct(a, j.optLong("v")) else PlayerActivity.remoteAct(a, j.optLong("v"))
+            val handled = if (useBr) BrowserActivity.remoteAct(a, j.optLong("v")) else if (useMt) MtTvPlayer.act(a, j.optLong("v")) else PlayerActivity.remoteAct(a, j.optLong("v"))
             if (!handled) return ok(JSONObject().put("none", true))
             if (useBr) try { Thread.sleep(120L) } catch (_: Exception) {}   // الـJS يتنفّذ قبل ما نقرا الحالة
         }
-        val st = (if (useBr) BrowserActivity.remoteState() else PlayerActivity.remoteState()) ?: return ok(JSONObject().put("none", true))
-        val note = if (useBr) "" else PlayerActivity.takeRemoteNote()   // (v799) رسالة الزرار بتتعرض على الموبايل مش التلفزيون
+        val st = (if (useBr) BrowserActivity.remoteState() else if (useMt) MtTvPlayer.state() else PlayerActivity.remoteState()) ?: return ok(JSONObject().put("none", true))
+        val note = if (useBr || useMt) "" else PlayerActivity.takeRemoteNote()   // (v799) رسالة الزرار بتتعرض على الموبايل مش التلفزيون
         return ok(JSONObject().put("st", st).apply { if (note.isNotEmpty()) put("note", note) })
     }
 

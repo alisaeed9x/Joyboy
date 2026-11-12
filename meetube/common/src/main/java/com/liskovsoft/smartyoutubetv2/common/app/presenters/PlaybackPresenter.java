@@ -122,9 +122,33 @@ public class PlaybackPresenter extends BasePresenter<PlaybackView> implements Pl
         return sPrefetchOnOpenEnabled;
     }
 
+    /** JOYBOY(v928): lets the host app (Joyboy) decide where a tapped video plays (phone / TV) before the player view starts. */
+    public interface OpenInterceptor {
+        /** true = handled by the host, do not start the player view. */
+        boolean intercept(Context context, Video video);
+    }
+
+    private static volatile OpenInterceptor sOpenInterceptor;
+
+    public static void setOpenInterceptor(OpenInterceptor interceptor) {
+        sOpenInterceptor = interceptor;
+    }
+
     public void openVideo(Video video) {
         if (video == null) {
             return;
+        }
+
+        // JOYBOY(v928): only for a tap from browse (not while the player is already in front, e.g. next video / seek-reopen).
+        OpenInterceptor interceptor = sOpenInterceptor;
+        if (interceptor != null && !getViewManager().isPlayerInForeground()) {
+            try {
+                if (interceptor.intercept(getContext(), video)) {
+                    return;
+                }
+            } catch (RuntimeException e) {
+                // never let the add-on break MeeTube
+            }
         }
 
         NetPath.logTap(video.videoId); // NetPath milestone 0: user intent (tap), before activity bring-up

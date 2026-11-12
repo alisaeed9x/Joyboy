@@ -32,7 +32,7 @@ object MeeTubeLink {
             if (autoTranslate) MtTranslate.autoFor = id   // (v890) الترجمة تبدأ لوحدها أول ما الفيديو يشتغل في مشغّل MeeTube
             bindBar()
             MobileMainApplication.boot(act.application)
-            com.liskovsoft.smartyoutubetv2.common.app.presenters.PlaybackPresenter.instance(act.applicationContext).openVideo(id, false, if (startMs > 0L) startMs else -1L, false)
+            MtTvRoute.bypassed { com.liskovsoft.smartyoutubetv2.common.app.presenters.PlaybackPresenter.instance(act.applicationContext).openVideo(id, false, if (startMs > 0L) startMs else -1L, false) }   // (v928) السؤال «تشغّله فين؟» اتسأل قبل كده في Main.playYt
             true
         } catch (e: Throwable) {
             LogStore.err("MeeTubeLink:playYt", e)
@@ -40,7 +40,34 @@ object MeeTubeLink {
         }
     }
 
+    /** (v928) على التلفزيون: فيديو يوتيوب في مشغّل MeeTube (بييجي من الموبايل عبر TvDirect). false = كمّل بمشغّل Joyboy. */
+    fun playYtOnTv(ctx: android.content.Context, id: String, startMs: Long): Boolean {
+        if (id.length != 11) return false
+        return try {
+            bindBar()
+            MobileMainApplication.boot(ctx.applicationContext as android.app.Application)
+            com.liskovsoft.smartyoutubetv2.common.app.presenters.PlaybackPresenter.instance(ctx.applicationContext).openVideo(id, false, if (startMs > 0L) startMs else -1L, false)
+            true
+        } catch (e: Throwable) {
+            LogStore.err("MeeTubeLink:playYtOnTv", e)
+            false
+        }
+    }
+
+    /** (v929) شاشة تسجيل الدخول بتاعة MeeTube (كود الجهاز: بتدوس «كمّل» ← صفحة جوجل/تطبيق يوتيوب ← «السماح» ← ترجع). */
+    fun signIn(act: Activity) {
+        try {
+            bindBar()
+            MobileMainApplication.boot(act.application)
+            com.liskovsoft.smartyoutubetv2.common.app.presenters.YTSignInPresenter.instance(act).start()
+        } catch (e: Throwable) {
+            LogStore.err("MeeTubeLink:signIn", e)
+            Notice.show(act, "ما قدرتش أفتح تسجيل الدخول: " + (e.message ?: e.javaClass.simpleName).take(60), 3000L)
+        }
+    }
+
     fun open(act: Activity) {
+        if (DeviceUi.isTv(act)) { try { act.startActivity(Intent(act, TvActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP).putExtra("tv_show", "youtube")) } catch (e: Throwable) { LogStore.err("MeeTubeLink:tvYt", e) }; return }   // (v929) على التلفزيون «يوتيوب» = صفحة يوتيوب بتاعة اللانشر (قوايم MeeTube جاية من الموبايل)
         try {
             bindBar()
             MobileMainApplication.boot(act.application)

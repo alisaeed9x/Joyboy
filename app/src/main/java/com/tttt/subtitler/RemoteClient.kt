@@ -305,11 +305,14 @@ object RemoteClient {
                     val nm = j.optString("name")
                     if (nm.isNotBlank() && nm != tv.name) { tv.name = nm; saveTv(tv) }
                     parseCtx(j)
+                    if (j.optBoolean("ytrefresh")) try { MtFeed.maybePush(true) } catch (_: Throwable) {}   // (v929) 🔄 من التلفزيون
+                    if (j.optBoolean("ytlogin")) try { MtFeed.onLoginRequest() } catch (_: Throwable) {}   // (v929) التلفزيون طلب تسجيل دخول يوتيوب
                     val mf = j.optString("mfr"); if (mf.isNotBlank()) try { IrTv.saveTvInfo(app(), mf, j.optString("model")) } catch (_: Throwable) {}   // (v809) ماركة وموديل التلفزيون لريموت IR
                 } catch (_: Exception) {}
                 if (state != St.CONNECTED) {
                     state = St.CONNECTED; lastError = ""; fire()
                     Thread { try { TvSync.pushAllNow() } catch (_: Throwable) {} }.also { it.isDaemon = true }.start()   // (v569) أول ما يتصل: كل إعدادات الموبايل (والمفاتيح) تتطبّق على التلفزيون
+                    try { MtFeed.maybePush(true) } catch (_: Throwable) {}   // (v929) فيديوهات MeeTube (اشتراكات + رئيسية) لصف يوتيوب على التلفزيون
                     if (Cfg.bool("gh_tv_auto", true) && !autoOffered && LinkVer.code(app()) > tvVer) { autoOffered = true; offerUpdate(true) }   // (v864) «ابعت التحديث للتلفزيون أول ما يتصل» من إعدادات مركز التحديث
                 }
             } else if (c == 401) {
@@ -326,6 +329,7 @@ object RemoteClient {
                     if (f != null && (f.ip != tv.ip || f.port != tv.port)) { tv.ip = f.ip; tv.port = f.port; saveTv(tv) }
                 }
             }
+            if (state == St.CONNECTED) try { MtFeed.maybePush() } catch (_: Throwable) {}   // (v929) تحديث دوري
             try { Thread.sleep(if (state == St.CONNECTED) 4000L else 3000L) } catch (_: InterruptedException) {}
         }
     }

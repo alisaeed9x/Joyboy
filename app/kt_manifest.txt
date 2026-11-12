@@ -134,7 +134,10 @@ com/tttt/subtitler/MtGlassView.kt
 com/tttt/subtitler/MtHeader.kt
 com/tttt/subtitler/MtPlayerLook.kt
 com/tttt/subtitler/MtSkin.kt
+com/tttt/subtitler/MtFeed.kt
 com/tttt/subtitler/MtTranslate.kt
+com/tttt/subtitler/MtTvPlayer.kt
+com/tttt/subtitler/MtTvRoute.kt
 com/tttt/subtitler/MtYt.kt
 com/tttt/subtitler/MusicService.kt
 com/tttt/subtitler/MusicUi.kt
@@ -288,4 +291,5 @@ com/tttt/subtitler/Xfer.kt
 com/tttt/subtitler/YtAudio.kt
 com/tttt/subtitler/YtFallback.kt
 com/tttt/subtitler/YtModels.kt
+com/tttt/subtitler/YtFeedStore.kt
 com/tttt/subtitler/YtNext.kt

@@ -186,6 +186,19 @@ object MtYt {
         catch (e: Throwable) { LogStore.err("MtYt:search", e); emptyList() }
     }
 
+    /** (v929) حساب MeeTube مسجّل دخول؟ */
+    fun signedIn(): Boolean = try { boot(); YouTubeServiceManager.instance().signInService.isSigned() } catch (e: Throwable) { LogStore.err("MtYt:signed", e); false }
+
+    /** (v929) أحدث فيديوهات الاشتراكات (صفحة الاشتراكات في MeeTube) — من خيط خلفي */
+    fun subscriptions(): List<NpItem> =
+        try { boot(); flatten(listOfNotNull(YouTubeServiceManager.instance().contentService.getSubscriptions())) }
+        catch (e: Throwable) { LogStore.err("MtYt:subs", e); emptyList() }
+
+    /** (v929) فيديوهات الصفحة الرئيسية في MeeTube — من خيط خلفي */
+    fun homeFeed(): List<NpItem> =
+        try { boot(); flatten(YouTubeServiceManager.instance().contentService.getHome()) }
+        catch (e: Throwable) { LogStore.err("MtYt:home", e); emptyList() }
+
     /** المقترحات بعد الفيديو (من محرك MeeTube) — من خيط خلفي */
     fun related(id: String): List<NpItem> {
         return try { flatten(service().getMetadata(id)?.suggestions).filter { it.id != id } }
