@@ -158,6 +158,8 @@ object MtPlay {
         if (i.getBooleanExtra("autotr", false) && !i.getBooleanExtra("nosub", false)) MtTranslate.autoFor = "L:$src"
         if (d.priv) MtTranslate.privIds.add("L:$src")
         d.forceId?.let { MtTranslate.idOverride["L:$src"] = it }   // (v936) forceid
+        // (v938) لينك من النت: هوية مشغّل Joyboy (u:…) + تسجيل المصطادة + extra ret (بيكتب فوق forceid بنفس القيمة لو موجود)
+        try { MtWeb.onOpen(app, i, src, d.headers, d.forceId, i.getBooleanExtra("incognito", false), d.priv && !i.getBooleanExtra("incognito", false)) } catch (_: Throwable) {}
         if (!d.priv) try { PubHistory.addVideoFrom(i) } catch (_: Throwable) {}   // (v936) السجل العام (كان بيتخطّى مع التوجيه لـMeeTube)
         MeeTubeLink.bindBar()
         MobileMainApplication.boot(act.application)

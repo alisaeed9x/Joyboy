@@ -294,3 +294,4 @@ com/tttt/subtitler/YtFallback.kt
 com/tttt/subtitler/YtModels.kt
 com/tttt/subtitler/YtFeedStore.kt
 com/tttt/subtitler/YtNext.kt
+com/tttt/subtitler/MtWeb.kt
