@@ -297,7 +297,7 @@ class PlayerActivity : Activity(), Host {
         val pl = player.isPlaying
         if (pl != rmPlaying) {
             rmPlaying = pl
-            val tx = if (pl) "▮▮" else "▶"
+            val tx = if (pl) "⏸" else "▶"
             if (!buffering) { ctl.play.text = tx; fsPlayB.text = tx; if (::centerPlay.isInitialized) centerPlay.text = tx }
         }
     }
@@ -2630,7 +2630,7 @@ class PlayerActivity : Activity(), Host {
             var chipRef: TextView? = null
             val chipB = b("▶ ترجم ▾", 0xFFE53935.toInt()) { chipRef?.let { translateMenu(it) } }   // (v415) زرار واحد بقايمة منسدلة
             chipRef = chipB
-            val pz = b("▮▮", 0xFF455A64.toInt()) { if (::engine.isInitialized && engine.userPaused) beginTranslate() else pauseTranslate() }   // (v438) إيقاف مؤقت / كمّل ظاهر جنب «ترجم» (كان جوه القايمة بس)
+            val pz = b("⏸", 0xFF455A64.toInt()) { if (::engine.isInitialized && engine.userPaused) beginTranslate() else pauseTranslate() }   // (v438) إيقاف مؤقت / كمّل ظاهر جنب «ترجم» (كان جوه القايمة بس)
             val cx = stopBtn(8)   // (v741) مربع أبيض مرسوم باليد جوه الأحمر (كان بيختفي)
             tidy(chipB); tidy(pz); pz.setPadding(0, 0, 0, 0); pz.textSize = 17f; dlB.setPadding(0, 0, 0, 0)
             row.addView(chipB, lp(-2))   // (v415) زرار «ترجم» الواحد
@@ -2642,7 +2642,7 @@ class PlayerActivity : Activity(), Host {
                 val started = engineStarted
                 pz.visibility = if (started) View.VISIBLE else View.GONE
                 cx.visibility = if (started) View.VISIBLE else View.GONE
-                pz.text = if (paused) "▶" else "▮▮"
+                pz.text = if (paused) "▶" else "⏸"
                 pz.background = ui.box(if (paused) 0xFF2E7D32.toInt() else 0xFF455A64.toInt(), 0x33FFFFFF, 8)
                 lgB.visibility = if (caps().dialect) View.VISIBLE else View.GONE   // (v444) بس في الأوضاع اللي فيها لهجات
                 if (!started) { chipB.text = if (sfBusy.isNotEmpty()) sfChip() else if (sfLive.isNotEmpty()) "💬 ترجمة لحظية ▾" else "▶ ترجم · " + modeShort() + " ▾"; chipB.background = ui.box(0xFFE53935.toInt(), 0x33FFFFFF, 12) }
@@ -2652,7 +2652,7 @@ class PlayerActivity : Activity(), Host {
                 }
             }
         } else {
-            val pz2 = b("▮▮", 0xFF455A64.toInt()) { if (::engine.isInitialized && engine.userPaused) beginTranslate() else pauseTranslate() }   // (v438)
+            val pz2 = b("⏸", 0xFF455A64.toInt()) { if (::engine.isInitialized && engine.userPaused) beginTranslate() else pauseTranslate() }   // (v438)
             val cx2 = stopBtn(10)   // (v741)
             tidy(tr); tidy(pz2); pz2.setPadding(0, 0, 0, 0); pz2.textSize = 19f; dlB.setPadding(0, 0, 0, 0)
             row.addView(tr, lp(0).apply { width = 0; weight = 3.6f })   // (v415) زرار «ترجم» الواحد
@@ -2665,7 +2665,7 @@ class PlayerActivity : Activity(), Host {
                                 tr.text = if (!engineStarted) (if (sfBusy.isNotEmpty()) sfChip() else if (sfLive.isNotEmpty()) "💬 ترجمة لحظية ▾" else "▶ ترجم · " + modeShort() + " ▾") else (Offline.liveShort()?.let { "$it · " } ?: modeChipTag()) + (if (paused) "⏸ " else if (trPct >= 100) "✅ " else "⏳ ") + trPct + "% ▾"
                 pz2.visibility = if (engineStarted) View.VISIBLE else View.GONE
                 cx2.visibility = if (engineStarted) View.VISIBLE else View.GONE
-                pz2.text = if (paused) "▶" else "▮▮"
+                pz2.text = if (paused) "▶" else "⏸"
                 pz2.background = ui.box(if (paused) 0xFF2E7D32.toInt() else 0xFF455A64.toInt(), 0x33FFFFFF, 10)
             }
         }
@@ -5510,7 +5510,7 @@ class PlayerActivity : Activity(), Host {
                 }
             }
             override fun onIsPlayingChanged(p: Boolean) {
-                val t = if (p) "▮▮" else "▶"; if (!buffering) { ctl.play.text = t; fsPlayB.text = t; if (::centerPlay.isInitialized) centerPlay.text = t }; centerPlay.visibility = if (pipNow() || busyShown() || (fullMode && chromeShown)) View.GONE else if (buffering) View.VISIBLE else if (p) View.GONE else View.VISIBLE
+                val t = if (p) "⏸" else "▶"; if (!buffering) { ctl.play.text = t; fsPlayB.text = t; if (::centerPlay.isInitialized) centerPlay.text = t }; centerPlay.visibility = if (pipNow() || busyShown() || (fullMode && chromeShown)) View.GONE else if (buffering) View.VISIBLE else if (p) View.GONE else View.VISIBLE
                 // تشخيص الشاشة السودا: صوت شغّال ومفيش ولا فريم فيديو اتعرض بعد ٥ ثواني
                 if (p && !firstFrame) h.postDelayed({ if (!firstFrame && !isFinishing) log("⚠️ مفيش فريم فيديو اتعرض بعد ٥ ثواني — غالبًا كودك/بروفايل الفيديو مش مدعوم على الجهاز (مثلًا HEVC 10-bit)") }, 5000)
             }
@@ -6521,15 +6521,19 @@ class PlayerActivity : Activity(), Host {
         val b = b0 && !(DeviceUi.isTv(this) && !tvSrcIsNet())   // (v576) تلفزيون + فيديو محلي: مفيش سبينر ولا مربع (القفز سريع)
         if (b == buffering && (b || spinners.isEmpty())) return
         buffering = b
-        val targets = listOfNotNull<TextView>(if (::fsPlayB.isInitialized) fsPlayB else null, if (::ctl.isInitialized) ctl.play else null, if (::centerPlay.isInitialized) centerPlay else null)
-        for (v in targets) {
-            if (b && v === (if (::centerPlay.isInitialized) centerPlay else null) && busyShown()) continue   // (v377) سبينر واحد بس
-            if (b) {
+        // (v925) اللودينج في نص الشاشة بس (centerPlay) — أزرار التشغيل اللي في الشريط فضلت بشكلها العادي
+        for (v in listOfNotNull<TextView>(if (::fsPlayB.isInitialized) fsPlayB else null, if (::ctl.isInitialized) ctl.play else null)) {
+            spinners.remove(v)?.stop(); v.foreground = null
+            v.text = if (player.isPlaying) "⏸" else "▶"
+        }
+        if (::centerPlay.isInitialized) {
+            val v = centerPlay
+            if (b && !busyShown()) {
                 val sp = spinners.getOrPut(v) { WinSpinnerDrawable() }
                 v.text = ""; v.foreground = sp; sp.start()
-            } else {
+            } else if (!b) {
                 spinners.remove(v)?.stop(); v.foreground = null
-                v.text = if (player.isPlaying) "▮▮" else "▶"
+                v.text = if (player.isPlaying) "⏸" else "▶"
             }
         }
         applyChromeFn()

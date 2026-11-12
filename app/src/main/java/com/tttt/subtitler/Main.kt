@@ -1540,7 +1540,7 @@ class MainActivity : Activity() {
         }
         if (!translate && handoff == null && startMs <= 0L && askTv(id, title, retOv)) return   // (v532) «تشغّله على التلفزيون؟»
         if (!translate && handoff == null && MeeTubeLink.playYt(this, id, startMs)) return   // (v887) يوتيوب العادي ← مشغّل MeeTube
-        if (translate && handoff == null && !DeviceUi.isTv(this) && id.length == 11) {   // (v890) يوتيوب بترجمة ← مشغّل MeeTube + محرك الترجمة فوقه (نفس مفتاح جيميناي المطلوب)
+        if (false && translate && handoff == null && !DeviceUi.isTv(this) && id.length == 11) {   // (v924) مقفول: يوتيوب بترجمة = مشغّل Joyboy القديم · (v890) يوتيوب بترجمة ← مشغّل MeeTube + محرك الترجمة فوقه (نفس مفتاح جيميناي المطلوب)
             ensureKeys { if (!MeeTubeLink.playYt(this, id, startMs, auto)) ytStart(id, title, translate, auto, startMs, handoff, retOv) }
             return
         }

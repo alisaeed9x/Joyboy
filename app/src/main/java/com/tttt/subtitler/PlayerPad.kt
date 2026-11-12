@@ -1049,9 +1049,9 @@ object PlayerPad {
             val mid = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; isBaselineAligned = false; layoutDirection = View.LAYOUT_DIRECTION_LTR }
             mid.addView(left, lp(0, -1, 1f)); mid.addView(volCol, lp(dp(76), -1).apply { leftMargin = dp(12) })
 
-            // ── صف الترجمة (فوق أزرار التحكم): [▶ ترجم / نسبة] ▮▮ ⚙ 🔁 🌐 ──
+            // ── صف الترجمة (فوق أزرار التحكم): [▶ ترجم / نسبة] ⏸ ⚙ 🔁 🌐 ──
             val trB = btn("▶ ترجم ▾", 16f, 0xFFE53935.toInt(), 0xFFFF6F69.toInt()) { sheetTr() }
-            val pzB = btn("▮▮", 17f) { go(if (paused) "tr_resume" else "tr_pause") }
+            val pzB = btn("⏸", 17f) { go(if (paused) "tr_resume" else "tr_pause") }
             val cxB = btn("⏹", 17f, 0xFF3B1A22.toInt(), 0xFF7A2B3A.toInt()) { confirmCancelTr() }   // (v759) إلغاء الترجمة خالص (مش مؤقت)
             val wzB = btn("⚙", 18f) { sheetSet() }   // (v762) بتفتح على الموبايل مش التلفزيون
             val rdB = btn("🔁", 18f, 0xFF6A1B9A.toInt(), 0xFF8E3FC4.toInt()) { go("redo") }
@@ -1231,7 +1231,7 @@ object PlayerPad {
                 capMode.visibility = if (ym.isNotBlank()) View.VISIBLE else View.GONE
                 capMode.text = ym
                 pzB.visibility = if (s.optBoolean("tstart", false)) View.VISIBLE else View.GONE
-                pzB.text = if (s.optBoolean("tpause", false)) "▶" else "▮▮"
+                pzB.text = if (s.optBoolean("tpause", false)) "▶" else "⏸"
                 cxB.visibility = pzB.visibility
                 rdB.visibility = if (s.optBoolean("hsub", false)) View.VISIBLE else View.GONE
                 lgB.visibility = if (s.optBoolean("cdial", false)) View.VISIBLE else View.GONE

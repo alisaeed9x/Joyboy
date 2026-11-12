@@ -415,7 +415,7 @@ class FileManagerActivity : Activity() {
         sendFab = IconTextView(this).apply {
             text = "📤 إرسال"; textSize = if (tvMode) 18f else 14f; gravity = Gravity.CENTER; setTextColor(android.graphics.Color.WHITE)
             setTypeface(typeface, android.graphics.Typeface.BOLD); setPadding(ui.dp(18), ui.dp(11), ui.dp(18), ui.dp(11))
-            background = ui.box(th.danger, th.danger, 26); isFocusable = true; elevation = ui.dp(6).toFloat()
+            background = ui.box(th.danger, th.danger, 26); isFocusable = true; elevation = ui.dp(6).toFloat(); tag = MtFloat.LIFT_TAG   // (v924) يطلع فوق الشريط الزجاجي
             setOnClickListener {
                 if (sel.isNotEmpty()) sendSelToFt()
                 else { selMode = !selMode; toast(if (selMode) "☑ اضغط على الملفات لتحديدها ثم «إرسال»" else "اتلغى وضع التحديد"); refresh() }
@@ -433,6 +433,7 @@ class FileManagerActivity : Activity() {
             addView(chip("📥 الصق هنا") { paste() }, LinearLayout.LayoutParams(-2, -2).apply { setMargins(ui.dp(4), 0, ui.dp(4), 0) })
             addView(chip("✖") { clip = emptyList(); refresh() })
         }
+        pasteBar.tag = MtFloat.LIFT_TAG   // (v924)
         root.addView(pasteBar, LinearLayout.LayoutParams(-1, -2))
 
         // شريط التحديد
@@ -451,6 +452,7 @@ class FileManagerActivity : Activity() {
         selBtn("↗ مشاركة") { shareSel() }
         selBtn("🗑 حذف") { deleteSel() }
         selBtn("⋯") { moreSel() }
+        selBar.tag = MtFloat.LIFT_TAG   // (v924) أزرار التحديد (نسخ/نقل/حذف…) كانت مستخبية ورا الشريط
         root.addView(selBar, LinearLayout.LayoutParams(-1, -2))
         // (v313) شريط البوابات السفلي (صغير) زي باقي الشاشات: الفيديوهات · الموسيقى · المتصفح · الملفات (إحنا فيه) · (v324) يوتيوب
         val gates = BottomNav(this, ui, th, 3) { i ->

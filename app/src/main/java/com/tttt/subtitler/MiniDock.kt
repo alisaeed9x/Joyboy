@@ -49,7 +49,7 @@ class MiniDock(
     private val title = ui.text("", 13f, Color.WHITE, true).apply { setSingleLine(); ellipsize = android.text.TextUtils.TruncateAt.MARQUEE; isSelected = true; maxWidth = ui.dp(120) }
     private val sub = ui.text("", 11f, 0xFFB8BCC8.toInt()).apply { setSingleLine(); ellipsize = android.text.TextUtils.TruncateAt.END; maxWidth = ui.dp(120) }
     private val btnPrev = btn("⏮") { MusicEngine.step(-1) }
-    private val btnPlay = btn("▮▮") { MusicEngine.toggle() }
+    private val btnPlay = btn("⏸") { MusicEngine.toggle() }
     private val btnNext = btn("⏭") { MusicEngine.step(1) }
     private val btnStop = btn("✕") { MusicEngine.stopAll() }
     // (v736) تصغير (يرجّع الدايرة) وتكبير (المشغّل الكامل) — زراير صريحة بدل الاعتماد على دوسة الصورة
@@ -305,7 +305,7 @@ class MiniDock(
         if (artOf(tr) != null && artKey == tr.uri) art.setImageBitmap(artOf(tr))   // الغلاف المتعرّف عليه (من مشغّل الموسيقى) أحسن من المدمج
         title.text = tr.title; sub.text = tr.artist; sub.visibility = if (tr.artist.isBlank()) View.GONE else View.VISIBLE
         btnPrev.visibility = if (YtAudio.isRemote(tr.uri)) View.GONE else View.VISIBLE   // صوت يوتيوب: مفيش «سابق»
-        btnPlay.text = if (MusicEngine.isPlaying) "▮▮" else "▶"
+        btnPlay.text = if (MusicEngine.isPlaying) "⏸" else "▶"
         paintBg()
         if (expanded) renderQueue()
         if (wasGone) { dock.alpha = 0f; dock.post { place(false); dock.animate().alpha(1f).setDuration(200L).start() } }

@@ -71,22 +71,16 @@ object MtTranslate : JoyboyPlayerHost.Provider {
             overlay.addView(s, FrameLayout.LayoutParams(-1, -2, Gravity.BOTTOM).apply { bottomMargin = dp(activity, 40) })
             sv = s; cached = null
             if (options != null) {
+                // (v924) زرار «ترجم» اتشال من مشغّل MeeTube (الترجمة في مشغّل Joyboy القديم) — مكانه «تشغيل على التلفزيون»
                 val b = TextView(activity).apply {
-                    tag = TAG_BTN; gravity = Gravity.CENTER; textSize = 13f; setTextColor(Color.WHITE)
+                    tag = TAG_BTN; gravity = Gravity.CENTER; textSize = 13f; setTextColor(Color.WHITE); text = "📺 تشغيل على التلفزيون"
                     setPadding(dp(activity, 10), 0, dp(activity, 10), 0)
                     background = GradientDrawable().apply { cornerRadius = dp(activity, 18).toFloat(); setColor(0x66000000) }
-                    setOnClickListener { toggle() }
+                    setOnClickListener { sendToTv() }
+                    visibility = if (try { PlayTarget.enabled() } catch (_: Throwable) { false }) View.GONE else View.VISIBLE   // وضع التلفزيون شغّال = بيتبعت لوحده
                 }
                 options.addView(b, 0, LinearLayout.LayoutParams(-2, dp(activity, 36)).apply { marginEnd = dp(activity, 6) })
-                btn = b
-                val m = TextView(activity).apply {   // (v923) قايمة أدوات Joyboy
-                    tag = TAG_BTN2; gravity = Gravity.CENTER; textSize = 15f; setTextColor(Color.WHITE); text = "⚙"
-                    setPadding(dp(activity, 10), 0, dp(activity, 10), 0)
-                    background = GradientDrawable().apply { cornerRadius = dp(activity, 18).toFloat(); setColor(0x66000000) }
-                    setOnClickListener { showMenu() }
-                }
-                options.addView(m, 1, LinearLayout.LayoutParams(-2, dp(activity, 36)).apply { marginEnd = dp(activity, 6) })
-                btn2 = m
+                btn = b; btn2 = null
             } else { btn = null; btn2 = null }
             // فيديو تاني (التالي/قايمة): المحرك القديم يتقفل، والترجمة تفضل شغّالة لو كانت شغّالة
             try { listenedOn?.removeListener(trans) } catch (_: Throwable) {}
@@ -124,6 +118,7 @@ object MtTranslate : JoyboyPlayerHost.Provider {
     }
 
     private fun maybeAuto() {
+        if (true) { autoFor = null; return }   // (v924) الترجمة التلقائية في مشغّل MeeTube اتقفلت
         val want = autoFor ?: return
         if (curId() == want && !on) { autoFor = null; start() }
     }
@@ -224,6 +219,20 @@ object MtTranslate : JoyboyPlayerHost.Provider {
         }.apply { isDaemon = true }.start()
     }
 
+    /** (v924) يبعت الفيديو الشغّال للتلفزيون (من نفس المكان) */
+    private fun sendToTv() {
+        val a = act ?: return
+        val lu = localUri()
+        val pos = try { player?.currentPosition ?: 0L } catch (_: Throwable) { 0L }
+        val ttl = try { info?.title() ?: "" } catch (_: Throwable) { "" }
+        val spec = when {
+            lu != null && (lu.startsWith("http://") || lu.startsWith("https://")) -> MediaSpec(url = lu, title = ttl, startMs = pos)
+            lu != null -> MediaSpec(uri = lu, title = ttl, startMs = pos)
+            else -> MediaSpec(ytid = curId(), title = ttl, startMs = pos)
+        }
+        if (!PlayTarget.force(a, spec)) Notice.show(a, "📺 ما اتبعتش للتلفزيون — اقترن بالتلفزيون الأول", 2600L)
+    }
+
     /** (v923) قايمة أدوات Joyboy فوق مشغّل MeeTube */
     private fun showMenu() {
         val a = act ?: return
@@ -256,6 +265,7 @@ object MtTranslate : JoyboyPlayerHost.Provider {
     }
 
     private fun refreshBtn(state: String? = null) {
+        if (true) return   // (v924) الزرار بقى «تشغيل على التلفزيون» ثابت
         val b = btn ?: return
         val e = eng
         b.text = when {

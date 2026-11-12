@@ -13,13 +13,13 @@ import com.newtube.mobile.MobileMainApplication
  * أي فتح لـPlayerActivity (من أي مكان: مكتبة · ملفات · متصفح · نقل · مهام) بيعدّي هنا الأول (PlayerActivity.onCreate):
  * لو الحالة مدعومة بيفتح الفيديو في مشغّل MeeTube (Video.localUri) ومحرك الترجمة + أزرار Joyboy (MtTranslate) فوقه، ومشغّل Joyboy القديم بيتقفل.
  * غير كده (تلفزيون · ريموت · يوتيوب · لينك محتاج Referer/Cookie · وضع متخفي · ملف تحميل لسه شغّال) = مشغّل Joyboy زي ما هو.
- * مفتاح الإيقاف: Cfg mt_main_player (الافتراضي true).
+ * مفتاح الإيقاف: Cfg mt_main_player (الافتراضي false من v924).
  */
 object MtPlay {
     const val KEY = "mt_main_player"
     private val MEDIA_EXT = Regex("\\.(mp4|m4v|mkv|webm|mov|m3u8|mpd|ts|3gp|avi|flv)(\\?|#|$)", RegexOption.IGNORE_CASE)
 
-    fun enabled(): Boolean = try { Cfg.bool(KEY, true) } catch (_: Throwable) { true }
+    fun enabled(): Boolean = try { Cfg.bool(KEY, false) } catch (_: Throwable) { false }   // (v924) افتراضي: مقفول — الملفات المحلية بتفتح على مشغّل Joyboy الكامل (الشاشة الكاملة)
 
     /** true = اتفتح في مشغّل MeeTube (والـPlayerActivity لازم تقفل نفسها) */
     fun reroute(act: Activity, i: Intent): Boolean {

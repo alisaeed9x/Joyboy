@@ -19,11 +19,11 @@ public final class NavTabs {
     public static final int SECOND = 1;
     /** What a slot can hold, in the order Settings lists them. */
     public static final int[] CHOICES = {MediaGroup.TYPE_SHORTS, MediaGroup.TYPE_SUBSCRIPTIONS,
-            VideoDownloads.SECTION_ID, MediaGroup.TYPE_HISTORY,
-            com.liskovsoft.smartyoutubetv2.common.misc.LocalMedia.SECTION_ID};
+            VideoDownloads.SECTION_ID, MediaGroup.TYPE_HISTORY}; // JOYBOY(v924): Media tab removed (it is in Joyboy's own bar)
     private static final String PREFS = "meetube_nav_tabs";
     private static final String[] KEYS = {"before_search", "after_search"}; // the names from when Search sat between
     private static final String KEY_SUBS_MIGRATED = "subs_next_to_home_v883";
+    private static final String KEY_MEDIA_REMOVED = "media_tab_removed_v924";
     private static final String KEY_LABELS = "labels";
     private static final String KEY_HOME = "home";
     private static final String KEY_BRAND_NAME = "brand_name";
@@ -32,7 +32,7 @@ public final class NavTabs {
     private static final String KEY_SEARCH_FAB_LEFT = "search_fab_left";
     private static final String KEY_TOP_BAR_PINNED = "top_bar_pinned";
     /** The bar as it was before the tabs could be picked. */
-    private static final int[] DEFAULTS = {com.liskovsoft.smartyoutubetv2.common.misc.LocalMedia.SECTION_ID, MediaGroup.TYPE_SUBSCRIPTIONS}; // JOYBOY(v883): Home | Subscriptions | Shorts | You
+    private static final int[] DEFAULTS = {MediaGroup.TYPE_SUBSCRIPTIONS, MediaGroup.TYPE_SHORTS}; // JOYBOY(v883): Home | Subscriptions | Shorts | You
 
     private NavTabs() {
     }
@@ -40,6 +40,7 @@ public final class NavTabs {
     /** The section id in {@code slot}, or {@link #NONE}. */
     public static int get(Context context, int slot) {
         migrateSubsNextToHome(context);
+        migrateRemoveMedia(context);
         return prefs(context).getInt(KEYS[slot], DEFAULTS[slot]);
     }
 
@@ -57,6 +58,26 @@ public final class NavTabs {
         SharedPreferences.Editor editor = p.edit().putBoolean(KEY_SUBS_MIGRATED, true);
         if (a != MediaGroup.TYPE_SUBSCRIPTIONS && a != com.liskovsoft.smartyoutubetv2.common.misc.LocalMedia.SECTION_ID) { // JOYBOY: Media stays first
             editor.putInt(KEYS[FIRST], MediaGroup.TYPE_SUBSCRIPTIONS).putInt(KEYS[SECOND], a);
+        }
+        editor.apply();
+    }
+
+    /** JOYBOY(v924): the Media tab leaves the MeeTube bar (Joyboy's own bar already has it). Runs once: a slot holding Media gets Subscriptions/Shorts instead. */
+    private static void migrateRemoveMedia(Context context) {
+        SharedPreferences p = prefs(context);
+        if (p.getBoolean(KEY_MEDIA_REMOVED, false)) {
+            return;
+        }
+        final int media = com.liskovsoft.smartyoutubetv2.common.misc.LocalMedia.SECTION_ID;
+        int a = p.getInt(KEYS[FIRST], DEFAULTS[FIRST]);
+        int b = p.getInt(KEYS[SECOND], DEFAULTS[SECOND]);
+        SharedPreferences.Editor editor = p.edit().putBoolean(KEY_MEDIA_REMOVED, true);
+        if (a == media && b == media) {
+            editor.putInt(KEYS[FIRST], MediaGroup.TYPE_SUBSCRIPTIONS).putInt(KEYS[SECOND], MediaGroup.TYPE_SHORTS);
+        } else if (a == media) {
+            editor.putInt(KEYS[FIRST], b == MediaGroup.TYPE_SUBSCRIPTIONS ? MediaGroup.TYPE_SHORTS : MediaGroup.TYPE_SUBSCRIPTIONS);
+        } else if (b == media) {
+            editor.putInt(KEYS[SECOND], a == MediaGroup.TYPE_SUBSCRIPTIONS ? MediaGroup.TYPE_SHORTS : MediaGroup.TYPE_SUBSCRIPTIONS);
         }
         editor.apply();
     }

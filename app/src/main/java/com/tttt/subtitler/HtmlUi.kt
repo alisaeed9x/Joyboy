@@ -310,7 +310,7 @@ fun Ui.grid(items: List<View>, cols: Int = 6): LinearLayout {
 
 
 /** نافذة سفلية (bottom sheet) بنفس كروت الأصل. fixedH = ارتفاع ثابت للقوائم الطويلة */
-fun Ui.sheet(act: Activity, title: String, views: List<View>, fixedH: Boolean = false, onClose: () -> Unit = {}, frac: Float = 0f): Dialog {
+fun Ui.sheet(act: Activity, title: String, views: List<View>, fixedH: Boolean = false, onClose: () -> Unit = {}, frac: Float = 0f, solid: Boolean = false): Dialog {   // (v924) solid = خلفية معتمة (شاشة الداتا)
     val d = GDialog(act)
     d.requestWindowFeature(Window.FEATURE_NO_TITLE)
     val body = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL }
@@ -334,6 +334,9 @@ fun Ui.sheet(act: Activity, title: String, views: List<View>, fixedH: Boolean = 
         root.addView(sv, LinearLayout.LayoutParams(-1, -2))
     }
     d.setContentView(root)
+    val solidCol = (th.bg or 0xFF000000.toInt())
+    fun rootBg(): android.graphics.drawable.Drawable = if (solid) box(solidCol, th.border, 18) else box(th.card, th.border, 18)
+    if (solid) root.background = rootBg()
     d.window?.apply {
         setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
         setGravity(Gravity.BOTTOM)
@@ -345,7 +348,7 @@ fun Ui.sheet(act: Activity, title: String, views: List<View>, fixedH: Boolean = 
         val land = ctx.resources.configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
         val w = d.window
         if (frac > 0f) {   // (v97) نافذة بنسبة من ارتفاع الشاشة (مثلًا 45%) بدل الصفحة الكاملة
-            root.background = box(th.card, th.border, 18)
+            root.background = rootBg()
             w?.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
             w?.setLayout(WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.WRAP_CONTENT)
             if (fixedH) holder.layoutParams = LinearLayout.LayoutParams(-1, (ctx.resources.displayMetrics.heightPixels * frac - dp(64)).toInt().coerceAtLeast(dp(120)))
@@ -355,7 +358,7 @@ fun Ui.sheet(act: Activity, title: String, views: List<View>, fixedH: Boolean = 
             w?.setLayout(WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.MATCH_PARENT)
             if (fixedH) holder.layoutParams = LinearLayout.LayoutParams(-1, 0, 1f)
         } else {
-            root.background = box(th.card, th.border, 18)
+            root.background = rootBg()
             w?.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
             w?.setLayout(WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.WRAP_CONTENT)
             if (fixedH) holder.layoutParams = LinearLayout.LayoutParams(-1, (ctx.resources.displayMetrics.heightPixels * 0.78f).toInt())

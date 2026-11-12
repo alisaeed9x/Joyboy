@@ -86,7 +86,7 @@ object MtFloat {
     private fun padScrollers(v: View, bottom: Int) {
         if (v is ViewGroup) {
             val cn = v.javaClass.name
-            val vertScroll = v !is HorizontalScrollView && (v is AbsListView || cn.endsWith("ScrollView") || cn.endsWith("RecyclerView"))   // (v922) + RecyclerView
+            val vertScroll = v !is HorizontalScrollView && (v is AbsListView || v is android.widget.ScrollView || cn.endsWith("ScrollView") || cn.endsWith("RecyclerView"))   // (v924) + ScrollView الأصلي (MaxHeightScroll بتاع الإعدادات اسمه مش بينتهي بـScrollView فكان الحشو بيفوّته)   // (v922) + RecyclerView
             if (vertScroll) {
                 val old0 = padded[v] ?: 0
                 val old = if (v.paddingBottom >= old0) old0 else 0   // (v922) الصفحة رجّعت الحشو لنفسها (setPadding) = نعيده من الأول

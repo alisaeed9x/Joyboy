@@ -266,7 +266,7 @@ class NetStatsUi(private val act: Activity, private val ui: Ui, private val th: 
     fun show() {
         NetLedger.flushNow()
         render()
-        val d = ui.sheet(act, "📶 استهلاك الداتا", listOf<View>(col))
+        val d = ui.sheet(act, "📶 استهلاك الداتا", listOf<View>(col), solid = true)   // (v924) معتمة: الإعدادات اللي وراها كانت بتبان وتلخبط
         dialogs.add(d); d.show()
     }
 }
