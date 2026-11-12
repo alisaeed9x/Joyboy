@@ -37,6 +37,8 @@ public final class JoyboyPlayerHost {
         default String audioUrl() { return null; }
         /** JOYBOY(v937): true while the sleep timer is set to "end of this video" (the add-on must not auto-advance). */
         default boolean endOfVideoSleep() { return false; }
+        /** JOYBOY(v939): MeeTube's stored end-of-video mode (PlayerConstants: 0 PAUSE, 1 CLOSE, 2 ALL, 3 ONE, 4 SHUFFLE, 5 LIST, 6 REVERSE_LIST). Default ALL so the add-on keeps its old behaviour when the Activity does not supply it. The add-on must not auto-advance when the user chose PAUSE/CLOSE, and must not open the next item when MeeTube itself repeats (ONE). */
+        default int playbackMode() { return 2; }
     }
 
     /** Implemented on the Joyboy side (MtTranslate). */
@@ -56,9 +58,6 @@ public final class JoyboyPlayerHost {
         /** Phase 4: a key the add-on wants first (TV remote layer). true = consumed. */
         default boolean onKey(Activity activity, KeyEvent event) { return false; }
 
-        /** JOYBOY(v939): true when this source must minimize to system PiP over its originating app (e.g. Joyboy Browser). */
-        default boolean preferSystemPip(Activity activity) { return false; }
-
         /** Phase 2: controls shown/hidden, so the subtitle bottom margin can follow them. */
         default void onControlsVisibility(Activity activity, boolean visible) { }
 
@@ -67,6 +66,9 @@ public final class JoyboyPlayerHost {
 
         /** JOYBOY(v937) phase 3: previous (-1) / next (+1) pressed; true = the add-on opened another episode itself. */
         default boolean onStep(Activity activity, int dir) { return false; }
+
+        /** JOYBOY(v939): the player is being minimized (drag-down / pinch / minimize button). The add-on records the source-aware restore target (MtOrigin) and returns false so MeeTube minimizes as before; return true only if the add-on consumed the gesture itself. */
+        default boolean onMinimize(Activity activity) { return false; }
     }
 
     private static volatile Provider sProvider;
@@ -111,16 +113,6 @@ public final class JoyboyPlayerHost {
         }
     }
 
-    /** JOYBOY(v939): source-aware minimize policy. Never throws; false preserves MeeTube's native Browse mini-card. */
-    public static boolean preferSystemPip(Activity activity) {
-        try {
-            Provider p = sProvider;
-            return p != null && activity != null && p.preferSystemPip(activity);
-        } catch (RuntimeException e) {
-            return false;
-        }
-    }
-
     /** JOYBOY(v930): offers a key event to the add-on first. true = consumed. Never throws. */
     public static boolean onKey(Activity activity, KeyEvent event) {
         try {
@@ -136,6 +128,16 @@ public final class JoyboyPlayerHost {
         try {
             Provider p = sProvider;
             return p != null && activity != null && p.onStep(activity, dir);
+        } catch (RuntimeException e) {
+            return false;
+        }
+    }
+
+    /** JOYBOY(v939): the player is being minimized; the add-on records the restore target. true = consumed by the add-on. Never throws. */
+    public static boolean onMinimize(Activity activity) {
+        try {
+            Provider p = sProvider;
+            return p != null && activity != null && p.onMinimize(activity);
         } catch (RuntimeException e) {
             return false;
         }

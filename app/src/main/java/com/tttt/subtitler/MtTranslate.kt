@@ -6,6 +6,7 @@ import android.graphics.drawable.GradientDrawable
 import android.os.Handler
 import android.os.Looper
 import android.view.Gravity
+import android.view.KeyEvent
 import android.view.View
 import android.view.ViewGroup
 import android.widget.FrameLayout
@@ -121,10 +122,76 @@ object MtTranslate : JoyboyPlayerHost.Provider {
     /** (v937 م3) ⏮ ⏭ في MeeTube ← حلقات فولدر المكتبة */
     override fun onStep(activity: Activity, dir: Int): Boolean = try { MtMedia.onStep(activity, dir) } catch (_: Throwable) { false }
 
-    /** JOYBOY(v939): Browser-origin streams minimize to Android PiP so the Joyboy Browser remains underneath. */
-    override fun preferSystemPip(activity: Activity): Boolean = try {
-        MtWeb.preferSystemPip(try { info?.localUri() } catch (_: Throwable) { null }, try { info?.videoId() } catch (_: Throwable) { null })
-    } catch (_: Throwable) { false }
+    /** (v939) قفز بالأرقام على التلفزيون (نفس سلوك Player.tvDigit): آخر رقمين = ثواني، واللي قبلهم دقايق — دوسة OK أو استنى 2.2ث */
+    private var tvDigits = ""
+    private var tvDigitRun: Runnable? = null
+
+    override fun onKey(activity: Activity, event: KeyEvent): Boolean {
+        return try {
+            if (!DeviceUi.isTv(activity)) return false
+            if (event.action != KeyEvent.ACTION_DOWN) return false
+            val d = when (event.keyCode) {
+                KeyEvent.KEYCODE_0 -> 0
+                KeyEvent.KEYCODE_1 -> 1
+                KeyEvent.KEYCODE_2 -> 2
+                KeyEvent.KEYCODE_3 -> 3
+                KeyEvent.KEYCODE_4 -> 4
+                KeyEvent.KEYCODE_5 -> 5
+                KeyEvent.KEYCODE_6 -> 6
+                KeyEvent.KEYCODE_7 -> 7
+                KeyEvent.KEYCODE_8 -> 8
+                KeyEvent.KEYCODE_9 -> 9
+                KeyEvent.KEYCODE_NUMPAD_0 -> 0
+                KeyEvent.KEYCODE_NUMPAD_1 -> 1
+                KeyEvent.KEYCODE_NUMPAD_2 -> 2
+                KeyEvent.KEYCODE_NUMPAD_3 -> 3
+                KeyEvent.KEYCODE_NUMPAD_4 -> 4
+                KeyEvent.KEYCODE_NUMPAD_5 -> 5
+                KeyEvent.KEYCODE_NUMPAD_6 -> 6
+                KeyEvent.KEYCODE_NUMPAD_7 -> 7
+                KeyEvent.KEYCODE_NUMPAD_8 -> 8
+                KeyEvent.KEYCODE_NUMPAD_9 -> 9
+                else -> return false
+            }
+            if (act !== activity || player == null) return false
+            if (tvDigits.length >= 4) tvDigits = ""
+            tvDigits += d.toString()
+            Notice.show(activity, "⏱ روح لوقت: $tvDigits (آخر رقمين = ثواني)", 1500L)
+            tvDigitRun?.let { ui.removeCallbacks(it) }
+            val r = Runnable {
+                val buf = tvDigits
+                tvDigits = ""
+                tvDigitRun = null
+                if (buf.isEmpty()) return@Runnable
+                val sec = if (buf.length <= 2) buf.toIntOrNull() ?: 0 else (buf.dropLast(2).toIntOrNull() ?: 0) * 60 + (buf.takeLast(2).toIntOrNull() ?: 0)
+                try {
+                    val p = player ?: return@Runnable
+                    val dur = try { p.duration } catch (_: Throwable) { 0L }
+                    p.seekTo((sec * 1000L).coerceIn(0L, if (dur > 0L) dur else Long.MAX_VALUE))
+                    Notice.show(activity, "⏱ " + PlayerLogic.clock(sec * 1000L), 1100L)
+                } catch (e: Throwable) {
+                    LogStore.err("MtTranslate:tvJump", e)
+                }
+            }
+            tvDigitRun = r
+            ui.postDelayed(r, 2200L)
+            true
+        } catch (_: Throwable) {
+            false
+        }
+    }
+
+    /** (v939) تصغير المشغّل (سحب لتحت/قرص/زرار): نسجّل وجهة الاستعادة من المصدر الأصلي في اللوج ونسيب MeeTube يصغّر زي ما هو — false = الإيماءة مش مستهلكة عندنا */
+    override fun onMinimize(activity: Activity): Boolean {
+        return try {
+            if (act !== activity) return false
+            val kind = MtOrigin.current()?.kind
+            LogStore.add("MtOrigin: minimize → " + (MtOrigin.minimizeTarget()?.name ?: "none"))
+            kind != null && kind != MtOrigin.Kind.YOUTUBE && kind != MtOrigin.Kind.REMOTE_TV
+        } catch (_: Throwable) {
+            false
+        }
+    }
 
     /** (v937 م3) هوية الفيديو للاستكمال/«آخر المشغّلة» (نفس مفتاح مشغّل Joyboy، مع forceid) */
     internal fun joyVid(a: Activity, lu: String): String = idOverride["L:$lu"] ?: localVid(a, lu)

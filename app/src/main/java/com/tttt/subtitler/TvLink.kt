@@ -414,7 +414,7 @@ object TvLink {
         when (j.optString("a")) {
             "add" -> PlayQueue.add(app, j.optString("ref"), j.optString("title"))
             "addcur" -> {   // (v779) ➕ من الريموت: ضيف الفيديو الشغّال دلوقتي على التلفزيون
-                val o = PlayerActivity.remoteQueueCur() ?: return err(404, "noplayer")
+                val o = PlayerActivity.remoteQueueCur() ?: MtTvPlayer.remoteQueueCur() ?: return err(404, "noplayer")
                 val rf = o.optString("ref")
                 if (rf.isEmpty()) return err(409, "noref")
                 PlayQueue.add(app, rf, o.optString("title"))
@@ -429,7 +429,7 @@ object TvLink {
 
     /** (v694) وصف الفيديو الشغّال دلوقتي (لينك / يوتيوب / فيديو الموبايل) + مكانه — والتلفزيون بيوقّفه مؤقتًا. 404 = مفيش مشغّل */
     private fun handoff(): HttpRes {
-        val o = PlayerActivity.remoteHandoff() ?: return err(404, "noplayer")
+        val o = PlayerActivity.remoteHandoff() ?: MtTvPlayer.remoteHandoff() ?: return err(404, "noplayer")
         return ok(o)
     }
 
@@ -568,7 +568,7 @@ object TvLink {
                     "vol_up" -> am.adjustStreamVolume(AudioManager.STREAM_MUSIC, AudioManager.ADJUST_RAISE, AudioManager.FLAG_SHOW_UI)
                     "vol_down" -> am.adjustStreamVolume(AudioManager.STREAM_MUSIC, AudioManager.ADJUST_LOWER, AudioManager.FLAG_SHOW_UI)
                     "mute" -> am.adjustStreamVolume(AudioManager.STREAM_MUSIC, AudioManager.ADJUST_TOGGLE_MUTE, AudioManager.FLAG_SHOW_UI)
-                    "playpause" -> { if (!PlayerActivity.remoteToggle()) { if (MusicEngine.isPlaying) MusicEngine.pause() else MusicEngine.resume() } }
+                    "playpause" -> { if (!PlayerActivity.remoteToggle() && !MtTvPlayer.remoteToggle()) { if (MusicEngine.isPlaying) MusicEngine.pause() else MusicEngine.resume() } }
                     "open_yt" -> showTv("youtube")
                     "open_browser" -> showTv("browser")
                     "open_sd" -> showTv("sd")

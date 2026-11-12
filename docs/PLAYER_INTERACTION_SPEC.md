@@ -1,40 +1,71 @@
-# Player Interaction Specification — v939
+# مواصفة التفاعل (PLAYER INTERACTION SPEC) — v939
 
-## Source identity
-- The launch intent is the source of truth for origin metadata.
-- Browser-origin streams carry `ret=browser`, original page URL (when known), Referer, User-Agent and Cookie. YouTube IDs opened by Browser retain the same return-origin metadata keyed by video ID.
-- `MtWeb` associates metadata with the exact stream URI and exposes a minimize policy for that URI.
-- The playback Activity must not infer the origin from whichever Activity resumed most recently.
+> لم يتم compile ولا اتجرّب على جهاز. المواصفة دي بتوصف الكود الحالي.
 
-## Minimize interactions
-| Input | Browser-origin stream | Other sources |
+## 1. إيماءات المشغّل (موبايل/تابلت)
+
+| الإيماءة | السلوك | المصدر |
 |---|---|---|
-| Fullscreen drag down | Enter Android system PiP | Existing MeeTube MiniHost handoff |
-| Back minimize gesture | Same centralized drag/minimize path | Existing MeeTube behavior |
-| Minimize control | Must use the same source policy when wired | Existing MeeTube behavior |
-| PiP expand | Restore same MeeTube session | Native PiP restoration |
-| PiP dismiss | Close only playback task; Browser task remains | Existing MeeTube dismiss policy |
+| سحب الفيديو لأسفل (ملء شاشة) | تصغير مصدر-واعي: يوتيوب ← دوك MeeTube؛ غير يوتيوب ← PiP النظام؛ لو PiP اترفض ← مسار التصغير العادي | `MobilePlaybackActivity.minimizeByDrag` + `JoyboyPlayerHost.onMinimize` |
+| قرص للداخل (pinch) | زوم (سلوك MeeTube الأصلي) — **مش** تصغير | MeeTube |
+| سحب أفقي على الفيديو | تقديم/تأخير (seek) — سلوك MeeTube | MeeTube |
+| ضغطة مزدوجة يمين/يسار | تقديم/تأخير بخطوة `seek_step_s` (5/10/15/30/60، افتراضي 10) | `StepBack.kt` / `Cfg` |
+| ضغطة على الفيديو | إظهار/إخفاء الكروم | MeeTube |
+| Back (ملء شاشة) | إخفاء الكروم أولاً، وبعدين تصغير/إغلاق حسب المصدر | MeeTube + `MtWeb`/`MtOrigin.onDetach` |
+| دوران الشاشة | يوتيوب: portrait أولاً. محلي/مباشر: landscape fullscreen تلقائي (v933) مع الحفاظ على شكل الفيديو | `MtPlay` |
 
-If PiP entry is refused by the OEM, restore the full player and do not fall through to BrowseView.
+- التصغير مش بيعمل Activity جديدة ولا بيعيد التشغيل ولا بينقّل ليوتيوب.
+- الاستعادة من PiP/الدوك بترجع لنفس الجلسة (نفس الموضع والحالة).
 
-## Bottom navigation indicator
-- Selection state is rendered independently from the optional lens effect.
-- While the lens runs, keep the indicator partially visible; the lens completion callback restores full opacity.
-- If the lens is disabled or unsupported, use the normal indicator animation.
-- Re-layout must recalculate the indicator position from the selected cell bounds.
+## 2. أزرار المشغّل
 
-## TV remote — acceptance contract (not yet implemented in v939)
-- Preserve existing HTTP/RPC payload names and response keys.
-- Commands must be idempotent where repeat delivery is possible.
-- `close` must not be interpreted as natural end-of-media and must not trigger autoplay-next.
-- Numeric seek: digit entry → visible buffer → OK commits → Back clears.
-- D-pad focus must never be lost behind a hidden overlay.
-- `mt_tv_player` default is `false`; legacy `Player.kt` remains the TV fallback.
+| الزر | السلوك |
+|---|---|
+| تشغيل/إيقاف (▮▮) | تبديل، بخفوت 25% مقصود |
+| السابق/التالي | حلقة المكتبة (`MtMedia.onStep`) — بيلف لو `autoplay_wrap`، وإلا إشعار أول/آخر حلقة |
+| السرعة | تدوير قائمة `PlayerLogic` (نفس قائمة المشغّل القديم) |
+| A-B | `ab_a` / `ab_b` / `ab_x` عبر `MtMedia` |
+| تكرار | عادي ← نفس الفيديو ← كل الفولدر (`loop`/`autoplay_wrap`) |
+| 🌐 ترجمة | بدء/وقف/استئناف من `MtTranslate` |
+| ⚙ إعدادات | قايمة: وضع مزدوج، جمل، إزاحة، تلفزيون، إعدادات المحرك |
+| إغلاق | إيقاف + حفظ `recent` + الرجوع للمصدر (`ret` / `MtOrigin`) |
 
-## Regression cases
-1. Browser page → open captured video → fullscreen → drag down: Browser is visible under PiP; no YouTube/BrowseView navigation.
-2. Browser-origin video → PiP refused: fullscreen player is restored.
-3. YouTube-origin video → minimize: existing MeeTube behavior is unchanged.
-4. Local media → minimize: existing MeeTube MiniHost behavior is unchanged.
-5. Bottom-nav lens enabled → tap YouTube/Select/other destinations: selected capsule remains visible during and after transition.
-6. TV flag absent or false: legacy TV route remains active.
+## 3. ريموت التلفزيون (D-pad) — عبر `MtTvPlayer` (العلم `mt_tv_player=false`)
+
+| المفتاح | السلوك |
+|---|---|
+| OK / وسط | تشغيل/إيقاف |
+| يمين/يسار (ضغطة) | تقديم/تأخير بخطوة البحث |
+| يمين/يسار (مطوّل) | scrub — تراكم في `tvScrubTo` والتثبيت بعد 800ms (سلوك المشغّل القديم؛ في MtTvPlayer حالياً فوري — فرق معروف) |
+| فوق/تحت | تنقّل بين عناصر شريط التلفزيون |
+| أرقام 0–9 | قفز رقمي: آخر رقمين = ثواني، تأكيد بعد 2.2 ثانية، مؤشر رقمي مرئي (`TvScrub`/`Notice`) — `MtTranslate.onKey` |
+| Back | إخفاء الكروم ← إغلاق المشغّل |
+| Menu | قايمة أدوات التلفزيون |
+
+- أوامر الريموت من الموبايل: نفس أسماء `rAct` القديمة (`toggle/seek/seekto/prev/next/speed/
+  speedset/close/loop/loopset/ab_a/ab_b/ab_x/qset/aset/volume.set/fit`) — غير المدعوم بيرجع
+  `false` بصراحة والموبايل بيخفي زره.
+- الحقول المعلنة في `state()`: `title/pos/dur/playing/speed/vol/fit/loop/lm/ab/cc/quality/audio/
+  ql/qc/al/ac/vw/vh/src/spd/kind` — بس المتنفذ فعلاً (`cc/quality/audio=false` بصراحة).
+
+## 4. نهاية الفيديو والطابور
+
+- `playbackMode`: `0 PAUSE` = إيقاف بلا التالي · `1 CLOSE` = إغلاق بلا التالي ·
+  `2 ALL` = التالي · `3 ONE` = إعادة نفس الفيديو.
+- التالي بيشتغل **مرة واحدة بالظبط** — الإغلاق المقصود عمره ما يفتح التالي.
+- التكرار: عادي / نفس الفيديو / كل الفولدر — نفس مفاتيح `Cfg` بتاعة المشغّل القديم.
+
+## 5. PiP والخلفية
+
+- PiP: للمصادر غير اليوتيوبية فقط. الدخول من `minimizeByDrag` بعد موافقة `onMinimize`.
+  لو الجهاز مش بيدعم PiP، `enterPipMode()` بيرفض بهدوء وبيكمل مسار التصغير العادي.
+- الخروج من PiP = استعادة نفس الجلسة (مش Activity جديدة).
+- تشغيل الخلفية: MeeTube `MediaService` — الترجمة بتكمل من `MtTranslate` والمحرك `Engine`.
+
+## 6. حالات خاصة
+
+- **`.part` نشط (بيتحمّل دلوقتي):** بيفضل على مشغّل Joyboy — MeeTube مش بيعيد تجهيز الملف وهو بيكبر.
+  `.part` متوقف/خلصان: مسموح في MeeTube (مستقر على القرص).
+- **`mirror_uri` / `handoff`:** بيفضلوا على مشغّل Joyboy عن قصد (مراية الريموت وجلسة المصغّر الحي
+  مربوطين بـ`Player.kt` — نقلهم لـMeeTube كان هيعيد التشغيل ويفقد الموضع).
+- **متخفي:** الهوية الخام من غير ربط، وبلا تسجيل في «المصطادة» أو «آخر المشغّلة».

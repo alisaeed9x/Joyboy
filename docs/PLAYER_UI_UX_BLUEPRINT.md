@@ -1,44 +1,74 @@
-# Joyboy Player UI/UX Blueprint — v939
+# مخطط واجهة المشغّل (PLAYER UI/UX BLUEPRINT) — v939
 
-## Product intent
-MeeTube remains the unified playback surface on mobile. Joyboy owns the integration layer: source identity, translation controls, library history, browser return behavior, and (later) TV remote parity. The visual language must remain MeeTube's existing glass treatment rather than introducing a second player design system.
+> مرجع التنفيذ: الشجرة الحالية (v939). كل حاجة هنا مبنية على مكونات موجودة فعلاً
+> (MtGlass / BottomNav / TvPlayerBar / MeeTube glass) — مش هوية جديدة.
+> لم يتم compile ولا اتجرّب على جهاز — البناء الحقيقي هو GitHub Actions، والتجربة على TCL.
 
-## Shared visual tokens
-- Reuse MeeTube glass surfaces, existing `MtGlass`/`MtPlayerLook` colors, corner radii, blur and motion curves.
-- Keep control hierarchy consistent: primary transport controls, timeline, secondary media actions, then contextual translation tools.
-- Keep text labels readable and localized; icons alone are insufficient for uncommon actions such as subtitle translation or audio-track selection.
-- Respect system insets, RTL/LTR, font scaling, and TV safe areas.
-- Avoid full-screen blur or per-frame work on the UI thread. Prefer existing MeeTube animation primitives.
+## 1. الهوية البصرية للمشغّل
 
-## Screen specifications
+- **الثيم الافتراضي:** `ytglass` — خلفية `#0F0F0F`، كروت `#272727`، أحمر `#FF0000` (من v884).
+  المشغّل بيتبع ثيم Joyboy (`MeeTubeLink.syncMtTheme`) — مفيش ثيم منفصل للمشغّل.
+- **الزجاج:** `MtGlass` هو لغة السطح الواحدة — أزرار عائمة، شيتات، الكبسولة.
+  لون الكبسولة المحددة: `MtGlass.selected(th)` = `0x24FFFFFF` (داكن) / `0x14000000` (فاتح)،
+  زوايا 22dp (`BottomNav.kt`). اللون واحد لكل التبويبات — التحديد بيتحرك مش بيتغيّر لونه.
+- **الأيقونات:** زر الإيقاف المؤقت يستخدم `▮▮` (الحرف `⏸` U+23F8 مش بيترسم على جهاز المستخدم).
+  أزرار المشغّل العائمة عندها خفوت 25% مقصود — محدش يرفعه.
+- **لا أخضر** في أي لون (تفضيل المستخدم). لا Jetpack Compose — Activities + Kotlin/Java + WebView.
 
-### Fullscreen player — mobile/tablet
-- Video surface owns the visual focus; controls appear on the existing MeeTube visibility lifecycle.
-- Primary row: play/pause, previous/next where available, seek affordances, and timeline.
-- Secondary row/sheet: quality, audio track, speed, subtitle, translation, download, repeat and sleep timer.
-- Joyboy translation pill and settings pill remain integrated in the existing options row; subtitle overlay margin follows control visibility.
-- Source context is not shown as a disruptive banner. It is retained in session state and used for return/minimize routing.
+## 2. المشغّل بملء الشاشة (MeeTube `MobilePlaybackActivity`)
 
-### Browser-origin mini player
-- For Joyboy Browser-origin media, use Android system PiP as the safe overlay while the Joyboy Browser remains underneath. This avoids routing into MeeTube's own Browse feed, which is not the originating page.
-- PiP shows only the video and native playback actions. Expanding returns to the same MeeTube playback session.
-- If the device refuses PiP, restore the fullscreen player and do not navigate to an unrelated feed.
-- This is intentionally a source-specific fallback; a future in-app Browser card requires Browser to implement a proper `MiniHost` surface contract.
+- المحرك الأساسي. التشغيل/الإيقاف/السرعة/الجودة/الصوت من MeeTube نفسه.
+- إضافات Joyboy (من `MtTranslate.pill`): زر 🌐 + ⚙ في `mOptionsRow` — بدء/وقف الترجمة،
+  وضع مزدوج، جمل، إزاحة، تلفزيون، إعدادات المحرك.
+- A-B: كبسولة + بند من `MtMedia` (نفس مفاتيح `Cfg` بتاعة المشغّل القديم).
+- التكرار: `loop` / `autoplay_wrap` — نفس المفاتيح، فالإعدادات القديمة بتكمل.
+- السحب لأسفل (drag-down) = تصغير؛ القرص (pinch) = زوم مش تصغير (سلوك MeeTube الأصلي محفوظ).
+- لا يوجد زر تصغير منفصل في MeeTube — التصغير بيتم بالسحب أو عن طريق `JoyboyPlayerHost.onMinimize`
+  اللي بيحوّل المصادر غير اليوتيوبية إلى PiP النظام (v939).
 
-### Bottom navigation
-- One reusable indicator follows the selected cell; no per-button duplicate capsules.
-- The glass capsule must remain visible while the optional navigation lens animates. The lens may enhance the transition but must not be the only thing making the selected state visible.
-- Recompute geometry after order changes, RTL layout, and width changes. Preserve the selected state after Activity transitions.
+## 3. المشغّل المصغّر (mini player) — التصميم المصدر-واعي
 
-### Android TV player (planned, disabled)
-- Do not ship the mobile touch overlay as the TV UI.
-- Dedicated D-pad control strip with large focus targets, visible focus ring, stable focus restoration, and Back closing the topmost sheet before leaving playback.
-- Numeric seek overlay accepts digits, confirms on OK, cancels on Back, and times out safely.
-- Translation, subtitle, audio and quality sheets must be focusable and usable at viewing distance.
-- New TV player remains behind `mt_tv_player=false` until physical TCL validation.
+- **قاعدة واحدة:** المصدر بيتسجّل مرة واحدة عند الفتح في `MtOrigin` (نوع المصدر، الرابط/الملف،
+  `ret`، الصفحة الأصلية، معرّف الجلسة، الهيدرز). كل مسارات التصغير/الرجوع بتقرأ منه —
+  مفيش مسار بيخمّن الوجهة من الـActivity اللي شغالة.
+- **يوتيوب** → دوك MeeTube الأصلي (mini host بتاع MeeTube).
+- **متصفح / واتساب / ملف محلي / رابط مباشر / قائمة** → PiP بتاع النظام فوق التطبيق الأصلي
+  (المتصفح يفضل مفتوح تحت الفيديو، والواتساب يفضل وراه).
+- **تلفزيون (ريموت)** → واجهة مشغّل التلفزيون، مش PiP.
+- شكل الـPiP: سطح عائم بزوايا مستديرة، نسبة العرض للفيديو الأصلي، سحب للتحريك (النظام)،
+  زر توسيع (رجوع لملء الشاشة لنفس الجلسة — من غير إعادة تشغيل ولا Activity جديدة)،
+  زر إغلاق (إنهاء الجلسة + الرجوع للمصدر عن طريق `MtWeb.onDetach` / `MtOrigin.onDetach`).
+- الحالة المحفوظة عبر التصغير/الاستعادة: الموضع، تشغيل/إيقاف، الصوت، السرعة، السبتايتل،
+  الترجمة، حالة ملء الشاشة، الطابور، هوية الفيديو، المصدر.
 
-## Motion principles
-- Preserve MeeTube's existing fullscreen morph, swipe-down and PiP transitions.
-- Source routing is independent of animation completion; animation callbacks must never choose the destination.
-- A cancelled or refused transition restores the player to a usable state.
-- No second ExoPlayer instance is created during minimize/restore.
+## 4. شريط التنقل السفلي (BottomNav)
+
+- مؤشر واحد قابل لإعادة الاستخدام (`place()` هو السائق الوحيد) — مش كبسولات منفصلة لكل زر.
+- الكبسولة بتتبع العنصر المحدد فعلاً: بعد كل `set()` / `mode()` بيتنادى `place()` مباشرة
+  (v939 — قبل كده كان الاعتماد على listener لحدود الصف اللي عمره ما بيتنادى عند تبديل الأطفال).
+- لو الخلية لسه مش مقاسة (`width == 0`) بيحاول تاني لحد 10 مرات بدل ما يسكت.
+- خريطة الخلايا: `4 → YT_HOME` في ترتيب يوتيوب، وخلايا يوتيوب `→ 4` في الترتيب العادي —
+  قبل كده يوتيوب كان بيقع على `⋯`.
+- مسار الرجوع بعد 600ms اللي كان بيرجّع الكبسولة للميديا اتشال — الكبسولة بتعكس الحالة الحقيقية.
+- الكبسولة بتاعة MeeTube نفسه (الصف العلوي Home/Subs/Shorts/You) ليها fallback بعد 1200ms
+  لو الـlens settle اتفقد (v939) — مسار السحب لسه من غير fallback آمن (خطر معروف).
+- RTL: قاعدة المؤشر `LEFT` مطلقة (مش `START`) لأن `place()` بيحسب `translationX` مطلق —
+  الصف نفسه بيفضل RTL.
+
+## 5. واجهة التلفزيون (D-pad)
+
+- ورا العلم `mt_tv_player` (افتراضي **false**) — مشغّل Joyboy القديم هو الاحتياطي لحد ما يتجرّب على TCL.
+- المكونات الموجودة بتتربط على `MtTvPlayer` بنفس واجهة `TvPlayerBar.Actions` اللي بيستخدمها
+  المشغّل القديم: `TvPlayerBar` / `TvScrub` / `TvInput` / `TvFocus` / `TvJump`.
+- ضوابط كبيرة قابلة للتركيز، مؤشر تركيز واضح، استعادة تركيز بعد كل شيت، Back بيخفي الكروم أولاً
+  وبعدين بيقفل. أرقام الريموت = قفز رقمي (آخر رقمين = ثواني، تأكيد بعد 2.2 ثانية — `MtTranslate.onKey`).
+- ضوابط الريموت من الموبايل بتيجي من نفس `rState` — الحقول اللي مش متنفذة في `MtTvPlayer.state()`
+  مش بتتعلن أصلاً، فالموبايل بيخفيها بدل ما يدوّر على زر ميت. `act()` بيرجع `false` بصراحة
+  للأوامر غير المدعومة (قبل v939 كان بيرجع `true` كذب).
+
+## 6. ما اتعملش لسه (مش في v939)
+
+- ربط `TvPlayerBar` الكامل بـ`MtTvPlayer` (الواجهة موجودة، الربط مرحلة 4 جزء 2).
+- جسر `engine.*` RPC والـSfJob (سبتايتل من الموبايل) — محتاجين نقل حالة من `PlayerActivity`.
+- `fit`/`rotate` عبر `PlayerView`، الوضع البصري، الدبلجة الصوتية — مش متنفذة في MeeTube.
+- موك-أب / سكرين شوت — مفيش جهاز ولا محاكي هنا؛ الصور تتاخد من TCL بعد البناء.

@@ -1925,6 +1925,13 @@ class MainActivity : Activity() {
     override fun onNewIntent(i: Intent?) {
         super.onNewIntent(i)
         if (DeviceUi.isTv(this) && !fromPlayer) fromTv = true   // (v482)
+        // (v939) إعادة توجيه باردة كانت بتحصل في onCreate بس — intent جديد من غير وجهة صريحة (لا تبويب ولا yt_open ولا رابط)
+        // كان بيتفتح على واجهة الموبايل بدل TvActivity: نفس شرط البداية بالظبط، بيتطبق هنا كمان قبل أي توزيع تبويب
+        if (DeviceUi.isTv(this) && !fromPlayer && i?.getBooleanExtra("force_phone", false) != true && i?.getStringExtra("tab") == null &&
+            i?.action != Intent.ACTION_VIEW && i?.action != Intent.ACTION_SEND && i?.getStringExtra("yt_open") == null &&
+            i?.getStringExtra(Links.EX_URL) == null) {
+            startActivity(Intent(this, TvActivity::class.java)); finish(); return
+        }
         i?.getStringExtra("ytaudio")?.let { id ->   // (v343) 🎧 من مشغّل الفيديو: كمّل كصوت من نفس المكان
             try {
                 playYtAudio(id, i?.getStringExtra("ytaudtitle") ?: "", "", "", false, (i?.getLongExtra("ytaudpos", 0L) ?: 0L).toInt(),

@@ -26,7 +26,13 @@ public class SplashActivity extends MotherActivity implements SplashView {
 
         // (v927) فتح البرنامج من أيقونة اللانشر = صفحة الميديا (Joyboy MainActivity) مش يوتيوب. يوتيوب بيتفتح من الشريط
         // السفلي / اللينكات (Intent من غير MAIN+LAUNCHER) فمش متأثرين.
-        if (openJoyboyFromLauncher(mNewIntent)) {
+        // (v939) ضغطة أيقونة اللانشر — باردة أو دافية — لازم تروح لواجهة Joyboy، وعمرها ما تقع على تصفّح يوتيوب
+        if (isLauncherMain(mNewIntent)) {
+            if (openJoyboyFromLauncher(mNewIntent)) {
+                finish();
+                overridePendingTransition(0, 0);
+                return;
+            }
             finish();
             overridePendingTransition(0, 0);
             return;
@@ -53,7 +59,8 @@ public class SplashActivity extends MotherActivity implements SplashView {
         }
 
         // JOYBOY(v932): على التلفزيون ضغطة الأيقونة تاني = لانشر التلفزيون مش صفحة MeeTube
-        if (isRealTv() && openJoyboyFromLauncher(intent)) {
+        // JOYBOY(v939): نفس منطق onCreate — قرار التلفزيون هنا كمان بيعتمد على تفضيل ui_mode مش الهاردوير بس
+        if (openJoyboyFromLauncher(intent)) {
             finish();
             overridePendingTransition(0, 0);
             return;
@@ -101,12 +108,38 @@ public class SplashActivity extends MotherActivity implements SplashView {
         }
     }
 
+    /**
+     * JOYBOY(v939): «تلفزيون» هنا = هاردوير التلفزيون أو تفضيل ui_mode=tv بتاع Joyboy (نفس تعريف DeviceUi.isTv
+     * في :app — :mobile مايقدرش ينده DeviceUi فبنقرا نفس ملف التفضيلات "p" ونفس المفتاح بالاسم).
+     * من غير ده أي TCL/ستيك مابيبلّغش LEANBACK كان بيقع على يوتيوب، والموبايل في وضع TV كان بيتجاهل تمامًا.
+     */
+    private boolean isTvMode() {
+        if (isRealTv()) {
+            return true;
+        }
+        try {
+            String m = getSharedPreferences("p", MODE_PRIVATE).getString("ui_mode", "auto");
+            return "tv".equals(m);
+        } catch (Throwable e) {
+            return false;
+        }
+    }
+
+    /** JOYBOY(v939): ضغطة أيقونة لانشر حقيقية (MAIN + LAUNCHER/LEANBACK + من غير data) — دي اللي لازم تروح لـJoyboy مش للـpresenter. */
+    private boolean isLauncherMain(Intent intent) {
+        return intent != null
+                && Intent.ACTION_MAIN.equals(intent.getAction())
+                && (intent.hasCategory(Intent.CATEGORY_LAUNCHER)
+                        || intent.hasCategory(Intent.CATEGORY_LEANBACK_LAUNCHER))
+                && intent.getData() == null;
+    }
+
     private boolean openJoyboyFromLauncher(Intent intent) {
         try {
-            boolean tv = isRealTv();
+            boolean tv = isTvMode();
             boolean launcher = intent != null && (intent.hasCategory(Intent.CATEGORY_LAUNCHER)
                     || (tv && intent.hasCategory(Intent.CATEGORY_LEANBACK_LAUNCHER)));
-            if (intent == null || !isTaskRoot() || !Intent.ACTION_MAIN.equals(intent.getAction())
+            if (intent == null || !Intent.ACTION_MAIN.equals(intent.getAction())
                     || !launcher || intent.getData() != null) {
                 return false;
             }

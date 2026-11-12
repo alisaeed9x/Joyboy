@@ -29,20 +29,6 @@ object MtWeb {
 
     private fun isWeb(u: String) = u.startsWith("http://", true) || u.startsWith("https://", true)
 
-    /** JOYBOY(v939): Browser-origin videos must float over Browser, not fall back to MeeTube BrowseView. */
-    fun onOpenYoutube(i: Intent, videoId: String) {
-        try {
-            val ret = i.getStringExtra("ret") ?: return
-            metas["yt:$videoId"] = Meta(videoId, ret, false)
-        } catch (_: Throwable) {}
-    }
-
-    fun preferSystemPip(src: String?, videoId: String?): Boolean = try {
-        val s = src?.takeIf { it.isNotBlank() }
-        val meta = if (s != null) metas[s] else videoId?.takeIf { it.isNotBlank() }?.let { metas["yt:$it"] }
-        meta?.ret == "browser"
-    } catch (_: Throwable) { false }
-
     /** (نسخة من Player.webId v138) هوية فيديو النت: الاسم في اللينك لوحده مش كفاية للينكات العامة */
     private fun webId(u: String, ref: String, title: String): String {
         val noFrag = u.substringBefore('#')
@@ -142,19 +128,25 @@ object MtWeb {
     /**
      * من MtMedia.detach: لو الأكتفيتي بتتقفل فعلاً (مش تغيير سطح/تدوير) ومفيش PiP، نرجّع للصفحة اللي فتحنا منها.
      * لو المستخدم انتقل لحلقة تانية جوه نفس المشغّل (openItem) الأكتفيتي مش بتتقفل فمفيش رجوع.
+     * true = رجّعنا فعلاً؛ false = مفيش ret هنا (MtMedia بيجرّب MtOrigin بعدها).
      */
-    fun onDetach(a: Activity, src: String?, videoId: String? = null) {
+    fun onDetach(a: Activity, src: String?): Boolean {
         try {
-            val s = src?.takeIf { it.isNotBlank() } ?: videoId?.takeIf { it.isNotBlank() }?.let { "yt:$it" } ?: return
+            val s = src ?: return false
             snapKey = null
-            val m = metas[s] ?: return
-            if (!a.isFinishing || a.isChangingConfigurations) return
+            val m = metas[s] ?: return false
+            if (!a.isFinishing || a.isChangingConfigurations) return false
             metas.remove(s)
             val flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
             when (m.ret) {
                 "yt" -> a.startActivity(Intent(a, MainActivity::class.java).addFlags(flags).putExtra("tab", "youtube"))
                 "browser" -> a.startActivity(Intent(a, BrowserActivity::class.java).addFlags(flags))
+                else -> return false
             }
-        } catch (e: Throwable) { LogStore.err("MtWeb:ret", e) }
+            return true
+        } catch (e: Throwable) {
+            LogStore.err("MtWeb:ret", e)
+            return false
+        }
     }
 }

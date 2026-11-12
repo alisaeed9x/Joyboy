@@ -86,8 +86,15 @@ object BrainRpc {
         val wait = (r.query["wait"]?.toLongOrNull() ?: 0L).coerceIn(0L, 25000L)
         val ver = if (BrainBus.ver > since) BrainBus.ver else BrainBus.await(since, wait)
         BrainBus.lastSync = System.currentTimeMillis()
-        val st = try { JSONObject(BrainBus.stateJson) } catch (_: Throwable) { JSONObject() }
-        val out = JSONObject().put("ver", ver).put("st", st).put("live", PlayerActivity.hasLive()).put("ctl", BrainBus.owner.isOwner(r.header("x-token"), System.currentTimeMillis()))
+        val mtLive = try { MtTvPlayer.live() } catch (_: Throwable) { false }
+        val st = if (PlayerActivity.hasLive()) {
+            try { JSONObject(BrainBus.stateJson) } catch (_: Throwable) { JSONObject() }
+        } else if (mtLive) {
+            try { MtTvPlayer.state() } catch (_: Throwable) { null } ?: JSONObject()
+        } else {
+            JSONObject()
+        }
+        val out = JSONObject().put("ver", ver).put("st", st).put("live", PlayerActivity.hasLive() || mtLive).put("ctl", BrainBus.owner.isOwner(r.header("x-token"), System.currentTimeMillis()))
             .put("events", BrainBus.eventsSince(since))
             .put("tasks", try { JSONArray(BrainBus.tasksJson) } catch (_: Throwable) { JSONArray() })
             .put("eng", try { JSONObject(BrainBus.engineJson) } catch (_: Throwable) { JSONObject() })
@@ -102,7 +109,7 @@ object BrainRpc {
     fun frame(r: HttpReq): HttpRes {
         val w = (r.query["w"]?.toIntOrNull() ?: 480).coerceIn(160, 960)
         val q = r.query["q"]?.toIntOrNull() ?: 60
-        val b = synchronized(frameLock) { PlayerActivity.brainFrame(w, q) } ?: return HttpRes(204)
+        val b = synchronized(frameLock) { PlayerActivity.brainFrame(w, q) ?: MtTvPlayer.frameJpeg(w, q) } ?: return HttpRes(204)
         return HttpRes(200, "image/jpeg", b)
     }
 

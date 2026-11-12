@@ -43,7 +43,7 @@ class BottomNav(act: Activity, private val ui: Ui, private val th: Theme, privat
     private fun normalOrder(): List<Int> = NORMAL_ORDER.filter { it != REMOTE && !(it == IR && tvDev) }.map { if (it == NET && tvDev) 3 else it }   // (v815) على التلفزيون «المخزن» يفضل مكانه
     private fun ytOrder(): List<Int> = YT_ORDER.filter { it != NET || !tvDev }   // (v823) على التلفزيون زرار النت مش في الشريط
     private var order: List<Int> = if (lite) LITE_ORDER else normalOrder()   // (v554) زرار الريموت اتشال: وضع التلفزيون بزرار عايم
-    private fun cellOf(a: Int): Int = if (a in order) a else if (a == 1 && !lite && 0 in order) 0 else if (lite) (if (a == 7) YT_ME else -1) else MORE
+    private fun cellOf(a: Int): Int = if (a in order) a else if (a == 1 && !lite && 0 in order) 0 else if (a == 4 && YT_HOME in order) YT_HOME else if ((a == YT_HOME || a == YT_SUBS || a == YT_ME) && 4 in order) 4 else if (lite) (if (a == 7) YT_ME else -1) else MORE
     // ===== (v608) «المزيد» = صف تاني بينزلق لفوق جنب الصف الأساسي (بدل قايمة منبثقة). الريل (تابلت) لسه بالقايمة =====
     private var moreOpen = false
     /** (v820) بيتنده لما صف «المزيد» يتفتح/يتقفل (كبسولة إعدادات الصفحة بتختفي وهو مفتوح) */
@@ -226,6 +226,8 @@ class BottomNav(act: Activity, private val ui: Ui, private val th: Theme, privat
     private var moving = false
     private var snap = false
     private var navPending = false   // (v911) دوسة تبويب لسه مستنية تخلّص الأنيميشن قبل ما نبدّل الشاشة
+    // (v939) عدّاد إعادة محاولة وضع الكبسولة: الخلية لسه ما اتقاستش — بنعيد لحد 10 مرات وبعدين نقف بدل ما ندوّر للأبد
+    private var placeTries = 0
     private lateinit var rowLL: LinearLayout
     private val glassNav = MtGlass.on() && !rail   // (v893) تبويب مضيء (lit tab) بدل خط المؤشّر
     private val indicator = View(act).apply {
@@ -270,8 +272,8 @@ class BottomNav(act: Activity, private val ui: Ui, private val th: Theme, privat
                         // (v914) الأنيميشن والانتقال مع بعض: الانتقال بيبدأ في أول فريم (والعدسة شغّالة على الشريط القديم وهو بيتلاشى) بدل ما يستنى 300ms
                         postOnAnimation {
                             onPick(idx)
-                            // Main فاضلة تحت الشاشة الجديدة: نرجّع الكبسولة لمكانها بعد ما الانتقال يغطّيها، وإلا لما نرجع هنلاقيها على التبويب اللي مشينا منه
-                            if (inMain) postDelayed({ active = prev; paint(); indicator.animate().cancel(); indicator.alpha = 1f; place(false) }, 600L)
+                            // Main فاضلة تحت الشاشة الجديدة: نرجّع الكبسولة للتبويب اللي Main لسه عليه بعد ما الانتقال يغطّيها، وإلا لما نرجع هنلاقيها على التبويب اللي مشينا منه — بس لو المستخدم لسه ما بدّلش تبويب تاني في النص
+                            if (inMain) postDelayed({ if (active == idx) set(prev) }, 600L)
                             postDelayed({ navPending = false }, 600L)
                         }
                     } else onPick(idx) } }
@@ -281,8 +283,8 @@ class BottomNav(act: Activity, private val ui: Ui, private val th: Theme, privat
         fillRow()
         val wrap = FrameLayout(act)
         wrap.addView(row, if (rail) FrameLayout.LayoutParams(-2, -1) else FrameLayout.LayoutParams(-1, -2))
-        wrap.addView(indicator, if (rail) FrameLayout.LayoutParams(ui.dp(2), ui.dp(22), Gravity.START or Gravity.CENTER_VERTICAL) else if (glassNav) FrameLayout.LayoutParams(ui.dp(56), ui.dp(46), Gravity.TOP or Gravity.START) else FrameLayout.LayoutParams(ui.dp(22), ui.dp(2), Gravity.TOP or Gravity.START))
-        row.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> if (!moving) { place(false); snap = false } }
+        wrap.addView(indicator, if (rail) FrameLayout.LayoutParams(ui.dp(2), ui.dp(22), Gravity.START or Gravity.CENTER_VERTICAL) else if (glassNav) FrameLayout.LayoutParams(ui.dp(56), ui.dp(46), Gravity.TOP or Gravity.LEFT) else FrameLayout.LayoutParams(ui.dp(22), ui.dp(2), Gravity.TOP or Gravity.LEFT))
+        row.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> if (!moving && snap) { if (place(false)) snap = false } }
         rowV = row; lineV = line
         if (rail) { view.addView(wrap, LinearLayout.LayoutParams(0, -1, 1f)); view.addView(line, LinearLayout.LayoutParams(ui.dp(1), -1)) }
         else {
@@ -375,19 +377,22 @@ class BottomNav(act: Activity, private val ui: Ui, private val th: Theme, privat
         if (o == order) return
         order = o; snap = true; indicator.animate().cancel(); moving = false
         fillRow(); paint(); rowLL.requestLayout()
+        rowLL.post { if (place(false)) snap = false }
     }
 
-    private fun place(animate: Boolean) {
+    private fun place(animate: Boolean): Boolean {
         indicator.visibility = if (cellOf(active) in cells.indices) View.VISIBLE else View.INVISIBLE
-        val c = cells.getOrNull(cellOf(active)) ?: return
+        val c = cells.getOrNull(cellOf(active)) ?: return false
         if (rail) {   // (v462) المؤشر شريط رأسي بيتحرك على Y
-            if (c.height == 0) return
+            if (c.height == 0) { if (placeTries++ < 10) rowLL.post { place(false) }; return false }
             val y = (c.top + c.height / 2 - ui.dp(11)).toFloat()
             if (animate) { moving = true; indicator.animate().cancel(); indicator.animate().setStartDelay(0L).translationY(y).setDuration(300L).setInterpolator(OvershootInterpolator(1.4f)).withEndAction { moving = false }.start() }
             else { indicator.animate().cancel(); moving = false; indicator.translationY = y }
-            return
+            placeTries = 0
+            return true
         }
-        if (c.width == 0) return
+        if (c.width == 0) { if (placeTries++ < 10) rowLL.post { place(animate) }; return false }
+        placeTries = 0
         var iw = ui.dp(22)
         if (glassNav) {   // (v893) المؤشّر = كبسولة زجاجية مضيئة بعرض الخلية تقريبًا
             iw = minOf(c.width - ui.dp(10), ui.dp(72)); val ih = ui.dp(46)
@@ -404,6 +409,7 @@ class BottomNav(act: Activity, private val ui: Ui, private val th: Theme, privat
             indicator.animate().cancel(); moving = false
             indicator.translationX = x
         }
+        return true
     }
 
     /** (v897) عدسة MeeTube: (من خلية · لخلية · لما العدسة تهدى) ← true لو العدسة شغّالة (الكبسولة بتستنى وتظهر بعدها) · false = زحلقة عادية */
@@ -413,7 +419,7 @@ class BottomNav(act: Activity, private val ui: Ui, private val th: Theme, privat
         val before = cellOf(active)
         val changed = cellOf(i) != before
         active = i; paint()
-        if (snap) { rowLL.requestLayout() }
+        if (snap) { rowLL.requestLayout(); rowLL.post { if (place(false)) snap = false } }
         else if (changed) {
             val from = cells.getOrNull(before); val to = cells.getOrNull(cellOf(i))
             var lensOn = false
@@ -423,7 +429,11 @@ class BottomNav(act: Activity, private val ui: Ui, private val th: Theme, privat
                     lensOn = hook(from, to) { indicator.animate().cancel(); indicator.animate().setStartDelay(0L).alpha(1f).setDuration(180L).start() }
                 } catch (e: Throwable) { lensOn = false; LogStore.err("Nav:lens", e) }
             }
-            if (lensOn) { indicator.animate().cancel(); indicator.alpha = 0.45f; place(false) }   // JOYBOY(v939): خليك مظهر الكبسولة أثناء العدسة؛ ما تختفيش لو callback اتأخر/اتلغى
+            if (lensOn) {
+                indicator.animate().cancel(); indicator.alpha = 0f; place(false)
+                indicator.postDelayed({ if (indicator.alpha < 1f) { indicator.alpha = 1f; place(false) } }, 900L)
+            }
+            // الكبسولة تستنى لحد ما العدسة تهدى؛ لو إشعار التهدئة ضاع (الأكتفيتي اتقفلت في النص) الـ900ms دي بترجّعها بدل ما تفضل مختفية
             else { indicator.alpha = 1f; place(true) }
             icons.getOrNull(cellOf(i))?.let { Motion.bounce(it) }
         }

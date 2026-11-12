@@ -1987,6 +1987,7 @@ public class MobilePlaybackActivity extends MobileActivity
             @Override public java.util.Map<String, String> headers() { Video v = getVideo(); return v != null && v.headers != null ? v.headers : java.util.Collections.<String, String>emptyMap(); } // JOYBOY(v934)
             @Override public String audioUrl() { Video v = getVideo(); return v != null ? v.audioUrl : null; } // JOYBOY(v935)
             @Override public boolean endOfVideoSleep() { return SleepTimer.isEndOfVideo(); } // JOYBOY(v937)
+            @Override public int playbackMode() { return PlayerData.instance(MobilePlaybackActivity.this).getPlaybackMode(); } // JOYBOY(v939): stored end-of-video mode so the add-on never auto-advances over PAUSE/CLOSE/ONE
         });
 
         // Persistent surface: PlayerView owns no surface (surface_type="none"); hand the
@@ -4168,6 +4169,9 @@ public class MobilePlaybackActivity extends MobileActivity
      */
     @Override
     public boolean dispatchKeyEvent(KeyEvent event) {
+        if (JoyboyPlayerHost.onKey(this, event)) { // JOYBOY(v939): TV add-on keys first (numeric seek)
+            return true;
+        }
         if (CastVolumeKeys.onDispatchKeyEvent(this, event)) {
             return true;
         }
@@ -8435,18 +8439,6 @@ public class MobilePlaybackActivity extends MobileActivity
      * player. Called once the release animation has landed on the mini-card rectangle.
      */
     private void minimizeByDrag() {
-        // JOYBOY(v939): Browser-origin streams have no MeeTube MiniHost. Use system PiP instead of
-        // the BrowseView fallback, keeping the original Joyboy Browser visible underneath.
-        if (JoyboyPlayerHost.preferSystemPip(this)) {
-            resetMorph();
-            enterPipMode();
-            if (mPipEnterPending) {
-                return;
-            }
-            // If the OEM refuses PiP, restore the player rather than navigating to an unrelated feed.
-            logPip("browser-origin-minimize-refused");
-            return;
-        }
         if (MiniSize.type(this) == MiniSize.DISABLED) { // MEETUBE(issue #188): no mini player, minimizing closes
             if (mPresenter != null) {
                 mPresenter.onFinish();
@@ -8465,6 +8457,15 @@ public class MobilePlaybackActivity extends MobileActivity
             logPip("minimize-blocked reason=in-pip");
             resetMorph();
             return;
+        }
+
+        // JOYBOY(v939): مصدر مش يوتيوب (متصفح/واتساب/ملف محلي/رابط مباشر) — التصغير يروح PiP بتاع النظام فوق التطبيق
+        // الأصلي بدل ما يدوّر على مضيف مصغّر بتاع MeeTube ويقع على يوتيوب. يوتيوب بيكمل على الدوك الأصلي بتاعه.
+        if (JoyboyPlayerHost.onMinimize(this)) {
+            enterPipMode();
+            if (mPipEnterPending) {
+                return;
+            }
         }
 
         if (!prepareMiniPlayerHandoff(false)) {

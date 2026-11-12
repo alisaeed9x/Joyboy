@@ -10,8 +10,26 @@
 | 2 | محرك الترجمة الكامل + قلب `mt_main_player` + معالجة الاستثناءات | v934+v935+v936 | ✓ اتكتبت (لم تُكومبايل) — باقي بس: `mirror_uri` · `.part` · `handoff` · التلفزيون |
 | 3 | أدوات الميديا (A-B · تكرار · boost · نوم · حلقات · استكمال) | v937 | ✓ اتكتبت (لم تُكومبايل) — النوم والتضخيم من MeeTube نفسه |
 | 2/3+ | قفل فجوات: هوية النت · المصطادة · لقطة · `ret` | v938 | ✓ اتكتبت (لم تُكومبايل) |
-| 4 | التلفزيون والريموت (D-pad + `MtTvPlayer` كامل + flag `mt_tv_player`) | v939 (flag فقط) | ◐ بدأ — flag افتراضي false؛ parity وD-pad لسه ناقصين |
+| 4 | التلفزيون والريموت (D-pad + `MtTvPlayer` كامل + flag `mt_tv_player`) | v939 (جزء 1) | ◐ جزء 1 اتكتب (لم يُكومبايل) — ربط TvPlayerBar الكامل + جسر engine.* + SfJob لسه |
 | 5 | تنظيف: شيل مشغّل Joyboy القديم | — | ✗ |
+
+## v939 — دمج المشغّل: أصل مصدر-واعي + تصغير PiP + كبسولة + لانشر + م4 جزء 1
+- `MtOrigin.kt` (جديد): جلسة تشغيل مصدر-واعية (نوع/رابط/`ret`/صفحة/جلسة/هيدرز) — `MtPlay.openMt`
+  بيسجّل، `MtTranslate.onMinimize` و`MtMedia.detach` بيقرأوا. وجهات الرجوع حسب المصدر.
+- التصغير: مصادر غير يوتيوبية ← PiP النظام فوق التطبيق الأصلي (`minimizeByDrag` + `onMinimize`)؛
+  يوتيوب ← دوك MeeTube؛ `.part` النشط بيفضل على Joyboy؛ `mirror_uri`/`handoff` على Joyboy عن قصد.
+- `BottomNav.kt`: `place()` هو السائق الوحيد (بعد `mode()`/`set()`)، `4 → YT_HOME`، إعادة محاولة
+  لحد 10 مرات، شال رجوع الـ600ms للميديا، قاعدة المؤشر `LEFT`؛ fallback لكبسولة MeeTube العلوية 1200ms.
+- اللانشر: `SplashActivity.isTvMode()` = هاردوير أو `ui_mode=tv`؛ بلا `isTaskRoot()`؛ ضغطة لانشر
+  بلا data عمرها ما بتقع على Browse. `Main.onNewIntent` بيعيد فحص التلفزيون.
+- م4 جزء 1: `MtTvPlayer` أعيد كتابته (علم `mt_tv_player=false`؛ `act()` صادق؛ prev/next/سرعة/
+  loop/A-B/صوت/`remoteToggle`/`remoteHandoff`/`remoteQueueCur`/`frameJpeg`؛ `state()` موسّعة)؛
+  `TvLink`/`BrainRpc` بيقعوا عليه لما مفيش قديم حي. لسه: ربط `TvPlayerBar` الكامل + `engine.*` + SfJob.
+- حارس `playbackMode` في `MtMedia.onEnded` (CLOSE/PAUSE بلا التالي، ONE بيعيد)؛ قفز رقمي من الريموت
+  (`MtTranslate.onKey`)؛ `dispatchKeyEvent` بينده `JoyboyPlayerHost.onKey` الأول.
+- وثائق: `docs/PLAYER_UI_UX_BLUEPRINT.md` · `PLAYER_SCREEN_FLOW.md` · `PLAYER_INTERACTION_SPEC.md` ·
+  `PLAYER_TEST_MATRIX.md` — كل الاختبارات «معلّقة» لحد Actions + TCL.
+- **لسه:** م4 جزء 2 (ربط D-pad الكامل + جسر RPC) · م5 (محظورة لحد ما م4 تتجرّب على TCL).
 
 ## v938 — قفل الفجوات (م4 اتأجلت بقرار علي)
 - `MtWeb.kt`: هوية `u:…`+`WebIdent` للينكات · `WebVideos.register` + لقطة مصغّرة · `ret` عند الإغلاق. فجوات «المصطادة» و`ret` اتقفلت.
@@ -70,11 +88,3 @@
 
 ## المرحلة الجاية: 4 (التلفزيون والريموت — flag `mt_tv_player`، D-pad، `MtTvPlayer` كامل). الفجوات القديمة (المصطادة · `ret`) تتقفل قبل م5. (أدوات الميديا: A-B · تكرار · boost · نوم · حلقات · استكمال)
 أول خطوة: جدول الاستثناءات في الخطة (`ref/cookie` هيدرز ← `Video.headers`، `aurl`، `qlist`…) قبل قلب `mt_main_player`. (م1: `mVideoShapePending` بيتصفّر في `onVideoShapeKnown`، وبيتضبط true عند أي فيديو جديد في `bindWatchVideo`.)
-
-
-## v939 — توجيه التصغير حسب المصدر + كبسولة التنقل
-- فيديو Joyboy Browser (`ret=browser`) — سواء ستريم مباشر أو YouTube ID — يطلب PiP النظام عند السحب للتصغير بدل fallback `BrowseView`؛ ده يحافظ على صفحة المتصفح تحت الفيديو. لو PiP اترفض، المشغّل يفضل ظاهر.
-- `BottomNav` ما بيخفيش الكبسولة بالكامل أثناء عدسة الانتقال؛ opacity جزئية لحد callback.
-- `MtTvPlayer.KEY_TV_PLAYER = mt_tv_player` والافتراضي `false`. التوجيه للتلفزيون متساب legacy حتى لو اتغيّرت القيمة يدويًا؛ ما يتوصلش flag بالـroute قبل اكتمال D-pad وRPC.
-- المرحلة 4 **غير مكتملة**: أوامر الريموت الكاملة، الحالة، RPC، لقطة JPEG، D-pad، numeric seek، mirror_uri وhandoff لم تتنفذ. م5 مؤجلة.
-- لم يتم compile أو اختبار على جهاز في v939.

@@ -12,7 +12,7 @@ import com.newtube.mobile.MobileMainApplication
  * (v923) مشغّل يوتيوب (MeeTube) هو المشغّل الأساسي لكل الميديا — البداية: الملفات المحلية واللينكات المباشرة.
  * أي فتح لـPlayerActivity (من أي مكان: مكتبة · ملفات · متصفح · نقل · مهام) بيعدّي هنا الأول (PlayerActivity.onCreate):
  * لو الحالة مدعومة بيفتح الفيديو في مشغّل MeeTube (Video.localUri) ومحرك الترجمة + أزرار Joyboy (MtTranslate) فوقه، ومشغّل Joyboy القديم بيتقفل.
- * غير كده (تلفزيون · ريموت · يوتيوب · لينك محتاج Referer/Cookie · وضع متخفي · ملف تحميل لسه شغّال) = مشغّل Joyboy زي ما هو.
+ * غير كده (تلفزيون من غير mt_tv_player · ريموت · يوتيوب · لينك محتاج Referer/Cookie · وضع متخفي · ملف تحميل لسه شغّال) = مشغّل Joyboy زي ما هو.
  * مفتاح الإيقاف: Cfg mt_main_player (الافتراضي true من v934 — م2 من خطة دمج المشغّل).
  */
 object MtPlay {
@@ -31,7 +31,7 @@ object MtPlay {
     fun decide(act: Activity, i: Intent): Decision {
         Cfg.ensure(act.applicationContext)
         if (!enabled()) return Decision.skip(R_OFF)
-        if (DeviceUi.isTv(act)) return Decision.skip(R_TV)   // JOYBOY(v939): flag mt_tv_player متسجل false، لكن التوجيه يفضل legacy لحد اكتمال D-pad وRPC في م4
+        if (DeviceUi.isTv(act) && !MtTvPlayer.enabled()) return Decision.skip(R_TV)
         if (i.getBooleanExtra("remote", false)) return Decision.skip("extra remote (ريموت — م4)")
         // (v936) لسه على مشغّل Joyboy: mirror_uri (م4 — تلفزيون) بس. يوتيوب/المتخفي/hsite/forceid/لينك من غير امتداد اتحلّوا.
         if (i.hasExtra("mirror_uri")) return Decision.skip("extra mirror_uri (م4 — تلفزيون)")
@@ -40,6 +40,7 @@ object MtPlay {
         // (v936) يوتيوب: مشغّل MeeTube بيستخرج بنفسه (من غير url/qlist/aurl بتاعة Joyboy) والترجمة بتشتغل على معرّف الفيديو
         val ytid = i.getStringExtra("ytid")
         if (ytid != null && i.getBooleanExtra("handoff", false)) return Decision.skip("handoff (تسليم من المصغّر الشغّال — لسه على Joyboy)")
+        if (ytid != null && DeviceUi.isTv(act)) return Decision.skip("ytid على التلفزيون (TvDirect/TvActivity — م4)")
         if (ytid != null) {
             if (ytid.length != 11) return Decision.skip("ytid مش 11 حرف")
             return Decision(true, "ok", yt = ytid, priv = priv)
@@ -60,7 +61,13 @@ object MtPlay {
             data != null -> {
                 val sc = data.scheme ?: return Decision.skip("data بدون scheme")
                 if (sc != "content" && sc != "file") return Decision.skip("data scheme=$sc")
-                if (sc == "file" && (data.path ?: "").let { it.endsWith(".part") || it.contains(".part") }) return Decision.skip("ملف .part (تحميل شغّال)")   // مشغّل Joyboy بيعرض الجزء المحمّل
+                // (v939) ملف .part: التحميل الشغّال لسه بيكبّر الملف فمشغّل Joyboy بس اللي بيعيد تجهيزه وهو بيكبر؛
+                // .part متوقّف/خلصان (مفيش مهمة نشطة عليه) ملف ثابت على القرص فمسموح في MeeTube
+                if (sc == "file" && (data.path ?: "").let { it.endsWith(".part") || it.contains(".part") }) {
+                    val pth = data.path ?: ""
+                    val growing = try { TaskCenter.items.any { (it.state == 0 || it.state == 1) && it.partPath == pth } } catch (_: Throwable) { false }
+                    if (growing) return Decision.skip("ملف .part (تحميل شغّال)")
+                }
                 data.toString()
             }
             !url.isNullOrBlank() -> {
@@ -148,14 +155,15 @@ object MtPlay {
     /** (v936) فتح فعلي في MeeTube (بعد القرار/الفحص). false = كمّل بمشغّل Joyboy. */
     private fun openMt(act: Activity, app: android.content.Context, i: Intent, d: Decision): Boolean {
         val startMs = i.getIntExtra("startms", 0).toLong().takeIf { it > 0L } ?: i.getLongExtra("startms", 0L)
+        val title0 = i.getStringExtra("title")?.takeIf { it.isNotBlank() }
+        try { MtOrigin.record(i, d.src, d.yt, title0 ?: "") } catch (_: Throwable) {}
         d.yt?.let { yid ->   // (v936) يوتيوب
-            try { MtWeb.onOpenYoutube(i, yid) } catch (_: Throwable) {}   // JOYBOY(v939): احتفظ بأصل فيديو يوتيوب لو اتفتح من المتصفح
             val tr = i.getBooleanExtra("autotr", false) && !i.getBooleanExtra("nosub", false)
             if (!d.priv) try { PubHistory.addVideoFrom(i) } catch (_: Throwable) {}
             return MeeTubeLink.playYt(act, yid, startMs, tr, d.priv)
         }
         val src = d.src ?: return false
-        val title = i.getStringExtra("title")?.takeIf { it.isNotBlank() } ?: nameOf(act, src)
+        val title = title0 ?: nameOf(act, src)
         if (i.getBooleanExtra("autotr", false) && !i.getBooleanExtra("nosub", false)) MtTranslate.autoFor = "L:$src"
         if (d.priv) MtTranslate.privIds.add("L:$src")
         d.forceId?.let { MtTranslate.idOverride["L:$src"] = it }   // (v936) forceid

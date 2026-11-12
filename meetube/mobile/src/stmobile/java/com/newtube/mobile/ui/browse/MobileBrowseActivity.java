@@ -1498,6 +1498,13 @@ public class MobileBrowseActivity extends MobileActivity
             mNavLensGliding = false;
             mBottomNav.post(this::maybeLaunchShorts); // held while the lens glided
         });
+        // JOYBOY(v939): if the lens settle callback is ever dropped, the lit pill must not stay hidden
+        bar.postDelayed(() -> {
+            if (mNavLensGliding) {
+                mBottomNav.setItemBackground(mNavPill);
+                mNavLensGliding = false;
+            }
+        }, 1200L);
         return true;
     }
 

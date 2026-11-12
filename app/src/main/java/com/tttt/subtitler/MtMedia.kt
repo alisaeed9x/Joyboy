@@ -76,13 +76,17 @@ object MtMedia {
             if (act !== a) return
             saveNow(true)
             val wasLu = lu()
-            val wasVideoId = try { info?.videoId() } catch (_: Throwable) { null }
             ui.removeCallbacks(tick); ticking = false
             try { player?.removeListener(listener) } catch (_: Throwable) {}
             (pill?.parent as? ViewGroup)?.removeView(pill)
             pill = null; player = null; options = null; info = null; act = null; key = null
             abA = -1L; abB = -1L
-            try { MtWeb.onDetach(a, wasLu, wasVideoId) } catch (_: Throwable) {}   // (v939): ret يدعم مصدر يوتيوب كمان
+            // (v938) extra ret: رجوع للمتصفح/يوتيوب عند الإغلاق الفعلي
+            // (v939) لو مفيش ret للمصطادة، MtOrigin بيرجّع حسب المصدر (واتساب/محلي ← ميديا Joyboy)
+            try {
+                val webRet = MtWeb.onDetach(a, wasLu)
+                if (!webRet) MtOrigin.onDetach(a, wasLu)
+            } catch (_: Throwable) {}
         } catch (e: Throwable) { LogStore.err("MtMedia:detach", e) }
     }
 
@@ -120,6 +124,13 @@ object MtMedia {
         abA < 0L -> "🅰 حلقة A-B: نقطة أ هنا"
         abB <= abA -> "🅱 نقطة ب هنا (أ = " + PlayerLogic.clock(abA) + ")"
         else -> "✖ إلغاء حلقة A-B (" + PlayerLogic.clock(abA) + " ← " + PlayerLogic.clock(abB) + ")"
+    }
+
+    /** (v939) حالة A-B بصيغة حقل rState بتاع الريموت: "" أو "A 01:23" أو "A 01:23 ← B 02:34" */
+    fun abState(): String = when {
+        abA < 0L -> ""
+        abB <= abA -> "A " + PlayerLogic.clock(abA)
+        else -> "A " + PlayerLogic.clock(abA) + " ← B " + PlayerLogic.clock(abB)
     }
 
     fun abNext() {
@@ -252,6 +263,11 @@ object MtMedia {
         ended = true
         saveNow(true)
         try { if (info?.endOfVideoSleep() == true) return } catch (_: Throwable) {}   // مؤقت النوم «آخر الفيديو» — MeeTube بيوقف لوحده
+        try {
+            val pm = info?.playbackMode() ?: 2
+            if (pm == 0 || pm == 1) return
+            if (pm == 3) return
+        } catch (_: Throwable) {}
         if (loopMode() == 1) { try { player?.seekTo(0L); player?.play() } catch (_: Throwable) {}; return }
         try { if (PlayQueue.hasNext(a)) { PlayQueue.playNext(a); return } } catch (e: Throwable) { LogStore.err("MtMedia:queue", e) }   // طابور التشغيل له الأولوية (زي Player v694)
         val go: () -> Unit = {
