@@ -401,6 +401,8 @@ class LibraryUi(
         normalBtns = if (audio) listOf(recBtn, setBtn, refreshBtn) else listOf(queueBtn, linkBtn, pickBtn, setBtn, refreshBtn)
         if (audio) { queueBtn.visibility = View.GONE; linkBtn.visibility = View.GONE; pickBtn.visibility = View.GONE }
         root.addView(head, LinearLayout.LayoutParams(-1, -2))
+        // (v932) مربعين المصدر (📺 فيديوهات التلفزيون | 📱 فيديوهات الموبايل) فوق: تحت الهيدر (فيه ⚙️) وفوق صف الترتيب — كانوا تحت خالص فوق الشريط السفلي
+        if (!audio) root.addView(srcBar, LinearLayout.LayoutParams(-1, -2).apply { setMargins(ui.dp(12), ui.dp(2), ui.dp(12), ui.dp(4)) })
 
         // (v433) صف واحد بدل اتنين: الترتيب (شيبس) + زرار فولدرات/الكل + زرار الشبكة/القايمة
         gridBtn = hbtn(if (grid()) "☰" else "🧩") { toggleGrid() }
@@ -517,7 +519,7 @@ class LibraryUi(
         }
         root.addView(body, LinearLayout.LayoutParams(-1, 0, 1f))
         root.addView(selBar, LinearLayout.LayoutParams(-1, -2))   // (v658)
-        // (v565) مربعين تحت (وانت متصل بالتلفزيون): فيديوهات التلفزيون | فيديوهات الموبايل
+        // (v565) مربعين المصدر (وانت متصل بالتلفزيون) — مكانهم فوق من v932: فيديوهات التلفزيون | فيديوهات الموبايل
         if (!audio) {
             fun srcBox(label: String, tv: Boolean): TextView = ui.text(label, 14f, th.text, true).apply {
                 gravity = Gravity.CENTER; isClickable = true
@@ -527,7 +529,6 @@ class LibraryUi(
             val bTv = srcBox("📺 فيديوهات التلفزيون", true); val bPh = srcBox("📱 فيديوهات الموبايل", false)
             srcBar.addView(bTv, LinearLayout.LayoutParams(0, ui.dp(44), 1f).apply { marginEnd = ui.dp(5) })
             srcBar.addView(bPh, LinearLayout.LayoutParams(0, ui.dp(44), 1f).apply { marginStart = ui.dp(5) })
-            root.addView(srcBar, LinearLayout.LayoutParams(-1, -2).apply { setMargins(ui.dp(12), ui.dp(4), ui.dp(12), ui.dp(8)) })
         }
         startAuto()   // (v468) بداية مؤقّت التحديث التلقائي (١٠ ثوانٍ)
     }

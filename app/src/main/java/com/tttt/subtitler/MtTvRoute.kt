@@ -52,10 +52,11 @@ object MtTvRoute : PlaybackPresenter.OpenInterceptor {
             if (video == null || bypass || context == null) return false
             if (DeviceUi.isTv(context)) return false
             Cfg.ensure(context.applicationContext)
-            if (!PlayTarget.enabled()) return false
             val id = video.videoId ?: return false
             if (id.length != 11 || video.isLocal()) return false
             try { RemoteClient.init(context) } catch (_: Throwable) {}
+            // (v931) السؤال «تشغّله فين؟» بيظهر لو «وضع التلفزيون» شغّال أو الموبايل متصل بالتلفزيون فعلًا دلوقتي (قبل كده كان بيحتاج وضع التلفزيون بس، فمع اتصال من غير الوضع مكنش بيسأل)
+            if (!PlayTarget.enabled() && RemoteClient.current == null) return false
             if (RemoteClient.lastTv() == null) return false
             val act = (context as? Activity) ?: top?.get() ?: return false
             if (act.isFinishing || act.isDestroyed) return false

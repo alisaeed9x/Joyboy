@@ -21,30 +21,55 @@ object MtPlay {
 
     fun enabled(): Boolean = try { Cfg.bool(KEY, false) } catch (_: Throwable) { false }   // (v924) افتراضي: مقفول — الملفات المحلية بتفتح على مشغّل Joyboy الكامل (الشاشة الكاملة)
 
+    /** (v930) قرار التوجيه: ok=true ← يتفتح في MeeTube بالمصدر src · ok=false ← reason = سبب البقاء على مشغّل Joyboy (للّوج). مفيش آثار جانبية. */
+    class Decision(val ok: Boolean, val reason: String, val src: String? = null) {
+        companion object { fun skip(reason: String) = Decision(false, reason) }
+    }
+
+    /** (v930) نفس شروط reroute القديمة بالظبط، بس بترجّع السبب. بتتنادى جوه try (Cfg.ensure ممكن ترمي). */
+    fun decide(act: Activity, i: Intent): Decision {
+        Cfg.ensure(act.applicationContext)
+        if (!enabled()) return Decision.skip(R_OFF)
+        if (DeviceUi.isTv(act)) return Decision.skip(R_TV)
+        if (i.getBooleanExtra("remote", false)) return Decision.skip("extra remote (ريموت — م4)")
+        for (k in listOf("mirror_uri", "ytid", "ytpend", "aurl", "qlist", "forceid")) {
+            if (i.hasExtra(k)) return Decision.skip("extra $k")
+        }
+        if (!i.getStringExtra("ref").isNullOrEmpty()) return Decision.skip("هيدر ref (م2)")
+        if (!i.getStringExtra("cookie").isNullOrEmpty()) return Decision.skip("هيدر cookie (م2)")
+        if (i.getBooleanExtra("incognito", false)) return Decision.skip("incognito (م2)")
+        if (i.getBooleanExtra("hsite", false)) return Decision.skip("hsite (م2)")
+        val data = i.data
+        val url = i.getStringExtra("url")
+        val src: String = when {
+            data != null -> {
+                val sc = data.scheme ?: return Decision.skip("data بدون scheme")
+                if (sc != "content" && sc != "file") return Decision.skip("data scheme=$sc")
+                if (sc == "file" && (data.path ?: "").let { it.endsWith(".part") || it.contains(".part") }) return Decision.skip("ملف .part (تحميل شغّال)")   // مشغّل Joyboy بيعرض الجزء المحمّل
+                data.toString()
+            }
+            !url.isNullOrBlank() -> {
+                if (!(url.startsWith("http://", true) || url.startsWith("https://", true))) return Decision.skip("url مش http(s)")
+                if (!MEDIA_EXT.containsMatchIn(url)) return Decision.skip("url مش امتداد ميديا (محتاج استخراج)")
+                url
+            }
+            else -> return Decision.skip("مفيش data ولا url")
+        }
+        return Decision(true, "ok", src)
+    }
+
+    private const val R_OFF = "mt_main_player off"
+    private const val R_TV = "tv"
+
     /** true = اتفتح في مشغّل MeeTube (والـPlayerActivity لازم تقفل نفسها) */
     fun reroute(act: Activity, i: Intent): Boolean {
         try {
-            Cfg.ensure(act.applicationContext)
-            if (!enabled() || DeviceUi.isTv(act)) return false
-            if (i.getBooleanExtra("remote", false) || i.hasExtra("mirror_uri") || i.hasExtra("ytid") || i.hasExtra("ytpend") ||
-                i.hasExtra("aurl") || i.hasExtra("qlist") || i.hasExtra("forceid")) return false
-            if (!i.getStringExtra("ref").isNullOrEmpty() || !i.getStringExtra("cookie").isNullOrEmpty()) return false
-            if (i.getBooleanExtra("incognito", false) || i.getBooleanExtra("hsite", false)) return false
-            val data = i.data
-            val url = i.getStringExtra("url")
-            val src: String = when {
-                data != null -> {
-                    val sc = data.scheme ?: return false
-                    if (sc != "content" && sc != "file") return false
-                    if (sc == "file" && (data.path ?: "").let { it.endsWith(".part") || it.contains(".part") }) return false   // تحميل لسه شغّال: مشغّل Joyboy بيعرض الجزء المحمّل
-                    data.toString()
-                }
-                !url.isNullOrBlank() -> {
-                    if (!(url.startsWith("http://", true) || url.startsWith("https://", true)) || !MEDIA_EXT.containsMatchIn(url)) return false   // صفحات/ستريمات محتاجة استخراج = مشغّل Joyboy
-                    url
-                }
-                else -> return false
+            val d = decide(act, i)
+            if (!d.ok) {
+                if (d.reason != R_OFF && d.reason != R_TV) LogStore.add("MtPlay: skip — ${d.reason}")   // (v930) السبب في اللوج (الحالتين الأوليين عادية فمش بنسجّلها)
+                return false
             }
+            val src = d.src ?: return false
             val title = i.getStringExtra("title")?.takeIf { it.isNotBlank() } ?: nameOf(act, src)
             if (i.getBooleanExtra("autotr", false) && !i.getBooleanExtra("nosub", false)) MtTranslate.autoFor = "L:$src"
             MeeTubeLink.bindBar()

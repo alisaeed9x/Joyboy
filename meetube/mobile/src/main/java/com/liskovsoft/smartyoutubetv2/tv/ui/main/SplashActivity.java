@@ -52,6 +52,13 @@ public class SplashActivity extends MotherActivity implements SplashView {
             return;
         }
 
+        // JOYBOY(v932): على التلفزيون ضغطة الأيقونة تاني = لانشر التلفزيون مش صفحة MeeTube
+        if (isRealTv() && openJoyboyFromLauncher(intent)) {
+            finish();
+            overridePendingTransition(0, 0);
+            return;
+        }
+
         mPresenter.onViewInitialized();
     }
 
@@ -78,14 +85,33 @@ public class SplashActivity extends MotherActivity implements SplashView {
         }
     }
 
+    /**
+     * JOYBOY(v932): على التلفزيون الحقيقي أيقونة البرنامج تفتح لانشر التلفزيون (TvActivity) مش MainActivity بتاعة الموبايل
+     * ولا صفحة يوتيوب (v927 كان بيحوّل لـMainActivity على كل الأجهزة، فالتلفزيون كان بيفتح على شكل الموبايل / يوتيوب).
+     */
+    private boolean isRealTv() {
+        try {
+            android.app.UiModeManager um = (android.app.UiModeManager) getSystemService(UI_MODE_SERVICE);
+            if (um != null && um.getCurrentModeType() == android.content.res.Configuration.UI_MODE_TYPE_TELEVISION) {
+                return true;
+            }
+            return getPackageManager().hasSystemFeature(android.content.pm.PackageManager.FEATURE_LEANBACK);
+        } catch (Throwable e) {
+            return false;
+        }
+    }
+
     private boolean openJoyboyFromLauncher(Intent intent) {
         try {
+            boolean tv = isRealTv();
+            boolean launcher = intent != null && (intent.hasCategory(Intent.CATEGORY_LAUNCHER)
+                    || (tv && intent.hasCategory(Intent.CATEGORY_LEANBACK_LAUNCHER)));
             if (intent == null || !isTaskRoot() || !Intent.ACTION_MAIN.equals(intent.getAction())
-                    || !intent.hasCategory(Intent.CATEGORY_LAUNCHER) || intent.getData() != null) {
+                    || !launcher || intent.getData() != null) {
                 return false;
             }
             Intent main = new Intent();
-            main.setClassName(getPackageName(), "com.tttt.subtitler.MainActivity");
+            main.setClassName(getPackageName(), tv ? "com.tttt.subtitler.TvActivity" : "com.tttt.subtitler.MainActivity");
             if (main.resolveActivity(getPackageManager()) == null) {
                 return false;
             }
