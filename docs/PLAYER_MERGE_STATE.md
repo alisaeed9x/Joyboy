@@ -13,6 +13,9 @@
 | 4 | التلفزيون والريموت (D-pad + `MtTvPlayer` كامل + flag `mt_tv_player`) | v939 (جزء 1) + v942 (جزء 2) | ✓ جزء 1 + جزء 2 اتكتبوا (لم يُكومبايلوا) — `act()` 36/78 + `state()` كل الـ72 + جسر `engine.*` + SfJob + D-pad كامل؛ لسه صادق كاذب: `qset`/`aset`/`visdlg`/`netdlg`/`subalign`/`subfile:`/`sfgo:`/`tr_free`/`tr_bg` |
 | 5 | تنظيف: شيل مشغّل Joyboy القديم | — | ✗ محظورة لحد ما م4 تتجرّب على TCL + موافقة علي |
 
+## v944 — شريط MtBar بترتيب القديم
+- `MtBar.kt` اتعاد ترتيبه: صف أيقونات واحد فوق (38dp، بيتسحب) + شريحة ترجمة (ترجمة · ⚙ · إعادة) + صف رئيسي بأحجام القديم؛ الأزرار المكتوبة اتشالت واللي ناقص راح لقايمة 🧰. لم يُكومبايل. التفاصيل: `CHANGES_v944.md`.
+
 ## v942 — شريط Joyboy الكامل + إكمال المحرك + م4 جزء 2 + بواقي م3
 - `MtBar.kt` (جديد، 1371 سطر): شريط Joyboy الكامل جوه مشغّل MeeTube عبر `Provider.extraControls` — صف ترجمة (▶ ترجم ▾ + ▮▮ + ✕ + 🌐 + جودة + 🔊 + ⬇) · صف أدوات (لهجة/مزامنة/لوج/جمل/CC/تكرار/مزدوج/شخصيات/فصل صوت/HD/التالية/صوت/لغة) · صف رئيسي (قفل/قفز جمل/تشغيل/PiP/ملاءمة 4 أوضاع/تدوير) · صف علوي (☰/🧰/🔤/⏩) · دواير عايمة بخفوت 25% (👁 لقطة بصرية/🎧 صوت/📺 تلفزيون/⚠ دفعات فاشلة/🔒 قفل) · كبسولة عمودية (تصدير + سلايدر صوت 0–200 + تضخيم). الشريط في `mControlsRoot` فبيختفي ويظهر مع أزرار MeeTube. الحبوب 🌐/⚙ اللي فوق زي ما هي.
 - الجسر: `JoyboyPlayerHost.onJoyboyAction` (default + static dispatcher) + `MobilePlaybackActivity.handleJoyboyAction` (fit→`setResizeMode` · pip→`enterPipMode` · lock→`setPlayerLocked` · rotate→`toggleFullscreen` · prev/next→`stepVideo` · speed→دورة `SPEED_PRESETS` · cc→`toggleCaptions` · quality/audio/sleep/chapters/download→الشيتات الأصلية · audio_only→`setAudioOnly` · playpause→`togglePlayPause`)؛ استدعاء `extraControls` بعد `attach` (~1995). من غير الجسر ده البناء يفشل — `MtTvPlayer` بينده `onJoyboyAction` من v942.

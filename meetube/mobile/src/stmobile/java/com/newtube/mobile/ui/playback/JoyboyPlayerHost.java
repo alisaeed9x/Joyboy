@@ -72,6 +72,9 @@ public final class JoyboyPlayerHost {
 
         // JOYBOY(v942): a named Joyboy action for MeeTube's own internals (fit, pip, lock, rotate, prev/next, speed, cc, quality, audio, sleep, chapters, download, audio_only, playpause). true = handled.
         default boolean onJoyboyAction(Activity activity, String action) { return false; }
+
+        /** JOYBOY(v946): Back was pressed; the add-on may ask first (e.g. continue the translation in the background). true = consumed, MeeTube does not close. */
+        default boolean onBack(Activity activity) { return false; }
     }
 
     private static volatile Provider sProvider;
@@ -141,6 +144,16 @@ public final class JoyboyPlayerHost {
         try {
             Provider p = sProvider;
             return p != null && activity != null && p.onMinimize(activity);
+        } catch (RuntimeException e) {
+            return false;
+        }
+    }
+
+    /** JOYBOY(v946): Back goes to the add-on first. true = consumed. Never throws. */
+    public static boolean onBack(Activity activity) {
+        try {
+            Provider p = sProvider;
+            return p != null && activity != null && p.onBack(activity);
         } catch (RuntimeException e) {
             return false;
         }

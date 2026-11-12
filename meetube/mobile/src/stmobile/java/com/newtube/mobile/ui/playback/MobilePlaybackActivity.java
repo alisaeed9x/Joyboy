@@ -2678,6 +2678,10 @@ public class MobilePlaybackActivity extends MobileActivity
         if (mClosing) {
             return;
         }
+        if (JoyboyPlayerHost.onBack(this)) { // JOYBOY(v946): the add-on asked something first (continue translating in the background?)
+            onBackGestureCancelled();
+            return;
+        }
         if (mMoreVideos != null && mMoreVideos.isShown()) {
             mMoreVideos.close();
             return;
