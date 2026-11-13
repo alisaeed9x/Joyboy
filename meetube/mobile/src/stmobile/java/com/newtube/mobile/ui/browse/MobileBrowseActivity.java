@@ -3788,21 +3788,6 @@ public class MobileBrowseActivity extends MobileActivity
     private static java.lang.ref.WeakReference<MobileBrowseActivity> sLive = new java.lang.ref.WeakReference<>(null);
     private static final String EXTRA_NAV_TAB = "meetube_nav_tab";
 
-    /** JOYBOY(v973): the live Browse (YouTube) screen is brought to the front as it is - no new instance, no reload. False when none is alive. */
-    public static boolean bringToFront(android.content.Context c) {
-        MobileBrowseActivity a = sLive.get();
-        if (a == null || a.isFinishing() || a.isDestroyed()) {
-            return false;
-        }
-        try {
-            c.startActivity(new android.content.Intent(c, MobileBrowseActivity.class)
-                    .addFlags(android.content.Intent.FLAG_ACTIVITY_REORDER_TO_FRONT | android.content.Intent.FLAG_ACTIVITY_SINGLE_TOP));
-            return true;
-        } catch (RuntimeException e) {
-            return false;
-        }
-    }
-
     /**
      * MEETUBE(search nav): fills {@code bar} with Browse's tabs (Search lit) and wires a tap on one
      * to go back to Browse on that tab. False when no Browse is open: the screen keeps no bar.

@@ -44,23 +44,6 @@ public final class SeekFilmstrip extends View {
     private final SparseArray<Object> mLoading = new SparseArray<>();
     private final Rect mSrc = new Rect();
     private final RectF mDst = new RectF();
-    /** JOYBOY(v956): frames for non-YouTube sources (local file / browser link), cut from the video itself. */
-    public interface FrameSource {
-        /** Time between frames in ms (0 = no frames, only the time shows). */
-        long eachMs();
-        float aspect();
-        /** Number of frames. */
-        int count();
-        @Nullable Bitmap frame(int index);
-    }
-
-    @Nullable private FrameSource mSource;
-
-    public void setFrameSource(@Nullable FrameSource source) {
-        mSource = source;
-        invalidate();
-    }
-
     @Nullable private MediaItemStoryboard mBoard;
     @Nullable private MediaItemStoryboard.Size mSize;
     @Nullable private Disposable mFetch;
@@ -128,51 +111,13 @@ public final class SeekFilmstrip extends View {
         float cx = getWidth() / 2f;
         float cy = getHeight() / 2f;
         MediaItemStoryboard.Size size = mSize;
-        FrameSource src = mSource;
-        if (src != null && src.eachMs() > 0 && src.count() > 0) {
-            drawSourceStrip(canvas, src, cx, cy + 56 * mDp);
-        } else if (size != null && size.getDurationEachMS() > 0 && size.getHeight() > 0) {
+        if (size != null && size.getDurationEachMS() > 0 && size.getHeight() > 0) {
             drawStrip(canvas, size, cx, cy + 56 * mDp);
         }
         canvas.drawText(mTime, cx, cy - 30 * mDp, mText);
         if (mTitle.length() > 0) {
             canvas.drawText(android.text.TextUtils.ellipsize(mTitle, new android.text.TextPaint(mSub),
                     getWidth() - 48 * mDp, android.text.TextUtils.TruncateAt.END).toString(), cx, cy - 4 * mDp, mSub);
-        }
-    }
-
-    private void drawSourceStrip(Canvas canvas, FrameSource src, float cx, float cy) {
-        float h = 64 * mDp;
-        float w = h * src.aspect();
-        long each = src.eachMs();
-        int max = src.count() - 1;
-        int centre = (int) (mPosition / each);
-        int reach = (int) (cx / w) + 2;
-        for (int k = -reach; k <= reach; k++) {
-            int index = centre + k;
-            if (k == 0 || index < 0 || index > max) {
-                continue;
-            }
-            float x = cx + ((index + 0.5f) * each - mPosition) / each * w;
-            drawSourceFrame(canvas, src, index, x - w / 2, cy - h / 2, w - 2 * mDp, h);
-        }
-        float big = 1.3f;
-        float bx = cx + ((centre + 0.5f) * each - mPosition) / each * w;
-        drawSourceFrame(canvas, src, Math.min(centre, max), bx - w * big / 2, cy - h * big / 2, w * big, h * big);
-        canvas.drawRect(mDst, mEdge);
-    }
-
-    private void drawSourceFrame(Canvas canvas, FrameSource src, int index, float left, float top, float width,
-            float height) {
-        mDst.set(left, top, left + width, top + height);
-        if (mDst.right < 0 || mDst.left > getWidth()) {
-            return;
-        }
-        Bitmap b = src.frame(index);
-        if (b == null) {
-            canvas.drawRect(mDst, mFill);
-        } else {
-            canvas.drawBitmap(b, null, mDst, mBitmap);
         }
     }
 

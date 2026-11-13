@@ -95,6 +95,7 @@ com/tttt/subtitler/KeyBrowser.kt
 com/tttt/subtitler/KeyDialog.kt
 com/tttt/subtitler/KeyVault.kt
 com/tttt/subtitler/LaunchShortcuts.kt
+com/tttt/subtitler/LaunchSplashActivity.kt
 com/tttt/subtitler/LibraryBackend.kt
 com/tttt/subtitler/LibraryCore.kt
 com/tttt/subtitler/LibraryUi.kt
@@ -296,6 +297,4 @@ com/tttt/subtitler/YtModels.kt
 com/tttt/subtitler/YtFeedStore.kt
 com/tttt/subtitler/YtNext.kt
 com/tttt/subtitler/MtWeb.kt
-com/tttt/subtitler/MtFrames.kt
-com/tttt/subtitler/TabNav.kt
-com/tttt/subtitler/VidHook.kt
+com/tttt/subtitler/MtEnhance.kt

@@ -1,7 +1,6 @@
 package com.tttt.subtitler
 
 import android.app.Activity
-import android.content.Intent
 import android.graphics.Color
 import android.graphics.drawable.GradientDrawable
 import android.media.audiofx.LoudnessEnhancer
@@ -91,7 +90,6 @@ object MtMedia {
             if (act !== a) return
             saveNow(true)
             val wasLu = lu()
-            val wasVid = try { info?.videoId() } catch (_: Throwable) { null }   // (v979)
             ui.removeCallbacks(tick); ticking = false
             try { player?.removeListener(listener) } catch (_: Throwable) {}
             releaseBoost()
@@ -103,7 +101,7 @@ object MtMedia {
             // (v939) لو مفيش ret للمصطادة، MtOrigin بيرجّع حسب المصدر (واتساب/محلي ← ميديا Joyboy)
             try {
                 val webRet = MtWeb.onDetach(a, wasLu)
-                if (!webRet) MtOrigin.onDetach(a, wasLu, wasVid)
+                if (!webRet) MtOrigin.onDetach(a, wasLu)
             } catch (_: Throwable) {}
         } catch (e: Throwable) { LogStore.err("MtMedia:detach", e) }
     }
@@ -380,8 +378,6 @@ object MtMedia {
             v.title = t.title
             v.localUri = t.uri
             if (wasPriv) { MtTranslate.privIds.add("L:" + t.uri); v.incognito = true }
-            // (v983) سجّل مصدر الملف الجديد: openItem بيفتح مباشرة من PlaybackPresenter من غير MtPlay، فمن غيرها المصدر بيفضل بتاع أول ملف والرجوع لفولدره وPiP بيغلطوا
-            try { MtOrigin.record(Intent(), t.uri, null, t.title) } catch (_: Throwable) {}
             PlaybackPresenter.instance(a.applicationContext).openVideo(v)
         } catch (e: Throwable) { LogStore.err("MtMedia:open", e) }
     }

@@ -4121,11 +4121,7 @@ class PlayerActivity : Activity(), Host {
     override fun onCreate(b: Bundle?) {
         NetLedger.start(this); NetLog.start(this); NetGate.apply(this)
         super.onCreate(b)
-        if (MtPlay.reroute(this, intent)) {   // (v923)
-            gone = true; try { overridePendingTransition(0, 0) } catch (_: Throwable) {}
-            if (MtPlay.holdForPlayer(this)) return   // (v950) بتفضل سودا ورا المشغّل لحد ما يظهر (من غير فلاش المكتبة/الشاشة البيضا)
-            finish(); return
-        }
+        if (MtPlay.reroute(this, intent)) { gone = true; try { overridePendingTransition(0, 0) } catch (_: Throwable) {}; finish(); return }   // (v923)
         smoothRotation()   // (v429)
         try { if (MtLook.playerAnim()) overridePendingTransition(R.anim.player_open_enter, R.anim.player_open_exit) } catch (_: Throwable) {}   // (v899) حركة فتح المشغّل من MeeTube
         synchronized(liveList) {
@@ -4161,8 +4157,6 @@ class PlayerActivity : Activity(), Host {
         noSub = intent.getBooleanExtra("nosub", false); askSaved = intent.getBooleanExtra("ask", false); autoTr = intent.getBooleanExtra("autotr", false)
         intent.getStringExtra("ua")?.takeIf { it.isNotEmpty() }?.let { hdr["User-Agent"] = it }
         intent.getStringExtra("ref")?.takeIf { it.isNotEmpty() }?.let { hdr["Referer"] = it }
-        // (v976) المشغّلات الخارجية (hls.js) بتبعت Origin مع كل طلب — نفس أصل الـReferer، من غير يوتيوب
-        hdr["Referer"]?.let { r0 -> if (!r0.contains("youtube.com", true) && !r0.contains("youtu.be", true)) Sniff.originOf(r0)?.let { o0 -> hdr["Origin"] = o0 } }
         intent.getStringExtra("cookie")?.takeIf { it.isNotEmpty() }?.let { hdr["Cookie"] = it }
 
         val page = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setBackgroundColor(th.bg); layoutDirection = View.LAYOUT_DIRECTION_RTL }
@@ -5406,12 +5400,8 @@ class PlayerActivity : Activity(), Host {
             player.exo()?.let { xp -> xp.setMediaSource(src, pos); xp.prepare() }; player.playWhenReady = play
             qCur = i; sizeTxt = ""; setQualLabel(o.h); refreshSize()
             if (ytAudioOnly) { ytAudioOnly = false; paintModePill() }   // (v459) تغيير الجودة بيرجّع الفيديو
-            // (v985) اختيار جودة من قايمة الفيديو دي مايتحفظش في yt_maxh العام: كان كل اختيار
-            // (حتى 240p مرة واحدة) بيفضل سقف لكل الفيديوهات والستريمنج بعد كده للأبد
-            // (MtYt.video/pick + سقف Auto بتاع MeeTube بيقروا yt_maxh). الاختيار بيفضل
-            // ساري للفيديو ده بس (qCur + المصدر اتبدّل فوق)؛ السقف العام بيتغيّر من
-            // الإعدادات بس (شيب «الجودة الافتراضية» في Main.kt).
-            if (!force) { Notice.show(this, "🎞 الجودة: " + o.label, 2000L) }
+            if (!force) { if (intent.getStringExtra("ytid") != null) Cfg.put("yt_maxh", o.h.toString())
+                Notice.show(this, "🎞 الجودة: " + o.label, 2000L) }
         } catch (e: Exception) { LogStore.err("Player:switchYt", e); Notice.show(this, "ما قدرتش أغيّر الجودة", 2300L) }
     }
     /** (v459) رابط الصوت المنفصل الحالي (لغة الصوت المختارة أولًا، بعده الصوت الافتراضي، بعده أي جودة بصوت) */

@@ -99,10 +99,10 @@ class FileTransferActivity : Activity() {
             val gates = BottomNav(this, ui, th, 3) { i ->
                 if (i != 3) {
                     NavAnim.set(3, i)
-                    if (i == 2) startActivity(TabNav.front(Intent(this, BrowserActivity::class.java)))
-                    else if (i == 4) MeeTubeLink.open(this)
-                    else startActivity(TabNav.main(this, if (i == 0) "videos" else if (i == 1) "music" else if (i == 7) "settings" else "tasks"))   // (v973) من غير finish
+                    if (i == 2) startActivity(Intent(this, BrowserActivity::class.java))
+                    else startActivity(Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP).putExtra("tab", if (i == 0) "videos" else if (i == 1) "music" else if (i == 4) "youtube" else if (i == 7) "settings" else "tasks"))
                     NavAnim.peek(this)
+                    finish()
                 }
             }
             if (floatNav) outer.addView(MtFloat.build(this, th, ui, body, gates, null), LinearLayout.LayoutParams(-1, 0, 1f))

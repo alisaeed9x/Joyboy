@@ -232,7 +232,6 @@ public class ViewManager {
     }
 
     private void startActivity(Class<?> activityClass) {
-        final boolean joyLocal = "MobileLocalPlaybackActivity".equals(activityClass.getSimpleName()); // JOYBOY(v950): opens with no window animation (no flash)
         Log.d(TAG, "Launching activity: " + activityClass.getSimpleName());
 
         mPendingActivityMs = System.currentTimeMillis();
@@ -259,7 +258,6 @@ public class ViewManager {
                 intent.addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT);
             }
 
-            if (joyLocal) { intent.addFlags(Intent.FLAG_ACTIVITY_NO_ANIMATION); }
             safeStartActivity(foreground, intent);
             return;
         }
@@ -273,7 +271,6 @@ public class ViewManager {
             intent.addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT);
         }
 
-        if (joyLocal) { intent.addFlags(Intent.FLAG_ACTIVITY_NO_ANIMATION); }
         safeStartActivity(mContext, intent);
     }
 

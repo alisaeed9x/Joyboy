@@ -56,10 +56,13 @@
     </queries>
     <application android:name=".JoyApp" android:allowAudioPlaybackCapture="true" android:largeHeap="true" android:supportsRtl="true" android:label="Joyboy" android:icon="@mipmap/ic_launcher" android:roundIcon="@mipmap/ic_launcher"
         android:usesCleartextTraffic="true" android:banner="@mipmap/ic_launcher" android:theme="@style/Theme.NewTube">
-        <!-- (v985) LaunchSplashActivity اتشالت: كانت ميتة من v920 (اللانشر بقى SplashActivity بتاع MeeTube، ومحدش بيبدأها) — واللانشر دلوقتي MainActivity نفسها -->
-        <activity android:name=".MainActivity" android:exported="true" android:theme="@style/AppMainPlain" android:launchMode="singleTask"
+        <!-- (v619) بوابة الفتح الخفيفة: صورة السبلاش فورًا ثم MainActivity (أيقونة اللانشر بتفتح دي) -->
+        <!-- (v920) اللانشر بقى SplashActivity بتاع MeeTube — دي لسه موجودة كبوابة لـMainActivity بس من غير فلتر لانشر -->
+        <activity android:name=".LaunchSplashActivity" android:exported="true" android:theme="@style/AppSplashMain"
             android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboardHidden|density">
-            <intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/></intent-filter>
+        </activity>
+        <activity android:name=".MainActivity" android:exported="true" android:theme="@style/AppMainPlain"
+            android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboardHidden|density">
             <intent-filter><action android:name="android.intent.action.SEND"/><category android:name="android.intent.category.DEFAULT"/><data android:mimeType="text/plain"/></intent-filter>
             <intent-filter><action android:name="android.intent.action.VIEW"/><category android:name="android.intent.category.DEFAULT"/><category android:name="android.intent.category.BROWSABLE"/><data android:scheme="https"/><data android:host="www.youtube.com"/><data android:host="m.youtube.com"/><data android:host="youtu.be"/><data android:host="music.youtube.com"/></intent-filter>   <!-- (v345) لينكات يوتيوب تتفتح في Subtitler -->
         </activity>

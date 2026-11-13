@@ -73,7 +73,7 @@ public class PlayerTimeBar extends View implements TimeBar {
     static final int BUFFERED_COLOR = 0x80FFFFFF;
     static final int UNPLAYED_COLOR = 0x33FFFFFF;
 
-    private static final float TRACK_DP = 4f; // JOYBOY(v956): was 2 — thicker, like the old Joyboy player
+    private static final float TRACK_DP = 2f;
     private static final float TRACK_DRAGGING_DP = 8f; // MEETUBE: a fat bar under the finger, like YouTube's
     private static final float GAP_DP = 2f;
     private static final float GAP_DRAGGING_DP = 3f;
@@ -343,50 +343,6 @@ public class PlayerTimeBar extends View implements TimeBar {
     }
 
     /** SponsorBlock ranges (progress fractions + a resolved color); null clears them. */
-    // ---- JOYBOY(v956): the translated parts of the video, drawn over the track like the old player ----
-    @Nullable private List<double[]> mTrCov = null;
-    @Nullable private List<double[]> mTrPend = null;
-    @Nullable private List<double[]> mTrRefine = null;
-    @Nullable private List<double[]> mTrVis = null;
-    private double mTrDurSec = 0d;
-    private boolean mTapSeek = true;
-
-    /** Translated (green), still-to-change (amber), being refined (blue) and visual-mode (light blue) ranges in seconds. */
-    public void setTranslation(double durSec, @Nullable List<double[]> cov, @Nullable List<double[]> pend,
-            @Nullable List<double[]> refine, @Nullable List<double[]> vis) {
-        mTrDurSec = durSec;
-        mTrCov = cov;
-        mTrPend = pend;
-        mTrRefine = refine;
-        mTrVis = vis;
-        invalidate();
-    }
-
-    /** JOYBOY(v956): a tap on the bar seeks there (YouTube's bar only seeks on a drag). */
-    public void setTapToSeek(boolean on) {
-        mTapSeek = on;
-    }
-
-    private void drawTrStrip(Canvas canvas, float left, float right, float y, float h, @Nullable List<double[]> segs,
-            int color, int alpha) {
-        if (segs == null || segs.isEmpty() || mTrDurSec <= 0d) {
-            return;
-        }
-        float w = right - left;
-        for (double[] seg : segs) {
-            if (seg == null || seg.length < 2) {
-                continue;
-            }
-            float a = left + (float) (w * Math.max(0d, Math.min(1d, seg[0] / mTrDurSec)));
-            float b = left + (float) (w * Math.max(0d, Math.min(1d, seg[1] / mTrDurSec)));
-            if (b <= a && a >= right) {
-                continue;
-            }
-            b = Math.max(b, a + dp(1.5f));
-            drawRect(canvas, a, y, Math.min(b, right), y + h, color, alpha);
-        }
-    }
-
     public void setSegments(@Nullable List<SeekBarSegment> segments) {
         mSegments.clear();
         if (segments != null) {
@@ -549,18 +505,6 @@ public class PlayerTimeBar extends View implements TimeBar {
                         drawRect(canvas, from, top, to, bottom, segment.color, restAlpha);
                     }
                 }
-            }
-        }
-
-        // JOYBOY(v956): the translation map just above the track — green = translated, amber/blue = being changed
-        if (restAlpha > 0 && hasDuration && mTrDurSec > 0d) {
-            float stripH = dp(3f);
-            float y1 = top - dp(2.5f) - stripH;
-            drawTrStrip(canvas, left, right, y1, stripH, mTrCov, 0xFF22C55E, restAlpha);
-            drawTrStrip(canvas, left, right, y1, stripH, mTrPend, 0xFFF59E0B, restAlpha);
-            drawTrStrip(canvas, left, right, y1, stripH, mTrRefine, 0xFF3B82F6, restAlpha);
-            if (mTrVis != null && !mTrVis.isEmpty()) {
-                drawTrStrip(canvas, left, right, y1 - dp(1.5f) - stripH * 0.8f, stripH * 0.8f, mTrVis, 0xFF93C5FD, restAlpha);
             }
         }
 
@@ -737,11 +681,7 @@ public class PlayerTimeBar extends View implements TimeBar {
                     return true;
                 }
                 if (mTouchPending) {
-                    if (mTapSeek) {
-                        tapSeek(x); // JOYBOY(v956): a tap seeks to the tapped spot
-                    } else {
-                        endTouch(false); // a tap: seeks nothing, like YouTube's bar
-                    }
+                    endTouch(false); // a tap: seeks nothing, like YouTube's bar
                     return true;
                 }
                 break;
@@ -755,22 +695,6 @@ public class PlayerTimeBar extends View implements TimeBar {
                 break;
         }
         return false;
-    }
-
-    /** JOYBOY(v956): a tap = begin + stop of a scrub that lands on the tapped spot. */
-    private void tapSeek(float x) {
-        mTouchPending = false;
-        ViewParent parent = getParent();
-        if (parent != null) {
-            parent.requestDisallowInterceptTouchEvent(false);
-        }
-        long position = positionAtTrackX(x);
-        mAnchorX = x;
-        mAnchorTrackX = x;
-        mGainLeft = 1f;
-        mGainRight = 1f;
-        beginScrub(position);
-        stopScrubbing(false);
     }
 
     /** Ends a touch or a drag without seeking (a tap, a taken touch, a hidden bar). */

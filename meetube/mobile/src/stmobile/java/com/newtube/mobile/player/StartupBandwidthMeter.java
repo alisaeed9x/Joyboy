@@ -18,8 +18,8 @@ import java.util.function.IntToLongFunction;
  */
 final class StartupBandwidthMeter implements BandwidthMeter, TransferListener {
     static final long DEFAULT_BOOTSTRAP_BPS = 1_000_000;
-    static final long MAX_RECENT_SEED_BPS = 8_000_000;
-    static final long SEED_MAX_AGE_MS = 15 * 60_000;
+    static final long MAX_RECENT_SEED_BPS = 4_000_000;
+    static final long SEED_MAX_AGE_MS = 5 * 60_000;
     static final long MIN_RATE_BPS = 100_000;
     static final long MAX_RATE_BPS = 50_000_000;
     private static final long SAMPLE_MAX_IDLE_MS = 30_000;

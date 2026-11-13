@@ -78,12 +78,8 @@ object NavSnap : Application.ActivityLifecycleCallbacks {
         } catch (_: Throwable) { shot = null }
     }
 
-    /** (v973) أكتيفيتيز لسه متبنّية أول مرة: بس دي بتاخد اللقطة. اللي كانت شغّالة أصلًا (بتتجاب قدّام) شاشتها جاهزة — اللقطة هتتكرر مع أنيميشن النافذة */
-    private val justCreated = java.util.WeakHashMap<Activity, Boolean>()
-
     override fun onActivityStarted(a: Activity) {
         try {
-            if (justCreated.remove(a) == null) { shot?.recycle(); shot = null; from = null; return }
             val bmp = shot ?: return
             if (SystemClock.uptimeMillis() - shotAt > 2000L || from?.get() === a) return
             shot = null; from = null
@@ -114,7 +110,7 @@ object NavSnap : Application.ActivityLifecycleCallbacks {
         } catch (_: Throwable) {}
     }
 
-    override fun onActivityCreated(a: Activity, b: Bundle?) { justCreated[a] = true }
+    override fun onActivityCreated(a: Activity, b: Bundle?) {}
     override fun onActivityResumed(a: Activity) { cur = WeakReference(a) }
     override fun onActivityStopped(a: Activity) {}
     override fun onActivitySaveInstanceState(a: Activity, b: Bundle) {}

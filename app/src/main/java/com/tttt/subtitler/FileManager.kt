@@ -459,10 +459,10 @@ class FileManagerActivity : Activity() {
             if (i != 3) {
                 NavAnim.set(3, i)
                 if (i == 0 && DeviceUi.isTv(this) && TvFocus.goHome(this)) { /* (v482) تلفزيون: الرئيسية = شاشة التلفزيون */ }
-                else if (i == 2) startActivity(TabNav.front(Intent(this, BrowserActivity::class.java)))
-                else if (i == 4) MeeTubeLink.open(this)
-                else startActivity(TabNav.main(this, if (i == 0) "videos" else if (i == 1) "music" else if (i == 7) "settings" else "tasks"))   // (v973) من غير finish
+                else if (i == 2) startActivity(Intent(this, BrowserActivity::class.java))
+                else startActivity(Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP).putExtra("tab", if (i == 0) "videos" else if (i == 1) "music" else if (i == 4) "youtube" else if (i == 7) "settings" else "tasks"))
                 NavAnim.peek(this)
+                finish()
             }
         }
         val floatNav = !tvMode && MtFloat.eligible(this)   // (v900) شريط عايم زجاجي زي صفحة الميديا
@@ -666,7 +666,7 @@ class FileManagerActivity : Activity() {
             sel.isNotEmpty() -> { sel.clear(); refresh() }
             query.isNotEmpty() -> searchEt.setText("")
             !isTop(cur) -> up()
-            else -> if (isTaskRoot || DeviceUi.isTv(this)) finish() else { NavAnim.set(3, 0); startActivity(TabNav.main(this, "videos")); NavAnim.peek(this) }   // (v973) Back = ميديا
+            else -> finish()
         }
     }
 
@@ -899,11 +899,10 @@ class FileManagerActivity : Activity() {
         if (!external && e in FmUtil.AUDIO) { Links.playAudioHere(this, Uri.fromFile(f).toString(), f.nameWithoutExtension); toast("🎵 " + f.name); return }
         try {
             if (!external && (e in FmUtil.VIDEO || e in FmUtil.AUDIO)) {
-                val pi = Intent(this, PlayerActivity::class.java).pipTask(this).apply {
+                startActivity(Intent(this, PlayerActivity::class.java).pipTask(this).apply {
                     data = Uri.fromFile(f); addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                     putExtra("landscape", e in FmUtil.VIDEO); putExtra("fresh", false); putExtra("nosub", false); putExtra("ask", false)
-                }
-                if (!MtPlay.fastOpen(this, pi)) startActivity(pi)   // (v978) فتح مباشر من غير PlayerActivity الوسيطة
+                })
             } else {
                 startActivity(Intent(Intent.ACTION_VIEW).apply {
                     setDataAndType(FmUtil.uriFor(this@FileManagerActivity, f), FmUtil.mime(f)); addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)

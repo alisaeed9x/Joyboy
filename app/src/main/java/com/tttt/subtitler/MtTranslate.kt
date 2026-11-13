@@ -51,8 +51,6 @@ object MtTranslate : JoyboyPlayerHost.Provider {
     private var sv: SubtitleView? = null
     @Volatile private var sideSubs: List<Sub>? = null
     private var engKey = ""
-    @Volatile private var exitSkip = false
-    private var engBg: BgJob? = null
     private var dubPlay: DubPlay? = null
     @Volatile private var dubBusy = false
     @Volatile private var dubCancel = false
@@ -98,11 +96,17 @@ object MtTranslate : JoyboyPlayerHost.Provider {
             overlay.addView(s, FrameLayout.LayoutParams(-1, -2, Gravity.BOTTOM).apply { bottomMargin = subMargin(activity) })
             sv = s; cached = null
             btn = null; btn2 = null
-            // (v963) زرار «🌐 ترجم» العلوي اتشال — الترجمة من شريحة الترجمة (▶ ترجمة) تحت
+            if (options != null) {
+                val b1 = pill(activity, TAG_BTN, "🌐 ترجم") { toggle() }
+                val b2 = pill(activity, TAG_BTN2, "⚙") { showMenu() }
+                options.addView(b2, 0); options.addView(b1, 0)
+                btn = b1; btn2 = b2
+            }
             try { listenedOn?.removeListener(trans) } catch (_: Throwable) {}
             player.addListener(trans); listenedOn = player
             refreshBtn(); maybeAuto()
             MtMedia.attach(activity, player, options, info)
+            try { MtEnhance.attach(activity, player, info) } catch (_: Throwable) {}   // (v945) تحسين صورة الملفات المحلية
             try {
                 MtBar.attachCircles(activity, player, overlay, info)
             } catch (_: Throwable) {}
@@ -114,6 +118,7 @@ object MtTranslate : JoyboyPlayerHost.Provider {
         try {
             try { MtTvPlayer.clear(activity) } catch (_: Throwable) {}
             try { MtMedia.detach(activity) } catch (_: Throwable) {}
+            try { MtEnhance.detach(activity) } catch (_: Throwable) {}
             try {
                 MtBar.detach(activity)
             } catch (_: Throwable) {}
@@ -132,7 +137,7 @@ object MtTranslate : JoyboyPlayerHost.Provider {
     }
 
     /** (v934) هامش السبتايتل من تحت: أعلى لما أزرار المشغّل ظاهرة */
-    private fun subMargin(a: Activity) = dp(a, if (ctlVisible) (if (a.resources.configuration.orientation == android.content.res.Configuration.ORIENTATION_PORTRAIT) 190 else 150) else 40)   // (v954) الشريط نزل تحت: السبتايتل فوقه مش جواه
+    private fun subMargin(a: Activity) = dp(a, if (ctlVisible) 96 else 40)
 
     /** (v937 م3) ⏮ ⏭ في MeeTube ← حلقات فولدر المكتبة */
     override fun onStep(activity: Activity, dir: Int): Boolean = try { MtMedia.onStep(activity, dir) } catch (_: Throwable) { false }
@@ -260,10 +265,8 @@ object MtTranslate : JoyboyPlayerHost.Provider {
     override fun onMinimize(activity: Activity): Boolean {
         return try {
             if (act !== activity) return false
-            // (v979) المصدر لازم يبقى بتاع الفيديو الشغّال: يوتيوب من فيد MeeTube مالوش تسجيل، وكان بيستعير مصدر فيديو قديم (ملف/متصفح) فيروح PiP بدل المصغّر الداخلي
-            val mine = MtOrigin.isFor(info?.videoId(), info?.localUri())
-            val kind = if (mine) MtOrigin.current()?.kind else null
-            LogStore.add("MtOrigin: minimize → " + ((if (mine) MtOrigin.minimizeTarget()?.name else null) ?: "none") + (if (mine) "" else " (مصدر قديم متجاهَل)"))
+            val kind = MtOrigin.current()?.kind
+            LogStore.add("MtOrigin: minimize → " + (MtOrigin.minimizeTarget()?.name ?: "none"))
             kind != null && kind != MtOrigin.Kind.YOUTUBE && kind != MtOrigin.Kind.REMOTE_TV
         } catch (_: Throwable) {
             false
@@ -305,25 +308,6 @@ object MtTranslate : JoyboyPlayerHost.Provider {
         layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, dp(a, 36)).apply { marginEnd = dp(a, 6) }
         setOnClickListener { click() }
     }
-
-    // (v956) خريطة الترجمة لشريط MeeTube (نقط/مجالات: مترجم · هيتغيّر · بيتنقّح) — نفس كاش Player: بتتحسب بس لما الجمل تتغيّر
-    private var segSubsRef: Any? = null
-    private var segPendN = -1
-    private var segCov: List<DoubleArray> = emptyList()
-    private var segPend: List<DoubleArray> = emptyList()
-
-    /** [cov, pend, refine] بالثواني، أو null لو مفيش محرك */
-    internal fun trSegs(): Array<List<DoubleArray>>? {
-        val e = eng ?: return null
-        return try {
-            val sr: Any = e.subs; val pn = e.pendingCount()
-            if (sr !== segSubsRef || pn != segPendN) { segSubsRef = sr; segPendN = pn; segCov = e.coverageSegs(); segPend = e.pendingSegs() }
-            arrayOf(segCov, segPend, e.refiningSegs)
-        } catch (_: Throwable) { null }
-    }
-    internal fun trDurSec(): Double = durSec
-    internal fun srcOrNull(): String? = localUri()
-    internal fun srcHeaders(): Map<String, String> = try { info?.headers() ?: emptyMap() } catch (_: Throwable) { emptyMap() }
 
     private fun localUri(): String? = try { info?.localUri()?.takeIf { it.isNotBlank() } } catch (_: Throwable) { null }
     /** (v923) مفتاح الفيديو الشغّال: معرّف يوتيوب (11 حرف) أو «L:<uri>» لملف/لينك مباشر */
@@ -377,52 +361,6 @@ object MtTranslate : JoyboyPlayerHost.Provider {
         e.userPaused = false
         ui.post { refreshBtn() }
         return true
-    }
-
-    /** (v965) بعد ما سؤال الخروج اتجاوب (كمّل في الخلفية / لا): خروج كامل من الفيديو من غير PiP، والفيديو واقف */
-    private var exitFull = false
-    override fun consumeExitFully(activity: Activity): Boolean { val v = exitFull; exitFull = false; return v }
-
-    /** (v946) الرجوع: لو الترجمة لسه ما خلصتش و«اسألني عند الخروج» مفعّل ← سؤال «أكمّل في الخلفية؟» بدل ما المحرك يتقفل في detach */
-    override fun onBack(activity: Activity): Boolean {
-        try {
-            if (exitSkip) { exitSkip = false; return false }
-            val a = act ?: return false
-            if (a !== activity) return false
-            if (MtBar.exitAskShowing()) return true
-            val e = eng ?: return false
-            if (!on || engVid.isEmpty() || privIds.contains(engVid)) return false
-            if (!Cfg.bool("ask_bg_exit", true)) return false
-            // (v964) سؤال «أكمّل في الخلفية؟» بيظهر في أي فل سكرين (بورتريه/لاند سكيب) لو الترجمة شغّالة
-            val dur = durSec
-            if (dur <= 0.0 || PlayerLogic.percent(e.coveredSec(), dur) >= 99) return false
-            val hasKey = Cfg.allMainKeys().isNotEmpty() || (try { Cfg.snapshot().keys.isNotEmpty() } catch (_: Throwable) { false })
-            if (!hasKey || engBg == null) return false
-            MtBar.exitAsk(activity, { handoffBg(activity) }, { exitSkip = true; exitFull = true; activity.onBackPressed() })
-            return true
-        } catch (t: Throwable) {
-            LogStore.err("MtTranslate:onBack", t)
-            return false
-        }
-    }
-
-    /** (v946) يسلّم الترجمة لخدمة الخلفية (BgJobs) ويكمّل الرجوع — نفس translateInBackground القديمة */
-    private fun handoffBg(a: Activity) {
-        val job = engBg; val e = eng
-        if (job == null || e == null) { exitSkip = true; exitFull = true; a.onBackPressed(); return }
-        on = false; token++; eng = null; engVid = ""; cached = null
-        val app = a.applicationContext
-        try { Notice.show(a, "🌙 هكمّل الترجمة في الخلفية — التقدم في الإشعارات", 2800L) } catch (_: Throwable) {}
-        Thread {
-            try { e.stop(); e.awaitStopped(4000); e.saveNow() } catch (t: Throwable) { LogStore.err("MtTranslate:bgStop", t) }
-            try { BgJobs.enqueue(app, job, "خروج (اخترت: كمّل في الخلفية)") } catch (t: Throwable) { LogStore.err("MtTranslate:bgEnq", t) }
-        }.apply { isDaemon = true }.start()
-        try {
-            if (android.os.Build.VERSION.SDK_INT >= 33 && a.checkSelfPermission("android.permission.POST_NOTIFICATIONS") != android.content.pm.PackageManager.PERMISSION_GRANTED)
-                a.requestPermissions(arrayOf("android.permission.POST_NOTIFICATIONS"), 12)
-        } catch (_: Throwable) {}
-        exitSkip = true; exitFull = true
-        a.onBackPressed()
     }
 
     /** (v942) الترجمة شغّالة دلوقتي؟ */
@@ -624,11 +562,6 @@ object MtTranslate : JoyboyPlayerHost.Provider {
                 vid = "yt:$id"
             }
             engKey = vid
-            run {
-                val web0 = lu != null && (lu.startsWith("http://") || lu.startsWith("https://"))
-                val ttl0 = (try { info?.title() } catch (_: Throwable) { null }) ?: vid
-                engBg = BgJob(vid, ttl0, if (lu != null && !web0) lu else null, if (lu != null) (if (web0) lu else null) else src, HashMap(hdr))
-            }
             val e = try {
                 val pb = PromptBuilder { p -> appCtx.assets.open(p).bufferedReader(Charsets.UTF_8).use { it.readText() } }
                 val store = Store(File(appCtx.filesDir, "progress"), Store.keyFor(vid))
@@ -899,7 +832,6 @@ object MtTranslate : JoyboyPlayerHost.Provider {
 
     /** (v942) صفوف شيت: Pair(العنوان، الفعل) — فعل null = عنوان قسم مش clickable */
     private fun openSheet(a: Activity, title: String, items: List<Pair<String, (() -> Unit)?>>) {
-        if (MtBar.meeRows(a, title, items) != null) return   // (v958) نافذة MeeTube الأصلية
         val views = ArrayList<View>()
         val u = Ui(a, Themes.current())
         var d: android.app.Dialog? = null
@@ -910,25 +842,24 @@ object MtTranslate : JoyboyPlayerHost.Provider {
                 views.add(u.button(label) { d?.dismiss(); f() })
             }
         }
-        d = u.sheet(a, title, views, false, {}, 0.6f)   // (v956) frac: في اللاندسكيب كانت بتفتح صفحة كاملة
+        d = u.sheet(a, title, views)
         d.show()
     }
 
     /** (v942) شيت من Views جاهزة (نصوص/أزرار) */
     private fun openSheetViews(a: Activity, title: String, views: List<View>) {
-        if (MtBar.meeViews(a, title, views) != null) return   // (v958)
         val u = Ui(a, Themes.current())
-        val d = u.sheet(a, title, views, false, {}, 0.6f)   // (v956)
+        val d = u.sheet(a, title, views)
         d.show()
     }
 
     /** (v935 م2) قايمة أدوات الترجمة فوق مشغّل MeeTube — (v942) بقت bottom-sheet */
-    fun showMenu(anchor: View? = null) {   // (v949) anchor ≠ null ← قايمة منبثقة جنب زرار ☰ (PopupWindow) بدل شيت
+    fun showMenu() {
         val a = act ?: return
         val items = ArrayList<Pair<String, (() -> Unit)?>>()
         fun m(label: String, f: () -> Unit) { items.add(Pair(label, f)) }
         m((if (on) "⏹ وقّف الترجمة" else "🌐 ابدأ الترجمة")) { toggle() }
-        m("⚙ نظام الترجمة (جيميناي / وشبر / تفريغ…)") { translateMenu(anchor) }
+        m("⚙ نظام الترجمة (جيميناي / وشبر / تفريغ…)") { translateMenu() }
         m(("💬 وضع الترجمة: " + (dualShort[curDual()] ?: "فردي") + "  (اضغط للتبديل)")) { cycleDual() }
         m("📝 قايمة الجمل") { showSentences() }
         m("🔎 ابحث في الجمل") { searchSentences() }
@@ -953,20 +884,11 @@ object MtTranslate : JoyboyPlayerHost.Provider {
             m("📃 الليستة (طابور التشغيل)") { PlayQueueUi.show(a) }
         }
         m("⚙ إعدادات محرك الترجمة") { MeeTubeLink.openSettings(a, "tr_engine") }
-        if (anchor != null) {
-            val rows = ArrayList<Pair<String, () -> Unit>>()
-            for (p in items) { val f = p.second; if (f != null) rows.add(Pair(p.first, f)) }
-            MtBar.popupMenu(a, anchor, false, rows)
-            return
-        }
         openSheet(a, "🌐 أدوات الترجمة والميديا", items)
     }
 
-    /** (v949) جمل الفيديو الحالي (للأدوات: قص/GIF/ترجمة ثابتة) */
-    internal fun subsNow(): List<Sub> = try { eng?.subs ?: sideSubs ?: emptyList() } catch (_: Throwable) { emptyList() }
-
     /** (v942) قايمة نظام الترجمة — نفس بنود Player.translateMenu بس bottom-sheet: جيميناي ٧٥/٢٥ مقابل الأدق، وشبر أوفلاين، تفريغ بس، إيقاف/كمّل، إعادة ترجمة، تقدم الباتشات، تغيير النظام */
-    fun translateMenu(anchor: View? = null) {   // (v956) anchor ≠ null ← قايمة منبثقة صغيرة جنب الزرار بدل شيت/صفحة كاملة
+    fun translateMenu() {
         val a = act ?: return
         val items = ArrayList<Pair<String, (() -> Unit)?>>()
         fun m(label: String, f: () -> Unit) { items.add(Pair(label, f)) }
@@ -1012,17 +934,9 @@ object MtTranslate : JoyboyPlayerHost.Provider {
         h("⚙ الإعدادات")
         m("🔀 غيّر نظام الترجمة (إيقاف + اختيار)") {
             stopEngine(); sv?.show(null); refreshBtn()
-            translateMenu(anchor)
+            translateMenu()
         }
         m("⚙ إعدادات الترجمة") { MeeTubeLink.openSettings(a, "tr_engine") }
-        if (anchor != null && MtBar.meeRows(a, "⚙ نظام الترجمة", items) != null) return   // (v958) نافذة MeeTube الأصلية (بالعناوين)
-        if (anchor != null) {
-            // (v956) منبثقة صغيرة: العناوين بتتشال (الحالة الحالية بتبان في شريحة الترجمة)، وبيفضل ✓ على الاختيار الحالي
-            val rows = ArrayList<Pair<String, () -> Unit>>()
-            for (pr in items) { val f = pr.second; if (f != null) rows.add(Pair(pr.first, f)) }
-            MtBar.popupMenu(a, anchor, true, rows)
-            return
-        }
         openSheet(a, "⚙ نظام الترجمة", items)
     }
 

@@ -177,7 +177,6 @@ public class MobileMainApplication extends MainApplication {
         if (sBooted == null) {
             sBooted = this;
         }
-        try { com.newtube.mobile.ui.common.PlayerTrace.install(mHost != null ? mHost : (android.app.Application) this); } catch (Throwable ignored) { } // JOYBOY(v952)
         // The shell-protected benchmark fixture uses only bundled media. Suppress speculative
         // server warmups for that offline run; production builds never enable this path.
         boolean offlineBenchmark = (com.liskovsoft.smartyoutubetv2.tv.BuildConfig.BENCHMARK

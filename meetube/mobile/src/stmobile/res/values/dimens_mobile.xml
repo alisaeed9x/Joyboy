@@ -31,7 +31,7 @@
     <!-- NEWTUBE(seek bar): the seek bar's box (its touch band; the track lies on its bottom edge in
          portrait), the bottom row's margin over it (the rows overlap by 8dp: only the band's
          lower part below the row's icons scrubs) and the dragged time/chapter pill's margin. -->
-    <dimen name="mobile_player_bar_height">26dp</dimen>
+    <dimen name="mobile_player_bar_height">18dp</dimen>
     <dimen name="mobile_player_bottom_row_margin">10dp</dimen>
     <dimen name="mobile_player_scrub_pill_margin">30dp</dimen>
 

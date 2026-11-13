@@ -9,9 +9,8 @@
     * android.hardware.touchscreen -> NOT required either (MEETUBE(tv), issue #21): Android TV and
       TV boxes have none, and the app is used there with the remote.
 
-  (v985) SplashActivity مابقتش لانشر: أيقونة الموبايل بقت MainActivity بتاع Joyboy
-  (:app manifest) — SplashActivity لسه معلَنة للبدء الصريح (MeeTubeLink / إعادة
-  التشغيل) وبتوجّه اللينكات اللي مش لانشر عبر SplashPresenter ->
+  SplashActivity already carries the normal LAUNCHER category in the main manifest,
+  so no launcher changes are needed here - it routes via SplashPresenter ->
   ViewManager.startView(BrowseView.class)/startDefaultView(), both of which are
   re-pointed at the touch Home screen below (see MobileMainApplication).
 
@@ -160,19 +159,6 @@
             android:configChanges="screenSize|smallestScreenSize|screenLayout|orientation|layoutDirection|keyboardHidden|uiMode"
             android:screenOrientation="user"
             android:theme="@style/Theme.NewTube.Player" />
-
-        <!-- JOYBOY(v947): second player instance for local files / direct links / browser videos (own task, no YouTube page behind it) -->
-        <activity
-            android:name="com.newtube.mobile.ui.playback.MobileLocalPlaybackActivity"
-            android:enableOnBackInvokedCallback="true"
-            tools:targetApi="33"
-            android:exported="false"
-            android:launchMode="singleTop"
-            android:taskAffinity="joyboy.localplayer"
-            android:supportsPictureInPicture="true"
-            android:configChanges="screenSize|smallestScreenSize|screenLayout|orientation|layoutDirection|keyboardHidden|uiMode"
-            android:screenOrientation="user"
-            android:theme="@style/Theme.NewTube.PlayerLocal" />
 
         <!--
           Background-playback foreground service (Background Audio + PiP wave). Reuses the single

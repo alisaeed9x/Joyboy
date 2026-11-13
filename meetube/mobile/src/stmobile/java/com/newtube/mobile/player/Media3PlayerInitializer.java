@@ -33,7 +33,7 @@ import com.liskovsoft.smartyoutubetv2.common.prefs.PlayerTweaksData;
  *       default = the BUFFER_HIGH preset that used to be hardcoded: 50s min / 75s max),</li>
  *   <li>start gate 0.5s first frame / 1.5s after rebuffer (TTFF fix),</li>
  *   <li>back-buffer 120s from keyframe with a RAM-clamped byte budget (backward-seek fix),</li>
- *   <li>ABR up-switch after 2.5s of stable buffer (the mobile tuning from the legacy round), paired
+ *   <li>ABR up-switch after 5s of stable buffer (the mobile tuning from the legacy round), paired
  *       with a down-switch window scaled to the chosen buffer preset (see
  *       {@link #createTrackSelector()}),</li>
  *   <li>only while saving data (a metered network AND Android Data Saver on for this app, see
@@ -82,7 +82,7 @@ public class Media3PlayerInitializer {
     private static final int LOW_TARGET_BUFFER_BYTES = 48 * MB;
     private static final int MEDIUM_TARGET_BUFFER_BYTES = 96 * MB;
     private static final int HIGHEST_TARGET_BUFFER_BYTES = 288 * MB;
-    private static final int ABR_UP_SWITCH_MS = 2_500;
+    private static final int ABR_UP_SWITCH_MS = 5_000;
 
     // NEWTUBE(buffer-knob): one-time default alignment. Every pre-knob mobile build ran the baked
     // BUFFER_HIGH preset no matter what the stored pref said, and PlayerData's parse default is
@@ -163,25 +163,6 @@ public class Media3PlayerInitializer {
                 .apply();
     }
 
-    // JOYBOY(v981): Joyboy's own quality setting (yt_maxh, prefs file "p", Cfg.int("yt_maxh", 0)):
-    // 0 means "highest quality" (uncapped), above 0 it caps at that height. :mobile cannot call
-    // :app's Cfg, so it reads the same prefs file and key by name - the same seam as
-    // SplashActivity.isTvMode() (v939) reading "ui_mode" from "p". The value is stored as a
-    // String (Cfg.put stores it with putString: yt_maxh is not in CfgCodec.INTS), so it is read
-    // with getString and parsed, never getInt. Any unreadable value means uncapped (0).
-    private static int joyboyMaxHeight(Context context) {
-        try {
-            String raw = context.getSharedPreferences("p", Context.MODE_PRIVATE)
-                    .getString("yt_maxh", "0");
-            if (raw == null) {
-                return 0;
-            }
-            return Math.max(0, Integer.parseInt(raw.trim()));
-        } catch (RuntimeException e) {
-            return 0;
-        }
-    }
-
     public DefaultTrackSelector createTrackSelector() {
         // NEWTUBE(abr-window): the DOWN-switch window must scale with the buffer preset. media3
         // signature (verified against 1.10.1 bytecode - the 4-arg ctor delegates to the 8-arg one
@@ -219,15 +200,12 @@ public class Media3PlayerInitializer {
                         AdaptiveTrackSelection.DEFAULT_BANDWIDTH_FRACTION,
                         VideoViewportCap.shared()));
 
-        // JOYBOY(v981): Auto ceiling follows Joyboy's own quality setting (yt_maxh): 0 means
-        // "highest quality", so no max-size cap at all; above 0 the cap is that height. An
-        // explicit user pick still overrides it (the track adapter lifts the constraints when
-        // pinning a track). Square, so a cap means its class in both orientations: media3
-        // checks width <= max AND height <= max with no rotation, and 1920x1080 left a
-        // vertical video's 1080p (1080x1920) and 720p (720x1280) out - vertical videos topped
-        // out at 608x1080, which YouTube calls 480p (VideoRung).
-        int joyMaxH = joyboyMaxHeight(mContext);
-        int ceiling = joyMaxH > 0 ? VideoRung.ceilingSide(joyMaxH) : Integer.MAX_VALUE;
+        // 1080p Auto ceiling, mobile default; an explicit user pick overrides it (the track
+        // adapter lifts the constraints when pinning a track). Square, so it means "1080p" in
+        // both orientations: media3 checks width <= max AND height <= max with no rotation, and
+        // 1920x1080 left a vertical video's 1080p (1080x1920) and 720p (720x1280) out - vertical
+        // videos topped out at 608x1080, which YouTube calls 480p (VideoRung).
+        int ceiling = VideoRung.ceilingSide(1080);
         trackSelector.setParameters(trackSelector.buildUponParameters()
                 // MEETUBE(issue #177): session audio effects require decoded, non-offloaded audio.
                 .setAudioOffloadPreferences(new AudioOffloadPreferences.Builder()
