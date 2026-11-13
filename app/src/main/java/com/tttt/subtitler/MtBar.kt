@@ -51,6 +51,8 @@ object MtBar {
     private const val DARK_OFF = 0xE00F0F12.toInt()
     private const val TAG_LOCKOV = "mtbar_lockov"
     private const val REST_A = 0.25f
+    private const val COUNTER_ROW_DP = 30   // (v971) ارتفاع صف عدّاد البداية/النهاية فوق شريط التقدم
+    private const val BAR_LINE_DP = 34      // (v971) ارتفاع سطر شريط التقدم
     private const val BAR_BOTTOM_DP = 6   // (v954) كان 84 — الشريط (ترجمة … تصدير) كان مرفوع لنص الشاشة؛ دلوقتي لازق تحت
 
     private val ui = Handler(Looper.getMainLooper())
@@ -102,6 +104,7 @@ object MtBar {
     private var qualB: TextView? = null            // (v960) زرار الجودة (رقم الجودة إجباري) جنب 🗣▾ — لاند سكيب
     private var qualLast = ""
     private var durCapWired = false
+    private var durTw: android.text.TextWatcher? = null   // (v972) بيشيل « / » من عدّاد النهاية لحظة الكتابة
     private var audModePill: TextView? = null
     private var batchWarn: TextView? = null
     private var volBar: SeekBar? = null
@@ -210,7 +213,7 @@ object MtBar {
         // (v944) نفس ترتيب المشغّل القديم: شريط أيقونات واحد فوق (بيتسحب) + شريحة الترجمة (ترجمة · ⚙ · إعادة) + الصف الرئيسي
         root.addView(trRow(activity))
         // (v946) شريط التقدم بين شريحة الترجمة والصف الرئيسي زي القديم: مكان فاضي (slot) وشريط MeeTube بيتحط عليه
-        val slot = View(activity).apply { layoutParams = LinearLayout.LayoutParams(-1, dp(activity, 34)) }   // (v949) 34dp: الوقت والشريط والمدة على نفس السطر زي القديم (timeRow 30dp)
+        val slot = View(activity).apply { layoutParams = LinearLayout.LayoutParams(-1, dp(activity, COUNTER_ROW_DP + BAR_LINE_DP)) }   // (v971) فوق: صف العدّادين، تحت: سطر الشريط   // (v949) 34dp: الوقت والشريط والمدة على نفس السطر زي القديم (timeRow 30dp)
         root.addView(slot)
         slotV = slot
         val mainV = mainRow(activity)
@@ -395,7 +398,7 @@ object MtBar {
         scrubL = null
         frames?.end(); frames = null
         try { bottomRowV?.translationY = 0f } catch (_: Throwable) {}
-        nativeDup.clear(); nativeInv.clear(); bottomRowV = null
+        nativeDup.clear(); nativeInv.clear(); bottomRowV = null; durTw = null; durCapWired = false
         try { exitDlg?.dismiss() } catch (_: Throwable) {}
         seekHook = null
         timeBar = null
@@ -642,9 +645,30 @@ object MtBar {
                 row.addView(durV, row.childCount, LinearLayout.LayoutParams(-2, -2).apply { marginEnd = dp(a, 8) })
             }
             if (durV != null) {
-                val t = durV.text?.toString() ?: ""
-                val fixed = t.trimStart(' ', '/')
-                if (fixed != t) durV.text = fixed
+                // (v972) عدّاد النهاية كان بيرعش: MeeTube كل مرة بيكتب النص بـ« / » قدّامه وإحنا كنا بنشيلها جوه كل رسمة (setText ← قياس تاني ← عرض بيتغيّر).
+                // دلوقتي: TextWatcher بيشيلها لحظة الكتابة نفسها (قبل أي قياس) + عرض أدنى ثابت + أرقام بعرض موحّد، فالكبسولة عمرها ما بتغيّر عرضها.
+                if (durTw == null) {
+                    val w = object : android.text.TextWatcher {
+                        override fun beforeTextChanged(c: CharSequence?, st: Int, cnt: Int, af: Int) {}
+                        override fun onTextChanged(c: CharSequence?, st: Int, b: Int, cnt: Int) {}
+                        override fun afterTextChanged(e: android.text.Editable?) {
+                            if (e == null || e.isEmpty()) return
+                            var n = 0
+                            while (n < e.length && (e[n] == ' ' || e[n] == '/')) n++
+                            if (n > 0) e.delete(0, n)
+                        }
+                    }
+                    durTw = w
+                    durV.addTextChangedListener(w)
+                    try {
+                        durV.fontFeatureSettings = "tnum"
+                        durV.gravity = Gravity.CENTER
+                        durV.minWidth = (durV.paint.measureText("-0:00:00") + dp(a, 18)).toInt()
+                    } catch (_: Throwable) {}
+                    val t0 = durV.text?.toString() ?: ""
+                    val f0 = t0.trimStart(' ', '/')
+                    if (f0 != t0) durV.text = f0
+                }
                 // (v960) كبسولة توقيت النهاية: زجاج زي كبسولة الوقت الحالي بالظبط (نفس المصدر ونفس الحواشي) + دوسة عليها بتبدّل المتبقّي/المدة
                 if (!durCapWired) {
                     durCapWired = true
@@ -657,25 +681,30 @@ object MtBar {
                     } catch (e: Throwable) { LogStore.err("MtBar:durCap", e) }
                 }
             }
-            // الصف كله على سطر الشريط (مركز الشريط = مركز الـslot)
+            // (v971) العدّادين (بداية/نهاية) فوق الشريط مش على نفس سطره: الـslot فيه منطقتين — فوق للعدّادين وتحت للشريط.
+            // الحساب مطلق (الموضع الأصلي من غير الـtranslation) فمفيش تراكم ولا رعشة، ومفيش تغيير هوامش حسب عرض النص تاني.
             val s = IntArray(2)
             val t = IntArray(2)
             slot.getLocationInWindow(s)
+            val barWant = s[1] + slot.height - dp(a, BAR_LINE_DP) / 2f
             tb.getLocationInWindow(t)
-            val want = s[1] + slot.height / 2f
-            val d = want - (t[1] + tb.height / 2f)
-            if (Math.abs(d) >= 1f) {
-                tb.translationY = tb.translationY + d
-                bottomRowV?.let { it.translationY = it.translationY + d }
+            val barD = barWant - ((t[1] - tb.translationY) + tb.height / 2f)
+            if (Math.abs(barD - tb.translationY) >= 0.5f) tb.translationY = barD
+            val br = bottomRowV
+            if (br != null && br.height > 0) {
+                val r2 = IntArray(2)
+                br.getLocationInWindow(r2)
+                val rowWant = s[1] + dp(a, COUNTER_ROW_DP) / 2f
+                val rowD = rowWant - ((r2[1] - br.translationY) + br.height / 2f)
+                if (Math.abs(rowD - br.translationY) >= 0.5f) br.translationY = rowD
             }
-            // الشريط بين الوقت والمدة: هامش يمين/شمال بعرض النصين
+            // الشريط بعرض الصف كله (العدّادين فوقه): هامش ثابت مرة واحدة
             val lp = tb.layoutParams as? ViewGroup.MarginLayoutParams
-            if (lp != null && posV != null && durV != null && timeV != null) {
-                val l = (timeV.width + dp(a, 10)).coerceAtLeast(0)
-                val r = (durV.width + dp(a, 18)).coerceAtLeast(0)
-                if (Math.abs(lp.leftMargin - l) > 2 || Math.abs(lp.rightMargin - r) > 2) {
-                    lp.leftMargin = l
-                    lp.rightMargin = r
+            if (lp != null) {
+                val m = dp(a, 6)
+                if (lp.leftMargin != m || lp.rightMargin != m) {
+                    lp.leftMargin = m
+                    lp.rightMargin = m
                     tb.layoutParams = lp
                 }
             }

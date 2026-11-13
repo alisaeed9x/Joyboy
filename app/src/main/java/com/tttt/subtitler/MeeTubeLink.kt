@@ -79,6 +79,7 @@ object MeeTubeLink {
             bindBar()
             MobileMainApplication.boot(act.application)
             if (act is MainActivity) NavAnim.set(0, 4)   // (v911) نفس أنيميشن انتقال التبويبات (mt_tab_enter/exit) بدل act_enter القديم
+            if (com.newtube.mobile.ui.browse.MobileBrowseActivity.bringToFront(act)) return   // (v973) شاشة يوتيوب شغّالة: تتجاب قدّام زي ما هي (من غير Splash ولا إعادة تحميل)
             act.startActivity(Intent(act, com.liskovsoft.smartyoutubetv2.tv.ui.main.SplashActivity::class.java))
         } catch (e: Throwable) {
             LogStore.err("MeeTubeLink:open", e)

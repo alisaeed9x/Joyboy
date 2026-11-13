@@ -171,7 +171,7 @@
             android:supportsPictureInPicture="true"
             android:configChanges="screenSize|smallestScreenSize|screenLayout|orientation|layoutDirection|keyboardHidden|uiMode"
             android:screenOrientation="user"
-            android:theme="@style/Theme.NewTube.Player" />
+            android:theme="@style/Theme.NewTube.PlayerLocal" />
 
         <!--
           Background-playback foreground service (Background Audio + PiP wave). Reuses the single

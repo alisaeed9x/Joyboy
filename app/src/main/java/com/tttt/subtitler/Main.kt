@@ -121,6 +121,7 @@ class MainActivity : Activity() {
     private var pendingTool = ""
     private var pendingSrc: ToolSrc? = null
     override fun onCreate(b: Bundle?) {
+        TabNav.pendingMain = null   // (v973)
         val t0Boot = android.os.SystemClock.uptimeMillis()   // (v834) قياس زمن onCreate + بداية عدّ السبلاش
         NetUse.init(); NetGate.apply(this)
         // (v834) NetLedger/NetLog بيقروا ملفات JSON (لحد 45 يوم) ويركّبوا ProxySelector: ما ينفعش يعطّلوا أول رسمة — خيط خلفي
@@ -949,7 +950,7 @@ class MainActivity : Activity() {
             dv.postDelayed({ if (!isFinishing && !isDestroyed) android.os.Looper.myQueue().addIdleHandler { if (!isFinishing && !isDestroyed) { try { ensureMusic(); musicUi?.ensureLoaded() } catch (e: Throwable) { LogStore.err("Main:prewarmMusic", e) } }; false } }, 1500L)   // (v940) الموسيقى تتبني وتتحمّل ورا الستار بدري
         }
         val tabletShell = DeviceUi.isTablet(this)   // (v462) قشرة التابلت: ريل جانبي زي يوتيوب التابلت بدل الشريط السفلي
-        val nav = BottomNav(this, ui, th, 0, tabletShell) { i -> if (i >= BottomNav.YT_HOME) { MeeTubeLink.open(this) /* (v888) MeeTube */ } else if (i == 2) { save(); NavAnim.set(curTab, 2); startActivity(Intent(this, BrowserActivity::class.java)) } else if (i == 3) { save(); NavAnim.set(curTab, 3); startActivity(FilesHub.intent(this)) } else if (i == 7) { musicReturnTab = -1; settingsShow?.invoke(null) } else if (i == 0 && fromTv && !fromPlayer && TvFocus.goHome(this)) { /* (v482) تلفزيون: «الرئيسية» = شاشة التلفزيون */ } else { musicReturnTab = -1; showTabFn(i) } }   // (v310) 4 الملفات = شاشة منفصلة زي المتصفح · (v606) يوتيوب شغّال ← المتصفح: الفيديو يكمّل في PiP والاتنين مع بعض
+        val nav = BottomNav(this, ui, th, 0, tabletShell) { i -> if (i >= BottomNav.YT_HOME) { MeeTubeLink.open(this) /* (v888) MeeTube */ } else if (i == 2) { save(); NavAnim.set(curTab, 2); startActivity(TabNav.front(Intent(this, BrowserActivity::class.java))) } else if (i == 3) { save(); NavAnim.set(curTab, 3); startActivity(TabNav.front(FilesHub.intent(this))) } else if (i == 7) { musicReturnTab = -1; settingsShow?.invoke(null) } else if (i == 0 && fromTv && !fromPlayer && TvFocus.goHome(this)) { /* (v482) تلفزيون: «الرئيسية» = شاشة التلفزيون */ } else { musicReturnTab = -1; showTabFn(i) } }   // (v310) 4 الملفات = شاشة منفصلة زي المتصفح · (v606) يوتيوب شغّال ← المتصفح: الفيديو يكمّل في PiP والاتنين مع بعض
         navUi = nav
         nav.onMoreToggle = { o -> pageGearUi?.moreOpen = o }   // (v820)
         if (!fromPlayer) {
@@ -1817,11 +1818,12 @@ class MainActivity : Activity() {
         val hd = clipHeaders(c)
         Thread {
             val vs = try { Downloader.variants(c.playUrl, hd) } catch (_: Throwable) { emptyList() }
+            val sz = if (vs.size > 1) try { Downloader.variantBytes(vs, hd) } catch (_: Throwable) { emptyList() } else emptyList()   // (v975) الحجم الكلي لكل جودة
             runOnUiThread {
                 if (isFinishing || isDestroyed) return@runOnUiThread
                 if (vs.size <= 1) clipDownload(c, title, vs.firstOrNull()?.url ?: c.playUrl, vs.firstOrNull()?.h ?: 0)
                 else DlQuality.show(this, "⬇ اختار جودة التحميل",
-                    vs.map { v -> DlQuality.Opt((if (v.h > 0) "${v.h}p" else "جودة") + (if (v.bw > 0) " · " + String.format("%.1f", v.bw / 1_000_000.0) + " Mbps" else ""), v.h, v.url, null, true) }, null) { o -> clipDownload(c, title, o.url, o.h) }
+                    vs.mapIndexed { i, v -> DlQuality.Opt(Downloader.variantLabel(v, sz.getOrElse(i) { 0L }), v.h, v.url, null, true) }, null) { o -> clipDownload(c, title, o.url, o.h) }
             }
         }.apply { isDaemon = true }.start()
     }
@@ -1901,6 +1903,7 @@ class MainActivity : Activity() {
     override fun onPause() { try { DataCapsule.detach(this) } catch (_: Throwable) {}; super.onPause() }   // (v799) كبسولة الداتا في كل التبويبات
     override fun onResume() {
         super.onResume()
+        TabNav.pendingMain?.let { t -> TabNav.pendingMain = null; try { onNewIntent(Intent().putExtra("tab", t)) } catch (e: Throwable) { LogStore.err("Main:pendingTab", e) } }   // (v973) REORDER_TO_FRONT من غير onNewIntent
         try { DataCapsule.attach(this) } catch (_: Throwable) {}   // (v799)
         try { tvModeSeen = PlayTarget.enabled(); TvModeFab.listeners.addIfAbsent(tvModeSync) } catch (_: Throwable) {}
         if (!fromPlayer) { updateYtBadge(); ytBackgroundSync() }
@@ -1924,6 +1927,7 @@ class MainActivity : Activity() {
     /** (v117) الرجوع من المتصفح بشريط البوابات: بيفتح البوابة اللي اخترتها */
     override fun onNewIntent(i: Intent?) {
         super.onNewIntent(i)
+        TabNav.pendingMain = null   // (v973) اتسلّم فعلًا
         if (DeviceUi.isTv(this) && !fromPlayer) fromTv = true   // (v482)
         // (v939) إعادة توجيه باردة كانت بتحصل في onCreate بس — intent جديد من غير وجهة صريحة (لا تبويب ولا yt_open ولا رابط)
         // كان بيتفتح على واجهة الموبايل بدل TvActivity: نفس شرط البداية بالظبط، بيتطبق هنا كمان قبل أي توزيع تبويب
@@ -1959,6 +1963,7 @@ class MainActivity : Activity() {
         if (!fromPlayer && curTab != 0) { if (fromTv && DeviceUi.isTv(this) && TvFocus.goHome(this)) return; showTabFn(0); return }   // (v477) تلفزيون: Back من أي قسم = الشاشة الرئيسية
         if (!fromPlayer && fromTv && curTab == 0 && libUi?.back() != true) { try { startActivity(Intent(this, TvActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)); finish() } catch (_: Throwable) { super.onBackPressed() }; return }   // (v467) زيارة من التلفزيون: رجوع من الجذر يرجّع للتلفزيون
         if (!fromPlayer && libUi?.back() == true) return
+        if (!fromPlayer && !tvShellOn && !DeviceUi.isTv(this)) { moveTaskToBack(true); return }   // (v973) Main هي الجذر: من غير finish عشان متكشفش تبويب شغّال تحتها (متصفح/ملفات/يوتيوب)
         super.onBackPressed()
     }
     override fun startActivity(i: Intent?) { super.startActivity(i); try { if (tvShellOn) { NavAnim.take(this); overridePendingTransition(0, 0) } else if (!NavAnim.take(this)) overridePendingTransition(R.anim.act_enter, R.anim.act_stay) } catch (e: Exception) { LogStore.err("Main:720", e) } }

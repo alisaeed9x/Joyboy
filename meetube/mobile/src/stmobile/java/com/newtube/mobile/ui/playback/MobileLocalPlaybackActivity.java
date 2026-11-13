@@ -40,6 +40,12 @@ public class MobileLocalPlaybackActivity extends MobilePlaybackActivity {
         sNextPortrait = false;
         try { setRequestedOrientation(portrait ? android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT : android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE); } catch (Throwable ignored) { }
         super.onCreate(savedInstanceState);
+        // JOYBOY(v973): لفّة الشاشة لاندسكيب وقت الفتح من غير أنيميشن اللفّ (كان بيبان فريم أبيض)
+        try {
+            android.view.WindowManager.LayoutParams wlp = getWindow().getAttributes();
+            wlp.rotationAnimation = android.view.WindowManager.LayoutParams.ROTATION_ANIMATION_JUMPCUT;
+            getWindow().setAttributes(wlp);
+        } catch (Throwable ignored) { }
         // JOYBOY(v950): black from the very first frame (never the white watch-page / theme window), no open animation
         try { getWindow().setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(android.graphics.Color.BLACK)); } catch (Throwable ignored) { }
         try { overridePendingTransition(0, 0); } catch (Throwable ignored) { }

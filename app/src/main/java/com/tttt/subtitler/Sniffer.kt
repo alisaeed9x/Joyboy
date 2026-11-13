@@ -35,7 +35,9 @@ import java.net.HttpURLConnection
 import java.net.URL
 
 /** فيديو اتلقط (زي «لينك التحميل» في 1DM): رابط + نوعه + مصدره (ref/ua) عشان المشغّل يفتحه بنفس الهيدرز */
-class Found(val url: String, val kind: String, val title: String = "", val ref: String = "", val ua: String = "", val page: String = "") {   // (v847) ref = الـReferer الحقيقي للطلب (إطار المشغّل) · page = صفحة المتصفح (للعنوان/التجميع)
+class Found(val url: String, val kind: String, val title: String = "", @Volatile var ref: String = "", val ua: String = "", val page: String = "") {   // (v976) ref بقت var: فحص اللينك بيصلّحها لو لقى Referer شغّال تاني
+    /** (v976) Origin الحقيقي للطلب (لو المشغّل الخارجي بيبعته) — اللي نجح في فحص اللينك */
+    @Volatile var origin = ""   // (v847) ref = الـReferer الحقيقي للطلب (إطار المشغّل) · page = صفحة المتصفح (للعنوان/التجميع)
     @Volatile var size = -1L
     @Volatile var mime = ""
     /** (v203) التبويب + «جيل» الصفحة اللي اتلقط منها: لما الصفحة تتغير الجيل بيزيد واللقطات القديمة بتختفي */
@@ -49,6 +51,13 @@ object Sniff {
     // (v722) + midroll/vast/vmap/banner/وسوم إعلان في اسم الملف — وبعدها AdBlock.blocked (شبكات إعلانات + مراهنات) في accept
     private val JUNK = Regex("(doubleclick|googlesyndication|adservice|/ads?/|/preroll|/midroll|/vast|/vmap|/adtag|/banner|[?&/_-]ads?[_-]|analytics|\\.gif)", RegexOption.IGNORE_CASE)
 
+    /** (v976) أصل اللينك (https://host) من غير سلاش في الآخر — للـOrigin، ومنه الـReferer = origin + "/" */
+    fun originOf(u: String?): String? {
+        if (u.isNullOrBlank() || !u.startsWith("http", true)) return null
+        val i = u.indexOf("://"); if (i < 0) return null
+        val e = u.indexOf('/', i + 3)
+        return (if (e < 0) u else u.substring(0, e)).takeIf { it.length > i + 3 }
+    }
     fun isDirect(u: String) = u.startsWith("http", true) && EXT.containsMatchIn(u)
 
     /** رابط الطلب → رابط فيديو صالح أو null */
@@ -63,6 +72,11 @@ object Sniff {
             return u
         }
         return if (EXT.containsMatchIn(raw)) raw else null
+    }
+    /** (v977) لينك جاي من صيّاد الجافا (VidHook): من غير شرط الامتداد، بنفس فلتر الإعلانات */
+    fun acceptHooked(raw: String): String? {
+        if (!raw.startsWith("http", true) || JUNK.containsMatchIn(raw) || AdBlock.blocked(raw)) return null
+        return if (raw.contains("googlevideo.com/videoplayback")) accept(raw) else raw
     }
     fun kindOf(u: String): String {
         val p = u.substringBefore('?').lowercase()

@@ -4161,6 +4161,8 @@ class PlayerActivity : Activity(), Host {
         noSub = intent.getBooleanExtra("nosub", false); askSaved = intent.getBooleanExtra("ask", false); autoTr = intent.getBooleanExtra("autotr", false)
         intent.getStringExtra("ua")?.takeIf { it.isNotEmpty() }?.let { hdr["User-Agent"] = it }
         intent.getStringExtra("ref")?.takeIf { it.isNotEmpty() }?.let { hdr["Referer"] = it }
+        // (v976) المشغّلات الخارجية (hls.js) بتبعت Origin مع كل طلب — نفس أصل الـReferer، من غير يوتيوب
+        hdr["Referer"]?.let { r0 -> if (!r0.contains("youtube.com", true) && !r0.contains("youtu.be", true)) Sniff.originOf(r0)?.let { o0 -> hdr["Origin"] = o0 } }
         intent.getStringExtra("cookie")?.takeIf { it.isNotEmpty() }?.let { hdr["Cookie"] = it }
 
         val page = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setBackgroundColor(th.bg); layoutDirection = View.LAYOUT_DIRECTION_RTL }

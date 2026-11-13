@@ -51,6 +51,8 @@ object MtPlay {
         val hdr = LinkedHashMap<String, String>()
         i.getStringExtra("ua")?.takeIf { it.isNotEmpty() }?.let { hdr["User-Agent"] = it }
         i.getStringExtra("ref")?.takeIf { it.isNotEmpty() }?.let { hdr["Referer"] = it }
+        // (v976) المشغّلات الخارجية (hls.js) بتبعت Origin مع كل طلب — نفس أصل الـReferer، من غير يوتيوب
+        hdr["Referer"]?.let { r0 -> if (!r0.contains("youtube.com", true) && !r0.contains("youtu.be", true)) Sniff.originOf(r0)?.let { o0 -> hdr["Origin"] = o0 } }
         i.getStringExtra("cookie")?.takeIf { it.isNotEmpty() }?.let { hdr["Cookie"] = it }
         val aurlRaw = i.getStringExtra("aurl")?.takeIf { it.isNotEmpty() }
         val aurl = aurlRaw?.takeIf { it.startsWith("http://", true) || it.startsWith("https://", true) }
