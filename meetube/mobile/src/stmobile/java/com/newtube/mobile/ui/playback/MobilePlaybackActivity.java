@@ -780,6 +780,15 @@ public class MobilePlaybackActivity extends MobileActivity
             mRoutedInWhileLeaving = true;
             logPip("routed-in while-leaving");
         }
+        // JOYBOY(v960): a different video opened while this one is in the PiP window: the new video used to
+        // start inside the small PiP window over a black screen. Expand the window first (same path as the
+        // routed-in restore above), so the new video opens full-size.
+        if (isInPipModeNow() && !SystemPipBridge.isRestoreIntent(intent)) {
+            mRoutedInRestoreAttempts = 0;
+            logPip("new video while in PiP: expand");
+            SystemPipBridge.restore(this);
+            Utils.postDelayed(mRoutedInRestore, 400);
+        }
     }
 
     /**
@@ -2708,10 +2717,18 @@ public class MobilePlaybackActivity extends MobileActivity
             resetMorph();
             return;
         }
+        if (isJoyLocalPage() && !mIsInPip && !mPipEnterPending && isLandscape()
+                && !com.newtube.mobile.ui.common.FocusRing.isTv(this)) {
+            // JOYBOY(v960): Back (swipe) in landscape fullscreen only leaves the fullscreen (to the upright player) —
+            // the video keeps playing and stays open; the next Back leaves it as before.
+            mBackPreview = false;
+            toggleFullscreen();
+            return;
+        }
         if (isJoyLocalPage() && !mIsInPip && !mPipEnterPending) { // JOYBOY(v950): local player — Back leaves straight (small PiP or close), upright or landscape, never the watch page
             mBackPreview = false;
             if (JoyboyPlayerHost.onMinimize(this)) {
-                setPlayWhenReady(false);
+                // JOYBOY(v960): no setPlayWhenReady(false) any more — the small PiP window keeps playing
                 enterPipMode();
                 if (mPipEnterPending) {
                     return;
@@ -2732,8 +2749,12 @@ public class MobilePlaybackActivity extends MobileActivity
         if (!mIsInPip && !mPipEnterPending
                 && layoutOrientation() == Configuration.ORIENTATION_LANDSCAPE) {
             mBackPreview = false;
-            // JOYBOY(v941): Back out of fullscreen for a non-YouTube source goes straight to a small
-            // paused PiP (or closes outright if PiP is refused) — never the watch page.
+            // JOYBOY(v960): Back out of landscape fullscreen only leaves the fullscreen now (the video stays open
+            // and keeps playing) — it no longer shrinks to a stopped PiP. (v941's PiP-on-Back is kept for TV only.)
+            if (!com.newtube.mobile.ui.common.FocusRing.isTv(this)) {
+                toggleFullscreen();
+                return;
+            }
             if (JoyboyPlayerHost.onMinimize(this)) {
                 setPlayWhenReady(false);
                 enterPipMode();
@@ -7947,7 +7968,7 @@ public class MobilePlaybackActivity extends MobileActivity
                 mVideoArea.setTranslationY(0f);
             }
             mFullscreenSwipe = 0;
-            setPlayWhenReady(false);
+            // JOYBOY(v962): the small PiP keeps playing (as Back does)
             enterPipMode();
             if (mPipEnterPending) {
                 return;
@@ -8671,7 +8692,7 @@ public class MobilePlaybackActivity extends MobileActivity
         // الأصلي بدل ما يدوّر على مضيف مصغّر بتاع MeeTube ويقع على يوتيوب. يوتيوب بيكمل على الدوك الأصلي بتاعه.
         if (JoyboyPlayerHost.onMinimize(this)) {
             // JOYBOY(v941): الفيديو بيوقف أول ما يصغّر، ولو النظام رفض الـPiP بيتقفل ويرجع للمصدر بدل ما يقع على دوك يوتيوب.
-            setPlayWhenReady(false);
+            // JOYBOY(v962): no pause — the small PiP keeps playing (as Back does)
             enterPipMode();
             if (mPipEnterPending) {
                 return;
@@ -12561,7 +12582,8 @@ public class MobilePlaybackActivity extends MobileActivity
                     toggleCaptions();
                     return true;
                 case "quality":
-                    openPlayerMenu();
+                    cancelAutoHide(); // JOYBOY(v960): the quality button opens the picker itself (not the whole gear sheet)
+                    showQualitySheet();
                     return true;
                 case "audio":
                     showAudioTrackSheet();
