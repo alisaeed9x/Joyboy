@@ -75,6 +75,9 @@ public final class JoyboyPlayerHost {
 
         /** JOYBOY(v946): Back was pressed; the add-on may ask first (e.g. continue the translation in the background). true = consumed, MeeTube does not close. */
         default boolean onBack(Activity activity) { return false; }
+
+        /** JOYBOY(v965): the exit question was answered (continue in background or not): leave the video completely (no PiP), stopped, back to the page it was opened from. true once, then reset. */
+        default boolean consumeExitFully(Activity activity) { return false; }
     }
 
     private static volatile Provider sProvider;
@@ -144,6 +147,16 @@ public final class JoyboyPlayerHost {
         try {
             Provider p = sProvider;
             return p != null && activity != null && p.onMinimize(activity);
+        } catch (RuntimeException e) {
+            return false;
+        }
+    }
+
+    /** JOYBOY(v965): true once after the add-on's exit question was answered. Never throws. */
+    public static boolean consumeExitFully(Activity activity) {
+        try {
+            Provider p = sProvider;
+            return p != null && activity != null && p.consumeExitFully(activity);
         } catch (RuntimeException e) {
             return false;
         }

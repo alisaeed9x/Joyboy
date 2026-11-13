@@ -98,12 +98,7 @@ object MtTranslate : JoyboyPlayerHost.Provider {
             overlay.addView(s, FrameLayout.LayoutParams(-1, -2, Gravity.BOTTOM).apply { bottomMargin = subMargin(activity) })
             sv = s; cached = null
             btn = null; btn2 = null
-            if (options != null) {
-                // (v954) ⚙ الصغير اللي جنب الكاست اتشال (مكرّر: ⚙ في شريحة الترجمة بيفتح نفس القايمة)
-                val b1 = pill(activity, TAG_BTN, "🌐 ترجم") { toggle() }
-                options.addView(b1, 0)
-                btn = b1; btn2 = null
-            }
+            // (v963) زرار «🌐 ترجم» العلوي اتشال — الترجمة من شريحة الترجمة (▶ ترجمة) تحت
             try { listenedOn?.removeListener(trans) } catch (_: Throwable) {}
             player.addListener(trans); listenedOn = player
             refreshBtn(); maybeAuto()
@@ -382,6 +377,10 @@ object MtTranslate : JoyboyPlayerHost.Provider {
         return true
     }
 
+    /** (v965) بعد ما سؤال الخروج اتجاوب (كمّل في الخلفية / لا): خروج كامل من الفيديو من غير PiP، والفيديو واقف */
+    private var exitFull = false
+    override fun consumeExitFully(activity: Activity): Boolean { val v = exitFull; exitFull = false; return v }
+
     /** (v946) الرجوع: لو الترجمة لسه ما خلصتش و«اسألني عند الخروج» مفعّل ← سؤال «أكمّل في الخلفية؟» بدل ما المحرك يتقفل في detach */
     override fun onBack(activity: Activity): Boolean {
         try {
@@ -392,13 +391,12 @@ object MtTranslate : JoyboyPlayerHost.Provider {
             val e = eng ?: return false
             if (!on || engVid.isEmpty() || privIds.contains(engVid)) return false
             if (!Cfg.bool("ask_bg_exit", true)) return false
-            val land = activity.resources.configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
-            if (land && (try { info?.sourceKind() } catch (_: Throwable) { null }) == "youtube") return false   // الرجوع هنا بيخرّج من الفل سكرين بس
+            // (v964) سؤال «أكمّل في الخلفية؟» بيظهر في أي فل سكرين (بورتريه/لاند سكيب) لو الترجمة شغّالة
             val dur = durSec
             if (dur <= 0.0 || PlayerLogic.percent(e.coveredSec(), dur) >= 99) return false
             val hasKey = Cfg.allMainKeys().isNotEmpty() || (try { Cfg.snapshot().keys.isNotEmpty() } catch (_: Throwable) { false })
             if (!hasKey || engBg == null) return false
-            MtBar.exitAsk(activity, { handoffBg(activity) }, { exitSkip = true; activity.onBackPressed() })
+            MtBar.exitAsk(activity, { handoffBg(activity) }, { exitSkip = true; exitFull = true; activity.onBackPressed() })
             return true
         } catch (t: Throwable) {
             LogStore.err("MtTranslate:onBack", t)
@@ -409,7 +407,7 @@ object MtTranslate : JoyboyPlayerHost.Provider {
     /** (v946) يسلّم الترجمة لخدمة الخلفية (BgJobs) ويكمّل الرجوع — نفس translateInBackground القديمة */
     private fun handoffBg(a: Activity) {
         val job = engBg; val e = eng
-        if (job == null || e == null) { exitSkip = true; a.onBackPressed(); return }
+        if (job == null || e == null) { exitSkip = true; exitFull = true; a.onBackPressed(); return }
         on = false; token++; eng = null; engVid = ""; cached = null
         val app = a.applicationContext
         try { Notice.show(a, "🌙 هكمّل الترجمة في الخلفية — التقدم في الإشعارات", 2800L) } catch (_: Throwable) {}
@@ -421,7 +419,7 @@ object MtTranslate : JoyboyPlayerHost.Provider {
             if (android.os.Build.VERSION.SDK_INT >= 33 && a.checkSelfPermission("android.permission.POST_NOTIFICATIONS") != android.content.pm.PackageManager.PERMISSION_GRANTED)
                 a.requestPermissions(arrayOf("android.permission.POST_NOTIFICATIONS"), 12)
         } catch (_: Throwable) {}
-        exitSkip = true
+        exitSkip = true; exitFull = true
         a.onBackPressed()
     }
 

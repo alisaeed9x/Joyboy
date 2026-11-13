@@ -1673,6 +1673,7 @@ public class MobilePlaybackActivity extends MobileActivity
         }
 
         if (isJoyLocalPage() && orientation != Configuration.ORIENTATION_LANDSCAPE && !mPortraitFull && !mIsInPip && !mPipEnterPending) {
+            mJoyFitMode = androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FILL; // JOYBOY(v969)
             mPortraitFull = true; // JOYBOY(v950): upright local video = the vertical fullscreen from the first layout
             refreshContentInsets();
         }
@@ -2010,6 +2011,7 @@ public class MobilePlaybackActivity extends MobileActivity
         });
 
         // JOYBOY(v942): the add-on's full button bar (MtBar) lives in the bottom controls container, so it hides/shows with MeeTube's controls.
+        mJoyBarOrientation = layoutOrientation(); // JOYBOY(v963)
         if (mControlsRoot instanceof ViewGroup) {
             JoyboyPlayerHost.extraControls(this, (ViewGroup) mControlsRoot);
         }
@@ -2598,6 +2600,9 @@ public class MobilePlaybackActivity extends MobileActivity
         enterPipMode();
     }
 
+    /** JOYBOY(v963): the orientation the add-on bar was last built for (-1 = not yet). */
+    private int mJoyBarOrientation = -1;
+
     @Override
     public void onConfigurationChanged(Configuration newConfig) {
         super.onConfigurationChanged(newConfig);
@@ -2623,6 +2628,12 @@ public class MobilePlaybackActivity extends MobileActivity
             dismissPlayerSheets();
         }
         applyWatchLayoutForOrientation(orientation);
+        if (mJoyBarOrientation != orientation) { // JOYBOY(v963): the add-on's bar is built per orientation (landscape row: quality/extend/fullscreen) — rebuild it after a turn, it used to keep the other shape's buttons
+            mJoyBarOrientation = orientation;
+            if (mControlsRoot instanceof ViewGroup) {
+                JoyboyPlayerHost.extraControls(this, (ViewGroup) mControlsRoot);
+            }
+        }
         if (mShorts != null && mShorts.isActive()) {
             applyShortsLayout(); // MEETUBE(issue #57): the short's zoom and glow for the new shape
         }
@@ -2702,6 +2713,16 @@ public class MobilePlaybackActivity extends MobileActivity
             onBackGestureCancelled();
             return;
         }
+        if (JoyboyPlayerHost.consumeExitFully(this)) { // JOYBOY(v965): the exit question was answered — leave completely (no PiP), stopped, back to the page it was opened from
+            mBackPreview = false;
+            try { setPlayWhenReady(false); } catch (RuntimeException ignored) { }
+            if (mPresenter != null) {
+                mPresenter.onFinish();
+            }
+            finish();
+            overridePendingTransition(0, 0);
+            return;
+        }
         if (mMoreVideos != null && mMoreVideos.isShown()) {
             mMoreVideos.close();
             return;
@@ -2717,18 +2738,12 @@ public class MobilePlaybackActivity extends MobileActivity
             resetMorph();
             return;
         }
-        if (isJoyLocalPage() && !mIsInPip && !mPipEnterPending && isLandscape()
-                && !com.newtube.mobile.ui.common.FocusRing.isTv(this)) {
-            // JOYBOY(v960): Back (swipe) in landscape fullscreen only leaves the fullscreen (to the upright player) —
-            // the video keeps playing and stays open; the next Back leaves it as before.
-            mBackPreview = false;
-            toggleFullscreen();
-            return;
-        }
+        // JOYBOY(v964): Back in landscape fullscreen of the local player now goes straight to PiP (same as upright) — no step back to portrait
         if (isJoyLocalPage() && !mIsInPip && !mPipEnterPending) { // JOYBOY(v950): local player — Back leaves straight (small PiP or close), upright or landscape, never the watch page
             mBackPreview = false;
             if (JoyboyPlayerHost.onMinimize(this)) {
-                // JOYBOY(v960): no setPlayWhenReady(false) any more — the small PiP window keeps playing
+                // JOYBOY(v970): Back = out of the video for good into a small PiP window, stopped and silent (it used to keep playing)
+                setPlayWhenReady(false);
                 enterPipMode();
                 if (mPipEnterPending) {
                     return;
@@ -7285,6 +7300,8 @@ public class MobilePlaybackActivity extends MobileActivity
     private static final float PORTRAIT_FULL_PULL_DP = 72f;
     /** The box's move into and out of the vertical fullscreen. */
     private static final long PORTRAIT_FULL_MS = 320;
+    /** JOYBOY(v969): the size mode the add-on / default picked for the upright fullscreen (-1 = none: whole picture). Fill = stretched to the screen exactly. */
+    private int mJoyFitMode = -1;
     private float mPullDownX;
     private float mPullDownY = -1f;
     private boolean mPullConsumed;
@@ -7307,6 +7324,7 @@ public class MobilePlaybackActivity extends MobileActivity
         if (on == mPortraitFull || (on && (isLandscape() || isShortsMode() || mIsInPip || mPipEnterPending))) {
             return;
         }
+        mJoyFitMode = on ? androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FILL : -1; // JOYBOY(v969): every upright fullscreen starts stretched to the screen
         mPortraitFull = on;
         if (mWatchRoot != null) {
             android.transition.TransitionManager.beginDelayedTransition((ViewGroup) mWatchRoot,
@@ -12522,6 +12540,10 @@ public class MobilePlaybackActivity extends MobileActivity
                 } catch (NumberFormatException e) {
                     n = 0;
                 }
+                mJoyFitMode = n == 1 ? androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FILL
+                        : n == 2 ? androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_ZOOM
+                        : n == 3 ? androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FIXED_WIDTH
+                        : androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FIT; // JOYBOY(v969)
                 switch (n) {
                     case 1:
                         setResizeMode(androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FILL);
@@ -12556,6 +12578,9 @@ public class MobilePlaybackActivity extends MobileActivity
                     enterPipMode();
                     return true;
                 case "lock":
+                    if (!(isLandscape() || mPortraitFull)) { // JOYBOY(v970): the touch lock is a fullscreen thing (like the native lock button)
+                        return true;
+                    }
                     setPlayerLocked(!mPlayerLocked);
                     return true;
                 case "rotate":
@@ -12629,6 +12654,9 @@ public class MobilePlaybackActivity extends MobileActivity
                 // like YouTube, with the ambient glow in the bands.
                 mode = androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FIT;
             }
+        } else if (mPortraitFull && !isLandscape() && mJoyFitMode != -1 && !mCommentsSide && !mChatSide
+                && (mShorts == null || !mShorts.isCommentsOpen())) {
+            mode = mJoyFitMode; // JOYBOY(v969): upright fullscreen follows the add-on's size button (default Fill = stretched to the screen)
         } else if (mPortraitFull && !isLandscape() || mCommentsSide || mChatSide
                 || mShorts != null && mShorts.isCommentsOpen()) {
             // MEETUBE(fullscreen): the whole picture, upright; ambient mode fills the bands. A pinch's

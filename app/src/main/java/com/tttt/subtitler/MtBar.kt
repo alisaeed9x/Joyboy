@@ -90,6 +90,7 @@ object MtBar {
     private var scrubL: androidx.media3.ui.TimeBar.OnScrubListener? = null   // (v956) فيلمستريب الميديا/المتصفح
     private var frames: MtFrames? = null
     private var bottomRowV: View? = null          // (v947) صف الوقت بتاع MeeTube — بيمشي مع شريط التقدم
+    private val nativeInv = ArrayList<View>()      // (v970) أزرار أصلية بتتخبّى INVISIBLE (مقاسها محفوظ)
     private val nativeDup = ArrayList<View>()      // (v947) أزرار MeeTube الأصلية المكرّرة (⏮ ⏯ ⏭ وسط الشاشة + ⛶) — بتتخبّى طول ما شريط Joyboy موجود
     private var seekHook: android.view.ViewTreeObserver.OnPreDrawListener? = null
     private var dualBtn: TextView? = null
@@ -227,6 +228,10 @@ object MtBar {
         barRoot = root
         hookSeekBar(activity, root)
         val portrait = activity.resources.configuration.orientation == Configuration.ORIENTATION_PORTRAIT
+        if (!portrait) {   // (v968) أي دخول فل سكرين (ملف/متصفح/يوتيوب) يبدأ Fill = الفيديو متمدّد على قد الشاشة بالظبط؛ بعدها زرار ⤢ يغيّر
+            try { Cfg.put("fit", "1") } catch (_: Throwable) {}
+            bridge(activity, "fit:1")
+        }
         val tools = toolbar(activity)
         mtStyle(activity, tools)
         val tlp = FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.END).apply {
@@ -390,7 +395,7 @@ object MtBar {
         scrubL = null
         frames?.end(); frames = null
         try { bottomRowV?.translationY = 0f } catch (_: Throwable) {}
-        nativeDup.clear(); bottomRowV = null
+        nativeDup.clear(); nativeInv.clear(); bottomRowV = null
         try { exitDlg?.dismiss() } catch (_: Throwable) {}
         seekHook = null
         timeBar = null
@@ -557,6 +562,11 @@ object MtBar {
                 if (i != 0) a.findViewById<View>(i)?.let { nativeDup.add(it) }
             } catch (_: Throwable) {}
         }
+        nativeInv.clear()
+        try {   // (v970) زرار القفل الأصلي العايم: مخفي (INVISIBLE عشان مقاسه يفضل لـ MeeTube) لأن القفل بقى في الصف الرئيسي
+            val i = a.resources.getIdentifier("mobile_player_lock", "id", a.packageName)
+            if (i != 0) a.findViewById<View>(i)?.let { nativeInv.add(it) }
+        } catch (_: Throwable) {}
         try {
             val i = a.resources.getIdentifier("mobile_player_bottom_row", "id", a.packageName)
             bottomRowV = if (i != 0) a.findViewById(i) else null
@@ -606,6 +616,7 @@ object MtBar {
     /** (v947) اخفي الأزرار الأصلية المكرّرة (GONE عشان ما تاخدش لمس ولا مساحة)؛ بتتنده كل فريم بس بتغيّر لو MeeTube رجّعها */
     private fun hideNativeDup() {
         for (v in nativeDup) { if (v.visibility != View.GONE) v.visibility = View.GONE }
+        for (v in nativeInv) { if (v.visibility != View.INVISIBLE) v.visibility = View.INVISIBLE }
     }
 
     /** (v949) الوقت الحالي في طرف والمدة في الطرف التاني، على نفس سطر شريط التقدم (زي timeRow في القديم) */
@@ -710,7 +721,23 @@ object MtBar {
                     opt.layoutParams = olp
                 }
             }
-            val sig = capW.toString() + "|" + modeW + "|" + optW + "|" + land
+            // (v963) لاند سكيب: «أونلاين · لهجة» تحت اسم الفيديو (مش جنبه) — نفس الحافة اليسار، تحت سطر النص مباشرة
+            val tid0 = a.resources.getIdentifier("mobile_player_title", "id", a.packageName)
+            val title0 = if (tid0 != 0) a.findViewById<View>(tid0) else null
+            val tloc = IntArray(2)
+            val ploc = IntArray(2)
+            var capTop = 0
+            var capLeft = 0
+            if (land && title0 != null && mode != null && title0.height > 0) {
+                try {
+                    title0.getLocationInWindow(tloc)
+                    (mode.parent as? View)?.getLocationInWindow(ploc)
+                    val lh = (title0 as? TextView)?.lineHeight ?: dp(a, 18)
+                    capTop = tloc[1] - ploc[1] + (title0.height + lh) / 2 + dp(a, 2)
+                    capLeft = tloc[0] - ploc[0] + title0.paddingLeft
+                } catch (_: Throwable) {}
+            }
+            val sig = capW.toString() + "|" + modeW + "|" + optW + "|" + land + "|" + capTop + "|" + capLeft
             if (sig != lastTopSig) {
                 lastTopSig = sig
                 (cap.layoutParams as? FrameLayout.LayoutParams)?.let {
@@ -719,7 +746,17 @@ object MtBar {
                 }
                 if (mode != null) {
                     (mode.layoutParams as? FrameLayout.LayoutParams)?.let {
-                        it.rightMargin = if (land) gap + capW + gap + optW + gap else gap + capW + dp(a, 6)
+                        if (land && capTop > 0) {
+                            it.gravity = Gravity.TOP or Gravity.LEFT
+                            it.leftMargin = capLeft
+                            it.topMargin = capTop
+                            it.rightMargin = 0
+                        } else {
+                            it.gravity = Gravity.TOP or Gravity.RIGHT
+                            it.leftMargin = 0
+                            it.topMargin = dp(a, 12)
+                            it.rightMargin = if (land) gap + capW + gap + optW + gap else gap + capW + dp(a, 6)
+                        }
                         mode.layoutParams = it
                     }
                 }
@@ -738,7 +775,7 @@ object MtBar {
                         if (it.gravity != g) it.gravity = g
                     }
                     val wantLeft = dp(a, 12)
-                    val wantRight = gap + capW + gap + optW + gap + modeW + dp(a, 10)
+                    val wantRight = gap + capW + gap + optW + gap + dp(a, 10)   // (v963) «أونلاين · لهجة» بقت تحت الاسم، مش جنبه
                     if (tlp.marginStart != wantLeft || tlp.marginEnd != wantRight) {
                         tlp.marginStart = wantLeft
                         tlp.marginEnd = wantRight
@@ -1071,7 +1108,11 @@ object MtBar {
             gravity = Gravity.START or Gravity.CENTER_VERTICAL
             layoutParams = LinearLayout.LayoutParams(0, -2, 1f)
         }
-        // (v955) 🔓 اتشال — قفل MeeTube الأصلي رجع
+        // (v970) 🔓 قفل اللمس على شمال 🗣 (أقصى الشمال): بيمنع اللمس على الفيديو لحد ما أدوس عليه تاني (زرار فك القفل بتاع MeeTube)؛ زرار القفل الأصلي العايم بقى مخفي
+        left.addView(u.fsCircle("🔓") { bridge(a, "lock") }.apply {
+            textSize = 16f
+            layoutParams = LinearLayout.LayoutParams(dp(a, 38), dp(a, 38)).apply { marginStart = dp(a, 3) }
+        })
         left.addView(u.fsBtn("🗣 ▾") { v -> dialectMenu(a, v, true) }.apply {
             textSize = 12f
             minimumWidth = dp(a, 38)
@@ -1113,16 +1154,8 @@ object MtBar {
             gravity = Gravity.END or Gravity.CENTER_VERTICAL
             layoutParams = LinearLayout.LayoutParams(0, -2, 1f)
         }
-        // (v949) ▲ الإشعارات الحمرا (قبل 🔄 في اليمين زي القديم: noticeBtn بارتفاع 34dp ومسافة 8dp)
-        noticeB = u.text("▲", 13f, 0xFFFF3B30.toInt(), true).apply {
-            gravity = Gravity.CENTER
-            alpha = 0.35f
-            setPadding(dp(a, 10), dp(a, 4), dp(a, 10), dp(a, 4))
-            background = u.box(0x33FF3B30, 0x99FF3B30.toInt(), 20)
-            setOnClickListener { v -> noticePopup(a, v) }
-            layoutParams = LinearLayout.LayoutParams(-2, dp(a, 34)).apply { marginEnd = dp(a, 8) }
-        }
-        noticeB?.let { right.addView(it) }
+        // (v966) ▲ الإشعارات الحمرا اتشال خالص
+        noticeB = null
         // (v960) ⤢ التمديد + ⛶ الشاشة الكاملة جنب بعض (الأفقي هنا؛ الرأسي في صف الحجم تحت)
         if (a.resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE) {
             right.addView(fitButton(a))
@@ -1142,29 +1175,7 @@ object MtBar {
             layoutDirection = View.LAYOUT_DIRECTION_RTL
             gravity = Gravity.CENTER_VERTICAL
         }
-        row.addView(u.fsBtn("📄 تصدير") { exportSub(a) })
-        volLab = u.text("🔊 100%", 12f, Color.WHITE, false).apply {
-            layoutParams = LinearLayout.LayoutParams(-2, -2).apply {
-                setMargins(dp(a, 8), 0, dp(a, 4), 0)
-            }
-        }
-        row.addView(volLab)
-        volBar = SeekBar(a).apply {
-            max = 200
-            progress = MtMedia.volumePct()
-            layoutParams = LinearLayout.LayoutParams(0, -2, 1f)
-            setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
-                override fun onProgressChanged(s: SeekBar?, p: Int, fromUser: Boolean) {
-                    if (!fromUser) return
-                    MtMedia.setVolumePct(p)
-                    refreshVolLab()
-                }
-
-                override fun onStartTrackingTouch(s: SeekBar?) {}
-                override fun onStopTrackingTouch(s: SeekBar?) {}
-            })
-        }
-        row.addView(volBar)
+        // (v963) «📄 تصدير» وسلايدر الصوت اتشالوا (التصدير لسه في 🧰 الأدوات)
         // (v960) الرأسي: ⤢ التمديد + ⛶ الشاشة الكاملة في آخر الصف (كان زرار الشاشة الكاملة في آخر صفحة اليوتيوب تحت)
         row.addView(fitButton(a))
         row.addView(fullButton(a))
@@ -1218,7 +1229,15 @@ object MtBar {
     }
 
     private fun cycleFit(a: Activity) {
-        val cur = try { Cfg.int("fit", 0) } catch (_: Throwable) { 0 }
+        // (v969) الوضع الحالي من المشغّل نفسه (الافتراضي Fill، أو الدخول بورتريه/لاندسكيب) مش من Cfg
+        val cur = try {
+            when ((a as? com.newtube.mobile.ui.playback.MobilePlaybackActivity)?.resizeMode) {
+                androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FILL -> 1
+                androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FIXED_WIDTH -> 3
+                null -> Cfg.int("fit", 0)
+                else -> 0
+            }
+        } catch (_: Throwable) { 0 }
         val idx = fitCodes.indexOf(if (cur == 2) 1 else cur)
         val n = fitCodes[(idx + 1) % fitCodes.size]
         try { Cfg.put("fit", n.toString()) } catch (_: Throwable) {}
