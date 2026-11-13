@@ -23,12 +23,13 @@ class JoyApp : Application() {
             } catch (_: Throwable) {
             }
         }
+        try { com.newtube.mobile.ui.common.PlayerTrace.sink = com.newtube.mobile.ui.common.PlayerTrace.Sink { l -> try { LogStore.add(l) } catch (_: Throwable) {} } } catch (_: Throwable) {}   // (v952)
         MtYt.app = this
-        try { MtSmooth.install(this) } catch (_: Throwable) {}   // (v946) فتح الفريمات لأعلى معدل تحديث في كل الشاشات
         NavSnap.install(this)   // (v923) انتقال موحّد بين الشاشات (لقطة + فيد)
         MeeTubeLink.bindBar()
         MtTvRoute.install(this)   // (v928) «تشغّله فين؟» لفيديوهات MeeTube لما وضع التلفزيون شغّال
         try { MtSkin.install(this) } catch (_: Throwable) {}   // (v897) الجلاس في البرنامج كله: خلفية متحركة + مسح الخلفيات الصلبة
+        try { MtSmooth.install(this) } catch (_: Throwable) {}   // (v988) فتح الفريمات لأعلى معدل تحديث
         followMeeTubeTheme()
     }
 

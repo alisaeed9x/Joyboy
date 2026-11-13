@@ -64,9 +64,6 @@ public final class JoyboyPlayerHost {
         /** Phase 2/4: lets the add-on put its own buttons into the player's control bar. */
         default void extraControls(Activity activity, ViewGroup bar) { }
 
-        /** JOYBOY(v948): lets the add-on add a row to the Quality sheet (the fake-HDR choice sits next to the quality picks). */
-        default void qualityExtras(Activity activity, ViewGroup list) { }
-
         /** JOYBOY(v937) phase 3: previous (-1) / next (+1) pressed; true = the add-on opened another episode itself. */
         default boolean onStep(Activity activity, int dir) { return false; }
 
@@ -75,6 +72,12 @@ public final class JoyboyPlayerHost {
 
         // JOYBOY(v942): a named Joyboy action for MeeTube's own internals (fit, pip, lock, rotate, prev/next, speed, cc, quality, audio, sleep, chapters, download, audio_only, playpause). true = handled.
         default boolean onJoyboyAction(Activity activity, String action) { return false; }
+
+        /** JOYBOY(v946): Back was pressed; the add-on may ask first (e.g. continue the translation in the background). true = consumed, MeeTube does not close. */
+        default boolean onBack(Activity activity) { return false; }
+
+        /** JOYBOY(v965): the exit question was answered (continue in background or not): leave the video completely (no PiP), stopped, back to the page it was opened from. true once, then reset. */
+        default boolean consumeExitFully(Activity activity) { return false; }
     }
 
     private static volatile Provider sProvider;
@@ -149,6 +152,26 @@ public final class JoyboyPlayerHost {
         }
     }
 
+    /** JOYBOY(v965): true once after the add-on's exit question was answered. Never throws. */
+    public static boolean consumeExitFully(Activity activity) {
+        try {
+            Provider p = sProvider;
+            return p != null && activity != null && p.consumeExitFully(activity);
+        } catch (RuntimeException e) {
+            return false;
+        }
+    }
+
+    /** JOYBOY(v946): Back goes to the add-on first. true = consumed. Never throws. */
+    public static boolean onBack(Activity activity) {
+        try {
+            Provider p = sProvider;
+            return p != null && activity != null && p.onBack(activity);
+        } catch (RuntimeException e) {
+            return false;
+        }
+    }
+
     // JOYBOY(v942): a named Joyboy action goes to the add-on first, then to the Activity's own handler. true = handled. Never throws.
     public static boolean onJoyboyAction(Activity activity, String action) {
         try {
@@ -165,35 +188,12 @@ public final class JoyboyPlayerHost {
         }
     }
 
-    /** JOYBOY(v946): the add-on asks the player to go easy on the glass over the video. samplingOff = the controls' frost stops sampling the video (use while the controls are hidden); frozen = the control discs show their tint alone. Never throws. */
-    public static void setGlassEconomy(Activity activity, boolean samplingOff, boolean frozen) {
-        try {
-            if (activity instanceof MobilePlaybackActivity) {
-                ((MobilePlaybackActivity) activity).joyboyGlass(samplingOff, frozen);
-            }
-        } catch (RuntimeException e) {
-            // ignore
-        }
-    }
-
     /** JOYBOY(v930): tells the add-on the control bar was shown or hidden. Never throws. */
     public static void onControlsVisibility(Activity activity, boolean visible) {
         try {
             Provider p = sProvider;
             if (p != null && activity != null) {
                 p.onControlsVisibility(activity, visible);
-            }
-        } catch (RuntimeException e) {
-            // ignore
-        }
-    }
-
-    /** JOYBOY(v948): the Quality sheet is being built; the add-on may append its own row. Never throws. */
-    public static void qualityExtras(Activity activity, ViewGroup list) {
-        try {
-            Provider p = sProvider;
-            if (p != null && activity != null && list != null) {
-                p.qualityExtras(activity, list);
             }
         } catch (RuntimeException e) {
             // ignore

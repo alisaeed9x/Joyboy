@@ -135,13 +135,22 @@ object ClipWatch {
     /** متصفح مخفي: بيحمّل الصفحة ويستنى أي طلب فيديو (بيشتغل مع المواقع اللي بتشغّل الفيديو أوتوماتيك) */
     @SuppressLint("SetJavaScriptEnabled")
     private fun probe(act: Context, u: String, ref: String = ""): ClipVideo? {
+        val onData = DataMeter.isCell(act)
         val latch = CountDownLatch(1); val found = AtomicReference<String?>(null); val info = AtomicReference("")
         val wref = AtomicReference<WebView?>(null); val ua = AtomicReference(UA)
+        val kindRef = AtomicReference<String?>(null); val frameRef = AtomicReference<String?>(null)   // (v977) نوع/إطار اللقطة لو جت من صيّاد الجافا
         val hh = Handler(Looper.getMainLooper())
         hh.post {
             try {
                 val wv = WebView(act); wref.set(wv); WebMute.register(wv); WebMute.mute(wv)
-                wv.settings.apply { javaScriptEnabled = true; domStorageEnabled = true; mediaPlaybackRequiresUserGesture = false; mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW }
+                VidHook.install(wv) { hu, hk, hf, _ -> Sniff.acceptHooked(hu)?.let { a -> if (found.compareAndSet(null, a)) { kindRef.set(when (hk) { "hls" -> "HLS"; "dash" -> "DASH"; else -> Sniff.kindOf(a) }); frameRef.set(hf.takeIf { it.startsWith("http", true) }); hh.post { grab(wv, info) } }; hh.postDelayed({ latch.countDown() }, 700) } }   // (v977)
+                wv.settings.apply {
+                    javaScriptEnabled = true
+                    domStorageEnabled = true
+                    mediaPlaybackRequiresUserGesture = onData
+                    mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
+                    blockNetworkImage = onData
+                }
                 ua.set(wv.settings.userAgentString ?: UA)
                 wv.webViewClient = object : WebViewClient() {
                     override fun shouldInterceptRequest(v: WebView, r: WebResourceRequest): WebResourceResponse? {
@@ -154,20 +163,23 @@ object ClipWatch {
                     override fun onPageStarted(v: WebView, url: String?, f: android.graphics.Bitmap?) { WebMute.mute(v) }
                     override fun onPageFinished(v: WebView, url: String?) {
                         WebMute.mute(v); grab(v, info)
-                        for (d in longArrayOf(500L, 2200L, 4500L)) hh.postDelayed({ try { v.evaluateJavascript(PageScan.PLAY_JS, null) } catch (_: Throwable) {} }, d)   // (v851) مشغّلات محتاجة دوسة تشغيل
+                        // (v981) على الداتا: مفيش تشغيل تلقائي — DOM + VidHook بس
+                        if (!onData) {
+                            for (d in longArrayOf(500L, 2200L, 4500L)) hh.postDelayed({ try { v.evaluateJavascript(PageScan.PLAY_JS, null) } catch (_: Throwable) {} }, d)   // (v851) مشغّلات محتاجة دوسة تشغيل
+                        }
                     }
                 }
-                hh.postDelayed({ latch.countDown() }, 10000)
+                hh.postDelayed({ latch.countDown() }, if (onData) 4000L else 10000L)
                 if (ref.isNotEmpty()) wv.loadUrl(u, mapOf("Referer" to ref)) else wv.loadUrl(u)
             } catch (_: Throwable) { latch.countDown() }
         }
-        latch.await(11, TimeUnit.SECONDS)
+        latch.await(if (onData) 4L else 11L, TimeUnit.SECONDS)
         val f = found.get()
         val j = try { JSONObject(info.get()) } catch (_: Throwable) { JSONObject() }
         hh.post { try { wref.get()?.stopLoading(); wref.get()?.destroy() } catch (_: Throwable) {} }
         if (f == null) return null
         val img = j.optString("i").takeIf { it.startsWith("http") }
-        return ClipVideo(u, j.optString("t").ifEmpty { Sniff.nameOf(u) }, bitmap(img) ?: frame(f), f, Sniff.kindOf(f), u, ua.get())
+        return ClipVideo(u, j.optString("t").ifEmpty { Sniff.nameOf(u) }, bitmap(img) ?: (if (kindRef.get() == "HLS" || kindRef.get() == "DASH") null else frame(f)), f, kindRef.get() ?: Sniff.kindOf(f), frameRef.get() ?: u, ua.get())
     }
     private fun grab(v: WebView, info: AtomicReference<String>) {
         try {
@@ -217,7 +229,9 @@ class ClipOrb(ctx: Context) : View(ctx) {
 
     override fun onDraw(c: Canvas) {
         val cx = width / 2f; val cy = height / 2f
-        val ro = minOf(width, height) * 0.46f
+        // (v975) الحلقة + النقطة اللي بتلف كانت بتتقص من حدود الـView (مربع جوه دايرة جوه مربع): نصف القطر بقى بيسيب مكان للنقطة (1dp + نص قطرها 6.5dp)
+        val rc = minOf(width, height) * 0.46f   // مرساة العلامات الصغيرة (📦 🔗 العدّاد 🎬) زي الأول
+        val ro = (minOf(width, height) / 2f - 8.5f * d).coerceAtLeast(minOf(width, height) * 0.30f)
         val ra = ro * 0.70f; val rt = ro * 0.86f
         val col = if (found) 0xFF34C759.toInt() else accent
         // زجاج
@@ -253,14 +267,14 @@ class ClipOrb(ctx: Context) : View(ctx) {
         p.color = Color.WHITE; c.drawCircle(ox, oy, 1.6f * d, p)
         // (v708) لقى فيديو والصورة ظاهرة: علامة 🎬 صغيرة تحت الشمال
         if (found && b != null && !b.isRecycled) {
-            val bx = cx - ro * 0.68f; val by = cy + ro * 0.68f
+            val bx = cx - rc * 0.68f; val by = cy + rc * 0.68f
             p.reset(); p.isAntiAlias = true; p.style = Paint.Style.FILL; p.color = 0xFF34C759.toInt(); c.drawCircle(bx, by, 9f * d, p)
             p.color = Color.WHITE; p.textAlign = Paint.Align.CENTER; p.textSize = 10f * d
             c.drawText("🎬", bx, by + 3.6f * d, p)
         }
         // عدّاد لو فيه أكتر من لينك
         if (count > 1 || showCount) {
-            val bx = cx + ro * 0.72f; val by = cy - ro * 0.72f
+            val bx = cx + rc * 0.72f; val by = cy - rc * 0.72f
             p.reset(); p.isAntiAlias = true; p.style = Paint.Style.FILL; p.color = 0xFFE53935.toInt(); c.drawCircle(bx, by, 8f * d, p)
             p.color = Color.WHITE; p.textAlign = Paint.Align.CENTER; p.textSize = 10f * d; p.typeface = android.graphics.Typeface.DEFAULT_BOLD
             c.drawText(count.toString(), bx, by + 3.6f * d, p)
@@ -275,8 +289,8 @@ class ClipOrb(ctx: Context) : View(ctx) {
             p.style = Paint.Style.STROKE; p.strokeWidth = 1f * d; p.color = 0x99FFFFFF.toInt(); c.drawRoundRect(box, hg / 2f, hg / 2f, p)
             p.style = Paint.Style.FILL; p.color = Color.WHITE; c.drawText(txt, l + w / 2f, tp + hg / 2f + 3.4f * d, p)
         }
-        if (files > 0) chip("📦" + (if (files > 9) "9+" else files.toString()), 0xFF1E6FE0.toInt(), cx - ro * 0.78f, cy - ro * 0.78f)
-        if (links > 0) chip("🔗" + (if (links > 9) "9+" else links.toString()), 0xFFEF6C00.toInt(), cx + ro * 0.78f, cy + ro * 0.78f)
+        if (files > 0) chip("📦" + (if (files > 9) "9+" else files.toString()), 0xFF1E6FE0.toInt(), cx - rc * 0.78f, cy - rc * 0.78f)
+        if (links > 0) chip("🔗" + (if (links > 9) "9+" else links.toString()), 0xFFEF6C00.toInt(), cx + rc * 0.78f, cy + rc * 0.78f)
     }
 }
 

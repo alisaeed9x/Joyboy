@@ -151,7 +151,7 @@ object MtSkin {
     fun aurora(ctx: Context, th: Theme): MtAurora = MtAurora(th, animated(ctx), intensity())
 
     // شاشات مش بنركّب عليها الخلفية: المشغّل (فيديو)، التلفزيون، سكان الكاميرا، السبلاش، لانشرات الأيقونات
-    private val skip = setOf("PlayerActivity", "TvActivity", "QrScanActivity", "LaunchSplashActivity", "TvFilesActivity", "LaunchBrowserActivity", "LaunchYoutubeActivity", "LaunchRemoteActivity", "SendToTvActivity")
+    private val skip = setOf("PlayerActivity", "TvActivity", "QrScanActivity", "TvFilesActivity", "LaunchBrowserActivity", "LaunchYoutubeActivity", "LaunchRemoteActivity", "SendToTvActivity")
 
     private class Slot(val aurora: MtAurora, var listener: ViewTreeObserver.OnGlobalLayoutListener?, var pending: Boolean)
     private val slots = WeakHashMap<Activity, Slot>()

@@ -32,9 +32,11 @@ object MeeTubeLink {
             if (incognito) MtTranslate.privIds.add(id)   // (v936)
             if (autoTranslate) MtTranslate.autoFor = id   // (v890) الترجمة تبدأ لوحدها أول ما الفيديو يشتغل في مشغّل MeeTube
             // (v941) سجّل المصدر يوتيوب: من غيرها MtOrigin بيفضل ماسك مصدر الجلسة اللي قبله (محلي مثلاً) والتصغير اللي بعده بيغلط
-            MtOrigin.record(Intent(), null, id, "")
+            // (v983) ret="yt": من غيرها الـrecord التاني ده بيمسح ret="yt" اللي سجّله MtPlay.openMt، فالخروج من يوتيوب كان بيرجع لفولدر المحلي القديم
+            MtOrigin.record(Intent().putExtra("ret", "yt"), null, id, "")
             bindBar()
             MobileMainApplication.boot(act.application)
+            try { com.newtube.mobile.ui.playback.MobileLocalPlaybackActivity.routeYoutube(act) } catch (_: Throwable) {}   // (v947) يوتيوب ← مشغّل يوتيوب العادي (الملفات/المتصفح على نسخة مشغّل منفصلة)
             MtTvRoute.bypassed { com.liskovsoft.smartyoutubetv2.common.app.presenters.PlaybackPresenter.instance(act.applicationContext).openVideo(id, false, if (startMs > 0L) startMs else -1L, incognito) }   // (v928) السؤال «تشغّله فين؟» اتسأل قبل كده في Main.playYt
             true
         } catch (e: Throwable) {
@@ -48,9 +50,11 @@ object MeeTubeLink {
         if (id.length != 11) return false
         return try {
             // (v941) سجّل المصدر يوتيوب (نفس سبب playYt)
-            MtOrigin.record(Intent(), null, id, "")
+            // (v983) ret="yt": نفس إصلاح playYt — الـIntent الفاضي كان بيمسح وجهة الرجوع ليوتيوب
+            MtOrigin.record(Intent().putExtra("ret", "yt"), null, id, "")
             bindBar()
             MobileMainApplication.boot(ctx.applicationContext as android.app.Application)
+            try { com.newtube.mobile.ui.playback.MobileLocalPlaybackActivity.routeYoutube(ctx) } catch (_: Throwable) {}   // (v947)
             com.liskovsoft.smartyoutubetv2.common.app.presenters.PlaybackPresenter.instance(ctx.applicationContext).openVideo(id, false, if (startMs > 0L) startMs else -1L, false)
             true
         } catch (e: Throwable) {
@@ -77,6 +81,7 @@ object MeeTubeLink {
             bindBar()
             MobileMainApplication.boot(act.application)
             if (act is MainActivity) NavAnim.set(0, 4)   // (v911) نفس أنيميشن انتقال التبويبات (mt_tab_enter/exit) بدل act_enter القديم
+            if (com.newtube.mobile.ui.browse.MobileBrowseActivity.bringToFront(act)) return   // (v973) شاشة يوتيوب شغّالة: تتجاب قدّام زي ما هي (من غير Splash ولا إعادة تحميل)
             act.startActivity(Intent(act, com.liskovsoft.smartyoutubetv2.tv.ui.main.SplashActivity::class.java))
         } catch (e: Throwable) {
             LogStore.err("MeeTubeLink:open", e)

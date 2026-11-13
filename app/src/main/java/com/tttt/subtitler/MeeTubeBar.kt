@@ -53,8 +53,8 @@ object MeeTubeBar {
             when (i) {
                 0 -> toMain(act, "videos")
                 1 -> toMain(act, "music")
-                2 -> openActivity(act, Intent(act, BrowserActivity::class.java))
-                3 -> openActivity(act, FilesHub.intent(act))
+                2 -> openActivity(act, TabNav.front(Intent(act, BrowserActivity::class.java)))
+                3 -> openActivity(act, TabNav.front(FilesHub.intent(act)))
                 5 -> toMain(act, "tasks")
                 7 -> toMain(act, "settings")
                 else -> return
@@ -73,15 +73,11 @@ object MeeTubeBar {
                 com.newtube.mobile.ui.playback.MiniPlayerBridge.close()
             }
         } catch (_: Throwable) {}
-        val intent = Intent(act, MainActivity::class.java)
-        intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
-        intent.putExtra("tab", tab)
-        openActivity(act, intent)
+        openActivity(act, TabNav.main(act, tab))   // (v973) REORDER بدل CLEAR_TOP: يوتيوب بيفضل شغّال تحت (فيدّه ومكانه زي ما هم)
     }
 
     private fun openActivity(act: Activity, intent: Intent) {
-        act.startActivity(intent)
-        act.finish()
+        act.startActivity(intent)   // (v973) من غير finish: شاشة يوتيوب بتفضل حيّة
         if (!NavAnim.take(act)) act.overridePendingTransition(0, 0)
     }
 }

@@ -23,6 +23,8 @@ import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
+import androidx.webkit.WebViewCompat
+import androidx.webkit.WebViewFeature
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.ByteArrayInputStream
@@ -171,6 +173,7 @@ class BrowserSaver(private val act: BrowserActivity, private val frame: FrameLay
 
     fun applyTo(w: WebView, t: BTab, url: String?) {
         val hs = hostOf(url ?: t.url)
+        installDocStart(w, levelFor(hs))
         val s = w.settings
         val noImg = when (imgMode()) {
             "never" -> imgOk[t.id] != hs
@@ -240,6 +243,26 @@ class BrowserSaver(private val act: BrowserActivity, private val frame: FrameLay
         if (isYt(hs)) try { w.evaluateJavascript(ytJs(ytQ(cap)), null) } catch (_: Throwable) {}
     }
     private fun isYt(hs: String) = hs.endsWith("youtube.com") || hs == "youtu.be"
+
+    // (v981) حرّاس بداية المستند: اتثبّتوا مرة واحدة لكل WebView (مفيش إزالة في webkit 1.16.0) — jsFor لسه هو الاحتياطي اللي بيطبّق مستوى اللحظة على كل صفحة
+    private val docStartDone = java.util.Collections.newSetFromMap(java.util.WeakHashMap<WebView, Boolean>())
+    private fun docStartJs(lv: Int): String {
+        val sb = StringBuilder()
+        if (lv >= SMART) sb.append(JS_LAZY)
+        if (!autoplayAllowed(lv)) sb.append(JS_GUARD)
+        if (lv != OFF && !preloadAllowed()) sb.append(JS_NOPRE)
+        return sb.toString()
+    }
+    private fun installDocStart(w: WebView, lv: Int) {
+        if (docStartDone.contains(w)) return
+        val js = docStartJs(lv)
+        if (js.isEmpty()) return
+        try {
+            if (!WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) return
+            WebViewCompat.addDocumentStartJavaScript(w, js, setOf("*"))
+            docStartDone.add(w)
+        } catch (_: Throwable) {}
+    }
 
     private fun jsFor(lv: Int, hs: String): String {
         val sb = StringBuilder()
@@ -318,7 +341,7 @@ class BrowserSaver(private val act: BrowserActivity, private val frame: FrameLay
         w.goBack()
     }
 
-    /** وضع الطوارئ: بيمنع الخطوط بس (الصور بتتمنع بإعداد blockNetworkImage والفيديو بالحارس)؛ بيتنفذ بعد فحص الإعلانات */
+    /** (v981) الداتا/الطوارئ: بيمنع الخطوط بس (الصور بتتمنع بإعداد blockNetworkImage والفيديو بالحارس)؛ بيتنفذ بعد فحص الإعلانات */
     fun intercept(u: String, t: BTab): WebResourceResponse? {
         countReq(u, t)   // (v789) عدّ طلبات كل تبويب/موقع لزرار «إيه اللي بياكل النت؟»
         if (level < SMART) return null
@@ -331,7 +354,7 @@ class BrowserSaver(private val act: BrowserActivity, private val frame: FrameLay
                 return WebResourceResponse("text/plain", "utf-8", ByteArrayInputStream(ByteArray(0)))
             }
         }
-        if (level < EMERG) return null
+        if (level < MAX) return null
         val path = u.substringBefore('?').substringBefore('#').lowercase()
         if (FONT_EXT.none { path.endsWith(it) }) return null
         savedFont.addAndGet(FONT_AVG)

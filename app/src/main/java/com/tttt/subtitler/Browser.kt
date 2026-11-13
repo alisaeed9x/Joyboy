@@ -505,7 +505,7 @@ class BrowserActivity : Activity() {
             isFocusable = true; isClickable = true
             setOnFocusChangeListener { v, f -> v.animate().scaleX(if (f) 1.15f else 1f).scaleY(if (f) 1.15f else 1f).setDuration(120).start() }
             setOnClickListener { badgeTap() }
-            setOnLongClickListener { if (hasExtras()) showAutoResults() else showList(); true }   // (v838) ضغطة طويلة: لو فيه ملفات/لينكات حقيقية ← نتيجة الفحص (فيها زرار الفيديوهات)
+            setOnLongClickListener { if (hasExtras()) showAutoResults() else showList(); true }   // (v975) showList نفسها بترجع إشعار لو مفيش فيديو (موبايل)   // (v838) ضغطة طويلة: لو فيه ملفات/لينكات حقيقية ← نتيجة الفحص (فيها زرار الفيديوهات)
             // (v736) الدايرة تتسحب لأي مكان، وسيبها على ✕ تحت = تتخبّى (بترجع لوحدها لما يتلقط فيديو جديد)
             // (v801) على الموبايل الدايرة ثابتة في نص الشريط اللي فوق الشريط السفلي — مفيش سحب (التلفزيون زي ما هو)
             if (tvOn) setOnTouchListener(object : View.OnTouchListener {
@@ -626,7 +626,7 @@ class BrowserActivity : Activity() {
         if (tvOn) root.addView(dlBar, LinearLayout.LayoutParams(-1, -2).apply { setMargins(ui.dp(8), ui.dp(4), ui.dp(8), ui.dp(6)) })   // (v324)
         else { dlBar.elevation = ui.dp(8).toFloat(); webWrap.addView(dlBar, FrameLayout.LayoutParams(-1, -2, Gravity.BOTTOM).apply { setMargins(ui.dp(8), 0, ui.dp(8), ui.dp(66)) }) }   // (v923) الرعشة: شريط «تحميل؟» بقى طبقة فوق الصفحة (فوق أزرار actStrip) بدل صف بيزقّ الـWebView
         // (v117) شريط البوابات: الفيديوهات · الموسيقى · المتصفح (إحنا فيه دلوقتي) · الملفات · (v324) يوتيوب
-        val gates = BottomNav(this, ui, th, 2) { i -> if (i != 2) NavAnim.set(2, i); if (i == 0) goMain("videos") else if (i == 1) goMain("music") else if (i == 4) goMain("youtube") else if (i == 5) goMain("tasks") else if (i == 7) goMain("settings") else if (i == 3) { startActivity(FilesHub.intent(this)); NavAnim.peek(this); finish() } }   // (v310) الملفات · (v364) الذكاء
+        val gates = BottomNav(this, ui, th, 2) { i -> if (i != 2) NavAnim.set(2, i); if (i == 0) goMain("videos") else if (i == 1) goMain("music") else if (i == 4) { MeeTubeLink.open(this); NavAnim.peek(this) } else if (i == 5) goMain("tasks") else if (i == 7) goMain("settings") else if (i == 3) { startActivity(TabNav.front(FilesHub.intent(this))); NavAnim.peek(this) } }   // (v973) من غير finish: التبويبات بتفضل شغّالة   // (v310) الملفات · (v364) الذكاء
         gatesNav = gates
         val floatNav = !tvOn && MtFloat.eligible(this)   // (v900) نفس شريط صفحة الميديا: عايم زجاجي
         if (!tvOn && !floatNav) root.addView(gates.view, LinearLayout.LayoutParams(-1, -2))   // (v517) تلفزيون: الشريط السفلي اتشال — 🏠 في شريط العنوان
@@ -688,9 +688,8 @@ class BrowserActivity : Activity() {
     private fun goMain(tab: String) {
         persistTabs()
         if (DeviceUi.isTv(this) && tab == "videos") { try { startActivity(Intent(this, TvActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP).putExtra("tv_show", "videos")); finish(); return } catch (_: Throwable) {} }   // (v530)   // (v482) تلفزيون: الرئيسية = شاشة التلفزيون
-        startActivity(Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP).putExtra("tab", tab))
+        startActivity(TabNav.main(this, tab))   // (v973) Main فاضلة شغّالة: بتتجاب قدّام من غير بناء ولا finish للمتصفح
         NavAnim.peek(this)
-        finish()
     }
     /** (v820) رجوع للشاشة الرئيسية وفتح قسم من الإعدادات الشاملة (مثلًا capture = 🔗 الاصطياد · tvset = 📺 التلفزيون) */
     private fun goMainSettings(sec: String) {
@@ -705,6 +704,18 @@ class BrowserActivity : Activity() {
     private fun noteYt(url: String?, title: String?) { /* (v124) سجل يوتيوب اتشال */ }
 
     // ===== إنشاء WebView لتبويب =====
+    /** (v977) لقطة من صيّاد الجافا — بتعدّي على نفس الفحص (verifyFound) زي أي لقطة */
+    private fun onHook(t: BTab, u: String, k: String, frame: String, origin: String) {
+        if (dead || t.hold != null) return
+        val a = Sniff.acceptHooked(u) ?: return
+        val kind = when (k) { "hls" -> "HLS"; "dash" -> "DASH"; else -> Sniff.kindOf(a) }
+        val og = origin.takeIf { it.startsWith("http", true) }
+        val ref = frame.takeIf { it.startsWith("http", true) } ?: (og?.plus("/")) ?: t.url
+        val pg = t.url; val g0 = t.gen
+        val f = Found(a, kind, "", ref, uaOf(t), pg)
+        if (og != null) f.origin = og
+        h.post { if (!dead) addFound(f, t, g0) }
+    }
     private fun makeWebView(t: BTab): WebView {
         if (PopupGuard.learned.isEmpty()) try { PopupGuard.learned.addAll(prefs().getStringSet("pop_learned", emptySet()) ?: emptySet()) } catch (_: Throwable) {}   // (v816)
         val w = WebView(this); WebMute.register(w)
@@ -717,6 +728,7 @@ class BrowserActivity : Activity() {
         }
         if (uaWeb.isEmpty()) uaWeb = w.settings.userAgentString ?: ""
         if (t.desktop) w.settings.userAgentString = DESK_UA
+        VidHook.install(w) { u, k, f, o -> onHook(t, u, k, f, o) }   // (v977) صيّاد جافا جوه كل الإطارات للمشغّلات الخارجية (لينكات من غير امتداد / قوايم HLS-DASH من fetch/XHR)
         if (t.priv) { w.settings.cacheMode = WebSettings.LOAD_NO_CACHE; @Suppress("DEPRECATION") w.settings.saveFormData = false }
         CookieManager.getInstance().setAcceptThirdPartyCookies(w, true)
         w.setBackgroundColor(Color.WHITE)
@@ -771,7 +783,7 @@ class BrowserActivity : Activity() {
                         hd.media = true
                         if (hd.sniffed.size < 6) { hd.sniffed.add(a) }
                     } else {
-                        val pg = t.url; h.post { if (!dead) addFound(Found(a, Sniff.kindOf(a), "", rf?.takeIf { it.startsWith("http", true) } ?: pg, uaOf(t), pg), t, g0) }   // (v847) Referer الحقيقي بتاع الطلب · (v850) t.url بدل v.url — shouldInterceptRequest بيشتغل على thread خلفي وv.url كان بيكرّش التطبيق
+                        val pg = t.url; val og = try { r.requestHeaders?.get("Origin") } catch (_: Throwable) { null }; h.post { if (!dead) addFound(Found(a, Sniff.kindOf(a), "", rf?.takeIf { it.startsWith("http", true) } ?: pg, uaOf(t), pg).also { f0 -> if (!og.isNullOrBlank() && og.startsWith("http", true)) f0.origin = og }, t, g0) }   // (v847) Referer الحقيقي بتاع الطلب · (v850) t.url بدل v.url — shouldInterceptRequest بيشتغل على thread خلفي وv.url كان بيكرّش التطبيق
                     }
                     Unit
                 }
@@ -1297,6 +1309,12 @@ class BrowserActivity : Activity() {
         val gVid: List<Pair<String, () -> Unit>> = listOf(
             "🎬 الفيديوهات الملقوطة (${groupsOf(vis()).size})" to { showList() },
             "🔎 افحص الصفحة (فيديوهات · ملفات · برامج · لينكات رفع)" to { pageScan() },
+            // (v981) مفتاح الاستكشاف الأوتوماتيك — الافتراضي مقفول؛ شغّال = الصفحات بتتفحص لوحدها، مقفول = الفحص اليدوي بالعدسة بس
+            (if (autoDiscoverOn()) "🔍 استكشاف تلقائي للفيديوهات والملفات: شغال ✓" else "🔍 استكشاف تلقائي للفيديوهات والملفات: مقفول") to {
+                val on = !autoDiscoverOn()
+                Cfg.put("auto_discover", if (on) "1" else "0")
+                Notice.show(this, if (on) "🔍 الاستكشاف الأوتوماتيك اشتغل — الصفحات هتتفحص لوحدها" else "🔍 الاستكشاف الأوتوماتيك اتقفل — الفحص اليدوي بالعدسة بس", 2600L)
+            },
             "🎞 تحكم الفيديو" to { showVideoControls() }
         )
         val gProt: List<Pair<String, () -> Unit>> = listOf(
@@ -1739,6 +1757,8 @@ class BrowserActivity : Activity() {
         var hostTries = 0; var srvTries = 0
         var pending = 0; var last = 0L; var hunts = 0   // (v851) hunts = كام مرة فحصنا جافا الصفحة
         var sv = 0; var sf = 0; var sl = 0   // اللي اتعلن عنه قبل كده (فيديو · ملفات · لينكات)
+        var cand = 0; var fake = 0; var vfy = 0   // (v980) المسح الخلفي: لينكات اتجرّبت · اللي طلع مزيّف · فحوصات شغّالة دلوقتي
+        var deepAt = 0L; var watching = false; var deepOnCatch = false
     }
     private val snaps = HashMap<Long, AutoSnap>()
     private val verifyPool by lazy { java.util.concurrent.Executors.newFixedThreadPool(2) { r -> Thread(r).apply { isDaemon = true } } }
@@ -1746,6 +1766,16 @@ class BrowserActivity : Activity() {
     private fun curSnap(): AutoSnap? { val t = tabs.getOrNull(curIdx) ?: return null; val s0 = snaps[t.id] ?: return null; return if (s0.gen == t.gen) s0 else null }
     private fun hasExtras(): Boolean { val s0 = curSnap() ?: return false; return s0.files.isNotEmpty() || s0.hosts.isNotEmpty() }
     private fun autoScanOn(): Boolean = try { Cfg.str("auto_scan", "1") == "1" } catch (_: Throwable) { true }
+    // (v981) مفتاح الاستكشاف الأوتوماتيك من قايمة ⋮ — الافتراضي مقفول (0)، والأوتوماتيك كله واقف لحد ما المستخدم يشغّله بنفسه
+    private fun autoDiscoverOn(): Boolean = try { Cfg.str("auto_discover", "0") == "1" } catch (_: Throwable) { false }
+    // (v981) الفحص الخلفي الأوتوماتيك مسموح؟ اليدوي دايمًا مسموح؛ الأوتوماتيك لازم مفتاح الاستكشاف + مفتاح الفحص + يتقفل على داتا الموبايل (مستوى التوفير MAX أو أعلى، أو شبكة خلوية فعلًا)
+    private fun autoBgAllowed(manual: Boolean): Boolean {
+        if (manual) return true
+        if (!autoDiscoverOn()) return false
+        if (!autoScanOn()) return false
+        if (::saver.isInitialized && saver.level >= BrowserSaver.MAX) return false
+        return !DataMeter.isCell(this)
+    }
 
     // (v842) ألعاب الفلاش (Ruffle): الكيبورد كان بيظهر ويختفي. السبب المرجّح: adjustResize بيصغّر الـWebView أول ما الكيبورد يطلع
     // فالصفحة بتاخد resize وبتشيل التركيز من خانة الكتابة فالكيبورد يتقفل ويتفتح تاني في لوب. الحل: في صفحات الفلاش بس
@@ -1766,16 +1796,17 @@ class BrowserActivity : Activity() {
     }
 
     private fun scheduleAutoScan(t: BTab, delays: LongArray) {
-        if (!autoScanOn()) return
+        if (!autoBgAllowed(false)) return
         val g = t.gen
         for (d in delays) h.postDelayed({ autoScan(t, g, d <= 9000L, false) }, d)
+        h.postDelayed({ if (!dead && t.gen == g) deepScan(t, false) }, 5000L)   // (v980) المسح العميق أوتوماتيك من غير دوس
     }
 
     /** مرّة فحص: تشغيل مكتوم للفيديوهات (اختياري) + لمّ الـDOM + تأكيد الملفات. manual = من زرار 🔎 */
-    private fun autoScan(t: BTab, g: Int, play: Boolean, manual: Boolean) {
+    private fun autoScan(t: BTab, g: Int, play: Boolean, manual: Boolean, deep: Boolean = false) {
         if (dead || t.gen != g || t.hold != null || t.blockedUrl != null) return
         if (t !== tabs.getOrNull(curIdx) || customView != null) return
-        if (!manual && !autoScanOn()) return
+        if (!autoBgAllowed(manual)) return
         val wv = t.wv ?: return
         val page = wv.url ?: t.url
         if (!page.startsWith("http", true)) return
@@ -1796,17 +1827,18 @@ class BrowserActivity : Activity() {
                 var list: List<ScanItem> = emptyList()
                 try { list = PageScan.parse((JSONTokener(r ?: "").nextValue() as? String) ?: "[]", page) } catch (e: Throwable) { LogStore.err("Browser:autoScan", e) }
                 val ua = uaOf(t)
-                list.filter { it.cat == PageScan.C_VIDEO && (manual || !it.viaLink) }.take(if (manual) 30 else 12).forEach { addFound(Found(it.url, Sniff.kindOf(it.url), "", page, ua), t, g) }
+                list.filter { it.cat == PageScan.C_VIDEO && (manual || deep || !it.viaLink) }.take(if (manual || deep) 30 else 12).forEach { addFound(Found(it.url, Sniff.kindOf(it.url), "", page, ua), t, g) }
                 sn.pages = list.filter { it.cat == PageScan.C_PAGE }
-                if (sn.hunts < 2 && (manual || list.none { it.cat == PageScan.C_VIDEO })) { sn.hunts++; autoHunt(t, g, sn, wv, page, ua, manual) }   // (v851) مفيش فيديو ظاهر: افحص الجافا والمشغّلات الخارجية
-                autoServers(t, g, sn, sn.pages.filter { it.title.startsWith(PageScan.SRV_TAG) }, ua, page)   // (v850) كل سيرفرات الفيلم مش السيرفر المفتوح بس
-                verifyAuto(t, g, sn, list.filter { it.cat == PageScan.C_FILE || it.cat == PageScan.C_HOST }, ua.ifBlank { PageScan.UA }, page)
+                if (sn.hunts < (if (deep) 4 else 2) && (manual || deep || list.none { it.cat == PageScan.C_VIDEO })) { sn.hunts++; autoHunt(t, g, sn, wv, page, ua, manual) }   // (v851) مفيش فيديو ظاهر: افحص الجافا والمشغّلات الخارجية
+                autoServers(t, g, sn, sn.pages.filter { it.title.startsWith(PageScan.SRV_TAG) || (deep && it.title == "مشغّل مدمج" && !PageScan.needsDispatcher(it.url)) }, ua, page, manual)   // (v850) كل سيرفرات الفيلم مش السيرفر المفتوح بس
+                verifyAuto(t, g, sn, list.filter { it.cat == PageScan.C_FILE || it.cat == PageScan.C_HOST }, ua.ifBlank { PageScan.UA }, page, manual)
             }
         } catch (e: Throwable) { LogStore.err("Browser:autoScan2", e) }
     }
 
     /** (v851) فحص جافا الصفحة (inline + خارجي، مضغوط/base64) + دخول المشغّلات الخارجية بـReferer الصفحة؛ اللي محتاج جافا يشتغل بيتفتح في متصفح مخفي */
     private fun autoHunt(t: BTab, g: Int, sn: AutoSnap, wv: WebView, page: String, ua: String, manual: Boolean) {
+        if (!manual && !autoBgAllowed(false)) return
         if (PageScan.needsDispatcher(page)) return
         try {
             wv.evaluateJavascript(PageScan.SCRIPT_JS) { r ->
@@ -1839,17 +1871,19 @@ class BrowserActivity : Activity() {
     }
 
     /** (v850) سيرفرات الفيلم (أزرار فيها data-embed/data-url…): كل واحد بيتفتح في الخلفية وبيتسحب فيديوه ويتضاف للاصطياد — حد أقصى 8 */
-    private fun autoServers(t: BTab, g: Int, sn: AutoSnap, servers: List<ScanItem>, ua: String, page: String) {
+    private fun autoServers(t: BTab, g: Int, sn: AutoSnap, servers: List<ScanItem>, ua: String, page: String, manual: Boolean = false) {
+        if (!manual && !autoBgAllowed(false)) return
         for (x in servers) {
             if (sn.srvTries >= 8) break
             val k = "srv:" + Sniff.key(x.url)
             if (k in sn.tried) continue
-            sn.tried.add(k); sn.srvTries++; sn.pending++
+            sn.tried.add(k); sn.srvTries++; sn.pending++; sn.cand++
             verifyPool.execute {
                 val v = try { ClipWatch.resolve(this, x.url, page) } catch (e: Throwable) { LogStore.err("Browser:srv", e); null }   // (v851) Referer = صفحة الفيلم
                 runOnUiThread {
                     sn.pending--
-                    if (dead || t.gen != g || v == null || v.playUrl.isEmpty()) return@runOnUiThread
+                    if (dead || t.gen != g) return@runOnUiThread
+                    if (v == null || v.playUrl.isEmpty()) { sn.fake++; return@runOnUiThread }   // (v980) السيرفر ماطلعش منه فيديو
                     addFound(Found(v.playUrl, v.kind, v.title, v.ref.ifEmpty { x.url }, v.ua.ifEmpty { ua }), t, g)
                 }
             }
@@ -1857,14 +1891,15 @@ class BrowserActivity : Activity() {
     }
 
     /** بيتأكد (على thread خلفي، من غير تحميل) إن كل ملف/لينك رفع ملف حقيقي؛ اللي ينجح بيتضاف للعدّاد */
-    private fun verifyAuto(t: BTab, g: Int, sn: AutoSnap, cands: List<ScanItem>, ua: String, page: String) {
+    private fun verifyAuto(t: BTab, g: Int, sn: AutoSnap, cands: List<ScanItem>, ua: String, page: String, manual: Boolean = false) {
+        if (!manual && !autoBgAllowed(false)) return
         for (x in cands) {
             if (sn.tried.size >= 60) break
             val k = Sniff.key(x.url)
             if (k in sn.tried) continue
             if (x.cat == PageScan.C_HOST) { if (sn.hostTries >= 8) continue; sn.hostTries++ }
             sn.tried.add(k)
-            sn.pending++
+            sn.pending++; sn.cand++
             verifyPool.execute {
                 var real: PageScan.RealFile? = null
                 try {
@@ -1874,7 +1909,8 @@ class BrowserActivity : Activity() {
                 val rf = real
                 runOnUiThread {
                     sn.pending--
-                    if (dead || t.gen != g || rf == null) return@runOnUiThread
+                    if (dead || t.gen != g) return@runOnUiThread
+                    if (rf == null) { sn.fake++; return@runOnUiThread }   // (v980) مش ملف حقيقي
                     val key = Sniff.key(rf.url)
                     if (x.cat == PageScan.C_HOST) { if (sn.hosts.none { Sniff.key(it.url) == key }) sn.hosts.add(ScanItem(PageScan.C_HOST, rf.url, x.url, rf.name.ifBlank { x.name }, rf.ext, rf.size)) }
                     else if (sn.files.none { Sniff.key(it.url) == key }) sn.files.add(ScanItem(PageScan.C_FILE, rf.url, x.url, rf.name.ifBlank { x.name }, rf.ext, rf.size))
@@ -1905,6 +1941,37 @@ class BrowserActivity : Activity() {
         Notice.show(this, parts.joinToString(" · "), 2600L)
     }
 
+    // ===== (v980) المسح العميق الأوتوماتيك: بيشتغل في الخلفية من غير نتيجة بتظهر؛ اللينك لازم يتأكد (حجم/فيديو حقيقي) قبل ما يتعدّ =====
+    /** report=true (دوسة العدسة): لو خلّص ومفيش لينك حقيقي يقولك. الفحص نفسه (addFound/verifyFound) بيرفض أي لينك مزيّف */
+    private fun deepScan(t: BTab, report: Boolean) {
+        // (v981) دوسة يدوية (report=true) بتعدّي كل البوابات حتى لو مفتاح الفحص الأوتوماتيك مقفول
+        if (dead || (!report && !autoScanOn()) || t.priv || t.hold != null || t.blockedUrl != null) return
+        if (!report && !autoBgAllowed(false)) return
+        val page = t.wv?.url ?: t.url
+        if (!page.startsWith("http", true) || PageScan.needsDispatcher(page)) return
+        val sn = snapOf(t); val g = t.gen
+        val now = android.os.SystemClock.uptimeMillis()
+        if (now - sn.deepAt < 15000L) return
+        sn.deepAt = now
+        autoScan(t, g, true, report, true)
+        h.postDelayed({ if (!dead && t.gen == g) autoScan(t, g, true, report, true) }, 4000L)   // ثانية مرة: مشغّلات اتحمّلت متأخر
+        if (report && !sn.watching) { sn.watching = true; watchDeep(t, g, sn, 0) }
+    }
+    private fun watchDeep(t: BTab, g: Int, sn: AutoSnap, waited: Int) {
+        h.postDelayed({
+            if (dead || t.gen != g) { sn.watching = false; return@postDelayed }
+            val w = waited + 700
+            val busy = sn.pending > 0 || sn.vfy > 0
+            if ((busy && w < 30000) || w < 6000) { watchDeep(t, g, sn, w); return@postDelayed }
+            sn.watching = false
+            if (t !== tabs.getOrNull(curIdx) || dlg?.isShowing == true) return@postDelayed
+            val real = items.count { it.tabId == t.id && it.gen == g } + sn.files.size + sn.hosts.size
+            if (real > 0) return@postDelayed
+            if (sn.cand > 0) Notice.show(this, "🔎 جرّبت " + sn.cand + " لينك وكلهم مش حقيقيين (مفيش فيديو فعلي ولا حجم)", 4200L)
+            else Notice.show(this, "🔎 مفيش لينكات فيديو حقيقية في الصفحة دي", 3200L)
+        }, 700L)
+    }
+
     // ===== (v837) زرار 🔎: فحص يدوي — بيشغّل نفس الفحص الأوتوماتيك دلوقتي ويفتح النتيجة (الملفات والروابط المتأكَّد منها بس) =====
     private var scanBusy = false
     private fun pageScan() {
@@ -1928,6 +1995,24 @@ class BrowserActivity : Activity() {
         }
         h.postDelayed(poll, 2200L)
     }
+    // (v981) «بحث عميق» من لوحة العدسة: بيشغّل ماكينة الفحص الكاملة مرة واحدة (deepScan يدوي) وبعدين بيحدّث نفس اللوحة بالنتايج
+    private fun runDeepSearch(t: BTab, page: String, ua: String) {
+        if (dead) return
+        val g = t.gen
+        val sn = snapOf(t)
+        Notice.show(this, "🔎 بحث عميق شغال…", 2500L)
+        deepScan(t, true)
+        var waited = 0
+        lateinit var poll: Runnable
+        poll = Runnable {
+            waited += 500
+            if (dead || t.gen != g) return@Runnable
+            val busy = sn.pending > 0 || sn.vfy > 0
+            if ((busy && waited < 30000) || waited < 6000) { h.postDelayed(poll, 500L); return@Runnable }
+            if (tabs.contains(t)) showScanResults(sn.hosts + sn.files + sn.pages.take(15), page, ua, t)
+        }
+        h.postDelayed(poll, 3000L)
+    }
     private fun showAutoResults() {
         val t = tabs.getOrNull(curIdx) ?: return
         val sn = snapOf(t)
@@ -1939,8 +2024,12 @@ class BrowserActivity : Activity() {
         val files = list.filter { it.cat == PageScan.C_FILE }
         val pages = list.filter { it.cat == PageScan.C_PAGE }
         if (n == 0 && hosts.isEmpty() && files.isEmpty() && pages.isEmpty()) {
-            Notice.show(this, "🔎 مفيش لينكات تتحمّل — بدوّر على فيديو في الصفحة نفسها…", 2600L)
-            resolvePage(ScanItem(PageScan.C_PAGE, page, "", PageScan.niceName(page)), ua, t, false)
+            // (v981) الفحص الخفيف مالقاش حاجة: اللوحة نفسها بتتعرض وفيها زرار «بحث عميق» — مفيش فحص تقيل أوتوماتيك، المستخدم هو اللي يدوس
+            val box = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL }
+            lateinit var d: Dialog
+            box.addView(ui.text("🔎 الفحص الخفيف مالقاش فيديوهات ولا ملفات في الصفحة دي.", 14f, th.muted))
+            box.addView(ui.button("🔍 بحث عميق", true) { d.dismiss(); runDeepSearch(t, page, ua) })
+            d = sheet("🔎 نتيجة فحص الصفحة", box); d.show()
             return
         }
         val box = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL }
@@ -2110,8 +2199,127 @@ class BrowserActivity : Activity() {
         f.tabId = t.id; f.gen = g
         if (g != t.gen) return   // لقطة من صفحة قديمة
         if (!keys.add("${t.id}:$g:" + Sniff.key(f.url))) return
-        if (f.size > 0 || f.kind == "HLS") { accept(f); return }
-        probe(f) { accept(f) }   // حجم مش معروف: نفحصه الأول، وأي فيديو أقل من 3 ميجا (إعلانات غالبًا) بيتتجاهل
+        if (f.kind.startsWith("YT")) { if (f.size > 0) { accept(f); return }; probe(f) { accept(f) }; return }   // يوتيوب زي ما كان
+        // (v976) كل لينك ملقوط بيتفحص فعلًا قبل ما يظهر: لازم يرد بفيديو/قايمة HLS حقيقية (مش صفحة HTML / 403 / 404 / لينك منتهي) ولو HLS أول مقطع فيها لازم يتحمّل.
+        // بيجرّب Referer/Origin بتوع المشغّل الخارجي ثم صفحة المتصفح ثم أصل اللينك ثم من غير — واللي ينجح بيتثبّت على اللقطة (المشغّل والتحميل بياخدوه)
+        val sn0 = snapOf(t); sn0.cand++; sn0.vfy++
+        verifyFound(f) { ok -> sn0.vfy--; if (ok) accept(f) else rejectFake(f) }   // أي فيديو أقل من 3 ميجا (إعلانات غالبًا) بيتتجاهل في accept
+    }
+    private class Peek(val code: Int, val mime: String, val body: ByteArray, val total: Long)
+    /** (v976) أول maxBytes بايت من اللينك (GET Range) بالهيدرز دي. null = مفيش رد (شبكة/مهلة) */
+    private fun httpPeek(url: String, hd: Map<String, String>, maxBytes: Int): Peek? {
+        var c: java.net.HttpURLConnection? = null
+        return try {
+            c = java.net.URL(url).openConnection() as java.net.HttpURLConnection
+            c.requestMethod = "GET"; c.connectTimeout = 8000; c.readTimeout = 9000; c.instanceFollowRedirects = true
+            c.setRequestProperty("Range", "bytes=0-${maxBytes - 1}")
+            for ((k, v) in hd) c.setRequestProperty(k, v)
+            val code = c.responseCode
+            val mime = c.contentType ?: ""
+            val total = c.getHeaderField("Content-Range")?.substringAfterLast('/')?.trim()?.toLongOrNull() ?: (if (code == 200) c.contentLengthLong else -1L)
+            val st = if (code in 200..299) c.inputStream else null
+            val buf = java.io.ByteArrayOutputStream()
+            if (st != null) { val b = ByteArray(4096); while (buf.size() < maxBytes) { val n = st.read(b, 0, minOf(b.size, maxBytes - buf.size())); if (n <= 0) break; buf.write(b, 0, n) } }
+            Peek(code, mime, buf.toByteArray(), total)
+        } catch (_: Throwable) { null } finally { try { c?.disconnect() } catch (_: Throwable) {} }
+    }
+    private class VRes(val ok: Boolean, val definite: Boolean, val size: Long, val mime: String)   // definite = السيرفر ردّ ورفض (مش مهلة شبكة)
+    private fun looksHtml(p: Peek): Boolean {
+        val m = p.mime.lowercase()
+        if (m.startsWith("text/html") || m.contains("json") || m.contains("xhtml")) return true
+        val s = String(p.body, 0, minOf(p.body.size, 200), Charsets.ISO_8859_1).trimStart('\uFEFF', ' ', '\n', '\r', '\t').lowercase()
+        return s.startsWith("<!doctype") || s.startsWith("<html") || s.startsWith("<head") || s.startsWith("<body") || s.startsWith("{")
+    }
+    private fun resolveUrl(base: String, ref: String): String = try { java.net.URL(java.net.URL(base), ref.trim()).toString() } catch (_: Throwable) { ref.trim() }
+    private fun checkMedia(f: Found, hd: Map<String, String>): VRes {
+        val pk = httpPeek(f.url, hd, 4096) ?: return VRes(false, false, -1L, "")
+        if (pk.code !in 200..299) return VRes(false, true, -1L, "")
+        val head = String(pk.body, Charsets.UTF_8).trimStart('\uFEFF', ' ', '\n', '\r', '\t')
+        val hls = isHls(f) || head.startsWith("#EXTM3U")
+        if (hls) {
+            if (!head.startsWith("#EXTM3U")) return VRes(false, true, -1L, pk.mime)
+            // قايمة HLS حقيقية: نتأكد إن أول مستوى وأول مقطع بيتحمّلوا (أغلب «الفيديو بيفضل 0%» بيبقى المقطع مرفوض)
+            var pl = httpPeek(f.url, hd, 120_000) ?: return VRes(false, false, -1L, pk.mime)
+            var plUrl = f.url
+            var text = String(pl.body, Charsets.UTF_8)
+            if (text.contains("#EXT-X-STREAM-INF")) {
+                val v = text.lines().map { it.trim() }.firstOrNull { it.isNotEmpty() && !it.startsWith("#") } ?: return VRes(false, true, -1L, pk.mime)
+                plUrl = resolveUrl(f.url, v)
+                pl = httpPeek(plUrl, hd, 120_000) ?: return VRes(false, false, -1L, pk.mime)
+                if (pl.code !in 200..299 || !String(pl.body, Charsets.UTF_8).trimStart('\uFEFF', ' ', '\n', '\r').startsWith("#EXTM3U")) return VRes(false, true, -1L, pk.mime)
+                text = String(pl.body, Charsets.UTF_8)
+            }
+            val seg = text.lines().map { it.trim() }.firstOrNull { it.isNotEmpty() && !it.startsWith("#") } ?: return VRes(false, true, -1L, pk.mime)
+            val sp = httpPeek(resolveUrl(plUrl, seg), hd, 2048) ?: return VRes(true, false, -1L, pk.mime)   // مهلة على المقطع: مش دليل إنه مزيّف
+            if (sp.code !in 200..299 || looksHtml(sp)) return VRes(false, true, -1L, pk.mime)
+            return VRes(true, true, -1L, pk.mime)
+        }
+        if (f.kind == "DASH") return if (head.contains("<MPD", true)) VRes(true, true, -1L, pk.mime) else VRes(false, true, -1L, pk.mime)
+        if (looksHtml(pk)) return VRes(false, true, -1L, pk.mime)
+        val b = pk.body
+        fun u(i: Int): Int = if (i < b.size) (b[i].toInt() and 0xFF) else -1
+        val magic = (u(4) == 0x66 && u(5) == 0x74 && u(6) == 0x79 && u(7) == 0x70) ||   // mp4/mov: ftyp
+            (u(0) == 0x1A && u(1) == 0x45 && u(2) == 0xDF && u(3) == 0xA3) ||   // webm/mkv
+            (u(0) == 0x46 && u(1) == 0x4C && u(2) == 0x56) ||   // flv
+            (u(0) == 0x47 && u(188) == 0x47)   // mpeg-ts
+        val m = pk.mime.lowercase()
+        if (!magic && (m.startsWith("text/") || m.startsWith("image/"))) return VRes(false, true, -1L, pk.mime)   // فيديو حقيقي: video/* أو octet-stream أو بصمة ملف فيديو
+        return VRes(true, true, pk.total, pk.mime)
+    }
+    private fun headerCandidates(f: Found): List<HashMap<String, String>> {
+        val base = dlHeaders(f); base.remove("Referer"); base.remove("Origin")
+        fun mk(ref: String?, org: String?): HashMap<String, String> { val m = HashMap(base); if (!ref.isNullOrEmpty()) m["Referer"] = ref; if (!org.isNullOrEmpty()) m["Origin"] = org; return m }
+        val refO = Sniff.originOf(f.ref); val pageO = Sniff.originOf(f.page); val urlO = Sniff.originOf(f.url)
+        val out = ArrayList<HashMap<String, String>>()
+        fun add(m: HashMap<String, String>) { if (out.none { it == m }) out.add(m) }
+        add(mk(f.ref.takeIf { it.isNotEmpty() }, f.origin.ifEmpty { refO ?: "" }))   // زي ما المشغّل الخارجي بعت
+        add(mk(f.ref.takeIf { it.isNotEmpty() }, null))
+        if (f.page.startsWith("http", true)) { add(mk(f.page, pageO)); add(mk(f.page, null)) }
+        if (refO != null) add(mk("$refO/", refO))
+        if (urlO != null) add(mk("$urlO/", null))
+        add(mk(null, null))
+        return out
+    }
+    private fun verifyFound(f: Found, done: (Boolean) -> Unit) {
+        Thread {
+            var ok = false; var definiteNo = false
+            try {
+                for (hd in headerCandidates(f)) {
+                    val r = checkMedia(f, hd)
+                    if (r.ok) {
+                        ok = true
+                        hd["Referer"]?.let { f.ref = it }; f.origin = hd["Origin"] ?: ""
+                        if (r.size > 0 && f.size <= 0) f.size = r.size
+                        if (r.mime.isNotEmpty() && f.mime.isEmpty()) f.mime = r.mime
+                        break
+                    }
+                    if (r.definite) definiteNo = true
+                }
+            } catch (e: Throwable) { LogStore.err("Browser:verify", e); ok = true }   // خطأ غير متوقع: ما نخبّيش اللقطة
+            val keep = ok || !definiteNo   // نخبّي بس لو السيرفر ردّ ورفض بكل الهيدرز (مش مهلة شبكة)
+            if (!keep) LogStore.add("🚫 لينك ملقوط مزيّف/مرفوض اتخبّى: " + f.url.take(140))
+            runOnUiThread { if (!dead) done(keep) }
+        }.apply { isDaemon = true }.start()
+    }
+    private val huntedGen = HashSet<String>()
+    /** (v976) لينك ملقوط اتبيّن إنه مزيّف: لو ما فضلش أي فيديو سليم في الصفحة بعد 3.5 ثانية، ندوّر في الصفحة والمشغّلات الخارجية (مرة واحدة لكل صفحة) */
+    private fun rejectFake(f: Found) {
+        val t = tabs.firstOrNull { it.id == f.tabId } ?: return
+        if (f.gen != t.gen || t.priv) return
+        val sf0 = snaps[t.id]; if (sf0 != null && sf0.gen == f.gen) sf0.fake++   // (v980)
+        val k = "${t.id}:${t.gen}"; val g = t.gen
+        if (!huntedGen.add(k)) return
+        h.postDelayed({
+            if (dead || !tabs.contains(t) || t.gen != g) return@postDelayed
+            if (items.any { it.tabId == t.id && it.gen == g }) return@postDelayed
+            val page = t.url; if (!page.startsWith("http", true)) return@postDelayed
+            val ua = uaOf(t)
+            Thread {
+                val v = try { ClipWatch.resolve(this, page) } catch (e: Throwable) { LogStore.err("Browser:autoHunt", e); null }
+                if (v == null || v.playUrl.isEmpty()) return@Thread
+                runOnUiThread { if (!dead && t.gen == g) addFound(Found(v.playUrl, v.kind, v.title, v.ref.ifEmpty { page }, v.ua.ifEmpty { ua }, page), t, g) }
+            }.apply { isDaemon = true }.start()
+        }, 3500L)
     }
     private fun accept(f: Found) {
         if (dead) return
@@ -2124,6 +2332,7 @@ class BrowserActivity : Activity() {
         if (repairId != null && !repairPending) { repairPending = true; h.postDelayed({ repairPending = false; autoRepair() }, 2000L) }   // نستنى ثانيتين عشان باقي الجودات توصل
         // (v715) من غير فتح القايمة لوحدها: العلامة الدايرة بتظهر وإنت تدوس عليها
         announce(t)   // (v838) رسالة بالعدد: 🎬 لقط N فيديو (+ ملفات ولينكات لو اتلقطت)
+        val sn1 = snapOf(t); if (!sn1.deepOnCatch) { sn1.deepOnCatch = true; deepScan(t, false) }   // (v980) لقط فيديو ← المسح يشتغل في الخلفية لوحده
     }
 
     // ===== (v401) مانع البوب-أب الذكي =====
@@ -2206,6 +2415,7 @@ class BrowserActivity : Activity() {
         val t = hd.tab; t.hold = null
         tabs.add(t); refreshTabsCount(); persistTabs()
         select(tabs.size - 1)
+        scheduleAutoScan(t, longArrayOf(1500L, 5000L, 12000L))   // (v980) صفحة البوب-أب كانت بتخلّص تحميل وهي مش الحالية فالفحص كان بيتخطاها
         for (a in hd.sniffed) addFound(Found(a, Sniff.kindOf(a), "", t.url, uaOf(t)), t)
     }
 
@@ -2277,6 +2487,12 @@ class BrowserActivity : Activity() {
             if (fanViews.isNotEmpty()) { closeFan(); return }   // (v801) الدايرة والأزرار مفتوحة حواليها: دوسة عليها = تصغير
             val gs = groupsOf(vis())
             if (gs.isEmpty() && hasExtras()) { showAutoResults(); return }   // (v838) مفيش فيديو بس فيه ملفات/لينكات حقيقية
+            if (!tvOn) {   // (v975) موبايل: مفيش شاشة اصطياد قديمة (لا جنب ولا نص) — مفيش فيديو = إشعار صغير · فيديو واحد = الأزرار حوالين الدايرة · أكتر = دواير الفيديوهات ثم الأزرار
+                if (gs.isEmpty()) { Notice.show(this, "🔍 لسه بدوّر على فيديو — شغّله في الصفحة لو ما ظهرش", 2600L); kickScan(); return }
+                if (gs.all { it.qs.isNotEmpty() }) { if (gs.size == 1) openFan(gs[0]) else showPick(gs) }
+                else Notice.show(this, "⏳ بجهّز الفيديو… جرّب تاني بعد ثانيتين", 2200L)
+                return
+            }
             if (gs.size == 1 && gs[0].qs.isNotEmpty()) showActions(gs[0])   // (v852) فيديو واحد: اسمه + الأزرار (من غير ما تتنشر حوالين الدايرة)
             else if (gs.size > 1 && !tvOn && gs.all { it.qs.isNotEmpty() }) showPick(gs)   // (v852) أكتر من فيديو: دايرة لكل فيديو فوق الدايرة + اسمه
             else showList()
@@ -2368,7 +2584,7 @@ class BrowserActivity : Activity() {
         val bottom = FrameLayout(this).apply {
             layoutDirection = View.LAYOUT_DIRECTION_LTR
             addView(left, FrameLayout.LayoutParams(-2, -1, Gravity.LEFT or Gravity.CENTER_VERTICAL).apply { leftMargin = ui.dp(4) })
-            addView(badge, FrameLayout.LayoutParams(ui.dp(56), ui.dp(56), Gravity.CENTER))
+            addView(badge, FrameLayout.LayoutParams(ui.dp(60), ui.dp(60), Gravity.CENTER))   // (v975) 56→60 (الحلقة بقت جوه حدودها)
             addView(panicB, FrameLayout.LayoutParams(ui.dp(44), ui.dp(44), Gravity.RIGHT or Gravity.CENTER_VERTICAL).apply { rightMargin = ui.dp(6) })
             if (!tvOn) addView(stripBtn("🔎", 18f) { pageScan() }, FrameLayout.LayoutParams(ui.dp(44), ui.dp(44), Gravity.RIGHT or Gravity.CENTER_VERTICAL).apply { rightMargin = ui.dp(56) })   // (v837) فحص الصفحة
         }
@@ -2394,10 +2610,11 @@ class BrowserActivity : Activity() {
         val fl = IntArray(2); frame.getLocationOnScreen(fl)
         val cx = bl[0] - fl[0] + badge.width / 2f; val cy = bl[1] - fl[1] + badge.height / 2f
         // الترتيب من اليمين لليسار (قراءة عربي): مشاهدة موبايل · بالترجمة موبايل · مشاهدة تلفزيون · بالترجمة تلفزيون · تحميل
+        // (v975) التحميل في النص: مشاهدة موبايل · بالترجمة موبايل · ⬇ تحميل (نص) · مشاهدة تلفزيون · بالترجمة تلفزيون
         val acts = listOf(
             Triple("mw", "📱\nمشاهدة", 0xFF2E9E5B.toInt()), Triple("mt", "📱🌐\nبالترجمة", 0xFF1E6BFF.toInt()),
-            Triple("tw", "📺\nمشاهدة", 0xFFE53935.toInt()), Triple("tt", "📺🌐\nبالترجمة", 0xFF7B1FA2.toInt()),
-            Triple("dl", "⬇\nتحميل", 0xFF455A64.toInt()))
+            Triple("dl", "⬇\nتحميل", 0xFF455A64.toInt()),
+            Triple("tw", "📺\nمشاهدة", 0xFFE53935.toInt()), Triple("tt", "📺🌐\nبالترجمة", 0xFF7B1FA2.toInt()))
         val rad = ui.dp(108).toFloat(); val sz = ui.dp(58)
         acts.forEachIndexed { i, (act, label, fill) ->
             val ang = Math.toRadians(-20.0 - 35.0 * i)
@@ -2406,7 +2623,7 @@ class BrowserActivity : Activity() {
                 text = label; setTextColor(Color.WHITE); textSize = 10.5f; typeface = android.graphics.Typeface.DEFAULT_BOLD; gravity = Gravity.CENTER; includeFontPadding = false
                 maxLines = 2; setPadding(ui.dp(2), 0, ui.dp(2), 0); elevation = ui.dp(14).toFloat()
                 background = android.graphics.drawable.GradientDrawable().apply { shape = android.graphics.drawable.GradientDrawable.OVAL; setColor(fill); setStroke(ui.dp(2), 0xCCFFFFFF.toInt()) }
-                setOnClickListener { closeFan(); markAct(act) }
+                setOnClickListener { closeFan(); fanAct(act, g) }
             }
             val lp = FrameLayout.LayoutParams(sz, sz, Gravity.TOP or Gravity.LEFT).apply { leftMargin = (x - sz / 2f).toInt(); topMargin = (y - sz / 2f).toInt() }
             frame.addView(b, lp); fanViews.add(b)
@@ -2474,7 +2691,7 @@ class BrowserActivity : Activity() {
             val row = LinearLayout(this).apply {
                 orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_LTR
                 isClickable = true; isFocusable = true
-                setOnClickListener { closeActions(); showActions(g) }
+                setOnClickListener { closeActions(); if (tvOn) showActions(g) else openFan(g) }   // (v975) موبايل: الأزرار حوالين الدايرة بدل الكارت اللي في النص
             }
             row.addView(TextView(this).apply {
                 text = g.title.ifBlank { "فيديو " + (i + 1) }; setTextColor(Color.WHITE); textSize = 12f; maxLines = 2; ellipsize = TextUtils.TruncateAt.END; maxWidth = ui.dp(230)
@@ -2507,19 +2724,31 @@ class BrowserActivity : Activity() {
     /** (v716) اختيار جودة التحميل: كل جودات الاصطياد (+ جودات HLS من الماستر) + «🎧 صوت بس». جودة واحدة بس = تحميل على طول */
     private fun askQuality(g: Grp, only: Qv? = null) {
         val src = if (only != null) listOf(only) else g.qs
-        if (src.any { isHls(it.f) }) Notice.show(this, "⏳ بجيب الجودات…", 1500L)
+        Notice.show(this, "⏳ بجيب الجودات وأحجامها…", 2500L)
         Thread {
             val opts = ArrayList<DlQuality.Opt>()
             for (q in src) {
                 if (isHls(q.f)) {
                     val vs = try { Downloader.variants(q.f.url, dlHeaders(q.f)) } catch (_: Throwable) { emptyList() }
                     if (vs.isNotEmpty()) {
-                        for (v in vs) opts.add(DlQuality.Opt((if (v.h > 0) "${v.h}p" else "جودة") + " · HLS" + (if (v.bw > 0) " · " + String.format("%.1f", v.bw / 1_000_000.0) + " Mbps" else ""), v.h, v.url, null, true, q))
+                        val sz = try { Downloader.variantBytes(vs, dlHeaders(q.f)) } catch (_: Throwable) { emptyList() }   // (v975) الحجم الكلي مش الريت
+                        vs.forEachIndexed { i, v -> opts.add(DlQuality.Opt(Downloader.variantLabel(v, sz.getOrElse(i) { 0L }), v.h, v.url, null, true, q)) }
                         continue
                     }
                 }
                 val h = if (q.h > 0) q.h else (hCache[Sniff.key(q.f.url)] ?: 0)
-                opts.add(DlQuality.Opt(q.label + (if (q.label.contains("MB") || q.label.contains("GB")) "" else szTxt(q)), h, q.f.url, q.audio, isHls(q.f), q))
+                var sTxt = ""
+                if (!q.label.contains("MB") && !q.label.contains("GB")) {   // (v975) الحجم الكلي دايمًا: لو لسه مش معروف نسأل السيرفر دلوقتي (الفيديو + الصوت لو منفصل)
+                    var n = szCache[q.f.url] ?: -1L
+                    if (n <= 0L) {
+                        val hs = dlHeaders(q.f)
+                        n = try { Downloader.sizeOf(q.f.url, hs) } catch (_: Throwable) { -1L }
+                        if (n > 0L && q.audio != null) { val a = try { Downloader.sizeOf(q.audio, hs) } catch (_: Throwable) { -1L }; if (a > 0L) n += a }
+                        if (n > 0L) szCache[q.f.url] = n
+                    }
+                    if (n > 0L) sTxt = " · " + Sniff.fmtSize(n)
+                }
+                opts.add(DlQuality.Opt(q.label + sTxt, h, q.f.url, q.audio, isHls(q.f), q))
             }
             if (src.size > 1) {   // (v853) جودات جاية من أكتر من لينك: ترتيب موحّد من الأعلى، والجودة المتكررة مرة (الملف المباشر أولى من HLS)
                 val ord = opts.withIndex().sortedWith(compareByDescending<IndexedValue<DlQuality.Opt>> { if (it.value.h > 0) it.value.h else 0 }.thenBy { it.index }).map { it.value }
@@ -2546,6 +2775,7 @@ class BrowserActivity : Activity() {
         val now = android.os.SystemClock.uptimeMillis()
         if (dead || now - lastKick < 1200L) return
         lastKick = now; scanUntil = now + 5000L
+        tabs.getOrNull(curIdx)?.let { deepScan(it, true) }   // (v980) دوسة العدسة: المسح يبدأ في الخلفية وأقولك لو مفيش لينك حقيقي
         h.post { if (!dead) refreshBadge() }
         h.postDelayed({ if (!dead) refreshBadge() }, 5100L)
     }
@@ -2620,10 +2850,15 @@ class BrowserActivity : Activity() {
     private fun markAct(act: String) {
         try {
             if (act == "close") { markHidden = true; vidMark.clear(); return }
-            val gs = groupsOf(vis())
-            val g = gs.singleOrNull()
-            val q = g?.qs?.getOrNull(qIdx(g))
-            if (g == null || q == null) { showList(); return }
+            val g = groupsOf(vis()).singleOrNull()
+            if (g == null) { showList(); return }
+            fanAct(act, g)
+        } catch (e: Throwable) { LogStore.err("Browser:markAct", e) }
+    }
+    /** (v975) زرار من الأزرار حوالين الدايرة، على فيديو بعينه (فيديو واحد أو اللي اتختار من دواير الفيديوهات) */
+    private fun fanAct(act: String, g: Grp) {
+        try {
+            val q = g.qs.getOrNull(qIdx(g)) ?: return
             when (act) {
                 "mw" -> openPlayer(q.f, true, q.audio)
                 "mt" -> openPlayer(q.f, false, q.audio)
@@ -2631,7 +2866,7 @@ class BrowserActivity : Activity() {
                 "tt" -> ensureKeys { sendToTv(g, q, true) }
                 "dl" -> askQuality(g)
             }
-        } catch (e: Throwable) { LogStore.err("Browser:markAct", e) }
+        } catch (e: Throwable) { LogStore.err("Browser:fanAct", e) }
     }
 
     // ===== (v203) تجميع الجودات: كل لينكات نفس الفيديو = اصطياد واحد =====
@@ -2775,6 +3010,7 @@ class BrowserActivity : Activity() {
         val m = HashMap<String, String>()
         val ua = f.ua.ifEmpty { uaWeb }; if (ua.isNotEmpty()) m["User-Agent"] = ua
         if (f.ref.isNotEmpty()) m["Referer"] = f.ref
+        if (f.origin.isNotEmpty()) m["Origin"] = f.origin   // (v976)
         val ck = try { CookieManager.getInstance().getCookie(f.url) ?: "" } catch (_: Throwable) { "" }
         if (ck.isNotEmpty()) m["Cookie"] = ck
         return m
@@ -2849,6 +3085,9 @@ class BrowserActivity : Activity() {
         return d
     }
     fun showList() {
+        if (!tvOn && groupsOf(vis()).isEmpty()) {   // (v975) مفيش فيديو: إشعار صغير بدل الشاشة الكبيرة العريضة «بدوّر…»
+            Notice.show(this, "🔍 لسه مفيش فيديو ملقوط — شغّل الفيديو في الصفحة", 2600L); kickScan(); return
+        }
         if (dlg == null) {
             val lb = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL }
             val st = ui.text("", 13f, th.muted).apply { setPadding(0, 0, 0, ui.dp(6)) }
@@ -3211,6 +3450,7 @@ class BrowserActivity : Activity() {
         // تبويب اتفتح من تبويب تاني: الرجوع يقفله ويرجّعك للأصلي
         if (tabs.size > 1 && tab.opener >= 0 && tabs.any { it.id == tab.opener }) { closeTab(curIdx); return }
         persistTabs()
+        if (!isTaskRoot && !DeviceUi.isTv(this)) { NavAnim.set(2, 0); startActivity(TabNav.main(this, "videos")); NavAnim.peek(this); return }   // (v973) التبويبات شغّالة: Back = ميديا (مش أي شاشة تحتك)
         super.onBackPressed()
     }
     // (v149) أول ما تخرج من المتصفح: كل الفيديو/الصوت في كل التبويبات يقف (من غير ما يكمّل في الخلفية)، وكل التبويبات تتجمّد

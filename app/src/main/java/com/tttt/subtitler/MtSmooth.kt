@@ -30,16 +30,14 @@ import java.lang.ref.WeakReference
  *     طلب مش قفل — أندرويد لسه ممكن ينزّله لو الجهاز سخن أو موفّر البطارية شغّال. (مش على التلفزيون.)
  *  1) مطابقة معدل الشاشة مع فريمات الفيديو: 24/30 على 120Hz = ×5/×4 بالظبط، فمفيش رعشة (judder). لو مفيش معدل مضاعف بالظبط
  *     (25fps على 60/90/120 مثلًا) بيفضل على أعلى معدل.
- *  2) تخفيف الزجاج وقت التشغيل: بلور الأزرار فوق الفيديو بيكلّف GPU لكل فريم. تلقائي = الزجاج بيبطّل يسحب الفيديو لما الأزرار مخفية،
- *     وأزرار الزجاج بتثبّت على اللون بس لو الفريمات بتقع. دايمًا = ثابتة طول التشغيل. إيقاف = زي MeeTube الأصلي.
+ *  2) (تخفيف الزجاج اتشال في v988: في v987 الفيديو على SurfaceView فالزجاج لون بس أصلًا، ومنعًا لأي مساس بشكل الأزرار.)
  *  3) فك الترميز: اسم الـdecoder بيتسجّل في اللوج (MtSmooth)، ولو اتفك سوفتوير لفيديو تقيل بيظهر تنبيه واحد بالسبب.
  *     (Media3 أصلًا بيرتّب الهاردوير الأول؛ السوفتوير بيتختار بس لو الهاردوير مش بيدعم الصيغة أو فشل.)
- * Cfg: mt_hz (0 أعلى · -1 النظام · رقم ثابت) · mt_hz_match (افتراضي 1) · mt_glass_eco (0 إيقاف · 1 تلقائي · 2 دايمًا — الافتراضي 1) · mt_hw_warn (افتراضي 1).
+ * Cfg: mt_hz (0 أعلى · -1 النظام · رقم ثابت) · mt_hz_match (افتراضي 1) · mt_hw_warn (افتراضي 1).
  */
 object MtSmooth {
     const val K_HZ = "mt_hz"
     const val K_MATCH = "mt_hz_match"
-    const val K_GLASS = "mt_glass_eco"
     const val K_HW_WARN = "mt_hw_warn"
 
     private val ui = Handler(Looper.getMainLooper())
@@ -52,13 +50,7 @@ object MtSmooth {
     private var matchRate = 0f
     private var matchMode = 0
     private var matchKey = ""
-    private var ctl = true
     private var playing = false
-    private var heavy = false
-    private var heavyHits = 0
-    private var heavyAt = 0L
-    private var glassOff = false
-    private var glassRun: Runnable? = null
     private var warned = ""
 
     // ---------- شاشات العرض ----------
@@ -108,16 +100,6 @@ object MtSmooth {
         Cfg.put(K_HZ, v.toString())
         try { (cur?.get() ?: act)?.let { refresh(it) } } catch (_: Throwable) {}
         try { evalMatch() } catch (_: Throwable) {}
-    }
-
-    private val glassNames = listOf("إيقاف", "تلقائي", "دايمًا")
-    fun glassMode(): Int = Cfg.int(K_GLASS, 1).coerceIn(0, 2)
-    fun glassName(): String = glassNames[glassMode()]
-    fun glassChoices(): List<String> = glassNames
-    fun setGlass(name: String) {
-        val i = glassNames.indexOf(name).let { if (it < 0) 1 else it }
-        Cfg.put(K_GLASS, i.toString())
-        try { pushGlass() } catch (_: Throwable) {}
     }
 
     fun matchOn(): Boolean = Cfg.bool(K_MATCH, true)
@@ -183,24 +165,10 @@ object MtSmooth {
         override fun onVideoSizeChanged(videoSize: androidx.media3.common.VideoSize) { evalMatch() }
         override fun onTracksChanged(tracks: androidx.media3.common.Tracks) { evalMatch() }
         override fun onMediaItemTransition(mediaItem: androidx.media3.common.MediaItem?, reason: Int) { evalMatch() }
-        override fun onIsPlayingChanged(isPlaying: Boolean) { playing = isPlaying; pushGlass() }
+        override fun onIsPlayingChanged(isPlaying: Boolean) { playing = isPlaying }
     }
 
     private val analytics = object : AnalyticsListener {
-        override fun onDroppedVideoFrames(eventTime: AnalyticsListener.EventTime, droppedFrames: Int, elapsedMs: Long) {
-            try {
-                if (droppedFrames < 8 || elapsedMs > 5000L || !playing) return
-                val now = SystemClock.elapsedRealtime()
-                heavyHits = if (now - heavyAt > 20000L) 1 else heavyHits + 1
-                heavyAt = now
-                if (heavyHits >= 2 && !heavy) {
-                    heavy = true
-                    LogStore.add("MtSmooth: فريمات واقعة ($droppedFrames في ${elapsedMs}ms) — الزجاج فوق الفيديو اتثبّت (وضع تلقائي)")
-                    pushGlass()
-                }
-            } catch (_: Throwable) {}
-        }
-
         override fun onVideoDecoderInitialized(eventTime: AnalyticsListener.EventTime, decoderName: String, initializedTimestampMs: Long, initializationDurationMs: Long) {
             try { checkDecoder(decoderName) } catch (e: Throwable) { LogStore.err("MtSmooth:decoder", e) }
         }
@@ -213,12 +181,11 @@ object MtSmooth {
                 detachListeners()
                 p.addListener(listener)
                 p.addAnalyticsListener(analytics)
-                heavy = false; heavyHits = 0; warned = ""
+                warned = ""
             }
             act = activity; player = p
             playing = try { p.isPlaying } catch (_: Throwable) { false }
             evalMatch()
-            pushGlass()
         } catch (e: Throwable) { LogStore.err("MtSmooth:attach", e) }
     }
 
@@ -226,21 +193,9 @@ object MtSmooth {
         try {
             if (act !== activity) return
             detachListeners()
-            glassRun?.let { ui.removeCallbacks(it) }; glassRun = null
-            try { JoyboyPlayerHost.setGlassEconomy(activity, false, false) } catch (_: Throwable) {}
-            glassOff = false
             matchRate = 0f; matchMode = 0; matchKey = ""
             player = null; act = null
             refresh(activity)   // رجّع المعدل العام للبرنامج
-        } catch (_: Throwable) {}
-    }
-
-    /** MtTranslate.onControlsVisibility */
-    fun onControls(activity: Activity, visible: Boolean) {
-        try {
-            if (act !== activity) return
-            ctl = visible
-            pushGlass()
         } catch (_: Throwable) {}
     }
 
@@ -300,25 +255,7 @@ object MtSmooth {
 
     private fun fmt(v: Float): String = if (Math.abs(v - Math.round(v)) < 0.01f) Math.round(v).toString() else String.format(java.util.Locale.US, "%.2f", v)
 
-    // ---------- 2) تخفيف الزجاج وقت التشغيل ----------
-    private fun pushGlass() {
-        val a = act ?: return
-        val m = glassMode()
-        val off = m != 0 && playing && !ctl
-        val frozen = playing && (m == 2 || (m == 1 && heavy))
-        glassRun?.let { ui.removeCallbacks(it) }
-        val go = Runnable {
-            try {
-                glassOff = off
-                JoyboyPlayerHost.setGlassEconomy(a, off, frozen)
-            } catch (_: Throwable) {}
-        }
-        glassRun = go
-        // الأزرار بتتلاشى 150ms لما تتخفي — منوقفش السحب إلا بعد ما تخلّص
-        ui.postDelayed(go, if (off && !glassOff) 300L else 0L)
-    }
-
-    // ---------- 3) فك الترميز: هاردوير ولا سوفتوير ----------
+    // ---------- 2) فك الترميز: هاردوير ولا سوفتوير ----------
     private fun isSoftware(ci: MediaCodecInfo): Boolean {
         if (Build.VERSION.SDK_INT >= 29) return ci.isSoftwareOnly || !ci.isHardwareAccelerated
         return softName(ci.name)

@@ -40,18 +40,13 @@
         <!-- This activity's name used inside atv channels -->
         <!-- More info: com.liskovsoft.leanbackassistant.utils.AppUtil -->
         <!-- (v920) السبلاش بقى شاشة الدخول (لانشر) — MeeTube هو البرنامج الأساسي -->
+        <!-- (v985) فلتر اللانشر اتشال: أيقونة الموبايل بقت MainActivity بتاع Joyboy (:app manifest) — النشاط نفسه لسه معلَن ومتصدَّر عشان MeeTubeLink.open/openUrl وإعادة التشغيل (Utils.restartTheApp) بيبدأوه صراحةً، وSplashPresenter لسه بيوجّه اللينكات اللي مش لانشر -->
         <activity
             android:name="com.liskovsoft.smartyoutubetv2.tv.ui.main.SplashActivity"
             android:exported="true"
             android:launchMode="singleInstance"
             android:configChanges="screenSize|smallestScreenSize|screenLayout|orientation|layoutDirection"
             android:screenOrientation="unspecified">
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-
-                <category android:name="android.intent.category.DEFAULT"/>
-                <category android:name="android.intent.category.LAUNCHER" />
-            </intent-filter>
         </activity>
 
         <!-- External-intent router (watch links, shares, vnd.youtube). Lives in its OWN ephemeral

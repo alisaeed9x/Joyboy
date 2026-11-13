@@ -52,11 +52,12 @@ object MtEnhance {
     private var heavy = 0
     private var heavyAt = 0L
     private var watch: Runnable? = null
+    private var reseek = false   // (v988) بعد دوسة الزرار: seek صغير عشان الـsink يسجّل المؤثرات فورًا
 
     // ---------- الإعدادات ----------
     private val names = listOf("إيقاف", "خفيف", "متوسط", "قوي")
 
-    fun level(): Int = Cfg.int(K_LEVEL, 1).coerceIn(0, 3)
+    fun level(): Int = Cfg.int(K_LEVEL, 0).coerceIn(0, 3)   // (v988) الافتراضي إيقاف
     fun levelName(): String = names[level()]
     fun vivid(): Boolean = Cfg.bool(K_VIVID, false)
 
@@ -76,6 +77,32 @@ object MtEnhance {
         Cfg.put(K_FAKE, i.toString())
         Cfg.put(K_OFF, "0")
         memOff = false
+    }
+    // ---------- (v949) أوضاع جاهزة — سويتش واحد بين كل أوضاع تحسين الصورة ----------
+    class Mode(val name: String, val level: Int, val vivid: Boolean, val fake: Int)
+    val modes: List<Mode> = listOf(
+        Mode("إيقاف", 0, false, 0),
+        Mode("وضوح", 2, false, 0),
+        Mode("ألوان", 1, true, 0),
+        Mode("HDR", 0, false, 2),
+        Mode("كامل", 2, true, 2)
+    )
+    /** رقم الوضع الجاهز المطابق للإعدادات الحالية، أو -1 لو الإعدادات مخصّصة من الإعدادات */
+    fun modeIndex(): Int = modes.indexOfFirst { it.level == level() && it.vivid == vivid() && it.fake == fake() }
+    fun modeName(): String = modeIndex().let { if (it < 0) "مخصّص" else modes[it].name }
+    /** بيروح للوضع اللي بعده (من «مخصّص» بيروح لأول وضع شغّال) ويطبّقه على الفيديو الشغّال فورًا */
+    fun cycleMode(): String {
+        val i = (modeIndex() + 1) % modes.size
+        val m = modes[i]
+        Cfg.put(K_LEVEL, m.level.toString())
+        Cfg.put(K_VIVID, if (m.vivid) "1" else "0")
+        Cfg.put(K_FAKE, m.fake.toString())
+        Cfg.put(K_OFF, "0")
+        memOff = false
+        reseek = true
+        evaluate()
+        reseek = false
+        return m.name
     }
     private fun hdrFor(l: Int): Float = when (l) { 1 -> 0.35f; 2 -> 0.65f; 3 -> 1.0f; else -> 0f }
 
@@ -138,6 +165,10 @@ object MtEnhance {
                 p.addAnalyticsListener(analytics)
             }
             act = activity; player = p; info = i
+            try {
+                val k = try { i?.sourceKind() ?: "youtube" } catch (_: Throwable) { "youtube" }
+                if (k != "youtube") p.setVideoEffects(emptyList<Effect>())   // (v988) الـVideoSink بيتعمل في onEnabled بس لو القايمة مش null
+            } catch (_: Throwable) {}
             evaluate()
         } catch (e: Throwable) { LogStore.err("MtEnhance:attach", e) }
     }
@@ -205,6 +236,7 @@ object MtEnhance {
             val eff = SharpenEffect(if (l == 0) -1f else sharpFor(l), if (v) 1.08f else 1f, if (v) 1.04f else 1f, hdrFor(fk))
             p.setVideoEffects(listOf<Effect>(eff))
             applied = key
+            if (reseek) { try { p.seekTo(p.currentPosition) } catch (_: Throwable) {} }
             gotFrame = false
             LogStore.add("MtEnhance: شغّال $key (${f.width}×${f.height})")
             armWatch()
@@ -220,6 +252,7 @@ object MtEnhance {
         if (applied.isEmpty()) return
         applied = ""
         try { player?.setVideoEffects(emptyList()) } catch (_: Throwable) {}
+        if (reseek) { try { player?.let { it.seekTo(it.currentPosition) } } catch (_: Throwable) {} }
     }
 
     private fun persistOff() {
