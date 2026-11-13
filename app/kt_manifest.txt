@@ -95,7 +95,6 @@ com/tttt/subtitler/KeyBrowser.kt
 com/tttt/subtitler/KeyDialog.kt
 com/tttt/subtitler/KeyVault.kt
 com/tttt/subtitler/LaunchShortcuts.kt
-com/tttt/subtitler/LaunchSplashActivity.kt
 com/tttt/subtitler/LibraryBackend.kt
 com/tttt/subtitler/LibraryCore.kt
 com/tttt/subtitler/LibraryUi.kt

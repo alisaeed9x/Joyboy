@@ -132,6 +132,17 @@ class MainActivity : Activity() {
         ytTvMode = intent?.getBooleanExtra("tv_target", false) == true
         if (fromPlayer) setTheme(android.R.style.Theme_Translucent_NoTitleBar)
         super.onCreate(b)
+        // (v985) استعادة PiP من أيقونة اللانشر — منقولة من SplashActivity بتاع MeeTube
+        // (هي اللي كانت بتعملها قبل ما يتشال فلتر اللانشر منها): ضغطة الأيقونة والمشغّل
+        // مثبّت في PiP لازم تكبّر المشغّل بدل ما تفتح الرئيسية. قبل أي حاجة تانية.
+        if (intent?.action == Intent.ACTION_MAIN && intent?.hasCategory(Intent.CATEGORY_LAUNCHER) == true) {
+            try {
+                if (com.newtube.mobile.MobileMainApplication.booted()?.restorePictureInPictureFromLauncher(this) == true) {
+                    finish()
+                    return
+                }
+            } catch (_: Throwable) {}
+        }
         if (fromPlayer) requestedOrientation = if (intent?.getBooleanExtra("land", false) == true) ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE else ActivityInfo.SCREEN_ORIENTATION_PORTRAIT   // الإعدادات من المشغّل: بنفس اتجاه المشغّل
         UiWatchdog.start()
         Cfg.init(this); CrashLog.install(this);
@@ -1936,6 +1947,16 @@ class MainActivity : Activity() {
     /** (v117) الرجوع من المتصفح بشريط البوابات: بيفتح البوابة اللي اخترتها */
     override fun onNewIntent(i: Intent?) {
         super.onNewIntent(i)
+        // (v985) استعادة PiP من أيقونة اللانشر — نفس فحص onCreate فوق (ضغطة الأيقونة
+        // والمشغّل مثبّت في PiP لازم تكبّر المشغّل بدل ما تفتح الرئيسية).
+        if (i?.action == Intent.ACTION_MAIN && i?.hasCategory(Intent.CATEGORY_LAUNCHER) == true) {
+            try {
+                if (com.newtube.mobile.MobileMainApplication.booted()?.restorePictureInPictureFromLauncher(this) == true) {
+                    finish()
+                    return
+                }
+            } catch (_: Throwable) {}
+        }
         TabNav.pendingMain = null   // (v973) اتسلّم فعلًا
         if (DeviceUi.isTv(this) && !fromPlayer) fromTv = true   // (v482)
         // (v939) إعادة توجيه باردة كانت بتحصل في onCreate بس — intent جديد من غير وجهة صريحة (لا تبويب ولا yt_open ولا رابط)

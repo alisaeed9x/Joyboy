@@ -1426,6 +1426,18 @@ object MtBar {
         aiLastMode = mode
         aiLastTargetW = tw
         aiLastTargetH = th
+        // (v985) الـbuffer لازم يتثبّت على المقاس الجديد *قبل* ما MtUpscale يبعت
+        // الـoutput resolution — غير كده أول فريم بييجي بالمقاس الجديد وبعدين شاشة
+        // سودا (الـbuffer القديم مش على قد الـresolution الجديدة). Off = المقاس
+        // المكوَّد (v981)، On = هدف التحسين. الـcast آمن: الـbar دايمًا مرفق
+        // من MobilePlaybackActivity (JoyboyPlayerHost.extraControls(this)).
+        val repinW = if (mode == MtUpscale.MODE_OFF) curVideoW() else tw
+        val repinH = if (mode == MtUpscale.MODE_OFF) curVideoH() else th
+        if (repinW > 0 && repinH > 0) {
+            try {
+                (act as? com.newtube.mobile.ui.playback.MobilePlaybackActivity)?.joyboyRepinSessionBuffer(repinW, repinH)
+            } catch (_: Throwable) {}
+        }
         try {
             if (mode == MtUpscale.MODE_OFF) {
                 MtUpscale.clear(p, curVideoW(), curVideoH())

@@ -9,8 +9,9 @@
     * android.hardware.touchscreen -> NOT required either (MEETUBE(tv), issue #21): Android TV and
       TV boxes have none, and the app is used there with the remote.
 
-  SplashActivity already carries the normal LAUNCHER category in the main manifest,
-  so no launcher changes are needed here - it routes via SplashPresenter ->
+  (v985) SplashActivity مابقتش لانشر: أيقونة الموبايل بقت MainActivity بتاع Joyboy
+  (:app manifest) — SplashActivity لسه معلَنة للبدء الصريح (MeeTubeLink / إعادة
+  التشغيل) وبتوجّه اللينكات اللي مش لانشر عبر SplashPresenter ->
   ViewManager.startView(BrowseView.class)/startDefaultView(), both of which are
   re-pointed at the touch Home screen below (see MobileMainApplication).
 

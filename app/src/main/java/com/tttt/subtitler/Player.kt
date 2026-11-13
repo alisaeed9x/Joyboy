@@ -5406,8 +5406,12 @@ class PlayerActivity : Activity(), Host {
             player.exo()?.let { xp -> xp.setMediaSource(src, pos); xp.prepare() }; player.playWhenReady = play
             qCur = i; sizeTxt = ""; setQualLabel(o.h); refreshSize()
             if (ytAudioOnly) { ytAudioOnly = false; paintModePill() }   // (v459) تغيير الجودة بيرجّع الفيديو
-            if (!force) { if (intent.getStringExtra("ytid") != null) Cfg.put("yt_maxh", o.h.toString())
-                Notice.show(this, "🎞 الجودة: " + o.label, 2000L) }
+            // (v985) اختيار جودة من قايمة الفيديو دي مايتحفظش في yt_maxh العام: كان كل اختيار
+            // (حتى 240p مرة واحدة) بيفضل سقف لكل الفيديوهات والستريمنج بعد كده للأبد
+            // (MtYt.video/pick + سقف Auto بتاع MeeTube بيقروا yt_maxh). الاختيار بيفضل
+            // ساري للفيديو ده بس (qCur + المصدر اتبدّل فوق)؛ السقف العام بيتغيّر من
+            // الإعدادات بس (شيب «الجودة الافتراضية» في Main.kt).
+            if (!force) { Notice.show(this, "🎞 الجودة: " + o.label, 2000L) }
         } catch (e: Exception) { LogStore.err("Player:switchYt", e); Notice.show(this, "ما قدرتش أغيّر الجودة", 2300L) }
     }
     /** (v459) رابط الصوت المنفصل الحالي (لغة الصوت المختارة أولًا، بعده الصوت الافتراضي، بعده أي جودة بصوت) */

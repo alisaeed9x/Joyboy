@@ -1332,11 +1332,11 @@ public class MobilePlaybackActivity extends MobileActivity
                 // on the buffer pinned in onVideoSizeChanged is now the wrong target —
                 // re-pin it to the new display size (same rule, same call, nothing else
                 // about the surface changes). Off keeps the v981 coded-size pin.
-                if (mJoyboyVideoW > 0 && mJoyboyVideoH > 0 && mSessionTexture != null
-                        && joyboyUpscalerMode(MobilePlaybackActivity.this) != 0) {
-                    int[] target = joyboyUpscaleTarget(mJoyboyVideoW, mJoyboyVideoH, r - l, b - t);
-                    mSessionTexture.setDefaultBufferSize(target[0], target[1]);
-                }
+                // JOYBOY(v985): both modes re-pin now — with the upscaler off there was
+                // no re-pin on expand/rotation at all, so a pin taken while the area was
+                // PiP/mini-sized stuck until the next track change. The helper skips
+                // small windows itself (PiP / mini / morph).
+                joyboyRepinBuffer();
             }
             if (mShortsCommentsGone >= 0f) {
                 followShortsComments(mShortsCommentsGone); // MEETUBE(shorts): the box's new size
@@ -2274,6 +2274,10 @@ public class MobilePlaybackActivity extends MobileActivity
         if (!mIsInPip && mExoPlayerController != null) {
             // Back from the mini card / PiP: full size again, fetch full resolution (VideoViewportCap).
             mExoPlayerController.clearSmallWindowViewport("resume");
+            // JOYBOY(v985): the cap lift above only starts an ordinary ABR up-switch,
+            // so the frame stays small until the track re-picks — re-pin the buffer to
+            // the full-size target now, so the fullscreen frame renders full-size.
+            joyboyRepinBuffer();
         }
         updatePipActions(); // re-arm the Android 12+ auto-enter flag cleared by the minimize hand-off
 
@@ -4085,6 +4089,10 @@ public class MobilePlaybackActivity extends MobileActivity
             SystemPipBridge.onPipEnded();
             if (mExoPlayerController != null) {
                 mExoPlayerController.clearSmallWindowViewport("pip-exit");
+                // JOYBOY(v985): same as the onResume expand above — the cap lift alone
+                // is only an ABR up-switch, so re-pin the buffer to the full-size target
+                // now (onResume re-pins again once the layout has settled).
+                joyboyRepinBuffer();
             }
             // Dismiss vs expand: an expand always ends with onResume (which clears the flag); a
             // dismiss ends with onStop. On the older PiP shell the dismissal onStop ran BEFORE this
@@ -6360,6 +6368,44 @@ public class MobilePlaybackActivity extends MobileActivity
         return new int[] {dispW, dispH};
     }
 
+    // JOYBOY(v985): re-pin the session texture's decode buffer to the size the
+    // current mode wants at the current video-area size (upscale target when the
+    // upscaler is on, coded size when off). The pin is skipped while the player
+    // is in a small window (PiP, mini card, morph in flight): a pin taken from
+    // a small-window measurement sticks after expand, and the buffer only ever
+    // needs re-pinning once the video is full-size again. Callers: expand
+    // (onResume / PiP exit), video-area layout change, track change.
+    private void joyboyRepinBuffer() {
+        if (mSessionTexture == null || mJoyboyVideoW <= 0 || mJoyboyVideoH <= 0) {
+            return;
+        }
+        if (mIsInPip || MiniPlayerBridge.isActive() || mMorphFraction != 0f) {
+            return;
+        }
+        if (joyboyUpscalerMode(this) != 0 && mVideoArea != null) {
+            int[] target = joyboyUpscaleTarget(mJoyboyVideoW, mJoyboyVideoH,
+                    mVideoArea.getWidth(), mVideoArea.getHeight());
+            mSessionTexture.setDefaultBufferSize(target[0], target[1]);
+        } else {
+            mSessionTexture.setDefaultBufferSize(mJoyboyVideoW, mJoyboyVideoH);
+        }
+    }
+
+    // JOYBOY(v985): the :app seam for an on-demand buffer re-pin. MtBar calls
+    // this (safe cast from its Activity) BEFORE MtUpscale.apply() sends the new
+    // output resolution, so the buffer and the signalled resolution always
+    // match: an output resolution without a matching buffer is what blacked
+    // the screen out on the AI toggle. Returns false when there is no session
+    // texture yet or the size is unknown - the caller then relies on the
+    // onVideoSizeChanged / layout re-pins above.
+    public boolean joyboyRepinSessionBuffer(int w, int h) {
+        if (mSessionTexture == null || w <= 0 || h <= 0) {
+            return false;
+        }
+        mSessionTexture.setDefaultBufferSize(w, h);
+        return true;
+    }
+
     private final Player.Listener mUiPlayerListener = new Player.Listener() {
         @Override
         public void onVideoSizeChanged(VideoSize videoSize) {
@@ -6379,16 +6425,9 @@ public class MobilePlaybackActivity extends MobileActivity
                 // target size (up to 1080p), so the buffer must be pinned to that target
                 // instead — a coded-size buffer would downscale the upscaled frame back
                 // down and waste the whole effect. Off stays the v981 coded-size pin.
-                if (mSessionTexture != null) {
-                    if (joyboyUpscalerMode(MobilePlaybackActivity.this) != 0) {
-                        int[] target = joyboyUpscaleTarget(videoSize.width, videoSize.height,
-                                mVideoArea != null ? mVideoArea.getWidth() : 0,
-                                mVideoArea != null ? mVideoArea.getHeight() : 0);
-                        mSessionTexture.setDefaultBufferSize(target[0], target[1]);
-                    } else {
-                        mSessionTexture.setDefaultBufferSize(videoSize.width, videoSize.height);
-                    }
-                }
+                // JOYBOY(v985): one helper does the pin now, and it skips small windows
+                // (PiP / mini / morph) so a small-window pin never sticks past expand.
+                joyboyRepinBuffer();
                 if (isShortsMode()) {
                     setResizeMode(PlayerData.instance(MobilePlaybackActivity.this).getResizeMode()); // fill or whole, by shape
                 }

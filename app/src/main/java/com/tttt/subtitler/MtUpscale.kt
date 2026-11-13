@@ -121,6 +121,11 @@ object MtUpscale {
     /**
      * (v982) Removes all effects and points the renderer back at the coded
      * video size.
+     * (v985) No output resolution is sent here any more: with no effects the
+     * renderer draws straight into the raw surface at its natural (coded)
+     * size, and the buffer pin is the v981 coded-size pin in
+     * onVideoSizeChanged plus the MtBar re-pin seam — sending a resolution
+     * here could disagree with that pin and black the frame out.
      */
     fun clear(player: ExoPlayer?, videoW: Int, videoH: Int) {
         if (player == null) {
@@ -128,9 +133,6 @@ object MtUpscale {
         }
         try {
             player.setVideoEffects(emptyList())
-            if (videoW > 0 && videoH > 0) {
-                sendOutputResolution(player, videoW, videoH)
-            }
         } catch (e: Throwable) {
             LogStore.err("MtUpscale:clear", e)
         }
