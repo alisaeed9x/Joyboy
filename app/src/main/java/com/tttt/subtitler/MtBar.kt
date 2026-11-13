@@ -777,7 +777,10 @@ object MtBar {
             }
         }
         fun circ(t: String, ts: Float, f: (View) -> Unit): TextView {
-            return u.fsCircle(t) { v -> f(v) }.apply {
+            val self = arrayOfNulls<TextView>(1)   // (v953) fsCircle بياخد () -> Unit، فبنمسك الـView يدويًا
+            val c = u.fsCircle(t) { self[0]?.let { f(it) } }
+            self[0] = c
+            return c.apply {
                 textSize = ts
                 layoutParams = lpC()
             }

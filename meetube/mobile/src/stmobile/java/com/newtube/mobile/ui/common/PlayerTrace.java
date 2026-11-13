@@ -5,7 +5,9 @@ import android.app.Application;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.graphics.Matrix;
 import android.graphics.Rect;
+import android.graphics.RectF;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
@@ -16,11 +18,13 @@ import android.view.SurfaceView;
 import android.view.TextureView;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.Window;
 import android.view.WindowManager;
 import android.widget.PopupWindow;
 import android.widget.TextView;
 
 import java.io.File;
+import java.lang.reflect.Field;
 import java.io.FileOutputStream;
 import java.io.RandomAccessFile;
 import java.lang.ref.WeakReference;
@@ -31,11 +35,13 @@ import java.util.Collections;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.WeakHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -53,6 +59,10 @@ import java.util.concurrent.Executors;
  *   <li><b>Buttons map</b>: every visible clickable view with id, text, exact on-screen bounds (px + dp, distance from left / right edge),
  *   a full dump when a screen opens and a NEW/GONE diff after every tap; every tap with the view it hit.</li>
  *   <li><b>Popups</b> (the ☰ 🧰 🗣 ⏱ … menus): anchor bounds, popup bounds, gap and side, and the items inside.</li>
+ *   <li><b>Windows (v953)</b>: every Dialog / bottom sheet / popup / panel window of the process (found through the global window list):
+ *   open/close, WindowManager attrs (type, gravity, size, dim, animation style), exact bounds, the sheet panel inside it, who opened it, its items,
+ *   per-frame motion of the window + panel, and taps inside it.</li>
+ *   <li><b>TextureView transform (v953)</b>: setTransform() matrix (scale / translate / rotate), the transformed video rect on screen and how much of it is visible.</li>
  * </ul>
  */
 public final class PlayerTrace {
@@ -99,6 +109,25 @@ public final class PlayerTrace {
     // ---- buttons diff state ----
     private static Set<String> lastKeys = new HashSet<>();
 
+    // ---- windows (dialogs / sheets / popups / panels) — v953 ----
+    private static final class Win {
+        int n;
+        long openedAt;
+        String label;
+        String kind;
+        WeakReference<View> root;
+    }
+    private static final Map<View, Win> wins = new WeakHashMap<>();
+    private static int winSeq;
+    private static java.lang.reflect.Method miGlobalViews;
+    private static boolean miTried;
+    private static java.lang.reflect.Field fmViews;
+    private static Object wmg;
+    private static boolean winEnumFailLogged;
+    private static final Map<String, String> notes = new HashMap<>();   // per-frame extra text for a tracked key (matrix info …)
+    private static String lastTapDesc = "";
+    private static long lastTapAt;
+
     // =====================================================================================
 
     public static synchronized void install(Application a) {
@@ -133,6 +162,7 @@ public final class PlayerTrace {
             log("TRACE OFF", true);
             flush();
             enabled = false;
+            wins.clear();
             return null;
         }
         try {
@@ -151,6 +181,7 @@ public final class PlayerTrace {
         t0 = System.currentTimeMillis();
         enabled = true;
         frameNo = 0; prevNanos = 0; inSeg = false; prevSnap.clear(); lastStep.clear(); lastKeys.clear();
+        wins.clear(); winSeq = 0; notes.clear(); lastTapDesc = ""; lastTapAt = 0L; winEnumFailLogged = false;
         Activity a = cur.get();
         StringBuilder h = new StringBuilder("TRACE ON  ").append(Build.MANUFACTURER).append(' ').append(Build.MODEL)
                 .append("  SDK ").append(Build.VERSION.SDK_INT);
@@ -163,7 +194,7 @@ public final class PlayerTrace {
                     .append("  refresh ").append(String.format(Locale.US, "%.1fHz (frame=%.1fms)", hz, frameMs));
         } catch (Throwable ignored) { }
         log(h.toString(), true);
-        log("legend: Δ = change since previous frame · JANK = frame later than 1.5x vsync · STALL = >50ms · JUMP = step 3x bigger than recent · REVERSE = direction flipped · TELEPORT = moved >25% of screen in one frame", false);
+        log("legend: Δ = change since previous frame · JANK = frame later than 1.5x vsync · STALL = >50ms · JUMP = step 3x bigger than recent · REVERSE = direction flipped · TELEPORT = moved >25% of screen in one frame · key suffix /xf = the video picture after the TextureView matrix (setTransform) · win-Dialog@n/window|panel = a Dialog/sheet/popup window and the panel inside it", false);
         if (a != null) main.postDelayed(() -> dumpButtons("trace started", a), 300L);
         startSampler();
         return file != null ? file.getAbsolutePath() : null;
@@ -226,7 +257,8 @@ public final class PlayerTrace {
         float dt = prevNanos == 0 ? 0f : (nanos - prevNanos) / 1e6f;
         prevNanos = nanos;
         Activity a = cur.get();
-        Map<String, float[]> snap = a != null ? snapshot(a) : new LinkedHashMap<String, float[]>();
+        List<View> winRoots = trackWindows(a);
+        Map<String, float[]> snap = a != null ? snapshot(a, winRoots) : new LinkedHashMap<String, float[]>();
         String an = a != null ? a.getClass().getSimpleName() : "-";
         boolean actChanged = !an.equals(prevActName) && !prevActName.isEmpty();
         boolean changed = differs(prevSnap, snap) || actChanged;
@@ -250,9 +282,13 @@ public final class PlayerTrace {
                 float[] n = e.getValue();
                 float[] p = prevSnap.get(e.getKey());
                 line.append("\n        ").append(shortKey(e.getKey())).append(String.format(Locale.US, " %6.1f,%6.1f %6.1fx%-6.1f a=%.2f", n[0], n[1], n[2], n[3], n[4]));
+                if (n.length > 5 && Math.abs(n[5]) > 0.05f) line.append(String.format(Locale.US, " rot=%.1f°", n[5]));
+                String note = notes.get(e.getKey());
+                if (note != null) line.append("  ").append(note);
                 if (p == null) { line.append("  (appeared)"); continue; }
                 float dx = n[0] - p[0], dy = n[1] - p[1], dw = n[2] - p[2], dh = n[3] - p[3], da = n[4] - p[4];
                 line.append(String.format(Locale.US, "  Δ %+.1f,%+.1f %+.1f,%+.1f", dx, dy, dw, dh));
+                if (n.length > 5 && p.length > 5 && Math.abs(n[5] - p[5]) > 0.05f) line.append(String.format(Locale.US, " Δrot %+.1f°", n[5] - p[5]));
                 float m = (float) (Math.hypot(dx, dy) + Math.hypot(dw, dh));
                 float[] ls = lastStep.get(e.getKey());
                 if (m > 0.5f || (ls != null && ls[2] > 0.5f)) {
@@ -325,33 +361,83 @@ public final class PlayerTrace {
         return false;
     }
 
-    private static Map<String, float[]> snapshot(Activity a) {
+    private static Map<String, float[]> snapshot(Activity a, List<View> winRoots) {
         Map<String, float[]> m = new LinkedHashMap<>();
-        View root = a.getWindow() != null ? a.getWindow().getDecorView() : null;
-        if (root == null) return m;
-        int[] idx = {0};
-        walkTracked(root, m, a.getClass().getSimpleName(), idx);
+        notes.clear();
+        View root = a != null && a.getWindow() != null ? a.getWindow().getDecorView() : null;
+        if (root != null) {
+            int[] idx = {0};
+            walkTracked(root, m, a.getClass().getSimpleName(), idx);
+        }
+        // v953: Dialog / sheet / popup / panel windows are separate roots — not under the activity decor
+        for (View r : winRoots) {
+            Win w = wins.get(r);
+            if (w == null || "Toast".equals(w.kind) || r.getWidth() <= 0 || r.getHeight() <= 0) continue;
+            String lab = "win-" + w.label;
+            float[] wr = rectOf(r);
+            WindowManager.LayoutParams lp = wlp(r);
+            if (lp != null) wr[4] *= lp.alpha;
+            m.put(lab + ":window", wr);
+            if (!w.kind.startsWith("Activity:")) {
+                View p = panelOf(r);
+                if (p != null && p != r) m.put(lab + ":panel", rectOf(p));
+            }
+            walkTracked(r, m, lab, new int[]{0});
+        }
         return m;
+    }
+
+    /** on-screen {x, y, w, h, alpha, rotation} of a view, with the scale / alpha / rotation of all its ancestors applied */
+    private static float[] rectOf(View v) {
+        int[] loc = new int[2];
+        v.getLocationOnScreen(loc);
+        float sx = 1f, sy = 1f, al = 1f, rot = 0f;
+        View c = v;
+        while (true) {
+            sx *= c.getScaleX(); sy *= c.getScaleY(); al *= c.getAlpha(); rot += c.getRotation();
+            if (c.getParent() instanceof View) c = (View) c.getParent(); else break;
+        }
+        return new float[]{loc[0], loc[1], v.getWidth() * sx, v.getHeight() * sy, al, rot};
     }
 
     private static void walkTracked(View v, Map<String, float[]> out, String act, int[] idx) {
         if (v.getVisibility() != View.VISIBLE) return;
         if (tracked(v) && v.getWidth() > 0 && v.getHeight() > 0) {
-            int[] loc = new int[2];
-            v.getLocationOnScreen(loc);
-            float sx = 1f, sy = 1f, al = 1f;
-            View c = v;
-            while (true) {
-                sx *= c.getScaleX(); sy *= c.getScaleY(); al *= c.getAlpha();
-                if (c.getParent() instanceof View) c = (View) c.getParent(); else break;
-            }
-            out.put(act + ":" + v.getClass().getSimpleName() + "#" + idx[0]++ + (v.getId() != View.NO_ID ? "/" + idName(v) : ""),
-                    new float[]{loc[0], loc[1], v.getWidth() * sx, v.getHeight() * sy, al});
+            String key = act + ":" + v.getClass().getSimpleName() + "#" + idx[0]++ + (v.getId() != View.NO_ID ? "/" + idName(v) : "");
+            float[] r = rectOf(v);
+            out.put(key, r);
+            if (v instanceof TextureView) textureXf((TextureView) v, key, r, out);
         }
         if (v instanceof ViewGroup) {
             ViewGroup g = (ViewGroup) v;
             for (int i = 0; i < g.getChildCount(); i++) walkTracked(g.getChildAt(i), out, act, idx);
         }
+    }
+
+    /**
+     * v953: a TextureView's setTransform() matrix moves / scales / rotates the VIDEO inside the view without touching the view's own
+     * bounds, so the view tree alone can't see it. This adds a "/xf" entry = where the picture really is (view bounds mapped through the matrix).
+     */
+    private static void textureXf(TextureView tv, String key, float[] r, Map<String, float[]> out) {
+        try {
+            Matrix m = new Matrix();
+            tv.getTransform(m);
+            float[] f = new float[9];
+            m.getValues(f);
+            float w = Math.max(1f, tv.getWidth()), h = Math.max(1f, tv.getHeight());
+            RectF rc = new RectF(0f, 0f, w, h);
+            m.mapRect(rc);
+            float scx = (float) Math.hypot(f[Matrix.MSCALE_X], f[Matrix.MSKEW_Y]);
+            float scy = (float) Math.hypot(f[Matrix.MSKEW_X], f[Matrix.MSCALE_Y]);
+            float rot = (float) Math.toDegrees(Math.atan2(f[Matrix.MSKEW_Y], f[Matrix.MSCALE_X]));
+            float kx = r[2] / w, ky = r[3] / h;   // ancestors' scale
+            out.put(key + "/xf", new float[]{r[0] + rc.left * kx, r[1] + rc.top * ky, rc.width() * kx, rc.height() * ky, r[4], r[5] + rot});
+            float vl = Math.max(0f, rc.left), vt = Math.max(0f, rc.top), vr = Math.min(w, rc.right), vb = Math.min(h, rc.bottom);
+            float full = Math.max(1f, rc.width() * rc.height());
+            float vis = Math.max(0f, vr - vl) * Math.max(0f, vb - vt);
+            notes.put(key + "/xf", String.format(Locale.US, "[matrix %s scale %.3fx%.3f trans %.1f,%.1f rot %.1f° · picture visible %.0f%%]",
+                    m.isIdentity() ? "identity" : "SET", scx, scy, f[Matrix.MTRANS_X], f[Matrix.MTRANS_Y], rot, 100f * vis / full));
+        } catch (Throwable ignored) { }
     }
 
     private static boolean differs(Map<String, float[]> a, Map<String, float[]> b) {
@@ -360,12 +446,13 @@ public final class PlayerTrace {
             float[] p = a.get(e.getKey());
             if (p == null) return true;
             float[] n = e.getValue();
-            for (int i = 0; i < 5; i++) if (Math.abs(n[i] - p[i]) > (i == 4 ? 0.004f : 0.3f)) return true;
+            for (int i = 0, c = Math.min(n.length, p.length); i < c; i++) if (Math.abs(n[i] - p[i]) > (i == 4 ? 0.004f : i == 5 ? 0.2f : 0.3f)) return true;
         }
         return false;
     }
 
     private static String shortKey(String k) {
+        if (k.startsWith("win-")) return String.format(Locale.US, "%-34s", k.replace(':', '/'));
         int i = k.indexOf(':');
         return String.format(Locale.US, "%-34s", i >= 0 ? k.substring(i + 1) : k);
     }
@@ -386,19 +473,28 @@ public final class PlayerTrace {
     /** call at the top of Activity.dispatchTouchEvent: logs the tap + the view it hit, and what appeared 450 ms later */
     public static void touch(Activity a, MotionEvent e) {
         if (!enabled || a == null) return;
-        try {
-            int act = e.getActionMasked();
-            if (act == MotionEvent.ACTION_DOWN) {
-                View hit = hit(a.getWindow().getDecorView(), (int) e.getRawX(), (int) e.getRawY());
-                log(String.format(Locale.US, "TOUCH down (%.0f,%.0f)  hit=%s", e.getRawX(), e.getRawY(), hit != null ? describe(hit) : "— (no clickable view: gesture area)"), true);
-                pendingCause = "tap@" + (int) e.getRawX() + "," + (int) e.getRawY() + (hit != null ? " " + describe(hit) : "");
-                pendingCauseAt = now();
-            } else if (act == MotionEvent.ACTION_UP) {
-                long dur = e.getEventTime() - e.getDownTime();
-                log(String.format(Locale.US, "TOUCH up   (%.0f,%.0f)  held %dms", e.getRawX(), e.getRawY(), dur), true);
-                main.postDelayed(() -> { if (cur.get() == a) dumpDiff("after tap", a); }, 450L);
-            }
-        } catch (Throwable ignored) { }
+        try { touchIn(a.getWindow().getDecorView(), "", e); } catch (Throwable ignored) { }
+    }
+
+    /** a touch that arrived in window `root` (activity decor, a Dialog / sheet window, a popup). `label` is empty for the activity itself. */
+    private static void touchIn(View root, String label, MotionEvent e) {
+        if (!enabled || root == null || e == null) return;
+        int act = e.getActionMasked();
+        String where = label.isEmpty() ? "" : "  win=" + label;
+        if (act == MotionEvent.ACTION_DOWN) {
+            int[] rl = new int[2];
+            root.getLocationOnScreen(rl);
+            View hit = hit(root, (int) e.getRawX() - rl[0], (int) e.getRawY() - rl[1]);
+            String hd = hit != null ? describe(hit) : "— (no clickable view: gesture area)";
+            log(String.format(Locale.US, "TOUCH down (%.0f,%.0f)%s  hit=%s", e.getRawX(), e.getRawY(), where, hd), true);
+            String c = "tap@" + (int) e.getRawX() + "," + (int) e.getRawY() + (label.isEmpty() ? "" : " in " + label) + (hit != null ? " " + describe(hit) : "");
+            pendingCause = c; pendingCauseAt = now();
+            lastTapDesc = c; lastTapAt = now();
+        } else if (act == MotionEvent.ACTION_UP) {
+            long dur = e.getEventTime() - e.getDownTime();
+            log(String.format(Locale.US, "TOUCH up   (%.0f,%.0f)%s  held %dms", e.getRawX(), e.getRawY(), where, dur), true);
+            main.postDelayed(() -> { Activity c = cur.get(); if (c != null) dumpDiff("after tap", c); }, 450L);
+        }
     }
 
     private static View hit(View v, int x, int y) {
@@ -421,9 +517,11 @@ public final class PlayerTrace {
     public static void dumpButtons(String why, Activity a) {
         if (!enabled || a == null) return;
         try {
-            List<String[]> rows = collect(a.getWindow().getDecorView(), a.getResources().getDisplayMetrics());
+            List<String[]> rows = collectAll(a);
             Set<String> keys = new HashSet<>();
             StringBuilder sb = new StringBuilder("BUTTONS (" + why + ")  " + a.getClass().getSimpleName() + "  count=" + rows.size());
+            String ws = windowsSummary(a);
+            if (!ws.isEmpty()) sb.append("\n   windows open: ").append(ws);
             int n = 0;
             for (String[] r : rows) {
                 keys.add(r[0]);
@@ -438,7 +536,7 @@ public final class PlayerTrace {
 
     private static void dumpDiff(String why, Activity a) {
         try {
-            List<String[]> rows = collect(a.getWindow().getDecorView(), a.getResources().getDisplayMetrics());
+            List<String[]> rows = collectAll(a);
             Set<String> keys = new HashSet<>();
             StringBuilder sb = new StringBuilder();
             int nNew = 0;
@@ -451,6 +549,39 @@ public final class PlayerTrace {
             lastKeys = keys;
             if (nNew > 0 || gone > 0) { log("BUTTONS diff (" + why + ")  new=" + nNew + " gone=" + gone + sb, false); flush(); }
         } catch (Throwable ignored) { }
+    }
+
+    /** v953: the activity's buttons + the buttons inside every other window (Dialog / sheet / popup), prefixed with the window label */
+    private static List<String[]> collectAll(Activity a) {
+        android.util.DisplayMetrics dm = a.getResources().getDisplayMetrics();
+        View ad = a.getWindow().getDecorView();
+        List<String[]> rows = collect(ad, dm);
+        List<View> all = rootViews();
+        if (all == null) return rows;
+        for (View r : all) {
+            if (r == null || r == ad || !r.isAttachedToWindow() || r.getVisibility() != View.VISIBLE) continue;
+            Win w = wins.get(r);
+            String tag = "[" + (w != null ? w.label : kindOf(r) + "@?") + "] ";
+            for (String[] x : collect(r, dm)) rows.add(new String[]{tag + x[0], tag + x[1], x[2], x[3]});
+        }
+        return rows;
+    }
+
+    private static String windowsSummary(Activity a) {
+        StringBuilder sb = new StringBuilder();
+        try {
+            List<View> all = rootViews();
+            View ad = a.getWindow().getDecorView();
+            if (all != null) for (View r : all) {
+                if (r == null || r == ad || !r.isAttachedToWindow() || r.getVisibility() != View.VISIBLE) continue;
+                Win w = wins.get(r);
+                int[] l = new int[2];
+                r.getLocationOnScreen(l);
+                if (sb.length() > 0) sb.append(" · ");
+                sb.append(w != null ? w.label : kindOf(r)).append(String.format(Locale.US, " (%d,%d %dx%d)", l[0], l[1], r.getWidth(), r.getHeight()));
+            }
+        } catch (Throwable ignored) { }
+        return sb.toString();
     }
 
     private static List<String[]> collect(View root, android.util.DisplayMetrics dm) {
@@ -507,6 +638,7 @@ public final class PlayerTrace {
     public static void popup(String name, View anchor, PopupWindow pw) {
         if (!enabled || anchor == null || pw == null) return;
         pendingCause = "popup " + name; pendingCauseAt = now();
+        try { pw.setTouchInterceptor((v, ev) -> { try { touchIn(v.getRootView(), "Popup:" + name, ev); } catch (Throwable ignored) { } return false; }); } catch (Throwable ignored) { }   // v953: taps inside the popup
         main.postDelayed(() -> {
             try {
                 View content = pw.getContentView();
@@ -532,6 +664,280 @@ public final class PlayerTrace {
                 flush();
             } catch (Throwable ignored) { }
         }, 180L);
+    }
+
+    // =====================================================================================  windows (v953)
+
+    /** every window root of this process (Activity decors, Dialogs, bottom sheets, popups, toasts) — null if the platform blocks the lookup */
+    @SuppressWarnings("unchecked")
+    private static List<View> rootViews() {
+        try {
+            if (Build.VERSION.SDK_INT >= 29) {
+                if (!miTried) {
+                    miTried = true;
+                    try { miGlobalViews = Class.forName("android.view.inspector.WindowInspector").getMethod("getGlobalWindowViews"); } catch (Throwable ignored) { }
+                }
+                if (miGlobalViews != null) {
+                    Object r = miGlobalViews.invoke(null);
+                    if (r instanceof List) return new ArrayList<View>((List<View>) r);
+                }
+            }
+        } catch (Throwable ignored) { }
+        try {
+            if (fmViews == null) {
+                Class<?> c = Class.forName("android.view.WindowManagerGlobal");
+                wmg = c.getMethod("getInstance").invoke(null);
+                Field f = c.getDeclaredField("mViews");
+                f.setAccessible(true);
+                fmViews = f;
+            }
+            Object r = fmViews.get(wmg);
+            if (r instanceof List) return new ArrayList<View>((List<View>) r);
+        } catch (Throwable ignored) { }
+        if (!winEnumFailLogged) {
+            winEnumFailLogged = true;
+            log("WINDOWS: this device blocks the window-list lookup — Dialog / sheet windows can't be tracked (only the activity window + MtBar popups)", true);
+        }
+        return null;
+    }
+
+    private static Activity activityOf(View v) {
+        Context c = v.getContext();
+        for (int i = 0; i < 10 && c instanceof android.content.ContextWrapper; i++) {
+            if (c instanceof Activity) return (Activity) c;
+            c = ((android.content.ContextWrapper) c).getBaseContext();
+        }
+        return c instanceof Activity ? (Activity) c : null;
+    }
+
+    private static WindowManager.LayoutParams wlp(View r) {
+        ViewGroup.LayoutParams lp = r.getLayoutParams();
+        return lp instanceof WindowManager.LayoutParams ? (WindowManager.LayoutParams) lp : null;
+    }
+
+    private static String kindOf(View r) {
+        Activity own = activityOf(r);
+        if (own != null && own.getWindow() != null && own.getWindow().getDecorView() == r) return "Activity:" + own.getClass().getSimpleName();
+        if (r.getClass().getSimpleName().contains("Popup")) return "Popup";
+        WindowManager.LayoutParams lp = wlp(r);
+        int t = lp != null ? lp.type : -1;
+        if (t == 2 || t == 1003) return "Dialog";
+        if (t == 1000 || t == 1001 || t == 1002 || t == 1005) return "Panel";
+        if (t == 2005) return "Toast";
+        return "Win" + t;
+    }
+
+    private static String typeName(int t) {
+        switch (t) {
+            case 1: return "APPLICATION_BASE(1)";
+            case 2: return "APPLICATION(2)";
+            case 1000: return "APPLICATION_PANEL(1000)";
+            case 1001: return "APPLICATION_MEDIA(1001)";
+            case 1002: return "APPLICATION_SUB_PANEL(1002)";
+            case 1003: return "APPLICATION_ATTACHED_DIALOG(1003)";
+            case 1005: return "APPLICATION_ABOVE_SUB_PANEL(1005)";
+            case 2005: return "TOAST(2005)";
+            case 2038: return "APPLICATION_OVERLAY(2038)";
+            default: return String.valueOf(t);
+        }
+    }
+
+    private static String gravStr(int g) {
+        int v = g & android.view.Gravity.VERTICAL_GRAVITY_MASK, h = g & android.view.Gravity.HORIZONTAL_GRAVITY_MASK;
+        String vs = v == android.view.Gravity.TOP ? "TOP" : v == android.view.Gravity.BOTTOM ? "BOTTOM" : v == android.view.Gravity.CENTER_VERTICAL ? "CENTER_V" : v == android.view.Gravity.FILL_VERTICAL ? "FILL_V" : "-";
+        String hs = h == android.view.Gravity.LEFT ? "LEFT" : h == android.view.Gravity.RIGHT ? "RIGHT" : h == android.view.Gravity.CENTER_HORIZONTAL ? "CENTER_H" : h == android.view.Gravity.FILL_HORIZONTAL ? "FILL_H" : "-";
+        return vs + "|" + hs + " (0x" + Integer.toHexString(g) + ")";
+    }
+
+    private static String sizeStr(int s) { return s == -1 ? "MATCH" : s == -2 ? "WRAP" : s + "px"; }
+
+    private static String flagsStr(int f) {
+        StringBuilder s = new StringBuilder();
+        if ((f & WindowManager.LayoutParams.FLAG_DIM_BEHIND) != 0) s.append("DIM ");
+        if ((f & WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE) != 0) s.append("NOT_FOCUSABLE ");
+        if ((f & WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL) != 0) s.append("NOT_TOUCH_MODAL ");
+        if ((f & WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE) != 0) s.append("NOT_TOUCHABLE ");
+        if ((f & WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH) != 0) s.append("WATCH_OUTSIDE ");
+        if ((f & WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN) != 0) s.append("LAYOUT_IN_SCREEN ");
+        if ((f & WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS) != 0) s.append("LAYOUT_NO_LIMITS ");
+        if ((f & WindowManager.LayoutParams.FLAG_FULLSCREEN) != 0) s.append("FULLSCREEN ");
+        return s.toString().trim();
+    }
+
+    private static String animName(View r, int id) {
+        if (id == 0) return "none set (theme default window animation — the SYSTEM animates the window; not measurable inside the app)";
+        try { return r.getResources().getResourceEntryName(id) + " (system-animated window; not measurable inside the app)"; } catch (Throwable t) { return "0x" + Integer.toHexString(id); }
+    }
+
+    /** the first sizeable descendant that is smaller than the window (= the visible sheet / card inside a bigger window); else the window itself */
+    private static View panelOf(View root) {
+        if (!(root instanceof ViewGroup)) return root;
+        int rw = root.getWidth(), rh = root.getHeight();
+        if (rw <= 0 || rh <= 0) return root;
+        ArrayList<View> q = new ArrayList<>();
+        ArrayList<Integer> dq = new ArrayList<>();
+        q.add(root); dq.add(0);
+        for (int i = 0; i < q.size() && i < 120; i++) {
+            View v = q.get(i);
+            int d = dq.get(i);
+            if (v != root && v.getVisibility() == View.VISIBLE && v.getWidth() > 0 && v.getHeight() > 0
+                    && (v.getWidth() < rw * 0.98f || v.getHeight() < rh * 0.98f)
+                    && (float) v.getWidth() * v.getHeight() >= 0.04f * rw * rh) return v;
+            if (d < 6 && v instanceof ViewGroup) {
+                ViewGroup g = (ViewGroup) v;
+                for (int k = 0; k < g.getChildCount(); k++) { q.add(g.getChildAt(k)); dq.add(d + 1); }
+            }
+        }
+        return root;
+    }
+
+    /** called every frame: opens / closes windows, returns the roots of all visible non-activity windows */
+    private static List<View> trackWindows(Activity a) {
+        List<View> out = new ArrayList<>();
+        List<View> all = rootViews();
+        if (all == null) return out;
+        View ad = (a != null && a.getWindow() != null) ? a.getWindow().getDecorView() : null;
+        Set<View> present = Collections.newSetFromMap(new IdentityHashMap<View, Boolean>());
+        for (View r : all) {
+            if (r == null || r == ad || !r.isAttachedToWindow() || r.getVisibility() != View.VISIBLE) continue;
+            present.add(r);
+            out.add(r);
+            if (!wins.containsKey(r)) {
+                Win w = new Win();
+                w.n = ++winSeq;
+                w.kind = kindOf(r);
+                w.label = w.kind + "@" + w.n;
+                w.openedAt = now();
+                w.root = new WeakReference<>(r);
+                wins.put(r, w);
+                windowOpened(r, w);
+            }
+        }
+        for (Map.Entry<View, Win> e : new ArrayList<>(wins.entrySet())) {
+            View k = e.getKey();
+            if (k == null || !present.contains(k)) {
+                windowClosed(e.getValue());
+                if (k != null) wins.remove(k);
+            }
+        }
+        return out;
+    }
+
+    private static void windowOpened(final View r, final Win w) {
+        try {
+            WindowManager.LayoutParams lp = wlp(r);
+            boolean recentTap = !lastTapDesc.isEmpty() && now() - lastTapAt < 1500L;
+            log("WINDOW OPEN   " + w.label + "  type=" + typeName(lp != null ? lp.type : -1) + "  opened by: " + (recentTap ? lastTapDesc : "unknown (no tap in the last 1.5s)")
+                    + (w.openedAt < 400L ? "  (already open when tracing started)" : ""), true);
+            if (!"Toast".equals(w.kind) && !w.kind.startsWith("Activity:")) { pendingCause = "window " + w.label; pendingCauseAt = now(); }
+            if (w.kind.equals("Dialog")) hookWindowTouches(r, w.label);
+            main.postDelayed(() -> windowDetail(w), 150L);
+        } catch (Throwable ignored) { }
+    }
+
+    private static void windowClosed(Win w) {
+        try {
+            log("WINDOW CLOSE  " + w.label + "  lived " + (now() - w.openedAt) + "ms", true);
+            if (!"Toast".equals(w.kind) && !w.kind.startsWith("Activity:")) { pendingCause = "window closed " + w.label; pendingCauseAt = now(); }
+        } catch (Throwable ignored) { }
+    }
+
+    /** layout is done 150 ms after the window appears: exact bounds, WindowManager attrs, the panel inside, its items */
+    private static void windowDetail(Win w) {
+        try {
+            View r = w.root.get();
+            if (!enabled) return;
+            if (r == null || !r.isAttachedToWindow()) { log("WINDOW " + w.label + "  (closed before its first layout)", false); return; }
+            WindowManager.LayoutParams lp = wlp(r);
+            android.util.DisplayMetrics dm = r.getResources().getDisplayMetrics();
+            float d = dm.density;
+            int[] l = new int[2];
+            r.getLocationOnScreen(l);
+            int ww = r.getWidth(), wh = r.getHeight();
+            StringBuilder sb = new StringBuilder("WINDOW ").append(w.label).append("  details");
+            sb.append("\n   class  : ").append(r.getClass().getName());
+            if (lp != null) {
+                sb.append("\n   attrs  : type=").append(typeName(lp.type)).append("  gravity=").append(gravStr(lp.gravity))
+                        .append("  size=").append(sizeStr(lp.width)).append("x").append(sizeStr(lp.height)).append("  offset=").append(lp.x).append(",").append(lp.y)
+                        .append("  dim=").append((lp.flags & WindowManager.LayoutParams.FLAG_DIM_BEHIND) != 0 ? lp.dimAmount : 0f)
+                        .append("  alpha=").append(lp.alpha).append("  softInput=0x").append(Integer.toHexString(lp.softInputMode))
+                        .append("  flags=[").append(flagsStr(lp.flags)).append("]");
+                sb.append("\n   anim   : ").append(animName(r, lp.windowAnimations));
+                CharSequence t = lp.getTitle();
+                if (t != null && t.length() > 0) sb.append("\n   title  : ").append(t);
+            }
+            sb.append(String.format(Locale.US, "\n   window : x=%d y=%d %dx%d px (%.0fx%.0f dp)  fromLeft=%d fromRight=%d fromTop=%d fromBottom=%d",
+                    l[0], l[1], ww, wh, ww / d, wh / d, l[0], dm.widthPixels - (l[0] + ww), l[1], dm.heightPixels - (l[1] + wh)));
+            boolean inside = l[0] >= 0 && l[1] >= 0 && l[0] + ww <= dm.widthPixels && l[1] + wh <= dm.heightPixels;
+            sb.append(String.format(Locale.US, "\n   inside screen: %s  (screen %dx%d, window covers %.0f%% of it)", inside ? "yes" : "NO — clipped / off-screen",
+                    dm.widthPixels, dm.heightPixels, 100f * ww * wh / Math.max(1f, (float) dm.widthPixels * dm.heightPixels)));
+            View p = panelOf(r);
+            if (p != null && p != r) {
+                int[] pl = new int[2];
+                p.getLocationOnScreen(pl);
+                int pw0 = p.getWidth(), ph = p.getHeight();
+                sb.append(String.format(Locale.US, "\n   panel  : %s  x=%d y=%d %dx%d px (%.0fx%.0f dp)  fromLeft=%d fromRight=%d fromTop=%d fromBottom=%d",
+                        describe(p), pl[0], pl[1], pw0, ph, pw0 / d, ph / d, pl[0], dm.widthPixels - (pl[0] + pw0), pl[1], dm.heightPixels - (pl[1] + ph)));
+            } else {
+                sb.append("\n   panel  : the window itself (WRAP_CONTENT sheet / popup)");
+            }
+            boolean recentTap = !lastTapDesc.isEmpty() && w.openedAt - lastTapAt < 1500L && w.openedAt >= lastTapAt;
+            sb.append("\n   opened by: ").append(recentTap ? lastTapDesc : "unknown (no tap right before)");
+            List<String[]> rows = collect(r, dm);
+            int n = 0;
+            for (String[] x : rows) if (n++ < 60) sb.append("\n   item   ").append(x[1]);
+            if (rows.size() > 60) sb.append("\n   … +").append(rows.size() - 60);
+            log(sb.toString(), false);
+            flush();
+        } catch (Throwable ignored) { }
+    }
+
+    /**
+     * Taps inside a Dialog / sheet never reach Activity.dispatchTouchEvent. The dialog's Window.Callback is wrapped (java.lang.reflect.Proxy,
+     * everything is delegated) so TOUCH lines + the "after tap" button diff also work there. Best effort: if the platform blocks the lookup, nothing changes.
+     */
+    private static void hookWindowTouches(View root, String label) {
+        try {
+            java.lang.reflect.Field f = null;
+            for (Class<?> c = root.getClass(); c != null && c != Object.class && f == null; c = c.getSuperclass()) {
+                try { f = c.getDeclaredField("mWindow"); } catch (NoSuchFieldException ignored) { }
+            }
+            if (f == null) return;
+            f.setAccessible(true);
+            Object wo = f.get(root);
+            if (!(wo instanceof Window)) return;
+            Window win = (Window) wo;
+            Window.Callback orig = win.getCallback();
+            if (orig == null) return;
+            if (java.lang.reflect.Proxy.isProxyClass(orig.getClass()) && java.lang.reflect.Proxy.getInvocationHandler(orig) instanceof TouchProxy) return;
+            Window.Callback p = (Window.Callback) java.lang.reflect.Proxy.newProxyInstance(TouchProxy.class.getClassLoader(),
+                    new Class<?>[]{Window.Callback.class}, new TouchProxy(orig, root, label));
+            win.setCallback(p);
+        } catch (Throwable ignored) { }
+    }
+
+    private static final class TouchProxy implements java.lang.reflect.InvocationHandler {
+        private final Object orig;
+        private final WeakReference<View> root;
+        private final String label;
+
+        TouchProxy(Object orig, View root, String label) {
+            this.orig = orig;
+            this.root = new WeakReference<>(root);
+            this.label = label;
+        }
+
+        @Override public Object invoke(Object proxy, java.lang.reflect.Method m, Object[] args) throws Throwable {
+            if (enabled && args != null && args.length == 1 && args[0] instanceof MotionEvent && "dispatchTouchEvent".equals(m.getName())) {
+                View r = root.get();
+                if (r != null) { try { touchIn(r, label, (MotionEvent) args[0]); } catch (Throwable ignored) { } }
+            }
+            try {
+                return m.invoke(orig, args);
+            } catch (java.lang.reflect.InvocationTargetException ex) {
+                throw ex.getCause() != null ? ex.getCause() : ex;
+            }
+        }
     }
 
     // =====================================================================================  output
