@@ -899,10 +899,11 @@ class FileManagerActivity : Activity() {
         if (!external && e in FmUtil.AUDIO) { Links.playAudioHere(this, Uri.fromFile(f).toString(), f.nameWithoutExtension); toast("🎵 " + f.name); return }
         try {
             if (!external && (e in FmUtil.VIDEO || e in FmUtil.AUDIO)) {
-                startActivity(Intent(this, PlayerActivity::class.java).pipTask(this).apply {
+                val pi = Intent(this, PlayerActivity::class.java).pipTask(this).apply {
                     data = Uri.fromFile(f); addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                     putExtra("landscape", e in FmUtil.VIDEO); putExtra("fresh", false); putExtra("nosub", false); putExtra("ask", false)
-                })
+                }
+                if (!MtPlay.fastOpen(this, pi)) startActivity(pi)   // (v978) فتح مباشر من غير PlayerActivity الوسيطة
             } else {
                 startActivity(Intent(Intent.ACTION_VIEW).apply {
                     setDataAndType(FmUtil.uriFor(this@FileManagerActivity, f), FmUtil.mime(f)); addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)

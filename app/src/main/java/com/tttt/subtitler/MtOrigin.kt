@@ -44,6 +44,18 @@ object MtOrigin {
 
     fun current(): Origin? = current
 
+    /**
+     * (v979) هل المصدر المسجّل ده بتاع الفيديو اللي شغّال دلوقتي فعلاً؟
+     * السبب: record() بيتنده بس لما الفيديو يتفتح من Joyboy (MtPlay.openMt / MeeTubeLink). فيديو يوتيوب اتفتح من فيد MeeTube نفسه
+     * عمره ما اتسجّل، فكان بيفضل شايل مصدر قديم (ملف/متصفح) من فيديو قبله — والتصغير كان يروح PiP والقفل يرجّع لميديا/المتصفح بدل يوتيوب.
+     * ملف/لينك: نفس الـsrc بتاع Video.localUri · يوتيوب: نفس الـvideoId.
+     */
+    fun isFor(videoId: String?, localUri: String?): Boolean {
+        val o = current ?: return false
+        return if (!localUri.isNullOrEmpty()) o.src == localUri
+        else !videoId.isNullOrEmpty() && o.videoId == videoId
+    }
+
     fun clear(src: String?) {
         try {
             val c = current
@@ -128,7 +140,7 @@ object MtOrigin {
      * بيتنده بعد MtWeb.onDetach (اللي بيغطّي ret للمصطادة) فلو هو رجّع خلاص مانرجّعش تاني.
      * شرط الإغلاق الفعلي (مش تدوير/تغيير سطح) بيتفحص هنا زي MtWeb.
      */
-    fun onDetach(a: Activity, src: String?): Boolean {
+    fun onDetach(a: Activity, src: String?, videoId: String? = null): Boolean {
         try {
             if (!a.isFinishing || a.isDestroyed || a.isChangingConfigurations) return false
             val o = current ?: return false
@@ -138,6 +150,11 @@ object MtOrigin {
                 return false
             }
             if (src != null && o.src != src && o.src.isNotEmpty()) return false
+            // (v979) فيديو يوتيوب من فيد MeeTube (من غير src) وملوش تسجيل بتاعه: المصدر اللي موجود قديم — ما نرجّعش بيه (كان بيفتح ميديا/المتصفح عند القفل)
+            if (src == null && !isFor(videoId, null)) {
+                current = null
+                return false
+            }
             val dest = destination(o)
             if (dest == ReturnTo.NONE) {
                 current = null

@@ -260,8 +260,10 @@ object MtTranslate : JoyboyPlayerHost.Provider {
     override fun onMinimize(activity: Activity): Boolean {
         return try {
             if (act !== activity) return false
-            val kind = MtOrigin.current()?.kind
-            LogStore.add("MtOrigin: minimize → " + (MtOrigin.minimizeTarget()?.name ?: "none"))
+            // (v979) المصدر لازم يبقى بتاع الفيديو الشغّال: يوتيوب من فيد MeeTube مالوش تسجيل، وكان بيستعير مصدر فيديو قديم (ملف/متصفح) فيروح PiP بدل المصغّر الداخلي
+            val mine = MtOrigin.isFor(info?.videoId(), info?.localUri())
+            val kind = if (mine) MtOrigin.current()?.kind else null
+            LogStore.add("MtOrigin: minimize → " + ((if (mine) MtOrigin.minimizeTarget()?.name else null) ?: "none") + (if (mine) "" else " (مصدر قديم متجاهَل)"))
             kind != null && kind != MtOrigin.Kind.YOUTUBE && kind != MtOrigin.Kind.REMOTE_TV
         } catch (_: Throwable) {
             false

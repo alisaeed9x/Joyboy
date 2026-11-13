@@ -1353,13 +1353,15 @@ class MainActivity : Activity() {
         play("", Uri.parse(v.uri), v.landscape, false, false, !BgJobs.isActive(v.videoId))
     }
     fun startPlayerNow(u: String, uri: Uri?, landscape: Boolean = uri != null, fresh: Boolean = false, noSub: Boolean = false, ask: Boolean = false, ret: String = "") {
-        startActivity(Intent(this, PlayerActivity::class.java).pipTask(this).apply {
+        val pi = Intent(this, PlayerActivity::class.java).pipTask(this).apply {
             if (uri != null) { data = uri; addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION) } else putExtra("url", u)
             putExtra("landscape", landscape); putExtra("fresh", fresh); putExtra("nosub", noSub); putExtra("ask", ask)
             if (ret.isNotEmpty()) putExtra("ret", ret)   // (v417) الرجوع من المشغّل لنفس الشاشة (متصفح/يوتيوب)
             // لو فتحنا الإعدادات من المشغّل واخترنا فيديو جديد: امسح المشغّل القديم بدل ما يفضل تحته
             if (intent?.getBooleanExtra("from_player", false) == true) addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_NO_ANIMATION)
-        })
+        }
+        // (v978) فتح مباشر في MeeTube من غير PlayerActivity الوسيطة (تاسك زيادة = بطء + رعشة سودا)
+        if (intent?.getBooleanExtra("from_player", false) == true || !MtPlay.fastOpen(this, pi)) startActivity(pi)
     }
     // ===== (v215) نسخة احتياطية كاملة: حفظ في ملف / استرجاع من ملف / استرجاع آخر نسخة تلقائية =====
     /** (v469) D4 بحث شامل موحّد: بيفتّش في مكتبة الفيديو + الموسيقى + سجل يوتيوب + أقسام الإعدادات، والدوسة على أي نتيجة بتقفز لها على طول */

@@ -200,6 +200,12 @@ object MtBar {
         removeByTag(bar, TAG_TOOLS)
         removeByTag(bar, TAG_CAP)
         removeByTag(bar, TAG_MODE)
+        // (v978) يوتيوب في الوضع الرأسي = أزرار MeeTube الأصلية بس (⌄ 🎧 · كاست CC ⚙ · ⏮ ⏯ ⏭ · الوقت · ⛶) من غير أي أزرار Joyboy.
+        // أزرار Joyboy (ترجمة/لهجة/أدوات/قفل/جودة…) بتفضل في اللاند سكيب وفي الملفات واللينكات.
+        if (cleanYtPortrait(activity, i)) {
+            dropBarState(activity)
+            return
+        }
         val root = LinearLayout(activity).apply {
             tag = TAG_BAR
             orientation = LinearLayout.VERTICAL
@@ -279,6 +285,89 @@ object MtBar {
             tickCount = 0
             ui.post(tick)
         }
+    }
+
+    /** (v978) true = يوتيوب + رأسي: مفيش شريط Joyboy. مفتاح Cfg «yt_portrait_clean» (الافتراضي شغّال) للرجوع للشكل القديم. */
+    private fun cleanYtPortrait(a: Activity, i: JoyboyPlayerHost.VideoInfo): Boolean {
+        return try {
+            if (a.resources.configuration.orientation != Configuration.ORIENTATION_PORTRAIT) return false
+            if (!Cfg.bool("yt_portrait_clean", true)) return false
+            val local = try { i.localUri() } catch (_: Throwable) { null }
+            val vid = try { i.videoId() } catch (_: Throwable) { null }
+            local.isNullOrBlank() && vid != null && vid.length == 11
+        } catch (_: Throwable) { false }
+    }
+
+    private class StockSnap(val titleStart: Int, val titleEnd: Int, val titleGravity: Int, val optGravity: Int, val optRight: Int,
+                            val barLeft: Int, val barRight: Int)
+    private val snaps = java.util.WeakHashMap<View, StockSnap>()
+    private val hiddenOrig = java.util.WeakHashMap<View, Int>()
+    private var durOrigParent: java.lang.ref.WeakReference<ViewGroup>? = null
+    private var durOrigIndex = -1
+    private var durOrigLp: ViewGroup.LayoutParams? = null
+
+    /** (v978) أول مرة نشوف الـview: نحفظ هوامشها الأصلية (قبل ما placeTop/alignSeek يغيّروها) عشان نرجّعها لو المشغّل رجع رأسي */
+    private fun snapStock(a: Activity) {
+        try {
+            val tid = a.resources.getIdentifier("mobile_player_title", "id", a.packageName)
+            val title = if (tid != 0) a.findViewById<View>(tid) else null
+            val oid = a.resources.getIdentifier("mobile_player_options", "id", a.packageName)
+            val opt = if (oid != 0) a.findViewById<View>(oid) else null
+            val key = title ?: opt ?: return
+            if (snaps.containsKey(key)) return
+            val tlp = title?.layoutParams as? ViewGroup.MarginLayoutParams
+            val olp = opt?.layoutParams as? FrameLayout.LayoutParams
+            val blp = timeBar?.layoutParams as? ViewGroup.MarginLayoutParams
+            snaps[key] = StockSnap(tlp?.marginStart ?: 0, tlp?.marginEnd ?: 0, (title as? TextView)?.gravity ?: 0,
+                olp?.gravity ?: -1, olp?.rightMargin ?: 0, blp?.leftMargin ?: 0, blp?.rightMargin ?: 0)
+        } catch (_: Throwable) {}
+    }
+
+    /** (v978) رجّع كل اللي شريط Joyboy غيّره في أزرار MeeTube الأصلية (إخفاء · إزاحة · هوامش · المدة) — للدخول في وضع «نظيف» بعد لاند سكيب */
+    private fun dropBarState(a: Activity) {
+        try {
+            val l = seekHook
+            val r = barRoot
+            if (l != null && r != null && r.viewTreeObserver.isAlive) r.viewTreeObserver.removeOnPreDrawListener(l)
+        } catch (_: Throwable) {}
+        seekHook = null
+        try {
+            fun v(n: String): View? = a.resources.getIdentifier(n, "id", a.packageName).let { if (it != 0) a.findViewById<View>(it) else null }
+            for ((view, vis) in hiddenOrig.entries.toList()) { try { view.visibility = vis } catch (_: Throwable) {} }
+            hiddenOrig.clear()
+            val tb = v("mobile_player_time_bar")
+            tb?.translationY = 0f
+            v("mobile_player_bottom_row")?.translationY = 0f
+            v("mobile_player_chapter")?.translationY = 0f
+            val title = v("mobile_player_title")
+            val opt = v("mobile_player_options")
+            val sn = snaps[title ?: opt ?: tb]
+            if (sn != null) {
+                (title?.layoutParams as? ViewGroup.MarginLayoutParams)?.let { it.marginStart = sn.titleStart; it.marginEnd = sn.titleEnd; title?.layoutParams = it }
+                (title as? TextView)?.let { if (sn.titleGravity != 0) it.gravity = sn.titleGravity }
+                (opt?.layoutParams as? FrameLayout.LayoutParams)?.let { if (sn.optGravity != -1) it.gravity = sn.optGravity; it.rightMargin = sn.optRight; opt?.layoutParams = it }
+                (tb?.layoutParams as? ViewGroup.MarginLayoutParams)?.let { it.leftMargin = sn.barLeft; it.rightMargin = sn.barRight; tb?.layoutParams = it }
+            }
+            if (title != null) title.layoutDirection = View.LAYOUT_DIRECTION_INHERIT
+            titleForcedLtr = false
+            // المدة اللي اتنقلت لآخر الصف ترجع مكانها جوه كبسولة الوقت
+            val durV = v("mobile_player_duration")
+            val op = durOrigParent?.get()
+            if (durV != null && op != null && durV.parent !== op) {
+                (durV.parent as? ViewGroup)?.removeView(durV)
+                try { durTw?.let { (durV as? TextView)?.removeTextChangedListener(it) } } catch (_: Throwable) {}
+                if (durOrigLp != null) op.addView(durV, durOrigIndex.coerceIn(0, op.childCount), durOrigLp) else op.addView(durV)
+            }
+            durTw = null; durCapWired = false
+            durOrigParent = null; durOrigIndex = -1; durOrigLp = null
+        } catch (_: Throwable) {}
+        nativeDup.clear(); nativeInv.clear(); bottomRowV = null; timeBar = null; slotV = null
+        try { frames?.end() } catch (_: Throwable) {}
+        frames = null
+        barRoot = null; toolsRoot = null; capRoot = null; modePill = null; noticeB = null
+        trChip = null; playB = null; pauseB = null; stopB = null; fitB = null; fullB = null; qualB = null
+        lockB = null; loopBtn = null; dualBtn = null; askBtn = null; volBar = null; volLab = null
+        lastTopSig = ""; trChipLast = ""; capLast = ""; qualLast = ""
     }
 
     fun attachCircles(activity: Activity, p: ExoPlayer, overlay: ViewGroup, i: JoyboyPlayerHost.VideoInfo) {
@@ -555,6 +644,7 @@ object MtBar {
             val id = a.resources.getIdentifier("mobile_player_time_bar", "id", a.packageName)
             timeBar = if (id != 0) a.findViewById(id) else null
         } catch (_: Throwable) { timeBar = null }
+        snapStock(a)   // (v978)
         hookFilmstrip(a)
         // (v947) أزرار MeeTube الأصلية اللي Joyboy عنده بدايلها في الصف الرئيسي: ⏮ ⏯ ⏭ (النص) + ⛶ + سهم الأكشنز — بتتخبّى (كانت بتظهر مرتين)
         nativeDup.clear()
@@ -618,8 +708,8 @@ object MtBar {
 
     /** (v947) اخفي الأزرار الأصلية المكرّرة (GONE عشان ما تاخدش لمس ولا مساحة)؛ بتتنده كل فريم بس بتغيّر لو MeeTube رجّعها */
     private fun hideNativeDup() {
-        for (v in nativeDup) { if (v.visibility != View.GONE) v.visibility = View.GONE }
-        for (v in nativeInv) { if (v.visibility != View.INVISIBLE) v.visibility = View.INVISIBLE }
+        for (v in nativeDup) { if (v.visibility != View.GONE) { if (!hiddenOrig.containsKey(v)) hiddenOrig[v] = v.visibility; v.visibility = View.GONE } }
+        for (v in nativeInv) { if (v.visibility != View.INVISIBLE) { if (!hiddenOrig.containsKey(v)) hiddenOrig[v] = v.visibility; v.visibility = View.INVISIBLE } }
     }
 
     /** (v949) الوقت الحالي في طرف والمدة في الطرف التاني، على نفس سطر شريط التقدم (زي timeRow في القديم) */
@@ -641,6 +731,7 @@ object MtBar {
             val row = bottomRowV as? LinearLayout
             // المدة تطلع من كبسولة الوقت لآخر الصف (الطرف التاني) ويتشال منها « / »
             if (row != null && posV != null && durV != null && durV.parent !== row) {
+                (durV.parent as? ViewGroup)?.let { pp -> if (durOrigParent == null) { durOrigParent = java.lang.ref.WeakReference(pp); durOrigIndex = pp.indexOfChild(durV); durOrigLp = durV.layoutParams } }   // (v978)
                 (durV.parent as? ViewGroup)?.removeView(durV)
                 row.addView(durV, row.childCount, LinearLayout.LayoutParams(-2, -2).apply { marginEnd = dp(a, 8) })
             }

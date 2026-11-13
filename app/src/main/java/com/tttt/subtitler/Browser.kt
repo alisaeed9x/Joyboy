@@ -1751,6 +1751,8 @@ class BrowserActivity : Activity() {
         var hostTries = 0; var srvTries = 0
         var pending = 0; var last = 0L; var hunts = 0   // (v851) hunts = كام مرة فحصنا جافا الصفحة
         var sv = 0; var sf = 0; var sl = 0   // اللي اتعلن عنه قبل كده (فيديو · ملفات · لينكات)
+        var cand = 0; var fake = 0; var vfy = 0   // (v980) المسح الخلفي: لينكات اتجرّبت · اللي طلع مزيّف · فحوصات شغّالة دلوقتي
+        var deepAt = 0L; var watching = false; var deepOnCatch = false
     }
     private val snaps = HashMap<Long, AutoSnap>()
     private val verifyPool by lazy { java.util.concurrent.Executors.newFixedThreadPool(2) { r -> Thread(r).apply { isDaemon = true } } }
@@ -1781,10 +1783,11 @@ class BrowserActivity : Activity() {
         if (!autoScanOn()) return
         val g = t.gen
         for (d in delays) h.postDelayed({ autoScan(t, g, d <= 9000L, false) }, d)
+        h.postDelayed({ if (!dead && t.gen == g) deepScan(t, false) }, 5000L)   // (v980) المسح العميق أوتوماتيك من غير دوس
     }
 
     /** مرّة فحص: تشغيل مكتوم للفيديوهات (اختياري) + لمّ الـDOM + تأكيد الملفات. manual = من زرار 🔎 */
-    private fun autoScan(t: BTab, g: Int, play: Boolean, manual: Boolean) {
+    private fun autoScan(t: BTab, g: Int, play: Boolean, manual: Boolean, deep: Boolean = false) {
         if (dead || t.gen != g || t.hold != null || t.blockedUrl != null) return
         if (t !== tabs.getOrNull(curIdx) || customView != null) return
         if (!manual && !autoScanOn()) return
@@ -1808,10 +1811,10 @@ class BrowserActivity : Activity() {
                 var list: List<ScanItem> = emptyList()
                 try { list = PageScan.parse((JSONTokener(r ?: "").nextValue() as? String) ?: "[]", page) } catch (e: Throwable) { LogStore.err("Browser:autoScan", e) }
                 val ua = uaOf(t)
-                list.filter { it.cat == PageScan.C_VIDEO && (manual || !it.viaLink) }.take(if (manual) 30 else 12).forEach { addFound(Found(it.url, Sniff.kindOf(it.url), "", page, ua), t, g) }
+                list.filter { it.cat == PageScan.C_VIDEO && (manual || deep || !it.viaLink) }.take(if (manual || deep) 30 else 12).forEach { addFound(Found(it.url, Sniff.kindOf(it.url), "", page, ua), t, g) }
                 sn.pages = list.filter { it.cat == PageScan.C_PAGE }
-                if (sn.hunts < 2 && (manual || list.none { it.cat == PageScan.C_VIDEO })) { sn.hunts++; autoHunt(t, g, sn, wv, page, ua, manual) }   // (v851) مفيش فيديو ظاهر: افحص الجافا والمشغّلات الخارجية
-                autoServers(t, g, sn, sn.pages.filter { it.title.startsWith(PageScan.SRV_TAG) }, ua, page)   // (v850) كل سيرفرات الفيلم مش السيرفر المفتوح بس
+                if (sn.hunts < (if (deep) 4 else 2) && (manual || deep || list.none { it.cat == PageScan.C_VIDEO })) { sn.hunts++; autoHunt(t, g, sn, wv, page, ua, manual) }   // (v851) مفيش فيديو ظاهر: افحص الجافا والمشغّلات الخارجية
+                autoServers(t, g, sn, sn.pages.filter { it.title.startsWith(PageScan.SRV_TAG) || (deep && it.title == "مشغّل مدمج" && !PageScan.needsDispatcher(it.url)) }, ua, page)   // (v850) كل سيرفرات الفيلم مش السيرفر المفتوح بس
                 verifyAuto(t, g, sn, list.filter { it.cat == PageScan.C_FILE || it.cat == PageScan.C_HOST }, ua.ifBlank { PageScan.UA }, page)
             }
         } catch (e: Throwable) { LogStore.err("Browser:autoScan2", e) }
@@ -1856,12 +1859,13 @@ class BrowserActivity : Activity() {
             if (sn.srvTries >= 8) break
             val k = "srv:" + Sniff.key(x.url)
             if (k in sn.tried) continue
-            sn.tried.add(k); sn.srvTries++; sn.pending++
+            sn.tried.add(k); sn.srvTries++; sn.pending++; sn.cand++
             verifyPool.execute {
                 val v = try { ClipWatch.resolve(this, x.url, page) } catch (e: Throwable) { LogStore.err("Browser:srv", e); null }   // (v851) Referer = صفحة الفيلم
                 runOnUiThread {
                     sn.pending--
-                    if (dead || t.gen != g || v == null || v.playUrl.isEmpty()) return@runOnUiThread
+                    if (dead || t.gen != g) return@runOnUiThread
+                    if (v == null || v.playUrl.isEmpty()) { sn.fake++; return@runOnUiThread }   // (v980) السيرفر ماطلعش منه فيديو
                     addFound(Found(v.playUrl, v.kind, v.title, v.ref.ifEmpty { x.url }, v.ua.ifEmpty { ua }), t, g)
                 }
             }
@@ -1876,7 +1880,7 @@ class BrowserActivity : Activity() {
             if (k in sn.tried) continue
             if (x.cat == PageScan.C_HOST) { if (sn.hostTries >= 8) continue; sn.hostTries++ }
             sn.tried.add(k)
-            sn.pending++
+            sn.pending++; sn.cand++
             verifyPool.execute {
                 var real: PageScan.RealFile? = null
                 try {
@@ -1886,7 +1890,8 @@ class BrowserActivity : Activity() {
                 val rf = real
                 runOnUiThread {
                     sn.pending--
-                    if (dead || t.gen != g || rf == null) return@runOnUiThread
+                    if (dead || t.gen != g) return@runOnUiThread
+                    if (rf == null) { sn.fake++; return@runOnUiThread }   // (v980) مش ملف حقيقي
                     val key = Sniff.key(rf.url)
                     if (x.cat == PageScan.C_HOST) { if (sn.hosts.none { Sniff.key(it.url) == key }) sn.hosts.add(ScanItem(PageScan.C_HOST, rf.url, x.url, rf.name.ifBlank { x.name }, rf.ext, rf.size)) }
                     else if (sn.files.none { Sniff.key(it.url) == key }) sn.files.add(ScanItem(PageScan.C_FILE, rf.url, x.url, rf.name.ifBlank { x.name }, rf.ext, rf.size))
@@ -1915,6 +1920,35 @@ class BrowserActivity : Activity() {
         if (nf > 0) parts.add("📦 $nf ملف/برنامج")
         if (nl > 0) parts.add("🔗 $nl رابط تحميل")
         Notice.show(this, parts.joinToString(" · "), 2600L)
+    }
+
+    // ===== (v980) المسح العميق الأوتوماتيك: بيشتغل في الخلفية من غير نتيجة بتظهر؛ اللينك لازم يتأكد (حجم/فيديو حقيقي) قبل ما يتعدّ =====
+    /** report=true (دوسة العدسة): لو خلّص ومفيش لينك حقيقي يقولك. الفحص نفسه (addFound/verifyFound) بيرفض أي لينك مزيّف */
+    private fun deepScan(t: BTab, report: Boolean) {
+        if (dead || !autoScanOn() || t.priv || t.hold != null || t.blockedUrl != null) return
+        val page = t.wv?.url ?: t.url
+        if (!page.startsWith("http", true) || PageScan.needsDispatcher(page)) return
+        val sn = snapOf(t); val g = t.gen
+        val now = android.os.SystemClock.uptimeMillis()
+        if (now - sn.deepAt < 15000L) return
+        sn.deepAt = now
+        autoScan(t, g, true, false, true)
+        h.postDelayed({ if (!dead && t.gen == g) autoScan(t, g, true, false, true) }, 4000L)   // ثانية مرة: مشغّلات اتحمّلت متأخر
+        if (report && !sn.watching) { sn.watching = true; watchDeep(t, g, sn, 0) }
+    }
+    private fun watchDeep(t: BTab, g: Int, sn: AutoSnap, waited: Int) {
+        h.postDelayed({
+            if (dead || t.gen != g) { sn.watching = false; return@postDelayed }
+            val w = waited + 700
+            val busy = sn.pending > 0 || sn.vfy > 0
+            if ((busy && w < 30000) || w < 6000) { watchDeep(t, g, sn, w); return@postDelayed }
+            sn.watching = false
+            if (t !== tabs.getOrNull(curIdx) || dlg?.isShowing == true) return@postDelayed
+            val real = items.count { it.tabId == t.id && it.gen == g } + sn.files.size + sn.hosts.size
+            if (real > 0) return@postDelayed
+            if (sn.cand > 0) Notice.show(this, "🔎 جرّبت " + sn.cand + " لينك وكلهم مش حقيقيين (مفيش فيديو فعلي ولا حجم)", 4200L)
+            else Notice.show(this, "🔎 مفيش لينكات فيديو حقيقية في الصفحة دي", 3200L)
+        }, 700L)
     }
 
     // ===== (v837) زرار 🔎: فحص يدوي — بيشغّل نفس الفحص الأوتوماتيك دلوقتي ويفتح النتيجة (الملفات والروابط المتأكَّد منها بس) =====
@@ -2125,7 +2159,8 @@ class BrowserActivity : Activity() {
         if (f.kind.startsWith("YT")) { if (f.size > 0) { accept(f); return }; probe(f) { accept(f) }; return }   // يوتيوب زي ما كان
         // (v976) كل لينك ملقوط بيتفحص فعلًا قبل ما يظهر: لازم يرد بفيديو/قايمة HLS حقيقية (مش صفحة HTML / 403 / 404 / لينك منتهي) ولو HLS أول مقطع فيها لازم يتحمّل.
         // بيجرّب Referer/Origin بتوع المشغّل الخارجي ثم صفحة المتصفح ثم أصل اللينك ثم من غير — واللي ينجح بيتثبّت على اللقطة (المشغّل والتحميل بياخدوه)
-        verifyFound(f) { ok -> if (ok) accept(f) else rejectFake(f) }   // أي فيديو أقل من 3 ميجا (إعلانات غالبًا) بيتتجاهل في accept
+        val sn0 = snapOf(t); sn0.cand++; sn0.vfy++
+        verifyFound(f) { ok -> sn0.vfy--; if (ok) accept(f) else rejectFake(f) }   // أي فيديو أقل من 3 ميجا (إعلانات غالبًا) بيتتجاهل في accept
     }
     private class Peek(val code: Int, val mime: String, val body: ByteArray, val total: Long)
     /** (v976) أول maxBytes بايت من اللينك (GET Range) بالهيدرز دي. null = مفيش رد (شبكة/مهلة) */
@@ -2228,6 +2263,7 @@ class BrowserActivity : Activity() {
     private fun rejectFake(f: Found) {
         val t = tabs.firstOrNull { it.id == f.tabId } ?: return
         if (f.gen != t.gen || t.priv) return
+        val sf0 = snaps[t.id]; if (sf0 != null && sf0.gen == f.gen) sf0.fake++   // (v980)
         val k = "${t.id}:${t.gen}"; val g = t.gen
         if (!huntedGen.add(k)) return
         h.postDelayed({
@@ -2253,6 +2289,7 @@ class BrowserActivity : Activity() {
         if (repairId != null && !repairPending) { repairPending = true; h.postDelayed({ repairPending = false; autoRepair() }, 2000L) }   // نستنى ثانيتين عشان باقي الجودات توصل
         // (v715) من غير فتح القايمة لوحدها: العلامة الدايرة بتظهر وإنت تدوس عليها
         announce(t)   // (v838) رسالة بالعدد: 🎬 لقط N فيديو (+ ملفات ولينكات لو اتلقطت)
+        val sn1 = snapOf(t); if (!sn1.deepOnCatch) { sn1.deepOnCatch = true; deepScan(t, false) }   // (v980) لقط فيديو ← المسح يشتغل في الخلفية لوحده
     }
 
     // ===== (v401) مانع البوب-أب الذكي =====
@@ -2335,6 +2372,7 @@ class BrowserActivity : Activity() {
         val t = hd.tab; t.hold = null
         tabs.add(t); refreshTabsCount(); persistTabs()
         select(tabs.size - 1)
+        scheduleAutoScan(t, longArrayOf(1500L, 5000L, 12000L))   // (v980) صفحة البوب-أب كانت بتخلّص تحميل وهي مش الحالية فالفحص كان بيتخطاها
         for (a in hd.sniffed) addFound(Found(a, Sniff.kindOf(a), "", t.url, uaOf(t)), t)
     }
 
@@ -2694,6 +2732,7 @@ class BrowserActivity : Activity() {
         val now = android.os.SystemClock.uptimeMillis()
         if (dead || now - lastKick < 1200L) return
         lastKick = now; scanUntil = now + 5000L
+        tabs.getOrNull(curIdx)?.let { deepScan(it, true) }   // (v980) دوسة العدسة: المسح يبدأ في الخلفية وأقولك لو مفيش لينك حقيقي
         h.post { if (!dead) refreshBadge() }
         h.postDelayed({ if (!dead) refreshBadge() }, 5100L)
     }

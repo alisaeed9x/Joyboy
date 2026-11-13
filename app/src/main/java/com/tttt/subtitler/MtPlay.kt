@@ -147,6 +147,25 @@ object MtPlay {
     private const val R_OFF = "mt_main_player off"
     private const val R_TV = "tv"
 
+    /**
+     * (v978) فتح مباشر من مكتبة الميديا/الملفات: قبل كده كل فيديو كان بيفتح PlayerActivity في تاسك جديد (NEW_DOCUMENT) وهي تفتح مشغّل MeeTube في تاسك تاني —
+     * تاسكين + أكتيفيتي وسيطة سودا = بطء فوق الثانية ونص ورعشة سودا/رمادي. دلوقتي نفس القرار (decide) بيتاخد من هنا، ولو ملف/لينك ينفع في MeeTube بيتفتح على طول.
+     * false = كمّل بالطريقة القديمة (startActivity(PlayerActivity)): يوتيوب · لينك محتاج فحص · أي حالة مش مدعومة.
+     */
+    fun fastOpen(act: Activity, i: Intent): Boolean {
+        return try {
+            val t0 = android.os.SystemClock.uptimeMillis()
+            val d = decide(act, i)
+            if (!d.ok || d.probe || d.yt != null) return false
+            val ok = openMt(act, act.applicationContext, i, d)
+            LogStore.add("MtPlay: fastOpen " + ok + " (" + (android.os.SystemClock.uptimeMillis() - t0) + "ms)")
+            ok
+        } catch (e: Throwable) {
+            LogStore.err("MtPlay:fastOpen", e)
+            false
+        }
+    }
+
     /** true = اتفتح في مشغّل MeeTube (أو هيتفتح بعد الفحص) والـPlayerActivity لازم تقفل نفسها */
     fun reroute(act: Activity, i: Intent): Boolean {
         try {
@@ -198,6 +217,7 @@ object MtPlay {
         MeeTubeLink.bindBar()
         MobileMainApplication.boot(act.application)
         if (act.javaClass.simpleName == "PlayerActivity" && !act.isFinishing) holdFor = java.lang.ref.WeakReference(act)   // (v950)
+        try { com.newtube.mobile.ui.playback.MobilePlaybackActivity.dismissLocalPip() } catch (_: Throwable) {}   // (v978) المشغّل القديم في PiP يتقفل — الفيديو الجديد بملء الشاشة مش جوه النافذة الصغيرة
         try { com.newtube.mobile.ui.playback.MobileLocalPlaybackActivity.route(act) } catch (_: Throwable) {}   // (v947) ملف/لينك/متصفح ← نسخة مشغّل منفصلة (تاسك لوحدها) بدل ما تحمّل صفحة يوتيوب
         val v = Video()
         v.videoId = "joy_local_" + Integer.toHexString(src.hashCode())
@@ -213,7 +233,10 @@ object MtPlay {
     }
 
     /** (v951) أبعاد الفيديو قبل ما المشغّل يتفتح: true = رأسي، false = أفقي، null = ماعرفناش. ملف/content متزامن (ms)، لينك نت بمهلة 1.5ث. */
+    private val vertCache = object : LinkedHashMap<String, Boolean>(32, 0.75f, true) { override fun removeEldestEntry(e: MutableMap.MutableEntry<String, Boolean>?) = size > 48 }   // (v978)
+
     private fun probeVertical(ctx: android.content.Context, src: String, hdr: Map<String, String>): Boolean? {
+        synchronized(vertCache) { vertCache[src] }?.let { return it }   // (v978) نفس الفيديو اتفحص قبل كده: من غير فتح MediaMetadataRetriever تاني
         var res: Boolean? = null
         val work = Runnable {
             val r = android.media.MediaMetadataRetriever()
@@ -232,9 +255,14 @@ object MtPlay {
             } catch (_: Throwable) {} finally { try { r.release() } catch (_: Throwable) {} }
         }
         val net = src.startsWith("http", true)
-        if (!net) { work.run(); return res }
-        val t = Thread(work).apply { isDaemon = true }; t.start()
-        try { t.join(1500L) } catch (_: Throwable) {}
+        val t0 = android.os.SystemClock.uptimeMillis()
+        if (!net) { work.run() }
+        else {
+            val t = Thread(work).apply { isDaemon = true }; t.start()
+            try { t.join(600L) } catch (_: Throwable) {}   // (v978) كان 1500ms — بيوقف الفتح؛ لو ماعرفناش بيصحّح نفسه عند أول فريم (autoLandscapeIfLocal)
+        }
+        LogStore.add("MtPlay: probeVertical " + res + " (" + (android.os.SystemClock.uptimeMillis() - t0) + "ms)")
+        res?.let { r -> synchronized(vertCache) { vertCache[src] = r } }
         return res
     }
 

@@ -842,6 +842,35 @@ public class MobilePlaybackActivity extends MobileActivity
                 && !player.isInPipModeNow();
     }
 
+    /**
+     * JOYBOY(v978): a new local video is about to open while the previous local player sits in the PiP window
+     * (Back leaves it as a small stopped PiP). Reusing that instance (singleTop → onNewIntent) played the new video
+     * INSIDE the small PiP over a black held screen. Close the PiP player for good instead, so the new video opens
+     * as a fresh full-screen player. Returns true when a PiP local player was closed.
+     */
+    public static boolean dismissLocalPip() {
+        MobilePlaybackActivity p = sCurrent.get();
+        if (p == null || !(p instanceof MobileLocalPlaybackActivity) || p.isFinishing() || p.isDestroyed()) {
+            return false;
+        }
+        if (!(p.mIsInPip || p.mPipEnterPending || p.isInPipModeNow())) {
+            return false;
+        }
+        try {
+            Utils.removeCallbacks(p.mRoutedInRestore);
+            p.mPipDismissPending = false;
+            p.setPlayWhenReady(false);
+            if (p.mPresenter != null) {
+                p.mPresenter.onFinish();
+            }
+            p.getViewManager().removeTop(p);
+            p.finishAndRemoveTask();
+            return true;
+        } catch (Throwable t) {
+            return false;
+        }
+    }
+
     /** Pinned as far as the launcher restore is concerned (see {@link #mPipStateStale}). */
     boolean isPinnedForRestore() {
         return pinnedForRestore(isInPipModeNow(), mPipStateStale);

@@ -33,11 +33,15 @@ public class MobileLocalPlaybackActivity extends MobilePlaybackActivity {
     /** JOYBOY(v951): set by MtPlay right before opening — the video is vertical (probed from its metadata). */
     public static volatile boolean sNextPortrait;
 
+    /** JOYBOY(v978): live instances — an old (PiP) instance dying after the new one started must not route PlaybackView back to YouTube. */
+    private static int sLive;
+
     @Override
     protected void onCreate(android.os.Bundle savedInstanceState) {
         // JOYBOY(v951): MtPlay probed the video's size BEFORE opening — a vertical one opens locked portrait from the first frame (no landscape-then-rotate)
         final boolean portrait = sNextPortrait;
         sNextPortrait = false;
+        sLive++;
         try { setRequestedOrientation(portrait ? android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT : android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE); } catch (Throwable ignored) { }
         super.onCreate(savedInstanceState);
         // JOYBOY(v973): لفّة الشاشة لاندسكيب وقت الفتح من غير أنيميشن اللفّ (كان بيبان فريم أبيض)
@@ -70,6 +74,7 @@ public class MobileLocalPlaybackActivity extends MobilePlaybackActivity {
     @Override
     protected void onDestroy() {
         super.onDestroy();
-        try { routeYoutube(this); } catch (Throwable ignored) { }
+        if (sLive > 0) sLive--;
+        if (sLive == 0) { try { routeYoutube(this); } catch (Throwable ignored) { } }
     }
 }

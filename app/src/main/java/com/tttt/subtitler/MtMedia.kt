@@ -90,6 +90,7 @@ object MtMedia {
             if (act !== a) return
             saveNow(true)
             val wasLu = lu()
+            val wasVid = try { info?.videoId() } catch (_: Throwable) { null }   // (v979)
             ui.removeCallbacks(tick); ticking = false
             try { player?.removeListener(listener) } catch (_: Throwable) {}
             releaseBoost()
@@ -101,7 +102,7 @@ object MtMedia {
             // (v939) لو مفيش ret للمصطادة، MtOrigin بيرجّع حسب المصدر (واتساب/محلي ← ميديا Joyboy)
             try {
                 val webRet = MtWeb.onDetach(a, wasLu)
-                if (!webRet) MtOrigin.onDetach(a, wasLu)
+                if (!webRet) MtOrigin.onDetach(a, wasLu, wasVid)
             } catch (_: Throwable) {}
         } catch (e: Throwable) { LogStore.err("MtMedia:detach", e) }
     }
