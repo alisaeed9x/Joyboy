@@ -35,6 +35,7 @@ object MtEnhance {
     const val K_LEVEL = "mt_enh_level"
     const val K_VIVID = "mt_enh_vivid"
     const val K_OFF = "mt_enh_off"
+    const val K_FAKE = "mt_enh_hdr"   // (v947) HDR وهمي: 0 إيقاف · 1 خفيف · 2 متوسط · 3 قوي (الافتراضي 0)
 
     private const val WATCH_MS = 4500L
     private const val MAX_PIXELS = 2_200_000   // ~1080p (1920×1088 = 2.09M)
@@ -65,6 +66,24 @@ object MtEnhance {
         Cfg.put(K_OFF, "0")
         memOff = false
     }
+
+    private val fakeNames = listOf("إيقاف", "خفيف", "متوسط", "قوي")
+    fun fake(): Int = Cfg.int(K_FAKE, 0).coerceIn(0, 3)
+    fun fakeName(): String = fakeNames[fake()]
+    fun setFake(name: String) {
+        val i = fakeNames.indexOf(name).let { if (it < 0) 0 else it }
+        Cfg.put(K_FAKE, i.toString())
+        Cfg.put(K_OFF, "0")
+        memOff = false
+    }
+    private fun hdrFor(l: Int): Float = when (l) { 1 -> 0.35f; 2 -> 0.65f; 3 -> 1.0f; else -> 0f }
+
+    /** (v948) سبب إن الفلتر مش شغّال على الفيديو الحالي (للإشعار)، أو "" لو شغّال */
+    @Volatile var lastWhy: String = ""
+        private set
+
+    /** (v948) تطبيق تغيير الدرجة على الفيديو الشغّال دلوقتي (من زرار HDR جوه المشغّل) */
+    fun refresh() { evaluate() }
 
     private fun sharpFor(l: Int): Float = when (l) { 1 -> 0.20f; 2 -> 0.45f; else -> 0.75f }
 
@@ -139,7 +158,7 @@ object MtEnhance {
 
     // ---------- القرار ----------
     private fun wanted(): Boolean {
-        if (memOff || Cfg.bool(K_OFF, false) || level() == 0) return false
+        if (memOff || Cfg.bool(K_OFF, false) || (level() == 0 && fake() == 0)) return false
         val k = try { info?.sourceKind() ?: "youtube" } catch (_: Throwable) { "youtube" }
         return k != "youtube"
     }
@@ -166,17 +185,23 @@ object MtEnhance {
     private fun evaluate() {
         try {
             val p = player ?: return
-            if (!wanted()) { clear(); return }
+            if (!wanted()) {
+                lastWhy = if (memOff || Cfg.bool(K_OFF, false)) "اتقفل تلقائي" else if (level() == 0 && fake() == 0) "" else "يوتيوب"
+                clear(); return
+            }
             val f = videoFormat(p) ?: return   // نستنى الفورمات (لو لسه مفيش، مانغيّرش حاجة)
             val why = blocked(f)
             if (why != null) {
+                lastWhy = why
                 if (applied.isNotEmpty()) LogStore.add("MtEnhance: اتشال — $why")
                 clear(); return
             }
+            lastWhy = ""
             val l = level(); val v = vivid()
-            val key = "$l/${if (v) 1 else 0}"
+            val fk = fake()
+            val key = "$l/${if (v) 1 else 0}/$fk"
             if (key == applied) return
-            val eff = SharpenEffect(sharpFor(l), if (v) 1.08f else 1f, if (v) 1.04f else 1f)
+            val eff = SharpenEffect(if (l == 0) -1f else sharpFor(l), if (v) 1.08f else 1f, if (v) 1.04f else 1f, hdrFor(fk))
             p.setVideoEffects(listOf<Effect>(eff))
             applied = key
             gotFrame = false
@@ -228,16 +253,17 @@ object MtEnhance {
 }
 
 /** تأثير فيديو: CAS + (تشبّع/تباين). sharp من 0 لـ1. */
-class SharpenEffect(private val sharp: Float, private val sat: Float, private val con: Float) : GlEffect {
+class SharpenEffect(private val sharp: Float, private val sat: Float, private val con: Float, private val hdr: Float = 0f) : GlEffect {
     override fun toGlShaderProgram(context: Context, useHdr: Boolean): GlShaderProgram =
-        SharpenProgram(useHdr, sharp, sat, con)
+        SharpenProgram(useHdr, sharp, sat, con, hdr)
 }
 
 private class SharpenProgram(
     useHdr: Boolean,
     private val sharp: Float,
     private val sat: Float,
-    private val con: Float
+    private val con: Float,
+    private val hdr: Float
 ) : BaseGlShaderProgram(useHdr, 1) {
 
     private val prog = GlUtil.GlProgram(VERT, FRAG)
@@ -264,7 +290,9 @@ private class SharpenProgram(
             prog.setSamplerTexIdUniform("uTexSampler", inputTexId, 0)
             prog.setFloatUniform("uTx", 1f / w)
             prog.setFloatUniform("uTy", 1f / h)
-            prog.setFloatUniform("uSharp", sharp)
+            prog.setFloatUniform("uSharp", if (sharp < 0f) 0f else sharp)
+            prog.setFloatUniform("uSharpOn", if (sharp < 0f) 0f else 1f)
+            prog.setFloatUniform("uHdr", hdr)
             prog.setFloatUniform("uSat", sat)
             prog.setFloatUniform("uCon", con)
             prog.bindAttributesAndUniforms()
@@ -292,23 +320,41 @@ private class SharpenProgram(
             "uniform float uTx;\n" +
             "uniform float uTy;\n" +
             "uniform float uSharp;\n" +
+            "uniform float uSharpOn;\n" +
             "uniform float uSat;\n" +
             "uniform float uCon;\n" +
+            "uniform float uHdr;\n" +
             "varying vec2 vTexSamplingCoord;\n" +
+            "const vec3 LUMA = vec3(0.2126, 0.7152, 0.0722);\n" +
             "void main() {\n" +
             "  vec2 uv = vTexSamplingCoord;\n" +
             "  vec3 c = texture2D(uTexSampler, uv).rgb;\n" +
-            "  vec3 n = texture2D(uTexSampler, uv + vec2(0.0, -uTy)).rgb;\n" +
-            "  vec3 s = texture2D(uTexSampler, uv + vec2(0.0, uTy)).rgb;\n" +
-            "  vec3 w = texture2D(uTexSampler, uv + vec2(-uTx, 0.0)).rgb;\n" +
-            "  vec3 e = texture2D(uTexSampler, uv + vec2(uTx, 0.0)).rgb;\n" +
-            "  vec3 mn = min(c, min(min(n, s), min(w, e)));\n" +
-            "  vec3 mx = max(c, max(max(n, s), max(w, e)));\n" +
-            "  vec3 amp = sqrt(clamp(min(mn, 1.0 - mx) / max(mx, 0.0001), 0.0, 1.0));\n" +
-            "  float peak = -1.0 / mix(8.0, 5.0, uSharp);\n" +
-            "  vec3 wgt = amp * peak;\n" +
-            "  vec3 col = clamp(((n + s + w + e) * wgt + c) / (1.0 + 4.0 * wgt), 0.0, 1.0);\n" +
-            "  float l = dot(col, vec3(0.2126, 0.7152, 0.0722));\n" +
+            "  vec3 col = c;\n" +
+            "  if (uSharpOn > 0.5) {\n" +
+            "    vec3 n = texture2D(uTexSampler, uv + vec2(0.0, -uTy)).rgb;\n" +
+            "    vec3 s = texture2D(uTexSampler, uv + vec2(0.0, uTy)).rgb;\n" +
+            "    vec3 w = texture2D(uTexSampler, uv + vec2(-uTx, 0.0)).rgb;\n" +
+            "    vec3 e = texture2D(uTexSampler, uv + vec2(uTx, 0.0)).rgb;\n" +
+            "    vec3 mn = min(c, min(min(n, s), min(w, e)));\n" +
+            "    vec3 mx = max(c, max(max(n, s), max(w, e)));\n" +
+            "    vec3 amp = sqrt(clamp(min(mn, 1.0 - mx) / max(mx, 0.0001), 0.0, 1.0));\n" +
+            "    float peak = -1.0 / mix(8.0, 5.0, uSharp);\n" +
+            "    vec3 wgt = amp * peak;\n" +
+            "    col = clamp(((n + s + w + e) * wgt + c) / (1.0 + 4.0 * wgt), 0.0, 1.0);\n" +
+            "  }\n" +
+            "  if (uHdr > 0.0) {\n" +
+            "    vec3 m = (texture2D(uTexSampler, uv + vec2(6.0 * uTx, 0.0)).rgb + texture2D(uTexSampler, uv + vec2(-6.0 * uTx, 0.0)).rgb +\n" +
+            "              texture2D(uTexSampler, uv + vec2(0.0, 6.0 * uTy)).rgb + texture2D(uTexSampler, uv + vec2(0.0, -6.0 * uTy)).rgb) * 0.25;\n" +
+            "    float lc = dot(col, LUMA);\n" +
+            "    col += (lc - dot(m, LUMA)) * 0.45 * uHdr;\n" +
+            "    lc = dot(col, LUMA);\n" +
+            "    col *= 1.0 + 0.20 * uHdr * smoothstep(0.5, 1.0, lc);\n" +
+            "    col = clamp(col, 0.0, 1.0);\n" +
+            "    col = mix(col, col * col * (3.0 - 2.0 * col), 0.35 * uHdr);\n" +
+            "    float l2 = dot(col, LUMA);\n" +
+            "    col = mix(vec3(l2), col, 1.0 + 0.25 * uHdr);\n" +
+            "  }\n" +
+            "  float l = dot(col, LUMA);\n" +
             "  col = mix(vec3(l), col, uSat);\n" +
             "  col = clamp((col - 0.5) * uCon + 0.5, 0.0, 1.0);\n" +
             "  gl_FragColor = vec4(col, 1.0);\n" +

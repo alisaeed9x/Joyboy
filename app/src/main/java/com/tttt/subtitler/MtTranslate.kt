@@ -107,6 +107,7 @@ object MtTranslate : JoyboyPlayerHost.Provider {
             refreshBtn(); maybeAuto()
             MtMedia.attach(activity, player, options, info)
             try { MtEnhance.attach(activity, player, info) } catch (_: Throwable) {}   // (v945) تحسين صورة الملفات المحلية
+            try { MtSmooth.attach(activity, player, info) } catch (_: Throwable) {}   // (v946) سلاسة: مطابقة معدل الشاشة · تخفيف الزجاج · فحص الـdecoder
             try {
                 MtBar.attachCircles(activity, player, overlay, info)
             } catch (_: Throwable) {}
@@ -119,6 +120,7 @@ object MtTranslate : JoyboyPlayerHost.Provider {
             try { MtTvPlayer.clear(activity) } catch (_: Throwable) {}
             try { MtMedia.detach(activity) } catch (_: Throwable) {}
             try { MtEnhance.detach(activity) } catch (_: Throwable) {}
+            try { MtSmooth.detach(activity) } catch (_: Throwable) {}
             try {
                 MtBar.detach(activity)
             } catch (_: Throwable) {}
@@ -282,11 +284,17 @@ object MtTranslate : JoyboyPlayerHost.Provider {
     override fun onControlsVisibility(activity: Activity, visible: Boolean) {
         try {
             ctlVisible = visible
+            try { MtSmooth.onControls(activity, visible) } catch (_: Throwable) {}   // (v946)
             val v = sv ?: return
             val lp = v.layoutParams as? FrameLayout.LayoutParams ?: return
             val m = subMargin(activity)
             if (lp.bottomMargin != m) { lp.bottomMargin = m; v.layoutParams = lp }
         } catch (_: Throwable) {}
+    }
+
+    /** (v948) صف HDR وهمي جوه شيت الجودة */
+    override fun qualityExtras(activity: Activity, list: ViewGroup) {
+        try { MtBar.qualityExtras(activity, list) } catch (_: Throwable) {}
     }
 
     /** (v942) شريط أزرار Joyboy الكامل (MtBar) — بيتحط في شريط تحكم MeeTube */

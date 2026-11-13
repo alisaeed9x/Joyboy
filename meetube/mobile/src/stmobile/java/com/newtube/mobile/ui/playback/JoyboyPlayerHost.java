@@ -64,6 +64,9 @@ public final class JoyboyPlayerHost {
         /** Phase 2/4: lets the add-on put its own buttons into the player's control bar. */
         default void extraControls(Activity activity, ViewGroup bar) { }
 
+        /** JOYBOY(v948): lets the add-on add a row to the Quality sheet (the fake-HDR choice sits next to the quality picks). */
+        default void qualityExtras(Activity activity, ViewGroup list) { }
+
         /** JOYBOY(v937) phase 3: previous (-1) / next (+1) pressed; true = the add-on opened another episode itself. */
         default boolean onStep(Activity activity, int dir) { return false; }
 
@@ -162,12 +165,35 @@ public final class JoyboyPlayerHost {
         }
     }
 
+    /** JOYBOY(v946): the add-on asks the player to go easy on the glass over the video. samplingOff = the controls' frost stops sampling the video (use while the controls are hidden); frozen = the control discs show their tint alone. Never throws. */
+    public static void setGlassEconomy(Activity activity, boolean samplingOff, boolean frozen) {
+        try {
+            if (activity instanceof MobilePlaybackActivity) {
+                ((MobilePlaybackActivity) activity).joyboyGlass(samplingOff, frozen);
+            }
+        } catch (RuntimeException e) {
+            // ignore
+        }
+    }
+
     /** JOYBOY(v930): tells the add-on the control bar was shown or hidden. Never throws. */
     public static void onControlsVisibility(Activity activity, boolean visible) {
         try {
             Provider p = sProvider;
             if (p != null && activity != null) {
                 p.onControlsVisibility(activity, visible);
+            }
+        } catch (RuntimeException e) {
+            // ignore
+        }
+    }
+
+    /** JOYBOY(v948): the Quality sheet is being built; the add-on may append its own row. Never throws. */
+    public static void qualityExtras(Activity activity, ViewGroup list) {
+        try {
+            Provider p = sProvider;
+            if (p != null && activity != null && list != null) {
+                p.qualityExtras(activity, list);
             }
         } catch (RuntimeException e) {
             // ignore

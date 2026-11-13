@@ -24,6 +24,7 @@ class JoyApp : Application() {
             }
         }
         MtYt.app = this
+        try { MtSmooth.install(this) } catch (_: Throwable) {}   // (v946) فتح الفريمات لأعلى معدل تحديث في كل الشاشات
         NavSnap.install(this)   // (v923) انتقال موحّد بين الشاشات (لقطة + فيد)
         MeeTubeLink.bindBar()
         MtTvRoute.install(this)   // (v928) «تشغّله فين؟» لفيديوهات MeeTube لما وضع التلفزيون شغّال

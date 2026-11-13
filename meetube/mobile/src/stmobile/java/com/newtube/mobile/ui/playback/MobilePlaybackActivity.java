@@ -5726,7 +5726,7 @@ public class MobilePlaybackActivity extends MobileActivity
     private void setControlsGlassLive(boolean live) {
         for (View control : mGlassControls) {
             if (control != null) {
-                com.newtube.mobile.ui.common.GlassDrawable.setLive(control, live);
+                com.newtube.mobile.ui.common.GlassDrawable.setLive(control, live && !mJoyGlassFrozen); // JOYBOY(v946)
             }
         }
     }
@@ -6339,11 +6339,27 @@ public class MobilePlaybackActivity extends MobileActivity
         }
     }
 
+    // JOYBOY(v946): the add-on's glass economy while the video plays. samplingOff: the frost stops recording the video (controls hidden);
+    // frozen: the control discs keep their tint alone. Both only ever lighten the glass; HDR's tint-only state and an open sheet still win.
+    private boolean mJoyGlassSamplingOff;
+    private boolean mJoyGlassFrozen;
+
+    public void joyboyGlass(boolean samplingOff, boolean frozen) {
+        runOnUiThread(() -> {
+            mJoyGlassSamplingOff = samplingOff;
+            mJoyGlassFrozen = frozen;
+            if (!mHdrOutput) {
+                setVideoGlassSampling(true); // applies the flag
+            }
+            setControlsGlassLive(!isPlayerSheetShown());
+        });
+    }
+
     /** Over HDR's SurfaceView the controls' glass is the tint alone (GlassSource#setSampling). */
     private void setVideoGlassSampling(boolean on) {
         View glass = findViewById(R.id.mobile_player_glass);
         if (glass instanceof com.newtube.mobile.ui.common.GlassSource) {
-            ((com.newtube.mobile.ui.common.GlassSource) glass).setSampling(on);
+            ((com.newtube.mobile.ui.common.GlassSource) glass).setSampling(on && !mJoyGlassSamplingOff); // JOYBOY(v946)
         }
     }
 
@@ -9775,6 +9791,7 @@ public class MobilePlaybackActivity extends MobileActivity
             addRungRow(qualityList, dialog, openedForId, beyond.poll(), selectedRung, true);
         }
 
+        JoyboyPlayerHost.qualityExtras(this, qualityList); // JOYBOY(v948): fake-HDR row next to the quality picks
         showPlayerSheet(dialog);
     }
 

@@ -448,6 +448,7 @@ object MtBar {
         row.addView(circ("🧰", 14f) { toolboxMenu(a) }.apply { background = sq() })
         row.addView(circ("📃", 12f) { PlayQueueUi.show(a) })
         row.addView(circ("HD", 11f) { bridge(a, "quality") }.apply { typeface = Typeface.DEFAULT_BOLD })
+        row.addView(chev("HDR") { hdrMenu(a) }.apply { typeface = Typeface.DEFAULT_BOLD })   // (v948) جنب الجودة
         row.addView(circ("🎙", 12f) { voiceMenu(a) })
         row.addView(circ("CC", 11f) { bridge(a, "cc") }.apply { typeface = Typeface.DEFAULT_BOLD })
         row.addView(circ("💬", 12f) { MtTranslate.cycleDual() })
@@ -765,6 +766,39 @@ object MtBar {
             views.add(b)
         }
         return u.sheet(a, title, views)
+    }
+
+    /** (v948) HDR وهمي من جوه المشغّل — بيتطبّق على الفيديو الشغّال فورًا */
+    private fun applyFakeHdr(a: Activity, name: String) {
+        MtEnhance.setFake(name)
+        MtEnhance.refresh()
+        val why = MtEnhance.lastWhy
+        val msg = if (name == "إيقاف") "🌅 HDR وهمي: إيقاف"
+            else if (why.isEmpty()) "🌅 HDR وهمي: $name"
+            else "🌅 HDR وهمي: $name — مش شغّال على الفيديو ده ($why)"
+        try { Notice.show(a, msg, 2200L) } catch (_: Throwable) {}
+    }
+
+    private fun hdrMenu(a: Activity) {
+        val cur = MtEnhance.fakeName()
+        sheetRows(a, "🌅 HDR وهمي", listOf("إيقاف", "خفيف", "متوسط", "قوي").map { n ->
+            ((if (n == cur) "✓ " else "") + n) to { applyFakeHdr(a, n) }
+        })
+    }
+
+    /** (v948) صف HDR جوه شيت الجودة بتاع MeeTube (جنب اختيار الجودة) */
+    fun qualityExtras(a: Activity, list: ViewGroup) {
+        try {
+            val u = uiHelper ?: Ui(a, Themes.current()).also { uiHelper = it }
+            val box = LinearLayout(a).apply {
+                orientation = LinearLayout.VERTICAL
+                layoutDirection = View.LAYOUT_DIRECTION_RTL
+                setPadding(dp(a, 16), dp(a, 10), dp(a, 16), dp(a, 6))
+            }
+            box.addView(u.text("🌅 HDR وهمي", 14f, u.th.text, true))
+            box.addView(u.chips(listOf("إيقاف", "خفيف", "متوسط", "قوي"), { MtEnhance.fakeName() }) { n -> applyFakeHdr(a, n) })
+            list.addView(box)
+        } catch (_: Throwable) {}
     }
 
     private fun toolboxMenu(a: Activity) {
