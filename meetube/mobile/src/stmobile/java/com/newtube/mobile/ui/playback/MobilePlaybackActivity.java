@@ -190,9 +190,6 @@ public class MobilePlaybackActivity extends MobileActivity
     @Nullable private View mBottomScrim;
     /** NEWTUBE(issue #9): the last known video display aspect (pixel aspect included), 0 = none yet. */
     private float mVideoAspect;
-    /** JOYBOY(v982): the last known coded video size, 0 = none yet (for the upscaler buffer re-pin on layout change). */
-    private int mJoyboyVideoW;
-    private int mJoyboyVideoH;
     private TextView mTitleView;
     /** MEETUBE(fullscreen): the channel, under the title in the vertical fullscreen. */
     private TextView mPlayerAuthor;
@@ -1328,15 +1325,6 @@ public class MobilePlaybackActivity extends MobileActivity
         mVideoArea.addOnLayoutChangeListener((v, l, t, r, b, ol, ot, or_, ob) -> {
             if ((r - l) != (or_ - ol) || (b - t) != (ob - ot)) {
                 applyControlsInsets();
-                // JOYBOY(v982): a rotation changes the display size, so with the upscaler
-                // on the buffer pinned in onVideoSizeChanged is now the wrong target —
-                // re-pin it to the new display size (same rule, same call, nothing else
-                // about the surface changes). Off keeps the v981 coded-size pin.
-                // JOYBOY(v985): both modes re-pin now — with the upscaler off there was
-                // no re-pin on expand/rotation at all, so a pin taken while the area was
-                // PiP/mini-sized stuck until the next track change. The helper skips
-                // small windows itself (PiP / mini / morph).
-                joyboyRepinBuffer();
             }
             if (mShortsCommentsGone >= 0f) {
                 followShortsComments(mShortsCommentsGone); // MEETUBE(shorts): the box's new size
@@ -2274,10 +2262,6 @@ public class MobilePlaybackActivity extends MobileActivity
         if (!mIsInPip && mExoPlayerController != null) {
             // Back from the mini card / PiP: full size again, fetch full resolution (VideoViewportCap).
             mExoPlayerController.clearSmallWindowViewport("resume");
-            // JOYBOY(v985): the cap lift above only starts an ordinary ABR up-switch,
-            // so the frame stays small until the track re-picks — re-pin the buffer to
-            // the full-size target now, so the fullscreen frame renders full-size.
-            joyboyRepinBuffer();
         }
         updatePipActions(); // re-arm the Android 12+ auto-enter flag cleared by the minimize hand-off
 
@@ -4089,10 +4073,6 @@ public class MobilePlaybackActivity extends MobileActivity
             SystemPipBridge.onPipEnded();
             if (mExoPlayerController != null) {
                 mExoPlayerController.clearSmallWindowViewport("pip-exit");
-                // JOYBOY(v985): same as the onResume expand above — the cap lift alone
-                // is only an ABR up-switch, so re-pin the buffer to the full-size target
-                // now (onResume re-pins again once the layout has settled).
-                joyboyRepinBuffer();
             }
             // Dismiss vs expand: an expand always ends with onResume (which clears the flag); a
             // dismiss ends with onStop. On the older PiP shell the dismissal onStop ran BEFORE this
@@ -6323,89 +6303,6 @@ public class MobilePlaybackActivity extends MobileActivity
         return PlayerTimeBar.formatTime(mFormatBuilder, mFormatter, timeMs);
     }
 
-    // JOYBOY(v982): Joyboy's upscaler setting (prefs file "p", key "upscaler", same seam as
-    // Media3PlayerInitializer.joyboyMaxHeight): "0" = off, "1" = AI bicubic, "2" = AI Pro
-    // Lanczos. Stored as a String on purpose (Cfg keeps it out of CfgCodec.INTS), so it is
-    // read with getString and parsed, never getInt. Any unreadable value means off (0).
-    private static int joyboyUpscalerMode(Context context) {
-        try {
-            String raw = context.getSharedPreferences("p", Context.MODE_PRIVATE)
-                    .getString("upscaler", "0");
-            if (raw == null) {
-                return 0;
-            }
-            int mode = Integer.parseInt(raw.trim());
-            return (mode >= 0 && mode <= 2) ? mode : 0;
-        } catch (RuntimeException e) {
-            return 0;
-        }
-    }
-
-    // JOYBOY(v982): the upscaler target size — (v982) same rule as MtUpscale.targetSize.
-    // Display size of the coded frame inside the video-area view, capped at 1080p; below
-    // the coded size there is nothing to upscale, so the target is the coded size itself.
-    // Returns {width, height}; a zero view size falls back to the coded size.
-    private static int[] joyboyUpscaleTarget(int videoW, int videoH, int viewW, int viewH) {
-        if (videoW <= 0 || videoH <= 0) {
-            return new int[] {videoW, videoH};
-        }
-        int vw = viewW > 0 ? viewW : videoW;
-        int vh = viewH > 0 ? viewH : videoH;
-        double scale = Math.min((double) vw / videoW, (double) vh / videoH);
-        int dispW = (int) Math.round(videoW * scale);
-        int dispH = (int) Math.round(videoH * scale);
-        if (dispH > 1080) {
-            dispH = 1080;
-            dispW = (int) Math.round(1080.0 * videoW / videoH);
-        }
-        if (dispW > 1920) {
-            dispW = 1920;
-            dispH = (int) Math.round(1920.0 * videoH / videoW);
-        }
-        if (dispH <= videoH) {
-            return new int[] {videoW, videoH};
-        }
-        return new int[] {dispW, dispH};
-    }
-
-    // JOYBOY(v985): re-pin the session texture's decode buffer to the size the
-    // current mode wants at the current video-area size (upscale target when the
-    // upscaler is on, coded size when off). The pin is skipped while the player
-    // is in a small window (PiP, mini card, morph in flight): a pin taken from
-    // a small-window measurement sticks after expand, and the buffer only ever
-    // needs re-pinning once the video is full-size again. Callers: expand
-    // (onResume / PiP exit), video-area layout change, track change.
-    private void joyboyRepinBuffer() {
-        if (mSessionTexture == null || mJoyboyVideoW <= 0 || mJoyboyVideoH <= 0) {
-            return;
-        }
-        if (mIsInPip || MiniPlayerBridge.isActive() || mMorphFraction != 0f) {
-            return;
-        }
-        if (joyboyUpscalerMode(this) != 0 && mVideoArea != null) {
-            int[] target = joyboyUpscaleTarget(mJoyboyVideoW, mJoyboyVideoH,
-                    mVideoArea.getWidth(), mVideoArea.getHeight());
-            mSessionTexture.setDefaultBufferSize(target[0], target[1]);
-        } else {
-            mSessionTexture.setDefaultBufferSize(mJoyboyVideoW, mJoyboyVideoH);
-        }
-    }
-
-    // JOYBOY(v985): the :app seam for an on-demand buffer re-pin. MtBar calls
-    // this (safe cast from its Activity) BEFORE MtUpscale.apply() sends the new
-    // output resolution, so the buffer and the signalled resolution always
-    // match: an output resolution without a matching buffer is what blacked
-    // the screen out on the AI toggle. Returns false when there is no session
-    // texture yet or the size is unknown - the caller then relies on the
-    // onVideoSizeChanged / layout re-pins above.
-    public boolean joyboyRepinSessionBuffer(int w, int h) {
-        if (mSessionTexture == null || w <= 0 || h <= 0) {
-            return false;
-        }
-        mSessionTexture.setDefaultBufferSize(w, h);
-        return true;
-    }
-
     private final Player.Listener mUiPlayerListener = new Player.Listener() {
         @Override
         public void onVideoSizeChanged(VideoSize videoSize) {
@@ -6413,21 +6310,6 @@ public class MobilePlaybackActivity extends MobileActivity
             // An unknown size keeps the last one, as the content frame does (DoubleTapPlayerViewImpl).
             if (videoSize.width > 0 && videoSize.height > 0) {
                 mVideoAspect = videoSize.width * videoSize.pixelWidthHeightRatio / videoSize.height;
-                mJoyboyVideoW = videoSize.width;
-                mJoyboyVideoH = videoSize.height;
-                // JOYBOY(v981): the session SurfaceTexture's decode buffers default to the
-                // TextureView's size, so a native-resolution frame was scaled down into the
-                // view-sized buffer and then upscaled again by the GPU - the soft image on
-                // local files, which have no quality ladder to blame. Pin the buffer to the
-                // video's coded size when it is known; the texture still scales for display,
-                // and the morph and mini-card re-parenting of this same texture is untouched.
-                // JOYBOY(v982): with the upscaler on, the effects pipeline renders at the
-                // target size (up to 1080p), so the buffer must be pinned to that target
-                // instead — a coded-size buffer would downscale the upscaled frame back
-                // down and waste the whole effect. Off stays the v981 coded-size pin.
-                // JOYBOY(v985): one helper does the pin now, and it skips small windows
-                // (PiP / mini / morph) so a small-window pin never sticks past expand.
-                joyboyRepinBuffer();
                 if (isShortsMode()) {
                     setResizeMode(PlayerData.instance(MobilePlaybackActivity.this).getResizeMode()); // fill or whole, by shape
                 }
@@ -6634,9 +6516,21 @@ public class MobilePlaybackActivity extends MobileActivity
     /** Switched output, waiting for its first frame to retire the old one. */
     private boolean mHdrSwapPending;
 
+    /** JOYBOY(v987): Joyboy's sharp_surface switch (prefs file "p", stored as a String "1"/"0"); on unless set to 0. */
+    private boolean joyboySharpSurface() {
+        try {
+            String raw = getSharedPreferences("p", MODE_PRIVATE).getString("sharp_surface", "1");
+            return raw == null || !(raw.trim().equals("0") || raw.trim().equalsIgnoreCase("false"));
+        } catch (RuntimeException e) {
+            return true;
+        }
+    }
+
     private void updateHdrOutput() {
         // Shorts stay on the texture (SDR): the SurfaceView fought the overlay's glass, peek and paging
-        boolean want = mPlayer != null && mHdrTrack && mMorphFraction == 0f && !MiniPlayerBridge.isActive()
+        // JOYBOY(v987): sharp_surface (default on) sends SDR video to the SurfaceView too - the display's
+        // hardware scaler/video enhancer only works on a SurfaceView layer, a TextureView is GL bilinear.
+        boolean want = mPlayer != null && (mHdrTrack || joyboySharpSurface()) && mMorphFraction == 0f && !MiniPlayerBridge.isActive()
                 && (mShorts == null || !mShorts.isActive());
         if (want == mHdrOutput) {
             return;

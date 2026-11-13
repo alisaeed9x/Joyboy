@@ -107,12 +107,6 @@ object MtBar {
     private var fullB: TextView? = null            // (v960) ⛶ دخول/خروج الشاشة الكاملة — جنب زرار التمديد
     private var qualB: TextView? = null            // (v960) زرار الجودة (رقم الجودة إجباري) جنب 🗣▾ — لاند سكيب
     private var qualLast = ""
-    private var aiB: TextView? = null              // (v982) زرار «AI» الدائري جنب زرار الجودة — تشغيل/إيقاف التحسين الحي
-    private var aiOn = false
-    private var aiPlayer: ExoPlayer? = null
-    private var aiLastMode = -1
-    private var aiLastTargetW = -1
-    private var aiLastTargetH = -1
     private var barHost: ViewGroup? = null         // (v982) جذر التحكم (مقاسه = مقاس منطقة الفيديو) لحساب هدف التحسين
     private var durCapWired = false
     private var durTw: android.text.TextWatcher? = null   // (v972) بيشيل « / » من عدّاد النهاية لحظة الكتابة
@@ -139,8 +133,6 @@ object MtBar {
                 refreshNotice()
                 refreshQuality()   // (v960)
                 refreshTrMap()   // (v956)
-                refreshAiButton()   // (v982) حالة زرار AI بتتبع الإعدادات (ممكن تتغيّر من برّه المشغّل)
-                reapplyUpscaler()   // (v982) إعادة تطبيق التحسين بس لما يتغيّر الوضع أو المقاس أو الفيديو
                 tickCount++
                 if (tickCount % 8 == 0) refreshBatchWarn()
             } catch (_: Throwable) {}
@@ -218,8 +210,6 @@ object MtBar {
         // أزرار Joyboy (ترجمة/لهجة/أدوات/قفل/جودة…) بتفضل في اللاند سكيب وفي الملفات واللينكات.
         if (cleanYtPortrait(activity, i)) {
             dropBarState(activity)
-            // (v982) من غير شريط مفيش زرار AI، بس الإعداد لسه بيطبَّق على المشغّل (وsetVideoEffects قبل الـprepare)
-            reapplyUpscaler()
             return
         }
         val root = LinearLayout(activity).apply {
@@ -296,9 +286,6 @@ object MtBar {
         toolsRoot = tools
         refreshBadge()
         refreshModes()
-        // (v982) أول تطبيق للتحسين مع الـattach — setVideoEffects قبل الـprepare (بقايمة فاضية لو الوضع مقفول)
-        reapplyUpscaler()
-        refreshAiButton()
         if (!ticking) {
             ticking = true
             tickCount = 0
@@ -1359,100 +1346,6 @@ object MtBar {
         if (t != qualLast) { qualLast = t; b.text = t }
     }
 
-    /** (v982) عرض/ارتفاع الفيديو المكوَّد من التراك الشغّال — 0 لو لسه مش معروف */
-    private fun curVideoW(): Int {
-        return try { player?.videoFormat?.width ?: 0 } catch (_: Throwable) { 0 }
-    }
-
-    /** (v982) عرض/ارتفاع الفيديو المكوَّد من التراك الشغّال — 0 لو لسه مش معروف */
-    private fun curVideoH(): Int {
-        return try { player?.videoFormat?.height ?: 0 } catch (_: Throwable) { 0 }
-    }
-
-    /** (v982) هدف التحسين من مقاس الفيديو المكوَّد ومقاس جذر التحكم (= منطقة الفيديو) */
-    private fun upscaleTarget(): Pair<Int, Int> {
-        val vw = try { barHost?.width ?: 0 } catch (_: Throwable) { 0 }
-        val vh = try { barHost?.height ?: 0 } catch (_: Throwable) { 0 }
-        return MtUpscale.targetSize(curVideoW(), curVideoH(), vw, vh)
-    }
-
-    /** (v982) دوسة زرار AI: إيقاف لو شغّال، وتشغيل على AI (1) لو الإعداد مقفول — وبيتكتب في الإعدادات عشان يفضلوا متزامنين */
-    private fun toggleUpscaler(a: Activity) {
-        val cur = try { Cfg.int("upscaler", 0) } catch (_: Throwable) { 0 }
-        val next = if (cur != 0) MtUpscale.MODE_OFF else MtUpscale.MODE_AI
-        try { Cfg.put("upscaler", next.toString()) } catch (_: Throwable) {}
-        refreshAiButton()
-        reapplyUpscaler()
-    }
-
-    /** (v982) لون زرار AI حسب الحالة: أزرق وهو شغّال، زجاجي عادي وهو مقفول */
-    private fun refreshAiButton() {
-        val b = aiB ?: return
-        val on = try { Cfg.int("upscaler", 0) } catch (_: Throwable) { 0 } != 0
-        if (on == aiOn) return
-        aiOn = on
-        val d = try { act?.resources?.displayMetrics?.density ?: 1f } catch (_: Throwable) { 1f }
-        b.background = if (on) {
-            android.graphics.drawable.GradientDrawable().apply {
-                shape = android.graphics.drawable.GradientDrawable.OVAL
-                setColor(BLUE_ON)
-                setStroke(maxOf(1, d.toInt()), 0xB3FFFFFF.toInt())
-            }
-        } else {
-            glassCircleBg(d)
-        }
-    }
-
-    /**
-     * (v982) تطبيق التحسين على المشغّل المرفق — بس لما يتغيّر الوضع أو
-     * الهدف أو المشغّل نفسه، عشان setVideoEffects متتندهش كل 700ms على
-     * الفاضي (كل نداء بيعيد بناء سلسلة الشيدر). الـattach بيندهها مرة
-     * (setVideoEffects قبل الـprepare)، والـtick بيعيدها لما الفيديو أو
-     * المقاس يتغيّر.
-     */
-    private fun reapplyUpscaler() {
-        val p = player ?: return
-        if (p !== aiPlayer) {
-            aiPlayer = p
-            aiLastMode = -1
-            aiLastTargetW = -1
-            aiLastTargetH = -1
-        }
-        val mode = try { Cfg.int("upscaler", 0) } catch (_: Throwable) { 0 }
-        val target = upscaleTarget()
-        val tw = target.first
-        val th = target.second
-        if (mode == aiLastMode && tw == aiLastTargetW && th == aiLastTargetH) return
-        aiLastMode = mode
-        aiLastTargetW = tw
-        aiLastTargetH = th
-        // (v985) الـbuffer لازم يتثبّت على المقاس الجديد *قبل* ما MtUpscale يبعت
-        // الـoutput resolution — غير كده أول فريم بييجي بالمقاس الجديد وبعدين شاشة
-        // سودا (الـbuffer القديم مش على قد الـresolution الجديدة). Off = المقاس
-        // المكوَّد (v981)، On = هدف التحسين. الـcast آمن: الـbar دايمًا مرفق
-        // من MobilePlaybackActivity (JoyboyPlayerHost.extraControls(this)).
-        val repinW = if (mode == MtUpscale.MODE_OFF) curVideoW() else tw
-        val repinH = if (mode == MtUpscale.MODE_OFF) curVideoH() else th
-        if (repinW > 0 && repinH > 0) {
-            try {
-                (act as? com.newtube.mobile.ui.playback.MobilePlaybackActivity)?.joyboyRepinSessionBuffer(repinW, repinH)
-            } catch (_: Throwable) {}
-        }
-        try {
-            if (mode == MtUpscale.MODE_OFF) {
-                MtUpscale.clear(p, curVideoW(), curVideoH())
-            } else {
-                MtUpscale.apply(p, mode, tw, th)
-            }
-        } catch (_: Throwable) {}
-    }
-
-    /** (v982) مدخل خارجي (من الإعدادات): إعادة تطبيق التحسين الحي على المشغّل المرفق لو فيه */
-    fun refreshUpscaler() {
-        try { refreshAiButton() } catch (_: Throwable) {}
-        try { reapplyUpscaler() } catch (_: Throwable) {}
-    }
-
     private fun mainRow(a: Activity): LinearLayout {
         val u = uiHelper!!
         val row = LinearLayout(a).apply {
@@ -1487,14 +1380,6 @@ object MtBar {
             }
             left.addView(qualB)
             refreshQuality()
-            // (v982) زرار «AI» الدائري جنب زرار الجودة — دوسة بتشغّل/تطفّي التحسين الحي من غير ما توقّف الفيديو
-            aiB = u.fsCircle("AI") { toggleUpscaler(a) }.apply {
-                textSize = 12f
-                layoutParams = LinearLayout.LayoutParams(dp(a, 38), dp(a, 38)).apply { marginStart = dp(a, 4) }
-            }
-            left.addView(aiB)
-            tvFocus(aiB!!)
-            refreshAiButton()
         }
         // (v954) 🌐 و🎧 اتشالوا من الشريط السفلي (مكرّرين: 🌐 = ⚙ شريحة الترجمة، 🎧 = سماعة MeeTube اللي فوق الشمال)
         val mid = LinearLayout(a).apply {

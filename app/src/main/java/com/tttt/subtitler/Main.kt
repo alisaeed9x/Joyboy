@@ -407,14 +407,8 @@ class MainActivity : Activity() {
                 ui.noHint()),
             ui.section("🎞 الجودة الافتراضية", true,
                 ui.chips(ytQ, { ytQ[ytQv.indexOf(Cfg.int("yt_maxh", 0)).coerceAtLeast(0)] }) { n -> Cfg.put("yt_maxh", ytQv[ytQ.indexOf(n).coerceAtLeast(0)].toString()) },
-                ui.noHint()),
-            ui.section("✨ تحسين الفيديو (AI)", true,
-                ui.chips(listOf("مغلق", "AI", "AI Pro"), { when (Cfg.int("upscaler", 0)) { 1 -> "AI"; 2 -> "AI Pro"; else -> "مغلق" } }) { n ->
-                    val m = when (n) { "AI" -> 1; "AI Pro" -> 2; else -> 0 }
-                    Cfg.put("upscaler", m.toString())
-                    try { MtBar.refreshUpscaler() } catch (_: Throwable) {}
-                },
-                ui.text("بيحسّن حدّة الفيديو وهو شغّال (AI خفيف · AI Pro أتقل وأوضح) — على حساب البطارية. زرار «AI» الدائري جنب زرار الجودة في المشغّل بيشغّله ويطفّيه بسرعة.", 12f, th.muted))) }
+                ui.switchRow("🔍 حدّة الفيديو (عرض SurfaceView زي المشغّل القديم)", Cfg.bool("sharp_surface", true)) { Cfg.put("sharp_surface", if (it) "1" else "0") },
+                ui.noHint())) }
         // ===== الواجهة بشكل نسخة الـ HTML: دوائر علوية + كارت فيديو + كبسولة + شبكة أزرار + زرار الترجمة =====
         var recentDlg: android.app.Dialog? = null
         val recentFile = File(filesDir, "recent.json")
