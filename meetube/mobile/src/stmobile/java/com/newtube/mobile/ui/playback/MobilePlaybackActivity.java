@@ -5843,6 +5843,113 @@ public class MobilePlaybackActivity extends MobileActivity
         container.addView(row);
     }
 
+    // ---------------------------------------------------------------------------------
+    // JOYBOY(v958): Joyboy's buttons on this player open their menus in MeeTube's own sheet
+    // (same BottomSheetDialog + handle + 48dp rows + showPlayerSheet: landscape card, bars, glass
+    // pause), not in a window of their own.
+    // ---------------------------------------------------------------------------------
+
+    /** Rows in MeeTube's sheet: a null action makes the row a section header. */
+    public android.app.Dialog joyboyRows(@Nullable CharSequence title, java.util.List<String> labels,
+            java.util.List<Runnable> actions) {
+        BottomSheetDialog sheet = Haptics.watch(new BottomSheetDialog(this));
+        LinearLayout content = createSheetContent();
+        addSheetTitle(content, title);
+        for (int i = 0; i < labels.size(); i++) {
+            Runnable action = i < actions.size() ? actions.get(i) : null;
+            if (action == null) {
+                TextView header = new TextView(this);
+                header.setText(labels.get(i));
+                header.setTextColor(getColorInt(R.color.mobile_color_on_surface_secondary));
+                header.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
+                header.setPadding(dp(20), dp(12), dp(16), dp(4));
+                content.addView(header);
+            } else {
+                addTextRow(content, sheet, labels.get(i), action);
+            }
+        }
+        sheet.setContentView(sheetRoot(content));
+        showPlayerSheet(sheet);
+        return sheet;
+    }
+
+    /** Ready-made views (sliders, chips, text) in MeeTube's sheet; their text takes the sheet's colors. */
+    public android.app.Dialog joyboySheet(@Nullable CharSequence title, java.util.List<View> views) {
+        BottomSheetDialog sheet = Haptics.watch(new BottomSheetDialog(this));
+        LinearLayout content = createSheetContent();
+        addSheetTitle(content, title);
+        for (View view : views) {
+            if (view.getParent() instanceof ViewGroup) {
+                ((ViewGroup) view.getParent()).removeView(view);
+            }
+            restyleForSheet(view);
+            ViewGroup.LayoutParams lp = view.getLayoutParams();
+            LinearLayout.LayoutParams out = new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+            if (lp instanceof ViewGroup.MarginLayoutParams) {
+                ViewGroup.MarginLayoutParams m = (ViewGroup.MarginLayoutParams) lp;
+                out.setMargins(Math.max(m.leftMargin, dp(16)), m.topMargin, Math.max(m.rightMargin, dp(16)), m.bottomMargin);
+            } else {
+                out.setMargins(dp(16), 0, dp(16), 0);
+            }
+            content.addView(view, out);
+        }
+        sheet.setContentView(sheetRoot(content));
+        showPlayerSheet(sheet);
+        return sheet;
+    }
+
+    private void addSheetTitle(LinearLayout content, @Nullable CharSequence title) {
+        if (title == null || title.length() == 0) {
+            return;
+        }
+        TextView t = new TextView(this);
+        t.setText(title);
+        t.setTextColor(getColorInt(R.color.mobile_color_on_surface));
+        t.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16);
+        t.setTypeface(t.getTypeface(), android.graphics.Typeface.BOLD);
+        t.setPadding(dp(20), dp(4), dp(16), dp(8));
+        content.addView(t);
+    }
+
+    /** A text-only gear-sheet row (addMenuRow's anatomy without the icon). */
+    private void addTextRow(LinearLayout container, BottomSheetDialog sheet, CharSequence text, Runnable action) {
+        TextView row = new TextView(this);
+        row.setText(text);
+        row.setTextColor(getColorInt(R.color.mobile_color_on_surface));
+        row.setTextSize(TypedValue.COMPLEX_UNIT_SP, 15);
+        row.setGravity(Gravity.CENTER_VERTICAL | Gravity.START);
+        row.setClickable(true);
+        row.setFocusable(true);
+        row.setBackgroundResource(resolveSelectableItemBackground());
+        row.setPadding(dp(20), dp(13), dp(16), dp(13));
+        row.setLayoutParams(new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
+        row.setOnClickListener(v -> {
+            sheet.dismiss();
+            action.run();
+        });
+        container.addView(row);
+    }
+
+    /** Joyboy's views are white-on-glass; on MeeTube's sheet their text and buttons follow the sheet. */
+    private void restyleForSheet(View view) {
+        if (view instanceof TextView) {
+            TextView tv = (TextView) view;
+            tv.setTextColor(getColorInt(R.color.mobile_color_on_surface));
+            if (tv.hasOnClickListeners()) {
+                tv.setBackgroundResource(resolveSelectableItemBackground());
+                tv.setPadding(dp(12), dp(8), dp(12), dp(8));
+            }
+        }
+        if (view instanceof ViewGroup) {
+            ViewGroup group = (ViewGroup) view;
+            for (int i = 0; i < group.getChildCount(); i++) {
+                restyleForSheet(group.getChildAt(i));
+            }
+        }
+    }
+
     /** NEWTUBE(sheet-landscape): the sheet waiting for what one of its rows opened (handOffSheet). */
     @Nullable private BottomSheetDialog mSheetHandingOff;
 

@@ -87,6 +87,8 @@ object MtBar {
     private var askBtn: TextView? = null
     private var slotV: View? = null
     private var timeBar: View? = null
+    private var scrubL: androidx.media3.ui.TimeBar.OnScrubListener? = null   // (v956) فيلمستريب الميديا/المتصفح
+    private var frames: MtFrames? = null
     private var bottomRowV: View? = null          // (v947) صف الوقت بتاع MeeTube — بيمشي مع شريط التقدم
     private val nativeDup = ArrayList<View>()      // (v947) أزرار MeeTube الأصلية المكرّرة (⏮ ⏯ ⏭ وسط الشاشة + ⛶) — بتتخبّى طول ما شريط Joyboy موجود
     private var seekHook: android.view.ViewTreeObserver.OnPreDrawListener? = null
@@ -116,6 +118,7 @@ object MtBar {
                 refreshBadge()
                 refreshModes()
                 refreshNotice()
+                refreshTrMap()   // (v956)
                 tickCount++
                 if (tickCount % 8 == 0) refreshBatchWarn()
             } catch (_: Throwable) {}
@@ -367,6 +370,10 @@ object MtBar {
         } catch (_: Throwable) {}
         dismissPopup()
         try { timeBar?.translationY = 0f } catch (_: Throwable) {}
+        try { scrubL?.let { (timeBar as? com.newtube.mobile.ui.playback.PlayerTimeBar)?.removeListener(it) } } catch (_: Throwable) {}
+        try { (timeBar as? com.newtube.mobile.ui.playback.PlayerTimeBar)?.setTranslation(0.0, null, null, null, null) } catch (_: Throwable) {}
+        scrubL = null
+        frames?.end(); frames = null
         try { bottomRowV?.translationY = 0f } catch (_: Throwable) {}
         nativeDup.clear(); bottomRowV = null
         try { exitDlg?.dismiss() } catch (_: Throwable) {}
@@ -521,6 +528,7 @@ object MtBar {
             val id = a.resources.getIdentifier("mobile_player_time_bar", "id", a.packageName)
             timeBar = if (id != 0) a.findViewById(id) else null
         } catch (_: Throwable) { timeBar = null }
+        hookFilmstrip(a)
         // (v947) أزرار MeeTube الأصلية اللي Joyboy عنده بدايلها في الصف الرئيسي: ⏮ ⏯ ⏭ (النص) + ⛶ + سهم الأكشنز — بتتخبّى (كانت بتظهر مرتين)
         nativeDup.clear()
         for (n in arrayOf("mobile_player_transport", "mobile_player_fullscreen", "mobile_player_actions_toggle", "mobile_player_cast")) {   // (v954) + قفل MeeTube الكبير (مكرّر مع 🔓 اللي في الصف الرئيسي) + الكاست   // (v949) + زرار CC بتاع MeeTube (Joyboy عنده CC في صف الدواير بيعمل نفس الشغلة)
@@ -536,6 +544,43 @@ object MtBar {
         val l = android.view.ViewTreeObserver.OnPreDrawListener { hideNativeDup(); alignSeek(); placeTop(); true }
         seekHook = l
         try { root.viewTreeObserver.addOnPreDrawListener(l) } catch (_: Throwable) {}
+    }
+
+    /**
+     * (v956) الفيلمستريب (الصور المصغرة وقت سحب الشريط) كان بيشتغل ليوتيوب بس (storyboard). للميديا والمتصفح مفيش storyboard،
+     * فبنوصّل مصدر إطارات بيقطّع من الملف/الرابط نفسه (MtFrames). ودوسة على الشريط بتنقل مباشرة (PlayerTimeBar.setTapToSeek).
+     */
+    private fun hookFilmstrip(a: Activity) {
+        try {
+            val tb = timeBar as? com.newtube.mobile.ui.playback.PlayerTimeBar ?: return
+            scrubL?.let { try { tb.removeListener(it) } catch (_: Throwable) {} }
+            scrubL = null
+            frames?.end(); frames = null
+            tb.setTapToSeek(true)
+            val fid = a.resources.getIdentifier("mobile_player_seek_filmstrip", "id", a.packageName)
+            val fs = if (fid != 0) a.findViewById<com.newtube.mobile.ui.playback.SeekFilmstrip>(fid) else null
+            val s = MtTranslate.srcOrNull()
+            if (fs == null || !MtFrames.usable(s)) { fs?.setFrameSource(null); return }
+            val fr = MtFrames(a, fs, s!!, MtTranslate.srcHeaders()) { player?.duration?.takeIf { it > 0 } ?: 0L }
+            frames = fr
+            fs.setFrameSource(fr)
+            val l = object : androidx.media3.ui.TimeBar.OnScrubListener {
+                override fun onScrubStart(timeBar: androidx.media3.ui.TimeBar, position: Long) { fr.begin(position) }
+                override fun onScrubMove(timeBar: androidx.media3.ui.TimeBar, position: Long) { fr.center(position) }
+                override fun onScrubStop(timeBar: androidx.media3.ui.TimeBar, position: Long, canceled: Boolean) { fr.end() }
+            }
+            scrubL = l
+            tb.addListener(l)
+        } catch (t: Throwable) { LogStore.err("MtBar:filmstrip", t) }
+    }
+
+    /** (v956) نقط/مجالات الأجزاء المترجمة على شريط MeeTube (أخضر = مترجم · كهرماني = هيتغيّر · أزرق = بيتنقّح) */
+    private fun refreshTrMap() {
+        val tb = timeBar as? com.newtube.mobile.ui.playback.PlayerTimeBar ?: return
+        val sg = MtTranslate.trSegs()
+        if (sg == null) { tb.setTranslation(0.0, null, null, null, null); return }
+        val dur = MtTranslate.trDurSec().takeIf { it > 0 } ?: ((player?.duration ?: 0L) / 1000.0)
+        tb.setTranslation(dur, sg[0].map { it }, sg[1].map { it }, sg[2].map { it }, null)
     }
 
     /** (v947) اخفي الأزرار الأصلية المكرّرة (GONE عشان ما تاخدش لمس ولا مساحة)؛ بتتنده كل فريم بس بتغيّر لو MeeTube رجّعها */
@@ -828,8 +873,8 @@ object MtBar {
                 }
             }
         }
-        // من اليمين: ☰ 🧰 ☑ 📃 CC 💬 ⏱▾ 🔤▾ 📝 📜 🔂
-        row.addView(circ("☰", 14f) { v -> MtTranslate.showMenu(v) })   // (v949) منبثقة جنب ☰
+        // (v956) من اليمين: 🧰 ☑ 💬 ⏱▾ 🔤▾ 📝 📜
+        // ☰ اتشال (قايمته كلها موجودة في 🧰/⏱/🔤/زرار الترجمة)، 📃 الطابور و🔂 التكرار اتشالوا (عند MeeTube: ⚙ ← المزيد)
         row.addView(circ("🧰", 14f) { v -> toolboxMenu(a, v) })
         // (v946) ☑/⬜ اسألني عند الخروج: أكمّل الترجمة في الخلفية؟ (نفس مفتاح ask_bg_exit في الإعدادات)
         val askV = circ(if (askOn()) "☑" else "⬜", 14f) {
@@ -840,7 +885,6 @@ object MtBar {
         }
         askBtn = askV
         row.addView(askV)
-        row.addView(circ("📃", 12f) { PlayQueueUi.show(a) })
         // (v954) HD · 🎙 · 🧑 اتشالوا (مش محتاجينهم) — الجودة والصوت جوه 🧰 والإعدادات
         // (v955) CC اتشال — زرار MeeTube الأصلي بيعمل نفس الشغلة
         val dualV = circ("💬", 12f) { MtTranslate.cycleDual(); refreshModes() }
@@ -850,9 +894,7 @@ object MtBar {
         row.addView(chev("🔤 ▾") { v -> textMenu(a, v) })
         row.addView(circ("📝", 12f) { MtTranslate.searchSentences() })
         row.addView(circ("📜", 12f) { showLog(a) })
-        val loopV = circ("🔂", 12f) { loopCycle(a); refreshModes() }
-        loopBtn = loopV
-        row.addView(loopV)
+        loopBtn = null
         return HorizontalScrollView(a).apply {
             tag = TAG_TOOLS
             isHorizontalScrollBarEnabled = false
@@ -877,13 +919,13 @@ object MtBar {
         }
         trChipLast = ""
         trChip = u.fsBtn("▶ ترجمة") {
-            if (MtTranslate.isTranslating()) MtTranslate.translateMenu() else MtTranslate.toggle()
+            if (MtTranslate.isTranslating()) MtTranslate.translateMenu(it) else MtTranslate.toggle()
         }.apply {
             background = u.box(0xFFE53935.toInt(), 0x33FFFFFF, 12)
             layoutParams = lp(-2)
         }
         row.addView(trChip)
-        row.addView(u.fsCircle("⚙") { MtTranslate.translateMenu() }.apply {
+        row.addView(u.fsCircle("⚙") { MtTranslate.translateMenu(trChip) }.apply {
             textSize = 14f
             background = u.box(0xE0374151.toInt(), 0x33FFFFFF, 12)
             layoutParams = lp(dp(a, 38))
@@ -1161,6 +1203,21 @@ object MtBar {
     private var popup: android.widget.PopupWindow? = null
     private var popupOwner: View? = null
 
+    /** (v958) قوايم/لوحات أزرار Joyboy بتفتح في نافذة MeeTube الأصلية (BottomSheetDialog بتاعتها) لو المشغّل MeeTube؛ null = مش MeeTube (تلفزيون/ريموت) فنرجع للقديم */
+    internal fun meeRows(a: Activity, title: String, items: List<Pair<String, (() -> Unit)?>>): android.app.Dialog? {
+        val h = a as? com.newtube.mobile.ui.playback.MobilePlaybackActivity ?: return null
+        return try {
+            val acts = ArrayList<Runnable?>()
+            for (it in items) { val f = it.second; acts.add(if (f == null) null else Runnable { f() }) }
+            h.joyboyRows(title, items.map { it.first }, acts)
+        } catch (t: Throwable) { LogStore.err("MtBar:meeRows", t); null }
+    }
+
+    internal fun meeViews(a: Activity, title: String, views: List<View>): android.app.Dialog? {
+        val h = a as? com.newtube.mobile.ui.playback.MobilePlaybackActivity ?: return null
+        return try { h.joyboySheet(title, views) } catch (t: Throwable) { LogStore.err("MtBar:meeViews", t); null }
+    }
+
     private fun dismissPopup() {
         try { popup?.dismiss() } catch (_: Throwable) {}
         popup = null
@@ -1172,6 +1229,7 @@ object MtBar {
         val had = popupOwner === anchor
         dismissPopup()
         if (had) return
+        if (meeViews(a, "", views) != null) return   // (v958) نافذة MeeTube الأصلية
         val col = LinearLayout(a).apply {
             orientation = LinearLayout.VERTICAL
             layoutDirection = View.LAYOUT_DIRECTION_RTL
@@ -1223,7 +1281,8 @@ object MtBar {
         } catch (_: Throwable) {}
     }
 
-    private fun popupRows(a: Activity, anchor: View, above: Boolean, items: List<Pair<String, () -> Unit>>) {
+    private fun popupRows(a: Activity, anchor: View, above: Boolean, items: List<Pair<String, () -> Unit>>, title: String = "") {
+        if (meeRows(a, title, items.map { Pair<String, (() -> Unit)?>(it.first, it.second) }) != null) return   // (v958) نافذة MeeTube الأصلية
         val u = uiHelper ?: return
         val views = ArrayList<View>()
         for ((t, f) in items) {
@@ -1242,7 +1301,7 @@ object MtBar {
 
     /** (v949) قايمة صفوف: منبثقة لو معاها زرار، وإلا شيت زي الأول (للتلفزيون/الريموت) */
     private fun rowsMenu(a: Activity, anchor: View?, above: Boolean, title: String, items: List<Pair<String, () -> Unit>>) {
-        if (anchor != null) popupRows(a, anchor, above, items) else sheetRows(a, title, items)
+        if (anchor != null) popupRows(a, anchor, above, items, title) else sheetRows(a, title, items)
     }
 
     /** (v949) لوحة فيها عناصر (سلايدر/شيبس): منبثقة جنب الزرار لو فيه زرار، وإلا شيت */
@@ -1302,8 +1361,6 @@ object MtBar {
 
     private fun toolboxMenu(a: Activity, anchor: View? = null) {
         val items: List<Pair<String, () -> Unit>> = listOf(
-            "📄 تصدير الترجمة (.srt)" to { exportSub(a) },
-            "😴 مؤقت النوم" to { sleepMenu(a, anchor, false) },
             "👁 لقطة بصرية (ترجمة الفريم)" to { visualSnap(a) },
             "📸 لقطة فريم (PNG)" to { snapFrame(a) },
             "⬇ حمّل الفيديو" to { MtTranslate.downloadCur() },
@@ -1314,10 +1371,7 @@ object MtBar {
             "🎞 عمل GIF" to { withSrc(a) { ToolsUi(a, uiHelper!!, Themes.current()).gif(it) } },
             "📦 ضغط / تغيير الدقة" to { withSrc(a) { ToolsUi(a, uiHelper!!, Themes.current()).compress(it) } },
             "🎬 ترجمة ثابتة (هارد ساب)" to { withSrc(a) { ToolsUi(a, uiHelper!!, Themes.current()).hardsub(it) } },
-            "🎧 تحويل لصوت" to { withSrc(a) { ToolsUi(a, uiHelper!!, Themes.current()).audio(it) } },
-            "⚙ إعدادات محرك الترجمة" to { MeeTubeLink.openSettings(a, "tr_engine") },
-            ("📹 تسجيل حركة المشغّل: " + (if (com.newtube.mobile.ui.common.PlayerTrace.isEnabled()) "شغّال ✅ (دوسة = إيقاف)" else "مقفول")) to { toggleTrace(a) },
-            "📤 مشاركة لوج الحركة" to { com.newtube.mobile.ui.common.PlayerTrace.shareLatest(a) }
+            "🎧 تحويل لصوت" to { withSrc(a) { ToolsUi(a, uiHelper!!, Themes.current()).audio(it) } }
         )
         if (anchor != null) popupRows(a, anchor, false, items) else sheetRows(a, "🧰 أدوات", items)
     }
@@ -1325,7 +1379,6 @@ object MtBar {
     private fun textMenu(a: Activity, anchor: View? = null) {
         val items: List<Pair<String, () -> Unit>> = listOf(
             "🎨 ستايل السبتايتل" to { MtTranslate.showStyle() },
-            "⏩ سرعة التشغيل" to { speedPanel(a, anchor, false) },
             "🔠 خط أكبر" to { bumpSubScale(a, 10) },
             "🔡 خط أصغر" to { bumpSubScale(a, -10) }
         )
@@ -1618,7 +1671,7 @@ object MtBar {
         val tv = u.text(txt, 11f, Color.WHITE, false).apply {
             typeface = Typeface.MONOSPACE
         }
-        u.sheet(a, "📋 اللوج", listOf(tv))
+        if (meeViews(a, "📋 اللوج", listOf(tv)) == null) u.sheet(a, "📋 اللوج", listOf(tv), false, {}, 0.6f).show()   // (v956) كان بيبني الشيت من غير show() فالزرار مكانش بيفتح حاجة
     }
 
     fun showChars(a: Activity) {

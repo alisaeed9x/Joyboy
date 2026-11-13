@@ -309,6 +309,25 @@ object MtTranslate : JoyboyPlayerHost.Provider {
         setOnClickListener { click() }
     }
 
+    // (v956) خريطة الترجمة لشريط MeeTube (نقط/مجالات: مترجم · هيتغيّر · بيتنقّح) — نفس كاش Player: بتتحسب بس لما الجمل تتغيّر
+    private var segSubsRef: Any? = null
+    private var segPendN = -1
+    private var segCov: List<DoubleArray> = emptyList()
+    private var segPend: List<DoubleArray> = emptyList()
+
+    /** [cov, pend, refine] بالثواني، أو null لو مفيش محرك */
+    internal fun trSegs(): Array<List<DoubleArray>>? {
+        val e = eng ?: return null
+        return try {
+            val sr: Any = e.subs; val pn = e.pendingCount()
+            if (sr !== segSubsRef || pn != segPendN) { segSubsRef = sr; segPendN = pn; segCov = e.coverageSegs(); segPend = e.pendingSegs() }
+            arrayOf(segCov, segPend, e.refiningSegs)
+        } catch (_: Throwable) { null }
+    }
+    internal fun trDurSec(): Double = durSec
+    internal fun srcOrNull(): String? = localUri()
+    internal fun srcHeaders(): Map<String, String> = try { info?.headers() ?: emptyMap() } catch (_: Throwable) { emptyMap() }
+
     private fun localUri(): String? = try { info?.localUri()?.takeIf { it.isNotBlank() } } catch (_: Throwable) { null }
     /** (v923) مفتاح الفيديو الشغّال: معرّف يوتيوب (11 حرف) أو «L:<uri>» لملف/لينك مباشر */
     private fun curId(): String? = localUri()?.let { "L:$it" } ?: try { info?.videoId()?.takeIf { it.length == 11 } } catch (_: Throwable) { null }
@@ -880,6 +899,7 @@ object MtTranslate : JoyboyPlayerHost.Provider {
 
     /** (v942) صفوف شيت: Pair(العنوان، الفعل) — فعل null = عنوان قسم مش clickable */
     private fun openSheet(a: Activity, title: String, items: List<Pair<String, (() -> Unit)?>>) {
+        if (MtBar.meeRows(a, title, items) != null) return   // (v958) نافذة MeeTube الأصلية
         val views = ArrayList<View>()
         val u = Ui(a, Themes.current())
         var d: android.app.Dialog? = null
@@ -890,14 +910,15 @@ object MtTranslate : JoyboyPlayerHost.Provider {
                 views.add(u.button(label) { d?.dismiss(); f() })
             }
         }
-        d = u.sheet(a, title, views)
+        d = u.sheet(a, title, views, false, {}, 0.6f)   // (v956) frac: في اللاندسكيب كانت بتفتح صفحة كاملة
         d.show()
     }
 
     /** (v942) شيت من Views جاهزة (نصوص/أزرار) */
     private fun openSheetViews(a: Activity, title: String, views: List<View>) {
+        if (MtBar.meeViews(a, title, views) != null) return   // (v958)
         val u = Ui(a, Themes.current())
-        val d = u.sheet(a, title, views)
+        val d = u.sheet(a, title, views, false, {}, 0.6f)   // (v956)
         d.show()
     }
 
@@ -907,7 +928,7 @@ object MtTranslate : JoyboyPlayerHost.Provider {
         val items = ArrayList<Pair<String, (() -> Unit)?>>()
         fun m(label: String, f: () -> Unit) { items.add(Pair(label, f)) }
         m((if (on) "⏹ وقّف الترجمة" else "🌐 ابدأ الترجمة")) { toggle() }
-        m("⚙ نظام الترجمة (جيميناي / وشبر / تفريغ…)") { translateMenu() }
+        m("⚙ نظام الترجمة (جيميناي / وشبر / تفريغ…)") { translateMenu(anchor) }
         m(("💬 وضع الترجمة: " + (dualShort[curDual()] ?: "فردي") + "  (اضغط للتبديل)")) { cycleDual() }
         m("📝 قايمة الجمل") { showSentences() }
         m("🔎 ابحث في الجمل") { searchSentences() }
@@ -945,7 +966,7 @@ object MtTranslate : JoyboyPlayerHost.Provider {
     internal fun subsNow(): List<Sub> = try { eng?.subs ?: sideSubs ?: emptyList() } catch (_: Throwable) { emptyList() }
 
     /** (v942) قايمة نظام الترجمة — نفس بنود Player.translateMenu بس bottom-sheet: جيميناي ٧٥/٢٥ مقابل الأدق، وشبر أوفلاين، تفريغ بس، إيقاف/كمّل، إعادة ترجمة، تقدم الباتشات، تغيير النظام */
-    fun translateMenu() {
+    fun translateMenu(anchor: View? = null) {   // (v956) anchor ≠ null ← قايمة منبثقة صغيرة جنب الزرار بدل شيت/صفحة كاملة
         val a = act ?: return
         val items = ArrayList<Pair<String, (() -> Unit)?>>()
         fun m(label: String, f: () -> Unit) { items.add(Pair(label, f)) }
@@ -991,9 +1012,17 @@ object MtTranslate : JoyboyPlayerHost.Provider {
         h("⚙ الإعدادات")
         m("🔀 غيّر نظام الترجمة (إيقاف + اختيار)") {
             stopEngine(); sv?.show(null); refreshBtn()
-            translateMenu()
+            translateMenu(anchor)
         }
         m("⚙ إعدادات الترجمة") { MeeTubeLink.openSettings(a, "tr_engine") }
+        if (anchor != null && MtBar.meeRows(a, "⚙ نظام الترجمة", items) != null) return   // (v958) نافذة MeeTube الأصلية (بالعناوين)
+        if (anchor != null) {
+            // (v956) منبثقة صغيرة: العناوين بتتشال (الحالة الحالية بتبان في شريحة الترجمة)، وبيفضل ✓ على الاختيار الحالي
+            val rows = ArrayList<Pair<String, () -> Unit>>()
+            for (pr in items) { val f = pr.second; if (f != null) rows.add(Pair(pr.first, f)) }
+            MtBar.popupMenu(a, anchor, true, rows)
+            return
+        }
         openSheet(a, "⚙ نظام الترجمة", items)
     }
 
