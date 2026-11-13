@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- MEETUBE(loader): Liquid ring, a rotating iridescent glass ring (liquid glass pack). Picked in Settings > Customization (Loader). VectorDrawable has no
+     blur, so a glow is a faint wider stroke underneath. -->
+<animated-vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt">
+    <aapt:attr name="android:drawable">
+        <vector
+            android:width="24dp"
+            android:height="24dp"
+            android:viewportWidth="256"
+            android:viewportHeight="256">
+            <path android:pathData="M128,49 A79,79 0 1,1 128,207 A79,79 0 1,1 128,49" android:strokeColor="#3DFF6B25" android:strokeWidth="23" />
+            <group android:name="spin" android:pivotX="128" android:pivotY="128">
+            <path android:pathData="M128,49 A79,79 0 1,1 128,207 A79,79 0 1,1 128,49" android:strokeColor="#2648DFFF" android:strokeWidth="31" android:strokeLineCap="round" android:trimPathEnd="0.786" />
+            <path android:pathData="M128,49 A79,79 0 1,1 128,207 A79,79 0 1,1 128,49" android:strokeWidth="17" android:strokeLineCap="round" android:trimPathEnd="0.786">
+                <aapt:attr name="android:strokeColor">
+                    <gradient android:type="linear" android:startX="49" android:startY="49" android:endX="207" android:endY="207">
+                        <item android:color="#FAFFFFFF" android:offset="0" />
+                        <item android:color="#FF48DFFF" android:offset="0.22" />
+                        <item android:color="#FFFF4C24" android:offset="0.48" />
+                        <item android:color="#FFFFCF43" android:offset="0.72" />
+                        <item android:color="#FF237BFF" android:offset="1" />
+                    </gradient>
+                </aapt:attr>
+            </path>
+            </group>
+            <group android:name="counter" android:pivotX="128" android:pivotY="128">
+            <path android:pathData="M128,49 A79,79 0 1,1 128,207 A79,79 0 1,1 128,49" android:strokeWidth="3" android:strokeLineCap="round" android:trimPathEnd="0.786">
+                <aapt:attr name="android:strokeColor">
+                    <gradient android:type="linear" android:startX="49" android:startY="49" android:endX="207" android:endY="207">
+                        <item android:color="#E6FFFFFF" android:offset="0" />
+                        <item android:color="#14FFFFFF" android:offset="0.45" />
+                        <item android:color="#A6FFFFFF" android:offset="1" />
+                    </gradient>
+                </aapt:attr>
+            </path>
+            </group>
+            <path android:pathData="M128,70 A58,58 0 1,1 128,186 A58,58 0 1,1 128,70" android:strokeColor="#408DEAFF" android:strokeWidth="2" />
+        </vector>
+    </aapt:attr>
+    <target android:name="spin">
+        <aapt:attr name="android:animation">
+            <objectAnimator android:duration="2200" android:interpolator="@android:interpolator/linear"
+                android:propertyName="rotation" android:repeatCount="infinite"
+                android:valueFrom="0" android:valueTo="360" android:valueType="floatType" />
+        </aapt:attr>
+    </target>
+    <target android:name="counter">
+        <aapt:attr name="android:animation">
+            <objectAnimator android:duration="2200" android:interpolator="@android:interpolator/linear"
+                android:propertyName="rotation" android:repeatCount="infinite"
+                android:valueFrom="0" android:valueTo="-360" android:valueType="floatType" />
+        </aapt:attr>
+    </target>
+</animated-vector>

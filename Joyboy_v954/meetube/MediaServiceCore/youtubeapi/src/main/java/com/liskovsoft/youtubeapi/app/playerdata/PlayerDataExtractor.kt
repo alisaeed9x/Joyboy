@@ -1,0 +1,297 @@
+package com.liskovsoft.youtubeapi.app.playerdata
+
+import com.eclipsesource.v8.V8ScriptExecutionException
+import com.liskovsoft.googlecommon.common.helpers.YouTubeHelper
+import com.liskovsoft.sharedutils.helpers.Helpers
+import com.liskovsoft.youtubeapi.app.nsigsolver.common.YouTubeInfoExtractor
+import com.liskovsoft.youtubeapi.app.nsigsolver.impl.V8ChallengeProvider
+import com.liskovsoft.youtubeapi.app.nsigsolver.provider.ChallengeInput
+import com.liskovsoft.youtubeapi.app.nsigsolver.provider.JsChallengeRequest
+import com.liskovsoft.youtubeapi.app.nsigsolver.provider.JsChallengeType
+import com.liskovsoft.youtubeapi.service.internal.MediaServiceData
+
+internal class PlayerDataExtractor @JvmOverloads constructor(
+    val playerUrl: String,
+    /** NEWTUBE(player-js-gate): told the signatureTimestamp once a not-yet-validated JS is read. */
+    private val onPlayerJsRead: OnPlayerJsRead? = null
+) {
+    private val tag = PlayerDataExtractor::class.java.simpleName
+    private val data
+        get() = MediaServiceData.instance()
+    private var nFuncCode: Boolean = false
+    private var sFuncCode: Boolean = false
+    private var cpnCode: String? = null
+    private var signatureTimestamp: String? = null
+    private val fixedPlayerUrl by lazy {
+        // Those are implements global helper functions. No fix. Fallback to regular.
+        // See https://github.com/yt-dlp/yt-dlp/issues/12398
+        // tv url: https://www.youtube.com/s/player/69b31e11/tv-player-es6-tce.vflset/tv-player-es6-tce.js
+        // web url: https://www.youtube.com/s/player/e12fbea4/player_ias_tce.vflset/en_US/base.js
+        playerUrl
+            //.replace("_tce", "") // global helper functions, web url
+            //.replace("/player_ias.vflset/en_US/base.js", "/tv-player-ias.vflset/tv-player-ias.js") // does not validates cpn
+            //.replace("-es6", "-ias") // es6 no supported
+    }
+
+    init {
+        // On the cold path (new player JS, nothing cached) the two steps below both need the same
+        // ~680 KB player body: checkSigData resolves it through the challenge provider, fetchAllData
+        // re-reads it for the cpn code + signature timestamp. Downloading it twice costs a second
+        // full body under AppServiceIntCached's player lock, which every other /player in the
+        // process is queued behind (~18s on a 300 kbps link). The memo makes one download feed both
+        // and is dropped when this constructor returns - order, synchronicity and the
+        // validate()/persist contract are deliberately untouched (STATUS.md: the once-per-rotation
+        // dummy solve must stay synchronous, firstValidExtractor's validate() depends on it).
+        YouTubeInfoExtractor.withPlayerMemo {
+            // Get the code from the cache
+            restoreAllData()
+
+            if (onPlayerJsRead != null && !(nFuncCode && sFuncCode)) {
+                // NEWTUBE(player-js-gate): a player not validated on this device yet. Read its JS
+                // FIRST and hand over what a /player request carries (the signatureTimestamp and
+                // the cpn code), then validate it exactly as below: the same solve on the same
+                // memo'd body, the same second read when the first found nothing, the same persist.
+                // Only the order moves; this constructor still returns validated or not, as before.
+                fetchAllData()
+                signatureTimestamp?.let { onPlayerJsRead.onRead(it, cpnCode) }
+                checkSigData()
+                checkCpnData()
+
+                if (cpnCode == null || signatureTimestamp == null) {
+                    fetchAllData()
+                    checkCpnData()
+                }
+                persistAllData()
+            } else {
+                checkSigData()
+                checkCpnData()
+
+                if (cpnCode == null || signatureTimestamp == null) {
+                    fetchAllData()
+                    checkCpnData()
+                    persistAllData()
+                }
+            }
+        }
+
+        // CPN validation also starts a short-lived J2V8 runtime. Starting the much heavier
+        // challenge-provider warmup before that validation made both runtimes contend during the
+        // first signed-in request, delaying /player even after an obsolete tap was canceled.
+        // Schedule this last so the challenge runtime remains hot for the upcoming format decipher.
+        warmupSigRuntimeAsync()
+    }
+
+    fun extractNSig(nParam: String): String? {
+        return bulkSigExtract(listOf(nParam), null).first?.firstOrNull()
+    }
+
+    fun extractSig(sParams: List<String?>): List<String?>? {
+        return bulkSigExtract(null, sParams).second
+    }
+
+    fun bulkSigExtract(nParams: List<String?>?, sParams: List<String?>?): Pair<List<String?>?, List<String?>?> {
+        if (Helpers.allNulls(nParams, sParams)) {
+            return Pair(null, null)
+        }
+
+        val response = bulkSigExtractReal(nParams, sParams)
+
+        return Pair(response.first, response.second)
+    }
+
+    /**
+     * "cpn":"KjdxegeSaJXRctIl"
+     */
+    fun createClientPlaybackNonce(): String? {
+        return cpnCode?.let { ClientPlaybackNonceExtractor.createClientPlaybackNonce(it) } ?: YouTubeHelper.generateCPNParameter()
+    }
+
+    /**
+     * "signatureTimestamp":20522
+     */
+    fun getSignatureTimestamp(): String? {
+        return signatureTimestamp
+    }
+
+    fun setSignatureTimestamp(timestamp: String) {
+        signatureTimestamp = timestamp
+    }
+
+    fun validate(): Boolean {
+        // TODO: fix cpn code
+        // return mNFuncCode && mSigFuncCode && mCPNCode != null && mSignatureTimestamp != null
+        return nFuncCode && sFuncCode && signatureTimestamp != null
+    }
+
+    private fun extractNSigReal(nParam: String): String? {
+        return bulkSigExtractReal(listOf(nParam), null).first?.firstOrNull()
+    }
+
+    private fun extractSigReal(sParam: List<String>): List<String?>? {
+        return bulkSigExtractReal(null, sParam).second
+    }
+
+    private fun bulkSigExtractReal(nParams: List<String?>?, sParams: List<String?>?): Pair<List<String?>?, List<String?>?> {
+        if (Helpers.allNulls(nParams, sParams)) {
+            return Pair(null, null)
+        }
+
+        var nProcessed: List<String?>? = null
+        var sProcessed: List<String?>? = null
+
+        val nRequest = nParams?.takeIf { nFuncCode }?.filterNotNull()?.takeIf { it.isNotEmpty() }?.distinct()?.let {
+            JsChallengeRequest(JsChallengeType.N, ChallengeInput(fixedPlayerUrl, it))
+        }
+
+        val sRequest = sParams?.takeIf { sFuncCode }?.filterNotNull()?.takeIf { it.isNotEmpty() }?.distinct()?.let {
+            JsChallengeRequest(JsChallengeType.SIG, ChallengeInput(fixedPlayerUrl, it))
+        }
+
+        val result = V8ChallengeProvider.bulkSolve(listOfNotNull(nRequest, sRequest))
+
+        for (item in result) {
+            when (item.response?.type) {
+                JsChallengeType.N ->
+                    nProcessed = nParams?.map { item.response.output.results[it] }
+                JsChallengeType.SIG ->
+                    sProcessed = sParams?.map { item.response.output.results[it] }
+                else -> {}
+            }
+        }
+
+        return Pair(nProcessed, sProcessed)
+    }
+
+    private fun loadPlayer(): String? {
+        return YouTubeInfoExtractor.loadPlayerSilent(fixedPlayerUrl)
+    }
+
+    private fun fetchAllData() {
+        val jsCode = loadPlayer()
+
+        cpnCode = jsCode?.let { ClientPlaybackNonceExtractor.extractClientPlaybackNonceCode(it) }
+        signatureTimestamp = jsCode?.let { CommonExtractor.extractSignatureTimestamp(it) }
+    }
+
+    private fun persistAllData() {
+        if (validate()) {
+            data.playerExtractorCache = PlayerExtractorCache(playerUrl, cpnCode, signatureTimestamp)
+        }
+    }
+
+    private fun restoreAllData() {
+        val playerCache = data.playerExtractorCache
+
+        if (playerCache?.playerUrl == playerUrl) {
+            cpnCode = playerCache.cpnCode
+            signatureTimestamp = playerCache.signatureTimestamp
+            nFuncCode = true
+            sFuncCode = true
+        }
+    }
+
+    private fun checkCpnData() {
+        cpnCode?.let {
+            try {
+                val result = createClientPlaybackNonce()
+                if (result == null)
+                    cpnCode = null
+            } catch (error: V8ScriptExecutionException) {
+                cpnCode = null
+            }
+        }
+    }
+
+    private fun checkSigData() {
+        if (nFuncCode && sFuncCode) {
+            return
+        }
+
+        try {
+            val nParam = CHECK_N
+            val sigParam = CHECK_SIG
+            val result = V8ChallengeProvider.bulkSolve(
+                listOf(
+                    JsChallengeRequest(JsChallengeType.N, ChallengeInput(fixedPlayerUrl, listOf(nParam))),
+                    JsChallengeRequest(JsChallengeType.SIG, ChallengeInput(fixedPlayerUrl, listOf(sigParam))),
+                ))
+
+            for (item in result) {
+                when (item.response?.type) {
+                    JsChallengeType.N ->
+                        if (item.response.output.results[nParam]?.let { it != nParam } ?: false)
+                            nFuncCode = true
+                    JsChallengeType.SIG ->
+                        if (item.response.output.results[sigParam]?.let { it != sigParam } ?: false)
+                            sFuncCode = true
+                    else -> {}
+                }
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
+    private fun warmupSigRuntimeAsync() {
+        if (!nFuncCode || !sFuncCode) {
+            return
+        }
+
+        android.util.Log.d("NetPath", "v8-warmup scheduled")
+        Thread({
+            val startMs = android.os.SystemClock.elapsedRealtime()
+            android.util.Log.d("NetPath", "v8-warmup start")
+            try {
+                // NEWTUBE(v8-memo): with the runtime, stage this player's code in it, evaluate it
+                // into the memo and cross-check it against today's path on checkSigData's fixed
+                // challenges, so later signature/n solves are hits instead of 206-240 ms of player
+                // re-evaluation (Pixel 9, netbench ttff-analysis.md 3.1).
+                // NEWTUBE(v8-priority): one step at a time, and a solve always goes first: it waits
+                // at most for the step in flight, and the memo steps (one player evaluation each)
+                // wait for the first solve after this began or MemoWarmup.GRACE_MS. So "complete"
+                // below can come seconds later; each step has its own v8-queue line.
+                V8ChallengeProvider.warmup(fixedPlayerUrl, listOf(
+                    JsChallengeRequest(JsChallengeType.N, ChallengeInput(fixedPlayerUrl, listOf(CHECK_N))),
+                    JsChallengeRequest(JsChallengeType.SIG, ChallengeInput(fixedPlayerUrl, listOf(CHECK_SIG)))
+                ))
+                android.util.Log.d(
+                    "NetPath",
+                    "v8-warmup complete ms=${android.os.SystemClock.elapsedRealtime() - startMs}"
+                )
+            } catch (e: Throwable) {
+                android.util.Log.e(
+                    "NetPath",
+                    "v8-warmup failed ms=${android.os.SystemClock.elapsedRealtime() - startMs} " +
+                            "${e.javaClass.simpleName}: ${e.message}"
+                )
+                android.util.Log.e(tag, "V8 warmup failed: ${e.message}")
+            }
+        }, "V8WarmUp").start()
+    }
+
+    /** NEWTUBE(player-js-gate): see PlayerJsReadAhead. */
+    fun interface OnPlayerJsRead {
+        fun onRead(signatureTimestamp: String, cpnCode: String?)
+    }
+
+    companion object {
+        // checkSigData's fixed challenges; the v8-memo guard in warmupSigRuntimeAsync reuses them.
+        private const val CHECK_N = "5cNpZqIJ7ixNqU68Y7S"
+        private const val CHECK_SIG = "NJAJEij0EwRgIhAI0KExTgjfPk-MPM9MAdzyyPRt=BM8-XO5tm5hlMCSVpAiEAv7eP3CURqZNSPow8BXXAoazVoXgeMP7gH9BdylHCwgw=gwzz"
+
+        /**
+         * NEWTUBE(player-js-gate): a cpn from a read-ahead cpn code, the way
+         * [createClientPlaybackNonce] makes one from the extractor's own (the random generator
+         * when there is no code or it does not run).
+         */
+        @JvmStatic
+        fun clientPlaybackNonceFromCode(cpnCode: String?): String? {
+            val fromCode = try {
+                cpnCode?.let { ClientPlaybackNonceExtractor.createClientPlaybackNonce(it) }
+            } catch (e: Exception) {
+                null
+            }
+            return fromCode ?: YouTubeHelper.generateCPNParameter()
+        }
+    }
+}

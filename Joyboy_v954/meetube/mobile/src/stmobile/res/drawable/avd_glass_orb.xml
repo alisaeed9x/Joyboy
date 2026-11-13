@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- MEETUBE(loader): Glass orb, a pulsing glossy orb with a moving highlight (liquid glass pack). Picked in Settings > Customization (Loader). VectorDrawable has no
+     blur, so a glow is a faint wider stroke underneath. -->
+<animated-vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt">
+    <aapt:attr name="android:drawable">
+        <vector
+            android:width="24dp"
+            android:height="24dp"
+            android:viewportWidth="256"
+            android:viewportHeight="256">
+            <group android:name="pulse" android:pivotX="128" android:pivotY="128">
+            <path android:pathData="M128,51 A77,77 0 1,1 128,205 A77,77 0 1,1 128,51" android:strokeColor="#2E42DFFF" android:strokeWidth="19" />
+            <path android:pathData="M128,51 A77,77 0 1,1 128,205 A77,77 0 1,1 128,51" android:strokeWidth="5">
+                <aapt:attr name="android:fillColor">
+                    <gradient android:type="radial" android:centerX="97.2" android:centerY="88" android:gradientRadius="120">
+                        <item android:color="#F2FFFFFF" android:offset="0" />
+                        <item android:color="#BF8CECFF" android:offset="0.16" />
+                        <item android:color="#E6FF5B24" android:offset="0.43" />
+                        <item android:color="#FF071323" android:offset="0.68" />
+                        <item android:color="#FF166DFF" android:offset="0.86" />
+                        <item android:color="#CCFFFFFF" android:offset="1" />
+                    </gradient>
+                </aapt:attr>
+                <aapt:attr name="android:strokeColor">
+                    <gradient android:type="linear" android:startX="51" android:startY="51" android:endX="205" android:endY="205">
+                        <item android:color="#FFFFFFFF" android:offset="0" />
+                        <item android:color="#FF42DFFF" android:offset="0.35" />
+                        <item android:color="#FFFF742D" android:offset="0.7" />
+                        <item android:color="#FFFFFFFF" android:offset="1" />
+                    </gradient>
+                </aapt:attr>
+            </path>
+            </group>
+            <group android:name="swirl" android:pivotX="128" android:pivotY="128">
+            <path android:pathData="M78,91 C93,53 157,47 184,83 C149,69 112,91 105,126 C98,158 126,182 164,170 C128,207 69,163 78,91Z" android:fillColor="#38FFFFFF" />
+            </group>
+            <group android:pivotX="101" android:pivotY="82" android:rotation="-35">
+            <path android:pathData="M79,82 A22,10 0 1,0 123,82 A22,10 0 1,0 79,82" android:fillColor="#7AFFFFFF" />
+            </group>
+        </vector>
+    </aapt:attr>
+    <target android:name="pulse">
+        <aapt:attr name="android:animation">
+            <objectAnimator android:duration="1800" android:repeatCount="infinite">
+                <propertyValuesHolder android:propertyName="scaleX">
+                    <keyframe android:fraction="0" android:value="0.935" />
+                    <keyframe android:fraction="0.5" android:value="1.065" />
+                    <keyframe android:fraction="1" android:value="0.935" />
+                </propertyValuesHolder>
+                <propertyValuesHolder android:propertyName="scaleY">
+                    <keyframe android:fraction="0" android:value="0.935" />
+                    <keyframe android:fraction="0.5" android:value="1.065" />
+                    <keyframe android:fraction="1" android:value="0.935" />
+                </propertyValuesHolder>
+            </objectAnimator>
+        </aapt:attr>
+    </target>
+    <target android:name="swirl">
+        <aapt:attr name="android:animation">
+            <objectAnimator android:duration="4000" android:interpolator="@android:interpolator/linear"
+                android:propertyName="rotation" android:repeatCount="infinite"
+                android:valueFrom="0" android:valueTo="360" android:valueType="floatType" />
+        </aapt:attr>
+    </target>
+</animated-vector>

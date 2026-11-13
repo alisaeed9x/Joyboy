@@ -1,0 +1,104 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  MEETUBE(list layout): Up next as cards, when Customization > Video layout is Cards - the full-width
+  thumbnail with the title and "Channel • views • date" under it, like the feeds' cards. Same ids
+  as item_mobile_related_video, so RelatedVideoAdapter binds either.
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:id="@+id/related_root"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:background="?attr/selectableItemBackground"
+    android:clickable="true"
+    android:focusable="true"
+    android:orientation="vertical"
+    android:paddingHorizontal="@dimen/mobile_watch_content_padding"
+    android:paddingTop="6dp"
+    android:paddingBottom="14dp">
+
+    <androidx.constraintlayout.widget.ConstraintLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content">
+
+        <com.google.android.material.card.MaterialCardView
+            android:layout_width="0dp"
+            android:layout_height="0dp"
+            app:cardBackgroundColor="@color/mobile_color_placeholder"
+            app:cardCornerRadius="@dimen/mobile_card_corner_radius"
+            app:cardElevation="0dp"
+            app:layout_constraintDimensionRatio="16:9"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintTop_toTopOf="parent">
+
+            <!-- MEETUBE(glass): what the badge frosts. -->
+            <com.newtube.mobile.ui.common.GlassSource
+                android:id="@+id/related_thumbnail_glass"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent">
+
+                <ImageView
+                    android:id="@+id/related_thumbnail"
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent"
+                    android:contentDescription="@null"
+                    android:scaleType="centerCrop" />
+
+            </com.newtube.mobile.ui.common.GlassSource>
+
+            <TextView
+                android:id="@+id/related_badge"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="bottom|end"
+                android:layout_margin="6dp"
+                android:background="@drawable/bg_video_badge"
+                android:paddingHorizontal="5dp"
+                android:paddingVertical="2dp"
+                android:textColor="@android:color/white"
+                android:textSize="12sp"
+                android:textStyle="bold"
+                android:visibility="gone"
+                tools:text="12:34" />
+
+            <com.newtube.mobile.ui.common.GlowProgressBar
+                android:id="@+id/related_watch_progress"
+                style="?android:attr/progressBarStyleHorizontal"
+                android:layout_width="match_parent"
+                android:layout_height="3dp"
+                android:layout_gravity="bottom"
+                android:max="100"
+                android:progressBackgroundTint="@color/mobile_color_progress_track"
+                android:progressTint="@color/mobile_color_progress"
+                android:visibility="gone" />
+
+        </com.google.android.material.card.MaterialCardView>
+
+    </androidx.constraintlayout.widget.ConstraintLayout>
+
+    <TextView
+        android:id="@+id/related_title"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="10dp"
+        android:ellipsize="end"
+        android:fontFamily="sans-serif-medium"
+        android:maxLines="2"
+        android:textColor="@color/mobile_color_on_surface"
+        android:textSize="15sp"
+        tools:text="A related video title that can wrap onto two lines" />
+
+    <TextView
+        android:id="@+id/related_subtitle"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="4dp"
+        android:ellipsize="end"
+        android:maxLines="1"
+        android:textColor="@color/mobile_color_on_surface_secondary"
+        android:textSize="13sp"
+        tools:text="Channel name • 1.2M views • 2 days ago" />
+
+</LinearLayout>

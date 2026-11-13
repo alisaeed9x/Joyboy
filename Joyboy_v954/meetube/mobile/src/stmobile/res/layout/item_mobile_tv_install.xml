@@ -1,0 +1,271 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- MEETUBE(tv install): one scrolling Settings row, with a glass card for each step. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:paddingHorizontal="@dimen/mobile_settings_row_inset"
+    android:paddingBottom="24dp">
+
+    <com.google.android.material.chip.ChipGroup
+        android:id="@+id/tv_type"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginBottom="12dp"
+        app:selectionRequired="true"
+        app:singleSelection="true" />
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="@drawable/bg_glass_card"
+        android:orientation="vertical"
+        android:padding="16dp">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+            <TextView
+                android:layout_width="36dp"
+                android:layout_height="36dp"
+                android:background="@drawable/bg_glass_circle"
+                android:gravity="center"
+                android:text="@string/mobile_settings_tv_step_one"
+                android:textColor="@color/mobile_color_on_surface"
+                android:textSize="16sp"
+                android:textStyle="bold" />
+            <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="12dp"
+                android:layout_weight="1"
+                android:accessibilityHeading="true"
+                android:text="@string/mobile_settings_tv_developer"
+                android:textColor="@color/mobile_color_on_surface"
+                android:textSize="17sp"
+                android:textStyle="bold" />
+        </LinearLayout>
+        <TextView
+            android:id="@+id/tv_developer_text"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:lineSpacingExtra="3dp"
+            android:text="@string/mobile_settings_tv_developer_android"
+            android:textColor="@color/mobile_color_on_surface_secondary"
+            android:textSize="14sp" />
+    </LinearLayout>
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="12dp"
+        android:background="@drawable/bg_glass_card"
+        android:orientation="vertical"
+        android:padding="16dp">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+            <TextView
+                android:layout_width="36dp"
+                android:layout_height="36dp"
+                android:background="@drawable/bg_glass_circle"
+                android:gravity="center"
+                android:text="@string/mobile_settings_tv_step_two"
+                android:textColor="@color/mobile_color_on_surface"
+                android:textSize="16sp"
+                android:textStyle="bold" />
+            <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="12dp"
+                android:layout_weight="1"
+                android:accessibilityHeading="true"
+                android:text="@string/mobile_settings_tv_debugging"
+                android:textColor="@color/mobile_color_on_surface"
+                android:textSize="17sp"
+                android:textStyle="bold" />
+        </LinearLayout>
+        <TextView
+            android:id="@+id/tv_debugging_text"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:lineSpacingExtra="3dp"
+            android:text="@string/mobile_settings_tv_debugging_android"
+            android:textColor="@color/mobile_color_on_surface_secondary"
+            android:textSize="14sp" />
+    </LinearLayout>
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="12dp"
+        android:background="@drawable/bg_glass_card"
+        android:orientation="vertical"
+        android:padding="16dp">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+            <TextView
+                android:layout_width="36dp"
+                android:layout_height="36dp"
+                android:background="@drawable/bg_glass_circle"
+                android:gravity="center"
+                android:text="@string/mobile_settings_tv_step_three"
+                android:textColor="@color/mobile_color_on_surface"
+                android:textSize="16sp"
+                android:textStyle="bold" />
+            <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="12dp"
+                android:layout_weight="1"
+                android:accessibilityHeading="true"
+                android:text="@string/mobile_settings_tv_find"
+                android:textColor="@color/mobile_color_on_surface"
+                android:textSize="17sp"
+                android:textStyle="bold" />
+        </LinearLayout>
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:text="@string/mobile_settings_tv_same_wifi"
+            android:textColor="@color/mobile_color_on_surface_secondary"
+            android:textSize="14sp" />
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/tv_search"
+            style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:minHeight="48dp"
+            android:text="@string/mobile_settings_tv_search"
+            android:textAllCaps="false"
+            android:textColor="@color/mobile_color_on_surface"
+            app:cornerRadius="28dp"
+            app:strokeColor="@color/meetube_glass_rim" />
+        <TextView
+            android:id="@+id/tv_search_status"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:accessibilityLiveRegion="polite"
+            android:textColor="@color/mobile_color_on_surface_secondary"
+            android:textSize="12sp"
+            android:visibility="gone" />
+        <com.google.android.material.chip.ChipGroup
+            android:id="@+id/tv_found"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            app:selectionRequired="true"
+            app:singleSelection="true" />
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:labelFor="@id/tv_ip"
+            android:text="@string/mobile_settings_tv_ip"
+            android:textColor="@color/mobile_color_on_surface"
+            android:textSize="14sp" />
+        <EditText
+            android:id="@+id/tv_ip"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:minHeight="48dp"
+            android:hint="@string/mobile_settings_tv_ip_hint"
+            android:imeOptions="actionDone"
+            android:inputType="text"
+            android:maxLength="15"
+            android:singleLine="true"
+            android:textColor="@color/mobile_color_on_surface"
+            android:textColorHint="@color/mobile_color_on_surface_secondary"
+            android:textSize="16sp" />
+    </LinearLayout>
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="12dp"
+        android:background="@drawable/bg_glass_card"
+        android:orientation="vertical"
+        android:padding="16dp">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+            <TextView
+                android:layout_width="36dp"
+                android:layout_height="36dp"
+                android:background="@drawable/bg_glass_circle"
+                android:gravity="center"
+                android:text="@string/mobile_settings_tv_step_four"
+                android:textColor="@color/mobile_color_on_surface"
+                android:textSize="16sp"
+                android:textStyle="bold" />
+            <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="12dp"
+                android:layout_weight="1"
+                android:accessibilityHeading="true"
+                android:text="@string/mobile_settings_tv_install"
+                android:textColor="@color/mobile_color_on_surface"
+                android:textSize="17sp"
+                android:textStyle="bold" />
+        </LinearLayout>
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/tv_install"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:minHeight="48dp"
+            android:text="@string/mobile_settings_tv_install_button"
+            android:textAllCaps="false"
+            android:textColor="@color/mobile_color_on_inverse_surface"
+            app:backgroundTint="@color/mobile_color_inverse_surface"
+            app:cornerRadius="28dp" />
+        <TextView
+            android:id="@+id/tv_install_status"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:accessibilityLiveRegion="polite"
+            android:lineSpacingExtra="3dp"
+            android:textColor="@color/mobile_color_on_surface_secondary"
+            android:textSize="14sp"
+            android:visibility="gone" />
+        <ProgressBar
+            android:id="@+id/tv_install_progress"
+            style="?android:attr/progressBarStyleHorizontal"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:indeterminate="false"
+            android:indeterminateTint="@color/mobile_color_progress"
+            android:max="100"
+            android:progressBackgroundTint="@color/mobile_color_track"
+            android:progressTint="@color/mobile_color_progress"
+            android:visibility="gone" />
+    </LinearLayout>
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="16dp"
+        android:gravity="center"
+        android:text="@string/mobile_settings_tv_footer"
+        android:textColor="@color/mobile_color_on_surface_secondary"
+        android:textSize="12sp" />
+</LinearLayout>

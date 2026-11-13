@@ -1,0 +1,432 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- MEETUBE(watch-look): the compact watch page (the default; Settings > Customization > Watch
+     page): a two-line title, one line of channel and numbers, then avatar, Subscribe and the
+     actions as glass icons on one row, and the comments card showing the top comments one at a
+     time (MobilePlaybackActivity.showNextTopComment). Same ids as include_watch_details_classic. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical">
+
+    <!-- Title and the line under it are one target: both open the description. -->
+    <LinearLayout
+        android:id="@+id/mobile_watch_header"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="?attr/selectableItemBackground"
+        android:clickable="true"
+        android:focusable="true"
+        android:orientation="vertical"
+        android:paddingHorizontal="@dimen/mobile_watch_content_padding"
+        android:paddingTop="10dp"
+        android:paddingBottom="8dp">
+
+        <TextView
+            android:id="@+id/mobile_watch_title"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:contentDescription="@null"
+            android:ellipsize="end"
+            android:fontFamily="sans-serif-medium"
+            android:letterSpacing="-0.01"
+            android:maxLines="2"
+            android:textColor="@color/mobile_color_on_surface"
+            android:textSize="17sp"
+            tools:text="A great video title that may wrap across a couple of lines" />
+
+        <LinearLayout
+            android:id="@+id/mobile_watch_meta_row"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <TextView
+                android:id="@+id/mobile_watch_channel_name"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:ellipsize="end"
+                android:fontFamily="sans-serif-medium"
+                android:maxWidth="140dp"
+                android:maxLines="1"
+                android:textColor="@color/mobile_color_on_surface"
+                android:textSize="13sp"
+                tools:text="Channel name" />
+
+            <TextView
+                android:id="@+id/mobile_watch_subs"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="6dp"
+                android:drawablePadding="6dp"
+                android:drawableStart="@drawable/meta_dot"
+                android:maxLines="1"
+                android:textColor="@color/mobile_color_on_surface_secondary"
+                android:textSize="13sp"
+                android:visibility="gone"
+                tools:text="1.2M subscribers"
+                tools:visibility="visible" />
+
+            <TextView
+                android:id="@+id/mobile_watch_meta"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="6dp"
+                android:drawablePadding="6dp"
+                android:drawableStart="@drawable/meta_dot"
+                android:layout_weight="1"
+                android:ellipsize="end"
+                android:maxLines="1"
+                android:textColor="@color/mobile_color_on_surface_secondary"
+                android:textSize="13sp"
+                tools:text="1.2M views · 3 days ago" />
+
+        </LinearLayout>
+
+    </LinearLayout>
+
+    <TextView
+        android:id="@+id/mobile_watch_description"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:paddingHorizontal="@dimen/mobile_watch_content_padding"
+        android:autoLink="web"
+        android:textColor="@color/mobile_color_on_surface_secondary"
+        android:textColorLink="@color/mobile_color_link"
+        android:textSize="14sp"
+        android:visibility="gone" />
+
+    <!-- Avatar (opens the channel), Subscribe, then the actions as glass icons, pushed to the end;
+         on a narrow screen they scroll under the Subscribe pill instead of squeezing it. -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingStart="@dimen/mobile_watch_content_padding"
+        android:paddingEnd="6dp">
+
+        <FrameLayout
+            android:id="@+id/mobile_watch_channel_row"
+            android:layout_width="44dp"
+            android:layout_height="48dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:clickable="true"
+            android:focusable="true">
+
+            <ImageView
+                android:id="@+id/mobile_watch_avatar"
+                android:layout_width="34dp"
+                android:layout_height="34dp"
+                android:layout_gravity="center_vertical|start"
+                android:contentDescription="@null"
+                android:src="@drawable/ic_watch_channel_placeholder" />
+
+            <com.newtube.mobile.ui.common.LiveRingView
+                android:id="@+id/mobile_watch_avatar_live"
+                android:layout_width="34dp"
+                android:layout_height="34dp"
+                android:layout_gravity="center_vertical|start"
+                android:visibility="gone" />
+
+        </FrameLayout>
+
+        <!-- Subscribe, and the app's mark it turns into while the actions are swiped
+             (MobilePlaybackActivity.morphSubscribe). A TextView, not a MaterialButton: Material
+             re-tints its own background (classic's note). -->
+        <FrameLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content">
+
+            <TextView
+                android:id="@+id/mobile_watch_subscribe"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:background="@drawable/bg_watch_subscribe"
+                android:clickable="true"
+                android:focusable="true"
+                android:fontFamily="sans-serif-medium"
+                android:gravity="center"
+                android:maxLines="1"
+                android:minHeight="44dp"
+                android:paddingHorizontal="14dp"
+                android:text="@string/mobile_watch_subscribe"
+                android:textColor="@color/mobile_color_on_inverse_surface"
+                android:textSize="13sp" />
+
+            <ImageView
+                android:id="@+id/mobile_watch_subscribe_icon"
+                android:layout_width="30dp"
+                android:layout_height="30dp"
+                android:layout_gravity="center"
+                android:alpha="0"
+                android:importantForAccessibility="no"
+                android:src="@drawable/ic_launcher_monochrome" />
+
+        </FrameLayout>
+
+        <com.newtube.mobile.ui.common.ShadeScrollView
+            android:id="@+id/mobile_watch_actions_scroll"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:fadingEdgeLength="32dp"
+            android:fillViewport="true"
+            android:overScrollMode="never"
+            android:requiresFadingEdge="horizontal"
+            android:scrollbars="none">
+
+            <!-- The 6dp gap after Subscribe is padding here, not the scroll's margin: swiped pills
+                 then fade out right at the mark instead of being cut off short of it. Start, not
+                 end: once Subscribe shrinks to the mark the row fits, and end-aligned pills left a
+                 gap between the mark and Like (issue #106); now they follow it in. -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:paddingStart="6dp"
+                android:gravity="start|center_vertical"
+                android:orientation="horizontal">
+
+                <!-- Like | Dislike: one glass pill, the like count beside the thumb. -->
+                <LinearLayout
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:background="@drawable/mobile_watch_pill_bg_touch"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal"
+                    android:padding="0dp">
+
+                    <LinearLayout
+                        android:id="@+id/mobile_watch_like"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:background="@drawable/mobile_watch_segment_ripple"
+                        android:clickable="true"
+                        android:focusable="true"
+                        android:gravity="center_vertical"
+                        android:orientation="horizontal"
+                        android:paddingStart="11dp"
+                        android:paddingEnd="9dp"
+                        android:paddingVertical="14dp">
+
+                        <ImageView
+                            android:id="@+id/mobile_watch_like_icon"
+                            android:layout_width="19dp"
+                            android:layout_height="19dp"
+                            android:contentDescription="@string/mobile_watch_like"
+                            android:src="@drawable/ic_watch_thumb_up_outline" />
+
+                        <TextView
+                            android:id="@+id/mobile_watch_like_count"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginStart="5dp"
+                            android:text="@string/mobile_watch_count_placeholder"
+                            android:textColor="@color/mobile_color_on_surface"
+                            android:textSize="13sp"
+                            tools:text="12K" />
+
+                    </LinearLayout>
+
+                    <View
+                        android:layout_width="1dp"
+                        android:layout_height="16dp"
+                        android:background="@color/mobile_color_divider" />
+
+                    <LinearLayout
+                        android:id="@+id/mobile_watch_dislike"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:background="@drawable/mobile_watch_segment_ripple"
+                        android:clickable="true"
+                        android:focusable="true"
+                        android:gravity="center_vertical"
+                        android:orientation="horizontal"
+                        android:paddingStart="9dp"
+                        android:paddingEnd="11dp"
+                        android:paddingVertical="14dp">
+
+                        <ImageView
+                            android:id="@+id/mobile_watch_dislike_icon"
+                            android:layout_width="19dp"
+                            android:layout_height="19dp"
+                            android:contentDescription="@string/mobile_watch_dislike"
+                            android:src="@drawable/ic_watch_thumb_down_outline" />
+
+                        <TextView
+                            android:id="@+id/mobile_watch_dislike_count"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginStart="5dp"
+                            android:text="@string/mobile_watch_count_placeholder"
+                            android:textColor="@color/mobile_color_on_surface"
+                            android:textSize="13sp" />
+
+                    </LinearLayout>
+
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/mobile_watch_share"
+                    style="@style/MobileWatchIconPill">
+
+                    <ImageView
+                        android:layout_width="19dp"
+                        android:layout_height="19dp"
+                        android:contentDescription="@string/mobile_watch_share"
+                        android:src="@drawable/ic_watch_share" />
+
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/mobile_watch_music"
+                    style="@style/MobileWatchIconPill"
+                    android:visibility="gone">
+
+                    <ImageView
+                        android:layout_width="19dp"
+                        android:layout_height="19dp"
+                        android:contentDescription="@string/mobile_lyrics"
+                        android:src="@drawable/ic_watch_lyrics" />
+
+                </LinearLayout>
+
+                <!-- The label shows only while a download runs (its percent; updateDownloadPill). -->
+                <LinearLayout
+                    android:id="@+id/mobile_watch_download"
+                    style="@style/MobileWatchIconPill">
+
+                    <ImageView
+                        android:id="@+id/mobile_watch_download_icon"
+                        android:layout_width="19dp"
+                        android:layout_height="19dp"
+                        android:contentDescription="@string/dialog_download"
+                        android:src="@drawable/ic_watch_download" />
+
+                    <TextView
+                        android:id="@+id/mobile_watch_download_label"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="5dp"
+                        android:fontFeatureSettings="tnum"
+                        android:text="@string/dialog_download"
+                        android:textColor="@color/mobile_color_on_surface"
+                        android:textSize="13sp"
+                        android:visibility="gone" />
+
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/mobile_watch_save"
+                    style="@style/MobileWatchIconPill">
+
+                    <ImageView
+                        android:id="@+id/mobile_watch_save_icon"
+                        android:layout_width="19dp"
+                        android:layout_height="19dp"
+                        android:contentDescription="@string/mobile_watch_save"
+                        android:src="@drawable/ic_player_playlist_add"
+                        android:tint="@color/mobile_color_on_surface" />
+
+                    <TextView
+                        android:id="@+id/mobile_watch_save_label"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/mobile_watch_save"
+                        android:visibility="gone" />
+
+                </LinearLayout>
+
+            </LinearLayout>
+
+        </com.newtube.mobile.ui.common.ShadeScrollView>
+
+    </LinearLayout>
+
+    <!-- Comments: the count, then one top comment at a time (it changes every few seconds). -->
+    <LinearLayout
+        android:id="@+id/mobile_watch_comments_entry"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginHorizontal="@dimen/mobile_watch_content_padding"
+        android:layout_marginTop="4dp"
+        android:background="@drawable/bg_watch_card"
+        android:clickable="true"
+        android:focusable="true"
+        android:orientation="vertical"
+        android:paddingHorizontal="14dp"
+        android:paddingVertical="11dp"
+        android:visibility="gone"
+        tools:visibility="visible">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:fontFamily="sans-serif-medium"
+                android:text="@string/mobile_comments_entry"
+                android:textColor="@color/mobile_color_on_surface"
+                android:textSize="14sp" />
+
+            <TextView
+                android:id="@+id/mobile_watch_comments_count"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="8dp"
+                android:layout_weight="1"
+                android:fontFeatureSettings="tnum"
+                android:maxLines="1"
+                android:textColor="@color/mobile_color_on_surface_secondary"
+                android:textSize="14sp"
+                tools:text="1.8K" />
+
+            <ImageView
+                android:layout_width="20dp"
+                android:layout_height="20dp"
+                android:contentDescription="@null"
+                android:rotation="270"
+                android:src="@drawable/ic_watch_expand" />
+
+        </LinearLayout>
+
+        <LinearLayout
+            android:id="@+id/mobile_watch_comment_teaser"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:gravity="center_vertical"
+            android:orientation="horizontal"
+            android:visibility="gone"
+            tools:visibility="visible">
+
+            <ImageView
+                android:id="@+id/mobile_watch_comment_avatar"
+                android:layout_width="24dp"
+                android:layout_height="24dp"
+                android:contentDescription="@null"
+                android:src="@drawable/ic_watch_channel_placeholder" />
+
+            <TextView
+                android:id="@+id/mobile_watch_comment_text"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="10dp"
+                android:layout_weight="1"
+                android:ellipsize="end"
+                android:maxLines="2"
+                android:textColor="@color/mobile_color_on_surface"
+                android:textSize="13sp"
+                tools:text="A top comment, two lines at most, and the next one fades in after it." />
+
+        </LinearLayout>
+
+    </LinearLayout>
+
+</LinearLayout>

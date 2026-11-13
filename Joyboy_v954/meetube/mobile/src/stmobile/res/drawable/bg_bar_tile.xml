@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- MEETUBE(bar editor): a tile of the Tabs page's bar stack, and the preview of the bar. -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
+    <solid android:color="@color/mobile_color_card" />
+    <corners android:radius="18dp" />
+</shape>

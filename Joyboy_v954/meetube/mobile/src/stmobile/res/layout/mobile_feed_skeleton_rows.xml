@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- MEETUBE(issue #91): the feed skeleton's ghosts in List layout - item_video_row's shape, swapped
+     in for the cards by MobileBrowseActivity.applyFeedSkeletonShape. -->
+<merge xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <LinearLayout style="@style/MobileSkeletonFeedRow">
+        <View style="@style/MobileSkeletonRelatedThumb" />
+        <LinearLayout style="@style/MobileSkeletonRelatedTextColumn">
+            <View style="@style/MobileSkeletonRelatedLineWide" />
+            <View style="@style/MobileSkeletonRelatedLineNarrow" />
+        </LinearLayout>
+    </LinearLayout>
+
+    <LinearLayout style="@style/MobileSkeletonFeedRow">
+        <View style="@style/MobileSkeletonRelatedThumb" />
+        <LinearLayout style="@style/MobileSkeletonRelatedTextColumn">
+            <View style="@style/MobileSkeletonRelatedLineWide" />
+            <View style="@style/MobileSkeletonRelatedLineNarrow" />
+        </LinearLayout>
+    </LinearLayout>
+
+    <LinearLayout style="@style/MobileSkeletonFeedRow">
+        <View style="@style/MobileSkeletonRelatedThumb" />
+        <LinearLayout style="@style/MobileSkeletonRelatedTextColumn">
+            <View style="@style/MobileSkeletonRelatedLineWide" />
+            <View style="@style/MobileSkeletonRelatedLineNarrow" />
+        </LinearLayout>
+    </LinearLayout>
+
+    <LinearLayout style="@style/MobileSkeletonFeedRow">
+        <View style="@style/MobileSkeletonRelatedThumb" />
+        <LinearLayout style="@style/MobileSkeletonRelatedTextColumn">
+            <View style="@style/MobileSkeletonRelatedLineWide" />
+            <View style="@style/MobileSkeletonRelatedLineNarrow" />
+        </LinearLayout>
+    </LinearLayout>
+
+    <LinearLayout style="@style/MobileSkeletonFeedRow">
+        <View style="@style/MobileSkeletonRelatedThumb" />
+        <LinearLayout style="@style/MobileSkeletonRelatedTextColumn">
+            <View style="@style/MobileSkeletonRelatedLineWide" />
+            <View style="@style/MobileSkeletonRelatedLineNarrow" />
+        </LinearLayout>
+    </LinearLayout>
+
+    <LinearLayout style="@style/MobileSkeletonFeedRow">
+        <View style="@style/MobileSkeletonRelatedThumb" />
+        <LinearLayout style="@style/MobileSkeletonRelatedTextColumn">
+            <View style="@style/MobileSkeletonRelatedLineWide" />
+            <View style="@style/MobileSkeletonRelatedLineNarrow" />
+        </LinearLayout>
+    </LinearLayout>
+
+    <LinearLayout style="@style/MobileSkeletonFeedRow">
+        <View style="@style/MobileSkeletonRelatedThumb" />
+        <LinearLayout style="@style/MobileSkeletonRelatedTextColumn">
+            <View style="@style/MobileSkeletonRelatedLineWide" />
+            <View style="@style/MobileSkeletonRelatedLineNarrow" />
+        </LinearLayout>
+    </LinearLayout>
+
+</merge>

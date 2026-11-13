@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- MEETUBE(loader): the picked loader drawable (Widget.MeeTube.GlassSpinner, Widget.MeeTube.Loader). -->
+    <attr name="meetubeLoader" format="reference" />
+    <!-- MEETUBE(glass): GlassView's shape and tint. -->
+    <declare-styleable name="GlassView">
+        <attr name="glassCornerRadius" format="dimension" />
+        <attr name="glassTint" format="color" />
+        <attr name="glassLiquid" format="boolean" />
+        <!-- On a surface that is already glass (a frosted sheet): no backdrop of its own, and the
+             tint stays see-through instead of the near-opaque no-backdrop fallback. -->
+        <attr name="glassOnGlass" format="boolean" />
+        <!-- MEETUBE(issue #118): the widest it grows; centre it with its layout gravity. -->
+        <attr name="glassMaxWidth" format="dimension" />
+        <!-- A flat bar's frost thins out to nothing over this much of its bottom (Settings' top bar). -->
+        <attr name="glassFadeBottom" format="dimension" />
+    </declare-styleable>
+</resources>

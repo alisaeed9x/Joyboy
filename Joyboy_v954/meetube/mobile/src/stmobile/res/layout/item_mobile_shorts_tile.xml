@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- MEETUBE(shorts): a channel's Shorts tab tile, as in YouTube's app - three to a row with small
+     gaps, the portrait thumbnail with its view count over it and the menu in the corner. Clipped to
+     12dp corners like every other Short (ShortTileHolder clips to its background's outline). -->
+<androidx.constraintlayout.widget.ConstraintLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:layout_margin="2dp"
+    android:background="@drawable/bg_skeleton_block"
+    android:foreground="?attr/selectableItemBackground">
+
+    <ImageView
+        android:id="@+id/shorts_tile_thumbnail"
+        android:layout_width="0dp"
+        android:layout_height="0dp"
+        android:importantForAccessibility="no"
+        android:scaleType="centerCrop"
+        app:layout_constraintDimensionRatio="9:16"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="parent" />
+
+    <View
+        android:layout_width="0dp"
+        android:layout_height="56dp"
+        android:background="@drawable/mobile_player_bottom_scrim"
+        android:importantForAccessibility="no"
+        app:layout_constraintBottom_toBottomOf="@id/shorts_tile_thumbnail"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent" />
+
+    <TextView
+        android:id="@+id/shorts_tile_views"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="6dp"
+        android:layout_marginEnd="6dp"
+        android:layout_marginBottom="6dp"
+        android:ellipsize="end"
+        android:fontFamily="sans-serif-medium"
+        android:maxLines="1"
+        android:shadowColor="#B3000000"
+        android:shadowRadius="3"
+        android:textColor="@android:color/white"
+        android:textSize="13sp"
+        app:layout_constraintBottom_toBottomOf="@id/shorts_tile_thumbnail"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        tools:text="891K views" />
+
+    <ImageButton
+        android:id="@+id/shorts_tile_more"
+        android:layout_width="36dp"
+        android:layout_height="36dp"
+        android:background="?attr/selectableItemBackgroundBorderless"
+        android:contentDescription="@string/mobile_menu_more"
+        android:padding="8dp"
+        android:rotation="90"
+        android:src="@drawable/ic_mobile_more_vert"
+        android:tint="@android:color/white"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintTop_toTopOf="parent" />
+
+</androidx.constraintlayout.widget.ConstraintLayout>

@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  MEETUBE(transcript): the video's transcript under it, like YouTube's panel: a search field, then a
+  line per caption with its time. The line being said lights up and stays in view; a tap plays from
+  it (TranscriptSheet). The frosted sheet glass, sized to stop under the video like Lyrics.
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:background="@drawable/bg_mobile_sheet"
+    android:orientation="vertical">
+
+    <View
+        android:layout_width="36dp"
+        android:layout_height="4dp"
+        android:layout_gravity="center_horizontal"
+        android:layout_marginTop="8dp"
+        android:background="@drawable/bg_mobile_sheet_handle" />
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingStart="16dp"
+        android:paddingTop="8dp"
+        android:paddingEnd="8dp"
+        android:paddingBottom="4dp">
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:orientation="vertical">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/mobile_transcript"
+                android:textColor="@color/mobile_color_on_surface"
+                android:textSize="18sp"
+                android:textStyle="bold" />
+
+            <!-- Which captions these are ("English (auto-generated)"). -->
+            <TextView
+                android:id="@+id/transcript_sheet_language"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:ellipsize="end"
+                android:maxLines="1"
+                android:textColor="@color/mobile_color_on_surface_secondary"
+                android:textSize="12sp"
+                android:visibility="gone"
+                tools:text="English (auto-generated)"
+                tools:visibility="visible" />
+
+        </LinearLayout>
+
+        <ImageButton
+            android:id="@+id/transcript_sheet_close"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:contentDescription="@string/mobile_sheet_close"
+            android:src="@drawable/ic_sheet_close" />
+
+    </LinearLayout>
+
+    <include layout="@layout/mobile_transcript_body" />
+
+</LinearLayout>

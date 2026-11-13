@@ -1,0 +1,122 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- MEETUBE(glass): the page is a GlassSource and the top bar and "Search settings" pill float
+     over it as frosted glass (Glass.blur), so the rows scroll under them. A GlassSource may not
+     hold the glass that samples it, hence the FrameLayout around both. -->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent">
+
+<com.newtube.mobile.ui.common.GlassSource
+    android:id="@+id/settings_blur_target"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/mobile_color_background">
+
+    <androidx.recyclerview.widget.RecyclerView
+        android:id="@+id/settings_list"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:clipToPadding="false"
+        android:paddingTop="@dimen/mobile_settings_list_top"
+        android:paddingBottom="16dp"
+        android:scrollbars="none"
+        tools:listitem="@layout/item_mobile_settings_row" />
+
+</com.newtube.mobile.ui.common.GlassSource>
+
+    <!-- The top bar: frosted over the rows, thinning out to nothing at its bottom edge
+         (glassFadeBottom), with the back arrow in a glass bead like the rows' icons. -->
+    <com.newtube.mobile.ui.common.GlassView
+        android:id="@+id/settings_bar"
+        android:layout_width="match_parent"
+        android:layout_height="@dimen/mobile_settings_list_top"
+        app:glassCornerRadius="0dp"
+        app:glassFadeBottom="@dimen/mobile_settings_bar_fade"
+        app:glassLiquid="false"
+        app:glassTint="@color/meetube_glass_tint">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="@dimen/mobile_settings_bar_height"
+        android:gravity="center_vertical"
+        android:orientation="horizontal">
+
+        <ImageButton
+            android:id="@+id/settings_back"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:layout_marginStart="12dp"
+            android:background="@drawable/bg_glass_circle"
+            android:contentDescription="@string/mobile_dialog_back"
+            android:padding="8dp"
+            android:src="@drawable/ic_mobile_back_arrow"
+            android:stateListAnimator="@animator/press_3d" />
+
+        <TextView
+            android:id="@+id/settings_title"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:ellipsize="end"
+            android:maxLines="1"
+            android:paddingStart="@dimen/mobile_settings_title_inset"
+            android:paddingEnd="16dp"
+            android:textColor="@color/mobile_color_on_surface"
+            android:textSize="@dimen/mobile_settings_title_size"
+            android:fontFamily="sans-serif-medium"
+            tools:text="Settings" />
+
+    </LinearLayout>
+
+    </com.newtube.mobile.ui.common.GlassView>
+
+    <!-- "Search settings" on the top level, pinned under the title: a tap opens the search page
+         (SettingsSearchFragment). Gone on every other page. -->
+    <com.newtube.mobile.ui.common.GlassView
+        android:id="@+id/settings_search_field"
+        android:layout_width="match_parent"
+        android:layout_height="52dp"
+        android:layout_marginStart="16dp"
+        android:layout_marginTop="@dimen/mobile_settings_search_top"
+        android:layout_marginEnd="16dp"
+        android:clickable="true"
+        android:elevation="6dp"
+        android:foreground="?attr/selectableItemBackground"
+        android:visibility="gone"
+        app:glassCornerRadius="26dp"
+        app:glassTint="@color/meetube_glass_tint"
+        tools:visibility="visible">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:contentDescription="@string/mobile_settings_search_hint"
+        android:focusable="true"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingStart="16dp"
+        android:paddingEnd="16dp">
+
+        <ImageView
+            android:layout_width="24dp"
+            android:layout_height="24dp"
+            android:importantForAccessibility="no"
+            android:src="@drawable/ic_mobile_search"
+            android:tint="@color/mobile_color_on_surface_secondary" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:importantForAccessibility="no"
+            android:paddingStart="16dp"
+            android:text="@string/mobile_settings_search_hint"
+            android:textColor="@color/mobile_color_on_surface_secondary"
+            android:textSize="16sp" />
+
+    </LinearLayout>
+
+    </com.newtube.mobile.ui.common.GlassView>
+
+</FrameLayout>

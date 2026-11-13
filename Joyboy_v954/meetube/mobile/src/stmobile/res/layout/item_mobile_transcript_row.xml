@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- MEETUBE(transcript): one caption: its time on a small glass chip, then the words. The line being
+     said gets the rounded highlight (selected) and full-strength text (TranscriptSheet). -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:background="@drawable/bg_transcript_row"
+    android:gravity="top"
+    android:orientation="horizontal"
+    android:paddingHorizontal="8dp"
+    android:paddingVertical="10dp">
+
+    <TextView
+        android:id="@+id/transcript_row_time"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:background="@drawable/mobile_watch_pill_bg"
+        android:fontFeatureSettings="tnum"
+        android:paddingHorizontal="8dp"
+        android:paddingVertical="2dp"
+        android:textColor="@color/mobile_color_on_surface"
+        android:textSize="12sp"
+        tools:text="0:10" />
+
+    <TextView
+        android:id="@+id/transcript_row_text"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="12dp"
+        android:layout_weight="1"
+        android:lineSpacingMultiplier="1.1"
+        android:textColor="@color/mobile_color_on_surface_secondary"
+        android:textSize="15sp"
+        tools:text="did you try to be faithful and honorable to your wife" />
+
+</LinearLayout>

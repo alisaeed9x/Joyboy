@@ -1,0 +1,193 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- MEETUBE(description-panel): shared description content for the panel and dialog. -->
+<androidx.core.widget.NestedScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:id="@+id/description_sheet_body"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:clipToPadding="false"
+    android:paddingBottom="24dp">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:paddingHorizontal="16dp"
+        android:paddingTop="16dp">
+
+        <TextView
+            android:id="@+id/description_sheet_title"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:fontFamily="sans-serif-medium"
+            android:textColor="@color/mobile_color_on_surface"
+            android:textIsSelectable="true"
+            android:textSize="18sp"
+            tools:text="Rick Astley - Never Gonna Give You Up (Official Video)" />
+
+        <!-- Likes / Views / date columns, as on YouTube. -->
+        <LinearLayout
+            android:id="@+id/description_sheet_stats"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="20dp"
+            android:baselineAligned="false"
+            android:orientation="horizontal" />
+
+        <TextView
+            android:id="@+id/description_sheet_text"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="20dp"
+            android:autoLink="web"
+            android:lineSpacingMultiplier="1.15"
+            android:textColor="@color/mobile_color_on_surface"
+            android:textColorLink="@color/mobile_color_link"
+            android:textIsSelectable="true"
+            android:textSize="14sp"
+            tools:text="The official video for Never Gonna Give You Up by Rick Astley." />
+
+        <!-- MEETUBE(transcript): YouTube's Transcript section; only for a video with captions. -->
+        <LinearLayout
+            android:id="@+id/description_sheet_transcript"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="28dp"
+            android:orientation="vertical"
+            android:visibility="gone"
+            tools:visibility="visible">
+
+            <TextView
+                style="@style/MobileDescriptionHeading"
+                android:text="@string/mobile_transcript" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="2dp"
+                android:text="@string/mobile_transcript_follow"
+                android:textColor="@color/mobile_color_on_surface_secondary"
+                android:textSize="13sp" />
+
+            <TextView
+                android:id="@+id/description_sheet_transcript_show"
+                android:layout_width="match_parent"
+                android:layout_height="44dp"
+                android:layout_marginTop="12dp"
+                android:background="@drawable/bg_watch_card"
+                android:clickable="true"
+                android:focusable="true"
+                android:fontFamily="sans-serif-medium"
+                android:gravity="center"
+                android:text="@string/mobile_transcript_show"
+                android:textColor="@color/mobile_color_on_surface"
+                android:textSize="14sp" />
+
+        </LinearLayout>
+
+        <!-- MEETUBE(description): the channel - Subscribe mirrors the watch page's; the picture or the
+             name opens the channel. -->
+        <LinearLayout
+            android:id="@+id/description_sheet_channel"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="28dp"
+            android:orientation="vertical"
+            android:visibility="gone"
+            tools:visibility="visible">
+
+            <LinearLayout
+                android:id="@+id/description_sheet_channel_row"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:background="?attr/selectableItemBackground"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <ImageView
+                    android:id="@+id/description_sheet_channel_avatar"
+                    android:layout_width="40dp"
+                    android:layout_height="40dp"
+                    android:contentDescription="@null"
+                    android:src="@drawable/ic_watch_channel_placeholder" />
+
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="12dp"
+                    android:layout_weight="1"
+                    android:orientation="vertical">
+
+                    <TextView
+                        android:id="@+id/description_sheet_channel_name"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:ellipsize="end"
+                        android:fontFamily="sans-serif-medium"
+                        android:maxLines="1"
+                        android:textColor="@color/mobile_color_on_surface"
+                        android:textSize="15sp"
+                        tools:text="KSI+" />
+
+                    <TextView
+                        android:id="@+id/description_sheet_channel_subs"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:ellipsize="end"
+                        android:maxLines="1"
+                        android:textColor="@color/mobile_color_on_surface_secondary"
+                        android:textSize="13sp"
+                        tools:text="776K subscribers" />
+
+                </LinearLayout>
+
+                <TextView
+                    android:id="@+id/description_sheet_subscribe"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="8dp"
+                    android:background="@drawable/bg_watch_subscribe"
+                    android:clickable="true"
+                    android:focusable="true"
+                    android:fontFamily="sans-serif-medium"
+                    android:gravity="center"
+                    android:maxLines="1"
+                    android:minHeight="44dp"
+                    android:paddingHorizontal="16dp"
+                    android:text="@string/mobile_watch_subscribe"
+                    android:textColor="@color/mobile_color_on_inverse_surface"
+                    android:textSize="14sp" />
+
+            </LinearLayout>
+
+        </LinearLayout>
+
+        <!-- MEETUBE(description): Date / Views / Likes in full, on one glass card (DescriptionSheet). -->
+        <LinearLayout
+            android:id="@+id/description_sheet_details"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="28dp"
+            android:orientation="vertical"
+            android:visibility="gone"
+            tools:visibility="visible">
+
+            <TextView
+                style="@style/MobileDescriptionHeading"
+                android:text="@string/mobile_description_details" />
+
+            <LinearLayout
+                android:id="@+id/description_sheet_details_rows"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:background="@drawable/bg_watch_card"
+                android:orientation="vertical"
+                android:paddingHorizontal="16dp"
+                android:paddingVertical="4dp" />
+
+        </LinearLayout>
+
+    </LinearLayout>
+
+</androidx.core.widget.NestedScrollView>

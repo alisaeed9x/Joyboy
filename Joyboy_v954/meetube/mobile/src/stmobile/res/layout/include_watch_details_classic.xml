@@ -1,0 +1,455 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- MEETUBE(watch-look): the classic watch page (Settings > Customization > Watch page): title, a
+     row of labelled pills, the channel row, the comments card. Inflated into
+     mobile_watch_details; the compact one is include_watch_details_compact. Same ids in both. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical">
+    <!-- MEETUBE: title and meta are one target - both open the description, so one
+         press feedback covers the pair instead of two separate highlights. -->
+    <LinearLayout
+        android:id="@+id/mobile_watch_header"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="4dp"
+        android:background="?attr/selectableItemBackground"
+        android:clickable="true"
+        android:focusable="true"
+        android:orientation="vertical"
+        android:paddingTop="8dp">
+
+    <!-- Title -->
+    <TextView
+        android:id="@+id/mobile_watch_title"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:contentDescription="@null"
+        android:paddingHorizontal="@dimen/mobile_watch_content_padding"
+        android:ellipsize="end"
+        android:fontFamily="sans-serif-medium"
+        android:maxLines="3"
+        android:textColor="@color/mobile_color_on_surface"
+        android:textSize="18sp"
+        tools:text="A great video title that may wrap across a couple of lines" />
+
+    <!-- views + date + expand-description affordance -->
+    <LinearLayout
+        android:id="@+id/mobile_watch_meta_row"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="0dp"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingHorizontal="@dimen/mobile_watch_content_padding"
+        android:paddingVertical="12dp">
+
+        <TextView
+            android:id="@+id/mobile_watch_meta"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:ellipsize="end"
+            android:maxLines="1"
+            android:textColor="@color/mobile_color_on_surface_secondary"
+            android:textSize="14sp"
+            tools:text="1,234,567 views • Jan 1, 2026" />
+
+    </LinearLayout>
+
+    </LinearLayout>
+
+    <!-- Expandable description (collapsed by default) -->
+    <TextView
+        android:id="@+id/mobile_watch_description"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="4dp"
+        android:paddingHorizontal="@dimen/mobile_watch_content_padding"
+        android:autoLink="web"
+        android:textColor="@color/mobile_color_on_surface_secondary"
+        android:textColorLink="@color/mobile_color_link"
+        android:textSize="14sp"
+        android:visibility="gone"
+        tools:text="Video description text..."
+        tools:visibility="visible" />
+
+    <!-- Actions row: segmented Like|Dislike pill (YouTube-style) + Share + Save.
+         Scrolls horizontally like YouTube's, so a fourth pill (or a wide count) can't
+         push an action off a narrow screen. -->
+    <!-- NEWTUBE(touch): no top margin - the meta row above (48dp tall now) and the pills'
+         own 6dp inset hold the old spacing. -->
+    <com.newtube.mobile.ui.common.ShadeScrollView
+        android:id="@+id/mobile_watch_actions_scroll"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="0dp"
+        android:fadingEdgeLength="32dp"
+        android:requiresFadingEdge="horizontal"
+        android:overScrollMode="never"
+        android:scrollbars="none">
+
+    <LinearLayout
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingHorizontal="@dimen/mobile_watch_content_padding">
+
+        <!-- padding 0: an inset background otherwise becomes the view's padding. -->
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:background="@drawable/mobile_watch_pill_bg_touch"
+            android:gravity="center_vertical"
+            android:orientation="horizontal"
+            android:padding="0dp">
+
+            <LinearLayout
+                android:id="@+id/mobile_watch_like"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:background="@drawable/mobile_watch_segment_ripple"
+                android:clickable="true"
+                android:focusable="true"
+                android:gravity="center_vertical"
+                android:orientation="horizontal"
+                android:paddingStart="14dp"
+                android:paddingEnd="12dp"
+                android:paddingVertical="14dp">
+
+                <ImageView
+                    android:id="@+id/mobile_watch_like_icon"
+                    android:layout_width="20dp"
+                    android:layout_height="20dp"
+                    android:contentDescription="@string/mobile_watch_like"
+                    android:src="@drawable/ic_watch_thumb_up_outline" />
+
+                <TextView
+                    android:id="@+id/mobile_watch_like_count"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="6dp"
+                    android:text="@string/mobile_watch_count_placeholder"
+                    android:textColor="@color/mobile_color_on_surface"
+                    android:textSize="14sp"
+                    tools:text="12K" />
+
+            </LinearLayout>
+
+            <View
+                android:layout_width="1dp"
+                android:layout_height="18dp"
+                android:background="@color/mobile_color_divider" />
+
+            <LinearLayout
+                android:id="@+id/mobile_watch_dislike"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:background="@drawable/mobile_watch_segment_ripple"
+                android:clickable="true"
+                android:focusable="true"
+                android:gravity="center_vertical"
+                android:orientation="horizontal"
+                android:paddingStart="12dp"
+                android:paddingEnd="14dp"
+                android:paddingVertical="14dp">
+
+                <ImageView
+                    android:id="@+id/mobile_watch_dislike_icon"
+                    android:layout_width="20dp"
+                    android:layout_height="20dp"
+                    android:contentDescription="@string/mobile_watch_dislike"
+                    android:src="@drawable/ic_watch_thumb_down_outline" />
+
+                <TextView
+                    android:id="@+id/mobile_watch_dislike_count"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="6dp"
+                    android:text="@string/mobile_watch_count_placeholder"
+                    android:textColor="@color/mobile_color_on_surface"
+                    android:textSize="14sp"
+                    tools:text="123" />
+
+            </LinearLayout>
+
+        </LinearLayout>
+
+        <LinearLayout
+            android:id="@+id/mobile_watch_share"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="8dp"
+            android:background="@drawable/mobile_watch_pill_bg_touch"
+            android:clickable="true"
+            android:focusable="true"
+            android:gravity="center_vertical"
+            android:orientation="horizontal"
+            android:paddingHorizontal="12dp"
+            android:paddingVertical="14dp">
+
+            <ImageView
+                android:layout_width="20dp"
+                android:layout_height="20dp"
+                android:contentDescription="@string/mobile_watch_share"
+                android:src="@drawable/ic_watch_share" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="6dp"
+                android:text="@string/mobile_watch_share"
+                android:textColor="@color/mobile_color_on_surface"
+                android:textSize="14sp" />
+
+        </LinearLayout>
+
+        <!-- MEETUBE(lyrics): the song's lyrics (LyricsSheet); shown only for videos YouTube Music has. -->
+        <LinearLayout
+            android:id="@+id/mobile_watch_music"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="8dp"
+            android:visibility="gone"
+            android:background="@drawable/mobile_watch_pill_bg_touch"
+            android:clickable="true"
+            android:focusable="true"
+            android:gravity="center_vertical"
+            android:orientation="horizontal"
+            android:paddingHorizontal="12dp"
+            android:paddingVertical="14dp">
+
+            <ImageView
+                android:layout_width="20dp"
+                android:layout_height="20dp"
+                android:contentDescription="@string/mobile_lyrics"
+                android:src="@drawable/ic_watch_lyrics" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="6dp"
+                android:text="@string/mobile_lyrics"
+                android:textColor="@color/mobile_color_on_surface"
+                android:textSize="14sp" />
+
+        </LinearLayout>
+
+        <!-- Download. Opens the quality picker; once the video is on the device the
+             pill reads "Downloaded" and opens the download's own menu. -->
+        <LinearLayout
+            android:id="@+id/mobile_watch_download"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="8dp"
+            android:background="@drawable/mobile_watch_pill_bg_touch"
+            android:clickable="true"
+            android:focusable="true"
+            android:gravity="center_vertical"
+            android:orientation="horizontal"
+            android:paddingHorizontal="12dp"
+            android:paddingVertical="14dp">
+
+            <ImageView
+                android:id="@+id/mobile_watch_download_icon"
+                android:layout_width="20dp"
+                android:layout_height="20dp"
+                android:contentDescription="@string/dialog_download"
+                android:src="@drawable/ic_watch_download" />
+
+            <TextView
+                android:id="@+id/mobile_watch_download_label"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="6dp"
+                android:text="@string/dialog_download"
+                android:textColor="@color/mobile_color_on_surface"
+                android:textSize="14sp" />
+
+        </LinearLayout>
+
+        <!-- Save to playlist. Same action as gear -> More -> Save to playlist; it lives
+             here too because that is where YouTube puts it and where people look. -->
+        <LinearLayout
+            android:id="@+id/mobile_watch_save"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="8dp"
+            android:background="@drawable/mobile_watch_pill_bg_touch"
+            android:clickable="true"
+            android:focusable="true"
+            android:gravity="center_vertical"
+            android:orientation="horizontal"
+            android:paddingHorizontal="12dp"
+            android:paddingVertical="14dp">
+
+            <ImageView
+                android:id="@+id/mobile_watch_save_icon"
+                android:layout_width="20dp"
+                android:layout_height="20dp"
+                android:contentDescription="@string/mobile_watch_save"
+                android:src="@drawable/ic_player_playlist_add"
+                android:tint="@color/mobile_color_on_surface" />
+
+            <TextView
+                android:id="@+id/mobile_watch_save_label"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="6dp"
+                android:text="@string/mobile_watch_save"
+                android:textColor="@color/mobile_color_on_surface"
+                android:textSize="14sp" />
+
+        </LinearLayout>
+
+    </LinearLayout>
+
+    </com.newtube.mobile.ui.common.ShadeScrollView>
+
+    <!-- Channel row: avatar + name/subs + Subscribe. Sections separate by
+         whitespace, not hairline dividers (matches current YouTube).
+         The row itself opens the channel page (Subscribe keeps its own click). -->
+    <LinearLayout
+        android:id="@+id/mobile_watch_channel_row"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="0dp"
+        android:background="?attr/selectableItemBackground"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingHorizontal="@dimen/mobile_watch_content_padding"
+        android:paddingVertical="8dp">
+
+        <!-- MEETUBE(issue #73): a live stream's channel gets the glowing red ring. -->
+        <FrameLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content">
+
+            <ImageView
+                android:id="@+id/mobile_watch_avatar"
+                android:layout_width="@dimen/mobile_watch_avatar_size"
+                android:layout_height="@dimen/mobile_watch_avatar_size"
+                android:contentDescription="@null"
+                android:src="@drawable/ic_watch_channel_placeholder" />
+
+            <com.newtube.mobile.ui.common.LiveRingView
+                android:id="@+id/mobile_watch_avatar_live"
+                android:layout_width="@dimen/mobile_watch_avatar_size"
+                android:layout_height="@dimen/mobile_watch_avatar_size"
+                android:visibility="gone" />
+
+        </FrameLayout>
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="10dp"
+            android:layout_weight="1"
+            android:orientation="vertical">
+
+            <TextView
+                android:id="@+id/mobile_watch_channel_name"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:ellipsize="end"
+                android:fontFamily="sans-serif-medium"
+                android:maxLines="1"
+                android:textColor="@color/mobile_color_on_surface"
+                android:textSize="15sp"
+                tools:text="Channel name" />
+
+            <TextView
+                android:id="@+id/mobile_watch_subs"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:ellipsize="end"
+                android:maxLines="1"
+                android:textColor="@color/mobile_color_on_surface_secondary"
+                android:textSize="13sp"
+                android:visibility="gone"
+                tools:text="1.2M subscribers"
+                tools:visibility="visible" />
+
+        </LinearLayout>
+
+        <!-- MEETUBE(glass): a TextView, not a MaterialButton - Material re-tints its own
+             background, so the glass "Subscribed" pill (bg_watch_subscribe, selected =
+             subscribed) would never show. -->
+        <TextView
+            android:id="@+id/mobile_watch_subscribe"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="8dp"
+            android:background="@drawable/bg_watch_subscribe"
+            android:clickable="true"
+            android:focusable="true"
+            android:fontFamily="sans-serif-medium"
+            android:gravity="center"
+            android:maxLines="1"
+            android:minHeight="48dp"
+            android:paddingHorizontal="16dp"
+            android:text="@string/mobile_watch_subscribe"
+            android:textColor="@color/mobile_color_on_inverse_surface"
+            android:textSize="14sp" />
+
+    </LinearLayout>
+
+    <!-- Comments entry: opens the comments panel over this page. Hidden until the loaded
+         metadata reports that comments are enabled (a non-null comments key).
+         Rendered as a rounded surface card, like YouTube's comments teaser. -->
+    <LinearLayout
+        android:id="@+id/mobile_watch_comments_entry"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginHorizontal="@dimen/mobile_watch_content_padding"
+        android:layout_marginTop="4dp"
+        android:background="@drawable/bg_watch_card"
+        android:clickable="true"
+        android:focusable="true"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingHorizontal="14dp"
+        android:paddingVertical="13dp"
+        android:visibility="gone"
+        tools:visibility="visible">
+
+        <ImageView
+            android:layout_width="22dp"
+            android:layout_height="22dp"
+            android:contentDescription="@null"
+            android:src="@drawable/ic_watch_comment" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="12dp"
+            android:fontFamily="sans-serif-medium"
+            android:text="@string/mobile_comments_entry"
+            android:textColor="@color/mobile_color_on_surface"
+            android:textSize="14sp" />
+
+        <!-- NEWTUBE(comments-panel): the total from the same /next ("1.8K"). -->
+        <TextView
+            android:id="@+id/mobile_watch_comments_count"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="8dp"
+            android:layout_weight="1"
+            android:fontFeatureSettings="tnum"
+            android:maxLines="1"
+            android:textColor="@color/mobile_color_on_surface_secondary"
+            android:textSize="14sp"
+            tools:text="1.8K" />
+
+        <ImageView
+            android:layout_width="24dp"
+            android:layout_height="24dp"
+            android:contentDescription="@null"
+            android:rotation="270"
+            android:src="@drawable/ic_watch_expand" />
+
+    </LinearLayout>
+
+</LinearLayout>

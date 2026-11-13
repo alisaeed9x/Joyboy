@@ -1,0 +1,82 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- MEETUBE(lyrics-panel): shared lyrics content for the panel and dialog. -->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:id="@+id/lyrics_sheet_body"
+    android:layout_width="match_parent"
+    android:layout_height="0dp"
+    android:layout_weight="1"
+    android:minHeight="160dp">
+
+    <ProgressBar
+        style="@style/Widget.MeeTube.GlassSpinner"
+        android:id="@+id/lyrics_sheet_loading"
+        android:layout_gravity="center" />
+
+    <TextView
+        android:id="@+id/lyrics_sheet_empty"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center"
+        android:gravity="center"
+        android:paddingHorizontal="32dp"
+        android:text="@string/mobile_lyrics_none"
+        android:textColor="@color/mobile_color_on_surface_secondary"
+        android:textSize="15sp"
+        android:visibility="gone" />
+
+    <androidx.core.widget.NestedScrollView
+        android:id="@+id/lyrics_sheet_scroll"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:clipToPadding="false"
+        android:paddingBottom="24dp"
+        android:visibility="gone">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:paddingHorizontal="20dp"
+            android:paddingTop="16dp">
+
+            <TextView
+                android:id="@+id/lyrics_sheet_song"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:fontFamily="sans-serif-medium"
+                android:textColor="@color/mobile_color_on_surface"
+                android:textSize="18sp"
+                tools:text="Ooroda Oththa Don" />
+
+            <TextView
+                android:id="@+id/lyrics_sheet_artist"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="2dp"
+                android:textColor="@color/mobile_color_on_surface_secondary"
+                android:textSize="14sp"
+                tools:text="Sai Abhyankkar" />
+
+            <!-- One TextView per timed line, or a single selectable one for plain lyrics. -->
+            <LinearLayout
+                android:id="@+id/lyrics_sheet_lines"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="20dp"
+                android:orientation="vertical" />
+
+            <TextView
+                android:id="@+id/lyrics_sheet_source"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="24dp"
+                android:textColor="@color/mobile_color_on_surface_secondary"
+                android:textSize="12sp"
+                tools:text="Source: LRCLIB" />
+
+        </LinearLayout>
+
+    </androidx.core.widget.NestedScrollView>
+
+</FrameLayout>

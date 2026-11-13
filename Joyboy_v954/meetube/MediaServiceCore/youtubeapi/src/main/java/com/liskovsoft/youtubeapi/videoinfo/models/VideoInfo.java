@@ -1,0 +1,697 @@
+package com.liskovsoft.youtubeapi.videoinfo.models;
+
+import androidx.annotation.Nullable;
+
+import com.liskovsoft.googlecommon.common.helpers.YouTubeHelper;
+import com.liskovsoft.sharedutils.helpers.Helpers;
+import com.liskovsoft.sharedutils.querystringparser.UrlQueryString;
+import com.liskovsoft.sharedutils.querystringparser.UrlQueryStringFactory;
+import com.liskovsoft.googlecommon.common.converters.jsonpath.JsonPath;
+import com.liskovsoft.googlecommon.common.helpers.ServiceHelper;
+import com.liskovsoft.googlecommon.common.models.V2.TextItem;
+import com.liskovsoft.youtubeapi.browse.v1.models.guide.TrackingParam;
+import com.liskovsoft.youtubeapi.common.helpers.AppClient;
+import com.liskovsoft.youtubeapi.videoinfo.models.formats.AdaptiveVideoFormat;
+import com.liskovsoft.youtubeapi.videoinfo.models.formats.RegularVideoFormat;
+
+import java.util.ArrayList;
+import java.util.List;
+
+public class VideoInfo {
+    private static final String PARAM_EVENT_ID = "ei";
+    private static final String PARAM_VM = "vm";
+    private static final String PARAM_OF = "of";
+    private static final String STATUS_OK = "OK";
+    private static final String STATUS_UNPLAYABLE = "UNPLAYABLE";
+    private static final String STATUS_ERROR = "ERROR";
+    private static final String STATUS_OFFLINE = "LIVE_STREAM_OFFLINE";
+    private static final String STATUS_LOGIN_REQUIRED = "LOGIN_REQUIRED";
+    private static final String STATUS_AGE_CHECK_REQUIRED = "AGE_CHECK_REQUIRED";
+    private static final String STATUS_AGE_VERIFICATION_REQUIRED = "AGE_VERIFICATION_REQUIRED";
+    private static final String STATUS_CONTENT_CHECK_REQUIRED = "CONTENT_CHECK_REQUIRED";
+
+    @JsonPath("$.streamingData.formats[*]")
+    private List<RegularVideoFormat> mRegularFormats;
+
+    @JsonPath("$.streamingData.adaptiveFormats[*]")
+    private List<AdaptiveVideoFormat> mAdaptiveFormats;
+
+    //@JsonPath("$.playabilityStatus.paygatedQualitiesMetadata.restrictedAdaptiveFormats[*]")
+    private List<AdaptiveVideoFormat> mRestrictedFormats;
+
+    @JsonPath("$.captions.playerCaptionsTracklistRenderer.captionTracks[*]")
+    private List<CaptionTrack> mCaptionTracks;
+
+    @JsonPath("$.captions.playerCaptionsTracklistRenderer.translationLanguages[*]")
+    private List<TranslationLanguage> mTranslationLanguages;
+
+    @JsonPath("$.streamingData.hlsManifestUrl")
+    private String mHlsManifestUrl;
+
+    @JsonPath("$.playbackTracking.videostatsWatchtimeUrl.baseUrl")
+    private String mVideoStatsWatchTimeUrl;
+
+    @JsonPath("$.streamingData.dashManifestUrl")
+    private String mDashManifestUrl;
+
+    @JsonPath("$.videoDetails")
+    private VideoDetails mVideoDetails;
+
+    @JsonPath("$.playbackTracking.videostatsPlaybackUrl.baseUrl")
+    private String mPlaybackUrl;
+
+    @JsonPath("$.playbackTracking.videostatsWatchtimeUrl.baseUrl")
+    private String mWatchTimeUrl;
+
+    @JsonPath("$.playabilityStatus.status")
+    private String mPlayabilityStatus;
+
+    @JsonPath("$.playabilityStatus.reason")
+    private String mPlayabilityReason;
+
+    @JsonPath("$.playabilityStatus.playableInEmbed")
+    private boolean mIsPlayableInEmbed;
+
+    // NEWTUBE(age-gate): 1 on every client's "Sign in to confirm your age" answer and absent (0)
+    // on a "confirm you're not a bot" one (netbench 2026-09-28: WaOKSUlf4TM on VISIONOS, TV,
+    // ANDROID_VR...; the bot wall on v03RjDNwG1o had no such field). Locale-independent.
+    @JsonPath("$.playabilityStatus.desktopLegacyAgeGateReason")
+    private int mDesktopLegacyAgeGateReason;
+
+    // NEWTUBE(readiness): the answer's pre-roll ads (see PrerollAds) and when it arrived
+    // (elapsedRealtime, stamped by VideoInfoService), which together say when its media may start.
+    @JsonPath("$.adSlots[*]")
+    private List<PrerollAds.Slot> mAdSlots;
+
+    @JsonPath("$.adPlacements[*]")
+    private List<PrerollAds.Placement> mAdPlacements;
+
+    private long mReceivedAtMs;
+
+    @JsonPath("$.playabilityStatus.errorScreen.playerErrorMessageRenderer.subreason")
+    private TextItem mPlayabilityDescription;
+
+    @JsonPath({"$.storyboards.playerStoryboardSpecRenderer.spec",
+               "$.storyboards.playerLiveStoryboardSpecRenderer.spec",
+    })
+    private String mStoryboardSpec;
+
+    @JsonPath("$.playabilityStatus.errorScreen.playerLegacyDesktopYpcTrailerRenderer.trailerVideoId")
+    private String mTrailerVideoId;
+
+    @JsonPath("$.microformat.playerMicroformatRenderer.liveBroadcastDetails.startTimestamp")
+    private String mStartTimestamp;
+
+    @JsonPath("$.microformat.playerMicroformatRenderer.uploadDate")
+    private String mUploadDate;
+
+    @JsonPath("$.playerConfig.audioConfig.loudnessDb")
+    private float mLoudnessDb;
+
+    // NEWTUBE(loudness): the same value able to tell "absent" from 0, and what the answers that omit
+    // it (VISIONOS) send instead. Number, not Float: the adapter maps an integral JSON number such as
+    // the -14 target to Integer, which a Float field silently refuses.
+    @JsonPath("$.playerConfig.audioConfig.loudnessDb")
+    private Number mAudioLoudnessDb;
+
+    @JsonPath("$.playerConfig.audioConfig.perceptualLoudnessDb")
+    private Number mPerceptualLoudnessDb;
+
+    @JsonPath("$.playerConfig.audioConfig.loudnessTargetLkfs")
+    private Number mLoudnessTargetLkfs;
+
+    @JsonPath("$.paidContentOverlay.paidContentOverlayRenderer.text")
+    private TextItem mPaidContentText;
+
+    @JsonPath("$.streamingData.serverAbrStreamingUrl")
+    private String mServerAbrStreamingUrl; // SABR format url
+
+    @JsonPath("$.playerConfig.mediaCommonConfig.mediaUstreamerRequestConfig.videoPlaybackUstreamerConfig")
+    private String mVideoPlaybackUstreamerConfig; // SABR config
+
+    /**
+     * NEWTUBE(auth-probe): the SERVER's own view of whether this request was signed in.
+     * {@link #isAuth()} is set from our outgoing flag, so it only says we ATTACHED a credential -
+     * it cannot distinguish "the account was honoured" from "the header was ignored and the video
+     * was served anonymously". YouTube echoes the truth back in the GFEEDBACK service tracking
+     * params as {@code logged_in=1|0}; the same shape the guide response already parses
+     * (browse/v1 Guide + TrackingParam).
+     */
+    @JsonPath("$.responseContext.serviceTrackingParams[*]")
+    private List<TrackingParam> mTrackingParams;
+
+    // Values used in tracking actions
+    private String mEventId;
+    private String mVisitorMonitoringData;
+    private String mOfParam;
+
+    private long mStartTimeMs;
+    private int mStartSegmentNum;
+    private int mSegmentDurationUs;
+    private boolean mIsStreamSeekable;
+    private List<CaptionTrack> mMergedCaptionTracks;
+    private boolean mIsAuth;
+    private boolean mIsBotCheckRequired;
+    private String mPoToken;
+    private String mVisitorCookie;
+    private AppClient mClient;
+    private VideoUrlHolder mUrlHolder;
+
+    public List<AdaptiveVideoFormat> getAdaptiveFormats() {
+        return mAdaptiveFormats;
+    }
+
+    public List<RegularVideoFormat> getRegularFormats() {
+        return mRegularFormats;
+    }
+
+    public List<AdaptiveVideoFormat> getRestrictedFormats() {
+        return mRestrictedFormats;
+    }
+
+    public String getHlsManifestUrl() {
+        return mHlsManifestUrl;
+    }
+
+    public String getVideoStatsWatchTimeUrl() {
+        return mVideoStatsWatchTimeUrl;
+    }
+
+    public List<CaptionTrack> getCaptionTracks() {
+        return mergeCaptionTracks();
+    }
+
+    public void setCaptionTracks(List<CaptionTrack> tracks) {
+        mMergedCaptionTracks = tracks;
+    }
+
+    public List<TranslationLanguage> getTranslationLanguages() {
+        return mTranslationLanguages;
+    }
+
+    public void setTranslationLanguages(List<TranslationLanguage> translationLanguages) {
+        mTranslationLanguages = translationLanguages;
+    }
+
+    public String getDashManifestUrl() {
+        return mDashManifestUrl;
+    }
+
+    public void setDashManifestUrl(String dashManifestUrl) {
+        mDashManifestUrl = dashManifestUrl;
+    }
+
+    /**
+     * Live googlevideo SEGMENTS are pot-enforced with NO grace window on strict (carrier CGNAT)
+     * networks: manifests load (200) but every segment 403s instantly. Path-style googlevideo
+     * URLs take parameters as /key/value path pairs, so the pot rides the MANIFEST URL as
+     * "/pot/&lt;token&gt;" (the yt-dlp-proven form) and the manifest then mints attested segment
+     * URLs. Idempotent; pot tokens are base64url so they're path-safe as-is.
+     */
+    public void appendPotToManifestUrls(String poToken) {
+        if (poToken == null || poToken.isEmpty()) {
+            return;
+        }
+        if (mHlsManifestUrl != null && !mHlsManifestUrl.contains("/pot/")) {
+            mHlsManifestUrl += "/pot/" + poToken;
+        }
+        if (mDashManifestUrl != null && !mDashManifestUrl.contains("/pot/")) {
+            mDashManifestUrl += "/pot/" + poToken;
+        }
+    }
+
+    public void setHlsManifestUrl(String hlsManifestUrl) {
+        mHlsManifestUrl = hlsManifestUrl;
+    }
+
+    public void setStoryboardSpec(String storyboardSpec) {
+        mStoryboardSpec = storyboardSpec;
+    }
+
+    public VideoDetails getVideoDetails() {
+        return mVideoDetails;
+    }
+
+    public String getEventId() {
+        parseTrackingParams();
+
+        return mEventId;
+    }
+
+    public String getVisitorMonitoringData() {
+        parseTrackingParams();
+
+        return mVisitorMonitoringData;
+    }
+
+    public String getOfParam() {
+        parseTrackingParams();
+
+        return mOfParam;
+    }
+
+    public String getPlaybackUrl() {
+        return mPlaybackUrl;
+    }
+
+    public String getWatchTimeUrl() {
+        return mWatchTimeUrl;
+    }
+
+    public boolean isRent() {
+        return isUnplayable() && getTrailerVideoId() != null;
+    }
+
+    public boolean isUnplayable() {
+        // NEWTUBE(delivery): VodDelivery - a SABR-only answer may still play over its HLS manifest.
+        return isUnknownRestricted() || isVisibilityRestricted() || isAgeRestricted()
+                || (isAdaptiveFormatsBroken() && !SabrVodCapability.accepts(this)
+                        && !VodDelivery.acceptsHls(this));
+    }
+
+    /**
+     * Video cannot be embedded
+     */
+    public boolean isEmbedRestricted() {
+        return !mIsPlayableInEmbed;
+    }
+
+    /**
+     * Reason of unavailability unknown or we received a temporal ban
+     */
+    public boolean isUnknownRestricted() {
+        return ServiceHelper.atLeastOneEquals(mPlayabilityStatus, STATUS_UNPLAYABLE);
+    }
+
+    /**
+     * Removed or hidden by the user
+     */
+    public boolean isVisibilityRestricted() {
+        return ServiceHelper.atLeastOneEquals(mPlayabilityStatus, STATUS_ERROR);
+    }
+
+    /** NEWTUBE(readiness): total pre-roll wait this answer announces, ms (0 = none). */
+    public long getPrerollWaitMs() {
+        return PrerollAds.waitMs(mAdSlots, mAdPlacements);
+    }
+
+    /** NEWTUBE(readiness): elapsedRealtime at which this answer arrived; 0 if never stamped. */
+    public long getReceivedAtMs() {
+        return mReceivedAtMs;
+    }
+
+    public void setReceivedAtMs(long receivedAtMs) {
+        mReceivedAtMs = receivedAtMs;
+    }
+
+    /**
+     * NEWTUBE(age-gate): an age gate, as opposed to a bot check that also answers LOGIN_REQUIRED.
+     * YouTube's structured marker, or an explicit AGE_* status.
+     */
+    public boolean isAgeGate() {
+        return mDesktopLegacyAgeGateReason != 0
+                || ServiceHelper.atLeastOneEquals(mPlayabilityStatus, STATUS_AGE_CHECK_REQUIRED,
+                        STATUS_AGE_VERIFICATION_REQUIRED);
+    }
+
+    /** NEWTUBE(walk-replay): YouTube's reason as sent, without the subreason (PlayabilityLog). */
+    public String getPlayabilityReason() {
+        return mPlayabilityReason;
+    }
+
+    /** NEWTUBE(walk-replay): the error screen's subreason, or null (PlayabilityLog). */
+    public String getPlayabilitySubreason() {
+        return mPlayabilityDescription != null ? mPlayabilityDescription.toString() : null;
+    }
+
+    /** NEWTUBE(walk-replay): the raw age-gate marker isAgeGate reads, 0 when absent (PlayabilityLog). */
+    public int getDesktopLegacyAgeGateReason() {
+        return mDesktopLegacyAgeGateReason;
+    }
+
+    /**
+     * Age restricted video
+     */
+    public boolean isAgeRestricted() {
+        return ServiceHelper.atLeastOneEquals(mPlayabilityStatus, STATUS_LOGIN_REQUIRED, STATUS_AGE_CHECK_REQUIRED, STATUS_CONTENT_CHECK_REQUIRED);
+    }
+
+    public boolean isExtendedHlsFormatsBroken() {
+        return !isLive() && getHlsManifestUrl() == null && isAdaptiveFullHD();
+    }
+
+    //public boolean hasExtendedHlsFormats() {
+    //    if (!isLive() && getHlsManifestUrl() != null && isAdaptiveFullHD()) {
+    //        long uploadTimeMs = DateHelper.toUnixTimeMs(getUploadDate());
+    //        // Extended formats may not work during 3 days after publication
+    //        return uploadTimeMs > 0 && System.currentTimeMillis() - uploadTimeMs > 4*24*60*60*1_000;
+    //    }
+    //
+    //    return false;
+    //}
+
+    public boolean hasExtendedHlsFormats() {
+        // Need upload date check?
+        // Extended formats may not work up to 3 days after publication.
+        return !isLive() && getHlsManifestUrl() != null && isAdaptiveFullHD();
+    }
+
+    public boolean containsAdaptiveVideoInfo() {
+        if (getAdaptiveFormats() == null || isAdaptiveFormatsBroken()) {
+            return false;
+        }
+
+        boolean result = false;
+
+        for (AdaptiveVideoFormat format : getAdaptiveFormats()) {
+            String mimeType = format.getMimeType();
+            if (mimeType != null && mimeType.startsWith("video/")) {
+                result = true;
+                break;
+            }
+        }
+
+        return result;
+    }
+
+    public boolean containsRegularVideoInfo() {
+        if (getRegularFormats() == null) {
+            return false;
+        }
+
+        boolean result = false;
+
+        for (RegularVideoFormat format : getRegularFormats()) {
+            String mimeType = format.getMimeType();
+            if (mimeType != null && mimeType.startsWith("video/")) {
+                result = true;
+                break;
+            }
+        }
+
+        return result;
+    }
+
+    public boolean isStoryboardBroken() {
+        return !isLive() && getStoryboardSpec() == null && (containsAdaptiveVideoInfo() || containsRegularVideoInfo());
+    }
+
+    public boolean isLive() {
+        return getVideoDetails() != null && getVideoDetails().isLive();
+    }
+
+    public boolean hasSubtitles() {
+        return mCaptionTracks != null;
+    }
+
+    public String getPlayabilityStatus() {
+        return Helpers.toString(ServiceHelper.createInfo(mPlayabilityReason, mPlayabilityDescription));
+    }
+
+    public String getRawPlayabilityStatus() {
+        return mPlayabilityStatus;
+    }
+
+    public boolean isLoginRequired() {
+        return STATUS_LOGIN_REQUIRED.equals(mPlayabilityStatus);
+    }
+
+    // NEWTUBE(embed-reroll): the visitorData the /player request carried; not from the answer.
+    private String mRequestVisitorData;
+
+    public String getRequestVisitorData() {
+        return mRequestVisitorData;
+    }
+
+    public void setRequestVisitorData(String visitorData) {
+        mRequestVisitorData = visitorData;
+    }
+
+    public boolean isBotCheckRequired() {
+        return mIsBotCheckRequired
+                || BotCheckDetector.isExplicitBotCheck(mPlayabilityStatus, getPlayabilityStatus());
+    }
+
+    public void setBotCheckRequired(boolean required) {
+        mIsBotCheckRequired = required;
+    }
+
+    /**
+     * NEWTUBE(botwall): a stand-alone "confirm you're not a bot" verdict with no media and no
+     * videoDetails, so it can answer ANY video without carrying another video's metadata into it
+     * (VideoLoaderController syncs whatever details it is handed onto the open video). Used where a
+     * walled network is answered without asking anyone, and by the debug-only wall injection.
+     */
+    public static VideoInfo botCheckVerdict(String reason, boolean auth) {
+        VideoInfo info = new VideoInfo();
+        info.mPlayabilityStatus = STATUS_LOGIN_REQUIRED;
+        info.mPlayabilityReason = reason;
+        info.mIsAuth = auth;
+        info.mIsBotCheckRequired = true;
+        return info;
+    }
+
+    public String getStoryboardSpec() {
+        return mStoryboardSpec;
+    }
+
+    public String getTrailerVideoId() {
+        return mTrailerVideoId;
+    }
+
+    public String getStartTimestamp() {
+        return mStartTimestamp;
+    }
+
+    public String getUploadDate() {
+        return mUploadDate;
+    }
+
+    public long getStartTimeMs() {
+        return mStartTimeMs;
+    }
+
+    public int getStartSegmentNum() {
+        return mStartSegmentNum;
+    }
+
+    public int getSegmentDurationUs() {
+        return mSegmentDurationUs;
+    }
+
+    public float getLoudnessDb() {
+        return mLoudnessDb;
+    }
+
+    /**
+     * NEWTUBE(loudness): the track loudness relative to the answer's target, or null when unknown.
+     * VISIONOS omits {@code loudnessDb} but sends the absolute loudness and the target it is measured
+     * against (-14 LKFS), which give the same number: Rick Astley +0.99 either way.
+     */
+    @Nullable
+    public Float getAudioLoudnessDb() {
+        if (mAudioLoudnessDb != null) {
+            return mAudioLoudnessDb.floatValue();
+        }
+        if (mPerceptualLoudnessDb != null && mLoudnessTargetLkfs != null) {
+            return mPerceptualLoudnessDb.floatValue() - mLoudnessTargetLkfs.floatValue();
+        }
+        return null;
+    }
+
+    public boolean isStreamSeekable() {
+        return mIsStreamSeekable;
+    }
+
+    public boolean isHfr() {
+        return mDashManifestUrl != null && mDashManifestUrl.contains("/hfr/all");
+    }
+
+    public String getPaidContentText() {
+        return mPaidContentText != null ? Helpers.toString(mPaidContentText.getText()) : null;
+    }
+
+    public String getServerAbrStreamingUrl() {
+        return getUrlHolder().getUrl();
+    }
+
+    public String getVideoPlaybackUstreamerConfig() {
+        return mVideoPlaybackUstreamerConfig;
+    }
+
+    /**
+     * Sync live data
+     */
+    public void sync(DashInfo dashInfo) {
+        if (dashInfo == null) {
+            return;
+        }
+
+        mSegmentDurationUs = dashInfo.getSegmentDurationUs();
+        mStartTimeMs = dashInfo.getStartTimeMs();
+        mStartSegmentNum = dashInfo.getStartSegmentNum();
+        mIsStreamSeekable = dashInfo.isSeekable();
+    }
+
+    public void setAuth(boolean auth) {
+        mIsAuth = auth;
+    }
+
+    /**
+     * The SERVER's verdict on whether this /player request was signed in, or null when the
+     * response carried no {@code logged_in} tracking param. Unlike {@link #isAuth()} this is not
+     * our own outgoing flag, so it is the only thing that can tell an honoured credential from an
+     * ignored one. See the field doc on {@code mTrackingParams}.
+     */
+    @Nullable
+    public Boolean isServerLoggedIn() {
+        if (mTrackingParams == null) {
+            return null;
+        }
+
+        for (TrackingParam param : mTrackingParams) {
+            if (param == null || param.getParams() == null) {
+                continue;
+            }
+            for (TrackingParam.Param inner : param.getParams()) {
+                if (inner != null && TrackingParam.Param.KEY_LOGGED_IN.equals(inner.getKey())) {
+                    return "1".equals(inner.getValue());
+                }
+            }
+        }
+
+        return null;
+    }
+
+    public boolean isAuth() {
+        return mIsAuth;
+    }
+
+    private void parseTrackingParams() {
+        boolean parseDone = mEventId != null || mVisitorMonitoringData != null;
+
+        if (!parseDone && mWatchTimeUrl != null) {
+            UrlQueryString queryString = UrlQueryStringFactory.parse(mWatchTimeUrl);
+
+            mEventId = queryString.get(PARAM_EVENT_ID);
+            mVisitorMonitoringData = queryString.get(PARAM_VM);
+            mOfParam = queryString.get(PARAM_OF);
+        }
+    }
+
+    private List<CaptionTrack> mergeCaptionTracks() {
+        if (mMergedCaptionTracks == null) {
+            mMergedCaptionTracks = mCaptionTracks;
+
+            if (!Helpers.isNullOrEmpty(mTranslationLanguages) && !Helpers.isNullOrEmpty(mCaptionTracks)) {
+                CaptionTrack originTrack = findOriginTrack(mCaptionTracks);
+                for (TranslationLanguage language : mTranslationLanguages) {
+                    mMergedCaptionTracks.add(new TranslatedCaptionTrack(originTrack, language));
+                }
+            }
+        }
+
+        return mMergedCaptionTracks;
+    }
+
+    /**
+     * We need auto sub because the lang param doesn't contain country name (e.g. en instead of en-US)<br/>
+     * This needed to exclude already translated tracks later in {@link TranslatedCaptionTrack}<br/>
+     * Auto-dubbed videos have an extra auto sub per dub (e.g. a.de-DE for the de-DE.10 audio), sorted by the localized name
+     * Skipped or the translations will be made from the dub transcript
+     */
+    private CaptionTrack findOriginTrack(List<CaptionTrack> captionTracks) {
+        List<String> dubbedLanguages = getAutoDubbedLanguages();
+        CaptionTrack result = null;
+
+        for (CaptionTrack track : captionTracks) {
+            if (track.isAutogenerated()) {
+                if (result == null) {
+                    result = track;
+                }
+
+                if (!track.isDubTranscript() && !Helpers.containsIgnoreCase(dubbedLanguages, track.getLanguageCode())) {
+                    result = track;
+                    break;
+                }
+            }
+        }
+
+        return result != null ? result : captionTracks.get(0);
+    }
+
+    private List<String> getAutoDubbedLanguages() {
+        List<String> result = new ArrayList<>();
+
+        if (mAdaptiveFormats == null) {
+            return result;
+        }
+
+        for (AdaptiveVideoFormat format : mAdaptiveFormats) {
+            String audioTrackId = format.getAudioTrackId();
+
+            if (format.isAutoDubbed() && audioTrackId != null) {
+                result.add(YouTubeHelper.extractLang(audioTrackId));
+            }
+        }
+
+        return result;
+    }
+
+    private boolean isAdaptiveFullHD() {
+        return getAdaptiveFormats() != null && !getAdaptiveFormats().isEmpty() && "1080p".equals(getAdaptiveFormats().get(0).getQualityLabel());
+    }
+
+    /**
+     * TODO: remove when SABR parser will be fixed
+     */
+    public boolean isAdaptiveFormatsBroken() {
+        // TODO: remove when SABR parser will be fixed
+        if (mAdaptiveFormats == null || mAdaptiveFormats.isEmpty()) {
+            return false;
+        }
+
+        boolean allBroken = true;
+
+        for (AdaptiveVideoFormat format : mAdaptiveFormats) {
+            if (format != null && !format.isBroken()) {
+                allBroken = false;
+                break;
+            }
+        }
+
+        return allBroken;
+    }
+
+    public String getPoToken() {
+        return mPoToken;
+    }
+
+    public void setPoToken(String poToken) {
+        mPoToken = poToken;
+    }
+
+    public String getVisitorCookie() {
+        return mVisitorCookie;
+    }
+
+    public void setVisitorCookie(String cookie) {
+        mVisitorCookie = cookie;
+    }
+
+    public AppClient getClient() {
+        return mClient;
+    }
+
+    public void setClient(AppClient client) {
+        mClient = client;
+    }
+
+    public VideoUrlHolder getUrlHolder() {
+        if (mUrlHolder == null) {
+            mUrlHolder = new VideoUrlHolder(mServerAbrStreamingUrl, null, null);
+        }
+
+        return mUrlHolder;
+    }
+}

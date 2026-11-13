@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- MEETUBE(loader): the Frosted loader (the issue #77 player spinner, picked in Settings >
+     Customization): a glass disc - a dim base so the arc reads on any frame, a frosted white tint,
+     a soft highlight on top and a hairline rim - with a thin white arc that runs like the neon
+     one's (neon_arc). One drawable, so it fits the same Widget.MeeTube.GlassSpinner box. -->
+<animated-vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt">
+    <aapt:attr name="android:drawable">
+        <vector
+            android:width="24dp"
+            android:height="24dp"
+            android:viewportWidth="24"
+            android:viewportHeight="24">
+            <path
+                android:fillColor="#47000000"
+                android:pathData="M12,0 A12,12 0 1,1 12,24 A12,12 0 1,1 12,0" />
+            <path
+                android:fillColor="#1AFFFFFF"
+                android:pathData="M12,0 A12,12 0 1,1 12,24 A12,12 0 1,1 12,0" />
+            <path android:pathData="M12,0 A12,12 0 1,1 12,24 A12,12 0 1,1 12,0">
+                <aapt:attr name="android:fillColor">
+                    <gradient
+                        android:endColor="#00FFFFFF"
+                        android:endX="12"
+                        android:endY="24"
+                        android:startColor="#26FFFFFF"
+                        android:startX="12"
+                        android:startY="0"
+                        android:type="linear" />
+                </aapt:attr>
+            </path>
+            <path
+                android:pathData="M12,0.15 A11.85,11.85 0 1,1 12,23.85 A11.85,11.85 0 1,1 12,0.15"
+                android:strokeColor="#40FFFFFF"
+                android:strokeWidth="0.3" />
+            <group
+                android:name="spin"
+                android:pivotX="12"
+                android:pivotY="12">
+                <path
+                    android:name="arc"
+                    android:pathData="M12,6.6 A5.4,5.4 0 1,1 12,17.4 A5.4,5.4 0 1,1 12,6.6"
+                    android:strokeColor="#EBFFFFFF"
+                    android:strokeLineCap="round"
+                    android:strokeWidth="1.15"
+                    android:trimPathEnd="0.1" />
+            </group>
+        </vector>
+    </aapt:attr>
+
+    <target android:name="arc" android:animation="@animator/neon_arc" />
+
+    <target android:name="spin">
+        <aapt:attr name="android:animation">
+            <objectAnimator
+                android:duration="1300"
+                android:interpolator="@android:interpolator/linear"
+                android:propertyName="rotation"
+                android:repeatCount="infinite"
+                android:valueFrom="0"
+                android:valueTo="360"
+                android:valueType="floatType" />
+        </aapt:attr>
+    </target>
+</animated-vector>

@@ -1,0 +1,626 @@
+package com.liskovsoft.googlecommon.common.helpers
+
+import com.google.net.cronet.okhttptransport.CronetInterceptor
+import com.liskovsoft.sharedutils.cronet.CronetManager
+import com.liskovsoft.sharedutils.helpers.Helpers
+import com.liskovsoft.sharedutils.okhttp.OkHttpManager
+import com.liskovsoft.youtubeapi.common.helpers.AppConstants
+import com.liskovsoft.youtubeapi.app.AppService
+import okhttp3.Headers
+import okhttp3.HttpUrl
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import okio.Buffer
+import java.io.IOException
+import java.security.MessageDigest
+import java.util.Collections
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicLong
+import java.util.concurrent.TimeUnit
+
+internal object RetrofitOkHttpHelper {
+    // Open-path stall bound: /player + /next gate every video open (and each failover-ring step),
+    // so a stalled host must fail in 8s instead of the shared 20s OkHttp defaults.
+    private const val OPEN_PATH_TIMEOUT_MS = 8_000
+    // Browse/search/feed reads may legitimately take longer than /player, but a TCP/TLS route that
+    // cannot connect should not leave the UI skeleton waiting on the shared 20s connect default.
+    // Read/write timeouts remain untouched and OkHttp's normal connection recovery still applies.
+    private const val API_CONNECT_TIMEOUT_MS = 10_000
+    private const val PLAYER_PATH = "/youtubei/v1/player"
+    private const val NEXT_PATH = "/youtubei/v1/next"
+    private const val YOUTUBE_ORIGIN = "https://www.youtube.com"
+    private val authSkipList = Collections.synchronizedList(mutableListOf<Request>())
+    private val playerRequestIds = AtomicLong()
+    private val nextRequestIds = AtomicLong()
+    private val apiRequestIds = AtomicLong()
+
+    @JvmStatic
+    val authHeaders: MutableMap<String, String> = ConcurrentHashMap()
+
+    @JvmStatic
+    val client: OkHttpClient by lazy { createClient() }
+
+    @JvmStatic
+    var disableCompression: Boolean = false
+
+    @JvmStatic
+    fun addAuthSkip(request: Request) {
+        synchronized(authSkipList) {
+            if (!authSkipList.contains(request)) {
+                authSkipList.add(request)
+            }
+        }
+    }
+
+    private val commonHeaders = mapOf(
+        // Enable compression in production
+        "Accept-Encoding" to DefaultHeaders.ACCEPT_ENCODING,
+    )
+
+    private val apiHeaders = mapOf(
+        "User-Agent" to DefaultHeaders.APP_USER_AGENT,
+    )
+
+    private val apiPrefixes = arrayOf(
+        "https://www.googleapis.com/upload/drive/v3",
+        "https://www.googleapis.com/drive/v3",
+        "https://m.youtube.com/youtubei/v1/",
+        "https://www.youtube.com/youtubei/v1/",
+        "https://youtubei.googleapis.com/youtubei/v1",
+        "https://www.youtube.com/api/stats/",
+        "https://clients1.google.com/complete/"
+    )
+
+    /**
+     * NOTE: visitor header could broke many apis. E.g. VisitorService
+     */
+    private val visitorApiSuffixes = arrayOf(
+        "/youtubei/v1/browse",
+        "/youtubei/v1/search",
+        "/youtubei/v1/player",
+        "/youtubei/v1/reel/",
+        "/youtubei/v1/next",
+        "/api/stats/",
+    )
+
+    private val tParamSuffixes = listOf("/browse", "/next", "/reel", "/playlist")
+
+    private fun createClient(): OkHttpClient {
+        val builder = OkHttpManager.instance().client.newBuilder()
+        addCommonHeaders(builder)
+        addOpenPathTimeout(builder)
+        builder.eventListenerFactory { apiConnectionListener }
+        //addCronetInterceptor(builder)
+        val built = builder.build()
+        // One line per process: which protocols the InnerTube client offers, and whether its H2
+        // liveness PING is on. protocols=[http/1.1] on a phone means the H2 switch lost the race.
+        android.util.Log.d(
+            "NetPath",
+            "api-client built protocols=${built.protocols} pingMs=${built.pingIntervalMillis}" +
+                " thread=${Thread.currentThread().name}",
+        )
+        return built
+    }
+
+    // NEWTUBE(api-pool): see StaleApiConnectionGuard.
+    internal val staleGuard = StaleApiConnectionGuard { android.os.SystemClock.elapsedRealtime() }
+
+    /** Hosts whose idle connections the guard tracks: where /player and /next go. Tests widen it. */
+    @Volatile
+    internal var guardedHosts: Set<String> = setOf("www.youtube.com")
+
+    private val apiConnectionListener = object : okhttp3.EventListener() {
+        override fun connectionAcquired(call: okhttp3.Call, connection: okhttp3.Connection) {
+            staleGuard.acquired(connection)
+        }
+
+        override fun connectionReleased(call: okhttp3.Call, connection: okhttp3.Connection) {
+            // /player and /next go to www.youtube.com; other hosts' idle sockets are never picked
+            // for them, so they must not trigger an eviction either.
+            if (call.request().url.host in guardedHosts) {
+                staleGuard.released(connection, connection.protocol() == okhttp3.Protocol.HTTP_1_1)
+            }
+        }
+    }
+
+    /**
+     * Before an interactive /player or /next on cellular: if a pooled HTTP/1.1 connection has
+     * been idle long enough for a carrier NAT to have dropped it, evict the idle connections so
+     * this call dials a fresh one. Never fires on HTTP/2 (its PING keeps the mapping alive).
+     */
+    private fun evictStaleApiConnectionsIfNeeded(request: Request) {
+        val network = activeNetworkId()
+        evictStaleApiConnectionsIfNeeded(network.startsWith("cell:"), request.url.encodedPath, network)
+    }
+
+    /** Returns the idle time that triggered an eviction, or -1. Split out for tests. */
+    internal fun evictStaleApiConnectionsIfNeeded(cellular: Boolean, endpoint: String, network: String): Long {
+        val pool = client.connectionPool
+        var idle = 0
+        val idleMs = staleGuard.evictIfStale(cellular, { (it as okhttp3.Connection).socket().isClosed }) {
+            idle = pool.idleConnectionCount()
+            pool.evictAll()
+        }
+        if (idleMs < 0) {
+            return idleMs
+        }
+        android.util.Log.w(
+            "NetPath",
+            "api-pool evict-idle reason=http1-stale idleMs=$idleMs idleConnections=$idle" +
+                " endpoint=$endpoint net=$network",
+        )
+        return idleMs
+    }
+
+    /**
+     * Per-request timeout bounds for API calls. Every youtubeapi Retrofit
+     * instance rides this one client (auth and non-auth requests alike - auth is applied per
+     * request in [addCommonHeaders]). /player and /next get an 8s connect+read bound; other known
+     * API calls get only a 10s connect bound. Write timeouts and non-API traffic stay untouched.
+     */
+    private fun addOpenPathTimeout(builder: OkHttpClient.Builder) {
+        builder.addInterceptor { chain ->
+            val request = chain.request()
+            val path = request.url.encodedPath
+            if (path.contains("/youtubei/v1/player") || path.contains("/youtubei/v1/next")) {
+                evictStaleApiConnectionsIfNeeded(request)
+                chain.withConnectTimeout(OPEN_PATH_TIMEOUT_MS, TimeUnit.MILLISECONDS)
+                    .withReadTimeout(OPEN_PATH_TIMEOUT_MS, TimeUnit.MILLISECONDS)
+                    .proceed(request)
+            } else if (isApiEndpoint(request)) {
+                chain.withConnectTimeout(API_CONNECT_TIMEOUT_MS, TimeUnit.MILLISECONDS)
+                    .proceed(request)
+            } else {
+                chain.proceed(request)
+            }
+        }
+    }
+
+    private fun addCommonHeaders(builder: OkHttpClient.Builder) {
+        builder.addInterceptor { chain ->
+            val request = chain.request()
+            val headers = request.headers
+            val requestBuilder = request.newBuilder()
+
+            applyHeaders(this.commonHeaders, headers, requestBuilder)
+
+            val url = request.url.toString()
+
+            if (apiPrefixes.any { url.startsWith(it) }) {
+                val doSkipAuth = authSkipList.remove(request)
+                val isPlayer = isPlayerEndpoint(request)
+
+                // Empty Home fix (anonymous user) and improve Recommendations for everyone
+                if (visitorApiSuffixes.any { url.contains(it) })
+                    headers["X-Goog-Visitor-Id"] ?: AppService.instance().visitorData?.let { requestBuilder.header("X-Goog-Visitor-Id", it) }
+
+                applyHeaders(this.apiHeaders, headers, requestBuilder)
+                // A native /player identity must not inherit the global TV referer. yt-dlp sends
+                // Origin plus the selected client's UA/name/version and no Referer for this call.
+                // Endpoint annotations provide Origin explicitly; every other API keeps the
+                // historical default referer unless it declared a client-specific one.
+                if (!isPlayer) {
+                    applyHeaders(mapOf("Referer" to DefaultHeaders.REFERER), headers, requestBuilder)
+                }
+
+                val tParam = if (tParamSuffixes.any { url.contains(it) }) YouTubeHelper.generateTParameter() else null
+
+                if (authHeaders.isEmpty() || doSkipAuth) {
+                    // Match yt-dlp's anonymous player call: it is keyless. Authenticated TV calls
+                    // retain their existing key/auth behavior and all non-player APIs are unchanged.
+                    val apiKey = if (isPlayer) null else AppConstants.API_KEY
+                    applyQueryKeys(mapOf("key" to apiKey, "prettyPrint" to "false", "t" to tParam),
+                        request, requestBuilder)
+                } else {
+                    applyQueryKeys(mapOf("prettyPrint" to "false", "t" to tParam), request, requestBuilder)
+                    applyHeaders(authHeaders, headers, requestBuilder)
+                }
+            }
+
+            val finalRequest = requestBuilder.build()
+            val response = when {
+                isPlayerEndpoint(finalRequest) -> proceedLoggedPlayerRequest(chain, finalRequest)
+                isNextEndpoint(finalRequest) -> proceedLoggedNextRequest(chain, finalRequest)
+                isApiEndpoint(finalRequest) -> proceedLoggedApiRequest(chain, finalRequest)
+                else -> chain.proceed(finalRequest)
+            }
+            logBrotliOnce(response)
+            retryOnceIfAuthRejected(chain, finalRequest, response)
+        }
+    }
+
+    @Volatile
+    private var brotliSeen = false
+
+    /**
+     * One line per process confirming the server actually negotiated br after the phone
+     * gate flips it on (this interceptor sees the raw Content-Encoding — UnzippingInterceptor
+     * sits earlier in the chain and strips it on the way out).
+     */
+    private fun logBrotliOnce(response: okhttp3.Response) {
+        if (!brotliSeen && response.header("Content-Encoding") == "br") {
+            brotliSeen = true
+            android.util.Log.d("NetPath", "brotli active: first br response ${response.request.url.encodedPath}")
+        }
+    }
+
+    /**
+     * A 401 on an authed API call means the access token died before its 60-min window
+     * (server-side revoke — possible now that the header is persisted across process starts,
+     * see YouTubeSignInService). Mint a fresh header and replay the request ONCE with it.
+     * Unauthed/skip-auth requests pass through untouched.
+     */
+    private fun retryOnceIfAuthRejected(
+        chain: okhttp3.Interceptor.Chain,
+        request: Request,
+        response: okhttp3.Response,
+    ): okhttp3.Response {
+        if (response.code != 401) return response
+        val rejected = request.header("Authorization") ?: return response
+
+        val refreshed = try {
+            com.liskovsoft.youtubeapi.service.YouTubeSignInService.instance().refreshRejectedAuthHeader(rejected)
+        } catch (e: Exception) {
+            false
+        }
+        val newAuth = authHeaders["Authorization"]
+        if (!refreshed || newAuth == null || newAuth == rejected) return response
+
+        android.util.Log.d("NetPath", "auth-retry: 401 with stale header, replaying with fresh token")
+        response.close()
+        val retryBuilder = request.newBuilder()
+        for ((name, value) in authHeaders) retryBuilder.header(name, value)
+        return chain.proceed(retryBuilder.build())
+    }
+
+    internal fun isPlayerEndpoint(request: Request): Boolean =
+        request.url.encodedPath.endsWith(PLAYER_PATH)
+
+    internal fun isNextEndpoint(request: Request): Boolean =
+        request.url.encodedPath.endsWith(NEXT_PATH)
+
+    private fun isApiEndpoint(request: Request): Boolean {
+        val url = request.url.toString()
+        return apiPrefixes.any { url.startsWith(it) }
+    }
+
+    /**
+     * Safe timing/error visibility for browse, search, feeds, comments and other API calls. The
+     * endpoint contains host + path only: query values, request/response bodies, auth tokens,
+     * cookies and user-entered search text never enter logcat.
+     */
+    private fun proceedLoggedApiRequest(
+        chain: okhttp3.Interceptor.Chain,
+        request: Request,
+    ): okhttp3.Response {
+        val id = apiRequestIds.incrementAndGet()
+        val startedMs = android.os.SystemClock.elapsedRealtime()
+        val bodyBytes = try {
+            request.body?.contentLength() ?: 0
+        } catch (_: Exception) {
+            -1
+        }
+        val endpoint = "${request.url.host}${request.url.encodedPath}"
+        android.util.Log.d(
+            "NetPath",
+            "api-http[S] aid=$id method=${request.method} endpoint=$endpoint" +
+                " auth=${yn(request.header("Authorization") != null)}" +
+                " visitor=${VisitorFingerprint.of(request.header("X-Goog-Visitor-Id"))}" +
+                " bodyBytes=$bodyBytes net=${activeNetworkId()}",
+        )
+
+        try {
+            val response = chain.proceed(request)
+            val elapsed = android.os.SystemClock.elapsedRealtime() - startedMs
+            val message = "api-http[C] aid=$id method=${request.method} endpoint=$endpoint" +
+                " code=${response.code} ms=$elapsed net=${activeNetworkId()} ${responseSummary(response)}"
+            if (response.isSuccessful) {
+                android.util.Log.d("NetPath", message)
+            } else {
+                android.util.Log.w("NetPath", message)
+            }
+            return response
+        } catch (error: IOException) {
+            val elapsed = android.os.SystemClock.elapsedRealtime() - startedMs
+            android.util.Log.w(
+                "NetPath",
+                "api-http[E] aid=$id method=${request.method} endpoint=$endpoint ms=$elapsed " +
+                    "net=${activeNetworkId()} " +
+                    "${error.javaClass.simpleName}:${safeErrorMessage(error.message)}",
+            )
+            throw error
+        }
+    }
+
+    /** Safe /player request/response fingerprint: useful in field logs, contains no credentials. */
+    private fun proceedLoggedPlayerRequest(
+        chain: okhttp3.Interceptor.Chain,
+        request: Request,
+    ): okhttp3.Response {
+        val id = playerRequestIds.incrementAndGet()
+        val startedMs = android.os.SystemClock.elapsedRealtime()
+        val body = inspectPlayerBody(request)
+        val visitor = request.header("X-Goog-Visitor-Id")
+        val origin = request.header("Origin")
+        val referer = request.header("Referer")
+        android.util.Log.d(
+            "NetPath",
+            "player-http[S] rid=$id video=${body.videoId} client=${request.header("X-Youtube-Client-Name")}" +
+                " cver=${request.header("X-Youtube-Client-Version")}" +
+                " visitor=${VisitorFingerprint.of(visitor)} pot=${yn(body.hasPoToken)}" +
+                " auth=${yn(request.header("Authorization") != null)}" +
+                " cookie=${yn(request.header("Cookie") != null)}" +
+                " authUser=${yn(request.header("X-Goog-AuthUser") != null)}" +
+                " contentOk=${yn(body.contentCheckOk)} racyOk=${yn(body.racyCheckOk)}" +
+                " sts=${yn(body.hasSignatureTimestamp)} stsDigits=${body.signatureTimestampDigits}" +
+                " ua=${fingerprint(request.header("User-Agent"))}" +
+                " origin=${if (origin == YOUTUBE_ORIGIN) "youtube" else if (origin == null) "none" else "other"}" +
+                " referer=${if (referer == null) "none" else "present"}" +
+                " key=${yn(request.url.queryParameter("key") != null)} net=${activeNetworkId()}",
+        )
+
+        try {
+            val response = chain.proceed(request)
+            val elapsed = android.os.SystemClock.elapsedRealtime() - startedMs
+            android.util.Log.d(
+                "NetPath",
+                "player-http[C] rid=$id video=${body.videoId} code=${response.code}" +
+                    " ms=$elapsed net=${activeNetworkId()} ${responseSummary(response)}",
+            )
+            if (!response.isSuccessful) {
+                val errorText = errorBodyText(response)
+                android.util.Log.w(
+                    "NetPath",
+                    "player-http[E] rid=$id code=${response.code} bodyHash=${fingerprint(errorText)}" +
+                        " body=${printable(errorText, 240)}",
+                )
+            }
+            return response
+        } catch (error: IOException) {
+            val elapsed = android.os.SystemClock.elapsedRealtime() - startedMs
+            android.util.Log.w(
+                "NetPath",
+                "player-http[E] rid=$id video=${body.videoId} ms=$elapsed " +
+                    "${error.javaClass.simpleName}: ${safeErrorMessage(error.message)}",
+            )
+            throw error
+        }
+    }
+
+    /** Safe /next timing shows whether an apparent playback loop is fetching suggestions. */
+    private fun proceedLoggedNextRequest(
+        chain: okhttp3.Interceptor.Chain,
+        request: Request,
+    ): okhttp3.Response {
+        val id = nextRequestIds.incrementAndGet()
+        val startedMs = android.os.SystemClock.elapsedRealtime()
+        val body = inspectPlayerBody(request)
+        android.util.Log.d(
+            "NetPath",
+            "next-http[S] nid=$id video=${body.videoId}" +
+                " client=${request.header("X-Youtube-Client-Name")}" +
+                " cver=${request.header("X-Youtube-Client-Version")}" +
+                " visitor=${VisitorFingerprint.of(request.header("X-Goog-Visitor-Id"))}" +
+                " auth=${yn(request.header("Authorization") != null)}" +
+                " cookie=${yn(request.header("Cookie") != null)} net=${activeNetworkId()}",
+        )
+        try {
+            val response = chain.proceed(request)
+            val elapsed = android.os.SystemClock.elapsedRealtime() - startedMs
+            android.util.Log.d(
+                "NetPath",
+                "next-http[C] nid=$id video=${body.videoId} code=${response.code}" +
+                    " ms=$elapsed net=${activeNetworkId()} ${responseSummary(response)}",
+            )
+            return response
+        } catch (error: IOException) {
+            val elapsed = android.os.SystemClock.elapsedRealtime() - startedMs
+            android.util.Log.w(
+                "NetPath",
+                "next-http[E] nid=$id video=${body.videoId} ms=$elapsed " +
+                    "${error.javaClass.simpleName}: ${safeErrorMessage(error.message)}",
+            )
+            throw error
+        }
+    }
+
+    private fun responseSummary(response: okhttp3.Response): String {
+        var redirects = 0
+        var prior = response.priorResponse
+        while (prior != null) {
+            redirects++
+            prior = prior.priorResponse
+        }
+        val contentType = response.header("Content-Type")?.substringBefore(';') ?: "none"
+        val contentLength = response.header("Content-Length") ?: "unknown"
+        val encoding = response.header("Content-Encoding") ?: "identity"
+        val tls = response.handshake?.tlsVersion?.javaName ?: "none"
+        return "protocol=${response.protocol} tls=$tls host=${response.request.url.host}" +
+            " redirects=$redirects ctype=$contentType clen=$contentLength encoding=$encoding"
+    }
+
+    private data class PlayerBodyInfo(
+        val videoId: String,
+        val hasPoToken: Boolean,
+        val contentCheckOk: Boolean,
+        val racyCheckOk: Boolean,
+        val hasSignatureTimestamp: Boolean,
+        val signatureTimestampDigits: Int,
+    )
+
+    private fun inspectPlayerBody(request: Request): PlayerBodyInfo {
+        return try {
+            val buffer = Buffer()
+            request.body?.writeTo(buffer)
+            val body = buffer.readUtf8()
+            val videoId = Regex("\\\"videoId\\\"\\s*:\\s*\\\"([^\\\"]+)\\\"")
+                .find(body)?.groupValues?.getOrNull(1) ?: "?"
+            // Format only, never the timestamp itself. A full positive integer token is required:
+            // decimal/exponent/string/negative values must not be mistaken for an integer prefix.
+            val signatureTimestampDigits = Regex(""""signatureTimestamp"\s*:\s*([1-9][0-9]*)\s*(?=[,}])""")
+                .find(body)?.groupValues?.getOrNull(1)?.length ?: 0
+            PlayerBodyInfo(
+                videoId,
+                Regex("\\\"poToken\\\"\\s*:").containsMatchIn(body),
+                Regex("\\\"contentCheckOk\\\"\\s*:\\s*true").containsMatchIn(body),
+                Regex("\\\"racyCheckOk\\\"\\s*:\\s*true").containsMatchIn(body),
+                Regex("\\\"signatureTimestamp\\\"\\s*:").containsMatchIn(body),
+                signatureTimestampDigits,
+            )
+        } catch (_: Exception) {
+            PlayerBodyInfo("?", false, false, false, false, 0)
+        }
+    }
+
+    /**
+     * The error body of a failed /player call, decompressed when it needs to be.
+     *
+     * This interceptor sits ABOVE the brotli decoder, so for a `Content-Encoding: br` response the
+     * peeked bytes are still compressed - and every InnerTube error is br-encoded. The log line
+     * therefore printed pure mojibake for exactly the responses worth reading. Found the hard way
+     * on 2026-09-07 chasing a repeatable HTTP 400 from an account-bearing WEB_EMBED /player, whose
+     * message was the entire point of the experiment.
+     *
+     * Decoding is best-effort by construction: the caller peeks a bounded prefix, so the brotli
+     * stream is usually truncated and throws partway. Whatever decoded before that is kept - the
+     * message lives at the front of these payloads.
+     */
+    private fun errorBodyText(response: okhttp3.Response): String {
+        val raw = try {
+            response.peekBody(2048).bytes()
+        } catch (_: Exception) {
+            return ""
+        }
+
+        if (!response.header("Content-Encoding").equals("br", ignoreCase = true)) {
+            return String(raw, Charsets.UTF_8)
+        }
+
+        val decoded = java.io.ByteArrayOutputStream()
+        var input: java.io.InputStream? = null
+        try {
+            input = brotliStream(java.io.ByteArrayInputStream(raw)) ?: return ""
+            val chunk = ByteArray(256)
+            while (true) {
+                val read = input.read(chunk)
+                if (read <= 0) break
+                decoded.write(chunk, 0, read)
+            }
+        } catch (_: Exception) {
+            // Truncated prefix - fall through with what we already have.
+        } finally {
+            try {
+                input?.close()
+            } catch (_: Exception) {
+            }
+        }
+        return String(decoded.toByteArray(), Charsets.UTF_8)
+    }
+
+    /**
+     * The brotli decoder reaches us only as a runtime transitive of SharedModules' okhttp-brotli,
+     * which is `implementation`-scoped and therefore absent from this module's COMPILE classpath.
+     * Reflection keeps the fix inside this file: adding a dependency to a submodule build file for
+     * a logging-path nicety would put churn in front of every upstream merge, and the honest
+     * fallback if the class is ever gone is simply an unreadable body, which is today's behaviour.
+     */
+    private fun brotliStream(source: java.io.InputStream): java.io.InputStream? = try {
+        Class.forName("org.brotli.dec.BrotliInputStream")
+            .getConstructor(java.io.InputStream::class.java)
+            .newInstance(source) as java.io.InputStream
+    } catch (_: Throwable) {
+        null
+    }
+
+    private fun fingerprint(value: String?): String {
+        if (value.isNullOrEmpty()) {
+            return "none"
+        }
+        return try {
+            MessageDigest.getInstance("SHA-256").digest(value.toByteArray(Charsets.UTF_8))
+                .take(5).joinToString("") { "%02x".format(it) }
+        } catch (_: Exception) {
+            Integer.toHexString(value.hashCode())
+        }
+    }
+
+    private fun printable(value: String, max: Int): String {
+        val safe = value.replace(Regex("[^\\x20-\\x7E]"), ".")
+        return if (safe.length <= max) safe else safe.substring(0, max) + "..."
+    }
+
+    private fun safeErrorMessage(value: String?): String {
+        val withoutUrls = (value ?: "").replace(Regex("https?://\\S+"), "[url]")
+        return printable(withoutUrls, 160)
+    }
+
+    private fun activeNetworkId(): String {
+        return try {
+            val context = AppService.instance().context
+            val manager = context.getSystemService(android.content.Context.CONNECTIVITY_SERVICE)
+                as? android.net.ConnectivityManager
+            val network = manager?.activeNetwork ?: return "none"
+            val caps = manager.getNetworkCapabilities(network) ?: return "none"
+            val transport = when {
+                caps.hasTransport(android.net.NetworkCapabilities.TRANSPORT_VPN) -> "vpn"
+                caps.hasTransport(android.net.NetworkCapabilities.TRANSPORT_WIFI) -> "wifi"
+                caps.hasTransport(android.net.NetworkCapabilities.TRANSPORT_CELLULAR) -> "cell"
+                caps.hasTransport(android.net.NetworkCapabilities.TRANSPORT_ETHERNET) -> "ethernet"
+                else -> "other"
+            }
+            "$transport:${network.hashCode()}"
+        } catch (_: RuntimeException) {
+            "unknown"
+        }
+    }
+
+    private fun yn(value: Boolean) = if (value) "y" else "n"
+
+    private fun applyHeaders(newHeaders: Map<String, String?>, oldHeaders: Headers, builder: Request.Builder) {
+        for (header in newHeaders) {
+            if (header.key == "Accept-Encoding") {
+                if (disableCompression) {
+                    continue
+                }
+                // Resolved at request time so the phone flavor's brotli gate (set after this
+                // object's static init) takes effect — commonHeaders itself is built once.
+                oldHeaders[header.key] ?: builder.header(header.key, DefaultHeaders.acceptEncoding())
+                continue
+            }
+
+            // Don't override existing headers
+            oldHeaders[header.key] ?: header.value?.let { builder.header(header.key, it) } // NOTE: don't remove null check
+        }
+    }
+
+    private fun applyQueryKeys(keys: Map<String, String?>, request: Request, builder: Request.Builder) {
+        val originUrl = request.url
+
+        var newUrlBuilder: HttpUrl.Builder? = null
+
+        for (entry in keys) {
+            // Don't override existing keys
+            originUrl.queryParameter(entry.key) ?: run {
+                if (entry.value == null)
+                    return@run
+
+                if (newUrlBuilder == null) {
+                    newUrlBuilder = originUrl.newBuilder()
+                }
+
+                newUrlBuilder?.addQueryParameter(entry.key, entry.value)
+            }
+        }
+
+        newUrlBuilder?.run {
+            builder.url(build())
+        }
+    }
+
+    private fun addCronetInterceptor(builder: OkHttpClient.Builder) {
+        val engine = CronetManager.getEngine(AppService.instance().context)
+        if (engine != null) {
+            builder.addInterceptor(CronetInterceptor.newBuilder(engine).build())
+        }
+    }
+}

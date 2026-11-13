@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- MEETUBE(tablet): the floating mini player as big as Android's picture-in-picture window
+         here, 0.6 of the short side less 16dp edges: 341dp wide on a 600dp-wide screen. -->
+    <dimen name="meetube_mini_width">341dp</dimen>
+    <dimen name="meetube_mini_height">192dp</dimen>
+</resources>

@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- MEETUBE(glass): the watch page's Subscribe pill, 40dp tall inside its 48dp touch target. Not
+     subscribed: the solid main-action pill. Subscribed (selected): a glass pill like the action row's
+     (tint + hairline). Each ripple has the pill as its mask: without one, a press flashed a square
+     ripple over the pill's rounded ends. -->
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:state_selected="true">
+        <inset android:insetTop="4dp" android:insetBottom="4dp">
+            <ripple android:color="?android:attr/colorControlHighlight">
+                <item>
+                    <shape android:shape="rectangle">
+                        <solid android:color="@color/meetube_glass_fill" />
+                        <stroke android:width="0.5dp" android:color="@color/meetube_glass_stroke" />
+                        <corners android:radius="20dp" />
+                    </shape>
+                </item>
+                <item android:id="@android:id/mask">
+                    <shape android:shape="rectangle">
+                        <solid android:color="#FFFFFFFF" />
+                        <corners android:radius="20dp" />
+                    </shape>
+                </item>
+            </ripple>
+        </inset>
+    </item>
+    <item>
+        <inset android:insetTop="4dp" android:insetBottom="4dp">
+            <ripple android:color="?android:attr/colorControlHighlight">
+                <item>
+                    <shape android:shape="rectangle">
+                        <solid android:color="@color/mobile_color_inverse_surface" />
+                        <corners android:radius="20dp" />
+                    </shape>
+                </item>
+                <item android:id="@android:id/mask">
+                    <shape android:shape="rectangle">
+                        <solid android:color="#FFFFFFFF" />
+                        <corners android:radius="20dp" />
+                    </shape>
+                </item>
+            </ripple>
+        </inset>
+    </item>
+</selector>

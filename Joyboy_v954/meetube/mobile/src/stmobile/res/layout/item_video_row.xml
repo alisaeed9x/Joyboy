@@ -1,0 +1,134 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  MEETUBE(list layout, issue #82): item_video_card as a compact row - a small 16:9 thumbnail on the
+  left, title and meta on the right, YouTube's list. Same view ids as the card, so
+  VideoCardAdapter.VideoViewHolder binds it unchanged; no avatar (the row has no room for one).
+-->
+<com.google.android.material.card.MaterialCardView
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:id="@+id/video_card_root"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:layout_margin="@dimen/mobile_card_spacing"
+    android:checkable="false"
+    android:clickable="true"
+    android:focusable="true"
+    android:foreground="?attr/selectableItemBackground"
+    app:cardBackgroundColor="@android:color/transparent"
+    app:cardCornerRadius="12dp"
+    app:cardElevation="0dp">
+
+    <androidx.constraintlayout.widget.ConstraintLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content">
+
+        <com.google.android.material.card.MaterialCardView
+            android:id="@+id/video_thumbnail_frame"
+            android:layout_width="@dimen/mobile_watch_related_thumb_width"
+            android:layout_height="0dp"
+            app:cardBackgroundColor="@color/mobile_color_placeholder"
+            app:cardCornerRadius="12dp"
+            app:cardElevation="0dp"
+            app:layout_constraintDimensionRatio="16:9"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintTop_toTopOf="parent">
+
+            <!-- MEETUBE(glass): what the badge frosts. -->
+            <com.newtube.mobile.ui.common.GlassSource
+                android:id="@+id/video_thumbnail_glass"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent">
+
+                <ImageView
+                    android:id="@+id/video_thumbnail"
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent"
+                    android:contentDescription="@null"
+                    android:scaleType="centerCrop" />
+
+            </com.newtube.mobile.ui.common.GlassSource>
+
+            <TextView
+                android:id="@+id/video_short_title"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:visibility="gone" />
+
+            <TextView
+                android:id="@+id/video_badge"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="bottom|end"
+                android:layout_margin="4dp"
+                android:background="@drawable/bg_video_badge"
+                android:paddingHorizontal="4dp"
+                android:paddingVertical="1dp"
+                android:textColor="@android:color/white"
+                android:textSize="11sp"
+                android:textStyle="bold"
+                android:visibility="gone"
+                tools:text="12:34" />
+
+            <com.newtube.mobile.ui.common.GlowProgressBar
+                android:id="@+id/video_watch_progress"
+                style="?android:attr/progressBarStyleHorizontal"
+                android:layout_width="match_parent"
+                android:layout_height="3dp"
+                android:layout_gravity="bottom"
+                android:max="100"
+                android:progressBackgroundTint="@color/mobile_color_progress_track"
+                android:progressTint="@color/mobile_color_progress"
+                android:visibility="gone"
+                tools:progress="40"
+                tools:visibility="visible" />
+
+        </com.google.android.material.card.MaterialCardView>
+
+        <TextView
+            android:id="@+id/video_title"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="12dp"
+            android:ellipsize="end"
+            android:fontFamily="sans-serif-medium"
+            android:lineSpacingExtra="1sp"
+            android:maxLines="3"
+            android:textColor="@color/mobile_color_on_surface"
+            android:textSize="15sp"
+            app:layout_constraintEnd_toStartOf="@+id/video_overflow"
+            app:layout_constraintStart_toEndOf="@id/video_thumbnail_frame"
+            app:layout_constraintTop_toTopOf="parent"
+            tools:text="A great video title that may wrap to two or three lines" />
+
+        <ImageButton
+            android:id="@+id/video_overflow"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:layout_marginEnd="-10dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:contentDescription="@string/mobile_player_more"
+            android:padding="10dp"
+            android:src="@drawable/ic_mobile_more_vert"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintTop_toTopOf="parent" />
+
+        <TextView
+            android:id="@+id/video_meta"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="12dp"
+            android:layout_marginTop="2dp"
+            android:ellipsize="end"
+            android:maxLines="2"
+            android:textColor="@color/mobile_color_on_surface_secondary"
+            android:textSize="12sp"
+            app:layout_constraintEnd_toStartOf="@id/video_overflow"
+            app:layout_constraintStart_toEndOf="@id/video_thumbnail_frame"
+            app:layout_constraintTop_toBottomOf="@id/video_title"
+            tools:text="Channel name · 1.2M views · 3 weeks ago" />
+
+    </androidx.constraintlayout.widget.ConstraintLayout>
+
+</com.google.android.material.card.MaterialCardView>

@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- MEETUBE(launch): the routing screen's theme; its Android 12+ splash is Theme.NewTube's (the
+         first frame: LaunchSplash animates in-app). -->
+    <style name="Theme.MeeTube.Splash" parent="Theme.NewTube" />
+</resources>

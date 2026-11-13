@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- MEETUBE(tablet): an upright tablet's sheets (lyrics, description, the gear menu...) span
+         the screen, as a phone's do; at Material's 640dp they floated in the middle. -->
+    <dimen name="meetube_sheet_max_width">100000dp</dimen>
+</resources>

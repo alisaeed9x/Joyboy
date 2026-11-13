@@ -1,0 +1,13 @@
+# v934 — المرحلة 2 من دمج المشغّل: MeeTube بقى مشغّل الملفات واللينكات + زرار وقايمة الترجمة
+- **التوجيه اتقلب:** `MtPlay.enabled()` الافتراضي بقى **true** (`mt_main_player`). مفتاح الرجوع لمشغّل Joyboy: إعدادات مظهر المشغّل ← «مشغّل MeeTube لكل الملفات واللينكات».
+- **هيدرز اللينكات (Referer / User-Agent / Cookie) + الصوت المنفصل (`aurl`)** بقوا مدعومين في MeeTube:
+  - `Video.headers` + `Video.audioUrl` (جديدين، ومنسوخين في `Video.from`) ← `PlayerEngine.openUrlList(list, headers, audio)` (default بيرجع للقديمة) ← `MobilePlaybackActivity` ← `Media3PlayerController` ← `Media3SourceFactory.fromUrlWithHeaders` (`DefaultHttpDataSource` بالهيدرز + `DefaultMediaSourceFactory` يختار mp4/HLS/DASH، و`MergingMediaSource` لو في صوت منفصل). من غير هيدرز/صوت المسار القديم زي ما هو بالظبط.
+  - `VideoLoaderController` بينده الدالة الجديدة؛ `VideoInfo.headers()` بيرجّع هيدرز الفيديو، و`MtTranslate` بيمرّرها لمصدر صوت المحرك (لينك مباشر محتاج Referer).
+  - `MtPlay.decide` بيطلّع الهيدرز والصوت في `Decision` (`headers`/`audio`)، و`reroute` بيحطهم في `Video`.
+- **زرار الترجمة رجع:** «🌐 ترجم / % / ⏳» + «⚙» في صف أزرار الأعلى (جنب الكاست/CC)، بشكل زجاجي. الترجمة التلقائية (`autotr` من المتصفح/المكتبة) رجعت تشتغل (`maybeAuto`).
+- **قايمة الترجمة (⚙):** ابدأ/وقّف · وضع الترجمة (فردي/أصلي/مزدوج/مزدوج أصلي فوق) · قايمة الجمل (اختار جملة ← المشغّل يروح لوقتها) · إزاحة التوقيت ±0.25ث وتصفير · ابعت للتلفزيون · إعدادات محرك الترجمة.
+- **السبتايتل بيطلع فوق أزرار المشغّل** لما تظهر (`JoyboyPlayerHost.onControlsVisibility` بتتنده من `MobilePlaybackActivity` عند إظهار/إخفاء الأزرار): هامش 96dp ظاهرة / 40dp مخفية.
+- معدّل: `Video.java` · `PlayerEngine.java` · `VideoLoaderController.java` · `MobilePlaybackActivity.java` · `Media3PlayerController.java` · `Media3SourceFactory.java` · `MtPlay.kt` · `MtTranslate.kt` · `MtPlayerLook.kt`. مفيش ملف `.kt` جديد (`kt_manifest.txt` زي ما هو).
+- **لسه على مشغّل Joyboy (بسبب مسجّل في اللوج `MtPlay: skip — …`):** يوتيوب (`ytid`/`ytpend`/`forceid`) · قايمة جودات (`qlist`) · `mirror_uri` · وضع المتخفي (محتاج تعطيل التاريخ) · `hsite` (محتاج استخراج) · ملف `.part` · لينك مش بامتداد ميديا · التلفزيون · `remote`.
+- **ما اتنقلش لسه من خطة م2:** نسخ محفوظة (versions) · ستايل السبتايتل (ستوديو) · سبتايتل جانبي `.srt/.vtt` · دبلجة · تحميل من المشغّل · مسارات صوت للمصادر المستخرجة · bottom-sheet بدل الحوار الزجاجي.
+- لم يتم compile ولا اتجرّب. تحقق ثابت: توازن الأقواس في كل الملفات المعدّلة.

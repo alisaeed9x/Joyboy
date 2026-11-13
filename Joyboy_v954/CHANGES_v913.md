@@ -1,0 +1,1 @@
+v913: Theme.onPrimary (لون النص فوق accent MeeTube: أسود في الفاتح/أبيض في الداكن) · LibraryUi: زرار ▶ العايم وعلامة ✓ الاختيار بقوا th.primary · Browser: أزرار نافذة الجودة (شاهد/تلفزيون/ليستة/حمّل) بقت primary بدل 1E6FE0. الباقي (Player/PlayerPad/ControllerPad/HtmlUi/PlayQueueUi/VidMark/LinkBubble/ClipWatch) لسه — محتاج قرار. لم يتم compile.

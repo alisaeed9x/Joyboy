@@ -1,0 +1,104 @@
+package com.tttt.subtitler
+
+import org.json.JSONArray
+import org.json.JSONObject
+
+/** آخر الفيديوهات (للشاشة الرئيسية) — فهرس صغير recent.json */
+class Recent(val id: String, val title: String, val url: String, val uri: String, val posSec: Double, val durSec: Double,
+             val subs: Int, val coverSec: Double, val ts: Long) {
+    val percent: Int get() = PlayerLogic.percent(coverSec, durSec)
+}
+
+object Recents {
+    fun parse(s: String): List<Recent> = try {
+        val a = JSONArray(s.ifEmpty { "[]" })
+        (0 until a.length()).mapNotNull { a.optJSONObject(it) }.map {
+            Recent(it.optString("id"), it.optString("title"), it.optString("url"), it.optString("uri"), it.optDouble("pos", 0.0),
+                it.optDouble("dur", 0.0), it.optInt("subs", 0), it.optDouble("cover", 0.0), it.optLong("ts", 0))
+        }.filter { it.id.isNotEmpty() }
+    } catch (_: Exception) { emptyList() }
+
+    fun toJson(l: List<Recent>): String {
+        val a = JSONArray()
+        for (r in l) a.put(JSONObject().put("id", r.id).put("title", r.title).put("url", r.url).put("uri", r.uri).put("pos", r.posSec)
+            .put("dur", r.durSec).put("subs", r.subs).put("cover", r.coverSec).put("ts", r.ts))
+        return a.toString()
+    }
+    fun remove(l: List<Recent>, id: String): List<Recent> = l.filter { it.id != id }
+    /** (v568) معرّف يوتيوب (11 حرف) لو الفيديو ده يوتيوب — من الـid المحفوظ أو من اللينك. لينك الستريم المحفوظ بيتنتهي، فيوتيوب لازم يتفتح بالمعرّف في قسم يوتيوب مش باللينك */
+    fun ytIdOf(r: Recent): String? =
+        r.id.takeIf { it.startsWith("yt:") }?.removePrefix("yt:")?.takeIf { it.length == 11 } ?: YT_URL_RE.find(r.url)?.groupValues?.get(1)
+    private val YT_URL_RE = Regex("(?:youtu\\.be/|youtube\\.com/(?:watch\\?(?:[^\\s#]*&)?v=|shorts/|live/|embed/))([A-Za-z0-9_-]{11})")
+    /** نفس الفيديو بيتحدّث ويطلع فوق؛ والقايمة محدودة */
+    fun upsert(l: List<Recent>, r: Recent, max: Int = 15): List<Recent> = (listOf(r) + l.filter { it.id != r.id }).take(max)
+
+    val ioLock = Any()   // (v664) عام: المشغّل بيكتب recent.json بنفس القفل عشان مايحصلش تداخل مع حفظ الخلفية
+    /** تحديث تقدم فيديو من الخلفية: بيحافظ على مكان الوقوف القديم ومابيخبّيش باقي الفيديوهات (حد أقصى 300) */
+    fun saveProgress(ctx: android.content.Context, id: String, title: String, url: String, uri: String, durSec: Double, subs: Int, coverSec: Double) {
+        synchronized(ioLock) {
+            try {
+                val f = java.io.File(ctx.filesDir, "recent.json")
+                val old = parse(try { f.readText() } catch (_: Exception) { "" })
+                val prev = old.firstOrNull { it.id == id }
+                val idx = old.indexOfFirst { it.id == id }
+                // (v664) تحديث من الخلفية (ترجمة فيديو قديم لسه شغّالة) ما بيرفعش الفيديو لأول القايمة: يتحدّث مكانه بنفس ترتيبه ووقته. كان بيطلّع الفيديو الأول فوق «آخر المشغّلة» كل ٦ ثواني فوق الفيديو الجديد
+                val r = Recent(id, title, url, uri, prev?.posSec ?: 0.0, if (durSec > 0) durSec else (prev?.durSec ?: 0.0), subs, coverSec, prev?.ts ?: System.currentTimeMillis())
+                val out = if (idx >= 0) old.toMutableList().also { it[idx] = r }.toList() else upsert(old, r, 300)
+                f.writeText(toJson(out))
+            } catch (_: Exception) {}
+        }
+    }
+
+    /** فيديو اتسمّى من جديد: نفس التقدم بمعرّف واسم جديدين */
+    fun rename(ctx: android.content.Context, oldId: String, newId: String, newTitle: String) {
+        synchronized(ioLock) {
+            try {
+                val f = java.io.File(ctx.filesDir, "recent.json")
+                val l = parse(try { f.readText() } catch (_: Exception) { "" }).map { if (it.id == oldId) Recent(newId, newTitle, it.url, it.uri, it.posSec, it.durSec, it.subs, it.coverSec, it.ts) else it }
+                f.writeText(toJson(l))
+            } catch (_: Exception) {}
+        }
+    }
+    fun drop(ctx: android.content.Context, id: String) {
+        synchronized(ioLock) {
+            try { val f = java.io.File(ctx.filesDir, "recent.json"); f.writeText(toJson(remove(parse(try { f.readText() } catch (_: Exception) { "" }), id))) } catch (_: Exception) {}
+        }
+    }
+
+    /** (v558) مسح كل آخر المشغّلة */
+    fun clearAll(ctx: android.content.Context) {
+        synchronized(ioLock) { try { java.io.File(ctx.filesDir, "recent.json").writeText("[]") } catch (_: Exception) {} }
+    }
+    /** (v558) شيل اللي يطابق الشرط (مثلًا فيديوهات المتصفح/يوتيوب = اللي ليها url ومالهاش uri) */
+    fun dropWhere(ctx: android.content.Context, pred: (Recent) -> Boolean) {
+        synchronized(ioLock) {
+            try { val f = java.io.File(ctx.filesDir, "recent.json"); f.writeText(toJson(parse(try { f.readText() } catch (_: Exception) { "" }).filter { !pred(it) })) } catch (_: Exception) {}
+        }
+    }
+
+    /** (v712) سجل المشاهدة الكامل: آخر المشغّلة (recent.json) + سجل المشاهدة (PubHistory: متصفح / يوتيوب / ملفات) — مرتّب بالأحدث ومن غير تكرار */
+    fun merged(ctx: android.content.Context, max: Int = 60): List<Recent> {
+        val base = try { parse(java.io.File(ctx.filesDir, "recent.json").readText()) } catch (_: Exception) { emptyList() }
+        val out = ArrayList<Recent>(base)
+        val seen = HashSet<String>(); for (r in base) { seen.add(r.id); ytIdOf(r)?.let { seen.add("yt:" + it) }; if (r.uri.isNotEmpty()) seen.add(r.uri); if (r.url.isNotEmpty()) seen.add(r.url) }
+        try {
+            for (src in listOf("youtube", "browser", "local")) for (x in PubHistory.list("v", src)) {
+                val ref = x.ref
+                val r: Recent = when (src) {
+                    "youtube" -> { if ("yt:" + ref in seen) continue; Recent("yt:" + ref, x.title, "", "", 0.0, 0.0, 0, 0.0, x.ts) }
+                    "local" -> { if (ref in seen) continue; Recent(ref, x.title, "", ref, 0.0, 0.0, 0, 0.0, x.ts) }
+                    else -> { if (ref in seen) continue; Recent(ref, x.title, ref, "", 0.0, 0.0, 0, 0.0, x.ts) }
+                }
+                seen.add(if (src == "youtube") "yt:" + ref else ref); out.add(r)
+            }
+        } catch (_: Throwable) {}
+        return out.sortedByDescending { it.ts }.take(max)
+    }
+
+    fun titleOf(videoId: String): String {
+        if (videoId.startsWith("yt:")) return "يوتيوب · " + videoId.removePrefix("yt:")
+        val raw = videoId.removePrefix("f:").removePrefix("u:")
+        val name = if (videoId.startsWith("f:")) raw.substringBeforeLast(':') else raw.substringBefore('?').substringAfterLast('/')
+        return name.ifBlank { raw }
+    }
+}
