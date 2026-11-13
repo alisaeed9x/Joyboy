@@ -169,7 +169,7 @@ public final class SystemPipBridge {
      * makes Android expand exactly its task (see the class doc).
      */
     static void restore(MobilePlaybackActivity player) {
-        Intent restore = new Intent(player, MobilePlaybackActivity.class)
+        Intent restore = new Intent(player, player.getClass()) // JOYBOY(v947): local-player instance restores itself
                 .setAction(ACTION_RESTORE_FROM_PIP)
                 .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_REORDER_TO_FRONT);
         player.startActivity(restore);

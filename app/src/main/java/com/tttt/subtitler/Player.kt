@@ -4121,7 +4121,11 @@ class PlayerActivity : Activity(), Host {
     override fun onCreate(b: Bundle?) {
         NetLedger.start(this); NetLog.start(this); NetGate.apply(this)
         super.onCreate(b)
-        if (MtPlay.reroute(this, intent)) { gone = true; try { overridePendingTransition(0, 0) } catch (_: Throwable) {}; finish(); return }   // (v923)
+        if (MtPlay.reroute(this, intent)) {   // (v923)
+            gone = true; try { overridePendingTransition(0, 0) } catch (_: Throwable) {}
+            if (MtPlay.holdForPlayer(this)) return   // (v950) بتفضل سودا ورا المشغّل لحد ما يظهر (من غير فلاش المكتبة/الشاشة البيضا)
+            finish(); return
+        }
         smoothRotation()   // (v429)
         try { if (MtLook.playerAnim()) overridePendingTransition(R.anim.player_open_enter, R.anim.player_open_exit) } catch (_: Throwable) {}   // (v899) حركة فتح المشغّل من MeeTube
         synchronized(liveList) {

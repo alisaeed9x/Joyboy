@@ -593,6 +593,7 @@ public class MobilePlaybackActivity extends MobileActivity
     @Override
     protected void onCreate(@Nullable Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        com.newtube.mobile.ui.common.PlayerTrace.mark("OPEN onCreate (" + getClass().getSimpleName() + ")"); // JOYBOY(v952)
 
         SystemPipBridge.attach(this);
         sCurrent = new java.lang.ref.WeakReference<>(this);
@@ -766,6 +767,7 @@ public class MobilePlaybackActivity extends MobileActivity
 
     @Override
     protected void onNewIntent(Intent intent) {
+        com.newtube.mobile.ui.common.PlayerTrace.mark("OPEN/MAXIMIZE new-intent (" + getClass().getSimpleName() + ")"); // JOYBOY(v952)
         cancelClose();
         super.onNewIntent(intent);
         // REORDER_TO_FRONT reuses this instance after mini mode. The pending card snapshot means
@@ -973,6 +975,11 @@ public class MobilePlaybackActivity extends MobileActivity
         mWatchRoot.addOnLayoutChangeListener(mWatchRootLayoutListener);
         mWatchScroll = findViewById(R.id.mobile_watch_scroll);
         mWatchFab = findViewById(R.id.mobile_watch_fullscreen_fab);
+        if (isJoyLocalPage()) { // JOYBOY(v950): local file / direct link / browser video — no watch page at all (no subscribe/next skeleton, no FAB), black from the first frame
+            mWatchRoot.setBackgroundColor(Color.BLACK);
+            if (mWatchScroll != null) { mWatchScroll.setVisibility(View.GONE); }
+            if (mWatchFab != null) { mWatchFab.setVisibility(View.GONE); }
+        }
         if (mWatchFab != null) {
             mWatchFab.setOnClickListener(v -> {
                 if (v.getAlpha() > 0.5f) {
@@ -1653,10 +1660,15 @@ public class MobilePlaybackActivity extends MobileActivity
      * Landscape: hide the content and let the video fill the whole screen (PLAYER POLISH immersive).
      */
     private void applyWatchLayoutForOrientation(int orientation) {
+        com.newtube.mobile.ui.common.PlayerTrace.mark("layout for orientation=" + (orientation == Configuration.ORIENTATION_LANDSCAPE ? "LAND" : "PORT") + " tall=" + isTallMode()); // JOYBOY(v952)
         if (mVideoArea == null) {
             return;
         }
 
+        if (isJoyLocalPage() && orientation != Configuration.ORIENTATION_LANDSCAPE && !mPortraitFull && !mIsInPip && !mPipEnterPending) {
+            mPortraitFull = true; // JOYBOY(v950): upright local video = the vertical fullscreen from the first layout
+            refreshContentInsets();
+        }
         // MEETUBE(lyrics-panel): fullscreen and Shorts close the panels; returning shows the page.
         if (orientation == Configuration.ORIENTATION_LANDSCAPE
                 || isTallMode() || (mShorts != null && mShorts.isActive())) {
@@ -1732,7 +1744,7 @@ public class MobilePlaybackActivity extends MobileActivity
                 mWatchScroll.setVisibility(isTallMode() || shorts ? View.GONE : View.VISIBLE);
             }
             if (mWatchFab != null) {
-                mWatchFab.setVisibility(shorts ? View.GONE : View.VISIBLE);
+                mWatchFab.setVisibility(shorts || isJoyLocalPage() ? View.GONE : View.VISIBLE); // JOYBOY(v950)
             }
             if (mCommentsPanel != null) {
                 mCommentsPanel.setSuspended(isTallMode());
@@ -2675,6 +2687,7 @@ public class MobilePlaybackActivity extends MobileActivity
     }
 
     private void handleBack() {
+        com.newtube.mobile.ui.common.PlayerTrace.mark("BACK pressed  portraitFull=" + mPortraitFull + " landscape=" + isLandscape() + " pip=" + mIsInPip); // JOYBOY(v952)
         if (mClosing) {
             return;
         }
@@ -2695,6 +2708,22 @@ public class MobilePlaybackActivity extends MobileActivity
             // MEETUBE(fullscreen): a morph left half-way with nothing moving it locks out Back, the
             // drags and the controls; Back puts the page back instead of closing the player.
             resetMorph();
+            return;
+        }
+        if (isJoyLocalPage() && !mIsInPip && !mPipEnterPending) { // JOYBOY(v950): local player — Back leaves straight (small PiP or close), upright or landscape, never the watch page
+            mBackPreview = false;
+            if (JoyboyPlayerHost.onMinimize(this)) {
+                setPlayWhenReady(false);
+                enterPipMode();
+                if (mPipEnterPending) {
+                    return;
+                }
+            }
+            if (mPresenter != null) {
+                mPresenter.onFinish();
+            }
+            finish();
+            overridePendingTransition(0, 0);
             return;
         }
         if (mPortraitFull && !isLandscape()) {
@@ -2804,6 +2833,7 @@ public class MobilePlaybackActivity extends MobileActivity
     }
 
     private void minimizeByBack() {
+        com.newtube.mobile.ui.common.PlayerTrace.mark("MINIMIZE by back (mini player)"); // JOYBOY(v952)
         boolean moving = mBackPreview;
         mBackPreview = false;
         if (!moving) {
@@ -3531,6 +3561,7 @@ public class MobilePlaybackActivity extends MobileActivity
 
     /** Enter PiP: shrink the video into a floating window that keeps playing, with a play/pause action. */
     private void enterPipMode() {
+        com.newtube.mobile.ui.common.PlayerTrace.mark("enter PiP (minimize to system window)"); // JOYBOY(v952)
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O
                 || !Helpers.isPictureInPictureSupported(this)
                 || mIsInPip) {
@@ -4155,7 +4186,7 @@ public class MobilePlaybackActivity extends MobileActivity
     }
 
     private PendingIntent buildContentIntent() {
-        Intent intent = new Intent(this, MobilePlaybackActivity.class);
+        Intent intent = new Intent(this, getClass()); // JOYBOY(v947)
         // REORDER_TO_FRONT: the player may sit BELOW Browse in the shared task (mini-player);
         // a notification tap must surface the existing instance, not stack a duplicate.
         intent.setFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_REORDER_TO_FRONT);
@@ -4966,6 +4997,7 @@ public class MobilePlaybackActivity extends MobileActivity
             return;
         }
         mVideoShapePending = false;
+        try { Video jv = getVideo(); com.newtube.mobile.ui.common.PlayerTrace.mark("FIRST FRAME src=" + (jv == null ? "?" : jv.localUri != null && !jv.localUri.isEmpty() ? (jv.headers != null && !jv.headers.isEmpty() ? "browser/link" : "media/file") : "youtube") + " vertical=" + isVerticalVideo() + " orient=" + (isLandscape() ? "LAND" : "PORT")); } catch (RuntimeException ignored) { } // JOYBOY(v952)
         if (autoLandscapeIfLocal()) { // JOYBOY(v933): local file / direct link -> landscape fullscreen on open
             return;
         }
@@ -4990,6 +5022,7 @@ public class MobilePlaybackActivity extends MobileActivity
     }
 
     private void toggleFullscreen() {
+        com.newtube.mobile.ui.common.PlayerTrace.mark("fullscreen toggle (button)  landscape=" + isLandscape() + " portraitFull=" + mPortraitFull); // JOYBOY(v952)
         int windowOrientation = getResources().getConfiguration().orientation;
         boolean toLandscape =
                 layoutOrientation() != Configuration.ORIENTATION_LANDSCAPE;
@@ -5063,6 +5096,16 @@ public class MobilePlaybackActivity extends MobileActivity
             boolean tv = com.newtube.mobile.ui.common.FocusRing.isTv(this);
             if (!(local || tv || JoyboyPlayerHost.wantsLandscape(this))) {
                 return false;
+            }
+            // JOYBOY(v949): MobileLocalPlaybackActivity locks landscape at onCreate; a vertical video gives it back (upright fullscreen stays MeeTube's own)
+            // JOYBOY(v950): a vertical video opens upright FULLSCREEN from the first frame — locked to portrait (the 🔓 button frees it),
+            // never back to USER (that left it on the portrait watch page).
+            if (this instanceof MobileLocalPlaybackActivity && isVerticalVideo()) {
+                setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_PORTRAIT);
+                if (getResources().getConfiguration().orientation != Configuration.ORIENTATION_LANDSCAPE) {
+                    setPortraitFull(true);
+                }
+                return true; // when the window still rotates, applyWatchLayoutForOrientation(portrait) enters the upright fullscreen
             }
             if (isFinishing() || mIsInPip || mPipEnterPending || isShortsMode() || mPortraitFull
                     || isVerticalVideo() || layoutOrientation() == Configuration.ORIENTATION_LANDSCAPE) {
@@ -7122,10 +7165,19 @@ public class MobilePlaybackActivity extends MobileActivity
 
     /** The video fills the portrait screen: a short, or the vertical fullscreen. */
     private boolean isTallMode() {
-        return isShortsMode() || (mPortraitFull && !isLandscape());
+        return isShortsMode() || (mPortraitFull && !isLandscape()) || (isJoyLocalPage() && !isLandscape()); // JOYBOY(v950)
+    }
+
+    /** JOYBOY(v950): this is the separate local-media player (files / direct links / browser): it never shows the YouTube watch page. */
+    private boolean isJoyLocalPage() {
+        return this instanceof MobileLocalPlaybackActivity;
     }
 
     private void setPortraitFull(boolean on) {
+        com.newtube.mobile.ui.common.PlayerTrace.mark("setPortraitFull(" + on + ")"); // JOYBOY(v952)
+        if (!on && isJoyLocalPage() && !isLandscape()) { // JOYBOY(v950): local player — upright fullscreen is the only upright layout (never the watch page)
+            return;
+        }
         if (on == mPortraitFull || (on && (isLandscape() || isShortsMode() || mIsInPip || mPipEnterPending))) {
             return;
         }
@@ -7185,6 +7237,7 @@ public class MobilePlaybackActivity extends MobileActivity
 
     @Override
     public boolean dispatchTouchEvent(android.view.MotionEvent event) {
+        com.newtube.mobile.ui.common.PlayerTrace.touch(this, event); // JOYBOY(v952)
         int action = event.getActionMasked();
         if (mPlayerLocked) {
             // MEETUBE(lock, issue #98): a locked player answers only its unlock button - no swipe,
@@ -8488,6 +8541,7 @@ public class MobilePlaybackActivity extends MobileActivity
      * player. Called once the release animation has landed on the mini-card rectangle.
      */
     private void minimizeByDrag() {
+        com.newtube.mobile.ui.common.PlayerTrace.mark("MINIMIZE by drag (mini player)"); // JOYBOY(v952)
         if (MiniSize.type(this) == MiniSize.DISABLED) { // MEETUBE(issue #188): no mini player, minimizing closes
             if (mPresenter != null) {
                 mPresenter.onFinish();

@@ -119,6 +119,29 @@ object MtPlay {
         } catch (_: Throwable) { false } finally { try { c?.disconnect() } catch (_: Throwable) {} }
     }
 
+    // (v950) PlayerActivity بتفضل ورا مشغّل MeeTube (شاشة سودا من غير أنيميشن) لحد ما المشغّل الجديد يظهر — قبل كده كانت بتقفل فوراً
+    // فمكتبة الفولدر كانت بتبان لحظة (إحساس ريستارت/خروج) والشاشة البيضا كانت ثيم النافذة الفاضية.
+    private var holdFor: java.lang.ref.WeakReference<Activity>? = null
+    private val hold = android.os.Handler(android.os.Looper.getMainLooper())
+    private val closeHeldRun = Runnable { closeHeld() }
+
+    /** true = الـactivity دي (PlayerActivity) متشالة لحد ما المشغّل يظهر، ومتقفلش دلوقتي. */
+    fun holdForPlayer(act: Activity): Boolean {
+        if (holdFor?.get() !== act) return false
+        try { act.window.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(android.graphics.Color.BLACK)) } catch (_: Throwable) {}
+        com.newtube.mobile.ui.playback.MobileLocalPlaybackActivity.sOnShown = Runnable { closeHeld() }
+        hold.removeCallbacks(closeHeldRun); hold.postDelayed(closeHeldRun, 6000L)   // أمان: لو المشغّل ماظهرش
+        return true
+    }
+
+    /** بتتنده لما مشغّل MeeTube يظهر (أو بعد مهلة الأمان) — بتقفل PlayerActivity المتشالة من غير أنيميشن. */
+    fun closeHeld() {
+        hold.removeCallbacks(closeHeldRun)
+        val a = holdFor?.get(); holdFor = null
+        com.newtube.mobile.ui.playback.MobileLocalPlaybackActivity.sOnShown = null
+        if (a != null && !a.isFinishing) try { a.finish(); a.overridePendingTransition(0, 0) } catch (_: Throwable) {}
+    }
+
     private const val R_OFF = "mt_main_player off"
     private const val R_TV = "tv"
 
@@ -172,6 +195,8 @@ object MtPlay {
         if (!d.priv) try { PubHistory.addVideoFrom(i) } catch (_: Throwable) {}   // (v936) السجل العام (كان بيتخطّى مع التوجيه لـMeeTube)
         MeeTubeLink.bindBar()
         MobileMainApplication.boot(act.application)
+        if (act.javaClass.simpleName == "PlayerActivity" && !act.isFinishing) holdFor = java.lang.ref.WeakReference(act)   // (v950)
+        try { com.newtube.mobile.ui.playback.MobileLocalPlaybackActivity.route(act) } catch (_: Throwable) {}   // (v947) ملف/لينك/متصفح ← نسخة مشغّل منفصلة (تاسك لوحدها) بدل ما تحمّل صفحة يوتيوب
         val v = Video()
         v.videoId = "joy_local_" + Integer.toHexString(src.hashCode())
         v.title = title
@@ -180,8 +205,35 @@ object MtPlay {
         if (startMs > 0L) { v.pendingPosMs = startMs; MtMedia.noResume.add("L:$src") }   // (v937) startms صريح ← مفيش استكمال من عندنا
         if (d.headers.isNotEmpty()) v.headers = HashMap(d.headers)   // (v934)
         v.audioUrl = d.audio
+        com.newtube.mobile.ui.playback.MobileLocalPlaybackActivity.sNextPortrait = probeVertical(app, src, d.headers) == true   // (v951) الاتجاه يتحدد قبل فتح النافذة — مفيش لفّة بعد أول فريم
         PlaybackPresenter.instance(app).openVideo(v)
         return true
+    }
+
+    /** (v951) أبعاد الفيديو قبل ما المشغّل يتفتح: true = رأسي، false = أفقي، null = ماعرفناش. ملف/content متزامن (ms)، لينك نت بمهلة 1.5ث. */
+    private fun probeVertical(ctx: android.content.Context, src: String, hdr: Map<String, String>): Boolean? {
+        var res: Boolean? = null
+        val work = Runnable {
+            val r = android.media.MediaMetadataRetriever()
+            try {
+                val u = Uri.parse(src)
+                when (u.scheme) {
+                    "http", "https" -> r.setDataSource(src, HashMap(hdr))
+                    "content", "file" -> r.setDataSource(ctx, u)
+                    else -> r.setDataSource(src)
+                }
+                var w = r.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH)?.toIntOrNull() ?: 0
+                var h = r.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT)?.toIntOrNull() ?: 0
+                val rot = r.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_VIDEO_ROTATION)?.toIntOrNull() ?: 0
+                if (rot % 180 != 0) { val t = w; w = h; h = t }
+                if (w > 0 && h > 0) res = h > w
+            } catch (_: Throwable) {} finally { try { r.release() } catch (_: Throwable) {} }
+        }
+        val net = src.startsWith("http", true)
+        if (!net) { work.run(); return res }
+        val t = Thread(work).apply { isDaemon = true }; t.start()
+        try { t.join(1500L) } catch (_: Throwable) {}
+        return res
     }
 
     private fun nameOf(act: Activity, s: String): String {

@@ -35,6 +35,7 @@ object MeeTubeLink {
             MtOrigin.record(Intent(), null, id, "")
             bindBar()
             MobileMainApplication.boot(act.application)
+            try { com.newtube.mobile.ui.playback.MobileLocalPlaybackActivity.routeYoutube(act) } catch (_: Throwable) {}   // (v947) يوتيوب ← مشغّل يوتيوب العادي (الملفات/المتصفح على نسخة مشغّل منفصلة)
             MtTvRoute.bypassed { com.liskovsoft.smartyoutubetv2.common.app.presenters.PlaybackPresenter.instance(act.applicationContext).openVideo(id, false, if (startMs > 0L) startMs else -1L, incognito) }   // (v928) السؤال «تشغّله فين؟» اتسأل قبل كده في Main.playYt
             true
         } catch (e: Throwable) {
@@ -51,6 +52,7 @@ object MeeTubeLink {
             MtOrigin.record(Intent(), null, id, "")
             bindBar()
             MobileMainApplication.boot(ctx.applicationContext as android.app.Application)
+            try { com.newtube.mobile.ui.playback.MobileLocalPlaybackActivity.routeYoutube(ctx) } catch (_: Throwable) {}   // (v947)
             com.liskovsoft.smartyoutubetv2.common.app.presenters.PlaybackPresenter.instance(ctx.applicationContext).openVideo(id, false, if (startMs > 0L) startMs else -1L, false)
             true
         } catch (e: Throwable) {

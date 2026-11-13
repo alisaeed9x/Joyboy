@@ -23,6 +23,7 @@ class JoyApp : Application() {
             } catch (_: Throwable) {
             }
         }
+        try { com.newtube.mobile.ui.common.PlayerTrace.sink = com.newtube.mobile.ui.common.PlayerTrace.Sink { l -> try { LogStore.add(l) } catch (_: Throwable) {} } } catch (_: Throwable) {}   // (v952)
         MtYt.app = this
         NavSnap.install(this)   // (v923) انتقال موحّد بين الشاشات (لقطة + فيد)
         MeeTubeLink.bindBar()

@@ -902,7 +902,7 @@ object MtTranslate : JoyboyPlayerHost.Provider {
     }
 
     /** (v935 م2) قايمة أدوات الترجمة فوق مشغّل MeeTube — (v942) بقت bottom-sheet */
-    fun showMenu() {
+    fun showMenu(anchor: View? = null) {   // (v949) anchor ≠ null ← قايمة منبثقة جنب زرار ☰ (PopupWindow) بدل شيت
         val a = act ?: return
         val items = ArrayList<Pair<String, (() -> Unit)?>>()
         fun m(label: String, f: () -> Unit) { items.add(Pair(label, f)) }
@@ -932,8 +932,17 @@ object MtTranslate : JoyboyPlayerHost.Provider {
             m("📃 الليستة (طابور التشغيل)") { PlayQueueUi.show(a) }
         }
         m("⚙ إعدادات محرك الترجمة") { MeeTubeLink.openSettings(a, "tr_engine") }
+        if (anchor != null) {
+            val rows = ArrayList<Pair<String, () -> Unit>>()
+            for (p in items) { val f = p.second; if (f != null) rows.add(Pair(p.first, f)) }
+            MtBar.popupMenu(a, anchor, false, rows)
+            return
+        }
         openSheet(a, "🌐 أدوات الترجمة والميديا", items)
     }
+
+    /** (v949) جمل الفيديو الحالي (للأدوات: قص/GIF/ترجمة ثابتة) */
+    internal fun subsNow(): List<Sub> = try { eng?.subs ?: sideSubs ?: emptyList() } catch (_: Throwable) { emptyList() }
 
     /** (v942) قايمة نظام الترجمة — نفس بنود Player.translateMenu بس bottom-sheet: جيميناي ٧٥/٢٥ مقابل الأدق، وشبر أوفلاين، تفريغ بس، إيقاف/كمّل، إعادة ترجمة، تقدم الباتشات، تغيير النظام */
     fun translateMenu() {

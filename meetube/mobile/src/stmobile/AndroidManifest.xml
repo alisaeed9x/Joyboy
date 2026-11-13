@@ -160,6 +160,19 @@
             android:screenOrientation="user"
             android:theme="@style/Theme.NewTube.Player" />
 
+        <!-- JOYBOY(v947): second player instance for local files / direct links / browser videos (own task, no YouTube page behind it) -->
+        <activity
+            android:name="com.newtube.mobile.ui.playback.MobileLocalPlaybackActivity"
+            android:enableOnBackInvokedCallback="true"
+            tools:targetApi="33"
+            android:exported="false"
+            android:launchMode="singleTop"
+            android:taskAffinity="joyboy.localplayer"
+            android:supportsPictureInPicture="true"
+            android:configChanges="screenSize|smallestScreenSize|screenLayout|orientation|layoutDirection|keyboardHidden|uiMode"
+            android:screenOrientation="user"
+            android:theme="@style/Theme.NewTube.Player" />
+
         <!--
           Background-playback foreground service (Background Audio + PiP wave). Reuses the single
           ExoPlayer instance owned by MobilePlaybackActivity - it does NOT create a second player.

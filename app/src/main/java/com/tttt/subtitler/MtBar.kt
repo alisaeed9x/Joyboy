@@ -46,6 +46,7 @@ object MtBar {
     private const val TAG_VIS = "mtbar_vis"
     private const val TAG_SYNC = "mtbar_sync"
     private const val TAG_CAP = "mtbar_cap"
+    private const val TAG_MODE = "mtbar_mode"
     private const val BLUE_ON = 0xFF1F5FBF.toInt()
     private const val DARK_OFF = 0xE00F0F12.toInt()
     private const val TAG_LOCKOV = "mtbar_lockov"
@@ -73,6 +74,10 @@ object MtBar {
     private var lockCircle: TextView? = null
     private var trChip: TextView? = null
     private var capRoot: ViewGroup? = null
+    private var modePill: TextView? = null         // (v949) «أونلاين · مصري» جنب كبسولة العنوان
+    private var noticeB: TextView? = null          // (v949) ▲ الإشعارات الحمرا (زي noticeBtn في القديم)
+    private var titleBaseR = -1                    // (v949) هامش العنوان الأصلي من جهة الكبسولات
+    private var lastTopSig = ""
     private var capPct: TextView? = null
     private var capNet: TextView? = null
     private var capDot: View? = null
@@ -82,6 +87,8 @@ object MtBar {
     private var askBtn: TextView? = null
     private var slotV: View? = null
     private var timeBar: View? = null
+    private var bottomRowV: View? = null          // (v947) صف الوقت بتاع MeeTube — بيمشي مع شريط التقدم
+    private val nativeDup = ArrayList<View>()      // (v947) أزرار MeeTube الأصلية المكرّرة (⏮ ⏯ ⏭ وسط الشاشة + ⛶) — بتتخبّى طول ما شريط Joyboy موجود
     private var seekHook: android.view.ViewTreeObserver.OnPreDrawListener? = null
     private var dualBtn: TextView? = null
     private var pauseB: TextView? = null
@@ -108,6 +115,7 @@ object MtBar {
                 refreshTrChip()
                 refreshBadge()
                 refreshModes()
+                refreshNotice()
                 tickCount++
                 if (tickCount % 8 == 0) refreshBatchWarn()
             } catch (_: Throwable) {}
@@ -176,6 +184,7 @@ object MtBar {
         removeByTag(bar, TAG_BAR)
         removeByTag(bar, TAG_TOOLS)
         removeByTag(bar, TAG_CAP)
+        removeByTag(bar, TAG_MODE)
         val root = LinearLayout(activity).apply {
             tag = TAG_BAR
             orientation = LinearLayout.VERTICAL
@@ -189,7 +198,7 @@ object MtBar {
         // (v944) نفس ترتيب المشغّل القديم: شريط أيقونات واحد فوق (بيتسحب) + شريحة الترجمة (ترجمة · ⚙ · إعادة) + الصف الرئيسي
         root.addView(trRow(activity))
         // (v946) شريط التقدم بين شريحة الترجمة والصف الرئيسي زي القديم: مكان فاضي (slot) وشريط MeeTube بيتحط عليه
-        val slot = View(activity).apply { layoutParams = LinearLayout.LayoutParams(-1, dp(activity, 30)) }
+        val slot = View(activity).apply { layoutParams = LinearLayout.LayoutParams(-1, dp(activity, 34)) }   // (v949) 34dp: الوقت والشريط والمدة على نفس السطر زي القديم (timeRow 30dp)
         root.addView(slot)
         slotV = slot
         root.addView(mainRow(activity))
@@ -209,15 +218,34 @@ object MtBar {
             leftMargin = dp(activity, 14)
             rightMargin = dp(activity, 14)
         }
-        // (v945) كبسولة العدّاد زي القديم (🔊 N% · N جملة ▾ + النت): فوق على الشمال، والشريط بيتسحب جنبها
+        // (v949) كبسولة العدّاد فوق اليمين زي القديم (اتحطّت مكان الشمال) + «أونلاين · مصري» جنب العنوان؛ المكان بيتظبط في placeTop() حسب أماكن أزرار MeeTube
         val cap = badgeCapsule(activity)
-        val clp = FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.START).apply {
-            topMargin = dp(activity, if (portrait) 72 else 58)
-            leftMargin = dp(activity, 14)
+        val clp = FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.RIGHT).apply {
+            topMargin = dp(activity, 12)
+            rightMargin = dp(activity, 100)
         }
-        tlp.leftMargin = dp(activity, 170)
+        tlp.leftMargin = dp(activity, 14)
+        tlp.gravity = Gravity.TOP or Gravity.RIGHT
         bar.addView(cap, clp)
         capRoot = cap
+        val mode = TextView(activity).apply {
+            tag = TAG_MODE
+            textSize = 11f
+            setTextColor(Color.WHITE)
+            typeface = Typeface.DEFAULT_BOLD
+            includeFontPadding = false
+            setSingleLine()
+            gravity = Gravity.CENTER
+            setPadding(dp(activity, 10), dp(activity, 6), dp(activity, 10), dp(activity, 6))
+            background = uiHelper!!.box(0xE0141418.toInt(), 0x1FFFFFFF, 12)
+            text = modeLabel()
+        }
+        bar.addView(mode, FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.RIGHT).apply {
+            topMargin = dp(activity, 12)
+            rightMargin = dp(activity, 230)
+        })
+        modePill = mode
+        lastTopSig = ""
         bar.addView(tools, tlp)
         toolsRoot = tools
         refreshBadge()
@@ -252,18 +280,8 @@ object MtBar {
                 rightMargin = dp(activity, 6)
             }
         }
-        col.addView(circle(u, activity, "👁") { visualSnap(activity) })
-        col.addView(circle(u, activity, "🎧") { audioHandoff(activity) })
-        col.addView(circle(u, activity, "📺") { MtTranslate.sendToTv() })
-        audModePill = u.fsBtn("🎧 وضع الصوت") {
-            toggleAudioOnly(activity)
-        }.apply {
-            setOnTouchListener(null)
-            layoutParams = LinearLayout.LayoutParams(-2, dp(activity, 34)).apply {
-                setMargins(dp(activity, 3), dp(activity, 3), dp(activity, 3), dp(activity, 3))
-            }
-        }
-        col.addView(audModePill)
+        // (v949) أزرار العمود الجانبي اتشالت لأنها مكرّرة: 🔓 (موجود في الصف الرئيسي) · 👁 و📺 (في قايمة 🧰) · 🎧 وضع الصوت (زرار سماعة MeeTube الأصلي فوق الشمال بيعمل نفس الشغلة). فاضل ⚠ بس.
+        audModePill = null
         batchWarn = u.fsCircle("⚠") { batchPanel(activity) }.apply {
             visibility = View.GONE
             layoutParams = LinearLayout.LayoutParams(dp(activity, 40), dp(activity, 40)).apply {
@@ -271,12 +289,7 @@ object MtBar {
             }
         }
         col.addView(batchWarn)
-        lockCircle = u.fsCircle("🔓") { toggleLock(activity) }.apply {
-            layoutParams = LinearLayout.LayoutParams(dp(activity, 40), dp(activity, 40)).apply {
-                setMargins(0, dp(activity, 6), 0, 0)
-            }
-        }
-        col.addView(lockCircle)
+        lockCircle = null
         overlay.addView(col)
         circlesRoot = col
         val lock = u.fsCircle("🔒") { toggleLock(activity) }.apply {
@@ -306,6 +319,11 @@ object MtBar {
     fun detach(activity: Activity) {
         ticking = false
         ui.removeCallbacks(tick)
+        dismissPopup()
+        try { modePill?.let { (it.parent as? ViewGroup)?.removeView(it) } } catch (_: Throwable) {}
+        modePill = null
+        noticeB = null
+        titleBaseR = -1
         try {
             voicePb?.stop()
         } catch (_: Throwable) {}
@@ -342,7 +360,10 @@ object MtBar {
             val r = barRoot
             if (l != null && r != null && r.viewTreeObserver.isAlive) r.viewTreeObserver.removeOnPreDrawListener(l)
         } catch (_: Throwable) {}
+        dismissPopup()
         try { timeBar?.translationY = 0f } catch (_: Throwable) {}
+        try { bottomRowV?.translationY = 0f } catch (_: Throwable) {}
+        nativeDup.clear(); bottomRowV = null
         try { exitDlg?.dismiss() } catch (_: Throwable) {}
         seekHook = null
         timeBar = null
@@ -495,28 +516,162 @@ object MtBar {
             val id = a.resources.getIdentifier("mobile_player_time_bar", "id", a.packageName)
             timeBar = if (id != 0) a.findViewById(id) else null
         } catch (_: Throwable) { timeBar = null }
-        if (timeBar == null) return
-        val l = android.view.ViewTreeObserver.OnPreDrawListener { alignSeek(); true }
+        // (v947) أزرار MeeTube الأصلية اللي Joyboy عنده بدايلها في الصف الرئيسي: ⏮ ⏯ ⏭ (النص) + ⛶ + سهم الأكشنز — بتتخبّى (كانت بتظهر مرتين)
+        nativeDup.clear()
+        for (n in arrayOf("mobile_player_transport", "mobile_player_fullscreen", "mobile_player_actions_toggle", "mobile_player_subtitles")) {   // (v949) + زرار CC بتاع MeeTube (Joyboy عنده CC في صف الدواير بيعمل نفس الشغلة)
+            try {
+                val i = a.resources.getIdentifier(n, "id", a.packageName)
+                if (i != 0) a.findViewById<View>(i)?.let { nativeDup.add(it) }
+            } catch (_: Throwable) {}
+        }
+        try {
+            val i = a.resources.getIdentifier("mobile_player_bottom_row", "id", a.packageName)
+            bottomRowV = if (i != 0) a.findViewById(i) else null
+        } catch (_: Throwable) { bottomRowV = null }
+        val l = android.view.ViewTreeObserver.OnPreDrawListener { hideNativeDup(); alignSeek(); placeTop(); true }
         seekHook = l
         try { root.viewTreeObserver.addOnPreDrawListener(l) } catch (_: Throwable) {}
     }
 
+    /** (v947) اخفي الأزرار الأصلية المكرّرة (GONE عشان ما تاخدش لمس ولا مساحة)؛ بتتنده كل فريم بس بتغيّر لو MeeTube رجّعها */
+    private fun hideNativeDup() {
+        for (v in nativeDup) { if (v.visibility != View.GONE) v.visibility = View.GONE }
+    }
+
+    /** (v949) الوقت الحالي في طرف والمدة في الطرف التاني، على نفس سطر شريط التقدم (زي timeRow في القديم) */
     private fun alignSeek() {
         val tb = timeBar ?: return
         val slot = slotV ?: return
         val root = barRoot ?: return
+        val a = act ?: return
         try {
             if (!root.isShown || slot.height <= 0 || tb.height <= 0) {
                 if (tb.translationY != 0f) tb.translationY = 0f
+                bottomRowV?.let { if (it.translationY != 0f) it.translationY = 0f }
                 return
             }
+            val posV = a.findViewById<TextView>(a.resources.getIdentifier("mobile_player_position", "id", a.packageName))
+            val durV = a.findViewById<TextView>(a.resources.getIdentifier("mobile_player_duration", "id", a.packageName))
+            val timeV = a.findViewById<View>(a.resources.getIdentifier("mobile_player_time", "id", a.packageName))
+            val chapV = a.findViewById<View>(a.resources.getIdentifier("mobile_player_chapter", "id", a.packageName))
+            val row = bottomRowV as? LinearLayout
+            // المدة تطلع من كبسولة الوقت لآخر الصف (الطرف التاني) ويتشال منها « / »
+            if (row != null && posV != null && durV != null && durV.parent !== row) {
+                (durV.parent as? ViewGroup)?.removeView(durV)
+                row.addView(durV, row.childCount, LinearLayout.LayoutParams(-2, -2).apply { marginEnd = dp(a, 8) })
+            }
+            if (durV != null) {
+                val t = durV.text?.toString() ?: ""
+                val fixed = t.trimStart(' ', '/')
+                if (fixed != t) durV.text = fixed
+            }
+            // الصف كله على سطر الشريط (مركز الشريط = مركز الـslot)
             val s = IntArray(2)
             val t = IntArray(2)
             slot.getLocationInWindow(s)
             tb.getLocationInWindow(t)
-            val d = (s[1] + slot.height / 2f) - (t[1] + tb.height / 2f)
-            if (Math.abs(d) >= 1f) tb.translationY = tb.translationY + d
+            val want = s[1] + slot.height / 2f
+            val d = want - (t[1] + tb.height / 2f)
+            if (Math.abs(d) >= 1f) {
+                tb.translationY = tb.translationY + d
+                bottomRowV?.let { it.translationY = it.translationY + d }
+            }
+            // الشريط بين الوقت والمدة: هامش يمين/شمال بعرض النصين
+            val lp = tb.layoutParams as? ViewGroup.MarginLayoutParams
+            if (lp != null && posV != null && durV != null && timeV != null) {
+                val l = (timeV.width + dp(a, 10)).coerceAtLeast(0)
+                val r = (durV.width + dp(a, 18)).coerceAtLeast(0)
+                if (Math.abs(lp.leftMargin - l) > 2 || Math.abs(lp.rightMargin - r) > 2) {
+                    lp.leftMargin = l
+                    lp.rightMargin = r
+                    tb.layoutParams = lp
+                }
+            }
+            // شريحة الفصل (لو فيه فصول) فوق الشريط مش عليه
+            chapV?.let { if (it.translationY != -dp(a, 30).toFloat()) it.translationY = -dp(a, 30).toFloat() }
         } catch (_: Throwable) {}
+    }
+
+    private fun modeLabel(): String {
+        val m = try { MtTranslate.curEngineMode() } catch (_: Throwable) { "gemini" }
+        val mn = when (m) {
+            "whisper" -> "أوفلاين"
+            "google" -> "جوجل"
+            "transcribe" -> "تفريغ"
+            else -> "أونلاين"
+        }
+        val d = try { Cfg.str("conv_dialect", "").ifBlank { "فصحى" } } catch (_: Throwable) { "فصحى" }
+        return mn + " · " + d
+    }
+
+    /** (v949) شريط فوق: [أيقونات MeeTube] [كبسولة العدّاد] [أونلاين · لهجة] [كبسولة العنوان] — الأماكن بتتحسب من أماكن أزرار MeeTube الفعلية (RTL/LTR)، والعنوان بيضيّق هامشه عشان ما يتغطّاش */
+    private fun placeTop() {
+        val a = act ?: return
+        val cap = capRoot ?: return
+        val mode = modePill
+        try {
+            val dm = a.resources.displayMetrics
+            val w = dm.widthPixels
+            var inset = 0
+            for (n in arrayOf("mobile_player_options", "mobile_player_audio", "mobile_player_back")) {
+                val id = a.resources.getIdentifier(n, "id", a.packageName)
+                if (id == 0) continue
+                val v = a.findViewById<View>(id) ?: continue
+                if (v.visibility != View.VISIBLE || v.width <= 0) continue
+                val loc = IntArray(2)
+                v.getLocationOnScreen(loc)
+                if (loc[0] + v.width / 2 > w / 2) inset = maxOf(inset, w - loc[0])
+            }
+            val capW = cap.width
+            val modeW = mode?.width ?: 0
+            val sig = inset.toString() + "|" + capW + "|" + modeW
+            if (sig == lastTopSig) return
+            lastTopSig = sig
+            val gap = dp(a, 8)
+            (cap.layoutParams as? FrameLayout.LayoutParams)?.let {
+                it.rightMargin = inset + gap
+                cap.layoutParams = it
+            }
+            if (mode != null) {
+                (mode.layoutParams as? FrameLayout.LayoutParams)?.let {
+                    it.rightMargin = inset + gap + capW + dp(a, 6)
+                    mode.layoutParams = it
+                }
+            }
+            val tid = a.resources.getIdentifier("mobile_player_title", "id", a.packageName)
+            val title = if (tid != 0) a.findViewById<View>(tid) else null
+            val tlp = title?.layoutParams as? ViewGroup.MarginLayoutParams
+            if (title != null && tlp != null && capW > 0) {
+                val rtl = title.layoutDirection == View.LAYOUT_DIRECTION_RTL
+                val cur = if (rtl) tlp.marginStart else tlp.marginEnd
+                if (titleBaseR < 0) titleBaseR = cur
+                val want = maxOf(titleBaseR, inset) + capW + modeW + dp(a, 20)
+                if (cur != want) {
+                    if (rtl) tlp.marginStart = want else tlp.marginEnd = want
+                    title.layoutParams = tlp
+                }
+            }
+        } catch (_: Throwable) {}
+    }
+
+    /** (v949) ▲ الإشعارات: أحمر شفاف، بيظهر دايمًا (خافت لو مفيش) ودوسة = قايمة من الأحدث للأقدم (زي noticeBtn) */
+    private fun refreshNotice() {
+        val b = noticeB ?: return
+        val n = try { NoticeLog.list().size } catch (_: Throwable) { 0 }
+        b.alpha = if (n == 0) 0.35f else 0.7f
+        val t = if (n == 0) "▲" else "▲ " + n
+        if (b.text.toString() != t) b.text = t
+    }
+
+    private fun noticePopup(a: Activity, anchor: View) {
+        val u = uiHelper ?: return
+        val items = try { NoticeLog.list() } catch (_: Throwable) { emptyList<NoticeLog.Item>() }
+        val views = ArrayList<View>()
+        for (it in items) {
+            views.add(u.text(it.msg, 11.5f, 0xFFF1F3F4.toInt()).apply { setPadding(dp(a, 10), 0, dp(a, 10), dp(a, 6)) })
+        }
+        if (items.isEmpty()) views.add(u.text("مفيش إشعارات", 11.5f, 0xFFC9CED6.toInt()).apply { setPadding(dp(a, 10), 0, dp(a, 10), dp(a, 6)) })
+        popupViews(a, anchor, true, views, 220)
     }
 
     private fun ovalBg(color: Int): android.graphics.drawable.GradientDrawable {
@@ -621,14 +776,14 @@ object MtBar {
                 setMargins(dp(a, 3), dp(a, 3), dp(a, 3), dp(a, 3))
             }
         }
-        fun circ(t: String, ts: Float, f: () -> Unit): TextView {
-            return u.fsCircle(t) { f() }.apply {
+        fun circ(t: String, ts: Float, f: (View) -> Unit): TextView {
+            return u.fsCircle(t) { v -> f(v) }.apply {
                 textSize = ts
                 layoutParams = lpC()
             }
         }
-        fun chev(t: String, f: () -> Unit): TextView {
-            return u.fsBtn(t) { f() }.apply {
+        fun chev(t: String, f: (View) -> Unit): TextView {
+            return u.fsBtn(t) { v -> f(v) }.apply {
                 textSize = 12f
                 minimumWidth = dp(a, 38)
                 setPadding(dp(a, 8), 0, dp(a, 8), 0)
@@ -639,8 +794,8 @@ object MtBar {
         }
         val sq = { u.box(0xE0141418.toInt(), 0x1FFFFFFF, 12) }
         // من اليمين: ☰ 🧰 📃 HD 🎙 CC 💬 ⏱▾ Aa▾ 🧑 📝 📋 🔂
-        row.addView(circ("☰", 14f) { MtTranslate.showMenu() }.apply { background = sq() })
-        row.addView(circ("🧰", 14f) { toolboxMenu(a) }.apply { background = sq() })
+        row.addView(circ("☰", 14f) { v -> MtTranslate.showMenu(v) }.apply { background = sq() })   // (v949) منبثقة جنب ☰
+        row.addView(circ("🧰", 14f) { v -> toolboxMenu(a, v) }.apply { background = sq() })
         // (v946) ☑/⬜ اسألني عند الخروج: أكمّل الترجمة في الخلفية؟ (نفس مفتاح ask_bg_exit في الإعدادات)
         val askV = circ(if (askOn()) "☑" else "⬜", 14f) {
             val on = !askOn()
@@ -652,13 +807,13 @@ object MtBar {
         row.addView(askV)
         row.addView(circ("📃", 12f) { PlayQueueUi.show(a) })
         row.addView(circ("HD", 11f) { bridge(a, "quality") }.apply { typeface = Typeface.DEFAULT_BOLD })
-        row.addView(circ("🎙", 12f) { voiceMenu(a) })
+        row.addView(circ("🎙", 12f) { v -> voiceMenu(a, v) })
         row.addView(circ("CC", 11f) { bridge(a, "cc") }.apply { typeface = Typeface.DEFAULT_BOLD })
         val dualV = circ("💬", 12f) { MtTranslate.cycleDual(); refreshModes() }
         dualBtn = dualV
         row.addView(dualV)
-        row.addView(chev("⏱ ▾") { toggleSyncStrip(a) })
-        row.addView(chev("🔤 ▾") { textMenu(a) })
+        row.addView(chev("⏱ ▾") { v -> syncMenu(a, v, false) })   // (v949) قايمة ⏱ منبثقة (والشريط السريع جواها)
+        row.addView(chev("🔤 ▾") { v -> textMenu(a, v) })
         row.addView(circ("🧑", 12f) { showChars(a) })
         row.addView(circ("📝", 12f) { MtTranslate.searchSentences() })
         row.addView(circ("📜", 12f) { showLog(a) })
@@ -749,11 +904,17 @@ object MtBar {
             layoutParams = LinearLayout.LayoutParams(dp(a, 40), dp(a, 40)).apply { marginEnd = dp(a, 4) }
         }
         left.addView(lockB)
-        left.addView(u.fsBtn("🗣 ▾") { dialectMenu(a) }.apply {
+        left.addView(u.fsBtn("🗣 ▾") { v -> dialectMenu(a, v, true) }.apply {
             textSize = 12f
             minimumWidth = dp(a, 38)
             setPadding(dp(a, 8), 0, dp(a, 8), 0)
             layoutParams = LinearLayout.LayoutParams(-2, dp(a, 38)).apply { marginStart = dp(a, 3) }
+        })
+        // (v949) أيقونة اللغة 🌐 جنب 🗣 زي trLgB القديمة (نظام/لغة الترجمة) ثم 🎧 مصدر الصوت
+        left.addView(u.fsCircle("🌐") { MtTranslate.translateMenu() }.apply {
+            textSize = 15f
+            setPadding(0, 0, 0, 0)
+            layoutParams = LinearLayout.LayoutParams(dp(a, 34), dp(a, 34)).apply { marginStart = dp(a, 3) }
         })
         left.addView(u.fsCircle("🎧") { AudioBridge.showMenu(a) }.apply {
             textSize = 15f
@@ -782,6 +943,16 @@ object MtBar {
             gravity = Gravity.END or Gravity.CENTER_VERTICAL
             layoutParams = LinearLayout.LayoutParams(0, -2, 1f)
         }
+        // (v949) ▲ الإشعارات الحمرا (قبل 🔄 في اليمين زي القديم: noticeBtn بارتفاع 34dp ومسافة 8dp)
+        noticeB = u.text("▲", 13f, 0xFFFF3B30.toInt(), true).apply {
+            gravity = Gravity.CENTER
+            alpha = 0.35f
+            setPadding(dp(a, 10), dp(a, 4), dp(a, 10), dp(a, 4))
+            background = u.box(0x33FF3B30, 0x99FF3B30.toInt(), 20)
+            setOnClickListener { v -> noticePopup(a, v) }
+            layoutParams = LinearLayout.LayoutParams(-2, dp(a, 34)).apply { marginEnd = dp(a, 8) }
+        }
+        noticeB?.let { right.addView(it) }
         right.addView(u.fsCircle("🔄") { bridge(a, "rotate") }.apply {
             layoutParams = LinearLayout.LayoutParams(dp(a, 40), dp(a, 40)).apply { marginEnd = dp(a, 8) }
         })
@@ -975,30 +1146,179 @@ object MtBar {
         return u.sheet(a, title, views)
     }
 
-    private fun toolboxMenu(a: Activity) {
-        sheetRows(a, "🧰 أدوات", listOf(
+    /** (v947) قايمة منبثقة جنب الزرار (PopupWindow زي togglePop في المشغّل القديم): عرض أدنى 150dp، لوح زجاجي، بتتسكرول لو أطول من المتاح؛ دوسة تانية على نفس الزرار بتقفلها */
+    private var popup: android.widget.PopupWindow? = null
+    private var popupOwner: View? = null
+
+    private fun dismissPopup() {
+        try { popup?.dismiss() } catch (_: Throwable) {}
+        popup = null
+        popupOwner = null
+    }
+
+    /** (v949) نسخة عامة من popupRows: بتاخد Views جاهزة (سلايدر/شيبس/نصوص) وتحطها جوه نفس اللوح المنبثق جنب الزرار */
+    private fun popupViews(a: Activity, anchor: View, above: Boolean, views: List<View>, minWdp: Int = 150) {
+        val had = popupOwner === anchor
+        dismissPopup()
+        if (had) return
+        val col = LinearLayout(a).apply {
+            orientation = LinearLayout.VERTICAL
+            layoutDirection = View.LAYOUT_DIRECTION_RTL
+            setPadding(dp(a, 6), dp(a, 6), dp(a, 6), dp(a, 6))
+            background = android.graphics.drawable.GradientDrawable(
+                android.graphics.drawable.GradientDrawable.Orientation.TOP_BOTTOM,
+                intArrayOf(0xF2242432.toInt(), 0xF5101017.toInt())
+            ).apply {
+                cornerRadius = dp(a, 24).toFloat()
+                setStroke(1, 0x3DFFFFFF)
+            }
+        }
+        for (v in views) {
+            (v.parent as? ViewGroup)?.removeView(v)
+            val lp = v.layoutParams
+            if (lp is LinearLayout.LayoutParams) {
+                if (lp.width == -1) lp.width = dp(a, maxOf(minWdp, 240))
+                col.addView(v, lp)
+            } else if (v is FlowRow) {
+                col.addView(v, LinearLayout.LayoutParams(dp(a, maxOf(minWdp, 240)), -2))
+            } else {
+                col.addView(v, LinearLayout.LayoutParams(-2, -2))
+            }
+        }
+        val dm = a.resources.displayMetrics
+        col.measure(
+            View.MeasureSpec.makeMeasureSpec((dm.widthPixels * 0.9f).toInt(), View.MeasureSpec.AT_MOST),
+            View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED)
+        )
+        val loc = IntArray(2)
+        anchor.getLocationOnScreen(loc)
+        val avail = (if (above) loc[1] - dp(a, 8) else dm.heightPixels - loc[1] - anchor.height - dp(a, 8)).coerceAtLeast(dp(a, 120))
+        val popH = minOf(col.measuredHeight, avail)
+        val sv = android.widget.ScrollView(a).apply {
+            overScrollMode = View.OVER_SCROLL_NEVER
+            isVerticalScrollBarEnabled = false
+            addView(col)
+        }
+        val pw = android.widget.PopupWindow(sv, maxOf(col.measuredWidth, dp(a, minWdp)), popH, false)
+        pw.isOutsideTouchable = true
+        pw.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(0))
+        pw.setOnDismissListener { if (popup === pw) { popup = null; popupOwner = null } }
+        try {
+            if (above) pw.showAsDropDown(anchor, 0, -(anchor.height + popH + dp(a, 2)))
+            else pw.showAsDropDown(anchor, 0, dp(a, 2))
+            popup = pw
+            popupOwner = anchor
+            try { com.newtube.mobile.ui.common.PlayerTrace.popup((anchor as? TextView)?.text?.toString()?.take(6) ?: anchor.javaClass.simpleName, anchor, pw) } catch (_: Throwable) {}   // (v952) لوج مكان القايمة وحجمها
+        } catch (_: Throwable) {}
+    }
+
+    private fun popupRows(a: Activity, anchor: View, above: Boolean, items: List<Pair<String, () -> Unit>>) {
+        val u = uiHelper ?: return
+        val views = ArrayList<View>()
+        for ((t, f) in items) {
+            val b = u.fsBtn(t) { dismissPopup(); f() }.apply { minimumWidth = dp(a, 150) }
+            tvFocus(b)
+            views.add(b)
+        }
+        popupViews(a, anchor, above, views)
+    }
+
+    /** (v949) لـMtTranslate: قايمة ☰ بقت منبثقة جنب الزرار بدل شيت */
+    fun popupMenu(a: Activity, anchor: View, above: Boolean, items: List<Pair<String, () -> Unit>>) {
+        if (uiHelper == null) uiHelper = Ui(a, Themes.current())
+        popupRows(a, anchor, above, items)
+    }
+
+    /** (v949) قايمة صفوف: منبثقة لو معاها زرار، وإلا شيت زي الأول (للتلفزيون/الريموت) */
+    private fun rowsMenu(a: Activity, anchor: View?, above: Boolean, title: String, items: List<Pair<String, () -> Unit>>) {
+        if (anchor != null) popupRows(a, anchor, above, items) else sheetRows(a, title, items)
+    }
+
+    /** (v949) لوحة فيها عناصر (سلايدر/شيبس): منبثقة جنب الزرار لو فيه زرار، وإلا شيت */
+    private fun panel(a: Activity, anchor: View?, above: Boolean, title: String, views: List<View>) {
+        val u = uiHelper ?: return
+        if (anchor != null) {
+            val all = ArrayList<View>()
+            all.add(u.text(title, 13f, 0xFF9AA0A6.toInt(), true).apply { setPadding(dp(a, 10), dp(a, 6), dp(a, 10), dp(a, 2)) })
+            all.addAll(views)
+            popupViews(a, anchor, above, all, 240)
+        } else {
+            u.sheet(a, title, views)
+        }
+    }
+
+    /** (v949) ⏱ تزامن الترجمة: تقديم/تأخير ربع ثانية + القيمة (دوسة = صفر) + حلقة A-B + الشريط السريع — منبثقة زي gSub القديمة */
+    private fun syncMenu(a: Activity, anchor: View?, above: Boolean) {
+        val ms = try { MtTranslate.offsetMs() } catch (_: Throwable) { 0L }
+        val items: List<Pair<String, () -> Unit>> = listOf(
+            "⏱ تقديم −0.25" to { shiftSync(a, -250) },
+            ("⏱ " + (if (ms > 0) "+" else "") + ms + "ms  (دوسة = صفر)") to { try { MtTranslate.shiftOffset(-MtTranslate.offsetMs()) } catch (_: Throwable) {}; refreshSyncVal() },
+            "⏱ تأخير +0.25" to { shiftSync(a, 250) },
+            ("🅰🅱 " + (try { MtMedia.abLabel() } catch (_: Throwable) { "حلقة A-B" })) to { try { MtMedia.abNext() } catch (_: Throwable) {} },
+            "✖ إلغاء حلقة A-B" to { try { MtMedia.abClear() } catch (_: Throwable) {} },
+            "⏱ شريط التزامن السريع" to { toggleSyncStrip(a) }
+        )
+        rowsMenu(a, anchor, above, "⏱ تزامن الترجمة", items)
+    }
+
+    /** (v949) ▲ → toolSrc لأدوات الفيديو (قص/صوت/GIF/ضغط/ترجمة ثابتة) زي toolSrc() القديمة */
+    private fun toolSrc(): ToolSrc? {
+        val i = info ?: return null
+        val p = player ?: return null
+        val lu = try { i.localUri() } catch (_: Throwable) { null } ?: return null
+        val hdr = HashMap<String, String>()
+        try { i.headers()?.let { hdr.putAll(it) } } catch (_: Throwable) {}
+        val au = try { i.audioUrl()?.takeIf { it.isNotEmpty() } } catch (_: Throwable) { null }
+        val name = (try { i.title() } catch (_: Throwable) { null } ?: "").ifBlank { "video" }
+        val dur = try { p.duration.coerceAtLeast(0L) } catch (_: Throwable) { 0L }
+        val vw = try { p.videoSize.width } catch (_: Throwable) { 0 }
+        val vh = try { p.videoSize.height } catch (_: Throwable) { 0 }
+        val cur = try { p.currentPosition } catch (_: Throwable) { 0L }
+        return ToolSrc(lu, au, name, dur, vw, vh, cur, MtTranslate.subsNow(), hdr)
+    }
+
+    private fun withSrc(a: Activity, f: (ToolSrc) -> Unit) {
+        val ts = toolSrc()
+        if (ts == null) Notice.show(a, "مفيش فيديو شغّال", 2300L) else f(ts)
+    }
+
+    /** (v952) تسجيل حركة المشغّل (PlayerTrace): فريم بفريم + مكان كل زرار وقايمة، في ملف PlayerTrace/trace_*.log */
+    private fun toggleTrace(a: Activity) {
+        com.newtube.mobile.ui.common.PlayerTrace.sink = com.newtube.mobile.ui.common.PlayerTrace.Sink { l -> try { LogStore.add(l) } catch (_: Throwable) {} }
+        val p = com.newtube.mobile.ui.common.PlayerTrace.setEnabled(a, !com.newtube.mobile.ui.common.PlayerTrace.isEnabled())
+        Notice.show(a, if (p != null) "📹 التسجيل شغّال — اللوج: $p" else "📹 التسجيل اتقفل — شارك اللوج من 🧰", 5000L)
+    }
+
+    private fun toolboxMenu(a: Activity, anchor: View? = null) {
+        val items: List<Pair<String, () -> Unit>> = listOf(
             "📄 تصدير الترجمة (.srt)" to { exportSub(a) },
-            "😴 مؤقت النوم" to { sleepMenu(a) },
-            "⏩ سرعة التشغيل" to { speedPanel(a) },
+            "😴 مؤقت النوم" to { sleepMenu(a, anchor, false) },
             "👁 لقطة بصرية (ترجمة الفريم)" to { visualSnap(a) },
             "📸 لقطة فريم (PNG)" to { snapFrame(a) },
-            "📋 اللوج" to { showLog(a) },
             "⬇ حمّل الفيديو" to { MtTranslate.downloadCur() },
             "🔊 مسارات الصوت" to { MtTranslate.showAudioTracks() },
             "🎧 مصدر الصوت (تلفزيون / موبايل)" to { AudioBridge.showMenu(a) },
             "📺 ابعت للتلفزيون" to { MtTranslate.sendToTv() },
-            "⚙ إعدادات محرك الترجمة" to { MeeTubeLink.openSettings(a, "tr_engine") }
-        ))
+            "✂ قص جزء من الفيديو" to { withSrc(a) { ToolsUi(a, uiHelper!!, Themes.current()).trim(it) } },
+            "🎞 عمل GIF" to { withSrc(a) { ToolsUi(a, uiHelper!!, Themes.current()).gif(it) } },
+            "📦 ضغط / تغيير الدقة" to { withSrc(a) { ToolsUi(a, uiHelper!!, Themes.current()).compress(it) } },
+            "🎬 ترجمة ثابتة (هارد ساب)" to { withSrc(a) { ToolsUi(a, uiHelper!!, Themes.current()).hardsub(it) } },
+            "🎧 تحويل لصوت" to { withSrc(a) { ToolsUi(a, uiHelper!!, Themes.current()).audio(it) } },
+            "⚙ إعدادات محرك الترجمة" to { MeeTubeLink.openSettings(a, "tr_engine") },
+            ("📹 تسجيل حركة المشغّل: " + (if (com.newtube.mobile.ui.common.PlayerTrace.isEnabled()) "شغّال ✅ (دوسة = إيقاف)" else "مقفول")) to { toggleTrace(a) },
+            "📤 مشاركة لوج الحركة" to { com.newtube.mobile.ui.common.PlayerTrace.shareLatest(a) }
+        )
+        if (anchor != null) popupRows(a, anchor, false, items) else sheetRows(a, "🧰 أدوات", items)
     }
 
-    private fun textMenu(a: Activity) {
-        sheetRows(a, "🔤 النص", listOf(
+    private fun textMenu(a: Activity, anchor: View? = null) {
+        val items: List<Pair<String, () -> Unit>> = listOf(
             "🎨 ستايل السبتايتل" to { MtTranslate.showStyle() },
-            "⏩ سرعة التشغيل" to { speedPanel(a) },
+            "⏩ سرعة التشغيل" to { speedPanel(a, anchor, false) },
             "🔠 خط أكبر" to { bumpSubScale(a, 10) },
-            "🔡 خط أصغر" to { bumpSubScale(a, -10) },
-            "💬 مزدوج / أحادي" to { MtTranslate.cycleDual() }
-        ))
+            "🔡 خط أصغر" to { bumpSubScale(a, -10) }
+        )
+        if (anchor != null) popupRows(a, anchor, false, items) else sheetRows(a, "🔤 النص", items)
     }
 
     private fun bumpSubScale(a: Activity, d: Int) {
@@ -1015,7 +1335,7 @@ object MtBar {
         } catch (_: Throwable) {}
     }
 
-    private fun speedPanel(a: Activity) {
+    private fun speedPanel(a: Activity, anchor: View? = null, above: Boolean = false) {
         val u = uiHelper!!
         val p = player ?: return
         val cur = try {
@@ -1056,10 +1376,10 @@ object MtBar {
                 bar.progress = ((sp - 0.25f) * 100f).toInt().coerceIn(0, 275)
             })
         }
-        u.sheet(a, "⏩ سرعة التشغيل", listOf(lab, bar, chips))
+        panel(a, anchor, above, "⏩ سرعة التشغيل", listOf(lab, bar, chips))
     }
 
-    private fun sleepMenu(a: Activity) {
+    private fun sleepMenu(a: Activity, anchor: View? = null, above: Boolean = false) {
         val items = ArrayList<Pair<String, () -> Unit>>()
         val cur = try {
             MtMedia.sleepLabel()
@@ -1073,10 +1393,10 @@ object MtBar {
             items.add("😴 بعد " + m + " دقيقة" to { MtMedia.setSleep(m) })
         }
         items.add("😴 آخر الفيديو" to { MtMedia.setSleep(-1) })
-        sheetRows(a, "😴 مؤقت النوم", items)
+        rowsMenu(a, anchor, above, "😴 مؤقت النوم", items)
     }
 
-    private fun dialectMenu(a: Activity) {
+    private fun dialectMenu(a: Activity, anchor: View? = null, above: Boolean = false) {
         val u = uiHelper!!
         val curD = try {
             Cfg.str("conv_dialect", "فصحى")
@@ -1150,7 +1470,7 @@ object MtBar {
                 }
             })
         }
-        u.sheet(a, "🌐 اللغة والأسلوب", listOf(lab, chips, toneLab, styleBar, degBar))
+        panel(a, anchor, above, "🌐 اللغة والأسلوب", listOf(lab, chips, toneLab, styleBar, degBar))
     }
 
     private fun applyTone(a: Activity, style: String?, strength: String?) {
@@ -1162,7 +1482,7 @@ object MtBar {
         } catch (_: Throwable) {}
     }
 
-    private fun voiceMenu(a: Activity) {
+    private fun voiceMenu(a: Activity, anchor: View? = null, above: Boolean = false) {
         val uriStr = info?.localUri()
         val uri = try {
             if (uriStr == null) null else Uri.parse(uriStr)
@@ -1217,7 +1537,7 @@ object MtBar {
                 Notice.show(a, "🗑 اتمسحت ملفات الموديل", 1800L)
             } catch (_: Throwable) {}
         })
-        sheetRows(a, "🎙 فصل صوت الكلام", items)
+        rowsMenu(a, anchor, above, "🎙 فصل صوت الكلام", items)
     }
 
     private fun startVoiceJob(a: Activity, uri: Uri, durMs: Long) {
