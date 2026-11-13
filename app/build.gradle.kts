@@ -46,6 +46,7 @@ dependencies {
     implementation(project(":mediaserviceinterfaces"))   // (v885)
     implementation("androidx.media3:media3-exoplayer:1.10.1")
     implementation("androidx.media3:media3-exoplayer-hls:1.10.1")
+    implementation("androidx.media3:media3-ui:1.10.1")   // (v959) MtBar.kt بيستخدم TimeBar/PlayerTimeBar؛ :mobile معرّفها stmobileImplementation فمش بتتمرر لـ:app (نفس media3Version في constants.gradle)
     implementation("androidx.media3:media3-datasource:1.10.1")
     implementation("androidx.media3:media3-database:1.10.1")   // (v564) كاش فيديو الموبايل على التلفزيون
     implementation("androidx.media3:media3-effect:1.10.1")

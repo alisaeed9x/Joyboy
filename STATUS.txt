@@ -1,3 +1,4 @@
+v959: إصلاح فشل بناء v958 — إضافة media3-ui:1.10.1 لـ:app (MtBar.kt كان مش شايف TimeBar). مفيش تغيير تاني. لم يتم compile ولا اتجرّب. التفاصيل: CHANGES_v959.md.
 v958: قوايم ولوحات أزرار Joyboy فوق مشغّل MeeTube بقت في نافذة MeeTube الأصلية (BottomSheetDialog + showPlayerSheet) — MobilePlaybackActivity.joyboyRows/joyboySheet + MtBar.meeRows/meeViews. لسه بالقديم: GAlert (جمل/نسخ/ستايل) · الشخصيات · الدفعات · البحث · ToolsUi. لم يتم compile ولا اتجرّب. التفاصيل: CHANGES_v958.md.
 v957: شريط تقدّم MeeTube — نقط الأجزاء المترجمة (أخضر/كهرماني/أزرق) · صور مصغّرة وقت السحب للميديا/المتصفح (MtFrames.kt) · دوسة على الشريط بتنقل · المسار 4dp. لم يتم compile ولا اتجرّب. التفاصيل: CHANGES_v957.md.
 v956: شيل ☰/📃/🔂/سرعة/نوم/تصدير/تشخيص من شريط Joyboy (مكرّرة عند MeeTube) · إصلاح زرار 📜 اللوج (كان من غير show) · قايمة الترجمة منبثقة صغيرة وباقي الشيتات 60% بدل صفحة كاملة. لم يتم compile ولا اتجرّب. التفاصيل: CHANGES_v956.md.
