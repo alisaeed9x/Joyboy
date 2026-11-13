@@ -100,9 +100,8 @@ object MtTranslate : JoyboyPlayerHost.Provider {
             btn = null; btn2 = null
             if (options != null) {
                 // (v954) ⚙ الصغير اللي جنب الكاست اتشال (مكرّر: ⚙ في شريحة الترجمة بيفتح نفس القايمة)
-                val b1 = pill(activity, TAG_BTN, "🌐 ترجم") { toggle() }
-                options.addView(b1, 0)
-                btn = b1; btn2 = null
+                // (v960) زرار «🌐 ترجم / N%» اتشال من الشريط العلوي (التحكم في الترجمة من شريحة الترجمة + كبسولة العدّاد)
+                btn = null; btn2 = null
             }
             try { listenedOn?.removeListener(trans) } catch (_: Throwable) {}
             player.addListener(trans); listenedOn = player
@@ -956,7 +955,7 @@ object MtTranslate : JoyboyPlayerHost.Provider {
         if (anchor != null) {
             val rows = ArrayList<Pair<String, () -> Unit>>()
             for (p in items) { val f = p.second; if (f != null) rows.add(Pair(p.first, f)) }
-            MtBar.popupMenu(a, anchor, false, rows)
+            MtBar.popupMenu(a, anchor, false, rows, true)   // (v961) منبثقة جنب الزرار
             return
         }
         openSheet(a, "🌐 أدوات الترجمة والميديا", items)
@@ -1015,15 +1014,83 @@ object MtTranslate : JoyboyPlayerHost.Provider {
             translateMenu(anchor)
         }
         m("⚙ إعدادات الترجمة") { MeeTubeLink.openSettings(a, "tr_engine") }
-        if (anchor != null && MtBar.meeRows(a, "⚙ نظام الترجمة", items) != null) return   // (v958) نافذة MeeTube الأصلية (بالعناوين)
         if (anchor != null) {
             // (v956) منبثقة صغيرة: العناوين بتتشال (الحالة الحالية بتبان في شريحة الترجمة)، وبيفضل ✓ على الاختيار الحالي
             val rows = ArrayList<Pair<String, () -> Unit>>()
             for (pr in items) { val f = pr.second; if (f != null) rows.add(Pair(pr.first, f)) }
-            MtBar.popupMenu(a, anchor, true, rows)
+            MtBar.popupMenu(a, anchor, true, rows, true)   // (v961) منبثقة جنب الزرار مش شيت/صفحة
             return
         }
         openSheet(a, "⚙ نظام الترجمة", items)
+    }
+
+    /**
+     * (v962) تعديل الترجمة الحالية بخيارات متعددة بتتنفّذ ورا بعض (زي Player.applyAiOptions):
+     * refine ← dial ← family ← explicit ← pron ← dedup. المفاتيح: refine/dial/family/explicit/pron/dedup
+     */
+    fun applyAiOptions(sel: Collection<String>) {
+        val a = act ?: return
+        val e = eng
+        if (e == null || !on) { Notice.show(a, "ابدأ الترجمة الأول", 2000L); return }
+        if (sel.isEmpty()) { Notice.show(a, "اختار خيار واحد على الأقل", 2000L); return }
+        val lang = try { Cfg.snapshot().lang } catch (_: Throwable) { "" }
+        val dialI = "زوّد شدة اللهجة الشعبية في كل جملة درجة واحدة: ألفاظ وتعبيرات الشارع والعامية المحلية ($lang) بدل الفصحى والكلام الرسمي، من غير ما تغيّر المعنى أو الجنس."
+        val familyI = "نضّف الجملة من الألفاظ الخارجة والإيحاءات الجنسية وخليها عائلية ومناسبة لكل الأعمار مع الحفاظ على المعنى العام."
+        val explicitI = "رجّع الترجمة لمطابقة صراحة النص الأصلي بالظبط (الألفاظ والإيحاءات زي ما هي في الأصل من غير تلطيف ولا حذف)."
+        val order = listOf("refine", "dial", "family", "explicit", "pron", "dedup").filter { it in sel }
+        val results = ArrayList<String>()
+        var stopped = false
+        fun say(m: String) { ui.post { Notice.show(a, m, 2400L) } }
+        fun rep(m: String) { if (m.startsWith("في عملية شغالة")) stopped = true; say(m) }
+        fun step(k: Int) {
+            if (stopped) return
+            if (k >= order.size) { say("✅ خلصت: " + results.joinToString(" · ")); ui.post { cached = null }; return }
+            fun fin(label: String, n: Int) { results.add("$label $n"); ui.post { cached = null }; step(k + 1) }
+            when (order[k]) {
+                "refine" -> { say("✍ (${k + 1}/${order.size}) تنقيح بالسياق…"); e.refineWholeNow({ m -> rep(m) }) { n -> fin("تنقيح", n) } }
+                "dial" -> { say("🔥 (${k + 1}/${order.size}) لهجة +…"); e.rewriteAll("زيادة شدة اللهجة", dialI, 0.0, { m -> rep(m) }) { n -> fin("لهجة", n) } }
+                "family" -> { say("🧹 (${k + 1}/${order.size}) عائلي…"); e.rewriteAll("عائلي", familyI, 0.0, { m -> rep(m) }) { n -> fin("عائلي", n) } }
+                "explicit" -> { say("🔞 (${k + 1}/${order.size}) صريح…"); e.rewriteAll("صريح", explicitI, 0.0, { m -> rep(m) }) { n -> fin("صريح", n) } }
+                "pron" -> { say("🔧 (${k + 1}/${order.size}) ضمائر…"); e.correctPronounsNow({ m -> rep(m) }) { n -> fin("ضمائر", n) } }
+                else -> { val n = e.removeDuplicates(); fin("دمج مكرر", n) }
+            }
+        }
+        step(0)
+    }
+
+    /** (v961) دوسة «▶ ترجمة» وهي واقفة: قايمة منبثقة جنب الزرار «اختار وضع الترجمة» — اختيار وضع بيحفظه ويبدأ الترجمة بيه */
+    fun startMenu(anchor: View? = null) {
+        val a = act ?: return
+        if (on) { translateMenu(anchor); return }
+        val dm = try { Cfg.int("dual_listen", 1) } catch (_: Throwable) { 1 }
+        val cm = curEngineMode()
+        val items = ArrayList<Pair<String, () -> Unit>>()
+        items.add(("☁ جيميناي — ٧٥/٢٥ (سماع واحد)" + (if (cm == "gemini" && dm == 0) " ✓" else "")) to {
+            try { Cfg.put("dual_listen", "0") } catch (_: Throwable) {}
+            setEngineMode("gemini"); start()
+        })
+        items.add(("🎯 جيميناي — السماع الأدق (مفتاحين + حكم)" + (if (cm == "gemini" && dm == 2) " ✓" else "")) to {
+            try { Cfg.put("dual_listen", "2") } catch (_: Throwable) {}
+            setEngineMode("gemini"); start()
+        })
+        items.add(("📴 وشبر + ترجمة أوفلاين" + (if (cm == "whisper") " ✓" else "")) to {
+            if (!Offline.configured()) {
+                Notice.show(a, "📴 وشبر مش متظبط على الجهاز — ظبّطه من إعدادات الترجمة الأول", 3000L)
+            } else { setEngineMode("whisper"); start() }
+        })
+        items.add(("✍ تفريغ بس — جيميناي (من غير ترجمة)" + (if (cm == "transcribe") " ✓" else "")) to {
+            setEngineMode("transcribe"); start()
+        })
+        items.add(("🌐 جوجل — من غير مفتاح (للملفات بس)" + (if (cm == "google") " ✓" else "")) to {
+            setEngineMode("google"); start()
+        })
+        if (anchor != null) MtBar.popupMenu(a, anchor, true, items, true)
+        else {
+            val rows = ArrayList<Pair<String, (() -> Unit)?>>()
+            rows.add(Pair("اختار وضع الترجمة", null))
+            for (p in items) rows.add(Pair(p.first, p.second))
+            openSheet(a, "🔤 وضع الترجمة", rows)
+        }
     }
 
     /** (v942) تقدم الباتشات — نفس بيانات Player.batchDialog بس شيت نصوص */

@@ -207,11 +207,7 @@ object MtBar {
         val mainV = mainRow(activity)
         root.addView(mainV)
         mtStyle(activity, mainV)   // (v954) نفس ستايل سماعة/إعدادات MeeTube
-        if (activity.resources.configuration.orientation == Configuration.ORIENTATION_PORTRAIT) {
-            val capV = capsuleRow(activity)
-            root.addView(capV)
-            mtStyle(activity, capV)
-        }
+        // (v960) صف «📄 تصدير + 🔊 الصوت» اتشال — الشريط وصف ⏮ ▶ ⏭ نزلوا لتحت
         val lp = FrameLayout.LayoutParams(-1, -2, Gravity.BOTTOM).apply {
             bottomMargin = dp(activity, BAR_BOTTOM_DP)
         }
@@ -531,7 +527,7 @@ object MtBar {
         hookFilmstrip(a)
         // (v947) أزرار MeeTube الأصلية اللي Joyboy عنده بدايلها في الصف الرئيسي: ⏮ ⏯ ⏭ (النص) + ⛶ + سهم الأكشنز — بتتخبّى (كانت بتظهر مرتين)
         nativeDup.clear()
-        for (n in arrayOf("mobile_player_transport", "mobile_player_fullscreen", "mobile_player_actions_toggle", "mobile_player_cast")) {   // (v954) + قفل MeeTube الكبير (مكرّر مع 🔓 اللي في الصف الرئيسي) + الكاست   // (v949) + زرار CC بتاع MeeTube (Joyboy عنده CC في صف الدواير بيعمل نفس الشغلة)
+        for (n in arrayOf("mobile_player_transport", "mobile_player_actions_toggle", "mobile_player_cast")) {   // (v960) ⛶ الأصلي رجع (مش بيتخبّى) // (v954) + قفل MeeTube الكبير (مكرّر مع 🔓 اللي في الصف الرئيسي) + الكاست   // (v949) + زرار CC بتاع MeeTube (Joyboy عنده CC في صف الدواير بيعمل نفس الشغلة)
             try {
                 val i = a.resources.getIdentifier(n, "id", a.packageName)
                 if (i != 0) a.findViewById<View>(i)?.let { nativeDup.add(it) }
@@ -608,9 +604,30 @@ object MtBar {
             // المدة تطلع من كبسولة الوقت لآخر الصف (الطرف التاني) ويتشال منها « / »
             if (row != null && posV != null && durV != null && durV.parent !== row) {
                 (durV.parent as? ViewGroup)?.removeView(durV)
-                row.addView(durV, row.childCount, LinearLayout.LayoutParams(-2, -2).apply { marginEnd = dp(a, 8) })
+                // (v960) المدة قبل زرار ⛶ (كانت بعده لما ⛶ كان متخبّي)
+                val fsId = a.resources.getIdentifier("mobile_player_fullscreen", "id", a.packageName)
+                val fsV = if (fsId != 0) a.findViewById<View>(fsId) else null
+                val at = if (fsV != null && fsV.parent === row) row.indexOfChild(fsV) else row.childCount
+                row.addView(durV, at, LinearLayout.LayoutParams(-2, -2).apply { marginEnd = dp(a, 8) })
             }
             if (durV != null) {
+                // (v960) رعشة 44:10: MeeTube بيكتب « / 44:10» كل تيك وإحنا كنا بنشيل « / » في preDraw (فريم بالنص القديم وبعرضه ← إعادة layout كل ثانية).
+                // دلوقتي TextWatcher بيشيلها في نفس لحظة الكتابة، والعرض ثابت (tnum + minWidth) فمفيش إعادة layout.
+                if (durV.getTag(0x6A0B0001) == null) {
+                    durV.setTag(0x6A0B0001, true)
+                    durV.gravity = Gravity.END
+                    durV.minWidth = durV.paint.measureText("0:00:00").toInt() + dp(a, 2)
+                    durV.addTextChangedListener(object : android.text.TextWatcher {
+                        override fun beforeTextChanged(c: CharSequence?, st: Int, n: Int, af: Int) {}
+                        override fun onTextChanged(c: CharSequence?, st: Int, b: Int, n: Int) {}
+                        override fun afterTextChanged(e: android.text.Editable?) {
+                            if (e == null || e.isEmpty()) return
+                            var k = 0
+                            while (k < e.length && (e[k] == ' ' || e[k] == '/')) k++
+                            if (k > 0) e.delete(0, k)
+                        }
+                    })
+                }
                 val t = durV.text?.toString() ?: ""
                 val fixed = t.trimStart(' ', '/')
                 if (fixed != t) durV.text = fixed
@@ -629,8 +646,9 @@ object MtBar {
             // الشريط بين الوقت والمدة: هامش يمين/شمال بعرض النصين
             val lp = tb.layoutParams as? ViewGroup.MarginLayoutParams
             if (lp != null && posV != null && durV != null && timeV != null) {
-                val l = (timeV.width + dp(a, 10)).coerceAtLeast(0)
-                val r = (durV.width + dp(a, 18)).coerceAtLeast(0)
+                // (v960) الهوامش بتكبر بس — عرض النصين لو اتذبذب (رقم أعرض/أضيق) الشريط ما يتحركش
+                val l = (timeV.width + dp(a, 10)).coerceAtLeast(lp.leftMargin)
+                val r = (durV.width + dp(a, 18)).coerceAtLeast(lp.rightMargin)
                 if (Math.abs(lp.leftMargin - l) > 2 || Math.abs(lp.rightMargin - r) > 2) {
                     lp.leftMargin = l
                     lp.rightMargin = r
@@ -891,8 +909,10 @@ object MtBar {
         dualBtn = dualV
         row.addView(dualV)
         row.addView(chev("⏱ ▾") { v -> syncMenu(a, v, false) })   // (v949) قايمة ⏱ منبثقة (والشريط السريع جواها)
+        row.addView(chev("⏩ ▾") { v -> speedPanel(a, v, false) })   // (v961) السرعة رجعت
         row.addView(chev("🔤 ▾") { v -> textMenu(a, v) })
         row.addView(circ("📝", 12f) { MtTranslate.searchSentences() })
+        row.addView(circ("📤", 12f) { exportSub(a) })   // (v961) تصدير SRT رجع (زي «📤 تصدير SRT» في القديم)
         row.addView(circ("📜", 12f) { showLog(a) })
         loopBtn = null
         return HorizontalScrollView(a).apply {
@@ -919,7 +939,7 @@ object MtBar {
         }
         trChipLast = ""
         trChip = u.fsBtn("▶ ترجمة") {
-            if (MtTranslate.isTranslating()) MtTranslate.translateMenu(it) else MtTranslate.toggle()
+            if (MtTranslate.isTranslating()) MtTranslate.translateMenu(it) else MtTranslate.startMenu(it)   // (v961) قبل الترجمة: اختار الوضع الأول
         }.apply {
             background = u.box(0xFFE53935.toInt(), 0x33FFFFFF, 12)
             layoutParams = lp(-2)
@@ -975,7 +995,7 @@ object MtBar {
             gravity = Gravity.START or Gravity.CENTER_VERTICAL
             layoutParams = LinearLayout.LayoutParams(0, -2, 1f)
         }
-        // (v955) 🔓 اتشال — قفل MeeTube الأصلي رجع
+        // (v962) 🗣▾ رجع — اللهجة والأسلوب + تعديل الترجمة (تنقيح/لهجة+/عائلي/صريح/ضمائر/دمج) بزرار تطبيق
         left.addView(u.fsBtn("🗣 ▾") { v -> dialectMenu(a, v, true) }.apply {
             textSize = 12f
             minimumWidth = dp(a, 38)
@@ -1005,16 +1025,13 @@ object MtBar {
             gravity = Gravity.END or Gravity.CENTER_VERTICAL
             layoutParams = LinearLayout.LayoutParams(0, -2, 1f)
         }
-        // (v949) ▲ الإشعارات الحمرا (قبل 🔄 في اليمين زي القديم: noticeBtn بارتفاع 34dp ومسافة 8dp)
-        noticeB = u.text("▲", 13f, 0xFFFF3B30.toInt(), true).apply {
-            gravity = Gravity.CENTER
-            alpha = 0.35f
-            setPadding(dp(a, 10), dp(a, 4), dp(a, 10), dp(a, 4))
-            background = u.box(0x33FF3B30, 0x99FF3B30.toInt(), 20)
-            setOnClickListener { v -> noticePopup(a, v) }
-            layoutParams = LinearLayout.LayoutParams(-2, dp(a, 34)).apply { marginEnd = dp(a, 8) }
+        // (v960) ▲ الإشعارات اتشال. مكانها زرار التمديد (احتواء ← ملء ← تمديد ← 100%)، وزرار ⛶ بتاع MeeTube رجع (بيدخل/بيخرج من الفل سكرين)
+        noticeB = null
+        fitB = u.fsCircle("⬛") { cycleFit(a) }.apply {
+            textSize = 15f
+            layoutParams = LinearLayout.LayoutParams(dp(a, 44), dp(a, 44)).apply { marginEnd = dp(a, 8) }
         }
-        noticeB?.let { right.addView(it) }
+        fitB?.let { right.addView(it) }
         // (v955) 🔄 ⧉ ⛶ اتشالوا — التدوير والـPiP في ⚙ MeeTube، و⛶ بتاع MeeTube رجع
         row.addView(left)
         row.addView(mid, LinearLayout.LayoutParams(-2, -2))
@@ -1113,7 +1130,7 @@ object MtBar {
             Cfg.put("fit", n.toString())
         } catch (_: Throwable) {}
         bridge(a, "fit:" + n)
-        fitB?.text = "⛶"
+        fitB?.text = "⬛"
         Notice.show(a, "⬛ " + fitName(n), 1400L)
     }
 
@@ -1218,6 +1235,16 @@ object MtBar {
         return try { h.joyboySheet(title, views) } catch (t: Throwable) { LogStore.err("MtBar:meeViews", t); null }
     }
 
+    private fun glassBg(a: Activity): android.graphics.drawable.GradientDrawable {
+        return android.graphics.drawable.GradientDrawable(
+            android.graphics.drawable.GradientDrawable.Orientation.TOP_BOTTOM,
+            intArrayOf(0xF2242432.toInt(), 0xF5101017.toInt())
+        ).apply {
+            cornerRadius = dp(a, 24).toFloat()
+            setStroke(1, 0x3DFFFFFF)
+        }
+    }
+
     private fun dismissPopup() {
         try { popup?.dismiss() } catch (_: Throwable) {}
         popup = null
@@ -1225,22 +1252,16 @@ object MtBar {
     }
 
     /** (v949) نسخة عامة من popupRows: بتاخد Views جاهزة (سلايدر/شيبس/نصوص) وتحطها جوه نفس اللوح المنبثق جنب الزرار */
-    private fun popupViews(a: Activity, anchor: View, above: Boolean, views: List<View>, minWdp: Int = 150) {
+    private fun popupViews(a: Activity, anchor: View, above: Boolean, views: List<View>, minWdp: Int = 150, force: Boolean = false, footer: View? = null) {
         val had = popupOwner === anchor
         dismissPopup()
         if (had) return
-        if (meeViews(a, "", views) != null) return   // (v958) نافذة MeeTube الأصلية
+        if (!force && meeViews(a, "", views) != null) return   // (v958) نافذة MeeTube الأصلية (v961: force = منبثقة جنب الزرار)
         val col = LinearLayout(a).apply {
             orientation = LinearLayout.VERTICAL
             layoutDirection = View.LAYOUT_DIRECTION_RTL
             setPadding(dp(a, 6), dp(a, 6), dp(a, 6), dp(a, 6))
-            background = android.graphics.drawable.GradientDrawable(
-                android.graphics.drawable.GradientDrawable.Orientation.TOP_BOTTOM,
-                intArrayOf(0xF2242432.toInt(), 0xF5101017.toInt())
-            ).apply {
-                cornerRadius = dp(a, 24).toFloat()
-                setStroke(1, 0x3DFFFFFF)
-            }
+            if (footer == null) background = glassBg(a)   // (v963) مع footer الخلفية على الغلاف الخارجي
         }
         for (v in views) {
             (v.parent as? ViewGroup)?.removeView(v)
@@ -1262,13 +1283,33 @@ object MtBar {
         val loc = IntArray(2)
         anchor.getLocationOnScreen(loc)
         val avail = (if (above) loc[1] - dp(a, 8) else dm.heightPixels - loc[1] - anchor.height - dp(a, 8)).coerceAtLeast(dp(a, 120))
-        val popH = minOf(col.measuredHeight, avail)
+        // (v963) footer (زرار «✔ تطبيق») ثابت تحت اللوحة ومش جوه السكرول — كان بيتقص في اللاندسكيب فمكانش بيبان
+        val fw: LinearLayout? = if (footer == null) null else {
+            (footer.parent as? ViewGroup)?.removeView(footer)
+            LinearLayout(a).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(dp(a, 8), dp(a, 4), dp(a, 8), dp(a, 8))
+                addView(footer, LinearLayout.LayoutParams(-1, -2))
+                measure(
+                    View.MeasureSpec.makeMeasureSpec(maxOf(col.measuredWidth, dp(a, minWdp)), View.MeasureSpec.EXACTLY),
+                    View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED)
+                )
+            }
+        }
+        val footH = fw?.measuredHeight ?: 0
+        val popH = minOf(col.measuredHeight + footH, avail)
         val sv = android.widget.ScrollView(a).apply {
             overScrollMode = View.OVER_SCROLL_NEVER
             isVerticalScrollBarEnabled = false
             addView(col)
         }
-        val pw = android.widget.PopupWindow(sv, maxOf(col.measuredWidth, dp(a, minWdp)), popH, false)
+        val content: View = if (fw == null) sv else LinearLayout(a).apply {
+            orientation = LinearLayout.VERTICAL
+            background = glassBg(a)
+            addView(sv, LinearLayout.LayoutParams(-1, (popH - footH).coerceAtLeast(dp(a, 60))))
+            addView(fw, LinearLayout.LayoutParams(-1, -2))
+        }
+        val pw = android.widget.PopupWindow(content, maxOf(col.measuredWidth, dp(a, minWdp)), popH, false)
         pw.isOutsideTouchable = true
         pw.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(0))
         pw.setOnDismissListener { if (popup === pw) { popup = null; popupOwner = null } }
@@ -1281,8 +1322,8 @@ object MtBar {
         } catch (_: Throwable) {}
     }
 
-    private fun popupRows(a: Activity, anchor: View, above: Boolean, items: List<Pair<String, () -> Unit>>, title: String = "") {
-        if (meeRows(a, title, items.map { Pair<String, (() -> Unit)?>(it.first, it.second) }) != null) return   // (v958) نافذة MeeTube الأصلية
+    private fun popupRows(a: Activity, anchor: View, above: Boolean, items: List<Pair<String, () -> Unit>>, title: String = "", force: Boolean = false) {
+        if (!force && meeRows(a, title, items.map { Pair<String, (() -> Unit)?>(it.first, it.second) }) != null) return   // (v958) نافذة MeeTube الأصلية
         val u = uiHelper ?: return
         val views = ArrayList<View>()
         for ((t, f) in items) {
@@ -1290,13 +1331,13 @@ object MtBar {
             tvFocus(b)
             views.add(b)
         }
-        popupViews(a, anchor, above, views)
+        popupViews(a, anchor, above, views, 150, force)
     }
 
     /** (v949) لـMtTranslate: قايمة ☰ بقت منبثقة جنب الزرار بدل شيت */
-    fun popupMenu(a: Activity, anchor: View, above: Boolean, items: List<Pair<String, () -> Unit>>) {
+    fun popupMenu(a: Activity, anchor: View, above: Boolean, items: List<Pair<String, () -> Unit>>, force: Boolean = false) {
         if (uiHelper == null) uiHelper = Ui(a, Themes.current())
-        popupRows(a, anchor, above, items)
+        popupRows(a, anchor, above, items, "", force)
     }
 
     /** (v949) قايمة صفوف: منبثقة لو معاها زرار، وإلا شيت زي الأول (للتلفزيون/الريموت) */
@@ -1305,13 +1346,13 @@ object MtBar {
     }
 
     /** (v949) لوحة فيها عناصر (سلايدر/شيبس): منبثقة جنب الزرار لو فيه زرار، وإلا شيت */
-    private fun panel(a: Activity, anchor: View?, above: Boolean, title: String, views: List<View>) {
+    private fun panel(a: Activity, anchor: View?, above: Boolean, title: String, views: List<View>, force: Boolean = false, footer: View? = null) {
         val u = uiHelper ?: return
         if (anchor != null) {
             val all = ArrayList<View>()
             all.add(u.text(title, 13f, 0xFF9AA0A6.toInt(), true).apply { setPadding(dp(a, 10), dp(a, 6), dp(a, 10), dp(a, 2)) })
             all.addAll(views)
-            popupViews(a, anchor, above, all, 240)
+            popupViews(a, anchor, above, all, 240, force, footer)
         } else {
             u.sheet(a, title, views)
         }
@@ -1460,81 +1501,107 @@ object MtBar {
         rowsMenu(a, anchor, above, "😴 مؤقت النوم", items)
     }
 
+    /**
+     * (v962) زرار 🗣 رجع: اللهجة + الأسلوب + الشدة بتتختار وبعدها «✔ تطبيق» هو اللي بيطبّق (مش فوري)،
+     * وتحتها خيارات المشغّل القديم المتعددة (✍ تنقيح · 🔥 لهجة+ · 🧹 عائلي · 🔞 صريح · 🔧 ضمائر · 🧠 دمج مكرر) + «▶ طبّق المحدد».
+     */
     private fun dialectMenu(a: Activity, anchor: View? = null, above: Boolean = false) {
         val u = uiHelper!!
-        val curD = try {
-            Cfg.str("conv_dialect", "فصحى")
-        } catch (_: Throwable) {
-            "فصحى"
-        }
-        val lab = u.text("🗣 اللهجة: " + curD, 14f, Color.WHITE, true)
-        val chips = FlowRow(a).apply {
-            layoutDirection = View.LAYOUT_DIRECTION_RTL
-        }
-        for (d in listOf("فصحى", "مصري", "شامي", "لبناني", "خليجي", "مغربي", "عراقي", "سوداني")) {
-            chips.addView(u.fsBtn(d) {
-                try {
-                    Cfg.put("conv_dialect", d)
-                } catch (_: Throwable) {}
-                try {
-                    MtTranslate.rpc("engine.dialect", JSONObject().apply { put("d", d) })
-                } catch (_: Throwable) {}
-                lab.text = "🗣 اللهجة: " + d
-                Notice.show(a, "🗣 اللهجة: " + d, 1400L)
-            })
-        }
+        val dialects = listOf("فصحى", "مصري", "شامي", "لبناني", "خليجي", "مغربي", "عراقي", "سوداني")
         val styles = listOf("حرفي", "شعبي", "جرئ", "+18")
         val degrees = listOf("خفيفة", "متوسطة", "شديدة")
-        val curS = try {
-            Cfg.str("tone_style", "شعبي")
-        } catch (_: Throwable) {
-            "شعبي"
+        var pD = try { Cfg.str("conv_dialect", "فصحى") } catch (_: Throwable) { "فصحى" }
+        var pS = try { Cfg.str("tone_style", "شعبي") } catch (_: Throwable) { "شعبي" }
+        var pG = try { Cfg.str("tone_strength", "متوسطة") } catch (_: Throwable) { "متوسطة" }
+        val lab = u.text("🗣 اللهجة: " + pD, 14f, Color.WHITE, true)
+        val chips = FlowRow(a).apply { layoutDirection = View.LAYOUT_DIRECTION_RTL }
+        val dBtns = HashMap<String, TextView>()
+        fun paintD() {
+            for ((d, b) in dBtns) {
+                val on = d == pD
+                b.text = (if (on) "✓ " else "") + d
+                b.background = u.box(if (on) 0xFF1F5FBF.toInt() else 0xE0141418.toInt(), 0x1FFFFFFF, 12)
+            }
+            lab.text = "🗣 اللهجة: " + pD
         }
-        val curG = try {
-            Cfg.str("tone_strength", "متوسطة")
-        } catch (_: Throwable) {
-            "متوسطة"
+        for (d in dialects) {
+            val b = u.fsBtn(d) { pD = d; paintD() }
+            dBtns[d] = b
+            chips.addView(b)
         }
-        val toneLab = u.text("🎨 الأسلوب: " + curS + " / " + curG, 13f, Color.WHITE, false)
+        val toneLab = u.text("🎨 الأسلوب: " + pS + " / " + pG, 13f, Color.WHITE, false)
         val styleBar = SeekBar(a).apply {
             max = 3
-            progress = styles.indexOf(curS).coerceIn(0, 3)
-            layoutParams = LinearLayout.LayoutParams(-1, -2).apply {
-                setMargins(dp(a, 12), dp(a, 8), dp(a, 12), dp(a, 4))
-            }
+            progress = styles.indexOf(pS).coerceIn(0, 3)
+            layoutParams = LinearLayout.LayoutParams(-1, -2).apply { setMargins(dp(a, 12), dp(a, 8), dp(a, 12), dp(a, 4)) }
             setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
-                override fun onProgressChanged(s: SeekBar?, pr: Int, fromUser: Boolean) {}
-                override fun onStartTrackingTouch(s: SeekBar?) {}
-                override fun onStopTrackingTouch(s: SeekBar?) {
-                    val st = styles[s?.progress ?: 0]
-                    try {
-                        Cfg.put("tone_style", st)
-                    } catch (_: Throwable) {}
-                    applyTone(a, st, null)
-                    toneLab.text = "🎨 الأسلوب: " + st + " / " + Cfg.str("tone_strength", "متوسطة")
+                override fun onProgressChanged(s: SeekBar?, pr: Int, fromUser: Boolean) {
+                    if (!fromUser) return
+                    pS = styles[pr.coerceIn(0, 3)]
+                    toneLab.text = "🎨 الأسلوب: " + pS + " / " + pG
                 }
+                override fun onStartTrackingTouch(s: SeekBar?) {}
+                override fun onStopTrackingTouch(s: SeekBar?) {}
             })
         }
         val degBar = SeekBar(a).apply {
             max = 2
-            progress = degrees.indexOf(curG).coerceIn(0, 2)
-            layoutParams = LinearLayout.LayoutParams(-1, -2).apply {
-                setMargins(dp(a, 12), dp(a, 4), dp(a, 12), dp(a, 8))
-            }
+            progress = degrees.indexOf(pG).coerceIn(0, 2)
+            layoutParams = LinearLayout.LayoutParams(-1, -2).apply { setMargins(dp(a, 12), dp(a, 4), dp(a, 12), dp(a, 8)) }
             setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
-                override fun onProgressChanged(s: SeekBar?, pr: Int, fromUser: Boolean) {}
-                override fun onStartTrackingTouch(s: SeekBar?) {}
-                override fun onStopTrackingTouch(s: SeekBar?) {
-                    val dg = degrees[s?.progress ?: 1]
-                    try {
-                        Cfg.put("tone_strength", dg)
-                    } catch (_: Throwable) {}
-                    applyTone(a, null, dg)
-                    toneLab.text = "🎨 الأسلوب: " + Cfg.str("tone_style", "شعبي") + " / " + dg
+                override fun onProgressChanged(s: SeekBar?, pr: Int, fromUser: Boolean) {
+                    if (!fromUser) return
+                    pG = degrees[pr.coerceIn(0, 2)]
+                    toneLab.text = "🎨 الأسلوب: " + pS + " / " + pG
                 }
+                override fun onStartTrackingTouch(s: SeekBar?) {}
+                override fun onStopTrackingTouch(s: SeekBar?) {}
             })
         }
-        panel(a, anchor, above, "🌐 اللغة والأسلوب", listOf(lab, chips, toneLab, styleBar, degBar))
+        val aiBase = linkedMapOf("refine" to "✍ تنقيح بالسياق", "dial" to "🔥 لهجة +", "family" to "🧹 عائلي", "explicit" to "🔞 صريح", "pron" to "🔧 ضمائر", "dedup" to "🧠 دمج مكرر")
+        val aiSel = linkedSetOf<String>()
+        val aiBtns = HashMap<String, TextView>()
+        // (v963) زرار «✔ تطبيق» واحد ثابت تحت اللوحة: بيحفظ اللهجة/الأسلوب/الشدة وبيبعتها للمحرك، ولو اخترت تعديلات (تنقيح/لهجة+…) بينفّذها كمان
+        val aiApply = u.fsBtn("✔ تطبيق") {
+            try { Cfg.put("conv_dialect", pD) } catch (_: Throwable) {}
+            try { Cfg.put("tone_style", pS) } catch (_: Throwable) {}
+            try { Cfg.put("tone_strength", pG) } catch (_: Throwable) {}
+            try { MtTranslate.rpc("engine.dialect", JSONObject().apply { put("d", pD) }) } catch (_: Throwable) {}
+            applyTone(a, pS, pG)
+            Notice.show(a, "✔ اتطبّق: " + pD + " · " + pS + " / " + pG, 2000L)
+            if (aiSel.isNotEmpty()) MtTranslate.applyAiOptions(aiSel.toList())
+            dismissPopup()
+        }.apply {
+            background = u.box(0xFF1F5FBF.toInt(), 0x33FFFFFF, 14)
+            textSize = 15f
+            gravity = Gravity.CENTER
+            setPadding(dp(a, 12), dp(a, 10), dp(a, 12), dp(a, 10))
+        }
+        fun paintAi() {
+            for ((id, b) in aiBtns) {
+                val on = id in aiSel
+                b.text = (if (on) "✓ " else "") + aiBase[id]
+                b.background = u.box(if (on) 0xFF1F5FBF.toInt() else 0xE0141418.toInt(), 0x1FFFFFFF, 12)
+            }
+            aiApply.text = if (aiSel.isEmpty()) "✔ تطبيق" else "✔ تطبيق (+" + aiSel.size + " تعديل)"
+        }
+        val aiChips = FlowRow(a).apply { layoutDirection = View.LAYOUT_DIRECTION_RTL }
+        for ((id, base) in aiBase) {
+            val b = u.fsBtn(base) {
+                if (!aiSel.remove(id)) {
+                    aiSel.add(id)
+                    if (id == "family") aiSel.remove("explicit")   // عائلي وصريح عكس بعض
+                    if (id == "explicit") aiSel.remove("family")
+                }
+                paintAi()
+            }
+            aiBtns[id] = b
+            aiChips.addView(b)
+        }
+        paintD()
+        paintAi()
+        val aiLab = u.text("🛠 تعديل الترجمة الحالية (بيتنفّذوا ورا بعض)", 13f, Color.WHITE, true)
+        panel(a, anchor, above, "🗣 اللهجة والأسلوب", listOf(lab, chips, toneLab, styleBar, degBar, aiLab, aiChips), true, aiApply)
     }
 
     private fun applyTone(a: Activity, style: String?, strength: String?) {
