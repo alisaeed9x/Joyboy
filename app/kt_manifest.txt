@@ -298,3 +298,5 @@ com/tttt/subtitler/YtFeedStore.kt
 com/tttt/subtitler/YtNext.kt
 com/tttt/subtitler/MtWeb.kt
 com/tttt/subtitler/MtFrames.kt
+com/tttt/subtitler/TabNav.kt
+com/tttt/subtitler/VidHook.kt
