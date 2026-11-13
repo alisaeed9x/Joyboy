@@ -51,7 +51,7 @@ object MtBar {
     private const val DARK_OFF = 0xE00F0F12.toInt()
     private const val TAG_LOCKOV = "mtbar_lockov"
     private const val REST_A = 0.25f
-    private const val BAR_BOTTOM_DP = 84
+    private const val BAR_BOTTOM_DP = 6   // (v954) كان 84 — الشريط (ترجمة … تصدير) كان مرفوع لنص الشاشة؛ دلوقتي لازق تحت
 
     private val ui = Handler(Looper.getMainLooper())
     private var act: Activity? = null
@@ -201,9 +201,13 @@ object MtBar {
         val slot = View(activity).apply { layoutParams = LinearLayout.LayoutParams(-1, dp(activity, 34)) }   // (v949) 34dp: الوقت والشريط والمدة على نفس السطر زي القديم (timeRow 30dp)
         root.addView(slot)
         slotV = slot
-        root.addView(mainRow(activity))
+        val mainV = mainRow(activity)
+        root.addView(mainV)
+        mtStyle(activity, mainV)   // (v954) نفس ستايل سماعة/إعدادات MeeTube
         if (activity.resources.configuration.orientation == Configuration.ORIENTATION_PORTRAIT) {
-            root.addView(capsuleRow(activity))
+            val capV = capsuleRow(activity)
+            root.addView(capV)
+            mtStyle(activity, capV)
         }
         val lp = FrameLayout.LayoutParams(-1, -2, Gravity.BOTTOM).apply {
             bottomMargin = dp(activity, BAR_BOTTOM_DP)
@@ -213,6 +217,7 @@ object MtBar {
         hookSeekBar(activity, root)
         val portrait = activity.resources.configuration.orientation == Configuration.ORIENTATION_PORTRAIT
         val tools = toolbar(activity)
+        mtStyle(activity, tools)
         val tlp = FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.END).apply {
             topMargin = dp(activity, if (portrait) 72 else 58)
             leftMargin = dp(activity, 14)
@@ -518,7 +523,7 @@ object MtBar {
         } catch (_: Throwable) { timeBar = null }
         // (v947) أزرار MeeTube الأصلية اللي Joyboy عنده بدايلها في الصف الرئيسي: ⏮ ⏯ ⏭ (النص) + ⛶ + سهم الأكشنز — بتتخبّى (كانت بتظهر مرتين)
         nativeDup.clear()
-        for (n in arrayOf("mobile_player_transport", "mobile_player_fullscreen", "mobile_player_actions_toggle", "mobile_player_subtitles")) {   // (v949) + زرار CC بتاع MeeTube (Joyboy عنده CC في صف الدواير بيعمل نفس الشغلة)
+        for (n in arrayOf("mobile_player_transport", "mobile_player_fullscreen", "mobile_player_actions_toggle", "mobile_player_cast")) {   // (v954) + قفل MeeTube الكبير (مكرّر مع 🔓 اللي في الصف الرئيسي) + الكاست   // (v949) + زرار CC بتاع MeeTube (Joyboy عنده CC في صف الدواير بيعمل نفس الشغلة)
             try {
                 val i = a.resources.getIdentifier(n, "id", a.packageName)
                 if (i != 0) a.findViewById<View>(i)?.let { nativeDup.add(it) }
@@ -604,50 +609,45 @@ object MtBar {
         return mn + " · " + d
     }
 
-    /** (v949) شريط فوق: [أيقونات MeeTube] [كبسولة العدّاد] [أونلاين · لهجة] [كبسولة العنوان] — الأماكن بتتحسب من أماكن أزرار MeeTube الفعلية (RTL/LTR)، والعنوان بيضيّق هامشه عشان ما يتغطّاش */
+    /** (v954) شريط فوق: يمين ← [كبسولة العدّاد] [أونلاين · لهجة] [اسم الفيديو] ← شمال [⚙ 🎧 ⌄]. السماعة والسهم بقوا جوه صف الإعدادات (شمال)، فاليمين بقى فيه الكبسولة بس، والعنوان بيضيّق هامشه من الجهتين حسب العرض الفعلي */
     private fun placeTop() {
         val a = act ?: return
         val cap = capRoot ?: return
         val mode = modePill
         try {
-            val dm = a.resources.displayMetrics
-            val w = dm.widthPixels
-            var inset = 0
-            for (n in arrayOf("mobile_player_options", "mobile_player_audio", "mobile_player_back")) {
-                val id = a.resources.getIdentifier(n, "id", a.packageName)
-                if (id == 0) continue
-                val v = a.findViewById<View>(id) ?: continue
-                if (v.visibility != View.VISIBLE || v.width <= 0) continue
-                val loc = IntArray(2)
-                v.getLocationOnScreen(loc)
-                if (loc[0] + v.width / 2 > w / 2) inset = maxOf(inset, w - loc[0])
-            }
             val capW = cap.width
             val modeW = mode?.width ?: 0
-            val sig = inset.toString() + "|" + capW + "|" + modeW
-            if (sig == lastTopSig) return
-            lastTopSig = sig
             val gap = dp(a, 8)
-            (cap.layoutParams as? FrameLayout.LayoutParams)?.let {
-                it.rightMargin = inset + gap
-                cap.layoutParams = it
-            }
-            if (mode != null) {
-                (mode.layoutParams as? FrameLayout.LayoutParams)?.let {
-                    it.rightMargin = inset + gap + capW + dp(a, 6)
-                    mode.layoutParams = it
+            val oid = a.resources.getIdentifier("mobile_player_options", "id", a.packageName)
+            val opt = if (oid != 0) a.findViewById<View>(oid) else null
+            val optW = if (opt != null && opt.visibility == View.VISIBLE) opt.width else 0
+            val sig = capW.toString() + "|" + modeW
+            if (sig != lastTopSig) {
+                lastTopSig = sig
+                (cap.layoutParams as? FrameLayout.LayoutParams)?.let {
+                    it.rightMargin = gap
+                    cap.layoutParams = it
+                }
+                if (mode != null) {
+                    (mode.layoutParams as? FrameLayout.LayoutParams)?.let {
+                        it.rightMargin = gap + capW + dp(a, 6)
+                        mode.layoutParams = it
+                    }
                 }
             }
             val tid = a.resources.getIdentifier("mobile_player_title", "id", a.packageName)
             val title = if (tid != 0) a.findViewById<View>(tid) else null
             val tlp = title?.layoutParams as? ViewGroup.MarginLayoutParams
-            if (title != null && tlp != null && capW > 0) {
+            // العنوان في صف الأزرار العلوي بس (في الفل-سكرين الرأسي العنوان تحت الصف فمش بيتلمس)
+            if (title != null && tlp != null && capW > 0 && tlp.topMargin <= dp(a, 30)) {
                 val rtl = title.layoutDirection == View.LAYOUT_DIRECTION_RTL
-                val cur = if (rtl) tlp.marginStart else tlp.marginEnd
-                if (titleBaseR < 0) titleBaseR = cur
-                val want = maxOf(titleBaseR, inset) + capW + modeW + dp(a, 20)
-                if (cur != want) {
-                    if (rtl) tlp.marginStart = want else tlp.marginEnd = want
+                val wantRight = gap + capW + modeW + dp(a, 14)   // اليمين: الكبسولة (+ «أونلاين · لهجة») وبعدها العنوان
+                val wantLeft = optW + dp(a, 8)                   // الشمال: صف ⚙ 🎧 ⌄ (+ 🌐 ترجم)
+                val wantStart = if (rtl) wantRight else wantLeft
+                val wantEnd = if (rtl) wantLeft else wantRight
+                if (tlp.marginStart != wantStart || tlp.marginEnd != wantEnd) {
+                    tlp.marginStart = wantStart
+                    tlp.marginEnd = wantEnd
                     title.layoutParams = tlp
                 }
             }
@@ -682,13 +682,46 @@ object MtBar {
         }
     }
 
+    /** (v954) حالة التفعيل بحلقة زرقا فوق نفس خلفية الزجاج (مش خلفية سودا/زرقا بتغيّر الستايل) */
+    private fun ring(v: View, on: Boolean) {
+        try {
+            v.foreground = if (on) android.graphics.drawable.GradientDrawable().apply {
+                shape = android.graphics.drawable.GradientDrawable.OVAL
+                setColor(0x00000000)
+                setStroke(2, 0xFF4C8DFF.toInt())
+            } else null
+        } catch (_: Throwable) {}
+    }
+
+    /** (v954) نفس ستايل أزرار MeeTube (سماعة/إعدادات): GlassDrawable.applyButton بنفس مصدر الزجاج والإعداد (شفاف/مثلّج/مينيمال) */
+    private fun mtStyle(a: Activity, root: View?) {
+        if (root == null) return
+        try {
+            val sid = a.resources.getIdentifier("mobile_player_glass", "id", a.packageName)
+            val src = if (sid != 0 && com.newtube.mobile.ui.common.Glass.isPlayerFrost(a)) a.findViewById<View>(sid) as? com.newtube.mobile.ui.common.GlassSource else null
+            styleTree(root, src)
+        } catch (t: Throwable) {
+            LogStore.err("MtBar:mtStyle", t)
+        }
+    }
+
+    private fun styleTree(v: View, src: com.newtube.mobile.ui.common.GlassSource?) {
+        if (v is ViewGroup) {
+            for (i in 0 until v.childCount) styleTree(v.getChildAt(i), src)
+            return
+        }
+        if (v !is TextView || v === noticeB || v === trChip || v.tag == TAG_CAP) return
+        if (v.background == null) return
+        try { com.newtube.mobile.ui.common.GlassDrawable.applyButton(v, src, 0, true) } catch (_: Throwable) {}
+    }
+
     /** (v945) 🔂 و💬 أزرق لما يكونوا شغّالين، غامق لما يكونوا مقفولين — زي القديم */
     private fun refreshModes() {
         try {
             val lo = MtMedia.loopMode() != 0
-            loopBtn?.background = ovalBg(if (lo) BLUE_ON else DARK_OFF)
+            loopBtn?.let { ring(it, lo) }
             val du = Cfg.int("sub_dual", 0) != 0
-            dualBtn?.background = ovalBg(if (du) BLUE_ON else DARK_OFF)
+            dualBtn?.let { ring(it, du) }
         } catch (_: Throwable) {}
     }
 
@@ -795,29 +828,26 @@ object MtBar {
                 }
             }
         }
-        val sq = { u.box(0xE0141418.toInt(), 0x1FFFFFFF, 12) }
-        // من اليمين: ☰ 🧰 📃 HD 🎙 CC 💬 ⏱▾ Aa▾ 🧑 📝 📋 🔂
-        row.addView(circ("☰", 14f) { v -> MtTranslate.showMenu(v) }.apply { background = sq() })   // (v949) منبثقة جنب ☰
-        row.addView(circ("🧰", 14f) { v -> toolboxMenu(a, v) }.apply { background = sq() })
+        // من اليمين: ☰ 🧰 ☑ 📃 CC 💬 ⏱▾ 🔤▾ 📝 📜 🔂
+        row.addView(circ("☰", 14f) { v -> MtTranslate.showMenu(v) })   // (v949) منبثقة جنب ☰
+        row.addView(circ("🧰", 14f) { v -> toolboxMenu(a, v) })
         // (v946) ☑/⬜ اسألني عند الخروج: أكمّل الترجمة في الخلفية؟ (نفس مفتاح ask_bg_exit في الإعدادات)
         val askV = circ(if (askOn()) "☑" else "⬜", 14f) {
             val on = !askOn()
             try { Cfg.put("ask_bg_exit", if (on) "1" else "0") } catch (_: Throwable) {}
             askBtn?.text = if (on) "☑" else "⬜"
             Notice.show(a, if (on) "هسألك لما تخرج: كمّل في الخلفية ولا لا" else "لما تخرج: الترجمة بتتقفل من غير سؤال ومن غير خلفية", 2600L)
-        }.apply { background = sq() }
+        }
         askBtn = askV
         row.addView(askV)
         row.addView(circ("📃", 12f) { PlayQueueUi.show(a) })
-        row.addView(circ("HD", 11f) { bridge(a, "quality") }.apply { typeface = Typeface.DEFAULT_BOLD })
-        row.addView(circ("🎙", 12f) { v -> voiceMenu(a, v) })
-        row.addView(circ("CC", 11f) { bridge(a, "cc") }.apply { typeface = Typeface.DEFAULT_BOLD })
+        // (v954) HD · 🎙 · 🧑 اتشالوا (مش محتاجينهم) — الجودة والصوت جوه 🧰 والإعدادات
+        // (v955) CC اتشال — زرار MeeTube الأصلي بيعمل نفس الشغلة
         val dualV = circ("💬", 12f) { MtTranslate.cycleDual(); refreshModes() }
         dualBtn = dualV
         row.addView(dualV)
         row.addView(chev("⏱ ▾") { v -> syncMenu(a, v, false) })   // (v949) قايمة ⏱ منبثقة (والشريط السريع جواها)
         row.addView(chev("🔤 ▾") { v -> textMenu(a, v) })
-        row.addView(circ("🧑", 12f) { showChars(a) })
         row.addView(circ("📝", 12f) { MtTranslate.searchSentences() })
         row.addView(circ("📜", 12f) { showLog(a) })
         val loopV = circ("🔂", 12f) { loopCycle(a); refreshModes() }
@@ -903,27 +933,14 @@ object MtBar {
             gravity = Gravity.START or Gravity.CENTER_VERTICAL
             layoutParams = LinearLayout.LayoutParams(0, -2, 1f)
         }
-        lockB = u.fsCircle("🔓") { toggleLock(a) }.apply {
-            layoutParams = LinearLayout.LayoutParams(dp(a, 40), dp(a, 40)).apply { marginEnd = dp(a, 4) }
-        }
-        left.addView(lockB)
+        // (v955) 🔓 اتشال — قفل MeeTube الأصلي رجع
         left.addView(u.fsBtn("🗣 ▾") { v -> dialectMenu(a, v, true) }.apply {
             textSize = 12f
             minimumWidth = dp(a, 38)
             setPadding(dp(a, 8), 0, dp(a, 8), 0)
             layoutParams = LinearLayout.LayoutParams(-2, dp(a, 38)).apply { marginStart = dp(a, 3) }
         })
-        // (v949) أيقونة اللغة 🌐 جنب 🗣 زي trLgB القديمة (نظام/لغة الترجمة) ثم 🎧 مصدر الصوت
-        left.addView(u.fsCircle("🌐") { MtTranslate.translateMenu() }.apply {
-            textSize = 15f
-            setPadding(0, 0, 0, 0)
-            layoutParams = LinearLayout.LayoutParams(dp(a, 34), dp(a, 34)).apply { marginStart = dp(a, 3) }
-        })
-        left.addView(u.fsCircle("🎧") { AudioBridge.showMenu(a) }.apply {
-            textSize = 15f
-            setPadding(0, 0, 0, 0)
-            layoutParams = LinearLayout.LayoutParams(dp(a, 34), dp(a, 34)).apply { marginStart = dp(a, 3) }
-        })
+        // (v954) 🌐 و🎧 اتشالوا من الشريط السفلي (مكرّرين: 🌐 = ⚙ شريحة الترجمة، 🎧 = سماعة MeeTube اللي فوق الشمال)
         val mid = LinearLayout(a).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER
@@ -956,16 +973,7 @@ object MtBar {
             layoutParams = LinearLayout.LayoutParams(-2, dp(a, 34)).apply { marginEnd = dp(a, 8) }
         }
         noticeB?.let { right.addView(it) }
-        right.addView(u.fsCircle("🔄") { bridge(a, "rotate") }.apply {
-            layoutParams = LinearLayout.LayoutParams(dp(a, 40), dp(a, 40)).apply { marginEnd = dp(a, 8) }
-        })
-        right.addView(u.fsCircle("⧉") { bridge(a, "pip") }.apply {
-            layoutParams = LinearLayout.LayoutParams(dp(a, 40), dp(a, 40))
-        })
-        fitB = u.fsCircle("⛶") { cycleFit(a) }.apply {
-            layoutParams = LinearLayout.LayoutParams(dp(a, 40), dp(a, 40)).apply { marginStart = dp(a, 8) }
-        }
-        right.addView(fitB)
+        // (v955) 🔄 ⧉ ⛶ اتشالوا — التدوير والـPiP في ⚙ MeeTube، و⛶ بتاع MeeTube رجع
         row.addView(left)
         row.addView(mid, LinearLayout.LayoutParams(-2, -2))
         row.addView(right)

@@ -99,10 +99,10 @@ object MtTranslate : JoyboyPlayerHost.Provider {
             sv = s; cached = null
             btn = null; btn2 = null
             if (options != null) {
+                // (v954) ⚙ الصغير اللي جنب الكاست اتشال (مكرّر: ⚙ في شريحة الترجمة بيفتح نفس القايمة)
                 val b1 = pill(activity, TAG_BTN, "🌐 ترجم") { toggle() }
-                val b2 = pill(activity, TAG_BTN2, "⚙") { showMenu() }
-                options.addView(b2, 0); options.addView(b1, 0)
-                btn = b1; btn2 = b2
+                options.addView(b1, 0)
+                btn = b1; btn2 = null
             }
             try { listenedOn?.removeListener(trans) } catch (_: Throwable) {}
             player.addListener(trans); listenedOn = player
@@ -137,7 +137,7 @@ object MtTranslate : JoyboyPlayerHost.Provider {
     }
 
     /** (v934) هامش السبتايتل من تحت: أعلى لما أزرار المشغّل ظاهرة */
-    private fun subMargin(a: Activity) = dp(a, if (ctlVisible) 96 else 40)
+    private fun subMargin(a: Activity) = dp(a, if (ctlVisible) (if (a.resources.configuration.orientation == android.content.res.Configuration.ORIENTATION_PORTRAIT) 190 else 150) else 40)   // (v954) الشريط نزل تحت: السبتايتل فوقه مش جواه
 
     /** (v937 م3) ⏮ ⏭ في MeeTube ← حلقات فولدر المكتبة */
     override fun onStep(activity: Activity, dir: Int): Boolean = try { MtMedia.onStep(activity, dir) } catch (_: Throwable) { false }

@@ -1646,9 +1646,7 @@ public class MobilePlaybackActivity extends MobileActivity
                 ViewGroup.MarginLayoutParams lp = (ViewGroup.MarginLayoutParams) button.getLayoutParams();
                 lp.width = icon;
                 lp.height = icon;
-                if (button == mAudioButton) {
-                    lp.setMarginStart(dp(4) + icon); // beside the back button
-                }
+                // JOYBOY(v954): the headphones now sit inside the options row beside the gear (no start margin)
                 button.setLayoutParams(lp);
                 button.setPadding(pad, pad, pad, pad);
             }
