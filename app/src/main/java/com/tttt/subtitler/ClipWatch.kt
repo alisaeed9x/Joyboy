@@ -135,6 +135,7 @@ object ClipWatch {
     /** متصفح مخفي: بيحمّل الصفحة ويستنى أي طلب فيديو (بيشتغل مع المواقع اللي بتشغّل الفيديو أوتوماتيك) */
     @SuppressLint("SetJavaScriptEnabled")
     private fun probe(act: Context, u: String, ref: String = ""): ClipVideo? {
+        val onData = DataMeter.isCell(act)
         val latch = CountDownLatch(1); val found = AtomicReference<String?>(null); val info = AtomicReference("")
         val wref = AtomicReference<WebView?>(null); val ua = AtomicReference(UA)
         val kindRef = AtomicReference<String?>(null); val frameRef = AtomicReference<String?>(null)   // (v977) نوع/إطار اللقطة لو جت من صيّاد الجافا
@@ -143,7 +144,13 @@ object ClipWatch {
             try {
                 val wv = WebView(act); wref.set(wv); WebMute.register(wv); WebMute.mute(wv)
                 VidHook.install(wv) { hu, hk, hf, _ -> Sniff.acceptHooked(hu)?.let { a -> if (found.compareAndSet(null, a)) { kindRef.set(when (hk) { "hls" -> "HLS"; "dash" -> "DASH"; else -> Sniff.kindOf(a) }); frameRef.set(hf.takeIf { it.startsWith("http", true) }); hh.post { grab(wv, info) } }; hh.postDelayed({ latch.countDown() }, 700) } }   // (v977)
-                wv.settings.apply { javaScriptEnabled = true; domStorageEnabled = true; mediaPlaybackRequiresUserGesture = false; mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW }
+                wv.settings.apply {
+                    javaScriptEnabled = true
+                    domStorageEnabled = true
+                    mediaPlaybackRequiresUserGesture = onData
+                    mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
+                    blockNetworkImage = onData
+                }
                 ua.set(wv.settings.userAgentString ?: UA)
                 wv.webViewClient = object : WebViewClient() {
                     override fun shouldInterceptRequest(v: WebView, r: WebResourceRequest): WebResourceResponse? {
@@ -156,14 +163,17 @@ object ClipWatch {
                     override fun onPageStarted(v: WebView, url: String?, f: android.graphics.Bitmap?) { WebMute.mute(v) }
                     override fun onPageFinished(v: WebView, url: String?) {
                         WebMute.mute(v); grab(v, info)
-                        for (d in longArrayOf(500L, 2200L, 4500L)) hh.postDelayed({ try { v.evaluateJavascript(PageScan.PLAY_JS, null) } catch (_: Throwable) {} }, d)   // (v851) مشغّلات محتاجة دوسة تشغيل
+                        // (v981) على الداتا: مفيش تشغيل تلقائي — DOM + VidHook بس
+                        if (!onData) {
+                            for (d in longArrayOf(500L, 2200L, 4500L)) hh.postDelayed({ try { v.evaluateJavascript(PageScan.PLAY_JS, null) } catch (_: Throwable) {} }, d)   // (v851) مشغّلات محتاجة دوسة تشغيل
+                        }
                     }
                 }
-                hh.postDelayed({ latch.countDown() }, 10000)
+                hh.postDelayed({ latch.countDown() }, if (onData) 4000L else 10000L)
                 if (ref.isNotEmpty()) wv.loadUrl(u, mapOf("Referer" to ref)) else wv.loadUrl(u)
             } catch (_: Throwable) { latch.countDown() }
         }
-        latch.await(11, TimeUnit.SECONDS)
+        latch.await(if (onData) 4L else 11L, TimeUnit.SECONDS)
         val f = found.get()
         val j = try { JSONObject(info.get()) } catch (_: Throwable) { JSONObject() }
         hh.post { try { wref.get()?.stopLoading(); wref.get()?.destroy() } catch (_: Throwable) {} }

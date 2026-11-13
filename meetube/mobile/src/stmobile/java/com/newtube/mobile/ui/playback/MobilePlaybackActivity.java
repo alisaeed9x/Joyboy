@@ -1702,7 +1702,8 @@ public class MobilePlaybackActivity extends MobileActivity
         }
 
         if (isJoyLocalPage() && orientation != Configuration.ORIENTATION_LANDSCAPE && !mPortraitFull && !mIsInPip && !mPipEnterPending) {
-            mJoyFitMode = androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FILL; // JOYBOY(v969)
+            // JOYBOY(v981): upright local fullscreen keeps the video's shape instead of stretching it (was Fill since v969)
+            mJoyFitMode = androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FIT;
             mPortraitFull = true; // JOYBOY(v950): upright local video = the vertical fullscreen from the first layout
             refreshContentInsets();
         }
@@ -6309,6 +6310,15 @@ public class MobilePlaybackActivity extends MobileActivity
             // An unknown size keeps the last one, as the content frame does (DoubleTapPlayerViewImpl).
             if (videoSize.width > 0 && videoSize.height > 0) {
                 mVideoAspect = videoSize.width * videoSize.pixelWidthHeightRatio / videoSize.height;
+                // JOYBOY(v981): the session SurfaceTexture's decode buffers default to the
+                // TextureView's size, so a native-resolution frame was scaled down into the
+                // view-sized buffer and then upscaled again by the GPU - the soft image on
+                // local files, which have no quality ladder to blame. Pin the buffer to the
+                // video's coded size when it is known; the texture still scales for display,
+                // and the morph and mini-card re-parenting of this same texture is untouched.
+                if (mSessionTexture != null) {
+                    mSessionTexture.setDefaultBufferSize(videoSize.width, videoSize.height);
+                }
                 if (isShortsMode()) {
                     setResizeMode(PlayerData.instance(MobilePlaybackActivity.this).getResizeMode()); // fill or whole, by shape
                 }
@@ -7353,7 +7363,8 @@ public class MobilePlaybackActivity extends MobileActivity
         if (on == mPortraitFull || (on && (isLandscape() || isShortsMode() || mIsInPip || mPipEnterPending))) {
             return;
         }
-        mJoyFitMode = on ? androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FILL : -1; // JOYBOY(v969): every upright fullscreen starts stretched to the screen
+        // JOYBOY(v981): every upright fullscreen starts fitted to the screen (was Fill, stretched, since v969)
+        mJoyFitMode = on ? androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FIT : -1;
         mPortraitFull = on;
         if (mWatchRoot != null) {
             android.transition.TransitionManager.beginDelayedTransition((ViewGroup) mWatchRoot,
@@ -12685,7 +12696,8 @@ public class MobilePlaybackActivity extends MobileActivity
             }
         } else if (mPortraitFull && !isLandscape() && mJoyFitMode != -1 && !mCommentsSide && !mChatSide
                 && (mShorts == null || !mShorts.isCommentsOpen())) {
-            mode = mJoyFitMode; // JOYBOY(v969): upright fullscreen follows the add-on's size button (default Fill = stretched to the screen)
+            // JOYBOY(v981): upright fullscreen follows the add-on's size button (default Fit since v981, was Fill)
+            mode = mJoyFitMode;
         } else if (mPortraitFull && !isLandscape() || mCommentsSide || mChatSide
                 || mShorts != null && mShorts.isCommentsOpen()) {
             // MEETUBE(fullscreen): the whole picture, upright; ambient mode fills the bands. A pinch's

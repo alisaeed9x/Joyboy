@@ -635,6 +635,7 @@ object MtBar {
         views.add(u.button("⛔ لا، قفّل خالص") { dlg?.dismiss(); onClose() })
         views.add(u.button("↩ رجوع للفيديو") { dlg?.dismiss() })
         dlg = u.sheet(a, "🌙 الترجمة لسه ما خلصتش", views)
+        dlg?.show()
         exitDlg = dlg
     }
 
@@ -1562,7 +1563,7 @@ object MtBar {
             all.addAll(views)
             popupViews(a, anchor, above, all, 240)
         } else {
-            u.sheet(a, title, views)
+            u.sheet(a, title, views).show()
         }
     }
 
@@ -1990,6 +1991,7 @@ object MtBar {
             } catch (_: Throwable) {}
         })
         batchDlg = u.sheet(a, "📄 دفعات الترجمة", rows)
+        batchDlg?.show()
     }
 
     fun toggleSyncStrip(a: Activity) {

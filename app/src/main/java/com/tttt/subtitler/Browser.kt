@@ -1309,6 +1309,12 @@ class BrowserActivity : Activity() {
         val gVid: List<Pair<String, () -> Unit>> = listOf(
             "🎬 الفيديوهات الملقوطة (${groupsOf(vis()).size})" to { showList() },
             "🔎 افحص الصفحة (فيديوهات · ملفات · برامج · لينكات رفع)" to { pageScan() },
+            // (v981) مفتاح الاستكشاف الأوتوماتيك — الافتراضي مقفول؛ شغّال = الصفحات بتتفحص لوحدها، مقفول = الفحص اليدوي بالعدسة بس
+            (if (autoDiscoverOn()) "🔍 استكشاف تلقائي للفيديوهات والملفات: شغال ✓" else "🔍 استكشاف تلقائي للفيديوهات والملفات: مقفول") to {
+                val on = !autoDiscoverOn()
+                Cfg.put("auto_discover", if (on) "1" else "0")
+                Notice.show(this, if (on) "🔍 الاستكشاف الأوتوماتيك اشتغل — الصفحات هتتفحص لوحدها" else "🔍 الاستكشاف الأوتوماتيك اتقفل — الفحص اليدوي بالعدسة بس", 2600L)
+            },
             "🎞 تحكم الفيديو" to { showVideoControls() }
         )
         val gProt: List<Pair<String, () -> Unit>> = listOf(
@@ -1760,6 +1766,16 @@ class BrowserActivity : Activity() {
     private fun curSnap(): AutoSnap? { val t = tabs.getOrNull(curIdx) ?: return null; val s0 = snaps[t.id] ?: return null; return if (s0.gen == t.gen) s0 else null }
     private fun hasExtras(): Boolean { val s0 = curSnap() ?: return false; return s0.files.isNotEmpty() || s0.hosts.isNotEmpty() }
     private fun autoScanOn(): Boolean = try { Cfg.str("auto_scan", "1") == "1" } catch (_: Throwable) { true }
+    // (v981) مفتاح الاستكشاف الأوتوماتيك من قايمة ⋮ — الافتراضي مقفول (0)، والأوتوماتيك كله واقف لحد ما المستخدم يشغّله بنفسه
+    private fun autoDiscoverOn(): Boolean = try { Cfg.str("auto_discover", "0") == "1" } catch (_: Throwable) { false }
+    // (v981) الفحص الخلفي الأوتوماتيك مسموح؟ اليدوي دايمًا مسموح؛ الأوتوماتيك لازم مفتاح الاستكشاف + مفتاح الفحص + يتقفل على داتا الموبايل (مستوى التوفير MAX أو أعلى، أو شبكة خلوية فعلًا)
+    private fun autoBgAllowed(manual: Boolean): Boolean {
+        if (manual) return true
+        if (!autoDiscoverOn()) return false
+        if (!autoScanOn()) return false
+        if (::saver.isInitialized && saver.level >= BrowserSaver.MAX) return false
+        return !DataMeter.isCell(this)
+    }
 
     // (v842) ألعاب الفلاش (Ruffle): الكيبورد كان بيظهر ويختفي. السبب المرجّح: adjustResize بيصغّر الـWebView أول ما الكيبورد يطلع
     // فالصفحة بتاخد resize وبتشيل التركيز من خانة الكتابة فالكيبورد يتقفل ويتفتح تاني في لوب. الحل: في صفحات الفلاش بس
@@ -1780,7 +1796,7 @@ class BrowserActivity : Activity() {
     }
 
     private fun scheduleAutoScan(t: BTab, delays: LongArray) {
-        if (!autoScanOn()) return
+        if (!autoBgAllowed(false)) return
         val g = t.gen
         for (d in delays) h.postDelayed({ autoScan(t, g, d <= 9000L, false) }, d)
         h.postDelayed({ if (!dead && t.gen == g) deepScan(t, false) }, 5000L)   // (v980) المسح العميق أوتوماتيك من غير دوس
@@ -1790,7 +1806,7 @@ class BrowserActivity : Activity() {
     private fun autoScan(t: BTab, g: Int, play: Boolean, manual: Boolean, deep: Boolean = false) {
         if (dead || t.gen != g || t.hold != null || t.blockedUrl != null) return
         if (t !== tabs.getOrNull(curIdx) || customView != null) return
-        if (!manual && !autoScanOn()) return
+        if (!autoBgAllowed(manual)) return
         val wv = t.wv ?: return
         val page = wv.url ?: t.url
         if (!page.startsWith("http", true)) return
@@ -1814,14 +1830,15 @@ class BrowserActivity : Activity() {
                 list.filter { it.cat == PageScan.C_VIDEO && (manual || deep || !it.viaLink) }.take(if (manual || deep) 30 else 12).forEach { addFound(Found(it.url, Sniff.kindOf(it.url), "", page, ua), t, g) }
                 sn.pages = list.filter { it.cat == PageScan.C_PAGE }
                 if (sn.hunts < (if (deep) 4 else 2) && (manual || deep || list.none { it.cat == PageScan.C_VIDEO })) { sn.hunts++; autoHunt(t, g, sn, wv, page, ua, manual) }   // (v851) مفيش فيديو ظاهر: افحص الجافا والمشغّلات الخارجية
-                autoServers(t, g, sn, sn.pages.filter { it.title.startsWith(PageScan.SRV_TAG) || (deep && it.title == "مشغّل مدمج" && !PageScan.needsDispatcher(it.url)) }, ua, page)   // (v850) كل سيرفرات الفيلم مش السيرفر المفتوح بس
-                verifyAuto(t, g, sn, list.filter { it.cat == PageScan.C_FILE || it.cat == PageScan.C_HOST }, ua.ifBlank { PageScan.UA }, page)
+                autoServers(t, g, sn, sn.pages.filter { it.title.startsWith(PageScan.SRV_TAG) || (deep && it.title == "مشغّل مدمج" && !PageScan.needsDispatcher(it.url)) }, ua, page, manual)   // (v850) كل سيرفرات الفيلم مش السيرفر المفتوح بس
+                verifyAuto(t, g, sn, list.filter { it.cat == PageScan.C_FILE || it.cat == PageScan.C_HOST }, ua.ifBlank { PageScan.UA }, page, manual)
             }
         } catch (e: Throwable) { LogStore.err("Browser:autoScan2", e) }
     }
 
     /** (v851) فحص جافا الصفحة (inline + خارجي، مضغوط/base64) + دخول المشغّلات الخارجية بـReferer الصفحة؛ اللي محتاج جافا يشتغل بيتفتح في متصفح مخفي */
     private fun autoHunt(t: BTab, g: Int, sn: AutoSnap, wv: WebView, page: String, ua: String, manual: Boolean) {
+        if (!manual && !autoBgAllowed(false)) return
         if (PageScan.needsDispatcher(page)) return
         try {
             wv.evaluateJavascript(PageScan.SCRIPT_JS) { r ->
@@ -1854,7 +1871,8 @@ class BrowserActivity : Activity() {
     }
 
     /** (v850) سيرفرات الفيلم (أزرار فيها data-embed/data-url…): كل واحد بيتفتح في الخلفية وبيتسحب فيديوه ويتضاف للاصطياد — حد أقصى 8 */
-    private fun autoServers(t: BTab, g: Int, sn: AutoSnap, servers: List<ScanItem>, ua: String, page: String) {
+    private fun autoServers(t: BTab, g: Int, sn: AutoSnap, servers: List<ScanItem>, ua: String, page: String, manual: Boolean = false) {
+        if (!manual && !autoBgAllowed(false)) return
         for (x in servers) {
             if (sn.srvTries >= 8) break
             val k = "srv:" + Sniff.key(x.url)
@@ -1873,7 +1891,8 @@ class BrowserActivity : Activity() {
     }
 
     /** بيتأكد (على thread خلفي، من غير تحميل) إن كل ملف/لينك رفع ملف حقيقي؛ اللي ينجح بيتضاف للعدّاد */
-    private fun verifyAuto(t: BTab, g: Int, sn: AutoSnap, cands: List<ScanItem>, ua: String, page: String) {
+    private fun verifyAuto(t: BTab, g: Int, sn: AutoSnap, cands: List<ScanItem>, ua: String, page: String, manual: Boolean = false) {
+        if (!manual && !autoBgAllowed(false)) return
         for (x in cands) {
             if (sn.tried.size >= 60) break
             val k = Sniff.key(x.url)
@@ -1925,15 +1944,17 @@ class BrowserActivity : Activity() {
     // ===== (v980) المسح العميق الأوتوماتيك: بيشتغل في الخلفية من غير نتيجة بتظهر؛ اللينك لازم يتأكد (حجم/فيديو حقيقي) قبل ما يتعدّ =====
     /** report=true (دوسة العدسة): لو خلّص ومفيش لينك حقيقي يقولك. الفحص نفسه (addFound/verifyFound) بيرفض أي لينك مزيّف */
     private fun deepScan(t: BTab, report: Boolean) {
-        if (dead || !autoScanOn() || t.priv || t.hold != null || t.blockedUrl != null) return
+        // (v981) دوسة يدوية (report=true) بتعدّي كل البوابات حتى لو مفتاح الفحص الأوتوماتيك مقفول
+        if (dead || (!report && !autoScanOn()) || t.priv || t.hold != null || t.blockedUrl != null) return
+        if (!report && !autoBgAllowed(false)) return
         val page = t.wv?.url ?: t.url
         if (!page.startsWith("http", true) || PageScan.needsDispatcher(page)) return
         val sn = snapOf(t); val g = t.gen
         val now = android.os.SystemClock.uptimeMillis()
         if (now - sn.deepAt < 15000L) return
         sn.deepAt = now
-        autoScan(t, g, true, false, true)
-        h.postDelayed({ if (!dead && t.gen == g) autoScan(t, g, true, false, true) }, 4000L)   // ثانية مرة: مشغّلات اتحمّلت متأخر
+        autoScan(t, g, true, report, true)
+        h.postDelayed({ if (!dead && t.gen == g) autoScan(t, g, true, report, true) }, 4000L)   // ثانية مرة: مشغّلات اتحمّلت متأخر
         if (report && !sn.watching) { sn.watching = true; watchDeep(t, g, sn, 0) }
     }
     private fun watchDeep(t: BTab, g: Int, sn: AutoSnap, waited: Int) {
@@ -1974,6 +1995,24 @@ class BrowserActivity : Activity() {
         }
         h.postDelayed(poll, 2200L)
     }
+    // (v981) «بحث عميق» من لوحة العدسة: بيشغّل ماكينة الفحص الكاملة مرة واحدة (deepScan يدوي) وبعدين بيحدّث نفس اللوحة بالنتايج
+    private fun runDeepSearch(t: BTab, page: String, ua: String) {
+        if (dead) return
+        val g = t.gen
+        val sn = snapOf(t)
+        Notice.show(this, "🔎 بحث عميق شغال…", 2500L)
+        deepScan(t, true)
+        var waited = 0
+        lateinit var poll: Runnable
+        poll = Runnable {
+            waited += 500
+            if (dead || t.gen != g) return@Runnable
+            val busy = sn.pending > 0 || sn.vfy > 0
+            if ((busy && waited < 30000) || waited < 6000) { h.postDelayed(poll, 500L); return@Runnable }
+            if (tabs.contains(t)) showScanResults(sn.hosts + sn.files + sn.pages.take(15), page, ua, t)
+        }
+        h.postDelayed(poll, 3000L)
+    }
     private fun showAutoResults() {
         val t = tabs.getOrNull(curIdx) ?: return
         val sn = snapOf(t)
@@ -1985,8 +2024,12 @@ class BrowserActivity : Activity() {
         val files = list.filter { it.cat == PageScan.C_FILE }
         val pages = list.filter { it.cat == PageScan.C_PAGE }
         if (n == 0 && hosts.isEmpty() && files.isEmpty() && pages.isEmpty()) {
-            Notice.show(this, "🔎 مفيش لينكات تتحمّل — بدوّر على فيديو في الصفحة نفسها…", 2600L)
-            resolvePage(ScanItem(PageScan.C_PAGE, page, "", PageScan.niceName(page)), ua, t, false)
+            // (v981) الفحص الخفيف مالقاش حاجة: اللوحة نفسها بتتعرض وفيها زرار «بحث عميق» — مفيش فحص تقيل أوتوماتيك، المستخدم هو اللي يدوس
+            val box = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL }
+            lateinit var d: Dialog
+            box.addView(ui.text("🔎 الفحص الخفيف مالقاش فيديوهات ولا ملفات في الصفحة دي.", 14f, th.muted))
+            box.addView(ui.button("🔍 بحث عميق", true) { d.dismiss(); runDeepSearch(t, page, ua) })
+            d = sheet("🔎 نتيجة فحص الصفحة", box); d.show()
             return
         }
         val box = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL }
