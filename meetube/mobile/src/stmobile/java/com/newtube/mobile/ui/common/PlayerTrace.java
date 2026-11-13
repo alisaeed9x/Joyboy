@@ -116,6 +116,7 @@ public final class PlayerTrace {
         String label;
         String kind;
         WeakReference<View> root;
+        WeakReference<View> panel;   // the view we track inside the window (android.R.id.content, or the sizeable child) — chosen once so it can't flip mid-animation
     }
     private static final Map<View, Win> wins = new WeakHashMap<>();
     private static int winSeq;
@@ -127,6 +128,8 @@ public final class PlayerTrace {
     private static final Map<String, String> notes = new HashMap<>();   // per-frame extra text for a tracked key (matrix info …)
     private static String lastTapDesc = "";
     private static long lastTapAt;
+    private static long lastTouchSig = Long.MIN_VALUE;
+    private static long lastDismissAt = -1L;
 
     // =====================================================================================
 
@@ -194,7 +197,7 @@ public final class PlayerTrace {
                     .append("  refresh ").append(String.format(Locale.US, "%.1fHz (frame=%.1fms)", hz, frameMs));
         } catch (Throwable ignored) { }
         log(h.toString(), true);
-        log("legend: Δ = change since previous frame · JANK = frame later than 1.5x vsync · STALL = >50ms · JUMP = step 3x bigger than recent · REVERSE = direction flipped · TELEPORT = moved >25% of screen in one frame · key suffix /xf = the video picture after the TextureView matrix (setTransform) · win-Dialog@n/window|panel = a Dialog/sheet/popup window and the panel inside it", false);
+        log("legend: Δ = change since previous frame · JANK = frame later than 1.5x vsync · STALL = >50ms · JUMP = step 3x bigger than recent · REVERSE = direction flipped · TELEPORT = moved >25% of screen in one frame · key suffix /xf = the video picture after the TextureView matrix (setTransform) · win-Dialog@n/window = the Dialog/sheet/popup window · /content = the view inside it that the app animates (alpha / scale / translationY of a sheet)", false);
         if (a != null) main.postDelayed(() -> dumpButtons("trace started", a), 300L);
         startSampler();
         return file != null ? file.getAbsolutePath() : null;
@@ -379,8 +382,13 @@ public final class PlayerTrace {
             if (lp != null) wr[4] *= lp.alpha;
             m.put(lab + ":window", wr);
             if (!w.kind.startsWith("Activity:")) {
-                View p = panelOf(r);
-                if (p != null && p != r) m.put(lab + ":panel", rectOf(p));
+                View pv = w.panel != null ? w.panel.get() : null;
+                if (pv == null || !pv.isAttachedToWindow()) {
+                    View cv = r.findViewById(android.R.id.content);
+                    pv = (cv != null && cv != r) ? cv : panelOf(r);
+                    w.panel = new WeakReference<>(pv);
+                }
+                if (pv != null && pv != r && pv.getVisibility() == View.VISIBLE && pv.getWidth() > 0) m.put(lab + ":content", rectOf(pv));
             }
             walkTracked(r, m, lab, new int[]{0});
         }
@@ -476,9 +484,28 @@ public final class PlayerTrace {
         try { touchIn(a.getWindow().getDecorView(), "", e); } catch (Throwable ignored) { }
     }
 
+    /** call from a Dialog's dispatchTouchEvent (GDialog does): logs the tap inside the sheet without any reflection */
+    public static void touchWindow(View root, MotionEvent e) {
+        if (!enabled || root == null) return;
+        try {
+            Win w = wins.get(root);
+            touchIn(root, w != null ? w.label : "Dialog", e);
+        } catch (Throwable ignored) { }
+    }
+
+    /** call when a sheet's dismiss() starts: lets WINDOW CLOSE report how long the exit animation took */
+    public static void sheetDismiss() {
+        if (!enabled) return;
+        lastDismissAt = now();
+        log("MARK  sheet dismiss() called", true);
+    }
+
     /** a touch that arrived in window `root` (activity decor, a Dialog / sheet window, a popup). `label` is empty for the activity itself. */
     private static void touchIn(View root, String label, MotionEvent e) {
         if (!enabled || root == null || e == null) return;
+        long sig = e.getEventTime() * 16L + e.getActionMasked();
+        if (sig == lastTouchSig) return;   // the same event arrives twice when both the Window.Callback hook and GDialog report it
+        lastTouchSig = sig;
         int act = e.getActionMasked();
         String where = label.isEmpty() ? "" : "  win=" + label;
         if (act == MotionEvent.ACTION_DOWN) {
@@ -764,9 +791,51 @@ public final class PlayerTrace {
         return s.toString().trim();
     }
 
-    private static String animName(View r, int id) {
-        if (id == 0) return "none set (theme default window animation — the SYSTEM animates the window; not measurable inside the app)";
-        try { return r.getResources().getResourceEntryName(id) + " (system-animated window; not measurable inside the app)"; } catch (Throwable t) { return "0x" + Integer.toHexString(id); }
+    /** the window's enter/exit animation as DEFINED in resources (the system plays it on the window surface, so it can't be sampled per frame) */
+    private static String animName(View r, int styleId) {
+        try {
+            Context ctx = r.getContext();
+            int style = styleId;
+            String src = "window attr";
+            if (style == 0) {
+                android.util.TypedValue tv = new android.util.TypedValue();
+                if (ctx.getTheme().resolveAttribute(android.R.attr.windowAnimationStyle, tv, true)) style = tv.resourceId;
+                src = "theme default";
+            }
+            if (style == 0) return "no window animation style";
+            android.content.res.TypedArray ta = ctx.obtainStyledAttributes(style, new int[]{android.R.attr.windowEnterAnimation, android.R.attr.windowExitAnimation});
+            int en = ta.getResourceId(0, 0), ex = ta.getResourceId(1, 0);
+            ta.recycle();
+            String sn;
+            try { sn = ctx.getResources().getResourceEntryName(style); } catch (Throwable t) { sn = "0x" + Integer.toHexString(style); }
+            return src + " style=" + sn + "  ENTER " + animSummary(ctx, en) + "  |  EXIT " + animSummary(ctx, ex)
+                    + "   (played by the system on the window surface — the app's own view animation is tracked as /content)";
+        } catch (Throwable t) {
+            return "unreadable (" + t.getClass().getSimpleName() + ")";
+        }
+    }
+
+    private static String animSummary(Context c, int id) {
+        if (id == 0) return "none";
+        try {
+            String nm;
+            try { nm = c.getResources().getResourceEntryName(id); } catch (Throwable t) { nm = "0x" + Integer.toHexString(id); }
+            return nm + " " + animDesc(android.view.animation.AnimationUtils.loadAnimation(c, id));
+        } catch (Throwable t) {
+            return "(unreadable)";
+        }
+    }
+
+    private static String animDesc(android.view.animation.Animation a) {
+        if (a instanceof android.view.animation.AnimationSet) {
+            StringBuilder sb = new StringBuilder("[");
+            List<android.view.animation.Animation> l = ((android.view.animation.AnimationSet) a).getAnimations();
+            for (int i = 0; i < l.size(); i++) { if (i > 0) sb.append(" + "); sb.append(animDesc(l.get(i))); }
+            return sb.append("]").toString();
+        }
+        String n = a.getClass().getSimpleName().replace("Animation", "");
+        String ip = a.getInterpolator() != null ? "/" + a.getInterpolator().getClass().getSimpleName() : "";
+        return n + " " + a.getDuration() + "ms" + (a.getStartOffset() > 0 ? " +" + a.getStartOffset() + "ms delay" : "") + ip;
     }
 
     /** the first sizeable descendant that is smaller than the window (= the visible sheet / card inside a bigger window); else the window itself */
@@ -831,18 +900,20 @@ public final class PlayerTrace {
                     + (w.openedAt < 400L ? "  (already open when tracing started)" : ""), true);
             if (!"Toast".equals(w.kind) && !w.kind.startsWith("Activity:")) { pendingCause = "window " + w.label; pendingCauseAt = now(); }
             if (w.kind.equals("Dialog")) hookWindowTouches(r, w.label);
-            main.postDelayed(() -> windowDetail(w), 150L);
+            main.postDelayed(() -> windowDetail(w), 450L);   // after the sheet's own enter animation (≈250ms) so the final bounds are real
         } catch (Throwable ignored) { }
     }
 
     private static void windowClosed(Win w) {
         try {
-            log("WINDOW CLOSE  " + w.label + "  lived " + (now() - w.openedAt) + "ms", true);
+            long since = lastDismissAt >= 0 ? now() - lastDismissAt : -1L;
+            log("WINDOW CLOSE  " + w.label + "  lived " + (now() - w.openedAt) + "ms"
+                    + (since >= 0 && since < 1500L ? "  · " + since + "ms after dismiss() = the app-side exit animation + removal" : ""), true);
             if (!"Toast".equals(w.kind) && !w.kind.startsWith("Activity:")) { pendingCause = "window closed " + w.label; pendingCauseAt = now(); }
         } catch (Throwable ignored) { }
     }
 
-    /** layout is done 150 ms after the window appears: exact bounds, WindowManager attrs, the panel inside, its items */
+    /** layout + enter animation are done 450 ms after the window appears: exact bounds, WindowManager attrs, the panel inside, its items */
     private static void windowDetail(Win w) {
         try {
             View r = w.root.get();
@@ -871,15 +942,16 @@ public final class PlayerTrace {
             boolean inside = l[0] >= 0 && l[1] >= 0 && l[0] + ww <= dm.widthPixels && l[1] + wh <= dm.heightPixels;
             sb.append(String.format(Locale.US, "\n   inside screen: %s  (screen %dx%d, window covers %.0f%% of it)", inside ? "yes" : "NO — clipped / off-screen",
                     dm.widthPixels, dm.heightPixels, 100f * ww * wh / Math.max(1f, (float) dm.widthPixels * dm.heightPixels)));
-            View p = panelOf(r);
+            View p = w.panel != null ? w.panel.get() : null;
+            if (p == null) p = panelOf(r);
             if (p != null && p != r) {
                 int[] pl = new int[2];
                 p.getLocationOnScreen(pl);
                 int pw0 = p.getWidth(), ph = p.getHeight();
-                sb.append(String.format(Locale.US, "\n   panel  : %s  x=%d y=%d %dx%d px (%.0fx%.0f dp)  fromLeft=%d fromRight=%d fromTop=%d fromBottom=%d",
+                sb.append(String.format(Locale.US, "\n   content: %s  x=%d y=%d %dx%d px (%.0fx%.0f dp)  fromLeft=%d fromRight=%d fromTop=%d fromBottom=%d",
                         describe(p), pl[0], pl[1], pw0, ph, pw0 / d, ph / d, pl[0], dm.widthPixels - (pl[0] + pw0), pl[1], dm.heightPixels - (pl[1] + ph)));
             } else {
-                sb.append("\n   panel  : the window itself (WRAP_CONTENT sheet / popup)");
+                sb.append("\n   content: the window itself (WRAP_CONTENT sheet / popup)");
             }
             boolean recentTap = !lastTapDesc.isEmpty() && w.openedAt - lastTapAt < 1500L && w.openedAt >= lastTapAt;
             sb.append("\n   opened by: ").append(recentTap ? lastTapDesc : "unknown (no tap right before)");
