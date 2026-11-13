@@ -32,7 +32,8 @@ object MeeTubeLink {
             if (incognito) MtTranslate.privIds.add(id)   // (v936)
             if (autoTranslate) MtTranslate.autoFor = id   // (v890) الترجمة تبدأ لوحدها أول ما الفيديو يشتغل في مشغّل MeeTube
             // (v941) سجّل المصدر يوتيوب: من غيرها MtOrigin بيفضل ماسك مصدر الجلسة اللي قبله (محلي مثلاً) والتصغير اللي بعده بيغلط
-            MtOrigin.record(Intent(), null, id, "")
+            // (v983) ret="yt": من غيرها الـrecord التاني ده بيمسح ret="yt" اللي سجّله MtPlay.openMt، فالخروج من يوتيوب كان بيرجع لفولدر المحلي القديم
+            MtOrigin.record(Intent().putExtra("ret", "yt"), null, id, "")
             bindBar()
             MobileMainApplication.boot(act.application)
             try { com.newtube.mobile.ui.playback.MobileLocalPlaybackActivity.routeYoutube(act) } catch (_: Throwable) {}   // (v947) يوتيوب ← مشغّل يوتيوب العادي (الملفات/المتصفح على نسخة مشغّل منفصلة)
@@ -49,7 +50,8 @@ object MeeTubeLink {
         if (id.length != 11) return false
         return try {
             // (v941) سجّل المصدر يوتيوب (نفس سبب playYt)
-            MtOrigin.record(Intent(), null, id, "")
+            // (v983) ret="yt": نفس إصلاح playYt — الـIntent الفاضي كان بيمسح وجهة الرجوع ليوتيوب
+            MtOrigin.record(Intent().putExtra("ret", "yt"), null, id, "")
             bindBar()
             MobileMainApplication.boot(ctx.applicationContext as android.app.Application)
             try { com.newtube.mobile.ui.playback.MobileLocalPlaybackActivity.routeYoutube(ctx) } catch (_: Throwable) {}   // (v947)

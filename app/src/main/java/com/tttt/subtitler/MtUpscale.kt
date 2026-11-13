@@ -3,7 +3,7 @@ package com.tttt.subtitler
 
 import android.content.Context
 import android.opengl.GLES20
-import android.util.Size
+import androidx.media3.common.util.Size
 import androidx.media3.common.C
 import androidx.media3.common.Effect
 import androidx.media3.common.VideoFrameProcessingException

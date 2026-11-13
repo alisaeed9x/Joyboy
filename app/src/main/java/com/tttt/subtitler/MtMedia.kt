@@ -1,6 +1,7 @@
 package com.tttt.subtitler
 
 import android.app.Activity
+import android.content.Intent
 import android.graphics.Color
 import android.graphics.drawable.GradientDrawable
 import android.media.audiofx.LoudnessEnhancer
@@ -379,6 +380,8 @@ object MtMedia {
             v.title = t.title
             v.localUri = t.uri
             if (wasPriv) { MtTranslate.privIds.add("L:" + t.uri); v.incognito = true }
+            // (v983) سجّل مصدر الملف الجديد: openItem بيفتح مباشرة من PlaybackPresenter من غير MtPlay، فمن غيرها المصدر بيفضل بتاع أول ملف والرجوع لفولدره وPiP بيغلطوا
+            try { MtOrigin.record(Intent(), t.uri, null, t.title) } catch (_: Throwable) {}
             PlaybackPresenter.instance(a.applicationContext).openVideo(v)
         } catch (e: Throwable) { LogStore.err("MtMedia:open", e) }
     }

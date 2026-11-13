@@ -7403,6 +7403,10 @@ public class MobilePlaybackActivity extends MobileActivity
      * top (the title); left by Back, a swipe up or down on the video, or turning the phone sideways.
      */
     private boolean mPortraitFull;
+    /** JOYBOY(v983): portrait-fullscreen state for the Joyboy bar (fit button only in fullscreen). */
+    public boolean isPortraitFull() {
+        return mPortraitFull;
+    }
     @Nullable
     private View mWatchFab;
     /** How far the page must be pulled down from its top to enter the vertical fullscreen. */

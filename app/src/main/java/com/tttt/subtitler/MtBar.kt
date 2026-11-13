@@ -5,6 +5,7 @@ import android.content.Intent
 import android.content.res.Configuration
 import android.graphics.Bitmap
 import android.graphics.Color
+import android.graphics.drawable.GradientDrawable
 import android.graphics.Typeface
 import android.net.Uri
 import android.os.Handler
@@ -48,6 +49,9 @@ object MtBar {
     private const val TAG_CAP = "mtbar_cap"
     private const val TAG_MODE = "mtbar_mode"
     private const val BLUE_ON = 0xFF1F5FBF.toInt()
+    private const val MT_SH_BLUE = 0xFF1F5FBF.toInt()
+    private const val MT_SH_RED = 0xFFB71C1C.toInt()
+    private const val MT_SH_GRAY = 0xFF455A64.toInt()
     private const val DARK_OFF = 0xE00F0F12.toInt()
     private const val TAG_LOCKOV = "mtbar_lockov"
     private const val REST_A = 0.25f
@@ -637,21 +641,144 @@ object MtBar {
 
     fun exitAskShowing(): Boolean = exitDlg?.isShowing == true
 
-    /** (v946) «🌙 الترجمة لسه ما خلصتش» — أكمّل في الخلفية / قفّل خالص / رجوع للفيديو */
+    private class MtShBtn(val t: String, val fill: Int, val f: () -> Unit)
+
+    private fun mtTvRing(a: Activity, v: View): View {
+        try {
+            if (DeviceUi.isRemote(a)) {
+                TvFocus.selfRing(v, Glass.theme().primary, a.resources.displayMetrics.density)
+            }
+        } catch (_: Throwable) {
+        }
+        return v
+    }
+
+    private fun mtShBtn(a: Activity, u: Ui, t: String, fill: Int, f: () -> Unit): TextView {
+        val tv = u.text(t, 13.5f, Color.WHITE, true).apply {
+            gravity = Gravity.CENTER
+            isFocusable = true
+            background = u.box(fill, 0x33FFFFFF, 12)
+            setOnClickListener { f() }
+        }
+        mtTvRing(a, tv)
+        return tv
+    }
+
+    private fun mtShHead(a: Activity, u: Ui, title: String): View {
+        return LinearLayout(a).apply {
+            orientation = LinearLayout.VERTICAL
+            layoutDirection = View.LAYOUT_DIRECTION_RTL
+            setPadding(u.dp(10), u.dp(8), u.dp(10), u.dp(6))
+            addView(u.text(title, 14f, Color.WHITE, true))
+        }
+    }
+
+    private fun mtGlassPanelBg(u: Ui): GradientDrawable {
+        val cols = if (MtGlass.on()) {
+            intArrayOf(0xE62E2E3C.toInt(), 0xEB121219.toInt())
+        } else {
+            intArrayOf(0xF2242432.toInt(), 0xF5101017.toInt())
+        }
+        return GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, cols).apply {
+            cornerRadius = u.dp(if (MtGlass.on()) 24 else 18).toFloat()
+            setStroke(
+                maxOf(1, if (MtGlass.on()) MtGlass.hair(u.ctx.resources.displayMetrics.density) else u.dp(1)),
+                if (MtGlass.on()) 0x3DFFFFFF else 0x33FFFFFF
+            )
+        }
+    }
+
+    private fun mtShDialog(a: Activity, u: Ui, maxDp: Int = 330, onCancel: () -> Unit = {}, build: (LinearLayout, () -> Unit) -> Unit): android.app.Dialog {
+        val dlg = android.app.Dialog(a)
+        dlg.requestWindowFeature(android.view.Window.FEATURE_NO_TITLE)
+        val col = LinearLayout(a).apply {
+            orientation = LinearLayout.VERTICAL
+            layoutDirection = View.LAYOUT_DIRECTION_RTL
+            setPadding(u.dp(8), u.dp(8), u.dp(8), u.dp(8))
+            background = mtGlassPanelBg(u)
+        }
+        var done = false
+        val close = {
+            done = true
+            try {
+                dlg.dismiss()
+            } catch (_: Throwable) {
+            }
+        }
+        build(col, close)
+        dlg.setContentView(android.widget.ScrollView(a).apply {
+            isVerticalScrollBarEnabled = false
+            addView(col)
+        })
+        dlg.setOnCancelListener {
+            if (!done) {
+                done = true
+                try {
+                    onCancel()
+                } catch (e: Throwable) {
+                    LogStore.err("MtBar:mtShDlgCancel", e)
+                }
+            }
+        }
+        val w = minOf(a.resources.displayMetrics.widthPixels - u.dp(32), u.dp(maxDp))
+        dlg.window?.let { win ->
+            win.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(0))
+            win.setLayout(w, ViewGroup.LayoutParams.WRAP_CONTENT)
+            win.setDimAmount(0.55f)
+            win.setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
+        }
+        try {
+            TvFocus.attachDialog(a, dlg, Glass.theme().primary)
+        } catch (_: Throwable) {
+        }
+        try {
+            if (!a.isFinishing && !a.isDestroyed) {
+                dlg.show()
+            }
+        } catch (e: Throwable) {
+            LogStore.err("MtBar:mtShDialog", e)
+        }
+        return dlg
+    }
+
+    private fun mtShConfirm(a: Activity, u: Ui, title: String, msg: String, btns: List<MtShBtn>, onCancel: () -> Unit = {}): android.app.Dialog {
+        return mtShDialog(a, u, 330, onCancel) { col, close ->
+            col.addView(mtShHead(a, u, title))
+            if (msg.isNotBlank()) {
+                col.addView(u.text(msg, 12.5f, 0xFFD0D4D9.toInt()).apply {
+                    setPadding(u.dp(10), u.dp(2), u.dp(10), u.dp(10))
+                    setLineSpacing(0f, 1.15f)
+                })
+            }
+            for (bt in btns) {
+                col.addView(
+                    mtShBtn(a, u, bt.t, bt.fill) {
+                        close()
+                        bt.f()
+                    },
+                    LinearLayout.LayoutParams(-1, u.dp(46)).apply {
+                        setMargins(u.dp(4), u.dp(3), u.dp(4), u.dp(3))
+                    }
+                )
+            }
+        }
+    }
+
+    /** (v983) «🌙 الترجمة لسه ما خلصتش» — نفس نافذة القديم (Player.askBgOnExit): دايلوج في النص مش شيت سفلي */
     fun exitAsk(a: Activity, onBg: () -> Unit, onClose: () -> Unit) {
         val u = uiHelper ?: Ui(a, Themes.current()).also { uiHelper = it }
         if (exitAskShowing()) return
-        var dlg: android.app.Dialog? = null
-        val views = ArrayList<View>()
-        views.add(u.text("أكمّل الترجمة في الخلفية؟ (هيستهلك نت)\nلو اخترت «لا» الترجمة بتتقفل خالص ومفيش نت بيتصرف.", 12f, Color.WHITE, false).apply {
-            setPadding(dp(a, 12), dp(a, 6), dp(a, 12), dp(a, 6))
-        })
-        views.add(u.button("🌙 أيوه، كمّل في الخلفية") { dlg?.dismiss(); onBg() })
-        views.add(u.button("⛔ لا، قفّل خالص") { dlg?.dismiss(); onClose() })
-        views.add(u.button("↩ رجوع للفيديو") { dlg?.dismiss() })
-        dlg = u.sheet(a, "🌙 الترجمة لسه ما خلصتش", views)
-        dlg?.show()
-        exitDlg = dlg
+        exitDlg = mtShConfirm(
+            a,
+            u,
+            "🌙 الترجمة لسه ما خلصتش",
+            "أكمّل الترجمة في الخلفية؟ (هيستهلك نت)\nلو اخترت «لا» الترجمة بتتقفل خالص ومفيش نت بيتصرف.",
+            listOf(
+                MtShBtn("🌙 أيوه، كمّل في الخلفية", MT_SH_BLUE) { onBg() },
+                MtShBtn("⛔ لا، قفّل خالص", MT_SH_RED) { onClose() },
+                MtShBtn("رجوع للفيديو", MT_SH_GRAY) { }
+            )
+        )
     }
 
     /** (v946) شريط تقدّم MeeTube (PlayerTimeBar) برّه طبقة الأزرار؛ بنلاقيه بالاسم ونرفعه بـtranslationY لحد مكان الـslot (مفيش تغيير في هامشه ولا في لمسه) */
@@ -1269,7 +1396,7 @@ object MtBar {
             android.graphics.drawable.GradientDrawable().apply {
                 shape = android.graphics.drawable.GradientDrawable.OVAL
                 setColor(BLUE_ON)
-                setStroke(maxOf(1, d.toInt()), 0xB3FFFFFF)
+                setStroke(maxOf(1, d.toInt()), 0xB3FFFFFF.toInt())
             }
         } else {
             glassCircleBg(d)
@@ -1394,6 +1521,14 @@ object MtBar {
         return row
     }
 
+    private fun isPortraitFull(a: Activity): Boolean {
+        return try {
+            (a as? com.newtube.mobile.ui.playback.MobilePlaybackActivity)?.isPortraitFull() ?: false
+        } catch (_: Throwable) {
+            false
+        }
+    }
+
     private fun capsuleRow(a: Activity): LinearLayout {
         val u = uiHelper!!
         val row = LinearLayout(a).apply {
@@ -1403,7 +1538,10 @@ object MtBar {
         }
         // (v963) «📄 تصدير» وسلايدر الصوت اتشالوا (التصدير لسه في 🧰 الأدوات)
         // (v960) الرأسي: ⤢ التمديد + ⛶ الشاشة الكاملة في آخر الصف (كان زرار الشاشة الكاملة في آخر صفحة اليوتيوب تحت)
-        row.addView(fitButton(a))
+        // (v983) ⤢ التمديد بس لما الفيديو مالي الشاشة رأسيًا (فل سكرين رأسي) — في صفحة المشاهدة الرأسية بيختفي عشان مكانه كان مكان زرار الشاشة الكاملة الأصلي؛ ⛶ بيفضل دايمًا لأنه مدخل الفل سكرين الوحيد
+        if (isPortraitFull(a)) {
+            row.addView(fitButton(a))
+        }
         row.addView(fullButton(a))
         return row
     }

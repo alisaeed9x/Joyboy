@@ -149,7 +149,11 @@ object MtOrigin {
                 current = null
                 return false
             }
-            if (src != null && o.src != src && o.src.isNotEmpty()) return false
+            // (v983) المصدر المسجّل مش بتاع الفيديو اللي بيتقفل ده: ما نرجّعش بيه، ونمسحه عشان ما يفضلش قديم يتلوّث بيه اللي بعده
+            if (src != null && o.src != src && o.src.isNotEmpty()) {
+                current = null
+                return false
+            }
             // (v979) فيديو يوتيوب من فيد MeeTube (من غير src) وملوش تسجيل بتاعه: المصدر اللي موجود قديم — ما نرجّعش بيه (كان بيفتح ميديا/المتصفح عند القفل)
             if (src == null && !isFor(videoId, null)) {
                 current = null
