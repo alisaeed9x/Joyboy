@@ -13,6 +13,7 @@ import androidx.media3.common.Format
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.VideoFrameProcessingException
+import androidx.media3.common.util.GlProgram
 import androidx.media3.common.util.GlUtil
 import androidx.media3.common.util.Size
 import androidx.media3.common.util.UnstableApi
@@ -266,7 +267,7 @@ private class SharpenProgram(
     private val hdr: Float
 ) : BaseGlShaderProgram(useHdr, 1) {
 
-    private val prog = GlUtil.GlProgram(VERT, FRAG)
+    private val prog = GlProgram(VERT, FRAG)
     private var w = 1
     private var h = 1
 
