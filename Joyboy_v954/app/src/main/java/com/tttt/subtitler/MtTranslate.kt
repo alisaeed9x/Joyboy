@@ -2,7 +2,6 @@ package com.tttt.subtitler
 
 import android.app.Activity
 import android.content.ContentValues
-import android.content.Intent
 import android.graphics.Color
 import android.graphics.drawable.GradientDrawable
 import android.os.Build
@@ -93,7 +92,6 @@ object MtTranslate : JoyboyPlayerHost.Provider {
             if (act !== activity) { stopEngine(); offsetMs = 0L; nativeCcOn = false }
             this.act = activity; this.player = player; this.info = info; this.overlay = overlay
             liteMode = !DeviceUi.isTv(activity) && (try { info.localUri().isNullOrBlank() } catch (_: Throwable) { true })
-            if (liteMode) { attachLite(activity, overlay, options); return }
             try { MtTvPlayer.set(activity, player, try { info.title() ?: "" } catch (_: Throwable) { "" }) } catch (_: Throwable) {}
             Cfg.ensure(activity.applicationContext)
             for (t in listOf(TAG_SUB)) overlay.findViewWithTag<View>(t)?.let { overlay.removeView(it) }
@@ -103,7 +101,7 @@ object MtTranslate : JoyboyPlayerHost.Provider {
             overlay.addView(s, FrameLayout.LayoutParams(-1, -2, Gravity.BOTTOM).apply { bottomMargin = subMargin(activity) })
             sv = s; cached = null
             btn = null; btn2 = null
-            if (options != null) {
+            if (options != null && !liteMode) {   // (v954) يوتيوب موبايل: مفيش أزرار عايمة فوق — شريحة ▶ ترجمة الحمرا تحت بس
                 val b1 = pill(activity, TAG_BTN, "🌐 ترجم") { toggle() }
                 val b2 = pill(activity, TAG_BTN2, "⚙") { showMenu() }
                 options.addView(b2, 0); options.addView(b1, 0)
@@ -112,43 +110,14 @@ object MtTranslate : JoyboyPlayerHost.Provider {
             try { listenedOn?.removeListener(trans) } catch (_: Throwable) {}
             player.addListener(trans); listenedOn = player
             refreshBtn(); maybeAuto()
-            MtMedia.attach(activity, player, options, info)
-            try {
-                MtBar.attachCircles(activity, player, overlay, info)
-            } catch (_: Throwable) {}
+            if (!liteMode) {
+                MtMedia.attach(activity, player, options, info)
+                try {
+                    MtBar.attachCircles(activity, player, overlay, info)
+                } catch (_: Throwable) {}
+            }
             if (!tickOn) { tickOn = true; ui.post(tick) }
         } catch (e: Throwable) { LogStore.err("MtTranslate:attach", e) }
-    }
-
-    /** (v954) يوتيوب على الموبايل: زرار «▶ ترجم» واحد (أحمر زي المشغّل القديم) بيفتح الفيديو في مشغّل Joyboy القديم بالترجمة من نفس المكان. */
-    private fun attachLite(a: Activity, overlay: ViewGroup, options: ViewGroup?) {
-        overlay.findViewWithTag<View>(TAG_SUB)?.let { overlay.removeView(it) }
-        options?.findViewWithTag<View>(TAG_BTN)?.let { options.removeView(it) }
-        options?.findViewWithTag<View>(TAG_BTN2)?.let { options.removeView(it) }
-        sv = null; btn = null; btn2 = null; cached = null
-        if (options != null) {
-            val b = pill(a, TAG_BTN, "▶ ترجم") { openInOldPlayer(a) }.apply {
-                background = GradientDrawable().apply { cornerRadius = dp(a, 18).toFloat(); setColor(0xFFE53935.toInt()) }
-            }
-            options.addView(b, 0); btn = b
-        }
-    }
-
-    /** (v954) فتح نفس فيديو يوتيوب في مشغّل Joyboy القديم (PlayerActivity) بترجمة تلقائية ومن نفس الثانية، وقفل مشغّل MeeTube. */
-    private fun openInOldPlayer(a: Activity) {
-        try {
-            val id = info?.videoId()?.takeIf { it.length == 11 } ?: run { Notice.show(a, "مش قادر أعرف الفيديو", 1800L); return }
-            val pos = try { player?.currentPosition ?: 0L } catch (_: Throwable) { 0L }
-            val title = try { info?.title() ?: "" } catch (_: Throwable) { "" }
-            try { player?.pause() } catch (_: Throwable) {}
-            a.startActivity(Intent(a, PlayerActivity::class.java).pipTask(a).apply {
-                putExtra("ytpend", true); putExtra("ytid", id); putExtra("title", title)
-                putExtra("ref", "https://www.youtube.com/")
-                putExtra("nosub", false); putExtra("autotr", true); putExtra(MtPlay.EX_OLD, true)
-                if (pos > 0L) putExtra("startms", pos)
-            })
-            a.finish()
-        } catch (e: Throwable) { LogStore.err("MtTranslate:oldPlayer", e) }
     }
 
     override fun detach(activity: Activity) {
@@ -331,8 +300,7 @@ object MtTranslate : JoyboyPlayerHost.Provider {
             val p = player ?: return
             val i = info ?: return
             if (act !== activity) return
-            if (liteMode) return   // (v954) يوتيوب على الموبايل من غير شريط Joyboy
-            MtBar.attachBar(activity, p, bar, i)
+            if (liteMode) MtBar.attachTrOnly(activity, p, bar, i) else MtBar.attachBar(activity, p, bar, i)   // (v954) يوتيوب موبايل: شريحة الترجمة بس
         } catch (e: Throwable) {
             LogStore.err("MtTranslate:extraControls", e)
         }

@@ -52,6 +52,7 @@ object MtBar {
     private const val TAG_LOCKOV = "mtbar_lockov"
     private const val REST_A = 0.25f
     private const val BAR_BOTTOM_DP = 84
+    private const val TR_ONLY_BOTTOM_DP = 128   // (v954) فوق شريط التقدم/الوقت الأصلي بتاع MeeTube
 
     private val ui = Handler(Looper.getMainLooper())
     private var act: Activity? = null
@@ -250,6 +251,32 @@ object MtBar {
         toolsRoot = tools
         refreshBadge()
         refreshModes()
+        if (!ticking) {
+            ticking = true
+            tickCount = 0
+            ui.post(tick)
+        }
+    }
+
+    /** (v954) يوتيوب على الموبايل: شريحة الترجمة بس (▶ ترجمة الأحمر · ⚙ الأوضاع · 🔁 إعادة · ▮▮ · ✕) فوق أزرار MeeTube الأصلية — من غير باقي شريط Joyboy. */
+    fun attachTrOnly(activity: Activity, p: ExoPlayer, bar: ViewGroup, i: JoyboyPlayerHost.VideoInfo) {
+        act = activity
+        player = p
+        info = i
+        uiHelper = Ui(activity, Themes.current())
+        removeByTag(bar, TAG_BAR)
+        removeByTag(bar, TAG_TOOLS)
+        removeByTag(bar, TAG_CAP)
+        removeByTag(bar, TAG_MODE)
+        val root = LinearLayout(activity).apply {
+            tag = TAG_BAR
+            orientation = LinearLayout.VERTICAL
+            layoutDirection = View.LAYOUT_DIRECTION_RTL
+            setPadding(dp(activity, 14), 0, dp(activity, 14), 0)
+        }
+        root.addView(trRow(activity))
+        bar.addView(root, FrameLayout.LayoutParams(-1, -2, Gravity.BOTTOM).apply { bottomMargin = dp(activity, TR_ONLY_BOTTOM_DP) })
+        barRoot = root
         if (!ticking) {
             ticking = true
             tickCount = 0

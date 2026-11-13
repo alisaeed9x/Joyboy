@@ -5,8 +5,8 @@ import android.content.Intent
 
 /**
  * (v954) فصل المشغّلين — كل واحد شغّال لوحده:
- *   • مشغّل MeeTube (يوتيوب) = فيديوهات يوتيوب العادية بس (ytid من غير ترجمة).
- *   • مشغّل Joyboy القديم (Player.kt = بتاع v863) = الملفات المحلية + لينكات المتصفح/المستطيل + أي لينك مباشر + يوتيوب بترجمة + التلفزيون/الريموت.
+ *   • مشغّل MeeTube (يوتيوب) = فيديوهات يوتيوب بس (الترجمة بتشتغل جواه بشريحة «▶ ترجمة» الحمرا).
+ *   • مشغّل Joyboy القديم (Player.kt = بتاع v863) = الملفات المحلية + لينكات المتصفح/المستطيل + أي لينك مباشر + التلفزيون/الريموت.
  * كل فتح لـPlayerActivity بيعدّي هنا الأول (PlayerActivity.onCreate): لو القرار ok ← يوتيوب في MeeTube والـPlayerActivity بتقفل نفسها،
  * غير كده القرار skip ← PlayerActivity بتكمّل كمشغّل Joyboy القديم زي ما هي (مفيش أي تغيير في سلوكها).
  * (اتشال من هنا: توجيه الملفات/اللينكات/المتخفي/hsite/forceid/probe لـMeeTube + MtWeb.onOpen + التوجيه الرأسي المسبق — كانوا سبب الأزرار المبعترة.)
@@ -22,22 +22,16 @@ object MtPlay {
         companion object { fun skip(reason: String) = Decision(false, reason) }
     }
 
-    /** extra بيحطّه زرار «ترجم» جوه مشغّل يوتيوب: افتح الفيديو في مشغّل Joyboy القديم (بيتجاوز التوجيه لـMeeTube). */
-    const val EX_OLD = "oldplayer"
-
     /** بتتنادى جوه try (Cfg.ensure ممكن ترمي). */
     fun decide(act: Activity, i: Intent): Decision {
         Cfg.ensure(act.applicationContext)
         if (!enabled()) return Decision.skip(R_OFF)
         if (i.getBooleanExtra("remote", false)) return Decision.skip(R_QUIET)             // ريموت (تلفزيون) ← مشغّل Joyboy
         if (i.hasExtra("mirror_uri")) return Decision.skip(R_QUIET)                      // مرآة التلفزيون ← مشغّل Joyboy
-        if (i.getBooleanExtra(EX_OLD, false)) return Decision.skip(R_QUIET)              // زرار «ترجم» جوه يوتيوب ← مشغّل Joyboy القديم
         val ytid = i.getStringExtra("ytid") ?: return Decision.skip(R_QUIET)             // مش يوتيوب (ملف/متصفح/لينك) ← مشغّل Joyboy القديم
         if (i.getBooleanExtra("handoff", false)) return Decision.skip("handoff (تسليم من المصغّر الشغّال — لسه على Joyboy)")
         if (DeviceUi.isTv(act)) return Decision.skip(R_QUIET)                            // التلفزيون زي ما هو (مشغّل Joyboy)
         if (ytid.length != 11) return Decision.skip("ytid مش 11 حرف")
-        // يوتيوب بترجمة (autotr من غير nosub) ← مشغّل Joyboy القديم بكل أزراره
-        if (i.getBooleanExtra("autotr", false) && !i.getBooleanExtra("nosub", false)) return Decision.skip(R_QUIET)
         val priv = i.getBooleanExtra("incognito", false) || hiddenSite(act, i)
         return Decision(true, "ok", yt = ytid, priv = priv)
     }
@@ -64,7 +58,7 @@ object MtPlay {
             val title0 = i.getStringExtra("title")?.takeIf { it.isNotBlank() }
             try { MtOrigin.record(i, null, yid, title0 ?: "") } catch (_: Throwable) {}
             if (!d.priv) try { PubHistory.addVideoFrom(i) } catch (_: Throwable) {}
-            return MeeTubeLink.playYt(act, yid, startMs, false, d.priv)
+            return MeeTubeLink.playYt(act, yid, startMs, i.getBooleanExtra("autotr", false) && !i.getBooleanExtra("nosub", false), d.priv)
         } catch (e: Throwable) {
             LogStore.err("MtPlay:reroute", e)
             return false
