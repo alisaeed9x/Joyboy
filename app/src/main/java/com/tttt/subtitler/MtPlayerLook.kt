@@ -160,5 +160,7 @@ object MtLook {
         ui.text("🎞 الحركة والأزرار", 13f, th.text, true),
         ui.switchRow("حركة فتح/قفل المشغّل (من MeeTube: تكبير ناعم + تلاشي)", Cfg.bool("mt_player_anim", true)) { Cfg.put("mt_player_anim", if (it) "1" else "0") },
         ui.switchRow("إخفاء زرار ⬇ تحميل من شريط المشغّل", hideDl()) { Cfg.put("hide_btn_dl", if (it) "1" else "0") },
-        ui.switchRow("مشغّل MeeTube لكل الملفات واللينكات (قفله = مشغّل Joyboy القديم)", MtPlay.enabled()) { Cfg.put(MtPlay.KEY, if (it) "1" else "0") })
+        ui.text("🎬 المشغّل", 13f, th.text, true),
+        ui.chips(listOf("MeeTube", "Player.kt"), { if (MtPlay.enabled()) "MeeTube" else "Player.kt" }) { n -> Cfg.put(MtPlay.KEY, if (n == "MeeTube") "1" else "0") },
+        ui.text("MeeTube = الأساسي (الافتراضي) · Player.kt = مشغّل Joyboy القديم (الاحتياطي) لكل حاجة ما عدا يوتيوب وفيديوهات صفحات لينكها يوتيوب — دي بتفضل على MeeTube", 11f, th.muted, false))
 }

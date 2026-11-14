@@ -182,18 +182,19 @@ class BottomNav(act: Activity, private val ui: Ui, private val th: Theme, privat
         for ((title, tiles) in moreGroups(act)) {
             if (tiles.isEmpty()) continue
             inner.addView(ui.text(title, 12.5f, th.muted, true).apply { setPadding(ui.dp(6), ui.dp(12), ui.dp(6), ui.dp(2)) }, LinearLayout.LayoutParams(-1, -2))
-            var row: LinearLayout? = null
-            for ((i, t) in tiles.withIndex()) {
-                if (i % cols == 0) {
-                    row = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL }
-                    inner.addView(row, LinearLayout.LayoutParams(-1, -2).apply { topMargin = ui.dp(8) })
-                }
-                val rem0 = tiles.size % cols
-                val lone = rem0 == 1 && i == tiles.size - 1 && tiles.size > 1   // (v861) مربع لوحده في آخر صف ← ياخد عرض الصف كله
-                row?.addView(tileView(act, t) { d.dismiss() }, LinearLayout.LayoutParams(0, -2, if (lone) cols.toFloat() else 1f).apply { setMargins(ui.dp(4), 0, ui.dp(4), 0) })
+            // (v1009) الصف الأخير بيتفرد لحد الآخر: كل مربع weight=1 (ولا فراغ فاضي). مربع واحد لوحده في آخر صف بينضم للصف اللي قبله (cols+1 جنب بعض)؛ ولو هو القسم كله بياخد العرض كله
+            val chunks = ArrayList<List<MoreItem>>()
+            var at = 0
+            while (at < tiles.size) {
+                val left = tiles.size - at
+                val take = if (left == cols + 1) cols + 1 else minOf(cols, left)
+                chunks.add(tiles.subList(at, at + take)); at += take
             }
-            val rem = tiles.size % cols
-            if (rem > 1) for (k in 0 until (cols - rem)) row?.addView(View(act), LinearLayout.LayoutParams(0, 1, 1f).apply { setMargins(ui.dp(4), 0, ui.dp(4), 0) })
+            for (chunk in chunks) {
+                val row = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL }
+                inner.addView(row, LinearLayout.LayoutParams(-1, -2).apply { topMargin = ui.dp(8) })
+                for (t in chunk) row.addView(tileView(act, t) { d.dismiss() }, LinearLayout.LayoutParams(0, -2, 1f).apply { setMargins(ui.dp(4), 0, ui.dp(4), 0) })
+            }
         }
         val sc = android.widget.ScrollView(act).apply { isVerticalScrollBarEnabled = false; addView(inner) }
         box.addView(sc, LinearLayout.LayoutParams(-1, -2))

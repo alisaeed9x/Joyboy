@@ -3509,7 +3509,8 @@ public class MobilePlaybackActivity extends MobileActivity
                 // third, the comments under it. The two-thirds cap below left them a third (#27).
                 return windowHeight / 3;
             }
-            if (mInlineAspect > 0f && mInlineAspect < 16f / 9f) {
+            // JOYBOY(v1007): fill / stretch / 100% keep the box fixed (16:9 like YouTube) and move the video inside it
+            if (mInlineAspect > 0f && mInlineAspect < 16f / 9f && joyFitMode() == JOY_FIT_FIT) {
                 int tall = Math.min(Math.round(width / mInlineAspect), windowHeight * 2 / 3);
                 height = Math.max(height, tall - mTallBoxCollapse); // the page scrolled it away (#36)
             }
@@ -12674,6 +12675,13 @@ public class MobilePlaybackActivity extends MobileActivity
 
     // Re-lay the video for the mode already in force (rotation, panels, portrait-full):
     // the stored Joyboy mode survives, PlayerData is NOT re-adopted here.
+    private void refreshInlineBox() {
+        if (mWatchRoot != null && mWatchRoot.getWidth() > 0 && !mIsInPip && !mPipEnterPending
+                && mMorphFraction == 0f && layoutOrientation() == Configuration.ORIENTATION_PORTRAIT) {
+            applyPortraitVideoHeight(mWatchRoot.getWidth());
+        }
+    }
+
     private void reapplyJoyFit() {
         applyJoyFit();
         applyControlsInsets();
@@ -12694,8 +12702,11 @@ public class MobilePlaybackActivity extends MobileActivity
         if (mMorphFraction != 0f || MiniPlayerBridge.isActive()) {
             return;
         }
-        // Portrait watch page: fit is a no-op. PiP shows the whole picture in its own window.
-        if ((!isLandscape() && !mPortraitFull) || mIsInPip || mPipEnterPending) {
+        // PiP shows the whole picture in its own window. The portrait watch page (JOYBOY v1007)
+        // keeps its box fixed and sizes the video inside it, except in plain FIT where the box
+        // follows the video and the surfaces stay MATCH_PARENT.
+        boolean inlinePage = !isLandscape() && !mPortraitFull;
+        if (mIsInPip || mPipEnterPending || (inlinePage && joyFitMode() == JOY_FIT_FIT)) {
             resetJoyFitSurfaces(frame);
             applyControlsInsets();
             return;
@@ -12768,6 +12779,7 @@ public class MobilePlaybackActivity extends MobileActivity
                 }
                 mJoyFitMode = n;
                 PlayerData.instance(this).setResizeMode(resizeModeForJoyFit(n));
+                refreshInlineBox();
                 applyJoyFit();
                 applyControlsInsets();
                 return true;
@@ -12885,6 +12897,7 @@ public class MobilePlaybackActivity extends MobileActivity
         if (mPlayerView != null) {
             mPlayerView.setResizeMode(androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FIT);
         }
+        refreshInlineBox();
         applyJoyFit();
         applyControlsInsets();
     }

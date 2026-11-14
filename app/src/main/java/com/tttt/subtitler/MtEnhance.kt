@@ -117,7 +117,7 @@ object MtEnhance {
     /** (v948) تطبيق تغيير الدرجة على الفيديو الشغّال دلوقتي (من زرار HDR جوه المشغّل) */
     fun refresh() { evaluate() }
 
-    private fun sharpFor(l: Int): Float = when (l) { 1 -> 0.20f; 2 -> 0.45f; else -> 0.75f }
+    private fun sharpFor(l: Int): Float = when (l) { 1 -> 0.15f; 2 -> 0.30f; else -> 0.55f }   // (v1007) أخف: الوضوح القديم كان بيطلّع هالات وحواف مبالغ فيها
 
     // ---------- الربط بالمشغّل ----------
     private val listener = object : Player.Listener {
@@ -241,7 +241,8 @@ object MtEnhance {
             val fk = fake()
             val key = "$l/${if (v) 1 else 0}/$fk"
             if (key == applied) return
-            val eff = SharpenEffect(if (l == 0) -1f else sharpFor(l), if (v) 1.08f else 1f, if (v) 1.04f else 1f, hdrFor(fk))
+            val eff = SharpenEffect(if (l == 0) -1f else sharpFor(l), if (v) 1.18f else 1f, 1f,   // (v1007) ألوان: vibrance (بيشدّ الباهت ويحمي المشبّع) من غير تباين زيادة — كانت «محروقة»
+                 hdrFor(fk))
             p.setVideoEffects(listOf<Effect>(eff))
             applied = key
             if (!primed) {
@@ -417,12 +418,15 @@ private class SharpenProgram(
             "    vec3 s = texture2D(uTexSampler, uv + vec2(0.0, uTy)).rgb;\n" +
             "    vec3 w = texture2D(uTexSampler, uv + vec2(-uTx, 0.0)).rgb;\n" +
             "    vec3 e = texture2D(uTexSampler, uv + vec2(uTx, 0.0)).rgb;\n" +
-            "    vec3 mn = min(c, min(min(n, s), min(w, e)));\n" +
-            "    vec3 mx = max(c, max(max(n, s), max(w, e)));\n" +
-            "    vec3 amp = sqrt(clamp(min(mn, 1.0 - mx) / max(mx, 0.0001), 0.0, 1.0));\n" +
+            "    float lc0 = dot(c, LUMA);\n" +
+            "    float ln = dot(n, LUMA); float ls = dot(s, LUMA); float lw = dot(w, LUMA); float le = dot(e, LUMA);\n" +
+            "    float mn = min(lc0, min(min(ln, ls), min(lw, le)));\n" +
+            "    float mx = max(lc0, max(max(ln, ls), max(lw, le)));\n" +
+            "    float amp = sqrt(clamp(min(mn, 1.0 - mx) / max(mx, 0.0001), 0.0, 1.0));\n" +
             "    float peak = -1.0 / mix(8.0, 5.0, uSharp);\n" +
-            "    vec3 wgt = amp * peak;\n" +
-            "    col = clamp(((n + s + w + e) * wgt + c) / (1.0 + 4.0 * wgt), 0.0, 1.0);\n" +
+            "    float wgt = amp * peak;\n" +
+            "    float lnew = clamp(((ln + ls + lw + le) * wgt + lc0) / (1.0 + 4.0 * wgt), 0.0, 1.0);\n" +
+            "    col = clamp(c + (lnew - lc0), 0.0, 1.0);\n" +
             "  }\n" +
             "  if (uHdr > 0.0) {\n" +
             "    vec3 m = (texture2D(uTexSampler, uv + vec2(6.0 * uTx, 0.0)).rgb + texture2D(uTexSampler, uv + vec2(-6.0 * uTx, 0.0)).rgb +\n" +
@@ -437,7 +441,8 @@ private class SharpenProgram(
             "    col = mix(vec3(l2), col, 1.0 + 0.25 * uHdr);\n" +
             "  }\n" +
             "  float l = dot(col, LUMA);\n" +
-            "  col = mix(vec3(l), col, uSat);\n" +
+            "  float chroma = max(col.r, max(col.g, col.b)) - min(col.r, min(col.g, col.b));\n" +
+            "  col = mix(vec3(l), col, 1.0 + (uSat - 1.0) * (1.0 - chroma));\n" +
             "  col = clamp((col - 0.5) * uCon + 0.5, 0.0, 1.0);\n" +
             "  gl_FragColor = vec4(col, 1.0);\n" +
             "}\n"

@@ -14,6 +14,7 @@ import com.newtube.mobile.MobileMainApplication
  * لو الحالة مدعومة بيفتح الفيديو في مشغّل MeeTube (Video.localUri) ومحرك الترجمة + أزرار Joyboy (MtTranslate) فوقه، ومشغّل Joyboy القديم بيتقفل.
  * غير كده (تلفزيون من غير mt_tv_player · ريموت · يوتيوب · لينك محتاج Referer/Cookie · وضع متخفي · ملف تحميل لسه شغّال) = مشغّل Joyboy زي ما هو.
  * مفتاح الإيقاف: Cfg mt_main_player (الافتراضي true من v934 — م2 من خطة دمج المشغّل).
+ * (v1007) مقفول = مشغّل Joyboy القديم (Player.kt) لكل حاجة ما عدا يوتيوب والفيديوهات المستضافة من صفحات لينكها يوتيوب.
  */
 object MtPlay {
     const val KEY = "mt_main_player"
@@ -30,7 +31,9 @@ object MtPlay {
     /** (v930) نفس شروط reroute القديمة بالظبط، بس بترجّع السبب. بتتنادى جوه try (Cfg.ensure ممكن ترمي). */
     fun decide(act: Activity, i: Intent): Decision {
         Cfg.ensure(act.applicationContext)
-        if (!enabled()) return Decision.skip(R_OFF)
+        // (v1007) مشغّل Joyboy القديم (Player.kt) بقى خيار تاني في الإعدادات: لما MeeTube مقفول بيشغّل كل حاجة ما عدا يوتيوب
+        // (فيديو يوتيوب نفسه، أو فيديو مستضاف من صفحة/Referer لينكها يوتيوب) — دول بيفضلوا على مشغّل MeeTube.
+        if (!enabled() && !ytLike(i)) return Decision.skip(R_OFF)
         if (DeviceUi.isTv(act) && !MtTvPlayer.enabled()) return Decision.skip(R_TV)
         if (i.getBooleanExtra("remote", false)) return Decision.skip("extra remote (ريموت — م4)")
         // (v936) لسه على مشغّل Joyboy: mirror_uri (م4 — تلفزيون) بس. يوتيوب/المتخفي/hsite/forceid/لينك من غير امتداد اتحلّوا.
@@ -85,6 +88,14 @@ object MtPlay {
     }
 
     private const val EX_PROBED = "mt_probed"
+
+    /** (v1007) الـintent ده يوتيوب؟ ytid · أو url/ref/page على دومين يوتيوب (youtube.com · youtu.be · googlevideo.com · youtube-nocookie.com) */
+    private fun ytLike(i: Intent): Boolean = try {
+        i.getStringExtra("ytid") != null || i.hasExtra("ytpend") ||
+            listOf(i.getStringExtra("url"), i.getStringExtra("ref"), i.getStringExtra("page"), i.dataString).any { u ->
+                u != null && Regex("(^|[/.])(youtube\\.com|youtu\\.be|googlevideo\\.com|youtube-nocookie\\.com)([/:?#]|$)", RegexOption.IGNORE_CASE).containsMatchIn(u)
+            }
+    } catch (_: Throwable) { false }
 
     /** (v936) الموقع محجوب بزرار 🚨؟ (extra hsite أو دومين اللينك/الـref في قايمة SiteBlock) — نفس شرط Player.hiddenSite */
     private fun hiddenSite(act: Activity, i: Intent): Boolean = try {

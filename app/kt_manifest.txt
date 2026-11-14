@@ -156,6 +156,7 @@ com/tttt/subtitler/MusicService.kt
 com/tttt/subtitler/MusicUi.kt
 com/tttt/subtitler/MusicWidget.kt
 com/tttt/subtitler/NavAnim.kt
+com/tttt/subtitler/NavOrigin.kt
 com/tttt/subtitler/NavSnap.kt
 com/tttt/subtitler/NetGate.kt
 com/tttt/subtitler/NetLedger.kt
