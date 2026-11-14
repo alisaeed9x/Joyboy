@@ -1703,7 +1703,6 @@ public class MobilePlaybackActivity extends MobileActivity
 
         if (isJoyLocalPage() && orientation != Configuration.ORIENTATION_LANDSCAPE && !mPortraitFull && !mIsInPip && !mPipEnterPending) {
             // JOYBOY(v981): upright local fullscreen keeps the video's shape instead of stretching it (was Fill since v969)
-            mJoyFitMode = androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FIT;
             mPortraitFull = true; // JOYBOY(v950): upright local video = the vertical fullscreen from the first layout
             refreshContentInsets();
         }
@@ -1723,7 +1722,7 @@ public class MobilePlaybackActivity extends MobileActivity
         if (orientation == Configuration.ORIENTATION_LANDSCAPE) {
             if (mPortraitFull) { // the landscape fullscreen takes over; upright again is the page
                 mPortraitFull = false;
-                setResizeMode(PlayerData.instance(this).getResizeMode()); // the pinch's choice again
+                reapplyJoyFit(); // the pinch's choice again
             }
             if (mAmbient != null) {
                 mAmbient.setFill(null);
@@ -1756,7 +1755,7 @@ public class MobilePlaybackActivity extends MobileActivity
                     * getResources().getDisplayMetrics().density);
             if (mCommentsSide) { // an open panel goes back under the video
                 mCommentsSide = false;
-                setResizeMode(PlayerData.instance(this).getResizeMode());
+                reapplyJoyFit();
             }
             layOutCommentsSide(lp, false);
             if (mChatSide) { // upright, the chat goes back under the video
@@ -1766,7 +1765,7 @@ public class MobilePlaybackActivity extends MobileActivity
                     mChatSlide.cancel();
                 }
                 lp.setMarginEnd(0);
-                setResizeMode(PlayerData.instance(this).getResizeMode());
+                reapplyJoyFit();
             }
             if (width > 0) {
                 // MEETUBE(shorts): a short fills the portrait screen; the watch page steps aside.
@@ -1805,6 +1804,8 @@ public class MobilePlaybackActivity extends MobileActivity
                 mTitleView.setVisibility(mPortraitFull ? View.VISIBLE : View.GONE);
             }
         }
+        // JOYBOY(v1001 Fix 2): rotation re-sizes the video surface for the fit mode
+        applyJoyFit();
     }
 
     /**
@@ -1856,7 +1857,7 @@ public class MobilePlaybackActivity extends MobileActivity
                 frame.setTranslationY(0f);
             }
             applyWatchLayoutForOrientation(Configuration.ORIENTATION_LANDSCAPE);
-            setResizeMode(PlayerData.instance(this).getResizeMode()); // fit beside the comments
+            reapplyJoyFit(); // fit beside the comments
             if (frame != null && oldW > 0f) {
                 float w = oldW, cx = oldCx, cy = oldCy;
                 OneShotPreDrawListener.add(frame, () -> {
@@ -2768,16 +2769,14 @@ public class MobilePlaybackActivity extends MobileActivity
             resetMorph();
             return;
         }
-        // JOYBOY(v964): Back in landscape fullscreen of the local player now goes straight to PiP (same as upright) — no step back to portrait
-        if (isJoyLocalPage() && !mIsInPip && !mPipEnterPending) { // JOYBOY(v950): local player — Back leaves straight (small PiP or close), upright or landscape, never the watch page
+        // JOYBOY(v1001): Back on the local player now closes the video completely (no PiP),
+        // upright or landscape — no step back to portrait, never the watch page
+        // JOYBOY(v950): local player — Back leaves straight, upright or landscape, never the watch page
+        if (isJoyLocalPage() && !mIsInPip && !mPipEnterPending) {
             mBackPreview = false;
             if (JoyboyPlayerHost.onMinimize(this)) {
-                // JOYBOY(v970): Back = out of the video for good into a small PiP window, stopped and silent (it used to keep playing)
+                // JOYBOY(v1001): Back = out of the video for good, stopped and silent
                 setPlayWhenReady(false);
-                enterPipMode();
-                if (mPipEnterPending) {
-                    return;
-                }
             }
             if (mPresenter != null) {
                 mPresenter.onFinish();
@@ -2795,17 +2794,14 @@ public class MobilePlaybackActivity extends MobileActivity
                 && layoutOrientation() == Configuration.ORIENTATION_LANDSCAPE) {
             mBackPreview = false;
             // JOYBOY(v960): Back out of landscape fullscreen only leaves the fullscreen now (the video stays open
-            // and keeps playing) — it no longer shrinks to a stopped PiP. (v941's PiP-on-Back is kept for TV only.)
+            // and keeps playing) — except on TV, where it closes the video completely (v1001, no PiP on exit).
             if (!com.newtube.mobile.ui.common.FocusRing.isTv(this)) {
                 toggleFullscreen();
                 return;
             }
             if (JoyboyPlayerHost.onMinimize(this)) {
+                // JOYBOY(v1001): Back on TV closes the video completely — no PiP on exit
                 setPlayWhenReady(false);
-                enterPipMode();
-                if (mPipEnterPending) {
-                    return;
-                }
                 if (mPresenter != null) {
                     mPresenter.onFinish();
                 }
@@ -6316,6 +6312,8 @@ public class MobilePlaybackActivity extends MobileActivity
                 applyControlsInsets();
                 updatePipActions(); // a new shape reshapes the PiP window
                 setInlineAspect(mVideoAspect);
+                // JOYBOY(v1001 Fix 2): a new video size re-sizes the video surface for the fit mode
+                applyJoyFit();
             }
         }
 
@@ -6555,6 +6553,8 @@ public class MobilePlaybackActivity extends MobileActivity
         } else {
             finishHdrSwap(); // no player to draw a frame: just put the texture back
         }
+        // JOYBOY(v1001 Fix 2): the (new) output surface gets the fit size too
+        applyJoyFit();
     }
 
     /** The first frame reached the new output: show it, retire the old one. */
@@ -6636,6 +6636,8 @@ public class MobilePlaybackActivity extends MobileActivity
         mVideoStill.setVisibility(View.GONE);
         contentFrame.addView(mVideoStill, 1, new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        // JOYBOY(v1001 Fix 2): the fresh texture gets the fit size too
+        applyJoyFit();
     }
 
     /** MEETUBE(shorts): the paged-away short's last frame, over the video while the next one opens. */
@@ -6846,6 +6848,8 @@ public class MobilePlaybackActivity extends MobileActivity
             ViewGroup contentFrame = mPlayerView.getContentFrame();
             contentFrame.addView(mVideoTexture, 0, new FrameLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+            // JOYBOY(v1001 Fix 2): the re-parented texture gets the fit size back
+            applyJoyFit();
         }
     }
 
@@ -7346,7 +7350,15 @@ public class MobilePlaybackActivity extends MobileActivity
     private static final float PORTRAIT_FULL_PULL_DP = 72f;
     /** The box's move into and out of the vertical fullscreen. */
     private static final long PORTRAIT_FULL_MS = 320;
-    /** JOYBOY(v969): the size mode the add-on / default picked for the upright fullscreen (-1 = none: whole picture). Fill = stretched to the screen exactly. */
+    // JOYBOY(v1001 Fix 2): the Joyboy fit modes, shared with PlayerLogic.fitSize and the
+    // MtBar / MtTvPlayer cycles. 0 = fit (whole picture), 1 = fill (crop to cover),
+    // 2 = stretch (fill, ignoring aspect), 3 = natural 1:1.
+    private static final int JOY_FIT_FIT = 0;
+    private static final int JOY_FIT_FILL = 1;
+    private static final int JOY_FIT_STRETCH = 2;
+    private static final int JOY_FIT_NATURAL = 3;
+
+    /** JOYBOY(v1001 Fix 2): the Joyboy fit mode in force; -1 = not picked yet, restore from PlayerData on first use. */
     private int mJoyFitMode = -1;
     private float mPullDownX;
     private float mPullDownY = -1f;
@@ -7370,8 +7382,8 @@ public class MobilePlaybackActivity extends MobileActivity
         if (on == mPortraitFull || (on && (isLandscape() || isShortsMode() || mIsInPip || mPipEnterPending))) {
             return;
         }
-        // JOYBOY(v981): every upright fullscreen starts fitted to the screen (was Fill, stretched, since v969)
-        mJoyFitMode = on ? androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FIT : -1;
+        // JOYBOY(v1001 Fix 2): entering/leaving the upright fullscreen keeps the fit mode
+        // the user picked; the default is fit (joyFitMode restores PlayerData).
         mPortraitFull = on;
         if (mWatchRoot != null) {
             android.transition.TransitionManager.beginDelayedTransition((ViewGroup) mWatchRoot,
@@ -7408,7 +7420,7 @@ public class MobilePlaybackActivity extends MobileActivity
                     .setDuration(PORTRAIT_FULL_MS).setInterpolator(Motion.EMPHASIZED_DECELERATE)
                     .withEndAction(() -> mWatchScroll.animate().setStartDelay(0)).start();
         }
-        setResizeMode(PlayerData.instance(this).getResizeMode()); // fit while upright-full; also re-lays the controls
+        reapplyJoyFit(); // fit while upright-full; also re-lays the controls
         if (mAmbient != null) {
             mAmbient.setFill(on ? mVideoArea : null); // the black bands glow with the video
         }
@@ -8020,9 +8032,9 @@ public class MobilePlaybackActivity extends MobileActivity
             settleFullscreenPull();
             return;
         }
-        // JOYBOY(v941): exiting fullscreen for a non-YouTube source (Media/browser/local/direct) never
-        // lands on the watch page — it goes straight to a small paused PiP, or closes outright (back to
-        // the origin) if the system refuses PiP. YouTube keeps the old fullscreen-exit behaviour.
+        // JOYBOY(v1001): exiting fullscreen for a non-YouTube source (Media/browser/local/direct) never
+        // lands on the watch page — it closes the video completely (no PiP), back to the origin.
+        // YouTube keeps the old fullscreen-exit behaviour.
         if (mFullscreenSwipe == SWIPE_EXIT_FULLSCREEN && JoyboyPlayerHost.onMinimize(this)) {
             if (mFullscreenSettle != null) {
                 mFullscreenSettle.cancel();
@@ -8033,10 +8045,10 @@ public class MobilePlaybackActivity extends MobileActivity
                 mVideoArea.setTranslationY(0f);
             }
             mFullscreenSwipe = 0;
-            // JOYBOY(v962): the small PiP keeps playing (as Back does)
-            enterPipMode();
-            if (mPipEnterPending) {
-                return;
+            // JOYBOY(v1001): swipe-down out of fullscreen closes the video completely — no PiP
+            try {
+                setPlayWhenReady(false);
+            } catch (RuntimeException ignored) {
             }
             if (mPresenter != null) {
                 mPresenter.onFinish();
@@ -8727,9 +8739,9 @@ public class MobilePlaybackActivity extends MobileActivity
     }
 
     /**
-     * Swipe-down now MINIMIZES like the YouTube app (playback continues in the Browse mini
-     * card) instead of closing. This activity stays alive behind Browse - it still owns the
-     * player. Called once the release animation has landed on the mini-card rectangle.
+     * JOYBOY(v1001): swipe-down minimize now CLOSES the video completely (no PiP, no Browse
+     * mini-card dock) instead of minimizing. Called once the release animation has landed
+     * on the mini-card rectangle.
      */
     private void minimizeByDrag() {
         com.newtube.mobile.ui.common.PlayerTrace.mark("MINIMIZE by drag (mini player)"); // JOYBOY(v952)
@@ -8741,26 +8753,21 @@ public class MobilePlaybackActivity extends MobileActivity
             overridePendingTransition(0, 0);
             return;
         }
-        // WHOLE-APP-IN-PIP GUARD: the host reorder below launches Browse into THIS activity's task.
-        // While the task is pinned that puts Browse on top of the PiP window, so the system renders
-        // the entire app - feed, tab bar and all - shrunk into the corner (and removeTop then leaves
-        // Browse alone in the pinned task). The drag settles on an animator, so a minimize started
-        // just before a home gesture still lands here ~150ms after PiP entry. Nothing to minimize
-        // into once we are already a small window: undo the morph and stay put.
+        // WHOLE-APP-IN-PIP GUARD: a minimize started just before a home gesture still lands
+        // here ~150ms after PiP entry. Nothing to minimize into once we are already a small
+        // window: undo the morph and stay put.
         if (mIsInPip || mPipEnterPending) {
             logPip("minimize-blocked reason=in-pip");
             resetMorph();
             return;
         }
 
-        // JOYBOY(v939): مصدر مش يوتيوب (متصفح/واتساب/ملف محلي/رابط مباشر) — التصغير يروح PiP بتاع النظام فوق التطبيق
-        // الأصلي بدل ما يدوّر على مضيف مصغّر بتاع MeeTube ويقع على يوتيوب. يوتيوب بيكمل على الدوك الأصلي بتاعه.
+        // JOYBOY(v1001): التصغير (سحب لتحت/رجوع) بيقفل الفيديو خالص — من غير PiP ومن غير دوك، وبيرجع للمصدر الأصلي
         if (JoyboyPlayerHost.onMinimize(this)) {
-            // JOYBOY(v941): الفيديو بيوقف أول ما يصغّر، ولو النظام رفض الـPiP بيتقفل ويرجع للمصدر بدل ما يقع على دوك يوتيوب.
-            // JOYBOY(v962): no pause — the small PiP keeps playing (as Back does)
-            enterPipMode();
-            if (mPipEnterPending) {
-                return;
+            // JOYBOY(v1001): swipe-down minimize closes the video completely — no PiP on exit
+            try {
+                setPlayWhenReady(false);
+            } catch (RuntimeException ignored) {
             }
             if (mPresenter != null) {
                 mPresenter.onFinish();
@@ -8770,45 +8777,19 @@ public class MobilePlaybackActivity extends MobileActivity
             return;
         }
 
-        if (!prepareMiniPlayerHandoff(false)) {
-            return;
+        // JOYBOY(v1001): YouTube (and any origin reaching here) also closes completely on
+        // swipe-down / Back minimize — no in-app mini-card dock on these exit gestures.
+        // The dock itself is untouched: minimizeForNavigation() still docks on channel
+        // navigation, and deliberate PiP entries still use enterPipMode().
+        try {
+            setPlayWhenReady(false);
+        } catch (RuntimeException ignored) {
         }
-
-        // Return to the screen the video was opened from (Search, Channel, Home...) - the
-        // last-resumed mini host is exactly the Activity visible through this translucent
-        // window during the drag. Falling back to Home only when no host exists (deep link).
-        MiniPlayerBridge.MiniHost host = MiniPlayerBridge.getMiniHost();
-        final Class<?> hostView = host != null ? host.getMiniHostViewClass() : BrowseView.class;
-
-        Runnable showHost = () -> {
-            // prepareMiniHostForHandoff may run this a frame or more later, so re-check: the same
-            // reorder-into-a-pinned-task hazard the guard above covers applies at THIS point too.
-            if (isFinishing() || isDestroyed() || mIsInPip || mPipEnterPending) {
-                return;
-            }
-            getViewManager().startView(hostView);
-            if (host != null) {
-                overridePendingTransition(0, 0);
-            }
-            // NEWTUBE(no-host-minimize): with no host Home is a NEW window over our dark backdrop,
-            // not a reorder of one already visible - keep its quick fade-in instead of a cut.
-            // Only AFTER the reorder launch: a docked player leaves the logical back stack (see
-            // prepareMiniPlayerHandoff). Removing it first would make the host the logical top
-            // and startView's "already top" guard would skip the reorder entirely, stranding the
-            // transparent player window above the host (observed: taps fell through to nothing).
-            getViewManager().removeTop(this);
-        };
-
-        boolean prepared = MiniPlayerBridge.prepareMiniHostForHandoff(showHost);
-        if (BuildConfig.DEBUG) {
-            android.util.Log.d(com.liskovsoft.smartyoutubetv2.common.misc.NetPath.TAG,
-                    "mini minimize host=" + (host != null ? host.getClass().getSimpleName() : "none")
-                            + " prepared=" + prepared);
+        if (mPresenter != null) {
+            mPresenter.onFinish();
         }
-        if (!prepared) {
-            // Cold/deep-link path: no retained host instance exists to pre-render.
-            showHost.run();
-        }
+        finish();
+        overridePendingTransition(0, 0);
     }
 
     /** Channel navigation completed: background this player as a live in-app mini session. */
@@ -10719,7 +10700,7 @@ public class MobilePlaybackActivity extends MobileActivity
                 mVideoArea.setLayoutParams(lp);
             });
             mChatSlide.start();
-            setResizeMode(PlayerData.instance(this).getResizeMode()); // the whole picture beside the chat
+            reapplyJoyFit(); // the whole picture beside the chat
         }
     }
 
@@ -12574,6 +12555,184 @@ public class MobilePlaybackActivity extends MobileActivity
         return mExoPlayerController.getVolume();
     }
 
+    // JOYBOY(v1001 Fix 2): the fit button scales the VIDEO, not the player box. The
+    // content frame stays a FIT box (its aspect is the video's); the two surfaces inside
+    // it are sized per the Joyboy fit mode, centred, exactly like the old Player.applyFit
+    // sized its SurfaceView inside a fixed box. The box never moves.
+
+    // Media3 box mode -> Joyboy fit mode. FIXED_WIDTH fills the width (crop) like fill;
+    // FIXED_HEIGHT is a fit in the usual case (a wider film keeps its sides in v1001).
+    private static int joyFitFromResizeMode(int mode) {
+        if (mode == PlayerConstants.RESIZE_MODE_STRETCH) {
+            return JOY_FIT_STRETCH;
+        }
+        if (mode == PlayerConstants.RESIZE_MODE_FIT_BOTH
+                || mode == PlayerConstants.RESIZE_MODE_FIT_WIDTH) {
+            return JOY_FIT_FILL;
+        }
+        return JOY_FIT_FIT;
+    }
+
+    // Joyboy fit mode -> the media3 box mode PlayerData stores. 100% has no box mode:
+    // it persists as FIT and comes back as fit on a fresh activity.
+    private static int resizeModeForJoyFit(int joyFit) {
+        if (joyFit == JOY_FIT_FILL) {
+            return PlayerConstants.RESIZE_MODE_FIT_BOTH;
+        }
+        if (joyFit == JOY_FIT_STRETCH) {
+            return PlayerConstants.RESIZE_MODE_STRETCH;
+        }
+        return PlayerConstants.RESIZE_MODE_DEFAULT;
+    }
+
+    // The Joyboy fit mode in force, lazily restored from PlayerData on first use.
+    private int joyFitMode() {
+        if (mJoyFitMode < 0) {
+            mJoyFitMode = joyFitFromResizeMode(PlayerData.instance(this).getResizeMode());
+        }
+        return mJoyFitMode;
+    }
+
+    // Video size inside a box, same modes as PlayerLogic.fitSize. :mobile cannot depend
+    // on the app module, so the lines live here too; keep both in sync.
+    private static int[] joyFitSize(int boxW, int boxH, int vw, int vh, int mode) {
+        if (vw <= 0 || vh <= 0 || boxW <= 0 || boxH <= 0) {
+            return new int[] {boxW, boxH};
+        }
+        if (mode == JOY_FIT_STRETCH) {
+            return new int[] {boxW, boxH};
+        }
+        if (mode == JOY_FIT_NATURAL) {
+            return new int[] {vw, vh};
+        }
+        float scale;
+        if (mode == JOY_FIT_FILL) {
+            scale = Math.max(boxW / (float) vw, boxH / (float) vh);
+        } else {
+            scale = Math.min(boxW / (float) vw, boxH / (float) vh);
+        }
+        return new int[] {Math.round(vw * scale), Math.round(vh * scale)};
+    }
+
+    // Size one video surface inside the fixed FIT box, centred. Only re-lays when the
+    // size actually changed, so a fit pass never loops the layout.
+    private static void setJoyFitSurface(@Nullable View surface, ViewGroup frame, int w, int h) {
+        if (surface == null || surface.getParent() != frame) {
+            return;
+        }
+        ViewGroup.LayoutParams lp = surface.getLayoutParams();
+        if (!(lp instanceof FrameLayout.LayoutParams)) {
+            return;
+        }
+        FrameLayout.LayoutParams flp = (FrameLayout.LayoutParams) lp;
+        if (flp.width == w && flp.height == h && flp.gravity == Gravity.CENTER) {
+            return;
+        }
+        flp.width = w;
+        flp.height = h;
+        flp.gravity = Gravity.CENTER;
+        surface.setLayoutParams(flp);
+    }
+
+    // One video surface back to the box: whole picture, subtitles on the box again.
+    private static void resetJoyFitSurface(@Nullable View surface, ViewGroup frame) {
+        if (surface == null || surface.getParent() != frame) {
+            return;
+        }
+        ViewGroup.LayoutParams lp = surface.getLayoutParams();
+        if (!(lp instanceof FrameLayout.LayoutParams)) {
+            return;
+        }
+        FrameLayout.LayoutParams flp = (FrameLayout.LayoutParams) lp;
+        if (flp.width == ViewGroup.LayoutParams.MATCH_PARENT
+                && flp.height == ViewGroup.LayoutParams.MATCH_PARENT) {
+            return;
+        }
+        flp.width = ViewGroup.LayoutParams.MATCH_PARENT;
+        flp.height = ViewGroup.LayoutParams.MATCH_PARENT;
+        flp.gravity = Gravity.CENTER;
+        surface.setLayoutParams(flp);
+    }
+
+    private void resetJoyFitSurfaces(ViewGroup frame) {
+        resetJoyFitSurface(mVideoTexture, frame);
+        resetJoyFitSurface(mHdrSurface, frame);
+        if (mPlayerView != null) {
+            mPlayerView.clearVideoRect();
+        }
+    }
+
+    // Re-lay the video for the mode already in force (rotation, panels, portrait-full):
+    // the stored Joyboy mode survives, PlayerData is NOT re-adopted here.
+    private void reapplyJoyFit() {
+        applyJoyFit();
+        applyControlsInsets();
+    }
+
+    // Size the video surfaces for the current Joyboy fit mode. Fullscreen and portrait-full
+    // only: on the portrait watch page the box follows the video (setInlineAspect), so fit
+    // is a no-op there and the surfaces stay MATCH_PARENT. Shorts never reach here.
+    private void applyJoyFit() {
+        if (mPlayerView == null) {
+            return;
+        }
+        ViewGroup frame = mPlayerView.getContentFrame();
+        if (frame == null) {
+            return;
+        }
+        // The morph and the mini card own the texture while they run: never touch its layout.
+        if (mMorphFraction != 0f || MiniPlayerBridge.isActive()) {
+            return;
+        }
+        // Portrait watch page: fit is a no-op. PiP shows the whole picture in its own window.
+        if ((!isLandscape() && !mPortraitFull) || mIsInPip || mPipEnterPending) {
+            resetJoyFitSurfaces(frame);
+            applyControlsInsets();
+            return;
+        }
+        if (frame.getWidth() == 0 || mPlayerView.getWidth() == 0 || mPlayerView.getHeight() == 0) {
+            frame.post(this::applyJoyFit);
+            return;
+        }
+        int mode = joyFitMode();
+        // Beside the comments/chat the whole picture shows, as the old box code forced FIT there.
+        if (mCommentsSide || mChatSide || (mShorts != null && mShorts.isCommentsOpen())) {
+            mode = JOY_FIT_FIT;
+        }
+        int areaW = mPlayerView.getWidth();
+        int areaH = mPlayerView.getHeight();
+        int vw = 0;
+        int vh = 0;
+        boolean sizeKnown = false;
+        if (mPlayer != null) {
+            VideoSize vs = mPlayer.getVideoSize();
+            if (vs != null && vs.width > 0 && vs.height > 0) {
+                vw = vs.width;
+                vh = vs.height;
+                sizeKnown = true;
+            }
+        }
+        if (!sizeKnown && mVideoAspect > 0f) {
+            vh = 1000;
+            vw = Math.round(1000f * mVideoAspect);
+        }
+        if (vw <= 0 || vh <= 0) {
+            return;
+        }
+        if (!sizeKnown && mode == JOY_FIT_NATURAL) {
+            mode = JOY_FIT_FIT;
+        }
+        int[] wh = joyFitSize(areaW, areaH, vw, vh, mode);
+        int w = wh[0];
+        int h = wh[1];
+        setJoyFitSurface(mVideoTexture, frame, w, h);
+        setJoyFitSurface(mHdrSurface, frame, w, h);
+        float left = (frame.getWidth() - w) / 2f;
+        float top = (frame.getHeight() - h) / 2f;
+        mPlayerView.setVideoRect(left, top, left + w, top + h);
+        applyControlsInsets();
+    }
+
     // JOYBOY(v942): named Joyboy actions (from MtBar / MtTvPlayer) mapped onto MeeTube's own internals. Called via JoyboyPlayerHost.onJoyboyAction; true = handled.
     public boolean handleJoyboyAction(String action) {
         if (action == null) {
@@ -12587,40 +12746,42 @@ public class MobilePlaybackActivity extends MobileActivity
                 } catch (NumberFormatException e) {
                     n = 0;
                 }
-                mJoyFitMode = n == 1 ? androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FILL
-                        : n == 2 ? androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_ZOOM
-                        : n == 3 ? androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FIXED_WIDTH
-                        : androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FIT; // JOYBOY(v969)
-                switch (n) {
-                    case 1:
-                        setResizeMode(androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FILL);
-                        break;
-                    case 2:
-                        setResizeMode(androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_ZOOM);
-                        break;
-                    case 3:
-                        setResizeMode(androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FIXED_WIDTH);
-                        break;
-                    default:
-                        setResizeMode(androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FIT);
-                        break;
+                if (n < 0 || n > 3) {
+                    n = 0;
                 }
+                // JOYBOY(v1001 Fix 2): 0 fit, 1 fill-crop, 2 stretch, 3 natural 1:1. Shorts
+                // keep the box modes (setResizeMode forces ZOOM/FIT there); everything else
+                // sizes the video surface inside the frozen FIT box.
+                if (isShortsMode()) {
+                    setResizeMode(resizeModeForJoyFit(n));
+                    return true;
+                }
+                mJoyFitMode = n;
+                PlayerData.instance(this).setResizeMode(resizeModeForJoyFit(n));
+                applyJoyFit();
+                applyControlsInsets();
                 return true;
             }
             switch (action) {
                 case "fit":
-                    int cur = getResizeMode();
-                    int next;
-                    if (cur == androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FILL) {
-                        next = 2;
-                    } else if (cur == androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_ZOOM) {
-                        next = 3;
-                    } else if (cur == androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FIXED_WIDTH) {
-                        next = 0;
-                    } else {
-                        next = 1;
+                    // JOYBOY(v1001 Fix 2): 4-mode cycle on the Joyboy mode. Shorts cycle the
+                    // box modes they actually use, off the box itself.
+                    if (isShortsMode()) {
+                        int cur = mPlayerView != null ? mPlayerView.getResizeMode()
+                                : androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FIT;
+                        int next;
+                        if (cur == androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FILL) {
+                            next = 2;
+                        } else if (cur == androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_ZOOM) {
+                            next = 3;
+                        } else if (cur == androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FIXED_WIDTH) {
+                            next = 0;
+                        } else {
+                            next = 1;
+                        }
+                        return handleJoyboyAction("fit:" + next);
                     }
-                    return handleJoyboyAction("fit:" + next);
+                    return handleJoyboyAction("fit:" + ((joyFitMode() + 1) % 4));
                 case "pip":
                     enterPipMode();
                     return true;
@@ -12701,22 +12862,21 @@ public class MobilePlaybackActivity extends MobileActivity
                 // like YouTube, with the ambient glow in the bands.
                 mode = androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FIT;
             }
-        } else if (mPortraitFull && !isLandscape() && mJoyFitMode != -1 && !mCommentsSide && !mChatSide
-                && (mShorts == null || !mShorts.isCommentsOpen())) {
-            // JOYBOY(v981): upright fullscreen follows the add-on's size button (default Fit since v981, was Fill)
-            mode = mJoyFitMode;
-        } else if (mPortraitFull && !isLandscape() || mCommentsSide || mChatSide
-                || mShorts != null && mShorts.isCommentsOpen()) {
-            // MEETUBE(fullscreen): the whole picture, upright; ambient mode fills the bands. A pinch's
-            // "fill" (landscape) would crop a 16:9 video to a sliver of its middle here - and to
-            // its middle beside the landscape comments (MEETUBE(fullscreen-actions)), and a short
-            // to a band of its middle in the third above its comments (#27).
-            mode = androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FIT;
+            if (mPlayerView != null) {
+                mPlayerView.setResizeMode(mode);
+            }
+            applyControlsInsets();
+            return;
         }
+        // JOYBOY(v1001 Fix 2): the box stays FIT; the mode now sizes the video surface
+        // inside it (applyJoyFit). A pinch, the zoom dialog and the controller restore all
+        // come through here, so they keep working with the same PlayerData values.
+        mJoyFitMode = joyFitFromResizeMode(mode);
         if (mPlayerView != null) {
-            mPlayerView.setResizeMode(mode);
+            mPlayerView.setResizeMode(androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FIT);
         }
-        applyControlsInsets(); // fill/zoom: the controls span the width (controlsStrip)
+        applyJoyFit();
+        applyControlsInsets();
     }
 
     /**
@@ -12728,7 +12888,10 @@ public class MobilePlaybackActivity extends MobileActivity
 
     @Override
     public int getResizeMode() {
-        return mPlayerView != null ? mPlayerView.getResizeMode() : RESIZE_MODE_DEFAULT;
+        // JOYBOY(v1001 Fix 2): the box is always FIT now; report the Joyboy mode back as
+        // the box mode it used to be, so the pinch, the zoom dialog and controlsStrip keep
+        // reading the mode they expect. 100% has no box mode and reports FIT.
+        return resizeModeForJoyFit(joyFitMode());
     }
 
     @Override

@@ -4,7 +4,7 @@ import com.tttt.subtitler.*
 import java.io.File
 fun main() {
     val pb = PromptBuilder { File(System.getenv("SUBTITLER_ASSETS") ?: "app/src/main/assets", it).readText(Charsets.UTF_8) }
-    val langs = listOf("مصري","شامي","لبناني","خليجي","مغربي","عراقي","سوداني","فصحى"); val styles = listOf("حرفي","شعبي","جرئ","+18")
+    val langs = listOf("مصري","شامي","لبناني","خليجي","مغربي","عراقي","سوداني","فصحى"); val styles = listOf("تلقائي","حرفي","شعبي","جرئ")
     var n = 0; var bad = 0
     val chars = listOf(Chr("منى","female","البطلة"), Chr("علي","male",""))
     val gloss = listOf(Gloss("سينسي","معلم"))

@@ -694,8 +694,8 @@ class PlayerActivity : Activity(), Host {
                     else if (a.startsWith("ai:")) applyAiOptions(listOf(a.substring(3)))
                     else {
                         val p = a.substring(5).split("|")
-                        val lbl = (p.getOrNull(0) ?: "").ifBlank { "حرفي" }; val dg = (p.getOrNull(1) ?: "").ifBlank { "متوسطة" }; val ap = p.getOrNull(2) ?: ""
-                        val sv = if (lbl == "حرفي") "" else lbl
+                        val lbl = (p.getOrNull(0) ?: "").ifBlank { "تلقائي" }; val dg = (p.getOrNull(1) ?: "").ifBlank { "متوسطة" }; val ap = p.getOrNull(2) ?: ""
+                        val sv = if (lbl == "تلقائي") "" else lbl
                         Cfg.put("tone_style", sv); Cfg.put("tone_strength", dg); engine.toneStyle = sv; engine.toneStrength = dg
                         if (ap.isNotEmpty()) runTool("أسلوب $lbl ($dg)", toneInstrOf(lbl, dg), ap == "all")
                     }
@@ -917,15 +917,15 @@ class PlayerActivity : Activity(), Host {
                 rowL.addView(btn((if (l == curL) "✓ " else "") + l, 16f, on, guard { d.dismiss(); dialectPick(l) }), flpm())
             col.addView(rowL, LinearLayout.LayoutParams(ui.dp(640), -2))
             // الأسلوب والشدة بأزرار ◂ ▸
-            val styles = listOf("حرفي", "شعبي", "جرئ", "+18"); val degs = listOf("خفيفة", "متوسطة", "شديدة")
-            fun stI() = styles.indexOf(Cfg.str("tone_style", "").ifBlank { "حرفي" }).coerceAtLeast(0)
+            val styles = listOf("تلقائي", "حرفي", "شعبي", "جرئ"); val degs = listOf("خفيفة", "متوسطة", "شديدة")
+            fun stI() = styles.indexOf(Cfg.str("tone_style", "").ifBlank { "تلقائي" }).coerceAtLeast(0)
             fun dgI() = degs.indexOf(Cfg.str("tone_strength", "متوسطة")).let { if (it < 0) 1 else it }
             stepLine(col, { "الأسلوب: " + styles[stI()] }, {
                 if (on) { val i = (stI() - 1).coerceAtLeast(0); Cfg.put("tone_style", if (i == 0) "" else styles[i]); engine.toneStyle = if (i == 0) "" else styles[i] } else say("✨ $aiWhy")
             }, {
                 if (on) { val i = (stI() + 1).coerceAtMost(styles.size - 1); Cfg.put("tone_style", styles[i]); engine.toneStyle = styles[i] } else say("✨ $aiWhy")
             })
-            stepLine(col, { "الشدة: " + degs[dgI()] + (if (stI() == 0) "  (مع شعبي/جرئ/+18 بس)" else "") }, {
+            stepLine(col, { "الشدة: " + degs[dgI()] + (if (stI() == styles.indexOf("حرفي")) "  (مع شعبي/جرئ/تلقائي بس)" else "") }, {
                 if (on) { val i = (dgI() - 1).coerceAtLeast(0); Cfg.put("tone_strength", degs[i]); engine.toneStrength = degs[i] } else say("✨ $aiWhy")
             }, {
                 if (on) { val i = (dgI() + 1).coerceAtMost(degs.size - 1); Cfg.put("tone_strength", degs[i]); engine.toneStrength = degs[i] } else say("✨ $aiWhy")
@@ -977,7 +977,7 @@ class PlayerActivity : Activity(), Host {
         touchSubs()
     }
     private fun toneInstrOf(st: String, dg: String): String {
-        val what = when (st) { "شعبي" -> "كلام الشارع الشعبي والتعبيرات اليومية بدل الرسمي"; "جرئ" -> "أجرأ وأكتر حرية في الألفاظ من غير تلطيف زيادة"; "+18" -> "صريح بلا تلطيف: الألفاظ والإيحاءات تطابق صراحة الأصل بالظبط"; else -> "" }
+        val what = when (st) { "تلقائي" -> "تلقائي: كل جملة على طبيعتها — الكلام العادي يترجم حرفيًا بأمانة؛ كلام الشارع والسباب والإيحاءات تترجم بصراحتها الشعبية زي ما اتقالت بالظبط من غير تلطيف ولا مبالغة؛ والأمثال والتعبيرات الاصطلاحية تترجم بالمثل أو التعبير المقابل في لغة الهدف مش حرفيًا"; "شعبي" -> "كلام الشارع الشعبي والتعبيرات اليومية بدل الرسمي"; "جرئ" -> "أجرأ وأكتر حرية في الألفاظ من غير تلطيف زيادة"; else -> "" }
         return if (what.isEmpty()) "رجّع كل جملة لترجمة حرفية أمينة قريبة من الأصل من غير مبالغة في العامية أو الجرأة."
         else "أعد صياغة كل جملة بأسلوب «$st»: $what. الشدة: $dg. حافظ على المعنى والجنس."
     }
@@ -1267,7 +1267,7 @@ class PlayerActivity : Activity(), Host {
         val eng = if (p.getOrNull(2) == "gemini") "gemini" else "google"
         if (eng == "gemini") {
             val dia = (p.getOrNull(3) ?: "").let { if (it == "فصحى") "" else it }
-            val sty = (p.getOrNull(4) ?: "").let { if (it == "حرفي") "" else it }
+            val sty = (p.getOrNull(4) ?: "").let { if (it == "تلقائي") "" else it }
             val str = (p.getOrNull(5) ?: "").ifBlank { "متوسطة" }
             try {
                 Cfg.put("conv_dialect", dia); TrWizard.syncSaved("conv_dialect", dia)
@@ -1450,8 +1450,8 @@ class PlayerActivity : Activity(), Host {
                 sfDoneUri = uri?.toString() ?: ""
                 sfDoneLabel = try {
                     if (engName.contains("جيميناي")) {
-                        val d = Cfg.str("conv_dialect", "").ifBlank { "فصحى" }; val sy = Cfg.str("tone_style", "").ifBlank { "حرفي" }; val st = Cfg.str("tone_strength", "متوسطة")
-                        "📄 ملف ترجمة · ✨ جيميناي · " + d + " · " + sy + (if (sy != "حرفي") " · " + st else "")
+                        val d = Cfg.str("conv_dialect", "").ifBlank { "فصحى" }; val sy = Cfg.str("tone_style", "").ifBlank { "تلقائي" }; val st = Cfg.str("tone_strength", "متوسطة")
+                        "📄 ملف ترجمة · ✨ جيميناي · " + d + " · " + sy + (if (sy != "تلقائي") " · " + st else "")
                     } else "📄 ملف ترجمة · 🌐 جوجل (فصحى)"
                 } catch (_: Throwable) { "📄 ملف ترجمة · " + engName }
                 Thread { try { engine.saveNow() } catch (e: Throwable) { LogStore.err("Player:sfSave", e) } }.start()
@@ -2386,6 +2386,12 @@ class PlayerActivity : Activity(), Host {
     // ===== الترجمة بإيد المستخدم: مفيش بداية تلقائية. زرار «ترجمة» أحمر ← بيتبدّل بـ ⏸ إيقاف مؤقت / ▶ إلغاء الإيقاف =====
     private var engineStarted = false
     private var noSub = false                     // دخلت بـ «فرجة من غير ترجمة»: الترجمة مخفية والمحرك واقف لحد ما تدوس «ترجمة»
+    // (v999 ملاحظة 4) ترجمة الاستوديو للفيديو ده: مصدرها + حالة سؤال الاختيار
+    @Volatile private var studioLabel = ""
+    @Volatile private var studioAskOpen = false
+    private var studioAskedVid = ""
+    private var studioApplied = false
+    private var studioAppliedN = 0
     var ccToggleFn: () -> Unit = {}
     private val trUpdaters = ArrayList<() -> Unit>()
     var tbCollapseFn: () -> Unit = {}
@@ -2406,6 +2412,7 @@ class PlayerActivity : Activity(), Host {
     /** (v667) أول ما الفيديو يفتح وملوش ترجمة محفوظة: يدوّر على سوفت صب (جوه الفيديو أو ملف جنبه) ويترجمه لوحده؛ مفيش ← هارد صب (بصري بجيميناي). لغة الأصل مش فارقة حتى لو عربي. إيقاف: Cfg auto_sub=0 */
     private fun autoSub() {
         try {
+            if (studioAskOpen) return
             val vu = uri ?: return
             val key = vu.toString()
             if (remote || autoSubKey == key || noSub || askSaved || Cfg.str("auto_sub", "1") == "0") return
@@ -2518,6 +2525,58 @@ class PlayerActivity : Activity(), Host {
             when (w) { 0 -> { trAsked = true; beginTranslate() }; 1 -> { trAsked = true; trHere = true; beginTranslate() }; else -> trFresh() }
         }.show()
     }
+    // (v999 ملاحظة 4) الفيديو ليه أكتر من مصدر ترجمة: اسأل «عايز ترجمة انهي واحدة؟» وافتكر الاختيار
+    // لكل فيديو (sub_choice:<vid>). بيتسأل مرة واحدة بس عند الفتح؛ «لاحقًا» بتسيب اللي شغّال زي ما هو.
+    // اختيار الاستوديو بيخبّي ترجمة المحرك الأول (stash) وبعدين بينسخ الاستوديو تحت مفتاح الفيديو.
+    private fun studioAsk(vidNow: String) {
+        val appCtx = applicationContext
+        val doc = try { StudioLink.findDoc(appCtx, vidNow, uri?.toString(), url, intent.getStringExtra("ref") ?: intent.getStringExtra("page") ?: "") } catch (_: Throwable) { null }
+        val engN = try { engine.subs.size } catch (_: Throwable) { 0 }
+        val stN = if (doc != null) try { StudioLink.studioSubs(appCtx, doc).size } catch (_: Throwable) { 0 } else 0
+        val side = try { sfSidecar() } catch (_: Throwable) { null }
+        if (doc == null || stN <= 0) { studioAskOpen = false; return }
+        val labels = ArrayList<String>()
+        val acts = ArrayList<() -> Unit>()
+        if (engN > 0) {
+            labels.add("🔤 ترجمة الفيديو (" + engN + " جملة)")
+            acts.add {
+                studioAskOpen = false
+                studioLabel = ""
+                try { StudioLink.remember(appCtx, vidNow, StudioLink.CHOICE_ENGINE) } catch (_: Throwable) {}
+                say("🔤 ترجمة الفيديو شغّالة")
+            }
+        }
+        if (side != null) {
+            labels.add("📄 ملف الترجمة جنب الفيديو («" + side.name + "»)")
+            acts.add {
+                studioAskOpen = false
+                try { StudioLink.remember(appCtx, vidNow, StudioLink.CHOICE_SIDECAR) } catch (_: Throwable) {}
+                sfRun("soft", autoEng(), null, -2, true)
+            }
+        }
+        labels.add(StudioLink.label(appCtx, doc) + " (" + stN + " جملة)")
+        acts.add {
+            studioAskOpen = false
+            Thread {
+                try {
+                    if (!BgJobs.isActive(vidNow)) {
+                        StudioLink.stashEngine(appCtx, vidNow)
+                        StudioLink.copyStudioToVid(appCtx, vidNow, doc)
+                    }
+                } catch (_: Throwable) {}
+                try { realEngine.load() } catch (_: Throwable) {}
+                runOnUiThread {
+                    if (isFinishing || isDestroyed) return@runOnUiThread
+                    studioLabel = StudioLink.label(appCtx, doc)
+                    touchSubs()
+                    refreshList()
+                    say("🎙 ترجمة الاستوديو شغّالة (" + stN + " جملة)")
+                }
+            }.apply { isDaemon = true }.start()
+        }
+        if (labels.size < 2) { studioAskOpen = false; return }
+        GAlert(this).setTitle("عايز ترجمة انهي واحدة؟").setItems(labels.toTypedArray()) { _, w -> if (w in acts.indices) acts[w]() }.setNegativeButton("لاحقًا") { _, _ -> studioAskOpen = false }.show()
+    }
     private fun trFresh() {
         if (!::engine.isInitialized) return
         resumePending = false; applyCard()
@@ -2564,6 +2623,14 @@ class PlayerActivity : Activity(), Host {
             else if (Cfg.str("trstart", "1") != "0") { try { engine.translateFromStart(); log("▶ الترجمة من أول الفيديو (أول جزء ناقص)") } catch (e: Throwable) { LogStore.err("Player:translateFromStart", e); say("⚠ تعذّر بدء الترجمة من أول الفيديو — جرّب ▶ ترجمة تاني") } }   // (v287)
             else if (posNow > 2000L) { try { engine.translateFrom(posNow / 1000.0); log("▶ الترجمة من " + fmtMs(posNow)) } catch (e: Throwable) { LogStore.err("Player:translateFrom", e); say("⚠ تعذّر بدء الترجمة من مكان التشغيل — جرّب ▶ ترجمة تاني") } }   // (v287)
         }
+        // (v999 ملاحظة 4) المحرك بدأ يترجم فعلًا: اللي في الملف من هنا ورايح خليط مش استوديو صافي،
+        // فالاختيار المتذكّر بيبقى «محرك» والعلامة بتتمسح — وإلا الفتحة الجاية كانت هتنسخ
+        // الاستوديو فوق شغل المحرك الجديد. (الرجوع المبكر فوق: مترجم 100% أو سؤال «كمّل؟» مبيغيّرش حاجة.)
+        try {
+            if (StudioLink.choice(applicationContext, vid) == StudioLink.CHOICE_STUDIO) StudioLink.remember(applicationContext, vid, StudioLink.CHOICE_ENGINE)
+            StudioLink.clearStudioMark(applicationContext, vid)
+            studioLabel = ""
+        } catch (_: Throwable) {}
         if (!engineStarted) { engineStarted = true; engine.userPaused = false; startEngine() }
         else {
             // (v399) استئناف: لو الوضع المحفوظ اتغيّر من ⚙/الإعدادات بعد الإيقاف بنطبّقه على المحرك قبل ما نكمّل (كان بيكمّل بالوضع القديم)
@@ -2890,18 +2957,38 @@ class PlayerActivity : Activity(), Host {
     private fun shChipLp() = ViewGroup.MarginLayoutParams(-2, ui.dp(36)).apply { setMargins(ui.dp(3), ui.dp(2), ui.dp(3), ui.dp(2)) }
     private fun shFlow() = FlowRow(this).apply { layoutDirection = View.LAYOUT_DIRECTION_RTL }
     /** بيعرض الشيت فوق/تحت الزرار حسب المساحة (مكان واحد لكل القوايم). onDismiss بيتنادى بالنافذة عشان صاحبها يفضّي مرجعه */
-    private fun showSheet(anchor: View, col: LinearLayout, maxDp: Int, tag: String, onDismiss: (android.widget.PopupWindow) -> Unit): android.widget.PopupWindow {
+    // (v999 ملاحظة 5) footer = صف ثابت برّه السكرول (زي صف «طبّق» في اللهجة والأسلوب) — بيتقاس وبيتخصم من الارتفاع المتاح؛ null = زي الأول بالظبط
+    private fun showSheet(anchor: View, col: LinearLayout, maxDp: Int, tag: String, onDismiss: (android.widget.PopupWindow) -> Unit, footer: View? = null): android.widget.PopupWindow {
         col.orientation = LinearLayout.VERTICAL; col.layoutDirection = View.LAYOUT_DIRECTION_RTL
-        col.setPadding(ui.dp(6), ui.dp(6), ui.dp(6), ui.dp(6)); col.background = glassPanelBg()
-        val scroll = android.widget.ScrollView(this).apply { isVerticalScrollBarEnabled = false; addView(col) }
+        col.setPadding(ui.dp(6), ui.dp(6), ui.dp(6), ui.dp(6))
+        // (v999 ملاحظة 5) مع فوتر: الخلفية على الحاوية الخارجية بس (لو فضلت على العمود كمان هيبقى فيه خط فاصل + استدارة في نص النافذة)
+        if (footer == null) col.background = glassPanelBg()
+        val scroll = android.widget.ScrollView(this).apply { isVerticalScrollBarEnabled = true; addView(col) }
         val popW = minOf(resources.displayMetrics.widthPixels - ui.dp(24), ui.dp(maxDp))
         col.measure(View.MeasureSpec.makeMeasureSpec(popW, View.MeasureSpec.EXACTLY), View.MeasureSpec.UNSPECIFIED)
+        val footH = if (footer == null) {
+            0
+        } else {
+            footer.measure(View.MeasureSpec.makeMeasureSpec(popW, View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED))
+            footer.measuredHeight
+        }
         val loc = IntArray(2); anchor.getLocationOnScreen(loc)
         val up = loc[1] > resources.displayMetrics.heightPixels / 2
         val avail = (if (up) loc[1] - ui.dp(12) else resources.displayMetrics.heightPixels - loc[1] - anchor.height - ui.dp(12)).coerceAtLeast(ui.dp(120))
-        val popH = minOf(col.measuredHeight, avail)
-        val pw = TvFocus.pop(this@PlayerActivity, scroll, popW, popH, true)
-        Motion.popIn(scroll, up)
+        val popH = minOf(col.measuredHeight + footH, avail)
+        val content: View = if (footer == null) {
+            scroll
+        } else {
+            LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                layoutDirection = View.LAYOUT_DIRECTION_RTL
+                background = glassPanelBg()
+                addView(scroll, LinearLayout.LayoutParams(-1, (popH - footH).coerceAtLeast(ui.dp(40))))
+                addView(footer, LinearLayout.LayoutParams(-1, -2))
+            }
+        }
+        val pw = TvFocus.pop(this@PlayerActivity, content, popW, popH, true)
+        Motion.popIn(content, up)
         pw.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(0))
         pw.isOutsideTouchable = true
         pw.setOnDismissListener { onDismiss(pw); showChrome() }
@@ -5796,6 +5883,32 @@ class PlayerActivity : Activity(), Host {
         Thread {
             // (كانت بتتعمل على الـ UI وبتجمّد الشاشة): إيقاف ترجمة الخلفية + قراءة وتحليل ملف الترجمة المحفوظة
             if (wasBg) try { BgJobs.stopAndWait(vidNow, 2500) } catch (e: Throwable) { LogStore.err("Player:stopBg", e) }
+            // (v999 ملاحظة 4) ترجمة الاستوديو قبل أول تحميل: لو دي الترجمة الوحيدة أو المستخدم اختارها
+            // قبل كده، انسخها تحت مفتاح الفيديو الأول فـ load() يلقطها وتعرض لوحدها. لو فيه مصادر
+            // تانية (ترجمة محرك / ملف جنب الفيديو) ومفيش اختيار متذكّر، اسأل بعد التحميل من خيط الواجهة.
+            val ref0 = intent.getStringExtra("ref") ?: intent.getStringExtra("page") ?: ""
+            val studioDoc = try { StudioLink.findDoc(applicationContext, vidNow, uri?.toString(), url, ref0) } catch (_: Throwable) { null }
+            val studioSubs0 = if (studioDoc != null) try { StudioLink.studioSubs(applicationContext, studioDoc) } catch (_: Throwable) { emptyList() } else emptyList()
+            val engineSavedN = try { StudioLink.loadSaved(applicationContext, vidNow)?.subs?.size ?: 0 } catch (_: Throwable) { 0 }
+            val markedStudio = studioDoc != null && StudioLink.studioFor(applicationContext, vidNow) == studioDoc.id
+            val sideFile0 = try { sfSidecar() } catch (_: Throwable) { null }
+            val remembered0 = try { StudioLink.choice(applicationContext, vidNow) } catch (_: Throwable) { "" }
+            if (studioDoc != null && studioSubs0.isNotEmpty() && !BgJobs.isActive(vidNow)) {
+                if (remembered0 == StudioLink.CHOICE_STUDIO || (engineSavedN == 0 && sideFile0 == null)) {
+                    if (engineSavedN > 0) StudioLink.stashEngine(applicationContext, vidNow)
+                    studioApplied = try { StudioLink.copyStudioToVid(applicationContext, vidNow, studioDoc) } catch (_: Throwable) { false }
+                    if (studioApplied) {
+                        studioAppliedN = studioSubs0.size
+                        studioLabel = StudioLink.label(applicationContext, studioDoc)
+                    }
+                } else if (remembered0.isEmpty() && ((engineSavedN > 0 && !markedStudio) || sideFile0 != null)) {
+                    studioAskOpen = true
+                    studioAskedVid = vidNow
+                }
+            }
+            if (markedStudio && engineSavedN > 0 && studioLabel.isEmpty()) {
+                studioLabel = if (studioDoc != null) StudioLink.label(applicationContext, studioDoc) else "🎙 Studio"
+            }
             val savedPos0 = try { eng.load() } catch (e: Throwable) { LogStore.err("Player:load", e); 0.0 }
             // (v125) آخر مكان وقوف فعلي (بيتحفظ كل 3 ث، حتى وإنت في PiP) أحدث من اللي في ملف الترجمة
             val lastPosSec = try { val s = Cfg.p.getString("lastpos", "") ?: ""; val i = s.indexOf('\t'); if (i > 0 && s.substring(0, i) == vidNow) (s.substring(i + 1).toLongOrNull() ?: 0L) / 1000.0 else 0.0 } catch (_: Throwable) { 0.0 }
@@ -5821,6 +5934,11 @@ class PlayerActivity : Activity(), Host {
                 refreshList()
                 LogStore.add("🎬 فتح فيديو $vidNow · ${LogStore.heapLine()}")
                 maybePrompt(wasBg)
+                if (studioAskOpen && studioAskedVid == vidNow) {
+                    if (pendingBegin) studioAskOpen = false else studioAsk(vidNow)
+                } else if (studioApplied) {
+                    say("🎙 ترجمة الاستوديو شغّالة (" + studioAppliedN + " جملة)")
+                }
                 if (pendingBegin) { pendingBegin = false; beginTranslate() } else { autoSub(); castSubAuto() }
             }
         }.apply { isDaemon = true }.start()
@@ -7001,8 +7119,8 @@ class PlayerActivity : Activity(), Host {
         col.addView(rowL, LinearLayout.LayoutParams(-1, -2))
         // أسلوب الترجمة وشدته: بيتحفظوا وبيدخلوا في برومبت كل باتش جديد وكل تحويل لهجة، ومعاهم زرار تطبيق على اللي اتترجم فعلًا
         // (v134) الأسلوب والشدة بقوا سلايدرين بدل أزرار — بتحرّك واللي بتقف عليه بيتحفظ
-        val toneStyles = listOf("حرفي", "شعبي", "جرئ", "+18"); val toneDegrees = listOf("خفيفة", "متوسطة", "شديدة")
-        var stI = toneStyles.indexOf(Cfg.str("tone_style", "").ifBlank { "حرفي" }).coerceAtLeast(0)
+        val toneStyles = listOf("تلقائي", "حرفي", "شعبي", "جرئ"); val toneDegrees = listOf("خفيفة", "متوسطة", "شديدة")
+        var stI = toneStyles.indexOf(Cfg.str("tone_style", "").ifBlank { "تلقائي" }).coerceAtLeast(0)
         var dgI = toneDegrees.indexOf(Cfg.str("tone_strength", "متوسطة")).let { if (it < 0) 1 else it }
         fun curStyle() = toneStyles[stI]
         fun curDeg() = toneDegrees[dgI]
@@ -7015,9 +7133,9 @@ class PlayerActivity : Activity(), Host {
         }
         val styleSb = mkSb(toneStyles.size - 1, stI); val degSb = mkSb(toneDegrees.size - 1, dgI)
         fun paintTone() {
-            styleLbl.text = "الأسلوب:  " + curStyle() + "   (حرفي ◂ شعبي ◂ جرئ ◂ +18)"
-            degLbl.text = "الشدة:  " + curDeg() + if (stI == 0) "   (بتشتغل مع شعبي / جرئ / +18 بس)" else ""
-            degSb.alpha = if (stI == 0) 0.4f else 1f
+            styleLbl.text = "الأسلوب:  " + curStyle() + "   (تلقائي ◂ حرفي ◂ شعبي ◂ جرئ)"
+            degLbl.text = "الشدة:  " + curDeg() + if (stI == toneStyles.indexOf("حرفي")) "   (بتشتغل مع شعبي / جرئ / تلقائي بس)" else ""
+            degSb.alpha = if (stI == toneStyles.indexOf("حرفي")) 0.4f else 1f
         }
         styleSb.setOnSeekBarChangeListener(object : android.widget.SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(sb: android.widget.SeekBar?, p: Int, fromUser: Boolean) {
@@ -7026,7 +7144,7 @@ class PlayerActivity : Activity(), Host {
             }
             override fun onStartTrackingTouch(sb: android.widget.SeekBar?) {}
             override fun onStopTrackingTouch(sb: android.widget.SeekBar?) {
-                say(if (stI == 0) "الأسلوب حرفي — الباتشات الجاية من غير تعديل أسلوب" else "الأسلوب ${curStyle()} (${curDeg()}) — الباتشات الجاية هتتترجم بيه. لو عايزه على اللي اتترجم دوس «طبّق»")
+                say(if (stI == toneStyles.indexOf("حرفي")) "الأسلوب حرفي — الباتشات الجاية من غير تعديل أسلوب" else "الأسلوب ${curStyle()} (${curDeg()}) — الباتشات الجاية هتتترجم بيه. لو عايزه على اللي اتترجم دوس «طبّق»")
             }
         })
         degSb.setOnSeekBarChangeListener(object : android.widget.SeekBar.OnSeekBarChangeListener {
@@ -7036,17 +7154,18 @@ class PlayerActivity : Activity(), Host {
             }
             override fun onStartTrackingTouch(sb: android.widget.SeekBar?) {}
             override fun onStopTrackingTouch(sb: android.widget.SeekBar?) {
-                say(if (stI == 0) "الشدة بتشتغل مع شعبي / جرئ / +18 بس" else "الشدة ${curDeg()} — الباتشات الجاية هتتترجم بيها")
+                say(if (stI == toneStyles.indexOf("حرفي")) "الشدة بتشتغل مع شعبي / جرئ / تلقائي بس" else "الشدة ${curDeg()} — الباتشات الجاية هتتترجم بيها")
             }
         })
         col.addView(styleLbl, LinearLayout.LayoutParams(-1, -2)); col.addView(styleSb, LinearLayout.LayoutParams(-1, -2))
         col.addView(degLbl, LinearLayout.LayoutParams(-1, -2)); col.addView(degSb, LinearLayout.LayoutParams(-1, -2))
         paintTone()
         fun toneInstr(): String = toneInstrOf(curStyle(), curDeg())
-        col.addView(shDuo(
+        // (v999 ملاحظة 5) صف «طبّق» كان آخر عناصر السكرول فبيتقص في الأفقي — بقى فوتر ثابت برّه السكرول
+        val applyRow = shDuo(
             shBtn("🔁 طبّق من هنا للآخر", SH_BLUE) { langPop?.dismiss(); runTool("أسلوب " + curStyle() + " (" + curDeg() + ")", toneInstr(), false) },
-            shBtn("🔁 طبّق على الفيديو كله", SH_GRAY) { langPop?.dismiss(); runTool("أسلوب " + curStyle() + " (" + curDeg() + ")", toneInstr(), true) }))
-        langPop = showSheet(anchor, col, 430, "langPopup") { pw -> if (langPop === pw) langPop = null }
+            shBtn("🔁 طبّق على الفيديو كله", SH_GRAY) { langPop?.dismiss(); runTool("أسلوب " + curStyle() + " (" + curDeg() + ")", toneInstr(), true) })
+        langPop = showSheet(anchor, col, 430, "langPopup", footer = applyRow) { pw -> if (langPop === pw) langPop = null }
     }
 
     /** كبسولة جانبية: باتش ما اترجمش / رجع ناقص + إعادة على المفاتيح الاحتياطية. مخفية لحد ما يحصل فشل */
@@ -7103,7 +7222,8 @@ class PlayerActivity : Activity(), Host {
         val col = LinearLayout(this)   // (v741) نفس شكل الشيت الموحّد
         fun close() { verPop?.dismiss() }
         val curD = Cfg.str("conv_dialect", "").ifBlank { "فصحى" }
-        col.addView(shHead("🗂 الترجمات", "الحالية: $curD · دوس على نسخة تبدّل ليها"))
+        val srcNote = if (studioLabel.isNotBlank()) " · " + studioLabel else ""
+        col.addView(shHead("🗂 الترجمات", "الحالية: $curD$srcNote · دوس على نسخة تبدّل ليها"))
         val vs = engine.versions.toList()
         if (vs.isEmpty()) col.addView(shNote("مفيش نسخ لسه — أول ما تغيّر اللهجة بتتحفظ النسخة القديمة هنا"))
         vs.forEachIndexed { i, v ->

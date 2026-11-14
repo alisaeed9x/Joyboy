@@ -122,9 +122,7 @@ class BottomNav(act: Activity, private val ui: Ui, private val th: Theme, privat
         val secs = ArrayList<MoreItem>()
         for (id in listOf(0, 4, 2, 1, 3, 5)) secs.add(MoreItem(DEFS[id].first, if (id == 0) "الفيديوهات" else DEFS[id].second, id == active) { onPick(id) })   // فيديوهات · يوتيوب · متصفح · موسيقى · مخزن · مهام
         val trl = ArrayList<MoreItem>()
-        if (!tvDev) trl.add(MoreItem("📚", "مكتبة الترجمات", false) { try { TrLibUi(act, ui, th).show() } catch (e: Throwable) { LogStore.err("Nav:trlib", e) } })   // (v990)
-        if (!tvDev) trl.add(MoreItem("🎓", "تفريغ المحاضرات", false) { try { LectureUi(act, ui, th).show() } catch (e: Throwable) { LogStore.err("Nav:lecture", e) } })   // (v991)
-        if (!tvDev) trl.add(MoreItem("📞", "المكالمات المسجلة", false) { try { LectureUi(act, ui, th).showCalls() } catch (e: Throwable) { LogStore.err("Nav:calls", e) } })   // (v994)
+        // (v999) بلاطات «الترجمة» المكررة اتشالت من هنا — كلها جوه «الاستوديو» (مكتبة الترجمات · تفريغ المحاضرات · المكالمات المسجلة)، والمجموعة بقت بلاطة واحدة
         // (v995) «الاستوديو» — نفس مجموعة «الترجمة»، ونفس بوابة !tvDev ونفس نمط try/catch
         if (!tvDev) trl.add(MoreItem("🎙", "الاستوديو", false) { try { StudioUi(act, ui, th).show() } catch (e: Throwable) { LogStore.err("Nav:studio", e) } })
         val store = listOf(

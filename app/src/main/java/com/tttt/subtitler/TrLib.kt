@@ -28,8 +28,11 @@ object TrLib {
     }
 
     val DIALECTS = listOf("فصحى", "مصري", "شامي", "لبناني", "خليجي", "مغربي", "عراقي", "سوداني")
-    val STYLES = listOf("حرفي", "شعبي", "جرئ", "+18")
+    val STYLES = listOf("تلقائي", "حرفي", "شعبي", "جرئ")
     val STRENGTHS = listOf("خفيفة", "متوسطة", "شديدة")
+
+    /** (v999) عرض أسلوب ترجمة قديمة محفوظ: "+18" اتشال من القوايم بس القيمة المحفوظة بتتعرض «+18 (قديم)» من غير ما تتغيّر */
+    fun displayStyle(s: String): String = if (s == "+18") "+18 (قديم)" else s
 
     private val lock = Any()
     private var cache: HashMap<String, Meta>? = null
@@ -93,7 +96,7 @@ object TrLib {
                 val x = m.getOrPut(id) { Meta(id) }
                 if (title.isNotBlank()) x.title = title
                 x.dialect = dialect.ifBlank { "فصحى" }
-                x.style = style.ifBlank { "حرفي" }
+                x.style = style.ifBlank { "تلقائي" }
                 x.strength = strength.ifBlank { "متوسطة" }
                 x.model = model; x.engine = engine; x.ts = System.currentTimeMillis()
                 flush(c)

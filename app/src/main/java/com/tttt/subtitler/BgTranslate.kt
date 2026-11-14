@@ -332,7 +332,7 @@ class BgService : Service() {
         engine.convDialect = Cfg.str("conv_dialect", "")
         // (v990) اللهجة/الأسلوب/الشدة: الإعدادات المتقدمة للترجمة دي لو موجودة، وإلا العامة (زي المشغّل)
         ovm?.ovDialect?.takeIf { it.isNotBlank() }?.let { engine.convDialect = if (it == "فصحى") "" else it }
-        engine.toneStyle = ovm?.ovStyle?.takeIf { it.isNotBlank() }?.let { if (it == "حرفي") "" else it } ?: Cfg.str("tone_style", "")
+        engine.toneStyle = ovm?.ovStyle?.takeIf { it.isNotBlank() }?.let { if (it == "تلقائي") "" else it } ?: Cfg.str("tone_style", "")
         engine.toneStrength = ovm?.ovStrength?.takeIf { it.isNotBlank() } ?: Cfg.str("tone_strength", "متوسطة")
         try { TrLib.stamp(app, job.vid, job.title, engine.convDialect.ifBlank { conf.lang }, engine.toneStyle, engine.toneStrength, conf.model, TrLib.engineLabel(conf)) } catch (_: Throwable) {}
         job.engine = engine

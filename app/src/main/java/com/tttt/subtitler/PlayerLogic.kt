@@ -3,15 +3,16 @@ package com.tttt.subtitler
 /** منطق نقي للمشغّل (متختبر في PlayerLogicTest) */
 object PlayerLogic {
     val speeds = listOf(0.5f, 0.75f, 1f, 1.25f, 1.5f, 2f)
-    val fitNames = listOf("احتواء", "ملء (قص)", "تمديد")
+    val fitNames = listOf("احتواء", "ملء (قص)", "تمديد", "100%")
 
     fun nextSpeed(cur: Float): Float { val i = speeds.indexOfFirst { Math.abs(it - cur) < 0.01f }; return speeds[(i + 1) % speeds.size] }
     fun speedLabel(s: Float) = (if (s == s.toInt().toFloat()) s.toInt().toString() else s.toString()) + "x"
 
-    /** مقاس الفيديو جوه الحاوية: 0 = احتواء، 1 = ملء بالقص، 2 = تمديد */
+    /** مقاس الفيديو جوه الحاوية: 0 = احتواء، 1 = ملء بالقص، 2 = تمديد، 3 = طبيعي 1:1 */
     fun fitSize(boxW: Int, boxH: Int, vw: Int, vh: Int, mode: Int): Pair<Int, Int> {
         if (vw <= 0 || vh <= 0 || boxW <= 0 || boxH <= 0) return boxW to boxH
         if (mode == 2) return boxW to boxH
+        if (mode == 3) return vw to vh
         val sc = if (mode == 1) maxOf(boxW.toFloat() / vw, boxH.toFloat() / vh) else minOf(boxW.toFloat() / vw, boxH.toFloat() / vh)
         return Math.round(vw * sc) to Math.round(vh * sc)
     }

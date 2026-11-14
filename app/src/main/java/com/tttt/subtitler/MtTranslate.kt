@@ -50,6 +50,11 @@ object MtTranslate : JoyboyPlayerHost.Provider {
     @Volatile private var offsetMs = 0L
     private var sv: SubtitleView? = null
     @Volatile private var sideSubs: List<Sub>? = null
+    // (v999 ملاحظة 4) ترجمة الاستوديو المعروضة من غير محرك (في sideSubs) + مصدرها + سؤال الاختيار
+    @Volatile private var studioShownFor = ""
+    private var studioLabel = ""
+    private var savedSideFor = ""
+    @Volatile private var studioAskOpen = false
     private var engKey = ""
     @Volatile private var exitSkip = false
     private var engBg: BgJob? = null
@@ -101,7 +106,7 @@ object MtTranslate : JoyboyPlayerHost.Provider {
             // (v963) زرار «🌐 ترجم» العلوي اتشال — الترجمة من شريحة الترجمة (▶ ترجمة) تحت
             try { listenedOn?.removeListener(trans) } catch (_: Throwable) {}
             player.addListener(trans); listenedOn = player
-            refreshBtn(); maybeAuto()
+            refreshBtn(); maybeAuto(); maybeShowStudio()
             MtMedia.attach(activity, player, options, info)
             try { MtEnhance.attach(activity, player, info) } catch (_: Throwable) {}   // (v988) أوضاع تحسين الصورة (✨)
             try { MtSmooth.attach(activity, player, info) } catch (_: Throwable) {}   // (v988) مطابقة معدل الشاشة + فحص الـdecoder
@@ -347,12 +352,116 @@ object MtTranslate : JoyboyPlayerHost.Provider {
         if (curId() == want && !on) { autoFor = null; start() }
     }
 
+    // (v999 ملاحظة 4) ترجمة الاستوديو في مشغّل MeeTube: هنا مفيش Engine شغّال من غير ما المستخدم
+    // يدوس «ترجم»، فالعرض بيتم من غير محرك — الجمل بتتحط في sideSubs والـtick بيعرضها زي السبتايتل
+    // الجانبي (نفس مسار applySide). النسخ تحت مفتاح الفيديو كمان بيتم هنا عشان لما المستخدم يدوس
+    // «ترجم» بعدين، المحرك يكمّل من ترجمة الاستوديو بدل ما يبدأ من الصفر.
+    // مصادر تانية موجودة (ترجمة محرك محفوظة) ومفيش اختيار متذكّر ← سؤال «عايز ترجمة انهي واحدة؟».
+    // الملف الجانبي (.srt جنب الفيديو) مش في السؤال هنا — لسه يدوي من «📄 سبتايتل جانبي».
+    private fun maybeShowStudio() {
+        val a = act ?: return
+        val id = curId() ?: return
+        if (on || studioAskOpen) return
+        if (studioShownFor == id) return
+        val appCtx = a.applicationContext
+        Thread {
+            try {
+                if (on) return@Thread
+                val lu = if (id.startsWith("L:")) id.substring(2) else null
+                val vid = if (lu != null) idOverride[id] ?: localVid(a, lu) else "yt:$id"
+                if (studioShownFor == id) return@Thread
+                val ref = try { srcHeaders()["Referer"] ?: "" } catch (_: Throwable) { "" }
+                val doc = StudioLink.findDoc(appCtx, vid, lu, null, ref)
+                val stSubs = if (doc != null) StudioLink.studioSubs(appCtx, doc) else emptyList()
+                if (doc == null || stSubs.isEmpty()) return@Thread
+                val engSaved = StudioLink.loadSaved(appCtx, vid)?.subs ?: emptyList()
+                val marked = StudioLink.studioFor(appCtx, vid) == doc.id
+                val remembered = StudioLink.choice(appCtx, vid)
+                if (remembered == StudioLink.CHOICE_SIDECAR) return@Thread
+                if (remembered == StudioLink.CHOICE_ENGINE && engSaved.isNotEmpty() && !marked) return@Thread
+                if (engSaved.isNotEmpty() && !marked && remembered.isEmpty()) {
+                    ui.post { studioAskMt(a, vid, doc, stSubs.size, engSaved.size) }
+                    return@Thread
+                }
+                if (!marked && !BgJobs.isActive(vid)) {
+                    if (engSaved.isNotEmpty()) StudioLink.stashEngine(appCtx, vid)
+                    StudioLink.copyStudioToVid(appCtx, vid, doc)
+                }
+                val subs = if (marked) engSaved else stSubs
+                if (subs.isEmpty()) return@Thread
+                ui.post {
+                    if (act !== a || curId() != id || on) return@post
+                    studioShownFor = id
+                    savedSideFor = vid
+                    studioLabel = StudioLink.label(appCtx, doc)
+                    sideSubs = subs
+                    cached = null
+                    Notice.show(a, "🎙 ترجمة الاستوديو شغّالة (" + subs.size + " جملة)", 2600L)
+                }
+            } catch (t: Throwable) {
+                LogStore.err("MtTranslate:studio", t)
+            }
+        }.apply { isDaemon = true }.start()
+    }
+
+    // (v999 ملاحظة 4) سؤال الاختيار في MeeTube: ترجمة الفيديو (المحرك) ولا ترجمة الاستوديو.
+    // اختيار الاستوديو بيخبّي ترجمة المحرك الأول (stash) وبينسخ الاستوديو تحت مفتاح الفيديو.
+    // الحارس askId: لو الفيديو اتغيّر والشيت لسه مفتوح، الدوسة مبتطبّقش حاجة.
+    private fun studioAskMt(a: Activity, vid: String, doc: Lecture.Doc, stN: Int, engN: Int) {
+        if (act !== a || on || studioAskOpen) return
+        studioAskOpen = true
+        val askId = curId()
+        val appCtx = a.applicationContext
+        val labels = ArrayList<String>()
+        val acts = ArrayList<() -> Unit>()
+        labels.add("🔤 ترجمة الفيديو (" + engN + " جملة)")
+        acts.add {
+            if (curId() != askId) { studioAskOpen = false; return@add }
+            StudioLink.remember(appCtx, vid, StudioLink.CHOICE_ENGINE)
+            studioAskOpen = false
+            studioShownFor = curId() ?: ""
+            savedSideFor = vid
+            sideSubs = StudioLink.loadSaved(appCtx, vid)?.subs ?: emptyList()
+            cached = null
+            Notice.show(a, "🔤 ترجمة الفيديو شغّالة", 2000L)
+        }
+        labels.add(StudioLink.label(appCtx, doc) + " (" + stN + " جملة)")
+        acts.add {
+            if (curId() != askId) { studioAskOpen = false; return@add }
+            StudioLink.remember(appCtx, vid, StudioLink.CHOICE_STUDIO)
+            studioAskOpen = false
+            Thread {
+                try {
+                    if (!BgJobs.isActive(vid)) {
+                        StudioLink.stashEngine(appCtx, vid)
+                        StudioLink.copyStudioToVid(appCtx, vid, doc)
+                    }
+                } catch (_: Throwable) {}
+                val subs = StudioLink.studioSubs(appCtx, doc)
+                ui.post {
+                    if (act !== a || curId() != askId || on) return@post
+                    studioShownFor = curId() ?: ""
+                    savedSideFor = vid
+                    studioLabel = StudioLink.label(appCtx, doc)
+                    sideSubs = subs
+                    cached = null
+                    Notice.show(a, "🎙 ترجمة الاستوديو شغّالة (" + stN + " جملة)", 2600L)
+                }
+            }.apply { isDaemon = true }.start()
+        }
+        GAlert(a).setTitle("عايز ترجمة انهي واحدة؟").setItems(labels.toTypedArray()) { _, w -> if (w in acts.indices) acts[w]() }.setNegativeButton("لاحقًا") { _, _ -> studioAskOpen = false }.show()
+    }
+
     private fun onVideoChanged() {
         val id = curId()
         sideSubs = null; nativeCcOn = false
+        savedSideFor = ""
+        studioLabel = ""
+        studioShownFor = ""
         try { dubPlay?.stop() } catch (_: Throwable) {}
         if (autoFor != null && id == autoFor) { stopEngine(); sv?.show(null); maybeAuto(); return }
         if (id != engVid) { val was = on; stopEngine(); sv?.show(null); if (was && id != null) start() else refreshBtn() }
+        maybeShowStudio()
     }
 
     fun toggle() {
@@ -557,6 +666,13 @@ object MtTranslate : JoyboyPlayerHost.Provider {
 
     private fun stopEngine() {
         on = false; token++
+        // (v999 ملاحظة 4) الترجمة المحفوظة المعروضة من غير محرك بتتشال مع إيقاف المحرك —
+        // وإلا كانت هتفضل ظاهرة بعد ما المستخدم يقفل الترجمة. السبتايتل الجانبي اليدوي (sideSubMenu)
+        // مش هنا: savedSideFor فاضي وقتها فمبيتأثرش.
+        if (savedSideFor.isNotEmpty()) {
+            sideSubs = null
+            savedSideFor = ""
+        }
         val e = eng; val wasId: String? = engVid.ifEmpty { null }; val wasKey = engKey; val ctx0 = act?.applicationContext; eng = null; engVid = ""
         if (e != null) Thread {
             try { e.saveNow() } catch (_: Throwable) {}; try { e.stop() } catch (_: Throwable) {}
@@ -628,6 +744,11 @@ object MtTranslate : JoyboyPlayerHost.Provider {
                 vid = "yt:$id"
             }
             engKey = vid
+            // (v999 ملاحظة 4) المحرك بدأ يترجم فعلًا: اللي في الملف من هنا ورايح خليط مش استوديو صافي،
+            // فالاختيار المتذكّر بيبقى «محرك» والعلامة بتتمسح — وإلا الفتحة الجاية كانت هتنسخ
+            // الاستوديو فوق شغل المحرك الجديد.
+            if (StudioLink.choice(appCtx, vid) == StudioLink.CHOICE_STUDIO) StudioLink.remember(appCtx, vid, StudioLink.CHOICE_ENGINE)
+            StudioLink.clearStudioMark(appCtx, vid)
             run {
                 val web0 = lu != null && (lu.startsWith("http://") || lu.startsWith("https://"))
                 val ttl0 = (try { info?.title() } catch (_: Throwable) { null }) ?: vid
@@ -734,7 +855,8 @@ object MtTranslate : JoyboyPlayerHost.Provider {
         val names = ArrayList<String>()
         names.add("💾 احفظ النسخة الحالية")
         vs.forEach { v -> names.add(v.name + " — " + v.dialect.ifBlank { "—" } + " — " + v.subs.size + " جملة") }
-        GAlert(a).setTitle("🗂 ترجمات الفيديو").setItems(names.toTypedArray()) { _, i ->
+        val verTitle = "🗂 ترجمات الفيديو" + (if (studioLabel.isNotBlank() && savedSideFor.isNotEmpty()) "\n" + studioLabel else "")
+        GAlert(a).setTitle(verTitle).setItems(names.toTypedArray()) { _, i ->
             if (i == 0) { e.saveVersion("نسخة " + fmtT(posSec)); Notice.show(a, "اتحفظت النسخة الحالية", 1600L) }
             else restoreVersion(a, e, i - 1)
         }.setNegativeButton("إغلاق", null).show()

@@ -191,8 +191,8 @@ object TrWizard {
                 if (!pl.only) {
                     val d = (if (pl.offline) pl.dialect else (pl.dia ?: "")).ifBlank { "فصحى" }
                     parts.add("🗣 $d")
-                    val st = Cfg.str("tone_style", "")
-                    if (st.isNotBlank() && st != "حرفي" && id in setOf("g_wav", "g_aac")) parts.add("🎚 $st/" + Cfg.str("tone_strength", "متوسطة"))
+                    val st = Cfg.str("tone_style", "").ifBlank { "تلقائي" }
+                    if (st != "تلقائي" && id in setOf("g_wav", "g_aac")) parts.add("🎚 $st/" + Cfg.str("tone_strength", "متوسطة"))
                 }
                 if (SourceMode.get() == SourceMode.HYBRID) parts.add("👁 " + SourceMode.kindLabel())
                 parts.joinToString(" · ")
@@ -368,7 +368,7 @@ object TrWizard {
         val hubL: () -> Unit = { stepHub() }
         var mId = Cfg.str("tr_mode_id", "")
         var onlySw = false   // (v427) «تفريغ بس» بقى وضع لوحده (ai_only / w_only) مش سويتش
-        var mStyle = Cfg.str("tone_style", "").ifBlank { "حرفي" }
+        var mStyle = Cfg.str("tone_style", "").ifBlank { "تلقائي" }
         var mDeg = Cfg.str("tone_strength", "متوسطة").ifBlank { "متوسطة" }
         var afterDl: (() -> Unit)? = null
         val dialectModes = setOf("g_wav", "g_aac")
@@ -379,7 +379,7 @@ object TrWizard {
 
         fun finishModes(s: String, k: String?) {
             TrWizard.pSrc = s; if (k != null) TrWizard.pKind = k
-            if (mId in dialectModes) { Cfg.put("tone_style", if (mStyle == "حرفي") "" else mStyle); Cfg.put("tone_strength", mDeg) }
+            if (mId in dialectModes) { Cfg.put("tone_style", if (mStyle == "تلقائي") "" else mStyle); Cfg.put("tone_strength", mDeg) }
             if (mId == "g_wav") Cfg.put(AudioEnc.PRESET_KEY, AudioEnc.NORMAL)
             if (mId == "g_aac") Cfg.put(AudioEnc.PRESET_KEY, AudioEnc.FAST)
             Cfg.put("tr_mode_id", mId); viaModes = true

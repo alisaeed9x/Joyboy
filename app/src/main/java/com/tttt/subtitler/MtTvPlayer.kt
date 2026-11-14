@@ -58,16 +58,15 @@ object MtTvPlayer {
         return player != null && a != null && !a.isFinishing && !a.isDestroyed
     }
 
-    /** (v942) وضع الملاءمة الحالي من Cfg: 0 احتواء · 1 ملء (قص) · 2 تمديد. 3 (100%) متشال على التلفزيون زي Player.curFit */
+    /** (v1001 Fix 2) وضع الملاءمة الحالي من Cfg: 0 احتواء · 1 ملء (قص) · 2 تمديد · 3 طبيعي 100% — موحّد مع MtBar وPlayerLogic */
     fun fitMode(): Int {
         val m = try { Cfg.int("fit", 0) } catch (_: Throwable) { 0 }
-        val c = m.coerceIn(0, 3)
-        return if (c == 3) 0 else c
+        return m.coerceIn(0, 3)
     }
 
     /** (v942) اسم وضع الملاءمة للريموت — تطبيق المقاس على سطح MeeTube لسه على جانب جافا (الجسر يقرا fitMode) */
     fun fitName(): String {
-        return PlayerLogic.fitNames[fitMode().coerceIn(0, 2)]
+        return PlayerLogic.fitNames[fitMode().coerceIn(0, 3)]
     }
 
     /** (v942) التضخيم الحالي 0..100 من MtMedia (اللي بيملكه) */
@@ -183,9 +182,9 @@ object MtTvPlayer {
     private fun toneRemote(rest: String): Boolean {
         if (!engineLive()) return false
         val pp = rest.split("|")
-        val lbl = (pp.getOrNull(0) ?: "").ifBlank { "حرفي" }
+        val lbl = (pp.getOrNull(0) ?: "").ifBlank { "تلقائي" }
         val dg = (pp.getOrNull(1) ?: "").ifBlank { "متوسطة" }
-        val sv = if (lbl == "حرفي") "" else lbl
+        val sv = if (lbl == "تلقائي") "" else lbl
         try { Cfg.put("tone_style", sv) } catch (_: Throwable) { return false }
         try { Cfg.put("tone_strength", dg) } catch (_: Throwable) { return false }
         val okTone = trOk(trRpc("engine.tone", JSONObject().put("style", sv).put("strength", dg)))
@@ -293,7 +292,7 @@ object MtTvPlayer {
                     true
                 }
                 "fit" -> {
-                    val n = (fitMode() + 1) % 3
+                    val n = (fitMode() + 1) % 4
                     try { Cfg.put("fit", n.toString()) } catch (_: Throwable) {}
                     try { JoyboyPlayerHost.onJoyboyAction(ac, "fit:" + n) } catch (_: Throwable) {}
                     true

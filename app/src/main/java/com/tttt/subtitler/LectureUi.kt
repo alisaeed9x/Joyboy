@@ -134,6 +134,170 @@ class LectureUi(private val act: Activity, private val ui: Ui, private val th: T
             ?: (u.lastPathSegment ?: "محاضرة")
     } catch (_: Throwable) { u.lastPathSegment ?: "محاضرة" }
 
+    // (v999 ملاحظة 2) اسم ولون المتحدث في قايمة الجمل — A/B/C للترجمة، D/S للمحاضرات.
+    // (v1000) أي اسم حر بعد إعادة التسمية (مثلاً «أحمد») بيظهر زي ما هو — مش فاضي.
+    private fun spkLabel(spk: String): String = when (spk) {
+        "A" -> "🗣 أ"
+        "B" -> "🗣 ب"
+        "C" -> "🗣 ج"
+        "D" -> "🎓 المحاضر"
+        "S" -> "🙋 طالب"
+        else -> if (spk.isBlank()) "" else "🗣 " + spk
+    }
+
+    private fun spkColor(spk: String): Int = when (spk) {
+        "A" -> th.primary
+        "B" -> amber
+        "C" -> 0xFFAB47BC.toInt()
+        "D" -> th.primary
+        "S" -> amber
+        else -> th.muted
+    }
+
+    // (v999) توقيت مكتوب: «1:12» أو «01:12» أو «1:02:30» أو ثواني «72» — بيرجّع ثواني أو null.
+    private fun parseSegTime(s: String): Double? {
+        val t = s.trim()
+        if (t.isEmpty()) return null
+        if (t.contains(':')) {
+            val parts = t.split(':')
+            if (parts.size == 2) {
+                val m = parts[0].toIntOrNull() ?: return null
+                val sec = parts[1].toDoubleOrNull() ?: return null
+                return m * 60.0 + sec
+            }
+            if (parts.size == 3) {
+                val h = parts[0].toIntOrNull() ?: return null
+                val m = parts[1].toIntOrNull() ?: return null
+                val sec = parts[2].toDoubleOrNull() ?: return null
+                return h * 3600.0 + m * 60.0 + sec
+            }
+            return null
+        }
+        return t.toDoubleOrNull()
+    }
+
+    // (v999 ملاحظة 2) صف جملة واحدة في قايمة الجمل الحيّة: ⏱ بداية → نهاية + المتحدث + النص. دوسة بتفتح التعديل.
+    private fun sentRow(d: Lecture.Doc, s: Lecture.Seg, onEdit: (Lecture.Seg) -> Unit): View {
+        val row = vcol().apply { setPadding(ui.dp(12), ui.dp(10), ui.dp(12), ui.dp(10)); background = glassBg(14) }
+        val top = hrow()
+        top.addView(ui.text("⏱ " + Lecture.fmtTime(s.start) + " → " + Lecture.fmtTime(s.end), 12f, th.muted, true))
+        val label = spkLabel(s.spk)
+        if (label.isNotBlank()) top.addView(ui.text(label, 12f, spkColor(s.spk), true).apply { setPadding(ui.dp(10), 0, 0, 0) })
+        if (s.lang.isNotBlank() && s.lang != d.langCode) top.addView(ui.text(s.lang, 11f, th.muted).apply { setPadding(ui.dp(10), 0, 0, 0) })
+        row.addView(top)
+        row.addView(ui.text(s.text, 14f, th.text).apply { setLineSpacing(0f, 1.3f); setTextIsSelectable(true) }, lp(-1, -2, 4))
+        row.isClickable = true
+        Glass.pressable(row)
+        row.setOnClickListener { onEdit(s) }
+        return row
+    }
+
+    // (v999 ملاحظة 2) تعديل جملة: نص + بداية + نهاية — بيتحفظ من غير إعادة تفريغ.
+    // (v1001) internal عشان صفحة الدردشة (CallChatUi) تستعمله على أول جملة في الفقاعة.
+    internal fun editSegDialog(d: Lecture.Doc, s: Lecture.Seg, onSaved: () -> Unit) {
+        val textEt = ui.input("نص الجملة", s.text, 3)
+        val startEt = ui.input("البداية (MM:SS أو ثواني)", Lecture.fmtTime(s.start))
+        val endEt = ui.input("النهاية (MM:SS أو ثواني)", Lecture.fmtTime(s.end))
+        val box = vcol()
+        box.addView(textEt, lp(-1, -2))
+        box.addView(startEt, lp(-1, -2, 8))
+        box.addView(endEt, lp(-1, -2, 8))
+        GAlert(act).setTitle("✎ تعديل الجملة").setMessage("التعديل بيتحفظ في التفريغ من غير إعادة تفريغ. التوقيتات بتتقلم داخل مدة الفيديو.").setView(box)
+            .setPositiveButton("حفظ") { _, _ ->
+                val ns = parseSegTime(startEt.text.toString())
+                val ne = parseSegTime(endEt.text.toString())
+                if (ns == null || ne == null) {
+                    Notice.show(act, "⚠ التوقيت لازم يبقى MM:SS أو ثواني", 2600L)
+                    return@setPositiveButton
+                }
+                val ok = Lecture.editSeg(act, d, s.chunk, s.start, textEt.text.toString(), ns, ne)
+                if (ok) onSaved() else Notice.show(act, "⚠ مقدرتش ألاقي الجملة", 2600L)
+            }.setNegativeButton("إلغاء", null).show()
+    }
+
+    // (v1000) المتحدثون الموجودون فعلًا في التفريغ — من قيم spk المميزة في الجمل.
+    private fun speakersOf(d: Lecture.Doc): List<String> = synchronized(d) {
+        d.segs.map { it.spk }.filter { it.isNotBlank() }.distinct().sorted()
+    }
+
+    // (v1000) «إعادة تسمية متحدث»: اختار متحدث موجود + اسم جديد ← Lecture.renameSpeaker.
+    // بيرفض لو التفريغ شغال (القلب نفسه بيرفض كمان — الرفض هنا عشان المستخدم ميدوسش على الفاضي).
+    // بعد النجاح: إعادة رسم الشاشة + تنبيه إن التنظيم والتلخيص اتمسحوا.
+    // (v1001) internal عشان صفحة الدردشة (CallChatUi) تستعمله من الفوتر.
+    internal fun renameSpeakerDialog(d: Lecture.Doc, onDone: () -> Unit) {
+        if (Lecture.isRunning(d.id)) {
+            Notice.show(act, "التفريغ شغال — استنى يخلص وبعدين غيّر أسماء المتحدثين", 3000L)
+            return
+        }
+        val spks = speakersOf(d)
+        if (spks.isEmpty()) {
+            Notice.show(act, "مفيش متحدثين متسجلين في التفريغ ده", 2600L)
+            return
+        }
+        val labels = spks.map { spkLabel(it).ifBlank { it } }.toTypedArray()
+        GAlert(act).setTitle("🗣 إعادة تسمية متحدث").setMessage("اختار المتحدث، وبعدها اكتب الاسم الجديد. التنظيم والتلخيص هيتمسحوا ويتعملوا من جديد بالأسماء الجديدة.").setItems(labels) { _, w ->
+            val old = spks[w]
+            val oldName = spkLabel(old).ifBlank { old }
+            val nameEt = ui.input("الاسم الجديد", "")
+            GAlert(act).setTitle("🗣 «" + oldName + "» ← اسم جديد").setMessage("كل الجمل اللي قالها «" + oldName + "» هتبقى بالاسم الجديد.").setView(nameEt)
+                .setPositiveButton("حفظ") { _, _ ->
+                    val newName = nameEt.text.toString().trim()
+                    if (newName.isEmpty()) {
+                        Notice.show(act, "اكتب الاسم الجديد الأول", 2400L)
+                        return@setPositiveButton
+                    }
+                    if (Lecture.isRunning(d.id)) {
+                        Notice.show(act, "التفريغ بدأ يشتغل — استنى يخلص", 3000L)
+                        return@setPositiveButton
+                    }
+                    val ok = Lecture.renameSpeaker(act, d, old, newName)
+                    if (ok) {
+                        Notice.show(act, "✅ بقى اسمه «" + newName + "» — التنظيم والتلخيص اتمسحوا، اعملهم من جديد", 3600L)
+                        onDone()
+                    } else {
+                        Notice.show(act, "⚠ مفيش متحدث بالاسم ده أو التفريغ شغال", 3000L)
+                    }
+                }.setNegativeButton("إلغاء", null).show()
+        }.setNegativeButton("إلغاء", null).show()
+    }
+
+    // (v1000) «دمج متحدثين»: اختار المصدر وبعدها الهدف ← Lecture.mergeSpeakers.
+    // نفس حارس التشغيل ونفس التنبيه بعد النجاح زي إعادة التسمية.
+    // (v1001) internal عشان صفحة الدردشة (CallChatUi) تستعمله من الفوتر.
+    internal fun mergeSpeakersDialog(d: Lecture.Doc, onDone: () -> Unit) {
+        if (Lecture.isRunning(d.id)) {
+            Notice.show(act, "التفريغ شغال — استنى يخلص وبعدين ادمج المتحدثين", 3000L)
+            return
+        }
+        val spks = speakersOf(d)
+        if (spks.size < 2) {
+            Notice.show(act, "لازم يبقى فيه متحدثين على الأقل عشان تدمج", 2600L)
+            return
+        }
+        val labels = spks.map { spkLabel(it).ifBlank { it } }.toTypedArray()
+        GAlert(act).setTitle("🔀 دمج متحدثين").setMessage("اختار المتحدث اللي هيتدمج (المصدر) — جمله كلها هتبقى باسم المتحدث التاني. التنظيم والتلخيص هيتمسحوا.").setItems(labels) { _, w ->
+            val from = spks[w]
+            val fromName = spkLabel(from).ifBlank { from }
+            val rest = spks.filter { it != from }
+            val restLabels = rest.map { spkLabel(it).ifBlank { it } }.toTypedArray()
+            GAlert(act).setTitle("🔀 «" + fromName + "» ← يبقى مين؟").setMessage("كل جمل «" + fromName + "» هتبقى باسم المتحدث اللي تختاره.").setItems(restLabels) { _, w2 ->
+                val to = rest[w2]
+                val toName = spkLabel(to).ifBlank { to }
+                if (Lecture.isRunning(d.id)) {
+                    Notice.show(act, "التفريغ بدأ يشتغل — استنى يخلص", 3000L)
+                    return@setItems
+                }
+                val ok = Lecture.mergeSpeakers(act, d, from, to)
+                if (ok) {
+                    Notice.show(act, "✅ «" + fromName + "» بقى «" + toName + "» — التنظيم والتلخيص اتمسحوا، اعملهم من جديد", 3600L)
+                    onDone()
+                } else {
+                    Notice.show(act, "⚠ مفيش متحدث بالاسم ده أو التفريغ شغال", 3000L)
+                }
+            }.setNegativeButton("إلغاء", null).show()
+        }.setNegativeButton("إلغاء", null).show()
+    }
+
     // ===================== الشاشة الأولى: المصدر + السجل =====================
     private var dlg: Dialog? = null
     private var shown = false
@@ -187,8 +351,8 @@ class LectureUi(private val act: Activity, private val ui: Ui, private val th: T
             val row = vcol().apply { setPadding(ui.dp(12), ui.dp(10), ui.dp(12), ui.dp(10)); background = glassBg(16) }
             val top = hrow()
             val t = vcol()
-            t.addView(ui.text(d.title.ifBlank { "محاضرة" }, 14f, th.text, true).apply { maxLines = 2; ellipsize = TextUtils.TruncateAt.END })
-            val meta = listOf(statusOf(d), if (d.durSec > 0) fmtDur(d.durSec) else "", if (d.words > 0) "${d.words} كلمة" else "").filter { it.isNotBlank() }.joinToString(" · ")
+            t.addView(ui.text(Studio.displayTitle(d).ifBlank { "محاضرة" }, 14f, th.text, true).apply { maxLines = 2; ellipsize = TextUtils.TruncateAt.END })
+            val meta = listOf(statusOf(d), if (d.durSec > 0) fmtDur(d.durSec) else "", if (d.words > 0) "${d.words} كلمة" else "", if (d.lang.isNotBlank()) "🌐 " + d.lang else "").filter { it.isNotBlank() }.joinToString(" · ")
             t.addView(ui.text(meta, 11.5f, th.muted).apply { maxLines = 1 })
             top.addView(t, LinearLayout.LayoutParams(0, -2, 1f))
             top.addView(ui.text("🗑", 16f, th.muted).apply {
@@ -200,7 +364,7 @@ class LectureUi(private val act: Activity, private val ui: Ui, private val th: T
                 val bar = LecBar(act).apply { track = Glass.alpha(th.text, 0x22); fill = th.primary; set(d.pct / 100f) }
                 row.addView(bar, lp(-1, ui.dp(5), 8))
             }
-            row.isClickable = true; Glass.pressable(row); row.setOnClickListener { openDoc(d, false) }
+            row.isClickable = true; Glass.pressable(row); row.setOnClickListener { open(d) }
             histCol.addView(row, lp(-1, -2, 8))
         }
     }
@@ -248,8 +412,26 @@ class LectureUi(private val act: Activity, private val ui: Ui, private val th: T
             }.setNegativeButton("إلغاء", null).show()
     }
 
-    private fun begin(kind: String, title: String, uri: String, link: String) {
+    // (v1001) type: نوع المحتوى — لو مش فاضي بيتثبّت عبر Studio.setType بعد newDoc (زي StudioUi.begin).
+    // parties: أطراف المكالمة — بتتثبّت بس على دوكيومنت جديد لسه نوعه فاضي (d.type.isBlank() قبل setType)؛
+    // دوكيومنت مستأنف ليه نوع أصلًا (مثلًا اتفرّغ قبل كده كمحاضرة) مبيتلمسش — لا نوعه ولا أطرافه ولا تفريغه.
+    private fun begin(kind: String, title: String, uri: String, link: String, type: String = "", parties: List<String> = emptyList()) {
         val d = Lecture.newDoc(act, kind, title, uri, link)
+        val fresh = d.type.isBlank()
+        if (type.isNotBlank()) {
+            try {
+                Studio.setType(act, d, type, false)
+            } catch (e: Throwable) {
+                LogStore.err("LectureUi:setType", e)
+            }
+        }
+        if (fresh && parties.isNotEmpty()) {
+            synchronized(d) {
+                d.parties.clear()
+                d.parties.addAll(parties)
+            }
+            Lecture.save(act, d)
+        }
         if (hist.none { it.id == d.id }) hist = listOf(d) + hist
         main.post { openDoc(d, !d.complete) }
     }
@@ -347,8 +529,22 @@ class LectureUi(private val act: Activity, private val ui: Ui, private val th: T
     /**
      * (v995) فتح شاشة تفريغ محفوظة من «الاستوديو» — نفس شاشة openDoc الخاصة، من غير بدء تلقائي
      * (التفريغ لو شغال بيكمّل لوحده، ولو واقف المستخدم بيدوس «كمّل» من جوّا الشاشة).
+     * (v1000) startSec: قفز للحظة دي بعد الفتح — من نتائج البحث في سجل الاستوديو.
      */
-    fun open(d: Lecture.Doc) { openDoc(d, false) }
+    fun open(d: Lecture.Doc, startSec: Double = 0.0) {
+        // (v1001) المكالمات بتتفتح في صفحة الدردشة — القايمة لسه متاحة من جوّاها عبر openList.
+        if (Studio.typeOf(d).code == "call") {
+            try {
+                CallChatUi(act, ui, th).show(d, startSec)
+            } catch (e: Throwable) {
+                LogStore.err("LectureUi:chat", e)
+                openDoc(d, false, startSec)
+            }
+        } else openDoc(d, false, startSec)
+    }
+
+    /** قايمة الجمل + تبويبات التنظيم/التلخيص مباشرة (من غير تحويلة الدردشة) — للمكالمات من جوّا صفحة الدردشة. */
+    fun openList(d: Lecture.Doc) { openDoc(d, false) }
 
     private class CallRow(val rec: Lecture.Rec, val who: CallKit.Who)
 
@@ -429,7 +625,12 @@ class LectureUi(private val act: Activity, private val ui: Ui, private val th: T
         val labels = arrayOf("🎓 فرّغ المكالمة دي", "🎤 احفظ بصمة صوت الشخص ده من المكالمة", "🎤 احفظ بصمة صوتي أنا من المكالمة")
         GAlert(act).setTitle(callTitle(r)).setItems(labels) { _, w ->
             when (w) {
-                0 -> { closeList(); begin("rec", r.who.name.ifBlank { r.rec.name.substringBeforeLast('.') }, r.rec.uri.toString(), "") }
+                0 -> {
+                    closeList()
+                    val other = r.who.name.ifBlank { "طرف تاني" }
+                    val parties = if (CallKit.hasVoice(act, "me")) listOf("أنا", other) else listOf(other)
+                    begin("rec", r.who.name.ifBlank { r.rec.name.substringBeforeLast('.') }, r.rec.uri.toString(), "", "call", parties)
+                }
                 1 -> saveVoiceDialog(r, false)
                 else -> saveVoiceDialog(r, true)
             }
@@ -467,9 +668,13 @@ class LectureUi(private val act: Activity, private val ui: Ui, private val th: T
     }
 
     // ===================== شاشة المحاضرة =====================
-    private fun openDoc(d: Lecture.Doc, autoStart: Boolean) {
+    private fun openDoc(d: Lecture.Doc, autoStart: Boolean, startSec: Double = 0.0) {
         var tab = "tr"                       // tr · org · sum
-        var stamps = false
+        // (v999 ملاحظة 2) التوقيت ظاهر افتراضيًا في أنواع الترجمة (subs/show) — ومقفول افتراضيًا للمحاضرات.
+        var stamps = Studio.typeOf(d).code == "subs" || Studio.typeOf(d).code == "show"
+        // (v1000) قايمة الجمل الحيّة بقت لكل الأنواع — مش subs/show بس: كل نوع بقى فيه
+        // صفوف بتوقيتات ومتحدثين ودوسة للتعديل (نفس sentRow/editSegDialog).
+        val isSentList = true
         var busy = false
         var lastSig = ""
         var alive = true
@@ -477,7 +682,9 @@ class LectureUi(private val act: Activity, private val ui: Ui, private val th: T
         var buildMsg = ""
         if (autoStart && !Lecture.isRunning(d.id)) Lecture.start(act, d)
 
-        val title = ui.text(d.title.ifBlank { "محاضرة" }, 15f, th.text, true).apply { maxLines = 2; ellipsize = TextUtils.TruncateAt.END }
+        // (v1000) العنوان التلقائي بيظهر هنا كمان — نفس قاعدة Studio.displayTitle
+        // (تلقائي بس لو العنوان الحقيقي عام)؛ قبل كده كان d.title بس فكان التلقائي مختفي جوه الشاشة.
+        val title = ui.text(Studio.displayTitle(d).ifBlank { "محاضرة" }, 15f, th.text, true).apply { maxLines = 2; ellipsize = TextUtils.TruncateAt.END }
         val status = ui.text("", 12f, th.muted)
         val bar = LecBar(act).apply { track = Glass.alpha(th.text, 0x22); fill = th.primary }
         val ctl = hrow()
@@ -511,7 +718,7 @@ class LectureUi(private val act: Activity, private val ui: Ui, private val th: T
             }
             val o = Lecture.parseOutline(raw)
             if (o.title.isNotBlank()) body.addView(ui.text(o.title, 16f, th.text, true).apply { setPadding(ui.dp(4), ui.dp(4), ui.dp(4), ui.dp(6)) })
-            if (webUsed) body.addView(ui.text("🌐 النقط اللي عليها 🌐 جت من النت مش من كلام المحاضر", 11.5f, amber).apply { setPadding(ui.dp(4), 0, ui.dp(4), ui.dp(6)) })
+            if (webUsed) body.addView(ui.text("🌐 النقط اللي عليها 🌐 جت من النت مش من الكلام الأصلي", 11.5f, amber).apply { setPadding(ui.dp(4), 0, ui.dp(4), ui.dp(6)) })
             for (s in o.secs) {
                 val c = vcol().apply { setPadding(ui.dp(12), ui.dp(10), ui.dp(12), ui.dp(10)); background = glassBg(16) }
                 if (s.head.isNotBlank()) c.addView(ui.text(s.head, 15f, th.primary, true).apply { setTextIsSelectable(true) })
@@ -534,22 +741,41 @@ class LectureUi(private val act: Activity, private val ui: Ui, private val th: T
             when (tab) {
                 "tr" -> {
                     opts.addView(ui.switchRow("⏱ توقيت قبل كل جملة", stamps) { stamps = it; lastSig = ""; renderAll() })
-                    val txt = Lecture.transcriptText(d, stamps)
-                    if (txt.isBlank()) {
-                        val r = Lecture.runOf(d.id)
-                        body.addView(ui.text(if (r != null && r.running) "⏳ لسه ما وصلش أول جزء…" else "مفيش تفريغ لسه.", 12.5f, th.muted).apply { setPadding(ui.dp(4), ui.dp(12), ui.dp(4), ui.dp(12)) })
-                    } else body.addView(ui.text(txt, 14f, th.text).apply { setTextIsSelectable(true); setLineSpacing(0f, 1.35f); setPadding(ui.dp(4), ui.dp(4), ui.dp(4), ui.dp(4)) })
+                    if (isSentList) {
+                        // (v999 ملاحظة 2) قايمة جمل حيّة لأنواع الترجمة: كل جملة صف بتوقيتها ومتحدثها،
+                        // بتكبر مع كل جزء بيخلص، ودوسة على أي جملة بتفتح تعديلها.
+                        val rows = Lecture.displaySegs(d)
+                        if (rows.isEmpty()) {
+                            val r = Lecture.runOf(d.id)
+                            body.addView(ui.text(if (r != null && r.running) "⏳ لسه ما وصلش أول جزء…" else "مفيش تفريغ لسه.", 12.5f, th.muted).apply { setPadding(ui.dp(4), ui.dp(12), ui.dp(4), ui.dp(12)) })
+                        } else {
+                            for (s in rows) {
+                                body.addView(sentRow(d, s) { seg -> editSegDialog(d, seg) { lastSig = ""; renderAll() } }, lp(-1, -2, 6))
+                            }
+                            val cs = if (d.chunkSec > 0) d.chunkSec else Lecture.CHUNK_SEC
+                            for (c in d.failed.sorted()) {
+                                body.addView(ui.text("⚠ [جزء ناقص من " + Lecture.fmtTime(c * cs) + " إلى " + Lecture.fmtTime(minOf(d.durSec, (c + 1) * cs)) + "]", 13f, amber).apply { setPadding(ui.dp(12), ui.dp(8), ui.dp(12), ui.dp(8)) }, lp(-1, -2, 6))
+                            }
+                        }
+                    } else {
+                        val txt = Lecture.transcriptText(d, stamps)
+                        if (txt.isBlank()) {
+                            val r = Lecture.runOf(d.id)
+                            body.addView(ui.text(if (r != null && r.running) "⏳ لسه ما وصلش أول جزء…" else "مفيش تفريغ لسه.", 12.5f, th.muted).apply { setPadding(ui.dp(4), ui.dp(12), ui.dp(4), ui.dp(12)) })
+                        } else body.addView(ui.text(txt, 14f, th.text).apply { setTextIsSelectable(true); setLineSpacing(0f, 1.35f); setPadding(ui.dp(4), ui.dp(4), ui.dp(4), ui.dp(4)) })
+                    }
                 }
                 "org" -> {
                     opts.addView(ui.switchRow("🌐 استعن بالنت (تصحيح مصطلحات وإكمال تعريفات)", Cfg.bool("lec_web", false)) { Cfg.put("lec_web", if (it) "1" else "0") })
-                    opts.addView(segRow(listOf("ar" to "اكتب بالعربي", "same" to "بلغة المحاضرة"), { Cfg.str("lec_out", "ar") }, { Cfg.put("lec_out", it) }), lp(-1, -2, 4))
-                    renderOutline(d.organized, "نظّم المحاضرة: عناوين رئيسية وتحت كل عنوان نقط قليلة.", if (d.organized.isBlank()) "🗂 نظّم المحاضرة" else "↻ إعادة التنظيم", { generateFn("org") }, d.organizedWeb)
+                    opts.addView(segRow(listOf("ar" to "اكتب بالعربي", "same" to "بلغة التفريغ"), { Cfg.str("lec_out", "ar") }, { Cfg.put("lec_out", it) }), lp(-1, -2, 4))
+                    // (v1000) لابلات محايدة للنوع: «المحاضرة» كانت غلط للمكالمات والاجتماعات والمسلسلات.
+                    renderOutline(d.organized, "نظّم التفريغ: عناوين رئيسية وتحت كل عنوان نقط قليلة.", if (d.organized.isBlank()) "🗂 نظّم التفريغ" else "↻ إعادة التنظيم", { generateFn("org") }, d.organizedWeb)
                 }
                 else -> {
                     opts.addView(ui.switchRow("🌐 استعن بالنت (تصحيح مصطلحات وإكمال تعريفات)", Cfg.bool("lec_web", false)) { Cfg.put("lec_web", if (it) "1" else "0") })
                     opts.addView(segRow(listOf("short" to "مختصر", "mid" to "متوسط"), { Cfg.str("lec_sumlen", "mid") }, { Cfg.put("lec_sumlen", it) }), lp(-1, -2, 4))
-                    opts.addView(segRow(listOf("ar" to "اكتب بالعربي", "same" to "بلغة المحاضرة"), { Cfg.str("lec_out", "ar") }, { Cfg.put("lec_out", it) }), lp(-1, -2, 4))
-                    renderOutline(d.summary, "لخّص المحاضرة: ملخص قصير + أهم النقط.", if (d.summary.isBlank()) "✂ لخّص المحاضرة" else "↻ إعادة التلخيص", { generateFn("sum") }, d.summaryWeb)
+                    opts.addView(segRow(listOf("ar" to "اكتب بالعربي", "same" to "بلغة التفريغ"), { Cfg.str("lec_out", "ar") }, { Cfg.put("lec_out", it) }), lp(-1, -2, 4))
+                    renderOutline(d.summary, "لخّص التفريغ: ملخص قصير + أهم النقط.", if (d.summary.isBlank()) "✂ لخّص التفريغ" else "↻ إعادة التلخيص", { generateFn("sum") }, d.summaryWeb)
                 }
             }
         }
@@ -585,13 +811,16 @@ class LectureUi(private val act: Activity, private val ui: Ui, private val th: T
 
         fun refreshStatus() {
             val r = Lecture.runOf(d.id)
+            // (v999) دقايق اتفرّغت من مدة الفيديو + اللغة المكتشفة — في سطر الحالة.
+            val mins = if (d.nChunks > 0 && d.durSec > 0) " · اتفرّغ " + Lecture.fmtMinutes(Lecture.doneMinutes(d)) + " من " + Lecture.fmtMinutes(d.durSec / 60.0) + " دقيقة" else ""
+            val lang = if (d.lang.isNotBlank()) " · 🌐 " + d.lang + (if (d.langCode.isNotBlank()) " (" + d.langCode + ")" else "") else ""
             status.text = when {
                 building -> buildMsg
-                r != null && r.running -> r.status + (if (d.failed.isNotEmpty()) " · ⚠ ${d.failed.size} ناقص" else "")
-                r != null && r.status.isNotBlank() && !d.complete -> r.status
-                d.complete -> "✅ التفريغ مكتمل — ${d.words} كلمة · ${fmtDur(d.durSec)}"
+                r != null && r.running -> r.status + (if (d.failed.isNotEmpty()) " · ⚠ ${d.failed.size} ناقص" else "") + mins + lang
+                r != null && r.status.isNotBlank() && !d.complete -> r.status + mins + lang
+                d.complete -> "✅ التفريغ مكتمل — ${d.words} كلمة · ${fmtDur(d.durSec)}" + lang
                 d.nChunks == 0 -> "جاهز للتفريغ"
-                else -> "⏸ واقف عند ${d.pct}%" + (if (d.failed.isNotEmpty()) " · ⚠ ${d.failed.size} جزء ناقص" else "")
+                else -> "⏸ واقف عند ${d.pct}%" + (if (d.failed.isNotEmpty()) " · ⚠ ${d.failed.size} جزء ناقص" else "") + mins + lang
             }
             bar.set(d.pct / 100f)
             bar.visibility = if (d.nChunks == 0 || d.complete) View.GONE else View.VISIBLE
@@ -638,11 +867,36 @@ class LectureUi(private val act: Activity, private val ui: Ui, private val th: T
         acts.addView(pill("📋 نسخ") { val t = curText(); if (t.isBlank()) Notice.show(act, "مفيش حاجة تتنسخ", 1800L) else copy(t) }, LinearLayout.LayoutParams(0, -2, 1f).apply { marginEnd = ui.dp(6) })
         acts.addView(pill("📤 مشاركة") { val t = curText(); if (t.isBlank()) Notice.show(act, "مفيش حاجة تتشارك", 1800L) else share(d.title, t) }, LinearLayout.LayoutParams(0, -2, 1f))
         content.addView(acts, lp(-1, -2, 8))
-        content.addView(pill("📘 مذكرة المذاكرة (Word / HTML)", primary = true) { chooseBuild() }, lp(-1, -2, 6))
+        // (v1000) إدارة المتحدثين — لكل الأنواع: إعادة تسمية / دمج، بحارس التشغيل جوه الديالوجات.
+        val spkRow = hrow()
+        spkRow.addView(pill("🗣 إعادة تسمية متحدث") { renameSpeakerDialog(d) { lastSig = ""; renderAll(); refreshStatus() } }, LinearLayout.LayoutParams(0, -2, 1f).apply { marginEnd = ui.dp(6) })
+        spkRow.addView(pill("🔀 دمج متحدثين") { mergeSpeakersDialog(d) { lastSig = ""; renderAll(); refreshStatus() } }, LinearLayout.LayoutParams(0, -2, 1f))
+        content.addView(spkRow, lp(-1, -2, 6))
+        // (v999 ملاحظة 3) المذكرة للمحاضرات بس — أنواع الترجمة (subs/show/…) والاجتماعات والمكالمات مبتظهرش عندهم
+        if (Studio.typeOf(d).code == "lecture") {
+            content.addView(pill("📘 مذكرة المذاكرة (Word / HTML)", primary = true) { chooseBuild() }, lp(-1, -2, 6))
+        }
 
-        val dd = ui.sheet(act, "🎓 " + d.title.take(28), listOf<View>(content), fixedH = true, onClose = { alive = false; loadHistory() })
+        // (v1001) عنوان الشيت حسب النوع — القايمة لسه متاحة للمكالمات من الدردشة فمتنفعش 🎓.
+        val sheetEmoji = if (Studio.typeOf(d).code == "call") "📞 " else "🎓 "
+        val dd = ui.sheet(act, sheetEmoji + Studio.displayTitle(d).take(28), listOf<View>(content), fixedH = true, onClose = { alive = false; loadHistory() })
         paintCtl(); paintTabs(); refreshStatus(); renderAll()
         dd.show()
+
+        // (v1000) قفز للحظة المطلوبة (من بحث السجل): أول جملة بتبدأ عند startSec أو بعدها —
+        // الصفوف في body بنفس ترتيب Lecture.displaySegs فالاندكس هو اندكس الصف.
+        if (startSec > 0.0) {
+            bodyScroll.post {
+                try {
+                    val rows = Lecture.displaySegs(d)
+                    val idx = rows.indexOfFirst { it.start >= startSec }
+                    if (idx >= 0) {
+                        val v = body.getChildAt(idx)
+                        if (v != null) bodyScroll.scrollTo(0, v.top)
+                    }
+                } catch (_: Throwable) {}
+            }
+        }
 
         // تحديث حي: الحالة كل ثانية، والتفريغ لما عدد الجمل يتغيّر (وهو بيشتغل)
         val ticker = object : Runnable {
@@ -651,7 +905,8 @@ class LectureUi(private val act: Activity, private val ui: Ui, private val th: T
                 try {
                     refreshStatus()
                     val r = Lecture.runOf(d.id)
-                    val sig = d.done.size.toString() + "/" + d.failed.size + "/" + (r?.running ?: false)
+                    // (v999) الإشارة بتتغيّر كمان لما عدد الجمل أو اللغة يتغيّروا — عشان القايمة الحيّة تكبر مع كل جزء.
+                    val sig = d.done.size.toString() + "/" + d.failed.size + "/" + d.segs.size + "/" + d.langCode + "/" + (r?.running ?: false)
                     if (sig != lastSig) {
                         lastSig = sig; paintCtl()
                         if (tab == "tr" && !busy) renderAll()

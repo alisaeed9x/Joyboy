@@ -306,7 +306,7 @@ class TrLibUi(private val act: Activity, private val ui: Ui, private val th: The
         val tags = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL }
         if (m != null && m.engine.isNotBlank()) {
             tags.addView(tag("🗣 " + m.dialect, th.text), LinearLayout.LayoutParams(-2, -2).apply { marginEnd = ui.dp(6) })
-            tags.addView(tag("🎭 " + m.style, th.text), LinearLayout.LayoutParams(-2, -2).apply { marginEnd = ui.dp(6) })
+            tags.addView(tag("🎭 " + TrLib.displayStyle(m.style), th.text), LinearLayout.LayoutParams(-2, -2).apply { marginEnd = ui.dp(6) })
             tags.addView(tag("💪 " + m.strength, th.text), LinearLayout.LayoutParams(-2, -2))
         } else tags.addView(tag("الإعدادات غير مسجّلة (ترجمة قديمة)", th.muted), LinearLayout.LayoutParams(-2, -2))
         c.addView(HorizontalScrollView(act).apply { isHorizontalScrollBarEnabled = false; addView(tags) }, lp(-1, -2, 10))
@@ -337,7 +337,7 @@ class TrLibUi(private val act: Activity, private val ui: Ui, private val th: The
     private fun overrideText(m: TrLib.Meta): String {
         val p = ArrayList<String>()
         if (m.ovDialect.isNotBlank()) p.add(m.ovDialect)
-        if (m.ovStyle.isNotBlank()) p.add(m.ovStyle)
+        if (m.ovStyle.isNotBlank()) p.add(TrLib.displayStyle(m.ovStyle))
         if (m.ovStrength.isNotBlank()) p.add(m.ovStrength)
         if (m.ovModel.isNotBlank()) p.add(m.ovModel)
         return p.joinToString(" · ")
@@ -451,7 +451,7 @@ class TrLibUi(private val act: Activity, private val ui: Ui, private val th: The
         fun lbl(v: String) = v.ifBlank { glob }
         val col = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL }
         col.addView(ui.text(x.title, 13.5f, th.text, true).apply { maxLines = 2; ellipsize = TextUtils.TruncateAt.END })
-        val rec = if (m == null || m.engine.isBlank()) "غير مسجّل (ترجمة قديمة)" else (m.dialect + " · " + m.style + " · " + m.strength + "\n" + m.engine)
+        val rec = if (m == null || m.engine.isBlank()) "غير مسجّل (ترجمة قديمة)" else (m.dialect + " · " + TrLib.displayStyle(m.style) + " · " + m.strength + "\n" + m.engine)
         col.addView(ui.text("المسجّل وقت الترجمة: " + rec, 11f, th.muted).apply { setPadding(0, ui.dp(4), 0, ui.dp(2)) })
         fun group(title: String, v: View) {
             col.addView(ui.text(title, 12.5f, th.primary, true).apply { setPadding(0, ui.dp(12), 0, ui.dp(2)) })
@@ -462,13 +462,17 @@ class TrLibUi(private val act: Activity, private val ui: Ui, private val th: The
         group("💪 الشدة", ui.chips(listOf(glob) + TrLib.STRENGTHS, { lbl(sg) }) { n -> sg = if (n == glob) "" else n })
         group("⚙ المحرك (موديل جيميناي)", ui.chips(listOf(glob) + Models.quota.keys.toList().distinct(), { lbl(md) }) { n -> md = if (n == glob) "" else n })
         col.addView(ui.text("بتتطبق على الاستكمال والإعادة (في الخلفية) بس. اللي اترجم قبل كده مابيتغيّرش غير لو دوست «إعادة». التفريغ المحلي (ويسبر) بيتظبط من إعدادات البرنامج مش من هنا.", 11f, th.muted).apply { setPadding(0, ui.dp(12), 0, ui.dp(4)) })
-        val sheet = ui.sheet(act, "⚙ إعدادات الترجمة", listOf<View>(col))
-        col.addView(ui.button("💾 حفظ", true) { TrLib.setOverrides(act, x.id, d, st, sg, md); sheet.dismiss(); if (shown) render(false) })
-        col.addView(ui.button("💾 حفظ + ▶ استكمال") {
-            TrLib.setOverrides(act, x.id, d, st, sg, md); sheet.dismiss()
-            if (x.state == "done") redo(x) else resume(x)
-        })
-        col.addView(ui.button("↺ رجوع للإعدادات العامة") { TrLib.setOverrides(act, x.id, "", "", "", ""); sheet.dismiss(); if (shown) render(false) })
+        // (v999 ملاحظة 5) الأزرار التلاتة كانوا آخر عناصر السكرول فمبيظهروش على الموبايلات الصغيرة — بقوا فوتر ثابت برّه السكرول
+        lateinit var sheet: Dialog
+        val foot = listOf<View>(
+            ui.button("💾 حفظ", true) { TrLib.setOverrides(act, x.id, d, st, sg, md); sheet.dismiss(); if (shown) render(false) },
+            ui.button("💾 حفظ + ▶ استكمال") {
+                TrLib.setOverrides(act, x.id, d, st, sg, md); sheet.dismiss()
+                if (x.state == "done") redo(x) else resume(x)
+            },
+            ui.button("↺ رجوع للإعدادات العامة") { TrLib.setOverrides(act, x.id, "", "", "", ""); sheet.dismiss(); if (shown) render(false) }
+        )
+        sheet = ui.sheet(act, "⚙ إعدادات الترجمة", listOf<View>(col), footer = foot)
         sheet.show()
     }
 

@@ -189,20 +189,20 @@ class Engine(
     private fun checkBaseSkip() { if (!baseSkipped && skipIfBaseLang && detDone && srcLang.isNotEmpty() && langCodeOf(srcLang) == baseLangCode) { baseSkipped = true; transOnly = true; host.log("🏠 لغة الفيديو هي لغتك الأساسية ($srcLang) — الترجمة التلقائية اتخطّت والنص الأصلي هيظهر زي ما هو. عايز ترجمة غصب عنها؟ دوس زرار «ترجم»") } }
     /** (v468) كشف لغة احتياطي: لو جيميناي ما رجّعش detected_source_language، نستنتج من حروف أول نص متفرّغ — نسبة عربي > 60% من الحروف → عربية */
     private fun fallbackDetectLang(texts: List<Sub>) { if (detDone) return; val txt = texts.take(8).joinToString(" ") { it.original }; var ar = 0; var ko = 0; var ja = 0; var cy = 0; var tot = 0; for (ch in txt) { if (ch.isLetter()) { tot++; val c = ch.code; if (c in 0x0600..0x06FF || c in 0x0750..0x077F || c in 0xFB50..0xFDFF || c in 0xFE70..0xFEFF) ar++; if (c in 0xAC00..0xD7A3 || c in 0x1100..0x11FF) ko++; if (c in 0x3040..0x30FF) ja++; if (c in 0x0400..0x04FF) cy++ } }; val hit = when { tot >= 20 && ar * 100 / tot > 60 -> "عربية"; tot >= 20 && ko * 100 / tot > 60 -> "كورية"; tot >= 20 && ja * 100 / tot > 60 -> "يابانية"; tot >= 20 && cy * 100 / tot > 60 -> "روسية"; else -> "" }; if (hit.isNotEmpty()) { srcLang = hit; detDone = true; host.log("🌐 لغة الفيديو الأصلية (استنتاج احتياطي من النص): $hit"); checkBaseSkip() } } // (v468) البند 12: سكربتات مميزة بلا تداخل (هانغول/كانا/سيريلي) بجانب العربي
-    /** أسلوب الترجمة الحي (حرفي/شعبي/جرئ/+18) وشدته (خفيفة/متوسطة/شديدة): بيتحط في أول برومبت كل باتش جديد وكل تحويل لهجة */
+    /** أسلوب الترجمة الحي (تلقائي/حرفي/شعبي/جرئ) وشدته (خفيفة/متوسطة/شديدة): بيتحط في أول برومبت كل باتش جديد وكل تحويل لهجة */
     @Volatile var toneStyle: String = ""
     @Volatile var toneStrength: String = "متوسطة"
     fun toneBlock(): String {
-        val st = toneStyle
-        if (st.isBlank() || st == "حرفي") return ""
+        val st = toneStyle.ifBlank { "تلقائي" }
+        if (st == "حرفي") return ""
         val what = when (st) {
+            "تلقائي" -> "تلقائي: كل جملة على طبيعتها — الكلام العادي يترجم حرفيًا بأمانة؛ كلام الشارع والسباب والإيحاءات تترجم بصراحتها الشعبية زي ما اتقالت بالظبط من غير تلطيف ولا مبالغة؛ والأمثال والتعبيرات الاصطلاحية تترجم بالمثل أو التعبير المقابل في لغة الهدف مش حرفيًا"
             "شعبي" -> "كلام الشارع الشعبي والتعبيرات اليومية بدل الرسمي والكتابي"
             "جرئ" -> "أجرأ وأكتر حرية في الألفاظ والتعبيرات من غير تلطيف زيادة"
-            "+18" -> "صريح بلا تلطيف: الألفاظ الخارجة والإيحاءات تتترجم بصراحة تطابق النص الأصلي بالظبط، من غير حذف ولا تخفيف"
             else -> return ""
         }
         val deg = when (toneStrength) { "خفيفة" -> "خفيفة: لمسة بسيطة بس في الجمل اللي تستاهل"; "شديدة" -> "شديدة: في كل جملة تقريبًا وبأقصى درجة"; else -> "متوسطة: في معظم الجمل بدرجة معتدلة" }
-        return "\n═══ أسلوب الترجمة (إلزامي) ═══\n- الأسلوب: $st — $what.\n- الشدة: $deg.\n- الأسلوب ده بيتطبّق على كل translated مع الحفاظ الكامل على المعنى وجنس المتكلم والمخاطَب.\n\n"
+        return "\n═══ أسلوب الترجمة (إلزامي) ═══\n- الأسلوب: $st — $what.\n- الشدة: $deg.\n- ترجم اللي اتقال بس — متضيفش ألفاظ ولا معاني مش موجودة في الأصل، ومتخففش اللي موجود.\n- الأسلوب ده بيتطبّق على كل translated مع الحفاظ الكامل على المعنى وجنس المتكلم والمخاطَب.\n\n"
     }
 
     // ===== (v469) تحسينات المحرك والبرومبت: سياق باتش (A1) · أمثلة few-shot (A2) · ذاكرة موضوع (A3) · قاموس مقفول (A4) · أمانة أرقام (A5) · تحسين مرحلتين (A6) · كاش أسطر (A7) · تطبيع ASR (A8) · محسّن قراءة (A9) · وسوم غير كلام (A10) · ترتيب مفاتيح بالزمن (A11) · جودة ووقت متبقٍّ (A12) · إعادة سطر واحد (A13) =====
@@ -846,7 +846,12 @@ class Engine(
             if (s.subs.isNotEmpty()) { for (r in s.done) done.add(r[0], r[1]) }
             else if (s.done.isNotEmpty()) host.log("♻ التقدم المحفوظ فيه دقايق «مخلّصة» من غير ولا جملة — هتتعاد الترجمة من الأول (v263)")
             for (r in s.failed) failed[Math.round(r[0] / ch).toInt()] = MAX_FAILS
-            chars.addAll(s.chars); gloss.addAll(s.gloss); tplCache.putAll(s.tpl)
+            // (v999 ملاحظة 4) تحميل تاني لنفس الملف (بعد اختيار ترجمة الاستوديو) مبيكررش القوايم
+            chars.clear()
+            gloss.clear()
+            chars.addAll(s.chars)
+            gloss.addAll(s.gloss)
+            tplCache.putAll(s.tpl)
             srcLang = s.srcLang; detDone = s.detDone; autoCharsAttempts = s.charsTried
             if (s.detDone) anyApplied = true
             pronUpTo = subs.size

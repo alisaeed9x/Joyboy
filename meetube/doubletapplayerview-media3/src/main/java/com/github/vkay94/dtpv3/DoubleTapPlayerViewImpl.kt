@@ -91,6 +91,11 @@ open class DoubleTapPlayerViewImpl @JvmOverloads constructor(
         addView(contentFrame, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT)
             .apply { gravity = Gravity.CENTER })
 
+        // JOYBOY(v1001 Fix 2): the fit button sizes the video surfaces inside this fixed
+        // FIT box, so a surface may be larger than the box (fill, stretch, 100%) and must
+        // still paint past its edges. This view itself stays clipped to the screen.
+        contentFrame.clipChildren = false
+
         // MEETUBE(issue #138): subtitles sit over the content frame, not in it - a fill (resize
         // ZOOM) or a pinch zoom makes the frame bigger than this view and carried their bottom line
         // off the screen. Padded to the part of the picture that shows, they still track the video
@@ -104,16 +109,51 @@ open class DoubleTapPlayerViewImpl @JvmOverloads constructor(
         }
     }
 
+    // JOYBOY(v1001 Fix 2): the rect the video actually paints, in content-frame coords.
+    // The fit button sizes the surfaces inside the fixed FIT box, so the video rect is
+    // no longer the box itself (fill crops past it, stretch fills the screen, 100% is
+    // the natural size). Unset = the box, as before.
+    private var videoRectLeft = 0f
+    private var videoRectTop = 0f
+    private var videoRectRight = 0f
+    private var videoRectBottom = 0f
+    private var hasVideoRect = false
+
+    fun setVideoRect(left: Float, top: Float, right: Float, bottom: Float) {
+        videoRectLeft = left
+        videoRectTop = top
+        videoRectRight = right
+        videoRectBottom = bottom
+        hasVideoRect = true
+    }
+
+    fun clearVideoRect() {
+        hasVideoRect = false
+    }
+
     /** The content frame as drawn (a pinch scales it about its centre), clipped to this view. */
     private fun fitSubtitles() {
-        val halfW = contentFrame.width * contentFrame.scaleX / 2f
-        val halfH = contentFrame.height * contentFrame.scaleY / 2f
-        val cx = contentFrame.left + contentFrame.translationX + contentFrame.width / 2f
-        val cy = contentFrame.top + contentFrame.translationY + contentFrame.height / 2f
-        val left = maxOf(0, Math.round(cx - halfW))
-        val top = maxOf(0, Math.round(cy - halfH))
-        val right = maxOf(0, Math.round(width - cx - halfW))
-        val bottom = maxOf(0, Math.round(height - cy - halfH))
+        val rectW: Float
+        val rectH: Float
+        val rectCx: Float
+        val rectCy: Float
+        if (hasVideoRect) {
+            rectW = videoRectRight - videoRectLeft
+            rectH = videoRectBottom - videoRectTop
+            rectCx = contentFrame.left + contentFrame.translationX + (videoRectLeft + videoRectRight) / 2f
+            rectCy = contentFrame.top + contentFrame.translationY + (videoRectTop + videoRectBottom) / 2f
+        } else {
+            rectW = contentFrame.width.toFloat()
+            rectH = contentFrame.height.toFloat()
+            rectCx = contentFrame.left + contentFrame.translationX + contentFrame.width / 2f
+            rectCy = contentFrame.top + contentFrame.translationY + contentFrame.height / 2f
+        }
+        val halfW = rectW * contentFrame.scaleX / 2f
+        val halfH = rectH * contentFrame.scaleY / 2f
+        val left = maxOf(0, Math.round(rectCx - halfW))
+        val top = maxOf(0, Math.round(rectCy - halfH))
+        val right = maxOf(0, Math.round(width - rectCx - halfW))
+        val bottom = maxOf(0, Math.round(height - rectCy - halfH))
         if (left != subtitleView.paddingLeft || top != subtitleView.paddingTop
             || right != subtitleView.paddingRight || bottom != subtitleView.paddingBottom) {
             subtitleView.setPadding(left, top, right, bottom)

@@ -381,11 +381,8 @@ final class AppPages {
         playerButton(context, rows, R.string.mobile_settings_player_prev_next, "mobile_player_previous", "mobile_player_next");
 
         rows.add(SettingsRow.header(context.getString(R.string.mobile_settings_player_buttons_fullscreen)));
-        playerButton(context, rows, R.string.mobile_watch_like, "mobile_player_like");
-        playerButton(context, rows, R.string.mobile_watch_dislike, "mobile_player_dislike");
         playerButton(context, rows, R.string.mobile_comments_entry, "mobile_player_comments");
         playerButton(context, rows, R.string.mobile_live_chat_entry, "mobile_player_chat");
-        playerButton(context, rows, R.string.dialog_download, "mobile_player_download");
         playerButton(context, rows, R.string.mobile_watch_share, "mobile_player_share");
         playerButton(context, rows, R.string.mobile_player_lock, "mobile_player_lock"); // issue #98
 

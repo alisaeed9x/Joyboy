@@ -372,8 +372,8 @@ class MainActivity : Activity() {
             }
         }
         val langs = listOf("مصري", "شامي", "لبناني", "خليجي", "مغربي", "عراقي", "سوداني", "فصحى")
-        val styles = listOf("حرفي", "شعبي", "جرئ", "+18")
-        var lang = Cfg.str("lang", "فصحى"); var style = Cfg.str("style", "حرفي"); var themeId = th.id
+        val styles = listOf("تلقائي", "حرفي", "شعبي", "جرئ")
+        var lang = Cfg.str("lang", "فصحى"); var style = Cfg.str("style", "تلقائي"); var themeId = th.id
         link = ui.input("رابط فيديو مباشر (mp4 / m3u8)", "")
         fun save() {
             if (noSaveCfg) return
@@ -546,6 +546,14 @@ class MainActivity : Activity() {
         val offLangChips = ui.chips(Offline.langLabels, { Offline.langLabels[Offline.langIds.indexOf(Offline.lang()).coerceAtLeast(0)] }) { val lid = Offline.langIds[Offline.langLabels.indexOf(it).coerceAtLeast(0)]; Cfg.put("stt_lang", lid); TrWizard.syncSaved("stt_lang", lid) ; if (lid == "ar" && Cfg.str("stt_engine", "whisper") == "sherpa") Notice.show(this, "⚠ (v468) SenseVoice (Sherpa) لا يدعم العربية — التفريغ العربي هيتعمل بـ Whisper تلقائيًا", 3200L) }
         val offPartLabels = listOf("⚡ لحظي (كل باتش)", "٣ دقايق", "٥ دقايق", "١٠ دقايق", "٢٠ دقيقة"); val offPartVals = listOf(1, 3, 5, 10, 20)
         val offPartChips = ui.chips(offPartLabels, { offPartLabels[offPartVals.indexOf(Cfg.int("ctx_min", 3)).let { if (it < 0) 1 else it }] }) { Cfg.put("ctx_min", offPartVals[offPartLabels.indexOf(it).coerceAtLeast(0)].toString()) }   // (v451) كان coerceAtLeast(1) فزرار «لحظي» (قيمة 1) كان بيتعرض «٣ دقايق» ومابيتعلّمش
+        // (v998) وارد: طول جزء التفريغ (٥ أو ١٠ دقايق) — بيتقرا من WaridTx.chunkSec() عند بداية التفريغ، وحفظ فوري
+        val waridChunkLabels = listOf("٥ دقائق", "١٠ دقائق")
+        val waridChunkVals = listOf("300", "600")
+        val waridChunkChips = ui.chips(waridChunkLabels, { waridChunkLabels[waridChunkVals.indexOf(Cfg.str(WaridTx.CHUNK_MIN_KEY, "300")).let { if (it < 0) 0 else it }] }) { Cfg.put(WaridTx.CHUNK_MIN_KEY, waridChunkVals[waridChunkLabels.indexOf(it).coerceAtLeast(0)]) }
+        // (v999 ملاحظة 1) نموذج التفريغ المستقل عن نموذج الترجمة (Cfg lec_model): الأدق افتراضيًا.
+        val lecModelLabels = listOf("🎯 الأدق (أبطأ)", "⚡ السريع")
+        val lecModelVals = listOf(Lecture.LEC_MODEL_ACCURATE, Lecture.LEC_MODEL_FAST)
+        val lecModelChips = ui.chips(lecModelLabels, { lecModelLabels[lecModelVals.indexOf(Lecture.lecModel()).let { if (it < 0) 0 else it }] }) { Cfg.put(Lecture.LEC_MODEL_KEY, lecModelVals[lecModelLabels.indexOf(it).coerceAtLeast(0)]) }
         val vaOn = "⚡ تلقائي مع كل فيديو"; val vaOff = "✋ يدوي (بريسيتس / زرار 👁)"
         val visAutoChips = ui.chips(listOf(vaOn, vaOff), { if (VisualMode.auto()) vaOn else vaOff }) { Cfg.put("vis_open_auto", if (it == vaOn) "1" else "0") }   // (v249) مفتاح مستقل: الافتراضي يدوي
         // (v198) إعدادات مشغّل الموسيقى
@@ -576,8 +584,8 @@ class MainActivity : Activity() {
                     ui.text("لهجة الترجمة (فصحى = من غير تحويل):", 12f, th.muted),
                     ui.chips(langs, { lang }) { lang = it; save(); val dv = if (it == "فصحى") "" else it; Cfg.put("conv_dialect", dv); TrWizard.syncSaved("conv_dialect", dv) },
                     ui.text("أسلوب الترجمة:", 12f, th.muted),
-                    ui.chips(styles, { Cfg.str("tone_style", "").ifBlank { style }.ifBlank { "حرفي" } }) { style = it; save(); Cfg.put("tone_style", if (it == "حرفي") "" else it) },
-                    ui.text("الشدة (بتشتغل مع شعبي / جرئ / +18 بس):", 12f, th.muted), toneDegChips,
+                    ui.chips(styles, { Cfg.str("tone_style", "").ifBlank { "تلقائي" } }) { style = it; save(); Cfg.put("tone_style", if (it == "تلقائي") "" else it) },
+                    ui.text("الشدة (بتشتغل مع شعبي / جرئ / تلقائي بس):", 12f, th.muted), toneDegChips,
                     ui.noHint()).apply { if (Strict.hideTrOpts()) visibility = View.GONE },
                 ui.section("🏠 اللغة الأساسية", false,
                     ui.noHint(),
@@ -621,7 +629,13 @@ class MainActivity : Activity() {
                 ui.section("⏱ التقطيع والتنقيح", false, chunk, ahead, hlsAhead,
                     ui.noHint(), offPartChips,
                     ui.switchRow("كمّل ترجمة باقي الفيديو بعد ما توصل لمكان التشغيل (بيرجع للأول لو فيه جزء ناقص)", Cfg.bool("keepgoing", true)) { Cfg.put("keepgoing", if (it) "1" else "0") },
-                    *fl("prefine"))) }),
+                    *fl("prefine")),
+                ui.section("🌐 وارد — طول جزء التفريغ", false,
+                    ui.text("أجزاء التفريغ بطريقة وارد (٥ أو ١٠ دقايق) — بيتطبق على التفريغات الجديدة بس؛ تفريغ وارد شغال بيكمّل بنفس حجمه.", 12f, th.muted),
+                    waridChunkChips),
+                ui.section("🎙 نموذج التفريغ الاحتياطي (الطريقة العادية القديمة)", false,
+                    ui.text("موديل الطريقة العادية القديمة بس — تفريغ الاستوديو الجديد بيشتغل بطريقة وارد (سلسلة موديلات تلقائية) ومبيتأثرش بالاختيار ده. ومبيغيّرش موديل الترجمة.", 12f, th.muted),
+                    lecModelChips)) }),
             tab("visual", { listOf<View>(
                 ui.section("🔑 مفتاح الوضع البصري فقط", true,
                     ui.noHint(), visKeysUi),

@@ -231,7 +231,7 @@ class LiveCaptionService : Service() {
         val keys = Cfg.allMainKeys()
         if (keys.isEmpty()) { deliver(order.skip(ki, System.currentTimeMillis())); return }
         val model = Cfg.str("model", Models.DEFAULT).trim().ifEmpty { Models.DEFAULT }
-        val lang = Cfg.str("lang", "فصحى"); val style = Cfg.str("style", "حرفي")
+        val lang = Cfg.str("lang", "فصحى"); val style = Cfg.str("style", "تلقائي")
         val ctx = synchronized(recent) { recent.toList() }
         val prompt = "ده مقطع صوت حوالي ${durSec.toInt()} ثواني مسجّل من فيديو شغّال على الجهاز، وممكن يبدأ أو ينتهي في نص جملة. اكتب ترجمة عربية بلهجة $lang (الأسلوب: $style) لأي كلام مسموع فيه، " +
             "كجمل قصيرة مناسبة لعرضها كترجمة فورية (حد أقصى حوالي 12 كلمة للسطر). ترجم كل كلام بشري مسموع حتى لو واطي، وتجاهل الموسيقى والمؤثرات، وماتألفش حاجة مش مسموعة.\n" +

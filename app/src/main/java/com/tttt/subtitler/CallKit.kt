@@ -77,6 +77,47 @@ object CallKit {
 
     fun hasVoice(ctx: Context, key: String): Boolean = File(voiceDir(ctx), "$key.wav").exists()
 
+    // (v1001) إدارة البصمات المحفوظة — لشاشة «الأصوات المحفوظة»:
+    // المفتاح هو contactKey(name) أو "me" لصاحب الجهاز — إعادة تسمية جهة اتصال بتغيّر مفتاحها
+    // فالمقطع القديم بيتّم (orphan) ومبيتربطش بالاسم الجديد؛ شاشة الحفظ لازم تنبّه لكده.
+    class VoiceEntry(val key: String, val name: String, val ts: Long)
+
+    /** كل البصمات المحفوظة، الأحدث أولًا — بيتخطى أي مدخل ملف الصوت بتاعه مش موجود. */
+    @Synchronized fun listVoices(ctx: Context): List<VoiceEntry> {
+        val out = ArrayList<VoiceEntry>()
+        val j = readIdx(ctx)
+        val keys = j.keys()
+        while (keys.hasNext()) {
+            val key = keys.next()
+            val o = j.optJSONObject(key) ?: continue
+            if (!File(voiceDir(ctx), "$key.wav").exists()) continue
+            out.add(VoiceEntry(key, o.optString("name"), o.optLong("ts", 0L)))
+        }
+        out.sortByDescending { it.ts }
+        return out
+    }
+
+    /** بيمسح ملف الصوت ومدخل الفهرس — المفتاح نفسه مبيتعادش استعماله إلا لو اتحفظت بصمة جديدة بنفس الاسم. */
+    @Synchronized fun deleteVoice(ctx: Context, key: String) {
+        try {
+            File(voiceDir(ctx), "$key.wav").delete()
+            val j = readIdx(ctx)
+            j.remove(key)
+            idxFile(ctx).writeText(j.toString(), Charsets.UTF_8)
+        } catch (e: Throwable) { LogStore.err("CallKit:deleteVoice", e) }
+    }
+
+    /** بيغيّر الاسم الظاهر في الفهرس بس — المفتاح بيفضل زي ما هو (مربوط بالاسم القديم عند الحفظ). */
+    @Synchronized fun renameVoice(ctx: Context, key: String, newName: String) {
+        try {
+            val j = readIdx(ctx)
+            val o = j.optJSONObject(key) ?: return
+            o.put("name", newName.trim())
+            j.put(key, o)
+            idxFile(ctx).writeText(j.toString(), Charsets.UTF_8)
+        } catch (e: Throwable) { LogStore.err("CallKit:renameVoice", e) }
+    }
+
     // ===================== جهات الاتصال =====================
     class Who(val name: String, val number: String)
 

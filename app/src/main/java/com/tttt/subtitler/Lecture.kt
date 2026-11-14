@@ -24,7 +24,14 @@ object Lecture {
     const val CHUNK_SEC = 60.0   // جيميناي ما بيقبلش أكتر من كده في الطلب الواحد بشكل موثوق
 
     // ===================== الموديل =====================
-    class Seg(val start: Double, val end: Double, val text: String, val chunk: Int, val spk: String = "")   // spk: D محاضر · S طالب/متحدث تاني · "" غير معروف
+    // (v999 ملاحظة 1) نموذج التفريغ المستقل عن نموذج الترجمة: الأدق افتراضيًا، والسريع = flash-lite.
+    // مفتاح Cfg مستقل «lec_model» — مفتاح «model» بتاع الترجمة مبيتلمسش.
+    const val LEC_MODEL_ACCURATE = "gemini-flash-latest"
+    const val LEC_MODEL_FAST = "gemini-flash-lite-latest"
+    const val LEC_MODEL_KEY = "lec_model"
+    fun lecModel(): String = Cfg.str(LEC_MODEL_KEY, LEC_MODEL_ACCURATE).trim().ifEmpty { LEC_MODEL_ACCURATE }
+
+    class Seg(val start: Double, val end: Double, val text: String, val chunk: Int, val spk: String = "", val lang: String = "", val tone: String = "")   // spk: D محاضر · S طالب/متحدث تاني · "" غير معروف — lang: كود ISO للغة الجملة دي (v999) — tone: نبرة الجملة بكلمة عربية واحدة (v1001، للمكالمات)
 
     class Doc(val id: String) {
         var title = ""
@@ -53,6 +60,11 @@ object Lecture {
         var typeAuto = false        // (v995) النوع اتحدد تلقائي ولا يدوي
         var typeConf = 0.0          // (v995) ثقة التحديد التلقائي 0.0–1.0
         var autoTitle = ""          // (v995) عنوان مولّد تلقائي من أول أجزاء التفريغ — منفصل عن title اللي المستخدم يعدّله
+        var warid = false           // (v998) تفريغ بطريقة وارد: سلسلة موديلات + ستريم + Files API (مش الوضع العادي)
+        var chunkSec = 60.0         // (v998) حجم الجزء بالثواني للتفريغ ده — 60 عادي، 300/600 وارد (بيتحفظ عشان الاستكمال ميتكسرش)
+        var langCode = ""           // (v998) كود ISO للغة المنطوقة (ar/en/tr/...) من رد وارد — بيتبعت لمحرك الترجمة كلغة مصدر
+        var langTally = ""          // (v999) عدّاد لغات الأجزاء «ar:3#العربية;en:1#English» — الغالبة فيه هي langCode الحالية
+        val parties = ArrayList<String>()   // (v1001) أطراف المكالمة بأسماء العرض بس، بنفس ترتيب المراجع — "أنا" أولًا لو فيه بصمة صوت لصاحب الجهاز — مفتاح الصوت بيتجاب بـ CallKit.contactKey(name) والرقم بـ CallKit.resolve وقت الدخول
         val complete: Boolean get() = nChunks > 0 && done.size >= nChunks && failed.isEmpty()
         val pct: Int get() = if (nChunks <= 0) 0 else (done.size * 100 / nChunks).coerceIn(0, 100)
         val words: Int get() = synchronized(this) { segs.sumOf { s -> s.text.split(' ').count { it.isNotBlank() } } }
@@ -65,6 +77,9 @@ object Lecture {
         @Volatile var status = "بجهّز الصوت…"
         @Volatile var error = ""
         @Volatile var titleTried = false   // (v995) اتحاول توليد عنوان تلقائي للدوكيومنت ده ولا لسه — مرة واحدة بس
+        @Volatile var callRefs: List<ByteArray> = emptyList()   // (v1001) المقاطع المرجعية للمكالمة، محمّلة مرة واحدة في start() — بنفس ترتيب callNames
+        @Volatile var callNames: List<String> = emptyList()   // (v1001) أسماء الأطراف بنفس ترتيب callRefs — callNames[0] = "أنا" لو فيه بصمة لصاحب الجهاز
+        @Volatile var callMixLogged: Boolean = false   // (v1001) اتسجّل خلط المراجع في اللوج مرة واحدة ولا لسه
     }
     val runs = ConcurrentHashMap<String, Run>()
     fun runOf(id: String): Run? = runs[id]
@@ -78,13 +93,14 @@ object Lecture {
 
     private fun toJson(d: Doc): JSONObject = synchronized(d) {
         val segs = JSONArray()
-        for (s in d.segs) segs.put(JSONObject().put("s", s.start).put("e", s.end).put("t", s.text).put("c", s.chunk).put("k", s.spk))
+        for (s in d.segs) segs.put(JSONObject().put("s", s.start).put("e", s.end).put("t", s.text).put("c", s.chunk).put("k", s.spk).put("g", s.lang).put("n", s.tone))
         JSONObject().put("id", d.id).put("title", d.title).put("kind", d.kind).put("uri", d.uri).put("link", d.link)
             .put("dur", d.durSec).put("n", d.nChunks).put("created", d.created).put("lang", d.lang).put("clean", d.clean)
             .put("done", JSONArray(d.done.toList())).put("failed", JSONArray(d.failed.toList())).put("segs", segs)
             .put("org", d.organized).put("orgWeb", d.organizedWeb).put("sum", d.summary).put("sumWeb", d.summaryWeb).put("sumLen", d.summaryLen)
             .put("ua", d.ua).put("ref", d.ref).put("an", d.analysis).put("anN", d.analysisN).put("anH", d.analysisHash)
             .put("ty", d.type).put("tyA", d.typeAuto).put("tyC", d.typeConf).put("aTi", d.autoTitle)
+            .put("wrd", d.warid).put("cSec", d.chunkSec).put("lCd", d.langCode).put("lTl", d.langTally).put("pty", JSONArray(d.parties))
     }
 
     private fun fromJson(o: JSONObject): Doc {
@@ -95,12 +111,14 @@ object Lecture {
         o.optJSONArray("done")?.let { a -> for (i in 0 until a.length()) d.done.add(a.optInt(i)) }
         o.optJSONArray("failed")?.let { a -> for (i in 0 until a.length()) d.failed.add(a.optInt(i)) }
         o.optJSONArray("segs")?.let { a ->
-            for (i in 0 until a.length()) { val x = a.optJSONObject(i) ?: continue; d.segs.add(Seg(x.optDouble("s"), x.optDouble("e"), x.optString("t"), x.optInt("c"), x.optString("k"))) }
+            for (i in 0 until a.length()) { val x = a.optJSONObject(i) ?: continue; d.segs.add(Seg(x.optDouble("s"), x.optDouble("e"), x.optString("t"), x.optInt("c"), x.optString("k"), x.optString("g"), toneOf(x.optString("n")))) }
         }
         d.organized = o.optString("org"); d.organizedWeb = o.optBoolean("orgWeb"); d.summary = o.optString("sum")
         d.summaryWeb = o.optBoolean("sumWeb"); d.summaryLen = o.optString("sumLen", "mid")
         d.ua = o.optString("ua"); d.ref = o.optString("ref"); d.analysis = o.optString("an"); d.analysisN = o.optInt("anN", 0); d.analysisHash = o.optString("anH")
         d.type = o.optString("ty"); d.typeAuto = o.optBoolean("tyA", false); d.typeConf = o.optDouble("tyC", 0.0); d.autoTitle = o.optString("aTi")
+        d.warid = o.optBoolean("wrd", false); d.chunkSec = o.optDouble("cSec", 60.0); d.langCode = o.optString("lCd"); d.langTally = o.optString("lTl")
+        o.optJSONArray("pty")?.let { a -> for (i in 0 until a.length()) d.parties.add(a.optString(i)) }
         return d
     }
 
@@ -184,7 +202,7 @@ object Lecture {
     fun audioPermission(): String = if (Build.VERSION.SDK_INT >= 33) "android.permission.READ_MEDIA_AUDIO" else "android.permission.READ_EXTERNAL_STORAGE"
     fun hasAudioPermission(ctx: Context): Boolean = ctx.checkSelfPermission(audioPermission()) == android.content.pm.PackageManager.PERMISSION_GRANTED
 
-    private val REC_HINT = Regex("record|rec[_\\- ]|voice|memo|dictaphone|call|ptt|تسجيل|ريكورد|مكالم|صوتيات", RegexOption.IGNORE_CASE)
+    internal val REC_HINT = Regex("record|rec[_\\- ]|voice|memo|dictaphone|call|ptt|تسجيل|ريكورد|مكالم|صوتيات", RegexOption.IGNORE_CASE)
 
     /** كل الصوتيات على الجهاز؛ isRec = تسجيل (علامة النظام IS_RECORDING أو اسم/مسار شبه «Recordings/Voice Recorder/Call»). يتنده من خيط خلفي */
     fun scanAudio(ctx: Context): List<Rec> {
@@ -215,12 +233,17 @@ object Lecture {
     // ===================== التفريغ =====================
     // type = نوع المحتوى ("" أو "lecture" = المحاضرة — السلوك القديم حرفيًا).
     // أي نوع تاني بياخد برومبته من سجل Studio.TxType. internal عشان Studio بيناديها لبرومبت المحاضرة.
-    internal fun transcribePrompt(durSec: Double, clean: Boolean, prev: String, type: String = ""): String {
+    // (v999 ملاحظة 1) اكتشاف اللغة: كل برومبت (محاضرة + الأنواع الخمسة في Studio) بيطلب lang بالعربي
+    // وlangCode بكود ISO، ولغة لكل عنصر لو الجملة بلغة تانية عن باقي المقطع.
+    // المثال في شكل الـJSON وصف محايد («كود ISO») مش قيمة «ar» — عشان ميميلش الموديل للعربي.
+    // terms: أسماء/مصطلحات متراكمة من الأجزاء اللي قبل كده — بتتثبّت كتابتها.
+    internal fun transcribePrompt(durSec: Double, clean: Boolean, prev: String, type: String = "", warid: Boolean = false, terms: String = "", parties: List<String> = emptyList(), refsMixed: Boolean = false): String {
         val t = type.ifBlank { "lecture" }
-        if (t != "lecture") return Studio.promptFor(t, durSec, clean, prev)
-        return buildString {
+        val base = if (t != "lecture") Studio.promptFor(t, durSec, clean, prev, terms, parties, refsMixed)
+        else buildString {
         append("أنت مفرّغ صوتي أكاديمي محترف بدقة عالية جدًا، متخصص في المحاضرات. اسمع المقطع الصوتي (مدته حوالي ${durSec.toInt()} ثانية) بتركيز كامل وفرّغ الكلام المنطوق نصًا حرفيًا بنفس اللغة المنطوقة فعلًا — من غير أي ترجمة ولا تلخيص ولا إضافة من عندك.\n\n")
         append("قواعد صارمة:\n")
+        append("- 🔴 اكتشف لغة الكلام المنطوق في المقطع ده أولًا (عربي/إنجليزي/تركي/كوري/أي لغة تانية) واكتبها في lang بالعربي وlangCode بكود ISO من حرفين (ar/en/tr/ko/...)، ولو فيه جملة بلغة تانية عن باقي المقطع حط كودها في lang بتاع العنصر نفسه. متفترضش إن اللغة عربي.\n")
         append("- 🔴 المتحدثين: المحاضر = الصوت الأساسي اللي بيشرح (spk=\"D\"). أي صوت تاني مختلف (طالب بيسأل أو بيقاطع أو بيرد، أو شخص تاني) = spk=\"S\". ميّز بين الأصوات من نبرتها وطبقتها وطريقة كلامها مش من المحتوى بس. لو الجملة الواحدة اتقالت من صوتين، افصلها لعنصرين.\n")
         append("- 🔴 لو طالب قاطع المحاضر أو سأل، سجّل سؤاله كعنصر منفصل spk=\"S\" بتوقيته، ورد المحاضر بعده كعنصر spk=\"D\". متدمجوش مع بعض أبدًا.\n")
         append("- 🔴 لو المتحدث خلط عربي وإنجليزي في نفس الجملة، اكتب كل جزء بلغته بالظبط زي ما اتقال. المصطلحات العلمية والإنجليزي القصير (حتى كلمتين وسط الجملة) تتكتب بحروفها الإنجليزية الصحيحة ومتتشالش ولا تتترجم ولا تتكتب بحروف عربية.\n")
@@ -231,12 +254,42 @@ object Lecture {
         append("- لو الصوت مش واضح اكتب أقرب تفسير علمي منطقي من السياق، ومتخترعش كلام لو مفيش كلام مسموع.\n")
         append("- لو المقطع مفيهوش كلام خالص رجّع segments فاضية.\n")
         if (prev.isNotBlank()) append("\nسياق آخر كلام في المقطع اللي قبله (لتكملة جملة مقطوعة على الحدود وتوحيد كتابة المصطلحات بس، متكررهوش): \"$prev\"\n")
+        if (terms.isNotBlank()) append("\nأسماء ومصطلحات ظهرت قبل كده في نفس التفريغ — اكتبها بنفس الطريقة دي بالظبط كل مرة تتقال: \"$terms\"\n")
         append("\nرجّع JSON فقط بدون شرح ولا markdown:\n")
-        append("{\"lang\":\"اللغة الأساسية بالعربي\",\"segments\":[{\"start\":0.0,\"end\":5.2,\"spk\":\"D\",\"text\":\"...\"}]}")
+        append("{\"lang\":\"اسم اللغة بالعربي\",\"langCode\":\"كود ISO\",\"segments\":[{\"start\":0.0,\"end\":5.2,\"spk\":\"D\",\"lang\":\"كود ISO\",\"text\":\"...\"}]}")
         }
+        if (!warid) return base
+        return waridPrompt(base)
     }
 
-    private fun spkOf(raw: String): String {
+    // (v998 — وارد) قواعد إضافية فوق برومبت النوع (محاضرة أو غيرها — أكواد spk بتفضل زي ما النوع حددها):
+    // حرفي تمامًا، لهجة مصرية زي ما اتنطقت، إنجليزي بحروف لاتينية، بادئات عربية على الكلمات الإنجليزية،
+    // كل utterance عنصر مستقل بتوقيت دقيق + spk، وlangCode (كود ISO) جنب lang في الـ JSON.
+    // (v999) الشكل الأساسي بقى فيه langCode أصلًا — وارد مبيعدّلش الشكل، بيضيف قواعده بس.
+    private fun waridPrompt(base: String): String {
+        val rules = buildString {
+            append("\n═══ قواعد وارد (إضافية — بتكمّل اللي فوق، مش بتلغيه) ═══\n")
+            append("- 🔴 فرّغ حرفيًا تمامًا: من غير تلخيص ولا تصحيح قواعد ولا إضافة ولا حذف. اللي اتقال يتكتب زي ما اتقال بالظبط.\n")
+            append("- 🔴 اللهجة المصرية زي ما اتنطقت حرفيًا — متحوّلهاش لفصحى. المصطلحات الإنجليزية والتقنية تتكتب بحروف لاتينية صحيحة، وأبدًا بحروف عربية صوتية.\n")
+            append("- 🔴 البادئات العربية (الـ، بـ، نـ، هـ، وـ) تفضل عربية لما تتلزق في كلمة إنجليزية (مثال: الـAPI، بـEnglish).\n")
+            append("- 🔴 كل مقطع كلام (utterance) عنصر مستقل: start/end دقيقين بالثواني نسبةً لبداية المقطع ده، وspk حسب الصوت (نفس أكواد spk المذكورة فوق حسب نوع المحتوى). الجملة الواحدة من صوتين تتفصل لعنصرين.\n")
+            append("- 🔴 التوقيت لازم يبقى دقيق — كل عنصر بمكانه وبدايته ونهايته الفعلية في المقطع، مش توزيع بالتساوي.\n")
+        }
+        val marker = "\nرجّع JSON فقط"
+        val at = base.indexOf(marker)
+        if (at < 0) return base + rules
+        return base.substring(0, at) + rules + base.substring(at)
+    }
+
+    // (v1001) تطبيع النبرة من رد الموديل: كلمة واحدة قصيرة (بحد أقصى 12 حرف)، وإلا فاضية.
+    internal fun toneOf(raw: String): String {
+        val t = raw.trim()
+        if (t.isEmpty()) return ""
+        val w = t.split(Regex("\\s+")).firstOrNull() ?: ""
+        return w.take(12)
+    }
+
+    internal fun spkOf(raw: String): String {
         val r = raw.trim().lowercase()
         return when {
             r.isEmpty() -> ""
@@ -247,7 +300,7 @@ object Lecture {
         }
     }
 
-    private fun parseJson(t: String): JSONObject? {
+    internal fun parseJson(t: String): JSONObject? {
         val c = t.replace("```json", "").replace("```", "").trim()
         return try { JSONObject(c) } catch (_: Throwable) {
             val a = c.indexOf('{'); val b = c.lastIndexOf('}')
@@ -255,33 +308,143 @@ object Lecture {
         }
     }
 
+    // (v999 ملاحظة 1) تطبيع كود اللغة لحرفين لاتينيين صغار، وإلا فاضي.
+    internal fun normLangCode(raw: String): String {
+        val c = raw.trim().lowercase().split('-', '_').firstOrNull() ?: ""
+        return if (c.length == 2 && c.all { it in 'a'..'z' }) c else ""
+    }
+
+    // (v999 ملاحظة 1) عدّاد لغات الأجزاء: «ar:3#العربية;en:1#English» — الغالبة بتحدد langCode/lang.
+    // لازم يتنده جوّا synchronized(d) — لو الغالبية اتقلبت في نص الفيديو، langCode بيتحدّث معاها.
+    internal fun recordLang(d: Doc, code: String, name: String) {
+        if (code.isBlank()) return
+        val map = LinkedHashMap<String, Pair<Int, String>>()
+        for (part in d.langTally.split(';')) {
+            val kv = part.split('#', limit = 2)
+            if (kv.isEmpty()) continue
+            val cc = kv[0].substringBefore(':')
+            val n = kv[0].substringAfter(':', "0").toIntOrNull() ?: 0
+            if (cc.isNotBlank() && n > 0) map[cc] = Pair(n, kv.getOrNull(1) ?: "")
+        }
+        val cur = map[code]
+        val nm = if (name.isNotBlank()) name else cur?.second ?: ""
+        map[code] = Pair((cur?.first ?: 0) + 1, nm)
+        val top = map.maxByOrNull { it.value.first }
+        d.langTally = map.entries.joinToString(";") { (k, v) -> k + ":" + v.first + "#" + v.second }
+        if (top != null) {
+            d.langCode = top.key
+            val topName = top.value.second
+            if (topName.isNotBlank()) d.lang = topName
+        }
+    }
+
+    // (v999 ملاحظة 1) أسماء/مصطلحات متراكمة من الأجزاء اللي قبل كده: كلمات لاتينية مبدوءة بكبير أو طويلة،
+    // وكلمات عربية طويلة، الأكثر تكرارًا أولًا — بحد أقصى 12 مصطلح و300 حرف (رخيص، من غير طلب شبكة).
+    internal fun termsFromPrev(d: Doc, idx: Int): String {
+        val counts = HashMap<String, Int>()
+        val segs = synchronized(d) { d.segs.filter { it.chunk < idx } }
+        for (s in segs) {
+            for (w in s.text.split(Regex("[^\\p{L}0-9_]+"))) {
+                val t = w.trim()
+                if (t.length < 4) continue
+                val latin = t[0] in 'A'..'Z' || t[0] in 'a'..'z'
+                val keep = if (latin) t[0] in 'A'..'Z' || t.length >= 5 else t.length >= 5
+                if (!keep) continue
+                counts[t] = (counts[t] ?: 0) + 1
+            }
+        }
+        val top = counts.entries.sortedByDescending { it.value }.take(12).map { it.key }
+        return top.joinToString("، ").take(300)
+    }
+
+    // (v999) تحويل مصفوفة segments في رد JSON لقايمة Seg — بتستعمل في المحاولة العادية وفي إعادة المحاولة بالموديل الأدق.
+    // (v1001) offset: إزاحة المراجع الملزوقة قبل المقطع (CallKit.mix) — أي عنصر بيبدأ قبلها هو المرجع نفسه وبيتخطى، والباقي بتتطرح منه.
+    private fun parseSegs(j: JSONObject, st: Double, en: Double, idx: Int, offset: Double = 0.0): List<Seg> {
+        val arr = j.optJSONArray("segments") ?: JSONArray()
+        val got = ArrayList<Seg>()
+        val dur = en - st
+        for (i in 0 until arr.length()) {
+            val x = arr.optJSONObject(i) ?: continue
+            val t = x.optString("text").trim()
+            if (t.isEmpty()) continue
+            val s0 = (x.optDouble("start", 0.0)).coerceIn(0.0, dur)
+            val e0 = (x.optDouble("end", s0)).coerceIn(s0, dur)
+            if (s0 < offset) continue
+            got.add(Seg(st + s0 - offset, st + e0 - offset, t, idx, spkOf(x.optString("spk")), normLangCode(x.optString("lang")), toneOf(x.optString("tone"))))
+        }
+        return got
+    }
+
     /** جزء واحد: بيرجّع true لو نجح (حتى لو الجزء صامت)، false لو فشل نهائيًا بعد المحاولات */
-    private fun doChunk(run: Run, keys: List<String>, mdl: String, src: AudioSource, idx: Int, worker: Int, dur: Double): Boolean {
+    private fun doChunk(run: Run, keys: List<String>, mdl: String, src: AudioSource, idx: Int, worker: Int, dur: Double, chunkSec: Double = CHUNK_SEC): Boolean {
         val d = run.doc
-        val st = idx * CHUNK_SEC; val en = minOf(dur, st + CHUNK_SEC)
+        val st = idx * chunkSec; val en = minOf(dur, st + chunkSec)
         if (en - st < 1.0) return true
         val wav = try { src.wav(st, en) } catch (e: Throwable) { LogStore.err("Lecture:wav", e); null } ?: return false
-        if (wav.silent) { synchronized(d) { d.segs.removeAll { it.chunk == idx } }; return true }
+        val hasSpeech = d.warid && wav.activeSec >= WaridTx.MIN_ACTIVE_SEC
+        if (wav.silent && !hasSpeech) { synchronized(d) { d.segs.removeAll { it.chunk == idx } }; return true }
+        // (v1001) مكالمة + مراجع محمّلة: لزق المراجع قبل المقطع — البوابة اللي فوق (silent/activeSec)
+        // لازم تفضل على المقطع الأصلي، لأن المقطع المخلوط فيه كلام مرجعي دايمًا فكان هيعدّيها على طول.
+        // المقطع المخلوط بياخد نفس activeSec/silent بتوع الأصلي، والإزاحة بتتطرح من التوقيتات بعدين.
+        val isCall = Studio.typeOf(d).code == "call"
+        var sendWav = wav
+        var mixOffset = 0.0
+        var refsMixed = isCall && run.callRefs.isNotEmpty()
+        if (refsMixed) {
+            try {
+                val mixed = CallKit.mix(wav.bytes, run.callRefs)
+                sendWav = WavChunk(mixed.wav, wav.startSec, wav.durSec, wav.silent, wav.gain, wav.activeSec)
+                mixOffset = mixed.offset
+                synchronized(run) {
+                    if (!run.callMixLogged) {
+                        run.callMixLogged = true
+                        LogStore.add("📞 [مكالمة] خلط " + run.callRefs.size + " مرجع صوت قبل كل جزء — الأطراف: " + run.callNames.joinToString("، "))
+                    }
+                }
+            } catch (e: Throwable) {
+                LogStore.err("Lecture:callMix", e)
+                refsMixed = false
+            }
+        }
         val prev = synchronized(d) { d.segs.filter { it.chunk == idx - 1 }.sortedBy { it.start }.takeLast(2).joinToString(" ") { it.text } }.takeLast(300)
-        val prompt = transcribePrompt(en - st, d.clean, prev, d.type)
+        val terms = termsFromPrev(d, idx)
+        val promptParties = if (refsMixed) run.callNames else synchronized(d) { d.parties.toList() }
+        val prompt = transcribePrompt(en - st, d.clean, prev, d.type, d.warid, terms, promptParties, refsMixed)
+        if (d.warid) return WaridTx.transcribeChunk(run, keys, sendWav, idx, worker, chunkSec, en - st, prompt, mixOffset)
         for (a in 0 until 4) {
             if (run.stop) return false
             val key = keys[(idx + worker + a) % keys.size]
             try {
-                val r = Api.generate(mdl, key, prompt, wav.bytes, Api.outTokens(en - st), 0.1, true, false)
+                val r = Api.generate(mdl, key, prompt, sendWav.bytes, Api.outTokens(en - st), 0.1, true, false)
                 val j = parseJson(r.text)
                 if (j == null) { if (r.text.isBlank() && r.finish.startsWith("PROMPT_")) { return true }; continue }
-                val arr = j.optJSONArray("segments") ?: JSONArray()
-                val got = ArrayList<Seg>()
-                for (i in 0 until arr.length()) {
-                    val x = arr.optJSONObject(i) ?: continue
-                    val t = x.optString("text").trim(); if (t.isEmpty()) continue
-                    val s0 = (x.optDouble("start", 0.0)).coerceIn(0.0, en - st); val e0 = (x.optDouble("end", s0)).coerceIn(s0, en - st)
-                    got.add(Seg(st + s0, st + e0, t, idx, spkOf(x.optString("spk"))))
+                var finalGot = parseSegs(j, st, en, idx, mixOffset)
+                var finalJ = j
+                // (v999 ملاحظة 1) فحص الجزء المشبوه — قاعدة محافظة: بيتعاد مرة واحدة بس، وبالموديل الأدق،
+                // وبيتاخد الرد الأطول بس. الشرط: الموديل الحالي مش الأدق أصلًا، وثواني الكلام الفعلي
+                // (activeSec) ≥ نصف مدة الجزء، وحروف النص المرجّع < حرفين لكل ثانية كلام.
+                // الجزء الهادي أو الصامت (activeSec قليل) مبيتعادش أبدًا.
+                val gotChars = finalGot.sumOf { it.text.length }
+                val suspicious = mdl != LEC_MODEL_ACCURATE && wav.activeSec >= (en - st) * 0.5 && gotChars < wav.activeSec * 2
+                if (suspicious) {
+                    try {
+                        val key2 = keys[(idx + worker + 1) % keys.size]
+                        val r2 = Api.generate(LEC_MODEL_ACCURATE, key2, prompt, sendWav.bytes, Api.outTokens(en - st), 0.1, true, false)
+                        val j2 = parseJson(r2.text)
+                        if (j2 != null) {
+                            val got2 = parseSegs(j2, st, en, idx, mixOffset)
+                            if (got2.sumOf { it.text.length } > gotChars) {
+                                finalGot = got2
+                                finalJ = j2
+                            }
+                        }
+                    } catch (e: Throwable) {
+                        LogStore.err("Lecture:retryAccurate", e)
+                    }
                 }
                 synchronized(d) {
-                    d.segs.removeAll { it.chunk == idx }; d.segs.addAll(got)
-                    val l = j.optString("lang"); if (l.isNotBlank() && d.lang.isBlank()) d.lang = l
+                    d.segs.removeAll { it.chunk == idx }; d.segs.addAll(finalGot)
+                    recordLang(d, normLangCode(finalJ.optString("langCode")), finalJ.optString("lang"))
                 }
                 return true
             } catch (e: NoKey) { run.error = e.message ?: "مفيش مفتاح"; run.stop = true; return false }
@@ -357,6 +520,29 @@ object Lecture {
         }.apply { isDaemon = true; start() }
     }
 
+    // (v1000 — المرحلة 2) اكتشاف نوع المحتوى قبل التفريغ: إشارات مجانية أولًا (من غير طلب شبكة)،
+    // ولو مفيش إشارة قوية بيجرّب طلب خفيف على أول 90 ثانية. بيتنده من start() بس، قبل خيوط التفريغ.
+    // مبيتندهش أبدًا لو النوع متحدد (يدوي أو تلقائي قديم) — ومبيرميش استثناء أبدًا.
+    private fun detectType(ctx: Context, d: Doc, src: AudioSource, dur: Double) {
+        if (d.type.isNotBlank() || d.typeAuto) return
+        val path = d.uri.ifBlank { d.link }
+        val free = TxDetect.freeSignals(d.kind, d.title, path, dur)
+        if (free != null) {
+            Studio.setType(ctx, d, free.type, true, free.conf)
+            return
+        }
+        val wav = try {
+            src.wav(0.0, minOf(90.0, dur))
+        } catch (_: Throwable) {
+            null
+        } ?: return
+        if (wav.silent) return
+        val res = TxDetect.detectLight(ctx, wav.bytes)
+        if (res == null) return
+        if (res.conf < 0.7) return
+        Studio.setType(ctx, d, res.type, true, res.conf)
+    }
+
     /** يبدأ/يكمّل التفريغ في الخلفية. الأجزاء اللي خلصت بتتخطى؛ اللي فشلت بتتعاد. */
     fun start(ctx0: Context, d: Doc): Run? {
         val ctx = ctx0.applicationContext
@@ -367,12 +553,64 @@ object Lecture {
             try {
                 val ks = keys()
                 if (ks.isEmpty()) throw IOException("مفيش مفتاح Gemini — ضيفه من الإعدادات الأول")
-                val mdl = model()
+                // (v999) التفريغ بموديل التفريغ المستقل (lec_model) — مش موديل الترجمة.
+                val mdl = lecModel()
                 run.status = "بجهّز الصوت…"
                 val s = openSource(ctx, d); src = s
                 val dur = s.durationSec()
                 if (dur <= 0.0) throw IOException("مقدرتش أعرف مدة الصوت")
-                synchronized(d) { d.durSec = dur; d.nChunks = Math.ceil(dur / CHUNK_SEC).toInt() }
+                // (v1000) وارد هو الافتراضي للاستوديو: دوكيومنت جديد (مفيش تقدّم) بيتفرّغ بوارد.
+                // الأولوية: سلسلة وارد التلقائية أولًا للتفريغات الجديدة؛ lec_model هو محرك المسار القديم (غير وارد) الثابت بس.
+                synchronized(d) {
+                    if (!d.warid && d.done.isEmpty() && d.failed.isEmpty() && d.segs.isEmpty()) {
+                        d.warid = true
+                    }
+                }
+                // (v1000 — المرحلة 2) اكتشاف نوع المحتوى قبل ما خيوط التفريغ تبدأ: بيتنده مرة واحدة هنا بس.
+                // القاعدة: بيتحدد تلقائي بس لو النوع لسه فاضي (d.type == "") ومتحددش تلقائي قبل كده (typeAuto == false) —
+                // لو المستخدم اختار نوع يدوي في بداية الجلسة (pickType) الاكتشاف مبيعدّلش عليه.
+                // أي فشل هنا مبيوقفش التفريغ أبدًا: بيتسجّل وبيتكمّل بالنوع زي ما هو.
+                try {
+                    detectType(ctx, d, s, dur)
+                } catch (e: Throwable) {
+                    LogStore.err("Lecture:detect", e)
+                }
+                // (v1001 — المرحلة 3) مكالمة: حمّل المقاطع المرجعية مرة واحدة قبل خيوط التفريغ —
+                // بصمة صاحب الجهاز ("me") أولًا، وبعدها بصمة كل طرف في d.parties ليه صوت محفوظ،
+                // وبنفس الترتيب ده بتتبني قايمة الأسماء (run.callNames) عشان البرومبت والخلط يتفقوا.
+                // مفيش global: المراجع عايشة على Run اللي بيتسلم لـ doChunk.
+                if (Studio.typeOf(d).code == "call") {
+                    try {
+                        val refs = ArrayList<ByteArray>()
+                        val names = ArrayList<String>()
+                        if (CallKit.hasVoice(ctx, "me")) {
+                            CallKit.voice(ctx, "me")?.let { refs.add(it); names.add("أنا") }
+                        }
+                        val partyNames = synchronized(d) { d.parties.toList() }
+                        for (nm in partyNames) {
+                            if (nm == "أنا") continue
+                            val key = CallKit.contactKey(nm)
+                            if (!CallKit.hasVoice(ctx, key)) continue
+                            CallKit.voice(ctx, key)?.let { refs.add(it); names.add(nm) }
+                        }
+                        run.callRefs = refs
+                        run.callNames = names
+                    } catch (e: Throwable) {
+                        LogStore.err("Lecture:callRefs", e)
+                    }
+                }
+                val cs = if (d.warid) {
+                    WaridTx.ensureChunkSec(d)
+                } else {
+                    synchronized(d) {
+                        if ((d.done.isNotEmpty() || d.segs.isNotEmpty()) && d.chunkSec != CHUNK_SEC) {
+                            d.done.clear(); d.failed.clear(); d.segs.clear()
+                        }
+                        d.chunkSec = CHUNK_SEC
+                    }
+                    CHUNK_SEC
+                }
+                synchronized(d) { d.durSec = dur; d.nChunks = Math.ceil(dur / cs).toInt() }
                 save(ctx, d)
                 val todo = (0 until d.nChunks).filter { it !in d.done }
                 if (todo.isEmpty()) { maybeAutoTitle(ctx, run); run.status = "التفريغ مكتمل ✅"; return@Thread }
@@ -384,9 +622,10 @@ object Lecture {
                         while (!run.stop) {
                             val k = next.getAndIncrement(); if (k >= todo.size) break
                             val idx = todo[k]
-                            val ok = try { doChunk(run, ks, mdl, s, idx, w, dur) } catch (e: Throwable) { LogStore.err("Lecture:worker", e); false }
+                            val ok = try { doChunk(run, ks, mdl, s, idx, w, dur, cs) } catch (e: Throwable) { LogStore.err("Lecture:worker", e); false }
                             synchronized(d) { if (ok) { d.done.add(idx); d.failed.remove(idx) } else if (!run.stop) d.failed.add(idx) }
-                            if (finished.incrementAndGet() % 4 == 0) save(ctx, d)
+                            val fin = finished.incrementAndGet()
+                            if (d.warid || fin % 4 == 0) save(ctx, d)
                             if (ok) maybeAutoTitle(ctx, run)
                             run.status = "بفرّغ… ${d.done.size}/${d.nChunks}"
                         }
@@ -418,27 +657,182 @@ object Lecture {
         return if (h > 0) "%d:%02d:%02d".format(h, m, r) else "%02d:%02d".format(m, r)
     }
 
+    // (v999 ملاحظة 2) جمل العرض بعد تطبيع التوقيتات: تقليم داخل مدة الفيديو، وبداية < نهاية،
+    // وكل جملة بتبدأ من نهاية اللي قبلها على الأقل — فمفيش جملتين معروضتين بتوقيتات متداخلة أبدًا.
+    // التطبيع للعرض بس: الخام في d.segs مبيتغيّرش، ومفيش جملة بتتحذف.
+    fun displaySegs(d: Doc): List<Seg> = synchronized(d) {
+        val dur = if (d.durSec > 0) d.durSec else d.segs.maxOfOrNull { it.end } ?: 0.0
+        val sorted = d.segs.sortedBy { it.start }
+        val out = ArrayList<Seg>()
+        var prevEnd = 0.0
+        for (s in sorted) {
+            var st = s.start.coerceIn(0.0, dur)
+            var en = s.end.coerceIn(0.0, dur)
+            if (en <= st) en = minOf(dur, st + 0.5)
+            if (en <= st) st = maxOf(0.0, en - 0.5)
+            if (st < prevEnd) st = prevEnd
+            if (en <= st) en = minOf(dur, st + 0.5)
+            if (en <= st) st = maxOf(0.0, en - 0.5)
+            out.add(Seg(st, en, s.text, s.chunk, s.spk, s.lang, s.tone))
+            prevEnd = en
+        }
+        out
+    }
+
+    // (v999 ملاحظة 2) تعديل جملة (نص + توقيت) من الواجهة — بيحفظ عبر save وبيعرض من غير إعادة تفريغ.
+    // التوقيتات بتتقلم داخل مدة الفيديو وstart < end. ملحوظة سياسة: ده تعديل في الطبقة الخام
+    // (Studio.kt بيقول الخام «متتعدّلش») — اتنفذ بطلب صريح في ملاحظات الاستوديو.
+    fun editSeg(ctx: Context, d: Doc, chunk: Int, oldStart: Double, newText: String, newStart: Double, newEnd: Double): Boolean {
+        val dur = if (d.durSec > 0) d.durSec else Double.MAX_VALUE
+        var st = newStart.coerceIn(0.0, dur)
+        var en = newEnd.coerceIn(0.0, dur)
+        if (en <= st) en = minOf(dur, st + 0.5)
+        if (en <= st) st = maxOf(0.0, en - 0.5)
+        val t = newText.trim()
+        if (t.isEmpty()) return false
+        val ok = synchronized(d) {
+            // أقرب جملة في نفس الجزء لوقت البداية المعروض — التطبيع للعرض ممكن يزحزح البداية شوية عن الخام.
+            val cand = d.segs.withIndex().filter { it.value.chunk == chunk }
+            val pick = cand.minByOrNull { Math.abs(it.value.start - oldStart) }
+            if (pick == null || Math.abs(pick.value.start - oldStart) > 30.0) false
+            else {
+                val old = pick.value
+                d.segs[pick.index] = Seg(st, en, t, old.chunk, old.spk, old.lang, old.tone)
+                true
+            }
+        }
+        if (ok) save(ctx, d)
+        return ok
+    }
+
+    // (v1000 استثناء ثانٍ بطلب صريح من صاحب التطبيق: إعادة تسمية/دمج المتحدثين مسموح عبر renameSpeaker
+    // وmergeSpeakers — بيغيّروا spk في كل الجمل دفعة واحدة، وبيمسحوا المشتقات النصية (تنظيم/تلخيص/تحليل)
+    // لأنها اتبنت على أسماء المتحدثين القديمة، وبيتحفظوا، من غير إعادة تفريغ.)
+    // ملحوظة سياسة: ده تعديل في الطبقة الخام زي editSeg — مسموح هنا بس، وبنفس شروطه.
+    // الحارس: التسمية/الدمج بيرفضوا (false) والتشغيل شغال على الدوكيومنت ده — اكتمال جزء بيمسح جمل
+    // الجزء ويعيد إضافتها، فكان هيمسح التسمية من غير ما يبان. editSeg فيه نفس الخطر ومعروف من v999.
+    private fun wipeDerived(d: Doc) {
+        d.organized = ""
+        d.organizedWeb = false
+        d.summary = ""
+        d.summaryWeb = false
+        d.summaryLen = "mid"
+        d.analysis = ""
+        d.analysisN = 0
+        d.analysisHash = ""
+    }
+
+    /** إعادة تسمية متحدث في كل الجمل: كل seg بـ spk == oldSpk بيبقى newSpk. بيرجّع false لو الاسمين فاضيين أو مفيش جملة مطابقة أو التشغيل شغال. */
+    fun renameSpeaker(ctx: Context, d: Doc, oldSpk: String, newSpk: String): Boolean {
+        if (oldSpk.isBlank() || newSpk.isBlank()) return false
+        if (isRunning(d.id)) return false
+        val old = oldSpk.trim()
+        val new = newSpk.trim()
+        if (old == new) return false
+        var matched = false
+        synchronized(d) {
+            for (i in d.segs.indices) {
+                val s = d.segs[i]
+                if (s.spk == old) {
+                    d.segs[i] = Seg(s.start, s.end, s.text, s.chunk, new, s.lang, s.tone)
+                    matched = true
+                }
+            }
+            if (matched) wipeDerived(d)
+        }
+        if (!matched) return false
+        save(ctx, d)
+        return true
+    }
+
+    /** دمج متحدث في متحدث تاني: كل seg بـ spk == fromSpk بيبقى toSpk. بيرجّع false لو from == to أو مفيش جملة مطابقة أو التشغيل شغال. */
+    fun mergeSpeakers(ctx: Context, d: Doc, fromSpk: String, toSpk: String): Boolean {
+        if (fromSpk.isBlank() || toSpk.isBlank()) return false
+        if (isRunning(d.id)) return false
+        val from = fromSpk.trim()
+        val to = toSpk.trim()
+        if (from == to) return false
+        var matched = false
+        synchronized(d) {
+            for (i in d.segs.indices) {
+                val s = d.segs[i]
+                if (s.spk == from) {
+                    d.segs[i] = Seg(s.start, s.end, s.text, s.chunk, to, s.lang, s.tone)
+                    matched = true
+                }
+            }
+            if (matched) wipeDerived(d)
+        }
+        if (!matched) return false
+        save(ctx, d)
+        return true
+    }
+
+    /** عدد الجمل اللي فيها نص البحث (من غير حساسية لحالة الحروف) + بداية أول جملة مطابقة أو null. دالة نقية، من غير I/O. */
+    fun countMatches(d: Doc, q: String): Pair<Int, Double?> {
+        if (q.isBlank()) return Pair(0, null)
+        var n = 0
+        var first: Double? = null
+        synchronized(d) {
+            for (s in d.segs.sortedBy { it.start }) {
+                if (!s.text.contains(q, true)) continue
+                n++
+                if (first == null) first = s.start
+            }
+        }
+        return Pair(n, first)
+    }
+
+    // (v999 ملاحظة 2) دقايق اتفرّغت = الأجزاء المكتملة × حجم الجزء، مقابل مدة الفيديو الكاملة.
+    fun doneMinutes(d: Doc): Double = synchronized(d) {
+        val cs = if (d.chunkSec > 0) d.chunkSec else CHUNK_SEC
+        d.done.size * cs / 60.0
+    }
+
+    fun fmtMinutes(m: Double): String {
+        return if (m < 10) String.format(java.util.Locale.US, "%.1f", m) else m.toInt().toString()
+    }
+
     /** نص التفريغ: stamps=true سطر لكل جملة بتوقيتها · false فقرات متصلة. القطع الفاشلة بتظهر كعلامة ⚠ */
-    fun transcriptText(d: Doc, stamps: Boolean): String = synchronized(d) {
+    // (v1001) names: أسماء الأطراف للمكالمات — لو مش فاضية وspk حرف A–E بيتكتب «الاسم: » قبل الجملة.
+    // الافتراضي فاضي فالمحاضرات والنسخ/المشاركة زي ما هي بالظبط من غير أي تغيير.
+    fun transcriptText(d: Doc, stamps: Boolean, names: List<String> = emptyList()): String = synchronized(d) {
         class Item(val start: Double, val text: String, val gap: Boolean, val spk: String)
         val items = ArrayList<Item>()
-        for (s in d.segs) items.add(Item(s.start, s.text, false, s.spk))
-        for (c in d.failed) items.add(Item(c * CHUNK_SEC, "⚠ [جزء ناقص من ${fmtTime(c * CHUNK_SEC)} إلى ${fmtTime(minOf(d.durSec, (c + 1) * CHUNK_SEC))}]", true, ""))
+        val cs = if (d.chunkSec > 0) d.chunkSec else CHUNK_SEC
+        for (s in displaySegs(d)) items.add(Item(s.start, s.text, false, s.spk))
+        for (c in d.failed) items.add(Item(c * cs, "⚠ [جزء ناقص من ${fmtTime(c * cs)} إلى ${fmtTime(minOf(d.durSec, (c + 1) * cs))}]", true, ""))
         items.sortBy { it.start }
+        fun nameOf(spk: String): String {
+            if (names.isEmpty()) return ""
+            if (spk.length != 1) return ""
+            val c = spk[0]
+            if (c !in 'A'..'E') return ""
+            return names.getOrNull(c - 'A') ?: ""
+        }
         val sb = StringBuilder()
         if (stamps) {
             for (i in items) {
                 if (i.gap) sb.append(i.text).append('\n')
-                else sb.append('[').append(fmtTime(i.start)).append("] ").append(if (i.spk == "S") "🙋 " else "").append(i.text).append('\n')
+                else {
+                    sb.append('[').append(fmtTime(i.start)).append("] ")
+                    val nm = nameOf(i.spk)
+                    if (nm.isNotEmpty()) sb.append(nm).append(": ")
+                    sb.append(if (i.spk == "S") "🙋 " else "").append(i.text).append('\n')
+                }
             }
         } else {
             var para = 0; var last = ""
             for (i in items) {
                 if (i.gap) { if (sb.isNotEmpty()) sb.append("\n\n"); sb.append(i.text).append("\n\n"); para = 0; last = ""; continue }
-                val changed = i.spk != last && (i.spk == "S" || last == "S")
+                val nm = nameOf(i.spk)
+                val changed = i.spk != last && (i.spk == "S" || last == "S" || nm.isNotEmpty())
                 if (changed || para > 650) { if (sb.isNotEmpty() && !sb.endsWith("\n\n")) sb.append("\n\n"); para = 0 }
                 else if (sb.isNotEmpty() && !sb.endsWith("\n\n")) sb.append(' ')
-                if (para == 0 && i.spk == "S") sb.append("🙋 ")
+                if (para == 0) {
+                    if (i.spk == "S") sb.append("🙋 ")
+                    if (nm.isNotEmpty()) sb.append(nm).append(": ")
+                }
                 sb.append(i.text); para += i.text.length + 1; last = i.spk
             }
         }
@@ -478,25 +872,47 @@ object Lecture {
         "\n- مسموح تستعين ببحث جوجل لتصحيح مصطلح أو إكمال تعريف ناقص فقط. كل نقطة مصدرها النت لازم تبدأ بالرمز 🌐 وتبقى قصيرة، ومتعدّلش ولا تناقض كلام المحاضر. باقي النقط من كلام المحاضر بس."
     else "\n- كل المحتوى لازم يكون من كلام المحاضر في التفريغ؛ متضيفش معلومات من برّه."
 
-    private fun organizePrompt(text: String, web: Boolean): String =
-        "أنت أستاذ جامعي بتنظّم تفريغ محاضرة لطالب بيذاكر منها.\n" +
+    // (v1000 — المرحلة 2) بلوك شكل المخرجات حسب نوع المحتوى: بيتحط في برومبت التنظيم والتلخيص.
+    // الشكل نفسه من سجل Studio.TxType.summaryShape — فأي تعديل في السجل بيسمع هنا من غير ما نعدّل البرومبت.
+    private fun typeBlock(t: Studio.TxType): String = when (t) {
+        Studio.TxType.CALL -> "شكل المخرجات المطلوب: " + t.summaryShape + ".\n- أي مبلغ أو موعد اتقال لازم يظهر زي ما اتقال بالظبط، وكل وعد يتسجل باسم اللي وعد بيه."
+        Studio.TxType.SUBS -> "شكل المخرجات المطلوب: " + t.summaryShape + ".\n- لخّص الأحداث والحوار من غير توقيتات في الملخص، واذكر المتحدثين باختصار."
+        Studio.TxType.SHOW -> "شكل المخرجات المطلوب: " + t.summaryShape + ".\n- لخّص أحداث الحلقة/الفيلم، واذكر الشخصيات الرئيسية وتقلبات الأحداث."
+        Studio.TxType.MEETING -> "شكل المخرجات المطلوب: " + t.summaryShape + ".\n- كل مهمة سطر فيه: المهمة + المسؤول عنها + الموعد النهائي لو اتقال."
+        Studio.TxType.AUDIO -> "شكل المخرجات المطلوب: " + t.summaryShape + ".\n- ملخص عام مختصر للنص من غير افتراض نوع محتوى معين."
+        else -> "شكل المخرجات المطلوب: " + t.summaryShape + "."
+    }
+
+    private fun organizePrompt(text: String, web: Boolean, type: String = ""): String {
+        val t = Studio.TxType.fromCode(type)
+        val termsLine = if (t == Studio.TxType.LECTURE) "\n- بعد آخر عنوان ضيف قسم «## أهم المصطلحات» — كل مصطلح سطر بالشكل «المصطلح — تعريف من سطر واحد» ومصدره نص التفريغ بس، من غير إضافة من برّه." else ""
+        return "أنت أستاذ جامعي بتنظّم تفريغ محاضرة لطالب بيذاكر منها.\n" +
         "المطلوب: عناوين رئيسية، وتحت كل عنوان نقط قليلة ومركّزة.\n" +
         "القواعد:\n- عدد العناوين الرئيسية من 5 لـ 12 حسب طول المحاضرة — مش أكتر.\n" +
         "- تحت كل عنوان من 3 لـ 6 نقط بس. كل نقطة جملة واحدة واضحة. ممنوع تعمل عشرات النقط.\n" +
         "- رتّب العناوين بتسلسل منطقي، مش بالضرورة بترتيب الكلام العشوائي.\n" +
-        "- ${outLangLine()}" + webLine(web) + "\n\n" +
+        "- ${outLangLine()}" + webLine(web) + termsLine + "\n" +
+        typeBlock(t) + "\n\n" +
         "الشكل بالظبط (من غير أي كلام تاني قبل أو بعد):\n# عنوان المحاضرة\n## العنوان الرئيسي الأول\n- نقطة\n- نقطة\n## العنوان الرئيسي التاني\n- نقطة\n\n" +
         "نص التفريغ:\n" + text
+    }
 
-    private fun summaryPrompt(text: String, short: Boolean, web: Boolean): String =
-        "لخّص تفريغ المحاضرة ده لطالب.\n" +
+    private fun summaryPrompt(text: String, short: Boolean, web: Boolean, type: String = ""): String {
+        val t = Studio.TxType.fromCode(type)
+        return "لخّص تفريغ المحاضرة ده لطالب.\n" +
         "القواعد:\n- " + (if (short) "ملخص من 3 لـ 4 جمل بس، وبعده 5 نقط أهم حاجات." else "ملخص فقرة واحدة (6 لـ 8 جمل) بيغطي الفكرة العامة، وبعده من 6 لـ 8 نقط لأهم الأفكار.") + "\n" +
-        "- ${outLangLine()}" + webLine(web) + "\n\n" +
+        "- ${outLangLine()}" + webLine(web) + "\n" +
+        typeBlock(t) + "\n\n" +
         "الشكل بالظبط (من غير أي كلام تاني):\n## الملخص\n<الفقرة>\n## أهم النقط\n- نقطة\n- نقطة\n\n" +
         "نص التفريغ:\n" + text
+    }
 
-    private fun fullText(d: Doc): String {
-        val t = transcriptText(d, false).replace(Regex("⚠ \\[جزء ناقص[^\\]]*\\]"), "").trim()
+    // (v1001) أسماء الأطراف لمدخل التنظيم/التلخيص — للمكالمات بس (d.parties)، غير كده فاضي.
+    private fun callNames(d: Doc): List<String> =
+        if (Studio.typeOf(d).code == "call") synchronized(d) { d.parties.toList() } else emptyList()
+
+    private fun fullText(d: Doc, names: List<String> = emptyList()): String {
+        val t = transcriptText(d, false, names).replace(Regex("⚠ \\[جزء ناقص[^\\]]*\\]"), "").trim()
         if (t.isBlank()) throw IOException("مفيش تفريغ لسه — فرّغ المحاضرة الأول")
         return t
     }
@@ -508,11 +924,11 @@ object Lecture {
     }
 
     /** «تنظيم»: عناوين + نقط. يتنده من خيط خلفي ويحفظ النتيجة في الدوكيومنت */
-    fun organize(ctx: Context, d: Doc, web: Boolean): String {
-        val t = fullText(d)
+    fun organize(ctx: Context, d: Doc, web: Boolean, type: String = d.type): String {
+        val t = fullText(d, callNames(d))
         var usedWeb = false
         val outs = parts(t).mapIndexed { i, p ->
-            val r = gen(organizePrompt(p, web), web, 16000); usedWeb = usedWeb || r.usedWeb
+            val r = gen(organizePrompt(p, web, type), web, 16000); usedWeb = usedWeb || r.usedWeb
             if (i == 0) r.text else r.text.lines().filterNot { it.startsWith("# ") && !it.startsWith("## ") }.joinToString("\n")
         }
         val res = outs.joinToString("\n")
@@ -521,15 +937,15 @@ object Lecture {
     }
 
     /** «تلخيص»: فقرة + أهم النقط */
-    fun summarize(ctx: Context, d: Doc, short: Boolean, web: Boolean): String {
-        val t = fullText(d)
+    fun summarize(ctx: Context, d: Doc, short: Boolean, web: Boolean, type: String = d.type): String {
+        val t = fullText(d, callNames(d))
         var usedWeb = false
         val ps = parts(t)
         var res: String
-        if (ps.size == 1) { val r = gen(summaryPrompt(ps[0], short, web), web, 6000); usedWeb = r.usedWeb; res = r.text }
+        if (ps.size == 1) { val r = gen(summaryPrompt(ps[0], short, web, type), web, 6000); usedWeb = r.usedWeb; res = r.text }
         else {
-            val mid = ps.joinToString("\n\n") { p -> gen(summaryPrompt(p, false, false), false, 6000).text }
-            val r = gen(summaryPrompt(mid, short, web), web, 6000); usedWeb = r.usedWeb; res = r.text
+            val mid = ps.joinToString("\n\n") { p -> gen(summaryPrompt(p, false, false, type), false, 6000).text }
+            val r = gen(summaryPrompt(mid, short, web, type), web, 6000); usedWeb = r.usedWeb; res = r.text
         }
         synchronized(d) { d.summary = res; d.summaryWeb = usedWeb; d.summaryLen = if (short) "short" else "mid" }
         save(ctx, d); return res

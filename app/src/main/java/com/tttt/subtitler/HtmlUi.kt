@@ -310,7 +310,8 @@ fun Ui.grid(items: List<View>, cols: Int = 6): LinearLayout {
 
 
 /** نافذة سفلية (bottom sheet) بنفس كروت الأصل. fixedH = ارتفاع ثابت للقوائم الطويلة */
-fun Ui.sheet(act: Activity, title: String, views: List<View>, fixedH: Boolean = false, onClose: () -> Unit = {}, frac: Float = 0f, solid: Boolean = false): Dialog {   // (v924) solid = خلفية معتمة (شاشة الداتا)
+fun Ui.sheet(act: Activity, title: String, views: List<View>, fixedH: Boolean = false, onClose: () -> Unit = {}, frac: Float = 0f, solid: Boolean = false, footer: List<View> = emptyList()): Dialog {   // (v924) solid = خلفية معتمة (شاشة الداتا)
+    // (v999 ملاحظة 5) footer = أزرار ثابتة برّه السكرول (زي «💾 حفظ» في إعدادات الترجمة) — بتفضل ظاهرة حتى لو الجسم أطول من الشاشة
     val d = GDialog(act)
     d.requestWindowFeature(Window.FEATURE_NO_TITLE)
     val body = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL }
@@ -332,6 +333,16 @@ fun Ui.sheet(act: Activity, title: String, views: List<View>, fixedH: Boolean = 
         val sv = MaxHeightScroll(ctx, maxH).apply { addView(body) }
         holder = sv
         root.addView(sv, LinearLayout.LayoutParams(-1, -2))
+    }
+    // (v999 ملاحظة 5) الفوتر برّه السكرول: ثابت تحت الجسم في الرأسي والأفقي (في الأفقي الـholder بياخد weight فالفوتر بيفضل لازق تحت)
+    if (footer.isNotEmpty()) {
+        val foot = LinearLayout(ctx).apply {
+            orientation = LinearLayout.VERTICAL
+            layoutDirection = View.LAYOUT_DIRECTION_RTL
+            setPadding(0, dp(8), 0, 0)
+        }
+        footer.forEach { foot.addView(it) }
+        root.addView(foot, LinearLayout.LayoutParams(-1, -2))
     }
     d.setContentView(root)
     val solidCol = (th.bg or 0xFF000000.toInt())

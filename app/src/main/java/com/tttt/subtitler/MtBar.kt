@@ -146,14 +146,15 @@ object MtBar {
         return (v * a.resources.displayMetrics.density).toInt()
     }
 
-    // (v961) ٣ وضعيات بس: Original (الافتراضي، من غير قص) · Fit (على عرض الشاشة) · Fill (ملء الشاشة كلها). القيم المخزّنة هي أكواد fit: القديمة (0 / 3 / 1)
-    private val fitCodes = intArrayOf(0, 3, 1)
+    // (v1001 Fix 2) ٤ وضعيات موحّدة مع PlayerLogic وMtTvPlayer: 0 احتواء · 1 ملء بالقص · 2 تمديد · 3 طبيعي 100%
+    private val fitCodes = intArrayOf(0, 1, 2, 3)
 
     private fun fitName(i: Int): String {
         return when (i) {
-            3 -> "Fit"
-            1, 2 -> "Fill"
-            else -> "Original"
+            1 -> "Fill"
+            2 -> "Stretch"
+            3 -> "100%"
+            else -> "Fit"
         }
     }
 
@@ -243,9 +244,11 @@ object MtBar {
         barRoot = root
         hookSeekBar(activity, root)
         val portrait = activity.resources.configuration.orientation == Configuration.ORIENTATION_PORTRAIT
-        if (!portrait) {   // (v968) أي دخول فل سكرين (ملف/متصفح/يوتيوب) يبدأ Fill = الفيديو متمدّد على قد الشاشة بالظبط؛ بعدها زرار ⤢ يغيّر
-            try { Cfg.put("fit", "1") } catch (_: Throwable) {}
-            bridge(activity, "fit:1")
+        if (!portrait) {
+            // (v1001 Fix 2) لا فرض Fill عند الدخول: إعادة تطبيق وضع المستخدم المحفوظ فقط
+            try {
+                bridge(activity, "fit:" + Cfg.int("fit", 0).coerceIn(0, 3))
+            } catch (_: Throwable) {}
         }
         val tools = toolbar(activity)
         mtStyle(activity, tools)
@@ -1507,16 +1510,11 @@ object MtBar {
     }
 
     private fun cycleFit(a: Activity) {
-        // (v969) الوضع الحالي من المشغّل نفسه (الافتراضي Fill، أو الدخول بورتريه/لاندسكيب) مش من Cfg
+        // (v1001 Fix 2) مصدر الحقيقة هو Cfg "fit" (0..3)، مش وضع صندوق MeeTube
         val cur = try {
-            when ((a as? com.newtube.mobile.ui.playback.MobilePlaybackActivity)?.resizeMode) {
-                androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FILL -> 1
-                androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FIXED_WIDTH -> 3
-                null -> Cfg.int("fit", 0)
-                else -> 0
-            }
+            Cfg.int("fit", 0).coerceIn(0, 3)
         } catch (_: Throwable) { 0 }
-        val idx = fitCodes.indexOf(if (cur == 2) 1 else cur)
+        val idx = fitCodes.indexOf(cur)
         val n = fitCodes[(idx + 1) % fitCodes.size]
         try { Cfg.put("fit", n.toString()) } catch (_: Throwable) {}
         bridge(a, "fit:" + n)
@@ -1632,11 +1630,12 @@ object MtBar {
     }
 
     /** (v949) نسخة عامة من popupRows: بتاخد Views جاهزة (سلايدر/شيبس/نصوص) وتحطها جوه نفس اللوح المنبثق جنب الزرار */
-    private fun popupViews(a: Activity, anchor: View, above: Boolean, views: List<View>, minWdp: Int = 150) {
+    // (v999 ملاحظة 5) footer = صف ثابت برّه السكرول (زي «✓ تطبيق» في اللغة والأسلوب)؛ في نافذة MeeTube الأصلية بيتبعت مع الـviews لأنه مفيش فوتر هناك
+    private fun popupViews(a: Activity, anchor: View, above: Boolean, views: List<View>, minWdp: Int = 150, footer: List<View> = emptyList()) {
         val had = popupOwner === anchor
         dismissPopup()
         if (had) return
-        if (meeViews(a, "", views) != null) return   // (v958) نافذة MeeTube الأصلية
+        if (meeViews(a, "", views + footer) != null) return   // (v958) نافذة MeeTube الأصلية
         val col = LinearLayout(a).apply {
             orientation = LinearLayout.VERTICAL
             layoutDirection = View.LAYOUT_DIRECTION_RTL
@@ -1669,13 +1668,55 @@ object MtBar {
         val loc = IntArray(2)
         anchor.getLocationOnScreen(loc)
         val avail = (if (above) loc[1] - dp(a, 8) else dm.heightPixels - loc[1] - anchor.height - dp(a, 8)).coerceAtLeast(dp(a, 120))
-        val popH = minOf(col.measuredHeight, avail)
+        // (v999 ملاحظة 5) الفوتر بيتقاس لوحده وبيتخصم من الارتفاع المتاح؛ من غير فوتر السلوك زي الأول بالظبط
+        val footWrap: LinearLayout? = if (footer.isEmpty()) {
+            null
+        } else {
+            LinearLayout(a).apply {
+                orientation = LinearLayout.VERTICAL
+                layoutDirection = View.LAYOUT_DIRECTION_RTL
+                setPadding(dp(a, 6), dp(a, 2), dp(a, 6), dp(a, 6))
+                for (v in footer) {
+                    (v.parent as? ViewGroup)?.removeView(v)
+                    addView(v)
+                }
+            }
+        }
+        val footH = if (footWrap == null) {
+            0
+        } else {
+            footWrap.measure(
+                View.MeasureSpec.makeMeasureSpec((dm.widthPixels * 0.9f).toInt(), View.MeasureSpec.AT_MOST),
+                View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED)
+            )
+            footWrap.measuredHeight
+        }
+        val popH = minOf(col.measuredHeight + footH, avail)
         val sv = android.widget.ScrollView(a).apply {
             overScrollMode = View.OVER_SCROLL_NEVER
             isVerticalScrollBarEnabled = false
             addView(col)
         }
-        val pw = android.widget.PopupWindow(sv, maxOf(col.measuredWidth, dp(a, minWdp)), popH, false)
+        val content: View = if (footWrap == null) {
+            sv
+        } else {
+            // (v999 ملاحظة 5) الخلفية على الحاوية الخارجية بس — العمود بيفقد خلفيته عشان التدرج يبقى متصل من غير خط فاصل
+            col.background = null
+            LinearLayout(a).apply {
+                orientation = LinearLayout.VERTICAL
+                layoutDirection = View.LAYOUT_DIRECTION_RTL
+                background = GradientDrawable(
+                    GradientDrawable.Orientation.TOP_BOTTOM,
+                    intArrayOf(0xF2242432.toInt(), 0xF5101017.toInt())
+                ).apply {
+                    cornerRadius = dp(a, 24).toFloat()
+                    setStroke(1, 0x3DFFFFFF)
+                }
+                addView(sv, LinearLayout.LayoutParams(-1, (popH - footH).coerceAtLeast(dp(a, 40))))
+                addView(footWrap, LinearLayout.LayoutParams(-1, -2))
+            }
+        }
+        val pw = android.widget.PopupWindow(content, maxOf(col.measuredWidth, dp(a, minWdp)), popH, false)
         pw.isOutsideTouchable = true
         pw.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(0))
         pw.setOnDismissListener { if (popup === pw) { popup = null; popupOwner = null } }
@@ -1712,15 +1753,19 @@ object MtBar {
     }
 
     /** (v949) لوحة فيها عناصر (سلايدر/شيبس): منبثقة جنب الزرار لو فيه زرار، وإلا شيت */
-    private fun panel(a: Activity, anchor: View?, above: Boolean, title: String, views: List<View>) {
-        val u = uiHelper ?: return
+    // (v999 ملاحظة 5) footer بيروح فوتر ثابت في المسارين؛ بيرجّع الـDialog في مسار الشيت (null في مسار المنبثقة) عشان المتصل يقدر يقفله
+    private fun panel(a: Activity, anchor: View?, above: Boolean, title: String, views: List<View>, footer: List<View> = emptyList()): android.app.Dialog? {
+        val u = uiHelper ?: return null
         if (anchor != null) {
             val all = ArrayList<View>()
             all.add(u.text(title, 13f, 0xFF9AA0A6.toInt(), true).apply { setPadding(dp(a, 10), dp(a, 6), dp(a, 10), dp(a, 2)) })
             all.addAll(views)
-            popupViews(a, anchor, above, all, 240)
+            popupViews(a, anchor, above, all, 240, footer)
+            return null
         } else {
-            u.sheet(a, title, views).show()
+            val d = u.sheet(a, title, views, footer = footer)
+            d.show()
+            return d
         }
     }
 
@@ -1890,12 +1935,12 @@ object MtBar {
                 Notice.show(a, "🗣 اللهجة: " + d, 1400L)
             })
         }
-        val styles = listOf("حرفي", "شعبي", "جرئ", "+18")
+        val styles = listOf("تلقائي", "حرفي", "شعبي", "جرئ")
         val degrees = listOf("خفيفة", "متوسطة", "شديدة")
         val curS = try {
-            Cfg.str("tone_style", "شعبي")
+            Cfg.str("tone_style", "").ifBlank { "تلقائي" }
         } catch (_: Throwable) {
-            "شعبي"
+            "تلقائي"
         }
         val curG = try {
             Cfg.str("tone_strength", "متوسطة")
@@ -1937,11 +1982,24 @@ object MtBar {
                         Cfg.put("tone_strength", dg)
                     } catch (_: Throwable) {}
                     applyTone(a, null, dg)
-                    toneLab.text = "🎨 الأسلوب: " + Cfg.str("tone_style", "شعبي") + " / " + dg
+                    toneLab.text = "🎨 الأسلوب: " + Cfg.str("tone_style", "").ifBlank { "تلقائي" } + " / " + dg
                 }
             })
         }
-        panel(a, anchor, above, "🌐 اللغة والأسلوب", listOf(lab, chips, toneLab, styleBar, degBar))
+        // (v999 ملاحظة 5) «✓ تطبيق»: تأكيد وإغلاق بس — اللهجة بتتطبق على الدوسة والأسلوب/الشدة على تحرير السلايدر (applyTone) فمفيش مسار تطبيق جديد
+        var sheetDlg: android.app.Dialog? = null
+        val applyRow = LinearLayout(a).apply {
+            orientation = LinearLayout.HORIZONTAL
+            layoutDirection = View.LAYOUT_DIRECTION_RTL
+            addView(u.fsBtn("✓ تطبيق") {
+                dismissPopup()
+                try {
+                    sheetDlg?.dismiss()
+                } catch (_: Throwable) {}
+                Notice.show(a, "✅ اللهجة والأسلوب اتطبّقوا", 1800L)
+            }, LinearLayout.LayoutParams(0, dp(a, 40), 1f))
+        }
+        sheetDlg = panel(a, anchor, above, "🌐 اللغة والأسلوب", listOf(lab, chips, toneLab, styleBar, degBar), footer = listOf(applyRow))
     }
 
     private fun applyTone(a: Activity, style: String?, strength: String?) {

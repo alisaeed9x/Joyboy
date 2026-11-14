@@ -22,7 +22,7 @@ import java.util.function.Consumer;
  */
 final class TranslationPages {
     private static final String[] DIALECTS = {"مصري", "شامي", "لبناني", "خليجي", "مغربي", "عراقي", "سوداني", "فصحى"};
-    private static final String[] STYLES = {"حرفي", "شعبي", "جرئ", "+18"};
+    private static final String[] STYLES = {"تلقائي", "حرفي", "شعبي", "جرئ"};
     private static final String[] STRENGTHS = {"خفيفة", "متوسطة", "شديدة"};
     private static final String[][] BASE_LANGS = {
             {"ar", "العربية"}, {"en", "English"}, {"fr", "Français"}, {"es", "Español"}, {"de", "Deutsch"},
@@ -70,18 +70,18 @@ final class TranslationPages {
         rows.add(style.bind(
                 () -> {
                     String v = TrCfg.str(context, "tone_style", "");
-                    return v.isEmpty() ? "حرفي" : v;
+                    return v.isEmpty() || "+18".equals(v) ? "تلقائي" : v;
                 },
                 value -> {
                     TrCfg.put(context, "style", value);
-                    TrCfg.put(context, "tone_style", "حرفي".equals(value) ? "" : value);
+                    TrCfg.put(context, "tone_style", "تلقائي".equals(value) ? "" : value);
                 }));
 
         SettingsRow.Choice<String> strength = SettingsRow.choice("الشدة");
         for (String s : STRENGTHS) {
             strength.option(s, s);
         }
-        rows.add(strength.summary("بتشتغل مع أسلوب شعبي / جرئ / +18 بس").bind(
+        rows.add(strength.summary("بتشتغل مع أسلوب شعبي / جرئ / تلقائي بس").bind(
                 () -> {
                     String v = TrCfg.str(context, "tone_strength", "متوسطة");
                     return v.isEmpty() ? "متوسطة" : v;

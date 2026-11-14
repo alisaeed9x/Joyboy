@@ -29,7 +29,23 @@ public final class WatchLook {
 
     /** {@code button} is the layout id's name ("mobile_player_cast"). */
     public static boolean isShown(Context context, String button) {
+        if (isRemoved(button)) {
+            return false;
+        }
         return !prefs(context).getBoolean(KEY_HIDDEN + button, false);
+    }
+
+    // MEETUBE(fullscreen-actions): like, dislike and download were removed from the
+    // fullscreen pill - they sat hidden behind Joyboy's bar - so they never show again,
+    // whatever the stored preference says.
+    private static boolean isRemoved(String button) {
+        if ("mobile_player_like".equals(button)) {
+            return true;
+        }
+        if ("mobile_player_dislike".equals(button)) {
+            return true;
+        }
+        return "mobile_player_download".equals(button);
     }
 
     public static void setShown(Context context, String button, boolean shown) {

@@ -101,7 +101,7 @@ object CfgCodec {
     val BOOLS = setOf("autochars", "autopron", "autotpl", "hitiming", "gapfill", "soundtags", "prefine", "refine2pass",
         "sub_nobg", "sub_plain", "sub_uni_on", "sub_split_on", "sub_two_lines", "sub_punct")
     val INTS = setOf("chunk", "ahead", "hls_ahead", "atrack", "parallel", "sub_scale", "sub_bgopa", "sub_blur", "sub_aspeed", "sub_dual", "sub_split", "kmode", "nmain", "nback")
-    const val VERSION = 2
+    const val VERSION = 3
     fun bool(v: Any?, d: Boolean): Boolean = when (v) {
         null -> d
         is Boolean -> v
@@ -218,6 +218,8 @@ object Cfg {
         val e = p.edit()
         for (k in CfgCodec.BOOLS) { val v = p.all[k]; if (v is String) e.putBoolean(k, CfgCodec.bool(v, false)) }
         for (k in CfgCodec.INTS) { val v = p.all[k]; if (v is String) v.trim().toIntOrNull()?.let { e.putInt(k, it) } }
+        // (v999) أسلوب "+18" اتشال: أي قيمة محفوظة بيه — في قناة الأسلوب الحي (tone_style) أو قناة القالب (style) — بتتحوّل للافتراضي الجديد «تلقائي»
+        for (k in listOf("tone_style", "style")) { val v = p.all[k]; if (v is String && v == "+18") e.putString(k, "تلقائي") }
         e.putInt("cfgv", CfgCodec.VERSION).apply()
     }
     fun str(k: String, d: String = "") = CfgCodec.str(raw(k), d)
@@ -277,7 +279,7 @@ object Cfg {
         val main = if (srv) listOf(FreeLlm.KEY) else if (omni || strict || (main0.isEmpty() && rf.isEmpty() && bk.isEmpty() && TrWizard.googleOn())) listOf(LocalKey.ID) else if (Strict.freeGem() && main0.isEmpty()) listOf(FreeLlm.KEY) else w(main0)
         return Conf(
             main, bk, str("model", Models.DEFAULT).trim().ifEmpty { Models.DEFAULT },
-            str("lang", "فصحى"), str("style", "حرفي"),
+            str("lang", "فصحى"), str("style", "تلقائي"),
             int("chunk", 60).coerceIn(10, 600), int("ahead", 3).coerceIn(0, 50), int("atrack", 1).coerceAtLeast(1),
             emptyList() /* جدول الشخصيات اليدوي اتشال — الشخصيات بتتحلل تلقائيًا */, str("gloss"),
             true, true, true,   // (v229) تحليل الشخصيات · تصحيح الضمائر · ترجمة القالب: أوتوماتيك دايمًا (اتشال مفتاحهم من الإعدادات)
@@ -390,7 +392,7 @@ class PromptBuilder(private val readAsset: (String) -> String) {
             "- ممنوع الألفاظ الفصحى اللي المصريين مابيقولوهاش: لقد، سوف، لماذا، ماذا، هذا/هذه/هؤلاء، هناك، الآن، أريد، كيف، أين، متى، الذي/التي، لكن، سوى، حيث، يجب أن، أستطيع.\n" +
             "- استعمل بدالها: ده/دي/دول، إيه، ليه، إزاي، فين، إمتى، مين، اللي، بس، عايز/عايزة، مش، مفيش، لسه، دلوقتي، كده، عشان/علشان، أوي، خالص، برضه، لازم، أقدر.\n" +
             "- الأفعال بالتصريف المصري: المضارع بـ\"ب\" (بيقول، بتعمل، بنروح)، المستقبل بـ\"ه\" (هعمل، هنروح)، النفي بـ\"ما…ش\" (ماعرفش، مشفتهوش)، والأمر بالمصري (قول، تعالى، خليك).\n" +
-            "- حافظ على الأسلوب المحدد (حرفي/شعبي/جرئ/+18) بس بالمصري، وماتغيّرش المعنى.\n"
+            "- حافظ على الأسلوب المحدد (تلقائي/حرفي/شعبي/جرئ) بس بالمصري، وماتغيّرش المعنى.\n"
         else -> "\n═══ قواعد اللهجة ($lang) (إلزامي) ═══\n- 🔴 كل translated لازم يبقى بلهجة $lang الحقيقية زي ما أهلها بيتكلموا فعلًا: مفردات وتعبيرات وتصريفات اللهجة، مش فصحى ولا مصري. ممنوع الفصحى الرسمية إلا لو الكلام الأصلي رسمي فعلًا.\n- حافظ على الأسلوب المحدد وماتغيّرش المعنى.\n"
     }
 
@@ -402,6 +404,7 @@ class PromptBuilder(private val readAsset: (String) -> String) {
             "- حقل original بس هو اللي بيتكتب بلغة الصوت الأصلية (وtranslated_en_pivot للإنجليزي). translated ما بيبقاش أبدًا بلغة الصوت الأصلية ولا بالإنجليزي.\n" +
             "- لغة الترجمة النهائية ثابتة ($target) مهما كانت لغة التعليمات اللي فوق أو لغة الصوت أو لغة المقاطع اللي قبل كده.\n"
         t += dialectBlock(c.lang)
+        t += "- 🔴 ترجم اللي اتقال بس — متضيفش ألفاظ ولا معاني مش موجودة في الأصل، ومتخففش اللي موجود.\n"
         if (strict) t += "- ⚠⚠ الرد اللي فات فيه جمل في translated مش بالعربي. راجع كل subtitle قبل ما ترد وتأكد إن كل translated عربي بـ$target.\n"
         return t
     }
@@ -427,7 +430,9 @@ class PromptBuilder(private val readAsset: (String) -> String) {
 
     /** (v288) رقم القالب للهجة + أسلوب + حالة لغة الصوت (first/ja/en/other) بنفس احتياطي templateId */
     fun idFor(lang: String, style: String, case: String): String {
-        var id = index.optString("$lang|$style|$case")
+        // (v999) «تلقائي» مالوش ملف قالب خاص: بيستخدم قالب «حرفي» لنفس اللهجة والحالة — سلوك تلقائي لكل جملة بييجي من toneBlock/styleEn/styleOf مش من القالب
+        val eff = if (style == "تلقائي") "حرفي" else style
+        var id = index.optString("$lang|$eff|$case")
         if (id.isEmpty()) id = index.optString("$lang|حرفي|$case")
         if (id.isEmpty()) id = index.optString("مصري|حرفي|$case")
         return id
@@ -661,6 +666,7 @@ object Api {
      */
     private val thinkVar = java.util.concurrent.ConcurrentHashMap<String, Int>()
     private fun thinkCfg(model: String, v: Int): String {
+        if (thinkBudget0.get() == true) return ",\"thinkingConfig\":{\"thinkingBudget\":0}"
         val m = model.lowercase()
         val three = m.contains("gemini-3") || m.contains("latest")
         val pro = m.contains("pro")
@@ -675,6 +681,10 @@ object Api {
     private val tokenCap = java.util.concurrent.ConcurrentHashMap<String, Int>()
     /** (v180) مهلة قراءة أقصر للخيط الحالي (الترجمة الحية: طلب أبطأ من ~12ث ملوش لازمة). null = الافتراضي 90ث */
     val readTimeoutOverride = ThreadLocal<Int?>()
+    /** (v998 — وارد) على الخيط ده بس: ابعت thinkingBudget 0 مهما كان الموديل (بدل thinkingLevel minimal) */
+    val thinkBudget0 = ThreadLocal<Boolean>()
+    /** (v998 — وارد) خطافات الستريم: onText لكل دلتا نص · onFirstToken لأول دلتا غير فاضية · cancel لإجهاض القراءة · onConn لقطع الاتصال من خيط الحارس */
+    class StreamCb(val onText: (String) -> Unit, val onFirstToken: () -> Unit, val cancel: () -> Boolean, val onConn: (HttpURLConnection) -> Unit)
 
     /** (v413) إثبات إن جيميناي اتنده فعلًا: كل طلب حقيقي بيتسجّل (قبل + بعد). لو مفيش سطور 🌐 في اللوج يبقى جيميناي ماتندهش خالص. */
     private val gemSeq = java.util.concurrent.atomic.AtomicInteger(0)
@@ -708,14 +718,17 @@ object Api {
     fun generateModel(model: String, key: String, prompt: String, wav: ByteArray?, maxTokens: Int, temp: Double, json: Boolean, search: Boolean): Result =
         generateInner(model, key, prompt, wav, maxTokens, temp, json, search)
     private fun generateInner(model: String, key: String, prompt: String, wav: ByteArray?,
-                 maxTokens: Int, temp: Double, json: Boolean, search: Boolean): Result {
+                 maxTokens: Int, temp: Double, json: Boolean, search: Boolean, fileUri: String? = null, stream: StreamCb? = null): Result {
         Quota.hit(model); Stats.req(model, key)
         val mt0 = minOf(maxTokens, tokenCap[model] ?: Int.MAX_VALUE)
         if (search) return generateOnce(model, key, prompt, wav, mt0, temp, json, search, "")
         var v = thinkVar[model] ?: 0
         var mt = mt0
         while (true) {
-            try { return generateOnce(model, key, prompt, wav, mt, temp, json, search, thinkCfg(model, v)) }
+            try {
+                if (stream != null) return generateStreamOnce(model, key, prompt, wav, fileUri, mt, temp, json, thinkCfg(model, v), stream)
+                return generateOnce(model, key, prompt, wav, mt, temp, json, search, thinkCfg(model, v))
+            }
             catch (e: ApiErr) {
                 val r = e.raw
                 if (e.code == 400 && mt > 8192 && (r.contains("max_output_tokens", true) || r.contains("maxOutputTokens", true) || r.contains("output token", true))) {
@@ -725,6 +738,126 @@ object Api {
                 v++; thinkVar[model] = v
             }
         }
+    }
+
+    /**
+     * (v998 — وارد) طلب ستريم على موديل بعينه بمفتاح جيميناي حقيقي — من غير تحويل FreeLLM (المسار ده مبيعدّيش على generate).
+     * نفس بناء الطلب بتاع generateOnce (منه thinkCfg عن طريق generateInner)، بس الرد بيتقري سطر سطر (SSE).
+     */
+    fun generateStream(model: String, key: String, prompt: String, wav: ByteArray?, fileUri: String?,
+                 maxTokens: Int, temp: Double, json: Boolean, cb: StreamCb): Result {
+        if (key == LocalKey.ID) throw NoKey()
+        if (FreeLlm.isWrapped(key) || FreeLlm.isKey(key)) throw ApiErr(400, "Warid: FreeLLM keys not supported")
+        val n = gemSeq.incrementAndGet()
+        val tail = "…" + key.takeLast(4)
+        val t0 = System.currentTimeMillis()
+        val kind = if (fileUri != null) "صوت Files" else if (wav != null) "صوت ${wav.size / 1024}KB" else "نص"
+        LogStore.add("🌐 [جيميناي #$n] وارد ستريم ← ${model.removePrefix("gemini-")} · مفتاح $tail · $kind")
+        try {
+            val r = generateInner(model, key, prompt, wav, maxTokens, temp, json, false, fileUri, cb)
+            LogStore.add("🌐 [جيميناي #$n] ✅ وارد رد ${r.text.length}حرف في ${System.currentTimeMillis() - t0}ms" + (if (r.finish.isNotEmpty() && r.finish != "STOP") " (${r.finish})" else ""))
+            return r
+        } catch (e: Throwable) {
+            val m = if (e is ApiErr) "HTTP ${e.code}: " + (e.message ?: "").take(90) else (e.javaClass.simpleName + ": " + (e.message ?: "").take(90))
+            LogStore.add("🌐 [جيميناي #$n] ❌ وارد فشل في ${System.currentTimeMillis() - t0}ms — $m")
+            throw e
+        }
+    }
+
+    /**
+     * (v998 — وارد) النسخة الستريمنج من generateOnce: نفس بناء الطلب، بس الرد SSE سطر سطر.
+     * كود الخطأ بيتفحص قبل حلقة السطور (errorStream → ApiErr زي generateOnce).
+     * مفيش [DONE] — نهاية الستريم هي نهاية السطور. SocketTimeoutException وسط الستريم = stall:
+     * النص الجزئي محفوظ في WaridStall.partial ومبيترميش.
+     */
+    private fun generateStreamOnce(model: String, key: String, prompt: String, wav: ByteArray?, fileUri: String?,
+                 maxTokens: Int, temp: Double, json: Boolean, think: String, cb: StreamCb): Result {
+        val enc = java.util.Base64.getEncoder()
+        val pk = if (wav != null && fileUri == null) AudioEnc.pack(wav) else null
+        val aud: ByteArray? = pk?.bytes
+        val head = "{\"contents\":[{\"parts\":[" + when {
+            fileUri != null -> "{\"file_data\":{\"mime_type\":\"audio/wav\",\"file_uri\":" + JSONObject.quote(fileUri) + "}},"
+            pk != null -> "{\"inline_data\":{\"mime_type\":\"" + pk.mime + "\",\"data\":\""
+            else -> ""
+        }
+        val mid = if (aud != null) "\"}}," else ""
+        val textPart = "{\"text\":" + JSONObject.quote(prompt) + "}"
+        val tail = "]}],\"generationConfig\":{\"maxOutputTokens\":$maxTokens,\"temperature\":$temp" +
+            (if (json) ",\"responseMimeType\":\"application/json\"" else "") + think + "},\"safetySettings\":[$SAFETY]}"
+        val hb = head.toByteArray(Charsets.UTF_8)
+        val mb = (mid + textPart + tail).toByteArray(Charsets.UTF_8)
+        val b64Len = if (aud != null) ((aud.size + 2) / 3).toLong() * 4 else 0L
+        val total = hb.size + b64Len + mb.size
+
+        val c = URL("$base/models/$model:streamGenerateContent?alt=sse").openConnection() as HttpURLConnection
+        try {
+            c.requestMethod = "POST"; c.doOutput = true; c.connectTimeout = 20000; c.readTimeout = (readTimeoutOverride.get() ?: 120000)
+            c.setRequestProperty("Content-Type", "application/json"); c.setRequestProperty("x-goog-api-key", key)
+            c.setRequestProperty("Accept", "text/event-stream")
+            c.setFixedLengthStreamingMode(total)
+            cb.onConn(c)
+            c.outputStream.use { os ->
+                os.write(hb)
+                if (aud != null) {
+                    val step = 3 * 16384
+                    var i = 0
+                    while (i < aud.size) {
+                        val e = minOf(aud.size, i + step)
+                        os.write(enc.encode(aud.copyOfRange(i, e)))
+                        i = e
+                    }
+                }
+                os.write(mb)
+            }
+            val code = c.responseCode
+            val stream = if (code < 300) c.inputStream else c.errorStream
+            if (code >= 300) {
+                val txt = stream?.bufferedReader(Charsets.UTF_8)?.use { it.readText() } ?: ""
+                NetUse.api(total, txt)
+                val m = try { JSONObject(txt).getJSONObject("error").getString("message") } catch (_: Exception) { "HTTP $code" }
+                throw ApiErr(code, m)
+            }
+            val sb = StringBuilder()
+            var finish = ""
+            var firstFired = false
+            var down = 0L
+            try {
+                stream?.bufferedReader(Charsets.UTF_8)?.use { r ->
+                    while (true) {
+                        if (cb.cancel()) throw WaridStall(sb.toString())
+                        val line = (try { r.readLine() } catch (e: java.net.SocketTimeoutException) { throw WaridStall(sb.toString()) }) ?: break
+                        down += line.length.toLong()
+                        val t = line.trim()
+                        if (t.isEmpty() || !t.startsWith("data:")) continue
+                        val payload = t.removePrefix("data:").trim()
+                        if (payload.isEmpty() || payload == "[DONE]") continue
+                        val obj = try { JSONObject(payload) } catch (_: Throwable) { continue }
+                        val cand = obj.optJSONArray("candidates")?.optJSONObject(0) ?: continue
+                        val fr = cand.optString("finishReason", "")
+                        if (fr.isNotEmpty()) finish = fr
+                        val parts = cand.optJSONObject("content")?.optJSONArray("parts") ?: continue
+                        for (i in 0 until parts.length()) {
+                            val delta = parts.optJSONObject(i)?.optString("text", "") ?: ""
+                            if (delta.isEmpty()) continue
+                            sb.append(delta)
+                            cb.onText(delta)
+                            if (!firstFired) {
+                                firstFired = true
+                                cb.onFirstToken()
+                            }
+                        }
+                    }
+                }
+            } catch (e: WaridStall) {
+                try { NetUse.api(total, sb.length.toLong()) } catch (_: Throwable) {}
+                throw e
+            } catch (e: java.io.IOException) {
+                try { NetUse.api(total, sb.length.toLong()) } catch (_: Throwable) {}
+                throw WaridStall(sb.toString())
+            }
+            try { NetUse.api(total, down) } catch (_: Throwable) {}
+            return Result(sb.toString(), finish)
+        } catch (e: Throwable) { try { c.disconnect() } catch (_: Throwable) {}; throw e }
     }
 
     private fun generateOnce(model: String, key: String, prompt: String, wav: ByteArray?,

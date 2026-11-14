@@ -230,11 +230,18 @@ object PlayerPad {
                 panel.addView(View(act).apply { background = pill(0xFF3A4C73.toInt(), 3f) }, lp(dp(42), dp(5)).apply { gravity = Gravity.CENTER_HORIZONTAL; bottomMargin = dp(12) })
                 panel.addView(label(title, 18f), lp(-1, -2).apply { bottomMargin = dp(2) })
                 val body = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL }
-                val scroll = MaxHeightScroll(act, (dm.heightPixels * 0.72f).toInt()).apply { isVerticalScrollBarEnabled = false; addView(body) }
+                // (v999 ملاحظة 5) السكرول بار بقى ظاهر عشان المستخدم يعرف إن فيه أزرار تحت (زي «▶ ترجم» و«🔁 طبّق…»)
+                val scroll = MaxHeightScroll(act, (dm.heightPixels * 0.72f).toInt()).apply { isVerticalScrollBarEnabled = true; addView(body) }
                 panel.addView(scroll, lp(-1, -2))
                 var redoFn: () -> Unit = {}
                 val closeFn: () -> Unit = { try { sd.dismiss() } catch (_: Throwable) {} }
-                redoFn = { body.removeAllViews(); fill(body, { redoFn() }, closeFn) }
+                // (v999 ملاحظة 5) redo() كانت بترجّع السكرول لأول الورقة بعد كل دوسة شيب — دلوقتي بتحفظ scrollY وبترجّعه بعد إعادة البناء
+                redoFn = {
+                    val savedY = scroll.scrollY
+                    body.removeAllViews()
+                    fill(body, { redoFn() }, closeFn)
+                    scroll.post { scroll.scrollTo(0, savedY) }
+                }
                 redoFn()
                 sd.setContentView(panel)
                 sd.window?.apply {
@@ -312,7 +319,7 @@ object PlayerPad {
                 }
             }
             // ── (v684) ترجمة ملف ترجمة: المرفق مع الفيديو، أو ملف من الموبايل ← إعدادات (مترجم/لهجة/أسلوب/شدة) ← زرار «▶ ترجم» ──
-            var sfEng = lastSfEng; var sfDia = "فصحى"; var sfSty = "حرفي"; var sfStr = "متوسطة"
+            var sfEng = lastSfEng; var sfDia = "فصحى"; var sfSty = "تلقائي"; var sfStr = "متوسطة"
             var dualSel = 0            // (v695) وضع العرض الحالي (من حالة التلفزيون)
             var appliedVer = -1        // (v695) آخر نسخة طبّقتها من «النسخ» (للتمييز في القايمة)
             var sfMobText: String? = null   // (v688) نص الملف اللي اخترته من الموبايل — الموبايل بيترجمه بالتوازي مع التلفزيون
@@ -326,8 +333,8 @@ object PlayerPad {
                     grp(body, "لهجة الترجمة")
                     chipRows(body, kotlin.collections.listOf("فصحى", "مصري", "شامي", "لبناني", "خليجي", "مغربي", "عراقي", "سوداني"), 4, { l -> l == sfDia }) { l -> sfDia = l; redo() }
                     grp(body, "الأسلوب")
-                    chipRows(body, kotlin.collections.listOf("حرفي", "شعبي", "جرئ", "+18"), 4, { l -> l == sfSty }) { l -> sfSty = l; redo() }
-                    grp(body, "الشدة (مع شعبي / جرئ / +18)")
+                    chipRows(body, kotlin.collections.listOf("تلقائي", "حرفي", "شعبي", "جرئ"), 4, { l -> l == sfSty }) { l -> sfSty = l; redo() }
+                    grp(body, "الشدة (مع شعبي / جرئ / تلقائي)")
                     chipRows(body, kotlin.collections.listOf("خفيفة", "متوسطة", "شديدة"), 3, { l -> l == sfStr }) { l -> sfStr = l; redo() }
                 } else {
                     body.addView(label("ℹ جوجل بيترجم فصحى بس — اللهجة والأسلوب والشدة مع جيميناي", 12.5f, 0xFFFFB74D.toInt(), false), lp(-1, -2).apply { topMargin = dp(10) })
@@ -359,7 +366,7 @@ object PlayerPad {
                 }, lp(-1, dp(56)).apply { topMargin = dp(16) })
             }
             fun openSfSettings(src: String, what: String) {
-                sfDia = curDialect.ifBlank { "فصحى" }; sfSty = curStyle.ifBlank { "حرفي" }; sfStr = curStrength.ifBlank { "متوسطة" }; sfEng = lastSfEng
+                sfDia = curDialect.ifBlank { "فصحى" }; sfSty = curStyle.ifBlank { "تلقائي" }; sfStr = curStrength.ifBlank { "متوسطة" }; sfEng = lastSfEng
                 sheetSfSettings(src, what)
             }
             fun pickSubFromPhone() {
@@ -560,15 +567,15 @@ object PlayerPad {
                     curDialect = if (l == "فصحى") "" else l; if (started && l != "فصحى") tapFill("dialect"); go("dialect:$l"); redo()
                 }
                 grp(body, "الأسلوب")
-                chipRows(body, kotlin.collections.listOf("حرفي", "شعبي", "جرئ", "+18"), 4, { l -> l == curStyle.ifBlank { "حرفي" } }) { l ->
-                    curStyle = if (l == "حرفي") "" else l; go("tone:" + l + "|" + curStrength.ifBlank { "متوسطة" }); redo()
+                chipRows(body, kotlin.collections.listOf("تلقائي", "حرفي", "شعبي", "جرئ"), 4, { l -> l == curStyle.ifBlank { "تلقائي" } }) { l ->
+                    curStyle = if (l == "تلقائي") "" else l; go("tone:" + l + "|" + curStrength.ifBlank { "متوسطة" }); redo()
                 }
-                grp(body, "الشدة (مع شعبي / جرئ / +18)")
+                grp(body, "الشدة (مع شعبي / جرئ / تلقائي)")
                 chipRows(body, kotlin.collections.listOf("خفيفة", "متوسطة", "شديدة"), 3, { l -> l == curStrength.ifBlank { "متوسطة" } }) { l ->
-                    curStrength = l; go("tone:" + curStyle.ifBlank { "حرفي" } + "|" + l); redo()
+                    curStrength = l; go("tone:" + curStyle.ifBlank { "تلقائي" } + "|" + l); redo()
                 }
-                opt(body, "🔁 طبّق الأسلوب من هنا للآخر") { go("tone:" + curStyle.ifBlank { "حرفي" } + "|" + curStrength.ifBlank { "متوسطة" } + "|from"); close() }
-                opt(body, "🔁 طبّق الأسلوب على الفيديو كله") { go("tone:" + curStyle.ifBlank { "حرفي" } + "|" + curStrength.ifBlank { "متوسطة" } + "|all"); close() }
+                opt(body, "🔁 طبّق الأسلوب من هنا للآخر") { go("tone:" + curStyle.ifBlank { "تلقائي" } + "|" + curStrength.ifBlank { "متوسطة" } + "|from"); close() }
+                opt(body, "🔁 طبّق الأسلوب على الفيديو كله") { go("tone:" + curStyle.ifBlank { "تلقائي" } + "|" + curStrength.ifBlank { "متوسطة" } + "|all"); close() }
                 grp(body, "أدوات الذكاء (دوسة واحدة)")
                 val tools = mapOf("✍ تنقيح" to "refine", "🔥 لهجة +" to "dial", "🧹 عائلي" to "family", "🔞 صريح" to "explicit", "🔧 ضمائر" to "pron", "🧠 دمج مكرر" to "dedup")
                 chipRows(body, tools.keys.toList(), 3, { false }, { l -> tools[l] }) { l -> if (started) tapFill(tools[l] ?: ""); go("ai:" + (tools[l] ?: "")); close() }
