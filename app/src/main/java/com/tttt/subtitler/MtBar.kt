@@ -1198,6 +1198,10 @@ object MtBar {
             else if (why.isEmpty()) "✨ تحسين الصورة: $name"
             else "✨ تحسين الصورة: $name — مش شغّال على الفيديو ده ($why)"
         try { Notice.show(a, msg, 2200L) } catch (_: Throwable) {}
+        // (v992) تأكيد حقيقي بعد ثانيتين: الشادر رسم فريمات ولا لأ
+        if (name != "إيقاف" && why.isEmpty()) {
+            try { MtEnhance.reportLater { r -> if (r.isNotEmpty()) try { Notice.show(a, "✨ $name: $r", 2600L) } catch (_: Throwable) {} } } catch (_: Throwable) {}
+        }
     }
 
     /** (v944) الشريط العلوي زي القديم: صف واحد أيقونات بس (38dp)، بيتسحب أفقيًا، الأدوات التانية في القوايم */

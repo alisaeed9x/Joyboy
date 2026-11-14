@@ -148,6 +148,8 @@ class LectureUi(private val act: Activity, private val ui: Ui, private val th: T
         col.addView(card("🎬", "فيديو أو محاضرة صوتية", "فيديو من المكتبة · ملف صوت · أي ملف من الجهاز") { chooseMedia() }, lp(-1, -2, 10))
         col.addView(card("🎙", "التسجيلات", "كل الريكوردز الموجودة على الجهاز") { openRecordings(false) }, lp(-1, -2, 8))
         col.addView(card("🔗", "من لينك", "يوتيوب · فيسبوك · أي لينك فيه صوت أو فيديو") { askLink() }, lp(-1, -2, 8))
+        col.addView(card("📞", "المكالمات المسجلة", "أسماء من جهات الاتصال · بصمة صوت · فرّغ المكالمة") { openCalls() }, lp(-1, -2, 8))   // (v994)
+        col.addView(card("🕘", "فيديوهات شفتها قبل كده", "سجل يوتيوب · المتصفح · فيديوهات الجهاز — اختار منها وابدأ") { openWatched() }, lp(-1, -2, 8))
         col.addView(ui.text("📚 محاضراتك", 13f, th.muted, true).apply { setPadding(ui.dp(4), ui.dp(16), ui.dp(4), ui.dp(2)) }, lp(-1, -2))
         val sc = ScrollView(act).apply { isVerticalScrollBarEnabled = false; addView(histCol) }
         col.addView(sc, LinearLayout.LayoutParams(-1, 0, 1f).apply { topMargin = ui.dp(4) })
@@ -252,6 +254,39 @@ class LectureUi(private val act: Activity, private val ui: Ui, private val th: T
         main.post { openDoc(d, !d.complete) }
     }
 
+    // ===================== فيديوهات شفتها قبل كده (السجل العام) =====================
+    private fun openWatched() {
+        var src = "youtube"
+        val list = vcol()
+        lateinit var d: Dialog
+        fun render() {
+            list.removeAllViews()
+            val items = PubHistory.list("v", src)
+            if (items.isEmpty()) { list.addView(ui.text("مفيش حاجة في السجل ده لسه.", 12.5f, th.muted).apply { setPadding(ui.dp(4), ui.dp(8), ui.dp(4), ui.dp(8)) }); return }
+            for (x in items.take(150)) {
+                val row = vcol().apply { setPadding(ui.dp(12), ui.dp(10), ui.dp(12), ui.dp(10)); background = glassBg(14) }
+                row.addView(ui.text(x.title, 14f, th.text, true).apply { maxLines = 2; ellipsize = TextUtils.TruncateAt.END })
+                row.addView(ui.text(java.text.SimpleDateFormat("yyyy/MM/dd  HH:mm", java.util.Locale.US).format(java.util.Date(x.ts)), 11.5f, th.muted).apply { maxLines = 1 })
+                row.isClickable = true; Glass.pressable(row)
+                row.setOnClickListener {
+                    d.dismiss()
+                    when (src) {
+                        "youtube" -> begin("link", x.title, "", YtHistory.watchUrl(x.ref))
+                        "local" -> begin("video", x.title, x.ref, "")
+                        else -> begin("link", x.title, "", x.ref)
+                    }
+                }
+                list.addView(row, lp(-1, -2, 6))
+            }
+        }
+        val content = vcol().apply { layoutParams = lp(-1, -1) }
+        content.addView(segRow(listOf("youtube" to "▶ يوتيوب", "browser" to "🌐 المتصفح", "local" to "📁 الجهاز"), { src }, { src = it; render() }), lp(-1, -2))
+        content.addView(ScrollView(act).apply { isVerticalScrollBarEnabled = false; addView(list) }, LinearLayout.LayoutParams(-1, 0, 1f).apply { topMargin = ui.dp(8) })
+        d = ui.sheet(act, "🕘 اختار فيديو من السجل", listOf<View>(content), fixedH = true)
+        d.show()
+        render()
+    }
+
     // ===================== التسجيلات =====================
     private fun openRecordings(allAudio: Boolean) {
         if (!Lecture.hasAudioPermission(act)) {
@@ -305,6 +340,126 @@ class LectureUi(private val act: Activity, private val ui: Ui, private val th: T
         render()
     }
 
+    // ===================== (v994) 📞 المكالمات المسجلة — أسماء من الجهات + بصمة الصوت (CallKit) =====================
+    /** مدخل من «المزيد» */
+    fun showCalls() = openCalls()
+
+    private class CallRow(val rec: Lecture.Rec, val who: CallKit.Who)
+
+    private fun callTitle(r: CallRow): String = when {
+        r.who.name.isNotBlank() -> "👤 " + r.who.name
+        r.who.number.isNotBlank() -> "📞 " + r.who.number
+        else -> r.rec.name.substringBeforeLast('.')
+    }
+
+    private fun callKey(r: CallRow): String = CallKit.contactKey(r.who.name.ifBlank { r.who.number.ifBlank { r.rec.name.substringBeforeLast('.') } })
+
+    private fun openCalls() {
+        if (!Lecture.hasAudioPermission(act)) {
+            Notice.show(act, "محتاج إذن الصوتيات الأول — اسمح بيه وبعدين ادوس تاني", 3600L)
+            try { act.requestPermissions(arrayOf(Lecture.audioPermission()), 12) } catch (_: Throwable) {}
+            return
+        }
+        var showAll = false
+        var scanning = true
+        var q = ""
+        var rows: List<CallRow> = emptyList()
+        val list = vcol()
+        val info = ui.text("⏳ بدوّر على التسجيلات…", 12f, th.muted).apply { setPadding(0, ui.dp(4), 0, ui.dp(4)) }
+        lateinit var d: Dialog
+
+        fun render() {
+            list.removeAllViews()
+            val src = (if (showAll) rows else rows.filter { it.rec.isRec }).filter { q.isBlank() || callTitle(it).contains(q, true) || it.rec.name.contains(q, true) }
+            info.text = when {
+                scanning -> "⏳ بدوّر على التسجيلات…"
+                src.isEmpty() -> if (showAll) "مفيش ملفات صوت" else "مفيش تسجيلات متعرّف عليها — جرّب «كل الصوتيات»"
+                else -> "${src.size} ملف"
+            }
+            for (r in src.take(200)) {
+                val row = vcol().apply { setPadding(ui.dp(12), ui.dp(10), ui.dp(12), ui.dp(10)); background = glassBg(14) }
+                row.addView(ui.text(callTitle(r), 14f, th.text, true).apply { maxLines = 2; ellipsize = TextUtils.TruncateAt.END })
+                val date = java.text.SimpleDateFormat("yyyy/MM/dd", java.util.Locale.US).format(java.util.Date(r.rec.dateSec * 1000L))
+                val voice = if (CallKit.hasVoice(act, callKey(r))) "🎤 بصمة محفوظة" else ""
+                val sub = listOf(fmtDur(r.rec.durMs / 1000.0), date, if (r.who.name.isNotBlank()) r.who.number else "", voice).filter { it.isNotBlank() }.joinToString(" · ")
+                row.addView(ui.text(sub, 11.5f, th.muted).apply { maxLines = 1 })
+                row.isClickable = true; Glass.pressable(row)
+                row.setOnClickListener { callActions(r) { d.dismiss() } }
+                list.addView(row, lp(-1, -2, 6))
+            }
+        }
+
+        val search = ui.input("🔍 دوّر باسم أو رقم", "")
+        search.addTextChangedListener(object : TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
+            override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
+            override fun afterTextChanged(s: Editable?) { q = s?.toString()?.trim() ?: ""; render() }
+        })
+        val content = vcol().apply { layoutParams = lp(-1, -1) }
+        content.addView(ui.text("اختار مكالمة: فرّغها، أو احفظ مقطع مرجعي لصوت الشخص (بصمة الصوت) عشان التفريغ يعرف مين بيتكلم.", 12f, th.muted), lp(-1, -2))
+        if (!CallKit.hasContactsPerm(act)) {
+            content.addView(pill("👥 اسمح بجهات الاتصال عشان تظهر أسماء الأشخاص") {
+                try { act.requestPermissions(arrayOf(android.Manifest.permission.READ_CONTACTS), 15) } catch (_: Throwable) {}
+                Notice.show(act, "اسمح وبعدين اقفل الشاشة وافتحها تاني", 3200L)
+            }, lp(-1, -2, 6))
+        }
+        content.addView(segRow(listOf("rec" to "🎙 التسجيلات", "all" to "🎵 كل الصوتيات"), { if (showAll) "all" else "rec" }, { showAll = it == "all"; render() }), lp(-1, -2, 6))
+        content.addView(search, lp(-1, -2, 4))
+        content.addView(info)
+        content.addView(ScrollView(act).apply { isVerticalScrollBarEnabled = false; addView(list) }, LinearLayout.LayoutParams(-1, 0, 1f))
+        d = ui.sheet(act, "📞 المكالمات المسجلة", listOf<View>(content), fixedH = true)
+        d.show()
+        Thread {
+            val out = ArrayList<CallRow>()
+            try {
+                for (r in Lecture.scanAudio(act)) out.add(CallRow(r, if (out.size < 300) CallKit.resolve(act, r.name) else CallKit.parseFileName(r.name)))
+            } catch (e: Throwable) { LogStore.err("LectureUi:calls", e) }
+            main.post { rows = out; scanning = false; if (!showAll && out.none { it.rec.isRec }) showAll = true; render() }
+        }.apply { isDaemon = true }.start()
+        render()
+    }
+
+    private fun callActions(r: CallRow, closeList: () -> Unit) {
+        val labels = arrayOf("🎓 فرّغ المكالمة دي", "🎤 احفظ بصمة صوت الشخص ده من المكالمة", "🎤 احفظ بصمة صوتي أنا من المكالمة")
+        GAlert(act).setTitle(callTitle(r)).setItems(labels) { _, w ->
+            when (w) {
+                0 -> { closeList(); begin("rec", r.who.name.ifBlank { r.rec.name.substringBeforeLast('.') }, r.rec.uri.toString(), "") }
+                1 -> saveVoiceDialog(r, false)
+                else -> saveVoiceDialog(r, true)
+            }
+        }.setNegativeButton("إغلاق", null).show()
+    }
+
+    /** يقتطع ~7 ثواني من المكالمة (من الثانية اللي يحددها المستخدم) ويحفظها كبصمة صوت عبر CallKit */
+    private fun saveVoiceDialog(r: CallRow, mine: Boolean) {
+        val nameEt = ui.input("اسم الشخص", if (mine) "أنا" else r.who.name.ifBlank { r.who.number })
+        val startEt = ui.input("من ثانية كام؟ (مثلاً 0)", "0")
+        val box = vcol()
+        box.addView(nameEt, lp(-1, -2))
+        box.addView(startEt, lp(-1, -2, 8))
+        GAlert(act).setTitle(if (mine) "🎤 بصمة صوتي" else "🎤 بصمة صوت الشخص").setMessage("هيقتطع 7 ثواني من المكالمة من الثانية اللي تحددها. اختار جزء الشخص ده بس هو اللي بيتكلم فيه وصوته واضح (من غير ما حد يقاطعه).").setView(box)
+            .setPositiveButton("احفظ") { _, _ ->
+                val nm = nameEt.text.toString().trim().ifBlank { if (mine) "أنا" else "شخص" }
+                val st0 = startEt.text.toString().trim().toDoubleOrNull() ?: 0.0
+                val key = if (mine) "me" else CallKit.contactKey(nm)
+                Notice.show(act, "⏳ بقتطع المقطع…", 1800L)
+                Thread {
+                    var msg: String
+                    val src = try { AudioSources.make(act, r.rec.uri, null, emptyMap(), 1) { LogStore.add("🎤 $it") } } catch (e: Throwable) { LogStore.err("LectureUi:voiceSrc", e); null }
+                    if (src == null) msg = "⚠ مقدرتش أفتح التسجيل"
+                    else try {
+                        val dur = src.durationSec()
+                        val st = st0.coerceIn(0.0, Math.max(0.0, dur - 1.0))
+                        val c = src.wav(st, Math.min(dur, st + 7.0))
+                        msg = if (c == null || c.silent || c.bytes.size < 4000) "⚠ المقطع ده صامت أو قصير — جرّب ثانية تانية"
+                        else { CallKit.saveVoice(act, key, nm, c.bytes); "✅ اتحفظت بصمة صوت: $nm" }
+                    } catch (e: Throwable) { LogStore.err("LectureUi:voice", e); msg = "⚠ فشل اقتطاع المقطع" }
+                    finally { try { src.close() } catch (_: Throwable) {} }
+                    main.post { Notice.show(act, msg, 3200L) }
+                }.apply { isDaemon = true }.start()
+            }.setNegativeButton("إلغاء", null).show()
+    }
+
     // ===================== شاشة المحاضرة =====================
     private fun openDoc(d: Lecture.Doc, autoStart: Boolean) {
         var tab = "tr"                       // tr · org · sum
@@ -312,6 +467,8 @@ class LectureUi(private val act: Activity, private val ui: Ui, private val th: T
         var busy = false
         var lastSig = ""
         var alive = true
+        var building = false
+        var buildMsg = ""
         if (autoStart && !Lecture.isRunning(d.id)) Lecture.start(act, d)
 
         val title = ui.text(d.title.ifBlank { "محاضرة" }, 15f, th.text, true).apply { maxLines = 2; ellipsize = TextUtils.TruncateAt.END }
@@ -423,6 +580,7 @@ class LectureUi(private val act: Activity, private val ui: Ui, private val th: T
         fun refreshStatus() {
             val r = Lecture.runOf(d.id)
             status.text = when {
+                building -> buildMsg
                 r != null && r.running -> r.status + (if (d.failed.isNotEmpty()) " · ⚠ ${d.failed.size} ناقص" else "")
                 r != null && r.status.isNotBlank() && !d.complete -> r.status
                 d.complete -> "✅ التفريغ مكتمل — ${d.words} كلمة · ${fmtDur(d.durSec)}"
@@ -431,6 +589,35 @@ class LectureUi(private val act: Activity, private val ui: Ui, private val th: T
             }
             bar.set(d.pct / 100f)
             bar.visibility = if (d.nChunks == 0 || d.complete) View.GONE else View.VISIBLE
+        }
+
+        fun buildFile(kind: String) {
+            if (building) return
+            if (d.segs.isEmpty()) { Notice.show(act, "فرّغ المحاضرة الأول", 2400L); return }
+            building = true; buildMsg = "⏳ بجهّز المذكرة…"; refreshStatus()
+            Thread {
+                var err = ""; var out: LectureDoc.Built? = null
+                try { out = LectureDoc.build(act, d, kind) { m -> buildMsg = m } } catch (e: Throwable) { LogStore.err("LectureUi:build", e); err = e.message ?: e.javaClass.simpleName }
+                main.post {
+                    building = false; buildMsg = ""; if (alive) refreshStatus()
+                    val b = out
+                    if (b == null) Notice.show(act, "⚠ " + err.take(120), 3600L)
+                    else GAlert(act).setTitle("✅ الملف جاهز").setMessage("اتحفظ في التنزيلات ← Joyboy/Study\n" + b.name)
+                        .setPositiveButton("فتح") { _, _ -> LectureDoc.open(act, b) }
+                        .setNeutralButton("مشاركة") { _, _ -> LectureDoc.share(act, b) }
+                        .setNegativeButton("إغلاق", null).show()
+                }
+            }.apply { isDaemon = true }.start()
+        }
+
+        fun chooseBuild() {
+            val labels = arrayOf(
+                "📘 Word — محسّن + مُضاف (إضافات موثوقة بالأحمر + صور + لقطات من الفيديو)",
+                "📄 Word — خام محسّن (تنظيم وألوان وخريطة ذهنية، بدون إضافات)",
+                "🌐 صفحة HTML (شغالة أوفلاين، تصميم المذكرة)",
+                "📝 تفريغ TXT", "{ } تفريغ JSON")
+            val kinds = arrayOf("docx_plus", "docx_raw", "html", "txt", "json")
+            GAlert(act).setTitle("📘 مذكرة المذاكرة").setItems(labels) { _, w -> buildFile(kinds[w]) }.setNegativeButton("إغلاق", null).show()
         }
 
         val content = vcol().apply { layoutParams = lp(-1, -1) }
@@ -445,6 +632,7 @@ class LectureUi(private val act: Activity, private val ui: Ui, private val th: T
         acts.addView(pill("📋 نسخ") { val t = curText(); if (t.isBlank()) Notice.show(act, "مفيش حاجة تتنسخ", 1800L) else copy(t) }, LinearLayout.LayoutParams(0, -2, 1f).apply { marginEnd = ui.dp(6) })
         acts.addView(pill("📤 مشاركة") { val t = curText(); if (t.isBlank()) Notice.show(act, "مفيش حاجة تتشارك", 1800L) else share(d.title, t) }, LinearLayout.LayoutParams(0, -2, 1f))
         content.addView(acts, lp(-1, -2, 8))
+        content.addView(pill("📘 مذكرة المذاكرة (Word / HTML)", primary = true) { chooseBuild() }, lp(-1, -2, 6))
 
         val dd = ui.sheet(act, "🎓 " + d.title.take(28), listOf<View>(content), fixedH = true, onClose = { alive = false; loadHistory() })
         paintCtl(); paintTabs(); refreshStatus(); renderAll()

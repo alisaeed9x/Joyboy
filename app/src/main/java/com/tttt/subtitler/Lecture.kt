@@ -24,7 +24,7 @@ object Lecture {
     const val CHUNK_SEC = 60.0   // جيميناي ما بيقبلش أكتر من كده في الطلب الواحد بشكل موثوق
 
     // ===================== الموديل =====================
-    class Seg(val start: Double, val end: Double, val text: String, val chunk: Int)
+    class Seg(val start: Double, val end: Double, val text: String, val chunk: Int, val spk: String = "")   // spk: D محاضر · S طالب/متحدث تاني · "" غير معروف
 
     class Doc(val id: String) {
         var title = ""
@@ -44,6 +44,11 @@ object Lecture {
         var summary = ""
         var summaryWeb = false
         var summaryLen = "mid"      // short · mid
+        var ua = ""                 // (v993) هيدرز اللينك المتحل — بتتستعمل للقطات الفيديو
+        var ref = ""
+        var analysis = ""           // (v993) تحليل المذكرة (JSON) — بيتعاد لو التفريغ اتغيّر
+        var analysisN = 0
+        var analysisHash = ""
         val complete: Boolean get() = nChunks > 0 && done.size >= nChunks && failed.isEmpty()
         val pct: Int get() = if (nChunks <= 0) 0 else (done.size * 100 / nChunks).coerceIn(0, 100)
         val words: Int get() = synchronized(this) { segs.sumOf { s -> s.text.split(' ').count { it.isNotBlank() } } }
@@ -68,11 +73,12 @@ object Lecture {
 
     private fun toJson(d: Doc): JSONObject = synchronized(d) {
         val segs = JSONArray()
-        for (s in d.segs) segs.put(JSONObject().put("s", s.start).put("e", s.end).put("t", s.text).put("c", s.chunk))
+        for (s in d.segs) segs.put(JSONObject().put("s", s.start).put("e", s.end).put("t", s.text).put("c", s.chunk).put("k", s.spk))
         JSONObject().put("id", d.id).put("title", d.title).put("kind", d.kind).put("uri", d.uri).put("link", d.link)
             .put("dur", d.durSec).put("n", d.nChunks).put("created", d.created).put("lang", d.lang).put("clean", d.clean)
             .put("done", JSONArray(d.done.toList())).put("failed", JSONArray(d.failed.toList())).put("segs", segs)
             .put("org", d.organized).put("orgWeb", d.organizedWeb).put("sum", d.summary).put("sumWeb", d.summaryWeb).put("sumLen", d.summaryLen)
+            .put("ua", d.ua).put("ref", d.ref).put("an", d.analysis).put("anN", d.analysisN).put("anH", d.analysisHash)
     }
 
     private fun fromJson(o: JSONObject): Doc {
@@ -83,10 +89,11 @@ object Lecture {
         o.optJSONArray("done")?.let { a -> for (i in 0 until a.length()) d.done.add(a.optInt(i)) }
         o.optJSONArray("failed")?.let { a -> for (i in 0 until a.length()) d.failed.add(a.optInt(i)) }
         o.optJSONArray("segs")?.let { a ->
-            for (i in 0 until a.length()) { val x = a.optJSONObject(i) ?: continue; d.segs.add(Seg(x.optDouble("s"), x.optDouble("e"), x.optString("t"), x.optInt("c"))) }
+            for (i in 0 until a.length()) { val x = a.optJSONObject(i) ?: continue; d.segs.add(Seg(x.optDouble("s"), x.optDouble("e"), x.optString("t"), x.optInt("c"), x.optString("k"))) }
         }
         d.organized = o.optString("org"); d.organizedWeb = o.optBoolean("orgWeb"); d.summary = o.optString("sum")
         d.summaryWeb = o.optBoolean("sumWeb"); d.summaryLen = o.optString("sumLen", "mid")
+        d.ua = o.optString("ua"); d.ref = o.optString("ref"); d.analysis = o.optString("an"); d.analysisN = o.optInt("anN", 0); d.analysisHash = o.optString("anH")
         return d
     }
 
@@ -158,6 +165,7 @@ object Lecture {
         if (d.link.isNotBlank()) {
             val r = resolveLink(ctx, d.link)
             if (d.title.isBlank() || d.title == "محاضرة" || d.title == d.link) d.title = r.title.ifBlank { d.title }
+            d.ua = r.hdr["User-Agent"] ?: ""; d.ref = r.hdr["Referer"] ?: ""
             return AudioSources.make(ctx, null, r.url, r.hdr, 1, log)
         }
         return AudioSources.make(ctx, Uri.parse(d.uri), null, emptyMap(), 1, log)
@@ -198,16 +206,31 @@ object Lecture {
     }
 
     // ===================== التفريغ =====================
-    private fun transcribePrompt(durSec: Double, clean: Boolean): String = buildString {
-        append("أنت مفرّغ صوتي أكاديمي دقيق. اسمع المقطع الصوتي (مدته حوالي ${durSec.toInt()} ثانية) وفرّغ الكلام المنطوق فيه نصًا حرفيًا بنفس اللغة المنطوقة فعلًا — من غير أي ترجمة ولا تلخيص ولا إضافة من عندك.\n")
-        append("- لو المحاضر خلط لغتين (عربي/إنجليزي مثلًا) اكتب كل جزء بلغته زي ما اتقال، والمصطلحات العلمية بحروفها الأصلية.\n")
-        append("- قسّم الكلام لجمل أو فقرات قصيرة (٤–١٥ ثانية للجملة) وحط لكل واحدة start/end بالثواني نسبةً لبداية المقطع ده.\n")
-        if (clean) append("- استبعد الكلام الجانبي اللي مش جزء من الشرح (طلب سكوت، تنظيم الحضور، دردشة بين الحضور، كلام عن الوقت). لو في ملاحظة قصيرة مرتبطة بالشرح مباشرة (افتحوا صفحة كذا) سيبها.\n")
+    private fun transcribePrompt(durSec: Double, clean: Boolean, prev: String): String = buildString {
+        append("أنت مفرّغ صوتي أكاديمي محترف بدقة عالية جدًا، متخصص في المحاضرات. اسمع المقطع الصوتي (مدته حوالي ${durSec.toInt()} ثانية) بتركيز كامل وفرّغ الكلام المنطوق نصًا حرفيًا بنفس اللغة المنطوقة فعلًا — من غير أي ترجمة ولا تلخيص ولا إضافة من عندك.\n\n")
+        append("قواعد صارمة:\n")
+        append("- 🔴 المتحدثين: المحاضر = الصوت الأساسي اللي بيشرح (spk=\"D\"). أي صوت تاني مختلف (طالب بيسأل أو بيقاطع أو بيرد، أو شخص تاني) = spk=\"S\". ميّز بين الأصوات من نبرتها وطبقتها وطريقة كلامها مش من المحتوى بس. لو الجملة الواحدة اتقالت من صوتين، افصلها لعنصرين.\n")
+        append("- 🔴 لو طالب قاطع المحاضر أو سأل، سجّل سؤاله كعنصر منفصل spk=\"S\" بتوقيته، ورد المحاضر بعده كعنصر spk=\"D\". متدمجوش مع بعض أبدًا.\n")
+        append("- 🔴 لو المتحدث خلط عربي وإنجليزي في نفس الجملة، اكتب كل جزء بلغته بالظبط زي ما اتقال. المصطلحات العلمية والإنجليزي القصير (حتى كلمتين وسط الجملة) تتكتب بحروفها الإنجليزية الصحيحة ومتتشالش ولا تتترجم ولا تتكتب بحروف عربية.\n")
+        append("- كل جملة أو وحدة معنى (٣–١٥ ثانية) عنصر منفصل بـ start/end بالثواني نسبةً لبداية المقطع ده، والتوقيت لازم يبقى دقيق.\n")
+        if (clean) append("- استبعد الكلام الإداري والجانبي اللي مالوش علاقة بالمادة (طلب سكوت، تنظيم الحضور، الغياب، الوقت، دردشة طلبة مع بعض). لكن أسئلة الطلبة للمحاضر وردوده عليها تتفرّغ دايمًا. ملاحظة قصيرة مرتبطة بالشرح (افتحوا صفحة كذا) سيبها.\n")
         else append("- فرّغ كل كلام مسموع حتى الجانبي.\n")
-        append("- لو الصوت مش واضح اكتب أقرب تفسير منطقي من السياق، ومتخترعش كلام لو مفيش كلام مسموع.\n")
-        append("- لو المقطع مفيهوش كلام خالص رجّع segments فاضية.\n\n")
-        append("رجّع JSON فقط بدون شرح ولا markdown:\n")
-        append("{\"lang\":\"اللغة الأساسية بالعربي\",\"segments\":[{\"start\":0.0,\"end\":5.2,\"text\":\"...\"}]}")
+        append("- تجاهل السكوت والمؤثرات غير الكلامية (خطوات، ضجيج، تنحنح).\n")
+        append("- لو الصوت مش واضح اكتب أقرب تفسير علمي منطقي من السياق، ومتخترعش كلام لو مفيش كلام مسموع.\n")
+        append("- لو المقطع مفيهوش كلام خالص رجّع segments فاضية.\n")
+        if (prev.isNotBlank()) append("\nسياق آخر كلام في المقطع اللي قبله (لتكملة جملة مقطوعة على الحدود وتوحيد كتابة المصطلحات بس، متكررهوش): \"$prev\"\n")
+        append("\nرجّع JSON فقط بدون شرح ولا markdown:\n")
+        append("{\"lang\":\"اللغة الأساسية بالعربي\",\"segments\":[{\"start\":0.0,\"end\":5.2,\"spk\":\"D\",\"text\":\"...\"}]}")
+    }
+
+    private fun spkOf(raw: String): String {
+        val r = raw.trim().lowercase()
+        return when {
+            r.isEmpty() -> ""
+            r.startsWith("s") || r.startsWith("ط") || r.startsWith("st") -> "S"
+            r.startsWith("d") || r.startsWith("م") || r.startsWith("l") -> "D"
+            else -> ""
+        }
     }
 
     private fun parseJson(t: String): JSONObject? {
@@ -225,7 +248,8 @@ object Lecture {
         if (en - st < 1.0) return true
         val wav = try { src.wav(st, en) } catch (e: Throwable) { LogStore.err("Lecture:wav", e); null } ?: return false
         if (wav.silent) { synchronized(d) { d.segs.removeAll { it.chunk == idx } }; return true }
-        val prompt = transcribePrompt(en - st, d.clean)
+        val prev = synchronized(d) { d.segs.filter { it.chunk == idx - 1 }.sortedBy { it.start }.takeLast(2).joinToString(" ") { it.text } }.takeLast(300)
+        val prompt = transcribePrompt(en - st, d.clean, prev)
         for (a in 0 until 4) {
             if (run.stop) return false
             val key = keys[(idx + worker + a) % keys.size]
@@ -239,7 +263,7 @@ object Lecture {
                     val x = arr.optJSONObject(i) ?: continue
                     val t = x.optString("text").trim(); if (t.isEmpty()) continue
                     val s0 = (x.optDouble("start", 0.0)).coerceIn(0.0, en - st); val e0 = (x.optDouble("end", s0)).coerceIn(s0, en - st)
-                    got.add(Seg(st + s0, st + e0, t, idx))
+                    got.add(Seg(st + s0, st + e0, t, idx, spkOf(x.optString("spk"))))
                 }
                 synchronized(d) {
                     d.segs.removeAll { it.chunk == idx }; d.segs.addAll(got)
@@ -316,20 +340,26 @@ object Lecture {
 
     /** نص التفريغ: stamps=true سطر لكل جملة بتوقيتها · false فقرات متصلة. القطع الفاشلة بتظهر كعلامة ⚠ */
     fun transcriptText(d: Doc, stamps: Boolean): String = synchronized(d) {
-        class Item(val start: Double, val text: String, val gap: Boolean)
+        class Item(val start: Double, val text: String, val gap: Boolean, val spk: String)
         val items = ArrayList<Item>()
-        for (s in d.segs) items.add(Item(s.start, s.text, false))
-        for (c in d.failed) items.add(Item(c * CHUNK_SEC, "⚠ [جزء ناقص من ${fmtTime(c * CHUNK_SEC)} إلى ${fmtTime(minOf(d.durSec, (c + 1) * CHUNK_SEC))}]", true))
+        for (s in d.segs) items.add(Item(s.start, s.text, false, s.spk))
+        for (c in d.failed) items.add(Item(c * CHUNK_SEC, "⚠ [جزء ناقص من ${fmtTime(c * CHUNK_SEC)} إلى ${fmtTime(minOf(d.durSec, (c + 1) * CHUNK_SEC))}]", true, ""))
         items.sortBy { it.start }
         val sb = StringBuilder()
         if (stamps) {
-            for (i in items) { if (i.gap) sb.append(i.text).append('\n') else sb.append('[').append(fmtTime(i.start)).append("] ").append(i.text).append('\n') }
-        } else {
-            var para = 0
             for (i in items) {
-                if (i.gap) { if (sb.isNotEmpty()) sb.append("\n\n"); sb.append(i.text).append("\n\n"); para = 0; continue }
-                if (para > 650) { sb.append("\n\n"); para = 0 } else if (sb.isNotEmpty() && !sb.endsWith("\n\n")) sb.append(' ')
-                sb.append(i.text); para += i.text.length + 1
+                if (i.gap) sb.append(i.text).append('\n')
+                else sb.append('[').append(fmtTime(i.start)).append("] ").append(if (i.spk == "S") "🙋 " else "").append(i.text).append('\n')
+            }
+        } else {
+            var para = 0; var last = ""
+            for (i in items) {
+                if (i.gap) { if (sb.isNotEmpty()) sb.append("\n\n"); sb.append(i.text).append("\n\n"); para = 0; last = ""; continue }
+                val changed = i.spk != last && (i.spk == "S" || last == "S")
+                if (changed || para > 650) { if (sb.isNotEmpty() && !sb.endsWith("\n\n")) sb.append("\n\n"); para = 0 }
+                else if (sb.isNotEmpty() && !sb.endsWith("\n\n")) sb.append(' ')
+                if (para == 0 && i.spk == "S") sb.append("🙋 ")
+                sb.append(i.text); para += i.text.length + 1; last = i.spk
             }
         }
         sb.toString().trim()
@@ -423,6 +453,77 @@ object Lecture {
         }
         synchronized(d) { d.summary = res; d.summaryWeb = usedWeb; d.summaryLen = if (short) "short" else "mid" }
         save(ctx, d); return res
+    }
+
+    // ===================== تحليل المذكرة (v993) — نفس منطق وضع المذاكرة في الـHTML =====================
+    private const val AN_MAX_CHARS = 200_000
+
+    private fun segsHash(d: Doc): String = synchronized(d) { d.segs.size.toString() + "_" + d.segs.sumOf { it.text.length } + "_" + d.segs.count { it.spk == "S" } }
+
+    private fun analysisPrompt(text: String): String = buildString {
+        append("أنت أستاذ جامعي خبير ومحرر أكاديمي محترف، متخصص في تحويل تفريغ المحاضرات الخام إلى مادة مذاكرة استثنائية الجودة. المطلوب مش تلخيص سطحي، المطلوب \"شغل فاخر\": مذكرة أكاديمية شاملة، عميقة، منظمة بعناية، تخلّي الطالب يذاكر منها من غير ما يرجع للمحاضرة الأصلية.\n\n")
+        append("⚠️⚠️ تحذير حرج: أغلب المحاضرات طبية. أي معلومة طبية غلط ممكن تضر مريض حقيقي. الدقة شرط أساسي غير قابل للتفاوض.\n\n")
+        append("═══ المصدر الوحيد للحقيقة ═══\nكل المحتوى الأساسي (bullets, detail, qna, keyPoints, definitions) لازم يتبني على كلام المحاضر الفعلي في النص. النص ده هو مصدر الحقيقة الوحيد.\n")
+        append("علامة (طالب) قبل جملة معناها إنها اتقالت من متحدث تاني غير المحاضر (سؤال أو مقاطعة أو رد). الجمل من غير علامة هي كلام المحاضر.\n\n")
+        append("═══ نظام تمييز الإضافات (حرج جدًا) ═══\nلو حبيت تضيف معلومة موثوقة من برّه كلام المحاضر (تعريف أوسع، سياق علمي معروف، تصنيف يفيد الفهم، إكمال خطوة ناقصة جوه تسلسل ذكره المحاضر):\n")
+        append("1. لازم تبقى دقيقة وموثوقة 100% علميًا — لو في أي شك ولو 1% متضيفهاش خالص.\n2. متتعارضش مع أي حاجة قالها المحاضر ولو ضمنيًا.\n3. الإضافة تسد فجوة صغيرة جوه قسم موجود؛ ممنوع تخترع قسم كامل من عندك.\n")
+        append("4. 🔴 حيط النص المضاف بـ [[ADD]] و [[/ADD]] بالظبط: \"...كلام المحاضر [[ADD]]المعلومة المضافة[[/ADD]] وباقي الكلام...\". العلامات إلزامية لأي جزء مضاف مهما صغر، وممنوعة على أي جزء منقول من كلام المحاضر.\n\n")
+        append("═══ 🚨 إضافات طبية حساسة ═══\nلو الإضافة بتخص جرعة دواء أو معيار تشخيص محدد أو خطوة علاج مباشر، حيطها كمان بـ [[MEDWARN]]...[[/MEDWARN]] برّه الـ[[ADD]]: [[MEDWARN]][[ADD]]نص الإضافة[[/ADD]][[/MEDWARN]]. ولو مش متأكد 100% اتجاهلها خالص.\n\n")
+        append("═══ 🏷️ تمييز المصطلحات العلمية (في bullets و detail) ═══\nكل مصطلح علمي أو تقني مهم يظهر لأول مرة في القسم (مرض، إجراء، مادة، خلية، مفهوم تشريحي/فسيولوجي دقيق) حيطه بـ [[TERM:تعريفه المختصر]]المصطلح[[/TERM]]. التعريف سطر واحد (8–15 كلمة) ودقيق 100%. علّم المصطلح مرة واحدة بس في القسم، من 2 لـ 5 مصطلحات لكل قسم، ومش كل كلمة.\n\n")
+        append("═══ معايير الجودة ═══\n")
+        append("- اشرح كل مفهوم بعمق يخلّي الطالب يفهم \"ليه\" مش بس \"إيه\"؛ اربط الأفكار، وضّح العلاقات السببية والاستثناءات اللي ذكرها المحاضر.\n")
+        append("- رتّب منطقيًا بداية ونهاية لكل قسم، مش نقل حرفي للترتيب العشوائي للكلام.\n")
+        append("- أمثلة والحالات السريرية/العملية اللي ذكرها المحاضر اشرحها بالتفصيل جوه القسم المرتبط.\n")
+        append("- أي مقارنة ذكرها المحاضر (الفرق بين تقنيتين، مين أفضل وليه) نظّمها في جدول جوه comparisons.\n")
+        append("- ابحث في النص كله عن أي سؤال من طالب ورد المحاضر عليه (الجمل اللي عليها علامة (طالب) وكمان أي سؤال متقال في الكلام) وسجّله في qna بالسؤال والإجابة كاملين ومفصّلين.\n")
+        append("- لكل قسم رئيسي اقترح مصطلح علمي إنجليزي دقيق (زي اسم مقالة Wikipedia) يصلح للبحث عن صورة توضيحية حقيقية في imageSearchTerm. لو القسم مفيهوش مفهوم بصري (مقدمة/خاتمة) سيبه فاضي.\n")
+        append("- 🔴🔴 الإشارات البصرية (visuals): المحاضر كتير بيشاور على حاجة قدامه من غير ما يسميها: \"عندنا هنا كذا\"، \"زي ما إنتو شايفين\"، \"شوفوا الشكل ده\"، \"ده اللي على الشاشة\"، \"الرسمة دي\"، \"هنا في الصورة\"، \"لاحظوا الجزء ده\"، \"as you can see\"، \"this one here\". لكل إشارة زي دي: (1) حدّد من سياق الجمل اللي قبلها وبعدها هو بيشاور على إيه بالظبط (شكل تشريحي؟ جدول؟ مخطط؟ أشعة؟ سلايد؟ جهاز؟) واكتبه في what بجملة واضحة. (2) سجّل ts = ثانية الجملة اللي فيها الإشارة (من الرقم بعد | في علامة الوقت). (3) اختار source: \"frame\" لو الأنسب لقطة من الفيديو نفسه (سلايد/رسمة/حاجة مخصوصة بالمحاضرة)، أو \"wiki\" لو الأنسب صورة مرجعية معروفة (شكل تشريحي، تصنيف، جهاز). (4) wikiTerm دايمًا: مصطلح Wikipedia إنجليزي دقيق للحاجة دي (بيتستعمل كبديل لو اللقطة مش متاحة). (5) callouts: أسماء الأجزاء اللي المحاضر نطقها وبيشاور عليها (تتحط كأسهم على اللقطة)، [] لو مفيش. حط الإشارة في القسم اللي بتخدمه. متخترعش إشارة لو مفيش مؤشر واضح، ومتكررش نفس الإشارة (حد أقصى 3 لكل قسم).\n")
+        append("- خريطة ذهنية في mindMap: عقدة مركزية (موضوع المحاضرة) + فروع (فرع لكل قسم) وتحت كل فرع نقط قصيرة جدًا (كلمة أو اتنين).\n\n")
+        append("النص الكامل للمحاضرة (كل سطر: [الوقت | الثواني] الكلام):\n").append(text).append("\n\n")
+        append("""أرجع JSON فقط بدون أي شرح أو markdown، بالهيكل ده بالظبط:
+{
+  "title": "عنوان المحاضرة المستنتج",
+  "subtitle": "وصف قصير جدًا (سطر واحد)",
+  "mindMap": {"center": "الموضوع المركزي (كلمتين-تلاتة)", "branches": [{"label": "اسم الفرع", "points": ["نقطة قصيرة 1", "نقطة قصيرة 2"]}]},
+  "sections": [{"heading": "عنوان القسم", "bullets": ["نقطة شرح (ممكن تحتوي [[ADD]]..[[/ADD]] أو [[TERM:..]]..[[/TERM]])"], "detail": "فقرة شرح موسّعة (4-7 جمل) تربط الأفكار وتوضّح العلاقات", "imageSearchTerm": "English Wikipedia term e.g. Pulpotomy", "visuals": [{"ts": 123.4, "phrase": "عندنا هنا الشكل ده", "what": "رسم تشريحي يوضّح الطبقات", "source": "frame", "wikiTerm": "Tooth anatomy", "callouts": ["Enamel", "Dentin"]}]}],
+  "comparisons": [{"title": "الفرق بين X وY", "columns": ["المعيار", "الأول", "التاني"], "rows": [["معيار", "قيمة أ", "قيمة ب"]]}],
+  "qna": [{"question": "سؤال الطالب كامل", "answer": "إجابة المحاضر كاملة ومفصّلة"}],
+  "review": {"keyPoints": ["نقطة مراجعة"], "definitions": [{"term": "مصطلح", "meaning": "تعريف مختصر"}], "quickQuiz": [{"question": "سؤال مراجعة يختبر الفهم", "answer": "إجابة مختصرة"}]}
+}
+
+الأعداد: sections من 5 لـ 12 حسب طول المحتوى وعمقه، comparisons [] لو مفيش مقارنة صريحة، qna [] لو مفيش سؤال في النص، review.keyPoints من 8 لـ 15، quickQuiz من 5 لـ 10، mindMap.branches بعدد sections تقريبًا، و visuals [] لو القسم مفيهوش إشارة بصرية. اكتب بالعربية المصرية الواضحة وسيب المصطلحات العلمية بلغتها الأصلية.""")
+    }
+
+    /** يحلل التفريغ لهيكل مذكرة (JSON). بيتخزّن في الدوكيومنت ويتعاد بس لو التفريغ اتغيّر. يتنده من خيط خلفي. */
+    fun analyze(ctx: Context, d: Doc): JSONObject {
+        val h = segsHash(d)
+        if (d.analysis.isNotBlank() && d.analysisHash == h) try { return JSONObject(d.analysis) } catch (_: Throwable) {}
+        val ks = keys(); if (ks.isEmpty()) throw IOException("مفيش مفتاح Gemini — ضيفه من الإعدادات الأول")
+        val lines = synchronized(d) {
+            d.segs.sortedBy { it.start }.joinToString("\n") { "[" + fmtTime(it.start) + " | " + it.start.toInt() + "] " + (if (it.spk == "S") "(طالب) " else "") + it.text }
+        }
+        if (lines.isBlank()) throw IOException("مفيش تفريغ لسه — فرّغ المحاضرة الأول")
+        val text = if (lines.length > AN_MAX_CHARS) lines.take(AN_MAX_CHARS) + "\n...[اتقطع باقي النص لطول المحاضرة]" else lines
+        val prompt = analysisPrompt(text)
+        val mdl = model()
+        var last: Throwable? = null
+        for (a in 0 until minOf(ks.size, 3) + 2) {
+            val key = ks[a % ks.size]
+            try {
+                val r = Api.generate(mdl, key, prompt, null, 24000, 0.3, true, false)
+                val j = parseJson(r.text)
+                if (j != null && (j.optJSONArray("sections")?.length() ?: 0) > 0) {
+                    synchronized(d) { d.analysis = j.toString(); d.analysisN++; d.analysisHash = h }
+                    save(ctx, d); return j
+                }
+                last = IOException("رد التحليل مش مكتمل (${r.finish})")
+            } catch (e: NoKey) { throw e }
+            catch (e: ApiErr) {
+                last = e
+                if (e.code == 429 || e.code >= 500) { try { Thread.sleep(1500L * (a + 1)) } catch (_: InterruptedException) {} }
+            } catch (e: Throwable) { last = e }
+        }
+        throw IOException("فشل التحليل: " + (last?.message ?: "").take(100))
     }
 
     // ===================== تحليل الناتج للعرض =====================

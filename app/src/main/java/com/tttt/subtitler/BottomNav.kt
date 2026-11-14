@@ -124,6 +124,7 @@ class BottomNav(act: Activity, private val ui: Ui, private val th: Theme, privat
         val trl = ArrayList<MoreItem>()
         if (!tvDev) trl.add(MoreItem("📚", "مكتبة الترجمات", false) { try { TrLibUi(act, ui, th).show() } catch (e: Throwable) { LogStore.err("Nav:trlib", e) } })   // (v990)
         if (!tvDev) trl.add(MoreItem("🎓", "تفريغ المحاضرات", false) { try { LectureUi(act, ui, th).show() } catch (e: Throwable) { LogStore.err("Nav:lecture", e) } })   // (v991)
+        if (!tvDev) trl.add(MoreItem("📞", "المكالمات المسجلة", false) { try { LectureUi(act, ui, th).showCalls() } catch (e: Throwable) { LogStore.err("Nav:calls", e) } })   // (v994)
         val store = listOf(
             MoreItem("📂", "مدير الملفات", false) { openHub(act, "fm") },
             MoreItem("↔", "إرسال واستقبال", false) { openHub(act, "ft") },

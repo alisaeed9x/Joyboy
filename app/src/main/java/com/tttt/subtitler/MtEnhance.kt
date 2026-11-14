@@ -27,7 +27,7 @@ import androidx.media3.exoplayer.analytics.AnalyticsListener
  * (v945) تحسين صورة الفيديو المحلي في مشغّل MeeTube — من غير AI ومن غير عتاد قوي.
  * فلتر شادر واحد خفيف (CAS: Contrast Adaptive Sharpening — بيحدّ الحواف بس ومابيزودش الضوضا في المساحات الملساء)
  * + «ألوان أوضح» اختياري (تباين وتشبّع خفيف). مرّة واحدة على الـGPU لكل فريم، 5 قراءات texture بس.
- * بيشتغل على أي مصدر مش يوتيوب (ملف محلي / لينك مباشر)، وبيتقفل لوحده لـ: HDR · أعلى من 1080p · أعلى من 60 فريم/ث.
+ * (v992) بيشتغل على أي مصدر (حتى يوتيوب)، وبيتقفل لوحده لـ: HDR · أعلى من 1080p · أعلى من 60 فريم/ث.
  * حمايات (الجهاز مش متجرّب): لو أول فريم ماظهرش خلال 4.5ث بعد التفعيل، أو الـpipeline رمى خطأ، أو الفريمات بتقع كتير ← الفلتر بيتشال.
  * أول حالتين بيتخزّنوا (mt_enh_off) والفلتر بيفضل مقفول لحد ما تختار درجة من الإعدادات؛ الفريمات الواقعة مقفولة لحد ما تقفل البرنامج.
  * Cfg: mt_enh_level (0 إيقاف · 1 خفيف · 2 متوسط · 3 قوي — الافتراضي 1) · mt_enh_vivid · mt_enh_off.
@@ -53,6 +53,10 @@ object MtEnhance {
     private var heavyAt = 0L
     private var watch: Runnable? = null
     private var reseek = false   // (v988) بعد دوسة الزرار: seek صغير عشان الـsink يسجّل المؤثرات فورًا
+    private var primed = false   // (v992) الريندرر اتفعّل وقائمة المؤثرات مش null (يعني الـVideoSink موجود) — غير كده setVideoEffects ما بتعملش حاجة
+
+    /** (v992) عدد الفريمات اللي الشادر رسمها فعلًا — بيثبت إن الفلتر شغّال مش مجرد «متفعّل» */
+    @JvmField val drawn = java.util.concurrent.atomic.AtomicLong(0)
 
     // ---------- الإعدادات ----------
     private val names = listOf("إيقاف", "خفيف", "متوسط", "قوي")
@@ -161,13 +165,18 @@ object MtEnhance {
             if (player !== p) {
                 detachListeners()
                 applied = ""
+                primed = false
                 p.addListener(listener)
                 p.addAnalyticsListener(analytics)
             }
             act = activity; player = p; info = i
             try {
                 val k = try { i?.sourceKind() ?: "youtube" } catch (_: Throwable) { "youtube" }
-                if (k != "youtube") p.setVideoEffects(emptyList<Effect>())   // (v988) الـVideoSink بيتعمل في onEnabled بس لو القايمة مش null
+                if (k != "youtube" || level() > 0 || fake() > 0) {
+                    p.setVideoEffects(emptyList<Effect>())   // (v988) الـVideoSink بيتعمل في onEnabled بس لو القايمة مش null
+                    // (v992) لو الريندرر لسه ما اتفعّلش (المشغّل IDLE) فالـsink هيتعمل من أول فيديو؛ غير كده هنعمل دورة للريندرر أول ما نفعّل الفلتر
+                    if (p.playbackState == Player.STATE_IDLE) primed = true
+                }
             } catch (_: Throwable) {}
             evaluate()
         } catch (e: Throwable) { LogStore.err("MtEnhance:attach", e) }
@@ -190,9 +199,8 @@ object MtEnhance {
 
     // ---------- القرار ----------
     private fun wanted(): Boolean {
-        if (memOff || Cfg.bool(K_OFF, false) || (level() == 0 && fake() == 0)) return false
-        val k = try { info?.sourceKind() ?: "youtube" } catch (_: Throwable) { "youtube" }
-        return k != "youtube"
+        // (v992) يوتيوب كمان (قبل كده كان بيتقفل معاه — ودي كانت سبب «دوست ومفيش أي تغيير» على فيديوهات المشغّل)
+        return !(memOff || Cfg.bool(K_OFF, false) || (level() == 0 && fake() == 0))
     }
 
     /** الفورمات المختار للفيديو (من التراكس الأول، ولو لسه، من فورمات الريندرر) */
@@ -218,7 +226,7 @@ object MtEnhance {
         try {
             val p = player ?: return
             if (!wanted()) {
-                lastWhy = if (memOff || Cfg.bool(K_OFF, false)) "اتقفل تلقائي" else if (level() == 0 && fake() == 0) "" else "يوتيوب"
+                lastWhy = if (memOff || Cfg.bool(K_OFF, false)) "اتقفل تلقائي" else ""
                 clear(); return
             }
             val f = videoFormat(p) ?: return   // نستنى الفورمات (لو لسه مفيش، مانغيّرش حاجة)
@@ -236,7 +244,11 @@ object MtEnhance {
             val eff = SharpenEffect(if (l == 0) -1f else sharpFor(l), if (v) 1.08f else 1f, if (v) 1.04f else 1f, hdrFor(fk))
             p.setVideoEffects(listOf<Effect>(eff))
             applied = key
-            if (reseek) { try { p.seekTo(p.currentPosition) } catch (_: Throwable) {} }
+            if (!primed) {
+                // (v992) الريندرر شغّال من غير VideoSink: نقفل مسار الفيديو لحظة ونفتحه عشان onEnabled يبني الـsink بالمؤثر
+                primed = true
+                cycleVideoRenderer(p)
+            } else if (reseek) { try { p.seekTo(p.currentPosition) } catch (_: Throwable) {} }
             gotFrame = false
             LogStore.add("MtEnhance: شغّال $key (${f.width}×${f.height})")
             armWatch()
@@ -245,6 +257,41 @@ object MtEnhance {
             persistOff()
             clear()
         }
+    }
+
+    /** (v992) disable/enable لمسار الفيديو (~250ms) — بيعيد onEnabled للريندرر فيتبني الـVideoSink بالمؤثرات الحالية */
+    private fun cycleVideoRenderer(p: ExoPlayer) {
+        try {
+            val params = p.trackSelectionParameters
+            if (params.disabledTrackTypes.contains(C.TRACK_TYPE_VIDEO)) return   // مسار الفيديو مقفول أصلًا (صوت بس) — الـsink هيتعمل لما يتفتح
+            p.trackSelectionParameters = params.buildUpon().setTrackTypeDisabled(C.TRACK_TYPE_VIDEO, true).build()
+            LogStore.add("MtEnhance: دورة ريندرر الفيديو (عشان الـVideoSink يتبني بالمؤثر)")
+            ui.postDelayed({
+                try {
+                    val pp = player ?: return@postDelayed
+                    pp.trackSelectionParameters = pp.trackSelectionParameters.buildUpon().setTrackTypeDisabled(C.TRACK_TYPE_VIDEO, false).build()
+                } catch (_: Throwable) {}
+            }, 250L)
+        } catch (e: Throwable) { LogStore.err("MtEnhance:cycle", e) }
+    }
+
+    /** (v992) بعد ~1.8ث من التفعيل: بيرجّع نص بيقول الفلتر رسم فريمات فعلًا ولا لأ (للإشعار) */
+    fun reportLater(cb: (String) -> Unit) {
+        val base = drawn.get()
+        ui.postDelayed({
+            try {
+                val n = drawn.get() - base
+                val playing = player?.isPlaying == true
+                val msg = when {
+                    applied.isEmpty() -> ""
+                    n > 0 -> "✓ الفلتر بيرسم ($n فريم)"
+                    !playing -> "الفيديو واقف — شغّله عشان الفلتر يتشاف"
+                    else -> "⚠ الفلتر متفعّل بس ما رسمش ولا فريم (السطح/الـpipeline) — شوف اللوج MtEnhance"
+                }
+                if (msg.isNotEmpty()) LogStore.add("MtEnhance: $msg")
+                cb(msg)
+            } catch (_: Throwable) {}
+        }, 1800L)
     }
 
     private fun clear() {
@@ -331,6 +378,7 @@ private class SharpenProgram(
             prog.setFloatUniform("uCon", con)
             prog.bindAttributesAndUniforms()
             GLES20.glDrawArrays(GLES20.GL_TRIANGLE_STRIP, 0, 4)
+            MtEnhance.drawn.incrementAndGet()
         } catch (e: Exception) {
             throw VideoFrameProcessingException(e, presentationTimeUs)
         }
