@@ -29,7 +29,8 @@ object Lecture {
     const val LEC_MODEL_ACCURATE = "gemini-flash-latest"
     const val LEC_MODEL_FAST = "gemini-flash-lite-latest"
     const val LEC_MODEL_KEY = "lec_model"
-    fun lecModel(): String = Cfg.str(LEC_MODEL_KEY, LEC_MODEL_ACCURATE).trim().ifEmpty { LEC_MODEL_ACCURATE }
+    // (v1012) «🔒 مصدر ثابت» (الافتراضي): موديل التفريغ دايمًا Flash Lite Latest؛ lec_model بيشتغل بس لو القفل اتقفل
+    fun lecModel(): String = StudioTx.pinned().ifEmpty { Cfg.str(LEC_MODEL_KEY, LEC_MODEL_ACCURATE).trim().ifEmpty { LEC_MODEL_ACCURATE } }
 
     class Seg(val start: Double, val end: Double, val text: String, val chunk: Int, val spk: String = "", val lang: String = "", val tone: String = "", val conf: Double = -1.0)   // spk: D محاضر · S طالب/متحدث تاني · "" غير معروف — lang: كود ISO للغة الجملة دي (v999) — tone: نبرة الجملة بكلمة عربية واحدة (v1001، للمكالمات) — conf: ثقة الموديل في دقة الجملة 0–1، و-1 = مارجّعش ثقة (v1002)
 
@@ -80,6 +81,9 @@ object Lecture {
         @Volatile var callRefs: List<ByteArray> = emptyList()   // (v1001) المقاطع المرجعية للمكالمة، محمّلة مرة واحدة في start() — بنفس ترتيب callNames
         @Volatile var callNames: List<String> = emptyList()   // (v1001) أسماء الأطراف بنفس ترتيب callRefs — callNames[0] = "أنا" لو فيه بصمة لصاحب الجهاز
         @Volatile var callMixLogged: Boolean = false   // (v1001) اتسجّل خلط المراجع في اللوج مرة واحدة ولا لسه
+        @Volatile var forceModel: String = ""   // (v1011) «إكمال الناقص» في الاستوديو: موديل التفريغ متثبّت (مفيش سلسلة وارد ولا موديل «الأدق» ولا FreeLLM) — فاضي = السلوك القديم بالظبط
+        @Volatile var offline: Boolean = false   // (v1012) تفريغ أوفلاين (Whisper) للغات غير العربية — بيتقفل لوحده أول ما يتكشف إن الكلام عربي
+        @Volatile var offSess: Offline.Session? = null   // (v1012) قفل لغة Whisper للتشغيلة دي
         @Volatile var showGlossary: String = ""   // (v1002) أسماء قاموس شخصيات المسلسل (للحلقة دي بس) — بتتضاف لـ terms في doChunk
     }
     val runs = ConcurrentHashMap<String, Run>()
@@ -451,8 +455,9 @@ object Lecture {
     private fun doChunk(run: Run, keys: List<String>, mdl: String, src: AudioSource, idx: Int, worker: Int, dur: Double, chunkSec: Double = CHUNK_SEC): Boolean {
         val d = run.doc
         // (G1) علم «الموديل الأقوى» لمرة واحدة للجزء ده — بيتسحب هنا وبيتمسح سواء نجح الجزء أو فشل.
-        val accurate = StudioIntel.takeAccurate(d, idx)
-        val useMdl = if (accurate) LEC_MODEL_ACCURATE else mdl
+        val forced = run.forceModel
+        val accurate = StudioIntel.takeAccurate(d, idx) && forced.isBlank()   // (v1011) موديل متثبّت ← مفيش «موديل أدق»
+        val useMdl = if (forced.isNotBlank()) forced else if (accurate) LEC_MODEL_ACCURATE else mdl
         val st = idx * chunkSec; val en = minOf(dur, st + chunkSec)
         if (en - st < 1.0) return true
         val wav = try { src.wav(st, en) } catch (e: Throwable) { LogStore.err("Lecture:wav", e); null } ?: return false
@@ -488,12 +493,15 @@ object Lecture {
         }
         val promptParties = if (refsMixed) run.callNames else synchronized(d) { d.parties.toList() }
         val prompt = transcribePrompt(en - st, d.clean, prev, d.type, d.warid, terms, promptParties, refsMixed)
-        if (d.warid) return WaridTx.transcribeChunk(run, keys, sendWav, idx, worker, chunkSec, en - st, prompt, mixOffset, accurate)
+        // (v1012) أوفلاين للغات غير العربية (سويتش الاستوديو): null = كمّل أونلاين بنفس Flash Lite
+        if (run.offline && !refsMixed) { val off = StudioTx.offlineChunk(run, wav, idx, st, en); if (off != null) return off }
+        if (d.warid) return WaridTx.transcribeChunk(run, keys, sendWav, idx, worker, chunkSec, en - st, prompt, mixOffset, accurate, forced)
         for (a in 0 until 4) {
             if (run.stop) return false
             val key = keys[(idx + worker + a) % keys.size]
             try {
-                val r = Api.generate(useMdl, key, prompt, sendWav.bytes, Api.outTokens(en - st), 0.1, true, false)
+                val r = if (forced.isNotBlank()) Api.generateModel(useMdl, key, prompt, sendWav.bytes, Api.outTokens(en - st), 0.1, true, false)
+                        else Api.generate(useMdl, key, prompt, sendWav.bytes, Api.outTokens(en - st), 0.1, true, false)
                 val j = parseJson(r.text)
                 if (j == null) { if (r.text.isBlank() && r.finish.startsWith("PROMPT_")) { return true }; continue }
                 var finalGot = parseSegs(j, st, en, idx, mixOffset)
@@ -503,7 +511,7 @@ object Lecture {
                 // (activeSec) ≥ نصف مدة الجزء، وحروف النص المرجّع < حرفين لكل ثانية كلام.
                 // الجزء الهادي أو الصامت (activeSec قليل) مبيتعادش أبدًا.
                 val gotChars = finalGot.sumOf { it.text.length }
-                val suspicious = useMdl != LEC_MODEL_ACCURATE && wav.activeSec >= (en - st) * 0.5 && gotChars < wav.activeSec * 2
+                val suspicious = forced.isBlank() && useMdl != LEC_MODEL_ACCURATE && wav.activeSec >= (en - st) * 0.5 && gotChars < wav.activeSec * 2
                 if (suspicious) {
                     try {
                         val key2 = keys[(idx + worker + 1) % keys.size]
@@ -550,7 +558,7 @@ object Lecture {
     private fun titleFromText(text: String): String? {
         val ks = keys()
         if (ks.isEmpty()) return null
-        val mdl = model()
+        val mdl = StudioTx.pinned().ifEmpty { model() }
         val prompt = titlePrompt(text)
         for (a in 0 until minOf(ks.size, 2)) {
             val key = ks[a % ks.size]
@@ -623,17 +631,22 @@ object Lecture {
     }
 
     /** يبدأ/يكمّل التفريغ في الخلفية. الأجزاء اللي خلصت بتتخطى؛ اللي فشلت بتتعاد. */
-    fun start(ctx0: Context, d: Doc): Run? {
+    fun start(ctx0: Context, d: Doc, forceModel: String = ""): Run? {
         val ctx = ctx0.applicationContext
         if (isRunning(d.id)) return runs[d.id]
-        val run = Run(d); runs[d.id] = run
+        // (v1012) مصدر التفريغ الثابت: لو السويتش مفعّل (الافتراضي) كل التفريغ بـ Flash Lite Latest — حتى من غير إكمال الناقص
+        val fm = if (forceModel.isNotBlank()) forceModel else StudioTx.pinned()
+        val run = Run(d); run.forceModel = fm; runs[d.id] = run
+        run.offline = StudioTx.offlineReady() && Studio.typeOf(d).code != "call" && d.langCode != "ar"
+        if (forceModel.isNotBlank()) run.titleTried = true   // (v1011) العنوان التلقائي بيستخدم موديل تاني — مش في إكمال الناقص
         Thread {
             var src: AudioSource? = null
             try {
-                val ks = keys()
+                // (v1011) موديل متثبّت ← مفاتيح جيميناي حقيقية بس (FreeLLM/محلي بيلفّوا على موديلات تانية)
+                val ks = if (fm.isBlank()) keys() else SubFileTr.realGemKeys()
                 if (ks.isEmpty()) throw IOException("مفيش مفتاح Gemini — ضيفه من الإعدادات الأول")
                 // (v999) التفريغ بموديل التفريغ المستقل (lec_model) — مش موديل الترجمة.
-                val mdl = lecModel()
+                val mdl = if (fm.isBlank()) lecModel() else fm
                 run.status = "بجهّز الصوت…"
                 val s = openSource(ctx, d); src = s
                 val dur = s.durationSec()
@@ -650,7 +663,7 @@ object Lecture {
                 // لو المستخدم اختار نوع يدوي في بداية الجلسة (pickType) الاكتشاف مبيعدّلش عليه.
                 // أي فشل هنا مبيوقفش التفريغ أبدًا: بيتسجّل وبيتكمّل بالنوع زي ما هو.
                 try {
-                    detectType(ctx, d, s, dur)
+                    if (forceModel.isBlank()) detectType(ctx, d, s, dur)   // (v1011) إكمال الناقص: طلب اكتشاف النوع بموديل تاني — بيتخطّى
                 } catch (e: Throwable) {
                     LogStore.err("Lecture:detect", e)
                 }

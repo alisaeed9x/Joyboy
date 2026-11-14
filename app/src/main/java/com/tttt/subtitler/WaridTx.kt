@@ -292,7 +292,7 @@ object WaridTx {
      */
     // (v1001) offset: إزاحة المراجع الملزوقة قبل المقطع (CallKit.mix) — أي عنصر بيبدأ قبلها هو المرجع نفسه وبيتخطى، والباقي بتتطرح منه.
     // (G1) accurate: إعادة تفريغ جملة — الـlite بيتستبعد من المحاولات، فالسلسلة بتبدأ من أول موديل Flash مش lite.
-    fun transcribeChunk(run: Lecture.Run, keys: List<String>, wav: WavChunk, idx: Int, worker: Int, chunkSec: Double, chunkDur: Double, prompt: String, offset: Double = 0.0, accurate: Boolean = false): Boolean {
+    fun transcribeChunk(run: Lecture.Run, keys: List<String>, wav: WavChunk, idx: Int, worker: Int, chunkSec: Double, chunkDur: Double, prompt: String, offset: Double = 0.0, accurate: Boolean = false, forceModel: String = ""): Boolean {
         val d = run.doc
         val st = idx * chunkSec
         val prevThink = Api.thinkBudget0.get()
@@ -304,10 +304,11 @@ object WaridTx {
         try {
             val tried = HashSet<String>()
             // (G1) إعادة التفريغ بموديل أقوى: الـlite مش في المحاولات أصلًا — أول pickModel هيبقى Flash.
-            if (accurate) tried.addAll(CHAIN.filter { it.contains("lite") })
+            if (accurate && forceModel.isBlank()) tried.addAll(CHAIN.filter { it.contains("lite") })
             for (a in 0 until 4) {
                 if (run.stop) return false
-                val model = pickModel(tried) ?: break
+                // (v1011) forceModel: نفس الموديل في كل المحاولات (بمفاتيح بتتبدّل) — مفيش اختيار من السلسلة ومفيش بديل صامت
+                val model = if (forceModel.isNotBlank()) forceModel else (pickModel(tried) ?: break)
                 tried.add(model)
                 val key = keys[(idx + worker + a) % keys.size]
                 var uploaded: WaridFiles.Uploaded? = null

@@ -302,6 +302,134 @@ object Studio {
             val tr = out.texts.getOrNull(i) ?: ""
             Sub(c.start, c.end, c.text, if (tr.isBlank()) c.text else tr, "male", "unknown", "none", emptyList(), emptyList(), false, false)
         }
+        val srtPath = persistSrt(ctx, d, libId, subs, engine, null, emptyList())
+        return SrtResult(srtPath, libId, subs.size, out.failed, out.error)
+    }
+
+    // ===================== (v1011) ترجمة الناقص بس =====================
+    /** نتيجة ترجمة الناقص: before = سطور كانت من غير ترجمة · now = اتترجم فعلًا في التشغيلة دي · remaining = لسه من غير ترجمة حقيقية */
+    class MissingTr(val srt: SrtResult?, val before: Int, val now: Int, val remaining: Int, val error: String)
+
+    /** السطر محتاج ترجمة أصلًا؟ (فيه حروف من غير العربي — وصف الصوت/الموسيقى بين [] أو ♪ مستثنى) */
+    private fun needsTr(orig: String): Boolean {
+        val t = orig.trim()
+        if (t.isEmpty() || t.startsWith("[") || t.startsWith("♪") || t.startsWith("(")) return false
+        var n = 0
+        for (ch in t) if (Character.isLetter(ch) && Character.UnicodeBlock.of(ch) != Character.UnicodeBlock.ARABIC) n++
+        return n >= 3
+    }
+
+    /** ترجمة حقيقية؟ فاضية أو نفس الأصل (لسطر أجنبي) = لأ */
+    private fun isRealTr(orig: String, tr: String): Boolean {
+        val t = tr.trim()
+        if (t.isEmpty()) return false
+        return !(t == orig.trim() && needsTr(orig))
+    }
+
+    private fun trKey(start: Double, text: String): String = Math.round(start * 10.0).toString() + "|" + text.trim()
+
+    /** الترجمة المحفوظة قبل كده لدوكيومنت (مفتاح بداية+أصل ← ترجمة حقيقية بس) */
+    private fun savedTranslations(ctx: Context, libId: String): Map<String, String> {
+        val m = HashMap<String, String>()
+        try {
+            val sv = Store(File(ctx.filesDir, "progress"), Store.keyFor(libId)).load() ?: return m
+            for (s in sv.subs) if (isRealTr(s.original, s.translated)) m[trKey(s.start, s.original)] = s.translated
+        } catch (e: Throwable) {
+            LogStore.err("Studio:savedTr", e)
+        }
+        return m
+    }
+
+    /** عدد سطور التفريغ اللي من غير ترجمة حقيقية دلوقتي (للتحليل قبل البدء) */
+    fun countUntranslated(ctx: Context, d: Lecture.Doc): Pair<Int, Int> {
+        val segs = synchronized(d) { d.segs.sortedBy { it.start } }
+        if (segs.isEmpty()) return 0 to 0
+        val known = savedTranslations(ctx, lecId(d))
+        return segs.count { !known.containsKey(trKey(it.start, it.text)) } to segs.size
+    }
+
+    private const val MISSING_BATCH = 160
+    private const val MISSING_ROUNDS = 3
+
+    /**
+     * (v1011) «إكمال الناقص» — الترجمة: بتترجم السطور اللي مالهاش ترجمة حقيقية بس (فاضية أو نفس الأصل الأجنبي)،
+     * والسطور اللي اترجمت قبل كده بتفضل زي ما هي بالظبط (مبتتبعتش لأي طلب ومبتتكتبش فوقها).
+     * الموديل متثبّت (modelId) ومحرك «gemini» بس — مفيش جوجل ولا موديل تاني. نفس خط SubFileTr.translate بتاع وارد (لهجة/أسلوب/لغة مصدر/تحليل رد).
+     * على دفعات: كل دفعة بتتحفظ أول ما تخلص (لو الشغل اتقطع بيكمّل من اللي اتحفظ)، وكل دفعة بتتعاد لحد ٣ جولات على السطور اللي رجعت فاضية/غلط.
+     * لازم تتنده من خيط خلفي.
+     */
+    fun translateMissing(ctx: Context, d: Lecture.Doc, report: (String) -> Unit, cancel: () -> Boolean, modelId: String, srcLang: String?): MissingTr {
+        val libId = lecId(d)
+        val segs = synchronized(d) { d.segs.sortedBy { it.start } }
+        if (segs.isEmpty()) return MissingTr(null, 0, 0, 0, "مفيش تفريغ لسه — فرّغ الأول")
+        val cues = segs.map { SubFileTr.Cue(it.start, it.end, it.text) }
+        val n = cues.size
+        val known = savedTranslations(ctx, libId)
+        val tr = Array(n) { "" }
+        val pending = ArrayList<Int>()
+        for (i in 0 until n) {
+            val k = known[trKey(cues[i].start, cues[i].text)]
+            if (k != null) tr[i] = k else pending.add(i)
+        }
+        val before = pending.size
+        if (before == 0) return MissingTr(null, 0, 0, 0, "")
+        var lastErr = ""
+        var okNow = 0
+        fun snapshot(): Pair<List<Sub>, List<DoubleArray>> {
+            val failedR = ArrayList<DoubleArray>()
+            val subs = cues.mapIndexed { i, c ->
+                if (tr[i].isBlank()) failedR.add(doubleArrayOf(c.start, c.end))
+                Sub(c.start, c.end, c.text, if (tr[i].isBlank()) c.text else tr[i], "male", "unknown", "none", emptyList(), emptyList(), false, false)
+            }
+            return subs to failedR
+        }
+        val batches = pending.chunked(MISSING_BATCH)
+        for ((bi, b0) in batches.withIndex()) {
+            if (cancel()) break
+            var todo: List<Int> = b0
+            for (round in 0 until MISSING_ROUNDS) {
+                if (todo.isEmpty() || cancel()) break
+                val sub = todo.map { cues[it] }
+                val out = try {
+                    SubFileTr.translate(sub, "gemini", { m -> report("دفعة " + (bi + 1) + "/" + batches.size + " — " + m) }, cancel, null, null, srcLang, modelId)
+                } catch (e: Throwable) {
+                    LogStore.err("Studio:trMissing", e)
+                    SubFileTr.Out(List(sub.size) { "" }, sub.size, (e.message ?: e.javaClass.simpleName).take(100))
+                }
+                val still = ArrayList<Int>()
+                for ((j, gi) in todo.withIndex()) {
+                    val t = out.texts.getOrNull(j)?.trim() ?: ""
+                    if (isRealTr(cues[gi].text, t)) { tr[gi] = t; okNow++ } else still.add(gi)
+                }
+                if (out.error.isNotBlank()) lastErr = out.error
+                if (still.isNotEmpty() && out.error.contains("مفيش مفتاح")) { todo = still; break }
+                todo = still
+                if (todo.isNotEmpty() && round < MISSING_ROUNDS - 1 && !cancel()) {
+                    report("إعادة " + todo.size + " سطر رجعوا فاضيين (جولة " + (round + 2) + "/" + MISSING_ROUNDS + ")")
+                    try { Thread.sleep(2000L * (round + 1)) } catch (_: InterruptedException) { break }
+                }
+            }
+            // حفظ الدفعة دي فورًا (تقدّم حقيقي) — لو التطبيق اتقفل بعدها بيكمّل من هنا
+            val (subs, failedR) = snapshot()
+            try {
+                Store(File(ctx.filesDir, "progress"), Store.keyFor(libId)).save(Saved(60, d.lang, true, subs, subs.filter { s -> failedR.none { it[0] == s.start } }.map { doubleArrayOf(it.start, it.end) }, failedR, emptyList(), emptyList(), emptyMap(), 0.0, 0))
+            } catch (e: Throwable) {
+                LogStore.err("Studio:trMissingSave", e)
+            }
+        }
+        val (subs, failedR) = snapshot()
+        val srtPath = persistSrt(ctx, d, libId, subs, "gemini", modelId, failedR)
+        val remaining = tr.count { it.isBlank() }
+        val err = if (cancel()) "اتوقفت" else if (remaining == before && lastErr.isNotBlank()) lastErr else ""
+        return MissingTr(SrtResult(srtPath, libId, subs.size, remaining, err), before, okNow, remaining, err)
+    }
+
+    /**
+     * (v1011) حفظ نتيجة ترجمة SRT (كان جوه translateToSrt — اتنقل هنا من غير تغيير في السلوك عشان إكمال الناقص يستخدمه):
+     * ملف SRT جنب الفيديو + تقدّم مكتبة الترجمات + نسخة مفتاح المشغّل + Recents + TrLib.stamp.
+     * failedRanges: مدد السطور اللي لسه من غير ترجمة (فاضية = كلها اترجمت، زي الأول). modelId: لو متحدد بيتسجّل في المكتبة بدل موديل الإعدادات.
+     */
+    private fun persistSrt(ctx: Context, d: Lecture.Doc, libId: String, subs: List<Sub>, engine: String, modelId: String?, failedRanges: List<DoubleArray>): String? {
         val title = displayTitle(d).ifBlank { "محاضرة" }
         val srtPath = try {
             SrtWriter.save(ctx, d.uri.ifBlank { null }, subs, 0L)
@@ -310,8 +438,9 @@ object Studio {
         }
         var savedForVid: Saved? = null
         try {
-            val done = subs.map { doubleArrayOf(it.start, it.end) }
-            val saved = Saved(60, d.lang, true, subs, done, emptyList(), emptyList(), emptyList(), emptyMap(), 0.0, 0)
+            val failedStarts = failedRanges.map { it[0] }.toSet()
+            val done = subs.filter { it.start !in failedStarts }.map { doubleArrayOf(it.start, it.end) }
+            val saved = Saved(60, d.lang, true, subs, done, failedRanges, emptyList(), emptyList(), emptyMap(), 0.0, 0)
             savedForVid = saved
             Store(File(ctx.filesDir, "progress"), Store.keyFor(libId)).save(saved)
         } catch (e: Throwable) {
@@ -346,12 +475,12 @@ object Studio {
             LogStore.err("Studio:recents", e)
         }
         try {
-            val model = Cfg.str("model", Models.DEFAULT).trim().ifEmpty { Models.DEFAULT }
+            val model = modelId?.takeIf { it.isNotBlank() } ?: Cfg.str("model", Models.DEFAULT).trim().ifEmpty { Models.DEFAULT }
             val engLabel = if (engine == "gemini") "جيميناي " + model.removePrefix("gemini-").removeSuffix("-latest") else "ترجمة جوجل"
             TrLib.stamp(ctx, libId, title, SubFileTr.effLang(), Cfg.str("tone_style", ""), Cfg.str("tone_strength", ""), model, engLabel)
         } catch (e: Throwable) {
             LogStore.err("Studio:stamp", e)
         }
-        return SrtResult(srtPath, libId, subs.size, out.failed, out.error)
+        return srtPath
     }
 }

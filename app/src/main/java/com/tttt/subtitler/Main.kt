@@ -394,25 +394,11 @@ class MainActivity : Activity() {
         val ytQ = listOf("أعلى جودة", "1080p", "720p", "480p", "360p", "240p")
         val ytQv = intArrayOf(0, 1080, 720, 480, 360, 240)
         var settingsDlg0: TabbedDialog? = null; var qui0: QueueUi? = null
+        // (v1012) قسم يوتيوب بقى مختصر: فتح يوتيوب + إعدادات MeeTube الكاملة. الجودة والسلاسة اتنقلوا لقسم «🎬 المشغّل»، والثيم مكانه الوحيد «🎨 المظهر».
         val ytSettingsViews: () -> List<View> = { listOf(
-            ui.section("🎨 المظهر (من MeeTube)", true,   // (v907) مصدر واحد: إعداد الثيم بتاع MeeTube نفسه (ThemeMode) — Joyboy وMeeTube بيتبعوه مع بعض
-    ui.chips(listOf("⚙ النظام", "☀️ فاتح", "🌙 داكن"), { when (com.newtube.mobile.ui.common.ThemeMode.peek(this)) { com.newtube.mobile.ui.common.ThemeMode.LIGHT -> "☀️ فاتح"; com.newtube.mobile.ui.common.ThemeMode.DARK -> "🌙 داكن"; else -> "⚙ النظام" } }) { n ->
-        com.newtube.mobile.ui.common.ThemeMode.set(this, when (n) { "☀️ فاتح" -> com.newtube.mobile.ui.common.ThemeMode.LIGHT; "🌙 داكن" -> com.newtube.mobile.ui.common.ThemeMode.DARK; else -> com.newtube.mobile.ui.common.ThemeMode.SYSTEM })
-        recreate()
-    },
-    ui.noHint()),
             ui.section("▶ MeeTube (يوتيوب البرنامج)", true,
                 ui.button("▶ افتح يوتيوب") { settingsDlg0?.dialog?.dismiss(); MeeTubeLink.open(this) },
                 ui.button("⚙ إعدادات MeeTube الكاملة (المشغّل · الشكل · الحساب · التحميل)") { settingsDlg0?.dialog?.dismiss(); MeeTubeLink.openSettings(this) },
-                ui.noHint()),
-            ui.section("🎞 الجودة الافتراضية", true,
-                ui.chips(ytQ, { ytQ[ytQv.indexOf(Cfg.int("yt_maxh", 0)).coerceAtLeast(0)] }) { n -> Cfg.put("yt_maxh", ytQv[ytQ.indexOf(n).coerceAtLeast(0)].toString()) },
-                ui.switchRow("🔍 حدّة الفيديو (عرض SurfaceView زي المشغّل القديم)", Cfg.bool("sharp_surface", true)) { Cfg.put("sharp_surface", if (it) "1" else "0") },
-                ui.noHint()),
-            ui.section("⚡ السلاسة والفريمات", true,   // (v988)
-                ui.chips(MtSmooth.hzChoices(this), { MtSmooth.hzLabel(this) }) { n -> MtSmooth.setHz(this, n) },
-                ui.switchRow("مطابقة معدل الشاشة مع فريمات الفيديو (24/30 ← ×5/×4 من غير رعشة)", MtSmooth.matchOn()) { Cfg.put(MtSmooth.K_MATCH, if (it) "1" else "0") },
-                ui.switchRow("تنبيه لو الفيديو التقيل اتفك بالمعالج (سوفتوير)", MtSmooth.hwWarnOn()) { Cfg.put(MtSmooth.K_HW_WARN, if (it) "1" else "0") },
                 ui.noHint())) }
         // ===== الواجهة بشكل نسخة الـ HTML: دوائر علوية + كارت فيديو + كبسولة + شبكة أزرار + زرار الترجمة =====
         var recentDlg: android.app.Dialog? = null
@@ -658,12 +644,6 @@ class MainActivity : Activity() {
         recreate()
     },
     ui.noHint()),
-                if (MtGlass.on()) ui.section("🎬 مظهر المشغّل (MeeTube)", false,
-                    ui.noHint(),
-                    ui.chips(listOf("🫧 شفاف", "🧊 مفروست", "▫️ مينيمال"), { when (MtGlass.playerBtnLook()) { 1 -> "🧊 مفروست"; 2 -> "▫️ مينيمال"; else -> "🫧 شفاف" } }) { n ->
-                        Cfg.put("player_btn_look", when (n) { "🧊 مفروست" -> "1"; "▫️ مينيمال" -> "2"; else -> "0" })
-                    },
-                    *MtLook.views(this, ui, th).toTypedArray()) else null,
                 ui.section("🎨 الشكل", false,
                     ui.noHint(),
                     ui.noHint(),
@@ -688,6 +668,28 @@ class MainActivity : Activity() {
                 ui.noHint(),
                 ui.button("📺 افتح إعدادات التلفزيون", true) { TvLookPad.show(this) },
                 ui.button("🔧 افتح إعدادات البرنامج على شاشة التلفزيون") { try { RemoteClient.cmd("open_settings") } catch (_: Throwable) {} }) }),
+            // (v1012) 🎬 المشغّل: كل إعدادات المشغّل في قسم واحد — اختيار المشغّل (دايم، مش مرتبط بالجلاس) · المظهر · الجودة · السلاسة · الخروج
+            tab("player", { listOfNotNull<View>(
+                ui.section("🎬 المشغّل الأساسي", true,
+                    ui.noHint(),
+                    ui.chips(listOf("MeeTube", "Player.kt"), { if (MtPlay.enabled()) "MeeTube" else "Player.kt" }) { n -> Cfg.put(MtPlay.KEY, if (n == "MeeTube") "1" else "0") },
+                    ui.text("MeeTube = الأساسي (الافتراضي) · Player.kt = مشغّل Joyboy القديم لكل حاجة ما عدا يوتيوب وفيديوهات صفحات لينكها يوتيوب", 11f, th.muted, false)),
+                if (MtGlass.on()) ui.section("🎬 مظهر المشغّل (MeeTube) — بيظهر مع الجلاس", false,
+                    ui.noHint(),
+                    ui.chips(listOf("🫧 شفاف", "🧊 مفروست", "▫️ مينيمال"), { when (MtGlass.playerBtnLook()) { 1 -> "🧊 مفروست"; 2 -> "▫️ مينيمال"; else -> "🫧 شفاف" } }) { n ->
+                        Cfg.put("player_btn_look", when (n) { "🧊 مفروست" -> "1"; "▫️ مينيمال" -> "2"; else -> "0" })
+                    },
+                    *MtLook.views(this, ui, th).toTypedArray()) else null,
+                ui.section("🎞 الجودة الافتراضية", true,
+                    ui.chips(ytQ, { ytQ[ytQv.indexOf(Cfg.int("yt_maxh", 0)).coerceAtLeast(0)] }) { n -> Cfg.put("yt_maxh", ytQv[ytQ.indexOf(n).coerceAtLeast(0)].toString()) },
+                    ui.switchRow("🔍 حدّة الفيديو (عرض SurfaceView زي المشغّل القديم)", Cfg.bool("sharp_surface", true)) { Cfg.put("sharp_surface", if (it) "1" else "0") },
+                    ui.noHint()),
+                ui.section("⚡ السلاسة والفريمات", false,
+                    ui.chips(MtSmooth.hzChoices(this), { MtSmooth.hzLabel(this) }) { n -> MtSmooth.setHz(this, n) },
+                    ui.switchRow("مطابقة معدل الشاشة مع فريمات الفيديو (24/30 ← ×5/×4 من غير رعشة)", MtSmooth.matchOn()) { Cfg.put(MtSmooth.K_MATCH, if (it) "1" else "0") },
+                    ui.switchRow("تنبيه لو الفيديو التقيل اتفك بالمعالج (سوفتوير)", MtSmooth.hwWarnOn()) { Cfg.put(MtSmooth.K_HW_WARN, if (it) "1" else "0") },
+                    ui.noHint()),
+                watchViews[0]) }),   // الخروج من المشغّل
             tab("youtube", ytSettingsViews),
             // ===== 🎵 الموسيقى =====
             
@@ -703,7 +705,6 @@ class MainActivity : Activity() {
                     ui.button("🔄 إعادة فحص الأغاني") { try { musicUi?.reload(true) } catch (_: Throwable) {}; Notice.show(this, "🔄 بفحص الأغاني…", 1600L) })) }, false, SettingsTabs.sub("music"), group = SettingsTabs.group("music")),
             // ===== 🛠 عام: الخروج · الترجمة الحية · الطابور · البطارية · الأمان · النسخة الاحتياطية · الثيم =====
             tab("more", { listOf<View>(
-                watchViews[0],   // (v458) بعد شيل القسمين الميتين: الخروج من المشغّل
                                 ui.section("▶ التشغيل", true,
                     ui.switchRow("كمّل الطابور تلقائيًا بعد إعادة تشغيل الجهاز", Cfg.bool("bg_autostart", true)) { Cfg.put("bg_autostart", if (it) "1" else "0") },
                     ui.noHint(),

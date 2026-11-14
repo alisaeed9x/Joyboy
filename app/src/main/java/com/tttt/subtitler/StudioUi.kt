@@ -795,6 +795,18 @@ class StudioUi(private val act: Activity, private val ui: Ui, private val th: Th
         if (hasVideo) {
             content.addView(pill("▶ شغّل الفيديو بالترجمة", primary = true) { playWithTranslation(d) }, lp(-1, -2, 8))
         }
+        // (v1012) مصدر التفريغ: قفل Flash Lite Latest (بدون تبديل موديلات) + سويتش التفريغ الأوفلاين للكلام غير العربي
+        content.addView(ui.switchRow("🔒 مصدر التفريغ ثابت: Gemini Flash Lite Latest (من غير تبديل موديلات)", StudioTx.fixedOn()) { v ->
+            Cfg.put(StudioTx.FIXED_KEY, if (v) "1" else "0")
+        }, lp(-1, -2, 6))
+        val offNote = ui.text(StudioTx.offlineNote(), 11.5f, th.muted)
+        content.addView(ui.switchRow("📴 تفريغ أوفلاين للكلام غير العربي (إنجليزي وغيره) — العربي أونلاين", StudioTx.offlineOn()) { v ->
+            Cfg.put(StudioTx.OFFLINE_KEY, if (v) "1" else "0")
+            offNote.text = StudioTx.offlineNote()
+        }, lp(-1, -2, 4))
+        content.addView(offNote, lp(-1, -2, 2))
+        // (v1011) إكمال الناقص: تفريغ وارد للأجزاء الناقصة + ترجمة السطور اللي من غير ترجمة، بموديل Gemini Flash Lite Latest بس
+        content.addView(pill("🧩 إكمال الناقص (تفريغ + ترجمة)", primary = true) { runComplete(d, srtStatus) { paintMeta(); renderHistory() } }, lp(-1, -2, 8))
         content.addView(pill("📖 فتح التفريغ") {
             try {
                 LectureUi(act, ui, th).open(d)
@@ -848,6 +860,58 @@ class StudioUi(private val act: Activity, private val ui: Ui, private val th: Th
         dd = ui.sheet(act, "🎙 " + Studio.displayTitle(d).take(28), listOf<View>(content), fixedH = true, onClose = { sheetOpen = false; main.removeCallbacks(tick) })
         dd.show()
         main.postDelayed(tick, 1200L)
+    }
+
+    /**
+     * (v1011) «🧩 إكمال الناقص»: بيحلّل الناقص (تفريغ/ترجمة/الاتنين) ويوري للمستخدم إيه اللي هيتعمل، وبعد الموافقة بيشغّل
+     * StudioComplete في الخلفية. النجاح بيتعلن بعد التحقق من الحالة المحفوظة بس. دوسة تانية والشغل شغّال = إيقاف (اللي خلص بيتحفظ).
+     */
+    private fun runComplete(d: Lecture.Doc, statusV: TextView, afterDone: () -> Unit) {
+        if (StudioComplete.isRunning(d.id)) {
+            GAlert(act).setTitle("🧩 إكمال الناقص شغّال").setMessage("تحب توقّفه؟ اللي خلص اتحفظ وتقدر تكمّل بعدين.")
+                .setPositiveButton("⏹ إيقاف") { _, _ -> StudioComplete.stop(d.id); statusV.text = "⏳ بوقّف…" }
+                .setNegativeButton("سيبه شغّال", null).show()
+            return
+        }
+        if (Lecture.isRunning(d.id)) {
+            Notice.show(act, "التفريغ لسه شغال — استنى يخلص وبعدها دوس تاني", 3000L)
+            return
+        }
+        val plan = try {
+            StudioComplete.analyze(act, d)
+        } catch (e: Throwable) {
+            LogStore.err("StudioUi:completePlan", e)
+            Notice.show(act, "⚠ مقدرتش أحلّل الناقص", 2600L)
+            return
+        }
+        if (plan.nothing) {
+            statusV.text = "✅ مفيش حاجة ناقصة — التفريغ والترجمة كاملين"
+            Notice.show(act, "✅ مفيش حاجة ناقصة", 2400L)
+            return
+        }
+        if (plan.needTx && plan.noSource) {
+            statusV.text = "⚠ مصدر الصوت مش متاح — مقدرش أفرّغ الناقص"
+            Notice.show(act, "⚠ مفيش ملف ولا لينك محفوظ للدوكيومنت ده", 3200L)
+            return
+        }
+        GAlert(act).setTitle("🧩 إكمال الناقص")
+            .setMessage("الناقص: " + plan.describe() + "\n\nهيتفرّغ ويترجم الناقص بس (اللي خلص قبل كده مبيتلمسش) بنفس طريقة وارد، وبموديل Gemini Flash Lite Latest لوحده — من غير أي موديل تاني.")
+            .setPositiveButton("ابدأ") { _, _ ->
+                statusV.text = "⏳ بحلّل الناقص…"
+                val job = StudioComplete.start(act, d,
+                    onStatus = { m -> main.post { statusV.text = m } },
+                    onDone = { r ->
+                        main.post {
+                            statusV.text = r.message
+                            Notice.show(act, r.message, if (r.ok) 3200L else 4200L)
+                            afterDone()
+                        }
+                    })
+                if (job == null) {
+                    statusV.text = "⚠ التفريغ شغال دلوقتي — استنى يخلص"
+                }
+            }
+            .setNegativeButton("إلغاء", null).show()
     }
 
     /** ترجمة التفريغ الجاهز لـSRT بمحرك الترجمة الحالي — على خيط خلفي، والنتيجة في مكتبة الترجمات */

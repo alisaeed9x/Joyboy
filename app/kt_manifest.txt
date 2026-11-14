@@ -233,6 +233,8 @@ com/tttt/subtitler/Stt.kt
 com/tttt/subtitler/Studio.kt
 com/tttt/subtitler/StudioIntel.kt
 com/tttt/subtitler/StudioIntelUi.kt
+com/tttt/subtitler/StudioComplete.kt
+com/tttt/subtitler/StudioTx.kt
 com/tttt/subtitler/StudioLink.kt
 com/tttt/subtitler/StudioPrivacy.kt
 com/tttt/subtitler/StudioPrivacyUi.kt
