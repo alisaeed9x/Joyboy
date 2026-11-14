@@ -184,11 +184,26 @@ class LectureUi(private val act: Activity, private val ui: Ui, private val th: T
         val label = spkLabel(s.spk)
         if (label.isNotBlank()) top.addView(ui.text(label, 12f, spkColor(s.spk), true).apply { setPadding(ui.dp(10), 0, 0, 0) })
         if (s.lang.isNotBlank() && s.lang != d.langCode) top.addView(ui.text(s.lang, 11f, th.muted).apply { setPadding(ui.dp(10), 0, 0, 0) })
+        // (v1002) جملة ثقة منخفضة (الموديل رجّع conf ≤ 0.6) بتتعلّم بلون كهرماني.
+        if (s.conf >= 0.0 && s.conf <= StudioIntel.LOW_CONF_MAX) top.addView(ui.text("⚠ ثقة " + (s.conf * 100).toInt() + "٪", 11f, amber).apply { setPadding(ui.dp(10), 0, 0, 0) })
         row.addView(top)
-        row.addView(ui.text(s.text, 14f, th.text).apply { setLineSpacing(0f, 1.3f); setTextIsSelectable(true) }, lp(-1, -2, 4))
+        val parties = synchronized(d) { d.parties.toList() }
+        val shownText = if (StudioPrivacy.isRedactOn(act)) StudioPrivacy.redact(s.text, parties) else s.text
+        row.addView(ui.text(shownText, 14f, th.text).apply { setLineSpacing(0f, 1.3f); setTextIsSelectable(true) }, lp(-1, -2, 4))
         row.isClickable = true
         Glass.pressable(row)
         row.setOnClickListener { onEdit(s) }
+        // (v1002) ضغطة طويلة = علامة على اللحظة دي (بتتبدل إضافة/إزالة).
+        row.setOnLongClickListener {
+            val added = try {
+                StudioIntel.toggleBookmark(act, d, s)
+            } catch (e: Throwable) {
+                LogStore.err("LectureUi:bookmark", e)
+                false
+            }
+            Notice.show(act, if (added) "🔖 اتحفظت العلامة عند " + Lecture.fmtTime(s.start) else "🔖 اتشالت العلامة", 2200L)
+            true
+        }
         return row
     }
 
@@ -370,8 +385,8 @@ class LectureUi(private val act: Activity, private val ui: Ui, private val th: T
     }
 
     private fun confirmDelete(d: Lecture.Doc) {
-        GAlert(act).setTitle("🗑 حذف المحاضرة").setMessage("«${d.title.take(50)}» — هيتمسح التفريغ والتنظيم والتلخيص.")
-            .setPositiveButton("حذف") { _, _ -> Lecture.delete(act, d.id); hist = hist.filter { it.id != d.id }; renderHistory() }
+        GAlert(act).setTitle("🗑 حذف المحاضرة").setMessage("«${d.title.take(50)}» — هيمسح التفريغ والترجمة والملخصات والعلامات نهائيًا.")
+            .setPositiveButton("حذف") { _, _ -> Lecture.deleteFull(act, d.id); hist = hist.filter { it.id != d.id }; renderHistory() }
             .setNegativeButton("إلغاء", null).show()
     }
 
@@ -532,8 +547,26 @@ class LectureUi(private val act: Activity, private val ui: Ui, private val th: T
      * (v1000) startSec: قفز للحظة دي بعد الفتح — من نتائج البحث في سجل الاستوديو.
      */
     fun open(d: Lecture.Doc, startSec: Double = 0.0) {
-        // (v1001) المكالمات بتتفتح في صفحة الدردشة — القايمة لسه متاحة من جوّاها عبر openList.
-        if (Studio.typeOf(d).code == "call") {
+        // (v1003) بوابة PIN — بتغطي كمان تدفق المشاركة من برّه (Main.handleSharedMedia ← open).
+        // بعد أول فتح ناجح في الجلسة، sessionUnlocked بيخلي البوابة no-op.
+        if (StudioPrivacy.isPinSet(act) && !StudioPrivacy.sessionUnlocked) {
+            StudioPrivacyUi(act, ui, th).showPinGate { openGated(d, startSec) }
+            return
+        }
+        openGated(d, startSec)
+    }
+
+    private fun openGated(d: Lecture.Doc, startSec: Double = 0.0) {
+        // (v1002) الاجتماعات بتتفتح في محضر الاجتماع — القايمة الكاملة لسه متاحة من جوّاه.
+        // (G5) لو فيه startSec (قفز من بحث) المحضر بيتخطى والتفريغ بيتفتح عند اللحظة دي على طول.
+        if (Studio.typeOf(d).code == "meeting" && startSec <= 0.0) {
+            try {
+                StudioIntelUi(act, ui, th).showMinutes(d)
+            } catch (e: Throwable) {
+                LogStore.err("LectureUi:minutes", e)
+                openDoc(d, false, startSec)
+            }
+        } else if (Studio.typeOf(d).code == "call") {
             try {
                 CallChatUi(act, ui, th).show(d, startSec)
             } catch (e: Throwable) {
@@ -693,10 +726,16 @@ class LectureUi(private val act: Activity, private val ui: Ui, private val th: T
         val body = vcol()
         val bodyScroll = ScrollView(act).apply { isVerticalScrollBarEnabled = false; addView(body) }
 
-        fun curText(): String = when (tab) {
-            "org" -> Lecture.outlineText(d.title, d.organized)
-            "sum" -> Lecture.outlineText("", d.summary)
-            else -> Lecture.transcriptText(d, stamps)
+        // (v1003) النسخ/المشاركة بيعدّوا على الإخفاء — التنظيم والتلخيص نفسهم مبيتطمسوش في التخزين.
+        fun curText(): String {
+            val t = when (tab) {
+                "org" -> Lecture.outlineText(d.title, d.organized)
+                "sum" -> Lecture.outlineText("", d.summary)
+                else -> Lecture.transcriptText(d, stamps)
+            }
+            if (!StudioPrivacy.isRedactOn(act)) return t
+            val parties = synchronized(d) { d.parties.toList() }
+            return StudioPrivacy.redact(t, parties)
         }
 
         fun paintCtl() {
@@ -741,6 +780,14 @@ class LectureUi(private val act: Activity, private val ui: Ui, private val th: T
             when (tab) {
                 "tr" -> {
                     opts.addView(ui.switchRow("⏱ توقيت قبل كل جملة", stamps) { stamps = it; lastSig = ""; renderAll() })
+                    // (v1002) مركز الذكاء الإضافي: اسأل/فصول/استخراج/وعود/علامات/ثقة منخفضة/كورس.
+                    opts.addView(pill("🧠 ذكاء إضافي — اسأل · فصول · استخراج") {
+                        try {
+                            StudioIntelUi(act, ui, th).showHub(d)
+                        } catch (e: Throwable) {
+                            LogStore.err("LectureUi:intel", e)
+                        }
+                    }, lp(-1, -2, 8))
                     if (isSentList) {
                         // (v999 ملاحظة 2) قايمة جمل حيّة لأنواع الترجمة: كل جملة صف بتوقيتها ومتحدثها،
                         // بتكبر مع كل جزء بيخلص، ودوسة على أي جملة بتفتح تعديلها.

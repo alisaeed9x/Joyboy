@@ -62,6 +62,9 @@
             android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboardHidden|density">
             <intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/></intent-filter>
             <intent-filter><action android:name="android.intent.action.SEND"/><category android:name="android.intent.category.DEFAULT"/><data android:mimeType="text/plain"/></intent-filter>
+            <!-- (v1003) مشاركة ملف صوت/فيديو من برّه (واتساب وغيره) → الاستوديو مباشرة -->
+            <intent-filter><action android:name="android.intent.action.SEND"/><category android:name="android.intent.category.DEFAULT"/><data android:mimeType="audio/*"/><data android:mimeType="video/*"/></intent-filter>
+            <intent-filter><action android:name="android.intent.action.SEND_MULTIPLE"/><category android:name="android.intent.category.DEFAULT"/><data android:mimeType="audio/*"/><data android:mimeType="video/*"/></intent-filter>
             <intent-filter><action android:name="android.intent.action.VIEW"/><category android:name="android.intent.category.DEFAULT"/><category android:name="android.intent.category.BROWSABLE"/><data android:scheme="https"/><data android:host="www.youtube.com"/><data android:host="m.youtube.com"/><data android:host="youtu.be"/><data android:host="music.youtube.com"/></intent-filter>   <!-- (v345) لينكات يوتيوب تتفتح في Subtitler -->
         </activity>
         <!-- (v593) أيقونتين إضافيتين في اللانشر: متصفح + يوتيوب (شاشات شفافة بتفتح الوجهة وتقفل) -->

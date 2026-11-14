@@ -113,7 +113,7 @@ object Studio {
             append("- لو المقطع مفيهوش كلام خالص رجّع segments فاضية.\n")
             if (prev.isNotBlank()) append("\nسياق آخر كلام في المقطع اللي قبله (لتكملة جملة مقطوعة على الحدود وتوحيد كتابة الأسماء بس، متكررهوش): \"$prev\"\n")
             append("\nرجّع JSON فقط بدون شرح ولا markdown:\n")
-            append("{\"lang\":\"اسم اللغة بالعربي\",\"langCode\":\"كود ISO\",\"segments\":[{\"start\":0.0,\"end\":5.2,\"spk\":\"A\",\"lang\":\"كود ISO\",\"text\":\"...\",\"tone\":\"...\"}]}")
+            append("{\"lang\":\"اسم اللغة بالعربي\",\"langCode\":\"كود ISO\",\"segments\":[{\"start\":0.0,\"end\":5.2,\"spk\":\"A\",\"lang\":\"كود ISO\",\"text\":\"...\",\"conf\":0.9,\"tone\":\"...\"}]}")
         }
 
         // برومبت الترجمة (subs): حوار حرفي، متحدثين A/B/C، والتوقيت لازم يطابق الكلام بالظبط لأنه هيبقى SRT.
@@ -130,7 +130,7 @@ object Studio {
             append("- لو المقطع مفيهوش كلام خالص رجّع segments فاضية.\n")
             if (prev.isNotBlank()) append("\nسياق آخر كلام في المقطع اللي قبله (لتكملة جملة مقطوعة على الحدود وتوحيد كتابة الأسماء بس، متكررهوش): \"$prev\"\n")
             append("\nرجّع JSON فقط بدون شرح ولا markdown:\n")
-            append("{\"lang\":\"اسم اللغة بالعربي\",\"langCode\":\"كود ISO\",\"segments\":[{\"start\":0.0,\"end\":5.2,\"spk\":\"A\",\"lang\":\"كود ISO\",\"text\":\"...\"}]}")
+            append("{\"lang\":\"اسم اللغة بالعربي\",\"langCode\":\"كود ISO\",\"segments\":[{\"start\":0.0,\"end\":5.2,\"spk\":\"A\",\"lang\":\"كود ISO\",\"text\":\"...\",\"conf\":0.9}]}")
         }
 
         // برومبت المسلسل/الفيلم: زي subs، مع تثبيت كتابة أسماء الشخصيات زي ما اتقالت.
@@ -147,7 +147,7 @@ object Studio {
             append("- لو المقطع مفيهوش كلام خالص رجّع segments فاضية.\n")
             if (prev.isNotBlank()) append("\nسياق آخر كلام في المقطع اللي قبله (لتكملة جملة مقطوعة على الحدود وتوحيد كتابة الأسماء بس، متكررهوش): \"$prev\"\n")
             append("\nرجّع JSON فقط بدون شرح ولا markdown:\n")
-            append("{\"lang\":\"اسم اللغة بالعربي\",\"langCode\":\"كود ISO\",\"segments\":[{\"start\":0.0,\"end\":5.2,\"spk\":\"A\",\"lang\":\"كود ISO\",\"text\":\"...\"}]}")
+            append("{\"lang\":\"اسم اللغة بالعربي\",\"langCode\":\"كود ISO\",\"segments\":[{\"start\":0.0,\"end\":5.2,\"spk\":\"A\",\"lang\":\"كود ISO\",\"text\":\"...\",\"conf\":0.9}]}")
         }
 
         // برومبت الاجتماع: حرفي، متحدثين A/B/C، والقرارات والمهام مش في التفريغ (دي من التلخيص بعدين).
@@ -163,7 +163,7 @@ object Studio {
             append("- لو المقطع مفيهوش كلام خالص رجّع segments فاضية.\n")
             if (prev.isNotBlank()) append("\nسياق آخر كلام في المقطع اللي قبله (لتكملة جملة مقطوعة على الحدود بس، متكررهوش): \"$prev\"\n")
             append("\nرجّع JSON فقط بدون شرح ولا markdown:\n")
-            append("{\"lang\":\"اسم اللغة بالعربي\",\"langCode\":\"كود ISO\",\"segments\":[{\"start\":0.0,\"end\":5.2,\"spk\":\"A\",\"lang\":\"كود ISO\",\"text\":\"...\"}]}")
+            append("{\"lang\":\"اسم اللغة بالعربي\",\"langCode\":\"كود ISO\",\"segments\":[{\"start\":0.0,\"end\":5.2,\"spk\":\"A\",\"lang\":\"كود ISO\",\"text\":\"...\",\"conf\":0.9}]}")
         }
 
         // برومبت الصوت العادي: نص حرفي مقسّم بالتوقيت، من غير أي افتراض عن نوع المحتوى.
@@ -179,7 +179,7 @@ object Studio {
             append("- لو المقطع مفيهوش كلام خالص رجّع segments فاضية.\n")
             if (prev.isNotBlank()) append("\nسياق آخر كلام في المقطع اللي قبله (لتكملة جملة مقطوعة على الحدود بس، متكررهوش): \"$prev\"\n")
             append("\nرجّع JSON فقط بدون شرح ولا markdown:\n")
-            append("{\"lang\":\"اسم اللغة بالعربي\",\"langCode\":\"كود ISO\",\"segments\":[{\"start\":0.0,\"end\":5.2,\"spk\":\"A\",\"lang\":\"كود ISO\",\"text\":\"...\"}]}")
+            append("{\"lang\":\"اسم اللغة بالعربي\",\"langCode\":\"كود ISO\",\"segments\":[{\"start\":0.0,\"end\":5.2,\"spk\":\"A\",\"lang\":\"كود ISO\",\"text\":\"...\",\"conf\":0.9}]}")
         }
 
         companion object {
@@ -231,7 +231,7 @@ object Studio {
         for (s in segs) {
             val c = cur
             if (c != null && c.spk == s.spk && c.spk.isNotBlank() && s.start - c.end <= 1.5) {
-                cur = Lecture.Seg(c.start, s.end, c.text + " " + s.text, c.chunk, c.spk, c.lang, c.tone)
+                cur = Lecture.Seg(c.start, s.end, c.text + " " + s.text, c.chunk, c.spk, c.lang, c.tone, c.conf)
             } else {
                 if (c != null) out.add(c)
                 cur = s

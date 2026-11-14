@@ -217,6 +217,7 @@ com/tttt/subtitler/SourceMode.kt
 com/tttt/subtitler/Speech.kt
 com/tttt/subtitler/Spinner.kt
 com/tttt/subtitler/SplashArt.kt
+com/tttt/subtitler/SrtCheck.kt
 com/tttt/subtitler/SrtWriter.kt
 com/tttt/subtitler/Stats.kt
 com/tttt/subtitler/StatsUi.kt
@@ -227,7 +228,11 @@ com/tttt/subtitler/StreamHunt.kt
 com/tttt/subtitler/Strict.kt
 com/tttt/subtitler/Stt.kt
 com/tttt/subtitler/Studio.kt
+com/tttt/subtitler/StudioIntel.kt
+com/tttt/subtitler/StudioIntelUi.kt
 com/tttt/subtitler/StudioLink.kt
+com/tttt/subtitler/StudioPrivacy.kt
+com/tttt/subtitler/StudioPrivacyUi.kt
 com/tttt/subtitler/StudioUi.kt
 com/tttt/subtitler/SubAlign.kt
 com/tttt/subtitler/SubDual.kt

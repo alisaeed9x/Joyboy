@@ -132,7 +132,16 @@ class StudioUi(private val act: Activity, private val ui: Ui, private val th: Th
     }
 
     // ===================== الشاشة الرئيسية =====================
+    // (v1003) بوابة PIN: لو فيه PIN ولسه الجلسة ماتفتحتش، شاشة PIN الأول — والاستوديو بيتفتح بس لما يصح.
     fun show() {
+        if (StudioPrivacy.isPinSet(act) && !StudioPrivacy.sessionUnlocked) {
+            StudioPrivacyUi(act, ui, th).showPinGate { showGated() }
+            return
+        }
+        showGated()
+    }
+
+    private fun showGated() {
         val cards = vcol()
         cards.addView(card("🎓", "تفريغ محاضرة", "تفريغ حرفي + تنظيم + تلخيص") {
             try {
@@ -169,6 +178,21 @@ class StudioUi(private val act: Activity, private val ui: Ui, private val th: Th
                 CallChatUi(act, ui, th).showVoices()
             } catch (e: Throwable) { LogStore.err("StudioUi:voices", e) }
         }, lp(-1, -2, 8))
+        cards.addView(card("🔁", "تفريغ تلقائي للمكالمات", "مكالمات جديدة تتفرّغ لوحدها — واي-فاي/شاحن بس") {
+            try {
+                StudioIntelUi(act, ui, th).showAutoCall()
+            } catch (e: Throwable) { LogStore.err("StudioUi:autoCall", e) }
+        }, lp(-1, -2, 8))
+        cards.addView(card("🔒", "خصوصية", "PIN · إخفاء · إحصائيات · ملخص · استثناء") {
+            try {
+                StudioPrivacyUi(act, ui, th).show()
+            } catch (e: Throwable) { LogStore.err("StudioUi:privacy", e) }
+        }, lp(-1, -2, 8))
+        cards.addView(card("📚", "الكورسات", "محاضرات مربوطة بمادة واحدة + قاموس تراكمي + Anki") {
+            try {
+                StudioIntelUi(act, ui, th).showCourses()
+            } catch (e: Throwable) { LogStore.err("StudioUi:courses", e) }
+        }, lp(-1, -2, 8))
         cards.addView(card("📚", "سجل التفريغات", "كل التفريغات — فتح · ترجمة لـSRT · تغيير النوع") {
             try {
                 showHistory()
@@ -186,6 +210,15 @@ class StudioUi(private val act: Activity, private val ui: Ui, private val th: Th
         col.addView(sc, LinearLayout.LayoutParams(-1, 0, 1f).apply { topMargin = ui.dp(4) })
         val d = ui.sheet(act, "🎙 الاستوديو", listOf<View>(col), fixedH = true)
         d.show()
+        // (v1002) فحص التفريغ التلقائي للمكالمات الجديدة — بيشتغل بس لو السويتش مفعّل، وعلى واي-فاي/شاحن.
+        Thread {
+            try {
+                val msg = StudioIntel.checkAutoCalls(act)
+                if (msg.isNotBlank()) main.post { Notice.show(act, msg, 4000L) }
+            } catch (e: Throwable) {
+                LogStore.err("StudioUi:autoCall", e)
+            }
+        }.apply { isDaemon = true }.start()
     }
 
     /** كارت «تلقائي ✨»: المصدر الأول، وبعدها النوع تلقائي أو يدوي — الاكتشاف التلقائي شغال من المرحلة 2 */
@@ -709,9 +742,9 @@ class StudioUi(private val act: Activity, private val ui: Ui, private val th: Th
     }
 
     private fun confirmDelete(d: Lecture.Doc) {
-        GAlert(act).setTitle("🗑 حذف التفريغ").setMessage("«${Studio.displayTitle(d).take(50)}» — هيتمسح التفريغ والتنظيم والتلخيص.")
+        GAlert(act).setTitle("🗑 حذف التفريغ").setMessage("«${Studio.displayTitle(d).take(50)}» — هيمسح التفريغ والترجمة والملخصات والعلامات نهائيًا.")
             .setPositiveButton("حذف") { _, _ ->
-                Lecture.delete(act, d.id)
+                Lecture.deleteFull(act, d.id)
                 hist = hist.filter { it.id != d.id }
                 renderHistory()
             }
@@ -745,8 +778,10 @@ class StudioUi(private val act: Activity, private val ui: Ui, private val th: Th
             typeChip.text = typeChipText(d)
         }
         fun paintMeta() {
+            // (v1002) تقدير التكلفة قبل البدء — بيتحسب مرة واحدة للشيت ده (مش مع كل tick).
+            val est = if (d.nChunks == 0) StudioIntel.estimateShort(d) else ""
             val t = Studio.typeOf(d)
-            val meta = listOf(statusOf(d), if (d.durSec > 0) fmtDur(d.durSec) else "", if (d.words > 0) "${d.words} كلمة" else "", if (d.lang.isNotBlank()) "🌐 " + d.lang + (if (d.langCode.isNotBlank()) " (" + d.langCode + ")" else "") else "", if (d.segs.isNotEmpty()) "${d.segs.size} جملة" else "", "الناتج: " + t.outputShape).filter { it.isNotBlank() }.joinToString(" · ")
+            val meta = listOf(statusOf(d), if (d.durSec > 0) fmtDur(d.durSec) else "", est, if (d.words > 0) "${d.words} كلمة" else "", if (d.lang.isNotBlank()) "🌐 " + d.lang + (if (d.langCode.isNotBlank()) " (" + d.langCode + ")" else "") else "", if (d.segs.isNotEmpty()) "${d.segs.size} جملة" else "", "الناتج: " + t.outputShape).filter { it.isNotBlank() }.joinToString(" · ")
             metaV.text = meta
         }
         typeChip.setOnClickListener {
@@ -783,6 +818,14 @@ class StudioUi(private val act: Activity, private val ui: Ui, private val th: Th
         content.addView(typeNote, lp(-1, -2, 4))
         content.addView(metaV, lp(-1, -2, 6))
         content.addView(srtStatus, lp(-1, -2, 6))
+        // (v1003) سويتش الإخفاء على شيت الدوكيومنت — التبديل بيقفل الشيت ويفتحه تاني عشان الجمل تعكس الوضع الجديد.
+        content.addView(ui.switchRow("🙈 وضع الإخفاء — طمس الأرقام والأسماء والمبالغ", StudioPrivacy.isRedactOn(act)) { v ->
+            StudioPrivacy.setRedactOn(act, v)
+            try {
+                dd.dismiss()
+            } catch (_: Throwable) {}
+            openDocSheet(d)
+        }, lp(-1, -2, 6))
         // (v999 ملاحظة 3) زرار التشغيل بالترجمة أول الأزرار — خطوتين بس من آخر التفريغ للمشاهدة بالترجمة (الصوتيات ملهاش فيديو فمبتظهرش)
         val hasVideo = (d.uri.isNotBlank() || d.link.isNotBlank()) && d.kind != "audio" && d.kind != "rec"
         if (hasVideo) {
@@ -793,6 +836,12 @@ class StudioUi(private val act: Activity, private val ui: Ui, private val th: Th
                 LectureUi(act, ui, th).open(d)
             } catch (e: Throwable) { LogStore.err("StudioUi:openDoc", e) }
         }, lp(-1, -2, 8))
+        // (v1002) مركز الذكاء الإضافي: اسأل/فصول/ترجمة جنب بعض/استخراج/وعود/علامات/ثقة منخفضة/كورس.
+        content.addView(pill("🧠 ذكاء إضافي") {
+            try {
+                StudioIntelUi(act, ui, th).showHub(d)
+            } catch (e: Throwable) { LogStore.err("StudioUi:intel", e) }
+        }, lp(-1, -2, 8))
         // (v1001) المكالمات ليها صفحة دردشة — من هنا أو من قايمة السجل (LectureUi.open بتحوّل ليها).
         if (Studio.typeOf(d).code == "call") {
             content.addView(pill("💬 عرض كدردشة") {
@@ -802,6 +851,8 @@ class StudioUi(private val act: Activity, private val ui: Ui, private val th: Th
             }, lp(-1, -2, 8))
         }
         content.addView(pill("📥 تحميل / مشاركة الترجمة") { shareTranslation(d) }, lp(-1, -2, 8))
+        content.addView(pill("🔍 فحص جودة الترجمة") { runSrtCheck(d) }, lp(-1, -2, 8))
+        content.addView(pill("✂ قص مقطع ومشاركته") { clipDialog(d) }, lp(-1, -2, 8))
         content.addView(pill("📝 ترجمة لـSRT") { runSrt(d, srtStatus) }, lp(-1, -2, 8))
         content.addView(pill("🌐 الترجمة عن طريق وارد") { runWaridTranslate(d, srtStatus) }, lp(-1, -2, 8))
         content.addView(pill("📚 فتح مكتبة الترجمات") {
@@ -811,9 +862,9 @@ class StudioUi(private val act: Activity, private val ui: Ui, private val th: Th
         }, lp(-1, -2, 8))
         content.addView(ui.text("الترجمة بتظهر في 📚 مكتبة الترجمات — ولو المصدر لينك، من غير ملف SRT جنب الفيديو (التفريغ نفسه مفيهوش ملف محلي).", 11.5f, th.muted), lp(-1, -2, 4))
         content.addView(pill("🗑 حذف التفريغ", danger = true) {
-            GAlert(act).setTitle("🗑 حذف التفريغ").setMessage("«${Studio.displayTitle(d).take(50)}» — هيتمسح التفريغ والتنظيم والتلخيص.")
+            GAlert(act).setTitle("🗑 حذف التفريغ").setMessage("«${Studio.displayTitle(d).take(50)}» — هيمسح التفريغ والترجمة والملخصات والعلامات نهائيًا.")
                 .setPositiveButton("حذف") { _, _ ->
-                    Lecture.delete(act, d.id)
+                    Lecture.deleteFull(act, d.id)
                     hist = hist.filter { it.id != d.id }
                     renderHistory()
                     try {
@@ -873,6 +924,177 @@ class StudioUi(private val act: Activity, private val ui: Ui, private val th: Th
                 Notice.show(act, "✅ اتعمل ملف SRT وظهر في 📚 مكتبة الترجمات", 3200L)
             }
         }
+    }
+
+    // (v1003) فحص جودة الترجمة: SrtCheck على نص الـSRT المحفوظ — على خيط خلفي، والنتيجة شيت بالملاحظات.
+    private fun runSrtCheck(d: Lecture.Doc) {
+        Notice.show(act, "⏳ بفحص الترجمة…", 1800L)
+        Thread {
+            val srt = try {
+                TrLib.srtText(act, Studio.lecId(d))
+            } catch (_: Throwable) {
+                null
+            }
+            val issues = if (srt == null) {
+                null
+            } else try {
+                SrtCheck.check(srt, d.durSec)
+            } catch (e: Throwable) {
+                LogStore.err("StudioUi:srtCheck", e)
+                null
+            }
+            main.post { showSrtIssues(d, srt, issues) }
+        }.apply { isDaemon = true }.start()
+    }
+
+    private fun showSrtIssues(d: Lecture.Doc, srt: String?, issues: List<SrtCheck.Issue>?) {
+        val col = vcol().apply { layoutParams = lp(-1, -1) }
+        val list = vcol()
+        if (srt == null || issues == null) {
+            col.addView(ui.text("مفيش ترجمة محفوظة لسه — دوس «📝 ترجمة لـSRT» الأول.", 12.5f, th.muted), lp(-1, -2))
+        } else if (issues.isEmpty()) {
+            col.addView(ui.text("✅ الترجمة سليمة — مفيش مشاكل في الترقيم ولا التوقيتات ولا التداخل.", 13f, th.text), lp(-1, -2))
+        } else {
+            val fixable = issues.count { it.fixable }
+            col.addView(ui.text("لقيت " + issues.size + " ملاحظة" + (if (fixable > 0) " (منها " + fixable + " قابلة للإصلاح التلقائي)" else "") + " — التداخل والسطور الطويلة تنبيه بس، مبيتصلحوش تلقائي.", 12.5f, th.muted), lp(-1, -2))
+            for (iss in issues) {
+                val row = vcol().apply { setPadding(ui.dp(12), ui.dp(10), ui.dp(12), ui.dp(10)); background = glassBg(14) }
+                row.addView(ui.text("سطر " + iss.line + ": " + iss.msg, 13f, th.text).apply { setLineSpacing(0f, 1.25f) })
+                if (iss.fixable) row.addView(ui.text("🛠 قابلة للإصلاح التلقائي", 11.5f, th.primary), lp(-1, -2, 2))
+                list.addView(row, lp(-1, -2, 6))
+            }
+            col.addView(ScrollView(act).apply { isVerticalScrollBarEnabled = false; addView(list) }, LinearLayout.LayoutParams(-1, 0, 1f).apply { topMargin = ui.dp(8) })
+            if (fixable > 0) {
+                col.addView(pill("🛠 إصلاح تلقائي", primary = true) { applySrtFix(d, srt) }, lp(-1, -2, 8))
+            }
+        }
+        val dd = ui.sheet(act, "🔍 فحص جودة الترجمة", listOf<View>(col), fixedH = true)
+        dd.show()
+    }
+
+    // (v1003) الإصلاح بيتطبق على نسخة التصدير بس (ملف الكاش اللي بيتشارك) — الترجمة المحفوظة
+    // في المكتبة زي ما هي، عشان إعادة الحفظ من النص المصحّح كانت هتضيّع النص الأصلي وبيانات الجمل.
+    private fun applySrtFix(d: Lecture.Doc, srt: String) {
+        Thread {
+            val fixed = try {
+                SrtCheck.fix(srt)
+            } catch (e: Throwable) {
+                LogStore.err("StudioUi:srtFix", e)
+                null
+            }
+            var file: java.io.File? = null
+            if (fixed != null) {
+                file = try {
+                    val f = java.io.File(act.cacheDir, TrLib.safeName(Studio.displayTitle(d)) + ".srt")
+                    f.writeText(fixed, Charsets.UTF_8)
+                    f
+                } catch (_: Throwable) {
+                    null
+                }
+            }
+            val f = file
+            main.post {
+                if (f == null) {
+                    Notice.show(act, "⚠ مقدرتش أطبّق الإصلاح", 3000L)
+                    return@post
+                }
+                GAlert(act).setTitle("✅ اتصلّحت نسخة التصدير").setMessage("الإصلاح اتطبق على نسخة التصدير بس (الملف اللي بيتشارك) — الترجمة المحفوظة في 📚 مكتبة الترجمات زي ما هي، ولو عملت «📝 ترجمة لـSRT» من جديد هترجع النسخة الأصلية.")
+                    .setPositiveButton("📤 مشاركة النسخة المصححة") { _, _ ->
+                        try {
+                            val u = FmUtil.uriFor(act, f)
+                            val send = Intent(Intent.ACTION_SEND).setType("application/x-subrip").putExtra(Intent.EXTRA_STREAM, u).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                            act.startActivity(Intent.createChooser(send, "مشاركة الترجمة المصححة"))
+                        } catch (e: Throwable) {
+                            LogStore.err("StudioUi:srtFixShare", e)
+                        }
+                    }.setNegativeButton("إغلاق", null).show()
+            }
+        }.apply { isDaemon = true }.start()
+    }
+
+    // (v1003) قص مقطع ومشاركته: البداية/النهاية MM:SS، الافتراضي أول وآخر جملة في التفريغ.
+    private fun clipDialog(d: Lecture.Doc) {
+        val segs = try {
+            Studio.displaySegs(d)
+        } catch (_: Throwable) {
+            emptyList<Lecture.Seg>()
+        }
+        if (segs.isEmpty()) {
+            Notice.show(act, "مفيش تفريغ لسه — فرّغ الأول", 2600L)
+            return
+        }
+        val startEt = ui.input("البداية (MM:SS)", Lecture.fmtTime(segs.first().start))
+        val endEt = ui.input("النهاية (MM:SS)", Lecture.fmtTime(segs.last().end))
+        val box = vcol()
+        box.addView(startEt, lp(-1, -2))
+        box.addView(endEt, lp(-1, -2, 8))
+        box.addView(ui.text("هيتقص الصوت (16kHz mono — جودة تفريغ) ويتشارك مع نصه. لو المصدر مش متاح (الملف اتمسح أو اللينك انتهى) هيتشارك النص بس.", 11.5f, th.muted), lp(-1, -2, 8))
+        GAlert(act).setTitle("✂ قص مقطع ومشاركته").setView(box)
+            .setPositiveButton("قص وشارك") { _, _ ->
+                val s = parseClipTime(startEt.text.toString())
+                val e = parseClipTime(endEt.text.toString())
+                if (s == null || e == null || e <= s) {
+                    Notice.show(act, "⚠ التوقيت لازم يبقى MM:SS والنهاية بعد البداية", 2600L)
+                    return@setPositiveButton
+                }
+                shareClip(d, s, e)
+            }.setNegativeButton("إلغاء", null).show()
+    }
+
+    private fun parseClipTime(s: String): Double? {
+        val t = s.trim()
+        if (t.isEmpty()) return null
+        if (t.contains(':')) {
+            val parts = t.split(':')
+            if (parts.size == 2) {
+                val m = parts[0].toIntOrNull() ?: return null
+                val sec = parts[1].toDoubleOrNull() ?: return null
+                return m * 60.0 + sec
+            }
+            if (parts.size == 3) {
+                val h = parts[0].toIntOrNull() ?: return null
+                val m = parts[1].toIntOrNull() ?: return null
+                val sec = parts[2].toDoubleOrNull() ?: return null
+                return h * 3600.0 + m * 60.0 + sec
+            }
+            return null
+        }
+        return t.toDoubleOrNull()
+    }
+
+    private fun shareClip(d: Lecture.Doc, s: Double, e: Double) {
+        Notice.show(act, "⏳ بقص المقطع…", 2000L)
+        Thread {
+            val res = try {
+                StudioPrivacy.cutClip(act, d, s, e)
+            } catch (ex: Throwable) {
+                LogStore.err("StudioUi:clip", ex)
+                null
+            }
+            main.post {
+                if (res == null) {
+                    Notice.show(act, "⚠ فشل قص المقطع", 3000L)
+                    return@post
+                }
+                try {
+                    val send = Intent(Intent.ACTION_SEND)
+                    if (res.audio != null) {
+                        send.setType("audio/wav")
+                        send.putExtra(Intent.EXTRA_STREAM, FmUtil.uriFor(act, res.audio))
+                        send.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    } else {
+                        send.setType("text/plain")
+                    }
+                    send.putExtra(Intent.EXTRA_SUBJECT, Studio.displayTitle(d))
+                    send.putExtra(Intent.EXTRA_TEXT, res.text)
+                    act.startActivity(Intent.createChooser(send, "مشاركة المقطع"))
+                    if (res.audio == null) Notice.show(act, res.note, 3600L)
+                } catch (ex: Throwable) {
+                    LogStore.err("StudioUi:clipShare", ex)
+                    Notice.show(act, "⚠ مقدرتش أشارك المقطع", 2600L)
+                }
+            }
+        }.apply { isDaemon = true }.start()
     }
 
     /** (v998) «الترجمة عن طريق وارد»: تفريغ وارد الأول لو الدوكيومنت مش متفريغ بوارد، وبعدها ترجمة لـSRT */

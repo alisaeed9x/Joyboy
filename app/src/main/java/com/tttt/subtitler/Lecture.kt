@@ -31,7 +31,7 @@ object Lecture {
     const val LEC_MODEL_KEY = "lec_model"
     fun lecModel(): String = Cfg.str(LEC_MODEL_KEY, LEC_MODEL_ACCURATE).trim().ifEmpty { LEC_MODEL_ACCURATE }
 
-    class Seg(val start: Double, val end: Double, val text: String, val chunk: Int, val spk: String = "", val lang: String = "", val tone: String = "")   // spk: D محاضر · S طالب/متحدث تاني · "" غير معروف — lang: كود ISO للغة الجملة دي (v999) — tone: نبرة الجملة بكلمة عربية واحدة (v1001، للمكالمات)
+    class Seg(val start: Double, val end: Double, val text: String, val chunk: Int, val spk: String = "", val lang: String = "", val tone: String = "", val conf: Double = -1.0)   // spk: D محاضر · S طالب/متحدث تاني · "" غير معروف — lang: كود ISO للغة الجملة دي (v999) — tone: نبرة الجملة بكلمة عربية واحدة (v1001، للمكالمات) — conf: ثقة الموديل في دقة الجملة 0–1، و-1 = مارجّعش ثقة (v1002)
 
     class Doc(val id: String) {
         var title = ""
@@ -80,6 +80,7 @@ object Lecture {
         @Volatile var callRefs: List<ByteArray> = emptyList()   // (v1001) المقاطع المرجعية للمكالمة، محمّلة مرة واحدة في start() — بنفس ترتيب callNames
         @Volatile var callNames: List<String> = emptyList()   // (v1001) أسماء الأطراف بنفس ترتيب callRefs — callNames[0] = "أنا" لو فيه بصمة لصاحب الجهاز
         @Volatile var callMixLogged: Boolean = false   // (v1001) اتسجّل خلط المراجع في اللوج مرة واحدة ولا لسه
+        @Volatile var showGlossary: String = ""   // (v1002) أسماء قاموس شخصيات المسلسل (للحلقة دي بس) — بتتضاف لـ terms في doChunk
     }
     val runs = ConcurrentHashMap<String, Run>()
     fun runOf(id: String): Run? = runs[id]
@@ -93,7 +94,7 @@ object Lecture {
 
     private fun toJson(d: Doc): JSONObject = synchronized(d) {
         val segs = JSONArray()
-        for (s in d.segs) segs.put(JSONObject().put("s", s.start).put("e", s.end).put("t", s.text).put("c", s.chunk).put("k", s.spk).put("g", s.lang).put("n", s.tone))
+        for (s in d.segs) segs.put(JSONObject().put("s", s.start).put("e", s.end).put("t", s.text).put("c", s.chunk).put("k", s.spk).put("g", s.lang).put("n", s.tone).put("cf", s.conf))
         JSONObject().put("id", d.id).put("title", d.title).put("kind", d.kind).put("uri", d.uri).put("link", d.link)
             .put("dur", d.durSec).put("n", d.nChunks).put("created", d.created).put("lang", d.lang).put("clean", d.clean)
             .put("done", JSONArray(d.done.toList())).put("failed", JSONArray(d.failed.toList())).put("segs", segs)
@@ -111,7 +112,7 @@ object Lecture {
         o.optJSONArray("done")?.let { a -> for (i in 0 until a.length()) d.done.add(a.optInt(i)) }
         o.optJSONArray("failed")?.let { a -> for (i in 0 until a.length()) d.failed.add(a.optInt(i)) }
         o.optJSONArray("segs")?.let { a ->
-            for (i in 0 until a.length()) { val x = a.optJSONObject(i) ?: continue; d.segs.add(Seg(x.optDouble("s"), x.optDouble("e"), x.optString("t"), x.optInt("c"), x.optString("k"), x.optString("g"), toneOf(x.optString("n")))) }
+            for (i in 0 until a.length()) { val x = a.optJSONObject(i) ?: continue; d.segs.add(Seg(x.optDouble("s"), x.optDouble("e"), x.optString("t"), x.optInt("c"), x.optString("k"), x.optString("g"), toneOf(x.optString("n")), confOf(x.optDouble("cf", -1.0)))) }
         }
         d.organized = o.optString("org"); d.organizedWeb = o.optBoolean("orgWeb"); d.summary = o.optString("sum")
         d.summaryWeb = o.optBoolean("sumWeb"); d.summaryLen = o.optString("sumLen", "mid")
@@ -150,6 +151,70 @@ object Lecture {
         runs[id]?.stop = true
         try { File(dir(ctx), "$id.json").delete() } catch (_: Throwable) {}
         runs.remove(id)
+    }
+
+    // (v1003 — المرحلة 5) حذف شامل للدوكيومنت وكل مشتقاته — الخيار اللي اتاخد: علامة studio_for
+    // بتتمسح دايمًا (هي علامة الإحياء)، وملف تقدم الفيديو + نسخة المحرك المخبّاة (.eng.json) بيتمسحوا،
+    // وsub_choice/sub_offset_ms بيتسابوا زي ما هما (تفضيلات باقية للفيديو، مابتحييش الدوكيومنت).
+    // مبيتمسحش: ملفات studio_series.json / studio_courses.json كلها (بيتشال الدوكيومنت من الكورس بس)،
+    // ولا مجلد voices (البصمات مشتركة)، ولا كاش صور الويكي (lectures/media)، ولا نسخة studio_inbox
+    // من الصوت الأصلي (بتفضل ملف يتيم — لو اتمسحت بعدين مفيش حاجة بتعتمد عليها).
+    // ملفات كاش التصدير (cacheDir/<title>.srt/.vtt) بتتمسح على قد ما العنوان الحالي يعرّفها — لو العنوان
+    // اتغيّر بعد التصدير ممكن يفضل ملف يتيم في الكاش (الكاش بيتمسح لوحده من النظام).
+    fun deleteFull(ctx: Context, id: String) {
+        runs[id]?.stop = true
+        val lecId = "lec:$id"
+        try { BgJobs.stopAndWait(lecId, 7000L) } catch (_: Throwable) {}
+        val d = load(ctx, id)
+        val vid = try { if (d != null) StudioLink.vidForDoc(ctx, d) else null } catch (_: Throwable) { null }
+        try { File(dir(ctx), "$id.json").delete() } catch (_: Throwable) {}
+        try { File(dir(ctx), "$id.tmp").delete() } catch (_: Throwable) {}
+        try { File(dir(ctx), "$id.intel.json").delete() } catch (_: Throwable) {}
+        val item = TrLib.Item(lecId, d?.title ?: "", d?.uri ?: "", d?.link ?: "", d?.durSec ?: 0.0, 0, 0.0, 0L, null, null)
+        try { TrLib.wipe(ctx, item) } catch (_: Throwable) {}
+        try { TrLib.forget(ctx, lecId) } catch (_: Throwable) {}
+        try { Recents.drop(ctx, lecId) } catch (_: Throwable) {}
+        if (vid != null) {
+            try { File(File(ctx.filesDir, "progress"), Store.keyFor(vid) + ".json").delete() } catch (_: Throwable) {}
+            try { File(File(ctx.filesDir, "progress"), Store.keyFor(vid) + ".eng.json").delete() } catch (_: Throwable) {}
+            try { StudioLink.clearStudioMark(ctx, vid) } catch (_: Throwable) {}
+        }
+        if (d != null) {
+            try {
+                for (f in TrLib.writtenSrt(ctx, item)) try { f.delete() } catch (_: Throwable) {}
+            } catch (_: Throwable) {}
+            try {
+                val safe = TrLib.safeName(Studio.displayTitle(d).ifBlank { d.title })
+                File(ctx.cacheDir, safe + ".srt").delete()
+                File(ctx.cacheDir, safe + ".vtt").delete()
+            } catch (_: Throwable) {}
+        }
+        try {
+            val course = StudioIntel.courseOf(ctx, id)
+            if (course.isNotBlank()) StudioIntel.removeFromCourse(ctx, course, id)
+        } catch (_: Throwable) {}
+        runs.remove(id)
+    }
+
+    // (v1003 — المرحلة 5) قص مقطع صوت من مصدر الدوكيومنت — بيفتح المصدر زي openSource بالظبط
+    // (محلي: الملف نفسه؛ لينك: الستريم بيتحل من جديد) وبيفك المدى المطلوب بس، من غير ما يفك الملف كله.
+    // بيرجّع null لو المصدر مش متاح (الملف اتمسح/اتنقل، أو اللينك مبيتحلش دلوقتي) — والمتصل بيقع على
+    // مقطع نصي بس. لازم يتنده من خيط خلفي (ممكن يعمل شبكة للينكات).
+    internal fun cutAudioClip(ctx: Context, d: Doc, startSec: Double, endSec: Double): WavChunk? {
+        var src: AudioSource? = null
+        try {
+            val s = startSec.coerceAtLeast(0.0)
+            val dur = if (d.durSec > 0) d.durSec else Double.MAX_VALUE
+            val e = endSec.coerceIn(0.0, dur)
+            if (e - s < 0.5) return null
+            src = openSource(ctx, d)
+            return src.wav(s, e)
+        } catch (e: Throwable) {
+            LogStore.err("Lecture:cutClip", e)
+            return null
+        } finally {
+            try { src?.close() } catch (_: Throwable) {}
+        }
     }
 
     fun newDoc(ctx: Context, kind: String, title: String, uri: String, link: String): Doc {
@@ -256,7 +321,7 @@ object Lecture {
         if (prev.isNotBlank()) append("\nسياق آخر كلام في المقطع اللي قبله (لتكملة جملة مقطوعة على الحدود وتوحيد كتابة المصطلحات بس، متكررهوش): \"$prev\"\n")
         if (terms.isNotBlank()) append("\nأسماء ومصطلحات ظهرت قبل كده في نفس التفريغ — اكتبها بنفس الطريقة دي بالظبط كل مرة تتقال: \"$terms\"\n")
         append("\nرجّع JSON فقط بدون شرح ولا markdown:\n")
-        append("{\"lang\":\"اسم اللغة بالعربي\",\"langCode\":\"كود ISO\",\"segments\":[{\"start\":0.0,\"end\":5.2,\"spk\":\"D\",\"lang\":\"كود ISO\",\"text\":\"...\"}]}")
+        append("{\"lang\":\"اسم اللغة بالعربي\",\"langCode\":\"كود ISO\",\"segments\":[{\"start\":0.0,\"end\":5.2,\"spk\":\"D\",\"lang\":\"كود ISO\",\"text\":\"...\",\"conf\":0.9}]}")
         }
         if (!warid) return base
         return waridPrompt(base)
@@ -274,6 +339,7 @@ object Lecture {
             append("- 🔴 البادئات العربية (الـ، بـ، نـ، هـ، وـ) تفضل عربية لما تتلزق في كلمة إنجليزية (مثال: الـAPI، بـEnglish).\n")
             append("- 🔴 كل مقطع كلام (utterance) عنصر مستقل: start/end دقيقين بالثواني نسبةً لبداية المقطع ده، وspk حسب الصوت (نفس أكواد spk المذكورة فوق حسب نوع المحتوى). الجملة الواحدة من صوتين تتفصل لعنصرين.\n")
             append("- 🔴 التوقيت لازم يبقى دقيق — كل عنصر بمكانه وبدايته ونهايته الفعلية في المقطع، مش توزيع بالتساوي.\n")
+            append("- 🔴 ثقة كل جملة: حط في \"conf\" رقم 0–1 يعبر عن ثقتك في دقة نص الجملة دي (1 = متأكد تمامًا) — ولو مش متأكد حط رقم قليل.\n")
         }
         val marker = "\nرجّع JSON فقط"
         val at = base.indexOf(marker)
@@ -287,6 +353,12 @@ object Lecture {
         if (t.isEmpty()) return ""
         val w = t.split(Regex("\\s+")).firstOrNull() ?: ""
         return w.take(12)
+    }
+
+    // (v1002) تطبيع ثقة الجملة من رد الموديل: رقم 0–1، و-1 لو مفيش ثقة مرجّعة (قديم أو موديل مابيدعمهاش).
+    internal fun confOf(raw: Double): Double {
+        if (raw < 0.0 || raw.isNaN()) return -1.0
+        return raw.coerceIn(0.0, 1.0)
     }
 
     internal fun spkOf(raw: String): String {
@@ -370,7 +442,7 @@ object Lecture {
             val s0 = (x.optDouble("start", 0.0)).coerceIn(0.0, dur)
             val e0 = (x.optDouble("end", s0)).coerceIn(s0, dur)
             if (s0 < offset) continue
-            got.add(Seg(st + s0 - offset, st + e0 - offset, t, idx, spkOf(x.optString("spk")), normLangCode(x.optString("lang")), toneOf(x.optString("tone"))))
+            got.add(Seg(st + s0 - offset, st + e0 - offset, t, idx, spkOf(x.optString("spk")), normLangCode(x.optString("lang")), toneOf(x.optString("tone")), confOf(x.optDouble("conf", -1.0))))
         }
         return got
     }
@@ -378,6 +450,9 @@ object Lecture {
     /** جزء واحد: بيرجّع true لو نجح (حتى لو الجزء صامت)، false لو فشل نهائيًا بعد المحاولات */
     private fun doChunk(run: Run, keys: List<String>, mdl: String, src: AudioSource, idx: Int, worker: Int, dur: Double, chunkSec: Double = CHUNK_SEC): Boolean {
         val d = run.doc
+        // (G1) علم «الموديل الأقوى» لمرة واحدة للجزء ده — بيتسحب هنا وبيتمسح سواء نجح الجزء أو فشل.
+        val accurate = StudioIntel.takeAccurate(d, idx)
+        val useMdl = if (accurate) LEC_MODEL_ACCURATE else mdl
         val st = idx * chunkSec; val en = minOf(dur, st + chunkSec)
         if (en - st < 1.0) return true
         val wav = try { src.wav(st, en) } catch (e: Throwable) { LogStore.err("Lecture:wav", e); null } ?: return false
@@ -407,15 +482,18 @@ object Lecture {
             }
         }
         val prev = synchronized(d) { d.segs.filter { it.chunk == idx - 1 }.sortedBy { it.start }.takeLast(2).joinToString(" ") { it.text } }.takeLast(300)
-        val terms = termsFromPrev(d, idx)
+        var terms = termsFromPrev(d, idx)
+        if (run.showGlossary.isNotBlank()) {
+            terms = if (terms.isBlank()) run.showGlossary else terms + "، " + run.showGlossary
+        }
         val promptParties = if (refsMixed) run.callNames else synchronized(d) { d.parties.toList() }
         val prompt = transcribePrompt(en - st, d.clean, prev, d.type, d.warid, terms, promptParties, refsMixed)
-        if (d.warid) return WaridTx.transcribeChunk(run, keys, sendWav, idx, worker, chunkSec, en - st, prompt, mixOffset)
+        if (d.warid) return WaridTx.transcribeChunk(run, keys, sendWav, idx, worker, chunkSec, en - st, prompt, mixOffset, accurate)
         for (a in 0 until 4) {
             if (run.stop) return false
             val key = keys[(idx + worker + a) % keys.size]
             try {
-                val r = Api.generate(mdl, key, prompt, sendWav.bytes, Api.outTokens(en - st), 0.1, true, false)
+                val r = Api.generate(useMdl, key, prompt, sendWav.bytes, Api.outTokens(en - st), 0.1, true, false)
                 val j = parseJson(r.text)
                 if (j == null) { if (r.text.isBlank() && r.finish.startsWith("PROMPT_")) { return true }; continue }
                 var finalGot = parseSegs(j, st, en, idx, mixOffset)
@@ -425,7 +503,7 @@ object Lecture {
                 // (activeSec) ≥ نصف مدة الجزء، وحروف النص المرجّع < حرفين لكل ثانية كلام.
                 // الجزء الهادي أو الصامت (activeSec قليل) مبيتعادش أبدًا.
                 val gotChars = finalGot.sumOf { it.text.length }
-                val suspicious = mdl != LEC_MODEL_ACCURATE && wav.activeSec >= (en - st) * 0.5 && gotChars < wav.activeSec * 2
+                val suspicious = useMdl != LEC_MODEL_ACCURATE && wav.activeSec >= (en - st) * 0.5 && gotChars < wav.activeSec * 2
                 if (suspicious) {
                     try {
                         val key2 = keys[(idx + worker + 1) % keys.size]
@@ -579,6 +657,14 @@ object Lecture {
                 // بصمة صاحب الجهاز ("me") أولًا، وبعدها بصمة كل طرف في d.parties ليه صوت محفوظ،
                 // وبنفس الترتيب ده بتتبني قايمة الأسماء (run.callNames) عشان البرومبت والخلط يتفقوا.
                 // مفيش global: المراجع عايشة على Run اللي بيتسلم لـ doChunk.
+                // (v1002) مسلسل/فيلم: حمّل قاموس أسماء الشخصيات للسلسلة دي مرة واحدة — بيتضاف لـ terms في doChunk.
+                if (Studio.typeOf(d).code == "show") {
+                    try {
+                        run.showGlossary = StudioIntel.glossaryTerms(ctx, d)
+                    } catch (e: Throwable) {
+                        LogStore.err("Lecture:glossary", e)
+                    }
+                }
                 if (Studio.typeOf(d).code == "call") {
                     try {
                         val refs = ArrayList<ByteArray>()
@@ -673,7 +759,7 @@ object Lecture {
             if (st < prevEnd) st = prevEnd
             if (en <= st) en = minOf(dur, st + 0.5)
             if (en <= st) st = maxOf(0.0, en - 0.5)
-            out.add(Seg(st, en, s.text, s.chunk, s.spk, s.lang, s.tone))
+            out.add(Seg(st, en, s.text, s.chunk, s.spk, s.lang, s.tone, s.conf))
             prevEnd = en
         }
         out
@@ -697,7 +783,7 @@ object Lecture {
             if (pick == null || Math.abs(pick.value.start - oldStart) > 30.0) false
             else {
                 val old = pick.value
-                d.segs[pick.index] = Seg(st, en, t, old.chunk, old.spk, old.lang, old.tone)
+                d.segs[pick.index] = Seg(st, en, t, old.chunk, old.spk, old.lang, old.tone, old.conf)
                 true
             }
         }
@@ -734,7 +820,7 @@ object Lecture {
             for (i in d.segs.indices) {
                 val s = d.segs[i]
                 if (s.spk == old) {
-                    d.segs[i] = Seg(s.start, s.end, s.text, s.chunk, new, s.lang, s.tone)
+                    d.segs[i] = Seg(s.start, s.end, s.text, s.chunk, new, s.lang, s.tone, s.conf)
                     matched = true
                 }
             }
@@ -757,7 +843,7 @@ object Lecture {
             for (i in d.segs.indices) {
                 val s = d.segs[i]
                 if (s.spk == from) {
-                    d.segs[i] = Seg(s.start, s.end, s.text, s.chunk, to, s.lang, s.tone)
+                    d.segs[i] = Seg(s.start, s.end, s.text, s.chunk, to, s.lang, s.tone, s.conf)
                     matched = true
                 }
             }

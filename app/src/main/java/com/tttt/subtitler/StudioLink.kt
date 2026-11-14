@@ -167,11 +167,14 @@ object StudioLink {
     // ملف SRT عند الطلب من ترجمة الاستوديو المحفوظة (للمشاركة/التصدير) — بيتكتب في الكاش بس،
     // ومفيش مجلد SRT دائم جديد: المشغّل بيقرا ملف Store مش SRT.
     fun exportSrt(ctx: Context, d: Lecture.Doc): File? {
-        val txt = try {
+        val raw = try {
             TrLib.srtText(ctx, Studio.lecId(d))
         } catch (_: Throwable) {
             null
         } ?: return null
+        // (v1003) الإخفاء بيطمس الملف المُصدَّر بس — الترجمة المحفوظة في المكتبة زي ما هي.
+        val parties = synchronized(d) { d.parties.toList() }
+        val txt = if (StudioPrivacy.isRedactOn(ctx)) StudioPrivacy.redact(raw, parties) else raw
         return try {
             val f = File(ctx.cacheDir, TrLib.safeName(Studio.displayTitle(d)) + ".srt")
             f.writeText(txt, Charsets.UTF_8)

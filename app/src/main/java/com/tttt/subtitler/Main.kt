@@ -1079,12 +1079,114 @@ class MainActivity : Activity() {
     }
     private fun handleExternal(i: Intent?) {
         if (i == null || isFinishing || isDestroyed) return
+        // (v1003 — المرحلة 5) مشاركة ملف صوت/فيديو من برّه (واتساب وغيره) → الاستوديو مباشرة.
+        // الملف بيتنسخ لـ filesDir/studio_inbox الأول (إذن المشاركة مؤقت)، وبعدين تفريغ + فتح الشاشة.
+        if (i.action == Intent.ACTION_SEND || i.action == Intent.ACTION_SEND_MULTIPLE) {
+            if (handleSharedMedia(i)) return
+        }
         val raw = when (i.action) { Intent.ACTION_SEND -> i.getStringExtra(Intent.EXTRA_TEXT) ?: ""; Intent.ACTION_VIEW -> i.dataString ?: ""; else -> return }
         val url = Regex("https?://\\S+").find(raw)?.value ?: return
         i.action = null   // ما يتكررش لو الأكتيفيتي اتعمل لها إعادة إنشاء
         val id = ytIdOf(url)
         if (id == null) { link.setText(url); openLinkAs(url); return }
         playYt(id, "", false)   // (v467) بطلب صاحب التطبيق: لينك يوتيوب اللي البرنامج يمسكه بيفتح في يوتيوب عادي على طول — من غير قايمة «افتحه إزاي؟»
+    }
+
+    // (v1003) بيرجّع true لو الـintent كان فيه ملف صوت/فيديو واتستهلك (حتى لو النسخ فشل — اتعرض تنبيه)،
+    // وfalse لو مفيش ملف وسائط (المتصل بيكمّل على مسار النص/اللينك القديم).
+    private fun handleSharedMedia(i: Intent): Boolean {
+        val uris = ArrayList<Uri>()
+        if (i.action == Intent.ACTION_SEND_MULTIPLE) {
+            val list = i.getParcelableArrayListExtra<Uri>(Intent.EXTRA_STREAM)
+            if (list != null) uris.addAll(list)
+            val cd = i.clipData
+            if (cd != null) for (k in 0 until cd.itemCount) cd.getItemAt(k).uri?.let { uris.add(it) }
+        } else {
+            i.getParcelableExtra<Uri>(Intent.EXTRA_STREAM)?.let { uris.add(it) }
+            val cd = i.clipData
+            if (cd != null) for (k in 0 until cd.itemCount) cd.getItemAt(k).uri?.let { uris.add(it) }
+        }
+        var picked: Uri? = null
+        var pickedKind = ""
+        for (u in uris) {
+            val kind = sharedMediaKind(u)
+            if (kind.isNotEmpty()) {
+                picked = u
+                pickedKind = kind
+                break
+            }
+        }
+        if (picked == null) return false
+        i.action = null   // ما يتكررش لو الأكتيفيتي اتعمل لها إعادة إنشاء
+        val uri = picked
+        val kind = pickedKind
+        Thread {
+            try {
+                val name = sharedDisplayName(uri)
+                val ext = name.substringAfterLast('.', "").lowercase()
+                val safeExt = when {
+                    ext.isNotBlank() && ext.length <= 5 && ext.all { it.isLetterOrDigit() } -> "." + ext
+                    kind == "audio" -> ".mp3"
+                    else -> ".mp4"
+                }
+                val inbox = File(filesDir, "studio_inbox").also { it.mkdirs() }
+                val base = TrLib.safeName(name.substringBeforeLast('.', name))
+                var target = File(inbox, base + safeExt)
+                var n = 2
+                while (target.exists()) {
+                    target = File(inbox, base + "_" + n + safeExt)
+                    n++
+                }
+                contentResolver.openInputStream(uri)?.use { inp ->
+                    target.outputStream().use { out -> inp.copyTo(out) }
+                } ?: throw java.io.IOException("مقدرتش أقرا الملف المشترك")
+                val title = name.substringBeforeLast('.', name).ifBlank { if (kind == "audio") "تسجيل صوتي" else "فيديو" }
+                val d = Lecture.newDoc(applicationContext, kind, title, Uri.fromFile(target).toString(), "")
+                // النوع بيتساب فاضي عمدًا — Lecture.start بيشغّل TxDetect ويكتشفه تلقائيًا.
+                Lecture.start(applicationContext, d)
+                runOnUiThread {
+                    try {
+                        val th = Themes.current()
+                        val ui = Ui(this, th)
+                        LectureUi(this, ui, th).open(d)
+                    } catch (e: Throwable) {
+                        LogStore.err("Main:shareOpen", e)
+                        Notice.show(this, "⚠ اتحفظ الملف وبدأ التفريغ — افتحه من 🎙 الاستوديو", 3400L)
+                    }
+                }
+            } catch (e: Throwable) {
+                LogStore.err("Main:shareMedia", e)
+                runOnUiThread { Notice.show(this, "⚠ مقدرتش أستقبل الملف المشترك: " + (e.message ?: "").take(80), 3400L) }
+            }
+        }.apply { isDaemon = true; start() }
+        return true
+    }
+
+    // نوع الوسائط من MIME الرسمي، ولو مش متاح من امتداد اسم الملف — فاضي لو مش صوت/فيديو.
+    private fun sharedMediaKind(u: Uri): String {
+        val mime = try { contentResolver.getType(u) ?: "" } catch (_: Throwable) { "" }
+        if (mime.startsWith("audio/")) return "audio"
+        if (mime.startsWith("video/")) return "video"
+        val name = try {
+            sharedDisplayName(u)
+        } catch (_: Throwable) {
+            ""
+        }.lowercase()
+        val audioExt = listOf(".mp3", ".wav", ".m4a", ".aac", ".ogg", ".opus", ".flac", ".amr", ".3gp", ".wma")
+        val videoExt = listOf(".mp4", ".mkv", ".webm", ".mov", ".avi", ".3gp", ".m4v", ".ts")
+        if (audioExt.any { name.endsWith(it) }) return "audio"
+        if (videoExt.any { name.endsWith(it) }) return "video"
+        return ""
+    }
+
+    private fun sharedDisplayName(u: Uri): String {
+        return try {
+            contentResolver.query(u, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { c ->
+                if (c.moveToFirst()) c.getString(0) ?: "" else ""
+            } ?: ""
+        } catch (_: Throwable) {
+            ""
+        }
     }
     // (v468) اتحذفت قايمة «افتحه إزاي؟» الميتة — لينكات يوتيوب بتفتح مباشرة من v467
     class StyleParts(val holder: View, val fonts: List<View>, val anim: List<View>, val look: List<View>)
@@ -1431,7 +1533,152 @@ class MainActivity : Activity() {
     }
 
     // (v469) D5 نسخة شاملة: كل الإعدادات (Backup.toJson) + ملف سجل المشاهدة/الاستئناف في JSON واحد — المفضلة والتقييمات وقوائم التشغيل والإحصائيات جوّه الإعدادات أصلًا فبتتسافر معاها
-    private fun fullJson(): String = try { org.json.JSONObject().put("kind", "subtitler-full").put("ver", 469).put("cfg", Backup.toJson()).put("recent", try { File(filesDir, "recent.json").readText() } catch (_: Throwable) { "" }).toString() } catch (e: Throwable) { LogStore.err("Main:fullJson", e); Backup.toJson() }
+    // (v1003) + قسم "studio": دوكيومنتات الاستوديو + intel + series/courses + فهرس الأصوات + excl/redact + علامة pinSet بس.
+    private fun fullJson(): String = try { org.json.JSONObject().put("kind", "subtitler-full").put("ver", 469).put("cfg", Backup.toJson()).put("recent", try { File(filesDir, "recent.json").readText() } catch (_: Throwable) { "" }).put("studio", studioBackupSection()).toString() } catch (e: Throwable) { LogStore.err("Main:fullJson", e); Backup.toJson() }
+
+    // (v1003) قسم الاستوديو في النسخة الشاملة — ملفات صغيرة نصية بس، من غير أي صوت:
+    //  • صوت البصمات (voices/*.wav) مبيتسافرش — فهرس index.json بس (المفاتيح/الأسماء).
+    //  • الـPIN مبيتسافرش أبدًا (لا الهاش ولا الملح) — pinSet علامة بس، والاسترجاع مبيسترجعوش.
+    //  • السقوف: أي دوكيومنت JSON أكبر من 2MB بيتخطى (وبتتسجل ids بتاعته)، ولو المجموع عدّى 8MB
+    //    بيتاخد أحدث 50 دوكيومنت بس (وبتتسجل truncated). النسخة التلقائية (Backup) لسه إعدادات بس.
+    private fun studioBackupSection(): org.json.JSONObject {
+        val root = org.json.JSONObject()
+        val docs = org.json.JSONObject()
+        val intel = org.json.JSONObject()
+        val skipped = org.json.JSONArray()
+        var totalBytes = 0L
+        val byCreated = ArrayList<Triple<String, Long, String>>()
+        try {
+            val lecDir = File(filesDir, "lectures")
+            for (f in lecDir.listFiles().orEmpty()) {
+                if (!f.name.endsWith(".json")) continue
+                val text = try { f.readText(Charsets.UTF_8) } catch (_: Throwable) { continue }
+                if (f.name.endsWith(".intel.json")) {
+                    intel.put(f.name.removeSuffix(".intel.json"), text)
+                    continue
+                }
+                val id = f.name.removeSuffix(".json")
+                if (text.length > 2 * 1024 * 1024) {
+                    skipped.put(id)
+                    continue
+                }
+                val created = try { org.json.JSONObject(text).optLong("created", f.lastModified()) } catch (_: Throwable) { f.lastModified() }
+                byCreated.add(Triple(id, created, text))
+                totalBytes += text.length
+            }
+        } catch (e: Throwable) {
+            LogStore.err("Main:studioBackup", e)
+        }
+        var truncated = false
+        val sorted = byCreated.sortedByDescending { it.second }
+        val take = if (totalBytes > 8 * 1024 * 1024) 50 else sorted.size
+        for ((idx, triple) in sorted.withIndex()) {
+            val id = triple.first
+            val text = triple.third
+            if (idx >= take) {
+                truncated = true
+                skipped.put(id)
+                continue
+            }
+            docs.put(id, text)
+        }
+        root.put("docs", docs)
+        root.put("intel", intel)
+        root.put("series", readSmallText(File(filesDir, "studio_series.json")))
+        root.put("courses", readSmallText(File(filesDir, "studio_courses.json")))
+        root.put("voicesIndex", readSmallText(File(File(filesDir, "voices"), "index.json")))
+        root.put("excl", Cfg.str(StudioIntel.EXCL_KEY, ""))
+        root.put("redact", StudioPrivacy.isRedactOn(this))
+        root.put("pinSet", StudioPrivacy.isPinSet(this))
+        root.put("skipped", skipped)
+        root.put("truncated", truncated)
+        return root
+    }
+
+    private fun readSmallText(f: File): String {
+        return try {
+            if (!f.exists() || f.length() > 1024 * 1024) "" else f.readText(Charsets.UTF_8)
+        } catch (_: Throwable) {
+            ""
+        }
+    }
+
+    // (v1003) استرجاع قسم الاستوديو — بيرجّع ملخص عدّاد للوج (واتسجّل في LogStore):
+    // دوكيومنت محلي أحدث (created أكبر) مبيتكتبش فوقه أبدًا. series/courses/index بيتكتبوا بس لو
+    // الملف المحلي مش موجود (مش بيتدمجوا — الدمج ممكن يضيّع إدخالات أجدد). الـPIN مبيسترجعش.
+    private fun restoreStudioSection(o: org.json.JSONObject): String {
+        var restoredDocs = 0
+        var keptLocal = 0
+        var restoredIntel = 0
+        var restoredShared = 0
+        try {
+            val lecDir = File(filesDir, "lectures").also { it.mkdirs() }
+            val docs = o.optJSONObject("docs")
+            if (docs != null) {
+                val ks = docs.keys()
+                while (ks.hasNext()) {
+                    val id = ks.next()
+                    val text = docs.optString(id, "")
+                    if (text.isBlank()) continue
+                    val incoming = try { org.json.JSONObject(text).optLong("created", 0L) } catch (_: Throwable) { 0L }
+                    val local = File(lecDir, "$id.json")
+                    if (local.exists()) {
+                        val localCreated = try { org.json.JSONObject(local.readText(Charsets.UTF_8)).optLong("created", 0L) } catch (_: Throwable) { 0L }
+                        if (localCreated > incoming) {
+                            keptLocal++
+                            continue
+                        }
+                    }
+                    try {
+                        local.writeText(text, Charsets.UTF_8)
+                        restoredDocs++
+                    } catch (e: Throwable) {
+                        LogStore.err("Main:studioRestoreDoc", e)
+                    }
+                }
+            }
+            val intel = o.optJSONObject("intel")
+            if (intel != null) {
+                val ks = intel.keys()
+                while (ks.hasNext()) {
+                    val id = ks.next()
+                    val text = intel.optString(id, "")
+                    if (text.isBlank()) continue
+                    try {
+                        File(lecDir, "$id.intel.json").writeText(text, Charsets.UTF_8)
+                        restoredIntel++
+                    } catch (e: Throwable) {
+                        LogStore.err("Main:studioRestoreIntel", e)
+                    }
+                }
+            }
+            restoredShared += restoreSharedStudioFile(File(filesDir, "studio_series.json"), o.optString("series", ""))
+            restoredShared += restoreSharedStudioFile(File(filesDir, "studio_courses.json"), o.optString("courses", ""))
+            restoredShared += restoreSharedStudioFile(File(File(filesDir, "voices").also { it.mkdirs() }, "index.json"), o.optString("voicesIndex", ""))
+            val excl = o.optString("excl", "")
+            if (excl.isNotBlank()) Cfg.put(StudioIntel.EXCL_KEY, excl)
+            if (o.has("redact")) StudioPrivacy.setRedactOn(this, o.optBoolean("redact", false))
+            if (o.optBoolean("pinSet", false)) LogStore.add("🔐 النسخة فيها PIN استوديو — مبيسترجعش، اعمل PIN جديد من الاستوديو")
+        } catch (e: Throwable) {
+            LogStore.err("Main:studioRestore", e)
+        }
+        val summary = "استوديو: $restoredDocs دوكيومنت، $restoredIntel intel، $restoredShared ملف مشترك، $keptLocal محلي أحدث اتساب"
+        LogStore.add("📥 " + summary)
+        return summary
+    }
+
+    private fun restoreSharedStudioFile(f: File, text: String): Int {
+        if (text.isBlank()) return 0
+        return try {
+            if (f.exists() && f.length() > 0) 0 else {
+                f.writeText(text, Charsets.UTF_8)
+                1
+            }
+        } catch (e: Throwable) {
+            LogStore.err("Main:studioRestoreShared", e)
+            0
+        }
+    }
     private fun fullToFile() {
         try { saveCfgFn?.invoke() } catch (_: Throwable) {}
         val stamp = java.text.SimpleDateFormat("yyyyMMdd-HHmm", java.util.Locale.US).format(java.util.Date())
@@ -1446,6 +1693,9 @@ class MainActivity : Activity() {
         val o = try { org.json.JSONObject(txt) } catch (_: Throwable) { null }
         if (o == null || !o.has("cfg")) { restoreBackup(txt); return }   // ملف نسخة عادية (مش شاملة) — بيترجع بالمسار العادي
         try { val rec = o.optString("recent", ""); if (rec.isNotEmpty()) File(filesDir, "recent.json").writeText(rec) } catch (e: Throwable) { LogStore.err("Main:fullRecent", e) }
+        if (o.has("studio")) {
+            try { restoreStudioSection(o.optJSONObject("studio") ?: org.json.JSONObject()) } catch (e: Throwable) { LogStore.err("Main:fullStudio", e) }
+        }
         restoreBackup(o.optString("cfg", ""))
     }
 

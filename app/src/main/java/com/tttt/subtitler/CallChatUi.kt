@@ -75,6 +75,7 @@ class CallChatUi(private val act: Activity, private val ui: Ui, private val th: 
         var bubbleViews = ArrayList<View>()
         val titleV = ui.text(Studio.displayTitle(d).ifBlank { "مكالمة" }, 15f, th.text, true).apply { maxLines = 2; ellipsize = TextUtils.TruncateAt.END }
         val metaV = ui.text("", 12f, th.muted)
+        val toneBar = hrow()
         val body = vcol()
         val bodyScroll = ScrollView(act).apply { isVerticalScrollBarEnabled = false; addView(body) }
 
@@ -90,6 +91,35 @@ class CallChatUi(private val act: Activity, private val ui: Ui, private val th: 
 
         fun refreshHeader() {
             metaV.text = headerLine()
+        }
+
+        // (v1002) خط زمني للنبرة: شريط ملوّن من Seg.tone — الدوسة على جزء بتقفز للفقاعة اللي فيها اللحظة.
+        fun jumpToBubble(sec: Double) {
+            try {
+                val segs = Lecture.displaySegs(d)
+                val segIdx = segs.indexOfFirst { it.start >= sec }
+                if (segIdx < 0) return
+                val bi = bubbles.indexOfLast { it.firstSegIdx <= segIdx }
+                if (bi < 0) return
+                val v = bubbleViews.getOrNull(bi) ?: return
+                bodyScroll.post { bodyScroll.scrollTo(0, v.top) }
+            } catch (_: Throwable) {}
+        }
+
+        fun paintTone() {
+            toneBar.removeAllViews()
+            val segs = StudioIntel.toneSegments(d)
+            if (segs.isEmpty()) return
+            val total = d.durSec.coerceAtLeast(1.0)
+            for (t in segs) {
+                val w = ((t.end - t.start) / total).toFloat().coerceAtLeast(0.02f)
+                val v = View(act).apply {
+                    setBackgroundColor(StudioIntel.toneColor(t.tone))
+                    isClickable = true
+                    setOnClickListener { jumpToBubble(t.start) }
+                }
+                toneBar.addView(v, LinearLayout.LayoutParams(0, -1, w).apply { marginEnd = 1 })
+            }
         }
 
         fun isAtBottom(): Boolean {
@@ -131,7 +161,10 @@ class CallChatUi(private val act: Activity, private val ui: Ui, private val th: 
                 })
             }
             box.addView(top)
-            box.addView(ui.text(b.text, 14f, th.text).apply { setLineSpacing(0f, 1.3f); setTextIsSelectable(true) }, lp(-1, -2, 4))
+            // (v1003) الإخفاء بيتطبق على العرض بس — الفقاعة نفسها (CallChat.Bubble) مبتتغيّرش.
+            val parties = synchronized(d) { d.parties.toList() }
+            val shownText = if (StudioPrivacy.isRedactOn(act)) StudioPrivacy.redact(b.text, parties) else b.text
+            box.addView(ui.text(shownText, 14f, th.text).apply { setLineSpacing(0f, 1.3f); setTextIsSelectable(true) }, lp(-1, -2, 4))
             val meta = hrow()
             meta.addView(ui.text(Lecture.fmtTime(b.start), 11f, th.muted, true))
             if (b.tone.isNotBlank()) {
@@ -152,6 +185,23 @@ class CallChatUi(private val act: Activity, private val ui: Ui, private val th: 
                 }
                 if (seg == null) return@setOnClickListener
                 LectureUi(act, ui, th).editSegDialog(d, seg) { lastSig = ""; renderAll(); refreshHeader() }
+            }
+            // (G8) ضغطة طويلة على الفقاعة = علامة على لحظة أول جملة فيها (نفس نافذة 0.6ث بتاعة sentRow).
+            outer.setOnLongClickListener {
+                val seg = try {
+                    Lecture.displaySegs(d).getOrNull(b.firstSegIdx)
+                } catch (_: Throwable) {
+                    null
+                }
+                if (seg == null) return@setOnLongClickListener false
+                val added = try {
+                    StudioIntel.toggleBookmark(act, d, seg)
+                } catch (e: Throwable) {
+                    LogStore.err("CallChatUi:bookmark", e)
+                    false
+                }
+                Notice.show(act, if (added) "🔖 اتحفظت العلامة عند " + Lecture.fmtTime(seg.start) else "🔖 اتشالت العلامة", 2200L)
+                true
             }
             return outer
         }
@@ -179,11 +229,13 @@ class CallChatUi(private val act: Activity, private val ui: Ui, private val th: 
                     if (wasBottom) bodyScroll.scrollTo(0, body.height) else bodyScroll.scrollTo(0, sy)
                 } catch (_: Throwable) {}
             }
+            paintTone()
         }
 
         val content = vcol().apply { layoutParams = lp(-1, -1) }
         content.addView(titleV)
         content.addView(metaV, lp(-1, -2, 2))
+        content.addView(toneBar, LinearLayout.LayoutParams(-1, ui.dp(10)).apply { topMargin = ui.dp(6) })
         content.addView(bodyScroll, LinearLayout.LayoutParams(-1, 0, 1f).apply { topMargin = ui.dp(8) })
 
         val acts = hrow().apply { layoutParams = LinearLayout.LayoutParams(-1, -2) }

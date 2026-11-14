@@ -6,6 +6,12 @@ object LockCore {
     fun hash(salt: String, pattern: List<Int>): String =
         java.security.MessageDigest.getInstance("SHA-256").digest((salt + ":" + pattern.joinToString("-")).toByteArray()).joinToString("") { "%02x".format(it) }
     fun newSalt(): String { val a = ByteArray(16); java.security.SecureRandom().nextBytes(a); return a.joinToString("") { "%02x".format(it) } }
+    /** (v1003) هاش PIN الاستوديو الرقمي — نفس عادة hash() بس على نص الـPIN مش قايمة أرقام */
+    fun hashPin(salt: String, pin: String): String {
+        val bytes = (salt + ":" + pin).toByteArray()
+        val digest = java.security.MessageDigest.getInstance("SHA-256").digest(bytes)
+        return digest.joinToString("") { "%02x".format(it) }
+    }
     /** بعد 5 محاولات غلط: 30 ثانية، وبتتضاعف مع كل محاولة غلط زيادة (الحد الأقصى 10 دقايق) */
     fun lockoutMs(fails: Int): Long = if (fails < 5) 0L else minOf(30_000L shl (fails - 5).coerceAtMost(5), 600_000L)
     /** لو عدّيت على نقطة ما بين نقطتين (مثلًا 0 → 2) النقطة اللي في النص (1) بتتحسب */

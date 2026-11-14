@@ -291,7 +291,8 @@ object WaridTx {
      * القطع ≥ 5MB base64 بتترفع Files API الأول وبتتمسح في finally بعد الـ generateContent.
      */
     // (v1001) offset: إزاحة المراجع الملزوقة قبل المقطع (CallKit.mix) — أي عنصر بيبدأ قبلها هو المرجع نفسه وبيتخطى، والباقي بتتطرح منه.
-    fun transcribeChunk(run: Lecture.Run, keys: List<String>, wav: WavChunk, idx: Int, worker: Int, chunkSec: Double, chunkDur: Double, prompt: String, offset: Double = 0.0): Boolean {
+    // (G1) accurate: إعادة تفريغ جملة — الـlite بيتستبعد من المحاولات، فالسلسلة بتبدأ من أول موديل Flash مش lite.
+    fun transcribeChunk(run: Lecture.Run, keys: List<String>, wav: WavChunk, idx: Int, worker: Int, chunkSec: Double, chunkDur: Double, prompt: String, offset: Double = 0.0, accurate: Boolean = false): Boolean {
         val d = run.doc
         val st = idx * chunkSec
         val prevThink = Api.thinkBudget0.get()
@@ -302,6 +303,8 @@ object WaridTx {
         AudioEnc.lossless.set(true)
         try {
             val tried = HashSet<String>()
+            // (G1) إعادة التفريغ بموديل أقوى: الـlite مش في المحاولات أصلًا — أول pickModel هيبقى Flash.
+            if (accurate) tried.addAll(CHAIN.filter { it.contains("lite") })
             for (a in 0 until 4) {
                 if (run.stop) return false
                 val model = pickModel(tried) ?: break
@@ -341,7 +344,7 @@ object WaridTx {
                         val s0 = (x.optDouble("start", 0.0)).coerceIn(0.0, chunkDur)
                         val e0 = (x.optDouble("end", s0)).coerceIn(s0, chunkDur)
                         if (s0 < offset) continue
-                        got.add(Lecture.Seg(st + s0 - offset, st + e0 - offset, t, idx, Lecture.spkOf(x.optString("spk")), Lecture.normLangCode(x.optString("lang")), Lecture.toneOf(x.optString("tone"))))
+                        got.add(Lecture.Seg(st + s0 - offset, st + e0 - offset, t, idx, Lecture.spkOf(x.optString("spk")), Lecture.normLangCode(x.optString("lang")), Lecture.toneOf(x.optString("tone")), Lecture.confOf(x.optDouble("conf", -1.0))))
                     }
                     synchronized(d) {
                         d.segs.removeAll { it.chunk == idx }
