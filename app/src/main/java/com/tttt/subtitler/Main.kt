@@ -949,6 +949,7 @@ class MainActivity : Activity() {
                 if (i == 7 && prevTab != 7) tabBeforeSettings = prevTab
                 if (prevTab == 7 && i != 7) { try { save(); refreshChip() } catch (_: Throwable) {} }
                 curTab = i
+                NavOrigin.mainTab(i)   // (v1006)
                 NetLedger.tab(when (i) { 0 -> "فيديوهات"; 1 -> "يوتيوب"; 5 -> "المهام"; 7 -> "الإعدادات"; else -> "تبويب $i" })
                 dockUi?.refresh()   // (v344) المشغّل المصغّر بيختفي
                 stripUi?.hidden = (curTab == 5)   // (v345) في صفحة الموسيقى وبيظهر في الباقي

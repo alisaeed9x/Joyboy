@@ -527,6 +527,7 @@ object Lecture {
                 return true
             } catch (e: NoKey) { run.error = e.message ?: "مفيش مفتاح"; run.stop = true; return false }
             catch (e: ApiErr) {
+                if (e.code == 502 && e.raw.startsWith("جوجل رجّع صفحة HTML")) { run.error = e.raw.take(200); run.stop = true; return false }
                 if (e.code == 429 || e.code >= 500) { try { Thread.sleep(1500L * (a + 1)) } catch (_: InterruptedException) {} }
                 else if (e.code != 400 && e.code != 403) { run.error = (e.message ?: "").take(120); return false }
             } catch (e: Throwable) { LogStore.err("Lecture:chunk", e); try { Thread.sleep(800) } catch (_: InterruptedException) {} }

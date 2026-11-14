@@ -2367,6 +2367,9 @@ public class MobilePlaybackActivity extends MobileActivity
         }
 
         mIsResumed = false;
+        if (isFinishing()) {
+            mClosedFromForeground = true; // JOYBOY(v1006): finished while on screen (Back / close) — not a PiP window dismissed from outside
+        }
         if (mAmbient != null) {
             mAmbient.stop();
         }
@@ -2733,6 +2736,13 @@ public class MobilePlaybackActivity extends MobileActivity
         }
         NetPath.log("theme player in-place lists=" + lists.size() + " skipped=" + skipped);
         return true;
+    }
+
+    /** JOYBOY(v1006): true = this player was closed while it was the visible screen (so the app should return to the page it was opened from). */
+    private boolean mClosedFromForeground;
+
+    public static boolean closedFromForeground(android.app.Activity a) {
+        return a instanceof MobilePlaybackActivity && ((MobilePlaybackActivity) a).mClosedFromForeground;
     }
 
     private void handleBack() {

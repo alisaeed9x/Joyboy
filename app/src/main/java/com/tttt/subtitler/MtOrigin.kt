@@ -19,7 +19,7 @@ import android.content.Intent
  */
 object MtOrigin {
     enum class Kind { YOUTUBE, BROWSER, LOCAL, EXTERNAL, DIRECT_URL, PLAYLIST, REMOTE_TV }
-    enum class ReturnTo { NONE, BROWSER, YOUTUBE, VIDEOS, TV_HOME }
+    enum class ReturnTo { NONE, BROWSER, YOUTUBE, VIDEOS, FILES, TV_HOME }
 
     class Origin(
         val kind: Kind,
@@ -30,7 +30,8 @@ object MtOrigin {
         val page: String,
         val sessionId: String,
         val startedMini: Boolean,
-        val headers: Map<String, String> = emptyMap()
+        val headers: Map<String, String> = emptyMap(),
+        val from: String = ""   // (v1006) الصفحة اللي اتفتح منها الفيديو (NavOrigin)
     )
 
     @Volatile private var current: Origin? = null
@@ -95,19 +96,28 @@ object MtOrigin {
         }
     }
 
-    /** وجهة الرجوع من المصدر. يوتيوب بس اللي بيرجع ليوتيوب؛ أي مصدر تاني لا. */
+    /** (v1006) الصفحة المسجّلة ← وجهة الرجوع */
+    private fun fromDest(from: String): ReturnTo? = when (from) {
+        "yt" -> ReturnTo.YOUTUBE
+        "browser" -> ReturnTo.BROWSER
+        "files" -> ReturnTo.FILES
+        "videos", "music", "tasks", "settings" -> ReturnTo.VIDEOS
+        else -> null
+    }
+
+    private fun tabOf(from: String): String = if (from == "music" || from == "tasks" || from == "settings") from else "videos"
+
+    /** وجهة الرجوع: الصفحة اللي فتحت منها الفيديو (ret الصريح الأول، وبعدين الصفحة المسجّلة). */
     fun destination(o: Origin): ReturnTo {
         return when (o.ret) {
             "browser" -> ReturnTo.BROWSER
             "yt" -> ReturnTo.YOUTUBE
             else -> when (o.kind) {
                 Kind.BROWSER -> ReturnTo.BROWSER
-                Kind.YOUTUBE -> ReturnTo.NONE
+                Kind.YOUTUBE -> fromDest(o.from) ?: ReturnTo.YOUTUBE
                 Kind.REMOTE_TV -> ReturnTo.TV_HOME
                 Kind.EXTERNAL -> ReturnTo.VIDEOS
-                Kind.LOCAL -> ReturnTo.VIDEOS
-                Kind.DIRECT_URL -> ReturnTo.VIDEOS
-                Kind.PLAYLIST -> ReturnTo.VIDEOS
+                Kind.LOCAL, Kind.DIRECT_URL, Kind.PLAYLIST -> fromDest(o.from) ?: ReturnTo.VIDEOS
             }
         }
     }
@@ -117,7 +127,10 @@ object MtOrigin {
         try {
             returnStarted = false
             val kind = classify(i, src, yt)
-            val ret = i.getStringExtra("ret") ?: ""
+            var ret = i.getStringExtra("ret") ?: ""
+            val from = NavOrigin.last()
+            // (v1006) فيديو يوتيوب اتفتح من صفحة تانية (استوديو/ميديا/ملفات…): الرجوع لصفحته مش ليوتيوب
+            if (ret == "yt" && src == null && yt != null && from.isNotEmpty() && from != "yt") ret = ""
             val page = i.getStringExtra("page") ?: ""
             val vid = yt ?: ""
             val mini = i.getBooleanExtra("mini", false) || i.getBooleanExtra("pip", false)
@@ -129,7 +142,7 @@ object MtOrigin {
             i.getStringExtra("cookie")?.takeIf { it.isNotEmpty() }?.let { hdr["Cookie"] = it }
             val prev = current
             val sid = if (prev != null && prev.src == (src ?: "") && prev.kind == kind) prev.sessionId else java.util.UUID.randomUUID().toString().take(12)
-            current = Origin(kind, src ?: "", vid, title, ret, page, sid, mini, hdr)
+            current = Origin(kind, src ?: "", vid, title, ret, page, sid, mini, hdr, from)
         } catch (e: Throwable) {
             LogStore.err("MtOrigin:record", e)
         }
@@ -137,40 +150,52 @@ object MtOrigin {
 
     /**
      * الرجوع عند الإغلاق الفعلي للمشغّل. true = اتنفّذ تنقّل.
-     * بيتنده بعد MtWeb.onDetach (اللي بيغطّي ret للمصطادة) فلو هو رجّع خلاص مانرجّعش تاني.
-     * شرط الإغلاق الفعلي (مش تدوير/تغيير سطح) بيتفحص هنا زي MtWeb.
+     * (v1006) إصلاح: الشرط القديم كان بيفحص `a.isDestroyed` وده دايمًا true جوه onDestroy (اللي منه بيتنده detach)،
+     * فالرجوع للمصدر ماكانش بيشتغل أبدًا والنظام كان بيختار صفحة عشوائية. دلوقتي: الإغلاق لازم يبقى والمشغّل ظاهر قدّامك
+     * (مش قفل PiP من برّه) والوجهة هي الصفحة اللي فتحت منها الفيديو، بـREORDER_TO_FRONT (من غير ما نقفل صفحات تانية).
      */
     fun onDetach(a: Activity, src: String?, videoId: String? = null): Boolean {
         try {
-            if (!a.isFinishing || a.isDestroyed || a.isChangingConfigurations) return false
-            val o = current ?: return false
+            if (!a.isFinishing || a.isChangingConfigurations) return false
+            val o = current
             if (returnStarted) {
                 returnStarted = false
                 current = null
                 return false
             }
-            // (v983) المصدر المسجّل مش بتاع الفيديو اللي بيتقفل ده: ما نرجّعش بيه، ونمسحه عشان ما يفضلش قديم يتلوّث بيه اللي بعده
-            if (src != null && o.src != src && o.src.isNotEmpty()) {
-                current = null
+            if (!com.newtube.mobile.ui.playback.MobilePlaybackActivity.closedFromForeground(a)) {
+                if (o != null && (src == null || o.src == src)) current = null
                 return false
             }
-            // (v979) فيديو يوتيوب من فيد MeeTube (من غير src) وملوش تسجيل بتاعه: المصدر اللي موجود قديم — ما نرجّعش بيه (كان بيفتح ميديا/المتصفح عند القفل)
-            if (src == null && !isFor(videoId, null)) {
+            val dest: ReturnTo
+            var tab = "videos"
+            if (o != null && ((src != null && (o.src == src || o.src.isEmpty())) || (src == null && isFor(videoId, null)))) {
+                dest = destination(o)
+                tab = tabOf(o.from)
+            } else if (src == null) {
+                dest = ReturnTo.YOUTUBE   // فيديو يوتيوب من فيد MeeTube نفسه — مالوش تسجيل: يرجع ليوتيوب
                 current = null
+            } else {
+                current = null            // مصدر قديم مش بتاع الفيديو ده
                 return false
             }
-            val dest = destination(o)
             if (dest == ReturnTo.NONE) {
                 current = null
                 return false
             }
             current = null
-            val flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
+            val app = a.applicationContext
+            val nt = Intent.FLAG_ACTIVITY_NEW_TASK
             when (dest) {
-                ReturnTo.BROWSER -> a.startActivity(Intent(a, BrowserActivity::class.java).addFlags(flags))
-                ReturnTo.YOUTUBE -> a.startActivity(Intent(a, MainActivity::class.java).addFlags(flags).putExtra("tab", "youtube"))
-                ReturnTo.VIDEOS -> a.startActivity(Intent(a, MainActivity::class.java).addFlags(flags).putExtra("tab", "videos"))
-                ReturnTo.TV_HOME -> a.startActivity(Intent(a, TvActivity::class.java).addFlags(flags))
+                ReturnTo.BROWSER -> app.startActivity(TabNav.front(Intent(app, BrowserActivity::class.java)).addFlags(nt))
+                ReturnTo.YOUTUBE -> {
+                    if (!com.newtube.mobile.ui.browse.MobileBrowseActivity.bringToFront(a)) {
+                        a.startActivity(Intent(a, MainActivity::class.java).addFlags(nt or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP).putExtra("tab", "youtube"))
+                    }
+                }
+                ReturnTo.VIDEOS -> app.startActivity(TabNav.main(app, tab).addFlags(nt))
+                ReturnTo.FILES -> app.startActivity(TabNav.front(FilesHub.intent(app)).addFlags(nt))
+                ReturnTo.TV_HOME -> app.startActivity(Intent(app, TvActivity::class.java).addFlags(nt or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP))
                 ReturnTo.NONE -> return false
             }
             return true

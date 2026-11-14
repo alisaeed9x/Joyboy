@@ -25,6 +25,7 @@ class JoyApp : Application() {
         }
         try { com.newtube.mobile.ui.common.PlayerTrace.sink = com.newtube.mobile.ui.common.PlayerTrace.Sink { l -> try { LogStore.add(l) } catch (_: Throwable) {} } } catch (_: Throwable) {}   // (v952)
         MtYt.app = this
+        NavOrigin.install(this)   // (v1006) آخر صفحة — للرجوع من الفيديو
         NavSnap.install(this)   // (v923) انتقال موحّد بين الشاشات (لقطة + فيد)
         MeeTubeLink.bindBar()
         MtTvRoute.install(this)   // (v928) «تشغّله فين؟» لفيديوهات MeeTube لما وضع التلفزيون شغّال

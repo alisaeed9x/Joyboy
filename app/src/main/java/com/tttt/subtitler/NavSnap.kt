@@ -83,6 +83,9 @@ object NavSnap : Application.ActivityLifecycleCallbacks {
 
     override fun onActivityStarted(a: Activity) {
         try {
+            // (v1006) المشغّل مبياخدش لقطة صفحة قديمة أبدًا — كانت بتظهر لقطة «آخر صفحة استوديو» فوق الفيديو لحظة وتعمل رعشة
+            val cn = a.javaClass.simpleName
+            if (cn.contains("Playback") || cn == "PlayerActivity") { shot?.recycle(); shot = null; from = null; justCreated.remove(a); return }
             if (justCreated.remove(a) == null) { shot?.recycle(); shot = null; from = null; return }
             val bmp = shot ?: return
             if (SystemClock.uptimeMillis() - shotAt > 2000L || from?.get() === a) return

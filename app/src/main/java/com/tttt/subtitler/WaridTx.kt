@@ -363,6 +363,11 @@ object WaridTx {
                     LogStore.add("🌐 [وارد] $model وقف الستريم (stall) — نص جزئي ${e.partial.length} حرف، بنجرّب اللي بعده")
                     continue
                 } catch (e: ApiErr) {
+                    if (e.code == 502 && e.raw.startsWith("جوجل رجّع صفحة HTML")) {
+                        run.error = e.raw.take(200)
+                        run.stop = true
+                        return false
+                    }
                     noteFailure(model, e)
                     if (e.code == 429 || e.code >= 500) {
                         try {

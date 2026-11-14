@@ -143,69 +143,32 @@ class StudioUi(private val act: Activity, private val ui: Ui, private val th: Th
 
     private fun showGated() {
         val cards = vcol()
-        cards.addView(card("🎓", "تفريغ محاضرة", "تفريغ حرفي + تنظيم + تلخيص") {
-            try {
-                LectureUi(act, ui, th).show()
-            } catch (e: Throwable) { LogStore.err("StudioUi:lecture", e) }
-        }, lp(-1, -2, 10))
-        cards.addView(card("🎙", "تفريغ تسجيل صوتي", "ريكوردز وصوتيات الجهاز") {
-            try {
-                openRecordings("audio", true)
-            } catch (e: Throwable) { LogStore.err("StudioUi:audio", e) }
-        }, lp(-1, -2, 8))
-        cards.addView(card("📞", "تفريغ مكالمة", "مكالمة مسجلة — النوع بيتحدد وانت بتفرّغ") {
-            try {
-                openRecordings("call", false)
-            } catch (e: Throwable) { LogStore.err("StudioUi:call", e) }
-        }, lp(-1, -2, 8))
-        cards.addView(card("💬", "ترجمة فيديو", "فيديو ← ملف SRT في مكتبة الترجمات") {
-            try {
-                startVideoFlow("subs")
-            } catch (e: Throwable) { LogStore.err("StudioUi:subs", e) }
-        }, lp(-1, -2, 8))
-        cards.addView(card("✨", "تلقائي", "اختار فيديو أو صوت — النوع بيتحدد تلقائي وانت بتفرّغ، وتقدر تغيّره يدوي بعدين") {
-            try {
-                autoChoice()
-            } catch (e: Throwable) { LogStore.err("StudioUi:auto", e) }
-        }, lp(-1, -2, 8))
-        cards.addView(card("📞", "المكالمات المسجلة", "أسماء من جهات الاتصال · بصمة صوت") {
-            try {
-                LectureUi(act, ui, th).showCalls()
-            } catch (e: Throwable) { LogStore.err("StudioUi:calls", e) }
-        }, lp(-1, -2, 8))
-        cards.addView(card("🎤", "الأصوات المحفوظة", "بصمات صوت جهات الاتصال — إعادة تسمية · حذف") {
-            try {
-                CallChatUi(act, ui, th).showVoices()
-            } catch (e: Throwable) { LogStore.err("StudioUi:voices", e) }
-        }, lp(-1, -2, 8))
-        cards.addView(card("🔁", "تفريغ تلقائي للمكالمات", "مكالمات جديدة تتفرّغ لوحدها — واي-فاي/شاحن بس") {
-            try {
-                StudioIntelUi(act, ui, th).showAutoCall()
-            } catch (e: Throwable) { LogStore.err("StudioUi:autoCall", e) }
-        }, lp(-1, -2, 8))
-        cards.addView(card("🔒", "خصوصية", "PIN · إخفاء · إحصائيات · ملخص · استثناء") {
-            try {
-                StudioPrivacyUi(act, ui, th).show()
-            } catch (e: Throwable) { LogStore.err("StudioUi:privacy", e) }
-        }, lp(-1, -2, 8))
-        cards.addView(card("📚", "الكورسات", "محاضرات مربوطة بمادة واحدة + قاموس تراكمي + Anki") {
-            try {
-                StudioIntelUi(act, ui, th).showCourses()
-            } catch (e: Throwable) { LogStore.err("StudioUi:courses", e) }
-        }, lp(-1, -2, 8))
-        cards.addView(card("📚", "سجل التفريغات", "كل التفريغات — فتح · ترجمة لـSRT · تغيير النوع") {
-            try {
-                showHistory()
-            } catch (e: Throwable) { LogStore.err("StudioUi:hist", e) }
-        }, lp(-1, -2, 8))
-        cards.addView(card("📚", "مكتبة الترجمات", "ترجمات الفيديو المحفوظة — فتح · استكمال · تصدير") {
-            try {
-                TrLibUi(act, ui, th).show()
-            } catch (e: Throwable) { LogStore.err("StudioUi:trlib", e) }
-        }, lp(-1, -2, 8))
+        fun section(t: String, top: Int) {
+            cards.addView(ui.text(t, 12f, th.muted, true).apply { setPadding(ui.dp(4), 0, ui.dp(4), 0) }, lp(-1, -2, top))
+        }
+        fun safe(tag: String, f: () -> Unit) {
+            try { f() } catch (e: Throwable) { LogStore.err("StudioUi:" + tag, e) }
+        }
+        // ===== ابدأ تفريغ: النوع بيتحدد تلقائي — مفيش أي سؤال عن النوع، وتقدر تغيّره من شاشة التفريغ =====
+        section("ابدأ", 6)
+        cards.addView(card("🎓", "محاضرة", "تفريغ حرفي + تنظيم + تلخيص") { safe("lecture") { LectureUi(act, ui, th).show() } }, lp(-1, -2, 6))
+        cards.addView(card("🎙", "تسجيل صوتي", "ريكوردز وصوتيات الجهاز") { safe("audio") { openRecordings("", true) } }, lp(-1, -2, 8))
+        cards.addView(card("📞", "مكالمة", "اختار مكالمة مسجلة — بتتفرّغ كمكالمة على طول") { safe("call") { openRecordings("call", false) } }, lp(-1, -2, 8))
+        cards.addView(card("🎬", "فيديو", "تفريغ كلامه أو ترجمته لـSRT أو مشاهدته — محلي · يوتيوب · لينك") { safe("video") { startVideoFlow("") } }, lp(-1, -2, 8))
+        // ===== المكالمات: كارت واحد بدل تلاتة =====
+        section("المكالمات", 16)
+        cards.addView(card("🗂", "إدارة المكالمات", "المكالمات المسجلة · الأصوات المحفوظة · التفريغ التلقائي") { safe("callsMenu") { callsMenu() } }, lp(-1, -2, 6))
+        // ===== مكتبتي =====
+        section("مكتبتي", 16)
+        cards.addView(card("🕘", "سجل التفريغات", "فتح · ترجمة لـSRT · تغيير النوع") { safe("hist") { showHistory() } }, lp(-1, -2, 6))
+        cards.addView(card("💬", "مكتبة الترجمات", "ترجمات الفيديو المحفوظة — فتح · استكمال · تصدير") { safe("trlib") { TrLibUi(act, ui, th).show() } }, lp(-1, -2, 8))
+        cards.addView(card("📚", "الكورسات", "محاضرات لمادة واحدة + قاموس تراكمي + Anki") { safe("courses") { StudioIntelUi(act, ui, th).showCourses() } }, lp(-1, -2, 8))
+        // ===== الإعدادات =====
+        section("إعدادات", 16)
+        cards.addView(card("🔒", "خصوصية", "PIN · إخفاء · إحصائيات · ملخص · استثناء") { safe("privacy") { StudioPrivacyUi(act, ui, th).show() } }, lp(-1, -2, 6))
         val col = vcol()
         col.layoutParams = lp(-1, -1)
-        col.addView(ui.text("مكان واحد للتفريغ والمذاكرة والترجمة والمكالمات.", 12.5f, th.muted), lp(-1, -2))
+        col.addView(ui.text("اختار تبدأ منين — النوع بيتحدد لوحده، وتقدر تغيّره بعد التفريغ.", 12.5f, th.muted), lp(-1, -2))
         val sc = ScrollView(act).apply { isVerticalScrollBarEnabled = false; addView(cards) }
         col.addView(sc, LinearLayout.LayoutParams(-1, 0, 1f).apply { topMargin = ui.dp(4) })
         val d = ui.sheet(act, "🎙 الاستوديو", listOf<View>(col), fixedH = true)
@@ -221,16 +184,18 @@ class StudioUi(private val act: Activity, private val ui: Ui, private val th: Th
         }.apply { isDaemon = true }.start()
     }
 
-    /** كارت «تلقائي ✨»: المصدر الأول، وبعدها النوع تلقائي أو يدوي — الاكتشاف التلقائي شغال من المرحلة 2 */
-    private fun autoChoice() {
-        val labels = arrayOf("🎬 فيديو", "🎙 تسجيل صوتي")
-        GAlert(act).setTitle("✨ تلقائي").setMessage("اختار المصدر — وبعدها اختار النوع يدوي، أو سيبه «✨ تلقائي» والبرنامج يحدده أول ما التفريغ يبدأ.").setItems(labels) { _, w ->
-            if (w == 0) {
-                startVideoFlow("")
-            } else {
-                openRecordings("", true)
-            }
-        }.setNegativeButton("إلغاء", null).show()
+    /** قايمة المكالمات: بدل 3 كروت منفصلة في الشاشة الرئيسية */
+    private fun callsMenu() {
+        val labels = arrayOf("📞 المكالمات المسجلة (أسماء · بصمة صوت)", "🎤 الأصوات المحفوظة", "🔁 التفريغ التلقائي للمكالمات")
+        GAlert(act).setTitle("🗂 إدارة المكالمات").setItems(labels) { _, w ->
+            try {
+                when (w) {
+                    0 -> LectureUi(act, ui, th).showCalls()
+                    1 -> CallChatUi(act, ui, th).showVoices()
+                    else -> StudioIntelUi(act, ui, th).showAutoCall()
+                }
+            } catch (e: Throwable) { LogStore.err("StudioUi:callsMenu", e) }
+        }.setNegativeButton("إغلاق", null).show()
     }
 
     // ===================== تدفق الفيديو: مصدر ← تفريغ/مشاهدة ← نوع يدوي ← تفريغ =====================
@@ -274,7 +239,7 @@ class StudioUi(private val act: Activity, private val ui: Ui, private val th: Th
             val kind = if (mime.startsWith("audio")) "audio" else "video"
             val title = nameOf(u).substringBeforeLast('.')
             if (kind == "audio") {
-                pickType(suggested) { t -> begin(kind, title, u.toString(), "", t) }
+                begin(kind, title, u.toString(), "", suggested)
             } else {
                 askWatchOrTranscribe(kind, title, u.toString(), "", suggested)
             }
@@ -358,7 +323,7 @@ class StudioUi(private val act: Activity, private val ui: Ui, private val th: Th
                 Glass.pressable(row)
                 row.setOnClickListener {
                     d.dismiss()
-                    pickType(presetType) { t -> begin(if (r.isRec) "rec" else "audio", r.name.substringBeforeLast('.'), r.uri.toString(), "", t) }
+                    begin(if (r.isRec) "rec" else "audio", r.name.substringBeforeLast('.'), r.uri.toString(), "", if (presetType == "call") "call" else "")
                 }
                 list.addView(row, lp(-1, -2, 6))
             }
@@ -370,7 +335,7 @@ class StudioUi(private val act: Activity, private val ui: Ui, private val th: Th
             override fun afterTextChanged(s: Editable?) { q = s?.toString()?.trim() ?: ""; render() }
         })
         val content = vcol().apply { layoutParams = lp(-1, -1) }
-        content.addView(ui.text("اختار تسجيل — بعدها اختار نوع المحتوى (محاضرة/مكالمة/…) وبعدها يبدأ التفريغ.", 12f, th.muted), lp(-1, -2))
+        content.addView(ui.text(if (presetType == "call") "اختار المكالمة — التفريغ بيبدأ على طول." else "اختار تسجيل — النوع بيتحدد لوحده والتفريغ بيبدأ على طول.", 12f, th.muted), lp(-1, -2))
         content.addView(segRow(listOf("rec" to "🎙 التسجيلات", "all" to "🎵 كل الصوتيات"), { if (showAll) "all" else "rec" }, { showAll = it == "all"; render() }), lp(-1, -2, 6))
         content.addView(search, lp(-1, -2, 4))
         content.addView(info)
@@ -391,13 +356,12 @@ class StudioUi(private val act: Activity, private val ui: Ui, private val th: Th
 
     /** «تفريغ» ولا «مشاهدة»؟ — التفريغ بيسحب الصوت بس من غير ما الفيديو يشتغل */
     private fun askWatchOrTranscribe(kind: String, title: String, uri: String, link: String, suggested: String) {
-        // (v1000) زرار «فرّغ» واحد بس: التفريغ الافتراضي بقى وارد، فالاختيار المنفصل «عن طريق وارد» بقى زايد.
-        val labels = arrayOf("🎓 فرّغ — من غير ما الفيديو يشتغل", "▶ شاهده في المشغّل")
-        GAlert(act).setTitle(if (title.isBlank()) "فيديو" else title).setMessage("تفريغ ولا مشاهدة؟ التفريغ بيسحب الصوت بس من غير ما الفيديو يشتغل.").setItems(labels) { _, w ->
-            if (w == 0) {
-                pickType(suggested) { t -> begin(kind, title, uri, link, t) }
-            } else {
-                watchVideo(title, uri, link)
+        val labels = arrayOf("🎓 فرّغ الكلام — من غير ما الفيديو يشتغل", "💬 ترجمة لملف SRT", "▶ شاهده في المشغّل")
+        GAlert(act).setTitle(if (title.isBlank()) "فيديو" else title).setMessage("التفريغ والترجمة بيسحبوا الصوت بس من غير ما الفيديو يشتغل.").setItems(labels) { _, w ->
+            when (w) {
+                0 -> begin(kind, title, uri, link, if (suggested == "subs") "" else suggested)
+                1 -> begin(kind, title, uri, link, "subs")
+                else -> watchVideo(title, uri, link)
             }
         }.setNegativeButton("إلغاء", null).show()
     }

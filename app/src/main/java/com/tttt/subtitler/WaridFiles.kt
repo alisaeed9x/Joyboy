@@ -36,6 +36,7 @@ object WaridFiles {
         } catch (_: Throwable) {
             ""
         }
+        if (Api.looksHtml(txt)) return Api.htmlMsg(c.responseCode, txt)
         return try {
             JSONObject(txt).getJSONObject("error").getString("message")
         } catch (_: Exception) {

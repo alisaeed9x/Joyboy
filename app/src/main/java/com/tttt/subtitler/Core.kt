@@ -690,6 +690,17 @@ object Api {
     private val gemSeq = java.util.concurrent.atomic.AtomicInteger(0)
     /** (v468) خطاف «طلب بطيء»: بيتنادى مرة واحدة لو طلب عدى 20 ثانية وهو طاير (المحرك بيوصله بشريط الحالة) */
     @Volatile var onSlow: ((String) -> Unit)? = null
+    /** (v1004) رد HTML بدل JSON (صفحة خطأ/بروكسي/VPN/DNS بيحجب Gemini) — رسالة مفهومة بدل «<!DOCTYPE html…» */
+    fun looksHtml(t: String): Boolean { val x = t.trimStart().take(40).lowercase(); return x.startsWith("<!doctype") || x.startsWith("<html") || x.startsWith("<?xml") }
+    fun htmlMsg(code: Int, txt: String): String {
+        try { LogStore.add("⚠ [Api] رد HTML بدل JSON (HTTP " + code + "): " + txt.replace(Regex("\\s+"), " ").take(300)) } catch (_: Throwable) {}
+        return "جوجل رجّع صفحة HTML بدل رد JSON (HTTP " + code + ") — غالبًا النت/VPN/DNS بيحجب Gemini أو المفتاح غلط. جرّب بدّل الشبكة أو المفتاح."
+    }
+    fun errMsg(code: Int, txt: String): String {
+        if (looksHtml(txt)) return htmlMsg(code, txt)
+        return try { JSONObject(txt).getJSONObject("error").getString("message") } catch (_: Exception) { "HTTP " + code }
+    }
+
     fun generate(model: String, key: String, prompt: String, wav: ByteArray? = null,
                  maxTokens: Int = 8192, temp: Double = 0.1, json: Boolean = true, search: Boolean = false): Result {
         if (key == LocalKey.ID) throw NoKey()   // (v259)
@@ -814,8 +825,13 @@ object Api {
             if (code >= 300) {
                 val txt = stream?.bufferedReader(Charsets.UTF_8)?.use { it.readText() } ?: ""
                 NetUse.api(total, txt)
-                val m = try { JSONObject(txt).getJSONObject("error").getString("message") } catch (_: Exception) { "HTTP $code" }
-                throw ApiErr(code, m)
+                throw ApiErr(code, errMsg(code, txt))
+            }
+            val ctype = (c.contentType ?: "").lowercase()
+            if (ctype.contains("html")) {
+                val txt = stream?.bufferedReader(Charsets.UTF_8)?.use { it.readText() } ?: ""
+                NetUse.api(total, txt)
+                throw ApiErr(502, htmlMsg(code, txt))
             }
             val sb = StringBuilder()
             var finish = ""
@@ -898,10 +914,8 @@ object Api {
             val stream = if (code < 300) c.inputStream else c.errorStream
             val txt = stream?.bufferedReader(Charsets.UTF_8)?.use { it.readText() } ?: ""
             NetUse.api(total, txt)
-            if (code >= 300) {
-                val m = try { JSONObject(txt).getJSONObject("error").getString("message") } catch (_: Exception) { "HTTP $code" }
-                throw ApiErr(code, m)
-            }
+            if (code >= 300) throw ApiErr(code, errMsg(code, txt))
+            if (looksHtml(txt)) throw ApiErr(502, htmlMsg(code, txt))
             val root = JSONObject(txt)
             val cand = root.optJSONArray("candidates")?.optJSONObject(0)
             if (cand == null) {
