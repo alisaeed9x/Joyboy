@@ -772,6 +772,7 @@ class MainActivity : Activity() {
                 if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission("android.permission.POST_NOTIFICATIONS") != android.content.pm.PackageManager.PERMISSION_GRANTED) {
                     try { requestPermissions(arrayOf("android.permission.POST_NOTIFICATIONS"), 12) } catch (e: Exception) { LogStore.err("Main:395", e) }
                 }
+                PermAsk.battery(this) { }   // (v1010) «توفير البطارية» اتشالت من أول تثبيت: بتتسأل هنا (مرة كل 24 ساعة بالكتير) والترجمة بتبدأ فورًا
                 var n = 0
                 vs.forEach { v -> if (BgJobs.enqueue(this, BgJob(v.videoId, v.title, v.uri, null, emptyMap()), "المكتبة (ترجمة بالخلفية يدوي)")) n++ }
                 Notice.show(this, (if (n > 0) "🌙 بدأت الترجمة في الخلفية ($n) — التقدم في الإشعارات" else "الفيديو ده بيترجم في الخلفية بالفعل").toString(), 3600L)
@@ -1249,24 +1250,12 @@ class MainActivity : Activity() {
     // ===== صلاحيات: بتتطلب كلها أول ما تفتح البرنامج (زي MX Player) — كل صلاحية مرة واحدة بس =====
     private class PermStep(val id: String, val title: String, val why: String, val granted: () -> Boolean, val launch: () -> Unit)
     private fun permSteps(): List<PermStep> {
+        // (v1010) أول تثبيت: النوافذ العادية بس وكلها مع بعض في طلب واحد (فيديوهات + صوتيات + إشعارات).
+        // «العرض فوق التطبيقات» و«إدارة كل الملفات» و«تعديل إعدادات النظام» و«توفير البطارية» اتشالت من هنا — بتتطلب وقت الحاجة بس (PermAsk).
         val l = ArrayList<PermStep>()
-        val media = if (Build.VERSION.SDK_INT >= 33) arrayOf(VideoScan.permission(), "android.permission.POST_NOTIFICATIONS") else arrayOf(VideoScan.permission())
-        l += PermStep("media", "الوصول للفيديوهات والإشعارات", "عشان تظهر فولدرات فيديوهاتك وإشعار تقدم الترجمة في الخلفية",
+        val media = (if (Build.VERSION.SDK_INT >= 33) arrayOf(VideoScan.permission(), MusicScan.permission(), "android.permission.POST_NOTIFICATIONS") else arrayOf(VideoScan.permission())).distinct().toTypedArray()
+        l += PermStep("media", "الوصول للفيديوهات والصوتيات والإشعارات", "عشان تظهر فولدرات فيديوهاتك وموسيقاك وإشعار تقدم الترجمة في الخلفية",
             { media.all { checkSelfPermission(it) == android.content.pm.PackageManager.PERMISSION_GRANTED } }, { requestPermissions(media, 13) })
-        if (Build.VERSION.SDK_INT >= 30) l += PermStep("allfiles", "إدارة كل الملفات", "عشان تغيّر اسم الفيديو أو تنقله أو تحذفه من غير ما النظام يسألك كل مرة",
-            { android.os.Environment.isExternalStorageManager() },
-            { startActivityForResult(Intent(android.provider.Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION, Uri.parse("package:$packageName")), 14) })
-        if (!DeviceUi.isTv(this)) {   // (v501) وضع التلفزيون: مفيش PiP ولا تحكم سطوع من الفيديو — الصلاحيتين دول مش بيتطلبوا
-        l += PermStep("overlay", "العرض فوق التطبيقات الأخرى", "عشان الترجمة تظهر تحت نافذة الـ PiP لما تخرج بره البرنامج",
-            { Build.VERSION.SDK_INT < 23 || android.provider.Settings.canDrawOverlays(this) },
-            { startActivityForResult(Intent(android.provider.Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName")), 14) })
-        l += PermStep("writesettings", "تعديل إعدادات النظام", "عشان التحكم في السطوع من الفيديو يشتغل",
-            { Build.VERSION.SDK_INT < 23 || android.provider.Settings.System.canWrite(this) },
-            { startActivityForResult(Intent(android.provider.Settings.ACTION_MANAGE_WRITE_SETTINGS, Uri.parse("package:$packageName")), 14) })
-        }
-        l += PermStep("battery", "تجاهل توفير البطارية", "عشان الترجمة في الخلفية ماتتقفلش لما الشاشة تتقفل",
-            { (getSystemService(Context.POWER_SERVICE) as android.os.PowerManager).isIgnoringBatteryOptimizations(packageName) },
-            { startActivityForResult(Intent(android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, Uri.parse("package:$packageName")), 14) })
         return l
     }
     private var permQueue: ArrayList<PermStep> = ArrayList()
@@ -1275,9 +1264,7 @@ class MainActivity : Activity() {
         if (todo.isEmpty()) { done(); return }
         permDone = done
         permQueue = ArrayList(todo)
-        GAlert(this).setTitle("🔐 صلاحيات البرنامج")
-            .setMessage("البرنامج هيطلب كام صلاحية مرة واحدة بس عشان يشتغل كامل زي MX Player:\n\n" + todo.joinToString("\n") { "• " + it.title + " — " + it.why } + "\n\nفي كل شاشة فعّل المفتاح ورجّع للبرنامج.")
-            .setCancelable(false).setPositiveButton("تمام، يلا") { _, _ -> nextPerm() }.setNegativeButton("بعدين") { _, _ -> permQueue.clear(); permDone?.invoke(); permDone = null }.show()
+        nextPerm()   // (v1010) طلب واحد مجمّع (فيديوهات + صوتيات + إشعارات) من غير نافذة شرح قبله
     }
     private fun nextPerm() {
         while (permQueue.isNotEmpty()) {

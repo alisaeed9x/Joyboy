@@ -31,6 +31,8 @@ class JoyApp : Application() {
         MtTvRoute.install(this)   // (v928) «تشغّله فين؟» لفيديوهات MeeTube لما وضع التلفزيون شغّال
         try { MtSkin.install(this) } catch (_: Throwable) {}   // (v897) الجلاس في البرنامج كله: خلفية متحركة + مسح الخلفيات الصلبة
         try { MtSmooth.install(this) } catch (_: Throwable) {}   // (v988) فتح الفريمات لأعلى معدل تحديث
+        try { MobileDataGuard.install(this) } catch (_: Throwable) {}   // (v1010) تحذير داتا الموبايل في كل الشاشات
+        try { PermAsk.install(this) } catch (_: Throwable) {}   // (v1010) صلاحيات بتتطلب وقت الحاجة بس
         followMeeTubeTheme()
     }
 

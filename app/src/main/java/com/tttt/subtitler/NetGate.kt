@@ -15,8 +15,18 @@ object NetGate {
     private var cb: ConnectivityManager.NetworkCallback? = null
     private var cm: ConnectivityManager? = null
     @Volatile private var lastWifi: Network? = null
+    @Volatile private var allowMobile = false   // (v1010) «إكمال بالداتا» من التحذير: الحجب بيتعلّق لحد ما الداتا تنقطع أو الواي فاي يرجع
 
-    fun enabled(ctx: Context): Boolean { Cfg.ensure(ctx); return Cfg.bool("wifi_only", true) }
+    fun allowMobile(ctx: Context, on: Boolean) {
+        allowMobile = on
+        try {
+            val m = cm ?: (ctx.applicationContext.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager).also { cm = it }
+            if (on) m.bindProcessToNetwork(null)
+            else if (enabled(ctx)) { val w = lastWifi; if (w != null) m.bindProcessToNetwork(w) else blockAll(m) }
+        } catch (_: Throwable) {}
+    }
+
+    fun enabled(ctx: Context): Boolean { Cfg.ensure(ctx); return Cfg.bool("wifi_only", false) }   // (v1010) الافتراضي مقفول: التحذير الكبير (MobileDataGuard) بيحمي من الداتا بدل الحجب الكامل
 
     fun set(ctx: Context, on: Boolean) {
         Cfg.ensure(ctx)
@@ -26,6 +36,7 @@ object NetGate {
 
     /** مفيش واي فاي: اربط على شبكة وهمية ميتة ← أي اتصال بيفشل بدل ما يروح على الداتا (أندرويد 12+؛ قبل كده الحجب بيبدأ أول ما الواي فاي يتوصّل) */
     private fun blockAll(m: ConnectivityManager) {
+        if (allowMobile) return
         try { if (android.os.Build.VERSION.SDK_INT >= 31) m.bindProcessToNetwork(Network.fromNetworkHandle((60000L shl 32) or 0xcafed00dL)) } catch (_: Throwable) {}
     }
 

@@ -54,6 +54,13 @@ class PlayerActivity : Activity(), Host {
             return true
         }
 
+        /** (v1010) تحذير الداتا: وقّف مشغّل Joyboy لو شغّال (محلي مش على التلفزيون)؛ true = إحنا اللي وقّفناه */
+        fun pauseForGuard(): Boolean {
+            val o = live() ?: return false
+            return try { if (!o.player.isRemote && o.player.isPlaying) { o.player.pause(); true } else false } catch (_: Throwable) { false }
+        }
+        fun resumeForGuard() { val o = live() ?: return; try { o.player.play() } catch (_: Throwable) {} }
+
         /** (v531) في مشغّل فيديو (برنامج) مفتوح دلوقتي؟ */
         fun hasLive(): Boolean = live() != null
 
@@ -6332,10 +6339,11 @@ class PlayerActivity : Activity(), Host {
     fun canOverlay() = Build.VERSION.SDK_INT < 23 || android.provider.Settings.canDrawOverlays(this)
     fun enterPip(fromUser: Boolean = true) {
         // شريط الترجمة بره نافذة PiP محتاج إذن "العرض فوق التطبيقات" (مرة واحدة)
-        if (fromUser && !DeviceUi.isTv(this) && !canOverlay() && !Cfg.str("pip_overlay_asked", "0").equals("1")) {
-            Cfg.put("pip_overlay_asked", "1")
-            Notice.show(this, ("فعّل «العرض فوق التطبيقات» لـ Subtitler عشان الترجمة تظهر فوق، وارجع دوس ⧉ تاني").toString(), 3600L)
-            try { startActivity(Intent(android.provider.Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName"))); return } catch (e: Exception) { LogStore.err("Main:2229", e) }
+        // (v1010) الصورة المصغّرة محتاجة إذن «العرض فوق التطبيقات»: بيتشرح ويتسأل وقت الحاجة بس (مش أول تثبيت)
+        if (!DeviceUi.isTv(this) && !canOverlay()) {
+            if (fromUser) PermAsk.overlay(this, { enterPip(true) }, { try { moveTaskToBack(true) } catch (_: Throwable) {} })   // «لا» = خروج عادي من غير صورة مصغّرة
+            else Cfg.put("pip_hint_pending", "1")   // خروج تلقائي: يطلع عادي من غير PiP، وفي الفتحة الجاية للمشغّل بيتسأل
+            return
         }
         if ((vidW <= 0 || vidH <= 0) && ::player.isInitialized) { try { val vs = player.videoSize(); if (vs.first > 0 && vs.second > 0) { vidW = vs.first; vidH = vs.second } } catch (_: Throwable) {} }   // (v606) تسليم من يوتيوب: المقاس لسه ماوصلش للـlistener
         if (Build.VERSION.SDK_INT >= 26) try {
@@ -7500,6 +7508,10 @@ class PlayerActivity : Activity(), Host {
     override fun onResume() {
         super.onResume(); if (gone) return; internalNav = false; resumedNow = true; h.removeCallbacks(pipExitCheck)
         tvWarmApply()   // (v462)
+        if (Cfg.bool("pip_hint_pending", false) && !canOverlay() && !DeviceUi.isTv(this)) {   // (v1010) آخر مرة خرجت عادي من غير PiP: اسأله دلوقتي
+            Cfg.put("pip_hint_pending", "0")
+            h.postDelayed({ try { if (!isFinishing && !isDestroyed) PermAsk.overlay(this, { }, { }) } catch (_: Throwable) {} }, 900L)
+        }
         trEnsureBtn()   // (v463) زرار لوحة النص في وضع التابلت
         WebMute.pauseAll()   // (v149) أي صوت WebView (متصفح/يوتيوب) يتقفل أول ما المشغّل يظهر
         if (audioOnlyMode) {   // رجعنا من وضع «صوت بس»: المحرك كان موقوف، نجهّزه من جديد (الترجمة بتبدأ لما تدوس ترجم)

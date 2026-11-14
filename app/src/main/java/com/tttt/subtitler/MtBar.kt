@@ -2355,6 +2355,13 @@ object MtBar {
         } catch (_: Throwable) {}
     }
 
+    /** (v1010) تحذير الداتا: وقّف المشغّل لو شغّال (بيرجّع true لو إحنا اللي وقّفناه) */
+    fun pauseForGuard(): Boolean {
+        val p = player ?: return false
+        return try { if (p.isPlaying) { p.pause(); true } else false } catch (_: Throwable) { false }
+    }
+    fun resumeForGuard() { try { player?.play() } catch (_: Throwable) {} }
+
     fun visualSnap(a: Activity) {
         val p = player ?: return
         if (act !== a) return
