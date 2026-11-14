@@ -49,6 +49,10 @@ object Lecture {
         var analysis = ""           // (v993) تحليل المذكرة (JSON) — بيتعاد لو التفريغ اتغيّر
         var analysisN = 0
         var analysisHash = ""
+        var type = ""               // (v995) نوع المحتوى: lecture · call · subs · show · meeting · audio — "" = لسه ما اتحددش (بيتعامل كمحاضرة)
+        var typeAuto = false        // (v995) النوع اتحدد تلقائي ولا يدوي
+        var typeConf = 0.0          // (v995) ثقة التحديد التلقائي 0.0–1.0
+        var autoTitle = ""          // (v995) عنوان مولّد تلقائي من أول أجزاء التفريغ — منفصل عن title اللي المستخدم يعدّله
         val complete: Boolean get() = nChunks > 0 && done.size >= nChunks && failed.isEmpty()
         val pct: Int get() = if (nChunks <= 0) 0 else (done.size * 100 / nChunks).coerceIn(0, 100)
         val words: Int get() = synchronized(this) { segs.sumOf { s -> s.text.split(' ').count { it.isNotBlank() } } }
@@ -60,6 +64,7 @@ object Lecture {
         @Volatile var stop = false
         @Volatile var status = "بجهّز الصوت…"
         @Volatile var error = ""
+        @Volatile var titleTried = false   // (v995) اتحاول توليد عنوان تلقائي للدوكيومنت ده ولا لسه — مرة واحدة بس
     }
     val runs = ConcurrentHashMap<String, Run>()
     fun runOf(id: String): Run? = runs[id]
@@ -79,6 +84,7 @@ object Lecture {
             .put("done", JSONArray(d.done.toList())).put("failed", JSONArray(d.failed.toList())).put("segs", segs)
             .put("org", d.organized).put("orgWeb", d.organizedWeb).put("sum", d.summary).put("sumWeb", d.summaryWeb).put("sumLen", d.summaryLen)
             .put("ua", d.ua).put("ref", d.ref).put("an", d.analysis).put("anN", d.analysisN).put("anH", d.analysisHash)
+            .put("ty", d.type).put("tyA", d.typeAuto).put("tyC", d.typeConf).put("aTi", d.autoTitle)
     }
 
     private fun fromJson(o: JSONObject): Doc {
@@ -94,6 +100,7 @@ object Lecture {
         d.organized = o.optString("org"); d.organizedWeb = o.optBoolean("orgWeb"); d.summary = o.optString("sum")
         d.summaryWeb = o.optBoolean("sumWeb"); d.summaryLen = o.optString("sumLen", "mid")
         d.ua = o.optString("ua"); d.ref = o.optString("ref"); d.analysis = o.optString("an"); d.analysisN = o.optInt("anN", 0); d.analysisHash = o.optString("anH")
+        d.type = o.optString("ty"); d.typeAuto = o.optBoolean("tyA", false); d.typeConf = o.optDouble("tyC", 0.0); d.autoTitle = o.optString("aTi")
         return d
     }
 
@@ -206,7 +213,12 @@ object Lecture {
     }
 
     // ===================== التفريغ =====================
-    private fun transcribePrompt(durSec: Double, clean: Boolean, prev: String): String = buildString {
+    // type = نوع المحتوى ("" أو "lecture" = المحاضرة — السلوك القديم حرفيًا).
+    // أي نوع تاني بياخد برومبته من سجل Studio.TxType. internal عشان Studio بيناديها لبرومبت المحاضرة.
+    internal fun transcribePrompt(durSec: Double, clean: Boolean, prev: String, type: String = ""): String {
+        val t = type.ifBlank { "lecture" }
+        if (t != "lecture") return Studio.promptFor(t, durSec, clean, prev)
+        return buildString {
         append("أنت مفرّغ صوتي أكاديمي محترف بدقة عالية جدًا، متخصص في المحاضرات. اسمع المقطع الصوتي (مدته حوالي ${durSec.toInt()} ثانية) بتركيز كامل وفرّغ الكلام المنطوق نصًا حرفيًا بنفس اللغة المنطوقة فعلًا — من غير أي ترجمة ولا تلخيص ولا إضافة من عندك.\n\n")
         append("قواعد صارمة:\n")
         append("- 🔴 المتحدثين: المحاضر = الصوت الأساسي اللي بيشرح (spk=\"D\"). أي صوت تاني مختلف (طالب بيسأل أو بيقاطع أو بيرد، أو شخص تاني) = spk=\"S\". ميّز بين الأصوات من نبرتها وطبقتها وطريقة كلامها مش من المحتوى بس. لو الجملة الواحدة اتقالت من صوتين، افصلها لعنصرين.\n")
@@ -221,6 +233,7 @@ object Lecture {
         if (prev.isNotBlank()) append("\nسياق آخر كلام في المقطع اللي قبله (لتكملة جملة مقطوعة على الحدود وتوحيد كتابة المصطلحات بس، متكررهوش): \"$prev\"\n")
         append("\nرجّع JSON فقط بدون شرح ولا markdown:\n")
         append("{\"lang\":\"اللغة الأساسية بالعربي\",\"segments\":[{\"start\":0.0,\"end\":5.2,\"spk\":\"D\",\"text\":\"...\"}]}")
+        }
     }
 
     private fun spkOf(raw: String): String {
@@ -229,6 +242,7 @@ object Lecture {
             r.isEmpty() -> ""
             r.startsWith("s") || r.startsWith("ط") || r.startsWith("st") -> "S"
             r.startsWith("d") || r.startsWith("م") || r.startsWith("l") -> "D"
+            r.length == 1 && r[0] in 'a'..'z' -> r.uppercase()
             else -> ""
         }
     }
@@ -249,7 +263,7 @@ object Lecture {
         val wav = try { src.wav(st, en) } catch (e: Throwable) { LogStore.err("Lecture:wav", e); null } ?: return false
         if (wav.silent) { synchronized(d) { d.segs.removeAll { it.chunk == idx } }; return true }
         val prev = synchronized(d) { d.segs.filter { it.chunk == idx - 1 }.sortedBy { it.start }.takeLast(2).joinToString(" ") { it.text } }.takeLast(300)
-        val prompt = transcribePrompt(en - st, d.clean, prev)
+        val prompt = transcribePrompt(en - st, d.clean, prev, d.type)
         for (a in 0 until 4) {
             if (run.stop) return false
             val key = keys[(idx + worker + a) % keys.size]
@@ -279,6 +293,70 @@ object Lecture {
         return false
     }
 
+    // ===================== العنوان التلقائي (v995) =====================
+    // عنوان قصير واحد من أول أجزاء التفريغ — طلب نص رخيص (JSON فقط، حرارة 0.1) على أول 12 جملة.
+    // بيتنده مرة واحدة بس لكل تشغيل تفريغ (titleTried)، وبيتخطى خالص لو العنوان اتولّد قبل كده.
+    // فشله صامت (مبيوقفش التفريغ ومبيتسجّلش إلا في LogStore).
+    // مبيكتبش في d.title أبدًا — بيتحفظ في d.autoTitle بس، والعرض بيقرر يوريه إمتى (Studio.displayTitle).
+    private fun titlePrompt(text: String): String = buildString {
+        append("اقترح عنوانًا قصيرًا واحدًا (3–7 كلمات) للمحتوى التالي من نص مفرّغ صوتيًا. العنوان بالعربية، وسيب المصطلحات العلمية بلغتها الأصلية.\n\n")
+        append("رجّع JSON فقط بدون شرح ولا markdown:\n")
+        append("{\"title\":\"...\"}\n\n")
+        append(text)
+    }
+
+    private fun titleFromText(text: String): String? {
+        val ks = keys()
+        if (ks.isEmpty()) return null
+        val mdl = model()
+        val prompt = titlePrompt(text)
+        for (a in 0 until minOf(ks.size, 2)) {
+            val key = ks[a % ks.size]
+            try {
+                val r = Api.generate(mdl, key, prompt, null, 512, 0.1, true, false)
+                val j = parseJson(r.text) ?: continue
+                val t = j.optString("title").trim()
+                if (t.isNotBlank()) return t.take(120)
+            } catch (e: NoKey) {
+                return null
+            } catch (e: Throwable) {
+                LogStore.err("Lecture:autoTitle", e)
+            }
+        }
+        return null
+    }
+
+    // بيحاول توليد العنوان لما يبقى فيه كفاية نص (أول جزئين، أو الجزء الوحيد لو المحاضرة قصيرة).
+    // بيشتغل في خيط خلفي منفصل عشان ميعطّلش خيوط التفريغ.
+    private fun maybeAutoTitle(ctx: Context, run: Run) {
+        val d = run.doc
+        val need = synchronized(d) {
+            if (run.titleTried) false
+            else if (d.autoTitle.isNotBlank()) {
+                run.titleTried = true
+                false
+            } else if (d.done.size < minOf(2, d.nChunks).coerceAtLeast(1)) false
+            else {
+                run.titleTried = true
+                true
+            }
+        }
+        if (!need) return
+        Thread {
+            try {
+                val text = synchronized(d) { d.segs.sortedBy { it.start }.take(12).joinToString(" ") { it.text } }.take(3000)
+                if (text.length < 40) return@Thread
+                val t = titleFromText(text)
+                if (!t.isNullOrBlank()) {
+                    synchronized(d) { if (d.autoTitle.isBlank()) d.autoTitle = t }
+                    save(ctx, d)
+                }
+            } catch (e: Throwable) {
+                LogStore.err("Lecture:autoTitle", e)
+            }
+        }.apply { isDaemon = true; start() }
+    }
+
     /** يبدأ/يكمّل التفريغ في الخلفية. الأجزاء اللي خلصت بتتخطى؛ اللي فشلت بتتعاد. */
     fun start(ctx0: Context, d: Doc): Run? {
         val ctx = ctx0.applicationContext
@@ -297,7 +375,7 @@ object Lecture {
                 synchronized(d) { d.durSec = dur; d.nChunks = Math.ceil(dur / CHUNK_SEC).toInt() }
                 save(ctx, d)
                 val todo = (0 until d.nChunks).filter { it !in d.done }
-                if (todo.isEmpty()) { run.status = "التفريغ مكتمل ✅"; return@Thread }
+                if (todo.isEmpty()) { maybeAutoTitle(ctx, run); run.status = "التفريغ مكتمل ✅"; return@Thread }
                 val next = AtomicInteger(0); val finished = AtomicInteger(0)
                 val par = minOf(ks.size, 3, todo.size).coerceAtLeast(1)
                 run.status = "بفرّغ…"
@@ -309,11 +387,13 @@ object Lecture {
                             val ok = try { doChunk(run, ks, mdl, s, idx, w, dur) } catch (e: Throwable) { LogStore.err("Lecture:worker", e); false }
                             synchronized(d) { if (ok) { d.done.add(idx); d.failed.remove(idx) } else if (!run.stop) d.failed.add(idx) }
                             if (finished.incrementAndGet() % 4 == 0) save(ctx, d)
+                            if (ok) maybeAutoTitle(ctx, run)
                             run.status = "بفرّغ… ${d.done.size}/${d.nChunks}"
                         }
                     }.apply { isDaemon = true; start() }
                 }
                 ths.forEach { try { it.join() } catch (_: InterruptedException) {} }
+                maybeAutoTitle(ctx, run)
                 run.status = when {
                     run.error.isNotEmpty() -> "اتوقف: " + run.error
                     run.stop -> "اتوقف — تقدر تكمّل"

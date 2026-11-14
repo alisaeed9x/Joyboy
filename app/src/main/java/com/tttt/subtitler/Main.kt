@@ -1465,6 +1465,8 @@ class MainActivity : Activity() {
         super.onActivityResult(r, c, d)
         if (r == ModelsUi.REQ) { ModelsUi.onResult(this, c, d); return }   // (v696) اختيار ملف موديل
         if (r == LectureUi.REQ) { LectureUi.onResult(this, c, d); return }   // (v991) اختيار فيديو/صوت للتفريغ
+        // (v995) اختيار فيديو/صوت للاستوديو
+        if (r == StudioUi.REQ) { StudioUi.onResult(this, c, d); return }
         if (r == 61) {
             if (c == RESULT_OK) d?.data?.let { u ->
                 try {

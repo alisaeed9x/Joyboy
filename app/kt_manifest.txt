@@ -215,6 +215,8 @@ com/tttt/subtitler/Store.kt
 com/tttt/subtitler/StreamHunt.kt
 com/tttt/subtitler/Strict.kt
 com/tttt/subtitler/Stt.kt
+com/tttt/subtitler/Studio.kt
+com/tttt/subtitler/StudioUi.kt
 com/tttt/subtitler/SubAlign.kt
 com/tttt/subtitler/SubDual.kt
 com/tttt/subtitler/SubFileTr.kt
@@ -307,3 +309,4 @@ com/tttt/subtitler/Lecture.kt
 com/tttt/subtitler/LectureDoc.kt
 com/tttt/subtitler/LectureUi.kt
 com/tttt/subtitler/CallKit.kt
+com/tttt/subtitler/LectureCss.kt

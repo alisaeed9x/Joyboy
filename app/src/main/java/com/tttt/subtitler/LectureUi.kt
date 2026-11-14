@@ -344,6 +344,12 @@ class LectureUi(private val act: Activity, private val ui: Ui, private val th: T
     /** مدخل من «المزيد» */
     fun showCalls() = openCalls()
 
+    /**
+     * (v995) فتح شاشة تفريغ محفوظة من «الاستوديو» — نفس شاشة openDoc الخاصة، من غير بدء تلقائي
+     * (التفريغ لو شغال بيكمّل لوحده، ولو واقف المستخدم بيدوس «كمّل» من جوّا الشاشة).
+     */
+    fun open(d: Lecture.Doc) { openDoc(d, false) }
+
     private class CallRow(val rec: Lecture.Rec, val who: CallKit.Who)
 
     private fun callTitle(r: CallRow): String = when {
