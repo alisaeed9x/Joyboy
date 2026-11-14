@@ -427,8 +427,8 @@ object StudioIntel {
         it.putExtra(CalendarContract.Events.DESCRIPTION, desc)
         val at = if (whenText.isNotBlank()) parseDateMillis(whenText) else null
         if (at != null) {
-            it.putExtra(CalendarContract.Events.EVENT_BEGIN_TIME, at)
-            it.putExtra(CalendarContract.Events.EVENT_END_TIME, at + 3600000L)
+            it.putExtra(CalendarContract.EXTRA_EVENT_BEGIN_TIME, at)
+            it.putExtra(CalendarContract.EXTRA_EVENT_END_TIME, at + 3600000L)
         }
         return it
     }

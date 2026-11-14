@@ -224,8 +224,8 @@ object StudioPrivacy {
             try {
                 for (p in StudioIntel.promises(ctx, d)) {
                     val who = p.who.ifBlank { "؟" }
-                    val when = if (p.whenText.isNotBlank()) " (" + p.whenText + ")" else ""
-                    out.add(who + ": " + p.what + when)
+                    val whenTxt = if (p.whenText.isNotBlank()) " (" + p.whenText + ")" else ""
+                    out.add(who + ": " + p.what + whenTxt)
                 }
             } catch (_: Throwable) {
             }

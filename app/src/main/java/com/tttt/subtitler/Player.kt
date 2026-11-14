@@ -2958,7 +2958,7 @@ class PlayerActivity : Activity(), Host {
     private fun shFlow() = FlowRow(this).apply { layoutDirection = View.LAYOUT_DIRECTION_RTL }
     /** بيعرض الشيت فوق/تحت الزرار حسب المساحة (مكان واحد لكل القوايم). onDismiss بيتنادى بالنافذة عشان صاحبها يفضّي مرجعه */
     // (v999 ملاحظة 5) footer = صف ثابت برّه السكرول (زي صف «طبّق» في اللهجة والأسلوب) — بيتقاس وبيتخصم من الارتفاع المتاح؛ null = زي الأول بالظبط
-    private fun showSheet(anchor: View, col: LinearLayout, maxDp: Int, tag: String, onDismiss: (android.widget.PopupWindow) -> Unit, footer: View? = null): android.widget.PopupWindow {
+    private fun showSheet(anchor: View, col: LinearLayout, maxDp: Int, tag: String, footer: View? = null, onDismiss: (android.widget.PopupWindow) -> Unit): android.widget.PopupWindow {
         col.orientation = LinearLayout.VERTICAL; col.layoutDirection = View.LAYOUT_DIRECTION_RTL
         col.setPadding(ui.dp(6), ui.dp(6), ui.dp(6), ui.dp(6))
         // (v999 ملاحظة 5) مع فوتر: الخلفية على الحاوية الخارجية بس (لو فضلت على العمود كمان هيبقى فيه خط فاصل + استدارة في نص النافذة)

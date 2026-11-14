@@ -70,6 +70,7 @@ class CallChatUi(private val act: Activity, private val ui: Ui, private val th: 
     fun show(d: Lecture.Doc, startSec: Double = 0.0) {
         var alive = true
         var lastSig = ""
+        var renderAllFn: () -> Unit = {}
         var firstRender = true
         var bubbles: List<CallChat.Bubble> = emptyList()
         var bubbleViews = ArrayList<View>()
@@ -184,7 +185,7 @@ class CallChatUi(private val act: Activity, private val ui: Ui, private val th: 
                     null
                 }
                 if (seg == null) return@setOnClickListener
-                LectureUi(act, ui, th).editSegDialog(d, seg) { lastSig = ""; renderAll(); refreshHeader() }
+                LectureUi(act, ui, th).editSegDialog(d, seg) { lastSig = ""; renderAllFn(); refreshHeader() }
             }
             // (G8) ضغطة طويلة على الفقاعة = علامة على لحظة أول جملة فيها (نفس نافذة 0.6ث بتاعة sentRow).
             outer.setOnLongClickListener {
@@ -251,6 +252,7 @@ class CallChatUi(private val act: Activity, private val ui: Ui, private val th: 
 
         var tick: Runnable? = null
         val dd = ui.sheet(act, "📞 " + Studio.displayTitle(d).take(28), listOf<View>(content), fixedH = true, onClose = { alive = false; tick?.let { main.removeCallbacks(it) } }, footer = listOf<View>(acts))
+        renderAllFn = { renderAll() }
         refreshHeader()
         renderAll()
         dd.show()
