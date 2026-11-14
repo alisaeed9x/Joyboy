@@ -61,6 +61,9 @@ class Conf(
     /** نسخة من الإعدادات بلهجة تانية (الباتشات الجديدة بتتبعت باللهجة المختارة مباشرة بدل فصحى ثم تحويل) */
     fun withLang(l: String): Conf = Conf(keys, backup, model, l, style, chunkSec, ahead, audioTrack, manualChars, manualGloss, autoChars,
         autoPronouns, autoTemplate, parallelPerKey, hiTiming, gapFill, soundTags, visKeys, partialRefine, refine, keyMode)
+    /** (v990) نسخة بموديل جيميناي تاني (إعدادات متقدمة لكل ترجمة في مكتبة الترجمات) */
+    fun withModel(m: String): Conf = Conf(keys, backup, m, lang, style, chunkSec, ahead, audioTrack, manualChars, manualGloss, autoChars,
+        autoPronouns, autoTemplate, parallelPerKey, hiTiming, gapFill, soundTags, visKeys, partialRefine, refine, keyMode)
     /** (v210) نسخة بمفاتيح أساسية تانية (الوضعين 3 و4: حوض الترانسكريبشن وحوض الترجمة) */
     fun withKeys(k: List<String>): Conf = Conf(k, backup, model, lang, style, chunkSec, ahead, audioTrack, manualChars, manualGloss, autoChars,
         autoPronouns, autoTemplate, parallelPerKey, hiTiming, gapFill, soundTags, visKeys, partialRefine, refine, keyMode)

@@ -121,6 +121,9 @@ class BottomNav(act: Activity, private val ui: Ui, private val th: Theme, privat
         // (v861) ترتيب جديد: كل مجموعة مضبوطة على 3 في الصف، والأيقونات مش مكرّرة
         val secs = ArrayList<MoreItem>()
         for (id in listOf(0, 4, 2, 1, 3, 5)) secs.add(MoreItem(DEFS[id].first, if (id == 0) "الفيديوهات" else DEFS[id].second, id == active) { onPick(id) })   // فيديوهات · يوتيوب · متصفح · موسيقى · مخزن · مهام
+        val trl = ArrayList<MoreItem>()
+        if (!tvDev) trl.add(MoreItem("📚", "مكتبة الترجمات", false) { try { TrLibUi(act, ui, th).show() } catch (e: Throwable) { LogStore.err("Nav:trlib", e) } })   // (v990)
+        if (!tvDev) trl.add(MoreItem("🎓", "تفريغ المحاضرات", false) { try { LectureUi(act, ui, th).show() } catch (e: Throwable) { LogStore.err("Nav:lecture", e) } })   // (v991)
         val store = listOf(
             MoreItem("📂", "مدير الملفات", false) { openHub(act, "fm") },
             MoreItem("↔", "إرسال واستقبال", false) { openHub(act, "ft") },
@@ -138,15 +141,15 @@ class BottomNav(act: Activity, private val ui: Ui, private val th: Theme, privat
         sys.add(MoreItem("📊", "النت والداتا", false) { try { NetStatsUi(act, ui, th).show() } catch (e: Throwable) { LogStore.err("Nav:net", e) } })
         if (!tvDev) sys.add(MoreItem("🔄", "مركز التحديث", false) { try { GhCiUi.show(act) } catch (e: Throwable) { LogStore.err("Nav:gh", e) } })   // (v861) تحديث البرنامج + تحديث التلفزيون + لوج الفشل
         sys.add(MoreItem(DEFS[7].first, "الإعدادات", 7 == active) { onPick(7) })
-        return listOf("الأقسام" to secs, "المخزن والإرسال" to store, "تحكم وريموت" to ctl, "النظام والتحديث" to sys)
+        return listOf("الأقسام" to secs, "الترجمة" to trl, "المخزن والإرسال" to store, "تحكم وريموت" to ctl, "النظام والتحديث" to sys)
     }
 
     private fun tileView(act: Activity, t: MoreItem, onDone: () -> Unit): View = LinearLayout(act).apply {
-        orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER; setPadding(ui.dp(4), ui.dp(12), ui.dp(4), ui.dp(10))
-        background = ui.box(if (t.on) Glass.alpha(th.primary, 0x28) else th.card, if (t.on) th.primary else th.border, 16, if (t.on) 2 else 1)
-        val ic = IconTextView(act).apply { text = t.emoji; textSize = 26f; gravity = Gravity.CENTER; includeFontPadding = false }
-        val lb = ui.text(t.label, 11.5f, if (t.on) th.primary else th.text, true).apply { gravity = Gravity.CENTER; maxLines = 2; setPadding(0, ui.dp(6), 0, 0) }
-        addView(ic, LinearLayout.LayoutParams(-2, ui.dp(34)))
+        orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER; setPadding(ui.dp(2), ui.dp(8), ui.dp(2), ui.dp(7))   // (v991) بلاطات أصغر عشان تتسع كلها (4 في الصف على الموبايل)
+        background = ui.box(if (t.on) Glass.alpha(th.primary, 0x28) else th.card, if (t.on) th.primary else th.border, 14, if (t.on) 2 else 1)
+        val ic = IconTextView(act).apply { text = t.emoji; textSize = 21f; gravity = Gravity.CENTER; includeFontPadding = false }
+        val lb = ui.text(t.label, 10.5f, if (t.on) th.primary else th.text, true).apply { gravity = Gravity.CENTER; maxLines = 2; setPadding(0, ui.dp(4), 0, 0) }
+        addView(ic, LinearLayout.LayoutParams(-2, ui.dp(28)))
         addView(lb, LinearLayout.LayoutParams(-1, -2))
         isClickable = true; isFocusable = true
         Glass.pressable(this)
@@ -158,7 +161,7 @@ class BottomNav(act: Activity, private val ui: Ui, private val th: Theme, privat
     private fun moreSheet(act: Activity) {
         val d = android.app.Dialog(act)
         d.requestWindowFeature(android.view.Window.FEATURE_NO_TITLE)
-        val cols = if (rail || act.resources.displayMetrics.widthPixels >= ui.dp(600)) 4 else 3
+        val cols = if (rail || act.resources.displayMetrics.widthPixels >= ui.dp(600)) 5 else 4   // (v991) كانت 4/3
         val glass = MtGlass.on()
         val sheetR = ui.dp(28).toFloat()
         val box = LinearLayout(act).apply {

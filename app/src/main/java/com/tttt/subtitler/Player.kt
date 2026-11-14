@@ -5764,6 +5764,7 @@ class PlayerActivity : Activity(), Host {
         BrainBus.reset()   // (v542) فيديو/محرك جديد: ترجمة الفيديو القديم ما تتبعتش للريموت
         engine.convDialect = Cfg.str("conv_dialect", "")
         engine.toneStyle = Cfg.str("tone_style", ""); engine.toneStrength = Cfg.str("tone_strength", "متوسطة")
+        try { TrLib.stamp(applicationContext, vid, intent.getStringExtra("title")?.takeIf { it.isNotBlank() } ?: Recents.titleOf(vid), engine.convDialect.ifBlank { conf.lang }, engine.toneStyle, engine.toneStrength, conf.model, TrLib.engineLabel(conf)) } catch (_: Throwable) {}   // (v990) مكتبة الترجمات
         engine.titleHint = run {
             val t = (intent.getStringExtra("title")?.takeIf { it.isNotBlank() } ?: Recents.titleOf(vid)).substringBeforeLast('.', Recents.titleOf(vid))
             val folder = try { uri?.toString()?.let { SrtWriter.pathOf(applicationContext, it)?.parentFile?.name } } catch (_: Exception) { null } ?: ""

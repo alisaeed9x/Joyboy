@@ -301,3 +301,7 @@ com/tttt/subtitler/TabNav.kt
 com/tttt/subtitler/VidHook.kt
 com/tttt/subtitler/MtEnhance.kt
 com/tttt/subtitler/MtSmooth.kt
+com/tttt/subtitler/TrLib.kt
+com/tttt/subtitler/TrLibUi.kt
+com/tttt/subtitler/Lecture.kt
+com/tttt/subtitler/LectureUi.kt

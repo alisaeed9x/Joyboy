@@ -657,6 +657,7 @@ object MtTranslate : JoyboyPlayerHost.Provider {
                     it.convDialect = Cfg.str("conv_dialect", "")
                     it.toneStyle = Cfg.str("tone_style", ""); it.toneStrength = Cfg.str("tone_strength", "متوسطة")
                     it.titleHint = (try { info?.title() } catch (_: Throwable) { null } ?: "")
+                    try { TrLib.stamp(appCtx, vid, (try { info?.title() } catch (_: Throwable) { null } ?: vid), it.convDialect.ifBlank { conf0.lang }, it.toneStyle, it.toneStrength, conf0.model, TrLib.engineLabel(conf0)) } catch (_: Throwable) {}   // (v990) مكتبة الترجمات
                     if (mode == "transcribe") it.transOnly = true
                 }
             } catch (t: Throwable) {

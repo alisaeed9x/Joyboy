@@ -294,7 +294,15 @@ class BgService : Service() {
         job.state = "running"; BgJobs.notifyChange()
         val app = applicationContext
         Cfg.init(app)
-        val conf = Cfg.snapshot()
+        val ovm = try { TrLib.meta(app, job.vid) } catch (_: Throwable) { null }   // (v990) إعدادات متقدمة لكل ترجمة (مكتبة الترجمات)
+        val conf = run {
+            var c0 = Cfg.snapshot()
+            if (ovm != null) {
+                if (ovm.ovModel.isNotBlank()) c0 = c0.withModel(ovm.ovModel)
+                if (ovm.ovDialect.isNotBlank()) c0 = c0.withLang(ovm.ovDialect)
+            }
+            c0
+        }
         if (conf.keys.isEmpty() && conf.backup.isEmpty()) { job.state = "failed"; job.err = "مفيش مفاتيح Gemini"; BgJobs.notifyChange(); done(job); return }
         postForeground(job)
         val store = Store(File(filesDir, "progress"), Store.keyFor(job.vid))
@@ -322,6 +330,11 @@ class BgService : Service() {
             listOf(t, folder).filter { it.isNotBlank() }.distinct().joinToString(" | ")
         }
         engine.convDialect = Cfg.str("conv_dialect", "")
+        // (v990) اللهجة/الأسلوب/الشدة: الإعدادات المتقدمة للترجمة دي لو موجودة، وإلا العامة (زي المشغّل)
+        ovm?.ovDialect?.takeIf { it.isNotBlank() }?.let { engine.convDialect = if (it == "فصحى") "" else it }
+        engine.toneStyle = ovm?.ovStyle?.takeIf { it.isNotBlank() }?.let { if (it == "حرفي") "" else it } ?: Cfg.str("tone_style", "")
+        engine.toneStrength = ovm?.ovStrength?.takeIf { it.isNotBlank() } ?: Cfg.str("tone_strength", "متوسطة")
+        try { TrLib.stamp(app, job.vid, job.title, engine.convDialect.ifBlank { conf.lang }, engine.toneStyle, engine.toneStrength, conf.model, TrLib.engineLabel(conf)) } catch (_: Throwable) {}
         job.engine = engine
         var ok = false
         engine.onFinished = { r -> ok = r }

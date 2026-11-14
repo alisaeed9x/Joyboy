@@ -1464,6 +1464,7 @@ class MainActivity : Activity() {
     override fun onActivityResult(r: Int, c: Int, d: Intent?) {
         super.onActivityResult(r, c, d)
         if (r == ModelsUi.REQ) { ModelsUi.onResult(this, c, d); return }   // (v696) اختيار ملف موديل
+        if (r == LectureUi.REQ) { LectureUi.onResult(this, c, d); return }   // (v991) اختيار فيديو/صوت للتفريغ
         if (r == 61) {
             if (c == RESULT_OK) d?.data?.let { u ->
                 try {
