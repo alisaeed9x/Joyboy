@@ -4636,6 +4636,7 @@ class PlayerActivity : Activity(), Host {
         gTool.addView(pd("📤 تصدير SRT") { doExport() })
         gTool.addView(pd("📥 استيراد ملف ترجمة (بيترجم فورًا)") { doImport() })
         gTool.addView(pd("📂 فتح فيديو") { doOpen() })
+        gTool.addView(pd("✨ تحسين الصورة: " + (try { MtEnhance.modeName() } catch (_: Throwable) { "إيقاف" })) { v -> mtEnhanceCycle(v) })   // (v1013) من MtBar
         gTool.addView(pd("🕳 سد الفجوات") { engine.retryFailed(); Notice.show(this, ("بحاول أسد الفجوات").toString(), 2300L) })
         // (v87) ترجمات الفيديو: قايمة صغيرة منسدلة بالنسخ المحفوظة (دوسة على نسخة ترجّعها)
         val gVer = gCol()
@@ -6710,6 +6711,36 @@ class PlayerActivity : Activity(), Host {
         noticePop = pw
     }
 
+    /** (v1013) نقل MtSmooth (مطابقة معدل الشاشة مع فريمات الفيديو + تنبيه الديكودر) و MtEnhance (✨ تحسين الصورة) لمشغّل Joyboy القديم.
+     *  نفس الـExoPlayer الشغّال (من غير محرك تاني)؛ لو المشغّل ريموت/كاست (exo()==null) بيتخطّى. الافتراضي المحفوظ (إيقاف) مابيغيّرش حاجة. لم يتم compile. */
+    private var mtParityExo: androidx.media3.exoplayer.ExoPlayer? = null
+    private fun mtParityAttach() {
+        try {
+            if (remote || !::player.isInitialized) return
+            val ex = player.exo() ?: return
+            if (mtParityExo === ex) return
+            mtParityExo = ex
+            try { MtSmooth.attach(this, ex, null) } catch (_: Throwable) {}
+            try { MtEnhance.attach(this, ex, null) } catch (_: Throwable) {}
+        } catch (_: Throwable) {}
+    }
+    private fun mtParityDetach() {
+        try { MtSmooth.detach(this) } catch (_: Throwable) {}
+        try { MtEnhance.detach(this) } catch (_: Throwable) {}
+        mtParityExo = null
+    }
+    private fun mtEnhanceCycle(btn: TextView? = null) {
+        mtParityAttach()
+        if (mtParityExo == null) { say("✨ تحسين الصورة مش متاح على المشغّل ده"); return }
+        val name = try { MtEnhance.cycleMode() } catch (_: Throwable) { return }
+        try { btn?.text = "✨ تحسين الصورة: " + name } catch (_: Throwable) {}
+        val why = try { MtEnhance.lastWhy } catch (_: Throwable) { "" }
+        say(if (name == "إيقاف") "✨ تحسين الصورة: إيقاف" else if (why.isEmpty()) "✨ تحسين الصورة: " + name else "✨ تحسين الصورة: " + name + " — مش شغّال على الفيديو ده (" + why + ")")
+        if (name != "إيقاف" && why.isEmpty()) {
+            try { MtEnhance.reportLater { r -> if (r.isNotEmpty()) say("✨ " + name + ": " + r) } } catch (_: Throwable) {}
+        }
+    }
+
     private fun say(m: String) = runOnUiThread { Notice.show(this, (m).toString(), 2300L) }
 
     // ===== (v418) دبلجة عربي (Edge TTS) =====
@@ -7508,6 +7539,7 @@ class PlayerActivity : Activity(), Host {
     override fun onResume() {
         super.onResume(); if (gone) return; internalNav = false; resumedNow = true; h.removeCallbacks(pipExitCheck)
         tvWarmApply()   // (v462)
+        mtParityAttach()   // (v1013) مطابقة فريمات + تحسين صورة (من مشغّل MeeTube)
         if (Cfg.bool("pip_hint_pending", false) && !canOverlay() && !DeviceUi.isTv(this)) {   // (v1010) آخر مرة خرجت عادي من غير PiP: اسأله دلوقتي
             Cfg.put("pip_hint_pending", "0")
             h.postDelayed({ try { if (!isFinishing && !isDestroyed) PermAsk.overlay(this, { }, { }) } catch (_: Throwable) {} }, 900L)
@@ -7571,6 +7603,7 @@ class PlayerActivity : Activity(), Host {
         LogStore.add("🔚 onDestroy (isFinishing=$isFinishing)")
         NoticeLog.detach(this)
         stopVoice()
+        mtParityDetach()   // (v1013)
         try { TaskCenter.extra.remove(taskListener) } catch (_: Throwable) {}
         h.removeCallbacksAndMessages(null)
         pipOv?.hide(); pipOv = null

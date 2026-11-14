@@ -16,7 +16,7 @@ object PageSettings {
 
     /** الصفحة ← أقسام الإعدادات اللي بتأثر عليها. قسم واحد بس = بيتفتح على طول من غير قايمة */
     private val SECTIONS = mapOf(
-        VIDEOS to listOf("general", "keys", "audio", "perf", "visual", "look", "more"),   // خط الترجمة · المفاتيح · التفريغ والصوت · الموديل · الصورة · شكل الترجمة · الخروج من المشغّل
+        VIDEOS to listOf("general", "keys", "audio", "perf", "look", "more"),   // خط الترجمة · المفاتيح · التفريغ والصوت · الموديل (والوضع البصري) · شكل الترجمة · الخروج من المشغّل
         MUSIC to listOf("music"),                                                          // الكلمات · شكل الكلمات · فحص الأغاني
         TASKS to listOf("more", "perf"))                                                   // الطابور والبطارية · الموديل وطول المقطع (اللي بيمشوا في المهام)
 

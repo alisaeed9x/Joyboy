@@ -596,7 +596,9 @@ class MainActivity : Activity() {
                 },
                 ui.button("📊 إحصائية الاستهلاك والكوتة") { StatsUi(this, ui, th).show() },
                                 ui.section("🔑 كل المفاتيح", true,
-                    ui.noHint(), keysUi, backupUi, extraUi))) }),
+                    ui.noHint(), keysUi, backupUi, extraUi)),
+                ui.section("🔑 مفتاح الوضع البصري فقط", true,
+                    ui.noHint(), visKeysUi)) }),   // (v1014) مفتاح الوضع البصري مع باقي المفاتيح
             // ===== 🎙 التفريغ والصوت: موديلات الجهاز + إعدادات الصوت =====
             tab("audio", { listOf<View>(
                 ui.noHint(),
@@ -606,28 +608,25 @@ class MainActivity : Activity() {
                     ui.noHint(),
                     ui.text("حجم موديل Whisper:", 12f, th.muted), offModelChips, ui.text("⚡ خانات التفريغ المتوازي:", 12f, th.muted), parChips, parNote, offStatus, offDlBtn, offProg,
                     ui.text("لغة الكلام (لو عارفها بتقلّل أخطاء الاكتشاف التلقائي):", 12f, th.muted), offLangChips,
-                    ui.noHint())) }),
+                    ui.noHint()),
+                ui.section("🌐 وارد — طول جزء التفريغ", false,
+                    ui.text("أجزاء التفريغ بطريقة وارد (٥ أو ١٠ دقايق) — بيتطبق على التفريغات الجديدة بس؛ تفريغ وارد شغال بيكمّل بنفس حجمه.", 12f, th.muted),
+                    waridChunkChips),
+                ui.section("🎙 نموذج التفريغ الاحتياطي (الطريقة العادية القديمة)", false,
+                    ui.text("موديل الطريقة العادية القديمة بس — تفريغ الاستوديو الجديد بيشتغل بطريقة وارد (سلسلة موديلات تلقائية) ومبيتأثرش بالاختيار ده. ومبيغيّرش موديل الترجمة.", 12f, th.muted),lecModelChips)) }),   // (v1014) وارد + نموذج التفريغ الاحتياطي اتنقلوا من «الموديل والأداء» لأنهم إعدادات تفريغ
             // ===== 🤖 الموديل والأداء =====
             tab("perf", { listOf<View>(
                 ui.noHint(),
+                ui.section("👁 محرك الوضع البصري", false, visAutoChips,
+                    ui.slider("المسافة اللي الوضع البصري بيفحصها قدّام مكان التشغيل", Cfg.int("vis_ahead", 180).coerceIn(30, 900), 30, 900, "ث") { Cfg.put("vis_ahead", it.toString()) },
+                    ui.noHint()),   // (v1014) كان تبويب «الصورة» لوحده
                                 ui.section("🤖 الموديل والسرعة", true, modelChips, fetchModelsBtn, model, modelDesc,
                     ui.noHint(), speedBtn, speedOut, speedUseBtn),
                 ui.section("⏱ التقطيع والتنقيح", false, chunk, ahead, hlsAhead,
                     ui.noHint(), offPartChips,
                     ui.switchRow("كمّل ترجمة باقي الفيديو بعد ما توصل لمكان التشغيل (بيرجع للأول لو فيه جزء ناقص)", Cfg.bool("keepgoing", true)) { Cfg.put("keepgoing", if (it) "1" else "0") },
-                    *fl("prefine")),
-                ui.section("🌐 وارد — طول جزء التفريغ", false,
-                    ui.text("أجزاء التفريغ بطريقة وارد (٥ أو ١٠ دقايق) — بيتطبق على التفريغات الجديدة بس؛ تفريغ وارد شغال بيكمّل بنفس حجمه.", 12f, th.muted),
-                    waridChunkChips),
-                ui.section("🎙 نموذج التفريغ الاحتياطي (الطريقة العادية القديمة)", false,
-                    ui.text("موديل الطريقة العادية القديمة بس — تفريغ الاستوديو الجديد بيشتغل بطريقة وارد (سلسلة موديلات تلقائية) ومبيتأثرش بالاختيار ده. ومبيغيّرش موديل الترجمة.", 12f, th.muted),
-                    lecModelChips)) }),
-            tab("visual", { listOf<View>(
-                ui.section("🔑 مفتاح الوضع البصري فقط", true,
-                    ui.noHint(), visKeysUi),
-                                ui.section("👁 محرك الوضع البصري", false, visAutoChips,
-                    ui.slider("المسافة اللي الوضع البصري بيفحصها قدّام مكان التشغيل", Cfg.int("vis_ahead", 180).coerceIn(30, 900), 30, 900, "ث") { Cfg.put("vis_ahead", it.toString()) },
-                    ui.noHint())) }),
+                    *fl("prefine"))) }),
+
             // ===== 🎬 شكل الترجمة =====
             tab("look", { listOf<View>(
                 ui.section("🔤 الخط والحجم", true, *sp.fonts.toTypedArray()),

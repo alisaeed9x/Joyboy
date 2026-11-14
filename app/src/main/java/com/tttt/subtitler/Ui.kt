@@ -46,7 +46,7 @@ class Ui(val ctx: Context, var th: Theme) {
                 override fun onStopTrackingTouch(s: SeekBar?) {}
             })
         }
-        return LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL; addView(tv); addView(sb) }
+        return LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL; addView(tv); addView(sb) }.also { SettingsIdx.reg(it, label) }   // (v1014) فهرس البحث
     }
     fun card(): LinearLayout = LinearLayout(ctx).apply {
         orientation = LinearLayout.VERTICAL; setPadding(dp(14), dp(12), dp(14), dp(14))
@@ -69,6 +69,7 @@ class Ui(val ctx: Context, var th: Theme) {
         layoutParams = LinearLayout.LayoutParams(-1, -2).apply { setMargins(0, dp(4), 0, dp(4)) }
         Glass.pressable(this)
         setOnClickListener { f() }
+        SettingsIdx.reg(this, t)   // (v1014) فهرس البحث
     }
     /**
      * (v909) سويتش MeeTube الأصلي (`com.newtube.mobile.ui.common.GlassSwitch`): نفس صف إعدادات MeeTube —
@@ -80,6 +81,7 @@ class Ui(val ctx: Context, var th: Theme) {
         if (glass == null) {
             val sw = plainSwitchRow(t, on, onChange)
             row.inner = sw; row.addView(sw, LinearLayout.LayoutParams(-1, -2))
+            SettingsIdx.reg(row, t)   // (v1014)
             return row
         }
         row.orientation = LinearLayout.HORIZONTAL; row.gravity = Gravity.CENTER_VERTICAL
@@ -91,6 +93,7 @@ class Ui(val ctx: Context, var th: Theme) {
         glass.setOnCheckedChangeListener { _, v -> onChange(v) }
         row.setOnClickListener { glass.isChecked = !glass.isChecked }   // الصف هو اللي بيقلب (clickOwner في GlassSwitch)
         row.inner = glass
+        SettingsIdx.reg(row, t)   // (v1014)
         return row
     }
     private fun plainSwitchRow(t: String, on: Boolean, onChange: (Boolean) -> Unit): Switch = IconSwitch(ctx).apply {   // (v909) الشكل القديم: تلفزيون + احتياطي لو سويتش MeeTube مااتبناش
@@ -134,6 +137,7 @@ class Ui(val ctx: Context, var th: Theme) {
             }
         }
         col.orientation = LinearLayout.VERTICAL
+        SettingsIdx.reg(col, items.joinToString(" "))   // (v1014) فهرس البحث
         return col
     }
     /** قسم قابل للطي (الموبايل صغير) */
@@ -142,7 +146,7 @@ class Ui(val ctx: Context, var th: Theme) {
         if (try { DeviceUi.isTv(ctx) } catch (_: Throwable) { false }) {
             val c = card(); val body = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL }
             views.forEach { body.addView(it) }
-            c.addView(text(title, 17f, th.primary, true).apply { setPadding(0, dp(6), 0, dp(8)) }); c.addView(body); return c
+            c.addView(text(title, 17f, th.primary, true).apply { setPadding(0, dp(6), 0, dp(8)) }); c.addView(body); SettingsIdx.sec[c] = title; return c
         }
         val c = card(); val body = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL; visibility = if (open) View.VISIBLE else View.GONE }
         views.forEach { body.addView(it) }
@@ -158,7 +162,7 @@ class Ui(val ctx: Context, var th: Theme) {
             if (o) Motion.stagger(body, 6, 30L)
             head.text = arr(o) + title
         }
-        c.addView(head); c.addView(body); return c
+        c.addView(head); c.addView(body); SettingsIdx.sec[c] = title; return c
     }
 }
 

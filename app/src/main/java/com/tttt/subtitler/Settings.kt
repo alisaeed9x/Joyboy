@@ -23,16 +23,15 @@ object SettingsTabs {
     val sections = listOf(
         // (v815) 5 مجموعات واضحة — كل حاجة شبه بعضها جنب بعضها، ومكان كل إعداد واحد بس
         Sec("general", "🚀 خط الترجمة", "اللهجة · الأسلوب · الشدة · الخطة (تفريغ ← ترجمة ← لهجة) · 📝 البرومبتات", "🚀 الترجمة والمحرك"),
-        Sec("keys", "🔑 المفاتيح", "مفاتيح جيميناي · الاستهلاك والكوتة", "🚀 الترجمة والمحرك"),
-        Sec("audio", "🎙 التفريغ والصوت", "موديلات التفريغ على الجهاز · لغة الكلام · مسار الصوت · جودة الصوت · الأصوات الخلفية · دقة التوقيت", "🚀 الترجمة والمحرك"),
-        Sec("perf", "🤖 الموديل والأداء", "الموديل الواحد (Gemini Flash-Lite) · اختبار السرعة · طول المقطع · المقاطع قدّام التشغيل · التنقيح", "🚀 الترجمة والمحرك"),
-        Sec("visual", "👁 الصورة (الوضع البصري)", "مفتاح الوضع البصري · تلقائي أو يدوي · المسافة قدّام التشغيل", "🚀 الترجمة والمحرك"),
+        Sec("keys", "🔑 المفاتيح", "مفاتيح جيميناي · مفتاح الوضع البصري · الاستهلاك والكوتة", "🚀 الترجمة والمحرك"),
+        Sec("audio", "🎙 التفريغ والصوت", "الصوت · موديلات التفريغ على الجهاز · لغة الكلام · وارد (طول الجزء) · نموذج التفريغ الاحتياطي", "🚀 الترجمة والمحرك"),
+        Sec("perf", "🤖 الموديل والأداء", "موديل الترجمة · اختبار السرعة · التقطيع والتنقيح · محرك الوضع البصري", "🚀 الترجمة والمحرك"),
         Sec("look", "🎬 شكل الترجمة", "الخط والحجم · الأنيميشن · وضع العرض · اللون · الخلفية · كبسولات العدّادات", "🎨 الشكل"),
         Sec("appearance", "🎨 المظهر", "المظهر (داكن · فاتح · أموليد · رملي) · درجة الدفء · نوع الجهاز · الحركة والوصول", "🎨 الشكل"),
         Sec("tvset", "📺 التلفزيون", "كل إعدادات التلفزيون في مكان واحد: الشكل والسمات · الخلفية · الأيقونات · الرئيسية والصفوف · الفيديوهات · المتصفح · الصلاة", "📺 التلفزيون"),
         // (v1012) قسم المشغّل: كل ما يخص المشغّل في مكان واحد (كان مبعثر بين يوتيوب والمظهر والخلفية)
-        Sec("player", "🎬 المشغّل", "المشغّل الأساسي (MeeTube / Player.kt) · مظهر المشغّل · الجودة الافتراضية · حدّة الفيديو · السلاسة والفريمات · الخروج من المشغّل", "▶ المشغّل ويوتيوب"),
-        Sec("youtube", "▶ يوتيوب", "فتح يوتيوب (MeeTube) · إعداداته الكاملة: الحساب · السجل · الإشعارات · التحميلات", "▶ المشغّل ويوتيوب"),
+        Sec("player", "🎬 المشغّل", "المشغّل الأساسي (MeeTube / Player.kt) · مظهر المشغّل · الجودة الافتراضية · حدّة الفيديو · السلاسة والفريمات · الخروج من المشغّل", "🎬 المشغّل"),
+        Sec("youtube", "▶ يوتيوب", "فتح يوتيوب (MeeTube) · إعداداته الكاملة: الحساب · السجل · الإشعارات · التحميلات", "▶ يوتيوب"),
         Sec("music", "🎵 مشغّل الموسيقى", "الكلمات (جيميناي) · الخط والحجم · الكلمات التلقائية · فحص الأغاني", "🎵 الموسيقى"),
         Sec("more", "🔋 الخلفية والتشغيل", "الطابور · مجلد الترجمة في الخلفية · البطارية (عشان الجهاز ما يقتلش الخدمة)", "🛠 النظام"),
         Sec("capture", "🔗 الاصطياد والترجمة الحية", "مراقب صفحات الفيديو في المتصفحات · الترجمة الحية فوق أي تطبيق", "🛠 النظام"),
@@ -67,6 +66,15 @@ class TabbedDialog(val act: Activity, val ui: Ui, val title: String, val tabs: L
     private var filter: Set<String>? = null       // (v820) null = كل الأقسام (الإعدادات الشاملة) · غير كده = أقسام صفحة معيّنة بس (PageSettings)
     private var curTitle = title
     private val tvMode = TvFocus.on(act)
+    // (v1014) بحث الإعدادات: مربع فوق + نتايج بتنقل الإعداد الحي نفسه (مش نسخة) وبترجّعه مكانه لما البحث يتقفل
+    private var searchEt: EditText? = null
+    private var searchPage: LinearLayout? = null
+    private var searchIdx: List<SHit>? = null
+    private val moved = ArrayList<MV>()
+    private var searching = false
+    private var silent = false
+    private val sh = android.os.Handler(android.os.Looper.getMainLooper())
+    private lateinit var frameV: LinearLayout
     private val previewBox = FrameLayout(act)
     private val titleTv: TextView
     private val backTv: TextView
@@ -99,6 +107,21 @@ class TabbedDialog(val act: Activity, val ui: Ui, val title: String, val tabs: L
         head.addView(titleTv, LinearLayout.LayoutParams(0, -2, 1f))
         head.addView(IconTextView(act).apply { text = "✕"; textSize = 18f; setTextColor(th.muted); setPadding(ui.dp(12), ui.dp(10), ui.dp(12), ui.dp(10)); setOnClickListener { embedClose?.invoke() ?: dialog.dismiss() } })
         root.addView(head, LinearLayout.LayoutParams(-1, -2))
+        // (v1014) 🔎 بحث في كل الإعدادات (مطابقة مرنة: تشكيل/همزات/ال/غلطات إملائية بسيطة/مرادفات)
+        searchPage = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL }
+        val sEt = ui.input("🔎 ابحث عن أي إعداد…  (مثلًا: مشغل · صوت · بطارية)", "")
+        searchEt = sEt
+        sEt.addTextChangedListener(object : android.text.TextWatcher {
+            override fun afterTextChanged(e: android.text.Editable?) {
+                if (silent) return
+                sh.removeCallbacksAndMessages(null)
+                val q = e?.toString() ?: ""
+                sh.postDelayed({ runSearch(q) }, 200L)
+            }
+            override fun beforeTextChanged(a: CharSequence?, b: Int, c: Int, d: Int) {}
+            override fun onTextChanged(a: CharSequence?, b: Int, c: Int, d: Int) {}
+        })
+        root.addView(sEt, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = ui.dp(4) })
 
         if (preview != null) { previewBox.addView(preview); previewBox.visibility = View.GONE; root.addView(previewBox, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = ui.dp(8) }) }
 
@@ -139,6 +162,7 @@ class TabbedDialog(val act: Activity, val ui: Ui, val title: String, val tabs: L
         }
 
         val frame = LinearLayout(act).apply { orientation = if (split) LinearLayout.HORIZONTAL else LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL }
+        frameV = frame
         frame.addView(listPage, if (split) LinearLayout.LayoutParams(ui.dp(if (tvMode) 360 else 300), -2) else LinearLayout.LayoutParams(-1, -2))
         bodyCol = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL }
         splitHint = ui.text("👈 اختار قسم من القايمة", 14f, th.muted).apply { setPadding(ui.dp(16), ui.dp(24), ui.dp(16), ui.dp(24)) }
@@ -158,7 +182,7 @@ class TabbedDialog(val act: Activity, val ui: Ui, val title: String, val tabs: L
             setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
         }
         // رجوع (زرار أو سويب): لو جوه قسم يرجع للقايمة، لو في القايمة يقفل الإعدادات
-        dialog.onBack = { if (cur >= 0) { back(); true } else false }
+        dialog.onBack = { if (searching) { endSearch(); true } else if (cur >= 0) { back(); true } else false }
         dialog.setOnDismissListener { onClose() }
         showList()
     }
@@ -172,6 +196,7 @@ class TabbedDialog(val act: Activity, val ui: Ui, val title: String, val tabs: L
     }
 
     private fun showList() {
+        if (searching) endSearch()
         val prev = cur
         cur = -1; directEntry = false
         if (::splitHint.isInitialized) splitHint.visibility = if (split) View.VISIBLE else View.GONE
@@ -186,6 +211,7 @@ class TabbedDialog(val act: Activity, val ui: Ui, val title: String, val tabs: L
     }
 
     fun back() {
+        if (searching) { endSearch(); return }
         if (tvMode && split) {   // (v487) تلفزيون: Back من جوه القسم = رجوع لقايمة الأقسام؛ ومن القايمة = خروج
             val f = if (embedded) act.currentFocus else (dialog.currentFocus ?: act.currentFocus)
             if (f != null && cur >= 0 && isInBody(f)) { rowViews.getOrNull(cur)?.let { TvFocus.focusIn(it) }; return }
@@ -202,8 +228,121 @@ class TabbedDialog(val act: Activity, val ui: Ui, val title: String, val tabs: L
         try { tabs[i].content.forEach { bodies[i].addView(it) } } catch (e: Throwable) { LogStore.err("Settings:tab:" + tabs[i].id, e) }
     }
 
+    // ===================== (v1014) بحث الإعدادات =====================
+    private fun moveInto(v: View, to: android.view.ViewGroup) {
+        val p = v.parent as? android.view.ViewGroup ?: return
+        moved.add(MV(v, p, p.indexOfChild(v), v.layoutParams))
+        p.removeView(v); to.addView(v)
+    }
+
+    /** بيرجّع كل إعداد اتنقل لنتايج البحث مكانه الأصلي بالظبط (عكس ترتيب النقل عشان الـindex يفضل صح) */
+    private fun restoreMoved() {
+        for (m in moved.asReversed()) {
+            try {
+                (m.v.parent as? android.view.ViewGroup)?.removeView(m.v)
+                val at = m.idx.coerceIn(0, m.p.childCount)
+                if (m.lp != null) m.p.addView(m.v, at, m.lp) else m.p.addView(m.v, at)
+            } catch (e: Throwable) { LogStore.err("Settings:restore", e) }
+        }
+        moved.clear()
+    }
+
+    fun endSearch(clearText: Boolean = true) {
+        sh.removeCallbacksAndMessages(null)
+        restoreMoved()
+        if (searching) {
+            searching = false
+            try { scrollBox.removeAllViews(); scrollBox.addView(frameV) } catch (_: Throwable) {}
+        }
+        searchPage?.removeAllViews()
+        if (clearText) { silent = true; try { if (!searchEt?.text.isNullOrEmpty()) searchEt?.setText("") } finally { silent = false } }
+    }
+
+    private fun walkIdx(g: android.view.ViewGroup, tab: Int, secT: String, out: MutableList<SHit>) {
+        var pending: TextView? = null
+        val kids = ArrayList<View>(); for (k in 0 until g.childCount) kids.add(g.getChildAt(k))
+        for (c in kids) {
+            val m = SettingsIdx.meta[c]
+            val st = SettingsIdx.sec[c]
+            if (m != null) {
+                val lab = pending
+                out.add(SHit(tab, secT, lab, c, SettingsFuzzy.words(m + " " + (lab?.text ?: "")), SettingsFuzzy.words(secT)))
+                pending = null
+            } else if (st != null) {
+                pending = null
+                if (c is android.view.ViewGroup) walkIdx(c, tab, st, out)
+            } else if (c is EditText) {
+                pending = null
+            } else if (c is TextView) {
+                if (c.text.isNotBlank() && c.text.length < 160) pending = c
+            } else if (c is android.view.ViewGroup) {
+                pending = null
+                walkIdx(c, tab, secT, out)
+            } else pending = null
+        }
+    }
+
+    private fun buildSearchIndex(): List<SHit> {
+        val out = ArrayList<SHit>()
+        for (i in tabs.indices) {
+            if (!isShown(i)) continue
+            ensureBody(i)
+            try { walkIdx(bodies[i], i, "", out) } catch (e: Throwable) { LogStore.err("Settings:idx:" + tabs[i].id, e) }
+        }
+        return out
+    }
+
+    private class Sc(val h: SHit, val own: Int, val sec: Int, val tab: Int)
+
+    private fun runSearch(q0: String) {
+        val q = q0.trim()
+        if (q.isEmpty()) { endSearch(false); return }
+        val pg = searchPage ?: return
+        restoreMoved()
+        if (!searching) { searching = true; try { scrollBox.removeAllViews(); scrollBox.addView(pg) } catch (_: Throwable) {} }
+        pg.removeAllViews()
+        var idx = searchIdx
+        if (idx == null) {
+            idx = try { buildSearchIndex() } catch (e: Throwable) { LogStore.err("Settings:index", e); emptyList() }
+            searchIdx = idx
+        }
+        val toks = SettingsFuzzy.queryTokens(q)
+        val tabWords = tabs.map { SettingsFuzzy.words(it.label) }
+        val scored = ArrayList<Sc>()
+        if (toks.isNotEmpty()) for (h in idx) {
+            var o = 0; var s = 0; var t = 0
+            for (alts in toks) {
+                if (SettingsFuzzy.hit(alts, h.ownW)) o++
+                else if (SettingsFuzzy.hit(alts, h.secW)) s++
+                else if (SettingsFuzzy.hit(alts, tabWords[h.tab])) t++
+            }
+            if (o + s + t > 0) scored.add(Sc(h, o, s, t))
+        }
+        var pick: List<Sc> = scored.filter { it.own + it.sec + it.tab == toks.size }.ifEmpty { scored }   // كل الكلمات أولًا، وإلا أي كلمة
+        if (pick.any { it.own + it.sec > 0 }) pick = pick.filter { it.own + it.sec > 0 }                 // تطابق على التبويب بس مايزاحمش
+        pick = pick.sortedWith(compareByDescending<Sc> { it.own * 4 + it.sec * 2 + it.tab }.thenBy { it.h.tab })
+        if (pick.isEmpty()) {
+            pg.addView(ui.text("مفيش إعداد مطابق — جرّب كلمة تانية", 13f, ui.th.muted).apply { setPadding(ui.dp(8), ui.dp(22), ui.dp(8), ui.dp(8)) })
+            return
+        }
+        for (sc in pick.take(30)) {
+            val h = sc.h
+            val card = ui.card()
+            val path = tabs[h.tab].label + (if (h.secTitle.isNotBlank()) "  ›  " + h.secTitle.replace(Regex("^[▸▾]\\s*"), "") else "")
+            card.addView(ui.text(path, 11.5f, ui.th.primary, true).apply {
+                setPadding(0, 0, 0, ui.dp(6)); Glass.pressable(this)
+                setOnClickListener { val t = h.tab; endSearch(); select(t) }   // فتح القسم نفسه
+            })
+            h.label?.let { moveInto(it, card) }
+            moveInto(h.ctl, card)
+            pg.addView(card)
+        }
+        if (pick.size > 30) pg.addView(ui.text("＋ " + (pick.size - 30) + " نتيجة تانية — حدّد كلمة البحث أكتر", 12f, ui.th.muted).apply { setPadding(ui.dp(8), ui.dp(8), ui.dp(8), ui.dp(8)) })
+    }
+
     fun select(i: Int, fromFocus: Boolean = false) {
         if (i !in tabs.indices) return
+        if (searching) endSearch()
         ensureBody(i)
         cur = i
         if (::splitHint.isInitialized) splitHint.visibility = View.GONE
@@ -231,6 +370,9 @@ class TabbedDialog(val act: Activity, val ui: Ui, val title: String, val tabs: L
      * ids = null بيرجّع القايمة الكاملة (الإعدادات الشاملة) — الشاشة الشاملة بتنده كده في كل مرة بتفتح.
      */
     fun setFilter(ids: List<String>?, ttl: String? = null) {
+        endSearch()
+        searchIdx = null
+        searchEt?.visibility = if (ids == null) View.VISIBLE else View.GONE
         filter = ids?.toSet()
         curTitle = if (ids != null && ttl != null) ttl else title
         rowViews.forEachIndexed { i, r -> r.visibility = if (isShown(i)) View.VISIBLE else View.GONE }
@@ -253,3 +395,71 @@ class TabbedDialog(val act: Activity, val ui: Ui, val title: String, val tabs: L
     fun showEmbedded(tabId: String? = null) = show(tabId)
 }
 
+
+
+// ===================== (v1014) فهرس بحث الإعدادات =====================
+/** كل ui.switchRow/chips/slider/button بيسجّل نصه هنا، وكل ui.section بيسجّل عنوانه — بحث الإعدادات بيمشي على الـViews الحيّة دي */
+object SettingsIdx {
+    val meta = java.util.WeakHashMap<View, String>()
+    val sec = java.util.WeakHashMap<View, String>()
+    fun reg(v: View, text: String) { try { meta[v] = text } catch (_: Throwable) {} }
+}
+
+internal class SHit(val tab: Int, val secTitle: String, val label: TextView?, val ctl: View, val ownW: List<String>, val secW: List<String>)
+internal class MV(val v: View, val p: android.view.ViewGroup, val idx: Int, val lp: android.view.ViewGroup.LayoutParams?)
+
+/** مطابقة مرنة عربي/إنجليزي: بيشيل التشكيل والتطويل، يوحّد الهمزات (أإآ→ا) والياء/الألف المقصورة والتاء المربوطة، يشيل «ال»، يسامح في غلطة إملائية واحدة (اتنين في الكلمات الطويلة)، ومرادفات قليلة (مشغل=player…) */
+object SettingsFuzzy {
+    private val STOP = setOf("نوع", "اعداد", "اعدادات", "عايز", "عاوز", "ابحث", "عن", "في", "من", "علي", "على", "ده", "دي", "بتاع", "بتاعه", "اختيار", "setting", "settings", "the")
+    private val SYN = mapOf(
+        "مشغل" to listOf("player", "بلاير"), "player" to listOf("مشغل"),
+        "ترجمه" to listOf("سبتايتل", "subtitle", "translation"), "سبتايتل" to listOf("ترجمه"),
+        "صوت" to listOf("audio", "volume"), "audio" to listOf("صوت"),
+        "فيديو" to listOf("video"), "video" to listOf("فيديو"),
+        "خلفيه" to listOf("background"), "بطاريه" to listOf("battery"),
+        "مفتاح" to listOf("key", "keys", "مفاتيح"), "مفاتيح" to listOf("مفتاح", "key"),
+        "جوده" to listOf("quality"), "سرعه" to listOf("speed"),
+        "ثيم" to listOf("مظهر", "theme"), "مظهر" to listOf("ثيم", "theme"),
+        "خط" to listOf("font"), "لهجه" to listOf("dialect"), "تحميل" to listOf("download"), "اشعار" to listOf("notification"))
+
+    fun norm(s: String): String {
+        val sb = StringBuilder(s.length)
+        for (c0 in s.lowercase()) {
+            if (c0 in '\u064B'..'\u0652' || c0 == '\u0670' || c0 == '\u0640') continue
+            val c = when (c0) { 'أ', 'إ', 'آ', 'ٱ' -> 'ا'; 'ى' -> 'ي'; 'ة' -> 'ه'; 'ؤ' -> 'و'; 'ئ' -> 'ي'; else -> c0 }
+            sb.append(if (c.isLetterOrDigit()) c else ' ')
+        }
+        return sb.toString()
+    }
+
+    fun words(s: String): List<String> = norm(s).split(' ').filter { it.isNotBlank() }.map { if (it.length > 4 && it.startsWith("ال")) it.substring(2) else it }
+
+    /** كل عنصر = كلمة بحث + مرادفاتها (أي واحدة منهم تكفي) */
+    fun queryTokens(q: String): List<List<String>> {
+        val w = words(q)
+        val keep = w.filter { it !in STOP }.ifEmpty { w }
+        return keep.map { t -> listOf(t) + (SYN[t] ?: emptyList()) }
+    }
+
+    private fun lev(a: String, b: String, lim: Int): Int {
+        if (Math.abs(a.length - b.length) > lim) return lim + 1
+        var prev = IntArray(b.length + 1) { it }
+        for (i in 1..a.length) {
+            val cur = IntArray(b.length + 1); cur[0] = i
+            for (j in 1..b.length) cur[j] = minOf(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (if (a[i - 1] == b[j - 1]) 0 else 1))
+            prev = cur
+        }
+        return prev[b.length]
+    }
+
+    private fun one(t: String, words: List<String>): Boolean {
+        for (w in words) {
+            if (w == t) return true
+            if (t.length >= 3 && (w.contains(t) || (w.length >= 3 && t.contains(w)))) return true
+            if (t.length >= 4 && w.length >= 4 && lev(t, w, if (t.length >= 8) 2 else 1) <= (if (t.length >= 8) 2 else 1)) return true
+        }
+        return false
+    }
+
+    fun hit(alts: List<String>, words: List<String>): Boolean = alts.any { one(it, words) }
+}
