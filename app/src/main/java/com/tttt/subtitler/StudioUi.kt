@@ -122,13 +122,68 @@ class StudioUi(private val act: Activity, private val ui: Ui, private val th: Th
 
     private fun statusOf(d: Lecture.Doc): String {
         val r = Lecture.runOf(d.id)
-        return when {
-            r != null && r.running -> "⏳ بيفرّغ… ${d.pct}%"
-            d.complete -> "✅ مكتمل"
-            d.failed.isNotEmpty() -> "⚠ ${d.failed.size} جزء ناقص"
-            d.nChunks == 0 -> "لسه ما بدأش"
-            else -> "⏸ واقف عند ${d.pct}%"
+        val live = r != null && r.running
+        return synchronized(d) {
+            val pct = d.pct
+            when {
+                live -> "⏳ بيفرّغ… $pct%"
+                d.complete -> "✅ متفرّغ كليًا — 100%"
+                d.nChunks == 0 || (d.done.isEmpty() && d.segs.isEmpty()) -> "⭕ لسه ما اتفرّغش — 0%"
+                else -> "🟡 متفرّغ جزئيًا — " + minOf(pct, 99) + "%" + (if (d.failed.isNotEmpty()) " · ⚠ ${d.failed.size} جزء ناقص" else "")
+            }
         }
+    }
+
+    private fun isBusy(d: Lecture.Doc): Boolean = Lecture.isRunning(d.id) || StudioComplete.isRunning(d.id)
+
+    /** ▶ إكمال: يكمّل الأجزاء الناقصة بس (اللي خلص مبيتعادش) */
+    private fun resumeDoc(d: Lecture.Doc) {
+        when {
+            isBusy(d) -> Notice.show(act, "التفريغ شغّال أصلًا", 2200L)
+            d.complete -> Notice.show(act, "✅ التفريغ كامل — لو عايز تعيده دوس «🔁 إعادة تفريغ»", 2800L)
+            else -> {
+                try { Lecture.start(act, d) } catch (e: Throwable) { LogStore.err("StudioUi:resume", e); Notice.show(act, "⚠ مقدرتش أكمّل التفريغ", 2600L); return }
+                Notice.show(act, "▶ بكمّل من الأجزاء الناقصة", 2200L)
+                renderHistory()
+            }
+        }
+    }
+
+    /** ⏹ إلغاء: بيوقّف التفريغ الشغّال، واللي خلص بيتحفظ */
+    private fun cancelDoc(d: Lecture.Doc) {
+        if (!isBusy(d)) { Notice.show(act, "مفيش تفريغ شغّال دلوقتي", 2200L); return }
+        StudioComplete.stop(d.id)
+        Lecture.stop(d.id)
+        Notice.show(act, "⏹ بوقّف… اللي خلص اتحفظ وتقدر تكمّل بعدين", 2800L)
+        renderHistory()
+    }
+
+    /** 🔁 إعادة تفريغ: بيمسح التفريغ الحالي (والتنظيم/التلخيص اللي اتبنوا عليه) ويفرّغ من أول جديد */
+    private fun restartDoc(d: Lecture.Doc, after: () -> Unit = {}) {
+        GAlert(act).setTitle("🔁 إعادة التفريغ من الأول")
+            .setMessage("«" + Studio.displayTitle(d).take(50) + "» — هيمسح التفريغ الحالي والتنظيم والتلخيص ويفرّغ كل الأجزاء من جديد. الترجمة المحفوظة قبل كده بتتعمل من جديد لو النص اتغيّر.")
+            .setPositiveButton("امسح وفرّغ من الأول") { _, _ ->
+                Notice.show(act, "⏳ بجهّز إعادة التفريغ…", 2200L)
+                Thread {
+                    try {
+                        StudioComplete.stop(d.id)
+                        Lecture.stop(d.id)
+                        var waited = 0
+                        while (isBusy(d) && waited < 60) { Thread.sleep(500L); waited++ }
+                        if (isBusy(d)) {
+                            main.post { Notice.show(act, "التفريغ لسه بيقفل — جرّب تاني بعد ثواني", 3000L) }
+                        } else {
+                            Lecture.resetTranscript(act, d)
+                            Lecture.start(act, d)
+                            main.post { Notice.show(act, "🔁 التفريغ بدأ من الأول", 2600L); after(); renderHistory() }
+                        }
+                    } catch (e: Throwable) {
+                        LogStore.err("StudioUi:restart", e)
+                        main.post { Notice.show(act, "⚠ مقدرتش أعيد التفريغ", 2600L) }
+                    }
+                }.apply { isDaemon = true }.start()
+            }
+            .setNegativeButton("إلغاء", null).show()
     }
 
     // ===================== الشاشة الرئيسية =====================
@@ -389,8 +444,7 @@ class StudioUi(private val act: Activity, private val ui: Ui, private val th: Th
     }
 
     /** يبدأ التفريغ: نوع يدوي (لو متحدد) ← Lecture.start (الصوت بس، الفيديو مبيشتغلش) ← شاشة التفريغ */
-    /** (v998) warid=true = تفريغ بطريقة وارد. الصوتيات (audio/rec) بتسأل عن الطريقة هنا، لأنها مبتعدّيش على سؤال «تفريغ ولا مشاهدة» */
-    private fun begin(kind: String, title: String, uri: String, link: String, type: String, warid: Boolean = false) {
+    private fun begin(kind: String, title: String, uri: String, link: String, type: String) {
         val d = try {
             Lecture.newDoc(act, kind, title, uri, link)
         } catch (e: Throwable) {
@@ -405,12 +459,6 @@ class StudioUi(private val act: Activity, private val ui: Ui, private val th: Th
                 LogStore.err("StudioUi:setType", e)
             }
         }
-        if (warid) {
-            beginWarid(d)
-            return
-        }
-        // (v1000) مفيش سؤال عن الطريقة هنا خلاص: التفريغ الافتراضي بقى وارد، فالخيارين كانوا هيودّوا لنفس المكان.
-        // تحويل دوكيومنت عادي قديم لوارد صراحةً لسه موجود عبر beginWarid() (بموافقة على مسح القديم).
         startNormal(d)
     }
 
@@ -424,42 +472,6 @@ class StudioUi(private val act: Activity, private val ui: Ui, private val th: Th
             return
         }
         Notice.show(act, "⏳ التفريغ بدأ — تقدر تتابعه من سجل التفريغات", 2800L)
-        try {
-            LectureUi(act, ui, th).open(d)
-        } catch (e: Throwable) {
-            LogStore.err("StudioUi:open", e)
-        }
-    }
-
-    /** (v998) تفريغ وارد: لو فيه تفريغ عادي قديم هيتمسح الأول (أجزاء ٦٠ ثانية مبتكملش على أجزاء وارد) — بموافقة المستخدم */
-    private fun beginWarid(d: Lecture.Doc) {
-        if (Lecture.isRunning(d.id)) {
-            Notice.show(act, "التفريغ شغال أصلًا — استنى يخلص", 2600L)
-            try {
-                LectureUi(act, ui, th).open(d)
-            } catch (e: Throwable) {
-                LogStore.err("StudioUi:open", e)
-            }
-            return
-        }
-        val hasOld = synchronized(d) { (d.segs.isNotEmpty() || d.done.isNotEmpty() || d.failed.isNotEmpty()) && !d.warid }
-        if (hasOld) {
-            GAlert(act).setTitle("🌐 التفريغ عن طريق وارد").setMessage("المصدر ده متفريغ قبل كده بالطريقة العادية — التفريغ القديم هيتمسح ويتفرّغ من جديد بطريقة وارد (أجزاء ٥ أو ١٠ دقايق).").setPositiveButton("امسح وفرّغ بوارد") { _, _ -> startWaridNow(d) }.setNegativeButton("إلغاء", null).show()
-            return
-        }
-        startWaridNow(d)
-    }
-
-    /** (v998) تشغيل وارد الفعلي بعد الموافقة */
-    private fun startWaridNow(d: Lecture.Doc) {
-        try {
-            WaridTx.startWarid(act, d)
-        } catch (e: Throwable) {
-            LogStore.err("StudioUi:waridStart", e)
-            Notice.show(act, "⚠ مقدرتش أبدأ التفريغ بوارد", 2600L)
-            return
-        }
-        Notice.show(act, "⏳ التفريغ بوارد بدأ — تقدر تتابعه من سجل التفريغات", 2800L)
         try {
             LectureUi(act, ui, th).open(d)
         } catch (e: Throwable) {
@@ -579,6 +591,7 @@ class StudioUi(private val act: Activity, private val ui: Ui, private val th: Th
     private var hist: List<Lecture.Doc> = emptyList()
     private val histCol = vcol()
     private var histTick: Runnable? = null
+    private var histWasBusy = false
     // (v1000) بحث شامل في السجل: عنوان + نص كل الجمل — نفس نمط TrLibUi (debounce 260ms،
     // خيط خلفي، token للإلغاء، حد أدنى حرفين). النتائج: (عدد الجمل المطابقة، بداية أول مطابقة).
     private var histQ = ""
@@ -612,7 +625,9 @@ class StudioUi(private val act: Activity, private val ui: Ui, private val th: Th
         val t = object : Runnable {
             override fun run() {
                 if (!histShown) return
-                if (hist.any { Lecture.isRunning(it.id) }) renderHistory()
+                val anyBusy = hist.any { isBusy(it) }
+                if (anyBusy || histWasBusy) renderHistory()   // (v1018) لسه بيرسم مرة بعد ما الشغل يخلص عشان الحالة والأزرار تتحدّث
+                histWasBusy = anyBusy
                 main.postDelayed(this, 1200L)
             }
         }
@@ -689,6 +704,12 @@ class StudioUi(private val act: Activity, private val ui: Ui, private val th: Th
                 setOnClickListener { confirmDelete(d) }
             })
             row.addView(top)
+            val busy = isBusy(d)
+            val acts = hrow()
+            acts.addView(pill("▶ إكمال", primary = !busy && !d.complete) { resumeDoc(d) }.apply { alpha = if (busy || d.complete) 0.5f else 1f }, LinearLayout.LayoutParams(0, -2, 1f).apply { marginEnd = ui.dp(6) })
+            acts.addView(pill("⏹ إلغاء", danger = busy) { cancelDoc(d) }.apply { alpha = if (busy) 1f else 0.5f }, LinearLayout.LayoutParams(0, -2, 1f).apply { marginEnd = ui.dp(6) })
+            acts.addView(pill("🔁 إعادة تفريغ") { restartDoc(d) }, LinearLayout.LayoutParams(0, -2, 1f))
+            row.addView(acts, lp(-1, -2, 8))
             row.isClickable = true
             Glass.pressable(row)
             row.setOnClickListener {
@@ -805,8 +826,9 @@ class StudioUi(private val act: Activity, private val ui: Ui, private val th: Th
             offNote.text = StudioTx.offlineNote()
         }, lp(-1, -2, 4))
         content.addView(offNote, lp(-1, -2, 2))
-        // (v1011) إكمال الناقص: تفريغ وارد للأجزاء الناقصة + ترجمة السطور اللي من غير ترجمة، بموديل Gemini Flash Lite Latest بس
+        // (v1011) إكمال الناقص: تفريغ الأجزاء الناقصة + ترجمة السطور اللي من غير ترجمة، بموديل Gemini Flash Lite Latest بس
         content.addView(pill("🧩 إكمال الناقص (تفريغ + ترجمة)", primary = true) { runComplete(d, srtStatus) { paintMeta(); renderHistory() } }, lp(-1, -2, 8))
+        content.addView(pill("🔁 إعادة التفريغ من الأول") { restartDoc(d) { paintMeta() } }, lp(-1, -2, 8))
         content.addView(pill("📖 فتح التفريغ") {
             try {
                 LectureUi(act, ui, th).open(d)
@@ -830,7 +852,6 @@ class StudioUi(private val act: Activity, private val ui: Ui, private val th: Th
         content.addView(pill("🔍 فحص جودة الترجمة") { runSrtCheck(d) }, lp(-1, -2, 8))
         content.addView(pill("✂ قص مقطع ومشاركته") { clipDialog(d) }, lp(-1, -2, 8))
         content.addView(pill("📝 ترجمة لـSRT") { runSrt(d, srtStatus) }, lp(-1, -2, 8))
-        content.addView(pill("🌐 الترجمة عن طريق وارد") { runWaridTranslate(d, srtStatus) }, lp(-1, -2, 8))
         content.addView(pill("📚 فتح مكتبة الترجمات") {
             try {
                 TrLibUi(act, ui, th).show()
@@ -895,7 +916,7 @@ class StudioUi(private val act: Activity, private val ui: Ui, private val th: Th
             return
         }
         GAlert(act).setTitle("🧩 إكمال الناقص")
-            .setMessage("الناقص: " + plan.describe() + "\n\nهيتفرّغ ويترجم الناقص بس (اللي خلص قبل كده مبيتلمسش) بنفس طريقة وارد، وبموديل Gemini Flash Lite Latest لوحده — من غير أي موديل تاني.")
+            .setMessage("الناقص: " + plan.describe() + "\n\nهيتفرّغ ويترجم الناقص بس (اللي خلص قبل كده مبيتلمسش) بنفس طريقة التفريغ العادية (أجزاء ٦٠ ثانية)، وبموديل Gemini Flash Lite Latest لوحده — من غير أي موديل تاني.")
             .setPositiveButton("ابدأ") { _, _ ->
                 statusV.text = "⏳ بحلّل الناقص…"
                 val job = StudioComplete.start(act, d,
@@ -934,7 +955,7 @@ class StudioUi(private val act: Activity, private val ui: Ui, private val th: Th
         }.apply { isDaemon = true }.start()
     }
 
-    /** نتيجة ترجمة SRT (عادي أو وارد): نفس العرض في الحالتين */
+    /** نتيجة ترجمة SRT */
     private fun showSrtResult(r: Studio.SrtResult?, statusV: TextView) {
         if (r == null) {
             statusV.text = "⚠ فشلت الترجمة"
@@ -1120,73 +1141,6 @@ class StudioUi(private val act: Activity, private val ui: Ui, private val th: Th
                 } catch (ex: Throwable) {
                     LogStore.err("StudioUi:clipShare", ex)
                     Notice.show(act, "⚠ مقدرتش أشارك المقطع", 2600L)
-                }
-            }
-        }.apply { isDaemon = true }.start()
-    }
-
-    /** (v998) «الترجمة عن طريق وارد»: تفريغ وارد الأول لو الدوكيومنت مش متفريغ بوارد، وبعدها ترجمة لـSRT */
-    private fun runWaridTranslate(d: Lecture.Doc, statusV: TextView) {
-        if (Lecture.isRunning(d.id)) {
-            Notice.show(act, "التفريغ لسه شغال — استنى يخلص وبعدها دوس تاني", 3000L)
-            return
-        }
-        val needTx = synchronized(d) { !d.warid || d.segs.isEmpty() }
-        val hasOld = synchronized(d) { d.segs.isNotEmpty() && !d.warid }
-        if (needTx && hasOld) {
-            GAlert(act).setTitle("🌐 الترجمة عن طريق وارد").setMessage("التفريغ الحالي بالطريقة العادية هيتمسح ويتفرّغ من جديد بطريقة وارد (أجزاء ٥ أو ١٠ دقايق)، وبعدها تتعمل الترجمة.").setPositiveButton("فرّغ بوارد وترجم") { _, _ -> runWaridTranslateNow(d, statusV, true) }.setNegativeButton("إلغاء", null).show()
-            return
-        }
-        runWaridTranslateNow(d, statusV, needTx)
-    }
-
-    /** (v998) تنفيذ الترجمة بوارد على خيط خلفي: تفريغ وارد (لو لازم) ← انتظار اكتماله ← ترجمة لـSRT */
-    private fun runWaridTranslateNow(d: Lecture.Doc, statusV: TextView, doTx: Boolean) {
-        statusV.text = if (doTx) "⏳ بفرّغ بوارد…" else "⏳ بترجم بوارد…"
-        Thread {
-            var res: Studio.SrtResult? = null
-            var fail = ""
-            var partialNote = ""
-            try {
-                if (doTx) {
-                    WaridTx.startWarid(act, d)
-                    while (Lecture.isRunning(d.id)) {
-                        val st = Lecture.runOf(d.id)?.status ?: ""
-                        main.post { if (st.isNotBlank()) statusV.text = "⏳ " + st }
-                        try {
-                            Thread.sleep(1000L)
-                        } catch (_: InterruptedException) {
-                            break
-                        }
-                    }
-                    val segs = synchronized(d) { d.segs.size }
-                    val err = Lecture.runOf(d.id)?.error ?: ""
-                    if (segs == 0) {
-                        fail = if (err.isNotBlank()) err.take(100) else "فشل التفريغ بوارد"
-                    } else {
-                        // (v1000) التفريغ خلص ناقص (في أجزاء فشلت): الترجمة هتتعمل من اللي اتفرّغ،
-                        // بس لازم يبان في الحالة النهائية إنها من تفريغ ناقص — مش ترجمة كاملة.
-                        val nFailed = synchronized(d) { d.failed.size }
-                        if (nFailed > 0) partialNote = "⚠ الترجمة اتعملت من تفريغ ناقص (" + nFailed + " جزء)"
-                    }
-                }
-                if (fail.isEmpty()) {
-                    res = WaridTx.translateWaridDoc(act, d, report = { m -> main.post { statusV.text = "⏳ " + m } })
-                }
-            } catch (e: Throwable) {
-                LogStore.err("StudioUi:waridTr", e)
-                if (fail.isEmpty()) fail = (e.message ?: e.javaClass.simpleName).take(100)
-            }
-            val r = res
-            val f = fail
-            val pn = partialNote
-            main.post {
-                if (f.isNotEmpty()) {
-                    statusV.text = "⚠ " + f
-                    Notice.show(act, "⚠ " + f, 3600L)
-                } else {
-                    showSrtResult(r, statusV)
-                    if (pn.isNotBlank() && r?.ok == true) statusV.text = statusV.text.toString() + " · " + pn
                 }
             }
         }.apply { isDaemon = true }.start()

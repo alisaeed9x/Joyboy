@@ -22,6 +22,8 @@ import java.util.concurrent.atomic.AtomicInteger
  */
 object Lecture {
     const val CHUNK_SEC = 60.0   // جيميناي ما بيقبلش أكتر من كده في الطلب الواحد بشكل موثوق
+    const val MIN_ACTIVE_SEC = 3.0   // (v1017) أقل ثواني كلام فعلي عشان الجزء ما يتعاملش كصامت
+    const val TAIL_OK_SEC = 8.0      // (v1017) جزء أخير ملوش صوت متفكّك وباقي منه أقل من كده ← مش ناقص
 
     // ===================== الموديل =====================
     // (v999 ملاحظة 1) نموذج التفريغ المستقل عن نموذج الترجمة: الأدق افتراضيًا، والسريع = flash-lite.
@@ -61,8 +63,7 @@ object Lecture {
         var typeAuto = false        // (v995) النوع اتحدد تلقائي ولا يدوي
         var typeConf = 0.0          // (v995) ثقة التحديد التلقائي 0.0–1.0
         var autoTitle = ""          // (v995) عنوان مولّد تلقائي من أول أجزاء التفريغ — منفصل عن title اللي المستخدم يعدّله
-        var warid = false           // (v998) تفريغ بطريقة وارد: سلسلة موديلات + ستريم + Files API (مش الوضع العادي)
-        var chunkSec = 60.0         // (v998) حجم الجزء بالثواني للتفريغ ده — 60 عادي، 300/600 وارد (بيتحفظ عشان الاستكمال ميتكسرش)
+        var chunkSec = 60.0         // حجم الجزء بالثواني للتفريغ ده — 60 دايمًا (القديم بوارد 300/600 بيتحوّل لـ60 أول ما يكمّل: migrateChunks)
         var langCode = ""           // (v998) كود ISO للغة المنطوقة (ar/en/tr/...) من رد وارد — بيتبعت لمحرك الترجمة كلغة مصدر
         var langTally = ""          // (v999) عدّاد لغات الأجزاء «ar:3#العربية;en:1#English» — الغالبة فيه هي langCode الحالية
         val parties = ArrayList<String>()   // (v1001) أطراف المكالمة بأسماء العرض بس، بنفس ترتيب المراجع — "أنا" أولًا لو فيه بصمة صوت لصاحب الجهاز — مفتاح الصوت بيتجاب بـ CallKit.contactKey(name) والرقم بـ CallKit.resolve وقت الدخول
@@ -105,7 +106,7 @@ object Lecture {
             .put("org", d.organized).put("orgWeb", d.organizedWeb).put("sum", d.summary).put("sumWeb", d.summaryWeb).put("sumLen", d.summaryLen)
             .put("ua", d.ua).put("ref", d.ref).put("an", d.analysis).put("anN", d.analysisN).put("anH", d.analysisHash)
             .put("ty", d.type).put("tyA", d.typeAuto).put("tyC", d.typeConf).put("aTi", d.autoTitle)
-            .put("wrd", d.warid).put("cSec", d.chunkSec).put("lCd", d.langCode).put("lTl", d.langTally).put("pty", JSONArray(d.parties))
+            .put("cSec", d.chunkSec).put("lCd", d.langCode).put("lTl", d.langTally).put("pty", JSONArray(d.parties))
     }
 
     private fun fromJson(o: JSONObject): Doc {
@@ -122,7 +123,7 @@ object Lecture {
         d.summaryWeb = o.optBoolean("sumWeb"); d.summaryLen = o.optString("sumLen", "mid")
         d.ua = o.optString("ua"); d.ref = o.optString("ref"); d.analysis = o.optString("an"); d.analysisN = o.optInt("anN", 0); d.analysisHash = o.optString("anH")
         d.type = o.optString("ty"); d.typeAuto = o.optBoolean("tyA", false); d.typeConf = o.optDouble("tyC", 0.0); d.autoTitle = o.optString("aTi")
-        d.warid = o.optBoolean("wrd", false); d.chunkSec = o.optDouble("cSec", 60.0); d.langCode = o.optString("lCd"); d.langTally = o.optString("lTl")
+        d.chunkSec = o.optDouble("cSec", 60.0); d.langCode = o.optString("lCd"); d.langTally = o.optString("lTl")
         o.optJSONArray("pty")?.let { a -> for (i in 0 until a.length()) d.parties.add(a.optString(i)) }
         return d
     }
@@ -306,7 +307,7 @@ object Lecture {
     // وlangCode بكود ISO، ولغة لكل عنصر لو الجملة بلغة تانية عن باقي المقطع.
     // المثال في شكل الـJSON وصف محايد («كود ISO») مش قيمة «ar» — عشان ميميلش الموديل للعربي.
     // terms: أسماء/مصطلحات متراكمة من الأجزاء اللي قبل كده — بتتثبّت كتابتها.
-    internal fun transcribePrompt(durSec: Double, clean: Boolean, prev: String, type: String = "", warid: Boolean = false, terms: String = "", parties: List<String> = emptyList(), refsMixed: Boolean = false): String {
+    internal fun transcribePrompt(durSec: Double, clean: Boolean, prev: String, type: String = "", terms: String = "", parties: List<String> = emptyList(), refsMixed: Boolean = false): String {
         val t = type.ifBlank { "lecture" }
         val base = if (t != "lecture") Studio.promptFor(t, durSec, clean, prev, terms, parties, refsMixed)
         else buildString {
@@ -327,17 +328,16 @@ object Lecture {
         append("\nرجّع JSON فقط بدون شرح ولا markdown:\n")
         append("{\"lang\":\"اسم اللغة بالعربي\",\"langCode\":\"كود ISO\",\"segments\":[{\"start\":0.0,\"end\":5.2,\"spk\":\"D\",\"lang\":\"كود ISO\",\"text\":\"...\",\"conf\":0.9}]}")
         }
-        if (!warid) return base
-        return waridPrompt(base)
+        return accuracyRules(base)
     }
 
-    // (v998 — وارد) قواعد إضافية فوق برومبت النوع (محاضرة أو غيرها — أكواد spk بتفضل زي ما النوع حددها):
+    // (v1017) قواعد الدقة — كانت قواعد وارد ونقلناها هنا، بتتطبق دايمًا على كل تفريغ (كل الأنواع) — إضافية فوق برومبت النوع (محاضرة أو غيرها — أكواد spk بتفضل زي ما النوع حددها):
     // حرفي تمامًا، لهجة مصرية زي ما اتنطقت، إنجليزي بحروف لاتينية، بادئات عربية على الكلمات الإنجليزية،
     // كل utterance عنصر مستقل بتوقيت دقيق + spk، وlangCode (كود ISO) جنب lang في الـ JSON.
     // (v999) الشكل الأساسي بقى فيه langCode أصلًا — وارد مبيعدّلش الشكل، بيضيف قواعده بس.
-    private fun waridPrompt(base: String): String {
+    private fun accuracyRules(base: String): String {
         val rules = buildString {
-            append("\n═══ قواعد وارد (إضافية — بتكمّل اللي فوق، مش بتلغيه) ═══\n")
+            append("\n═══ قواعد الدقة (إضافية — بتكمّل اللي فوق، مش بتلغيه) ═══\n")
             append("- 🔴 فرّغ حرفيًا تمامًا: من غير تلخيص ولا تصحيح قواعد ولا إضافة ولا حذف. اللي اتقال يتكتب زي ما اتقال بالظبط.\n")
             append("- 🔴 اللهجة المصرية زي ما اتنطقت حرفيًا — متحوّلهاش لفصحى. المصطلحات الإنجليزية والتقنية تتكتب بحروف لاتينية صحيحة، وأبدًا بحروف عربية صوتية.\n")
             append("- 🔴 البادئات العربية (الـ، بـ، نـ، هـ، وـ) تفضل عربية لما تتلزق في كلمة إنجليزية (مثال: الـAPI، بـEnglish).\n")
@@ -460,8 +460,14 @@ object Lecture {
         val useMdl = if (forced.isNotBlank()) forced else if (accurate) LEC_MODEL_ACCURATE else mdl
         val st = idx * chunkSec; val en = minOf(dur, st + chunkSec)
         if (en - st < 1.0) return true
-        val wav = try { src.wav(st, en) } catch (e: Throwable) { LogStore.err("Lecture:wav", e); null } ?: return false
-        val hasSpeech = d.warid && wav.activeSec >= WaridTx.MIN_ACTIVE_SEC
+        var wavErr = false
+        val wav = try { src.wav(st, en) } catch (e: Throwable) { wavErr = true; LogStore.err("Lecture:wav", e); null }
+        if (wav == null) {
+            // (v1017) ذيل الملف: مدة الحاوية أطول من الصوت المتفكّك فعليًا ← مفيش صوت يتفرّغ، مش «جزء ناقص» للأبد
+            if (!wavErr && dur - st <= TAIL_OK_SEC) { synchronized(d) { d.segs.removeAll { it.chunk == idx } }; return true }
+            return false
+        }
+        val hasSpeech = wav.activeSec >= MIN_ACTIVE_SEC   // (v1017) كلام هادي (٣ ثواني فعلية فأكتر) ما يتعاملش كصمت
         if (wav.silent && !hasSpeech) { synchronized(d) { d.segs.removeAll { it.chunk == idx } }; return true }
         // (v1001) مكالمة + مراجع محمّلة: لزق المراجع قبل المقطع — البوابة اللي فوق (silent/activeSec)
         // لازم تفضل على المقطع الأصلي، لأن المقطع المخلوط فيه كلام مرجعي دايمًا فكان هيعدّيها على طول.
@@ -492,10 +498,9 @@ object Lecture {
             terms = if (terms.isBlank()) run.showGlossary else terms + "، " + run.showGlossary
         }
         val promptParties = if (refsMixed) run.callNames else synchronized(d) { d.parties.toList() }
-        val prompt = transcribePrompt(en - st, d.clean, prev, d.type, d.warid, terms, promptParties, refsMixed)
+        val prompt = transcribePrompt(en - st, d.clean, prev, d.type, terms, promptParties, refsMixed)
         // (v1012) أوفلاين للغات غير العربية (سويتش الاستوديو): null = كمّل أونلاين بنفس Flash Lite
         if (run.offline && !refsMixed) { val off = StudioTx.offlineChunk(run, wav, idx, st, en); if (off != null) return off }
-        if (d.warid) return WaridTx.transcribeChunk(run, keys, sendWav, idx, worker, chunkSec, en - st, prompt, mixOffset, accurate, forced)
         for (a in 0 until 4) {
             if (run.stop) return false
             val key = keys[(idx + worker + a) % keys.size]
@@ -536,7 +541,7 @@ object Lecture {
             } catch (e: NoKey) { run.error = e.message ?: "مفيش مفتاح"; run.stop = true; return false }
             catch (e: ApiErr) {
                 if (e.code == 502 && e.raw.startsWith("جوجل رجّع صفحة HTML")) { run.error = e.raw.take(200); run.stop = true; return false }
-                if (e.code == 429 || e.code >= 500) { try { Thread.sleep(1500L * (a + 1)) } catch (_: InterruptedException) {} }
+                if (e.code == 429 || e.code >= 500) { try { Thread.sleep((if (e.code == 429) 5000L else 1500L) * (a + 1)) } catch (_: InterruptedException) {} }   // (v1017) 429 بيستنى أطول — كان بيفشّل الأجزاء على مفتاح واحد
                 else if (e.code != 400 && e.code != 403) { run.error = (e.message ?: "").take(120); return false }
             } catch (e: Throwable) { LogStore.err("Lecture:chunk", e); try { Thread.sleep(800) } catch (_: InterruptedException) {} }
         }
@@ -556,14 +561,14 @@ object Lecture {
     }
 
     private fun titleFromText(text: String): String? {
-        val ks = keys()
+        val ks = StudioTx.keysFor(keys())
         if (ks.isEmpty()) return null
         val mdl = StudioTx.pinned().ifEmpty { model() }
         val prompt = titlePrompt(text)
         for (a in 0 until minOf(ks.size, 2)) {
             val key = ks[a % ks.size]
             try {
-                val r = Api.generate(mdl, key, prompt, null, 512, 0.1, true, false)
+                val r = StudioTx.generate(mdl, key, prompt, null, 512, 0.1, true, false)
                 val j = parseJson(r.text) ?: continue
                 val t = j.optString("title").trim()
                 if (t.isNotBlank()) return t.take(120)
@@ -630,6 +635,43 @@ object Lecture {
         Studio.setType(ctx, d, res.type, true, res.conf)
     }
 
+    /**
+     * (v1017) وارد اتشال: التفريغ كله بأجزاء 60 ثانية. دوكيومنت اتفرّغ قبل كده بوارد (أجزاء 300/600) ما بيتمسحش:
+     * جمله بتفضل زي ما هي (بتتعلّم على جزء الـ60ث اللي بتبدأ فيه)، وكل جزء وارد خلصان بيتحسب أجزاء الـ60ث اللي بيغطيها خلصانة،
+     * والأجزاء اللي كانت فاشلة بتبقى ناقصة وبتتفرّغ بالطريقة العادية.
+     */
+    internal fun migrateChunks(d: Doc, dur: Double) {
+        synchronized(d) {
+            val old = d.chunkSec
+            if (old <= 0.0 || Math.abs(old - CHUNK_SEC) < 0.5) { d.chunkSec = CHUNK_SEC; return }
+            val total = Math.ceil(dur / CHUNK_SEC).toInt()
+            val oldDone = d.done.toList()
+            val moved = d.segs.map { Seg(it.start, it.end, it.text, (it.start / CHUNK_SEC).toInt().coerceAtLeast(0), it.spk, it.lang, it.tone, it.conf) }
+            d.segs.clear(); d.segs.addAll(moved)
+            d.done.clear(); d.failed.clear()
+            for (c in oldDone) {
+                val from = Math.floor(c * old / CHUNK_SEC).toInt()
+                val to = Math.ceil((c + 1) * old / CHUNK_SEC).toInt().coerceAtMost(total)
+                for (k in from until to) d.done.add(k)
+            }
+            d.chunkSec = CHUNK_SEC
+        }
+    }
+
+    /**
+     * (v1018) «إعادة التفريغ من الأول»: بيمسح التفريغ الحالي (الجمل/الأجزاء/اللغة) والمشتقات اللي اتبنت عليه (تنظيم/تلخيص/تحليل)
+     * وبيسيب المصدر والعنوان والنوع والأطراف زي ما هم. لازم التشغيلة تكون واقفة قبل النداء. بعدها Lecture.start بيفرّغ كل الأجزاء من جديد.
+     */
+    fun resetTranscript(ctx: Context, d: Doc) {
+        synchronized(d) {
+            d.done.clear(); d.failed.clear(); d.segs.clear(); d.nChunks = 0
+            d.chunkSec = CHUNK_SEC; d.lang = ""; d.langCode = ""; d.langTally = ""
+            d.organized = ""; d.organizedWeb = false; d.summary = ""; d.summaryWeb = false
+            d.analysis = ""; d.analysisN = 0; d.analysisHash = ""
+        }
+        save(ctx, d)
+    }
+
     /** يبدأ/يكمّل التفريغ في الخلفية. الأجزاء اللي خلصت بتتخطى؛ اللي فشلت بتتعاد. */
     fun start(ctx0: Context, d: Doc, forceModel: String = ""): Run? {
         val ctx = ctx0.applicationContext
@@ -651,13 +693,6 @@ object Lecture {
                 val s = openSource(ctx, d); src = s
                 val dur = s.durationSec()
                 if (dur <= 0.0) throw IOException("مقدرتش أعرف مدة الصوت")
-                // (v1000) وارد هو الافتراضي للاستوديو: دوكيومنت جديد (مفيش تقدّم) بيتفرّغ بوارد.
-                // الأولوية: سلسلة وارد التلقائية أولًا للتفريغات الجديدة؛ lec_model هو محرك المسار القديم (غير وارد) الثابت بس.
-                synchronized(d) {
-                    if (!d.warid && d.done.isEmpty() && d.failed.isEmpty() && d.segs.isEmpty()) {
-                        d.warid = true
-                    }
-                }
                 // (v1000 — المرحلة 2) اكتشاف نوع المحتوى قبل ما خيوط التفريغ تبدأ: بيتنده مرة واحدة هنا بس.
                 // القاعدة: بيتحدد تلقائي بس لو النوع لسه فاضي (d.type == "") ومتحددش تلقائي قبل كده (typeAuto == false) —
                 // لو المستخدم اختار نوع يدوي في بداية الجلسة (pickType) الاكتشاف مبيعدّلش عليه.
@@ -699,17 +734,8 @@ object Lecture {
                         LogStore.err("Lecture:callRefs", e)
                     }
                 }
-                val cs = if (d.warid) {
-                    WaridTx.ensureChunkSec(d)
-                } else {
-                    synchronized(d) {
-                        if ((d.done.isNotEmpty() || d.segs.isNotEmpty()) && d.chunkSec != CHUNK_SEC) {
-                            d.done.clear(); d.failed.clear(); d.segs.clear()
-                        }
-                        d.chunkSec = CHUNK_SEC
-                    }
-                    CHUNK_SEC
-                }
+                migrateChunks(d, dur)   // (v1017) تفريغ وارد قديم (300/600ث) بيتحوّل لأجزاء الـ60ث من غير ما يتمسح
+                val cs = CHUNK_SEC
                 synchronized(d) { d.durSec = dur; d.nChunks = Math.ceil(dur / cs).toInt() }
                 save(ctx, d)
                 val todo = (0 until d.nChunks).filter { it !in d.done }
@@ -725,7 +751,7 @@ object Lecture {
                             val ok = try { doChunk(run, ks, mdl, s, idx, w, dur, cs) } catch (e: Throwable) { LogStore.err("Lecture:worker", e); false }
                             synchronized(d) { if (ok) { d.done.add(idx); d.failed.remove(idx) } else if (!run.stop) d.failed.add(idx) }
                             val fin = finished.incrementAndGet()
-                            if (d.warid || fin % 4 == 0) save(ctx, d)
+                            save(ctx, d)   // (v1017) كل جزء بيتحفظ أول ما يخلص
                             if (ok) maybeAutoTitle(ctx, run)
                             run.status = "بفرّغ… ${d.done.size}/${d.nChunks}"
                         }
@@ -943,14 +969,14 @@ object Lecture {
     class TextResult(val text: String, val usedWeb: Boolean)
 
     private fun gen(prompt: String, web: Boolean, maxTok: Int): TextResult {
-        val ks = keys(); if (ks.isEmpty()) throw IOException("مفيش مفتاح Gemini — ضيفه من الإعدادات الأول")
+        val ks = StudioTx.keysFor(keys()); if (ks.isEmpty()) throw IOException("مفيش مفتاح Gemini — ضيفه من الإعدادات الأول")
         val mdl = model()
         var last: Throwable? = null
         var useWeb = web
         for (a in 0 until minOf(ks.size, 3) + 2) {
             val key = ks[a % ks.size]
             try {
-                val r = Api.generate(mdl, key, prompt, null, maxTok, 0.2, false, useWeb)
+                val r = StudioTx.generate(mdl, key, prompt, null, maxTok, 0.2, false, useWeb)
                 if (r.text.isNotBlank()) return TextResult(r.text.trim(), useWeb)
                 last = IOException("رد فاضي (${r.finish})")
             } catch (e: NoKey) { throw e }
@@ -1094,7 +1120,7 @@ object Lecture {
     fun analyze(ctx: Context, d: Doc): JSONObject {
         val h = segsHash(d)
         if (d.analysis.isNotBlank() && d.analysisHash == h) try { return JSONObject(d.analysis) } catch (_: Throwable) {}
-        val ks = keys(); if (ks.isEmpty()) throw IOException("مفيش مفتاح Gemini — ضيفه من الإعدادات الأول")
+        val ks = StudioTx.keysFor(keys()); if (ks.isEmpty()) throw IOException("مفيش مفتاح Gemini — ضيفه من الإعدادات الأول")
         val lines = synchronized(d) {
             d.segs.sortedBy { it.start }.joinToString("\n") { "[" + fmtTime(it.start) + " | " + it.start.toInt() + "] " + (if (it.spk == "S") "(طالب) " else "") + it.text }
         }
@@ -1106,7 +1132,7 @@ object Lecture {
         for (a in 0 until minOf(ks.size, 3) + 2) {
             val key = ks[a % ks.size]
             try {
-                val r = Api.generate(mdl, key, prompt, null, 24000, 0.3, true, false)
+                val r = StudioTx.generate(mdl, key, prompt, null, 24000, 0.3, true, false)
                 val j = parseJson(r.text)
                 if (j != null && (j.optJSONArray("sections")?.length() ?: 0) > 0) {
                     synchronized(d) { d.analysis = j.toString(); d.analysisN++; d.analysisHash = h }

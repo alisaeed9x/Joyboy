@@ -61,6 +61,7 @@ class BrowserSaver(private val act: BrowserActivity, private val frame: FrameLay
         private val FONT_EXT = listOf(".woff2", ".woff", ".ttf", ".otf")
 
         fun isArchive(u: String?): Boolean = u != null && u.startsWith("file://") && u.contains("/br_offline/")
+        fun isHomeArchive(u: String?): Boolean = u != null && u.startsWith("file://") && u.endsWith("/br_offline/home.mht")   // (v1016) نسخة جوجل الرئيسية للطوارئ
         fun hostOf(u: String?): String = try { android.net.Uri.parse(u ?: "").host ?: "" } catch (_: Throwable) { "" }
         fun fmt(b: Long): String = when {
             b < 1024L -> "$b B"
@@ -118,16 +119,26 @@ class BrowserSaver(private val act: BrowserActivity, private val frame: FrameLay
         } catch (_: Throwable) {}
     }
 
+    // ===== (v1016) زرار التوفير العايم: 3 حالات بس — 🧊 أقصى توفير ← 🌓 متوسط ← ⭕ مقفول =====
+    var onMode: (() -> Unit)? = null
+    fun quickMode(): String = if (p.getBoolean("sv_emerg", false)) "ultra" else when (p.getString("sv_mode", "auto")) { "ultra" -> "ultra"; "off" -> "off"; else -> "mid" }
+    fun quickLabel(): String = when (quickMode()) { "ultra" -> "🧊"; "off" -> "⭕"; else -> "🌓" }
+    fun quickCycle() {
+        val next = when (quickMode()) { "ultra" -> "always"; "mid" -> "off"; else -> "ultra" }
+        p.edit().putString("sv_mode", next).putBoolean("sv_emerg", false).apply()   // سويتش الطوارئ القديم بيتقفل عشان مايغلبش اختيارك
+        netChanged(true)
+    }
+
     private fun computeLevel(): Int {
         if (p.getBoolean("sv_emerg", false)) return EMERG
-        when (p.getString("sv_mode", "auto")) { "off" -> return OFF; "always" -> return MAX }
+        when (p.getString("sv_mode", "auto")) { "off" -> return OFF; "always" -> return MAX; "ultra" -> return EMERG }   // (v1015) «🧊 أقصى حد» = مستوى الطوارئ دايمًا على أي شبكة (نص أولًا + خطوط وتراكرز وفيديو موقوفين + ميزانية 1 ميجا)
         var l = when { net == N_CELL -> MAX; net == N_WIFI && metered -> SMART; net == N_WIFI -> BAL; else -> SMART }   // مفيش نت: ذكي (الواي فاي عمره ما بيتعامل على إنه مفتوح من غير ما النظام يقول)
         if (poor && l < SMART) l = SMART
         return l
     }
 
     private fun netName(): String = when { net == N_NONE -> "📴 مفيش نت"; net == N_CELL -> "📶 داتا موبايل"; metered -> "🛜 واي فاي محدود"; else -> "🛜 واي فاي" }
-    private fun levelName(l: Int = level): String = when (l) { EMERG -> "🚨 طوارئ الداتا"; MAX -> "توفير أقصى"; SMART -> "توفير ذكي"; BAL -> "متوازن"; else -> "مقفول" } + if (poor && l != OFF) " · اتصال ضعيف" else ""
+    private fun levelName(l: Int = level): String = when (l) { EMERG -> if (p.getString("sv_mode", "auto") == "ultra") "🧊 أقصى توفير" else "🚨 طوارئ الداتا"; MAX -> "🌓 توفير متوسط"; SMART -> "توفير ذكي"; BAL -> "متوازن"; else -> "⭕ مقفول" } + if (poor && l != OFF) " · اتصال ضعيف" else ""
 
     private fun netChanged(manual: Boolean = false) {
         val oN = net; val oM = metered; val oL = level
@@ -137,6 +148,7 @@ class BrowserSaver(private val act: BrowserActivity, private val frame: FrameLay
             reapplyAll()
             if (oL != level || oN != net) { try { Notice.show(act, netName() + " — " + levelName(), 2600L) } catch (_: Throwable) {} }
             updateCap()
+            try { onMode?.invoke() } catch (_: Throwable) {}   // (v1016) زرار التوفير العايم يحدّث شكله
         }
     }
 
@@ -306,6 +318,7 @@ class BrowserSaver(private val act: BrowserActivity, private val frame: FrameLay
     fun pageFinished(t: BTab, w: WebView, url: String?) {
         if (t === host.tab()) finishAt = SystemClock.elapsedRealtime()
         if (backTabs.remove(t.id) != null) applyTo(w, t, url)
+        if (url != null && !t.priv) { try { homeSnap(w, url) } catch (_: Throwable) {} }   // (v1016) نسخة جوجل الأوفلاين
         val hs = hostOf(url)
         try { w.evaluateJavascript(jsFor(levelFor(hs), hs), null) } catch (_: Throwable) {}
         if (url != null && url.startsWith("http") && !t.priv && level != EMERG && p.getBoolean("sv_off_auto", true)) {
@@ -333,6 +346,33 @@ class BrowserSaver(private val act: BrowserActivity, private val frame: FrameLay
             return true
         }
         return false
+    }
+
+    // ===== (v1016) نسخة جوجل الرئيسية أوفلاين: للطوارئ 🚨 وزراري «بحث جديد/خروج» في قفل المخفي =====
+    private fun homeArchive(): File? = File(offDir(), "home.mht").takeIf { it.exists() && it.length() > 0 }
+    /** بتتحفظ لما تفتح جوجل الرئيسية عادي، وبتتجدّد كل 12 ساعة */
+    private fun homeSnap(w: WebView, url: String) {
+        if (!url.startsWith("http")) return
+        val u = android.net.Uri.parse(url); val hs = (u.host ?: "").lowercase()
+        if (hs != "www.google.com" && hs != "google.com") return
+        val path = u.path ?: ""
+        if ((path != "" && path != "/") || u.getQueryParameter("q") != null) return
+        if (homeArchive() != null && System.currentTimeMillis() - p.getLong("sv_home_ts", 0L) < 12 * 3600_000L) return
+        h.postDelayed({
+            try {
+                if (hostOf(w.url) != hs) return@postDelayed
+                val f = File(offDir(), "home.mht")
+                w.saveWebArchive(f.absolutePath, false) { saved -> if (saved != null && f.exists() && f.length() > 0) p.edit().putLong("sv_home_ts", System.currentTimeMillis()).apply() }
+            } catch (_: Throwable) {}
+        }, 3500L)
+    }
+    /** true = فتحنا النسخة المحفوظة (من غير ما نستنى الشبكة)؛ false = مفيش نسخة ← حمّل جوجل عادي */
+    fun loadOfflineHome(w: WebView, t: BTab): Boolean {
+        if (t.priv) return false
+        val f = homeArchive() ?: return false
+        fileOpen.add(t.id); offTabs.remove(t.id); stage.remove(t.id); stageUrl.remove(t.id)
+        try { w.settings.allowFileAccess = true } catch (_: Throwable) {}
+        return try { w.loadUrl("file://" + f.absolutePath); true } catch (_: Throwable) { false }
     }
 
     /** رجوع سريع: من الكاش الأول (حتى لو قديم) بدل ما ينتظر الشبكة */
@@ -594,6 +634,7 @@ class BrowserSaver(private val act: BrowserActivity, private val frame: FrameLay
 
     // ===== دورة الحياة =====
     fun attach() {
+        if (p.getString("sv_mode", "auto") == "auto") p.edit().putString("sv_mode", "always").apply()   // (v1016) «تلقائي» اتشال: بقى 🌓 متوسط
         readNet(); level = computeLevel(); loadDay(); lastAds = host.adsBlocked()
         if (Build.VERSION.SDK_INT >= 24) {
             try {
@@ -907,8 +948,8 @@ class BrowserSaver(private val act: BrowserActivity, private val frame: FrameLay
         col.addView(ui.text(netName() + " — " + levelName(), 15f, th.primary, true))
         col.addView(ui.noHint().apply { setPadding(0, ui.dp(2), 0, ui.dp(4)) })
         col.addView(lab("وضع التوفير"))
-        val mn = listOf("تلقائي", "دايمًا توفير", "مقفول"); val mv = listOf("auto", "always", "off")
-        col.addView(ui.chips(mn, { mn[mv.indexOf(p.getString("sv_mode", "auto") ?: "auto").coerceAtLeast(0)] }) { pick -> val i = mn.indexOf(pick); if (i >= 0) { p.edit().putString("sv_mode", mv[i]).apply(); netChanged(true) } })
+        val mn = listOf("🧊 أقصى توفير", "🌓 متوسط", "⭕ مقفول"); val mv = listOf("ultra", "always", "off")   // (v1016) 3 حالات بس
+        col.addView(ui.chips(mn, { mn[mv.indexOf(quickMode().let { if (it == "mid") "always" else it }).coerceAtLeast(0)] }) { pick -> val i = mn.indexOf(pick); if (i >= 0) { p.edit().putString("sv_mode", mv[i]).putBoolean("sv_emerg", false).apply(); netChanged(true) } })
         col.addView(ui.noHint())
         col.addView(ui.switchRow("🚨 وضع طوارئ الداتا (نص أولًا + خطوط وفيديو موقوفين)", p.getBoolean("sv_emerg", false)) { v -> p.edit().putBoolean("sv_emerg", v).apply(); netChanged(true) })
         col.addView(ui.switchRow("🅰 نص أولًا على داتا الموبايل (الصور بالضغط)", p.getBoolean("sv_text_cell", false)) { v -> p.edit().putBoolean("sv_text_cell", v).apply(); netChanged(true) })

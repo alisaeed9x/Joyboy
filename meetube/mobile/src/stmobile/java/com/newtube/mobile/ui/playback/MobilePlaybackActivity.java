@@ -2741,6 +2741,20 @@ public class MobilePlaybackActivity extends MobileActivity
     /** JOYBOY(v1006): true = this player was closed while it was the visible screen (so the app should return to the page it was opened from). */
     private boolean mClosedFromForeground;
 
+    /** JOYBOY(v1016): the red panic button in the browser closes the live player without ceremony. */
+    public static boolean panicClose() {
+        final MobilePlaybackActivity a = sCurrent.get();
+        if (a == null || a.isFinishing() || a.isDestroyed()) {
+            return false;
+        }
+        a.runOnUiThread(new Runnable() {
+            @Override public void run() {
+                try { a.finish(); } catch (Throwable ignored) { }
+            }
+        });
+        return true;
+    }
+
     public static boolean closedFromForeground(android.app.Activity a) {
         return a instanceof MobilePlaybackActivity && ((MobilePlaybackActivity) a).mClosedFromForeground;
     }

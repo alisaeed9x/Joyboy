@@ -148,7 +148,7 @@ object StudioIntel {
 
     // ===================== طلبات Gemini النصية =====================
     private fun gemKeys(): List<String> =
-        (Cfg.keys("keys") + Cfg.keys("backup") + Cfg.keys("extra")).distinct()
+        StudioTx.keysFor((Cfg.keys("keys") + Cfg.keys("backup") + Cfg.keys("extra")).distinct())
 
     private fun textModel(): String = Cfg.str("model", Models.DEFAULT).trim().ifEmpty { Models.DEFAULT }
 
@@ -159,7 +159,7 @@ object StudioIntel {
         for (a in 0 until minOf(ks.size, 2)) {
             val key = ks[a % ks.size]
             try {
-                val r = Api.generate(mdl, key, prompt, null, maxTokens, 0.1, true, false)
+                val r = StudioTx.generate(mdl, key, prompt, null, maxTokens, 0.1, true, false)
                 val j = Lecture.parseJson(r.text)
                 if (j != null) return j
             } catch (e: NoKey) {
@@ -236,7 +236,7 @@ object StudioIntel {
             for (a in 0 until minOf(ks.size, 2)) {
                 val key = ks[a % ks.size]
                 try {
-                    val r = Api.generate(mdl, key, prompt, null, 2048, 0.1, true, false)
+                    val r = StudioTx.generate(mdl, key, prompt, null, 2048, 0.1, true, false)
                     val j = Lecture.parseJson(r.text) ?: continue
                     val ans = j.optString("answer").trim()
                     if (ans.isBlank() || ans.contains("لا يوجد في التفريغ")) continue
@@ -469,13 +469,11 @@ object StudioIntel {
     }
 
     // ===================== 11) تقدير التكلفة/المدة =====================
-    // عدد الأجزاء = المدة ÷ حجم الجزء (وارد 300/600 من الإعدادات، عادي 60) — والتحذير من حالة وارد
-    // المحفوظة في Cfg (warid_state): يومي كل موديل مقابل سقفه، وكول داون. مفيش تتبّع كوتة جديد هنا.
+    // عدد الأجزاء = المدة ÷ 60 ثانية (حجم الجزء الثابت). مفيش تحذير كوتة — مفيش سلسلة موديلات ولا تتبّع كوتة هنا.
     fun estimate(d: Lecture.Doc): Estimate {
-        val cs = if (d.warid) WaridTx.chunkSec() else Lecture.CHUNK_SEC
+        val cs = Lecture.CHUNK_SEC
         val n = if (d.durSec > 0) kotlin.math.ceil(d.durSec / cs).toInt().coerceAtLeast(1) else 0
-        // تحذير الكوتة وارد بس — الدوكيومنتات غير الوارد مالهاش تحذير (مفيش تتبّع كوتة لمفاتيح المسار العادي).
-        return Estimate(n, cs, if (d.warid) quotaWarn() else "")
+        return Estimate(n, cs, "")
     }
 
     fun estimateShort(d: Lecture.Doc): String {
@@ -483,35 +481,6 @@ object StudioIntel {
         val e = estimate(d)
         val mins = (d.durSec / 60.0).toInt().coerceAtLeast(1)
         return "$mins دقيقة ≈ ${e.nChunks} جزء"
-    }
-
-    fun quotaWarn(): String {
-        return try {
-            val raw = Cfg.str(WaridTx.STATE_KEY, "")
-            if (raw.isBlank()) return ""
-            val root = JSONObject(raw)
-            val m = root.optJSONObject("m") ?: return ""
-            var ready = 0
-            var worst = ""
-            var worstLeft = Int.MAX_VALUE
-            for (model in WaridTx.CHAIN) {
-                val o = m.optJSONObject(model) ?: continue
-                val daily = o.optInt("d", 0)
-                val cap = if (model.contains("lite")) WaridTx.LITE_DAILY_CAP else WaridTx.FLASH_DAILY_CAP
-                val left = cap - daily
-                if (left < worstLeft) {
-                    worstLeft = left
-                    worst = model
-                }
-                val cool = o.optLong("cool", 0L)
-                if (daily < cap && cool <= System.currentTimeMillis()) ready++
-            }
-            if (ready == 0) return "⚠ كل موديلات وارد مستنفدة أو مهدّاة دلوقتي — التفريغ ممكن يفشل لحد ما الكوتة تتجدد"
-            if (worstLeft in 0..5) return "⚠ موديل $worst قرب يخلص (باقي $worstLeft طلب اليوم)"
-            ""
-        } catch (_: Throwable) {
-            ""
-        }
     }
 
     // ===================== 12) ثقة منخفضة =====================
@@ -529,10 +498,9 @@ object StudioIntel {
 
     fun takeAccurate(d: Lecture.Doc, chunk: Int): Boolean = accurateChunks.remove(d.id + "#" + chunk)
 
-    // إعادة تفريغ المقطع: الجزء كله (300ث وارد / 60ث عادي) بيتعاد — الجملة لوحدها مالهاش طلب صوت مستقل.
+    // إعادة تفريغ المقطع: الجزء كله (60ث) بيتعاد — الجملة لوحدها مالهاش طلب صوت مستقل.
     // بيمسح جمل الجزء ويحطه في failed، وبعدها Lecture.start بيكمّل الناقص بس.
-    // (G1) الجزء المعاد بيتعلم «أقوى» — المسار العادي بيستعمل LEC_MODEL_ACCURATE، ووارد بيبدأ
-    // السلسلة من أول موديل Flash مش lite (شوف takeAccurate في doChunk وtranscribeChunk).
+    // (G1) الجزء المعاد بيتعلم «أقوى» — بيستعمل LEC_MODEL_ACCURATE (إلا لو مصدر التفريغ متثبّت: Flash Lite Latest بس) — شوف takeAccurate في doChunk.
     fun retranscribeSeg(ctx: Context, d: Lecture.Doc, seg: Lecture.Seg): Boolean {
         if (Lecture.isRunning(d.id)) return false
         synchronized(d) {

@@ -212,7 +212,7 @@ class StudioIntelUi(private val act: Activity, private val ui: Ui, private val t
                     try {
                         val segs = Studio.displaySegs(d)
                         val cues = segs.map { SubFileTr.Cue(it.start, it.end, it.text) }
-                        val out = SubFileTr.translate(cues, TrWizard.method(), { m -> main.post { status.text = "⏳ " + m } }, { false }, lang, null, d.langCode.ifBlank { null })
+                        val out = SubFileTr.translate(cues, TrWizard.method(), { m -> main.post { status.text = "⏳ " + m } }, { false }, lang, null, d.langCode.ifBlank { null }, StudioTx.pinned().ifBlank { null })
                         failed = out.failed
                         err = out.error
                         pairs = segs.mapIndexed { i, s -> s.text to (out.texts.getOrNull(i) ?: "") }

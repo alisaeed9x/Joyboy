@@ -42,6 +42,7 @@ import android.util.Rational
 
 /** مشغّل الفيديو والترجمة (اتنقل من Main.kt في v100 — من غير أي تغيير في الكود) */
 class PlayerActivity : Activity(), Host {
+    @Volatile private var panicShut = false   // (v1016) 🚨 قفل المشغّل: ماتحفظش في آخر المشغّلة
     private var gone = false   // (v923) اتحوّل لمشغّل MeeTube (MtPlay) — الدوال بتتخطّى
     // (v507) ريزوليوشن ديناميك لوضع التلفزيون
     override fun attachBaseContext(newBase: android.content.Context) { super.attachBaseContext(TvScale.wrap(newBase)) }
@@ -63,6 +64,16 @@ class PlayerActivity : Activity(), Host {
 
         /** (v531) في مشغّل فيديو (برنامج) مفتوح دلوقتي؟ */
         fun hasLive(): Boolean = live() != null
+
+        /** (v1016) 🚨 الطوارئ: اقفل أي مشغّل Joyboy شغّال من غير ما يحفظ في «آخر المشغّلة» (بيتنادى قبل مسح السجل) */
+        fun panicClose(): Boolean {
+            val list = synchronized(liveList) { liveList.mapNotNull { it.get() }.filter { !it.isFinishing && !it.isDestroyed } }
+            for (o in list) {
+                o.panicShut = true
+                try { o.runOnUiThread { try { o.player.pause() } catch (_: Throwable) {}; if (!o.isFinishing) o.finish() } } catch (_: Throwable) {}
+            }
+            return list.isNotEmpty()
+        }
 
         private fun live(): PlayerActivity? = synchronized(liveList) { liveList.mapNotNull { it.get() }.lastOrNull { !it.isFinishing && !it.isDestroyed } }
 
@@ -6507,7 +6518,7 @@ class PlayerActivity : Activity(), Host {
         }
     }
 
-    private fun saveRecent() { if (!handedOff && !remote) saveRecentForce() }
+    private fun saveRecent() { if (!handedOff && !remote && !panicShut) saveRecentForce() }
     /** (v586) يوتيوب: نفس مخزن تقدم المشغّل المصغّر (YtProg) — عشان الخروج من تكبير الشاشة وفتح الفيديو تاني يكمّل من نفس المكان */
     private fun saveYtProg() {
         try {

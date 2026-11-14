@@ -5,7 +5,7 @@ import org.json.JSONObject
 /**
  * (v1012) مصدر التفريغ في الاستوديو:
  *  • «🔒 مصدر ثابت»: كل تفريغ الاستوديو بـ Gemini Flash Lite Latest بس — مفيش سلسلة موديلات ولا «موديل أدق» ولا تبديل صامت
- *    (الإعداد studio_tx_fixed، الافتراضي مفعّل). لو اتقفل بيرجع السلوك القديم (سلسلة وارد / lec_model).
+ *    (الإعداد studio_tx_fixed، الافتراضي مفعّل). لو اتقفل بيرجع لموديل lec_model من الإعدادات.
  *  • «📴 تفريغ أوفلاين»: سويتش (studio_tx_offline، الافتراضي مقفول). مفعّل ← الكلام غير العربي (إنجليزي/غيره) بيتفرّغ على الجهاز بـ Whisper
  *    (Offline.transcribe الموجود — مفيش محرك جديد). العربي دايمًا أونلاين بـ Flash Lite: لو Whisper طلّع نص عربي في أي جزء الجزء ده
  *    بيتعاد أونلاين والتشغيلة كلها بتكمّل أونلاين. أي فشل أوفلاين لجزء ← الجزء ده بيتفرّغ أونلاين بنفس Flash Lite.
@@ -18,6 +18,20 @@ object StudioTx {
     /** الموديل المتثبّت للتفريغ، أو "" لو القفل مقفول */
     fun pinned(): String = if (fixedOn()) StudioComplete.MODEL else ""
     fun offlineOn(): Boolean = Cfg.bool(OFFLINE_KEY, false)
+
+    /** (v1017) مفاتيح الاستوديو: القفل مفعّل ← مفاتيح جيميناي حقيقية بس (FreeLLM/المحلي بيلفّوا على موديلات تانية) */
+    fun keysFor(ks: List<String>): List<String> =
+        if (fixedOn()) ks.filter { it != LocalKey.ID && !FreeLlm.isWrapped(it) && !FreeLlm.isKey(it) } else ks
+
+    /**
+     * (v1017) طلب جيميناي واحد لأي حاجة في الاستوديو (تفريغ/ترجمة/تنظيم/تلخيص/عنوان/تحليل/اكتشاف نوع).
+     * القفل مفعّل ← Flash Lite Latest بالظبط عبر generateModel (مفيش تبديل صامت). مقفول ← Api.generate بالموديل اللي اتبعت (السلوك القديم).
+     */
+    fun generate(fallbackModel: String, key: String, prompt: String, wav: ByteArray?, maxTokens: Int, temp: Double, json: Boolean, search: Boolean): Api.Result {
+        val p = pinned()
+        return if (p.isBlank()) Api.generate(fallbackModel, key, prompt, wav, maxTokens, temp, json, search)
+        else Api.generateModel(p, key, prompt, wav, maxTokens, temp, json, search)
+    }
 
     /** الأوفلاين مفعّل وجاهز فعلًا (المكتبة + الموديل نازل)؟ */
     fun offlineReady(): Boolean = offlineOn() && try { WhisperLib.loaded && Offline.engine().ready() } catch (_: Throwable) { false }

@@ -333,6 +333,11 @@ class BrowserActivity : Activity() {
     private lateinit var panicB: TextView
     private lateinit var undoB: TextView
     private var actStrip: FrameLayout? = null               // (v808) طبقة شفافة فوق أسفل الصفحة (موبايل بس): الصف التحتاني + زرار الأدوات
+    private var saveB: TextView? = null            // (v1016) زرار التوفير العايم: 🧊 أقصى ← 🌓 متوسط ← ⭕ مقفول
+    private var privLocked = false                 // (v1016) المتخفي مقفول بغطا أسود (دخول بالبصمة)
+    private var privLockV: FrameLayout? = null
+    private var escapeGoogle = false               // (v1016) دخول جوجل الجاي من 🚨/خروج المخفي يفتح النسخة الأوفلاين لو موجودة
+    private var screenOffRx: android.content.BroadcastReceiver? = null
     private lateinit var toolsHost: LinearLayout        // (v808) عمود الأدوات + زرار ☰ (لـ TvModeFab يحسب مكان الكبسولة)
     private var toolsRelayout: (() -> Unit)? = null     // (v823) بيرتّب عمود الأدوات رأسي (بورتريه) أو أفقي (لاندسكيب)
     private lateinit var toolsInner: LinearLayout        // (v801) صف الأدوات جوه الشريط (🕶 ① 🕘 🛡 🔄 + ألسنة التلفزيون)
@@ -652,6 +657,11 @@ class BrowserActivity : Activity() {
             override fun reloadCur() { try { wvOrNull?.reload() } catch (_: Throwable) {} }
         })
         saver.attach()
+        saver.onMode = { saveB?.text = saver.quickLabel() }; saveB?.text = saver.quickLabel()   // (v1016)
+        try {   // (v1016) قفل الشاشة = المتخفي يتقفل بغطا أسود
+            screenOffRx = object : android.content.BroadcastReceiver() { override fun onReceive(c: Context?, i: Intent?) { lockPriv() } }
+            registerReceiver(screenOffRx, android.content.IntentFilter(Intent.ACTION_SCREEN_OFF))
+        } catch (_: Throwable) {}
 
         // التبويبات: رجّع المحفوظة (لو مفعّل) وبعدها لو جاي بلينك افتحه في تبويب جديد
         val start = intent?.getStringExtra("start")?.trim() ?: ""
@@ -747,7 +757,7 @@ class BrowserActivity : Activity() {
             }
             override fun onProgressChanged(v: WebView?, p: Int) {
                 t.progress = p; if (t === tabs.getOrNull(curIdx)) updateProgress()
-                if (p >= 70 && t.id == panicClearId && (v?.url ?: "").contains("google.")) endPanicCover()   // (v231) جوجل ثبت: شيل الغطا
+                if (p >= 70 && t.id == panicClearId && ((v?.url ?: "").contains("google.") || BrowserSaver.isArchive(v?.url))) endPanicCover()   // (v231) جوجل ثبت: شيل الغطا
             }
             override fun onReceivedTitle(v: WebView?, title: String?) {
                 if (title.isNullOrBlank()) return
@@ -854,14 +864,14 @@ class BrowserActivity : Activity() {
                 }
                 if (t.blockedUrl != null && url != null && SiteBlock.keyOf(url) == SiteBlock.keyOf(t.blockedUrl)) return   // (v412) موقع محجوب: مفيش تسجيل ولا اصطياد
                 if (url != null && !url.startsWith("data:")) {
-                    t.url = url
+                    t.url = if (BrowserSaver.isHomeArchive(url)) GOOGLE else url   // (v1016) النسخة الأوفلاين تتحسب جوجل
                     val ti = v.title?.takeIf { it.isNotBlank() } ?: ""
                     if (ti.isNotEmpty()) { t.title = ti; pageTitles[url] = ti }
                     if (!t.priv && !BrowserSaver.isArchive(url) && !(t.id == panicClearId && SiteBlock.keyOf(url) == lastPurgeKey)) BrowserStore.recordVisit(this@BrowserActivity, url, ti)   // (v412) صفحة جوجل بعد الطوارئ ماتتسجّلش لو هي نفسها اللي اتمسحت
                     noteYt(url, ti)
                 }
-                if (t.id == panicClearId && (url ?: "").contains("google.")) { try { v.clearHistory() } catch (_: Throwable) {}; endPanicCover(); updateNav() }   // (v231) الرجوع مايرجّعش الصفحة اللي اتمسحت
-                if (t === tabs.getOrNull(curIdx)) { showUrl(url); updateNav(); updateStar(); scanOnce(); scheduleAutoScan(t, longArrayOf(1000L, 3500L)); scheduleFlashKb(t) }   // (v838) فحص أوتوماتيك · (v842) كيبورد ألعاب الفلاش
+                if (t.id == panicClearId && ((url ?: "").contains("google.") || BrowserSaver.isArchive(url))) { try { v.clearHistory() } catch (_: Throwable) {}; endPanicCover(); updateNav() }   // (v231) الرجوع مايرجّعش الصفحة اللي اتمسحت
+                if (t === tabs.getOrNull(curIdx)) { showUrl(if (BrowserSaver.isHomeArchive(url)) GOOGLE else url); updateNav(); updateStar(); scanOnce(); scheduleAutoScan(t, longArrayOf(1000L, 3500L)); scheduleFlashKb(t) }   // (v838) فحص أوتوماتيك · (v842) كيبورد ألعاب الفلاش
                 if (adFor(url)) v.evaluateJavascript(adJs(), null)
                 saver.pageFinished(t, v, url)   // (v783)
                 saveAdStats()
@@ -967,6 +977,7 @@ class BrowserActivity : Activity() {
         addr.hint = if (t.priv) "🕶 متخفي — رابط الموقع / كلمة بحث" else "رابط الموقع / كلمة بحث"
         tabsB.setTextColor(if (t.priv) 0xFFE1BEE7.toInt() else th.text)
         applyPrivLook(t.priv)   // (v848)
+        if (t.priv && privLocked) showPrivLock() else hidePrivLock()   // (v1016)
         endPanicCover(); refreshBlockCover()
         scanOnce(); persistTabs()
         if (tvOn) h.post { if (!dead) tvToPage() }
@@ -995,7 +1006,7 @@ class BrowserActivity : Activity() {
         // (v124) التبويبات المتخفية عمرها ما بتتحفظ
         val keep = tabs.filter { !it.priv }
         val ci = keep.indexOf(tabs.getOrNull(curIdx)).let { if (it < 0) 0 else it }
-        BrowserStore.saveTabs(this, keep.map { BrowserStore.SavedTab(if (it.id == panicClearId) GOOGLE else (it.wv?.url?.takeIf { u -> !u.startsWith("data:") } ?: it.url), it.title, it.desktop, if (it.id == panicClearId) "" else BrowserStore.packState(stateOf(it))) }, ci)
+        BrowserStore.saveTabs(this, keep.map { BrowserStore.SavedTab(if (it.id == panicClearId) GOOGLE else (it.wv?.url?.takeIf { u -> !u.startsWith("data:") }?.let { u -> if (BrowserSaver.isHomeArchive(u)) GOOGLE else u } ?: it.url), it.title, it.desktop, if (it.id == panicClearId) "" else BrowserStore.packState(stateOf(it))) }, ci)
     }
 
     // ===== تحميل لينك / بحث =====
@@ -1012,6 +1023,7 @@ class BrowserActivity : Activity() {
         t.url = u; t.errUrl = ""
         if (gateBlocked(t, u)) return   // (v412) موقع محجوب: غطا أسود وبلاش تحميل
         t.blockedUrl = null; refreshBlockCover()
+        if (escapeGoogle && u.trimEnd('/') == GOOGLE) { escapeGoogle = false; if (saver.loadOfflineHome(w, t)) return }   // (v1016)
         saver.beforeLoad(w, t, u)   // (v783)
         val hdr = saver.headersFor(u)
         if (hdr != null && u.startsWith("http")) w.loadUrl(u, hdr) else w.loadUrl(u)   // Save-Data: on لما التوفير شغّال
@@ -1121,6 +1133,67 @@ class BrowserActivity : Activity() {
         panicClearId = -1L
         if (::panicCover.isInitialized) panicCover.visibility = View.GONE
     }
+    // ===== (v1016) 🚨 يقفل الفيديو المصطاد · المتخفي المقفول: غطا أسود — دخول بالبصمة · بحث جديد · خروج =====
+    private fun closeLivePlayers() {
+        try { PlayerActivity.panicClose() } catch (_: Throwable) {}
+        try { com.newtube.mobile.ui.playback.MobilePlaybackActivity.panicClose() } catch (_: Throwable) {}
+    }
+    private fun lockPriv() {
+        if (dead || tabs.none { it.priv }) return
+        privLocked = true
+        if (tabs.getOrNull(curIdx)?.priv == true) showPrivLock()
+    }
+    private fun hidePrivLock() {
+        privLockV?.let { try { (it.parent as? ViewGroup)?.removeView(it) } catch (_: Throwable) {} }
+        privLockV = null
+    }
+    private fun showPrivLock() {
+        if (dead || privLockV != null) return
+        try { addr.clearFocus(); (getSystemService(Context.INPUT_METHOD_SERVICE) as? android.view.inputmethod.InputMethodManager)?.hideSoftInputFromWindow(window.decorView.windowToken, 0) } catch (_: Throwable) {}
+        WebMute.pauseAll()
+        try { wvOrNull?.evaluateJavascript(BrowserSaver.JS_STOPMEDIA, null) } catch (_: Throwable) {}
+        fun pb(label: String, fill: Int, onTap: () -> Unit): TextView = IconTextView(this).apply {
+            text = label; textSize = 17f; gravity = Gravity.CENTER; setTextColor(Color.WHITE)
+            background = ui.box(fill, 0x66FFFFFF, 14); setPadding(ui.dp(12), ui.dp(14), ui.dp(12), ui.dp(14))
+            layoutParams = LinearLayout.LayoutParams(-1, -2).apply { setMargins(0, ui.dp(7), 0, ui.dp(7)) }
+            setOnClickListener { onTap() }
+        }
+        val col = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER_HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL }
+        col.addView(IconTextView(this).apply { text = "🔒 المتصفح المخفي مقفول"; textSize = 20f; setTextColor(Color.WHITE); gravity = Gravity.CENTER; typeface = android.graphics.Typeface.DEFAULT_BOLD })
+        col.addView(IconTextView(this).apply { text = "شغلك لسه مفتوح زي ما سيبته"; textSize = 13f; setTextColor(0xFFB0B0B0.toInt()); gravity = Gravity.CENTER; setPadding(0, ui.dp(4), 0, ui.dp(18)) })
+        col.addView(pb("🔓 دخول بالبصمة", 0xFF6A1B9A.toInt()) { privAuth { privLocked = false; hidePrivLock() } })
+        col.addView(pb("🔍 بحث جديد", 0xFF1E6BFF.toInt()) { privToGoogle(false) })
+        col.addView(pb("🚪 خروج", 0xFFD32F2F.toInt()) { privToGoogle(true) })
+        val v = FrameLayout(this).apply { setBackgroundColor(Color.BLACK); isClickable = true; isFocusable = true; addView(col, FrameLayout.LayoutParams(ui.dp(280), -2, Gravity.CENTER)) }
+        privLockV = v
+        (window.decorView as? ViewGroup)?.addView(v, ViewGroup.LayoutParams(-1, -1))
+    }
+    /** بحث جديد: متصفح عادي على جوجل والمخفي يفضل مقفول · خروج: نفس الحاجة + المخفي يتقفل ويتمسح */
+    private fun privToGoogle(closePriv: Boolean) {
+        hidePrivLock()
+        escapeGoogle = true
+        val nt = newTab(GOOGLE, !closePriv)
+        if (closePriv) { privLocked = false; closeAllTabs(true, nt) }
+    }
+    private fun privAuth(then: () -> Unit) {
+        if (android.os.Build.VERSION.SDK_INT < 28) { Notice.show(this, "البصمة محتاجة أندرويد 9 أو أحدث", 2800L); return }
+        var done = false
+        try {
+            val ex = mainExecutor
+            val b = android.hardware.biometrics.BiometricPrompt.Builder(this).setTitle("🔒 المتصفح المخفي").setSubtitle("ابصم للدخول")
+            if (android.os.Build.VERSION.SDK_INT >= 30) b.setAllowedAuthenticators(android.hardware.biometrics.BiometricManager.Authenticators.BIOMETRIC_WEAK or android.hardware.biometrics.BiometricManager.Authenticators.DEVICE_CREDENTIAL)
+            else if (android.os.Build.VERSION.SDK_INT >= 29) b.setDeviceCredentialAllowed(true)
+            else b.setNegativeButton("إلغاء", ex) { _, _ -> }
+            b.build().authenticate(android.os.CancellationSignal(), ex, object : android.hardware.biometrics.BiometricPrompt.AuthenticationCallback() {
+                override fun onAuthenticationSucceeded(r: android.hardware.biometrics.BiometricPrompt.AuthenticationResult?) { if (!done) { done = true; then() } }
+                override fun onAuthenticationError(code: Int, msg: CharSequence?) {
+                    if (code == android.hardware.biometrics.BiometricPrompt.BIOMETRIC_ERROR_USER_CANCELED || code == android.hardware.biometrics.BiometricPrompt.BIOMETRIC_ERROR_CANCELED) return
+                    Notice.show(this@BrowserActivity, "مقدرتش أتأكد من البصمة — جرّب تاني أو دوس «خروج»", 3200L)
+                }
+            })
+        } catch (_: Throwable) { Notice.show(this, "مقدرتش أفتح البصمة", 2500L) }
+    }
+
     private fun panic(blockedUrl: String? = null) {
         if (dead || tabs.isEmpty()) return
         val t = tabs[curIdx]
@@ -1142,6 +1215,7 @@ class BrowserActivity : Activity() {
             w.evaluateJavascript("(function(){var a=document.querySelectorAll('video,audio');for(var i=0;i<a.length;i++){try{a[i].pause()}catch(e){}}})()", null)
         } catch (_: Throwable) {
         }
+        closeLivePlayers()   // (v1016) فيديو اتصاد واتشغّل في المشغّل يتقفل مع 🚨
         panicCover.visibility = View.VISIBLE
         panicClearId = t.id
         t.thumb = null; t.title = ""; t.errUrl = ""
@@ -1151,7 +1225,7 @@ class BrowserActivity : Activity() {
         keys.removeAll { it.startsWith("${t.id}:") }
         webGroups.clear(); openKey = null; autoShown = false; refreshBadge()
         showUrl(GOOGLE, true)
-        w.stopLoading(); w.loadUrl(GOOGLE)
+        w.stopLoading(); if (!saver.loadOfflineHome(w, t)) w.loadUrl(GOOGLE)   // (v1016) نسخة جوجل المحفوظة أوفلاين لو موجودة (من غير انتظار شبكة)
         undoB.visibility = if (panicUrl != null) View.VISIBLE else View.GONE
         persistTabs()   // (persistTabs بتحفظ جوجل مكان الصفحة اللي اتمسحت)
     }
@@ -1502,14 +1576,14 @@ class BrowserActivity : Activity() {
         prefs().edit().putBoolean("br_swipe_hint_done", true).apply()
         if (tabsDlg?.isShowing == true) renderTabs()
     }
-    private fun closeAllTabs(priv: Boolean = false) {
+    private fun closeAllTabs(priv: Boolean = false, landOn: BTab? = null) {
         val victims = tabs.filter { it.priv == priv }
         val curT = tabs.getOrNull(curIdx)
         for (t in victims) try { t.wv?.let { (it.parent as? ViewGroup)?.removeView(it); if (t.priv) { it.clearCache(true); it.clearHistory(); it.clearFormData() }; it.destroy() } } catch (_: Throwable) {}
         tabs.removeAll(victims.toSet())
         tabsDlg?.dismiss()
         if (tabs.isEmpty()) { newTab(home(), true); return }
-        if (curT != null && curT in victims) select(0) else { curIdx = tabs.indexOf(curT).coerceAtLeast(0); webGroups.clear(); refreshBadge(); refreshTabsCount(); persistTabs() }
+        if (curT != null && curT in victims) select((landOn?.let { tabs.indexOf(it) } ?: -1).let { if (it >= 0) it else 0 }) else { curIdx = tabs.indexOf(curT).coerceAtLeast(0); webGroups.clear(); refreshBadge(); refreshTabsCount(); persistTabs() }
     }
 
     private fun entryRow(e: BrowserStore.Entry, onOpen: () -> Unit, onDel: () -> Unit): View {
@@ -2522,6 +2596,8 @@ class BrowserActivity : Activity() {
         val bTab = stripBtn("🕶") { newTab(home(), true, -1L, true) }   // تصفح مخفي
         // (v848) 🕶 اتنقل برة عمود الأدوات: ظاهر دايمًا (جنب ⚙️ و☰)
         bTab.layoutParams = LinearLayout.LayoutParams(ui.dp(40), ui.dp(40)).apply { setMargins(ui.dp(3), ui.dp(3), ui.dp(3), 0) }
+        saveB = stripBtn("🧊", 18f) { if (::saver.isInitialized) saver.quickCycle() }   // (v1016) توفير الداتا: دوسة = الحالة اللي بعدها
+        saveB?.layoutParams = LinearLayout.LayoutParams(ui.dp(40), ui.dp(40)).apply { setMargins(ui.dp(3), ui.dp(3), ui.dp(3), 0) }
         val co = coPill("📺①") { toggleCoSurf() }; coBtn1 = co; toolsInner.addView(co); vm(co)   // مزامنة المتصفح مع التلفزيون
         val bHist = stripBtn("🕘") { showHistory() }   // السجل — دخول سريع
         toolsInner.addView(bHist); vm(bHist)
@@ -2566,8 +2642,8 @@ class BrowserActivity : Activity() {
             toolsInner.gravity = if (land) Gravity.CENTER_VERTICAL else Gravity.CENTER_HORIZONTAL
             (gearB.layoutParams as? LinearLayout.LayoutParams)?.setMargins(ui.dp(3), ui.dp(3), ui.dp(3), if (land) ui.dp(3) else 0)
             (bTab.layoutParams as? LinearLayout.LayoutParams)?.setMargins(ui.dp(3), ui.dp(3), ui.dp(3), if (land) ui.dp(3) else 0)
-            if (land) { toolsPanel.addView(toolsToggle); toolsPanel.addView(gearB); toolsPanel.addView(bTab); toolsPanel.addView(toolsInner, LinearLayout.LayoutParams(-2, -2)) }
-            else { toolsPanel.addView(toolsInner, LinearLayout.LayoutParams(-2, -2)); toolsPanel.addView(bTab); toolsPanel.addView(gearB); toolsPanel.addView(toolsToggle) }
+            if (land) { toolsPanel.addView(toolsToggle); toolsPanel.addView(gearB); toolsPanel.addView(bTab); saveB?.let { toolsPanel.addView(it) }; toolsPanel.addView(toolsInner, LinearLayout.LayoutParams(-2, -2)) }
+            else { toolsPanel.addView(toolsInner, LinearLayout.LayoutParams(-2, -2)); saveB?.let { toolsPanel.addView(it) }; toolsPanel.addView(bTab); toolsPanel.addView(gearB); toolsPanel.addView(toolsToggle) }
             toolsInner.translationX = 0f; toolsInner.translationY = 0f
             toolsPanel.requestLayout()
         }
@@ -3441,6 +3517,7 @@ class BrowserActivity : Activity() {
 
     @Suppress("DEPRECATION")
     override fun onBackPressed() {
+        if (privLockV != null) { moveTaskToBack(true); return }   // (v1016) المتخفي مقفول: Back مايدخلش
         if (actScrim != null) { closeActions(); return }   // (v716)
         if (customView != null) { leaveCustom(); return }
         if (::dlBar.isInitialized && dlBar.visibility == View.VISIBLE) { hideDl(); return }   // (v324)
@@ -3473,11 +3550,12 @@ class BrowserActivity : Activity() {
 
     /** (v854) هوم/ريسنت (مش فتح المشغّل من جوه التطبيق): لو الإعداد شغّال ← التبويبات المتخفية تتقفل */
     override fun onUserLeaveHint() {
-        try { if (prefs().getBoolean("br_priv_close", false) && tabs.any { it.priv }) closeAllTabs(true) } catch (_: Throwable) {}
+        try { lockPriv() } catch (_: Throwable) {}   // (v1016) بدل ما يتقفل ويضيع: بيفضل مفتوح ومقفول بغطا أسود وبصمة
         super.onUserLeaveHint()
     }
     override fun onDestroy() {
         SubHunt.stop()   // (v746)
+        try { screenOffRx?.let { unregisterReceiver(it) } } catch (_: Throwable) {}   // (v1016)
         try { if (::saver.isInitialized) saver.destroy() } catch (_: Throwable) {}   // (v783)
         try { dockUi?.detach() } catch (_: Throwable) {}
         try { stripUi?.detach() } catch (_: Throwable) {}

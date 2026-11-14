@@ -666,7 +666,6 @@ object Api {
      */
     private val thinkVar = java.util.concurrent.ConcurrentHashMap<String, Int>()
     private fun thinkCfg(model: String, v: Int): String {
-        if (thinkBudget0.get() == true) return ",\"thinkingConfig\":{\"thinkingBudget\":0}"
         val m = model.lowercase()
         val three = m.contains("gemini-3") || m.contains("latest")
         val pro = m.contains("pro")
@@ -681,10 +680,6 @@ object Api {
     private val tokenCap = java.util.concurrent.ConcurrentHashMap<String, Int>()
     /** (v180) مهلة قراءة أقصر للخيط الحالي (الترجمة الحية: طلب أبطأ من ~12ث ملوش لازمة). null = الافتراضي 90ث */
     val readTimeoutOverride = ThreadLocal<Int?>()
-    /** (v998 — وارد) على الخيط ده بس: ابعت thinkingBudget 0 مهما كان الموديل (بدل thinkingLevel minimal) */
-    val thinkBudget0 = ThreadLocal<Boolean>()
-    /** (v998 — وارد) خطافات الستريم: onText لكل دلتا نص · onFirstToken لأول دلتا غير فاضية · cancel لإجهاض القراءة · onConn لقطع الاتصال من خيط الحارس */
-    class StreamCb(val onText: (String) -> Unit, val onFirstToken: () -> Unit, val cancel: () -> Boolean, val onConn: (HttpURLConnection) -> Unit)
 
     /** (v413) إثبات إن جيميناي اتنده فعلًا: كل طلب حقيقي بيتسجّل (قبل + بعد). لو مفيش سطور 🌐 في اللوج يبقى جيميناي ماتندهش خالص. */
     private val gemSeq = java.util.concurrent.atomic.AtomicInteger(0)
@@ -729,7 +724,7 @@ object Api {
     fun generateModel(model: String, key: String, prompt: String, wav: ByteArray?, maxTokens: Int, temp: Double, json: Boolean, search: Boolean): Result =
         generateInner(model, key, prompt, wav, maxTokens, temp, json, search)
     private fun generateInner(model: String, key: String, prompt: String, wav: ByteArray?,
-                 maxTokens: Int, temp: Double, json: Boolean, search: Boolean, fileUri: String? = null, stream: StreamCb? = null): Result {
+                 maxTokens: Int, temp: Double, json: Boolean, search: Boolean): Result {
         Quota.hit(model); Stats.req(model, key)
         val mt0 = minOf(maxTokens, tokenCap[model] ?: Int.MAX_VALUE)
         if (search) return generateOnce(model, key, prompt, wav, mt0, temp, json, search, "")
@@ -737,7 +732,6 @@ object Api {
         var mt = mt0
         while (true) {
             try {
-                if (stream != null) return generateStreamOnce(model, key, prompt, wav, fileUri, mt, temp, json, thinkCfg(model, v), stream)
                 return generateOnce(model, key, prompt, wav, mt, temp, json, search, thinkCfg(model, v))
             }
             catch (e: ApiErr) {
@@ -749,131 +743,6 @@ object Api {
                 v++; thinkVar[model] = v
             }
         }
-    }
-
-    /**
-     * (v998 — وارد) طلب ستريم على موديل بعينه بمفتاح جيميناي حقيقي — من غير تحويل FreeLLM (المسار ده مبيعدّيش على generate).
-     * نفس بناء الطلب بتاع generateOnce (منه thinkCfg عن طريق generateInner)، بس الرد بيتقري سطر سطر (SSE).
-     */
-    fun generateStream(model: String, key: String, prompt: String, wav: ByteArray?, fileUri: String?,
-                 maxTokens: Int, temp: Double, json: Boolean, cb: StreamCb): Result {
-        if (key == LocalKey.ID) throw NoKey()
-        if (FreeLlm.isWrapped(key) || FreeLlm.isKey(key)) throw ApiErr(400, "Warid: FreeLLM keys not supported")
-        val n = gemSeq.incrementAndGet()
-        val tail = "…" + key.takeLast(4)
-        val t0 = System.currentTimeMillis()
-        val kind = if (fileUri != null) "صوت Files" else if (wav != null) "صوت ${wav.size / 1024}KB" else "نص"
-        LogStore.add("🌐 [جيميناي #$n] وارد ستريم ← ${model.removePrefix("gemini-")} · مفتاح $tail · $kind")
-        try {
-            val r = generateInner(model, key, prompt, wav, maxTokens, temp, json, false, fileUri, cb)
-            LogStore.add("🌐 [جيميناي #$n] ✅ وارد رد ${r.text.length}حرف في ${System.currentTimeMillis() - t0}ms" + (if (r.finish.isNotEmpty() && r.finish != "STOP") " (${r.finish})" else ""))
-            return r
-        } catch (e: Throwable) {
-            val m = if (e is ApiErr) "HTTP ${e.code}: " + (e.message ?: "").take(90) else (e.javaClass.simpleName + ": " + (e.message ?: "").take(90))
-            LogStore.add("🌐 [جيميناي #$n] ❌ وارد فشل في ${System.currentTimeMillis() - t0}ms — $m")
-            throw e
-        }
-    }
-
-    /**
-     * (v998 — وارد) النسخة الستريمنج من generateOnce: نفس بناء الطلب، بس الرد SSE سطر سطر.
-     * كود الخطأ بيتفحص قبل حلقة السطور (errorStream → ApiErr زي generateOnce).
-     * مفيش [DONE] — نهاية الستريم هي نهاية السطور. SocketTimeoutException وسط الستريم = stall:
-     * النص الجزئي محفوظ في WaridStall.partial ومبيترميش.
-     */
-    private fun generateStreamOnce(model: String, key: String, prompt: String, wav: ByteArray?, fileUri: String?,
-                 maxTokens: Int, temp: Double, json: Boolean, think: String, cb: StreamCb): Result {
-        val enc = java.util.Base64.getEncoder()
-        val pk = if (wav != null && fileUri == null) AudioEnc.pack(wav) else null
-        val aud: ByteArray? = pk?.bytes
-        val head = "{\"contents\":[{\"parts\":[" + when {
-            fileUri != null -> "{\"file_data\":{\"mime_type\":\"audio/wav\",\"file_uri\":" + JSONObject.quote(fileUri) + "}},"
-            pk != null -> "{\"inline_data\":{\"mime_type\":\"" + pk.mime + "\",\"data\":\""
-            else -> ""
-        }
-        val mid = if (aud != null) "\"}}," else ""
-        val textPart = "{\"text\":" + JSONObject.quote(prompt) + "}"
-        val tail = "]}],\"generationConfig\":{\"maxOutputTokens\":$maxTokens,\"temperature\":$temp" +
-            (if (json) ",\"responseMimeType\":\"application/json\"" else "") + think + "},\"safetySettings\":[$SAFETY]}"
-        val hb = head.toByteArray(Charsets.UTF_8)
-        val mb = (mid + textPart + tail).toByteArray(Charsets.UTF_8)
-        val b64Len = if (aud != null) ((aud.size + 2) / 3).toLong() * 4 else 0L
-        val total = hb.size + b64Len + mb.size
-
-        val c = URL("$base/models/$model:streamGenerateContent?alt=sse").openConnection() as HttpURLConnection
-        try {
-            c.requestMethod = "POST"; c.doOutput = true; c.connectTimeout = 20000; c.readTimeout = (readTimeoutOverride.get() ?: 120000)
-            c.setRequestProperty("Content-Type", "application/json"); c.setRequestProperty("x-goog-api-key", key)
-            c.setRequestProperty("Accept", "text/event-stream")
-            c.setFixedLengthStreamingMode(total)
-            cb.onConn(c)
-            c.outputStream.use { os ->
-                os.write(hb)
-                if (aud != null) {
-                    val step = 3 * 16384
-                    var i = 0
-                    while (i < aud.size) {
-                        val e = minOf(aud.size, i + step)
-                        os.write(enc.encode(aud.copyOfRange(i, e)))
-                        i = e
-                    }
-                }
-                os.write(mb)
-            }
-            val code = c.responseCode
-            val stream = if (code < 300) c.inputStream else c.errorStream
-            if (code >= 300) {
-                val txt = stream?.bufferedReader(Charsets.UTF_8)?.use { it.readText() } ?: ""
-                NetUse.api(total, txt)
-                throw ApiErr(code, errMsg(code, txt))
-            }
-            val ctype = (c.contentType ?: "").lowercase()
-            if (ctype.contains("html")) {
-                val txt = stream?.bufferedReader(Charsets.UTF_8)?.use { it.readText() } ?: ""
-                NetUse.api(total, txt)
-                throw ApiErr(502, htmlMsg(code, txt))
-            }
-            val sb = StringBuilder()
-            var finish = ""
-            var firstFired = false
-            var down = 0L
-            try {
-                stream?.bufferedReader(Charsets.UTF_8)?.use { r ->
-                    while (true) {
-                        if (cb.cancel()) throw WaridStall(sb.toString())
-                        val line = (try { r.readLine() } catch (e: java.net.SocketTimeoutException) { throw WaridStall(sb.toString()) }) ?: break
-                        down += line.length.toLong()
-                        val t = line.trim()
-                        if (t.isEmpty() || !t.startsWith("data:")) continue
-                        val payload = t.removePrefix("data:").trim()
-                        if (payload.isEmpty() || payload == "[DONE]") continue
-                        val obj = try { JSONObject(payload) } catch (_: Throwable) { continue }
-                        val cand = obj.optJSONArray("candidates")?.optJSONObject(0) ?: continue
-                        val fr = cand.optString("finishReason", "")
-                        if (fr.isNotEmpty()) finish = fr
-                        val parts = cand.optJSONObject("content")?.optJSONArray("parts") ?: continue
-                        for (i in 0 until parts.length()) {
-                            val delta = parts.optJSONObject(i)?.optString("text", "") ?: ""
-                            if (delta.isEmpty()) continue
-                            sb.append(delta)
-                            cb.onText(delta)
-                            if (!firstFired) {
-                                firstFired = true
-                                cb.onFirstToken()
-                            }
-                        }
-                    }
-                }
-            } catch (e: WaridStall) {
-                try { NetUse.api(total, sb.length.toLong()) } catch (_: Throwable) {}
-                throw e
-            } catch (e: java.io.IOException) {
-                try { NetUse.api(total, sb.length.toLong()) } catch (_: Throwable) {}
-                throw WaridStall(sb.toString())
-            }
-            try { NetUse.api(total, down) } catch (_: Throwable) {}
-            return Result(sb.toString(), finish)
-        } catch (e: Throwable) { try { c.disconnect() } catch (_: Throwable) {}; throw e }
     }
 
     private fun generateOnce(model: String, key: String, prompt: String, wav: ByteArray?,

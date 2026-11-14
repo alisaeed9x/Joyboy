@@ -532,10 +532,6 @@ class MainActivity : Activity() {
         val offLangChips = ui.chips(Offline.langLabels, { Offline.langLabels[Offline.langIds.indexOf(Offline.lang()).coerceAtLeast(0)] }) { val lid = Offline.langIds[Offline.langLabels.indexOf(it).coerceAtLeast(0)]; Cfg.put("stt_lang", lid); TrWizard.syncSaved("stt_lang", lid) ; if (lid == "ar" && Cfg.str("stt_engine", "whisper") == "sherpa") Notice.show(this, "⚠ (v468) SenseVoice (Sherpa) لا يدعم العربية — التفريغ العربي هيتعمل بـ Whisper تلقائيًا", 3200L) }
         val offPartLabels = listOf("⚡ لحظي (كل باتش)", "٣ دقايق", "٥ دقايق", "١٠ دقايق", "٢٠ دقيقة"); val offPartVals = listOf(1, 3, 5, 10, 20)
         val offPartChips = ui.chips(offPartLabels, { offPartLabels[offPartVals.indexOf(Cfg.int("ctx_min", 3)).let { if (it < 0) 1 else it }] }) { Cfg.put("ctx_min", offPartVals[offPartLabels.indexOf(it).coerceAtLeast(0)].toString()) }   // (v451) كان coerceAtLeast(1) فزرار «لحظي» (قيمة 1) كان بيتعرض «٣ دقايق» ومابيتعلّمش
-        // (v998) وارد: طول جزء التفريغ (٥ أو ١٠ دقايق) — بيتقرا من WaridTx.chunkSec() عند بداية التفريغ، وحفظ فوري
-        val waridChunkLabels = listOf("٥ دقائق", "١٠ دقائق")
-        val waridChunkVals = listOf("300", "600")
-        val waridChunkChips = ui.chips(waridChunkLabels, { waridChunkLabels[waridChunkVals.indexOf(Cfg.str(WaridTx.CHUNK_MIN_KEY, "300")).let { if (it < 0) 0 else it }] }) { Cfg.put(WaridTx.CHUNK_MIN_KEY, waridChunkVals[waridChunkLabels.indexOf(it).coerceAtLeast(0)]) }
         // (v999 ملاحظة 1) نموذج التفريغ المستقل عن نموذج الترجمة (Cfg lec_model): الأدق افتراضيًا.
         val lecModelLabels = listOf("🎯 الأدق (أبطأ)", "⚡ السريع")
         val lecModelVals = listOf(Lecture.LEC_MODEL_ACCURATE, Lecture.LEC_MODEL_FAST)
@@ -609,11 +605,8 @@ class MainActivity : Activity() {
                     ui.text("حجم موديل Whisper:", 12f, th.muted), offModelChips, ui.text("⚡ خانات التفريغ المتوازي:", 12f, th.muted), parChips, parNote, offStatus, offDlBtn, offProg,
                     ui.text("لغة الكلام (لو عارفها بتقلّل أخطاء الاكتشاف التلقائي):", 12f, th.muted), offLangChips,
                     ui.noHint()),
-                ui.section("🌐 وارد — طول جزء التفريغ", false,
-                    ui.text("أجزاء التفريغ بطريقة وارد (٥ أو ١٠ دقايق) — بيتطبق على التفريغات الجديدة بس؛ تفريغ وارد شغال بيكمّل بنفس حجمه.", 12f, th.muted),
-                    waridChunkChips),
-                ui.section("🎙 نموذج التفريغ الاحتياطي (الطريقة العادية القديمة)", false,
-                    ui.text("موديل الطريقة العادية القديمة بس — تفريغ الاستوديو الجديد بيشتغل بطريقة وارد (سلسلة موديلات تلقائية) ومبيتأثرش بالاختيار ده. ومبيغيّرش موديل الترجمة.", 12f, th.muted),lecModelChips)) }),   // (v1014) وارد + نموذج التفريغ الاحتياطي اتنقلوا من «الموديل والأداء» لأنهم إعدادات تفريغ
+                ui.section("🎙 نموذج تفريغ المحاضرات (لو قفل الاستوديو مقفول)", false,
+                    ui.text("بيشتغل بس لو قفلت «🔒 مصدر التفريغ ثابت» في الاستوديو — طول ما القفل شغال (الافتراضي) التفريغ والترجمة والتنظيم والتلخيص كلهم بـ Gemini Flash Lite Latest ومبيتأثروش بالاختيار ده. ومبيغيّرش موديل ترجمة المشغّل.", 12f, th.muted),lecModelChips)) }),   // (v1014) نموذج التفريغ اتنقل من «الموديل والأداء» لأنه إعداد تفريغ
             // ===== 🤖 الموديل والأداء =====
             tab("perf", { listOf<View>(
                 ui.noHint(),

@@ -89,7 +89,7 @@ object Studio {
         // برومبت المكالمة: متحدثين A/B (أو C لو فيه تالت)، حرفي، والمقاطعات عناصر منفصلة.
         // (v1001) الأطراف والنبرة: parties بنفس ترتيب المراجع الملزوقة — A = أول مرجع، B = التاني، وهكذا —
         // وكل عنصر ممكن يحمل "tone" (كلمة عربية واحدة للنبرة). الإضافتين قبل سطر الـJSON عشان
-        // promptFor وwaridPrompt يلاقوا الماركر ويدخّلوا إضافاتهم من غير ما يمسحوهم.
+        // promptFor وaccuracyRules يلاقوا الماركر ويدخّلوا إضافاتهم من غير ما يمسحوهم.
         private fun callPrompt(durSec: Double, clean: Boolean, prev: String, parties: List<String> = emptyList(), refsMixed: Boolean = false): String = buildString {
             append("أنت مفرّغ صوتي محترف بدقة عالية جدًا، متخصص في المكالمات المسجلة. اسمع المقطع الصوتي (مدته حوالي ${durSec.toInt()} ثانية) بتركيز كامل وفرّغ الكلام المنطوق نصًا حرفيًا بنفس اللغة المنطوقة فعلًا — من غير أي ترجمة ولا تلخيص ولا إضافة من عندك.\n\n")
             append("قواعد صارمة:\n")
@@ -292,7 +292,7 @@ object Studio {
         val engine = if (eng == "gemini" || eng == "google") eng else TrWizard.method()
         val src = srcLang ?: d.langCode.ifBlank { null }
         val out = try {
-            SubFileTr.translate(cues, engine, report, cancel, null, null, src)
+            SubFileTr.translate(cues, engine, report, cancel, null, null, src, StudioTx.pinned().ifBlank { null })   // (v1017) الاستوديو: Flash Lite Latest بس
         } catch (e: Throwable) {
             LogStore.err("Studio:tr", e)
             return SrtResult(null, libId, 0, cues.size, (e.message ?: e.javaClass.simpleName).take(100))
@@ -302,7 +302,7 @@ object Studio {
             val tr = out.texts.getOrNull(i) ?: ""
             Sub(c.start, c.end, c.text, if (tr.isBlank()) c.text else tr, "male", "unknown", "none", emptyList(), emptyList(), false, false)
         }
-        val srtPath = persistSrt(ctx, d, libId, subs, engine, null, emptyList())
+        val srtPath = persistSrt(ctx, d, libId, subs, engine, StudioTx.pinned().ifBlank { null }, emptyList())
         return SrtResult(srtPath, libId, subs.size, out.failed, out.error)
     }
 

@@ -61,14 +61,14 @@ object TxDetect {
      * مبرميش استثناء أبدًا.
      */
     fun detectLight(ctx: Context, wavBytes: ByteArray, mime: String = "audio/wav"): Result? {
-        val ks = keys()
+        val ks = StudioTx.keysFor(keys())
         if (ks.isEmpty()) return null
         val mdl = Lecture.lecModel()
         val prompt = detectPrompt()
         for (a in 0 until minOf(ks.size, 2)) {
             val key = ks[a % ks.size]
             try {
-                val r = Api.generate(mdl, key, prompt, wavBytes, 256, 0.1, true, false)
+                val r = StudioTx.generate(mdl, key, prompt, wavBytes, 256, 0.1, true, false)
                 val j = Lecture.parseJson(r.text) ?: continue
                 val type = j.optString("type").trim().lowercase()
                 if (type !in listOf("lecture", "call", "subs", "show", "meeting", "audio")) continue
