@@ -599,7 +599,7 @@ class StudioUi(private val act: Activity, private val ui: Ui, private val th: Th
         Thread {
             var res: Studio.SrtResult? = null
             try {
-                res = Studio.translateToSrt(act, d) { m -> main.post { statusV.text = "⏳ " + m } }
+                res = Studio.translateToSrt(act, d, report = { m -> main.post { statusV.text = "⏳ " + m } })
             } catch (e: Throwable) {
                 LogStore.err("StudioUi:srt", e)
             }
