@@ -3135,7 +3135,7 @@ public class MobilePlaybackActivity extends MobileActivity
                     ? box.getWidth() : getResources().getDisplayMetrics().widthPixels;
             int height = box.getHeight() > 0
                     ? box.getHeight() : getResources().getDisplayMetrics().heightPixels;
-            int strip = controlsStrip(width, height, mVideoAspect, getResizeMode());
+            int strip = 0; // JOYBOY(v1037): the controls always reach the screen edges (bars/cutout only) - no pillarbox strip, in Fit too
             left = Math.max(bars.left, strip);
             right = Math.max(bars.right, strip);
             top = bars.top;
@@ -12786,6 +12786,18 @@ public class MobilePlaybackActivity extends MobileActivity
         // The morph and the mini card own the texture while they run: never touch its layout.
         if (mMorphFraction != 0f || MiniPlayerBridge.isActive()) {
             return;
+        }
+        // JOYBOY(v1037): stretch-to-screen needs the content frame itself to be the whole player area. It was
+        // always a FIT box (the video's aspect, e.g. 16:9 = 1920 of 2400 px on a 20:9 phone), so the stretched
+        // surface was clipped to it and two black bars stayed on the sides. Fit/PiP/side panels keep the FIT box.
+        if (!isShortsMode()) {
+            boolean sidePanel = mCommentsSide || mChatSide || (mShorts != null && mShorts.isCommentsOpen());
+            int boxMode = (joyFitMode() == JOY_FIT_STRETCH && !sidePanel && !mIsInPip && !mPipEnterPending)
+                    ? androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FILL
+                    : androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FIT;
+            if (mPlayerView.getResizeMode() != boxMode) {
+                mPlayerView.setResizeMode(boxMode);
+            }
         }
         // PiP shows the whole picture in its own window. The portrait watch page (JOYBOY v1007)
         // keeps its box fixed and sizes the video inside it, except in plain FIT where the box

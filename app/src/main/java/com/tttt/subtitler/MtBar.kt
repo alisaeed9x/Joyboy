@@ -1817,27 +1817,6 @@ object MtBar {
         rowsMenu(a, anchor, above, "⏱ تزامن الترجمة", items)
     }
 
-    /** (v949) ▲ → toolSrc لأدوات الفيديو (قص/صوت/GIF/ضغط/ترجمة ثابتة) زي toolSrc() القديمة */
-    private fun toolSrc(): ToolSrc? {
-        val i = info ?: return null
-        val p = player ?: return null
-        val lu = try { i.localUri() } catch (_: Throwable) { null } ?: return null
-        val hdr = HashMap<String, String>()
-        try { i.headers()?.let { hdr.putAll(it) } } catch (_: Throwable) {}
-        val au = try { i.audioUrl()?.takeIf { it.isNotEmpty() } } catch (_: Throwable) { null }
-        val name = (try { i.title() } catch (_: Throwable) { null } ?: "").ifBlank { "video" }
-        val dur = try { p.duration.coerceAtLeast(0L) } catch (_: Throwable) { 0L }
-        val vw = try { p.videoSize.width } catch (_: Throwable) { 0 }
-        val vh = try { p.videoSize.height } catch (_: Throwable) { 0 }
-        val cur = try { p.currentPosition } catch (_: Throwable) { 0L }
-        return ToolSrc(lu, au, name, dur, vw, vh, cur, MtTranslate.subsNow(), hdr)
-    }
-
-    private fun withSrc(a: Activity, f: (ToolSrc) -> Unit) {
-        val ts = toolSrc()
-        if (ts == null) Notice.show(a, "مفيش فيديو شغّال", 2300L) else f(ts)
-    }
-
     /** (v952) تسجيل حركة المشغّل (PlayerTrace): فريم بفريم + مكان كل زرار وقايمة، في ملف PlayerTrace/trace_*.log */
     private fun toggleTrace(a: Activity) {
         com.newtube.mobile.ui.common.PlayerTrace.sink = com.newtube.mobile.ui.common.PlayerTrace.Sink { l -> try { LogStore.add(l) } catch (_: Throwable) {} }
@@ -1852,13 +1831,8 @@ object MtBar {
             "⬇ حمّل الفيديو" to { MtTranslate.downloadCur() },
             "🔊 مسارات الصوت" to { MtTranslate.showAudioTracks() },
             "🎧 مصدر الصوت (تلفزيون / موبايل)" to { AudioBridge.showMenu(a) },
-            "📺 ابعت للتلفزيون" to { MtTranslate.sendToTv() },
-            "✂ قص جزء من الفيديو" to { withSrc(a) { ToolsUi(a, uiHelper!!, Themes.current()).trim(it) } },
-            "🎞 عمل GIF" to { withSrc(a) { ToolsUi(a, uiHelper!!, Themes.current()).gif(it) } },
-            "📦 ضغط / تغيير الدقة" to { withSrc(a) { ToolsUi(a, uiHelper!!, Themes.current()).compress(it) } },
-            "🎬 ترجمة ثابتة (هارد ساب)" to { withSrc(a) { ToolsUi(a, uiHelper!!, Themes.current()).hardsub(it) } },
-            "🎧 تحويل لصوت" to { withSrc(a) { ToolsUi(a, uiHelper!!, Themes.current()).audio(it) } }
-        )
+            "📺 ابعت للتلفزيون" to { MtTranslate.sendToTv() }
+        )   // (v1038) القص/GIF/الضغط/الترجمة الثابتة/التحويل لصوت اتشالوا
         if (anchor != null) popupRows(a, anchor, false, items) else sheetRows(a, "🧰 أدوات", items)
     }
 

@@ -482,6 +482,7 @@ class FileManagerActivity : Activity() {
         setContentView(host)
         fab = TasksFab(this, host, ui) { startActivity(Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP).putExtra("tab", "tasks")) }   // (v420)
         dockUi = MiniDock(this, host, ui, th, { startActivity(Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP).putExtra("fullmusic", true)) })   // (v344)
+        try { YtMiniCard(this, host) } catch (e: Throwable) { LogStore.err("FileManager:ytMini", e) }   // (v1037) كارت يوتيوب المصغّر يمشي معاك في كل الصفحات
         stripUi = StatusStrip(this, host, ui, th) { startActivity(Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP).putExtra("tab", "tasks")) }   // (v345)
     }
 

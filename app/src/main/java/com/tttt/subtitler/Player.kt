@@ -457,20 +457,6 @@ class PlayerActivity : Activity(), Host {
             "link.apply" -> { phoneAck = true; refreshAsked = false; val nu = a.optString("url"); if (nu.startsWith("http")) { applyNewLink(LinkRefresh.Res(nu, true, a.optString("cookie"), a.optString("ua"))); Notice.show(this, "✓ اتحدّث لينك الفيديو (من الموبايل)", 2500L) } }
             "dl.info" -> res.put("info", dlInfo())   // (v804) زرار ⬇ في الريموت: وصف الفيديو الشغّال (ملف محلي / لينك + جودات)
             "dl.start" -> res.put("started", dlStart(a))   // (v804) الريموت اختار «حمّل على التلفزيون»
-            "task.add" -> {
-                val s = toolSrc()
-                if (s == null) res.put("err", "nosrc")
-                else try {
-                    val q = a.optString("q", "متوسطة")
-                    when (a.optString("kind")) {
-                        "trim" -> Tools.trim(this, s, a.optLong("a"), a.optLong("b"), q)
-                        "audio" -> Tools.audio(this, s, q)
-                        "gif" -> Tools.gif(this, s, a.optLong("a"), a.optLong("b", 5000L), q)
-                        "compress" -> Tools.compress(this, s, a.optInt("h", 480), q)
-                        else -> res.put("err", "kind")
-                    }
-                } catch (e: Throwable) { LogStore.err("Player:task.add", e); res.put("err", e.message ?: "err") }
-            }
             "track.audio" -> switchAudio(a.optInt("i"))
             "track.quality" -> rSetQ(a.optInt("i"))
             "conf.reload" -> {
@@ -1524,7 +1510,7 @@ class PlayerActivity : Activity(), Host {
         // (v676) أدوات الترجمة (باتشات · إعدادات · خلفية · لوج · ذكّرني · دبلجة) اتنقلت لصفحة «🔤 الترجمة» على الشريط
         if (u != null && (u.scheme == "file" || u.scheme == "content")) add("🎙 فصل صوت الكلام") { voiceMenu() }
         add("☰ القائمة الكاملة") { tvMenuFn?.invoke(anchor) }
-        add("🧰 أدوات الفيديو") { tvToolsFn?.invoke(anchor) }
+        add("⋯ مركز التحميل والليستة") { tvToolsFn?.invoke(anchor) }
         GAlert(this).setTitle("المزيد").setItems(labels.toTypedArray()) { _, w -> if (w in acts.indices) acts[w]() }.show()
     }
     private var tvDigitRun: Runnable? = null
@@ -1945,10 +1931,10 @@ class PlayerActivity : Activity(), Host {
         paintAud()
         Notice.show(this, "🔊 لغة الصوت: " + t.name, 2000L)
     }
-    // (v188) زرار «⏳ المهام» جنب زرار الترجمة: عداد أحمر + قايمة الأدوات بتنزل لفوق
+    // (v188) زرار «⏳ مركز التحميل» جنب زرار الترجمة: عداد أحمر + قايمة ⋯ بتنزل لفوق
     private var tasksPopFn: ((View) -> Unit)? = null
     private val taskBadges = ArrayList<TextView>()
-    private fun taskCount(): Int = TaskCenter.active() + BgJobs.jobs.count { it.active }
+    private fun taskCount(): Int = TaskCenter.active()   // (v1038) تحميلات بس
     private val taskListener: () -> Unit = {
         val n = taskCount()
         for (bd in taskBadges) { bd.text = if (n > 99) "99+" else n.toString(); bd.visibility = if (n > 0) View.VISIBLE else View.GONE }
@@ -1990,11 +1976,6 @@ class PlayerActivity : Activity(), Host {
     private fun isHlsUrl(): Boolean = (url ?: "").contains(".m3u8", true)
     private fun dlName(): String = (intent.getStringExtra("title")?.takeIf { it.isNotBlank() } ?: Recents.titleOf(vid)).substringBeforeLast('.', "").ifBlank { intent.getStringExtra("title")?.takeIf { it.isNotBlank() } ?: Recents.titleOf(vid) }
 
-    /** (v135) مصدر 🧰 أدوات الفيديو: الفيديو الشغّال دلوقتي (محلي = Uri، نت = لينك مباشر؛ aurl = صوت منفصل لو موجود) */
-    private fun toolSrc(): ToolSrc? {
-        val u = uri?.toString() ?: url ?: return null
-        return ToolSrc(u, if (uri == null) aurl else null, dlName(), durMs, vidW, vidH, player.currentPosition, engine.subs, HashMap(hdr))
-    }
     /** (v134) حجم الفيديو الحالي: HEAD للينك المباشر/اليوتيوب (صورة+صوت)، وتقدير bitrate×المدة لـ HLS */
     fun refreshSize(show: Boolean = false) {
         if (uri != null || url == null || sizeBusy) return
@@ -2072,7 +2053,7 @@ class PlayerActivity : Activity(), Host {
             if (!res.first) throw java.io.IOException(res.second)
             t.msg = ""; t.outPath = res.second
         }
-        try { Notice.show(this, "⬇ اتضاف للتحميل — تابعه من تبويب «المهام» (إيقاف · استكمال · إلغاء)", 3200L) } catch (_: Throwable) {}
+        try { Notice.show(this, "⬇ اتضاف للتحميل — تابعه من «مركز التحميل» (إيقاف · استكمال · إلغاء)", 3200L) } catch (_: Throwable) {}
     }
     /** (v134) زرار ⬇: قايمة الجودات (بحجم كل واحدة) — الاختيار بيبدأ التحميل */
     fun downloadPopup(anchor: View) {
@@ -2542,58 +2523,7 @@ class PlayerActivity : Activity(), Host {
             when (w) { 0 -> { trAsked = true; beginTranslate() }; 1 -> { trAsked = true; trHere = true; beginTranslate() }; else -> trFresh() }
         }.show()
     }
-    // (v999 ملاحظة 4) الفيديو ليه أكتر من مصدر ترجمة: اسأل «عايز ترجمة انهي واحدة؟» وافتكر الاختيار
-    // لكل فيديو (sub_choice:<vid>). بيتسأل مرة واحدة بس عند الفتح؛ «لاحقًا» بتسيب اللي شغّال زي ما هو.
-    // اختيار الاستوديو بيخبّي ترجمة المحرك الأول (stash) وبعدين بينسخ الاستوديو تحت مفتاح الفيديو.
-    private fun studioAsk(vidNow: String) {
-        val appCtx = applicationContext
-        val doc = try { StudioLink.findDoc(appCtx, vidNow, uri?.toString(), url, intent.getStringExtra("ref") ?: intent.getStringExtra("page") ?: "") } catch (_: Throwable) { null }
-        val engN = try { engine.subs.size } catch (_: Throwable) { 0 }
-        val stN = if (doc != null) try { StudioLink.studioSubs(appCtx, doc).size } catch (_: Throwable) { 0 } else 0
-        val side = try { sfSidecar() } catch (_: Throwable) { null }
-        if (doc == null || stN <= 0) { studioAskOpen = false; return }
-        val labels = ArrayList<String>()
-        val acts = ArrayList<() -> Unit>()
-        if (engN > 0) {
-            labels.add("🔤 ترجمة الفيديو (" + engN + " جملة)")
-            acts.add {
-                studioAskOpen = false
-                studioLabel = ""
-                try { StudioLink.remember(appCtx, vidNow, StudioLink.CHOICE_ENGINE) } catch (_: Throwable) {}
-                say("🔤 ترجمة الفيديو شغّالة")
-            }
-        }
-        if (side != null) {
-            labels.add("📄 ملف الترجمة جنب الفيديو («" + side.name + "»)")
-            acts.add {
-                studioAskOpen = false
-                try { StudioLink.remember(appCtx, vidNow, StudioLink.CHOICE_SIDECAR) } catch (_: Throwable) {}
-                sfRun("soft", autoEng(), null, -2, true)
-            }
-        }
-        labels.add(StudioLink.label(appCtx, doc) + " (" + stN + " جملة)")
-        acts.add {
-            studioAskOpen = false
-            Thread {
-                try {
-                    if (!BgJobs.isActive(vidNow)) {
-                        StudioLink.stashEngine(appCtx, vidNow)
-                        StudioLink.copyStudioToVid(appCtx, vidNow, doc)
-                    }
-                } catch (_: Throwable) {}
-                try { realEngine.load() } catch (_: Throwable) {}
-                runOnUiThread {
-                    if (isFinishing || isDestroyed) return@runOnUiThread
-                    studioLabel = StudioLink.label(appCtx, doc)
-                    touchSubs()
-                    refreshList()
-                    say("🎙 ترجمة الاستوديو شغّالة (" + stN + " جملة)")
-                }
-            }.apply { isDaemon = true }.start()
-        }
-        if (labels.size < 2) { studioAskOpen = false; return }
-        GAlert(this).setTitle("عايز ترجمة انهي واحدة؟").setItems(labels.toTypedArray()) { _, w -> if (w in acts.indices) acts[w]() }.setNegativeButton("لاحقًا") { _, _ -> studioAskOpen = false }.show()
-    }
+    private fun studioAsk(vidNow: String) { studioAskOpen = false }   // (v1037) الاستوديو اتمسح — ما بقاش فيه مصدر ترجمة تاني يتسأل عليه
     private fun trFresh() {
         if (!::engine.isInitialized) return
         resumePending = false; applyCard()
@@ -2640,14 +2570,7 @@ class PlayerActivity : Activity(), Host {
             else if (Cfg.str("trstart", "1") != "0") { try { engine.translateFromStart(); log("▶ الترجمة من أول الفيديو (أول جزء ناقص)") } catch (e: Throwable) { LogStore.err("Player:translateFromStart", e); say("⚠ تعذّر بدء الترجمة من أول الفيديو — جرّب ▶ ترجمة تاني") } }   // (v287)
             else if (posNow > 2000L) { try { engine.translateFrom(posNow / 1000.0); log("▶ الترجمة من " + fmtMs(posNow)) } catch (e: Throwable) { LogStore.err("Player:translateFrom", e); say("⚠ تعذّر بدء الترجمة من مكان التشغيل — جرّب ▶ ترجمة تاني") } }   // (v287)
         }
-        // (v999 ملاحظة 4) المحرك بدأ يترجم فعلًا: اللي في الملف من هنا ورايح خليط مش استوديو صافي،
-        // فالاختيار المتذكّر بيبقى «محرك» والعلامة بتتمسح — وإلا الفتحة الجاية كانت هتنسخ
-        // الاستوديو فوق شغل المحرك الجديد. (الرجوع المبكر فوق: مترجم 100% أو سؤال «كمّل؟» مبيغيّرش حاجة.)
-        try {
-            if (StudioLink.choice(applicationContext, vid) == StudioLink.CHOICE_STUDIO) StudioLink.remember(applicationContext, vid, StudioLink.CHOICE_ENGINE)
-            StudioLink.clearStudioMark(applicationContext, vid)
-            studioLabel = ""
-        } catch (_: Throwable) {}
+        studioLabel = ""
         if (!engineStarted) { engineStarted = true; engine.userPaused = false; startEngine() }
         else {
             // (v399) استئناف: لو الوضع المحفوظ اتغيّر من ⚙/الإعدادات بعد الإيقاف بنطبّقه على المحرك قبل ما نكمّل (كان بيكمّل بالوضع القديم)
@@ -4695,26 +4618,14 @@ class PlayerActivity : Activity(), Host {
         }
         gSet.addView(pd("📥 تحميل النص الأصلي (SRT)") { exportOriginalSrt() })
         // (v167) زرار «تضخيم الصوت» اتشال — التضخيم بقى جزء أحمر في سلايدر الصوت نفسه (بعد 100%)
-        // (v135) 🧰 أدوات الفيديو (زرار في الشريط العلوي): قص · صوت · GIF · ضغط · ترجمة ثابتة — كل واحدة بتتحط في توبيب «المهام» وبتتحفظ لوحدها لما تخلص
+        // (v1038) زرار ⋯ في الشريط العلوي: مركز التحميل + الليستة بس (أدوات القص/الصوت/GIF/الضغط/الترجمة الثابتة اتشالت)
         val gTools = gCol()
-        val toolsUi = ToolsUi(this, ui, th)
-        fun withSrc(f: (ToolSrc) -> Unit) { val ts = toolSrc(); if (ts == null) Notice.show(this, "مفيش فيديو شغّال", 2300L) else f(ts) }
-        gTools.addView(ui.text("🧰 أدوات الفيديو", 12f, th.primary, true).apply { setPadding(ui.dp(10), ui.dp(6), ui.dp(10), ui.dp(4)) })
-        gTools.addView(pd("✂ قص جزء من الفيديو") { withSrc { toolsUi.trim(it) } })
-        gTools.addView(pd("🎧 تحويل لصوت") { withSrc { toolsUi.audio(it) } })
-        gTools.addView(pd("🎞 عمل GIF") { withSrc { toolsUi.gif(it) } })
-        gTools.addView(pd("📦 ضغط / تغيير الدقة") { withSrc { toolsUi.compress(it) } })
-        gTools.addView(pd("🎬 ترجمة ثابتة (هارد ساب)") { withSrc { toolsUi.hardsub(it) } })
+        gTools.addView(ui.text("⋯ المزيد", 12f, th.primary, true).apply { setPadding(ui.dp(10), ui.dp(6), ui.dp(10), ui.dp(4)) })
         gTools.addView(pd("➕ إضافة للليستة") { queueCurrent() })   // (v694)
         gTools.addView(pd("📋 الليستة") { PlayQueueUi.show(this) })
-        gTools.addView(ui.text("النتيجة بتظهر في «📋 صفحة المهام» (زرار ⏳ جنب الترجمة)", 10f, 0xFF9AA0A6.toInt()).apply { setPadding(ui.dp(10), ui.dp(6), ui.dp(10), ui.dp(2)) })
-        // (v188) صفحة المهام (التقدم + الناتج) في نافذة فوق المشغّل — الأدوات جواها بتشتغل على الفيديو الشغّال
+        // (v188) مركز التحميل (التقدم + الناتج) في نافذة فوق المشغّل
         fun openTasksDialog() {
-            val tu = TasksUi(this, ui, th) { k ->
-                withSrc { ts ->
-                    when (k) { "trim" -> toolsUi.trim(ts); "audio" -> toolsUi.audio(ts); "gif" -> toolsUi.gif(ts); "compress" -> toolsUi.compress(ts); "hardsub" -> toolsUi.hardsub(ts); else -> {} }
-                }
-            }
+            val tu = TasksUi(this, ui, th)
             val dlg = android.app.Dialog(this)
             dlg.requestWindowFeature(android.view.Window.FEATURE_NO_TITLE)
             val box = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; setBackgroundColor(th.bg) }
@@ -4728,9 +4639,9 @@ class PlayerActivity : Activity(), Host {
             dlg.show()
             dlg.window?.setLayout(-1, -1)
         }
-        val tasksPageB = pd("📋 صفحة المهام") { openTasksDialog() }
+        val tasksPageB = pd("⬇ مركز التحميل") { openTasksDialog() }
         gTools.addView(tasksPageB, 1)
-        tasksPopFn = { v -> tasksPageB.text = "📋 صفحة المهام (" + taskCount() + ")"; togglePop(v, gTools, true) }
+        tasksPopFn = { v -> tasksPageB.text = "⬇ مركز التحميل (" + taskCount() + ")"; togglePop(v, gTools, true) }
         val toolsB = IconGlyphButton(this, "toolbox").apply { background = ui.box(0xE0141418.toInt(), 0x1FFFFFFF, 12); setOnClickListener { togglePop(this, gTools, false) } }
         tvMenuFn = { v -> togglePop(v, gTool, true) }; tvToolsFn = { v -> togglePop(v, gTools, true) }   // (v517) ⋯ المزيد على التلفزيون
         // (v151) خيارات متعددة الاختيار + زرار واحد «طبّق المحدد»: بيتنفّذوا ورا بعض (تنقيح ← لهجة+ ← عائلي/صريح ← ضمائر ← دمج مكرر)
@@ -4756,7 +4667,7 @@ class PlayerActivity : Activity(), Host {
         fun exAdd(v: View) { tbExtra.addView(v, 0) }
         tbCollapseFn = { }
         menuB.setOnLongClickListener { giShow("القائمة", Gravity.CENTER); true }
-        toolsB.setOnLongClickListener { giShow("أدوات الفيديو", Gravity.CENTER); true }
+        toolsB.setOnLongClickListener { giShow("المزيد", Gravity.CENTER); true }
         tbRow.addView(menuB, LinearLayout.LayoutParams(ui.dp(40), ui.dp(40)).apply { setMargins(ui.dp(3), ui.dp(3), ui.dp(3), ui.dp(3)) }); tbAdd(tbExtra)
 
         val textB = tip(grp("🔤", gText), "النص")
@@ -5920,32 +5831,6 @@ class PlayerActivity : Activity(), Host {
         Thread {
             // (كانت بتتعمل على الـ UI وبتجمّد الشاشة): إيقاف ترجمة الخلفية + قراءة وتحليل ملف الترجمة المحفوظة
             if (wasBg) try { BgJobs.stopAndWait(vidNow, 2500) } catch (e: Throwable) { LogStore.err("Player:stopBg", e) }
-            // (v999 ملاحظة 4) ترجمة الاستوديو قبل أول تحميل: لو دي الترجمة الوحيدة أو المستخدم اختارها
-            // قبل كده، انسخها تحت مفتاح الفيديو الأول فـ load() يلقطها وتعرض لوحدها. لو فيه مصادر
-            // تانية (ترجمة محرك / ملف جنب الفيديو) ومفيش اختيار متذكّر، اسأل بعد التحميل من خيط الواجهة.
-            val ref0 = intent.getStringExtra("ref") ?: intent.getStringExtra("page") ?: ""
-            val studioDoc = try { StudioLink.findDoc(applicationContext, vidNow, uri?.toString(), url, ref0) } catch (_: Throwable) { null }
-            val studioSubs0 = if (studioDoc != null) try { StudioLink.studioSubs(applicationContext, studioDoc) } catch (_: Throwable) { emptyList() } else emptyList()
-            val engineSavedN = try { StudioLink.loadSaved(applicationContext, vidNow)?.subs?.size ?: 0 } catch (_: Throwable) { 0 }
-            val markedStudio = studioDoc != null && StudioLink.studioFor(applicationContext, vidNow) == studioDoc.id
-            val sideFile0 = try { sfSidecar() } catch (_: Throwable) { null }
-            val remembered0 = try { StudioLink.choice(applicationContext, vidNow) } catch (_: Throwable) { "" }
-            if (studioDoc != null && studioSubs0.isNotEmpty() && !BgJobs.isActive(vidNow)) {
-                if (remembered0 == StudioLink.CHOICE_STUDIO || (engineSavedN == 0 && sideFile0 == null)) {
-                    if (engineSavedN > 0) StudioLink.stashEngine(applicationContext, vidNow)
-                    studioApplied = try { StudioLink.copyStudioToVid(applicationContext, vidNow, studioDoc) } catch (_: Throwable) { false }
-                    if (studioApplied) {
-                        studioAppliedN = studioSubs0.size
-                        studioLabel = StudioLink.label(applicationContext, studioDoc)
-                    }
-                } else if (remembered0.isEmpty() && ((engineSavedN > 0 && !markedStudio) || sideFile0 != null)) {
-                    studioAskOpen = true
-                    studioAskedVid = vidNow
-                }
-            }
-            if (markedStudio && engineSavedN > 0 && studioLabel.isEmpty()) {
-                studioLabel = if (studioDoc != null) StudioLink.label(applicationContext, studioDoc) else "🎙 Studio"
-            }
             val savedPos0 = try { eng.load() } catch (e: Throwable) { LogStore.err("Player:load", e); 0.0 }
             // (v125) آخر مكان وقوف فعلي (بيتحفظ كل 3 ث، حتى وإنت في PiP) أحدث من اللي في ملف الترجمة
             val lastPosSec = try { val s = Cfg.p.getString("lastpos", "") ?: ""; val i = s.indexOf('\t'); if (i > 0 && s.substring(0, i) == vidNow) (s.substring(i + 1).toLongOrNull() ?: 0L) / 1000.0 else 0.0 } catch (_: Throwable) { 0.0 }

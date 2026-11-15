@@ -20,7 +20,7 @@ object PageSettings {
         MUSIC to listOf("music"),                                                          // الكلمات · شكل الكلمات · فحص الأغاني
         TASKS to listOf("more", "perf"))                                                   // الطابور والبطارية · الموديل وطول المقطع (اللي بيمشوا في المهام)
 
-    private val TITLES = mapOf(VIDEOS to "⚙️ إعدادات الفيديوهات", MUSIC to "⚙️ إعدادات الموسيقى", TASKS to "⚙️ إعدادات المهام", BROWSER to "⚙️ إعدادات المتصفح")
+    private val TITLES = mapOf(VIDEOS to "⚙️ إعدادات الفيديوهات", MUSIC to "⚙️ إعدادات الموسيقى", TASKS to "⚙️ إعدادات مركز التحميل", BROWSER to "⚙️ إعدادات المتصفح")
 
     fun sections(page: String): List<String> = SECTIONS[page] ?: emptyList()
     fun title(page: String): String = TITLES[page] ?: "⚙️ الإعدادات"

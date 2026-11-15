@@ -116,10 +116,7 @@ class MainActivity : Activity() {
     private fun webSearch(q: String) { saveCfgFn?.invoke(); NavAnim.set(curTab, 2); startActivity(Intent(this, BrowserActivity::class.java).putExtra("start", "https://www.google.com/search?q=" + java.net.URLEncoder.encode(q, "UTF-8"))) }
     private var fabHide = false
     /** (v336) الزرار العايم اتشال؛ الدالة دلوقتي بتحدّث عدّاد زرار «المهام» في الشريط السفلي */
-    private fun updateTasksFab() { try { val a = TaskCenter.active() + BgJobs.jobs.count { it.active }; val t = TaskCenter.total() + BgJobs.jobs.size; val n = if (a > 0) a else t; navUi?.label(5, if (n > 0) "المهام ($n)" else "المهام"); tasksFabUi?.let { it.hidden = fabHide || curTab == 5 } } catch (_: Throwable) {} }
-    private var toolsUiM: ToolsUi? = null
-    private var pendingTool = ""
-    private var pendingSrc: ToolSrc? = null
+    private fun updateTasksFab() { try { val a = TaskCenter.active(); val t = TaskCenter.total(); val n = if (a > 0) a else t; navUi?.label(5, if (n > 0) "مركز التحميل ($n)" else "مركز التحميل"); tasksFabUi?.let { it.hidden = fabHide || curTab == 5 } } catch (_: Throwable) {} }
     override fun onCreate(b: Bundle?) {
         TabNav.pendingMain = null   // (v973)
         val t0Boot = android.os.SystemClock.uptimeMillis()   // (v834) قياس زمن onCreate + بداية عدّ السبلاش
@@ -532,10 +529,6 @@ class MainActivity : Activity() {
         val offLangChips = ui.chips(Offline.langLabels, { Offline.langLabels[Offline.langIds.indexOf(Offline.lang()).coerceAtLeast(0)] }) { val lid = Offline.langIds[Offline.langLabels.indexOf(it).coerceAtLeast(0)]; Cfg.put("stt_lang", lid); TrWizard.syncSaved("stt_lang", lid) ; if (lid == "ar" && Cfg.str("stt_engine", "whisper") == "sherpa") Notice.show(this, "⚠ (v468) SenseVoice (Sherpa) لا يدعم العربية — التفريغ العربي هيتعمل بـ Whisper تلقائيًا", 3200L) }
         val offPartLabels = listOf("⚡ لحظي (كل باتش)", "٣ دقايق", "٥ دقايق", "١٠ دقايق", "٢٠ دقيقة"); val offPartVals = listOf(1, 3, 5, 10, 20)
         val offPartChips = ui.chips(offPartLabels, { offPartLabels[offPartVals.indexOf(Cfg.int("ctx_min", 3)).let { if (it < 0) 1 else it }] }) { Cfg.put("ctx_min", offPartVals[offPartLabels.indexOf(it).coerceAtLeast(0)].toString()) }   // (v451) كان coerceAtLeast(1) فزرار «لحظي» (قيمة 1) كان بيتعرض «٣ دقايق» ومابيتعلّمش
-        // (v999 ملاحظة 1) نموذج التفريغ المستقل عن نموذج الترجمة (Cfg lec_model): الأدق افتراضيًا.
-        val lecModelLabels = listOf("🎯 الأدق (أبطأ)", "⚡ السريع")
-        val lecModelVals = listOf(Lecture.LEC_MODEL_ACCURATE, Lecture.LEC_MODEL_FAST)
-        val lecModelChips = ui.chips(lecModelLabels, { lecModelLabels[lecModelVals.indexOf(Lecture.lecModel()).let { if (it < 0) 0 else it }] }) { Cfg.put(Lecture.LEC_MODEL_KEY, lecModelVals[lecModelLabels.indexOf(it).coerceAtLeast(0)]) }
         val vaOn = "⚡ تلقائي مع كل فيديو"; val vaOff = "✋ يدوي (بريسيتس / زرار 👁)"
         val visAutoChips = ui.chips(listOf(vaOn, vaOff), { if (VisualMode.auto()) vaOn else vaOff }) { Cfg.put("vis_open_auto", if (it == vaOn) "1" else "0") }   // (v249) مفتاح مستقل: الافتراضي يدوي
         // (v198) إعدادات مشغّل الموسيقى
@@ -605,8 +598,7 @@ class MainActivity : Activity() {
                     ui.text("حجم موديل Whisper:", 12f, th.muted), offModelChips, ui.text("⚡ خانات التفريغ المتوازي:", 12f, th.muted), parChips, parNote, offStatus, offDlBtn, offProg,
                     ui.text("لغة الكلام (لو عارفها بتقلّل أخطاء الاكتشاف التلقائي):", 12f, th.muted), offLangChips,
                     ui.noHint()),
-                ui.section("🎙 نموذج تفريغ المحاضرات (لو قفل الاستوديو مقفول)", false,
-                    ui.text("بيشتغل بس لو قفلت «🔒 مصدر التفريغ ثابت» في الاستوديو — طول ما القفل شغال (الافتراضي) التفريغ والترجمة والتنظيم والتلخيص كلهم بـ Gemini Flash Lite Latest ومبيتأثروش بالاختيار ده. ومبيغيّرش موديل ترجمة المشغّل.", 12f, th.muted),lecModelChips)) }),   // (v1014) نموذج التفريغ اتنقل من «الموديل والأداء» لأنه إعداد تفريغ
+                ) }),
             // ===== 🤖 الموديل والأداء =====
             tab("perf", { listOf<View>(
                 ui.noHint(),
@@ -869,9 +861,8 @@ class MainActivity : Activity() {
         lib.onAutoRefresh = { if (!libBackend.remote) doScan() }
 
         // (v124) الشريط السفلي: بوابتين — الفيديوهات (المكتبة) · المتصفح (تبويب يوتيوب اتشال)
-        // (v135) بوابة تالتة: «المهام» (قص · صوت · GIF · ضغط · ترجمة ثابتة)
-        toolsUiM = ToolsUi(this, ui, th)
-        val tasksUi = TasksUi(this, ui, th) { k -> pickTool(k) }; tasksUiRef = tasksUi
+        // (v1038) البوابة التالتة: «مركز التحميل» (التحميلات بس — أدوات القص/GIF/الضغط اتشالت)
+        val tasksUi = TasksUi(this, ui, th); tasksUiRef = tasksUi
         tasksUi.onOpenOut = { t -> openTaskOutput(t) }   // (v472) دوسة على مهمة خالصة تفتح الفيديو
         tasksUi.onClose = { showTabFn(if (tabBeforeTasks == 5) 0 else tabBeforeTasks) }   // (v324) ✕ في صفحة المهام
         // (v198) الشريط السفلي (البوابات) وشريط النظام بياخدوا لون مشغّل الموسيقى لما يتفتح، ويرجعوا لثيم البرنامج لما يتقفل
@@ -944,7 +935,7 @@ class MainActivity : Activity() {
                 if (prevTab == 7 && i != 7) { try { save(); refreshChip() } catch (_: Throwable) {} }
                 curTab = i
                 NavOrigin.mainTab(i)   // (v1006)
-                NetLedger.tab(when (i) { 0 -> "فيديوهات"; 1 -> "يوتيوب"; 5 -> "المهام"; 7 -> "الإعدادات"; else -> "تبويب $i" })
+                NetLedger.tab(when (i) { 0 -> "فيديوهات"; 1 -> "يوتيوب"; 5 -> "مركز التحميل"; 7 -> "الإعدادات"; else -> "تبويب $i" })
                 dockUi?.refresh()   // (v344) المشغّل المصغّر بيختفي
                 stripUi?.hidden = (curTab == 5)   // (v345) في صفحة الموسيقى وبيظهر في الباقي
                 lib.root.visibility = if (i == 0) View.VISIBLE else View.INVISIBLE   // (v940) كل التبويبات متقاسة ورا بعض: التبديل من غير layout تقيل
@@ -1035,6 +1026,7 @@ class MainActivity : Activity() {
         frame.addView(warmView, FrameLayout.LayoutParams(-1, -1))
         refreshWarm()
         dockUi = MiniDock(this, frame, ui, th, { musicOpenFn?.invoke() }, { curTab == 1 }) { t -> musicUi?.artBitmap(t) }   // (v344)
+        try { YtMiniCard(this, frame) } catch (e: Throwable) { LogStore.err("Main:ytMini", e) }   // (v1037) كارت يوتيوب المصغّر يمشي معاك في كل الصفحات
         stripUi = StatusStrip(this, frame, ui, th) { showTabFn(5) }   // (v345)
         tasksFabUi = TasksFab(this, frame, ui) { showTasksDialog() }   // (v420) عايم: بيظهر وقت المهام الشغّالة بس
         if (!fromPlayer && b == null && !tvShellOn) { frame.alpha = 0f; frame.animate().setStartDelay(0L).alpha(1f).setDuration(160L).start() }   // (v312) بدل السبلاش: ظهور ناعم سريع
@@ -1074,11 +1066,6 @@ class MainActivity : Activity() {
     }
     private fun handleExternal(i: Intent?) {
         if (i == null || isFinishing || isDestroyed) return
-        // (v1003 — المرحلة 5) مشاركة ملف صوت/فيديو من برّه (واتساب وغيره) → الاستوديو مباشرة.
-        // الملف بيتنسخ لـ filesDir/studio_inbox الأول (إذن المشاركة مؤقت)، وبعدين تفريغ + فتح الشاشة.
-        if (i.action == Intent.ACTION_SEND || i.action == Intent.ACTION_SEND_MULTIPLE) {
-            if (handleSharedMedia(i)) return
-        }
         val raw = when (i.action) { Intent.ACTION_SEND -> i.getStringExtra(Intent.EXTRA_TEXT) ?: ""; Intent.ACTION_VIEW -> i.dataString ?: ""; else -> return }
         val url = Regex("https?://\\S+").find(raw)?.value ?: return
         i.action = null   // ما يتكررش لو الأكتيفيتي اتعمل لها إعادة إنشاء
@@ -1087,102 +1074,6 @@ class MainActivity : Activity() {
         playYt(id, "", false)   // (v467) بطلب صاحب التطبيق: لينك يوتيوب اللي البرنامج يمسكه بيفتح في يوتيوب عادي على طول — من غير قايمة «افتحه إزاي؟»
     }
 
-    // (v1003) بيرجّع true لو الـintent كان فيه ملف صوت/فيديو واتستهلك (حتى لو النسخ فشل — اتعرض تنبيه)،
-    // وfalse لو مفيش ملف وسائط (المتصل بيكمّل على مسار النص/اللينك القديم).
-    private fun handleSharedMedia(i: Intent): Boolean {
-        val uris = ArrayList<Uri>()
-        if (i.action == Intent.ACTION_SEND_MULTIPLE) {
-            val list = i.getParcelableArrayListExtra<Uri>(Intent.EXTRA_STREAM)
-            if (list != null) uris.addAll(list)
-            val cd = i.clipData
-            if (cd != null) for (k in 0 until cd.itemCount) cd.getItemAt(k).uri?.let { uris.add(it) }
-        } else {
-            i.getParcelableExtra<Uri>(Intent.EXTRA_STREAM)?.let { uris.add(it) }
-            val cd = i.clipData
-            if (cd != null) for (k in 0 until cd.itemCount) cd.getItemAt(k).uri?.let { uris.add(it) }
-        }
-        var picked: Uri? = null
-        var pickedKind = ""
-        for (u in uris) {
-            val kind = sharedMediaKind(u)
-            if (kind.isNotEmpty()) {
-                picked = u
-                pickedKind = kind
-                break
-            }
-        }
-        if (picked == null) return false
-        i.action = null   // ما يتكررش لو الأكتيفيتي اتعمل لها إعادة إنشاء
-        val uri = picked
-        val kind = pickedKind
-        Thread {
-            try {
-                val name = sharedDisplayName(uri)
-                val ext = name.substringAfterLast('.', "").lowercase()
-                val safeExt = when {
-                    ext.isNotBlank() && ext.length <= 5 && ext.all { it.isLetterOrDigit() } -> "." + ext
-                    kind == "audio" -> ".mp3"
-                    else -> ".mp4"
-                }
-                val inbox = File(filesDir, "studio_inbox").also { it.mkdirs() }
-                val base = TrLib.safeName(name.substringBeforeLast('.', name))
-                var target = File(inbox, base + safeExt)
-                var n = 2
-                while (target.exists()) {
-                    target = File(inbox, base + "_" + n + safeExt)
-                    n++
-                }
-                contentResolver.openInputStream(uri)?.use { inp ->
-                    target.outputStream().use { out -> inp.copyTo(out) }
-                } ?: throw java.io.IOException("مقدرتش أقرا الملف المشترك")
-                val title = name.substringBeforeLast('.', name).ifBlank { if (kind == "audio") "تسجيل صوتي" else "فيديو" }
-                val d = Lecture.newDoc(applicationContext, kind, title, Uri.fromFile(target).toString(), "")
-                // النوع بيتساب فاضي عمدًا — Lecture.start بيشغّل TxDetect ويكتشفه تلقائيًا.
-                Lecture.start(applicationContext, d)
-                runOnUiThread {
-                    try {
-                        val th = Themes.current()
-                        val ui = Ui(this, th)
-                        LectureUi(this, ui, th).open(d)
-                    } catch (e: Throwable) {
-                        LogStore.err("Main:shareOpen", e)
-                        Notice.show(this, "⚠ اتحفظ الملف وبدأ التفريغ — افتحه من 🎙 الاستوديو", 3400L)
-                    }
-                }
-            } catch (e: Throwable) {
-                LogStore.err("Main:shareMedia", e)
-                runOnUiThread { Notice.show(this, "⚠ مقدرتش أستقبل الملف المشترك: " + (e.message ?: "").take(80), 3400L) }
-            }
-        }.apply { isDaemon = true; start() }
-        return true
-    }
-
-    // نوع الوسائط من MIME الرسمي، ولو مش متاح من امتداد اسم الملف — فاضي لو مش صوت/فيديو.
-    private fun sharedMediaKind(u: Uri): String {
-        val mime = try { contentResolver.getType(u) ?: "" } catch (_: Throwable) { "" }
-        if (mime.startsWith("audio/")) return "audio"
-        if (mime.startsWith("video/")) return "video"
-        val name = try {
-            sharedDisplayName(u)
-        } catch (_: Throwable) {
-            ""
-        }.lowercase()
-        val audioExt = listOf(".mp3", ".wav", ".m4a", ".aac", ".ogg", ".opus", ".flac", ".amr", ".3gp", ".wma")
-        val videoExt = listOf(".mp4", ".mkv", ".webm", ".mov", ".avi", ".3gp", ".m4v", ".ts")
-        if (audioExt.any { name.endsWith(it) }) return "audio"
-        if (videoExt.any { name.endsWith(it) }) return "video"
-        return ""
-    }
-
-    private fun sharedDisplayName(u: Uri): String {
-        return try {
-            contentResolver.query(u, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { c ->
-                if (c.moveToFirst()) c.getString(0) ?: "" else ""
-            } ?: ""
-        } catch (_: Throwable) {
-            ""
-        }
-    }
     // (v468) اتحذفت قايمة «افتحه إزاي؟» الميتة — لينكات يوتيوب بتفتح مباشرة من v467
     class StyleParts(val holder: View, val fonts: List<View>, val anim: List<View>, val look: List<View>)
     private fun styleParts(ui: Ui, th: Theme): StyleParts {
@@ -1295,62 +1186,6 @@ class MainActivity : Activity() {
         }
         Notice.show(this, ("مفيش صفحة مخصوصة لجهازك — هفتحلك إعدادات التطبيق: فعّل «التشغيل التلقائي» و«بدون قيود» للبطارية").toString(), 3600L)
         try { startActivity(Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$packageName"))) } catch (e: Exception) { LogStore.err("Main:621", e) }
-    }
-
-    // ===== (v137) أدوات الفيديو من تبويب «المهام»: الأداة → اختيار الفيديو → نافذة الإعدادات → تبدأ =====
-    fun pickTool(kind: String) {
-        pendingTool = kind
-        // (v139) قايمة الفيديوهات اللي جوه التطبيق نفسه؛ مدير الملفات بقى زرار احتياطي جواها
-        VideoPicker.show(this, "اختار الفيديو", { v -> onToolVideo(kind, v) }, { pickToolFromFiles() })
-    }
-    private fun pickToolFromFiles() {
-        try { startActivityForResult(filePicker("video/*", "اختار الفيديو", true), 52) } catch (e: Exception) { Notice.show(this, "مفيش تطبيق ملفات يفتح", 2400L) }
-    }
-    private fun onToolVideo(kind: String, v: VideoItem) {
-        Notice.show(this, "بقرا الفيديو…", 1500L)
-        Thread {
-            val subs = try { Store(File(filesDir, "progress"), Store.keyFor(v.videoId)).load()?.subs ?: emptyList() } catch (_: Throwable) { emptyList<Sub>() }
-            var dur = v.durMs; var w = v.w; var h = v.h
-            if (dur <= 0 || w <= 0 || h <= 0) {
-                val pr = Tools.probe(applicationContext, v.uri)
-                if (dur <= 0) dur = pr.durMs; if (w <= 0) w = pr.w; if (h <= 0) h = pr.h
-            }
-            val src = ToolSrc(v.uri, null, v.title, dur, w, h, 0L, subs)
-            runOnUiThread { if (!isDestroyed && !isFinishing) runTool(kind, src) }
-        }.apply { isDaemon = true }.start()
-    }
-    private fun onToolPicked(u: Uri) {
-        try { contentResolver.takePersistableUriPermission(u, Intent.FLAG_GRANT_READ_URI_PERMISSION) } catch (_: Exception) {}
-        val kind = pendingTool
-        Notice.show(this, "بقرا الفيديو…", 1500L)
-        Thread {
-            var name = "video"; var size = 0L
-            try { contentResolver.query(u, arrayOf(OpenableColumns.DISPLAY_NAME, OpenableColumns.SIZE), null, null, null)?.use { c -> if (c.moveToFirst()) { name = c.getString(0) ?: name; size = c.getLong(1) } } } catch (_: Exception) {}
-            val pr = Tools.probe(applicationContext, u.toString())
-            val subs = try { Store(File(filesDir, "progress"), Store.keyFor("f:$name:$size")).load()?.subs ?: emptyList() } catch (_: Throwable) { emptyList<Sub>() }
-            val src = ToolSrc(u.toString(), null, name.substringBeforeLast('.', name), pr.durMs, pr.w, pr.h, 0L, subs)
-            runOnUiThread { if (!isDestroyed && !isFinishing) runTool(kind, src) }
-        }.start()
-    }
-    private fun runTool(kind: String, src: ToolSrc) {
-        val tu = toolsUiM ?: return
-        when (kind) {
-            "trim" -> tu.trim(src); "audio" -> tu.audio(src); "gif" -> tu.gif(src); "compress" -> tu.compress(src)
-            "hardsub" -> if (src.subs.none { it.translated.isNotBlank() || it.original.isNotBlank() }) askSrt(src) else tu.hardsub(src)
-        }
-    }
-    private fun askSrt(src: ToolSrc) {
-        GAlert(this).setTitle("🎬 مفيش ترجمة محفوظة للفيديو ده")
-            .setMessage("اختار ملف ترجمة SRT عشان يتحرق في الفيديو، أو ترجم الفيديو في المشغّل الأول.")
-            .setPositiveButton("اختار ملف SRT") { _, _ -> pendingSrc = src; try { startActivityForResult(filePicker("*/*", "اختار ملف الترجمة (SRT)", false), 53) } catch (_: Exception) {} }
-            .setNegativeButton("إلغاء", null).show()
-    }
-    private fun onSrtPicked(u: Uri) {
-        val src = pendingSrc ?: return; pendingSrc = null
-        val text = try { contentResolver.openInputStream(u)?.use { String(it.readBytes(), Charsets.UTF_8) } } catch (_: Exception) { null } ?: ""
-        val subs = PlayerLogic.parseSrt(text.removePrefix("\uFEFF")).map { (a, b, t) -> Sub(a, b, t, t, "", "", "", emptyList(), emptyList(), false, false) }
-        if (subs.isEmpty()) { Notice.show(this, "الملف ده مش SRT صالح", 2600L); return }
-        toolsUiM?.hardsub(ToolSrc(src.uri, null, src.name, src.durMs, src.w, src.h, 0L, subs))
     }
 
     fun pickVideo() { startActivityForResult(filePicker("video/*", "اختار فيديو", true), 1) }
@@ -1515,151 +1350,9 @@ class MainActivity : Activity() {
 
     // (v469) D5 نسخة شاملة: كل الإعدادات (Backup.toJson) + ملف سجل المشاهدة/الاستئناف في JSON واحد — المفضلة والتقييمات وقوائم التشغيل والإحصائيات جوّه الإعدادات أصلًا فبتتسافر معاها
     // (v1003) + قسم "studio": دوكيومنتات الاستوديو + intel + series/courses + فهرس الأصوات + excl/redact + علامة pinSet بس.
-    private fun fullJson(): String = try { org.json.JSONObject().put("kind", "subtitler-full").put("ver", 469).put("cfg", Backup.toJson()).put("recent", try { File(filesDir, "recent.json").readText() } catch (_: Throwable) { "" }).put("studio", studioBackupSection()).toString() } catch (e: Throwable) { LogStore.err("Main:fullJson", e); Backup.toJson() }
+    private fun fullJson(): String = try { org.json.JSONObject().put("kind", "subtitler-full").put("ver", 469).put("cfg", Backup.toJson()).put("recent", try { File(filesDir, "recent.json").readText() } catch (_: Throwable) { "" }).toString() } catch (e: Throwable) { LogStore.err("Main:fullJson", e); Backup.toJson() }
 
-    // (v1003) قسم الاستوديو في النسخة الشاملة — ملفات صغيرة نصية بس، من غير أي صوت:
-    //  • صوت البصمات (voices/*.wav) مبيتسافرش — فهرس index.json بس (المفاتيح/الأسماء).
-    //  • الـPIN مبيتسافرش أبدًا (لا الهاش ولا الملح) — pinSet علامة بس، والاسترجاع مبيسترجعوش.
-    //  • السقوف: أي دوكيومنت JSON أكبر من 2MB بيتخطى (وبتتسجل ids بتاعته)، ولو المجموع عدّى 8MB
-    //    بيتاخد أحدث 50 دوكيومنت بس (وبتتسجل truncated). النسخة التلقائية (Backup) لسه إعدادات بس.
-    private fun studioBackupSection(): org.json.JSONObject {
-        val root = org.json.JSONObject()
-        val docs = org.json.JSONObject()
-        val intel = org.json.JSONObject()
-        val skipped = org.json.JSONArray()
-        var totalBytes = 0L
-        val byCreated = ArrayList<Triple<String, Long, String>>()
-        try {
-            val lecDir = File(filesDir, "lectures")
-            for (f in lecDir.listFiles().orEmpty()) {
-                if (!f.name.endsWith(".json")) continue
-                val text = try { f.readText(Charsets.UTF_8) } catch (_: Throwable) { continue }
-                if (f.name.endsWith(".intel.json")) {
-                    intel.put(f.name.removeSuffix(".intel.json"), text)
-                    continue
-                }
-                val id = f.name.removeSuffix(".json")
-                if (text.length > 2 * 1024 * 1024) {
-                    skipped.put(id)
-                    continue
-                }
-                val created = try { org.json.JSONObject(text).optLong("created", f.lastModified()) } catch (_: Throwable) { f.lastModified() }
-                byCreated.add(Triple(id, created, text))
-                totalBytes += text.length
-            }
-        } catch (e: Throwable) {
-            LogStore.err("Main:studioBackup", e)
-        }
-        var truncated = false
-        val sorted = byCreated.sortedByDescending { it.second }
-        val take = if (totalBytes > 8 * 1024 * 1024) 50 else sorted.size
-        for ((idx, triple) in sorted.withIndex()) {
-            val id = triple.first
-            val text = triple.third
-            if (idx >= take) {
-                truncated = true
-                skipped.put(id)
-                continue
-            }
-            docs.put(id, text)
-        }
-        root.put("docs", docs)
-        root.put("intel", intel)
-        root.put("series", readSmallText(File(filesDir, "studio_series.json")))
-        root.put("courses", readSmallText(File(filesDir, "studio_courses.json")))
-        root.put("voicesIndex", readSmallText(File(File(filesDir, "voices"), "index.json")))
-        root.put("excl", Cfg.str(StudioIntel.EXCL_KEY, ""))
-        root.put("redact", StudioPrivacy.isRedactOn(this))
-        root.put("pinSet", StudioPrivacy.isPinSet(this))
-        root.put("skipped", skipped)
-        root.put("truncated", truncated)
-        return root
-    }
 
-    private fun readSmallText(f: File): String {
-        return try {
-            if (!f.exists() || f.length() > 1024 * 1024) "" else f.readText(Charsets.UTF_8)
-        } catch (_: Throwable) {
-            ""
-        }
-    }
-
-    // (v1003) استرجاع قسم الاستوديو — بيرجّع ملخص عدّاد للوج (واتسجّل في LogStore):
-    // دوكيومنت محلي أحدث (created أكبر) مبيتكتبش فوقه أبدًا. series/courses/index بيتكتبوا بس لو
-    // الملف المحلي مش موجود (مش بيتدمجوا — الدمج ممكن يضيّع إدخالات أجدد). الـPIN مبيسترجعش.
-    private fun restoreStudioSection(o: org.json.JSONObject): String {
-        var restoredDocs = 0
-        var keptLocal = 0
-        var restoredIntel = 0
-        var restoredShared = 0
-        try {
-            val lecDir = File(filesDir, "lectures").also { it.mkdirs() }
-            val docs = o.optJSONObject("docs")
-            if (docs != null) {
-                val ks = docs.keys()
-                while (ks.hasNext()) {
-                    val id = ks.next()
-                    val text = docs.optString(id, "")
-                    if (text.isBlank()) continue
-                    val incoming = try { org.json.JSONObject(text).optLong("created", 0L) } catch (_: Throwable) { 0L }
-                    val local = File(lecDir, "$id.json")
-                    if (local.exists()) {
-                        val localCreated = try { org.json.JSONObject(local.readText(Charsets.UTF_8)).optLong("created", 0L) } catch (_: Throwable) { 0L }
-                        if (localCreated > incoming) {
-                            keptLocal++
-                            continue
-                        }
-                    }
-                    try {
-                        local.writeText(text, Charsets.UTF_8)
-                        restoredDocs++
-                    } catch (e: Throwable) {
-                        LogStore.err("Main:studioRestoreDoc", e)
-                    }
-                }
-            }
-            val intel = o.optJSONObject("intel")
-            if (intel != null) {
-                val ks = intel.keys()
-                while (ks.hasNext()) {
-                    val id = ks.next()
-                    val text = intel.optString(id, "")
-                    if (text.isBlank()) continue
-                    try {
-                        File(lecDir, "$id.intel.json").writeText(text, Charsets.UTF_8)
-                        restoredIntel++
-                    } catch (e: Throwable) {
-                        LogStore.err("Main:studioRestoreIntel", e)
-                    }
-                }
-            }
-            restoredShared += restoreSharedStudioFile(File(filesDir, "studio_series.json"), o.optString("series", ""))
-            restoredShared += restoreSharedStudioFile(File(filesDir, "studio_courses.json"), o.optString("courses", ""))
-            restoredShared += restoreSharedStudioFile(File(File(filesDir, "voices").also { it.mkdirs() }, "index.json"), o.optString("voicesIndex", ""))
-            val excl = o.optString("excl", "")
-            if (excl.isNotBlank()) Cfg.put(StudioIntel.EXCL_KEY, excl)
-            if (o.has("redact")) StudioPrivacy.setRedactOn(this, o.optBoolean("redact", false))
-            if (o.optBoolean("pinSet", false)) LogStore.add("🔐 النسخة فيها PIN استوديو — مبيسترجعش، اعمل PIN جديد من الاستوديو")
-        } catch (e: Throwable) {
-            LogStore.err("Main:studioRestore", e)
-        }
-        val summary = "استوديو: $restoredDocs دوكيومنت، $restoredIntel intel، $restoredShared ملف مشترك، $keptLocal محلي أحدث اتساب"
-        LogStore.add("📥 " + summary)
-        return summary
-    }
-
-    private fun restoreSharedStudioFile(f: File, text: String): Int {
-        if (text.isBlank()) return 0
-        return try {
-            if (f.exists() && f.length() > 0) 0 else {
-                f.writeText(text, Charsets.UTF_8)
-                1
-            }
-        } catch (e: Throwable) {
-            LogStore.err("Main:studioRestoreShared", e)
-            0
-        }
-    }
     private fun fullToFile() {
         try { saveCfgFn?.invoke() } catch (_: Throwable) {}
         val stamp = java.text.SimpleDateFormat("yyyyMMdd-HHmm", java.util.Locale.US).format(java.util.Date())
@@ -1674,9 +1367,6 @@ class MainActivity : Activity() {
         val o = try { org.json.JSONObject(txt) } catch (_: Throwable) { null }
         if (o == null || !o.has("cfg")) { restoreBackup(txt); return }   // ملف نسخة عادية (مش شاملة) — بيترجع بالمسار العادي
         try { val rec = o.optString("recent", ""); if (rec.isNotEmpty()) File(filesDir, "recent.json").writeText(rec) } catch (e: Throwable) { LogStore.err("Main:fullRecent", e) }
-        if (o.has("studio")) {
-            try { restoreStudioSection(o.optJSONObject("studio") ?: org.json.JSONObject()) } catch (e: Throwable) { LogStore.err("Main:fullStudio", e) }
-        }
         restoreBackup(o.optString("cfg", ""))
     }
 
@@ -1709,9 +1399,6 @@ class MainActivity : Activity() {
     override fun onActivityResult(r: Int, c: Int, d: Intent?) {
         super.onActivityResult(r, c, d)
         if (r == ModelsUi.REQ) { ModelsUi.onResult(this, c, d); return }   // (v696) اختيار ملف موديل
-        if (r == LectureUi.REQ) { LectureUi.onResult(this, c, d); return }   // (v991) اختيار فيديو/صوت للتفريغ
-        // (v995) اختيار فيديو/صوت للاستوديو
-        if (r == StudioUi.REQ) { StudioUi.onResult(this, c, d); return }
         if (r == 61) {
             if (c == RESULT_OK) d?.data?.let { u ->
                 try {
@@ -1742,8 +1429,6 @@ class MainActivity : Activity() {
             }
             return
         }
-        if (r == 52) { if (c == RESULT_OK) d?.data?.let { onToolPicked(it) }; return }
-        if (r == 53) { if (c == RESULT_OK) d?.data?.let { onSrtPicked(it) } else pendingSrc = null; return }
         if (lockUi?.onResult(r, c == RESULT_OK) == true) return
         if (mediaOps?.onResult(r, c == RESULT_OK) == true) return
         if (r == 14) { nextPerm(); return }
@@ -2009,7 +1694,7 @@ class MainActivity : Activity() {
             t.msg = ""; t.outPath = res.second
             Downloader.takeLastOut()?.let { t.outUri = it.first; t.mime = it.second }   // (v472) دوسة على المهمة الخالصة تفتح الفيديو
         }
-        Notice.show(this, ("⬇ اتضاف للتحميل — تابعه من تبويب «المهام»").toString(), 3000L)
+        Notice.show(this, ("⬇ اتضاف للتحميل — تابعه من «مركز التحميل»").toString(), 3000L)
     }
     /** (v716) بيجيب جودات الفيديو ويعرض قايمة الاختيار؛ لو جودة واحدة بس أو الجلب فشل بيحمّل على طول */
     fun ytDownloadAsk(n: NpItem) {
@@ -2110,7 +1795,7 @@ class MainActivity : Activity() {
             if (!res.first) throw java.io.IOException(res.second)
             t.msg = ""; t.outPath = res.second
         }
-        Notice.show(this, "⬇ اتضاف للتحميل — تابعه من تبويب «المهام»", 3000L)
+        Notice.show(this, "⬇ اتضاف للتحميل — تابعه من «مركز التحميل»", 3000L)
     }
     /** (v350) عدّاد الفيديوهات الجديدة على أيقونة يوتيوب */
     /** (v355) فتح قسم من إعدادات البرنامج من أي شاشة (مثلًا ⚙ يوتيوب) */

@@ -34,7 +34,7 @@ class BottomNav(act: Activity, private val ui: Ui, private val th: Theme, privat
         val NORMAL_ORDER = BAR_ORDER
         val YT_ORDER = listOf(0, YT_HOME, YT_SUBS, YT_ME, NET, MORE)  // نسخة كاملة وانت في يوتيوب: الموسيقى والمتصفح بيروحوا لـ«المزيد» · (v829) زرار النت بعد «أنا» (كان قبلها)
         val LITE_ORDER = listOf(YT_HOME, YT_SUBS, 0, YT_ME)           // نسخة اللايت: الرئيسية · الاشتراكات · محلي · أنا
-        val DEFS = listOf("🎞" to "الفيديوهات", "🎵" to "الموسيقى", "🌐" to "المتصفح", "🗂" to "المخزن", "▶" to "يوتيوب", "📋" to "المهام", "" to "", "⚙️" to "الإعدادات", "⋯" to "المزيد",
+        val DEFS = listOf("🎞" to "الفيديوهات", "🎵" to "الموسيقى", "🌐" to "المتصفح", "🗂" to "المخزن", "▶" to "يوتيوب", "⬇" to "مركز التحميل", "" to "", "⚙️" to "الإعدادات", "⋯" to "المزيد",
             "🏠" to "الرئيسية", "📺" to "الاشتراكات", "👤" to "أنا", "📱" to "الريموت", "📎" to "الكليبورد", "📶" to "", "📡" to "ريموت IR", "🩺" to "العناية")
     }
     /** البوابات اللي ورا ⋯ المزيد: أي بوابة مش في الشريط (حاليًا: الملفات 3 · المهام 5 · الذكاء 6 · الإعدادات 7) — الزرار بيتلوّن لما واحدة منهم تبقى هي النشطة */
@@ -122,9 +122,8 @@ class BottomNav(act: Activity, private val ui: Ui, private val th: Theme, privat
         val secs = ArrayList<MoreItem>()
         for (id in listOf(0, 4, 2, 1, 3, 5)) secs.add(MoreItem(DEFS[id].first, if (id == 0) "الفيديوهات" else DEFS[id].second, id == active) { onPick(id) })   // فيديوهات · يوتيوب · متصفح · موسيقى · مخزن · مهام
         val trl = ArrayList<MoreItem>()
-        // (v999) بلاطات «الترجمة» المكررة اتشالت من هنا — كلها جوه «الاستوديو» (مكتبة الترجمات · تفريغ المحاضرات · المكالمات المسجلة)، والمجموعة بقت بلاطة واحدة
-        // (v995) «الاستوديو» — نفس مجموعة «الترجمة»، ونفس بوابة !tvDev ونفس نمط try/catch
-        if (!tvDev) trl.add(MoreItem("🎙", "الاستوديو", false) { try { StudioUi(act, ui, th).show() } catch (e: Throwable) { LogStore.err("Nav:studio", e) } })
+        // (v1037) «الاستوديو» اتمسح خالص — بس «📚 مكتبة الترجمات» (من v990) فضلت لأنها مستقلة (مش جزء منه)
+        if (!tvDev) trl.add(MoreItem("📚", "مكتبة الترجمات", false) { try { TrLibUi(act, ui, th).show() } catch (e: Throwable) { LogStore.err("Nav:trlib", e) } })
         val store = listOf(
             MoreItem("📂", "مدير الملفات", false) { openHub(act, "fm") },
             MoreItem("↔", "إرسال واستقبال", false) { openHub(act, "ft") },

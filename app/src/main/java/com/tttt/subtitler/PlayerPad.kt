@@ -739,7 +739,7 @@ object PlayerPad {
             val lockB = btn("", 12f) { go("lock") }
             val notB = btn("🔔\nالإشعارات", 12f) { go("notice") }
             val menuB = btn("☰\nقايمة التلفزيون", 12f) { go("menu") }
-            val toolsB = btn("🧰\nأدوات الفيديو", 12f) { go("tools") }
+            val toolsB = btn("⬇\nمركز التحميل", 12f) { go("tools") }
             val moreB = btn("⋯\nالمزيد", 12f) { go("more") }
             val killB = btn("⏹\nإغلاق الفيديو", 12f, 0xFF3B1A22.toInt(), 0xFF7A2B3A.toInt()) {
                 GAlert(act).setMessage("أقفل الفيديو على التلفزيون؟").setPositiveButton("اقفل") { _, _ -> go("close") }.setNegativeButton("لأ", null).show()
@@ -885,7 +885,7 @@ object PlayerPad {
                     if (!res.first) throw java.io.IOException(res.second)
                     t.msg = ""; t.outPath = res.second
                 }
-                note("⬇ اتضاف للتحميل على الموبايل — تابعه من «المهام»")
+                note("⬇ اتضاف للتحميل على الموبايل — تابعه من «مركز التحميل»")
             }
             fun dlOnTv(name: String, pk: DlPick, hs: HashMap<String, String>) {
                 val args = JSONObject().put("name", name).put("url", pk.url).put("audio", pk.audio ?: "").put("hls", pk.hls).put("h", pk.h).put("hdr", JSONObject(hs as Map<*, *>))
@@ -959,7 +959,7 @@ object PlayerPad {
                         val hd = mapOf("X-Token" to tv.token, "X-Ver" to LinkVer.code(app).toString())
                         val nm = Xfer.safeName(fn)
                         TaskCenter.add(app, "dm", "📥 $nm") { t -> XNet.download(app, t, url, hd, nm, sz, XCat.VIDEO) }
-                        note("📥 اتضاف للتحميل على الموبايل — تابعه من «المهام»")
+                        note("📥 اتضاف للتحميل على الموبايل — تابعه من «مركز التحميل»")
                     }
                 }
             }

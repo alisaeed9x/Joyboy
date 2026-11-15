@@ -89,7 +89,7 @@ object FilesHub {
     /** cur = 0 ملفات · 1 إرسال واستقبال (الاتنين جوه المخزن) — 2 موسيقى · 3 مهام بيفتحوا صفحاتهم من نفس الشريط */
     fun switchBar(act: Activity, ui: Ui, th: Theme, cur: Int): MediaSwitch {
         Cfg.put(K, if (cur == 1) "ft" else "fm")
-        val sw = MediaSwitch(act, ui, th, listOf("📂 الملفات", "📡 إرسال واستقبال", "🎵 الموسيقى", "📋 المهام"), 12.5f) { t ->
+        val sw = MediaSwitch(act, ui, th, listOf("📂 الملفات", "📡 إرسال واستقبال", "🎵 الموسيقى", "⬇ مركز التحميل"), 12.5f) { t ->
             if (t != cur) {
                 try {
                     if (t >= 2) {

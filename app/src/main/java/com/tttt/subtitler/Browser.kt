@@ -646,6 +646,7 @@ class BrowserActivity : Activity() {
         setContentView(frame)
         RotateHint.attach(this)   // (v823) زرار «لفّ الشاشة» لما اتجاه التليفون يخالف اتجاه المتصفح
         dockUi = MiniDock(this, frame, ui, th, { startActivity(Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP).putExtra("fullmusic", true)) })   // (v344)
+        try { YtMiniCard(this, frame) } catch (e: Throwable) { LogStore.err("Browser:ytMini", e) }   // (v1037) كارت يوتيوب المصغّر يمشي معاك في كل الصفحات
         stripUi = StatusStrip(this, frame, ui, th) { goMain("tasks") }   // (v345)
         tasksFabUi = TasksFab(this, frame, ui) { goMain("tasks") }   // (v420)
         saver = BrowserSaver(this, frame, object : BrowserSaver.Host {   // (v783)
@@ -1782,7 +1783,7 @@ class BrowserActivity : Activity() {
             val ck = try { CookieManager.getInstance().getCookie(url) } catch (_: Throwable) { null }
             // (v324) التحميل بيظهر في «المهام» (DmTasks بتتابع DownloadManager)
             DmTasks.start(applicationContext, url, name, mime, ua ?: uaWeb, ck, tab.url)
-            Notice.show(this, "⬇ اتضاف للتحميل — تابعه من زرار المهام: $name", 2600L)
+            Notice.show(this, "⬇ اتضاف للتحميل — تابعه من مركز التحميل: $name", 2600L)
         } catch (e: Throwable) { LogStore.err("Browser:download", e); Notice.show(this, "التحميل فشل: " + (e.message ?: "").take(60), 3000L) }
     }
 
@@ -3107,7 +3108,7 @@ class BrowserActivity : Activity() {
             if (!res.first) throw java.io.IOException(res.second)
             t.msg = ""; t.outPath = res.second
         }
-        Notice.show(this, "⬇ اتضاف للتحميل — تابعه من تبويب «المهام»", 3000L)
+        Notice.show(this, "⬇ اتضاف للتحميل — تابعه من «مركز التحميل»", 3000L)
     }
     private fun dlVideo(g: Grp, q: Qv) = queueDl(Downloader.Job(g.title + qTag(q), q.f.url, q.audio, isHls(q.f), q.h, dlHeaders(q.f)))
     private fun dlAudio(g: Grp) {

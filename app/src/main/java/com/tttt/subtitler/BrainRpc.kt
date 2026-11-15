@@ -30,11 +30,6 @@ object BrainRpc {
 
     private fun taskOp(op: String, a: JSONObject): JSONObject {
         if (op == "task.clear") { TaskCenter.clearFinished(); return JSONObject().put("ok", true) }
-        if (op == "task.add") {
-            val res = PlayerActivity.brain(op, a) ?: return JSONObject().put("ok", false).put("err", "noplayer")
-            val bad = res.optString("err", "")
-            return if (bad.isNotEmpty()) JSONObject().put("ok", false).put("err", bad) else JSONObject().put("ok", true).put("res", res)
-        }
         val t = TaskCenter.items.firstOrNull { it.id == a.optInt("id", -1) } ?: return JSONObject().put("ok", false).put("err", "notask")
         when (op) {
             "task.stop" -> TaskCenter.stop(t)

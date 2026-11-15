@@ -15,9 +15,6 @@ com/tttt/subtitler/Browser.kt
 com/tttt/subtitler/BrowserDl.kt
 com/tttt/subtitler/BrowserSaver.kt
 com/tttt/subtitler/BtScan.kt
-com/tttt/subtitler/CallChat.kt
-com/tttt/subtitler/CallChatUi.kt
-com/tttt/subtitler/CallKit.kt
 com/tttt/subtitler/CareApps.kt
 com/tttt/subtitler/CareAppsUi.kt
 com/tttt/subtitler/CareBatteryUi.kt
@@ -73,7 +70,6 @@ com/tttt/subtitler/FtWeb.kt
 com/tttt/subtitler/FtXfer.kt
 com/tttt/subtitler/GhCi.kt
 com/tttt/subtitler/GhCiUi.kt
-com/tttt/subtitler/GifWriter.kt
 com/tttt/subtitler/Glass.kt
 com/tttt/subtitler/Haptic.kt
 com/tttt/subtitler/HtmlUi.kt
@@ -98,10 +94,6 @@ com/tttt/subtitler/KeyBrowser.kt
 com/tttt/subtitler/KeyDialog.kt
 com/tttt/subtitler/KeyVault.kt
 com/tttt/subtitler/LaunchShortcuts.kt
-com/tttt/subtitler/Lecture.kt
-com/tttt/subtitler/LectureCss.kt
-com/tttt/subtitler/LectureDoc.kt
-com/tttt/subtitler/LectureUi.kt
 com/tttt/subtitler/LibraryBackend.kt
 com/tttt/subtitler/LibraryCore.kt
 com/tttt/subtitler/LibraryUi.kt
@@ -195,7 +187,6 @@ com/tttt/subtitler/PubHistoryUi.kt
 com/tttt/subtitler/PublicApis.kt
 com/tttt/subtitler/QrCode.kt
 com/tttt/subtitler/QueueUi.kt
-com/tttt/subtitler/QuickTiles.kt
 com/tttt/subtitler/RecentSongs.kt
 com/tttt/subtitler/Recents.kt
 com/tttt/subtitler/RemoteActivity.kt
@@ -230,15 +221,6 @@ com/tttt/subtitler/Store.kt
 com/tttt/subtitler/StreamHunt.kt
 com/tttt/subtitler/Strict.kt
 com/tttt/subtitler/Stt.kt
-com/tttt/subtitler/Studio.kt
-com/tttt/subtitler/StudioIntel.kt
-com/tttt/subtitler/StudioIntelUi.kt
-com/tttt/subtitler/StudioComplete.kt
-com/tttt/subtitler/StudioTx.kt
-com/tttt/subtitler/StudioLink.kt
-com/tttt/subtitler/StudioPrivacy.kt
-com/tttt/subtitler/StudioPrivacyUi.kt
-com/tttt/subtitler/StudioUi.kt
 com/tttt/subtitler/SubAlign.kt
 com/tttt/subtitler/SubDual.kt
 com/tttt/subtitler/SubFileTr.kt
@@ -258,7 +240,6 @@ com/tttt/subtitler/TasksFab.kt
 com/tttt/subtitler/TasksUi.kt
 com/tttt/subtitler/TermNotes.kt
 com/tttt/subtitler/Theme.kt
-com/tttt/subtitler/ToolsUi.kt
 com/tttt/subtitler/TrLib.kt
 com/tttt/subtitler/TrLibUi.kt
 com/tttt/subtitler/TrWizard.kt
@@ -300,7 +281,6 @@ com/tttt/subtitler/TvTokens.kt
 com/tttt/subtitler/TvUpdate.kt
 com/tttt/subtitler/TvWatchNext.kt
 com/tttt/subtitler/TvWifi.kt
-com/tttt/subtitler/TxDetect.kt
 com/tttt/subtitler/TypeServer.kt
 com/tttt/subtitler/Ui.kt
 com/tttt/subtitler/UiWatchdog.kt
@@ -322,9 +302,6 @@ com/tttt/subtitler/Xfer.kt
 com/tttt/subtitler/YtAudio.kt
 com/tttt/subtitler/YtFallback.kt
 com/tttt/subtitler/YtFeedStore.kt
+com/tttt/subtitler/YtMiniCard.kt
 com/tttt/subtitler/YtModels.kt
 com/tttt/subtitler/YtNext.kt
-com/tttt/subtitler/SrtSplit.kt
-com/tttt/subtitler/StudioAutoTr.kt
-com/tttt/subtitler/StudioSettingsUi.kt
-com/tttt/subtitler/DocActions.kt

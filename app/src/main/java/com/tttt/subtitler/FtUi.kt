@@ -1026,7 +1026,7 @@ class FileTransferActivity : Activity() {
             h.post {
                 if (jobs.isEmpty()) Notice.show(this, "⚠ مفيش ملفات صالحة", 2500L)
                 else if (jobs.size > FtOut.MAX_FILES) Notice.show(this, "⚠ لحد " + FtOut.MAX_FILES + " ملف في المرة — قسّمهم على دفعات", 3500L)
-                else if (XRemote.downloadPaths(app, p.name, jobs)) Notice.show(this, "⬇ بدأ تنزيل " + jobs.size + " ملف — التقدم في صفحة المهام", 3500L)
+                else if (XRemote.downloadPaths(app, p.name, jobs)) Notice.show(this, "⬇ بدأ تنزيل " + jobs.size + " ملف — التقدم في مركز التحميل", 3500L)
                 else Notice.show(this, "⚠ مش متصل بالتلفزيون", 2500L)
             }
         }.also { it.isDaemon = true }.start()
