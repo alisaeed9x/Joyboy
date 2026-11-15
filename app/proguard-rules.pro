@@ -42,3 +42,11 @@
 -dontwarn com.newtube.**
 -dontwarn org.chromium.net.**
 -dontwarn org.conscrypt.**
+
+# (v1029) dnsjava (جاي من MeeTube/sharedutils) بيشاور على JNA وWindows وJNDI وlombok — مش موجودين على أندرويد وفرع Windows عمره ما بيتنفّذ هنا.
+# ده اللي كان موقّع R8 في v1028 (missing_rules.txt). dontwarn كفاية؛ مفيش حاجة منهم بتتنادى فعليًا.
+-dontwarn com.sun.jna.**
+-dontwarn javax.naming.**
+-dontwarn lombok.**
+-dontwarn org.xbill.DNS.config.**
+-dontwarn org.slf4j.impl.**
