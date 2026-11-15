@@ -55,7 +55,7 @@ class YtMiniCard(private val act: Activity, private val parent: FrameLayout, pri
                 MotionEvent.ACTION_DOWN -> return true
                 MotionEvent.ACTION_MOVE -> {
                     moved = true
-                    val pw = parent.width - width; val ph = parent.height - height
+                    val pw = this@YtMiniCard.parent.width - width; val ph = this@YtMiniCard.parent.height - height
                     x = (e.rawX + dx).coerceIn(0f, pw.toFloat().coerceAtLeast(0f))
                     y = (e.rawY + dy).coerceIn(0f, ph.toFloat().coerceAtLeast(0f))
                     return true
