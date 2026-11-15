@@ -1,3 +1,4 @@
+import java.util.zip.ZipFile
 plugins { id("com.android.application") }   // (v878) AGP 9.2: كوتلن مدمج؛ ksp/hilt اتشالوا مع PlayTube
 
 // (v569) sherpa-onnx و ML Kit اتشالوا من الـ APK (كانوا بيزوّدوه ~100 ميجا) — التفريغ على الجهاز Whisper بس.
@@ -8,6 +9,7 @@ val joyVerName: String = "${joyVerNum / 100}.${(joyVerNum % 100).toString().padS
 // (v1027) حجم التحميل: المعماريات من gradle.properties → joyAbi (مفصولة بفاصلة).
 //   arm64-v8a بس (الافتراضي) = كل موبايلات ومعظم صناديق التلفزيون الحديثة، وبيشيل نص المكتبات الـnative تقريبًا.
 //   لو جهاز 32-bit (بوكس تلفزيون قديم): joyAbi=arm64-v8a,armeabi-v7a أو joyAbi=armeabi-v7a
+val joyMinify: Boolean = ((project.findProperty("joyMinify") as String?) ?: "true") != "false"   // (v1028)
 val joyAbis: List<String> = ((project.findProperty("joyAbi") as String?) ?: "arm64-v8a,armeabi-v7a").split(",").map { it.trim() }.filter { it.isNotEmpty() }
 android {
     signingConfigs {
@@ -31,7 +33,9 @@ android {
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
-        debug { isMinifyEnabled = false }
+        // (v1028) الـCI بيبني assembleDebug (مش release) — وdebug كان من غير R8/تصغير موارد خالص، وده سبب إن الـAPK 60MB.
+        // دلوقتي debug بيتصغّر زي release (نفس القواعد). لو البيلد/التشغيل باظ بسبب R8: joyMinify=false في gradle.properties.
+        debug { isMinifyEnabled = joyMinify; isShrinkResources = joyMinify; proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro") }
     }
     // (v460) تقسيم حسب المعمارية: الـ APK الواحد كان شايل مكتبات arm64 + armeabi-v7a مع بعض (~100MB).
     // دلوقتي كل معمارية ليها APK لوحده (اللي هتنزّله لجهازك هو اللي فيه arm64-v8a في اسمه — أصغر بكتير)،
@@ -75,11 +79,11 @@ dependencies {
 
 // (v1027) تقرير حجم الـAPK في لوج البناء (بعد assembleRelease): الحجم المضغوط لكل فئة (dex / res / assets / lib لكل معمارية) وأكبر 15 ملف.
 // عشان نعرف بالأرقام إيه اللي بياخد المساحة قبل أي تصغير تاني.
-tasks.matching { it.name == "assembleRelease" }.configureEach {
+tasks.matching { it.name == "assembleRelease" || it.name == "assembleDebug" }.configureEach {
     doLast {
         try {
-            fileTree(layout.buildDirectory.dir("outputs/apk/release")).matching { include("*.apk") }.forEach { apk ->
-                val z = java.util.zip.ZipFile(apk)
+            fileTree(layout.buildDirectory.dir("outputs/apk")).matching { include("**/*.apk") }.forEach { apk ->
+                val z = ZipFile(apk)
                 val es = z.entries().toList().sortedByDescending { it.compressedSize }
                 println("== APK size report: " + apk.name + "  " + String.format("%.1f", apk.length() / 1048576.0) + " MB")
                 es.groupBy { e ->
