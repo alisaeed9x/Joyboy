@@ -5,6 +5,10 @@ plugins { id("com.android.application") }   // (v878) AGP 9.2: كوتلن مدم
 // دلوقتي بيتحسب لوحده من أحدث CHANGES_vNNN.md في جذر المشروع (820 ← "8.20")؛ لو مالقاش ملفات بيرجع للاحتياطي.
 val joyVerNum: Int = rootProject.projectDir.listFiles()?.mapNotNull { f -> Regex("CHANGES_v(\\d+)\\.md").matchEntire(f.name)?.groupValues?.get(1)?.toIntOrNull() }?.maxOrNull() ?: 820
 val joyVerName: String = "${joyVerNum / 100}.${(joyVerNum % 100).toString().padStart(2, '0')}"
+// (v1027) حجم التحميل: المعماريات من gradle.properties → joyAbi (مفصولة بفاصلة).
+//   arm64-v8a بس (الافتراضي) = كل موبايلات ومعظم صناديق التلفزيون الحديثة، وبيشيل نص المكتبات الـnative تقريبًا.
+//   لو جهاز 32-bit (بوكس تلفزيون قديم): joyAbi=arm64-v8a,armeabi-v7a أو joyAbi=armeabi-v7a
+val joyAbis: List<String> = ((project.findProperty("joyAbi") as String?) ?: "arm64-v8a,armeabi-v7a").split(",").map { it.trim() }.filter { it.isNotEmpty() }
 android {
     signingConfigs {
         getByName("debug") {
@@ -16,8 +20,8 @@ android {
     compileSdk = 37   // (v869) 36→37: مكتبات PlayTube (core 1.19 / compose 2026) محتاجاها
     defaultConfig { applicationId = "com.tttt.joyboy"; minSdk = 26; targetSdk = 34; versionCode = (System.getenv("JB_VERSION_CODE")?.toIntOrNull() ?: (System.currentTimeMillis() / 60000L).toInt()); versionName = joyVerName; missingDimensionStrategy("default", "stmobile")   // (v878) مكتبة MeeTube :mobile فيها flavor واحد
         // (v656) versionCode = وقت البناء بالدقايق: أي بيلد (حتى من سورس قديم) كوده أعلى من اللي قبله ← أندرويد يقبل التثبيت فوق الأحدث من غير حذف ولا فقد بيانات (نفس الـkeystore)
-        ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a") }
-        externalNativeBuild { cmake { arguments += listOf("-DCMAKE_BUILD_TYPE=Release") + (if (System.getenv("JOY_STQ") == "1" || project.findProperty("joyStq") == "1") listOf("-DJOY_STQ=ON") else emptyList()); abiFilters += listOf("arm64-v8a", "armeabi-v7a") } }   // (v253) whisper.cpp + (v307) substem: arm64 بس (armeabi-v7a من غير أوفلاين)   // (v181) معماريات الموبايل بس: بتصغّر مكتبة onnxruntime
+        ndk { abiFilters += joyAbis }   // (v1027) المعماريات من joyAbi في gradle.properties (الافتراضي arm64 بس = أصغر تحميل)
+        externalNativeBuild { cmake { arguments += listOf("-DCMAKE_BUILD_TYPE=Release") + (if (System.getenv("JOY_STQ") == "1" || project.findProperty("joyStq") == "1") listOf("-DJOY_STQ=ON") else emptyList()); abiFilters += joyAbis } }   // (v253) whisper.cpp + (v307) substem: arm64 بس (armeabi-v7a من غير أوفلاين)   // (v181) معماريات الموبايل بس: بتصغّر مكتبة onnxruntime
     }
     buildTypes {
         release {
@@ -37,7 +41,9 @@ android {
     compileOptions { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17; isCoreLibraryDesugaringEnabled = true }   // (v327) NewPipeExtractor بيستخدم List.of وغيره
     // (v878) jvmTarget 17 بييجي تلقائي من compileOptions (كوتلن مدمج في AGP 9)
     testOptions { unitTests { isReturnDefaultValues = true } }   // (v589 T4) استدعاءات android.* في اختبارات JVM ترجّع قيم افتراضية بدل ما ترمي
-    packaging { jniLibs { useLegacyPackaging = true }; resources { excludes += listOf("/META-INF/{AL2.0,LGPL2.1}", "/META-INF/INDEX.LIST", "/META-INF/DEPENDENCIES", "/META-INF/*.version") } }   // (v325) NewPipeExtractor
+    // (v1027) لغات المكتبات (material/appcompat/media3/…): كل واحدة جايبة ~80 لغة؛ واجهة التطبيق عربي + إنجليزي بس
+    androidResources { localeFilters += listOf("ar", "en") }
+    packaging { jniLibs { useLegacyPackaging = true; if ("armeabi-v7a" !in joyAbis) excludes += "**/armeabi-v7a/**"; if ("arm64-v8a" !in joyAbis) excludes += "**/arm64-v8a/**"; excludes += listOf("**/x86/**", "**/x86_64/**") }; resources { excludes += listOf("/META-INF/{AL2.0,LGPL2.1}", "/META-INF/INDEX.LIST", "/META-INF/DEPENDENCIES", "/META-INF/*.version") } }   // (v325) NewPipeExtractor
 }
 dependencies {
     implementation(project(":mobile"))   // (v878) MeeTube (GPL-3.0) مدموج — بدل PlayTube
@@ -65,6 +71,31 @@ dependencies {
     testImplementation("junit:junit:4.13.2")            // (v589 T4)
     testImplementation("org.json:json:20240303")        // org.json الحقيقي بدل stub بتاع android.jar (اللي بيرمي "not mocked")
     implementation(project(":youtubeapi"))   // (v889) MtYt بيجيب روابط الفيديو/الصوت من MediaServiceCore بتاع MeeTube (بدل NewPipeExtractor اللي اتشال)
+}
+
+// (v1027) تقرير حجم الـAPK في لوج البناء (بعد assembleRelease): الحجم المضغوط لكل فئة (dex / res / assets / lib لكل معمارية) وأكبر 15 ملف.
+// عشان نعرف بالأرقام إيه اللي بياخد المساحة قبل أي تصغير تاني.
+tasks.matching { it.name == "assembleRelease" }.configureEach {
+    doLast {
+        try {
+            fileTree(layout.buildDirectory.dir("outputs/apk/release")).matching { include("*.apk") }.forEach { apk ->
+                val z = java.util.zip.ZipFile(apk)
+                val es = z.entries().toList().sortedByDescending { it.compressedSize }
+                println("== APK size report: " + apk.name + "  " + String.format("%.1f", apk.length() / 1048576.0) + " MB")
+                es.groupBy { e ->
+                    when {
+                        e.name.startsWith("lib/") -> "lib/" + e.name.split("/").getOrElse(1) { "" }
+                        e.name.startsWith("assets/") -> "assets"
+                        e.name.startsWith("res/") -> "res"
+                        e.name.endsWith(".dex") -> "dex"
+                        else -> "other"
+                    }
+                }.forEach { (k, v) -> println(String.format("   %-18s %7.2f MB", k, v.sumOf { it.compressedSize } / 1048576.0)) }
+                es.take(15).forEach { e -> println(String.format("   %7.2f MB  %s", e.compressedSize / 1048576.0, e.name)) }
+                z.close()
+            }
+        } catch (t: Throwable) { println("APK size report failed: " + t) }
+    }
 }
 
 // (v398) مسح أي ملف .kt قديم فاضل في الريبو ومش في kt_manifest.txt (قايمة ملفات الإصدار الحالي) قبل الكومبايل —
