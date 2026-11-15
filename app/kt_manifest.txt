@@ -324,3 +324,7 @@ com/tttt/subtitler/YtFallback.kt
 com/tttt/subtitler/YtFeedStore.kt
 com/tttt/subtitler/YtModels.kt
 com/tttt/subtitler/YtNext.kt
+com/tttt/subtitler/SrtSplit.kt
+com/tttt/subtitler/StudioAutoTr.kt
+com/tttt/subtitler/StudioSettingsUi.kt
+com/tttt/subtitler/DocActions.kt

@@ -112,6 +112,7 @@ object StudioComplete {
         if (plan.needTx) {
             if (plan.noSource) return Result(false, "⚠ مصدر الصوت مش متاح (مفيش ملف ولا لينك محفوظ) — مقدرش أفرّغ الأجزاء الناقصة", plan.txMissing, -1, 0, false)
             var lastErr = ""
+            val segsBefore = synchronized(d) { d.segs.size }   // (v1032) عشان نعرف التفريغ زاد ولا لأ
             for (round in 1..TX_ROUNDS) {
                 if (job.stop) break
                 val label = if (TX_ROUNDS > 1) "تفريغ (محاولة $round/$TX_ROUNDS)" else "تفريغ"
@@ -137,6 +138,9 @@ object StudioComplete {
                 }
             }
             txRemaining = synchronized(d) { if (d.nChunks > 0) (0 until d.nChunks).count { it !in d.done } else (if (d.segs.isEmpty()) 1 else 0) }
+            // (v1032 — المرحلة 7) التفريغ زاد ← التنظيم/التلخيص القديمين مبنيين على نص ناقص: بيتمسحوا (قبل أي return تحت، حتى لو اتوقف)
+            if (synchronized(d) { d.segs.size } != segsBefore && Lecture.invalidateDerived(ctx, d))
+                LogStore.add("🧩 [إكمال الناقص] التفريغ اتغيّر — التنظيم/التلخيص القديمين اتمسحوا (اعمل تنظيم/تلخيص تاني)")
             if (job.stop) return Result(false, "⏸ اتوقف — اللي اتفرّغ اتحفظ، دوس «إكمال الناقص» تاني تكمّل", txRemaining, -1, 0, true)
             val segs = synchronized(d) { d.segs.size }
             if (segs == 0) {

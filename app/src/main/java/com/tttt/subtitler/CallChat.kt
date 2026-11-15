@@ -9,7 +9,7 @@ package com.tttt.subtitler
  */
 object CallChat {
 
-    class Bubble(val spk: String, val name: String, val text: String, val start: Double, val end: Double, val tone: String, val firstSegIdx: Int)
+    class Bubble(val spk: String, val name: String, val text: String, val start: Double, val end: Double, val tone: String, val firstSegIdx: Int, val gender: String = "", val failedChunk: Int = -1)   // (v1036) gender: male/female/"" · failedChunk >= 0 = فقاعة «جزء ناقص» مكانه الزمني (مش جملة)
 
     /** حروف المتحدثين A–E بالترتيب — نفس ترتيب parties والمراجع في Studio.callPrompt. */
     private val LETTERS = listOf("A", "B", "C", "D", "E")
@@ -59,9 +59,11 @@ object CallChat {
         else -> "😐"
     }
 
-    /** فقاعات العرض من جمل العرض المطبّعة — دمج متتالي لنفس المتحدث بس (من غير حد زمني زي SUBS). */
+    /** فقاعات العرض من جمل العرض المطبّعة — دمج متتالي لنفس المتحدث بس (من غير حد زمني زي SUBS).
+     *  (v1036) الجمل من Lecture.orderedSegs (عتبة الترتيب)، والجزء الفاشل بيظهر فقاعة «⚠ ناقص» مكانه الزمني. */
     fun bubbles(d: Lecture.Doc): List<Bubble> {
-        val segs = Lecture.displaySegs(d)
+        val segs = Lecture.orderedSegs(d)
+        val fails = Lecture.failedRanges(d)
         val out = ArrayList<Bubble>()
         var curSpk = ""
         var curText = StringBuilder()
@@ -71,13 +73,23 @@ object CallChat {
         var curFirst = 0
         fun flush() {
             if (curText.isNotEmpty()) {
-                out.add(Bubble(curSpk, speakerName(d, curSpk), curText.toString().trim(), curStart, curEnd, curTone, curFirst))
+                out.add(Bubble(curSpk, speakerName(d, curSpk), curText.toString().trim(), curStart, curEnd, curTone, curFirst, Lecture.genderOf(d, curSpk)))
             }
             curText = StringBuilder()
             curSpk = ""
             curTone = ""
         }
+        var fi = 0
+        fun flushFails(upTo: Double, idx: Int) {
+            while (fi < fails.size && fails[fi].second <= upTo) {
+                flush()
+                val f = fails[fi]
+                out.add(Bubble("⚠", "⚠ الجزء " + (f.first + 1) + " ناقص", "(" + Lecture.fmtTime(f.second) + " ← " + Lecture.fmtTime(f.third) + ") — دوس لإعادة المحاولة", f.second, f.third, "", idx, "", f.first))
+                fi++
+            }
+        }
         for ((idx, s) in segs.withIndex()) {
+            flushFails(s.start, idx)
             if (curText.isEmpty() || s.spk != curSpk) {
                 flush()
                 curSpk = s.spk
@@ -93,6 +105,7 @@ object CallChat {
             }
         }
         flush()
+        flushFails(Double.MAX_VALUE, segs.size)
         return out
     }
 }

@@ -105,15 +105,16 @@ object Studio {
                 }
             }
             append("- 🔴 نبرة كل جملة: حط في \"tone\" كلمة عربية واحدة قصيرة تصف نبرة المتحدث في الجملة دي (مثلاً: هادي / متضايق / بيضحك / عصبي / جاد). لو النبرة محايدة سيبها فاضية.\n")
+            append("- 🔴 جنس كل متحدث: من طبقة الصوت وطريقة الكلام وصيغة كلامه عن نفسه (فعل/صفة مذكر ولا مؤنث) حط في \"genders\" على مستوى الرد كله حرف كل متحدث موجود في المقطع وقيمته \"m\" (ذكر) أو \"f\" (أنثى) — ولو مش متأكد من متحدث معيّن متحطش له قيمة.\n")
             append("- 🔴 لو طرف قاطع التاني أو رد عليه في نص جملته، سجّل المقاطعة كعنصر منفصل بتوقيتها. متدمجش كلام طرفين في عنصر واحد أبدًا.\n")
             append("- 🔴 لو المتحدث خلط عربي وإنجليزي في نفس الجملة، اكتب كل جزء بلغته بالظبط زي ما اتقال.\n")
             append("- كل جملة أو وحدة معنى (٣–١٥ ثانية) عنصر منفصل بـ start/end بالثواني نسبةً لبداية المقطع ده، والتوقيت لازم يبقى دقيق.\n")
             append("- تجاهل السكوت والمؤثرات غير الكلامية (خطوات، ضجيج، تنحنح).\n")
             append("- لو الصوت مش واضح اكتب أقرب تفسير منطقي من السياق، ومتخترعش كلام لو مفيش كلام مسموع.\n")
             append("- لو المقطع مفيهوش كلام خالص رجّع segments فاضية.\n")
-            if (prev.isNotBlank()) append("\nسياق آخر كلام في المقطع اللي قبله (لتكملة جملة مقطوعة على الحدود وتوحيد كتابة الأسماء بس، متكررهوش): \"$prev\"\n")
+            if (prev.isNotBlank()) append("\nسياق آخر كلام في المقطع اللي قبله، الحرف قبل النقطتين = الطرف (لتكملة جملة مقطوعة على الحدود وتوحيد كتابة الأسماء بس، متكررهوش): \"$prev\"\n🔴 ثبّت الأطراف: نفس الصوت يفضل بنفس الحرف اللي في السياق ده. أول متكلم في المقطع ده مش بالضرورة A — اربط كل صوت بالحرف اللي كان عليه قبل كده (مثلًا لو آخر جملة B واللي بيتكلم دلوقتي نفس الصوت يبقى B).\n")
             append("\nرجّع JSON فقط بدون شرح ولا markdown:\n")
-            append("{\"lang\":\"اسم اللغة بالعربي\",\"langCode\":\"كود ISO\",\"segments\":[{\"start\":0.0,\"end\":5.2,\"spk\":\"A\",\"lang\":\"كود ISO\",\"text\":\"...\",\"conf\":0.9,\"tone\":\"...\"}]}")
+            append("{\"lang\":\"اسم اللغة بالعربي\",\"langCode\":\"كود ISO\",\"genders\":{\"A\":\"m\",\"B\":\"f\"},\"segments\":[{\"start\":0.0,\"end\":5.2,\"spk\":\"A\",\"lang\":\"كود ISO\",\"text\":\"...\",\"conf\":0.9,\"tone\":\"...\"}]}")
         }
 
         // برومبت الترجمة (subs): حوار حرفي، متحدثين A/B/C، والتوقيت لازم يطابق الكلام بالظبط لأنه هيبقى SRT.
@@ -266,6 +267,28 @@ object Studio {
         return d
     }
 
+    // ===================== (v1031) سطور الترجمة =====================
+    /**
+     * سطور الترجمة لدوكيومنت: Seg ← SrtSplit (تقطيع الجمل الطويلة). حتمية — نفس التفريغ ← نفس السطور — فمفاتيح
+     * الترجمة المحفوظة (trKey) بتفضل متطابقة بين التشغيلات.
+     * keepOld=true: جملة ليها ترجمة محفوظة قديمة بمفتاحها كجملة كاملة (ترجمة اتعملت قبل v1031 من غير تقطيع)
+     * بتفضل cue واحد زي ما هي عشان الترجمة القديمة ما تتعاملش كناقصة وتتحسب فلوس تاني.
+     * keepOld=false: كل الجمل بتتقطّع (للترجمة من الأول).
+     */
+    fun cuesOf(ctx: Context, d: Lecture.Doc, keepOld: Boolean): List<SubFileTr.Cue> {
+        val segs = synchronized(d) { d.segs.sortedBy { it.start } }
+        if (segs.isEmpty()) return emptyList()
+        val old = if (keepOld) savedTranslations(ctx, lecId(d)) else emptyMap()
+        val out = ArrayList<SubFileTr.Cue>(segs.size + segs.size / 2)
+        for (s in segs) {
+            val g = when (Lecture.genderOf(d, s.spk)) { "male" -> "m"; "female" -> "f"; else -> "" }   // (v1036) جنس المتكلم لو معروف (مكالمات)
+            if (old.isNotEmpty() && old.containsKey(trKey(s.start, s.text))) out.add(SubFileTr.Cue(s.start, s.end, s.text, g))
+            else if (g.isEmpty()) out.addAll(SrtSplit.split(s.start, s.end, s.text))
+            else for (c in SrtSplit.split(s.start, s.end, s.text)) out.add(SubFileTr.Cue(c.start, c.end, c.text, g))
+        }
+        return out
+    }
+
     // ===================== التفريغ ← ترجمة SRT =====================
     class SrtResult(val srtPath: String?, val libId: String, val subs: Int, val failed: Int, val error: String) {
         val ok: Boolean get() = error.isEmpty() && subs > 0
@@ -288,7 +311,10 @@ object Studio {
         // ودمج الحوار لـ SUBS كان هيغيّر تقسيم الـ cues. فالـSRT بيفضل على الخام زي ما اتفرّغ بالظبط.
         val segs = synchronized(d) { d.segs.sortedBy { it.start } }
         if (segs.isEmpty()) return SrtResult(null, libId, 0, 0, "مفيش تفريغ لسه — فرّغ الأول")
-        val cues = segs.map { SubFileTr.Cue(it.start, it.end, it.text) }
+        // (v1031 — المرحلة 1) الجمل الطويلة بتتقطّع لسطور ترجمة (≤٦.٥ث و٢×٤٢ حرف) — الخام d.segs ما بيتلمسش.
+        // keepOld=false: الترجمة دي من الأول فمفيش داعي نحافظ على تقسيم قديم.
+        val cues = cuesOf(ctx, d, false)
+        LogStore.add("✂ [SRT] " + segs.size + " جملة تفريغ ← " + cues.size + " سطر ترجمة (أطول سطر " + (cues.maxOfOrNull { it.text.length } ?: 0) + " حرف، أطول مدة " + "%.1f".format(cues.maxOfOrNull { it.end - it.start } ?: 0.0) + "ث)")
         val engine = if (eng == "gemini" || eng == "google") eng else TrWizard.method()
         val src = srcLang ?: d.langCode.ifBlank { null }
         val out = try {
@@ -300,7 +326,7 @@ object Studio {
         if (cancel()) return SrtResult(null, libId, 0, out.failed, "اتوقفت")
         val subs = cues.mapIndexed { i, c ->
             val tr = out.texts.getOrNull(i) ?: ""
-            Sub(c.start, c.end, c.text, if (tr.isBlank()) c.text else tr, "male", "unknown", "none", emptyList(), emptyList(), false, false)
+            Sub(c.start, c.end, c.text, if (tr.isBlank()) c.text else tr, if (c.g == "f") "female" else "male", "unknown", "none", emptyList(), emptyList(), false, false)
         }
         val srtPath = persistSrt(ctx, d, libId, subs, engine, StudioTx.pinned().ifBlank { null }, emptyList())
         return SrtResult(srtPath, libId, subs.size, out.failed, out.error)
@@ -342,10 +368,10 @@ object Studio {
 
     /** عدد سطور التفريغ اللي من غير ترجمة حقيقية دلوقتي (للتحليل قبل البدء) */
     fun countUntranslated(ctx: Context, d: Lecture.Doc): Pair<Int, Int> {
-        val segs = synchronized(d) { d.segs.sortedBy { it.start } }
-        if (segs.isEmpty()) return 0 to 0
+        val cues = cuesOf(ctx, d, true)   // (v1031) نفس سطور الترجمة اللي بتتترجم فعلًا
+        if (cues.isEmpty()) return 0 to 0
         val known = savedTranslations(ctx, lecId(d))
-        return segs.count { !known.containsKey(trKey(it.start, it.text)) } to segs.size
+        return cues.count { !known.containsKey(trKey(it.start, it.text)) } to cues.size
     }
 
     private const val MISSING_BATCH = 160
@@ -360,9 +386,8 @@ object Studio {
      */
     fun translateMissing(ctx: Context, d: Lecture.Doc, report: (String) -> Unit, cancel: () -> Boolean, modelId: String, srcLang: String?): MissingTr {
         val libId = lecId(d)
-        val segs = synchronized(d) { d.segs.sortedBy { it.start } }
-        if (segs.isEmpty()) return MissingTr(null, 0, 0, 0, "مفيش تفريغ لسه — فرّغ الأول")
-        val cues = segs.map { SubFileTr.Cue(it.start, it.end, it.text) }
+        val cues = cuesOf(ctx, d, true)   // (v1031) سطور الترجمة المقطّعة؛ جملة ليها ترجمة قديمة كاملة بتفضل زي ما هي
+        if (cues.isEmpty()) return MissingTr(null, 0, 0, 0, "مفيش تفريغ لسه — فرّغ الأول")
         val n = cues.size
         val known = savedTranslations(ctx, libId)
         val tr = Array(n) { "" }
@@ -379,7 +404,7 @@ object Studio {
             val failedR = ArrayList<DoubleArray>()
             val subs = cues.mapIndexed { i, c ->
                 if (tr[i].isBlank()) failedR.add(doubleArrayOf(c.start, c.end))
-                Sub(c.start, c.end, c.text, if (tr[i].isBlank()) c.text else tr[i], "male", "unknown", "none", emptyList(), emptyList(), false, false)
+                Sub(c.start, c.end, c.text, if (tr[i].isBlank()) c.text else tr[i], if (c.g == "f") "female" else "male", "unknown", "none", emptyList(), emptyList(), false, false)
             }
             return subs to failedR
         }

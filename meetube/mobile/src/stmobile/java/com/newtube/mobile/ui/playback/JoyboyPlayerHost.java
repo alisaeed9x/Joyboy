@@ -70,6 +70,9 @@ public final class JoyboyPlayerHost {
         /** JOYBOY(v939): the player is being minimized (drag-down / pinch / minimize button). The add-on records the source-aware restore target (MtOrigin) and returns false so MeeTube minimizes as before; return true only if the add-on consumed the gesture itself. */
         default boolean onMinimize(Activity activity) { return false; }
 
+        /** JOYBOY(v1034): true = this video is a YouTube video (not a local file / direct link / browser / remote TV), so minimize docks it as the in-app mini card instead of closing it. */
+        default boolean wantsYoutubeDock(Activity activity) { return false; }
+
         // JOYBOY(v942): a named Joyboy action for MeeTube's own internals (fit, pip, lock, rotate, prev/next, speed, cc, quality, audio, sleep, chapters, download, audio_only, playpause). true = handled.
         default boolean onJoyboyAction(Activity activity, String action) { return false; }
 
@@ -147,6 +150,16 @@ public final class JoyboyPlayerHost {
         try {
             Provider p = sProvider;
             return p != null && activity != null && p.onMinimize(activity);
+        } catch (RuntimeException e) {
+            return false;
+        }
+    }
+
+    /** JOYBOY(v1034): minimize of a YouTube video docks it into the in-app mini card. Never throws. */
+    public static boolean wantsYoutubeDock(Activity activity) {
+        try {
+            Provider p = sProvider;
+            return p != null && activity != null && p.wantsYoutubeDock(activity);
         } catch (RuntimeException e) {
             return false;
         }

@@ -890,6 +890,17 @@ public class MobilePlaybackActivity extends MobileActivity
         mVideoArea = findViewById(R.id.mobile_video_area);
         mZoomHintView = findViewById(R.id.mobile_player_zoom_hint);
         mPlayerView = findViewById(R.id.mobile_player_view);
+        // JOYBOY(v1030): fit/fill was computed against the box's size at call time (right after a layout transition / rotation / PiP exit,
+        // before the box reached its final size), so the surface kept the old small size (half screen / PiP-sized video). Re-run the fit whenever the box size changes.
+        if (mPlayerView != null) {
+            mPlayerView.addOnLayoutChangeListener((jfV, jfL, jfT, jfR, jfB, jfOL, jfOT, jfOR, jfOB) -> {
+                if ((jfR - jfL) != (jfOR - jfOL) || (jfB - jfT) != (jfOB - jfOT)) {
+                    jfV.removeCallbacks(mJoyRefitRunnable);
+                    jfV.post(mJoyRefitRunnable);
+                    jfV.postDelayed(mJoyRefitRunnable, 350L); // once more after the layout transition settles
+                }
+            });
+        }
         // NEWTUBE(seek bar): the video box leaves its children unclipped so that the seek bar's dot
         // can hang over the page - but the picture must stay in the box: zoomed to fill, a vertical
         // video's frame is far taller than the portrait box and spilled over the page.
@@ -7405,6 +7416,7 @@ public class MobilePlaybackActivity extends MobileActivity
 
     /** JOYBOY(v1001 Fix 2): the Joyboy fit mode in force; -1 = not picked yet, restore from PlayerData on first use. */
     private int mJoyFitMode = -1;
+    private final Runnable mJoyRefitRunnable = this::reapplyJoyFit; // JOYBOY(v1030)
     private float mPullDownX;
     private float mPullDownY = -1f;
     private boolean mPullConsumed;
@@ -8785,7 +8797,7 @@ public class MobilePlaybackActivity extends MobileActivity
 
     /**
      * JOYBOY(v1001): swipe-down minimize now CLOSES the video completely (no PiP, no Browse
-     * mini-card dock) instead of minimizing. Called once the release animation has landed
+     * mini-card dock) instead of minimizing. (v1034: YouTube docks again - see dockYoutubeIntoHost.) Called once the release animation has landed
      * on the mini-card rectangle.
      */
     private void minimizeByDrag() {
@@ -8809,6 +8821,7 @@ public class MobilePlaybackActivity extends MobileActivity
 
         // JOYBOY(v1001): التصغير (سحب لتحت/رجوع) بيقفل الفيديو خالص — من غير PiP ومن غير دوك، وبيرجع للمصدر الأصلي
         if (JoyboyPlayerHost.onMinimize(this)) {
+            com.newtube.mobile.ui.common.PlayerTrace.mark("MINIMIZE branch=host-close (v1031 diag)"); // JOYBOY(v1031 phase 0)
             // JOYBOY(v1001): swipe-down minimize closes the video completely — no PiP on exit
             try {
                 setPlayWhenReady(false);
@@ -8822,6 +8835,14 @@ public class MobilePlaybackActivity extends MobileActivity
             return;
         }
 
+        // JOYBOY(v1034 phase 5): YouTube ONLY docks as the in-app mini card (decision §10-1: no system PiP, other sources keep close + return-to-origin).
+        // No host screen underneath (Joyboy's own YouTube tab, deep link) or any failure -> falls through to the close below, as in v1001.
+        if (JoyboyPlayerHost.wantsYoutubeDock(this) && dockYoutubeIntoHost()) {
+            com.newtube.mobile.ui.common.PlayerTrace.mark("MINIMIZE branch=youtube-dock (v1034)");
+            return;
+        }
+
+        com.newtube.mobile.ui.common.PlayerTrace.mark("MINIMIZE branch=fallback-close (youtube/other, v1031 diag)"); // JOYBOY(v1031 phase 0)
         // JOYBOY(v1001): YouTube (and any origin reaching here) also closes completely on
         // swipe-down / Back minimize — no in-app mini-card dock on these exit gestures.
         // The dock itself is untouched: minimizeForNavigation() still docks on channel
@@ -8835,6 +8856,39 @@ public class MobilePlaybackActivity extends MobileActivity
         }
         finish();
         overridePendingTransition(0, 0);
+    }
+
+    /**
+     * JOYBOY(v1034): dock this YouTube player into the host screen underneath (Browse/Search/Channel) - the same
+     * hand-off minimizeForNavigation() uses, but reordering the registered host to the front instead of a channel route.
+     * @return true when the hand-off started (the caller must not close); false = nothing was touched, caller closes.
+     */
+    private boolean dockYoutubeIntoHost() {
+        try {
+            MiniPlayerBridge.MiniHost host = MiniPlayerBridge.getMiniHost();
+            if (host == null || mPlayer == null) {
+                return false;
+            }
+            final Class<?> hostView = host.getMiniHostViewClass();
+            if (hostView == null || !prepareMiniPlayerHandoff(false)) {
+                return false;
+            }
+            final Runnable reorder = () -> {
+                if (isFinishing() || isDestroyed()) {
+                    return;
+                }
+                // Reorder the host to the front, then drop this player from the logical back stack (it stays alive behind the card).
+                getViewManager().startView(hostView);
+                getViewManager().removeTop(this);
+            };
+            if (!MiniPlayerBridge.prepareMiniHostForHandoff(reorder)) {
+                reorder.run();
+            }
+            return true;
+        } catch (RuntimeException e) {
+            logPip("youtube-dock failed: " + e);
+            return false;
+        }
     }
 
     /** Channel navigation completed: background this player as a live in-app mini session. */

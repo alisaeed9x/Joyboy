@@ -43,6 +43,11 @@ object MtOrigin {
         returnStarted = true
     }
 
+    // (v1030) تبديل المشغّل ⇄ (MeeTube ← Player.kt): قفل MeeTube هنا مش «خروج» — لازم مايرجّعش للصفحة الأصلية فوق المشغّل الجديد
+    @Volatile private var suppressReturn = false
+    fun suppressNextReturn() { suppressReturn = true }
+    fun consumeSuppressReturn(): Boolean { val v = suppressReturn; suppressReturn = false; return v }
+
     fun current(): Origin? = current
 
     /**
@@ -184,6 +189,7 @@ object MtOrigin {
                 return false
             }
             current = null
+            LogStore.add("MtOrigin: onDetach → رجوع للمصدر dest=" + dest.name + " src=" + (src ?: "null") + " (قفل المشغّل فعليًا، مش تصغير)")   // (v1031 — م0)
             val app = a.applicationContext
             val nt = Intent.FLAG_ACTIVITY_NEW_TASK
             when (dest) {

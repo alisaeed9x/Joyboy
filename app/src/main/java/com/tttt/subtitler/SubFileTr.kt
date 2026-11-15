@@ -15,7 +15,7 @@ import java.util.concurrent.atomic.AtomicInteger
  * مستقل عن محرك الصوت: بياخد جمل (وقت + نص) ويرجّع نص مترجم لكل جملة.
  */
 object SubFileTr {
-    class Cue(val start: Double, val end: Double, val text: String)
+    class Cue(val start: Double, val end: Double, val text: String, val g: String = "")   // g (v1036): جنس المتكلم m/f لو معروف (مكالمات الاستوديو) — فاضي = مجهول والسلوك زي ما كان
     class Out(val texts: List<String>, val failed: Int, val error: String)
 
     // ===== قراءة الملفات =====
@@ -268,10 +268,12 @@ object SubFileTr {
         (if (ctx.isBlank()) "" else "\nالسياق السابق:\n$ctx") +
         "\nأخرج JSON فقط بالشكل: {\"items\":[{\"idx\":0,\"translated\":\"...\"}]}\nالسطور:\n"
 
-    private fun gemBatch(items: List<Pair<Int, String>>, ctx: String, lang: String, style: String, keys: List<String>, first: Int, srcLang: String? = null, modelOv: String? = null): Map<Int, String> {
+    private fun gemBatch(items: List<Pair<Int, String>>, ctx: String, lang: String, style: String, keys: List<String>, first: Int, srcLang: String? = null, modelOv: String? = null, genders: Map<Int, String> = emptyMap()): Map<Int, String> {
         val arr = JSONArray()
-        for ((i, t) in items) arr.put(JSONObject().put("idx", i).put("text", oneLine(t)))
-        val prompt = gemPrompt(lang, style, ctx, srcLang) + arr.toString()
+        for ((i, t) in items) { val o = JSONObject().put("idx", i).put("text", oneLine(t)); genders[i]?.let { o.put("g", it) }; arr.put(o) }
+        // (v1036) جنس المتكلم (m/f) لو معروف — بيتبعت جنب السطر عشان الأفعال/الصفات/الضمائر تتصرّف صح
+        val gNote = if (genders.isEmpty()) "" else "ملحوظة: حقل g في السطر = جنس المتكلم (m ذكر، f أنثى) — صرّف أفعال المتكلم وصفاته وضمائره على جنسه.\n"
+        val prompt = gemPrompt(lang, style, ctx, srcLang) + gNote + arr.toString()
         var lastErr: Exception? = null
         for (attempt in 0 until 4) {
             val key = keys[(first + attempt) % keys.size]
@@ -327,7 +329,7 @@ object SubFileTr {
                         val b = batches[bi]
                         val ctx = if (b[0] == 0) "" else ((maxOf(0, b[0] - 3) until b[0]).joinToString("\n") { oneLine(cues[it].text) })
                         try {
-                            val m = gemBatch(b.map { (it - b[0]) to cues[it].text }, ctx, lang, style, keys, bi + w, srcLang, modelOv)
+                            val m = gemBatch(b.map { (it - b[0]) to cues[it].text }, ctx, lang, style, keys, bi + w, srcLang, modelOv, b.mapNotNull { gi -> cues[gi].g.takeIf { it.isNotEmpty() }?.let { (gi - b[0]) to it } }.toMap())
                             for ((k, tr) in m) { val gi = b[0] + k; if (gi in b) res[gi] = tr }
                         } catch (e: Exception) { if (firstErr[0] == null) firstErr[0] = (e.message ?: e.javaClass.simpleName).take(100); bad.addAndGet(b.size) }
                         val d = done.incrementAndGet()
@@ -385,7 +387,7 @@ object SubFileTr {
         (if (srcLang.isNullOrBlank()) "" else "لغة السطور الأصلية (كود ISO): $srcLang.\n") +
         "ثم ترجم «السطور المطلوبة» فقط إلى العربية بلهجة «$lang» وأسلوب «$style».\n" +
         dialectRule(lang) + "- ترجم بالمعنى الكامل للمشهد مش سطر سطر: السطر الغامض يتحدد بما قبله وبعده في الملف كله.\n" +
-        "- 🔴 الضمائر والأجناس: حدّد كل (هو/هي/أنت/هم/هذا) يعود على مين من السياق، واكتب الضمير والفعل والصفة الصح (مذكر/مؤنث، مفرد/جمع، رسمي/غير رسمي).\n" +
+        "- 🔴 الضمائر والأجناس: حدّد كل (هو/هي/أنت/هم/هذا) يعود على مين من السياق، واكتب الضمير والفعل والصفة الصح (مذكر/مؤنث، مفرد/جمع، رسمي/غير رسمي). لو السطر فيه حقل g فهو جنس المتكلم (m ذكر، f أنثى) — اعتمد عليه في أفعال المتكلم وصفاته.\n" +
         "- ثبّت ترجمة الأسماء والألقاب وكلمات القرابة والمصطلحات في الملف كله، وحافظ على نبرة كل شخصية من أول الملف لآخره.\n" +
         "- كل سطر له ترجمة واحدة بنفس idx: ممنوع الدمج أو الحذف أو إعادة الترتيب، والسطر قصير ومناسب للقراءة على الشاشة.\n" +
         "- لو السطر وصف صوت أو موسيقى مثل [music] أو ♪ ترجمه بإيجاز بين أقواس.\n" +
@@ -399,7 +401,7 @@ object SubFileTr {
         (if (srcLang.isNullOrBlank()) "" else " (لغته الأصلية: $srcLang)") +
         (if (cands >= 2) " ومعاه ترجمتين مرشّحتين (candidate_1 و candidate_2) من مترجمين مختلفين" else " ومعاه ترجمة مرشّحة (candidate_1)") +
         ". المطلوب نسخة نهائية واحدة جاهزة للعرض لكل سطر:\n" +
-        "- 🔴 صحّح الضمائر والأجناس والمخاطَب (هو/هي/أنت/هم، مذكر/مؤنث، مفرد/جمع) على حسب من يتكلم ومع مين في الملف كله.\n" +
+        "- 🔴 صحّح الضمائر والأجناس والمخاطَب (هو/هي/أنت/هم، مذكر/مؤنث، مفرد/جمع) على حسب من يتكلم ومع مين في الملف كله. لو السطر فيه حقل g فهو جنس المتكلم (m ذكر، f أنثى) — اعتمد عليه.\n" +
         "- ثبّت الأسماء والألقاب والمصطلحات في الملف كله، وصحّح أي ترجمة حرفية أو معنى اتغيّر أو سطر اتحذف منه جزء.\n" +
         (if (cands >= 2) "- اختار الأدق من المرشحتين أو ادمج الأفضل منهما أو أعد الصياغة لو الاتنين مش مظبوطين.\n" else "") +
         dialectRule(lang) + "- اللهجة «$lang» والأسلوب «$style» بشكل ثابت من أول الملف لآخره، والسطر قصير ومناسب للقراءة على الشاشة.\n" +
@@ -451,7 +453,7 @@ object SubFileTr {
                 for (b in chunks) {
                     if (cancel()) break
                     val items = JSONArray()
-                    for (i in b) items.put(JSONObject().put("idx", i - b[0]).put("ref", i + 1).put("text", oneLine(cues[i].text)))
+                    for (i in b) { val o = JSONObject().put("idx", i - b[0]).put("ref", i + 1).put("text", oneLine(cues[i].text)); if (cues[i].g.isNotEmpty()) o.put("g", cues[i].g); items.put(o) }
                     try {
                         val m = callItems(fullTrPrompt(lang, style, ctxBlock(cues, b.first(), b.last() + 1), items, srcLang), keys, keys.indexOf(trKeys[w]).coerceAtLeast(0), 0.3, modelOv)
                         for ((k, tr) in m) { val gi = b[0] + k; if (gi in b) passes[w][gi] = tr }
@@ -483,6 +485,7 @@ object SubFileTr {
                         val c1 = passes[0][i]; val c2 = if (nt > 1) passes[1][i] else null
                         if (!c1.isNullOrBlank()) o.put("candidate_1", oneLine(c1))
                         if (!c2.isNullOrBlank()) o.put("candidate_2", oneLine(c2))
+                        if (cues[i].g.isNotEmpty()) o.put("g", cues[i].g)
                         items.put(o)
                     }
                     try {

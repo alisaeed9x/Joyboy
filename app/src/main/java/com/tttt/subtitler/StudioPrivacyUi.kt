@@ -17,7 +17,7 @@ import android.widget.TextView
 /**
  * (v1003 — المرحلة 5) 🔒 خصوصية الاستوديو — الواجهة بس، والمنطق في StudioPrivacy.kt:
  *  • بوابة PIN للاستوديو كله (StudioUi.show + LectureUi.open — التانية بتغطي تدفق المشاركة من برّه).
- *  • مركز الخصوصية: PIN (تعيين/تغيير/إزالة) · وضع الإخفاء · إحصائيات المكالمات · ملخص يومي/أسبوعي ·
+ *  • مركز الخصوصية: PIN (تعيين/تغيير/إزالة) · وضع الإخفاء · (v1036: إحصائيات المكالمات والملخص اليومي/الأسبوعي بقوا في StudioUi.callsMenu، والدالتين showStats/showDigest هنا زي ما هما) ·
  *    قائمة استثناء التفريغ التلقائي.
  *  • مفيش زرار «حذف شامل لكل التفريغات» هنا عمدًا — الحذف من شاشة كل تفريغ لوحده (Lecture.deleteFull).
  *  • شاشة «العناصر المهمة» (StudioIntelUi.extractSheet) بتعرض الأرقام والمبالغ عمدًا فمبتتطمسش.
@@ -118,9 +118,8 @@ class StudioPrivacyUi(private val act: Activity, private val ui: Ui, private val
                 Notice.show(act, if (v) "🙈 الإخفاء اتفعّل — بيبان في العرض والنسخ والمشاركة والتصدير" else "الإخفاء اتقفل", 2800L)
             }, lp(-1, -2, 4))
             body.addView(ui.text("بيخفي الأرقام والأسماء والمبالغ في العرض والتصدير — مش في شاشة العناصر المهمة (دي بتعرضهم عمدًا عشان تضيفهم للتقويم أو جهات الاتصال). مذكرات Word/HTML بتفضل من غير إخفاء.", 11.5f, th.muted), lp(-1, -2, 4))
-            body.addView(ui.text("📊 التقارير", 15f, th.text, true).apply { setPadding(0, ui.dp(14), 0, 0) })
-            body.addView(pill("📊 إحصائيات المكالمات") { showStats() }, lp(-1, -2, 8))
-            body.addView(pill("📰 ملخص يومي / أسبوعي للمكالمات") { showDigest() }, lp(-1, -2, 8))
+            // (v1036 — المرحلة 4) إحصائيات المكالمات والملخص اليومي/الأسبوعي اتنقلوا لـ«🗂 إدارة المكالمات» (StudioUi.callsMenu)
+            body.addView(ui.text("🚫 الاستثناء", 15f, th.text, true).apply { setPadding(0, ui.dp(14), 0, 0) })
             body.addView(pill("🚫 قائمة الاستثناء") { showExclusions() }, lp(-1, -2, 8))
             body.addView(ui.text("الحذف الشامل لكل التفريغات مش موجود هنا عمدًا — الحذف من شاشة كل تفريغ لوحده (🗑 حذف التفريغ).", 11.5f, th.muted).apply { setPadding(0, ui.dp(14), 0, 0) })
         }

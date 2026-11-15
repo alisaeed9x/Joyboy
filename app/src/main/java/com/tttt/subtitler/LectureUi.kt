@@ -448,7 +448,13 @@ class LectureUi(private val act: Activity, private val ui: Ui, private val th: T
             Lecture.save(act, d)
         }
         if (hist.none { it.id == d.id }) hist = listOf(d) + hist
-        main.post { openDoc(d, !d.complete) }
+        // (v1031 — المرحلة 1) قبل كده: openDoc(d, !d.complete) مباشرة — كان بيتخطّى open() يعني بوابة PIN
+        // وتحويلة النوع (مكالمة ← دردشة، اجتماع ← محضر). دلوقتي: نبدأ التفريغ الأول (لو محتاج)، وبعدين open()
+        // اللي فيها البوابة والتحويلة. open() بتفتح من غير بدء تلقائي فالبدء هنا هو الوحيد (مفيش تفريغ مزدوج).
+        if (!d.complete && !Lecture.isRunning(d.id)) {
+            try { Lecture.start(act, d) } catch (e: Throwable) { LogStore.err("LectureUi:beginStart", e) }
+        }
+        main.post { open(d) }
     }
 
     // ===================== فيديوهات شفتها قبل كده (السجل العام) =====================
@@ -662,12 +668,42 @@ class LectureUi(private val act: Activity, private val ui: Ui, private val th: T
                     closeList()
                     val other = r.who.name.ifBlank { "طرف تاني" }
                     val parties = if (CallKit.hasVoice(act, "me")) listOf("أنا", other) else listOf(other)
-                    begin("rec", r.who.name.ifBlank { r.rec.name.substringBeforeLast('.') }, r.rec.uri.toString(), "", "call", parties)
+                    // (v1036 — قرار §10-3) المستخدم يكتب/يأكّد أسماء الأطراف قبل التفريغ (اسم بس أو اسم له بصمة محفوظة)
+                    askCallParties(parties) { names ->
+                        begin("rec", r.who.name.ifBlank { r.rec.name.substringBeforeLast('.') }, r.rec.uri.toString(), "", "call", names)
+                    }
                 }
                 1 -> saveVoiceDialog(r, false)
                 else -> saveVoiceDialog(r, true)
             }
         }.setNegativeButton("إغلاق", null).show()
+    }
+
+    /**
+     * (v1036 — المرحلة 3، قرار §10-3) نافذة أسماء أطراف المكالمة قبل التفريغ: طرفين، وطرف تالت بزرار (يظهر مفتوح لو فيه اسم تالت جاهز).
+     * الاسم اللي ليه بصمة صوت محفوظة (CallKit.contactKey) التفريغ بيستعملها كمرجع؛ الباقي بالاسم بس.
+     * الحقول الفاضية بتتشال، والترتيب = حروف المتحدثين A/B/C. onOk بيتنده بالأسماء المكتوبة (ممكن قايمة فاضية = من غير أسماء).
+     */
+    internal fun askCallParties(defaults: List<String>, onOk: (List<String>) -> Unit) {
+        val box = vcol()
+        box.addView(ui.text("اكتب أسماء الأطراف بالترتيب اللي بيتكلموا بيه غالبًا. لو للاسم بصمة صوت محفوظة التفريغ بيستعملها، وغير كده الأسماء بتتحط بس.", 12f, th.muted), lp(-1, -2))
+        val e1 = ui.input("الطرف الأول (مثلًا: أنا)", defaults.getOrElse(0) { "" })
+        val e2 = ui.input("الطرف التاني", defaults.getOrElse(1) { "" })
+        val e3 = ui.input("الطرف التالت", defaults.getOrElse(2) { "" })
+        box.addView(e1, lp(-1, -2, 8))
+        box.addView(e2, lp(-1, -2, 6))
+        box.addView(e3, lp(-1, -2, 6))
+        val more = ui.text("➕ فيه طرف تالت", 13f, th.primary, true).apply { setPadding(ui.dp(4), ui.dp(8), ui.dp(4), ui.dp(4)); isClickable = true; Glass.pressable(this) }
+        if (defaults.getOrElse(2) { "" }.isBlank()) {
+            e3.visibility = View.GONE
+            more.setOnClickListener { e3.visibility = View.VISIBLE; more.visibility = View.GONE }
+            box.addView(more, lp(-1, -2, 2))
+        }
+        GAlert(act).setTitle("👥 أسماء الأطراف").setView(box)
+            .setPositiveButton("ابدأ التفريغ") { _, _ ->
+                val names = listOf(e1, e2, e3).map { it.text.toString().trim() }.filter { it.isNotEmpty() }.distinct()
+                onOk(names)
+            }.setNegativeButton("إلغاء", null).show()
     }
 
     /** يقتطع ~7 ثواني من المكالمة (من الثانية اللي يحددها المستخدم) ويحفظها كبصمة صوت عبر CallKit */
@@ -741,7 +777,12 @@ class LectureUi(private val act: Activity, private val ui: Ui, private val th: T
         fun paintCtl() {
             ctl.removeAllViews()
             val r = Lecture.runOf(d.id)
-            if (r != null && r.running) ctl.addView(pill("⏹ إيقاف", danger = true) { Lecture.stop(d.id) }, LinearLayout.LayoutParams(0, -2, 1f))
+            val atr = StudioAutoTr.state(d.id)
+            if (atr != null && atr.stage == "translate") {
+                ctl.addView(pill("⏹ إيقاف الترجمة", danger = true) { StudioAutoTr.stop(d.id) }, LinearLayout.LayoutParams(0, -2, 1f))
+            } else if (atr != null && atr.stage == "done" && !(r != null && r.running)) {
+                ctl.addView(pill("▶ شغّل بالترجمة", primary = true) { StudioUi(act, ui, th).playWithTranslation(d) }, LinearLayout.LayoutParams(0, -2, 1f))
+            } else if (r != null && r.running) ctl.addView(pill("⏹ إيقاف", danger = true) { if (StudioAutoTr.isActive(d.id)) StudioAutoTr.stop(d.id) else Lecture.stop(d.id) }, LinearLayout.LayoutParams(0, -2, 1f))
             else if (!d.complete) ctl.addView(pill(if (d.failed.isNotEmpty()) "🔁 أعد الناقص وكمّل" else if (d.nChunks == 0) "▶ ابدأ التفريغ" else "▶ كمّل التفريغ", primary = true) {
                 Lecture.start(act, d); lastSig = ""; paintCtl()
             }, LinearLayout.LayoutParams(0, -2, 1f))
@@ -791,18 +832,27 @@ class LectureUi(private val act: Activity, private val ui: Ui, private val th: T
                     if (isSentList) {
                         // (v999 ملاحظة 2) قايمة جمل حيّة لأنواع الترجمة: كل جملة صف بتوقيتها ومتحدثها،
                         // بتكبر مع كل جزء بيخلص، ودوسة على أي جملة بتفتح تعديلها.
-                        val rows = Lecture.displaySegs(d)
-                        if (rows.isEmpty()) {
+                        // (v1036 — المرحلة 3) عرض مرتّب بالعتبة (Lecture.orderedSegs): الجزء k ما بيظهرش غير لما كل اللي قبله يتحسم،
+                        // والجزء الفاشل بيظهر «مكانه الزمني» بين الجمل (كان في آخر القايمة) وبدوسة عليه بيعيد المحاولة.
+                        val rows = Lecture.orderedSegs(d)
+                        val fails = Lecture.failedRanges(d)
+                        if (rows.isEmpty() && fails.isEmpty()) {
                             val r = Lecture.runOf(d.id)
                             body.addView(ui.text(if (r != null && r.running) "⏳ لسه ما وصلش أول جزء…" else "مفيش تفريغ لسه.", 12.5f, th.muted).apply { setPadding(ui.dp(4), ui.dp(12), ui.dp(4), ui.dp(12)) })
                         } else {
+                            var fi = 0
+                            fun failView(f: Triple<Int, Double, Double>): View = ui.text("⚠ الجزء " + (f.first + 1) + " ناقص (" + Lecture.fmtTime(f.second) + " ← " + Lecture.fmtTime(f.third) + ") — دوس لإعادة المحاولة", 13f, amber).apply {
+                                tag = "fail"; setPadding(ui.dp(12), ui.dp(8), ui.dp(12), ui.dp(8)); isClickable = true; Glass.pressable(this)
+                                setOnClickListener {
+                                    if (Lecture.isRunning(d.id)) Notice.show(act, "التفريغ شغّال دلوقتي", 2000L)
+                                    else { Lecture.start(act, d); Notice.show(act, "🔁 بعيد الأجزاء الناقصة…", 2400L); lastSig = ""; renderAll() }
+                                }
+                            }
                             for (s in rows) {
+                                while (fi < fails.size && fails[fi].second <= s.start) { body.addView(failView(fails[fi]), lp(-1, -2, 6)); fi++ }
                                 body.addView(sentRow(d, s) { seg -> editSegDialog(d, seg) { lastSig = ""; renderAll() } }, lp(-1, -2, 6))
                             }
-                            val cs = if (d.chunkSec > 0) d.chunkSec else Lecture.CHUNK_SEC
-                            for (c in d.failed.sorted()) {
-                                body.addView(ui.text("⚠ [جزء ناقص من " + Lecture.fmtTime(c * cs) + " إلى " + Lecture.fmtTime(minOf(d.durSec, (c + 1) * cs)) + "]", 13f, amber).apply { setPadding(ui.dp(12), ui.dp(8), ui.dp(12), ui.dp(8)) }, lp(-1, -2, 6))
-                            }
+                            while (fi < fails.size) { body.addView(failView(fails[fi]), lp(-1, -2, 6)); fi++ }
                         }
                     } else {
                         val txt = Lecture.transcriptText(d, stamps)
@@ -861,8 +911,11 @@ class LectureUi(private val act: Activity, private val ui: Ui, private val th: T
             // (v999) دقايق اتفرّغت من مدة الفيديو + اللغة المكتشفة — في سطر الحالة.
             val mins = if (d.nChunks > 0 && d.durSec > 0) " · اتفرّغ " + Lecture.fmtMinutes(Lecture.doneMinutes(d)) + " من " + Lecture.fmtMinutes(d.durSec / 60.0) + " دقيقة" else ""
             val lang = if (d.lang.isNotBlank()) " · 🌐 " + d.lang + (if (d.langCode.isNotBlank()) " (" + d.langCode + ")" else "") else ""
+            val atr = StudioAutoTr.state(d.id)
             status.text = when {
                 building -> buildMsg
+                atr != null && atr.stage != "transcribe" && !(atr.stage != "translate" && r != null && r.running) -> atr.msg   // (v1031) مرحلة الترجمة/النتيجة بتاعة زرار «ترجمة»
+                atr != null && atr.active -> atr.msg + (if (d.failed.isNotEmpty()) " · ⚠ ${d.failed.size} ناقص" else "") + mins + lang
                 r != null && r.running -> r.status + (if (d.failed.isNotEmpty()) " · ⚠ ${d.failed.size} ناقص" else "") + mins + lang
                 r != null && r.status.isNotBlank() && !d.complete -> r.status + mins + lang
                 d.complete -> "✅ التفريغ مكتمل — ${d.words} كلمة · ${fmtDur(d.durSec)}" + lang
@@ -871,6 +924,13 @@ class LectureUi(private val act: Activity, private val ui: Ui, private val th: T
             }
             bar.set(d.pct / 100f)
             bar.visibility = if (d.nChunks == 0 || d.complete) View.GONE else View.VISIBLE
+            // (v1031) شريط المرحلتين: المرحلة ① = ٠–٥٠٪ من التفريغ، ② = ٥٠٪ لحد الخلاص (الترجمة نفسها بدون نسبة دقيقة فبتظهر ٧٥٪ وهي شغّالة)
+            if (atr != null && atr.active) {
+                bar.set(if (atr.stage == "translate") 0.75f else (d.pct / 100f) * 0.5f)
+                bar.visibility = View.VISIBLE
+            } else if (atr != null && atr.stage == "done") {
+                bar.visibility = View.GONE
+            }
         }
 
         fun buildFile(kind: String) {
@@ -935,10 +995,18 @@ class LectureUi(private val act: Activity, private val ui: Ui, private val th: T
         if (startSec > 0.0) {
             bodyScroll.post {
                 try {
-                    val rows = Lecture.displaySegs(d)
+                    val rows = Lecture.orderedSegs(d)
                     val idx = rows.indexOfFirst { it.start >= startSec }
                     if (idx >= 0) {
-                        val v = body.getChildAt(idx)
+                        // (v1036) علامات «جزء ناقص» بتتحط بين الصفوف — بنعدّي عليها (tag == "fail") عشان اندكس الجملة يفضل صح
+                        var seen = 0
+                        var v: View? = null
+                        for (i in 0 until body.childCount) {
+                            val c = body.getChildAt(i)
+                            if (c.tag == "fail") continue
+                            if (seen == idx) { v = c; break }
+                            seen++
+                        }
                         if (v != null) bodyScroll.scrollTo(0, v.top)
                     }
                 } catch (_: Throwable) {}
@@ -953,7 +1021,7 @@ class LectureUi(private val act: Activity, private val ui: Ui, private val th: T
                     refreshStatus()
                     val r = Lecture.runOf(d.id)
                     // (v999) الإشارة بتتغيّر كمان لما عدد الجمل أو اللغة يتغيّروا — عشان القايمة الحيّة تكبر مع كل جزء.
-                    val sig = d.done.size.toString() + "/" + d.failed.size + "/" + d.segs.size + "/" + d.langCode + "/" + (r?.running ?: false)
+                    val sig = d.done.size.toString() + "/" + d.failed.size + "/" + d.segs.size + "/" + d.langCode + "/" + (r?.running ?: false) + "/" + (StudioAutoTr.state(d.id)?.stage ?: "")
                     if (sig != lastSig) {
                         lastSig = sig; paintCtl()
                         if (tab == "tr" && !busy) renderAll()

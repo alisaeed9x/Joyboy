@@ -67,6 +67,7 @@ object Lecture {
         var langCode = ""           // (v998) كود ISO للغة المنطوقة (ar/en/tr/...) من رد وارد — بيتبعت لمحرك الترجمة كلغة مصدر
         var langTally = ""          // (v999) عدّاد لغات الأجزاء «ar:3#العربية;en:1#English» — الغالبة فيه هي langCode الحالية
         val parties = ArrayList<String>()   // (v1001) أطراف المكالمة بأسماء العرض بس، بنفس ترتيب المراجع — "أنا" أولًا لو فيه بصمة صوت لصاحب الجهاز — مفتاح الصوت بيتجاب بـ CallKit.contactKey(name) والرقم بـ CallKit.resolve وقت الدخول
+        val partyGender = ArrayList<String>()   // (v1036) جنس كل طرف بنفس ترتيب حروف المتحدثين (A=0, B=1, C=2): m/f = استنتاج تلقائي · M/F = اختيار يدوي (بيغلب التلقائي) · \"\" = مجهول
         val complete: Boolean get() = nChunks > 0 && done.size >= nChunks && failed.isEmpty()
         val pct: Int get() = if (nChunks <= 0) 0 else (done.size * 100 / nChunks).coerceIn(0, 100)
         val words: Int get() = synchronized(this) { segs.sumOf { s -> s.text.split(' ').count { it.isNotBlank() } } }
@@ -85,6 +86,7 @@ object Lecture {
         @Volatile var forceModel: String = ""   // (v1011) «إكمال الناقص» في الاستوديو: موديل التفريغ متثبّت (مفيش سلسلة وارد ولا موديل «الأدق» ولا FreeLLM) — فاضي = السلوك القديم بالظبط
         @Volatile var offline: Boolean = false   // (v1012) تفريغ أوفلاين (Whisper) للغات غير العربية — بيتقفل لوحده أول ما يتكشف إن الكلام عربي
         @Volatile var offSess: Offline.Session? = null   // (v1012) قفل لغة Whisper للتشغيلة دي
+        @Volatile var diagSeq: Int = 0   // (v1031 — م0) ترتيب إكمال الأجزاء في التشغيلة دي (للتشخيص بس)
         @Volatile var showGlossary: String = ""   // (v1002) أسماء قاموس شخصيات المسلسل (للحلقة دي بس) — بتتضاف لـ terms في doChunk
     }
     val runs = ConcurrentHashMap<String, Run>()
@@ -106,7 +108,7 @@ object Lecture {
             .put("org", d.organized).put("orgWeb", d.organizedWeb).put("sum", d.summary).put("sumWeb", d.summaryWeb).put("sumLen", d.summaryLen)
             .put("ua", d.ua).put("ref", d.ref).put("an", d.analysis).put("anN", d.analysisN).put("anH", d.analysisHash)
             .put("ty", d.type).put("tyA", d.typeAuto).put("tyC", d.typeConf).put("aTi", d.autoTitle)
-            .put("cSec", d.chunkSec).put("lCd", d.langCode).put("lTl", d.langTally).put("pty", JSONArray(d.parties))
+            .put("cSec", d.chunkSec).put("lCd", d.langCode).put("lTl", d.langTally).put("pty", JSONArray(d.parties)).put("ptg", JSONArray(d.partyGender))
     }
 
     private fun fromJson(o: JSONObject): Doc {
@@ -125,6 +127,7 @@ object Lecture {
         d.type = o.optString("ty"); d.typeAuto = o.optBoolean("tyA", false); d.typeConf = o.optDouble("tyC", 0.0); d.autoTitle = o.optString("aTi")
         d.chunkSec = o.optDouble("cSec", 60.0); d.langCode = o.optString("lCd"); d.langTally = o.optString("lTl")
         o.optJSONArray("pty")?.let { a -> for (i in 0 until a.length()) d.parties.add(a.optString(i)) }
+        o.optJSONArray("ptg")?.let { a -> for (i in 0 until a.length()) d.partyGender.add(a.optString(i)) }
         return d
     }
 
@@ -454,6 +457,7 @@ object Lecture {
     /** جزء واحد: بيرجّع true لو نجح (حتى لو الجزء صامت)، false لو فشل نهائيًا بعد المحاولات */
     private fun doChunk(run: Run, keys: List<String>, mdl: String, src: AudioSource, idx: Int, worker: Int, dur: Double, chunkSec: Double = CHUNK_SEC): Boolean {
         val d = run.doc
+        val tDiag0 = System.currentTimeMillis()   // (v1031 — م0) توقيت الجزء ده للتشخيص
         // (G1) علم «الموديل الأقوى» لمرة واحدة للجزء ده — بيتسحب هنا وبيتمسح سواء نجح الجزء أو فشل.
         val forced = run.forceModel
         val accurate = StudioIntel.takeAccurate(d, idx) && forced.isBlank()   // (v1011) موديل متثبّت ← مفيش «موديل أدق»
@@ -492,12 +496,22 @@ object Lecture {
                 refsMixed = false
             }
         }
-        val prev = synchronized(d) { d.segs.filter { it.chunk == idx - 1 }.sortedBy { it.start }.takeLast(2).joinToString(" ") { it.text } }.takeLast(300)
+        // (v1032 — المرحلة 3) المكالمة: آخر ٣ جمل **بحرف المتحدث** (A: ... B: ...) عشان الجزء ده يكمّل بنفس الحروف — لأن «أول صوت = A» جوّا الجزء لوحده كان بيقلب الأطراف.
+        val isCallDoc = Studio.typeOf(d).code == "call"
+        val prev = synchronized(d) {
+            val last = d.segs.filter { it.chunk == idx - 1 }.sortedBy { it.start }
+            if (isCallDoc) last.takeLast(3).joinToString(" ") { (if (it.spk.isNotBlank()) it.spk + ": " else "") + it.text }
+            else last.takeLast(2).joinToString(" ") { it.text }
+        }.takeLast(300)
         var terms = termsFromPrev(d, idx)
         if (run.showGlossary.isNotBlank()) {
             terms = if (terms.isBlank()) run.showGlossary else terms + "، " + run.showGlossary
         }
         val promptParties = if (refsMixed) run.callNames else synchronized(d) { d.parties.toList() }
+        // (v1031 — م0) تشخيص (يأكّد/ينفي أسباب 4 و6 في خطة JOYBOY_ROADMAP): هل prev فاضي؟ كام جزء خلصوا قبل ما ده يبدأ؟ مين شغّال بالتوازي؟
+        LogStore.add("🧪 [تشخيص-تفريغ] جزء " + (idx + 1) + "/" + d.nChunks + " بدأ — نوع=" + d.type.ifBlank { "lecture" } + " · prev " + (if (prev.isBlank()) "فاضي" else "موجود(" + prev.length + " حرف، من غير حرف المتحدث)") +
+            " · خلصوا قبله=" + synchronized(d) { d.done.size } + " · الجزء السابق " + (if (synchronized(d) { (idx - 1) in d.done }) "خلص" else if (idx == 0) "—" else "لسه ماخلصش") +
+            " · أطراف=" + promptParties.size + (if (refsMixed) " (مراجع صوت مخلوطة)" else " (من غير مراجع صوت)"))
         val prompt = transcribePrompt(en - st, d.clean, prev, d.type, terms, promptParties, refsMixed)
         // (v1012) أوفلاين للغات غير العربية (سويتش الاستوديو): null = كمّل أونلاين بنفس Flash Lite
         if (run.offline && !refsMixed) { val off = StudioTx.offlineChunk(run, wav, idx, st, en); if (off != null) return off }
@@ -536,7 +550,15 @@ object Lecture {
                 synchronized(d) {
                     d.segs.removeAll { it.chunk == idx }; d.segs.addAll(finalGot)
                     recordLang(d, normLangCode(finalJ.optString("langCode")), finalJ.optString("lang"))
+                    if (isCallDoc) mergeAutoGenders(d, finalJ)   // (v1036) جنس كل طرف من رد الموديل (أول استنتاج غير فاضي بيثبت، واليدوي بيغلب)
                 }
+                try {
+                    val seq = synchronized(run) { ++run.diagSeq }
+                    val firstSpk = finalGot.minByOrNull { it.start }?.spk?.ifBlank { "؟" } ?: "—"
+                    val spkSet = finalGot.map { it.spk.ifBlank { "؟" } }.distinct().joinToString("/")
+                    LogStore.add("🧪 [تشخيص-تفريغ] جزء " + (idx + 1) + " خلص كـ«رقم " + seq + "» في ترتيب الإكمال بعد " + (System.currentTimeMillis() - tDiag0) + "ms · جمل=" + finalGot.size +
+                        " · أول متحدث=" + firstSpk + " · متحدثين=" + spkSet + " · أول جملة: " + (finalGot.minByOrNull { it.start }?.text?.take(25) ?: ""))
+                } catch (_: Throwable) {}
                 return true
             } catch (e: NoKey) { run.error = e.message ?: "مفيش مفتاح"; run.stop = true; return false }
             catch (e: ApiErr) {
@@ -668,6 +690,7 @@ object Lecture {
             d.chunkSec = CHUNK_SEC; d.lang = ""; d.langCode = ""; d.langTally = ""
             d.organized = ""; d.organizedWeb = false; d.summary = ""; d.summaryWeb = false
             d.analysis = ""; d.analysisN = 0; d.analysisHash = ""
+            for (i in d.partyGender.indices) if (d.partyGender[i].firstOrNull()?.isLowerCase() == true) d.partyGender[i] = ""   // (v1036) الاستنتاج التلقائي بيتعاد؛ اللي اتحدد يدويًا (M/F) بيفضل
         }
         save(ctx, d)
     }
@@ -741,7 +764,8 @@ object Lecture {
                 val todo = (0 until d.nChunks).filter { it !in d.done }
                 if (todo.isEmpty()) { maybeAutoTitle(ctx, run); run.status = "التفريغ مكتمل ✅"; return@Thread }
                 val next = AtomicInteger(0); val finished = AtomicInteger(0)
-                val par = minOf(ks.size, 3, todo.size).coerceAtLeast(1)
+                // (v1032 — المرحلة 3، قرار §10-2) المكالمة: أجزاء متتابعة (واحد ورا التاني) — الجزء k يلاقي آخر جمل k-1 بحروفها، فالأطراف تثبت. وقت أطول مقبول مقابل الثبات (وبيقلّل 429).
+                val par = if (Studio.typeOf(d).code == "call") 1 else minOf(ks.size, 3, todo.size).coerceAtLeast(1)
                 run.status = "بفرّغ…"
                 val ths = (0 until par).map { w ->
                     Thread {
@@ -824,6 +848,7 @@ object Lecture {
             else {
                 val old = pick.value
                 d.segs[pick.index] = Seg(st, en, t, old.chunk, old.spk, old.lang, old.tone, old.conf)
+                wipeDerived(d)   // (v1036) تعديل نص التفريغ ← التنظيم/التلخيص القديمين مبقوش بيمثّلوه
                 true
             }
         }
@@ -846,6 +871,17 @@ object Lecture {
         d.analysis = ""
         d.analysisN = 0
         d.analysisHash = ""
+    }
+
+    /** (v1032 — المرحلة 7) تفريغ اتكمّل بعد ما التنظيم/التلخيص اتبنوا → بيتمسحوا بدل ما يفضلوا ظاهرين وهما ناقصين. بيرجّع true لو كان فيه حاجة اتمسحت. */
+    fun invalidateDerived(ctx: Context, d: Doc): Boolean {
+        val had = synchronized(d) {
+            val h = d.organized.isNotBlank() || d.summary.isNotBlank() || d.analysis.isNotBlank()
+            if (h) wipeDerived(d)
+            h
+        }
+        if (had) save(ctx, d)
+        return had
     }
 
     /** إعادة تسمية متحدث في كل الجمل: كل seg بـ spk == oldSpk بيبقى newSpk. بيرجّع false لو الاسمين فاضيين أو مفيش جملة مطابقة أو التشغيل شغال. */
@@ -892,6 +928,86 @@ object Lecture {
         if (!matched) return false
         save(ctx, d)
         return true
+    }
+
+    // ===================== (v1036 — المرحلة 3) الجنس لكل طرف + تبديل الأطراف + العرض المرتّب =====================
+
+    /** حرف المتحدث ← رقم الطرف (A=0..E=4) أو -1. */
+    private fun partyIdx(spk: String): Int = if (spk.length == 1 && spk[0] in 'A'..'E') spk[0] - 'A' else -1
+
+    /** جنس المتحدث: "male" / "female" / "" (مجهول). */
+    fun genderOf(d: Doc, spk: String): String = synchronized(d) {
+        val i = partyIdx(spk)
+        when (d.partyGender.getOrNull(i)?.lowercase()) { "m" -> "male"; "f" -> "female"; else -> "" }
+    }
+
+    /** يدمج «genders» من رد الموديل ({"A":"m","B":"f"}) — بس للخانات الفاضية (اللي اتحدد قبل كده تلقائي أو يدوي ما بيتغيّرش). لازم تتنده جوّا synchronized(d). */
+    private fun mergeAutoGenders(d: Doc, j: JSONObject) {
+        val g = j.optJSONObject("genders") ?: return
+        for (letter in listOf("A", "B", "C", "D", "E")) {
+            val raw = g.optString(letter).trim().lowercase()
+            val v = when { raw.startsWith("m") || raw.startsWith("ذ") -> "m"; raw.startsWith("f") || raw.startsWith("أ") || raw.startsWith("ا") -> "f"; else -> "" }
+            if (v.isEmpty()) continue
+            val i = letter[0] - 'A'
+            while (d.partyGender.size <= i) d.partyGender.add("")
+            if (d.partyGender[i].isBlank()) d.partyGender[i] = v
+        }
+    }
+
+    /** تعديل يدوي: g = "m" / "f" / "" (تلقائي من جديد). */
+    fun setPartyGender(ctx: Context, d: Doc, idx: Int, g: String) {
+        if (idx < 0 || idx > 4) return
+        synchronized(d) {
+            while (d.partyGender.size <= idx) d.partyGender.add("")
+            d.partyGender[idx] = when (g.lowercase()) { "m" -> "M"; "f" -> "F"; else -> "" }
+        }
+        save(ctx, d)
+    }
+
+    /** ⚥ رمز الجنس للعرض جنب اسم الطرف. */
+    fun genderMark(d: Doc, spk: String): String = when (genderOf(d, spk)) { "male" -> "♂"; "female" -> "♀"; else -> "" }
+
+    /** 🔄 «بدّل الأطراف من هنا»: A↔B لكل جملة بدايتها >= fromSec. بيرجّع عدد الجمل اللي اتبدّلت (0 = مفيش حاجة اتغيّرت أو التفريغ شغّال). */
+    fun swapFrom(ctx: Context, d: Doc, fromSec: Double): Int {
+        if (isRunning(d.id)) return 0
+        var n = 0
+        synchronized(d) {
+            for (i in d.segs.indices) {
+                val s = d.segs[i]
+                if (s.start < fromSec - 0.05) continue
+                val to = when (s.spk) { "A" -> "B"; "B" -> "A"; else -> continue }
+                d.segs[i] = Seg(s.start, s.end, s.text, s.chunk, to, s.lang, s.tone, s.conf)
+                n++
+            }
+            if (n > 0) wipeDerived(d)
+        }
+        if (n > 0) save(ctx, d)
+        return n
+    }
+
+    /** أول جزء لسه ماخلصش لا بنجاح ولا بفشل نهائي — كل الأجزاء قبله «محسومة». */
+    private fun frontierChunk(d: Doc): Int {
+        for (c in 0 until d.nChunks) if (c !in d.done && c !in d.failed) return c
+        return Int.MAX_VALUE
+    }
+
+    /**
+     * جمل العرض بعد «عتبة الترتيب»: أثناء التشغيل الجزء k ما بيظهرش غير لما كل الأجزاء قبله تتحسم (نجاح أو فشل نهائي) —
+     * عشان التفريغ المتوازي ما يبيّنش جزء ٥ قبل ٣ وبعدين يتحشر الباقي وسطه. بعد ما التشغيل يقف بتظهر كل الجمل.
+     */
+    fun orderedSegs(d: Doc): List<Seg> {
+        val all = displaySegs(d)
+        if (!isRunning(d.id)) return all
+        val f = synchronized(d) { frontierChunk(d) }
+        if (f == Int.MAX_VALUE) return all
+        return all.filter { it.chunk < f }
+    }
+
+    /** الأجزاء الفاشلة كنطاقات زمنية (رقم الجزء، من، إلى) بالترتيب — لعرضها مكانها الزمني. */
+    fun failedRanges(d: Doc): List<Triple<Int, Double, Double>> = synchronized(d) {
+        val cs = if (d.chunkSec > 0) d.chunkSec else CHUNK_SEC
+        val f = if (isRunning(d.id)) frontierChunk(d) else Int.MAX_VALUE   // أثناء التشغيل: الفاشل بيظهر بس لما كل اللي قبله يتحسم (نفس عتبة orderedSegs)
+        d.failed.sorted().filter { it < f }.map { c -> Triple(c, c * cs, if (d.durSec > 0) minOf(d.durSec, (c + 1) * cs) else (c + 1) * cs) }
     }
 
     /** عدد الجمل اللي فيها نص البحث (من غير حساسية لحالة الحروف) + بداية أول جملة مطابقة أو null. دالة نقية، من غير I/O. */
@@ -1038,15 +1154,35 @@ object Lecture {
         if (Studio.typeOf(d).code == "call") synchronized(d) { d.parties.toList() } else emptyList()
 
     private fun fullText(d: Doc, names: List<String> = emptyList()): String {
-        val t = transcriptText(d, false, names).replace(Regex("⚠ \\[جزء ناقص[^\\]]*\\]"), "").trim()
-        if (t.isBlank()) throw IOException("مفيش تفريغ لسه — فرّغ المحاضرة الأول")
-        return t
+        // (v1032 — المرحلة 3) علامات «جزء ناقص» بتفضل في مكانها الزمني (كانت بتتشال بصمت فالملخص يبان كامل) + ملحوظة في الأول للموديل.
+        val t0 = transcriptText(d, false, names).trim()
+        if (t0.replace(Regex("⚠ \\[جزء ناقص[^\\]]*\\]"), "").isBlank()) throw IOException("مفيش تفريغ لسه — فرّغ المحاضرة الأول")
+        val miss = synchronized(d) { d.failed.size }
+        return if (miss > 0) "[ملحوظة: التفريغ ناقص $miss جزء — مكانهم متعلّم بـ«⚠ [جزء ناقص …]». متفترضش اللي اتقال فيهم، واذكر في أول الناتج بجملة واحدة إنه ناقص.]\n\n" + t0 else t0
     }
 
     private fun parts(t: String): List<String> {
         if (t.length <= MAX_CHARS) return listOf(t)
-        val n = Math.ceil(t.length / MAX_CHARS.toDouble()).toInt(); val size = t.length / n + 1
-        return (0 until n).map { t.substring(it * size, minOf(t.length, (it + 1) * size)) }
+        // (v1036) التقسيم على حدود أسطر/جمل (مش بعدد حروف خام) — كل سطر بيمثّل جملة/متحدث، فمفيش جملة بتتقطع نصين.
+        val n = Math.ceil(t.length / MAX_CHARS.toDouble()).toInt()
+        val target = t.length / n + 1
+        val out = ArrayList<String>()
+        var from = 0
+        while (from < t.length) {
+            var to = minOf(t.length, from + target)
+            if (to < t.length) {
+                val nl = t.lastIndexOf('\n', to)
+                if (nl > from + target / 2) to = nl + 1
+                else {
+                    var k = to
+                    while (k > from + target / 2 && t[k - 1] !in ".!?؟…") k--
+                    if (k > from + target / 2) to = k
+                }
+            }
+            out.add(t.substring(from, to))
+            from = to
+        }
+        return out
     }
 
     /** «تنظيم»: عناوين + نقط. يتنده من خيط خلفي ويحفظ النتيجة في الدوكيومنت */

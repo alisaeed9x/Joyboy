@@ -278,6 +278,19 @@ object MtTranslate : JoyboyPlayerHost.Provider {
         }
     }
 
+    /** (v1034 — المرحلة 5، قرار §10-1) تصغير يوتيوب فقط = المصغّر الداخلي. true: فيديو يوتيوب (من غير localUri) ومصدره يوتيوب أو غير مسجّل (فيد MeeTube نفسه). ملف/لينك/متصفح/تلفزيون ← false (قفل + رجوع للمصدر زي v1001). */
+    override fun wantsYoutubeDock(activity: Activity): Boolean {
+        return try {
+            if (act !== activity) return false
+            if (!info?.localUri().isNullOrBlank()) return false
+            val mine = MtOrigin.isFor(info?.videoId(), info?.localUri())
+            val kind = if (mine) MtOrigin.current()?.kind else null
+            kind == null || kind == MtOrigin.Kind.YOUTUBE
+        } catch (_: Throwable) {
+            false
+        }
+    }
+
     /** (v937 م3) هوية الفيديو للاستكمال/«آخر المشغّلة» (نفس مفتاح مشغّل Joyboy، مع forceid) */
     internal fun joyVid(a: Activity, lu: String): String = idOverride["L:$lu"] ?: localVid(a, lu)
 

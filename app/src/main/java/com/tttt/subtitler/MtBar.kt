@@ -1536,6 +1536,7 @@ object MtBar {
             if (pos > 1000L) it.putExtra("startms", pos.toInt())
             Cfg.put(MtPlay.KEY, "0")
             try { player?.pause() } catch (_: Throwable) {}
+            try { MtOrigin.suppressNextReturn() } catch (_: Throwable) {}   // (v1030) القفل هنا تبديل مش خروج: ما يرجّعش للصفحة الأصلية فوق Player.kt
             a.startActivity(it)
             a.finish()
         } catch (e: Throwable) {

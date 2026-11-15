@@ -1077,7 +1077,9 @@ class Engine(
             ex.submit {
                 try {
                     var p: Prep? = prep0
+                    val tPrep0 = System.currentTimeMillis()   // (v1031 — م0) توقيت فك/تجهيز الصوت لكل باتش
                     val ok = if (prep0 != null) { preps[i] = prep0; true } else guard(i) { val got = prepare(i, force); p = got; if (got != null) preps[i] = got }
+                    if (prep0 == null) LogStore.add("⏱ [مشغّل-توقيت] باتش ${i + 1}: فك+تجهيز الصوت " + (System.currentTimeMillis() - tPrep0) + "ms")
                     if (ok) {
                         val pp = p
                         if (pp == null) failed.remove(i)
@@ -1198,6 +1200,7 @@ class Engine(
                     } catch (e: Throwable) { pool.end(key, 0, false); throw e }
                 }
                 val took = System.currentTimeMillis() - t0
+                LogStore.add("⏱ [مشغّل-توقيت] باتش ${i + 1}: طلب الموديل " + took + "ms (" + mdl + (if (tx) ", تفريغ" else ", تفريغ+ترجمة") + (if (hedge) ", نسخة احتياطية" else "") + ", محاولة " + tries + ", من أول إرسال " + (startedAt[i]?.let { System.currentTimeMillis() - it } ?: -1L) + "ms)")   // (v1031 — م0)
                 if (isClosed) return
                 if (gemCalled) { flushModeMsg(); noteWho("🔑 جيميناي شغّال", " — باتش ${i + 1} بمفتاح " + pool.tail(key) + " (" + conf.keys.size + " أساسي)") }   // (v278)   // الإنجن اتقفل أثناء الطلب (خرجت من الفيديو): ارمي الرد
                 if (r.finish == "MAX_TOKENS" && trunc >= 2) partial = true
@@ -2400,7 +2403,7 @@ class Engine(
         }
         try {
             bg.submit {
-                try { analyzeChars() } catch (e: Exception) { host.log("⚠ تحليل الشخصيات فشل: " + (e.message ?: "").take(100)) }
+                try { val tAc = System.currentTimeMillis(); analyzeChars(); LogStore.add("⏱ [مشغّل-توقيت] تحليل الشخصيات " + (System.currentTimeMillis() - tAc) + "ms") } catch (e: Exception) { host.log("⚠ تحليل الشخصيات فشل: " + (e.message ?: "").take(100)) }
                 finally { synchronized(lock) { charsBusy = false; autoCharsAttempts++ }; persist() }
             }
         } catch (_: Exception) { synchronized(lock) { charsBusy = false } }
@@ -2670,7 +2673,7 @@ class Engine(
     private fun runRefine(isFinal: Boolean) {
         try {
             bg.submit {
-                try { refinePass(isFinal) } catch (e: Exception) { warnUser("refine", "⚠ تنقيح الترجمة فشل — الترجمة سليمة بس من غير تنقيح"); host.log("⚠ تنقيح الترجمة فشل: " + (e.message ?: "").take(100)) }
+                try { val tRf = System.currentTimeMillis(); refinePass(isFinal); LogStore.add("⏱ [مشغّل-توقيت] تنقيح بالسياق (نهائي=" + isFinal + ") " + (System.currentTimeMillis() - tRf) + "ms") } catch (e: Exception) { warnUser("refine", "⚠ تنقيح الترجمة فشل — الترجمة سليمة بس من غير تنقيح"); host.log("⚠ تنقيح الترجمة فشل: " + (e.message ?: "").take(100)) }
                 finally { refineBusy = false }
             }
         } catch (e: Exception) { LogStore.err("Engine:refineSubmit", e); refineBusy = false }   // (v468)
@@ -3208,7 +3211,7 @@ class Engine(
         holeBusy.incrementAndGet()
         try {
             holeEx.submit {
-                try { holeFill(i, rawStart, rawEnd, w, key) }
+                try { val tHf = System.currentTimeMillis(); holeFill(i, rawStart, rawEnd, w, key); val dHf = System.currentTimeMillis() - tHf; if (dHf > 300) LogStore.add("⏱ [مشغّل-توقيت] سدّ ثغرات المقطع ${i + 1}: " + dHf + "ms") }
                 catch (e: Exception) { host.log("⚠ سدّ الثغرات في المقطع ${i + 1} فشل: " + (e.message ?: "").take(80)) }
                 finally { holeBusy.decrementAndGet() }
             }

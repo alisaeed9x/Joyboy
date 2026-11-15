@@ -102,6 +102,7 @@ object MtMedia {
             // (v938) extra ret: رجوع للمتصفح/يوتيوب عند الإغلاق الفعلي
             // (v939) لو مفيش ret للمصطادة، MtOrigin بيرجّع حسب المصدر (واتساب/محلي ← ميديا Joyboy)
             try {
+                if (MtOrigin.consumeSuppressReturn()) return   // (v1030) تبديل مشغّل مش خروج
                 val webRet = MtWeb.onDetach(a, wasLu)
                 if (!webRet) MtOrigin.onDetach(a, wasLu, wasVid)
             } catch (_: Throwable) {}

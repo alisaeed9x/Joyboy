@@ -212,7 +212,7 @@ class StudioUi(private val act: Activity, private val ui: Ui, private val th: Th
         cards.addView(card("🎬", "فيديو", "تفريغ كلامه أو ترجمته لـSRT أو مشاهدته — محلي · يوتيوب · لينك") { safe("video") { startVideoFlow("") } }, lp(-1, -2, 8))
         // ===== المكالمات: كارت واحد بدل تلاتة =====
         section("المكالمات", 16)
-        cards.addView(card("🗂", "إدارة المكالمات", "المكالمات المسجلة · الأصوات المحفوظة · التفريغ التلقائي") { safe("callsMenu") { callsMenu() } }, lp(-1, -2, 6))
+        cards.addView(card("🗂", "إدارة المكالمات", "المكالمات المسجلة · الأصوات المحفوظة · إحصائيات · ملخص · التفريغ التلقائي") { safe("callsMenu") { callsMenu() } }, lp(-1, -2, 6))
         // ===== مكتبتي =====
         section("مكتبتي", 16)
         cards.addView(card("🕘", "سجل التفريغات", "فتح · ترجمة لـSRT · تغيير النوع") { safe("hist") { showHistory() } }, lp(-1, -2, 6))
@@ -220,7 +220,9 @@ class StudioUi(private val act: Activity, private val ui: Ui, private val th: Th
         cards.addView(card("📚", "الكورسات", "محاضرات لمادة واحدة + قاموس تراكمي + Anki") { safe("courses") { StudioIntelUi(act, ui, th).showCourses() } }, lp(-1, -2, 8))
         // ===== الإعدادات =====
         section("إعدادات", 16)
-        cards.addView(card("🔒", "خصوصية", "PIN · إخفاء · إحصائيات · ملخص · استثناء") { safe("privacy") { StudioPrivacyUi(act, ui, th).show() } }, lp(-1, -2, 6))
+        cards.addView(card("🔒", "خصوصية", "PIN · إخفاء · استثناء") { safe("privacy") { StudioPrivacyUi(act, ui, th).show() } }, lp(-1, -2, 6))
+        cards.addView(card("⚙", "إعدادات الترجمة", "لهجة · أسلوب · شدة — لترجمة الاستوديو") { safe("trSettings") { StudioSettingsUi(act, ui, th).translation() } }, lp(-1, -2, 8))
+        cards.addView(card("⚙", "إعدادات التفريغ", "مصدر ثابت Flash Lite · تفريغ أوفلاين") { safe("txSettings") { StudioSettingsUi(act, ui, th).transcription() } }, lp(-1, -2, 8))
         val col = vcol()
         col.layoutParams = lp(-1, -1)
         col.addView(ui.text("اختار تبدأ منين — النوع بيتحدد لوحده، وتقدر تغيّره بعد التفريغ.", 12.5f, th.muted), lp(-1, -2))
@@ -241,12 +243,15 @@ class StudioUi(private val act: Activity, private val ui: Ui, private val th: Th
 
     /** قايمة المكالمات: بدل 3 كروت منفصلة في الشاشة الرئيسية */
     private fun callsMenu() {
-        val labels = arrayOf("📞 المكالمات المسجلة (أسماء · بصمة صوت)", "🎤 الأصوات المحفوظة", "🔁 التفريغ التلقائي للمكالمات")
+        // (v1036 — المرحلة 4) الإحصائيات والملخص اليومي/الأسبوعي اتنقلوا هنا من مركز الخصوصية — مكانهم الطبيعي مع المكالمات
+        val labels = arrayOf("📞 المكالمات المسجلة (أسماء · بصمة صوت)", "🎤 الأصوات المحفوظة", "📊 إحصائيات المكالمات", "📰 ملخص يومي / أسبوعي", "🔁 التفريغ التلقائي للمكالمات")
         GAlert(act).setTitle("🗂 إدارة المكالمات").setItems(labels) { _, w ->
             try {
                 when (w) {
                     0 -> LectureUi(act, ui, th).showCalls()
                     1 -> CallChatUi(act, ui, th).showVoices()
+                    2 -> StudioPrivacyUi(act, ui, th).showStats()
+                    3 -> StudioPrivacyUi(act, ui, th).showDigest()
                     else -> StudioIntelUi(act, ui, th).showAutoCall()
                 }
             } catch (e: Throwable) { LogStore.err("StudioUi:callsMenu", e) }
@@ -378,7 +383,17 @@ class StudioUi(private val act: Activity, private val ui: Ui, private val th: Th
                 Glass.pressable(row)
                 row.setOnClickListener {
                     d.dismiss()
-                    begin(if (r.isRec) "rec" else "audio", r.name.substringBeforeLast('.'), r.uri.toString(), "", if (presetType == "call") "call" else "")
+                    if (presetType == "call") {
+                        // (v1036 — قرار §10-3) المكالمة: نكتب/نأكّد أسماء الأطراف قبل التفريغ (الاسم الافتراضي من اسم الملف لو اتعرف)
+                        val who = try { CallKit.parseFileName(r.name) } catch (_: Throwable) { null }
+                        val other = who?.name?.takeIf { it.isNotBlank() } ?: ""
+                        val defaults = if (CallKit.hasVoice(act, "me")) listOf("أنا", other) else listOf(other)
+                        LectureUi(act, ui, th).askCallParties(defaults) { names ->
+                            begin(if (r.isRec) "rec" else "audio", r.name.substringBeforeLast('.'), r.uri.toString(), "", "call", parties = names)
+                        }
+                    } else {
+                        begin(if (r.isRec) "rec" else "audio", r.name.substringBeforeLast('.'), r.uri.toString(), "", "")
+                    }
                 }
                 list.addView(row, lp(-1, -2, 6))
             }
@@ -411,11 +426,11 @@ class StudioUi(private val act: Activity, private val ui: Ui, private val th: Th
 
     /** «تفريغ» ولا «مشاهدة»؟ — التفريغ بيسحب الصوت بس من غير ما الفيديو يشتغل */
     private fun askWatchOrTranscribe(kind: String, title: String, uri: String, link: String, suggested: String) {
-        val labels = arrayOf("🎓 فرّغ الكلام — من غير ما الفيديو يشتغل", "💬 ترجمة لملف SRT", "▶ شاهده في المشغّل")
-        GAlert(act).setTitle(if (title.isBlank()) "فيديو" else title).setMessage("التفريغ والترجمة بيسحبوا الصوت بس من غير ما الفيديو يشتغل.").setItems(labels) { _, w ->
+        val labels = arrayOf("🎓 فرّغ الكلام — من غير ما الفيديو يشتغل", "💬 ترجمة — تفريغ ثم ترجمة تلقائي لملف SRT", "▶ شاهده في المشغّل")
+        GAlert(act).setTitle(if (title.isBlank()) "فيديو" else title).setMessage("التفريغ والترجمة بيسحبوا الصوت بس من غير ما الفيديو يشتغل. «ترجمة» بتفرّغ الأول وبعدين بتترجم لوحدها.").setItems(labels) { _, w ->
             when (w) {
                 0 -> begin(kind, title, uri, link, if (suggested == "subs") "" else suggested)
-                1 -> begin(kind, title, uri, link, "subs")
+                1 -> begin(kind, title, uri, link, "subs", autoTr = true)   // (v1031) تفريغ ثم ترجمة تلقائي
                 else -> watchVideo(title, uri, link)
             }
         }.setNegativeButton("إلغاء", null).show()
@@ -444,7 +459,7 @@ class StudioUi(private val act: Activity, private val ui: Ui, private val th: Th
     }
 
     /** يبدأ التفريغ: نوع يدوي (لو متحدد) ← Lecture.start (الصوت بس، الفيديو مبيشتغلش) ← شاشة التفريغ */
-    private fun begin(kind: String, title: String, uri: String, link: String, type: String) {
+    private fun begin(kind: String, title: String, uri: String, link: String, type: String, autoTr: Boolean = false, parties: List<String> = emptyList()) {
         val d = try {
             Lecture.newDoc(act, kind, title, uri, link)
         } catch (e: Throwable) {
@@ -459,7 +474,30 @@ class StudioUi(private val act: Activity, private val ui: Ui, private val th: Th
                 LogStore.err("StudioUi:setType", e)
             }
         }
+        // (v1036) أسماء أطراف المكالمة (من نافذة الأسماء) — بس لدوكيومنت لسه من غير تفريغ، عشان ما نمسحش أطراف دوكيومنت قديم
+        if (parties.isNotEmpty() && synchronized(d) { d.segs.isEmpty() }) {
+            synchronized(d) { d.parties.clear(); d.parties.addAll(parties) }
+            try { Lecture.save(act, d) } catch (e: Throwable) { LogStore.err("StudioUi:parties", e) }
+        }
+        if (autoTr) { startAutoTr(d); return }
         startNormal(d)
+    }
+
+    /** (v1031 — المرحلة 1) «ترجمة»: ① تفريغ ← ② ترجمة تلقائي (StudioAutoTr) ← شاشة التفريغ بتعرض المرحلة والتقدّم وزرار ▶ شغّل بالترجمة */
+    private fun startAutoTr(d: Lecture.Doc) {
+        try {
+            StudioAutoTr.start(act, d)
+        } catch (e: Throwable) {
+            LogStore.err("StudioUi:autoTr", e)
+            Notice.show(act, "⚠ مقدرتش أبدأ الترجمة", 2600L)
+            return
+        }
+        Notice.show(act, "⏳ ① تفريغ ثم ② ترجمة تلقائي — تقدر تتابعهم من الشاشة", 3200L)
+        try {
+            LectureUi(act, ui, th).open(d)
+        } catch (e: Throwable) {
+            LogStore.err("StudioUi:autoTrOpen", e)
+        }
     }
 
     /** التفريغ العادي: Lecture.start ← شاشة التفريغ */
@@ -525,7 +563,7 @@ class StudioUi(private val act: Activity, private val ui: Ui, private val th: Th
     }
 
     /** (v999 ملاحظة 3) شغّل الفيديو بالترجمة: لازم تكون فيه ترجمة محفوظة (lec:) — لو مفيش بنوجّه لزرار «📝 ترجمة لـSRT» بدل ما الفيديو يفتح من غير ترجمة */
-    private fun playWithTranslation(d: Lecture.Doc, startSec: Double = 0.0) {
+    fun playWithTranslation(d: Lecture.Doc, startSec: Double = 0.0) {   // (v1031) internal: LectureUi بتناديها من زرار «▶ شغّل بالترجمة»
         val hasSubs = try {
             StudioLink.hasSubs(act, Studio.lecId(d))
         } catch (_: Throwable) {
@@ -595,6 +633,7 @@ class StudioUi(private val act: Activity, private val ui: Ui, private val th: Th
     // (v1000) بحث شامل في السجل: عنوان + نص كل الجمل — نفس نمط TrLibUi (debounce 260ms،
     // خيط خلفي، token للإلغاء، حد أدنى حرفين). النتائج: (عدد الجمل المطابقة، بداية أول مطابقة).
     private var histQ = ""
+    private var histType = ""   // (v1035 — المرحلة 4) فلتر النوع في السجل: "" = الكل، غير كده كود النوع (Studio.TxType.code)
     private var histSearchTok = 0
     private var histHits: Map<String, Pair<Int, Double?>> = emptyMap()
 
@@ -615,6 +654,13 @@ class StudioUi(private val act: Activity, private val ui: Ui, private val th: Th
             }
         })
         col.addView(search, lp(-1, -2, 8))
+        // (v1035 — المرحلة 4) فلتر النوع (الشرائح بتلف على أكتر من صف لوحدها)
+        val filters = DocActions.historyFilters()
+        val typeChips = ui.chips(filters.map { it.first }, { filters.firstOrNull { f -> f.second == histType }?.first ?: filters[0].first }) { name ->
+            histType = filters.firstOrNull { f -> f.first == name }?.second ?: ""
+            renderHistory()
+        }
+        col.addView(typeChips, lp(-1, -2, 8))
         col.addView(pill("↻ تحديث") { loadHistory() }, lp(-1, -2, 8))
         val sc = ScrollView(act).apply { isVerticalScrollBarEnabled = false; addView(histCol) }
         col.addView(sc, LinearLayout.LayoutParams(-1, 0, 1f).apply { topMargin = ui.dp(4) })
@@ -673,9 +719,10 @@ class StudioUi(private val act: Activity, private val ui: Ui, private val th: Th
     private fun renderHistory() {
         histCol.removeAllViews()
         val searching = histQ.length >= 2
-        val docs = if (searching) hist.filter { histHits.containsKey(it.id) } else hist
+        val byType = if (histType.isBlank()) hist else hist.filter { Studio.typeOf(it).code == histType }
+        val docs = if (searching) byType.filter { histHits.containsKey(it.id) } else byType
         if (docs.isEmpty()) {
-            histCol.addView(ui.text(if (searching) "مفيش نتيجة لـ«" + histQ + "» — جرّب كلمة تانية." else "مفيش تفريغات لسه — اختار مصدر من شاشة الاستوديو.", 12.5f, th.muted).apply { setPadding(ui.dp(4), ui.dp(8), ui.dp(4), ui.dp(8)) })
+            histCol.addView(ui.text(if (searching) "مفيش نتيجة لـ«" + histQ + "» — جرّب كلمة تانية." else if (histType.isNotBlank() && hist.isNotEmpty()) "مفيش تفريغات من النوع ده." else "مفيش تفريغات لسه — اختار مصدر من شاشة الاستوديو.", 12.5f, th.muted).apply { setPadding(ui.dp(4), ui.dp(8), ui.dp(4), ui.dp(8)) })
             return
         }
         for (d in docs) {
@@ -746,6 +793,24 @@ class StudioUi(private val act: Activity, private val ui: Ui, private val th: Th
         }
     }
 
+    private fun safeUi(tag: String, f: () -> Unit) {
+        try { f() } catch (e: Throwable) { LogStore.err("StudioUi:" + tag, e) }
+    }
+
+    /** (v1032) سطور الترجمة المحفوظة للدوكيومنت (نفس شاشة مكتبة الترجمات: بحث + تعديل سطر) */
+    private fun openLines(d: Lecture.Doc) {
+        safeUi("lines") {
+            val id = Studio.lecId(d)
+            if (!StudioLink.hasSubs(act, id)) {
+                Notice.show(act, "لسه مفيش ترجمة محفوظة — دوس «📝 ترجمة لـSRT» الأول", 3200L)
+                return@safeUi
+            }
+            val item = TrLib.items(act).firstOrNull { it.id == id }
+                ?: TrLib.Item(id, Studio.displayTitle(d), d.uri, d.link, d.durSec, 0, 0.0, System.currentTimeMillis(), null, null)
+            TrLibUi(act, ui, th).openLines(item)
+        }
+    }
+
     // ===================== شاشة التفريغ: النوع ✎ + العنوان التلقائي + ترجمة لـSRT =====================
     private fun openDocSheet(d: Lecture.Doc) {
         // (v1001) بادئة العنوان حسب النوع — «المحاضرة: » كانت غلط للمكالمات والأنواع التانية.
@@ -759,8 +824,10 @@ class StudioUi(private val act: Activity, private val ui: Ui, private val th: Th
         val typeNote = ui.text("تغيير النوع بيعيد التنظيم والعرض من نفس التفريغ — الصوت مبيتفرّغش من جديد.", 11.5f, th.muted)
         val metaV = ui.text("", 12f, th.muted)
         val srtStatus = ui.text("", 12.5f, th.muted)
+        var actionsPainter: () -> Unit = {}   // (v1035) بيتعيّن تحت بعد ما الأزرار تتبني — النوع لو اتغيّر الأزرار بتتعاد
         fun paintType() {
             typeChip.text = typeChipText(d)
+            actionsPainter()
         }
         fun paintMeta() {
             // (v1002) تقدير التكلفة قبل البدء — بيتحسب مرة واحدة للشيت ده (مش مع كل tick).
@@ -811,53 +878,44 @@ class StudioUi(private val act: Activity, private val ui: Ui, private val th: Th
             } catch (_: Throwable) {}
             openDocSheet(d)
         }, lp(-1, -2, 6))
-        // (v999 ملاحظة 3) زرار التشغيل بالترجمة أول الأزرار — خطوتين بس من آخر التفريغ للمشاهدة بالترجمة (الصوتيات ملهاش فيديو فمبتظهرش)
+        // (v1035 — المرحلة 4) الأزرار من سجل واحد حسب النوع (DocActions): أساسي ظاهر + «⋯ المزيد» مطوي. النوع لو اتغيّر بيتعاد رسمهم.
         val hasVideo = (d.uri.isNotBlank() || d.link.isNotBlank()) && d.kind != "audio" && d.kind != "rec"
-        if (hasVideo) {
-            content.addView(pill("▶ شغّل الفيديو بالترجمة", primary = true) { playWithTranslation(d) }, lp(-1, -2, 8))
+        val actionsHost = vcol()
+        fun actionView(a: DocActions.A): View = when (a) {
+            DocActions.A.PLAY -> pill("▶ شغّل الفيديو بالترجمة", primary = true) { playWithTranslation(d) }
+            DocActions.A.CHAT -> pill("💬 فتح الدردشة", primary = true) {
+                try { CallChatUi(act, ui, th).show(d) } catch (e: Throwable) { LogStore.err("StudioUi:chat", e) }
+            }
+            DocActions.A.OPEN -> pill("📖 فتح التفريغ", primary = true) {
+                try { LectureUi(act, ui, th).open(d) } catch (e: Throwable) { LogStore.err("StudioUi:openDoc", e) }
+            }
+            // (v1011) إكمال الناقص: تفريغ الأجزاء الناقصة + ترجمة السطور اللي من غير ترجمة، بموديل Gemini Flash Lite Latest بس
+            DocActions.A.COMPLETE -> pill("🧩 إكمال الناقص (تفريغ + ترجمة)", primary = true) { runComplete(d, srtStatus) { paintMeta(); renderHistory() } }
+            // (v1002) مركز الذكاء الإضافي: اسأل/فصول/ترجمة جنب بعض/استخراج/وعود/علامات/ثقة منخفضة/كورس.
+            DocActions.A.INTEL -> pill("🧠 ذكاء إضافي") { safeUi("intel") { StudioIntelUi(act, ui, th).showHub(d) } }
+            DocActions.A.TRANSLATE_SRT -> pill("📝 ترجمة لـSRT") { runSrt(d, srtStatus) }
+            DocActions.A.LINES -> pill("👁 عرض / تعديل السطور المترجمة") { openLines(d) }
+            DocActions.A.SHARE_TR -> pill("📥 تحميل / مشاركة الترجمة") { shareTranslation(d) }
+            DocActions.A.QUALITY -> pill("🔍 فحص جودة الترجمة") { runSrtCheck(d) }
+            DocActions.A.CLIP -> pill("✂ قص مقطع ومشاركته") { clipDialog(d) }
+            DocActions.A.TR_LIB -> pill("📚 فتح مكتبة الترجمات") { safeUi("trlib") { TrLibUi(act, ui, th).show() } }
+            DocActions.A.TR_SETTINGS -> pill("⚙ إعدادات الترجمة") { safeUi("trSettings") { StudioSettingsUi(act, ui, th).translation() } }
+            DocActions.A.TX_SETTINGS -> pill("⚙ إعدادات التفريغ") { safeUi("txSettings") { StudioSettingsUi(act, ui, th).transcription() } }
+            DocActions.A.RESTART -> pill("🔁 إعادة التفريغ من الأول") { restartDoc(d) { paintMeta() } }
         }
-        // (v1012) مصدر التفريغ: قفل Flash Lite Latest (بدون تبديل موديلات) + سويتش التفريغ الأوفلاين للكلام غير العربي
-        content.addView(ui.switchRow("🔒 مصدر التفريغ ثابت: Gemini Flash Lite Latest (من غير تبديل موديلات)", StudioTx.fixedOn()) { v ->
-            Cfg.put(StudioTx.FIXED_KEY, if (v) "1" else "0")
-        }, lp(-1, -2, 6))
-        val offNote = ui.text(StudioTx.offlineNote(), 11.5f, th.muted)
-        content.addView(ui.switchRow("📴 تفريغ أوفلاين للكلام غير العربي (إنجليزي وغيره) — العربي أونلاين", StudioTx.offlineOn()) { v ->
-            Cfg.put(StudioTx.OFFLINE_KEY, if (v) "1" else "0")
-            offNote.text = StudioTx.offlineNote()
-        }, lp(-1, -2, 4))
-        content.addView(offNote, lp(-1, -2, 2))
-        // (v1011) إكمال الناقص: تفريغ الأجزاء الناقصة + ترجمة السطور اللي من غير ترجمة، بموديل Gemini Flash Lite Latest بس
-        content.addView(pill("🧩 إكمال الناقص (تفريغ + ترجمة)", primary = true) { runComplete(d, srtStatus) { paintMeta(); renderHistory() } }, lp(-1, -2, 8))
-        content.addView(pill("🔁 إعادة التفريغ من الأول") { restartDoc(d) { paintMeta() } }, lp(-1, -2, 8))
-        content.addView(pill("📖 فتح التفريغ") {
-            try {
-                LectureUi(act, ui, th).open(d)
-            } catch (e: Throwable) { LogStore.err("StudioUi:openDoc", e) }
-        }, lp(-1, -2, 8))
-        // (v1002) مركز الذكاء الإضافي: اسأل/فصول/ترجمة جنب بعض/استخراج/وعود/علامات/ثقة منخفضة/كورس.
-        content.addView(pill("🧠 ذكاء إضافي") {
-            try {
-                StudioIntelUi(act, ui, th).showHub(d)
-            } catch (e: Throwable) { LogStore.err("StudioUi:intel", e) }
-        }, lp(-1, -2, 8))
-        // (v1001) المكالمات ليها صفحة دردشة — من هنا أو من قايمة السجل (LectureUi.open بتحوّل ليها).
-        if (Studio.typeOf(d).code == "call") {
-            content.addView(pill("💬 عرض كدردشة") {
-                try {
-                    CallChatUi(act, ui, th).show(d)
-                } catch (e: Throwable) { LogStore.err("StudioUi:chat", e) }
-            }, lp(-1, -2, 8))
+        actionsPainter = {
+            actionsHost.removeAllViews()
+            val lay = DocActions.layout(Studio.typeOf(d).code, hasVideo)
+            for (a in lay.primary) actionsHost.addView(actionView(a), lp(-1, -2, 8))
+            if (lay.more.isNotEmpty()) {
+                val moreViews = ArrayList<View>()
+                for (a in lay.more) moreViews.add(actionView(a).apply { layoutParams = lp(-1, -2, 8) })
+                moreViews.add(ui.text("الترجمة بتظهر في 📚 مكتبة الترجمات — ولو المصدر لينك، من غير ملف SRT جنب الفيديو (التفريغ نفسه مفيهوش ملف محلي).", 11.5f, th.muted).apply { layoutParams = lp(-1, -2, 4) })
+                actionsHost.addView(ui.section("⋯ المزيد", false, *moreViews.toTypedArray()), lp(-1, -2, 10))
+            }
         }
-        content.addView(pill("📥 تحميل / مشاركة الترجمة") { shareTranslation(d) }, lp(-1, -2, 8))
-        content.addView(pill("🔍 فحص جودة الترجمة") { runSrtCheck(d) }, lp(-1, -2, 8))
-        content.addView(pill("✂ قص مقطع ومشاركته") { clipDialog(d) }, lp(-1, -2, 8))
-        content.addView(pill("📝 ترجمة لـSRT") { runSrt(d, srtStatus) }, lp(-1, -2, 8))
-        content.addView(pill("📚 فتح مكتبة الترجمات") {
-            try {
-                TrLibUi(act, ui, th).show()
-            } catch (e: Throwable) { LogStore.err("StudioUi:trlib", e) }
-        }, lp(-1, -2, 8))
-        content.addView(ui.text("الترجمة بتظهر في 📚 مكتبة الترجمات — ولو المصدر لينك، من غير ملف SRT جنب الفيديو (التفريغ نفسه مفيهوش ملف محلي).", 11.5f, th.muted), lp(-1, -2, 4))
+        actionsPainter()
+        content.addView(actionsHost, lp(-1, -2, 0))
         content.addView(pill("🗑 حذف التفريغ", danger = true) {
             GAlert(act).setTitle("🗑 حذف التفريغ").setMessage("«${Studio.displayTitle(d).take(50)}» — هيمسح التفريغ والترجمة والملخصات والعلامات نهائيًا.")
                 .setPositiveButton("حذف") { _, _ ->

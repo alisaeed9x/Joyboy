@@ -32,9 +32,10 @@ class CallChatUi(private val act: Activity, private val ui: Ui, private val th: 
     private fun glassBg(r: Int): android.graphics.drawable.Drawable =
         if (MtGlass.on()) MtGlass.pill(th, MtGlass.fill(th), ui.dp(r).toFloat(), act.resources.displayMetrics.density) else ui.box(th.surface, th.border, 12)
 
-    private fun bubbleBg(me: Boolean): android.graphics.drawable.Drawable {
-        if (!me) return glassBg(16)
-        val tint = Glass.alpha(th.primary, 0x33)
+    private fun bubbleBg(me: Boolean, gender: String = ""): android.graphics.drawable.Drawable {
+        val gc = genderColor(gender)
+        if (!me && gc == 0) return glassBg(16)
+        val tint = if (gc != 0) Glass.alpha(gc, 0x26) else Glass.alpha(th.primary, 0x33)
         return if (MtGlass.on()) MtGlass.pill(th, tint, ui.dp(16).toFloat(), act.resources.displayMetrics.density) else ui.box(tint, th.border, 16)
     }
 
@@ -45,6 +46,11 @@ class CallChatUi(private val act: Activity, private val ui: Ui, private val th: 
             background = if (primary) Glass.primaryFill(th, ui.dp(16).toFloat()) else glassBg(16)
             isClickable = true; Glass.pressable(this); setOnClickListener { onClick() }
         }
+
+    // (v1036) لون لكل جنس: ذكر أزرق، أنثى وردي — بيغلب لون الحرف لما الجنس يتعرف
+    private val maleCol = 0xFF42A5F5.toInt()
+    private val femaleCol = 0xFFEC407A.toInt()
+    private fun genderColor(g: String): Int = when (g) { "male" -> maleCol; "female" -> femaleCol; else -> 0 }
 
     private fun spkColor(spk: String): Int = when (spk) {
         "A" -> th.primary
@@ -83,7 +89,7 @@ class CallChatUi(private val act: Activity, private val ui: Ui, private val th: 
         fun headerLine(): String {
             val parties = synchronized(d) { d.parties.toList() }
             val parts = ArrayList<String>()
-            if (parties.isNotEmpty()) parts.add(parties.joinToString(" · "))
+            if (parties.isNotEmpty()) parts.add(parties.mapIndexed { i, nm -> nm + (Lecture.genderMark(d, ('A' + i).toString()).let { m -> if (m.isEmpty()) "" else " $m" }) }.joinToString(" · "))
             if (d.durSec > 0) parts.add(Lecture.fmtTime(d.durSec))
             parts.add(statusOf(d))
             if (d.lang.isNotBlank()) parts.add("🌐 " + d.lang)
@@ -134,31 +140,93 @@ class CallChatUi(private val act: Activity, private val ui: Ui, private val th: 
 
         // (v1001) ▶ على الفقاعة: شغّل التسجيل من لحظة الفقاعة في المشغّل المصغّر (من غير ما تسيب الدردشة).
         // لينك من غير ملف محلي (uri فاضي) مفيهوش زرار تشغيل أصلًا.
-        fun playAt(sec: Double) {
+        // (v1030) ▶ بيشغّل الرسالة دي بس: بيقف لوحده عند آخرها، والرسالة اللي بعدها بزرار ▶ بتاعها.
+        var stopWatch: Runnable? = null
+        fun cancelWatch() { stopWatch?.let { main.removeCallbacks(it) }; stopWatch = null }
+        fun playAt(sec: Double, endSec: Double = 0.0) {
             if (d.uri.isBlank()) {
                 Notice.show(act, "مفيش ملف صوت محلي للمكالمة دي", 2400L)
                 return
             }
             try {
+                cancelWatch()
                 val ms = (sec * 1000.0).toInt().coerceAtLeast(0)
                 val title = Studio.displayTitle(d).ifBlank { "مكالمة" }
-                MusicEngine.play(act, listOf(Links.trackOf(d.uri, title)), 0, false, ms)
-                Notice.show(act, "▶ بيشغّل من " + Lecture.fmtTime(sec), 1800L)
+                val track = Links.trackOf(d.uri, title)
+                MusicEngine.play(act, listOf(track), 0, false, ms)
+                Notice.show(act, "▶ بيشغّل الرسالة دي بس (من " + Lecture.fmtTime(sec) + ")", 1800L)
+                if (endSec > sec + 0.2) {
+                    val endMs = (endSec * 1000.0).toInt()
+                    val myUri = track.uri
+                    val giveUpAt = System.currentTimeMillis() + ((endSec - sec) * 1000.0).toLong() + 20000L
+                    val w = object : Runnable {
+                        override fun run() {
+                            if (stopWatch !== this) return
+                            try {
+                                // لو المشغّل بقى على حاجة تانية (المستخدم شغّل أغنية/تسجيل غيره) نفك المراقبة من غير ما نقفل حاجة
+                                if (!alive || MusicEngine.current?.uri != myUri || System.currentTimeMillis() > giveUpAt) { stopWatch = null; return }
+                                if (MusicEngine.ready && MusicEngine.posMs >= endMs) {
+                                    MusicEngine.pause()
+                                    stopWatch = null
+                                    return
+                                }
+                            } catch (_: Throwable) { stopWatch = null; return }
+                            main.postDelayed(this, 80L)
+                        }
+                    }
+                    stopWatch = w
+                    main.postDelayed(w, 250L)
+                }
             } catch (e: Throwable) {
                 LogStore.err("CallChatUi:play", e)
                 Notice.show(act, "⚠ مقدرتش أشغّل الصوت", 2400L)
             }
         }
 
+        // (v1036) 🔄 «بدّل الأطراف من هنا»: A↔B من الفقاعة دي لآخر المكالمة
+        fun swapFromDialog(sec: Double) {
+            if (Lecture.isRunning(d.id)) { Notice.show(act, "استنى التفريغ يخلص الأول", 2400L); return }
+            GAlert(act).setTitle("🔄 بدّل الأطراف من هنا")
+                .setMessage("هيتبدّل «أ» و«ب» في كل الكلام من " + Lecture.fmtTime(sec) + " لآخر المكالمة (اللي قبله ما بيتغيّرش). التنظيم والتلخيص الحاليين هيتمسحوا عشان بيتبنوا على الأطراف القديمة.")
+                .setPositiveButton("بدّل") { _, _ ->
+                    val n = Lecture.swapFrom(act, d, sec)
+                    Notice.show(act, if (n > 0) "🔄 اتبدّلت " + n + " جملة — الملخص/التنظيم اتمسحوا" else "مفيش حاجة اتبدّلت", 3000L)
+                    lastSig = ""; renderAllFn(); refreshHeader()
+                }.setNegativeButton("إلغاء", null).show()
+        }
+
+        // (v1036) فقاعة «جزء ناقص» مكانه الزمني — الدوسة = إعادة محاولة الأجزاء الناقصة بس
+        fun failedRow(b: CallChat.Bubble): View {
+            val box = vcol().apply { setPadding(ui.dp(12), ui.dp(10), ui.dp(12), ui.dp(10)); background = glassBg(16) }
+            box.addView(ui.text(b.name, 12.5f, amber, true))
+            box.addView(ui.text(b.text, 12.5f, th.muted), lp(-1, -2, 4))
+            box.isClickable = true; Glass.pressable(box)
+            box.setOnClickListener {
+                if (Lecture.isRunning(d.id)) { Notice.show(act, "التفريغ شغّال دلوقتي", 2000L); return@setOnClickListener }
+                Lecture.start(act, d)
+                Notice.show(act, "🔁 بعيد الأجزاء الناقصة…", 2400L)
+                lastSig = ""; renderAllFn(); refreshHeader()
+            }
+            return box
+        }
+
         fun bubbleRow(b: CallChat.Bubble): View {
+            if (b.failedChunk >= 0) return failedRow(b)
             val me = CallChat.isMe(d, b.spk)
-            val box = vcol().apply { setPadding(ui.dp(12), ui.dp(10), ui.dp(12), ui.dp(10)); background = bubbleBg(me) }
+            val box = vcol().apply { setPadding(ui.dp(12), ui.dp(10), ui.dp(12), ui.dp(10)); background = bubbleBg(me, b.gender) }
             val top = hrow()
-            top.addView(ui.text(b.name, 12.5f, spkColor(b.spk), true).apply { maxLines = 1; ellipsize = TextUtils.TruncateAt.END }, LinearLayout.LayoutParams(0, -2, 1f))
+            val gcol = genderColor(b.gender)
+            top.addView(ui.text(b.name + (Lecture.genderMark(d, b.spk).let { m -> if (m.isEmpty()) "" else " $m" }), 12.5f, if (gcol != 0) gcol else spkColor(b.spk), true).apply { maxLines = 1; ellipsize = TextUtils.TruncateAt.END }, LinearLayout.LayoutParams(0, -2, 1f))
+            if ((b.spk == "A" || b.spk == "B") && !Lecture.isRunning(d.id)) {
+                top.addView(ui.text("🔄", 13f, th.muted, true).apply {
+                    setPadding(ui.dp(10), ui.dp(2), ui.dp(2), ui.dp(2)); isClickable = true; Glass.pressable(this)
+                    setOnClickListener { swapFromDialog(b.start) }
+                })
+            }
             if (d.uri.isNotBlank()) {
                 top.addView(ui.text("▶", 14f, th.primary, true).apply {
                     setPadding(ui.dp(10), ui.dp(2), ui.dp(2), ui.dp(2)); isClickable = true; Glass.pressable(this)
-                    setOnClickListener { playAt(b.start) }
+                    setOnClickListener { playAt(b.start, b.end) }
                 })
             }
             box.addView(top)
@@ -250,8 +318,74 @@ class CallChatUi(private val act: Activity, private val ui: Ui, private val th: 
             LectureUi(act, ui, th).openList(d)
         }, LinearLayout.LayoutParams(0, -2, 1f))
 
+        // (v1030) 🔁 إعادة تفريغ + 🗑 حذف التفريغ من شاشة المكالمة نفسها (نفس منطق StudioUi.restartDoc / confirmDelete)
+        var ddRef: android.app.Dialog? = null
+        fun busy(): Boolean = Lecture.isRunning(d.id) || StudioComplete.isRunning(d.id)
+        val acts2 = hrow().apply { layoutParams = LinearLayout.LayoutParams(-1, -2).apply { topMargin = ui.dp(6) } }
+        acts2.addView(pill("🔁 إعادة تفريغ") {
+            GAlert(act).setTitle("🔁 إعادة التفريغ من الأول")
+                .setMessage("«" + Studio.displayTitle(d).take(50) + "» — هيمسح التفريغ الحالي والتنظيم والتلخيص ويفرّغ كل الأجزاء من جديد.")
+                .setPositiveButton("امسح وفرّغ من الأول") { _, _ ->
+                    Notice.show(act, "⏳ بجهّز إعادة التفريغ…", 2200L)
+                    Thread {
+                        try {
+                            StudioComplete.stop(d.id)
+                            Lecture.stop(d.id)
+                            var waited = 0
+                            while (busy() && waited < 60) { Thread.sleep(500L); waited++ }
+                            if (busy()) {
+                                main.post { Notice.show(act, "التفريغ لسه بيقفل — جرّب تاني بعد ثواني", 3000L) }
+                            } else {
+                                Lecture.resetTranscript(act, d)
+                                Lecture.start(act, d)
+                                main.post { Notice.show(act, "🔁 التفريغ بدأ من الأول", 2600L); lastSig = ""; renderAll(); refreshHeader() }
+                            }
+                        } catch (e: Throwable) {
+                            LogStore.err("CallChatUi:restart", e)
+                            main.post { Notice.show(act, "⚠ مقدرتش أعيد التفريغ", 2600L) }
+                        }
+                    }.apply { isDaemon = true }.start()
+                }
+                .setNegativeButton("إلغاء", null).show()
+        }, LinearLayout.LayoutParams(0, -2, 1f).apply { marginEnd = ui.dp(6) })
+        acts2.addView(pill("🗑 حذف التفريغ") {
+            GAlert(act).setTitle("🗑 حذف التفريغ")
+                .setMessage("«" + Studio.displayTitle(d).take(50) + "» — هيمسح التفريغ والترجمة والملخصات والعلامات نهائيًا.")
+                .setPositiveButton("حذف") { _, _ ->
+                    Thread {
+                        try {
+                            StudioComplete.stop(d.id)
+                            Lecture.stop(d.id)
+                            Lecture.deleteFull(act, d.id)
+                            main.post { Notice.show(act, "🗑 اتحذف التفريغ", 2200L); try { ddRef?.dismiss() } catch (_: Throwable) {} }
+                        } catch (e: Throwable) {
+                            LogStore.err("CallChatUi:delete", e)
+                            main.post { Notice.show(act, "⚠ مقدرتش أحذف التفريغ", 2600L) }
+                        }
+                    }.apply { isDaemon = true }.start()
+                }
+                .setNegativeButton("إلغاء", null).show()
+        }, LinearLayout.LayoutParams(0, -2, 1f).apply { marginEnd = ui.dp(6) })
+        // (v1036) ⚧ جنس الأطراف: تلقائي من التفريغ، وتعديل يدوي بيغلب التلقائي
+        acts2.addView(pill("⚧ الجنس") {
+            val letters = synchronized(d) {
+                (d.segs.map { it.spk }.filter { it.length == 1 && it[0] in 'A'..'E' } + d.parties.indices.map { ('A' + it).toString() }).toSet().sorted()
+            }
+            if (letters.isEmpty()) { Notice.show(act, "مفيش أطراف لسه — فرّغ المكالمة الأول", 2400L); return@pill }
+            val labels = letters.map { l -> CallChat.speakerName(d, l) + "  " + Lecture.genderMark(d, l).ifEmpty { "؟" } }.toTypedArray()
+            GAlert(act).setTitle("⚧ جنس الأطراف").setItems(labels) { _, w ->
+                val l = letters[w]
+                GAlert(act).setTitle(CallChat.speakerName(d, l)).setItems(arrayOf("🤖 تلقائي (من التفريغ الجاي)", "♂ ذكر", "♀ أنثى")) { _, g ->
+                    Lecture.setPartyGender(act, d, l[0] - 'A', when (g) { 1 -> "m"; 2 -> "f"; else -> "" })
+                    Notice.show(act, "اتحفظ — هيتطبّق على أي ترجمة جاية (الترجمات اللي اتعملت قبل كده ما بتتغيّرش)", 3200L)
+                    lastSig = ""; renderAllFn(); refreshHeader()
+                }.setNegativeButton("إلغاء", null).show()
+            }.setNegativeButton("إغلاق", null).show()
+        }, LinearLayout.LayoutParams(0, -2, 1f))
+
         var tick: Runnable? = null
-        val dd = ui.sheet(act, "📞 " + Studio.displayTitle(d).take(28), listOf<View>(content), fixedH = true, onClose = { alive = false; tick?.let { main.removeCallbacks(it) } }, footer = listOf<View>(acts))
+        val dd = ui.sheet(act, "📞 " + Studio.displayTitle(d).take(28), listOf<View>(content), fixedH = true, onClose = { alive = false; cancelWatch(); tick?.let { main.removeCallbacks(it) } }, footer = listOf<View>(acts, acts2))
+        ddRef = dd
         renderAllFn = { renderAll() }
         refreshHeader()
         renderAll()
@@ -296,6 +430,28 @@ class CallChatUi(private val act: Activity, private val ui: Ui, private val th: 
     // ===================== 🎤 الأصوات المحفوظة =====================
     fun showVoices() {
         val list = vcol()
+        // (v1036 — المرحلة 4) ▶ سماع البصمة المحفوظة: ملف مؤقت في الكاش + MediaPlayer لوحده (من غير ما نلمس مشغّل الموسيقى)
+        var player: android.media.MediaPlayer? = null
+        fun stopPlayer() { try { player?.release() } catch (_: Throwable) {}; player = null }
+        fun playVoice(v: CallKit.VoiceEntry) {
+            try {
+                stopPlayer()
+                val bytes = CallKit.voice(act, v.key)
+                if (bytes == null) { Notice.show(act, "⚠ ملف البصمة مش موجود", 2400L); return }
+                val f = java.io.File(act.cacheDir, "voice_preview.wav")
+                f.writeBytes(bytes)
+                val mp = android.media.MediaPlayer()
+                mp.setDataSource(f.absolutePath)
+                mp.setOnCompletionListener { try { it.release() } catch (_: Throwable) {}; if (player === it) player = null }
+                mp.prepare()
+                mp.start()
+                player = mp
+                Notice.show(act, "▶ بيشغّل بصمة «" + v.name + "»", 1600L)
+            } catch (e: Throwable) {
+                LogStore.err("CallChatUi:voicePlay", e)
+                Notice.show(act, "⚠ مقدرتش أشغّل البصمة", 2400L)
+            }
+        }
         fun render() {
             list.removeAllViews()
             val voices = try {
@@ -305,7 +461,7 @@ class CallChatUi(private val act: Activity, private val ui: Ui, private val th: 
                 emptyList()
             }
             if (voices.isEmpty()) {
-                list.addView(ui.text("مفيش بصمات محفوظة لسه — افتح أي مكالمة ← 🎤 احفظ بصمة.", 12.5f, th.muted).apply { setPadding(ui.dp(4), ui.dp(8), ui.dp(4), ui.dp(8)) })
+                list.addView(ui.text("مفيش بصمات محفوظة لسه — دوس ➕ فوق واختار مكالمة.", 12.5f, th.muted).apply { setPadding(ui.dp(4), ui.dp(8), ui.dp(4), ui.dp(8)) })
                 return
             }
             for (v in voices) {
@@ -316,6 +472,10 @@ class CallChatUi(private val act: Activity, private val ui: Ui, private val th: 
                 val date = java.text.SimpleDateFormat("yyyy/MM/dd", java.util.Locale.US).format(java.util.Date(v.ts))
                 t.addView(ui.text("🎤 بصمة محفوظة · " + date, 11.5f, th.muted).apply { maxLines = 1 })
                 top.addView(t, LinearLayout.LayoutParams(0, -2, 1f))
+                top.addView(ui.text("▶", 16f, th.primary, true).apply {
+                    setPadding(ui.dp(10), ui.dp(6), ui.dp(4), ui.dp(6)); isClickable = true; Glass.pressable(this)
+                    setOnClickListener { playVoice(v) }
+                })
                 top.addView(ui.text("✎", 16f, th.muted).apply {
                     setPadding(ui.dp(10), ui.dp(6), ui.dp(4), ui.dp(6)); isClickable = true; Glass.pressable(this)
                     setOnClickListener { renameVoiceDialog(v) { render() } }
@@ -330,9 +490,13 @@ class CallChatUi(private val act: Activity, private val ui: Ui, private val th: 
         }
         val content = vcol().apply { layoutParams = lp(-1, -1) }
         content.addView(ui.text("البصمة بتتحفظ باسم الشخص — لو غيّرت اسم جهة الاتصال في التليفون، البصمة القديمة بتتّم ومبتتربطش بالاسم الجديد (المفتاح مربوط بالاسم وقت الحفظ).", 11.5f, th.muted), lp(-1, -2))
-        content.addView(ui.text("لحفظ بصمة جديدة: افتح أي مكالمة ← 🎤 احفظ بصمة.", 11.5f, th.muted), lp(-1, -2, 4))
+        // (v1036) ➕ بصمة جديدة: بيفتح قايمة المكالمات (فيها «🎤 احفظ بصمة» لكل مكالمة) — بعد الحفظ ارجع افتح الشاشة دي تاني عشان تتحدّث
+        content.addView(pill("➕ حفظ بصمة جديدة من مكالمة") {
+            try { LectureUi(act, ui, th).showCalls() } catch (e: Throwable) { LogStore.err("CallChatUi:addVoice", e) }
+        }, lp(-1, -2, 6))
+        content.addView(ui.text("بعد ما تحفظ بصمة ارجع افتح «الأصوات المحفوظة» تاني عشان تظهر هنا.", 11.5f, th.muted), lp(-1, -2, 4))
         content.addView(ScrollView(act).apply { isVerticalScrollBarEnabled = false; addView(list) }, LinearLayout.LayoutParams(-1, 0, 1f).apply { topMargin = ui.dp(8) })
-        val dd = ui.sheet(act, "🎤 الأصوات المحفوظة", listOf<View>(content), fixedH = true)
+        val dd = ui.sheet(act, "🎤 الأصوات المحفوظة", listOf<View>(content), fixedH = true, onClose = { stopPlayer() })
         dd.show()
         render()
     }

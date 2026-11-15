@@ -477,6 +477,9 @@ class TrLibUi(private val act: Activity, private val ui: Ui, private val th: The
     }
 
     // ===================== السطور: بحث وتعديل =====================
+    /** (v1032) نقطة دخول للاستوديو: نفس شاشة السطور بالظبط لعنصر مبني من دوكيومنت */
+    fun openLines(x: TrLib.Item) = showLines(x)
+
     private fun showLines(x: TrLib.Item) {
         val sv = TrLib.loadSaved(act, x.id)
         if (sv == null || sv.subs.isEmpty()) { Notice.show(act, "مفيش أسطر مترجمة لسه في الفيديو ده", 2600L); return }
