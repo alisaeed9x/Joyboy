@@ -108,7 +108,6 @@ object MtTranslate : JoyboyPlayerHost.Provider {
             player.addListener(trans); listenedOn = player
             refreshBtn(); maybeAuto(); maybeShowStudio()
             MtMedia.attach(activity, player, options, info)
-            try { MtEnhance.attach(activity, player, info) } catch (_: Throwable) {}   // (v988) أوضاع تحسين الصورة (✨)
             try { MtSmooth.attach(activity, player, info) } catch (_: Throwable) {}   // (v988) مطابقة معدل الشاشة + فحص الـdecoder
             try {
                 MtBar.attachCircles(activity, player, overlay, info)

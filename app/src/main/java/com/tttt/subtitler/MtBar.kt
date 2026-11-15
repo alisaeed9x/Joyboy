@@ -147,13 +147,13 @@ object MtBar {
     }
 
     // (v1001 Fix 2) ٤ وضعيات موحّدة مع PlayerLogic وMtTvPlayer: 0 احتواء · 1 ملء بالقص · 2 تمديد · 3 طبيعي 100%
-    private val fitCodes = intArrayOf(0, 1, 2, 3)
+    private val fitCodes = intArrayOf(0, 2)   // (v1020) وضعين بس: Fit + ملء الشاشة (تمديد على أبعاد الشاشة)
+
+    private fun savedFit(): Int = if (Cfg.int("fit", 0) == 2) 2 else 0
 
     private fun fitName(i: Int): String {
         return when (i) {
-            1 -> "Fill"
-            2 -> "Stretch"
-            3 -> "100%"
+            2 -> "ملء الشاشة"
             else -> "Fit"
         }
     }
@@ -247,7 +247,7 @@ object MtBar {
         if (!portrait) {
             // (v1001 Fix 2) لا فرض Fill عند الدخول: إعادة تطبيق وضع المستخدم المحفوظ فقط
             try {
-                bridge(activity, "fit:" + Cfg.int("fit", 0).coerceIn(0, 3))
+                bridge(activity, "fit:" + savedFit())
             } catch (_: Throwable) {}
         }
         val tools = toolbar(activity)
@@ -1261,7 +1261,6 @@ object MtBar {
         row.addView(circ("📝", 12f) { MtTranslate.searchSentences() })
         row.addView(circ("📜", 12f) { showLog(a) })
         // (v988) ✨ سويتش أوضاع تحسين الصورة: إيقاف ← وضوح ← ألوان ← HDR ← كامل (آخر الشريط — مفيش زرار اتحرّك)
-        row.addView(chev("✨ " + MtEnhance.modeName()) { v -> cycleEnhance(a, v as? TextView) }.apply { typeface = Typeface.DEFAULT_BOLD })
         loopBtn = null
         return HorizontalScrollView(a).apply {
             tag = TAG_TOOLS
@@ -1331,7 +1330,7 @@ object MtBar {
     }
 
     /** (v944) الصف الرئيسي بنفس أحجام القديم: شمال 🔓 🗣▾ 🎧 | نص ⏮ ▶ ⏭ (60×44 / 56) | يمين تدوير ⧉ ⛶ (40dp) */
-    /** (v960) ⤢ التمديد (احتواء ← ملء ← تمديد ← 100%) */
+    /** (v960) ⤢ التمديد — (v1020) Fit ↔ ملء الشاشة بس */
     private fun fitButton(a: Activity): TextView {
         val u = uiHelper!!
         return u.fsCircle("⤢") { cycleFit(a) }.apply {
@@ -1400,6 +1399,14 @@ object MtBar {
             }
             left.addView(qualB)
             refreshQuality()
+        }
+        // (v1023) ⇄ تبديل المشغّل: يفتح نفس الفيديو في مشغّل Joyboy القديم من نفس الثانية، والاختيار بيثبت للفيديوهات الجاية (نفس مفتاح الإعدادات). يوتيوب بس على MeeTube فمبيظهرش له.
+        val srcIsLocal = try { !info?.localUri().isNullOrBlank() } catch (_: Throwable) { false }
+        if (srcIsLocal) {
+            left.addView(u.fsCircle("⇄") { switchToOldPlayer(a) }.apply {
+                textSize = 16f
+                layoutParams = LinearLayout.LayoutParams(dp(a, 38), dp(a, 38)).apply { marginStart = dp(a, 4) }
+            })
         }
         // (v954) 🌐 و🎧 اتشالوا من الشريط السفلي (مكرّرين: 🌐 = ⚙ شريحة الترجمة، 🎧 = سماعة MeeTube اللي فوق الشمال)
         val mid = LinearLayout(a).apply {
@@ -1509,11 +1516,37 @@ object MtBar {
         } catch (_: Throwable) {}
     }
 
+    /** (v1023) ⇄ نفس الفيديو في مشغّل Joyboy القديم (Player.kt) من نفس الثانية + تثبيت الاختيار (mt_main_player = مقفول) */
+    private fun switchToOldPlayer(a: Activity) {
+        try {
+            val i = info ?: return
+            val lu = try { i.localUri() } catch (_: Throwable) { null }
+            if (lu.isNullOrBlank()) { Notice.show(a, "يوتيوب بيشتغل على MeeTube بس", 2300L); return }
+            val it = android.content.Intent(a, PlayerActivity::class.java)
+            if (lu.startsWith("http://", true) || lu.startsWith("https://", true)) it.putExtra("url", lu)
+            else { it.data = android.net.Uri.parse(lu); it.addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION) }
+            try { i.headers()?.let { h ->
+                h["User-Agent"]?.let { v -> it.putExtra("ua", v) }
+                h["Referer"]?.let { v -> it.putExtra("ref", v) }
+                h["Cookie"]?.let { v -> it.putExtra("cookie", v) }
+            } } catch (_: Throwable) {}
+            try { i.audioUrl()?.takeIf { s -> s.isNotEmpty() }?.let { v -> it.putExtra("aurl", v) } } catch (_: Throwable) {}
+            try { i.title()?.takeIf { s -> s.isNotBlank() }?.let { v -> it.putExtra("title", v) } } catch (_: Throwable) {}
+            val pos = try { player?.currentPosition ?: 0L } catch (_: Throwable) { 0L }
+            if (pos > 1000L) it.putExtra("startms", pos.toInt())
+            Cfg.put(MtPlay.KEY, "0")
+            try { player?.pause() } catch (_: Throwable) {}
+            a.startActivity(it)
+            a.finish()
+        } catch (e: Throwable) {
+            LogStore.err("MtBar:switchToOld", e)
+            Notice.show(a, "⇄ ما قدرتش أبدّل المشغّل", 2300L)
+        }
+    }
+
     private fun cycleFit(a: Activity) {
         // (v1001 Fix 2) مصدر الحقيقة هو Cfg "fit" (0..3)، مش وضع صندوق MeeTube
-        val cur = try {
-            Cfg.int("fit", 0).coerceIn(0, 3)
-        } catch (_: Throwable) { 0 }
+        val cur = try { savedFit() } catch (_: Throwable) { 0 }
         val idx = fitCodes.indexOf(cur)
         val n = fitCodes[(idx + 1) % fitCodes.size]
         try { Cfg.put("fit", n.toString()) } catch (_: Throwable) {}

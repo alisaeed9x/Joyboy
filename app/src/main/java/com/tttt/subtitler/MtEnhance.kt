@@ -260,6 +260,20 @@ object MtEnhance {
         }
     }
 
+    /** (v1020) الفيت/الملء غيّر مقاس سطح الفيديو: لو الفلتر شغّال، الـVideoSink لازم يتبني تاني على المقاس الجديد وإلا الزرار «يتعطل» لحد الخروج */
+    fun onSurfaceResized() {
+        try {
+            if (applied.isEmpty()) return
+            ui.postDelayed({
+                try {
+                    val pp = player ?: return@postDelayed
+                    if (applied.isEmpty()) return@postDelayed
+                    cycleVideoRenderer(pp)
+                } catch (_: Throwable) {}
+            }, 180L)
+        } catch (_: Throwable) {}
+    }
+
     /** (v992) disable/enable لمسار الفيديو (~250ms) — بيعيد onEnabled للريندرر فيتبني الـVideoSink بالمؤثرات الحالية */
     private fun cycleVideoRenderer(p: ExoPlayer) {
         try {

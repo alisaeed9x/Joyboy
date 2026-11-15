@@ -314,8 +314,6 @@ com/tttt/subtitler/VisualMode.kt
 com/tttt/subtitler/VoiceClean.kt
 com/tttt/subtitler/WallSources.kt
 com/tttt/subtitler/WallStore.kt
-com/tttt/subtitler/WaridFiles.kt
-com/tttt/subtitler/WaridTx.kt
 com/tttt/subtitler/WebIdent.kt
 com/tttt/subtitler/WebMute.kt
 com/tttt/subtitler/WebVideos.kt

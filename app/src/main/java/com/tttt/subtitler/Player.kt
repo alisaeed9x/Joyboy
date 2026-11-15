@@ -2189,7 +2189,7 @@ class PlayerActivity : Activity(), Host {
     var offsetMs = 0L; var speed = 1f; var fit = 0; var fsFit = 2; var ccOn = true; var fitFsB: TextView? = null
     fun isLandNow() = resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
     /** أفقي: وضع الشاشة الكاملة (الافتراضي تمديد) — رأسي: وضع منفصل (الافتراضي احتواء) */
-    fun curFit(): Int { val m = if (isLandNow()) fsFit else fit; return if (m == 3 && DeviceUi.isTv(this)) 0 else m }   // (v707) «100%» محتاج قرص بصباعين — مش بيشتغل بالريموت فعلى التلفزيون متشال
+    fun curFit(): Int { val m = if (isLandNow()) fsFit else fit; return if (m == 2) 2 else 0 }   // (v1020) احتواء / ملء الشاشة بس (القديم 1 و3 بيتحوّلوا لاحتواء)   // (v707) «100%» محتاج قرص بصباعين — مش بيشتغل بالريموت فعلى التلفزيون متشال
     lateinit var svRef: android.view.SurfaceView
     @Volatile var visNow = 0.0
     var vidW = 0; var vidH = 0
@@ -2366,7 +2366,7 @@ class PlayerActivity : Activity(), Host {
     }
     // (v469) أسماء أوضاع العرض: الثلاثة الأصلية من PlayerLogic + وضع رابع «100%» (حجم طبيعي 1:1 مع زوم بالقرص) بيتحسب هنا
     private var vidZoomF = 1f
-    fun fitNameOf(m: Int): String = if (m == 3) "100%" else PlayerLogic.fitNames[m.coerceIn(0, 2)]
+    fun fitNameOf(m: Int): String = if (m == 2) "ملء الشاشة" else "احتواء"   // (v1020) وضعين بس
     fun cycleFitNow() {
         if (remote && !rmFitSkip) {   // (v604) الاحتواء/التكبير: موبايل ولا تلفزيون؟
             rmChoose("📐 شكل الصورة", "📱 على الموبايل بس", "📺 على التلفزيون", { rmFitSkip = true; try { cycleFitNow() } finally { rmFitSkip = false } }, {
@@ -2374,11 +2374,10 @@ class PlayerActivity : Activity(), Host {
             })
             return
         }
-        val nFit = if (DeviceUi.isTv(this)) 3 else 4
-        if (isLandNow()) { fsFit = (fsFit % nFit + 1) % nFit; Cfg.p.edit().putString("fs_fit", fsFit.toString()).apply() }
-        else { fit = (fit % nFit + 1) % nFit; Cfg.p.edit().putString("fit", fit.toString()).apply() }
+        if (isLandNow()) { fsFit = if (curFit() == 2) 0 else 2; Cfg.p.edit().putString("fs_fit", fsFit.toString()).apply() }   // (v1020) وضعين بس
+        else { fit = if (curFit() == 2) 0 else 2; Cfg.p.edit().putString("fit", fit.toString()).apply() }
         fitFsB?.text = "⬛ " + fitNameOf(curFit()); applyFit(svRef, videoBoxRef)
-        say("⬛ " + fitNameOf(curFit()) + (if (curFit() == 3) " — اقرص بصباعين للتكبير/التصغير" else ""))
+        say("⬛ " + fitNameOf(curFit()))
     }
     var vid = ""
     // ===== استكمال/إعادة ترجمة + ترجمة في الخلفية =====
@@ -4455,11 +4454,13 @@ class PlayerActivity : Activity(), Host {
             giShow(dualLabel(), Gravity.CENTER)
         }
         var fsSpeedB: TextView? = null
+        var spdVisB: TextView? = null   // (v1025) زرار السرعة الظاهر في الشريط العلوي
         var ccFsB: TextView? = null
         fun cycleSpeed() {
             speed = PlayerLogic.nextSpeed(speed); player.setPlaybackSpeed(speed)
             Cfg.p.edit().putString("speed", speed.toString()).putString("speed:$vid", speed.toString()).apply()   // (v469) الدورة كمان بتحفظ لكل فيديو
             fsSpeedB?.text = "⏩ " + PlayerLogic.speedLabel(speed)
+            spdVisB?.text = PlayerLogic.speedLabel(speed)
             giShow("⏱ " + PlayerLogic.speedLabel(speed), Gravity.CENTER)
         }
         fun toggleCc() {
@@ -4570,12 +4571,13 @@ class PlayerActivity : Activity(), Host {
         if (noSub) { ccOn = false; ccB.alpha = 0.4f; ctl.cc.alpha = 0.4f }
         val fitB = fb("⬛ " + fitNameOf(curFit())) { v ->
             if (remote) { cycleFitNow(); return@fb }   // (v604) يسأل موبايل/تلفزيون
-            if (isLandNow()) { fsFit = (fsFit + 1) % 4; Cfg.p.edit().putString("fs_fit", fsFit.toString()).apply() }
-            else { fit = (fit + 1) % 4; Cfg.p.edit().putString("fit", fit.toString()).apply() }
+            if (isLandNow()) { fsFit = if (curFit() == 2) 0 else 2; Cfg.p.edit().putString("fs_fit", fsFit.toString()).apply() }   // (v1020) وضعين بس
+            else { fit = if (curFit() == 2) 0 else 2; Cfg.p.edit().putString("fit", fit.toString()).apply() }
             v.text = "⬛ " + fitNameOf(curFit()); applyFit(sv, videoBox)
         }
         fitFsB = fitB
         val menuB = IconGlyphButton(this, "menu").apply { background = ui.box(0xE0141418.toInt(), 0x1FFFFFFF, 12); setOnClickListener { togglePop(this, gTool, false) } }
+        val swB = ui.fsCircle("⇄") { switchToMeeTube() }.apply { textSize = 16f; setOnLongClickListener { giShow("تبديل المشغّل", Gravity.CENTER); true } }   // (v1023) ⇄ نفس الفيديو في مشغّل MeeTube + تثبيت الاختيار
         val bgOnB = IconGlyphButton(this, if (Cfg.bool("ask_bg_exit", true)) "check_box" else "box").apply {
             background = ui.box(0xE0141418.toInt(), 0x1FFFFFFF, 12)
             setOnClickListener {
@@ -4647,7 +4649,15 @@ class PlayerActivity : Activity(), Host {
         gTool.addView(pd("📤 تصدير SRT") { doExport() })
         gTool.addView(pd("📥 استيراد ملف ترجمة (بيترجم فورًا)") { doImport() })
         gTool.addView(pd("📂 فتح فيديو") { doOpen() })
-        gTool.addView(pd("✨ تحسين الصورة: " + (try { MtEnhance.modeName() } catch (_: Throwable) { "إيقاف" })) { v -> mtEnhanceCycle(v) })   // (v1013) من MtBar
+        // (v1025) اللي اتشال من الشريط العلوي لقلّة الاستعمال بقى هنا
+        gTool.addView(pd("📜 اللوج") { toggleLog() })
+        gTool.addView(pd("🧑 الشخصيات") { showChars() })
+        gTool.addView(pd("☑ اسألني عند الخروج (تبديل)") {
+            val on = !Cfg.bool("ask_bg_exit", true)
+            Cfg.put("ask_bg_exit", if (on) "1" else "0")
+            giShowFn(if (on) "هسألك لما تخرج: كمّل في الخلفية ولا لا" else "لما تخرج: الترجمة بتتقفل من غير سؤال ومن غير خلفية")
+        })
+        // (v1020) ✨ تحسين الصورة اتنقل برّه القايمة: زرار لوحده جنب ☰ في الشريط العلوي
         gTool.addView(pd("🕳 سد الفجوات") { engine.retryFailed(); Notice.show(this, ("بحاول أسد الفجوات").toString(), 2300L) })
         // (v87) ترجمات الفيديو: قايمة صغيرة منسدلة بالنسخ المحفوظة (دوسة على نسخة ترجّعها)
         val gVer = gCol()
@@ -4792,6 +4802,11 @@ class PlayerActivity : Activity(), Host {
         val audPill = barPill(tip(mini("🔊") { v -> audPopFn?.invoke(v) }, "لغة الصوت"))   // (v661) بيظهر بس لو الفيديو فيه أكتر من لغة صوت
         audPill.visibility = View.GONE; audPills.add(audPill); toolR.addView(audPill)
         rcViews["dual"] = dualB; rcViews["bgon"] = bgOnB; rcViews["ai"] = aiB   // (v531) ريموت الموبايل
+        // (v1025) إعادة توزيع أزرار الشريط العلوي (الأماكن ثابتة): الأكتر استعمالًا بقت ظاهرة، والأقل اتنقل لقايمة ☰
+        //   ⚡ السرعة ← مكان 📋 اللوج · 🔄 إعادة ترجمة ← مكان 🧑 الشخصيات · 🌙 ترجمة بالخلفية ← مكان ☑ سؤال الخروج
+        val spdB = tip(ui.fsCircle(PlayerLogic.speedLabel(speed)) { cycleSpeed(); showChrome() }.apply { textSize = 11f }, "السرعة"); spdVisB = spdB
+        val rtB = tip(mini("🔄") { batchDialog() }, "إعادة ترجمة")
+        val bgTrB = tip(mini("🌙") { translateInBackground() }, "ترجمة بالخلفية")
         val toolBtns = listOf<TextView>(syncB, tip(logB, "اللوج"), tip(sentB, "الجمل"), tip(ccB, "إظهار/إخفاء الترجمة"), tip(loopB, "تكرار الفيديو"), tip(dualB, "وضع الترجمة"), tip(charsB, "الشخصيات"), tip(voiceB, "فصل صوت الكلام عن الموسيقى"), qualB, nextListB)
         toolBtns.drop(1).filter { it !== voiceB && it !== qualB && it !== nextListB }.forEach { b ->   // (v226) 🔑 اتشال من الشريط العلوي
             toolR.addView(b, LinearLayout.LayoutParams(if (b.text.startsWith("🔑")) ui.dp(42) else ui.dp(30), ui.dp(30)).apply { setMargins(ui.dp(3), 0, ui.dp(3), 0) })
@@ -4822,14 +4837,14 @@ class PlayerActivity : Activity(), Host {
         mid.addView(nextB, LinearLayout.LayoutParams(ui.dp(60), ui.dp(44)).apply { marginStart = ui.dp(8) })
         btnRow.addView(mid, LinearLayout.LayoutParams(-2, -2))
         val rightB = LinearLayout(this).apply { layoutDirection = View.LAYOUT_DIRECTION_LTR; gravity = Gravity.END or Gravity.CENTER_VERTICAL }
-        fsBarFs = ui.fsCircle("⛶") { cycleFitNow(); showChrome() }
-        val rotBarB = ui.fsCircle(Icons.ROT) { toggleFs(); showChrome() }.apply { textSize = 19f }   // لاندسكيب/بورتريت (أيقونة الروتيشن زي MX)
+        fsBarFs = ui.fsCircle("⤢") { cycleFitNow(); showChrome() }.apply { textSize = 18f }   // (v1019) ⤢ التمديد — نفس أيقونة ووظيفة زرار MeeTube (احتواء ← ملء ← تمديد ← 100%)
+        val rotBarB = ui.fsCircle("⛶") { toggleFs(); showChrome() }.apply { textSize = 18f }   // (v1019) ⛶ الشاشة الكاملة/التدوير — نفس أيقونة زرار MeeTube بالظبط
         val pipBarB = ui.fsCircle("⧉") { enterPip() }
         (noticeBtn.parent as? ViewGroup)?.removeView(noticeBtn)
         rightB.addView(noticeBtn, LinearLayout.LayoutParams(-2, ui.dp(34)).apply { marginEnd = ui.dp(8) })
-        rightB.addView(rotBarB, LinearLayout.LayoutParams(ui.dp(40), ui.dp(40)).apply { marginEnd = ui.dp(8) })
         rightB.addView(pipBarB, LinearLayout.LayoutParams(ui.dp(40), ui.dp(40)))
-        rightB.addView(fsBarFs, LinearLayout.LayoutParams(ui.dp(40), ui.dp(40)).apply { marginStart = ui.dp(8) })
+        rightB.addView(fsBarFs, LinearLayout.LayoutParams(ui.dp(40), ui.dp(40)).apply { marginStart = ui.dp(4) })   // (v1019) نفس ترتيب MeeTube: ⤢ ثم ⛶
+        rightB.addView(rotBarB, LinearLayout.LayoutParams(ui.dp(40), ui.dp(40)).apply { marginStart = ui.dp(4) })
         btnRow.addView(rightB, LinearLayout.LayoutParams(0, -2, 1f))
         fsBar.addView(btnRow, LinearLayout.LayoutParams(-1, ui.dp(72)))
         // (v91) في العرض الواسع (لاندسكيب): ⏱ 📋 📝 CC 💬 بتتنقل للصف السفلي جنب 🔄؛ في الضيق (بورتريت) بتفضل في صفها
@@ -4846,17 +4861,20 @@ class PlayerActivity : Activity(), Host {
             leftB.addView(lockB, lockLp()); leftB.addView(aiB); smallIcon(lgIcon); smallIcon(audRouteB)
             (noticeBtn.parent as? ViewGroup)?.removeView(noticeBtn)
             rightB.addView(noticeBtn, LinearLayout.LayoutParams(-2, ui.dp(34)).apply { marginEnd = ui.dp(8) })
-            rightB.addView(rotBarB, LinearLayout.LayoutParams(ui.dp(40), ui.dp(40)).apply { marginEnd = ui.dp(8) })
             rightB.addView(pipBarB, LinearLayout.LayoutParams(ui.dp(40), ui.dp(40)))
-            rightB.addView(fsBarFs, LinearLayout.LayoutParams(ui.dp(40), ui.dp(40)).apply { marginStart = ui.dp(8) })
+            rightB.addView(fsBarFs, LinearLayout.LayoutParams(ui.dp(40), ui.dp(40)).apply { marginStart = ui.dp(4) })   // (v1019) نفس ترتيب MeeTube: ⤢ ثم ⛶
+            rightB.addView(rotBarB, LinearLayout.LayoutParams(ui.dp(40), ui.dp(40)).apply { marginStart = ui.dp(4) })
             // من الشمال لليمين (LTR): 🔁 📋 📝 🔤 ⏱ 💬 CC ☰  ← يعني ☰ على اليمين جنب عداد الجمل
-            tbRow.addView(toolBtns[4], lp(4)); tbRow.addView(toolBtns[1], lp(1)); tbRow.addView(toolBtns[2], lp(2)); tbRow.addView(toolBtns[6], lp(6))
+            tbRow.addView(toolBtns[4], lp(4)); tbRow.addView(spdB, lp(1)); tbRow.addView(toolBtns[2], lp(2)); tbRow.addView(rtB, lp(6))   // (v1025)
             tbRow.addView(textB, LinearLayout.LayoutParams(-2, ui.dp(38)).apply { setMargins(ui.dp(3), ui.dp(3), ui.dp(3), ui.dp(3)) })
             tbRow.addView(toolBtns[0], lp(0)); tbRow.addView(toolBtns[5], lp(5)); tbRow.addView(toolBtns[3], lp(3)); // (v378) 🎙 فصل الصوت و HD و 📃 اتشالوا من الشريط العلوي (الجودة رجعت جنب زرار الترجمة، والتالي بقى لوحة تحت الأزرار)
             // (v221) زرار 🔑 وضع المفاتيح (toolBtns[7]) كان بيتشال هنا ومابيترجّعش — فمكانش بيظهر خالص في الشريط العلوي
-            tbRow.addView(bgOnB, LinearLayout.LayoutParams(ui.dp(40), ui.dp(40)).apply { setMargins(ui.dp(3), ui.dp(3), ui.dp(3), ui.dp(3)) })
+            (bgTrB.parent as? ViewGroup)?.removeView(bgTrB); (spdB.parent as? ViewGroup)?.removeView(spdB); (rtB.parent as? ViewGroup)?.removeView(rtB)
+            tbRow.addView(bgTrB, LinearLayout.LayoutParams(ui.dp(40), ui.dp(40)).apply { setMargins(ui.dp(3), ui.dp(3), ui.dp(3), ui.dp(3)) })   // (v1025) 🌙 مكان ☑
             (toolsB.parent as? ViewGroup)?.removeView(toolsB)
             tbRow.addView(toolsB, LinearLayout.LayoutParams(ui.dp(40), ui.dp(40)).apply { setMargins(ui.dp(3), ui.dp(3), ui.dp(3), ui.dp(3)) })
+            (swB.parent as? ViewGroup)?.removeView(swB)
+            tbRow.addView(swB, LinearLayout.LayoutParams(ui.dp(40), ui.dp(40)).apply { setMargins(ui.dp(3), ui.dp(3), ui.dp(3), ui.dp(3)) })   // (v1023) ⇄ جنب ✨ و☰
             tbRow.addView(menuB, LinearLayout.LayoutParams(ui.dp(40), ui.dp(40)).apply { setMargins(ui.dp(3), ui.dp(3), ui.dp(3), ui.dp(3)) })
             textB.minimumWidth = ui.dp(38); textB.setPadding(ui.dp(8), 0, ui.dp(8), 0)
             textAtBottom = false
@@ -6732,7 +6750,6 @@ class PlayerActivity : Activity(), Host {
             if (mtParityExo === ex) return
             mtParityExo = ex
             try { MtSmooth.attach(this, ex, null) } catch (_: Throwable) {}
-            try { MtEnhance.attach(this, ex, null) } catch (_: Throwable) {}
         } catch (_: Throwable) {}
     }
     private fun mtParityDetach() {
@@ -6740,6 +6757,24 @@ class PlayerActivity : Activity(), Host {
         try { MtEnhance.detach(this) } catch (_: Throwable) {}
         mtParityExo = null
     }
+    /** (v1023) ⇄ نفس الفيديو في مشغّل MeeTube من نفس الثانية، والاختيار بيثبت (mt_main_player = شغّال) للفيديوهات الجاية */
+    private fun switchToMeeTube() {
+        try {
+            if (remote) { say("⇄ مش متاح في وضع الريموت"); return }
+            val i = Intent(intent)
+            val pos = try { player.currentPosition } catch (_: Throwable) { 0L }
+            if (pos > 1000L) i.putExtra("startms", pos.toInt())
+            val was = MtPlay.enabled()
+            Cfg.put(MtPlay.KEY, "1")
+            if (!MtPlay.reroute(this, i)) {
+                Cfg.put(MtPlay.KEY, if (was) "1" else "0")
+                say("⇄ مشغّل MeeTube مش بيدعم الفيديو ده")
+                return
+            }
+            try { player.pause() } catch (_: Throwable) {}
+        } catch (e: Throwable) { LogStore.err("Player:switchToMt", e); say("⇄ ما قدرتش أبدّل المشغّل") }
+    }
+
     private fun mtEnhanceCycle(btn: TextView? = null) {
         mtParityAttach()
         if (mtParityExo == null) { say("✨ تحسين الصورة مش متاح على المشغّل ده"); return }

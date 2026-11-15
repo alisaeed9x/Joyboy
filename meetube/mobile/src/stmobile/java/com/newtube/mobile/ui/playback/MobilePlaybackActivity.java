@@ -5060,6 +5060,17 @@ public class MobilePlaybackActivity extends MobileActivity
             return false;
         }
         float aspect = mVideoAspect;
+        // JOYBOY(v1022): with a video effect on (✨ وضوح/ألوان/HDR/كامل) the renderer's Format no longer
+        // carries the file's rotation (the effect pipeline applies it), so the shape came out wrong and
+        // landscape/vertical videos opened in the wrong orientation. The player's displayed VideoSize is
+        // the final, rotation-applied shape in both modes - trust it first.
+        if (mPlayer != null) {
+            VideoSize shown = mPlayer.getVideoSize();
+            if (shown != null && shown.width > 0 && shown.height > 0) {
+                float par = shown.pixelWidthHeightRatio > 0f ? shown.pixelWidthHeightRatio : 1f;
+                return shown.width * par / shown.height < 1f;
+            }
+        }
         androidx.media3.common.Format format = mPlayer != null ? mPlayer.getVideoFormat() : null;
         if (format != null && format.width > 0 && format.height > 0) {
             float ratio = format.pixelWidthHeightRatio > 0f ? format.pixelWidthHeightRatio : 1f;
@@ -6339,6 +6350,15 @@ public class MobilePlaybackActivity extends MobileActivity
                 setInlineAspect(mVideoAspect);
                 // JOYBOY(v1001 Fix 2): a new video size re-sizes the video surface for the fit mode
                 applyJoyFit();
+                // JOYBOY(v1022): with a video effect the first-rendered-frame event can come late or not
+                // at all, and the orientation decision waits for it - the known size is the fallback.
+                if (mVideoShapePending) {
+                    getWindow().getDecorView().postDelayed(() -> {
+                        if (mVideoShapePending && !isFinishing() && !isDestroyed()) {
+                            onVideoShapeKnown();
+                        }
+                    }, 900L);
+                }
             }
         }
 
@@ -12591,10 +12611,7 @@ public class MobilePlaybackActivity extends MobileActivity
         if (mode == PlayerConstants.RESIZE_MODE_STRETCH) {
             return JOY_FIT_STRETCH;
         }
-        if (mode == PlayerConstants.RESIZE_MODE_FIT_BOTH
-                || mode == PlayerConstants.RESIZE_MODE_FIT_WIDTH) {
-            return JOY_FIT_FILL;
-        }
+        // JOYBOY(v1020): no zoom/crop modes any more - only fit and stretch-to-screen
         return JOY_FIT_FIT;
     }
 
@@ -12781,8 +12798,8 @@ public class MobilePlaybackActivity extends MobileActivity
                 } catch (NumberFormatException e) {
                     n = 0;
                 }
-                if (n < 0 || n > 3) {
-                    n = 0;
+                if (n != JOY_FIT_STRETCH) { // JOYBOY(v1020): two modes only - fit (0) / stretch to the screen (2)
+                    n = JOY_FIT_FIT;
                 }
                 // JOYBOY(v1001 Fix 2): 0 fit, 1 fill-crop, 2 stretch, 3 natural 1:1. Shorts
                 // keep the box modes (setResizeMode forces ZOOM/FIT there); everything else
@@ -12806,18 +12823,10 @@ public class MobilePlaybackActivity extends MobileActivity
                         int cur = mPlayerView != null ? mPlayerView.getResizeMode()
                                 : androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FIT;
                         int next;
-                        if (cur == androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FILL) {
-                            next = 2;
-                        } else if (cur == androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_ZOOM) {
-                            next = 3;
-                        } else if (cur == androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FIXED_WIDTH) {
-                            next = 0;
-                        } else {
-                            next = 1;
-                        }
+                        next = cur == androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FILL ? 0 : 2; // JOYBOY(v1020)
                         return handleJoyboyAction("fit:" + next);
                     }
-                    return handleJoyboyAction("fit:" + ((joyFitMode() + 1) % 4));
+                    return handleJoyboyAction("fit:" + (joyFitMode() == JOY_FIT_STRETCH ? JOY_FIT_FIT : JOY_FIT_STRETCH)); // JOYBOY(v1020)
                 case "pip":
                     enterPipMode();
                     return true;

@@ -2187,17 +2187,20 @@ class BrowserActivity : Activity() {
         if (ev.actionMasked == android.view.MotionEvent.ACTION_DOWN || ev.actionMasked == android.view.MotionEvent.ACTION_UP) lastTouchAt = android.os.SystemClock.uptimeMillis()
         if (ev.actionMasked == android.view.MotionEvent.ACTION_DOWN && fanViews.isNotEmpty()) {   // (v801) دوسة في أي مكان برّا الأزرار = تتصغّر لعلامة البحث بس (والدوسة بتكمّل عادي)
             val rx = ev.rawX.toInt(); val ry = ev.rawY.toInt(); var inside = false
-            val r = android.graphics.Rect()
-            for (v in fanViews + listOf<View>(badge)) { try { if (v.getGlobalVisibleRect(r) && r.contains(rx, ry)) { inside = true; break } } catch (_: Throwable) {} }
+            // (v1020) لاندسكيب: getGlobalVisibleRect بيرجّع إحداثيات النافذة مش الشاشة (فيه إزاحة نوتش/شريط جانبي) فكانت الدوسة على الأزرار بتتعدّ «برّاها» وتقفلها — بنقارن بإحداثيات الشاشة + هامش لمس
+            val slop = ui.dp(10)
+            val loc = IntArray(2)
+            for (v in fanViews + listOf<View>(badge)) { try { v.getLocationOnScreen(loc); if (rx >= loc[0] - slop && rx <= loc[0] + v.width + slop && ry >= loc[1] - slop && ry <= loc[1] + v.height + slop) { inside = true; break } } catch (_: Throwable) {} }
             if (!inside) closeFan()
         }
         // (v852) اتشال: دوسة على الفيديو ماعادتش بتفتح الأزرار — الدايرة بس بتكتب عدد الفيديوهات، ودوسة عليها = دواير الفيديوهات
         if (ev.actionMasked == android.view.MotionEvent.ACTION_UP && ev.eventTime - ev.downTime < 450L && actScrim == null) {   // (v716) دوسة في الصفحة نفسها = الدايرة تدوّر على فيديو
-            try { val r = android.graphics.Rect(); if (webHolder.getGlobalVisibleRect(r) && r.contains(ev.rawX.toInt(), ev.rawY.toInt())) kickScan() } catch (_: Throwable) {}
+            try { val lc = IntArray(2); webHolder.getLocationOnScreen(lc); if (webHolder.isShown && ev.rawX.toInt() in lc[0]..(lc[0] + webHolder.width) && ev.rawY.toInt() in lc[1]..(lc[1] + webHolder.height)) kickScan() } catch (_: Throwable) {}   // (v1024) إحداثيات الشاشة مش النافذة
         }
         if (ev.actionMasked == android.view.MotionEvent.ACTION_DOWN && ::dlBar.isInitialized && dlBar.visibility == View.VISIBLE && dlBar.isLaidOut) {
-            val r = android.graphics.Rect()
-            if (dlBar.getGlobalVisibleRect(r) && !r.contains(ev.rawX.toInt(), ev.rawY.toInt())) hideDl()
+            val lc = IntArray(2); dlBar.getLocationOnScreen(lc)   // (v1024) إحداثيات الشاشة مش النافذة (لاندسكيب)
+            val ox = ev.rawX.toInt(); val oy = ev.rawY.toInt()
+            if (!(ox in lc[0]..(lc[0] + dlBar.width) && oy in lc[1]..(lc[1] + dlBar.height))) hideDl()
         }
         return super.dispatchTouchEvent(ev)
     }
