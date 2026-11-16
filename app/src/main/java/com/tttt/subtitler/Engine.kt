@@ -83,13 +83,13 @@ class Engine(
     private var trP: Pool? = null
     @Synchronized private fun splitPools(): Pair<Pool, Pool> {
         val c = conf
-        val sig = activeMode.toString() + "|" + fastLatched + "|" + c.keys.joinToString(",") + "|" + c.backup.joinToString(",") + "|" + c.refine.joinToString(",")
+        val sig = activeMode.toString() + "|" + fastLatched + "|" + directLatched + "|" + c.keys.joinToString(",") + "|" + c.backup.joinToString(",") + "|" + c.refine.joinToString(",")
         val a = txP; val b = trP
         if (a != null && b != null && sig == splitSig) return a to b
         // (v1071) الوضع السريع: كل المفاتيح بتفرغ ما عدا مفتاح واحد بس هو اللي بيترجم
-        val (nTx, nTr) = if (fastLatched && activeMode >= KeyMode.SPLIT_A && activeMode < KeyMode.TRANSCRIBE_ALL && c.keys.size > 1) (c.keys.size - 1) to 1 else KeyMode.txTrCounts(c.keys.size, activeMode)
+        val (nTx, nTr) = if (directLatched) c.keys.size to c.keys.size else if (fastLatched && activeMode >= KeyMode.SPLIT_A && activeMode < KeyMode.TRANSCRIBE_ALL && c.keys.size > 1) (c.keys.size - 1) to 1 else KeyMode.txTrCounts(c.keys.size, activeMode)
         val txKeys = c.keys.take(nTx)
-        val trKeys = if (c.keys.size <= 1 || activeMode >= KeyMode.TRANSCRIBE_ALL) c.keys else c.keys.takeLast(nTr)   // (v219) الوضع 4: كل المفاتيح بتنسخ وكل المفاتيح بتترجم
+        val trKeys = if (c.keys.size <= 1 || activeMode >= KeyMode.TRANSCRIBE_ALL || directLatched) c.keys else c.keys.takeLast(nTr)   // (v219) الوضع 4: كل المفاتيح بتنسخ وكل المفاتيح بتترجم
         val p1 = Pool(c.withKeys(txKeys)); val p2 = Pool(c.withKeys(trKeys))
         txP = p1; trP = p2; splitSig = sig
         modeMsg = "🔑 وضع $activeMode: ${txKeys.size} مفتاح ترانسكريبشن + ${trKeys.size} مفتاح ترجمة" + (if (c.keys.size <= 1) " (مفتاح واحد بيعمل الاتنين)" else if (activeMode >= KeyMode.TRANSCRIBE_ALL) " (كل المفاتيح بتعمل الاتنين)" else "")   // (v413) مابتتطبعش إلا لما جيميناي يتنده فعلًا
@@ -100,6 +100,8 @@ class Engine(
     // ===== (v1065) وضع الترجمة السريعة ⚡ =====
     /** مفعّل من الإعدادات (ترجمة سريعة). بيتثبّت وقت إنشاء المحرك: التغيير بيشتغل من أول ترجمة جديدة */
     @Volatile private var fastLatched: Boolean = try { Cfg.bool("fastmode", false) } catch (_: Throwable) { false }
+    /** (v1075) السلايدر «سريع ↔ دقيق»: الموضع 0..2 = مسار مباشر (صوت ← ترجمة بطلب واحد وكل المفاتيح بتعمل الاتنين). بيتثبّت وقت بداية الترجمة؛ باقي بلوكات السلايدر لايف (TrSlider) */
+    @Volatile private var directLatched: Boolean = try { TrSlider.direct() } catch (_: Throwable) { false }
     /** الباتش اللي بيتقسّم لخطوات بتكبر عشان أول ترجمة تظهر بدري؛ -1 = لسه مفيش */
     @Volatile private var rampChunk = -1
     @Volatile private var rampStep = 0
@@ -220,6 +222,8 @@ class Engine(
     /** أسلوب الترجمة الحي (تلقائي/حرفي/شعبي/جرئ) وشدته (خفيفة/متوسطة/شديدة): بيتحط في أول برومبت كل باتش جديد وكل تحويل لهجة */
     @Volatile var toneStyle: String = ""
     @Volatile var toneStrength: String = "متوسطة"
+    /** (v1075) أسلوب الترجمة في برومبتات الترجمة بس، وبيتقفل من السلايدر */
+    private fun toneB(): String = if (TrSlider.on("tone") || TrProfile.forcesTone()) toneBlock() else ""   // (v1076) لهجة صريحة من سلايدر النوع ← الشدة تشتغل حتى لو السلايدر سريع
     fun toneBlock(): String {
         val st = toneStyle.ifBlank { "تلقائي" }
         if (st == "حرفي") return ""
@@ -312,7 +316,7 @@ class Engine(
 
     /** (v469) إضافات البرومبت في مكان واحد: سياق (A1) + ذاكرة موضوع (A3) + أمثلة (A2) + قاموس مقفول (A4) */
     private fun promptExtras(prevLine: String = "", nextLine: String = "", withCtx: Boolean = true): String =
-        (if (withCtx) ctxLinesBlock(prevLine, nextLine) else "") + topicBlock() + fewShotBlock() + glossaryBlock()
+        (if (withCtx && TrSlider.on("ctx")) ctxLinesBlock(prevLine, nextLine) else "") + (if (TrSlider.on("topic")) topicBlock() else "") + (if (TrSlider.on("fewshot")) fewShotBlock() else "") + glossaryBlock()   // (v1075) السلايدر
 
     /** (v469) A1: أقرب جملة معروفة قبل بداية الباتش (أصلها + ترجمتها لو موجودة) وأقرب جملة بعد نهايته — لبرومبتات الصوت */
     private fun chunkPrevLine(start: Double): String = try { synchronized(lock) { subs.lastOrNull { it.start < start - 0.01 } }?.let { s -> s.original.trim() + (if (s.translated.isNotBlank() && s.translated != s.original) " ← " + s.translated.trim() else "") } ?: "" } catch (_: Throwable) { "" }
@@ -408,6 +412,7 @@ class Engine(
     }
     /** (v469) A7: تعبئة ترجمات جاهزة من الكاش في مصفوفة مجموعة قبل أي إرسال — بيرجع عدد الجمل اللي اتوفرت (مفاتيح API ما بتتصرفش عليها) */
     private fun cachePrefill(flat: List<Sub>, tr: Array<String?>): Int {
+        if (!TrSlider.on("cache")) return 0   // (v1075) السلايدر
         var n = 0
         for (i2 in flat.indices) {
             val s = flat[i2]
@@ -447,7 +452,7 @@ class Engine(
     }
     /** (v469) A5: فحص أمانة بعد تطبيق مجموعة — سطر ناقصه رقم بيترجم من جديد مرة واحدة بس لكل باتش */
     private fun fidelityFix(chunk: Int, list: List<Sub>): List<Sub> {
-        if (transOnly || keyless || list.isEmpty()) return list
+        if (transOnly || keyless || list.isEmpty() || !TrSlider.on("fidelity")) return list   // (v1075) السلايدر
         val bad = list.indices.filter { !list[it].isSound && list[it].translated.isNotBlank() && missingNums(list[it]).isNotEmpty() }
         if (bad.isEmpty()) return list
         if (!fidDone.add(chunk)) return list
@@ -686,6 +691,16 @@ class Engine(
     }
 
     /** اختيار لهجة التحويل. existing=true: بيحوّل كمان اللي اتترجم قبل كده — من مكان المشاهدة وللقدّام الأول، وبعدين اللي قبله. بيحفظ نسخة باللهجة القديمة قبل التحويل (🗂) */
+    // ===== (v1077) تطبيق بأثر رجعي من ⚙ الترجمة: الجمل اللي اتغيّرت بتتعرض بين أقواس (عرض بس — مابتتحفظش ولا بتتصدّر) =====
+    /** مفاتيح الجمل (pk) اللي اتغيّرت بأثر رجعي */
+    val applied: MutableSet<String> = java.util.concurrent.ConcurrentHashMap.newKeySet()
+    /** تفريغ بأثر رجعي: كل الجمل بتتعرض بنصها الأصلي بين أقواس */
+    @Volatile var origView = false
+    /** الأداة الجاية (تحويل لهجة / إعادة صياغة) تعلّم اللي بتغيّره — بيتصفّر أول ما الأداة تبدأ */
+    @Volatile var markRetro = false
+    fun isApplied(s: Sub): Boolean = pk(s) in applied
+    fun markAllApplied() { synchronized(lock) { for (s in subs) applied.add(pk(s)) } }
+    fun clearMarks() { applied.clear() }
     fun setConvDialect(d: String, existing: Boolean) {
         if (Strict.noGemKeys()) { convDialect = ""; pend.clear(); return }   // (v410) فصحى بس في نص-أونلاين والأوفلاين
         val prev = convDialect
@@ -730,6 +745,7 @@ class Engine(
     }
     private fun convertSubs(tgt: String): Int {
         var changed = 0
+        val mk = markRetro; markRetro = false   // (v1077)
         val snap = synchronized(lock) { subs }
         val idx0 = snap.indices.filter { needsConv(snap[it]) }
         if (idx0.isEmpty()) return 0
@@ -770,7 +786,7 @@ class Engine(
                         if (tr.isEmpty()) continue
                         val t = snap[ix]
                         val at = cur.indexOfFirst { Math.abs(it.start - t.start) < 0.05 && it.original == t.original }
-                        if (at >= 0) { cur[at] = cur[at].copy(translated = tr, conv = true); got.add(ix); if (tr != t.translated) changed++ }
+                        if (at >= 0) { cur[at] = cur[at].copy(translated = tr, conv = true); got.add(ix); if (tr != t.translated) { changed++; if (mk) applied.add(pk(cur[at])) } }
                     }
                     // اللي ما رجعش في الرد يفضل غير محوّل (هيتحاول تاني)، مش بيتعلّم
                     subs = cur
@@ -898,7 +914,8 @@ class Engine(
 
     fun run() {
         if (conf.keys.isEmpty() && conf.backup.isEmpty()) { host.status("⚠ ادخل مفتاح Gemini في الإعدادات"); host.log("⚠ مفيش مفاتيح Gemini"); host.notice("⚠ مفيش مفتاح جيميناي — ضيف واحد من الإعدادات ← المفاتيح"); return }
-        fastLatched = try { Cfg.bool("fastmode", false) } catch (_: Throwable) { false }; rampChunk = -1; fastLight.clear()   // (v1068) الوضع السريع بيتأخد من الإعداد وقت بداية الترجمة (مش وقت فتح المشغّل) — عشان صف «⚡ سريع» في قايمة جيميناي يشتغل على طول
+        fastLatched = try { Cfg.bool("fastmode", false) } catch (_: Throwable) { false }; rampChunk = -1; fastLight.clear()
+        directLatched = try { TrSlider.direct() } catch (_: Throwable) { false }   // (v1075)   // (v1068) الوضع السريع بيتأخد من الإعداد وقت بداية الترجمة (مش وقت فتح المشغّل) — عشان صف «⚡ سريع» في قايمة جيميناي يشتغل على طول
         Api.onSlow = { m -> try { host.status(m) } catch (_: Throwable) {} }   // (v468) مؤشر «باتش بيحاول» في شريط الحالة
         val capMax = basePool.capacity(ppk)
         val ex = Executors.newFixedThreadPool(maxOf(capMax, Offline.MAX_PAR) + 2) { r -> Thread(r).also { it.isDaemon = true } }   // +2: باتش اتنسخ واتحسب من نسخته الاحتياطية ممكن يفضل خيطه الأصلي شغال شوية من غير ما يحجز مكان باتش جديد
@@ -983,12 +1000,12 @@ class Engine(
                 if (gapTick(headless || keepGoing)) continue
                 if (txIdle() && gapBusy.get() == 0 && holeBusy.get() == 0 && finalRefineTick()) { nap(300); continue }   // (v140) تنقيح نهائي قبل ما نقول «خلصت»
                 // (v158) كل المقاطع خلصت: تنقيح كامل واحد بالفيديو كله (بعد التنقيح الجزئي مقطع مقطع)
-                if (!transOnly && txIdle() && gapBusy.get() == 0 && holeBusy.get() == 0 && conf.partialRefine && d > 0 && cStart(firstUndone(d)) >= d && !fullRefineStarted && subs.size >= 12 && toolBusy == null) {
+                if (!transOnly && txIdle() && gapBusy.get() == 0 && holeBusy.get() == 0 && conf.partialRefine && TrSlider.on("refine") && d > 0 && cStart(firstUndone(d)) >= d && !fullRefineStarted && subs.size >= 12 && toolBusy == null) {
                     fullRefineStarted = true; host.log("✍ تنقيح كامل نهائي (الفيديو كله في طلب واحد)…")
                     refineWholeNow({ host.status(it) }, { fullRefineDone = true }); nap(300); continue
                 }
                 if (fullRefineStarted && !fullRefineDone && toolBusy != null) { nap(300); continue }
-                if (headless && txIdle() && gapBusy.get() == 0 && holeBusy.get() == 0 && (gapScanClean || !conf.gapFill) && !hasRepairable() && d > 0 && cStart(firstUndone(d)) >= d) {
+                if (headless && txIdle() && gapBusy.get() == 0 && holeBusy.get() == 0 && (gapScanClean || !conf.gapFill || !TrSlider.on("holes")) && !hasRepairable() && d > 0 && cStart(firstUndone(d)) >= d) {
                     finished = true; host.status("✅ خلصت الترجمة"); break
                 }
                 if (inflight.isEmpty()) maybeConvert(true)
@@ -1100,7 +1117,7 @@ class Engine(
     private fun dispatch(i: Int, ex: java.util.concurrent.ExecutorService, force: Boolean = false, firstKey: String? = null, prep0: Prep? = null) {
         if (!inflight.add(i)) return
         if (fastLatched && rampChunk < 0 && !force) { rampChunk = i; rampStep = 0; rampNext = -1.0 }   // (v1065) أول باتش بيتبعت = اللي بيتقسّم لخطوات بتكبر
-        if (fastLatched && !force && fastLight.size < FAST_LIGHT_N) fastLight.add(i)   // (v1066) برومبت خفيف لأول باتشين
+        if (fastLatched && !force && TrSlider.on("light") && fastLight.size < FAST_LIGHT_N) fastLight.add(i)   // (v1066) برومبت خفيف لأول باتشين
         startedAt[i] = System.currentTimeMillis(); hedged.remove(i)
         // (v151) المفتاح بيتحجز للباتش من لحظة الإرسال (قبل فك الصوت) عشان باتشين ما يتحطوش على نفس المفتاح
         val fk = firstKey ?: pool.pickIdle(i, null, perKey)
@@ -1126,7 +1143,7 @@ class Engine(
      * بنبعت نسخة منه على مفتاح تاني — أول نسخة تخلص هي اللي بتتطبّق والتانية بتتجاهل. نسخة واحدة بس في نفس الوقت.
      */
     private fun hedgeTick() {
-        if (inflight.isEmpty() || hedgeBusy.get() >= 1 || pool.usableCount() < 2 || Offline.on()) return   // (v253) الأوفلاين: نسخة احتياطية بتستنى نفس المعالج
+        if (!TrSlider.on("hedge") || inflight.isEmpty() || hedgeBusy.get() >= 1 || pool.usableCount() < 2 || Offline.on()) return   // (v1075) السلايدر   // (v253) الأوفلاين: نسخة احتياطية بتستنى نفس المعالج
         val now = System.currentTimeMillis()
         val ms = recentMs.toList().sorted()
         val med = if (ms.isEmpty()) 0L else ms[ms.size / 2]
@@ -1162,7 +1179,7 @@ class Engine(
     }
 
     // ===== ترجمة مقطع =====
-    @Synchronized private fun src(): AudioSource = source ?: openSource().also { it.setPreRoll(if (conf.hiTiming) 3.0 else 0.0); source = it }
+    @Synchronized private fun src(): AudioSource = source ?: openSource().also { it.setPreRoll(if (TrSlider.on("hitiming")) 3.0 else 0.0); source = it }   // (v1075) السلايدر بدل إعداد hitiming
 
     private class Prep(val w: WavChunk, val rawStart: Double, val rawEnd: Double)
 
@@ -1353,11 +1370,11 @@ class Engine(
         var srv = 0   // (v459) مفيش موديل بديل: أخطاء السيرفر بتتعاد على نفس الموديل الواحد (كان في v227 بيبدّل لموديل تاني)
         val fastStep = fastLatched && !hedge && !backupFirst && i == rampChunk && rampStep < 2
         // (v1070) الصوت بنص سرعته عشان الدقة
-        val spd = if (fastStep && FAST_SPEED != 1.0 && w.durSec >= 4.0) FAST_SPEED else 1.0
-        val canSplit = fastStep && rampStep == 0 && w.durSec >= 16.0 && !Offline.on() && pool.usableCount() >= 2   // (v1067) طلبين بالتوازي
+        val spd = if (fastStep && FAST_SPEED != 1.0 && w.durSec >= 4.0 && TrSlider.on("slowaudio")) FAST_SPEED else 1.0   // (v1075) السلايدر
+        val canSplit = fastStep && rampStep == 0 && w.durSec >= 16.0 && !Offline.on() && pool.usableCount() >= 2 && TrSlider.on("race")   // (v1067) طلبين بالتوازي
         val sendBytes = if (spd != 1.0) { try { AudioTools.speedUp(w.bytes, spd) } catch (_: Throwable) { w.bytes } } else w.bytes
         val spdEff = if (sendBytes === w.bytes) 1.0 else spd
-        val tx = activeMode >= KeyMode.SPLIT_A && i !in fullChunks   // (v210) ترانسكريبشن بس، والترجمة بعدين مجمّعة على مفاتيح الترجمة
+        val tx = activeMode >= KeyMode.SPLIT_A && i !in fullChunks && !directLatched   // (v1075) المسار المباشر من السلايدر: tx=false ← (v210) ترانسكريبشن بس، والترجمة بعدين مجمّعة على مفاتيح الترجمة
         // (v1071) الوضع السريع بقى هيكلي: نفس المسار ده (تفريغ على كل المفاتيح + ترجمة مجمّعة على مفتاح واحد) بدل الترجمة المباشرة من الصوت
         while (running && tries++ < MAX_TRIES) {
             if (claimed.contains(i)) return   // نسخة تانية من الباتش ده خلصت وطُبّقت قبلنا
@@ -1386,7 +1403,7 @@ class Engine(
                                 if (sd != null) sd
                                 else {
                                     resScale = spdEff
-                                    val k2 = if (i == rampChunk && rampStep < 2 && !Offline.on() && pool.usableCount() >= 2) pool.pickFree(key, rr.getAndIncrement()) else null
+                                    val k2 = if (i == rampChunk && rampStep < 2 && !Offline.on() && pool.usableCount() >= 2 && TrSlider.on("race")) pool.pickFree(key, rr.getAndIncrement()) else null
                                     if (k2 != null && k2 != key) fastRace(i, p, mdl, key, k2, prompt, sendBytes, w.durSec, tmp, spdEff)   // (v1066) أول خطوتين: نفس الطلب على مفتاحين والأسرع يكسب
                                     else {
                                         val sc = StreamSubs()
@@ -1560,7 +1577,7 @@ class Engine(
     private val dialConf = ConcurrentHashMap<String, Conf>()
     /** (v742) كل طلب صوت لجيميناي بياخد بلوك «دقة السماع» في الآخر (لغات غير الإنجليزي بتتسمع غلط كتير بالصوت المضغوط) */
     private fun buildPrompt(durSec: Double, start: Double, strict: Boolean = false, chunk: Int = -1, hole: Boolean = false, holeNear: Boolean = false, tx: Boolean = false): String =
-        buildPromptCore(durSec, start, strict, chunk, hole, holeNear, tx) + (if (lightOn(chunk, hole, tx)) "" else listenBlock())   // (v1066) الخفيف من غير بلوك دقة السماع الطويل
+        buildPromptCore(durSec, start, strict, chunk, hole, holeNear, tx) + (if (lightOn(chunk, hole, tx) || !TrSlider.on("listen")) "" else listenBlock())   // (v1066) الخفيف من غير بلوك دقة السماع الطويل
 
     private fun listenBlock(): String {
         val lang = if (detDone && srcLang.isNotBlank()) " The spoken language is $srcLang (the language name is written in Arabic)." else ""
@@ -1584,13 +1601,13 @@ class Engine(
             val prev = if (hole) "" else Subs.prevContext(subs, start)
             // (v210) tx = طلب ترانسكريبشن بس (الوضعين 3/4، الباتشات العادية). الثغرات والفجوات وإعادة الباتش الكامل بتفضل صوت ← ترجمة مباشرة
             val sl = if (detDone) srcLang else ""   // (v331) لغة الكلام الأصلية بعد ما تتحدد من أول باتش
-            val base = if (tx) toneBlock() + ModePrompts.transcribe(pb, c, durSec, prev, effectiveChars(), effectiveGloss(), strict, hole, holeNear, sl, notes = !hole)
-            else toneBlock() + ModePrompts.english(pb, c, durSec, prev, effectiveChars(), effectiveGloss(), strict, hole, holeNear, sl)
+            val base = if (tx) toneB() + ModePrompts.transcribe(pb, c, durSec, prev, effectiveChars(), effectiveGloss(), strict, hole, holeNear, sl, notes = !hole)
+            else toneB() + ModePrompts.english(pb, c, durSec, prev, effectiveChars(), effectiveGloss(), strict, hole, holeNear, sl)
             return if (tx || hole) base else base + promptExtras(chunkPrevLine(start), chunkNextLine(start, durSec))   // (v469) سياق/أمثلة/ذاكرة/قاموس لبرومبتات الترجمة بس
         }
         val case = pb.caseOf(srcLang, detDone)
         val tf = if (case == "other") synchronized(tplCache) { tplCache[tplKey(pb.templateId(c, "other"))] } else null
-        val built = toneBlock() + pb.build(c, srcLang, detDone, durSec, if (hole) "" else Subs.prevContext(subs, start), effectiveChars(), effectiveGloss(), tf, strict, hole)
+        val built = toneB() + pb.build(c, srcLang, detDone, durSec, if (hole) "" else Subs.prevContext(subs, start), effectiveChars(), effectiveGloss(), tf, strict, hole)
         val built2 = if (hole && holeNear) built.replace(PromptBuilder.holeBlock(), PromptBuilder.holeNearBlock()) else built
         return if (hole) built2 else built2 + promptExtras(chunkPrevLine(start), chunkNextLine(start, durSec))   // (v469)
     }
@@ -1765,8 +1782,8 @@ class Engine(
     private fun crossCheck(i: Int, w: WavChunk, fresh: List<Sub>, key0: String): Pair<List<Sub>, Set<Double>> {
         val none: Pair<List<Sub>, Set<Double>> = fresh to emptySet()
         val mode = try { Cfg.int("dual_listen", 1) } catch (_: Throwable) { 1 }
-        if (mode == 0 || Offline.on() || !running || isClosed || w.silent || fresh.isEmpty()) return none
-        if (mode == 1 && !nonEnglishSrc()) return none
+        if (mode == 0 || !TrSlider.on("cross") || Offline.on() || !running || isClosed || w.silent || fresh.isEmpty()) return none   // (v1075) السلايدر
+        if (mode == 1 && !nonEnglishSrc() && !TrSlider.on("crossall")) return none
         if (pool.usableCount() < 2) return none
         val keyB = pool.pickFree(key0, rr.getAndIncrement()) ?: return none
         if (keyB == key0) return none
@@ -1846,7 +1863,7 @@ class Engine(
      * بنستبدل النص بس لو الرد منطقي (مش فاضي ولا أطول بكتير)؛ التوقيت والباقي زي ما هو. أقصى 4 جمل للباتش. مش بيشتغل مع التفريغ الأوفلاين.
      */
     private fun relistenLow(i: Int, fresh: List<Sub>, key0: String, skip: Set<Double> = emptySet()): List<Sub> {
-        if (Offline.on() || !running || isClosed) return fresh
+        if (!TrSlider.on("relisten") || Offline.on() || !running || isClosed) return fresh   // (v1075) السلايدر
         val idx = fresh.indices.filter { fresh[it].lowConf && !fresh[it].isSound && !fresh[it].isSong && fresh[it].original.isNotBlank() && fresh[it].start !in skip }.take(if (nonEnglishSrc()) 8 else 4)   // (v742) 8 للغات غير الإنجليزي · اللي اتحكم فيه بالتسميع المزدوج بيتخطّى
         if (idx.isEmpty()) return fresh
         val out = fresh.toMutableList()
@@ -1968,7 +1985,7 @@ class Engine(
                 val first = items.first().start
                 val before = synchronized(lock) { subs.filter { it.start < first && it.translated.isNotBlank() && !(it.isSound && (it.original.startsWith("📖") || it.original.startsWith("💡"))) }.takeLast(20) }   // (v425) الترانسكريبشن القديم + ترجمته (من غير سطور الشرح)
                 val after = tHold.values.filter { it.i > lastIdx }.sortedBy { it.i }.flatMap { it.fresh }.take(6)
-                val prompt = toneBlock() + ModePrompts.translate(pb, c, items, before, after, effectiveChars(), effectiveGloss(), langBad > 0) + promptExtras(before.lastOrNull()?.let { it.original.trim() + " ← " + it.translated.trim() } ?: "", after.firstOrNull()?.original?.trim() ?: "")   // (v469) A1 سياق صريح + A2/A3/A4
+                val prompt = toneB() + ModePrompts.translate(pb, c, items, before, after, effectiveChars(), effectiveGloss(), langBad > 0) + promptExtras(before.lastOrNull()?.let { it.original.trim() + " ← " + it.translated.trim() } ?: "", after.firstOrNull()?.original?.trim() ?: "")   // (v469) A1 سياق صريح + A2/A3/A4
                 var reply: JSONObject? = null
                 var attempts = 0; var net = 0; var bad = 0
                 while (running && !isClosed && reply == null && attempts++ < 6) {
@@ -2029,7 +2046,7 @@ class Engine(
             try {
                 var list = t.fresh.mapIndexed { q, s -> s.copy(translated = tr[a + q]!!.trim(), pivot = pv[a + q].orEmpty()) }
                 if (LangGuard.foreignOf(list).isNotEmpty()) list = fixForeign(list)
-                if (Cfg.bool("refine2pass", false)) list = refinePass2(t.i, list)   // (v469) A6: تحسين على مرحلتين (مطفي افتراضيًا)
+                if (TrSlider.on("refine2")) list = refinePass2(t.i, list)   // (v1075) السلايدر بدل مفتاح refine2pass   // (v469) A6: تحسين على مرحلتين (مطفي افتراضيًا)
                 list = fidelityFix(t.i, list)   // (v469) A5: أمانة الأرقام والأسماء قبل التطبيق
                 if (dl.isEmpty()) dialOf.remove(t.i) else dialOf[t.i] = dl
                 applyChunk(t.i, t.p.rawStart, t.p.rawEnd, t.p.w, t.j, list, t.prior)
@@ -2436,7 +2453,7 @@ class Engine(
                     val full = flatAll.size <= CTX_FULL_MAX
                     val lo = if (full) 0 else (base - CTX_WINDOW).coerceAtLeast(0)
                     val hi = if (full) flatAll.size else (base + flat.size + CTX_WINDOW).coerceAtMost(flatAll.size)
-                    val prompt = toneBlock() + ModePrompts.contextual(pb, c, flatAll.subList(lo, hi), lo, missing.map { base + it }, items, doneTr, effectiveChars(), effectiveGloss(), pn + 1, parts.size, langBad > 0, beforeMax = if (ctxBatches() > 0) 40 else 20) + promptExtras(withCtx = false)   // (v469) A2/A3/A4 (السياق الكامل موجود أصلًا في الوضع ده)
+                    val prompt = toneB() + ModePrompts.contextual(pb, c, flatAll.subList(lo, hi), lo, missing.map { base + it }, items, doneTr, effectiveChars(), effectiveGloss(), pn + 1, parts.size, langBad > 0, beforeMax = if (ctxBatches() > 0) 40 else 20) + promptExtras(withCtx = false)   // (v469) A2/A3/A4 (السياق الكامل موجود أصلًا في الوضع ده)
                     val rep0 = askJson(prompt, (items.size * 90).coerceIn(4096, 32768), tp, "ترجمة سياقية")
                     if (rep0 == null) { if (swapTranslate(items, missing, tr, pv) > 0) { swapped = true; continue } else break }   // (v286) بديل تلقائي
                     val rep = rep0
@@ -2621,7 +2638,7 @@ class Engine(
     // --- تحليل الشخصيات تلقائيًا (_maybeAutoAnalyzeCharacters / analyzeCharacters) ---
     private fun maybeAnalyze() {
         if (sideOff()) return
-        if (!conf.autoChars || conf.manualChars.isNotEmpty()) return
+        if (!conf.autoChars || conf.manualChars.isNotEmpty() || !TrSlider.on("chars")) return   // (v1075)
         maybeLookup()
         maybeIdentify()
         synchronized(lock) {
@@ -2770,7 +2787,7 @@ class Engine(
 
     // --- تصحيح الضمائر تلقائيًا (_maybeAutoCorrectPronouns) ---
     private fun maybePronouns() {
-        if (sideOff() || !conf.autoPronouns) return
+        if (sideOff() || !conf.autoPronouns || !TrSlider.on("pron")) return   // (v1075)
         if (effectiveChars().isEmpty()) return
         synchronized(lock) {
             if (pronBusy || subs.size < PRON_MIN_LINES || pronUpTo >= subs.size) return
@@ -2873,7 +2890,7 @@ class Engine(
 
     private fun maybeRefine() {
         if (keyless) return
-        if (!conf.partialRefine) return
+        if (!conf.partialRefine || !TrSlider.on("refine")) return   // (v1075)
         val keysOk = partialKeys().isNotEmpty()
         if (!keysOk) {
             if (!partialWarned && chunksDone >= 2) { partialWarned = true; host.log("✍ التنقيح الجزئي واقف: محتاج 3 مفاتيح على الأقل عشان البرنامج يخصّص مفتاح للتنقيح — هيتنقّح في الآخر بالمفاتيح العادية") }
@@ -2889,7 +2906,7 @@ class Engine(
     private var finalAt = -1   // (v154) آخر chunksDone اتعمل عنده تنقيح نهائي (مرة واحدة لكل قيمة — مايتعادش لو فشل)
     /** من حلقة run() وقت الهدوء (مفيش باتش في الجو): لو في مقاطع خلصت بعد آخر تنقيح، نقّح الباقي. بيرجّع true لو التنقيح شغال — الحلقة تستنى */
     private fun finalRefineTick(): Boolean {
-        if (isClosed || transOnly) return false
+        if (isClosed || transOnly || !TrSlider.on("refine")) return false   // (v1075)
         synchronized(lock) {
             if (refineBusy) return true
             if (subs.size < 8 || finalAt == chunksDone) return false
@@ -3038,6 +3055,7 @@ class Engine(
     fun rewriteAll(label: String, instruction: String, fromSec: Double, report: (String) -> Unit, done: (Int) -> Unit) {
         if (toolBusy != null) { report("في عملية شغالة: " + toolBusy); return }
         toolBusy = label
+        val mk = markRetro; markRetro = false   // (v1077)
         Thread {
             var changed = 0
             val mine = HashSet<String>()
@@ -3069,7 +3087,7 @@ class Engine(
                                 val tr = c.optString("translated").trim(); if (tr.isEmpty()) continue
                                 val t = snap[ix]
                                 val at = cur.indexOfFirst { Math.abs(it.start - t.start) < 0.05 && it.original == t.original }
-                                if (at >= 0 && cur[at].translated != tr) { cur[at] = cur[at].copy(translated = tr); changed++ }
+                                if (at >= 0 && cur[at].translated != tr) { cur[at] = cur[at].copy(translated = tr); changed++; if (mk) applied.add(pk(cur[at])) }
                             }
                             subs = cur
                         }
@@ -3401,7 +3419,7 @@ class Engine(
     /** مناطق اتترجمت بس مفيهاش جمل لمدة طويلة، قريبة من مكان التشغيل: بتتبعت بمفاتيح المراقبين/الاحتياطي وبتتعلّم بـ «» */
     private fun gapTick(all: Boolean = false): Boolean {
         if (!fillOk()) return false
-        if (!conf.gapFill || !running) return false
+        if (!conf.gapFill || !running || !TrSlider.on("holes")) return false   // (v1075)
         val off = offFill()
         val maxPar = if (off) 1 else Gaps.MAX_PARALLEL   // (v283) الأوفلاين بينسخ واحد في المرة
         val now = System.currentTimeMillis()
@@ -3438,7 +3456,7 @@ class Engine(
     private val holeEx = Executors.newSingleThreadExecutor { r -> Thread(r).also { it.isDaemon = true; it.name = "holefill" } }
     /** سدّ الثغرات كان شغال جوه خانة الباتش (inflight) فكل باتش بيستنى طلبات الثغرات قبل ما الباتش اللي بعده يتبعت = تأخير. دلوقتي على خيط لوحده */
     private fun scheduleHoleFill(i: Int, rawStart: Double, rawEnd: Double, w: WavChunk, key: String) {
-        if (!fillOk()) return   // (v283) من غير أوفلاين ومن غير جيميناي مفيش حاجة تسدّ الثغرة
+        if (!fillOk() || !TrSlider.on("holes")) return   // (v283) من غير أوفلاين ومن غير جيميناي مفيش حاجة تسدّ الثغرة · (v1075) السلايدر
         if (holeTried.contains(i)) return
         holeBusy.incrementAndGet()
         try {
@@ -3537,7 +3555,7 @@ class Engine(
         for (round in 0 until 2) {
             val missing = raw.indices.filter { out[it] == null }
             if (missing.isEmpty()) break
-            val prompt = toneBlock() + ModePrompts.translate(pb, c, missing.map { raw[it] }, before, after, effectiveChars(), effectiveGloss(), round > 0)
+            val prompt = toneB() + ModePrompts.translate(pb, c, missing.map { raw[it] }, before, after, effectiveChars(), effectiveGloss(), round > 0)
             val rr2 = Api.generate(curModel(), key, prompt, null, maxTokens = (missing.size * 150).coerceIn(2048, 8192), temp = 0.2)
             val jj = if (rr2.text.isBlank()) null else Parse.json(rr2.text)
             if (jj != null) for ((ix, pr) in TParse.translations(jj, missing.size)) out[missing[ix]] = pr

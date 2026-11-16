@@ -2679,8 +2679,11 @@ class PlayerActivity : Activity(), Host {
         dlRef = dlB
         if (MtGlass.on() && MtLook.hideDl()) dlB.visibility = View.GONE   // (v899) إعداد MeeTube: إخفاء الزرار
         var trRef: TextView? = null
-        val tr = b("▶ ترجم ▾", 0xFFE53935.toInt()) { trRef?.let { translateMenu(it) } }   // (v254) قبل البداية: الإعداد المحفوظ أو شاشة «طريقة الترجمة»
+        val tr = b("▶ ترجم ▾", 0xFFE53935.toInt()) { trRef?.let { trMainClick(it) } }   // (v254) قبل البداية: الإعداد المحفوظ أو شاشة «طريقة الترجمة»
         trRef = tr
+        var gearRef: TextView? = null
+        val gearB = b("⚙", 0xFF37474F.toInt()) { gearRef?.let { trSettings(it) } }   // (v1075) إعدادات الترجمة: النوع (ترجمة/تفريغ) + المحرك + سلايدر سريع↔دقيق
+        gearRef = gearB
         var lgRef: TextView? = null
         val lgB = b("🌐", 0xFF37474F.toInt()) { lgRef?.let { langPopup(it) } }
         lgRef = lgB
@@ -2699,24 +2702,29 @@ class PlayerActivity : Activity(), Host {
         if (compact) {
             // الشريط السفلي: شريحة صغيرة بنسبة الترجمة (⏳ 19%) — دوس عليها تتفرد: إيقاف/استئناف + اللغة، وبتتلم لوحدها بعد 5 ثواني
             var chipRef: TextView? = null
-            val chipB = b("▶ ترجم ▾", 0xFFE53935.toInt()) { chipRef?.let { translateMenu(it) } }   // (v415) زرار واحد بقايمة منسدلة
+            val chipB = b("▶ ترجم ▾", 0xFFE53935.toInt()) { chipRef?.let { trMainClick(it) } }   // (v415) زرار واحد بقايمة منسدلة
             chipRef = chipB
             val pz = b("⏸", 0xFF455A64.toInt()) { if (::engine.isInitialized && engine.userPaused) beginTranslate() else pauseTranslate() }   // (v438) إيقاف مؤقت / كمّل ظاهر جنب «ترجم» (كان جوه القايمة بس)
             val cx = stopBtn(8)   // (v741) مربع أبيض مرسوم باليد جوه الأحمر (كان بيختفي)
             tidy(chipB); tidy(pz); pz.setPadding(0, 0, 0, 0); pz.textSize = 17f; dlB.setPadding(0, 0, 0, 0)
-            row.addView(chipB, lp(-2))   // (v415) زرار «ترجم» الواحد
+            // (v1077) «ترجم/النسبة» و⚙ جوه حاوية واحدة: الصف بيلفّ (FlowRow) فكان ممكن ⚙ ينزل سطر لوحده لما نص الشريحة يطول وهي شغّالة
+            val chipGear = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL }
+            chipGear.addView(chipB, lp(-2))   // (v415) زرار «ترجم» الواحد
+            gearB.setPadding(0, 0, 0, 0); gearB.textSize = 17f; chipGear.addView(gearB, sq())   // (v1075)
+            row.addView(chipGear, LinearLayout.LayoutParams(-2, -2))
             row.addView(pz, sq())
             row.addView(cx, sq())
             if (webVid) { row.addView(qBtn(), lp(-2)); row.addView(aBtn(), lp(-2)); row.addView(dlB, sq()) }
             trUpdaters.add {
                 val paused = ::engine.isInitialized && engine.userPaused
                 val started = engineStarted
+                gearB.visibility = View.VISIBLE   // (v1077) ⚙ ظاهر دايمًا جنب «ترجم» حتى والترجمة شغّالة
                 pz.visibility = if (started) View.VISIBLE else View.GONE
                 cx.visibility = if (started) View.VISIBLE else View.GONE
                 pz.text = if (paused) "▶" else "⏸"
                 pz.background = ui.box(if (paused) 0xFF2E7D32.toInt() else 0xFF455A64.toInt(), 0x33FFFFFF, 8)
                 lgB.visibility = if (caps().dialect) View.VISIBLE else View.GONE   // (v444) بس في الأوضاع اللي فيها لهجات
-                if (!started) { chipB.text = if (sfBusy.isNotEmpty()) sfChip() else if (sfLive.isNotEmpty()) "💬 ترجمة لحظية ▾" else "▶ ترجم · " + modeShort() + " ▾"; chipB.background = ui.box(0xFFE53935.toInt(), 0x33FFFFFF, 12) }
+                if (!started) { chipB.text = if (sfBusy.isNotEmpty()) sfChip() else if (sfLive.isNotEmpty()) "💬 ترجمة لحظية ▾" else trVerb() + " · " + trEngShort(); chipB.background = ui.box(0xFFE53935.toInt(), 0x33FFFFFF, 12) }
                 else {
                     chipB.text = (Offline.liveShort()?.let { "$it · " } ?: modeChipTag()) + (if (paused) "⏸ " else if (trPct >= 100) "✅ " else "⏳ ") + trPct + "%" + " ▾"
                     chipB.background = ui.box(if (paused) 0xFF8D6E00.toInt() else if (trPct >= 100) 0xFF2E7D32.toInt() else 0xFF1F5FBF.toInt(), 0x33FFFFFF, 12)
@@ -2727,13 +2735,14 @@ class PlayerActivity : Activity(), Host {
             val cx2 = stopBtn(10)   // (v741)
             tidy(tr); tidy(pz2); pz2.setPadding(0, 0, 0, 0); pz2.textSize = 19f; dlB.setPadding(0, 0, 0, 0)
             row.addView(tr, lp(0).apply { width = 0; weight = 3.6f })   // (v415) زرار «ترجم» الواحد
+            gearB.setPadding(0, 0, 0, 0); gearB.textSize = 19f; row.addView(gearB, sq())   // (v1075)
             row.addView(pz2, sq())
             row.addView(cx2, sq())
             if (webVid) { row.addView(qBtn(), lp(0).apply { width = 0; weight = 1.2f }); row.addView(aBtn(), lp(0).apply { width = 0; weight = 0.9f }); row.addView(dlB, sq()) }
             trUpdaters.add {
                 val paused = ::engine.isInitialized && engine.userPaused
-                                tr.visibility = View.VISIBLE
-                                tr.text = if (!engineStarted) (if (sfBusy.isNotEmpty()) sfChip() else if (sfLive.isNotEmpty()) "💬 ترجمة لحظية ▾" else "▶ ترجم · " + modeShort() + " ▾") else (Offline.liveShort()?.let { "$it · " } ?: modeChipTag()) + (if (paused) "⏸ " else if (trPct >= 100) "✅ " else "⏳ ") + trPct + "% ▾"
+                                tr.visibility = View.VISIBLE; gearB.visibility = View.VISIBLE   // (v1077)
+                                tr.text = if (!engineStarted) (if (sfBusy.isNotEmpty()) sfChip() else if (sfLive.isNotEmpty()) "💬 ترجمة لحظية ▾" else trVerb() + " · " + trEngShort()) else (Offline.liveShort()?.let { "$it · " } ?: modeChipTag()) + (if (paused) "⏸ " else if (trPct >= 100) "✅ " else "⏳ ") + trPct + "% ▾"
                 pz2.visibility = if (engineStarted) View.VISIBLE else View.GONE
                 cx2.visibility = if (engineStarted) View.VISIBLE else View.GONE
                 pz2.text = if (paused) "▶" else "⏸"
@@ -3111,6 +3120,7 @@ class PlayerActivity : Activity(), Host {
             col.addView(shRow("🌙 كمّل في الخلفية") { close(); translateInBackground() })
         }
         col.addView(shSection("⚙ الإعدادات"))
+        col.addView(shRow("🎚 النوع واللهجة والشدة", "", true) { close(); h.post { trSettings(anchor) } })   // (v1077) نفس ⚙ اللي جنب «ترجم»
         col.addView(shRow("⚙ إعدادات الترجمة", setVal, true) { close(); h.post { modeSettings(anchor) } })
         if (started) col.addView(shRow("🔀 غيّر النظام", "", true) {
             close()
@@ -3122,6 +3132,222 @@ class PlayerActivity : Activity(), Host {
 
     /** (v743) اسم نظام السماع الحالي لجيميناي */
     private fun listenName(): String = if (Cfg.bool("fastmode", false)) "⚡ سريع" else when (Cfg.int("dual_listen", 1)) { 0 -> "٧٥/٢٥"; 2 -> "🎯 الأدق"; else -> "🎯 ذكي" }
+    // ===================== (v1075) زرار «ترجم» على طول + ⚙ إعدادات الترجمة + سلايدر سريع ↔ دقيق =====================
+    private fun trIsTx(): Boolean = Cfg.str("tr_kind", "translate") == "transcribe"
+    private fun trVerb(): String = if (trIsTx()) "▶ فرّغ" else "▶ ترجم"
+    private fun trEngShort(): String = if (Cfg.str("tr_engine", "gem") == "off") "📴 وشبر" else "☁ جيميناي"
+    /** قبل البداية: بيبدأ على طول بالنوع والمحرك المحفوظين. بعد البداية (أو سوفت صب شغّال): قايمة الأدوات زي الأول */
+    private fun trMainClick(anchor: View) {
+        if (engineStarted || sfBusy.isNotEmpty() || sfLive.isNotEmpty()) { translateMenu(anchor); return }
+        val tx = trIsTx(); val off = Cfg.str("tr_engine", "gem") == "off"
+        when {
+            tx && off -> askVideoLang { offlineQuick(true) }
+            tx -> startGeminiTranscribe()
+            off -> whisperStart()
+            else -> geminiStart()
+        }
+    }
+
+    private fun trSettings(anchor: View) {
+        trAnchor = anchor
+        shDialog(340) { col, close ->
+            val off = Cfg.str("tr_engine", "gem") == "off"
+            fun again() { close(); h.post { trSettings(anchor) } }
+            fun engSync() { try { if (::engine.isInitialized) engine.convDialect = Cfg.str("conv_dialect", "") } catch (_: Throwable) {} }
+            col.addView(shHead("⚙ إعدادات الترجمة", "زرار «ترجم» بيشتغل على طول بالإعدادات دي"))
+            // (v1076) سلايدر النوع: شمال تفريغ بس · نص ترجمة فصحى · يمين ترجمة بلهجة (اللهجة تحتها وبتظهر/تختفي مع الموضع)
+            col.addView(shSection("النوع"))
+            val modeTitle = ui.text("", 14f, Color.WHITE, true).apply { gravity = Gravity.CENTER; setPadding(0, ui.dp(2), 0, ui.dp(2)) }
+            val diaBox = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL }
+            val qBox = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL }
+            val qNote = shNote("سلايدر سريع ↔ دقيق بيشتغل مع ترجمة جيميناي بس (مش مع التفريغ ولا وشبر)")
+            val saveNote = ui.text("", 11.5f, 0xFF9AA0A6.toInt()).apply { setPadding(ui.dp(10), ui.dp(2), ui.dp(10), ui.dp(4)) }
+            fun paintSave() {
+                saveNote.text = when {
+                    !TrProfile.hasSaved() -> "لسه مفيش إعدادات محفوظة — اللي بتغيّره بيفضل زي ما هو"
+                    TrProfile.dirty() -> "⚠ فيه تغييرات لسه ما اتحفظتش — مع الفيديو الجاي هترجع للمحفوظ: " + TrProfile.savedSummary()
+                    else -> "✓ محفوظة: " + TrProfile.savedSummary() + " — بتتطبّق على أي فيديو جديد"
+                }
+                saveNote.setTextColor(if (TrProfile.dirty()) 0xFFFFB74D.toInt() else 0xFF9AA0A6.toInt())
+            }
+            fun paintDia() {
+                diaBox.removeAllViews()
+                val cd = TrProfile.dialect()
+                diaBox.addView(shNote("اللهجة"))
+                val rd = shFlow()
+                for (d in TrProfile.dialects()) rd.addView(shChip(d, d == cd) { TrProfile.applyDialect(d); engSync(); updateTr(); paintDia(); paintSave(); trLiveApply("dia", TrProfile.DIA) }, shChipLp())
+                diaBox.addView(rd, LinearLayout.LayoutParams(-1, -2))
+                diaBox.addView(shNote("الشدة"))
+                val rs = shFlow(); val cg = TrProfile.degree()
+                for (g in TrProfile.degrees) rs.addView(shChip(g, g == cg) { TrProfile.setDegree(g); try { if (::engine.isInitialized) engine.toneStrength = g } catch (_: Throwable) {}; paintDia(); paintSave(); trLiveApply("deg", TrProfile.DIA) }, shChipLp())
+                diaBox.addView(rs, LinearLayout.LayoutParams(-1, -2))
+                if (TrProfile.styleIsLiteral()) diaBox.addView(shNote("الأسلوب حرفي — الشدة مش هتأثر (غيّره من 🌐 اللهجة والأسلوب)", true))
+            }
+            fun refresh() {
+                val m = TrProfile.mode()
+                modeTitle.text = when (m) { TrProfile.TX -> "✍ تفريغ بس (من غير ترجمة)"; TrProfile.MSA -> "🔤 ترجمة فصحى"; else -> "🗣 ترجمة بلهجة" }
+                diaBox.visibility = if (m == TrProfile.DIA && !off) View.VISIBLE else View.GONE
+                qBox.visibility = if (m != TrProfile.TX && !off) View.VISIBLE else View.GONE
+                qNote.visibility = if (qBox.visibility == View.VISIBLE) View.GONE else View.VISIBLE
+                paintSave()
+            }
+            col.addView(modeTitle, LinearLayout.LayoutParams(-1, -2))
+            var lastM = TrProfile.mode().let { if (off && it == TrProfile.DIA) TrProfile.MSA else it }
+            val msb = SeekBar(this).apply {
+                layoutDirection = View.LAYOUT_DIRECTION_LTR; max = if (off) 1 else 2; progress = lastM
+                setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+                    override fun onProgressChanged(s: SeekBar?, p: Int, u: Boolean) {
+                        if (!u || p == lastM) return
+                        val prevM = lastM; lastM = p; TrProfile.setMode(p); engSync(); updateTr(); paintDia(); refresh(); trLiveApply("mode", prevM)
+                    }
+                    override fun onStartTrackingTouch(s: SeekBar?) {}
+                    override fun onStopTrackingTouch(s: SeekBar?) {}
+                })
+            }
+            col.addView(msb, LinearLayout.LayoutParams(-1, -2))
+            val mends = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_LTR; setPadding(ui.dp(10), 0, ui.dp(10), 0) }
+            mends.addView(ui.text("✍ تفريغ", 11.5f, 0xFF9AA0A6.toInt()), LinearLayout.LayoutParams(0, -2, 1f))
+            mends.addView(ui.text("🔤 فصحى", 11.5f, 0xFF9AA0A6.toInt()).apply { gravity = Gravity.CENTER }, LinearLayout.LayoutParams(0, -2, 1f))
+            if (!off) mends.addView(ui.text("🗣 لهجة", 11.5f, 0xFF9AA0A6.toInt()).apply { gravity = Gravity.END }, LinearLayout.LayoutParams(0, -2, 1f))
+            col.addView(mends, LinearLayout.LayoutParams(-1, -2))
+            col.addView(diaBox, LinearLayout.LayoutParams(-1, -2))
+            col.addView(shSection("المحرك"))
+            val e = shFlow()
+            e.addView(shChip("☁ جيميناي", !off) { Cfg.put("tr_engine", "gem"); updateTr(); again() }, shChipLp())
+            e.addView(shChip("📴 وشبر أوفلاين", off) { Cfg.put("tr_engine", "off"); updateTr(); again() }, shChipLp())
+            col.addView(e, LinearLayout.LayoutParams(-1, -2))
+            if (off) col.addView(shNote("الأوفلاين بيترجم فصحى بس — اللهجة والشدة محتاجين جيميناي"))
+            trSliderSection(qBox) { paintSave() }
+            col.addView(qBox, LinearLayout.LayoutParams(-1, -2))
+            col.addView(qNote)
+            if (::realEngine.isInitialized && !remote && realEngine.applied.isNotEmpty())
+                col.addView(shRow("( ) شيل الأقواس من الجمل المتغيّرة", realEngine.applied.size.toString() + " جملة") { realEngine.clearMarks(); touchSubs(); again() })   // (v1077)
+            // (v1076) حفظ: الإعدادات دي بتتطبّق تلقائي على أي فيديو تاني تفتحه بعد كده
+            col.addView(shSection("💾 الحفظ"))
+            col.addView(saveNote)
+            col.addView(shBtn("💾 حفظ الإعدادات لكل الفيديوهات", SH_BLUE) { TrProfile.save(); paintSave(); say("💾 اتحفظت: " + TrProfile.savedSummary() + " — هتتطبّق على أي فيديو جديد") }, LinearLayout.LayoutParams(-1, ui.dp(46)).apply { setMargins(ui.dp(4), ui.dp(2), ui.dp(4), ui.dp(4)) })
+            col.addView(shRow("🔧 إعدادات متقدمة", "", true) { close(); h.post { modeSettings(anchor) } })
+            col.addView(shRow("إغلاق") { close() })
+            refresh()
+        }
+    }
+
+    // ===================== (v1077) تطبيق فوري وبأثر رجعي من ⚙ الترجمة =====================
+    private var trAnchor: View? = null
+    private val liveKinds = HashSet<String>()
+    private var liveFrom = -1
+    private val liveRun = Runnable { trLiveApplyNow() }
+    /** أي تغيير في النوع/اللهجة/الشدة والترجمة شغّالة (أو فيه جمل) بيتطبّق بعد ~1.2ث من آخر لمسة (عشان السلايدر ما يبعتش طلب لكل خطوة) */
+    private fun trLiveApply(kind: String, prevMode: Int) {
+        if (!::engine.isInitialized) return
+        val has = try { engineStarted || engine.subs.isNotEmpty() } catch (_: Throwable) { false }
+        if (!has) return
+        if (liveKinds.isEmpty()) liveFrom = prevMode
+        liveKinds.add(kind); h.removeCallbacks(liveRun); h.postDelayed(liveRun, 1200L)
+    }
+    private fun trLiveApplyNow() {
+        val kinds = liveKinds.toSet(); val from = liveFrom; liveKinds.clear(); liveFrom = -1
+        if (kinds.isEmpty() || !::engine.isInitialized) return
+        val to = TrProfile.mode()
+        val eng: Engine? = if (::realEngine.isInitialized && !remote) realEngine else null
+        try {
+            if (to == TrProfile.TX) {
+                if (from == TrProfile.TX) return
+                engine.transOnly = true; eng?.origView = true
+                say("✍ تفريغ — اللي اتترجم بيتعرض بنصه الأصلي بين أقواس ( ) والباتشات الجاية من غير ترجمة"); touchSubs(); return
+            }
+            if (from == TrProfile.TX) {
+                val viewOnly = eng?.origView == true
+                eng?.origView = false
+                if (engine.transOnly) {
+                    engine.transOnly = false
+                    if (!viewOnly) { say("🔤 رجوع للترجمة — بتبدأ من الأول بالإعدادات الجديدة"); cancelTranslate { trAnchor?.let { trMainClick(it) } }; return }
+                }
+                touchSubs()
+            }
+            if (!engineStarted && engine.subs.isEmpty()) return
+            fun armMark() { eng?.markRetro = true; h.postDelayed({ eng?.markRetro = false }, 5000L) }
+            when {
+                to == TrProfile.DIA && (from != TrProfile.DIA || "dia" in kinds) -> {
+                    val d = TrProfile.dialect()
+                    armMark(); engine.setConvDialect(d, true)
+                    say("🗣 بحوّل اللي اتترجم للهجة $d — الجمل المتغيّرة بتظهر بين أقواس ( ) وبيبدأ من مكانك")
+                }
+                to == TrProfile.MSA && from == TrProfile.DIA -> {
+                    engine.setConvDialect("", true)   // بيحفظ نسخة اللهجة الحالية في 🗂 قبل الرجوع
+                    val vi = engine.versions.indexOfLast { it.dialect == "فصحى" }
+                    if (vi >= 0) { restoreVersion(vi); eng?.markAllApplied(); say("🔤 رجعت الفصحى — الجمل بين أقواس ( ) (اللهجة محفوظة في 🗂)") }
+                    else {
+                        armMark()
+                        engine.rewriteAll("فصحى", "حوّل كل جملة للعربية الفصحى المبسطة الأمينة للمعنى بدل العامية، من غير ما تغيّر المعنى.", 0.0, { m -> say(m) }) { n -> say(if (n > 0) "✅ فصحى: اتغيّرت $n جملة (بين أقواس ( ) — ترجع من 🗂)" else "فصحى: مفيش جمل اتغيّرت"); touchSubs() }
+                    }
+                    touchSubs()
+                }
+                "deg" in kinds && to == TrProfile.DIA -> {
+                    val st = Cfg.str("tone_style", "").ifBlank { "تلقائي" }
+                    if (st == "حرفي") { say("الأسلوب حرفي — الشدة مش هتأثر"); return }
+                    val dg = TrProfile.degree(); val label = "شدة $dg"
+                    armMark()
+                    engine.rewriteAll(label, toneInstrOf(st, dg), 0.0, { m -> say(m) }) { n -> say(if (n > 0) "✅ $label: اتغيّرت $n جملة (بين أقواس ( ) — ترجع من 🗂)" else "$label: مفيش جمل اتغيّرت"); touchSubs() }
+                }
+            }
+        } catch (e: Throwable) { LogStore.err("Player:liveApply", e) }
+    }
+    /** الجملة المعروضة بين أقواس لو اتغيّرت بأثر رجعي (أو التفريغ بأثر رجعي بيعرض الأصل) — عرض بس */
+    private fun trMarkParens(s: Sub?, gs: List<Sub>): Sub? {
+        if (s == null || gs.isEmpty() || s.isSound || !::realEngine.isInitialized || remote) return s
+        val e = realEngine
+        return try {
+            val dual3 = sub.style.dual >= 3
+            if (e.origView) { val o = s.original.ifBlank { s.translated }; if (o.isBlank()) s else s.copy(translated = "($o)", original = if (dual3) "($o)" else s.original) }
+            else if (!dual3 && s.translated.isNotBlank() && gs.any { e.isApplied(it) }) s.copy(translated = "(" + s.translated + ")")
+            else s
+        } catch (_: Throwable) { s }
+    }
+    private fun dispTr(q: Sub): String {
+        val base = if (q.translated.isEmpty()) q.original else q.withSpeaker(q.translated)
+        return try {
+            if (!::realEngine.isInitialized || remote) base
+            else if (realEngine.origView) { val o = q.original.ifBlank { base }; if (o.isBlank()) base else "($o)" }
+            else if (q.translated.isNotEmpty() && realEngine.isApplied(q)) "($base)" else base
+        } catch (_: Throwable) { base }
+    }
+
+    /** سلايدر واحد: شمال سريع · نص متوازن · يمين دقيق وأبطأ. الشيك بوكس للعرض بس وبيتغيّروا لوحدهم مع السلايدر */
+    private fun trSliderSection(col: LinearLayout, onChanged: () -> Unit = {}) {
+        col.addView(shSection("⚖ سريع ↔ دقيق"))
+        val title = ui.text("", 14f, Color.WHITE, true).apply { gravity = Gravity.CENTER; setPadding(0, ui.dp(2), 0, ui.dp(2)) }
+        fun listBox() = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; setPadding(ui.dp(10), 0, ui.dp(10), ui.dp(4)) }
+        val speedL = listBox(); val accL = listBox()
+        fun line(b: TrSlider.Block, on: Boolean): View = ui.text((if (on) "☑ " else "☐ ") + b.label, 12f, if (on) 0xFF8AB4F8.toInt() else 0xFF6B7280.toInt()).apply { setPadding(0, ui.dp(2), 0, ui.dp(2)) }
+        fun paint(p: Int) {
+            title.text = TrSlider.title(p)
+            speedL.removeAllViews(); accL.removeAllViews()
+            for (b in TrSlider.speedBlocks()) speedL.addView(line(b, TrSlider.onAt(b.id, p)))
+            for (b in TrSlider.accuracyBlocks()) accL.addView(line(b, TrSlider.onAt(b.id, p)))
+        }
+        col.addView(title, LinearLayout.LayoutParams(-1, -2))
+        val sb = SeekBar(this).apply {
+            layoutDirection = View.LAYOUT_DIRECTION_LTR; max = TrSlider.MAX; progress = TrSlider.pos()
+            setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+                override fun onProgressChanged(s: SeekBar?, p: Int, u: Boolean) { if (u) { TrSlider.setPos(p); paint(p); onChanged() } }
+                override fun onStartTrackingTouch(s: SeekBar?) {}
+                override fun onStopTrackingTouch(s: SeekBar?) { if (engineStarted) say("⚖ المسار (مباشر / تفريغ ثم ترجمة) بيتغيّر من أول ترجمة جديدة — الباقي لايف") }
+            })
+        }
+        col.addView(sb, LinearLayout.LayoutParams(-1, -2))
+        val ends = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_LTR; setPadding(ui.dp(10), 0, ui.dp(10), 0) }
+        ends.addView(ui.text("⚡ سريع", 11.5f, 0xFF9AA0A6.toInt()), LinearLayout.LayoutParams(0, -2, 1f))
+        ends.addView(ui.text("⚖", 11.5f, 0xFF9AA0A6.toInt()).apply { gravity = Gravity.CENTER }, LinearLayout.LayoutParams(0, -2, 1f))
+        ends.addView(ui.text("🎯 دقيق وأبطأ", 11.5f, 0xFF9AA0A6.toInt()).apply { gravity = Gravity.END }, LinearLayout.LayoutParams(0, -2, 1f))
+        col.addView(ends, LinearLayout.LayoutParams(-1, -2))
+        col.addView(shNote("⚡ بيزوّد السرعة"))
+        col.addView(speedL, LinearLayout.LayoutParams(-1, -2))
+        col.addView(shNote("🎯 بيزوّد الدقة"))
+        col.addView(accL, LinearLayout.LayoutParams(-1, -2))
+        paint(TrSlider.pos())
+    }
+
     /** (v743) دوس جيميناي ← اختار: ٧٥/٢٥ (سماع واحد) أو 🎯 السماع الأدق (تسميع مزدوج بمفتاحين + حكم) — الاتنين موجودين */
     private fun geminiAsk() {
         if (!TrWizard.hasGeminiKey()) { say("☁ جيميناي محتاج مفتاح — ضيفه من الإعدادات ← 🔑 المفاتيح"); return }
@@ -4275,7 +4501,7 @@ class PlayerActivity : Activity(), Host {
         }
         UiWatchdog.start()
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-        Cfg.init(this); CrashLog.install(this); conf = Cfg.snapshot()
+        Cfg.init(this); CrashLog.install(this); try { TrProfile.restore() } catch (_: Throwable) {}; conf = Cfg.snapshot()   // (v1076) الإعدادات المحفوظة بتتطبّق قبل لقطة الإعدادات
         th = Themes.current(); ui = Ui(this, th)
         applyBars(th)
         speed = Cfg.str("speed", "1").toFloatOrNull() ?: 1f; fit = Cfg.int("fit", 0).coerceIn(0, 3); fsFit = Cfg.int("fs_fit", 2).coerceIn(0, 3); offsetMs = 0L   // (v469) الحد بقى 3 عشان وضع 100% الجديد
@@ -5298,7 +5524,7 @@ class PlayerActivity : Activity(), Host {
                 val bar = View(this@PlayerActivity).apply { setBackgroundColor(if (q.gender == "female") SubStyle.FEMALE else SubStyle.MALE) }
                 val col = LinearLayout(this@PlayerActivity).apply { orientation = LinearLayout.VERTICAL; setPadding(ui.dp(10), ui.dp(6), ui.dp(10), ui.dp(6)) }
                 col.addView(ui.text(PlayerLogic.clock((q.start * 1000).toLong()), 10f, th.muted))
-                col.addView(ui.text(if (q.translated.isEmpty()) q.original else q.withSpeaker(q.translated), 14f, th.text))
+                col.addView(ui.text(dispTr(q), 14f, th.text))
                 if (q.original.isNotBlank() && q.original != q.translated) col.addView(ui.text(q.original, 11f, th.muted))
                 row.addView(bar, LinearLayout.LayoutParams(ui.dp(4), -1)); row.addView(col, LinearLayout.LayoutParams(0, -2, 1f))
                 row.setBackgroundColor(if (i == curIdx) (th.primary and 0x00FFFFFF) or 0x33000000 else Color.TRANSPARENT)
@@ -5485,12 +5711,13 @@ class PlayerActivity : Activity(), Host {
                 val key = act.joinToString(",") + ":" + part + (if (liveWait) "|W" else "") + (if (nat) "|N:" + nativeCue + (if (sfLive.isNotEmpty()) "|L" + sfLiveGen else "") else "")
                 if (idx != curIdx || key != curKey) {
                     curIdx = idx; curKey = key
-                    val shown: Sub? = when {
+                    val shown0: Sub? = when {
                         !ccOn -> null
                         gs.isEmpty() || preferNative -> if (nat && !liveWait) natSub(nativeCue) else null
                         parts.size > 1 -> (if (ssn.dual >= 3) gs[0].copy(original = parts[part], isContinuation = gs[0].isContinuation && part == parts.size - 1) else gs[0].copy(translated = parts[part], isContinuation = gs[0].isContinuation && part == parts.size - 1))
                         else -> PlayerLogic.combine(gs)
                     }
+                    val shown = trMarkParens(shown0, gs)   // (v1077) أقواس على الجمل المتغيّرة بأثر رجعي
                     sub.show(shown, gs)
                     if (pipNow()) pipOv?.set(if (shown == null) "" else sub.style.mainText(shown))
                     if (sentDlg.isShowing) { updVis(); adapter.notifyDataSetChanged() }
@@ -5891,6 +6118,7 @@ class PlayerActivity : Activity(), Host {
     private var pendingBegin = false
     private fun initEngine() {
         if (remote) { initRemoteEngine(); return }
+        try { if (TrProfile.restore()) conf = Cfg.snapshot() } catch (_: Throwable) {}   // (v1076) فيديو جديد: الإعدادات المحفوظة (نوع/لهجة/شدة/سلايدر)
         endCheckDone = false; resumeSeekDone = false; askResumeMs = 0L; finishedMark = false   // (v1056)
         if (StartFresh.consume()) noResPending = true   // (v1056) «ابدأ من جديد» جاية من الموبايل
         vid = videoId()

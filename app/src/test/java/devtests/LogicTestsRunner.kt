@@ -39,7 +39,9 @@ class LogicTestsRunner {
         "devtests.remotelibtest.RemoteLibTestKt",
         "devtests.soundtest.SoundTestKt",
         "devtests.speechtest.SpeechTestKt",
-        "devtests.substyletest.SubStyleTestKt"
+        "devtests.substyletest.SubStyleTestKt",
+        "devtests.trslidertest.TrSliderTestKt",
+        "devtests.trprofiletest.TrProfileTestKt"
     )
 
     @Test fun allLogicTests() {
