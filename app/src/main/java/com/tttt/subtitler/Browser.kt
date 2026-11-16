@@ -378,6 +378,7 @@ class BrowserActivity : Activity() {
     private lateinit var findCount: TextView
     private var tabsDlg: Dialog? = null
     private var tabsBox: LinearLayout? = null
+    private var browserLoadingOv: View? = null   // (v1071) صفحة الانتقال للمتصفح
     private var fileCb: ValueCallback<Array<Uri>>? = null
     private val DESK_UA = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
 
@@ -436,6 +437,36 @@ class BrowserActivity : Activity() {
     }
 
     // ===== بناء الشاشة =====
+    // (v1071) صفحة الانتقال للمتصفح: سودة + علامة تحميل + «جاري الانتقال الى المتصفح» — مابتختفيش إلا لما الصفحة تفتح بالكامل
+    private fun showBrowserLoading() {
+        try {
+            if (browserLoadingOv != null) return
+            val ov = FrameLayout(this).apply { setBackgroundColor(Color.BLACK) }
+            val col = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER }
+            val sp = android.widget.ProgressBar(this).apply { isIndeterminate = true; indeterminateTintList = android.content.res.ColorStateList.valueOf(Color.WHITE) }
+            val tx = TextView(this).apply {
+                text = "⏳ جاري الانتقال الى المتصفح…"
+                setTextColor(Color.WHITE)
+                textSize = 16f
+                gravity = Gravity.CENTER
+                setPadding(0, ui.dp(16), 0, 0)
+            }
+            col.addView(sp, LinearLayout.LayoutParams(-2, -2).apply { gravity = Gravity.CENTER })
+            col.addView(tx, LinearLayout.LayoutParams(-2, -2).apply { gravity = Gravity.CENTER })
+            ov.addView(col, FrameLayout.LayoutParams(-2, -2, Gravity.CENTER))
+            (window.decorView as? ViewGroup)?.addView(ov, ViewGroup.LayoutParams(-1, -1))
+            browserLoadingOv = ov
+        } catch (_: Throwable) {}
+    }
+
+    private fun hideBrowserLoading() {
+        try {
+            val ov = browserLoadingOv ?: return
+            browserLoadingOv = null
+            (window.decorView as? ViewGroup)?.removeView(ov)
+        } catch (_: Throwable) {}
+    }
+
     override fun onCreate(b: Bundle?) {
         NetLedger.start(this); NetLog.start(this); NetGate.apply(this)
         super.onCreate(b)
@@ -656,6 +687,8 @@ class BrowserActivity : Activity() {
         } else root, FrameLayout.LayoutParams(-1, -1))
         frame.addView(customBox, FrameLayout.LayoutParams(-1, -1))
         setContentView(frame)
+        showBrowserLoading()   // (v1071) صفحة سودة + تحميل لحد ما الصفحة تفتح بالكامل
+        h.postDelayed({ hideBrowserLoading() }, 20_000L)   // (v1071) أمان: ماتفضلش سودة لو التحميل علّق
         RotateHint.attach(this)   // (v823) زرار «لفّ الشاشة» لما اتجاه التليفون يخالف اتجاه المتصفح
         dockUi = MiniDock(this, frame, ui, th, { startActivity(Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP).putExtra("fullmusic", true)) })   // (v344)
         try { YtMiniCard(this, frame) } catch (e: Throwable) { LogStore.err("Browser:ytMini", e) }   // (v1037) كارت يوتيوب المصغّر يمشي معاك في كل الصفحات
@@ -885,6 +918,7 @@ class BrowserActivity : Activity() {
                 }
                 if (t.id == panicClearId && ((url ?: "").contains("google.") || BrowserSaver.isArchive(url))) { try { v.clearHistory() } catch (_: Throwable) {}; endPanicCover(); updateNav() }   // (v231) الرجوع مايرجّعش الصفحة اللي اتمسحت
                 if (t === tabs.getOrNull(curIdx)) { showUrl(if (BrowserSaver.isHomeArchive(url)) GOOGLE else url); updateNav(); updateStar(); scanOnce(); scheduleAutoScan(t, longArrayOf(1000L, 3500L)); scheduleFlashKb(t) }   // (v838) فحص أوتوماتيك · (v842) كيبورد ألعاب الفلاش
+                if (t === tabs.getOrNull(curIdx) && v.progress >= 100) hideBrowserLoading()   // (v1071) الصفحة فتحت بالكامل
                 if (adFor(url)) v.evaluateJavascript(adJs(), null)
                 saver.pageFinished(t, v, url)   // (v783)
                 saveAdStats()
@@ -899,6 +933,7 @@ class BrowserActivity : Activity() {
             override fun onReceivedError(v: WebView, r: WebResourceRequest, e: android.webkit.WebResourceError) {
                 if (!r.isForMainFrame) return
                 if (t.hold != null) return   // (v401) بوب-أب في الحجر: المهلة هتحكم
+                hideBrowserLoading()   // (v1071) صفحة الخطأ حلّت مكان التحميل: المتصفح مفتوح خلاص
                 val u = r.url.toString()
                 // (v1069) النسخة الأوفلاين نفسها فشلت تتحمّل: ارجع لجوجل الحي بدل صفحة الخطأ
                 if (BrowserSaver.isHomeArchive(u)) {

@@ -83,10 +83,11 @@ class Engine(
     private var trP: Pool? = null
     @Synchronized private fun splitPools(): Pair<Pool, Pool> {
         val c = conf
-        val sig = activeMode.toString() + "|" + c.keys.joinToString(",") + "|" + c.backup.joinToString(",") + "|" + c.refine.joinToString(",")
+        val sig = activeMode.toString() + "|" + fastLatched + "|" + c.keys.joinToString(",") + "|" + c.backup.joinToString(",") + "|" + c.refine.joinToString(",")
         val a = txP; val b = trP
         if (a != null && b != null && sig == splitSig) return a to b
-        val (nTx, nTr) = KeyMode.txTrCounts(c.keys.size, activeMode)
+        // (v1071) الوضع السريع: كل المفاتيح بتفرغ ما عدا مفتاح واحد بس هو اللي بيترجم
+        val (nTx, nTr) = if (fastLatched && activeMode >= KeyMode.SPLIT_A && activeMode < KeyMode.TRANSCRIBE_ALL && c.keys.size > 1) (c.keys.size - 1) to 1 else KeyMode.txTrCounts(c.keys.size, activeMode)
         val txKeys = c.keys.take(nTx)
         val trKeys = if (c.keys.size <= 1 || activeMode >= KeyMode.TRANSCRIBE_ALL) c.keys else c.keys.takeLast(nTr)   // (v219) الوضع 4: كل المفاتيح بتنسخ وكل المفاتيح بتترجم
         val p1 = Pool(c.withKeys(txKeys)); val p2 = Pool(c.withKeys(trKeys))
@@ -123,7 +124,7 @@ class Engine(
     }
     private val fastLight = ConcurrentHashMap.newKeySet<Int>()
     private fun lightOn(chunk: Int, hole: Boolean, tx: Boolean): Boolean = fastLatched && !hole && !tx && chunk >= 0 && (chunk == rampChunk || chunk in fastLight)
-    private val pool: Pool get() = if (activeMode >= KeyMode.SPLIT_A && !fastLatched) splitPools().first else basePool
+    private val pool: Pool get() = if (activeMode >= KeyMode.SPLIT_A) splitPools().first else basePool
     private val trPool: Pool get() = splitPools().second
     @Volatile private var running = true
     /** وقفة: المحرك مايبعتش مقاطع جديدة (مستني اختيار المستخدم: كمّل ولا ترجم من جديد) */
@@ -1356,7 +1357,8 @@ class Engine(
         val canSplit = fastStep && rampStep == 0 && w.durSec >= 16.0 && !Offline.on() && pool.usableCount() >= 2   // (v1067) طلبين بالتوازي
         val sendBytes = if (spd != 1.0) { try { AudioTools.speedUp(w.bytes, spd) } catch (_: Throwable) { w.bytes } } else w.bytes
         val spdEff = if (sendBytes === w.bytes) 1.0 else spd
-        val tx = activeMode >= KeyMode.SPLIT_A && i !in fullChunks && !fastLatched   // (v210) ترانسكريبشن بس، والترجمة بعدين مجمّعة على مفاتيح الترجمة
+        val tx = activeMode >= KeyMode.SPLIT_A && i !in fullChunks   // (v210) ترانسكريبشن بس، والترجمة بعدين مجمّعة على مفاتيح الترجمة
+        // (v1071) الوضع السريع بقى هيكلي: نفس المسار ده (تفريغ على كل المفاتيح + ترجمة مجمّعة على مفتاح واحد) بدل الترجمة المباشرة من الصوت
         while (running && tries++ < MAX_TRIES) {
             if (claimed.contains(i)) return   // نسخة تانية من الباتش ده خلصت وطُبّقت قبلنا
             if (!hedge) { keyOf[i] = key; offOf[i] = (tx && Offline.on()) }

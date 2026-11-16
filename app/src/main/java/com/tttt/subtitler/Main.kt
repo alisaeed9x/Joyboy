@@ -56,6 +56,7 @@ class MainActivity : Activity() {
     private var ytTvMode = false   // (v532) جاي من زرار «يوتيوب» في الريموت: كل فيديو بيسأل «تشغّله على التلفزيون؟» والرجوع بيرجّع للريموت
     private var ytTvSent = false
     private var fromTv = false   // (v467) الزيارة دي جاية من واجهة التلفزيون: قفل الإعدادات/الرجوع من الجذر يرجّع لها
+    private var browserLoadingOv: View? = null   // (v1071) صفحة الانتقال للمتصفح
     private val baseLangs = listOf("ar" to "العربية", "en" to "English", "fr" to "Français", "es" to "Español", "de" to "Deutsch", "tr" to "Türkçe", "hi" to "हिन्दी", "ko" to "한국어", "ja" to "日本語", "zh" to "中文")   // (v467) اللغة الأساسية
     // (v469) D7 وضع النص الكبير: fontScale على مستوى الـ Context فبيكبّر كل نصوص الواجهة (المقاسة بـ SP) بنسبة ثابتة ٪٢٥
     override fun attachBaseContext(nb0: android.content.Context) {
@@ -955,13 +956,9 @@ class MainActivity : Activity() {
             }
         }
         musicOpenFn = { showTabFn(1); musicUi?.showFull() }   // (v337)
-        // (v621) تسخين: صفحتي يوتيوب والموسيقى بتتبنوا وإنت فاضي بعد ما الشاشة تظهر، بدل ما يتبنوا وقت الدوسة على التبويب (أول فتح كان بيهنّج)
-        if (!fromPlayer && !tvShellOn && !DeviceUi.isTv(this) && Cfg.bool("prewarm_tabs", true)) {
-            val dv = window.decorView
-            dv.postDelayed({ if (!isFinishing && !isDestroyed) android.os.Looper.myQueue().addIdleHandler { if (!isFinishing && !isDestroyed) { try { ensureMusic(); musicUi?.ensureLoaded() } catch (e: Throwable) { LogStore.err("Main:prewarmMusic", e) } }; false } }, 1500L)   // (v940) الموسيقى تتبني وتتحمّل ورا الستار بدري
-        }
+        // (v1071) مفيش تسخين في الخلفية: لا يوتيوب ولا موسيقى ولا أي صفحة بتتبني قبل ما تدوس عليها — كل صفحة بتفتح وقت الدوسة بس
         val tabletShell = DeviceUi.isTablet(this)   // (v462) قشرة التابلت: ريل جانبي زي يوتيوب التابلت بدل الشريط السفلي
-        val nav = BottomNav(this, ui, th, 0, tabletShell) { i -> if (i >= BottomNav.YT_HOME) { MeeTubeLink.open(this) /* (v888) MeeTube */ } else if (i == 2) { save(); NavAnim.set(curTab, 2); startActivity(TabNav.front(Intent(this, BrowserActivity::class.java))) } else if (i == 3) { save(); NavAnim.set(curTab, 3); startActivity(TabNav.front(FilesHub.intent(this))) } else if (i == 7) { musicReturnTab = -1; settingsShow?.invoke(null) } else if (i == 0 && fromTv && !fromPlayer && TvFocus.goHome(this)) { /* (v482) تلفزيون: «الرئيسية» = شاشة التلفزيون */ } else { musicReturnTab = -1; showTabFn(i) } }   // (v310) 4 الملفات = شاشة منفصلة زي المتصفح · (v606) يوتيوب شغّال ← المتصفح: الفيديو يكمّل في PiP والاتنين مع بعض
+        val nav = BottomNav(this, ui, th, 0, tabletShell) { i -> if (i >= BottomNav.YT_HOME) { MeeTubeLink.open(this) /* (v888) MeeTube */ } else if (i == 2) { save(); NavAnim.set(curTab, 2); showBrowserLoading(); startActivity(TabNav.front(Intent(this, BrowserActivity::class.java))) } else if (i == 3) { save(); NavAnim.set(curTab, 3); startActivity(TabNav.front(FilesHub.intent(this))) } else if (i == 7) { musicReturnTab = -1; settingsShow?.invoke(null) } else if (i == 0 && fromTv && !fromPlayer && TvFocus.goHome(this)) { /* (v482) تلفزيون: «الرئيسية» = شاشة التلفزيون */ } else { musicReturnTab = -1; showTabFn(i) } }   // (v310) 4 الملفات = شاشة منفصلة زي المتصفح · (v606) يوتيوب شغّال ← المتصفح: الفيديو يكمّل في PiP والاتنين مع بعض
         navUi = nav
         nav.onMoreToggle = { o -> pageGearUi?.moreOpen = o }   // (v820)
         if (!fromPlayer) {
@@ -1847,8 +1844,39 @@ class MainActivity : Activity() {
         }
     }
     override fun onPause() { try { DataCapsule.detach(this) } catch (_: Throwable) {}; super.onPause() }   // (v799) كبسولة الداتا في كل التبويبات
+    // (v1071) صفحة الانتقال للمتصفح: سودة + علامة تحميل + «جاري الانتقال الى المتصفح» — مابتختفيش إلا لما المتصفح يفتح بالكامل (بتتخبّى من onResume لما ترجع)
+    private fun showBrowserLoading() {
+        try {
+            if (browserLoadingOv != null) return
+            val ov = FrameLayout(this).apply { setBackgroundColor(Color.BLACK) }
+            val col = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER }
+            val sp = ProgressBar(this).apply { isIndeterminate = true; indeterminateTintList = android.content.res.ColorStateList.valueOf(Color.WHITE) }
+            val tx = TextView(this).apply {
+                text = "⏳ جاري الانتقال الى المتصفح…"
+                setTextColor(Color.WHITE)
+                textSize = 16f
+                gravity = Gravity.CENTER
+                setPadding(0, ui.dp(16), 0, 0)
+            }
+            col.addView(sp, LinearLayout.LayoutParams(-2, -2).apply { gravity = Gravity.CENTER })
+            col.addView(tx, LinearLayout.LayoutParams(-2, -2).apply { gravity = Gravity.CENTER })
+            ov.addView(col, FrameLayout.LayoutParams(-2, -2, Gravity.CENTER))
+            (window.decorView as? ViewGroup)?.addView(ov, ViewGroup.LayoutParams(-1, -1))
+            browserLoadingOv = ov
+        } catch (_: Throwable) {}
+    }
+
+    private fun hideBrowserLoading() {
+        try {
+            val ov = browserLoadingOv ?: return
+            browserLoadingOv = null
+            (window.decorView as? ViewGroup)?.removeView(ov)
+        } catch (_: Throwable) {}
+    }
+
     override fun onResume() {
         super.onResume()
+        try { hideBrowserLoading() } catch (_: Throwable) {}
         TabNav.pendingMain?.let { t -> TabNav.pendingMain = null; try { onNewIntent(Intent().putExtra("tab", t)) } catch (e: Throwable) { LogStore.err("Main:pendingTab", e) } }   // (v973) REORDER_TO_FRONT من غير onNewIntent
         try { DataCapsule.attach(this) } catch (_: Throwable) {}   // (v799)
         try { tvModeSeen = PlayTarget.enabled(); TvModeFab.listeners.addIfAbsent(tvModeSync) } catch (_: Throwable) {}

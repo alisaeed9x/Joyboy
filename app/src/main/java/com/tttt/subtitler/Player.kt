@@ -706,8 +706,9 @@ class PlayerActivity : Activity(), Host {
             "voice" -> runOnUiThread { try { voiceMenu() } catch (e: Throwable) { LogStore.err("Player:rvoice", e) } }   // (v712) فصل صوت الكلام
             "nextlist" -> runOnUiThread { try { openNextSheet() } catch (e: Throwable) { LogStore.err("Player:rnext", e) } }   // (v712) 📃 التالي (يوتيوب)
             "tr_free", "tr_gem" -> geminiAsk()   // (v743) FreeLLM اتشال — الزرارين القدام بيفتحوا اختيار جيميناي
-            "tr_gem_acc" -> { trAsked = true; h.post { Cfg.put("dual_listen", "2"); Cfg.put("fastmode", "0"); geminiStart() } }   // (v1043) الاختيار اتعمل على الموبايل — من غير نافذة على التلفزيون
-            "tr_gem_fast" -> { trAsked = true; h.post { Cfg.put("dual_listen", "0"); Cfg.put("fastmode", "0"); geminiStart() } }
+            // (v1071) وضع واحد بس: السريع — أوامر الريموت القديمة (الأدق/٧٥/٢٥) بقت سريع برضه
+            "tr_gem_acc" -> { trAsked = true; h.post { Cfg.put("fastmode", "1"); geminiStart() } }
+            "tr_gem_fast" -> { trAsked = true; h.post { Cfg.put("fastmode", "1"); geminiStart() } }
             "tr_gem_quick" -> { trAsked = true; h.post { Cfg.put("fastmode", "1"); geminiStart() } }   // (v1068) ⚡ سريع
             "tr_whisper" -> whisperStart()
             "tr_gtx" -> startGeminiTranscribe()
@@ -3091,7 +3092,7 @@ class PlayerActivity : Activity(), Host {
             // (v667) السوفت صب والهارد صب بيتترجموا أوتوماتيك أول ما الفيديو يفتح — مفيش زراير ليهم هنا
             col.addView(shSection("🔤 ترجمة"))
             col.addView(shRow("☁ ١ · جيميناي", if (mk == "gem") "✓ " + listenName() else listenName()) { close(); h.post { geminiAsk() } })
-            col.addView(shNote("هتختار: ٧٥/٢٥ (سماع واحد، أسرع وأرخص) أو 🎯 السماع الأدق (مفتاحين + حكم) أو ⚡ سريع (أول ترجمة في ثواني) · لهجات + أسلوب + بصري · محتاج نت"))
+            col.addView(shNote("⚡ سريع (تفريغ دقيق + ترجمة مجمّعة) · لهجات + أسلوب + بصري · محتاج نت"))
             col.addView(shRow("📴 ٢ · وشبر + ترجمة أوفلاين (HY-MT1.5)", if (mk == "off") "✓ الحالي" else setVal) { close(); whisperStart() })
             col.addView(shSection("✍ تفريغ بس (من غير ترجمة) — نظامين"))
             col.addView(shRow("☁ بجيميناي (من الصوت)", if (mk == "txg") "✓ الحالي" else "") { close(); startGeminiTranscribe() })
@@ -3121,17 +3122,11 @@ class PlayerActivity : Activity(), Host {
     /** (v743) دوس جيميناي ← اختار: ٧٥/٢٥ (سماع واحد) أو 🎯 السماع الأدق (تسميع مزدوج بمفتاحين + حكم) — الاتنين موجودين */
     private fun geminiAsk() {
         if (!TrWizard.hasGeminiKey()) { say("☁ جيميناي محتاج مفتاح — ضيفه من الإعدادات ← 🔑 المفاتيح"); return }
-        val n = try { Cfg.snapshot().let { c -> (c.keys + c.backup + c.refine).filter { it.length > 10 }.distinct().size } } catch (_: Throwable) { 0 }
-        val dm = Cfg.int("dual_listen", 1)
         val fast = Cfg.bool("fastmode", false)   // (v1068)
-        // (v749) الوضعين صفّين ظاهرين فوق بعض (من غير رسالة طويلة تزقّ الأزرار برّه الشاشة على التلفزيون)
+        // (v1071) وضع واحد بس: السريع — صفّا الأدق و٧٥/٢٥ اتشالوا من القايمة
         shDialog(330) { col, close ->
             col.addView(shHead("☁ جيميناي — اختار الوضع", "الحالي: " + listenName()))
-            col.addView(shRow("🎯 السماع الأدق", if (dm == 2 && !fast) "✓ الحالي" else "مفتاحين + حكم") { close(); h.post { Cfg.put("dual_listen", "2"); Cfg.put("fastmode", "0"); geminiStart() } })
-            col.addView(shRow("⚡ ٧٥/٢٥ — سماع واحد", if (dm == 0 && !fast) "✓ الحالي" else "أسرع وأرخص") { close(); h.post { Cfg.put("dual_listen", "0"); Cfg.put("fastmode", "0"); geminiStart() } })
-            // (v1068) ⚡ سريع تحت الاتنين: نفس مفتاح «⚡ الترجمة السريعة» (fastmode) — أول ترجمة في ثواني، برومبت خفيف، من غير تسميع مزدوج
-            col.addView(shRow("⚡ سريع", if (fast) "✓ الحالي" else "أول ترجمة في ثواني · برومبت خفيف") { close(); h.post { Cfg.put("fastmode", "1"); geminiStart() } })
-            if (n < 2) col.addView(shNote("عندك مفتاح واحد بس — 🎯 الأدق محتاج مفتاحين، ومن غيرهم هيشتغل كسماع واحد.", true))
+            col.addView(shRow("⚡ سريع", if (fast) "✓ الحالي" else "أول ترجمة في ثواني · تفريغ دقيق + ترجمة مجمّعة") { close(); h.post { Cfg.put("fastmode", "1"); geminiStart() } })
             col.addView(shRow("إلغاء") { close() })
         }
     }
@@ -3376,15 +3371,7 @@ class PlayerActivity : Activity(), Host {
                 say("🎧 جودة الصوت: AAC (داتا أقل) — الباتشات الجاية هتترفع بيها")
             }, cLp())
             col.addView(r, LinearLayout.LayoutParams(-1, -2))
-            // (v742) تسميع مزدوج: مفتاح تاني يسمع نفس الباتش وأي اختلاف يتحسم بسماع تالت على الجملة
-            col.addView(shHead("🎯 تدقيق السماع بمفتاحين", "مفتاح تاني بيسمع نفس الباتش، والجمل اللي اختلفوا فيها بتتسمع تالت"))
-            val dl = Cfg.int("dual_listen", 1)
-            val r2 = shFlow()
-            r2.addView(shChip("⛔ مقفول", dl == 0) { setPop?.dismiss(); Cfg.put("dual_listen", "0"); say("🎯 التسميع المزدوج: مقفول") }, cLp())
-            r2.addView(shChip("🌍 ذكي (غير الإنجليزي)", dl == 1) { setPop?.dismiss(); Cfg.put("dual_listen", "1"); say("🎯 التسميع المزدوج: شغّال للغات غير الإنجليزي") }, cLp())
-            r2.addView(shChip("🔁 دايمًا", dl == 2) { setPop?.dismiss(); Cfg.put("dual_listen", "2"); say("🎯 التسميع المزدوج: شغّال لكل الباتشات") }, cLp())
-            col.addView(r2, LinearLayout.LayoutParams(-1, -2))
-            col.addView(shNote("بيستهلك طلبات جيميناي أكتر (باتش واحد = طلبين + سماعات قصيرة للخلافات). محتاج مفتاحين على الأقل."))
+            // (v1071) صف تدقيق السماع اتشال — التسميع المزدوج ثابت «ذكي» (غير الإنجليزي بس) ومفيش مكان يغيّره
         }
         fun keysSection() {
             col.addView(shHead("🔑 مفاتيح جيميناي", "$keysN مفتاح" + (if (mk == "fgem") " · كل مفتاح بيلف على كل الموديلات · ٧٥٪ بتنسخ و٢٥٪ بتترجم بالسياق" else if (mk == "gem") " · ٧٥٪ بتنسخ و٢٥٪ بتترجم بالسياق" else "")))

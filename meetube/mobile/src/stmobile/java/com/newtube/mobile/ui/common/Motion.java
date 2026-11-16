@@ -55,37 +55,16 @@ public final class Motion {
      * the end, so scrolling and the glass that samples the page pay nothing afterwards. A new call
      * on the same view takes over from the running one.
      */
+    // (v1071) Joyboy: مفيش أنيميشن — الحالة النهائية فورًا، من غير فيد ولا بلور بيصفى
     public static void frostIn(android.view.View view) {
         view.animate().cancel();
-        view.setAlpha(0f);
-        view.animate().alpha(1f).setDuration(FROST_MS).setInterpolator(EMPHASIZED_DECELERATE).withLayer().start();
-        if (android.os.Build.VERSION.SDK_INT < 31) {
-            return;
-        }
+        view.setAlpha(1f);
+        view.setRenderEffect(null);
         Object running = view.getTag(com.liskovsoft.smartyoutubetv2.tv.R.id.mobile_frost_animator);
         if (running instanceof android.animation.Animator) {
             ((android.animation.Animator) running).cancel();
         }
-        float radius = FROST_BLUR_DP * view.getResources().getDisplayMetrics().density;
-        android.animation.ValueAnimator frost = android.animation.ValueAnimator.ofFloat(radius, 0f);
-        frost.setDuration(FROST_MS);
-        frost.setInterpolator(EMPHASIZED_DECELERATE);
-        frost.addUpdateListener(a -> {
-            float r = (float) a.getAnimatedValue();
-            view.setRenderEffect(r < 0.5f ? null : android.graphics.RenderEffect.createBlurEffect(
-                    r, r, android.graphics.Shader.TileMode.CLAMP));
-        });
-        frost.addListener(new android.animation.AnimatorListenerAdapter() {
-            @Override
-            public void onAnimationEnd(android.animation.Animator animation) { // also after cancel()
-                view.setRenderEffect(null);
-                if (view.getTag(com.liskovsoft.smartyoutubetv2.tv.R.id.mobile_frost_animator) == animation) {
-                    view.setTag(com.liskovsoft.smartyoutubetv2.tv.R.id.mobile_frost_animator, null);
-                }
-            }
-        });
-        view.setTag(com.liskovsoft.smartyoutubetv2.tv.R.id.mobile_frost_animator, frost);
-        frost.start();
+        view.setTag(com.liskovsoft.smartyoutubetv2.tv.R.id.mobile_frost_animator, null);
     }
 
     /** MEETUBE(motion): the same pop, barely there - for a whole bar acknowledging a change. */
@@ -93,20 +72,14 @@ public final class Motion {
         pop(view, 0.965f, 1.015f);
     }
 
+    // (v1071) Joyboy: مفيش أنيميشن — الحجم النهائي على طول
     private static void pop(android.view.View view, float in, float over) {
         if (view == null) {
             return;
         }
-        android.animation.Keyframe k0 = android.animation.Keyframe.ofFloat(0f, 1f);
-        android.animation.Keyframe k1 = android.animation.Keyframe.ofFloat(0.35f, in);
-        android.animation.Keyframe k2 = android.animation.Keyframe.ofFloat(0.75f, over);
-        android.animation.Keyframe k3 = android.animation.Keyframe.ofFloat(1f, 1f);
-        android.animation.ObjectAnimator pop = android.animation.ObjectAnimator.ofPropertyValuesHolder(view,
-                android.animation.PropertyValuesHolder.ofKeyframe(android.view.View.SCALE_X, k0, k1, k2, k3),
-                android.animation.PropertyValuesHolder.ofKeyframe(android.view.View.SCALE_Y, k0, k1, k2, k3));
-        pop.setDuration(POP_MS);
-        pop.setInterpolator(STANDARD);
-        pop.start();
+        view.animate().cancel();
+        view.setScaleX(1f);
+        view.setScaleY(1f);
     }
 
     /**
