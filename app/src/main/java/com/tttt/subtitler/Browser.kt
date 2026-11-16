@@ -2129,21 +2129,36 @@ class BrowserActivity : Activity() {
         fun head(x: String) = box.addView(ui.text(x, 13.5f, th.primary, true).apply { setPadding(0, ui.dp(10), 0, ui.dp(2)) })
         fun row(label: String, sub: String, act: () -> Unit) = box.addView(ui.button(label.take(70) + "\n" + sub.take(60)) { d.dismiss(); act() })
         fun sz(x: ScanItem) = if (x.size > 0) " · " + Sniff.fmtSize(x.size) else ""
+        // (v1064) صف بصورة مصغّرة (poster / صورة الكارت) عشان تعرف تختار الفيديو الصح؛ من غير صورة ← الصف العادي
+        fun trow(x: ScanItem, label: String, sub: String, act: () -> Unit) {
+            if (x.img.isEmpty()) { row(label, sub, act); return }
+            val iv = android.widget.ImageView(this).apply { scaleType = android.widget.ImageView.ScaleType.CENTER_CROP; setBackgroundColor(0x22888888) }
+            val tv = ui.text(label.take(70) + "\n" + sub.take(60), 14f, th.text)
+            val line = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; gravity = Gravity.CENTER_VERTICAL
+                setPadding(ui.dp(8), ui.dp(8), ui.dp(8), ui.dp(8)); background = ui.box(th.surface, th.border, 10)
+                isClickable = true; setOnClickListener { d.dismiss(); act() }
+            }
+            line.addView(iv, LinearLayout.LayoutParams(ui.dp(104), ui.dp(64)))
+            line.addView(tv, LinearLayout.LayoutParams(0, -2, 1f).apply { marginStart = ui.dp(10) })
+            box.addView(line, LinearLayout.LayoutParams(-1, -2).apply { topMargin = ui.dp(6) })
+            Thread { val b = try { PageScan.fetchThumb(x.img, ua, page) } catch (_: Throwable) { null }; if (b != null) runOnUiThread { if (!dead) iv.setImageBitmap(b) } }.apply { isDaemon = true }.start()
+        }
         if (n > 0) {
             head("🎬 فيديوهات ($n)")
             box.addView(ui.button("🎬 افتح الفيديوهات الملقوطة — تحميل · تلفزيون · مشاهدة", true) { d.dismiss(); showList() })
         }
         if (hosts.isNotEmpty()) {
             head("🔗 روابط رفع (${hosts.size}) — ملفات حقيقية")
-            hosts.forEach { x -> row("🔗 " + x.name, x.ext.uppercase() + sz(x) + " · " + PageScan.hostOf(x.title.ifBlank { x.url })) { resolveHost(x, ua) } }
+            hosts.forEach { x -> trow(x, "🔗 " + x.name, x.ext.uppercase() + sz(x) + " · " + PageScan.hostOf(x.title.ifBlank { x.url })) { resolveHost(x, ua) } }
         }
         if (files.isNotEmpty()) {
             head("📦 ملفات وبرامج (${files.size}) — ملفات حقيقية")
-            files.forEach { x -> row("⬇ " + x.name, x.ext.uppercase() + sz(x) + " · " + PageScan.hostOf(x.url)) { dlDialog(x.name, x.url, ua, null) } }
+            files.forEach { x -> trow(x, "⬇ " + x.name, x.ext.uppercase() + sz(x) + " · " + PageScan.hostOf(x.url)) { dlDialog(x.name, x.url, ua, null) } }
         }
         if (pages.isNotEmpty()) {
             head("📄 صفحات فيديو (${pages.size}) — دوس يجيب الفيديو")
-            pages.forEach { x -> row("🎞 " + x.title.ifBlank { x.name }, PageScan.hostOf(x.url)) { resolvePage(x, ua, t, true) } }
+            pages.forEach { x -> trow(x, "🎞 " + x.title.ifBlank { x.name }, PageScan.hostOf(x.url)) { resolvePage(x, ua, t, true) } }
         }
         d = sheet("🔎 نتيجة فحص الصفحة", box); d.show()
     }
@@ -2318,6 +2333,8 @@ class BrowserActivity : Activity() {
             Peek(code, mime, buf.toByteArray(), total)
         } catch (_: Throwable) { null } finally { try { c?.disconnect() } catch (_: Throwable) {} }
     }
+    /** (v1063) أكواد مؤقتة (ضغط/ازدحام/مهلة): مش دليل إن اللينك مزيّف */
+    private fun transientCode(c: Int): Boolean = c == 408 || c == 425 || c == 429 || c >= 500
     private class VRes(val ok: Boolean, val definite: Boolean, val size: Long, val mime: String)   // definite = السيرفر ردّ ورفض (مش مهلة شبكة)
     private fun looksHtml(p: Peek): Boolean {
         val m = p.mime.lowercase()
@@ -2328,7 +2345,7 @@ class BrowserActivity : Activity() {
     private fun resolveUrl(base: String, ref: String): String = try { java.net.URL(java.net.URL(base), ref.trim()).toString() } catch (_: Throwable) { ref.trim() }
     private fun checkMedia(f: Found, hd: Map<String, String>): VRes {
         val pk = httpPeek(f.url, hd, 4096) ?: return VRes(false, false, -1L, "")
-        if (pk.code !in 200..299) return VRes(false, true, -1L, "")
+        if (pk.code !in 200..299) return VRes(false, !transientCode(pk.code), -1L, "")   // (v1063) 429/5xx/408 = مؤقت: ما نخبّيش اللقطة
         val head = String(pk.body, Charsets.UTF_8).trimStart('\uFEFF', ' ', '\n', '\r', '\t')
         val hls = isHls(f) || head.startsWith("#EXTM3U")
         if (hls) {
@@ -2341,12 +2358,12 @@ class BrowserActivity : Activity() {
                 val v = text.lines().map { it.trim() }.firstOrNull { it.isNotEmpty() && !it.startsWith("#") } ?: return VRes(false, true, -1L, pk.mime)
                 plUrl = resolveUrl(f.url, v)
                 pl = httpPeek(plUrl, hd, 120_000) ?: return VRes(false, false, -1L, pk.mime)
-                if (pl.code !in 200..299 || !String(pl.body, Charsets.UTF_8).trimStart('\uFEFF', ' ', '\n', '\r').startsWith("#EXTM3U")) return VRes(false, true, -1L, pk.mime)
+                if (pl.code !in 200..299 || !String(pl.body, Charsets.UTF_8).trimStart('\uFEFF', ' ', '\n', '\r').startsWith("#EXTM3U")) return VRes(false, !transientCode(pl.code), -1L, pk.mime)
                 text = String(pl.body, Charsets.UTF_8)
             }
             val seg = text.lines().map { it.trim() }.firstOrNull { it.isNotEmpty() && !it.startsWith("#") } ?: return VRes(false, true, -1L, pk.mime)
             val sp = httpPeek(resolveUrl(plUrl, seg), hd, 2048) ?: return VRes(true, false, -1L, pk.mime)   // مهلة على المقطع: مش دليل إنه مزيّف
-            if (sp.code !in 200..299 || looksHtml(sp)) return VRes(false, true, -1L, pk.mime)
+            if (sp.code !in 200..299 || looksHtml(sp)) return VRes(false, !transientCode(sp.code), -1L, pk.mime)
             return VRes(true, true, -1L, pk.mime)
         }
         if (f.kind == "DASH") return if (head.contains("<MPD", true)) VRes(true, true, -1L, pk.mime) else VRes(false, true, -1L, pk.mime)
@@ -2397,9 +2414,13 @@ class BrowserActivity : Activity() {
         }.apply { isDaemon = true }.start()
     }
     private val huntedGen = HashSet<String>()
+    private val rejTries = HashMap<String, Int>()   // (v1063)
     /** (v976) لينك ملقوط اتبيّن إنه مزيّف: لو ما فضلش أي فيديو سليم في الصفحة بعد 3.5 ثانية، ندوّر في الصفحة والمشغّلات الخارجية (مرة واحدة لكل صفحة) */
     private fun rejectFake(f: Found) {
         val t = tabs.firstOrNull { it.id == f.tabId } ?: return
+        // (v1063) اللينك المرفوض كان بيفضل في keys طول الصفحة فمايتفحصش تاني حتى لو الرفض كان عابر ← نسمح بمحاولتين تانيين بعد 12 ثانية
+        val kk = "${t.id}:${f.gen}:" + Sniff.key(f.url); val rn = (rejTries[kk] ?: 0) + 1; rejTries[kk] = rn
+        if (rn <= 2) h.postDelayed({ keys.remove(kk) }, 12000L)
         if (f.gen != t.gen || t.priv) return
         val sf0 = snaps[t.id]; if (sf0 != null && sf0.gen == f.gen) sf0.fake++   // (v980)
         val k = "${t.id}:${t.gen}"; val g = t.gen
@@ -3235,6 +3256,31 @@ class BrowserActivity : Activity() {
             runOnUiThread { if (!dead) refreshBadge() }   // (v558) العدّاد والقايمة يتحدّثوا لما الفحص يخلص (حتى لو الجودة ماطلعتش)
         }.apply { isDaemon = true }.start()
     }
+    // (v1064) صور مصغّرة لقايمة الفيديوهات الملقوطة: 1) poster اللي فحص الصفحة لقاه لنفس اللينك  2) لقطة من الفيديو نفسه (MediaMetadataRetriever بنفس هيدرز التحميل). بتتخزّن لكل لينك
+    private val fThumb = java.util.concurrent.ConcurrentHashMap<String, android.graphics.Bitmap>()
+    private val fThumbBusy: MutableSet<String> = java.util.concurrent.ConcurrentHashMap.newKeySet()
+    private fun loadFoundThumb(f: Found, iv: android.widget.ImageView) {
+        val k = Sniff.key(f.url)
+        fThumb[k]?.let { iv.setImageBitmap(it); return }
+        if (!fThumbBusy.add(k)) { h.postDelayed({ if (!dead) fThumb[k]?.let { iv.setImageBitmap(it) } }, 3000L); return }   // لسه بيتحمّل (من رسم قايمة تاني): نحاول تاني بعد شوية
+        val hs = dlHeaders(f); val u = f.url; val pg = f.page.ifEmpty { f.ref }; val ua = f.ua
+        Thread {
+            var bmp: android.graphics.Bitmap? = null
+            try { PageScan.posters[k]?.let { bmp = PageScan.fetchThumb(it, ua, pg) } } catch (_: Throwable) {}
+            if (bmp == null && !f.kind.startsWith("YT")) try {
+                val r = android.media.MediaMetadataRetriever()
+                try {
+                    r.setDataSource(u, hs)
+                    val fr = r.getFrameAtTime(1_000_000L, android.media.MediaMetadataRetriever.OPTION_CLOSEST_SYNC) ?: r.getFrameAtTime(0L)
+                    if (fr != null) { val sc = 320f / maxOf(fr.width, 1); bmp = if (sc < 1f) android.graphics.Bitmap.createScaledBitmap(fr, 320, (fr.height * sc).toInt().coerceAtLeast(1), true) else fr }
+                } finally { try { r.release() } catch (_: Throwable) {} }
+            } catch (_: Throwable) {}
+            val b = bmp
+            if (b != null) fThumb[k] = b
+            fThumbBusy.remove(k)
+            runOnUiThread { if (!dead && b != null) iv.setImageBitmap(b) }
+        }.apply { isDaemon = true }.start()
+    }
     private val selQ = HashMap<String, Int>()   // (v231) الجودة المختارة لكل اصطياد (مفتاح المجموعة ← رقم الجودة)
 
     /** (v231) اصطياد واحد لكل فيديو: العنوان + اختيار الجودة (لو أكتر من جودة) + زرار أزرق كبير «🌐 شاهد وترجم» وتحته ▶ فرجة · ⬇ تحميل (بحجمه) · 📋 نسخ · 🎧 صوت */
@@ -3252,7 +3298,14 @@ class BrowserActivity : Activity() {
     /** (v594) كارت صغير: العنوان + اختيار الجودة + صف أزرار صغيرة (🌐 ترجمة · ▶ شاهد · 📺 تلفزيون · ⬇ حمّل). ضغطة طويلة على الاسم = نسخ اللينك · على «حمّل» = صوت بس */
     private fun groupCard(g: Grp): View {
         val c = ui.card()
-        c.addView(ui.text(g.title, 13f, th.text, true).apply { maxLines = 2; ellipsize = TextUtils.TruncateAt.END; setOnLongClickListener { g.qs.getOrNull(qIdx(g))?.let { copyUrl(it.f.url) }; true } })
+        // (v1064) صورة مصغّرة جنب العنوان عشان تعرف تختار الفيديو الصح (poster من الصفحة، أو لقطة من الفيديو نفسه)
+        val tIv = android.widget.ImageView(this).apply { scaleType = android.widget.ImageView.ScaleType.CENTER_CROP; setBackgroundColor(0x22888888) }
+        val tTv = ui.text(g.title, 13f, th.text, true).apply { maxLines = 3; ellipsize = TextUtils.TruncateAt.END; setOnLongClickListener { g.qs.getOrNull(qIdx(g))?.let { copyUrl(it.f.url) }; true } }
+        val tRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; gravity = Gravity.CENTER_VERTICAL }
+        tRow.addView(tIv, LinearLayout.LayoutParams(ui.dp(104), ui.dp(64)))
+        tRow.addView(tTv, LinearLayout.LayoutParams(0, -2, 1f).apply { marginStart = ui.dp(10) })
+        c.addView(tRow)
+        g.qs.getOrNull(qIdx(g))?.let { loadFoundThumb(it.f, tIv) }
         if (repairId != null) {   // وضع إصلاح اللينك: اختيار الجودة بس
             if (g.qs.size > 1) c.addView(ui.text("🎞 ${g.qs.size} جودات", 13f, th.primary, true))
             for (q in g.qs) c.addView(ui.button("🔧 استخدم " + q.label, true) { dlg?.dismiss(); applyRepair(q) })

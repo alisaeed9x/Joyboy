@@ -4270,6 +4270,7 @@ class PlayerActivity : Activity(), Host {
     override fun onCreate(b: Bundle?) {
         NetLedger.start(this); NetLog.start(this); NetGate.apply(this)
         super.onCreate(b)
+        if (incognito) try { window.addFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE) } catch (_: Throwable) {}   // (v1062) متخفي: المعاينة في الريسنت سودا
         if (MtPlay.reroute(this, intent)) {   // (v923)
             gone = true; try { overridePendingTransition(0, 0) } catch (_: Throwable) {}
             if (MtPlay.holdForPlayer(this)) return   // (v950) بتفضل سودا ورا المشغّل لحد ما يظهر (من غير فلاش المكتبة/الشاشة البيضا)

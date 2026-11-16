@@ -74,6 +74,8 @@ object MtMedia {
             val newKey = try { i.localUri()?.takeIf { it.isNotBlank() } ?: i.videoId() } catch (_: Throwable) { null }
             if (act !== a || key != newKey) { abA = -1L; abB = -1L; resumed = false; ended = false }
             act = a; info = i; options = opts; key = newKey
+            // (v1062) فيديو متخفي (محلي «L:» أو يوتيوب بـincognito) ← FLAG_SECURE: المعاينة في الريسنت سودا + لقطة الشاشة ممنوعة؛ غير متخفي ← يتشال
+            try { val pv = priv() || ((try { i.videoId() } catch (_: Throwable) { null })?.let { MtTranslate.privIds.contains(it) } == true); a.runOnUiThread { try { if (pv) a.window.addFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE) else a.window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE) } catch (_: Throwable) {} } } catch (_: Throwable) {}
             if (player !== p) { try { player?.removeListener(listener) } catch (_: Throwable) {}; p.addListener(listener); player = p }
             opts?.findViewWithTag<View>(TAG_AB)?.let { opts.removeView(it) }
             pill = null

@@ -110,7 +110,7 @@ object PlayTarget {
         if (spec.startMs <= 0L && local) {
             val pos = try { ResumeAsk.savedMs(act, spec.uri ?: "") } catch (_: Throwable) { 0L }
             if (pos > 0L) {
-                ResumeAsk.show(act, pos) { r -> send(act, if (r) spec.copy(startMs = pos) else spec.copy(startMs = -1L), target, local, onSent)   // (v1056) -1 = «ابدأ من جديد» صريحة: التلفزيون ما يكمّلش من عنده }
+                ResumeAsk.show(act, pos) { r -> send(act, if (r) spec.copy(startMs = pos) else spec.copy(startMs = -1L), target, local, onSent) }   // (v1056) -1 = «ابدأ من جديد» صريحة: التلفزيون ما يكمّلش من عنده
                 return true
             }
         }
