@@ -53,7 +53,6 @@ class PageGear(private val act: Activity, host: FrameLayout, private val anchor:
         // الشريط السفلي بيتغيّر ارتفاعه (صف «المزيد»، الدوران): الكبسولة تفضل لازقة فوقه
         anchor.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> reposition() }
         lift?.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> reposition() }   // (v829) ظهور/اختفاء شريط الميديا
-        MtFloat.barOf(act)?.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> reposition() }   // (v910) ارتفاع الشريط الزجاجي العايم
         // (v1049) ألسنة التلفزيون (📺 🎮 ▶) بتظهر/تختفي مع الاتصال: الكبسولة تتزحزح بعيد عن الحافة اليمين
         TvModeFab.listeners.add { try { if (!act.isDestroyed) view.post { reposition() } } catch (_: Throwable) {} }
         host.post { reposition() }
@@ -67,9 +66,6 @@ class PageGear(private val act: Activity, host: FrameLayout, private val anchor:
         if (rail) { rm = anchor.width + ui.dp(10); bm = ui.dp(10) + up }   // تابلت: الريل على الجنب
         else {
             rm = if (DeviceUi.isTablet(act)) ui.dp(14) else (sw / 10 - ui.dp(28)).coerceAtLeast(ui.dp(4)); bm = anchor.height + ui.dp(6) + up
-            // (v910) الشريط الزجاجي العايم له حشو 6dp + هامش 12dp تحت (والـlift جواه أصلًا): لازم نقعد فوق الزجاج كله مش فوق الأزرار بس، وإلا الكبسولة تستخبّى وراه
-            val fb = MtFloat.barTop(act)
-            if (fb > 0) bm = fb + ui.dp(8)
         }
         // (v1049) ألسنة التلفزيون واقفة على الحافة اليمين (عرضها 40dp): لو ظاهرة الكبسولة تبعد عنها أفقيًا
         if (!rail && TvModeFab.edgeTabsShown(act)) rm = maxOf(rm, ui.dp(48))

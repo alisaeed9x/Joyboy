@@ -44,9 +44,7 @@ class StatusStrip(private val act: Activity, private val parent: FrameLayout, pr
     private fun show(text: String, holdMs: Long) {
         if (hidden) return
         tv.text = text
-        if (!shown) { shown = true; tv.animate().cancel(); tv.alpha = 0f; tv.visibility = View.VISIBLE; tv.animate().alpha(1f).setDuration(180L).start()
-            if (MtGlass.on()) tv.post { try { com.newtube.mobile.ui.common.SheetGlass.frost(tv, act.window, ui.dp(MtGlass.rad(18)).toFloat(), MeeRes.color("meetube_toast_glass", 0xA3303034.toInt(), 0xA3303034.toInt())) } catch (_: Throwable) {} }   // (v909) SheetGlass.frost بنفس استدعاء MobileSnackbar: بلور حقيقي للصفحة تحت الكبسولة
-        }
+        if (!shown) { shown = true; tv.animate().cancel(); tv.alpha = 0f; tv.visibility = View.VISIBLE; tv.animate().alpha(1f).setDuration(180L).start() }
         main.removeCallbacks(hideRun); main.postDelayed(hideRun, holdMs)
     }
 

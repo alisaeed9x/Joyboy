@@ -38,7 +38,7 @@ class Ui(val ctx: Context, var th: Theme) {
     fun noHint(): IconTextView = IconTextView(ctx).apply { visibility = View.GONE }
     fun slider(label: String, init: Int, lo: Int, hi: Int, unit: String, onChange: (Int) -> Unit): LinearLayout {
         val tv = text("$label: ${init.coerceIn(lo, hi)}$unit", 13f, th.text)
-        val sb = (if (MtGlass.on()) com.newtube.mobile.ui.common.GlassSlider(ctx) else SeekBar(ctx)).apply { layoutDirection = android.view.View.LAYOUT_DIRECTION_LTR;   // (v909) GlassSlider الأصلي من MeeTube
+        val sb = SeekBar(ctx).apply { layoutDirection = android.view.View.LAYOUT_DIRECTION_LTR;   // (v1072) GlassSlider بتاع MeeTube اتشال — SeekBar عادي
             max = hi - lo; progress = init.coerceIn(lo, hi) - lo
             setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
                 override fun onProgressChanged(s: SeekBar?, p: Int, u: Boolean) { tv.text = "$label: ${p + lo}$unit"; if (u) onChange(p + lo) }
@@ -72,33 +72,19 @@ class Ui(val ctx: Context, var th: Theme) {
         SettingsIdx.reg(this, t)   // (v1014) فهرس البحث
     }
     /**
-     * (v909) سويتش MeeTube الأصلي (`com.newtube.mobile.ui.common.GlassSwitch`): نفس صف إعدادات MeeTube —
-     * النص جنب السويتش والصف كله clickable هو اللي بيقلب (السويتش الأصلي بيعمل click على صاحبه). تلفزيون/فشل بناء ← الشكل القديم.
+     * (v1072) سويتش MeeTube الأصلي (GlassSwitch) اتشال مع البرنامج — الشكل العادي دايمًا.
+     * النص جنب السويتش والصف كله clickable هو اللي بيقلب. تلفزيون ← الشكل القديم.
      */
     fun switchRow(t: String, on: Boolean, onChange: (Boolean) -> Unit): SwitchRow {
         val row = SwitchRow(ctx)
-        val glass: CompoundButton? = if (MtGlass.on()) try { com.newtube.mobile.ui.common.GlassSwitch(ctx) } catch (_: Throwable) { null } else null
-        if (glass == null) {
-            val sw = plainSwitchRow(t, on, onChange)
-            row.inner = sw; row.addView(sw, LinearLayout.LayoutParams(-1, -2))
-            SettingsIdx.reg(row, t)   // (v1014)
-            return row
-        }
-        row.orientation = LinearLayout.HORIZONTAL; row.gravity = Gravity.CENTER_VERTICAL
-        row.setPadding(0, dp(2), 0, dp(2)); row.isClickable = true; row.isFocusable = true
-        val label = text(t, 14f, th.text).apply { setPadding(0, dp(6), dp(10), dp(6)) }
-        row.addView(label, LinearLayout.LayoutParams(0, -2, 1f))
-        row.addView(glass, LinearLayout.LayoutParams(-2, -2))
-        glass.isChecked = on
-        glass.setOnCheckedChangeListener { _, v -> onChange(v) }
-        row.setOnClickListener { glass.isChecked = !glass.isChecked }   // الصف هو اللي بيقلب (clickOwner في GlassSwitch)
-        row.inner = glass
+        val sw = plainSwitchRow(t, on, onChange)
+        row.inner = sw; row.addView(sw, LinearLayout.LayoutParams(-1, -2))
         SettingsIdx.reg(row, t)   // (v1014)
         return row
     }
-    private fun plainSwitchRow(t: String, on: Boolean, onChange: (Boolean) -> Unit): Switch = IconSwitch(ctx).apply {   // (v909) الشكل القديم: تلفزيون + احتياطي لو سويتش MeeTube مااتبناش
+    private fun plainSwitchRow(t: String, on: Boolean, onChange: (Boolean) -> Unit): Switch = IconSwitch(ctx).apply {   // (v1072) الشكل العادي (سويتش MeeTube اتشال)
         text = t; isChecked = on; setTextColor(th.text); textSize = 14f; setPadding(0, dp(6), 0, dp(6)); minHeight = dp(48)   // (v458)
-        if (MtGlass.on()) try {   // (v893) سويتش MeeTube: مقبض أبيض · مسار لون التمييز مفعّل / رمادي غامق مقفول (v905: الزجاجي بيرسم نفسه)
+        if (MtGlass.on()) try {   // (v893) مقبض أبيض · مسار لون التمييز مفعّل / رمادي غامق مقفول
             thumbTintList = android.content.res.ColorStateList.valueOf(Color.WHITE)
             trackTintList = android.content.res.ColorStateList(arrayOf(intArrayOf(android.R.attr.state_checked), intArrayOf()), intArrayOf(th.primary, 0xFF3A3A3F.toInt()))
         } catch (_: Throwable) {}

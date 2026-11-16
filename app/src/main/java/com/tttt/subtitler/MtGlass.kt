@@ -109,9 +109,9 @@ object MtGlass {
         GradientDrawable().apply { setColor(th.surface); cornerRadius = radiusPx }
 
     // ===== الحركة (Motion.java): منحنيات Material 3 =====
-    // (v908) منحنيات MeeTube نفسها (Motion.java) — مش نسخة
-    val EMPHASIZED_DECELERATE: Interpolator = com.newtube.mobile.ui.common.Motion.EMPHASIZED_DECELERATE
-    val EMPHASIZED_ACCELERATE: Interpolator = com.newtube.mobile.ui.common.Motion.EMPHASIZED_ACCELERATE
+    // (v1072) منحنيات MeeTube نفسها بقت ثوابت محلية (Emphasized من Material 3) بعد ما اتشال المودول
+    val EMPHASIZED_DECELERATE: Interpolator = PathInterpolator(0.05f, 0.7f, 0.1f, 1f)
+    val EMPHASIZED_ACCELERATE: Interpolator = PathInterpolator(0.3f, 0f, 0.8f, 0.15f)
     val STANDARD: Interpolator = PathInterpolator(0.2f, 0f, 0f, 1f)
     val EMPHASIZED: Interpolator by lazy {
         val p = Path()

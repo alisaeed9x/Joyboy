@@ -7,7 +7,7 @@ import android.os.Bundle
 /**
  * (v1006) «آخر صفحة كنت فيها» — عشان الخروج من أي فيديو يرجّعك للصفحة اللي فتحته منها بالظبط
  * (فيديوهات · موسيقى · مهام · إعدادات · يوتيوب · متصفح · ملفات)، مش لأي صفحة صادف إنها فوق في الستاك.
- * MtOrigin.record() بياخد اللقطة دي لحظة فتح الفيديو (الصفحة لسه هي اللي قدّام).
+ * (v1072) اللقطة كانت بتتاخد في MtOrigin.record() لحظة فتح الفيديو (الصفحة لسه هي اللي قدّام) — MtOrigin اتشال مع MeeTube.
  */
 object NavOrigin : Application.ActivityLifecycleCallbacks {
     @Volatile private var page = ""

@@ -94,6 +94,7 @@ class MainActivity : Activity() {
     private var musicUi: MusicUi? = null            // (v189) صفحة الموسيقى
     private var tasksUiRef: TasksUi? = null
     private var showTabFn: (Int) -> Unit = {}
+    private var ytUi: YtProUi? = null   // (v1072) يوتيوب الداخلي رجع — واجهة أصلية على NewPipe بدل MeeTube
     private var mediaSw: MediaSwitch? = null   // (v654) زرارين فيديوهات/موسيقى فوق «ميديا»
     private var musicOpenFn: (() -> Unit)? = null   // (v337) يفتح صفحة الموسيقى ومشغّلها الكامل (لتشغيل صوت يوتيوب)
     private var tasksDlgRefresh: (() -> Unit)? = null
@@ -130,12 +131,12 @@ class MainActivity : Activity() {
         ytTvMode = intent?.getBooleanExtra("tv_target", false) == true
         if (fromPlayer) setTheme(android.R.style.Theme_Translucent_NoTitleBar)
         super.onCreate(b)
-        // (v985) استعادة PiP من أيقونة اللانشر — منقولة من SplashActivity بتاع MeeTube
-        // (هي اللي كانت بتعملها قبل ما يتشال فلتر اللانشر منها): ضغطة الأيقونة والمشغّل
-        // مثبّت في PiP لازم تكبّر المشغّل بدل ما تفتح الرئيسية. قبل أي حاجة تانية.
+        // (v1072) استعادة PiP من أيقونة اللانشر — مشغّل Joyboy نفسه: ضغطة الأيقونة والمشغّل مثبّت في PiP لازم تكبّر المشغّل بدل ما تفتح الرئيسية. قبل أي حاجة تانية.
         if (intent?.action == Intent.ACTION_MAIN && intent?.hasCategory(Intent.CATEGORY_LAUNCHER) == true) {
             try {
-                if (com.newtube.mobile.MobileMainApplication.booted()?.restorePictureInPictureFromLauncher(this) == true) {
+                val live = PlayerActivity.liveOrNull()
+                if (live != null && live.pipNow()) {
+                    startActivity(Intent(this, PlayerActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT))
                     finish()
                     return
                 }
@@ -393,11 +394,10 @@ class MainActivity : Activity() {
         val ytQ = listOf("أعلى جودة", "1080p", "720p", "480p", "360p", "240p")
         val ytQv = intArrayOf(0, 1080, 720, 480, 360, 240)
         var settingsDlg0: TabbedDialog? = null; var qui0: QueueUi? = null
-        // (v1012) قسم يوتيوب بقى مختصر: فتح يوتيوب + إعدادات MeeTube الكاملة. الجودة والسلاسة اتنقلوا لقسم «🎬 المشغّل»، والثيم مكانه الوحيد «🎨 المظهر».
+        // (v1072) قسم يوتيوب: فتح يوتيوب الداخلي (MeeTube اتشال — مفيش إعدادات MeeTube).
         val ytSettingsViews: () -> List<View> = { listOf(
-            ui.section("▶ MeeTube (يوتيوب البرنامج)", true,
-                ui.button("▶ افتح يوتيوب") { settingsDlg0?.dialog?.dismiss(); MeeTubeLink.open(this) },
-                ui.button("⚙ إعدادات MeeTube الكاملة (المشغّل · الشكل · الحساب · التحميل)") { settingsDlg0?.dialog?.dismiss(); MeeTubeLink.openSettings(this) },
+            ui.section("▶ يوتيوب", true,
+                ui.button("▶ افتح يوتيوب") { settingsDlg0?.dialog?.dismiss(); showTabFn(4) },
                 ui.noHint())) }
         // ===== الواجهة بشكل نسخة الـ HTML: دوائر علوية + كارت فيديو + كبسولة + شبكة أزرار + زرار الترجمة =====
         var recentDlg: android.app.Dialog? = null
@@ -624,9 +624,9 @@ class MainActivity : Activity() {
                     ui.slider("الظهور (100 = معتمة، أقل = أشفّ)", Cfg.int("badge_alpha", 55).coerceIn(15, 100), 15, 100, "%") { Cfg.put("badge_alpha", it.toString()) })) }, true),
             // (v606) المظهر: 7 أقسام بقوا 3 — الثيم (+ استوديو السمات + راحة العين) · الواجهة (السكِن + نوع الجهاز) · الحركة والوصول
             tab("appearance", { listOfNotNull<View>(
-                ui.section("🎨 المظهر (من MeeTube)", true,   // (v907) مصدر واحد: إعداد الثيم بتاع MeeTube نفسه (ThemeMode) — Joyboy وMeeTube بيتبعوه مع بعض
-    ui.chips(listOf("⚙ النظام", "☀️ فاتح", "🌙 داكن"), { when (com.newtube.mobile.ui.common.ThemeMode.peek(this)) { com.newtube.mobile.ui.common.ThemeMode.LIGHT -> "☀️ فاتح"; com.newtube.mobile.ui.common.ThemeMode.DARK -> "🌙 داكن"; else -> "⚙ النظام" } }) { n ->
-        com.newtube.mobile.ui.common.ThemeMode.set(this, when (n) { "☀️ فاتح" -> com.newtube.mobile.ui.common.ThemeMode.LIGHT; "🌙 داكن" -> com.newtube.mobile.ui.common.ThemeMode.DARK; else -> com.newtube.mobile.ui.common.ThemeMode.SYSTEM })
+                ui.section("🎨 المظهر", true,   // (v1072) الجانب (فاتح/داكن/نظام) من إعداد Joyboy نفسه (Cfg theme_mode)
+    ui.chips(listOf("⚙ النظام", "☀️ فاتح", "🌙 داكن"), { when (MeeRes.mode(this)) { "light" -> "☀️ فاتح"; "dark" -> "🌙 داكن"; else -> "⚙ النظام" } }) { n ->
+        Cfg.put("theme_mode", when (n) { "☀️ فاتح" -> "light"; "🌙 داكن" -> "dark"; else -> "system" })
         recreate()
     },
     ui.noHint()),
@@ -748,7 +748,7 @@ class MainActivity : Activity() {
         lib.onYtPick = { n -> playYt(n.id, n.title) }   // (v344) بحث الفيديوهات: اقتراح يوتيوب = فيديو
         lib.onWebSearch = { q -> webSearch(q) }
         lib.onUniSearch = { q -> globalSearch(q) }   // (v469) D4 بحث شامل موسّع (مكتبة + موسيقى + سجل يوتيوب + أقسام الإعدادات)
-        lib.onDash = { a -> when (a) { "yt" -> { MeeTubeLink.open(this) }; "music" -> showTabFn(1); "browser" -> { save(); NavAnim.set(curTab, 2); startActivity(Intent(this, BrowserActivity::class.java)) }; "tvfiles" -> startActivity(Intent(this, TvFilesActivity::class.java)); "tvvideos" -> XferUi.browseTv(this) } }   // (v469) D3 بلاطات لوحة البداية · (v607) مركز النقل
+        lib.onDash = { a -> when (a) { "yt" -> showTabFn(4); "music" -> showTabFn(1); "browser" -> { save(); NavAnim.set(curTab, 2); startActivity(Intent(this, BrowserActivity::class.java)) }; "tvfiles" -> startActivity(Intent(this, TvFilesActivity::class.java)); "tvvideos" -> XferUi.browseTv(this) } }   // (v469) D3 بلاطات لوحة البداية · (v607) مركز النقل
         // ===== ترجمة في الخلفية: من ⋮ على الفيديو/الفولدر =====
         fun startBg(vs: List<VideoItem>) {
             ensureKeys {
@@ -918,34 +918,59 @@ class MainActivity : Activity() {
                 { v -> save(); playChecked(v) }, { v -> m.lib.playItem(v) },
                 { n -> playYt(n.id, n.title) }, { n -> playYtAudio(n.id, n.title, n.channel, n.thumb) }, { x -> webSearch(x) })
         }
+        // (v1072) بوابة يوتيوب (الخامسة): YtProUi رجع — واجهة أصلية على NewPipeExtractor بدل MeeTube؛ بتتبني أول ما تفتحها
+        fun ensureYt(): YtProUi {
+            ytUi?.let { return it }
+            YtSkin.translucent = tvShellOn   // (v516)
+            val yt = YtProUi(this, ui, th,
+                { Recents.parse(try { recentFile.readText() } catch (_: Exception) { "" }).associateBy { it.id } },
+                { id, name, tr -> playYt(id, name, tr) },
+                { u -> save(); NavAnim.set(curTab, 2); startActivity(Intent(this, BrowserActivity::class.java).putExtra("start", u)) },
+                { startActivityForResult(filePicker("*/*", "اختار ملف الاشتراكات", false), 47) },
+                { n -> playYtAudio(n.id, n.title, n.channel, n.thumb) },
+                { n, a -> ytDownload(n, a) },
+                { PubHistoryUi.show(this, ui, th) { kind, src, ref, title -> when {
+                    kind == "v" && src == "youtube" -> playYt(ref, title, false)
+                    kind == "v" && src == "local" -> play("", android.net.Uri.parse(ref), true)
+                    kind == "v" -> openLink(ref)
+                    kind == "a" && src == "youtube" -> playYtAudio(ref, title, "", "")
+                    else -> {}
+                } } }, onPlayAt = { id, name, tr, ms, pk -> playYt(id, name, tr, tr, ms, pk) })
+            ytUi = yt; yt.root.visibility = View.INVISIBLE; yt.onTab = { syncNav() }   // (v475) تبويبات يوتيوب في الشريط السفلي
+            pane.addView(yt.root, 1, FrameLayout.LayoutParams(-1, -1))
+            pane.addView(yt.busyView, FrameLayout.LayoutParams(-1, -1))   // (v337) لودينج جلب رابط الفيديو فوق الصفحة
+            return yt
+        }
         // (v189) البوابات: 0 الفيديوهات · 1 الموسيقى · 2 المتصفح · 3 الملفات (شاشات لوحدها) · (v324) 4 يوتيوب
         // (v324) 5 = صفحة المهام: مش في الشريط، بتتفتح من الزرار العايم (الشريط ساعتها مفيهوش بوابة نشطة)
         showTabFn = { i ->
-            if (i == 4) { MeeTubeLink.open(this) }   // (v888) يوتيوب = MeeTube دايمًا (موبايل وتابلت وتلفزيون) — بوابة Joyboy اتمسحت
-            else if (i == 0 || i == 1 || i == 5 || i == 7) {
+            if (i == 0 || i == 1 || i == 4 || i == 5 || i == 7) {
                 val prevTab = curTab
-                val prevView: View? = when (prevTab) { 0 -> lib.root; 1 -> musicUi?.root; 7 -> settingsHostRef; 5 -> tasksUi.root; else -> null }   // (v621) للأنيميشن الخارج
+                val prevView: View? = when (prevTab) { 0 -> lib.root; 1 -> musicUi?.root; 4 -> ytUi?.root; 7 -> settingsHostRef; 5 -> tasksUi.root; else -> null }   // (v621) للأنيميشن الخارج
                 if (i == 5 && prevTab != 5) tabBeforeTasks = prevTab
                 if (i == 7 && prevTab != 7) tabBeforeSettings = prevTab
                 if (prevTab == 7 && i != 7) { try { save(); refreshChip() } catch (_: Throwable) {} }
                 curTab = i
                 NavOrigin.mainTab(i)   // (v1006)
-                NetLedger.tab(when (i) { 0 -> "فيديوهات"; 1 -> "يوتيوب"; 5 -> "مركز التحميل"; 7 -> "الإعدادات"; else -> "تبويب $i" })
+                NetLedger.tab(when (i) { 0 -> "فيديوهات"; 1 -> "يوتيوب"; 4 -> "يوتيوب"; 5 -> "مركز التحميل"; 7 -> "الإعدادات"; else -> "تبويب $i" })
                 dockUi?.refresh()   // (v344) المشغّل المصغّر بيختفي
                 stripUi?.hidden = (curTab == 5)   // (v345) في صفحة الموسيقى وبيظهر في الباقي
                 lib.root.visibility = if (i == 0) View.VISIBLE else View.INVISIBLE   // (v940) كل التبويبات متقاسة ورا بعض: التبديل من غير layout تقيل
                 if (i == 1) ensureMusic()
                 musicUi?.root?.visibility = if (i == 1) View.VISIBLE else View.INVISIBLE
+                if (i == 4) ensureYt()
+                ytUi?.root?.visibility = if (i == 4) View.VISIBLE else View.INVISIBLE
                 tasksUi.root.visibility = if (i == 5) View.VISIBLE else View.INVISIBLE
                 settingsHostRef?.visibility = if (i == 7) View.VISIBLE else View.INVISIBLE
                 tasksDlgRefresh = if (i == 5) ({ tasksUi.refresh() }) else null
                 syncNav()   // (v475)
                 if (i == 1) { musicUi?.ensureLoaded(); musicUi?.applyNavTint() } else setNavTint(null)
+                if (i == 4) { ytUi?.refresh(); ytUi?.tvFocusList() } else if (prevTab == 4) ytUi?.onHide()
                 if (i == 5) tasksUi.refresh()
                 updateTasksFab()
                 pageGearUi?.sync(i)   // (v820) ⚙️ الصفحة: بيظهر في الفيديوهات/الموسيقى/المهام بس
                 if (prevTab != i) {   // (v312) الصفحة الجديدة بتنزلق من ناحية اتجاه الانتقال (الشريط RTL: رقم أكبر = شمال)
-                    val target: View? = when (i) { 0 -> lib.root; 1 -> musicUi?.root; 7 -> settingsHostRef; else -> tasksUi.root }
+                    val target: View? = when (i) { 0 -> lib.root; 1 -> musicUi?.root; 4 -> ytUi?.root; 7 -> settingsHostRef; else -> tasksUi.root }
                     if (target != null && Cfg.bool("anim_tabs", true)) {
                         val dir = if (NavAnim.pos(i) > NavAnim.pos(prevTab)) -1 else 1
                         Motion.tabEnter(target, dir)
@@ -958,7 +983,7 @@ class MainActivity : Activity() {
         musicOpenFn = { showTabFn(1); musicUi?.showFull() }   // (v337)
         // (v1071) مفيش تسخين في الخلفية: لا يوتيوب ولا موسيقى ولا أي صفحة بتتبني قبل ما تدوس عليها — كل صفحة بتفتح وقت الدوسة بس
         val tabletShell = DeviceUi.isTablet(this)   // (v462) قشرة التابلت: ريل جانبي زي يوتيوب التابلت بدل الشريط السفلي
-        val nav = BottomNav(this, ui, th, 0, tabletShell) { i -> if (i >= BottomNav.YT_HOME) { MeeTubeLink.open(this) /* (v888) MeeTube */ } else if (i == 2) { save(); NavAnim.set(curTab, 2); showBrowserLoading(); startActivity(TabNav.front(Intent(this, BrowserActivity::class.java))) } else if (i == 3) { save(); NavAnim.set(curTab, 3); startActivity(TabNav.front(FilesHub.intent(this))) } else if (i == 7) { musicReturnTab = -1; settingsShow?.invoke(null) } else if (i == 0 && fromTv && !fromPlayer && TvFocus.goHome(this)) { /* (v482) تلفزيون: «الرئيسية» = شاشة التلفزيون */ } else { musicReturnTab = -1; showTabFn(i) } }   // (v310) 4 الملفات = شاشة منفصلة زي المتصفح · (v606) يوتيوب شغّال ← المتصفح: الفيديو يكمّل في PiP والاتنين مع بعض
+        val nav = BottomNav(this, ui, th, 0, tabletShell) { i -> if (i >= BottomNav.YT_HOME) { musicReturnTab = -1; val was = curTab == 4; if (!was) showTabFn(4); ytUi?.tapTab(i - BottomNav.YT_HOME, !was) } else if (i == 2) { save(); val ytPip = try { curTab == 4 && android.os.Build.VERSION.SDK_INT >= 26 && !DeviceUi.isTv(this) && ytUi?.leaveForPip() == true } catch (_: Throwable) { false }; NavAnim.set(curTab, 2); showBrowserLoading(); if (ytPip) window.decorView.postDelayed({ if (!isFinishing && !isDestroyed) startActivity(TabNav.front(Intent(this, BrowserActivity::class.java))) }, 1000L) else startActivity(TabNav.front(Intent(this, BrowserActivity::class.java))) } else if (i == 3) { save(); NavAnim.set(curTab, 3); startActivity(TabNav.front(FilesHub.intent(this))) } else if (i == 7) { musicReturnTab = -1; settingsShow?.invoke(null) } else if (i == 0 && fromTv && !fromPlayer && TvFocus.goHome(this)) { /* (v482) تلفزيون: «الرئيسية» = شاشة التلفزيون */ } else { musicReturnTab = -1; showTabFn(i) } }   // (v310) 4 الملفات = شاشة منفصلة زي المتصفح · (v606) يوتيوب شغّال ← المتصفح: الفيديو يكمّل في PiP والاتنين مع بعض
         navUi = nav
         nav.onMoreToggle = { o -> pageGearUi?.moreOpen = o }   // (v820)
         if (!fromPlayer) {
@@ -985,10 +1010,9 @@ class MainActivity : Activity() {
         pane.onSwipe = { musicReturnTab = -1; showTabFn(if (curTab == 0) 1 else 0) }
         val paneWrap = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_LTR }
         paneWrap.addView(pane, LinearLayout.LayoutParams(-1, 0, 1f))
-        val floatNav = MtGlass.on() && !tabletShell && !fromPlayer && !DeviceUi.isTv(this) && Build.VERSION.SDK_INT >= 31   // (v895) شريط سفلي عايم بزجاج حقيقي (أندرويد 12+)
+        val floatNav = false   // (v1072) الشريط العايم الزجاجي اتشال مع MeeTube — الشريط السفلي العادي دايمًا
         if (!floatNav && !packageName.endsWith(".lite") && !DeviceUi.isTv(this)) paneWrap.addView(msw.view, LinearLayout.LayoutParams(-1, -2))   // (v829) زرارين فيديوهات/موسيقى بقوا تحت (فوق الشريط السفلي مباشرة) بدل فوق الصفحة
         if (tabletShell) { shell.addView(paneWrap, LinearLayout.LayoutParams(0, -1, 1f)); shell.addView(nav.view, LinearLayout.LayoutParams(ui.dp(80), -1)) }
-        else if (floatNav) { MtFloat.attach(this, th, ui, shell, paneWrap, nav, if (!packageName.endsWith(".lite")) msw else null) }
         else { shell.addView(paneWrap, LinearLayout.LayoutParams(-1, 0, 1f)); shell.addView(nav.view, LinearLayout.LayoutParams(-1, -2)) }
         val frame = FrameLayout(this).apply { if (!MtSkin.on()) setBackgroundColor(th.bg); layoutDirection = View.LAYOUT_DIRECTION_LTR }   // (v897) الخلفية المتحركة في الـwindow
         tvShellOn = fromTv && !fromPlayer && DeviceUi.isTv(this)
@@ -1017,7 +1041,6 @@ class MainActivity : Activity() {
         frame.addView(warmView, FrameLayout.LayoutParams(-1, -1))
         refreshWarm()
         dockUi = MiniDock(this, frame, ui, th, { musicOpenFn?.invoke() }, { curTab == 1 }) { t -> musicUi?.artBitmap(t) }   // (v344)
-        try { YtMiniCard(this, frame) } catch (e: Throwable) { LogStore.err("Main:ytMini", e) }   // (v1037) كارت يوتيوب المصغّر يمشي معاك في كل الصفحات
         stripUi = StatusStrip(this, frame, ui, th) { showTabFn(5) }   // (v345)
         tasksFabUi = TasksFab(this, frame, ui) { showTasksDialog() }   // (v420) عايم: بيظهر وقت المهام الشغّالة بس
         if (!fromPlayer && b == null && !tvShellOn) { frame.alpha = 0f; frame.animate().setStartDelay(0L).alpha(1f).setDuration(160L).start() }   // (v312) بدل السبلاش: ظهور ناعم سريع
@@ -1029,7 +1052,7 @@ class MainActivity : Activity() {
             if (t0 == "music") frame.post { showTabFn(1) }
             else if (t0 == "tasks") frame.post { showTabFn(5) }
             else if (t0 == "settings") frame.post { settingsShow?.invoke(null) }
-            else if (t0 == "youtube") frame.post { if (intent?.getStringExtra("yt_open") == null) { MeeTubeLink.open(this) }; openYtFromIntent(intent) }   // (v880) أيقونة/تايل يوتيوب ← MeeTube
+            else if (t0 == "youtube") frame.post { showTabFn(4); openYtFromIntent(intent) }   // (v1072) أيقونة/تايل يوتيوب ← يوتيوب الداخلي
             if (intent?.getBooleanExtra("lib_tv", false) == true) { intent?.removeExtra("lib_tv"); frame.post { libSourceFn?.invoke(true) } }   // (v691) التطبيق ماكانش شغّال: افتح مكتبة التلفزيون
         }
         intent?.getStringExtra("reopen_tab")?.let { t -> intent?.removeExtra("reopen_tab"); frame.post { if (!isFinishing && !isDestroyed) settingsShow?.invoke(t) } }
@@ -1080,7 +1103,7 @@ class MainActivity : Activity() {
         fun put(k: String, v: String) { Cfg.put(k, v); prev.style = st(); prev.show(null); showDemo() }
         fun slider(label: String, k: String, d: Int, lo: Int, hi: Int, unit: String): LinearLayout {
             val tv = ui.text("$label: ${Cfg.int(k, d)}$unit", 13f, th.text)
-            val sb = (if (MtGlass.on()) com.newtube.mobile.ui.common.GlassSlider(this) else SeekBar(this)).apply { layoutDirection = android.view.View.LAYOUT_DIRECTION_LTR;   // (v905)
+            val sb = SeekBar(this).apply { layoutDirection = android.view.View.LAYOUT_DIRECTION_LTR;   // (v1072) GlassSlider بتاع MeeTube اتشال — SeekBar عادي
                 max = hi - lo; progress = Cfg.int(k, d).coerceIn(lo, hi) - lo
                 setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
                     override fun onProgressChanged(s: SeekBar?, p: Int, u: Boolean) { tv.text = "$label: ${p + lo}$unit"; if (u) put(k, (p + lo).toString()) }
@@ -1300,8 +1323,8 @@ class MainActivity : Activity() {
             // لو فتحنا الإعدادات من المشغّل واخترنا فيديو جديد: امسح المشغّل القديم بدل ما يفضل تحته
             if (intent?.getBooleanExtra("from_player", false) == true) addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_NO_ANIMATION)
         }
-        // (v978) فتح مباشر في MeeTube من غير PlayerActivity الوسيطة (تاسك زيادة = بطء + رعشة سودا)
-        if (intent?.getBooleanExtra("from_player", false) == true || !MtPlay.fastOpen(this, pi)) startActivity(pi)
+        // (v1072) فتح مباشر للمشغّل (MtPlay.fastOpen اتشال مع MeeTube — كان بيرجّع false دايمًا)
+        startActivity(pi)
     }
     // ===== (v215) نسخة احتياطية كاملة: حفظ في ملف / استرجاع من ملف / استرجاع آخر نسخة تلقائية =====
     /** (v469) D4 بحث شامل موحّد: بيفتّش في مكتبة الفيديو + الموسيقى + سجل يوتيوب + أقسام الإعدادات، والدوسة على أي نتيجة بتقفز لها على طول */
@@ -1476,11 +1499,6 @@ class MainActivity : Activity() {
             return
         }
         if (!translate && handoff == null && startMs <= 0L && askTv(id, title, retOv)) return   // (v532) «تشغّله على التلفزيون؟»
-        if (!translate && handoff == null && MeeTubeLink.playYt(this, id, startMs)) return   // (v887) يوتيوب العادي ← مشغّل MeeTube
-        if (false && translate && handoff == null && !DeviceUi.isTv(this) && id.length == 11) {   // (v924) مقفول: يوتيوب بترجمة = مشغّل Joyboy القديم · (v890) يوتيوب بترجمة ← مشغّل MeeTube + محرك الترجمة فوقه (نفس مفتاح جيميناي المطلوب)
-            ensureKeys { if (!MeeTubeLink.playYt(this, id, startMs, auto)) ytStart(id, title, translate, auto, startMs, handoff, retOv) }
-            return
-        }
         playYtHere(id, title, translate, auto, startMs, handoff, retOv)
     }
     private fun playYtHere(id: String, title: String, translate: Boolean = true, auto: Boolean = translate, startMs: Long = 0L, handoff: YtPick? = null, retOv: String = "") {
@@ -1524,7 +1542,7 @@ class MainActivity : Activity() {
     }
     /** (v532) لينك يوتيوب مش فيديو (قناة / قايمة تشغيل / بحث): بيتفتح في تاب يوتيوب بتاع البرنامج مش في المتصفح */
     private fun openYtPage(u: String) {
-        try { MeeTubeLink.openUrl(this, u) } catch (e: Throwable) { LogStore.err("Main:ytPage", e) }   // (v888) قناة/قايمة/بحث ← MeeTube
+        try { showTabFn(4); ytUi?.openUrl(u) } catch (e: Throwable) { LogStore.err("Main:ytPage", e) }   // (v1072) قناة/قايمة/بحث ← يوتيوب الداخلي
     }
     private fun cancelYtLoad() { ytLoadTok++; ytLoadLaunched = false }
     /** (v339) بنفتح «صفحة المشغّل» فورًا (لودينج جواها) وبنجيب رابط الفيديو في الخلفية؛ لو فشل بنقفلها ونطلّع الدايلوج ونفضل في يوتيوب */
@@ -1796,7 +1814,13 @@ class MainActivity : Activity() {
     fun openSettingsTab(t: String) { try { settingsShow?.invoke(t) } catch (_: Throwable) {} }
     /** (v407) صفحة «سجل يوتيوب» المنفصلة — بتتفتح من فولدر المصطادة ومن الإعدادات ▸ يوتيوب (نفس البيانات) */
     private var saveFn: () -> Unit = {}   // (v407) save() دالة محلية في onCreate — بنمسكها هنا
-    fun showYtHistory() { MeeTubeLink.open(this) }   // (v888) سجل يوتيوب جوه MeeTube
+    fun showYtHistory() {   // (v1072) سجل يوتيوب الداخلي رجع — مش جوه MeeTube
+        try {
+            YtHistoryUi.show(this, ui, th,
+                { id, title -> playYt(id, title, false) },
+                { id, title, _ -> playYtAudio(id, title, "", "") })
+        } catch (e: Throwable) { LogStore.err("Main:ytHist", e) }
+    }
     private fun tvToLauncher(show: String) {
         try { startActivity(Intent(this, TvActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP).putExtra("tv_show", show)); finish() }
         catch (_: Throwable) { showTabFn(0) }
@@ -1856,7 +1880,7 @@ class MainActivity : Activity() {
                 setTextColor(Color.WHITE)
                 textSize = 16f
                 gravity = Gravity.CENTER
-                setPadding(0, ui.dp(16), 0, 0)
+                setPadding(0, (16 * resources.displayMetrics.density).toInt(), 0, 0)
             }
             col.addView(sp, LinearLayout.LayoutParams(-2, -2).apply { gravity = Gravity.CENTER })
             col.addView(tx, LinearLayout.LayoutParams(-2, -2).apply { gravity = Gravity.CENTER })
@@ -1901,11 +1925,12 @@ class MainActivity : Activity() {
     /** (v117) الرجوع من المتصفح بشريط البوابات: بيفتح البوابة اللي اخترتها */
     override fun onNewIntent(i: Intent?) {
         super.onNewIntent(i)
-        // (v985) استعادة PiP من أيقونة اللانشر — نفس فحص onCreate فوق (ضغطة الأيقونة
-        // والمشغّل مثبّت في PiP لازم تكبّر المشغّل بدل ما تفتح الرئيسية).
+        // (v1072) استعادة PiP من أيقونة اللانشر — مشغّل Joyboy نفسه (نفس فحص onCreate فوق).
         if (i?.action == Intent.ACTION_MAIN && i?.hasCategory(Intent.CATEGORY_LAUNCHER) == true) {
             try {
-                if (com.newtube.mobile.MobileMainApplication.booted()?.restorePictureInPictureFromLauncher(this) == true) {
+                val live = PlayerActivity.liveOrNull()
+                if (live != null && live.pipNow()) {
+                    startActivity(Intent(this, PlayerActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT))
                     finish()
                     return
                 }
@@ -1934,11 +1959,12 @@ class MainActivity : Activity() {
         if (i?.getBooleanExtra("fullmusic", false) == true) musicOpenFn?.invoke()   // (v344) ⤢ من المشغّل المصغّر في المتصفح/الملفات
         if (i?.getStringExtra("tab") != null) ytTvMode = i?.getBooleanExtra("tv_target", false) == true   // (v532)
         if (i?.getStringExtra("reopen_tab") != null) { val rt = i.getStringExtra("reopen_tab"); i.removeExtra("reopen_tab"); settingsShow?.invoke(rt) }   // (v820) المتصفح ← قسم من الإعدادات الشاملة (مثلًا 🔗 الاصطياد)
-        when (i?.getStringExtra("tab")) { "videos" -> if (DeviceUi.isTv(this) && !fromPlayer) tvToLauncher("videos") else showTabFn(0); "music" -> showTabFn(1); "tasks" -> showTabFn(5); "settings" -> settingsShow?.invoke(null); "youtube" -> { if (i?.getStringExtra("yt_open") == null) { MeeTubeLink.open(this) }; openYtFromIntent(i) } }
+        when (i?.getStringExtra("tab")) { "videos" -> if (DeviceUi.isTv(this) && !fromPlayer) tvToLauncher("videos") else showTabFn(0); "music" -> showTabFn(1); "tasks" -> showTabFn(5); "settings" -> settingsShow?.invoke(null); "youtube" -> { showTabFn(4); openYtFromIntent(i) } }
     }
     override fun dispatchKeyEvent(ev: android.view.KeyEvent): Boolean { TvKill.watch(this, ev); if (TvFocus.handleKey(this, ev)) return true; return super.dispatchKeyEvent(ev) }   // (v477) Menu = دوسة طويلة
     @Suppress("DEPRECATION")
     override fun onBackPressed() {
+        if (!fromPlayer && curTab == 4 && ytUi?.back() == true) return   // (v1072) رجوع جوه يوتيوب (صفحة مشاهدة/قناة ← القايمة)
         if (!fromPlayer && ytTvMode && curTab == 4) { ytTvMode = false }   // (v603) الريموت القديم اتمسح: مفيش «رجوع للريموت»، بيكمّل الرجوع العادي
 
         if (!fromPlayer && curTab == 7) { settingsBack?.invoke(); return }   // (v370)

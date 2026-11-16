@@ -55,7 +55,6 @@ object MobileDataGuard {
     private var pulse: ObjectAnimator? = null
 
     // اللي إحنا وقّفناه (عشان نكمّل اللي وقّفناه بس — مش اللي المستخدم واقفه بإيده)
-    private var pausedMt = false
     private var pausedJoy = false
     private var pausedWeb = false
     private var pausedBg = false
@@ -151,7 +150,6 @@ object MobileDataGuard {
 
     // ===================== الإيقاف المؤقت والاستكمال =====================
     private fun pauseEverything() {
-        try { pausedMt = MtBar.pauseForGuard() } catch (_: Throwable) {}
         try { pausedJoy = PlayerActivity.pauseForGuard() } catch (_: Throwable) {}
         try { pausedWeb = WebMute.pauseMarked() } catch (_: Throwable) {}
         try {
@@ -164,14 +162,13 @@ object MobileDataGuard {
 
     private fun resumeEverything() {
         val a = app
-        try { if (pausedMt) MtBar.resumeForGuard() } catch (_: Throwable) {}
         try { if (pausedJoy) PlayerActivity.resumeForGuard() } catch (_: Throwable) {}
         try { if (pausedWeb) WebMute.resumeMarked() } catch (_: Throwable) {}
         try {
             pausedTasks.forEach { t -> try { if (t.state == 6 || (t.state == 1 && t.paused) || t.state == 3 || t.state == 5) TaskCenter.pause(t, false) } catch (_: Throwable) {} }
         } catch (_: Throwable) {}
         try { if (pausedBg && a != null) BgJobs.resumeAll(a) } catch (_: Throwable) {}
-        pausedMt = false; pausedJoy = false; pausedWeb = false; pausedBg = false; pausedTasks = emptyList()
+        pausedJoy = false; pausedWeb = false; pausedBg = false; pausedTasks = emptyList()
     }
 
     // ===================== الرجوع للبرنامج =====================

@@ -241,7 +241,7 @@ try{setInterval(tick,800)}catch(e){}
  * (v119) عشان نعرف بالظبط إيه اللي حصل بدل ما نرمي المستخدم على المتصفح.
  */
 object YtExtract {
-    // (v889) المستخرج القديم (عملاء InnerTube بتوع Joyboy) اتمسح — كل جلب الروابط بقى من محرك MeeTube (MtYt). الاسم فضل عشان المتصفح والمشغّل.
+    // (v889) المستخرج القديم (عملاء InnerTube بتوع Joyboy) اتمسح — كل جلب الروابط بقى من مكتبات يوتيوب (MtYt). الاسم فضل عشان المتصفح والمشغّل.
     private val ID = Regex("(?:youtu\\.be/|youtube(?:-nocookie)?\\.com/(?:watch\\?(?:[^#]*&)?v=|shorts/|embed/|live/|v/))([A-Za-z0-9_-]{11})")
     fun videoId(u: String): String? = ID.find(u)?.groupValues?.get(1)
 
@@ -266,7 +266,7 @@ object YtExtract {
         val opts = ArrayList<Opt>()
         try { val qa = JSONArray(g.qlist); for (i in 0 until qa.length()) { val o = qa.getJSONObject(i); opts.add(Opt(o.optString("l"), o.optString("u"), o.optString("a").ifEmpty { null }, o.optInt("h"))) } } catch (_: Throwable) {}
         val label = if (g.by.endsWith("HLS")) "HLS" else (opts.firstOrNull()?.label ?: "")
-        return Pick(g.url, g.audio, g.title, g.ua, label, opts).also { it.tag = "MeeTube" }
+        return Pick(g.url, g.audio, g.title, g.ua, label, opts).also { it.tag = "يوتيوب" }
     }
 
     /** روابط مباشرة لفيديو يوتيوب (للمتصفح): كل جودة كـFound + HLS لو موجود */

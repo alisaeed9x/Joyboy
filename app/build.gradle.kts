@@ -20,7 +20,7 @@ android {
     }
     namespace = "com.tttt.subtitler"
     compileSdk = 37   // (v869) 36→37: مكتبات PlayTube (core 1.19 / compose 2026) محتاجاها
-    defaultConfig { applicationId = "com.tttt.joyboy"; minSdk = 26; targetSdk = 34; versionCode = (System.getenv("JB_VERSION_CODE")?.toIntOrNull() ?: (System.currentTimeMillis() / 60000L).toInt()); versionName = joyVerName; missingDimensionStrategy("default", "stmobile")   // (v878) مكتبة MeeTube :mobile فيها flavor واحد
+    defaultConfig { applicationId = "com.tttt.joyboy"; minSdk = 26; targetSdk = 34; versionCode = (System.getenv("JB_VERSION_CODE")?.toIntOrNull() ?: (System.currentTimeMillis() / 60000L).toInt()); versionName = joyVerName
         // (v656) versionCode = وقت البناء بالدقايق: أي بيلد (حتى من سورس قديم) كوده أعلى من اللي قبله ← أندرويد يقبل التثبيت فوق الأحدث من غير حذف ولا فقد بيانات (نفس الـkeystore)
         ndk { abiFilters += joyAbis }   // (v1027) المعماريات من joyAbi في gradle.properties (الافتراضي arm64 بس = أصغر تحميل)
         externalNativeBuild { cmake { arguments += listOf("-DCMAKE_BUILD_TYPE=Release") + (if (System.getenv("JOY_STQ") == "1" || project.findProperty("joyStq") == "1") listOf("-DJOY_STQ=ON") else emptyList()); abiFilters += joyAbis } }   // (v253) whisper.cpp + (v307) substem: arm64 بس (armeabi-v7a من غير أوفلاين)   // (v181) معماريات الموبايل بس: بتصغّر مكتبة onnxruntime
@@ -50,9 +50,6 @@ android {
     packaging { jniLibs { useLegacyPackaging = true; if ("armeabi-v7a" !in joyAbis) excludes += "**/armeabi-v7a/**"; if ("arm64-v8a" !in joyAbis) excludes += "**/arm64-v8a/**"; excludes += listOf("**/x86/**", "**/x86_64/**") }; resources { excludes += listOf("/META-INF/{AL2.0,LGPL2.1}", "/META-INF/INDEX.LIST", "/META-INF/DEPENDENCIES", "/META-INF/*.version") } }   // (v325) NewPipeExtractor
 }
 dependencies {
-    implementation(project(":mobile"))   // (v878) MeeTube (GPL-3.0) مدموج — بدل PlayTube
-    implementation(project(":common"))   // (v885) MainUIData في MeeTubeLink.syncMtTheme — :mobile بيعرّف :common بـ implementation فمش بيتمرر
-    implementation(project(":sharedutils"))   // (v885) أنواع أب MainUIData (DataChangeBase…)
     implementation(project(":mediaserviceinterfaces"))   // (v885)
     implementation("androidx.webkit:webkit:1.16.0")   // (v977) VidHook: addDocumentStartJavaScript + addWebMessageListener (نفس webkitVersion في meetube/constants.gradle)
     implementation("androidx.media3:media3-exoplayer:1.10.1")
@@ -75,6 +72,9 @@ dependencies {
     testImplementation("junit:junit:4.13.2")            // (v589 T4)
     testImplementation("org.json:json:20240303")        // org.json الحقيقي بدل stub بتاع android.jar (اللي بيرمي "not mocked")
     implementation(project(":youtubeapi"))   // (v889) MtYt بيجيب روابط الفيديو/الصوت من MediaServiceCore بتاع MeeTube (بدل NewPipeExtractor اللي اتشال)
+    implementation("io.reactivex.rxjava3:rxjava:3.1.12")   // (v1072) تسجيل دخول يوتيوب بالكود (YtMtSignIn): signInObserve بيرجّع Observable — نفس نسخة مكتبات youtubeapi (implementation مش بتتسرّب لـ:app)
+    implementation("io.reactivex.rxjava3:rxandroid:3.0.2")   // (v1072) نفس السبب — AndroidSchedulers.mainThread
+    implementation("com.github.TeamNewPipe:NewPipeExtractor:v0.26.5")   // (v1072) يوتيوب الداخلي رجع — YtNp/YtProUi المستعادة؛ محتاج jitpack.io في settings
 }
 
 // (v1027) تقرير حجم الـAPK في لوج البناء (بعد assembleRelease): الحجم المضغوط لكل فئة (dex / res / assets / lib لكل معمارية) وأكبر 15 ملف.

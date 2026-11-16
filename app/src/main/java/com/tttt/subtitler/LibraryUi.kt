@@ -277,7 +277,6 @@ class LibraryUi(
     }
     private val resumeBtn = IconTextView(act).apply {
         text = "▶"; textSize = 24f; setTextColor(th.onPrimary); gravity = Gravity.CENTER; elevation = ui.dp(8).toFloat(); visibility = View.GONE
-        tag = MtFloat.LIFT_TAG   // (v910) الشريط الزجاجي العايم: الدايرة تتزحزح لفوقه بدل ما تستخبّى وراه
         background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(th.primary) }
     }
     private fun newBadge() = IconTextView(act).apply {

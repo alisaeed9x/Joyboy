@@ -6,13 +6,6 @@ class NpItem(val id: String, val title: String, val channel: String, val channel
 
 class YtPick(val url: String, val audio: String?, val ua: String, val title: String, val h: Int, val qlist: String = "", val durMs: Long = 0L)
 
-/** (v889) سجل الفيديوهات القديم اتمسح؛ فاضلة هنا بس دوال بسيطة لسه الكود بيناديها. */
-object YtHistory {
-    fun watchUrl(id: String) = "https://www.youtube.com/watch?v=$id"
-    @Suppress("UNUSED_PARAMETER") fun add(ctx: android.content.Context, id: String, title: String, chan: String = "", audio: Boolean = false) {}
-    fun clear(ctx: android.content.Context) { try { java.io.File(ctx.filesDir, "yt_history.json").delete() } catch (_: Exception) {} }
-}
-
 object YtAge {
     fun ageOf(ts: Long): String {
         if (ts <= 0L) return ""

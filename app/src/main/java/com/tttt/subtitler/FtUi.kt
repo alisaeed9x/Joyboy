@@ -93,20 +93,18 @@ class FileTransferActivity : Activity() {
         else {   // (v660) المخزن: شريط 📂 الملفات | 📡 نقل فوق + الشريط السفلي زي باقي الصفحات
             val outer = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_LTR; setBackgroundColor(th.bg) }
             outer.addView(FilesHub.switchBar(this, ui, th, 1).view, LinearLayout.LayoutParams(-1, -2))
-            val floatNav = MtFloat.eligible(this)   // (v900)
             val body = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_LTR }
             body.addView(root, LinearLayout.LayoutParams(-1, 0, 1f))
             val gates = BottomNav(this, ui, th, 3) { i ->
                 if (i != 3) {
                     NavAnim.set(3, i)
                     if (i == 2) startActivity(TabNav.front(Intent(this, BrowserActivity::class.java)))
-                    else if (i == 4) MeeTubeLink.open(this)
+                    else if (i == 4) startActivity(TabNav.main(this, "youtube"))   // (v1072) يوتيوب الداخلي بدل MeeTube
                     else startActivity(TabNav.main(this, if (i == 0) "videos" else if (i == 1) "music" else if (i == 7) "settings" else "tasks"))   // (v973) من غير finish
                     NavAnim.peek(this)
                 }
             }
-            if (floatNav) outer.addView(MtFloat.build(this, th, ui, body, gates, null), LinearLayout.LayoutParams(-1, 0, 1f))
-            else { outer.addView(body, LinearLayout.LayoutParams(-1, 0, 1f)); outer.addView(gates.view, LinearLayout.LayoutParams(-1, -2)) }
+            outer.addView(body, LinearLayout.LayoutParams(-1, 0, 1f)); outer.addView(gates.view, LinearLayout.LayoutParams(-1, -2))
             setContentView(outer)
         }
         val l: () -> Unit = { onHub() }

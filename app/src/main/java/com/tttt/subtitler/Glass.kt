@@ -68,7 +68,7 @@ object Glass {
 
     private fun content(d: Dialog): View? = d.window?.decorView?.findViewById(android.R.id.content)
 
-    /** (v910) نافذة الأكتيفيتي اللي الشيت فوقها — الصفحة اللي SheetGlass (MeeTube) بيبلّرها */
+    /** (v1072) نافذة الأكتيفيتي اللي الشيت فوقها — كانت بتتبلّر بـSheetGlass بتاع MeeTube (اتشال) */
     fun hostWindowOf(ctx: Context?): Window? {
         var x: Context? = ctx
         while (x is android.content.ContextWrapper) { if (x is android.app.Activity) return x.window; x = x.baseContext }
@@ -142,27 +142,12 @@ open class GDialog(ctx: Context, theme: Int = 0) : Dialog(ctx, theme) {
         super.onBackPressed()
     }
 
-    /** (v953) PlayerTrace: لمس جوه الشيت بيتسجّل مباشرة من هنا (من غير reflection) — بيتجاهل التكرار لو الـcallback hook سجّله */
-    override fun dispatchTouchEvent(ev: MotionEvent): Boolean {
-        try { com.newtube.mobile.ui.common.PlayerTrace.touchWindow(window?.decorView, ev) } catch (_: Throwable) {}
-        return super.dispatchTouchEvent(ev)
-    }
-
     override fun show() {
-        try { com.newtube.mobile.ui.common.PlayerTrace.mark("sheet show (" + javaClass.simpleName + ")") } catch (_: Throwable) {}   // (v953)
         seq++; closing = false
         if (!plain) Glass.styleWindow(this)
         try { TvFocus.attachWindow(context, window, Glass.theme().primary) } catch (_: Throwable) {}   // (v477 م3)
         super.show()
         try { Glass.enter(this) } catch (_: Throwable) {}
-        frostTarget?.let { t -> try { com.newtube.mobile.ui.common.SheetGlass.frost(t, hostWindow(), frostCorner) } catch (_: Throwable) {} }   // (v909) SheetGlass.frost الأصلي من MeeTube (بدل SheetFrost)
-    }
-
-    /** (v909) نافذة الأكتيفيتي اللي الدايلوج فوقها — الصفحة اللي SheetGlass بيبلّرها */
-    private fun hostWindow(): Window? {
-        var x: Context? = context
-        while (x is android.content.ContextWrapper) { if (x is android.app.Activity) return x.window; x = x.baseContext }
-        return null
     }
 
     private fun realDismiss() { try { super.dismiss() } catch (_: Throwable) {} }
@@ -172,7 +157,6 @@ open class GDialog(ctx: Context, theme: Int = 0) : Dialog(ctx, theme) {
         if (closing) return
         if (!isShowing || v == null || Looper.myLooper() != Looper.getMainLooper()) { realDismiss(); return }
         closing = true
-        try { com.newtube.mobile.ui.common.PlayerTrace.sheetDismiss() } catch (_: Throwable) {}   // (v953) بداية أنيميشن الخروج
         val my = seq
         try { Glass.exit(this) { if (closing && my == seq) { closing = false; realDismiss() } } } catch (_: Throwable) { closing = false; realDismiss(); return }
         // احتياطي لو الأنيميشن اتلغى

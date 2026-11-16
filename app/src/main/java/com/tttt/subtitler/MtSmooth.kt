@@ -21,7 +21,6 @@ import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.analytics.AnalyticsListener
-import com.newtube.mobile.ui.playback.JoyboyPlayerHost
 import java.lang.ref.WeakReference
 
 /**
@@ -174,7 +173,7 @@ object MtSmooth {
         }
     }
 
-    fun attach(activity: Activity, p: ExoPlayer, info: JoyboyPlayerHost.VideoInfo?) {
+    fun attach(activity: Activity, p: ExoPlayer) {   // (v1072) بارامتر JoyboyPlayerHost.VideoInfo اتشال مع MeeTube — كان بيتجاهل أصلًا (دايمًا null من Joyboy)
         try {
             Cfg.ensure(activity.applicationContext)
             if (player !== p) {

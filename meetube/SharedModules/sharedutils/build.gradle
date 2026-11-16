@@ -45,7 +45,6 @@ dependencies {
 
     testImplementation 'junit:junit:' + junitVersion
     testImplementation 'org.robolectric:robolectric:' + robolectricVersion
-    testImplementation dependencies.project(':sharedtests')
 
     implementation 'commons-io:commons-io:' + commonsIOVersion
 

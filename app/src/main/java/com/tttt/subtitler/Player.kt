@@ -77,6 +77,9 @@ class PlayerActivity : Activity(), Host {
 
         private fun live(): PlayerActivity? = synchronized(liveList) { liveList.mapNotNull { it.get() }.lastOrNull { !it.isFinishing && !it.isDestroyed } }
 
+        /** (v1072) المشغّل الحي الحالي (لاستعادة PiP من اللانشر) — null لو مفيش */
+        fun liveOrNull(): PlayerActivity? = live()
+
         private fun <T> onUi(o: PlayerActivity, ms: Long = 900L, f: () -> T): T? {
             val box = arrayOfNulls<Any>(1)
             val latch = java.util.concurrent.CountDownLatch(1)
@@ -4262,11 +4265,6 @@ class PlayerActivity : Activity(), Host {
         NetLedger.start(this); NetLog.start(this); NetGate.apply(this)
         super.onCreate(b)
         if (incognito) try { window.addFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE) } catch (_: Throwable) {}   // (v1062) متخفي: المعاينة في الريسنت سودا
-        if (MtPlay.reroute(this, intent)) {   // (v923)
-            gone = true; try { overridePendingTransition(0, 0) } catch (_: Throwable) {}
-            if (MtPlay.holdForPlayer(this)) return   // (v950) بتفضل سودا ورا المشغّل لحد ما يظهر (من غير فلاش المكتبة/الشاشة البيضا)
-            finish(); return
-        }
         smoothRotation()   // (v429)
         try { if (MtLook.playerAnim()) overridePendingTransition(R.anim.player_open_enter, R.anim.player_open_exit) } catch (_: Throwable) {}   // (v899) حركة فتح المشغّل من MeeTube
         synchronized(liveList) {
@@ -4367,8 +4365,8 @@ class PlayerActivity : Activity(), Host {
         rotBtn = ui.fsCircle(Icons.ROT) { flashFloat(rotBtn); toggleFs() }.apply { textSize = 24f; alpha = REST_A }
         videoBox.addView(rotBtn, FrameLayout.LayoutParams(ui.dp(48), ui.dp(48), Gravity.END or Gravity.TOP).apply { setMargins(0, ui.dp(60), ui.dp(11), 0) })
         rotBtn.visibility = View.GONE   // (v97) زرار الروتيشن العايم اتلغى — الروتيشن في الشريط السفلي بس
-        // (v343) 🎧 حوّل لصوت: بيكمّل نفس فيديو يوتيوب في مشغّل الموسيقى من نفس المكان (بيوفّر الداتا) — تحت 👁 على طول
-        audBtn = ui.fsCircle("🎧") { switchToAudio() }.apply { textSize = 20f; alpha = REST_A; visibility = View.GONE }
+        // (v1072) 🎧 صوت بس: تبديل فوري جوه المشغّل (إيقاف تراك الفيديو) — من غير مشغّل الموسيقى ولا إعادة تحميل — تحت 👁 على طول
+        audBtn = ui.fsCircle("🎧") { flashFloat(audBtn); toggleYtMode() }.apply { textSize = 20f; alpha = REST_A; visibility = View.GONE }
         videoBox.addView(audBtn, FrameLayout.LayoutParams(ui.dp(44), ui.dp(44), Gravity.END or Gravity.TOP).apply { setMargins(0, ui.dp(174), ui.dp(8), 0) })
         // (v619) 📺 تحت 🎧: ابعت اللي شغّال على الموبايل للتلفزيون القريب (بنفس الثانية). مخفي إلا لو في تلفزيون قريب ومش متصل
         tvBtn = ui.fsCircle("📺") { sendToTv() }.apply { textSize = 20f; alpha = REST_A; visibility = View.GONE; contentDescription = "كمّل على التلفزيون" }
@@ -5063,7 +5061,7 @@ class PlayerActivity : Activity(), Host {
             batchBtn.visibility = if (cv && !tvHide) View.VISIBLE else View.GONE
             if (::audBtn.isInitialized) audBtn.visibility = if (cv && intent.getStringExtra("ytid")?.length == 11) View.VISIBLE else View.GONE
             if (::tvBtn.isInitialized) tvBtn.visibility = if (cv && !remote && !DeviceUi.isTv(this) && TvModeFab.nearby()) View.VISIBLE else View.GONE   // (v619)
-            if (::modePill.isInitialized) modePill.visibility = if (cv && intent.getStringExtra("ytid")?.length == 11 && ytAudioUrl() != null) View.VISIBLE else View.GONE   // (v459)
+            if (::modePill.isInitialized) modePill.visibility = if (cv && intent.getStringExtra("ytid")?.length == 11) View.VISIBLE else View.GONE   // (v1072) التبديل بقى بإيقاف تراك الفيديو — مش محتاج مسار صوت منفصل
             // (v430) في الشاشة الكاملة 👁 (وجنبه 🔄/🎧) مخفي 100% وبيظهر بس مع باقي أدوات المشغّل (لمسة) بوضوح كامل مش باهت
             if (fullMode) {
                 floatBar.animate().cancel(); batchBtn.animate().cancel(); floatFades.remove(floatBar)?.let { h.removeCallbacks(it) }
@@ -5564,7 +5562,14 @@ class PlayerActivity : Activity(), Host {
             else DefaultMediaSourceFactory(f).createMediaSource(MediaItem.fromUri(Uri.parse(o.url)))
             player.exo()?.let { xp -> xp.setMediaSource(src, pos); xp.prepare() }; player.playWhenReady = play
             qCur = i; sizeTxt = ""; setQualLabel(o.h); refreshSize()
-            if (ytAudioOnly) { ytAudioOnly = false; paintModePill() }   // (v459) تغيير الجودة بيرجّع الفيديو
+            if (ytAudioOnly) {
+                ytAudioOnly = false
+                try {
+                    val xp0 = player.exo()
+                    if (xp0 != null) xp0.trackSelectionParameters = xp0.trackSelectionParameters.buildUpon().setTrackTypeDisabled(androidx.media3.common.C.TRACK_TYPE_VIDEO, false).build()
+                } catch (_: Throwable) {}
+                paintModePill()
+            }   // (v1072) تغيير الجودة بيرجّع الفيديو — ولازم تراك الفيديو يتفعّل تاني (التبديل بقى بإيقاف التراك مش بمصدر جديد)
             // (v985) اختيار جودة من قايمة الفيديو دي مايتحفظش في yt_maxh العام: كان كل اختيار
             // (حتى 240p مرة واحدة) بيفضل سقف لكل الفيديوهات والستريمنج بعد كده للأبد
             // (MtYt.video/pick + سقف Auto بتاع MeeTube بيقروا yt_maxh). الاختيار بيفضل
@@ -5579,38 +5584,22 @@ class PlayerActivity : Activity(), Host {
     private var ytResolving = false   // (v467) جلب مسار الصوت عند الطلب شغّال
     private fun paintModePill() { if (::modePill.isInitialized) modePill.text = if (ytAudioOnly) "🎬 وضع الفيديو" else "🎧 وضع الصوت" }
 
-    /** (v459) تبديل وضع الصوت/الفيديو لفيديو يوتيوب جوه المشغّل نفسه ومن نفس المكان: الصوت بس بيوفّر الداتا،
-     *  والرجوع للفيديو بيعيد تشغيل الجودة الحالية بالدمج العادي (switchYt). */
+    /** (v1072) تبديل صوت/فيديو بطريقة MeeTube: نفس الـExoPlayer ونفس المكان — إيقاف تراك الفيديو بس (من غير إعادة تحميل ولا مصدر جديد ولا انتظار). */
     private fun toggleYtMode() {
         try {
-            val play = player.playWhenReady
-            if (!ytAudioOnly) {
-                val au = ytAudioUrl() ?: run {
-                    // (v467) مفيش مسار صوت جاهز (دخول handoff مثلًا): بنجيبه عند الطلب بدل ما نقول «ملوش» على طول
-                    val yid = intent.getStringExtra("ytid")?.takeIf { it.length == 11 }
-                    if (yid != null && !ytResolving) { ytResolving = true; Notice.show(this, "⏳ بجيب مسار الصوت…", 1500L)
-                        Thread { val got = try { MtYt.video(yid, Cfg.int("yt_maxh", 0), true) } catch (_: Throwable) { null }
-                            runOnUiThread { ytResolving = false
-                                if (got != null && !isFinishing && !isDestroyed) { aurl = got.audio?.takeIf { it.isNotEmpty() } ?: aurl
-                                    try { got.qlist.takeIf { it.isNotEmpty() }?.let { sj -> val qa = org.json.JSONArray(sj); qOpts = (0 until qa.length()).map { qi -> val o = qa.getJSONObject(qi); YtExtract.Opt(o.optString("l"), o.optString("u"), o.optString("a").ifEmpty { null }, o.optInt("h")) }; parseATracks(sj) } } catch (_: Exception) {}
-                                    if (ytAudioUrl() != null) toggleYtMode() else Notice.show(this, "الفيديو ده ملوش مسار صوت منفصل", 2000L)
-                                } else if (!isFinishing && !isDestroyed) Notice.show(this, "ما قدرتش أجيب مسار الصوت — جرّب تاني", 2200L) }
-                        }.apply { isDaemon = true }.start()
-                    } else Notice.show(this, "الفيديو ده ملوش مسار صوت منفصل", 2000L)
-                    return }
-                val pos = player.currentPosition
-                val f = httpDsf ?: DefaultHttpDataSource.Factory().setDefaultRequestProperties(hdr).setAllowCrossProtocolRedirects(true)
-                val src = DefaultMediaSourceFactory(f).createMediaSource(MediaItem.fromUri(Uri.parse(au)))
-                player.exo()?.let { xp -> xp.setMediaSource(src, pos); xp.prepare() }; player.playWhenReady = play
-                ytAudioOnly = true
-                Notice.show(this, "🎧 وضع الصوت: صوت بس — بيوفّر الداتا والبطارية", 2000L)
-            } else {
-                ytAudioOnly = false
-                switchYt(if (qCur >= 0) qCur else 0, force = true)   // بيرجع يدمج الفيديو + الصوت من نفس المكان
-                Notice.show(this, "🎬 وضع الفيديو", 1500L)
+            val xp = player.exo()
+            if (xp == null) {
+                Notice.show(this, "ما قدرتش أبدّل الوضع", 2200L)
+                return
             }
+            ytAudioOnly = !ytAudioOnly
+            xp.trackSelectionParameters = xp.trackSelectionParameters.buildUpon().setTrackTypeDisabled(androidx.media3.common.C.TRACK_TYPE_VIDEO, ytAudioOnly).build()
+            Notice.show(this, if (ytAudioOnly) "🎧 وضع الصوت: صوت بس — بيوفّر الداتا والبطارية" else "🎬 وضع الفيديو", 2000L)
             paintModePill()
-        } catch (e: Exception) { LogStore.err("Player:ytMode", e); Notice.show(this, "ما قدرتش أبدّل الوضع", 2200L) }
+        } catch (e: Exception) {
+            LogStore.err("Player:ytMode", e)
+            Notice.show(this, "ما قدرتش أبدّل الوضع", 2200L)
+        }
     }
 
     private fun hlsAuto() {
@@ -6773,24 +6762,12 @@ class PlayerActivity : Activity(), Host {
             val ex = player.exo() ?: return
             if (mtParityExo === ex) return
             mtParityExo = ex
-            try { MtSmooth.attach(this, ex, null) } catch (_: Throwable) {}
+            try { MtSmooth.attach(this, ex) } catch (_: Throwable) {}
         } catch (_: Throwable) {}
     }
     private fun mtParityDetach() {
         try { MtSmooth.detach(this) } catch (_: Throwable) {}
-        try { MtEnhance.detach(this) } catch (_: Throwable) {}
         mtParityExo = null
-    }
-    private fun mtEnhanceCycle(btn: TextView? = null) {
-        mtParityAttach()
-        if (mtParityExo == null) { say("✨ تحسين الصورة مش متاح على المشغّل ده"); return }
-        val name = try { MtEnhance.cycleMode() } catch (_: Throwable) { return }
-        try { btn?.text = "✨ تحسين الصورة: " + name } catch (_: Throwable) {}
-        val why = try { MtEnhance.lastWhy } catch (_: Throwable) { "" }
-        say(if (name == "إيقاف") "✨ تحسين الصورة: إيقاف" else if (why.isEmpty()) "✨ تحسين الصورة: " + name else "✨ تحسين الصورة: " + name + " — مش شغّال على الفيديو ده (" + why + ")")
-        if (name != "إيقاف" && why.isEmpty()) {
-            try { MtEnhance.reportLater { r -> if (r.isNotEmpty()) say("✨ " + name + ": " + r) } } catch (_: Throwable) {}
-        }
     }
 
     private fun say(m: String) = runOnUiThread { Notice.show(this, (m).toString(), 2300L) }

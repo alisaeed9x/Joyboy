@@ -236,26 +236,12 @@ class CarePage(val k: CareKit, val title: String) {
 
     private val root = k.col().apply { setBackgroundColor(k.pal.bg) }
 
-    /** (v927) الشريط السفلي بتاع البرنامج (زجاجي شفاف زي باقي الصفحات) تحت صفحة «مركز العناية» الرئيسية */
+    /** (v927) الشريط السفلي بتاع البرنامج تحت صفحة «مركز العناية» الرئيسية */
     fun withNav() {
         try {
             val act = k.act; val th = k.th
             val nav = BottomNav(act, k.ui, th, BottomNav.CARE) { i -> navTo(i) }
-            if (MtFloat.eligible(act)) {
-                nav.floatGlass()
-                val src = JoyGlassSource(act).apply { setBackgroundColor(k.pal.bg) }
-                root.removeView(scroll)
-                src.addView(scroll, FrameLayout.LayoutParams(-1, -1))
-                scroll.clipToPadding = false; scroll.setPadding(0, 0, 0, k.dp(96))
-                val bar = MeeGlass.bar(act, th); bar.setSource(src)
-                bar.addView(nav.view, FrameLayout.LayoutParams(-1, -2))
-                val fl = FrameLayout(act)
-                fl.addView(src, FrameLayout.LayoutParams(-1, -1))
-                fl.addView(bar, FrameLayout.LayoutParams(-1, -2, Gravity.BOTTOM).apply { setMargins(k.dp(16), 0, k.dp(16), k.dp(12)) })
-                root.addView(fl, LinearLayout.LayoutParams(-1, 0, 1f))
-            } else {
-                root.addView(nav.view, LinearLayout.LayoutParams(-1, -2))
-            }
+            root.addView(nav.view, LinearLayout.LayoutParams(-1, -2))   // (v1072) الشريط العايم الزجاجي اتشال مع MeeTube — شريط عادي
         } catch (e: Throwable) { LogStore.err("Care:nav", e) }
     }
 
@@ -265,7 +251,7 @@ class CarePage(val k: CareKit, val title: String) {
         try {
             when {
                 i == BottomNav.CARE -> return
-                i >= BottomNav.YT_HOME && i <= BottomNav.YT_ME -> { dismiss(); MeeTubeLink.open(act) }
+                i >= BottomNav.YT_HOME && i <= BottomNav.YT_ME -> { dismiss(); main("youtube") }
                 i == 0 -> { dismiss(); main("videos") }
                 i == 1 -> { dismiss(); main("music") }
                 i == 2 -> { dismiss(); act.startActivity(android.content.Intent(act, BrowserActivity::class.java)) }

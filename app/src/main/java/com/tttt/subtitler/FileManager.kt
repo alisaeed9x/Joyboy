@@ -415,7 +415,7 @@ class FileManagerActivity : Activity() {
         sendFab = IconTextView(this).apply {
             text = "📤 إرسال"; textSize = if (tvMode) 18f else 14f; gravity = Gravity.CENTER; setTextColor(android.graphics.Color.WHITE)
             setTypeface(typeface, android.graphics.Typeface.BOLD); setPadding(ui.dp(18), ui.dp(11), ui.dp(18), ui.dp(11))
-            background = ui.box(th.danger, th.danger, 26); isFocusable = true; elevation = ui.dp(6).toFloat(); tag = MtFloat.LIFT_TAG   // (v924) يطلع فوق الشريط الزجاجي
+            background = ui.box(th.danger, th.danger, 26); isFocusable = true; elevation = ui.dp(6).toFloat()   // (v924)
             setOnClickListener {
                 if (sel.isNotEmpty()) sendSelToFt()
                 else { selMode = !selMode; toast(if (selMode) "☑ اضغط على الملفات لتحديدها ثم «إرسال»" else "اتلغى وضع التحديد"); refresh() }
@@ -433,7 +433,6 @@ class FileManagerActivity : Activity() {
             addView(chip("📥 الصق هنا") { paste() }, LinearLayout.LayoutParams(-2, -2).apply { setMargins(ui.dp(4), 0, ui.dp(4), 0) })
             addView(chip("✖") { clip = emptyList(); refresh() })
         }
-        pasteBar.tag = MtFloat.LIFT_TAG   // (v924)
         root.addView(pasteBar, LinearLayout.LayoutParams(-1, -2))
 
         // شريط التحديد
@@ -452,7 +451,6 @@ class FileManagerActivity : Activity() {
         selBtn("↗ مشاركة") { shareSel() }
         selBtn("🗑 حذف") { deleteSel() }
         selBtn("⋯") { moreSel() }
-        selBar.tag = MtFloat.LIFT_TAG   // (v924) أزرار التحديد (نسخ/نقل/حذف…) كانت مستخبية ورا الشريط
         root.addView(selBar, LinearLayout.LayoutParams(-1, -2))
         // (v313) شريط البوابات السفلي (صغير) زي باقي الشاشات: الفيديوهات · الموسيقى · المتصفح · الملفات (إحنا فيه) · (v324) يوتيوب
         val gates = BottomNav(this, ui, th, 3) { i ->
@@ -460,13 +458,12 @@ class FileManagerActivity : Activity() {
                 NavAnim.set(3, i)
                 if (i == 0 && DeviceUi.isTv(this) && TvFocus.goHome(this)) { /* (v482) تلفزيون: الرئيسية = شاشة التلفزيون */ }
                 else if (i == 2) startActivity(TabNav.front(Intent(this, BrowserActivity::class.java)))
-                else if (i == 4) MeeTubeLink.open(this)
+                else if (i == 4) startActivity(TabNav.main(this, "youtube"))   // (v1072) يوتيوب الداخلي بدل MeeTube
                 else startActivity(TabNav.main(this, if (i == 0) "videos" else if (i == 1) "music" else if (i == 7) "settings" else "tasks"))   // (v973) من غير finish
                 NavAnim.peek(this)
             }
         }
-        val floatNav = !tvMode && MtFloat.eligible(this)   // (v900) شريط عايم زجاجي زي صفحة الميديا
-        if (!tvMode && !floatNav) root.addView(gates.view, LinearLayout.LayoutParams(-1, -2))   // (v517) تلفزيون: الشريط السفلي اتشال (🏠 في القايمة الجانبية)
+        if (!tvMode) root.addView(gates.view, LinearLayout.LayoutParams(-1, -2))   // (v517) تلفزيون: الشريط السفلي اتشال (🏠 في القايمة الجانبية)
 
         // (v324) زرار المهام العايم (دايرة حمراء بالعدد) فوق القايمة؛ دوسة عليه بتفتح صفحة المهام في الرئيسية
         val host = FrameLayout(this)
@@ -476,13 +473,12 @@ class FileManagerActivity : Activity() {
             shell.addView(side, LinearLayout.LayoutParams(ui.dp(280), -1))
             shell.addView(root, LinearLayout.LayoutParams(0, -1, 1f))
             host.addView(shell, FrameLayout.LayoutParams(-1, -1))
-        } else host.addView(if (floatNav) MtFloat.build(this, th, ui, root, gates, null) else root, FrameLayout.LayoutParams(-1, -1))   // (v900)
+        } else host.addView(root, FrameLayout.LayoutParams(-1, -1))   // (v1072) الشريط العايم اتشال مع MeeTube
         if (DeviceUi.isTablet(this)) buildDetailPane(host)   // (v462)
         // (v336) زرار المهام العايم اتشال — المهام في الشريط السفلي
         setContentView(host)
         fab = TasksFab(this, host, ui) { startActivity(Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP).putExtra("tab", "tasks")) }   // (v420)
         dockUi = MiniDock(this, host, ui, th, { startActivity(Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP).putExtra("fullmusic", true)) })   // (v344)
-        try { YtMiniCard(this, host) } catch (e: Throwable) { LogStore.err("FileManager:ytMini", e) }   // (v1037) كارت يوتيوب المصغّر يمشي معاك في كل الصفحات
         stripUi = StatusStrip(this, host, ui, th) { startActivity(Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP).putExtra("tab", "tasks")) }   // (v345)
     }
 
@@ -904,7 +900,7 @@ class FileManagerActivity : Activity() {
                     data = Uri.fromFile(f); addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                     putExtra("landscape", e in FmUtil.VIDEO); putExtra("fresh", false); putExtra("nosub", false); putExtra("ask", false)
                 }
-                if (!MtPlay.fastOpen(this, pi)) startActivity(pi)   // (v978) فتح مباشر من غير PlayerActivity الوسيطة
+                startActivity(pi)   // (v1072) MtPlay.fastOpen اتشال مع MeeTube — فتح مباشر
             } else {
                 startActivity(Intent(Intent.ACTION_VIEW).apply {
                     setDataAndType(FmUtil.uriFor(this@FileManagerActivity, f), FmUtil.mime(f)); addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)

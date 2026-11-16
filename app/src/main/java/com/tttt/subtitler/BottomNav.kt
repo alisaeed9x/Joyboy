@@ -209,9 +209,7 @@ class BottomNav(act: Activity, private val ui: Ui, private val th: Theme, privat
     }
 
     private fun navBg(): Int = if (MtGlass.on()) MtGlass.barSolid(th) else th.card   // (v893) زجاج MeeTube
-    private fun navBgD(): android.graphics.drawable.Drawable =
-        if (floatMode) android.graphics.drawable.ColorDrawable(0) else android.graphics.drawable.ColorDrawable(navBg())
-    private var floatMode = false   // (v895) شريط عايم: من غير خلفية صلبة — الزجاج بيجي من MtGlassView
+    private fun navBgD(): android.graphics.drawable.Drawable = android.graphics.drawable.ColorDrawable(navBg())
     private val icons = ArrayList<IconTextView>()
     private val labels = ArrayList<IconTextView>()
     private val cells = ArrayList<View>()
@@ -351,8 +349,6 @@ class BottomNav(act: Activity, private val ui: Ui, private val th: Theme, privat
     }
 
     /** (v350) عدّاد أحمر فوق أيقونة البوابة؛ 0 = مخفي */
-    /** (v895) الشريط عايم فوق المحتوى جوه زجاج حقيقي (MtFloat): شيل الخلفية الصلبة والخط العلوي */
-    fun floatGlass() { floatMode = true; rowLL.background = android.graphics.drawable.ColorDrawable(0); lineV?.visibility = View.GONE }
     fun badge(i: Int, n: Int) {
         for (k in (if (i == 4) listOf(4, YT_SUBS) else listOf(i))) {   // (v475) عدّاد يوتيوب الجديد بيظهر كمان على خلية «الاشتراكات»
             val b = badges.getOrNull(k) ?: continue
@@ -442,10 +438,8 @@ class BottomNav(act: Activity, private val ui: Ui, private val th: Theme, privat
     /** (v198) لون الشريط وهو مشغّل الموسيقى مفتوح (بيتبع لون الغلاف)؛ null = رجّعه للثيم */
     fun tint(c: Int?) {
         tinted = c != null
-        // (v923) الشريط العايم: كان بيتلوّن بمربع صلب (ColorDrawable) فوق كبسولة الزجاج = شكل مربع بنفسجي غير منتظم. دلوقتي كبسولة مدوّرة شبه شفافة بنفس استدارة الزجاج
-        val soft = if (c != null) (c and 0x00FFFFFF) or 0x55000000.toInt() else 0   // (v927) أشفّ: نفس شفافية الزجاج في باقي الصفحات
-        rowV?.background = if (c != null) { if (floatMode) GradientDrawable().apply { setColor(soft); cornerRadius = ui.dp(28).toFloat() } else android.graphics.drawable.ColorDrawable(c) } else navBgD()
-        moreHost?.setBackgroundColor(if (c != null) (if (floatMode) soft else c) else if (floatMode) 0 else navBg())
+        rowV?.background = if (c != null) android.graphics.drawable.ColorDrawable(c) else navBgD()
+        moreHost?.setBackgroundColor(if (c != null) c else navBg())
         lineV?.setBackgroundColor(if (c != null) 0x22FFFFFF else if (MtGlass.on()) MtGlass.rim(th) else th.border)
         paint()
     }
