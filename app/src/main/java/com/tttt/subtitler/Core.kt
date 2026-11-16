@@ -98,7 +98,7 @@ object KeyMode {
 // ===== ترميز الإعدادات (نقي — متختبر) =====
 object CfgCodec {
     /** مفاتيح بتتخزن Boolean / Int فعليًا بعد الهجرة */
-    val BOOLS = setOf("autochars", "autopron", "autotpl", "hitiming", "gapfill", "soundtags", "prefine", "refine2pass",
+    val BOOLS = setOf("autochars", "autopron", "autotpl", "hitiming", "gapfill", "soundtags", "prefine", "refine2pass", "fastmode",
         "sub_nobg", "sub_plain", "sub_uni_on", "sub_split_on", "sub_two_lines", "sub_punct")
     val INTS = setOf("chunk", "ahead", "hls_ahead", "atrack", "parallel", "sub_scale", "sub_bgopa", "sub_blur", "sub_aspeed", "sub_dual", "sub_split", "kmode", "nmain", "nback")
     const val VERSION = 3
@@ -745,6 +745,108 @@ object Api {
         }
     }
 
+    /**
+     * (v1065 — وضع الترجمة السريعة ⚡) نفس generate بس بـ streamGenerateContent?alt=sse:
+     * onText بيتنده بالنص المتجمّع كل ما يوصل جزء من الرد، فالجمل المترجمة تظهر قبل ما الباتش كله يخلص.
+     * أي حالة خاصة (مفتاح محلي/FreeLLM، أو 400 بسبب التفكير/سقف التوكنز) بتروح لـ generate العادي.
+     */
+    fun generateStream(model: String, key: String, prompt: String, wav: ByteArray?,
+                       maxTokens: Int, temp: Double, onText: (String) -> Unit): Result {
+        if (key == LocalKey.ID || FreeLlm.isWrapped(key) || FreeLlm.isKey(key)) return generate(model, key, prompt, wav, maxTokens, temp, true, false)
+        val n = gemSeq.incrementAndGet()
+        val t0 = System.currentTimeMillis()
+        LogStore.add("🌐 [جيميناي #$n] طلب ⚡stream ← ${model.removePrefix("gemini-")} · مفتاح …${key.takeLast(4)} · " + (if (wav != null) "صوت ${wav.size / 1024}KB" else "نص ${prompt.length}حرف"))
+        val first = LongArray(1) { -1L }
+        try {
+            Quota.hit(model); Stats.req(model, key)
+            val mt = minOf(maxTokens, tokenCap[model] ?: Int.MAX_VALUE)
+            val r = try { streamOnce(model, key, prompt, wav, mt, temp, thinkCfg(model, thinkVar[model] ?: 0), onText, t0, first) }
+            catch (e: ApiErr) { if (e.code == 400) return generate(model, key, prompt, wav, maxTokens, temp, true, false) else throw e }
+            LogStore.add("🌐 [جيميناي #$n] ✅ ⚡ أول جزء بعد ${first[0]}ms · الرد كامل ${r.text.length}حرف في ${System.currentTimeMillis() - t0}ms" + (if (r.finish.isNotEmpty() && r.finish != "STOP") " (${r.finish})" else ""))
+            return r
+        } catch (e: Throwable) {
+            val m = if (e is ApiErr) "HTTP ${e.code}: " + (e.message ?: "").take(90) else (e.javaClass.simpleName + ": " + (e.message ?: "").take(90))
+            LogStore.add("🌐 [جيميناي #$n] ❌ ⚡ فشل في ${System.currentTimeMillis() - t0}ms — $m")
+            throw e
+        }
+    }
+
+    private fun streamOnce(model: String, key: String, prompt: String, wav: ByteArray?, maxTokens: Int, temp: Double, think: String,
+                           onText: (String) -> Unit, t0: Long, first: LongArray): Result {
+        val enc = java.util.Base64.getEncoder()
+        val pk = if (wav != null) AudioEnc.pack(wav) else null
+        val aud: ByteArray? = pk?.bytes
+        val head = "{\"contents\":[{\"parts\":[" + (if (pk != null) "{\"inline_data\":{\"mime_type\":\"" + pk.mime + "\",\"data\":\"" else "")
+        val mid = if (aud != null) "\"}}," else ""
+        val textPart = "{\"text\":" + JSONObject.quote(prompt) + "}"
+        val tail = "]}],\"generationConfig\":{\"maxOutputTokens\":$maxTokens,\"temperature\":$temp,\"responseMimeType\":\"application/json\"" + think + "},\"safetySettings\":[$SAFETY]}"
+        val hb = head.toByteArray(Charsets.UTF_8)
+        val mb = (mid + textPart + tail).toByteArray(Charsets.UTF_8)
+        val b64Len = if (aud != null) ((aud.size + 2) / 3).toLong() * 4 else 0L
+        val total = hb.size + b64Len + mb.size
+        val c = URL("$base/models/$model:streamGenerateContent?alt=sse").openConnection() as HttpURLConnection
+        try {
+            c.requestMethod = "POST"; c.doOutput = true; c.connectTimeout = 20000; c.readTimeout = (readTimeoutOverride.get() ?: 90000)
+            c.setRequestProperty("Content-Type", "application/json"); c.setRequestProperty("x-goog-api-key", key)
+            c.setFixedLengthStreamingMode(total)
+            c.outputStream.use { os ->
+                os.write(hb)
+                if (aud != null) {
+                    val step = 3 * 16384
+                    var i = 0
+                    while (i < aud.size) {
+                        val e = minOf(aud.size, i + step)
+                        os.write(enc.encode(aud.copyOfRange(i, e)))
+                        i = e
+                    }
+                }
+                os.write(mb)
+            }
+            val code = c.responseCode
+            if (code >= 300) {
+                val errTxt = c.errorStream?.bufferedReader(Charsets.UTF_8)?.use { it.readText() } ?: ""
+                NetUse.api(total, errTxt)
+                throw ApiErr(code, errMsg(code, errTxt))
+            }
+            val sb = StringBuilder()
+            var finish = ""
+            var block = ""
+            c.inputStream.bufferedReader(Charsets.UTF_8).use { rd ->
+                while (true) {
+                    val line = rd.readLine() ?: break
+                    if (!line.startsWith("data:")) continue
+                    val js = line.substring(5).trim()
+                    if (js.isEmpty() || js == "[DONE]") continue
+                    val root = try { JSONObject(js) } catch (_: Exception) { null }
+                    if (root == null) continue
+                    val cand = root.optJSONArray("candidates")?.optJSONObject(0)
+                    if (cand == null) {
+                        val why = root.optJSONObject("promptFeedback")?.optString("blockReason", "") ?: ""
+                        if (why.isNotEmpty()) block = "PROMPT_$why"
+                        continue
+                    }
+                    val parts = cand.optJSONObject("content")?.optJSONArray("parts")
+                    var added = false
+                    if (parts != null) for (k in 0 until parts.length()) {
+                        val t = parts.optJSONObject(k)?.optString("text", "") ?: ""
+                        if (t.isNotEmpty()) { sb.append(t); added = true }
+                    }
+                    val fr = cand.optString("finishReason", "")
+                    if (fr.isNotEmpty()) finish = fr
+                    if (added) {
+                        if (first[0] < 0) first[0] = System.currentTimeMillis() - t0
+                        try { onText(sb.toString()) } catch (_: Throwable) {}
+                    }
+                }
+            }
+            val all = sb.toString()
+            NetUse.api(total, all)
+            if (looksHtml(all)) throw ApiErr(502, htmlMsg(code, all))
+            if (all.isEmpty() && block.isNotEmpty()) return Result("", block)
+            return Result(all, finish)
+        } finally { try { c.disconnect() } catch (_: Throwable) {} }
+    }
+
     private fun generateOnce(model: String, key: String, prompt: String, wav: ByteArray?,
                  maxTokens: Int, temp: Double, json: Boolean, search: Boolean, think: String): Result {
         val enc = java.util.Base64.getEncoder()
@@ -796,6 +898,46 @@ object Api {
             if (parts != null) for (i in 0 until parts.length()) sb.append(parts.optJSONObject(i)?.optString("text", "") ?: "")
             return Result(sb.toString(), cand.optString("finishReason", ""))
         } catch (e: Throwable) { try { c.disconnect() } catch (_: Throwable) {}; throw e }
+    }
+}
+
+/** (v1065) بيطلّع كل جملة JSON كاملة من رد جيميناي وهو لسه بيوصل (stream): {"subtitles":[{..},{..} — الجملة بتتحسب جاهزة أول ما قوسها يتقفل */
+class StreamSubs {
+    private var pos = 0
+    private var depth = 0
+    private var inStr = false
+    private var esc = false
+    private var objStart = -1
+    /** كل الجمل اللي اكتملت لحد دلوقتي بالترتيب */
+    val all = ArrayList<JSONObject>()
+    /** بيدّيه النص المتجمّع كله؛ بيرجّع عدد الجمل الجديدة اللي اكتملت */
+    fun feed(acc: String): Int {
+        var found = 0
+        var i = pos
+        while (i < acc.length) {
+            val ch = acc[i]
+            if (inStr) {
+                if (esc) esc = false else if (ch == '\\') esc = true else if (ch == '"') inStr = false
+            } else {
+                when (ch) {
+                    '"' -> inStr = true
+                    '{' -> { depth++; if (depth == 2) objStart = i }
+                    '}' -> {
+                        if (depth == 2 && objStart >= 0) {
+                            try {
+                                val o = JSONObject(acc.substring(objStart, i + 1))
+                                if (o.has("start") && (o.has("original") || o.has("text"))) { all.add(o); found++ }
+                            } catch (_: Exception) {}
+                            objStart = -1
+                        }
+                        if (depth > 0) depth--
+                    }
+                }
+            }
+            i++
+        }
+        pos = i
+        return found
     }
 }
 
@@ -909,6 +1051,17 @@ class Ranges {
         r.clear(); r.addAll(m)
     }
     @Synchronized fun covers(s: Double, e: Double) = r.any { it[0] <= s + 0.05 && it[1] >= e - 0.05 }
+    /** (v1065) أول نقطة >= from مش مغطّاة (بحد أقصى to). to لو كله مغطّى */
+    @Synchronized fun nextGap(from: Double, to: Double): Double {
+        var p = from
+        for (x in r) { if (x[1] <= p + 0.05) continue; if (x[0] <= p + 0.05) p = x[1] else break }
+        return minOf(p, to)
+    }
+    /** (v1065) نهاية المنطقة الفاضية اللي بتبدأ عند from = بداية أول مجال مترجم بعدها (أو to) */
+    @Synchronized fun gapEnd(from: Double, to: Double): Double {
+        for (x in r) if (x[0] > from + 0.05) return minOf(x[0], to)
+        return to
+    }
     @Synchronized fun list(): List<DoubleArray> = r.map { it.copyOf() }
     @Synchronized fun total(): Double = r.sumOf { it[1] - it[0] }
     @Synchronized fun clear() = r.clear()

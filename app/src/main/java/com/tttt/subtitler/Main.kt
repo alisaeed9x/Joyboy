@@ -288,10 +288,11 @@ class MainActivity : Activity() {
         val hlsAhead = ui.input("روابط m3u8: عدد الباتشات اللي بتتحمّل مقدّمًا قدّام الترجمة (الباقي مابيتحمّلش لحد ما توصله)", Cfg.str("hls_ahead", "3"))
         val atrack = ui.input("رقم مسار الصوت (لو الفيديو فيه أكتر من لغة)", Cfg.str("atrack", "1"))
         val gloss = ui.input("مسرد مصطلحات ثابت (كل سطر: الكلمة = ترجمتها)", Cfg.str("gloss"), 3)
-        val flags = linkedMapOf("hitiming" to false, "soundtags" to true, "prefine" to true)   // (v458) اتشال من الخريطة: autochars/autopron/autotpl/gapfill (المحرك بيفرضهم شغالين دايمًا من v229 فمفاتيحهم كانت ميتة) وautosrt (مفيش أي كود بيقراه)
+        val flags = linkedMapOf("hitiming" to false, "soundtags" to true, "prefine" to true, "fastmode" to false)   // (v458) اتشال من الخريطة: autochars/autopron/autotpl/gapfill (المحرك بيفرضهم شغالين دايمًا من v229 فمفاتيحهم كانت ميتة) وautosrt (مفيش أي كود بيقراه)
         val flagText = mapOf(
             "prefine" to "تنقيح جزئي أثناء الترجمة: كل مقطع يخلص، الجمل الجديدة (مع 25 جملة قبلها كسياق) بتتبعت بنصها الأصلي وترجمتها للتنقيح وتتصحّح الترجمة الحرفية — على مفاتيح تنقيح مخصوصة (البرنامج بيخصّصها لوحده من قايمة المفاتيح، ومفتاح الصور احتياطي لها) من غير ما ياخد من مفاتيح الترجمة؛ وفي الآخر بيحصل تنقيح كامل واحد",
             "hitiming" to "دقة توقيت أعلى (بيفك الصوت من قبل البداية بـ 3 ثواني — أبطأ شوية)",
+            "fastmode" to "⚡ الترجمة السريعة: طلب واحد (تفريغ+ترجمة) بالـ stream — الجمل بتظهر أول ما تتقفل، وأول باتش بيتقسّم 10ث ← 20ث ← 30ث من مكان التشغيل، من غير تسميع مزدوج ولا انتظار تجميع. جودة أقل شوية من الوضع العادي. بيشتغل من أول ترجمة جديدة",
             "soundtags" to "التقاط الأصوات الخلفية والهمهمات والموسيقى وعرضها كسطر وصف فوق الفيديو")
         val flagViews = flags.map { (k, d) -> ui.switchRow(flagText[k]!!, Cfg.bool(k, d)) { } }
         fun keyList(t: String) = t.lines().map { it.trim() }.filter { it.length > 10 }
@@ -610,7 +611,7 @@ class MainActivity : Activity() {
                 ui.section("⏱ التقطيع والتنقيح", false, chunk, ahead, hlsAhead,
                     ui.noHint(), offPartChips,
                     ui.switchRow("كمّل ترجمة باقي الفيديو بعد ما توصل لمكان التشغيل (بيرجع للأول لو فيه جزء ناقص)", Cfg.bool("keepgoing", true)) { Cfg.put("keepgoing", if (it) "1" else "0") },
-                    *fl("prefine"))) }),
+                    *fl("fastmode", "prefine"))) }),
 
             // ===== 🎬 شكل الترجمة =====
             tab("look", { listOf<View>(
