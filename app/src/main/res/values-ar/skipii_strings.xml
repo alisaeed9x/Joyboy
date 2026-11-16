@@ -1,0 +1,778 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- v1080: Skipii strings merged verbatim (10 files) into one file. -->
+<!-- No name collided with Joyboy's existing strings (verified 2026-11-16: 0 collisions), -->
+<!-- so no skipii_ renaming was needed. app_name value is "Joyboy" (v1080): the key -->
+<!-- stays app_name (vendored code references R.string.app_name), only the value changed. -->
+<!-- the graft agent owns branding. -->
+<resources>
+    <!-- From Skipii strings.xml -->
+    <!-- Compact counts (formatCount): %1$s is the number, already with the language's decimal mark ("1,2"). -->
+    <string name="count_thousands">%1$s ألف</string>
+    <string name="count_millions">%1$s مليون</string>
+    <string name="count_billions">%1$s مليار</string>
+    <!-- Only used where count_in_ten_thousands is true (Japanese): 万 and 億. Unused in Arabic, kept unchanged. -->
+    <string name="count_ten_thousands">%1$s万</string>
+    <string name="count_hundred_millions">%1$s億</string>
+
+    <!-- %1$s is a compact count from formatCount ("1.2M"); the quantity is the exact count.
+         "few" (n % 100 = 3..10) also hits big compacted counts ("1.2 مليون"), so it keeps the singular form that
+         reads right after ألف / مليون. -->
+    <plurals name="views_count">
+        <item quantity="zero">%1$s مشاهدة</item>
+        <item quantity="one">%1$s مشاهدة</item>
+        <item quantity="two">مشاهدتان</item>
+        <item quantity="few">%1$s مشاهدات</item>
+        <item quantity="many">%1$s مشاهدة</item>
+        <item quantity="other">%1$s مشاهدة</item>
+    </plurals>
+    <plurals name="subscribers_count">
+        <item quantity="zero">%1$s مشترك</item>
+        <item quantity="one">%1$s مشترك</item>
+        <item quantity="two">مشتركان</item>
+        <item quantity="few">%1$s مشتركين</item>
+        <item quantity="many">%1$s مشتركًا</item>
+        <item quantity="other">%1$s مشترك</item>
+    </plurals>
+
+    <!-- Ages (displayAge). %1$s is a relative time already in the app's language ("3 days ago"). -->
+    <string name="age_just_now">الآن</string>
+    <string name="age_streamed">تم بثه %1$s</string>
+    <string name="age_premiered">تم عرضه لأول مرة %1$s</string>
+
+    <!-- The account sheet's Language card (LanguageSettings). -->
+    <string name="language_title">اللغة</string>
+    <string name="language_phone">لغة الهاتف</string>
+    <!-- %1$s is the language's own name ("Español"). -->
+    <string name="language_phone_named">لغة الهاتف (%1$s)</string>
+    <string name="language_line">كلمات التطبيق نفسه. تبقى الفيديوهات والعناوين والتعليقات كما كتبها أصحابها.</string>
+
+    <!-- From Skipii strings_app.xml -->
+    <!-- Bottom tab bar labels (MainActivity Tab, drawn by NavBar). Tight: the selected tab shows its label
+         beside the icon in a shared pill; keep as short as possible (~12 characters). -->
+    <string name="app_tab_home">الرئيسية</string>
+    <string name="app_tab_subscriptions">الاشتراكات</string>
+    <!-- YouTube's name for its short vertical videos; most languages keep "Shorts". -->
+    <string name="app_tab_shorts">Shorts</string>
+    <string name="app_tab_search">بحث</string>
+    <string name="app_tab_library">المكتبة</string>
+
+    <!-- Self-update: the Update pill in Home's header, beside the profile picture. Short (~10 characters). -->
+    <string name="app_update_pill">تحديث</string>
+    <!-- Update pill while installing. Short (~10 characters). -->
+    <string name="app_update_pill_installing">جارٍ التثبيت</string>
+    <!-- Update pill after a failed download/install. Short (~10 characters). -->
+    <string name="app_update_pill_retry">أعد المحاولة</string>
+    <!-- Download progress, %1$s is a whole number 0-100 ("42%"). -->
+    <string name="app_update_percent">%1$s%%</string>
+    <!-- Title of the "What's new" sheet listing the release notes of a new version. -->
+    <string name="app_update_whats_new">ما الجديد</string>
+    <!-- Download size of the new version, %1$s is a number with one decimal ("16.8"). -->
+    <string name="app_update_size_mb">%1$s ميغابايت</string>
+    <string name="app_update_no_notes">لم تُنشر أي ملاحظات مع هذا الإصدار.</string>
+    <!-- The What's new sheet's full-width button. -->
+    <string name="app_update_button">تحديث</string>
+    <!-- The sheet's button while downloading, %1$s is a whole number 0-100. -->
+    <string name="app_update_downloading">جارٍ التنزيل %1$s%%</string>
+    <string name="app_update_installing">جارٍ التثبيت…</string>
+    <string name="app_update_try_again">إعادة المحاولة</string>
+    <!-- Notification channel name (Android Settings › Notifications). -->
+    <string name="app_update_channel">تحديثات التطبيق</string>
+    <!-- Notification after the app updated itself, %1$s is the version ("0.5.79"). -->
+    <string name="app_updated_title">تم تحديث Skipii إلى الإصدار %1$s</string>
+    <string name="app_updated_text">انقر للفتح</string>
+
+    <!-- The Subscribe button (player and channel page). Short: shares a row with the bell key. -->
+    <string name="app_subscribe">اشتراك</string>
+    <string name="app_subscribed">تم الاشتراك</string>
+    <!-- Accessibility labels of the bell key next to Subscribed. -->
+    <string name="app_bell_on_description">الجرس مفعّل: كل فيديو جديد. انقر لإيقافه</string>
+    <string name="app_bell_off_description">الجرس: تلقَّ إشعارًا بكل فيديو جديد</string>
+    <!-- Messages after turning a channel's bell on/off. %1$s is the channel's name. -->
+    <string name="app_bell_on_message">كل فيديو جديد من %1$s</string>
+    <string name="app_bell_off_message">تم إيقاف الإشعارات من %1$s</string>
+    <!-- Same, when the channel's name isn't known. -->
+    <string name="app_bell_on_message_unnamed">كل فيديو جديد من هذه القناة</string>
+    <string name="app_bell_off_message_unnamed">تم إيقاف الإشعارات من هذه القناة</string>
+    <string name="app_bell_failed">تعذّر تغيير الجرس.</string>
+    <!-- Notifications were refused when asked (Android 13+). -->
+    <string name="app_bell_allow_notifications">اسمح بإشعارات Skipii لاستخدام الجرس.</string>
+    <!-- Notifications are off in Android's settings; the settings page opens next. -->
+    <string name="app_bell_turn_on_notifications">فعِّل إشعارات Skipii لاستخدام الجرس.</string>
+
+    <!-- Notification channel for new videos from channels with the bell on (Android Settings › Notifications). -->
+    <string name="app_new_videos_channel">فيديوهات جديدة</string>
+    <string name="app_new_videos_channel_description">كل فيديو جديد من القنوات التي فعّلت جرسها</string>
+    <!-- A new-video notification's title when the channel's name isn't known. -->
+    <string name="app_new_video_unnamed">فيديو جديد</string>
+
+    <!-- The signed-in account's name when Google's page didn't give one. -->
+    <string name="app_account_fallback_name">حساب YouTube</string>
+    <!-- Errors shown on the signed-in feeds. %1$s is an HTTP status code ("403"). -->
+    <string name="app_error_session_rejected">رفض YouTube الجلسة (%1$s). جرّب تسجيل الدخول مرة أخرى.</string>
+    <string name="app_error_youtube_returned">ردّ YouTube بالرمز %1$s</string>
+    <!-- The live activity's notification channel, and its skip buttons. %1$s = seconds ("10"). -->
+    <string name="app_live_channel">التشغيل في الخلفية</string>
+    <string name="app_live_channel_description">عناصر التحكم في التشغيل عندما لا يكون Skipii على الشاشة</string>
+    <string name="app_live_back">−%1$s ث</string>
+    <string name="app_live_forward">+%1$s ث</string>
+
+    <!-- From Skipii strings_bar.xml -->
+    <!-- The open player's bar (the tab bar turns into it): play, -10 / +10, audio only, the ⋮ key. -->
+    <!-- Accessibility labels of the bar's play button. -->
+    <string name="bar_play">تشغيل</string>
+    <string name="bar_pause">إيقاف مؤقت</string>
+    <!-- Accessibility labels of the bar's seek buttons. -->
+    <!-- Accessibility label of the ⋮ key that opens the card of tools. -->
+    <string name="bar_more_controls">عناصر تحكم إضافية</string>
+    <!-- Accessibility label of the ✕ the ⋮ key turns into. -->
+    <string name="bar_close">إغلاق</string>
+    <!-- Accessibility labels of the audio only button (plays sound without the picture). -->
+    <string name="bar_audio_only">الصوت فقط</string>
+    <string name="bar_audio_only_on">وضع الصوت فقط مفعّل</string>
+
+    <!-- Tool labels under 58 dp round buttons in one row (up to six): very small text, keep VERY short (~9 characters). -->
+    <string name="bar_tool_speed">السرعة</string>
+    <string name="bar_tool_quality">الجودة</string>
+    <!-- Picture-in-picture, abbreviated. -->
+    <string name="bar_tool_pip">نافذة</string>
+    <string name="bar_tool_captions">الترجمة</string>
+    <string name="bar_tool_fullscreen">ملء الشاشة</string>
+    <!-- Plays the next video. -->
+    <string name="bar_tool_next">التالي</string>
+
+    <!-- Title of the chapter list, and the accessibility label of the button that opens it. -->
+    <string name="bar_chapters">الفصول</string>
+    <!-- Above the chapter list: which chapter is playing, e.g. "3 of 12". -->
+    <string name="bar_chapter_position">%1$s من %2$s</string>
+    <!-- A chapter with no title: "Chapter 3". -->
+    <string name="bar_chapter_untitled">الفصل %1$s</string>
+
+    <!-- Quality list title. -->
+    <string name="bar_quality">الجودة</string>
+    <!-- The quality that picks itself from the connection. Short, shown on a small round button too. -->
+    <string name="bar_quality_auto">تلقائي</string>
+    <!-- Next to the quality list's title: the quality playing now. %1$s = "720p". -->
+    <string name="bar_quality_playing">يتم تشغيل %1$s</string>
+    <!-- After "Auto" in the quality list: the height it plays right now. %1$s = 720 (shown as "720p now"). -->
+    <string name="bar_quality_now">%1$sp الآن</string>
+    <!-- Note after the lowest qualities (240p and below): uses little mobile data. -->
+    <string name="bar_quality_data_saver">توفير البيانات</string>
+    <!-- Accessibility label of the check on the chosen row of a list. -->
+    <string name="bar_selected">محدّد</string>
+
+    <!-- Captions list title (next to an on/off switch). -->
+    <string name="bar_captions">الترجمة</string>
+    <!-- Section heading in the captions list, written in capitals: languages the phone translates the captions into.
+         (Arabic has no capitals.) -->
+    <string name="bar_captions_translated">مترجمة على هاتفك</string>
+    <!-- Captions list row that shows every language. -->
+    <string name="bar_captions_more_languages">لغات أخرى</string>
+    <!-- Captions list button that opens the full text of the video's captions. -->
+    <string name="bar_transcript">نص الفيديو</string>
+
+    <!-- Message when the phone's settings don't allow picture-in-picture for the app. -->
+    <string name="bar_pip_off">ميزة نافذة ضمن النافذة غير مفعّلة لتطبيق Skipii في الإعدادات.</string>
+
+    <!-- Pill above the scrub preview: let go here to not jump. Short. -->
+    <string name="bar_cancel">إلغاء</string>
+
+    <!-- Speed panel. Under the big speed number: whether the speed applies to every video or only this one. -->
+    <string name="bar_speed_every_video">كل الفيديوهات</string>
+    <string name="bar_speed_this_video">هذا الفيديو فقط</string>
+    <!-- Checkbox: keep this speed for every video. -->
+    <string name="bar_speed_remember">تذكُّر السرعة لكل الفيديوهات</string>
+    <!-- Under the checkbox: remembering ends when the speed is set back to normal (1×). -->
+    <string name="bar_speed_remember_note">إلى أن تعيدها إلى 1×</string>
+
+    <!-- From Skipii strings_comments.xml -->
+    <!-- ── Comments ─────────────────────────────────────────────────────────── -->
+
+    <!-- Title of the comments card under the video and of the comments panel. -->
+    <string name="comments_title">التعليقات</string>
+    <string name="comments_turned_off">التعليقات غير مفعّلة لهذا الفيديو.</string>
+    <!-- Comments card, signed in, when the video has no comments yet. -->
+    <string name="comments_none_add_first">لا توجد تعليقات بعد. أضِف أول تعليق.</string>
+    <string name="comments_none">لا توجد تعليقات بعد.</string>
+    <!-- Accessibility label of the panel's close (X) button. -->
+    <string name="comments_close">إغلاق التعليقات</string>
+    <!-- Shown at the bottom of the comments panel instead of the comment box when signed out. -->
+    <string name="comments_sign_in_to_comment">سجّل الدخول للتعليق.</string>
+    <!-- Above the comment box while replying. %1$s = the name of the person replied to. -->
+    <string name="comments_replying_to">الرد على %1$s</string>
+    <!-- Accessibility label of the X that stops replying. -->
+    <string name="comments_cancel_reply">إلغاء الرد</string>
+    <!-- Placeholder in the comment box. -->
+    <string name="comments_add_reply">إضافة رد…</string>
+    <string name="comments_add_comment">إضافة تعليق…</string>
+    <!-- Accessibility label of the send button (posts the comment). -->
+    <string name="comments_post">نشر</string>
+    <!-- Accessibility label of the pin icon on a pinned comment. -->
+    <string name="comments_pinned">مثبّت</string>
+    <!-- Accessibility labels of a comment's thumbs-up button. -->
+    <string name="comments_like">إعجاب</string>
+    <string name="comments_unlike">إلغاء الإعجاب</string>
+    <!-- Accessibility label of the heart the video's creator gave a comment. -->
+    <string name="comments_hearted">أعجب به صاحب القناة</string>
+    <!-- Small text button under a comment, keep short. -->
+    <string name="comments_reply">رد</string>
+    <!-- Text button that folds a comment's replies away. -->
+    <string name="comments_hide_replies">إخفاء الردود</string>
+    <!-- Text button that opens a comment's replies. %1$s = how many. -->
+    <plurals name="comments_replies">
+        <item quantity="zero">%1$s رد</item>
+        <item quantity="one">%1$s رد</item>
+        <item quantity="two">%1$s رد</item>
+        <item quantity="few">%1$s ردود</item>
+        <item quantity="many">%1$s ردًا</item>
+        <item quantity="other">%1$s رد</item>
+    </plurals>
+    <!-- Author shown on a comment the person just posted, until the page reloads. -->
+    <string name="comments_you">أنت</string>
+    <!-- Errors shown under the comment box. -->
+    <string name="comments_error_like">تعذّر الإعجاب بهذا التعليق.</string>
+    <string name="comments_error_post">تعذّر نشر تعليقك.</string>
+    <string name="comments_error_cant_post">التعليقات غير مفعّلة أو لا يمكن نشرها على هذا الفيديو.</string>
+    <string name="comments_error_reply_not_found">تعذّر العثور على التعليق للرد عليه. حاول مرة أخرى.</string>
+    <string name="comments_error_like_not_found">تعذّر العثور على التعليق للإعجاب به. حاول مرة أخرى.</string>
+    <string name="comments_error_not_accepted">لم يقبل YouTube التعليق.</string>
+
+    <!-- ── Captions ─────────────────────────────────────────────────────────── -->
+
+    <!-- Title of the captions sheet and of the captions card in settings. -->
+    <string name="captions_title">الترجمة</string>
+    <!-- Title of the transcript panel and the button that opens it. -->
+    <string name="captions_transcript">نص الفيديو</string>
+    <!-- Shown over the video while a translation model downloads. %1$s = a language name ("German"). -->
+    <string name="captions_downloading_language">جارٍ تنزيل اللغة %1$s للترجمة…</string>
+    <!-- Shown over the video while captions are being translated. %1$s = a language name. -->
+    <string name="captions_translating_into">جارٍ الترجمة إلى %1$s…</string>
+    <!-- Error over the video / in the transcript. %1$s = a language name. -->
+    <string name="captions_error_download">تعذّر تنزيل اللغة %1$s للترجمة.</string>
+    <string name="captions_error_load">تعذّر تحميل هذه الترجمة.</string>
+    <!-- Note after a caption track's language in the list: captions YouTube made itself from speech. -->
+    <string name="captions_auto_generated">منشأة تلقائيًا</string>
+    <!-- Short form of "auto-generated", in a small chip next to the transcript's title, keep short. -->
+    <string name="captions_auto">تلقائية</string>
+    <!-- Notes after a translation language in the list. -->
+    <string name="captions_note_downloading">جارٍ التنزيل…</string>
+    <!-- %1$s = the language translated from ("from English"). -->
+    <string name="captions_note_from">من %1$s</string>
+    <!-- The translation model still has to be downloaded; "MB" = megabytes. -->
+    <string name="captions_note_download_size">تنزيل ~30 ميغابايت</string>
+    <!-- Section heading in the captions list (shown in capitals): the languages that are translated by the phone itself.
+         (Arabic has no capitals.) -->
+    <string name="captions_translated_on_phone">مترجمة على هاتفك</string>
+    <!-- Row at the end of the captions list that shows every language. -->
+    <string name="captions_more_languages">لغات أخرى</string>
+    <string name="captions_none">لا تتوفر ترجمة لهذا الفيديو.</string>
+    <!-- Accessibility label of the check on the chosen row. -->
+    <string name="captions_selected">محدّدة</string>
+    <!-- Accessibility label of the transcript panel's close (X) button. -->
+    <string name="captions_close_transcript">إغلاق نص الفيديو</string>
+    <string name="captions_no_transcript">لا تتوفر ترجمة لهذا الفيديو، لذا لا يوجد نص.</string>
+    <string name="captions_no_lines">لا توجد سطور بعد.</string>
+    <!-- Transcript search found nothing. %1$s = what was typed. -->
+    <string name="captions_nothing_matches">لا شيء يطابق «%1$s».</string>
+    <!-- Button that scrolls the transcript back to the line being said. -->
+    <string name="captions_back_to_now">العودة إلى الآن</string>
+    <!-- Placeholder of the transcript's search field. -->
+    <string name="captions_search_transcript">البحث في النص</string>
+    <!-- Accessibility label of the X that clears the search. -->
+    <string name="captions_clear_search">محو البحث</string>
+
+    <!-- Settings card (account sheet). -->
+    <string name="captions_settings_subtitle">اختر لغة أو أوقفها من المشغّل</string>
+    <!-- A sample caption in the settings preview, shown as two lines over a picture: this is the first line… -->
+    <string name="captions_sample_line_1">بهذا الشكل ستظهر</string>
+    <!-- …and this the second. Split the sentence about evenly. -->
+    <string name="captions_sample_line_2">الترجمة على الفيديو.</string>
+    <!-- Setting label, then its choice chips. -->
+    <string name="captions_show">عرض الترجمة</string>
+    <string name="captions_show_never">أبدًا</string>
+    <string name="captions_show_always">دائمًا</string>
+    <!-- Chip: show captions only when the video's language differs from the app's. %1$s = the app's language ("English"). -->
+    <string name="captions_show_foreign">عندما لا يكون باللغة %1$s</string>
+    <!-- Setting label: the style captions are drawn in. -->
+    <string name="captions_look">المظهر</string>
+    <!-- Caption style chips: a plain black box, white text with a black outline, and Android's own caption settings. -->
+    <string name="captions_look_classic">كلاسيكي</string>
+    <string name="captions_look_outline">بحواف</string>
+    <string name="captions_look_system">من Android</string>
+    <!-- Setting label: caption text size, then its chips. -->
+    <string name="captions_size">الحجم</string>
+    <string name="captions_size_small">صغير</string>
+    <string name="captions_size_medium">متوسط</string>
+    <string name="captions_size_large">كبير</string>
+    <string name="captions_size_huge">ضخم</string>
+    <!-- Setting label over the downloaded translation languages (each with an X to delete it). -->
+    <string name="captions_kept_languages">لغات الترجمة على هذا الهاتف</string>
+    <!-- Accessibility label of a downloaded language's X. %1$s = the language. -->
+    <string name="captions_remove_language">إزالة %1$s</string>
+
+    <!-- From Skipii strings_player.xml -->
+    <!-- ── Portrait player page (PlayerUi.kt) ── -->
+
+    <!-- Tappable word after the video's stats line ("1.2M views · 3 days ago"), opens / closes the description. Keep short. -->
+    <string name="player_description_more">…المزيد</string>
+    <string name="player_description_less">عرض أقل</string>
+    <!-- Part of the stats line under the title. %1$s is a compact count ("1.2M"); the quantity is the exact count.
+         "few" keeps the singular form, which reads right after ألف / مليون (see views_count). -->
+    <plurals name="player_likes">
+        <item quantity="zero">%1$s إعجاب</item>
+        <item quantity="one">%1$s إعجاب</item>
+        <item quantity="two">إعجابان</item>
+        <item quantity="few">%1$s إعجابات</item>
+        <item quantity="many">%1$s إعجابًا</item>
+        <item quantity="other">%1$s إعجاب</item>
+    </plurals>
+    <!-- Section title above the related videos list under the player. -->
+    <string name="player_more_videos">فيديوهات أخرى</string>
+    <!-- Pill button in the player's action row (label and accessibility label). Keep short. -->
+    <string name="player_share">مشاركة</string>
+    <!-- Pill button in the player's action row: opens every line of the captions. Keep short. -->
+    <string name="player_transcript">نص الفيديو</string>
+    <!-- Pill button in the player's action row: opens the "Save to playlist" sheet. Keep short. -->
+    <string name="player_playlist">قائمة تشغيل</string>
+    <!-- Accessibility labels of the action row's buttons. -->
+    <string name="player_like">إعجاب</string>
+    <string name="player_dislike">عدم إعجاب</string>
+    <string name="player_save_to_playlist">حفظ في قائمة تشغيل</string>
+    <!-- Accessibility label of the mini-player's close (X) button. -->
+    <string name="player_close">إغلاق</string>
+
+    <!-- ── Short notes shown at the bottom of the player after an action (PlayerState.kt) ── -->
+    <string name="player_playing_next">سيتم تشغيله تاليًا</string>
+    <string name="player_added_to_queue">تمت الإضافة إلى قائمة الانتظار</string>
+    <string name="player_like_failed">تعذّر تعديل إعجابك.</string>
+    <string name="player_subscribe_failed">تعذّر تعديل اشتراكك.</string>
+    <!-- "Watch later" is YouTube's own playlist name. -->
+    <string name="player_saved_watch_later">تم الحفظ في قائمة المشاهدة لاحقًا</string>
+    <string name="player_watch_later_failed">تعذّر الحفظ في قائمة المشاهدة لاحقًا.</string>
+    <!-- %1$s is a playlist's name. -->
+    <string name="player_saved_to">تم الحفظ في %1$s</string>
+    <!-- %1$s is a playlist's name. -->
+    <string name="player_removed_from">تمت الإزالة من %1$s</string>
+    <!-- %1$s is a playlist's name. -->
+    <string name="player_playlist_update_failed">تعذّر تعديل %1$s.</string>
+    <string name="player_create_playlist_failed">تعذّر إنشاء قائمة التشغيل.</string>
+
+    <!-- ── Errors shown over the video ── -->
+    <string name="player_error_no_stream">لم يتم العثور على بث قابل للتشغيل لهذا الفيديو.</string>
+    <string name="player_error_connection">انقطع الاتصال. تحقّق من الشبكة وحاول مرة أخرى.</string>
+    <string name="player_error_refused">رفض YouTube البث. حاول مرة أخرى.</string>
+    <string name="player_error_unplayable">تعذّر تشغيل هذا الفيديو.</string>
+    <!-- Errors from loading a video or a page (YouTube.friendlyError), shown in the player and on pages. -->
+    <string name="player_error_age_restricted">هذا الفيديو مقيّد بالفئة العمرية ويتطلب حساب YouTube لمشاهدته.</string>
+    <string name="player_error_geo">هذا الفيديو غير متاح في بلدك.</string>
+    <string name="player_error_bot_check">يطلب YouTube تأكيد أنك لست روبوتًا.</string>
+    <string name="player_error_bot_check_hint">تشغيل وضع الطيران ثم إيقافه يحل المشكلة عادةً.</string>
+    <string name="player_error_private">هذا الفيديو خاص.</string>
+    <string name="player_error_members_only">هذا الفيديو مخصّص للأعضاء فقط. لا يمكن لـ Skipii تشغيل فيديوهات الأعضاء بعد.</string>
+    <string name="player_error_unavailable">هذا الفيديو غير متاح.</string>
+    <string name="player_error_rate_limited">يحدّ YouTube من عدد الطلبات الآن. حاول مرة أخرى بعد دقيقة.</string>
+    <string name="player_error_offline">تعذّر الوصول إلى YouTube. تحقّق من اتصالك.</string>
+    <string name="player_error_generic">حدث خطأ أثناء التحميل. حاول مرة أخرى.</string>
+
+    <!-- First part of the quality sheet's technical "Playing …" line ("Auto · 1920×1080 · H.264 · itag 299"):
+         the quality is chosen automatically. Keep short. -->
+    <string name="player_quality_auto">تلقائي</string>
+
+    <!-- ── SponsorBlock segment categories (SponsorBlock settings in the account sheet) ── -->
+    <string name="player_sb_sponsor">رعاية</string>
+    <string name="player_sb_selfpromo">ترويج ذاتي</string>
+    <string name="player_sb_interaction">تذكير بالإعجاب والاشتراك</string>
+    <string name="player_sb_intro">مقدمة</string>
+    <string name="player_sb_outro">الخاتمة وشارة النهاية</string>
+    <string name="player_sb_preview">معاينة وملخص</string>
+    <string name="player_sb_music_offtopic">جزء غير موسيقي في فيديو موسيقي</string>
+    <string name="player_sb_filler">استطراد</string>
+    <!-- Short lowercase category names, put into the player's "Skip …" pill and "Skipped 0:30 …" note
+         ("Skip sponsor", "Skipped 0:30 self-promo"). Keep very short. -->
+    <string name="player_sb_short_sponsor">الرعاية</string>
+    <string name="player_sb_short_selfpromo">الترويج</string>
+    <string name="player_sb_short_interaction">التذكير</string>
+    <string name="player_sb_short_intro">المقدمة</string>
+    <string name="player_sb_short_outro">الخاتمة</string>
+    <string name="player_sb_short_preview">المعاينة</string>
+    <string name="player_sb_short_music_offtopic">غير الموسيقي</string>
+    <string name="player_sb_short_filler">الاستطراد</string>
+    <!-- What happens at a category's segments: chips in the SponsorBlock settings, four side by side. Keep very short (~6 characters). -->
+    <string name="player_sb_action_skip">تخطٍّ</string>
+    <string name="player_sb_action_ask">اسأل</string>
+    <string name="player_sb_action_show">عرض</string>
+    <string name="player_sb_action_off">إيقاف</string>
+    <!-- Wide windows: filters above the More videos column (the open video's channel, or the rest). -->
+    <string name="player_more_all">الكل</string>
+    <string name="player_more_from">من %1$s</string>
+    <string name="player_more_related">ذات صلة</string>
+    <string name="player_not_interested_done">تم. سترى عددًا أقل من الفيديوهات المشابهة</string>
+    <string name="player_channel_not_recommended">لن تُقترح عليك هذه القناة بعد الآن</string>
+    <string name="player_feedback_failed">تعذّر الإرسال إلى YouTube. حاول مرة أخرى</string>
+
+    <!-- From Skipii strings_settings.xml -->
+    <string name="settings_title">الإعدادات</string>
+    <string name="settings_search">البحث في الإعدادات</string>
+    <string name="settings_no_results">لا شيء يطابق «%1$s»</string>
+    <string name="settings_group_watching">أثناء المشاهدة</string>
+    <string name="settings_group_look">المظهر واللغة</string>
+    <string name="settings_playback">التشغيل</string>
+    <string name="settings_notifications">الإشعارات</string>
+    <string name="settings_account">الحساب</string>
+    <string name="settings_about">حول التطبيق</string>
+    <string name="settings_on">مفعّل</string>
+    <string name="settings_off">متوقف</string>
+    <string name="settings_speed_keep">الاحتفاظ بالسرعة</string>
+    <string name="settings_speed_remember_title">تذكّر السرعة لكل الفيديوهات</string>
+    <string name="settings_speed_remember_on">تبدأ الفيديوهات الجديدة بسرعة %1$s×</string>
+    <string name="settings_speed_remember_off">يبدأ كل فيديو بسرعة 1×</string>
+    <string name="settings_speed_kept_summary">السرعة ثابتة على %1$s×</string>
+    <string name="settings_speed_per_video">السرعة لكل فيديو</string>
+    <string name="settings_audio_only_line">الصوت دون الصورة في كل الفيديوهات. وأيضًا في شريط المشغّل.</string>
+    <string name="settings_sb_summary">يتخطى %1$s، ويسأل عن %2$s</string>
+    <string name="settings_mode">الوضع</string>
+    <string name="settings_theme">السمة</string>
+    <string name="settings_amoled_title">أسود AMOLED</string>
+    <string name="settings_amoled_line">الوضع الداكن بالأسود الخالص، لشاشات OLED</string>
+    <string name="settings_amoled_light_line">يُستخدم عندما يكون التطبيق داكنًا: اختر داكن أو النظام</string>
+    <plurals name="settings_bells_count">
+        <item quantity="zero">%1$s قناة جرسها مفعّل</item>
+        <item quantity="one">%1$s قناة جرسها مفعّل</item>
+        <item quantity="two">%1$s قناتان جرسهما مفعّل</item>
+        <item quantity="few">%1$s قنوات جرسها مفعّل</item>
+        <item quantity="many">%1$s قناة جرسها مفعّل</item>
+        <item quantity="other">%1$s قناة جرسها مفعّل</item>
+    </plurals>
+    <string name="settings_bells_none">لم يُفعَّل أي جرس بعد</string>
+    <string name="settings_bells_empty">فعّل الجرس على زر الاشتراك في قناة، وسيخبرك Skipii بكل فيديو جديد لها.</string>
+    <string name="settings_bell_line">كل فيديو جديد</string>
+    <string name="settings_system_notifications">إعدادات الإشعارات في Android</string>
+    <string name="settings_system_notifications_line">الصوت، الاهتزاز، عدم الإزعاج</string>
+    <string name="settings_full_sync">تم تسجيل الدخول باستخدام Google · مزامنة كاملة</string>
+    <string name="settings_sync_note">المزامنة الكاملة مفعّلة: الإعجابات والاشتراكات وقائمة المشاهدة لاحقًا وسجلّ المشاهدة تعود إلى حسابك.</string>
+    <string name="settings_version">الإصدار %1$s</string>
+    <string name="settings_up_to_date">محدَّث · انقر للتحقق</string>
+    <string name="settings_checking">جارٍ البحث عن تحديثات…</string>
+    <string name="settings_update_available">الإصدار %1$s متاح</string>
+    <string name="settings_source">الشيفرة المصدرية على GitHub</string>
+    <string name="settings_source_line">أبلغ عن مشكلة أو اطلب ميزة</string>
+    <string name="settings_crash_title">تقرير الأعطال</string>
+    <string name="settings_crash_saved">محفوظ من آخر عطل. شاركه والصقه في بلاغ على GitHub</string>
+    <string name="settings_crash_none">لا يوجد عطل محفوظ. يشارك كيف أغلق Android تطبيق Skipii آخر مرة، لبلاغ على GitHub</string>
+    <string name="settings_crash_tile">تم حفظ تقرير عطل</string>
+    <string name="settings_crash_share">مشاركة تقرير الأعطال</string>
+    <string name="settings_made_by">من صنع %1$s</string>
+    <string name="settings_say_hi">تعال وقل مرحبًا</string>
+    <string name="settings_email_developer">راسل المطوّر</string>
+    <string name="settings_no_app">لا يوجد تطبيق على هذا الهاتف يمكنه فتح ذلك</string>
+    <string name="settings_zoom_fill_title">التكبير لملء الشاشة في وضع ملء الشاشة</string>
+    <string name="settings_zoom_fill_on">كل فيديو يملأ الشاشة، وتُقص الحواف الزائدة. قرّب إصبعيك لرؤية الفيديو كاملًا.</string>
+    <string name="settings_zoom_fill_off">تظهر الفيديوهات كاملة مع أشرطة سوداء. باعد إصبعيك في وضع ملء الشاشة لملء الشاشة.</string>
+    <string name="settings_zoom_fill_summary">مكبّر لملء الشاشة</string>
+    <string name="settings_seek_step_title">الرجوع والتقديم</string>
+    <string name="settings_seek_step_line">مقدار القفز عند النقر مرتين على الفيديو وبأزرار −/⁠+</string>
+    <string name="settings_seconds_short">%1$s ث</string>
+    <string name="settings_seek_step_summary">قفزات %1$s ث</string>
+    <string name="settings_music_normal_title">الموسيقى بالسرعة العادية</string>
+    <string name="settings_music_normal_line">تُشغَّل الأغاني دائمًا بسرعة 1×، حتى مع حفظ سرعة لكل الفيديوهات</string>
+    <string name="settings_chapters_open_title">إبقاء الفصول مفتوحة</string>
+    <string name="settings_chapters_open_line">اختيار فصل يُبقي القائمة مفتوحة لتنتقل من فصل إلى آخر</string>
+    <string name="settings_auto_pip_title">صورة داخل صورة عند المغادرة</string>
+    <string name="settings_auto_pip_line">عند الذهاب إلى الشاشة الرئيسية أثناء تشغيل فيديو، يستمر في نافذة صغيرة</string>
+    <!-- Settings › Playback: playback controls as a live activity (Android's Live Updates) while the app is off screen. -->
+    <string name="settings_live_title">نشاط مباشر</string>
+    <string name="settings_live_line">عند مغادرة Skipii أثناء تشغيل فيديو، تظهر عناصر التحكم في شريط الحالة وعلى شاشة القفل</string>
+    <string name="settings_live_needs">يتطلب Android 16 QPR1 أو أحدث</string>
+    <string name="settings_live_refused">يعرضه هذا الهاتف كإشعار عادي فقط، لذا تبقى عناصر التحكم في الوسائط وحدها</string>
+    <string name="settings_live_allow_title">السماح بالتحديثات المباشرة</string>
+    <string name="settings_live_allow_line">التحديثات المباشرة متوقفة لـ Skipii في إعدادات Android</string>
+    <!-- Only for Settings' search: other words people use for it. -->
+    <string name="settings_live_words">تحديث مباشر، Now Bar، شريط الحالة، شاشة القفل</string>
+    <string name="settings_swipe_brightness_title">السحب لضبط السطوع</string>
+    <string name="settings_swipe_brightness_line">في وضع ملء الشاشة، اسحب لأعلى أو لأسفل على الجانب الأيسر من الفيديو.</string>
+    <string name="settings_swipe_volume_title">السحب لضبط مستوى الصوت</string>
+    <string name="settings_swipe_volume_line">في وضع ملء الشاشة، اسحب لأعلى أو لأسفل على الجانب الأيمن من الفيديو.</string>
+    <!-- Only for Settings' search: other words people use for them. -->
+    <string name="settings_swipe_words">إيماءة، إيماءات، سحب، تمرير، السطوع، مستوى الصوت، الصوت</string>
+
+    <!-- From Skipii strings_shorts.xml -->
+    <!-- Shorts tab: shown instead of the feed when YouTube sent no Shorts at all. -->
+    <string name="shorts_none_offered">لم يقدّم YouTube أي فيديوهات Shorts الآن.</string>
+    <!-- Shorts tab: shown on a short that failed to load or play (under shorts_cant_play_title). -->
+    <string name="shorts_cant_play_now">يتعذّر تشغيل فيديو Shorts هذا الآن.</string>
+    <!-- Shorts tab: bold heading over the reason a short failed. -->
+    <string name="shorts_cant_play_title">يتعذّر تشغيل فيديو Shorts هذا</string>
+    <!-- Shorts tab: button under a load error, pill-shaped, keep short. -->
+    <string name="shorts_try_again">إعادة المحاولة</string>
+
+    <!-- Short notes shown at the bottom of the Shorts tab. -->
+    <string name="shorts_sign_in_to_like">سجّل الدخول للإعجاب بفيديوهات Shorts.</string>
+    <string name="shorts_like_failed">تعذّر تعديل إعجابك.</string>
+    <string name="shorts_sign_in_to_subscribe">سجّل الدخول للاشتراك.</string>
+    <string name="shorts_subscription_failed">تعذّر تعديل اشتراكك.</string>
+    <string name="shorts_channel_unavailable">يتعذّر فتح هذه القناة.</string>
+
+    <!-- Accessibility labels (read by screen readers) of the Shorts glass bar's icon buttons. -->
+    <string name="shorts_back">رجوع</string>
+    <string name="shorts_like">إعجاب</string>
+    <string name="shorts_comments">التعليقات</string>
+    <string name="shorts_share">مشاركة</string>
+    <string name="shorts_channel">القناة</string>
+
+    <!-- Channel card over a short (228 dp wide card, one line each). -->
+    <string name="shorts_subscribe">اشتراك</string>
+    <string name="shorts_unsubscribe">إلغاء الاشتراك</string>
+    <string name="shorts_go_to_channel">الانتقال إلى القناة</string>
+    <!-- Accessibility labels of the channel card's bell button. -->
+    <string name="shorts_bell_on">الجرس مفعّل: كل فيديو جديد. انقر لإيقافه</string>
+    <string name="shorts_bell_off">الجرس: تلقَّ إشعارًا بكل فيديو جديد</string>
+
+    <!-- From Skipii strings_tv.xml -->
+    <string name="tv_hint_seek">التقديم أو الترجيع</string>
+    <string name="tv_hint_play_pause">تشغيل / إيقاف مؤقت</string>
+
+    <!-- From Skipii strings_ui.xml -->
+    <!-- ── Shared ─────────────────────────────────────────────────────────── -->
+    <!-- Button after an error (a feed, a search, a channel, the playlists list). -->
+    <string name="ui_try_again">إعادة المحاولة</string>
+    <!-- Accessibility label of a round back-arrow button at the top of a page. -->
+    <string name="ui_back">رجوع</string>
+    <!-- Button that closes a page or message. -->
+    <string name="ui_close">إغلاق</string>
+    <!-- Button, ~20 characters: opens Google's sign-in page. -->
+    <string name="ui_sign_in_with_google">تسجيل الدخول عبر Google</string>
+    <!-- Name of the account's built-in playlist of videos saved for later (YouTube's "Watch later"). -->
+    <string name="ui_watch_later">المشاهدة لاحقًا</string>
+    <!-- Name of the account's built-in playlist of liked videos. -->
+    <string name="ui_liked_videos">الفيديوهات التي أعجبتني</string>
+
+    <!-- ── Long-press options on a video ──────────────────────────────────── -->
+    <string name="ui_play_next">تشغيل تاليًا</string>
+    <string name="ui_add_to_queue">إضافة إلى قائمة الانتظار</string>
+    <string name="ui_save_to_watch_later">حفظ في قائمة المشاهدة لاحقًا</string>
+    <!-- Option and the title of the sheet listing the account's playlists. -->
+    <string name="ui_save_to_playlist">حفظ في قائمة تشغيل</string>
+    <string name="ui_share">مشاركة</string>
+
+    <!-- ── Save to playlist sheet ─────────────────────────────────────────── -->
+    <!-- Accessibility label of the check on a playlist that holds the video. -->
+    <string name="ui_saved">محفوظ</string>
+    <!-- Playlist privacy, a small chip (~10 characters) and the line under a playlist's name. -->
+    <string name="ui_privacy_private">خاص</string>
+    <string name="ui_privacy_unlisted">غير مدرج</string>
+    <string name="ui_privacy_public">عام</string>
+    <string name="ui_new_playlist">قائمة تشغيل جديدة</string>
+    <!-- Hint inside the empty name field of a new playlist. -->
+    <string name="ui_playlist_name">اسم قائمة التشغيل</string>
+    <!-- Small button (~10 characters) that creates the new playlist. -->
+    <string name="ui_create">إنشاء</string>
+
+    <!-- ── Queue ──────────────────────────────────────────────────────────── -->
+    <!-- Card under the player: "Queue · 3" = 3 videos queued (%1$s). Keep short. -->
+    <plurals name="ui_queue_count">
+        <item quantity="zero">قائمة الانتظار · %1$s</item>
+        <item quantity="one">قائمة الانتظار · %1$s</item>
+        <item quantity="two">قائمة الانتظار · %1$s</item>
+        <item quantity="few">قائمة الانتظار · %1$s</item>
+        <item quantity="many">قائمة الانتظار · %1$s</item>
+        <item quantity="other">قائمة الانتظار · %1$s</item>
+    </plurals>
+    <!-- Small button (~8 characters) that empties the queue. -->
+    <string name="ui_clear">محو</string>
+    <!-- Title of the queue sheet. -->
+    <string name="ui_queue">قائمة الانتظار</string>
+    <!-- Accessibility label of the X on a queued video. -->
+    <string name="ui_remove_from_queue">إزالة من قائمة الانتظار</string>
+    <string name="ui_queue_empty">قائمة الانتظار فارغة. اضغط مع الاستمرار على فيديو لإضافته.</string>
+
+    <!-- ── Account sheet: settings ────────────────────────────────────────── -->
+    <!-- Line under the SponsorBlock switch. -->
+    <string name="ui_sponsorblock_line">تخطي فقرات الرعاية والمقاطع الأخرى</string>
+    <!-- Required credit under the SponsorBlock settings; keep "sponsor.ajay.app" and "CC BY-NC-SA 4.0" as they are. -->
+    <string name="ui_sponsorblock_credit">المقاطع من SponsorBlock (sponsor.ajay.app)، وهو مشروع مجتمعي. البيانات مرخّصة بموجب CC BY-NC-SA 4.0.</string>
+    <string name="ui_player_controls">عناصر التحكم في المشغّل</string>
+    <!-- Line under "Player controls" when the controls live in the bottom pill. -->
+    <string name="ui_player_controls_in_bar_line">في شريط التشغيل أسفل المشغّل</string>
+    <!-- Line under "Player controls" when the controls are drawn over the video. -->
+    <string name="ui_player_controls_on_video_line">على الفيديو؛ اسحب المؤشر على حافته السفلية للتنقّل</string>
+    <!-- Chips (~14 characters): where the player's controls live. -->
+    <string name="ui_player_controls_pill">شريط التشغيل</string>
+    <string name="ui_player_controls_on_video">على الفيديو</string>
+    <!-- Title of the Shorts setting (YouTube's short vertical videos; use YouTube's own name for them in your language). -->
+    <string name="ui_shorts">Shorts</string>
+    <string name="ui_shorts_on_line">عرض علامة تبويب Shorts</string>
+    <string name="ui_shorts_off_line">علامة تبويب Shorts مخفية ولا يتم تحميل أي فيديوهات Shorts</string>
+    <string name="ui_appearance">المظهر</string>
+    <!-- Theme mode chips (~10 characters). -->
+    <string name="ui_mode_system">النظام</string>
+    <string name="ui_mode_light">فاتح</string>
+    <string name="ui_mode_dark">داكن</string>
+    <!-- Theme taken from the phone's wallpaper colours; label under a 56 dp swatch, keep short (~10 characters). -->
+    <string name="ui_theme_wallpaper">الخلفية</string>
+    <!-- Accessibility label of the check on the selected theme. -->
+    <string name="ui_selected">محدّد</string>
+
+    <!-- ── Sign-in ────────────────────────────────────────────────────────── -->
+    <!-- Accessibility label of the X that leaves the sign-in page. -->
+    <string name="ui_cancel">إلغاء</string>
+    <string name="ui_sign_in_title">تسجيل الدخول إلى YouTube</string>
+    <!-- Under the title of the sign-in page; keep "accounts.google.com" as it is. -->
+    <string name="ui_sign_in_line">accounts.google.com · محفوظة ومشفّرة على هذا الهاتف</string>
+    <string name="ui_sign_in_error">تم تسجيل الدخول، لكن YouTube لم يستجب. تحقّق من اتصالك وحاول مرة أخرى.</string>
+    <string name="ui_finishing_sign_in">جارٍ إكمال تسجيل الدخول…</string>
+    <!-- Accessibility label of the account button when signed out. -->
+    <string name="ui_sign_in">تسجيل الدخول</string>
+    <string name="ui_account_pitch_title">YouTube الخاص بك، بلا إعلانات</string>
+    <string name="ui_account_pitch_body">سجّل الدخول للحصول على اقتراحاتك واشتراكاتك وسجلّ المشاهدة وقوائم التشغيل. تتم مزامنة الإعجابات والاشتراكات وقائمة المشاهدة لاحقًا وسجلّ المشاهدة مع حسابك.</string>
+    <string name="ui_sign_out">تسجيل الخروج</string>
+
+    <!-- ── Home / Subscriptions / Library ─────────────────────────────────── -->
+    <string name="ui_home_signed_out_title">اقتراحاتك، بلا إعلانات</string>
+    <string name="ui_home_signed_out_body">سجّل الدخول عبر Google لعرض صفحتك الرئيسية على YouTube، أو ابحث مباشرةً.</string>
+    <!-- Text link under "Sign in with Google" on Home when signed out. -->
+    <string name="ui_search_instead">البحث بدلاً من ذلك</string>
+    <!-- Page title (large header). -->
+    <string name="ui_subscriptions_title">الاشتراكات</string>
+    <string name="ui_subscriptions_signed_out_title">اشتراكاتك</string>
+    <string name="ui_subscriptions_signed_out_body">سجّل الدخول عبر Google لعرض الفيديوهات الجديدة من القنوات التي تتابعها.</string>
+    <!-- Page title (large header). -->
+    <string name="ui_library_title">المكتبة</string>
+    <string name="ui_library_signed_out_title">مكتبتك</string>
+    <string name="ui_library_signed_out_body">سجّل الدخول عبر Google لعرض السجلّ والمشاهدة لاحقًا والفيديوهات التي أعجبتك وقوائم التشغيل.</string>
+    <!-- Section title in Library: videos watched. -->
+    <string name="ui_history">السجلّ</string>
+    <string name="ui_history_empty">لم تشاهد أي شيء بعد.</string>
+    <!-- Section title in Library. -->
+    <string name="ui_playlists">قوائم التشغيل</string>
+    <string name="ui_playlist_empty_title">لا شيء هنا بعد</string>
+    <string name="ui_playlist_empty_body">ستظهر هنا الفيديوهات التي تضيفها إلى قائمة التشغيل هذه.</string>
+
+    <!-- ── Search ─────────────────────────────────────────────────────────── -->
+    <!-- Page title (large header). -->
+    <string name="ui_search_title">بحث</string>
+    <!-- Hint inside the empty search field. -->
+    <string name="ui_search_hint">البحث في YouTube</string>
+    <!-- Accessibility label of the X that empties the search field. -->
+    <string name="ui_clear_search">محو</string>
+    <string name="ui_search_error_title">تعذّر تحميل البحث</string>
+    <string name="ui_search_intro_title">ابحث بلا إعلانات</string>
+    <string name="ui_search_intro_body">تُشغَّل النتائج فورًا، بلا إعلانات وبلا تسجيل دخول.</string>
+    <string name="ui_search_nothing_found">لم يتم العثور على شيء</string>
+    <!-- %1$s = what was searched for. -->
+    <string name="ui_search_no_match">لا توجد فيديوهات تطابق «%1$s».</string>
+    <string name="ui_recent_searches">عمليات البحث الأخيرة</string>
+    <!-- Text link beside "Recent searches". -->
+    <string name="ui_clear_all">محو الكل</string>
+    <!-- Accessibility label of the X on a past search. -->
+    <string name="ui_remove_search">إزالة</string>
+
+    <!-- ── Channel page and feeds ─────────────────────────────────────────── -->
+    <string name="ui_subscription_error">تعذّر تعديل اشتراكك.</string>
+    <string name="ui_channel_error_title">تعذّر تحميل هذه القناة</string>
+    <!-- Section title on a channel page: its uploads. -->
+    <string name="ui_videos">الفيديوهات</string>
+    <string name="ui_channel_sort_latest">الأحدث</string>
+    <string name="ui_channel_sort_popular">الأكثر شيوعًا</string>
+    <string name="ui_channel_sort_oldest">الأقدم</string>
+    <string name="ui_see_all">عرض الكل</string>
+    <string name="ui_channel_popular_videos">الفيديوهات الشائعة</string>
+    <string name="ui_channel_featured_channels">قنوات مميّزة</string>
+    <string name="ui_channel_no_videos">لم تنشر هذه القناة أي فيديوهات.</string>
+    <string name="ui_channel_no_shorts">لم تنشر هذه القناة أي Shorts.</string>
+    <string name="ui_channel_no_playlists">ليست لهذه القناة قوائم تشغيل عامة.</string>
+    <string name="ui_feed_error_title">تعذّر تحميل هذا المحتوى</string>
+    <!-- Shown when an account feed fails because the session ended. -->
+    <string name="ui_signed_out_error">لقد سجّلت الخروج.</string>
+    <string name="ui_chip_empty_title">لا شيء هنا</string>
+    <string name="ui_chip_empty_body">لم يرسل YouTube أي فيديو لـ «%1$s».</string>
+    <string name="ui_not_interested">غير مهتم</string>
+    <string name="ui_dont_recommend_channel">عدم اقتراح القناة</string>
+    <plurals name="ui_seek_back">
+        <item quantity="zero">رجوع %1$s ثانية</item>
+        <item quantity="one">رجوع %1$s ثانية</item>
+        <item quantity="two">رجوع %1$s ثانية</item>
+        <item quantity="few">رجوع %1$s ثوانٍ</item>
+        <item quantity="many">رجوع %1$s ثانية</item>
+        <item quantity="other">رجوع %1$s ثانية</item>
+    </plurals>
+    <plurals name="ui_seek_forward">
+        <item quantity="zero">تقديم %1$s ثانية</item>
+        <item quantity="one">تقديم %1$s ثانية</item>
+        <item quantity="two">تقديم %1$s ثانية</item>
+        <item quantity="few">تقديم %1$s ثوانٍ</item>
+        <item quantity="many">تقديم %1$s ثانية</item>
+        <item quantity="other">تقديم %1$s ثانية</item>
+    </plurals>
+
+    <!-- From Skipii strings_video.xml -->
+    <!-- Video player overlay (portrait "on the video" controls and fullscreen), quality/speed pickers, errors. -->
+
+    <!-- Small note under the loading spinner while YouTube runs a bot check on this connection. -->
+    <string name="video_bot_check_waiting">يتحقّق YouTube من هذا الاتصال. جارٍ إعادة المحاولة…</string>
+
+    <!-- Accessibility labels of the round buttons on the video. -->
+    <string name="video_audio_only">الصوت فقط</string>
+    <!-- Accessibility label of the filled audio-only button shown while audio only is on (tap turns it off). -->
+    <string name="video_audio_only_on">وضع الصوت فقط مفعّل</string>
+    <string name="video_playback_speed">سرعة التشغيل</string>
+    <string name="video_captions">الترجمة</string>
+    <string name="video_quality">الجودة</string>
+    <string name="video_pip">نافذة ضمن النافذة</string>
+    <string name="video_next">التالي</string>
+    <string name="video_fullscreen">ملء الشاشة</string>
+    <string name="video_exit_fullscreen">الخروج من ملء الشاشة</string>
+    <string name="video_play">تشغيل</string>
+    <string name="video_pause">إيقاف مؤقت</string>
+    <!-- Accessibility label of the check mark on the chosen row of a picker. -->
+    <string name="video_selected">محدّد</string>
+
+    <!-- Message shown when picture-in-picture can't start because the user turned it off in Android's settings. -->
+    <string name="video_pip_off">ميزة نافذة ضمن النافذة غير مفعّلة لتطبيق Skipii في الإعدادات.</string>
+
+    <!-- Quality: automatic. Also the start of the quality pill on the video ("Auto · 720p"): small pill, keep short. -->
+    <string name="video_quality_auto">تلقائي</string>
+    <!-- Subtitle of the Auto row in the quality sheet. -->
+    <string name="video_quality_auto_best">الأفضل حتى 1080p</string>
+    <!-- Appended to the Auto row's subtitle after " · "; %1$s = a resolution like "720p". -->
+    <string name="video_quality_auto_playing">يتم تشغيل %1$s</string>
+    <!-- Under the quality sheet's title; %1$s = the format being played, like "1080p60 H.264". -->
+    <string name="video_quality_playing">يتم تشغيل %1$s</string>
+    <!-- Quality tag for the lowest resolutions (240p and below). -->
+    <string name="video_quality_data_saver">توفير البيانات</string>
+    <!-- Quality tag for 1080p. -->
+    <string name="video_quality_full_hd">Full HD</string>
+
+    <!-- Title of the speed sheet. -->
+    <string name="video_speed">السرعة</string>
+
+    <!-- Headers of the small fullscreen picker cards, shown in CAPITALS (write them in capitals where the script has them).
+         Arabic has no capitals. -->
+    <string name="video_drop_captions">الترجمة</string>
+    <string name="video_drop_quality">الجودة</string>
+    <string name="video_drop_speed">السرعة</string>
+
+    <!-- Captions card: row that turns captions off. -->
+    <string name="video_captions_off">إيقاف</string>
+    <!-- Captions card: small grey tags after a language name. -->
+    <string name="video_captions_tag_auto">تلقائية</string>
+    <string name="video_captions_tag_downloading">جارٍ التنزيل</string>
+    <string name="video_captions_tag_translated">مترجمة</string>
+    <string name="video_captions_tag_download">تنزيل</string>
+
+    <!-- Speed card: tag after 1× -->
+    <string name="video_speed_normal">عادية</string>
+    <!-- Speed card: tag after a speed set on the ruler that isn't one of the presets. -->
+    <string name="video_speed_custom">مخصّصة</string>
+    <!-- Speed card: row that keeps the speed for every video (toggle). -->
+    <string name="video_speed_every_video">كل الفيديوهات</string>
+
+    <!-- SponsorBlock pill, small: %1$s = the segment kind ("sponsor", "intro", …). Keep short. -->
+    <string name="video_skip_segment">تخطي %1$s</string>
+    <!-- After an automatic skip: %1$s = length ("1:12"), %2$s = the segment kind ("sponsor"). -->
+    <string name="video_skipped_segment">تم تخطي %2$s (%1$s)</string>
+    <!-- Button after the "Skipped …" note. -->
+    <string name="video_undo">تراجع</string>
+
+    <!-- Button on the playback error panel. -->
+    <string name="video_try_again">إعادة المحاولة</string>
+    <string name="video_open_in_youtube">فتح في YouTube</string>
+</resources>

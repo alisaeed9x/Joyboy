@@ -1,5 +1,10 @@
 import java.util.zip.ZipFile
-plugins { id("com.android.application") }   // (v878) AGP 9.2: كوتلن مدمج؛ ksp/hilt اتشالوا مع PlayTube
+// (v878) AGP 9.2: كوتلن مدمج؛ ksp/hilt اتشالوا مع PlayTube
+// (v1080) Compose compiler plugin for the vendored Skipii UI; 2.3.21 matches AGP 9.2.1's embedded Kotlin.
+plugins {
+    id("com.android.application")
+    id("org.jetbrains.kotlin.plugin.compose") version "2.3.21"
+}
 
 // (v569) sherpa-onnx و ML Kit اتشالوا من الـ APK (كانوا بيزوّدوه ~100 ميجا) — التفريغ على الجهاز Whisper بس.
 // (v820) اسم النسخة (اللي بيظهر في تحديث التلفزيون والموبايل) كان ثابت "7.99" من v799 فكان بيعرض 799 لكل النسخ بعدها.
@@ -20,6 +25,11 @@ android {
     }
     namespace = "com.tttt.subtitler"
     compileSdk = 37   // (v869) 36→37: مكتبات PlayTube (core 1.19 / compose 2026) محتاجاها
+    // (v1080) Compose + BuildConfig for the vendored Skipii code: its UI is 100% Compose, and Crash/Settings/Updater read BuildConfig.
+    buildFeatures {
+        compose = true
+        buildConfig = true
+    }
     defaultConfig { applicationId = "com.tttt.joyboy"; minSdk = 26; targetSdk = 34; versionCode = (System.getenv("JB_VERSION_CODE")?.toIntOrNull() ?: (System.currentTimeMillis() / 60000L).toInt()); versionName = joyVerName
         // (v656) versionCode = وقت البناء بالدقايق: أي بيلد (حتى من سورس قديم) كوده أعلى من اللي قبله ← أندرويد يقبل التثبيت فوق الأحدث من غير حذف ولا فقد بيانات (نفس الـkeystore)
         ndk { abiFilters += joyAbis }   // (v1027) المعماريات من joyAbi في gradle.properties (الافتراضي arm64 بس = أصغر تحميل)
@@ -76,6 +86,31 @@ dependencies {
     implementation("io.reactivex.rxjava3:rxjava:3.1.12")   // (v1072) تسجيل دخول يوتيوب بالكود (YtMtSignIn): signInObserve بيرجّع Observable — نفس نسخة مكتبات youtubeapi (implementation مش بتتسرّب لـ:app)
     implementation("io.reactivex.rxjava3:rxandroid:3.0.2")   // (v1072) نفس السبب — AndroidSchedulers.mainThread
     implementation("com.github.TeamNewPipe:NewPipeExtractor:v0.26.5")   // (v1072) يوتيوب الداخلي رجع — YtNp/YtProUi المستعادة؛ محتاج jitpack.io في settings
+    // (v1080) Compose stack for the vendored Skipii UI (BOM 2024.09.03, same as Skipii's own build; every artifact below is imported by vendored code).
+    val composeBom = platform("androidx.compose:compose-bom:2024.09.03")
+    implementation(composeBom)
+    implementation("androidx.compose.ui:ui")
+    implementation("androidx.compose.ui:ui-graphics")
+    implementation("androidx.compose.ui:ui-text")
+    implementation("androidx.compose.runtime:runtime")
+    implementation("androidx.compose.foundation:foundation")
+    implementation("androidx.compose.animation:animation")
+    implementation("androidx.compose.material3:material3")
+    implementation("androidx.compose.material:material-icons-extended")
+    implementation("androidx.activity:activity-compose:1.10.1")
+    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")
+    implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.7")
+    // (v1080) Coil image loading for Skipii's AsyncImage thumbnails (ImageLoaderFactory is wired in JoyApp).
+    implementation("io.coil-kt:coil-compose:2.7.0")
+    // (v1080) Guava ListenableFuture (PlaybackService) + WorkManager (NewVideos bell check) + Window (foldables, Adaptive.kt).
+    implementation("com.google.guava:guava:33.3.1-android")
+    implementation("androidx.work:work-runtime-ktx:2.10.0")
+    implementation("androidx.window:window:1.3.0")
+    // (v1080) Media3 pieces Skipii's player uses that Joyboy did not already have (1.10.1 = Joyboy's Media3).
+    implementation("androidx.media3:media3-exoplayer-dash:1.10.1")
+    implementation("androidx.media3:media3-datasource-okhttp:1.10.1")
+    implementation("androidx.media3:media3-session:1.10.1")
+    implementation("androidx.media3:media3-ui-compose:1.10.1")
 }
 
 // (v1027) تقرير حجم الـAPK في لوج البناء (بعد assembleRelease): الحجم المضغوط لكل فئة (dex / res / assets / lib لكل معمارية) وأكبر 15 ملف.

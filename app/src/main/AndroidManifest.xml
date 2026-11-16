@@ -58,6 +58,7 @@
         android:usesCleartextTraffic="true" android:banner="@mipmap/ic_launcher" android:theme="@style/Theme.NewTube">
         <!-- (v985) LaunchSplashActivity اتشالت: كانت ميتة من v920 (اللانشر بقى SplashActivity بتاع MeeTube، ومحدش بيبدأها) — واللانشر دلوقتي MainActivity نفسها -->
         <activity android:name=".MainActivity" android:exported="true" android:theme="@style/AppMainPlain" android:launchMode="singleTask"
+            android:supportsPictureInPicture="true" android:resizeableActivity="true"
             android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboardHidden|density">
             <intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/></intent-filter>
             <intent-filter><action android:name="android.intent.action.SEND"/><category android:name="android.intent.category.DEFAULT"/><data android:mimeType="text/plain"/></intent-filter>
@@ -153,6 +154,16 @@
         </receiver>
         <service android:name=".GhCiJob" android:exported="false" android:permission="android.permission.BIND_JOB_SERVICE"/>   <!-- (v856) فحص GitHub Actions + التحديث -->
         <service android:name=".MusicService" android:exported="false" android:foregroundServiceType="mediaPlayback"/>
+        <!-- (v1080) Skipii player, embedded in MainActivity's YouTube tab: the one ExoPlayer lives
+             in this MediaSessionService (background audio + media notification); SkipiiApp talks
+             to it through a MediaController. LiveControlsReceiver takes the live-activity buttons.
+             UpdateReceiver is NOT registered: the Skipii self-update check is disabled, so no
+             PackageInstaller result can ever arrive. Skipii's MainActivity is NOT registered:
+             it is never launched; the app's launcher stays Joyboy's MainActivity. -->
+        <service android:name="com.decio.skipii.PlaybackService" android:exported="false" android:foregroundServiceType="mediaPlayback">
+            <intent-filter><action android:name="androidx.media3.session.MediaSessionService"/></intent-filter>
+        </service>
+        <receiver android:name="com.decio.skipii.LiveControlsReceiver" android:exported="false"/>
         <service android:name=".TaskService" android:exported="false" android:foregroundServiceType="dataSync" android:stopWithTask="false"/>   <!-- (v420) خدمة التحميلات في الخلفية -->
         <!-- (v518) هدف مشاركة «ابعت للتلفزيون» · الخدمة الأمامية (v603: الريموت القديم اتمسح، الأيقونة بتفتح الكنترولر الجديد) -->
         <!-- (v595) أيقونة الريموت: شاشة شفافة بتفتح شاشة الكنترولر الجديد (الجويستيك) في كل مرة -->

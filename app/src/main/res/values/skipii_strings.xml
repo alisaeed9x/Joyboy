@@ -1,0 +1,771 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- v1080: Skipii strings merged verbatim (10 files) into one file. -->
+<!-- No name collided with Joyboy's existing strings (verified 2026-11-16: 0 collisions), -->
+<!-- so no skipii_ renaming was needed. app_name value is "Joyboy" (v1080): the key -->
+<!-- stays app_name (vendored code references R.string.app_name), only the value changed. -->
+<!-- the graft agent owns branding. -->
+<resources>
+    <!-- From Skipii strings.xml -->
+    <string name="app_name" translatable="false">Joyboy</string>
+
+    <!-- Compact counts (formatCount): %1$s is the number, already with the language's decimal mark ("1,2"). -->
+    <string name="count_thousands">%1$sK</string>
+    <string name="count_millions">%1$sM</string>
+    <string name="count_billions">%1$sB</string>
+    <!-- Only used where count_in_ten_thousands is true (Japanese): 万 and 億. -->
+    <string name="count_ten_thousands">%1$s万</string>
+    <string name="count_hundred_millions">%1$s億</string>
+
+    <!-- %1$s is a compact count from formatCount ("1.2M"); the quantity is the exact count. -->
+    <plurals name="views_count">
+        <item quantity="one">%1$s view</item>
+        <item quantity="other">%1$s views</item>
+    </plurals>
+    <plurals name="subscribers_count">
+        <item quantity="one">%1$s subscriber</item>
+        <item quantity="other">%1$s subscribers</item>
+    </plurals>
+
+    <!-- Ages (displayAge). %1$s is a relative time already in the app's language ("3 days ago"). -->
+    <string name="age_just_now">just now</string>
+    <string name="age_streamed">Streamed %1$s</string>
+    <string name="age_premiered">Premiered %1$s</string>
+
+    <!-- The account sheet's Language card (LanguageSettings). -->
+    <string name="language_title">Language</string>
+    <string name="language_phone">Phone\'s language</string>
+    <!-- %1$s is the language's own name ("Español"). -->
+    <string name="language_phone_named">Phone\'s language (%1$s)</string>
+    <string name="language_line">The app\'s own words. Videos, titles and comments stay as their creators wrote them.</string>
+
+    <!-- From Skipii strings_app.xml -->
+    <!-- Bottom tab bar labels (MainActivity Tab, drawn by NavBar). Tight: the selected tab shows its label
+         beside the icon in a shared pill; keep as short as possible (~12 characters). -->
+    <string name="app_tab_home">Home</string>
+    <string name="app_tab_subscriptions">Subscriptions</string>
+    <!-- YouTube's name for its short vertical videos; most languages keep "Shorts". -->
+    <string name="app_tab_shorts">Shorts</string>
+    <string name="app_tab_search">Search</string>
+    <string name="app_tab_library">Library</string>
+
+    <!-- Self-update: the Update pill in Home's header, beside the profile picture. Short (~10 characters). -->
+    <string name="app_update_pill">Update</string>
+    <!-- Update pill while installing. Short (~10 characters). -->
+    <string name="app_update_pill_installing">Installing</string>
+    <!-- Update pill after a failed download/install. Short (~10 characters). -->
+    <string name="app_update_pill_retry">Retry</string>
+    <!-- Download progress, %1$s is a whole number 0-100 ("42%"). -->
+    <string name="app_update_percent">%1$s%%</string>
+    <!-- Title of the "What's new" sheet listing the release notes of a new version. -->
+    <string name="app_update_whats_new">What\'s new</string>
+    <!-- Download size of the new version, %1$s is a number with one decimal ("16.8"). -->
+    <string name="app_update_size_mb">%1$s MB</string>
+    <string name="app_update_no_notes">No notes were published with this version.</string>
+    <!-- The What's new sheet's full-width button. -->
+    <string name="app_update_button">Update</string>
+    <!-- The sheet's button while downloading, %1$s is a whole number 0-100. -->
+    <string name="app_update_downloading">Downloading %1$s%%</string>
+    <string name="app_update_installing">Installing…</string>
+    <string name="app_update_try_again">Try again</string>
+    <!-- Notification channel name (Android Settings › Notifications). -->
+    <string name="app_update_channel">App updates</string>
+    <!-- Notification after the app updated itself, %1$s is the version ("0.5.79"). -->
+    <string name="app_updated_title">Skipii updated to %1$s</string>
+    <string name="app_updated_text">Tap to open</string>
+
+    <!-- The Subscribe button (player and channel page). Short: shares a row with the bell key. -->
+    <string name="app_subscribe">Subscribe</string>
+    <string name="app_subscribed">Subscribed</string>
+    <!-- Accessibility labels of the bell key next to Subscribed. -->
+    <string name="app_bell_on_description">Bell on: every new video. Tap to turn off</string>
+    <string name="app_bell_off_description">Bell: get a notification for every new video</string>
+    <!-- Messages after turning a channel's bell on/off. %1$s is the channel's name. -->
+    <string name="app_bell_on_message">Every new video from %1$s</string>
+    <string name="app_bell_off_message">Notifications off for %1$s</string>
+    <!-- Same, when the channel's name isn't known. -->
+    <string name="app_bell_on_message_unnamed">Every new video from this channel</string>
+    <string name="app_bell_off_message_unnamed">Notifications off for this channel</string>
+    <string name="app_bell_failed">Couldn\'t change the bell.</string>
+    <!-- Notifications were refused when asked (Android 13+). -->
+    <string name="app_bell_allow_notifications">Allow Skipii\'s notifications to use the bell.</string>
+    <!-- Notifications are off in Android's settings; the settings page opens next. -->
+    <string name="app_bell_turn_on_notifications">Turn on Skipii\'s notifications to use the bell.</string>
+
+    <!-- Notification channel for new videos from channels with the bell on (Android Settings › Notifications). -->
+    <string name="app_new_videos_channel">New videos</string>
+    <string name="app_new_videos_channel_description">Every new video from channels with the bell on</string>
+    <!-- A new-video notification's title when the channel's name isn't known. -->
+    <string name="app_new_video_unnamed">New video</string>
+
+    <!-- The signed-in account's name when Google's page didn't give one. -->
+    <string name="app_account_fallback_name">YouTube account</string>
+    <!-- Errors shown on the signed-in feeds. %1$s is an HTTP status code ("403"). -->
+    <string name="app_error_session_rejected">YouTube rejected the session (%1$s). Try signing in again.</string>
+    <string name="app_error_youtube_returned">YouTube returned %1$s</string>
+    <!-- The live activity's notification channel, and its skip buttons. %1$s = seconds ("10"). -->
+    <string name="app_live_channel">Playing in the background</string>
+    <string name="app_live_channel_description">Playback controls while Skipii is off screen</string>
+    <string name="app_live_back">−%1$s s</string>
+    <string name="app_live_forward">+%1$s s</string>
+
+    <!-- From Skipii strings_bar.xml -->
+    <!-- The open player's bar (the tab bar turns into it): play, -10 / +10, audio only, the ⋮ key. -->
+    <!-- Accessibility labels of the bar's play button. -->
+    <string name="bar_play">Play</string>
+    <string name="bar_pause">Pause</string>
+    <!-- Accessibility labels of the bar's seek buttons. -->
+    <!-- Accessibility label of the ⋮ key that opens the card of tools. -->
+    <string name="bar_more_controls">More controls</string>
+    <!-- Accessibility label of the ✕ the ⋮ key turns into. -->
+    <string name="bar_close">Close</string>
+    <!-- Accessibility labels of the audio only button (plays sound without the picture). -->
+    <string name="bar_audio_only">Audio only</string>
+    <string name="bar_audio_only_on">Audio only is on</string>
+
+    <!-- Tool labels under 58 dp round buttons in one row (up to six): very small text, keep VERY short (~9 characters). -->
+    <string name="bar_tool_speed">Speed</string>
+    <string name="bar_tool_quality">Quality</string>
+    <!-- Picture-in-picture, abbreviated. -->
+    <string name="bar_tool_pip">PiP</string>
+    <string name="bar_tool_captions">Captions</string>
+    <string name="bar_tool_fullscreen">Fullscreen</string>
+    <!-- Plays the next video. -->
+    <string name="bar_tool_next">Next</string>
+
+    <!-- Title of the chapter list, and the accessibility label of the button that opens it. -->
+    <string name="bar_chapters">Chapters</string>
+    <!-- Above the chapter list: which chapter is playing, e.g. "3 of 12". -->
+    <string name="bar_chapter_position">%1$s of %2$s</string>
+    <!-- A chapter with no title: "Chapter 3". -->
+    <string name="bar_chapter_untitled">Chapter %1$s</string>
+
+    <!-- Quality list title. -->
+    <string name="bar_quality">Quality</string>
+    <!-- The quality that picks itself from the connection. Short, shown on a small round button too. -->
+    <string name="bar_quality_auto">Auto</string>
+    <!-- Next to the quality list's title: the quality playing now. %1$s = "720p". -->
+    <string name="bar_quality_playing">Playing %1$s</string>
+    <!-- After "Auto" in the quality list: the height it plays right now. %1$s = 720 (shown as "720p now"). -->
+    <string name="bar_quality_now">%1$sp now</string>
+    <!-- Note after the lowest qualities (240p and below): uses little mobile data. -->
+    <string name="bar_quality_data_saver">Data saver</string>
+    <!-- Accessibility label of the check on the chosen row of a list. -->
+    <string name="bar_selected">Selected</string>
+
+    <!-- Captions list title (next to an on/off switch). -->
+    <string name="bar_captions">Captions</string>
+    <!-- Section heading in the captions list, written in capitals: languages the phone translates the captions into. -->
+    <string name="bar_captions_translated">TRANSLATED ON YOUR PHONE</string>
+    <!-- Captions list row that shows every language. -->
+    <string name="bar_captions_more_languages">More languages</string>
+    <!-- Captions list button that opens the full text of the video's captions. -->
+    <string name="bar_transcript">Transcript</string>
+
+    <!-- Message when the phone's settings don't allow picture-in-picture for the app. -->
+    <string name="bar_pip_off">Picture-in-picture is turned off for Skipii in Settings.</string>
+
+    <!-- Pill above the scrub preview: let go here to not jump. Short. -->
+    <string name="bar_cancel">Cancel</string>
+
+    <!-- Speed panel. Under the big speed number: whether the speed applies to every video or only this one. -->
+    <string name="bar_speed_every_video">Every video</string>
+    <string name="bar_speed_this_video">This video only</string>
+    <!-- Checkbox: keep this speed for every video. -->
+    <string name="bar_speed_remember">Remember for every video</string>
+    <!-- Under the checkbox: remembering ends when the speed is set back to normal (1×). -->
+    <string name="bar_speed_remember_note">Until you set it back to 1×</string>
+
+    <!-- From Skipii strings_comments.xml -->
+    <!-- ── Comments ─────────────────────────────────────────────────────────── -->
+
+    <!-- Title of the comments card under the video and of the comments panel. -->
+    <string name="comments_title">Comments</string>
+    <string name="comments_turned_off">Comments are turned off for this video.</string>
+    <!-- Comments card, signed in, when the video has no comments yet. -->
+    <string name="comments_none_add_first">No comments yet. Add the first one.</string>
+    <string name="comments_none">No comments yet.</string>
+    <!-- Accessibility label of the panel's close (X) button. -->
+    <string name="comments_close">Close comments</string>
+    <!-- Shown at the bottom of the comments panel instead of the comment box when signed out. -->
+    <string name="comments_sign_in_to_comment">Sign in to comment.</string>
+    <!-- Above the comment box while replying. %1$s = the name of the person replied to. -->
+    <string name="comments_replying_to">Replying to %1$s</string>
+    <!-- Accessibility label of the X that stops replying. -->
+    <string name="comments_cancel_reply">Cancel reply</string>
+    <!-- Placeholder in the comment box. -->
+    <string name="comments_add_reply">Add a reply…</string>
+    <string name="comments_add_comment">Add a comment…</string>
+    <!-- Accessibility label of the send button (posts the comment). -->
+    <string name="comments_post">Post</string>
+    <!-- Accessibility label of the pin icon on a pinned comment. -->
+    <string name="comments_pinned">Pinned</string>
+    <!-- Accessibility labels of a comment's thumbs-up button. -->
+    <string name="comments_like">Like</string>
+    <string name="comments_unlike">Unlike</string>
+    <!-- Accessibility label of the heart the video's creator gave a comment. -->
+    <string name="comments_hearted">Hearted by creator</string>
+    <!-- Small text button under a comment, keep short. -->
+    <string name="comments_reply">Reply</string>
+    <!-- Text button that folds a comment's replies away. -->
+    <string name="comments_hide_replies">Hide replies</string>
+    <!-- Text button that opens a comment's replies. %1$s = how many. -->
+    <plurals name="comments_replies">
+        <item quantity="one">%1$s reply</item>
+        <item quantity="other">%1$s replies</item>
+    </plurals>
+    <!-- Author shown on a comment the person just posted, until the page reloads. -->
+    <string name="comments_you">You</string>
+    <!-- Errors shown under the comment box. -->
+    <string name="comments_error_like">Couldn\'t like that comment.</string>
+    <string name="comments_error_post">Couldn\'t post your comment.</string>
+    <string name="comments_error_cant_post">Comments are turned off or can\'t be posted on this video.</string>
+    <string name="comments_error_reply_not_found">Couldn\'t find that comment to reply to. Try again.</string>
+    <string name="comments_error_like_not_found">Couldn\'t find that comment to like. Try again.</string>
+    <string name="comments_error_not_accepted">YouTube didn\'t accept the comment.</string>
+
+    <!-- ── Captions ─────────────────────────────────────────────────────────── -->
+
+    <!-- Title of the captions sheet and of the captions card in settings. -->
+    <string name="captions_title">Captions</string>
+    <!-- Title of the transcript panel and the button that opens it. -->
+    <string name="captions_transcript">Transcript</string>
+    <!-- Shown over the video while a translation model downloads. %1$s = a language name ("German"). -->
+    <string name="captions_downloading_language">Downloading %1$s for translating…</string>
+    <!-- Shown over the video while captions are being translated. %1$s = a language name. -->
+    <string name="captions_translating_into">Translating into %1$s…</string>
+    <!-- Error over the video / in the transcript. %1$s = a language name. -->
+    <string name="captions_error_download">Couldn\'t download %1$s for translating.</string>
+    <string name="captions_error_load">Couldn\'t load these captions.</string>
+    <!-- Note after a caption track's language in the list: captions YouTube made itself from speech. -->
+    <string name="captions_auto_generated">auto-generated</string>
+    <!-- Short form of "auto-generated", in a small chip next to the transcript's title, keep short. -->
+    <string name="captions_auto">auto</string>
+    <!-- Notes after a translation language in the list. -->
+    <string name="captions_note_downloading">downloading…</string>
+    <!-- %1$s = the language translated from ("from English"). -->
+    <string name="captions_note_from">from %1$s</string>
+    <!-- The translation model still has to be downloaded; "MB" = megabytes. -->
+    <string name="captions_note_download_size">~30 MB download</string>
+    <!-- Section heading in the captions list (shown in capitals): the languages that are translated by the phone itself. -->
+    <string name="captions_translated_on_phone">TRANSLATED ON YOUR PHONE</string>
+    <!-- Row at the end of the captions list that shows every language. -->
+    <string name="captions_more_languages">More languages</string>
+    <string name="captions_none">This video has no captions.</string>
+    <!-- Accessibility label of the check on the chosen row. -->
+    <string name="captions_selected">Selected</string>
+    <!-- Accessibility label of the transcript panel's close (X) button. -->
+    <string name="captions_close_transcript">Close transcript</string>
+    <string name="captions_no_transcript">This video has no captions, so there\'s no transcript.</string>
+    <string name="captions_no_lines">No lines yet.</string>
+    <!-- Transcript search found nothing. %1$s = what was typed. -->
+    <string name="captions_nothing_matches">Nothing matches \"%1$s\".</string>
+    <!-- Button that scrolls the transcript back to the line being said. -->
+    <string name="captions_back_to_now">Back to now</string>
+    <!-- Placeholder of the transcript's search field. -->
+    <string name="captions_search_transcript">Search the transcript</string>
+    <!-- Accessibility label of the X that clears the search. -->
+    <string name="captions_clear_search">Clear search</string>
+
+    <!-- Settings card (account sheet). -->
+    <string name="captions_settings_subtitle">Pick a language or turn them off in the player</string>
+    <!-- A sample caption in the settings preview, shown as two lines over a picture: this is the first line… -->
+    <string name="captions_sample_line_1">This is how captions</string>
+    <!-- …and this the second. Split the sentence about evenly. -->
+    <string name="captions_sample_line_2">will look on the video.</string>
+    <!-- Setting label, then its choice chips. -->
+    <string name="captions_show">Show captions</string>
+    <string name="captions_show_never">Never</string>
+    <string name="captions_show_always">Always</string>
+    <!-- Chip: show captions only when the video's language differs from the app's. %1$s = the app's language ("English"). -->
+    <string name="captions_show_foreign">When it isn\'t in %1$s</string>
+    <!-- Setting label: the style captions are drawn in. -->
+    <string name="captions_look">Look</string>
+    <string name="captions_look_skipii" translatable="false">Skipii</string>
+    <!-- Caption style chips: a plain black box, white text with a black outline, and Android's own caption settings. -->
+    <string name="captions_look_classic">Classic</string>
+    <string name="captions_look_outline">Outline</string>
+    <string name="captions_look_system">Android\'s</string>
+    <!-- Setting label: caption text size, then its chips. -->
+    <string name="captions_size">Size</string>
+    <string name="captions_size_small">Small</string>
+    <string name="captions_size_medium">Medium</string>
+    <string name="captions_size_large">Large</string>
+    <string name="captions_size_huge">Huge</string>
+    <!-- Setting label over the downloaded translation languages (each with an X to delete it). -->
+    <string name="captions_kept_languages">Translation languages on this phone</string>
+    <!-- Accessibility label of a downloaded language's X. %1$s = the language. -->
+    <string name="captions_remove_language">Remove %1$s</string>
+
+    <!-- From Skipii strings_player.xml -->
+    <!-- ── Portrait player page (PlayerUi.kt) ── -->
+
+    <!-- Tappable word after the video's stats line ("1.2M views · 3 days ago"), opens / closes the description. Keep short. -->
+    <string name="player_description_more">…more</string>
+    <string name="player_description_less">less</string>
+    <!-- Part of the stats line under the title. %1$s is a compact count ("1.2M"); the quantity is the exact count. -->
+    <plurals name="player_likes">
+        <item quantity="one">%1$s like</item>
+        <item quantity="other">%1$s likes</item>
+    </plurals>
+    <!-- Section title above the related videos list under the player. -->
+    <string name="player_more_videos">More videos</string>
+    <!-- Pill button in the player's action row (label and accessibility label). Keep short. -->
+    <string name="player_share">Share</string>
+    <!-- Pill button in the player's action row: opens every line of the captions. Keep short. -->
+    <string name="player_transcript">Transcript</string>
+    <!-- (v1080) Pill buttons in the player's action row: Joyboy translation (SkipiiBridge) and download. -->
+    <string name="player_translate">▶ ترجم</string>
+    <string name="player_translate_pause">⏸ إيقاف مؤقت</string>
+    <string name="player_translate_resume">▶ كمّل</string>
+    <string name="player_translate_starting">⏳ بجهّز الترجمة…</string>
+    <string name="player_translate_no_video">مفيش فيديو مفتوح للترجمة</string>
+    <string name="player_translate_no_audio">⚠ معرفتش أجيب رابط الصوت للفيديو ده</string>
+    <string name="player_translate_failed">⚠ تعذّر بدء الترجمة — جرّب ▶ ترجم تاني</string>
+    <string name="player_download">⬇ تحميل</string>
+    <!-- Pill button in the player's action row: opens the "Save to playlist" sheet. Keep short. -->
+    <string name="player_playlist">Playlist</string>
+    <!-- Accessibility labels of the action row's buttons. -->
+    <string name="player_like">Like</string>
+    <string name="player_dislike">Dislike</string>
+    <string name="player_save_to_playlist">Save to playlist</string>
+    <!-- Accessibility label of the mini-player's close (X) button. -->
+    <string name="player_close">Close</string>
+
+    <!-- ── Short notes shown at the bottom of the player after an action (PlayerState.kt) ── -->
+    <string name="player_playing_next">Playing next</string>
+    <string name="player_added_to_queue">Added to queue</string>
+    <string name="player_like_failed">Couldn\'t update your like.</string>
+    <string name="player_subscribe_failed">Couldn\'t update your subscription.</string>
+    <!-- "Watch later" is YouTube's own playlist name. -->
+    <string name="player_saved_watch_later">Saved to Watch later</string>
+    <string name="player_watch_later_failed">Couldn\'t save to Watch later.</string>
+    <!-- %1$s is a playlist's name. -->
+    <string name="player_saved_to">Saved to %1$s</string>
+    <!-- %1$s is a playlist's name. -->
+    <string name="player_removed_from">Removed from %1$s</string>
+    <!-- %1$s is a playlist's name. -->
+    <string name="player_playlist_update_failed">Couldn\'t update %1$s.</string>
+    <string name="player_create_playlist_failed">Couldn\'t create the playlist.</string>
+
+    <!-- ── Errors shown over the video ── -->
+    <string name="player_error_no_stream">No playable stream was found for this video.</string>
+    <string name="player_error_connection">Lost the connection. Check your network and try again.</string>
+    <string name="player_error_refused">YouTube refused the stream. Try again.</string>
+    <string name="player_error_unplayable">This video couldn\'t be played.</string>
+    <!-- Errors from loading a video or a page (YouTube.friendlyError), shown in the player and on pages. -->
+    <string name="player_error_age_restricted">This video is age-restricted and needs a YouTube account to watch.</string>
+    <string name="player_error_geo">This video isn\'t available in your country.</string>
+    <string name="player_error_bot_check">YouTube is asking to confirm you\'re not a bot.</string>
+    <string name="player_error_bot_check_hint">Turning airplane mode on and back off usually fixes it.</string>
+    <string name="player_error_private">This video is private.</string>
+    <string name="player_error_members_only">This is a members-only video. Skipii can\'t play members-only videos yet.</string>
+    <string name="player_error_unavailable">This video isn\'t available.</string>
+    <string name="player_error_rate_limited">YouTube is rate-limiting requests right now. Try again in a minute.</string>
+    <string name="player_error_offline">Couldn\'t reach YouTube. Check your connection.</string>
+    <string name="player_error_generic">Something went wrong loading this. Try again.</string>
+
+    <!-- First part of the quality sheet's technical "Playing …" line ("Auto · 1920×1080 · H.264 · itag 299"):
+         the quality is chosen automatically. Keep short. -->
+    <string name="player_quality_auto">Auto</string>
+
+    <!-- ── SponsorBlock segment categories (SponsorBlock settings in the account sheet) ── -->
+    <string name="player_sb_sponsor">Sponsor</string>
+    <string name="player_sb_selfpromo">Self-promotion</string>
+    <string name="player_sb_interaction">Like and subscribe reminder</string>
+    <string name="player_sb_intro">Intro</string>
+    <string name="player_sb_outro">Outro and credits</string>
+    <string name="player_sb_preview">Preview and recap</string>
+    <string name="player_sb_music_offtopic">Non-music part of a music video</string>
+    <string name="player_sb_filler">Filler tangent</string>
+    <!-- Short lowercase category names, put into the player's "Skip …" pill and "Skipped 0:30 …" note
+         ("Skip sponsor", "Skipped 0:30 self-promo"). Keep very short. -->
+    <string name="player_sb_short_sponsor">sponsor</string>
+    <string name="player_sb_short_selfpromo">self-promo</string>
+    <string name="player_sb_short_interaction">reminder</string>
+    <string name="player_sb_short_intro">intro</string>
+    <string name="player_sb_short_outro">outro</string>
+    <string name="player_sb_short_preview">preview</string>
+    <string name="player_sb_short_music_offtopic">non-music</string>
+    <string name="player_sb_short_filler">filler</string>
+    <!-- What happens at a category's segments: chips in the SponsorBlock settings, four side by side. Keep very short (~6 characters). -->
+    <string name="player_sb_action_skip">Skip</string>
+    <string name="player_sb_action_ask">Ask</string>
+    <string name="player_sb_action_show">Show</string>
+    <string name="player_sb_action_off">Off</string>
+    <!-- Wide windows: filters above the More videos column (the open video's channel, or the rest). -->
+    <string name="player_more_all">All</string>
+    <string name="player_more_from">From %1$s</string>
+    <string name="player_more_related">Related</string>
+    <string name="player_not_interested_done">Got it. You\'ll see fewer videos like this</string>
+    <string name="player_channel_not_recommended">You won\'t be recommended this channel</string>
+    <string name="player_feedback_failed">Couldn\'t send that to YouTube. Try again</string>
+
+    <!-- From Skipii strings_settings.xml -->
+    <string name="settings_title">Settings</string>
+    <string name="settings_search">Search settings</string>
+    <!-- A search that found nothing; %1$s = what was typed. -->
+    <string name="settings_no_results">Nothing matches “%1$s”</string>
+    <!-- Group labels on the Settings page. -->
+    <string name="settings_group_watching">Watching</string>
+    <string name="settings_group_look">Look &amp; language</string>
+    <!-- Category names. -->
+    <string name="settings_playback">Playback</string>
+    <string name="settings_notifications">Notifications</string>
+    <string name="settings_account">Account</string>
+    <string name="settings_about">About</string>
+    <string name="settings_sponsorblock" translatable="false">SponsorBlock</string>
+    <!-- A quick toggle's state. -->
+    <string name="settings_on">On</string>
+    <string name="settings_off">Off</string>
+    <!-- Quick toggle: playback speed remembered for every video. Short. -->
+    <string name="settings_speed_keep">Keep speed</string>
+    <string name="settings_speed_remember_title">Remember speed for every video</string>
+    <!-- %1$s = a speed like 1.5 (the × follows). -->
+    <string name="settings_speed_remember_on">New videos start at %1$s×</string>
+    <string name="settings_speed_remember_off">Each video starts at 1×</string>
+    <string name="settings_speed_kept_summary">speed kept at %1$s×</string>
+    <string name="settings_speed_per_video">speed set per video</string>
+    <string name="settings_audio_only_line">Sound without the picture, in every video. Also on the player bar.</string>
+    <!-- SponsorBlock's summary: %1$s segment types skipped, %2$s asked about. -->
+    <string name="settings_sb_summary">Skips %1$s, asks about %2$s</string>
+    <string name="settings_mode">Mode</string>
+    <string name="settings_theme">Theme</string>
+    <!-- Switch under the mode chips: dark mode on pure black. Keep "AMOLED" as it is. -->
+    <string name="settings_amoled_title">AMOLED black</string>
+    <string name="settings_amoled_line">Dark mode on pure black, for OLED screens</string>
+    <!-- The same switch's line while Light is picked (it does nothing then). -->
+    <string name="settings_amoled_light_line">Used when the app is dark: pick Dark or System</string>
+    <plurals name="settings_bells_count">
+        <item quantity="one">%1$s channel with the bell on</item>
+        <item quantity="other">%1$s channels with the bell on</item>
+    </plurals>
+    <string name="settings_bells_none">No bells on yet</string>
+    <string name="settings_bells_empty">Ring the bell on a channel\'s Subscribe button and Skipii tells you about each of its new videos.</string>
+    <string name="settings_bell_line">Every new video</string>
+    <string name="settings_system_notifications">Android notification settings</string>
+    <string name="settings_system_notifications_line">Sound, vibration, Do Not Disturb</string>
+    <string name="settings_full_sync">Signed in with Google · full sync</string>
+    <string name="settings_sync_note">Full sync is on: likes, subscribes, Watch later and watch history go back to your account.</string>
+    <!-- %1$s = this app's version, like 0.5.81. -->
+    <string name="settings_version">Version %1$s</string>
+    <string name="settings_up_to_date">Up to date · tap to check</string>
+    <string name="settings_checking">Checking for updates…</string>
+    <!-- %1$s = the newer version. -->
+    <string name="settings_update_available">Version %1$s is available</string>
+    <string name="settings_source">Source code on GitHub</string>
+    <string name="settings_source_line">Report a problem or ask for a feature</string>
+    <!-- Settings › About: the crash report (GitHub #55), shared to paste into an issue. -->
+    <string name="settings_crash_title">Crash report</string>
+    <string name="settings_crash_saved">Saved from the last crash. Share it and paste it into a GitHub issue</string>
+    <string name="settings_crash_none">No crash saved. Shares how Android last closed Skipii, for a GitHub issue</string>
+    <string name="settings_crash_tile">Crash report saved</string>
+    <string name="settings_crash_share">Share crash report</string>
+    <!-- The developer card, last on the Settings page; %1$s = the handle (@y7esdii). -->
+    <string name="settings_made_by">Made by %1$s</string>
+    <string name="settings_say_hi">Come say hi</string>
+    <string name="settings_email_developer">Email the developer</string>
+    <string name="settings_no_app">No app on this phone can open that</string>
+    <string name="settings_zoom_fill_title">Zoom to fill in fullscreen</string>
+    <string name="settings_zoom_fill_on">Every video fills the screen; the edges past it are cropped. Pinch in to see a video whole.</string>
+    <string name="settings_zoom_fill_off">Videos show whole, with black bars. Pinch out on one in fullscreen to fill the screen.</string>
+    <string name="settings_zoom_fill_summary">zoomed to fill</string>
+    <string name="settings_seek_step_title">Skip back and forward</string>
+    <string name="settings_seek_step_line">How far a double tap on the video and the −/⁠+ buttons jump</string>
+    <string name="settings_seconds_short">%1$s s</string>
+    <string name="settings_seek_step_summary">Skips %1$s s</string>
+    <string name="settings_music_normal_title">Music at normal speed</string>
+    <string name="settings_music_normal_line">Songs always play at 1×, even with a speed kept for every video</string>
+    <string name="settings_chapters_open_title">Keep chapters open</string>
+    <string name="settings_chapters_open_line">Picking a chapter leaves the list open, so you can go from one to the next</string>
+    <string name="settings_auto_pip_title">Picture-in-picture when you leave</string>
+    <string name="settings_auto_pip_line">Going home while a video plays keeps it playing in a small window</string>
+    <!-- Settings › Playback: playback controls as a live activity (Android's Live Updates) while the app is off screen. -->
+    <string name="settings_live_title">Live activity</string>
+    <string name="settings_live_line">Leaving Skipii while a video plays puts its controls in the status bar and on the lock screen</string>
+    <string name="settings_live_needs">Needs Android 16 QPR1 or later</string>
+    <string name="settings_live_refused">This phone shows it only as a normal notification, so the media controls stay on their own</string>
+    <string name="settings_live_allow_title">Allow Live updates</string>
+    <string name="settings_live_allow_line">Live updates are off for Skipii in Android\'s settings</string>
+    <!-- Only for Settings' search: other words people use for it. -->
+    <string name="settings_live_words">Live update, Now Bar, status bar chip, lock screen</string>
+    <string name="settings_swipe_brightness_title">Swipe to adjust brightness</string>
+    <string name="settings_swipe_brightness_line">In fullscreen, swipe up or down on the left side of the video.</string>
+    <string name="settings_swipe_volume_title">Swipe to adjust volume</string>
+    <string name="settings_swipe_volume_line">In fullscreen, swipe up or down on the right side of the video.</string>
+    <!-- Only for Settings' search: other words people use for them. -->
+    <string name="settings_swipe_words">gesture, gestures, swipe, slide, brightness, volume, sound</string>
+
+    <!-- From Skipii strings_shorts.xml -->
+    <!-- Shorts tab: shown instead of the feed when YouTube sent no Shorts at all. -->
+    <string name="shorts_none_offered">YouTube didn\'t offer any Shorts right now.</string>
+    <!-- Shorts tab: shown on a short that failed to load or play (under shorts_cant_play_title). -->
+    <string name="shorts_cant_play_now">This Short can\'t play right now.</string>
+    <!-- Shorts tab: bold heading over the reason a short failed. -->
+    <string name="shorts_cant_play_title">This Short can\'t play</string>
+    <!-- Shorts tab: button under a load error, pill-shaped, keep short. -->
+    <string name="shorts_try_again">Try again</string>
+
+    <!-- Short notes shown at the bottom of the Shorts tab. -->
+    <string name="shorts_sign_in_to_like">Sign in to like Shorts.</string>
+    <string name="shorts_like_failed">Couldn\'t update your like.</string>
+    <string name="shorts_sign_in_to_subscribe">Sign in to subscribe.</string>
+    <string name="shorts_subscription_failed">Couldn\'t update your subscription.</string>
+    <string name="shorts_channel_unavailable">This channel can\'t be opened.</string>
+
+    <!-- Accessibility labels (read by screen readers) of the Shorts glass bar's icon buttons. -->
+    <string name="shorts_back">Back</string>
+    <string name="shorts_like">Like</string>
+    <string name="shorts_comments">Comments</string>
+    <string name="shorts_share">Share</string>
+    <string name="shorts_channel">Channel</string>
+
+    <!-- Channel card over a short (228 dp wide card, one line each). -->
+    <string name="shorts_subscribe">Subscribe</string>
+    <string name="shorts_unsubscribe">Unsubscribe</string>
+    <string name="shorts_go_to_channel">Go to channel</string>
+    <!-- Accessibility labels of the channel card's bell button. -->
+    <string name="shorts_bell_on">Bell on: every new video. Tap to turn off</string>
+    <string name="shorts_bell_off">Bell: get a notification for every new video</string>
+
+    <!-- From Skipii strings_tv.xml -->
+    <string name="tv_hint_seek">Seek</string>
+    <string name="tv_hint_play_pause">Play / pause</string>
+
+    <!-- From Skipii strings_ui.xml -->
+    <!-- ── Shared ─────────────────────────────────────────────────────────── -->
+    <!-- Button after an error (a feed, a search, a channel, the playlists list). -->
+    <string name="ui_try_again">Try again</string>
+    <!-- Accessibility label of a round back-arrow button at the top of a page. -->
+    <string name="ui_back">Back</string>
+    <!-- Button that closes a page or message. -->
+    <string name="ui_close">Close</string>
+    <!-- Button, ~20 characters: opens Google's sign-in page. -->
+    <string name="ui_sign_in_with_google">Sign in with Google</string>
+    <!-- Name of the account's built-in playlist of videos saved for later (YouTube's "Watch later"). -->
+    <string name="ui_watch_later">Watch later</string>
+    <!-- Name of the account's built-in playlist of liked videos. -->
+    <string name="ui_liked_videos">Liked videos</string>
+
+    <!-- ── Long-press options on a video ──────────────────────────────────── -->
+    <string name="ui_play_next">Play next</string>
+    <string name="ui_add_to_queue">Add to queue</string>
+    <string name="ui_save_to_watch_later">Save to Watch later</string>
+    <!-- Option and the title of the sheet listing the account's playlists. -->
+    <string name="ui_save_to_playlist">Save to playlist</string>
+    <string name="ui_share">Share</string>
+
+    <!-- ── Save to playlist sheet ─────────────────────────────────────────── -->
+    <!-- Accessibility label of the check on a playlist that holds the video. -->
+    <string name="ui_saved">Saved</string>
+    <!-- Playlist privacy, a small chip (~10 characters) and the line under a playlist's name. -->
+    <string name="ui_privacy_private">Private</string>
+    <string name="ui_privacy_unlisted">Unlisted</string>
+    <string name="ui_privacy_public">Public</string>
+    <string name="ui_new_playlist">New playlist</string>
+    <!-- Hint inside the empty name field of a new playlist. -->
+    <string name="ui_playlist_name">Playlist name</string>
+    <!-- Small button (~10 characters) that creates the new playlist. -->
+    <string name="ui_create">Create</string>
+
+    <!-- ── Queue ──────────────────────────────────────────────────────────── -->
+    <!-- Card under the player: "Queue · 3" = 3 videos queued (%1$s). Keep short. -->
+    <plurals name="ui_queue_count">
+        <item quantity="one">Queue · %1$s</item>
+        <item quantity="other">Queue · %1$s</item>
+    </plurals>
+    <!-- Small button (~8 characters) that empties the queue. -->
+    <string name="ui_clear">Clear</string>
+    <!-- Title of the queue sheet. -->
+    <string name="ui_queue">Queue</string>
+    <!-- Accessibility label of the X on a queued video. -->
+    <string name="ui_remove_from_queue">Remove from queue</string>
+    <string name="ui_queue_empty">Nothing queued. Press and hold a video to add it.</string>
+
+    <!-- ── Account sheet: settings ────────────────────────────────────────── -->
+    <!-- Line under the SponsorBlock switch. -->
+    <string name="ui_sponsorblock_line">Skip sponsor reads and other segments</string>
+    <!-- Required credit under the SponsorBlock settings; keep "sponsor.ajay.app" and "CC BY-NC-SA 4.0" as they are. -->
+    <string name="ui_sponsorblock_credit">Segments from SponsorBlock (sponsor.ajay.app), a community project. Data licensed CC BY-NC-SA 4.0.</string>
+    <string name="ui_player_controls">Player controls</string>
+    <!-- Line under "Player controls" when the controls live in the bottom pill. -->
+    <string name="ui_player_controls_in_bar_line">In the playback pill at the bottom of the player</string>
+    <!-- Line under "Player controls" when the controls are drawn over the video. -->
+    <string name="ui_player_controls_on_video_line">On the video; drag the knob on its bottom edge to scrub</string>
+    <!-- Chips (~14 characters): where the player's controls live. -->
+    <string name="ui_player_controls_pill">Playback pill</string>
+    <string name="ui_player_controls_on_video">On the video</string>
+    <!-- Title of the Shorts setting (YouTube's short vertical videos; use YouTube's own name for them in your language). -->
+    <string name="ui_shorts">Shorts</string>
+    <string name="ui_shorts_on_line">Show the Shorts tab</string>
+    <string name="ui_shorts_off_line">The Shorts tab is hidden and no Shorts are loaded</string>
+    <string name="ui_appearance">Appearance</string>
+    <!-- Theme mode chips (~10 characters). -->
+    <string name="ui_mode_system">System</string>
+    <string name="ui_mode_light">Light</string>
+    <string name="ui_mode_dark">Dark</string>
+    <!-- Theme taken from the phone's wallpaper colours; label under a 56 dp swatch, keep short (~10 characters). -->
+    <string name="ui_theme_wallpaper">Wallpaper</string>
+    <!-- Accessibility label of the check on the selected theme. -->
+    <string name="ui_selected">Selected</string>
+
+    <!-- ── Sign-in ────────────────────────────────────────────────────────── -->
+    <!-- Accessibility label of the X that leaves the sign-in page. -->
+    <string name="ui_cancel">Cancel</string>
+    <string name="ui_sign_in_title">Sign in to YouTube</string>
+    <!-- Under the title of the sign-in page; keep "accounts.google.com" as it is. -->
+    <string name="ui_sign_in_line">accounts.google.com · kept encrypted on this phone</string>
+    <string name="ui_sign_in_error">Signed in, but YouTube didn\'t answer. Check your connection and try again.</string>
+    <string name="ui_finishing_sign_in">Finishing sign-in…</string>
+    <!-- Accessibility label of the account button when signed out. -->
+    <string name="ui_sign_in">Sign in</string>
+    <string name="ui_account_pitch_title">Your YouTube, without the ads</string>
+    <string name="ui_account_pitch_body">Sign in to get your recommendations, subscriptions, history and playlists. Likes, subscribes, Watch later and watch history sync back to your account.</string>
+    <string name="ui_sign_out">Sign out</string>
+
+    <!-- ── Home / Subscriptions / Library ─────────────────────────────────── -->
+    <string name="ui_home_signed_out_title">Your recommendations, minus the ads</string>
+    <string name="ui_home_signed_out_body">Sign in with Google to see your own YouTube home feed, or just search.</string>
+    <!-- Text link under "Sign in with Google" on Home when signed out. -->
+    <string name="ui_search_instead">Search instead</string>
+    <!-- Page title (large header). -->
+    <string name="ui_subscriptions_title">Subscriptions</string>
+    <string name="ui_subscriptions_signed_out_title">Your subscriptions</string>
+    <string name="ui_subscriptions_signed_out_body">Sign in with Google to see new videos from the channels you follow.</string>
+    <!-- Page title (large header). -->
+    <string name="ui_library_title">Library</string>
+    <string name="ui_library_signed_out_title">Your library</string>
+    <string name="ui_library_signed_out_body">Sign in with Google for your history, Watch later, liked videos and playlists.</string>
+    <!-- Section title in Library: videos watched. -->
+    <string name="ui_history">History</string>
+    <string name="ui_history_empty">Nothing watched yet.</string>
+    <!-- Section title in Library. -->
+    <string name="ui_playlists">Playlists</string>
+    <string name="ui_playlist_empty_title">Nothing here yet</string>
+    <string name="ui_playlist_empty_body">Videos you add to this playlist will show up here.</string>
+
+    <!-- ── Search ─────────────────────────────────────────────────────────── -->
+    <!-- Page title (large header). -->
+    <string name="ui_search_title">Search</string>
+    <!-- Hint inside the empty search field. -->
+    <string name="ui_search_hint">Search YouTube</string>
+    <!-- Accessibility label of the X that empties the search field. -->
+    <string name="ui_clear_search">Clear</string>
+    <string name="ui_search_error_title">Search didn\'t load</string>
+    <string name="ui_search_intro_title">Search without the ads</string>
+    <string name="ui_search_intro_body">Results play straight away, with no ads and no sign-in.</string>
+    <string name="ui_search_nothing_found">Nothing found</string>
+    <!-- %1$s = what was searched for. -->
+    <string name="ui_search_no_match">No videos matched “%1$s”.</string>
+    <string name="ui_recent_searches">Recent searches</string>
+    <!-- Text link beside "Recent searches". -->
+    <string name="ui_clear_all">Clear all</string>
+    <!-- Accessibility label of the X on a past search. -->
+    <string name="ui_remove_search">Remove</string>
+
+    <!-- ── Channel page and feeds ─────────────────────────────────────────── -->
+    <string name="ui_subscription_error">Couldn\'t update your subscription.</string>
+    <string name="ui_channel_error_title">Couldn\'t load this channel</string>
+    <!-- Section title on a channel page: its uploads. -->
+    <string name="ui_videos">Videos</string>
+    <!-- The order of a channel's Videos tab, three small chips (~12 characters each): newest first, most viewed first, oldest first. -->
+    <string name="ui_channel_sort_latest">Latest</string>
+    <string name="ui_channel_sort_popular">Popular</string>
+    <string name="ui_channel_sort_oldest">Oldest</string>
+    <!-- Link at the end of a shelf's title on a channel's Home tab (~12 characters). -->
+    <string name="ui_see_all">See all</string>
+    <!-- Titles of YouTube's own shelves on a channel's Home tab. -->
+    <string name="ui_channel_popular_videos">Popular videos</string>
+    <string name="ui_channel_featured_channels">Featured channels</string>
+    <!-- A channel tab with nothing in it ("Shorts" is YouTube's name, keep it). -->
+    <string name="ui_channel_no_videos">This channel hasn\'t posted any videos.</string>
+    <string name="ui_channel_no_shorts">This channel hasn\'t posted any Shorts.</string>
+    <string name="ui_channel_no_playlists">This channel has no public playlists.</string>
+    <string name="ui_feed_error_title">Couldn\'t load this</string>
+    <!-- Shown when an account feed fails because the session ended. -->
+    <string name="ui_signed_out_error">You\'re signed out.</string>
+    <!-- Home, a category chip whose page had no videos. %1$s = the chip's name. -->
+    <string name="ui_chip_empty_title">Nothing here</string>
+    <string name="ui_chip_empty_body">YouTube sent no videos for “%1$s”.</string>
+    <string name="ui_not_interested">Not interested</string>
+    <string name="ui_dont_recommend_channel">Don\'t recommend channel</string>
+    <plurals name="ui_seek_back">
+        <item quantity="one">Back %1$s second</item>
+        <item quantity="other">Back %1$s seconds</item>
+    </plurals>
+    <plurals name="ui_seek_forward">
+        <item quantity="one">Forward %1$s second</item>
+        <item quantity="other">Forward %1$s seconds</item>
+    </plurals>
+
+    <!-- From Skipii strings_video.xml -->
+    <!-- Video player overlay (portrait "on the video" controls and fullscreen), quality/speed pickers, errors. -->
+
+    <!-- Small note under the loading spinner while YouTube runs a bot check on this connection. -->
+    <string name="video_bot_check_waiting">YouTube is checking this connection. Trying again…</string>
+
+    <!-- Accessibility labels of the round buttons on the video. -->
+    <string name="video_audio_only">Audio only</string>
+    <!-- Accessibility label of the filled audio-only button shown while audio only is on (tap turns it off). -->
+    <string name="video_audio_only_on">Audio only is on</string>
+    <string name="video_playback_speed">Playback speed</string>
+    <string name="video_captions">Captions</string>
+    <string name="video_quality">Quality</string>
+    <string name="video_pip">Picture-in-picture</string>
+    <string name="video_next">Next</string>
+    <string name="video_fullscreen">Fullscreen</string>
+    <string name="video_exit_fullscreen">Exit fullscreen</string>
+    <string name="video_play">Play</string>
+    <string name="video_pause">Pause</string>
+    <!-- Accessibility label of the check mark on the chosen row of a picker. -->
+    <string name="video_selected">Selected</string>
+
+    <!-- Message shown when picture-in-picture can't start because the user turned it off in Android's settings. -->
+    <string name="video_pip_off">Picture-in-picture is turned off for Skipii in Settings.</string>
+
+    <!-- Quality: automatic. Also the start of the quality pill on the video ("Auto · 720p"): small pill, keep short. -->
+    <string name="video_quality_auto">Auto</string>
+    <!-- Subtitle of the Auto row in the quality sheet. -->
+    <string name="video_quality_auto_best">Best up to 1080p</string>
+    <!-- Appended to the Auto row's subtitle after " · "; %1$s = a resolution like "720p". -->
+    <string name="video_quality_auto_playing">playing %1$s</string>
+    <!-- Under the quality sheet's title; %1$s = the format being played, like "1080p60 H.264". -->
+    <string name="video_quality_playing">Playing %1$s</string>
+    <!-- Quality tag for the lowest resolutions (240p and below). -->
+    <string name="video_quality_data_saver">Data saver</string>
+    <!-- Quality tag for 1080p. -->
+    <string name="video_quality_full_hd">Full HD</string>
+
+    <!-- Title of the speed sheet. -->
+    <string name="video_speed">Speed</string>
+
+    <!-- Headers of the small fullscreen picker cards, shown in CAPITALS (write them in capitals where the script has them). -->
+    <string name="video_drop_captions">CAPTIONS</string>
+    <string name="video_drop_quality">QUALITY</string>
+    <string name="video_drop_speed">SPEED</string>
+
+    <!-- Captions card: row that turns captions off. -->
+    <string name="video_captions_off">Off</string>
+    <!-- Captions card: small grey tags after a language name. -->
+    <string name="video_captions_tag_auto">auto</string>
+    <string name="video_captions_tag_downloading">downloading</string>
+    <string name="video_captions_tag_translated">translated</string>
+    <string name="video_captions_tag_download">download</string>
+
+    <!-- Speed card: tag after 1× -->
+    <string name="video_speed_normal">Normal</string>
+    <!-- Speed card: tag after a speed set on the ruler that isn't one of the presets. -->
+    <string name="video_speed_custom">Custom</string>
+    <!-- Speed card: row that keeps the speed for every video (toggle). -->
+    <string name="video_speed_every_video">Every video</string>
+
+    <!-- SponsorBlock pill, small: %1$s = the segment kind ("sponsor", "intro", …). Keep short. -->
+    <string name="video_skip_segment">Skip %1$s</string>
+    <!-- After an automatic skip: %1$s = length ("1:12"), %2$s = the segment kind ("sponsor"). -->
+    <string name="video_skipped_segment">Skipped %1$s %2$s</string>
+    <!-- Button after the "Skipped …" note. -->
+    <string name="video_undo">Undo</string>
+
+    <!-- Button on the playback error panel. -->
+    <string name="video_try_again">Try again</string>
+    <string name="video_open_in_youtube">Open in YouTube</string>
+</resources>
