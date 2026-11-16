@@ -15,6 +15,7 @@ import com.tttt.subtitler.Downloader
 import com.tttt.subtitler.Engine
 import com.tttt.subtitler.Host
 import com.tttt.subtitler.PromptBuilder
+import com.tttt.subtitler.R
 import com.tttt.subtitler.Store
 import com.tttt.subtitler.Sub
 import com.tttt.subtitler.TaskCenter
@@ -171,7 +172,13 @@ object SkipiiTranslate {
                 val pb = PromptBuilder { p ->
                     appCtx.assets.open(p).bufferedReader(Charsets.UTF_8).use { it.readText() }
                 }
-                val host = BridgeHost(state, item.id)
+                val host = BridgeHost(
+                    state,
+                    item.id,
+                    currentEngine = { engine },
+                    post = { f -> postMain(f) },
+                    cuesOf = { subs -> toCues(subs) },
+                )
                 val eng = Engine(conf, { makeAudio(appCtx, audioUrl, conf) }, store, host, pb)
                 eng.persistBlocked = true
                 eng.convDialect = readCfg("conv_dialect", "")
@@ -274,35 +281,38 @@ object SkipiiTranslate {
      * throw). Changed lines are pushed only while the captions are still driven
      * by this Engine for the same video.
      */
-    private inner class BridgeHost(
+    private class BridgeHost(
         private val state: PlayerState,
         private val id: String,
+        private val currentEngine: () -> Engine?,
+        private val post: (() -> Unit) -> Unit,
+        private val cuesOf: (List<Sub>) -> List<CaptionCue>,
     ) : Host {
         @Volatile
         var engine: Engine? = null
 
         override fun log(s: String) {
-            Log.i(TAG, s)
+            Log.i("SkipiiTranslate", s)
         }
 
         override fun status(s: String) {
-            Log.i(TAG, s)
+            Log.i("SkipiiTranslate", s)
         }
 
         override fun changed() {
             val eng = engine ?: return
-            if (this@SkipiiTranslate.engine !== eng) return
-            val cues = toCues(eng.subs)
-            postMain {
-                if (this@SkipiiTranslate.engine !== eng) return@postMain
-                if (state.current?.id != id) return@postMain
-                if (!state.captions.joyboyDriven) return@postMain
+            if (currentEngine() !== eng) return
+            val cues = cuesOf(eng.subs)
+            post {
+                if (currentEngine() !== eng) return@post
+                if (state.current?.id != id) return@post
+                if (!state.captions.joyboyDriven) return@post
                 state.captions.useJoyboyCues(cues)
             }
         }
 
         override fun notice(s: String) {
-            postMain {
+            post {
                 state.actionMessage = s
             }
         }

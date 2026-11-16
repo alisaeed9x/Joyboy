@@ -1749,10 +1749,10 @@ private fun ActivationBox() {
         )
         Spacer(Modifier.height(14.dp))
         Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-            PillButton(if (signed) "🔄 تسجيل دخول جديد" else "🔐 تسجيل الدخول بكود التفعيل") {
+            PillButton(if (signed) "🔄 تسجيل دخول جديد" else "🔐 تسجيل الدخول بكود التفعيل", onClick = {
                 val act = context.findActivity() ?: return@PillButton
                 YtMtSignIn.signIn(act) { signed = runCatching { MtYt.signedIn() }.getOrDefault(false) }
-            }
+            })
         }
     }
 }
