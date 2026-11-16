@@ -706,8 +706,9 @@ class PlayerActivity : Activity(), Host {
             "voice" -> runOnUiThread { try { voiceMenu() } catch (e: Throwable) { LogStore.err("Player:rvoice", e) } }   // (v712) فصل صوت الكلام
             "nextlist" -> runOnUiThread { try { openNextSheet() } catch (e: Throwable) { LogStore.err("Player:rnext", e) } }   // (v712) 📃 التالي (يوتيوب)
             "tr_free", "tr_gem" -> geminiAsk()   // (v743) FreeLLM اتشال — الزرارين القدام بيفتحوا اختيار جيميناي
-            "tr_gem_acc" -> { trAsked = true; h.post { Cfg.put("dual_listen", "2"); geminiStart() } }   // (v1043) الاختيار اتعمل على الموبايل — من غير نافذة على التلفزيون
-            "tr_gem_fast" -> { trAsked = true; h.post { Cfg.put("dual_listen", "0"); geminiStart() } }
+            "tr_gem_acc" -> { trAsked = true; h.post { Cfg.put("dual_listen", "2"); Cfg.put("fastmode", "0"); geminiStart() } }   // (v1043) الاختيار اتعمل على الموبايل — من غير نافذة على التلفزيون
+            "tr_gem_fast" -> { trAsked = true; h.post { Cfg.put("dual_listen", "0"); Cfg.put("fastmode", "0"); geminiStart() } }
+            "tr_gem_quick" -> { trAsked = true; h.post { Cfg.put("fastmode", "1"); geminiStart() } }   // (v1068) ⚡ سريع
             "tr_whisper" -> whisperStart()
             "tr_gtx" -> startGeminiTranscribe()
             "tr_wtx" -> offlineQuick(true)
@@ -3090,7 +3091,7 @@ class PlayerActivity : Activity(), Host {
             // (v667) السوفت صب والهارد صب بيتترجموا أوتوماتيك أول ما الفيديو يفتح — مفيش زراير ليهم هنا
             col.addView(shSection("🔤 ترجمة"))
             col.addView(shRow("☁ ١ · جيميناي", if (mk == "gem") "✓ " + listenName() else listenName()) { close(); h.post { geminiAsk() } })
-            col.addView(shNote("هتختار: ٧٥/٢٥ (سماع واحد، أسرع وأرخص) أو 🎯 السماع الأدق (مفتاحين + حكم) · لهجات + أسلوب + بصري · محتاج نت"))
+            col.addView(shNote("هتختار: ٧٥/٢٥ (سماع واحد، أسرع وأرخص) أو 🎯 السماع الأدق (مفتاحين + حكم) أو ⚡ سريع (أول ترجمة في ثواني) · لهجات + أسلوب + بصري · محتاج نت"))
             col.addView(shRow("📴 ٢ · وشبر + ترجمة أوفلاين (HY-MT1.5)", if (mk == "off") "✓ الحالي" else setVal) { close(); whisperStart() })
             col.addView(shSection("✍ تفريغ بس (من غير ترجمة) — نظامين"))
             col.addView(shRow("☁ بجيميناي (من الصوت)", if (mk == "txg") "✓ الحالي" else "") { close(); startGeminiTranscribe() })
@@ -3116,17 +3117,20 @@ class PlayerActivity : Activity(), Host {
     }
 
     /** (v743) اسم نظام السماع الحالي لجيميناي */
-    private fun listenName(): String = when (Cfg.int("dual_listen", 1)) { 0 -> "٧٥/٢٥"; 2 -> "🎯 الأدق"; else -> "🎯 ذكي" }
+    private fun listenName(): String = if (Cfg.bool("fastmode", false)) "⚡ سريع" else when (Cfg.int("dual_listen", 1)) { 0 -> "٧٥/٢٥"; 2 -> "🎯 الأدق"; else -> "🎯 ذكي" }
     /** (v743) دوس جيميناي ← اختار: ٧٥/٢٥ (سماع واحد) أو 🎯 السماع الأدق (تسميع مزدوج بمفتاحين + حكم) — الاتنين موجودين */
     private fun geminiAsk() {
         if (!TrWizard.hasGeminiKey()) { say("☁ جيميناي محتاج مفتاح — ضيفه من الإعدادات ← 🔑 المفاتيح"); return }
         val n = try { Cfg.snapshot().let { c -> (c.keys + c.backup + c.refine).filter { it.length > 10 }.distinct().size } } catch (_: Throwable) { 0 }
         val dm = Cfg.int("dual_listen", 1)
+        val fast = Cfg.bool("fastmode", false)   // (v1068)
         // (v749) الوضعين صفّين ظاهرين فوق بعض (من غير رسالة طويلة تزقّ الأزرار برّه الشاشة على التلفزيون)
         shDialog(330) { col, close ->
             col.addView(shHead("☁ جيميناي — اختار الوضع", "الحالي: " + listenName()))
-            col.addView(shRow("🎯 السماع الأدق", if (dm == 2) "✓ الحالي" else "مفتاحين + حكم") { close(); h.post { Cfg.put("dual_listen", "2"); geminiStart() } })
-            col.addView(shRow("⚡ ٧٥/٢٥ — سماع واحد", if (dm == 0) "✓ الحالي" else "أسرع وأرخص") { close(); h.post { Cfg.put("dual_listen", "0"); geminiStart() } })
+            col.addView(shRow("🎯 السماع الأدق", if (dm == 2 && !fast) "✓ الحالي" else "مفتاحين + حكم") { close(); h.post { Cfg.put("dual_listen", "2"); Cfg.put("fastmode", "0"); geminiStart() } })
+            col.addView(shRow("⚡ ٧٥/٢٥ — سماع واحد", if (dm == 0 && !fast) "✓ الحالي" else "أسرع وأرخص") { close(); h.post { Cfg.put("dual_listen", "0"); Cfg.put("fastmode", "0"); geminiStart() } })
+            // (v1068) ⚡ سريع تحت الاتنين: نفس مفتاح «⚡ الترجمة السريعة» (fastmode) — أول ترجمة في ثواني، برومبت خفيف، من غير تسميع مزدوج
+            col.addView(shRow("⚡ سريع", if (fast) "✓ الحالي" else "أول ترجمة في ثواني · برومبت خفيف") { close(); h.post { Cfg.put("fastmode", "1"); geminiStart() } })
             if (n < 2) col.addView(shNote("عندك مفتاح واحد بس — 🎯 الأدق محتاج مفتاحين، ومن غيرهم هيشتغل كسماع واحد.", true))
             col.addView(shRow("إلغاء") { close() })
         }
@@ -4623,7 +4627,6 @@ class PlayerActivity : Activity(), Host {
         }
         fitFsB = fitB
         val menuB = IconGlyphButton(this, "menu").apply { background = ui.box(0xE0141418.toInt(), 0x1FFFFFFF, 12); setOnClickListener { togglePop(this, gTool, false) } }
-        val swB = ui.fsCircle("⇄") { switchToMeeTube() }.apply { textSize = 16f; setOnLongClickListener { giShow("تبديل المشغّل", Gravity.CENTER); true } }   // (v1023) ⇄ نفس الفيديو في مشغّل MeeTube + تثبيت الاختيار
         val bgOnB = IconGlyphButton(this, if (Cfg.bool("ask_bg_exit", true)) "check_box" else "box").apply {
             background = ui.box(0xE0141418.toInt(), 0x1FFFFFFF, 12)
             setOnClickListener {
@@ -4912,8 +4915,6 @@ class PlayerActivity : Activity(), Host {
             tbRow.addView(bgTrB, LinearLayout.LayoutParams(ui.dp(40), ui.dp(40)).apply { setMargins(ui.dp(3), ui.dp(3), ui.dp(3), ui.dp(3)) })   // (v1025) 🌙 مكان ☑
             (toolsB.parent as? ViewGroup)?.removeView(toolsB)
             tbRow.addView(toolsB, LinearLayout.LayoutParams(ui.dp(40), ui.dp(40)).apply { setMargins(ui.dp(3), ui.dp(3), ui.dp(3), ui.dp(3)) })
-            (swB.parent as? ViewGroup)?.removeView(swB)
-            tbRow.addView(swB, LinearLayout.LayoutParams(ui.dp(40), ui.dp(40)).apply { setMargins(ui.dp(3), ui.dp(3), ui.dp(3), ui.dp(3)) })   // (v1023) ⇄ جنب ✨ و☰
             tbRow.addView(menuB, LinearLayout.LayoutParams(ui.dp(40), ui.dp(40)).apply { setMargins(ui.dp(3), ui.dp(3), ui.dp(3), ui.dp(3)) })
             textB.minimumWidth = ui.dp(38); textB.setPadding(ui.dp(8), 0, ui.dp(8), 0)
             textAtBottom = false
@@ -6793,24 +6794,6 @@ class PlayerActivity : Activity(), Host {
         try { MtEnhance.detach(this) } catch (_: Throwable) {}
         mtParityExo = null
     }
-    /** (v1023) ⇄ نفس الفيديو في مشغّل MeeTube من نفس الثانية، والاختيار بيثبت (mt_main_player = شغّال) للفيديوهات الجاية */
-    private fun switchToMeeTube() {
-        try {
-            if (remote) { say("⇄ مش متاح في وضع الريموت"); return }
-            val i = Intent(intent)
-            val pos = try { player.currentPosition } catch (_: Throwable) { 0L }
-            if (pos > 1000L) i.putExtra("startms", pos.toInt())
-            val was = MtPlay.enabled()
-            Cfg.put(MtPlay.KEY, "1")
-            if (!MtPlay.reroute(this, i)) {
-                Cfg.put(MtPlay.KEY, if (was) "1" else "0")
-                say("⇄ مشغّل MeeTube مش بيدعم الفيديو ده")
-                return
-            }
-            try { player.pause() } catch (_: Throwable) {}
-        } catch (e: Throwable) { LogStore.err("Player:switchToMt", e); say("⇄ ما قدرتش أبدّل المشغّل") }
-    }
-
     private fun mtEnhanceCycle(btn: TextView? = null) {
         mtParityAttach()
         if (mtParityExo == null) { say("✨ تحسين الصورة مش متاح على المشغّل ده"); return }

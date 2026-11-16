@@ -1007,13 +1007,18 @@ object MtTranslate : JoyboyPlayerHost.Provider {
         h("الترجمة: " + (if (!on) "واقفة" else pct + (if (paused) " (واقفة مؤقتًا)" else "")) + " · الوضع: " + curEngineMode())
         h("🔤 نظام الترجمة")
         val dm = try { Cfg.int("dual_listen", 1) } catch (_: Throwable) { 1 }
-        m("☁ جيميناي — ٧٥/٢٥ (سماع واحد)" + (if (dm == 0) " ✓ الحالي" else "")) {
-            Cfg.put("dual_listen", "0")
-            Notice.show(a, "☁ جيميناي ٧٥/٢٥ — هيتطبق على الباتشات الجاية", 2200L)
+        val fast = try { Cfg.bool("fastmode", false) } catch (_: Throwable) { false }   // (v1068)
+        m("☁ جيميناي — ٧٥/٢٥ (سماع واحد)" + (if (dm == 0 && !fast) " ✓ الحالي" else "")) {
+            Cfg.put("dual_listen", "0"); Cfg.put("fastmode", "0")
+            Notice.show(a, if (fast) "☁ جيميناي ٧٥/٢٥ — هيتطبق من أول ترجمة جديدة" else "☁ جيميناي ٧٥/٢٥ — هيتطبق على الباتشات الجاية", 2200L)
         }
-        m("🎯 جيميناي — السماع الأدق (مفتاحين + حكم)" + (if (dm == 2) " ✓ الحالي" else "")) {
-            Cfg.put("dual_listen", "2")
-            Notice.show(a, "🎯 السماع الأدق — هيتطبق على الباتشات الجاية", 2200L)
+        m("🎯 جيميناي — السماع الأدق (مفتاحين + حكم)" + (if (dm == 2 && !fast) " ✓ الحالي" else "")) {
+            Cfg.put("dual_listen", "2"); Cfg.put("fastmode", "0")
+            Notice.show(a, if (fast) "🎯 السماع الأدق — هيتطبق من أول ترجمة جديدة" else "🎯 السماع الأدق — هيتطبق على الباتشات الجاية", 2200L)
+        }
+        m("⚡ جيميناي — سريع (أول ترجمة في ثواني · برومبت خفيف)" + (if (fast) " ✓ الحالي" else "")) {
+            Cfg.put("fastmode", "1")
+            Notice.show(a, "⚡ جيميناي سريع — هيشتغل من أول ترجمة جديدة", 2400L)
         }
         m("📴 وشبر + ترجمة أوفلاين" + (if (curEngineMode() == "whisper") " ✓ الحالي" else "")) {
             if (!Offline.configured()) { Notice.show(a, "📴 وشبر مش متظبط على الجهاز — ظبّطه من إعدادات الترجمة الأول", 3000L); return@m }

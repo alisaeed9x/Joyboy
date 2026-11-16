@@ -13,14 +13,11 @@ import com.newtube.mobile.MobileMainApplication
  * أي فتح لـPlayerActivity (من أي مكان: مكتبة · ملفات · متصفح · نقل · مهام) بيعدّي هنا الأول (PlayerActivity.onCreate):
  * لو الحالة مدعومة بيفتح الفيديو في مشغّل MeeTube (Video.localUri) ومحرك الترجمة + أزرار Joyboy (MtTranslate) فوقه، ومشغّل Joyboy القديم بيتقفل.
  * غير كده (تلفزيون من غير mt_tv_player · ريموت · يوتيوب · لينك محتاج Referer/Cookie · وضع متخفي · ملف تحميل لسه شغّال) = مشغّل Joyboy زي ما هو.
- * مفتاح الإيقاف: Cfg mt_main_player (الافتراضي true من v934 — م2 من خطة دمج المشغّل).
- * (v1007) مقفول = مشغّل Joyboy القديم (Player.kt) لكل حاجة ما عدا يوتيوب والفيديوهات المستضافة من صفحات لينكها يوتيوب.
+ * (v1068) مفيش مفتاح تبديل: MeeTube لفيديوهات يوتيوب بس · كل ما عداها (وكل التلفزيون) = مشغّل Joyboy (Player.kt).
  */
 object MtPlay {
-    const val KEY = "mt_main_player"
     private val MEDIA_EXT = Regex("\\.(mp4|m4v|mkv|webm|mov|m3u8|mpd|ts|3gp|avi|flv)(\\?|#|$)", RegexOption.IGNORE_CASE)
 
-    fun enabled(): Boolean = try { Cfg.bool(KEY, true) } catch (_: Throwable) { true }   // (v934 م2) افتراضي: شغّال — MeeTube هو مشغّل الملفات واللينكات؛ مفتاح الرجوع لمشغّل Joyboy في إعدادات المشغّل
 
     /** (v930) قرار التوجيه: ok=true ← يتفتح في MeeTube بالمصدر src · ok=false ← reason = سبب البقاء على مشغّل Joyboy (للّوج). مفيش آثار جانبية. */
     class Decision(val ok: Boolean, val reason: String, val src: String? = null, val headers: Map<String, String> = emptyMap(), val audio: String? = null,
@@ -31,10 +28,10 @@ object MtPlay {
     /** (v930) نفس شروط reroute القديمة بالظبط، بس بترجّع السبب. بتتنادى جوه try (Cfg.ensure ممكن ترمي). */
     fun decide(act: Activity, i: Intent): Decision {
         Cfg.ensure(act.applicationContext)
-        // (v1007) مشغّل Joyboy القديم (Player.kt) بقى خيار تاني في الإعدادات: لما MeeTube مقفول بيشغّل كل حاجة ما عدا يوتيوب
-        // (فيديو يوتيوب نفسه، أو فيديو مستضاف من صفحة/Referer لينكها يوتيوب) — دول بيفضلوا على مشغّل MeeTube.
-        if (!enabled() && !ytLike(i)) return Decision.skip(R_OFF)
-        if (DeviceUi.isTv(act) && !MtTvPlayer.enabled()) return Decision.skip(R_TV)
+        // (v1068) مشغّل MeeTube = فيديوهات يوتيوب بس. أي حاجة تانية (ملفات · لينكات مباشرة · متصفح) = مشغّل Joyboy (Player.kt).
+        // والتلفزيون = Player.kt دايمًا. مفيش مفتاح تبديل بين المشغّلين.
+        if (DeviceUi.isTv(act)) return Decision.skip(R_TV)
+        if (!ytLike(i)) return Decision.skip(R_OFF)
         if (i.getBooleanExtra("remote", false)) return Decision.skip("extra remote (ريموت — م4)")
         // (v936) لسه على مشغّل Joyboy: mirror_uri (م4 — تلفزيون) بس. يوتيوب/المتخفي/hsite/forceid/لينك من غير امتداد اتحلّوا.
         if (i.hasExtra("mirror_uri")) return Decision.skip("extra mirror_uri (م4 — تلفزيون)")

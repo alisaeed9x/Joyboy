@@ -1403,14 +1403,6 @@ object MtBar {
             left.addView(qualB)
             refreshQuality()
         }
-        // (v1023) ⇄ تبديل المشغّل: يفتح نفس الفيديو في مشغّل Joyboy القديم من نفس الثانية، والاختيار بيثبت للفيديوهات الجاية (نفس مفتاح الإعدادات). يوتيوب بس على MeeTube فمبيظهرش له.
-        val srcIsLocal = try { !info?.localUri().isNullOrBlank() } catch (_: Throwable) { false }
-        if (srcIsLocal) {
-            left.addView(u.fsCircle("⇄") { switchToOldPlayer(a) }.apply {
-                textSize = 16f
-                layoutParams = LinearLayout.LayoutParams(dp(a, 38), dp(a, 38)).apply { marginStart = dp(a, 4) }
-            })
-        }
         // (v954) 🌐 و🎧 اتشالوا من الشريط السفلي (مكرّرين: 🌐 = ⚙ شريحة الترجمة، 🎧 = سماعة MeeTube اللي فوق الشمال)
         val mid = LinearLayout(a).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -1517,35 +1509,6 @@ object MtBar {
             p.seekTo(t)
             Notice.show(a, if (dir > 0) "⏭ +10 ثواني" else "⏮ −10 ثواني", 1200L)
         } catch (_: Throwable) {}
-    }
-
-    /** (v1023) ⇄ نفس الفيديو في مشغّل Joyboy القديم (Player.kt) من نفس الثانية + تثبيت الاختيار (mt_main_player = مقفول) */
-    private fun switchToOldPlayer(a: Activity) {
-        try {
-            val i = info ?: return
-            val lu = try { i.localUri() } catch (_: Throwable) { null }
-            if (lu.isNullOrBlank()) { Notice.show(a, "يوتيوب بيشتغل على MeeTube بس", 2300L); return }
-            val it = android.content.Intent(a, PlayerActivity::class.java)
-            if (lu.startsWith("http://", true) || lu.startsWith("https://", true)) it.putExtra("url", lu)
-            else { it.data = android.net.Uri.parse(lu); it.addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION) }
-            try { i.headers()?.let { h ->
-                h["User-Agent"]?.let { v -> it.putExtra("ua", v) }
-                h["Referer"]?.let { v -> it.putExtra("ref", v) }
-                h["Cookie"]?.let { v -> it.putExtra("cookie", v) }
-            } } catch (_: Throwable) {}
-            try { i.audioUrl()?.takeIf { s -> s.isNotEmpty() }?.let { v -> it.putExtra("aurl", v) } } catch (_: Throwable) {}
-            try { i.title()?.takeIf { s -> s.isNotBlank() }?.let { v -> it.putExtra("title", v) } } catch (_: Throwable) {}
-            val pos = try { player?.currentPosition ?: 0L } catch (_: Throwable) { 0L }
-            if (pos > 1000L) it.putExtra("startms", pos.toInt())
-            Cfg.put(MtPlay.KEY, "0")
-            try { player?.pause() } catch (_: Throwable) {}
-            try { MtOrigin.suppressNextReturn() } catch (_: Throwable) {}   // (v1030) القفل هنا تبديل مش خروج: ما يرجّعش للصفحة الأصلية فوق Player.kt
-            a.startActivity(it)
-            a.finish()
-        } catch (e: Throwable) {
-            LogStore.err("MtBar:switchToOld", e)
-            Notice.show(a, "⇄ ما قدرتش أبدّل المشغّل", 2300L)
-        }
     }
 
     private fun cycleFit(a: Activity) {

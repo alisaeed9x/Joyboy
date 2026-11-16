@@ -653,12 +653,8 @@ class MainActivity : Activity() {
                 ui.noHint(),
                 ui.button("📺 افتح إعدادات التلفزيون", true) { TvLookPad.show(this) },
                 ui.button("🔧 افتح إعدادات البرنامج على شاشة التلفزيون") { try { RemoteClient.cmd("open_settings") } catch (_: Throwable) {} }) }),
-            // (v1012) 🎬 المشغّل: كل إعدادات المشغّل في قسم واحد — اختيار المشغّل (دايم، مش مرتبط بالجلاس) · المظهر · الجودة · السلاسة · الخروج
+            // (v1012) 🎬 المشغّل: كل إعدادات المشغّل في قسم واحد — المظهر · الجودة · السلاسة · الخروج
             tab("player", { listOfNotNull<View>(
-                ui.section("🎬 المشغّل الأساسي", true,
-                    ui.noHint(),
-                    ui.chips(listOf("MeeTube", "Player.kt"), { if (MtPlay.enabled()) "MeeTube" else "Player.kt" }) { n -> Cfg.put(MtPlay.KEY, if (n == "MeeTube") "1" else "0") },
-                    ui.text("MeeTube = الأساسي (الافتراضي) · Player.kt = مشغّل Joyboy القديم لكل حاجة ما عدا يوتيوب وفيديوهات صفحات لينكها يوتيوب", 11f, th.muted, false)),
                 if (MtGlass.on()) ui.section("🎬 مظهر المشغّل (MeeTube) — بيظهر مع الجلاس", false,
                     ui.noHint(),
                     ui.chips(listOf("🫧 شفاف", "🧊 مفروست", "▫️ مينيمال"), { when (MtGlass.playerBtnLook()) { 1 -> "🧊 مفروست"; 2 -> "▫️ مينيمال"; else -> "🫧 شفاف" } }) { n ->

@@ -98,7 +98,7 @@ class Engine(
     private fun flushModeMsg() { val m = modeMsg ?: return; modeMsg = null; host.log(m) }
     // ===== (v1065) وضع الترجمة السريعة ⚡ =====
     /** مفعّل من الإعدادات (ترجمة سريعة). بيتثبّت وقت إنشاء المحرك: التغيير بيشتغل من أول ترجمة جديدة */
-    private val fastLatched: Boolean = try { Cfg.bool("fastmode", false) } catch (_: Throwable) { false }
+    @Volatile private var fastLatched: Boolean = try { Cfg.bool("fastmode", false) } catch (_: Throwable) { false }
     /** الباتش اللي بيتقسّم لخطوات بتكبر عشان أول ترجمة تظهر بدري؛ -1 = لسه مفيش */
     @Volatile private var rampChunk = -1
     @Volatile private var rampStep = 0
@@ -897,6 +897,7 @@ class Engine(
 
     fun run() {
         if (conf.keys.isEmpty() && conf.backup.isEmpty()) { host.status("⚠ ادخل مفتاح Gemini في الإعدادات"); host.log("⚠ مفيش مفاتيح Gemini"); host.notice("⚠ مفيش مفتاح جيميناي — ضيف واحد من الإعدادات ← المفاتيح"); return }
+        fastLatched = try { Cfg.bool("fastmode", false) } catch (_: Throwable) { false }; rampChunk = -1; fastLight.clear()   // (v1068) الوضع السريع بيتأخد من الإعداد وقت بداية الترجمة (مش وقت فتح المشغّل) — عشان صف «⚡ سريع» في قايمة جيميناي يشتغل على طول
         Api.onSlow = { m -> try { host.status(m) } catch (_: Throwable) {} }   // (v468) مؤشر «باتش بيحاول» في شريط الحالة
         val capMax = basePool.capacity(ppk)
         val ex = Executors.newFixedThreadPool(maxOf(capMax, Offline.MAX_PAR) + 2) { r -> Thread(r).also { it.isDaemon = true } }   // +2: باتش اتنسخ واتحسب من نسخته الاحتياطية ممكن يفضل خيطه الأصلي شغال شوية من غير ما يحجز مكان باتش جديد
