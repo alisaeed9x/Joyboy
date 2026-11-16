@@ -382,7 +382,19 @@ class BrowserActivity : Activity() {
     private val DESK_UA = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
 
     private fun prefs() = getSharedPreferences("p", 0)
-    private fun home() = prefs().getString("br_home", "")?.ifBlank { null } ?: "https://www.google.com"
+    // (v1069) الصفحة الرئيسية: من غير سكيم (google.com) كانت بتتبعت زي ما هي لـloadUrl فمابتفتحش · ولينك ملف أوفلاين اتمسح بيرجع جوجل بدل صفحة فاضية
+    private fun home(): String {
+        val raw = prefs().getString("br_home", "")?.trim() ?: ""
+        if (raw.isBlank()) return "https://www.google.com"
+        if (raw.startsWith("file://")) {
+            val path = try { android.net.Uri.parse(raw).path ?: "" } catch (_: Throwable) { "" }
+            if (path.isBlank() || !java.io.File(path).exists()) return "https://www.google.com"
+            return raw
+        }
+        if (raw.startsWith("about:")) return raw
+        if (!raw.contains("://")) return "https://$raw"
+        return raw
+    }
     private fun searchUrl(q: String): String = when (prefs().getString("br_engine", "Google")) {
         "DuckDuckGo" -> "https://duckduckgo.com/?q="
         "Bing" -> "https://www.bing.com/search?q="
@@ -888,6 +900,12 @@ class BrowserActivity : Activity() {
                 if (!r.isForMainFrame) return
                 if (t.hold != null) return   // (v401) بوب-أب في الحجر: المهلة هتحكم
                 val u = r.url.toString()
+                // (v1069) النسخة الأوفلاين نفسها فشلت تتحمّل: ارجع لجوجل الحي بدل صفحة الخطأ
+                if (BrowserSaver.isHomeArchive(u)) {
+                    t.errUrl = ""
+                    try { v.loadUrl(GOOGLE) } catch (_: Throwable) {}
+                    return
+                }
                 if (u.startsWith("http") && saver.onError(t, v, u, e.errorCode)) return   // (v783) أوفلاين: كاش ثم نسخة محفوظة قبل صفحة الخطأ
                 if (u.startsWith("data:") || t.errUrl == u) return
                 t.errUrl = u

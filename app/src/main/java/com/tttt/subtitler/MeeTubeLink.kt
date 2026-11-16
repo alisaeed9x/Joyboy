@@ -25,20 +25,36 @@ object MeeTubeLink {
         }
     }
 
-    /** (v887) فيديو يوتيوب عادي (من غير ترجمة) على الموبايل/التابلت ← مشغّل MeeTube نفسه (أسرع، والتكبير من غير إعادة تحميل). false = كمّل بمشغّل Joyboy. */
-    fun playYt(act: Activity, id: String, startMs: Long, autoTranslate: Boolean = false, incognito: Boolean = false): Boolean {   // (v936) incognito: بدون تاريخ MeeTube ولا ترجمة محفوظة
+    /** (v1069) فيديو يوتيوب ← مشغّل Joyboy (Player.kt) مباشرة: نفس إنتنت ytStart (ytpend + ytid) — مشغّل MeeTube اتشال خالص. */
+    fun openJoyboyPlayer(act: Activity, id: String, title: String, startMs: Long = 0L, autoTranslate: Boolean = false, incognito: Boolean = false): Boolean {
+        if (id.length != 11) return false
+        return try {
+            MtOrigin.record(Intent().putExtra("ret", "yt"), null, id, "")
+            act.startActivity(Intent(act, PlayerActivity::class.java).pipTask(act).apply {
+                putExtra("ytpend", true)
+                putExtra("ytid", id)
+                putExtra("title", title)
+                putExtra("ref", "https://www.youtube.com/")
+                putExtra("nosub", !autoTranslate)
+                putExtra("autotr", autoTranslate)
+                putExtra("incognito", incognito)
+                if (startMs > 0L) putExtra("startms", startMs)
+                putExtra("ret", "yt")
+            })
+            true
+        } catch (e: Throwable) {
+            LogStore.err("MeeTubeLink:joyboyPlayer", e)
+            false
+        }
+    }
+
+    /** (v1069) فيديو يوتيوب على الموبايل/التابلت ← مشغّل Joyboy (مشغّل MeeTube اتشال خالص). false = كمّل بالمسار القديم. */
+    fun playYt(act: Activity, id: String, startMs: Long, autoTranslate: Boolean = false, incognito: Boolean = false): Boolean {   // (v936) incognito: بدون تاريخ ولا ترجمة محفوظة
         if (DeviceUi.isTv(act) || id.length != 11) return false
         return try {
-            if (incognito) MtTranslate.privIds.add(id)   // (v936)
-            if (autoTranslate) MtTranslate.autoFor = id   // (v890) الترجمة تبدأ لوحدها أول ما الفيديو يشتغل في مشغّل MeeTube
-            // (v941) سجّل المصدر يوتيوب: من غيرها MtOrigin بيفضل ماسك مصدر الجلسة اللي قبله (محلي مثلاً) والتصغير اللي بعده بيغلط
-            // (v983) ret="yt": من غيرها الـrecord التاني ده بيمسح ret="yt" اللي سجّله MtPlay.openMt، فالخروج من يوتيوب كان بيرجع لفولدر المحلي القديم
-            MtOrigin.record(Intent().putExtra("ret", "yt"), null, id, "")
             bindBar()
             MobileMainApplication.boot(act.application)
-            try { com.newtube.mobile.ui.playback.MobileLocalPlaybackActivity.routeYoutube(act) } catch (_: Throwable) {}   // (v947) يوتيوب ← مشغّل يوتيوب العادي (الملفات/المتصفح على نسخة مشغّل منفصلة)
-            MtTvRoute.bypassed { com.liskovsoft.smartyoutubetv2.common.app.presenters.PlaybackPresenter.instance(act.applicationContext).openVideo(id, false, if (startMs > 0L) startMs else -1L, incognito) }   // (v928) السؤال «تشغّله فين؟» اتسأل قبل كده في Main.playYt
-            true
+            openJoyboyPlayer(act, id, "", startMs, autoTranslate, incognito)
         } catch (e: Throwable) {
             LogStore.err("MeeTubeLink:playYt", e)
             false

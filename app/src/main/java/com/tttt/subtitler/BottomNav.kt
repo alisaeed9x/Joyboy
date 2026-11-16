@@ -121,8 +121,7 @@ class BottomNav(act: Activity, private val ui: Ui, private val th: Theme, privat
         val secs = ArrayList<MoreItem>()
         for (id in listOf(0, 4, 2, 1, 5)) secs.add(MoreItem(DEFS[id].first, if (id == 0) "الفيديوهات" else DEFS[id].second, id == active) { onPick(id) })   // فيديوهات · يوتيوب · متصفح · موسيقى · مخزن · مهام
         val trl = ArrayList<MoreItem>()
-        // (v1037) «الاستوديو» اتمسح خالص — بس «📚 مكتبة الترجمات» (من v990) فضلت لأنها مستقلة (مش جزء منه)
-        if (!tvDev) trl.add(MoreItem("📚", "مكتبة الترجمات", false) { try { TrLibUi(act, ui, th).show() } catch (e: Throwable) { LogStore.err("Nav:trlib", e) } })
+        // (v1069) زرار «📚 مكتبة الترجمات» اتشال من «المزيد» — المجموعة فاضية فالشيت بيعدّيها (moreSheet بيتخطى المجموعات الفاضية)
         val ctl = ArrayList<MoreItem>()
         if (!tvDev && !lite) ctl.add(MoreItem("📱", "الريموت", false) { try { ControllerPad.show(act) } catch (e: Throwable) { LogStore.err("Nav:remote", e) } })
         if (!tvDev) ctl.add(MoreItem("📡", "ريموت IR", false) { try { IrCatalogUi.show(act) } catch (e: Throwable) { LogStore.err("Nav:ir", e) } })

@@ -349,7 +349,8 @@ class BrowserSaver(private val act: BrowserActivity, private val frame: FrameLay
     }
 
     // ===== (v1016) نسخة جوجل الرئيسية أوفلاين: للطوارئ 🚨 وزراري «بحث جديد/خروج» في قفل المخفي =====
-    private fun homeArchive(): File? = File(offDir(), "home.mht").takeIf { it.exists() && it.length() > 0 }
+    // (v1069) أقل من 4KB يعني لقطة فاشلة/فاضية — ماتتحسبش نسخة عشان ماتغطيش على الصفحة الحية
+    private fun homeArchive(): File? = File(offDir(), "home.mht").takeIf { it.exists() && it.length() > 4096 }
     /** بتتحفظ لما تفتح جوجل الرئيسية عادي، وبتتجدّد كل 12 ساعة */
     private fun homeSnap(w: WebView, url: String) {
         if (!url.startsWith("http")) return
@@ -367,8 +368,11 @@ class BrowserSaver(private val act: BrowserActivity, private val frame: FrameLay
         }, 3500L)
     }
     /** true = فتحنا النسخة المحفوظة (من غير ما نستنى الشبكة)؛ false = مفيش نسخة ← حمّل جوجل عادي */
+    // (v1069) النسخة الأوفلاين للطوارئ بس: لو فيه شبكة الصفحة الحية هي اللي بتتفتح — النسخة المحفوظة كانت بتغطي عليها دايمًا فالصفحة الرئيسية مابتفتحش
     fun loadOfflineHome(w: WebView, t: BTab): Boolean {
         if (t.priv) return false
+        readNet()
+        if (net != N_NONE) return false
         val f = homeArchive() ?: return false
         fileOpen.add(t.id); offTabs.remove(t.id); stage.remove(t.id); stageUrl.remove(t.id)
         try { w.settings.allowFileAccess = true } catch (_: Throwable) {}

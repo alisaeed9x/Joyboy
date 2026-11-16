@@ -106,8 +106,8 @@ class Engine(
     private val RAMP_SECS = doubleArrayOf(10.0, 20.0, 30.0)
     /** (v1066) أول N باتشات في الوضع السريع بتروح ببرومبت خفيف ورد مختصر (start/end/original/translated بس) */
     private val FAST_LIGHT_N = 2
-    /** (v1067) تسريع الصوت قبل الإرسال لأول خطوتين (1.0 = مطفي). الأوقات بترجع للأصل بالضرب */
-    private val FAST_SPEED = 1.25
+    /** (v1070) الصوت بنص سرعته قبل الإرسال لأول خطوتين (1.0 = مطفي) عشان الدقة. الأوقات بترجع للأصل بالضرب */
+    private val FAST_SPEED = 0.5
     /** (v1067) الخطوة الأولى = 30ث بتتقسم لطلبين بالتوازي على مفتاحين: 10ث + 20ث */
     private val FAST_FIRST_SECS = 10.0
     private val FAST_SPLIT_SECS = 30.0
@@ -1298,7 +1298,7 @@ class Engine(
                 try {
                     val a = parts[ix]; val dur = a[1] - a[0]
                     var bs = AudioTools.cut(w.bytes, a[0], a[1])
-                    if (spd > 1.0) bs = try { AudioTools.speedUp(bs, spd) } catch (_: Throwable) { bs }
+                    if (spd != 1.0) bs = try { AudioTools.speedUp(bs, spd) } catch (_: Throwable) { bs }
                     val sc = StreamSubs()
                     res[ix] = Api.generateStream(mdl, k, promptFor(dur / spd), bs, Api.outTokens(dur), tmp) { acc -> streamPreview(i, pws[ix], sc, acc, spd, a[0]) }
                     if (ix == 1) pool.end(k, System.currentTimeMillis() - t0, true)
@@ -1351,9 +1351,10 @@ class Engine(
         var langRetry = 0; var langSwitchRetry = 0
         var srv = 0   // (v459) مفيش موديل بديل: أخطاء السيرفر بتتعاد على نفس الموديل الواحد (كان في v227 بيبدّل لموديل تاني)
         val fastStep = fastLatched && !hedge && !backupFirst && i == rampChunk && rampStep < 2
-        val spd = if (fastStep && FAST_SPEED > 1.0 && w.durSec >= 4.0) FAST_SPEED else 1.0   // (v1067) تسريع الصوت
+        // (v1070) الصوت بنص سرعته عشان الدقة
+        val spd = if (fastStep && FAST_SPEED != 1.0 && w.durSec >= 4.0) FAST_SPEED else 1.0
         val canSplit = fastStep && rampStep == 0 && w.durSec >= 16.0 && !Offline.on() && pool.usableCount() >= 2   // (v1067) طلبين بالتوازي
-        val sendBytes = if (spd > 1.0) { try { AudioTools.speedUp(w.bytes, spd) } catch (_: Throwable) { w.bytes } } else w.bytes
+        val sendBytes = if (spd != 1.0) { try { AudioTools.speedUp(w.bytes, spd) } catch (_: Throwable) { w.bytes } } else w.bytes
         val spdEff = if (sendBytes === w.bytes) 1.0 else spd
         val tx = activeMode >= KeyMode.SPLIT_A && i !in fullChunks && !fastLatched   // (v210) ترانسكريبشن بس، والترجمة بعدين مجمّعة على مفاتيح الترجمة
         while (running && tries++ < MAX_TRIES) {
@@ -1433,7 +1434,8 @@ class Engine(
                     switchKey(key)?.let { key = it }
                     nap(400); continue
                 }
-                if (!offRan && fresh.isEmpty() && !w.silent) { partial = true; host.log("⚠ المقطع ${i + 1} لسه من غير جمل — هيتحاول تاني كفجوة") }
+                // (v1070) باتش فاضي مابقاش يتعلّم «خلص» — قبل كده applyChunk كان بيمسح failed وبيعلّم done فالثغرة كانت بتضيع نهائي
+                if (!offRan && fresh.isEmpty() && !w.silent) { failed[i] = MAX_FAILS; incomplete.add(i); host.log("🕳 المقطع ${i + 1} رجع من غير جمل — اتسجل كفجوة وهيتعاد تلقائيًا"); persist(); return }
                 pool.good(key)
                 if (!claimed.add(i)) { host.log("↩ باتش ${i + 1}: نسخة تانية خلصته قبلها — اتجاهلت دي"); return }
                 if (i > maxApplied) maxApplied = i
