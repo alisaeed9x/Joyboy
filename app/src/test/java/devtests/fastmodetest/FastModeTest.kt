@@ -43,6 +43,27 @@ fun main() {
     check("fast: من غير حقول الجنس/المخاطَب", !fp.contains("addressee") && !fp.contains("topic_gender") && !fp.contains("emotion"))
     check("fast: أقصر بكتير من برومبت الوضع 2", fp.length * 3 < ModePrompts.english(pb, cf, 10.0, "", emptyList(), emptyList()).length)
 
+    // ===== (v1067) أدوات الصوت: تسريع/قص صمت/قص جزء =====
+    fun mkWav(sil1: Double, tone: Double, sil2: Double): ByteArray {
+        val r = 16000; val n1 = (sil1 * r).toInt(); val n2 = (tone * r).toInt(); val n3 = (sil2 * r).toInt()
+        val total = n1 + n2 + n3; val pcm = ByteArray(total * 2)
+        for (k in 0 until total) {
+            val v = if (k in n1 until n1 + n2) { val t = k / r.toDouble(); (9000 * (Math.sin(2 * Math.PI * 200 * t) + 0.5 * Math.sin(2 * Math.PI * 410 * t))).toInt() } else 0
+            pcm[2 * k] = (v and 255).toByte(); pcm[2 * k + 1] = ((v shr 8) and 255).toByte()
+        }
+        return Wav.header(pcm.size, r) + pcm
+    }
+    val aw = mkWav(3.0, 6.0, 2.0)
+    val sped = AudioTools.speedUp(aw, 1.25)
+    val ratio = ((aw.size - 44) / 2).toDouble() / ((sped.size - 44) / 2)
+    check("speedUp: أقصر بـ1.25 مرة تقريبًا", Math.abs(ratio - 1.25) < 0.04)
+    check("speedUp: هيدر WAV سليم", String(sped, 0, 4) == "RIFF" && sped.size > 44)
+    check("speedUp: k=1 بيرجّع نفس الملف", AudioTools.speedUp(aw, 1.0) === aw)
+    val tr = AudioTools.trimSilence(aw)
+    check("trimSilence: بيشيل صمت الأطراف بهامش", tr != null && Math.abs(tr.leadSec - 2.6) < 0.15 && Math.abs(tr.durSec - 6.8) < 0.3)
+    check("trimSilence: صمت قليل = null", AudioTools.trimSilence(mkWav(0.2, 6.0, 0.2)) == null)
+    check("cut: ثانية = 16000 عينة", (AudioTools.cut(aw, 2.0, 3.0).size - 44) / 2 == 16000)
+
     println("PASS=$pass FAIL=$fail")
     System.exit(if (fail == 0) 0 else 1)
 }

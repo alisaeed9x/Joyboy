@@ -106,6 +106,21 @@ class Engine(
     private val RAMP_SECS = doubleArrayOf(10.0, 20.0, 30.0)
     /** (v1066) أول N باتشات في الوضع السريع بتروح ببرومبت خفيف ورد مختصر (start/end/original/translated بس) */
     private val FAST_LIGHT_N = 2
+    /** (v1067) تسريع الصوت قبل الإرسال لأول خطوتين (1.0 = مطفي). الأوقات بترجع للأصل بالضرب */
+    private val FAST_SPEED = 1.25
+    /** (v1067) الخطوة الأولى = 30ث بتتقسم لطلبين بالتوازي على مفتاحين: 10ث + 20ث */
+    private val FAST_FIRST_SECS = 10.0
+    private val FAST_SPLIT_SECS = 30.0
+    private class NoSplit : Exception()
+    private fun rampSizes(): DoubleArray = if (!Offline.on() && pool.usableCount() >= 2) doubleArrayOf(FAST_SPLIT_SECS) else RAMP_SECS
+    private fun scaleTimes(j: JSONObject, k: Double) {
+        val a = j.optJSONArray("subtitles") ?: return
+        for (x in 0 until a.length()) {
+            val o = a.optJSONObject(x) ?: continue
+            if (o.has("start")) o.put("start", Parse.sec(o, "start", 0.0) * k)
+            if (o.has("end")) o.put("end", Parse.sec(o, "end", 0.0) * k)
+        }
+    }
     private val fastLight = ConcurrentHashMap.newKeySet<Int>()
     private fun lightOn(chunk: Int, hole: Boolean, tx: Boolean): Boolean = fastLatched && !hole && !tx && chunk >= 0 && (chunk == rampChunk || chunk in fastLight)
     private val pool: Pool get() = if (activeMode >= KeyMode.SPLIT_A && !fastLatched) splitPools().first else basePool
@@ -1157,7 +1172,7 @@ class Engine(
      * فالمحرك بيبعت الخطوة اللي بعدها لوحده. null = الباتش كله مرة واحدة.
      */
     private fun rampWindow(cs: Double, ce: Double): DoubleArray? {
-        val size = RAMP_SECS.getOrNull(rampStep) ?: Double.MAX_VALUE
+        val size = rampSizes().getOrNull(rampStep) ?: Double.MAX_VALUE
         var a: Double
         if (rampStep == 0) {
             val pos = try { host.position() } catch (_: Throwable) { cs }
@@ -1200,6 +1215,10 @@ class Engine(
             if (d <= 0 || (rawEnd - rawStart > 5.0 && rawStart < d - 3.0)) { incomplete.add(i); host.log("⚠ باتش ${i + 1}: مقدرتش أفك صوته — أعده من علامة التحذير") }
             done.add(rawStart, rawEnd); persist(); return null
         }
+        if (fastLatched && i == rampChunk && rampStep < 2 && !w.silent) {   // (v1067) ✂ قص صمت أول/آخر الخطوات الأولى
+            val tr = try { AudioTools.trimSilence(w.bytes) } catch (_: Throwable) { null }
+            if (tr != null) { host.log("✂ المقطع ${i + 1}: اتقص صمت ${"%.1f".format(w.durSec - tr.durSec)}ث من الأطراف"); w = WavChunk(tr.bytes, w.startSec + tr.leadSec, tr.durSec, false, w.gain, w.activeSec) }
+        }
         host.log("🎧 صوت المقطع ${i + 1}: ${w.bytes.size / 1024}KB في ${System.currentTimeMillis() - t0}ms")
         // (v166) نضغط الصوت هنا (نفس خيط التجهيز) عشان الرفع يبدأ بحجم أصغر ونشوف النسبة في اللوج
         try { val pk = AudioEnc.pack(w.bytes); host.log("📦 المقطع ${i + 1}: ${pk.srcSize / 1024}KB ← ${pk.bytes.size / 1024}KB (${pk.mime.removePrefix("audio/")})") } catch (_: Throwable) {}
@@ -1210,22 +1229,22 @@ class Engine(
      * (v1066) ⚡ سباق مفتاحين لأول خطوتين من الباتش الأول: الأصلي بالـ stream (بيعرض الجمل وهي بتوصل) والتاني نسخة عادية على مفتاح تاني.
      * أول رد ناجح يكسب، والتاني بيتجاهل. لو الاتنين فشلوا بيترمي خطأ الأصلي (عشان تحويل المفتاح/الكوتة يشتغل زي الأول).
      */
-    private fun fastRace(i: Int, p: Prep, mdl: String, key: String, k2: String, prompt: String, w: WavChunk, tmp: Double): Api.Result {
+    private fun fastRace(i: Int, p: Prep, mdl: String, key: String, k2: String, prompt: String, bytes: ByteArray, durSec: Double, tmp: Double, scale: Double): Api.Result {
         val decided = java.util.concurrent.atomic.AtomicBoolean(false)
         val q = java.util.concurrent.LinkedBlockingQueue<Triple<Int, Api.Result?, Throwable?>>()
-        val mt = Api.outTokens(w.durSec)
+        val mt = Api.outTokens(durSec)
         host.log("⚡ باتش ${i + 1}: أول خطوات الوضع السريع على مفتاحين مع بعض — الأسرع يكسب")
         Thread {
             try {
                 val sc = StreamSubs()
-                q.add(Triple(1, Api.generateStream(mdl, key, prompt, w.bytes, mt, tmp) { acc -> if (!decided.get()) streamPreview(i, p, sc, acc) }, null))
+                q.add(Triple(1, Api.generateStream(mdl, key, prompt, bytes, mt, tmp) { acc -> if (!decided.get()) streamPreview(i, p, sc, acc, scale) }, null))
             } catch (e: Throwable) { q.add(Triple(1, null, e)) }
         }.apply { isDaemon = true; name = "fast-race-a" }.start()
         Thread {
             val t0 = System.currentTimeMillis()
             pool.begin(k2)
             try {
-                val r = Api.generate(mdl, k2, prompt, w.bytes, maxTokens = mt, temp = tmp)
+                val r = Api.generate(mdl, k2, prompt, bytes, maxTokens = mt, temp = tmp)
                 pool.end(k2, System.currentTimeMillis() - t0, true)
                 q.add(Triple(2, r, null))
             } catch (e: Throwable) {
@@ -1251,6 +1270,68 @@ class Engine(
         throw (errA ?: errB ?: Exception("الوضع السريع: الطلب اتلغى"))
     }
 
+    /**
+     * (v1067) ⚡ الخطوة الأولى (30ث) بتتقسم لطلبين بالتوازي على مفتاحين: أول 10ث + الباقي (مع تداخل 0.5ث عند الحد).
+     * كل طلب بالـ stream وبيعرض جمله فورًا في نافذته؛ الرد النهائي بيتدمج (أوقات نسبة لأول الباتش بعد إرجاع التسريع) وبيتطبّق مرة واحدة.
+     * NoSplit = مش ينفع نقسّم (مفتاح تاني/طول) فنكمل بطلب واحد.
+     */
+    private fun fastSplit(i: Int, p: Prep, mdl: String, key: String, promptFor: (Double) -> String, w: WavChunk, tmp: Double, spd: Double): Api.Result {
+        val k2 = pool.pickFree(key, rr.getAndIncrement())?.takeIf { it != key } ?: throw NoSplit()
+        val total = w.durSec
+        val spAbs = maxOf(p.rawStart, w.startSec) + FAST_FIRST_SECS
+        val sp = spAbs - w.startSec
+        val ov = 0.5
+        if (sp < 3.0 || sp > total - 4.0) throw NoSplit()
+        val parts = listOf(
+            doubleArrayOf(0.0, minOf(total, sp + ov)),
+            doubleArrayOf(sp - ov, total))
+        val pws = listOf(Prep(w, p.rawStart, spAbs), Prep(w, spAbs, p.rawEnd))
+        val res = arrayOfNulls<Api.Result>(2); val err = arrayOfNulls<Throwable>(2)
+        val latch = java.util.concurrent.CountDownLatch(2)
+        host.log("⚡ باتش ${i + 1}: الخطوة الأولى طلبين بالتوازي (${"%.0f".format(sp)}ث + ${"%.0f".format(total - sp)}ث) على مفتاحين")
+        for (ix in 0..1) {
+            val k = if (ix == 0) key else k2
+            Thread {
+                val t0 = System.currentTimeMillis()
+                if (ix == 1) pool.begin(k)
+                try {
+                    val a = parts[ix]; val dur = a[1] - a[0]
+                    var bs = AudioTools.cut(w.bytes, a[0], a[1])
+                    if (spd > 1.0) bs = try { AudioTools.speedUp(bs, spd) } catch (_: Throwable) { bs }
+                    val sc = StreamSubs()
+                    res[ix] = Api.generateStream(mdl, k, promptFor(dur / spd), bs, Api.outTokens(dur), tmp) { acc -> streamPreview(i, pws[ix], sc, acc, spd, a[0]) }
+                    if (ix == 1) pool.end(k, System.currentTimeMillis() - t0, true)
+                } catch (e: Throwable) {
+                    if (ix == 1) { pool.end(k, 0, false); if (e is ApiErr && e.code == 429) { noteQuota(); pool.block(k, 60_000) } }
+                    err[ix] = e
+                } finally { latch.countDown() }
+            }.apply { isDaemon = true; name = "fast-split-$ix" }.start()
+        }
+        while (running && !latch.await(500, java.util.concurrent.TimeUnit.MILLISECONDS)) { }
+        if (!running) throw Exception("الوضع السريع: اتلغى")
+        (err[0] ?: err[1])?.let { e -> throw (err.firstOrNull { it is ApiErr } ?: e) }
+        val out = JSONArray(); var lang = ""; var trunc = false
+        for (ix in 0..1) {
+            val r = res[ix] ?: throw NoSplit()
+            if (r.finish == "MAX_TOKENS") trunc = true
+            if (r.text.isBlank()) continue
+            val j = Parse.json(r.text) ?: throw BadReply("رد Gemini مش JSON صالح")
+            if (lang.isEmpty()) lang = j.optString("detected_source_language")
+            val arr = j.optJSONArray("subtitles") ?: continue
+            for (x in 0 until arr.length()) {
+                val o = arr.optJSONObject(x) ?: continue
+                val s0 = Parse.sec(o, "start", 0.0) * spd + parts[ix][0]
+                val e0 = if (o.has("end")) Parse.sec(o, "end", 0.0) * spd + parts[ix][0] else s0 + 1.0
+                if (ix == 0 && s0 >= sp) continue
+                if (ix == 1 && s0 < sp) continue
+                out.put(JSONObject(o.toString()).put("start", s0).put("end", e0))
+            }
+        }
+        val merged = JSONObject().put("subtitles", out)
+        if (lang.isNotEmpty()) merged.put("detected_source_language", lang)
+        return Api.Result(merged.toString(), if (trunc) "MAX_TOKENS" else "STOP")
+    }
+
     private fun send(i: Int, p: Prep, backupFirst: Boolean = false, avoidKey: String? = null, hedge: Boolean = false, firstKey: String? = null) {
         val w = p.w; val rawStart = p.rawStart; val rawEnd = p.rawEnd
         val prior = subs
@@ -1268,14 +1349,20 @@ class Engine(
         var trunc = 0; var empties = 0; var bad = 0; var net = 0; var tries = 0; var langBad = 0
         var langRetry = 0; var langSwitchRetry = 0
         var srv = 0   // (v459) مفيش موديل بديل: أخطاء السيرفر بتتعاد على نفس الموديل الواحد (كان في v227 بيبدّل لموديل تاني)
+        val fastStep = fastLatched && !hedge && !backupFirst && i == rampChunk && rampStep < 2
+        val spd = if (fastStep && FAST_SPEED > 1.0 && w.durSec >= 4.0) FAST_SPEED else 1.0   // (v1067) تسريع الصوت
+        val canSplit = fastStep && rampStep == 0 && w.durSec >= 16.0 && !Offline.on() && pool.usableCount() >= 2   // (v1067) طلبين بالتوازي
+        val sendBytes = if (spd > 1.0) { try { AudioTools.speedUp(w.bytes, spd) } catch (_: Throwable) { w.bytes } } else w.bytes
+        val spdEff = if (sendBytes === w.bytes) 1.0 else spd
         val tx = activeMode >= KeyMode.SPLIT_A && i !in fullChunks && !fastLatched   // (v210) ترانسكريبشن بس، والترجمة بعدين مجمّعة على مفاتيح الترجمة
         while (running && tries++ < MAX_TRIES) {
             if (claimed.contains(i)) return   // نسخة تانية من الباتش ده خلصت وطُبّقت قبلنا
             if (!hedge) { keyOf[i] = key; offOf[i] = (tx && Offline.on()) }
-            val prompt = buildPrompt(w.durSec, w.startSec, langBad > 0 || (tx && empties > 0), i, tx = tx)
+            val prompt = buildPrompt(w.durSec / spdEff, w.startSec, langBad > 0 || (tx && empties > 0), i, tx = tx)
             try {
                 val t0 = System.currentTimeMillis()
                 val mdl = curModel()   // (v459) موديل واحد بس دايمًا
+                var resScale = 1.0   // (v1067) معامل إرجاع الأوقات للأصل (الصوت المتسرّع)
                 var gemCalled = false   // (v413) هل جيميناي اتنده فعلًا للباتش ده؟ (false = Whisper لوحده)
                 val r = run {
                     pool.begin(key, i)
@@ -1284,11 +1371,23 @@ class Engine(
                             gemCalled = true
                             val tmp = if (tx && empties == 0 && bad == 0 && trunc == 0) 0.0 else 0.1
                             if (fastLatched && !hedge && !tx) {   // (v1065) ⚡ الجمل بتظهر أول ما تتقفل في الـ stream
-                                val k2 = if (i == rampChunk && rampStep < 2 && !Offline.on() && pool.usableCount() >= 2) pool.pickFree(key, rr.getAndIncrement()) else null
-                                if (k2 != null && k2 != key) fastRace(i, p, mdl, key, k2, prompt, w, tmp)   // (v1066) أول خطوتين: نفس الطلب على مفتاحين والأسرع يكسب
+                                var done: Api.Result? = null
+                                if (canSplit) {
+                                    try {
+                                        done = fastSplit(i, p, mdl, key, { d -> buildPrompt(d, w.startSec, langBad > 0, i, tx = tx) }, w, tmp, spdEff)
+                                        resScale = 1.0
+                                    } catch (e: ApiErr) { throw e } catch (e: NoSplit) { } catch (e: BadReply) { throw e } catch (e: Exception) { host.log("⚠ الطلبين بالتوازي فشلوا (${(e.message ?: "").take(60)}) — طلب واحد") }
+                                }
+                                val sd = done
+                                if (sd != null) sd
                                 else {
-                                    val sc = StreamSubs()
-                                    Api.generateStream(mdl, key, prompt, w.bytes, Api.outTokens(w.durSec), tmp) { acc -> streamPreview(i, p, sc, acc) }
+                                    resScale = spdEff
+                                    val k2 = if (i == rampChunk && rampStep < 2 && !Offline.on() && pool.usableCount() >= 2) pool.pickFree(key, rr.getAndIncrement()) else null
+                                    if (k2 != null && k2 != key) fastRace(i, p, mdl, key, k2, prompt, sendBytes, w.durSec, tmp, spdEff)   // (v1066) أول خطوتين: نفس الطلب على مفتاحين والأسرع يكسب
+                                    else {
+                                        val sc = StreamSubs()
+                                        Api.generateStream(mdl, key, prompt, sendBytes, Api.outTokens(w.durSec), tmp) { acc -> streamPreview(i, p, sc, acc, spdEff) }
+                                    }
                                 }
                             } else Api.generate(mdl, key, prompt, w.bytes, maxTokens = Api.outTokens(w.durSec), temp = tmp)
                         }   // (v331) التفريغ بحرارة 0 (أدق وثابت)؛ الإعادة بعد فشل بحرارة 0.1 عشان ما يرجعش نفس الرد
@@ -1305,7 +1404,7 @@ class Engine(
                 if (r.finish == "MAX_TOKENS" && trunc < 2) { trunc++; host.log("⚠ الرد اتقطع — إعادة المحاولة"); nap(600); continue }
                 if (r.finish.isNotEmpty() && r.finish != "STOP" && r.finish != "MAX_TOKENS") throw Exception("رد Gemini اتوقف: ${r.finish}")
                 var j: JSONObject? = null
-                if (r.text.isNotBlank()) { j = Parse.json(r.text); if (j == null) throw BadReply("رد Gemini مش JSON صالح") }
+                if (r.text.isNotBlank()) { j = Parse.json(r.text); if (j == null) throw BadReply("رد Gemini مش JSON صالح"); if (resScale != 1.0) scaleTimes(j, resScale) }
                 var fresh = if (j == null) emptyList() else if (tx) TParse.transcript(j, w.startSec, w.durSec) else Parse.subs(j, w.startSec, w.durSec)
                 // حارس اللغة: لو 30%+ من الجمل translated فيها مش بالعربي → إعادة المحاولة بتشديد، وبعدها إصلاح الباقي نصيًا (الترانسكريبشن مفيهوش translated فمالوش حارس هنا — الحارس بيشتغل بعد الترجمة)
                 val off = if (tx) emptyList() else LangGuard.foreignOf(fresh)
@@ -1579,13 +1678,13 @@ class Engine(
      * (v1065) ⚡ عرض الجمل المترجمة وهي لسه بتوصل من الـ stream (قبل ما الباتش يخلص): بتتعرض مؤقتًا بنفس شكل معاينة التفريغ،
      * وبعدين applyChunk بيحلّ محلّها بالنسخة النهائية. مفيش done ولا persist هنا — الباتش لسه ماخلصش.
      */
-    private fun streamPreview(i: Int, p: Prep, sc: StreamSubs, acc: String) {
+    private fun streamPreview(i: Int, p: Prep, sc: StreamSubs, acc: String, scale: Double = 1.0, shift: Double = 0.0) {
         if (isClosed || claimed.contains(i)) return
         if (sc.feed(acc) == 0) return
         try {
             val w = p.w
-            val raw = sc.all.mapNotNull { o -> try { Parse.sub(o, w.startSec) } catch (_: Throwable) { null } }
-                .filter { it.original.isNotEmpty() && it.translated.isNotBlank() && !it.isSound && !LangGuard.foreign(it) && it.start >= p.rawStart - 1.0 && it.start < w.startSec + w.durSec + 1.0 }
+            val raw = sc.all.mapNotNull { o -> try { Parse.sub(if (scale == 1.0 && shift == 0.0) o else JSONObject(o.toString()).also { c -> c.put("start", Parse.sec(c, "start", 0.0) * scale + shift); if (c.has("end")) c.put("end", Parse.sec(c, "end", 0.0) * scale + shift) }, w.startSec) } catch (_: Throwable) { null } }
+                .filter { it.original.isNotEmpty() && it.translated.isNotBlank() && !it.isSound && !LangGuard.foreign(it) && it.start >= p.rawStart - 1.0 && it.start < minOf(w.startSec + w.durSec, p.rawEnd) + 1.0 }
                 .map { if (it.end > it.start) it else it.copy(end = it.start + 2.0) }
             if (raw.isEmpty()) return
             var tagged = Subs.splitAll(raw).map { Subs.capPace(it).copy(chunk = i) }
