@@ -827,8 +827,16 @@ public class MobileBrowseActivity extends MobileActivity
 
     @Override
     public int getMiniCardBottomOffsetPx() {
-        // JOYBOY(v911): شريط التبويبات بقى فوق، فالكارت قاعد فوق شريط Joyboy مباشرة (الـmorph بيضيف هامشه 12dp)
-        return 0;
+        // JOYBOY(v1057): الكارت متثبّت فوق شريط MeeTube (mobile_nav_glass) اللي هو نفسه فوق شريط Joyboy — فالـmorph لازم يهبط هناك
+        // مش على قاع الشاشة (كان 0 فيهبط فوق الشريطين وبعدين الكارت الحقيقي يظهر فوقهم = «نتش»).
+        // الكارت: قاعه = أعلى nav_glass − 10dp، والـmorph بيطرح 12dp ← −2dp. getTop() من غير translation (NavHider بيحرّك الشريط، والكارت بيمشي بـhomeY)
+        View nav = findViewById(R.id.mobile_nav_glass);
+        View root = findViewById(R.id.mobile_browse_root);
+        if (nav == null || root == null || nav.getVisibility() == View.GONE || nav.getHeight() <= 0 || root.getHeight() <= 0) {
+            return 0;
+        }
+        float d = getResources().getDisplayMetrics().density;
+        return Math.max(0, Math.round(root.getHeight() - nav.getTop() - 2 * d));
     }
 
     /**

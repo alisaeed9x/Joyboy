@@ -214,7 +214,7 @@ object MtTvPlayer {
     fun remoteToggle(): Boolean {
         if (!live()) return false
         onUi { p, _ ->
-            if (p.isPlaying) p.pause() else p.play()
+            if (p.isPlaying) p.pause() else { if (p.playbackState == androidx.media3.common.Player.STATE_ENDED) p.seekTo(0L); p.play() }   // (v1055) ▶ بعد النهاية = من الأول
             true
         }
         return true
@@ -227,7 +227,7 @@ object MtTvPlayer {
         val handled = onUi { p, ac ->
             when (a) {
                 "toggle", "playpause" -> {
-                    if (p.isPlaying) p.pause() else p.play()
+                    if (p.isPlaying) p.pause() else { if (p.playbackState == androidx.media3.common.Player.STATE_ENDED) p.seekTo(0L); p.play() }   // (v1055) ▶ بعد النهاية = من الأول
                     true
                 }
                 "seek" -> {

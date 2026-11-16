@@ -972,6 +972,8 @@ public class Media3PlayerController implements Player.Listener {
 
     public void setPlayWhenReady(boolean play) {
         if (mPlayer != null) {
+            // (v1055) ▶ بعد ما الفيديو يخلص = إعادة من الأول (كان بيفضل واقف على النهاية)
+            if (play && mPlayer.getPlaybackState() == Player.STATE_ENDED) { mPlayer.seekTo(0); }
             mPlayer.setPlayWhenReady(play);
         }
     }

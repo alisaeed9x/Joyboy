@@ -93,6 +93,7 @@ object MtMedia {
             val wasLu = lu()
             val wasVid = try { info?.videoId() } catch (_: Throwable) { null }   // (v979)
             ui.removeCallbacks(tick); ticking = false
+            try { EndOverlay.hide(); ResumeAsk.dismiss() } catch (_: Throwable) {}   // (v1055)
             try { player?.removeListener(listener) } catch (_: Throwable) {}
             releaseBoost()
             // (v942) مؤقت النوم بيفضل شغال وبيكمّل على المشغّل الجديد — التضخيم بس اللي بيتفك لأنه مربوط بجلسة الصوت القديمة
@@ -111,7 +112,7 @@ object MtMedia {
 
     private val listener = object : Player.Listener {
         override fun onPlaybackStateChanged(state: Int) {
-            if (state != Player.STATE_ENDED) ended = false
+            if (state != Player.STATE_ENDED) { ended = false; EndOverlay.hide() }   // (v1055)
             if (state == Player.STATE_READY) tryResume()
             if (state == Player.STATE_ENDED) {
                 // (v942) نوم «آخر الفيديو» لفيديو مش محلي: onEnded بيرجع بدري لما localUri فاضي فبنوقّف هنا
@@ -210,7 +211,9 @@ object MtMedia {
     // ===================== وضع التكرار =====================
 
     /** 0 عادي (التالي لو فيه وبعدها يقف) · 1 يعيد نفس الفيديو · 2 يكمّل الفولدر ولما يخلص يرجع لأول فيديو — نفس Player.loopMode */
-    fun loopMode(): Int = try { if (Cfg.str("loop", "0") == "1") 1 else if (Cfg.str("autoplay_wrap", "0") == "1") 2 else 0 } catch (_: Throwable) { 0 }
+    /** (v1055) على التلفزيون الافتراضي «كل الفولدر» (آخر فيديو ← أول فيديو في القايمة) زي مشغّل Joyboy */
+    private fun wrapOn(): Boolean = try { Cfg.str("autoplay_wrap", if (act?.let { DeviceUi.isTv(it) } == true) "1" else "0") == "1" } catch (_: Throwable) { false }
+    fun loopMode(): Int = try { if (Cfg.str("loop", "0") == "1") 1 else if (wrapOn()) 2 else 0 } catch (_: Throwable) { 0 }
     fun loopLabel(): String = when (loopMode()) { 1 -> "🔂 نفس الفيديو"; 2 -> "🔁 كل الفولدر"; else -> "➡ عادي" }
 
     fun loopCycle() {
@@ -348,9 +351,12 @@ object MtMedia {
         val u = lu() ?: return null
         val all = VideoScan.cache ?: return null
         val me = all.firstOrNull { it.uri == u } ?: return null
-        val sib = VideoLib.sortVideos(all.filter { it.folderKey == me.folderKey }, VideoLib.SORT_NAME)
+        val sib = VideoLib.sortVideos(all.filter { it.folderKey == me.folderKey }, sortMode())
         return Pair(sib, sib.indexOfFirst { it.uri == u })
     }
+
+    /** (v1055) نفس ترتيب صفحة «الفيديوهات» على التلفزيون (tv_vid_sort)، وبالاسم على الموبايل */
+    private fun sortMode(): String = try { if (act?.let { DeviceUi.isTv(it) } == true) Cfg.str("tv_vid_sort", VideoLib.SORT_NEW) else VideoLib.SORT_NAME } catch (_: Throwable) { VideoLib.SORT_NAME }
 
     private fun targetOf(d: Int): VideoItem? {
         val s = sibs() ?: return null
@@ -426,15 +432,13 @@ object MtMedia {
         if (loopMode() == 1) { try { player?.seekTo(0L); player?.play() } catch (_: Throwable) {}; return }
         try { if (PlayQueue.hasNext(a)) { PlayQueue.playNext(a); return } } catch (e: Throwable) { LogStore.err("MtMedia:queue", e) }   // طابور التشغيل له الأولوية (زي Player v694)
         val go: () -> Unit = {
-            val t = targetOf(1)
-            if (t != null && act === a) {
-                val goNow = Runnable { openItem(a, t) }
-                if (Cfg.str("autoplay_next", "1") != "1") goNow.run()
-                else {
-                    val nv = Video(); nv.title = t.title
-                    val shown = try { (a as? com.newtube.mobile.ui.playback.MobilePlaybackActivity)?.showNextCountdown(nv, goNow) ?: false } catch (_: Throwable) { false }
-                    if (!shown) goNow.run()
-                }
+            if (act === a && ended) {
+                val tn = targetOf(1); val tp = targetOf(-1)
+                if (tn != null && Cfg.str("autoplay_next", "1") != "1") openItem(a, tn)
+                else EndOverlay.show(a, tp != null, tn != null, 5,   // (v1055) ⏮ السابق · 🔄 إعادة · ⏭ التالي (بعد ٥ث لوحده)
+                    { tp?.let { openItem(a, it) } },
+                    { try { player?.seekTo(0L); player?.play() } catch (_: Throwable) {} },
+                    { tn?.let { openItem(a, it) } })
             }
         }
         if (VideoScan.cache == null) ensureScan(a, go) else go()
@@ -442,21 +446,53 @@ object MtMedia {
 
     // ===================== الاستكمال + «آخر المشغّلة» =====================
 
+    /** (v1055) نسأل «كمّل ولا ابدأ من جديد؟» على التلفزيون لما مفيش موبايل متوصل (أو على الموبايل لو متوصل بالتلفزيون)؛ غير كده بنكمّل من غير سؤال */
+    private fun shouldAsk(a: Activity): Boolean = try {
+        if (DeviceUi.isTv(a)) TvLink.remoteList().none { it.alive() } else RemoteClient.state == RemoteClient.St.CONNECTED
+    } catch (_: Throwable) { false }
+
+    private fun clearSaved(a: Activity, id: String) {
+        try { if ((Cfg.p.getString("lastpos", "") ?: "").startsWith(id + "\t")) Cfg.p.edit().remove("lastpos").apply() } catch (_: Throwable) {}
+        try { VideoStateService.instance(a.applicationContext)?.removeByVideoId(id) } catch (_: Throwable) {}
+    }
+
     private fun tryResume() {
         if (resumed) return
         val a = act ?: return
         val p = player ?: return
         val u = lu() ?: return
         resumed = true
+        if (StartFresh.consume()) {   // (v1056) «ابدأ من جديد» جاية من الموبايل
+            try { clearSaved(a, MtTranslate.joyVid(a, u)); if ((try { p.currentPosition } catch (_: Throwable) { 0L }) > 1500L) p.seekTo(0L) } catch (_: Throwable) {}
+            return
+        }
         if (priv() || noResume.remove("L:$u")) return
         val dur = try { p.duration } catch (_: Throwable) { -1L }
-        if (dur <= 0L || p.currentPosition > 3000L) return
+        if (dur <= 0L) return
         val k = key
+        val cp0 = try { p.currentPosition } catch (_: Throwable) { 0L }
+        // (v1055) شبكة أمان: لو MeeTube رجّعنا على آخر الفيديو (حالة قديمة) ← نبدأ من الأول بدل ما نقعد على النهاية
+        if (cp0 >= dur - 4000L) { try { p.seekTo(0L) } catch (_: Throwable) {}; return }
         Thread {
-            val pos = savedPosMs(a, u)
-            if (pos > 5000L && pos < dur - 4000L) ui.post {
-                if (act === a && key == k) try {
-                    if (p.currentPosition <= 3000L) { p.seekTo(pos); Notice.show(a, "⏩ كملت من " + PlayerLogic.clock(pos), 2000L) }
+            val saved = savedPosMs(a, u)
+            val pos = if (cp0 > 3000L) cp0 else saved
+            val valid = pos > 5000L && pos < dur - 4000L
+            ui.post {
+                if (act !== a || key != k || !valid) return@post
+                try {
+                    if (shouldAsk(a)) {
+                        val id = MtTranslate.joyVid(a, u)
+                        try { p.pause() } catch (_: Throwable) {}
+                        ResumeAsk.show(a, pos) { resume ->
+                            if (act !== a || key != k) return@show
+                            try {
+                                if (resume) p.seekTo(pos) else { p.seekTo(0L); clearSaved(a, id) }
+                                p.play()
+                            } catch (_: Throwable) {}
+                        }
+                    } else if (cp0 <= 3000L && p.currentPosition <= 3000L) {
+                        p.seekTo(pos); Notice.show(a, "⏩ كملت من " + PlayerLogic.clock(pos), 2000L)
+                    }
                 } catch (_: Throwable) {}
             }
         }.apply { isDaemon = true }.start()
@@ -505,6 +541,9 @@ object MtMedia {
             else if (pos >= dur - 4000L && (Cfg.p.getString("lastpos", "") ?: "").startsWith(id + "\t")) Cfg.p.edit().remove("lastpos").apply()
         } catch (_: Throwable) {}
         // (v942) write-through للاستكمال في مخزن MeeTube المحلي بنفس المفتاح — وlastpos لسه المصدر الاحتياطي
+        val atEnd = pos >= dur - 4000L
+        // (v1055) الفيديو خلص: مسح مكان الوقوف من مخزن MeeTube كمان (كان بيفضل على آخر ثواني فيرجّعنا للنهاية)
+        if (atEnd) { try { VideoStateService.instance(a.applicationContext)?.removeByVideoId(id) } catch (_: Throwable) {} }
         try { writeMtState(a, id, pos, dur) } catch (_: Throwable) {}
         if (!recent || pos <= 1000L) return
         val title = (try { info?.title() } catch (_: Throwable) { null })?.takeIf { it.isNotBlank() } ?: Recents.titleOf(id)
@@ -517,7 +556,7 @@ object MtMedia {
                     val f = File(dir, "recent.json")
                     val old = Recents.parse(try { f.readText() } catch (_: Exception) { "" })
                     val prev = old.firstOrNull { it.id == id }
-                    val r = Recent(id, title, if (web) u else "", if (web) "" else u, pos / 1000.0, dur / 1000.0,
+                    val r = Recent(id, title, if (web) u else "", if (web) "" else u, (if (atEnd) 0L else pos) / 1000.0, dur / 1000.0,
                         st?.first ?: (prev?.subs ?: 0), st?.second ?: (prev?.coverSec ?: 0.0), System.currentTimeMillis())
                     f.writeText(Recents.toJson(Recents.upsert(old, r, 300)))
                 } catch (_: Throwable) {}

@@ -4050,9 +4050,61 @@ class PlayerActivity : Activity(), Host {
             }
             return
         }
-        if (!hasNextEpisode()) return
+        if (!hasNextEpisode()) { endButtons(); return }
         if (Cfg.str("autoplay_next", "1") != "1") { stepEpisode(1); return }
-        showNextUp(nextEpisodeTitle()) { stepEpisode(1) }
+        endButtons()   // (v1056) ⏮ السابق · 🔄 إعادة · ⏭ التالي (التالي بعد ٥ ثواني لوحده) بدل كارت «التالي بعد…»
+    }
+
+    // ===== (v1056) نهاية الفيديو + الاستكمال في Player.kt =====
+    private var finishedMark = false
+    private var endCheckDone = false
+    private var resumeSeekDone = false
+    private var askResumeMs = 0L
+    private var noResPending = false
+
+    /** الفيديو خلص: نمسح مكان الوقوف المحفوظ (lastpos) ونسجّل «آخر المشغّلة» من الصفر — فتحه الجاي يبدأ من الأول */
+    private fun markFinished() {
+        finishedMark = true
+        if (incognito || remote) return
+        try { clearSavedPos(); Thread { try { saveRecentForce() } catch (_: Throwable) {} }.apply { isDaemon = true }.start() } catch (_: Throwable) {}
+    }
+    private fun clearSavedPos() {
+        try { if ((Cfg.p.getString("lastpos", "") ?: "").startsWith(vid + "\t")) Cfg.p.edit().remove("lastpos").apply() } catch (_: Throwable) {}
+    }
+    /** نسأل «كمّل ولا ابدأ من جديد؟» على التلفزيون لما مفيش موبايل متوصل، أو على الموبايل لو متوصل بالتلفزيون */
+    private fun shouldAskResume(): Boolean = try {
+        if (remote || incognito) false
+        else if (DeviceUi.isTv(this)) TvLink.remoteList().none { it.alive() } else RemoteClient.state == RemoteClient.St.CONNECTED
+    } catch (_: Throwable) { false }
+    /** أول READY بعد الاستكمال: لو وقفنا على آخر الفيديو ← من الأول (أي مصدر)، ولو لازم نسأل ← الشاشة المنبثقة (٥ث ← من جديد) */
+    private fun maybeEndCheck() {
+        if (endCheckDone || !resumeSeekDone || isFinishing || isDestroyed) return
+        if (player.playbackState != Player.STATE_READY) return
+        val d = player.duration
+        if (d <= 0L) return
+        endCheckDone = true
+        val pos = player.currentPosition
+        if (pos >= d - 4000L) { askResumeMs = 0L; player.seekTo(0L); cur = 0L; clearSavedPos(); return }
+        val ask = askResumeMs; askResumeMs = 0L
+        if (ask > 5000L && ask < d - 4000L) {
+            player.pause()
+            ResumeAsk.show(this, ask) { resume ->
+                if (isFinishing || isDestroyed) return@show
+                try { if (resume) player.seekTo(ask) else { player.seekTo(0L); cur = 0L; clearSavedPos() }; player.play() } catch (_: Throwable) {}
+            }
+        }
+    }
+    /** أزرار نص الشاشة عند نهاية الفيديو المحلي: ⏮ السابق · 🔄 إعادة · ⏭ التالي (لف لأول/آخر فيديو لو اللف شغّال) */
+    private fun endButtons() {
+        if (isFinishing || isDestroyed || remote) return
+        val p = libSibs()
+        val wrap = wrapOn() && p != null && p.first.size > 1
+        val hasN = p != null && (p.first.getOrNull(p.second + 1) != null || wrap)
+        val hasP = p != null && (p.first.getOrNull(p.second - 1) != null || wrap)
+        EndOverlay.show(this, hasP, hasN, 5,
+            { stepEpisode(-1) },
+            { try { player.seekTo(0L); player.play() } catch (_: Throwable) {} },
+            { stepEpisode(1) })
     }
     private fun nextEpisodeTitle(): String {
         val p = libSibs() ?: return "الحلقة التالية"
@@ -5644,19 +5696,23 @@ class PlayerActivity : Activity(), Host {
             }
             override fun onPlaybackStateChanged(st: Int) {
                 setBuffering(st == Player.STATE_BUFFERING)
+                if (st != Player.STATE_ENDED) { finishedMark = false; try { EndOverlay.hide() } catch (_: Throwable) {} }   // (v1056)
+                if (st == Player.STATE_READY) h.post { try { maybeEndCheck() } catch (e: Throwable) { LogStore.err("Player:endCheck", e) } }   // (v1056)
                 if (st == Player.STATE_READY) { ytBusy(false); castRecover = 0 }   // (v362) · (v767)
                 else if (st == Player.STATE_BUFFERING && !firstFrame && intent.getStringExtra("ytid") != null) ytBusy(true, "⏳ بيحمّل الفيديو…")
                 if (st == Player.STATE_READY) h.postDelayed({ checkIdentityDuration() }, 1500)
                 // (v97) الفيديو خلص: لو اللوب شغّال يعيد من الأول، وإلا يروح للحلقة اللي بعدها (لو في)
                 if (st == Player.STATE_ENDED && !isFinishing) {
+                    markFinished()   // (v1056) الفيديو المخلّص يتفتح من الأول
                     if (sleepEndOfVideo) { sleepEndOfVideo = false; say("😴 مؤقت النوم: الفيديو خلص") }
                     else if (Cfg.str("loop", "0") == "1") { player.seekTo(0); player.play() }
                     else if (!remote && PlayQueue.hasNext(this@PlayerActivity)) h.post { if (PlayQueue.playNext(this@PlayerActivity)) h.postDelayed({ if (!isFinishing) finish() }, 700L) }   // (v694) طابور التشغيل: التالي لوحده (له الأولوية على الحلقة اللي بعدها)
-                    else if (hasNextEpisode() || intent.getStringExtra("ytid") != null) h.post { v469AutoNext() }   // (v469) بطاقة «التالي بعد…» بدل الانتقال الفوري
+                    else if (hasNextEpisode() || intent.getStringExtra("ytid") != null) h.post { v469AutoNext() }   // (v469) يوتيوب: بطاقة «التالي بعد…» · (v1056) المحلي: أزرار ⏮ 🔄 ⏭
+                    else if (uri != null && !remote && libSibs() != null) h.post { endButtons() }   // (v1056) آخر فيديو ومفيش لف: سابق + إعادة بس
                     else if (uri != null && VideoScan.cache == null && VideoScan.hasPermission(this@PlayerActivity)) {   // (v531) المكتبة لسه ما اتفحصتش: افحص وكمّل للتالي
                         Thread {
                             try { VideoScan.scan(this@PlayerActivity) } catch (_: Throwable) {}
-                            runOnUiThread { if (!isFinishing && !isDestroyed && hasNextEpisode()) v469AutoNext() }
+                            runOnUiThread { if (!isFinishing && !isDestroyed) { if (hasNextEpisode()) v469AutoNext() else endButtons() } }
                         }.also { it.isDaemon = true }.start()
                     }
                 }
@@ -5857,6 +5913,8 @@ class PlayerActivity : Activity(), Host {
     private var pendingBegin = false
     private fun initEngine() {
         if (remote) { initRemoteEngine(); return }
+        endCheckDone = false; resumeSeekDone = false; askResumeMs = 0L; finishedMark = false   // (v1056)
+        if (StartFresh.consume()) noResPending = true   // (v1056) «ابدأ من جديد» جاية من الموبايل
         vid = videoId()
         NetLedger.setVideo("player", try { notifTitle() } catch (_: Throwable) { null }, try { uri?.toString() ?: intent.getStringExtra("page")?.takeIf { it.isNotBlank() } ?: url } catch (_: Throwable) { null }); NetUse.init(); NetUse.videoReset(); NetUse.online = (uri == null)   // عدّاد النت: فيديو الإنترنت بيتحسب لوحده
         if (uri == null && url != null && !incognito) webRegister()
@@ -5930,12 +5988,15 @@ class PlayerActivity : Activity(), Host {
                 if (pendingYt) return@runOnUiThread   // (v351) لسه مفيش رابط: الاستكمال/السؤال بيحصلوا بعد ما initEngine تتعاد على الرابط الحقيقي
                 val startMs = intent.getLongExtra("startms", 0L)   // (v343) جاي من تحويل صوت→فيديو: كمّل من نفس مكان الصوت
                 if (startMs > 0L) intent.removeExtra("startms")   // (v351) بيتستهلك مرة واحدة
+                val noRes = noResPending; noResPending = false   // (v1056)
                 if (startMs > 0L) { player.seekTo(startMs); cur = startMs; log("⏩ كملت من ${fmtMs(cur)}") }
-                else if (savedPos > 5.0 && !freshOnce) { player.seekTo((savedPos * 1000).toLong()); cur = (savedPos * 1000).toLong(); log("⏩ كملت من ${fmtMs(cur)}") }
+                else if (noRes) { clearSavedPos(); player.seekTo(0L); cur = 0L; log("⏮ بدأت من جديد") }   // (v1056) الموبايل اختار «ابدأ من جديد»
+                else if (savedPos > 5.0 && !freshOnce) { player.seekTo((savedPos * 1000).toLong()); cur = (savedPos * 1000).toLong(); log("⏩ كملت من ${fmtMs(cur)}"); if (shouldAskResume()) askResumeMs = cur }
                 else if (uri == null && !freshOnce && rp > 5.0) {
                     // رابط من الإنترنت: لو مفيش مكان وقوف في الترجمة، كمّل من آخر مكان اتفرجت عليه (من السجل)
-                    player.seekTo((rp * 1000).toLong()); cur = (rp * 1000).toLong(); log("⏩ كملت من ${fmtMs(cur)}")
+                    player.seekTo((rp * 1000).toLong()); cur = (rp * 1000).toLong(); log("⏩ كملت من ${fmtMs(cur)}"); if (shouldAskResume()) askResumeMs = cur
                 }
+                resumeSeekDone = true; maybeEndCheck()   // (v1056)
                 refreshList()
                 LogStore.add("🎬 فتح فيديو $vidNow · ${LogStore.heapLine()}")
                 maybePrompt(wasBg)
@@ -6237,6 +6298,7 @@ class PlayerActivity : Activity(), Host {
 
     /** بدّل الفيديو في نفس الشاشة من غير ما تفتح Activity جديدة */
     fun swapVideo(newUri: Uri) {
+        try { EndOverlay.hide(); ResumeAsk.dismiss() } catch (_: Throwable) {}   // (v1056)
         stopVoice()   // (v334) الصوت النضيف بتاع الفيديو القديم
         saveRecent()
         try { visual.stop() } catch (e: Exception) { LogStore.err("Main:2164", e) }
@@ -6526,7 +6588,7 @@ class PlayerActivity : Activity(), Host {
             val old = Recents.parse(try { f.readText() } catch (_: Exception) { "" })
             val prev = old.firstOrNull { it.id == vid }
             val ready = ::engine.isInitialized && engineReady
-            val r = Recent(vid, (if (uri == null) intent.getStringExtra("title")?.takeIf { it.isNotBlank() } else null) ?: Recents.titleOf(vid), url ?: "", uri?.toString() ?: "", cur / 1000.0, durMs / 1000.0, if (ready) engine.subs.size else (prev?.subs ?: 0), if (ready) engine.coveredSec() else (prev?.coverSec ?: 0.0), System.currentTimeMillis())
+            val r = Recent(vid, (if (uri == null) intent.getStringExtra("title")?.takeIf { it.isNotBlank() } else null) ?: Recents.titleOf(vid), url ?: "", uri?.toString() ?: "", (if (finishedMark) 0.0 else cur / 1000.0), durMs / 1000.0, if (ready) engine.subs.size else (prev?.subs ?: 0), if (ready) engine.coveredSec() else (prev?.coverSec ?: 0.0), System.currentTimeMillis())
             f.writeText(Recents.toJson(Recents.upsert(old, r, 300)))
             }
             // (v570) لينك مش يوتيوب (جاي من المتصفح): نحفظ مصغّرة من الفيديو الشغّال مرة واحدة عشان تظهر في «آخر المشغّلة» (بس من خيط خلفي — PixelCopy)
@@ -7626,6 +7688,7 @@ class PlayerActivity : Activity(), Host {
         try { volWatch?.stop(); volWatch = null } catch (_: Throwable) {}
         LogStore.add("🔚 onDestroy (isFinishing=$isFinishing)")
         NoticeLog.detach(this)
+        try { EndOverlay.hide(); ResumeAsk.dismiss() } catch (_: Throwable) {}   // (v1056)
         stopVoice()
         mtParityDetach()   // (v1013)
         try { TaskCenter.extra.remove(taskListener) } catch (_: Throwable) {}

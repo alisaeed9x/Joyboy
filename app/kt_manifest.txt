@@ -228,6 +228,9 @@ com/tttt/subtitler/SubHunt.kt
 com/tttt/subtitler/SubName.kt
 com/tttt/subtitler/SubOnline.kt
 com/tttt/subtitler/SubPick.kt
+com/tttt/subtitler/VidPick.kt
+com/tttt/subtitler/ResumeAsk.kt
+com/tttt/subtitler/EndOverlay.kt
 com/tttt/subtitler/SubStyle.kt
 com/tttt/subtitler/SubtitleView.kt
 com/tttt/subtitler/SwipeCard.kt

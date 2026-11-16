@@ -523,7 +523,7 @@ object RemoteClient {
     /** @return null لو نجح (والـvisible بتقول لو شاشة اللانشر ظاهرة)، أو رسالة الخطأ */
     fun openLink(url: String, title: String = "", how: String = "", ref: String = "", ua: String = "", cookie: String = "", startMs: Long = 0L, page: String = ""): String? {
         val body = JSONObject().put("url", url).put("title", title).put("how", how).put("ref", ref).put("ua", ua).put("cookie", cookie)   // (v533) ref/ua/cookie للينكات المصطادة من المتصفح
-        if (startMs > 0L) body.put("startms", startMs)   // (v543) كمّل من نفس المكان
+        if (startMs != 0L) body.put("startms", startMs)   // (v543) كمّل من نفس المكان
         if (page.isNotBlank()) body.put("page", page)   // (v820) لينك صفحة الفيديو: عشان تحديث اللينك على التلفزيون يلاقيها
         val (c, t) = post("/open", body)
         if (c == 200) return null

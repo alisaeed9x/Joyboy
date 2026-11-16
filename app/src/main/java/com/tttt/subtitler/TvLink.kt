@@ -617,7 +617,8 @@ object TvLink {
     private fun open(r: HttpReq): HttpRes {
         val j = try { JSONObject(r.bodyText()) } catch (_: Exception) { return err(403, "bad") }
         val u = j.optString("url").trim()
-        val startMs = j.optLong("startms", 0L)   // (v543) كمّل من نفس المكان
+        var startMs = j.optLong("startms", 0L)   // (v543) كمّل من نفس المكان
+        if (startMs < 0L) { startMs = 0L; StartFresh.arm() }   // (v1056) الموبايل اختار «ابدأ من جديد» ← تجاهل التقدّم المحفوظ هنا
         if (u.startsWith("tv://", true)) return openLocal(u.substring(5).trim(), startMs)   // (v543 م3) فيديو من مكتبة التلفزيون
         if (!(u.startsWith("http://", true) || u.startsWith("https://", true))) return err(403, "badurl")
         val title = j.optString("title")

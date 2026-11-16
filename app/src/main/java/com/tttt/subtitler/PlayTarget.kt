@@ -106,6 +106,14 @@ object PlayTarget {
             Notice.show(act, "📺 مفيش تلفزيون متصل — دوس الزرار العايم 📺 أو اخرج من وضع التلفزيون", 4200L)
             return true
         }
+        // (v1055) فيديو على الموبايل اتفرجت على جزء منه: نسأل «كمّل ولا ابدأ من جديد؟» (٥ ثواني ← من جديد) قبل ما نبعته للتلفزيون
+        if (spec.startMs <= 0L && local) {
+            val pos = try { ResumeAsk.savedMs(act, spec.uri ?: "") } catch (_: Throwable) { 0L }
+            if (pos > 0L) {
+                ResumeAsk.show(act, pos) { r -> send(act, if (r) spec.copy(startMs = pos) else spec.copy(startMs = -1L), target, local, onSent)   // (v1056) -1 = «ابدأ من جديد» صريحة: التلفزيون ما يكمّلش من عنده }
+                return true
+            }
+        }
         send(act, spec, target, local, onSent)
         return true
     }
@@ -178,7 +186,7 @@ object PlayTarget {
                     try { onSent?.invoke() } catch (_: Throwable) { }
                     // (v554) مفيش شاشة ريموت/متحكم على الموبايل: الفيديو اشتغل على التلفزيون وبتتحكم من ريموت التلفزيون
                     Notice.show(act, "📺 اتفتح على التلفزيون" + (if (spec.title.isNotBlank()) " — " + spec.title else ""), 3000L)
-                    TvModeFab.miniReset(spec.startMs); nowTitle = spec.title.ifBlank { "فيديو على التلفزيون" }; nowSrc = (if (local) spec.uri else (spec.url ?: target0)); nowHeaders = spec.headers; TvModeFab.refresh()   // (v560) كبسولة «اسم ✕» · (v761) بقت مشغّل مصغّر بشريط بيتحرك
+                    TvModeFab.miniReset(spec.startMs.coerceAtLeast(0L)); nowTitle = spec.title.ifBlank { "فيديو على التلفزيون" }; nowSrc = (if (local) spec.uri else (spec.url ?: target0)); nowHeaders = spec.headers; TvModeFab.refresh()   // (v560) كبسولة «اسم ✕» · (v761) بقت مشغّل مصغّر بشريط بيتحرك
                     // (v761) ما بقاش بيفتح صفحة المشغّل على الموبايل — التحكم من الريموت (🎮) أو من المشغّل المصغّر
                 } else {
                     GAlert(act).setTitle("⚠ ما اتبعتش للتلفزيون").setMessage(er)
