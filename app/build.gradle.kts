@@ -51,6 +51,7 @@ android {
 }
 dependencies {
     implementation(project(":mediaserviceinterfaces"))   // (v885)
+    implementation(project(":sharedutils"))   // (v1074) رجّعتها: youtubeapi/mediaserviceinterfaces معرّفينها implementation فمش بتتسرّب لـ:app — وJoyApp/MtYt/YtMtSignIn بيستوردوا GlobalPreferences مباشرة
     implementation("androidx.webkit:webkit:1.16.0")   // (v977) VidHook: addDocumentStartJavaScript + addWebMessageListener (نفس webkitVersion في meetube/constants.gradle)
     implementation("androidx.media3:media3-exoplayer:1.10.1")
     implementation("androidx.media3:media3-exoplayer-hls:1.10.1")
@@ -71,7 +72,7 @@ dependencies {
     implementation("com.squareup.okhttp3:okhttp:5.4.0")   // (v869) 4.12→5.4 (نفس نسخة PlayTube)   // (v418) WebSocket لـ Edge TTS (دبلجة عربي)
     testImplementation("junit:junit:4.13.2")            // (v589 T4)
     testImplementation("org.json:json:20240303")        // org.json الحقيقي بدل stub بتاع android.jar (اللي بيرمي "not mocked")
-    implementation(project(":youtubeapi"))   // (v889) MtYt بيجيب روابط الفيديو/الصوت من MediaServiceCore بتاع MeeTube (بدل NewPipeExtractor اللي اتشال)
+    implementation(project(":youtubeapi")) { exclude(group = "com.grack", module = "nanojson") }   // (v889) MtYt بيجيب روابط الفيديو/الصوت من MediaServiceCore بتاع MeeTube (بدل NewPipeExtractor اللي اتشال)   // (v1074) استثناء nanojson بتاع youtubeapi: NewPipeExtractor بيجيب fork بنفس الكلاسات (com.github.TeamNewPipe:nanojson) — الاتنين مع بعض كانوا بيوقّعوا checkDebugDuplicateClasses
     implementation("io.reactivex.rxjava3:rxjava:3.1.12")   // (v1072) تسجيل دخول يوتيوب بالكود (YtMtSignIn): signInObserve بيرجّع Observable — نفس نسخة مكتبات youtubeapi (implementation مش بتتسرّب لـ:app)
     implementation("io.reactivex.rxjava3:rxandroid:3.0.2")   // (v1072) نفس السبب — AndroidSchedulers.mainThread
     implementation("com.github.TeamNewPipe:NewPipeExtractor:v0.26.5")   // (v1072) يوتيوب الداخلي رجع — YtNp/YtProUi المستعادة؛ محتاج jitpack.io في settings

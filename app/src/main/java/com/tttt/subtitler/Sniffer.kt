@@ -261,6 +261,10 @@ object YtExtract {
     fun cachedPick(id: String, maxH: Int = 0): Pick? = null
     fun clearPicks() { MtYt.clearCache() }
 
+    // (v1074) فاحص عملاء InnerTube اتمسح في v889 (كل الجلب بقى من MtYt) — YtFast.startup (المستعاد من v863) لسه بينده loadPin/reprobe؛ بيرجّعوا false عشان التسخين يروح لـNewPipe
+    fun loadPin() { }
+    fun reprobe(force: Boolean = false): Boolean = false
+
     fun fetchPick(id: String, maxH: Int = 0, fresh: Boolean = false): Pick? {
         val g = MtYt.video(id, maxH, fresh) ?: return null
         val opts = ArrayList<Opt>()

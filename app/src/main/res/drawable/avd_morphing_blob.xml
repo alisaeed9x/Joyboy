@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- MEETUBE(loader): Morphing blob, a continuously morphing liquid shape (liquid glass pack). Picked in Settings > Customization (Loader). VectorDrawable has no
+     blur, so a glow is a faint wider stroke underneath. -->
+<animated-vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt">
+    <aapt:attr name="android:drawable">
+        <vector
+            android:width="24dp"
+            android:height="24dp"
+            android:viewportWidth="256"
+            android:viewportHeight="256">
+            <group android:name="sway" android:pivotX="128" android:pivotY="128">
+            <path android:name="glow" android:pathData="M128,40 C158,36 166,74 188,79 C219,87 225,121 202,143 C185,160 193,195 164,207 C133,220 112,194 88,201 C56,210 35,183 49,153 C61,128 35,105 56,80 C75,57 101,44 128,40Z" android:strokeColor="#3036DFFF" android:strokeWidth="16" android:strokeLineJoin="round" />
+            <path android:name="blob" android:pathData="M128,40 C158,36 166,74 188,79 C219,87 225,121 202,143 C185,160 193,195 164,207 C133,220 112,194 88,201 C56,210 35,183 49,153 C61,128 35,105 56,80 C75,57 101,44 128,40Z" android:strokeColor="#D9FFFFFF" android:strokeWidth="3">
+                <aapt:attr name="android:fillColor">
+                    <gradient android:type="linear" android:startX="35" android:startY="35" android:endX="222" android:endY="218">
+                        <item android:color="#FFFFFFFF" android:offset="0" />
+                        <item android:color="#FF36DFFF" android:offset="0.2" />
+                        <item android:color="#FFFF4A20" android:offset="0.48" />
+                        <item android:color="#FFFFC943" android:offset="0.72" />
+                        <item android:color="#FF126BFF" android:offset="1" />
+                    </gradient>
+                </aapt:attr>
+            </path>
+            </group>
+            <group android:pivotX="92" android:pivotY="83" android:rotation="-28">
+            <path android:pathData="M69,83 A23,9 0 1,0 115,83 A23,9 0 1,0 69,83" android:fillColor="#73FFFFFF" />
+            </group>
+        </vector>
+    </aapt:attr>
+    <target android:name="glow">
+        <aapt:attr name="android:animation">
+            <objectAnimator android:duration="1200" android:interpolator="@android:interpolator/fast_out_slow_in"
+                android:propertyName="pathData" android:repeatCount="infinite" android:repeatMode="reverse"
+                android:valueFrom="M128,40 C158,36 166,74 188,79 C219,87 225,121 202,143 C185,160 193,195 164,207 C133,220 112,194 88,201 C56,210 35,183 49,153 C61,128 35,105 56,80 C75,57 101,44 128,40Z" android:valueTo="M128,35 C159,48 177,48 195,78 C216,111 196,128 208,153 C222,185 185,215 155,201 C127,188 111,218 82,195 C51,171 67,146 48,122 C27,95 62,65 89,70 C108,73 108,27 128,35Z" android:valueType="pathType" />
+        </aapt:attr>
+    </target>
+    <target android:name="blob">
+        <aapt:attr name="android:animation">
+            <objectAnimator android:duration="1200" android:interpolator="@android:interpolator/fast_out_slow_in"
+                android:propertyName="pathData" android:repeatCount="infinite" android:repeatMode="reverse"
+                android:valueFrom="M128,40 C158,36 166,74 188,79 C219,87 225,121 202,143 C185,160 193,195 164,207 C133,220 112,194 88,201 C56,210 35,183 49,153 C61,128 35,105 56,80 C75,57 101,44 128,40Z" android:valueTo="M128,35 C159,48 177,48 195,78 C216,111 196,128 208,153 C222,185 185,215 155,201 C127,188 111,218 82,195 C51,171 67,146 48,122 C27,95 62,65 89,70 C108,73 108,27 128,35Z" android:valueType="pathType" />
+        </aapt:attr>
+    </target>
+    <target android:name="sway">
+        <aapt:attr name="android:animation">
+            <objectAnimator android:duration="1200" android:interpolator="@android:interpolator/fast_out_slow_in"
+                android:propertyName="rotation" android:repeatCount="infinite" android:repeatMode="reverse"
+                android:valueFrom="0" android:valueTo="12" android:valueType="floatType" />
+        </aapt:attr>
+    </target>
+</animated-vector>

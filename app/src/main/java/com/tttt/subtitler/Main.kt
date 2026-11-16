@@ -1816,7 +1816,8 @@ class MainActivity : Activity() {
     private var saveFn: () -> Unit = {}   // (v407) save() دالة محلية في onCreate — بنمسكها هنا
     fun showYtHistory() {   // (v1072) سجل يوتيوب الداخلي رجع — مش جوه MeeTube
         try {
-            YtHistoryUi.show(this, ui, th,
+            val th2 = Themes.current()
+            YtHistoryUi.show(this, Ui(this, th2), th2,
                 { id, title -> playYt(id, title, false) },
                 { id, title, _ -> playYtAudio(id, title, "", "") })
         } catch (e: Throwable) { LogStore.err("Main:ytHist", e) }

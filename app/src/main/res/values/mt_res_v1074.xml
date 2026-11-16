@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  (v1074) موارد مستعادة من MeeTube :mobile (اتمسح مع البرنامج في v1072) — لازمة للودرات
+  (MtPlayerLook: avd_neon_ring / avd_frosted_ring / meetube_loader / avd_frosted_cookie /
+  avd_liquid_ring / avd_glass_orb / avd_morphing_blob / avd_glass_orbit) وحركات فتح/قفل المشغّل
+  (player_open_enter / player_open_exit / player_close_enter / player_close_exit).
+  القيم منسوخة زي ما هي من meetube/mobile/src/stmobile/res/values (player_glyphs.xml و
+  styles_mobile.xml وcolors_mobile.xml) — من غير أي تغيير.
+-->
+<resources>
+    <color name="mobile_color_primary">#FF453A</color>
+    <string name="neon_ring_path" translatable="false">M12,4 A8,8 0 1,1 12,20 A8,8 0 1,1 12,4</string>
+    <string name="path_player_play" translatable="false">M8,5 L13.5,8.5 L13.5,15.5 L8,19 Z M13.5,8.5 L19,12 L19,12 L13.5,15.5 Z</string>
+    <string name="path_player_pause" translatable="false">M6,5 L10,5 L10,19 L6,19 Z M14,5 L18,5 L18,19 L14,19 Z</string>
+</resources>
