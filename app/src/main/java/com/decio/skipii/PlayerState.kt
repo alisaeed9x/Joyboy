@@ -135,12 +135,15 @@ class PlayerState(private val scope: CoroutineScope) {
     val captions = CaptionsState(scope) { controller?.currentPosition ?: positionMs }
 
     /** (v1080) Joyboy Engine translation for the open video (SkipiiBridge). */
-    var translateState by mutableStateOf(SkipiiTranslate.State.Idle)
-        private set
+    private var _translateState by mutableStateOf(SkipiiTranslate.State.Idle)
+
+    /** Read-only view of the translation state for the player UI and the bridge. */
+    val translateState: SkipiiTranslate.State
+        get() = _translateState
 
     /** The bridge sets this from the main thread as the Engine starts, pauses or stops. */
     fun setTranslateState(s: SkipiiTranslate.State) {
-        translateState = s
+        _translateState = s
     }
 
     /** The ▶ ترجم pill: start the Joyboy Engine for this video, or pause / resume it. */
@@ -186,7 +189,7 @@ class PlayerState(private val scope: CoroutineScope) {
     private fun show(item: VideoItem, startPlayback: Boolean) {
         if (current?.id != item.id) {
             SkipiiTranslate.stop()
-            translateState = SkipiiTranslate.State.Idle
+            _translateState = SkipiiTranslate.State.Idle
         }
         openedAt = android.os.SystemClock.elapsedRealtime()
         Log.i("SkipiiTime", "open ${item.id}")
@@ -716,7 +719,7 @@ class PlayerState(private val scope: CoroutineScope) {
     fun close() {
         loadJob?.cancel()
         SkipiiTranslate.stop()
-        translateState = SkipiiTranslate.State.Idle
+        _translateState = SkipiiTranslate.State.Idle
         controller?.run { stop(); clearMediaItems() }
         queue = emptyList()
         expanded = false
