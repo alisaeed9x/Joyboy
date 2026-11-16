@@ -12,4 +12,6 @@
     <string name="neon_ring_path" translatable="false">M12,4 A8,8 0 1,1 12,20 A8,8 0 1,1 12,4</string>
     <string name="path_player_play" translatable="false">M8,5 L13.5,8.5 L13.5,15.5 L8,19 Z M13.5,8.5 L19,12 L19,12 L13.5,15.5 Z</string>
     <string name="path_player_pause" translatable="false">M6,5 L10,5 L10,19 L6,19 Z M14,5 L18,5 L18,19 L14,19 Z</string>
+    <!-- (v1078) Theme.NewTube كان في meetube/mobile styles_mobile.xml (اتمسح v1072) والمانيفست وAppSplash لسه بيشاوروا عليه → AAPT "resource style/Theme.NewTube not found". نفس أب نسخة values-v31 -->
+    <style name="Theme.NewTube" parent="@android:style/Theme.DeviceDefault.NoActionBar" />
 </resources>

@@ -190,9 +190,9 @@ object MtYt {
     /** (v929) حساب يوتيوب مسجّل دخول؟ */
     fun signedIn(): Boolean = try { boot(); YouTubeServiceManager.instance().signInService.isSigned() } catch (e: Throwable) { LogStore.err("MtYt:signed", e); false }
 
-    /** (v1072) تسجيل الخروج من حساب يوتيوب (device-code) — بيمسح التوكن من نفس مخزن الإعدادات */
+    /** (v1072) تسجيل الخروج من حساب يوتيوب — (v1078) SignInService الحقيقي مفيهوش signOut() (دي في oauth.SignInService القديمة) فبنمسح كل الحسابات بـ removeAccount */
     fun signOut() {
-        try { boot(); YouTubeServiceManager.instance().signInService.signOut() } catch (e: Throwable) { LogStore.err("MtYt:signOut", e) }
+        try { boot(); val svc = YouTubeServiceManager.instance().signInService; for (a in ArrayList(svc.accounts)) svc.removeAccount(a) } catch (e: Throwable) { LogStore.err("MtYt:signOut", e) }
     }
 
     /** (v929) أحدث فيديوهات الاشتراكات (صفحة الاشتراكات في يوتيوب) — من خيط خلفي */
