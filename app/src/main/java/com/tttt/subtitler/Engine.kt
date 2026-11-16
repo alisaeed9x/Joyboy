@@ -104,6 +104,10 @@ class Engine(
     @Volatile private var rampStep = 0
     @Volatile private var rampNext = -1.0
     private val RAMP_SECS = doubleArrayOf(10.0, 20.0, 30.0)
+    /** (v1066) أول N باتشات في الوضع السريع بتروح ببرومبت خفيف ورد مختصر (start/end/original/translated بس) */
+    private val FAST_LIGHT_N = 2
+    private val fastLight = ConcurrentHashMap.newKeySet<Int>()
+    private fun lightOn(chunk: Int, hole: Boolean, tx: Boolean): Boolean = fastLatched && !hole && !tx && chunk >= 0 && (chunk == rampChunk || chunk in fastLight)
     private val pool: Pool get() = if (activeMode >= KeyMode.SPLIT_A && !fastLatched) splitPools().first else basePool
     private val trPool: Pool get() = splitPools().second
     @Volatile private var running = true
@@ -802,8 +806,8 @@ class Engine(
     fun redoAll(keep: Boolean = true) { redo(0, -1, keep); onlyChunks = null; forcedSticky = true; forcedCursor = 0; paused = false }
     /** كمّل الترجمة من المكان ده (من غير مسح حاجة): بيقفز بالمؤشر لباتش الوقت ده ويلغي الإيقاف */
     /** (v224) ابدأ من أول الفيديو: أول باتش لسه ناقص من الأول، بغض النظر عن مكان الفيديو دلوقتي (ثابت لحد ما يوصل لمكان التشغيل) */
-    fun translateFromStart() { onlyChunks = null; forcedSticky = true; forcedCursor = 0; paused = false; userPaused = false; rampChunk = -1 }
-    fun translateFrom(sec: Double) { onlyChunks = null; forcedSticky = false; forcedCursor = chunkOfSec(sec.coerceAtLeast(0.0)); paused = false; userPaused = false; rampChunk = -1 }
+    fun translateFromStart() { onlyChunks = null; forcedSticky = true; forcedCursor = 0; paused = false; userPaused = false; rampChunk = -1; fastLight.clear() }
+    fun translateFrom(sec: Double) { onlyChunks = null; forcedSticky = false; forcedCursor = chunkOfSec(sec.coerceAtLeast(0.0)); paused = false; userPaused = false; rampChunk = -1; fastLight.clear() }
     fun stop() { isClosed = true; running = false; bg.shutdownNow(); gapEx.shutdownNow(); exec?.shutdownNow(); try { trEx.shutdownNow() } catch (_: Exception) {}; try { hedgeEx.shutdownNow() } catch (_: Exception) {}; try { holeEx.shutdownNow() } catch (_: Exception) {}; try { persistEx.shutdownNow() } catch (_: Exception) {} }
     /** (v122) إعدادات اتغيّرت من شاشة الإعدادات (لهجة / أسلوب / موديل / شخصيات…): تتطبّق على الباتشات والتحويلات الجاية من غير إعادة تشغيل المحرك */
     fun applyConf(c: Conf) {
@@ -1079,6 +1083,7 @@ class Engine(
     private fun dispatch(i: Int, ex: java.util.concurrent.ExecutorService, force: Boolean = false, firstKey: String? = null, prep0: Prep? = null) {
         if (!inflight.add(i)) return
         if (fastLatched && rampChunk < 0 && !force) { rampChunk = i; rampStep = 0; rampNext = -1.0 }   // (v1065) أول باتش بيتبعت = اللي بيتقسّم لخطوات بتكبر
+        if (fastLatched && !force && fastLight.size < FAST_LIGHT_N) fastLight.add(i)   // (v1066) برومبت خفيف لأول باتشين
         startedAt[i] = System.currentTimeMillis(); hedged.remove(i)
         // (v151) المفتاح بيتحجز للباتش من لحظة الإرسال (قبل فك الصوت) عشان باتشين ما يتحطوش على نفس المفتاح
         val fk = firstKey ?: pool.pickIdle(i, null, perKey)
@@ -1201,6 +1206,51 @@ class Engine(
         return Prep(w, rawStart, rawEnd)
     }
 
+    /**
+     * (v1066) ⚡ سباق مفتاحين لأول خطوتين من الباتش الأول: الأصلي بالـ stream (بيعرض الجمل وهي بتوصل) والتاني نسخة عادية على مفتاح تاني.
+     * أول رد ناجح يكسب، والتاني بيتجاهل. لو الاتنين فشلوا بيترمي خطأ الأصلي (عشان تحويل المفتاح/الكوتة يشتغل زي الأول).
+     */
+    private fun fastRace(i: Int, p: Prep, mdl: String, key: String, k2: String, prompt: String, w: WavChunk, tmp: Double): Api.Result {
+        val decided = java.util.concurrent.atomic.AtomicBoolean(false)
+        val q = java.util.concurrent.LinkedBlockingQueue<Triple<Int, Api.Result?, Throwable?>>()
+        val mt = Api.outTokens(w.durSec)
+        host.log("⚡ باتش ${i + 1}: أول خطوات الوضع السريع على مفتاحين مع بعض — الأسرع يكسب")
+        Thread {
+            try {
+                val sc = StreamSubs()
+                q.add(Triple(1, Api.generateStream(mdl, key, prompt, w.bytes, mt, tmp) { acc -> if (!decided.get()) streamPreview(i, p, sc, acc) }, null))
+            } catch (e: Throwable) { q.add(Triple(1, null, e)) }
+        }.apply { isDaemon = true; name = "fast-race-a" }.start()
+        Thread {
+            val t0 = System.currentTimeMillis()
+            pool.begin(k2)
+            try {
+                val r = Api.generate(mdl, k2, prompt, w.bytes, maxTokens = mt, temp = tmp)
+                pool.end(k2, System.currentTimeMillis() - t0, true)
+                q.add(Triple(2, r, null))
+            } catch (e: Throwable) {
+                pool.end(k2, 0, false)
+                if (e is ApiErr && e.code == 429) { noteQuota(); pool.block(k2, 60_000) }
+                q.add(Triple(2, null, e))
+            }
+        }.apply { isDaemon = true; name = "fast-race-b" }.start()
+        var errA: Throwable? = null; var errB: Throwable? = null
+        var got = 0
+        while (got < 2 && running) {
+            val t = q.poll(500, java.util.concurrent.TimeUnit.MILLISECONDS) ?: continue
+            got++
+            val res = t.second
+            if (res != null) {
+                decided.set(true)
+                if (t.first == 2) host.log("⚡ باتش ${i + 1}: المفتاح التاني رجع الأول")
+                return res
+            }
+            if (t.first == 1) errA = t.third else errB = t.third
+        }
+        decided.set(true)
+        throw (errA ?: errB ?: Exception("الوضع السريع: الطلب اتلغى"))
+    }
+
     private fun send(i: Int, p: Prep, backupFirst: Boolean = false, avoidKey: String? = null, hedge: Boolean = false, firstKey: String? = null) {
         val w = p.w; val rawStart = p.rawStart; val rawEnd = p.rawEnd
         val prior = subs
@@ -1234,8 +1284,12 @@ class Engine(
                             gemCalled = true
                             val tmp = if (tx && empties == 0 && bad == 0 && trunc == 0) 0.0 else 0.1
                             if (fastLatched && !hedge && !tx) {   // (v1065) ⚡ الجمل بتظهر أول ما تتقفل في الـ stream
-                                val sc = StreamSubs()
-                                Api.generateStream(mdl, key, prompt, w.bytes, Api.outTokens(w.durSec), tmp) { acc -> streamPreview(i, p, sc, acc) }
+                                val k2 = if (i == rampChunk && rampStep < 2 && !Offline.on() && pool.usableCount() >= 2) pool.pickFree(key, rr.getAndIncrement()) else null
+                                if (k2 != null && k2 != key) fastRace(i, p, mdl, key, k2, prompt, w, tmp)   // (v1066) أول خطوتين: نفس الطلب على مفتاحين والأسرع يكسب
+                                else {
+                                    val sc = StreamSubs()
+                                    Api.generateStream(mdl, key, prompt, w.bytes, Api.outTokens(w.durSec), tmp) { acc -> streamPreview(i, p, sc, acc) }
+                                }
                             } else Api.generate(mdl, key, prompt, w.bytes, maxTokens = Api.outTokens(w.durSec), temp = tmp)
                         }   // (v331) التفريغ بحرارة 0 (أدق وثابت)؛ الإعادة بعد فشل بحرارة 0.1 عشان ما يرجعش نفس الرد
                         // (v253) ترانسكريبشن أوفلاين (Whisper على الجهاز) — لو فشل جيميناي (gem) بيكمّل الباتش
@@ -1402,7 +1456,7 @@ class Engine(
     private val dialConf = ConcurrentHashMap<String, Conf>()
     /** (v742) كل طلب صوت لجيميناي بياخد بلوك «دقة السماع» في الآخر (لغات غير الإنجليزي بتتسمع غلط كتير بالصوت المضغوط) */
     private fun buildPrompt(durSec: Double, start: Double, strict: Boolean = false, chunk: Int = -1, hole: Boolean = false, holeNear: Boolean = false, tx: Boolean = false): String =
-        buildPromptCore(durSec, start, strict, chunk, hole, holeNear, tx) + listenBlock()
+        buildPromptCore(durSec, start, strict, chunk, hole, holeNear, tx) + (if (lightOn(chunk, hole, tx)) "" else listenBlock())   // (v1066) الخفيف من غير بلوك دقة السماع الطويل
 
     private fun listenBlock(): String {
         val lang = if (detDone && srcLang.isNotBlank()) " The spoken language is $srcLang (the language name is written in Arabic)." else ""
@@ -1420,6 +1474,7 @@ class Engine(
         val dl = convDialect.let { if (it.isBlank() || it == "فصحى") "" else it }
         if (chunk >= 0) { if (dl.isEmpty()) dialOf.remove(chunk) else dialOf[chunk] = dl }
         val c = if (dl.isEmpty() || dl == conf.lang) conf else dialConf.getOrPut(dl) { conf.withLang(dl) }
+        if (lightOn(chunk, hole, tx)) return ModePrompts.fast(pb, c, durSec, effectiveGloss(), if (detDone) srcLang else "", strict)   // (v1066) ⚡ برومبت خفيف للباتشات الأولى
         // (v209) الوضع 2+ (وكمان 3 و4 في طلبات الصوت): برومبت إنجليزي بدل القالب العربي — نفس شكل الرد فـ Parse.subs بيقراه عادي
         if (activeMode >= KeyMode.ALL_PARALLEL || tx) {   // (v239) tx يشتغل في كل الأوضاع (سدّ الثغرات بأسلوب الوضع 4)
             val prev = if (hole) "" else Subs.prevContext(subs, start)

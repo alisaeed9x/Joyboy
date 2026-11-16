@@ -34,6 +34,15 @@ fun main() {
     check("gapEnd: مفيش مجال بعدها = to", Math.abs(r.gapEnd(60.0, 90.0) - 90.0) < 0.01)
     check("gapEnd: بيتقصّ على to", Math.abs(r.gapEnd(30.0, 40.0) - 40.0) < 0.01)
 
+    // ===== (v1066) برومبت الوضع السريع الخفيف =====
+    val pb = PromptBuilder { java.io.File(System.getenv("SUBTITLER_ASSETS") ?: "app/src/main/assets", it).readText(Charsets.UTF_8) }
+    val cf = Conf(listOf("k"), emptyList(), "m", "مصري", "تلقائي", 60, 3, 1, emptyList(), "", true, true, true, keyMode = 2)
+    val fp = ModePrompts.fast(pb, cf, 10.0, listOf(Gloss("سينسي", "معلم")), "يابانية", false)
+    check("fast: مفيش placeholders", !fp.contains("{{") && !fp.contains("§") && !fp.contains("undefined"))
+    check("fast: بيحتوي اللهجة والـ JSON المختصر", fp.contains("Egyptian") && fp.contains("\"translated\"") && fp.contains("detected_source_language"))
+    check("fast: من غير حقول الجنس/المخاطَب", !fp.contains("addressee") && !fp.contains("topic_gender") && !fp.contains("emotion"))
+    check("fast: أقصر بكتير من برومبت الوضع 2", fp.length * 3 < ModePrompts.english(pb, cf, 10.0, "", emptyList(), emptyList()).length)
+
     println("PASS=$pass FAIL=$fail")
     System.exit(if (fail == 0) 0 else 1)
 }

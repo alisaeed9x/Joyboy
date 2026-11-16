@@ -208,6 +208,27 @@ Use this context to:
         return sb.toString()
     }
 
+    /**
+     * (v1066) ⚡ برومبت الوضع السريع للباتشات الأولى: خفيف ورد مختصر (start/end/original/translated + اللغة بس).
+     * من غير قالب طويل ولا أمثلة ولا سياق ولا شخصيات ولا حقول جنس/مخاطَب/emotion… — الرد الأقصر = أسرع أول ترجمة.
+     * الجودة بتتظبط بعدين: الباتشات اللي بعده بالبرومبت الكامل + التنقيح/الضمائر في الخلفية.
+     */
+    fun fast(pb: PromptBuilder, c: Conf, durSec: Double, gloss: List<Gloss>, srcLang: String = "", strict: Boolean = false): String {
+        val sb = StringBuilder()
+        sb.append("You are a fast, accurate audio translator. This is a standalone audio segment; timestamps start at 0.0 at its beginning.\n\n")
+        sb.append("1. Listen and write every spoken sentence (singing too: one subtitle per lyric line) in \"original\", in the language actually spoken, exactly as heard.\n")
+        sb.append("2. Translate each sentence into ${dialectEn(c.lang)} (${styleEn(c.style)}), Arabic letters only, in \"translated\".\n")
+        sb.append("3. One subtitle = one stretch of speech between two pauses, at most about 12 spoken words; split longer speech at the nearest breath or pause. Different speakers are different subtitles.\n")
+        sb.append("4. start and end are seconds relative to this segment only, real measured values with one decimal (never rounded or evenly spaced).\n")
+        sb.append("5. Ignore music, noise and other non-speech sounds; never invent speech that is not audible. If nothing is spoken: {\"subtitles\":[]}.\n\n")
+        sb.append("Return JSON only, no text outside it, exactly this shape:\n{\"subtitles\":[{\"start\":0.0,\"end\":2.0,\"original\":\"...\",\"translated\":\"...\"},...],\"detected_source_language\":\"...\"}\n")
+        sb.append("detected_source_language: the spoken language written in Arabic, one or two words.\n")
+        sb.append(glossBlock(c, gloss))
+        sb.append("\n⏱ Exact duration of this audio: ${dur(durSec)} seconds; every start and end is between 0.0 and ${dur(durSec)}.\n")
+        sb.append(langLock(pb, c, strict)).append(srcLock(srcLang))
+        return sb.toString()
+    }
+
     // ───────────────────────── الوضعين 3 و4: ترانسكريبشن بس ─────────────────────────
 
     internal const val TRANSCRIBE_MAIN = """You are a professional speech transcriber (verbatim, with exact timing). You do NOT translate.
