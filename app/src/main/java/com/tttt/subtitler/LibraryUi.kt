@@ -747,7 +747,7 @@ class LibraryUi(
         tile("▶ يوتيوب") { onDash?.invoke("yt") }
         tile("🎵 موسيقى") { onDash?.invoke("music") }
         tile("🌐 متصفح") { onDash?.invoke("browser") }
-        tile("📤 نقل") { onDash?.invoke("transfer") }
+        // (v1048) بلاطة «📤 نقل» اتشالت
         dashBox.addView(tiles, LinearLayout.LayoutParams(-1, -2))
         // (v610) مربعات كبيرة: تصفح الملفات · ملفات التلفزيون · فيديوهات التلفزيون
         val squares = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL }
@@ -760,7 +760,7 @@ class LibraryUi(
             col.addView(ui.text(t, 12f, th.text, true).apply { gravity = Gravity.CENTER; setSingleLine() })
             squares.addView(col, LinearLayout.LayoutParams(0, ui.dp(84), 1f).apply { setMargins(ui.dp(3), ui.dp(4), ui.dp(3), ui.dp(2)) })
         }
-        square("📂", "تصفح الملفات", "files")
+        // (v1048) مربع «📂 تصفح الملفات» اتشال
         square("📺", "ملفات التلفزيون", "tvfiles")
         square("🎬", "فيديوهات التلفزيون", "tvvideos")
         dashBox.addView(squares, LinearLayout.LayoutParams(-1, -2))
@@ -1312,7 +1312,6 @@ class LibraryUi(
         val synth = FolderItem("__sel__", if (fs.isNotEmpty()) "المحدد (${fs.size} فولدر)" else "المحدد (${vs.size} $noun)", "", vids)
         fun add(icon: String, label: String, color: Int, f: () -> Unit) { selBar.addView(selBtn(icon, label, color, f), LinearLayout.LayoutParams(0, -2, 1f)) }
         if (!audio) add("📺", "تلفزيون", th.primary) { val l = vids; clearSel(); onTvPlay(l) }
-        add("📤", "إرسال", th.text) { val l = vids; clearSel(); onSendMany(l) }
         if (fs.isEmpty() && vs.size == 1) add("✏", "تسمية", th.text) { val v = vs[0]; clearSel(); onRename(v) }
         if (fs.isEmpty()) add("📁", "نقل", th.text) { val l = vs; clearSel(); onMoveMany(l) }
         add("🗑", "حذف", th.danger) { clearSel(); onDeleteFolder(synth) }

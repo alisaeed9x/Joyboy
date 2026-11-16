@@ -1442,7 +1442,19 @@ object MtTranslate : JoyboyPlayerHost.Provider {
                             ends = LongArray(list.size) { (list[it].end * 1000).toLong() }
                         }
                         val idx = PlayerLogic.activeIndices(starts, ends, p.currentPosition + offsetMs, 0L)
-                        val shown = PlayerLogic.combine(idx.mapNotNull { list.getOrNull(it) })
+                        var shown = PlayerLogic.combine(idx.mapNotNull { list.getOrNull(it) })
+                        // (v1045) عرض بالتتابع: جملة واحدة بتتقسم عند علامة الفصل وكل جزء بيظهر لوقته ويختفي وبعده اللي بعده
+                        if (idx.size == 1 && shown != null && v.style.splitOn) {
+                            try {
+                                val i0 = idx[0]; val st = v.style
+                                val src = if (st.dual >= 3) shown.original.ifBlank { shown.translated } else shown.translated
+                                val pp = PlayerLogic.seqParts(src, ends[i0] - starts[i0], maxOf(st.splitThresh * 2, 12))
+                                if (pp.size > 1) {
+                                    val k = PlayerLogic.partIndex(starts[i0], ends[i0], p.currentPosition + offsetMs, pp, true)
+                                    shown = if (st.dual >= 3) shown.copy(original = pp[k], isContinuation = shown.isContinuation && k == pp.size - 1) else shown.copy(translated = pp[k], isContinuation = shown.isContinuation && k == pp.size - 1)
+                                }
+                            } catch (_: Throwable) {}
+                        }
                         v.show(shown, if (idx.size > 1) idx.mapNotNull { list.getOrNull(it) } else emptyList())
                         if (on && ++tickN % 8 == 0) refreshBtn()
                     }

@@ -1007,7 +1007,6 @@ class TvActivity : Activity() {
             "int:browser" -> openBrowser()
             "int:videos" -> showVideosPage()
             "int:files" -> guardPin { startActivity(Intent(this, FileManagerActivity::class.java)) }
-            "int:transfer" -> startActivity(Intent(this, FileTransferActivity::class.java))
             "int:voice" -> voiceToSearch()
             else -> launchApp(t)
         }
@@ -3172,7 +3171,6 @@ class TvActivity : Activity() {
         val all = ArrayList<View>()
         all.add(stile("📶", "الواي فاي") { TvWifi.quick(this@TvActivity) })
         all.add(stile("📱", "ريموت الموبايل") { TvLinkUi.show(this@TvActivity) })
-        all.add(stile("📤", "نقل الملفات") { startActivity(Intent(this@TvActivity, FileTransferActivity::class.java)) })
         all.add(stile("🛠", "إعدادات الأندرويد") { openSystemSettings() })
         all.add(stile("🌙", "نوم") { showSaver() })
         all.add(stile("🎨", "المظهر") { showAppearance() })

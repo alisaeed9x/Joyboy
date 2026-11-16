@@ -28,7 +28,7 @@ class BottomNav(act: Activity, private val ui: Ui, private val th: Theme, privat
         const val DEAD_AI = 6
         /** (v467) ترتيب الشريط بطلب صاحب التطبيق: الفيديوهات ← يوتيوب ← الموسيقى ← المتصفح ← المزيد.
          *  أي بوابة مش في الشريط بتظهر تلقائيًا جوه «المزيد» — فأي إضافة جديدة هتبان من غير تعديل هنا. */
-        val BAR_ORDER = listOf(0, REMOTE, 4, 2, CARE, NET, 8)   // (v654) 1 (الموسيقى) اتدمجت مع 0 في زرار «ميديا»
+        val BAR_ORDER = listOf(0, REMOTE, 4, 2, NET, 8)   // (v654) 1 (الموسيقى) اتدمجت مع 0 في زرار «ميديا»   // (v1041) «العناية» اتشالت
         /** (v475) خلايا يوتيوب الافتراضية (مش بوابات): الرئيسية 9 · الاشتراكات 10 · أنا 11 — بتحل محل خلية «يوتيوب» وانت جواه */
         const val YT_HOME = 9; const val YT_SUBS = 10; const val YT_ME = 11
         val NORMAL_ORDER = BAR_ORDER
@@ -80,7 +80,6 @@ class BottomNav(act: Activity, private val ui: Ui, private val th: Theme, privat
                 GAlert(act).setTitle("📺 التلفزيون").setItems(labels) { _, i -> collapseMore(); if (i == 0) TvModeFab.toggleAlways(act) else RemoteClient.forcePushFlow(act) }.setNegativeButton("إغلاق", null).show()
             }) { collapseMore(); TvModeFab.toggle(act) })
         }
-        if (CARE !in order) items.add(MoreItem("🩺", "العناية", false) { collapseMore(); try { CareUi(act, ui, th).show() } catch (e: Throwable) { LogStore.err("Nav:care", e) } })   // (v825) · (v829) في الشريط الأساسي بقت زرار — هنا بس وانت في يوتيوب
         if (7 in ids) items.add(MoreItem(DEFS[7].first, DEFS[7].second, 7 == active) { collapseMore(); onPick(7) })
         val sw = act.resources.displayMetrics.widthPixels
         val w = if (items.size <= 5) sw / items.size else (sw / 5.4f).toInt()
@@ -120,15 +119,10 @@ class BottomNav(act: Activity, private val ui: Ui, private val th: Theme, privat
     private fun moreGroups(act: Activity): List<Pair<String, List<MoreItem>>> {
         // (v861) ترتيب جديد: كل مجموعة مضبوطة على 3 في الصف، والأيقونات مش مكرّرة
         val secs = ArrayList<MoreItem>()
-        for (id in listOf(0, 4, 2, 1, 3, 5)) secs.add(MoreItem(DEFS[id].first, if (id == 0) "الفيديوهات" else DEFS[id].second, id == active) { onPick(id) })   // فيديوهات · يوتيوب · متصفح · موسيقى · مخزن · مهام
+        for (id in listOf(0, 4, 2, 1, 5)) secs.add(MoreItem(DEFS[id].first, if (id == 0) "الفيديوهات" else DEFS[id].second, id == active) { onPick(id) })   // فيديوهات · يوتيوب · متصفح · موسيقى · مخزن · مهام
         val trl = ArrayList<MoreItem>()
         // (v1037) «الاستوديو» اتمسح خالص — بس «📚 مكتبة الترجمات» (من v990) فضلت لأنها مستقلة (مش جزء منه)
         if (!tvDev) trl.add(MoreItem("📚", "مكتبة الترجمات", false) { try { TrLibUi(act, ui, th).show() } catch (e: Throwable) { LogStore.err("Nav:trlib", e) } })
-        val store = listOf(
-            MoreItem("📂", "مدير الملفات", false) { openHub(act, "fm") },
-            MoreItem("↔", "إرسال واستقبال", false) { openHub(act, "ft") },
-            MoreItem("\uE001", "اقتران جهاز بلوتوث", false) { openHub(act, "ft", "bt") }
-        )
         val ctl = ArrayList<MoreItem>()
         if (!tvDev && !lite) ctl.add(MoreItem("📱", "الريموت", false) { try { ControllerPad.show(act) } catch (e: Throwable) { LogStore.err("Nav:remote", e) } })
         if (!tvDev) ctl.add(MoreItem("📡", "ريموت IR", false) { try { IrCatalogUi.show(act) } catch (e: Throwable) { LogStore.err("Nav:ir", e) } })
@@ -137,11 +131,11 @@ class BottomNav(act: Activity, private val ui: Ui, private val th: Theme, privat
             GAlert(act).setTitle("📺 التلفزيون").setItems(labels) { _, _ -> TvModeFab.toggleAlways(act) }.setNegativeButton("إغلاق", null).show()
         }) { TvModeFab.toggle(act) })
         val sys = ArrayList<MoreItem>()
-        sys.add(MoreItem("🩺", "العناية", false) { try { CareUi(act, ui, th).show() } catch (e: Throwable) { LogStore.err("Nav:care", e) } })
         sys.add(MoreItem("📊", "النت والداتا", false) { try { NetStatsUi(act, ui, th).show() } catch (e: Throwable) { LogStore.err("Nav:net", e) } })
         if (!tvDev) sys.add(MoreItem("🔄", "مركز التحديث", false) { try { GhCiUi.show(act) } catch (e: Throwable) { LogStore.err("Nav:gh", e) } })   // (v861) تحديث البرنامج + تحديث التلفزيون + لوج الفشل
+        if (!tvDev) sys.add(MoreItem("📤", "إرسال التحديث للتلفزيون", false) { try { RemoteClient.forcePushFlow(act) } catch (e: Throwable) { LogStore.err("Nav:pushUpd", e) } })   // (v1048) من صفحة «المزيد» مباشرة
         sys.add(MoreItem(DEFS[7].first, "الإعدادات", 7 == active) { onPick(7) })
-        return listOf("الأقسام" to secs, "الترجمة" to trl, "المخزن والإرسال" to store, "تحكم وريموت" to ctl, "النظام والتحديث" to sys)
+        return listOf("الأقسام" to secs, "الترجمة" to trl, "تحكم وريموت" to ctl, "النظام والتحديث" to sys)
     }
 
     private fun tileView(act: Activity, t: MoreItem, onDone: () -> Unit): View = LinearLayout(act).apply {

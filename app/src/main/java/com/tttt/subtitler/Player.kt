@@ -100,6 +100,8 @@ class PlayerActivity : Activity(), Host {
         /** (v799) آخر رسالة اتجمّعت من أمر ريموت (للموبايل) — بتتسحب مرة واحدة */
         @Volatile private var lastRemoteNote = ""
         fun takeRemoteNote(): String { val n = lastRemoteNote; lastRemoteNote = ""; return n }
+        /** (v1044) قايمة اختيار اتجمّعت من أمر ريموت (بتتعرض على الموبايل) — بتتسحب مرة واحدة */
+        fun takePm(): org.json.JSONObject? { val o = live() ?: return null; val p = o.rcPm; o.rcPm = null; return p }
 
         /** (v684) ملف ترجمة جه من الموبايل (TvLink /subup): بيتحفظ ويستنى أمر «ترجم» من الموبايل. false = مفيش مشغّل فيديو شغّال */
         fun remoteSubImport(f: java.io.File, name: String, cues: Int, show: Boolean = false): Boolean { val o = live() ?: return false; return onUi(o) { o.subImported(f, name, cues, show) } == true }
@@ -580,8 +582,63 @@ class PlayerActivity : Activity(), Host {
     private val rcViews = HashMap<String, View>()
     private fun rcClick(k: String) { try { rcViews[k]?.performClick() } catch (e: Throwable) { LogStore.err("Player:rc:" + k, e) } }
 
+    // (v1044) قوايم التلفزيون اللي بتتفتح من ريموت الموبايل بتتعرض على الموبايل: بنلتقط القايمة (RcCapture) ونبعتها، والموبايل بيرجّع رقم الاختيار (pick)
+    @Volatile var rcPm: org.json.JSONObject? = null
+    private var rcPmActs: List<() -> Unit> = emptyList()
+    private var tvMenuCol: LinearLayout? = null
+    private var tvToolsCol: LinearLayout? = null
+    private fun rcPmRun(block: () -> Unit) {
+        RcCapture.captured = null; RcCapture.active = true
+        try { block() } catch (e: Throwable) { LogStore.err("Player:pm", e) } finally { RcCapture.active = false }
+        val c = RcCapture.captured; RcCapture.captured = null
+        if (c != null) {
+            val lst = ArrayList<() -> Unit>()
+            for (i in c.labels.indices) lst.add { try { c.cb?.onClick(RcCapture.noopDi, i) } catch (e: Throwable) { LogStore.err("Player:pmcb", e) }; Unit }
+            rcPmActs = lst
+            rcPm = org.json.JSONObject().put("t", c.title).put("l", org.json.JSONArray(c.labels))
+        }
+    }
+    private fun rcPmCol(col: LinearLayout?, title: String) {
+        val labels = ArrayList<String>(); val acts = ArrayList<() -> Unit>()
+        if (col != null) for (i in 0 until col.childCount) {
+            val ch = col.getChildAt(i)
+            val t = (ch as? TextView)?.text?.toString()?.trim().orEmpty()
+            if (t.isNotEmpty() && ch.hasOnClickListeners()) { labels.add(t); acts.add { try { ch.performClick() } catch (e: Throwable) { LogStore.err("Player:pmcol", e) }; Unit } }
+        }
+        if (labels.isEmpty()) return
+        rcPmActs = acts
+        rcPm = org.json.JSONObject().put("t", title).put("l", org.json.JSONArray(labels))
+    }
+    /** (v1051) قايمة جاهزة (عنوان + صفوف) تتبعت للموبايل بدل ما تتعرض على التلفزيون */
+    private fun rcPmList(title: String, items: List<Pair<String, () -> Unit>>) {
+        if (items.isEmpty()) return
+        rcPmActs = items.map { it.second }
+        rcPm = org.json.JSONObject().put("t", title).put("l", org.json.JSONArray(items.map { it.first }))
+    }
+    private fun rcPmOpen(kind: String, anchor: View) {
+        when (kind) {
+            "voice" -> rcPmRun { voiceMenu() }            // (v1051) 🎙 فصل صوت الكلام
+            "notice" -> rcPmRun { noticePopup(anchor) }   // (v1051) 🔔 الإشعارات
+            "chap" -> rcPmRun { chaptersSheet() }         // (v1051) 📑 فصول الفيديو
+            "lang" -> rcPmRun { langPopup(anchor) }       // (v1051) 🌐 لهجة الترجمة
+            "whisper" -> { trAsked = true; h.postDelayed({ trAsked = false }, 1500L); rcPmRun { whisperStart() } }   // (v1051) 📴 وشبر: اختيار لغة الكلام على الموبايل
+            "subs" -> rcPmRun { tvSubTracksDialog(anchor) }
+            "more" -> rcPmRun { tvMoreDialog(anchor) }
+            "wiz" -> rcPmRun { translateMenu(anchor) }
+            "menu" -> rcPmCol(tvMenuCol, "☰ القايمة")
+            "tools" -> rcPmCol(tvToolsCol, "⬇ مركز التحميل والليستة")
+        }
+    }
+    private fun rcPmPick(i: Int) {
+        val a = rcPmActs.getOrNull(i) ?: return
+        rcPmActs = emptyList()
+        rcPmRun { a() }
+    }
+
     private fun rAct(a: String, v: Long): Boolean {
         val anchor = window.decorView
+        if (a.startsWith("pm_")) { rcPmOpen(a.removePrefix("pm_"), anchor); return true }
+        if (a == "pick") { rcPmPick(v.toInt()); return true }
         if (a.startsWith("tr_")) { trAsked = true; h.postDelayed({ trAsked = false }, 1500L) }   // (v685) الأوامر من الموبايل ما تفتحش سؤال على شاشة التلفزيون
         when (a) {
             "tr_cont" -> { trAsked = true; beginTranslate() }
@@ -649,6 +706,8 @@ class PlayerActivity : Activity(), Host {
             "voice" -> runOnUiThread { try { voiceMenu() } catch (e: Throwable) { LogStore.err("Player:rvoice", e) } }   // (v712) فصل صوت الكلام
             "nextlist" -> runOnUiThread { try { openNextSheet() } catch (e: Throwable) { LogStore.err("Player:rnext", e) } }   // (v712) 📃 التالي (يوتيوب)
             "tr_free", "tr_gem" -> geminiAsk()   // (v743) FreeLLM اتشال — الزرارين القدام بيفتحوا اختيار جيميناي
+            "tr_gem_acc" -> { trAsked = true; h.post { Cfg.put("dual_listen", "2"); geminiStart() } }   // (v1043) الاختيار اتعمل على الموبايل — من غير نافذة على التلفزيون
+            "tr_gem_fast" -> { trAsked = true; h.post { Cfg.put("dual_listen", "0"); geminiStart() } }
             "tr_whisper" -> whisperStart()
             "tr_gtx" -> startGeminiTranscribe()
             "tr_wtx" -> offlineQuick(true)
@@ -3003,6 +3062,13 @@ class PlayerActivity : Activity(), Host {
     /** (v741) قبل أي تفريغ بوشبر: اختار لغة كلام الفيديو من الأساسية — الكشف التلقائي بياخد وقت طويل */
     private fun askVideoLang(then: () -> Unit) {
         val cur = try { Offline.lang() } catch (_: Throwable) { "" }
+        if (RcCapture.active) {   // (v1051) وشبر: اختيار لغة كلام الفيديو على الموبايل
+            rcPmList("🌍 لغة كلام الفيديو", Offline.langIds.indices.map { i ->
+                val id = Offline.langIds[i]
+                ((if (id == cur) "✓ " else "") + (Offline.langLabels.getOrNull(i) ?: id).let { if (id.isEmpty()) "🔍 تلقائي (أبطأ وبيغلط)" else it }) to { Cfg.put("stt_lang", id); try { TrWizard.syncSaved("stt_lang", id) } catch (_: Throwable) { }; then() }
+            })
+            return
+        }
         shDialog(330) { col, close ->
             col.addView(shHead("🌍 لغة كلام الفيديو", "اختارها بإيدك — الكشف التلقائي بياخد وقت طويل وبيغلط"))
             col.addView(shLangFlow(cur) { id -> close(); Cfg.put("stt_lang", id); try { TrWizard.syncSaved("stt_lang", id) } catch (_: Throwable) { }; then() }, LinearLayout.LayoutParams(-1, -2))
@@ -3906,6 +3972,10 @@ class PlayerActivity : Activity(), Host {
     }
     fun chaptersSheet() {
         if (chapters.isEmpty()) { say("📑 مفيش فصول للفيديو ده — الفصول بتتقرا من وصف فيه سطور زي «12:34 عنوان الفصل» (للمحلي: ملف .txt بنفس اسم الفيديو جنبه)"); return }
+        if (RcCapture.active) {   // (v1051) من ريموت الموبايل: الفصول بتتعرض على الموبايل
+            rcPmList("📑 فصول الفيديو (${chapters.size})", chapters.map { c -> ("⏱ " + PlayerLogic.clock(c.ms) + "  ·  " + c.title) to { try { player.seekTo(c.ms); player.play() } catch (_: Throwable) {}; Unit } })
+            return
+        }
         val col = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; setPadding(ui.dp(8), ui.dp(6), ui.dp(8), ui.dp(6)) }
         var dlg: android.app.Dialog? = null
         for (c in chapters) {
@@ -4028,7 +4098,7 @@ class PlayerActivity : Activity(), Host {
     }
     /** (v469) B14: شريط التزامن السريع العائم — زرّين −/+ بضغط مطوّل متكرر + عرض القيمة الحالية، وبخفوت الأزرار العائمة المعتاد */
     fun toggleSyncStrip() {
-        syncStripV?.let { val show = it.visibility != View.VISIBLE; it.visibility = if (show) View.VISIBLE else View.GONE; if (show) syncValV?.text = String.format("%+.2f", offsetMs / 1000.0); return }
+        syncStripV?.let { val show = !it.isShown; it.visibility = if (show) View.VISIBLE else View.GONE; if (show) try { showChrome() } catch (_: Throwable) {}; if (show) syncValV?.text = String.format("%+.2f", offsetMs / 1000.0); return }
         val col = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER_HORIZONTAL
             setPadding(ui.dp(5), ui.dp(6), ui.dp(5), ui.dp(6)); background = ui.box(0xCC14171C.toInt(), 0x33FFFFFF, 16); alpha = REST_A
@@ -4420,7 +4490,7 @@ class PlayerActivity : Activity(), Host {
         var textAtBottom = false
         var qualCol: LinearLayout? = null   // (v808) مرجع متقدّم لقايمة الجودات — gQ بيتعرّف بعد togglePop
         fun togglePop(v: View, col: LinearLayout, above: Boolean) {
-            val had = popupOwner === v; dismissPop()
+            val had = popupOwner === v && (popup?.isShowing == true); dismissPop()   // (v1042) لو القايمة اتقفلت من برّه (صاحبها فضل متسجّل) الدوسة الجاية لازم تفتح مش تقفل
             if (!had) {
                 (col.parent as? android.view.ViewGroup)?.removeView(col)
                 // (v125) القوايم الطويلة بتتسكرول وبتتحصر في المساحة المتاحة بدل ما تطلع بره الشاشة
@@ -4643,7 +4713,7 @@ class PlayerActivity : Activity(), Host {
         gTools.addView(tasksPageB, 1)
         tasksPopFn = { v -> tasksPageB.text = "⬇ مركز التحميل (" + taskCount() + ")"; togglePop(v, gTools, true) }
         val toolsB = IconGlyphButton(this, "toolbox").apply { background = ui.box(0xE0141418.toInt(), 0x1FFFFFFF, 12); setOnClickListener { togglePop(this, gTools, false) } }
-        tvMenuFn = { v -> togglePop(v, gTool, true) }; tvToolsFn = { v -> togglePop(v, gTools, true) }   // (v517) ⋯ المزيد على التلفزيون
+        tvMenuFn = { v -> togglePop(v, gTool, true) }; tvToolsFn = { v -> togglePop(v, gTools, true) }; tvMenuCol = gTool; tvToolsCol = gTools   // (v517) ⋯ المزيد على التلفزيون
         // (v151) خيارات متعددة الاختيار + زرار واحد «طبّق المحدد»: بيتنفّذوا ورا بعض (تنقيح ← لهجة+ ← عائلي/صريح ← ضمائر ← دمج مكرر)
         val aiBase = linkedMapOf("refine" to "✍ تنقيح بالسياق", "dial" to "🔥 لهجة +", "family" to "🧹 عائلي", "explicit" to "🔞 صريح", "pron" to "🔧 ضمائر", "dedup" to "🧠 دمج مكرر")
         val aiBtns = HashMap<String, TextView>()
@@ -4721,6 +4791,11 @@ class PlayerActivity : Activity(), Host {
         val toolBtns = listOf<TextView>(syncB, tip(logB, "اللوج"), tip(sentB, "الجمل"), tip(ccB, "إظهار/إخفاء الترجمة"), tip(loopB, "تكرار الفيديو"), tip(dualB, "وضع الترجمة"), tip(charsB, "الشخصيات"), tip(voiceB, "فصل صوت الكلام عن الموسيقى"), qualB, nextListB)
         toolBtns.drop(1).filter { it !== voiceB && it !== qualB && it !== nextListB }.forEach { b ->   // (v226) 🔑 اتشال من الشريط العلوي
             toolR.addView(b, LinearLayout.LayoutParams(if (b.text.startsWith("🔑")) ui.dp(42) else ui.dp(30), ui.dp(30)).apply { setMargins(ui.dp(3), 0, ui.dp(3), 0) })
+        }
+        // (v1047) تكبير/تصغير الترجمة السريع: A+ / A− في آخر الشريط العلوي (الأماكن الثابتة اللي قبلهم ما اتحرّكتش)
+        for ((lbl, dlt, tp) in listOf(Triple("A−", -10, "تصغير الترجمة"), Triple("A+", 10, "تكبير الترجمة"))) {
+            val b = tip(mini(lbl) { tvSubScale(dlt) }, tp).apply { textSize = 11f }
+            toolR.addView(b, LinearLayout.LayoutParams(ui.dp(30), ui.dp(30)).apply { setMargins(ui.dp(3), 0, ui.dp(3), 0) })
         }
         toolRow.addView(toolR, FrameLayout.LayoutParams(-2, -2, Gravity.END or Gravity.CENTER_VERTICAL))
         fsBar.addView(toolRow, LinearLayout.LayoutParams(-1, ui.dp(36)))
@@ -5351,6 +5426,14 @@ class PlayerActivity : Activity(), Host {
                 // جملة طويلة واحدة: بتتقسم لأجزاء بتظهر بالتتابع على مدة الجملة (التوقيت الأصلي ثابت)
                 var parts: List<String> = emptyList(); var part = 0
                 val ssn = sub.style
+                // (v1045) عرض بالتتابع: جملة واحدة بتتقسم عند علامة الفصل وكل جزء بيظهر لوقته ويختفي وبعده اللي بعده
+                if (ccOn && !preferNative && gs.size == 1 && idx >= 0 && ssn.splitOn) {
+                    try {
+                        val g0 = gs[0]; val src = if (ssn.dual >= 3) g0.original.ifBlank { g0.translated } else g0.translated
+                        val pp = PlayerLogic.seqParts(src, ends[idx] - starts[idx], maxOf(ssn.splitThresh * 2, 12))
+                        if (pp.size > 1) { parts = pp; part = PlayerLogic.partIndex(starts[idx], ends[idx], cur - offsetMs, pp, true) }
+                    } catch (e: Throwable) { LogStore.err("Player:seqParts", e) }
+                }
                 // (v633) مفيش وميض: لو فيه ترجمة للبرنامج (محرك شغّال/جمل مترجمة) ما نعرضش الترجمة الأصلية في الفجوة القصيرة بين جملتين (أو قبل ما جملة المحرك تبدأ بأجزاء من الثانية)
                 //        إلا لو الفجوة فعلًا استمرت. من غير ترجمة برنامج بتظهر الأصلية فورًا زي الأول.
                 val natGap = ccOn && gs.isEmpty() && nativeCue.isNotEmpty()
@@ -5366,7 +5449,7 @@ class PlayerActivity : Activity(), Host {
                     val shown: Sub? = when {
                         !ccOn -> null
                         gs.isEmpty() || preferNative -> if (nat && !liveWait) natSub(nativeCue) else null
-                        parts.size > 1 -> gs[0].copy(translated = parts[part], isContinuation = gs[0].isContinuation && part == parts.size - 1)
+                        parts.size > 1 -> (if (ssn.dual >= 3) gs[0].copy(original = parts[part], isContinuation = gs[0].isContinuation && part == parts.size - 1) else gs[0].copy(translated = parts[part], isContinuation = gs[0].isContinuation && part == parts.size - 1))
                         else -> PlayerLogic.combine(gs)
                     }
                     sub.show(shown, gs)
@@ -5536,7 +5619,7 @@ class PlayerActivity : Activity(), Host {
         player.exo()?.setVideoSurfaceView(sv)
         applyBoost()
         // (v714) الجودة اللي مختارها في الإعدادات (yt_maxh) هي الحد الأقصى لفيديوهات المتصفح/HLS: أعلى جودة لحد الحد ده، ولو مفيش ينزل تحتها — وما يطلعش فوقه إلا لما تختار بإيدك من زرار الجودة
-        try { val mh = Cfg.int("yt_maxh", 0); if (mh > 0 && uri == null) player.exo()?.let { xp -> xp.trackSelectionParameters = xp.trackSelectionParameters.buildUpon().setMaxVideoSize(Int.MAX_VALUE, mh).build() } } catch (e: Throwable) { LogStore.err("Player:maxh", e) }
+        try { val mh = if (DeviceUi.realTvCached) 0 else Cfg.int("yt_maxh", 0); if (mh > 0 && uri == null) player.exo()?.let { xp -> xp.trackSelectionParameters = xp.trackSelectionParameters.buildUpon().setMaxVideoSize(Int.MAX_VALUE, mh).build() } } catch (e: Throwable) { LogStore.err("Player:maxh", e) }
         player.setPlaybackSpeed(speed)
         var firstFrame = false
         val plst = object : Player.Listener {
@@ -6601,6 +6684,11 @@ class PlayerActivity : Activity(), Host {
     private var noticePop: android.widget.PopupWindow? = null
     /** (v236) قايمة إشعارات صغيرة شفافة بتفتح لفوق (زي قوايم المشغّل): الإشعارات بس من الأحدث للأقدم، ضغطة طويلة = مسح الكل */
     private fun noticePopup(anchor: View) {
+        if (RcCapture.active) {   // (v1051) 🔔 على الموبايل
+            val l = NoticeLog.list().map { it.msg to { } }
+            rcPmList("🔔 الإشعارات", if (l.isEmpty()) listOf("مفيش إشعارات" to { }) else l)
+            return
+        }
         noticePop?.let { if (it.isShowing) { it.dismiss(); noticePop = null; return } }
         val dm = resources.displayMetrics
         val col = LinearLayout(this).apply {
@@ -6880,6 +6968,7 @@ class PlayerActivity : Activity(), Host {
                 for (m in VoiceClean.models) if (m.file != VoiceClean.model().file) items.add("⚙ المحرك: " + m.label + " — " + m.note to { VoiceClean.setModel(m.file); say("⚙ المحرك: " + m.label) })
                 if (ready != null) items.add("🗑 امسح كل الصوت المفصول" to { stopVoice(); VoiceClean.deleteAll(this); say("🗑 اتمسح") })
             }
+            if (RcCapture.active) { rcPmList("🎙 فصل صوت الكلام", items); return }   // (v1051) على الموبايل
             shDialog(340) { col, close ->
                 col.addView(shHead("🎙 فصل صوت الكلام"))
                 for ((t, f) in items) col.addView(shRow(t) { close(); f() })
@@ -7075,6 +7164,10 @@ class PlayerActivity : Activity(), Host {
         if (!caps().dialect) { say("🗣 اللهجة والأسلوب مش شغّالين في «" + modeName() + "» — اختار وضع من اللي فيها لهجات (FreeLLM / وشبر + مترجم LLM)"); return }   // (v444)
         val langs = listOf("فصحى", "مصري", "شامي", "لبناني", "خليجي", "مغربي", "عراقي", "سوداني")
         val curL = Cfg.str("conv_dialect", "").ifBlank { "فصحى" }
+        if (RcCapture.active) {   // (v1051) اختيار اللهجة على الموبايل (الأسلوب والشدة سلايدرات: لسه على التلفزيون)
+            rcPmList("🌐 اللهجة (الحالية: $curL)", langs.map { l -> (if (l == curL) "✓ " else "") + (if (l == "فصحى") "فصحى (حرفية)" else l) to { dialectPick(l) } })
+            return
+        }
         val col = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL
             setPadding(ui.dp(6), ui.dp(6), ui.dp(6), ui.dp(6)); background = glassPanelBg()

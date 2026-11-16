@@ -40,7 +40,7 @@ class PageGear(private val act: Activity, host: FrameLayout, private val anchor:
     val view = IconTextView(act).apply {
         text = "⚙️"; textSize = 16f; gravity = Gravity.CENTER; includeFontPadding = false
         background = ui.box(th.card, th.border, 15)
-        elevation = ui.dp(6).toFloat()
+        elevation = ui.dp(14).toFloat()   // (v1049) فوق ألسنة التلفزيون (elevation 10-12) مش وراها
         contentDescription = "إعدادات الصفحة"
         visibility = View.GONE
         Glass.pressable(this)
@@ -54,12 +54,15 @@ class PageGear(private val act: Activity, host: FrameLayout, private val anchor:
         anchor.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> reposition() }
         lift?.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> reposition() }   // (v829) ظهور/اختفاء شريط الميديا
         MtFloat.barOf(act)?.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> reposition() }   // (v910) ارتفاع الشريط الزجاجي العايم
+        // (v1049) ألسنة التلفزيون (📺 🎮 ▶) بتظهر/تختفي مع الاتصال: الكبسولة تتزحزح بعيد عن الحافة اليمين
+        TvModeFab.listeners.add { try { if (!act.isDestroyed) view.post { reposition() } } catch (_: Throwable) {} }
+        host.post { reposition() }
     }
 
     private fun reposition() {
         val lp = view.layoutParams as? FrameLayout.LayoutParams ?: return
         val sw = act.resources.displayMetrics.widthPixels
-        val rm: Int; var bm: Int
+        var rm: Int; var bm: Int
         val up = if (lift != null && lift.visibility == View.VISIBLE) lift.height else 0   // (v829)
         if (rail) { rm = anchor.width + ui.dp(10); bm = ui.dp(10) + up }   // تابلت: الريل على الجنب
         else {
@@ -68,6 +71,8 @@ class PageGear(private val act: Activity, host: FrameLayout, private val anchor:
             val fb = MtFloat.barTop(act)
             if (fb > 0) bm = fb + ui.dp(8)
         }
+        // (v1049) ألسنة التلفزيون واقفة على الحافة اليمين (عرضها 40dp): لو ظاهرة الكبسولة تبعد عنها أفقيًا
+        if (!rail && TvModeFab.edgeTabsShown(act)) rm = maxOf(rm, ui.dp(48))
         if (lp.rightMargin != rm || lp.bottomMargin != bm) { lp.rightMargin = rm; lp.bottomMargin = bm; view.layoutParams = lp }
     }
 

@@ -355,7 +355,7 @@ object ControllerPad {
             val gapP = dp(6)
             val stripW = dp(46)
             // (v799) الدايرة بقت أكبر بكتير: مساحتها = الشاشة كلها ناقص عمود الصوت (يمين) — والمقاس الفعلي بيتظبط بعد الرسم على المساحة الفاضية (fitPad)
-            val availG = inner - 2 * (stripW + gapP)   // (v817) عمود السطوع شمال + عمود الصوت يمين
+            val availG = inner - (stripW + gapP)   // (v817) عمود السطوع شمال + عمود الصوت يمين
             val s0 = minOf(availG, (dm.heightPixels - dp(540)).coerceAtLeast(dp(170)))
             val cornerW = (s0 * 0.22f).toInt().coerceAtLeast(dp(48))
             val padFull = dp(259)
@@ -489,54 +489,8 @@ object ControllerPad {
                 bind(bx, true) { RemoteRouter.press(act, cid) { m -> say("⚠ $m", 0xFFFFB74D.toInt()) } }   // (v821) ماسك = تكرار؛ واي فاي أو IR تلقائي
                 return bx
             }
-            volCol.addView(volTxt("+", "رفع الصوت", Cmds.VOL_UP), android.widget.LinearLayout.LayoutParams(-1, dp(40)).apply { bottomMargin = gapP })
             volCol.addView(volBar, android.widget.LinearLayout.LayoutParams(-1, 0, 1f))
-            volCol.addView(volTxt("−", "خفض الصوت", Cmds.VOL_DOWN), android.widget.LinearLayout.LayoutParams(-1, dp(40)).apply { topMargin = gapP })
-            volCol.addView(miniBtn("headphone", 0xFF0EA5E9.toInt(), 0xFF2563EB.toInt(), "مصدر الصوت", false) { AudioBridge.showMenu(act) }, android.widget.LinearLayout.LayoutParams(-1, muteH).apply { topMargin = gapP })   // (v811) مصدر الصوت: تلفزيون / موبايل
             volCol.addView(miniBtn("mute", 0xFFE8456F.toInt(), 0xFFBE185D.toInt(), "كتم الصوت", false) { RemoteRouter.press(act, Cmds.MUTE) { m -> say("⚠ $m", 0xFFFFB74D.toInt()) } }, android.widget.LinearLayout.LayoutParams(-1, muteH).apply { topMargin = gapP })
-
-            // (v817) سلايدر السطوع العمودي على الشمال (مقابل سلايدر الصوت): بيغيّر سطوع التلفزيون الحقيقي. تحته: 🌙 تعتيم برمجي إضافي · ☀ أقصى سطوع
-            val briBar = VolumeBar(act) { p -> RemoteClient.setBrightness(p) }
-            briBar.vertical = true; briBar.icon = "🔆"; briBar.zeroIcon = "0"; briBar.setFillColor(0xFFF59E0B.toInt())
-            val briSync = object : Runnable {   // لو السطوع اتغيّر من التلفزيون نفسه: السلايدر يلحق (إلا وإنت ماسكه)
-                override fun run() {
-                    val v = RemoteClient.tvBri
-                    if (v >= 0 && !briBar.dragging) briBar.setValue(v)
-                    hh.postDelayed(this, 1500L)
-                }
-            }
-            hh.post(briSync)
-            var briWarned = false
-            // الأمر اتبعت بس التلفزيون مارد بـ«none» = مفيش إذن: نبّه مرة واحدة على الموبايل
-            val briWatch = object : Runnable {
-                override fun run() {
-                    val bm = RemoteClient.tvBriMode
-                    if (!briWarned && (bm == "none" || bm == "sys-tv") && briBar.dragging.not() && RemoteClient.tvBri >= 0) {
-                        briWarned = true
-                        Notice.show(act, if (bm == "none") "⚠ التلفزيون مش واخد إذن «تعديل إعدادات النظام» ولا «العرض فوق التطبيقات» — السطوع مش هيتغيّر. فعّلهم من إعدادات التلفزيون (أو بالـadb)"
-                            else "⚠ التلفزيون بيتجاهل سطوع النظام (الإضاءة من إعدادات صورة التلفزيون). فعّل «العرض فوق التطبيقات» لـ Joyboy على التلفزيون عشان التعتيم يشتغل", 7000L)
-                    }
-                    hh.postDelayed(this, 2000L)
-                }
-            }
-            hh.postDelayed(briWatch, 4000L)
-            fun txtMini(t: String, desc: String, fire: () -> Unit): View {
-                val bx = FrameLayout(act).apply { background = cardBg(false); contentDescription = desc }
-                bx.addView(TextView(act).apply { text = t; textSize = 20f; gravity = Gravity.CENTER; includeFontPadding = false }, FrameLayout.LayoutParams(-1, -1, Gravity.CENTER))
-                bind(bx, false, fire)
-                return bx
-            }
-            val softBtn = txtMini("🌙", "تعتيم برمجي إضافي") {
-                val on = !RemoteClient.tvBriSoft
-                RemoteClient.tvBriSoft = on
-                RemoteClient.cmd("bri_soft:" + (if (on) "1" else "0"))
-                Notice.show(act, if (on) "🌙 التعتيم البرمجي اشتغل (فوق سطوع النظام)" else "🌙 التعتيم البرمجي اتقفل", 1800L)
-            }
-            val maxBtn = txtMini("☀", "أقصى سطوع") { briBar.setValue(100); RemoteClient.setBrightness(100) }
-            val briCol = android.widget.LinearLayout(act).apply { orientation = android.widget.LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_LTR }
-            briCol.addView(briBar, android.widget.LinearLayout.LayoutParams(-1, 0, 1f))
-            briCol.addView(softBtn, android.widget.LinearLayout.LayoutParams(-1, dp(44)).apply { topMargin = gapP })
-            briCol.addView(maxBtn, android.widget.LinearLayout.LayoutParams(-1, dp(44)).apply { topMargin = gapP })
 
             // ── باقي الأزرار (مكتبة/يوتيوب/متصفح/ترجمة/نص…): كلها فوق، والمنطقة اللي تحت للتنقل (الدايرة) + الصوت ──
             plDispose = PlayerPad.show(act, { d.dismiss() }) { P ->
@@ -653,7 +607,6 @@ object ControllerPad {
                 val leftCol = android.widget.LinearLayout(act).apply { orientation = android.widget.LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_LTR }
                 leftCol.addView(padHolder, android.widget.LinearLayout.LayoutParams(-1, dp(150), 1f).apply { topMargin = dp(6) })
                 val lower = android.widget.LinearLayout(act).apply { orientation = android.widget.LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_LTR }
-                lower.addView(briCol, android.widget.LinearLayout.LayoutParams(stripW, -1).apply { rightMargin = gapP; topMargin = dp(5) })   // (v817) سطوع التلفزيون
                 lower.addView(leftCol, android.widget.LinearLayout.LayoutParams(0, -1, 1f))
                 lower.addView(volCol, android.widget.LinearLayout.LayoutParams(stripW, -1).apply { leftMargin = gapP; topMargin = dp(5) })
                 col.addView(lower, android.widget.LinearLayout.LayoutParams(-1, dp(276), 1f))

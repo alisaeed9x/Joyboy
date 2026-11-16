@@ -67,7 +67,9 @@ fun Activity.showKeyBrowser(onKey: (String) -> Unit) {
         userAgentString = userAgentString.replace("; wv", "").replace(Regex("Version/\\d+\\.\\d+\\s"), "")
     }
     try { CookieManager.getInstance().setAcceptCookie(true); CookieManager.getInstance().setAcceptThirdPartyCookies(wv, true) } catch (_: Exception) {}
-    wv.webViewClient = WebViewClient()
+    wv.webViewClient = object : WebViewClient() {
+        override fun onRenderProcessGone(v: WebView, d: android.webkit.RenderProcessGoneDetail): Boolean = true   // (v1049)
+    }
     wv.webChromeClient = WebChromeClient()
     wv.setBackgroundColor(Color.WHITE)
 

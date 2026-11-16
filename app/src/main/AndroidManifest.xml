@@ -99,10 +99,9 @@
         <!-- (v653) نقل الملفات الذكي: رادار + إرسال/استقبال مشفّر بموافقة + سجل + هوية الجهاز (بجانب مركز النقل القديم من غير ما يتأثر) -->
         <activity android:name=".FileTransferActivity" android:exported="false" android:label="Joyboy نقل ذكي" android:theme="@style/AppSplash"
             android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboardHidden|density"/>
-        <activity android:name=".TransferActivity" android:exported="true" android:label="Joyboy نقل" android:theme="@style/AppSplash"
+        <activity android:name=".TransferActivity" android:exported="false" android:label="Joyboy نقل" android:theme="@style/AppSplash"
             android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboardHidden|density">
-            <intent-filter><action android:name="android.intent.action.SEND"/><category android:name="android.intent.category.DEFAULT"/><data android:mimeType="*/*"/></intent-filter>
-            <intent-filter><action android:name="android.intent.action.SEND_MULTIPLE"/><category android:name="android.intent.category.DEFAULT"/><data android:mimeType="*/*"/></intent-filter>
+            <!-- (v1051) فلاتر المشاركة (SEND / SEND_MULTIPLE) اتشالت: «Joyboy نقل» مابقاش بيظهر في قايمة المشاركة -->
         </activity>
         <activity android:name=".TvFilesActivity" android:exported="false" android:theme="@style/AppSplash"
             android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboardHidden|density"/>   <!-- (v610) تصفح ملفات التلفزيون من الموبايل -->

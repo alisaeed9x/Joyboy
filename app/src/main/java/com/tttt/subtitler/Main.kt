@@ -750,7 +750,7 @@ class MainActivity : Activity() {
         lib.onYtPick = { n -> playYt(n.id, n.title) }   // (v344) بحث الفيديوهات: اقتراح يوتيوب = فيديو
         lib.onWebSearch = { q -> webSearch(q) }
         lib.onUniSearch = { q -> globalSearch(q) }   // (v469) D4 بحث شامل موسّع (مكتبة + موسيقى + سجل يوتيوب + أقسام الإعدادات)
-        lib.onDash = { a -> when (a) { "yt" -> { MeeTubeLink.open(this) }; "music" -> showTabFn(1); "browser" -> { save(); NavAnim.set(curTab, 2); startActivity(Intent(this, BrowserActivity::class.java)) }; "transfer" -> startActivity(Intent(this, FileTransferActivity::class.java)); "files" -> startActivity(Intent(this, FileManagerActivity::class.java)); "tvfiles" -> startActivity(Intent(this, TvFilesActivity::class.java)); "tvvideos" -> XferUi.browseTv(this) } }   // (v469) D3 بلاطات لوحة البداية · (v607) مركز النقل
+        lib.onDash = { a -> when (a) { "yt" -> { MeeTubeLink.open(this) }; "music" -> showTabFn(1); "browser" -> { save(); NavAnim.set(curTab, 2); startActivity(Intent(this, BrowserActivity::class.java)) }; "tvfiles" -> startActivity(Intent(this, TvFilesActivity::class.java)); "tvvideos" -> XferUi.browseTv(this) } }   // (v469) D3 بلاطات لوحة البداية · (v607) مركز النقل
         // ===== ترجمة في الخلفية: من ⋮ على الفيديو/الفولدر =====
         fun startBg(vs: List<VideoItem>) {
             ensureKeys {
@@ -786,10 +786,7 @@ class MainActivity : Activity() {
         // (v658) «📤 إرسال» من شريط التحديد: بيفتح نقل الملفات على الرادار والملفات المحددة جاهزة (من غير ما تختارها تاني)
         val sendVia: (List<VideoItem>) -> Unit = { vs ->
             try {
-                startActivity(Intent(this, FileTransferActivity::class.java)
-                    .putStringArrayListExtra("ft_uris", ArrayList(vs.map { it.uri }))
-                    .putStringArrayListExtra("ft_names", ArrayList(vs.map { it.name }))
-                    .putExtra("ft_sizes", vs.map { it.size }.toLongArray()))
+                Notice.show(this, "📤 الإرسال اتشال", 2200L)   // (v1051) مفيش دخول لشاشة النقل
             } catch (e: Throwable) { LogStore.err("Main:sendVia", e); Notice.show(this, "⚠ ما قدرتش أفتح نقل الملفات", 2600L) }
         }
         lib.onMoveMany = { vs -> if (vs.firstOrNull()?.let { tvItem(it) } != true) ops.moveMany(vs, lib.allFolders()) }

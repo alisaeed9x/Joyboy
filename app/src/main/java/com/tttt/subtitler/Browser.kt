@@ -878,6 +878,12 @@ class BrowserActivity : Activity() {
                 saveAdStats()
                 persistTabs()
             }
+            // (v1049) موت عملية الويب (ذاكرة التلفزيون خلصت / النظام قتلها): من غير ده كان التطبيق كله بيقفل (فورس كلوز). دلوقتي بنرجّع true ونعيد بناء التبويب
+            override fun onRenderProcessGone(v: WebView, d: android.webkit.RenderProcessGoneDetail): Boolean {
+                try { LogStore.add("💥 Browser: renderer gone · crash=" + d.didCrash() + " · " + t.url) } catch (_: Throwable) {}
+                h.post { try { if (!dead) recoverDeadWebView(t, v) } catch (e: Throwable) { LogStore.err("Browser:renderGone", e) } }
+                return true
+            }
             override fun onReceivedError(v: WebView, r: WebResourceRequest, e: android.webkit.WebResourceError) {
                 if (!r.isForMainFrame) return
                 if (t.hold != null) return   // (v401) بوب-أب في الحجر: المهلة هتحكم
@@ -982,6 +988,17 @@ class BrowserActivity : Activity() {
         endPanicCover(); refreshBlockCover()
         scanOnce(); persistTabs()
         if (tvOn) h.post { if (!dead) tvToPage() }
+    }
+    /** (v1049) الـWebView مات (renderer gone): شيله وابنيه من جديد على نفس اللينك بدل ما التطبيق يقفل */
+    private fun recoverDeadWebView(t: BTab, dead0: WebView) {
+        val i = tabs.indexOf(t)
+        try { (dead0.parent as? ViewGroup)?.removeView(dead0) } catch (_: Throwable) {}
+        try { dead0.destroy() } catch (_: Throwable) {}
+        if (i < 0) return
+        if (t.wv === dead0) t.wv = null
+        t.frozen = null; t.loaded = false
+        if (i == curIdx) select(i) else { refreshTabsCount(); persistTabs() }
+        Notice.show(this, "⚠ الصفحة وقفت (ذاكرة) — اتحمّلت تاني", 2600L)
     }
     private fun closeTab(i: Int) {
         if (i !in tabs.indices) return
@@ -3384,7 +3401,7 @@ class BrowserActivity : Activity() {
                 val ql = webQlist(f)
                 ql?.let { putExtra("qlist", it) }
                 // (v714) فيه كذا جودة: افتح على الجودة اللي مختارها (yt_maxh) — أعلى واحدة لحد الحد ده، ولو مفيش ينزل لأقل واحدة؛ مش أعلى القايمة
-                val mh = Cfg.int("yt_maxh", 0)
+                val mh = if (DeviceUi.realTvCached) 0 else Cfg.int("yt_maxh", 0)
                 if (ql != null && mh > 0) {
                     val qa = JSONArray(ql); var best: JSONObject? = null; var low: JSONObject? = null; var cur = 0
                     for (i in 0 until qa.length()) { val q = qa.getJSONObject(i); val h = q.optInt("h"); if (Sniff.key(q.optString("u")) == Sniff.key(f.url)) cur = h

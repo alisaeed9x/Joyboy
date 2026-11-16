@@ -1258,6 +1258,9 @@ object MtBar {
         row.addView(dualV)
         row.addView(chev("⏱ ▾") { v -> syncMenu(a, v, false) })   // (v949) قايمة ⏱ منبثقة (والشريط السريع جواها)
         row.addView(chev("🔤 ▾") { v -> textMenu(a, v) })
+        // (v1047) تكبير/تصغير الترجمة السريع: زرارين مباشرين في الشريط (من غير فتح قايمة) — بيتكرروا بالدوسة
+        row.addView(circ("A+", 12f) { bumpSubScale(a, 10) })
+        row.addView(circ("A−", 12f) { bumpSubScale(a, -10) })
         row.addView(circ("📝", 12f) { MtTranslate.searchSentences() })
         row.addView(circ("📜", 12f) { showLog(a) })
         // (v988) ✨ سويتش أوضاع تحسين الصورة: إيقاف ← وضوح ← ألوان ← HDR ← كامل (آخر الشريط — مفيش زرار اتحرّك)

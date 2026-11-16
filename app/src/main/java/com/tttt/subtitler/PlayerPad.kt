@@ -177,15 +177,27 @@ object PlayerPad {
                 }
             }
             fun lp(w: Int, h: Int, wt: Float = 0f) = LinearLayout.LayoutParams(w, h, wt)
+            // (v1044) قايمة اختيار جاية من التلفزيون ← بتتعرض هنا على الموبايل، والاختيار بيرجع للتلفزيون بالرقم (pick)
+            var pickFn: (Int) -> Unit = {}
+            fun showPm(pm: org.json.JSONObject) {
+                val ls = pm.optJSONArray("l") ?: return
+                val labels = Array(ls.length()) { ls.optString(it) }
+                try { act.runOnUiThread { try {
+                    if (act.isFinishing || act.isDestroyed) return@runOnUiThread
+                    GAlert(act).setTitle(pm.optString("t")).setItems(labels) { _, i -> pickFn(i) }.setNegativeButton("إغلاق", null).show()
+                } catch (_: Throwable) {} } } catch (_: Throwable) {}
+            }
             fun go(a: String, v: Long = 0L) {
                 Thread {
                     try {
                         val r = RemoteClient.player(a, v)
+                        r?.optJSONObject("pm")?.let { showPm(it) }
                         val n = r?.optString("note", "") ?: ""   // (v799) رسالة الزرار بتظهر على الموبايل بس (مش على التلفزيون)
                         if (n.isNotEmpty()) try { act.runOnUiThread { if (!act.isFinishing && !act.isDestroyed) Notice.show(act, n, 2200L) } } catch (_: Throwable) {}
                     } catch (e: Throwable) { LogStore.err("PlayerPad:go", e) }
                 }.also { it.isDaemon = true }.start()
             }
+            pickFn = { i -> go("pick", i.toLong()) }
             /** (v709) يلبّس الزرار طبقة ميه بتطلع من تحت (ClipDrawable) — key = مفتاح الأداة اللي بتملّيه، "*" = أي أداة */
             fun fillable(b: TextView, key: String): TextView {
                 val water = GradientDrawable().apply { shape = GradientDrawable.RECTANGLE; cornerRadius = MtGlass.pr(dpf(14f)); setColor(MtGlass.pf(0xAA22C55E.toInt())) }
@@ -458,15 +470,20 @@ object PlayerPad {
                 }
                 if (!started) {
                     grp(body, "🔤 ترجمة")
-                    opt(body, "☁ جيميناي — اختار ٧٥/٢٥ أو السماع الأدق") { go("tr_gem"); close() }
-                    opt(body, "📴 وشبر + ترجمة أوفلاين (HY-MT1.5 · فصحى)") { go("tr_whisper"); close() }
+                    opt(body, "☁ جيميناي — اختار ٧٥/٢٥ أو السماع الأدق") {   // (v1043) الاختيار على الموبايل (كان بيفتح على التلفزيون)
+                        close()
+                        GAlert(act).setTitle("☁ جيميناي — اختار الوضع")
+                            .setItems(arrayOf("🎯 السماع الأدق (مفتاحين + حكم)", "⚡ ٧٥/٢٥ — سماع واحد (أسرع وأرخص)")) { _, i -> go(if (i == 0) "tr_gem_acc" else "tr_gem_fast") }
+                            .setNegativeButton("إلغاء", null).show()
+                    }
+                    opt(body, "📴 وشبر + ترجمة أوفلاين (HY-MT1.5 · فصحى)") { go("pm_whisper"); close() }   // (v1051) اختيار اللغة على الموبايل
                     grp(body, "✍ تفريغ بس (من غير ترجمة)")
                     opt(body, "☁ بجيميناي (من الصوت)") { go("tr_gtx"); close() }
                     opt(body, "📴 على الجهاز بوشبر") { go("tr_wtx"); close() }
                 } else {
                     opt(body, if (paused) "▶ كمّل الترجمة" else "⏸ إيقاف مؤقت") { go(if (paused) "tr_resume" else "tr_pause"); close() }
                     opt(body, "⏹ إلغاء الترجمة (مش مؤقت)") { close(); confirmCancelTr() }
-                    opt(body, "🔀 غيّر الوضع (بيفتح على التلفزيون)") { go("tr_wiz"); close() }
+                    opt(body, "🔀 غيّر الوضع") { go("pm_wiz"); close() }
                     opt(body, "🌙 كمّل الترجمة في الخلفية") { go("tr_bg"); close() }
                     opt(body, "📋 الجمل") { go("sent"); close() }
                     opt(body, "🧑 الشخصيات") { go("chars"); close() }
@@ -733,19 +750,19 @@ object PlayerPad {
             val visB = btn("👁\nلقطة بصرية", 12f) { go("vsnap") }
             val sentB = btn("📝\nالجمل", 12f) { go("sent") }
             val charsB = btn("🧑\nالشخصيات", 12f) { go("chars") }
-            val subsB = btn("🔤\nمسارات الترجمة", 12f) { go("subs") }
+            val subsB = btn("🔤\nمسارات الترجمة", 12f) { go("pm_subs") }
             val qB = btn("🎞\nالجودة", 12f) { if (qList.size > 1) sheetList("🎞 الجودة", qList, qCur, "qset") else if (st.optBoolean("quality", false)) go("quality") else note("مفيش جودات للفيديو ده") }
             val aB = btn("🔊\nلغة الصوت", 12f) { if (aList.size > 1) sheetList("🔊 لغة الصوت", aList, aCur, "aset") else if (st.optBoolean("audio", false)) go("audio") else note("مفيش مسارات صوت تانية") }
             val lockB = btn("", 12f) { go("lock") }
-            val notB = btn("🔔\nالإشعارات", 12f) { go("notice") }
-            val menuB = btn("☰\nقايمة التلفزيون", 12f) { go("menu") }
-            val toolsB = btn("⬇\nمركز التحميل", 12f) { go("tools") }
-            val moreB = btn("⋯\nالمزيد", 12f) { go("more") }
+            val notB = btn("🔔\nالإشعارات", 12f) { go("pm_notice") }
+            val menuB = btn("☰\nقايمة التلفزيون", 12f) { go("pm_menu") }
+            val toolsB = btn("⬇\nمركز التحميل", 12f) { go("pm_tools") }
+            val moreB = btn("⋯\nالمزيد", 12f) { go("pm_more") }
             val killB = btn("⏹\nإغلاق الفيديو", 12f, 0xFF3B1A22.toInt(), 0xFF7A2B3A.toInt()) {
                 GAlert(act).setMessage("أقفل الفيديو على التلفزيون؟").setPositiveButton("اقفل") { _, _ -> go("close") }.setNegativeButton("لأ", null).show()
             }
                         val pipB = btn("⧉\nنافذة صغيرة", 12f) { go("pip") }   // (v712) كانت ناقصة من الريموت
-            val voiceB = btn("🎙\nفصل صوت الكلام", 12f) { go("voice") }
+            val voiceB = btn("🎙\nفصل صوت الكلام", 12f) { go("pm_voice") }
             val bgB = btn("◼\nخلفية الترجمة", 12f) { go("bgon") }
             val logB = btn("📜\nاللوج", 12f) { go("log") }
             val nextB = btn("📃\nالفيديوهات الجاية", 12f) { go("nextlist") }

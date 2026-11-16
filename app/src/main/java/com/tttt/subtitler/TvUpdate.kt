@@ -159,10 +159,52 @@ object TvUpdate {
             addView(bar, LinearLayout.LayoutParams(-1, (14 * dd).toInt()).apply { setMargins((16 * dd).toInt(), 0, (16 * dd).toInt(), (16 * dd).toInt()) })
         }
         var cancelled = false
-        val dlg = try {
-            GAlert(a).setTitle("⬇ تنزيل التحديث").setView(boxV).setCancelable(false)
-                .setNegativeButton("إلغاء") { _, _ -> cancelled = true }.create().also { it.show() }
-        } catch (e: Throwable) { LogStore.err("TvUpdate:dlg", e); null }
+        // (v1052) تصغير: الشاشة تتحوّل لكبسولة صغيرة فوق (تقدّم + الوقت الباقي + سرعة النت)، والدوسة عليها بترجّع الشاشة الكاملة
+        var dlg: android.app.Dialog? = null
+        var capsule: FrameLayout? = null
+        var capTv: TextView? = null
+        var capBar: android.widget.ProgressBar? = null
+        var finished = false
+        fun removeCapsule() {
+            try { capsule?.let { (it.parent as? ViewGroup)?.removeView(it) } } catch (_: Throwable) {}
+            capsule = null; capTv = null; capBar = null
+        }
+        lateinit var showFull: () -> Unit
+        fun minimize() {
+            try {
+                if (finished) return
+                val big = try { TvFocus.onCtx(a) } catch (_: Throwable) { false }
+                val th = Themes.byId(Cfg.str("theme", "mx"))
+                val t = TextView(a).apply { text = "⬇ التحديث…"; textSize = if (big) 16f else 13f; setTextColor(th.text); gravity = Gravity.CENTER; maxLines = 1; layoutDirection = View.LAYOUT_DIRECTION_RTL }
+                val b = android.widget.ProgressBar(a, null, android.R.attr.progressBarStyleHorizontal).apply {
+                    max = 1000; isIndeterminate = bar.isIndeterminate; progress = bar.progress
+                    try { progressTintList = android.content.res.ColorStateList.valueOf(th.primary) } catch (_: Throwable) {}
+                }
+                val inner = LinearLayout(a).apply {
+                    orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL
+                    val ph = (14 * dd).toInt(); val pv = (7 * dd).toInt(); setPadding(ph, pv, ph, pv)
+                    background = GradientDrawable().apply { setColor((th.card and 0x00FFFFFF) or 0xF2000000.toInt()); cornerRadius = 22 * dd; setStroke((1 * dd).toInt(), th.primary) }
+                    addView(t, LinearLayout.LayoutParams(-2, -2).apply { gravity = Gravity.CENTER_HORIZONTAL })
+                    addView(b, LinearLayout.LayoutParams(((if (big) 340 else 230) * dd).toInt(), (5 * dd).toInt()).apply { topMargin = (4 * dd).toInt(); gravity = Gravity.CENTER_HORIZONTAL })
+                }
+                val fl = FrameLayout(a).apply {
+                    isClickable = true; isFocusable = true; elevation = 24 * dd
+                    addView(inner, FrameLayout.LayoutParams(-2, -2))
+                    setOnClickListener { removeCapsule(); showFull() }
+                }
+                val root = a.window.decorView as ViewGroup
+                root.addView(fl, FrameLayout.LayoutParams(-2, -2).apply { gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL; topMargin = (14 * dd).toInt() })
+                capsule = fl; capTv = t; capBar = b
+            } catch (e: Throwable) { LogStore.err("TvUpdate:min", e); removeCapsule(); showFull() }
+        }
+        showFull = {
+            dlg = try {
+                GAlert(a).setTitle("⬇ تنزيل التحديث").setView(boxV).setCancelable(false)
+                    .setNeutralButton("▁ تصغير") { _, _ -> minimize() }
+                    .setNegativeButton("إلغاء") { _, _ -> cancelled = true }.create().also { it.show() }
+            } catch (e: Throwable) { LogStore.err("TvUpdate:dlg", e); null }
+        }
+        minimize()   // (v1053) التنزيل بيبدأ كبسولة صغيرة علطول — الدوسة عليها بتفتح الشاشة الكاملة (فيها إلغاء)
         Thread {
             val f = File(a.cacheDir, "tv_update.apk")
             var ok = false; var msg = ""
@@ -196,6 +238,10 @@ object TvUpdate {
                                 h.post {
                                     tv.text = "⬇ " + (if (total > 0) (g * 100 / total).toString() + "%   " else "") + (g / 1048576L) + " / " + (total / 1048576L) + " MB" + info
                                     if (total > 0) { bar.isIndeterminate = false; bar.progress = (g * 1000L / total).toInt().coerceIn(0, 1000) }
+                                    capTv?.text = "⬇ " + (if (total > 0) (g * 100 / total).toString() + "%" else (g / 1048576L).toString() + " MB") +
+                                        "  ·  ⏱ " + (if (etaS >= 0) (if (etaS >= 60) (etaS / 60).toString() + "د " + (etaS % 60) + "ث" else etaS.toString() + "ث") else "…") +
+                                        "  ·  🚀 " + (if (sp > 1.0) String.format(java.util.Locale.US, "%.1f MB/s", sp / 1048576.0) else "…")
+                                    capBar?.let { cb -> if (total > 0) { cb.isIndeterminate = false; cb.progress = bar.progress } }
                                 }
                             }
                         }
@@ -206,7 +252,9 @@ object TvUpdate {
             } catch (e: Exception) { msg = e.message ?: "فشل"; try { f.delete() } catch (_: Exception) {} }
             finally { downloading = false }
             h.post {
+                finished = true
                 try { dlg?.dismiss() } catch (_: Throwable) {}
+                removeCapsule()
                 if (ok) install(a, f) else if (!cancelled) Notice.show(a, "⚠ التحديث فشل: $msg", 3500L) else if (!o.force) TvLink.declineOffer(o)   // (v573) إلغاء التنزيل ← ما يعرضش نفس النسخة أوتوماتيك تاني
             }
         }.also { it.isDaemon = true }.start()

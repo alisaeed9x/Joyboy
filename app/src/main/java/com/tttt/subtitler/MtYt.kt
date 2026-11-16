@@ -115,7 +115,8 @@ object MtYt {
             out.add(Q(m.height.toString() + "p", m.url, null, m.height))
         }
         out.sortByDescending { it.h }
-        val capped = if (maxH > 0) out.filter { it.h <= maxH }.ifEmpty { out.takeLast(1) } else out
+        val capH = if (DeviceUi.realTvCached) 0 else maxH   // (v1045) التلفزيون الحقيقي بيفتح كل الجودات — سقف yt_maxh للموبايل بس
+        val capped = if (capH > 0) out.filter { it.h <= capH }.ifEmpty { out.takeLast(1) } else out
         return Pair(capped, audio?.url)
     }
 

@@ -379,7 +379,8 @@ object TvLink {
         }
         val st = (if (useBr) BrowserActivity.remoteState() else if (useMt) MtTvPlayer.state() else PlayerActivity.remoteState()) ?: return ok(JSONObject().put("none", true))
         val note = if (useBr || useMt) "" else PlayerActivity.takeRemoteNote()   // (v799) رسالة الزرار بتتعرض على الموبايل مش التلفزيون
-        return ok(JSONObject().put("st", st).apply { if (note.isNotEmpty()) put("note", note) })
+        val pm = if (useBr || useMt) null else PlayerActivity.takePm()   // (v1044) قايمة اختيار تتعرض على الموبايل
+        return ok(JSONObject().put("st", st).apply { if (note.isNotEmpty()) put("note", note); if (pm != null) put("pm", pm) })
     }
 
     /** (v684) استقبال ملف ترجمة من الموبايل على قطع (كل قطعة نص ≤ ~50 ألف حرف عشان حد البودي 256KB). آخر قطعة بتركّب الملف وتسلّمه لمشغّل الفيديو */

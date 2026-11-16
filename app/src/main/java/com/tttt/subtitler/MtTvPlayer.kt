@@ -220,8 +220,10 @@ object MtTvPlayer {
         return true
     }
 
-    fun act(a: String, v: Long): Boolean {
+    fun act(a0: String, v: Long): Boolean {
         if (!live()) return false
+        // (v1044) أوامر «pm_*» الجديدة من ريموت الموبايل = نفس الأوامر القديمة هنا (قوايم MeeTube لسه بتتعرض على التلفزيون)
+        val a = when (a0) { "pm_subs" -> "subs"; "pm_more" -> "more"; "pm_menu" -> "menu"; "pm_tools" -> "tools"; "pm_wiz" -> "tr_wiz"; "pm_voice" -> "voice"; "pm_notice" -> "notice"; "pm_whisper" -> "tr_whisper"; "pm_chap" -> "more"; "pm_lang" -> "more"; else -> a0 }
         val handled = onUi { p, ac ->
             when (a) {
                 "toggle", "playpause" -> {
@@ -292,7 +294,7 @@ object MtTvPlayer {
                     true
                 }
                 "fit" -> {
-                    val n = (fitMode() + 1) % 4
+                    val n = if (fitMode() == 2) 0 else 2   // (v1042) وضعين بس (احتواء/ملء) من v1020 — الدورة القديمة 0→1→2→3 كانت بتدوس مرتين من غير أثر
                     try { Cfg.put("fit", n.toString()) } catch (_: Throwable) {}
                     try { JoyboyPlayerHost.onJoyboyAction(ac, "fit:" + n) } catch (_: Throwable) {}
                     true

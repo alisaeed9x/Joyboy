@@ -156,10 +156,35 @@ object TrLib {
 
     // ===================== الإجراءات =====================
     /** null = ينفع يكمّل في الخلفية، غير كده سبب المنع */
-    fun bgBlock(i: Item): String? = when {
+    fun bgBlock(i: Item, c: Context? = null): String? = when {
         i.id.startsWith("yt:") -> "يوتيوب: لينك الفيديو بينتهي، افتحه من المشغّل عشان تكمّل"
         i.uri.isBlank() && !i.url.startsWith("http") -> "مفيش مصدر محفوظ للفيديو، افتحه من المشغّل مرة"
+        c != null && i.uri.isNotBlank() && !readable(c, i.uri) -> "الفيديو مش متاح (اتمسح أو صلاحية الوصول راحت) — افتحه من المشغّل مرة أو أضفه تاني بزرار ➕"
         else -> null
+    }
+
+    /** (v1052) هل لسه نقدر نقرا الفيديو من الـuri المحفوظ؟ (كان بيفشل بعدين في الخلفية برسالة عامة) */
+    private fun readable(c: Context, uri: String): Boolean = try {
+        val u = android.net.Uri.parse(uri)
+        if (u.scheme == "file") File(u.path ?: "").exists()
+        else { c.contentResolver.openFileDescriptor(u, "r")?.use { true } ?: false }
+    } catch (e: Throwable) { LogStore.err("TrLib:readable", e); false }
+
+    /** (v1052) إضافة فيديوهات من الموبايل لطابور الترجمة في الخلفية. بيرجّع (اتضاف, كان موجود) */
+    fun addVideos(c: Context, uris: List<android.net.Uri>): Pair<Int, Int> {
+        var added = 0; var dup = 0
+        val app = c.applicationContext
+        for (u in uris) {
+            try {
+                try { app.contentResolver.takePersistableUriPermission(u, android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION) } catch (_: Throwable) {}
+                var name = ""
+                try { app.contentResolver.query(u, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)?.use { q -> if (q.moveToFirst()) name = q.getString(0) ?: "" } } catch (_: Throwable) {}
+                val id = BgJobs.videoId(app, u, null)
+                val title = name.ifBlank { Recents.titleOf(id) }
+                if (BgJobs.enqueue(app, BgJob(id, title, u.toString(), null, HashMap()), "مكتبة الترجمات — إضافة فيديو")) added++ else dup++
+            } catch (e: Throwable) { LogStore.err("TrLib:add", e) }
+        }
+        return Pair(added, dup)
     }
 
     fun startBg(c: Context, i: Item, why: String): Boolean {

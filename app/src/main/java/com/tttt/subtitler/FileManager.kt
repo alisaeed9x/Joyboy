@@ -1067,7 +1067,7 @@ class FileManagerActivity : Activity() {
                 else if (uris.size > 1500) toast("⚠ لحد 1500 ملف في المرة — قسّمهم على دفعات")
                 else {
                     try {
-                        startActivity(Intent(this, FileTransferActivity::class.java).putStringArrayListExtra("ft_uris", uris).putStringArrayListExtra("ft_names", names).putExtra("ft_sizes", sizes.toLongArray()))
+                        toast("📤 الإرسال اتشال")   // (v1051) مفيش دخول لشاشة النقل
                         sel.clear(); selMode = false; refresh()
                     } catch (e: Throwable) { LogStore.err("FM:sendFt", e); toast("⚠ مش قادر أفتح نقل الملفات") }
                 }
@@ -1078,7 +1078,7 @@ class FileManagerActivity : Activity() {
     /** (v610) موبايل ← تلفزيون: ابعت المحدد (ملفات أو مجلدات بكل اللي جواها) للتلفزيون المقترن */
     private fun sendSelToTv() {
         val paired = try { RemoteClient.lastTv() != null } catch (_: Throwable) { false }
-        if (!paired) { toast("⚠ مفيش تلفزيون مقترن — اقترن من مركز النقل (الرادار)"); try { startActivity(Intent(this, FileTransferActivity::class.java)) } catch (_: Throwable) {}; return }
+        if (!paired) { toast("⚠ مفيش تلفزيون مقترن — اقترن من «الريموت»"); return }   // (v1051) من غير فتح شاشة النقل
         val files = XExpand.files(selFiles(), 300)
         if (files.isEmpty()) { toast("مفيش ملفات تتبعت"); return }
         XferUi.sendUris(this, files.map { Uri.fromFile(it) }, files.map { it.name })

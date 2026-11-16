@@ -315,9 +315,24 @@ class GAlert(private val ctx: Context) {
     fun create(): Dialog = build().first
 
     fun show(): Dialog {
+        // (v1044) لو الأمر جاي من ريموت الموبايل: قايمة الاختيار ما تتعرضش على التلفزيون — بتتسجّل وتتبعت للموبايل يعرضها
+        val its = items
+        if (RcCapture.active && its != null && view == null) {
+            RcCapture.captured = RcCapture.Item((title ?: "").toString(), its.map { it.toString() }, itemsCb)
+            return Dialog(ctx)
+        }
         val (d, col) = build()
         d.show()
         col?.let { Motion.stagger(it, 8, 35L) }
         return d
     }
+}
+
+
+/** (v1044) التقاط قوايم الاختيار (GAlert.setItems) اللي بتتفتح من أمر ريموت الموبايل عشان تتعرض على الموبايل مش التلفزيون */
+object RcCapture {
+    @Volatile var active = false
+    @Volatile var captured: Item? = null
+    class Item(val title: String, val labels: List<String>, val cb: android.content.DialogInterface.OnClickListener?)
+    val noopDi = object : android.content.DialogInterface { override fun cancel() {}; override fun dismiss() {} }
 }

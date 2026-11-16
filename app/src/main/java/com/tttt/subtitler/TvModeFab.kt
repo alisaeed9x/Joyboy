@@ -84,6 +84,13 @@ object TvModeFab {
     }
     private fun startTick() { if (tickOn) return; tickOn = true; main.post(tick) }
     @Volatile private var capWanted = false   // (v764) المشغّل المصغّر: false = زرار على الحافة جنب 📺 🎮 · true = كبسولة مفتوحة ناحية الشمال
+    /** (v1049) ألسنة التلفزيون (📺 🎮 ▶) ظاهرة دلوقتي على الحافة اليمين في الشاشة دي؟ — PageGear بيبعد عنها بدل ما يستخبّى وراها */
+    fun edgeTabsShown(a: Activity): Boolean {
+        val l = layers[a] ?: return false
+        if (strips.containsKey(a)) return false
+        fun vis(v: View?) = v != null && v.parent != null && v.visibility == View.VISIBLE
+        return vis(l.btn) || vis(l.ctl) || vis(l.capTab) || vis(l.cap) || phoneCtl[a]?.let { vis(it) } == true
+    }
     /** (v764) فتح/تصغير الكبسولة: بتتفرد من الحافة اليمين ناحية الشمال، والتصغير بيرجّعها زرار جنب 🎮 */
     private fun setCap(a: Activity, l: Layer, open: Boolean) {
         capWanted = open

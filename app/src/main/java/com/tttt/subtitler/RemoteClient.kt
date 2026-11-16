@@ -443,6 +443,7 @@ object RemoteClient {
             val st = j.optJSONObject("st")
             val n = j.optString("note", "")
             if (st != null && n.isNotEmpty()) st.put("note", n)   // (v799) رسالة التلفزيون لأمر الزرار — الموبايل يعرضها
+            val pm = j.optJSONObject("pm"); if (st != null && pm != null) st.put("pm", pm)   // (v1044) قايمة اختيار من التلفزيون — الموبايل يعرضها
             st
         } catch (_: Exception) { null }
     }

@@ -161,6 +161,18 @@ class TrLibUi(private val act: Activity, private val ui: Ui, private val th: The
     fun show() {
         val content = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; layoutParams = lp(-1, -1) }
         content.addView(summary, lp(-1, -2))
+        content.addView(pill("➕ أضف فيديو للترجمة في الخلفية", primary = true) {
+            VidPick.pick(act) { l ->
+                if (l.isEmpty()) return@pick
+                Thread {
+                    val (a, d) = TrLib.addVideos(act, l)
+                    act.runOnUiThread {
+                        Notice.show(act, if (a > 0) "اتضاف $a فيديو لطابور الترجمة في الخلفية" + (if (d > 0) " ($d كان موجود)" else "") else "الفيديوهات دي في الطابور فعلًا", 3000L)
+                        if (shown) render(false)
+                    }
+                }.apply { isDaemon = true }.start()
+            }
+        }, lp(-1, -2, 6))
         val search = ui.input("🔍 دوّر في الأسماء وفي نص الترجمة", "")
         search.addTextChangedListener(object : TextWatcher {
             private var pending: Runnable? = null
@@ -345,7 +357,7 @@ class TrLibUi(private val act: Activity, private val ui: Ui, private val th: The
 
     // ===================== الإجراءات =====================
     private fun resume(x: TrLib.Item) {
-        val why = TrLib.bgBlock(x)
+        val why = TrLib.bgBlock(x, act)
         if (why != null) { Notice.show(act, why, 3400L); return }
         val ok = TrLib.startBg(act, x, "مكتبة الترجمات — استكمال")
         Notice.show(act, if (ok) "دخلت طابور الترجمة في الخلفية — هتكمّل من " + x.pct + "%" else "الترجمة دي شغّالة أو في الطابور فعلًا", 2800L)
@@ -353,7 +365,7 @@ class TrLibUi(private val act: Activity, private val ui: Ui, private val th: The
     }
 
     private fun redo(x: TrLib.Item) {
-        val why = TrLib.bgBlock(x)
+        val why = TrLib.bgBlock(x, act)
         if (why != null) { Notice.show(act, why, 3400L); return }
         GAlert(act).setTitle("↻ إعادة الترجمة")
             .setMessage("اللي اترجم لحد دلوقتي (" + x.subs + " سطر) هيتمسح وتبدأ من الأول في الخلفية — بالإعدادات المتقدمة لو مظبوطة، وإلا بالإعدادات العامة. ملف SRT اللي جنب الفيديو بيفضل لحد ما الترجمة الجديدة تخلص.")

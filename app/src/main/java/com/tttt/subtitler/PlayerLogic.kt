@@ -48,6 +48,22 @@ object PlayerLogic {
         val n = (w.size + thresh - 1) / thresh; val per = (w.size + n - 1) / n
         return w.chunked(per).map { it.joinToString(" ") }
     }
+    /** (v1045) عرض بالتتابع: الجملة بتتقسم عند علامة الفصل (. ! ? ؟ … ، , ؛ ;) وكل جزء بيظهر لوقته (بالتناسب مع طوله على مدة الجملة) وبعدين اللي بعده.
+     *  جزء أقل من كلمتين بيتضم لجاره، وجزء طويل من غير علامة (أكتر من maxWords) بيتقسم بالتساوي. جملة قصيرة/فيها سطور/مدتها ما تكفيش (أقل من 700ms للجزء) = جزء واحد. */
+    private val SEQ_SPLIT = Regex("(?<=[.!?؟…،,؛;])\\s+")
+    fun seqParts(text: String, durMs: Long, maxWords: Int): List<String> {
+        val t = text.trim()
+        if (t.isEmpty() || t.contains('\n')) return listOf(text)
+        fun wc(x: String) = x.trim().split(Regex("\\s+")).count { it.isNotEmpty() }
+        val merged = ArrayList<String>()
+        for (p in SEQ_SPLIT.split(t).filter { it.isNotBlank() }) {
+            if (merged.isNotEmpty() && (wc(p) < 2 || wc(merged.last()) < 2)) merged[merged.size - 1] = merged.last() + " " + p else merged.add(p)
+        }
+        val out = ArrayList<String>()
+        for (p in merged) out.addAll(if (wc(p) > maxWords) splitParts(p, maxWords) else listOf(p))
+        if (out.size <= 1 || durMs / out.size < 700L) return listOf(text)
+        return out
+    }
     /** (v169) سطرين فوق بعض (مش أجزاء بالتتابع):
      *  - لو فيه فاصلة/نقطة/؟/!/… → التقسيم عند علامة الترقيم الأقرب للنص (الأول فوق والتاني تحت).
      *  - لو مفيش علامة وعرض النص أكبر من limitPx (70% من عرض الفيديو) → بالنص بالظبط بالكلمات (10 و10 مش 18 و2).

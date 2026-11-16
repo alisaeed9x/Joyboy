@@ -153,6 +153,7 @@ object ClipWatch {
                 }
                 ua.set(wv.settings.userAgentString ?: UA)
                 wv.webViewClient = object : WebViewClient() {
+                    override fun onRenderProcessGone(v: WebView, d: android.webkit.RenderProcessGoneDetail): Boolean = true   // (v1049)
                     override fun shouldInterceptRequest(v: WebView, r: WebResourceRequest): WebResourceResponse? {
                         val x = r.url.toString()
                         WebMute.mute(v)
