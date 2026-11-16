@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- (v1079) أنيميتور القوس بتاع اللودرات (avd_neon_ring / avd_frosted_ring): بيتمدّد وبعدين الطرف التاني يلحقه.
+     كان في meetube/mobile (اتمسح v1072) — اتعاد كتابته. -->
+<set xmlns:android="http://schemas.android.com/apk/res/android">
+    <objectAnimator
+        android:duration="1300"
+        android:interpolator="@android:interpolator/fast_out_slow_in"
+        android:propertyName="trimPathEnd"
+        android:repeatCount="infinite"
+        android:repeatMode="reverse"
+        android:valueFrom="0.1"
+        android:valueTo="0.75"
+        android:valueType="floatType" />
+    <objectAnimator
+        android:duration="1300"
+        android:interpolator="@android:interpolator/fast_out_slow_in"
+        android:propertyName="trimPathStart"
+        android:repeatCount="infinite"
+        android:repeatMode="reverse"
+        android:valueFrom="0"
+        android:valueTo="0.6"
+        android:valueType="floatType" />
+</set>

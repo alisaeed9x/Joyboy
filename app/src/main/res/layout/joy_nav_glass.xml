@@ -1,12 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- (v906) كبسولة الشريط السفلي = نفس mobile_nav_glass بتاع MeeTube بالظبط (GlassView الأصلي من :mobile).
-     الألوان من meetube_glass_tint (values / values-night) — MeeGlass.ctx بيحدّد فاتح/داكن من ثيم Joyboy. -->
-<com.newtube.mobile.ui.common.GlassView
-    xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:app="http://schemas.android.com/apk/res-auto"
+<!-- (v1079) ملف قديم من MeeTube كان بيستخدم attrs glassTint/glassCornerRadius (اتمسحوا v1072) ومفيش كود بيندهه.
+     استبدلته بحاوية فاضية عشان AAPT ما يفشلش لو الملف القديم لسه في الريبو. الأفضل تمسح الملف من الريبو. -->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
-    android:layout_height="wrap_content"
-    android:elevation="0dp"
-    android:padding="6dp"
-    app:glassCornerRadius="34dp"
-    app:glassTint="@color/meetube_glass_tint" />
+    android:layout_height="wrap_content" />
