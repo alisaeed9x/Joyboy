@@ -1468,7 +1468,7 @@ class MainActivity : androidx.activity.ComponentActivity() {
         if (r == 14) { nextPerm(); return }
         if (r == 1 && c == RESULT_OK) d?.data?.let { try { contentResolver.takePersistableUriPermission(it, Intent.FLAG_GRANT_READ_URI_PERMISSION) } catch (e: Exception) { LogStore.err("Main:665", e) }; play("", it) }
     }
-    override fun onRequestPermissionsResult(rc: Int, perms: Array<out String>, res: IntArray) {
+    override fun onRequestPermissionsResult(rc: Int, perms: Array<String>, res: IntArray) {
         super.onRequestPermissionsResult(rc, perms, res)
         if (rc == 13) { scanFn(); nextPerm(); return }
         if (rc == 12) { if (res.isNotEmpty() && res[0] == android.content.pm.PackageManager.PERMISSION_GRANTED) musicUi?.load() else Notice.show(this, "من غير إذن الصوتيات مش هقدر أعرض الموسيقى", 3200L); return }
@@ -1954,7 +1954,7 @@ class MainActivity : androidx.activity.ComponentActivity() {
         try { playYt(id, "", false) } catch (e: Throwable) { LogStore.err("Main:ytOpen", e) }   // (v888) إشعار فيديو جديد ← مباشرة للمشغّل (MeeTube أو Joyboy)
     }
     /** (v117) الرجوع من المتصفح بشريط البوابات: بيفتح البوابة اللي اخترتها */
-    override fun onNewIntent(i: Intent?) {
+    override fun onNewIntent(i: Intent) {
         super.onNewIntent(i)
         // (v1072) استعادة PiP من أيقونة اللانشر — مشغّل Joyboy نفسه (نفس فحص onCreate فوق).
         if (i?.action == Intent.ACTION_MAIN && i?.hasCategory(Intent.CATEGORY_LAUNCHER) == true) {
