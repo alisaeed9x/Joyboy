@@ -139,7 +139,7 @@ class PlaybackService : MediaSessionService() {
         // task removed by System UI; the open window keeps playing. Its task is still listed, as
         // the removed one no longer is by now.
         val open = SkipiiEmbed.openTaskId()
-        if (open != null && getSystemService(ActivityManager::class.java).appTasks.any { it.taskInfo.taskId == open }) {
+        if (open != null && getSystemService(ActivityManager::class.java).appTasks.any { it.taskInfo?.taskId == open }) {
             Log.i("Skipii", "an older window's task was removed; still open in task $open, playing on")
             return
         }

@@ -10,3 +10,4 @@
 - ملفات: settings.gradle.kts · build.gradle (classpath: kotlin-gradle-plugin + compose-compiler) · app/build.gradle.kts · AndroidManifest · JoyApp · Main.kt.
 - مشغّل Skipii (بورتريه): زرار شاشة كاملة دايم تحت يمين نافذة الفيديو حتى والتحكم مخفي (VideoView.kt). كان موجود جوه شريط التحكم بس واختفى معاه. ما اتعملش compile.
 - **مشغّل Skipii اتعطّل**: أي فيديو بتدوس عليه في Skipii (رئيسية/بحث/قنوات/إشعارات) بيتفتح في مشغّل Joyboy (`playYt(id,title,false)`) بكل أزرار الترجمة بتاعته، والرجوع منه لتبويب يوتيوب. Skipii بس للتصفح. شاشة الشورتس (فيد رأسي بمشغّلاتها) لسه شغّالة جوه Skipii. ما اتعملش compile.
+- إصلاح بيلد: PlaybackService.kt:142 — taskInfo بقت nullable مع compileSdk 37 (`taskInfo?.taskId`). ما اتعملش compile.
