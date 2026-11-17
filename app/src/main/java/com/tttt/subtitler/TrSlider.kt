@@ -60,13 +60,18 @@ object TrSlider {
     /** المسار المباشر (صوت ← ترجمة في طلب واحد) = الموضع 0..2؛ فوق كده تفريغ ثم ترجمة مجمّعة */
     fun direct(p: Int = pos()): Boolean = onAt("direct", p)
 
+    /** (v1090) المتوازن 4..6 = المحرك البسيط (FastTr) — مش بلوكات المحرك القديم. 0..3 سريع و7..10 دقيق على المحرك القديم */
+    const val BAL_LO = 4
+    const val BAL_HI = 6
+    fun balanced(p: Int = pos()): Boolean = clamp(p) in BAL_LO..BAL_HI
+
     fun speedBlocks(): List<Block> = blocks.filter { it.speed }
     fun accuracyBlocks(): List<Block> = blocks.filter { !it.speed }
 
     fun title(p: Int): String = when (clamp(p)) {
         0, 1 -> "⚡ أسرع"
         2, 3 -> "⚡ سريع"
-        4, 5, 6 -> "⚖ متوازن"
+        4, 5, 6 -> "⚖ متوازن (المحرك البسيط)"
         7, 8 -> "🎯 دقيق"
         else -> "🎯 أدق (وأبطأ)"
     }

@@ -2383,7 +2383,7 @@ class PlayerActivity : Activity(), Host {
             st.title = notifTitle(); st.posMs = player.currentPosition.coerceAtLeast(0); st.durMs = if (durMs > 0) durMs else 0L
             st.playing = player.isPlaying
             st.trState = if (!::engine.isInitialized || !engineStarted) 0 else if (engine.userPaused) 2 else 1
-            st.trPct = if (durMs > 0 && ::engine.isInitialized) PlayerLogic.percent(engine.coveredSec(), durMs / 1000.0).toInt() else 0
+            st.trPct = fastTr?.takeIf { it.total > 0 }?.pct ?: if (durMs > 0 && ::engine.isInitialized) PlayerLogic.percent(engine.coveredSec(), durMs / 1000.0).toInt() else 0
             KeepAliveService.refresh()
         } catch (e: Throwable) { LogStore.err("pushNotif", e) }
     }
@@ -2634,9 +2634,16 @@ class PlayerActivity : Activity(), Host {
             else if (Cfg.str("trstart", "1") != "0") { try { engine.translateFromStart(); log("▶ الترجمة من أول الفيديو (أول جزء ناقص)") } catch (e: Throwable) { LogStore.err("Player:translateFromStart", e); say("⚠ تعذّر بدء الترجمة من أول الفيديو — جرّب ▶ ترجمة تاني") } }   // (v287)
             else if (posNow > 2000L) { try { engine.translateFrom(posNow / 1000.0); log("▶ الترجمة من " + fmtMs(posNow)) } catch (e: Throwable) { LogStore.err("Player:translateFrom", e); say("⚠ تعذّر بدء الترجمة من مكان التشغيل — جرّب ▶ ترجمة تاني") } }   // (v287)
         }
-        try { fastTr?.let { if (it.running) { it.stop(); say("⚡ المحرك التاني اتقفل — المحرك الأساسي بدأ") } } } catch (_: Throwable) {}   // (v1089)
         studioLabel = ""
-        if (!engineStarted) { engineStarted = true; engine.userPaused = false; startEngine() }
+        val bal = balancedPath()   // (v1090) المتوازن = المحرك البسيط (FastTr) مكان مسار المحرك القديم
+        if (!engineStarted) { engineStarted = true; engine.userPaused = false; if (!(bal && startBalanced())) startEngine() }
+        else if (fastTr != null) {
+            // (v1090) استئناف/تحويل والمتوازن هو اللي شغّال
+            engine.userPaused = false
+            val ft = fastTr
+            if (!bal) { try { ft?.stop() } catch (_: Throwable) {}; fastTr = null; startEngine(); say("🔄 المحرك القديم كمّل بالوضع الجديد") }
+            else if (ft != null) { ft.paused = false; if (!ft.running) ft.start() }
+        }
         else {
             // (v399) استئناف: لو الوضع المحفوظ اتغيّر من ⚙/الإعدادات بعد الإيقاف بنطبّقه على المحرك قبل ما نكمّل (كان بيكمّل بالوضع القديم)
             try { TrWizard.savedPlan()?.let { sp -> if (appliedSig.isNotEmpty() && planSig(sp) != appliedSig) { LogStore.add("🔄 الوضع المحفوظ اختلف عن اللي شغّال — بطبّقه قبل الاستئناف"); runPlanCore(sp, false) } } } catch (e: Throwable) { LogStore.err("Player:resumeSync", e) }
@@ -2657,72 +2664,33 @@ class PlayerActivity : Activity(), Host {
     private fun updateTrChip() { trChipV?.visibility = if (engineStarted || trChipDismissed || pipNow()) View.GONE else View.VISIBLE }
     /** (v438) اسم موديل FreeLLM الشغّال على شريحة الترجمة */
     private fun modeChipTag(): String = if (Strict.freeText() || Strict.freeGem()) "🆓 " + FreeLlm.liveName().take(20) + " · " else ""
-    fun pauseTranslate() { if (engineStarted) { engine.userPaused = true; updateTr() } }
+    fun pauseTranslate() { if (engineStarted) { engine.userPaused = true; try { fastTr?.paused = true } catch (_: Throwable) {}; updateTr() } }   // (v1090)
     /** (v427) فيه محرك شغّال أو ترجمة موجودة؟ (الإعادة ملهاش معنى قبل كده) */
     private fun hasSubsNow(): Boolean = try { ::engine.isInitialized && (engineStarted || engine.subs.isNotEmpty()) } catch (_: Throwable) { false }
     /** صف الأزرار: [▶ ترجمة] (أحمر) قبل البداية — وبعد الضغط يختفي ويظهر مكانه [⏸ إيقاف مؤقت] [▶ إلغاء الإيقاف] */
-    // ===== (v1089) المحرك التاني (الأخضر): صف أزرار فوق صف الترجمة القديم — ترجم ٢ · ⏸ · ⏹ =====
+    // ===== (v1090) المتوازن = المحرك البسيط (FastTr) بنفس زرار «ترجم» القديم — مفيش صف تاني =====
     private var fastTr: FastTr? = null
-    private fun fastTrStop() { try { fastTr?.stop() } catch (_: Throwable) {}; updateTr() }
-    private fun fastTrClick() {
-        if (remote) { say("⚠ المحرك التاني مش شغّال في وضع التحكم عن بُعد"); return }
-        if (!::engine.isInitialized || !engineReady) { say("⏳ بيانات الفيديو لسه بتتحمّل — جرّب بعد ثانية"); return }
-        val cur0 = fastTr
-        if (cur0 != null && cur0.running) { cur0.paused = false; updateTr(); return }
-        if (engineStarted && !engine.userPaused && trPct < 100) { say("⚠ المحرك الأساسي شغّال — وقّفه (⏸) الأول وبعدين شغّل الأخضر"); return }
-        val sp = spec ?: return
-        dismissStrip()
-        if (noSub) { noSub = false; if (!ccOn) ccToggleFn() }
+    /** المتوازن (سلايدر 4..6) على ترجمة جيميناي الصوتية العادية بس؛ سريع ودقيق والباقي (تفريغ/وشبر/سوفت صب/FreeLLM) على المحرك القديم زي ما هم */
+    private fun balancedPath(): Boolean = try {
+        !remote && TrSlider.balanced() && !trIsTx() && Cfg.str("tr_engine", "gem") != "off" && !Offline.on() &&
+            (Strict.id() == "g_wav" || Strict.id() == "g_aac") && SourceMode.get() == SourceMode.AUDIO && conf.keys.isNotEmpty()
+    } catch (_: Throwable) { false }
+    private fun startBalanced(): Boolean {
+        val sp = spec ?: return false
         val hst: Host = guard ?: this
         val ft = FastTr(conf, { makeSource(sp) }, engine, hst, Cfg.str("conv_dialect", ""))
         ft.onState = { runOnUiThread { try { updateTr() } catch (_: Throwable) {} } }
         fastTr = ft
-        ft.start()
-        updateTr()
+        val fresh = freshOnce; freshOnce = false   // «ابدأ من الأول وجديد»: نفس اللي startEngine بيعمله (seek 0 + مسح على خيط خلفي)
+        if (fresh) { try { player.seekTo(0) } catch (_: Throwable) {}; cur = 0L }
+        log("⚖ متوازن — المحرك البسيط (كل مفتاح باتش: تفريغ ثم ترجمة) · سلايدر " + TrSlider.pos() + "/10")
+        Thread {
+            if (fresh) try { engine.redoAll() } catch (e: Throwable) { val m = "⚠ " + (e.message ?: e.toString()).take(120); log(m); runOnUiThread { say(m) } }
+            ft.start()
+        }.apply { isDaemon = true }.start()
+        return true
     }
-    private fun makeFastRow(compact: Boolean): ViewGroup {
-        val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; gravity = if (compact) Gravity.START else Gravity.CENTER }
-        val G1 = 0xFF2E7D32.toInt(); val G2 = 0xFF1B5E20.toInt(); val G3 = 0xFF8D6E00.toInt()
-        fun b(t: String, fill: Int, f: () -> Unit) = IconTextView(this).apply {
-            text = t; textSize = if (compact) 12f else 14f; setTextColor(Color.WHITE); gravity = Gravity.CENTER; typeface = android.graphics.Typeface.DEFAULT_BOLD
-            setPadding(ui.dp(if (compact) 10 else 8), 0, ui.dp(if (compact) 10 else 8), 0)
-            background = ui.box(fill, 0x33FFFFFF, if (compact) 8 else 10); setOnClickListener { f() }
-            setSingleLine(); includeFontPadding = false
-        }
-        val hh = ui.dp(if (compact) 40 else 44); val m = ui.dp(if (compact) 3 else 4)
-        fun lp(w: Int) = LinearLayout.LayoutParams(w, hh).apply { setMargins(m, m, m, m) }
-        fun sq() = LinearLayout.LayoutParams(hh, hh).apply { setMargins(m, m, m, m) }
-        val go = b("⚡ ترجم ٢", G1) { fastTrClick() }
-        val pz = b("⏸", G2) { fastTr?.let { it.paused = !it.paused; updateTr() } }
-        pz.setPadding(0, 0, 0, 0); pz.textSize = if (compact) 17f else 19f
-        val cx = StopSquareView(this).apply {
-            background = ui.box(G2, 0x33FFFFFF, if (compact) 8 else 10); isClickable = true; isFocusable = true
-            contentDescription = "إيقاف المحرك التاني"; setOnClickListener { fastTrStop() }
-        }
-        if (compact) row.addView(go, lp(-2)) else row.addView(go, lp(0).apply { width = 0; weight = 3.6f })
-        row.addView(pz, sq()); row.addView(cx, sq())
-        trUpdaters.add {
-            val ft = fastTr
-            val run = ft != null && ft.running
-            val paused = ft != null && ft.running && ft.paused
-            val fin = ft != null && ft.finished
-            val pc = ft?.pct ?: 0
-            go.text = if (!run) (if (fin) "✅ ترجم ٢ · ١٠٠%" else "⚡ ترجم ٢") else (if (paused) "⏸ " else if (fin) "✅ " else "⏳ ") + pc + "%"
-            go.background = ui.box(if (paused) G3 else G1, 0x33FFFFFF, if (compact) 8 else 10)
-            pz.visibility = if (run) View.VISIBLE else View.GONE
-            cx.visibility = if (run) View.VISIBLE else View.GONE
-            pz.text = if (paused) "▶" else "⏸"
-        }
-        return row
-    }
-    private fun makeTrRow(compact: Boolean): ViewGroup {
-        val old = makeTrRowOld(compact)
-        val col = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL }
-        col.addView(makeFastRow(compact), LinearLayout.LayoutParams(if (compact) -2 else -1, -2))
-        col.addView(old, LinearLayout.LayoutParams(if (compact) -2 else -1, -2))
-        updateTr()
-        return col
-    }
+    private fun makeTrRow(compact: Boolean): ViewGroup = makeTrRowOld(compact)
     private fun makeTrRowOld(compact: Boolean): ViewGroup {
         // (v144) الشريط السفلي: صف بيلفّ لوحده (FlowRow) والعلامة جواه — مفيش عمود رأسي ولا عرض ثابت يخلي الأزرار تتقص أو الشريحة تعلق
         val row: ViewGroup = if (compact) FlowRow(this).apply { layoutDirection = View.LAYOUT_DIRECTION_RTL }
@@ -2939,11 +2907,13 @@ class PlayerActivity : Activity(), Host {
     fun cancelTranslate(onDone: (() -> Unit)? = null) {
         if (remote || !::engine.isInitialized || !engineStarted) return
         val eng = realEngine
+        val ftWait = fastTr   // (v1090)
         engineStarted = false; updateTr()
         say("⏹ بلغي الترجمة…")
         Thread {
             try { retireEngine() } catch (_: Throwable) {}
-            try { eng.awaitStopped(4000L) } catch (_: Throwable) {}   // المحرك بيحفظ اللي اتترجم وهو بيقفل — نستنى يخلص قبل ما نحمّل المحفوظ تاني
+            try { ftWait?.awaitDone(4000L) } catch (_: Throwable) {}
+            if (ftWait == null) try { eng.awaitStopped(4000L) } catch (_: Throwable) {}   // (v1090: المحرك التاني ما بيعدّيش على run فمفيش stoppedFlag) المحرك بيحفظ اللي اتترجم وهو بيقفل — نستنى يخلص قبل ما نحمّل المحفوظ تاني
             runOnUiThread {
                 if (isFinishing || isDestroyed) return@runOnUiThread
                 try { initEngine() } catch (e: Throwable) { LogStore.err("Player:cancelTr", e) }
@@ -3383,9 +3353,13 @@ class PlayerActivity : Activity(), Host {
         fun listBox() = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; setPadding(ui.dp(10), 0, ui.dp(10), ui.dp(4)) }
         val speedL = listBox(); val accL = listBox()
         fun line(b: TrSlider.Block, on: Boolean): View = ui.text((if (on) "☑ " else "☐ ") + b.label, 12f, if (on) 0xFF8AB4F8.toInt() else 0xFF6B7280.toInt()).apply { setPadding(0, ui.dp(2), 0, ui.dp(2)) }
+        val balNote = shNote("⚖ المتوازن: المحرك البسيط — كل مفتاح ياخد باتش ويفرّغه (يظهر على طول) وبعدين يترجمه. من غير بلوكات سرعة/دقة. حرّك يمين للدقيق أو شمال للسريع وهيشتغلوا على المحرك القديم.")
         fun paint(p: Int) {
             title.text = TrSlider.title(p)
             speedL.removeAllViews(); accL.removeAllViews()
+            val bal = TrSlider.balanced(p)   // (v1090)
+            balNote.visibility = if (bal) View.VISIBLE else View.GONE
+            if (bal) return
             for (b in TrSlider.speedBlocks()) speedL.addView(line(b, TrSlider.onAt(b.id, p)))
             for (b in TrSlider.accuracyBlocks()) accL.addView(line(b, TrSlider.onAt(b.id, p)))
         }
@@ -3404,6 +3378,7 @@ class PlayerActivity : Activity(), Host {
         ends.addView(ui.text("⚖", 11.5f, 0xFF9AA0A6.toInt()).apply { gravity = Gravity.CENTER }, LinearLayout.LayoutParams(0, -2, 1f))
         ends.addView(ui.text("🎯 دقيق وأبطأ", 11.5f, 0xFF9AA0A6.toInt()).apply { gravity = Gravity.END }, LinearLayout.LayoutParams(0, -2, 1f))
         col.addView(ends, LinearLayout.LayoutParams(-1, -2))
+        col.addView(balNote)
         col.addView(shNote("⚡ بيزوّد السرعة"))
         col.addView(speedL, LinearLayout.LayoutParams(-1, -2))
         col.addView(shNote("🎯 بيزوّد الدقة"))
@@ -5813,7 +5788,7 @@ class PlayerActivity : Activity(), Host {
                     updateProblems()
                 }
                 if (now - lastBeat > 20000) { lastBeat = now; LogStore.add("💓 ${LogStore.heapLine()} · ${if (player.isPlaying) "بيشتغل" else "واقف"} @${fmtMs(cur)} · مترجم ${(engine.coveredSec() / 60).toInt()}د · ${engine.subs.size} جملة") }
-                run { val pc = PlayerLogic.percent(engine.coveredSec(), durMs / 1000.0); val wp = Offline.livePct() * 1000 + Offline.runIdx; if (pc != trPct || wp != lastWp) { trPct = pc; lastWp = wp; updateTr() } }
+                run { val pc = fastTr?.takeIf { it.total > 0 }?.pct ?: PlayerLogic.percent(engine.coveredSec(), durMs / 1000.0); val wp = Offline.livePct() * 1000 + Offline.runIdx; if (pc != trPct || wp != lastWp) { trPct = pc; lastWp = wp; updateTr() } }
                 if (fullMode) { fsBadge.set("🔊 " + PlayerLogic.percent(engine.coveredSec(), durMs / 1000.0).toString() + "% · " + list.size.toString() + " جملة ▾", ((try { engine.offlineBrief() } catch (_: Throwable) { null }) ?: "")); fsBadge.setOn(engineStarted && !engine.userPaused, ((Strict.freeText() || Strict.freeGem()) && FreeLlm.waiting)); netBadge.set(NetUse.fmt(NetUse.localTotal()), NetUse.fmt(NetUse.onlineTotal())); applyBadgeAlpha() }   // (v236) نقطة خضراء = الوضع الصوتي شغّال
                 if (fullMode && ::visual.isInitialized) {   // (v431) الجزء البصري (👁 + الفاصل) بيظهر بس لما الوضع البصري شغّال؛ غير كده الكبسولة صوتي بس
                     val vOn = visual.running; val vv = if (vOn) View.VISIBLE else View.GONE
@@ -6088,7 +6063,7 @@ class PlayerActivity : Activity(), Host {
     /** أي مكان بيقفل المحرك الحالي لازم يعدّي من هنا: يقطع ندائاته للمشغّل الأول، وبعدين يقفله ويختمه */
     private fun retireEngine() {
         if (remote) return   // (v546) وضع المتحكم: المحرك بتاع التلفزيون ومايتقفلش من الموبايل
-        try { fastTr?.stop(); fastTr = null } catch (_: Throwable) {}   // (v1089)
+        try { fastTr?.stop(); fastTr = null } catch (_: Throwable) {}   // (v1089/v1090)
         try { guard?.kill() } catch (_: Throwable) {}
         try { if (::engine.isInitialized) engine.stop() } catch (e: Throwable) { LogStore.err("Player:retire", e) }
     }

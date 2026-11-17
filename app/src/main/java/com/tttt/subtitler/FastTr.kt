@@ -6,7 +6,7 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicInteger
 
 /**
- * (v1089) محرك الترجمة التاني (الأزرار الخضرا): نفس الموديل ونفس تقسيم الباتشات، بس أبسط بكتير.
+ * (v1089→v1090) المحرك البسيط = «المتوازن» بزرار «ترجم» القديم: نفس الموديل ونفس تقسيم الباتشات، بس أبسط بكتير.
  *  - كل مفتاح بياخد باتش: يفرّغه (تفريغ بلغته الأصلية) ← الجمل تظهر على طول كنص أبيض عادي (نفس خط ولون وحجم الترجمة الحالية، من غير أي تأثيرات)
  *    كل جملة من بدايتها لنهايتها ← بعدين نفس الباتش يترجم والجمل المفرّغة بتتبدّل بالترجمة.
  *  - مفيش تنقيح ولا سد ثغرات ولا شخصيات ولا لهجات معقّدة: تفريغ + ترجمة بس.
@@ -46,16 +46,20 @@ class FastTr(
 
     fun start() {
         if (running) { paused = false; state(); return }
-        stopped = false; paused = false; running = true
+        stopped = false; paused = false; running = true; busy = true
         Thread {
             try { runAll() }
             catch (e: Throwable) { try { host.log("⚠ [محرك ٢] وقف بخطأ: " + (e.message ?: e.toString()).take(140)) } catch (_: Throwable) {} }
-            finally { running = false; state() }
+            finally { running = false; busy = false; state() }
         }.apply { isDaemon = true; name = "fast-tr" }.start()
         state()
     }
 
-    fun stop() { stopped = true; paused = false; running = false; state() }
+    /** (v1090) true طول ما فيه خيوط شغّالة (حتى بعد stop لحد ما آخر طلب يخلص) */
+    @Volatile var busy = false; private set
+    fun awaitDone(ms: Long) { val end = System.currentTimeMillis() + ms; while (busy && System.currentTimeMillis() < end) nap(50) }
+
+    fun stop() { stopped = true; paused = false; running = false; try { eng.saveNow() } catch (_: Throwable) {}; state() }
 
     private fun nap(ms: Long) { try { Thread.sleep(ms) } catch (_: InterruptedException) {} }
     private fun waitIfPaused() { while (paused && !stopped) nap(200) }
