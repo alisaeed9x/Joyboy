@@ -1,3 +1,4 @@
+v1087 (2026-11-17): إصلاح خطأ الكومبايل الوحيد في v1086 (Track.id لازم Long في YoutubeSlot.kt). ما اتعملش compile. التفاصيل: CHANGES_v1087.md.
 v1086 (2026-11-17): شيل كود اليوتيوب/MeeTube/Skipii بالكامل لعزل الفورس كلوز — بدايله YoutubeSlot.kt (علامة YOUTUBE_SLOT) + تبويب يوتيوب فاضي. ما اتعملش compile. التفاصيل: CHANGES_v1086.md.
 v1085 (2026-11-17): إصلاح الفورس كلوز عند الفتح — Skipii بيتهيّأ كسول عند فتح تبويب يوتيوب + حماية كل نداءاته (لو فشل بيرجع ليوتيوب الداخلي ويسجّل في اللوج). ما اتعملش compile. التفاصيل: CHANGES_v1085.md.
 v1084 (2026-11-17): إصلاح فشل البناء — توقيع onRequestPermissionsResult (Array<String>) وonNewIntent (Intent) في Main.kt. ما اتعملش compile. التفاصيل: CHANGES_v1084.md.

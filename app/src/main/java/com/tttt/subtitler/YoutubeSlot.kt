@@ -99,7 +99,7 @@ object YtAudio {
     fun thumbUrl(t: Track): String? = null   // YOUTUBE_SLOT
     fun thumb(t: Track): Bitmap? = null   // YOUTUBE_SLOT
     fun track(vid: String, title: String, channel: String, thumb: String, a: YtPick): Track =   // YOUTUBE_SLOT
-        Track("yt:" + vid, a.url, title.ifBlank { a.title }, channel, a.durMs, "yt", "يوتيوب")
+        Track(-(((("a" + vid).hashCode().toLong() shl 31) xor ("b" + vid).hashCode().toLong()) and Long.MAX_VALUE) - 1L, a.url, title.ifBlank { a.title }, channel, a.durMs, "yt", "يوتيوب")
     fun src(app: Context, t: Track): AudioSource =
         if (isRemote(t.uri)) AudioSources.make(app, null, t.uri, headersFor(t.uri), 1) { }
         else AudioSources.make(app, android.net.Uri.parse(t.uri), null, emptyMap(), 1) { }
