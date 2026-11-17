@@ -1499,6 +1499,7 @@ class Engine(
                     holdTranscript(i, p, j, relistenLow(i, xc.first, key, xc.second), prior, key, partial)   // (v331) الجمل واطية الثقة بتتسمع تاني قبل الترجمة
                     startedAt[i]?.let { recentMs.addLast(System.currentTimeMillis() - it); while (recentMs.size > 8) recentMs.pollFirst() }
                     if (hedge) { inflight.remove(i); host.log("⚡ باتش ${i + 1}: النسخة الاحتياطية خلصت الأول") }
+                    if (!hedge && fastLatched && i == rampChunk) { rampStep++; rampNext = rawEnd }   // (v1088) خطوات التسخين كانت واقفة على الخطوة 0 في مسار «تفريغ ثم ترجمة» (الزيادة كانت في المسار المباشر بس) ← الباتش الأول بيتقطّع نوافذ صغيرة (10ث مع مفتاح واحد) وكل نافذة رحلة تفريغ+ترجمة كاملة
                     return
                 }
                 if (!backupFirst && !hedge) awaitTurn(i)   // (v1081) الكتابة بالترتيب: باتش أقدم لسه شغّال ← استنى دوره (بحد أقصى ORDER_MAX_WAIT_MS)
@@ -1992,7 +1993,9 @@ class Engine(
         val viewer = if (headless) -1 else (host.position() / ch).toInt()
         val urgent = activeMode < KeyMode.SPLIT_A || flush || switching || now - oldest > TR_MAX_WAIT_MS || (viewer >= 0 && avail.first() <= viewer + 1)
         if (!urgent && avail.size < TGROUP_MIN) return false
-        val take = avail.take(TGROUP_MAX)
+        // (v1088) المشاهد مستني الباتش ده: مجموعة صغيرة (2) بدل 5 — الرد النصي مش stream فزمنه بيزيد مع حجم المجموعة، والباقي بيتترجم في اللفة اللي بعدها
+        val nearViewer = viewer >= 0 && avail.first() <= viewer + 1 && !flush && !switching && now - oldest <= TR_MAX_WAIT_MS
+        val take = avail.take(if (nearViewer) 2 else TGROUP_MAX)
         val group = take.mapNotNull { tHold[it] }
         if (group.isEmpty()) return false
         tTaken.addAll(take); trBusy.incrementAndGet()
@@ -2007,6 +2010,7 @@ class Engine(
     }
 
     private fun translateGroup(group: List<TItem>) {
+        val tG0 = System.currentTimeMillis()   // (v1088) توقيت الترجمة المجمّعة (لوج)
         val dl = convDialect.let { if (it.isBlank() || it == "فصحى") "" else it }
         val c = if (dl.isEmpty() || dl == conf.lang) conf else dialConf.getOrPut(dl) { conf.withLang(dl) }
         val flat = ArrayList<Sub>(); val off = IntArray(group.size)
@@ -2076,6 +2080,7 @@ class Engine(
             host.log("⚠ ترجمة مجمّعة: " + (e.message ?: e.javaClass.simpleName).take(120))
         }
         if (!running || isClosed) return
+        LogStore.add("⏱ [مشغّل-توقيت] ترجمة مجمّعة: " + group.size + " باتش · " + flat.size + " جملة · " + (System.currentTimeMillis() - tG0) + "ms (جولات " + round + ")")   // (v1088)
         applyGroupTranslated(group, off, tr, pv, if (swapped) "" else dl)
     }
 
