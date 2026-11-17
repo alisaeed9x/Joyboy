@@ -50,7 +50,3 @@
 -dontwarn lombok.**
 -dontwarn org.xbill.DNS.config.**
 -dontwarn org.slf4j.impl.**
-
-# (v1081) كان في skipii/consumer-rules.pro وكان بيوقّع البيلد (exportDebugConsumerProguardFiles).
-# أسماء الكلاسات والميثودز الحقيقية في الـ crash reports.
--dontobfuscate

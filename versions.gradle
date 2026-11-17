@@ -1,0 +1,6 @@
+// (v1086) إصدارات مشتركة (كانت في meetube/SharedModules/constants.gradle اللي اتشال مع MeeTube)
+ext {
+    kotlinVersion = '2.3.21'
+    kotlinxVersion = '1.11.0'
+    okhttpVersion = '5.4.0'
+}

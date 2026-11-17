@@ -1,11 +1,10 @@
 package com.tttt.subtitler
 
 import android.app.Application
-import com.liskovsoft.sharedutils.prefs.GlobalPreferences
 
 /**
  * (v878) الـApplication بتاع Joyboy — عادي من غير Hilt.
- * (v1072) MeeTube اتشال خالص: مفيش تهيئة MeeTube ولا لانشر بتاعه ولا متابعة ثيمه ولا استعادة PiP بتاعته. اللي فاضل تهيئة مكتبات بيانات يوتيوب (GlobalPreferences) عشان الصفحة الرئيسية والاشتراكات وتسجيل الدخول.
+ * (v1086) كود يوتيوب/MeeTube/Skipii اتشال بالكامل — بدايله YoutubeSlot.kt (YOUTUBE_SLOT).
  */
 class JoyApp : Application() {
     companion object {
@@ -15,10 +14,7 @@ class JoyApp : Application() {
 
     override fun onCreate() {
         super.onCreate()
-        try { com.decio.skipii.SkipiiEmbed.hostActivityClass = "com.tttt.subtitler.MainActivity"; com.decio.skipii.SkipiiEmbed.init(this) } catch (e: Throwable) { try { LogStore.err("Skipii:init", e) } catch (_: Throwable) {} }   // (v1080)
         app = this
-        // (v1072) تهيئة مكتبات بيانات يوتيوب (الحساب + التوكن): أول استدعاء بيشغّل الـcallbacks المسجلة (تهيئة مدير الحساب + الهيدرات) في خيوط خلفية
-        try { GlobalPreferences.instance(this) } catch (_: Throwable) {}
         MtYt.app = this
         NavOrigin.install(this)   // (v1006) آخر صفحة — للرجوع من الفيديو
         NavSnap.install(this)   // (v923) انتقال موحّد بين الشاشات (لقطة + فيد)
@@ -29,3 +25,4 @@ class JoyApp : Application() {
         try { PermAsk.install(this) } catch (_: Throwable) {}   // (v1010) صلاحيات بتتطلب وقت الحاجة بس
     }
 }
+
