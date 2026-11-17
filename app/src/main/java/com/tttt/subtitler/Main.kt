@@ -1,6 +1,7 @@
 @file:OptIn(UnstableApi::class)
 package com.tttt.subtitler
 
+import android.app.Activity
 import android.content.Context
 import android.content.Intent
 import android.media.AudioManager
@@ -19,12 +20,6 @@ import android.view.View
 import android.view.WindowManager
 import android.webkit.*
 import android.widget.*
-import androidx.activity.ComponentActivity
-import androidx.compose.ui.platform.ComposeView
-import com.decio.skipii.SkipiiApp
-import com.decio.skipii.SkipiiHost
-import com.decio.skipii.SkipiiTheme
-import com.decio.skipii.Tab
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
@@ -55,7 +50,7 @@ fun filePicker(mime: String, title: String, persist: Boolean): Intent {
     return Intent.createChooser(get, title).putExtra(Intent.EXTRA_INITIAL_INTENTS, arrayOf(open))
 }
 
-class MainActivity : ComponentActivity() {
+class MainActivity : androidx.activity.ComponentActivity() {
     lateinit var link: EditText
     private var fromPlayer = false
     private var ytTvMode = false   // (v532) جاي من زرار «يوتيوب» في الريموت: كل فيديو بيسأل «تشغّله على التلفزيون؟» والرجوع بيرجّع للريموت
@@ -99,7 +94,9 @@ class MainActivity : ComponentActivity() {
     private var musicUi: MusicUi? = null            // (v189) صفحة الموسيقى
     private var tasksUiRef: TasksUi? = null
     private var showTabFn: (Int) -> Unit = {}
-    private var skipiiView: ComposeView? = null   // (v1080) يوتيوب الداخلي = SkipiiApp مضمّنة (ComposeView) بدل YtProUi
+    private var skipiiView: View? = null   // (v1080) Skipii بدل يوتيوب الداخلي على الموبايل/التابلت
+    private fun skipiiOn() = !DeviceUi.isTv(this) && !fromPlayer
+    private var ytUi: YtProUi? = null   // (v1072) يوتيوب الداخلي رجع — واجهة أصلية على NewPipe بدل MeeTube
     private var mediaSw: MediaSwitch? = null   // (v654) زرارين فيديوهات/موسيقى فوق «ميديا»
     private var musicOpenFn: (() -> Unit)? = null   // (v337) يفتح صفحة الموسيقى ومشغّلها الكامل (لتشغيل صوت يوتيوب)
     private var tasksDlgRefresh: (() -> Unit)? = null
@@ -119,7 +116,6 @@ class MainActivity : ComponentActivity() {
     private var uniSearchFn: ((String) -> Unit)? = null   // (v345) بحث شامل
     private var stripUi: StatusStrip? = null   // (v345) شريط الحالة الموحّد
     private var dockUi: MiniDock? = null   // (v344) المشغّل المصغّر العايم
-    private var ytBubbleUi: YtBubble? = null   // (v1080 Phase 3D) دايرة فيديو يوتيوب العايمة
     /** (v344) «ابحث في المتصفح»: بيفتح المتصفح ببحث جوجل عن النص */
     private fun webSearch(q: String) { saveCfgFn?.invoke(); NavAnim.set(curTab, 2); startActivity(Intent(this, BrowserActivity::class.java).putExtra("start", "https://www.google.com/search?q=" + java.net.URLEncoder.encode(q, "UTF-8"))) }
     private var fabHide = false
@@ -400,17 +396,10 @@ class MainActivity : ComponentActivity() {
         val ytQ = listOf("أعلى جودة", "1080p", "720p", "480p", "360p", "240p")
         val ytQv = intArrayOf(0, 1080, 720, 480, 360, 240)
         var settingsDlg0: TabbedDialog? = null; var qui0: QueueUi? = null
-        // (v1080) قسم يوتيوب: فتح يوتيوب الداخلي (Skipii مضمّنة) + تسجيل الدخول بكود التفعيل
-        // (MeeTube اتشال — مفيش إعدادات MeeTube). الطريقة التانية للدخول في صفحة حساب Skipii.
-        var ytSignState: android.widget.TextView? = null
-        fun refreshYtSign() {
-            ytSignState?.text = if (MtYt.signedIn()) "✅ حساب يوتيوب مسجّل (كود التفعيل)" else "🔐 حساب يوتيوب مش مسجّل"
-        }
+        // (v1072) قسم يوتيوب: فتح يوتيوب الداخلي (MeeTube اتشال — مفيش إعدادات MeeTube).
         val ytSettingsViews: () -> List<View> = { listOf(
             ui.section("▶ يوتيوب", true,
                 ui.button("▶ افتح يوتيوب") { settingsDlg0?.dialog?.dismiss(); showTabFn(4) },
-                ui.button("🔐 تسجيل الدخول بحساب يوتيوب (كود التفعيل)") { YtMtSignIn.signIn(this) { refreshYtSign() } },
-                ui.text("", 13f, th.muted).also { ytSignState = it; refreshYtSign() },
                 ui.noHint())) }
         // ===== الواجهة بشكل نسخة الـ HTML: دوائر علوية + كارت فيديو + كبسولة + شبكة أزرار + زرار الترجمة =====
         var recentDlg: android.app.Dialog? = null
@@ -931,27 +920,46 @@ class MainActivity : ComponentActivity() {
                 { v -> save(); playChecked(v) }, { v -> m.lib.playItem(v) },
                 { n -> playYt(n.id, n.title) }, { n -> playYtAudio(n.id, n.title, n.channel, n.thumb) }, { x -> webSearch(x) })
         }
-        // (v1080) بوابة يوتيوب (الخامسة): SkipiiApp مضمّنة كـ ComposeView جوه التبويب —
-        // بتتبني أول ما تفتحها. شريط Joyboy السفلي هو اللي بيملك التبويبات (الرئيسية ·
-        // الاشتراكات · أنا) وبيبعتها لـ SkipiiHost؛ شريط Skipii نفسه مخفي (embedded).
-        // MainActivity بقت ComponentActivity عشان الـ ComposeView يلاقي LifecycleOwner
-        // و SavedStateRegistryOwner و OnBackPressedDispatcherOwner، وعشان كاستات
-        // ComponentActivity جوه SkipiiApp (OrientationController / PipController) تنجح.
-        fun ensureYt(): ComposeView {
+        // (v1072) بوابة يوتيوب (الخامسة): YtProUi رجع — واجهة أصلية على NewPipeExtractor بدل MeeTube؛ بتتبني أول ما تفتحها
+        fun ensureSkipii(): View {   // (v1080)
             skipiiView?.let { return it }
-            val cv = ComposeView(this)
-            cv.setContent { SkipiiTheme { SkipiiApp(embedded = true) } }
-            cv.visibility = View.INVISIBLE
-            skipiiView = cv
-            pane.addView(cv, 1, FrameLayout.LayoutParams(-1, -1))
-            return cv
+            val v = com.decio.skipii.SkipiiEmbed.createView(this)
+            com.decio.skipii.SkipiiEmbed.onPlay = { id, title -> runOnUiThread { try { playYt(id, title, false) } catch (e: Throwable) { LogStore.err("Main:skipiiPlay", e) } }; true }   // (v1080) الفيديو بيتشغّل في مشغّل Joyboy
+            com.decio.skipii.SkipiiEmbed.hostTaskId = { if (isFinishing || isDestroyed) null else taskId }
+            com.decio.skipii.SkipiiEmbed.onFullscreen = { f -> runOnUiThread { navUi?.view?.visibility = if (f && curTab == 4) View.GONE else View.VISIBLE } }
+            v.visibility = View.INVISIBLE
+            skipiiView = v
+            pane.addView(v, 1, FrameLayout.LayoutParams(-1, -1))
+            return v
+        }
+        fun ensureYt(): YtProUi {
+            ytUi?.let { return it }
+            YtSkin.translucent = tvShellOn   // (v516)
+            val yt = YtProUi(this, ui, th,
+                { Recents.parse(try { recentFile.readText() } catch (_: Exception) { "" }).associateBy { it.id } },
+                { id, name, tr -> playYt(id, name, tr) },
+                { u -> save(); NavAnim.set(curTab, 2); startActivity(Intent(this, BrowserActivity::class.java).putExtra("start", u)) },
+                { startActivityForResult(filePicker("*/*", "اختار ملف الاشتراكات", false), 47) },
+                { n -> playYtAudio(n.id, n.title, n.channel, n.thumb) },
+                { n, a -> ytDownload(n, a) },
+                { PubHistoryUi.show(this, ui, th) { kind, src, ref, title -> when {
+                    kind == "v" && src == "youtube" -> playYt(ref, title, false)
+                    kind == "v" && src == "local" -> play("", android.net.Uri.parse(ref), true)
+                    kind == "v" -> openLink(ref)
+                    kind == "a" && src == "youtube" -> playYtAudio(ref, title, "", "")
+                    else -> {}
+                } } }, onPlayAt = { id, name, tr, ms, pk -> playYt(id, name, tr, tr, ms, pk) })
+            ytUi = yt; yt.root.visibility = View.INVISIBLE; yt.onTab = { syncNav() }   // (v475) تبويبات يوتيوب في الشريط السفلي
+            pane.addView(yt.root, 1, FrameLayout.LayoutParams(-1, -1))
+            pane.addView(yt.busyView, FrameLayout.LayoutParams(-1, -1))   // (v337) لودينج جلب رابط الفيديو فوق الصفحة
+            return yt
         }
         // (v189) البوابات: 0 الفيديوهات · 1 الموسيقى · 2 المتصفح · 3 الملفات (شاشات لوحدها) · (v324) 4 يوتيوب
         // (v324) 5 = صفحة المهام: مش في الشريط، بتتفتح من الزرار العايم (الشريط ساعتها مفيهوش بوابة نشطة)
         showTabFn = { i ->
             if (i == 0 || i == 1 || i == 4 || i == 5 || i == 7) {
                 val prevTab = curTab
-                val prevView: View? = when (prevTab) { 0 -> lib.root; 1 -> musicUi?.root; 4 -> skipiiView; 7 -> settingsHostRef; 5 -> tasksUi.root; else -> null }   // (v621) للأنيميشن الخارج
+                val prevView: View? = when (prevTab) { 0 -> lib.root; 1 -> musicUi?.root; 4 -> (skipiiView ?: ytUi?.root); 7 -> settingsHostRef; 5 -> tasksUi.root; else -> null }   // (v621) للأنيميشن الخارج
                 if (i == 5 && prevTab != 5) tabBeforeTasks = prevTab
                 if (i == 7 && prevTab != 7) tabBeforeSettings = prevTab
                 if (prevTab == 7 && i != 7) { try { save(); refreshChip() } catch (_: Throwable) {} }
@@ -959,23 +967,25 @@ class MainActivity : ComponentActivity() {
                 NavOrigin.mainTab(i)   // (v1006)
                 NetLedger.tab(when (i) { 0 -> "فيديوهات"; 1 -> "يوتيوب"; 4 -> "يوتيوب"; 5 -> "مركز التحميل"; 7 -> "الإعدادات"; else -> "تبويب $i" })
                 dockUi?.refresh()   // (v344) المشغّل المصغّر بيختفي
-                ytBubbleUi?.refresh()
                 stripUi?.hidden = (curTab == 5)   // (v345) في صفحة الموسيقى وبيظهر في الباقي
                 lib.root.visibility = if (i == 0) View.VISIBLE else View.INVISIBLE   // (v940) كل التبويبات متقاسة ورا بعض: التبديل من غير layout تقيل
                 if (i == 1) ensureMusic()
                 musicUi?.root?.visibility = if (i == 1) View.VISIBLE else View.INVISIBLE
-                if (i == 4) ensureYt()
+                if (i == 4) { if (skipiiOn()) ensureSkipii() else ensureYt() }
                 skipiiView?.visibility = if (i == 4) View.VISIBLE else View.INVISIBLE
+                if (skipiiView != null) { com.decio.skipii.SkipiiEmbed.setHidden(this, i != 4); if (i != 4) navUi?.view?.visibility = View.VISIBLE }
+                ytUi?.root?.visibility = if (i == 4) View.VISIBLE else View.INVISIBLE
                 tasksUi.root.visibility = if (i == 5) View.VISIBLE else View.INVISIBLE
                 settingsHostRef?.visibility = if (i == 7) View.VISIBLE else View.INVISIBLE
                 tasksDlgRefresh = if (i == 5) ({ tasksUi.refresh() }) else null
                 syncNav()   // (v475)
                 if (i == 1) { musicUi?.ensureLoaded(); musicUi?.applyNavTint() } else setNavTint(null)
+                if (i == 4) { ytUi?.refresh(); ytUi?.tvFocusList() } else if (prevTab == 4) ytUi?.onHide()
                 if (i == 5) tasksUi.refresh()
                 updateTasksFab()
                 pageGearUi?.sync(i)   // (v820) ⚙️ الصفحة: بيظهر في الفيديوهات/الموسيقى/المهام بس
                 if (prevTab != i) {   // (v312) الصفحة الجديدة بتنزلق من ناحية اتجاه الانتقال (الشريط RTL: رقم أكبر = شمال)
-                    val target: View? = when (i) { 0 -> lib.root; 1 -> musicUi?.root; 4 -> skipiiView; 7 -> settingsHostRef; else -> tasksUi.root }
+                    val target: View? = when (i) { 0 -> lib.root; 1 -> musicUi?.root; 4 -> (skipiiView ?: ytUi?.root); 7 -> settingsHostRef; else -> tasksUi.root }
                     if (target != null && Cfg.bool("anim_tabs", true)) {
                         val dir = if (NavAnim.pos(i) > NavAnim.pos(prevTab)) -1 else 1
                         Motion.tabEnter(target, dir)
@@ -988,7 +998,7 @@ class MainActivity : ComponentActivity() {
         musicOpenFn = { showTabFn(1); musicUi?.showFull() }   // (v337)
         // (v1071) مفيش تسخين في الخلفية: لا يوتيوب ولا موسيقى ولا أي صفحة بتتبني قبل ما تدوس عليها — كل صفحة بتفتح وقت الدوسة بس
         val tabletShell = DeviceUi.isTablet(this)   // (v462) قشرة التابلت: ريل جانبي زي يوتيوب التابلت بدل الشريط السفلي
-        val nav = BottomNav(this, ui, th, 0, tabletShell) { i -> if (i >= BottomNav.YT_HOME) { musicReturnTab = -1; val was = curTab == 4; if (!was) showTabFn(4); SkipiiHost.requestTab(when (i - BottomNav.YT_HOME) { 0 -> Tab.Home; 1 -> Tab.Subscriptions; else -> Tab.Library }) } else if (i == 2) { save(); NavAnim.set(curTab, 2); showBrowserLoading(); startActivity(TabNav.front(Intent(this, BrowserActivity::class.java))) } else if (i == 3) { save(); NavAnim.set(curTab, 3); startActivity(TabNav.front(FilesHub.intent(this))) } else if (i == 7) { musicReturnTab = -1; settingsShow?.invoke(null) } else if (i == 0 && fromTv && !fromPlayer && TvFocus.goHome(this)) { /* (v482) تلفزيون: «الرئيسية» = شاشة التلفزيون */ } else { musicReturnTab = -1; showTabFn(i) } }   // (v310) 4 الملفات = شاشة منفصلة زي المتصفح · (v1080) يوتيوب شغّال ← المتصفح: ON_STOP جوه SkipiiApp بيحوّل الصوت للخلفية، و AutoEnter بيدخّل PiP لو مفعّل (leaveForPip بتاع YtProUi اتمسح معاه)
+        val nav = BottomNav(this, ui, th, 0, tabletShell) { i -> if (i >= BottomNav.YT_HOME) { musicReturnTab = -1; val was = curTab == 4; if (!was) showTabFn(4); ytUi?.tapTab(i - BottomNav.YT_HOME, !was) } else if (i == 2) { save(); val ytPip = try { curTab == 4 && android.os.Build.VERSION.SDK_INT >= 26 && !DeviceUi.isTv(this) && ytUi?.leaveForPip() == true } catch (_: Throwable) { false }; NavAnim.set(curTab, 2); showBrowserLoading(); if (ytPip) window.decorView.postDelayed({ if (!isFinishing && !isDestroyed) startActivity(TabNav.front(Intent(this, BrowserActivity::class.java))) }, 1000L) else startActivity(TabNav.front(Intent(this, BrowserActivity::class.java))) } else if (i == 3) { save(); NavAnim.set(curTab, 3); startActivity(TabNav.front(FilesHub.intent(this))) } else if (i == 7) { musicReturnTab = -1; settingsShow?.invoke(null) } else if (i == 0 && fromTv && !fromPlayer && TvFocus.goHome(this)) { /* (v482) تلفزيون: «الرئيسية» = شاشة التلفزيون */ } else { musicReturnTab = -1; showTabFn(i) } }   // (v310) 4 الملفات = شاشة منفصلة زي المتصفح · (v606) يوتيوب شغّال ← المتصفح: الفيديو يكمّل في PiP والاتنين مع بعض
         navUi = nav
         nav.onMoreToggle = { o -> pageGearUi?.moreOpen = o }   // (v820)
         if (!fromPlayer) {
@@ -1046,13 +1056,6 @@ class MainActivity : ComponentActivity() {
         frame.addView(warmView, FrameLayout.LayoutParams(-1, -1))
         refreshWarm()
         dockUi = MiniDock(this, frame, ui, th, { musicOpenFn?.invoke() }, { curTab == 1 }) { t -> musicUi?.artBitmap(t) }   // (v344)
-        // (v1080 Phase 3D) دايرة فيديو يوتيوب العايمة: دوسة عليها = رجوع لتبويب يوتيوب والمشغّل مفتوح
-        ytBubbleUi = YtBubble(this, frame, ui, { curTab == 4 || tvShellOn }) {
-            showTabFn(4)
-            SkipiiHost.playerState?.let { it.expanded = true }
-        }
-        SkipiiHost.playbackListener = { ytBubbleUi?.refresh() }
-        SkipiiHost.embeddedBottomBar = !tabletShell && !DeviceUi.isTv(this)
         stripUi = StatusStrip(this, frame, ui, th) { showTabFn(5) }   // (v345)
         tasksFabUi = TasksFab(this, frame, ui) { showTasksDialog() }   // (v420) عايم: بيظهر وقت المهام الشغّالة بس
         if (!fromPlayer && b == null && !tvShellOn) { frame.alpha = 0f; frame.animate().setStartDelay(0L).alpha(1f).setDuration(160L).start() }   // (v312) بدل السبلاش: ظهور ناعم سريع
@@ -1460,7 +1463,7 @@ class MainActivity : ComponentActivity() {
         if (r == 14) { nextPerm(); return }
         if (r == 1 && c == RESULT_OK) d?.data?.let { try { contentResolver.takePersistableUriPermission(it, Intent.FLAG_GRANT_READ_URI_PERMISSION) } catch (e: Exception) { LogStore.err("Main:665", e) }; play("", it) }
     }
-    override fun onRequestPermissionsResult(rc: Int, perms: Array<String>, res: IntArray) {
+    override fun onRequestPermissionsResult(rc: Int, perms: Array<out String>, res: IntArray) {
         super.onRequestPermissionsResult(rc, perms, res)
         if (rc == 13) { scanFn(); nextPerm(); return }
         if (rc == 12) { if (res.isNotEmpty() && res[0] == android.content.pm.PackageManager.PERMISSION_GRANTED) musicUi?.load() else Notice.show(this, "من غير إذن الصوتيات مش هقدر أعرض الموسيقى", 3200L); return }
@@ -1554,7 +1557,7 @@ class MainActivity : ComponentActivity() {
     }
     /** (v532) لينك يوتيوب مش فيديو (قناة / قايمة تشغيل / بحث): بيتفتح في تاب يوتيوب بتاع البرنامج مش في المتصفح */
     private fun openYtPage(u: String) {
-        try { showTabFn(4); SkipiiHost.openUrl(u) } catch (e: Throwable) { LogStore.err("Main:ytPage", e) }   // (v1080) قناة/قايمة/بحث/فيديو ← Skipii (routeUrl: الشورت للشورتس، والباقي للمشغّل)
+        try { showTabFn(4); ytUi?.openUrl(u) } catch (e: Throwable) { LogStore.err("Main:ytPage", e) }   // (v1072) قناة/قايمة/بحث ← يوتيوب الداخلي
     }
     private fun cancelYtLoad() { ytLoadTok++; ytLoadLaunched = false }
     /** (v339) بنفتح «صفحة المشغّل» فورًا (لودينج جواها) وبنجيب رابط الفيديو في الخلفية؛ لو فشل بنقفلها ونطلّع الدايلوج ونفضل في يوتيوب */
@@ -1826,10 +1829,12 @@ class MainActivity : ComponentActivity() {
     fun openSettingsTab(t: String) { try { settingsShow?.invoke(t) } catch (_: Throwable) {} }
     /** (v407) صفحة «سجل يوتيوب» المنفصلة — بتتفتح من فولدر المصطادة ومن الإعدادات ▸ يوتيوب (نفس البيانات) */
     private var saveFn: () -> Unit = {}   // (v407) save() دالة محلية في onCreate — بنمسكها هنا
-    fun showYtHistory() {   // (v1080) سجل يوتيوب بقى تبويب «المكتبة» في Skipii (سجل المشاهدة + قوايم التشغيل)؛ YtHistoryUi اتمسح
+    fun showYtHistory() {   // (v1072) سجل يوتيوب الداخلي رجع — مش جوه MeeTube
         try {
-            showTabFn(4)
-            SkipiiHost.requestTab(Tab.Library)
+            val th2 = Themes.current()
+            YtHistoryUi.show(this, Ui(this, th2), th2,
+                { id, title -> playYt(id, title, false) },
+                { id, title, _ -> playYtAudio(id, title, "", "") })
         } catch (e: Throwable) { LogStore.err("Main:ytHist", e) }
     }
     private fun tvToLauncher(show: String) {
@@ -1838,11 +1843,21 @@ class MainActivity : ComponentActivity() {
     }
     fun updateYtBadge() { navUi?.badge(4, 0) }
     /** (v475) الشريط السفلي: وانت في يوتيوب بيعرض (الرئيسية · الاشتراكات · أنا)؛ اللايت ترتيبه ثابت (الرئيسية · الاشتراكات · محلي · أنا) */
+    private var navTop = false
+    private fun placeNavTop(top: Boolean) {
+        if (top == navTop) return
+        val nv = navUi?.view ?: return
+        val p = nv.parent as? android.view.ViewGroup ?: return
+        navTop = top
+        p.removeView(nv)
+        p.addView(nv, if (top) 0 else p.childCount, LinearLayout.LayoutParams(-1, -2))
+    }
     fun syncNav() {
         tvBar?.select(if (curTab == 4) 2 else if (curTab == 0) 4 else -1)   // (v516)
         val n = navUi ?: return
         val liteApp = packageName.endsWith(".lite")
-        n.mode(curTab == 4)
+        n.mode(curTab == 4 && !skipiiOn())
+        placeNavTop(curTab == 4 && skipiiOn() && !DeviceUi.isTablet(this))   // (v1080) جوه يوتيوب (Skipii) الشريط فوق، وتحت في الباقي
         mediaSw?.show(if (!liteApp && !fromPlayer && !tvShellOn && (curTab == 0 || curTab == 1)) curTab else -1)   // (v654)
         n.set(if (liteApp && curTab == 7) BottomNav.YT_ME else curTab)
     }
@@ -1926,7 +1941,7 @@ class MainActivity : ComponentActivity() {
         stoppedAt = 0L
         if (!fromPlayer && libStarted) libUi?.let { if (it.hasData) it.render() else scanFn() }
     }
-    override fun onDestroy() { try { AppWall.detach(this) } catch (_: Throwable) {}; try { TvModeFab.listeners.remove(tvModeSync) } catch (_: Throwable) {}; try { KeysSync.reload = null } catch (_: Throwable) {}; try { dockUi?.detach() } catch (_: Throwable) {}; try { ytBubbleUi?.detach() } catch (_: Throwable) {}; SkipiiHost.playbackListener = null; try { stripUi?.detach() } catch (_: Throwable) {}; try { tasksFabUi?.detach() } catch (_: Throwable) {}; if (!fromPlayer) TaskCenter.listener = null; try { tasksFabUi?.detach() } catch (_: Throwable) {}; try { musicUi?.destroy() } catch (_: Throwable) {}; super.onDestroy() }
+    override fun onDestroy() { try { AppWall.detach(this) } catch (_: Throwable) {}; try { TvModeFab.listeners.remove(tvModeSync) } catch (_: Throwable) {}; try { KeysSync.reload = null } catch (_: Throwable) {}; try { dockUi?.detach() } catch (_: Throwable) {}; try { stripUi?.detach() } catch (_: Throwable) {}; try { tasksFabUi?.detach() } catch (_: Throwable) {}; if (!fromPlayer) TaskCenter.listener = null; try { tasksFabUi?.detach() } catch (_: Throwable) {}; try { musicUi?.destroy() } catch (_: Throwable) {}; super.onDestroy() }
     /** (v327) إشعار فيديو جديد: افتح تفاصيله في بوابة يوتيوب (الدالة بتتركّب أول ما بوابة يوتيوب تتبني؛ showTabFn(4) بتبنيها) */
     private fun openYtFromIntent(i: Intent?) {
         val id = i?.getStringExtra("yt_open") ?: return
@@ -1934,7 +1949,7 @@ class MainActivity : ComponentActivity() {
         try { playYt(id, "", false) } catch (e: Throwable) { LogStore.err("Main:ytOpen", e) }   // (v888) إشعار فيديو جديد ← مباشرة للمشغّل (MeeTube أو Joyboy)
     }
     /** (v117) الرجوع من المتصفح بشريط البوابات: بيفتح البوابة اللي اخترتها */
-    override fun onNewIntent(i: Intent) {
+    override fun onNewIntent(i: Intent?) {
         super.onNewIntent(i)
         // (v1072) استعادة PiP من أيقونة اللانشر — مشغّل Joyboy نفسه (نفس فحص onCreate فوق).
         if (i?.action == Intent.ACTION_MAIN && i?.hasCategory(Intent.CATEGORY_LAUNCHER) == true) {
@@ -1962,6 +1977,7 @@ class MainActivity : ComponentActivity() {
                     i?.getStringExtra("ytaudurl"), i?.getStringExtra("ytaudua") ?: "", i?.getLongExtra("ytauddur", 0L) ?: 0L)
             } catch (e: Throwable) { LogStore.err("Main:ytaudio", e); Notice.show(this, ("ما قدرتش أحوّل لصوت — جرّب تاني").toString(), 3000L) }
         }
+        com.decio.skipii.SkipiiEmbed.handleIntent(i)   // (v1080)
         handleExternal(i); handleLinkIntent(i)   // (v345)
         handleClipBubbleIntent(i)   // (v729) أزرار الدايرة العايمة (LinkWatch) من فوق أي تطبيق
         // (v547 م3) «📚 مكتبة التلفزيون» من شاشة الريموت
@@ -1975,7 +1991,8 @@ class MainActivity : ComponentActivity() {
     override fun dispatchKeyEvent(ev: android.view.KeyEvent): Boolean { TvKill.watch(this, ev); if (TvFocus.handleKey(this, ev)) return true; return super.dispatchKeyEvent(ev) }   // (v477) Menu = دوسة طويلة
     @Suppress("DEPRECATION")
     override fun onBackPressed() {
-        if (!fromPlayer && curTab == 4 && SkipiiHost.back()) return   // (v1080) رجوع جوه Skipii (مشغّل ← مصغّر · تبويب ← الرئيسية · قايمة/قناة ← القايمة)
+        if (!fromPlayer && curTab == 4 && skipiiView != null && onBackPressedDispatcher.hasEnabledCallbacks()) { super.onBackPressed(); return }   // (v1080) رجوع جوه Skipii (BackHandler)
+        if (!fromPlayer && curTab == 4 && ytUi?.back() == true) return   // (v1072) رجوع جوه يوتيوب (صفحة مشاهدة/قناة ← القايمة)
         if (!fromPlayer && ytTvMode && curTab == 4) { ytTvMode = false }   // (v603) الريموت القديم اتمسح: مفيش «رجوع للريموت»، بيكمّل الرجوع العادي
 
         if (!fromPlayer && curTab == 7) { settingsBack?.invoke(); return }   // (v370)

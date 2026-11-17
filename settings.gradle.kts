@@ -15,6 +15,7 @@ gradle.extra["mediaServiceCoreRoot"] = File(mt, "MediaServiceCore")
 gradle.extra["sharedModulesConstants"] = File(mt, "SharedModules/constants.gradle")
 
 include(":app")
+include(":skipii")   // (v1080) Skipii embedded
 fun mod(name: String, dir: String) { include(name); project(name).projectDir = File(mt, dir) }
 mod(":mediaserviceinterfaces", "MediaServiceCore/mediaserviceinterfaces")
 mod(":youtubeapi", "MediaServiceCore/youtubeapi")

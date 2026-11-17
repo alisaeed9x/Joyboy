@@ -10,8 +10,9 @@ buildscript {
     dependencies {
         // AGP 9.2 فيه كومبايلر كوتلن مدمج — مفيش بلجن kotlin-android منفصل (نفس بناء MeeTube)
         classpath 'com.android.tools.build:gradle:9.2.1'
-        // (v1083) كوتلن المدمج في AGP 9.2.1 بيرجع لـ2.2.10 لوحده، و produceDebugComposeMapping بيدوّر على compose-group-mapping:2.2.10 (مش موجود). تثبيت KGP على 2.3.21 يخلي المدمج يستخدم نفس نسخة بلجن الكومبوز.
-        classpath 'org.jetbrains.kotlin:kotlin-gradle-plugin:2.3.21'
+        // (v1080) Compose compiler for :skipii — same version as the Kotlin runtime in constants.gradle
+        classpath 'org.jetbrains.kotlin:kotlin-gradle-plugin:' + kotlinVersion
+        classpath 'org.jetbrains.kotlin:compose-compiler-gradle-plugin:' + kotlinVersion
     }
 }
 

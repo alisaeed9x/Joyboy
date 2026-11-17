@@ -1,0 +1,83 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="settings_title">Impostazioni</string>
+    <string name="settings_search">Cerca nelle impostazioni</string>
+    <string name="settings_no_results">Nessun risultato per «%1$s»</string>
+    <string name="settings_group_watching">Mentre guardi</string>
+    <string name="settings_group_look">Aspetto e lingua</string>
+    <string name="settings_playback">Riproduzione</string>
+    <string name="settings_notifications">Notifiche</string>
+    <string name="settings_account">Account</string>
+    <string name="settings_about">Informazioni</string>
+    <string name="settings_on">Attivo</string>
+    <string name="settings_off">Disattivato</string>
+    <string name="settings_speed_keep">Mantieni velocità</string>
+    <string name="settings_speed_remember_title">Ricorda la velocità per ogni video</string>
+    <string name="settings_speed_remember_on">I nuovi video partono a %1$s×</string>
+    <string name="settings_speed_remember_off">Ogni video parte a 1×</string>
+    <string name="settings_speed_kept_summary">velocità fissa a %1$s×</string>
+    <string name="settings_speed_per_video">velocità per video</string>
+    <string name="settings_audio_only_line">Audio senza immagine, in ogni video. Anche nella barra del player.</string>
+    <string name="settings_sb_summary">Salta %1$s, chiede per %2$s</string>
+    <string name="settings_mode">Modalità</string>
+    <string name="settings_theme">Tema</string>
+    <string name="settings_amoled_title">Nero AMOLED</string>
+    <string name="settings_amoled_line">Modalità scura in nero puro, per schermi OLED</string>
+    <string name="settings_amoled_light_line">Si usa quando l\'app è scura: scegli Scuro o Sistema</string>
+    <plurals name="settings_bells_count">
+        <item quantity="one">%1$s canale con la campanella attiva</item>
+        <item quantity="many">%1$s di canali con la campanella attiva</item>
+        <item quantity="other">%1$s canali con la campanella attiva</item>
+    </plurals>
+    <string name="settings_bells_none">Ancora nessuna campanella attiva</string>
+    <string name="settings_bells_empty">Attiva la campanella sul pulsante Iscriviti di un canale e Skipii ti avvisa di ogni suo nuovo video.</string>
+    <string name="settings_bell_line">Ogni nuovo video</string>
+    <string name="settings_system_notifications">Impostazioni di notifica di Android</string>
+    <string name="settings_system_notifications_line">Suono, vibrazione, Non disturbare</string>
+    <string name="settings_full_sync">Accesso con Google · sincronizzazione completa</string>
+    <string name="settings_sync_note">La sincronizzazione completa è attiva: Mi piace, iscrizioni, Guarda più tardi e cronologia tornano al tuo account.</string>
+    <string name="settings_version">Versione %1$s</string>
+    <string name="settings_up_to_date">Aggiornata · tocca per controllare</string>
+    <string name="settings_checking">Ricerca aggiornamenti…</string>
+    <string name="settings_update_available">È disponibile la versione %1$s</string>
+    <string name="settings_source">Codice sorgente su GitHub</string>
+    <string name="settings_source_line">Segnala un problema o chiedi una funzione</string>
+    <string name="settings_crash_title">Rapporto sugli arresti</string>
+    <string name="settings_crash_saved">Salvato dall\'ultimo arresto anomalo. Condividilo e incollalo in una issue su GitHub</string>
+    <string name="settings_crash_none">Nessun arresto salvato. Condivide come Android ha chiuso Skipii l\'ultima volta, per una issue su GitHub</string>
+    <string name="settings_crash_tile">Rapporto sugli arresti salvato</string>
+    <string name="settings_crash_share">Condividi il rapporto sugli arresti</string>
+    <string name="settings_made_by">Creato da %1$s</string>
+    <string name="settings_say_hi">Passa a salutare</string>
+    <string name="settings_email_developer">Scrivi allo sviluppatore</string>
+    <string name="settings_no_app">Nessuna app di questo telefono può aprirlo</string>
+    <string name="settings_zoom_fill_title">Zoom per riempire a schermo intero</string>
+    <string name="settings_zoom_fill_on">Ogni video riempie lo schermo; i bordi in eccesso vengono tagliati. Avvicina due dita per vedere un video intero.</string>
+    <string name="settings_zoom_fill_off">I video si vedono interi, con bande nere. Allarga due dita a schermo intero per riempire lo schermo.</string>
+    <string name="settings_zoom_fill_summary">zoom per riempire</string>
+    <string name="settings_seek_step_title">Indietro e avanti</string>
+    <string name="settings_seek_step_line">Di quanto saltano un doppio tocco sul video e i pulsanti −/⁠+</string>
+    <string name="settings_seconds_short">%1$s s</string>
+    <string name="settings_seek_step_summary">Salti di %1$s s</string>
+    <string name="settings_music_normal_title">Musica a velocità normale</string>
+    <string name="settings_music_normal_line">I brani suonano sempre a 1×, anche con una velocità tenuta per tutti i video</string>
+    <string name="settings_chapters_open_title">Tieni aperti i capitoli</string>
+    <string name="settings_chapters_open_line">Scegliendo un capitolo l\'elenco resta aperto, per passare dall\'uno all\'altro</string>
+    <string name="settings_auto_pip_title">Picture in picture quando esci</string>
+    <string name="settings_auto_pip_line">Tornando alla schermata Home durante un video, continua in una piccola finestra</string>
+    <!-- Settings › Playback: playback controls as a live activity (Android's Live Updates) while the app is off screen. -->
+    <string name="settings_live_title">Attività dal vivo</string>
+    <string name="settings_live_line">Uscendo da Skipii mentre un video è in riproduzione, i comandi restano nella barra di stato e nella schermata di blocco</string>
+    <string name="settings_live_needs">Richiede Android 16 QPR1 o versioni successive</string>
+    <string name="settings_live_refused">Questo telefono la mostra solo come notifica normale, quindi restano solo i controlli multimediali</string>
+    <string name="settings_live_allow_title">Consenti aggiornamenti dal vivo</string>
+    <string name="settings_live_allow_line">Gli aggiornamenti dal vivo sono disattivati per Skipii nelle impostazioni di Android</string>
+    <!-- Only for Settings' search: other words people use for it. -->
+    <string name="settings_live_words">Aggiornamento dal vivo, Now Bar, barra di stato, schermata di blocco</string>
+    <string name="settings_swipe_brightness_title">Scorri per regolare la luminosità</string>
+    <string name="settings_swipe_brightness_line">A schermo intero, scorri in su o in giù sul lato sinistro del video.</string>
+    <string name="settings_swipe_volume_title">Scorri per regolare il volume</string>
+    <string name="settings_swipe_volume_line">A schermo intero, scorri in su o in giù sul lato destro del video.</string>
+    <!-- Only for Settings' search: other words people use for them. -->
+    <string name="settings_swipe_words">gesto, gesti, scorrere, luminosità, volume, audio</string>
+</resources>

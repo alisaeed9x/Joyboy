@@ -1,0 +1,82 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="settings_title">Einstellungen</string>
+    <string name="settings_search">Einstellungen durchsuchen</string>
+    <string name="settings_no_results">Nichts passt zu „%1$s“</string>
+    <string name="settings_group_watching">Beim Ansehen</string>
+    <string name="settings_group_look">Aussehen und Sprache</string>
+    <string name="settings_playback">Wiedergabe</string>
+    <string name="settings_notifications">Benachrichtigungen</string>
+    <string name="settings_account">Konto</string>
+    <string name="settings_about">Info</string>
+    <string name="settings_on">An</string>
+    <string name="settings_off">Aus</string>
+    <string name="settings_speed_keep">Tempo behalten</string>
+    <string name="settings_speed_remember_title">Tempo für alle Videos merken</string>
+    <string name="settings_speed_remember_on">Neue Videos starten mit %1$s×</string>
+    <string name="settings_speed_remember_off">Jedes Video startet mit 1×</string>
+    <string name="settings_speed_kept_summary">Tempo bleibt bei %1$s×</string>
+    <string name="settings_speed_per_video">Tempo pro Video</string>
+    <string name="settings_audio_only_line">Ton ohne Bild, in jedem Video. Auch in der Leiste des Players.</string>
+    <string name="settings_sb_summary">Überspringt %1$s, fragt bei %2$s</string>
+    <string name="settings_mode">Modus</string>
+    <string name="settings_theme">Design</string>
+    <string name="settings_amoled_title">AMOLED-Schwarz</string>
+    <string name="settings_amoled_line">Dunkler Modus in reinem Schwarz, für OLED-Displays</string>
+    <string name="settings_amoled_light_line">Gilt, wenn die App dunkel ist: wähle Dunkel oder System</string>
+    <plurals name="settings_bells_count">
+        <item quantity="one">%1$s Kanal mit aktivierter Glocke</item>
+        <item quantity="other">%1$s Kanäle mit aktivierter Glocke</item>
+    </plurals>
+    <string name="settings_bells_none">Noch keine Glocke aktiviert</string>
+    <string name="settings_bells_empty">Aktiviere die Glocke am Abonnieren-Button eines Kanals, und Skipii meldet dir jedes neue Video.</string>
+    <string name="settings_bell_line">Jedes neue Video</string>
+    <string name="settings_system_notifications">Android-Benachrichtigungseinstellungen</string>
+    <string name="settings_system_notifications_line">Ton, Vibration, Bitte nicht stören</string>
+    <string name="settings_full_sync">Mit Google angemeldet · vollständige Synchronisierung</string>
+    <string name="settings_sync_note">Die vollständige Synchronisierung ist an: Likes, Abos, Später ansehen und der Wiedergabeverlauf gehen zurück an dein Konto.</string>
+    <string name="settings_version">Version %1$s</string>
+    <string name="settings_up_to_date">Aktuell · zum Prüfen tippen</string>
+    <string name="settings_checking">Suche nach Updates…</string>
+    <string name="settings_update_available">Version %1$s ist verfügbar</string>
+    <string name="settings_source">Quellcode auf GitHub</string>
+    <string name="settings_source_line">Ein Problem melden oder eine Funktion wünschen</string>
+    <string name="settings_crash_title">Absturzbericht</string>
+    <string name="settings_crash_saved">Vom letzten Absturz gespeichert. Teile ihn und füge ihn in ein GitHub-Issue ein</string>
+    <string name="settings_crash_none">Kein Absturz gespeichert. Teilt, wie Android Skipii zuletzt beendet hat, für ein GitHub-Issue</string>
+    <string name="settings_crash_tile">Absturzbericht gespeichert</string>
+    <string name="settings_crash_share">Absturzbericht teilen</string>
+    <string name="settings_made_by">Gemacht von %1$s</string>
+    <string name="settings_say_hi">Sag gern Hallo</string>
+    <string name="settings_email_developer">E-Mail an den Entwickler</string>
+    <string name="settings_no_app">Keine App auf diesem Telefon kann das öffnen</string>
+    <string name="settings_zoom_fill_title">Im Vollbild zum Füllen zoomen</string>
+    <string name="settings_zoom_fill_on">Jedes Video füllt den Bildschirm; überstehende Ränder werden abgeschnitten. Zusammenziehen, um ein Video ganz zu sehen.</string>
+    <string name="settings_zoom_fill_off">Videos werden ganz gezeigt, mit schwarzen Balken. Im Vollbild auseinanderziehen, um den Bildschirm zu füllen.</string>
+    <string name="settings_zoom_fill_summary">zum Füllen gezoomt</string>
+    <string name="settings_seek_step_title">Zurück- und vorspulen</string>
+    <string name="settings_seek_step_line">Wie weit ein Doppeltippen aufs Video und die −/⁠+-Tasten springen</string>
+    <string name="settings_seconds_short">%1$s s</string>
+    <string name="settings_seek_step_summary">Sprünge von %1$s s</string>
+    <string name="settings_music_normal_title">Musik in normaler Geschwindigkeit</string>
+    <string name="settings_music_normal_line">Songs laufen immer mit 1×, auch wenn eine Geschwindigkeit für alle Videos gemerkt ist</string>
+    <string name="settings_chapters_open_title">Kapitel offen lassen</string>
+    <string name="settings_chapters_open_line">Nach der Wahl eines Kapitels bleibt die Liste offen, so geht es von einem zum nächsten</string>
+    <string name="settings_auto_pip_title">Bild-im-Bild beim Verlassen</string>
+    <string name="settings_auto_pip_line">Wechselst du beim Abspielen zum Startbildschirm, läuft das Video in einem kleinen Fenster weiter</string>
+    <!-- Settings › Playback: playback controls as a live activity (Android's Live Updates) while the app is off screen. -->
+    <string name="settings_live_title">Live-Aktivität</string>
+    <string name="settings_live_line">Verlässt du Skipii, während ein Video läuft, liegen die Steuerelemente in der Statusleiste und auf dem Sperrbildschirm</string>
+    <string name="settings_live_needs">Benötigt Android 16 QPR1 oder neuer</string>
+    <string name="settings_live_refused">Dieses Handy zeigt sie nur als normale Benachrichtigung, daher bleiben nur die Mediensteuerelemente</string>
+    <string name="settings_live_allow_title">Live-Updates erlauben</string>
+    <string name="settings_live_allow_line">Live-Updates sind für Skipii in den Android-Einstellungen aus</string>
+    <!-- Only for Settings' search: other words people use for it. -->
+    <string name="settings_live_words">Live-Update, Now Bar, Statusleiste, Sperrbildschirm</string>
+    <string name="settings_swipe_brightness_title">Wischen für Helligkeit</string>
+    <string name="settings_swipe_brightness_line">Im Vollbild auf der linken Seite des Videos nach oben oder unten wischen.</string>
+    <string name="settings_swipe_volume_title">Wischen für Lautstärke</string>
+    <string name="settings_swipe_volume_line">Im Vollbild auf der rechten Seite des Videos nach oben oder unten wischen.</string>
+    <!-- Only for Settings' search: other words people use for them. -->
+    <string name="settings_swipe_words">Geste, Gesten, wischen, Helligkeit, Lautstärke, Ton</string>
+</resources>

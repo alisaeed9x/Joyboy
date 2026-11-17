@@ -1,0 +1,86 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="settings_title">الإعدادات</string>
+    <string name="settings_search">البحث في الإعدادات</string>
+    <string name="settings_no_results">لا شيء يطابق «%1$s»</string>
+    <string name="settings_group_watching">أثناء المشاهدة</string>
+    <string name="settings_group_look">المظهر واللغة</string>
+    <string name="settings_playback">التشغيل</string>
+    <string name="settings_notifications">الإشعارات</string>
+    <string name="settings_account">الحساب</string>
+    <string name="settings_about">حول التطبيق</string>
+    <string name="settings_on">مفعّل</string>
+    <string name="settings_off">متوقف</string>
+    <string name="settings_speed_keep">الاحتفاظ بالسرعة</string>
+    <string name="settings_speed_remember_title">تذكّر السرعة لكل الفيديوهات</string>
+    <string name="settings_speed_remember_on">تبدأ الفيديوهات الجديدة بسرعة %1$s×</string>
+    <string name="settings_speed_remember_off">يبدأ كل فيديو بسرعة 1×</string>
+    <string name="settings_speed_kept_summary">السرعة ثابتة على %1$s×</string>
+    <string name="settings_speed_per_video">السرعة لكل فيديو</string>
+    <string name="settings_audio_only_line">الصوت دون الصورة في كل الفيديوهات. وأيضًا في شريط المشغّل.</string>
+    <string name="settings_sb_summary">يتخطى %1$s، ويسأل عن %2$s</string>
+    <string name="settings_mode">الوضع</string>
+    <string name="settings_theme">السمة</string>
+    <string name="settings_amoled_title">أسود AMOLED</string>
+    <string name="settings_amoled_line">الوضع الداكن بالأسود الخالص، لشاشات OLED</string>
+    <string name="settings_amoled_light_line">يُستخدم عندما يكون التطبيق داكنًا: اختر داكن أو النظام</string>
+    <plurals name="settings_bells_count">
+        <item quantity="zero">%1$s قناة جرسها مفعّل</item>
+        <item quantity="one">%1$s قناة جرسها مفعّل</item>
+        <item quantity="two">%1$s قناتان جرسهما مفعّل</item>
+        <item quantity="few">%1$s قنوات جرسها مفعّل</item>
+        <item quantity="many">%1$s قناة جرسها مفعّل</item>
+        <item quantity="other">%1$s قناة جرسها مفعّل</item>
+    </plurals>
+    <string name="settings_bells_none">لم يُفعَّل أي جرس بعد</string>
+    <string name="settings_bells_empty">فعّل الجرس على زر الاشتراك في قناة، وسيخبرك Skipii بكل فيديو جديد لها.</string>
+    <string name="settings_bell_line">كل فيديو جديد</string>
+    <string name="settings_system_notifications">إعدادات الإشعارات في Android</string>
+    <string name="settings_system_notifications_line">الصوت، الاهتزاز، عدم الإزعاج</string>
+    <string name="settings_full_sync">تم تسجيل الدخول باستخدام Google · مزامنة كاملة</string>
+    <string name="settings_sync_note">المزامنة الكاملة مفعّلة: الإعجابات والاشتراكات وقائمة المشاهدة لاحقًا وسجلّ المشاهدة تعود إلى حسابك.</string>
+    <string name="settings_version">الإصدار %1$s</string>
+    <string name="settings_up_to_date">محدَّث · انقر للتحقق</string>
+    <string name="settings_checking">جارٍ البحث عن تحديثات…</string>
+    <string name="settings_update_available">الإصدار %1$s متاح</string>
+    <string name="settings_source">الشيفرة المصدرية على GitHub</string>
+    <string name="settings_source_line">أبلغ عن مشكلة أو اطلب ميزة</string>
+    <string name="settings_crash_title">تقرير الأعطال</string>
+    <string name="settings_crash_saved">محفوظ من آخر عطل. شاركه والصقه في بلاغ على GitHub</string>
+    <string name="settings_crash_none">لا يوجد عطل محفوظ. يشارك كيف أغلق Android تطبيق Skipii آخر مرة، لبلاغ على GitHub</string>
+    <string name="settings_crash_tile">تم حفظ تقرير عطل</string>
+    <string name="settings_crash_share">مشاركة تقرير الأعطال</string>
+    <string name="settings_made_by">من صنع %1$s</string>
+    <string name="settings_say_hi">تعال وقل مرحبًا</string>
+    <string name="settings_email_developer">راسل المطوّر</string>
+    <string name="settings_no_app">لا يوجد تطبيق على هذا الهاتف يمكنه فتح ذلك</string>
+    <string name="settings_zoom_fill_title">التكبير لملء الشاشة في وضع ملء الشاشة</string>
+    <string name="settings_zoom_fill_on">كل فيديو يملأ الشاشة، وتُقص الحواف الزائدة. قرّب إصبعيك لرؤية الفيديو كاملًا.</string>
+    <string name="settings_zoom_fill_off">تظهر الفيديوهات كاملة مع أشرطة سوداء. باعد إصبعيك في وضع ملء الشاشة لملء الشاشة.</string>
+    <string name="settings_zoom_fill_summary">مكبّر لملء الشاشة</string>
+    <string name="settings_seek_step_title">الرجوع والتقديم</string>
+    <string name="settings_seek_step_line">مقدار القفز عند النقر مرتين على الفيديو وبأزرار −/⁠+</string>
+    <string name="settings_seconds_short">%1$s ث</string>
+    <string name="settings_seek_step_summary">قفزات %1$s ث</string>
+    <string name="settings_music_normal_title">الموسيقى بالسرعة العادية</string>
+    <string name="settings_music_normal_line">تُشغَّل الأغاني دائمًا بسرعة 1×، حتى مع حفظ سرعة لكل الفيديوهات</string>
+    <string name="settings_chapters_open_title">إبقاء الفصول مفتوحة</string>
+    <string name="settings_chapters_open_line">اختيار فصل يُبقي القائمة مفتوحة لتنتقل من فصل إلى آخر</string>
+    <string name="settings_auto_pip_title">صورة داخل صورة عند المغادرة</string>
+    <string name="settings_auto_pip_line">عند الذهاب إلى الشاشة الرئيسية أثناء تشغيل فيديو، يستمر في نافذة صغيرة</string>
+    <!-- Settings › Playback: playback controls as a live activity (Android's Live Updates) while the app is off screen. -->
+    <string name="settings_live_title">نشاط مباشر</string>
+    <string name="settings_live_line">عند مغادرة Skipii أثناء تشغيل فيديو، تظهر عناصر التحكم في شريط الحالة وعلى شاشة القفل</string>
+    <string name="settings_live_needs">يتطلب Android 16 QPR1 أو أحدث</string>
+    <string name="settings_live_refused">يعرضه هذا الهاتف كإشعار عادي فقط، لذا تبقى عناصر التحكم في الوسائط وحدها</string>
+    <string name="settings_live_allow_title">السماح بالتحديثات المباشرة</string>
+    <string name="settings_live_allow_line">التحديثات المباشرة متوقفة لـ Skipii في إعدادات Android</string>
+    <!-- Only for Settings' search: other words people use for it. -->
+    <string name="settings_live_words">تحديث مباشر، Now Bar، شريط الحالة، شاشة القفل</string>
+    <string name="settings_swipe_brightness_title">السحب لضبط السطوع</string>
+    <string name="settings_swipe_brightness_line">في وضع ملء الشاشة، اسحب لأعلى أو لأسفل على الجانب الأيسر من الفيديو.</string>
+    <string name="settings_swipe_volume_title">السحب لضبط مستوى الصوت</string>
+    <string name="settings_swipe_volume_line">في وضع ملء الشاشة، اسحب لأعلى أو لأسفل على الجانب الأيمن من الفيديو.</string>
+    <!-- Only for Settings' search: other words people use for them. -->
+    <string name="settings_swipe_words">إيماءة، إيماءات، سحب، تمرير، السطوع، مستوى الصوت، الصوت</string>
+</resources>

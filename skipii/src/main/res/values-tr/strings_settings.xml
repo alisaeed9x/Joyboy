@@ -1,0 +1,82 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="settings_title">Ayarlar</string>
+    <string name="settings_search">Ayarlarda ara</string>
+    <string name="settings_no_results">“%1$s” ile eşleşen bir şey yok</string>
+    <string name="settings_group_watching">İzlerken</string>
+    <string name="settings_group_look">Görünüm ve dil</string>
+    <string name="settings_playback">Oynatma</string>
+    <string name="settings_notifications">Bildirimler</string>
+    <string name="settings_account">Hesap</string>
+    <string name="settings_about">Hakkında</string>
+    <string name="settings_on">Açık</string>
+    <string name="settings_off">Kapalı</string>
+    <string name="settings_speed_keep">Hızı koru</string>
+    <string name="settings_speed_remember_title">Hızı her video için hatırla</string>
+    <string name="settings_speed_remember_on">Yeni videolar %1$s× hızla başlar</string>
+    <string name="settings_speed_remember_off">Her video 1× hızla başlar</string>
+    <string name="settings_speed_kept_summary">hız sabit: %1$s×</string>
+    <string name="settings_speed_per_video">hız videoya göre</string>
+    <string name="settings_audio_only_line">Her videoda görüntüsüz ses. Oynatıcı çubuğunda da var.</string>
+    <string name="settings_sb_summary">Atlanan: %1$s, sorulan: %2$s</string>
+    <string name="settings_mode">Mod</string>
+    <string name="settings_theme">Tema</string>
+    <string name="settings_amoled_title">AMOLED siyahı</string>
+    <string name="settings_amoled_line">Saf siyah koyu mod, OLED ekranlar için</string>
+    <string name="settings_amoled_light_line">Uygulama koyuyken kullanılır: Koyu veya Sistem\'i seçin</string>
+    <plurals name="settings_bells_count">
+        <item quantity="one">Zili açık %1$s kanal</item>
+        <item quantity="other">Zili açık %1$s kanal</item>
+    </plurals>
+    <string name="settings_bells_none">Henüz açık zil yok</string>
+    <string name="settings_bells_empty">Bir kanalın Abone ol düğmesindeki zili aç, Skipii her yeni videosunu sana haber versin.</string>
+    <string name="settings_bell_line">Her yeni video</string>
+    <string name="settings_system_notifications">Android bildirim ayarları</string>
+    <string name="settings_system_notifications_line">Ses, titreşim, Rahatsız Etmeyin</string>
+    <string name="settings_full_sync">Google ile giriş yapıldı · tam senkronizasyon</string>
+    <string name="settings_sync_note">Tam senkronizasyon açık: beğeniler, abonelikler, Daha sonra izle ve izleme geçmişi hesabına geri gider.</string>
+    <string name="settings_version">Sürüm %1$s</string>
+    <string name="settings_up_to_date">Güncel · kontrol için dokun</string>
+    <string name="settings_checking">Güncellemeler kontrol ediliyor…</string>
+    <string name="settings_update_available">%1$s sürümü hazır</string>
+    <string name="settings_source">GitHub’da kaynak kodu</string>
+    <string name="settings_source_line">Bir sorun bildir ya da özellik iste</string>
+    <string name="settings_crash_title">Çökme raporu</string>
+    <string name="settings_crash_saved">Son çökmeden kaydedildi. Paylaşın ve bir GitHub issue\'suna yapıştırın</string>
+    <string name="settings_crash_none">Kayıtlı çökme yok. Android\'in Skipii\'yi son kez nasıl kapattığını paylaşır, bir GitHub issue\'su için</string>
+    <string name="settings_crash_tile">Çökme raporu kaydedildi</string>
+    <string name="settings_crash_share">Çökme raporunu paylaş</string>
+    <string name="settings_made_by">%1$s tarafından yapıldı</string>
+    <string name="settings_say_hi">Gel bir merhaba de</string>
+    <string name="settings_email_developer">Geliştiriciye e-posta gönder</string>
+    <string name="settings_no_app">Bu telefondaki hiçbir uygulama bunu açamıyor</string>
+    <string name="settings_zoom_fill_title">Tam ekranda doldurmak için yakınlaştır</string>
+    <string name="settings_zoom_fill_on">Her video ekranı doldurur; taşan kenarlar kırpılır. Bir videonun tamamını görmek için parmaklarınızı birleştirin.</string>
+    <string name="settings_zoom_fill_off">Videolar siyah çubuklarla bütün olarak gösterilir. Tam ekranda ekranı doldurmak için parmaklarınızı açın.</string>
+    <string name="settings_zoom_fill_summary">doldurmak için yakınlaştırıldı</string>
+    <string name="settings_seek_step_title">Geri ve ileri sarma</string>
+    <string name="settings_seek_step_line">Videoya çift dokunmanın ve −/⁠+ düğmelerinin ne kadar atlayacağı</string>
+    <string name="settings_seconds_short">%1$s sn</string>
+    <string name="settings_seek_step_summary">%1$s sn atlama</string>
+    <string name="settings_music_normal_title">Müzik normal hızda</string>
+    <string name="settings_music_normal_line">Şarkılar, tüm videolar için bir hız saklansa bile her zaman 1× çalar</string>
+    <string name="settings_chapters_open_title">Bölümleri açık tut</string>
+    <string name="settings_chapters_open_line">Bir bölüm seçince liste açık kalır, böylece birinden diğerine geçebilirsin</string>
+    <string name="settings_auto_pip_title">Çıkınca pencere içinde pencere</string>
+    <string name="settings_auto_pip_line">Video oynarken ana ekrana dönersen küçük bir pencerede oynamaya devam eder</string>
+    <!-- Settings › Playback: playback controls as a live activity (Android's Live Updates) while the app is off screen. -->
+    <string name="settings_live_title">Canlı etkinlik</string>
+    <string name="settings_live_line">Video oynarken Skipii\'den çıkınca kontroller durum çubuğunda ve kilit ekranında kalır</string>
+    <string name="settings_live_needs">Android 16 QPR1 veya üstü gerekir</string>
+    <string name="settings_live_refused">Bu telefon onu yalnızca normal bir bildirim olarak gösteriyor, bu yüzden yalnızca medya kontrolleri kalır</string>
+    <string name="settings_live_allow_title">Canlı güncellemelere izin ver</string>
+    <string name="settings_live_allow_line">Canlı güncellemeler Android ayarlarında Skipii için kapalı</string>
+    <!-- Only for Settings' search: other words people use for it. -->
+    <string name="settings_live_words">Canlı güncelleme, Now Bar, durum çubuğu, kilit ekranı</string>
+    <string name="settings_swipe_brightness_title">Parlaklık için kaydır</string>
+    <string name="settings_swipe_brightness_line">Tam ekranda videonun sol tarafında yukarı veya aşağı kaydırın.</string>
+    <string name="settings_swipe_volume_title">Ses düzeyi için kaydır</string>
+    <string name="settings_swipe_volume_line">Tam ekranda videonun sağ tarafında yukarı veya aşağı kaydırın.</string>
+    <!-- Only for Settings' search: other words people use for them. -->
+    <string name="settings_swipe_words">hareket, hareketler, kaydırma, parlaklık, ses, ses düzeyi</string>
+</resources>

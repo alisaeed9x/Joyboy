@@ -50,7 +50,3 @@
 -dontwarn lombok.**
 -dontwarn org.xbill.DNS.config.**
 -dontwarn org.slf4j.impl.**
-
-# (v1080) Skipii vendored code (same keep as the app's own package above; R8 shrinks debug AND release).
--keep class com.decio.skipii.** { *; }
--keepclassmembers class com.decio.skipii.** { *; }
