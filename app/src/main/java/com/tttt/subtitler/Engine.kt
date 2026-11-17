@@ -924,11 +924,25 @@ class Engine(
                 if (headless && !anyApplied && failedCount() >= 5) { fatal = "المقاطع بتفشل ورا بعض — راجع المفاتيح والنت"; host.log("⛔ " + fatal); host.status("⛔ " + fatal); running = false; break }
                 if (userPaused) { host.status("⏸ الترجمة واقفة مؤقتًا — دوس «إلغاء الإيقاف» تكمّل"); nap(300); continue }
                 if (paused) { host.status("⏸ مستني اختيارك: كمّل على الترجمة الحالية ولا ترجم من جديد"); nap(300); continue }
+                val posNow = if (headless) 0.0 else try { host.position() } catch (_: Throwable) { 0.0 }
+                val pcNow = if (headless) 0 else (posNow / ch).toInt().coerceAtLeast(0)
+                val hotNow = playheadHot()
+                // (v1094) سحب المشاهد لمكان تاني في الوضع السريع: الباتش اللي نزل عليه يبدأ بخطوات سريعة تاني (بعد ما الشغّال دلوقتي يخلص — مفيش إلغاء)
+                if (fastLatched && !headless) {
+                    val jumped = lastLoopPos >= 0 && Math.abs(posNow - lastLoopPos) > 8.0
+                    if (jumped && pcNow != rampChunk && rampChunk !in inflight && pcNow !in inflight && d > 0 && !isDone(pcNow, d)) {
+                        rampChunk = -1; rampStep = 0; rampNext = -1.0; fastLight.clear()
+                        host.log("⚡ سحبت لمكان تاني: الباتش ${pcNow + 1} هيبدأ بخطوات سريعة بعد ما الشغّال دلوقتي يخلص")
+                    }
+                }
+                lastLoopPos = posNow
                 hedgeTick()
                 autoRetryTick()
+                holeDeferTick()
                 // (v151) باتش فشل: يتبعت الأول لأقرب مفتاح خلّص باتشه (مفيش باتشين على مفتاح واحد) وبعدين الترجمة تكمّل باقي الباتشات عادي
-                if (rehomeQ.isNotEmpty()) {
-                    val ri = rehomeQ.keys.minOrNull()
+                val riPick = rehomeQ.keys.filter { !(hotNow && it < pcNow) }.minOrNull()   // (v1094) إعادة باتش ورا المشاهد تستنى لحد ما اللي قدامه يتترجم
+                if (rehomeQ.isNotEmpty() && riPick != null) {
+                    val ri: Int? = riPick
                     val re = ri?.let { rehomeQ[it] }
                     if (ri == null || re == null || ri in inflight || isDone(ri, d)) { if (ri != null) rehomeQ.remove(ri); continue }
                     var rk = pool.pickIdle(ri, re.avoid, perKey)
@@ -951,8 +965,8 @@ class Engine(
                     }
                 }
                 // إعادة الباتشات الفاشلة بالأولوية (أكتر من 3): مفيش باتشات جديدة تتبعت لحد ما الفاشلين يتبعتوا، وبعدين الترجمة تكمّل عادي
-                if (priorityRetry.isNotEmpty()) {
-                    val nx = priorityRetry.firstOrNull { it !in inflight }
+                if (priorityRetry.any { !(hotNow && it < pcNow) }) {   // (v1094) أولوية الإعادة للباتشات قدام المشاهد بس؛ اللي وراه بيستنى
+                    val nx = priorityRetry.firstOrNull { it !in inflight && !(hotNow && it < pcNow) }
                     if (nx == null) { nap(150); continue }
                     if (activeInflight() >= cap) { nap(150); continue }
                     priorityRetry.remove(nx)
@@ -1135,6 +1149,7 @@ class Engine(
      * بنبعت نسخة منه على مفتاح تاني — أول نسخة تخلص هي اللي بتتطبّق والتانية بتتجاهل. نسخة واحدة بس في نفس الوقت.
      */
     private fun hedgeTick() {
+        if (quotaCooling()) return   // (v1094) 429: ماتبعتش نسخ تانية من الباتشات
         if (inflight.isEmpty() || hedgeBusy.get() >= 1 || pool.usableCount() < 2 || Offline.on()) return   // (v253) الأوفلاين: نسخة احتياطية بتستنى نفس المعالج
         val now = System.currentTimeMillis()
         val ms = recentMs.toList().sorted()
@@ -1436,6 +1451,14 @@ class Engine(
                     if (!w.silent && !hedge && lk.isNotEmpty() && lk != Offline.usedLang.get().orEmpty() && langRetry++ < 1) { host.log("🌐 المقطع ${i + 1}: فاضي — إعادة واحدة باللغة المقفولة ($lk)"); continue }
                     host.log("🔇 المقطع ${i + 1}: Whisper ما لقاش كلام — اتقبل من غير إعادة")
                 }
+                // (v1094) الوضع السريع: خطوة جزئية من الباتش الأول رجعت فاضية وفيه جمل متترجمة قبلها = موسيقى/صمت. بتتقبل «خلصانة» بدل ما تتعاد 4 مرات وتتحط أولوية وتاخد مفاتيح الباتشات 2 و3 و4
+                if (!offRan && !tx && !hedge && fresh.isEmpty() && fastLatched && i == rampChunk && (rawStart > cStart(i) + 0.05 || rawEnd < cEnd(i, currentDur()) - 0.05) && subCount(i, currentDur()) > 0) {
+                    pool.good(key)
+                    host.log("🔇 باتش ${i + 1}: الخطوة ${"%.0f".format(java.util.Locale.US, rawStart)}ث → ${"%.0f".format(java.util.Locale.US, rawEnd)}ث مفيهاش كلام — اتقبلت من غير إعادة")
+                    done.add(rawStart, rawEnd); failed.remove(i); incomplete.remove(i)
+                    rampStep++; rampNext = rawEnd
+                    persist(); return
+                }
                 if (!offRan && fresh.isEmpty() && !w.silent && !hedge && !backupFirst && queueBackup(i, p, "رجع من غير جمل")) return   // (v216) صفر جمل: على المفتاح الاحتياطي بالترتيب في كل الأوضاع
                 if (!offRan && fresh.isEmpty() && empties < (if (w.silent) 1 else 3)) {
                     empties++
@@ -1651,6 +1674,26 @@ class Engine(
 
     // (v227) حماية من أخطاء جوجل: 429 = الطلبات المتوازية تقلّ لـ 2 لمدة 5 دقايق + الاستعلامات الجانبية (اسم العمل/الشخصيات) تقف
     @Volatile private var quotaCapUntil = 0L
+    private fun quotaCooling(): Boolean = System.currentTimeMillis() < quotaCapUntil
+    // ===== (v1094) المشاهد أولًا =====
+    /** الجزء اللي قدام المشاهد (من مكانه لـ 30ث قدام) لسه فيه باتش ناقص ممكن يتبعت: كل الشغل الجانبي (بحث الشخصيات · سدّ الثغرات والفجوات · نسخ احتياطية) واقف عشان المفاتيح تخدم المشاهد بس */
+    private fun playheadHot(): Boolean {
+        if (headless) return false
+        val d = currentDur(); if (d <= 0) return false
+        val pos = try { host.position() } catch (_: Throwable) { return false }
+        val to = minOf(d, pos + 30.0)
+        var i = (pos / ch).toInt().coerceAtLeast(0)
+        while (cStart(i) < to) { if (!isDone(i, d) && (failed[i] ?: 0) < MAX_FAILS) return true; i++ }
+        return false
+    }
+    private class HoleJob(val i: Int, val rawStart: Double, val rawEnd: Double, val w: WavChunk, val key: String)
+    private val holeDefer = java.util.concurrent.ConcurrentLinkedQueue<HoleJob>()
+    private fun holeDeferTick() {
+        if (holeDefer.isEmpty() || playheadHot() || quotaCooling()) return
+        val h = holeDefer.poll() ?: return
+        scheduleHoleFill(h.i, h.rawStart, h.rawEnd, h.w, h.key)
+    }
+    @Volatile private var lastLoopPos = -1.0
     private fun capNow(c: Int): Int = if (System.currentTimeMillis() < quotaCapUntil) minOf(c, 2).coerceAtLeast(1) else c
     private fun noteQuota() {
         val now = System.currentTimeMillis()
@@ -1667,7 +1710,7 @@ class Engine(
         if (TrWizard.googleOn()) return !optIn
         return false
     }
-    private fun sideOk(): Boolean = !sideOff() && System.currentTimeMillis() >= quotaCapUntil && (basePool.all().any { basePool.ok(it) } || convLlm() != null)
+    private fun sideOk(): Boolean = !sideOff() && System.currentTimeMillis() >= quotaCapUntil && !playheadHot() && (basePool.all().any { basePool.ok(it) } || convLlm() != null)
     @Volatile private var sideNoted = false
     /** (v285) إشعار واحد لكل تشغيل: إيه اللي اتقفل ولسه ليه وإزاي يتفتح — بدل ما يتقفل بصمت */
     private fun sideNotice() {
@@ -3409,6 +3452,7 @@ class Engine(
     private fun gapTick(all: Boolean = false): Boolean {
         if (!fillOk()) return false
         if (!conf.gapFill || !running) return false
+        if (playheadHot() || quotaCooling()) return false   // (v1094) المشاهد أولًا + راحة للمفاتيح بعد 429
         val off = offFill()
         val maxPar = if (off) 1 else Gaps.MAX_PARALLEL   // (v283) الأوفلاين بينسخ واحد في المرة
         val now = System.currentTimeMillis()
@@ -3447,6 +3491,10 @@ class Engine(
     private fun scheduleHoleFill(i: Int, rawStart: Double, rawEnd: Double, w: WavChunk, key: String) {
         if (!fillOk()) return   // (v283) من غير أوفلاين ومن غير جيميناي مفيش حاجة تسدّ الثغرة
         if (holeTried.contains(i)) return
+        if (playheadHot() || quotaCooling()) {   // (v1094) المشاهد أولًا: سدّ الثغرات يتأجّل لحد ما الجزء اللي قدام المشاهد يتترجم ومفيش 429
+            if (holeDefer.none { it.i == i }) { holeDefer.add(HoleJob(i, rawStart, rawEnd, w, key)); while (holeDefer.size > 4) holeDefer.poll() }
+            return
+        }
         holeBusy.incrementAndGet()
         try {
             holeEx.submit {

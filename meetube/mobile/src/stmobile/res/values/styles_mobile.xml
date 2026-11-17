@@ -24,6 +24,8 @@
       stays dark in both, like YouTube's: its chrome uses the fixed mobile_player_* colours.
     -->
     <style name="Theme.NewTube" parent="Theme.MaterialComponents.DayNight.NoActionBar">
+        <!-- (v1095) ThemeEnforcement بتاع MaterialButton بيفحص colorPrimaryVariant — معرّفة صراحة عشان الفحص ما يفشلش لو الوراثة ما وصلتش (كراش MobileBrowseActivity سطر 110) -->
+        <item name="colorPrimaryVariant">?attr/colorPrimary</item>
         <!-- MEETUBE(scrollbars): no scroll bar at the side of anything, sheets and dialogs included
              (screens also turn them off at runtime: BounceOverscroll). -->
         <item name="android:scrollViewStyle">@style/Widget.MeeTube.NoScrollbars.ScrollView</item>

@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <style name="AppSplash" parent="@android:style/Theme.DeviceDefault.NoActionBar">
+    <!-- (v1095) كان parent = DeviceDefault (مش Material) فكل شاشة بثيم AppSplash/AppSplashMain/AppMainPlain على أندرويد 12+ مكانتش Material. اتوحّد مع values/ -->
+    <style name="AppSplash" parent="Theme.NewTube">
         <item name="android:windowBackground">@drawable/splash_window</item>
         <item name="android:windowSplashScreenBackground">@color/splash_bg</item>
         <item name="android:windowSplashScreenAnimatedIcon">@drawable/splash_empty</item>

@@ -1,0 +1,3 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- (v1095) MeeTube بيدوّر على الثيمات بالاسم وقت التشغيل (MainUIData.ColorScheme → Helpers.getResourceId): تصغير الموارد ما يشيلهاش -->
+<resources xmlns:tools="http://schemas.android.com/tools" tools:keep="@style/*,@attr/*" tools:shrinkMode="safe" />
