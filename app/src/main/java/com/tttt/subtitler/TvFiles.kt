@@ -233,7 +233,7 @@ class TvFilesActivity : Activity() {
                 if (jobs.isEmpty()) { Notice.show(this, "⚠ مفيش ملفات تتنزّل", 2600L); return@runOnUiThread }
                 val title = if (targets.size == 1) targets[0].name else targets.size.toString() + " عنصر من التلفزيون"
                 if (XRemote.downloadPaths(app, title, jobs)) {
-                    Notice.show(this, "⬇ بدأ تنزيل " + jobs.size + " ملف" + (if (capped) " (أول 400 بس)" else "") + " — التقدم في مركز التحميل، والملفات في فولدراتها (Joyboy)", 4500L)
+                    Notice.show(this, "⬇ بدأ تنزيل " + jobs.size + " ملف" + (if (capped) " (أول 400 بس)" else "") + " — التقدم في زرار المهام، والملفات في فولدراتها (Joyboy)", 4500L)
                     sel.clear(); adapter.notifyDataSetChanged(); renderBar(); updateInfo()
                 } else Notice.show(this, "⚠ مش متصل بالتلفزيون", 2600L)
             }

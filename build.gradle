@@ -1,8 +1,8 @@
-// (v1086) الجذر: Joyboy (:app) بس. إصدارات المكتبات من versions.gradle
-apply from: 'versions.gradle'
+// (v878) الجذر: Joyboy (:app) + مودولات MeeTube. الإعدادات المشتركة (إصدارات المكتبات) من meetube/SharedModules/constants.gradle
+apply from: gradle.ext.sharedModulesConstants
 
 buildscript {
-    apply from: 'versions.gradle'
+    apply from: gradle.ext.sharedModulesConstants
     repositories {
         google()
         mavenCentral()
@@ -17,6 +17,7 @@ allprojects {
     repositories {
         google()
         mavenCentral()
+        maven { url = uri('https://jitpack.io') }
     }
     configurations.all {
         resolutionStrategy.force 'com.squareup.okhttp3:okhttp:' + okhttpVersion
@@ -24,5 +25,6 @@ allprojects {
         resolutionStrategy.force 'org.jetbrains.kotlin:kotlin-stdlib-jdk7:' + kotlinVersion
         resolutionStrategy.force 'org.jetbrains.kotlin:kotlin-stdlib:' + kotlinVersion
         resolutionStrategy.force 'org.jetbrains.kotlinx:kotlinx-coroutines-android:' + kotlinxVersion
+        resolutionStrategy.force 'org.chromium.net:cronet-api:' + cronetApiVersion
     }
 }

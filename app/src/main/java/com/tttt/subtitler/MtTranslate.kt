@@ -1006,11 +1006,19 @@ object MtTranslate : JoyboyPlayerHost.Provider {
         val paused = e?.userPaused == true
         h("الترجمة: " + (if (!on) "واقفة" else pct + (if (paused) " (واقفة مؤقتًا)" else "")) + " · الوضع: " + curEngineMode())
         h("🔤 نظام الترجمة")
+        val mode = try { Cfg.str("tr_mode", "acc") } catch (_: Throwable) { "acc" }
         val fast = try { Cfg.bool("fastmode", false) } catch (_: Throwable) { false }   // (v1068)
-        // (v1071) وضع واحد بس: السريع — صفّا ٧٥/٢٥ والأدق اتشالوا من القايمة
-        m("⚡ جيميناي — سريع (أول ترجمة في ثواني · تفريغ دقيق)" + (if (fast) " ✓ الحالي" else "")) {
-            Cfg.put("fastmode", "1")
-            Notice.show(a, "⚡ جيميناي سريع — هيشتغل من أول ترجمة جديدة", 2400L)
+        m("سريع" + (if (mode == "fast") " ✓ الحالي" else "")) {
+            Cfg.put("tr_mode", "fast"); Cfg.put("fastmode", "1")
+            Notice.show(a, "سريع — هيشتغل من أول ترجمة جديدة", 2400L)
+        }
+        m("دقيق" + (if (mode == "acc") " ✓ الحالي" else "")) {
+            Cfg.put("tr_mode", "acc"); Cfg.put("fastmode", "0")
+            Notice.show(a, if (fast) "دقيق — هيتطبق من أول ترجمة جديدة" else "دقيق — هيتطبق على الباتشات الجاية", 2200L)
+        }
+        m("متوازن" + (if (mode == "bal") " ✓ الحالي" else "")) {
+            Cfg.put("tr_mode", "bal"); Cfg.put("fastmode", "0")
+            Notice.show(a, if (fast) "متوازن — هيتطبق من أول ترجمة جديدة" else "متوازن — هيتطبق على الباتشات الجاية", 2200L)
         }
         m("📴 وشبر + ترجمة أوفلاين" + (if (curEngineMode() == "whisper") " ✓ الحالي" else "")) {
             if (!Offline.configured()) { Notice.show(a, "📴 وشبر مش متظبط على الجهاز — ظبّطه من إعدادات الترجمة الأول", 3000L); return@m }

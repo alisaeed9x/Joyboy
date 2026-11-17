@@ -12,8 +12,8 @@ import java.lang.ref.WeakReference
  * (v928) توجيه فيديو MeeTube (موبايل/تابلت): لو «وضع التلفزيون» شغّال وفي تلفزيون مقترن، دوسة على أي فيديو في MeeTube
  * بتطلّع نافذة «تشغّله فين؟ 📺 تلفزيون / 📱 موبايل» (نفس PlayTarget.askWhere).
  *  • تلفزيون ← PlayTarget.force (الفيديو بيتفتح على التلفزيون في مشغّل MeeTube، والموبايل بيبقى ريموت).
- *  • موبايل  ← مشغّل Joyboy (v1069: مشغّل MeeTube اتشال خالص — دوسة الفيديو بتفتح Player.kt على طول).
- * مفيش تلفزيون مقترن أو وضع التلفزيون مقفول ← الفيديو بيفتح في مشغّل Joyboy على طول من غير أي سؤال.
+ *  • موبايل  ← بيكمّل في مشغّل MeeTube على الموبايل (bypass مرة واحدة عشان النافذة ماتتكررش).
+ * مفيش تلفزيون مقترن أو وضع التلفزيون مقفول ← MeeTube بيشتغل عادي من غير أي سؤال.
  * الربط: PlaybackPresenter.setOpenInterceptor (مودول :common مايعرفش app) — بيتركّب من JoyApp.onCreate.
  */
 object MtTvRoute : PlaybackPresenter.OpenInterceptor {
@@ -55,19 +55,17 @@ object MtTvRoute : PlaybackPresenter.OpenInterceptor {
             val id = video.videoId ?: return false
             if (id.length != 11 || video.isLocal()) return false
             try { RemoteClient.init(context) } catch (_: Throwable) {}
+            // (v931) السؤال «تشغّله فين؟» بيظهر لو «وضع التلفزيون» شغّال أو الموبايل متصل بالتلفزيون فعلًا دلوقتي (قبل كده كان بيحتاج وضع التلفزيون بس، فمع اتصال من غير الوضع مكنش بيسأل)
+            if (!PlayTarget.enabled() && RemoteClient.current == null) return false
+            if (RemoteClient.lastTv() == null) return false
             val act = (context as? Activity) ?: top?.get() ?: return false
             if (act.isFinishing || act.isDestroyed) return false
             val title = video.title?.toString() ?: ""
             val start = if (video.pendingPosMs > 0L) video.pendingPosMs else 0L
-            // (v931) السؤال «تشغّله فين؟» بيظهر لو «وضع التلفزيون» شغّال أو الموبايل متصل بالتلفزيون فعلًا دلوقتي (قبل كده كان بيحتاج وضع التلفزيون بس، فمع اتصال من غير الوضع مكنش بيسأل)
-            if ((PlayTarget.enabled() || RemoteClient.current != null) && RemoteClient.lastTv() != null) {
-                PlayTarget.askWhere(act, title,
-                    { if (!PlayTarget.force(act, MediaSpec(ytid = id, title = title, startMs = start))) Notice.show(act, "📺 ما اتبعتش للتلفزيون", 2600L) },
-                    { try { MeeTubeLink.openJoyboyPlayer(act, id, title, start) } catch (e: Throwable) { LogStore.err("MtTvRoute:phone", e) } })
-                return true
-            }
-            // (v1069) مشغّل MeeTube اتشال خالص: دوسة الفيديو في MeeTube بتفتح مشغّل Joyboy على طول (من غير صفحة التعليقات ولا مشغّل MeeTube)
-            return try { MeeTubeLink.openJoyboyPlayer(act, id, title, start, false, video.incognito) } catch (e: Throwable) { LogStore.err("MtTvRoute:joyboy", e); false }
+            PlayTarget.askWhere(act, title,
+                { if (!PlayTarget.force(act, MediaSpec(ytid = id, title = title, startMs = start))) Notice.show(act, "📺 ما اتبعتش للتلفزيون", 2600L) },
+                { try { bypassed { PlaybackPresenter.instance(act.applicationContext).openVideo(video) } } catch (e: Throwable) { LogStore.err("MtTvRoute:phone", e) } })
+            return true
         } catch (e: Throwable) {
             LogStore.err("MtTvRoute:intercept", e)
             return false

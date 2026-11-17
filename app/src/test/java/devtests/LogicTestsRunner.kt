@@ -22,7 +22,6 @@ class LogicTestsRunner {
         "devtests.securitytest.CareSecurityTestKt",
         "devtests.coveragetest.CoverageTestKt",
         "devtests.enginetest.EngineTestKt",
-        "devtests.fastmodetest.FastModeTestKt",
         "devtests.giftest.GifTestKt",
         "devtests.iconpacktest.IconPackTestKt",
         "devtests.irunifiedtest.IrUnifiedTestKt",
@@ -39,9 +38,7 @@ class LogicTestsRunner {
         "devtests.remotelibtest.RemoteLibTestKt",
         "devtests.soundtest.SoundTestKt",
         "devtests.speechtest.SpeechTestKt",
-        "devtests.substyletest.SubStyleTestKt",
-        "devtests.trslidertest.TrSliderTestKt",
-        "devtests.trprofiletest.TrProfileTestKt"
+        "devtests.substyletest.SubStyleTestKt"
     )
 
     @Test fun allLogicTests() {

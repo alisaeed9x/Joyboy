@@ -32,20 +32,11 @@ object ResumeAsk {
     private var dlg: Dialog? = null
     private var tick: Runnable? = null
 
-    /** (v1072) معرّف يوتيوب (11 حرف) من رابط أو معرّف مباشر — بديل MtTranslate.joyVid بعد ما اتشال */
-    private fun ytIdFrom(u: String): String {
-        val s = u.trim()
-        if (s.length == 11 && s.matches(Regex("[A-Za-z0-9_-]{11}"))) return s
-        val m = Regex("(?:[?&]v=|youtu\\.be/|/shorts/|/embed/|/v/|/live/)([A-Za-z0-9_-]{11})").find(s)
-        if (m != null) return m.groupValues[1]
-        return ""
-    }
-
     /** مكان وقوف صالح للفيديو المحلي (بين ٥ث وقبل النهاية بـ٤ث)، أو 0 لو مفيش — للموبايل قبل ما يبعت الفيديو للتلفزيون */
     fun savedMs(a: Activity, lu: String): Long {
         try {
             if (lu.isBlank()) return 0L
-            val id = ytIdFrom(lu)
+            val id = MtTranslate.joyVid(a, lu)
             var pos = 0L
             val s = Cfg.p.getString("lastpos", "") ?: ""
             val i = s.indexOf('\t')

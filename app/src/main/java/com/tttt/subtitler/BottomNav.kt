@@ -24,25 +24,23 @@ class BottomNav(act: Activity, private val ui: Ui, private val th: Theme, privat
         const val IR = 15
         /** (v829) زرار «العناية»: واخد مكان «ريموت IR» في الشريط الأساسي (IR راح لـ«المزيد») — بيفتح CareUi مباشرة */
         const val CARE = 16
-        /** (v1081) «الشورتس» تبويب لوحده برّه يوتيوب (بيفتح صفحة الشورتس بتاعة Skipii) */
-        const val SHORTS = 17
         /** (v472) «الذكاء» تبويب اتمسح قديمًا — الرقم 6 محجوز عشان ترقيم البوابات ما يتغيّرش، لكن مش بيظهر في أي حته */
         const val DEAD_AI = 6
         /** (v467) ترتيب الشريط بطلب صاحب التطبيق: الفيديوهات ← يوتيوب ← الموسيقى ← المتصفح ← المزيد.
          *  أي بوابة مش في الشريط بتظهر تلقائيًا جوه «المزيد» — فأي إضافة جديدة هتبان من غير تعديل هنا. */
-        val BAR_ORDER = listOf(0, REMOTE, 4, SHORTS, 2, 8)   // (v1081) ميديا · يوتيوب · الشورتس · المتصفح · المزيد (النت والداتا في «المزيد»)   // (v654) 1 (الموسيقى) اتدمجت مع 0 في زرار «ميديا»   // (v1041) «العناية» اتشالت
+        val BAR_ORDER = listOf(0, REMOTE, 4, 2, CARE, NET, 8)   // (v654) 1 (الموسيقى) اتدمجت مع 0 في زرار «ميديا»
         /** (v475) خلايا يوتيوب الافتراضية (مش بوابات): الرئيسية 9 · الاشتراكات 10 · أنا 11 — بتحل محل خلية «يوتيوب» وانت جواه */
         const val YT_HOME = 9; const val YT_SUBS = 10; const val YT_ME = 11
         val NORMAL_ORDER = BAR_ORDER
         val YT_ORDER = listOf(0, YT_HOME, YT_SUBS, YT_ME, NET, MORE)  // نسخة كاملة وانت في يوتيوب: الموسيقى والمتصفح بيروحوا لـ«المزيد» · (v829) زرار النت بعد «أنا» (كان قبلها)
         val LITE_ORDER = listOf(YT_HOME, YT_SUBS, 0, YT_ME)           // نسخة اللايت: الرئيسية · الاشتراكات · محلي · أنا
-        val DEFS = listOf("🎞" to "الفيديوهات", "🎵" to "الموسيقى", "🌐" to "المتصفح", "🗂" to "المخزن", "▶" to "يوتيوب", "⬇" to "مركز التحميل", "" to "", "⚙️" to "الإعدادات", "⋯" to "المزيد",
-            "🏠" to "الرئيسية", "📺" to "الاشتراكات", "👤" to "أنا", "📱" to "الريموت", "📎" to "الكليبورد", "📶" to "", "📡" to "ريموت IR", "🩺" to "العناية", "🎬" to "الشورتس")
+        val DEFS = listOf("🎞" to "الفيديوهات", "🎵" to "الموسيقى", "🌐" to "المتصفح", "🗂" to "المخزن", "▶" to "يوتيوب", "📋" to "المهام", "" to "", "⚙️" to "الإعدادات", "⋯" to "المزيد",
+            "🏠" to "الرئيسية", "📺" to "الاشتراكات", "👤" to "أنا", "📱" to "الريموت", "📎" to "الكليبورد", "📶" to "", "📡" to "ريموت IR", "🩺" to "العناية")
     }
     /** البوابات اللي ورا ⋯ المزيد: أي بوابة مش في الشريط (حاليًا: الملفات 3 · المهام 5 · الذكاء 6 · الإعدادات 7) — الزرار بيتلوّن لما واحدة منهم تبقى هي النشطة */
     private val lite = act.packageName.endsWith(".lite")
     private val tvDev = try { DeviceUi.isTv(act) } catch (_: Throwable) { false }   // (v521) على التلفزيون زرار الريموت مخفي
-    private fun normalOrder(): List<Int> = NORMAL_ORDER.filter { it != REMOTE && !(it == IR && tvDev) && it != SHORTS   /* YOUTUBE_SLOT: تبويب الشورتس مخفي لحد ما Skipii يتركّب */ }.map { if (it == NET && tvDev) 3 else it }   // (v815) على التلفزيون «المخزن» يفضل مكانه
+    private fun normalOrder(): List<Int> = NORMAL_ORDER.filter { it != REMOTE && !(it == IR && tvDev) }.map { if (it == NET && tvDev) 3 else it }   // (v815) على التلفزيون «المخزن» يفضل مكانه
     private fun ytOrder(): List<Int> = YT_ORDER.filter { it != NET || !tvDev }   // (v823) على التلفزيون زرار النت مش في الشريط
     private var order: List<Int> = if (lite) LITE_ORDER else normalOrder()   // (v554) زرار الريموت اتشال: وضع التلفزيون بزرار عايم
     private fun cellOf(a: Int): Int = if (a in order) a else if (a == 1 && !lite && 0 in order) 0 else if (a == 4 && YT_HOME in order) YT_HOME else if ((a == YT_HOME || a == YT_SUBS || a == YT_ME) && 4 in order) 4 else if (lite) (if (a == 7) YT_ME else -1) else MORE
@@ -82,6 +80,7 @@ class BottomNav(act: Activity, private val ui: Ui, private val th: Theme, privat
                 GAlert(act).setTitle("📺 التلفزيون").setItems(labels) { _, i -> collapseMore(); if (i == 0) TvModeFab.toggleAlways(act) else RemoteClient.forcePushFlow(act) }.setNegativeButton("إغلاق", null).show()
             }) { collapseMore(); TvModeFab.toggle(act) })
         }
+        if (CARE !in order) items.add(MoreItem("🩺", "العناية", false) { collapseMore(); try { CareUi(act, ui, th).show() } catch (e: Throwable) { LogStore.err("Nav:care", e) } })   // (v825) · (v829) في الشريط الأساسي بقت زرار — هنا بس وانت في يوتيوب
         if (7 in ids) items.add(MoreItem(DEFS[7].first, DEFS[7].second, 7 == active) { collapseMore(); onPick(7) })
         val sw = act.resources.displayMetrics.widthPixels
         val w = if (items.size <= 5) sw / items.size else (sw / 5.4f).toInt()
@@ -121,9 +120,12 @@ class BottomNav(act: Activity, private val ui: Ui, private val th: Theme, privat
     private fun moreGroups(act: Activity): List<Pair<String, List<MoreItem>>> {
         // (v861) ترتيب جديد: كل مجموعة مضبوطة على 3 في الصف، والأيقونات مش مكرّرة
         val secs = ArrayList<MoreItem>()
-        for (id in listOf(0, 4, 2, 1, 5)) secs.add(MoreItem(DEFS[id].first, if (id == 0) "الفيديوهات" else DEFS[id].second, id == active) { onPick(id) })   // فيديوهات · يوتيوب · متصفح · موسيقى · مخزن · مهام
-        val trl = ArrayList<MoreItem>()
-        // (v1069) زرار «📚 مكتبة الترجمات» اتشال من «المزيد» — المجموعة فاضية فالشيت بيعدّيها (moreSheet بيتخطى المجموعات الفاضية)
+        for (id in listOf(0, 4, 2, 1, 3, 5)) secs.add(MoreItem(DEFS[id].first, if (id == 0) "الفيديوهات" else DEFS[id].second, id == active) { onPick(id) })   // فيديوهات · يوتيوب · متصفح · موسيقى · مخزن · مهام
+        val store = listOf(
+            MoreItem("📂", "مدير الملفات", false) { openHub(act, "fm") },
+            MoreItem("↔", "إرسال واستقبال", false) { openHub(act, "ft") },
+            MoreItem("\uE001", "اقتران جهاز بلوتوث", false) { openHub(act, "ft", "bt") }
+        )
         val ctl = ArrayList<MoreItem>()
         if (!tvDev && !lite) ctl.add(MoreItem("📱", "الريموت", false) { try { ControllerPad.show(act) } catch (e: Throwable) { LogStore.err("Nav:remote", e) } })
         if (!tvDev) ctl.add(MoreItem("📡", "ريموت IR", false) { try { IrCatalogUi.show(act) } catch (e: Throwable) { LogStore.err("Nav:ir", e) } })
@@ -132,19 +134,19 @@ class BottomNav(act: Activity, private val ui: Ui, private val th: Theme, privat
             GAlert(act).setTitle("📺 التلفزيون").setItems(labels) { _, _ -> TvModeFab.toggleAlways(act) }.setNegativeButton("إغلاق", null).show()
         }) { TvModeFab.toggle(act) })
         val sys = ArrayList<MoreItem>()
+        sys.add(MoreItem("🩺", "العناية", false) { try { CareUi(act, ui, th).show() } catch (e: Throwable) { LogStore.err("Nav:care", e) } })
         sys.add(MoreItem("📊", "النت والداتا", false) { try { NetStatsUi(act, ui, th).show() } catch (e: Throwable) { LogStore.err("Nav:net", e) } })
         if (!tvDev) sys.add(MoreItem("🔄", "مركز التحديث", false) { try { GhCiUi.show(act) } catch (e: Throwable) { LogStore.err("Nav:gh", e) } })   // (v861) تحديث البرنامج + تحديث التلفزيون + لوج الفشل
-        if (!tvDev) sys.add(MoreItem("📤", "إرسال التحديث للتلفزيون", false) { try { RemoteClient.forcePushFlow(act) } catch (e: Throwable) { LogStore.err("Nav:pushUpd", e) } })   // (v1048) من صفحة «المزيد» مباشرة
         sys.add(MoreItem(DEFS[7].first, "الإعدادات", 7 == active) { onPick(7) })
-        return listOf("الأقسام" to secs, "الترجمة" to trl, "تحكم وريموت" to ctl, "النظام والتحديث" to sys)
+        return listOf("الأقسام" to secs, "المخزن والإرسال" to store, "تحكم وريموت" to ctl, "النظام والتحديث" to sys)
     }
 
     private fun tileView(act: Activity, t: MoreItem, onDone: () -> Unit): View = LinearLayout(act).apply {
-        orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER; setPadding(ui.dp(2), ui.dp(8), ui.dp(2), ui.dp(7))   // (v991) بلاطات أصغر عشان تتسع كلها (4 في الصف على الموبايل)
-        background = ui.box(if (t.on) Glass.alpha(th.primary, 0x28) else th.card, if (t.on) th.primary else th.border, 14, if (t.on) 2 else 1)
-        val ic = IconTextView(act).apply { text = t.emoji; textSize = 21f; gravity = Gravity.CENTER; includeFontPadding = false }
-        val lb = ui.text(t.label, 10.5f, if (t.on) th.primary else th.text, true).apply { gravity = Gravity.CENTER; maxLines = 2; setPadding(0, ui.dp(4), 0, 0) }
-        addView(ic, LinearLayout.LayoutParams(-2, ui.dp(28)))
+        orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER; setPadding(ui.dp(4), ui.dp(12), ui.dp(4), ui.dp(10))
+        background = ui.box(if (t.on) Glass.alpha(th.primary, 0x28) else th.card, if (t.on) th.primary else th.border, 16, if (t.on) 2 else 1)
+        val ic = IconTextView(act).apply { text = t.emoji; textSize = 26f; gravity = Gravity.CENTER; includeFontPadding = false }
+        val lb = ui.text(t.label, 11.5f, if (t.on) th.primary else th.text, true).apply { gravity = Gravity.CENTER; maxLines = 2; setPadding(0, ui.dp(6), 0, 0) }
+        addView(ic, LinearLayout.LayoutParams(-2, ui.dp(34)))
         addView(lb, LinearLayout.LayoutParams(-1, -2))
         isClickable = true; isFocusable = true
         Glass.pressable(this)
@@ -156,7 +158,7 @@ class BottomNav(act: Activity, private val ui: Ui, private val th: Theme, privat
     private fun moreSheet(act: Activity) {
         val d = android.app.Dialog(act)
         d.requestWindowFeature(android.view.Window.FEATURE_NO_TITLE)
-        val cols = if (rail || act.resources.displayMetrics.widthPixels >= ui.dp(600)) 5 else 4   // (v991) كانت 4/3
+        val cols = if (rail || act.resources.displayMetrics.widthPixels >= ui.dp(600)) 4 else 3
         val glass = MtGlass.on()
         val sheetR = ui.dp(28).toFloat()
         val box = LinearLayout(act).apply {
@@ -176,19 +178,18 @@ class BottomNav(act: Activity, private val ui: Ui, private val th: Theme, privat
         for ((title, tiles) in moreGroups(act)) {
             if (tiles.isEmpty()) continue
             inner.addView(ui.text(title, 12.5f, th.muted, true).apply { setPadding(ui.dp(6), ui.dp(12), ui.dp(6), ui.dp(2)) }, LinearLayout.LayoutParams(-1, -2))
-            // (v1009) الصف الأخير بيتفرد لحد الآخر: كل مربع weight=1 (ولا فراغ فاضي). مربع واحد لوحده في آخر صف بينضم للصف اللي قبله (cols+1 جنب بعض)؛ ولو هو القسم كله بياخد العرض كله
-            val chunks = ArrayList<List<MoreItem>>()
-            var at = 0
-            while (at < tiles.size) {
-                val left = tiles.size - at
-                val take = if (left == cols + 1) cols + 1 else minOf(cols, left)
-                chunks.add(tiles.subList(at, at + take)); at += take
+            var row: LinearLayout? = null
+            for ((i, t) in tiles.withIndex()) {
+                if (i % cols == 0) {
+                    row = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL }
+                    inner.addView(row, LinearLayout.LayoutParams(-1, -2).apply { topMargin = ui.dp(8) })
+                }
+                val rem0 = tiles.size % cols
+                val lone = rem0 == 1 && i == tiles.size - 1 && tiles.size > 1   // (v861) مربع لوحده في آخر صف ← ياخد عرض الصف كله
+                row?.addView(tileView(act, t) { d.dismiss() }, LinearLayout.LayoutParams(0, -2, if (lone) cols.toFloat() else 1f).apply { setMargins(ui.dp(4), 0, ui.dp(4), 0) })
             }
-            for (chunk in chunks) {
-                val row = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL }
-                inner.addView(row, LinearLayout.LayoutParams(-1, -2).apply { topMargin = ui.dp(8) })
-                for (t in chunk) row.addView(tileView(act, t) { d.dismiss() }, LinearLayout.LayoutParams(0, -2, 1f).apply { setMargins(ui.dp(4), 0, ui.dp(4), 0) })
-            }
+            val rem = tiles.size % cols
+            if (rem > 1) for (k in 0 until (cols - rem)) row?.addView(View(act), LinearLayout.LayoutParams(0, 1, 1f).apply { setMargins(ui.dp(4), 0, ui.dp(4), 0) })
         }
         val sc = android.widget.ScrollView(act).apply { isVerticalScrollBarEnabled = false; addView(inner) }
         box.addView(sc, LinearLayout.LayoutParams(-1, -2))
@@ -211,7 +212,9 @@ class BottomNav(act: Activity, private val ui: Ui, private val th: Theme, privat
     }
 
     private fun navBg(): Int = if (MtGlass.on()) MtGlass.barSolid(th) else th.card   // (v893) زجاج MeeTube
-    private fun navBgD(): android.graphics.drawable.Drawable = android.graphics.drawable.ColorDrawable(navBg())
+    private fun navBgD(): android.graphics.drawable.Drawable =
+        if (floatMode) android.graphics.drawable.ColorDrawable(0) else android.graphics.drawable.ColorDrawable(navBg())
+    private var floatMode = false   // (v895) شريط عايم: من غير خلفية صلبة — الزجاج بيجي من MtGlassView
     private val icons = ArrayList<IconTextView>()
     private val labels = ArrayList<IconTextView>()
     private val cells = ArrayList<View>()
@@ -262,7 +265,7 @@ class BottomNav(act: Activity, private val ui: Ui, private val th: Theme, privat
                 addView(box, if (idx == NET) LinearLayout.LayoutParams(ui.dp(54), ui.dp(30)) else LinearLayout.LayoutParams(ui.dp(38), ui.dp(20)))
                 addView(lab, LinearLayout.LayoutParams(-2, -2))
                 Glass.pressable(this)
-                setOnClickListener { if (idx == MORE) { set(idx); toggleMore(act) } else if (idx == REMOTE) { set(idx); try { ControllerPad.show(act) } catch (e: Throwable) { LogStore.err("Nav:remote", e) } } else if (idx == CARE) { set(idx); collapseMore(); try { CareUi(act, ui, th).show() } catch (e: Throwable) { LogStore.err("Nav:care", e) } } else if (idx == IR) { set(idx); collapseMore(); try { IrCatalogUi.show(act) } catch (e: Throwable) { LogStore.err("Nav:ir", e) } } else if (idx == NET) { set(idx); collapseMore(); try { NetStatsUi(act, ui, th).show() } catch (e: Throwable) { LogStore.err("Nav:net", e) } } else { collapseMore(); val leaves = act !is MainActivity || idx == 2 || idx == 3   // (v911) كل اللي بيفتح شاشة تانية (متصفح/مخزن/يوتيوب)؛ التبويبات الداخلية في Main عندها أنيميشنها
+                setOnClickListener { if (idx == MORE) { set(idx); toggleMore(act) } else if (idx == REMOTE) { set(idx); try { ControllerPad.show(act) } catch (e: Throwable) { LogStore.err("Nav:remote", e) } } else if (idx == CARE) { set(idx); collapseMore(); try { CareUi(act, ui, th).show() } catch (e: Throwable) { LogStore.err("Nav:care", e) } } else if (idx == IR) { set(idx); collapseMore(); try { IrCatalogUi.show(act) } catch (e: Throwable) { LogStore.err("Nav:ir", e) } } else if (idx == NET) { set(idx); collapseMore(); try { NetStatsUi(act, ui, th).show() } catch (e: Throwable) { LogStore.err("Nav:net", e) } } else { collapseMore(); val leaves = act !is MainActivity || idx == 2 || idx == 3 || idx == 4   // (v911) كل اللي بيفتح شاشة تانية (متصفح/مخزن/يوتيوب)؛ التبويبات الداخلية في Main عندها أنيميشنها
                     if (leaves && !rail && cellOf(idx) != cellOf(active) && !navPending) {   // (v911) الشاشات التانية Activity لوحدها: كانت بتتفتح/تتقفل لحظة الدوسة فمفيش عدسة ولا انزلاق ولا ضغطة، والفتح الثقيل كان بيتزامن مع الأنيميشن فيقطّع. دلوقتي الأنيميشن بيخلّص الأول وبعدها الانتقال
                         val prev = active; val inMain = act is MainActivity
                         navPending = true; set(idx)
@@ -351,6 +354,8 @@ class BottomNav(act: Activity, private val ui: Ui, private val th: Theme, privat
     }
 
     /** (v350) عدّاد أحمر فوق أيقونة البوابة؛ 0 = مخفي */
+    /** (v895) الشريط عايم فوق المحتوى جوه زجاج حقيقي (MtFloat): شيل الخلفية الصلبة والخط العلوي */
+    fun floatGlass() { floatMode = true; rowLL.background = android.graphics.drawable.ColorDrawable(0); lineV?.visibility = View.GONE }
     fun badge(i: Int, n: Int) {
         for (k in (if (i == 4) listOf(4, YT_SUBS) else listOf(i))) {   // (v475) عدّاد يوتيوب الجديد بيظهر كمان على خلية «الاشتراكات»
             val b = badges.getOrNull(k) ?: continue
@@ -440,8 +445,10 @@ class BottomNav(act: Activity, private val ui: Ui, private val th: Theme, privat
     /** (v198) لون الشريط وهو مشغّل الموسيقى مفتوح (بيتبع لون الغلاف)؛ null = رجّعه للثيم */
     fun tint(c: Int?) {
         tinted = c != null
-        rowV?.background = if (c != null) android.graphics.drawable.ColorDrawable(c) else navBgD()
-        moreHost?.setBackgroundColor(if (c != null) c else navBg())
+        // (v923) الشريط العايم: كان بيتلوّن بمربع صلب (ColorDrawable) فوق كبسولة الزجاج = شكل مربع بنفسجي غير منتظم. دلوقتي كبسولة مدوّرة شبه شفافة بنفس استدارة الزجاج
+        val soft = if (c != null) (c and 0x00FFFFFF) or 0x55000000.toInt() else 0   // (v927) أشفّ: نفس شفافية الزجاج في باقي الصفحات
+        rowV?.background = if (c != null) { if (floatMode) GradientDrawable().apply { setColor(soft); cornerRadius = ui.dp(28).toFloat() } else android.graphics.drawable.ColorDrawable(c) } else navBgD()
+        moreHost?.setBackgroundColor(if (c != null) (if (floatMode) soft else c) else if (floatMode) 0 else navBg())
         lineV?.setBackgroundColor(if (c != null) 0x22FFFFFF else if (MtGlass.on()) MtGlass.rim(th) else th.border)
         paint()
     }

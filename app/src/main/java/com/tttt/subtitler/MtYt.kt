@@ -4,13 +4,14 @@ import android.app.Application
 import com.liskovsoft.mediaserviceinterfaces.data.MediaFormat
 import com.liskovsoft.mediaserviceinterfaces.data.MediaItemFormatInfo
 import com.liskovsoft.youtubeapi.service.YouTubeServiceManager
+import com.newtube.mobile.MobileMainApplication
 import org.json.JSONArray
 import org.json.JSONObject
 import java.util.concurrent.ConcurrentHashMap
 
 /**
- * (v889) جلب روابط فيديو/صوت يوتيوب من مكتبات يوتيوب (MediaServiceCore) — YtNp اتعاد في v1072 لصفحات يوتيوب الداخلية، وMtYt بيجيب الروابط والفيدات من مكتبات youtubeapi.
- * بيتنده من خيط خلفي بس (الطلب متزامن).
+ * (v889) جلب روابط فيديو/صوت يوتيوب من محرك MeeTube نفسه (MediaServiceCore) — بدل طبقة الاستخراج القديمة بتاعت Joyboy
+ * (YtNp/YtFast/YtExtract-clients اتمسحوا). بيتنده من خيط خلفي بس (الطلب متزامن).
  * بيطلّع نفس الأشكال اللي المشغّل والموسيقى والتحميل متعودين عليها: Got (url + صوت منفصل + قايمة الجودات JSON) و YtPick.
  */
 object MtYt {
@@ -27,8 +28,7 @@ object MtYt {
 
     fun clearCache() { cache.clear() }
 
-    /** (v1072) تهيئة طبقة بيانات يوتيوب: GlobalPreferences.instance بيبنّي الـsingleton بكونتكست التطبيق وبيشغّل كل الـonInit المعلّقة (منها تسجيل AccountManager بتاع تسجيل الدخول) — ده بديل MobileMainApplication.boot بعد ما اتشال برنامج MeeTube */
-    private fun boot() { app?.let { try { com.liskovsoft.sharedutils.prefs.GlobalPreferences.instance(it) } catch (_: Throwable) {} } }
+    private fun boot() { app?.let { MobileMainApplication.boot(it) } }
 
     private fun service() = run { boot(); YouTubeServiceManager.instance().mediaItemService }
 
@@ -38,11 +38,11 @@ object MtYt {
         val t0 = System.currentTimeMillis()
         return try {
             val fi = service().getFormatInfo(id)
-            if (fi == null) { lastWhy = "يوتيوب مرجّعش معلومات للفيديو"; return null }
+            if (fi == null) { lastWhy = "MeeTube مرجّعش معلومات للفيديو"; return null }
             if (fi.isUnplayable) { lastWhy = fi.playabilityReason ?: "الفيديو مش متاح"; return null }
             cache[id] = Pair(System.currentTimeMillis(), fi)
             lastWhy = ""
-            LogStore.add("⏱ يوتيوب $id: " + (System.currentTimeMillis() - t0) + "ms")
+            LogStore.add("⏱ MeeTube $id: " + (System.currentTimeMillis() - t0) + "ms")
             fi
         } catch (e: Throwable) {
             lastWhy = e.javaClass.simpleName + ": " + (e.message ?: "")
@@ -133,9 +133,9 @@ object MtYt {
         val title = fi.title ?: ""
         val (qs, _) = build(fi, maxH)
         val top = qs.firstOrNull()
-        if (top != null) return Got(top.url, top.audio, ua, title, qlistJson(qs), "يوتيوب")
+        if (top != null) return Got(top.url, top.audio, ua, title, qlistJson(qs), "MeeTube")
         val hls = try { fi.hlsManifestUrl } catch (_: Throwable) { null }
-        if (!hls.isNullOrEmpty()) return Got(hls, null, ua, title, "", "يوتيوب·HLS")
+        if (!hls.isNullOrEmpty()) return Got(hls, null, ua, title, "", "MeeTube·HLS")
         lastWhy = if (fi.containsSabrFormats()) "الفيديو ده SABR بس (من غير روابط مباشرة)" else "مفيش روابط مباشرة للفيديو"
         return null
     }
@@ -180,32 +180,27 @@ object MtYt {
         return out.distinctBy { it.id }
     }
 
-    /** بحث فيديوهات (من مكتبات يوتيوب) — من خيط خلفي */
+    /** بحث فيديوهات (من محرك MeeTube) — من خيط خلفي */
     fun search(q: String): List<NpItem> {
         if (q.isBlank()) return emptyList()
         return try { boot(); flatten(YouTubeServiceManager.instance().contentService.getSearch(q)) }
         catch (e: Throwable) { LogStore.err("MtYt:search", e); emptyList() }
     }
 
-    /** (v929) حساب يوتيوب مسجّل دخول؟ */
+    /** (v929) حساب MeeTube مسجّل دخول؟ */
     fun signedIn(): Boolean = try { boot(); YouTubeServiceManager.instance().signInService.isSigned() } catch (e: Throwable) { LogStore.err("MtYt:signed", e); false }
 
-    /** (v1072) تسجيل الخروج من حساب يوتيوب — (v1078) SignInService الحقيقي مفيهوش signOut() (دي في oauth.SignInService القديمة) فبنمسح كل الحسابات بـ removeAccount */
-    fun signOut() {
-        try { boot(); val svc = YouTubeServiceManager.instance().signInService; for (a in ArrayList(svc.accounts)) svc.removeAccount(a) } catch (e: Throwable) { LogStore.err("MtYt:signOut", e) }
-    }
-
-    /** (v929) أحدث فيديوهات الاشتراكات (صفحة الاشتراكات في يوتيوب) — من خيط خلفي */
+    /** (v929) أحدث فيديوهات الاشتراكات (صفحة الاشتراكات في MeeTube) — من خيط خلفي */
     fun subscriptions(): List<NpItem> =
         try { boot(); flatten(listOfNotNull(YouTubeServiceManager.instance().contentService.getSubscriptions())) }
         catch (e: Throwable) { LogStore.err("MtYt:subs", e); emptyList() }
 
-    /** (v929) فيديوهات الصفحة الرئيسية في يوتيوب — من خيط خلفي */
+    /** (v929) فيديوهات الصفحة الرئيسية في MeeTube — من خيط خلفي */
     fun homeFeed(): List<NpItem> =
         try { boot(); flatten(YouTubeServiceManager.instance().contentService.getHome()) }
         catch (e: Throwable) { LogStore.err("MtYt:home", e); emptyList() }
 
-    /** المقترحات بعد الفيديو (من مكتبات يوتيوب) — من خيط خلفي */
+    /** المقترحات بعد الفيديو (من محرك MeeTube) — من خيط خلفي */
     fun related(id: String): List<NpItem> {
         return try { flatten(service().getMetadata(id)?.suggestions).filter { it.id != id } }
         catch (e: Throwable) { LogStore.err("MtYt:related", e); emptyList() }

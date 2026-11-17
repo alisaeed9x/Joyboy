@@ -589,7 +589,6 @@
         android:contentDescription="@string/mobile_mini_expand"
         android:layout_width="@dimen/meetube_mini_width"
         android:layout_height="@dimen/meetube_mini_height"
-        android:layout_marginLeft="12dp"
         android:layout_marginRight="12dp"
         android:layout_marginBottom="10dp"
         android:clickable="true"
@@ -601,8 +600,8 @@
         app:strokeColor="@color/meetube_glass_stroke"
         app:strokeWidth="1dp"
         app:layout_constraintBottom_toTopOf="@id/mobile_nav_glass"
-        app:layout_constraintEnd_toEndOf="parent"
-        tools:visibility="visible">   <!-- JOYBOY(v1057): الركن END (الشمال في RTL) — زي هدف الـmorph في MobilePlaybackActivity.computeMorphTarget؛ كان Right فالفيديو بيهبط شمال والكارت يظهر يمين -->
+        app:layout_constraintRight_toRightOf="parent"
+        tools:visibility="visible">
 
         <FrameLayout
             android:layout_width="match_parent"

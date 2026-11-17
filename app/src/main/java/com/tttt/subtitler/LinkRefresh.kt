@@ -92,7 +92,6 @@ return JSON.stringify(o)})()"""
             override fun onCreateWindow(v: WebView?, isDialog: Boolean, isUserGesture: Boolean, resultMsg: android.os.Message?): Boolean = false
         }
         wv.webViewClient = object : WebViewClient() {
-            override fun onRenderProcessGone(v: WebView, d: android.webkit.RenderProcessGoneDetail): Boolean = true   // (v1049) من غير ده موت الـrenderer بيقفل التطبيق
             override fun shouldInterceptRequest(v: WebView, r: WebResourceRequest): WebResourceResponse? {
                 val u = r.url.toString()
                 if (AdBlock.blocked(u)) return WebResourceResponse("text/plain", "utf-8", java.io.ByteArrayInputStream(ByteArray(0)))

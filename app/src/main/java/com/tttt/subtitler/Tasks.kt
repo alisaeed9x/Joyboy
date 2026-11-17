@@ -1,17 +1,62 @@
+@file:OptIn(UnstableApi::class)
 package com.tttt.subtitler
 
+import android.content.ContentValues
 import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.Color
+import android.graphics.Paint
+import android.graphics.Typeface
+import android.media.MediaCodec
+import android.media.MediaExtractor
+import android.media.MediaFormat
+import android.media.MediaMetadataRetriever
+import android.media.MediaMuxer
 import android.net.Uri
+import android.os.Build
+import android.os.Environment
 import android.os.Handler
 import android.os.Looper
+import android.provider.MediaStore
+import android.text.Layout
+import android.text.StaticLayout
+import android.text.TextDirectionHeuristics
+import android.text.TextPaint
 import android.widget.Toast
+import androidx.media3.common.Effect
+import androidx.media3.common.MediaItem
+import androidx.media3.common.MimeTypes
+import androidx.media3.common.audio.AudioProcessor
+import androidx.media3.common.audio.SonicAudioProcessor
+import androidx.media3.common.util.UnstableApi
+import androidx.media3.effect.BitmapOverlay
+import androidx.media3.effect.OverlayEffect
+import androidx.media3.common.OverlaySettings
+import androidx.media3.effect.Presentation
+import androidx.media3.effect.StaticOverlaySettings
+import androidx.media3.effect.TextureOverlay
+import androidx.media3.transformer.AudioEncoderSettings
+import androidx.media3.transformer.Composition
+import androidx.media3.transformer.DefaultEncoderFactory
+import androidx.media3.transformer.EditedMediaItem
+import androidx.media3.transformer.Effects
+import androidx.media3.transformer.ExportException
+import androidx.media3.transformer.ExportResult
+import androidx.media3.transformer.ProgressHolder
+import androidx.media3.transformer.Transformer
+import androidx.media3.transformer.VideoEncoderSettings
+import com.google.common.collect.ImmutableList
 import java.io.File
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.IOException
+import java.nio.ByteBuffer
 import java.util.concurrent.CopyOnWriteArrayList
+import java.util.concurrent.CountDownLatch
 import java.util.concurrent.LinkedBlockingQueue
 
-/** (v1038) عنصر واحد في «مركز التحميل» (تحميل فيديو/صوت/متصفح/نقل) */
+/** (v135) مهمة واحدة في توبيب «المهام»: قص · صوت · GIF · ضغط · هارد ساب */
 class TaskItem(val id: Int, val kind: String, val title: String) {
     /** 0 مستني · 1 شغّال · 2 خلص · 3 فشل · 4 اتلغى · 5 اتوقف (⏹) · 6 واقف مؤقتًا من غير ما يكون شغّال (هيبدأ من الأول لما يكمّل) */
     @Volatile var state = 0
@@ -48,7 +93,7 @@ class TaskItem(val id: Int, val kind: String, val title: String) {
 
 class TaskCancelled : RuntimeException("اتلغت")
 
-/** مركز التحميل: التحميلات بتتنفّذ هنا (3 خانات متوازية) وبتتابع تقدّمها */
+/** طابور المهام: مهمة واحدة في المرة (الترميز تقيل)، والناتج بيتحفظ لوحده في Movies / Music / Pictures ← Subtitler */
 object TaskCenter {
     /** (v723) المهمة اللي الخيط الحالي بينفّذها (عشان Downloader يبلّغ بالحجم والسرعة) */
     val cur = ThreadLocal<TaskItem?>()
@@ -242,8 +287,428 @@ object TaskStore {
         resumed = true
         val app = ctx.applicationContext
         SegDl.sweep(app)   // (v819) مخلفات الكاش القديمة + تحميلات ناقصة عدّى عليها 3 أيام
-        // (v1038) مفيش مهام ترميز بتتكمّل تاني (القص/الـGIF/الضغط اتشالوا) — ملف المهام القديم بيتمسح بس
-        try { file(app).delete() } catch (_: Throwable) {}
-        lastSig = ""
+        try {
+            val f = file(app)
+            if (!f.exists()) return
+            val ar = JSONArray(f.readText()); f.delete(); lastSig = ""
+            for (i in 0 until ar.length()) {
+                val o = ar.getJSONObject(i); val tries = o.optInt("tries", 0)
+                if (tries >= 2) continue   // مهمة بتقتل العملية كل مرة: مانلفّش عليها
+                val t = try { Tools.fromSpec(app, o.getString("spec")) } catch (e: Throwable) { LogStore.err("TaskStore:spec", e); null } ?: continue
+                t.tries = tries + 1; t.msg = "↻ كمّلت بعد ما التطبيق اتقفل"
+                TaskCenter.changed()
+            }
+        } catch (e: Throwable) { LogStore.err("TaskStore:resume", e) }
+    }
+}
+
+/** مصدر الأدوات: الفيديو الشغّال دلوقتي في المشغّل */
+class ToolSrc(val uri: String, val audioUri: String?, val name: String, val durMs: Long, val w: Int, val h: Int, val curMs: Long, val subs: List<Sub>, val hdr: Map<String, String> = emptyMap())
+
+class Probe(val w: Int, val h: Int, val durMs: Long, val aRate: Int)
+
+/** حفظ الناتج: MediaStore على أندرويد 10+ (Movies/Music/Pictures ← Subtitler) */
+object Out {
+    fun publish(ctx: Context, t: TaskItem, f: File, display: String, mime: String) {
+        val size = f.length()
+        if (size <= 0L) throw IOException("الملف الناتج فاضي")
+        if (Build.VERSION.SDK_INT >= 29) {
+            val coll: Uri; val rel: String
+            when {
+                mime.startsWith("video") -> { coll = MediaStore.Video.Media.EXTERNAL_CONTENT_URI; rel = Environment.DIRECTORY_MOVIES + "/Subtitler" }
+                mime.startsWith("audio") -> { coll = MediaStore.Audio.Media.EXTERNAL_CONTENT_URI; rel = Environment.DIRECTORY_MUSIC + "/Subtitler" }
+                else -> { coll = MediaStore.Images.Media.EXTERNAL_CONTENT_URI; rel = Environment.DIRECTORY_PICTURES + "/Subtitler" }
+            }
+            val cv = ContentValues().apply {
+                put(MediaStore.MediaColumns.DISPLAY_NAME, display); put(MediaStore.MediaColumns.MIME_TYPE, mime)
+                put(MediaStore.MediaColumns.RELATIVE_PATH, rel); put(MediaStore.MediaColumns.IS_PENDING, 1)
+            }
+            val cr = ctx.contentResolver
+            val uri = cr.insert(coll, cv) ?: throw IOException("ما قدرتش أكتب في المعرض")
+            try {
+                val os = cr.openOutputStream(uri) ?: throw IOException("ما قدرتش أفتح الملف للكتابة")
+                os.use { o -> f.inputStream().use { it.copyTo(o) } }
+                cr.update(uri, ContentValues().apply { put(MediaStore.MediaColumns.IS_PENDING, 0) }, null, null)
+            } catch (e: Throwable) { try { cr.delete(uri, null, null) } catch (_: Throwable) {}; throw e }
+            t.outUri = uri; t.outPath = "$rel/$display"
+        } else {
+            val dir = File(ctx.getExternalFilesDir(null) ?: ctx.filesDir, "Subtitler"); dir.mkdirs()
+            val dst = File(dir, display); f.copyTo(dst, true)
+            t.outUri = null; t.outPath = dst.absolutePath
+        }
+        t.outSize = size; t.mime = mime
+        try { f.delete() } catch (_: Throwable) {}
+    }
+}
+
+/** تشغيل Transformer (Media3) وانتظار نتيجته؛ لازم يتبدي ويتتابع من الـ main looper */
+object Xform {
+    /** (v456) سبب الفشل بصيغة مفهومة: كود Media3 + أعمق رسالة، عشان تتعرف ليه فشلت من غير ما نفتح اللوج */
+    private fun explain(e: Throwable): String {
+        val code = (e as? ExportException)?.errorCodeName
+        var root: Throwable = e
+        while (root.cause != null && root.cause !== root) root = root.cause!!
+        val detail = (root.message ?: root.javaClass.simpleName).replace('\n', ' ').take(90)
+        return (if (code != null) "$code · " else "") + detail
+    }
+
+    /** (v456) محاولتين: لو الأولى فشلت (مهلة الميوكسر / ترميز) بتتعاد تلقائيًا من الأول بإعدادات أبسط (معدل بت يختاره المرمّز نفسه) */
+    fun run(ctx: Context, t: TaskItem, edited: EditedMediaItem, out: File, vMime: String?, vBitrate: Int, aBitrate: Int) {
+        var last: Throwable? = null
+        for (attempt in 0..1) {
+            if (t.cancelled) throw TaskCancelled()
+            if (attempt == 1) { t.msg = "↻ إعادة محاولة تلقائية (إعدادات أبسط)…"; t.pct = 0; TaskCenter.changed() }
+            try {
+                runOnce(ctx, t, edited, out, vMime, if (attempt == 0) vBitrate else 0, aBitrate)
+                return
+            } catch (e: TaskCancelled) { throw e
+            } catch (e: Throwable) {
+                if (t.cancelled) throw TaskCancelled()
+                last = e; LogStore.err("Xform#" + attempt, e)
+                try { out.delete() } catch (_: Throwable) {}
+            }
+        }
+        val e = last ?: RuntimeException("فشل غير معروف")
+        throw RuntimeException(explain(e), e)
+    }
+
+    private fun runOnce(ctx: Context, t: TaskItem, edited: EditedMediaItem, out: File, vMime: String?, vBitrate: Int, aBitrate: Int) {
+        val main = Handler(Looper.getMainLooper())
+        val latch = CountDownLatch(1)
+        var error: Throwable? = null
+        var tr: Transformer? = null
+        val poll = object : Runnable {
+            override fun run() {
+                val x = tr ?: return
+                if (latch.count == 0L) return
+                try {
+                    val ph = ProgressHolder()
+                    if (x.getProgress(ph) == Transformer.PROGRESS_STATE_AVAILABLE) { t.pct = ph.progress.coerceIn(0, 99); TaskCenter.changed() }
+                } catch (_: Throwable) {}
+                main.postDelayed(this, 500)
+            }
+        }
+        t.onCancel = { main.post { try { tr?.cancel() } catch (_: Throwable) {}; latch.countDown() } }
+        if (t.cancelled) throw TaskCancelled()
+        main.post {
+            try {
+                val eb = DefaultEncoderFactory.Builder(ctx)
+                if (vBitrate > 0) eb.setRequestedVideoEncoderSettings(VideoEncoderSettings.Builder().setBitrate(vBitrate).build())
+                if (aBitrate > 0) eb.setRequestedAudioEncoderSettings(AudioEncoderSettings.Builder().setBitrate(aBitrate).build())
+                // (v456) المهلة الافتراضية بين عينتين للميوكسر 10 ث → بتفشل المهمة عند 5-10% لما الجهاز يبطّئ الـ GPU (الشاشة اتقفلت / التطبيق في الخلفية) فرفعناها
+                val b = Transformer.Builder(ctx).setEncoderFactory(eb.build()).setAudioMimeType(MimeTypes.AUDIO_AAC).setMaxDelayBetweenMuxerSamplesMs(300_000L)
+                if (vMime != null) b.setVideoMimeType(vMime)
+                b.addListener(object : Transformer.Listener {
+                    override fun onCompleted(composition: Composition, exportResult: ExportResult) { latch.countDown() }
+                    override fun onError(composition: Composition, exportResult: ExportResult, exportException: ExportException) { error = exportException; latch.countDown() }
+                })
+                val x = b.build(); tr = x
+                x.start(edited, out.absolutePath)
+                main.postDelayed(poll, 500)
+            } catch (e: Throwable) { error = e; latch.countDown() }
+        }
+        latch.await()
+        if (t.cancelled) { try { out.delete() } catch (_: Throwable) {}; throw TaskCancelled() }
+        error?.let { e -> try { out.delete() } catch (_: Throwable) {}; throw (if (e is Exception) e else RuntimeException(e)) }
+    }
+}
+
+/** ترجمة محروقة في الصورة: بتتحوّل لـ Bitmap شفاف بتتغيّر مع وقت الفيديو (النص العربي بيتشكّل بـ StaticLayout بتاع أندرويد) */
+class SubOverlay(subs: List<Sub>, private val vw: Int, private val vh: Int, private val tf: Typeface, private val scale: Int, private val useOrig: Boolean) : BitmapOverlay() {
+    private val sorted = subs.filter { textOf(it).isNotBlank() }.sortedBy { it.start }
+    private val blank: Bitmap = Bitmap.createBitmap(2, 2, Bitmap.Config.ARGB_8888)
+    private var curIdx = -2
+    private var curBmp: Bitmap = blank
+    private var hint = 0
+    private val settings: OverlaySettings = StaticOverlaySettings.Builder()
+        .setOverlayFrameAnchor(0f, -1f)
+        .setBackgroundFrameAnchor(0f, -0.86f)
+        .build()
+
+    private fun textOf(s: Sub): String = (if (useOrig) s.original else s.translated.ifBlank { s.original }).trim()
+
+    private fun find(tUs: Long): Int {
+        val t = tUs / 1_000_000.0
+        val n = sorted.size
+        if (n == 0) return -1
+        if (hint >= n) hint = n - 1
+        while (hint > 0 && sorted[hint].start > t) hint--
+        while (hint < n && sorted[hint].end <= t) hint++
+        return if (hint < n && t >= sorted[hint].start && t < sorted[hint].end) hint else -1
+    }
+
+    override fun getBitmap(presentationTimeUs: Long): Bitmap {
+        val i = find(presentationTimeUs)
+        if (i != curIdx) { curIdx = i; curBmp = if (i < 0) blank else render(textOf(sorted[i])) }
+        return curBmp
+    }
+
+    override fun getOverlaySettings(presentationTimeUs: Long): OverlaySettings = settings
+
+    private fun render(text: String): Bitmap {
+        val maxW = (vw * 0.9f).toInt().coerceAtLeast(64)
+        val size = (minOf(vw, vh) * 0.06f * scale / 100f).coerceAtLeast(14f)
+        val fill = TextPaint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.WHITE; textSize = size; typeface = tf }
+        val stroke = TextPaint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.BLACK; textSize = size; typeface = tf; style = Paint.Style.STROKE; strokeWidth = size * 0.16f; strokeJoin = Paint.Join.ROUND }
+        fun lay(p: TextPaint) = StaticLayout.Builder.obtain(text, 0, text.length, p, maxW)
+            .setAlignment(Layout.Alignment.ALIGN_CENTER).setTextDirection(TextDirectionHeuristics.FIRSTSTRONG_RTL).setLineSpacing(0f, 1.05f).build()
+        val l1 = lay(fill); val l2 = lay(stroke)
+        var lineW = 0f
+        for (k in 0 until l1.lineCount) lineW = maxOf(lineW, l1.getLineWidth(k))
+        val padX = (size * 0.55f).toInt(); val padY = (size * 0.28f).toInt()
+        val bw = (lineW.toInt() + 2 * padX).coerceAtLeast(8); val bh = (l1.height + 2 * padY).coerceAtLeast(8)
+        val bmp = Bitmap.createBitmap(bw, bh, Bitmap.Config.ARGB_8888)
+        val c = Canvas(bmp)
+        c.drawRoundRect(0f, 0f, bw.toFloat(), bh.toFloat(), size * 0.35f, size * 0.35f, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0x8C000000.toInt() })
+        c.translate(bw / 2f - maxW / 2f, padY.toFloat())
+        l2.draw(c); l1.draw(c)
+        return bmp
+    }
+}
+
+/** العمليات نفسها: كل دالة بتضيف مهمة للطابور وبترجّعها */
+object Tools {
+    const val ORIG = "الأصلية"
+    val QUALS = listOf("منخفضة", "متوسطة", "عالية")
+
+    fun clock(ms: Long): String {
+        val s = (ms / 1000).coerceAtLeast(0); val h = s / 3600; val m = (s % 3600) / 60; val ss = s % 60
+        return if (h > 0) "%d:%02d:%02d".format(h, m, ss) else "%d:%02d".format(m, ss)
+    }
+    private fun secs(ms: Long) = (ms / 1000).toString()
+    private fun safe(s: String): String = s.replace(Regex("[\\\\/:*?\"<>|\\n\\r]"), " ").trim().take(60).ifBlank { "video" }
+    private fun even(v: Int) = (v / 2) * 2
+
+    fun vBitrate(shortSide: Int, q: String): Int {
+        val base = when { shortSide >= 1080 -> 6_000_000; shortSide >= 720 -> 3_500_000; shortSide >= 480 -> 1_800_000; shortSide >= 360 -> 1_000_000; shortSide > 0 -> 600_000; else -> 2_500_000 }
+        return when (q) { "منخفضة" -> base * 45 / 100; "عالية" -> base * 16 / 10; else -> base }
+    }
+    fun aBitrate(q: String): Int = when (q) { "منخفضة" -> 96_000; "عالية" -> 256_000; else -> 160_000 }
+
+    /** (v137) لينك نت → ينزل لملف مؤقت الأول (بالهيدرز، وبيدمج الصورة والصوت لو منفصلين)؛ ملف محلي → زي ما هو. بيرجّع (المسار، الملف المؤقت لو اتعمل) */
+    private fun localSrc(app: Context, t: TaskItem, s: ToolSrc): Pair<String, File?> {
+        if (!s.uri.startsWith("http")) return Pair(s.uri, null)
+        val isHls = s.uri.contains(".m3u8", true)
+        val f = tmp(app, t, "src." + (if (isHls) "ts" else "mp4"))
+        val ctl = Downloader.Ctl(); ctl.ext = { t.cancelled }
+        t.onCancel = { ctl.cancelled = true }
+        t.msg = "⬇ بينزّل الفيديو الأول…"; TaskCenter.changed()
+        try {
+            Downloader.toCache(s.uri, s.audioUri, isHls, 0, s.hdr, f, ctl) { p -> t.pct = p * 30 / 100; t.msg = "⬇ بينزّل الفيديو… $p%"; TaskCenter.changed() }
+        } catch (e: Throwable) { try { f.delete() } catch (_: Throwable) {}; throw e }
+        t.onCancel = null
+        return Pair(Uri.fromFile(f).toString(), f)
+    }
+    private fun localAudio(app: Context, t: TaskItem, url: String, hdr: Map<String, String>): Pair<String, File?> {
+        if (!url.startsWith("http")) return Pair(url, null)
+        val f = tmp(app, t, "src.m4a")
+        val ctl = Downloader.Ctl(); ctl.ext = { t.cancelled }
+        t.onCancel = { ctl.cancelled = true }
+        t.msg = "⬇ بينزّل الصوت الأول…"; TaskCenter.changed()
+        try { Downloader.toCache(url, null, false, 0, hdr, f, ctl) { p -> t.pct = p * 30 / 100; t.msg = "⬇ بينزّل الصوت… $p%"; TaskCenter.changed() } }
+        catch (e: Throwable) { try { f.delete() } catch (_: Throwable) {}; throw e }
+        t.onCancel = null
+        return Pair(Uri.fromFile(f).toString(), f)
+    }
+    private fun del(f: File?) { try { f?.delete() } catch (_: Throwable) {} }
+
+    private fun tmp(ctx: Context, t: TaskItem, ext: String): File { val d = File(ctx.cacheDir, "tasks"); d.mkdirs(); return File(d, "t${t.id}.$ext") }
+
+    fun probe(ctx: Context, src: String): Probe {
+        val mr = MediaMetadataRetriever()
+        var w = 0; var h = 0; var d = 0L; var ar = 0
+        try {
+            if (src.startsWith("http")) mr.setDataSource(src, HashMap<String, String>()) else mr.setDataSource(ctx, Uri.parse(src))
+            w = mr.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH)?.toIntOrNull() ?: 0
+            h = mr.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT)?.toIntOrNull() ?: 0
+            val rot = mr.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_ROTATION)?.toIntOrNull() ?: 0
+            if (rot == 90 || rot == 270) { val x = w; w = h; h = x }
+            d = mr.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L
+        } catch (_: Throwable) {} finally { try { mr.release() } catch (_: Throwable) {} }
+        val ex = MediaExtractor()
+        try {
+            ex.setDataSource(ctx, Uri.parse(src), null)
+            for (i in 0 until ex.trackCount) {
+                val f = ex.getTrackFormat(i)
+                if ((f.getString(MediaFormat.KEY_MIME) ?: "").startsWith("audio/")) { if (f.containsKey(MediaFormat.KEY_SAMPLE_RATE)) ar = f.getInteger(MediaFormat.KEY_SAMPLE_RATE); break }
+            }
+        } catch (_: Throwable) {} finally { try { ex.release() } catch (_: Throwable) {} }
+        return Probe(w, h, d, ar)
+    }
+
+    private fun specOf(k: String, s: ToolSrc, p: JSONObject, withSubs: Boolean = false): String {
+        val o = JSONObject().put("k", k).put("uri", s.uri).put("name", s.name).put("dur", s.durMs).put("w", s.w).put("h", s.h).put("cur", s.curMs).put("p", p)
+        s.audioUri?.let { o.put("aud", it) }
+        val hd = JSONObject(); for ((a, b) in s.hdr) hd.put(a, b); o.put("hdr", hd)
+        if (withSubs) { val ar = JSONArray(); for (x in s.subs) ar.put(JSONObject().put("s", x.start).put("e", x.end).put("o", x.original).put("t", x.translated)); o.put("subs", ar) }
+        return o.toString()
+    }
+
+    /** (v457) إعادة بناء مهمة من وصفها المحفوظ */
+    fun fromSpec(app: Context, spec: String): TaskItem? {
+        val o = JSONObject(spec); val p = o.getJSONObject("p")
+        val hdr = HashMap<String, String>(); o.optJSONObject("hdr")?.let { h -> for (k in h.keys()) hdr[k] = h.getString(k) }
+        val subs = ArrayList<Sub>()
+        o.optJSONArray("subs")?.let { ar -> for (i in 0 until ar.length()) { val x = ar.getJSONObject(i); subs.add(Sub(x.getDouble("s"), x.getDouble("e"), x.getString("o"), x.getString("t"), "unknown", "unknown", "none", emptyList(), emptyList(), false, false)) } }
+        val s = ToolSrc(o.getString("uri"), if (o.has("aud")) o.getString("aud") else null, o.getString("name"), o.optLong("dur"), o.optInt("w"), o.optInt("h"), o.optLong("cur"), subs, hdr)
+        return when (o.getString("k")) {
+            "trim" -> trim(app, s, p.getLong("a"), p.getLong("b"), p.getString("q"))
+            "audio" -> audio(app, s, p.getString("q"))
+            "gif" -> gif(app, s, p.getLong("a"), p.getLong("b"), p.getString("q"))
+            "compress" -> compress(app, s, p.getInt("h"), p.getString("q"))
+            "hardsub" -> hardsub(app, s, p.getString("q"), if (p.has("f")) p.getString("f") else null, p.getInt("sc"), p.getBoolean("o"))
+            else -> null
+        }
+    }
+
+    // ===== قص =====
+    fun trim(ctx: Context, s: ToolSrc, a: Long, b: Long, q: String): TaskItem {
+        val app = ctx.applicationContext
+        return TaskCenter.add(app, "trim", "✂ قص ${clock(a)} ← ${clock(b)} · ${s.name}", specOf("trim", s, JSONObject().put("a", a).put("b", b).put("q", q))) { t ->
+            val (src, srcF) = localSrc(app, t, s)
+            val pr = probe(app, src)
+            val item = MediaItem.Builder().setUri(src)
+                .setClippingConfiguration(MediaItem.ClippingConfiguration.Builder().setStartPositionMs(a).setEndPositionMs(b).build()).build()
+            val out = tmp(app, t, "mp4")
+            try {
+                t.msg = "بيقص…"
+                Xform.run(app, t, EditedMediaItem.Builder(item).build(), out, MimeTypes.VIDEO_H264, vBitrate(minOf(pr.w, pr.h).let { if (pr.w == 0 || pr.h == 0) 0 else it }, q), aBitrate(q))
+                Out.publish(app, t, out, "${safe(s.name)} قص ${secs(a)}-${secs(b)} ث.mp4", "video/mp4")
+            } finally { try { out.delete() } catch (_: Throwable) {}; del(srcF) }
+        }
+    }
+
+    // ===== صوت (M4A/AAC) =====
+    fun audio(ctx: Context, s: ToolSrc, q: String): TaskItem {
+        val app = ctx.applicationContext
+        return TaskCenter.add(app, "audio", "🎧 صوت ($q) · ${s.name}", specOf("audio", s, JSONObject().put("q", q))) { t ->
+            val (src, srcF) = if (s.audioUri != null) localAudio(app, t, s.audioUri, s.hdr) else localSrc(app, t, s)
+            val out = tmp(app, t, "m4a")
+            try {
+                if (q == ORIG) {
+                    t.msg = "بيستخرج الصوت…"
+                    copyAudio(app, src, out)
+                } else {
+                    val pr = probe(app, src)
+                    // بنغيّر معدل العينة (44.1 ↔ 48 كيلو) عشان Transformer يعيد الترميز فعلاً ويطبّق الجودة بدل ما ينسخ الصوت زي ما هو
+                    val target = if (pr.aRate == 44100) 48000 else 44100
+                    val sonic = SonicAudioProcessor(); sonic.setOutputSampleRateHz(target)
+                    val item = MediaItem.fromUri(src)
+                    val ed = EditedMediaItem.Builder(item).setRemoveVideo(true)
+                        .setEffects(Effects(listOf<AudioProcessor>(sonic), emptyList<Effect>())).build()
+                    t.msg = "بيحوّل الصوت…"
+                    Xform.run(app, t, ed, out, null, 0, aBitrate(q))
+                }
+                Out.publish(app, t, out, "${safe(s.name)}.m4a", "audio/mp4")
+            } finally { try { out.delete() } catch (_: Throwable) {}; del(srcF) }
+        }
+    }
+
+    /** نسخ مسار الصوت زي ما هو من غير إعادة ترميز (سريع، بس لازم الصوت يكون AAC أو نوع بيقبله MP4) */
+    private fun copyAudio(ctx: Context, src: String, out: File) {
+        val ex = MediaExtractor()
+        try {
+            ex.setDataSource(ctx, Uri.parse(src), null)
+            var ti = -1; var fmt: MediaFormat? = null
+            for (i in 0 until ex.trackCount) {
+                val f = ex.getTrackFormat(i)
+                if ((f.getString(MediaFormat.KEY_MIME) ?: "").startsWith("audio/")) { ti = i; fmt = f; break }
+            }
+            if (ti < 0 || fmt == null) throw IOException("مفيش مسار صوت في الفيديو ده")
+            ex.selectTrack(ti)
+            val muxer = MediaMuxer(out.absolutePath, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
+            try {
+                val mt = try { muxer.addTrack(fmt) } catch (e: Exception) { throw IOException("الصوت الأصلي مش AAC — اختار جودة (منخفضة/متوسطة/عالية) بدل «الأصلية»") }
+                muxer.start()
+                val buf = ByteBuffer.allocate(1024 * 1024); val info = MediaCodec.BufferInfo()
+                while (true) {
+                    buf.clear(); val n = ex.readSampleData(buf, 0); if (n < 0) break
+                    info.set(0, n, ex.sampleTime, MediaCodec.BUFFER_FLAG_KEY_FRAME)
+                    muxer.writeSampleData(mt, buf, info); ex.advance()
+                }
+                muxer.stop()
+            } finally { try { muxer.release() } catch (_: Throwable) {} }
+        } finally { try { ex.release() } catch (_: Throwable) {} }
+    }
+
+    // ===== GIF =====
+    fun gif(ctx: Context, s: ToolSrc, startMs: Long, lenMs: Long, q: String): TaskItem {
+        val app = ctx.applicationContext
+        val width = when (q) { "منخفضة" -> 240; "عالية" -> 480; else -> 360 }
+        val fps = when (q) { "منخفضة" -> 8; "عالية" -> 12; else -> 10 }
+        return TaskCenter.add(app, "gif", "🎞 GIF ${clock(startMs)} (${lenMs / 1000} ث) · ${s.name}", specOf("gif", s, JSONObject().put("a", startMs).put("b", lenMs).put("q", q))) { t ->
+            val mr = MediaMetadataRetriever()
+            val out = tmp(app, t, "gif")
+            val (src, srcF) = localSrc(app, t, s)
+            try {
+                mr.setDataSource(app, Uri.parse(src))
+                val frames = (lenMs * fps / 1000).toInt().coerceIn(1, 240)
+                var gw: GifWriter? = null; var px: IntArray? = null; var ow = 0; var oh = 0; var got = 0
+                out.outputStream().buffered().use { os ->
+                    for (i in 0 until frames) {
+                        if (t.cancelled) throw TaskCancelled()
+                        val tUs = startMs * 1000L + i * 1_000_000L / fps
+                        val bm = mr.getFrameAtTime(tUs, MediaMetadataRetriever.OPTION_CLOSEST) ?: continue
+                        if (gw == null) {
+                            ow = even(minOf(width, bm.width)).coerceAtLeast(2); oh = even((ow.toLong() * bm.height / bm.width).toInt()).coerceAtLeast(2)
+                            gw = GifWriter(os, ow, oh); px = IntArray(ow * oh)
+                        }
+                        val sc = if (bm.width == ow && bm.height == oh) bm else Bitmap.createScaledBitmap(bm, ow, oh, true)
+                        sc.getPixels(px!!, 0, ow, 0, 0, ow, oh)
+                        gw!!.addFrame(px!!, 1000 / fps); got++
+                        if (sc !== bm) sc.recycle(); bm.recycle()
+                        t.pct = ((i + 1) * 100 / frames).coerceAtMost(99); t.msg = "فريم ${i + 1} / $frames"; TaskCenter.changed()
+                    }
+                    if (gw == null) throw IOException("ما قدرتش أقرا فريمات من الفيديو ده")
+                    gw!!.finish()
+                }
+                Out.publish(app, t, out, "${safe(s.name)} ${secs(startMs)}ث.gif", "image/gif")
+            } finally { try { mr.release() } catch (_: Throwable) {}; try { out.delete() } catch (_: Throwable) {}; del(srcF) }
+        }
+    }
+
+    // ===== ضغط / تغيير الدقة =====
+    fun compress(ctx: Context, s: ToolSrc, targetShort: Int, q: String): TaskItem {
+        val app = ctx.applicationContext
+        val lab = if (targetShort > 0) "${targetShort}p" else "نفس الدقة"
+        return TaskCenter.add(app, "compress", "📦 ضغط ($lab · $q) · ${s.name}", specOf("compress", s, JSONObject().put("h", targetShort).put("q", q))) { t ->
+            val (src, srcF) = localSrc(app, t, s)
+            val pr = probe(app, src)
+            val short = minOf(pr.w, pr.h)
+            val fx = ArrayList<Effect>(); var outShort = short
+            if (targetShort > 0 && short > 0 && targetShort < short) {
+                val sc = targetShort.toDouble() / short
+                fx.add(Presentation.createForWidthAndHeight(even((pr.w * sc).toInt()).coerceAtLeast(2), even((pr.h * sc).toInt()).coerceAtLeast(2), Presentation.LAYOUT_SCALE_TO_FIT))
+                outShort = targetShort
+            }
+            val ed = EditedMediaItem.Builder(MediaItem.fromUri(src)).setEffects(Effects(emptyList<AudioProcessor>(), fx)).build()
+            val out = tmp(app, t, "mp4")
+            try {
+                t.msg = "بيضغط…"
+                Xform.run(app, t, ed, out, MimeTypes.VIDEO_H264, vBitrate(outShort, q), aBitrate(q))
+                Out.publish(app, t, out, "${safe(s.name)} مضغوط.mp4", "video/mp4")
+            } finally { try { out.delete() } catch (_: Throwable) {}; del(srcF) }
+        }
+    }
+
+    // ===== هارد ساب =====
+    fun hardsub(ctx: Context, s: ToolSrc, q: String, fontFile: String?, scale: Int, useOrig: Boolean): TaskItem {
+        val app = ctx.applicationContext
+        return TaskCenter.add(app, "hardsub", "🎬 ترجمة ثابتة في الفيديو · ${s.name}", specOf("hardsub", s, JSONObject().put("q", q).apply { if (fontFile != null) put("f", fontFile) }.put("sc", scale).put("o", useOrig), true)) { t ->
+            val (src, srcF) = localSrc(app, t, s)
+            var pr = probe(app, src)
+            if ((pr.w <= 0 || pr.h <= 0) && s.w > 0 && s.h > 0) pr = Probe(s.w, s.h, pr.durMs, pr.aRate)   // أبعاد من المشغّل لو الفحص فشل
+            if (pr.w <= 0 || pr.h <= 0) { del(srcF); throw IOException("ما قدرتش أعرف أبعاد الفيديو") }
+            val tf = try { if (fontFile != null) Typeface.createFromAsset(app.assets, "fonts/$fontFile") else Typeface.DEFAULT_BOLD } catch (_: Throwable) { Typeface.DEFAULT_BOLD }
+            val ov = SubOverlay(s.subs, pr.w, pr.h, tf, scale, useOrig)
+            val fx = ArrayList<Effect>(); fx.add(OverlayEffect(ImmutableList.of<TextureOverlay>(ov)))
+            val ed = EditedMediaItem.Builder(MediaItem.fromUri(src)).setEffects(Effects(emptyList<AudioProcessor>(), fx)).build()
+            val out = tmp(app, t, "mp4")
+            try {
+                t.msg = "بيحرق الترجمة (بياخد وقت)…"
+                Xform.run(app, t, ed, out, MimeTypes.VIDEO_H264, vBitrate(minOf(pr.w, pr.h), q), aBitrate(q))
+                Out.publish(app, t, out, "${safe(s.name)} (ترجمة ثابتة).mp4", "video/mp4")
+            } finally { try { out.delete() } catch (_: Throwable) {}; del(srcF) }
+        }
     }
 }

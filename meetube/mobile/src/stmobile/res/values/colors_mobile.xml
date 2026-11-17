@@ -27,7 +27,7 @@
     <color name="mobile_color_skeleton_highlight">#F6F6F6</color>
     <color name="mobile_color_link">#065FD4</color>
     <color name="mobile_color_qr_bg">#FFFFFF</color>
-    <color name="mobile_color_divider">#E6E6E6</color>
+    <color name="mobile_color_divider">#1A000000</color>
     <color name="mobile_color_pill">#0D000000</color>
     <!-- Opaque equivalent of the translucent pill over #0F0F0F. MaterialButton flattens a
          translucent background tint onto its white base, which made white "Subscribed" text
@@ -80,20 +80,24 @@
     <color name="mobile_watch_fab_shadow">#00000000</color>
     <color name="mobile_player_cast_active">#64D2FF</color>
 
-    <!-- (v1071) مفيش زجاج: كل الألوان الشفافة بقت مصمتة (Material You: أبيض في الفاتح) -->
-    <color name="meetube_glass_tint">#FAFAFA</color>
-    <color name="meetube_glass_button">#FFFFFF</color>
-    <color name="meetube_watch_card">#FFFFFF</color>
-    <color name="meetube_search_glass_tint">#EBEBEB</color>
+    <!-- MEETUBE(glass): the floating-glass surfaces (light side; dark in values-night). -->
+    <color name="meetube_glass_tint">#66FAFAFA</color>
+    <!-- MEETUBE(glass): You's Accounts / Settings, whiter so they stand off a light page. -->
+    <color name="meetube_glass_button">#D9FFFFFF</color>
+    <!-- MEETUBE(glass): the watch page's Comments card, milky glass the page shows through. -->
+    <color name="meetube_watch_card">#8CFFFFFF</color>
+    <!-- MEETUBE(search): the search pill stays visible over a plain page, frosted over results. -->
+    <color name="meetube_search_glass_tint">#14000000</color>
     <!-- MEETUBE(glass): a pill on a frosted sheet ("Add a comment"): a see-through lift. -->
-    <color name="meetube_glass_pill_tint">#EBEBEB</color>
-    <color name="meetube_sheet_glass">#FFFFFF</color>
-    <color name="meetube_glass_fill">#F2F2F2</color>
-    <color name="meetube_glass_stroke">#E6E6E6</color>
-    <color name="meetube_glass_rim">#E0E0E0</color>
-    <color name="meetube_glass_sheen">#00000000</color>
-    <color name="meetube_glass_selected">#EBEBEB</color>
-    <color name="meetube_nav_inactive">#606060</color>
+    <color name="meetube_glass_pill_tint">#14000000</color>
+    <!-- MEETUBE(glass): sheet surfaces - the surface, a little see-through over the blurred page. -->
+    <color name="meetube_sheet_glass">#D6FFFFFF</color>
+    <color name="meetube_glass_fill">#0D000000</color>
+    <color name="meetube_glass_stroke">#1A000000</color>
+    <color name="meetube_glass_rim">#1F000000</color>
+    <color name="meetube_glass_sheen">#80FFFFFF</color>
+    <color name="meetube_glass_selected">#14000000</color>
+    <color name="meetube_nav_inactive">#99000000</color>
     <!-- MEETUBE(nav bloom): the plain tab glow - grey on the light glass, white on the dark. -->
     <color name="meetube_nav_bloom_plain">#FF8E8E93</color>
     <!-- MEETUBE(glass): the frosted top bar - the page colour at ~75%. -->

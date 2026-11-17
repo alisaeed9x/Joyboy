@@ -78,6 +78,9 @@ java $JOPT -cp "$OUT/t10:$CP" SoundTestKt | grep -E "^(PASS|FAIL)|الاختبا
 mkdir -p "$OUT/t11"
 "$KC" -jvm-target 17 -cp "$CP" -d "$OUT/t11" "$ROOT/dev-tests/CoverageTest.kt" 2>&1 | grep error && exit 1 || true
 java $JOPT -cp "$OUT/t11:$CP" CoverageTestKt | grep -E "^(PASS|FAIL)|الاختبارات|فشل"
+mkdir -p "$OUT/t12"
+"$KC" -jvm-target 17 -cp "$CP" -d "$OUT/t12" "$SRC/GifWriter.kt" "$ROOT/dev-tests/GifTest.kt" 2>&1 | grep error && exit 1 || true
+java $JOPT -cp "$OUT/t12:$CP" GifTestKt | grep -E "^(PASS|FAIL)"
 mkdir -p "$OUT/t13"
 mkdir -p "$OUT/t15"
 "$KC" -jvm-target 17 -cp "$CP" -d "$OUT/t15" "$ROOT/dev-tests/NoLossTest.kt" 2>&1 | grep -E "error:" && exit 1 || true

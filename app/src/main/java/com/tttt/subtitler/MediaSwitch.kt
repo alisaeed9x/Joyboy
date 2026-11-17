@@ -84,33 +84,31 @@ class SwipeFrame(ctx: android.content.Context) : android.widget.FrameLayout(ctx)
 object FilesHub {
     private const val K = "hub_last"
     fun intent(ctx: android.content.Context): android.content.Intent =
-        android.content.Intent(ctx, FileManagerActivity::class.java)   // (v1051) «إرسال واستقبال» اتشال: المخزن = مدير الملفات بس حتى لو آخر تبويب محفوظ كان ft
+        android.content.Intent(ctx, if (Cfg.str(K, "fm") == "ft") FileTransferActivity::class.java else FileManagerActivity::class.java)
 
     /** cur = 0 ملفات · 1 إرسال واستقبال (الاتنين جوه المخزن) — 2 موسيقى · 3 مهام بيفتحوا صفحاتهم من نفس الشريط */
     fun switchBar(act: Activity, ui: Ui, th: Theme, cur: Int): MediaSwitch {
-        Cfg.put(K, "fm")
-        // (v1051) تبويب «📡 إرسال واستقبال» اتشال: الأرقام الجديدة 0 ملفات · 1 موسيقى · 2 مركز التحميل (بتتحوّل للأرقام القديمة تحت)
-        val sw = MediaSwitch(act, ui, th, listOf("📂 الملفات", "🎵 الموسيقى", "⬇ مركز التحميل"), 12.5f) { t0 ->
-            val t = if (t0 == 0) 0 else t0 + 1
+        Cfg.put(K, if (cur == 1) "ft" else "fm")
+        val sw = MediaSwitch(act, ui, th, listOf("📂 الملفات", "📡 إرسال واستقبال", "🎵 الموسيقى", "📋 المهام"), 12.5f) { t ->
             if (t != cur) {
                 try {
                     if (t >= 2) {
                         act.startActivity(android.content.Intent(act, MainActivity::class.java).addFlags(android.content.Intent.FLAG_ACTIVITY_CLEAR_TOP or android.content.Intent.FLAG_ACTIVITY_SINGLE_TOP).putExtra("tab", if (t == 2) "music" else "tasks"))
                     } else {
-                        act.startActivity(android.content.Intent(act, FileManagerActivity::class.java))
+                        act.startActivity(android.content.Intent(act, if (t == 1) FileTransferActivity::class.java else FileManagerActivity::class.java))
                     }
                     act.finish(); act.overridePendingTransition(0, 0)
                 } catch (e: Throwable) { LogStore.err("FilesHub:switch", e) }
             }
         }
-        sw.show(if (cur >= 2) cur - 1 else 0)
+        sw.show(cur)
         return sw
     }
 
     /** (v855) فتح المخزن على تبويب معيّن من أي مكان (شبكة «المزيد»): fm ملفات · ft إرسال واستقبال؛ open = send/recv/bt جوه مركز الإرسال والاستقبال */
     fun open(ctx: android.content.Context, tab: String, open: String = ""): android.content.Intent {
-        Cfg.put(K, "fm")
-        val i = android.content.Intent(ctx, FileManagerActivity::class.java)   // (v1051) ft اتشال
+        Cfg.put(K, if (tab == "ft") "ft" else "fm")
+        val i = android.content.Intent(ctx, if (tab == "ft") FileTransferActivity::class.java else FileManagerActivity::class.java)
         if (open.isNotEmpty()) i.putExtra("ft_open", open)
         return i
     }

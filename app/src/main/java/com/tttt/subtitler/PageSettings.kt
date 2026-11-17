@@ -16,11 +16,11 @@ object PageSettings {
 
     /** الصفحة ← أقسام الإعدادات اللي بتأثر عليها. قسم واحد بس = بيتفتح على طول من غير قايمة */
     private val SECTIONS = mapOf(
-        VIDEOS to listOf("general", "keys", "audio", "perf", "look", "more"),   // خط الترجمة · المفاتيح · التفريغ والصوت · الموديل (والوضع البصري) · شكل الترجمة · الخروج من المشغّل
+        VIDEOS to listOf("general", "keys", "audio", "perf", "visual", "look", "more"),   // خط الترجمة · المفاتيح · التفريغ والصوت · الموديل · الصورة · شكل الترجمة · الخروج من المشغّل
         MUSIC to listOf("music"),                                                          // الكلمات · شكل الكلمات · فحص الأغاني
         TASKS to listOf("more", "perf"))                                                   // الطابور والبطارية · الموديل وطول المقطع (اللي بيمشوا في المهام)
 
-    private val TITLES = mapOf(VIDEOS to "⚙️ إعدادات الفيديوهات", MUSIC to "⚙️ إعدادات الموسيقى", TASKS to "⚙️ إعدادات مركز التحميل", BROWSER to "⚙️ إعدادات المتصفح")
+    private val TITLES = mapOf(VIDEOS to "⚙️ إعدادات الفيديوهات", MUSIC to "⚙️ إعدادات الموسيقى", TASKS to "⚙️ إعدادات المهام", BROWSER to "⚙️ إعدادات المتصفح")
 
     fun sections(page: String): List<String> = SECTIONS[page] ?: emptyList()
     fun title(page: String): String = TITLES[page] ?: "⚙️ الإعدادات"
@@ -40,7 +40,7 @@ class PageGear(private val act: Activity, host: FrameLayout, private val anchor:
     val view = IconTextView(act).apply {
         text = "⚙️"; textSize = 16f; gravity = Gravity.CENTER; includeFontPadding = false
         background = ui.box(th.card, th.border, 15)
-        elevation = ui.dp(14).toFloat()   // (v1049) فوق ألسنة التلفزيون (elevation 10-12) مش وراها
+        elevation = ui.dp(6).toFloat()
         contentDescription = "إعدادات الصفحة"
         visibility = View.GONE
         Glass.pressable(this)
@@ -53,22 +53,21 @@ class PageGear(private val act: Activity, host: FrameLayout, private val anchor:
         // الشريط السفلي بيتغيّر ارتفاعه (صف «المزيد»، الدوران): الكبسولة تفضل لازقة فوقه
         anchor.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> reposition() }
         lift?.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> reposition() }   // (v829) ظهور/اختفاء شريط الميديا
-        // (v1049) ألسنة التلفزيون (📺 🎮 ▶) بتظهر/تختفي مع الاتصال: الكبسولة تتزحزح بعيد عن الحافة اليمين
-        TvModeFab.listeners.add { try { if (!act.isDestroyed) view.post { reposition() } } catch (_: Throwable) {} }
-        host.post { reposition() }
+        MtFloat.barOf(act)?.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> reposition() }   // (v910) ارتفاع الشريط الزجاجي العايم
     }
 
     private fun reposition() {
         val lp = view.layoutParams as? FrameLayout.LayoutParams ?: return
         val sw = act.resources.displayMetrics.widthPixels
-        var rm: Int; var bm: Int
+        val rm: Int; var bm: Int
         val up = if (lift != null && lift.visibility == View.VISIBLE) lift.height else 0   // (v829)
         if (rail) { rm = anchor.width + ui.dp(10); bm = ui.dp(10) + up }   // تابلت: الريل على الجنب
         else {
             rm = if (DeviceUi.isTablet(act)) ui.dp(14) else (sw / 10 - ui.dp(28)).coerceAtLeast(ui.dp(4)); bm = anchor.height + ui.dp(6) + up
+            // (v910) الشريط الزجاجي العايم له حشو 6dp + هامش 12dp تحت (والـlift جواه أصلًا): لازم نقعد فوق الزجاج كله مش فوق الأزرار بس، وإلا الكبسولة تستخبّى وراه
+            val fb = MtFloat.barTop(act)
+            if (fb > 0) bm = fb + ui.dp(8)
         }
-        // (v1049) ألسنة التلفزيون واقفة على الحافة اليمين (عرضها 40dp): لو ظاهرة الكبسولة تبعد عنها أفقيًا
-        if (!rail && TvModeFab.edgeTabsShown(act)) rm = maxOf(rm, ui.dp(48))
         if (lp.rightMargin != rm || lp.bottomMargin != bm) { lp.rightMargin = rm; lp.bottomMargin = bm; view.layoutParams = lp }
     }
 

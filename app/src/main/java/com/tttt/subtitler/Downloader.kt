@@ -42,7 +42,6 @@ object Downloader {
         c.connectTimeout = 15000; c.readTimeout = 30000; c.instanceFollowRedirects = true; c.requestMethod = method
         c.setRequestProperty("User-Agent", headers["User-Agent"] ?: UA)
         for ((k, v) in headers) if (!k.equals("User-Agent", true)) c.setRequestProperty(k, v)
-        headers["Referer"]?.let { r0 -> if (headers["Origin"] == null && !r0.contains("youtube.com", true)) Sniff.originOf(r0)?.let { c.setRequestProperty("Origin", it) } }   // (v976)
         if (range != null) c.setRequestProperty("Range", range)
         return c
     }
@@ -240,7 +239,7 @@ object Downloader {
     /** (v716) HLS اتحمّل بصيغة fMP4 ← الملف mp4 مش ts */
     private val lastFmp4 = ThreadLocal<Boolean>()
     /** (v716) جودات الـ HLS (ماستر بلاي ليست): ارتفاع + ريت + لينك قائمة الجودة دي. فاضية لو اللينك قائمة وسيطة مش ماستر */
-    class Variant(val h: Int, val bw: Long, val url: String, val avg: Long = 0L)
+    class Variant(val h: Int, val bw: Long, val url: String)
     fun variants(url: String, headers: Map<String, String>): List<Variant> {
         val pl = readText(url, headers)
         if (!pl.contains("#EXT-X-STREAM-INF")) return emptyList()
@@ -249,44 +248,15 @@ object Downloader {
             val l = lines[i].trim(); if (!l.startsWith("#EXT-X-STREAM-INF")) continue
             val m = Regex("RESOLUTION=(\\d+)x(\\d+)").find(l)
             val h = if (m != null) minOf(m.groupValues[1].toInt(), m.groupValues[2].toInt()) else 0
-            val bw = Regex("(?<![A-Z-])BANDWIDTH=(\\d+)").find(l)?.groupValues?.get(1)?.toLongOrNull() ?: 0L
-            val avg = Regex("AVERAGE-BANDWIDTH=(\\d+)").find(l)?.groupValues?.get(1)?.toLongOrNull() ?: 0L
+            val bw = Regex("BANDWIDTH=(\\d+)").find(l)?.groupValues?.get(1)?.toLongOrNull() ?: 0L
             var j = i + 1
             while (j < lines.size && (lines[j].isBlank() || lines[j].startsWith("#"))) j++
             if (j >= lines.size) continue
-            out.add(Variant(h, bw, resolve(url, lines[j].trim()), avg))
+            out.add(Variant(h, bw, resolve(url, lines[j].trim())))
         }
         val use = out.filter { it.h > 0 }.ifEmpty { out }
         return use.groupBy { it.h }.map { (_, v) -> v.maxByOrNull { it.bw }!! }.sortedWith(compareByDescending<Variant> { it.h }.thenByDescending { it.bw })
     }
-
-    /** (v975) مدة قائمة جودة HLS بالثواني (مجموع EXTINF) — 0 لو لايف أو مش معروفة */
-    fun hlsSeconds(url: String, headers: Map<String, String>): Double {
-        try {
-            val pl = readText(url, headers)
-            if (pl.contains("#EXT-X-STREAM-INF") || !pl.contains("#EXT-X-ENDLIST")) return 0.0
-            var s = 0.0
-            for (l in pl.lineSequence()) { val t = l.trim(); if (t.startsWith("#EXTINF:")) s += t.removePrefix("#EXTINF:").substringBefore(',').trim().toDoubleOrNull() ?: 0.0 }
-            return s
-        } catch (_: Throwable) { return 0.0 }
-    }
-    /** (v975) الحجم الكلي التقريبي (بايت) لكل جودة HLS = متوسط الريت × المدة ÷ 8. 0 = مش معروف. بيجيب القوائم بالتوازي */
-    fun variantBytes(vs: List<Variant>, headers: Map<String, String>): List<Long> {
-        if (vs.isEmpty()) return emptyList()
-        val ex = java.util.concurrent.Executors.newFixedThreadPool(minOf(vs.size, 6))
-        try {
-            val fs = vs.map { v -> ex.submit(java.util.concurrent.Callable<Long> {
-                val rate = if (v.avg > 0) v.avg else v.bw
-                val sec = if (rate > 0) hlsSeconds(v.url, headers) else 0.0
-                if (sec > 0) (rate * sec / 8.0).toLong() else 0L
-            }) }
-            return fs.map { try { it.get(12, java.util.concurrent.TimeUnit.SECONDS) } catch (_: Throwable) { 0L } }
-        } finally { ex.shutdownNow() }
-    }
-    /** (v975) اسم الجودة: «1080p · HLS · ≈ 450.3 MB» (الحجم الكلي مش سرعة الثانية) */
-    fun variantLabel(v: Variant, bytes: Long): String =
-        (if (v.h > 0) "${v.h}p" else "جودة") + " · HLS" +
-        (if (bytes > 0) " · ≈ " + Sniff.fmtSize(bytes) else if (v.bw > 0) " · حجمه مش معروف" else "")
 
     /** (v716) تحميل ملف عادي (أي نوع) بنفس الكوكيز/الـ UA/الـ Referer ويتحفظ في التنزيلات — بديل لما DownloadManager يفشل. بيرجّع المسار */
     fun fileTo(ctx: Context, url: String, headers: Map<String, String>, display: String, mime: String?, ctl: Ctl, onPct: (Int) -> Unit): String {

@@ -5,7 +5,6 @@ import android.app.Activity
 /**
  * (v313) انتقال أفقي بين الشاشات الأربعة (الفيديوهات/الموسيقى · المتصفح · الملفات · المهام).
  * الشريط السفلي RTL: رقم أكبر = ناحية الشمال، فالشاشة الجديدة بتدخل من الشمال والقديمة بتروح يمين (والعكس).
- * (v1071) مفيش أنيميشن خالص: كل الانتقالات فورية (0, 0) — من غير سلايد ولا فيد ولا تكبير ولا لقطة شاشة بتتلاشى.
  */
 object NavAnim {
     private var enter = 0
@@ -18,21 +17,23 @@ object NavAnim {
     fun set(from: Int, to: Int) {
         if (from == to) return
         has = true
-        enter = 0
-        exit = 0
+        NavSnap.arm()   // (v923) لقطة الشاشة القديمة تفضل لحد ما الجديدة ترسم
+        if (MtGlass.on()) { enter = R.anim.mt_tab_enter; exit = R.anim.mt_tab_exit; return }   // (v893) MeeTube: فيد + تكبير خفيف (من غير سلايد أفقي)
+        if (pos(to) > pos(from)) { enter = R.anim.nav_in_left; exit = R.anim.nav_out_right }
+        else { enter = R.anim.nav_in_right; exit = R.anim.nav_out_left }
     }
 
     /** (v321) بتطبّق الانتقال فورًا من غير ما تمسحه — بتتنده بعد startActivity مباشرة (قبل finish) عشان الشاشة الجديدة هي اللي تاخده */
     fun peek(act: Activity) {
         if (!has) return
-        try { act.overridePendingTransition(0, 0) } catch (_: Throwable) {}
+        try { act.overridePendingTransition(enter, exit) } catch (_: Throwable) {}
     }
 
     /** بتتنده بعد startActivity/finish؛ true لو طبّقت الانتقال الاتجاهي */
     fun take(act: Activity): Boolean {
         if (!has) return false
         has = false
-        try { act.overridePendingTransition(0, 0) } catch (_: Throwable) {}
+        try { act.overridePendingTransition(enter, exit) } catch (_: Throwable) {}
         return true
     }
 }

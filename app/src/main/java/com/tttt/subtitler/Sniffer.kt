@@ -35,9 +35,7 @@ import java.net.HttpURLConnection
 import java.net.URL
 
 /** فيديو اتلقط (زي «لينك التحميل» في 1DM): رابط + نوعه + مصدره (ref/ua) عشان المشغّل يفتحه بنفس الهيدرز */
-class Found(val url: String, val kind: String, val title: String = "", @Volatile var ref: String = "", val ua: String = "", val page: String = "") {   // (v976) ref بقت var: فحص اللينك بيصلّحها لو لقى Referer شغّال تاني
-    /** (v976) Origin الحقيقي للطلب (لو المشغّل الخارجي بيبعته) — اللي نجح في فحص اللينك */
-    @Volatile var origin = ""   // (v847) ref = الـReferer الحقيقي للطلب (إطار المشغّل) · page = صفحة المتصفح (للعنوان/التجميع)
+class Found(val url: String, val kind: String, val title: String = "", val ref: String = "", val ua: String = "", val page: String = "") {   // (v847) ref = الـReferer الحقيقي للطلب (إطار المشغّل) · page = صفحة المتصفح (للعنوان/التجميع)
     @Volatile var size = -1L
     @Volatile var mime = ""
     /** (v203) التبويب + «جيل» الصفحة اللي اتلقط منها: لما الصفحة تتغير الجيل بيزيد واللقطات القديمة بتختفي */
@@ -51,13 +49,6 @@ object Sniff {
     // (v722) + midroll/vast/vmap/banner/وسوم إعلان في اسم الملف — وبعدها AdBlock.blocked (شبكات إعلانات + مراهنات) في accept
     private val JUNK = Regex("(doubleclick|googlesyndication|adservice|/ads?/|/preroll|/midroll|/vast|/vmap|/adtag|/banner|[?&/_-]ads?[_-]|analytics|\\.gif)", RegexOption.IGNORE_CASE)
 
-    /** (v976) أصل اللينك (https://host) من غير سلاش في الآخر — للـOrigin، ومنه الـReferer = origin + "/" */
-    fun originOf(u: String?): String? {
-        if (u.isNullOrBlank() || !u.startsWith("http", true)) return null
-        val i = u.indexOf("://"); if (i < 0) return null
-        val e = u.indexOf('/', i + 3)
-        return (if (e < 0) u else u.substring(0, e)).takeIf { it.length > i + 3 }
-    }
     fun isDirect(u: String) = u.startsWith("http", true) && EXT.containsMatchIn(u)
 
     /** رابط الطلب → رابط فيديو صالح أو null */
@@ -72,11 +63,6 @@ object Sniff {
             return u
         }
         return if (EXT.containsMatchIn(raw)) raw else null
-    }
-    /** (v977) لينك جاي من صيّاد الجافا (VidHook): من غير شرط الامتداد، بنفس فلتر الإعلانات */
-    fun acceptHooked(raw: String): String? {
-        if (!raw.startsWith("http", true) || JUNK.containsMatchIn(raw) || AdBlock.blocked(raw)) return null
-        return if (raw.contains("googlevideo.com/videoplayback")) accept(raw) else raw
     }
     fun kindOf(u: String): String {
         val p = u.substringBefore('?').lowercase()
@@ -241,7 +227,7 @@ try{setInterval(tick,800)}catch(e){}
  * (v119) عشان نعرف بالظبط إيه اللي حصل بدل ما نرمي المستخدم على المتصفح.
  */
 object YtExtract {
-    // (v889) المستخرج القديم (عملاء InnerTube بتوع Joyboy) اتمسح — كل جلب الروابط بقى من مكتبات يوتيوب (MtYt). الاسم فضل عشان المتصفح والمشغّل.
+    // (v889) المستخرج القديم (عملاء InnerTube بتوع Joyboy) اتمسح — كل جلب الروابط بقى من محرك MeeTube (MtYt). الاسم فضل عشان المتصفح والمشغّل.
     private val ID = Regex("(?:youtu\\.be/|youtube(?:-nocookie)?\\.com/(?:watch\\?(?:[^#]*&)?v=|shorts/|embed/|live/|v/))([A-Za-z0-9_-]{11})")
     fun videoId(u: String): String? = ID.find(u)?.groupValues?.get(1)
 
@@ -261,16 +247,12 @@ object YtExtract {
     fun cachedPick(id: String, maxH: Int = 0): Pick? = null
     fun clearPicks() { MtYt.clearCache() }
 
-    // (v1074) فاحص عملاء InnerTube اتمسح في v889 (كل الجلب بقى من MtYt) — YtFast.startup (المستعاد من v863) لسه بينده loadPin/reprobe؛ بيرجّعوا false عشان التسخين يروح لـNewPipe
-    fun loadPin() { }
-    fun reprobe(force: Boolean = false): Boolean = false
-
     fun fetchPick(id: String, maxH: Int = 0, fresh: Boolean = false): Pick? {
         val g = MtYt.video(id, maxH, fresh) ?: return null
         val opts = ArrayList<Opt>()
         try { val qa = JSONArray(g.qlist); for (i in 0 until qa.length()) { val o = qa.getJSONObject(i); opts.add(Opt(o.optString("l"), o.optString("u"), o.optString("a").ifEmpty { null }, o.optInt("h"))) } } catch (_: Throwable) {}
         val label = if (g.by.endsWith("HLS")) "HLS" else (opts.firstOrNull()?.label ?: "")
-        return Pick(g.url, g.audio, g.title, g.ua, label, opts).also { it.tag = "يوتيوب" }
+        return Pick(g.url, g.audio, g.title, g.ua, label, opts).also { it.tag = "MeeTube" }
     }
 
     /** روابط مباشرة لفيديو يوتيوب (للمتصفح): كل جودة كـFound + HLS لو موجود */

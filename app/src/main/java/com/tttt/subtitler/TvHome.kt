@@ -951,7 +951,7 @@ class TvActivity : Activity() {
     /** قايمة «المزيد»: كل اللي كان في الريل القديم + أزرار اللانشر (إعدادات الأندرويد · تطبيقات السيستم · المشغّل الافتراضي · إلغاء التثبيت) */
     private fun moreMenu() {
         val items = arrayOf("🛠 إعدادات الأندرويد", "📦 تطبيقات السيستم", "🏠 خليه المشغّل الافتراضي", "🗑 إلغاء تثبيت اللانشر",
-            "🎛 تخصيص الصفوف", "🔒 قفل TV", "🌡 دفء ليلي (شغّل/اقفل)", "🌙 نوم (شاشة سكون)", "🎵 الموسيقى", "⬇ مركز التحميل",
+            "🎛 تخصيص الصفوف", "🔒 قفل TV", "🌡 دفء ليلي (شغّل/اقفل)", "🌙 نوم (شاشة سكون)", "🎵 الموسيقى", "📋 المهام",
             "🎮 اختصارات الريموت",
             "🖼 خلفية اللانشر",
             "📐 حجم الواجهة",
@@ -1007,6 +1007,7 @@ class TvActivity : Activity() {
             "int:browser" -> openBrowser()
             "int:videos" -> showVideosPage()
             "int:files" -> guardPin { startActivity(Intent(this, FileManagerActivity::class.java)) }
+            "int:transfer" -> startActivity(Intent(this, FileTransferActivity::class.java))
             "int:voice" -> voiceToSearch()
             else -> launchApp(t)
         }
@@ -3171,6 +3172,7 @@ class TvActivity : Activity() {
         val all = ArrayList<View>()
         all.add(stile("📶", "الواي فاي") { TvWifi.quick(this@TvActivity) })
         all.add(stile("📱", "ريموت الموبايل") { TvLinkUi.show(this@TvActivity) })
+        all.add(stile("📤", "نقل الملفات") { startActivity(Intent(this@TvActivity, FileTransferActivity::class.java)) })
         all.add(stile("🛠", "إعدادات الأندرويد") { openSystemSettings() })
         all.add(stile("🌙", "نوم") { showSaver() })
         all.add(stile("🎨", "المظهر") { showAppearance() })

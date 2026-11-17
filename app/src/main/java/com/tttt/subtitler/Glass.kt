@@ -57,43 +57,65 @@ object Glass {
         v.background = drawable(th, r0, maxOf(1, d.toInt()), if (th.isLight) th.border else alpha(Color.WHITE, 0x2E), 0xF2)
     }
 
-    // (v1071) تعتيم بس — من غير بلور ورا الشيت/الدايلوج
+    /** تعتيم خفيف + بلور للخلفية (أندرويد 12+). على الأقدم: تعتيم بس */
     fun styleWindow(d: Dialog, windowBlur: Boolean = true) {   // (v910) windowBlur=false: الشيت بيبلّر نفسه بـSheetGlass فمش محتاجين بلور النافذة كلها
         val w = d.window ?: return
         try {
             w.addFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND)
+            if (MtGlass.on()) {   // (v893) MeeTube: تعتيم خفيف + بلور تقيل ورا الشيت
+                w.setDimAmount(0.32f)
+                if (windowBlur && (d !is GDialog || d.frostTarget == null)) { if (Build.VERSION.SDK_INT >= 31) { w.addFlags(WindowManager.LayoutParams.FLAG_BLUR_BEHIND); val lp0 = w.attributes; lp0.blurBehindRadius = 30; w.attributes = lp0 } }   // (v905) الشيت المثلّج بيبلّر نفسه والصفحة تفضل حادّة؛ بلور النافذة كلها للدايلوجات التانية
+                return
+            }
             w.setDimAmount(0.40f)
+            if (Build.VERSION.SDK_INT >= 31) { w.addFlags(WindowManager.LayoutParams.FLAG_BLUR_BEHIND); val lp = w.attributes; lp.blurBehindRadius = 26; w.attributes = lp }
         } catch (_: Throwable) {}
     }
 
     private fun content(d: Dialog): View? = d.window?.decorView?.findViewById(android.R.id.content)
 
-    /** (v1072) نافذة الأكتيفيتي اللي الشيت فوقها — كانت بتتبلّر بـSheetGlass بتاع MeeTube (اتشال) */
+    /** (v910) نافذة الأكتيفيتي اللي الشيت فوقها — الصفحة اللي SheetGlass (MeeTube) بيبلّرها */
     fun hostWindowOf(ctx: Context?): Window? {
         var x: Context? = ctx
         while (x is android.content.ContextWrapper) { if (x is android.app.Activity) return x.window; x = x.baseContext }
         return null
     }
 
-    // (v1071) مفيش بلور للشيت — الخلفية بقت مصمتة فمش محتاجة تتبلّر
-    fun frostSheet(d: Dialog, target: View, cornerPx: Float, tint: Int = 0) {
+    /** (v910) بلور MeeTube الحقيقي (SheetGlass.frost: نسخة مبلّرة من الصفحة اللي تحت + tint + حافة) لأي شيت Dialog عادي (مش GDialog). target = اللوح اللي بيتبلّر */
+    fun frostSheet(d: Dialog, target: View, cornerPx: Float, tint: Int = 0) {   // (v915) tint: 0 = لون الشيت الافتراضي · غير كده = لون زجاج مخصوص (زجاج الشريط)
+        if (!MtGlass.on()) return
+        try {
+            val host = hostWindowOf(d.context) ?: return
+            if (tint != 0) com.newtube.mobile.ui.common.SheetGlass.frost(target, host, cornerPx, tint)
+            else com.newtube.mobile.ui.common.SheetGlass.frost(target, host, cornerPx)
+        } catch (_: Throwable) {}
     }
 
-    // (v1071) مفيش أنيميشن: الدايلوج بيظهر على طول
     fun enter(d: Dialog) {
         val c = content(d) ?: return
+        val g = d.window?.attributes?.gravity ?: 0
+        val bottom = ((g and Gravity.VERTICAL_GRAVITY_MASK) == Gravity.BOTTOM)
+        val dens = c.resources.displayMetrics.density
+        if (MtGlass.on()) {   // (v893) MeeTube: الشيت بينزلق لفوق/النافذة بتكبر بمنحنى emphasized-decelerate
+            c.animate().cancel()
+            c.alpha = 0f; c.scaleX = if (bottom) 1f else 0.92f; c.scaleY = if (bottom) 1f else 0.92f; c.translationY = (if (bottom) 72f else 16f) * dens
+            c.animate().alpha(1f).scaleX(1f).scaleY(1f).translationY(0f).setDuration(Skins.dur(MtGlass.ENTER_MS)).setInterpolator(MtGlass.EMPHASIZED_DECELERATE).start()
+            return
+        }
         c.animate().cancel()
-        c.alpha = 1f
-        c.scaleX = 1f
-        c.scaleY = 1f
-        c.translationY = 0f
+        c.alpha = 0f; c.scaleX = 0.93f; c.scaleY = 0.93f; c.translationY = (if (bottom) 56f else 14f) * dens
+        c.animate().alpha(1f).scaleX(1f).scaleY(1f).translationY(0f).setDuration(240L).setInterpolator(DecelerateInterpolator(1.6f)).start()
     }
 
-    // (v1071) مفيش أنيميشن: الدايلوج بيتقفل على طول
     fun exit(d: Dialog, done: () -> Unit) {
         val c = content(d)
-        c?.animate()?.cancel()
-        done()
+        if (c == null) { done(); return }
+        c.animate().cancel()
+        if (MtGlass.on()) {   // (v893) خروج: بيتسارع ويتلاشى
+            c.animate().alpha(0f).scaleX(0.96f).scaleY(0.96f).translationY(12f * c.resources.displayMetrics.density).setDuration(Skins.dur(MtGlass.EXIT_MS)).setInterpolator(MtGlass.EMPHASIZED_ACCELERATE).withEndAction { done() }.start()
+            return
+        }
+        c.animate().alpha(0f).scaleX(0.95f).scaleY(0.95f).setDuration(140L).withEndAction { done() }.start()
     }
 
     /** تأثير ضغطة: بيصغّر العنصر وهو مضغوط ويرجّعه بنطّة خفيفة. مابيعترضش الـ click */
@@ -148,6 +170,14 @@ open class GDialog(ctx: Context, theme: Int = 0) : Dialog(ctx, theme) {
         try { TvFocus.attachWindow(context, window, Glass.theme().primary) } catch (_: Throwable) {}   // (v477 م3)
         super.show()
         try { Glass.enter(this) } catch (_: Throwable) {}
+        frostTarget?.let { t -> try { com.newtube.mobile.ui.common.SheetGlass.frost(t, hostWindow(), frostCorner) } catch (_: Throwable) {} }   // (v909) SheetGlass.frost الأصلي من MeeTube (بدل SheetFrost)
+    }
+
+    /** (v909) نافذة الأكتيفيتي اللي الدايلوج فوقها — الصفحة اللي SheetGlass بيبلّرها */
+    private fun hostWindow(): Window? {
+        var x: Context? = context
+        while (x is android.content.ContextWrapper) { if (x is android.app.Activity) return x.window; x = x.baseContext }
+        return null
     }
 
     private fun realDismiss() { try { super.dismiss() } catch (_: Throwable) {} }
@@ -277,24 +307,9 @@ class GAlert(private val ctx: Context) {
     fun create(): Dialog = build().first
 
     fun show(): Dialog {
-        // (v1044) لو الأمر جاي من ريموت الموبايل: قايمة الاختيار ما تتعرضش على التلفزيون — بتتسجّل وتتبعت للموبايل يعرضها
-        val its = items
-        if (RcCapture.active && its != null && view == null) {
-            RcCapture.captured = RcCapture.Item((title ?: "").toString(), its.map { it.toString() }, itemsCb)
-            return Dialog(ctx)
-        }
         val (d, col) = build()
         d.show()
         col?.let { Motion.stagger(it, 8, 35L) }
         return d
     }
-}
-
-
-/** (v1044) التقاط قوايم الاختيار (GAlert.setItems) اللي بتتفتح من أمر ريموت الموبايل عشان تتعرض على الموبايل مش التلفزيون */
-object RcCapture {
-    @Volatile var active = false
-    @Volatile var captured: Item? = null
-    class Item(val title: String, val labels: List<String>, val cb: android.content.DialogInterface.OnClickListener?)
-    val noopDi = object : android.content.DialogInterface { override fun cancel() {}; override fun dismiss() {} }
 }

@@ -196,8 +196,8 @@ object SubSidecar {
             val nb = norm(base)
             // (v661) تطابق متسامح: نفس الاسم · name.ar.srt · أو نفس الاسم بعد شيل المسافات/الرموز + لاحقة قصيرة (لغة) — من غير ما «movie1» تلقط «movie10»
             fun matches(name: String): Boolean {
-                // (v1070) نفس الاسم بس — «movie.2.srt» و«movie.trailer.srt» مابقوش يتطابقوا (الـ startsWith القديم كان بياخد أي لاحقة)
                 val n = name.lowercase()
+                // (v1070) نفس الاسم بس — «movie.2.srt» و«movie.trailer.srt» مابقوش يتطابقوا (الـ startsWith القديم كان بياخد أي لاحقة)
                 if (n == base) return true
                 val nn = norm(n)
                 if (nb.isEmpty() || !nn.startsWith(nb)) return false

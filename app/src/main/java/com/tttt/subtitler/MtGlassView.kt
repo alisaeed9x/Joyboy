@@ -115,8 +115,8 @@ object MtFloat {
         val src = JoyGlassSource(act).apply { if (!skin) setBackgroundColor(th.bg) }
         sources[act] = src
         // (v923) الرعشة في المتصفح: الزجاج كان بيسجّل الـWebView كلها في RenderNode ويرسمها مرتين كل فريم (مرة للشاشة ومرة للبلور) فالصفحة بترتعش.
-        // (v1071) مفيش بلور حي خالص: الشريط بياخد لون الزجاج المصمت من غير ما يبلّر الصفحة وراه — في كل التبويبات مش المتصفح بس
-        src.setSampling(false)
+        // في المتصفح (reserve) الـWebView بتترسم مباشرة على النافذة والشريط بياخد لون الزجاج من غير بلور حي.
+        if (reserve) src.setSampling(false)
         src.addView(paneWrap, FrameLayout.LayoutParams(-1, -1))
         fl.addView(src, FrameLayout.LayoutParams(-1, -1))
         nav.floatGlass()

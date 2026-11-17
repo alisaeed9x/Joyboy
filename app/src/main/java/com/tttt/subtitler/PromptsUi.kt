@@ -25,7 +25,7 @@ object PromptsUi {
         val th = ui.th
         val read = rawReader(act)
         var lang = Cfg.str("lang", "فصحى")
-        var style = Cfg.str("style", "تلقائي")
+        var style = Cfg.str("style", "حرفي")
         val box = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL }
         val dlg = ui.sheet(act, "📝 البرومبتات", listOf(box), false)
 

@@ -93,18 +93,20 @@ class FileTransferActivity : Activity() {
         else {   // (v660) المخزن: شريط 📂 الملفات | 📡 نقل فوق + الشريط السفلي زي باقي الصفحات
             val outer = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_LTR; setBackgroundColor(th.bg) }
             outer.addView(FilesHub.switchBar(this, ui, th, 1).view, LinearLayout.LayoutParams(-1, -2))
+            val floatNav = MtFloat.eligible(this)   // (v900)
             val body = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_LTR }
             body.addView(root, LinearLayout.LayoutParams(-1, 0, 1f))
             val gates = BottomNav(this, ui, th, 3) { i ->
                 if (i != 3) {
                     NavAnim.set(3, i)
-                    if (i == 2) startActivity(TabNav.front(Intent(this, BrowserActivity::class.java)))
-                    else if (i == 4) startActivity(TabNav.main(this, "youtube"))   // (v1072) يوتيوب الداخلي بدل MeeTube
-                    else startActivity(TabNav.main(this, if (i == 0) "videos" else if (i == 1) "music" else if (i == 7) "settings" else "tasks"))   // (v973) من غير finish
+                    if (i == 2) startActivity(Intent(this, BrowserActivity::class.java))
+                    else startActivity(Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP).putExtra("tab", if (i == 0) "videos" else if (i == 1) "music" else if (i == 4) "youtube" else if (i == 7) "settings" else "tasks"))
                     NavAnim.peek(this)
+                    finish()
                 }
             }
-            outer.addView(body, LinearLayout.LayoutParams(-1, 0, 1f)); outer.addView(gates.view, LinearLayout.LayoutParams(-1, -2))
+            if (floatNav) outer.addView(MtFloat.build(this, th, ui, body, gates, null), LinearLayout.LayoutParams(-1, 0, 1f))
+            else { outer.addView(body, LinearLayout.LayoutParams(-1, 0, 1f)); outer.addView(gates.view, LinearLayout.LayoutParams(-1, -2)) }
             setContentView(outer)
         }
         val l: () -> Unit = { onHub() }
@@ -1024,7 +1026,7 @@ class FileTransferActivity : Activity() {
             h.post {
                 if (jobs.isEmpty()) Notice.show(this, "⚠ مفيش ملفات صالحة", 2500L)
                 else if (jobs.size > FtOut.MAX_FILES) Notice.show(this, "⚠ لحد " + FtOut.MAX_FILES + " ملف في المرة — قسّمهم على دفعات", 3500L)
-                else if (XRemote.downloadPaths(app, p.name, jobs)) Notice.show(this, "⬇ بدأ تنزيل " + jobs.size + " ملف — التقدم في مركز التحميل", 3500L)
+                else if (XRemote.downloadPaths(app, p.name, jobs)) Notice.show(this, "⬇ بدأ تنزيل " + jobs.size + " ملف — التقدم في صفحة المهام", 3500L)
                 else Notice.show(this, "⚠ مش متصل بالتلفزيون", 2500L)
             }
         }.also { it.isDaemon = true }.start()

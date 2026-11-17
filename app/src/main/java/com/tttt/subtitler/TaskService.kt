@@ -47,7 +47,7 @@ class TaskService : Service() {
 
     override fun onStartCommand(i: Intent?, flags: Int, startId: Int): Int {
         val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        nm.createNotificationChannel(NotificationChannel(CH, "تحميلات شغّالة", NotificationManager.IMPORTANCE_LOW))
+        nm.createNotificationChannel(NotificationChannel(CH, "مهام شغّالة", NotificationManager.IMPORTANCE_LOW))
         if (i == null) { try { TaskStore.resume(applicationContext) } catch (_: Throwable) {} }   // (v457) رجعنا بعد قتل العملية: كمّل المهام المحفوظة
         val b = busy()
         if (b.isEmpty()) { stopSelf(startId); return START_NOT_STICKY }

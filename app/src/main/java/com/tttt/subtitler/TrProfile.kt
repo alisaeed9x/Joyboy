@@ -23,7 +23,7 @@ object TrProfile {
 
     private const val SAVED = "trp_saved"
     /** الإعدادات اللي بتتحفظ مع بعض */
-    private val keys = listOf("tr_kind", "tr_engine", "lang", "conv_dialect", "tone_strength", "tr_slider", "tr_dia_last")
+    private val keys = listOf("tr_kind", "tr_engine", "lang", "conv_dialect", "tone_strength", "tr_mode", "tr_dia_last")
 
     /** نقي (متختبر): النوع من القيم الخام */
     fun modeOf(kind: String, convDialect: String, lang: String): Int {
@@ -73,7 +73,7 @@ object TrProfile {
     private fun cur(k: String): String = when (k) {
         "tr_kind" -> Cfg.str(k, "translate").ifBlank { "translate" }
         "tr_engine" -> Cfg.str(k, "gem").ifBlank { "gem" }
-        "tr_slider" -> TrSlider.pos().toString()
+        "tr_mode" -> Cfg.str("tr_mode", "acc").ifBlank { "acc" }
         "tone_strength" -> degree()
         "lang" -> Cfg.str(k, "فصحى").ifBlank { "فصحى" }
         "tr_dia_last" -> dialect()

@@ -1289,8 +1289,7 @@ object MtBar {
         }
         trChipLast = ""
         trChip = u.fsBtn("▶ ترجمة") {
-            // (v1071) زرار الترجمة بيفتح خيارات الترجمة على طول — مش بيبدأ مباشرة بالخيار المحفوظ
-            MtTranslate.translateMenu(it)
+            if (MtTranslate.isTranslating()) MtTranslate.translateMenu(it) else MtTranslate.toggle()
         }.apply {
             background = u.box(0xFFE53935.toInt(), 0x33FFFFFF, 12)
             layoutParams = lp(-2)

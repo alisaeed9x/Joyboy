@@ -177,27 +177,15 @@ object PlayerPad {
                 }
             }
             fun lp(w: Int, h: Int, wt: Float = 0f) = LinearLayout.LayoutParams(w, h, wt)
-            // (v1044) قايمة اختيار جاية من التلفزيون ← بتتعرض هنا على الموبايل، والاختيار بيرجع للتلفزيون بالرقم (pick)
-            var pickFn: (Int) -> Unit = {}
-            fun showPm(pm: org.json.JSONObject) {
-                val ls = pm.optJSONArray("l") ?: return
-                val labels = Array(ls.length()) { ls.optString(it) }
-                try { act.runOnUiThread { try {
-                    if (act.isFinishing || act.isDestroyed) return@runOnUiThread
-                    GAlert(act).setTitle(pm.optString("t")).setItems(labels) { _, i -> pickFn(i) }.setNegativeButton("إغلاق", null).show()
-                } catch (_: Throwable) {} } } catch (_: Throwable) {}
-            }
             fun go(a: String, v: Long = 0L) {
                 Thread {
                     try {
                         val r = RemoteClient.player(a, v)
-                        r?.optJSONObject("pm")?.let { showPm(it) }
                         val n = r?.optString("note", "") ?: ""   // (v799) رسالة الزرار بتظهر على الموبايل بس (مش على التلفزيون)
                         if (n.isNotEmpty()) try { act.runOnUiThread { if (!act.isFinishing && !act.isDestroyed) Notice.show(act, n, 2200L) } } catch (_: Throwable) {}
                     } catch (e: Throwable) { LogStore.err("PlayerPad:go", e) }
                 }.also { it.isDaemon = true }.start()
             }
-            pickFn = { i -> go("pick", i.toLong()) }
             /** (v709) يلبّس الزرار طبقة ميه بتطلع من تحت (ClipDrawable) — key = مفتاح الأداة اللي بتملّيه، "*" = أي أداة */
             fun fillable(b: TextView, key: String): TextView {
                 val water = GradientDrawable().apply { shape = GradientDrawable.RECTANGLE; cornerRadius = MtGlass.pr(dpf(14f)); setColor(MtGlass.pf(0xAA22C55E.toInt())) }
@@ -242,18 +230,11 @@ object PlayerPad {
                 panel.addView(View(act).apply { background = pill(0xFF3A4C73.toInt(), 3f) }, lp(dp(42), dp(5)).apply { gravity = Gravity.CENTER_HORIZONTAL; bottomMargin = dp(12) })
                 panel.addView(label(title, 18f), lp(-1, -2).apply { bottomMargin = dp(2) })
                 val body = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL }
-                // (v999 ملاحظة 5) السكرول بار بقى ظاهر عشان المستخدم يعرف إن فيه أزرار تحت (زي «▶ ترجم» و«🔁 طبّق…»)
-                val scroll = MaxHeightScroll(act, (dm.heightPixels * 0.72f).toInt()).apply { isVerticalScrollBarEnabled = true; addView(body) }
+                val scroll = MaxHeightScroll(act, (dm.heightPixels * 0.72f).toInt()).apply { isVerticalScrollBarEnabled = false; addView(body) }
                 panel.addView(scroll, lp(-1, -2))
                 var redoFn: () -> Unit = {}
                 val closeFn: () -> Unit = { try { sd.dismiss() } catch (_: Throwable) {} }
-                // (v999 ملاحظة 5) redo() كانت بترجّع السكرول لأول الورقة بعد كل دوسة شيب — دلوقتي بتحفظ scrollY وبترجّعه بعد إعادة البناء
-                redoFn = {
-                    val savedY = scroll.scrollY
-                    body.removeAllViews()
-                    fill(body, { redoFn() }, closeFn)
-                    scroll.post { scroll.scrollTo(0, savedY) }
-                }
+                redoFn = { body.removeAllViews(); fill(body, { redoFn() }, closeFn) }
                 redoFn()
                 sd.setContentView(panel)
                 sd.window?.apply {
@@ -331,7 +312,7 @@ object PlayerPad {
                 }
             }
             // ── (v684) ترجمة ملف ترجمة: المرفق مع الفيديو، أو ملف من الموبايل ← إعدادات (مترجم/لهجة/أسلوب/شدة) ← زرار «▶ ترجم» ──
-            var sfEng = lastSfEng; var sfDia = "فصحى"; var sfSty = "تلقائي"; var sfStr = "متوسطة"
+            var sfEng = lastSfEng; var sfDia = "فصحى"; var sfSty = "حرفي"; var sfStr = "متوسطة"
             var dualSel = 0            // (v695) وضع العرض الحالي (من حالة التلفزيون)
             var appliedVer = -1        // (v695) آخر نسخة طبّقتها من «النسخ» (للتمييز في القايمة)
             var sfMobText: String? = null   // (v688) نص الملف اللي اخترته من الموبايل — الموبايل بيترجمه بالتوازي مع التلفزيون
@@ -345,8 +326,8 @@ object PlayerPad {
                     grp(body, "لهجة الترجمة")
                     chipRows(body, kotlin.collections.listOf("فصحى", "مصري", "شامي", "لبناني", "خليجي", "مغربي", "عراقي", "سوداني"), 4, { l -> l == sfDia }) { l -> sfDia = l; redo() }
                     grp(body, "الأسلوب")
-                    chipRows(body, kotlin.collections.listOf("تلقائي", "حرفي", "شعبي", "جرئ"), 4, { l -> l == sfSty }) { l -> sfSty = l; redo() }
-                    grp(body, "الشدة (مع شعبي / جرئ / تلقائي)")
+                    chipRows(body, kotlin.collections.listOf("حرفي", "شعبي", "جرئ", "+18"), 4, { l -> l == sfSty }) { l -> sfSty = l; redo() }
+                    grp(body, "الشدة (مع شعبي / جرئ / +18)")
                     chipRows(body, kotlin.collections.listOf("خفيفة", "متوسطة", "شديدة"), 3, { l -> l == sfStr }) { l -> sfStr = l; redo() }
                 } else {
                     body.addView(label("ℹ جوجل بيترجم فصحى بس — اللهجة والأسلوب والشدة مع جيميناي", 12.5f, 0xFFFFB74D.toInt(), false), lp(-1, -2).apply { topMargin = dp(10) })
@@ -378,7 +359,7 @@ object PlayerPad {
                 }, lp(-1, dp(56)).apply { topMargin = dp(16) })
             }
             fun openSfSettings(src: String, what: String) {
-                sfDia = curDialect.ifBlank { "فصحى" }; sfSty = curStyle.ifBlank { "تلقائي" }; sfStr = curStrength.ifBlank { "متوسطة" }; sfEng = lastSfEng
+                sfDia = curDialect.ifBlank { "فصحى" }; sfSty = curStyle.ifBlank { "حرفي" }; sfStr = curStrength.ifBlank { "متوسطة" }; sfEng = lastSfEng
                 sheetSfSettings(src, what)
             }
             fun pickSubFromPhone() {
@@ -470,18 +451,15 @@ object PlayerPad {
                 }
                 if (!started) {
                     grp(body, "🔤 ترجمة")
-                    opt(body, "☁ جيميناي — ⚡ سريع") {   // (v1071) وضع واحد بس: السريع — من غير قايمة اختيار
-                        close()
-                        go("tr_gem_quick")
-                    }
-                    opt(body, "📴 وشبر + ترجمة أوفلاين (HY-MT1.5 · فصحى)") { go("pm_whisper"); close() }   // (v1051) اختيار اللغة على الموبايل
+                    opt(body, "☁ جيميناي — اختار ٧٥/٢٥ أو السماع الأدق") { go("tr_gem"); close() }
+                    opt(body, "📴 وشبر + ترجمة أوفلاين (HY-MT1.5 · فصحى)") { go("tr_whisper"); close() }
                     grp(body, "✍ تفريغ بس (من غير ترجمة)")
                     opt(body, "☁ بجيميناي (من الصوت)") { go("tr_gtx"); close() }
                     opt(body, "📴 على الجهاز بوشبر") { go("tr_wtx"); close() }
                 } else {
                     opt(body, if (paused) "▶ كمّل الترجمة" else "⏸ إيقاف مؤقت") { go(if (paused) "tr_resume" else "tr_pause"); close() }
                     opt(body, "⏹ إلغاء الترجمة (مش مؤقت)") { close(); confirmCancelTr() }
-                    opt(body, "🔀 غيّر الوضع") { go("pm_wiz"); close() }
+                    opt(body, "🔀 غيّر الوضع (بيفتح على التلفزيون)") { go("tr_wiz"); close() }
                     opt(body, "🌙 كمّل الترجمة في الخلفية") { go("tr_bg"); close() }
                     opt(body, "📋 الجمل") { go("sent"); close() }
                     opt(body, "🧑 الشخصيات") { go("chars"); close() }
@@ -582,15 +560,15 @@ object PlayerPad {
                     curDialect = if (l == "فصحى") "" else l; if (started && l != "فصحى") tapFill("dialect"); go("dialect:$l"); redo()
                 }
                 grp(body, "الأسلوب")
-                chipRows(body, kotlin.collections.listOf("تلقائي", "حرفي", "شعبي", "جرئ"), 4, { l -> l == curStyle.ifBlank { "تلقائي" } }) { l ->
-                    curStyle = if (l == "تلقائي") "" else l; go("tone:" + l + "|" + curStrength.ifBlank { "متوسطة" }); redo()
+                chipRows(body, kotlin.collections.listOf("حرفي", "شعبي", "جرئ", "+18"), 4, { l -> l == curStyle.ifBlank { "حرفي" } }) { l ->
+                    curStyle = if (l == "حرفي") "" else l; go("tone:" + l + "|" + curStrength.ifBlank { "متوسطة" }); redo()
                 }
-                grp(body, "الشدة (مع شعبي / جرئ / تلقائي)")
+                grp(body, "الشدة (مع شعبي / جرئ / +18)")
                 chipRows(body, kotlin.collections.listOf("خفيفة", "متوسطة", "شديدة"), 3, { l -> l == curStrength.ifBlank { "متوسطة" } }) { l ->
-                    curStrength = l; go("tone:" + curStyle.ifBlank { "تلقائي" } + "|" + l); redo()
+                    curStrength = l; go("tone:" + curStyle.ifBlank { "حرفي" } + "|" + l); redo()
                 }
-                opt(body, "🔁 طبّق الأسلوب من هنا للآخر") { go("tone:" + curStyle.ifBlank { "تلقائي" } + "|" + curStrength.ifBlank { "متوسطة" } + "|from"); close() }
-                opt(body, "🔁 طبّق الأسلوب على الفيديو كله") { go("tone:" + curStyle.ifBlank { "تلقائي" } + "|" + curStrength.ifBlank { "متوسطة" } + "|all"); close() }
+                opt(body, "🔁 طبّق الأسلوب من هنا للآخر") { go("tone:" + curStyle.ifBlank { "حرفي" } + "|" + curStrength.ifBlank { "متوسطة" } + "|from"); close() }
+                opt(body, "🔁 طبّق الأسلوب على الفيديو كله") { go("tone:" + curStyle.ifBlank { "حرفي" } + "|" + curStrength.ifBlank { "متوسطة" } + "|all"); close() }
                 grp(body, "أدوات الذكاء (دوسة واحدة)")
                 val tools = mapOf("✍ تنقيح" to "refine", "🔥 لهجة +" to "dial", "🧹 عائلي" to "family", "🔞 صريح" to "explicit", "🔧 ضمائر" to "pron", "🧠 دمج مكرر" to "dedup")
                 chipRows(body, tools.keys.toList(), 3, { false }, { l -> tools[l] }) { l -> if (started) tapFill(tools[l] ?: ""); go("ai:" + (tools[l] ?: "")); close() }
@@ -748,19 +726,19 @@ object PlayerPad {
             val visB = btn("👁\nلقطة بصرية", 12f) { go("vsnap") }
             val sentB = btn("📝\nالجمل", 12f) { go("sent") }
             val charsB = btn("🧑\nالشخصيات", 12f) { go("chars") }
-            val subsB = btn("🔤\nمسارات الترجمة", 12f) { go("pm_subs") }
+            val subsB = btn("🔤\nمسارات الترجمة", 12f) { go("subs") }
             val qB = btn("🎞\nالجودة", 12f) { if (qList.size > 1) sheetList("🎞 الجودة", qList, qCur, "qset") else if (st.optBoolean("quality", false)) go("quality") else note("مفيش جودات للفيديو ده") }
             val aB = btn("🔊\nلغة الصوت", 12f) { if (aList.size > 1) sheetList("🔊 لغة الصوت", aList, aCur, "aset") else if (st.optBoolean("audio", false)) go("audio") else note("مفيش مسارات صوت تانية") }
             val lockB = btn("", 12f) { go("lock") }
-            val notB = btn("🔔\nالإشعارات", 12f) { go("pm_notice") }
-            val menuB = btn("☰\nقايمة التلفزيون", 12f) { go("pm_menu") }
-            val toolsB = btn("⬇\nمركز التحميل", 12f) { go("pm_tools") }
-            val moreB = btn("⋯\nالمزيد", 12f) { go("pm_more") }
+            val notB = btn("🔔\nالإشعارات", 12f) { go("notice") }
+            val menuB = btn("☰\nقايمة التلفزيون", 12f) { go("menu") }
+            val toolsB = btn("🧰\nأدوات الفيديو", 12f) { go("tools") }
+            val moreB = btn("⋯\nالمزيد", 12f) { go("more") }
             val killB = btn("⏹\nإغلاق الفيديو", 12f, 0xFF3B1A22.toInt(), 0xFF7A2B3A.toInt()) {
                 GAlert(act).setMessage("أقفل الفيديو على التلفزيون؟").setPositiveButton("اقفل") { _, _ -> go("close") }.setNegativeButton("لأ", null).show()
             }
                         val pipB = btn("⧉\nنافذة صغيرة", 12f) { go("pip") }   // (v712) كانت ناقصة من الريموت
-            val voiceB = btn("🎙\nفصل صوت الكلام", 12f) { go("pm_voice") }
+            val voiceB = btn("🎙\nفصل صوت الكلام", 12f) { go("voice") }
             val bgB = btn("◼\nخلفية الترجمة", 12f) { go("bgon") }
             val logB = btn("📜\nاللوج", 12f) { go("log") }
             val nextB = btn("📃\nالفيديوهات الجاية", 12f) { go("nextlist") }
@@ -900,7 +878,7 @@ object PlayerPad {
                     if (!res.first) throw java.io.IOException(res.second)
                     t.msg = ""; t.outPath = res.second
                 }
-                note("⬇ اتضاف للتحميل على الموبايل — تابعه من «مركز التحميل»")
+                note("⬇ اتضاف للتحميل على الموبايل — تابعه من «المهام»")
             }
             fun dlOnTv(name: String, pk: DlPick, hs: HashMap<String, String>) {
                 val args = JSONObject().put("name", name).put("url", pk.url).put("audio", pk.audio ?: "").put("hls", pk.hls).put("h", pk.h).put("hdr", JSONObject(hs as Map<*, *>))
@@ -974,7 +952,7 @@ object PlayerPad {
                         val hd = mapOf("X-Token" to tv.token, "X-Ver" to LinkVer.code(app).toString())
                         val nm = Xfer.safeName(fn)
                         TaskCenter.add(app, "dm", "📥 $nm") { t -> XNet.download(app, t, url, hd, nm, sz, XCat.VIDEO) }
-                        note("📥 اتضاف للتحميل على الموبايل — تابعه من «مركز التحميل»")
+                        note("📥 اتضاف للتحميل على الموبايل — تابعه من «المهام»")
                     }
                 }
             }

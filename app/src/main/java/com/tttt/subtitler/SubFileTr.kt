@@ -15,7 +15,7 @@ import java.util.concurrent.atomic.AtomicInteger
  * مستقل عن محرك الصوت: بياخد جمل (وقت + نص) ويرجّع نص مترجم لكل جملة.
  */
 object SubFileTr {
-    class Cue(val start: Double, val end: Double, val text: String, val g: String = "")   // g (v1036): جنس المتكلم m/f لو معروف (مكالمات الاستوديو) — فاضي = مجهول والسلوك زي ما كان
+    class Cue(val start: Double, val end: Double, val text: String)
     class Out(val texts: List<String>, val failed: Int, val error: String)
 
     // ===== قراءة الملفات =====
@@ -217,21 +217,20 @@ object SubFileTr {
     /** (v684) اللهجة الفعلية: اللي اتختارت من الموبايل/المشغّل (conv_dialect) وإلا لغة الإعدادات */
     fun effLang(): String = if (Strict.hideTrOpts()) "فصحى" else Cfg.str("conv_dialect", "").ifBlank { Cfg.str("lang", "فصحى") }.ifBlank { "فصحى" }
 
-    /** (v684) الأسلوب + الشدة اللي اتختاروا (تلقائي / شعبي / جرئ + خفيفة/متوسطة/شديدة)، وإلا أسلوب الإعدادات */
-    fun effStyle(): String = styleOf(Cfg.str("tone_style", ""), Cfg.str("tone_strength", "متوسطة"), Cfg.str("style", "تلقائي").ifBlank { "تلقائي" })
+    /** (v684) الأسلوب + الشدة اللي اتختاروا (شعبي / جرئ / +18 + خفيفة/متوسطة/شديدة)، وإلا أسلوب الإعدادات */
+    fun effStyle(): String = styleOf(Cfg.str("tone_style", ""), Cfg.str("tone_strength", "متوسطة"), Cfg.str("style", "حرفي").ifBlank { "حرفي" })
 
     /** (v688) نفس منطق effStyle بس من قيم بنديها (الموبايل بيترجم بإعدادات اتختارت في الورقة من غير ما يغيّر إعداداته) */
     fun styleOf(ts: String, dg0: String, base: String): String {
-        val t = ts.ifBlank { "تلقائي" }
-        if (t == "حرفي") return base
+        if (ts.isBlank() || ts == "حرفي") return base
         val dg = dg0.ifBlank { "متوسطة" }
-        val what = when (t) {
-            "تلقائي" -> "تلقائي: كل جملة على طبيعتها — الكلام العادي يترجم حرفيًا بأمانة؛ كلام الشارع والسباب والإيحاءات تترجم بصراحتها الشعبية زي ما اتقالت بالظبط من غير تلطيف ولا مبالغة؛ والأمثال والتعبيرات الاصطلاحية تترجم بالمثل أو التعبير المقابل في لغة الهدف مش حرفيًا"
+        val what = when (ts) {
             "شعبي" -> "كلام الشارع الشعبي والتعبيرات اليومية بدل الرسمي"
             "جرئ" -> "أجرأ وأكتر حرية في الألفاظ من غير تلطيف زيادة"
-            else -> return base
+            "+18" -> "صريح بلا تلطيف: الألفاظ والإيحاءات تطابق صراحة الأصل بالظبط"
+            else -> ""
         }
-        return t + " ($what) — الشدة: $dg"
+        return ts + (if (what.isEmpty()) "" else " ($what) — الشدة: $dg")
     }
 
     /** (v703) فحص مفاتيح جيميناي بنفس المصدر اللي الترجمة بتستخدمه فعلًا (كان فيه فحصين مختلفين فكان بيحوّل لجوجل بصمت) */
@@ -243,42 +242,24 @@ object SubFileTr {
     private fun gemKeys(): List<String> = (Cfg.allMainKeys() + Cfg.keys("viskeys")).distinct().filter { it.length > 10 }
     private fun gemModel(): String = Cfg.str("model", Models.DEFAULT).trim().ifEmpty { Models.DEFAULT }
 
-    /**
-     * (v1011) استدعاء نص واحد بجيميناي. modelOv فاضي = المسار القديم بالظبط (موديل الإعدادات عبر Api.generate).
-     * modelOv متحدد = الموديل ده بالتحديد وبس عبر Api.generateModel — مفيش FreeLLM اللي بيلف على موديلات تانية،
-     * ومفيش بديل صامت: لو فشل بيرمي الاستثناء والمحاولات بتتعاد على نفس الموديل بس.
-     */
-    private fun gemCall(modelOv: String?, key: String, prompt: String, temp: Double): Api.Result =
-        if (modelOv.isNullOrBlank()) Api.generate(gemModel(), key, prompt, null, 8192, temp, true, false)
-        else Api.generateModel(modelOv, key, prompt, null, 8192, temp, true, false)
-
-    /** (v1011) مفاتيح جيميناي الحقيقية بس (من غير LocalKey / FreeLLM) — لازمة لما الموديل يتثبّت */
-    fun realGemKeys(): List<String> = try {
-        gemKeys().filter { it != LocalKey.ID && !FreeLlm.isWrapped(it) && !FreeLlm.isKey(it) }
-    } catch (_: Throwable) { emptyList() }
-
-    private fun gemPrompt(lang: String, style: String, ctx: String, srcLang: String? = null): String =
+    private fun gemPrompt(lang: String, style: String, ctx: String): String =
         "أنت مترجم أفلام ومسلسلات محترف. ترجم سطور الترجمة التالية (أي لغة أصلية) إلى العربية بلهجة «$lang» وأسلوب «$style».\n" +
-        (if (srcLang.isNullOrBlank()) "" else "- لغة السطور الأصلية (كود ISO): $srcLang — السطور مكتوبة بيها، فمتخمّنش لغة تانية.\n") +
-        dialectRule(lang) + "- ترجم اللي اتقال بس — متضيفش ألفاظ ولا معاني مش موجودة في الأصل، ومتخففش اللي موجود.\n" +
-        "- حافظ على المعنى والنبرة والفروق بين المتكلمين، واجعل كل سطر قصيرًا ومناسبًا للقراءة على الشاشة.\n" +
+        dialectRule(lang) + "- حافظ على المعنى والنبرة والفروق بين المتكلمين، واجعل كل سطر قصيرًا ومناسبًا للقراءة على الشاشة.\n" +
         "- كل سطر له ترجمة واحدة بنفس رقم idx: ممنوع الدمج أو الحذف أو إعادة الترتيب.\n" +
         "- لو السطر وصف صوت أو موسيقى مثل [music] أو ♪ ترجمه بإيجاز بين أقواس أو اتركه كما هو.\n" +
         "- السطور السابقة للسياق فقط، لا تترجمها." +
         (if (ctx.isBlank()) "" else "\nالسياق السابق:\n$ctx") +
         "\nأخرج JSON فقط بالشكل: {\"items\":[{\"idx\":0,\"translated\":\"...\"}]}\nالسطور:\n"
 
-    private fun gemBatch(items: List<Pair<Int, String>>, ctx: String, lang: String, style: String, keys: List<String>, first: Int, srcLang: String? = null, modelOv: String? = null, genders: Map<Int, String> = emptyMap()): Map<Int, String> {
+    private fun gemBatch(items: List<Pair<Int, String>>, ctx: String, lang: String, style: String, keys: List<String>, first: Int): Map<Int, String> {
         val arr = JSONArray()
-        for ((i, t) in items) { val o = JSONObject().put("idx", i).put("text", oneLine(t)); genders[i]?.let { o.put("g", it) }; arr.put(o) }
-        // (v1036) جنس المتكلم (m/f) لو معروف — بيتبعت جنب السطر عشان الأفعال/الصفات/الضمائر تتصرّف صح
-        val gNote = if (genders.isEmpty()) "" else "ملحوظة: حقل g في السطر = جنس المتكلم (m ذكر، f أنثى) — صرّف أفعال المتكلم وصفاته وضمائره على جنسه.\n"
-        val prompt = gemPrompt(lang, style, ctx, srcLang) + gNote + arr.toString()
+        for ((i, t) in items) arr.put(JSONObject().put("idx", i).put("text", oneLine(t)))
+        val prompt = gemPrompt(lang, style, ctx) + arr.toString()
         var lastErr: Exception? = null
         for (attempt in 0 until 4) {
             val key = keys[(first + attempt) % keys.size]
             try {
-                val r = gemCall(modelOv, key, prompt, 0.2)
+                val r = Api.generate(gemModel(), key, prompt, null, 8192, 0.2, true, false)
                 val js = Parse.json(r.text) ?: throw Exception("رد جيميناي مش JSON")
                 val a = js.optJSONArray("items") ?: throw Exception("رد جيميناي من غير items")
                 val m = HashMap<Int, String>()
@@ -306,16 +287,15 @@ object SubFileTr {
      * ترجمة كل الجمل. eng = "google" | "gemini". report بيتنادى بنص التقدم. cancel() لو true بيوقف.
      * اللي يفشل بيتسيب فاضي في النتيجة (والمشغّل بيحط مكانه النص الأصلي) وعدّاده في failed.
      */
-    fun translate(cues: List<Cue>, eng: String, report: (String) -> Unit, cancel: () -> Boolean = { false }, langOv: String? = null, styleOv: String? = null, srcLang: String? = null, modelOv: String? = null): Out {
+    fun translate(cues: List<Cue>, eng: String, report: (String) -> Unit, cancel: () -> Boolean = { false }, langOv: String? = null, styleOv: String? = null): Out {
         val n = cues.size
         val res = arrayOfNulls<String>(n)
         var failed = 0
         if (eng == "gemini") {
-            // (v1011) موديل متثبّت ← مفاتيح جيميناي حقيقية بس (FreeLLM بيلف على موديلات تانية)
-            val keys = if (modelOv.isNullOrBlank()) gemKeys() else realGemKeys()
+            val keys = gemKeys()
             if (keys.isEmpty()) return Out(List(n) { "" }, n, "مفيش مفتاح جيميناي — ضيفه من الإعدادات أو اختار جوجل")
             val lang = langOv ?: effLang(); val style = styleOv ?: effStyle()   // (v688) الموبايل بيبعت لهجته/أسلوبه
-            if (keys.size >= 2 && n > 0) return translateMulti(cues, keys, lang, style, report, cancel, srcLang, modelOv)   // (v638) الملف كامل لمفتاحين + تنقيح بالباقي
+            if (keys.size >= 2 && n > 0) return translateMulti(cues, keys, lang, style, report, cancel)   // (v638) الملف كامل لمفتاحين + تنقيح بالباقي
             val size = 40
             val batches = (0 until n).chunked(size)
             val next = AtomicInteger(0); val done = AtomicInteger(0); val bad = AtomicInteger(0)
@@ -329,7 +309,7 @@ object SubFileTr {
                         val b = batches[bi]
                         val ctx = if (b[0] == 0) "" else ((maxOf(0, b[0] - 3) until b[0]).joinToString("\n") { oneLine(cues[it].text) })
                         try {
-                            val m = gemBatch(b.map { (it - b[0]) to cues[it].text }, ctx, lang, style, keys, bi + w, srcLang, modelOv, b.mapNotNull { gi -> cues[gi].g.takeIf { it.isNotEmpty() }?.let { (gi - b[0]) to it } }.toMap())
+                            val m = gemBatch(b.map { (it - b[0]) to cues[it].text }, ctx, lang, style, keys, bi + w)
                             for ((k, tr) in m) { val gi = b[0] + k; if (gi in b) res[gi] = tr }
                         } catch (e: Exception) { if (firstErr[0] == null) firstErr[0] = (e.message ?: e.javaClass.simpleName).take(100); bad.addAndGet(b.size) }
                         val d = done.incrementAndGet()
@@ -382,12 +362,11 @@ object SubFileTr {
         return sb.toString()
     }
 
-    private fun fullTrPrompt(lang: String, style: String, ctx: String, items: JSONArray, srcLang: String? = null): String =
+    private fun fullTrPrompt(lang: String, style: String, ctx: String, items: JSONArray): String =
         "أنت مترجم أفلام ومسلسلات محترف. أمامك ملف الترجمة الأصلي لفيديو واحد (بترتيبه، وأرقام الأسطر #N) — اقرأه كله أولًا وافهم القصة: مين بيتكلم مع مين، العلاقات بينهم، مين ذكر ومين أنثى، والمصطلحات المتكررة.\n" +
-        (if (srcLang.isNullOrBlank()) "" else "لغة السطور الأصلية (كود ISO): $srcLang.\n") +
         "ثم ترجم «السطور المطلوبة» فقط إلى العربية بلهجة «$lang» وأسلوب «$style».\n" +
         dialectRule(lang) + "- ترجم بالمعنى الكامل للمشهد مش سطر سطر: السطر الغامض يتحدد بما قبله وبعده في الملف كله.\n" +
-        "- 🔴 الضمائر والأجناس: حدّد كل (هو/هي/أنت/هم/هذا) يعود على مين من السياق، واكتب الضمير والفعل والصفة الصح (مذكر/مؤنث، مفرد/جمع، رسمي/غير رسمي). لو السطر فيه حقل g فهو جنس المتكلم (m ذكر، f أنثى) — اعتمد عليه في أفعال المتكلم وصفاته.\n" +
+        "- 🔴 الضمائر والأجناس: حدّد كل (هو/هي/أنت/هم/هذا) يعود على مين من السياق، واكتب الضمير والفعل والصفة الصح (مذكر/مؤنث، مفرد/جمع، رسمي/غير رسمي).\n" +
         "- ثبّت ترجمة الأسماء والألقاب وكلمات القرابة والمصطلحات في الملف كله، وحافظ على نبرة كل شخصية من أول الملف لآخره.\n" +
         "- كل سطر له ترجمة واحدة بنفس idx: ممنوع الدمج أو الحذف أو إعادة الترتيب، والسطر قصير ومناسب للقراءة على الشاشة.\n" +
         "- لو السطر وصف صوت أو موسيقى مثل [music] أو ♪ ترجمه بإيجاز بين أقواس.\n" +
@@ -396,12 +375,11 @@ object SubFileTr {
         "═══ السطور المطلوبة (idx من 0 إلى " + (items.length() - 1) + "، و«ref» = رقمه #N في الملف) ═══\n" + items.toString() +
         "\nأخرج JSON فقط وبدون أي نص خارجه: {\"items\":[{\"idx\":0,\"translated\":\"...\"}]} — " + items.length() + " عنصر بالضبط، كل واحد بترجمة عربية غير فاضية."
 
-    private fun refinePrompt(lang: String, style: String, ctx: String, items: JSONArray, cands: Int, srcLang: String? = null): String =
+    private fun refinePrompt(lang: String, style: String, ctx: String, items: JSONArray, cands: Int): String =
         "أنت منقّح ترجمة أفلام ومسلسلات محترف (لهجة «$lang» وأسلوب «$style»). لكل سطر معاك النص الأصلي" +
-        (if (srcLang.isNullOrBlank()) "" else " (لغته الأصلية: $srcLang)") +
         (if (cands >= 2) " ومعاه ترجمتين مرشّحتين (candidate_1 و candidate_2) من مترجمين مختلفين" else " ومعاه ترجمة مرشّحة (candidate_1)") +
         ". المطلوب نسخة نهائية واحدة جاهزة للعرض لكل سطر:\n" +
-        "- 🔴 صحّح الضمائر والأجناس والمخاطَب (هو/هي/أنت/هم، مذكر/مؤنث، مفرد/جمع) على حسب من يتكلم ومع مين في الملف كله. لو السطر فيه حقل g فهو جنس المتكلم (m ذكر، f أنثى) — اعتمد عليه.\n" +
+        "- 🔴 صحّح الضمائر والأجناس والمخاطَب (هو/هي/أنت/هم، مذكر/مؤنث، مفرد/جمع) على حسب من يتكلم ومع مين في الملف كله.\n" +
         "- ثبّت الأسماء والألقاب والمصطلحات في الملف كله، وصحّح أي ترجمة حرفية أو معنى اتغيّر أو سطر اتحذف منه جزء.\n" +
         (if (cands >= 2) "- اختار الأدق من المرشحتين أو ادمج الأفضل منهما أو أعد الصياغة لو الاتنين مش مظبوطين.\n" else "") +
         dialectRule(lang) + "- اللهجة «$lang» والأسلوب «$style» بشكل ثابت من أول الملف لآخره، والسطر قصير ومناسب للقراءة على الشاشة.\n" +
@@ -411,12 +389,12 @@ object SubFileTr {
         "\nأخرج JSON فقط وبدون أي نص خارجه: {\"items\":[{\"idx\":0,\"translated\":\"...\"}]} — " + items.length() + " عنصر بالضبط، كل واحد بالترجمة النهائية بعد التنقيح."
 
     /** طلب JSON واحد بمحاولات: بيبدأ بمفتاح primary وبيلف على باقي المفاتيح لو فشل */
-    private fun callItems(prompt: String, keys: List<String>, primary: Int, temp: Double, modelOv: String? = null): Map<Int, String> {
+    private fun callItems(prompt: String, keys: List<String>, primary: Int, temp: Double): Map<Int, String> {
         var lastErr: Exception? = null
         for (attempt in 0 until 4) {
             val key = keys[(primary + attempt) % keys.size]
             try {
-                val r = gemCall(modelOv, key, prompt, temp)
+                val r = Api.generate(gemModel(), key, prompt, null, 8192, temp, true, false)
                 val js = Parse.json(r.text) ?: throw Exception("رد جيميناي مش JSON")
                 val a = js.optJSONArray("items") ?: throw Exception("رد جيميناي من غير items")
                 val m = HashMap<Int, String>()
@@ -438,7 +416,7 @@ object SubFileTr {
      * ٢) باقي المفاتيح (لحد 2) بتاخد الأصل + الترجمتين وتنقّحهم (ضمائر/أجناس/ثبات مصطلحات/اختيار الأدق) والنتيجة النهائية هي المنقّحة،
      * وأي سطر التنقيح فشل فيه بيرجع للترجمة الأولى ثم التانية ثم الأصل.
      */
-    fun translateMulti(cues: List<Cue>, keys: List<String>, lang: String, style: String, report: (String) -> Unit, cancel: () -> Boolean = { false }, srcLang: String? = null, modelOv: String? = null): Out {
+    fun translateMulti(cues: List<Cue>, keys: List<String>, lang: String, style: String, report: (String) -> Unit, cancel: () -> Boolean = { false }): Out {
         val n = cues.size
         val (nt, nr) = multiPlan(keys.size)
         val trKeys = keys.take(nt); val rfKeys = keys.drop(nt).take(nr)
@@ -453,9 +431,9 @@ object SubFileTr {
                 for (b in chunks) {
                     if (cancel()) break
                     val items = JSONArray()
-                    for (i in b) { val o = JSONObject().put("idx", i - b[0]).put("ref", i + 1).put("text", oneLine(cues[i].text)); if (cues[i].g.isNotEmpty()) o.put("g", cues[i].g); items.put(o) }
+                    for (i in b) items.put(JSONObject().put("idx", i - b[0]).put("ref", i + 1).put("text", oneLine(cues[i].text)))
                     try {
-                        val m = callItems(fullTrPrompt(lang, style, ctxBlock(cues, b.first(), b.last() + 1), items, srcLang), keys, keys.indexOf(trKeys[w]).coerceAtLeast(0), 0.3, modelOv)
+                        val m = callItems(fullTrPrompt(lang, style, ctxBlock(cues, b.first(), b.last() + 1), items), keys, keys.indexOf(trKeys[w]).coerceAtLeast(0), 0.3)
                         for ((k, tr) in m) { val gi = b[0] + k; if (gi in b) passes[w][gi] = tr }
                     } catch (e: Exception) { if (firstErr[0] == null) firstErr[0] = (e.message ?: e.javaClass.simpleName).take(100) }
                     report("✨ ترجمة كاملة " + doneA.incrementAndGet() + "/" + totalA + (if (nt > 1) " (" + nt + " مفاتيح بالتوازي)" else ""))
@@ -485,11 +463,10 @@ object SubFileTr {
                         val c1 = passes[0][i]; val c2 = if (nt > 1) passes[1][i] else null
                         if (!c1.isNullOrBlank()) o.put("candidate_1", oneLine(c1))
                         if (!c2.isNullOrBlank()) o.put("candidate_2", oneLine(c2))
-                        if (cues[i].g.isNotEmpty()) o.put("g", cues[i].g)
                         items.put(o)
                     }
                     try {
-                        val m = callItems(refinePrompt(lang, style, ctxBlock(cues, b.first(), b.last() + 1), items, nt, srcLang), keys, keys.indexOf(rfKeys[w]).coerceAtLeast(0), 0.2, modelOv)
+                        val m = callItems(refinePrompt(lang, style, ctxBlock(cues, b.first(), b.last() + 1), items, nt), keys, keys.indexOf(rfKeys[w]).coerceAtLeast(0), 0.2)
                         for ((k, tr) in m) { val gi = b[0] + k; if (gi in b) refined[gi] = tr }
                     } catch (e: Exception) { if (firstErr[0] == null) firstErr[0] = (e.message ?: e.javaClass.simpleName).take(100) }
                     report("🧹 تنقيح وتظبيط الضمائر " + doneB.incrementAndGet() + "/" + chunks.size + (if (rfKeys.size > 1) " (" + rfKeys.size + " مفاتيح بالتوازي)" else ""))

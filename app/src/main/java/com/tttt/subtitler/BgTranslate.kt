@@ -295,10 +295,10 @@ class BgService : Service() {
         val app = applicationContext
         Cfg.init(app)
         val ovm = try { TrLib.meta(app, job.vid) } catch (_: Throwable) { null }   // (v990) إعدادات متقدمة لكل ترجمة (مكتبة الترجمات)
+        // (v1091) سطر withModel بتاع v1090 متساب: Cfg هنا مفيهوش withModel — تجاوز الموديل لكل ترجمة مش متاح
         val conf = run {
             var c0 = Cfg.snapshot()
             if (ovm != null) {
-                if (ovm.ovModel.isNotBlank()) c0 = c0.withModel(ovm.ovModel)
                 if (ovm.ovDialect.isNotBlank()) c0 = c0.withLang(ovm.ovDialect)
             }
             c0

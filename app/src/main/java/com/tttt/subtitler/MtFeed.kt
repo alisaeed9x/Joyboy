@@ -8,10 +8,10 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 /**
- * (v929) الموبايل بيجيب قوايم الفيديوهات من يوتيوب (أحدث الاشتراكات + الصفحة الرئيسية) ويبعتها لصف/صفحة يوتيوب بتاعة التلفزيون (TvLink /ytfeed).
- * التلفزيون ما بيشغّلش يوتيوب ولا بيسجّل دخول — الحساب كله على الموبايل.
+ * (v929) الموبايل بيجيب قوايم الفيديوهات من MeeTube (أحدث الاشتراكات + الصفحة الرئيسية) ويبعتها لصف/صفحة يوتيوب بتاعة التلفزيون (TvLink /ytfeed).
+ * التلفزيون ما بيشغّلش MeeTube ولا بيسجّل دخول — الحساب كله على الموبايل.
  *  • بيتبعت أول ما الموبايل يتصل بالتلفزيون، وبعدها كل 15 دقيقة (كل 45 ثانية لحد ما الحساب يتسجّل).
- *  • مش مسجّل دخول ← بيتبعت signed=false والتلفزيون بيعرض «سجّل الدخول من الموبايل»؛ دوسة عليها بتطلّع طلب للموبايل (ping.ytlogin) ← نافذة تسجيل الدخول.
+ *  • مش مسجّل دخول ← بيتبعت signed=false والتلفزيون بيعرض «سجّل الدخول من MeeTube على الموبايل»؛ دوسة عليها بتطلّع طلب للموبايل (ping.ytlogin) ← نافذة تسجيل الدخول.
  */
 object MtFeed {
     @Volatile private var lastAt = 0L
@@ -73,10 +73,10 @@ object MtFeed {
     fun onLoginRequest() {
         if (MtYt.signedIn()) { maybePush(true); return }
         loginPending = true
-        resumed()?.let { a -> a.runOnUiThread { showLoginIfPending(a) } }
+        MtTvRoute.resumed()?.let { a -> a.runOnUiThread { showLoginIfPending(a) } }
     }
 
-    /** أي شاشة اتفتحت قدّام — لو في طلب معلّق نسأل */
+    /** من MtTvRoute: أي شاشة اتفتحت قدّام — لو في طلب معلّق نسأل */
     fun onResumed(a: Activity) {
         try {
             if (loginPending) showLoginIfPending(a)
@@ -87,13 +87,13 @@ object MtFeed {
     private fun showLoginIfPending(a: Activity) {
         if (!loginPending || a.isFinishing || a.isDestroyed) return
         val n = a.javaClass.name
-        if (!n.startsWith("com.tttt.subtitler")) return
+        if (!(n.startsWith("com.tttt.subtitler") || n.startsWith("com.newtube") || n.startsWith("com.liskovsoft"))) return
         if (n.contains("SignIn")) return
         loginPending = false
         try {
             GAlert(a).setTitle("🔐 تسجيل دخول يوتيوب")
-                .setMessage("صف يوتيوب على التلفزيون محتاج حسابك. تسجّل الدخول دلوقتي؟\n\nهيظهر كود، افتحه من تطبيق يوتيوب على موبايلك ودوس «تم»، وترجع.")
-                .setPositiveButton("سجّل الدخول") { _, _ -> YtMtSignIn.signIn(a) }
+                .setMessage("صف يوتيوب على التلفزيون محتاج حسابك من MeeTube. تسجّل الدخول دلوقتي؟\n\nهتفتح صفحة جوجل، تدوس «السماح»، وترجع.")
+                .setPositiveButton("سجّل الدخول") { _, _ -> MeeTubeLink.signIn(a) }
                 .setNegativeButton("بعدين", null).show()
         } catch (e: Throwable) { LogStore.err("MtFeed:login", e) }
     }

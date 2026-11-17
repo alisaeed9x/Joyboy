@@ -227,7 +227,17 @@ class MiniDock(
     private var glassKey = -1
     private fun paintBg() {
         val on = MusicEngine.isPlaying
-        // (v1072) البلور الحي اتشال مع MeeTube — الكبسولة بخلفية صلبة دايمًا
+        // (v909) الكبسولة المقفولة = GlassDrawable بتاع MeeTube فوق GlassSource الصفحة (بلور حي وبيتابع السحب)؛ الموسّعة (مستطيل مدوّر) رسم floatPill
+        val src = if (MtGlass.on() && !expanded) MtFloat.sourceFor(act) else null
+        if (src != null) {
+            val key = if (on) 1 else 0
+            if (glassKey != key) {
+                glassKey = key
+                val tint = if (on) 0xB02A3F6B.toInt() else MeeRes.color("meetube_toast_glass", 0xA3303034.toInt(), 0xA3303034.toInt())
+                try { com.newtube.mobile.ui.common.GlassDrawable.apply(dock, src, 0, tint) } catch (_: Throwable) { glassKey = -1 }
+            }
+            if (glassKey != -1) return
+        }
         glassKey = -1
         dock.background = if (MtGlass.on()) MtGlass.floatPill(ui.dp(if (expanded) 28 else 26).toFloat(), dock.resources.displayMetrics.density, if (on) 0xFF8FB4FF.toInt() else 0)   // (v901) زجاج MeeTube
             else ui.box(0xEE1B1E27.toInt(), if (on) 0xFF8FB4FF.toInt() else 0x55FFFFFF, if (expanded) 28 else 26, 2)

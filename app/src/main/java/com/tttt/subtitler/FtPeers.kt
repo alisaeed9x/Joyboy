@@ -438,7 +438,7 @@ object FtNotify {
             try {
                 val nm = app.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
                 nm.createNotificationChannel(NotificationChannel(CH, "طلبات استقبال ملفات", NotificationManager.IMPORTANCE_HIGH))
-                val pi = PendingIntent.getActivity(app, 7, Intent(app, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
+                val pi = PendingIntent.getActivity(app, 7, Intent(app, FileTransferActivity::class.java).putExtra("ft_sid", s.sid).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
                 nm.notify(nid(s), Notification.Builder(app, CH).setSmallIcon(android.R.drawable.stat_sys_download).setContentTitle("📥 طلب استقبال ملفات").setContentText(txt).setAutoCancel(true).setContentIntent(pi).setCategory(Notification.CATEGORY_MESSAGE).build())
             } catch (_: Throwable) {}
             try { FtHub.topAct?.get()?.let { a -> a.runOnUiThread { Notice.show(a, "📥 $txt — افتح «نقل الملفات»", 5000L) } } } catch (_: Throwable) {}
