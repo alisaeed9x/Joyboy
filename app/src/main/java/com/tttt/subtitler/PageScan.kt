@@ -6,7 +6,10 @@ import java.net.URL
 import java.net.URLDecoder
 
 /** (v837) نتيجة فحص الصفحة. cat: 0 فيديو مباشر · 1 ملف/برنامج · 2 لينك موقع رفع (بيتحوّل لرابط مباشر) · 3 صفحة فيديو/مشغّل مدمج */
-class ScanItem(val cat: Int, val url: String, val title: String, val name: String, val ext: String = "", val size: Long = -1L, val viaLink: Boolean = false)
+class ScanItem(val cat: Int, val url: String, val title: String, val name: String, val ext: String = "", val size: Long = -1L, val viaLink: Boolean = false) {
+    /** (v1064) رابط صورة مصغّرة للعنصر (poster / صورة الكارت اللي حوالين اللينك) — فاضي لو ملقيناش */
+    var img: String = ""
+}
 
 /** (v837) رابط مباشر اتجاب من لينك موقع رفع */
 class ScanResolved(val url: String, val name: String)
@@ -34,16 +37,17 @@ document.querySelectorAll('video').forEach(function(v){try{v.muted=true;var p=v.
 document.querySelectorAll(s).forEach(function(b){try{if(b.offsetWidth>0&&n<6){b.click();n++;}}catch(e){}});});
 return n;}catch(e){return -1}})()"""
 
-    /** [[url, title, kind]] — kind: m = فيديو/صوت · f = iframe/embed · a = لينك · ai = لينك فيه صورة */
+    /** [[url, title, kind, img]] — img (v1064) = poster/صورة الكارت — kind: m = فيديو/صوت · f = iframe/embed · a = لينك · ai = لينك فيه صورة */
     val DOM_JS = """(function(){try{var o=[],s={},L=location.href,T=document.title;
 function A(u){try{return new URL(u,L).href}catch(e){return ''}}
-function P(u,t,k){if(!u)return;u=A(u);if(!/^https?:/i.test(u))return;u=u.split('#')[0];if(s[u])return;s[u]=1;o.push([u,String(t||'').replace(/\s+/g,' ').trim().slice(0,120),k]);}
-document.querySelectorAll('video,audio').forEach(function(v){P(v.currentSrc,T,'m');P(v.getAttribute('src'),T,'m');v.querySelectorAll('source').forEach(function(x){P(x.getAttribute('src'),T,'m');});});
+function I(e){try{var x=e;for(var d=0;d<3&&x&&x!==document.body;d++,x=x.parentElement){if(x.querySelectorAll('a[href]').length>4&&d>0)break;var m=x.tagName==='IMG'?x:x.querySelector('img');if(m){var u=m.currentSrc||m.getAttribute('src')||m.getAttribute('data-src')||m.getAttribute('data-lazy-src')||m.getAttribute('data-original')||(m.getAttribute('srcset')||'').trim().split(/\s+/)[0];if(u&&!/^data:/i.test(u))return A(u);}}}catch(e){}return ''}
+function P(u,t,k,g){if(!u)return;u=A(u);if(!/^https?:/i.test(u))return;u=u.split('#')[0];if(s[u])return;s[u]=1;var gi='';try{gi=g?A(g):''}catch(e){}o.push([u,String(t||'').replace(/\s+/g,' ').trim().slice(0,120),k,gi]);}
+document.querySelectorAll('video,audio').forEach(function(v){var g=v.getAttribute('poster')||I(v);P(v.currentSrc,T,'m',g);P(v.getAttribute('src'),T,'m',g);v.querySelectorAll('source').forEach(function(x){P(x.getAttribute('src'),T,'m',g);});});
 document.querySelectorAll('meta[property^="og:video"],meta[name="twitter:player:stream"]').forEach(function(m){P(m.content,T,'m');});
-document.querySelectorAll('iframe[src],embed[src]').forEach(function(f){P(f.getAttribute('src'),T,'f');});
+document.querySelectorAll('iframe[src],embed[src]').forEach(function(f){P(f.getAttribute('src'),T,'f',I(f));});
 var SA=['data-embed-url','data-embed','data-url','data-src','data-link','data-href','data-iframe','data-video','data-player','data-frame','data-server','data-stream'];
-document.querySelectorAll('[data-embed-url],[data-embed],[data-url],[data-src],[data-link],[data-href],[data-iframe],[data-video],[data-player],[data-frame],[data-server],[data-stream]').forEach(function(e){if(e.tagName==='A'&&e.getAttribute('href')&&e.getAttribute('href')!=='#'&&e.getAttribute('href')!=='javascript:void(0)'&&!e.getAttribute('data-embed-url')&&!e.getAttribute('data-embed'))return;for(var i=0;i<SA.length;i++){var v=e.getAttribute(SA[i]);if(v&&/^(https?:)?\/\/|^\//.test(v.trim())){P(v.trim(),'سيرفر: '+(e.innerText||e.title||'').trim(),'s');break;}}});
-document.querySelectorAll('a[href]').forEach(function(a){var im=a.querySelector('img');P(a.getAttribute('href'),a.innerText||a.title||a.getAttribute('aria-label')||(im&&im.alt)||'',im?'ai':'a');});
+document.querySelectorAll('[data-embed-url],[data-embed],[data-url],[data-src],[data-link],[data-href],[data-iframe],[data-video],[data-player],[data-frame],[data-server],[data-stream]').forEach(function(e){if(e.tagName==='A'&&e.getAttribute('href')&&e.getAttribute('href')!=='#'&&e.getAttribute('href')!=='javascript:void(0)'&&!e.getAttribute('data-embed-url')&&!e.getAttribute('data-embed'))return;for(var i=0;i<SA.length;i++){var v=e.getAttribute(SA[i]);if(v&&/^(https?:)?\/\/|^\//.test(v.trim())){P(v.trim(),'سيرفر: '+(e.innerText||e.title||'').trim(),'s',I(e));break;}}});
+document.querySelectorAll('a[href]').forEach(function(a){var im=a.querySelector('img');P(a.getAttribute('href'),a.innerText||a.title||a.getAttribute('aria-label')||(im&&im.alt)||'',im?'ai':'a',I(a));});
 return JSON.stringify(o.slice(0,800));}catch(e){return '[]'}})()"""
 
     /** (v851) جافا الصفحة الحيّة: كل <script> inline + ملفات الجافا + iframes + اللي مشغّل الصفحة (jwplayer/videojs) محمّله دلوقتي → StreamHunt */
@@ -139,12 +143,39 @@ v.__jb=2;}catch(e){}});}catch(e){}})()"""
         val arr = try { JSONArray(json) } catch (_: Throwable) { return out }
         for (i in 0 until arr.length()) {
             val a = try { arr.getJSONArray(i) } catch (_: Throwable) { continue }
-            val u = a.optString(0); val t = a.optString(1); val k = a.optString(2)
+            val u = a.optString(0); val t = a.optString(1); val k = a.optString(2); val g = a.optString(3)
             if (u.isEmpty() || !seen.add(Sniff.key(u))) continue
-            classify(u, t, k, page)?.let { out.add(it) }
+            classify(u, t, k, page)?.let { it.img = g; if (g.isNotEmpty() && it.cat == C_VIDEO) posters[Sniff.key(u)] = g; out.add(it) }
         }
         val cap = mapOf(C_VIDEO to 30, C_HOST to 15, C_FILE to 40, C_PAGE to 25)
         return out.groupBy { it.cat }.toSortedMap().flatMap { (c, l) -> l.take(cap[c] ?: 20) }
+    }
+
+    // ===== (v1064) صور مصغّرة لعناصر الفحص =====
+    /** (v1064) poster اللي الفحص لقاه لكل لينك فيديو في الصفحة (مفتاح Sniff.key) — بتستخدمه قايمة الفيديوهات الملقوطة */
+    val posters = java.util.concurrent.ConcurrentHashMap<String, String>()
+    private val thumbCache = object : android.util.LruCache<String, android.graphics.Bitmap>(24) {}
+    /** يجيب صورة مصغّرة (فك مصغّر ~320px) — على thread خلفي. null لو فشل. بيبعت Referer الصفحة عشان المواقع اللي بتمنع الصور من برّا */
+    fun fetchThumb(u: String, ua: String, ref: String): android.graphics.Bitmap? {
+        if (!u.startsWith("http", true)) return null
+        thumbCache.get(u)?.let { return it }
+        var c: HttpURLConnection? = null
+        return try {
+            c = URL(u).openConnection() as HttpURLConnection
+            c.connectTimeout = 7000; c.readTimeout = 9000; c.instanceFollowRedirects = true
+            c.setRequestProperty("User-Agent", ua.ifBlank { UA }); if (ref.startsWith("http", true)) c.setRequestProperty("Referer", ref)
+            c.setRequestProperty("Accept", "image/*,*/*;q=0.5")
+            if (c.responseCode !in 200..299) return null
+            val b = java.io.ByteArrayOutputStream(); val buf = ByteArray(8192); var tot = 0
+            c.inputStream.use { st -> while (true) { val n = st.read(buf); if (n <= 0) break; tot += n; if (tot > 3_000_000) return null; b.write(buf, 0, n) } }
+            val data = b.toByteArray()
+            val bo = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            android.graphics.BitmapFactory.decodeByteArray(data, 0, data.size, bo)
+            var ss = 1; while (bo.outWidth / (ss * 2) >= 320) ss *= 2
+            val bmp = android.graphics.BitmapFactory.decodeByteArray(data, 0, data.size, android.graphics.BitmapFactory.Options().apply { inSampleSize = ss })
+            if (bmp != null) thumbCache.put(u, bmp)
+            bmp
+        } catch (_: Throwable) { null } finally { try { c?.disconnect() } catch (_: Throwable) {} }
     }
 
     // ===== تحويل لينكات مواقع الرفع لرابط مباشر (على thread خلفي) =====

@@ -23,15 +23,14 @@ class JoyApp : Application() {
             } catch (_: Throwable) {
             }
         }
+        try { com.newtube.mobile.ui.common.PlayerTrace.sink = com.newtube.mobile.ui.common.PlayerTrace.Sink { l -> try { LogStore.add(l) } catch (_: Throwable) {} } } catch (_: Throwable) {}   // (v952)
         MtYt.app = this
         NavOrigin.install(this)   // (v1006) آخر صفحة — للرجوع من الفيديو
         NavSnap.install(this)   // (v923) انتقال موحّد بين الشاشات (لقطة + فيد)
-        MtFeed.install(this)   // (v1072) تتبّع الشاشة الظاهرة + طلب تسجيل الدخول المعلق (كان في MtTvRoute)
         MeeTubeLink.bindBar()
         MtTvRoute.install(this)   // (v928) «تشغّله فين؟» لفيديوهات MeeTube لما وضع التلفزيون شغّال
         try { MtSkin.install(this) } catch (_: Throwable) {}   // (v897) الجلاس في البرنامج كله: خلفية متحركة + مسح الخلفيات الصلبة
-        // (v988) فتح الفريمات لأعلى معدل تحديث
-        try { MtSmooth.install(this) } catch (_: Throwable) {}
+        try { MtSmooth.install(this) } catch (_: Throwable) {}   // (v988) فتح الفريمات لأعلى معدل تحديث
         try { MobileDataGuard.install(this) } catch (_: Throwable) {}   // (v1010) تحذير داتا الموبايل في كل الشاشات
         try { PermAsk.install(this) } catch (_: Throwable) {}   // (v1010) صلاحيات بتتطلب وقت الحاجة بس
         followMeeTubeTheme()

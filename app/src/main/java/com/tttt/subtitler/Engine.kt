@@ -107,7 +107,7 @@ class Engine(
     /** (v1066) أول N باتشات في الوضع السريع بتروح ببرومبت خفيف ورد مختصر (start/end/original/translated بس) */
     private val FAST_LIGHT_N = 2
     /** (v1067) تسريع الصوت قبل الإرسال لأول خطوتين (1.0 = مطفي). الأوقات بترجع للأصل بالضرب */
-    private val FAST_SPEED = 0.5
+    private val FAST_SPEED = 1.25
     /** (v1067) الخطوة الأولى = 30ث بتتقسم لطلبين بالتوازي على مفتاحين: 10ث + 20ث */
     private val FAST_FIRST_SECS = 10.0
     private val FAST_SPLIT_SECS = 30.0
@@ -216,20 +216,20 @@ class Engine(
     private fun checkBaseSkip() { if (!baseSkipped && skipIfBaseLang && detDone && srcLang.isNotEmpty() && langCodeOf(srcLang) == baseLangCode) { baseSkipped = true; transOnly = true; host.log("🏠 لغة الفيديو هي لغتك الأساسية ($srcLang) — الترجمة التلقائية اتخطّت والنص الأصلي هيظهر زي ما هو. عايز ترجمة غصب عنها؟ دوس زرار «ترجم»") } }
     /** (v468) كشف لغة احتياطي: لو جيميناي ما رجّعش detected_source_language، نستنتج من حروف أول نص متفرّغ — نسبة عربي > 60% من الحروف → عربية */
     private fun fallbackDetectLang(texts: List<Sub>) { if (detDone) return; val txt = texts.take(8).joinToString(" ") { it.original }; var ar = 0; var ko = 0; var ja = 0; var cy = 0; var tot = 0; for (ch in txt) { if (ch.isLetter()) { tot++; val c = ch.code; if (c in 0x0600..0x06FF || c in 0x0750..0x077F || c in 0xFB50..0xFDFF || c in 0xFE70..0xFEFF) ar++; if (c in 0xAC00..0xD7A3 || c in 0x1100..0x11FF) ko++; if (c in 0x3040..0x30FF) ja++; if (c in 0x0400..0x04FF) cy++ } }; val hit = when { tot >= 20 && ar * 100 / tot > 60 -> "عربية"; tot >= 20 && ko * 100 / tot > 60 -> "كورية"; tot >= 20 && ja * 100 / tot > 60 -> "يابانية"; tot >= 20 && cy * 100 / tot > 60 -> "روسية"; else -> "" }; if (hit.isNotEmpty()) { srcLang = hit; detDone = true; host.log("🌐 لغة الفيديو الأصلية (استنتاج احتياطي من النص): $hit"); checkBaseSkip() } } // (v468) البند 12: سكربتات مميزة بلا تداخل (هانغول/كانا/سيريلي) بجانب العربي
-    /** أسلوب الترجمة الحي (حرفي/شعبي/جرئ/+18) وشدته (خفيفة/متوسطة/شديدة): بيتحط في أول برومبت كل باتش جديد وكل تحويل لهجة */
+    /** أسلوب الترجمة الحي (تلقائي/حرفي/شعبي/جرئ) وشدته (خفيفة/متوسطة/شديدة): بيتحط في أول برومبت كل باتش جديد وكل تحويل لهجة */
     @Volatile var toneStyle: String = ""
     @Volatile var toneStrength: String = "متوسطة"
     fun toneBlock(): String {
-        val st = toneStyle
-        if (st.isBlank() || st == "حرفي") return ""
+        val st = toneStyle.ifBlank { "تلقائي" }
+        if (st == "حرفي") return ""
         val what = when (st) {
+            "تلقائي" -> "تلقائي: كل جملة على طبيعتها — الكلام العادي يترجم حرفيًا بأمانة؛ كلام الشارع والسباب والإيحاءات تترجم بصراحتها الشعبية زي ما اتقالت بالظبط من غير تلطيف ولا مبالغة؛ والأمثال والتعبيرات الاصطلاحية تترجم بالمثل أو التعبير المقابل في لغة الهدف مش حرفيًا"
             "شعبي" -> "كلام الشارع الشعبي والتعبيرات اليومية بدل الرسمي والكتابي"
             "جرئ" -> "أجرأ وأكتر حرية في الألفاظ والتعبيرات من غير تلطيف زيادة"
-            "+18" -> "صريح بلا تلطيف: الألفاظ الخارجة والإيحاءات تتترجم بصراحة تطابق النص الأصلي بالظبط، من غير حذف ولا تخفيف"
             else -> return ""
         }
         val deg = when (toneStrength) { "خفيفة" -> "خفيفة: لمسة بسيطة بس في الجمل اللي تستاهل"; "شديدة" -> "شديدة: في كل جملة تقريبًا وبأقصى درجة"; else -> "متوسطة: في معظم الجمل بدرجة معتدلة" }
-        return "\n═══ أسلوب الترجمة (إلزامي) ═══\n- الأسلوب: $st — $what.\n- الشدة: $deg.\n- الأسلوب ده بيتطبّق على كل translated مع الحفاظ الكامل على المعنى وجنس المتكلم والمخاطَب.\n\n"
+        return "\n═══ أسلوب الترجمة (إلزامي) ═══\n- الأسلوب: $st — $what.\n- الشدة: $deg.\n- ترجم اللي اتقال بس — متضيفش ألفاظ ولا معاني مش موجودة في الأصل، ومتخففش اللي موجود.\n- الأسلوب ده بيتطبّق على كل translated مع الحفاظ الكامل على المعنى وجنس المتكلم والمخاطَب.\n\n"
     }
 
     // ===== (v469) تحسينات المحرك والبرومبت: سياق باتش (A1) · أمثلة few-shot (A2) · ذاكرة موضوع (A3) · قاموس مقفول (A4) · أمانة أرقام (A5) · تحسين مرحلتين (A6) · كاش أسطر (A7) · تطبيع ASR (A8) · محسّن قراءة (A9) · وسوم غير كلام (A10) · ترتيب مفاتيح بالزمن (A11) · جودة ووقت متبقٍّ (A12) · إعادة سطر واحد (A13) =====
@@ -519,30 +519,8 @@ class Engine(
 
     // ===== واجهة للـ UI =====
     fun failedCount() = failed.count { it.value >= MAX_FAILS }
-    // ===== (v1081) الكتابة بالترتيب + باتشات «اتبعتت ولسه ما رجعتش» =====
-    /** (v1083) أقصى استنى للكتابة بالترتيب: كان 45ث وكان بيحبس باقي الباتشات ورا باتش بطيء/فاشل ← بقى ثواني قليلة بس */
-    private val ORDER_MAX_WAIT_MS = 3_000L
-    /** باتش أقدم اتبعت من أكتر من كده يتعتبر «متأخر» ومش بنستناه */
-    private val ORDER_STALE_MS = 20_000L
-    /** فيه باتش أقدم (جوه النافذة) لسه شغّال أو مستني مفتاح؟ ← الباتش ده يستنى دوره. الفاشل نهائي (فجوة) والباتش اللي عدّى عليه ORDER_MAX_WAIT_MS ما بيعطّلوش حد */
-    private fun lowerPending(i: Int): Boolean {
-        val lo = maxOf(0, i - window)
-        val now = System.currentTimeMillis()
-        for (k in lo until i) {
-            if ((failed[k] ?: 0) >= MAX_FAILS) continue
-            if (fastLatched && k == rampChunk) continue   // (v1083) خطوات التسخين متتابعة بطبعها — الباتشات اللي بعدها ما تستناهاش
-            if (k in inflight) { val t = startedAt[k]; if (t != null && now - t <= ORDER_STALE_MS) return true }
-            // (v1083) باتش مستني مفتاح (rehome) ما بيحبسش حد: كان بيوقّف كل اللي بعده من غير حد أقصى
-        }
-        return false
-    }
-    private fun awaitTurn(i: Int) {
-        val t0 = System.currentTimeMillis()
-        while (running && !isClosed && System.currentTimeMillis() - t0 < ORDER_MAX_WAIT_MS && lowerPending(i)) nap(150)
-        val w = System.currentTimeMillis() - t0
-        if (w >= 1500L) LogStore.add("⏳ باتش ${i + 1}: استنى دوره ${w / 1000}ث (باتش أقدم لسه شغّال) عشان الكتابة تبقى بالترتيب")
-    }
-    /** مجالات الباتشات اللي اتبعتت (أو اتفرّغت ومستنية الترجمة) ولسه ما اتكتبتش — خط/نقط زرقا في شريط التقدم */
+    /** (v146) سطر لكل باتش + هل هو الأسرع في دفعته (بيتلوّن أخضر). الدفعة = الباتشات اللي بتتبعت مع بعض (عددها = عدد الطلبات المتوازية) */
+    /** (دمج v1081) مجالات الباتشات اللي اتبعتت (أو اتفرّغت ومستنية الترجمة) ولسه ما اتكتبتش — خط/نقط زرقا في شريط التقدم */
     fun inflightSegs(): List<DoubleArray> {
         if (inflight.isEmpty() && tHold.isEmpty()) return emptyList()
         val d = currentDur(); if (d <= 0) return emptyList()
@@ -551,7 +529,7 @@ class Engine(
         for (k in ids) { if (cStart(k) >= d || isDone(k, d)) continue; out.add(doubleArrayOf(cStart(k), cEnd(k, d))) }
         return out
     }
-    /** (v146) سطر لكل باتش + هل هو الأسرع في دفعته (بيتلوّن أخضر). الدفعة = الباتشات اللي بتتبعت مع بعض (عددها = عدد الطلبات المتوازية) */
+
     fun batchRows(): List<Pair<String, Boolean>> {
         val d = host.playerDuration()
         val c = (host.position() / ch).toInt().coerceAtLeast(0)
@@ -717,16 +695,6 @@ class Engine(
     }
 
     /** اختيار لهجة التحويل. existing=true: بيحوّل كمان اللي اتترجم قبل كده — من مكان المشاهدة وللقدّام الأول، وبعدين اللي قبله. بيحفظ نسخة باللهجة القديمة قبل التحويل (🗂) */
-    // ===== (v1077) تطبيق بأثر رجعي من ⚙ الترجمة: الجمل اللي اتغيّرت بتتعرض بين أقواس (عرض بس — مابتتحفظش ولا بتتصدّر) =====
-    /** مفاتيح الجمل (pk) اللي اتغيّرت بأثر رجعي */
-    val applied: MutableSet<String> = java.util.concurrent.ConcurrentHashMap.newKeySet()
-    /** تفريغ بأثر رجعي: كل الجمل بتتعرض بنصها الأصلي بين أقواس */
-    @Volatile var origView = false
-    /** الأداة الجاية (تحويل لهجة / إعادة صياغة) تعلّم اللي بتغيّره — بيتصفّر أول ما الأداة تبدأ */
-    @Volatile var markRetro = false
-    fun isApplied(s: Sub): Boolean = pk(s) in applied
-    fun markAllApplied() { synchronized(lock) { for (s in subs) applied.add(pk(s)) } }
-    fun clearMarks() { applied.clear() }
     fun setConvDialect(d: String, existing: Boolean) {
         if (Strict.noGemKeys()) { convDialect = ""; pend.clear(); return }   // (v410) فصحى بس في نص-أونلاين والأوفلاين
         val prev = convDialect
@@ -915,7 +883,12 @@ class Engine(
             if (s.subs.isNotEmpty()) { for (r in s.done) done.add(r[0], r[1]) }
             else if (s.done.isNotEmpty()) host.log("♻ التقدم المحفوظ فيه دقايق «مخلّصة» من غير ولا جملة — هتتعاد الترجمة من الأول (v263)")
             for (r in s.failed) failed[Math.round(r[0] / ch).toInt()] = MAX_FAILS
-            chars.addAll(s.chars); gloss.addAll(s.gloss); tplCache.putAll(s.tpl)
+            // (v999 ملاحظة 4) تحميل تاني لنفس الملف (بعد اختيار ترجمة الاستوديو) مبيكررش القوايم
+            chars.clear()
+            gloss.clear()
+            chars.addAll(s.chars)
+            gloss.addAll(s.gloss)
+            tplCache.putAll(s.tpl)
             srcLang = s.srcLang; detDone = s.detDone; autoCharsAttempts = s.charsTried
             if (s.detDone) anyApplied = true
             pronUpTo = subs.size
@@ -934,7 +907,7 @@ class Engine(
 
     fun run() {
         if (conf.keys.isEmpty() && conf.backup.isEmpty()) { host.status("⚠ ادخل مفتاح Gemini في الإعدادات"); host.log("⚠ مفيش مفاتيح Gemini"); host.notice("⚠ مفيش مفتاح جيميناي — ضيف واحد من الإعدادات ← المفاتيح"); return }
-        fastLatched = try { Cfg.bool("fastmode", false) } catch (_: Throwable) { false }; rampChunk = -1; fastLight.clear()   // (v1068)
+        fastLatched = try { Cfg.bool("fastmode", false) } catch (_: Throwable) { false }; rampChunk = -1; fastLight.clear()   // (v1068) الوضع السريع بيتأخد من الإعداد وقت بداية الترجمة (مش وقت فتح المشغّل) — عشان صف «⚡ سريع» في قايمة جيميناي يشتغل على طول
         Api.onSlow = { m -> try { host.status(m) } catch (_: Throwable) {} }   // (v468) مؤشر «باتش بيحاول» في شريط الحالة
         val capMax = basePool.capacity(ppk)
         val ex = Executors.newFixedThreadPool(maxOf(capMax, Offline.MAX_PAR) + 2) { r -> Thread(r).also { it.isDaemon = true } }   // +2: باتش اتنسخ واتحسب من نسخته الاحتياطية ممكن يفضل خيطه الأصلي شغال شوية من غير ما يحجز مكان باتش جديد
@@ -1135,8 +1108,8 @@ class Engine(
     /** فك صوت المقطع + الإرسال لجيميناي كله في خيط من الحوض: عدة باتشات بتفك صوتها وتتبعت بالتوازي على كل المفاتيح (قبل كده الفك كان بالترتيب في حلقة واحدة فالباتشات كانت بتمشي واحد ورا التاني) */
     private fun dispatch(i: Int, ex: java.util.concurrent.ExecutorService, force: Boolean = false, firstKey: String? = null, prep0: Prep? = null) {
         if (!inflight.add(i)) return
-        if (fastLatched && rampChunk < 0 && !force) { rampChunk = i; rampStep = 0; rampNext = -1.0 }   // (v1065)
-        if (fastLatched && !force && fastLight.size < FAST_LIGHT_N) fastLight.add(i)   // (v1066)
+        if (fastLatched && rampChunk < 0 && !force) { rampChunk = i; rampStep = 0; rampNext = -1.0 }   // (v1065) أول باتش بيتبعت = اللي بيتقسّم لخطوات بتكبر
+        if (fastLatched && !force && fastLight.size < FAST_LIGHT_N) fastLight.add(i)   // (v1066) برومبت خفيف لأول باتشين
         startedAt[i] = System.currentTimeMillis(); hedged.remove(i)
         // (v151) المفتاح بيتحجز للباتش من لحظة الإرسال (قبل فك الصوت) عشان باتشين ما يتحطوش على نفس المفتاح
         val fk = firstKey ?: pool.pickIdle(i, null, perKey)
@@ -1144,7 +1117,9 @@ class Engine(
             ex.submit {
                 try {
                     var p: Prep? = prep0
+                    val tPrep0 = System.currentTimeMillis()   // (v1031 — م0) توقيت فك/تجهيز الصوت لكل باتش
                     val ok = if (prep0 != null) { preps[i] = prep0; true } else guard(i) { val got = prepare(i, force); p = got; if (got != null) preps[i] = got }
+                    if (prep0 == null) LogStore.add("⏱ [مشغّل-توقيت] باتش ${i + 1}: فك+تجهيز الصوت " + (System.currentTimeMillis() - tPrep0) + "ms")
                     if (ok) {
                         val pp = p
                         if (pp == null) failed.remove(i)
@@ -1224,6 +1199,7 @@ class Engine(
         return doubleArrayOf(a, b)
     }
 
+
     /** يفك الصوت (ويقصّر المقطع لأقرب لحظة صمت). null = مفيش حاجة تتبعت (صامت / مفيش صوت). */
     private fun prepare(i: Int, force: Boolean = false): Prep? {
         claimed.remove(i)   // محاولة جديدة للباتش ده من الأول
@@ -1233,10 +1209,10 @@ class Engine(
         synchronized(trimLock) {
             prepared.add(i)
             val cs = cStart(i); val ce = cEnd(i, d)
-            val rw = if (fastLatched && i == rampChunk) rampWindow(cs, ce) else null   // (v1065)
+            val rw = if (fastLatched && i == rampChunk) rampWindow(cs, ce) else null   // (v1065) خطوة صغيرة من الباتش بدل الباتش كله
             rawStart = rw?.get(0) ?: cs; rawEnd = rw?.get(1) ?: ce
         }
-        val start = if (i == 0) 0.0 else maxOf(0.0, rawStart - OVERLAP)
+        val start = if (i == 0 && rawStart < 0.05) 0.0 else maxOf(0.0, rawStart - OVERLAP)
         host.status("⏳ ترجمة المقطع ${i + 1}…")
         val t0 = System.currentTimeMillis()
         val s0 = src()
@@ -1250,7 +1226,7 @@ class Engine(
             if (d <= 0 || (rawEnd - rawStart > 5.0 && rawStart < d - 3.0)) { incomplete.add(i); host.log("⚠ باتش ${i + 1}: مقدرتش أفك صوته — أعده من علامة التحذير") }
             done.add(rawStart, rawEnd); persist(); return null
         }
-        if (fastLatched && i == rampChunk && rampStep < 2 && !w.silent) {   // (v1067)
+        if (fastLatched && i == rampChunk && rampStep < 2 && !w.silent) {   // (v1067) ✂ قص صمت أول/آخر الخطوات الأولى
             val tr = try { AudioTools.trimSilence(w.bytes) } catch (_: Throwable) { null }
             if (tr != null) { host.log("✂ المقطع ${i + 1}: اتقص صمت ${"%.1f".format(w.durSec - tr.durSec)}ث من الأطراف"); w = WavChunk(tr.bytes, w.startSec + tr.leadSec, tr.durSec, false, w.gain, w.activeSec) }
         }
@@ -1332,7 +1308,7 @@ class Engine(
                 try {
                     val a = parts[ix]; val dur = a[1] - a[0]
                     var bs = AudioTools.cut(w.bytes, a[0], a[1])
-                    if (spd != 1.0) bs = try { AudioTools.speedUp(bs, spd) } catch (_: Throwable) { bs }
+                    if (spd > 1.0) bs = try { AudioTools.speedUp(bs, spd) } catch (_: Throwable) { bs }
                     val sc = StreamSubs()
                     res[ix] = Api.generateStream(mdl, k, promptFor(dur / spd), bs, Api.outTokens(dur), tmp) { acc -> streamPreview(i, pws[ix], sc, acc, spd, a[0]) }
                     if (ix == 1) pool.end(k, System.currentTimeMillis() - t0, true)
@@ -1385,9 +1361,9 @@ class Engine(
         var langRetry = 0; var langSwitchRetry = 0
         var srv = 0   // (v459) مفيش موديل بديل: أخطاء السيرفر بتتعاد على نفس الموديل الواحد (كان في v227 بيبدّل لموديل تاني)
         val fastStep = fastLatched && !hedge && !backupFirst && i == rampChunk && rampStep < 2
-        val spd = if (fastStep && FAST_SPEED != 1.0 && w.durSec >= 4.0) FAST_SPEED else 1.0   // (v1067)
-        val canSplit = fastStep && rampStep == 0 && w.durSec >= 16.0 && !Offline.on() && pool.usableCount() >= 2   // (v1067)
-        val sendBytes = if (spd != 1.0) { try { AudioTools.speedUp(w.bytes, spd) } catch (_: Throwable) { w.bytes } } else w.bytes
+        val spd = if (fastStep && FAST_SPEED > 1.0 && w.durSec >= 4.0) FAST_SPEED else 1.0   // (v1067) تسريع الصوت
+        val canSplit = fastStep && rampStep == 0 && w.durSec >= 16.0 && !Offline.on() && pool.usableCount() >= 2   // (v1067) طلبين بالتوازي
+        val sendBytes = if (spd > 1.0) { try { AudioTools.speedUp(w.bytes, spd) } catch (_: Throwable) { w.bytes } } else w.bytes
         val spdEff = if (sendBytes === w.bytes) 1.0 else spd
         val tx = activeMode >= KeyMode.SPLIT_A && i !in fullChunks && !fastLatched   // (v210) ترانسكريبشن بس، والترجمة بعدين مجمّعة على مفاتيح الترجمة
         while (running && tries++ < MAX_TRIES) {
@@ -1397,8 +1373,8 @@ class Engine(
             try {
                 val t0 = System.currentTimeMillis()
                 val mdl = curModel()   // (v459) موديل واحد بس دايمًا
-                var gemCalled = false   // (v413)
-                var resScale = 1.0   // (v1067) هل جيميناي اتنده فعلًا للباتش ده؟ (false = Whisper لوحده)
+                var resScale = 1.0   // (v1067) معامل إرجاع الأوقات للأصل (الصوت المتسرّع)
+                var gemCalled = false   // (v413) هل جيميناي اتنده فعلًا للباتش ده؟ (false = Whisper لوحده)
                 val r = run {
                     pool.begin(key, i)
                     try {
@@ -1432,6 +1408,7 @@ class Engine(
                     } catch (e: Throwable) { pool.end(key, 0, false); throw e }
                 }
                 val took = System.currentTimeMillis() - t0
+                LogStore.add("⏱ [مشغّل-توقيت] باتش ${i + 1}: طلب الموديل " + took + "ms (" + mdl + (if (tx) ", تفريغ" else ", تفريغ+ترجمة") + (if (hedge) ", نسخة احتياطية" else "") + ", محاولة " + tries + ", من أول إرسال " + (startedAt[i]?.let { System.currentTimeMillis() - it } ?: -1L) + "ms)")   // (v1031 — م0)
                 if (isClosed) return
                 if (gemCalled) { flushModeMsg(); noteWho("🔑 جيميناي شغّال", " — باتش ${i + 1} بمفتاح " + pool.tail(key) + " (" + conf.keys.size + " أساسي)") }   // (v278)   // الإنجن اتقفل أثناء الطلب (خرجت من الفيديو): ارمي الرد
                 if (r.finish == "MAX_TOKENS" && trunc >= 2) partial = true
@@ -1466,6 +1443,7 @@ class Engine(
                     switchKey(key)?.let { key = it }
                     nap(400); continue
                 }
+                // (دمج v1070) باتش فاضي مابقاش يتعلّم «خلص» — قبل كده applyChunk كان بيمسح failed وبيعلّم done فالثغرة كانت بتضيع نهائي
                 if (!offRan && fresh.isEmpty() && !w.silent) { failed[i] = MAX_FAILS; incomplete.add(i); host.log("🕳 المقطع ${i + 1} رجع من غير جمل — اتسجل كفجوة وهيتعاد تلقائيًا"); persist(); return }
                 pool.good(key)
                 if (!claimed.add(i)) { host.log("↩ باتش ${i + 1}: نسخة تانية خلصته قبلها — اتجاهلت دي"); return }
@@ -1477,16 +1455,14 @@ class Engine(
                     holdTranscript(i, p, j, relistenLow(i, xc.first, key, xc.second), prior, key, partial)   // (v331) الجمل واطية الثقة بتتسمع تاني قبل الترجمة
                     startedAt[i]?.let { recentMs.addLast(System.currentTimeMillis() - it); while (recentMs.size > 8) recentMs.pollFirst() }
                     if (hedge) { inflight.remove(i); host.log("⚡ باتش ${i + 1}: النسخة الاحتياطية خلصت الأول") }
-                    if (!hedge && fastLatched && i == rampChunk) { rampStep++; rampNext = rawEnd }   // (v1088) خطوات التسخين كانت واقفة على الخطوة 0 في مسار «تفريغ ثم ترجمة» (الزيادة كانت في المسار المباشر بس) ← الباتش الأول بيتقطّع نوافذ صغيرة (10ث مع مفتاح واحد) وكل نافذة رحلة تفريغ+ترجمة كاملة
                     return
                 }
-                if (!backupFirst && !hedge) awaitTurn(i)   // (v1081)
                 val rampWin = fastLatched && i == rampChunk
                 applyChunk(i, rawStart, rawEnd, w, j, fresh, prior)
-                if (rampWin) { rampStep++; rampNext = rawEnd }   // (v1065)
+                if (rampWin) { rampStep++; rampNext = rawEnd }   // (v1065) الخطوة الجاية أكبر
                 if (!rampWin) startedAt[i]?.let { recentMs.addLast(System.currentTimeMillis() - it); while (recentMs.size > 8) recentMs.pollFirst() }   // خطوات التسخين القصيرة ما تقلّلش حد «الباتش المتأخر»
                 if (hedge) { inflight.remove(i); host.log("⚡ باتش ${i + 1}: النسخة الاحتياطية خلصت الأول") }
-                if (rampWin) holeTried.remove(i)   // (v1065)
+                if (rampWin) holeTried.remove(i)   // (v1065) كل خطوة من الباتش السريع ليها سدّ ثغراتها
                 scheduleHoleFill(i, rawStart, rawEnd, w, key)   // برّه خانة الباتش: الباتش الجاي مايستناش سدّ الثغرات
                 if (partial) { incomplete.add(i); host.log("⚠ باتش ${i + 1} رجع ناقص — تقدر تعيده من علامة التحذير") }
                 return
@@ -1591,7 +1567,7 @@ class Engine(
     private val dialConf = ConcurrentHashMap<String, Conf>()
     /** (v742) كل طلب صوت لجيميناي بياخد بلوك «دقة السماع» في الآخر (لغات غير الإنجليزي بتتسمع غلط كتير بالصوت المضغوط) */
     private fun buildPrompt(durSec: Double, start: Double, strict: Boolean = false, chunk: Int = -1, hole: Boolean = false, holeNear: Boolean = false, tx: Boolean = false): String =
-        buildPromptCore(durSec, start, strict, chunk, hole, holeNear, tx) + (if (lightOn(chunk, hole, tx)) "" else listenBlock())   // (v1066)
+        buildPromptCore(durSec, start, strict, chunk, hole, holeNear, tx) + (if (lightOn(chunk, hole, tx)) "" else listenBlock())   // (v1066) الخفيف من غير بلوك دقة السماع الطويل
 
     private fun listenBlock(): String {
         val lang = if (detDone && srcLang.isNotBlank()) " The spoken language is $srcLang (the language name is written in Arabic)." else ""
@@ -1609,7 +1585,7 @@ class Engine(
         val dl = convDialect.let { if (it.isBlank() || it == "فصحى") "" else it }
         if (chunk >= 0) { if (dl.isEmpty()) dialOf.remove(chunk) else dialOf[chunk] = dl }
         val c = if (dl.isEmpty() || dl == conf.lang) conf else dialConf.getOrPut(dl) { conf.withLang(dl) }
-        if (lightOn(chunk, hole, tx)) return ModePrompts.fast(pb, c, durSec, effectiveGloss(), if (detDone) srcLang else "", strict)   // (v1066)
+        if (lightOn(chunk, hole, tx)) return ModePrompts.fast(pb, c, durSec, effectiveGloss(), if (detDone) srcLang else "", strict)   // (v1066) ⚡ برومبت خفيف للباتشات الأولى
         // (v209) الوضع 2+ (وكمان 3 و4 في طلبات الصوت): برومبت إنجليزي بدل القالب العربي — نفس شكل الرد فـ Parse.subs بيقراه عادي
         if (activeMode >= KeyMode.ALL_PARALLEL || tx) {   // (v239) tx يشتغل في كل الأوضاع (سدّ الثغرات بأسلوب الوضع 4)
             val prev = if (hole) "" else Subs.prevContext(subs, start)
@@ -1710,6 +1686,10 @@ class Engine(
     /** (v283) سدّ الثغرات/الفجوات بالأوفلاين نفسه (Whisper / SenseVoice / السحابي) بدل صوت جيميناي: في «تفريغ بس» وفي مسار جوجل/الخارجي وبدون مفتاح جيميناي. جيميناي مترجم = الطريقة القديمة (جيميناي) */
     private fun offFill(): Boolean = Offline.configured() && (transOnly || keyless || TrWizard.googleOn())
     private fun fillOk(): Boolean = !isClosed && (!sideOff() || offFill())
+    /**
+     * (v1065) ⚡ عرض الجمل المترجمة وهي لسه بتوصل من الـ stream (قبل ما الباتش يخلص): بتتعرض مؤقتًا بنفس شكل معاينة التفريغ،
+     * وبعدين applyChunk بيحلّ محلّها بالنسخة النهائية. مفيش done ولا persist هنا — الباتش لسه ماخلصش.
+     */
     private fun streamPreview(i: Int, p: Prep, sc: StreamSubs, acc: String, scale: Double = 1.0, shift: Double = 0.0) {
         if (isClosed || claimed.contains(i)) return
         if (sc.feed(acc) == 0) return
@@ -1958,9 +1938,7 @@ class Engine(
         val viewer = if (headless) -1 else (host.position() / ch).toInt()
         val urgent = activeMode < KeyMode.SPLIT_A || flush || switching || now - oldest > TR_MAX_WAIT_MS || (viewer >= 0 && avail.first() <= viewer + 1)
         if (!urgent && avail.size < TGROUP_MIN) return false
-        // (v1088) المشاهد مستني الباتش ده: مجموعة صغيرة (2) بدل 5 — الرد النصي مش stream فزمنه بيزيد مع حجم المجموعة، والباقي بيتترجم في اللفة اللي بعدها
-        val nearViewer = viewer >= 0 && avail.first() <= viewer + 1 && !flush && !switching && now - oldest <= TR_MAX_WAIT_MS
-        val take = avail.take(if (nearViewer) 2 else TGROUP_MAX)
+        val take = avail.take(TGROUP_MAX)
         val group = take.mapNotNull { tHold[it] }
         if (group.isEmpty()) return false
         tTaken.addAll(take); trBusy.incrementAndGet()
@@ -1975,7 +1953,6 @@ class Engine(
     }
 
     private fun translateGroup(group: List<TItem>) {
-        val tG0 = System.currentTimeMillis()   // (v1088)
         val dl = convDialect.let { if (it.isBlank() || it == "فصحى") "" else it }
         val c = if (dl.isEmpty() || dl == conf.lang) conf else dialConf.getOrPut(dl) { conf.withLang(dl) }
         val flat = ArrayList<Sub>(); val off = IntArray(group.size)
@@ -2045,7 +2022,6 @@ class Engine(
             host.log("⚠ ترجمة مجمّعة: " + (e.message ?: e.javaClass.simpleName).take(120))
         }
         if (!running || isClosed) return
-        LogStore.add("⏱ [مشغّل-توقيت] ترجمة مجمّعة: " + group.size + " باتش · " + flat.size + " جملة · " + (System.currentTimeMillis() - tG0) + "ms (جولات " + round + ")")   // (v1088)
         applyGroupTranslated(group, off, tr, pv, if (swapped) "" else dl)
     }
 
@@ -2514,9 +2490,11 @@ class Engine(
             if (tagged.size < n0) host.log("🔕 المقطع ${i + 1}: اتشالت ${n0 - tagged.size} جملة كانت فوق صمت تام")
         }
         tagged = Subs.harmonize(tagged, subs)   // توحيد ترجمة سطور الكورَس المتكررة في الأغاني
+        // (v1065) خطوة جزئية من باتش الوضع السريع: جمل الباتش نفسه برّه نافذة الخطوة دي (خطوات سابقة) بتفضل
+        val partialWin = fastLatched && i == rampChunk && (rawStart > cStart(i) + 0.05 || rawEnd < cEnd(i, currentDur()) - 0.05)
         synchronized(lock) {
             tagged = Subs.dropOverlapZone(tagged, subs.filter { it.chunk != i }, rawStart)
-            val keep = subs.filter { it.chunk != i && !(it.chunk == -1 && it.start >= rawStart && it.start < rawEnd) && !Subs.inMyZone(it, tagged, i, rawEnd) }
+            val keep = subs.filter { (it.chunk != i || (partialWin && (it.start < rawStart - 0.5 || it.start >= rawEnd + 0.5))) && !(it.chunk == -1 && it.start >= rawStart && it.start < rawEnd) && !Subs.inMyZone(it, tagged, i, rawEnd) }
             subs = Subs.merge(Subs.dedup(keep + tagged)).sortedBy { it.start }
             Subs.refreshMain(subs)
         }
@@ -2664,7 +2642,7 @@ class Engine(
         }
         try {
             bg.submit {
-                try { analyzeChars() } catch (e: Exception) { host.log("⚠ تحليل الشخصيات فشل: " + (e.message ?: "").take(100)) }
+                try { val tAc = System.currentTimeMillis(); analyzeChars(); LogStore.add("⏱ [مشغّل-توقيت] تحليل الشخصيات " + (System.currentTimeMillis() - tAc) + "ms") } catch (e: Exception) { host.log("⚠ تحليل الشخصيات فشل: " + (e.message ?: "").take(100)) }
                 finally { synchronized(lock) { charsBusy = false; autoCharsAttempts++ }; persist() }
             }
         } catch (_: Exception) { synchronized(lock) { charsBusy = false } }
@@ -2934,7 +2912,7 @@ class Engine(
     private fun runRefine(isFinal: Boolean) {
         try {
             bg.submit {
-                try { refinePass(isFinal) } catch (e: Exception) { warnUser("refine", "⚠ تنقيح الترجمة فشل — الترجمة سليمة بس من غير تنقيح"); host.log("⚠ تنقيح الترجمة فشل: " + (e.message ?: "").take(100)) }
+                try { val tRf = System.currentTimeMillis(); refinePass(isFinal); LogStore.add("⏱ [مشغّل-توقيت] تنقيح بالسياق (نهائي=" + isFinal + ") " + (System.currentTimeMillis() - tRf) + "ms") } catch (e: Exception) { warnUser("refine", "⚠ تنقيح الترجمة فشل — الترجمة سليمة بس من غير تنقيح"); host.log("⚠ تنقيح الترجمة فشل: " + (e.message ?: "").take(100)) }
                 finally { refineBusy = false }
             }
         } catch (e: Exception) { LogStore.err("Engine:refineSubmit", e); refineBusy = false }   // (v468)
@@ -3472,7 +3450,7 @@ class Engine(
         holeBusy.incrementAndGet()
         try {
             holeEx.submit {
-                try { holeFill(i, rawStart, rawEnd, w, key) }
+                try { val tHf = System.currentTimeMillis(); holeFill(i, rawStart, rawEnd, w, key); val dHf = System.currentTimeMillis() - tHf; if (dHf > 300) LogStore.add("⏱ [مشغّل-توقيت] سدّ ثغرات المقطع ${i + 1}: " + dHf + "ms") }
                 catch (e: Exception) { host.log("⚠ سدّ الثغرات في المقطع ${i + 1} فشل: " + (e.message ?: "").take(80)) }
                 finally { holeBusy.decrementAndGet() }
             }

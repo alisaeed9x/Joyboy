@@ -269,6 +269,26 @@
         <item name="bottomSheetDialogTheme">@style/ThemeOverlay.NewTube.BottomSheetDialog.Player</item>
     </style>
 
+    <!-- JOYBOY(v973): نافذة مشغّل الملفات/المتصفح (MobileLocalPlaybackActivity): سودا من أول فريم — من غير سبلاش أبيض (السبلاش كان بياخد mobile_color_background = أبيض في الثيم الفاتح)
+         ومن غير نافذة شفافة (كانت بتورّي اللون الرمادي اللي ورا) ومن غير أنيميشن فتح (الأنيميشن كان يلعب فوق الأبيض/الرمادي). الإغلاق زي ما هو. -->
+    <style name="PlayerLocalWindowAnimation" parent="PlayerWindowAnimation">
+        <item name="android:activityOpenEnterAnimation">@anim/joy_none</item>
+        <item name="android:activityOpenExitAnimation">@anim/joy_none</item>
+        <item name="android:taskOpenEnterAnimation">@anim/joy_none</item>
+        <item name="android:taskOpenExitAnimation">@anim/joy_none</item>
+        <item name="android:taskToFrontEnterAnimation">@anim/joy_none</item>
+        <item name="android:taskToFrontExitAnimation">@anim/joy_none</item>
+    </style>
+
+    <style name="Theme.NewTube.PlayerLocal" parent="Theme.NewTube.Player">
+        <item name="android:windowIsTranslucent">false</item>
+        <item name="android:windowBackground">@android:color/black</item>
+        <item name="android:windowAnimationStyle">@style/PlayerLocalWindowAnimation</item>
+        <item name="android:windowSplashScreenBackground" tools:targetApi="31">@android:color/black</item>
+        <item name="android:statusBarColor">@android:color/black</item>
+        <item name="android:navigationBarColor">@android:color/black</item>
+    </style>
+
     <style name="ThemeOverlay.NewTube.BottomSheetDialog.Player">
         <item name="android:windowLightStatusBar">false</item>
     </style>

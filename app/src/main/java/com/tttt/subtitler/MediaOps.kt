@@ -29,7 +29,16 @@ import java.util.Locale
 /** عمليات الملف من ⋮ في قايمة الفيديوهات: تفاصيل · إعادة تسمية · نقل · مشاركة · حذف.
  *  على أندرويد 10+ الملفات اللي مش بتاعة التطبيق بتحتاج موافقة النظام (نافذة تأكيد بتظهر مرة لكل عملية). */
 class MediaOps(private val act: Activity, private val ui: Ui, private val th: Theme, private val onChanged: () -> Unit) {
-    companion object { const val REQ = 4721 }
+    companion object {
+        const val REQ = 4721
+        @Volatile private var askedAllFiles = false
+    }
+    /** (v1010) «إدارة كل الملفات» ما بتتطلبش أول تثبيت: أول عملية ملفات في التشغيلة بتشرحها وتسأل، ولو لأ العملية بتكمّل بموافقة النظام كل مرة */
+    private fun gate(go: () -> Unit) {
+        if (Build.VERSION.SDK_INT < 30 || Environment.isExternalStorageManager() || askedAllFiles) { go(); return }
+        askedAllFiles = true
+        PermAsk.allFiles(act, { go() }, { go() })
+    }
     private var pending: (() -> Unit)? = null
 
     /** مع صلاحية «إدارة كل الملفات» (أو أندرويد 9-) بنتعامل مع الملف مباشرة من غير نافذة موافقة النظام */
@@ -77,7 +86,8 @@ class MediaOps(private val act: Activity, private val ui: Ui, private val th: Th
     }
 
     // ===== إعادة تسمية =====
-    fun rename(v: VideoItem) {
+    fun rename(v: VideoItem) = gate { rename0(v) }
+    private fun rename0(v: VideoItem) {
         if (busy(v)) return
         val ext = v.name.substringAfterLast('.', "")
         val base = v.name.substringBeforeLast('.', v.name)
@@ -128,7 +138,8 @@ class MediaOps(private val act: Activity, private val ui: Ui, private val th: Th
     private fun folderBusy(f: FolderItem): Boolean = f.videos.any { busy(it) }
 
     /** إعادة تسمية الفولدر: بتنقل كل فيديوهاته للمسار الجديد (الترجمات مربوطة بالاسم+الحجم فمابتتأثرش) */
-    fun renameFolder(f: FolderItem) {
+    fun renameFolder(f: FolderItem) = gate { renameFolder0(f) }
+    private fun renameFolder0(f: FolderItem) {
         if (f.videos.isEmpty()) { toast("الفولدر فاضي"); return }
         if (folderBusy(f)) return
         val rel = relOf(f.key) ?: run { toast("مقدرش أغيّر اسم الفولدر ده (مش على الذاكرة الداخلية)"); return }
@@ -159,7 +170,8 @@ class MediaOps(private val act: Activity, private val ui: Ui, private val th: Th
     }
 
     /** مسح الفولدر بكل فيديوهاته (ومعاهم الترجمات المحفوظة) */
-    fun deleteFolder(f: FolderItem) {
+    fun deleteFolder(f: FolderItem) = gate { deleteFolder0(f) }
+    private fun deleteFolder0(f: FolderItem) {
         if (f.videos.isEmpty()) { toast("الفولدر فاضي"); return }
         if (folderBusy(f)) return
         GAlert(act).setTitle("🗑 مسح الفولدر").setMessage("هتمسح «${f.name}» بكل اللي فيه (${f.videos.size} فيديو) من الجهاز نهائيًا ومعاهم الترجمات المحفوظة. متأكد؟")
@@ -183,7 +195,8 @@ class MediaOps(private val act: Activity, private val ui: Ui, private val th: Th
             }.setNegativeButton("إلغاء", null).show()
     }
 
-    fun move(v: VideoItem, folders: List<FolderItem>) {
+    fun move(v: VideoItem, folders: List<FolderItem>) = gate { move0(v, folders) }
+    private fun move0(v: VideoItem, folders: List<FolderItem>) {
         if (busy(v)) return
         val cur = relOf(v.folderKey)
         val opts = folders.mapNotNull { f -> relOf(f.key)?.let { f.name to it } }.filter { it.second != cur }.distinctBy { it.second }
@@ -215,7 +228,8 @@ class MediaOps(private val act: Activity, private val ui: Ui, private val th: Th
     }
 
     /** (v658) نقل أكتر من فيديو مرة واحدة: قايمة بأسماء الفولدرات (+ فولدر جديد) ثم نقل الكل بطلب موافقة واحد */
-    fun moveMany(vs: List<VideoItem>, folders: List<FolderItem>) {
+    fun moveMany(vs: List<VideoItem>, folders: List<FolderItem>) = gate { moveMany0(vs, folders) }
+    private fun moveMany0(vs: List<VideoItem>, folders: List<FolderItem>) {
         if (vs.isEmpty()) return
         if (vs.size == 1) { move(vs[0], folders); return }
         if (vs.any { busy(it) }) return
@@ -273,7 +287,8 @@ class MediaOps(private val act: Activity, private val ui: Ui, private val th: Th
     }
 
     // ===== حذف =====
-    fun delete(v: VideoItem) {
+    fun delete(v: VideoItem) = gate { delete0(v) }
+    private fun delete0(v: VideoItem) {
         if (busy(v)) return
         GAlert(act).setTitle("🗑 حذف الملف").setMessage("هتمسح «${v.name}» من الجهاز نهائيًا (ومعاه الترجمة/الكلمات المحفوظة له). متأكد؟")
             .setPositiveButton("احذف") { _, _ ->

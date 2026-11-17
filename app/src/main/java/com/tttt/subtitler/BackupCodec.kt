@@ -11,7 +11,8 @@ object BackupCodec {
     const val FORMAT = "subtitler-backup"
     const val VERSION = 1
     /** مفاتيح مابتتحفظش: قفل المجلد + علامة استرجاع المفاتيح التلقائي */
-    fun skip(k: String): Boolean = k == "kv_init" || k.startsWith("lock_") || k == "gh_token"   // (v856) توكن GitHub مابيتحفظش في النسخ الاحتياطية
+    // (v1003) PIN الاستوديو مابيتحفظش أبدًا — بيتعمل من جديد على الجهاز الجديد (pinSet بس بيتسافر في النسخة الشاملة).
+    fun skip(k: String): Boolean = k == "kv_init" || k.startsWith("lock_") || k == "gh_token" || k == "studio_pin_hash" || k == "studio_pin_salt" || k == "studio_pin_fails" || k == "studio_pin_until"   // (v856) توكن GitHub مابيتحفظش في النسخ الاحتياطية
     /** مفاتيح المفاتيح: النسخة الفاضية ما بتمسحش مفاتيح موجودة */
     val SECRET_FIELDS = setOf("keys", "backup", "extra", "viskeys")
 

@@ -22,6 +22,7 @@ class LogicTestsRunner {
         "devtests.securitytest.CareSecurityTestKt",
         "devtests.coveragetest.CoverageTestKt",
         "devtests.enginetest.EngineTestKt",
+        "devtests.fastmodetest.FastModeTestKt",
         "devtests.giftest.GifTestKt",
         "devtests.iconpacktest.IconPackTestKt",
         "devtests.irunifiedtest.IrUnifiedTestKt",

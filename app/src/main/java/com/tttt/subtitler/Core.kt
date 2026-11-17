@@ -61,6 +61,9 @@ class Conf(
     /** نسخة من الإعدادات بلهجة تانية (الباتشات الجديدة بتتبعت باللهجة المختارة مباشرة بدل فصحى ثم تحويل) */
     fun withLang(l: String): Conf = Conf(keys, backup, model, l, style, chunkSec, ahead, audioTrack, manualChars, manualGloss, autoChars,
         autoPronouns, autoTemplate, parallelPerKey, hiTiming, gapFill, soundTags, visKeys, partialRefine, refine, keyMode)
+    /** (v990) نسخة بموديل جيميناي تاني (إعدادات متقدمة لكل ترجمة في مكتبة الترجمات) */
+    fun withModel(m: String): Conf = Conf(keys, backup, m, lang, style, chunkSec, ahead, audioTrack, manualChars, manualGloss, autoChars,
+        autoPronouns, autoTemplate, parallelPerKey, hiTiming, gapFill, soundTags, visKeys, partialRefine, refine, keyMode)
     /** (v210) نسخة بمفاتيح أساسية تانية (الوضعين 3 و4: حوض الترانسكريبشن وحوض الترجمة) */
     fun withKeys(k: List<String>): Conf = Conf(k, backup, model, lang, style, chunkSec, ahead, audioTrack, manualChars, manualGloss, autoChars,
         autoPronouns, autoTemplate, parallelPerKey, hiTiming, gapFill, soundTags, visKeys, partialRefine, refine, keyMode)
@@ -95,10 +98,10 @@ object KeyMode {
 // ===== ترميز الإعدادات (نقي — متختبر) =====
 object CfgCodec {
     /** مفاتيح بتتخزن Boolean / Int فعليًا بعد الهجرة */
-    val BOOLS = setOf("autochars", "autopron", "autotpl", "hitiming", "gapfill", "soundtags", "prefine", "refine2pass",
+    val BOOLS = setOf("autochars", "autopron", "autotpl", "hitiming", "gapfill", "soundtags", "prefine", "refine2pass", "fastmode",
         "sub_nobg", "sub_plain", "sub_uni_on", "sub_split_on", "sub_two_lines", "sub_punct")
     val INTS = setOf("chunk", "ahead", "hls_ahead", "atrack", "parallel", "sub_scale", "sub_bgopa", "sub_blur", "sub_aspeed", "sub_dual", "sub_split", "kmode", "nmain", "nback")
-    const val VERSION = 2
+    const val VERSION = 3
     fun bool(v: Any?, d: Boolean): Boolean = when (v) {
         null -> d
         is Boolean -> v
@@ -215,6 +218,8 @@ object Cfg {
         val e = p.edit()
         for (k in CfgCodec.BOOLS) { val v = p.all[k]; if (v is String) e.putBoolean(k, CfgCodec.bool(v, false)) }
         for (k in CfgCodec.INTS) { val v = p.all[k]; if (v is String) v.trim().toIntOrNull()?.let { e.putInt(k, it) } }
+        // (v999) أسلوب "+18" اتشال: أي قيمة محفوظة بيه — في قناة الأسلوب الحي (tone_style) أو قناة القالب (style) — بتتحوّل للافتراضي الجديد «تلقائي»
+        for (k in listOf("tone_style", "style")) { val v = p.all[k]; if (v is String && v == "+18") e.putString(k, "تلقائي") }
         e.putInt("cfgv", CfgCodec.VERSION).apply()
     }
     fun str(k: String, d: String = "") = CfgCodec.str(raw(k), d)
@@ -274,7 +279,7 @@ object Cfg {
         val main = if (srv) listOf(FreeLlm.KEY) else if (omni || strict || (main0.isEmpty() && rf.isEmpty() && bk.isEmpty() && TrWizard.googleOn())) listOf(LocalKey.ID) else if (Strict.freeGem() && main0.isEmpty()) listOf(FreeLlm.KEY) else w(main0)
         return Conf(
             main, bk, str("model", Models.DEFAULT).trim().ifEmpty { Models.DEFAULT },
-            str("lang", "فصحى"), str("style", "حرفي"),
+            str("lang", "فصحى"), str("style", "تلقائي"),
             int("chunk", 60).coerceIn(10, 600), int("ahead", 3).coerceIn(0, 50), int("atrack", 1).coerceAtLeast(1),
             emptyList() /* جدول الشخصيات اليدوي اتشال — الشخصيات بتتحلل تلقائيًا */, str("gloss"),
             true, true, true,   // (v229) تحليل الشخصيات · تصحيح الضمائر · ترجمة القالب: أوتوماتيك دايمًا (اتشال مفتاحهم من الإعدادات)
@@ -387,7 +392,7 @@ class PromptBuilder(private val readAsset: (String) -> String) {
             "- ممنوع الألفاظ الفصحى اللي المصريين مابيقولوهاش: لقد، سوف، لماذا، ماذا، هذا/هذه/هؤلاء، هناك، الآن، أريد، كيف، أين، متى، الذي/التي، لكن، سوى، حيث، يجب أن، أستطيع.\n" +
             "- استعمل بدالها: ده/دي/دول، إيه، ليه، إزاي، فين، إمتى، مين، اللي، بس، عايز/عايزة، مش، مفيش، لسه، دلوقتي، كده، عشان/علشان، أوي، خالص، برضه، لازم، أقدر.\n" +
             "- الأفعال بالتصريف المصري: المضارع بـ\"ب\" (بيقول، بتعمل، بنروح)، المستقبل بـ\"ه\" (هعمل، هنروح)، النفي بـ\"ما…ش\" (ماعرفش، مشفتهوش)، والأمر بالمصري (قول، تعالى، خليك).\n" +
-            "- حافظ على الأسلوب المحدد (حرفي/شعبي/جرئ/+18) بس بالمصري، وماتغيّرش المعنى.\n"
+            "- حافظ على الأسلوب المحدد (تلقائي/حرفي/شعبي/جرئ) بس بالمصري، وماتغيّرش المعنى.\n"
         else -> "\n═══ قواعد اللهجة ($lang) (إلزامي) ═══\n- 🔴 كل translated لازم يبقى بلهجة $lang الحقيقية زي ما أهلها بيتكلموا فعلًا: مفردات وتعبيرات وتصريفات اللهجة، مش فصحى ولا مصري. ممنوع الفصحى الرسمية إلا لو الكلام الأصلي رسمي فعلًا.\n- حافظ على الأسلوب المحدد وماتغيّرش المعنى.\n"
     }
 
@@ -399,6 +404,7 @@ class PromptBuilder(private val readAsset: (String) -> String) {
             "- حقل original بس هو اللي بيتكتب بلغة الصوت الأصلية (وtranslated_en_pivot للإنجليزي). translated ما بيبقاش أبدًا بلغة الصوت الأصلية ولا بالإنجليزي.\n" +
             "- لغة الترجمة النهائية ثابتة ($target) مهما كانت لغة التعليمات اللي فوق أو لغة الصوت أو لغة المقاطع اللي قبل كده.\n"
         t += dialectBlock(c.lang)
+        t += "- 🔴 ترجم اللي اتقال بس — متضيفش ألفاظ ولا معاني مش موجودة في الأصل، ومتخففش اللي موجود.\n"
         if (strict) t += "- ⚠⚠ الرد اللي فات فيه جمل في translated مش بالعربي. راجع كل subtitle قبل ما ترد وتأكد إن كل translated عربي بـ$target.\n"
         return t
     }
@@ -424,7 +430,9 @@ class PromptBuilder(private val readAsset: (String) -> String) {
 
     /** (v288) رقم القالب للهجة + أسلوب + حالة لغة الصوت (first/ja/en/other) بنفس احتياطي templateId */
     fun idFor(lang: String, style: String, case: String): String {
-        var id = index.optString("$lang|$style|$case")
+        // (v999) «تلقائي» مالوش ملف قالب خاص: بيستخدم قالب «حرفي» لنفس اللهجة والحالة — سلوك تلقائي لكل جملة بييجي من toneBlock/styleEn/styleOf مش من القالب
+        val eff = if (style == "تلقائي") "حرفي" else style
+        var id = index.optString("$lang|$eff|$case")
         if (id.isEmpty()) id = index.optString("$lang|حرفي|$case")
         if (id.isEmpty()) id = index.optString("مصري|حرفي|$case")
         return id
@@ -677,6 +685,7 @@ object Api {
     private val gemSeq = java.util.concurrent.atomic.AtomicInteger(0)
     /** (v468) خطاف «طلب بطيء»: بيتنادى مرة واحدة لو طلب عدى 20 ثانية وهو طاير (المحرك بيوصله بشريط الحالة) */
     @Volatile var onSlow: ((String) -> Unit)? = null
+    /** (v1004) رد HTML بدل JSON (صفحة خطأ/بروكسي/VPN/DNS بيحجب Gemini) — رسالة مفهومة بدل «<!DOCTYPE html…» */
     fun looksHtml(t: String): Boolean { val x = t.trimStart().take(40).lowercase(); return x.startsWith("<!doctype") || x.startsWith("<html") || x.startsWith("<?xml") }
     fun htmlMsg(code: Int, txt: String): String {
         try { LogStore.add("⚠ [Api] رد HTML بدل JSON (HTTP " + code + "): " + txt.replace(Regex("\\s+"), " ").take(300)) } catch (_: Throwable) {}
@@ -722,7 +731,9 @@ object Api {
         var v = thinkVar[model] ?: 0
         var mt = mt0
         while (true) {
-            try { return generateOnce(model, key, prompt, wav, mt, temp, json, search, thinkCfg(model, v)) }
+            try {
+                return generateOnce(model, key, prompt, wav, mt, temp, json, search, thinkCfg(model, v))
+            }
             catch (e: ApiErr) {
                 val r = e.raw
                 if (e.code == 400 && mt > 8192 && (r.contains("max_output_tokens", true) || r.contains("maxOutputTokens", true) || r.contains("output token", true))) {
@@ -734,6 +745,11 @@ object Api {
         }
     }
 
+    /**
+     * (v1065 — وضع الترجمة السريعة ⚡) نفس generate بس بـ streamGenerateContent?alt=sse:
+     * onText بيتنده بالنص المتجمّع كل ما يوصل جزء من الرد، فالجمل المترجمة تظهر قبل ما الباتش كله يخلص.
+     * أي حالة خاصة (مفتاح محلي/FreeLLM، أو 400 بسبب التفكير/سقف التوكنز) بتروح لـ generate العادي.
+     */
     fun generateStream(model: String, key: String, prompt: String, wav: ByteArray?,
                        maxTokens: Int, temp: Double, onText: (String) -> Unit): Result {
         if (key == LocalKey.ID || FreeLlm.isWrapped(key) || FreeLlm.isKey(key)) return generate(model, key, prompt, wav, maxTokens, temp, true, false)
@@ -869,10 +885,8 @@ object Api {
             val stream = if (code < 300) c.inputStream else c.errorStream
             val txt = stream?.bufferedReader(Charsets.UTF_8)?.use { it.readText() } ?: ""
             NetUse.api(total, txt)
-            if (code >= 300) {
-                val m = try { JSONObject(txt).getJSONObject("error").getString("message") } catch (_: Exception) { "HTTP $code" }
-                throw ApiErr(code, m)
-            }
+            if (code >= 300) throw ApiErr(code, errMsg(code, txt))
+            if (looksHtml(txt)) throw ApiErr(502, htmlMsg(code, txt))
             val root = JSONObject(txt)
             val cand = root.optJSONArray("candidates")?.optJSONObject(0)
             if (cand == null) {
@@ -1037,6 +1051,17 @@ class Ranges {
         r.clear(); r.addAll(m)
     }
     @Synchronized fun covers(s: Double, e: Double) = r.any { it[0] <= s + 0.05 && it[1] >= e - 0.05 }
+    /** (v1065) أول نقطة >= from مش مغطّاة (بحد أقصى to). to لو كله مغطّى */
+    @Synchronized fun nextGap(from: Double, to: Double): Double {
+        var p = from
+        for (x in r) { if (x[1] <= p + 0.05) continue; if (x[0] <= p + 0.05) p = x[1] else break }
+        return minOf(p, to)
+    }
+    /** (v1065) نهاية المنطقة الفاضية اللي بتبدأ عند from = بداية أول مجال مترجم بعدها (أو to) */
+    @Synchronized fun gapEnd(from: Double, to: Double): Double {
+        for (x in r) if (x[0] > from + 0.05) return minOf(x[0], to)
+        return to
+    }
     @Synchronized fun list(): List<DoubleArray> = r.map { it.copyOf() }
     @Synchronized fun total(): Double = r.sumOf { it[1] - it[0] }
     @Synchronized fun clear() = r.clear()

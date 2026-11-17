@@ -197,8 +197,7 @@ object SubSidecar {
             // (v661) تطابق متسامح: نفس الاسم · name.ar.srt · أو نفس الاسم بعد شيل المسافات/الرموز + لاحقة قصيرة (لغة) — من غير ما «movie1» تلقط «movie10»
             fun matches(name: String): Boolean {
                 val n = name.lowercase()
-                // (v1070) نفس الاسم بس — «movie.2.srt» و«movie.trailer.srt» مابقوش يتطابقوا (الـ startsWith القديم كان بياخد أي لاحقة)
-                if (n == base) return true
+                if (n == base || n.startsWith("$base.")) return true
                 val nn = norm(n)
                 if (nb.isEmpty() || !nn.startsWith(nb)) return false
                 // (v703) اللاحقة لازم تكون علامة لغة/نوع بس (ar · eng · sub · forced…) — مفيش أرقام ولا كلام تاني، عشان «1» ما تلقطش «10» ولا «movie» تلقط «movies2»
@@ -215,6 +214,24 @@ object SubSidecar {
                 } catch (e: Throwable) { LogStore.err("Player:sidecarMS", e) }
             }
             var c = files.filter { it.isFile && it.extension.lowercase() in exts && matches(it.nameWithoutExtension) }
+            // (v667) مفيش تطابق بالاسم: فولدر فيه «1.mp4» و«ترجمة رقم 1.srt» (أو فولدر فرعي اسمه ترجمة/subs) ← نطابق بالرقم الأخير في الاسم
+            if (c.isEmpty()) {
+                fun digits(x: String): String = buildString { for (ch in x) append(if (ch in '\u0660'..'\u0669') ('0' + (ch - '\u0660')) else if (ch in '\u06F0'..'\u06F9') ('0' + (ch - '\u06F0')) else ch) }
+                fun lastNum(x: String): Long? = Regex("\\d+").findAll(digits(x)).lastOrNull()?.value?.toLongOrNull()
+                val vn = lastNum(f.nameWithoutExtension)
+                if (vn != null) {
+                    val pool = ArrayList<java.io.File>(files)
+                    try {
+                        files.filter { it.isDirectory && Regex("ترجم|subs?|subtitle|caption|srt", RegexOption.IGNORE_CASE).containsMatchIn(it.name) }
+                            .forEach { d -> d.listFiles()?.let { pool.addAll(it) } }
+                    } catch (_: Throwable) {}
+                    // (v703) الرقم لوحده مش كفاية: الفيديو اسمه رقم بس، أو حروف الاتنين متشابهة (غير كده كان بياخد ملف فيلم تاني)
+                    val vl = norm(f.nameWithoutExtension.filter { !it.isDigit() })
+                    c = pool.filter { it.isFile && it.extension.lowercase() in exts && lastNum(it.nameWithoutExtension) == vn &&
+                        (vl.isEmpty() || norm(it.nameWithoutExtension.filter { ch -> !ch.isDigit() }).let { sl -> sl.isNotEmpty() && (sl.contains(vl) || vl.contains(sl)) }) }
+                    if (c.isNotEmpty()) LogStore.add("💬 سوفت صب: تطابق بالرقم ($vn) ← «" + c.first().name + "»")
+                }
+            }
             val r = c.sortedWith(compareBy({ x -> val n = x.name.lowercase(); if (n.contains(".ar.") || n.contains("arab") || n.contains(".ara.")) 0 else 1 }, { x -> exts.indexOf(x.extension.lowercase()) }, { it.name })).firstOrNull()
             LogStore.add("💬 سوفت صب: فحص ملف جنب الفيديو — الفولدر فيه " + files.size + " ملف، " + (if (r != null) "لقيت «" + r.name + "»" else "مفيش ملف ترجمة بنفس الاسم"))
             r

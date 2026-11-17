@@ -78,8 +78,15 @@ object NavSnap : Application.ActivityLifecycleCallbacks {
         } catch (_: Throwable) { shot = null }
     }
 
+    /** (v973) أكتيفيتيز لسه متبنّية أول مرة: بس دي بتاخد اللقطة. اللي كانت شغّالة أصلًا (بتتجاب قدّام) شاشتها جاهزة — اللقطة هتتكرر مع أنيميشن النافذة */
+    private val justCreated = java.util.WeakHashMap<Activity, Boolean>()
+
     override fun onActivityStarted(a: Activity) {
         try {
+            // (v1006) المشغّل مبياخدش لقطة صفحة قديمة أبدًا — كانت بتظهر لقطة «آخر صفحة استوديو» فوق الفيديو لحظة وتعمل رعشة
+            val cn = a.javaClass.simpleName
+            if (cn.contains("Playback") || cn == "PlayerActivity") { shot?.recycle(); shot = null; from = null; justCreated.remove(a); return }
+            if (justCreated.remove(a) == null) { shot?.recycle(); shot = null; from = null; return }
             val bmp = shot ?: return
             if (SystemClock.uptimeMillis() - shotAt > 2000L || from?.get() === a) return
             shot = null; from = null
@@ -110,7 +117,7 @@ object NavSnap : Application.ActivityLifecycleCallbacks {
         } catch (_: Throwable) {}
     }
 
-    override fun onActivityCreated(a: Activity, b: Bundle?) {}
+    override fun onActivityCreated(a: Activity, b: Bundle?) { justCreated[a] = true }
     override fun onActivityResumed(a: Activity) { cur = WeakReference(a) }
     override fun onActivityStopped(a: Activity) {}
     override fun onActivitySaveInstanceState(a: Activity, b: Bundle) {}

@@ -605,7 +605,7 @@ class TransferActivity : Activity() {
         val items = picked().mapNotNull { it.rem }
         if (items.isEmpty()) { Notice.show(this, "اختار ملفات من التلفزيون الأول", 2200L); return }
         if (XRemote.download(applicationContext, items)) {
-            Notice.show(this, "⬇ بدأ تنزيل " + items.size + " ملف — التقدم في زرار المهام، والملفات في فولدراتها (Joyboy)", 4200L)
+            Notice.show(this, "⬇ بدأ تنزيل " + items.size + " ملف — التقدم في مركز التحميل، والملفات في فولدراتها (Joyboy)", 4200L)
             sel.clear(); adapter.notifyDataSetChanged(); updateInfo()
         } else Notice.show(this, "⚠ مش متصل بالتلفزيون", 2600L)
     }

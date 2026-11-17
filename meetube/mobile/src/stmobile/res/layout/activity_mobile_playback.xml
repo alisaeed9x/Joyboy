@@ -113,37 +113,6 @@
                     android:layout_gravity="bottom"
                     android:background="@drawable/mobile_player_bottom_scrim" />
 
-                <!-- Top bar: back + title -->
-                <ImageButton
-                    android:id="@+id/mobile_player_back"
-                    android:layout_width="@dimen/mobile_player_icon_button"
-                    android:layout_height="@dimen/mobile_player_icon_button"
-                    android:layout_gravity="top|start"
-                    android:layout_marginStart="4dp"
-                    android:layout_marginTop="10dp"
-                    android:background="?attr/selectableItemBackgroundBorderless"
-                    android:contentDescription="@string/mobile_player_minimize"
-                    android:padding="12dp"
-                    android:scaleType="fitCenter"
-                    android:src="@drawable/ic_player_minimize"
-                    android:tint="@color/mobile_player_on_video" />
-
-                <!-- MEETUBE(audio-only): headphones - play the sound alone (the video track is dropped,
-                     the thumbnail stays), and Home keeps the audio going instead of a PiP window. -->
-                <com.newtube.mobile.ui.playback.PlayerButton
-                    android:id="@+id/mobile_player_audio"
-                    android:layout_width="@dimen/mobile_player_icon_button"
-                    android:layout_height="@dimen/mobile_player_icon_button"
-                    android:layout_gravity="top|start"
-                    android:layout_marginStart="52dp"
-                    android:layout_marginTop="10dp"
-                    android:background="?attr/selectableItemBackgroundBorderless"
-                    android:contentDescription="@string/mobile_player_audio_only"
-                    android:padding="12dp"
-                    android:scaleType="fitCenter"
-                    android:src="@drawable/ic_player_headphones"
-                    android:tint="@color/mobile_player_audio_tint" />
-
                 <!-- paddingEnd must clear the full top-right options row (mobile_player_options):
                      3 icon buttons * 48dp (no end margin) = 144dp. Otherwise the wrapped
                      title runs under the leftmost option (cast) icon. -->
@@ -211,6 +180,30 @@
                     android:layout_marginTop="10dp"
                     android:gravity="center_vertical"
                     android:orientation="horizontal">
+
+                    <!-- JOYBOY(v954): minimize (chevron) moved from the top-start corner into the options row, next to the gear/headphones -->
+                    <ImageButton
+                        android:id="@+id/mobile_player_back"
+                        android:layout_width="@dimen/mobile_player_icon_button"
+                        android:layout_height="@dimen/mobile_player_icon_button"
+                        android:background="?attr/selectableItemBackgroundBorderless"
+                        android:contentDescription="@string/mobile_player_minimize"
+                        android:padding="12dp"
+                        android:scaleType="fitCenter"
+                        android:src="@drawable/ic_player_minimize"
+                        android:tint="@color/mobile_player_on_video" />
+
+                    <!-- JOYBOY(v954): headphones (audio-only) moved from the top-start corner into the options row -->
+                    <com.newtube.mobile.ui.playback.PlayerButton
+                        android:id="@+id/mobile_player_audio"
+                        android:layout_width="@dimen/mobile_player_icon_button"
+                        android:layout_height="@dimen/mobile_player_icon_button"
+                        android:background="?attr/selectableItemBackgroundBorderless"
+                        android:contentDescription="@string/mobile_player_audio_only"
+                        android:padding="12dp"
+                        android:scaleType="fitCenter"
+                        android:src="@drawable/ic_player_headphones"
+                        android:tint="@color/mobile_player_audio_tint" />
 
                     <!-- Cast picker (casting wave): lists DIAL-discovered TVs + paired screens.
                          Route B only for now; see com.newtube.mobile.casting. -->

@@ -164,7 +164,14 @@ open class GDialog(ctx: Context, theme: Int = 0) : Dialog(ctx, theme) {
         super.onBackPressed()
     }
 
+    /** (v953) PlayerTrace: لمس جوه الشيت بيتسجّل مباشرة من هنا (من غير reflection) — بيتجاهل التكرار لو الـcallback hook سجّله */
+    override fun dispatchTouchEvent(ev: MotionEvent): Boolean {
+        try { com.newtube.mobile.ui.common.PlayerTrace.touchWindow(window?.decorView, ev) } catch (_: Throwable) {}
+        return super.dispatchTouchEvent(ev)
+    }
+
     override fun show() {
+        try { com.newtube.mobile.ui.common.PlayerTrace.mark("sheet show (" + javaClass.simpleName + ")") } catch (_: Throwable) {}   // (v953)
         seq++; closing = false
         if (!plain) Glass.styleWindow(this)
         try { TvFocus.attachWindow(context, window, Glass.theme().primary) } catch (_: Throwable) {}   // (v477 م3)
@@ -187,6 +194,7 @@ open class GDialog(ctx: Context, theme: Int = 0) : Dialog(ctx, theme) {
         if (closing) return
         if (!isShowing || v == null || Looper.myLooper() != Looper.getMainLooper()) { realDismiss(); return }
         closing = true
+        try { com.newtube.mobile.ui.common.PlayerTrace.sheetDismiss() } catch (_: Throwable) {}   // (v953) بداية أنيميشن الخروج
         val my = seq
         try { Glass.exit(this) { if (closing && my == seq) { closing = false; realDismiss() } } } catch (_: Throwable) { closing = false; realDismiss(); return }
         // احتياطي لو الأنيميشن اتلغى
@@ -307,9 +315,24 @@ class GAlert(private val ctx: Context) {
     fun create(): Dialog = build().first
 
     fun show(): Dialog {
+        // (v1044) لو الأمر جاي من ريموت الموبايل: قايمة الاختيار ما تتعرضش على التلفزيون — بتتسجّل وتتبعت للموبايل يعرضها
+        val its = items
+        if (RcCapture.active && its != null && view == null) {
+            RcCapture.captured = RcCapture.Item((title ?: "").toString(), its.map { it.toString() }, itemsCb)
+            return Dialog(ctx)
+        }
         val (d, col) = build()
         d.show()
         col?.let { Motion.stagger(it, 8, 35L) }
         return d
     }
+}
+
+
+/** (v1044) التقاط قوايم الاختيار (GAlert.setItems) اللي بتتفتح من أمر ريموت الموبايل عشان تتعرض على الموبايل مش التلفزيون */
+object RcCapture {
+    @Volatile var active = false
+    @Volatile var captured: Item? = null
+    class Item(val title: String, val labels: List<String>, val cb: android.content.DialogInterface.OnClickListener?)
+    val noopDi = object : android.content.DialogInterface { override fun cancel() {}; override fun dismiss() {} }
 }

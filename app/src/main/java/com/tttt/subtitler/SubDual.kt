@@ -108,7 +108,7 @@ object SubDual {
                 val eng = if (engIn == "gemini" && SubFileTr.hasGemKeys()) "gemini" else "google"
                 if (engIn == "gemini" && eng == "google") { say("⚠ مفيش مفتاح جيميناي على الموبايل — الموبايل مش هيترجم (ما حوّلتش لجوجل عشان اللهجة) والتلفزيون بيكمّل"); status = ""; return@Thread }
                 val lang = dia.ifBlank { "فصحى" }
-                val style = SubFileTr.styleOf(if (sty == "حرفي") "" else sty, str, Cfg.str("style", "حرفي").ifBlank { "حرفي" })
+                val style = SubFileTr.styleOf(sty, str, Cfg.str("style", "تلقائي").ifBlank { "تلقائي" })
                 val engName = if (eng == "gemini") "جيميناي" else "جوجل"
                 say("📱 الموبايل بيترجم " + cues.size + " جملة بـ " + engName + " (التلفزيون كمان بيحاول)")
                 var lastSay = 0L

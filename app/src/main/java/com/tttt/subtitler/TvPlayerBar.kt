@@ -55,6 +55,7 @@ class TvPlayerBar(private val act: Activity, private val ui: Ui, private val th:
         fun covSegs(): List<DoubleArray> = emptyList()
         fun pendSegs(): List<DoubleArray> = emptyList()
         fun refineSegs(): List<DoubleArray> = emptyList()
+        fun sentSegs(): List<DoubleArray> = emptyList()   // (دمج v1081)
     }
 
     private val h = Handler(Looper.getMainLooper())
@@ -167,7 +168,7 @@ class TvPlayerBar(private val act: Activity, private val ui: Ui, private val th:
             val d = a.dur(); val sp = a.scrubPos(); val p = if (sp >= 0) sp else a.pos()
             cur.text = PlayerLogic.clock(p); total.text = if (d > 0) PlayerLogic.clock(d) else "--:--"
             track.frac = if (d > 0) (p.toFloat() / d).coerceIn(0f, 1f) else 0f
-            track.durSec = d / 1000.0; track.cov = a.covSegs(); track.pend = a.pendSegs(); track.refine = a.refineSegs()   // (v693)
+            track.durSec = d / 1000.0; track.cov = a.covSegs(); track.pend = a.pendSegs(); track.refine = a.refineSegs(); track.sent = a.sentSegs()   // (v693) · (دمج v1081)
             track.invalidate()
             playB.text = if (a.playing()) "⏸" else "▶"
             if (slim) {
@@ -196,6 +197,7 @@ class TvPlayerBar(private val act: Activity, private val ui: Ui, private val th:
         var cov: List<DoubleArray> = emptyList()
         var pend: List<DoubleArray> = emptyList()
         var refine: List<DoubleArray> = emptyList()
+        var sent: List<DoubleArray> = emptyList()   // (دمج v1081) أزرق فاتح = اتبعت ولسه ما رجعش
         private val p = Paint(Paint.ANTI_ALIAS_FLAG)
         private fun strip(c: Canvas, w: Float, y: Float, hh: Float, segs: List<DoubleArray>, color: Int, trackColor: Int?) {
             val rad = hh / 2f
@@ -223,6 +225,7 @@ class TvPlayerBar(private val act: Activity, private val ui: Ui, private val th:
                 strip(c, w, cy + th / 2 + 3f * d, 4f * d, cov, 0xFF22C55E.toInt(), 0x33FFFFFF)
                 if (pend.isNotEmpty()) strip(c, w, cy - th / 2 - 7f * d, 3f * d, pend, 0xFFF59E0B.toInt(), null)
                 if (refine.isNotEmpty()) strip(c, w, cy - th / 2 - 7f * d, 3f * d, refine, 0xFF3B82F6.toInt(), null)
+                if (sent.isNotEmpty()) strip(c, w, cy - th / 2 - 11f * d, 3f * d, sent, 0xFF2DA8FF.toInt(), null)   // (دمج v1081)
             }
             if (isFocused) { p.color = Color.WHITE; c.drawCircle((w * frac).coerceIn(th, w - th), cy, 9f * d, p) }
         }

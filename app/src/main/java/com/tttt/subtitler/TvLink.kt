@@ -379,7 +379,8 @@ object TvLink {
         }
         val st = (if (useBr) BrowserActivity.remoteState() else if (useMt) MtTvPlayer.state() else PlayerActivity.remoteState()) ?: return ok(JSONObject().put("none", true))
         val note = if (useBr || useMt) "" else PlayerActivity.takeRemoteNote()   // (v799) رسالة الزرار بتتعرض على الموبايل مش التلفزيون
-        return ok(JSONObject().put("st", st).apply { if (note.isNotEmpty()) put("note", note) })
+        val pm = if (useBr || useMt) null else PlayerActivity.takePm()   // (v1044) قايمة اختيار تتعرض على الموبايل
+        return ok(JSONObject().put("st", st).apply { if (note.isNotEmpty()) put("note", note); if (pm != null) put("pm", pm) })
     }
 
     /** (v684) استقبال ملف ترجمة من الموبايل على قطع (كل قطعة نص ≤ ~50 ألف حرف عشان حد البودي 256KB). آخر قطعة بتركّب الملف وتسلّمه لمشغّل الفيديو */
@@ -617,8 +618,7 @@ object TvLink {
         val j = try { JSONObject(r.bodyText()) } catch (_: Exception) { return err(403, "bad") }
         val u = j.optString("url").trim()
         var startMs = j.optLong("startms", 0L)   // (v543) كمّل من نفس المكان
-        // (v1056) الموبايل اختار «ابدأ من جديد» ← تجاهل التقدّم المحفوظ هنا
-        if (startMs < 0L) { startMs = 0L; StartFresh.arm() }
+        if (startMs < 0L) { startMs = 0L; StartFresh.arm() }   // (v1056) الموبايل اختار «ابدأ من جديد» ← تجاهل التقدّم المحفوظ هنا
         if (u.startsWith("tv://", true)) return openLocal(u.substring(5).trim(), startMs)   // (v543 م3) فيديو من مكتبة التلفزيون
         if (!(u.startsWith("http://", true) || u.startsWith("https://", true))) return err(403, "badurl")
         val title = j.optString("title")

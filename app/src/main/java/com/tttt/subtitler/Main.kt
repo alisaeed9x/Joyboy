@@ -56,7 +56,6 @@ class MainActivity : Activity() {
     private var ytTvMode = false   // (v532) جاي من زرار «يوتيوب» في الريموت: كل فيديو بيسأل «تشغّله على التلفزيون؟» والرجوع بيرجّع للريموت
     private var ytTvSent = false
     private var fromTv = false   // (v467) الزيارة دي جاية من واجهة التلفزيون: قفل الإعدادات/الرجوع من الجذر يرجّع لها
-    private var browserLoadingOv: View? = null   // (v1071) صفحة الانتقال للمتصفح
     private val baseLangs = listOf("ar" to "العربية", "en" to "English", "fr" to "Français", "es" to "Español", "de" to "Deutsch", "tr" to "Türkçe", "hi" to "हिन्दी", "ko" to "한국어", "ja" to "日本語", "zh" to "中文")   // (v467) اللغة الأساسية
     // (v469) D7 وضع النص الكبير: fontScale على مستوى الـ Context فبيكبّر كل نصوص الواجهة (المقاسة بـ SP) بنسبة ثابتة ٪٢٥
     override fun attachBaseContext(nb0: android.content.Context) {
@@ -117,11 +116,9 @@ class MainActivity : Activity() {
     private fun webSearch(q: String) { saveCfgFn?.invoke(); NavAnim.set(curTab, 2); startActivity(Intent(this, BrowserActivity::class.java).putExtra("start", "https://www.google.com/search?q=" + java.net.URLEncoder.encode(q, "UTF-8"))) }
     private var fabHide = false
     /** (v336) الزرار العايم اتشال؛ الدالة دلوقتي بتحدّث عدّاد زرار «المهام» في الشريط السفلي */
-    private fun updateTasksFab() { try { val a = TaskCenter.active() + BgJobs.jobs.count { it.active }; val t = TaskCenter.total() + BgJobs.jobs.size; val n = if (a > 0) a else t; navUi?.label(5, if (n > 0) "المهام ($n)" else "المهام"); tasksFabUi?.let { it.hidden = fabHide || curTab == 5 } } catch (_: Throwable) {} }
-    private var toolsUiM: ToolsUi? = null
-    private var pendingTool = ""
-    private var pendingSrc: ToolSrc? = null
+    private fun updateTasksFab() { try { val a = TaskCenter.active(); val t = TaskCenter.total(); val n = if (a > 0) a else t; navUi?.label(5, if (n > 0) "مركز التحميل ($n)" else "مركز التحميل"); tasksFabUi?.let { it.hidden = fabHide || curTab == 5 } } catch (_: Throwable) {} }
     override fun onCreate(b: Bundle?) {
+        TabNav.pendingMain = null   // (v973)
         val t0Boot = android.os.SystemClock.uptimeMillis()   // (v834) قياس زمن onCreate + بداية عدّ السبلاش
         NetUse.init(); NetGate.apply(this)
         // (v834) NetLedger/NetLog بيقروا ملفات JSON (لحد 45 يوم) ويركّبوا ProxySelector: ما ينفعش يعطّلوا أول رسمة — خيط خلفي
@@ -132,6 +129,17 @@ class MainActivity : Activity() {
         ytTvMode = intent?.getBooleanExtra("tv_target", false) == true
         if (fromPlayer) setTheme(android.R.style.Theme_Translucent_NoTitleBar)
         super.onCreate(b)
+        // (v985) استعادة PiP من أيقونة اللانشر — منقولة من SplashActivity بتاع MeeTube
+        // (هي اللي كانت بتعملها قبل ما يتشال فلتر اللانشر منها): ضغطة الأيقونة والمشغّل
+        // مثبّت في PiP لازم تكبّر المشغّل بدل ما تفتح الرئيسية. قبل أي حاجة تانية.
+        if (intent?.action == Intent.ACTION_MAIN && intent?.hasCategory(Intent.CATEGORY_LAUNCHER) == true) {
+            try {
+                if (com.newtube.mobile.MobileMainApplication.booted()?.restorePictureInPictureFromLauncher(this) == true) {
+                    finish()
+                    return
+                }
+            } catch (_: Throwable) {}
+        }
         if (fromPlayer) requestedOrientation = if (intent?.getBooleanExtra("land", false) == true) ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE else ActivityInfo.SCREEN_ORIENTATION_PORTRAIT   // الإعدادات من المشغّل: بنفس اتجاه المشغّل
         UiWatchdog.start()
         Cfg.init(this); CrashLog.install(this);
@@ -280,10 +288,11 @@ class MainActivity : Activity() {
         val hlsAhead = ui.input("روابط m3u8: عدد الباتشات اللي بتتحمّل مقدّمًا قدّام الترجمة (الباقي مابيتحمّلش لحد ما توصله)", Cfg.str("hls_ahead", "3"))
         val atrack = ui.input("رقم مسار الصوت (لو الفيديو فيه أكتر من لغة)", Cfg.str("atrack", "1"))
         val gloss = ui.input("مسرد مصطلحات ثابت (كل سطر: الكلمة = ترجمتها)", Cfg.str("gloss"), 3)
-        val flags = linkedMapOf("hitiming" to false, "soundtags" to true, "prefine" to true)   // (v458) اتشال من الخريطة: autochars/autopron/autotpl/gapfill (المحرك بيفرضهم شغالين دايمًا من v229 فمفاتيحهم كانت ميتة) وautosrt (مفيش أي كود بيقراه)
+        val flags = linkedMapOf("hitiming" to false, "soundtags" to true, "prefine" to true, "fastmode" to false)   // (v458) اتشال من الخريطة: autochars/autopron/autotpl/gapfill (المحرك بيفرضهم شغالين دايمًا من v229 فمفاتيحهم كانت ميتة) وautosrt (مفيش أي كود بيقراه)
         val flagText = mapOf(
             "prefine" to "تنقيح جزئي أثناء الترجمة: كل مقطع يخلص، الجمل الجديدة (مع 25 جملة قبلها كسياق) بتتبعت بنصها الأصلي وترجمتها للتنقيح وتتصحّح الترجمة الحرفية — على مفاتيح تنقيح مخصوصة (البرنامج بيخصّصها لوحده من قايمة المفاتيح، ومفتاح الصور احتياطي لها) من غير ما ياخد من مفاتيح الترجمة؛ وفي الآخر بيحصل تنقيح كامل واحد",
             "hitiming" to "دقة توقيت أعلى (بيفك الصوت من قبل البداية بـ 3 ثواني — أبطأ شوية)",
+            "fastmode" to "⚡ الترجمة السريعة: طلب واحد (تفريغ+ترجمة) بالـ stream — الجمل بتظهر أول ما تتقفل، وأول باتش بيتقسّم 10ث ← 20ث ← 30ث من مكان التشغيل، من غير تسميع مزدوج ولا انتظار تجميع. جودة أقل شوية من الوضع العادي. بيشتغل من أول ترجمة جديدة",
             "soundtags" to "التقاط الأصوات الخلفية والهمهمات والموسيقى وعرضها كسطر وصف فوق الفيديو")
         val flagViews = flags.map { (k, d) -> ui.switchRow(flagText[k]!!, Cfg.bool(k, d)) { } }
         fun keyList(t: String) = t.lines().map { it.trim() }.filter { it.length > 10 }
@@ -361,8 +370,8 @@ class MainActivity : Activity() {
             }
         }
         val langs = listOf("مصري", "شامي", "لبناني", "خليجي", "مغربي", "عراقي", "سوداني", "فصحى")
-        val styles = listOf("حرفي", "شعبي", "جرئ", "+18")
-        var lang = Cfg.str("lang", "فصحى"); var style = Cfg.str("style", "حرفي"); var themeId = th.id
+        val styles = listOf("تلقائي", "حرفي", "شعبي", "جرئ")
+        var lang = Cfg.str("lang", "فصحى"); var style = Cfg.str("style", "تلقائي"); var themeId = th.id
         link = ui.input("رابط فيديو مباشر (mp4 / m3u8)", "")
         fun save() {
             if (noSaveCfg) return
@@ -383,24 +392,11 @@ class MainActivity : Activity() {
         val ytQ = listOf("أعلى جودة", "1080p", "720p", "480p", "360p", "240p")
         val ytQv = intArrayOf(0, 1080, 720, 480, 360, 240)
         var settingsDlg0: TabbedDialog? = null; var qui0: QueueUi? = null
+        // (v1012) قسم يوتيوب بقى مختصر: فتح يوتيوب + إعدادات MeeTube الكاملة. الجودة والسلاسة اتنقلوا لقسم «🎬 المشغّل»، والثيم مكانه الوحيد «🎨 المظهر».
         val ytSettingsViews: () -> List<View> = { listOf(
-            ui.section("🎨 المظهر (من MeeTube)", true,   // (v907) مصدر واحد: إعداد الثيم بتاع MeeTube نفسه (ThemeMode) — Joyboy وMeeTube بيتبعوه مع بعض
-    ui.chips(listOf("⚙ النظام", "☀️ فاتح", "🌙 داكن"), { when (com.newtube.mobile.ui.common.ThemeMode.peek(this)) { com.newtube.mobile.ui.common.ThemeMode.LIGHT -> "☀️ فاتح"; com.newtube.mobile.ui.common.ThemeMode.DARK -> "🌙 داكن"; else -> "⚙ النظام" } }) { n ->
-        com.newtube.mobile.ui.common.ThemeMode.set(this, when (n) { "☀️ فاتح" -> com.newtube.mobile.ui.common.ThemeMode.LIGHT; "🌙 داكن" -> com.newtube.mobile.ui.common.ThemeMode.DARK; else -> com.newtube.mobile.ui.common.ThemeMode.SYSTEM })
-        recreate()
-    },
-    ui.noHint()),
             ui.section("▶ MeeTube (يوتيوب البرنامج)", true,
                 ui.button("▶ افتح يوتيوب") { settingsDlg0?.dialog?.dismiss(); MeeTubeLink.open(this) },
                 ui.button("⚙ إعدادات MeeTube الكاملة (المشغّل · الشكل · الحساب · التحميل)") { settingsDlg0?.dialog?.dismiss(); MeeTubeLink.openSettings(this) },
-                ui.noHint()),
-            ui.section("🎞 الجودة الافتراضية", true,
-                ui.chips(ytQ, { ytQ[ytQv.indexOf(Cfg.int("yt_maxh", 0)).coerceAtLeast(0)] }) { n -> Cfg.put("yt_maxh", ytQv[ytQ.indexOf(n).coerceAtLeast(0)].toString()) },
-                ui.noHint()),
-            ui.section("⚡ السلاسة والفريمات", false,
-                ui.chips(MtSmooth.hzChoices(this), { MtSmooth.hzLabel(this) }) { n -> MtSmooth.setHz(this, n) },
-                ui.switchRow("مطابقة معدل الشاشة مع فريمات الفيديو (24/30 ← ×5/×4 من غير رعشة)", MtSmooth.matchOn()) { Cfg.put(MtSmooth.K_MATCH, if (it) "1" else "0") },
-                ui.switchRow("تنبيه لو الفيديو التقيل اتفك بالمعالج (سوفتوير)", MtSmooth.hwWarnOn()) { Cfg.put(MtSmooth.K_HW_WARN, if (it) "1" else "0") },
                 ui.noHint())) }
         // ===== الواجهة بشكل نسخة الـ HTML: دوائر علوية + كارت فيديو + كبسولة + شبكة أزرار + زرار الترجمة =====
         var recentDlg: android.app.Dialog? = null
@@ -546,35 +542,6 @@ class MainActivity : Activity() {
         fun fxSwitch(label: String, key: String, def: Boolean) = ui.switchRow(label, Cfg.bool(key, def)) { fxPut(key, if (it) "1" else "0") }
         val toneDegrees = listOf("خفيفة", "متوسطة", "شديدة")
         val toneDegChips = ui.chips(toneDegrees, { Cfg.str("tone_strength", "متوسطة").ifBlank { "متوسطة" } }) { Cfg.put("tone_strength", it) }
-        // (v1091) التلات أزرار: سريع / دقيق / متوازن — مفتاح واحد tr_mode (fast/acc/bal، الافتراضي acc) + fastmode للتوافق
-        val trModeLabels = listOf("سريع", "دقيق", "متوازن")
-        fun trModeLabel(m: String) = when (m) { "fast" -> "سريع"; "bal" -> "متوازن"; else -> "دقيق" }
-        val trModeBox = arrayOfNulls<android.widget.LinearLayout>(1)
-        fun markTrModeChips() {
-            val col = trModeBox[0] ?: return
-            val cur = trModeLabel(Cfg.str("tr_mode", "acc"))
-            fun walk(v: android.view.View) {
-                if (v is android.view.ViewGroup) {
-                    for (i in 0 until v.childCount) walk(v.getChildAt(i))
-                } else if (v is android.widget.TextView) {
-                    val base = v.text.toString().removeSuffix(" ✓").trim()
-                    if (base in trModeLabels) {
-                        val nt = base + if (base == cur) " ✓" else ""
-                        if (v.text.toString() != nt) v.text = nt
-                    }
-                }
-            }
-            walk(col)
-        }
-        val trModeChips = ui.chips(trModeLabels, { trModeLabel(Cfg.str("tr_mode", "acc")) }) { picked ->
-            val m = when (picked) { "سريع" -> "fast"; "متوازن" -> "bal"; else -> "acc" }
-            Cfg.put("tr_mode", m)
-            Cfg.put("fastmode", if (m == "fast") "1" else "0")
-            markTrModeChips()
-        }
-        trModeBox[0] = trModeChips
-        trModeChips.post { markTrModeChips() }
-        trModeChips.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> markTrModeChips() }
         val watchViews = listOf<View>(
             ui.section("🌙 الخروج من المشغّل", false,
                 fxSwitch("اسألني لما أخرج: أكمّل الترجمة في الخلفية؟ (لو مقفول: الخروج بيقفل الترجمة خالص)", "ask_bg_exit", true)),
@@ -593,8 +560,8 @@ class MainActivity : Activity() {
                     ui.text("لهجة الترجمة (فصحى = من غير تحويل):", 12f, th.muted),
                     ui.chips(langs, { lang }) { lang = it; save(); val dv = if (it == "فصحى") "" else it; Cfg.put("conv_dialect", dv); TrWizard.syncSaved("conv_dialect", dv) },
                     ui.text("أسلوب الترجمة:", 12f, th.muted),
-                    ui.chips(styles, { Cfg.str("tone_style", "").ifBlank { style }.ifBlank { "حرفي" } }) { style = it; save(); Cfg.put("tone_style", if (it == "حرفي") "" else it) },
-                    ui.text("الشدة (بتشتغل مع شعبي / جرئ / +18 بس):", 12f, th.muted), toneDegChips,
+                    ui.chips(styles, { Cfg.str("tone_style", "").ifBlank { "تلقائي" } }) { style = it; save(); Cfg.put("tone_style", if (it == "تلقائي") "" else it) },
+                    ui.text("الشدة (بتشتغل مع شعبي / جرئ / تلقائي بس):", 12f, th.muted), toneDegChips,
                     ui.noHint()).apply { if (Strict.hideTrOpts()) visibility = View.GONE },
                 ui.section("🏠 اللغة الأساسية", false,
                     ui.noHint(),
@@ -619,7 +586,9 @@ class MainActivity : Activity() {
                 },
                 ui.button("📊 إحصائية الاستهلاك والكوتة") { StatsUi(this, ui, th).show() },
                                 ui.section("🔑 كل المفاتيح", true,
-                    ui.noHint(), keysUi, backupUi, extraUi))) }),
+                    ui.noHint(), keysUi, backupUi, extraUi)),
+                ui.section("🔑 مفتاح الوضع البصري فقط", true,
+                    ui.noHint(), visKeysUi)) }),   // (v1014) مفتاح الوضع البصري مع باقي المفاتيح
             // ===== 🎙 التفريغ والصوت: موديلات الجهاز + إعدادات الصوت =====
             tab("audio", { listOf<View>(
                 ui.noHint(),
@@ -629,23 +598,21 @@ class MainActivity : Activity() {
                     ui.noHint(),
                     ui.text("حجم موديل Whisper:", 12f, th.muted), offModelChips, ui.text("⚡ خانات التفريغ المتوازي:", 12f, th.muted), parChips, parNote, offStatus, offDlBtn, offProg,
                     ui.text("لغة الكلام (لو عارفها بتقلّل أخطاء الاكتشاف التلقائي):", 12f, th.muted), offLangChips,
-                    ui.noHint())) }),
+                    ui.noHint()),
+                ) }),
             // ===== 🤖 الموديل والأداء =====
             tab("perf", { listOf<View>(
                 ui.noHint(),
+                ui.section("👁 محرك الوضع البصري", false, visAutoChips,
+                    ui.slider("المسافة اللي الوضع البصري بيفحصها قدّام مكان التشغيل", Cfg.int("vis_ahead", 180).coerceIn(30, 900), 30, 900, "ث") { Cfg.put("vis_ahead", it.toString()) },
+                    ui.noHint()),   // (v1014) كان تبويب «الصورة» لوحده
                                 ui.section("🤖 الموديل والسرعة", true, modelChips, fetchModelsBtn, model, modelDesc,
-                    ui.noHint(), speedBtn, speedOut, speedUseBtn,
-                    ui.text("وضع الترجمة:", 12f, th.muted), trModeChips),
+                    ui.noHint(), speedBtn, speedOut, speedUseBtn),
                 ui.section("⏱ التقطيع والتنقيح", false, chunk, ahead, hlsAhead,
                     ui.noHint(), offPartChips,
                     ui.switchRow("كمّل ترجمة باقي الفيديو بعد ما توصل لمكان التشغيل (بيرجع للأول لو فيه جزء ناقص)", Cfg.bool("keepgoing", true)) { Cfg.put("keepgoing", if (it) "1" else "0") },
-                    *fl("prefine"))) }),
-            tab("visual", { listOf<View>(
-                ui.section("🔑 مفتاح الوضع البصري فقط", true,
-                    ui.noHint(), visKeysUi),
-                                ui.section("👁 محرك الوضع البصري", false, visAutoChips,
-                    ui.slider("المسافة اللي الوضع البصري بيفحصها قدّام مكان التشغيل", Cfg.int("vis_ahead", 180).coerceIn(30, 900), 30, 900, "ث") { Cfg.put("vis_ahead", it.toString()) },
-                    ui.noHint())) }),
+                    *fl("fastmode", "prefine"))) }),
+
             // ===== 🎬 شكل الترجمة =====
             tab("look", { listOf<View>(
                 ui.section("🔤 الخط والحجم", true, *sp.fonts.toTypedArray()),
@@ -662,12 +629,6 @@ class MainActivity : Activity() {
         recreate()
     },
     ui.noHint()),
-                if (MtGlass.on()) ui.section("🎬 مظهر المشغّل (MeeTube)", false,
-                    ui.noHint(),
-                    ui.chips(listOf("🫧 شفاف", "🧊 مفروست", "▫️ مينيمال"), { when (MtGlass.playerBtnLook()) { 1 -> "🧊 مفروست"; 2 -> "▫️ مينيمال"; else -> "🫧 شفاف" } }) { n ->
-                        Cfg.put("player_btn_look", when (n) { "🧊 مفروست" -> "1"; "▫️ مينيمال" -> "2"; else -> "0" })
-                    },
-                    *MtLook.views(this, ui, th).toTypedArray()) else null,
                 ui.section("🎨 الشكل", false,
                     ui.noHint(),
                     ui.noHint(),
@@ -692,6 +653,24 @@ class MainActivity : Activity() {
                 ui.noHint(),
                 ui.button("📺 افتح إعدادات التلفزيون", true) { TvLookPad.show(this) },
                 ui.button("🔧 افتح إعدادات البرنامج على شاشة التلفزيون") { try { RemoteClient.cmd("open_settings") } catch (_: Throwable) {} }) }),
+            // (v1012) 🎬 المشغّل: كل إعدادات المشغّل في قسم واحد — المظهر · الجودة · السلاسة · الخروج
+            tab("player", { listOfNotNull<View>(
+                if (MtGlass.on()) ui.section("🎬 مظهر المشغّل (MeeTube) — بيظهر مع الجلاس", false,
+                    ui.noHint(),
+                    ui.chips(listOf("🫧 شفاف", "🧊 مفروست", "▫️ مينيمال"), { when (MtGlass.playerBtnLook()) { 1 -> "🧊 مفروست"; 2 -> "▫️ مينيمال"; else -> "🫧 شفاف" } }) { n ->
+                        Cfg.put("player_btn_look", when (n) { "🧊 مفروست" -> "1"; "▫️ مينيمال" -> "2"; else -> "0" })
+                    },
+                    *MtLook.views(this, ui, th).toTypedArray()) else null,
+                ui.section("🎞 الجودة الافتراضية", true,
+                    ui.chips(ytQ, { ytQ[ytQv.indexOf(Cfg.int("yt_maxh", 0)).coerceAtLeast(0)] }) { n -> Cfg.put("yt_maxh", ytQv[ytQ.indexOf(n).coerceAtLeast(0)].toString()) },
+                    ui.switchRow("🔍 حدّة الفيديو (عرض SurfaceView زي المشغّل القديم)", Cfg.bool("sharp_surface", true)) { Cfg.put("sharp_surface", if (it) "1" else "0") },
+                    ui.noHint()),
+                ui.section("⚡ السلاسة والفريمات", false,
+                    ui.chips(MtSmooth.hzChoices(this), { MtSmooth.hzLabel(this) }) { n -> MtSmooth.setHz(this, n) },
+                    ui.switchRow("مطابقة معدل الشاشة مع فريمات الفيديو (24/30 ← ×5/×4 من غير رعشة)", MtSmooth.matchOn()) { Cfg.put(MtSmooth.K_MATCH, if (it) "1" else "0") },
+                    ui.switchRow("تنبيه لو الفيديو التقيل اتفك بالمعالج (سوفتوير)", MtSmooth.hwWarnOn()) { Cfg.put(MtSmooth.K_HW_WARN, if (it) "1" else "0") },
+                    ui.noHint()),
+                watchViews[0]) }),   // الخروج من المشغّل
             tab("youtube", ytSettingsViews),
             // ===== 🎵 الموسيقى =====
             
@@ -707,7 +686,6 @@ class MainActivity : Activity() {
                     ui.button("🔄 إعادة فحص الأغاني") { try { musicUi?.reload(true) } catch (_: Throwable) {}; Notice.show(this, "🔄 بفحص الأغاني…", 1600L) })) }, false, SettingsTabs.sub("music"), group = SettingsTabs.group("music")),
             // ===== 🛠 عام: الخروج · الترجمة الحية · الطابور · البطارية · الأمان · النسخة الاحتياطية · الثيم =====
             tab("more", { listOf<View>(
-                watchViews[0],   // (v458) بعد شيل القسمين الميتين: الخروج من المشغّل
                                 ui.section("▶ التشغيل", true,
                     ui.switchRow("كمّل الطابور تلقائيًا بعد إعادة تشغيل الجهاز", Cfg.bool("bg_autostart", true)) { Cfg.put("bg_autostart", if (it) "1" else "0") },
                     ui.noHint(),
@@ -769,13 +747,14 @@ class MainActivity : Activity() {
         lib.onYtPick = { n -> playYt(n.id, n.title) }   // (v344) بحث الفيديوهات: اقتراح يوتيوب = فيديو
         lib.onWebSearch = { q -> webSearch(q) }
         lib.onUniSearch = { q -> globalSearch(q) }   // (v469) D4 بحث شامل موسّع (مكتبة + موسيقى + سجل يوتيوب + أقسام الإعدادات)
-        lib.onDash = { a -> when (a) { "yt" -> { MeeTubeLink.open(this) }; "music" -> showTabFn(1); "browser" -> { save(); NavAnim.set(curTab, 2); startActivity(Intent(this, BrowserActivity::class.java)) }; "transfer" -> startActivity(Intent(this, FileTransferActivity::class.java)); "files" -> startActivity(Intent(this, FileManagerActivity::class.java)); "tvfiles" -> startActivity(Intent(this, TvFilesActivity::class.java)); "tvvideos" -> XferUi.browseTv(this) } }   // (v469) D3 بلاطات لوحة البداية · (v607) مركز النقل
+        lib.onDash = { a -> when (a) { "yt" -> { MeeTubeLink.open(this) }; "music" -> showTabFn(1); "browser" -> { save(); NavAnim.set(curTab, 2); startActivity(Intent(this, BrowserActivity::class.java)) }; "tvfiles" -> startActivity(Intent(this, TvFilesActivity::class.java)); "tvvideos" -> XferUi.browseTv(this) } }   // (v469) D3 بلاطات لوحة البداية · (v607) مركز النقل
         // ===== ترجمة في الخلفية: من ⋮ على الفيديو/الفولدر =====
         fun startBg(vs: List<VideoItem>) {
             ensureKeys {
                 if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission("android.permission.POST_NOTIFICATIONS") != android.content.pm.PackageManager.PERMISSION_GRANTED) {
                     try { requestPermissions(arrayOf("android.permission.POST_NOTIFICATIONS"), 12) } catch (e: Exception) { LogStore.err("Main:395", e) }
                 }
+                PermAsk.battery(this) { }   // (v1010) «توفير البطارية» اتشالت من أول تثبيت: بتتسأل هنا (مرة كل 24 ساعة بالكتير) والترجمة بتبدأ فورًا
                 var n = 0
                 vs.forEach { v -> if (BgJobs.enqueue(this, BgJob(v.videoId, v.title, v.uri, null, emptyMap()), "المكتبة (ترجمة بالخلفية يدوي)")) n++ }
                 Notice.show(this, (if (n > 0) "🌙 بدأت الترجمة في الخلفية ($n) — التقدم في الإشعارات" else "الفيديو ده بيترجم في الخلفية بالفعل").toString(), 3600L)
@@ -804,10 +783,7 @@ class MainActivity : Activity() {
         // (v658) «📤 إرسال» من شريط التحديد: بيفتح نقل الملفات على الرادار والملفات المحددة جاهزة (من غير ما تختارها تاني)
         val sendVia: (List<VideoItem>) -> Unit = { vs ->
             try {
-                startActivity(Intent(this, FileTransferActivity::class.java)
-                    .putStringArrayListExtra("ft_uris", ArrayList(vs.map { it.uri }))
-                    .putStringArrayListExtra("ft_names", ArrayList(vs.map { it.name }))
-                    .putExtra("ft_sizes", vs.map { it.size }.toLongArray()))
+                Notice.show(this, "📤 الإرسال اتشال", 2200L)   // (v1051) مفيش دخول لشاشة النقل
             } catch (e: Throwable) { LogStore.err("Main:sendVia", e); Notice.show(this, "⚠ ما قدرتش أفتح نقل الملفات", 2600L) }
         }
         lib.onMoveMany = { vs -> if (vs.firstOrNull()?.let { tvItem(it) } != true) ops.moveMany(vs, lib.allFolders()) }
@@ -879,9 +855,8 @@ class MainActivity : Activity() {
         lib.onAutoRefresh = { if (!libBackend.remote) doScan() }
 
         // (v124) الشريط السفلي: بوابتين — الفيديوهات (المكتبة) · المتصفح (تبويب يوتيوب اتشال)
-        // (v135) بوابة تالتة: «المهام» (قص · صوت · GIF · ضغط · ترجمة ثابتة)
-        toolsUiM = ToolsUi(this, ui, th)
-        val tasksUi = TasksUi(this, ui, th) { k -> pickTool(k) }; tasksUiRef = tasksUi
+        // (v1038) البوابة التالتة: «مركز التحميل» (التحميلات بس — أدوات القص/GIF/الضغط اتشالت)
+        val tasksUi = TasksUi(this, ui, th); tasksUiRef = tasksUi
         tasksUi.onOpenOut = { t -> openTaskOutput(t) }   // (v472) دوسة على مهمة خالصة تفتح الفيديو
         tasksUi.onClose = { showTabFn(if (tabBeforeTasks == 5) 0 else tabBeforeTasks) }   // (v324) ✕ في صفحة المهام
         // (v198) الشريط السفلي (البوابات) وشريط النظام بياخدوا لون مشغّل الموسيقى لما يتفتح، ويرجعوا لثيم البرنامج لما يتقفل
@@ -953,7 +928,8 @@ class MainActivity : Activity() {
                 if (i == 7 && prevTab != 7) tabBeforeSettings = prevTab
                 if (prevTab == 7 && i != 7) { try { save(); refreshChip() } catch (_: Throwable) {} }
                 curTab = i
-                NetLedger.tab(when (i) { 0 -> "فيديوهات"; 1 -> "يوتيوب"; 5 -> "المهام"; 7 -> "الإعدادات"; else -> "تبويب $i" })
+                NavOrigin.mainTab(i)   // (v1006)
+                NetLedger.tab(when (i) { 0 -> "فيديوهات"; 1 -> "يوتيوب"; 5 -> "مركز التحميل"; 7 -> "الإعدادات"; else -> "تبويب $i" })
                 dockUi?.refresh()   // (v344) المشغّل المصغّر بيختفي
                 stripUi?.hidden = (curTab == 5)   // (v345) في صفحة الموسيقى وبيظهر في الباقي
                 lib.root.visibility = if (i == 0) View.VISIBLE else View.INVISIBLE   // (v940) كل التبويبات متقاسة ورا بعض: التبديل من غير layout تقيل
@@ -985,7 +961,7 @@ class MainActivity : Activity() {
             dv.postDelayed({ if (!isFinishing && !isDestroyed) android.os.Looper.myQueue().addIdleHandler { if (!isFinishing && !isDestroyed) { try { ensureMusic(); musicUi?.ensureLoaded() } catch (e: Throwable) { LogStore.err("Main:prewarmMusic", e) } }; false } }, 1500L)   // (v940) الموسيقى تتبني وتتحمّل ورا الستار بدري
         }
         val tabletShell = DeviceUi.isTablet(this)   // (v462) قشرة التابلت: ريل جانبي زي يوتيوب التابلت بدل الشريط السفلي
-        val nav = BottomNav(this, ui, th, 0, tabletShell) { i -> if (i >= BottomNav.YT_HOME) { MeeTubeLink.open(this) /* (v888) MeeTube */ } else if (i == 2) { save(); NavAnim.set(curTab, 2); showBrowserLoading(); startActivity(Intent(this, BrowserActivity::class.java)) } else if (i == 3) { save(); NavAnim.set(curTab, 3); startActivity(FilesHub.intent(this)) } else if (i == 7) { musicReturnTab = -1; settingsShow?.invoke(null) } else if (i == 0 && fromTv && !fromPlayer && TvFocus.goHome(this)) { /* (v482) تلفزيون: «الرئيسية» = شاشة التلفزيون */ } else { musicReturnTab = -1; showTabFn(i) } }   // (v310) 4 الملفات = شاشة منفصلة زي المتصفح · (v606) يوتيوب شغّال ← المتصفح: الفيديو يكمّل في PiP والاتنين مع بعض
+        val nav = BottomNav(this, ui, th, 0, tabletShell) { i -> if (i >= BottomNav.YT_HOME) { MeeTubeLink.open(this) /* (v888) MeeTube */ } else if (i == 2) { save(); NavAnim.set(curTab, 2); showBrowserLoading(); startActivity(TabNav.front(Intent(this, BrowserActivity::class.java))) } else if (i == 3) { save(); NavAnim.set(curTab, 3); startActivity(TabNav.front(FilesHub.intent(this))) } else if (i == 7) { musicReturnTab = -1; settingsShow?.invoke(null) } else if (i == 0 && fromTv && !fromPlayer && TvFocus.goHome(this)) { /* (v482) تلفزيون: «الرئيسية» = شاشة التلفزيون */ } else { musicReturnTab = -1; showTabFn(i) } }   // (v310) 4 الملفات = شاشة منفصلة زي المتصفح · (v606) يوتيوب شغّال ← المتصفح: الفيديو يكمّل في PiP والاتنين مع بعض
         navUi = nav
         nav.onMoreToggle = { o -> pageGearUi?.moreOpen = o }   // (v820)
         if (!fromPlayer) {
@@ -1044,8 +1020,7 @@ class MainActivity : Activity() {
         frame.addView(warmView, FrameLayout.LayoutParams(-1, -1))
         refreshWarm()
         dockUi = MiniDock(this, frame, ui, th, { musicOpenFn?.invoke() }, { curTab == 1 }) { t -> musicUi?.artBitmap(t) }   // (v344)
-        // (v1037) كارت يوتيوب المصغّر يمشي معاك في كل الصفحات
-        try { YtMiniCard(this, frame) } catch (e: Throwable) { LogStore.err("Main:ytMini", e) }
+        try { YtMiniCard(this, frame) } catch (e: Throwable) { LogStore.err("Main:ytMini", e) }   // (v1037) كارت يوتيوب المصغّر يمشي معاك في كل الصفحات
         stripUi = StatusStrip(this, frame, ui, th) { showTabFn(5) }   // (v345)
         tasksFabUi = TasksFab(this, frame, ui) { showTasksDialog() }   // (v420) عايم: بيظهر وقت المهام الشغّالة بس
         if (!fromPlayer && b == null && !tvShellOn) { frame.alpha = 0f; frame.animate().setStartDelay(0L).alpha(1f).setDuration(160L).start() }   // (v312) بدل السبلاش: ظهور ناعم سريع
@@ -1092,6 +1067,7 @@ class MainActivity : Activity() {
         if (id == null) { link.setText(url); openLinkAs(url); return }
         playYt(id, "", false)   // (v467) بطلب صاحب التطبيق: لينك يوتيوب اللي البرنامج يمسكه بيفتح في يوتيوب عادي على طول — من غير قايمة «افتحه إزاي؟»
     }
+
     // (v468) اتحذفت قايمة «افتحه إزاي؟» الميتة — لينكات يوتيوب بتفتح مباشرة من v467
     class StyleParts(val holder: View, val fonts: List<View>, val anim: List<View>, val look: List<View>)
     private fun styleParts(ui: Ui, th: Theme): StyleParts {
@@ -1152,24 +1128,12 @@ class MainActivity : Activity() {
     // ===== صلاحيات: بتتطلب كلها أول ما تفتح البرنامج (زي MX Player) — كل صلاحية مرة واحدة بس =====
     private class PermStep(val id: String, val title: String, val why: String, val granted: () -> Boolean, val launch: () -> Unit)
     private fun permSteps(): List<PermStep> {
+        // (v1010) أول تثبيت: النوافذ العادية بس وكلها مع بعض في طلب واحد (فيديوهات + صوتيات + إشعارات).
+        // «العرض فوق التطبيقات» و«إدارة كل الملفات» و«تعديل إعدادات النظام» و«توفير البطارية» اتشالت من هنا — بتتطلب وقت الحاجة بس (PermAsk).
         val l = ArrayList<PermStep>()
-        val media = if (Build.VERSION.SDK_INT >= 33) arrayOf(VideoScan.permission(), "android.permission.POST_NOTIFICATIONS") else arrayOf(VideoScan.permission())
-        l += PermStep("media", "الوصول للفيديوهات والإشعارات", "عشان تظهر فولدرات فيديوهاتك وإشعار تقدم الترجمة في الخلفية",
+        val media = (if (Build.VERSION.SDK_INT >= 33) arrayOf(VideoScan.permission(), MusicScan.permission(), "android.permission.POST_NOTIFICATIONS") else arrayOf(VideoScan.permission())).distinct().toTypedArray()
+        l += PermStep("media", "الوصول للفيديوهات والصوتيات والإشعارات", "عشان تظهر فولدرات فيديوهاتك وموسيقاك وإشعار تقدم الترجمة في الخلفية",
             { media.all { checkSelfPermission(it) == android.content.pm.PackageManager.PERMISSION_GRANTED } }, { requestPermissions(media, 13) })
-        if (Build.VERSION.SDK_INT >= 30) l += PermStep("allfiles", "إدارة كل الملفات", "عشان تغيّر اسم الفيديو أو تنقله أو تحذفه من غير ما النظام يسألك كل مرة",
-            { android.os.Environment.isExternalStorageManager() },
-            { startActivityForResult(Intent(android.provider.Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION, Uri.parse("package:$packageName")), 14) })
-        if (!DeviceUi.isTv(this)) {   // (v501) وضع التلفزيون: مفيش PiP ولا تحكم سطوع من الفيديو — الصلاحيتين دول مش بيتطلبوا
-        l += PermStep("overlay", "العرض فوق التطبيقات الأخرى", "عشان الترجمة تظهر تحت نافذة الـ PiP لما تخرج بره البرنامج",
-            { Build.VERSION.SDK_INT < 23 || android.provider.Settings.canDrawOverlays(this) },
-            { startActivityForResult(Intent(android.provider.Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName")), 14) })
-        l += PermStep("writesettings", "تعديل إعدادات النظام", "عشان التحكم في السطوع من الفيديو يشتغل",
-            { Build.VERSION.SDK_INT < 23 || android.provider.Settings.System.canWrite(this) },
-            { startActivityForResult(Intent(android.provider.Settings.ACTION_MANAGE_WRITE_SETTINGS, Uri.parse("package:$packageName")), 14) })
-        }
-        l += PermStep("battery", "تجاهل توفير البطارية", "عشان الترجمة في الخلفية ماتتقفلش لما الشاشة تتقفل",
-            { (getSystemService(Context.POWER_SERVICE) as android.os.PowerManager).isIgnoringBatteryOptimizations(packageName) },
-            { startActivityForResult(Intent(android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, Uri.parse("package:$packageName")), 14) })
         return l
     }
     private var permQueue: ArrayList<PermStep> = ArrayList()
@@ -1178,9 +1142,7 @@ class MainActivity : Activity() {
         if (todo.isEmpty()) { done(); return }
         permDone = done
         permQueue = ArrayList(todo)
-        GAlert(this).setTitle("🔐 صلاحيات البرنامج")
-            .setMessage("البرنامج هيطلب كام صلاحية مرة واحدة بس عشان يشتغل كامل زي MX Player:\n\n" + todo.joinToString("\n") { "• " + it.title + " — " + it.why } + "\n\nفي كل شاشة فعّل المفتاح ورجّع للبرنامج.")
-            .setCancelable(false).setPositiveButton("تمام، يلا") { _, _ -> nextPerm() }.setNegativeButton("بعدين") { _, _ -> permQueue.clear(); permDone?.invoke(); permDone = null }.show()
+        nextPerm()   // (v1010) طلب واحد مجمّع (فيديوهات + صوتيات + إشعارات) من غير نافذة شرح قبله
     }
     private fun nextPerm() {
         while (permQueue.isNotEmpty()) {
@@ -1218,62 +1180,6 @@ class MainActivity : Activity() {
         }
         Notice.show(this, ("مفيش صفحة مخصوصة لجهازك — هفتحلك إعدادات التطبيق: فعّل «التشغيل التلقائي» و«بدون قيود» للبطارية").toString(), 3600L)
         try { startActivity(Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$packageName"))) } catch (e: Exception) { LogStore.err("Main:621", e) }
-    }
-
-    // ===== (v137) أدوات الفيديو من تبويب «المهام»: الأداة → اختيار الفيديو → نافذة الإعدادات → تبدأ =====
-    fun pickTool(kind: String) {
-        pendingTool = kind
-        // (v139) قايمة الفيديوهات اللي جوه التطبيق نفسه؛ مدير الملفات بقى زرار احتياطي جواها
-        VideoPicker.show(this, "اختار الفيديو", { v -> onToolVideo(kind, v) }, { pickToolFromFiles() })
-    }
-    private fun pickToolFromFiles() {
-        try { startActivityForResult(filePicker("video/*", "اختار الفيديو", true), 52) } catch (e: Exception) { Notice.show(this, "مفيش تطبيق ملفات يفتح", 2400L) }
-    }
-    private fun onToolVideo(kind: String, v: VideoItem) {
-        Notice.show(this, "بقرا الفيديو…", 1500L)
-        Thread {
-            val subs = try { Store(File(filesDir, "progress"), Store.keyFor(v.videoId)).load()?.subs ?: emptyList() } catch (_: Throwable) { emptyList<Sub>() }
-            var dur = v.durMs; var w = v.w; var h = v.h
-            if (dur <= 0 || w <= 0 || h <= 0) {
-                val pr = Tools.probe(applicationContext, v.uri)
-                if (dur <= 0) dur = pr.durMs; if (w <= 0) w = pr.w; if (h <= 0) h = pr.h
-            }
-            val src = ToolSrc(v.uri, null, v.title, dur, w, h, 0L, subs)
-            runOnUiThread { if (!isDestroyed && !isFinishing) runTool(kind, src) }
-        }.apply { isDaemon = true }.start()
-    }
-    private fun onToolPicked(u: Uri) {
-        try { contentResolver.takePersistableUriPermission(u, Intent.FLAG_GRANT_READ_URI_PERMISSION) } catch (_: Exception) {}
-        val kind = pendingTool
-        Notice.show(this, "بقرا الفيديو…", 1500L)
-        Thread {
-            var name = "video"; var size = 0L
-            try { contentResolver.query(u, arrayOf(OpenableColumns.DISPLAY_NAME, OpenableColumns.SIZE), null, null, null)?.use { c -> if (c.moveToFirst()) { name = c.getString(0) ?: name; size = c.getLong(1) } } } catch (_: Exception) {}
-            val pr = Tools.probe(applicationContext, u.toString())
-            val subs = try { Store(File(filesDir, "progress"), Store.keyFor("f:$name:$size")).load()?.subs ?: emptyList() } catch (_: Throwable) { emptyList<Sub>() }
-            val src = ToolSrc(u.toString(), null, name.substringBeforeLast('.', name), pr.durMs, pr.w, pr.h, 0L, subs)
-            runOnUiThread { if (!isDestroyed && !isFinishing) runTool(kind, src) }
-        }.start()
-    }
-    private fun runTool(kind: String, src: ToolSrc) {
-        val tu = toolsUiM ?: return
-        when (kind) {
-            "trim" -> tu.trim(src); "audio" -> tu.audio(src); "gif" -> tu.gif(src); "compress" -> tu.compress(src)
-            "hardsub" -> if (src.subs.none { it.translated.isNotBlank() || it.original.isNotBlank() }) askSrt(src) else tu.hardsub(src)
-        }
-    }
-    private fun askSrt(src: ToolSrc) {
-        GAlert(this).setTitle("🎬 مفيش ترجمة محفوظة للفيديو ده")
-            .setMessage("اختار ملف ترجمة SRT عشان يتحرق في الفيديو، أو ترجم الفيديو في المشغّل الأول.")
-            .setPositiveButton("اختار ملف SRT") { _, _ -> pendingSrc = src; try { startActivityForResult(filePicker("*/*", "اختار ملف الترجمة (SRT)", false), 53) } catch (_: Exception) {} }
-            .setNegativeButton("إلغاء", null).show()
-    }
-    private fun onSrtPicked(u: Uri) {
-        val src = pendingSrc ?: return; pendingSrc = null
-        val text = try { contentResolver.openInputStream(u)?.use { String(it.readBytes(), Charsets.UTF_8) } } catch (_: Exception) { null } ?: ""
-        val subs = PlayerLogic.parseSrt(text.removePrefix("\uFEFF")).map { (a, b, t) -> Sub(a, b, t, t, "", "", "", emptyList(), emptyList(), false, false) }
-        if (subs.isEmpty()) { Notice.show(this, "الملف ده مش SRT صالح", 2600L); return }
-        toolsUiM?.hardsub(ToolSrc(src.uri, null, src.name, src.durMs, src.w, src.h, 0L, subs))
     }
 
     fun pickVideo() { startActivityForResult(filePicker("video/*", "اختار فيديو", true), 1) }
@@ -1437,7 +1343,10 @@ class MainActivity : Activity() {
     }
 
     // (v469) D5 نسخة شاملة: كل الإعدادات (Backup.toJson) + ملف سجل المشاهدة/الاستئناف في JSON واحد — المفضلة والتقييمات وقوائم التشغيل والإحصائيات جوّه الإعدادات أصلًا فبتتسافر معاها
+    // (v1003) + قسم "studio": دوكيومنتات الاستوديو + intel + series/courses + فهرس الأصوات + excl/redact + علامة pinSet بس.
     private fun fullJson(): String = try { org.json.JSONObject().put("kind", "subtitler-full").put("ver", 469).put("cfg", Backup.toJson()).put("recent", try { File(filesDir, "recent.json").readText() } catch (_: Throwable) { "" }).toString() } catch (e: Throwable) { LogStore.err("Main:fullJson", e); Backup.toJson() }
+
+
     private fun fullToFile() {
         try { saveCfgFn?.invoke() } catch (_: Throwable) {}
         val stamp = java.text.SimpleDateFormat("yyyyMMdd-HHmm", java.util.Locale.US).format(java.util.Date())
@@ -1514,8 +1423,6 @@ class MainActivity : Activity() {
             }
             return
         }
-        if (r == 52) { if (c == RESULT_OK) d?.data?.let { onToolPicked(it) }; return }
-        if (r == 53) { if (c == RESULT_OK) d?.data?.let { onSrtPicked(it) } else pendingSrc = null; return }
         if (lockUi?.onResult(r, c == RESULT_OK) == true) return
         if (mediaOps?.onResult(r, c == RESULT_OK) == true) return
         if (r == 14) { nextPerm(); return }
@@ -1781,7 +1688,7 @@ class MainActivity : Activity() {
             t.msg = ""; t.outPath = res.second
             Downloader.takeLastOut()?.let { t.outUri = it.first; t.mime = it.second }   // (v472) دوسة على المهمة الخالصة تفتح الفيديو
         }
-        Notice.show(this, ("⬇ اتضاف للتحميل — تابعه من تبويب «المهام»").toString(), 3000L)
+        Notice.show(this, ("⬇ اتضاف للتحميل — تابعه من «مركز التحميل»").toString(), 3000L)
     }
     /** (v716) بيجيب جودات الفيديو ويعرض قايمة الاختيار؛ لو جودة واحدة بس أو الجلب فشل بيحمّل على طول */
     fun ytDownloadAsk(n: NpItem) {
@@ -1857,11 +1764,12 @@ class MainActivity : Activity() {
         val hd = clipHeaders(c)
         Thread {
             val vs = try { Downloader.variants(c.playUrl, hd) } catch (_: Throwable) { emptyList() }
+            val sz = if (vs.size > 1) try { Downloader.variantBytes(vs, hd) } catch (_: Throwable) { emptyList() } else emptyList()   // (v975) الحجم الكلي لكل جودة
             runOnUiThread {
                 if (isFinishing || isDestroyed) return@runOnUiThread
                 if (vs.size <= 1) clipDownload(c, title, vs.firstOrNull()?.url ?: c.playUrl, vs.firstOrNull()?.h ?: 0)
                 else DlQuality.show(this, "⬇ اختار جودة التحميل",
-                    vs.map { v -> DlQuality.Opt((if (v.h > 0) "${v.h}p" else "جودة") + (if (v.bw > 0) " · " + String.format("%.1f", v.bw / 1_000_000.0) + " Mbps" else ""), v.h, v.url, null, true) }, null) { o -> clipDownload(c, title, o.url, o.h) }
+                    vs.mapIndexed { i, v -> DlQuality.Opt(Downloader.variantLabel(v, sz.getOrElse(i) { 0L }), v.h, v.url, null, true) }, null) { o -> clipDownload(c, title, o.url, o.h) }
             }
         }.apply { isDaemon = true }.start()
     }
@@ -1881,7 +1789,7 @@ class MainActivity : Activity() {
             if (!res.first) throw java.io.IOException(res.second)
             t.msg = ""; t.outPath = res.second
         }
-        Notice.show(this, "⬇ اتضاف للتحميل — تابعه من تبويب «المهام»", 3000L)
+        Notice.show(this, "⬇ اتضاف للتحميل — تابعه من «مركز التحميل»", 3000L)
     }
     /** (v350) عدّاد الفيديوهات الجديدة على أيقونة يوتيوب */
     /** (v355) فتح قسم من إعدادات البرنامج من أي شاشة (مثلًا ⚙ يوتيوب) */
@@ -1938,24 +1846,26 @@ class MainActivity : Activity() {
             }
         }
     }
-    // (v1071) صفحة الانتقال للمتصفح: سودة + علامة تحميل + «جاري الانتقال الى المتصفح» — مابتختفيش إلا لما المتصفح يفتح بالكامل (بتتخبّى من onResume لما ترجع)
+    override fun onPause() { try { DataCapsule.detach(this) } catch (_: Throwable) {}; super.onPause() }   // (v799) كبسولة الداتا في كل التبويبات
+    // (دمج v1071) صفحة الانتقال للمتصفح: سودة + علامة تحميل + «جاري الانتقال الى المتصفح» — بتتخبّى من onResume لما ترجع
+    private var browserLoadingOv: android.view.View? = null
     private fun showBrowserLoading() {
         try {
             if (browserLoadingOv != null) return
-            val ov = FrameLayout(this).apply { setBackgroundColor(Color.BLACK) }
-            val col = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER }
-            val sp = ProgressBar(this).apply { isIndeterminate = true; indeterminateTintList = android.content.res.ColorStateList.valueOf(Color.WHITE) }
-            val tx = TextView(this).apply {
+            val ov = android.widget.FrameLayout(this).apply { setBackgroundColor(android.graphics.Color.BLACK) }
+            val col = android.widget.LinearLayout(this).apply { orientation = android.widget.LinearLayout.VERTICAL; gravity = android.view.Gravity.CENTER }
+            val sp = android.widget.ProgressBar(this).apply { isIndeterminate = true; indeterminateTintList = android.content.res.ColorStateList.valueOf(android.graphics.Color.WHITE) }
+            val tx = android.widget.TextView(this).apply {
                 text = "⏳ جاري الانتقال الى المتصفح…"
-                setTextColor(Color.WHITE)
+                setTextColor(android.graphics.Color.WHITE)
                 textSize = 16f
-                gravity = Gravity.CENTER
+                gravity = android.view.Gravity.CENTER
                 setPadding(0, (16 * resources.displayMetrics.density).toInt(), 0, 0)
             }
-            col.addView(sp, LinearLayout.LayoutParams(-2, -2).apply { gravity = Gravity.CENTER })
-            col.addView(tx, LinearLayout.LayoutParams(-2, -2).apply { gravity = Gravity.CENTER })
-            ov.addView(col, FrameLayout.LayoutParams(-2, -2, Gravity.CENTER))
-            (window.decorView as? ViewGroup)?.addView(ov, ViewGroup.LayoutParams(-1, -1))
+            col.addView(sp, android.widget.LinearLayout.LayoutParams(-2, -2).apply { gravity = android.view.Gravity.CENTER })
+            col.addView(tx, android.widget.LinearLayout.LayoutParams(-2, -2).apply { gravity = android.view.Gravity.CENTER })
+            ov.addView(col, android.widget.FrameLayout.LayoutParams(-2, -2, android.view.Gravity.CENTER))
+            (window.decorView as? android.view.ViewGroup)?.addView(ov, android.view.ViewGroup.LayoutParams(-1, -1))
             browserLoadingOv = ov
         } catch (_: Throwable) {}
     }
@@ -1964,14 +1874,14 @@ class MainActivity : Activity() {
         try {
             val ov = browserLoadingOv ?: return
             browserLoadingOv = null
-            (window.decorView as? ViewGroup)?.removeView(ov)
+            (window.decorView as? android.view.ViewGroup)?.removeView(ov)
         } catch (_: Throwable) {}
     }
 
-    override fun onPause() { try { DataCapsule.detach(this) } catch (_: Throwable) {}; super.onPause() }   // (v799) كبسولة الداتا في كل التبويبات
     override fun onResume() {
         super.onResume()
-        try { hideBrowserLoading() } catch (_: Throwable) {}
+        try { hideBrowserLoading() } catch (_: Throwable) {}   // (دمج v1071)
+        TabNav.pendingMain?.let { t -> TabNav.pendingMain = null; try { onNewIntent(Intent().putExtra("tab", t)) } catch (e: Throwable) { LogStore.err("Main:pendingTab", e) } }   // (v973) REORDER_TO_FRONT من غير onNewIntent
         try { DataCapsule.attach(this) } catch (_: Throwable) {}   // (v799)
         try { tvModeSeen = PlayTarget.enabled(); TvModeFab.listeners.addIfAbsent(tvModeSync) } catch (_: Throwable) {}
         if (!fromPlayer) { updateYtBadge(); ytBackgroundSync() }
@@ -1995,6 +1905,17 @@ class MainActivity : Activity() {
     /** (v117) الرجوع من المتصفح بشريط البوابات: بيفتح البوابة اللي اخترتها */
     override fun onNewIntent(i: Intent?) {
         super.onNewIntent(i)
+        // (v985) استعادة PiP من أيقونة اللانشر — نفس فحص onCreate فوق (ضغطة الأيقونة
+        // والمشغّل مثبّت في PiP لازم تكبّر المشغّل بدل ما تفتح الرئيسية).
+        if (i?.action == Intent.ACTION_MAIN && i?.hasCategory(Intent.CATEGORY_LAUNCHER) == true) {
+            try {
+                if (com.newtube.mobile.MobileMainApplication.booted()?.restorePictureInPictureFromLauncher(this) == true) {
+                    finish()
+                    return
+                }
+            } catch (_: Throwable) {}
+        }
+        TabNav.pendingMain = null   // (v973) اتسلّم فعلًا
         if (DeviceUi.isTv(this) && !fromPlayer) fromTv = true   // (v482)
         // (v939) إعادة توجيه باردة كانت بتحصل في onCreate بس — intent جديد من غير وجهة صريحة (لا تبويب ولا yt_open ولا رابط)
         // كان بيتفتح على واجهة الموبايل بدل TvActivity: نفس شرط البداية بالظبط، بيتطبق هنا كمان قبل أي توزيع تبويب
@@ -2030,6 +1951,7 @@ class MainActivity : Activity() {
         if (!fromPlayer && curTab != 0) { if (fromTv && DeviceUi.isTv(this) && TvFocus.goHome(this)) return; showTabFn(0); return }   // (v477) تلفزيون: Back من أي قسم = الشاشة الرئيسية
         if (!fromPlayer && fromTv && curTab == 0 && libUi?.back() != true) { try { startActivity(Intent(this, TvActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)); finish() } catch (_: Throwable) { super.onBackPressed() }; return }   // (v467) زيارة من التلفزيون: رجوع من الجذر يرجّع للتلفزيون
         if (!fromPlayer && libUi?.back() == true) return
+        if (!fromPlayer && !tvShellOn && !DeviceUi.isTv(this)) { moveTaskToBack(true); return }   // (v973) Main هي الجذر: من غير finish عشان متكشفش تبويب شغّال تحتها (متصفح/ملفات/يوتيوب)
         super.onBackPressed()
     }
     override fun startActivity(i: Intent?) { super.startActivity(i); try { if (tvShellOn) { NavAnim.take(this); overridePendingTransition(0, 0) } else if (!NavAnim.take(this)) overridePendingTransition(R.anim.act_enter, R.anim.act_stay) } catch (e: Exception) { LogStore.err("Main:720", e) } }

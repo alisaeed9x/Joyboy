@@ -175,7 +175,6 @@ object NetLedger {
         val r = resumedName ?: return NO_PAGE
         return when (r) {
             "MainActivity" -> "🏠 الرئيسية" + (tabName?.let { " — $it" } ?: "")
-            "LaunchSplashActivity" -> "🚀 شاشة الفتح"
             "PlayerActivity" -> "🎬 المشغّل"
             "BrowserActivity" -> "🌐 المتصفح" + (webHost?.let { " — $it" } ?: "")
             "LaunchBrowserActivity" -> "🌐 المتصفح"

@@ -459,10 +459,10 @@ class FileManagerActivity : Activity() {
             if (i != 3) {
                 NavAnim.set(3, i)
                 if (i == 0 && DeviceUi.isTv(this) && TvFocus.goHome(this)) { /* (v482) تلفزيون: الرئيسية = شاشة التلفزيون */ }
-                else if (i == 2) startActivity(Intent(this, BrowserActivity::class.java))
-                else startActivity(Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP).putExtra("tab", if (i == 0) "videos" else if (i == 1) "music" else if (i == 4) "youtube" else if (i == 7) "settings" else "tasks"))
+                else if (i == 2) startActivity(TabNav.front(Intent(this, BrowserActivity::class.java)))
+                else if (i == 4) MeeTubeLink.open(this)
+                else startActivity(TabNav.main(this, if (i == 0) "videos" else if (i == 1) "music" else if (i == 7) "settings" else "tasks"))   // (v973) من غير finish
                 NavAnim.peek(this)
-                finish()
             }
         }
         val floatNav = !tvMode && MtFloat.eligible(this)   // (v900) شريط عايم زجاجي زي صفحة الميديا
@@ -482,6 +482,7 @@ class FileManagerActivity : Activity() {
         setContentView(host)
         fab = TasksFab(this, host, ui) { startActivity(Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP).putExtra("tab", "tasks")) }   // (v420)
         dockUi = MiniDock(this, host, ui, th, { startActivity(Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP).putExtra("fullmusic", true)) })   // (v344)
+        try { YtMiniCard(this, host) } catch (e: Throwable) { LogStore.err("FileManager:ytMini", e) }   // (v1037) كارت يوتيوب المصغّر يمشي معاك في كل الصفحات
         stripUi = StatusStrip(this, host, ui, th) { startActivity(Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP).putExtra("tab", "tasks")) }   // (v345)
     }
 
@@ -666,7 +667,7 @@ class FileManagerActivity : Activity() {
             sel.isNotEmpty() -> { sel.clear(); refresh() }
             query.isNotEmpty() -> searchEt.setText("")
             !isTop(cur) -> up()
-            else -> finish()
+            else -> if (isTaskRoot || DeviceUi.isTv(this)) finish() else { NavAnim.set(3, 0); startActivity(TabNav.main(this, "videos")); NavAnim.peek(this) }   // (v973) Back = ميديا
         }
     }
 
@@ -903,8 +904,7 @@ class FileManagerActivity : Activity() {
                     data = Uri.fromFile(f); addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                     putExtra("landscape", e in FmUtil.VIDEO); putExtra("fresh", false); putExtra("nosub", false); putExtra("ask", false)
                 }
-                // (v978) فتح مباشر من غير PlayerActivity الوسيطة
-                if (!MtPlay.fastOpen(this, pi)) startActivity(pi)
+                if (!MtPlay.fastOpen(this, pi)) startActivity(pi)   // (v978) فتح مباشر من غير PlayerActivity الوسيطة
             } else {
                 startActivity(Intent(Intent.ACTION_VIEW).apply {
                     setDataAndType(FmUtil.uriFor(this@FileManagerActivity, f), FmUtil.mime(f)); addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
@@ -1067,7 +1067,7 @@ class FileManagerActivity : Activity() {
                 else if (uris.size > 1500) toast("⚠ لحد 1500 ملف في المرة — قسّمهم على دفعات")
                 else {
                     try {
-                        startActivity(Intent(this, FileTransferActivity::class.java).putStringArrayListExtra("ft_uris", uris).putStringArrayListExtra("ft_names", names).putExtra("ft_sizes", sizes.toLongArray()))
+                        toast("📤 الإرسال اتشال")   // (v1051) مفيش دخول لشاشة النقل
                         sel.clear(); selMode = false; refresh()
                     } catch (e: Throwable) { LogStore.err("FM:sendFt", e); toast("⚠ مش قادر أفتح نقل الملفات") }
                 }
@@ -1078,7 +1078,7 @@ class FileManagerActivity : Activity() {
     /** (v610) موبايل ← تلفزيون: ابعت المحدد (ملفات أو مجلدات بكل اللي جواها) للتلفزيون المقترن */
     private fun sendSelToTv() {
         val paired = try { RemoteClient.lastTv() != null } catch (_: Throwable) { false }
-        if (!paired) { toast("⚠ مفيش تلفزيون مقترن — اقترن من مركز النقل (الرادار)"); try { startActivity(Intent(this, FileTransferActivity::class.java)) } catch (_: Throwable) {}; return }
+        if (!paired) { toast("⚠ مفيش تلفزيون مقترن — اقترن من «الريموت»"); return }   // (v1051) من غير فتح شاشة النقل
         val files = XExpand.files(selFiles(), 300)
         if (files.isEmpty()) { toast("مفيش ملفات تتبعت"); return }
         XferUi.sendUris(this, files.map { Uri.fromFile(it) }, files.map { it.name })

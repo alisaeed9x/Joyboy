@@ -1,9 +1,6 @@
 package com.tttt.subtitler
 
 import android.app.Activity
-import android.app.Application
-import android.os.Bundle
-import java.lang.ref.WeakReference
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -18,25 +15,6 @@ object MtFeed {
     @Volatile private var lastSigned = false
     @Volatile private var busy = false
     @Volatile private var loginPending = false
-    @Volatile private var resumedRef: WeakReference<Activity>? = null
-
-    /** (v1072) تتبّع الشاشة اللي قدّام (نقل من MtTvRoute.install — من غير إنترسبتور المشغّل) */
-    fun install(app: Application) {
-        try {
-            app.registerActivityLifecycleCallbacks(object : Application.ActivityLifecycleCallbacks {
-                override fun onActivityCreated(a: Activity, b: Bundle?) {}
-                override fun onActivityStarted(a: Activity) {}
-                override fun onActivityResumed(a: Activity) { resumedRef = WeakReference(a); try { onResumed(a) } catch (_: Throwable) {} }
-                override fun onActivityPaused(a: Activity) { if (resumedRef?.get() === a) resumedRef = null }
-                override fun onActivityStopped(a: Activity) {}
-                override fun onActivitySaveInstanceState(a: Activity, b: Bundle) {}
-                override fun onActivityDestroyed(a: Activity) {}
-            })
-        } catch (_: Throwable) {}
-    }
-
-    /** الشاشة اللي قدّام دلوقتي (أو null) */
-    fun resumed(): Activity? = resumedRef?.get()?.takeIf { !it.isFinishing && !it.isDestroyed }
 
     /** بيتنده من حلقة الاتصال (RemoteClient.loop) كل ~4 ثواني وهو متصل — بيتحكم في التكرار لوحده. */
     fun maybePush(force: Boolean = false) {

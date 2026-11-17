@@ -23,9 +23,7 @@ object TaskAgg {
         val live = items.filter { it.state == 0 || it.state == 1 }
         val act = live.filter { !(it.state == 1 && it.paused) }
         val pausedT = live.size - act.size + items.count { it.state == 6 }
-        val bg = BgJobs.jobs.filter { it.active }
-        val bgAct = bg.filter { !it.paused }
-        val pausedAll = pausedT + (bg.size - bgAct.size)
+        val pausedAll = pausedT   // (v1038) مركز التحميل = التحميلات بس (ترجمة الخلفية في 📚 مكتبة الترجمات)
         val ids = items.map { it.id }.toHashSet(); smp.keys.removeAll { it !in ids }
         var rateSum = 0.0
         for (t in act) {
@@ -39,17 +37,15 @@ object TaskAgg {
             }
             rateSum += s.rate
         }
-        val n = act.size + bgAct.size
+        val n = act.size
         val frac: Float
-        if (n > 0) frac = ((act.sumOf { it.pct } + bgAct.sumOf { it.pct }) / (100f * n)).coerceIn(0f, 1f)
+        if (n > 0) frac = (act.sumOf { it.pct } / (100f * n)).coerceIn(0f, 1f)
         else {
-            val p = items.filter { it.state == 1 || it.state == 6 }.map { it.pct } + bg.filter { it.paused }.map { it.pct }
+            val p = items.filter { it.state == 1 || it.state == 6 }.map { it.pct }
             frac = if (p.isEmpty()) 0f else (p.sum() / (100f * p.size)).coerceIn(0f, 1f)
         }
         var eta = -1L
         if (act.isNotEmpty() && rateSum > 0.05) eta = (act.sumOf { 100 - it.pct } / rateSum).toLong().coerceAtLeast(0L)
-        val bgEta = bgAct.maxOfOrNull { it.remainSec } ?: -1L
-        if (bgEta >= 0L && (act.isEmpty() || eta >= 0L)) eta = maxOf(eta, bgEta)
         return Snap(n, pausedAll, frac, eta)
     }
 

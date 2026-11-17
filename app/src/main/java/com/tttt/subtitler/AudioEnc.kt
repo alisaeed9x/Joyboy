@@ -175,16 +175,15 @@ object AudioTools {
         return Trim(cut(wav, lead, end), lead, end - lead)
     }
 
-    /** تغيير سرعة الصوت k× بالحفاظ على النغمة (WSOLA: إطار 40ms، نص تداخل، بحث ±10ms عن أحسن تطابق). k>1 بيسرّع والناتج أقصر بحوالي k مرة؛ k<1 بيبطّأ والناتج أطول (v1070) */
+    /** تسريع k× (k>1) بالحفاظ على النغمة (WSOLA: إطار 40ms، نص تداخل، بحث ±10ms عن أحسن تطابق). الناتج أقصر بحوالي k مرة */
     fun speedUp(wav: ByteArray, k: Double): ByteArray {
-        if (k == 1.0 || !isWav(wav)) return wav
+        if (k <= 1.01 || !isWav(wav)) return wav
         val rate = rateOf(wav); if (rate < 8000) return wav
         val n = (wav.size - 44) / 2
         val fl = rate / 25
         if (n < fl * 4) return wav
         val hs = fl / 2
-        // (v1070) التبطيء محتاج ha أصغر من hs — القيد القديم (hs+1) كان بيمنع أي k<1
-        val ha = (hs * k).toInt().coerceAtLeast(1)
+        val ha = (hs * k).toInt().coerceAtLeast(hs + 1)
         val delta = rate / 100
         val x = ShortArray(n) { val o = 44 + 2 * it; ((wav[o + 1].toInt() shl 8) or (wav[o].toInt() and 0xFF)).toShort() }
         val cap = (n / k).toInt() + fl * 3

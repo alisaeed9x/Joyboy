@@ -36,6 +36,20 @@ class FastTr(
     private val mergeLock = Any()
     private val srcLock = Any()
     private val persistN = AtomicInteger(0)
+    private val active = ConcurrentHashMap.newKeySet<Int>()   // (دمج v1081) باتشات اتبعتت (تفريغ/ترجمة) ولسه ما خلصتش
+    @Volatile private var durSec = 0.0
+
+    /** مجالات الباتشات اللي اتبعتت ولسه ما خلصتش — أزرق في شريط التقدم (نفس معنى Engine.inflightSegs) */
+    fun inflightSegs(): List<DoubleArray> {
+        if (active.isEmpty() || durSec <= 0) return emptyList()
+        val out = ArrayList<DoubleArray>()
+        for (i in active.toList().sorted()) {
+            val a = try { eng.chunkStartSec(i) } catch (_: Throwable) { continue }
+            val b = minOf(try { eng.chunkStartSec(i + 1) } catch (_: Throwable) { durSec }, durSec)
+            if (b > a) out.add(doubleArrayOf(a, b))
+        }
+        return out
+    }
 
     val pct: Int get() = if (total <= 0) 0 else (doneSet.size * 100 / total).coerceIn(0, 100)
     val finished: Boolean get() = total > 0 && doneSet.size >= total
@@ -74,6 +88,7 @@ class FastTr(
         var n = 0
         while (eng.chunkStartSec(n) < dur) n++
         total = n
+        durSec = dur
         // ترتيب الباتشات: من مكان التشغيل لآخر الفيديو، وبعدها اللي قبله
         val start = eng.chunkOfSec(host.position()).coerceIn(0, maxOf(0, n - 1))
         // الباتشات اللي فيها ترجمة جاهزة فعلًا (من أي محرك) بتتخطّى — عشان ماندوّرش على ترجمة موجودة ونحرق الكوتة
@@ -91,8 +106,10 @@ class FastTr(
                     val idx = next.getAndIncrement()
                     if (idx >= order.size) break
                     val i = order[idx]
+                    active.add(i)
                     try { process(i, s, dur) }
                     catch (e: Throwable) { failedSet.add(i); host.log("⚠ [محرك ٢] باتش ${i + 1}: " + (e.message ?: e.toString()).take(120)) }
+                    finally { active.remove(i) }
                     state()
                 }
             }.apply { isDaemon = true; name = "fast-tr-$w" }

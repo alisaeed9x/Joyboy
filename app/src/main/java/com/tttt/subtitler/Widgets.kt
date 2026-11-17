@@ -127,8 +127,8 @@ object WidgetHub {
         val iHead = rid(c, "id", "w_head"); val iTitle = rid(c, "id", "w_title"); val iBar = rid(c, "id", "w_bar"); val iInfo = rid(c, "id", "w_info")
         val iPrev = rid(c, "id", "w_prev"); val iNext = rid(c, "id", "w_next"); val iBody = rid(c, "id", "w_body")
         if (list.isEmpty()) {
-            rv.setTextViewText(iHead, "📋 المهام")
-            rv.setTextViewText(iTitle, "مفيش مهام شغّالة دلوقتي")
+            rv.setTextViewText(iHead, "⬇ التحميل والترجمة")
+            rv.setTextViewText(iTitle, "مفيش شغل شغّال دلوقتي")
             rv.setTextViewText(iInfo, "")
             rv.setViewVisibility(iBar, View.GONE)
             rv.setViewVisibility(iPrev, View.INVISIBLE)

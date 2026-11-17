@@ -32,4 +32,18 @@ object WebMute {
             else w.post { try { w.evaluateJavascript(PAUSE_JS, null) } catch (_: Throwable) {} }
         } catch (_: Throwable) {}
     }
+
+    private const val PAUSE_MARK_JS = "(function(){var n=0;try{var a=document.querySelectorAll('video,audio');for(var i=0;i<a.length;i++){try{if(!a[i].paused&&!a[i].ended){a[i].__jbGuard=1;a[i].pause();n++}}catch(e){}}}catch(e){}return n})()"
+    private const val RESUME_MARK_JS = "(function(){try{var a=document.querySelectorAll('video,audio');for(var i=0;i<a.length;i++){try{if(a[i].__jbGuard){a[i].__jbGuard=0;var p=a[i].play();if(p&&p.catch)p.catch(function(){})}}catch(e){}}}catch(e){}})()"
+
+    /** (v1010) تحذير الداتا: بيوقّف اللي شغّال بس ويعلّم عليه عشان resumeMarked يكمّله. بيرجّع true لو في WebViews مسجّلة. UI thread. */
+    fun pauseMarked(): Boolean {
+        val ws = synchronized(this) { live.removeAll { it.get() == null }; live.mapNotNull { it.get() } }
+        for (w in ws) try { w.evaluateJavascript(PAUSE_MARK_JS, null) } catch (_: Throwable) {}
+        return ws.isNotEmpty()
+    }
+    fun resumeMarked() {
+        val ws = synchronized(this) { live.mapNotNull { it.get() } }
+        for (w in ws) try { w.evaluateJavascript(RESUME_MARK_JS, null) } catch (_: Throwable) {}
+    }
 }

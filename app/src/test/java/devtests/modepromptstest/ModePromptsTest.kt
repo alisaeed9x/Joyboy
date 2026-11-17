@@ -10,7 +10,7 @@ private fun check(name: String, ok: Boolean) { if (ok) println("PASS $name") els
 fun main() {
     val pb = PromptBuilder { File(System.getenv("SUBTITLER_ASSETS") ?: "app/src/main/assets", it).readText(Charsets.UTF_8) }
     val langs = listOf("مصري", "شامي", "لبناني", "خليجي", "مغربي", "عراقي", "سوداني", "فصحى")
-    val styles = listOf("حرفي", "شعبي", "جرئ", "+18")
+    val styles = listOf("تلقائي", "حرفي", "شعبي", "جرئ")
     val chars = listOf(Chr("منى", "female", "البطلة"), Chr("علي", "male", ""))
     val gloss = listOf(Gloss("سينسي", "معلم"))
     var n = 0; var bad = 0

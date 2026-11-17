@@ -3,8 +3,8 @@ package com.tttt.subtitler
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 
-/** مقطع صوت جاهز للإرسال: WAV 16kHz mono PCM16. startSec = وقت أول عينة فعلاً في الفيديو. */
-class WavChunk(val bytes: ByteArray, val startSec: Double, val durSec: Double, val silent: Boolean, val gain: Double = 1.0)
+/** مقطع صوت جاهز للإرسال: WAV 16kHz mono PCM16. startSec = وقت أول عينة فعلاً في الفيديو. activeSec = ثواني الكلام الفعلي (نوافذ 0.5ث اللي RMS بتاعها فوق العتبة) — (v998) لوارد: نسبة الصمت لوحدها مبتكفيش للقطع الطويلة */
+class WavChunk(val bytes: ByteArray, val startSec: Double, val durSec: Double, val silent: Boolean, val gain: Double = 1.0, val activeSec: Double = 0.0)
 
 interface AudioSource {
     /** مدة الفيديو بالثواني لو معروفة، وإلا 0 */
@@ -185,7 +185,7 @@ class PcmSink(expectedSec: Double = 60.0, private val outRate: Int = 16000) {
         System.arraycopy(Wav.header(pcm, outRate), 0, out, 0, 44)
         System.arraycopy(buf, 0, out, 44, pcm)
         val silent = winTotal > 0 && winActive.toDouble() / winTotal < 0.04   // (v743) كان 0.06
-        return WavChunk(out, startSec, (pcm / 2).toDouble() / outRate, silent, appliedGain)
+        return WavChunk(out, startSec, (pcm / 2).toDouble() / outRate, silent, appliedGain, winActive * 0.5)
     }
 }
 
