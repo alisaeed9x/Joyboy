@@ -227,7 +227,7 @@ class BottomNav(act: Activity, private val ui: Ui, private val th: Theme, privat
     private val glassNav = MtGlass.on() && !rail   // (v893) تبويب مضيء (lit tab) بدل خط المؤشّر
     private val indicator = View(act).apply {
         background = GradientDrawable().apply {
-            if (glassNav) { setColor(MtGlass.selected(th)); cornerRadius = ui.dp(22).toFloat(); setStroke(1, MtGlass.rim(th)) }
+            if (glassNav) { setColor(capsuleFill()); cornerRadius = ui.dp(22).toFloat(); setStroke(1, MtGlass.rim(th)) }
             else { setColor(th.primary); cornerRadius = ui.dp(2).toFloat() }
         }
     }
@@ -443,6 +443,10 @@ class BottomNav(act: Activity, private val ui: Ui, private val th: Theme, privat
         lineV?.setBackgroundColor(if (c != null) 0x22FFFFFF else if (MtGlass.on()) MtGlass.rim(th) else th.border)
         paint()
     }
+    // (v1080) تعبئة الكبسولة شفافة عشان الأيقونة والليبل اللي تحتها يبانوا: الكبسولة مرسومة فوق الصف (wrap.addView بعد row) فأي تعبئة مصمتة بتدفنهم — والشفافية دي هي اللي الزجاج قبل v1071 كان بيعملها
+    // الداكن: أبيض 20% زي فرع الـtinted في نفس السطر (فوق الشريط #121212 بيطلع رمادي #414141 والأيقونة البيضا بتفضل بيضا تحته) · الفاتح: أسود 12% (فوق الشريط #EDEDED بيطلع رمادي #D1D1D1 والأيقونة السودا بتفضل سودا تحته)
+    private fun capsuleFill(): Int =
+        if (th.isLight) 0x1F000000 else 0x33FFFFFF
     private fun paint() {
         for (i in icons.indices) {
             val on = i == cellOf(active)
@@ -451,6 +455,6 @@ class BottomNav(act: Activity, private val ui: Ui, private val th: Theme, privat
             icons[i].setTextColor(if (on) onC else off)
             labels[i].setTextColor(if (on) onC else off)
         }
-        (indicator.background as? GradientDrawable)?.setColor(if (glassNav) (if (tinted) 0x33FFFFFF else MtGlass.selected(th)) else if (tinted) 0xFFFFFFFF.toInt() else th.primary)
+        (indicator.background as? GradientDrawable)?.setColor(if (glassNav) (if (tinted) 0x33FFFFFF else capsuleFill()) else if (tinted) 0xFFFFFFFF.toInt() else th.primary)
     }
 }
