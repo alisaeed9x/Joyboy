@@ -34,6 +34,12 @@ object SkipiiEmbed {
     var onFullscreen: ((Boolean) -> Unit)? = null
     /** (id, title) of a tapped video; return true when the host plays it itself. */
     var onPlay: ((String, String) -> Boolean)? = null
+    /** (v1081) true while the host's own «الشورتس» tab is the visible one: Skipii shows its Shorts page (no Shorts tab in Skipii's own pill). */
+    var shortsMode by mutableStateOf(false)
+    /** (v1081) ‹ / Back on the host's Shorts tab: the host leaves the Shorts tab (to YouTube). */
+    var onShortsBack: (() -> Unit)? = null
+    /** (v1081) Skipii runs inside Joyboy: Shorts has its own host tab, so Skipii's pill/rail don't list it. */
+    var embedded = false
     private var savedOrientation: Int? = null
 
     fun mainIntent(context: Context): Intent =
@@ -96,6 +102,7 @@ object SkipiiEmbed {
     }
 
     fun createView(activity: ComponentActivity): View = ComposeView(activity).apply {
+        embedded = true
         layoutDirection = View.LAYOUT_DIRECTION_LTR
         setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
         setContent {

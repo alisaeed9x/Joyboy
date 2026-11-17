@@ -5658,9 +5658,11 @@ class PlayerActivity : Activity(), Host {
                 val onlineSrc = url != null || uri?.scheme?.startsWith("http") == true
                 if (onlineSrc && durMs > 0) { try { addBuf(cur / 1000.0, player.bufferedPosition / 1000.0) } catch (_: Throwable) {} }
                 val refSegs = engine.refiningSegs
+                val sentSegs = try { engine.inflightSegs() } catch (_: Throwable) { emptyList() }   // (v1081) أزرق = اتبعت ولسه ما رجعش
+                pr.sent = sentSegs
                 pr.durSec = durMs / 1000.0; pr.cov = segCov; pr.pend = segPend; pr.refine = refSegs; pr.vis = segVis; pr.buf = if (onlineSrc) ArrayList(bufSegs) else partBuf
                 pr.invalidate()
-                if (miniBar.visibility == View.VISIBLE) { miniBar.played = frac; miniBar.durSec = durMs / 1000.0; miniBar.cov = segCov; miniBar.pend = segPend; miniBar.refine = refSegs; miniBar.vis = segVis; miniBar.buf = pr.buf; miniBar.invalidate() }
+                if (miniBar.visibility == View.VISIBLE) { miniBar.played = frac; miniBar.durSec = durMs / 1000.0; miniBar.cov = segCov; miniBar.sent = sentSegs; miniBar.pend = segPend; miniBar.refine = refSegs; miniBar.vis = segVis; miniBar.buf = pr.buf; miniBar.invalidate() }
                 val tEl = PlayerLogic.clock(cur); val tDu = PlayerLogic.clock(durMs)
                 if (fullMode) { fsEl.text = tEl; fsDu.text = tDu } else { ctl.tEl.text = tEl; ctl.tDur.text = tDu }
                 val now = System.currentTimeMillis()

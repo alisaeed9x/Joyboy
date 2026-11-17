@@ -24,23 +24,25 @@ class BottomNav(act: Activity, private val ui: Ui, private val th: Theme, privat
         const val IR = 15
         /** (v829) زرار «العناية»: واخد مكان «ريموت IR» في الشريط الأساسي (IR راح لـ«المزيد») — بيفتح CareUi مباشرة */
         const val CARE = 16
+        /** (v1081) «الشورتس» تبويب لوحده برّه يوتيوب (بيفتح صفحة الشورتس بتاعة Skipii) */
+        const val SHORTS = 17
         /** (v472) «الذكاء» تبويب اتمسح قديمًا — الرقم 6 محجوز عشان ترقيم البوابات ما يتغيّرش، لكن مش بيظهر في أي حته */
         const val DEAD_AI = 6
         /** (v467) ترتيب الشريط بطلب صاحب التطبيق: الفيديوهات ← يوتيوب ← الموسيقى ← المتصفح ← المزيد.
          *  أي بوابة مش في الشريط بتظهر تلقائيًا جوه «المزيد» — فأي إضافة جديدة هتبان من غير تعديل هنا. */
-        val BAR_ORDER = listOf(0, REMOTE, 4, 2, NET, 8)   // (v654) 1 (الموسيقى) اتدمجت مع 0 في زرار «ميديا»   // (v1041) «العناية» اتشالت
+        val BAR_ORDER = listOf(0, REMOTE, 4, SHORTS, 2, 8)   // (v1081) ميديا · يوتيوب · الشورتس · المتصفح · المزيد (النت والداتا في «المزيد»)   // (v654) 1 (الموسيقى) اتدمجت مع 0 في زرار «ميديا»   // (v1041) «العناية» اتشالت
         /** (v475) خلايا يوتيوب الافتراضية (مش بوابات): الرئيسية 9 · الاشتراكات 10 · أنا 11 — بتحل محل خلية «يوتيوب» وانت جواه */
         const val YT_HOME = 9; const val YT_SUBS = 10; const val YT_ME = 11
         val NORMAL_ORDER = BAR_ORDER
         val YT_ORDER = listOf(0, YT_HOME, YT_SUBS, YT_ME, NET, MORE)  // نسخة كاملة وانت في يوتيوب: الموسيقى والمتصفح بيروحوا لـ«المزيد» · (v829) زرار النت بعد «أنا» (كان قبلها)
         val LITE_ORDER = listOf(YT_HOME, YT_SUBS, 0, YT_ME)           // نسخة اللايت: الرئيسية · الاشتراكات · محلي · أنا
         val DEFS = listOf("🎞" to "الفيديوهات", "🎵" to "الموسيقى", "🌐" to "المتصفح", "🗂" to "المخزن", "▶" to "يوتيوب", "⬇" to "مركز التحميل", "" to "", "⚙️" to "الإعدادات", "⋯" to "المزيد",
-            "🏠" to "الرئيسية", "📺" to "الاشتراكات", "👤" to "أنا", "📱" to "الريموت", "📎" to "الكليبورد", "📶" to "", "📡" to "ريموت IR", "🩺" to "العناية")
+            "🏠" to "الرئيسية", "📺" to "الاشتراكات", "👤" to "أنا", "📱" to "الريموت", "📎" to "الكليبورد", "📶" to "", "📡" to "ريموت IR", "🩺" to "العناية", "🎬" to "الشورتس")
     }
     /** البوابات اللي ورا ⋯ المزيد: أي بوابة مش في الشريط (حاليًا: الملفات 3 · المهام 5 · الذكاء 6 · الإعدادات 7) — الزرار بيتلوّن لما واحدة منهم تبقى هي النشطة */
     private val lite = act.packageName.endsWith(".lite")
     private val tvDev = try { DeviceUi.isTv(act) } catch (_: Throwable) { false }   // (v521) على التلفزيون زرار الريموت مخفي
-    private fun normalOrder(): List<Int> = NORMAL_ORDER.filter { it != REMOTE && !(it == IR && tvDev) }.map { if (it == NET && tvDev) 3 else it }   // (v815) على التلفزيون «المخزن» يفضل مكانه
+    private fun normalOrder(): List<Int> = NORMAL_ORDER.filter { it != REMOTE && !(it == IR && tvDev) && (it != SHORTS || (!tvDev && try { com.decio.skipii.ShortsSetting.enabled } catch (_: Throwable) { false })) }.map { if (it == NET && tvDev) 3 else it }   // (v815) على التلفزيون «المخزن» يفضل مكانه
     private fun ytOrder(): List<Int> = YT_ORDER.filter { it != NET || !tvDev }   // (v823) على التلفزيون زرار النت مش في الشريط
     private var order: List<Int> = if (lite) LITE_ORDER else normalOrder()   // (v554) زرار الريموت اتشال: وضع التلفزيون بزرار عايم
     private fun cellOf(a: Int): Int = if (a in order) a else if (a == 1 && !lite && 0 in order) 0 else if (a == 4 && YT_HOME in order) YT_HOME else if ((a == YT_HOME || a == YT_SUBS || a == YT_ME) && 4 in order) 4 else if (lite) (if (a == 7) YT_ME else -1) else MORE
@@ -227,7 +229,7 @@ class BottomNav(act: Activity, private val ui: Ui, private val th: Theme, privat
     private val glassNav = MtGlass.on() && !rail   // (v893) تبويب مضيء (lit tab) بدل خط المؤشّر
     private val indicator = View(act).apply {
         background = GradientDrawable().apply {
-            if (glassNav) { setColor(capsuleFill()); cornerRadius = ui.dp(22).toFloat(); setStroke(1, MtGlass.rim(th)) }
+            if (glassNav) { setColor(MtGlass.selected(th)); cornerRadius = ui.dp(22).toFloat(); setStroke(1, MtGlass.rim(th)) }
             else { setColor(th.primary); cornerRadius = ui.dp(2).toFloat() }
         }
     }
@@ -260,7 +262,7 @@ class BottomNav(act: Activity, private val ui: Ui, private val th: Theme, privat
                 addView(box, if (idx == NET) LinearLayout.LayoutParams(ui.dp(54), ui.dp(30)) else LinearLayout.LayoutParams(ui.dp(38), ui.dp(20)))
                 addView(lab, LinearLayout.LayoutParams(-2, -2))
                 Glass.pressable(this)
-                setOnClickListener { if (idx == MORE) { set(idx); toggleMore(act) } else if (idx == REMOTE) { set(idx); try { ControllerPad.show(act) } catch (e: Throwable) { LogStore.err("Nav:remote", e) } } else if (idx == CARE) { set(idx); collapseMore(); try { CareUi(act, ui, th).show() } catch (e: Throwable) { LogStore.err("Nav:care", e) } } else if (idx == IR) { set(idx); collapseMore(); try { IrCatalogUi.show(act) } catch (e: Throwable) { LogStore.err("Nav:ir", e) } } else if (idx == NET) { set(idx); collapseMore(); try { NetStatsUi(act, ui, th).show() } catch (e: Throwable) { LogStore.err("Nav:net", e) } } else { collapseMore(); val leaves = act !is MainActivity || idx == 2 || idx == 3 || idx == 4   // (v911) كل اللي بيفتح شاشة تانية (متصفح/مخزن/يوتيوب)؛ التبويبات الداخلية في Main عندها أنيميشنها
+                setOnClickListener { if (idx == MORE) { set(idx); toggleMore(act) } else if (idx == REMOTE) { set(idx); try { ControllerPad.show(act) } catch (e: Throwable) { LogStore.err("Nav:remote", e) } } else if (idx == CARE) { set(idx); collapseMore(); try { CareUi(act, ui, th).show() } catch (e: Throwable) { LogStore.err("Nav:care", e) } } else if (idx == IR) { set(idx); collapseMore(); try { IrCatalogUi.show(act) } catch (e: Throwable) { LogStore.err("Nav:ir", e) } } else if (idx == NET) { set(idx); collapseMore(); try { NetStatsUi(act, ui, th).show() } catch (e: Throwable) { LogStore.err("Nav:net", e) } } else { collapseMore(); val leaves = act !is MainActivity || idx == 2 || idx == 3   // (v911) كل اللي بيفتح شاشة تانية (متصفح/مخزن/يوتيوب)؛ التبويبات الداخلية في Main عندها أنيميشنها
                     if (leaves && !rail && cellOf(idx) != cellOf(active) && !navPending) {   // (v911) الشاشات التانية Activity لوحدها: كانت بتتفتح/تتقفل لحظة الدوسة فمفيش عدسة ولا انزلاق ولا ضغطة، والفتح الثقيل كان بيتزامن مع الأنيميشن فيقطّع. دلوقتي الأنيميشن بيخلّص الأول وبعدها الانتقال
                         val prev = active; val inMain = act is MainActivity
                         navPending = true; set(idx)
@@ -443,10 +445,6 @@ class BottomNav(act: Activity, private val ui: Ui, private val th: Theme, privat
         lineV?.setBackgroundColor(if (c != null) 0x22FFFFFF else if (MtGlass.on()) MtGlass.rim(th) else th.border)
         paint()
     }
-    // (v1080) تعبئة الكبسولة شفافة عشان الأيقونة والليبل اللي تحتها يبانوا: الكبسولة مرسومة فوق الصف (wrap.addView بعد row) فأي تعبئة مصمتة بتدفنهم — والشفافية دي هي اللي الزجاج قبل v1071 كان بيعملها
-    // الداكن: أبيض 20% زي فرع الـtinted في نفس السطر (فوق الشريط #121212 بيطلع رمادي #414141 والأيقونة البيضا بتفضل بيضا تحته) · الفاتح: أسود 12% (فوق الشريط #EDEDED بيطلع رمادي #D1D1D1 والأيقونة السودا بتفضل سودا تحته)
-    private fun capsuleFill(): Int =
-        if (th.isLight) 0x1F000000 else 0x33FFFFFF
     private fun paint() {
         for (i in icons.indices) {
             val on = i == cellOf(active)
@@ -455,6 +453,6 @@ class BottomNav(act: Activity, private val ui: Ui, private val th: Theme, privat
             icons[i].setTextColor(if (on) onC else off)
             labels[i].setTextColor(if (on) onC else off)
         }
-        (indicator.background as? GradientDrawable)?.setColor(if (glassNav) (if (tinted) 0x33FFFFFF else capsuleFill()) else if (tinted) 0xFFFFFFFF.toInt() else th.primary)
+        (indicator.background as? GradientDrawable)?.setColor(if (glassNav) (if (tinted) 0x33FFFFFF else MtGlass.selected(th)) else if (tinted) 0xFFFFFFFF.toInt() else th.primary)
     }
 }

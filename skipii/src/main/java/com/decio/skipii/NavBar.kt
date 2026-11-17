@@ -297,7 +297,7 @@ internal fun NavPill(
                     horizontalArrangement = Arrangement.spacedBy(BarGap),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    val shown = Tab.entries.filter { it != Tab.Shorts || ShortsSetting.enabled }
+                    val shown = Tab.entries.filter { it != Tab.Shorts || (ShortsSetting.enabled && !SkipiiEmbed.embedded) }   // (v1081) الشورتس تبويب لوحده في شريط Joyboy
                     shown.forEachIndexed { i, t ->
                         val active = t == selected
                         val spec = if (reduced) snap<Float>() else tween(260, easing = Motion.Emphasized)

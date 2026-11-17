@@ -58,6 +58,9 @@ class DualProgress(ctx: Context, val th: Theme) : View(ctx) {
     var buf: List<DoubleArray> = emptyList()
     /** (v226) أماكن جمل الوضع البصري — علامات زرقاء تحت الأخضر */
     var vis: List<DoubleArray> = emptyList()
+    /** (v1081) باتشات اتبعتت للترجمة ولسه ما رجعتش — أزرق على نفس خط الأخضر (الأخضر = اتكتب) عشان تعرف إنه اتبعت مش اتنسي */
+    var sent: List<DoubleArray> = emptyList()
+    private val SENT_BLUE = 0xFF2DA8FF.toInt()
     private val p = Paint(Paint.ANTI_ALIAS_FLAG)
     private val d = ctx.resources.displayMetrics.density
     /** (v445) 0..1: الشريط بيتخن والمقبض بيكبر وبيتوهّج وانت ماسكه (أنيميشن ناعم) */
@@ -88,7 +91,7 @@ class DualProgress(ctx: Context, val th: Theme) : View(ctx) {
         setMeasuredDimension(MeasureSpec.getSize(w), if (thin) MeasureSpec.getSize(h).coerceAtLeast(3) else ((if (mini) (if (big) 50 else 30) else 34) * d).toInt())
     }
 
-    private fun strip(c: Canvas, w: Float, y0: Float, hh: Float, segs: List<DoubleArray>, color: Int, trackColor: Int?) {
+    private fun strip(c: Canvas, w: Float, y0: Float, hh: Float, segs: List<DoubleArray>, color: Int, trackColor: Int?, minW: Float = 1.5f * d) {
         val rad = hh / 2f
         if (trackColor != null) { p.shader = null; p.color = trackColor; c.drawRoundRect(RectF(0f, y0, w, y0 + hh), rad, rad, p) }
         if (durSec <= 0.0 || segs.isEmpty()) return
@@ -97,7 +100,7 @@ class DualProgress(ctx: Context, val th: Theme) : View(ctx) {
             val a = (w * (s[0] / durSec)).toFloat().coerceIn(0f, w)
             val b = (w * (s[1] / durSec)).toFloat().coerceIn(0f, w)
             if (b <= a && a >= w) continue
-            c.drawRoundRect(RectF(a, y0, maxOf(b, a + 1.5f * d).coerceAtMost(w), y0 + hh), rad, rad, p)
+            c.drawRoundRect(RectF(a, y0, maxOf(b, a + minW).coerceAtMost(w), y0 + hh), rad, rad, p)
         }
     }
 
@@ -112,6 +115,7 @@ class DualProgress(ctx: Context, val th: Theme) : View(ctx) {
             p.color = 0x44FFFFFF; c.drawRect(0f, hh, w, 2f * hh, p)
             p.color = 0xFF3B82F6.toInt(); c.drawRect(0f, hh, w * played.coerceIn(0f, 1f), 2f * hh, p)
             strip(c, w, 2f * hh, hh, cov, 0xFF22C55E.toInt(), 0x33FFFFFF)
+            if (sent.isNotEmpty()) strip(c, w, 2f * hh, hh, sent, SENT_BLUE, null, 5f * d)
             return
         }
         if (mini) {
@@ -135,10 +139,12 @@ class DualProgress(ctx: Context, val th: Theme) : View(ctx) {
                 // (v804) شريط واحد: تقدم الترجمة (أخضر) خط رفيع جوه نفس الشريط من تحت، وعلامات الوضع البصري (أزرق فاتح) من فوق
                 val ih = (tr * 0.7f).coerceAtLeast(2f * d)
                 strip(c, w, cy + tr - ih - 1f * d, ih, cov, 0xFF22C55E.toInt(), null)
+                if (sent.isNotEmpty()) strip(c, w, cy + tr - ih - 1f * d, ih, sent, SENT_BLUE, null, 5f * d)
                 if (vis.isNotEmpty()) strip(c, w, cy - tr + 1f * d, ih * 0.8f, vis, 0xFF93C5FD.toInt(), null)
             } else {
                 // الشريط التاني (تحت): أخضر = فيه جملة ترجمة فعلًا (بيتقطع عند الفجوات)
                 strip(c, w, cy + tr + 3f * d * kk, 4f * d * kk, cov, 0xFF22C55E.toInt(), th.border)
+                if (sent.isNotEmpty()) strip(c, w, cy + tr + 3f * d * kk, 4f * d * kk, sent, SENT_BLUE, null, 5f * d)
                 if (vis.isNotEmpty()) strip(c, w, cy + tr + 8.5f * d * kk, 3f * d * kk, vis, 0xFF3B82F6.toInt(), null)
             }
             val r = (if (dragging) 5.5f else 3.5f) * d * (if (big) 2.4f else 1f)
@@ -165,6 +171,7 @@ class DualProgress(ctx: Context, val th: Theme) : View(ctx) {
             p.shader = null
         }
         strip(c, w, cy + th6 + 4f * d, 3f * d, cov, 0xFF22C55E.toInt(), 0x2EFFFFFF)
+        if (sent.isNotEmpty()) strip(c, w, cy + th6 + 4f * d, 3f * d, sent, SENT_BLUE, null, 5f * d)
         if (vis.isNotEmpty()) strip(c, w, cy + th6 + 8.5f * d, 3f * d, vis, 0xFF3B82F6.toInt(), null)
         val r = (5.5f + 3.5f * grow) * d
         val tx = px.coerceIn(r, w - r)

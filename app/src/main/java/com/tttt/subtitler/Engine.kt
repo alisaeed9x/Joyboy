@@ -526,6 +526,39 @@ class Engine(
     // ===== واجهة للـ UI =====
     fun failedCount() = failed.count { it.value >= MAX_FAILS }
     /** (v146) سطر لكل باتش + هل هو الأسرع في دفعته (بيتلوّن أخضر). الدفعة = الباتشات اللي بتتبعت مع بعض (عددها = عدد الطلبات المتوازية) */
+    // ===== (v1081) الكتابة بالترتيب + باتشات «اتبعتت ولسه ما رجعتش» =====
+    /** (v1083) أقصى استنى للكتابة بالترتيب: كان 45ث وكان بيحبس باقي الباتشات ورا باتش بطيء/فاشل ← بقى ثواني قليلة بس */
+    private val ORDER_MAX_WAIT_MS = 3_000L
+    /** باتش أقدم اتبعت من أكتر من كده يتعتبر «متأخر» ومش بنستناه */
+    private val ORDER_STALE_MS = 20_000L
+    /** فيه باتش أقدم (جوه النافذة) لسه شغّال أو مستني مفتاح؟ ← الباتش ده يستنى دوره. الفاشل نهائي (فجوة) والباتش اللي عدّى عليه ORDER_MAX_WAIT_MS ما بيعطّلوش حد */
+    private fun lowerPending(i: Int): Boolean {
+        val lo = maxOf(0, i - window)
+        val now = System.currentTimeMillis()
+        for (k in lo until i) {
+            if ((failed[k] ?: 0) >= MAX_FAILS) continue
+            if (fastLatched && k == rampChunk) continue   // (v1083) خطوات التسخين متتابعة بطبعها — الباتشات اللي بعدها ما تستناهاش
+            if (k in inflight) { val t = startedAt[k]; if (t != null && now - t <= ORDER_STALE_MS) return true }
+            // (v1083) باتش مستني مفتاح (rehome) ما بيحبسش حد: كان بيوقّف كل اللي بعده من غير حد أقصى
+        }
+        return false
+    }
+    private fun awaitTurn(i: Int) {
+        val t0 = System.currentTimeMillis()
+        while (running && !isClosed && System.currentTimeMillis() - t0 < ORDER_MAX_WAIT_MS && lowerPending(i)) nap(150)
+        val w = System.currentTimeMillis() - t0
+        if (w >= 1500L) LogStore.add("⏳ باتش ${i + 1}: استنى دوره ${w / 1000}ث (باتش أقدم لسه شغّال) عشان الكتابة تبقى بالترتيب")
+    }
+    /** مجالات الباتشات اللي اتبعتت (أو اتفرّغت ومستنية الترجمة) ولسه ما اتكتبتش — خط/نقط زرقا في شريط التقدم */
+    fun inflightSegs(): List<DoubleArray> {
+        if (inflight.isEmpty() && tHold.isEmpty()) return emptyList()
+        val d = currentDur(); if (d <= 0) return emptyList()
+        val ids = java.util.TreeSet<Int>(); ids.addAll(inflight); ids.addAll(tHold.keys)
+        val out = ArrayList<DoubleArray>()
+        for (k in ids) { if (cStart(k) >= d || isDone(k, d)) continue; out.add(doubleArrayOf(cStart(k), cEnd(k, d))) }
+        return out
+    }
+
     fun batchRows(): List<Pair<String, Boolean>> {
         val d = host.playerDuration()
         val c = (host.position() / ch).toInt().coerceAtLeast(0)
@@ -915,7 +948,8 @@ class Engine(
     fun run() {
         if (conf.keys.isEmpty() && conf.backup.isEmpty()) { host.status("⚠ ادخل مفتاح Gemini في الإعدادات"); host.log("⚠ مفيش مفاتيح Gemini"); host.notice("⚠ مفيش مفتاح جيميناي — ضيف واحد من الإعدادات ← المفاتيح"); return }
         fastLatched = try { Cfg.bool("fastmode", false) } catch (_: Throwable) { false }; rampChunk = -1; fastLight.clear()
-        directLatched = try { TrSlider.direct() } catch (_: Throwable) { false }   // (v1075)   // (v1068) الوضع السريع بيتأخد من الإعداد وقت بداية الترجمة (مش وقت فتح المشغّل) — عشان صف «⚡ سريع» في قايمة جيميناي يشتغل على طول
+        directLatched = try { TrSlider.direct() } catch (_: Throwable) { false }   // (v1075)
+        try { host.log("🎚 سلايدر " + TrSlider.pos() + "/10 — " + (if (directLatched) "⚡ مسار مباشر (صوت←ترجمة بطلب واحد، كل المفاتيح)" else "🧩 تفريغ ثم ترجمة مجمّعة") + " · " + conf.keys.size + " مفتاح" + (if (fastLatched) " · ramp/stream" else "")) } catch (_: Throwable) {}   // (v1083) تشخيص: مسار السلايدر الفعلي في اللوج   // (v1068) الوضع السريع بيتأخد من الإعداد وقت بداية الترجمة (مش وقت فتح المشغّل) — عشان صف «⚡ سريع» في قايمة جيميناي يشتغل على طول
         Api.onSlow = { m -> try { host.status(m) } catch (_: Throwable) {} }   // (v468) مؤشر «باتش بيحاول» في شريط الحالة
         val capMax = basePool.capacity(ppk)
         val ex = Executors.newFixedThreadPool(maxOf(capMax, Offline.MAX_PAR) + 2) { r -> Thread(r).also { it.isDaemon = true } }   // +2: باتش اتنسخ واتحسب من نسخته الاحتياطية ممكن يفضل خيطه الأصلي شغال شوية من غير ما يحجز مكان باتش جديد
@@ -1467,6 +1501,7 @@ class Engine(
                     if (hedge) { inflight.remove(i); host.log("⚡ باتش ${i + 1}: النسخة الاحتياطية خلصت الأول") }
                     return
                 }
+                if (!backupFirst && !hedge) awaitTurn(i)   // (v1081) الكتابة بالترتيب: باتش أقدم لسه شغّال ← استنى دوره (بحد أقصى ORDER_MAX_WAIT_MS)
                 val rampWin = fastLatched && i == rampChunk
                 applyChunk(i, rawStart, rawEnd, w, j, fresh, prior)
                 if (rampWin) { rampStep++; rampNext = rawEnd }   // (v1065) الخطوة الجاية أكبر
@@ -1782,7 +1817,7 @@ class Engine(
     private fun crossCheck(i: Int, w: WavChunk, fresh: List<Sub>, key0: String): Pair<List<Sub>, Set<Double>> {
         val none: Pair<List<Sub>, Set<Double>> = fresh to emptySet()
         val mode = try { Cfg.int("dual_listen", 1) } catch (_: Throwable) { 1 }
-        if (mode == 0 || !TrSlider.on("cross") || Offline.on() || !running || isClosed || w.silent || fresh.isEmpty()) return none   // (v1075) السلايدر
+        if (mode == 0 || !TrSlider.on("cross") || Offline.on() || !running || isClosed || w.silent || fresh.isEmpty() || accLagging(i, "التسميع المزدوج")) return none   // (v1075) السلايدر
         if (mode == 1 && !nonEnglishSrc() && !TrSlider.on("crossall")) return none
         if (pool.usableCount() < 2) return none
         val keyB = pool.pickFree(key0, rr.getAndIncrement()) ?: return none
@@ -1862,8 +1897,16 @@ class Engine(
      * (v331) الجمل اللي جيميناي علّم عليها low_confidence: سماع تاني لنافذة ضيقة حواليها (±1.2ث) بمفتاح تاني، ومعاها قراءة المرة الأولى كمرجع.
      * بنستبدل النص بس لو الرد منطقي (مش فاضي ولا أطول بكتير)؛ التوقيت والباقي زي ما هو. أقصى 4 جمل للباتش. مش بيشتغل مع التفريغ الأوفلاين.
      */
+    private val accSkipLogged = java.util.concurrent.ConcurrentHashMap.newKeySet<Int>()
+    /** (v1083) إضافات الدقة (تسميع مزدوج / سماع تاني) بتتخطّى لو الترجمة متأخرة (4+ باتشات مستنية) أو مفتاح واحد بس متاح — الأولوية إن الترجمة توصل */
+    private fun accLagging(i: Int, what: String): Boolean {
+        val keysLow = pool.usableCount() < 2
+        val lag = keysLow || tHold.size >= 4
+        if (lag && accSkipLogged.add(i)) LogStore.add("⏭ باتش ${i + 1}: تخطّيت $what — " + (if (keysLow) "مفتاح واحد بس متاح" else "فيه ${tHold.size} باتش مستني الترجمة"))
+        return lag
+    }
     private fun relistenLow(i: Int, fresh: List<Sub>, key0: String, skip: Set<Double> = emptySet()): List<Sub> {
-        if (!TrSlider.on("relisten") || Offline.on() || !running || isClosed) return fresh   // (v1075) السلايدر
+        if (!TrSlider.on("relisten") || Offline.on() || !running || isClosed || accLagging(i, "السماع التاني")) return fresh   // (v1075) السلايدر
         val idx = fresh.indices.filter { fresh[it].lowConf && !fresh[it].isSound && !fresh[it].isSong && fresh[it].original.isNotBlank() && fresh[it].start !in skip }.take(if (nonEnglishSrc()) 8 else 4)   // (v742) 8 للغات غير الإنجليزي · اللي اتحكم فيه بالتسميع المزدوج بيتخطّى
         if (idx.isEmpty()) return fresh
         val out = fresh.toMutableList()
@@ -1941,6 +1984,7 @@ class Engine(
         if ((activeMode >= KeyMode.TRANSCRIBE_ALL || Strict.mt()) && !switching) return contextTick()   // (v696) أوفلاين كامل: الترجمة بعد ما كل الباتشات تتفرّغ (رام)   // (v219) الوضع 4: ترجمة سياقية واحدة بعد ما كل الباتشات تتنسخ
         if (tHold.isEmpty() || !running || isClosed) return false
         if (trBusy.get() >= maxOf(1, trPool.capacity(1))) return false
+        // (v1083) رجعت زي v1075: الترجمة المجمّعة ما بتستناش باتش أقدم لسه بيتنسخ (كان v1081 بيحبسها ورا أبطأ باتش — خصوصًا مع التسميع المزدوج)
         val avail = tHold.keys.filter { it !in tTaken }.sorted()
         if (avail.isEmpty()) return false
         val now = System.currentTimeMillis()

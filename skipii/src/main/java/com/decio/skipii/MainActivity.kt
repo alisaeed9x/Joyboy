@@ -378,7 +378,7 @@ fun SkipiiApp() {
         val back = shortsBackTo
         shortsBackTo = null
         when {
-            back == null -> tab = shortsFrom
+            back == null -> { val hook = SkipiiEmbed.onShortsBack; if (SkipiiEmbed.shortsMode && hook != null) hook() else tab = shortsFrom }   // (v1081) تبويب الشورتس بتاع Joyboy: الرجوع بيخرج منه
             // From another tab: leave() puts the feed back; the channel page shows over that tab again.
             !shortsListOnTab -> { tab = shortsFrom; showChannel(back) }
             // From the channel page over a short: the page covers the feed's short again (paused first).
@@ -438,6 +438,17 @@ fun SkipiiApp() {
     }
     // Shorts turned off (account sheet) while it was the tab: back to where it was opened from.
     LaunchedEffect(ShortsSetting.enabled) { if (!ShortsSetting.enabled && tab == Tab.Shorts) tab = shortsFrom }
+    // (v1081) تبويب «الشورتس» بتاع Joyboy (برّه يوتيوب): الهوست بيشغّل shortsMode ← Skipii يفتح صفحة الشورتس؛ ولما يطفّيه يرجع للتبويب اللي كان فيه
+    LaunchedEffect(SkipiiEmbed.shortsMode) {
+        if (SkipiiEmbed.shortsMode) {
+            if (tab != Tab.Shorts) {
+                settingsOpen = false; openPlaylist = null; openChannel = null; player.expanded = false
+                shortsFrom = Tab.Home; tab = Tab.Shorts
+            }
+        } else if (tab == Tab.Shorts) {
+            tab = if (shortsFrom == Tab.Shorts) Tab.Home else shortsFrom
+        }
+    }
     LaunchedEffect(tab == Tab.Shorts) {
         if (tab == Tab.Shorts) shortsMorph.animateTo(1f, if (reduced) snap() else tween(ShortsEnterMs, easing = androidx.compose.animation.core.LinearEasing))
         else shortsMorph.animateTo(0f, if (reduced) snap() else tween(ShortsExitMs, easing = ShortsExitEasing))
@@ -564,7 +575,7 @@ fun SkipiiApp() {
                     lib, contentPadding, onOpen = player::open, onSearch = { tab = Tab.Search },
                     onSignIn = { signingIn = true }, onAccount = { settingsOpen = true },
                     scrollToTop = scrollToTop[Tab.Home] ?: 0,
-                    shortsCard = if (wide && ShortsSetting.enabled && shorts.items.isNotEmpty()) {
+                    shortsCard = if (wide && ShortsSetting.enabled && !SkipiiEmbed.embedded && shorts.items.isNotEmpty()) {
                         { m -> ShortsHomeCard(shorts, onOpen = { selectTab(Tab.Shorts) }, modifier = m) }
                     } else null,
                 )
@@ -624,7 +635,7 @@ fun SkipiiApp() {
         if (showRail) {
             NavRail(
                 selected = tab,
-                tabs = Tab.entries.filter { it != Tab.Shorts || ShortsSetting.enabled },
+                tabs = Tab.entries.filter { it != Tab.Shorts || (ShortsSetting.enabled && !SkipiiEmbed.embedded) },
                 onSelect = { t -> if (player.expanded) player.expanded = false; selectTab(t) },
                 modifier = Modifier.graphicsLayer { alpha = 1f - settingsAway },
             )
