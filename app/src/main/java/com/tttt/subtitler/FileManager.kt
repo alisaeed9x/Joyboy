@@ -460,7 +460,7 @@ class FileManagerActivity : Activity() {
                 NavAnim.set(3, i)
                 if (i == 0 && DeviceUi.isTv(this) && TvFocus.goHome(this)) { /* (v482) تلفزيون: الرئيسية = شاشة التلفزيون */ }
                 else if (i == 2) startActivity(TabNav.front(Intent(this, BrowserActivity::class.java)))
-                else if (i == 4) MeeTubeLink.open(this)
+                else if (i == 4) startActivity(TabNav.main(this, "youtube"))   // (v1105 Y5)
                 else startActivity(TabNav.main(this, if (i == 0) "videos" else if (i == 1) "music" else if (i == 7) "settings" else "tasks"))   // (v973) من غير finish
                 NavAnim.peek(this)
             }
@@ -482,7 +482,6 @@ class FileManagerActivity : Activity() {
         setContentView(host)
         fab = TasksFab(this, host, ui) { startActivity(Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP).putExtra("tab", "tasks")) }   // (v420)
         dockUi = MiniDock(this, host, ui, th, { startActivity(Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP).putExtra("fullmusic", true)) })   // (v344)
-        try { YtMiniCard(this, host) } catch (e: Throwable) { LogStore.err("FileManager:ytMini", e) }   // (v1037) كارت يوتيوب المصغّر يمشي معاك في كل الصفحات
         stripUi = StatusStrip(this, host, ui, th) { startActivity(Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP).putExtra("tab", "tasks")) }   // (v345)
     }
 
@@ -904,7 +903,7 @@ class FileManagerActivity : Activity() {
                     data = Uri.fromFile(f); addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                     putExtra("landscape", e in FmUtil.VIDEO); putExtra("fresh", false); putExtra("nosub", false); putExtra("ask", false)
                 }
-                if (!MtPlay.fastOpen(this, pi)) startActivity(pi)   // (v978) فتح مباشر من غير PlayerActivity الوسيطة
+                startActivity(pi)   // (v1105 Y5)
             } else {
                 startActivity(Intent(Intent.ACTION_VIEW).apply {
                     setDataAndType(FmUtil.uriFor(this@FileManagerActivity, f), FmUtil.mime(f)); addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)

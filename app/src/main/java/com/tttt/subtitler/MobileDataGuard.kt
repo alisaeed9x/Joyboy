@@ -151,7 +151,6 @@ object MobileDataGuard {
 
     // ===================== الإيقاف المؤقت والاستكمال =====================
     private fun pauseEverything() {
-        try { pausedMt = MtBar.pauseForGuard() } catch (_: Throwable) {}
         try { pausedJoy = PlayerActivity.pauseForGuard() } catch (_: Throwable) {}
         try { pausedWeb = WebMute.pauseMarked() } catch (_: Throwable) {}
         try {
@@ -164,7 +163,6 @@ object MobileDataGuard {
 
     private fun resumeEverything() {
         val a = app
-        try { if (pausedMt) MtBar.resumeForGuard() } catch (_: Throwable) {}
         try { if (pausedJoy) PlayerActivity.resumeForGuard() } catch (_: Throwable) {}
         try { if (pausedWeb) WebMute.resumeMarked() } catch (_: Throwable) {}
         try {

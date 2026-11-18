@@ -370,16 +370,15 @@ object TvLink {
         val a = j.optString("a")
         // (v531) المتصفح قدّامك (أو مفيش مشغّل برنامج) ← الأوامر والحالة على فيديو الصفحة؛ غير كده ← مشغّل البرنامج
         val useBr = BrowserActivity.live() != null && (top?.get() is BrowserActivity || !PlayerActivity.hasLive())
-        val useMt = !useBr && !PlayerActivity.hasLive() && MtTvPlayer.live()   // (v928) فيديو يوتيوب شغّال في مشغّل MeeTube على التلفزيون
         if (a != "state" && a.isNotEmpty()) {
             if (dup(j.optString("cid"))) return ok(JSONObject().put("dup", true))
-            val handled = if (useBr) BrowserActivity.remoteAct(a, j.optLong("v")) else if (useMt) MtTvPlayer.act(a, j.optLong("v")) else PlayerActivity.remoteAct(a, j.optLong("v"))
+            val handled = if (useBr) BrowserActivity.remoteAct(a, j.optLong("v")) else PlayerActivity.remoteAct(a, j.optLong("v"))
             if (!handled) return ok(JSONObject().put("none", true))
             if (useBr) try { Thread.sleep(120L) } catch (_: Exception) {}   // الـJS يتنفّذ قبل ما نقرا الحالة
         }
-        val st = (if (useBr) BrowserActivity.remoteState() else if (useMt) MtTvPlayer.state() else PlayerActivity.remoteState()) ?: return ok(JSONObject().put("none", true))
-        val note = if (useBr || useMt) "" else PlayerActivity.takeRemoteNote()   // (v799) رسالة الزرار بتتعرض على الموبايل مش التلفزيون
-        val pm = if (useBr || useMt) null else PlayerActivity.takePm()   // (v1044) قايمة اختيار تتعرض على الموبايل
+        val st = (if (useBr) BrowserActivity.remoteState() else PlayerActivity.remoteState()) ?: return ok(JSONObject().put("none", true))
+        val note = if (useBr) "" else PlayerActivity.takeRemoteNote()   // (v799) رسالة الزرار بتتعرض على الموبايل مش التلفزيون
+        val pm = if (useBr) null else PlayerActivity.takePm()   // (v1044) قايمة اختيار تتعرض على الموبايل
         return ok(JSONObject().put("st", st).apply { if (note.isNotEmpty()) put("note", note); if (pm != null) put("pm", pm) })
     }
 
@@ -387,7 +386,7 @@ object TvLink {
     private val subUpParts = HashMap<String, Array<String?>>()
     private fun subUp(r: HttpReq): HttpRes {
         val j = try { JSONObject(r.bodyText()) } catch (_: Exception) { return err(403, "bad") }
-        if (!PlayerActivity.hasLive() && !MtTvPlayer.live()) return ok(JSONObject().put("none", true))   // مفيش مشغّل فيديو شغّال
+        if (!PlayerActivity.hasLive()) return ok(JSONObject().put("none", true))   // مفيش مشغّل فيديو شغّال
         val id = j.optString("id"); val t = j.optInt("t", 1).coerceIn(1, 60); val i = j.optInt("i", 0)
         if (id.isBlank() || i !in 0 until t) return err(400, "bad")
         val parts = synchronized(subUpParts) { if (subUpParts.size > 3 && !subUpParts.containsKey(id)) subUpParts.clear(); subUpParts.getOrPut(id) { arrayOfNulls(t) } }
@@ -406,9 +405,6 @@ object TvLink {
             java.io.File(dir, nm).also { it.writeText(txt, Charsets.UTF_8) }
         } catch (e: Throwable) { LogStore.err("TvLink:subUp", e); return err(500, "write") }
         var handled = PlayerActivity.remoteSubImport(f, nm, cues, j.optString("m") == "show")
-        if (!handled) {
-            try { handled = MtTranslate.importSub(android.net.Uri.fromFile(f)) } catch (_: Throwable) { handled = false }
-        }
         return ok(JSONObject().put("done", true).put("cues", cues).put("player", handled))
     }
 
@@ -418,7 +414,7 @@ object TvLink {
         when (j.optString("a")) {
             "add" -> PlayQueue.add(app, j.optString("ref"), j.optString("title"))
             "addcur" -> {   // (v779) ➕ من الريموت: ضيف الفيديو الشغّال دلوقتي على التلفزيون
-                val o = PlayerActivity.remoteQueueCur() ?: MtTvPlayer.remoteQueueCur() ?: return err(404, "noplayer")
+                val o = PlayerActivity.remoteQueueCur() ?: return err(404, "noplayer")
                 val rf = o.optString("ref")
                 if (rf.isEmpty()) return err(409, "noref")
                 PlayQueue.add(app, rf, o.optString("title"))
@@ -433,7 +429,7 @@ object TvLink {
 
     /** (v694) وصف الفيديو الشغّال دلوقتي (لينك / يوتيوب / فيديو الموبايل) + مكانه — والتلفزيون بيوقّفه مؤقتًا. 404 = مفيش مشغّل */
     private fun handoff(): HttpRes {
-        val o = PlayerActivity.remoteHandoff() ?: MtTvPlayer.remoteHandoff() ?: return err(404, "noplayer")
+        val o = PlayerActivity.remoteHandoff() ?: return err(404, "noplayer")
         return ok(o)
     }
 
@@ -462,7 +458,7 @@ object TvLink {
         if (jid.isBlank() || SfJob.id != jid) return err(409, "nojob")
         SfJob.phoneSeen = System.currentTimeMillis()
         if (SfJob.winner == "tv") return ok(JSONObject().put("lost", true))
-        if (!PlayerActivity.hasLive() && !MtTvPlayer.live()) return ok(JSONObject().put("none", true))
+        if (!PlayerActivity.hasLive()) return ok(JSONObject().put("none", true))
         val t = j.optInt("t", 1).coerceIn(1, 60); val i = j.optInt("i", 0)
         if (i !in 0 until t) return err(400, "bad")
         val parts = synchronized(subTrParts) { if (subTrParts.size > 3 && !subTrParts.containsKey(jid)) subTrParts.clear(); subTrParts.getOrPut(jid) { arrayOfNulls(t) } }
@@ -483,12 +479,7 @@ object TvLink {
                 else -> err(409, "nojob")
             }
         }
-        return when (MtTranslate.applyPhoneSubs(jid, texts, body.optInt("f", 0), body.optString("e", "google"))) {
-            0 -> ok(JSONObject().put("done", true).put("applied", true))
-            3 -> ok(JSONObject().put("done", true).put("lost", true))
-            1 -> ok(JSONObject().put("none", true))
-            else -> err(409, "nojob")
-        }
+        return ok(JSONObject().put("none", true))   // (v1105 Y5) كان MtTranslate.applyPhoneSubs (مشغّل ميتيوب على التلفزيون) — مفيش مشغّل شغّال
     }
 
     /** (v522) مشغّل الموسيقى: a = state أو أمر (toggle/next/prev/seek/seekto/shuffle/mode/lyrics) */
@@ -580,7 +571,7 @@ object TvLink {
                     "vol_up" -> am.adjustStreamVolume(AudioManager.STREAM_MUSIC, AudioManager.ADJUST_RAISE, AudioManager.FLAG_SHOW_UI)
                     "vol_down" -> am.adjustStreamVolume(AudioManager.STREAM_MUSIC, AudioManager.ADJUST_LOWER, AudioManager.FLAG_SHOW_UI)
                     "mute" -> am.adjustStreamVolume(AudioManager.STREAM_MUSIC, AudioManager.ADJUST_TOGGLE_MUTE, AudioManager.FLAG_SHOW_UI)
-                    "playpause" -> { if (!PlayerActivity.remoteToggle() && !MtTvPlayer.remoteToggle()) { if (MusicEngine.isPlaying) MusicEngine.pause() else MusicEngine.resume() } }
+                    "playpause" -> { if (!PlayerActivity.remoteToggle()) { if (MusicEngine.isPlaying) MusicEngine.pause() else MusicEngine.resume() } }
                     "open_yt" -> showTv("youtube")
                     "open_browser" -> showTv("browser")
                     "open_sd" -> showTv("sd")

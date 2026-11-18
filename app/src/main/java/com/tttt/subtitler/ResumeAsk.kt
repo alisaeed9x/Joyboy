@@ -32,11 +32,21 @@ object ResumeAsk {
     private var dlg: Dialog? = null
     private var tick: Runnable? = null
 
+    /** (v1105 Y5) نفس هوية مشغّل Joyboy للملفات: f:الاسم:الحجم (اتنقلت من MtTranslate.localVid) */
+    private fun localVid(a: Activity, u: String): String {
+        try {
+            val uri = android.net.Uri.parse(u)
+            if (uri.scheme == "content") a.contentResolver.query(uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME, android.provider.OpenableColumns.SIZE), null, null, null)?.use { c -> if (c.moveToFirst()) return "f:" + c.getString(0) + ":" + c.getLong(1) }
+            if (uri.scheme == "file") { val f = java.io.File(uri.path ?: ""); if (f.isFile) return "f:" + f.name + ":" + f.length() }
+        } catch (_: Throwable) {}
+        return "f:$u"
+    }
+
     /** مكان وقوف صالح للفيديو المحلي (بين ٥ث وقبل النهاية بـ٤ث)، أو 0 لو مفيش — للموبايل قبل ما يبعت الفيديو للتلفزيون */
     fun savedMs(a: Activity, lu: String): Long {
         try {
             if (lu.isBlank()) return 0L
-            val id = MtTranslate.joyVid(a, lu)
+            val id = localVid(a, lu)   // (v1105 Y5) كانت MtTranslate.joyVid
             var pos = 0L
             val s = Cfg.p.getString("lastpos", "") ?: ""
             val i = s.indexOf('\t')

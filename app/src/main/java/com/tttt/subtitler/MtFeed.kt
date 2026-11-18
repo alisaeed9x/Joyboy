@@ -51,10 +51,30 @@ object MtFeed {
     fun onLoginRequest() {
         if (MtYt.signedIn()) { maybePush(true); return }
         loginPending = true
-        MtTvRoute.resumed()?.let { a -> a.runOnUiThread { showLoginIfPending(a) } }
+        resumed()?.let { a -> a.runOnUiThread { showLoginIfPending(a) } }
     }
 
-    /** من MtTvRoute: أي شاشة اتفتحت قدّام — لو في طلب معلّق نسأل */
+    // (v1105 Y5) كانت جوه MtTvRoute (اتمسح): الشاشة الظاهرة دلوقتي (null = البرنامج في الخلفية)
+    @Volatile private var res: java.lang.ref.WeakReference<Activity>? = null
+    private var installed = false
+    fun resumed(): Activity? = res?.get()
+    fun install(app: android.app.Application) {
+        try {
+            if (installed) return
+            installed = true
+            app.registerActivityLifecycleCallbacks(object : android.app.Application.ActivityLifecycleCallbacks {
+                override fun onActivityResumed(a: Activity) { res = java.lang.ref.WeakReference(a); try { onResumed(a) } catch (_: Throwable) {} }
+                override fun onActivityCreated(a: Activity, b: android.os.Bundle?) {}
+                override fun onActivityStarted(a: Activity) {}
+                override fun onActivityPaused(a: Activity) { if (res?.get() === a) res = null }
+                override fun onActivityStopped(a: Activity) {}
+                override fun onActivitySaveInstanceState(a: Activity, b: android.os.Bundle) {}
+                override fun onActivityDestroyed(a: Activity) {}
+            })
+        } catch (e: Throwable) { LogStore.err("MtFeed:install", e) }
+    }
+
+    /** من install: أي شاشة اتفتحت قدّام — لو في طلب معلّق نسأل */
     fun onResumed(a: Activity) {
         try {
             if (loginPending) showLoginIfPending(a)
@@ -65,13 +85,12 @@ object MtFeed {
     private fun showLoginIfPending(a: Activity) {
         if (!loginPending || a.isFinishing || a.isDestroyed) return
         val n = a.javaClass.name
-        if (!(n.startsWith("com.tttt.subtitler") || n.startsWith("com.newtube") || n.startsWith("com.liskovsoft"))) return
-        if (n.contains("SignIn")) return
+        if (!n.startsWith("com.tttt.subtitler")) return
         loginPending = false
         try {
             GAlert(a).setTitle("🔐 تسجيل دخول يوتيوب")
-                .setMessage("صف يوتيوب على التلفزيون محتاج حسابك من MeeTube. تسجّل الدخول دلوقتي؟\n\nهتفتح صفحة جوجل، تدوس «السماح»، وترجع.")
-                .setPositiveButton("سجّل الدخول") { _, _ -> MeeTubeLink.signIn(a) }
+                .setMessage("صف يوتيوب على التلفزيون محتاج حسابك. تسجّل الدخول دلوقتي؟\n\nهيظهر كود، تدخله في youtube.com/activate من أي جهاز وتدوس «السماح».")
+                .setPositiveButton("سجّل الدخول") { _, _ -> val th0 = Themes.current(); YtAccount.login(a, Ui(a, th0), th0) { ok -> if (ok) try { maybePush(true) } catch (_: Throwable) {} } }   // (v1105 Y5) كانت MeeTubeLink.signIn
                 .setNegativeButton("بعدين", null).show()
         } catch (e: Throwable) { LogStore.err("MtFeed:login", e) }
     }

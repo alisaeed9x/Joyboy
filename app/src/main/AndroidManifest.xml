@@ -183,5 +183,22 @@
         <service android:name=".ClipOverlayService" android:exported="false" android:foregroundServiceType="specialUse" android:stopWithTask="false">
             <property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE" android:value="clipboard_link_overlay"/>
         </service>
+            <!-- (v1105 Y5) شاشات ميتيوب اتقفلت: مفيش أي أكتيفيتي بتاعته بتتسجّل (المسح الفعلي للكود مع :mobile في Y6) -->
+        <activity android:name="com.liskovsoft.smartyoutubetv2.tv.ui.main.SplashActivity" tools:node="remove"/>
+        <activity android:name="com.newtube.mobile.ui.browse.MobileBrowseActivity" tools:node="remove"/>
+        <activity android:name="com.newtube.mobile.ui.playback.MobilePlaybackActivity" tools:node="remove"/>
+        <activity android:name="com.newtube.mobile.ui.playback.MobileLocalPlaybackActivity" tools:node="remove"/>
+        <activity android:name="com.newtube.mobile.ui.settings.SettingsTransferActivity" tools:node="remove"/>
+        <activity android:name="com.newtube.mobile.downloads.DownloadFolderActivity" tools:node="remove"/>
+        <activity android:name="com.newtube.mobile.ui.playback.SeekThumb" tools:node="remove"/>
+        <activity android:name="com.newtube.mobile.ui.dialog.MobileAppDialogActivity" tools:node="remove"/>
+        <activity android:name="com.newtube.mobile.ui.update.MobileUpdateActivity" tools:node="remove"/>
+        <activity android:name="com.newtube.mobile.ui.channel.MobileChannelUploadsActivity" tools:node="remove"/>
+        <activity android:name="com.newtube.mobile.ui.channel.MobileChannelActivity" tools:node="remove"/>
+        <activity android:name="com.newtube.mobile.ui.search.MobileSearchActivity" tools:node="remove"/>
+        <activity android:name="com.newtube.mobile.ui.signin.MobileSignInActivity" tools:node="remove"/>
+        <activity android:name="com.newtube.mobile.ui.webbrowser.MobileWebBrowserActivity" tools:node="remove"/>
+        <activity android:name="com.newtube.mobile.ui.settings.MobileSettingsActivity" tools:node="remove"/>
+        <activity android:name="com.newtube.mobile.ui.adddevice.MobileAddDeviceActivity" tools:node="remove"/>
     </application>
 </manifest>

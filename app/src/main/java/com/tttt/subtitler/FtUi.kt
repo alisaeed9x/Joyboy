@@ -100,7 +100,7 @@ class FileTransferActivity : Activity() {
                 if (i != 3) {
                     NavAnim.set(3, i)
                     if (i == 2) startActivity(TabNav.front(Intent(this, BrowserActivity::class.java)))
-                    else if (i == 4) MeeTubeLink.open(this)
+                    else if (i == 4) startActivity(TabNav.main(this, "youtube"))   // (v1105 Y5)
                     else startActivity(TabNav.main(this, if (i == 0) "videos" else if (i == 1) "music" else if (i == 7) "settings" else "tasks"))   // (v973) من غير finish
                     NavAnim.peek(this)
                 }

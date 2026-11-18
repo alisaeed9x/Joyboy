@@ -21,3 +21,14 @@
 
 ## 3) جدول الجلاس/الأنيميشن (ممنوع يتلمس) — لسه للتحقق في Y5
 الجلاس الحالي في `app` (`MtGlass · MtGlassView · MtHeader · MtSkin · Theme · Glass`) — ما اتلمسش في Y0–Y2. الـJava اللي في `:mobile/ui/common` (`Glass*` · `SheetGlass`) محتاج grep تفصيلي قبل Y5 (مش اتعمل هنا).
+
+## 4) تحديث v1105 (Y5) — جدول «يتنقل / يتمسح» بعد التنفيذ
+| العنصر | القرار اللي اتنفّذ |
+|---|---|
+| `MeeTubeLink` · `MeeTubeBar` · `MtPlay` · `MtTvRoute` · `MtMedia` · `MtWeb` · `MtOrigin` · `MtBar` · `MtTranslate` · `MtTvPlayer` · `MtFrames` · `YtMiniCard` | **اتمسحوا** (v1105) |
+| أكتيفيتيز `:mobile` (16) | **اتقفلوا من الـmanifest** (`tools:node="remove"`) — الكود لسه موجود |
+| `MobileMainApplication.boot` | **لسه محتاجينه** (MtYt/الدخول) ← ينتقل لـ`app` في Y6 |
+| `GlassView` · `GlassSource` · `NavLens` · `Motion` · `ThemeMode` · `SeekThumb` (`:mobile/ui/common|playback`) | **لازم يتنقلوا لـ`app` في Y6** (الجلاس/الشريط/الثيم بيستخدموهم) |
+| `JoyboyPlayerHost.VideoInfo` | معتمد عليه `MtSmooth`/`MtEnhance` ← يتفكّ في Y6 |
+| `MtGlass* · MtHeader · MtSkin · MtPlayerLook · Theme · MtSmooth · MtEnhance · MtFeed · MtYt` | **بيفضلوا** |
+

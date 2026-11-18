@@ -27,8 +27,7 @@ class JoyApp : Application() {
         MtYt.app = this
         NavOrigin.install(this)   // (v1006) آخر صفحة — للرجوع من الفيديو
         NavSnap.install(this)   // (v923) انتقال موحّد بين الشاشات (لقطة + فيد)
-        MeeTubeLink.bindBar()
-        MtTvRoute.install(this)   // (v928) «تشغّله فين؟» لفيديوهات MeeTube لما وضع التلفزيون شغّال
+        MtFeed.install(this)   // (v1105 Y5) كان جوه MtTvRoute: متابعة الشاشة الظاهرة لطلب دخول يوتيوب من التلفزيون
         try { MtSkin.install(this) } catch (_: Throwable) {}   // (v897) الجلاس في البرنامج كله: خلفية متحركة + مسح الخلفيات الصلبة
         try { MtSmooth.install(this) } catch (_: Throwable) {}   // (v988) فتح الفريمات لأعلى معدل تحديث
         try { MobileDataGuard.install(this) } catch (_: Throwable) {}   // (v1010) تحذير داتا الموبايل في كل الشاشات
@@ -65,6 +64,6 @@ class JoyApp : Application() {
         })
     }
 
-    override fun onTrimMemory(level: Int) { super.onTrimMemory(level); MeeTubeLink.onTrim(level) }
-    override fun onLowMemory() { super.onLowMemory(); MeeTubeLink.onLow() }
+    override fun onTrimMemory(level: Int) { super.onTrimMemory(level); try { MobileMainApplication.booted()?.onTrimMemory(level) } catch (_: Throwable) {} }   // (v1105 Y5) كانت MeeTubeLink.onTrim
+    override fun onLowMemory() { super.onLowMemory(); try { MobileMainApplication.booted()?.onLowMemory() } catch (_: Throwable) {} }
 }

@@ -2834,7 +2834,7 @@ class TvActivity : Activity() {
 
     /** (v929) كارت الحالة لما مفيش فيديوهات: مش مسجّل دخول ← دوسة تطلب من الموبايل · لسه ماوصلش حاجة ← مستني الموبايل */
     private fun ytStateTile(): View = when (YtFeedStore.signed) {
-        false -> tile("🔐", "سجّل الدخول من MeeTube (على الموبايل)") { askYtLogin() }
+        false -> tile("🔐", "سجّل الدخول بالكود (من الموبايل)") { askYtLogin() }
         null -> tile("📱", "وصّل الموبايل (وضع التلفزيون) عشان تظهر اشتراكاتك") { }
         else -> tile("▶", "مفيش فيديوهات — جرّب 🔄 تحديث") { ytRefreshNow() }
     }

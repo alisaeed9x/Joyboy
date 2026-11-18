@@ -43,7 +43,7 @@ import android.util.Rational
 /** مشغّل الفيديو والترجمة (اتنقل من Main.kt في v100 — من غير أي تغيير في الكود) */
 class PlayerActivity : Activity(), Host {
     @Volatile private var panicShut = false   // (v1016) 🚨 قفل المشغّل: ماتحفظش في آخر المشغّلة
-    private var gone = false   // (v923) اتحوّل لمشغّل MeeTube (MtPlay) — الدوال بتتخطّى
+    private var gone = false   // (v923) (v1105 Y5: مفيش تحويل لمشغّل ميتيوب — بيفضل false)
     // (v507) ريزوليوشن ديناميك لوضع التلفزيون
     override fun attachBaseContext(newBase: android.content.Context) { super.attachBaseContext(TvScale.wrap(newBase)) }
     companion object {
@@ -4561,11 +4561,6 @@ class PlayerActivity : Activity(), Host {
         NetLedger.start(this); NetLog.start(this); NetGate.apply(this)
         super.onCreate(b)
         if (incognito) try { window.addFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE) } catch (_: Throwable) {}   // (v1062) متخفي: المعاينة في الريسنت سودا
-        if (MtPlay.reroute(this, intent)) {   // (v923)
-            gone = true; try { overridePendingTransition(0, 0) } catch (_: Throwable) {}
-            if (MtPlay.holdForPlayer(this)) return   // (v950) بتفضل سودا ورا المشغّل لحد ما يظهر (من غير فلاش المكتبة/الشاشة البيضا)
-            finish(); return
-        }
         smoothRotation()   // (v429)
         try { if (MtLook.playerAnim()) overridePendingTransition(R.anim.player_open_enter, R.anim.player_open_exit) } catch (_: Throwable) {}   // (v899) حركة فتح المشغّل من MeeTube
         synchronized(liveList) {

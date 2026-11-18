@@ -340,10 +340,6 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
             appBar.addView(tabsBox, LinearLayout.LayoutParams(ui.dp(360), ui.dp(46)).apply { marginEnd = ui.dp(10) })
         }
         if (DeviceUi.isRemote(act)) appBar.addView(micBtn(), LinearLayout.LayoutParams(ui.dp(48), ui.dp(44)))
-        if (!DeviceUi.isTv(act)) appBar.addView(TextView(act).apply {   // (v878) MeeTube (يوتيوب كامل مدموج): دوسة = قايمة (فتح · بدل البوابة)
-            text = "MeeTube"; textSize = 12.5f; setTextColor(YtSkin.accent); typeface = YtSkin.medium; gravity = Gravity.CENTER; setSingleLine(); setPadding(ui.dp(8), 0, ui.dp(8), 0)
-            foreground = YtSkin.ripple(); setOnClickListener { MeeTubeLink.menu(act) }
-        }, LinearLayout.LayoutParams(-2, ui.dp(44)))
         appBar.addView(iconBtn("search", "بحث") { enterSearch(true) }, LinearLayout.LayoutParams(ui.dp(44), ui.dp(44)))
         appBar.addView(iconBtn("gear", "إعدادات يوتيوب") { settings() }, LinearLayout.LayoutParams(ui.dp(44), ui.dp(44)))
         val backBtn = iconBtn("back", "رجوع") { exitSearch() }.apply { scaleX = -1f }

@@ -674,7 +674,7 @@ class BrowserActivity : Activity() {
         if (tvOn) root.addView(dlBar, LinearLayout.LayoutParams(-1, -2).apply { setMargins(ui.dp(8), ui.dp(4), ui.dp(8), ui.dp(6)) })   // (v324)
         else { dlBar.elevation = ui.dp(8).toFloat(); webWrap.addView(dlBar, FrameLayout.LayoutParams(-1, -2, Gravity.BOTTOM).apply { setMargins(ui.dp(8), 0, ui.dp(8), ui.dp(66)) }) }   // (v923) الرعشة: شريط «تحميل؟» بقى طبقة فوق الصفحة (فوق أزرار actStrip) بدل صف بيزقّ الـWebView
         // (v117) شريط البوابات: الفيديوهات · الموسيقى · المتصفح (إحنا فيه دلوقتي) · الملفات · (v324) يوتيوب
-        val gates = BottomNav(this, ui, th, 2) { i -> if (i != 2) NavAnim.set(2, i); if (i == 0) goMain("videos") else if (i == 1) goMain("music") else if (i == 4) { MeeTubeLink.open(this); NavAnim.peek(this) } else if (i == 5) goMain("tasks") else if (i == 7) goMain("settings") else if (i == 3) { startActivity(TabNav.front(FilesHub.intent(this))); NavAnim.peek(this) } }   // (v973) من غير finish: التبويبات بتفضل شغّالة   // (v310) الملفات · (v364) الذكاء
+        val gates = BottomNav(this, ui, th, 2) { i -> if (i != 2) NavAnim.set(2, i); if (i == 0) goMain("videos") else if (i == 1) goMain("music") else if (i == 4) { goMain("youtube") /* (v1105 Y5) */ } else if (i == 5) goMain("tasks") else if (i == 7) goMain("settings") else if (i == 3) { startActivity(TabNav.front(FilesHub.intent(this))); NavAnim.peek(this) } }   // (v973) من غير finish: التبويبات بتفضل شغّالة   // (v310) الملفات · (v364) الذكاء
         gatesNav = gates
         val floatNav = !tvOn && MtFloat.eligible(this)   // (v900) نفس شريط صفحة الميديا: عايم زجاجي
         if (!tvOn && !floatNav) root.addView(gates.view, LinearLayout.LayoutParams(-1, -2))   // (v517) تلفزيون: الشريط السفلي اتشال — 🏠 في شريط العنوان
@@ -691,7 +691,6 @@ class BrowserActivity : Activity() {
         h.postDelayed({ hideBrowserLoading() }, 20_000L)   // (v1071) أمان: ماتفضلش سودة لو التحميل علّق
         RotateHint.attach(this)   // (v823) زرار «لفّ الشاشة» لما اتجاه التليفون يخالف اتجاه المتصفح
         dockUi = MiniDock(this, frame, ui, th, { startActivity(Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP).putExtra("fullmusic", true)) })   // (v344)
-        try { YtMiniCard(this, frame) } catch (e: Throwable) { LogStore.err("Browser:ytMini", e) }   // (v1037) كارت يوتيوب المصغّر يمشي معاك في كل الصفحات
         stripUi = StatusStrip(this, frame, ui, th) { goMain("tasks") }   // (v345)
         tasksFabUi = TasksFab(this, frame, ui) { goMain("tasks") }   // (v420)
         saver = BrowserSaver(this, frame, object : BrowserSaver.Host {   // (v783)

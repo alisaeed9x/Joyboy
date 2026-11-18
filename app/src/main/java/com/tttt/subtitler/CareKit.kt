@@ -265,7 +265,7 @@ class CarePage(val k: CareKit, val title: String) {
         try {
             when {
                 i == BottomNav.CARE -> return
-                i >= BottomNav.YT_HOME && i <= BottomNav.YT_ME -> { dismiss(); MeeTubeLink.open(act) }
+                i >= BottomNav.YT_HOME && i <= BottomNav.YT_ME -> { dismiss(); main("youtube") }   // (v1105 Y5)
                 i == 0 -> { dismiss(); main("videos") }
                 i == 1 -> { dismiss(); main("music") }
                 i == 2 -> { dismiss(); act.startActivity(android.content.Intent(act, BrowserActivity::class.java)) }
