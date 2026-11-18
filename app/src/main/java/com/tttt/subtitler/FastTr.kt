@@ -202,9 +202,11 @@ class FastTr(
     private fun <T> withKey(i: Int, label: String, call: (String, Int) -> T): T? {
         var avoid: String? = null
         var attempt = 0
-        val deadline = System.currentTimeMillis() + 5 * 60_000L
+        var deadline = System.currentTimeMillis() + 5 * 60_000L
         while (!stopped && attempt < TRIES && System.currentTimeMillis() < deadline) {
             waitIfPaused()
+            // (v1101) بوابة النت: النت واقع → استنى هنا (مش بنحرق محاولات ولا مفاتيح) والمهلة بتتمدّد بقد وقت الفصل
+            if (NetWait.gateDown()) { val t0n = System.currentTimeMillis(); NetWait.waitUp({ !stopped }) { try { host.status(NetWait.statusText()) } catch (_: Throwable) {} }; deadline += System.currentTimeMillis() - t0n; continue }
             val k = pool.pickIdle(i, avoid, 1) ?: pool.pickFree(avoid, i) ?: pool.pickFree(null, i)
             if (k == null) { nap(500); continue }
             pool.begin(k, i)
@@ -224,6 +226,7 @@ class FastTr(
                 host.log("⚠ [محرك ٢] باتش ${i + 1} $label: ${e.message}")
                 avoid = k; attempt++
             } catch (e: java.io.IOException) {
+                if (NetWait.stillDown(e)) { val t0n = System.currentTimeMillis(); NetWait.waitUp({ !stopped }) { try { host.status(NetWait.statusText()) } catch (_: Throwable) {} }; deadline += System.currentTimeMillis() - t0n; continue }   // (v1101) فصل نت مش فشل مفتاح
                 pool.block(k, 5_000L); avoid = k; attempt++
             } finally {
                 pool.end(k, System.currentTimeMillis() - t0, ok)

@@ -29,6 +29,8 @@ object NavSnap : Application.ActivityLifecycleCallbacks {
     private var armedUntil = 0L
     private var shot: Bitmap? = null
     private var shotAt = 0L
+    private var shotBarPx = 0      // (v1096) ارتفاع الشريط السفلي (بكسل كامل) في الشاشة القديمة وقت اللقطة
+    private var shotDecorH = 0
     private var from: WeakReference<Activity>? = null
     private val EASE = PathInterpolator(0.2f, 0f, 0f, 1f)
 
@@ -48,6 +50,7 @@ object NavSnap : Application.ActivityLifecycleCallbacks {
             val decor = w.decorView
             if (decor.width <= 0 || decor.height <= 0) return
             val k = 0.33f
+            shotBarPx = barHeight(decor); shotDecorH = decor.height
             val bmp = Bitmap.createBitmap((decor.width * k).toInt().coerceAtLeast(1), (decor.height * k).toInt().coerceAtLeast(1), Bitmap.Config.ARGB_8888)
             PixelCopy.request(w, bmp, { res ->
                 if (res == PixelCopy.SUCCESS) {
@@ -55,6 +58,21 @@ object NavSnap : Application.ActivityLifecycleCallbacks {
                 } else bmp.recycle()
             }, Handler(Looper.getMainLooper()))
         } catch (_: Throwable) {}
+    }
+
+
+    /** (v1096) T1: بيدوّر على الشريط السفلي (tag = tvfab_nav) ويرجّع ارتفاعه لو لازق تحت الشاشة، وإلا 0 (شريط جانبي/مخفي/عايم فوق المحتوى) */
+    private fun barHeight(decor: View): Int {
+        try {
+            val d = decor as? ViewGroup ?: return 0
+            val bar = d.findViewWithTag<View>("tvfab_nav") ?: return 0
+            if (bar.visibility != View.VISIBLE || bar.height <= 0 || bar.width < decor.width * 0.8f) return 0
+            val loc = IntArray(2); bar.getLocationInWindow(loc)
+            val dl = IntArray(2); decor.getLocationInWindow(dl)
+            val top = loc[1] - dl[1]
+            if (top < decor.height * 0.5f) return 0
+            return (decor.height - top).coerceIn(0, decor.height / 3)
+        } catch (_: Throwable) { return 0 }
     }
 
     fun install(app: Application) { try { app.registerActivityLifecycleCallbacks(this) } catch (_: Throwable) {} }
@@ -70,6 +88,7 @@ object NavSnap : Application.ActivityLifecycleCallbacks {
             val decor = a.window?.decorView ?: return
             if (decor.width <= 0 || decor.height <= 0) return
             val k = 0.5f
+            shotBarPx = barHeight(decor); shotDecorH = decor.height
             val bmp = Bitmap.createBitmap((decor.width * k).toInt().coerceAtLeast(1), (decor.height * k).toInt().coerceAtLeast(1), Bitmap.Config.ARGB_8888)
             val c = Canvas(bmp); c.scale(k, k)
             decor.draw(c)
@@ -87,17 +106,24 @@ object NavSnap : Application.ActivityLifecycleCallbacks {
             val cn = a.javaClass.simpleName
             if (cn.contains("Playback") || cn == "PlayerActivity") { shot?.recycle(); shot = null; from = null; justCreated.remove(a); return }
             if (justCreated.remove(a) == null) { shot?.recycle(); shot = null; from = null; return }
-            val bmp = shot ?: return
+            val full = shot ?: return
             if (SystemClock.uptimeMillis() - shotAt > 2000L || from?.get() === a) return
             shot = null; from = null
-            if (!animsOn(a)) { bmp.recycle(); return }
-            val decor = a.window?.decorView as? ViewGroup ?: run { bmp.recycle(); return }
+            if (!animsOn(a)) { full.recycle(); return }
+            val decor = a.window?.decorView as? ViewGroup ?: run { full.recycle(); return }
+            // (v1096) T1: اللقطة من غير ارتفاع الشريط → الشريط الحقيقي للشاشة الجديدة يفضل ثابت ومتكرّرش
+            val barPx = shotBarPx; val dh = shotDecorH.coerceAtLeast(1)
+            val keepH = if (barPx > 0) (full.height * (1f - barPx.toFloat() / dh)).toInt().coerceIn(1, full.height) else full.height
+            val bmp = if (keepH < full.height) { try { Bitmap.createBitmap(full, 0, 0, full.width, keepH) } catch (_: Throwable) { full } } else full
+            if (bmp !== full) full.recycle()
+            val dens = a.resources.displayMetrics.density
             val iv = ImageView(a).apply {
                 setImageBitmap(bmp); scaleType = ImageView.ScaleType.FIT_XY
                 isClickable = false; isFocusable = false; importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
                 elevation = 1000f
             }
-            decor.addView(iv, ViewGroup.LayoutParams(-1, -1))
+            // bottomMargin بدل حساب الارتفاع: الـdecor ممكن لسه ما اتقاسش وقت onActivityStarted
+            decor.addView(iv, android.widget.FrameLayout.LayoutParams(-1, -1, android.view.Gravity.TOP).apply { bottomMargin = barPx })
             var done = false
             fun finish() {
                 if (done) return; done = true
@@ -109,7 +135,7 @@ object NavSnap : Application.ActivityLifecycleCallbacks {
                 Choreographer.getInstance().postFrameCallback {
                     iv.postDelayed({
                         if (done) return@postDelayed
-                        iv.animate().alpha(0f).scaleX(1.025f).scaleY(1.025f).setDuration(240L).setInterpolator(EASE).withEndAction { finish() }.start()
+                        iv.animate().alpha(0f).translationX(-NavAnim.dir * 10f * dens).setDuration(240L).setInterpolator(EASE).withEndAction { finish() }.start()
                     }, 70L)
                 }
             }

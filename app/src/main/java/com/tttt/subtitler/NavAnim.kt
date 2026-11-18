@@ -10,6 +10,8 @@ object NavAnim {
     private var enter = 0
     private var exit = 0
     private var has = false
+    /** (v1096) اتجاه الحركة لـNavSnap: +1 الجديدة جاية من الشمال · -1 من اليمين */
+    @Volatile var dir = 1
 
     /** (v336) مكان البوابة في الشريط (يوتيوب بقى قبل الملفات): الأرقام الداخلية 3=ملفات و4=يوتيوب */
     fun pos(i: Int): Int = when (i) { 4 -> 3; 3 -> 4; 6 -> 5; 5 -> 6; else -> i }
@@ -18,9 +20,9 @@ object NavAnim {
         if (from == to) return
         has = true
         NavSnap.arm()   // (v923) لقطة الشاشة القديمة تفضل لحد ما الجديدة ترسم
-        if (MtGlass.on()) { enter = R.anim.mt_tab_enter; exit = R.anim.mt_tab_exit; return }   // (v893) MeeTube: فيد + تكبير خفيف (من غير سلايد أفقي)
-        if (pos(to) > pos(from)) { enter = R.anim.nav_in_left; exit = R.anim.nav_out_right }
-        else { enter = R.anim.nav_in_right; exit = R.anim.nav_out_left }
+        // (v1096) T1: أنيميشن النافذة اتقفل (0,0) — الشريط السفلي جزء من كل نافذة وكان بيترعش معاها. الحركة بقت على لقطة المحتوى بس (NavSnap) والشريط ثابت.
+        enter = 0; exit = 0
+        dir = if (pos(to) > pos(from)) 1 else -1
     }
 
     /** (v321) بتطبّق الانتقال فورًا من غير ما تمسحه — بتتنده بعد startActivity مباشرة (قبل finish) عشان الشاشة الجديدة هي اللي تاخده */

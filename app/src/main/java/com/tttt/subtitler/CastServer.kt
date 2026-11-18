@@ -214,6 +214,8 @@ object SubSidecar {
                 } catch (e: Throwable) { LogStore.err("Player:sidecarMS", e) }
             }
             var c = files.filter { it.isFile && it.extension.lowercase() in exts && matches(it.nameWithoutExtension) }
+            // (v1096) T1: لو في ملف بنفس الاسم بالظبط (movie.srt) ياخد الأولوية — «movie.ar.srt» و«movie.2.srt» يفضلوا احتياطي من غير ما يخطفوا
+            c.filter { it.nameWithoutExtension.lowercase() == base }.let { ex -> if (ex.isNotEmpty() && ex.size < c.size) c = ex }
             // (v667) مفيش تطابق بالاسم: فولدر فيه «1.mp4» و«ترجمة رقم 1.srt» (أو فولدر فرعي اسمه ترجمة/subs) ← نطابق بالرقم الأخير في الاسم
             if (c.isEmpty()) {
                 fun digits(x: String): String = buildString { for (ch in x) append(if (ch in '\u0660'..'\u0669') ('0' + (ch - '\u0660')) else if (ch in '\u06F0'..'\u06F9') ('0' + (ch - '\u06F0')) else ch) }

@@ -245,6 +245,8 @@ com/tttt/subtitler/TermNotes.kt
 com/tttt/subtitler/Theme.kt
 com/tttt/subtitler/TrLib.kt
 com/tttt/subtitler/TrLibUi.kt
+com/tttt/subtitler/TrSlider.kt
+com/tttt/subtitler/TrProfile.kt
 com/tttt/subtitler/TrWizard.kt
 com/tttt/subtitler/Transfer.kt
 com/tttt/subtitler/TransferUi.kt
@@ -309,3 +311,4 @@ com/tttt/subtitler/YtFeedStore.kt
 com/tttt/subtitler/YtMiniCard.kt
 com/tttt/subtitler/YtModels.kt
 com/tttt/subtitler/YtNext.kt
+com/tttt/subtitler/NetWait.kt

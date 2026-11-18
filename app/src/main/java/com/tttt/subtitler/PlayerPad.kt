@@ -188,8 +188,12 @@ object PlayerPad {
                 } catch (_: Throwable) {} } } catch (_: Throwable) {}
             }
             fun go(a: String, v: Long = 0L) {
+                // (v1102) أوامر ترجمة جيميناي: لو مفيش مفتاح على الموبايل شاشة المفاتيح تفتح هنا على الموبايل (مش على التلفزيون) وبعد الحفظ الأمر يكمّل؛ ولو فيه مفاتيح بتتبعت للتلفزيون قبل الأمر
+                val gemCmd = a == "tr_gem" || a == "tr_free" || a == "tr_gtx" || a.startsWith("tr_gem_")
+                if (gemCmd && !RemoteClient.hasKeys() && act.needGeminiKey { go(a, v) }) return
                 Thread {
                     try {
+                        if (gemCmd && RemoteClient.hasKeys()) try { RemoteClient.sendKeys() } catch (e: Throwable) { LogStore.err("PlayerPad:keys", e) }
                         val r = RemoteClient.player(a, v)
                         r?.optJSONObject("pm")?.let { showPm(it) }
                         val n = r?.optString("note", "") ?: ""   // (v799) رسالة الزرار بتظهر على الموبايل بس (مش على التلفزيون)
@@ -473,7 +477,7 @@ object PlayerPad {
                     opt(body, "☁ جيميناي — اختار ٧٥/٢٥ أو الأدق أو السريع") {   // (v1043) الاختيار على الموبايل (كان بيفتح على التلفزيون)
                         close()
                         GAlert(act).setTitle("☁ جيميناي — اختار الوضع")
-                            .setItems(arrayOf("🎯 السماع الأدق (مفتاحين + حكم)", "⚡ ٧٥/٢٥ — سماع واحد (أسرع وأرخص)", "⚡ سريع — أول ترجمة في ثواني (برومبت خفيف)")) { _, i -> go(when (i) { 0 -> "tr_gem_acc"; 1 -> "tr_gem_fast"; else -> "tr_gem_quick" }) }
+                            .setItems(arrayOf("⚡ سريع — أول ترجمة في ثواني (برومبت خفيف)", "⚖ متوازن — كل مفتاح باتش (تفريغ ثم ترجمة)", "🎯 الأدق (مفتاحين + حكم)", "⚡ ٧٥/٢٥ — سماع واحد (أسرع وأرخص)")) { _, i -> go(when (i) { 0 -> "tr_gem_quick"; 1 -> "tr_gem_bal"; 2 -> "tr_gem_acc"; else -> "tr_gem_fast" }) }   // (v1097) T2: نفس مناطق سلايدر الترجمة (سريع · متوازن · الأدق) + ٧٥/٢٥
                             .setNegativeButton("إلغاء", null).show()
                     }
                     opt(body, "📴 وشبر + ترجمة أوفلاين (HY-MT1.5 · فصحى)") { go("pm_whisper"); close() }   // (v1051) اختيار اللغة على الموبايل

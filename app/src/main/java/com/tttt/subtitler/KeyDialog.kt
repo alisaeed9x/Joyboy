@@ -93,11 +93,30 @@ fun Activity.ensureKeys(onDone: () -> Unit) {
     val app = applicationContext
     Thread {
         try { KeyVault.restore(app, "kv_full"); KeyVault.save(app) } catch (_: Throwable) {}
-        runOnUiThread { if (!isFinishing && !isDestroyed) ensureKeysUi(onDone) }
+        runOnUiThread { if (!isFinishing && !isDestroyed) ensureKeysUi(false, onDone) }
     }.apply { isDaemon = true }.start()
 }
-private fun Activity.ensureKeysUi(onDone: () -> Unit) {
-    if (hasAnyKeyNow() || Cfg.str("key_later", "0") == "1") { onDone(); return }
+/**
+ * (v1101) ضغط «ترجمة بجيميناي» من غير أي مفتاح: بيفتح شاشة المفاتيح غصب (حتى لو قلت «بعدين» قبل كده) بدل ما الزرار يسكت.
+ * بيرجّع true لو مفيش مفتاح (الشاشة اتفتحت ولازم المتصل يوقف)، وبعد ما تحفظ مفتاح بينفّذ onSaved (يكمّل الترجمة لوحده).
+ */
+fun Activity.needGeminiKey(onSaved: () -> Unit): Boolean {
+    Cfg.init(this)
+    if (TrWizard.hasGeminiKey()) return false
+    // (v1102) تلفزيون متوصّل بيه ريموت موبايل: الكتابة بالريموت صعبة — مفيش شاشة على التلفزيون؛ المفتاح بيتحط من الموبايل وبيتبعت
+    if (try { DeviceUi.isTv(this) && TvLink.remoteList().any { it.alive() } } catch (_: Throwable) { false }) {
+        runOnUiThread { Notice.show(this, "☁ جيميناي محتاج مفتاح — ضيفه من الموبايل وهيتبعت للتلفزيون", 4000L) }
+        return true
+    }
+    runOnUiThread {
+        if (isFinishing || isDestroyed) return@runOnUiThread
+        ensureKeysUi(true) { if (TrWizard.hasGeminiKey()) onSaved() }
+    }
+    return true
+}
+
+private fun Activity.ensureKeysUi(force: Boolean, onDone: () -> Unit) {
+    if (!force && (hasAnyKeyNow() || Cfg.str("key_later", "0") == "1")) { onDone(); return }
     val th = Themes.current(); val ui = Ui(this, th)
     val d = GDialog(this); d.requestWindowFeature(Window.FEATURE_NO_TITLE)
     var finished = false
@@ -123,9 +142,10 @@ private fun Activity.ensureKeysUi(onDone: () -> Unit) {
         orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL
         setPadding(ui.dp(16), ui.dp(16), ui.dp(16), ui.dp(16)); background = ui.box(th.card, th.border, 18)
     }
-    box.addView(ui.text("🔑 ضيف مفتاح Gemini", 17f, th.primary, true))
+    box.addView(ui.text(if (force) "🔑 الترجمة بجيميناي محتاجة مفتاح" else "🔑 ضيف مفتاح Gemini", 17f, th.primary, true))
+    if (force) box.addView(ui.text("ضيف مفتاح Gemini وبعدين دوس حفظ — الترجمة هتبدأ لوحدها.", 12f, th.muted).apply { setPadding(0, ui.dp(4), 0, ui.dp(6)) })
     box.addView(ui.noHint().apply { setPadding(0, ui.dp(4), 0, ui.dp(8)) })
-    box.addView(pill("🆓 كمّل من غير مفتاح", th.surface, th.primary) {
+    if (!force) box.addView(pill("🆓 كمّل من غير مفتاح", th.surface, th.primary) {
         Cfg.p.edit().putString("key_later", "1").putString("tr_method", "google").apply(); d.dismiss()
         try { (this as? MainActivity)?.openSettingsTab("audio") } catch (_: Throwable) {}
     }, LinearLayout.LayoutParams(-1, ui.dp(42)).apply { bottomMargin = ui.dp(6) })
@@ -144,7 +164,7 @@ private fun Activity.ensureKeysUi(onDone: () -> Unit) {
         if (ks.isEmpty()) Notice.show(this, ("اكتب مفتاح صالح").toString(), 2300L)
         else { Cfg.p.edit().putString("keys", ks.joinToString("\n")).apply(); d.dismiss() }
     }, LinearLayout.LayoutParams(0, ui.dp(44), 1f).apply { setMargins(0, 0, ui.dp(4), 0) })
-    btns.addView(pill("بعدين", th.surface, th.muted) { Cfg.p.edit().putString("key_later", "1").apply(); d.dismiss() }, LinearLayout.LayoutParams(0, ui.dp(44), 1f).apply { setMargins(ui.dp(4), 0, 0, 0) })
+    btns.addView(pill(if (force) "إلغاء" else "بعدين", th.surface, th.muted) { if (!force) Cfg.p.edit().putString("key_later", "1").apply(); d.dismiss() }, LinearLayout.LayoutParams(0, ui.dp(44), 1f).apply { setMargins(ui.dp(4), 0, 0, 0) })
     box.addView(btns, LinearLayout.LayoutParams(-1, -2).apply { topMargin = ui.dp(12) })
     d.setContentView(ScrollView(this).apply { addView(box) })
     d.setOnDismissListener { done() }

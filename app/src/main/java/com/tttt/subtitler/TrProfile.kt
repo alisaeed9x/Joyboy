@@ -1,6 +1,9 @@
 package com.tttt.subtitler
 
 /**
+ * (v1098) T3 — متكيّف على v1095: tr_kind/tr_engine مفاتيح تفضيل (لو فاضية بتتحسب من الخطة المحفوظة في TrWizard)،
+ * والمحفوظ بيشمل كمان tr_bal/fastmode/dual_listen لأن وضع الترجمة في 1095 هو اللي بيحدّد موضع السلايدر (TrSlider).
+ *
  * (v1076) سلايدر «النوع» التلاتي + اللهجة والشدة + حفظ الإعدادات للفيديوهات الجاية.
  *
  * المواضع (شمال ← يمين): تفريغ بس · ترجمة فصحى · ترجمة بلهجة.
@@ -23,7 +26,7 @@ object TrProfile {
 
     private const val SAVED = "trp_saved"
     /** الإعدادات اللي بتتحفظ مع بعض */
-    private val keys = listOf("tr_kind", "tr_engine", "lang", "conv_dialect", "tone_strength", "tr_mode", "tr_dia_last")
+    private val keys = listOf("tr_kind", "tr_engine", "lang", "conv_dialect", "tone_strength", "tr_slider", "tr_dia_last", "tr_bal", "fastmode", "dual_listen")   // (v1098) الثلاثة الأخيرة = أوضاع 1095
 
     /** نقي (متختبر): النوع من القيم الخام */
     fun modeOf(kind: String, convDialect: String, lang: String): Int {
@@ -32,7 +35,18 @@ object TrProfile {
         return if (d.isEmpty() || d == "فصحى") MSA else DIA
     }
 
-    fun mode(): Int = try { modeOf(Cfg.str("tr_kind", "translate"), Cfg.str("conv_dialect", ""), Cfg.str("lang", "فصحى")) } catch (_: Throwable) { MSA }
+    /** (v1098) النوع/المحرك: المفتاح لو اتحدد، وإلا من آخر نظام اشتغل (الخطة المحفوظة) — وإلا ترجمة جيميناي */
+    fun kind(): String = try {
+        Cfg.str("tr_kind", "").ifBlank { if (TrWizard.savedPlan()?.only == true) "transcribe" else "translate" }
+    } catch (_: Throwable) { "translate" }
+    fun engine(): String = try {
+        Cfg.str("tr_engine", "").ifBlank { if (TrWizard.savedPlan()?.offline == true) "off" else "gem" }
+    } catch (_: Throwable) { "gem" }
+
+    fun mode(): Int = try { modeOf(kind(), Cfg.str("conv_dialect", ""), Cfg.str("lang", "فصحى")) } catch (_: Throwable) { MSA }
+
+    /** (v1100) T2b: هل المستخدم اختار لهجة صريحة؟ — الشدة وقتها لازم تشتغل حتى لو السلايدر سريع (Engine.toneB) */
+    fun forcesTone(): Boolean = try { mode() == DIA && !Strict.hideTrOpts() } catch (_: Throwable) { false }
 
     fun dialects(): List<String> = TrWizard.dialects.filter { it != "فصحى" }
 
@@ -66,14 +80,14 @@ object TrProfile {
     /** الشدة بتأثر لما الأسلوب مش «حرفي» (الأسلوب الحرفي بيطفّي بلوك الأسلوب كله) */
     fun styleIsLiteral(): Boolean = Cfg.str("tone_style", "") == "حرفي"
 
-    /** هل المستخدم اختار لهجة صريحة؟ — الشدة وقتها لازم تشتغل حتى لو السلايدر سريع */
-    fun forcesTone(): Boolean = try { mode() == DIA && !Strict.hideTrOpts() } catch (_: Throwable) { false }
-
     // ===== الحفظ =====
     private fun cur(k: String): String = when (k) {
-        "tr_kind" -> Cfg.str(k, "translate").ifBlank { "translate" }
-        "tr_engine" -> Cfg.str(k, "gem").ifBlank { "gem" }
-        "tr_mode" -> Cfg.str("tr_mode", "acc").ifBlank { "acc" }
+        "tr_kind" -> kind()
+        "tr_engine" -> engine()
+        "tr_bal" -> if (Cfg.bool(k, false)) "1" else "0"
+        "fastmode" -> if (Cfg.bool(k, false)) "1" else "0"
+        "dual_listen" -> Cfg.int(k, 1).toString()
+        "tr_slider" -> TrSlider.pos().toString()
         "tone_strength" -> degree()
         "lang" -> Cfg.str(k, "فصحى").ifBlank { "فصحى" }
         "tr_dia_last" -> dialect()
@@ -93,7 +107,7 @@ object TrProfile {
     /** سطر ملخّص للمحفوظ: «🗣 لهجة مصري · شدة متوسطة · جيميناي» */
     fun savedSummary(): String {
         if (!hasSaved()) return ""
-        val kind = Cfg.str("trp_tr_kind", "translate"); val dia = Cfg.str("trp_conv_dialect", "")
+        val kind = Cfg.str("trp_tr_kind", "translate").ifBlank { "translate" }; val dia = Cfg.str("trp_conv_dialect", "")
         val what = when (modeOf(kind, dia, Cfg.str("trp_lang", "فصحى"))) {
             TX -> "✍ تفريغ بس"
             MSA -> "🔤 ترجمة فصحى"

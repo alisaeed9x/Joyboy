@@ -614,7 +614,7 @@ object MtTranslate : JoyboyPlayerHost.Provider {
         val id = curId()
         if (id == null) { Notice.show(a, "مش قادر أعرف الفيديو ده للترجمة", 2600L); return }
         val conf0 = try { Cfg.snapshot() } catch (e: Throwable) { LogStore.err("MtTranslate:conf", e); return }
-        if (conf0.keys.isEmpty()) { Notice.show(a, "ضيف مفتاح جيميناي من إعدادات Joyboy الأول", 3000L); return }
+        if (conf0.keys.isEmpty()) { if (!a.needGeminiKey { start() }) Notice.show(a, "ضيف مفتاح جيميناي من إعدادات Joyboy الأول", 3000L); return }   // (v1101) شاشة المفاتيح تفتح غصب
         val mode = curEngineMode()
         if (mode == "google") {
             Notice.show(a, "جوجل للملفات بس — الترجمة الحية هنا بجيميناي", 3000L)
