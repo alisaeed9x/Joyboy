@@ -32,6 +32,8 @@ interface EngineBackend {
     fun pendingSegs(): List<DoubleArray>
     /** (v1081) باتشات اتبعتت ولسه ما رجعتش (خط/نقط زرقا) */
     fun inflightSegs(): List<DoubleArray> = emptyList()
+    // (v1115) نقاط حالة المفاتيح جنب عدّاد الجمل — الافتراضي فاضي (الجلسات البعيدة مفيهاش نقط)
+    fun keyDots(): String = ""
     fun batches(): List<Engine.BatchInfo>
     fun batchRows(): List<Pair<String, Boolean>>
     fun problems(): List<Engine.BatchInfo>
@@ -122,6 +124,7 @@ class LocalEngine(val e: Engine) : EngineBackend {
     override fun coverageSegs(): List<DoubleArray> = e.coverageSegs()
     override fun pendingSegs(): List<DoubleArray> = e.pendingSegs()
     override fun inflightSegs(): List<DoubleArray> = e.inflightSegs()
+    override fun keyDots(): String = e.keyDots()
     override fun batches(): List<Engine.BatchInfo> = e.batches()
     override fun batchRows(): List<Pair<String, Boolean>> = e.batchRows()
     override fun problems(): List<Engine.BatchInfo> = e.problems()

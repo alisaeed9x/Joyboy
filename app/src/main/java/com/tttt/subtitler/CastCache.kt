@@ -67,7 +67,7 @@ object NetCache {
     /** تحميل أعمق + باك-بفر 60ث: الرجوع في الأجزاء المتحملة (الخط الأزرق) بييجي من القرص فورًا من غير نت */
     fun loadControl(): DefaultLoadControl = DefaultLoadControl.Builder()
         .setBufferDurationsMs(30_000, 120_000, 2_500, 5_000)
-        .setBackBufferDurationMs(60_000)
+        .setBackBuffer(60_000, false)
         .setTargetBufferBytes(64 * 1024 * 1024)
         .setPrioritizeTimeOverSizeThresholds(false)
         .build()
