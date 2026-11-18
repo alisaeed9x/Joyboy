@@ -1,92 +1,64 @@
 package com.tttt.subtitler
 
-import android.annotation.SuppressLint
 import android.app.Activity
-import android.app.Dialog
 import android.content.Context
 import android.content.SharedPreferences
-import android.view.Gravity
-import android.view.KeyEvent
-import android.webkit.CookieManager
-import android.webkit.WebView
-import android.webkit.WebViewClient
-import android.widget.LinearLayout
+import com.liskovsoft.mediaserviceinterfaces.data.MediaGroup
+import com.liskovsoft.mediaserviceinterfaces.data.MediaItem
+import com.liskovsoft.youtubeapi.service.YouTubeServiceManager
 import org.json.JSONArray
 import org.json.JSONObject
 import org.schabi.newpipe.extractor.Page
 import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
-import java.security.MessageDigest
+import java.util.concurrent.ConcurrentHashMap
 import java.util.zip.GZIPInputStream
 
 /**
- * (v346) حساب جوجل ليوتيوب — بدون مفتاح API ولا إعداد في Google Cloud:
- *  1) تسجيل الدخول بصفحة جوجل الحقيقية في WebView (بيانات الدخول مابتعدّيش على التطبيق، بس الكوكيز اللي بتطلع بعدها بتتحفظ).
- *  2) الكوكيز بتتحفظ في ملف خاص (yt_acc) مش في Cfg — عشان ماتدخلش النسخ الاحتياطي ولا التصدير، ولا يمسحها «مسح المتصفح».
- *  3) طلبات يوتيوب الداخلية (InnerTube browse) بتتوقّع بـ SAPISIDHASH — نفس اللي المتصفح بيعمله.
- *  4) القراءة بماشي عام (walk) على الـJSON مش على مسار ثابت، فتغيّر الشكل الداخلي لصفحة يوتيوب مايكسرهاش بسهولة.
- * آخر رد اتحفظ في filesDir/yt_acc_last.json للتشخيص لو حاجة ما اتعرفتش.
+ * (v1104) Y4 — حساب يوتيوب بتوكن كود التفعيل (OAuth2 device flow، من محرك MeeTube/MediaServiceCore) بدل كوكيز WebView + QR.
+ *  • الدخول: YtCodeLogin (كود + youtube.com/activate). مفيش WebView جوجل، ومفيش كوكيز، ومفيش QR/نقل جلسة للتلفزيون
+ *    (التلفزيون بيدخل بالكود مباشرة — ده بالظبط اللي الـdevice flow معمول له).
+ *  • القوايم (قنواتي · السجل · الإعجاب · شاهد لاحقًا · قوايمي · الاشتراكات): contentService + continueGroup.
+ *  • الأفعال (اشتراك · لايك · تعليق): mediaItemService / commentsService.
+ *  • الجلسات القديمة (كوكيز) بتتمسح أول ما البرنامج يفتح — لازم تدخل بالكود مرة واحدة.
+ *  • اللي فاضل من InnerTube الخام: relatedLite (مقترحات من غير حساب) + محلل الردود (للشورتس وللمسارات الاحتياطية القديمة) — من غير أي توقيع حساب.
+ * كل دوال الشبكة بتتنده من خيط خلفي. لم يتم compile.
  */
 object YtAccount {
     private const val ORIGIN = "https://www.youtube.com"
     private const val API_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
-    // من غير كلمة wv — جوجل بترفض الدخول من WebView الواضح
-    private const val LOGIN_UA = "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36"
     private const val SYNC_EVERY_MS = 6 * 60 * 60 * 1000L
 
     @Volatile private var sp: SharedPreferences? = null
     @Volatile private var dir: File? = null
 
     fun init(c: Context) {
-        if (sp == null) { val a = c.applicationContext; sp = a.getSharedPreferences("yt_acc", 0); dir = a.filesDir }
+        if (sp == null) {
+            val a = c.applicationContext; sp = a.getSharedPreferences("yt_acc", 0); dir = a.filesDir
+            // (v1104 Y4) كوكيز الدخول القديم (WebView) مبقاش ليها استخدام — بنمسحها
+            try { if (sp?.contains("cookie") == true) { sp?.edit()?.remove("cookie")?.remove("login_at")?.apply(); LogStore.add("🍪 اتمسحت جلسة الكوكيز القديمة — ادخل بالكود (🔐)") } } catch (_: Throwable) {}
+        }
     }
 
-    private fun cookie(): String = sp?.getString("cookie", "") ?: ""
+    // ───────── الحالة ─────────
+    @Volatile private var sAt = 0L
+    @Volatile private var sVal = false
+    /** مسجّل دخول بالكود؟ (كاش 20 ثانية؛ أول مرة بتشغّل المحرك) */
+    fun loggedIn(): Boolean {
+        val now = System.currentTimeMillis()
+        if (now - sAt < 20_000L) return sVal
+        val v = try { MtYt.signedIn() } catch (_: Throwable) { false }
+        sVal = v; sAt = now
+        return v
+    }
+    private fun refreshState() { sAt = 0L }
 
-    /** (v459) الجلسة كانت لقطة واحدة من يوم تسجيل الدخول وبتعفّن (يوتيوب بيبدّل كوكيز SAPISID)، فصفحة الاشتراكات
-     *  كانت بتفشل بـ«رد غير صالح/جلسة منتهية» رغم إن loggedIn() بتقول مسجّل. مخزن كوكيز الـ WebView بيضل حديث،
-     *  فقبل أي طلب بناخد منه نسخة أجدد لو فيها SAPISID مختلف عن المحفوظ. */
-    private fun refreshCookie() {
-        try {
-            val fresh = android.webkit.CookieManager.getInstance().getCookie(ORIGIN) ?: return
-            if (!fresh.contains("SAPISID=") && !fresh.contains("__Secure-3PAPISID=")) return
-            val cur = cookie()
-            fun sid(t: String): String? = t.split(";").map { it.trim() }.firstOrNull { it.startsWith("__Secure-3PAPISID=") || it.startsWith("SAPISID=") }
-            if (sid(fresh) != null && sid(fresh) != sid(cur)) {
-                sp?.edit()?.putString("cookie", fresh)?.putLong("login_at", System.currentTimeMillis())?.apply()
-                LogStore.add("🍪 جلسة يوتيوب اتحدّثت من مخزن الويب")
-            }
-        } catch (_: Throwable) {}
-    }
-    private fun cv(name: String): String? {
-        for (p in cookie().split(";")) { val t = p.trim(); if (t.startsWith("$name=")) return t.substring(name.length + 1) }
-        return null
-    }
-    /** (v488) تصدير/استيراد الجلسة (دخول بالـQR: الموبايل بيبعت، التلفزيون بيستقبل) */
-    fun exportCookie(): String { refreshCookie(); return cookie() }
-    fun importCookie(ck: String): Boolean {
-        if (!ck.contains("SAPISID=") && !ck.contains("__Secure-3PAPISID=")) return false
-        sp?.edit()?.putString("cookie", ck)?.putLong("login_at", System.currentTimeMillis())?.putLong("sync_at", 0L)?.apply() ?: return false
-        try {   // كمان في مخزن الويب (عشان تحديث الجلسة وصفحات الويب جوه البرنامج)
-            val cm = CookieManager.getInstance(); cm.setAcceptCookie(true)
-            for (p in ck.split(";")) { val t = p.trim(); if (t.contains("=")) cm.setCookie(ORIGIN, "$t; Domain=.youtube.com; Path=/; Secure") }
-            cm.flush()
-        } catch (_: Throwable) { }
-        LogStore.add("🍪 جلسة يوتيوب اتستلمت من الموبايل (QR)")
-        return true
-    }
-    fun loggedIn(): Boolean = cv("SAPISID") != null || cv("__Secure-3PAPISID") != null
-    /** (v574) نفس حساب الجلسة المحفوظة؟ (نفس SAPISID) — عشان الموبايل مايفضلش يبعت ونعيد المزامنة من الصفر كل مرة */
-    fun sameSession(ck: String): Boolean {
-        fun sid(t: String): String? = t.split(";").map { it.trim() }.firstOrNull { it.startsWith("__Secure-3PAPISID=") || it.startsWith("SAPISID=") }
-        val a = sid(ck); return a != null && a == sid(cookie())
-    }
     /** (v574) callback بيتنادى (من thread خلفي) لما مزامنة الاشتراكات تخلص — لانشر التلفزيون بيحدّث صف يوتيوب بيه */
     @Volatile var onSynced: (() -> Unit)? = null
     fun syncDue(every: Long = SYNC_EVERY_MS): Boolean = System.currentTimeMillis() - (sp?.getLong("sync_at", 0L) ?: 0L) > every
     @Volatile private var syncing = false
-    /** (v389) مزامنة في الخلفية (نفس زرار «🔄 مزامنة الاشتراكات») من غير ما المستخدم يدخل صفحة «أنت»؛ مرة واحدة في نفس الوقت */
+    /** (v389) مزامنة في الخلفية (نفس زرار «🔄 مزامنة الاشتراكات») — مرة واحدة في نفس الوقت */
     fun syncAsync(force: Boolean = false, onDone: (Int) -> Unit = {}) {
         if (syncing || !loggedIn()) return
         if (!force && System.currentTimeMillis() - lastSyncAt() < 60_000L) return   // مش أكتر من مرة في الدقيقة
@@ -100,107 +72,31 @@ object YtAccount {
     fun lastSyncAt(): Long = sp?.getLong("sync_at", 0L) ?: 0L
     fun chanCount(): Int = sp?.getInt("chan_n", 0) ?: 0
 
-    // ───────── تسجيل الدخول ─────────
-    @SuppressLint("SetJavaScriptEnabled")
+    // ───────── تسجيل الدخول / الخروج (بالكود) ─────────
     fun login(act: Activity, ui: Ui, th: Theme, onDone: (Boolean) -> Unit) {
         init(act)
-        val d = Dialog(act, android.R.style.Theme_Black_NoTitleBar_Fullscreen)
-        val wv = WebView(act)
-        val cm = CookieManager.getInstance()
-        cm.setAcceptCookie(true); cm.setAcceptThirdPartyCookies(wv, true)
-        wv.settings.javaScriptEnabled = true
-        wv.settings.domStorageEnabled = true
-        wv.settings.userAgentString = LOGIN_UA
-        var done = false
-        wv.webViewClient = object : WebViewClient() {
-            override fun onPageFinished(v: WebView?, url: String?) {
-                if (done) return
-                val u = url ?: return
-                if (!u.contains("youtube.com")) return
-                val ck = cm.getCookie(ORIGIN) ?: ""
-                if (ck.contains("SAPISID=") || ck.contains("__Secure-3PAPISID=")) {
-                    done = true
-                    try { cm.flush() } catch (_: Throwable) {}
-                    sp?.edit()?.putString("cookie", ck)?.putLong("login_at", System.currentTimeMillis())?.putLong("sync_at", 0L)?.apply()
-                    d.dismiss(); onDone(true)
-                }
-            }
+        YtCodeLogin.show(act, ui, th) { ok ->
+            refreshState(); YtMtFeed.reset()
+            if (ok) { try { sp?.edit()?.putLong("sync_at", 0L)?.apply() } catch (_: Throwable) {} }
+            onDone(ok)
         }
-        val root = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL; setBackgroundColor(th.bg) }
-        val bar = LinearLayout(act).apply {
-            orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL
-            setPadding(ui.dp(12), ui.dp(8), ui.dp(12), ui.dp(8)); setBackgroundColor(th.surface)
-        }
-        val title = ui.text("🔐 تسجيل الدخول بحساب جوجل", 14f, th.text, true)
-        val close = ui.text("✕", 18f, th.text, true).apply { setPadding(ui.dp(10), ui.dp(4), ui.dp(10), ui.dp(4)); setOnClickListener { d.dismiss() } }
-        bar.addView(title, LinearLayout.LayoutParams(0, -2, 1f)); bar.addView(close, LinearLayout.LayoutParams(-2, -2))
-        root.addView(bar, LinearLayout.LayoutParams(-1, -2))
-        // (v480 م7) تلفزيون: تسجيل الدخول محتاج مؤشر (صفحات جوجل مش بتتنقل كويس بالتركيز)
-        val hostFl: android.widget.FrameLayout? = if (TvFocus.onCtx(act)) android.widget.FrameLayout(act) else null
-        val ptr: TvPointer? = hostFl?.let { TvPointer(act, it, th.primary) }
-        if (hostFl != null && ptr != null) {
-            hostFl.addView(wv, android.widget.FrameLayout.LayoutParams(-1, -1))
-            hostFl.addView(ptr.view, android.widget.FrameLayout.LayoutParams(-1, -1))
-            root.addView(hostFl, LinearLayout.LayoutParams(-1, 0, 1f))
-        } else root.addView(wv, LinearLayout.LayoutParams(-1, 0, 1f))
-        d.setContentView(root)
-        d.setOnKeyListener { _, kc, ev ->
-            if (ptr != null && (kc == KeyEvent.KEYCODE_DPAD_UP || kc == KeyEvent.KEYCODE_DPAD_DOWN || kc == KeyEvent.KEYCODE_DPAD_LEFT || kc == KeyEvent.KEYCODE_DPAD_RIGHT)) {
-                if (ev.action == KeyEvent.ACTION_DOWN) ptr.move(kc, ev.repeatCount, wv)
-                true
-            } else if (ptr != null && (kc == KeyEvent.KEYCODE_DPAD_CENTER || kc == KeyEvent.KEYCODE_ENTER || kc == KeyEvent.KEYCODE_NUMPAD_ENTER)) {
-                if (ev.action == KeyEvent.ACTION_UP) ptr.click()
-                true
-            } else if (kc == KeyEvent.KEYCODE_BACK && ev.action == KeyEvent.ACTION_UP && wv.canGoBack()) { wv.goBack(); true } else false
-        }
-        d.setOnDismissListener { try { wv.stopLoading(); wv.destroy() } catch (_: Throwable) {}; if (!done) onDone(false) }
-        d.show()
-        wv.loadUrl("https://accounts.google.com/ServiceLogin?service=youtube&continue=" + java.net.URLEncoder.encode("https://m.youtube.com/", "UTF-8"))
     }
 
     fun logout() {
-        sp?.edit()?.clear()?.apply()
-        try {
-            val cm = CookieManager.getInstance()
-            for ((host, dom) in listOf("https://www.youtube.com" to ".youtube.com", "https://m.youtube.com" to ".youtube.com",
-                "https://accounts.google.com" to ".google.com", "https://www.google.com" to ".google.com")) {
-                val ck = cm.getCookie(host) ?: continue
-                for (p in ck.split(";")) {
-                    val n = p.substringBefore("=").trim(); if (n.isEmpty()) continue
-                    cm.setCookie(host, "$n=; Max-Age=0; Path=/")
-                    cm.setCookie(host, "$n=; Max-Age=0; Path=/; Domain=$dom")
-                }
-            }
-            cm.flush()
-        } catch (_: Throwable) {}
+        try { YtCodeLogin.logout() } catch (_: Throwable) {}
+        try { sp?.edit()?.clear()?.apply() } catch (_: Throwable) {}
+        refreshState(); YtMtFeed.reset(); YtMtFeed.dropHomeSnap(); plMap.clear()
+        try { dir?.let { d -> File(d, "yt_snap_1.json").delete(); File(d, "yt_feed.json").delete() } } catch (_: Throwable) {}
     }
 
-    // ───────── InnerTube ─────────
+    /** (v471) كان بيرجّع هيدرز الكوكيز لـNewPipe — دلوقتي مفيش كوكيز: NewPipe بيشتغل من غير حساب (الحساب كله على المحرك) */
+    fun authHeaders(): Map<String, String>? = null
+
     private fun ver(): String = Cfg.str("yt_client_ver", "2.20260601.01.00")
-    private fun sha1(s: String): String =
-        MessageDigest.getInstance("SHA-1").digest(s.toByteArray(Charsets.UTF_8)).joinToString("") { String.format("%02x", it.toInt() and 0xff) }
-
-    private fun auth(): String {
-        val ts = System.currentTimeMillis() / 1000
-        val sid = cv("SAPISID") ?: cv("__Secure-3PAPISID") ?: ""
-        val p1 = cv("__Secure-1PAPISID") ?: sid
-        val p3 = cv("__Secure-3PAPISID") ?: sid
-        fun h(v: String) = "${ts}_" + sha1("$ts $v $ORIGIN")
-        return "SAPISIDHASH ${h(sid)} SAPISID1PHASH ${h(p1)} SAPISID3PHASH ${h(p3)}"
-    }
 
     private fun ctx(): JSONObject = JSONObject().put("client",
         JSONObject().put("clientName", "WEB").put("clientVersion", ver()).put("hl", YtLocale.hl()).put("gl", YtLocale.gl()))   // (v471) اللغة من YtLocale
 
-    /** (v471) هيدرز حسابك (كوكيز + SAPISIDHASH) لطلبات الويب اللي بتخرج من NewPipe (next/browse/search) — null لو مش مسجّل الدخول */
-    fun authHeaders(): Map<String, String>? {
-        if (!loggedIn()) return null
-        return try {
-            refreshCookie()
-            val ck = cookie(); if (ck.isBlank()) return null
-            mapOf("Cookie" to ck, "Authorization" to auth(), "X-Goog-AuthUser" to "0", "Origin" to ORIGIN, "X-Origin" to ORIGIN)
-        } catch (_: Throwable) { null }
-    }
 
     /** (v471) طلب InnerTube خفيف: بيشتغل من غير تسجيل دخول، ولو مسجّل بيتبعت بحسابك (لغة وترتيب حسابك). مهلة قصيرة عشان الرئيسية ما تتعطّلش */
     private fun postLite(path: String, body: JSONObject): JSONObject {
@@ -225,41 +121,166 @@ object YtAccount {
         } finally { c.disconnect() }
     }
 
+
     /** (v471) فيديوهات مقترحة لفيديو من ردّ next الخفيف (بدل StreamInfo الكامل) */
     fun relatedLite(videoId: String): List<NpItem> {
         val j = postLite("next", JSONObject().put("context", ctx()).put("videoId", videoId))
         return parse(j).items.filter { it.kind == 0 && it.id != videoId && it.dur !in 1L..60L }
     }
 
-    private fun post(path: String, body: JSONObject): JSONObject {
-        refreshCookie()   // (v459) نسخة أجدد من الكوكيز لو متاحة
-        if (!loggedIn()) throw RuntimeException("مش مسجّل الدخول — سجّل بحساب جوجل الأول")
-        val c = URL("$ORIGIN/youtubei/v1/$path?prettyPrint=false").openConnection() as HttpURLConnection
-        try {
-            c.connectTimeout = 20000; c.readTimeout = 30000; c.requestMethod = "POST"; c.doOutput = true
-            c.setRequestProperty("Content-Type", "application/json")
-            c.setRequestProperty("User-Agent", API_UA)
-            c.setRequestProperty("Cookie", cookie())
-            c.setRequestProperty("Authorization", auth())
-            c.setRequestProperty("Origin", ORIGIN); c.setRequestProperty("X-Origin", ORIGIN)
-            c.setRequestProperty("X-Goog-AuthUser", "0")
-            c.setRequestProperty("X-Youtube-Client-Name", "1"); c.setRequestProperty("X-Youtube-Client-Version", ver())
-            c.setRequestProperty("Accept-Language", YtLocale.acceptLanguage())
-            c.setRequestProperty("Accept-Encoding", "gzip")
-            c.outputStream.use { it.write(body.toString().toByteArray(Charsets.UTF_8)) }
-            val code = c.responseCode
-            var ins = if (code >= 400) c.errorStream else c.inputStream
-            if (ins != null && "gzip".equals(c.contentEncoding, true)) ins = GZIPInputStream(ins)
-            val txt = ins?.bufferedReader(Charsets.UTF_8)?.use { it.readText() } ?: ""
-            if (code == 401 || code == 403) { try { sp?.edit()?.remove("cookie")?.apply() } catch (_: Throwable) {}; throw RuntimeException("يوتيوب رفض الجلسة ($code) — الجلسة انتهت واتمسحت، سجّل الدخول تاني من تبويب «أنت»") }   // (v459) بنمسح الجلسة الميتة بدل ما نفضل نجربها
-            if (code >= 400) throw RuntimeException("يوتيوب رد بخطأ $code")
-            try { dir?.let { File(it, "yt_acc_last.json").writeText(txt.take(300_000)) } } catch (_: Throwable) {}
-            return JSONObject(txt)
-        } finally { c.disconnect() }
+
+
+    // ───────── قوايم الحساب (من المحرك) ─────────
+    private val kept = ConcurrentHashMap<String, MediaGroup>()
+    private val keptOrder = ArrayList<String>()
+    private var kseq = 0
+    private val plMap = ConcurrentHashMap<String, MediaItem>()
+
+    private fun keep(g: MediaGroup?): Page? {
+        if (g == null || g.nextPageKey == null) return null
+        val k = "yta:m" + (++kseq)
+        kept[k] = g
+        synchronized(keptOrder) { keptOrder.add(k); while (keptOrder.size > 24) kept.remove(keptOrder.removeAt(0)) }
+        return Page(k)
     }
 
-    private fun browse(id: String): JSONObject = post("browse", JSONObject().put("context", ctx()).put("browseId", id))
-    private fun browseMore(token: String): JSONObject = post("browse", JSONObject().put("context", ctx()).put("continuation", token))
+    /** MediaItem → NpItem: فيديو (0) · قناة (1) · قايمة تشغيل (2) */
+    private fun np(m: MediaItem): NpItem? {
+        val vid = m.videoId
+        if (!vid.isNullOrEmpty() && vid.length == 11) return MtYt.toItem(m)
+        val pid = m.playlistId
+        if (!pid.isNullOrEmpty()) {
+            plMap[pid] = m
+            return NpItem("", m.title ?: "", m.secondTitle?.toString() ?: "", "", m.cardImageUrl ?: "", -1L, -1L, "", 2, "yta:VL$pid")
+        }
+        val cid = m.channelId
+        if (!cid.isNullOrEmpty() && cid.startsWith("UC")) {
+            val u = "https://www.youtube.com/channel/$cid"
+            return NpItem("", m.title ?: "", "", u, m.cardImageUrl ?: "", -1L, -1L, "", 1, u)
+        }
+        return null
+    }
+
+    private fun resOf(g: MediaGroup?): YtRes {
+        if (g == null) return YtRes(emptyList(), null)
+        val out = ArrayList<NpItem>(); val seen = HashSet<String>()
+        for (m in g.mediaItems ?: emptyList()) { val x = np(m) ?: continue; if (seen.add(x.kind.toString() + x.id + x.url)) out.add(x) }
+        return YtRes(out, keep(g))
+    }
+
+    /** MediaItem بسيط (Proxy) من معرّف قايمة — عشان getGroup(item) تفتح قايمة (إعجاب LL / شاهد لاحقًا WL / أي قايمة) */
+    private fun playlistItem(pid: String, title: String): MediaItem =
+        java.lang.reflect.Proxy.newProxyInstance(MediaItem::class.java.classLoader, arrayOf<Class<*>>(MediaItem::class.java)) { _, mt, _ ->
+            when (mt.name) {
+                "getPlaylistId" -> pid
+                "getTitle" -> title
+                else -> when (mt.returnType) {
+                    java.lang.Boolean.TYPE -> false
+                    Integer.TYPE -> 0
+                    java.lang.Long.TYPE -> 0L
+                    java.lang.Double.TYPE -> 0.0
+                    java.lang.Float.TYPE -> 0f
+                    else -> null
+                }
+            }
+        } as MediaItem
+
+    private fun videoItem(id: String): MediaItem =
+        java.lang.reflect.Proxy.newProxyInstance(MediaItem::class.java.classLoader, arrayOf<Class<*>>(MediaItem::class.java)) { _, mt, _ ->
+            when (mt.name) {
+                "getVideoId" -> id
+                else -> when (mt.returnType) {
+                    java.lang.Boolean.TYPE -> false
+                    Integer.TYPE -> 0
+                    java.lang.Long.TYPE -> 0L
+                    java.lang.Double.TYPE -> 0.0
+                    java.lang.Float.TYPE -> 0f
+                    else -> null
+                }
+            }
+        } as MediaItem
+
+    private fun cs() = run { MtYt.ensureBoot(); YouTubeServiceManager.instance().contentService }
+
+    // ───────── واجهة للشاشة (نفس الأسماء القديمة) ─────────
+    /** المفاتيح: FEchannels · FEhistory · FEsubscriptions · FEwhat_to_watch · FEplaylist_aggregation · VLLL (إعجاب) · VLWL (شاهد لاحقًا) · VL<id> (قايمة) */
+    fun listFirst(browseId: String): YtRes {
+        if (!loggedIn()) throw RuntimeException("مش مسجّل الدخول — سجّل بالكود الأول (🔐)")
+        val g: MediaGroup? = when {
+            browseId == "FEchannels" -> cs().getSubscribedChannels()
+            browseId == "FEhistory" -> cs().getHistory()
+            browseId == "FEsubscriptions" -> cs().getSubscriptions()
+            browseId == "FEwhat_to_watch" -> return YtMtFeed.home(emptyList()) ?: YtRes(emptyList(), null)
+            browseId == "FEplaylist_aggregation" -> {
+                MtYt.ensureBoot()
+                YouTubeServiceManager.instance().contentService.getPlaylistsObserve().blockingFirst()
+            }
+            browseId == "VLLL" -> cs().getGroup(plMap["LL"] ?: playlistItem("LL", "فيديوهات الإعجاب"))
+            browseId == "VLWL" -> cs().getGroup(plMap["WL"] ?: playlistItem("WL", "شاهد لاحقًا"))
+            browseId.startsWith("VL") -> { val pid = browseId.substring(2); cs().getGroup(plMap[pid] ?: playlistItem(pid, "")) }
+            else -> null
+        }
+        return resOf(g)
+    }
+    fun listMore(p: Page): YtRes {
+        val g = kept[p.url ?: ""] ?: return YtRes(emptyList(), null)
+        return resOf(cs().continueGroup(g))
+    }
+
+    private fun row(title: String, sub: String, key: String) = NpItem("act", title, sub, "", "", -1L, -1L, "", 2, "yta:$key")
+    fun menuItems(): List<NpItem> = listOf(
+        row("📺 قنواتي", "كل القنوات اللي مشترك فيها (${chanCount()})", "FEchannels"),
+        row("🕘 سجل مشاهدتي في يوتيوب", "اللي شفته على حسابك", "FEhistory"),
+        row("👍 فيديوهات الإعجاب", "اللي عملتلها لايك", "VLLL"),
+        row("⏰ شاهد لاحقًا", "قايمة شاهد لاحقًا بتاعتك", "VLWL"),
+        row("📃 قوايم التشغيل بتاعتي", "القوايم اللي عملتها أو حفظتها", "FEplaylist_aggregation"),
+        row("🔄 مزامنة الاشتراكات دلوقتي", syncLabel(), "!sync"),
+        row("🚪 تسجيل الخروج", "بيشيل حساب الدخول من التطبيق", "!out"))
+
+    private fun syncLabel(): String {
+        val t = lastSyncAt(); if (t <= 0L) return "لسه ما اتزامنتش"
+        val m = (System.currentTimeMillis() - t) / 60000
+        return "آخر مزامنة: " + (if (m < 1) "دلوقتي" else if (m < 60) "من $m دقيقة" else if (m < 1440) "من ${m / 60} ساعة" else "من ${m / 1440} يوم")
+    }
+
+    private fun sameChan(a: String, b: String): Boolean { val x = YtRss.chanId(a); val y = YtRss.chanId(b); return if (x != null && y != null) x == y else a == b }
+
+    /** بيجيب كل قنوات حسابك ويضيف الجديد منها على اشتراكاتك المحلية (مابيمسحش أي حاجة). بيرجّع عدد القنوات الجديدة */
+    fun syncSubs(): Int {
+        if (!loggedIn()) throw RuntimeException("مش مسجّل الدخول — سجّل بالكود الأول (🔐)")
+        val chans = ArrayList<NpItem>()
+        var r = resOf(cs().getSubscribedChannels())
+        chans.addAll(r.items.filter { it.kind == 1 })
+        var nx = r.next; var pages = 0
+        while (nx != null && pages++ < 40) { r = listMore(nx); chans.addAll(r.items.filter { it.kind == 1 }); nx = r.next }
+        if (chans.isEmpty()) throw RuntimeException("ما لقيتش قنوات في حسابك — لو متأكد إن عندك اشتراكات: اخرج وادخل بالكود تاني")
+        val subs = YtStore.read(YtStore.SUBS); var added = 0
+        for (c in chans) if (subs.none { sameChan(it.channelUrl, c.channelUrl) }) { subs.add(c); added++ }
+        YtStore.write(YtStore.SUBS, subs)
+        sp?.edit()?.putLong("sync_at", System.currentTimeMillis())?.putInt("chan_n", chans.size)?.apply()
+        return added
+    }
+
+    // ───────── أفعال على حسابك: اشتراك · لايك · تعليق ─────────
+    private fun needLogin() { if (!loggedIn()) throw RuntimeException("مش مسجّل الدخول — سجّل بالكود الأول (🔐)") }
+
+    fun setSubscribed(chanUrl: String, on: Boolean) {
+        needLogin()
+        val id = YtRss.chanId(chanUrl) ?: throw RuntimeException("مش قادر أعرف معرّف القناة")
+        val s = MtYt.itemSvc()
+        if (on) s.subscribe(id) else s.unsubscribe(id)
+    }
+    fun setLiked(videoId: String, on: Boolean) {
+        needLogin()
+        val s = MtYt.itemSvc(); val it = videoItem(videoId)
+        if (on) s.setLike(it) else s.removeLike(it)
+    }
+    /** بينشر تعليق على الفيديو */
+    fun postComment(videoId: String, text: String) {
+        needLogin()
+        MtYt.ensureBoot()
+        YouTubeServiceManager.instance().commentsService.createCommentObserve(videoId, text).blockingFirst()
+    }
 
     // ───────── قراءة الرد (ماشي عام على الـJSON) ─────────
     private fun walk(n: Any?, f: (String, JSONObject) -> Unit) {
@@ -340,10 +361,36 @@ object YtAccount {
             return NpItem("", title, "", u, "", -1L, -1L, "", 1, u)
         }
         if (type.contains("PLAYLIST")) return NpItem("", title, parts.firstOrNull() ?: "", "", "", -1L, -1L, "", 2, "yta:VL$id")
+        if (type.contains("SHORT") && id.length == 11) { shorts.add(id); return vid(id, title, parts.firstOrNull() ?: "", "", -1L, "") }
         if (!type.contains("VIDEO") || id.length != 11) return null
         var dur = -1L
         walk(o.optJSONObject("contentImage")) { k, p -> if (k == "thumbnailBadgeViewModel" && dur < 0) dur = secs(p.optString("text")) }
         return vid(id, title, parts.firstOrNull() ?: "", "", dur, parts.drop(1).joinToString(" · "))
+    }
+
+    /** (v864) شورتس من الفيد: reelItemRenderer (القديم) / shortsLockupViewModel (الجديد) */
+    private fun reel(o: JSONObject): NpItem? {
+        val id = o.optString("videoId"); if (id.length != 11) return null
+        shorts.add(id)
+        return vid(id, txt(o.optJSONObject("headline")), "", "", -1L, "")
+    }
+    private fun shortLockup(o: JSONObject): NpItem? {
+        var id = o.optJSONObject("onTap")?.optJSONObject("innertubeCommand")?.optJSONObject("reelWatchEndpoint")?.optString("videoId") ?: ""
+        if (id.length != 11) id = o.optString("entityId").substringAfterLast('-')
+        if (id.length != 11) return null
+        shorts.add(id)
+        return vid(id, txt(o.optJSONObject("overlayMetadata")?.optJSONObject("primaryText")), "", "", -1L, "")
+    }
+    /** (v864) بوست (community post) من الفيد: kind = 4، والدوسة بتفتحه في المتصفح */
+    private fun post(o: JSONObject): NpItem? {
+        val pid = o.optString("postId"); if (pid.isEmpty()) return null
+        val text = txt(o.optJSONObject("contentText")).trim()
+        val by = o.optJSONObject("authorText")
+        val chId = o.optJSONObject("authorEndpoint")?.optJSONObject("browseEndpoint")?.optString("browseId") ?: ""
+        val chUrl = if (chId.startsWith("UC")) "https://www.youtube.com/channel/$chId" else ""
+        val thumb = lastThumb(o.optJSONObject("backstageAttachment")?.optJSONObject("backstageImageRenderer")?.optJSONObject("image"))
+        return NpItem(pid, (if (text.isEmpty()) "📝 بوست" else text).take(400), txt(by), chUrl, thumb, -1L, -1L,
+            txt(o.optJSONObject("publishedTimeText")), 4, "https://www.youtube.com/post/$pid", 0L, lastThumb(o.optJSONObject("authorThumbnail")))
     }
 
     class Parsed(val items: List<NpItem>, val next: String?)
@@ -356,6 +403,9 @@ object YtAccount {
                 "channelRenderer", "gridChannelRenderer" -> chan(o)
                 "playlistRenderer", "gridPlaylistRenderer" -> plist(o)
                 "lockupViewModel" -> lockup(o)
+                "reelItemRenderer" -> reel(o)
+                "shortsLockupViewModel" -> shortLockup(o)
+                "backstagePostRenderer" -> post(o)
                 else -> null
             }
             if (x != null && seen.add(x.kind.toString() + x.id + x.url)) out.add(x)
@@ -365,74 +415,5 @@ object YtAccount {
             }
         }
         return Parsed(out, tok)
-    }
-
-    // ───────── واجهة للشاشة ─────────
-    fun listFirst(browseId: String): YtRes { val r = parse(browse(browseId)); return YtRes(r.items, r.next?.let { Page(it) }) }
-    fun listMore(p: Page): YtRes { val r = parse(browseMore(p.url ?: "")); return YtRes(r.items, r.next?.let { Page(it) }) }
-
-    private fun row(title: String, sub: String, key: String) = NpItem("act", title, sub, "", "", -1L, -1L, "", 2, "yta:$key")
-    fun menuItems(): List<NpItem> = listOf(
-        row("📺 قنواتي", "كل القنوات اللي مشترك فيها (${chanCount()})", "FEchannels"),
-        row("🕘 سجل مشاهدتي في يوتيوب", "اللي شفته على حسابك", "FEhistory"),
-        row("👍 فيديوهات الإعجاب", "اللي عملتلها لايك", "VLLL"),
-        row("⏰ شاهد لاحقًا", "قايمة شاهد لاحقًا بتاعتك", "VLWL"),
-        row("📃 قوايم التشغيل بتاعتي", "القوايم اللي عملتها أو حفظتها", "FEplaylist_aggregation"),
-        row("🔄 مزامنة الاشتراكات دلوقتي", syncLabel(), "!sync"),
-        row("🚪 تسجيل الخروج", "بيشيل بيانات الدخول من التطبيق", "!out"))
-
-    private fun syncLabel(): String {
-        val t = lastSyncAt(); if (t <= 0L) return "لسه ما اتزامنتش"
-        val m = (System.currentTimeMillis() - t) / 60000
-        return "آخر مزامنة: " + (if (m < 1) "دلوقتي" else if (m < 60) "من $m دقيقة" else if (m < 1440) "من ${m / 60} ساعة" else "من ${m / 1440} يوم")
-    }
-
-    private fun sameChan(a: String, b: String): Boolean { val x = YtRss.chanId(a); val y = YtRss.chanId(b); return if (x != null && y != null) x == y else a == b }
-
-    /** بيجيب كل قنوات حسابك ويضيف الجديد منها على اشتراكاتك المحلية (مابيمسحش أي حاجة). بيرجّع عدد القنوات الجديدة */
-    fun syncSubs(): Int {
-        val chans = ArrayList<NpItem>()
-        var r = parse(browse("FEchannels"))
-        chans.addAll(r.items.filter { it.kind == 1 })
-        var tok = r.next; var pages = 0
-        while (tok != null && pages++ < 40) { r = parse(browseMore(tok)); chans.addAll(r.items.filter { it.kind == 1 }); tok = r.next }
-        if (chans.isEmpty()) throw RuntimeException("ما لقيتش قنوات في ردّ يوتيوب — غالبًا الجلسة انتهت: من تبويب «أنت» سجّل الخروج وادخل تاني. (الرد اتحفظ في yt_acc_last.json)")
-        val subs = YtStore.read(YtStore.SUBS); var added = 0
-        for (c in chans) if (subs.none { sameChan(it.channelUrl, c.channelUrl) }) { subs.add(c); added++ }
-        YtStore.write(YtStore.SUBS, subs)
-        sp?.edit()?.putLong("sync_at", System.currentTimeMillis())?.putInt("chan_n", chans.size)?.apply()
-        return added
-    }
-
-    // ───────── (v403) أفعال على حسابك: اشتراك · لايك · تعليق (best effort — بتفشل بهدوء لو يوتيوب غيّر الشكل) ─────────
-    fun setSubscribed(chanUrl: String, on: Boolean) {
-        val id = YtRss.chanId(chanUrl) ?: throw RuntimeException("مش قادر أعرف معرّف القناة")
-        post(if (on) "subscription/subscribe" else "subscription/unsubscribe",
-            JSONObject().put("context", ctx()).put("channelIds", JSONArray().put(id)))
-    }
-    fun setLiked(videoId: String, on: Boolean) {
-        post(if (on) "like/like" else "like/removelike",
-            JSONObject().put("context", ctx()).put("target", JSONObject().put("videoId", videoId)))
-    }
-    private fun findStr(n: Any?, key: String): String? {
-        when (n) {
-            is JSONObject -> {
-                val d = n.optString(key); if (d.isNotEmpty() && n.opt(key) is String) return d
-                val ks = n.keys(); while (ks.hasNext()) { val r = findStr(n.opt(ks.next()), key); if (r != null) return r }
-            }
-            is JSONArray -> for (i in 0 until n.length()) { val r = findStr(n.opt(i), key); if (r != null) return r }
-        }
-        return null
-    }
-    /** بينشر تعليق على الفيديو (بيجيب بارامتر الإنشاء من قسم التعليقات في ردّ next) */
-    fun postComment(videoId: String, text: String) {
-        val r1 = post("next", JSONObject().put("context", ctx()).put("videoId", videoId))
-        var tok: String? = null
-        walk(r1) { k, o -> if (tok == null && k == "itemSectionRenderer" && o.optString("sectionIdentifier").contains("comment")) tok = findStr(o, "token") }
-        if (tok == null) walk(r1) { k, o -> if (tok == null && k == "engagementPanelSectionListRenderer" && o.optString("panelIdentifier").contains("comments")) tok = findStr(o, "token") }
-        val t = tok ?: throw RuntimeException("ما لقيتش قسم التعليقات (التعليقات مقفولة؟)")
-        val r2 = post("next", JSONObject().put("context", ctx()).put("continuation", t))
-        val params = findStr(r2, "createCommentParams") ?: throw RuntimeException("يوتيوب مدّاش صلاحية التعليق من هنا")
-        post("comment/create_comment", JSONObject().put("context", ctx()).put("createCommentParams", params).put("commentText", text))
     }
 }

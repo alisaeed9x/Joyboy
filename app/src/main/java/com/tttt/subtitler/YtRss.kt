@@ -54,7 +54,7 @@ object YtRss {
                 val e = o.getJSONObject(k); val a = e.getJSONArray("i"); val l = ArrayList<NpItem>()
                 for (n in 0 until a.length()) {
                     val x = a.getJSONObject(n)
-                    l.add(mk(x.optString("i"), x.optString("t"), x.optString("c"), x.optString("u"), x.optLong("p"), x.optLong("v", -1L)))
+                    l.add(mk(x.optString("i"), x.optString("t"), x.optString("c"), x.optString("u"), x.optLong("p"), x.optLong("v", -1L)).also { if (x.optInt("s", 0) == 1) shortIds.add(it.id) })
                 }
                 mem[k] = Entry(e.optLong("t"), l)
             }
@@ -68,7 +68,7 @@ object YtRss {
             for ((k, e) in mem) {
                 if (k !in keep) continue
                 val a = JSONArray()
-                for (it in e.items) a.put(JSONObject().put("i", it.id).put("t", it.title).put("c", it.channel).put("u", it.channelUrl).put("p", it.ts).put("v", it.count))
+                for (it in e.items) a.put(JSONObject().put("i", it.id).put("t", it.title).put("c", it.channel).put("u", it.channelUrl).put("p", it.ts).put("v", it.count).put("s", if (it.id in shortIds) 1 else 0))
                 o.put(k, JSONObject().put("t", e.t).put("i", a))
             }
             val tmp = File(d, "yt_rss2.json.tmp"); tmp.writeText(o.toString()); tmp.renameTo(File(d, "yt_rss2.json"))
@@ -79,6 +79,9 @@ object YtRss {
         NpItem(id, title, ch, chUrl, "https://i.ytimg.com/vi/$id/mqdefault.jpg", -1L, views, ageOf(ts), 0, "https://www.youtube.com/watch?v=$id", ts)
 
     /** «منذ 3 أيام» من وقت دقيق */
+    /** (v864) معرّفات الشورتس اللي اتشافت في RSS (بتتحفظ في الكاش) */
+    val shortIds: MutableSet<String> = java.util.Collections.synchronizedSet(HashSet<String>())
+    fun isShort(id: String): Boolean = id in shortIds || id in YtAccount.shorts
     fun ageOf(ts: Long): String {
         if (ts <= 0L) return ""
         val s = (System.currentTimeMillis() - ts) / 1000L
@@ -158,7 +161,8 @@ object YtRss {
                     "author" -> inAuthor = false
                     "entry" -> {
                         inEntry = false
-                        if (id.isNotEmpty() && !isShort && !title.contains("#shorts", true)) {
+                        if (id.isNotEmpty()) {
+                            if (isShort || title.contains("#shorts", true)) shortIds.add(id)   // (v864) الشورتس بتظهر (بعلامة) مش بتتشال
                             val ts = try { OffsetDateTime.parse(pub).toInstant().toEpochMilli() } catch (_: Throwable) { 0L }
                             out.add(mk(id, title, author.ifEmpty { feedAuthor }, chUrl, ts, views))
                         }
@@ -265,8 +269,8 @@ object YtRss {
                 if (ts > 0L && (r != null || o.age.isBlank())) ageOf(ts) else o.age, o.kind, o.url, ts, o.avatar)
         }
         val ids = fixed.map { it.id }.toHashSet()
-        val cutoff = minOf(fixed.filter { it.ts > 0L }.minOfOrNull { it.ts } ?: return fixed, System.currentTimeMillis() - 3 * 86_400_000L)   // (v754) دايمًا آخر 3 أيام على الأقل من RSS
-        val extra = rss.filter { it.kind == 0 && it.id !in ids && it.ts >= cutoff && !it.title.contains("#short", true) }
+        val cutoff = minOf(fixed.filter { it.ts > 0L && it.kind == 0 }.minOfOrNull { it.ts } ?: return fixed.sortedByDescending { it.ts }, System.currentTimeMillis() - 3 * 86_400_000L)   // (v867) كان بيرجّع من غير ترتيب   // (v754) دايمًا آخر 3 أيام على الأقل من RSS
+        val extra = rss.filter { it.kind == 0 && it.id !in ids && it.ts >= cutoff }
         return (fixed + extra).sortedByDescending { it.ts }
     }
 

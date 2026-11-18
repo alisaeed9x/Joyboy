@@ -1370,3 +1370,5 @@ v1099: T4 — تطبيق فوري وبأثر رجعي من ⚙ (لهجة/فصح�
 v1100: T2b — توصيل 10 بلوكات سلايدر في Engine (hedge · cache · tone · ctx · topic · fewshot · relisten · cross · hitiming · refine2) + forcesTone + نقل اختبارات السلايدر/البروفايل. direct/twostep/slowaudio مش متوصّلين (السبب في CHANGES_v1100.md). لم يتم compile. CHANGES_v1100.md
 v1101: انتظار النت (NetWait.kt: الباتش بيستنى مش بيفشل، والحلقة الرئيسية بتوقّف الإرسال لحد ما فحص حقيقي للسيرفر ينجح) + ▶ ترجم من غير مفتاح بيفتح شاشة المفاتيح غصب وبيبدأ بعد الحفظ. لم يتم compile كامل. CHANGES_v1101.md
 v1102: شاشة مفتاح جيميناي من ريموت الموبايل بتفتح على الموبايل وبتبعت المفاتيح للتلفزيون. لم يتم compile. CHANGES_v1102.md
+v1103: يوتيوب Y0 فحص (docs/YT_REPLACE_AUDIT.md) + Y1 دخول بالكود (YtCodeLogin.kt) + Y2 رجوع يوتيوب القديم جنب ميتيوب (مفتاح yt_classic، افتراضي مقفول). لم يتم compile. CHANGES_v1103.md
+v1104: يوتيوب Y3 (الرئيسية/الاشتراكات من محرك MeeTube بتحميل مفتوح + الأحدث أولًا، YtMtFeed.kt) + Y4 (الحساب بتوكن الكود: YtAccount من جديد، شيل الكوكيز وQR/YtLink). لم يتم compile. CHANGES_v1104.md

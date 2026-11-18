@@ -27,9 +27,12 @@ import java.util.concurrent.Callable
 import java.util.concurrent.Executors
 import java.util.zip.GZIPInputStream
 
+// (v1103 Y2) NpItem اتنقل لـ YtModels.kt (نفس الشكل)
+
 class YtRes(val items: List<NpItem>, val next: Page?)
 class YtDetail(val id: String, val title: String, val channel: String, val channelUrl: String, val desc: String, val views: Long,
                val likes: Long, val age: String, val thumb: String, val dur: Long, val related: List<NpItem>)
+// (v1103 Y2) YtPick في YtModels.kt
 
 /** (v388) لغة صوت يوتيوب: التفضيل (yt_alang: ar افتراضي · orig = الأصلي · أو كود لغة) + اختيار المسار + اسمه بالعربي */
 object YtLang {
@@ -433,43 +436,7 @@ object YtNp {
     }
 
     /** (v326) استخراج رابط التشغيل بـ NewPipe (بديل لـ YtExtract): فيديو بس mp4 + صوت m4a لو أعلى جودة من المدمج، وإلا المدمج، وإلا HLS */
-    fun pick(id: String, maxH: Int): YtPick? {
-        val i = info(id)
-        val vo0 = i.videoOnlyStreams.filter { !it.content.isNullOrBlank() }
-        val vo = vo0.filter { it.format?.suffix == "mp4" }.ifEmpty { vo0 }
-        val mux = i.videoStreams.filter { !it.content.isNullOrBlank() }
-        val aud = i.audioStreams.filter { !it.content.isNullOrBlank() }.sortedByDescending { it.averageBitrate }
-        val bestAud = aud.firstOrNull { it.format?.suffix == "m4a" } ?: aud.firstOrNull()
-        val ua = "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Mobile Safari/537.36"
-        val ttl = i.name ?: ""
-        // (v388) مسارات الصوت (لغات): نختار لغتك المفضّلة (عربي افتراضيًا) بدل أعلى bitrate عشوائي (كان بيجيب الدبلجة الإنجليزي أحيانًا)
-        val trs = audioTracks(aud)
-        val multi = trs.size > 1
-        val chTr = if (multi) { val o = YtLang.takeOverride(id) ?: YtLang.pref(); if (o == "smart") YtLang.chooseSmart(trs, ttl, i.uploaderName ?: "") else YtLang.choose(trs, o) } else null   // (v623) smart: قناة عربي ← عربي · غيرها ← لغة العنوان
-        val audUrl: String? = chTr?.url ?: bestAud?.content
-        // (v327) كل الجودات المتاحة (نفس شكل YtExtract.Pick.optsJson: l/u/a/h) عشان زرار الجودة في المشغّل يشتغل
-        val byH = HashMap<Int, Array<String?>>()   // h -> [label, url, audio]
-        fun addMux() { for (m in mux) if (m.height > 0 && !byH.containsKey(m.height)) byH[m.height] = arrayOf(m.height.toString() + "p", m.content, null) }
-        fun addVo() { if (audUrl != null) for (v in vo.sortedByDescending { it.bitrate }) {
-            if (v.height <= 0 || byH.containsKey(v.height)) continue
-            byH[v.height] = arrayOf(v.height.toString() + "p", v.content, audUrl)
-        } }
-        // أكتر من لغة صوت: الفيديو-بس + الصوت المختار الأول (عشان لغة الصوت تتبدّل)، والمدمج (بصوته الافتراضي) للارتفاعات الناقصة بس
-        if (multi) { addVo(); addMux() } else { addMux(); addVo() }
-        if (byH.isNotEmpty()) {
-            val hs = byH.keys.sortedDescending()
-            val h = (if (maxH > 0) hs.firstOrNull { it <= maxH } ?: hs.last() else hs.first())
-            val arr = org.json.JSONArray()
-            for (k in hs) { val o = byH[k]!!; arr.put(org.json.JSONObject().put("l", o[0]).put("u", o[1]).put("a", o[2] ?: "").put("h", k)) }
-            if (multi) arr.optJSONObject(0)?.put("at", YtLang.json(trs, chTr))
-            else { val al = altsOf(aud.filter { it.audioTrackType?.name != "DESCRIPTIVE" }); if (al.size > 1) { val q = org.json.JSONArray(); for ((n, u) in al) q.put(org.json.JSONObject().put("n", n).put("u", u)); arr.optJSONObject(0)?.put("aq", q) } }   // (v406) جودات الصوت
-            val c = byH[h]!!
-            return YtPick(c[1]!!, c[2], ua, ttl, h, arr.toString())
-        }
-        val hls = i.hlsUrl
-        if (!hls.isNullOrBlank()) return YtPick(hls, null, ua, ttl, 0)
-        return null
-    }
+    fun pick(id: String, maxH: Int): YtPick? = MtYt.pick(id, maxH)   // (v1103 Y2) الروابط من محرك MeeTube (MtYt) بدل NewPipe — نفس القرار: جلب الروابط الحالي
 
     /** (v388) مسارات الصوت مجمّعة باللغة (بنتخطى الوصف الصوتي)؛ لكل لغة أعلى جودة (m4a أولًا) */
     private fun audioTracks(aud: List<org.schabi.newpipe.extractor.stream.AudioStream>): List<YtLang.Tr> {
@@ -510,15 +477,7 @@ object YtNp {
     }
 
     /** (v337) رابط الصوت بس (m4a لو متاح، وإلا أعلى جودة) من غير أي داتا فيديو — للتشغيل في مشغّل الموسيقى وللتحميل */
-    fun pickAudio(id: String): YtPick? {
-        val i = info(id)
-        val aud = i.audioStreams.filter { !it.content.isNullOrBlank() }.sortedByDescending { it.averageBitrate }
-        val b = aud.firstOrNull { it.format?.suffix == "m4a" } ?: aud.firstOrNull() ?: return null
-        val ua = "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Mobile Safari/537.36"
-        val trs = audioTracks(aud)   // (v388) أغاني/صوت بس: الأصلي (مش الدبلجة)
-        val au = (if (trs.size > 1) YtLang.choose(trs, "orig")?.url else null) ?: b.content
-        return YtPick(au, null, ua, i.name ?: "", 0, "", if (i.duration > 0L) i.duration * 1000L else 0L)
-    }
+    fun pickAudio(id: String): YtPick? = MtYt.audio(id, 0)   // (v1103 Y2) من MtYt
 
     /** (v326) تعليقات الفيديو (kind 3: title = النص · channel = الكاتب · count = لايكات · thumb = صورته) */
     fun comments(id: String): Pair<YtRes, (Page) -> YtRes> {

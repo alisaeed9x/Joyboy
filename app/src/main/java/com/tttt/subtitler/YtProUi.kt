@@ -59,7 +59,13 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
         var pos = 0
         var durF = 0; var dateF = 0   // (v469) C5: فلاتر بحث (مدة/تاريخ) بتتطبق على صفحات التحميل التالية كمان
         var cMode = false; var cLoaded = false; val ci = ArrayList<NpItem>(); var cn: Page? = null; var cm: ((Page) -> YtRes)? = null
-        fun list(): ArrayList<NpItem> = if (cMode) ci else items
+        var typeF = 0   // (v864) فلتر نوع الاشتراكات: 0 الكل · 1 فيديوهات · 2 شورتس · 3 بوستات
+        var shelfOn = false   // (v865) الشورتس بتتجمّع 4-4 في «رف» (زي يوتيوب)
+        fun list(): ArrayList<NpItem> {
+            if (cMode) return ci
+            val base: ArrayList<NpItem> = if (typeF == 0) items else ArrayList(items.filter { typeOk(it, typeF) })
+            return if (shelfOn && (typeF == 0 || typeF == 2)) shelfify(base) else base
+        }
         fun nxt(): Page? = if (cMode) cn else next
         fun mf(): ((Page) -> YtRes)? = if (cMode) cm else more
     }
@@ -160,9 +166,14 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
             if (st.vid != null || st.q != null || st.chUrl != null) return
             if (st.tab == 1) {
                 val subs = YtStore.read(YtStore.SUBS)
-                if (subs.isNotEmpty()) { bgLine(true); YtRss.refreshAsync(subs) }
-            } else if (st.tab == 0 && chipSel == 0 && YtNp.homeAgeMs() > 5 * 60_000L) {
-                if (YtNp.refreshHomeAsync(YtStore.read(YtStore.HIST), YtStore.read(YtStore.SUBS))) bgLine(true)
+                if (YtMtFeed.usableCached()) { /* (v1104 Y3) اشتراكات المحرك: التحديث بالسحب أو بفتح الصفحة */ }
+                else if (subs.isNotEmpty()) { bgLine(true); YtRss.refreshAsync(subs) }
+            } else if (st.tab == 0 && chipSel == 0) {
+                if (YtMtFeed.usableCached()) {   // (v1104 Y3) رئيسية المحرك
+                    if (YtMtFeed.homeAgeMs() > 5 * 60_000L && YtMtFeed.refreshHomeAsync(YtStore.read(YtStore.HIST))) bgLine(true)
+                } else if (YtNp.homeAgeMs() > 5 * 60_000L) {
+                    if (YtNp.refreshHomeAsync(YtStore.read(YtStore.HIST), YtStore.read(YtStore.SUBS))) bgLine(true)
+                }
             }
         }
     }
@@ -187,9 +198,9 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
     }
     private fun pullRefresh() {
         when (cur?.tab) {
-            0 -> { YtNp.clearHome(); openTab(0) }
+            0 -> { YtNp.clearHome(); YtMtFeed.dropHomeSnap(); if (YtAccount.loggedIn()) YtAccount.syncAsync(true); openTab(0) }
             1 -> openSubs(true)
-            4 -> if (MtYt.signedIn()) syncNow() else openTab(4)
+            4 -> if (YtAccount.loggedIn()) syncNow() else openTab(4)
         }
     }
     private val busyDr = WinSpinnerDrawable()
@@ -263,6 +274,9 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
     private val FILTERS = listOf("" to "الكل", "videos" to "فيديوهات", "channels" to "قنوات", "playlists" to "قوايم")
     // (v469) C5/C10: ترتيب القوايم · إخفاء المُشاهَد · فلاتر بحث (مدة/تاريخ) · تشغيل قايمة كاملة
     private var sortMode = 0
+    private var typeMode = 0
+    private val typeLabels = listOf("الكل", "فيديوهات", "شورتس", "بوستات")
+    private var ctlType: TextView? = null
     private var hideSeen = try { Cfg.str("ytp_hide_seen", "0") == "1" } catch (_: Throwable) { false }
     private var pendDurF = 0; private var pendDateF = 0
     private var pendingPlayAll = false
@@ -326,6 +340,10 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
             appBar.addView(tabsBox, LinearLayout.LayoutParams(ui.dp(360), ui.dp(46)).apply { marginEnd = ui.dp(10) })
         }
         if (DeviceUi.isRemote(act)) appBar.addView(micBtn(), LinearLayout.LayoutParams(ui.dp(48), ui.dp(44)))
+        if (!DeviceUi.isTv(act)) appBar.addView(TextView(act).apply {   // (v878) MeeTube (يوتيوب كامل مدموج): دوسة = قايمة (فتح · بدل البوابة)
+            text = "MeeTube"; textSize = 12.5f; setTextColor(YtSkin.accent); typeface = YtSkin.medium; gravity = Gravity.CENTER; setSingleLine(); setPadding(ui.dp(8), 0, ui.dp(8), 0)
+            foreground = YtSkin.ripple(); setOnClickListener { MeeTubeLink.menu(act) }
+        }, LinearLayout.LayoutParams(-2, ui.dp(44)))
         appBar.addView(iconBtn("search", "بحث") { enterSearch(true) }, LinearLayout.LayoutParams(ui.dp(44), ui.dp(44)))
         appBar.addView(iconBtn("gear", "إعدادات يوتيوب") { settings() }, LinearLayout.LayoutParams(ui.dp(44), ui.dp(44)))
         val backBtn = iconBtn("back", "رجوع") { exitSearch() }.apply { scaleX = -1f }
@@ -380,6 +398,8 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
         paintNotif()
         YtRss.attach(act); YtAccount.init(act)
         YtNp.attach(act)   // (v407) كاش الرئيسية على الملف
+        YtMtFeed.attach(act); Thread { try { YtMtFeed.usable() } catch (_: Throwable) {} }.also { it.isDaemon = true }.start()   // (v1104 Y3) نعرف من بدري لو حساب الكود مسجّل
+        YtMtFeed.onHome = { r -> act.runOnUiThread { onFeedUpdate(0, r.items) } }
         YtNp.onHome = { r -> act.runOnUiThread { onFeedUpdate(0, r.items) } }
         YtRss.onFeed = { r -> act.runOnUiThread { onFeedUpdate(1, r.items) } }
         try { YtNotify.schedule(act) } catch (_: Throwable) {}
@@ -399,11 +419,12 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
         // (v469) صف التحكم في القوايم: ترتيب · إخفاء المُشاهَد · (للبحث) مدة/تاريخ الرفع
         val ctl = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; visibility = View.GONE; setPadding(ui.dp(8), 0, ui.dp(8), ui.dp(6)) }
         fun ctlChip(onClick: (View) -> Unit): TextView = ui.text("", 12f, th.text).apply { gravity = Gravity.CENTER; setPadding(ui.dp(12), ui.dp(5), ui.dp(12), ui.dp(5)); setOnClickListener { v -> onClick(v) }; paintChip(this, false) }
+        ctlType = ctlChip { v -> typeMenu(v) }
         ctlSort = ctlChip { v -> sortMenu(v) }
         ctlHide = ctlChip { toggleHideSeen() }
         ctlDur = ctlChip { v -> durMenu(v) }
         ctlDate = ctlChip { v -> dateMenu(v) }
-        for (c in listOf(ctlSort!!, ctlHide!!, ctlDur!!, ctlDate!!)) ctl.addView(c, LinearLayout.LayoutParams(-2, -2).apply { setMargins(ui.dp(3), 0, ui.dp(3), 0) })
+        for (c in listOf(ctlType!!, ctlSort!!, ctlHide!!, ctlDur!!, ctlDate!!)) ctl.addView(c, LinearLayout.LayoutParams(-2, -2).apply { setMargins(ui.dp(3), 0, ui.dp(3), 0) })
         ctlRow = ctl
         page.addView(HorizontalScrollView(act).apply { isHorizontalScrollBarEnabled = false; addView(ctl) }, LinearLayout.LayoutParams(-1, -2))
 
@@ -455,7 +476,7 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
                 setOnKeyListener { _, k, e ->
                     if (e.action == android.view.KeyEvent.ACTION_DOWN && (k == android.view.KeyEvent.KEYCODE_MENU || k == android.view.KeyEvent.KEYCODE_BUTTON_Y)) {
                         val item = cur?.list()?.getOrNull(selectedItemPosition); val sv = selectedView
-                        if (item != null && sv != null && item.kind != 3 && item.id != "act") { menu(sv, item); true } else false
+                        if (item != null && sv != null && item.kind != 3 && item.kind != 4 && item.kind != 5 && item.id != "act") { menu(sv, item); true } else false
                     } else false
                 }
             }
@@ -468,7 +489,7 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
                 }
                 false
             }
-            setOnItemLongClickListener { _, v, p, _ -> cur?.list()?.getOrNull(p)?.let { if (it.kind == 3) copy(it.title) else if (it.id != "act") menu(v, it) }; true }
+            setOnItemLongClickListener { _, v, p, _ -> cur?.list()?.getOrNull(p)?.let { if (it.kind == 3 || it.kind == 4) copy(it.title) else if (it.kind == 5) { } else if (it.id != "act") menu(v, it) }; true }
             setOnScrollListener(object : AbsListView.OnScrollListener {
                 override fun onScrollStateChanged(v: AbsListView?, s: Int) { if (s == AbsListView.OnScrollListener.SCROLL_STATE_IDLE) prewarmVisible() }   // (v472)
                 override fun onScroll(v: AbsListView?, first: Int, vis: Int, total: Int) { if (total > 0 && first + vis >= total - 3) loadMore() }
@@ -532,10 +553,7 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
                 if (f != null) f(id, title, translate, posMs, pick) else onPlay(id, title, translate)
             }
             override fun openChannel(url: String, name: String) { watch.close(false); this@YtProUi.openChannel(url, name, "") }
-            // (v1073) من جوه صفحة المشاهدة: فيديو عادي بيروح لمشغّل Joyboy؛ الشورت بس بيكمّل في صفحة المشاهدة
-            // (v560) وضع التلفزيون: ما نفتحش صفحة المشاهدة (مشغّلها المصغّر بيشغّل على الموبايل)
-            // (v494) تلفزيون: من غير صفحة المشاهدة
-            override fun openVideo(v: NpItem) { if (DeviceUi.isTv(act) || PlayTarget.enabled() || !isShort(v)) play(v, false) else watchVideo(v, null) }
+            override fun openVideo(v: NpItem) { if (DeviceUi.isTv(act) || PlayTarget.enabled()) play(v, false) else watchVideo(v, null) }   // (v560) وضع التلفزيون: ما نفتحش صفحة المشاهدة (مشغّلها المصغّر بيشغّل على الموبايل)   // (v494) تلفزيون: من غير صفحة المشاهدة
             override fun audio(v: NpItem) { playAudio(v) }
             override fun download(anchor: View, v: NpItem) { dlMenu(anchor, v) }
             override fun state(open: Boolean) { if (open) ytDock.dismiss(); setNavHidden(open || chan.isOpen); pillGate(open || chan.isOpen); if (!open) tvFocusList() }   // (v479 م5)
@@ -553,7 +571,7 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
     // (v621) كان refresh() بيعمل notifyDataSetChanged + يمسح كاش الـrecents (قراءة ملف على الـUI thread) في نفس لحظة بداية الأنيميشن ← تهنيج. دلوقتي بعد ما الانزلاق يخلص
     private val softRefresh = Runnable { recMemoAt = 0L; try { adapter.notifyDataSetChanged() } catch (_: Throwable) {} }
     fun refresh() {
-        if (cur == null) { recMemoAt = 0L; openTab(if (MtYt.signedIn() || YtStore.read(YtStore.SUBS).isNotEmpty()) 1 else 0) }   // (v674) تلفزيون: بيفتح على الاشتراكات · (v761) الموبايل كمان: أول ما تدخل يوتيوب تجيب الاشتراكات الأول مش الرئيسية
+        if (cur == null) { recMemoAt = 0L; openTab(if (YtAccount.loggedIn() || YtMtFeed.usableCached() || YtStore.read(YtStore.SUBS).isNotEmpty()) 1 else 0) }   // (v674) تلفزيون: بيفتح على الاشتراكات · (v761) الموبايل كمان: أول ما تدخل يوتيوب تجيب الاشتراكات الأول مش الرئيسية
         else { h.removeCallbacks(softRefresh); h.postDelayed(softRefresh, 280L) }
         startPoll()
     }
@@ -567,7 +585,7 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
             (::watch.isInitialized && watch.pipHandoff()) || (::ytDock.isInitialized && ytDock.pipHandoff())
         } catch (e: Throwable) { LogStore.err("YtProUi:leaveForPip", e); false }
     }
-    fun destroy() { h.removeCallbacks(pollRun); h.removeCallbacks(softRefresh); h.removeCallbacks(lineWatch); YtNp.onHome = null; YtRss.onFeed = null; try { ytDock.dismiss() } catch (_: Throwable) {}; watch.release() }
+    fun destroy() { h.removeCallbacks(pollRun); h.removeCallbacks(softRefresh); h.removeCallbacks(lineWatch); YtNp.onHome = null; YtMtFeed.onHome = null; YtRss.onFeed = null; try { ytDock.dismiss() } catch (_: Throwable) {}; watch.release() }
     /** (v479 م5) بحث صوتي على التلفزيون: النتيجة بترجع من Main.onActivityResult (كود 78) */
     private fun startVoice() {
         try {
@@ -652,6 +670,17 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
         when (i) {
             0 -> load("🏠 الرئيسية", 0, null, null, null, "", false, false) {
                 val hh = YtStore.read(YtStore.HIST); var ss = YtStore.read(YtStore.SUBS)
+                // (v1104 Y3) الرئيسية من محرك MeeTube (حساب الكود): كل الفيديوهات + تحميل مفتوح. فاضية/فشلت ← المسار القديم تحت زي ما هو
+                if (YtMtFeed.usable()) {
+                    val m = try { YtMtFeed.home(hh) } catch (e: Throwable) { LogStore.err("YtProUi:mtHome", e); null }
+                    if (m != null) {
+                        val shown = HashSet<String>(); m.items.forEach { shown.add(it.id) }
+                        return@load Pair(m, { p: Page -> val x = YtMtFeed.more(p, hh); YtRes(x.items.filter { shown.add(it.id) }, x.next) })
+                    }
+                    LogStore.add("⚠ رئيسية المحرك رجعت فاضية — بجرّب المسار القديم")
+                }
+                if (ss.isEmpty() && YtAccount.loggedIn()) { try { YtAccount.syncSubs() } catch (_: Throwable) {}; ss = YtStore.read(YtStore.SUBS) }   // (v375) مسجّل بجوجل ولسه ما فتحتش الاشتراكات: هات القنوات الأول
+                if (YtAccount.loggedIn()) YtAccount.syncAsync()   // (v390) مزامنة تلقائية في الخلفية في كل دخول للرئيسية (نجحت الرئيسية ولا فشلت)، مش بس بعد الفشل
                 // (v407) أي رئيسية محفوظة (حتى لو قديمة، أو من الملف بعد قفل البرنامج) بتتعرض فورًا، والتحديث في الخلفية وبعدها كبسولة «فيديوهات جديدة»
                 val seenIds = hh.map { it.id }.toHashSet()
                 val cached = YtNp.homeStale()?.let { c0 -> YtRes(c0.items.filter { x -> x.id !in seenIds }, null) }?.takeIf { it.items.size >= 6 }
@@ -660,20 +689,14 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
                     homeFirst(cached, hh, ss)
                 }
                 else {
-                    // (v1072) الرئيسية من يوتيوب (مكتبات youtubeapi) أولًا — نفس محتوى صفحة MeeTube الرئيسية؛ لو فاضية/فشلت نرجع للمسار القديم (YtNp)
+                    // (v389) علاج ذاتي: لو الرئيسية فضيت أو فشلت (كان لازم تدخل «أنت» وتعمل مزامنة) → نعمل نفس المزامنة + نعيد تهيئة NewPipe ونحاول تاني
                     var err: Throwable? = null
-                    var r = try {
-                        val mt = MtYt.homeFeed().filter { it.id !in seenIds }
-                        if (mt.size >= 6) YtRes(mt, null) else YtRes(emptyList(), null)
-                    } catch (e: Throwable) { err = e; YtRes(emptyList(), null) }
+                    var r = try { YtNp.home(hh, ss) } catch (e: Throwable) { err = e; YtRes(emptyList(), null) }
                     if (r.items.isEmpty()) {
-                        // (v389) علاج ذاتي: لو الرئيسية فضيت أو فشلت → إعادة تهيئة NewPipe ونحاول تاني
-                        r = try { YtNp.home(hh, ss) } catch (e: Throwable) { err = e; YtRes(emptyList(), null) }
-                        if (r.items.isEmpty()) {
-                            LogStore.add("🩹 الرئيسية فاضية" + (err?.let { " (" + (it.message ?: it.javaClass.simpleName).take(80) + ")" } ?: "") + " — إعادة تهيئة وإعادة محاولة")
-                            YtNp.reset()
-                            try { r = YtNp.home(hh, ss); err = null } catch (e: Throwable) { err = e }
-                        }
+                        LogStore.add("🩹 الرئيسية فاضية" + (err?.let { " (" + (it.message ?: it.javaClass.simpleName).take(80) + ")" } ?: "") + " — مزامنة + إعادة تهيئة وإعادة محاولة")
+                        YtNp.reset()
+                        if (YtAccount.loggedIn()) { try { YtAccount.syncSubs() } catch (e: Throwable) { LogStore.add("⚠ مزامنة العلاج الذاتي فشلت: " + (e.message ?: "").take(100)) }; ss = YtStore.read(YtStore.SUBS) }
+                        try { r = YtNp.home(hh, ss); err = null } catch (e: Throwable) { err = e }
                     }
                     if (r.items.isEmpty() && err != null) throw err
                     homeFirst(r, hh, ss)
@@ -681,7 +704,7 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
             }
             1 -> {
                 val subs = YtStore.read(YtStore.SUBS)
-                if (subs.isEmpty() && !MtYt.signedIn()) { bind(St("📺 اشتراكاتي", 1, ArrayList(), null, null, null, null, null, "")); emptyPrompt(1, null) }
+                if (subs.isEmpty() && !YtAccount.loggedIn() && !YtMtFeed.usableCached()) { bind(St("📺 اشتراكاتي", 1, ArrayList(), null, null, null, null, null, "")); emptyPrompt(1, null) }
                 else openSubs(false)
             }
             2, 3 -> showLocal(i, false)
@@ -735,19 +758,15 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
     private fun yrow(title: String, sub: String, key: String) = NpItem("act", title, sub, "", "", -1L, -1L, "", 2, "yta:$key")
     private fun openYou() {
         val rows = ArrayList<NpItem>()
-        // (v475) أول سطر: لو مش مسجّل ← تسجيل الدخول · لو مسجّل ولسه مفيش قنوات محلية ← استيراد ملف اشتراكات
-        if (!MtYt.signedIn()) rows.add(yrow("🔐 سجّل الدخول بحساب جوجل", "اشتراكاتك وسجلك وقوايمك وفيديوهات الإعجاب", "!login"))
-        else if (YtStore.read(YtStore.SUBS).isEmpty()) rows.add(yrow("📥 استورد اشتراكاتك", "ملف CSV/OPML من يوتيوب — القنوات المحلية بتغذي الـRSS", "!import"))
+        // (v475) أول سطر: لو مش مسجّل ← تسجيل الدخول · لو مسجّل ولسه مفيش قنوات متزامنة ← مزامنة
+        if (!YtAccount.loggedIn()) rows.add(yrow("🔐 سجّل الدخول بالكود (youtube.com/activate)", "اشتراكاتك وسجلك وقوايمك وفيديوهات الإعجاب", "!login"))
+        else if (YtStore.read(YtStore.SUBS).isEmpty()) rows.add(yrow("🔄 زامن اشتراكاتك دلوقتي", "لسه مفيش قنوات متزامنة من حسابك", "!sync"))
         rows.add(yrow("🕘 سجل المشاهدة", "اللي فتحته من يوتيوب على الجهاز (" + YtStore.read(YtStore.HIST).size + ")", "!hist"))
         rows.add(yrow("⏩ أكمل المشاهدة", "فيديوهات بدأتها ومكملتهاش — بتكمل من نفس المكان", "!cont"))   // (v469) C6
         rows.add(yrow("🕘 السجل العام", "فيديوهات وصوتيات من كل المصادر — بالمسح", "!pub"))
         rows.add(yrow("🔖 المحفوظات", "(" + YtStore.read(YtStore.SAVED).size + ")", "!saved"))
         rows.add(yrow("📥 التحميلات", "الفيديوهات والصوتيات اللي نزّلتها من يوتيوب", "!dl"))
-        // (v1072) قوايم الحساب (قنواتي/سجل يوتيوب/إعجاب/شاهد لاحقًا/قوايم التشغيل) كانت بتتفتح بملفات تعريف الكوكيز — اتشالت مع الجلسة القديمة؛ اللي فضل: تحديث الفيد + الخروج
-        if (MtYt.signedIn()) {
-            rows.add(yrow("🔄 مزامنة الاشتراكات دلوقتي", "حدّث فيد الاشتراكات من حسابك", "!sync"))
-            rows.add(yrow("🚪 تسجيل الخروج", "بيشيل بيانات الدخول من التطبيق", "!out"))
-        }
+        if (YtAccount.loggedIn()) rows.addAll(YtAccount.menuItems())
         rows.add(yrow("⚙ إعدادات يوتيوب", "الجودة · حفظ السجل · المسح", "!set"))
         if (lite) rows.add(yrow("⚙ إعدادات المشغّل والتطبيق", "الترجمة · شكل الترجمة · المظهر · الخلفية · الأمان", "!setall"))   // (v475) اللايت: «أنا» و«الإعدادات» مدموجين
         bind(St("👤 أنت", 4, rows, null, null, null, null, null, ""))
@@ -815,21 +834,15 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
         watch.open(it, r)
     }
 
-    // (v1073) الشورت = رابط /shorts/ أو مدة ≤ 60 ثانية — نفس كشف YtNp
-    private fun isShort(it: NpItem): Boolean = it.url.contains("/shorts/") || it.dur in 1L..60L
-
     private fun open(it: NpItem, srcView: View? = null) {
         if (it.kind == 2 && it.url.startsWith("yta:")) { openAcc(it); return }
         if (it.url == "ytpl:all") { cur?.let { st -> playAll(st) }; return }   // (v469) C7
         if (it.url.startsWith("ytdm:")) { Notice.show(act, "ده تنزيل شغّال في مدير تنزيلات النظام — لما يخلص هيظهر تحت في القايمة والملف في التنزيلات/Subtitler", 3000L); return }   // (v469) C3
         when (it.kind) {
-            // (v1073) الشورت بيفتح صفحة المشاهدة (مشغّل يوتيوب القديم المصغّر)؛ أي فيديو تاني بيفتح مشغّل Joyboy (player kit) على طول
-            // (v560) وضع التلفزيون = play() ← PlayTarget يبعت للتلفزيون
-            // (v494) وضع التلفزيون: دايمًا المشغّل على طول
-            // (v337) دوسة على الفيديو = يتشغّل على طول (التفاصيل من الضغطة الطويلة ← ℹ)
-            0 -> if (isShort(it) && it.id.length == 11 && !DeviceUi.isTv(act) && !PlayTarget.enabled()) watchVideo(it, srcView) else play(it, false)
+            0 -> if (YtOpen.mode() == YtOpen.PAGE && it.id.length == 11 && !DeviceUi.isTv(act) && !PlayTarget.enabled()) watchVideo(it, srcView) else play(it, false)   // (v560) وضع التلفزيون = play() ← PlayTarget يبعت للتلفزيون   // (v494) وضع التلفزيون: دايمًا المشغّل على طول   // (v337) دوسة على الفيديو = يتشغّل على طول (التفاصيل من الضغطة الطويلة ← ℹ)
             1 -> openChannel(it.channelUrl, it.title, it.thumb)
             2 -> load("📃 " + it.title, -1, null, null, null, "", true, false) { YtNp.playlist(it.url) }
+            4 -> try { act.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(it.url))) } catch (e: Throwable) { LogStore.err("Yt:post", e) }   // (v864) بوست ← يتفتح في المتصفح
         }
     }
 
@@ -850,30 +863,21 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
                 else Notice.show(act, "اتقفلت صفحة الدخول من غير ما يتم", 2200L)
             }
         }
-        // (v488) تلفزيون: اختيار بين QR من الموبايل أو الدخول بالكود الجديد
-        if (TvFocus.onCtx(act)) {
-            GAlert(act).setTitle("🔐 تسجيل الدخول بحساب جوجل")
-                .setItems(arrayOf("📱 بالـQR من الموبايل (لو مسجّل عليه)", "🔐 كود من تطبيق يوتيوب (جهاز جديد)")) { _, which ->
-                    if (which == 0) YtLink.showTvQr(act, ui, th, after) else YtMtSignIn.signIn(act, after)
-                }.setNegativeButton("إلغاء", null).show()
-            return
-        }
-        // (v1072) الدخول بالكود بتاع يوتيوب (device-code) بدل WebView الكوكيز القديم
-        YtMtSignIn.signIn(act, after)
+        // (v1104 Y4) الدخول بكود التفعيل على الموبايل والتلفزيون (مفيش QR ولا كوكيز ولا WebView جوجل)
+        YtAccount.login(act, ui, th, after)
     }
     private fun syncNow() {
-        // (v1072) مفيش مزامنة كوكيز — الفيد بيتجاب من حساب يوتيوب مباشرة (MtYt)؛ القنوات المحلية من الاستيراد بس
-        Notice.show(act, "🔄 بحدّث فيد الاشتراكات من حسابك…", 2000L)
+        Notice.show(act, "🔄 بجيب اشتراكاتك من يوتيوب…", 2000L)
         Thread {
             try {
-                val vids = MtYt.subscriptions()
+                val n = YtAccount.syncSubs()
                 act.runOnUiThread {
                     if (act.isFinishing || act.isDestroyed) return@runOnUiThread
-                    Notice.show(act, if (vids.isEmpty()) "⚠ الفيد فاضي — اتأكد إنك مسجّل الدخول" else "✅ الفيد اتحدّث (" + vids.size + " فيديو)", 3500L)
+                    Notice.show(act, "✅ اتضاف $n قناة جديدة (الإجمالي " + YtStore.read(YtStore.SUBS).size + ")", 3500L)
                     when (cur?.tab) { 0 -> openTab(0); 1 -> openSubs(false); 4 -> openTab(4) }
                 }
             } catch (e: Throwable) {
-                act.runOnUiThread { Notice.show(act, "⚠ " + (e.message ?: "فشل التحديث").take(140), 4800L) }
+                act.runOnUiThread { Notice.show(act, "⚠ " + (e.message ?: "فشلت المزامنة").take(140), 4800L) }
             }
         }.start()
     }
@@ -881,7 +885,6 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
         val key = it.url.removePrefix("yta:")
         when (key) {
             "!sync" -> syncNow()
-            "!import" -> onImport()   // (v1072) استيراد ملف اشتراكات (CSV/OPML) بدل مزامنة الكوكيز
             "!hist" -> showLocal(2, true)
             "!cont" -> showContinue()
             "!pub" -> onPubHistory()
@@ -891,7 +894,7 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
             "!set" -> settings()
             "!setall" -> (act as? MainActivity)?.openSettingsRoot()
             "!out" -> GAlert(act).setTitle("🚪 تسجيل الخروج").setMessage("هتتشال بيانات الدخول من التطبيق. الاشتراكات اللي اتحفظت هتفضل زي ما هي.")
-                .setPositiveButton("خروج") { _, _ -> MtYt.signOut(); Notice.show(act, "اتسجّل الخروج", 2000L); openTab(4) }
+                .setPositiveButton("خروج") { _, _ -> YtAccount.logout(); Notice.show(act, "اتسجّل الخروج", 2000L); openTab(4) }
                 .setNegativeButton("إلغاء", null).show()
             else -> {
                 val t = if (key.startsWith("VLPL")) "📃 " + it.title else it.title
@@ -911,23 +914,43 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
     private fun openSubs(force: Boolean) {
         hidePill()
         val subs = YtStore.read(YtStore.SUBS)
-        if (subs.isEmpty() && !MtYt.signedIn()) { openTab(1); return }
+        if (subs.isEmpty() && !YtAccount.loggedIn() && !YtMtFeed.usableCached()) { openTab(1); return }
         hideKb(); sugBox.visibility = View.GONE; stack.clear(); paintTabs(1)
         load("📺 اشتراكاتي", 1, null, null, null, "", false, false) {
-            // (v1072) القنوات من المخزن المحلي بس (استيراد) — مفيش مزامنة قنوات بالكوكيز
+            // (v1104 Y3) الاشتراكات من محرك MeeTube (حساب الكود): الأحدث أولًا + تحميل مفتوح. فاضية/فشلت ← المسار القديم (الكوكيز/RSS) تحت زي ما هو
+            if (YtMtFeed.usable()) {
+                val m = try { YtMtFeed.subs() } catch (e: Throwable) { LogStore.err("YtProUi:mtSubs", e); null }
+                if (m != null) {
+                    val shown = HashSet<String>(); m.items.forEach { shown.add(it.id) }
+                    try { YtNotify.markSeen(m.items); YtNotify.markOpened(act) } catch (_: Throwable) {}
+                    return@load Pair(m, { p: Page -> val x = YtMtFeed.more(p); YtRes(x.items.filter { shown.add(it.id) }, x.next) })
+                }
+                LogStore.add("⚠ اشتراكات المحرك رجعت فاضية — بجرّب المسار القديم")
+            }
+            // (v346) لو مسجّل بجوجل: بنزامن قنوات الحساب الأول (كل 6 ساعات أو لما تدوس تحديث) وبعدين نقرأ الاشتراكات من جديد
+            // (v350) لو القنوات فاضية أو المزامنة فشلت: نحاول تاني ونظهر السبب بدل «مفيش نتايج» الصامتة
             var syncErr: String? = null
+            if (YtAccount.loggedIn() && (force || YtStore.read(YtStore.SUBS).isEmpty())) {
+                try { YtAccount.syncSubs() } catch (e: Throwable) { syncErr = e.message ?: e.javaClass.simpleName }
+            } else if (YtAccount.loggedIn()) {   // (v390) مزامنة تلقائية في الخلفية في كل دخول؛ لو جابت قنوات جديدة والصفحة لسه مفتوحة بتتحدّث
+                YtAccount.syncAsync { n -> if (n > 0) act.runOnUiThread { if (!act.isFinishing && !act.isDestroyed && cur?.tab == 1) openSubs(false) } }
+            }
             val subsNow = YtStore.read(YtStore.SUBS)
             var r = YtRes(emptyList(), null)
             var more: ((Page) -> YtRes)? = null
-            // (v471) مسجّل بحسابك: فيد الاشتراكات الرسمي الأول — من مكتبات youtubeapi (نفس فيد صفحة MeeTube) بدل طلبات الكوكيز.
+            // (v471) مسجّل بحسابك: فيد الاشتراكات الرسمي الأول — طلب واحد بدل طلب لكل قناة، العناوين بلغة حسابك، والمدد والتصفّح للصفحات اللي بعدها، وأقل فشلًا من RSS.
             // RSS (بإعادة المحاولة ورابط قايمة الرفع) بقى الاحتياطي. الإعداد yt_subs_official
-            val official = MtYt.signedIn() && Cfg.bool("yt_subs_official", true)
+            val official = YtAccount.loggedIn() && Cfg.bool("yt_subs_official", true)
             if (official) {
                 try {
-                    val vids = MtYt.subscriptions().filter { it.kind == 0 && it.dur !in 1L..60L }
+                    val a = YtAccount.listFirst("FEsubscriptions")
+                    val vids = a.items.filter { (it.kind == 0 || it.kind == 4) }
                     if (vids.isNotEmpty()) {
+                        // (v754) نجيب أول 3 صفحات من الفيد الرسمي (كان صفحة واحدة بس) عشان الفيديوهات الجديدة كلها تيجي قبل القديمة
                         val acc = ArrayList<NpItem>(vids); val seen0 = HashSet<String>(); acc.removeAll { !seen0.add(it.id) }
-                        r = YtRes(acc, null); more = null   // (v1072) فيد يوتيوب الرسمي صفحة واحدة — مفيش صفحات بعدها
+                        var nx = a.next; var pg = 0
+                        while (nx != null && pg < 5) { pg++; try { val x = YtAccount.listMore(nx); for (v in x.items) if ((v.kind == 0 || v.kind == 4) && seen0.add(v.id)) acc.add(v); nx = x.next } catch (_: Throwable) { break } }
+                        r = YtRes(acc, nx); more = { p -> val x = YtAccount.listMore(p); YtRes(x.items.filter { (it.kind == 0 || it.kind == 4) }, x.next) }
                     }
                 } catch (e: Throwable) {
                     if (syncErr == null) syncErr = e.message ?: e.javaClass.simpleName
@@ -957,11 +980,12 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
                 r = YtRes(all.take(45), Page("ytp:rss:45"))
                 more = { p -> val o = (p.url ?: "").substringAfterLast(':').toIntOrNull() ?: all.size; val e = minOf(all.size, o + 45); YtRes(if (o < e) all.subList(o, e).toList() else emptyList(), if (e < all.size) Page("ytp:rss:" + e) else null) }
             }
-            if (r.items.isEmpty() && MtYt.signedIn() && !official) {
-                // (v1072) بديل: فيد الاشتراكات الرسمي من حسابك مباشرة (من غير RSS)
+            if (r.items.isEmpty() && YtAccount.loggedIn() && !official) {
+                // (v350) بديل: فيد الاشتراكات الرسمي من حسابك مباشرة (من غير RSS)
                 try {
-                    val vids = MtYt.subscriptions().filter { it.kind == 0 }
-                    if (vids.isNotEmpty()) { r = YtRes(vids, null); more = null }
+                    val a = YtAccount.listFirst("FEsubscriptions")
+                    val vids = a.items.filter { it.kind == 0 }
+                    if (vids.isNotEmpty()) { r = YtRes(vids, a.next); more = { p -> val x = YtAccount.listMore(p); YtRes(x.items.filter { it.kind == 0 }, x.next) } }
                 } catch (e: Throwable) { if (syncErr == null) syncErr = e.message ?: e.javaClass.simpleName }
             }
             if (r.items.isEmpty() && syncErr != null) throw RuntimeException(syncErr)
@@ -1006,7 +1030,7 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
         val snap: List<NpItem>? = if (!push && chUrl == null && q == null && (tab == 0 || tab == 1)) {
             try {
                 if (tab == 1) YtSnap.load(act, 1)
-                else { val seen = YtStore.read(YtStore.HIST).map { it.id }.toHashSet(); YtNp.homeStale()?.items?.filter { it.id !in seen }?.takeIf { it.size >= 6 } }
+                else { val seen = YtStore.read(YtStore.HIST).map { it.id }.toHashSet(); (if (YtMtFeed.usableCached()) YtMtFeed.homeStale() else YtNp.homeStale()?.items)?.filter { it.id !in seen }?.takeIf { it.size >= 6 } }
             } catch (_: Throwable) { null }
         } else null
         val snapL: List<NpItem> = snap ?: emptyList()
@@ -1019,7 +1043,7 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
         }
         Thread {
             try {
-                if (tab != 1) YtNp.init()   // (v472) الاشتراكات مش محتاجة NewPipe (الفيد الرسمي/RSS) — NewPipe بيتهيّأ لوحده لو احتاجه كاحتياطي
+                if (tab != 1 && !(tab == 0 && YtMtFeed.usable())) YtNp.init()   // (v1104 Y3) رئيسية المحرك مش محتاجة NewPipe  // (v472) الاشتراكات مش محتاجة NewPipe (الفيد الرسمي/RSS) — NewPipe بيتهيّأ لوحده لو احتاجه كاحتياطي
                 val (r, more) = job()
                 if (tab == 1 && r.items.isNotEmpty()) YtSnap.save(act, 1, r.items)
                 act.runOnUiThread {
@@ -1072,6 +1096,8 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
 
     private fun bind(st: St) {
         cur = st; statusTv.visibility = View.GONE; spin(false); hidePrompt()
+        st.typeF = if (st.tab == 1 && st.chUrl == null && st.q == null && st.vid == null) typeMode else 0   // (v864)
+        st.shelfOn = st.tab == 1 && st.chUrl == null && st.q == null && st.vid == null && !DeviceUi.isTv(act)   // (v865)
         // (v469) C7: صف «شغّل الكل» على رأس أي قايمة تشغيل
         if (st.vid == null && st.title.startsWith("📃") && st.items.any { it.kind == 0 } && st.items.none { it.url == "ytpl:all" })
             st.items.add(0, NpItem("act", "▶ شغّل الكل", st.title.removePrefix("📃").trim(), "", "", -1L, st.items.count { it.kind == 0 }.toLong(), "", 2, "ytpl:all"))
@@ -1216,7 +1242,7 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
         val items = arrayOf("🎞 الجودة الافتراضية: " + (if (q <= 0) "أعلى جودة" else q.toString() + "p"),
             "🕘 حفظ سجل المشاهدة: " + (if (YtStore.histOn()) "شغّال" else "مقفول"),
             "📥 التحميلات المسجّلة", "🗑 مسح السجل", "🗑 مسح سجل التحميلات",
-            "👤 حساب جوجل: " + (if (MtYt.signedIn()) "مسجّل الدخول" else "مش مسجّل"),
+            "👤 حساب جوجل: " + (if (YtAccount.loggedIn()) "مسجّل الدخول" else "مش مسجّل"),
             "⏭ تخطي الرعاة (SponsorBlock): " + (if (YtSponsor.on()) "شغّال" else "مقفول"))
         GAlert(act).setTitle("⚙ إعدادات يوتيوب").setItems(items) { _, w ->
             when (w) {
@@ -1306,11 +1332,11 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
                 val r = mf(nx)
                 act.runOnUiThread {
                     if (cur === st && st.cMode == inC) {
-                        val l = st.list(); val before = l.size; val seen = l.map { it.id + it.url + it.title.take(40) }.toHashSet()
-                        r.items.forEach { if (seen.add(it.id + it.url + it.title.take(40))) l.add(it) }
+                        val l = if (inC) st.ci else st.items; val before = st.list().size; val seen = l.map { it.id + it.url + it.title.take(40) }.toHashSet()
+                        r.items.forEach { if (seen.add(it.id + it.url + it.title.take(40))) l.add(it) }   // (v865) بنضيف على القايمة الأصلية (list() ممكن تبقى نسخة مفلترة/مجمّعة)
                         if (inC) st.cn = r.next else st.next = r.next
                         if (!inC) applyListPrefs(st)   // (v469) C10
-                        adapter.notifyDataSetChanged()
+                        adapter.set(st.list())
                         // (v575) تلفزيون: لو الدفعة رجعت من غير جديد (كلها مكررة/مفلترة) كمّل لوحدك بدل ما التحميل يقف
                         if (DeviceUi.isTv(act) && !inC && st.next != null && st.list().size == before && moreEmpty++ < 8) h.postDelayed({ if (cur === st) loadMore() }, 400L) else if (st.list().size != before) moreEmpty = 0
                     }
@@ -1332,7 +1358,7 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
     /** الرئيسية/الاشتراكات رجعت فاضية أو فشلت: لو مش مسجّل ← تسجيل الدخول، لو مسجّل ولسه ما اتزامنش ← مزامنة. why = سبب الفشل لو فيه */
     private fun emptyPrompt(tab: Int, why: String?) {
         val pre = if (why.isNullOrBlank()) "" else "⚠ " + why.take(140) + "\n\n"
-        if (!MtYt.signedIn()) {
+        if (!YtAccount.loggedIn()) {
             val m = if (tab == 1) "مش مسجّل دخول في يوتيوب.\nسجّل دخولك عشان تظهرلك اشتراكاتك." else "مش مسجّل دخول في يوتيوب.\nسجّل دخولك عشان الرئيسية تظهرلك فيديوهات على ذوقك."
             if (tab == 1) showPrompt(pre + m, "🔐 تسجيل الدخول" to { startLogin() }, "📥 استورد ملف اشتراكات" to { onImport() }, "↻ إعادة المحاولة" to { openTab(tab) })
             else showPrompt(pre + m, "🔐 تسجيل الدخول" to { startLogin() }, "↻ إعادة المحاولة" to { openTab(tab) })
@@ -1379,6 +1405,7 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
         row.visibility = if (show) View.VISIBLE else View.GONE
         if (!show || st == null) return
         ctlSort?.text = "↕ ترتيب: " + sortLabels[sortMode]
+        ctlType?.let { it.visibility = if (st.tab == 1 && st.chUrl == null && st.q == null) View.VISIBLE else View.GONE; it.text = "🎞 النوع: " + typeLabels[typeMode]; paintChip(it, typeMode != 0) }
         ctlHide?.let { it.text = if (hideSeen) "🙈 المُشاهَد: مخفي" else "👁 المُشاهَد: ظاهر"; paintChip(it, hideSeen) }
         val isSearch = st.q != null
         ctlDur?.visibility = if (isSearch) View.VISIBLE else View.GONE
@@ -1396,6 +1423,18 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
         }
         val pa = st.items.firstOrNull { it.url == "ytpl:all" }
         if (pa != null) { st.items.remove(pa); st.items.add(0, pa) }
+    }
+    /** (v865) قايمة الشورتس اللي بيتسوايب عليها المشغّل اللايت: كل شورتس الفيد المحمّل بالترتيب الزمني */
+    private fun shortsQueue(): List<NpItem> = cur?.items?.filter { it.kind == 0 && isShortLike(it) } ?: emptyList()
+    private fun typeMenu(anchor: View) {
+        val m = PopupMenu(act, anchor)
+        typeLabels.forEachIndexed { i, l -> m.menu.add(0, i, i, (if (i == typeMode) "✓ " else "") + l) }
+        m.setOnMenuItemClickListener { mi ->
+            typeMode = mi.itemId
+            cur?.let { st -> st.typeF = typeMode; st.pos = 0; adapter.set(st.list()); lv.setSelection(0); paintCtl(st) }
+            true
+        }
+        m.show()
     }
     private fun sortMenu(anchor: View) {
         val m = PopupMenu(act, anchor)
@@ -1603,8 +1642,8 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
         override fun getCount() = if (grid) (items.size + 1) / 2 else items.size
         override fun getItem(p: Int) = if (grid) items[p * 2] else items[p]
         override fun getItemId(p: Int) = p.toLong()
-        override fun getViewTypeCount() = 3
-        override fun getItemViewType(p: Int): Int = if (grid) 1 else if (cards && items[p].kind == 0 && items[p].id != "act") 2 else 0
+        override fun getViewTypeCount() = 4
+        override fun getItemViewType(p: Int): Int = if (grid) 1 else if (items[p].kind == 5) 3 else if (cards && items[p].kind == 0 && items[p].id != "act") 2 else 0
         private fun gridView(p: Int, cv: View?): View {
             val row: LinearLayout
             if (cv == null) {
@@ -1631,6 +1670,40 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
             }
             return row
         }
+        private inner class ShelfHold(val label: TextView, val cells: Array<FrameLayout>, val imgs: Array<ImageView>, val titles: Array<TextView>)
+        /** (v865) «رف الشورتس»: 4 شورتس جنب بعض (9:16) في كارت بعرض الفيديو العادي، دوسة = المشغّل اللايت (سويب للي بعده) */
+        private fun shelfView(p: Int, cv: View?): View {
+            val hd: ShelfHold; val v: View
+            if (cv == null) {
+                val sw = act.resources.displayMetrics.widthPixels
+                val pad = ui.dp(10); val gap = ui.dp(6)
+                val cw = (sw - 2 * pad - 3 * gap) / 4; val chh = cw * 16 / 9
+                val label = ui.text("🩳 شورتس", 14f, th.text, true).apply { setPadding(ui.dp(2), 0, ui.dp(2), ui.dp(6)) }
+                val row = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL }
+                val cells = Array(4) { FrameLayout(act).apply { background = GradientDrawable().apply { cornerRadius = ui.dp(10).toFloat(); setColor(th.surface) }; clipToOutline = true } }
+                val imgs = Array(4) { ImageView(act).apply { scaleType = ImageView.ScaleType.CENTER_CROP } }
+                val titles: Array<TextView> = Array(4) { ui.text("", 10.5f, Color.WHITE, true).apply { maxLines = 2; ellipsize = TextUtils.TruncateAt.END; setPadding(ui.dp(5), ui.dp(16), ui.dp(5), ui.dp(5)); background = GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, intArrayOf(0x00000000, 0xCC000000.toInt())) } }
+                for (k in 0 until 4) {
+                    cells[k].addView(imgs[k], FrameLayout.LayoutParams(-1, -1))
+                    cells[k].addView(titles[k], FrameLayout.LayoutParams(-1, -2, Gravity.BOTTOM))
+                    row.addView(cells[k], LinearLayout.LayoutParams(cw, chh).apply { if (k < 3) marginEnd = gap })
+                }
+                val box = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; setPadding(pad, ui.dp(8), pad, ui.dp(10)); addView(label); addView(row) }
+                hd = ShelfHold(label, cells, imgs, titles); box.tag = hd; v = box
+            } else { v = cv; hd = cv.tag as ShelfHold }
+            val ids = items[p].url.removePrefix("ytshelf:").split(",").filter { x -> x.isNotBlank() }
+            for (k in 0 until 4) {
+                val c = hd.cells[k]
+                if (k >= ids.size) { c.visibility = View.INVISIBLE; c.setOnClickListener(null); c.setOnLongClickListener(null); continue }
+                val id = ids[k]; val info = shortInfo[id]
+                c.visibility = View.VISIBLE
+                hd.titles[k].text = info?.title ?: ""
+                try { Glide.with(act).load("https://i.ytimg.com/vi/$id/hqdefault.jpg").centerCrop().into(hd.imgs[k]) } catch (_: Throwable) {}
+                c.setOnClickListener { val s = info ?: shortsQueue().firstOrNull { q -> q.id == id }; if (s != null) play(s, false) else onPlay(id, "", false) }   // (v1103 Y2) ShortsPlayer اتمسح v889 — الشورتس بتتفتح كفيديو عادي (تبويب الشورتس = T5)
+                c.setOnLongClickListener { x -> info?.let { menu(x, it) }; true }
+            }
+            return v
+        }
         private fun cardView(p: Int, cv: View?): View {
             val c: Card
             val v: View
@@ -1643,7 +1716,7 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
                 v.animate().alpha(1f).translationY(0f).setStartDelay(p * 28L).setDuration(Skins.dur(200L)).setInterpolator(android.view.animation.DecelerateInterpolator(1.8f)).start()
             } else { v.alpha = 1f; v.translationY = 0f }
             c.title.text = vi.title
-            c.meta.text = listOf(vi.channel, if (vi.count >= 0) fmtN(vi.count) + " مشاهدة" else "", vi.age).filter { x -> x.isNotBlank() }.joinToString(" · ")
+            c.meta.text = listOf(if (YtRss.isShort(vi.id)) "🩳 شورتس" else "", vi.channel, if (vi.count >= 0) fmtN(vi.count) + " مشاهدة" else "", vi.age).filter { x -> x.isNotBlank() }.joinToString(" · ")
             val d = fmtDur(vi.dur)
             c.dur.text = d; c.dur.visibility = if (d.isEmpty()) View.GONE else View.VISIBLE
             val rec = recs()["yt:" + vi.id] as? Recent
@@ -1675,6 +1748,7 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
         }
         override fun getView(p: Int, cv: View?, parent: ViewGroup?): View {
             if (grid) return gridView(p, cv)
+            if (items[p].kind == 5) return shelfView(p, cv)
             if (cards && items[p].kind == 0 && items[p].id != "act") return cardView(p, cv)
             val hd: Hold
             val v: View
@@ -1703,7 +1777,7 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
                 v.animate().alpha(1f).translationY(0f).setStartDelay(p * 38L).setDuration(Skins.dur(300L)).setInterpolator(android.view.animation.DecelerateInterpolator(1.8f)).start()
             } else { v.alpha = 1f; v.translationY = 0f }
             hd.title.text = it.title
-            val cm = it.kind == 3 || it.id == "act"
+            val cm = it.kind == 3 || it.kind == 4 || it.id == "act"
             hd.box.visibility = if (cm) View.GONE else View.VISIBLE
             val vid = it.kind == 0 && it.id.isNotBlank()
             hd.btns.visibility = if (vid) View.VISIBLE else View.GONE
@@ -1713,8 +1787,9 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
             val seen = it.kind == 0 && recs().containsKey("yt:" + it.id)
             hd.title.alpha = if (seen) 0.6f else 1f
             hd.meta.text = when (it.kind) {
+                4 -> listOf("📝 بوست", it.channel, it.age).filter { s -> s.isNotBlank() }.joinToString(" · ")
                 3 -> listOf(it.channel, if (it.count > 0) "♥ " + fmtN(it.count) else "", it.age).filter { s -> s.isNotBlank() }.joinToString(" · ")
-                0 -> listOf(it.channel, if (it.count >= 0) fmtN(it.count) + " مشاهدة" else "", it.age).filter { s -> s.isNotBlank() }.joinToString(" · ")
+                0 -> listOf(if (YtRss.isShort(it.id)) "🩳 شورتس" else "", it.channel, if (it.count >= 0) fmtN(it.count) + " مشاهدة" else "", it.age).filter { s -> s.isNotBlank() }.joinToString(" · ")
                 1 -> "📺 قناة" + if (it.count >= 0) " · " + fmtN(it.count) + " مشترك" else ""
                 2 -> if (it.id == "act") it.channel else "📃 قايمة" + (if (it.channel.isNotBlank()) " · " + it.channel else "") + if (it.count >= 0) " · " + it.count + " فيديو" else ""
                 else -> "📃 قايمة" + (if (it.channel.isNotBlank()) " · " + it.channel else "") + if (it.count >= 0) " · " + it.count + " فيديو" else ""
@@ -1726,4 +1801,35 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
             return v
         }
     }
+}
+
+/** (v865) معلومات الشورتس اللي اتجمّعت في أرفف (id ← العنصر) عشان الرف يعرض عناوينها */
+private val shortInfo = java.util.concurrent.ConcurrentHashMap<String, NpItem>()
+private fun isShortLike(x: NpItem): Boolean = YtRss.isShort(x.id) || x.dur in 1L..60L
+
+/** (v865) كل 4 شورتس متتالية في الترتيب الزمني ← رف واحد (kind = 5) في مكان أحدث واحد فيهم؛ الباقي بيتشال من مكانه */
+private fun shelfify(src: List<NpItem>): ArrayList<NpItem> {
+    val shorts = src.filter { it.kind == 0 && isShortLike(it) }
+    if (shorts.isEmpty()) return ArrayList(src)
+    val groups = shorts.chunked(4)
+    val groupOf = HashMap<String, Int>()
+    groups.forEachIndexed { gi, g -> g.forEach { groupOf[it.id] = gi; shortInfo[it.id] = it } }
+    val placed = HashSet<Int>(); val out = ArrayList<NpItem>(src.size)
+    for (x in src) {
+        val gi = if (x.kind == 0) groupOf[x.id] else null
+        if (gi == null) { out.add(x); continue }
+        if (placed.add(gi)) {
+            val g = groups[gi]
+            out.add(NpItem(g[0].id, "شورتس", "", "", "", -1L, -1L, g[0].age, 5, "ytshelf:" + g.joinToString(",") { it.id }, g[0].ts))
+        }
+    }
+    return out
+}
+
+/** (v864) فلتر نوع الاشتراكات: 1 فيديوهات · 2 شورتس · 3 بوستات */
+private fun typeOk(it: NpItem, f: Int): Boolean = when (f) {
+    1 -> it.kind == 0 && !isShortLike(it)
+    2 -> it.kind == 0 && isShortLike(it)
+    3 -> it.kind == 4
+    else -> true
 }

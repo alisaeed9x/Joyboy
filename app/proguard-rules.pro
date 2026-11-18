@@ -50,3 +50,14 @@
 -dontwarn lombok.**
 -dontwarn org.xbill.DNS.config.**
 -dontwarn org.slf4j.impl.**
+
+# (v1103 Y2) NewPipeExtractor (رجع مع يوتيوب القديم) — بيشاور على Rhino/jsoup/protobuf اختياريين؛ timeago patterns بتتحمّل بالاسم
+-dontwarn org.schabi.newpipe.extractor.**
+-keep class org.schabi.newpipe.extractor.timeago.patterns.** { *; }
+-keep class org.schabi.newpipe.extractor.services.youtube.** { *; }
+-dontwarn org.jsoup.**
+-dontwarn com.google.protobuf.**
+-dontwarn jdk.dynalink.**
+-dontwarn javax.annotation.**
+# (v1103 Y1) RxJava3 — مستعمل من شاشة دخول الكود
+-dontwarn io.reactivex.rxjava3.**

@@ -30,6 +30,12 @@ object MtYt {
 
     private fun boot() { app?.let { MobileMainApplication.boot(it) } }
 
+    /** (v1104 Y4) خدمة العناصر (لايك/اشتراك) — من خيط خلفي */
+    fun itemSvc() = service()
+
+    /** (v1103 Y1) تشغيل محرك MeeTube من برّه (شاشة دخول الكود) */
+    fun ensureBoot() = boot()
+
     private fun service() = run { boot(); YouTubeServiceManager.instance().mediaItemService }
 
     /** معلومات الفورمات للفيديو (كاش 90 دقيقة). null لو فشل — والسبب في lastWhy. */
@@ -164,14 +170,14 @@ object MtYt {
 
     fun watchUrl(id: String) = "https://www.youtube.com/watch?v=$id"
 
-    private fun toItem(m: com.liskovsoft.mediaserviceinterfaces.data.MediaItem): NpItem? {
+    fun toItem(m: com.liskovsoft.mediaserviceinterfaces.data.MediaItem): NpItem? {
         val vid = m.videoId ?: return null
         if (vid.length != 11) return null
         val sub = m.secondTitle?.toString() ?: ""
         val parts = sub.split(" • ", "·", "•").map { it.trim() }.filter { it.isNotEmpty() }
         val thumb = m.cardImageUrl?.takeIf { it.isNotBlank() } ?: "https://i.ytimg.com/vi/$vid/mqdefault.jpg"
         return NpItem(vid, m.title ?: "", parts.firstOrNull() ?: "", "", thumb, (m.durationMs / 1000L).coerceAtLeast(0L), -1L,
-            m.productionDate ?: "", 0, watchUrl(vid), m.publishedDate.coerceAtLeast(0L))
+            (m.productionDate?.takeIf { it.isNotBlank() } ?: YtAge.ageOf(m.publishedDate.coerceAtLeast(0L))), 0, watchUrl(vid), m.publishedDate.coerceAtLeast(0L))   // (v1104 Y3) لو مفيش نص عمر: نحسبه من وقت النشر
     }
 
     private fun flatten(groups: List<com.liskovsoft.mediaserviceinterfaces.data.MediaGroup>?): List<NpItem> {
@@ -204,5 +210,42 @@ object MtYt {
     fun related(id: String): List<NpItem> {
         return try { flatten(service().getMetadata(id)?.suggestions).filter { it.id != id } }
         catch (e: Throwable) { LogStore.err("MtYt:related", e); emptyList() }
+    }
+
+    // ───────── (v1104 Y3) الرئيسية والاشتراكات بتحميل مفتوح (continueGroup) ─────────
+    /** صفحة فيديوهات + المجموعة اللي منها نكمّل (null = خلصت). */
+    class Feed(val items: List<NpItem>, val next: com.liskovsoft.mediaserviceinterfaces.data.MediaGroup?)
+
+    private fun feedOf(g: com.liskovsoft.mediaserviceinterfaces.data.MediaGroup?): Feed {
+        if (g == null) return Feed(emptyList(), null)
+        val items = flatten(listOf(g))
+        return Feed(items, if (g.nextPageKey != null) g else null)
+    }
+
+    /** أول صفحة اشتراكات (الأحدث أولًا) — من خيط خلفي */
+    fun subsFirst(): Feed =
+        try { boot(); val f = feedOf(YouTubeServiceManager.instance().contentService.getSubscriptions()); Feed(newestFirst(f.items), f.next) }
+        catch (e: Throwable) { LogStore.err("MtYt:subsFirst", e); Feed(emptyList(), null) }
+
+    /** أول صفحة رئيسية: كل الصفوف مدموجة، والتكملة من أول صف ليه صفحة تانية — من خيط خلفي */
+    fun homeFirst(): Feed =
+        try {
+            boot()
+            val groups = YouTubeServiceManager.instance().contentService.getHome() ?: emptyList()
+            val items = flatten(groups)
+            val next = groups.firstOrNull { it != null && it.nextPageKey != null && !it.mediaItems.isNullOrEmpty() }
+            Feed(items, next)
+        } catch (e: Throwable) { LogStore.err("MtYt:homeFirst", e); Feed(emptyList(), null) }
+
+    /** الصفحة اللي بعد المجموعة دي */
+    fun more(g: com.liskovsoft.mediaserviceinterfaces.data.MediaGroup): Feed =
+        try { boot(); feedOf(YouTubeServiceManager.instance().contentService.continueGroup(g)) }
+        catch (e: Throwable) { LogStore.err("MtYt:more", e); Feed(emptyList(), null) }
+
+    /** ترتيب بالأحدث لو أغلب العناصر ليها وقت نشر (غير كده بنسيب ترتيب يوتيوب زي ما هو) */
+    fun newestFirst(l: List<NpItem>): List<NpItem> {
+        if (l.size < 2) return l
+        val withTs = l.count { it.ts > 0L }
+        return if (withTs * 10 >= l.size * 7) l.sortedByDescending { it.ts } else l
     }
 }

@@ -75,6 +75,14 @@ dependencies {
     testImplementation("junit:junit:4.13.2")            // (v589 T4)
     testImplementation("org.json:json:20240303")        // org.json الحقيقي بدل stub بتاع android.jar (اللي بيرمي "not mocked")
     implementation(project(":youtubeapi"))   // (v889) MtYt بيجيب روابط الفيديو/الصوت من MediaServiceCore بتاع MeeTube (بدل NewPipeExtractor اللي اتشال)
+    implementation("com.github.TeamNewPipe:NewPipeExtractor:v0.26.5")   // (v1103 Y2) رجوع يوتيوب القديم (YtNp: بحث/قنوات/قوايم/تعليقات) — نفس نسخة v887؛ jitpack.io موجود في settings
+    implementation("io.reactivex.rxjava3:rxjava:3.1.12")   // (v1103 Y1) signInObserve() (شاشة دخول الكود) — :mediaserviceinterfaces معرّفها implementation فمش بتتمرر لـ:app
+    implementation("io.reactivex.rxjava3:rxandroid:3.0.2")
+}
+
+// (v1103 Y2) nanojson متكرر: youtubeapi بيجيب com.grack:nanojson:1.10 وNewPipeExtractor بيجيب فورك TeamNewPipe (نفس الـpackage) — نسيب الفورك بس (نفس v879)
+configurations.configureEach {
+    exclude(group = "com.grack", module = "nanojson")
 }
 
 // (v1027) تقرير حجم الـAPK في لوج البناء (بعد assembleRelease): الحجم المضغوط لكل فئة (dex / res / assets / lib لكل معمارية) وأكبر 15 ملف.
