@@ -27,8 +27,6 @@ class FastTr(
 
     @Volatile var running = false; private set
     @Volatile var paused = false
-    // (v1119) تفريغ بس: الجمل المفرّغة هي الناتج — من غير خطوة ترجمة
-    @Volatile var transOnly: Boolean = false
     @Volatile private var stopped = false
     @Volatile var total = 0; private set
     @Volatile var onState: (() -> Unit)? = null
@@ -39,10 +37,14 @@ class FastTr(
     private val err503Times = ArrayDeque<Long>()
     @Volatile private var last503At = 0L
     @Volatile private var lastCapLogged = -1
-    // (v1119) إشعار فصل النت مرة واحدة بس لكل فصل (مش من كل خيط)
-    private val downNoteLock = Any()
-    private var downNoted = false
     private val mergeLock = Any()
+    // (v1118) نسخة التأمين للباتش البطيء: وقت بدء كل باتش شغّال، وتفريغه الأول، ومين كسب الترجمة
+    private val startedAt = ConcurrentHashMap<Int, Long>()
+    private val rawOf = ConcurrentHashMap<Int, List<Sub>>()
+    private val trWon = ConcurrentHashMap.newKeySet<Int>()
+    private val hedged = ConcurrentHashMap.newKeySet<Int>()
+    private val hedgeRunning = AtomicInteger(0)
+    private val finishedMs = ArrayList<Long>()
     private val srcLock = Any()
     private val persistN = AtomicInteger(0)
     private val active = ConcurrentHashMap.newKeySet<Int>()   // (دمج v1081) باتشات اتبعتت (تفريغ/ترجمة) ولسه ما خلصتش
@@ -106,34 +108,6 @@ class FastTr(
         }
     }
 
-    // (v1119) إشعار فصل النت مرة واحدة بس لكل فصل — كبسولة على التلفزيون + بيوصل للموبايل (نفس host.notice بتاع المحرك القديم)
-    private fun noteDownOnce() {
-        synchronized(downNoteLock) {
-            if (downNoted) return
-            downNoted = true
-        }
-        try { host.notice(NetWait.statusText()) } catch (_: Throwable) {}
-    }
-
-    // (v1119) إشعار رجوع النت مرة واحدة بس — للي أعلن الفصل
-    private fun noteBackOnce() {
-        synchronized(downNoteLock) {
-            if (!downNoted) return
-            downNoted = false
-        }
-        try { host.notice("✅ النت رجع — بكمّل الترجمة") } catch (_: Throwable) {}
-    }
-
-    // (v1119) انتظار رجوع النت مع الإشعارين — بيرجّع الوقت اللي اتمددت بيه مهلة الباتش
-    private fun waitNetDown(): Long {
-        val t0n = System.currentTimeMillis()
-        noteDownOnce()
-        NetWait.waitUp({ !stopped }) { try { host.status(NetWait.statusText()) } catch (_: Throwable) {} }
-        val spent = System.currentTimeMillis() - t0n
-        if (!stopped) noteBackOnce()
-        return spent
-    }
-
     // (v1117) سطر لوج واحد مع كل تغيير في السقف بس — مش مع كل باتش
     @Synchronized private fun logCapIfChanged(cap: Int) {
         if (lastCapLogged < 0) {
@@ -154,6 +128,76 @@ class FastTr(
                 host.log("⚡ التوازي رجع $cap")
             } catch (_: Throwable) {
             }
+        }
+    }
+
+    // (v1118) وسيط زمن آخر باتشات خلصت — null لو لسه أقل من 3
+    private fun noteFinish(ms: Long) {
+        synchronized(finishedMs) {
+            finishedMs.add(ms)
+            if (finishedMs.size > 12) {
+                finishedMs.removeAt(0)
+            }
+        }
+    }
+
+    private fun medianMs(): Long? {
+        val copy = synchronized(finishedMs) { finishedMs.toList() }
+        if (copy.size < 3) {
+            return null
+        }
+        return copy.sorted()[copy.size / 2]
+    }
+
+    // (v1118) بعد قد إيه الباتش يتعتبر بطيء: 1.6 × الوسيط (بين 25 و90ث)، ونص كده للباتش اللي المشغّل واقف عنده أو اللي بعده
+    private fun hedgeAfterMs(i: Int): Long {
+        val med = medianMs()
+        val base = if (med == null) 45_000L else (med * 16 / 10).coerceIn(25_000L, 90_000L)
+        val cur = try { eng.chunkOfSec(host.position()) } catch (_: Throwable) { -1 }
+        if (i == cur || i == cur + 1) {
+            return maxOf(12_000L, base / 2)
+        }
+        return base
+    }
+
+    private fun isStraggler(i: Int, now: Long): Boolean {
+        if (hedged.contains(i)) {
+            return false
+        }
+        if (trWon.contains(i)) {
+            return false
+        }
+        val t = startedAt[i] ?: return false
+        return now - t > hedgeAfterMs(i)
+    }
+
+    // (v1118) الخيط اللي خلّص باتشه بيدوّر الأول على باتش بطيء يعمله نسخة تأمين على مفتاحه الفاضي — مش بيستنى ولا بيحجب أي باتش تاني
+    // (v1118) مفيش تأمين وقت موجة 503 (هيضاعف الحمل)، ونسخة تأمين واحدة بس في نفس الوقت
+    @Synchronized private fun claimStraggler(): Int {
+        if (capNow() < normalCap()) {
+            return -1
+        }
+        if (hedgeRunning.get() >= 1) {
+            return -1
+        }
+        val now = System.currentTimeMillis()
+        for (i in active.toList().sorted()) {
+            if (isStraggler(i, now) && hedged.add(i)) {
+                hedgeRunning.incrementAndGet()
+                host.log("⚡ [محرك ٢] باتش ${i + 1}: بطيء — نسخة تأمين على مفتاح تاني (أول واحدة تخلص تكسب)")
+                return i
+            }
+        }
+        return -1
+    }
+
+    private fun runHedge(i: Int, s: AudioSource, dur: Double) {
+        try {
+            process(i, s, dur, true)
+        } catch (e: Throwable) {
+            host.log("⚠ [محرك ٢] باتش ${i + 1} نسخة التأمين: " + (e.message ?: e.toString()).take(100))
+        } finally {
+            hedgeRunning.decrementAndGet()
         }
     }
 
@@ -211,10 +255,7 @@ class FastTr(
         // ترتيب الباتشات: من مكان التشغيل لآخر الفيديو، وبعدها اللي قبله
         val start = eng.chunkOfSec(host.position()).coerceIn(0, maxOf(0, n - 1))
         // الباتشات اللي فيها ترجمة جاهزة فعلًا (من أي محرك) بتتخطّى — عشان ماندوّرش على ترجمة موجودة ونحرق الكوتة
-        // (v1119) تفريغ بس: الجملة المفرّغة أصلها هو الناتج — فالموجود يُحسب من الأصل مش من الترجمة
-        val haveTr = eng.subs.filter {
-            if (transOnly) it.original.isNotBlank() else (it.translated.isNotBlank() && it.translated != it.original)
-        }.map { it.chunk }.toSet()
+        val haveTr = eng.subs.filter { it.translated.isNotBlank() && it.translated != it.original }.map { it.chunk }.toSet()
         val order = ((start until n) + (0 until start)).filter { it !in doneSet && it !in haveTr }
         val workers = pool.all().size.coerceIn(1, MAX_WORKERS)
         host.log("⚡ [محرك ٢] $n باتش · $workers خيط (كل مفتاح باتش) · الموديل ${model().removePrefix("gemini-")}")
@@ -227,8 +268,19 @@ class FastTr(
                     if (stopped) break
                     waitForSlot()
                     if (stopped) break
+                    val h = claimStraggler()
+                    if (h >= 0) {
+                        runHedge(h, s, dur)
+                        state()
+                        continue
+                    }
                     val idx = next.getAndIncrement()
-                    if (idx >= order.size) break
+                    if (idx >= order.size) {
+                        // (v1118) الباتشات خلصت توزيع: لو لسه فيه باتش شغّال الخيط الفاضي يفضل يراقب عشان يعمل نسخة تأمين
+                        if (active.isEmpty()) break
+                        nap(1000)
+                        continue
+                    }
                     val i = order[idx]
                     active.add(i)
                     try { process(i, s, dur) }
@@ -246,47 +298,41 @@ class FastTr(
     }
 
     // ===== باتش واحد =====
-    private fun process(i: Int, s: AudioSource, dur: Double) {
+    private fun process(i: Int, s: AudioSource, dur: Double, hedge: Boolean = false) {
         val bs = eng.chunkStartSec(i)
         val be = minOf(eng.chunkStartSec(i + 1), dur)
         if (be - bs < 0.3) { doneSet.add(i); return }
-        val a0 = maxOf(0.0, bs - PAD); val a1 = minOf(dur, be + PAD)
-        var w: WavChunk? = synchronized(srcLock) { s.wav(a0, a1) }
-        var r = 0
-        while (w == null && r++ < 2 && !stopped) { nap(600); w = synchronized(srcLock) { s.wav(a0, a1) } }
-        if (w == null || w.silent) { merge(bs, be, emptyList()); doneSet.add(i); return }
-        val wav = w
         val t0 = System.currentTimeMillis()
+        if (!hedge) {
+            startedAt[i] = t0
+        }
+        // (v1118) نسخة التأمين لو التفريغ خلص عند الأصلي بتترجم بس من غير ما ترفع الصوت تاني
+        val cached = if (hedge) rawOf[i] else null
 
         // 1) تفريغ
-        val raw = withKey(i, "تفريغ") { k, _ ->
-            val rep = Api.generate(model(), k, transcribePrompt(), wav.bytes, Api.outTokens(wav.durSec), 0.0, true)
-            val a = arr(rep.text) ?: throw BadReply("رد التفريغ مش JSON")
-            val out = ArrayList<Sub>()
-            for (x in 0 until a.length()) {
-                val o = a.optJSONObject(x) ?: continue
-                val txt = o.optString("text", "").trim()
-                if (txt.isEmpty()) continue
-                val st = wav.startSec + Parse.sec(o, "start", 0.0)
-                var en = wav.startSec + Parse.sec(o, "end", 0.0)
-                if (st < bs - 0.25 || st >= be) continue   // الجملة بتتبع الباتش اللي بتبدأ فيه
-                if (en <= st + 0.2) en = st + 1.5
-                en = minOf(en, dur)
-                out.add(plain(st, en, txt, txt, i))
-            }
-            out
+        val raw = cached ?: transcribeStep(i, s, dur, bs, be)
+        if (raw == null) {
+            if (trWon.contains(i)) return
+            if (hedge && active.contains(i)) return
+            failedSet.add(i)
+            host.log("⚠ [محرك ٢] باتش ${i + 1}: التفريغ فشل بعد $TRIES محاولات")
+            return
         }
-        if (raw == null) { failedSet.add(i); host.log("⚠ [محرك ٢] باتش ${i + 1}: التفريغ فشل بعد $TRIES محاولات"); return }
-        merge(bs, be, raw)            // الجمل المفرّغة تظهر دلوقتي
+        if (cached == null) {
+            // (v1118) أول تفريغ يخلص هو اللي يظهر ويكمل؛ التاني يقف (والتأمين يرجع متاح لو الترجمة اتأخرت)
+            val first = rawOf.putIfAbsent(i, raw) == null
+            if (!first) {
+                if (hedge) hedged.remove(i)
+                return
+            }
+            merge(bs, be, raw)            // الجمل المفرّغة تظهر دلوقتي
+        }
         val tTx = System.currentTimeMillis() - t0
-        if (raw.isEmpty()) { doneSet.add(i); failedSet.remove(i); host.log("⚡ [محرك ٢] باتش ${i + 1}: مفيش كلام (${tTx}ms)"); state(); return }
-
-        // (v1119) تفريغ بس: مفيش خطوة ترجمة — الجمل المفرّغة هي الناتج النهائي
-        if (transOnly) {
-            doneSet.add(i)
-            failedSet.remove(i)
-            host.log("⚡ [محرك ٢] باتش ${i + 1}: ${raw.size} جملة · تفريغ بس ${tTx}ms")
-            if (persistN.incrementAndGet() % 3 == 0) try { eng.saveNow() } catch (_: Throwable) {}
+        if (raw.isEmpty()) {
+            if (!trWon.add(i)) return
+            doneSet.add(i); failedSet.remove(i)
+            noteFinish(System.currentTimeMillis() - (startedAt[i] ?: t0))
+            host.log("⚡ [محرك ٢] باتش ${i + 1}: مفيش كلام (${tTx}ms)")
             state()
             return
         }
@@ -307,16 +353,48 @@ class FastTr(
         }
         if (tr != null) {
             val done = raw.mapIndexed { j, sb -> val t = tr.getOrNull(j).orEmpty(); plain(sb.start, sb.end, sb.original, t.ifBlank { sb.original }, i) }
+            // (v1118) أول ترجمة تخلص (الأصلي أو التأمين) هي اللي بتتدمج
+            if (!trWon.add(i)) return
             merge(bs, be, done)
             failedSet.remove(i)
         } else {
+            if (trWon.contains(i)) return
+            if (hedge && active.contains(i)) return
             failedSet.add(i)   // التفريغ فضل ظاهر
             host.log("⚠ [محرك ٢] باتش ${i + 1}: الترجمة فشلت — التفريغ فاضل معروض")
         }
         doneSet.add(i)
-        host.log("⚡ [محرك ٢] باتش ${i + 1}: ${raw.size} جملة · تفريغ ${tTx}ms · إجمالي ${System.currentTimeMillis() - t0}ms")
+        noteFinish(System.currentTimeMillis() - (startedAt[i] ?: t0))
+        host.log("⚡ [محرك ٢] باتش ${i + 1}: ${raw.size} جملة · تفريغ ${tTx}ms · إجمالي ${System.currentTimeMillis() - t0}ms" + (if (hedge) " · 🏁 نسخة التأمين كسبت" else ""))
         if (persistN.incrementAndGet() % 3 == 0) try { eng.saveNow() } catch (_: Throwable) {}
         state()
+    }
+
+    // (v1118) خطوة التفريغ اتفصلت عن process بدون تغيير في المنطق — الصوت الفاضي بيرجع قايمة فاضية (بيتعامل معاه زي «مفيش كلام»)
+    private fun transcribeStep(i: Int, s: AudioSource, dur: Double, bs: Double, be: Double): List<Sub>? {
+        val a0 = maxOf(0.0, bs - PAD); val a1 = minOf(dur, be + PAD)
+        var w: WavChunk? = synchronized(srcLock) { s.wav(a0, a1) }
+        var r = 0
+        while (w == null && r++ < 2 && !stopped) { nap(600); w = synchronized(srcLock) { s.wav(a0, a1) } }
+        if (w == null || w.silent) return emptyList()
+        val wav = w
+        return withKey(i, "تفريغ") { k, _ ->
+            val rep = Api.generate(model(), k, transcribePrompt(), wav.bytes, Api.outTokens(wav.durSec), 0.0, true)
+            val a = arr(rep.text) ?: throw BadReply("رد التفريغ مش JSON")
+            val out = ArrayList<Sub>()
+            for (x in 0 until a.length()) {
+                val o = a.optJSONObject(x) ?: continue
+                val txt = o.optString("text", "").trim()
+                if (txt.isEmpty()) continue
+                val st = wav.startSec + Parse.sec(o, "start", 0.0)
+                var en = wav.startSec + Parse.sec(o, "end", 0.0)
+                if (st < bs - 0.25 || st >= be) continue   // الجملة بتتبع الباتش اللي بتبدأ فيه
+                if (en <= st + 0.2) en = st + 1.5
+                en = minOf(en, dur)
+                out.add(plain(st, en, txt, txt, i))
+            }
+            out
+        }
     }
 
     /** جملة عادية من غير أي علامات (لون/إيموشن/متكلم…) عشان تتعرض بنفس شكل الترجمة العادي */
@@ -325,8 +403,6 @@ class FastTr(
 
     /** بيبدّل جمل الباتش (بدايتها جوه [bs,be)) بالجديدة ويبلّغ المشغّل */
     private fun merge(bs: Double, be: Double, fresh: List<Sub>) {
-        // (v1119) نتيجة طلب خلص بعد الإلغاء ماتوصلش — الباتشات اللي اتلغت ماترجعش تظهر
-        if (stopped) return
         synchronized(mergeLock) {
             val keep = eng.subs.filter { it.start < bs || it.start >= be }
             eng.importSubs((keep + fresh).sortedBy { it.start })
@@ -339,13 +415,10 @@ class FastTr(
         var avoid: String? = null
         var attempt = 0
         var deadline = System.currentTimeMillis() + 5 * 60_000L
-        while (!stopped && attempt < TRIES && System.currentTimeMillis() < deadline) {
+        while (!stopped && attempt < TRIES && System.currentTimeMillis() < deadline && !trWon.contains(i)) {
             waitIfPaused()
             // (v1101) بوابة النت: النت واقع → استنى هنا (مش بنحرق محاولات ولا مفاتيح) والمهلة بتتمدّد بقد وقت الفصل
-            if (NetWait.gateDown()) {
-                deadline += waitNetDown()
-                continue
-            }
+            if (NetWait.gateDown()) { val t0n = System.currentTimeMillis(); NetWait.waitUp({ !stopped }) { try { host.status(NetWait.statusText()) } catch (_: Throwable) {} }; deadline += System.currentTimeMillis() - t0n; continue }
             val k = pool.pickIdle(i, avoid, 1) ?: pool.pickFree(avoid, i) ?: pool.pickFree(null, i)
             if (k == null) { nap(500); continue }
             pool.begin(k, i)
@@ -368,11 +441,7 @@ class FastTr(
                 host.log("⚠ [محرك ٢] باتش ${i + 1} $label: ${e.message}")
                 avoid = k; attempt++
             } catch (e: java.io.IOException) {
-                // (v1101) فصل نت مش فشل مفتاح
-                if (NetWait.stillDown(e)) {
-                    deadline += waitNetDown()
-                    continue
-                }
+                if (NetWait.stillDown(e)) { val t0n = System.currentTimeMillis(); NetWait.waitUp({ !stopped }) { try { host.status(NetWait.statusText()) } catch (_: Throwable) {} }; deadline += System.currentTimeMillis() - t0n; continue }   // (v1101) فصل نت مش فشل مفتاح
                 pool.block(k, 5_000L); avoid = k; attempt++
             } finally {
                 pool.end(k, System.currentTimeMillis() - t0, ok)

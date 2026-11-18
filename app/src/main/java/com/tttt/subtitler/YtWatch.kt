@@ -1499,6 +1499,7 @@ class YtDock(private val act: Activity, private val ui: Ui, private val onExpand
         addView(row, FrameLayout.LayoutParams(-1, -1))
         addView(prog, FrameLayout.LayoutParams(-1, ui.dp(2), Gravity.TOP))
         setOnClickListener { expand() }
+        addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> if (visibility == View.VISIBLE) post { applyInset() } }   // (v1119)
         queueTv.setOnClickListener { showQueue() }
         playTv.setOnClickListener { toggle() }
         closeTv.setOnClickListener { dismiss() }
@@ -1524,7 +1525,16 @@ class YtDock(private val act: Activity, private val ui: Ui, private val onExpand
         paintPlay()
     }
 
+    /** (v1119) الشريط الزجاجي العايم بيغطّي أسفل الصفحة — الدوك المصغّر لازم يقعد فوقه مش تحته (كان بينزل تحت مستوى شريط الأدوات) */
+    private fun applyInset() {
+        val lp = layoutParams as? FrameLayout.LayoutParams ?: return
+        val bt = try { MtFloat.barTop(act) } catch (_: Throwable) { 0 }
+        val b = if (bt > 0) bt + ui.dp(8) else 0
+        if (lp.bottomMargin != b) { lp.bottomMargin = b; layoutParams = lp }
+    }
+
     fun show(item: NpItem, k: YtKept) {
+        applyInset(); post { applyInset() }
         dismissInner()
         vid = item.id; ttl = item.title; pick = k.pick
         titleTv.text = item.title; chanTv.text = item.channel

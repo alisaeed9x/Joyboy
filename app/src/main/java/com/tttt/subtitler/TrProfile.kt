@@ -73,8 +73,6 @@ object TrProfile {
             MSA -> { Cfg.put("tr_kind", "translate"); applyDialect("") }
             else -> { Cfg.put("tr_kind", "translate"); applyDialect(dialect()) }
         }
-        // (v1119) الاختيار الصريح هنا هو مصدر الحقيقة ل tr_s_only — عشان الخطة المحفوظة تطابق النوع
-        try { TrWizard.syncSaved("tr_s_only", if (m == TX) "1" else "0") } catch (_: Throwable) {}
     }
 
     fun setDegree(g: String) { if (g in degrees) Cfg.put("tone_strength", g) }

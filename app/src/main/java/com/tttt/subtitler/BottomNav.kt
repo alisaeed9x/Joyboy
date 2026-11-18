@@ -222,6 +222,7 @@ class BottomNav(act: Activity, private val ui: Ui, private val th: Theme, privat
     private var lineV: View? = null
     private var tinted = false
     private var moving = false
+    private val doneMoving = Runnable { moving = false }   // (v1119)
     private var snap = false
     private var navPending = false   // (v911) دوسة تبويب لسه مستنية تخلّص الأنيميشن قبل ما نبدّل الشاشة
     // (v939) عدّاد إعادة محاولة وضع الكبسولة: الخلية لسه ما اتقاستش — بنعيد لحد 10 مرات وبعدين نقف بدل ما ندوّر للأبد
@@ -274,6 +275,9 @@ class BottomNav(act: Activity, private val ui: Ui, private val th: Theme, privat
                             if (inMain) postDelayed({ if (active == idx) set(prev) }, 600L)
                             postDelayed({ navPending = false }, 600L)
                         }
+                    } else if (glassNav && !rail && cellOf(idx) != cellOf(active)) {
+                        // (v1119) الكبسولة تبدأ تتحرك الأول وبعدها (فريم بعده) تبديل الصفحة التقيل — كان التبديل بيحصل قبل ما الأنيميشن يبدأ فبيبان إنه واقف/بيقفز
+                        set(idx); postOnAnimation { onPick(idx) }
                     } else onPick(idx) } }
             }
             icons.add(icon); labels.add(lab); cells.add(cell)
@@ -386,7 +390,7 @@ class BottomNav(act: Activity, private val ui: Ui, private val th: Theme, privat
         if (rail) {   // (v462) المؤشر شريط رأسي بيتحرك على Y
             if (c.height == 0) { if (placeTries++ < 10) rowLL.post { place(false) }; return false }
             val y = (c.top + c.height / 2 - ui.dp(11)).toFloat()
-            if (animate) { moving = true; indicator.animate().cancel(); indicator.animate().setStartDelay(0L).translationY(y).setDuration(300L).setInterpolator(OvershootInterpolator(1.4f)).withEndAction { moving = false }.start() }
+            if (animate) { moving = true; indicator.animate().cancel(); indicator.animate().setStartDelay(0L).translationY(y).setDuration(300L).setInterpolator(OvershootInterpolator(1.4f)).start(); indicator.removeCallbacks(doneMoving); indicator.postDelayed(doneMoving, 340L) }   // (v1119) من غير withEndAction: أي listener بيخلّي الأنيميشن يمشي على الـUI thread ويتقطّع، من غيره بيمشي على الـRenderThread
             else { indicator.animate().cancel(); moving = false; indicator.translationY = y }
             placeTries = 0
             return true
@@ -404,7 +408,8 @@ class BottomNav(act: Activity, private val ui: Ui, private val th: Theme, privat
         if (animate) {
             moving = true
             indicator.animate().cancel()
-            indicator.animate().setStartDelay(0L).translationX(x).setDuration(if (glassNav) 320L else 300L).setInterpolator(if (glassNav) MtGlass.EMPHASIZED else OvershootInterpolator(1.4f)).withEndAction { moving = false }.start()
+            indicator.animate().setStartDelay(0L).translationX(x).setDuration(if (glassNav) 320L else 300L).setInterpolator(if (glassNav) MtGlass.EMPHASIZED else OvershootInterpolator(1.4f)).start()
+            indicator.removeCallbacks(doneMoving); indicator.postDelayed(doneMoving, 360L)   // (v1119) RenderThread
         } else {
             indicator.animate().cancel(); moving = false
             indicator.translationX = x

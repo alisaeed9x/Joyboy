@@ -1231,19 +1231,22 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
     // (v1113) حجم الملف بيتجاب بـ HEAD على نفس الرابط — لو فشل الحجم بيتساب من الصف من غير ما يظهر رقم غلط
     private fun headBytes(u: String, ua: String): Long {
         if (u.isBlank()) return -1L
-        return try {
+        fun probe(method: String): Long = try {
             val c = java.net.URL(u).openConnection() as java.net.HttpURLConnection
-            c.requestMethod = "HEAD"
-            c.connectTimeout = 5000
-            c.readTimeout = 5000
+            c.requestMethod = method
+            c.connectTimeout = 4000
+            c.readTimeout = 4000
             if (ua.isNotBlank()) c.setRequestProperty("User-Agent", ua)
+            if (method == "GET") c.setRequestProperty("Range", "bytes=0-0")
             c.connect()
-            val len = c.getHeaderField("Content-Length")?.toLongOrNull() ?: -1L
-            c.disconnect()
+            // (v1119) HEAD أحيانًا بيرجع من غير Content-Length على روابط جوجل؛ GET بـRange بيرجع الحجم الكلي في Content-Range
+            var len = c.getHeaderField("Content-Length")?.toLongOrNull() ?: -1L
+            if (method == "GET") len = c.getHeaderField("Content-Range")?.substringAfterLast('/')?.toLongOrNull() ?: -1L
+            try { c.disconnect() } catch (_: Throwable) {}
             len
-        } catch (_: Throwable) {
-            -1L
-        }
+        } catch (_: Throwable) { -1L }
+        val a = probe("HEAD")
+        return if (a > 0) a else probe("GET")
     }
     // (v1113) تنسيق الحجم: ميجا برقم عشري واحد، أو جيجا لو 1024 ميجا أو أكتر
     private fun fmtBytes(b: Long): String {
@@ -1252,12 +1255,16 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
         return String.format(java.util.Locale.US, "%.1f MB", mb)
     }
     private fun qualityDl(v: NpItem) {
-        Notice.show(act, "⏳ بجيب الجودات والأحجام…", 1500L)
+        // (v1119) الشيت بيفتح فورًا (لودينج جواه) — كان مستني كل الروابط + كل الـHEAD ورا بعض (تقيل: لحد ٥ث لكل واحد) وبعدين يظهر.
+        // الصفوف بتظهر أول ما الجودات توصل، والأحجام بتتكتب في كل صف لوحدها لما توصل (بالتوازي).
+        val th = Glass.theme(); val u = Ui(act, th)
+        val col = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL }
+        val loadTv = u.text("⏳ بجيب الجودات…", 15f, th.text).apply { gravity = Gravity.CENTER; setPadding(0, u.dp(22), 0, u.dp(22)) }
+        col.addView(loadTv, LinearLayout.LayoutParams(-1, -2))
+        val dlg = GAlert(act).setTitle("⬇ اختار جودة التحميل").setView(col).setNegativeButton("إلغاء", null).show()
+        class Row(val label: String, val url: String, val aud: String, val h: Int, val audioOnly: Boolean)
         Thread {
-            val labels = ArrayList<String>()
-            val urls = ArrayList<String>()
-            val auds = ArrayList<String>()
-            val hs = ArrayList<Int>()
+            val rows = ArrayList<Row>()
             var uas = ""
             try {
                 val g = YtFast.video(v.id, 0)
@@ -1269,60 +1276,55 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
                         val o = a.getJSONObject(i)
                         val au = o.optString("a")
                         if (au.isNotBlank() && anyAud.isEmpty()) anyAud = au
-                        val vu = o.optString("u")
-                        val vb = headBytes(vu, uas)
-                        val ab = headBytes(au, uas)
-                        var lab = "🎬 " + o.optString("l")
-                        val tot = (if (vb > 0) vb else 0L) + (if (ab > 0) ab else 0L)
-                        if (tot > 0) lab += "  ·  " + fmtBytes(tot)
-                        labels.add(lab)
-                        urls.add(vu)
-                        auds.add(au)
-                        hs.add(o.optInt("h", 0))
+                        rows.add(Row("🎬 " + o.optString("l"), o.optString("u"), au, o.optInt("h", 0), false))
                     }
                     val audioUrl = anyAud.ifBlank { try { YtFast.audio(v.id, 0)?.url ?: "" } catch (_: Throwable) { "" } }
-                    if (audioUrl.isNotBlank()) {
-                        var alab = "🎧 صوت بس"
-                        val ab = headBytes(audioUrl, uas)
-                        val dur = v.dur
-                        if (ab > 0 && dur > 0) {
-                            val kbps = ab * 8 / dur / 1000
-                            if (kbps > 0) alab += " · " + kbps + " kbps"
-                        }
-                        if (ab > 0) alab += " · " + fmtBytes(ab)
-                        labels.add(alab)
-                        urls.add(audioUrl)
-                        auds.add("A")
-                        hs.add(0)
-                    }
+                    if (audioUrl.isNotBlank()) rows.add(Row("🎧 صوت بس", audioUrl, "A", 0, true))
                 }
             } catch (_: Throwable) {}
             // قايمة الجودات مش جاية: على الأقل رابط واحد بالجودة الافتراضية
-            if (labels.isEmpty()) {
+            if (rows.isEmpty()) {
                 try {
                     val g2 = YtFast.video(v.id, 0)
-                    if (g2 != null && g2.url.isNotBlank()) {
-                        uas = g2.ua
-                        var lab = "🎬 الجودة الافتراضية"
-                        val vb = headBytes(g2.url, uas)
-                        val ab = headBytes(g2.audio ?: "", uas)
-                        val tot = (if (vb > 0) vb else 0L) + (if (ab > 0) ab else 0L)
-                        if (tot > 0) lab += "  ·  " + fmtBytes(tot)
-                        labels.add(lab)
-                        urls.add(g2.url)
-                        auds.add(g2.audio ?: "")
-                        hs.add(0)
-                    }
+                    if (g2 != null && g2.url.isNotBlank()) { uas = g2.ua; rows.add(Row("🎬 الجودة الافتراضية", g2.url, g2.audio ?: "", 0, false)) }
                 } catch (_: Throwable) {}
             }
+            val uaF = uas
             act.runOnUiThread {
                 if (act.isFinishing || act.isDestroyed) return@runOnUiThread
-                if (labels.isEmpty()) { Notice.show(act, "⚠ ما قدرتش أجيب روابط التحميل", 2600L); return@runOnUiThread }
-                GAlert(act).setTitle("⬇ اختار جودة التحميل").setItems(labels.toTypedArray()) { _, w ->
-                    val audioOnly = auds[w] == "A"
-                    YtDlTask.start(act.applicationContext, v, urls[w], if (audioOnly) null else auds[w], uas, audioOnly, hs[w])
-                    Notice.show(act, "⬇ اتضاف للمهام — الدايرة العايمة بتوريك الباقي", 2600L)
-                }.setNegativeButton("إلغاء", null).show()
+                if (rows.isEmpty()) { loadTv.text = "⚠ ما قدرتش أجيب روابط التحميل"; return@runOnUiThread }
+                col.removeView(loadTv)
+                val tvs = ArrayList<TextView>()
+                for (r in rows) {
+                    val tv = u.text(r.label, 15f, th.text).apply { setPadding(u.dp(14), u.dp(12), u.dp(14), u.dp(12)); background = u.box(th.surface, th.border, 12) }
+                    Glass.pressable(tv)
+                    tv.setOnClickListener {
+                        dlg.dismiss()
+                        YtDlTask.start(act.applicationContext, v, r.url, if (r.audioOnly) null else r.aud, uaF, r.audioOnly, r.h)
+                        Notice.show(act, "⬇ اتضاف للمهام — الدايرة العايمة بتوريك الباقي", 2600L)
+                    }
+                    col.addView(tv, LinearLayout.LayoutParams(-1, -2).apply { setMargins(0, u.dp(3), 0, u.dp(3)) })
+                    tvs.add(tv)
+                }
+                // الأحجام: كل رابط HEAD مرة واحدة (الصوت المشترك بين الجودات بيتجاب مرة) وبالتوازي، والصف بيتحدّث لما حجمه يوصل
+                val cache = java.util.concurrent.ConcurrentHashMap<String, Long>()
+                val pool = java.util.concurrent.Executors.newFixedThreadPool(4) { r -> Thread(r).apply { isDaemon = true } }
+                fun sz(url: String): Long = if (url.isBlank() || url == "A") -1L else cache.getOrPut(url) { headBytes(url, uaF) }
+                for ((i, r) in rows.withIndex()) pool.execute {
+                    val vb = if (r.audioOnly) 0L else sz(r.url)
+                    val ab = if (r.audioOnly) sz(r.url) else sz(r.aud)
+                    var lab = r.label
+                    if (r.audioOnly) {
+                        val dur = v.dur
+                        if (ab > 0 && dur > 0) { val kbps = ab * 8 / dur / 1000; if (kbps > 0) lab += " · " + kbps + " kbps" }
+                        if (ab > 0) lab += " · " + fmtBytes(ab)
+                    } else {
+                        val tot = (if (vb > 0) vb else 0L) + (if (ab > 0) ab else 0L)
+                        if (tot > 0) lab += "  ·  " + fmtBytes(tot)
+                    }
+                    if (lab != r.label) act.runOnUiThread { if (!act.isFinishing && !act.isDestroyed) tvs[i].text = lab }
+                }
+                pool.shutdown()
             }
         }.apply { isDaemon = true }.start()
     }
