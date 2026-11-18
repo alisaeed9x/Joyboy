@@ -901,12 +901,15 @@ class PlayerActivity : Activity(), Host {
     private fun modeLabelNow(): String = try {
         if (!engineStarted && sfDoneLabel.isNotEmpty() && sfDoneUri.isNotEmpty() && sfDoneUri == (uri?.toString() ?: "")) sfDoneLabel else modeName()
     } catch (_: Throwable) { "" }
+    // (v1119) عدّاد الجمل المترجمة/المفرّغة — نفس قيمة «جمل_المحرك» في سطر التشخيص
+    private fun subCountNow(): Int = try { if (::engine.isInitialized) engine.subs.size else 0 } catch (_: Throwable) { 0 }
     private fun tvTrLabel(): String = try {
         if (!engineStarted && sfBusy.isNotEmpty()) tvSfShort()
         else if (!engineStarted && sfLive.isNotEmpty()) "💬 لحظية"
         else if (!engineStarted && sfDoneUri.isNotEmpty() && sfDoneUri == (uri?.toString() ?: "")) "✅ مترجم"
         else if (!engineStarted) "▶ ترجم"
-        else (if (::engine.isInitialized && engine.userPaused) "⏸ " else if (trPct >= 100) "✅ " else "⏳ ") + trPct + "%"
+        // (v1119) عدّاد الجمل في زرار الترجمة على التلفزيون: «⏳ 19% · 42 جملة»
+        else (if (::engine.isInitialized && engine.userPaused) "⏸ " else if (trPct >= 100) "✅ " else "⏳ ") + trPct + "%" + " · " + subCountNow() + " جملة"
     } catch (_: Throwable) { "▶ ترجم" }
     private fun tvTrColor(): Int = try {
         if (!engineStarted && sfBusy.isNotEmpty()) 0xFF1F5FBF.toInt()
@@ -2681,11 +2684,14 @@ class PlayerActivity : Activity(), Host {
         val sp = spec ?: return false
         val hst: Host = guard ?: this
         val ft = FastTr(conf, { makeSource(sp) }, engine, hst, Cfg.str("conv_dialect", ""))
+        // (v1119) تفريغ بس: المحرك البسيط بياخد العلم من الخطة اللي شغّلتها runPlanCore
+        try { ft.transOnly = engine.transOnly } catch (_: Throwable) {}
         ft.onState = { runOnUiThread { try { updateTr() } catch (_: Throwable) {} } }
         fastTr = ft
         val fresh = freshOnce; freshOnce = false
         if (fresh) { try { player.seekTo(0) } catch (_: Throwable) {}; cur = 0L }
-        log("⚖ متوازن — المحرك البسيط (كل مفتاح باتش: تفريغ ثم ترجمة)")
+        val balNote = if (ft.transOnly) "تفريغ بس — من غير ترجمة" else "تفريغ ثم ترجمة"
+        log("⚖ متوازن — المحرك البسيط (كل مفتاح باتش: " + balNote + ")")
         Thread {
             if (fresh) try { engine.redoAll() } catch (e: Throwable) { val m = "⚠ " + (e.message ?: e.toString()).take(120); log(m); runOnUiThread { say(m) } }
             ft.start()
@@ -3140,14 +3146,22 @@ class PlayerActivity : Activity(), Host {
             col.addView(shHead(if (sfBusy.isNotEmpty()) "⏳ ترجمة السوفت صب " + sfPct() + "% — " + sfBusy else "ترجمة الفيديو", "اختار النظام"))
             // (v667) السوفت صب والهارد صب بيتترجموا أوتوماتيك أول ما الفيديو يفتح — مفيش زراير ليهم هنا
             col.addView(shSection("🔤 ترجمة"))
-            col.addView(shRow("☁ ١ · جيميناي", if (mk == "gem") "✓ " + listenName() else listenName()) { close(); h.post { geminiAsk() } })
-            col.addView(shNote("هتختار: ٧٥/٢٥ (سماع واحد، أسرع وأرخص) أو 🎯 السماع الأدق (مفتاحين + حكم) أو ⚡ سريع (أول ترجمة في ثواني) · لهجات + أسلوب + بصري · محتاج نت"))
+            // (v1119) الأربع أوضاع ظاهرين على طول في القايمة — مش ورا ضغطة تانية (شكوى الريموت: كان بيظهر وضع واحد بس)
+            val dm = Cfg.int("dual_listen", 1)
+            val bal = Cfg.bool("tr_bal", false)
+            val fast = Cfg.bool("fastmode", false) && !bal
+            val gemNow = mk == "gem"
+            col.addView(shRow("🎯 السماع الأدق", if (gemNow && dm == 2 && !fast && !bal) "✓ الحالي" else "مفتاحين + حكم") { close(); h.post { Cfg.put("tr_bal", "0"); Cfg.put("dual_listen", "2"); Cfg.put("fastmode", "0"); geminiStart() } })
+            col.addView(shRow("⚡ ٧٥/٢٥ — سماع واحد", if (gemNow && dm == 0 && !fast && !bal) "✓ الحالي" else "أسرع وأرخص") { close(); h.post { Cfg.put("tr_bal", "0"); Cfg.put("dual_listen", "0"); Cfg.put("fastmode", "0"); geminiStart() } })
+            col.addView(shRow("⚡ سريع", if (gemNow && fast) "✓ الحالي" else "أول ترجمة في ثواني · برومبت خفيف") { close(); h.post { Cfg.put("tr_bal", "0"); Cfg.put("fastmode", "1"); geminiStart() } })
+            col.addView(shRow("⚖ متوازن", if (gemNow && bal) "✓ الحالي" else "كل مفتاح باتش: تفريغ يظهر فورًا ثم ترجمة") { close(); h.post { Cfg.put("tr_bal", "1"); geminiStart() } })
+            col.addView(shNote("لهجات + أسلوب + بصري · محتاج نت"))
             col.addView(shRow("📴 ٢ · وشبر + ترجمة أوفلاين (HY-MT1.5)", if (mk == "off") "✓ الحالي" else setVal) { close(); whisperStart() })
             col.addView(shSection("✍ تفريغ بس (من غير ترجمة) — نظامين"))
             col.addView(shRow("☁ بجيميناي (من الصوت)", if (mk == "txg") "✓ الحالي" else "") { close(); startGeminiTranscribe() })
             col.addView(shRow("📴 على الجهاز بوشبر", if (mk == "txw") "✓ الحالي" else "") { close(); askVideoLang { offlineQuick(true) } })
         } else {
-            col.addView(shHead(Offline.liveLine() ?: ("الترجمة: " + trPct + "%" + (if (paused) " (واقفة)" else "")), "الوضع: " + modeName() + (if (Strict.freeText() || Strict.freeGem()) " · 🆓 " + FreeLlm.liveName() else "")))
+            col.addView(shHead(Offline.liveLine() ?: ("الترجمة: " + trPct + "% · " + subCountNow() + " جملة" + (if (paused) " (واقفة)" else "")), "الوضع: " + modeName() + (if (Strict.freeText() || Strict.freeGem()) " · 🆓 " + FreeLlm.liveName() else "")))
             col.addView(shDuo(
                 shBtn(if (paused) "▶ كمّل" else "⏸ إيقاف مؤقت", if (paused) SH_BLUE else SH_GRAY) { close(); if (paused) beginTranslate() else pauseTranslate() },
                 shBtn("⏹ إلغاء الترجمة", SH_RED) { close(); h.post { cancelDialog() } }))
@@ -3292,6 +3306,8 @@ class PlayerActivity : Activity(), Host {
             if (to == TrProfile.TX) {
                 if (from == TrProfile.TX) return
                 engine.transOnly = true; eng?.origView = true
+                // (v1119) التبديل اللايف يوصل للمحرك البسيط كمان — مش للمحرك القديم بس
+                try { fastTr?.transOnly = true } catch (_: Throwable) {}
                 say("✍ تفريغ — اللي اتترجم بيتعرض بنصه الأصلي بين أقواس ( ) والباتشات الجاية من غير ترجمة"); touchSubs(); return
             }
             if (from == TrProfile.TX) {
@@ -3299,6 +3315,8 @@ class PlayerActivity : Activity(), Host {
                 eng?.origView = false
                 if (engine.transOnly) {
                     engine.transOnly = false
+                    // (v1119) الرجوع للترجمة يرجّع المحرك البسيط كمان
+                    try { fastTr?.transOnly = false } catch (_: Throwable) {}
                     if (!viewOnly) { say("🔤 رجوع للترجمة — بتبدأ من الأول بالإعدادات الجديدة"); cancelTranslate { trAnchor?.let { trMainClick(it) } }; return }
                 }
                 touchSubs()
@@ -3423,13 +3441,18 @@ class PlayerActivity : Activity(), Host {
     /** (v741) ☁ ترجمة جيميناي لوحده: الصوت بيتبعت باتشات لجيميناي بإعداداته (WAV/AAC + مفاتيحك) — من غير FreeLLM ولا وشبر */
     private fun geminiStart() {
         if (needGeminiKey { geminiStart() }) return   // (v1101)
-        Cfg.put("tr_kind", "translate"); Cfg.put("tr_engine", "gem")   // (v1098) T3: ⚙ يفتكر آخر نظام اشتغل
+        // (v1119) FIX قلب الوضع: التشغيل هنا ترجمة، بس من غير ما يكتب فوق اختيار التفريغ المحفوظ
+        // tr_kind بيتكتب من اختيارك الصريح بس (الإعدادات/القايمة)، مش من كل ضغطة ترجمة
+        Cfg.put("tr_engine", "gem")
         try {
             val dia = TrWizard.dialectWanted().ifBlank { "فصحى" }
             val mid = if (AudioEnc.preset() == AudioEnc.NORMAL) "g_wav" else "g_aac"
             val pl = TrWizard.Plan("online", TrWizard.CURRENT, "", "", "gemini", dia = dia)
             Cfg.put("tr_mode_id", mid); SourceMode.set(SourceMode.AUDIO)
-            try { TrWizard.save(pl) } catch (e: Throwable) { LogStore.err("Player:gemSave", e) }
+            // (v1119) الحفظ بيحتفظ باختيار التفريغ المحفوظ — التشغيل نفسه ترجمة (pl.only=false)
+            val prevOnly = try { TrWizard.savedPlan()?.only ?: false } catch (_: Throwable) { false }
+            val savePl = TrWizard.Plan("online", TrWizard.CURRENT, "", "", "gemini", dia = dia, only = prevOnly)
+            try { TrWizard.save(savePl) } catch (e: Throwable) { LogStore.err("Player:gemSave", e) }
             runPlan(pl)
             try { applyChromeFn() } catch (_: Throwable) {}
             say("☁ ترجمة جيميناي — الباتشات بتتبعت بإعداداته (" + (if (mid == "g_wav") "WAV" else "AAC") + ")")
@@ -3443,7 +3466,10 @@ class PlayerActivity : Activity(), Host {
             val dia = TrWizard.dialectWanted().ifBlank { "فصحى" }
             val pl = TrWizard.Plan("online", TrWizard.CURRENT, "", "", "gemini", dia = dia)
             Cfg.put("tr_mode_id", Strict.FREE_GEM); SourceMode.set(SourceMode.AUDIO)
-            try { TrWizard.save(pl) } catch (e: Throwable) { LogStore.err("Player:freeGemSave", e) }
+            // (v1119) نفس إصلاح geminiStart: الحفظ بيحتفظ باختيار التفريغ المحفوظ
+            val prevOnly = try { TrWizard.savedPlan()?.only ?: false } catch (_: Throwable) { false }
+            val savePl = TrWizard.Plan("online", TrWizard.CURRENT, "", "", "gemini", dia = dia, only = prevOnly)
+            try { TrWizard.save(savePl) } catch (e: Throwable) { LogStore.err("Player:freeGemSave", e) }
             runPlan(pl)
             try { applyChromeFn() } catch (_: Throwable) {}
             say("🆓 ترجمة FreeLLM — بيلف على كل مفاتيح جيميناي وكل موديلاتها، ولو موديل/مفتاح وقف بيكمّل بالتاني")
@@ -4111,7 +4137,7 @@ class PlayerActivity : Activity(), Host {
         // (v1116) FIX 1: النقط من المحرك الشغّال فعلًا — المتوازن (FastTr) ليه حوض مفاتيح خاص بيه، والمحرك القديم حوضه في Engine
         val dots = try { fastTr?.keyDots() ?: engine.keyDots() } catch (_: Throwable) { "" }
         diagLog("🔬 عرض @" + fmtMs(cur) + " · حلقة_وقعت=" + bad + "(" + errN + ") · cc=" + ccOn + " · أصلية=" + nativeCue.length + "ح · مسارات_نص=" + sfNativeCountNow() + " · نص_مقفول=" + txtOff +
-            " · hide=" + sfHideNative + " · ترجمة_شغالة=" + sfBusy.isNotEmpty() + " · جمل_المحرك=" + engine.subs.size + " · مفاتيح=" + dots + " · ظاهر=" + (sub.visibility == View.VISIBLE) + "/" + sub.height + " · curIdx=" + curIdx)
+            " · hide=" + sfHideNative + " · ترجمة_شغالة=" + engineStarted + " · جمل_المحرك=" + engine.subs.size + " · مفاتيح=" + dots + " · ظاهر=" + (sub.visibility == View.VISIBLE) + "/" + sub.height + " · curIdx=" + curIdx)
     }
 
     private fun subSafeTick() {
