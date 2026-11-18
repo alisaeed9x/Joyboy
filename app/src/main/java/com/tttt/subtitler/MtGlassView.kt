@@ -31,7 +31,7 @@ import kotlin.math.min
  * بدل نسختنا المنقولة (MtGlassView/MtGlassSource/MtLens اللي فضلت للأماكن التانية). فبلور 8dp + تشبّع 1.5× + حبيبات + انكسار (أندرويد 13+)
  * + حافة لامعة + العدسة — كلها من نفس الكود اللي في شريط MeeTube، ولونه من meetube_glass_tint.
  */
-class JoyGlassSource(ctx: Context) : com.newtube.mobile.ui.common.GlassSource(ctx) {
+class JoyGlassSource(ctx: Context) : com.tttt.subtitler.mtui.GlassSource(ctx) {
     /** الخلفية المتحركة (MtAurora) اللي الزجاج لازم يبلّرها لما الصفحة نفسها شفافة — GlassView بيسأل المصدر عن getBackground() */
     var ground: android.graphics.drawable.Drawable? = null
     override fun getBackground(): android.graphics.drawable.Drawable? {
@@ -53,11 +53,11 @@ object MeeGlass {
     }
 
     /** كبسولة الشريط الزجاجية بنفس مقاسات mobile_nav_glass في MeeTube (استدارة 34 · حشو 6 · ظل 6 · tint = meetube_glass_tint) — layout/joy_nav_glass.xml */
-    fun bar(act: Activity, th: Theme): com.newtube.mobile.ui.common.GlassView =
-        android.view.LayoutInflater.from(ctx(act, th)).inflate(R.layout.joy_nav_glass, null) as com.newtube.mobile.ui.common.GlassView
+    fun bar(act: Activity, th: Theme): com.tttt.subtitler.mtui.GlassView =
+        android.view.LayoutInflater.from(ctx(act, th)).inflate(R.layout.joy_nav_glass, null) as com.tttt.subtitler.mtui.GlassView
 
-    fun lens(act: Activity, th: Theme): com.newtube.mobile.ui.common.NavLens =
-        com.newtube.mobile.ui.common.NavLens(ctx(act, th), null).apply { visibility = View.GONE; elevation = 8f * act.resources.displayMetrics.density }
+    fun lens(act: Activity, th: Theme): com.tttt.subtitler.mtui.NavLens =
+        com.tttt.subtitler.mtui.NavLens(ctx(act, th), null).apply { visibility = View.GONE; elevation = 8f * act.resources.displayMetrics.density }
 }
 
 /** (v895) الشريط السفلي العايم فوق المحتوى (موبايل بس): المصدر = الصفحات، والزجاج = الشريط + شريط ميديا */
@@ -123,7 +123,7 @@ object MtFloat {
         val bar = MeeGlass.bar(act, th)   // (v906) GlassView بتاع MeeTube الأصلي
         bar.setSource(src)
         // (v922) زرارين فيديوهات/موسيقى كانوا جوه نفس كبسولة الشريط فكل أنيميشن (عدسة/اهتزاز/ضغطة) كان بيجري عليهم ويتقل — دلوقتي كبسولة زجاجية لوحدها فوق الشريط، من غير أي أنيميشن للشريط
-        var mswBar: com.newtube.mobile.ui.common.GlassView? = null
+        var mswBar: com.tttt.subtitler.mtui.GlassView? = null
         if (msw != null) {
             val mb = MeeGlass.bar(act, th)
             mb.setSource(src)
@@ -155,14 +155,14 @@ object MtFloat {
         fl.addView(wrap, FrameLayout.LayoutParams(-1, -2, Gravity.BOTTOM).apply { setMargins(ui.dp(16), 0, ui.dp(16), gap) })
         // (v922) العدسة والاهتزاز كانوا سبب اللاج الرهيب (بلور حي + ريندر لكل فريم فوق الصفحة كلها): اتقفلوا افتراضيًا. الانزلاقة + قفزة الأيقونة بس.
         // لو عايزهم تاني: Cfg glass_lens / glass_jiggle = true.
-        val lensOn = Cfg.bool("glass_lens", false) && com.newtube.mobile.ui.common.NavLens.enabled(act)
+        val lensOn = Cfg.bool("glass_lens", false) && com.tttt.subtitler.mtui.NavLens.enabled(act)
         if (lensOn) {
             val lens = MeeGlass.lens(act, th)
             fl.addView(lens, FrameLayout.LayoutParams(ui.dp(1), ui.dp(1), Gravity.TOP or Gravity.START))
             nav.lensHook = { from, to, settled ->
-                val fx = com.newtube.mobile.ui.common.NavLens.centreInBar(from, bar); val tx = com.newtube.mobile.ui.common.NavLens.centreInBar(to, bar)
-                if (Cfg.bool("glass_jiggle", false)) com.newtube.mobile.ui.common.NavLens.jiggle(bar, if (tx > fx) 1 else -1)
-                if (com.newtube.mobile.ui.common.NavLens.supported(act)) { lens.play(bar, from, to, Runnable { settled() }); true } else false
+                val fx = com.tttt.subtitler.mtui.NavLens.centreInBar(from, bar); val tx = com.tttt.subtitler.mtui.NavLens.centreInBar(to, bar)
+                if (Cfg.bool("glass_jiggle", false)) com.tttt.subtitler.mtui.NavLens.jiggle(bar, if (tx > fx) 1 else -1)
+                if (com.tttt.subtitler.mtui.NavLens.supported(act)) { lens.play(bar, from, to, Runnable { settled() }); true } else false
             }
         } else {
             nav.lensHook = null

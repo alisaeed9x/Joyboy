@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="meetube_sheet_glass">#C71C1C21</color>
+    <color name="meetube_glass_rim">#3DFFFFFF</color>
+    <color name="meetube_glass_sheen">#1AFFFFFF</color>
+    <color name="meetube_switch_off">#3A3A3F</color>
+    <color name="meetube_switch_on">@color/meetube_accent</color>
+    <color name="meetube_accent">#F1F1F1</color>
+</resources>

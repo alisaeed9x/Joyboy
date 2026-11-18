@@ -45,7 +45,7 @@ object MtEnhance {
     private val ui = Handler(Looper.getMainLooper())
     private var act: Activity? = null
     private var player: ExoPlayer? = null
-    private var info: com.newtube.mobile.ui.playback.JoyboyPlayerHost.VideoInfo? = null
+    private var info: com.tttt.subtitler.mtui.JoyboyPlayerHost.VideoInfo? = null
     private var applied = ""
     private var gotFrame = false
     private var memOff = false
@@ -159,7 +159,7 @@ object MtEnhance {
         }
     }
 
-    fun attach(activity: Activity, p: ExoPlayer, i: com.newtube.mobile.ui.playback.JoyboyPlayerHost.VideoInfo?) {
+    fun attach(activity: Activity, p: ExoPlayer, i: com.tttt.subtitler.mtui.JoyboyPlayerHost.VideoInfo?) {
         try {
             Cfg.ensure(activity.applicationContext)
             if (player !== p) {

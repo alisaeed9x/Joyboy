@@ -2,6 +2,9 @@ package com.tttt.subtitler
 
 import android.content.Context
 import com.liskovsoft.mediaserviceinterfaces.data.MediaGroup
+import com.liskovsoft.youtubeapi.browse.v2.BrowseServiceGates
+import com.liskovsoft.youtubeapi.service.YouTubeServiceManager
+import io.reactivex.rxjava3.disposables.Disposable
 import org.schabi.newpipe.extractor.Page
 import java.util.concurrent.ConcurrentHashMap
 
@@ -26,6 +29,18 @@ object YtMtFeed {
     @Volatile private var homeBusy = false
     @Volatile private var signedAt = 0L
     @Volatile private var signedVal = false
+    @Volatile private var signedInAt = 0L        // (v1106) وقت آخر دخول ناجح — بنعيد المحاولة لو الرئيسية رجعت فاضية بعده بشوية (المحرك لسه بيجهّز الحساب)
+    @Volatile private var lastShown: Set<String> = emptySet()   // (v1107) اللي اتشاف فعلًا (ظهر على الشاشة وإنت بتسكرول) — مش كل اللي اتحمّل. الجديد/اللي لسه ماوصلتلوش بيطلع فوق في التحديث. «اتفرّجت عليه» (HIST) حاجة تانية: بيتشال من الرئيسية
+    private const val VIEWED_KEY = "ytp_home_viewed"
+    /** (v1107) فيديوهات عدّت على الشاشة وإنت بتسكرول في الرئيسية — بتتحفظ (آخر 400) عشان التحديث الجاي يفرّق بين اللي شفته واللي لسه */
+    fun markViewed(ids: Collection<String>) {
+        if (ids.isEmpty()) return
+        val s = LinkedHashSet<String>()
+        for (x in ids) { if (s.size >= 400) break; s.add(x) }
+        for (x in lastShown) { if (s.size >= 400) break; s.add(x) }
+        lastShown = s
+        try { Cfg.put(VIEWED_KEY, s.joinToString("\n")) } catch (_: Throwable) {}
+    }
     private val groups = ConcurrentHashMap<String, MediaGroup>()
     private val order = ArrayList<String>()
     private var seq = 0
@@ -45,8 +60,13 @@ object YtMtFeed {
     /** نفس usable() من غير ما نشغّل المحرك (آمنة على خيط الواجهة) — آخر قيمة معروفة */
     fun usableCached(): Boolean = enabled() && signedVal
 
-    /** بعد دخول/خروج: نصفّر الكاش */
-    fun reset() { signedAt = 0L; homeAt = 0L; groups.clear(); synchronized(order) { order.clear() } }
+    /** (v1106) الدخول تم دلوقتي: القيمة المعروفة تتحدّث فورًا (usableCached كانت بتفضل false لحد أول فحص فصفحة «سجّل دخولك» كانت بتفضل ظاهرة) */
+    fun markSigned(v: Boolean) { signedVal = v; signedAt = System.currentTimeMillis(); if (v) signedInAt = signedAt }
+
+    /** بعد دخول/خروج: نصفّر الكاش (القيمة المعروفة signedVal بتفضل لحد ما يتحدّد غيرها) */
+    fun reset() { signedAt = 0L; homeAt = 0L; stopWalk(); walks.clear(); lastShown = emptySet(); groups.clear(); synchronized(order) { order.clear() } }
+
+    private fun justSignedIn() = signedInAt > 0L && System.currentTimeMillis() - signedInAt < 90_000L
 
     fun homeAgeMs(): Long = if (homeAt == 0L) Long.MAX_VALUE else System.currentTimeMillis() - homeAt
 
@@ -67,32 +87,107 @@ object YtMtFeed {
     }
 
     // ───────── الرئيسية ─────────
-    /** أول صفحة رئيسية (من غير الفيديوهات اللي اتشافت). null = فاضية/فشلت ← المسار القديم. */
+    // (v1106) كانت بتاخد أول صفحة صفوف بس (getHome) وتكمّل من أول صف واحد فقط = جزء صغير من اللي ميتيوب بيجيبه. دلوقتي بنمشي قايمة الأقسام
+    // صفحة صفحة (getHomeObserve) بنفس طريقة ميتيوب: صفحتين الأول وكل ما تنزل صفحة كمان (SectionListPacer)، والجديد (اللي ماظهرش في آخر تحديث) فوق.
+    private const val WPFX = "ytmh:"
+    private const val WALK_FIRST_PAGES = 2
+    private val walks = ConcurrentHashMap<String, Walk>()
+    @Volatile private var walk: Walk? = null
+
+    private class Walk(val key: String) : BrowseServiceGates.SectionListPacer {
+        val lock = Object()
+        val items = ArrayList<NpItem>()
+        val ids = HashSet<String>()
+        var pages = 0
+        var allowed = WALK_FIRST_PAGES
+        var delivered = 0
+        @Volatile var done = false
+        @Volatile var stopped = false
+        @Volatile var err: Throwable? = null
+        @Volatile var disp: Disposable? = null
+        override fun awaitNextPage(groupType: Int, nextPage: Int, disposal: BrowseServiceGates.Disposal): Boolean {
+            if (groupType != MediaGroup.TYPE_HOME) return true
+            synchronized(lock) {
+                while (nextPage > allowed && !stopped && !disposal.isDisposed()) { try { lock.wait(1000L) } catch (_: InterruptedException) { return false } }
+            }
+            return !stopped && !disposal.isDisposed()
+        }
+        fun demand() { synchronized(lock) { allowed++; lock.notifyAll() } }
+        fun stop() { stopped = true; done = true; try { disp?.dispose() } catch (_: Throwable) {}; synchronized(lock) { lock.notifyAll() } }
+    }
+
+    private fun stopWalk() { val w = walk; walk = null; w?.stop(); if (w != null && BrowseServiceGates.sectionListPacer === w) BrowseServiceGates.sectionListPacer = null }
+
+    private fun startWalk(): Walk {
+        stopWalk()
+        val w = Walk(WPFX + (++seq))
+        walks[w.key] = w
+        synchronized(order) { order.add(w.key); while (order.size > MAX_GROUPS) { val k = order.removeAt(0); groups.remove(k); walks.remove(k)?.stop() } }
+        walk = w
+        BrowseServiceGates.sectionListPacer = w
+        try {
+            MtYt.ensureBoot()
+            w.disp = YouTubeServiceManager.instance().contentService.getHomeObserve().subscribe(
+                { gs ->
+                    val got = try { MtYt.flattenGroups(gs) } catch (_: Throwable) { emptyList() }
+                    synchronized(w.lock) { for (x in got) if (w.ids.add(x.id)) w.items.add(x); w.pages++; w.lock.notifyAll() }
+                },
+                { e -> w.err = e; w.done = true; synchronized(w.lock) { w.lock.notifyAll() } },
+                { w.done = true; synchronized(w.lock) { w.lock.notifyAll() } })
+        } catch (e: Throwable) { w.err = e; w.done = true }
+        return w
+    }
+
+    /** أول رئيسية (من غير اللي اتشاف) بتحميل مفتوح. null = فاضية/فشلت ← المسار القديم. من خيط خلفي. */
     fun home(hist: List<NpItem>): YtRes? {
         val seen = hist.map { it.id }.toHashSet()
-        var f = MtYt.homeFirst()
-        var r = res(f, seen)
-        // الرئيسية ممكن تيجي أغلبها مشاهَد قبل كده: كمّل صفحتين لحد ما يبقى فيه كفاية
-        var guard = 0
-        val acc = ArrayList<NpItem>(r.items)
-        var nxt = f.next
-        while (acc.size < 12 && nxt != null && guard < 3) {
-            guard++
-            f = MtYt.more(nxt); nxt = f.next
-            val x = res(f, seen); val have = acc.map { it.id }.toHashSet()
-            acc.addAll(x.items.filter { it.id !in have })
-            r = YtRes(acc, x.next)
+        var attempt = 0
+        while (true) {
+            val w = startWalk()
+            val deadline = System.currentTimeMillis() + 12_000L
+            synchronized(w.lock) {
+                while (!w.done && w.pages < WALK_FIRST_PAGES && System.currentTimeMillis() < deadline) { try { w.lock.wait(300L) } catch (_: InterruptedException) { break } }
+            }
+            val first: List<NpItem>
+            synchronized(w.lock) { first = w.items.filter { it.id !in seen && it.kind == 0 }; w.delivered = w.items.size }
+            if (first.isNotEmpty()) {
+                val prev = lastShown
+                val ordered = if (prev.isEmpty()) first else first.filter { it.id !in prev } + first.filter { it.id in prev }   // الجديد فوق
+                homeAt = System.currentTimeMillis()
+                val out = YtRes(ordered, if (w.done && w.delivered >= w.items.size) null else Page(w.key))
+                saveHomeSnap(out)
+                return out
+            }
+            w.err?.let { LogStore.err("YtMtFeed:home", it) }
+            stopWalk()
+            // الدخول لسه جديد: المحرك أوقات بيحتاج ثواني يجهّز الحساب — نعيد مرة أو اتنين قبل ما نسلّم للمسار القديم
+            if (justSignedIn() && attempt < 2) { attempt++; try { Thread.sleep(1500L) } catch (_: InterruptedException) { return null }; continue }
+            return null
         }
-        if (acc.isEmpty()) return null
-        homeAt = System.currentTimeMillis()
-        val out = YtRes(acc, r.next)
-        saveHomeSnap(out)
-        return out
+    }
+
+    /** الدفعة اللي بعد كده من مشي الرئيسية */
+    private fun moreWalk(w: Walk, seen: Set<String>): YtRes {
+        val deadline = System.currentTimeMillis() + 12_000L
+        val chunk: List<NpItem>
+        synchronized(w.lock) {
+            if (w.delivered >= w.items.size && !w.done) {
+                w.demand()
+                while (w.delivered >= w.items.size && !w.done && System.currentTimeMillis() < deadline) { try { w.lock.wait(300L) } catch (_: InterruptedException) { break } }
+            }
+            chunk = w.items.subList(w.delivered.coerceAtMost(w.items.size), w.items.size).filter { it.id !in seen && it.kind == 0 }
+            w.delivered = w.items.size
+        }
+        if (!w.done) w.demand()   // صفحة قدّام القارئ دايمًا
+        val end = w.done && w.delivered >= w.items.size
+        return YtRes(chunk, if (end) null else Page(w.key))
     }
 
     /** الصفحة اللي بعد Page ماركة ytm: */
     fun more(p: Page, hist: List<NpItem> = emptyList()): YtRes {
-        val g = groups[p.url ?: ""] ?: return YtRes(emptyList(), null)
+        val k = p.url ?: ""
+        if (k.startsWith(WPFX)) { val w = walks[k] ?: return YtRes(emptyList(), null); return moreWalk(w, hist.map { it.id }.toHashSet()) }
+        val g = groups[k] ?: return YtRes(emptyList(), null)
         val seen = hist.map { it.id }.toHashSet()
         return res(MtYt.more(g), seen)
     }
@@ -102,25 +197,42 @@ object YtMtFeed {
         if (homeBusy) return false
         homeBusy = true
         Thread {
-            try { val r = home(hist); onHome?.invoke(r ?: YtRes(emptyList(), null)) }
+            try { val r = peekHome(hist); onHome?.invoke(r ?: YtRes(emptyList(), null)) }
             catch (_: Throwable) { try { onHome?.invoke(YtRes(emptyList(), null)) } catch (_: Throwable) {} }
             finally { homeBusy = false }
         }.also { it.isDaemon = true; it.start() }
         return true
     }
 
+    /** (v1106) فحص خلفي: أول صفحة بس (من غير مشي) — عشان التحديث الخلفي ما يوقّفش تحميل الصفحة اللي إنت نازل فيها */
+    private fun peekHome(hist: List<NpItem>): YtRes? {
+        val seen = hist.map { it.id }.toHashSet()
+        val f = MtYt.homeFirst()
+        val items = f.items.filter { it.id !in seen && it.kind == 0 }.distinctBy { it.id }
+        if (items.isEmpty()) return null
+        homeAt = System.currentTimeMillis()
+        return YtRes(items, null)
+    }
+
     // ───────── الاشتراكات ─────────
     /** أول صفحة اشتراكات (الأحدث أولًا). null = فاضية/فشلت ← المسار القديم. */
     fun subs(): YtRes? {
-        val f = MtYt.subsFirst()
-        val r = res(f, emptySet())
+        var f = MtYt.subsFirst()
+        var r = res(f, emptySet())
+        if (r.items.isEmpty() && justSignedIn()) { try { Thread.sleep(1500L) } catch (_: InterruptedException) {}; f = MtYt.subsFirst(); r = res(f, emptySet()) }   // (v1106) دخول لسه جديد
         if (r.items.isEmpty()) return null
         return r
     }
 
+    /** (v1107) معرّفات أول صفحة اشتراكات (للعدّاد الأحمر على «الاشتراكات»). null = فاضية/فشلت */
+    fun subsIds(): List<String>? {
+        val l = MtYt.subsFirst().items.filter { it.kind == 0 }.map { it.id }.distinct()
+        return if (l.isEmpty()) null else l
+    }
+
     // ───────── كاش الرئيسية على القرص (عشان تفتح فورًا) ─────────
     @Volatile private var dir: java.io.File? = null
-    fun attach(c: Context) { if (dir == null) dir = c.applicationContext.filesDir }
+    fun attach(c: Context) { if (dir == null) { dir = c.applicationContext.filesDir; if (lastShown.isEmpty()) lastShown = try { Cfg.str(VIEWED_KEY, "").split('\n').filter { it.isNotBlank() }.toHashSet() } catch (_: Throwable) { emptySet() } } }
     private fun saveHomeSnap(r: YtRes) { try { dir?.let { d -> YtSnapHome.save(d, r.items) } } catch (_: Throwable) {} }
     /** آخر رئيسية محفوظة من المحرك (حتى لو قديمة) — null لو مفيش */
     fun homeStale(): List<NpItem>? = try { dir?.let { YtSnapHome.load(it) } } catch (_: Throwable) { null }

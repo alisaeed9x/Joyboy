@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- (v1109 Y6b) موارد الجلاس المنقولة من :mobile (mtui) — ألوان/ids/styleable/نص — عشان :mobile يتمسح بعدين -->
+<resources>
+    <color name="meetube_sheet_glass">#D6FFFFFF</color>
+    <color name="meetube_glass_rim">#1F000000</color>
+    <color name="meetube_glass_sheen">#80FFFFFF</color>
+    <color name="meetube_switch_off">#E3E3E8</color>
+    <color name="meetube_switch_on">@color/meetube_accent</color>
+    <color name="meetube_accent">#0F0F0F</color>
+    <color name="meetube_toast_rim">#3DFFFFFF</color>
+    <item name="mobile_frost_animator" type="id" />
+    <item name="mobile_jiggle_animator" type="id" />
+    <item name="mobile_sheet_rim" type="id" />
+    <declare-styleable name="GlassView">
+        <attr name="glassCornerRadius" format="dimension" />
+        <attr name="glassTint" format="color" />
+        <attr name="glassLiquid" format="boolean" />
+        <!-- On a surface that is already glass (a frosted sheet): no backdrop of its own, and the
+             tint stays see-through instead of the near-opaque no-backdrop fallback. -->
+        <attr name="glassOnGlass" format="boolean" />
+        <!-- MEETUBE(issue #118): the widest it grows; centre it with its layout gravity. -->
+        <attr name="glassMaxWidth" format="dimension" />
+        <!-- A flat bar's frost thins out to nothing over this much of its bottom (Settings' top bar). -->
+        <attr name="glassFadeBottom" format="dimension" />
+    </declare-styleable>
+    <string name="mobile_settings_seek_thumb_failed">Couldn’t use that picture (5 MB at most)</string>
+</resources>

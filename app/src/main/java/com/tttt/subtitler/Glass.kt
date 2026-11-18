@@ -86,8 +86,8 @@ object Glass {
         if (!MtGlass.on()) return
         try {
             val host = hostWindowOf(d.context) ?: return
-            if (tint != 0) com.newtube.mobile.ui.common.SheetGlass.frost(target, host, cornerPx, tint)
-            else com.newtube.mobile.ui.common.SheetGlass.frost(target, host, cornerPx)
+            if (tint != 0) com.tttt.subtitler.mtui.SheetGlass.frost(target, host, cornerPx, tint)
+            else com.tttt.subtitler.mtui.SheetGlass.frost(target, host, cornerPx)
         } catch (_: Throwable) {}
     }
 
@@ -166,18 +166,18 @@ open class GDialog(ctx: Context, theme: Int = 0) : Dialog(ctx, theme) {
 
     /** (v953) PlayerTrace: لمس جوه الشيت بيتسجّل مباشرة من هنا (من غير reflection) — بيتجاهل التكرار لو الـcallback hook سجّله */
     override fun dispatchTouchEvent(ev: MotionEvent): Boolean {
-        try { com.newtube.mobile.ui.common.PlayerTrace.touchWindow(window?.decorView, ev) } catch (_: Throwable) {}
+        try { com.tttt.subtitler.mtui.PlayerTrace.touchWindow(window?.decorView, ev) } catch (_: Throwable) {}
         return super.dispatchTouchEvent(ev)
     }
 
     override fun show() {
-        try { com.newtube.mobile.ui.common.PlayerTrace.mark("sheet show (" + javaClass.simpleName + ")") } catch (_: Throwable) {}   // (v953)
+        try { com.tttt.subtitler.mtui.PlayerTrace.mark("sheet show (" + javaClass.simpleName + ")") } catch (_: Throwable) {}   // (v953)
         seq++; closing = false
         if (!plain) Glass.styleWindow(this)
         try { TvFocus.attachWindow(context, window, Glass.theme().primary) } catch (_: Throwable) {}   // (v477 م3)
         super.show()
         try { Glass.enter(this) } catch (_: Throwable) {}
-        frostTarget?.let { t -> try { com.newtube.mobile.ui.common.SheetGlass.frost(t, hostWindow(), frostCorner) } catch (_: Throwable) {} }   // (v909) SheetGlass.frost الأصلي من MeeTube (بدل SheetFrost)
+        frostTarget?.let { t -> try { com.tttt.subtitler.mtui.SheetGlass.frost(t, hostWindow(), frostCorner) } catch (_: Throwable) {} }   // (v909) SheetGlass.frost الأصلي من MeeTube (بدل SheetFrost)
     }
 
     /** (v909) نافذة الأكتيفيتي اللي الدايلوج فوقها — الصفحة اللي SheetGlass بيبلّرها */
@@ -194,7 +194,7 @@ open class GDialog(ctx: Context, theme: Int = 0) : Dialog(ctx, theme) {
         if (closing) return
         if (!isShowing || v == null || Looper.myLooper() != Looper.getMainLooper()) { realDismiss(); return }
         closing = true
-        try { com.newtube.mobile.ui.common.PlayerTrace.sheetDismiss() } catch (_: Throwable) {}   // (v953) بداية أنيميشن الخروج
+        try { com.tttt.subtitler.mtui.PlayerTrace.sheetDismiss() } catch (_: Throwable) {}   // (v953) بداية أنيميشن الخروج
         val my = seq
         try { Glass.exit(this) { if (closing && my == seq) { closing = false; realDismiss() } } } catch (_: Throwable) { closing = false; realDismiss(); return }
         // احتياطي لو الأنيميشن اتلغى

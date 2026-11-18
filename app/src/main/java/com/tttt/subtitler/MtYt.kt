@@ -4,7 +4,6 @@ import android.app.Application
 import com.liskovsoft.mediaserviceinterfaces.data.MediaFormat
 import com.liskovsoft.mediaserviceinterfaces.data.MediaItemFormatInfo
 import com.liskovsoft.youtubeapi.service.YouTubeServiceManager
-import com.newtube.mobile.MobileMainApplication
 import org.json.JSONArray
 import org.json.JSONObject
 import java.util.concurrent.ConcurrentHashMap
@@ -28,7 +27,7 @@ object MtYt {
 
     fun clearCache() { cache.clear() }
 
-    private fun boot() { app?.let { MobileMainApplication.boot(it) } }
+    private fun boot() { app?.let { com.tttt.subtitler.mtui.MtEngine.boot(it) } }   // (v1111 Y6d) كان MobileMainApplication.boot
 
     /** (v1104 Y4) خدمة العناصر (لايك/اشتراك) — من خيط خلفي */
     fun itemSvc() = service()
@@ -185,6 +184,9 @@ object MtYt {
         for (g in groups ?: emptyList()) for (m in g.mediaItems ?: emptyList()) toItem(m)?.let { out.add(it) }
         return out.distinctBy { it.id }
     }
+
+    /** (v1106) نفس flatten للاستخدام من برّه (YtMtFeed: مشي الرئيسية صفحة صفحة) */
+    fun flattenGroups(groups: List<com.liskovsoft.mediaserviceinterfaces.data.MediaGroup>?): List<NpItem> = flatten(groups)
 
     /** بحث فيديوهات (من محرك MeeTube) — من خيط خلفي */
     fun search(q: String): List<NpItem> {

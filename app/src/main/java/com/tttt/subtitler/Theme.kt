@@ -2,7 +2,7 @@ package com.tttt.subtitler
 
 import android.content.Context
 import android.content.res.Configuration
-import com.newtube.mobile.ui.common.ThemeMode
+import com.tttt.subtitler.mtui.ThemeMode
 
 /**
  * (v907) ثيم واحد بس — مصدره MeeTube.

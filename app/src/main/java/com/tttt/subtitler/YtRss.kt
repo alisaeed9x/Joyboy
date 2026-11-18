@@ -336,6 +336,45 @@ object YtNotify {
     private fun storeBadge(n: Int) { badge = n; Cfg.put(BADGE, n.toString()) }
     /** فتحت الاشتراكات: العدّاد يتصفّر وبنبدأ العدّ من دلوقتي */
     fun markOpened(c: Context) { Cfg.put(OPENED, System.currentTimeMillis().toString()); storeBadge(0); try { (c as? MainActivity)?.let { m -> m.runOnUiThread { m.updateYtBadge() } } } catch (_: Throwable) {} }
+    // ───────── (v1107) عدّاد «الاشتراكات» لحساب الكود (محرك MeeTube) ─────────
+    // «جديد» = فيديو في أول صفحة اشتراكات مش موجود في آخر قايمة اشتراكات اتعرضت عليك. مش مربوط بالمشاهدة: فتح الاشتراكات = كل اللي ظهر فيها اتشاف.
+    private const val MT_BASE = "ytp_subs_base"
+    private val mtLock = Any()
+    @Volatile private var mtPeekAt = 0L
+    fun mtBaseKnown(): Boolean = Cfg.str(MT_BASE, "").isNotEmpty()
+    private fun mtBase(): List<String> = Cfg.str(MT_BASE, "").split('\n').filter { it.isNotBlank() }
+    /** القايمة اللي اتعرضت دلوقتي بتتضاف للأساس (آخر 300 معرّف) */
+    fun mtMarkSubs(ids: List<String>) {
+        synchronized(mtLock) {
+            val s = LinkedHashSet<String>()
+            for (x in ids) { if (s.size >= 300) break; s.add(x) }
+            for (x in mtBase()) { if (s.size >= 300) break; s.add(x) }
+            Cfg.put(MT_BASE, s.joinToString("\n"))
+        }
+    }
+    /** أول مرة = أساس من غير عدّاد */
+    private fun mtCountNew(ids: List<String>): Int = synchronized(mtLock) {
+        val base = mtBase().toHashSet()
+        if (base.isEmpty()) { Cfg.put(MT_BASE, ids.take(300).joinToString("\n")); storeBadge(0); 0 }
+        else { val n = ids.count { it !in base }; storeBadge(n); n }
+    }
+    /** فحص خلفي (كل 3 دقايق بالكتير) لأول صفحة اشتراكات؛ لازم تكون فتحت الاشتراكات مرة بحساب الكود الأول */
+    fun mtPeek(c: Context, force: Boolean = false) {
+        val now = android.os.SystemClock.elapsedRealtime()
+        if (!force && mtPeekAt != 0L && now - mtPeekAt < 3 * 60_000L) return
+        try { Cfg.ensure(c) } catch (_: Throwable) {}
+        if (!mtBaseKnown()) return
+        mtPeekAt = now
+        Thread {
+            try {
+                Cfg.ensure(c); YtMtFeed.attach(c)
+                if (!YtMtFeed.usable()) return@Thread
+                val ids = YtMtFeed.subsIds() ?: return@Thread
+                mtCountNew(ids)
+                (c as? MainActivity)?.let { m -> m.runOnUiThread { m.updateYtBadge() } }
+            } catch (_: Throwable) {}
+        }.apply { isDaemon = true; start() }
+    }
     private fun countNew(items: List<NpItem>): Int {
         val t = Cfg.str(OPENED, "").toLongOrNull() ?: 0L
         if (t == 0L) { Cfg.put(OPENED, System.currentTimeMillis().toString()); return 0 }   // أول مرة: خط أساس
@@ -344,6 +383,7 @@ object YtNotify {
     /** بيحدّث العدّاد من الفيد (كاش 15 دقيقة) في خيط خلفي؛ بيستدعي done على نفس الخيط */
     fun refreshBadge(c: Context, force: Boolean = false, done: (Int) -> Unit) {
         val now = System.currentTimeMillis()
+        if (mtBaseKnown()) { done(badgeCount()); return }   // (v1107) حساب الكود: العدّاد من محرك MeeTube (mtPeek)
         if (!force && now - (Cfg.str(BADGE_AT, "0").toLongOrNull() ?: 0L) < 5 * 60 * 1000L) return
         Cfg.put(BADGE_AT, now.toString())
         Thread {
@@ -399,7 +439,7 @@ object YtNotify {
         val subs = YtStore.read(YtStore.SUBS); if (subs.isEmpty()) return 0
         val nm = c.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         val feed = YtRss.feed(subs, true).items
-        try { storeBadge(countNew(feed)) } catch (_: Throwable) {}   // (v350) العدّاد بيتحدّث مع الفحص الدوري كمان
+        if (!mtBaseKnown()) try { storeBadge(countNew(feed)) } catch (_: Throwable) {}   // (v350) العدّاد بيتحدّث مع الفحص الدوري كمان
         val seen = readSeen(); val fresh = ArrayList<NpItem>()
         val firstRun = seen.isEmpty()
         val newest = HashMap<String, Long>()

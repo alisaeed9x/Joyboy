@@ -105,7 +105,7 @@ object MtLook {
     }
 
     fun setThumbDot(ctx: Context) { try { thumbFile(ctx).delete() } catch (_: Throwable) {} }
-    fun pickThumbPicture(ctx: Context) { try { com.newtube.mobile.ui.playback.SeekThumb.setType(ctx, com.newtube.mobile.ui.playback.SeekThumb.PICTURE) } catch (_: Throwable) {} }
+    fun pickThumbPicture(ctx: Context) { try { com.tttt.subtitler.mtui.SeekThumb.setType(ctx, com.tttt.subtitler.mtui.SeekThumb.PICTURE) } catch (_: Throwable) {} }
 
     // ---------- الإيماءات (PlayerGesturePrefs في MeeTube) ----------
     fun levelSwipes(): Boolean = try { !MtGlass.on() || Cfg.bool("gest_levels", true) } catch (_: Throwable) { true }

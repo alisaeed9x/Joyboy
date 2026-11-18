@@ -1,7 +1,9 @@
 package com.tttt.subtitler
 
 import android.app.Activity
+import android.app.Application
 import android.app.Dialog
+import android.os.Bundle
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
@@ -41,6 +43,10 @@ object YtCodeLogin {
         var disp: Disposable? = null
         var finished = false
         var code = ""
+        val wasSigned = signedIn()   // (v1106) لو مسجّل بالفعل (وبتسجّل بحساب تاني) مبنعتمدش على فحص «مسجّل ولا لأ» عشان ما يقفلش بالغلط
+        var inBg = false
+        var cbReg: Application.ActivityLifecycleCallbacks? = null
+        val watching = java.util.concurrent.atomic.AtomicBoolean(false)
 
         val box = LinearLayout(act).apply {
             orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL
@@ -55,7 +61,7 @@ object YtCodeLogin {
             background = GradientDrawable().apply { setColor(th.card); cornerRadius = ui.dp(12).toFloat(); setStroke(ui.dp(1), th.border) }
         }
         val urlV = ui.text(URL_SHOW, 14f, th.primary, true).apply { gravity = Gravity.CENTER; layoutDirection = View.LAYOUT_DIRECTION_LTR; setPadding(0, ui.dp(8), 0, ui.dp(4)) }
-        val hint = ui.text("افتح الصفحة دي من أي جهاز، اكتب الكود، ووافق على حسابك. الشاشة دي هتقفل لوحدها لما الدخول يتم.", 12f, th.muted, false).apply { gravity = Gravity.CENTER; setPadding(0, 0, 0, ui.dp(8)) }
+        val hint = ui.text("افتح الصفحة دي من أي جهاز، اكتب الكود، ووافق على حسابك، وارجع للتطبيق. الشاشة دي هتقفل لوحدها لما الدخول يتم.", 12f, th.muted, false).apply { gravity = Gravity.CENTER; setPadding(0, 0, 0, ui.dp(8)) }
         val btnCopy = ui.button("📋 انسخ الكود") {
             if (code.isNotBlank()) try { (act.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager).setPrimaryClip(ClipData.newPlainText("code", code)); Notice.show(act, "اتنسخ الكود", 1500L) } catch (_: Throwable) {}
         }
@@ -80,6 +86,46 @@ object YtCodeLogin {
         fun setCode(c: String) { code = c; state.text = "الكود (بيتجدّد لوحده لو خلص وقته):"; codeV.text = c; codeV.visibility = View.VISIBLE; urlV.visibility = View.VISIBLE; hint.visibility = View.VISIBLE; btnCopy.visibility = View.VISIBLE; btnOpen.visibility = View.VISIBLE; btnRetry.visibility = View.GONE }
         fun setError(msg: String) { state.text = "⚠ $msg"; codeV.visibility = View.GONE; urlV.visibility = View.GONE; hint.visibility = View.GONE; btnCopy.visibility = View.GONE; btnOpen.visibility = View.GONE; btnRetry.visibility = View.VISIBLE }
 
+        fun unregisterCb() { try { cbReg?.let { act.application.unregisterActivityLifecycleCallbacks(it) } } catch (_: Throwable) {}; cbReg = null }
+
+        /** (v1106) إنهاء الدخول — من onComplete بتاع المحرك، أو من فحص الرجوع للتطبيق (أيهما الأول). مرة واحدة بس. */
+        fun complete() {
+            if (finished) return
+            finished = true
+            try { YtMtFeed.markSigned(true) } catch (_: Throwable) {}
+            unregisterCb()
+            // لو الدخول خلص والتطبيق في الخلفية (إنت لسه في المتصفح/يوتيوب): نحاول نرجّعه قدّام (أندرويد ممكن يمنع ده — وقتها بيتحدّث أول ما تفتحه)
+            if (inBg) try { act.startActivity(Intent(act, act.javaClass).addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or Intent.FLAG_ACTIVITY_SINGLE_TOP)) } catch (_: Throwable) {}
+            Notice.show(act, "✅ اتسجّل الدخول", 2500L)
+            try { d.dismiss() } catch (_: Throwable) {}
+            onDone(true)
+        }
+
+        /** (v1106) أول ما ترجع للتطبيق: بنتأكد فورًا إن الموافقة تمت (من غير ما نستنى دورة الاستعلام الجاية) */
+        fun watch() {
+            if (wasSigned || finished || !watching.compareAndSet(false, true)) return
+            Thread {
+                try {
+                    var n = 0
+                    while (!finished && d.isShowing && n < 24) {
+                        val ok = try { MtYt.signedIn() } catch (_: Throwable) { false }
+                        if (ok) { act.runOnUiThread { complete() }; break }
+                        n++; try { Thread.sleep(750L) } catch (_: InterruptedException) { break }
+                    }
+                } finally { watching.set(false) }
+            }.also { it.isDaemon = true; it.start() }
+        }
+        cbReg = object : Application.ActivityLifecycleCallbacks {
+            override fun onActivityResumed(a: Activity) { inBg = false; if (!finished) watch() }
+            override fun onActivityPaused(a: Activity) { inBg = true }
+            override fun onActivityCreated(a: Activity, b: Bundle?) {}
+            override fun onActivityStarted(a: Activity) {}
+            override fun onActivityStopped(a: Activity) {}
+            override fun onActivitySaveInstanceState(a: Activity, b: Bundle) {}
+            override fun onActivityDestroyed(a: Activity) {}
+        }
+        try { act.application.registerActivityLifecycleCallbacks(cbReg) } catch (_: Throwable) {}
+
         fun start() {
             disp?.dispose(); code = ""; finished = false
             setLoading("جاري طلب الكود…")
@@ -89,11 +135,11 @@ object YtCodeLogin {
                     .subscribe(
                         { c -> if (!finished) setCode(c) },
                         { e -> if (!finished) { LogStore.err("YtCodeLogin:signIn", e); setError(e.message ?: e.javaClass.simpleName) } },
-                        { finished = true; Notice.show(act, "✅ اتسجّل الدخول", 2500L); try { d.dismiss() } catch (_: Throwable) {}; onDone(true) })
+                        { complete() })
             } catch (e: Throwable) { LogStore.err("YtCodeLogin:start", e); setError(e.message ?: e.javaClass.simpleName) }
         }
         btnRetry.setOnClickListener { start() }
-        d.setOnDismissListener { try { disp?.dispose() } catch (_: Throwable) {}; if (!finished) onDone(false) }
+        d.setOnDismissListener { try { disp?.dispose() } catch (_: Throwable) {}; unregisterCb(); if (!finished) onDone(false) }
 
         d.setContentView(box)
         d.window?.apply { setBackgroundDrawable(android.graphics.drawable.ColorDrawable(Color.TRANSPARENT)); setLayout((act.resources.displayMetrics.widthPixels * 0.92f).toInt().coerceAtMost(ui.dp(440)), -2) }

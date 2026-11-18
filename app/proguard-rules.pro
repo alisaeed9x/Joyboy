@@ -35,6 +35,7 @@
 # (v878) MeeTube — انعكاس على media3 والـpreferences؛ ومحرك JS (J2V8) و InnerTube
 -keep class com.liskovsoft.** { *; }
 -keep class com.newtube.** { *; }
+-keep class com.tttt.subtitler.mtui.** { *; }   # (v1108 Y6a) الجلاس المنقول من :mobile — بيتعمل inflate من layout/joy_nav_glass.xml
 -keep class com.github.vkay94.** { *; }
 -keep class com.eclipsesource.v8.** { *; }
 -keep class androidx.media3.** { *; }

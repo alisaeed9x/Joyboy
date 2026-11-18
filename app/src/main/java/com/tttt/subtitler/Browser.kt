@@ -1206,7 +1206,6 @@ class BrowserActivity : Activity() {
     // ===== (v1016) 🚨 يقفل الفيديو المصطاد · المتخفي المقفول: غطا أسود — دخول بالبصمة · بحث جديد · خروج =====
     private fun closeLivePlayers() {
         try { PlayerActivity.panicClose() } catch (_: Throwable) {}
-        try { com.newtube.mobile.ui.playback.MobilePlaybackActivity.panicClose() } catch (_: Throwable) {}
     }
     private fun lockPriv() {
         if (dead || tabs.none { it.priv }) return

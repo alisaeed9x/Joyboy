@@ -38,7 +38,7 @@ class Ui(val ctx: Context, var th: Theme) {
     fun noHint(): IconTextView = IconTextView(ctx).apply { visibility = View.GONE }
     fun slider(label: String, init: Int, lo: Int, hi: Int, unit: String, onChange: (Int) -> Unit): LinearLayout {
         val tv = text("$label: ${init.coerceIn(lo, hi)}$unit", 13f, th.text)
-        val sb = (if (MtGlass.on()) com.newtube.mobile.ui.common.GlassSlider(ctx) else SeekBar(ctx)).apply { layoutDirection = android.view.View.LAYOUT_DIRECTION_LTR;   // (v909) GlassSlider الأصلي من MeeTube
+        val sb = (if (MtGlass.on()) com.tttt.subtitler.mtui.GlassSlider(ctx) else SeekBar(ctx)).apply { layoutDirection = android.view.View.LAYOUT_DIRECTION_LTR;   // (v909) GlassSlider الأصلي من MeeTube
             max = hi - lo; progress = init.coerceIn(lo, hi) - lo
             setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
                 override fun onProgressChanged(s: SeekBar?, p: Int, u: Boolean) { tv.text = "$label: ${p + lo}$unit"; if (u) onChange(p + lo) }
@@ -72,12 +72,12 @@ class Ui(val ctx: Context, var th: Theme) {
         SettingsIdx.reg(this, t)   // (v1014) فهرس البحث
     }
     /**
-     * (v909) سويتش MeeTube الأصلي (`com.newtube.mobile.ui.common.GlassSwitch`): نفس صف إعدادات MeeTube —
+     * (v909) سويتش MeeTube الأصلي (`com.tttt.subtitler.mtui.GlassSwitch`): نفس صف إعدادات MeeTube —
      * النص جنب السويتش والصف كله clickable هو اللي بيقلب (السويتش الأصلي بيعمل click على صاحبه). تلفزيون/فشل بناء ← الشكل القديم.
      */
     fun switchRow(t: String, on: Boolean, onChange: (Boolean) -> Unit): SwitchRow {
         val row = SwitchRow(ctx)
-        val glass: CompoundButton? = if (MtGlass.on()) try { com.newtube.mobile.ui.common.GlassSwitch(ctx) } catch (_: Throwable) { null } else null
+        val glass: CompoundButton? = if (MtGlass.on()) try { com.tttt.subtitler.mtui.GlassSwitch(ctx) } catch (_: Throwable) { null } else null
         if (glass == null) {
             val sw = plainSwitchRow(t, on, onChange)
             row.inner = sw; row.addView(sw, LinearLayout.LayoutParams(-1, -2))

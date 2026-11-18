@@ -234,7 +234,7 @@ class MiniDock(
             if (glassKey != key) {
                 glassKey = key
                 val tint = if (on) 0xB02A3F6B.toInt() else MeeRes.color("meetube_toast_glass", 0xA3303034.toInt(), 0xA3303034.toInt())
-                try { com.newtube.mobile.ui.common.GlassDrawable.apply(dock, src, 0, tint) } catch (_: Throwable) { glassKey = -1 }
+                try { com.tttt.subtitler.mtui.GlassDrawable.apply(dock, src, 0, tint) } catch (_: Throwable) { glassKey = -1 }
             }
             if (glassKey != -1) return
         }

@@ -14,16 +14,22 @@ import java.util.WeakHashMap
 class JoyApp : Application() {
     override fun onCreate() {
         super.onCreate()
+        try { com.tttt.subtitler.mtui.ThemeMode.init(this) } catch (_: Throwable) {}   // (v1109 Y6b) الثيم بقى في app (كان بيتعمله init جوه MobileMainApplication.boot)
         // (v920) MeeTube هو الأساس: تهيئة فورية — اللانشر هو SplashActivity بتاعته
         try {
-            MobileMainApplication.boot(this)
+            // (v1111 Y6d) تهيئة المحرك من app (MtEngine). لو فشلت لأي سبب: الرجوع للـboot القديم بتاع :mobile (يتشال في Y6e)
+            try { com.tttt.subtitler.mtui.MtEngine.boot(this) } catch (e2: Throwable) {
+                try { LogStore.err("JoyApp:mtengine", e2) } catch (_: Throwable) {}
+                MobileMainApplication.boot(this)
+            }
         } catch (e: Throwable) {
             try {
                 LogStore.err("JoyApp:mtboot", e)
             } catch (_: Throwable) {
             }
         }
-        try { com.newtube.mobile.ui.common.PlayerTrace.sink = com.newtube.mobile.ui.common.PlayerTrace.Sink { l -> try { LogStore.add(l) } catch (_: Throwable) {} } } catch (_: Throwable) {}   // (v952)
+        try { com.tttt.subtitler.mtui.PlayerTrace.sink = com.tttt.subtitler.mtui.PlayerTrace.Sink { l -> try { LogStore.add(l) } catch (_: Throwable) {} } } catch (_: Throwable) {}   // (v952)
+        try { com.tttt.subtitler.mtui.PlayerTrace.install(this) } catch (_: Throwable) {}   // (v1110 Y6c) كان بيتعمل جوه MobileMainApplication.onCreate (النسخة القديمة)
         MtYt.app = this
         NavOrigin.install(this)   // (v1006) آخر صفحة — للرجوع من الفيديو
         NavSnap.install(this)   // (v923) انتقال موحّد بين الشاشات (لقطة + فيد)
@@ -53,7 +59,7 @@ class JoyApp : Application() {
             }
             // (v908) جانب فاتح/داكن من إعداد MeeTube (ThemeMode) قبل ما أي شاشة Joyboy تتبني — نفس اللي MeeTube بيعمله لشاشاته (أندرويد 10+)
             override fun onActivityPreCreated(a: Activity, b: Bundle?) {
-                try { if (a.javaClass.name.startsWith("com.tttt.subtitler")) com.newtube.mobile.ui.common.ThemeMode.syncResources(a, com.newtube.mobile.ui.common.ThemeMode.desiredNight(a)) } catch (_: Throwable) {}
+                try { if (a.javaClass.name.startsWith("com.tttt.subtitler")) com.tttt.subtitler.mtui.ThemeMode.syncResources(a, com.tttt.subtitler.mtui.ThemeMode.desiredNight(a)) } catch (_: Throwable) {}
             }
             override fun onActivityCreated(a: Activity, b: Bundle?) {}
             override fun onActivityStarted(a: Activity) {}
@@ -64,6 +70,4 @@ class JoyApp : Application() {
         })
     }
 
-    override fun onTrimMemory(level: Int) { super.onTrimMemory(level); try { MobileMainApplication.booted()?.onTrimMemory(level) } catch (_: Throwable) {} }   // (v1105 Y5) كانت MeeTubeLink.onTrim
-    override fun onLowMemory() { super.onLowMemory(); try { MobileMainApplication.booted()?.onLowMemory() } catch (_: Throwable) {} }
 }

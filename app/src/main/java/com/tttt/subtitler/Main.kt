@@ -134,14 +134,7 @@ class MainActivity : Activity() {
         // (v985) استعادة PiP من أيقونة اللانشر — منقولة من SplashActivity بتاع MeeTube
         // (هي اللي كانت بتعملها قبل ما يتشال فلتر اللانشر منها): ضغطة الأيقونة والمشغّل
         // مثبّت في PiP لازم تكبّر المشغّل بدل ما تفتح الرئيسية. قبل أي حاجة تانية.
-        if (intent?.action == Intent.ACTION_MAIN && intent?.hasCategory(Intent.CATEGORY_LAUNCHER) == true) {
-            try {
-                if (com.newtube.mobile.MobileMainApplication.booted()?.restorePictureInPictureFromLauncher(this) == true) {
-                    finish()
-                    return
-                }
-            } catch (_: Throwable) {}
-        }
+        // (v1110 Y6c) استرجاع PiP بتاع مشغّل MeeTube اتشال (المشغّل اتمسح في Y5)
         if (fromPlayer) requestedOrientation = if (intent?.getBooleanExtra("land", false) == true) ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE else ActivityInfo.SCREEN_ORIENTATION_PORTRAIT   // الإعدادات من المشغّل: بنفس اتجاه المشغّل
         UiWatchdog.start()
         Cfg.init(this); CrashLog.install(this);
@@ -626,8 +619,8 @@ class MainActivity : Activity() {
             // (v606) المظهر: 7 أقسام بقوا 3 — الثيم (+ استوديو السمات + راحة العين) · الواجهة (السكِن + نوع الجهاز) · الحركة والوصول
             tab("appearance", { listOfNotNull<View>(
                 ui.section("🎨 المظهر (من MeeTube)", true,   // (v907) مصدر واحد: إعداد الثيم بتاع MeeTube نفسه (ThemeMode) — Joyboy وMeeTube بيتبعوه مع بعض
-    ui.chips(listOf("⚙ النظام", "☀️ فاتح", "🌙 داكن"), { when (com.newtube.mobile.ui.common.ThemeMode.peek(this)) { com.newtube.mobile.ui.common.ThemeMode.LIGHT -> "☀️ فاتح"; com.newtube.mobile.ui.common.ThemeMode.DARK -> "🌙 داكن"; else -> "⚙ النظام" } }) { n ->
-        com.newtube.mobile.ui.common.ThemeMode.set(this, when (n) { "☀️ فاتح" -> com.newtube.mobile.ui.common.ThemeMode.LIGHT; "🌙 داكن" -> com.newtube.mobile.ui.common.ThemeMode.DARK; else -> com.newtube.mobile.ui.common.ThemeMode.SYSTEM })
+    ui.chips(listOf("⚙ النظام", "☀️ فاتح", "🌙 داكن"), { when (com.tttt.subtitler.mtui.ThemeMode.peek(this)) { com.tttt.subtitler.mtui.ThemeMode.LIGHT -> "☀️ فاتح"; com.tttt.subtitler.mtui.ThemeMode.DARK -> "🌙 داكن"; else -> "⚙ النظام" } }) { n ->
+        com.tttt.subtitler.mtui.ThemeMode.set(this, when (n) { "☀️ فاتح" -> com.tttt.subtitler.mtui.ThemeMode.LIGHT; "🌙 داكن" -> com.tttt.subtitler.mtui.ThemeMode.DARK; else -> com.tttt.subtitler.mtui.ThemeMode.SYSTEM })
         recreate()
     },
     ui.noHint()),
@@ -1110,7 +1103,7 @@ class MainActivity : Activity() {
         fun put(k: String, v: String) { Cfg.put(k, v); prev.style = st(); prev.show(null); showDemo() }
         fun slider(label: String, k: String, d: Int, lo: Int, hi: Int, unit: String): LinearLayout {
             val tv = ui.text("$label: ${Cfg.int(k, d)}$unit", 13f, th.text)
-            val sb = (if (MtGlass.on()) com.newtube.mobile.ui.common.GlassSlider(this) else SeekBar(this)).apply { layoutDirection = android.view.View.LAYOUT_DIRECTION_LTR;   // (v905)
+            val sb = (if (MtGlass.on()) com.tttt.subtitler.mtui.GlassSlider(this) else SeekBar(this)).apply { layoutDirection = android.view.View.LAYOUT_DIRECTION_LTR;   // (v905)
                 max = hi - lo; progress = Cfg.int(k, d).coerceIn(lo, hi) - lo
                 setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
                     override fun onProgressChanged(s: SeekBar?, p: Int, u: Boolean) { tv.text = "$label: ${p + lo}$unit"; if (u) put(k, (p + lo).toString()) }
@@ -1835,7 +1828,7 @@ class MainActivity : Activity() {
         try { startActivity(Intent(this, TvActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP).putExtra("tv_show", show)); finish() }
         catch (_: Throwable) { showTabFn(0) }
     }
-    fun updateYtBadge() { navUi?.badge(4, 0) }
+    fun updateYtBadge() { navUi?.badge(4, try { YtNotify.badgeCount() } catch (_: Throwable) { 0 }) }   // (v1107) عدّاد الفيديوهات الجديدة على «الاشتراكات»
     /** (v475) الشريط السفلي: وانت في يوتيوب بيعرض (الرئيسية · الاشتراكات · أنا)؛ اللايت ترتيبه ثابت (الرئيسية · الاشتراكات · محلي · أنا) */
     fun syncNav() {
         tvBar?.select(if (curTab == 4) 2 else if (curTab == 0) 4 else -1)   // (v516)
@@ -1915,7 +1908,8 @@ class MainActivity : Activity() {
         TabNav.pendingMain?.let { t -> TabNav.pendingMain = null; try { onNewIntent(Intent().putExtra("tab", t)) } catch (e: Throwable) { LogStore.err("Main:pendingTab", e) } }   // (v973) REORDER_TO_FRONT من غير onNewIntent
         try { DataCapsule.attach(this) } catch (_: Throwable) {}   // (v799)
         try { tvModeSeen = PlayTarget.enabled(); TvModeFab.listeners.addIfAbsent(tvModeSync) } catch (_: Throwable) {}
-        if (!fromPlayer) { updateYtBadge(); ytBackgroundSync() }
+        if (!fromPlayer) { updateYtBadge(); ytBackgroundSync(); try { if (!(curTab == 4 && (ytUi?.currentTab ?: 0) == 1)) YtNotify.mtPeek(this) } catch (_: Throwable) {} }   // (v1107)
+        if (!fromPlayer) try { ytUi?.onAppResume() } catch (_: Throwable) {}   // (v1106) صفحة «سجّل دخولك» ما تفضلش ظاهرة بعد ما الدخول يتم
         // الرجوع من المشغّل أو من إعدادات الإذن: حدّث العرض (تقدم الترجمة) أو أعد الفحص
         if (!fromPlayer) CrashLog.showIfAny(this)
         if (!fromPlayer) ClipOverlay.ensure(this)   // (v735) مراقب الكليبورد بإذن العرض فوق التطبيقات (بيشتغل لوحده أول ما الإذن يتفعّل)
@@ -1938,14 +1932,7 @@ class MainActivity : Activity() {
         super.onNewIntent(i)
         // (v985) استعادة PiP من أيقونة اللانشر — نفس فحص onCreate فوق (ضغطة الأيقونة
         // والمشغّل مثبّت في PiP لازم تكبّر المشغّل بدل ما تفتح الرئيسية).
-        if (i?.action == Intent.ACTION_MAIN && i?.hasCategory(Intent.CATEGORY_LAUNCHER) == true) {
-            try {
-                if (com.newtube.mobile.MobileMainApplication.booted()?.restorePictureInPictureFromLauncher(this) == true) {
-                    finish()
-                    return
-                }
-            } catch (_: Throwable) {}
-        }
+        // (v1110 Y6c) استرجاع PiP بتاع مشغّل MeeTube اتشال (المشغّل اتمسح في Y5)
         TabNav.pendingMain = null   // (v973) اتسلّم فعلًا
         if (DeviceUi.isTv(this) && !fromPlayer) fromTv = true   // (v482)
         // (v939) إعادة توجيه باردة كانت بتحصل في onCreate بس — intent جديد من غير وجهة صريحة (لا تبويب ولا yt_open ولا رابط)

@@ -21,7 +21,7 @@ import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.analytics.AnalyticsListener
-import com.newtube.mobile.ui.playback.JoyboyPlayerHost
+import com.tttt.subtitler.mtui.JoyboyPlayerHost
 import java.lang.ref.WeakReference
 
 /**

@@ -1373,3 +1373,10 @@ v1102: شاشة مفتاح جيميناي من ريموت الموبايل بت�
 v1103: يوتيوب Y0 فحص (docs/YT_REPLACE_AUDIT.md) + Y1 دخول بالكود (YtCodeLogin.kt) + Y2 رجوع يوتيوب القديم جنب ميتيوب (مفتاح yt_classic، افتراضي مقفول). لم يتم compile. CHANGES_v1103.md
 v1104: يوتيوب Y3 (الرئيسية/الاشتراكات من محرك MeeTube بتحميل مفتوح + الأحدث أولًا، YtMtFeed.kt) + Y4 (الحساب بتوكن الكود: YtAccount من جديد، شيل الكوكيز وQR/YtLink). لم يتم compile. CHANGES_v1104.md
 v1105: يوتيوب Y5 — يوتيوب Joyboy القديم بقى الوحيد (yt_classic اتشال)، مسح 12 ملف ربط ميتيوب (MeeTubeLink/MtPlay/MtBar/MtTranslate/MtTvPlayer…)، وقفل 16 أكتيفيتي ميتيوب من الـmanifest. كود :mobile لسه موجود (الجلاس معتمد عليه) = Y6. لم يتم compile. CHANGES_v1105.md
+v1106: إصلاح دخول يوتيوب بالكود (فحص فوري عند الرجوع للتطبيق + markSigned + إعادة تحميل صفحة «سجّل دخولك») + الرئيسية بتمشي كل صفحات المحرك زي ميتيوب والجديد فوق (YtMtFeed walk). لم يتم compile. CHANGES_v1106.md
+
+v1107: عدّاد أحمر بعدد الفيديوهات الجديدة على «الاشتراكات» (أساس بآخر قايمة اتعرضت) · اتشاف (سكرول) ≠ اتفرّجت عليه (HIST) في ترتيب الرئيسية · شيل الخط الأزرق ودايرة تحميل بدله · شيل صف إشعارات/تحديث الاشتراكات · الفتح والرجوع على الرئيسية. لم يتم compile. CHANGES_v1107.md
+v1108: Y6a — نسخ 12 كلاس جلاس/حركة من :mobile لـapp (package com.tttt.subtitler.mtui) من غير مسح الأصل؛ فاضل ThemeMode + MobileMainApplication.boot + الموارد قبل مسح المودولات. لم يتم compile. CHANGES_v1108.md
+v1109: Y6b — ThemeMode (mtui) + موارد الجلاس لـapp/res + شيل panicClose؛ فاضل MobileMainApplication.boot قبل مسح المودولات. لم يتم compile. CHANGES_v1109.md
+v1110: Y6c صغيرة — PlayerTrace.install في JoyApp، شيل PiP-restore وtrim لـMobileMainApplication؛ boot فاضل في JoyApp+MtYt بس. لم يتم compile. CHANGES_v1110.md
+v1111: Y6d — MtEngine (تهيئة المحرك من app) بدل MobileMainApplication.boot، مع fallback تلقائي؛ فاضل Y6e مسح المودولات. لم يتم compile. CHANGES_v1111.md

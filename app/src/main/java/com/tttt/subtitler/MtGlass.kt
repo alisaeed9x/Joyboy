@@ -126,8 +126,8 @@ object MtGlass {
 
     // ===== الحركة (Motion.java): منحنيات Material 3 =====
     // (v908) منحنيات MeeTube نفسها (Motion.java) — مش نسخة
-    val EMPHASIZED_DECELERATE: Interpolator = com.newtube.mobile.ui.common.Motion.EMPHASIZED_DECELERATE
-    val EMPHASIZED_ACCELERATE: Interpolator = com.newtube.mobile.ui.common.Motion.EMPHASIZED_ACCELERATE
+    val EMPHASIZED_DECELERATE: Interpolator = com.tttt.subtitler.mtui.Motion.EMPHASIZED_DECELERATE
+    val EMPHASIZED_ACCELERATE: Interpolator = com.tttt.subtitler.mtui.Motion.EMPHASIZED_ACCELERATE
     val STANDARD: Interpolator = PathInterpolator(0.2f, 0f, 0f, 1f)
     val EMPHASIZED: Interpolator by lazy {
         val p = Path()
@@ -148,8 +148,8 @@ object MtGlass {
     /** «الدفعة»: بيصغّر لـ in وبيعدّي لـ over وبيستقر (لايك/اختيار/سويتش) */
     fun pop(v: View?, inS: Float = 0.78f, over: Float = 1.12f) {
         if (v == null) return
-        if (inS == 0.78f && over == 1.12f) { com.newtube.mobile.ui.common.Motion.pop(v); return }       // (v909) Motion.pop الأصلي
-        if (inS == 0.965f && over == 1.015f) { com.newtube.mobile.ui.common.Motion.nudge(v); return }   // (v909) Motion.nudge الأصلي
+        if (inS == 0.78f && over == 1.12f) { com.tttt.subtitler.mtui.Motion.pop(v); return }       // (v909) Motion.pop الأصلي
+        if (inS == 0.965f && over == 1.015f) { com.tttt.subtitler.mtui.Motion.nudge(v); return }   // (v909) Motion.nudge الأصلي
         v.animate().cancel()
         fun kf() = arrayOf(Keyframe.ofFloat(0f, 1f), Keyframe.ofFloat(0.35f, inS), Keyframe.ofFloat(0.75f, over), Keyframe.ofFloat(1f, 1f))
         val a = ObjectAnimator.ofPropertyValuesHolder(v, PropertyValuesHolder.ofKeyframe("scaleX", *kf()), PropertyValuesHolder.ofKeyframe("scaleY", *kf()))
@@ -164,7 +164,7 @@ object MtGlass {
      * البلور بيتشال في الآخر فمفيش تكلفة بعد كده. dx = انزلاقة أفقية خفيفة (اتجاه التبويب).
      */
     fun frostIn(v: View, dx: Float = 0f) {
-        if (dx == 0f) { com.newtube.mobile.ui.common.Motion.frostIn(v); return }   // (v909) Motion.frostIn الأصلي (فيد + بلور بيصفى)
+        if (dx == 0f) { com.tttt.subtitler.mtui.Motion.frostIn(v); return }   // (v909) Motion.frostIn الأصلي (فيد + بلور بيصفى)
         v.animate().cancel()
         frosting.remove(v)?.cancel()
         v.alpha = 0f; v.translationX = dx

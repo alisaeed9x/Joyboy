@@ -91,7 +91,12 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
     private val lineWatch = Runnable { loadBusy = false; bgBusy = false; updateLine() }
     private fun updateLine() {
         h.removeCallbacks(lineWatch)
-        if (loadBusy || bgBusy) { topLine.start(); h.postDelayed(lineWatch, 40_000L) } else topLine.stop()
+        topLine.stop()   // (v1107) الخط الأزرق اللي فوق اتشال — بدله دايرة التحميل الدايرية (نفس لودينج البرنامج)
+        if (loadBusy || bgBusy) h.postDelayed(lineWatch, 40_000L)
+        val showPtr = bgBusy && !loadBusy && spinBox.visibility != View.VISIBLE
+        ptr.animate().cancel()
+        if (showPtr) { ptr.rotation = 0f; ptrDr.start(); ptr.animate().alpha(1f).translationY(ui.dp(10).toFloat()).setDuration(Skins.dur(180L)).start() }
+        else ptr.animate().alpha(0f).translationY(-ui.dp(50).toFloat()).setDuration(Skins.dur(160L)).withEndAction { ptrDr.stop() }.start()
     }
     private fun bgLine(on: Boolean) { bgBusy = on; updateLine() }
     private var pendingItems: List<NpItem>? = null
@@ -160,7 +165,7 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
     private val pollRun: Runnable = object : Runnable {
         override fun run() {
             h.postDelayed(this, 4 * 60_000L)
-            if (navSel != 1) tvBadgeRefresh(true)   // (v575)
+            if (navSel != 1) { tvBadgeRefresh(true); try { YtNotify.mtPeek(act) } catch (_: Throwable) {} }   // (v575) · (v1107) عدّاد «الاشتراكات»
             if (root.visibility != View.VISIBLE || watch.isOpen || chan.isOpen || bgBusy || loadBusy) return
             val st = cur ?: return
             if (st.vid != null || st.q != null || st.chUrl != null) return
@@ -177,6 +182,18 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
             }
         }
     }
+    // (v1107) «اتشاف» في الرئيسية = ظهر على الشاشة وإنت بتسكرول (من الأول لحد أبعد مكان وصلتله). «اتفرّجت عليه» = اتفتح فعلًا (السجل HIST) وده اللي بيتشال من الرئيسية.
+    private var homeSeenFor: Any? = null
+    private var homeSeenMax = -1
+    private fun markHomeViewed() {
+        val st = cur ?: return
+        if (st !== homeSeenFor || homeSeenMax < 0) return
+        if (st.tab != 0 || st.vid != null || st.q != null || st.chUrl != null || chipSel != 0) return
+        if (!YtMtFeed.usableCached()) return
+        val l = st.list(); val ids = ArrayList<String>()
+        for (i in 0..minOf(homeSeenMax, l.size - 1)) { val x = l[i]; if (x.kind == 0 && x.id.length == 11) ids.add(x.id) }
+        YtMtFeed.markViewed(ids)
+    }
     private fun startPoll() { h.removeCallbacks(pollRun); h.postDelayed(pollRun, 4 * 60_000L) }
 
     // (v407) recents() بتقرا ملف recent.json وتحلّله — كانت بتتنده لكل كارت في كل getView (سبب تقطيع/بطء الفتح والسكرول). دلوقتي كاش 3 ثواني
@@ -188,13 +205,15 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
         return recMemo
     }
     // (v390) سحب لتحت = تحديث (الرئيسية · الاشتراكات · أنت) زي قايمة الفيديوهات
-    private val ptr = IconTextView(act).apply {
-        text = "🔄"; textSize = 20f; gravity = Gravity.CENTER; background = ui.box(th.surface, th.border, 22)
+    private val ptrDr = WinSpinnerDrawable().apply { setColorFilter(PorterDuffColorFilter(th.primary, PorterDuff.Mode.SRC_IN)) }   // (v1107) دايرة التحديث = لودينج البرنامج بدل 🔄 والخط الأزرق
+    private val ptr = FrameLayout(act).apply {
+        background = ui.box(th.surface, th.border, 22)
         elevation = ui.dp(6).toFloat(); alpha = 0f; translationY = -ui.dp(50).toFloat()
+        addView(View(act).apply { foreground = ptrDr }, FrameLayout.LayoutParams(ui.dp(26), ui.dp(26), Gravity.CENTER))
     }
     private fun endPull() {
         lv.animate().translationY(0f).setDuration(250).start()
-        ptr.animate().alpha(0f).translationY(-ui.dp(50).toFloat()).setDuration(250).start()
+        if (!(bgBusy || loadBusy)) ptr.animate().alpha(0f).translationY(-ui.dp(50).toFloat()).setDuration(250).start()
     }
     private fun pullRefresh() {
         when (cur?.tab) {
@@ -487,8 +506,11 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
             }
             setOnItemLongClickListener { _, v, p, _ -> cur?.list()?.getOrNull(p)?.let { if (it.kind == 3 || it.kind == 4) copy(it.title) else if (it.kind == 5) { } else if (it.id != "act") menu(v, it) }; true }
             setOnScrollListener(object : AbsListView.OnScrollListener {
-                override fun onScrollStateChanged(v: AbsListView?, s: Int) { if (s == AbsListView.OnScrollListener.SCROLL_STATE_IDLE) prewarmVisible() }   // (v472)
-                override fun onScroll(v: AbsListView?, first: Int, vis: Int, total: Int) { if (total > 0 && first + vis >= total - 3) loadMore() }
+                override fun onScrollStateChanged(v: AbsListView?, s: Int) { if (s == AbsListView.OnScrollListener.SCROLL_STATE_IDLE) { prewarmVisible(); try { markHomeViewed() } catch (_: Throwable) {} } }   // (v472)
+                override fun onScroll(v: AbsListView?, first: Int, vis: Int, total: Int) {
+                    if (total > 0 && first + vis >= total - 3) loadMore()
+                    if (vis > 0) { val c0 = cur; if (homeSeenFor !== c0) { homeSeenFor = c0; homeSeenMax = -1 }; if (first + vis - 1 > homeSeenMax) homeSeenMax = first + vis - 1 }   // (v1107) أبعد مكان وصلتله في الرئيسية
+                }
             })
         }
         page.addView(lv, LinearLayout.LayoutParams(-1, 0, 1f))
@@ -566,12 +588,24 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
     // ───────── واجهة Main ─────────
     // (v621) كان refresh() بيعمل notifyDataSetChanged + يمسح كاش الـrecents (قراءة ملف على الـUI thread) في نفس لحظة بداية الأنيميشن ← تهنيج. دلوقتي بعد ما الانزلاق يخلص
     private val softRefresh = Runnable { recMemoAt = 0L; try { adapter.notifyDataSetChanged() } catch (_: Throwable) {} }
+    private var leftYt = false   // (v1107)
     fun refresh() {
-        if (cur == null) { recMemoAt = 0L; openTab(if (YtAccount.loggedIn() || YtMtFeed.usableCached() || YtStore.read(YtStore.SUBS).isNotEmpty()) 1 else 0) }   // (v674) تلفزيون: بيفتح على الاشتراكات · (v761) الموبايل كمان: أول ما تدخل يوتيوب تجيب الاشتراكات الأول مش الرئيسية
-        else { h.removeCallbacks(softRefresh); h.postDelayed(softRefresh, 280L) }
+        if (cur == null) { recMemoAt = 0L; leftYt = false; openTab(0) }   // (v1107) بيفتح على الرئيسية دايمًا (كان الاشتراكات)
+        else if (leftYt && !watch.isOpen && !chan.isOpen && cur?.let { it.tab == 1 && it.vid == null && it.q == null && it.chUrl == null } == true) { leftYt = false; recMemoAt = 0L; openTab(0) }   // (v1107) خرجت من يوتيوب وإنت في الاشتراكات ورجعت ← الرئيسية
+        else { leftYt = false; h.removeCallbacks(softRefresh); h.postDelayed(softRefresh, 280L) }
         startPoll()
     }
-    fun onHide() { hideKb(); sugBox.visibility = View.GONE; watch.pause(); h.removeCallbacks(pollRun); h.removeCallbacks(softRefresh); if (DeviceUi.isTv(act) && navSel == 1) { try { YtNotify.markOpened(act) } catch (_: Throwable) {} } }   // (v575) خرجت من الاشتراكات = العدّ من دلوقتي
+    /** (v1106) رجعت للتطبيق: لو صفحة «سجّل دخولك» لسه ظاهرة والدخول تم وإنت بره (أو الحالة اتغيّرت) → حمّل الصفحة فورًا من غير ما تنقل بين التابات */
+    fun onAppResume() {
+        if (promptBox.visibility != View.VISIBLE) return
+        val tab = cur?.tab ?: navSel
+        if (tab != 0 && tab != 1) return
+        Thread {
+            val ok = try { YtMtFeed.reset(); MtYt.signedIn() } catch (_: Throwable) { false }
+            if (ok) { try { YtMtFeed.markSigned(true) } catch (_: Throwable) {}; act.runOnUiThread { if (!act.isFinishing && !act.isDestroyed && promptBox.visibility == View.VISIBLE) { if (tab == 1) openSubs(true) else openTab(0) } } }
+        }.also { it.isDaemon = true; it.start() }
+    }
+    fun onHide() { leftYt = true; try { markHomeViewed() } catch (_: Throwable) {}; hideKb(); sugBox.visibility = View.GONE; watch.pause(); h.removeCallbacks(pollRun); h.removeCallbacks(softRefresh); if (DeviceUi.isTv(act) && navSel == 1) { try { YtNotify.markOpened(act) } catch (_: Throwable) {} } }   // (v575) خرجت من الاشتراكات = العدّ من دلوقتي
     /** (v348) Main.onStop: الشورتس تقف لما التطبيق يروح الخلفية أو يظهر المشغّل فوقه (بترجع في refresh() مع onResume) */
     fun onPause() { watch.pause(); ytDock.pause() }
     /** (v606) خروج من التطبيق (Home/Recents) والفيديو شغّال في صفحة المشاهدة أو الشريط السفلي: يتسلّم للمشغّل الكامل ويدخل PiP. true = اتسلّم */
@@ -918,7 +952,7 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
                 val m = try { YtMtFeed.subs() } catch (e: Throwable) { LogStore.err("YtProUi:mtSubs", e); null }
                 if (m != null) {
                     val shown = HashSet<String>(); m.items.forEach { shown.add(it.id) }
-                    try { YtNotify.markSeen(m.items); YtNotify.markOpened(act) } catch (_: Throwable) {}
+                    try { YtNotify.markSeen(m.items); YtNotify.mtMarkSubs(m.items.map { it.id }); YtNotify.markOpened(act) } catch (_: Throwable) {}   // (v1107) اللي ظهر في القايمة = اتشاف ← العدّاد يتصفّر
                     return@load Pair(m, { p: Page -> val x = YtMtFeed.more(p); YtRes(x.items.filter { shown.add(it.id) }, x.next) })
                 }
                 LogStore.add("⚠ اشتراكات المحرك رجعت فاضية — بجرّب المسار القديم")
@@ -1103,7 +1137,7 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
         val det = st.vid != null
         detailBox.visibility = if (det) View.VISIBLE else View.GONE
         chanRow.visibility = if (st.chUrl != null && !det) View.VISIBLE else View.GONE
-        subsRow.visibility = if (st.tab == 1 && !det && st.items.isNotEmpty()) View.VISIBLE else View.GONE; paintNotif()
+        subsRow.visibility = View.GONE   // (v1107) صف «إشعارات الفيديوهات الجديدة + تحديث» اتشال
         if (st.chUrl != null) { chanName.text = st.chName ?: ""; paintSub(YtStore.contains(YtStore.SUBS, NpItem("", "", "", st.chUrl, "", -1L, 0L, "", 1, st.chUrl))) }
         filterRow.visibility = if (st.q != null && !det) View.VISIBLE else View.GONE
         filterViews.forEach { tv -> paintChip(tv, tv.tag == st.filter) }
