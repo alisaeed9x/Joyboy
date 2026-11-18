@@ -192,9 +192,7 @@ public final class JoyboyPlayerHost {
             if (p != null && activity != null && action != null && p.onJoyboyAction(activity, action)) {
                 return true;
             }
-            if (activity instanceof MobilePlaybackActivity) {
-                return ((MobilePlaybackActivity) activity).handleJoyboyAction(action);
-            }
+            // JOYBOY(v1112): MobilePlaybackActivity is gone from the app (Y5); no Activity fallback.
             return false;
         } catch (RuntimeException e) {
             return false;

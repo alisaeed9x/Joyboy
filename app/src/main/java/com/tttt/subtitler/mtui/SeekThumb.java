@@ -132,8 +132,9 @@ public final class SeekThumb extends Activity {
                     //noinspection ResultOfMethodCallIgnored
                     old.renameTo(file(this));
                 }
-                com.tttt.subtitler.mtui.MobileSnackbar.show(this,
-                        com.tttt.subtitler.R.string.mobile_settings_seek_thumb_failed);
+                android.widget.Toast.makeText(this,
+                        com.tttt.subtitler.R.string.mobile_settings_seek_thumb_failed,
+                        android.widget.Toast.LENGTH_SHORT).show(); // JOYBOY(v1112): was MobileSnackbar
             }
             //noinspection ResultOfMethodCallIgnored
             tmp.delete();

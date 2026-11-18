@@ -71,7 +71,7 @@
     <div class="row"><button id="cSave" style="background:var(--btn);flex:1">حفظ وتحديث</button><button id="cClose">إغلاق</button></div>
     <div class="hint">
       التوكن بيتخزّن في المتصفح ده بس (localStorage) ومابيتبعتش لأي مكان غير api.github.com. الصلاحية المطلوبة: <b dir="ltr">Actions: Read</b> (fine-grained) أو <b dir="ltr">repo</b> (classic).<br>
-      أزرار التحميل بتفتح لينكات github.com مباشرة — لازم تكون مسجّل دخول على GitHub في نفس المتصفح.
+      تحميل الملف بيفتح لينك github.com مباشرة (لازم تكون مسجّل دخول). زرار اللوج بيحمّل الـzip بالتوكن، ولو مفيش توكن بيفتح اللوج الخام للـjob الفاشل.
     </div>
   </div>
 
@@ -193,9 +193,55 @@
       return '<a class="btn dl" target="_blank" rel="noopener" href="'+base+x.id+'" title="'+esc(x.name)+mb+'">⬇ '+lbl+'</a>';
     }).join('');
   }
+  // JOYBOY(v1112): الرابط القديم github.com/<repo>/actions/runs/<id>/logs كان بيدّي 404 (ده مسار الـAPI مش مسار صفحة ويب).
+  // دلوقتي: زرار بيحمّل الـzip من الـAPI (محتاج token)، ولو فشل بيفتح اللوج الخام للـjob الفاشل على github.com.
   function linkLogs(r){
-    return '<a class="btn lg" target="_blank" rel="noopener" href="https://github.com/'+S.repo+'/actions/runs/'+r.id+'/logs" title="تحميل أرشيف اللوج (zip)">⬇ لوج</a>';
+    return '<button class="btn lg" data-log="'+r.id+'" title="تحميل أرشيف اللوج (zip)">⬇ لوج</button>';
   }
+  function saveBlob(blob,name){
+    var u=URL.createObjectURL(blob), a=document.createElement('a');
+    a.href=u; a.download=name; document.body.appendChild(a); a.click();
+    setTimeout(function(){ URL.revokeObjectURL(u); a.remove(); },4000);
+  }
+  function toLink(btn,href,label,title){
+    var a=document.createElement('a');
+    a.className='btn lg'; a.target='_blank'; a.rel='noopener'; a.href=href; a.title=title||''; a.textContent=label;
+    btn.parentNode.replaceChild(a,btn);
+  }
+  function downloadLog(id,btn){
+    var r=S.runs.filter(function(x){ return x.id===id; })[0];
+    if(!r || btn.disabled) return;
+    var label=btn.textContent;
+    btn.disabled=true; btn.textContent='⏳ …';
+    var restore=function(){ btn.disabled=false; btn.textContent=label; };
+    // 1) أرشيف الـzip الكامل من الـAPI (بيرجّع 302 لرابط موقّع — محتاج token)
+    var zip = S.tok
+      ? fetch('https://api.github.com/repos/'+S.repo+'/actions/runs/'+id+'/logs',{headers:headers(),cache:'no-store'})
+          .then(function(res){ if(!res.ok) throw new Error('HTTP '+res.status); return res.blob(); })
+          .then(function(b){ if(!b || !b.size) throw new Error('empty'); saveBlob(b,'logs_'+id+'.zip'); })
+      : Promise.reject(new Error('no token'));
+    zip.then(restore).catch(function(){
+      // 2) بديل: اللوج الخام للـjob الفاشل على github.com (لازم تكون مسجّل دخول في نفس المتصفح)
+      return api('/actions/runs/'+id+'/jobs?per_page=30').then(function(j){
+        var jobs=j.jobs||[];
+        var bad=jobs.filter(function(x){ return x.conclusion==='failure'; })[0]
+             || jobs.filter(function(x){ return x.conclusion==='cancelled'; })[0] || jobs[0];
+        var href = bad
+          ? 'https://github.com/'+S.repo+'/commit/'+r.head_sha+'/checks/'+bad.id+'/logs'
+          : 'https://github.com/'+S.repo+'/actions/runs/'+id;
+        toLink(btn,href,'⬇ لوج (job)','اللوج الخام للـjob الفاشل');
+        showErr(S.tok ? 'تحميل الـzip فشل من المتصفح — دوس الزرار تاني يفتح اللوج الخام.'
+                      : 'من غير token مفيش zip — دوس الزرار تاني يفتح اللوج الخام (حط token في ⚙ لتحميل الـzip).');
+      });
+    }).catch(function(e){
+      toLink(btn,'https://github.com/'+S.repo+'/actions/runs/'+id,'فتح الـrun','صفحة الـrun');
+      showErr('مقدرتش أجيب اللوج: '+(e && e.message ? e.message : e)+'\nدوس «فتح الـrun» وحمّله من الصفحة.');
+    });
+  }
+  $('list').addEventListener('click',function(ev){
+    var b=ev.target && ev.target.closest ? ev.target.closest('[data-log]') : null;
+    if(b) downloadLog(parseInt(b.getAttribute('data-log'),10),b);
+  });
 
   function render(){
     var box=$('list');

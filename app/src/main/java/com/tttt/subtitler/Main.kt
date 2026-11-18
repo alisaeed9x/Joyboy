@@ -1033,7 +1033,7 @@ class MainActivity : Activity() {
         }
         setContentView(frame)
         RotateHint.attach(this)   // (v823) زرار «لفّ الشاشة» لما اتجاه التليفون يخالف اتجاه التطبيق
-        if (intent?.getStringExtra("tab") == null) SplashArt.show(this, b, t0Boot)   // (v922) الدخول من شريط MeeTube/المتصفح بتبويب معيّن = من غير سبلاش، ينقل على طول · (v592) سبلاش Joyboy عشوائي مرة كل تشغيل · (v834) المدة من أول onCreate
+        // (v1112) نداء SplashArt.show اتشال من واجهة الموبايل — السبلاش للتلفزيون بس (TvHome)
         try { LogStore.add("⏱ Main.onCreate = " + (android.os.SystemClock.uptimeMillis() - t0Boot) + "ms") } catch (_: Throwable) {}
         // (v469) D2 طبقة الفلتر الدافئ فوق محتوى الشاشة (ما بتمنعش اللمس: View عادية من غير مستمعات، والعناصر العائمة فوقها)
         warmView = View(this).apply { isClickable = false; isFocusable = false; importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO }

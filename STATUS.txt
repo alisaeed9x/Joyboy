@@ -1380,3 +1380,4 @@ v1108: Y6a — نسخ 12 كلاس جلاس/حركة من :mobile لـapp (packag
 v1109: Y6b — ThemeMode (mtui) + موارد الجلاس لـapp/res + شيل panicClose؛ فاضل MobileMainApplication.boot قبل مسح المودولات. لم يتم compile. CHANGES_v1109.md
 v1110: Y6c صغيرة — PlayerTrace.install في JoyApp، شيل PiP-restore وtrim لـMobileMainApplication؛ boot فاضل في JoyApp+MtYt بس. لم يتم compile. CHANGES_v1110.md
 v1111: Y6d — MtEngine (تهيئة المحرك من app) بدل MobileMainApplication.boot، مع fallback تلقائي؛ فاضل Y6e مسح المودولات. لم يتم compile. CHANGES_v1111.md
+v1112: إصلاح بيلد v1111 (Haptics/MobileSnackbar/MobilePlaybackActivity في mtui) + ويدجت Actions من v1090 مع إصلاح 404 زرار اللوج + شيل نداء SplashArt من الموبايل. لم يتم compile. CHANGES_v1112.md
