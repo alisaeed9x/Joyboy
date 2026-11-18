@@ -4108,8 +4108,10 @@ class PlayerActivity : Activity(), Host {
         if (now - diagAt < 4000L || diagN >= 120 || !::sub.isInitialized || !::engine.isInitialized || !player.isPlaying) return
         diagAt = now; diagN++
         val txtOff = try { player.exo()?.trackSelectionParameters?.disabledTrackTypes?.contains(C.TRACK_TYPE_TEXT) == true } catch (_: Throwable) { false }
+        // (v1116) FIX 1: النقط من المحرك الشغّال فعلًا — المتوازن (FastTr) ليه حوض مفاتيح خاص بيه، والمحرك القديم حوضه في Engine
+        val dots = try { fastTr?.keyDots() ?: engine.keyDots() } catch (_: Throwable) { "" }
         diagLog("🔬 عرض @" + fmtMs(cur) + " · حلقة_وقعت=" + bad + "(" + errN + ") · cc=" + ccOn + " · أصلية=" + nativeCue.length + "ح · مسارات_نص=" + sfNativeCountNow() + " · نص_مقفول=" + txtOff +
-            " · hide=" + sfHideNative + " · ترجمة_شغالة=" + sfBusy.isNotEmpty() + " · جمل_المحرك=" + engine.subs.size + " · مفاتيح=" + engine.keyDots() + " · ظاهر=" + (sub.visibility == View.VISIBLE) + "/" + sub.height + " · curIdx=" + curIdx)
+            " · hide=" + sfHideNative + " · ترجمة_شغالة=" + sfBusy.isNotEmpty() + " · جمل_المحرك=" + engine.subs.size + " · مفاتيح=" + dots + " · ظاهر=" + (sub.visibility == View.VISIBLE) + "/" + sub.height + " · curIdx=" + curIdx)
     }
 
     private fun subSafeTick() {

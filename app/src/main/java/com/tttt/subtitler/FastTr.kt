@@ -33,6 +33,10 @@ class FastTr(
     private val doneSet = ConcurrentHashMap.newKeySet<Int>()
     private val failedSet = ConcurrentHashMap.newKeySet<Int>()
     private val pool = Pool(conf)
+    // (v1117) توازي تكيفي لموجة 503: أوقات آخر أخطاء 503 — النافذة 60ث وبتتقصّ عند القراءة
+    private val err503Times = ArrayDeque<Long>()
+    @Volatile private var last503At = 0L
+    @Volatile private var lastCapLogged = -1
     private val mergeLock = Any()
     private val srcLock = Any()
     private val persistN = AtomicInteger(0)
@@ -49,6 +53,88 @@ class FastTr(
             if (b > a) out.add(doubleArrayOf(a, b))
         }
         return out
+    }
+
+    /** (v1116) FIX 1: نقاط حالة المفاتيح من حوض المحرك البسيط نفسه — نفس معنى وألوان Engine.keyDots */
+    fun keyDots(): String {
+        val dots = arrayOf("🔵", "🟢", "🔴", "🟠")
+        val parts = pool.all().mapIndexed { idx, k -> dots[pool.dotState(k)] + (idx + 1) }
+        return parts.joinToString(" ")
+    }
+
+    // (v1117) سقف التوازي العادي = عدد الخيوط اللي بتتفتح أصلًا
+    private fun normalCap(): Int {
+        return pool.all().size.coerceIn(1, MAX_WORKERS)
+    }
+
+    // (v1117) سقف التوازي الحالي حسب موجة 503 — من غير أي انتظار: 0-1 خطأ في آخر 60ث = عادي، 2 = 2، 3+ = 1
+    // (v1117) ولو مفيش 503 من 30ث بيرجع للعادي لوحده حتى لو نافذة الـ60ث لسه فيها أخطاء قديمة
+    private fun capNow(): Int {
+        val now = System.currentTimeMillis()
+        if (now - last503At > 30_000L) {
+            return normalCap()
+        }
+        val n = synchronized(err503Times) {
+            while (err503Times.isNotEmpty() && now - err503Times.first() > 60_000L) {
+                err503Times.removeFirst()
+            }
+            err503Times.size
+        }
+        if (n >= 3) {
+            return minOf(1, normalCap())
+        }
+        if (n == 2) {
+            return minOf(2, normalCap())
+        }
+        return normalCap()
+    }
+
+    // (v1117) تسجيل خطأ 503 لحساب الموجة — بيتنده من مسار إعادة المحاولة بس، من غير ما يغيّر فيه حاجة
+    private fun record503() {
+        val now = System.currentTimeMillis()
+        last503At = now
+        synchronized(err503Times) {
+            err503Times.addLast(now)
+            while (err503Times.isNotEmpty() && now - err503Times.first() > 60_000L) {
+                err503Times.removeFirst()
+            }
+        }
+    }
+
+    // (v1117) سطر لوج واحد مع كل تغيير في السقف بس — مش مع كل باتش
+    @Synchronized private fun logCapIfChanged(cap: Int) {
+        if (lastCapLogged < 0) {
+            lastCapLogged = cap
+            return
+        }
+        if (cap == lastCapLogged) {
+            return
+        }
+        lastCapLogged = cap
+        if (cap < normalCap()) {
+            try {
+                host.log("⚡ التوازي نزل لـ$cap — موجة 503")
+            } catch (_: Throwable) {
+            }
+        } else {
+            try {
+                host.log("⚡ التوازي رجع $cap")
+            } catch (_: Throwable) {
+            }
+        }
+    }
+
+    // (v1117) بوابة بدء الباتشات: الخيط بيستنى خانة فاضية تحت السقف الحالي — نفس نمط waitIfPaused اللي في الملف
+    // (v1117) دي مش انتظار قبل إعادة 503 ولا وقفة ثابتة بين الباتشات — الباتش اللي ليه خانة بيبدأ فورًا، والانتظار هنا بس لما السقف مليان
+    private fun waitForSlot() {
+        while (!stopped) {
+            val cap = capNow()
+            logCapIfChanged(cap)
+            if (active.size < cap) {
+                return
+            }
+            nap(200)
+        }
     }
 
     val pct: Int get() = if (total <= 0) 0 else (doneSet.size * 100 / total).coerceIn(0, 100)
@@ -102,6 +188,8 @@ class FastTr(
             val t = Thread {
                 while (!stopped) {
                     waitIfPaused()
+                    if (stopped) break
+                    waitForSlot()
                     if (stopped) break
                     val idx = next.getAndIncrement()
                     if (idx >= order.size) break
@@ -220,6 +308,9 @@ class FastTr(
                 pool.block(k, 10 * 60_000L); avoid = k; attempt++
             } catch (e: ApiErr) {
                 host.log("⚠ [محرك ٢] باتش ${i + 1} $label: HTTP ${e.code} — بجرّب مفتاح تاني")
+                if (e.code == 503) {
+                    record503()
+                }
                 pool.block(k, if (e.code == 429) 60_000L else if (e.code == 403 || e.code == 401 || e.code == 400) 5 * 60_000L else 8_000L)
                 avoid = k; attempt++
             } catch (e: BadReply) {

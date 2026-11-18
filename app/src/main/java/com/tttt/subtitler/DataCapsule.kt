@@ -68,8 +68,34 @@ object DataMeter {
         } catch (_: Throwable) {}
     }
 
+    /** (v1116) FIX 2: آخر نوع شبكة معروف — الـ Binder (getActiveNetwork) كان بيجمّد الواجهة 2ث من خيطها الرئيسي */
+    @Volatile private var cellCache = false
+    @Volatile private var cellCacheAt = 0L
+    @Volatile private var cellRefreshRunning = false
+
     /** هل النت الحالي خلوي؟ (VPN: بنعتمد على «محدودة» من النظام — نفس قاعدة المتصفح) */
-    fun isCell(c: Context): Boolean = try {
+    fun isCell(c: Context): Boolean {
+        val now = android.os.SystemClock.elapsedRealtime()
+        if (now - cellCacheAt < 5_000L) return cellCache
+        if (!cellRefreshRunning) {
+            cellRefreshRunning = true
+            val appCtx = c.applicationContext
+            val t = Thread {
+                try {
+                    cellCache = isCellNow(appCtx)
+                    cellCacheAt = android.os.SystemClock.elapsedRealtime()
+                } catch (_: Throwable) {}
+                finally { cellRefreshRunning = false }
+            }
+            t.isDaemon = true
+            t.name = "datameter-cell"
+            t.start()
+        }
+        return cellCache
+    }
+
+    /** الفحص الحقيقي (Binder) — بيتنادى من خيط خلفية بس، مش من خيط الواجهة */
+    private fun isCellNow(c: Context): Boolean = try {
         val cm = c.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
         val n = cm.activeNetwork
         val cap = if (n != null) cm.getNetworkCapabilities(n) else null
