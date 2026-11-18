@@ -4109,7 +4109,7 @@ class PlayerActivity : Activity(), Host {
         diagAt = now; diagN++
         val txtOff = try { player.exo()?.trackSelectionParameters?.disabledTrackTypes?.contains(C.TRACK_TYPE_TEXT) == true } catch (_: Throwable) { false }
         diagLog("🔬 عرض @" + fmtMs(cur) + " · حلقة_وقعت=" + bad + "(" + errN + ") · cc=" + ccOn + " · أصلية=" + nativeCue.length + "ح · مسارات_نص=" + sfNativeCountNow() + " · نص_مقفول=" + txtOff +
-            " · hide=" + sfHideNative + " · ترجمة_شغالة=" + sfBusy.isNotEmpty() + " · جمل_المحرك=" + engine.subs.size + " · ظاهر=" + (sub.visibility == View.VISIBLE) + "/" + sub.height + " · curIdx=" + curIdx)
+            " · hide=" + sfHideNative + " · ترجمة_شغالة=" + sfBusy.isNotEmpty() + " · جمل_المحرك=" + engine.subs.size + " · مفاتيح=" + engine.keyDots() + " · ظاهر=" + (sub.visibility == View.VISIBLE) + "/" + sub.height + " · curIdx=" + curIdx)
     }
 
     private fun subSafeTick() {
@@ -5925,19 +5925,32 @@ class PlayerActivity : Activity(), Host {
         if (remote) { buildRemotePlayer(); return }
         val sv = svRef; val videoBox = videoBoxRef
         // (v406) تكبير من المشغّل المصغّر في يوتيوب: بناخد نفس المشغّل (شغّال ومحمّل) بدل ما نبني واحد جديد ونحمّل من الأول
-        val ho: androidx.media3.exoplayer.ExoPlayer? = null   // (v888) تسليم المشغّل المصغّر اتشال مع يوتيوب Joyboy
+        // (v1113) التسليم رجع بعد ما اتشال في v888 — بدونه التكبير كان بيبني مشغّل جديد ويحمّل الفيديو من الأول
+        val ho = if (intent.getBooleanExtra("handoff", false) && uri == null) YtHandoff.take() else null
         handedOff = ho != null
         if (ho != null) {
             httpDsf = DefaultHttpDataSource.Factory().setDefaultRequestProperties(hdr).setAllowCrossProtocolRedirects(true)
             player = LocalPlayback(ho)
         } else {
         val castSrc = uri == null && CastCache.isCast(url)   // (v564) فيديو جاي من الموبايل: كاش مؤقت بيتمسح لما تخرج
+        // (v1113) فيديو إنترنت عادي (http): كاش دائم + باك-بفر — الرجوع في المتحمّل من القرص مش من النت
+        val netSrc = uri == null && !castSrc && (url?.startsWith("http") == true)
         val factory = if (uri != null) DefaultMediaSourceFactory(this)
-        else { val f = DefaultHttpDataSource.Factory().setDefaultRequestProperties(hdr).setAllowCrossProtocolRedirects(true).apply { if (castSrc) { setConnectTimeoutMs(15_000); setReadTimeoutMs(30_000) } }; httpDsf = f; DefaultMediaSourceFactory(if (castSrc) CastCache.factory(this, f) else f).apply { if (castSrc) setLoadErrorHandlingPolicy(androidx.media3.exoplayer.upstream.DefaultLoadErrorHandlingPolicy(60)) } }   // (v767) فيديو الموبايل: مهلة قراءة 30ث + 60 محاولة (بدل 8ث و3) — الموبايل ممكن يتأخر لما شاشته تتقفل
+        else {
+            val f = DefaultHttpDataSource.Factory().setDefaultRequestProperties(hdr).setAllowCrossProtocolRedirects(true).apply { if (castSrc) { setConnectTimeoutMs(15_000); setReadTimeoutMs(30_000) } }
+            httpDsf = f
+            val dsf = when {
+                castSrc -> CastCache.factory(this, f)
+                netSrc -> NetCache.factory(this, f)
+                else -> f
+            }
+            DefaultMediaSourceFactory(dsf).apply { if (castSrc) setLoadErrorHandlingPolicy(androidx.media3.exoplayer.upstream.DefaultLoadErrorHandlingPolicy(60)) }   // (v767) فيديو الموبايل: مهلة قراءة 30ث + 60 محاولة (بدل 8ث و3) — الموبايل ممكن يتأخر لما شاشته تتقفل
+        }
         // MKV وغيره: لو الديكودر الأول فشل (HEVC / 10-bit) جرّب اللي بعده بدل شاشة سودا
         val rf = DefaultRenderersFactory(this).setEnableDecoderFallback(true)
         val eb = ExoPlayer.Builder(this, rf).setMediaSourceFactory(factory)
         if (castSrc) eb.setLoadControl(CastCache.loadControl())
+        else if (netSrc) eb.setLoadControl(NetCache.loadControl())
         player = LocalPlayback(eb.build())
         }
         // (v467) دخول الـ handoff (تكبير من مشغّل يوتيوب المصغّر): qOpts/aurl بيبقوا فاضيين فزرار الصوت/فيديو والجودات كانوا ميتين — بنجيب بيانات الستريم في الخلفية من غير ما نلمس التشغيل الشغّال
@@ -6626,7 +6639,15 @@ class PlayerActivity : Activity(), Host {
         try { tbView?.let { v -> (v.layoutParams as? FrameLayout.LayoutParams)?.let { lp -> lp.rightMargin = ui.dp(8); v.layoutParams = lp } } } catch (_: Throwable) {}   // (v265)
         st.visibility = if (f) View.GONE else View.VISIBLE
         if (::logDrawer.isInitialized) { (leftCol.layoutParams as FrameLayout.LayoutParams).topMargin = ui.dp(44); logDrawer.visibility = View.VISIBLE; leftCol.requestLayout() }
-        @Suppress("DEPRECATION") window.decorView.systemUiVisibility = if (f) (View.SYSTEM_UI_FLAG_FULLSCREEN or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY or View.SYSTEM_UI_FLAG_LAYOUT_STABLE) else (if (Build.VERSION.SDK_INT >= 23 && th.isLight) View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR else 0)
+        // (v1113) ملء الشاشة من الحافة للحافة: المحتوى يمتد تحت شريط الحالة والتنقل
+        // (v1113) فمافيش شريط رمادي فوق ولا تحت ياكل من الفيديو — والشرايط نفسها شفافة فتظهر سودا فوق الفيديو
+        if (f) {
+            window.statusBarColor = Color.TRANSPARENT
+            window.navigationBarColor = Color.TRANSPARENT
+        } else {
+            applyBars(th)
+        }
+        @Suppress("DEPRECATION") window.decorView.systemUiVisibility = if (f) (View.SYSTEM_UI_FLAG_FULLSCREEN or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY or View.SYSTEM_UI_FLAG_LAYOUT_STABLE or View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION) else (if (Build.VERSION.SDK_INT >= 23 && th.isLight) View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR else 0)
         placeCard()
         if (f) showChrome() else { h.removeCallbacks(hideChrome); chromeShown = false; applyChromeFn() }
         if (::svRef.isInitialized) videoBoxRef.post { applyFit(svRef, videoBoxRef) }   // (v429) بعد ما الـ layout يخلص بالمقاس الجديد (كان بيتحسب على المقاس القديم لفريم)

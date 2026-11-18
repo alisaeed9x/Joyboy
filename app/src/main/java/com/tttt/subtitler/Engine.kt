@@ -176,6 +176,12 @@ class Engine(
     private val runs = ConcurrentHashMap<Int, KeyRun>()                // آخر تنفيذ ناجح لكل باتش (مفتاح · موديل · زمن)
     private fun curModel(): String = conf.model
     private fun keyNo(k: String): Int = basePool.all().indexOf(k) + 1
+    // (v1114) FIX 5: نقاط حالة المفاتيح — نقطة لكل مفتاح في الـ pool (العدد من الـ pool نفسه، من غير عدد ثابت) برقمه
+    fun keyDots(): String {
+        val dots = arrayOf("🔵", "🟢", "🔴", "🟠")
+        val parts = pool.all().mapIndexed { idx, k -> dots[pool.dotState(k)] + (idx + 1) }
+        return parts.joinToString(" ")
+    }
     private fun shortModel(m: String) = m.removePrefix("gemini-")
     private fun fmtSec(ms: Long) = String.format(java.util.Locale.US, "%.1f", ms / 1000.0) + "ث"
 
@@ -1410,6 +1416,8 @@ class Engine(
         var key = firstKey?.takeIf { pool.ok(it) } ?: (pool.pickIdle(i, avoidKey, perKey) ?: nextKey(avoidKey)) ?: throw Exception("كل المفاتيح معطلة مؤقتًا — راجع المفاتيح")   // (v459) أول اختيار = مفتاح فاضي فعلًا (الاحتياطي داخل لما الأساسيين مشغولين): كل مفتاح ليه باتش بالتوازي
         var partial = false
         var trunc = 0; var empties = 0; var bad = 0; var net = 0; var tries = 0; var langBad = 0
+        // (v1114) الرد الفاسد (BadReply) بيعيد الطلب من غير stream — الـ stream هو اللي بيرجّع JSON مكسور
+        var badStream = false
         var langRetry = 0; var langSwitchRetry = 0
         var srv = 0   // (v459) مفيش موديل بديل: أخطاء السيرفر بتتعاد على نفس الموديل الواحد (كان في v227 بيبدّل لموديل تاني)
         val fastStep = fastLatched && !hedge && !backupFirst && i == rampChunk && rampStep < 2
@@ -1433,7 +1441,7 @@ class Engine(
                         val gem = {
                             gemCalled = true
                             val tmp = if (tx && empties == 0 && bad == 0 && trunc == 0) 0.0 else 0.1
-                            if (fastLatched && !hedge && !tx) {   // (v1065) ⚡ الجمل بتظهر أول ما تتقفل في الـ stream
+                            if (fastLatched && !hedge && !tx && !badStream) {   // (v1065) ⚡ الجمل بتظهر أول ما تتقفل في الـ stream
                                 var done: Api.Result? = null
                                 if (canSplit) {
                                     try {
@@ -1445,7 +1453,8 @@ class Engine(
                                 if (sd != null) sd
                                 else {
                                     resScale = spdEff
-                                    val k2 = if (i == rampChunk && rampStep < 2 && !Offline.on() && pool.usableCount() >= 2 && TrSlider.on("race")) pool.pickFree(key, rr.getAndIncrement()) else null   // (v1097) T2: TrSlider
+                                    // (v1114) الكوتة واقعة (429): مفيش سباق مفتاحين — الباتش بيتبعت على مفتاح واحد بس لحد ما الكوتة ترجع
+                                    val k2 = if (i == rampChunk && rampStep < 2 && !Offline.on() && pool.usableCount() >= 2 && !quotaCooling() && TrSlider.on("race")) pool.pickFree(key, rr.getAndIncrement()) else null   // (v1097) T2: TrSlider
                                     if (k2 != null && k2 != key) fastRace(i, p, mdl, key, k2, prompt, sendBytes, w.durSec, tmp, spdEff)   // (v1066) أول خطوتين: نفس الطلب على مفتاحين والأسرع يكسب
                                     else {
                                         val sc = StreamSubs()
@@ -1499,12 +1508,20 @@ class Engine(
                 if (!offRan && fresh.isEmpty() && !w.silent && !hedge && !backupFirst && queueBackup(i, p, "رجع من غير جمل")) return   // (v216) صفر جمل: على المفتاح الاحتياطي بالترتيب في كل الأوضاع
                 if (!offRan && fresh.isEmpty() && empties < (if (w.silent) 1 else 3)) {
                     empties++
+                    pool.markBad(key)
                     if (!w.silent) host.log("⚠ المقطع ${i + 1} رجع من غير جمل رغم وجود صوت — إعادة محاولة ($empties/3)")
                     switchKey(key)?.let { key = it }
                     nap(400); continue
                 }
                 // (دمج v1070) باتش فاضي مابقاش يتعلّم «خلص» — قبل كده applyChunk كان بيمسح failed وبيعلّم done فالثغرة كانت بتضيع نهائي
-                if (!offRan && fresh.isEmpty() && !w.silent) { failed[i] = MAX_FAILS; incomplete.add(i); host.log("🕳 المقطع ${i + 1} رجع من غير جمل — اتسجل كفجوة وهيتعاد تلقائيًا"); persist(); return }
+                if (!offRan && fresh.isEmpty() && !w.silent) {
+                    pool.markBad(key)
+                    failed[i] = MAX_FAILS
+                    incomplete.add(i)
+                    host.log("🕳 المقطع ${i + 1} رجع من غير جمل — اتسجل كفجوة وهيتعاد تلقائيًا")
+                    persist()
+                    return
+                }
                 pool.good(key)
                 if (!claimed.add(i)) { host.log("↩ باتش ${i + 1}: نسخة تانية خلصته قبلها — اتجاهلت دي"); return }
                 if (i > maxApplied) maxApplied = i
@@ -1527,7 +1544,13 @@ class Engine(
                 if (partial) { incomplete.add(i); host.log("⚠ باتش ${i + 1} رجع ناقص — تقدر تعيده من علامة التحذير") }
                 return
             } catch (e: BadReply) {
-                if (bad++ < 2) { host.log("⚠ ${e.message} — إعادة المحاولة"); nap(600); continue }
+                if (bad++ < 2) {
+                    badStream = true
+                    pool.markBad(key)
+                    host.log("⚠ ${e.message} — إعادة المحاولة")
+                    nap(600)
+                    continue
+                }
                 throw e
             } catch (e: ApiErr) {
                 val invalid = e.code == 401 || e.code == 403 || (e.code == 400 && (e.message ?: "").contains("API key", true))
@@ -1548,7 +1571,15 @@ class Engine(
                 }
                 if (e.code >= 500) {
                     srv++
-                    host.log("⚠ خطأ من السيرفر (${e.code}) — إعادة المحاولة على نفس الموديل"); nap(3000); continue   // (v459) نفس الموديل الواحد
+                    // (v1114) 503 — تصحيح: إعادة فورية من غير أي انتظار — الأولوية لمفتاح تاني فاضي، ولو مفيش مفتاح فاضي الإعادة فورًا على نفس المفتاح
+                    val alt = try { switchKey(key) } catch (_: RehomeEx) { null }
+                    if (alt != null) {
+                        key = alt
+                        host.log("⚠ خطأ من السيرفر (${e.code}) — تحويل لمفتاح ${pool.tail(alt)} وإعادة المحاولة على نفس الموديل")
+                    } else {
+                        host.log("⚠ خطأ من السيرفر (${e.code}) — إعادة المحاولة على نفس الموديل")
+                    }
+                    continue
                 }
                 throw e
             } catch (e: Unsupported) { throw e

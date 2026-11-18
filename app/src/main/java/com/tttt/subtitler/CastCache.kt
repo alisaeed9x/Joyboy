@@ -45,3 +45,30 @@ object CastCache {
     /** تنضيف بقايا لو التطبيق اتقفل وهو بيشغّل فيديو من الموبايل (مفيش كاش مفتوح دلوقتي) */
     @Synchronized fun purgeStale(ctx: Context) { if (cache == null) try { File(ctx.cacheDir, DIR).deleteRecursively() } catch (_: Throwable) {} }
 }
+
+/**
+ * (v1113) كاش دائم لفيديوهات الإنترنت العادية: نفس ميكانيكا CastCache بس في مجلد منفصل (net_cache)
+ * وسقف 1GB، ومبيتمسحش أبدًا عند الخروج من الفيديو — عكس كاش الكاست اللي purge() بيمسحه.
+ * purge()/purgeStale() بتوع CastCache بيمسحوا مجلد cast_cache بس، فالمجلد ده آمن منهم.
+ */
+object NetCache {
+    private const val DIR = "net_cache"
+    private const val MAX_BYTES = 1024L * 1024 * 1024
+    @Volatile private var cache: SimpleCache? = null
+
+    @Synchronized fun factory(ctx: Context, upstream: DataSource.Factory): DataSource.Factory {
+        val c = cache ?: run {
+            val d = File(ctx.cacheDir, DIR); d.mkdirs()
+            SimpleCache(d, LeastRecentlyUsedCacheEvictor(MAX_BYTES), StandaloneDatabaseProvider(ctx.applicationContext)).also { cache = it }
+        }
+        return CacheDataSource.Factory().setCache(c).setUpstreamDataSourceFactory(upstream).setFlags(CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR)
+    }
+
+    /** تحميل أعمق + باك-بفر 60ث: الرجوع في الأجزاء المتحملة (الخط الأزرق) بييجي من القرص فورًا من غير نت */
+    fun loadControl(): DefaultLoadControl = DefaultLoadControl.Builder()
+        .setBufferDurationsMs(30_000, 120_000, 2_500, 5_000)
+        .setBackBufferDurationMs(60_000)
+        .setTargetBufferBytes(64 * 1024 * 1024)
+        .setPrioritizeTimeOverSizeThresholds(false)
+        .build()
+}

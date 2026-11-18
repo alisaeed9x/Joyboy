@@ -494,7 +494,11 @@ class Pool(private val c: Conf) {
     fun capacity(perKey: Int): Int = maxOf(1, (if (mains.isNotEmpty()) (mains + c.refine + bk()).distinct().size else bk().size) * perKey.coerceIn(1, 4))   // (v459) الاحتياطي بيتحسب في التوازي: كل مفتاح متاح ليه باتش
     @Synchronized fun ok(k: String) = (until[k] ?: 0L) < System.currentTimeMillis()
     @Synchronized fun block(k: String, ms: Long) { until[k] = System.currentTimeMillis() + ms }
-    @Synchronized fun good(k: String) { until.remove(k); streak = 0 }
+    @Synchronized fun good(k: String) {
+        until.remove(k)
+        streak = 0
+        lastOk[k] = true
+    }
     @Synchronized fun clear() { until.clear() }
     fun count() = all().size
     fun all(): List<String> = (c.keys + bk()).distinct()
@@ -517,6 +521,8 @@ class Pool(private val c: Conf) {
     /** طلبات شغالة دلوقتي على كل مفتاح + متوسط زمن الرد (ms): بنوزّع الباتشات على المفتاح الفاضي/الأسرع بدل التبادل الأعمى (التبادل كان بيحبس الباتشات الزوجية على المفتاح البطيء) */
     private val load = HashMap<String, Int>()
     private val lat = HashMap<String, Double>()
+    /** (v1114) FIX 5: آخر نتيجة لكل مفتاح — true = آخر رد صالح، false = آخر رد فاشل/فاضي/فاسد، null = لسه ما اتستخدمش */
+    private val lastOk = HashMap<String, Boolean>()
     /** (v151) حجز مفتاح لباتش قبل ما يبدأ فعلًا (فك الصوت بياخد وقت): من غير الحجز باتشين ممكن يشوفوا نفس المفتاح فاضي ويتحطوا عليه سوا */
     private val rsv = HashMap<Int, String>()
     private fun used(k: String): Int = (load[k] ?: 0) + rsv.values.count { it == k }
@@ -533,8 +539,23 @@ class Pool(private val c: Conf) {
     @Synchronized fun begin(k: String, i: Int = -1) { if (i >= 0) rsv.remove(i); load[k] = (load[k] ?: 0) + 1 }
     @Synchronized fun end(k: String, ms: Long, okReply: Boolean) {
         load[k] = maxOf(0, (load[k] ?: 1) - 1)
+        lastOk[k] = okReply
         val v = if (okReply) ms.toDouble() else 45_000.0   // الفشل/الانتهاء بتايم أوت بيأخّر المفتاح في الترتيب
         lat[k] = lat[k]?.let { it * 0.6 + v * 0.4 } ?: v
+    }
+    /** (v1114) FIX 5: رد فاسد/فاضي بعد ما الـ end سجّل نجاح HTTP — بيصحّح آخر نتيجة للفشل */
+    @Synchronized fun markBad(k: String) {
+        lastOk[k] = false
+    }
+    /** (v1114) FIX 5: حالة المفتاح للنقطة — 0 أزرق (فاضي/لسه ما اشتغلش) · 1 أخضر (شغّال أو آخر رد صالح) · 2 أحمر (آخر رد فاشل) · 3 برتقالي (إعادة بعد فشل) */
+    @Synchronized fun dotState(k: String): Int {
+        val busy = (load[k] ?: 0) > 0
+        val last = lastOk[k]
+        if (busy && last == false) return 3
+        if (busy) return 1
+        if (last == true) return 1
+        if (last == false) return 2
+        return 0
     }
     /** الأساسي الأقل شغلًا، ولو متساويين الأسرع؛ وبعدين الاحتياطي (نفس ترتيب pick) */
     @Synchronized fun pickFree(avoid: String?, rr: Int): String? {

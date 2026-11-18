@@ -284,7 +284,8 @@ class YtMiniPlayer(private val act: Activity, private val ui: Ui) : FrameLayout(
                 resumeMs = pos; handed = true
                 releasePlayer(true)
                 showCtl(true, false)
-                onExpand(pos, null)
+                // (v1113) نمرّر الروابط المحلولة أصلًا (curPick/lastPick) بدل null — وإلا المشغّل الكامل بيعيد حلّ اللينك من الأول (ytpend)
+                onExpand(pos, curPick ?: lastPick)
             }
         }
         playB.setOnClickListener {

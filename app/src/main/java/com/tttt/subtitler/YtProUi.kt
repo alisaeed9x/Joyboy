@@ -1228,10 +1228,37 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
     /** (v472) ⬇ على أي صورة فيديو: صفحة اختيار الجودة مباشرة (من غير قايمة وسيطة) */
     private fun dlMenu(anchor: View, it: NpItem) { qualityDl(asWatch(it)) }
     /** (v472) اختيار الجودة ← مهمة تحميل في «المهام» (دايرة التقدم العايمة + عدّاد الباقي). الروابط بتتجاب من نفس السباق السريع (YtFast) بدل NewPipe التقيل */
+    // (v1113) حجم الملف بيتجاب بـ HEAD على نفس الرابط — لو فشل الحجم بيتساب من الصف من غير ما يظهر رقم غلط
+    private fun headBytes(u: String, ua: String): Long {
+        if (u.isBlank()) return -1L
+        return try {
+            val c = java.net.URL(u).openConnection() as java.net.HttpURLConnection
+            c.requestMethod = "HEAD"
+            c.connectTimeout = 5000
+            c.readTimeout = 5000
+            if (ua.isNotBlank()) c.setRequestProperty("User-Agent", ua)
+            c.connect()
+            val len = c.getHeaderField("Content-Length")?.toLongOrNull() ?: -1L
+            c.disconnect()
+            len
+        } catch (_: Throwable) {
+            -1L
+        }
+    }
+    // (v1113) تنسيق الحجم: ميجا برقم عشري واحد، أو جيجا لو 1024 ميجا أو أكتر
+    private fun fmtBytes(b: Long): String {
+        val mb = b / 1048576.0
+        if (mb >= 1024.0) return String.format(java.util.Locale.US, "%.1f GB", mb / 1024.0)
+        return String.format(java.util.Locale.US, "%.1f MB", mb)
+    }
     private fun qualityDl(v: NpItem) {
-        Notice.show(act, "⏳ بجيب الجودات المتاحة…", 1500L)
+        Notice.show(act, "⏳ بجيب الجودات والأحجام…", 1500L)
         Thread {
-            val labels = ArrayList<String>(); val urls = ArrayList<String>(); val auds = ArrayList<String>(); val hs = ArrayList<Int>(); var uas = ""
+            val labels = ArrayList<String>()
+            val urls = ArrayList<String>()
+            val auds = ArrayList<String>()
+            val hs = ArrayList<Int>()
+            var uas = ""
             try {
                 val g = YtFast.video(v.id, 0)
                 if (g != null) {
@@ -1239,16 +1266,54 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
                     val a = org.json.JSONArray(g.qlist)
                     var anyAud = ""
                     for (i in 0 until a.length()) {
-                        val o = a.getJSONObject(i); val au = o.optString("a")
+                        val o = a.getJSONObject(i)
+                        val au = o.optString("a")
                         if (au.isNotBlank() && anyAud.isEmpty()) anyAud = au
-                        labels.add("🎬 " + o.optString("l") + if (au.isBlank()) "" else "  ·  صورة + صوت (بيتدمجوا)"); urls.add(o.optString("u")); auds.add(au); hs.add(o.optInt("h", 0))
+                        val vu = o.optString("u")
+                        val vb = headBytes(vu, uas)
+                        val ab = headBytes(au, uas)
+                        var lab = "🎬 " + o.optString("l")
+                        val tot = (if (vb > 0) vb else 0L) + (if (ab > 0) ab else 0L)
+                        if (tot > 0) lab += "  ·  " + fmtBytes(tot)
+                        labels.add(lab)
+                        urls.add(vu)
+                        auds.add(au)
+                        hs.add(o.optInt("h", 0))
                     }
                     val audioUrl = anyAud.ifBlank { try { YtFast.audio(v.id, 0)?.url ?: "" } catch (_: Throwable) { "" } }
-                    if (audioUrl.isNotBlank()) { labels.add("🎧 صوت بس (أعلى جودة)"); urls.add(audioUrl); auds.add("A"); hs.add(0) }
+                    if (audioUrl.isNotBlank()) {
+                        var alab = "🎧 صوت بس"
+                        val ab = headBytes(audioUrl, uas)
+                        val dur = v.dur
+                        if (ab > 0 && dur > 0) {
+                            val kbps = ab * 8 / dur / 1000
+                            if (kbps > 0) alab += " · " + kbps + " kbps"
+                        }
+                        if (ab > 0) alab += " · " + fmtBytes(ab)
+                        labels.add(alab)
+                        urls.add(audioUrl)
+                        auds.add("A")
+                        hs.add(0)
+                    }
                 }
             } catch (_: Throwable) {}
-            if (labels.isEmpty()) {   // قايمة الجودات مش جاية: على الأقل رابط واحد بالجودة الافتراضية
-                try { val g2 = YtFast.video(v.id, 0); if (g2 != null && g2.url.isNotBlank()) { uas = g2.ua; labels.add("🎬 الجودة الافتراضية"); urls.add(g2.url); auds.add(g2.audio ?: ""); hs.add(0) } } catch (_: Throwable) {}
+            // قايمة الجودات مش جاية: على الأقل رابط واحد بالجودة الافتراضية
+            if (labels.isEmpty()) {
+                try {
+                    val g2 = YtFast.video(v.id, 0)
+                    if (g2 != null && g2.url.isNotBlank()) {
+                        uas = g2.ua
+                        var lab = "🎬 الجودة الافتراضية"
+                        val vb = headBytes(g2.url, uas)
+                        val ab = headBytes(g2.audio ?: "", uas)
+                        val tot = (if (vb > 0) vb else 0L) + (if (ab > 0) ab else 0L)
+                        if (tot > 0) lab += "  ·  " + fmtBytes(tot)
+                        labels.add(lab)
+                        urls.add(g2.url)
+                        auds.add(g2.audio ?: "")
+                        hs.add(0)
+                    }
+                } catch (_: Throwable) {}
             }
             act.runOnUiThread {
                 if (act.isFinishing || act.isDestroyed) return@runOnUiThread
@@ -1267,6 +1332,9 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
         if (m != null) { m.openSettingsTab("youtube"); return }   // (v355) إعدادات يوتيوب بقت قسم جوه إعدادات البرنامج
         settingsLegacy()
     }
+    // (v1113) إعدادات يوتيوب جوه إعدادات البرنامج بتنادي دول
+    fun openDownloadsPage() { openDownloads() }
+    fun openAccountTab() { openTab(4) }
     private fun settingsLegacy() {
         val q = Cfg.int("yt_maxh", 0)
         val items = arrayOf("🎞 الجودة الافتراضية: " + (if (q <= 0) "أعلى جودة" else q.toString() + "p"),

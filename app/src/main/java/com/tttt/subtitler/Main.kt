@@ -387,11 +387,22 @@ class MainActivity : Activity() {
         val ytQ = listOf("أعلى جودة", "1080p", "720p", "480p", "360p", "240p")
         val ytQv = intArrayOf(0, 1080, 720, 480, 360, 240)
         var settingsDlg0: TabbedDialog? = null; var qui0: QueueUi? = null
-        // (v1012) قسم يوتيوب بقى مختصر: فتح يوتيوب + إعدادات MeeTube الكاملة. الجودة والسلاسة اتنقلوا لقسم «🎬 المشغّل»، والثيم مكانه الوحيد «🎨 المظهر».
+        // (v1113) قسم يوتيوب الكامل رجع هنا (كان مختصر من v1012): الجودة + السجل + التحميلات + المسح + الحساب + تخطي الرعاة
         val ytSettingsViews: () -> List<View> = { listOf(
             ui.section("▶ يوتيوب", true,
                 ui.button("▶ افتح يوتيوب") { settingsDlg0?.dialog?.dismiss(); openYoutube() },
                 ui.button("🔐 دخول يوتيوب بالكود (youtube.com/activate)") { settingsDlg0?.dialog?.dismiss(); YtAccount.login(this, ui, th) { ok -> if (ok) ytUi?.refresh() } },
+                ui.text("🎞 الجودة الافتراضية", 14f, th.text, true),
+                ui.chips(ytQ, { ytQ[ytQv.indexOf(Cfg.int("yt_maxh", 0)).coerceAtLeast(0)] }) { pick ->
+                    val i = ytQ.indexOf(pick)
+                    if (i >= 0) Cfg.put("yt_maxh", ytQv[i].toString())
+                },
+                ui.switchRow("🕘 حفظ سجل المشاهدة", YtStore.histOn()) { on -> Cfg.put("ytp_hist_on", if (on) "1" else "0") },
+                ui.button("📥 التحميلات المسجّلة") { settingsDlg0?.dialog?.dismiss(); ytUi?.openDownloadsPage() },
+                ui.button("🗑 مسح السجل") { YtStore.write(YtStore.HIST, emptyList()); PlayTarget.clearTvHistory(this, "yt"); Notice.show(this, "🗑 السجل اتمسح", 1800L) },
+                ui.button("🗑 مسح سجل التحميلات") { YtStore.write(YtStore.DL, emptyList()); Notice.show(this, "🗑 سجل التحميلات اتمسح", 1800L) },
+                ui.button("👤 حساب جوجل: " + (if (YtAccount.loggedIn()) "مسجّل الدخول" else "مش مسجّل")) { settingsDlg0?.dialog?.dismiss(); ytUi?.openAccountTab() },
+                ui.switchRow("⏭ تخطي الرعاة (SponsorBlock)", YtSponsor.on()) { on -> Cfg.put("yt_sponsor", if (on) "1" else "0") },
                 ui.noHint())) }
         // ===== الواجهة بشكل نسخة الـ HTML: دوائر علوية + كارت فيديو + كبسولة + شبكة أزرار + زرار الترجمة =====
         var recentDlg: android.app.Dialog? = null
@@ -1567,6 +1578,11 @@ class MainActivity : Activity() {
                 if (handoff.qlist.isNotEmpty()) putExtra("qlist", handoff.qlist)
                 putExtra("title", title.ifBlank { handoff.title }); putExtra("ytid", id)
                 putExtra("nosub", !translate); putExtra("autotr", auto); putExtra("ret", ret); if (startMs > 0L) putExtra("startms", startMs)
+                // (v606) الخروج من التطبيق: المشغّل يدخل PiP أول ما يفتح
+                if (YtHandoff.pipNext) {
+                    YtHandoff.pipNext = false
+                    putExtra("pip", true)
+                }
             })
             return
         }

@@ -7,6 +7,7 @@ import android.media.MediaDataSource
 import android.media.MediaExtractor
 import android.media.MediaFormat
 import android.net.Uri
+import android.os.Looper
 import java.io.File
 import java.io.IOException
 import java.net.HttpURLConnection
@@ -147,6 +148,8 @@ class FileSource(
     @Volatile private var fmt: MediaFormat? = null
     @Volatile private var track = -1
     @Volatile private var durUs = 0L
+    // (v1114) فيه جلب مدة شغال في الخلفية ولا لأ — عشان ما نفتحش extractor تاني من خيط الواجهة كل مرة
+    @Volatile private var durWarming = false
     @Volatile private var preRollUs = 0L
     @Volatile private var closed = false
     private val slots = java.util.concurrent.Semaphore(if (uri != null) 2 else 4)   // أقصى عدد فك متوازي (محلي أخف من الشبكة)
@@ -197,8 +200,27 @@ class FileSource(
 
     /** من غير قفل لو المدة معروفة: الواجهة بتسأل عليها كل ثانية */
     override fun durationSec(): Double {
-        val d = durUs; if (d > 0) return d / 1_000_000.0
+        val d = durUs
+        if (d > 0) return d / 1_000_000.0
+        // (v1114) خيط الواجهة مابستناش الشبكة أبدًا: بيرجع 0 فورًا وبيشغّل الجلب في الخلفية (المدة بتتكاش في durUs)
+        if (fmt == null && Looper.myLooper() == Looper.getMainLooper()) {
+            warmDurationAsync()
+            return 0.0
+        }
         return durationSlow()
+    }
+    // (v1114) جلب المدة (فتح الـ extractor من الشبكة) في خيط خلفية — كان بيتنده من خيط الواجهة وبيجمّد التطبيق
+    private fun warmDurationAsync() {
+        if (durWarming) return
+        durWarming = true
+        Thread {
+            try {
+                durationSlow()
+            } catch (_: Exception) {
+            } finally {
+                durWarming = false
+            }
+        }.apply { isDaemon = true; name = "dur-warm" }.start()
     }
     private fun durationSlow(): Double {
         if (fmt == null) {

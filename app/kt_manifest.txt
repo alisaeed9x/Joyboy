@@ -1,3 +1,4 @@
+com/tttt/subtitler/ActionsWidget.kt
 com/tttt/subtitler/AppWall.kt
 com/tttt/subtitler/AudioBridge.kt
 com/tttt/subtitler/AudioCore.kt
