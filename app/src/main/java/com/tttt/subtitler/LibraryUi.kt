@@ -196,7 +196,7 @@ class LibraryUi(
     private var animLvl = ""
     private val stateBox = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER; setPadding(ui.dp(28), ui.dp(28), ui.dp(28), ui.dp(28)) }
     private val stateTv = ui.text("", 14f, th.muted).apply { gravity = Gravity.CENTER }
-    private val stateBar = ProgressBar(act)
+    private val stateBar = LoadUi.view(act, 40, th.primary)   // (v1122) نفس لودينج المشغّل
     private val stateBtn = ui.button("", true) { onGrant() }
     private lateinit var refreshBtn: TextView
     private lateinit var selAllBtn: TextView
@@ -773,7 +773,7 @@ class LibraryUi(
         titleTv.text = if (audio) "🎵 الموسيقى" else "📁 الفيديوهات"; subTv.text = ""; backV.visibility = View.GONE
         emptyTv.visibility = View.GONE; listV.visibility = View.GONE; stateBox.visibility = View.VISIBLE
         stateBar.visibility = if (busy) View.VISIBLE else View.GONE
-        stateTv.text = msg
+        stateTv.text = if (LoadUi.isLoad(msg)) LoadUi.strip(msg) else msg   // اللودينج فوق = بدل ⏳
         stateBtn.visibility = if (btn != null) View.VISIBLE else View.GONE
         if (btn != null) stateBtn.text = btn
     }

@@ -480,7 +480,7 @@ class MusicUi(private val act: Activity, private val ui: Ui, private val th: The
             gravity = Gravity.CENTER; minHeight = ui.dp(44); background = ui.box(BLUE, BLUE, 12)
             setOnClickListener {
                 if (genBusy) return@setOnClickListener
-                genBusy = true; text = "⏳ جيميناي بيسمع…"
+                genBusy = true; LoadUi.set(this, "⏳ جيميناي بيسمع…")
                 val start = t.durMs / 1000.0 * (0.25 + 0.4 * Math.random())
                 SongId.gemini(act, t, start, emptyList()) { m, msg ->
                     act.runOnUiThread {
@@ -863,7 +863,7 @@ class MusicUi(private val act: Activity, private val ui: Ui, private val th: The
     private fun startLyrics(t: Track, m: String, retry: Boolean, fresh: Boolean, gem: Boolean = false) {
         val ck = t.uri + "|" + m
         lyrKey = ck
-        if (LyricsEngine.isRunning(t, m)) { setStatus("🎧 بتتكتب في الخلفية… استنى"); if (lyr == null) bigMsg("⏳ بتتكتب… هتظهر هنا أول ما تجهز", true); return }
+        if (LyricsEngine.isRunning(t, m)) { setStatus("🎧 بتتكتب في الخلفية… استنى"); if (lyr == null) bigMsg("بتتكتب… هتظهر هنا أول ما تجهز", true); return }
         if (lyr == null) bigMsg("📝 بجيب الكلمات…", true)
         setStatus("📝 بجهّز الطلب…")
         LyricsEngine.start(act, t, m, nameHint(t), retry, fresh, !idPending(t), { stage ->
@@ -1168,7 +1168,7 @@ class MusicUi(private val act: Activity, private val ui: Ui, private val th: The
     /** (v339) يفتح المشغّل الكامل فورًا بلودينج مكان الألبوم — لحد ما رابط صوت يوتيوب يتجاب (endYtLoading + showFull بعدها) */
     fun showYtLoading(title: String, channel: String) {
         ytLoading = true
-        ytLoadTitle.text = title; ytLoadSub.text = channel.ifBlank { "يوتيوب" } + " · ⏳ بجيب الصوت…"
+        ytLoadTitle.text = title; LoadUi.set(ytLoadSub, channel.ifBlank { "يوتيوب" } + " · ⏳ بجيب الصوت…")
         fullCol.visibility = View.INVISIBLE; ytLoadV.visibility = View.VISIBLE; ytSpin.start()
         fullOn = true; full.visibility = View.VISIBLE; onNavTint(navCol(bgColor))
     }

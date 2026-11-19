@@ -140,8 +140,9 @@ object TvUpdate {
             return
         }
         val tv = IconTextView(a).apply {
-            text = "⏳ بتواصل مع الموبايل…"; textSize = 16f
+            textSize = 16f
             setTextColor(Themes.byId(Cfg.str("theme", "mx")).text)
+            LoadUi.set(this, "⏳ بتواصل مع الموبايل…")
             layoutDirection = View.LAYOUT_DIRECTION_RTL
             val p = (16 * a.resources.displayMetrics.density).toInt(); setPadding(p, p, p, p)
         }

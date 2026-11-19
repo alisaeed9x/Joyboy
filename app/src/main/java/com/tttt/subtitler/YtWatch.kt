@@ -137,6 +137,8 @@ object YtHandoff {
         if (old != null && old !== x) try { old.release() } catch (_: Throwable) {}
     }
     fun take(): ExoPlayer? { hh.removeCallbacks(expire); val x = p; p = null; return x }
+    /** (v1123) بصّة على المشغّل المتسلّم من غير ما نشيله — المشغّل الكامل يعرف شكل الفيديو (عريض/طولي) من أول لحظة */
+    fun peek(): ExoPlayer? = p
 }
 
 /** (v406) علامة «مدبلج» على كروت القوايم: بنفحص لغات الصوت للفيديوهات الظاهرة (خيطين خلفيين، بعد ما الكارت يفضل ظاهر لحظة) ونكاشّي النتيجة */
@@ -1228,7 +1230,7 @@ class YtWatchPage(private val act: Activity, private val ui: Ui, private val hos
         paintLike()
         chanName.text = v.channel
         chanAvHost.removeAllViews(); chanAvHost.addView(avatar(v.channel.ifBlank { "؟" }, 40, v.avatar), FrameLayout.LayoutParams(-1, -1))
-        descTv.text = "⏳ …"; descTv.maxLines = if (tv) 6 else 2
+        LoadUi.set(descTv, "⏳ …"); descTv.maxLines = if (tv) 6 else 2
         paintSub(); paintSave(); paintTabs()
         listBox.removeAllViews()
         if (tv) { rail.removeAllViews(); tvTabVis() }
@@ -1256,7 +1258,7 @@ class YtWatchPage(private val act: Activity, private val ui: Ui, private val hos
     private fun status(t: String) {
         val box = if (tv && !comments) rail else listBox   // (v479 م5) تلفزيون: حالة المقترحات بتظهر في صف المقترحات
         box.removeAllViews()
-        box.addView(TextView(act).apply { text = t; textSize = if (tv) 16f else 13f; setTextColor(YtSkin.sub); gravity = Gravity.CENTER; setPadding(ui.dp(20), ui.dp(30), ui.dp(20), ui.dp(30)) }, if (box === rail) LinearLayout.LayoutParams(-2, -2) else LinearLayout.LayoutParams(-1, -2))
+        box.addView(TextView(act).apply { textSize = if (tv) 16f else 13f; setTextColor(YtSkin.sub); LoadUi.set(this, t); gravity = Gravity.CENTER; setPadding(ui.dp(20), ui.dp(30), ui.dp(20), ui.dp(30)) }, if (box === rail) LinearLayout.LayoutParams(-2, -2) else LinearLayout.LayoutParams(-1, -2))
     }
 
     private fun setTab(c: Boolean) {
@@ -1365,7 +1367,7 @@ class YtWatchPage(private val act: Activity, private val ui: Ui, private val hos
 
     private fun toggleReplies(tv: TextView, box: LinearLayout, first: Page, n: Int) {
         if (box.visibility == View.VISIBLE) { box.visibility = View.GONE; tv.text = "↩ $n ردود"; return }
-        box.visibility = View.VISIBLE; tv.text = "⏳ …"
+        box.visibility = View.VISIBLE; LoadUi.set(tv, "⏳ …")
         if (box.childCount > 0) { tv.text = "▲ إخفاء الردود"; return }
         val v = item ?: return; val my = gen
         fun fill(page: Page) {

@@ -572,7 +572,7 @@ class FileManagerActivity : Activity() {
         val token = ++loadToken
         val root = cur
         val ql = q.lowercase()
-        emptyTv.text = "⏳ بدوّر في كل المجلدات…"; emptyTv.visibility = View.VISIBLE
+        LoadUi.set(emptyTv, "⏳ بدوّر في كل المجلدات…"); emptyTv.visibility = View.VISIBLE
         Thread {
             val res = ArrayList<FmItem>()
             try {

@@ -183,7 +183,7 @@ object PlayQueueUi {
         }
         fun load() {
             if (tvTab) {
-                note.text = "⏳ بجيب طابور التلفزيون…"
+                LoadUi.set(note, "⏳ بجيب طابور التلفزيون…")
                 tvPost(JSONObject().put("a", "get")) { r -> if (r != null) { items = r; tvCount = r.size; note.text = ""; render() } else { items = emptyList(); note.text = "⚠ مش متصل بالتلفزيون"; render() } }
             } else { items = PlayQueue.list(act); render() }
         }

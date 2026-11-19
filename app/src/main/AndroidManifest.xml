@@ -74,7 +74,7 @@
         </activity>
         <activity android:name=".BrowserActivity" android:exported="false" android:windowSoftInputMode="adjustResize" android:theme="@style/AppSplash"
             android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboardHidden|density"/>
-        <activity android:name=".PlayerActivity" android:exported="false" android:autoRemoveFromRecents="true"
+        <activity android:name=".PlayerActivity" android:exported="false" android:autoRemoveFromRecents="true" android:theme="@style/AppPlayer"
             android:supportsPictureInPicture="true" android:resizeableActivity="true"
             android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboardHidden|density"/>
         <!-- (v476) اللانشر: HOME + LEANBACK_LAUNCHER — TvActivity هي الشاشة الرئيسية للتلفزيون -->

@@ -8,6 +8,12 @@ import android.graphics.Paint
 import android.graphics.PixelFormat
 import android.graphics.drawable.Drawable
 import android.view.animation.LinearInterpolator
+import android.graphics.PorterDuff
+import android.graphics.PorterDuffColorFilter
+import android.text.Editable
+import android.text.TextWatcher
+import android.view.View
+import android.widget.TextView
 
 /** لودينج على طريقة ويندوز 10/11: 5 نقط بتلف في دايرة — بتتسارع وبتتباطأ ورا بعض */
 class WinSpinnerDrawable : Drawable() {
@@ -52,4 +58,76 @@ class WinSpinnerDrawable : Drawable() {
     override fun setColorFilter(f: ColorFilter?) { paint.colorFilter = f }
     @Suppress("OVERRIDE_DEPRECATION")
     override fun getOpacity() = PixelFormat.TRANSLUCENT
+}
+
+/**
+ * (v1122) لودينج البرنامج الموحّد: أي «⏳ …» (وإيموجي اللودينج) في الإشعارات/النصوص بقت بتتعرض بنفس لودينج تشغيل الفيديو
+ * (WinSpinnerDrawable / لودر MeeTube) بدل الإيموجي.
+ *  • `LoadUi.set(tv, "⏳ بجيب…")` ← بيشيل الإيموجي ويحط اللودينج قبل النص؛ أي نص تاني بعد كده (أو `set` بنص من غير ⏳) بيشيل اللودينج لوحده.
+ *  • `LoadUi.view(ctx, dp, color)` ← View لودينج لوحده (بدل ProgressBar الدايري).
+ */
+object LoadUi {
+    const val MARK = "⏳"
+    private class St(val d: WinSpinnerDrawable) { var own = false; var on = false }
+    private val map = java.util.WeakHashMap<TextView, St>()
+
+    fun isLoad(t: CharSequence?): Boolean = t != null && t.toString().trimStart().startsWith(MARK)
+    /** فيه ⏳ في أي مكان في النص (للشرايح/الحالات اللي الإيموجي فيها في النص مش في أوله) */
+    fun has(t: CharSequence?): Boolean = t != null && t.toString().contains(MARK)
+    /** النص من غير ⏳؛ «…» لوحدها = من غير نص (اللودينج كفاية) */
+    fun strip(t: CharSequence?): String {
+        val x = (t?.toString() ?: "").replace(MARK, "").replace("  ", " ").trim()
+        return if (x == "…" || x == "...") "" else x
+    }
+
+    private fun state(tv: TextView): St = map.getOrPut(tv) {
+        val st = St(WinSpinnerDrawable())
+        tv.addTextChangedListener(object : TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
+            override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
+            override fun afterTextChanged(s: Editable?) { if (!st.own && st.on) detach(tv) }   // نص جديد من برّه ← اللودينج يتشال
+        })
+        tv.addOnAttachStateChangeListener(object : View.OnAttachStateChangeListener {
+            override fun onViewAttachedToWindow(v: View) { if (st.on) st.d.start() }
+            override fun onViewDetachedFromWindow(v: View) { st.d.stop() }
+        })
+        st
+    }
+
+    fun set(tv: TextView, t: CharSequence?, dp: Int = 0) {
+        if (!has(t)) { map[tv]?.let { if (it.on) detach(tv) }; tv.text = t; return }
+        val st = state(tv)
+        val txt = strip(t)
+        if (st.on && tv.text.toString() == txt) return   // نفس الحالة (بتتنده كل تيك) ← من غير requestLayout
+        st.own = true
+        try { tv.text = txt } finally { st.own = false }
+        val den = tv.resources.displayMetrics.density
+        val px = ((if (dp > 0) dp else if (txt.isEmpty()) 30 else 18) * den).toInt()
+        st.d.setBounds(0, 0, px, px)
+        st.d.setColorFilter(PorterDuffColorFilter(tv.currentTextColor, PorterDuff.Mode.SRC_IN))
+        tv.compoundDrawablePadding = if (txt.isEmpty()) 0 else (8 * den).toInt()
+        tv.setCompoundDrawablesRelative(st.d, null, null, null)
+        st.on = true
+        st.d.start()
+    }
+
+    fun detach(tv: TextView) {
+        val st = map[tv] ?: return
+        st.on = false; st.d.stop()
+        tv.setCompoundDrawablesRelative(null, null, null, null)
+    }
+
+    /** View لودينج لوحده بنفس الأنيميشن (بدل ProgressBar الدايري) — بيشتغل لما يظهر وبيقف لما يتشال */
+    fun view(ctx: android.content.Context, dp: Int = 44, color: Int = Color.WHITE): View {
+        val d = WinSpinnerDrawable().apply { setColorFilter(PorterDuffColorFilter(color, PorterDuff.Mode.SRC_IN)) }
+        val v = View(ctx)
+        val px = (dp * ctx.resources.displayMetrics.density).toInt()
+        v.minimumWidth = px; v.minimumHeight = px   // wrap_content = الحجم ده
+        v.foreground = d
+        v.addOnAttachStateChangeListener(object : View.OnAttachStateChangeListener {
+            override fun onViewAttachedToWindow(x: View) { d.start() }
+            override fun onViewDetachedFromWindow(x: View) { d.stop() }
+        })
+        return v
+    }
 }

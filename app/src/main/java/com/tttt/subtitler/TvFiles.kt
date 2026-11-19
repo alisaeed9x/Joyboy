@@ -164,12 +164,12 @@ class TvFilesActivity : Activity() {
     }
 
     private fun updateInfo() {
-        info.text = when {
+        LoadUi.set(info, when {
             msg.isNotEmpty() -> msg
             noAccess -> "⚠ التلفزيون مش مدّي التطبيق صلاحية «كل الملفات» — افتح الملفات على التلفزيون مرة واسمح بالوصول."
             items.isEmpty() -> "المجلد فاضي"
             else -> items.size.toString() + " عنصر" + (if (sel.isNotEmpty()) " · اتحدّد " + sel.size else "") + " — ضغطة مطوّلة أو ⋮ للنقل"
-        }
+        })
     }
 
     private fun up() { if (path.isNotEmpty()) load(parent) else finish() }

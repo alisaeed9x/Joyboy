@@ -13,4 +13,9 @@
     <style name="AppMainPlain" parent="AppSplash">
         <item name="android:windowBackground">@drawable/splash_window</item>
     </style>
+    <!-- (v1123) ثيم المشغّل: نافذة سودا من أول لحظة (كان بياخد ثيم التطبيق فيبان وميض/لون تاني قبل أول فريم وقت الدخول للشاشة الكاملة) -->
+    <style name="AppPlayer" parent="Theme.NewTube">
+        <item name="android:windowBackground">@android:color/black</item>
+        <item name="android:windowAnimationStyle">@null</item>
+    </style>
 </resources>

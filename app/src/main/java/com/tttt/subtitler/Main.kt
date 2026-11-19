@@ -387,23 +387,60 @@ class MainActivity : Activity() {
         val ytQ = listOf("أعلى جودة", "1080p", "720p", "480p", "360p", "240p")
         val ytQv = intArrayOf(0, 1080, 720, 480, 360, 240)
         var settingsDlg0: TabbedDialog? = null; var qui0: QueueUi? = null
-        // (v1113) قسم يوتيوب الكامل رجع هنا (كان مختصر من v1012): الجودة + السجل + التحميلات + المسح + الحساب + تخطي الرعاة
-        val ytSettingsViews: () -> List<View> = { listOf(
+        // (v1121) قسم يوتيوب الكامل: فتح الفيديو · الجودة والصوت · اللغة · الإشعارات والسجل · أنيميشن اليوتيوب (من إعدادات MeeTube/يوتيوب القديمة) · المسح
+        val ytLangN = listOf("🧠 ذكي", "العربية", "الأصلي", "English", "Français", "Español", "Türkçe", "Deutsch", "Русский", "हिन्दी")
+        val ytLangV = listOf("smart", "ar", "orig", "en", "fr", "es", "tr", "de", "ru", "hi")
+        val ytSettingsViews: () -> List<View> = { listOfNotNull<View>(
             ui.section("▶ يوتيوب", true,
                 ui.button("▶ افتح يوتيوب") { settingsDlg0?.dialog?.dismiss(); openYoutube() },
                 ui.button("🔐 دخول يوتيوب بالكود (youtube.com/activate)") { settingsDlg0?.dialog?.dismiss(); YtAccount.login(this, ui, th) { ok -> if (ok) ytUi?.refresh() } },
-                ui.text("🎞 الجودة الافتراضية", 14f, th.text, true),
+                ui.button("👤 حساب جوجل: " + (if (YtAccount.loggedIn()) "مسجّل الدخول" else "مش مسجّل")) { settingsDlg0?.dialog?.dismiss(); ytUi?.openAccountTab() },
+                ui.button("🚪 تسجيل الخروج") { YtAccount.logout(); Notice.show(this, "اتسجّل الخروج", 1800L) },
+                ui.button("📥 التحميلات المسجّلة") { settingsDlg0?.dialog?.dismiss(); ytUi?.openDownloadsPage() },
+                ui.noHint()),
+            ui.section("🎬 لما تدوس على فيديو", true,
+                ui.chips(listOf("صفحة المشاهدة", "المشغّل مباشرة"), { if (YtOpen.mode() == YtOpen.PLAYER) "المشغّل مباشرة" else "صفحة المشاهدة" }) { n -> Cfg.put("yt_open_mode", if (n == "المشغّل مباشرة") YtOpen.PLAYER else YtOpen.PAGE) },
+                ui.switchRow("▶ شغّل تلقائي في المشغّل المصغّر", YtOpen.autoPlay()) { Cfg.put("yt_mini_auto", if (it) "1" else "0") },
+                ui.switchRow("⬇ لما تنزّل من صفحة المشاهدة: الفيديو يكمّل في شريط صغير تحت (زي يوتيوب)", YtDockCfg.on()) { Cfg.put("yt_dock", if (it) "1" else "0") },
+                ui.switchRow("🪟 لما تخرج من التطبيق والفيديو شغّال: يكمّل في نافذة صغيرة (PiP)", Cfg.str("yt_auto_pip", "1") != "0") { Cfg.put("yt_auto_pip", if (it) "1" else "0") },
+                ui.switchRow("🌐 علامة «مدبلج» على الفيديوهات متعددة اللغات", YtDub.enabled()) { Cfg.put("yt_dub_scan", if (it) "1" else "0") },
+                ui.switchRow("⏭ تخطي الرعاة (SponsorBlock)", YtSponsor.on()) { on -> Cfg.put("yt_sponsor", if (on) "1" else "0") },
+                ui.switchRow("🎬 الشورتس تظهر كفيديوهات عادية", YtBackends.shortsAsVideos()) { Cfg.put("yt_shorts_normal", if (it) "1" else "0") },
+                ui.text("صفحة المشاهدة: الفيديو بيكبر بأنيميشن ومعاه الوصف والتعليقات والمقترحات. المشغّل مباشرة: الدوسة بتفتح المشغّل على طول.", 12f, th.muted)),
+            ui.section("🎞 الجودة ولغة الصوت", true,
+                ui.text("الجودة الافتراضية (أعلى جودة بيتفتح بيها الفيديو — على الداتا اختار 360p أو 480p)", 13f, th.text, true),
                 ui.chips(ytQ, { ytQ[ytQv.indexOf(Cfg.int("yt_maxh", 0)).coerceAtLeast(0)] }) { pick ->
                     val i = ytQ.indexOf(pick)
                     if (i >= 0) Cfg.put("yt_maxh", ytQv[i].toString())
                 },
+                ui.text("🔊 لغة صوت الفيديو", 13f, th.text, true),
+                ui.chips(ytLangN, { ytLangN[ytLangV.indexOf(YtLang.pref()).coerceAtLeast(0)] }) { n -> Cfg.put("yt_alang", ytLangV[ytLangN.indexOf(n).coerceAtLeast(0)]); try { YtExtract.clearPicks(); YtFast.clearCache() } catch (_: Throwable) {} },
+                ui.text("🧠 ذكي: قناة عربي ← صوت عربي، وأي قناة تانية ← صوت بلغة العنوان. لو اللغة مش موجودة بيفتح بالصوت الأصلي.", 12f, th.muted)),
+            ui.section("🌐 لغة المحتوى والحساب", false,
+                ui.chips(YtLocale.names, { YtLocale.names[YtLocale.values.indexOf(Cfg.str("yt_hl", "auto")).coerceAtLeast(0)] }) { n -> Cfg.put("yt_hl", YtLocale.values[YtLocale.names.indexOf(n).coerceAtLeast(0)]); try { YtNp.reset(); YtFast.clearCache() } catch (_: Throwable) {} },
+                ui.switchRow("👤 التعليقات والمقترحات بحسابي", Cfg.bool("yt_np_auth", true)) { Cfg.put("yt_np_auth", if (it) "1" else "0") },
+                ui.switchRow("📺 الاشتراكات من فيد حسابي الرسمي (أسرع وبلغتك)", Cfg.bool("yt_subs_official", true)) { Cfg.put("yt_subs_official", if (it) "1" else "0") },
+                ui.switchRow("🔄 الاشتراك يتسجّل على حسابي كمان", YtSubscribe.syncOn()) { Cfg.put("yt_acc_sync", if (it) "1" else "0") },
+                ui.text("تغيير اللغة بيحدّث الرئيسية من جديد.", 12f, th.muted)),
+            ui.section("🔔 الإشعارات والسجل", false,
+                ui.switchRow("🔔 إشعارات الفيديوهات الجديدة من اشتراكاتي", YtNotify.enabled()) { YtNotify.setEnabled(this, it) },
+                ui.button("🔔 رجّع إشعارات كل القنوات") { Cfg.put("ytp_notif_off", ""); Notice.show(this, "🔔 رجعت إشعارات كل القنوات", 2200L) },
                 ui.switchRow("🕘 حفظ سجل المشاهدة", YtStore.histOn()) { on -> Cfg.put("ytp_hist_on", if (on) "1" else "0") },
-                ui.button("📥 التحميلات المسجّلة") { settingsDlg0?.dialog?.dismiss(); ytUi?.openDownloadsPage() },
+                ui.button("🕘 سجل يوتيوب") { settingsDlg0?.dialog?.dismiss(); showYtHistory() }),
+            ui.section("✨ أنيميشن اليوتيوب", true,
+                ui.text("⭕ اللودر (بيظهر في كل لودينج)", 13f, th.text, true),
+                ui.switchRow("استخدم لودر المشغّل (قفله = النقط القديمة)", Cfg.bool("mt_loader_on", true)) { Cfg.put("mt_loader_on", if (it) "1" else "0") },
+                MtLook.loaderPicker(this, th),
+                ui.switchRow("🎞 حركة فتح/قفل المشغّل (تكبير ناعم + تلاشي)", Cfg.bool("mt_player_anim", true)) { Cfg.put("mt_player_anim", if (it) "1" else "0") },
+                ui.switchRow("✨ توهّج رأس شريط التقدّم", MtLook.glowOn()) { Cfg.put("progress_glow", if (it) "1" else "0") },
+                ui.switchRow("🫧 زجاج سائل (Liquid Glass)", try { com.tttt.subtitler.mtui.Glass.isLiquid(this) } catch (_: Throwable) { false }) { try { com.tttt.subtitler.mtui.Glass.setLiquid(this, it) } catch (_: Throwable) {} },
+                ui.switchRow("🔍 عدسة وحركة شريط التبويبات", try { com.tttt.subtitler.mtui.NavLens.enabled(this) } catch (_: Throwable) { false }) { try { com.tttt.subtitler.mtui.NavLens.setEnabled(this, it) } catch (_: Throwable) {} },
+                ui.switchRow("🎞 انتقالات انسيابية بين التبويبات", Cfg.bool("anim_tabs", true)) { Cfg.put("anim_tabs", if (it) "1" else "0") },
+                ui.switchRow("📳 اهتزاز لمسي خفيف", Cfg.bool("haptics", true)) { Cfg.put("haptics", if (it) "1" else "0") },
+                ui.text("بعض التغييرات بتظهر بعد قفل وفتح الصفحة أو التطبيق.", 12f, th.muted)),
+            ui.section("🗑 مسح البيانات", false,
                 ui.button("🗑 مسح السجل") { YtStore.write(YtStore.HIST, emptyList()); PlayTarget.clearTvHistory(this, "yt"); Notice.show(this, "🗑 السجل اتمسح", 1800L) },
-                ui.button("🗑 مسح سجل التحميلات") { YtStore.write(YtStore.DL, emptyList()); Notice.show(this, "🗑 سجل التحميلات اتمسح", 1800L) },
-                ui.button("👤 حساب جوجل: " + (if (YtAccount.loggedIn()) "مسجّل الدخول" else "مش مسجّل")) { settingsDlg0?.dialog?.dismiss(); ytUi?.openAccountTab() },
-                ui.switchRow("⏭ تخطي الرعاة (SponsorBlock)", YtSponsor.on()) { on -> Cfg.put("yt_sponsor", if (on) "1" else "0") },
-                ui.noHint())) }
+                ui.button("🗑 مسح سجل التحميلات") { YtStore.write(YtStore.DL, emptyList()); Notice.show(this, "🗑 سجل التحميلات اتمسح", 1800L) })) }
         // ===== الواجهة بشكل نسخة الـ HTML: دوائر علوية + كارت فيديو + كبسولة + شبكة أزرار + زرار الترجمة =====
         var recentDlg: android.app.Dialog? = null
         val recentFile = File(filesDir, "recent.json")
@@ -516,7 +553,7 @@ class MainActivity : Activity() {
             if (Offline.downloading()) { Offline.cancelDownload() }
             else if (Offline.downloaded()) { Notice.show(this, "دوس دوسة طويلة على الزرار عشان تمسح الموديل", 2300L) }
             else {
-                offProg.text = "⏳ بيبدأ التنزيل…"
+                LoadUi.set(offProg, "⏳ بيبدأ التنزيل…")
                 Offline.download(Offline.model(), { a, t -> runOnUiThread { offProg.text = "⬇ " + (a / 1048576) + " / " + (t / 1048576) + " ميجا" } },
                     { err -> runOnUiThread { offProg.text = if (err == null) "✅ الموديل نزل" else "❌ $err"; offDlBtn.postDelayed({ offRefresh() }, 500) } })
                 offRefresh()
@@ -1894,9 +1931,9 @@ class MainActivity : Activity() {
             if (browserLoadingOv != null) return
             val ov = android.widget.FrameLayout(this).apply { setBackgroundColor(android.graphics.Color.BLACK) }
             val col = android.widget.LinearLayout(this).apply { orientation = android.widget.LinearLayout.VERTICAL; gravity = android.view.Gravity.CENTER }
-            val sp = android.widget.ProgressBar(this).apply { isIndeterminate = true; indeterminateTintList = android.content.res.ColorStateList.valueOf(android.graphics.Color.WHITE) }
+            val sp = LoadUi.view(this, 52)   // (v1122) نفس لودينج تشغيل الفيديو
             val tx = android.widget.TextView(this).apply {
-                text = "⏳ جاري الانتقال الى المتصفح…"
+                text = "جاري الانتقال الى المتصفح…"
                 setTextColor(android.graphics.Color.WHITE)
                 textSize = 16f
                 gravity = android.view.Gravity.CENTER

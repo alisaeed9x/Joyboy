@@ -327,7 +327,7 @@ class TransferActivity : Activity() {
     private fun updateInfo() {
         val real = rows.count { !it.header }
         val s = if (infoMsg.isNotEmpty()) infoMsg else if (real == 0) "مفيش ملفات هنا" else "$real عنصر" + (if (sel.isNotEmpty()) " · اتحدّد " + sel.size else "")
-        info.text = s
+        LoadUi.set(info, s)
         accessBtn.visibility = if (needAccess) View.VISIBLE else View.GONE
     }
 

@@ -213,7 +213,7 @@ object PlayerPad {
             }
             /** دوسة على أداة: الزرار يبدأ يتملّى فورًا لحد ما التلفزيون يبلّغ إنه شغّال */
             fun tapFill(k: String) { if (k.isEmpty() || k == "dedup") return; tapKey = k; tapAt = System.currentTimeMillis() }
-            fun note(t: String) { try { android.widget.Toast.makeText(act, t, android.widget.Toast.LENGTH_SHORT).show() } catch (_: Throwable) {} }
+            fun note(t: String) { if (LoadUi.isLoad(t)) { Notice.show(act, t, 2000L); return }; try { android.widget.Toast.makeText(act, t, android.widget.Toast.LENGTH_SHORT).show() } catch (_: Throwable) {} }   // (v1122) «⏳ …» ← إشعار البرنامج بلودينجه
             fun tm(ms: Long): String {
                 val s = (ms / 1000L).coerceAtLeast(0L); val h = s / 3600L; val m = (s % 3600L) / 60L; val c = s % 60L
                 return if (h > 0L) String.format(Locale.US, "%d:%02d:%02d", h, m, c) else String.format(Locale.US, "%02d:%02d", m, c)
@@ -918,7 +918,8 @@ object PlayerPad {
             /** الخطوة الأخيرة: الحجم + «تحمّله فين؟» */
             fun sheetDlWhere(name: String, pk: DlPick, hs: HashMap<String, String>, own: Boolean) = sheet("⬇ تحميل") { body, _, close ->
                 body.addView(label(name, 13f, cDim, false).apply { maxLines = 2; ellipsize = TextUtils.TruncateAt.END }, lp(-1, -2).apply { topMargin = dp(4) })
-                val szTv = label("📦 الحجم: " + (if (pk.size > 0L) sizeTxt(pk.size, pk.approx) else "⏳ بحسبه…"), 16f, 0xFFFDE68A.toInt(), true)
+                val szTv = label("📦 الحجم: " + (if (pk.size > 0L) sizeTxt(pk.size, pk.approx) else "بحسبه…"), 16f, 0xFFFDE68A.toInt(), true)
+            if (pk.size <= 0L) LoadUi.set(szTv, "⏳ 📦 الحجم: بحسبه…")   // (v1122) لودينج متحرك لحد ما الحجم يوصل
                 body.addView(szTv.apply { background = bg(0xFF3A2A12.toInt(), 0xFFF59E0B.toInt(), 14f); setPadding(dp(12), dp(12), dp(12), dp(12)) }, lp(-1, -2).apply { topMargin = dp(10) })
                 if (pk.size <= 0L) Thread {
                     val n = try { dlSize(pk.url, pk.audio, hs) } catch (_: Throwable) { -1L }
@@ -957,6 +958,7 @@ object PlayerPad {
                     body.addView(label("الحجم بيظهر جنب كل جودة", 12f, cDim, false), lp(-1, -2).apply { topMargin = dp(4) })
                     for (pk in picks) {
                         val b = btn(pk.label + (if (pk.size > 0L) "   ·   " + sizeTxt(pk.size, pk.approx) else "   ·   ⏳"), 15f) { close(); sheetDlWhere(name, pk, hs, own) }
+                if (pk.size <= 0L) LoadUi.set(b, b.text)   // (v1122) ⏳ ← لودينج متحرك
                         body.addView(b, lp(-1, dp(52)).apply { topMargin = dp(8) })
                         if (pk.size <= 0L) Thread {
                             val n = try { dlSize(pk.url, pk.audio, hs) } catch (_: Throwable) { -1L }
@@ -1167,7 +1169,7 @@ object PlayerPad {
                         if (Math.abs(tgt - f.cur) < 0.005f) f.cur = tgt
                         f.clip.level = (f.cur * 10000f).toInt().coerceIn(0, 10000)
                     }
-                    aiB.text = if (toolKey.isNotEmpty()) "✨ لهجة وترجمة · " + (if (toolPct > 0) "$toolPct%" else "⏳") else "✨ لهجة وترجمة"
+                    LoadUi.set(aiB, if (toolKey.isNotEmpty()) "✨ لهجة وترجمة · " + (if (toolPct > 0) "$toolPct%" else "⏳") else "✨ لهجة وترجمة")
                 }
                 val playing = s.optBoolean("playing", false)
                 val spd = PosExtrap.speedOf(s.optString("speed", "1x"))

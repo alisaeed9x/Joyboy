@@ -16,7 +16,7 @@ import android.widget.LinearLayout
 class YtLoadingPage(act: Activity, ui: Ui, th: Theme, private val onCancel: () -> Unit) {
     private val spin = WinSpinnerDrawable()
     private val titleTv = ui.text("", 16f, th.text, true).apply { gravity = Gravity.CENTER; maxLines = 3; setPadding(ui.dp(20), ui.dp(16), ui.dp(20), 0) }
-    private val subTv = ui.text("⏳ بجيب الفيديو…", 13f, th.muted).apply { gravity = Gravity.CENTER; setPadding(ui.dp(20), ui.dp(6), ui.dp(20), 0) }
+    private val subTv = ui.text("بجيب الفيديو…", 13f, th.muted).apply { gravity = Gravity.CENTER; setPadding(ui.dp(20), ui.dp(6), ui.dp(20), 0) }
     val root = FrameLayout(act).apply { visibility = View.GONE; isClickable = true; setBackgroundColor(th.bg); layoutDirection = View.LAYOUT_DIRECTION_LTR }
     val visible: Boolean get() = root.visibility == View.VISIBLE
 

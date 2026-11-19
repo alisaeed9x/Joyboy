@@ -41,7 +41,7 @@ object VideoLib {
     fun tooSmall(size: Long, name: String): Boolean = size < 1_048_576L && name.substringAfterLast('.', "").lowercase() != "gif"
 
     const val SORT_NAME = "name"; const val SORT_NEW = "new"; const val SORT_OLD = "old"; const val SORT_SIZE = "size"
-    val sortLabels = listOf(SORT_NAME to "🔤 الاسم", SORT_NEW to "🕒 الأحدث", SORT_OLD to "⏳ الأقدم", SORT_SIZE to "📦 الحجم")
+    val sortLabels = listOf(SORT_NAME to "🔤 الاسم", SORT_NEW to "🕒 الأحدث", SORT_OLD to "🕰 الأقدم", SORT_SIZE to "📦 الحجم")
     fun sortKeyOf(label: String) = sortLabels.firstOrNull { it.second == label }?.first ?: SORT_NAME
     fun sortLabelOf(key: String) = sortLabels.firstOrNull { it.first == key }?.second ?: sortLabels[0].second
 

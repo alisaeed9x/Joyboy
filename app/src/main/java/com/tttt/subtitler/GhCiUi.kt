@@ -59,7 +59,7 @@ object GhCiUi {
         }
         fun runsMsg(m: String) { runBox.removeAllViews(); runBox.addView(ui.text(m, 12f, th.muted)) }
         fun loadRuns() {
-            onUi { refresh.text = "⏳" }
+            onUi { LoadUi.set(refresh, "⏳", 18) }
             Thread {
                 try {
                     if (GhCi.token().isBlank()) { onUi { runsMsg("⚠ النسخة دي مش متظبّطة للاتصال بـGitHub") }; return@Thread }
@@ -79,7 +79,7 @@ object GhCiUi {
             col.addView(box, LinearLayout.LayoutParams(-1, -2).apply { topMargin = ui.dp(10) })
             return ind
         }
-        fun setApp(m: String) = onUi { appInd?.text = m }
+        fun setApp(m: String) = onUi { appInd?.let { LoadUi.set(it, m) } }
         fun askInstall(art: GhCi.Art) {
             val mb = (art.size / 1048576L).toString()
             Thread {

@@ -443,9 +443,9 @@ class BrowserActivity : Activity() {
             if (browserLoadingOv != null) return
             val ov = FrameLayout(this).apply { setBackgroundColor(Color.BLACK) }
             val col = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER }
-            val sp = android.widget.ProgressBar(this).apply { isIndeterminate = true; indeterminateTintList = android.content.res.ColorStateList.valueOf(Color.WHITE) }
+            val sp = LoadUi.view(this, 52)   // (v1122) نفس لودينج تشغيل الفيديو
             val tx = TextView(this).apply {
-                text = "⏳ جاري الانتقال الى المتصفح…"
+                text = "جاري الانتقال الى المتصفح…"
                 setTextColor(Color.WHITE)
                 textSize = 16f
                 gravity = Gravity.CENTER
@@ -2330,7 +2330,7 @@ class BrowserActivity : Activity() {
 
     private val ytPicks = HashMap<String, YtExtract.Pick>()   // (v119) معرّف → أحسن اختيار (فيه الصوت المنفصل وقايمة الجودات)
     private fun ytFetch(id: String) {
-        hint.text = "⏳ بجيب روابط يوتيوب…"
+        LoadUi.set(hint, "⏳ بجيب روابط يوتيوب…")
         val tt = tab
         Thread {
             val r = try { YtExtract.fetch(id) } catch (e: Throwable) { LogStore.err("Browser:ytFetch", e); emptyList() }   // (v468) تسجيل بدل البلع الصامت
@@ -3269,7 +3269,7 @@ class BrowserActivity : Activity() {
         val box = listBox ?: return
         box.removeAllViews()
         val gs = groupsOf(vis())
-        statusTv?.text = if (gs.isEmpty()) "⏳ بدوّر على فيديوهات… شغّل الفيديو في الصفحة لو ما ظهرش" else "اختار الفيديو اللي عايزه (${gs.size})"
+        statusTv?.let { LoadUi.set(it, if (gs.isEmpty()) "⏳ بدوّر على فيديوهات… شغّل الفيديو في الصفحة لو ما ظهرش" else "اختار الفيديو اللي عايزه (${gs.size})") }
         if (repairId == null) for (g in gs) for (q in g.qs) if (q.h <= 0 && q.audio == null && !q.f.kind.startsWith("YT")) probeHeight(q.f)   // (v533)
         for (g in gs) box.addView(groupCard(g))
     }

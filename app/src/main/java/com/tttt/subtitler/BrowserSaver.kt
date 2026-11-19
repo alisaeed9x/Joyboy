@@ -895,7 +895,7 @@ class BrowserSaver(private val act: BrowserActivity, private val frame: FrameLay
             val step = object : Runnable {
                 override fun run() {
                     if (d?.isShowing != true) { busy = false; return }
-                    if (left > 0) { res.text = "⏳ بقيس… " + left; left--; sampleNetThreads(thr); h.postDelayed(this, 1000L); return }
+                    if (left > 0) { LoadUi.set(res, "⏳ بقيس… " + left); left--; sampleNetThreads(thr); h.postDelayed(this, 1000L); return }
                     busy = false
                     val dr = (TrafficStats.getUidRxBytes(uid) - rx0).coerceAtLeast(0L); val dt = (TrafficStats.getUidTxBytes(uid) - tx0).coerceAtLeast(0L)
                     val total = dr + dt

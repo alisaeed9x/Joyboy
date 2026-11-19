@@ -56,7 +56,7 @@ object VideoPicker {
         fun render() {
             list.removeAllViews()
             if (all.isEmpty()) {
-                info.text = if (scanning) "⏳ بدوّر على الفيديوهات…" else "مفيش فيديوهات اتلقت — جرّب «من مدير الملفات»"
+                LoadUi.set(info, if (scanning) "⏳ بدوّر على الفيديوهات…" else "مفيش فيديوهات اتلقت — جرّب «من مدير الملفات»")
                 return
             }
             val src = if (q.isBlank()) VideoLib.sortVideos(all, VideoLib.SORT_NEW) else VideoLib.search(all, q)

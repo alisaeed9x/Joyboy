@@ -142,7 +142,7 @@ class WallStore(
         val q = query
         val pg = page
         val por = portrait
-        status?.text = if (q.isBlank()) "⏳ بجيب أحدث الخلفيات…" else "⏳ بدوّر على «$q»…"
+        status?.let { LoadUi.set(it, if (q.isBlank()) "⏳ بجيب أحدث الخلفيات…" else "⏳ بدوّر على «$q»…") }
         moreBtn?.visibility = View.GONE
         Thread {
             val list: List<WallItem> = try {
@@ -158,7 +158,7 @@ class WallStore(
                     status?.text = if (seen.isEmpty()) "مفيش نتايج — جرّب كلمة تانية أو اتأكد من النت" else "خلصت النتايج"
                     moreBtn?.visibility = View.GONE
                 } else {
-                    status?.text = if (q.isBlank()) "أحدث الخلفيات — دوس على أي صورة" else "نتايج «$q» — دوس على أي صورة"
+                    status?.let { LoadUi.set(it, if (q.isBlank()) "أحدث الخلفيات — دوس على أي صورة" else "نتايج «$q» — دوس على أي صورة") }
                     moreBtn?.visibility = View.VISIBLE
                 }
             }
@@ -226,7 +226,7 @@ class WallStore(
         cache.get(item.thumbs.firstOrNull() ?: "")?.let { iv.setImageBitmap(it) }   // الصورة الصغيرة لحد ما الكبيرة تنزل
 
         val msg = TextView(act).apply {
-            text = "⏳ بنزّل الصورة بجودة كاملة…"; textSize = 13f; setTextColor(Color.WHITE); gravity = Gravity.CENTER
+            textSize = 13f; setTextColor(Color.WHITE); LoadUi.set(this, "⏳ بنزّل الصورة بجودة كاملة…"); gravity = Gravity.CENTER
             setPadding(dp(12), dp(6), dp(12), dp(6)); background = round(0xAA000000.toInt(), 12)
         }
         frame.addView(msg, FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.CENTER_HORIZONTAL).apply { topMargin = dp(48) })

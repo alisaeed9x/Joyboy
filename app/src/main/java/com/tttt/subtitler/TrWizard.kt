@@ -237,6 +237,11 @@ object TrWizard {
     /** (v261) تغيير من الإعدادات (لغة التفريغ / الموديل / المحرك / طريقة الترجمة) بيتكتب كمان في الخطة المحفوظة، وإلا «▶ ترجمة» كان بيكتب القديم فوقه */
     fun syncSaved(key: String, v: String) {
         if (!saved()) return
+        // (v1119) نوع الترجمة الصريح (تفريغ/ترجمة) بيتكتب في الخطة المحفوظة كمان — وإلا الاستئناف كان بيرجّع القديم
+        if (key == "tr_s_only") {
+            Cfg.put("tr_s_only", v)
+            return
+        }
         // (v297) اللهجة اتغيّرت من أي مكان (إعدادات / زرار اللغة في المشغّل): تتكتب في الخطة المحفوظة كمان، وإلا «▶ ترجمة» كان بيرجّع القديمة (فصحى)
         if (key == "conv_dialect" || key == "lang") {
             val d = v.ifBlank { "فصحى" }
@@ -564,12 +569,12 @@ object TrWizard {
             fun cur() = Offline.models.firstOrNull { it.id == model } ?: Offline.model()
             fun refresh() {
                 val m = cur(); val have = Offline.downloaded(m)
-                st.text = when {
+                LoadUi.set(st, when {
                     !WhisperLib.loaded -> "⛔ جهازك مش بيدعم الأوفلاين (محتاج معالج 64-bit)"
                     have -> "✅ الموديل نازل وجاهز — " + m.note
                     Offline.downloading() -> "⏳ بينزّل…"
                     else -> "⬇ لازم تنزّل الموديل مرة واحدة (~" + m.approxMb + " ميجا) — " + m.note
-                }
+                })
                 dl.text = if (Offline.downloading()) "⏹ إلغاء التنزيل" else if (have) "✓ الموديل نازل" else "⬇ تنزيل (~" + m.approxMb + " ميجا)"
                 dl.isEnabled = WhisperLib.loaded && (Offline.downloading() || !have)
             }
@@ -577,7 +582,7 @@ object TrWizard {
                 val m = cur()
                 if (Offline.downloading()) Offline.cancelDownload()
                 else if (!Offline.downloaded(m)) {
-                    pr.text = "⏳ بيبدأ التنزيل…"
+                    LoadUi.set(pr, "⏳ بيبدأ التنزيل…")
                     Offline.download(m,
                         { a, t -> act.runOnUiThread { pr.text = "⬇ " + (a / 1048576) + " / " + (t / 1048576) + " ميجا" } },
                         { err -> act.runOnUiThread { pr.text = if (err == null) "✅ الموديل نزل" else "❌ $err"; refresh() } })
@@ -608,13 +613,13 @@ object TrWizard {
             fun cur() = LocalMt.model()
             fun refresh() {
                 val m = cur(); val have = LocalMt.downloaded(m)
-                st.text = when {
+                LoadUi.set(st, when {
                     !LocalMt.supported() -> "⛔ مكتبة الترجمة على الجهاز مش متاحة"
                     !LocalMt.usable(m) -> "⛔ النسخة الصغيرة (1.25-bit) محتاجة بيلد خاص (JOY_STQ=1) — النسخة دي من غيره. اختار 1.8B العادية."
                     have -> "✅ الموديل موجود وجاهز — " + m.note
                     Offline.downloading() -> "⏳ بينزّل…"
                     else -> "⬇ مش موجود (~" + m.approxMb + " ميجا) — " + m.note
-                }
+                })
                 dl.text = if (Offline.downloading()) "⏹ إلغاء التنزيل" else if (have) "✓ الموديل موجود" else "⬇ تنزيل (~" + m.approxMb + " ميجا)"
                 dl.isEnabled = LocalMt.usable(m) && (Offline.downloading() || !have)
             }
@@ -622,7 +627,7 @@ object TrWizard {
                 val m = cur()
                 if (Offline.downloading()) Offline.cancelDownload()
                 else if (!LocalMt.downloaded(m)) {
-                    pr.text = "⏳ بيبدأ التنزيل…"
+                    LoadUi.set(pr, "⏳ بيبدأ التنزيل…")
                     Offline.fetchModel("mt/" + m.file, LocalMt.url(m), m.approxMb,
                         { a, t -> act.runOnUiThread { pr.text = "⬇ " + (a / 1048576) + " / " + (if (t > a) (t / 1048576).toString() else "~" + m.approxMb) + " ميجا" } },
                         { err -> act.runOnUiThread { pr.text = if (err == null) "✅ الموديل نزل" else "❌ $err"; refresh() } })

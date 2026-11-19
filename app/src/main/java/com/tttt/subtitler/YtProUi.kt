@@ -1295,7 +1295,11 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
                 if (rows.isEmpty()) { loadTv.text = "⚠ ما قدرتش أجيب روابط التحميل"; return@runOnUiThread }
                 col.removeView(loadTv)
                 val tvs = ArrayList<TextView>()
+                var vHead = false; var aHead = false
                 for (r in rows) {
+                    // (v1121) عناوين: الفيديوهات (جودة + حجم) فوق، والصوت لوحده تحت
+                    if (!r.audioOnly && !vHead) { vHead = true; col.addView(u.text("🎬 الفيديو — الجودة والحجم", 12f, th.muted, true).apply { setPadding(u.dp(4), u.dp(2), u.dp(4), u.dp(2)) }) }
+                    if (r.audioOnly && !aHead) { aHead = true; col.addView(u.text("🎧 الصوت", 12f, th.muted, true).apply { setPadding(u.dp(4), u.dp(8), u.dp(4), u.dp(2)) }) }
                     val tv = u.text(r.label, 15f, th.text).apply { setPadding(u.dp(14), u.dp(12), u.dp(14), u.dp(12)); background = u.box(th.surface, th.border, 12) }
                     Glass.pressable(tv)
                     tv.setOnClickListener {

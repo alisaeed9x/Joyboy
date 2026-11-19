@@ -227,7 +227,7 @@ class YtChannelPage(private val act: Activity, private val ui: Ui, private val h
 
     private fun status(t: String) {
         listBox.removeAllViews(); rowBox = null; rowN = 0
-        listBox.addView(TextView(act).apply { text = t; textSize = 13f; setTextColor(YtSkin.sub); gravity = Gravity.CENTER; setPadding(ui.dp(20), ui.dp(30), ui.dp(20), ui.dp(30)) }, LinearLayout.LayoutParams(-1, -2))
+        listBox.addView(TextView(act).apply { textSize = 13f; setTextColor(YtSkin.sub); LoadUi.set(this, t); gravity = Gravity.CENTER; setPadding(ui.dp(20), ui.dp(30), ui.dp(20), ui.dp(30)) }, LinearLayout.LayoutParams(-1, -2))
     }
 
     // ───────── فتح/قفل ─────────

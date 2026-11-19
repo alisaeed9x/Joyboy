@@ -136,7 +136,9 @@ object Notice {
             val asking = yes != null && no != null
             val rowTv = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL }
             val msgTv = IconTextView(act).apply {
-                text = msg; textSize = msgSize; setTextColor(if (tv) look.fg else th.text)
+                textSize = msgSize; setTextColor(if (tv) look.fg else th.text)
+                LoadUi.set(this, if (msg.trimStart().startsWith("🔄")) "⏳" + msg.trimStart().removePrefix("🔄") else msg)   // (v1122) «🔄 بجيب…» برضه لودينج (مش زرار)
+                // «⏳ …» ← لودينج البرنامج المتحرك بدل الإيموجي
                 gravity = Gravity.CENTER
                 if (tv) {
                     typeface = android.graphics.Typeface.DEFAULT_BOLD

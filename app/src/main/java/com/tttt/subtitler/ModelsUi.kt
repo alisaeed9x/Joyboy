@@ -115,7 +115,7 @@ object ModelsUi {
     }
 
     private fun download(act: Activity, it: Item, prog: TextView) {
-        prog.text = "⏳ بيبدأ التنزيل…"
+        LoadUi.set(prog, "⏳ بيبدأ التنزيل…")
         try { act.window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON) } catch (_: Throwable) {}   // منع نوم الشاشة أثناء التنزيل
         Offline.fetchModel(it.rel, it.url, it.approxMb,
             { a, t -> act.runOnUiThread { prog.text = "⬇ " + (a / 1_048_576L) + " / " + (if (t > a) (t / 1_048_576L).toString() else "~" + it.approxMb) + " ميجا" } },
@@ -127,6 +127,6 @@ object ModelsUi {
                 }
             })
         rebuild?.invoke().also { }   // الزرار يتحوّل لـ «إلغاء»
-        progTv[it.rel]?.text = "⏳ بيبدأ التنزيل…"
+        progTv[it.rel]?.let { LoadUi.set(it, "⏳ بيبدأ التنزيل…") }
     }
 }

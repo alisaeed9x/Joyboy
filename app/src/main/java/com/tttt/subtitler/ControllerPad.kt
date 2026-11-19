@@ -886,7 +886,7 @@ object RecentPicker {
             d.show()
 
             // ── قايمة التلفزيون: من التلفزيون نفسه (/recent) ──
-            tvStatus.text = "⏳ بجيب من التلفزيون…"
+            LoadUi.set(tvStatus, "⏳ بجيب من التلفزيون…")
             Thread {
                 var items: List<Item>? = null; var err: String? = null
                 try {

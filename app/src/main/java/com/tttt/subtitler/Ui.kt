@@ -29,7 +29,8 @@ class Ui(val ctx: Context, var th: Theme) {
     }
     private val plex: android.graphics.Typeface? by lazy { try { android.graphics.Typeface.createFromAsset(ctx.assets, "fonts/ibm_plex.ttf") } catch (_: Exception) { null } }
     fun text(t: String, size: Float = 14f, color: Int = th.text, bold: Boolean = false) = IconTextView(ctx).apply {
-        text = t; textSize = size; setTextColor(color)
+        textSize = size; setTextColor(color)
+        if (LoadUi.isLoad(t)) LoadUi.set(this, t) else text = t   // (v1122) «⏳ …» ← لودينج متحرك
         if (bold) {
             plex?.let { typeface = it } ?: setTypeface(typeface, android.graphics.Typeface.BOLD)
         }
@@ -63,6 +64,7 @@ class Ui(val ctx: Context, var th: Theme) {
     fun button(t: String, primary: Boolean = false, f: () -> Unit) = IconButton(ctx).apply {
         text = t; isAllCaps = false; stateListAnimator = null; minHeight = dp(48)   // (v458) هدف لمس قياسي
         setTextColor(if (primary) (if (th.isLight) Color.WHITE else Color.BLACK) else th.text)   // (v475) كان مبلوع جوه التعليق اللي فوق فالأزرار كلها كانت بلون الخط الافتراضي الباهت
+        if (LoadUi.isLoad(t)) LoadUi.set(this, t)   // (v1122) «⏳ …» ← لودينج متحرك
         background = if (primary) Glass.primaryFill(th, dp(Skins.rad(12)).toFloat())
             else if (MtGlass.on()) MtGlass.pill(th, MtGlass.fill(th), dp(24).toFloat(), ctx.resources.displayMetrics.density)   // (v893) كبسولة زجاجية
             else box(th.surface, th.border, 12)

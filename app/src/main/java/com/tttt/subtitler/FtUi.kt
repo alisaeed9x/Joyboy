@@ -465,7 +465,7 @@ class FileTransferActivity : Activity() {
             }
         }
         val n = vis.size
-        radarStatus?.text = if (scanning && n == 0) "⏳ بدوّر على أجهزة قريبة…" else if (n == 0) "مفيش أجهزة ظاهرة — اتأكد إن الجهاز التاني فاتح «نقل الملفات» وعلى نفس الواي فاي" else if (scanning) "⏳ لقيت $n جهاز — لسه بدوّر…" else "لقيت $n جهاز — اضغط على جهاز للإرسال"
+        radarStatus?.let { LoadUi.set(it, if (scanning && n == 0) "⏳ بدوّر على أجهزة قريبة…" else if (n == 0) "مفيش أجهزة ظاهرة — اتأكد إن الجهاز التاني فاتح «نقل الملفات» وعلى نفس الواي فاي" else if (scanning) "⏳ لقيت $n جهاز — لسه بدوّر…" else "لقيت $n جهاز — اضغط على جهاز للإرسال") }
         if (n > 0 && !tvMode) radarStatus?.text = radarStatus?.text.toString() + "\nBT بلوتوث · QS Quick Share · JB Joyboy"
         if (btMsg.isNotEmpty()) radarStatus?.text = radarStatus?.text.toString() + "\n" + btMsg
     }
@@ -964,7 +964,7 @@ class FileTransferActivity : Activity() {
             }
         }
         fun load(path: String) {
-            info.text = "⏳ بحمّل…"
+            LoadUi.set(info, "⏳ بحمّل…")
             val app = applicationContext
             Thread {
                 var er: String? = null

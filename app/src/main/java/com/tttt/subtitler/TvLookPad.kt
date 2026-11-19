@@ -174,7 +174,7 @@ object TvLookPad {
                 body.addView(grid(vs, perRow), LinearLayout.LayoutParams(-1, -2))
             }
 
-            val sortOpts = listOf("name" to "🔤 الاسم", "new" to "🕒 الأحدث", "old" to "⏳ الأقدم", "size" to "📦 الحجم")
+            val sortOpts = listOf("name" to "🔤 الاسم", "new" to "🕒 الأحدث", "old" to "🕰 الأقدم", "size" to "📦 الحجم")
             val viewOpts = listOf("grid" to "▦ كبيرة", "dense" to "▪ صغيرة", "list" to "☰ قائمة")
             val prayOpts = listOf("5" to "الهيئة المصرية", "4" to "أم القرى (مكة)", "3" to "رابطة العالم الإسلامي", "2" to "أمريكا الشمالية",
                 "1" to "كراتشي", "8" to "الخليج", "9" to "الكويت", "10" to "قطر", "13" to "تركيا (ديانت)", "12" to "فرنسا")

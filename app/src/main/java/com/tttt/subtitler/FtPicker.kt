@@ -278,7 +278,7 @@ class FtPicker(
         renderChips()
         val my = ++gen
         loading = true
-        info.text = "⏳ بحمّل…"
+        LoadUi.set(info, "⏳ بحمّل…")
         items = emptyList(); shown = emptyList(); adapter.notifyDataSetChanged()
         val app = act.applicationContext
         Thread {
@@ -387,7 +387,7 @@ class FtPicker(
         if (groupable(section)) items = levelItems()
         val q = query.lowercase()
         shown = sorted(if (q.isEmpty()) items else items.filter { it.name.lowercase().contains(q) })
-        info.text = if (loading) "⏳ بحمّل…" else if (shown.isEmpty()) (if (!hasAccess()) "محتاج صلاحية الوصول للملفات" else "مفيش ملفات هنا") else shown.size.toString() + (if (groupable(section) && groupKey == null) " فولدر" else " عنصر")
+        LoadUi.set(info, if (loading) "⏳ بحمّل…" else if (shown.isEmpty()) (if (!hasAccess()) "محتاج صلاحية الوصول للملفات" else "مفيش ملفات هنا") else shown.size.toString() + (if (groupable(section) && groupKey == null) " فولدر" else " عنصر"))
         adapter.notifyDataSetChanged()
         updateBar()
     }
