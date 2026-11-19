@@ -437,11 +437,14 @@ class BrowserActivity : Activity() {
     }
 
     // ===== بناء الشاشة =====
-    // (v1071) صفحة الانتقال للمتصفح: سودة + علامة تحميل + «جاري الانتقال الى المتصفح» — مابتختفيش إلا لما الصفحة تفتح بالكامل
+    // (v1132) كبسولة صغيرة في نص الشاشة بدل الصفحة السودة الكاملة (v1071): لودينج + «جاري الانتقال الى المتصفح» — مابتختفيش إلا لما الصفحة تفتح بالكامل
     private fun showBrowserLoading() {
         try {
             if (browserLoadingOv != null) return
-            val ov = FrameLayout(this).apply { setBackgroundColor(Color.BLACK) }
+            val ov = FrameLayout(this).apply {
+                background = android.graphics.drawable.GradientDrawable().apply { setColor(0xCC000000.toInt()); cornerRadius = ui.dp(14).toFloat() }
+                setPadding(ui.dp(20), ui.dp(16), ui.dp(20), ui.dp(16))
+            }
             val col = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER }
             val sp = LoadUi.view(this, 52)   // (v1122) نفس لودينج تشغيل الفيديو
             val tx = TextView(this).apply {
@@ -454,7 +457,7 @@ class BrowserActivity : Activity() {
             col.addView(sp, LinearLayout.LayoutParams(-2, -2).apply { gravity = Gravity.CENTER })
             col.addView(tx, LinearLayout.LayoutParams(-2, -2).apply { gravity = Gravity.CENTER })
             ov.addView(col, FrameLayout.LayoutParams(-2, -2, Gravity.CENTER))
-            (window.decorView as? ViewGroup)?.addView(ov, ViewGroup.LayoutParams(-1, -1))
+            (window.decorView as? ViewGroup)?.addView(ov, FrameLayout.LayoutParams(-2, -2, Gravity.CENTER))
             browserLoadingOv = ov
         } catch (_: Throwable) {}
     }
@@ -1190,7 +1193,10 @@ class BrowserActivity : Activity() {
     private fun updateProgress() {
         val p = tab.progress
         reloadB.text = if (p < 100) "✕" else "🔄"
-        if (p >= 100) { progTrack.animate().cancel(); progTrack.animate().setStartDelay(0L).alpha(0f).setDuration(220L).withEndAction { progTrack.visibility = View.INVISIBLE }.start(); return }
+        if (p >= 100) {
+            hideBrowserLoading()
+            progTrack.animate().cancel(); progTrack.animate().setStartDelay(0L).alpha(0f).setDuration(220L).withEndAction { progTrack.visibility = View.INVISIBLE }.start(); return
+        }
         progTrack.animate().cancel(); progTrack.alpha = 1f
         progTrack.visibility = View.VISIBLE
         val w = progTrack.width.takeIf { it > 0 } ?: resources.displayMetrics.widthPixels

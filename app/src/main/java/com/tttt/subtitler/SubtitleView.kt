@@ -186,6 +186,7 @@ class SubtitleView(ctx: Context) : View(ctx) {
             if (place) sp.setSpan(ForegroundColorSpan(SubStyle.PLACE), a, b, 0)
             else { sp.setSpan(ForegroundColorSpan(SubStyle.WHITE), a, b, 0); sp.setSpan(StyleSpan(Typeface.BOLD), a, b, 0) }
         }
+        if (style.underline && txt.isNotEmpty()) sp.setSpan(UnderlineSpan(), 0, txt.length, 0)
         main = build(sp, tp, avail)
         val s2 = style.secondary(s)
         sec = if (s2.isBlank()) null else build(s2, tp2, avail)

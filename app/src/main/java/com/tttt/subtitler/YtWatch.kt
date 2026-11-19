@@ -54,14 +54,14 @@ import org.schabi.newpipe.extractor.Page
 import java.util.Locale
 
 /**
- * (v402) صفحة المشاهدة (زي يوتيوب): دوسة على فيديو → المربع بتاعه بيكبر بأنيميشن من مكان الكارت لمشغّل مصغّر فوق،
+ * (v402) صفحة المشاهدة (زي يوتيوب): دوسة على فيديو → المربع بتاعه بيكبر بأنيميشن من مكان الكارت لمشغّل يوتيوب فوق،
  * وتحته العنوان واللايكات والقناة والاشتراك والوصف والتعليقات والمقترحات. زرار التكبير (الركن) بيفتح مشغّلك الكامل من نفس الثانية.
  * الإعداد: يوتيوب ← «لما تدوس على فيديو»: صفحة المشاهدة (الافتراضي) أو المشغّل مباشرة.
  */
 object YtOpen {
     const val PAGE = "page"
     const val PLAYER = "player"
-    fun mode(): String = if (Cfg.str("yt_open_mode", PAGE) == PLAYER) PLAYER else PAGE
+    fun mode(): String = PAGE   // (v1132) صفحة المشاهدة رجعت: الفيديو بيفتح عليها والمشغّل بيفتح جواها
     fun autoPlay(): Boolean = Cfg.str("yt_mini_auto", "1") != "0"
 }
 
@@ -106,6 +106,21 @@ private class YtGlyph(ctx: Context, var kind: Int) : View(ctx) {
             4 -> {
                 p.style = Paint.Style.FILL
                 c.drawCircle(cx, cy - s * 0.2f, s * 0.07f, p); c.drawCircle(cx, cy, s * 0.07f, p); c.drawCircle(cx, cy + s * 0.2f, s * 0.07f, p)
+            }
+            5 -> {
+                p.style = Paint.Style.STROKE
+                p.strokeWidth = s * 0.08f
+                p.strokeCap = Paint.Cap.ROUND
+                val a = s * 0.12f
+                val l = s * 0.15f
+                c.drawLine(cx - a, cy - a - l, cx - a, cy - a, p)
+                c.drawLine(cx - a - l, cy - a, cx - a, cy - a, p)
+                c.drawLine(cx + a, cy - a - l, cx + a, cy - a, p)
+                c.drawLine(cx + a + l, cy - a, cx + a, cy - a, p)
+                c.drawLine(cx - a, cy + a + l, cx - a, cy + a, p)
+                c.drawLine(cx - a - l, cy + a, cx - a, cy + a, p)
+                c.drawLine(cx + a, cy + a + l, cx + a, cy + a, p)
+                c.drawLine(cx + a + l, cy + a, cx + a, cy + a, p)
             }
             else -> {
                 p.style = Paint.Style.STROKE; p.strokeWidth = s * 0.08f; p.strokeCap = Paint.Cap.ROUND; p.strokeJoin = Paint.Join.ROUND
@@ -178,8 +193,19 @@ object YtDub {
     fun isDubbed(l: List<String>?): Boolean = l != null && l.size > 1
 }
 
-/** مشغّل مصغّر (نسخة صغيرة من المشغّل): ExoPlayer + تحكم (تشغيل/إيقاف · شريط · زرار تكبير في الركن · سهم تصغير) */
-class YtMiniPlayer(private val act: Activity, private val ui: Ui) : FrameLayout(act) {
+/** (v1128) الشاشة الكاملة جوه نفس مشغّل صفحة المشاهدة: Back بيقفلها قبل أي حاجة تانية */
+object YtFull {
+    @Volatile var cur: YtPlayerKit? = null
+
+    fun exit(): Boolean {
+        val c = cur
+        if (c == null) return false
+        return c.exitFull()
+    }
+}
+
+/** مشغّل يوتيوب جوه صفحة المشاهدة: ExoPlayer + تحكم (تشغيل/إيقاف · شريط · زرار تكبير في الركن · سهم تصغير) */
+class YtPlayerKit(private val act: Activity, private val ui: Ui) : FrameLayout(act) {
     var onExpand: (Long, YtPick?) -> Unit = { _, _ -> }
     var onCollapse: () -> Unit = {}
     var onEnded: (() -> Unit)? = null   // (v469) C9: خلص الفيديو — صفحة المشاهدة بتشغّل اللي بعده من قائمة الانتظار
@@ -222,6 +248,24 @@ class YtMiniPlayer(private val act: Activity, private val ui: Ui) : FrameLayout(
         setPadding(ui.dp(8), ui.dp(5), ui.dp(8), ui.dp(5)); background = GradientDrawable().apply { setColor(0xAA000000.toInt()); cornerRadius = ui.dp(6).toFloat() }
     }
     private val bar = LinearLayout(act)
+    // (v1129) موبايل: صف أزرار صغير فوق (جودة · صوت بس · تحميل · تكبير). تلفزيون: زي ما كان
+    private val tvMode = TvFocus.onCtx(act)
+    private val topRow = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+    private var audB: TextView? = null
+    private var audioTrackMode = false
+    var onDownload: (View) -> Unit = {}
+
+    private fun tbtn(txt: String, cd: String, click: (View) -> Unit): TextView = TextView(act).apply {
+        text = txt; textSize = 16f; gravity = Gravity.CENTER; includeFontPadding = false; contentDescription = cd
+        setTextColor(Color.WHITE)
+        background = GradientDrawable().apply { setShape(GradientDrawable.OVAL); setColor(0x88000000.toInt()) }
+        setOnClickListener { click(it) }
+    }
+
+    private fun paintAudioBtn() {
+        val b = audB ?: return
+        (b.background as? GradientDrawable)?.setColor(if (audioOnly) YtSkin.accent else 0x88000000.toInt())
+    }
 
     private val hideR = Runnable { if (exo?.isPlaying == true && !dragging) showCtl(false, false) }
     private val ticker = object : Runnable {
@@ -247,11 +291,16 @@ class YtMiniPlayer(private val act: Activity, private val ui: Ui) : FrameLayout(
             keepScreenOn = isPlaying && !audioOnly   // (v469) C4: وضع الصوت بس بيخلي الشاشة تنام عادي
             if (isPlaying) scheduleHide() else showCtl(true, false)
         }
-        override fun onRenderedFirstFrame() { thumb.visibility = View.GONE }
-        override fun onVideoSizeChanged(v: androidx.media3.common.VideoSize) { vw = (v.width * v.pixelWidthHeightRatio).toInt(); vh = v.height; fit() }
+        override fun onRenderedFirstFrame() { if (!audioOnly) thumb.visibility = View.GONE }
+        override fun onVideoSizeChanged(v: androidx.media3.common.VideoSize) {
+            vw = (v.width * v.pixelWidthHeightRatio).toInt()
+            vh = v.height
+            fit()
+            if (fsOn) applyFsOrient()
+        }
         override fun onPlayerError(e: PlaybackException) {
             LogStore.err("YtMini", e)
-            this@YtMiniPlayer.error("ما قدرتش أشغّله هنا — دوس زرار التكبير يفتحه في مشغّلك")
+            this@YtPlayerKit.error("ما قدرتش أشغّل الفيديو ده — جرّب تاني")
         }
     }
 
@@ -265,9 +314,19 @@ class YtMiniPlayer(private val act: Activity, private val ui: Ui) : FrameLayout(
         addView(msgTv, FrameLayout.LayoutParams(-1, -2, Gravity.CENTER))
         playB.addView(playG, FrameLayout.LayoutParams(-1, -1))
         addView(playB, FrameLayout.LayoutParams(ui.dp(56), ui.dp(56), Gravity.CENTER))
-        addView(closeG, FrameLayout.LayoutParams(ui.dp(44), ui.dp(44), Gravity.TOP or Gravity.START))
-        addView(gearG, FrameLayout.LayoutParams(ui.dp(44), ui.dp(44), Gravity.TOP or Gravity.END))
-        addView(dubTv, FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.END).apply { setMargins(0, ui.dp(10), ui.dp(48), 0) })
+        if (tvMode) {
+            addView(closeG, FrameLayout.LayoutParams(ui.dp(44), ui.dp(44), Gravity.TOP or Gravity.START))
+            addView(gearG, FrameLayout.LayoutParams(ui.dp(44), ui.dp(44), Gravity.TOP or Gravity.END))
+            addView(dubTv, FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.END).apply { setMargins(0, ui.dp(10), ui.dp(48), 0) })
+        } else {
+            val bs = ui.dp(38); val mg = ui.dp(4)
+            topRow.addView(tbtn("🎞", "الجودة") { qualityMenu(it) }, LinearLayout.LayoutParams(bs, bs).apply { setMargins(mg, 0, mg, 0) })
+            audB = tbtn("🎧", "صوت بس") { toggleAudioOnly() }
+            topRow.addView(audB, LinearLayout.LayoutParams(bs, bs).apply { setMargins(mg, 0, mg, 0) })
+            topRow.addView(tbtn("⬇", "تحميل") { onDownload(it) }, LinearLayout.LayoutParams(bs, bs).apply { setMargins(mg, 0, mg, 0) })
+            topRow.addView(expandG, LinearLayout.LayoutParams(ui.dp(40), ui.dp(40)).apply { setMargins(mg, 0, mg, 0) })
+            addView(topRow, FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.END).apply { setMargins(0, ui.dp(6), ui.dp(4), 0) })
+        }
         bar.apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; setPadding(ui.dp(10), 0, ui.dp(2), 0) }
         seek.max = 1000
         try {
@@ -277,24 +336,32 @@ class YtMiniPlayer(private val act: Activity, private val ui: Ui) : FrameLayout(
         } catch (_: Throwable) {}
         bar.addView(timeTv, LinearLayout.LayoutParams(-2, -2))
         bar.addView(seek, LinearLayout.LayoutParams(0, ui.dp(36), 1f))
-        bar.addView(expandG, LinearLayout.LayoutParams(ui.dp(44), ui.dp(44)))
+        if (tvMode) bar.addView(expandG, LinearLayout.LayoutParams(ui.dp(44), ui.dp(44)))
         addView(bar, FrameLayout.LayoutParams(-1, ui.dp(44), Gravity.BOTTOM))
 
         setOnClickListener { showCtl(!ctlOn, true) }
-        closeG.setOnClickListener { onCollapse() }
+        closeG.setOnClickListener {
+            if (fsOn) exitFull() else onCollapse()
+        }
         gearG.setOnClickListener { showMenu(it) }
         dubTv.setOnClickListener { langMenu(it) }
         expandG.setOnClickListener {
+            if (inPlaceFull()) {
+                if (fsOn) exitFull() else enterFull()
+                return@setOnClickListener
+            }
             // (v406) تكبير فوري: بنسلّم نفس المشغّل (شغّال ومحمّل) للمشغّل الكامل من غير إعادة تحميل
             val ho = handoff()
             if (ho != null) { showCtl(true, false); onExpand(ho.second, ho.first) }
             else {
                 val pos = exo?.currentPosition ?: resumeMs
+                val rp = realPick()   // (v1129) لو كان صوت بس: نفتح المشغّل الكامل بالفيديو مش بلينك الصوت
                 resumeMs = pos; handed = true
+                if (audioOnly) { audioOnly = false; audioTrackMode = false; tex.visibility = View.VISIBLE; paintAudioBtn() }
                 releasePlayer(true)
                 showCtl(true, false)
                 // (v1113) نمرّر الروابط المحلولة أصلًا (curPick/lastPick) بدل null — وإلا المشغّل الكامل بيعيد حلّ اللينك من الأول (ytpend)
-                onExpand(pos, curPick ?: lastPick)
+                onExpand(pos, rp ?: lastPick)
             }
         }
         playB.setOnClickListener {
@@ -324,7 +391,7 @@ class YtMiniPlayer(private val act: Activity, private val ui: Ui) : FrameLayout(
         })
     }
 
-    // (v479 م5) تلفزيون: المشغّل المصغّر هدف تركيز واحد — OK = تشغيل/إيقاف · ←/→ = ±10ث (والضغط المستمر بيزوّد الخطوة) · Menu = قايمة الجودة/الصوت
+    // (v479 م5) تلفزيون: مشغّل صفحة المشاهدة هدف تركيز واحد — OK = تشغيل/إيقاف · ←/→ = ±10ث (والضغط المستمر بيزوّد الخطوة) · Menu = قايمة الجودة/الصوت
     init {
         if (TvFocus.onCtx(act)) {
             descendantFocusability = ViewGroup.FOCUS_BLOCK_DESCENDANTS
@@ -370,6 +437,87 @@ class YtMiniPlayer(private val act: Activity, private val ui: Ui) : FrameLayout(
         langMenu(anchor)
     }
 
+    // (v1128) شاشة كاملة جوه نفس المشغّل: بنرفع الصندوق لفوق الشاشة كلها ونلف الاتجاه حسب شكل الفيديو (زي fit/stretch)، من غير ما نفتح مشغّل تاني
+    private var fsOn = false
+    private var fsHome: ViewGroup? = null
+    private var fsIndex = 0
+    private var fsLp: ViewGroup.LayoutParams? = null
+    private var fsHolder: View? = null
+    private var fsOldOrient = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+
+    private fun inPlaceFull(): Boolean {
+        if (TvFocus.onCtx(act)) return false
+        return Cfg.str("yt_fs_inplace", "1") != "0"   // (v1130) الافتراضي: التكبير جوه نفس المشغّل
+    }
+
+    fun isFull(): Boolean = fsOn
+
+    private fun applyFsOrient() {
+        val wide = vw <= 0 || vh <= 0 || vw >= vh
+        val want = if (wide) android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE else android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+        if (act.requestedOrientation != want) act.requestedOrientation = want
+    }
+
+    private fun setFsBars(hide: Boolean) {
+        val decor = act.window.decorView
+        val ctl = androidx.core.view.WindowCompat.getInsetsController(act.window, decor)
+        if (hide) {
+            ctl.systemBarsBehavior = androidx.core.view.WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            ctl.hide(androidx.core.view.WindowInsetsCompat.Type.systemBars())
+        } else {
+            ctl.show(androidx.core.view.WindowInsetsCompat.Type.systemBars())
+        }
+    }
+
+    fun enterFull() {
+        if (fsOn) return
+        val home = parent as? ViewGroup ?: return
+        val decor = act.window.decorView as? ViewGroup ?: return
+        val lp = layoutParams
+        val holder = View(act)
+        val idx = home.indexOfChild(this)
+        fsHome = home
+        fsIndex = idx
+        fsLp = lp
+        fsHolder = holder
+        fsOldOrient = act.requestedOrientation
+        home.removeView(this)
+        home.addView(holder, idx, lp)
+        decor.addView(this, FrameLayout.LayoutParams(-1, -1))
+        fsOn = true
+        YtFull.cur = this
+        expandG.kind = 5
+        expandG.invalidate()
+        applyFsOrient()
+        setFsBars(true)
+        showCtl(true, true)
+    }
+
+    fun exitFull(): Boolean {
+        if (!fsOn) return false
+        fsOn = false
+        if (YtFull.cur === this) YtFull.cur = null
+        val decor = act.window.decorView as? ViewGroup
+        decor?.removeView(this)
+        val home = fsHome
+        val holder = fsHolder
+        val lp = fsLp
+        if (home != null && holder != null) {
+            val idx = home.indexOfChild(holder)
+            home.removeView(holder)
+            if (lp != null) home.addView(this, idx, lp) else home.addView(this, idx)
+        }
+        fsHome = null
+        fsHolder = null
+        fsLp = null
+        expandG.kind = 2
+        expandG.invalidate()
+        setFsBars(false)
+        act.requestedOrientation = fsOldOrient
+        showCtl(true, true)
+        return true
+    }
+
     override fun onSizeChanged(w: Int, h: Int, ow: Int, oh: Int) { super.onSizeChanged(w, h, ow, oh); fit() }
 
     private fun fit() {
@@ -391,7 +539,11 @@ class YtMiniPlayer(private val act: Activity, private val ui: Ui) : FrameLayout(
     private fun showCtl(on: Boolean, auto: Boolean) {
         ctlOn = on
         hh.removeCallbacks(hideR)
-        for (v in listOf<View>(shade, playB, bar, closeG, gearG)) {
+        // (v1132) شريط التقدم (bar) مبيتخفيش مع باقي الكنترول — خط التقدم ظاهر على طول
+        bar.visibility = View.VISIBLE
+        val vs = ArrayList<View>(); vs.add(shade); vs.add(playB)
+        if (tvMode) { vs.add(closeG); vs.add(gearG) } else vs.add(topRow)
+        for (v in vs) {
             if (on) { v.visibility = View.VISIBLE; v.animate().alpha(1f).setDuration(160L).start() }
             else v.animate().alpha(0f).setDuration(160L).withEndAction { if (!ctlOn) v.visibility = View.INVISIBLE }.start()
         }
@@ -415,7 +567,9 @@ class YtMiniPlayer(private val act: Activity, private val ui: Ui) : FrameLayout(
     }
 
     fun reset() {
+        exitFull()
         releasePlayer(false)
+        audioOnly = false; audioTrackMode = false; tex.visibility = View.VISIBLE; paintAudioBtn()
         lastPick = null; curPick = null; resumeMs = 0L; handed = false; vw = 0; vh = 0
         ents.clear(); lgs.clear(); aq.clear(); audOvr = null; lgIdx = -1; curEnt = 0; qRaw = ""; dubTv.visibility = View.GONE
         msgTv.visibility = View.GONE; seek.progress = 0; timeTv.text = "0:00 / 0:00"
@@ -424,7 +578,10 @@ class YtMiniPlayer(private val act: Activity, private val ui: Ui) : FrameLayout(
         showCtl(true, false)
     }
 
-    fun start(pick: YtPick, autoplay: Boolean, seekMs: Long = 0L) { parse(pick); playPick(pick, autoplay, seekMs) }
+    fun start(pick: YtPick, autoplay: Boolean, seekMs: Long = 0L) {
+        if (audioOnly) { audioOnly = false; audioTrackMode = false; tex.visibility = View.VISIBLE; paintAudioBtn() }
+        parse(pick); playPick(pick, autoplay, seekMs)
+    }
 
     private fun parse(pick: YtPick) {
         ents.clear(); lgs.clear(); aq.clear(); audOvr = null; lgIdx = -1; curEnt = 0
@@ -494,11 +651,13 @@ class YtMiniPlayer(private val act: Activity, private val ui: Ui) : FrameLayout(
 
     private fun pickQuality(i: Int) {
         val e = ents.getOrNull(i) ?: return
+        dropAudioMode()
         curEnt = i
         reload(e.url, if (e.audio.isEmpty()) null else (audOvr ?: e.audio), e.h, "🎞 الجودة: " + e.label)
     }
     private fun pickLang(i: Int) {
         val l = lgs.getOrNull(i) ?: return
+        dropAudioMode()
         lgIdx = i; audOvr = l.url
         val e = splitEnt()
         if (e == null) { Notice.show(act, "اللغة دي مش متاحة مع الجودات الحالية", 2200L); return }
@@ -506,6 +665,7 @@ class YtMiniPlayer(private val act: Activity, private val ui: Ui) : FrameLayout(
     }
     private fun pickAudioQ(i: Int) {
         val v = audioVariants().getOrNull(i) ?: return
+        dropAudioMode()
         audOvr = v.second
         val e = splitEnt()
         if (e == null) { Notice.show(act, "جودة الصوت دي مش متاحة مع الجودات الحالية", 2200L); return }
@@ -532,6 +692,9 @@ class YtMiniPlayer(private val act: Activity, private val ui: Ui) : FrameLayout(
 
     /** بيسلّم المشغّل الشغّال للـ YtHandoff ويرجّع (pick الحالي, الموضع) عشان نفتح المشغّل الكامل من غير تحميل */
     fun handoff(): Pair<YtPick, Long>? {
+        exitFull()
+        if (audioOnly && !audioTrackMode) return null   // (v1129) الـExoPlayer شغّال بلينك الصوت: التكبير بيعيد التحميل بالفيديو
+        if (audioTrackMode) restoreVideoTracks()
         val p = exo ?: return null; val cp = curPick ?: return null
         if (p.playbackState == androidx.media3.common.Player.STATE_IDLE) return null
         val pos = p.currentPosition
@@ -547,6 +710,9 @@ class YtMiniPlayer(private val act: Activity, private val ui: Ui) : FrameLayout(
 
     /** (v417) تصغير لشريط يوتيوب السفلي (YtDock): بنسلّم نفس المشغّل شغّال من غير ما يقف أو يتحمّل تاني. null لو مفيش حاجة شغّالة تتسلّم */
     fun detachForDock(): YtKept? {
+        exitFull()
+        if (audioOnly && !audioTrackMode) return null
+        if (audioTrackMode) restoreVideoTracks()
         val p = exo ?: return null; val cp = curPick ?: return null
         val st = p.playbackState
         if (st == androidx.media3.common.Player.STATE_IDLE || st == androidx.media3.common.Player.STATE_ENDED) return null
@@ -574,6 +740,7 @@ class YtMiniPlayer(private val act: Activity, private val ui: Ui) : FrameLayout(
                 MergingMediaSource(pf.createMediaSource(MediaItem.fromUri(Uri.parse(pick.url))), pf.createMediaSource(MediaItem.fromUri(Uri.parse(au))))
             } else DefaultMediaSourceFactory(f).createMediaSource(MediaItem.fromUri(Uri.parse(pick.url)))
             p.addListener(listener)
+            if (audioOnly && audioTrackMode) { try { p.trackSelectionParameters = p.trackSelectionParameters.buildUpon().setTrackTypeDisabled(C.TRACK_TYPE_VIDEO, true).build() } catch (_: Throwable) {} }
             if (seekMs > 0L) p.setMediaSource(src, seekMs) else p.setMediaSource(src)
             p.prepare(); p.playWhenReady = autoplay
             exo = p
@@ -581,7 +748,7 @@ class YtMiniPlayer(private val act: Activity, private val ui: Ui) : FrameLayout(
             hh.removeCallbacks(ticker); hh.post(ticker)
         } catch (e: Throwable) {
             LogStore.err("YtMini:start", e)
-            error("ما قدرتش أشغّله هنا — دوس زرار التكبير يفتحه في مشغّلك")
+            error("ما قدرتش أشغّل الفيديو ده — جرّب تاني")
         }
     }
 
@@ -604,17 +771,51 @@ class YtMiniPlayer(private val act: Activity, private val ui: Ui) : FrameLayout(
     private var preAudioEnt = -1
     fun isAudioOnly() = audioOnly
     fun toggleAudioOnly() {
+        if (exo == null && lastPick == null) return
         if (!audioOnly) {
             val light = audioVariants().lastOrNull()?.second ?: curPick?.audio?.takeIf { it.isNotBlank() }
-            if (light == null) { Notice.show(act, "الوضع ده محتاج ستريم صوت منفصل — جرّب زرار «🎧 صوت» تحت (بيشغّل في مشغّل الموسيقى وبيكمّل مع قفل الشاشة)", 3600L); return }
             preAudioEnt = curEnt; audioOnly = true
             tex.visibility = View.INVISIBLE; thumb.visibility = View.VISIBLE; keepScreenOn = false
-            reload(light, null, 0, "🎧 وضع الصوت بس: أخف جودة صوت")
+            if (light != null) {
+                audioTrackMode = false
+                reload(light, null, 0, "🎧 صوت بس: أخف جودة صوت")
+            } else {
+                // مفيش ستريم صوت منفصل: بنقفل مسار الفيديو بس في نفس المشغّل (الصوت يكمّل، والداتا مش هتقلّ زي الستريم المنفصل)
+                audioTrackMode = true
+                try { exo?.let { it.trackSelectionParameters = it.trackSelectionParameters.buildUpon().setTrackTypeDisabled(C.TRACK_TYPE_VIDEO, true).build() } } catch (_: Throwable) {}
+                Notice.show(act, "🎧 صوت بس (الفيديو واقف)", 1600L)
+            }
         } else {
-            audioOnly = false; tex.visibility = View.VISIBLE
-            if (preAudioEnt >= 0) pickQuality(preAudioEnt)
+            if (audioTrackMode) { restoreVideoTracks(); hh.postDelayed({ if (!audioOnly) thumb.visibility = View.GONE }, 1500L) }
+            else {
+                audioOnly = false; tex.visibility = View.VISIBLE
+                if (preAudioEnt >= 0) pickQuality(preAudioEnt)
+            }
             Notice.show(act, "🎬 رجعنا لوضع الفيديو", 1500L)
         }
+        paintAudioBtn()
+    }
+
+    private fun restoreVideoTracks() {
+        audioOnly = false; audioTrackMode = false; tex.visibility = View.VISIBLE
+        try { exo?.let { it.trackSelectionParameters = it.trackSelectionParameters.buildUpon().setTrackTypeDisabled(C.TRACK_TYPE_VIDEO, false).build() } } catch (_: Throwable) {}
+        paintAudioBtn()
+    }
+
+    private fun dropAudioMode() {
+        if (!audioOnly) return
+        audioOnly = false; audioTrackMode = false; tex.visibility = View.VISIBLE
+        paintAudioBtn()
+    }
+
+    /** الـpick الحقيقي للفيديو (لو شغّال بلينك الصوت بس بنرجّع رابط الجودة اللي كانت قبله) */
+    private fun realPick(): YtPick? {
+        val cp = curPick ?: return null
+        if (audioOnly && !audioTrackMode) {
+            val e = ents.getOrNull(preAudioEnt) ?: return cp
+            return YtPick(e.url, if (e.audio.isEmpty()) null else (audOvr ?: e.audio), cp.ua, cp.title, e.h, qRaw)
+        }
+        return cp
     }
     /** (v429) رابط صوت جاهز من اللي شغّال دلوقتي (لتحويل «🎧 صوت» فوري من غير جلب جديد): url, ua, الموضع — null لو HLS/مفيش */
     fun audioHint(): Triple<String, String, Long>? {
@@ -624,10 +825,14 @@ class YtMiniPlayer(private val act: Activity, private val ui: Ui) : FrameLayout(
         return Triple(u, cp.ua, position())
     }
     fun pause() { exo?.playWhenReady = false }
-    fun release() { releasePlayer(false); hh.removeCallbacks(hideR) }
+    fun release() {
+        exitFull()
+        releasePlayer(false)
+        hh.removeCallbacks(hideR)
+    }
 }
 
-/** (v469) C9 قائمة انتظار يوتيوب: بتتملى من مقترحات/قايمة الفيديو الحالي، والتالي بيتشغّل تلقائيًا، وبتتعدّل بالسحب للحذف من شريط المشغّل المصغّر */
+/** (v469) C9 قائمة انتظار يوتيوب: بتتملى من مقترحات/قايمة الفيديو الحالي، والتالي بيتشغّل تلقائيًا، وبتتعدّل بالسحب للحذف من شريط يوتيوب السفلي */
 object YtQueue {
     private val l = ArrayList<NpItem>()
     @Volatile var curId = ""
@@ -640,11 +845,11 @@ object YtQueue {
     @Synchronized fun size() = l.size
 }
 
-/** الصفحة نفسها: مشغّل مصغّر فوق + (عنوان · قناة · اشتراك · وصف · مقترحات/تعليقات) بتتحرك بالسحب تحته */
+/** الصفحة نفسها: مشغّل يوتيوب فوق + (عنوان · قناة · اشتراك · وصف · مقترحات/تعليقات) بتتحرك بالسحب تحته */
 class YtWatchPage(private val act: Activity, private val ui: Ui, private val host: YtWatchHost) : FrameLayout(act) {
     private val sw = act.resources.displayMetrics.widthPixels
     private val medium: Typeface = YtSkin.medium
-    private val mini = YtMiniPlayer(act, ui)
+    private val kit = YtPlayerKit(act, ui)
     private val scroll = ScrollView(act)
     private val body = LinearLayout(act)
     private var gen = 0
@@ -705,7 +910,7 @@ class YtWatchPage(private val act: Activity, private val ui: Ui, private val hos
             if (!isOpen) return
             val v = item ?: return
             if (tv) tvPaint()
-            val pos = mini.position(); val dur = mini.durationMs()
+            val pos = kit.position(); val dur = kit.durationMs()
             if (dur > 0 && pos > 0) {
                 val now = System.currentTimeMillis()
                 if (now - progSaveAt > 4000L) { progSaveAt = now; try { YtProg.save(v.id, pos, dur, titleNow(), v.thumb) } catch (_: Throwable) {} }
@@ -715,7 +920,7 @@ class YtWatchPage(private val act: Activity, private val ui: Ui, private val hos
                 val tgt = YtSponsor.skipTarget(v.id, pos)
                 if (tgt > 0) {
                     lastSkipFrom = pos; skipCoolUntil = System.currentTimeMillis() + 6000L
-                    mini.seekToMs(tgt)
+                    kit.seekToMs(tgt)
                     val cat = YtSponsor.cached(v.id)?.firstOrNull { it.endMs == tgt }?.cat ?: "sponsor"
                     sbTxt?.text = "⏭ اتخطى مقطع " + YtSponsor.label(cat)
                     sbBar?.visibility = View.VISIBLE
@@ -737,8 +942,8 @@ class YtWatchPage(private val act: Activity, private val ui: Ui, private val hos
     fun tvBack(): Boolean {
         if (!tv || !isOpen) return false
         val f = findFocus() ?: return false
-        if (f === mini) return false
-        mini.requestFocus(); return true
+        if (f === kit) return false
+        kit.requestFocus(); return true
     }
 
     // ───────── (v428) سحب لتحت = تصغير الصفحة (زي يوتيوب): الصفحة تتبع صباعك، وبعد حد معيّن/سرعة تنزل للشريط الصغير (YtDock) ─────────
@@ -756,7 +961,7 @@ class YtWatchPage(private val act: Activity, private val ui: Ui, private val hos
         when (e.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
                 dragDownY = e.rawY; dragDownX = e.rawX; dragging = false
-                dragStartedOnVideo = e.y < mini.bottom
+                dragStartedOnVideo = e.y < kit.bottom
                 vt?.recycle(); vt = VelocityTracker.obtain(); vt?.addMovement(e)
             }
             MotionEvent.ACTION_MOVE -> {
@@ -802,7 +1007,7 @@ class YtWatchPage(private val act: Activity, private val ui: Ui, private val hos
     init {
         visibility = View.GONE; isClickable = true; setBackgroundColor(YtSkin.bgSolid); layoutDirection = View.LAYOUT_DIRECTION_RTL
         val col = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL }
-        col.addView(mini, LinearLayout.LayoutParams(-1, sw * 9 / 16))
+        col.addView(kit, LinearLayout.LayoutParams(-1, sw * 9 / 16))
         col.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f))
         addView(col, FrameLayout.LayoutParams(-1, -1))
         body.orientation = LinearLayout.VERTICAL; body.layoutDirection = View.LAYOUT_DIRECTION_RTL
@@ -812,11 +1017,11 @@ class YtWatchPage(private val act: Activity, private val ui: Ui, private val hos
         likeChip = chip("👍") { toggleLike() }
         saveChip = chip("🔖 احفظ") { toggleSave() }
         for (c in listOf(likeChip, saveChip,
-            chip("🌐 ترجمة وفرجة") { val v = item; if (v != null) { val ho = mini.handoff(); host.expand(v.id, titleNow(), ho?.second ?: mini.position(), true, ho?.first) } },
-            chip("🎧 صوت") { val v = item; if (v != null) { try { mini.audioHint()?.let { YtAudioHint.put(v.id, it.first, it.second, it.third) } } catch (_: Throwable) {}; mini.pause(); host.audio(saveItem()) } },
+            chip("🌐 ترجمة وفرجة") { val v = item; if (v != null) { val ho = kit.handoff(); host.expand(v.id, titleNow(), ho?.second ?: kit.position(), true, ho?.first) } },
+            chip("🎧 صوت") { val v = item; if (v != null) { try { kit.audioHint()?.let { YtAudioHint.put(v.id, it.first, it.second, it.third) } } catch (_: Throwable) {}; kit.pause(); host.audio(saveItem()) } },
             chip("⬇ تحميل") { a -> val v = item; if (v != null) host.download(a, saveItem()) },
             chip("📋 نسخ") { val v = item; if (v != null) copy(YtNp.watchUrl(v.id)) },
-            chip("↗ مشاركة") { val v = item; if (v != null) { val sec = mini.position() / 1000L; share(YtNp.watchUrl(v.id) + if (sec > 5) "&t=" + sec + "s" else "") } },
+            chip("↗ مشاركة") { val v = item; if (v != null) { val sec = kit.position() / 1000L; share(YtNp.watchUrl(v.id) + if (sec > 5) "&t=" + sec + "s" else "") } },
             chip("➕ إضافة للليستة") { val v = item; if (v != null) PlayQueueUi.add(act, YtNp.watchUrl(v.id), titleNow()) })) {   // (v469) C11: مشاركة من الموضع الحالي · (v779) إضافة للليستة
             chipsRow.addView(c, LinearLayout.LayoutParams(-2, -2).apply { setMargins(ui.dp(4), 0, ui.dp(4), 0) })
         }
@@ -859,19 +1064,20 @@ class YtWatchPage(private val act: Activity, private val ui: Ui, private val hos
         body.addView(composer, LinearLayout.LayoutParams(-1, -2))
         body.addView(listBox, LinearLayout.LayoutParams(-1, -2))
 
-        mini.idOf = { item?.id }   // (v586)
-        mini.onCollapse = { close(true) }
-        mini.onExpand = { pos, pk -> val v = item; if (v != null) host.expand(v.id, titleNow(), pos, false, pk) }
-        mini.onEnded = { val nx = YtQueue.next(); if (nx != null) host.openVideo(nx) }   // (v469) C9: التالي من قائمة الانتظار تلقائيًا
-        // (v469) C1: شريط «اتخطى مقطع» + تراجع — تحت المشغّل المصغّر على طول
+        kit.idOf = { item?.id }   // (v586)
+        kit.onCollapse = { close(true) }
+        kit.onDownload = { a -> val v = item; if (v != null) host.download(a, saveItem()) }   // (v1129)
+        kit.onExpand = { pos, pk -> val v = item; if (v != null) host.expand(v.id, titleNow(), pos, false, pk) }
+        kit.onEnded = { val nx = YtQueue.next(); if (nx != null) host.openVideo(nx) }   // (v469) C9: التالي من قائمة الانتظار تلقائيًا
+        // (v469) C1: شريط «اتخطى مقطع» + تراجع — تحت مشغّل الصفحة على طول
         val sb = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; gravity = Gravity.CENTER_VERTICAL; visibility = View.GONE; setPadding(ui.dp(12), ui.dp(6), ui.dp(12), ui.dp(6)); setBackgroundColor(YtSkin.surface) }
         val st = TextView(act).apply { textSize = 12.5f; setTextColor(YtSkin.text); typeface = medium }
         val un = TextView(act).apply { text = "↩ تراجع"; textSize = 12.5f; typeface = medium; gravity = Gravity.CENTER; setTextColor(YtSkin.chipOnText); setPadding(ui.dp(12), ui.dp(6), ui.dp(12), ui.dp(6))
             background = GradientDrawable().apply { setColor(YtSkin.chipOnBg); cornerRadius = ui.dp(14).toFloat() }
-            setOnClickListener { if (lastSkipFrom >= 0) { mini.seekToMs(lastSkipFrom); skipCoolUntil = System.currentTimeMillis() + 12000L }; sbBar?.visibility = View.GONE } }
+            setOnClickListener { if (lastSkipFrom >= 0) { kit.seekToMs(lastSkipFrom); skipCoolUntil = System.currentTimeMillis() + 12000L }; sbBar?.visibility = View.GONE } }
         sb.addView(st, LinearLayout.LayoutParams(0, -2, 1f)); sb.addView(un, LinearLayout.LayoutParams(-2, -2))
         sbTxt = st; sbBar = sb
-        (mini.parent as? LinearLayout)?.addView(sb, 1, LinearLayout.LayoutParams(-1, -2))
+        (kit.parent as? LinearLayout)?.addView(sb, 1, LinearLayout.LayoutParams(-1, -2))
         if (tv) tvLayout()
     }
 
@@ -885,14 +1091,14 @@ class YtWatchPage(private val act: Activity, private val ui: Ui, private val hos
         val old = (0 until chipsRow.childCount).map { chipsRow.getChildAt(it) }   // 0 لايك · 1 حفظ · 2 ترجمة · 3 صوت · 4 تحميل · 5 نسخ · 6 مشاركة
         chipsRow.removeAllViews()
         removeAllViews()
-        for (v in listOf<View?>(mini, sbBar, listBox, tabRel, tabCom, subB, bellB, crumbTv, titleTv, metaTv, descTv)) detach(v)
+        for (v in listOf<View?>(kit, sbBar, listBox, tabRel, tabCom, subB, bellB, crumbTv, titleTv, metaTv, descTv)) detach(v)
 
-        val miniW = minOf((dm.widthPixels * 0.56f).toInt(), (dm.heightPixels * 0.52f * 16f / 9f).toInt())
-        val miniH = miniW * 9 / 16
-        mini.id = View.generateViewId()
+        val kitW = minOf((dm.widthPixels * 0.56f).toInt(), (dm.heightPixels * 0.52f * 16f / 9f).toInt())
+        val kitH = kitW * 9 / 16
+        kit.id = View.generateViewId()
         val vcol = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL }
-        vcol.addView(mini, LinearLayout.LayoutParams(miniW, miniH))
-        sbBar?.let { vcol.addView(it, LinearLayout.LayoutParams(miniW, -2)) }
+        vcol.addView(kit, LinearLayout.LayoutParams(kitW, kitH))
+        sbBar?.let { vcol.addView(it, LinearLayout.LayoutParams(kitW, -2)) }
 
         titleTv.apply { textSize = 22f; maxLines = 3 }
         metaTv.textSize = 15f
@@ -904,23 +1110,23 @@ class YtWatchPage(private val act: Activity, private val ui: Ui, private val hos
         info.addView(descTv, LinearLayout.LayoutParams(-1, -2).apply { setMargins(ui.dp(12), ui.dp(12), ui.dp(12), 0) })
         val top = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; setPadding(ui.dp(24), ui.dp(16), ui.dp(24), 0) }
         top.addView(vcol, LinearLayout.LayoutParams(-2, -2))
-        top.addView(info, LinearLayout.LayoutParams(0, miniH, 1f).apply { marginStart = ui.dp(20) })
+        top.addView(info, LinearLayout.LayoutParams(0, kitH, 1f).apply { marginStart = ui.dp(20) })
 
         // صف الأزرار: اشتراك · جرس · لايك · القناة · الجودة · لغة الصوت · مقترحات · تعليقات · حفظ · ترجمة · صوت · تحميل · مشاركة
-        val qc = chip("🎞 الجودة") { a -> mini.qualityMenu(a) }
-        val lc = chip("🌐 لغة الصوت") { a -> mini.audioLangMenu(a) }.apply { visibility = View.GONE }
+        val qc = chip("🎞 الجودة") { a -> kit.qualityMenu(a) }
+        val lc = chip("🌐 لغة الصوت") { a -> kit.audioLangMenu(a) }.apply { visibility = View.GONE }
         val cc = chip("📺 القناة") { openChan() }
         qChip = qc; lChip = lc; chanChip = cc
         subB.id = View.generateViewId()
-        mini.nextFocusDownId = subB.id
+        kit.nextFocusDownId = subB.id
         val acts = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; gravity = Gravity.CENTER_VERTICAL; setPadding(ui.dp(20), ui.dp(12), ui.dp(20), ui.dp(12)) }
         val btns = listOf<View?>(subB, bellB, likeChip, cc, qc, lc, tabRel, tabCom, saveChip, old.getOrNull(2), old.getOrNull(3), old.getOrNull(4), old.getOrNull(6))
         for (v in btns) {
             if (v == null) continue
             detach(v)
-            if (v === bellB) { acts.addView(v, LinearLayout.LayoutParams(ui.dp(46), ui.dp(46)).apply { setMargins(ui.dp(5), 0, ui.dp(5), 0) }); v.nextFocusUpId = mini.id; continue }
+            if (v === bellB) { acts.addView(v, LinearLayout.LayoutParams(ui.dp(46), ui.dp(46)).apply { setMargins(ui.dp(5), 0, ui.dp(5), 0) }); v.nextFocusUpId = kit.id; continue }
             (v as? TextView)?.apply { textSize = 16f; setPadding(ui.dp(18), ui.dp(10), ui.dp(18), ui.dp(10)) }
-            v.nextFocusUpId = mini.id
+            v.nextFocusUpId = kit.id
             acts.addView(v, LinearLayout.LayoutParams(-2, -2).apply { setMargins(ui.dp(5), 0, ui.dp(5), 0) })
         }
         val actsHsv = HorizontalScrollView(act).apply { isHorizontalScrollBarEnabled = false; clipChildren = false; addView(acts, FrameLayout.LayoutParams(-2, -2)) }
@@ -956,13 +1162,13 @@ class YtWatchPage(private val act: Activity, private val ui: Ui, private val hos
     /** نصوص الأزرار اللي بتتغيّر بعد التحميل (الجودة الحالية · لغة الصوت لو الفيديو متعدد اللغات) */
     private fun tvPaint() {
         try {
-            setIf(qChip, "🎞 " + mini.qualityLabel().ifBlank { "الجودة" })
-            val hl = mini.hasLangs()
+            setIf(qChip, "🎞 " + kit.qualityLabel().ifBlank { "الجودة" })
+            val hl = kit.hasLangs()
             val l = lChip
             if (l != null) {
                 val vis = if (hl) View.VISIBLE else View.GONE
                 if (l.visibility != vis) l.visibility = vis
-                if (hl) setIf(l, "🌐 " + mini.langLabel().ifBlank { "لغة الصوت" })
+                if (hl) setIf(l, "🌐 " + kit.langLabel().ifBlank { "لغة الصوت" })
             }
         } catch (_: Throwable) {}
     }
@@ -1135,29 +1341,29 @@ class YtWatchPage(private val act: Activity, private val ui: Ui, private val hos
     fun open(v: NpItem, src: Rect?) {
         val wasOpen = visibility == View.VISIBLE && !closing
         closing = false
-        animate().cancel(); mini.animate().cancel(); tail.animate().cancel()
+        animate().cancel(); kit.animate().cancel(); tail.animate().cancel()
         gen++; val my = gen
         item = v; det = null; comments = false; cLoaded = false; cNext = null; cMore = null; cItems = ArrayList(); cTotal = -1; relShown = 20
         liked = likedSet().contains(v.id); likeCount = -1L; dislikeN = -1L; metaBase = ""; lastSkipFrom = -1L; sbBar?.visibility = View.GONE; cEdit.setText(""); composer.visibility = View.GONE; tabCom.text = "💬 تعليقات"
         if (YtSponsor.on()) YtSponsor.fetch(v.id) {}   // (v469) C1
         hh2.removeCallbacks(pageTick); hh2.postDelayed(pageTick, 600L)
-        mini.reset(); mini.setThumb(v.thumb); mini.loading(true)
+        kit.reset(); kit.setThumb(v.thumb); kit.loading(true)
         bindItem(v)
         scroll.scrollTo(0, 0)
-        if (tv) post { try { mini.requestFocus() } catch (_: Throwable) {} }   // (v479 م5) التركيز على الفيديو أول ما الصفحة تفتح (ومن مقترح كمان)
+        if (tv) post { try { kit.requestFocus() } catch (_: Throwable) {} }   // (v479 م5) التركيز على الفيديو أول ما الصفحة تفتح (ومن مقترح كمان)
         if (!wasOpen) { from = src; host.state(true); animateIn(src) }
         else { body.alpha = 0f; body.animate().alpha(1f).setDuration(220L).start() }
         // (v471) الفيديو والتفاصيل بقوا على خيطين منفصلين: قبل كده المشغّل كان بيستنى NewPipe يخلّص كل التفاصيل (3-8 ثواني) قبل ما يبدأ يجيب الرابط،
         // وكمان كان بيمشي في الطريق البطيء بس. دلوقتي الرابط بيتجاب من نفس السباق السريع بتاع المشغّل الكامل (YtExtract + NewPipe + كاش) والتفاصيل تظهر لما تجهز.
         Thread {
-            val cap = Cfg.int("yt_maxh", 0)   // (v406) نفس جودة المشغّل الكامل (المصغّر هو نفس المشغّل)
+            val cap = Cfg.int("yt_maxh", 0)   // (v406) نفس جودة المشغّل الكامل (مشغّل الصفحة هو نفس المشغّل)
             var pk: YtPick? = null
             try { val g = YtFast.video(v.id, cap); if (g != null) pk = YtPick(g.url, g.audio, g.ua, g.title, 0, g.qlist) } catch (_: Throwable) {}
             val pick = pk
             act.runOnUiThread {
                 if (my != gen || act.isFinishing || act.isDestroyed) return@runOnUiThread
-                if (pick == null) mini.error("ما قدرتش أجيب الفيديو هنا — دوس زرار التكبير يجرّب في مشغّلك")
-                else { val sk = seekOnOpenMs; seekOnOpenMs = 0L; mini.start(pick, YtOpen.autoPlay(), sk) }   // (v469) C6: استكمال من نفس المكان
+                if (pick == null) kit.error("ما قدرتش أجيب الفيديو ده — جرّب تاني")
+                else { val sk = seekOnOpenMs; seekOnOpenMs = 0L; kit.start(pick, YtOpen.autoPlay(), sk) }   // (v469) C6: استكمال من نفس المكان
             }
         }.apply { isDaemon = true }.start()
         // (v472) المقترحات بتطلع من طلب next الخفيف (~ثانية، وبحسابك لو مسجّل) من غير ما تستنى تفاصيل NewPipe
@@ -1183,31 +1389,31 @@ class YtWatchPage(private val act: Activity, private val ui: Ui, private val hos
         if (visibility != View.VISIBLE || closing) return
         closing = true; gen++
         hh2.removeCallbacks(pageTick); hh2.removeCallbacks(sbHide)   // (v469) C6: حفظ أخير قبل القفل
-        try { val v = item; val d = mini.durationMs(); if (v != null && d > 0) YtProg.save(v.id, mini.position(), d, titleNow(), v.thumb) } catch (_: Throwable) {}
+        try { val v = item; val d = kit.durationMs(); if (v != null && d > 0) YtProg.save(v.id, kit.position(), d, titleNow(), v.thumb) } catch (_: Throwable) {}
         // (v417) النزول من صفحة المشاهدة: الفيديو بيكمّل في شريط صغير تحت (YtDock) بدل ما يقف ويختفي
-        val kept = if (dock && YtDockCfg.on()) mini.detachForDock() else null
-        if (kept == null) mini.pause()
+        val kept = if (dock && YtDockCfg.on()) kit.detachForDock() else null
+        if (kept == null) kit.pause()
         host.state(false)
         val dockItem = item
         if (kept != null) { if (dockItem != null) host.dock(dockItem, kept) else { try { kept.p.release() } catch (_: Throwable) {} } }
         fun finish() {
             visibility = View.GONE; closing = false
-            mini.release(); mini.animate().cancel(); tail.animate().cancel()
-            mini.scaleX = 1f; mini.scaleY = 1f; mini.translationX = 0f; mini.translationY = 0f; mini.alpha = 1f
+            kit.release(); kit.animate().cancel(); tail.animate().cancel()
+            kit.scaleX = 1f; kit.scaleY = 1f; kit.translationX = 0f; kit.translationY = 0f; kit.alpha = 1f
             tail.translationY = 0f; tail.alpha = 1f; alpha = 1f
         }
         if (!animated) { finish(); return }
         val src = from
-        mini.pivotX = 0f; mini.pivotY = 0f
-        val loc = IntArray(2); mini.getLocationOnScreen(loc)
-        val pw = mini.width.toFloat().coerceAtLeast(1f); val ph = mini.height.toFloat().coerceAtLeast(1f)
+        kit.pivotX = 0f; kit.pivotY = 0f
+        val loc = IntArray(2); kit.getLocationOnScreen(loc)
+        val pw = kit.width.toFloat().coerceAtLeast(1f); val ph = kit.height.toFloat().coerceAtLeast(1f)
         tail.animate().translationY(ui.dp(90).toFloat()).alpha(0f).setDuration(180L).start()
         if (src != null && src.width() > 0) {
-            mini.animate().scaleX(src.width() / pw).scaleY(src.height() / ph).translationX((src.left - loc[0]).toFloat()).translationY((src.top - loc[1]).toFloat())
+            kit.animate().scaleX(src.width() / pw).scaleY(src.height() / ph).translationX((src.left - loc[0]).toFloat()).translationY((src.top - loc[1]).toFloat())
                 .setDuration(260L).setInterpolator(DecelerateInterpolator(1.4f)).start()
             animate().alpha(0f).setStartDelay(120L).setDuration(160L).withEndAction { finish() }.start()
         } else {
-            mini.animate().translationY(ui.dp(60).toFloat()).alpha(0f).setDuration(200L).start()
+            kit.animate().translationY(ui.dp(60).toFloat()).alpha(0f).setDuration(200L).start()
             animate().alpha(0f).setDuration(220L).withEndAction { finish() }.start()
         }
     }
@@ -1216,15 +1422,15 @@ class YtWatchPage(private val act: Activity, private val ui: Ui, private val hos
         visibility = View.VISIBLE; alpha = 0f
         tail.alpha = 0f; tail.translationY = ui.dp(90).toFloat()
         post {
-            val pw = (if (mini.width > 0) mini.width else sw).toFloat(); val ph = (if (mini.height > 0) mini.height else sw * 9 / 16).toFloat()
-            val loc = IntArray(2); mini.getLocationOnScreen(loc)
-            mini.pivotX = 0f; mini.pivotY = 0f
+            val pw = (if (kit.width > 0) kit.width else sw).toFloat(); val ph = (if (kit.height > 0) kit.height else sw * 9 / 16).toFloat()
+            val loc = IntArray(2); kit.getLocationOnScreen(loc)
+            kit.pivotX = 0f; kit.pivotY = 0f
             if (src != null && src.width() > 0) {
-                mini.scaleX = src.width() / pw; mini.scaleY = src.height() / ph
-                mini.translationX = (src.left - loc[0]).toFloat(); mini.translationY = (src.top - loc[1]).toFloat()
-            } else { mini.translationY = ui.dp(60).toFloat(); mini.alpha = 0f }
+                kit.scaleX = src.width() / pw; kit.scaleY = src.height() / ph
+                kit.translationX = (src.left - loc[0]).toFloat(); kit.translationY = (src.top - loc[1]).toFloat()
+            } else { kit.translationY = ui.dp(60).toFloat(); kit.alpha = 0f }
             animate().alpha(1f).setStartDelay(0L).setDuration(140L).start()
-            mini.animate().scaleX(1f).scaleY(1f).translationX(0f).translationY(0f).alpha(1f).setDuration(360L).setInterpolator(DecelerateInterpolator(1.6f)).start()
+            kit.animate().scaleX(1f).scaleY(1f).translationX(0f).translationY(0f).alpha(1f).setDuration(360L).setInterpolator(DecelerateInterpolator(1.6f)).start()
             tail.animate().translationY(0f).alpha(1f).setStartDelay(140L).setDuration(320L).setInterpolator(DecelerateInterpolator()).start()
         }
     }
@@ -1434,21 +1640,21 @@ class YtWatchPage(private val act: Activity, private val ui: Ui, private val hos
         }.apply { isDaemon = true }.start()
     }
 
-    fun pause() { mini.pause() }
-    fun release() { mini.release() }
+    fun pause() { kit.pause() }
+    fun release() { kit.release() }
 
     /** (v606) خرجت من التطبيق (Home) والفيديو شغّال في صفحة المشاهدة (بورتريه، من غير ما تدخل شاشة كاملة): سلّمه للمشغّل الكامل ومعاه علامة «ادخل PiP» */
     fun pipHandoff(): Boolean {
         val v = item ?: return false
-        if (!isOpen || closing || !mini.isPlayingNow()) return false
-        val ho = mini.handoff() ?: return false
+        if (!isOpen || closing || !kit.isPlayingNow()) return false
+        val ho = kit.handoff() ?: return false
         YtHandoff.pipNext = true
         host.expand(v.id, titleNow(), ho.second, false, ho.first)
         return true
     }
 }
 
-/** (v417) مشغّل شغّال + الـ pick بتاعه + الموضع — بيتسلّم من المشغّل المصغّر لشريط يوتيوب السفلي */
+/** (v417) مشغّل شغّال + الـ pick بتاعه + الموضع — بيتسلّم من مشغّل الصفحة لشريط يوتيوب السفلي */
 class YtKept(val p: ExoPlayer, val pick: YtPick, val pos: Long)
 
 object YtDockCfg { fun on(): Boolean = Cfg.str("yt_dock", "1") != "0" }
@@ -1534,7 +1740,7 @@ class YtDock(private val act: Activity, private val ui: Ui, private val onExpand
         paintPlay()
     }
 
-    /** (v1119) الشريط الزجاجي العايم بيغطّي أسفل الصفحة — الدوك المصغّر لازم يقعد فوقه مش تحته (كان بينزل تحت مستوى شريط الأدوات) */
+    /** (v1119) الشريط الزجاجي العايم بيغطّي أسفل الصفحة — دوك الصفحة لازم يقعد فوقه مش تحته (كان بينزل تحت مستوى شريط الأدوات) */
     private fun applyInset() {
         val lp = layoutParams as? FrameLayout.LayoutParams ?: return
         val bt = try { MtFloat.barTop(act) } catch (_: Throwable) { 0 }

@@ -399,14 +399,13 @@ class MainActivity : Activity() {
                 ui.button("📥 التحميلات المسجّلة") { settingsDlg0?.dialog?.dismiss(); ytUi?.openDownloadsPage() },
                 ui.noHint()),
             ui.section("🎬 لما تدوس على فيديو", true,
-                ui.chips(listOf("صفحة المشاهدة", "المشغّل مباشرة"), { if (YtOpen.mode() == YtOpen.PLAYER) "المشغّل مباشرة" else "صفحة المشاهدة" }) { n -> Cfg.put("yt_open_mode", if (n == "المشغّل مباشرة") YtOpen.PLAYER else YtOpen.PAGE) },
-                ui.switchRow("▶ شغّل تلقائي في المشغّل المصغّر", YtOpen.autoPlay()) { Cfg.put("yt_mini_auto", if (it) "1" else "0") },
-                ui.switchRow("⬇ لما تنزّل من صفحة المشاهدة: الفيديو يكمّل في شريط صغير تحت (زي يوتيوب)", YtDockCfg.on()) { Cfg.put("yt_dock", if (it) "1" else "0") },
+                ui.switchRow("▶ تشغيل تلقائي في مشغّل صفحة المشاهدة", YtOpen.autoPlay()) { Cfg.put("yt_mini_auto", if (it) "1" else "0") },
+                ui.switchRow("⬇ دوك صفحة المشاهدة (شريط تحت لما تصغّر الفيديو بالسحب لتحت)", YtDockCfg.on()) { Cfg.put("yt_dock", if (it) "1" else "0") },
                 ui.switchRow("🪟 لما تخرج من التطبيق والفيديو شغّال: يكمّل في نافذة صغيرة (PiP)", Cfg.str("yt_auto_pip", "1") != "0") { Cfg.put("yt_auto_pip", if (it) "1" else "0") },
                 ui.switchRow("🌐 علامة «مدبلج» على الفيديوهات متعددة اللغات", YtDub.enabled()) { Cfg.put("yt_dub_scan", if (it) "1" else "0") },
                 ui.switchRow("⏭ تخطي الرعاة (SponsorBlock)", YtSponsor.on()) { on -> Cfg.put("yt_sponsor", if (on) "1" else "0") },
                 ui.switchRow("🎬 الشورتس تظهر كفيديوهات عادية", YtBackends.shortsAsVideos()) { Cfg.put("yt_shorts_normal", if (it) "1" else "0") },
-                ui.text("صفحة المشاهدة: الفيديو بيكبر بأنيميشن ومعاه الوصف والتعليقات والمقترحات. المشغّل مباشرة: الدوسة بتفتح المشغّل على طول.", 12f, th.muted)),
+                ui.text("الفيديو بيفتح على صفحة المشاهدة: المشغّل فوق، وتحته الوصف والتعليقات والمقترحات. اسحب لتحت يصغّر لدوك تحت، وزرار التكبير بيفتح المشغّل الكامل من نفس الثانية.", 12f, th.muted)),
             ui.section("🎞 الجودة ولغة الصوت", true,
                 ui.text("الجودة الافتراضية (أعلى جودة بيتفتح بيها الفيديو — على الداتا اختار 360p أو 480p)", 13f, th.text, true),
                 ui.chips(ytQ, { ytQ[ytQv.indexOf(Cfg.int("yt_maxh", 0)).coerceAtLeast(0)] }) { pick ->
@@ -1924,12 +1923,15 @@ class MainActivity : Activity() {
         }
     }
     override fun onPause() { try { DataCapsule.detach(this) } catch (_: Throwable) {}; super.onPause() }   // (v799) كبسولة الداتا في كل التبويبات
-    // (دمج v1071) صفحة الانتقال للمتصفح: سودة + علامة تحميل + «جاري الانتقال الى المتصفح» — بتتخبّى من onResume لما ترجع
+    // (v1132) كبسولة صغيرة في نص الشاشة بدل الصفحة السودة الكاملة (v1071): لودينج + «جاري الانتقال الى المتصفح» — بتتخبّى من onResume لما ترجع
     private var browserLoadingOv: android.view.View? = null
     private fun showBrowserLoading() {
         try {
             if (browserLoadingOv != null) return
-            val ov = android.widget.FrameLayout(this).apply { setBackgroundColor(android.graphics.Color.BLACK) }
+            val ov = android.widget.FrameLayout(this).apply {
+                background = android.graphics.drawable.GradientDrawable().apply { setColor(0xCC000000.toInt()); cornerRadius = (14 * resources.displayMetrics.density) }
+                setPadding((20 * resources.displayMetrics.density).toInt(), (16 * resources.displayMetrics.density).toInt(), (20 * resources.displayMetrics.density).toInt(), (16 * resources.displayMetrics.density).toInt())
+            }
             val col = android.widget.LinearLayout(this).apply { orientation = android.widget.LinearLayout.VERTICAL; gravity = android.view.Gravity.CENTER }
             val sp = LoadUi.view(this, 52)   // (v1122) نفس لودينج تشغيل الفيديو
             val tx = android.widget.TextView(this).apply {
@@ -1942,7 +1944,7 @@ class MainActivity : Activity() {
             col.addView(sp, android.widget.LinearLayout.LayoutParams(-2, -2).apply { gravity = android.view.Gravity.CENTER })
             col.addView(tx, android.widget.LinearLayout.LayoutParams(-2, -2).apply { gravity = android.view.Gravity.CENTER })
             ov.addView(col, android.widget.FrameLayout.LayoutParams(-2, -2, android.view.Gravity.CENTER))
-            (window.decorView as? android.view.ViewGroup)?.addView(ov, android.view.ViewGroup.LayoutParams(-1, -1))
+            (window.decorView as? android.view.ViewGroup)?.addView(ov, android.widget.FrameLayout.LayoutParams(-2, -2, android.view.Gravity.CENTER))
             browserLoadingOv = ov
         } catch (_: Throwable) {}
     }
@@ -2014,6 +2016,7 @@ class MainActivity : Activity() {
     override fun dispatchKeyEvent(ev: android.view.KeyEvent): Boolean { TvKill.watch(this, ev); if (TvFocus.handleKey(this, ev)) return true; return super.dispatchKeyEvent(ev) }   // (v477) Menu = دوسة طويلة
     @Suppress("DEPRECATION")
     override fun onBackPressed() {
+        if (YtFull.exit()) return
         if (!fromPlayer && ytTvMode && curTab == 4) { ytTvMode = false }   // (v603) الريموت القديم اتمسح: مفيش «رجوع للريموت»، بيكمّل الرجوع العادي
 
         if (!fromPlayer && curTab == 7) { settingsBack?.invoke(); return }   // (v370)
@@ -2026,6 +2029,6 @@ class MainActivity : Activity() {
         if (!fromPlayer && !tvShellOn && !DeviceUi.isTv(this)) { moveTaskToBack(true); return }   // (v973) Main هي الجذر: من غير finish عشان متكشفش تبويب شغّال تحتها (متصفح/ملفات/يوتيوب)
         super.onBackPressed()
     }
-    override fun startActivity(i: Intent?) { super.startActivity(i); try { if (tvShellOn) { NavAnim.take(this); overridePendingTransition(0, 0) } else if (!NavAnim.take(this)) overridePendingTransition(R.anim.act_enter, R.anim.act_stay) } catch (e: Exception) { LogStore.err("Main:720", e) } }
+    override fun startActivity(i: Intent?) { super.startActivity(i); try { if (tvShellOn) { NavAnim.take(this); overridePendingTransition(0, 0) } else if (i?.getBooleanExtra("handoff", false) == true) { NavAnim.take(this); overridePendingTransition(0, 0) } else if (!NavAnim.take(this)) overridePendingTransition(R.anim.act_enter, R.anim.act_stay) } catch (e: Exception) { LogStore.err("Main:720", e) } }
     override fun finish() { super.finish(); try { if (fromPlayer || tvShellOn) overridePendingTransition(0, 0) else overridePendingTransition(R.anim.act_stay, R.anim.act_exit) } catch (e: Exception) { LogStore.err("Main:721", e) } }
 }

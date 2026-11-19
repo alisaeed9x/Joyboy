@@ -705,11 +705,11 @@ class PlayerActivity : Activity(), Host {
             "pip" -> runOnUiThread { try { enterPip() } catch (e: Throwable) { LogStore.err("Player:rpip", e) } }   // (v712) نافذة صغيرة من الريموت
             "voice" -> runOnUiThread { try { voiceMenu() } catch (e: Throwable) { LogStore.err("Player:rvoice", e) } }   // (v712) فصل صوت الكلام
             "nextlist" -> runOnUiThread { try { openNextSheet() } catch (e: Throwable) { LogStore.err("Player:rnext", e) } }   // (v712) 📃 التالي (يوتيوب)
-            "tr_free", "tr_gem" -> geminiAsk()   // (v743) FreeLLM اتشال — الزرارين القدام بيفتحوا اختيار جيميناي
-            "tr_gem_acc" -> { trAsked = true; h.post { Cfg.put("tr_bal", "0"); Cfg.put("dual_listen", "2"); Cfg.put("fastmode", "0"); geminiStart() } }   // (v1043) الاختيار اتعمل على الموبايل — من غير نافذة على التلفزيون
-            "tr_gem_fast" -> { trAsked = true; h.post { Cfg.put("tr_bal", "0"); Cfg.put("dual_listen", "0"); Cfg.put("fastmode", "0"); geminiStart() } }
-            "tr_gem_quick" -> { trAsked = true; h.post { Cfg.put("tr_bal", "0"); Cfg.put("fastmode", "1"); geminiStart() } }
-        "tr_gem_bal" -> { trAsked = true; h.post { Cfg.put("tr_bal", "1"); geminiStart() } }   // (دمج v1090) ⚖ متوازن   // (v1068) ⚡ سريع
+            "tr_free", "tr_gem" -> remoteTrGuarded { geminiAsk() }   // (v743) FreeLLM اتشال — الزرارين القدام بيفتحوا اختيار جيميناي
+            "tr_gem_acc" -> remoteTrGuarded { trAsked = true; h.post { Cfg.put("tr_bal", "0"); Cfg.put("dual_listen", "2"); Cfg.put("fastmode", "0"); geminiStart() } }   // (v1043) الاختيار اتعمل على الموبايل — من غير نافذة على التلفزيون
+            "tr_gem_fast" -> remoteTrGuarded { trAsked = true; h.post { Cfg.put("tr_bal", "0"); Cfg.put("dual_listen", "0"); Cfg.put("fastmode", "0"); geminiStart() } }
+            "tr_gem_quick" -> remoteTrGuarded { trAsked = true; h.post { Cfg.put("tr_bal", "0"); Cfg.put("fastmode", "1"); geminiStart() } }
+        "tr_gem_bal" -> remoteTrGuarded { trAsked = true; h.post { Cfg.put("tr_bal", "1"); geminiStart() } }   // (دمج v1090) ⚖ متوازن   // (v1068) ⚡ سريع
             "tr_whisper" -> whisperStart()
             "tr_gtx" -> startGeminiTranscribe()
             "tr_wtx" -> offlineQuick(true)
@@ -898,6 +898,14 @@ class PlayerActivity : Activity(), Host {
     @Volatile private var sfDoneUri = ""
     /** (v703) وصف اللي اترجم بيه ملف الترجمة فعلًا (مترجم · لهجة · أسلوب) — بيتعرض مكان «وشبر + LibreTranslate» (ده وضع محرك الصوت المحفوظ مش ملف الترجمة) */
     @Volatile private var sfDoneLabel = ""
+    @Volatile private var sfShown = false
+    private var sfOffKey = ""
+    @Volatile private var sfBatchFresh = false
+    private fun hasSoftSubNow(): Boolean {
+        val u = uri?.toString() ?: ""
+        if (u.isNotEmpty() && sfDoneUri == u) return true
+        return try { sfSidecar() != null || castSubFile?.exists() == true || mobileSub?.exists() == true || sfNativeCount() > 0 } catch (_: Throwable) { false }
+    }
     private fun modeLabelNow(): String = try {
         if (!engineStarted && sfDoneLabel.isNotEmpty() && sfDoneUri.isNotEmpty() && sfDoneUri == (uri?.toString() ?: "")) sfDoneLabel else modeName()
     } catch (_: Throwable) { "" }
@@ -930,14 +938,16 @@ class PlayerActivity : Activity(), Host {
         if (!engineStarted && sfBusy.isNotEmpty()) tvSfShort()
         else if (!engineStarted && sfLive.isNotEmpty()) "💬 لحظية"
         else if (!engineStarted && sfDoneUri.isNotEmpty() && sfDoneUri == (uri?.toString() ?: "")) "✅ مترجم"
-        else if (!engineStarted) "▶ ترجم"
+        else if (!engineStarted && hasSoftSubNow()) "💬 سوفت سب"
+        else if (!engineStarted) (if (trIsTx()) "✍ تفريغ" else "▶ ترجم")
         // (v1119) عدّاد الجمل في زرار الترجمة على التلفزيون: «⏳ 19% · 42 جملة»
         else (if (::engine.isInitialized && engine.userPaused) "⏸ " else if (trPct >= 100) "✅ " else "⏳ ") + trPct + "%" + " · " + subCountNow() + " جملة" + dotsNow()
     } catch (_: Throwable) { "▶ ترجم" }
     private fun tvTrColor(): Int = try {
         if (!engineStarted && sfBusy.isNotEmpty()) 0xFF1F5FBF.toInt()
         else if (!engineStarted && sfDoneUri.isNotEmpty() && sfDoneUri == (uri?.toString() ?: "")) 0xFF2E7D32.toInt()
-        else if (!engineStarted) 0xFFE53935.toInt()
+        else if (!engineStarted && hasSoftSubNow()) 0xFF2E7D32.toInt()
+        else if (!engineStarted) (if (trIsTx()) 0xFF1F5FBF.toInt() else 0xFFE53935.toInt())
         else if (::engine.isInitialized && engine.userPaused) 0xFF8D6E00.toInt() else if (trPct >= 100) 0xFF2E7D32.toInt() else 0xFF1F5FBF.toInt()
     } catch (_: Throwable) { 0xFFE53935.toInt() }
     /** (v639) لوحة Aa⏱ بتبويبين: 🔤 الشكل (حجم/توقيت/خط/خلفية) · ✨ الذكاء (لهجات/أسلوب/أدوات/شخصيات). يمين/شمال بيبدّل التبويب، ودوسة واحدة على أي أداة بتشغّلها */
@@ -1107,6 +1117,7 @@ class PlayerActivity : Activity(), Host {
                 if (engine.subs.isNotEmpty()) add("💾 احفظ النسخة الحالية") { engine.saveVersion("نسخة " + PlayerLogic.clock(player.currentPosition)); say("💾 اتحفظت نسخة") }
             }
         } catch (e: Throwable) { LogStore.err("Tv:versions", e) }
+        add("📝 ترجمات الفيديو (قديم + جديد)") { sfTranslationsDialog(anchor) }
         if (!Strict.hideTrOpts()) add("🌐 لغة / لهجة ترجمة البرنامج") { preferNative = false; tvSubDialog(1) }   // (v696) أوفلاين كامل: فصحى بس
         // (v552) «ترجمة ملف الترجمة» اتشالت — السؤال بقى جوه ▶ ترجم لما الفيديو يبقى فيه سوفت صب
         add("⚙ إعدادات الترجمة") { modeSettings(anchor) }
@@ -1248,6 +1259,7 @@ class PlayerActivity : Activity(), Host {
                 sfHideNative = true; sfKillNative()   // (v762)
                 nativeCue = ""
                 sfDoneUri = uri?.toString() ?: ""
+                sfShown = true
                 sfDoneLabel = "🌍 ترجمة أونلاين · " + g.source.take(40)
                 Thread { try { engine.saveNow() } catch (e: Throwable) { LogStore.err("Player:subAddSave", e) } }.start()
                 val lgN = if (g.lang == "ar") "عربي" else g.lang
@@ -1540,6 +1552,7 @@ class PlayerActivity : Activity(), Host {
                 sfHideNative = true; sfKillNative()   // (v762)   // (v667) ملف الترجمة الأصلي يتفصل والمترجم هو اللي يظهر
                 nativeCue = ""
                 sfDoneUri = uri?.toString() ?: ""
+                sfShown = true
                 sfDoneLabel = try {
                     if (engName.contains("جيميناي")) {
                         val d = Cfg.str("conv_dialect", "").ifBlank { "فصحى" }; val sy = Cfg.str("tone_style", "").ifBlank { "تلقائي" }; val st = Cfg.str("tone_strength", "متوسطة")
@@ -1562,6 +1575,7 @@ class PlayerActivity : Activity(), Host {
         netEntries { l, a -> add(l, a) }   // (v746) جلب ترجمة أونلاين + متصفح + ضبط توقيت
         add("🔤⏱ شكل وتوقيت الترجمة") { tvSubDialog() }
         if (hasSubs) add("📝 الجمل المترجمة") { try { if (::sentDlg.isInitialized) sentDlg.show() } catch (_: Throwable) {} }
+        add("📝 ترجمات الفيديو (قديم + جديد)") { sfTranslationsDialog(anchor) }
         if (tr) {
             add("🔄 إعادة / تقدم الباتشات") { batchDialog() }
             add("⚙ إعدادات الترجمة") { modeSettings(anchor) }
@@ -2569,8 +2583,9 @@ class PlayerActivity : Activity(), Host {
         val vu = uri ?: return false
         val key = vu.toString()
         if (softAskedFor == key || !::engine.isInitialized || engineStarted || engine.subs.isNotEmpty() || sfBusy.isNotEmpty()) return false
+        if (!hasSoftSubNow()) return false
         softAskedFor = key
-        softAuto(vu) { beginTranslate(false) }
+        sfChoiceDialog(window.decorView)
         return true
     }
     /** (v670) أوتوماتيك لقى ترجمة مفيش حاجة تتعمل بيها لسه (المشغّل لسه بيحمّل مساراته): لما المسار يظهر نرجع نجرّب تاني مرة واحدة */
@@ -2635,10 +2650,30 @@ class PlayerActivity : Activity(), Host {
             runOnUiThread { try { player.seekTo(0) } catch (_: Throwable) {}; trAsked = true; beginTranslate() }
         }.apply { isDaemon = true }.start()
     }
+    private fun sfClearForBatch() {
+        val u = uri?.toString() ?: ""
+        try { if (::engine.isInitialized && engine.subs.isNotEmpty()) engine.saveVersion("ترجمة السوفت سب") } catch (_: Throwable) {}
+        sfDoneUri = ""
+        sfDoneLabel = ""
+        sfShown = false
+        try { sfStopLive() } catch (_: Throwable) {}
+        sfHideNative = false
+        preferNative = false
+        nativeCue = ""
+        curIdx = -2
+        sfOffKey = u
+        if (sfBatchFresh) {
+            sfBatchFresh = false
+            try { engine.redoAll(true) } catch (_: Throwable) {}
+            trAsked = true
+        }
+        updateTr()
+    }
     fun beginTranslate(auto: Boolean = false) {
         if (remote) { remoteBegin(auto); return }
         val asked = trAsked; trAsked = false
         if (!auto && softGate()) return
+        if (::engine.isInitialized && (sfShown || (sfDoneUri.isNotEmpty() && sfDoneUri == (uri?.toString() ?: "")))) sfClearForBatch()
         if (Cfg.str("hard_mode", "0") == "1" && !SourceMode.keepHard()) {   // (v291) الهجين بهارد سب محتاج hard_mode=1 والصوت شغّال
             Cfg.put("hard_mode", "0")   // (v240) أي ترجمة صوتية بتطلّعك من وضع الهارد سب
             // (v261) ووقّف الوضع البصري بتاع الهارد سب كمان، وإلا بيفضل شغّال جنب الترجمة الصوتية
@@ -2808,7 +2843,12 @@ class PlayerActivity : Activity(), Host {
                 pz.background = ui.box(if (paused) 0xFF2E7D32.toInt() else 0xFF455A64.toInt(), 0x33FFFFFF, 8)
                 gearB.visibility = View.VISIBLE   // (v1097) ⚙ ظاهر دايمًا جنب «ترجم» حتى والترجمة شغّالة
                 lgB.visibility = if (caps().dialect) View.VISIBLE else View.GONE   // (v444) بس في الأوضاع اللي فيها لهجات
-                if (!started) { chipB.text = if (sfBusy.isNotEmpty()) sfChip() else if (sfLive.isNotEmpty()) "💬 ترجمة لحظية ▾" else "▶ ترجم · " + modeShort() + " ▾"; chipB.background = ui.box(0xFFE53935.toInt(), 0x33FFFFFF, 12) }
+                if (!started) {
+                    val tx = trIsTx()
+                    val soft = hasSoftSubNow()
+                    chipB.text = if (sfBusy.isNotEmpty()) sfChip() else if (sfLive.isNotEmpty()) "💬 ترجمة لحظية ▾" else if (soft) "💬 سوفت سب · " + modeShort() + " ▾" else (if (tx) "✍ تفريغ · " else "▶ ترجم · ") + modeShort() + " ▾"
+                    chipB.background = ui.box(if (soft) 0xFF2E7D32.toInt() else if (tx) 0xFF1F5FBF.toInt() else 0xFFE53935.toInt(), 0x33FFFFFF, 12)
+                }
                 else {
                     LoadUi.set(chipB, (Offline.liveShort()?.let { "$it · " } ?: modeChipTag()) + (if (paused) "⏸ " else if (trPct >= 100) "✅ " else "⏳ ") + trPct + "%" + dotsNow() + " ▾")
                     chipB.background = ui.box(if (paused) 0xFF8D6E00.toInt() else if (trPct >= 100) 0xFF2E7D32.toInt() else 0xFF1F5FBF.toInt(), 0x33FFFFFF, 12)
@@ -2825,8 +2865,11 @@ class PlayerActivity : Activity(), Host {
             if (webVid) { row.addView(qBtn(), lp(0).apply { width = 0; weight = 1.2f }); row.addView(aBtn(), lp(0).apply { width = 0; weight = 0.9f }); row.addView(dlB, sq()) }
             trUpdaters.add {
                 val paused = ::engine.isInitialized && engine.userPaused
-                                tr.visibility = View.VISIBLE; gearB.visibility = View.VISIBLE   // (v1097)
-                                LoadUi.set(tr, if (!engineStarted) (if (sfBusy.isNotEmpty()) sfChip() else if (sfLive.isNotEmpty()) "💬 ترجمة لحظية ▾" else "▶ ترجم · " + modeShort() + " ▾") else (Offline.liveShort()?.let { "$it · " } ?: modeChipTag()) + (if (paused) "⏸ " else if (trPct >= 100) "✅ " else "⏳ ") + trPct + "%" + dotsNow() + " ▾")
+                tr.visibility = View.VISIBLE; gearB.visibility = View.VISIBLE   // (v1097)
+                val tx = trIsTx()
+                val soft = hasSoftSubNow()
+                LoadUi.set(tr, if (!engineStarted) (if (sfBusy.isNotEmpty()) sfChip() else if (sfLive.isNotEmpty()) "💬 ترجمة لحظية ▾" else if (soft) "💬 سوفت سب · " + modeShort() + " ▾" else (if (tx) "✍ تفريغ · " else "▶ ترجم · ") + modeShort() + " ▾") else (Offline.liveShort()?.let { "$it · " } ?: modeChipTag()) + (if (paused) "⏸ " else if (trPct >= 100) "✅ " else "⏳ ") + trPct + "%" + dotsNow() + " ▾")
+                tr.background = ui.box(if (!engineStarted) (if (soft) 0xFF2E7D32.toInt() else if (tx) 0xFF1F5FBF.toInt() else 0xFFE53935.toInt()) else (if (paused) 0xFF8D6E00.toInt() else if (trPct >= 100) 0xFF2E7D32.toInt() else 0xFF1F5FBF.toInt()), 0x33FFFFFF, 10)
                 pz2.visibility = if (engineStarted) View.VISIBLE else View.GONE
                 cx2.visibility = if (engineStarted) View.VISIBLE else View.GONE
                 pz2.text = if (paused) "▶" else "⏸"
@@ -3176,6 +3219,17 @@ class PlayerActivity : Activity(), Host {
     }
 
     /** (v741) قايمة «ترجم»: قبل البداية = 3 أنظمة ترجمة + نظامين تفريغ · بعد البداية = تحكم (إيقاف/إلغاء) + أدوات + الإعدادات */
+    private fun sfChoiceDialog(anchor: View) {
+        val key = uri?.toString() ?: ""
+        softAskedFor = key
+        val col = LinearLayout(this)
+        fun close() { trMenuPop?.dismiss() }
+        col.addView(shHead("💬 فيه ترجمة جاهزة للفيديو ده", "سوفت سب — تترجم هي ولا تترجم الصوت بالباتشات؟"))
+        col.addView(shRow("💬 ترجمة السوفت سب", sfSideName().ifBlank { "ملف الترجمة" }) { close(); sfEngineChoice("السوفت سب") { e -> sfRun("soft", e) } })
+        col.addView(shRow("⚡ ترجمة بالباتشات زي زمان", "من الصوت — والسوفت سب بيتقفل") { close(); sfBatchFresh = true; trAsked = true; h.post { translateMenu(anchor) } })
+        trMenuPop = showSheet(anchor, col, 320, "sfChoice") { pw -> if (trMenuPop === pw) trMenuPop = null }
+    }
+
     fun translateMenu(anchor: View) {
         trMenuPop?.let { if (it.isShowing) { it.dismiss(); trMenuPop = null; return } }
         val started = engineStarted
@@ -3200,9 +3254,12 @@ class PlayerActivity : Activity(), Host {
             col.addView(shRow("⚖ متوازن", if (gemNow && bal) "✓ الحالي" else "كل مفتاح باتش: تفريغ يظهر فورًا ثم ترجمة") { close(); h.post { Cfg.put("tr_bal", "1"); geminiStart() } })
             col.addView(shNote("لهجات + أسلوب + بصري · محتاج نت"))
             col.addView(shRow("📴 ٢ · وشبر + ترجمة أوفلاين (HY-MT1.5)", if (mk == "off") "✓ الحالي" else setVal) { close(); whisperStart() })
-            col.addView(shSection("✍ تفريغ بس (من غير ترجمة) — نظامين"))
-            col.addView(shRow("☁ بجيميناي (من الصوت)", if (mk == "txg") "✓ الحالي" else "") { close(); startGeminiTranscribe() })
-            col.addView(shRow("📴 على الجهاز بوشبر", if (mk == "txw") "✓ الحالي" else "") { close(); askVideoLang { offlineQuick(true) } })
+            col.addView(shRow("✍ تفريغ بس", if (mk == "txg" || mk == "txw") "✓ الحالي" else "من غير ترجمة") { close(); h.post { if (TrProfile.engine() == "off") askVideoLang { offlineQuick(true) } else startGeminiTranscribe() } })
+            col.addView(shSection("✍ التفريغ بـ:"))
+            val engRow = shFlow()
+            engRow.addView(shChip("☁ جيميناي", TrProfile.engine() != "off") { Cfg.put("tr_engine", "gem"); updateTr(); close(); h.post { translateMenu(anchor) } }, shChipLp())
+            engRow.addView(shChip("📴 وشبر", TrProfile.engine() == "off") { Cfg.put("tr_engine", "off"); updateTr(); close(); h.post { translateMenu(anchor) } }, shChipLp())
+            col.addView(engRow, LinearLayout.LayoutParams(-1, -2))
         } else {
             col.addView(shHead(Offline.liveLine() ?: ("الترجمة: " + trPct + "% · " + subCountNow() + " جملة" + (if (paused) " (واقفة)" else "")), "الوضع: " + modeName() + (if (Strict.freeText() || Strict.freeGem()) " · 🆓 " + FreeLlm.liveName() else "")))
             col.addView(shDuo(
@@ -3229,6 +3286,8 @@ class PlayerActivity : Activity(), Host {
     /** قبل البداية: بيبدأ على طول بالنوع والمحرك المحفوظين (⚙). بعد البداية (أو سوفت صب شغّال): قايمة الأدوات زي الأول */
     private fun trMainClick(anchor: View) {
         if (engineStarted || sfBusy.isNotEmpty() || sfLive.isNotEmpty()) { translateMenu(anchor); return }
+        val key = uri?.toString() ?: ""
+        if (hasSoftSubNow() && softAskedFor != key) { sfChoiceDialog(anchor); return }
         val tx = trIsTx(); val off = TrProfile.engine() == "off"
         LogStore.add("▶ زرار ترجم ← " + (if (tx) "تفريغ" else "ترجمة") + " · " + (if (off) "وشبر أوفلاين" else "جيميناي"))   // (v1126) تشخيص: أنهي فرع اشتغل
         when {
@@ -3237,6 +3296,16 @@ class PlayerActivity : Activity(), Host {
             off -> whisperStart()
             else -> geminiStart()
         }
+    }
+
+    private fun remoteTrGuarded(run: () -> Unit) {
+        val key = uri?.toString() ?: ""
+        if (!engineStarted && hasSoftSubNow() && softAskedFor != key) {
+            sfChoiceDialog(window.decorView)
+            notice("💬 فيه سوفت سب — اختار من التلفزيون: ترجمته ولا الباتشات")
+            return
+        }
+        run()
     }
 
     private fun trSettings(anchor: View) {
@@ -4640,7 +4709,7 @@ class PlayerActivity : Activity(), Host {
         } catch (_: Throwable) {}
         if (incognito) try { window.addFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE) } catch (_: Throwable) {}   // (v1062) متخفي: المعاينة في الريسنت سودا
         smoothRotation()   // (v429)
-        try { if (MtLook.playerAnim()) overridePendingTransition(R.anim.player_open_enter, R.anim.player_open_exit) } catch (_: Throwable) {}   // (v899) حركة فتح المشغّل من MeeTube
+        try { if (intent.getBooleanExtra("handoff", false)) overridePendingTransition(0, 0) else if (MtLook.playerAnim()) overridePendingTransition(R.anim.player_open_enter, R.anim.player_open_exit) } catch (_: Throwable) {}   // (v899) (v1130) التسليم من المشغّل المصغّر: من غير حركة حركة فتح المشغّل من MeeTube
         synchronized(liveList) {
             liveList.removeAll { it.get() == null }
             liveList.toList().forEach { r -> r.get()?.let { o -> if (o !== this) try { o.runOnUiThread { o.killForNewVideo() } } catch (_: Throwable) {} } }
@@ -5204,7 +5273,7 @@ class PlayerActivity : Activity(), Host {
         val spdB = tip(ui.fsCircle(PlayerLogic.speedLabel(speed)) { cycleSpeed(); showChrome() }.apply { textSize = 11f }, "السرعة"); spdVisB = spdB
         val rtB = tip(mini("🔄") { batchDialog() }, "إعادة ترجمة")
         val bgTrB = tip(mini("🌙") { translateInBackground() }, "ترجمة بالخلفية")
-        val toolBtns = listOf<TextView>(syncB, tip(logB, "اللوج"), tip(sentB, "الجمل"), tip(ccB, "إظهار/إخفاء الترجمة"), tip(loopB, "تكرار الفيديو"), tip(dualB, "وضع الترجمة"), tip(charsB, "الشخصيات"), tip(voiceB, "فصل صوت الكلام عن الموسيقى"), qualB, nextListB)
+        val toolBtns = listOf<TextView>(syncB, tip(logB, "اللوج"), tip(sentB, "الجمل"), tip(mini("📝") { sfTranslationsDialog(window.decorView) }, "ترجمات الفيديو"), tip(ccB, "إظهار/إخفاء الترجمة"), tip(loopB, "تكرار الفيديو"), tip(dualB, "وضع الترجمة"), tip(charsB, "الشخصيات"), tip(voiceB, "فصل صوت الكلام عن الموسيقى"), qualB, nextListB)
         toolBtns.drop(1).filter { it !== voiceB && it !== qualB && it !== nextListB }.forEach { b ->   // (v226) 🔑 اتشال من الشريط العلوي
             toolR.addView(b, LinearLayout.LayoutParams(if (b.text.startsWith("🔑")) ui.dp(42) else ui.dp(30), ui.dp(30)).apply { setMargins(ui.dp(3), 0, ui.dp(3), 0) })
         }
@@ -5857,6 +5926,8 @@ class PlayerActivity : Activity(), Host {
                 val natHold = !preferNative && natGap && (engineStarted || sfBusy.isNotEmpty() || engine.subs.isNotEmpty()) && now - natGapSince < 900L
                 val nat = ccOn && !sfHideNative && (gs.isEmpty() || preferNative) && nativeCue.isNotEmpty() && !natHold   // (v515) (v521) preferNative = المستخدم اختار مسار الفيديو الأصلي ترجمة الفيديو الأصلية لما مفيش ترجمة من المحرك
                 if (nat != natShown) { natShown = nat; try { sub.style = natStyle(SubStyle.load { k, d -> Cfg.str(k, d) }) } catch (e: Throwable) { LogStore.err("Player:natStyle", e) } }
+                val ul = (sfShown && !preferNative && gs.isNotEmpty()) || (nat && sfLive.isNotEmpty())
+                if (ul != sub.style.underline) { sub.style = sub.style.copy(underline = ul); curIdx = -2 }
                 if (nativeCue != natWaitCue) { natWaitCue = nativeCue; natWaitSince = now }
                 val liveWait = nat && sfLive.isNotEmpty() && sfLiveCache[nativeCue] == null && now - natWaitSince < 2500L   // (v703) لسه الترجمة ماجتش: ما نعرضش الأصل
                 val key = act.joinToString(",") + ":" + part + (if (liveWait) "|W" else "") + (if (nat) "|N:" + nativeCue + (if (sfLive.isNotEmpty()) "|L" + sfLiveGen else "") else "")
@@ -6402,6 +6473,9 @@ class PlayerActivity : Activity(), Host {
                 } else if (studioApplied) {
                     say("🎙 ترجمة الاستوديو شغّالة (" + studioAppliedN + " جملة)")
                 }
+                if (!sfShown && ::engine.isInitialized && engine.subs.isNotEmpty()) {
+                    try { if (sfSidecar() != null) sfShown = true } catch (_: Throwable) {}
+                }
                 if (pendingBegin) { pendingBegin = false; beginTranslate() } else { autoSub(); castSubAuto() }
             }
         }.apply { isDaemon = true }.start()
@@ -6706,6 +6780,7 @@ class PlayerActivity : Activity(), Host {
         uri = newUri; url = null; aurl = null; hdr.clear()
         cur = 0L; durMs = 0L; vidW = 0; vidH = 0; curIdx = -2; curKey = ""; dirty = true
         nativeCue = ""; sfHideNative = false; textPicked = false; natShown = false; natLast = ""; diagCueN = 0; diagCueLast = ""; diagN = 0; preferNative = false; sfLive = ""; sfLiveCache.clear(); sfLiveAsk.clear()
+        sfShown = false; sfOffKey = ""
         synchronized(logBuf) { logBuf.setLength(0) }
         status = ""; conf = Cfg.snapshot()
         try { sub.show(null) } catch (e: Exception) { LogStore.err("Main:2172", e) }
@@ -7762,6 +7837,7 @@ class PlayerActivity : Activity(), Host {
     /** يرجّع نسخة محفوظة ويظبط لهجة الترجمة الجاية على لهجتها */
     fun restoreVersion(i: Int) {
         val v = engine.versions.getOrNull(i) ?: return
+        sfShown = false
         val n = engine.applyVersion(i)
         val d = if (v.dialect == "فصحى") "" else v.dialect
         Cfg.p.edit().putString("conv_dialect", d).apply()
@@ -7801,6 +7877,65 @@ class PlayerActivity : Activity(), Host {
         vs.forEachIndexed { i, v ->
             box.addView(ui.button("${v.name} — ${v.dialect.ifBlank { "—" }} — ${v.subs.size} جملة") { restoreVersion(i); d.dismiss() })
         }
+        d.setContentView(android.widget.ScrollView(this).apply { addView(box) })
+        d.window?.apply { setBackgroundDrawable(android.graphics.drawable.ColorDrawable(Color.TRANSPARENT)); setLayout((resources.displayMetrics.widthPixels * 0.94f).toInt(), WindowManager.LayoutParams.WRAP_CONTENT) }
+        ui.fullPage(d)
+        d.show()
+    }
+
+    fun sfTranslationsDialog(anchor: View) {
+        val d = GDialog(this); d.requestWindowFeature(android.view.Window.FEATURE_NO_TITLE)
+        val box = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; setPadding(ui.dp(14), ui.dp(12), ui.dp(14), ui.dp(14)); background = ui.box(th.card, th.border, 18) }
+        box.addView(ui.text("📝 ترجمات الفيديو", 16f, th.primary, true))
+        box.addView(ui.noHint())
+        val u = uri?.toString() ?: ""
+        val softOn = sfShown && !preferNative
+        if (::engine.isInitialized && engine.subs.isNotEmpty()) {
+            box.addView(ui.button("💬 ترجمة البرنامج (الحالية) — " + engine.subs.size + " جملة" + (if (softOn) " · دي ترجمة السوفت سب" else "")) { preferNative = false; ccOn = true; curIdx = -2; d.dismiss(); Notice.show(this, "💬 ترجمة البرنامج", 1300L) })
+        }
+        if (sfSidecar() != null || sfDoneUri == u) {
+            val nm = sfSideName().ifBlank { "ملف الترجمة" }
+            val st = if (sfShown && preferNative) "مخفية — الأصلية ظاهرة" else if (sfShown) "ظاهرة" else "مش معروضة"
+            box.addView(ui.button("💬 السوفت سب: " + nm + " (" + st + ") — دوس للإخفاء/الإظهار") {
+                if (sfShown && !preferNative) {
+                    try { player.exo()?.let { xp -> xp.trackSelectionParameters = xp.trackSelectionParameters.buildUpon().setTrackTypeDisabled(androidx.media3.common.C.TRACK_TYPE_TEXT, false).build() } } catch (_: Throwable) {}
+                    sfHideNative = false; preferNative = true; ccOn = true; curIdx = -2
+                    Notice.show(this, "💬 السوفت سب الأصلية ظاهرة", 1500L)
+                } else if (sfShown) {
+                    preferNative = false; ccOn = true; curIdx = -2
+                    Notice.show(this, "💬 ترجمة السوفت سب ظاهرة", 1500L)
+                } else {
+                    val vi = try { engine.versions.indexOfFirst { it.name == "ترجمة السوفت سب" } } catch (_: Throwable) { -1 }
+                    if (vi >= 0) { restoreVersion(vi); sfShown = true }
+                    else { d.dismiss(); sfEngineChoice("السوفت سب") { e -> sfRun("soft", e) }; return@button }
+                }
+                d.dismiss()
+            })
+        }
+        val tc = androidx.media3.common.C.TRACK_TYPE_TEXT
+        val groups = try { (player.exo()?.currentTracks?.groups ?: emptyList<androidx.media3.common.Tracks.Group>()).filter { it.type == tc && it.length > 0 && it.isSupported } } catch (_: Throwable) { emptyList() }
+        groups.forEachIndexed { i, g ->
+            val f = g.getTrackFormat(0)
+            val lang = (f.language ?: "").let { l -> if (l.isBlank() || l == "und") "" else try { java.util.Locale(l).getDisplayLanguage(java.util.Locale("ar")).ifBlank { l } } catch (_: Throwable) { l } }
+            val name = listOf(f.label ?: "", lang).filter { it.isNotBlank() }.distinct().joinToString(" · ").ifBlank { "مسار " + (i + 1) }
+            box.addView(ui.button("💬 " + name + " (من الفيديو)") {
+                try {
+                    player.exo()?.let { xp -> xp.trackSelectionParameters = xp.trackSelectionParameters.buildUpon().setTrackTypeDisabled(tc, false)
+                        .setOverrideForType(androidx.media3.common.TrackSelectionOverride(g.mediaTrackGroup, 0)).build() }
+                    sfHideNative = false; preferNative = true; ccOn = true; curIdx = -2
+                    Notice.show(this, "💬 " + name, 1500L)
+                } catch (e: Throwable) { LogStore.err("Player:pickText2", e) }
+                d.dismiss()
+            })
+        }
+        try {
+            if (::engine.isInitialized) {
+                val vs = engine.versions.toList()
+                vs.forEachIndexed { i, v -> box.addView(ui.button("🗂 " + v.name + " — " + v.subs.size + " جملة (" + v.dialect.ifBlank { "فصحى" } + ")") { restoreVersion(i); d.dismiss() }) }
+                if (engine.subs.isNotEmpty()) box.addView(ui.button("💾 احفظ النسخة الحالية") { engine.saveVersion("نسخة " + fmtMs(player.currentPosition).substring(3)); d.dismiss(); sfTranslationsDialog(anchor) })
+            }
+        } catch (e: Throwable) { LogStore.err("Player:sfTrans", e) }
+        box.addView(ui.button("📝 الجمل المترجمة") { d.dismiss(); try { if (::sentDlg.isInitialized) sentDlg.show() } catch (_: Throwable) {} })
         d.setContentView(android.widget.ScrollView(this).apply { addView(box) })
         d.window?.apply { setBackgroundDrawable(android.graphics.drawable.ColorDrawable(Color.TRANSPARENT)); setLayout((resources.displayMetrics.widthPixels * 0.94f).toInt(), WindowManager.LayoutParams.WRAP_CONTENT) }
         ui.fullPage(d)

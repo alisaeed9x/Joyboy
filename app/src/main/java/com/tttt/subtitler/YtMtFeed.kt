@@ -83,7 +83,39 @@ object YtMtFeed {
 
     private fun res(f: MtYt.Feed, seen: Set<String>): YtRes {
         val items = f.items.filter { it.id !in seen && it.kind == 0 }.distinctBy { it.id }
+        fillAvatars(items)
         return YtRes(items, keep(f.next))
+    }
+
+    private val avCache = ConcurrentHashMap<String, String>()
+
+    private fun fillAvatars(items: List<NpItem>) {
+        if (items.isEmpty()) return
+        val subsMap = try { YouTubeServiceManager.instance().contentService.subscribedChannelAvatars } catch (_: Throwable) { null }
+        var resolved = 0
+        for (x in items) {
+            if (x.avatar.isNotBlank()) continue
+            val cid = x.channelId
+            if (cid.isBlank()) continue
+            val sub = subsMap?.get(cid)
+            if (!sub.isNullOrBlank()) {
+                x.avatar = sub
+                avCache[cid] = sub
+                continue
+            }
+            val cached = avCache[cid]
+            if (!cached.isNullOrBlank()) {
+                x.avatar = cached
+                continue
+            }
+            if (resolved >= 20) continue
+            resolved++
+            val url = try { YouTubeServiceManager.instance().contentService.getChannelAvatarUrl(cid) } catch (_: Throwable) { null }
+            if (!url.isNullOrBlank()) {
+                x.avatar = url
+                avCache[cid] = url
+            }
+        }
     }
 
     // ───────── الرئيسية ─────────
@@ -154,6 +186,7 @@ object YtMtFeed {
                 val prev = lastShown
                 val ordered = if (prev.isEmpty()) first else first.filter { it.id !in prev } + first.filter { it.id in prev }   // الجديد فوق
                 homeAt = System.currentTimeMillis()
+                fillAvatars(ordered)
                 val out = YtRes(ordered, if (w.done && w.delivered >= w.items.size) null else Page(w.key))
                 saveHomeSnap(out)
                 return out
@@ -210,6 +243,7 @@ object YtMtFeed {
         val f = MtYt.homeFirst()
         val items = f.items.filter { it.id !in seen && it.kind == 0 }.distinctBy { it.id }
         if (items.isEmpty()) return null
+        fillAvatars(items)
         homeAt = System.currentTimeMillis()
         return YtRes(items, null)
     }
@@ -248,7 +282,7 @@ private object YtSnapHome {
         if (vids.isEmpty()) return
         val a = org.json.JSONArray()
         for (x in vids) a.put(org.json.JSONObject().put("i", x.id).put("t", x.title).put("c", x.channel).put("cu", x.channelUrl).put("th", x.thumb)
-            .put("d", x.dur).put("n", x.count).put("a", x.age).put("k", x.kind).put("u", x.url).put("ts", x.ts).put("av", x.avatar))
+            .put("d", x.dur).put("n", x.count).put("a", x.age).put("k", x.kind).put("u", x.url).put("ts", x.ts).put("av", x.avatar).put("cid", x.channelId))
         val tmp = java.io.File(d, "yt_mt_home.json.tmp")
         tmp.writeText(org.json.JSONObject().put("at", System.currentTimeMillis()).put("items", a).toString()); tmp.renameTo(f(d))
     }
@@ -260,7 +294,7 @@ private object YtSnapHome {
         for (n in 0 until a.length()) {
             val x = a.getJSONObject(n); val ts = x.optLong("ts", 0L)
             l.add(NpItem(x.optString("i"), x.optString("t"), x.optString("c"), x.optString("cu"), x.optString("th"), x.optLong("d", -1L), x.optLong("n", -1L),
-                if (ts > 0L) YtRss.ageOf(ts) else x.optString("a"), x.optInt("k", 0), x.optString("u"), ts, x.optString("av")))
+                if (ts > 0L) YtRss.ageOf(ts) else x.optString("a"), x.optInt("k", 0), x.optString("u"), ts, x.optString("av"), x.optString("cid")))
         }
         return if (l.isEmpty()) null else l
     }

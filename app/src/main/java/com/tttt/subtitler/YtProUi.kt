@@ -571,7 +571,7 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
                 if (f != null) f(id, title, translate, posMs, pick) else onPlay(id, title, translate)
             }
             override fun openChannel(url: String, name: String) { watch.close(false); this@YtProUi.openChannel(url, name, "") }
-            override fun openVideo(v: NpItem) { if (DeviceUi.isTv(act) || PlayTarget.enabled()) play(v, false) else watchVideo(v, null) }   // (v560) وضع التلفزيون: ما نفتحش صفحة المشاهدة (مشغّلها المصغّر بيشغّل على الموبايل)   // (v494) تلفزيون: من غير صفحة المشاهدة
+            override fun openVideo(v: NpItem) { open(v, null) }   // (v1132) صفحة المشاهدة رجعت: التالي من قائمة الانتظار بيفتح عليها (التلفزيون مبيفتحش الصفحة أصلًا من open())
             override fun audio(v: NpItem) { playAudio(v) }
             override fun download(anchor: View, v: NpItem) { dlMenu(anchor, v) }
             override fun state(open: Boolean) { if (open) ytDock.dismiss(); setNavHidden(open || chan.isOpen); pillGate(open || chan.isOpen); if (!open) tvFocusList() }   // (v479 م5)

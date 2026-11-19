@@ -8,7 +8,7 @@ data class SubStyle(
     val scale: Int = 100, val bgOpa: Int = 45, val noBg: Boolean = false, val blur: Int = 0, val animMs: Int = 250,
     val anim: String = "default", val font: String = "Cairo", val plain: Boolean = false, val dual: Int = 0,
     val uniOn: Boolean = false, val uniColor: String = "#FFFFFF", val splitOn: Boolean = false, val splitThresh: Int = 8,
-    val fontStyle: String = "orig", val punctOn: Boolean = true
+    val fontStyle: String = "orig", val punctOn: Boolean = true, val underline: Boolean = false
 ) {
     companion object {
         val entrances = listOf(

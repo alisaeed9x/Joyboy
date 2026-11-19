@@ -169,14 +169,48 @@ object MtYt {
 
     fun watchUrl(id: String) = "https://www.youtube.com/watch?v=$id"
 
+    private val relRe = Regex("^(\\d+)\\s+(second|minute|hour|day|week|month|year)s?\\s+ago$", RegexOption.IGNORE_CASE)
+
+    private fun relToArabic(seg: String): String? {
+        val t = seg.trim().removePrefix("Streamed ").trim()
+        if (t.startsWith("منذ") || t.startsWith("قبل")) return t
+        val m = relRe.find(t) ?: return null
+        val n = m.groupValues[1].toLongOrNull() ?: return null
+        if (m.groupValues[2].equals("second", true)) return "الآن"
+        val forms = when (m.groupValues[2].lowercase()) {
+            "minute" -> arrayOf("دقيقة", "دقيقتين", "دقائق", "دقيقة")
+            "hour" -> arrayOf("ساعة", "ساعتين", "ساعات", "ساعة")
+            "day" -> arrayOf("يوم", "يومين", "أيام", "يومًا")
+            "week" -> arrayOf("أسبوع", "أسبوعين", "أسابيع", "أسبوع")
+            "month" -> arrayOf("شهر", "شهرين", "شهور", "شهرًا")
+            else -> arrayOf("سنة", "سنتين", "سنين", "سنة")
+        }
+        val word = when {
+            n == 1L -> forms[0]
+            n == 2L -> forms[1]
+            n in 3L..10L -> "$n ${forms[2]}"
+            else -> "$n ${forms[3]}"
+        }
+        return "منذ $word"
+    }
+
+    private fun ageSeg(parts: List<String>): String {
+        for (p in parts.asReversed()) {
+            val a = relToArabic(p)
+            if (a != null) return a
+        }
+        return ""
+    }
+
     fun toItem(m: com.liskovsoft.mediaserviceinterfaces.data.MediaItem): NpItem? {
         val vid = m.videoId ?: return null
         if (vid.length != 11) return null
         val sub = m.secondTitle?.toString() ?: ""
         val parts = sub.split(" • ", "·", "•").map { it.trim() }.filter { it.isNotEmpty() }
         val thumb = m.cardImageUrl?.takeIf { it.isNotBlank() } ?: "https://i.ytimg.com/vi/$vid/mqdefault.jpg"
+        val age = m.productionDate?.takeIf { it.isNotBlank() } ?: ageSeg(parts).takeIf { it.isNotBlank() } ?: YtAge.ageOf(m.publishedDate.coerceAtLeast(0L))
         return NpItem(vid, m.title ?: "", parts.firstOrNull() ?: "", "", thumb, (m.durationMs / 1000L).coerceAtLeast(0L), -1L,
-            (m.productionDate?.takeIf { it.isNotBlank() } ?: YtAge.ageOf(m.publishedDate.coerceAtLeast(0L))), 0, watchUrl(vid), m.publishedDate.coerceAtLeast(0L))   // (v1104 Y3) لو مفيش نص عمر: نحسبه من وقت النشر
+            age, 0, watchUrl(vid), m.publishedDate.coerceAtLeast(0L), channelId = m.channelId ?: "")
     }
 
     private fun flatten(groups: List<com.liskovsoft.mediaserviceinterfaces.data.MediaGroup>?): List<NpItem> {

@@ -251,9 +251,9 @@ class FastTr(
         val be = minOf(eng.chunkStartSec(i + 1), dur)
         if (be - bs < 0.3) { doneSet.add(i); return }
         val a0 = maxOf(0.0, bs - PAD); val a1 = minOf(dur, be + PAD)
-        var w: WavChunk? = synchronized(srcLock) { s.wav(a0, a1) }
+        var w: WavChunk? = s.wav(a0, a1)
         var r = 0
-        while (w == null && r++ < 2 && !stopped) { nap(600); w = synchronized(srcLock) { s.wav(a0, a1) } }
+        while (w == null && r++ < 2 && !stopped) { nap(600); w = s.wav(a0, a1) }
         if (w == null || w.silent) { merge(bs, be, emptyList()); doneSet.add(i); return }
         val wav = w
         val t0 = System.currentTimeMillis()
