@@ -903,13 +903,36 @@ class PlayerActivity : Activity(), Host {
     } catch (_: Throwable) { "" }
     // (v1119) عدّاد الجمل المترجمة/المفرّغة — نفس قيمة «جمل_المحرك» في سطر التشخيص
     private fun subCountNow(): Int = try { if (::engine.isInitialized) engine.subs.size else 0 } catch (_: Throwable) { 0 }
+    // (v1126) نقط حالة المفاتيح (🔵🟢🔴🟠) بره اللوج: جنب عدّاد الجمل في زرار/شارة الترجمة
+    private fun dotsNow(): String = try { val d = fastTr?.keyDots() ?: engine.keyDots(); if (d.isBlank()) "" else " $d" } catch (_: Throwable) { "" }
+    private var lastDotsShown = ""
+    // (v1126) كشف النت البطيء: باتشات متبعتة ومفيش ولا جملة/نسبة اتحرّكت بقالها 35ث ← إشعار (مرة/90ث) وسطر في اللوج، وإشعار تاني لما يرجع يتحرّك
+    private var progKey = ""; private var progAt = 0L; private var stallNotedAt = 0L; private var stallActive = false
+    private fun netStallWatch() {
+        try {
+            if (!engineStarted || !::engine.isInitialized || engine.userPaused || remote) { progAt = 0L; return }
+            val now = System.currentTimeMillis()
+            val k = subCountNow().toString() + "/" + trPct
+            if (k != progKey || progAt == 0L) {
+                progKey = k; progAt = now
+                if (stallActive) { stallActive = false; Notice.show(this, "✅ النت رجع — الترجمة بتكمّل", 2600L); LogStore.add("✅ النت رجع — الباتشات بتتحرّك تاني") }
+                return
+            }
+            if (now - progAt < 35_000L || now - stallNotedAt < 90_000L) return
+            if (allSentSegs().isEmpty()) return   // مفيش باتشات متبعتة: مفيش حاجة مستنية رد
+            stallNotedAt = now; stallActive = true
+            val sec = (now - progAt) / 1000
+            LogStore.add("🐌 النت بطيء — باتشات متبعتة ومفيش رد بقالها " + sec + "ث (الرفع أو الرد متأخر) · المفاتيح:" + dotsNow())
+            Notice.show(this, "🐌 النت بطيء — الباتشات اتبعتت ومفيش رد بقالها " + sec + " ث\nالترجمة هتكمّل لوحدها أول ما النت يتحسّن", 5000L)
+        } catch (_: Throwable) {}
+    }
     private fun tvTrLabel(): String = try {
         if (!engineStarted && sfBusy.isNotEmpty()) tvSfShort()
         else if (!engineStarted && sfLive.isNotEmpty()) "💬 لحظية"
         else if (!engineStarted && sfDoneUri.isNotEmpty() && sfDoneUri == (uri?.toString() ?: "")) "✅ مترجم"
         else if (!engineStarted) "▶ ترجم"
         // (v1119) عدّاد الجمل في زرار الترجمة على التلفزيون: «⏳ 19% · 42 جملة»
-        else (if (::engine.isInitialized && engine.userPaused) "⏸ " else if (trPct >= 100) "✅ " else "⏳ ") + trPct + "%" + " · " + subCountNow() + " جملة"
+        else (if (::engine.isInitialized && engine.userPaused) "⏸ " else if (trPct >= 100) "✅ " else "⏳ ") + trPct + "%" + " · " + subCountNow() + " جملة" + dotsNow()
     } catch (_: Throwable) { "▶ ترجم" }
     private fun tvTrColor(): Int = try {
         if (!engineStarted && sfBusy.isNotEmpty()) 0xFF1F5FBF.toInt()
@@ -2624,16 +2647,24 @@ class PlayerActivity : Activity(), Host {
         try { val st = Throwable().stackTrace; LogStore.add("▶ طلب بدء الترجمة ← " + (st.getOrNull(1)?.let { it.methodName + ":" + it.lineNumber } ?: "?") + (if (autoTr) " (autotr)" else "")) } catch (_: Throwable) {}
         // (v467) اللغة الأساسية: البدء التلقائي بيحترمها، واليدوي (زرار «ترجم») بيفرض الترجمة ويلغي أي تخطي حصل في نفس الجلسة
         if (::engine.isInitialized) { engine.baseLangCode = Cfg.str("base_lang", "ar"); if (auto) engine.skipIfBaseLang = true else { engine.skipIfBaseLang = false; if (engine.baseSkipped) { engine.baseSkipped = false; engine.transOnly = false } } }
-        if (::engine.isInitialized && !engineReady) { pendingBegin = true; return }   // البيانات المحفوظة لسه بتتحمّل: هتبدأ لوحدها أول ما تخلص
+        if (::engine.isInitialized && !engineReady) { pendingBegin = true; LogStore.add("⏳ بدء الترجمة/التفريغ مؤجّل — بيانات الفيديو المحفوظة لسه بتتحمّل (هيبدأ لوحده)"); return }   // البيانات المحفوظة لسه بتتحمّل: هتبدأ لوحدها أول ما تخلص
         // (v203) لو الفيديو مترجم 100% (مثلًا بعد تحديث لينكه): مفيش ترجمة تاني، الترجمة المحفوظة شغّالة. ولو ناقص بيكمّل الباقي بس (المخلّص بيتخطّى)
         if (::engine.isInitialized && !engineStarted && !freshOnce && (try { engine.fullyDone() } catch (_: Throwable) { false })) {
             dismissStrip()
             if (noSub) { noSub = false; if (!ccOn) ccToggleFn() }
+            // (v1126) تفريغ على فيديو متفرّغ/مترجم بالكامل: كان بيطلع «مترجم 100%» ويقف من غير ما يبان إنه بدأ — دلوقتي بيعرض النص الأصلي ويقول السبب صراحة
+            if (engine.transOnly) {
+                try { if (::realEngine.isInitialized && !remote) realEngine.origView = true } catch (_: Throwable) {}
+                touchSubs()
+                LogStore.add("✍ تفريغ: الفيديو متفرّغ/مترجم بالكامل — اتعرض النص الأصلي (للتفريغ من الأول: 🔁 إعادة)")
+                Notice.show(this, "✍ الفيديو ده متفرّغ بالفعل 100% — عرضت النص الأصلي (للتفريغ من الأول: 🔁 إعادة)", 4200L)
+                return
+            }
             Notice.show(this, "✓ الفيديو ده مترجم 100% — مترجمتش حاجة (لو عايز تعيد: 🔁 إعادة)", 3600L)
             return
         }
         // (v685) فيه ترجمة محفوظة ناقصة: اسأل (كمّل الباقي / من مكان التشغيل / من الأول وجديد) بدل ما يكمّل لوحده
-        if (!auto && !asked && ::engine.isInitialized && !engineStarted && !freshOnce && engine.subs.isNotEmpty()) { trChoiceDialog(); return }
+        if (!auto && !asked && ::engine.isInitialized && !engineStarted && !freshOnce && engine.subs.isNotEmpty()) { LogStore.add("❔ فيه ترجمة محفوظة ناقصة — بسأل (كمّل/من مكان التشغيل/من الأول)"); trChoiceDialog(); return }
         dismissStrip()
         if (noSub) { noSub = false; if (!ccOn) ccToggleFn() }   // بدأت ترجمة: رجّع إظهار الترجمة
         // (v134) الترجمة تبدأ من المكان اللي واقف فيه في الفيديو (مش من الأول): المؤشر بيتحط على باتش الوقت الحالي، واللي اتترجم قبل كده بيتخطّى
@@ -2779,7 +2810,7 @@ class PlayerActivity : Activity(), Host {
                 lgB.visibility = if (caps().dialect) View.VISIBLE else View.GONE   // (v444) بس في الأوضاع اللي فيها لهجات
                 if (!started) { chipB.text = if (sfBusy.isNotEmpty()) sfChip() else if (sfLive.isNotEmpty()) "💬 ترجمة لحظية ▾" else "▶ ترجم · " + modeShort() + " ▾"; chipB.background = ui.box(0xFFE53935.toInt(), 0x33FFFFFF, 12) }
                 else {
-                    LoadUi.set(chipB, (Offline.liveShort()?.let { "$it · " } ?: modeChipTag()) + (if (paused) "⏸ " else if (trPct >= 100) "✅ " else "⏳ ") + trPct + "%" + " ▾")
+                    LoadUi.set(chipB, (Offline.liveShort()?.let { "$it · " } ?: modeChipTag()) + (if (paused) "⏸ " else if (trPct >= 100) "✅ " else "⏳ ") + trPct + "%" + dotsNow() + " ▾")
                     chipB.background = ui.box(if (paused) 0xFF8D6E00.toInt() else if (trPct >= 100) 0xFF2E7D32.toInt() else 0xFF1F5FBF.toInt(), 0x33FFFFFF, 12)
                 }
             }
@@ -2795,7 +2826,7 @@ class PlayerActivity : Activity(), Host {
             trUpdaters.add {
                 val paused = ::engine.isInitialized && engine.userPaused
                                 tr.visibility = View.VISIBLE; gearB.visibility = View.VISIBLE   // (v1097)
-                                LoadUi.set(tr, if (!engineStarted) (if (sfBusy.isNotEmpty()) sfChip() else if (sfLive.isNotEmpty()) "💬 ترجمة لحظية ▾" else "▶ ترجم · " + modeShort() + " ▾") else (Offline.liveShort()?.let { "$it · " } ?: modeChipTag()) + (if (paused) "⏸ " else if (trPct >= 100) "✅ " else "⏳ ") + trPct + "% ▾")
+                                LoadUi.set(tr, if (!engineStarted) (if (sfBusy.isNotEmpty()) sfChip() else if (sfLive.isNotEmpty()) "💬 ترجمة لحظية ▾" else "▶ ترجم · " + modeShort() + " ▾") else (Offline.liveShort()?.let { "$it · " } ?: modeChipTag()) + (if (paused) "⏸ " else if (trPct >= 100) "✅ " else "⏳ ") + trPct + "%" + dotsNow() + " ▾")
                 pz2.visibility = if (engineStarted) View.VISIBLE else View.GONE
                 cx2.visibility = if (engineStarted) View.VISIBLE else View.GONE
                 pz2.text = if (paused) "▶" else "⏸"
@@ -3199,6 +3230,7 @@ class PlayerActivity : Activity(), Host {
     private fun trMainClick(anchor: View) {
         if (engineStarted || sfBusy.isNotEmpty() || sfLive.isNotEmpty()) { translateMenu(anchor); return }
         val tx = trIsTx(); val off = TrProfile.engine() == "off"
+        LogStore.add("▶ زرار ترجم ← " + (if (tx) "تفريغ" else "ترجمة") + " · " + (if (off) "وشبر أوفلاين" else "جيميناي"))   // (v1126) تشخيص: أنهي فرع اشتغل
         when {
             tx && off -> askVideoLang { offlineQuick(true) }
             tx -> startGeminiTranscribe()
@@ -3390,20 +3422,14 @@ class PlayerActivity : Activity(), Host {
     private fun trSliderSection(col: LinearLayout, onChanged: () -> Unit = {}) {
         col.addView(shSection("⚖ سريع ↔ دقيق"))
         val title = ui.text("", 14f, Color.WHITE, true).apply { gravity = Gravity.CENTER; setPadding(0, ui.dp(2), 0, ui.dp(2)) }
-        fun listBox() = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; setPadding(ui.dp(10), 0, ui.dp(10), ui.dp(4)) }
-        val speedL = listBox(); val accL = listBox()
-        fun line(b: TrSlider.Block, on: Boolean): View = ui.text((if (on) "☑ " else "☐ ") + b.label, 12f, if (on) 0xFF8AB4F8.toInt() else 0xFF6B7280.toInt()).apply { setPadding(0, ui.dp(2), 0, ui.dp(2)) }
+        // (v1127) قايمة البلوكات (☑/☐) اتشالت — البلوكات بتتحدد لوحدها من موضع السلايدر (TrSlider.onAt) من غير عرض
         val balNote = shNote("⚖ المتوازن: المحرك البسيط — كل مفتاح ياخد باتش ويفرّغه (يظهر على طول) وبعدين يترجمه. من غير بلوكات سرعة/دقة. حرّك يمين للدقيق أو شمال للسريع.")
         val dualNote = shNote("⚡ ٧٥/٢٥ (سماع واحد) مختار من «🔧 إعدادات متقدمة» — تحريك السلايدر جوه الدقيق مش بيغيّره")
         fun paint(p: Int) {
             title.text = TrSlider.title(p)
-            speedL.removeAllViews(); accL.removeAllViews()
             val bal = TrSlider.zone(p) == TrSlider.BAL
             balNote.visibility = if (bal) View.VISIBLE else View.GONE
             dualNote.visibility = if (TrSlider.zone(p) == TrSlider.ACC && Cfg.int("dual_listen", 1) == 0) View.VISIBLE else View.GONE
-            if (bal) return
-            for (b in TrSlider.speedBlocks()) speedL.addView(line(b, TrSlider.onAt(b.id, p)))
-            for (b in TrSlider.accuracyBlocks()) accL.addView(line(b, TrSlider.onAt(b.id, p)))
         }
         col.addView(title, LinearLayout.LayoutParams(-1, -2))
         val sb = SeekBar(this).apply {
@@ -3421,10 +3447,6 @@ class PlayerActivity : Activity(), Host {
         ends.addView(ui.text("🎯 دقيق وأبطأ", 11.5f, 0xFF9AA0A6.toInt()).apply { gravity = Gravity.END }, LinearLayout.LayoutParams(0, -2, 1f))
         col.addView(ends, LinearLayout.LayoutParams(-1, -2))
         col.addView(balNote); col.addView(dualNote)
-        col.addView(shNote("⚡ بيزوّد السرعة"))
-        col.addView(speedL, LinearLayout.LayoutParams(-1, -2))
-        col.addView(shNote("🎯 بيزوّد الدقة"))
-        col.addView(accL, LinearLayout.LayoutParams(-1, -2))
         paint(TrSlider.pos())
     }
 
@@ -4659,6 +4681,7 @@ class PlayerActivity : Activity(), Host {
         val page = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setBackgroundColor(th.bg); layoutDirection = View.LAYOUT_DIRECTION_RTL }
         val videoBox = FrameLayout(this).apply { background = GradientDrawable().apply { setColor(Color.BLACK); cornerRadius = ui.dp(14).toFloat() }; clipToOutline = true; layoutDirection = View.LAYOUT_DIRECTION_LTR }
         videoBoxRef = videoBox
+        hookRotAnim(videoBox)   // (v1125)
         val sv = SurfaceView(this); svRef = sv
         sv.holder.addCallback(object : android.view.SurfaceHolder.Callback {   // (v604) تدوير الموبايل في وضع المتحكم
             override fun surfaceCreated(h: android.view.SurfaceHolder) { if (remote) redrawLastRemoteFrame() }
@@ -5876,8 +5899,8 @@ class PlayerActivity : Activity(), Host {
                     updateProblems()
                 }
                 if (now - lastBeat > 20000) { lastBeat = now; LogStore.add("💓 ${LogStore.heapLine()} · ${if (player.isPlaying) "بيشتغل" else "واقف"} @${fmtMs(cur)} · مترجم ${(engine.coveredSec() / 60).toInt()}د · ${engine.subs.size} جملة") }
-                run { val pc = fastTr?.takeIf { it.total > 0 }?.pct ?: PlayerLogic.percent(engine.coveredSec(), durMs / 1000.0); val wp = Offline.livePct() * 1000 + Offline.runIdx; if (pc != trPct || wp != lastWp) { trPct = pc; lastWp = wp; updateTr() } }
-                if (fullMode) { fsBadge.set("🔊 " + PlayerLogic.percent(engine.coveredSec(), durMs / 1000.0).toString() + "% · " + list.size.toString() + " جملة ▾", ((try { engine.offlineBrief() } catch (_: Throwable) { null }) ?: "")); fsBadge.setOn(engineStarted && !engine.userPaused, ((Strict.freeText() || Strict.freeGem()) && FreeLlm.waiting)); netBadge.set(NetUse.fmt(NetUse.localTotal()), NetUse.fmt(NetUse.onlineTotal())); applyBadgeAlpha() }   // (v236) نقطة خضراء = الوضع الصوتي شغّال
+                run { val pc = fastTr?.takeIf { it.total > 0 }?.pct ?: PlayerLogic.percent(engine.coveredSec(), durMs / 1000.0); val wp = Offline.livePct() * 1000 + Offline.runIdx; if (pc != trPct || wp != lastWp) { trPct = pc; lastWp = wp; updateTr() }; val dn = dotsNow(); if (dn != lastDotsShown) { lastDotsShown = dn; updateTr() }; netStallWatch() }
+                if (fullMode) { fsBadge.set("🔊 " + PlayerLogic.percent(engine.coveredSec(), durMs / 1000.0).toString() + "% · " + list.size.toString() + " جملة" + dotsNow() + " ▾", ((try { engine.offlineBrief() } catch (_: Throwable) { null }) ?: "")); fsBadge.setOn(engineStarted && !engine.userPaused, ((Strict.freeText() || Strict.freeGem()) && FreeLlm.waiting)); netBadge.set(NetUse.fmt(NetUse.localTotal()), NetUse.fmt(NetUse.onlineTotal())); applyBadgeAlpha() }   // (v236) نقطة خضراء = الوضع الصوتي شغّال
                 if (fullMode && ::visual.isInitialized) {   // (v431) الجزء البصري (👁 + الفاصل) بيظهر بس لما الوضع البصري شغّال؛ غير كده الكبسولة صوتي بس
                     val vOn = visual.running; val vv = if (vOn) View.VISIBLE else View.GONE
                     if (visBadge.visibility != vv) visBadge.visibility = vv
@@ -6025,6 +6048,22 @@ class PlayerActivity : Activity(), Host {
         WebMute.pauseAll()
         player.exo()?.setVideoSurfaceView(sv)
         applyBoost()
+        // (v1124) تسليم من يوتيوب: لقطة آخر فريم فوق السطح الجديد لحد أول فريم حقيقي عليه (مفيش لحظة سواد) — بتتشال بأول onRenderedFirstFrame أو بعد 1.5ث
+        if (ho != null) YtHandoff.takeSnap()?.let { bm ->
+            try {
+                val iv = android.widget.ImageView(this).apply { setImageBitmap(bm); scaleType = android.widget.ImageView.ScaleType.FIT_CENTER }
+                videoBox.addView(iv, minOf(1, videoBox.childCount), FrameLayout.LayoutParams(-1, -1))
+                var gone = false
+                val rm = Runnable {
+                    if (!gone) { gone = true
+                        iv.animate().alpha(0f).setDuration(120L).withEndAction { try { videoBox.removeView(iv); bm.recycle() } catch (_: Throwable) {} }.start() }
+                }
+                player.exo()?.addListener(object : Player.Listener {
+                    override fun onRenderedFirstFrame() { h.post(rm); try { player.exo()?.removeListener(this) } catch (_: Throwable) {} }
+                })
+                h.postDelayed(rm, 1500L)
+            } catch (e: Throwable) { LogStore.err("Player:snap", e) }
+        }
         // (v714) الجودة اللي مختارها في الإعدادات (yt_maxh) هي الحد الأقصى لفيديوهات المتصفح/HLS: أعلى جودة لحد الحد ده، ولو مفيش ينزل تحتها — وما يطلعش فوقه إلا لما تختار بإيدك من زرار الجودة
         try { val mh = if (DeviceUi.realTvCached) 0 else Cfg.int("yt_maxh", 0); if (mh > 0 && uri == null) player.exo()?.let { xp -> xp.trackSelectionParameters = xp.trackSelectionParameters.buildUpon().setMaxVideoSize(Int.MAX_VALUE, mh).build() } } catch (e: Throwable) { LogStore.err("Player:maxh", e) }
         player.setPlaybackSpeed(speed)
@@ -6740,7 +6779,49 @@ class PlayerActivity : Activity(), Host {
     }
     /** (v429) الدوران بين البورتريه والشاشة الكاملة كان بيبان «نتشة»: الشاشة بتلف بأنيميشن النظام والسطح بيتمدّد لحظة بمقاس قديم. كروس-فيد بيخفي ده */
     private fun smoothRotation() {
-        try { val a = window.attributes; if (a.rotationAnimation != 1) { a.rotationAnimation = 1; window.attributes = a } } catch (_: Throwable) {}   // ROTATION_ANIMATION_CROSSFADE
+        try { val ra = if (ytRotAnimOn()) 2 else 1; val a = window.attributes; if (a.rotationAnimation != ra) { a.rotationAnimation = ra; window.attributes = a } } catch (_: Throwable) {}   // 1 = CROSSFADE · (v1125) 2 = JUMPCUT لما حركة تدوير الفيديو بتاعتنا شغّالة (يوتيوب)
+    }
+    /** (v1125) حركة «تدوير عنصر الفيديو» زي يوتيوب: بتتطبّق على جلسات يوتيوب بس، ومقفولة لو player_rot_anim=0 */
+    private fun ytRotAnimOn(): Boolean = try { intent.getStringExtra("ytid") != null && Cfg.str("player_rot_anim", "1") != "0" } catch (_: Throwable) { false }
+    private var lastDispRot = -1
+    private fun dispRot(): Int = try { if (Build.VERSION.SDK_INT >= 30) (display?.rotation ?: 0) else @Suppress("DEPRECATION") windowManager.defaultDisplay.rotation } catch (_: Throwable) { 0 }
+    /** (v1125) لما الشاشة تلف 90°: صندوق الفيديو يبدأ من شكله القديم (مدوّر ومصغّر/مكبّر ومن مكانه) ويلف لمكانه الجديد في 280ms بدل قفزة/كروس-فيد */
+    private fun hookRotAnim(box: View) {
+        box.addOnLayoutChangeListener { v, l, t, r, b, ol, ot, or2, ob ->
+            try {
+                val rot = dispRot()
+                if (lastDispRot < 0) { lastDispRot = rot; return@addOnLayoutChangeListener }
+                if (rot == lastDispRot) return@addOnLayoutChangeListener
+                val prev = lastDispRot; lastDispRot = rot
+                val nw = r - l; val nh = b - t; val ow = or2 - ol; val oh = ob - ot
+                if (ow <= 0 || oh <= 0 || nw <= 0 || nh <= 0 || !ytRotAnimOn() || remote || gone || pipNow()) return@addOnLayoutChangeListener
+                val d = -((((rot - prev) * 90) % 360 + 540) % 360 - 180)   // الصورة اللي كانت لازقة في الجهاز بتبان مدوّرة عكس لفّة الجهاز
+                if (kotlin.math.abs(d) != 90) return@addOnLayoutChangeListener
+                val dv = window.decorView
+                val sw = dv.width.toFloat(); val sh = dv.height.toFloat()   // الشاشة الجديدة
+                val wo = sh; val ho = sw                                    // الشاشة القديمة (مقلوبة)
+                val cxo = (ol + or2) / 2f; val cyo = (ot + ob) / 2f
+                val cx = if (d < 0) cyo else ho - cyo
+                val cy = if (d < 0) wo - cxo else cxo
+                val s = (ow.toFloat() / nw).coerceIn(0.3f, 3f)
+                v.pivotX = nw / 2f; v.pivotY = nh / 2f
+                v.rotation = d.toFloat(); v.scaleX = s; v.scaleY = s
+                v.translationX = cx - (l + r) / 2f; v.translationY = cy - (t + b) / 2f
+                v.animate().rotation(0f).scaleX(1f).scaleY(1f).translationX(0f).translationY(0f).setDuration(280L)
+                    .setInterpolator(android.view.animation.DecelerateInterpolator()).start()
+            } catch (e: Throwable) { LogStore.err("Player:rotAnim", e) }
+        }
+    }
+    /** (v1125) الخروج من الشاشة الكاملة: لو لاندسكيب في جلسة يوتيوب، الشاشة بتلف بورتريه والفيديو بيلف (المشغّل لسه فوق) وبعدها بس نرجع للصفحة — الصفحة بتبان بورتريه من غير نتشة */
+    private var exitRotating = false
+    private fun exitRotateThen(block: () -> Unit) {
+        if (exitRotating) return   // Back مرتين أثناء اللفّة: تتجاهل التانية
+        if (!ytRotAnimOn() || remote || gone || isFinishing || isDestroyed || pipNow() || resources.configuration.orientation != Configuration.ORIENTATION_LANDSCAPE) { block(); return }
+        try {
+            exitRotating = true; smoothRotation(); userRot = true
+            requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+            h.postDelayed({ if (!isDestroyed) block() }, 340L)
+        } catch (_: Throwable) { block() }
     }
     fun toggleFs() {
         if (remote) {   // (v604) متوصّل بتلفزيون: لفّ إيه بالظبط؟
@@ -7054,8 +7135,7 @@ class PlayerActivity : Activity(), Host {
             try { eng.awaitStopped(3000); eng.saveNow() } catch (e: Throwable) { LogStore.err("Player:closeNoBg0", e) }   // (v287)
             try { if (BgJobs.isActive(v)) BgJobs.stop(v) } catch (e: Throwable) { LogStore.err("Player:closeNoBg2", e) }
         }.start()
-        returnToOrigin()
-        super.onBackPressed()
+        exitRotateThen { returnToOrigin(); super.onBackPressed() }   // (v1125)
     }
     /** (v339) الرجوع من الفيديو يرجّعك للصفحة اللي فتحته منها (يوتيوب / المتصفح) بنفس مكانك — حتى لو النظام كان قفل الصفحة دي وإحنا في المشغّل */
     private fun returnToOrigin() {

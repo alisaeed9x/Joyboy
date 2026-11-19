@@ -130,8 +130,15 @@ object YtHandoff {
     @Volatile var pipNext = false
     @Volatile private var p: ExoPlayer? = null
     private val hh = Handler(Looper.getMainLooper())
-    private val expire = Runnable { val x = p; p = null; try { x?.release() } catch (_: Throwable) {} }
+    private val expire = Runnable { val x = p; p = null; snapBmp = null; try { x?.release() } catch (_: Throwable) {} }
+    /** (v1124) لقطة آخر فريم من سطح صفحة المشاهدة — المشغّل الكامل بيحطها فوق السطح الجديد لحد أول فريم حقيقي (من غير لحظة سواد) */
+    @Volatile private var snapBmp: android.graphics.Bitmap? = null
+    fun putSnap(t: android.view.TextureView?) {
+        snapBmp = try { if (t != null && t.isAvailable && t.width > 0 && t.height > 0) t.getBitmap((t.width / 2).coerceAtLeast(1), (t.height / 2).coerceAtLeast(1)) else null } catch (_: Throwable) { null }
+    }
+    fun takeSnap(): android.graphics.Bitmap? { val b = snapBmp; snapBmp = null; return b }
     fun put(x: ExoPlayer) {
+        snapBmp = null
         val old = p; p = x
         hh.removeCallbacks(expire); hh.postDelayed(expire, 12000L)
         if (old != null && old !== x) try { old.release() } catch (_: Throwable) {}
@@ -531,7 +538,7 @@ class YtMiniPlayer(private val act: Activity, private val ui: Ui) : FrameLayout(
         try { p.removeListener(listener) } catch (_: Throwable) {}
         hh.removeCallbacks(ticker); exo = null; keepScreenOn = false
         p.playWhenReady = true
-        YtHandoff.put(p)
+        YtHandoff.put(p); YtHandoff.putSnap(tex)   // (v1124)
         thumb.visibility = View.VISIBLE
         playG.kind = 0; playG.invalidate()
         resumeMs = pos; handed = true
@@ -1606,7 +1613,7 @@ class YtDock(private val act: Activity, private val ui: Ui, private val onExpand
         try { p.removeListener(listener) } catch (_: Throwable) {}
         hh.removeCallbacks(tick); exo = null
         p.playWhenReady = true
-        YtHandoff.put(p)
+        YtHandoff.put(p); YtHandoff.putSnap(tex)   // (v1124)
         visibility = View.GONE
         onExpand(vid, ttl, pos, pk)
     }
