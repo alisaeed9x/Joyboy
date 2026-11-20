@@ -1,5 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<!-- (v1148) موارد اتنقلت من ميتيوب (:mobile) قبل حذفه — الثيم/اللودرز/حركات المشغّل/الألوان اللي التطبيق لسه بيستخدمها -->
-<resources xmlns:tools="http://schemas.android.com/tools">
-    <dimen name="meetube_sheet_max_width">100000dp</dimen>
-</resources>
