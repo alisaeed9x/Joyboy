@@ -88,6 +88,26 @@ object YtMtFeed {
     }
 
     private val avCache = ConcurrentHashMap<String, String>()
+    private val avBusy = ConcurrentHashMap<String, Boolean>()
+
+    /** (v1144) لوجو قناة من أي مفتاح (رابط/@handle/UC…): كاش ← خريطة اشتراكاتك ← جلب من الخدمة في خيط خلفي. cb بيتنده على خيط خلفي (الـUI يعمل runOnUiThread) */
+    fun avatarAsync(c: android.content.Context, key: String, cb: (String) -> Unit) {
+        if (key.isBlank()) return
+        val cid = if (key.startsWith("UC") && key.length == 24) key else (YtRss.chanId(key) ?: return)
+        val hit = avCache[cid]
+        if (!hit.isNullOrBlank()) { cb(hit); return }
+        if (avBusy.putIfAbsent(cid, true) != null) return
+        Thread {
+            try {
+                try { attach(c) } catch (_: Throwable) {}
+                val sm = YouTubeServiceManager.instance().contentService
+                var u: String? = try { sm.subscribedChannelAvatars?.get(cid) } catch (_: Throwable) { null }
+                if (u.isNullOrBlank()) u = try { sm.getChannelAvatarUrl(cid) } catch (_: Throwable) { null }
+                if (!u.isNullOrBlank()) { avCache[cid] = u; cb(u) }
+            } catch (_: Throwable) {}
+            avBusy.remove(cid)
+        }.apply { isDaemon = true; start() }
+    }
 
     private fun fillAvatars(items: List<NpItem>) {
         if (items.isEmpty()) return

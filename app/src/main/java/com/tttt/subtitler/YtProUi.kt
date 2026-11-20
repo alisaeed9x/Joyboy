@@ -606,7 +606,7 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
             if (ok) { try { YtMtFeed.markSigned(true) } catch (_: Throwable) {}; act.runOnUiThread { if (!act.isFinishing && !act.isDestroyed && promptBox.visibility == View.VISIBLE) { if (tab == 1) openSubs(true) else openTab(0) } } }
         }.also { it.isDaemon = true; it.start() }
     }
-    fun onHide() { leftYt = true; try { markHomeViewed() } catch (_: Throwable) {}; hideKb(); sugBox.visibility = View.GONE; watch.pause(); h.removeCallbacks(pollRun); h.removeCallbacks(softRefresh); if (DeviceUi.isTv(act) && navSel == 1) { try { YtNotify.markOpened(act) } catch (_: Throwable) {} } }   // (v575) خرجت من الاشتراكات = العدّ من دلوقتي
+    fun onHide() { leftYt = true; YtNotify.clearNew(); try { markHomeViewed() } catch (_: Throwable) {}; hideKb(); sugBox.visibility = View.GONE; watch.pause(); h.removeCallbacks(pollRun); h.removeCallbacks(softRefresh); if (DeviceUi.isTv(act) && navSel == 1) { try { YtNotify.markOpened(act) } catch (_: Throwable) {} } }   // (v575) خرجت من الاشتراكات = العدّ من دلوقتي
     /** (v348) Main.onStop: الشورتس تقف لما التطبيق يروح الخلفية أو يظهر المشغّل فوقه (بترجع في refresh() مع onResume) */
     fun onPause() { watch.pause(); ytDock.pause() }
     /** (v606) خروج من التطبيق (Home/Recents) والفيديو شغّال في صفحة المشاهدة أو الشريط السفلي: يتسلّم للمشغّل الكامل ويدخل PiP. true = اتسلّم */
@@ -695,7 +695,7 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
 
     // ───────── تنقّل ─────────
     private fun openTab(i: Int) {
-        hideKb(); sugBox.visibility = View.GONE; stack.clear(); paintTabs(i); hidePill()
+        if (i != 1) YtNotify.clearNew(); hideKb(); sugBox.visibility = View.GONE; stack.clear(); paintTabs(i); hidePill()
         searchTyping = false; searchBar.visibility = View.GONE; appBar.visibility = View.VISIBLE   // (v397)
         if (i == 0) { chipSel = 0; paintHomeChips() }
         when (i) {
@@ -960,7 +960,7 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
                 val m = try { YtMtFeed.subs() } catch (e: Throwable) { LogStore.err("YtProUi:mtSubs", e); null }
                 if (m != null) {
                     val shown = HashSet<String>(); m.items.forEach { shown.add(it.id) }
-                    try { YtNotify.markSeen(m.items); YtNotify.mtMarkSubs(m.items.map { it.id }); YtNotify.markOpened(act) } catch (_: Throwable) {}   // (v1107) اللي ظهر في القايمة = اتشاف ← العدّاد يتصفّر
+                    try { YtNotify.noteNewMt(m.items.map { it.id }); YtNotify.markSeen(m.items); YtNotify.mtMarkSubs(m.items.map { it.id }); YtNotify.markOpened(act) } catch (_: Throwable) {}   // (v1107) اللي ظهر في القايمة = اتشاف ← العدّاد يتصفّر
                     return@load Pair(m, { p: Page -> val x = YtMtFeed.more(p); YtRes(x.items.filter { shown.add(it.id) }, x.next) })
                 }
                 LogStore.add("⚠ اشتراكات المحرك رجعت فاضية — بجرّب المسار القديم")
@@ -1027,7 +1027,7 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
                 } catch (e: Throwable) { if (syncErr == null) syncErr = e.message ?: e.javaClass.simpleName }
             }
             if (r.items.isEmpty() && syncErr != null) throw RuntimeException(syncErr)
-            if (r.items.isNotEmpty()) { YtNotify.markSeen(r.items); YtNotify.markOpened(act) }   // اللي اتعرض ما يجيش عليه إشعار ولا عدّاد
+            if (r.items.isNotEmpty()) { YtNotify.noteNewTs(r.items); YtNotify.markSeen(r.items); YtNotify.markOpened(act) }   // اللي اتعرض ما يجيش عليه إشعار ولا عدّاد
             Pair(r, more)
         }
     }
@@ -1681,7 +1681,7 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
     private class Cell(val root: LinearLayout, val thumb: ImageView, val dur: TextView, val title: TextView, val meta: TextView)
 
     private class Card(val root: LinearLayout, val thumb: ImageView, val dur: TextView, val prog: View, val av: TextView, val avImg: ImageView,
-                        val title: TextView, val meta: TextView, val more: View, val dub: TextView, val dl: View, val aud: View)
+                        val title: TextView, val meta: TextView, val more: View, val dub: TextView, val dl: View, val aud: View, val newB: TextView)
 
     /** (v397) كارت فيديو زي يوتيوب: صورة بعرض الشاشة 16:9 (مدة + شريط استكمال) + أفاتار القناة + العنوان + «القناة · المشاهدات · الوقت» + ⋮ */
     private fun makeCard(): Card {
@@ -1704,6 +1704,12 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
             setPadding(ui.dp(7), ui.dp(4), ui.dp(7), ui.dp(4)); background = GradientDrawable().apply { setColor(0xCC000000.toInt()); cornerRadius = ui.dp(5).toFloat() }
         }
         box.addView(dub, FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.START).apply { setMargins(ui.dp(8), ui.dp(8), ui.dp(8), ui.dp(8)) })
+        // (v1144) علامة «جديد» على فيديوهات الاشتراكات اللي اتضافت من آخر مرة فتحت فيها الاشتراكات — بتختفي لما تخرج وتدخل تاني
+        val newB = TextView(act).apply {
+            text = "جديد"; textSize = 11f; setTextColor(Color.WHITE); includeFontPadding = false; typeface = medium; visibility = View.GONE
+            setPadding(ui.dp(7), ui.dp(4), ui.dp(7), ui.dp(4)); background = GradientDrawable().apply { setColor(0xFFE53935.toInt()); cornerRadius = ui.dp(5).toFloat() }
+        }
+        box.addView(newB, FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.END).apply { setMargins(ui.dp(8), ui.dp(8), ui.dp(8), ui.dp(8)) })
         val tb = YtThumbBtns.attach(act, ui, box)   // (v472) 🎧 صوت + ⬇ تحميل فوق كل صورة
         val av = TextView(act).apply { gravity = Gravity.CENTER; textSize = 15f; setTextColor(Color.WHITE); includeFontPadding = false; typeface = medium }
         val avImg = ImageView(act).apply { scaleType = ImageView.ScaleType.CENTER_CROP; visibility = View.GONE }
@@ -1725,7 +1731,7 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
         val root = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL }
         root.addView(box, LinearLayout.LayoutParams(-1, sw * 9 / 16))
         root.addView(info, LinearLayout.LayoutParams(-1, -2))
-        return Card(root, thumb, dur, prog, av, avImg, title, meta, more, dub, tb.dl, tb.aud)
+        return Card(root, thumb, dur, prog, av, avImg, title, meta, more, dub, tb.dl, tb.aud, newB)
     }
 
     /** (v378) كارت فيديو للشبكة (الرئيسية): صورة 16:9 وتحتها اسم الفيديو ثم القناة */
@@ -1828,6 +1834,7 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
                 v.animate().alpha(1f).translationY(0f).setStartDelay(p * 28L).setDuration(Skins.dur(200L)).setInterpolator(android.view.animation.DecelerateInterpolator(1.8f)).start()
             } else { v.alpha = 1f; v.translationY = 0f }
             c.title.text = vi.title
+            c.newB.visibility = if (YtNotify.isNew(vi.id)) View.VISIBLE else View.GONE   // (v1144)
             c.meta.text = listOf(if (YtRss.isShort(vi.id)) "🩳 شورتس" else "", vi.channel, if (vi.count >= 0) fmtN(vi.count) + " مشاهدة" else "", vi.age).filter { x -> x.isNotBlank() }.joinToString(" · ")
             val d = fmtDur(vi.dur)
             c.dur.text = d; c.dur.visibility = if (d.isEmpty()) View.GONE else View.VISIBLE
@@ -1843,6 +1850,11 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
             } else {
                 c.avImg.visibility = View.GONE
                 try { Glide.with(act).clear(c.avImg) } catch (_: Throwable) {}
+                // (v1144) لوجو القناة ناقص (RSS/بحث/مقترحات) ← نجيبه في الخلفية ونحطه
+                YtMtFeed.avatarAsync(act, vi.channelId.ifBlank { vi.channelUrl }) { u ->
+                    vi.avatar = u
+                    act.runOnUiThread { try { if (items.getOrNull(p) === vi && c.title.text.toString() == vi.title) { c.avImg.visibility = View.VISIBLE; Glide.with(act).load(u).circleCrop().override(ui.dp(72), ui.dp(72)).into(c.avImg) } } catch (_: Throwable) {} }
+                }
             }
             try {
                 if (vi.thumb.isNotBlank()) Glide.with(act).load(vi.thumb).centerCrop().override(sw, sw * 9 / 16)

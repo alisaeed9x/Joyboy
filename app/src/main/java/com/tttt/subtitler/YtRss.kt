@@ -343,6 +343,12 @@ object YtNotify {
     @Volatile private var mtPeekAt = 0L
     fun mtBaseKnown(): Boolean = Cfg.str(MT_BASE, "").isNotEmpty()
     private fun mtBase(): List<String> = Cfg.str(MT_BASE, "").split('\n').filter { it.isNotBlank() }
+    // (v1144) علامة «جديد» على الكروت: بتتحسب قبل ما الأساس/السجل يتحدّث، وبتتمسح لما تطلع من الاشتراكات
+    private val newSet = java.util.Collections.synchronizedSet(HashSet<String>())
+    fun isNew(id: String) = newSet.contains(id)
+    fun clearNew() { newSet.clear() }
+    fun noteNewMt(ids: List<String>) { try { val b = mtBase().toHashSet(); if (b.isNotEmpty()) for (x in ids) if (x !in b) newSet.add(x) } catch (_: Throwable) {} }
+    fun noteNewTs(items: List<NpItem>) { try { val m = readSeen(); if (m.isNotEmpty()) for (it in items) { val cid = YtRss.chanId(it.channelUrl) ?: continue; val sv = m[cid] ?: continue; if (it.ts > sv) newSet.add(it.id) } } catch (_: Throwable) {} }
     /** القايمة اللي اتعرضت دلوقتي بتتضاف للأساس (آخر 300 معرّف) */
     fun mtMarkSubs(ids: List<String>) {
         synchronized(mtLock) {

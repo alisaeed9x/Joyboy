@@ -89,6 +89,7 @@ interface YtWatchHost {
     fun audio(v: NpItem)
     fun download(anchor: View, v: NpItem)
     fun state(open: Boolean)
+    fun bgTranslate() {}   // (v1145) تفريغ وترجمة في الخلفية
     fun dock(item: NpItem, kept: YtKept) {}   // (v417) تصغير لشريط تحت: المشغّل بيكمّل شغّال
 }
 
@@ -1079,6 +1080,18 @@ class YtWatchPage(private val act: Activity, private val ui: Ui, private val hos
 
         body.addView(titleTv, LinearLayout.LayoutParams(-1, -2))
         body.addView(metaTv, LinearLayout.LayoutParams(-1, -2))
+        if (embedded) {   // (v1144) تحت الفيديو على طول: ⬇ تحميل · 🎧 صوت بس · 🔗 مشاركة لينك
+            val ar = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; setPadding(ui.dp(10), 0, ui.dp(10), 0) }
+            val bs = listOf(
+                chip("⬇ تحميل") { a -> val v = item; if (v != null) host.download(a, saveItem()) },
+                chip("🎧 صوت بس") { val v = item; if (v != null) host.audio(saveItem()) },
+                chip("🔗 مشاركة لينك") { val v = item; if (v != null) { val sec = pPos() / 1000L; share(YtNp.watchUrl(v.id) + if (sec > 5) "&t=" + sec + "s" else "") } })
+            for (b in bs) ar.addView(b, LinearLayout.LayoutParams(0, -2, 1f).apply { setMargins(ui.dp(4), 0, ui.dp(4), 0) })
+            body.addView(ar, LinearLayout.LayoutParams(-1, -2).apply { topMargin = ui.dp(10) })
+            val ar2 = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; setPadding(ui.dp(10), 0, ui.dp(10), 0) }
+            ar2.addView(chip("🌙 تفريغ وترجمة في الخلفية") { val v = item; if (v != null) host.bgTranslate() }, LinearLayout.LayoutParams(0, -2, 1f).apply { setMargins(ui.dp(4), 0, ui.dp(4), 0) })
+            body.addView(ar2, LinearLayout.LayoutParams(-1, -2).apply { topMargin = ui.dp(8) })   // (v1145)
+        }
         body.addView(HorizontalScrollView(act).apply { isHorizontalScrollBarEnabled = false; addView(chipsRow) }, LinearLayout.LayoutParams(-1, -2).apply { topMargin = ui.dp(10) })
         body.addView(chanBox, LinearLayout.LayoutParams(-1, -2))
         body.addView(descTv, LinearLayout.LayoutParams(-1, -2).apply { setMargins(ui.dp(12), 0, ui.dp(12), 0) })
@@ -1273,7 +1286,7 @@ class YtWatchPage(private val act: Activity, private val ui: Ui, private val hos
     }
     private fun fmtDur(s: Long): String = if (s <= 0) "" else if (s >= 3600) String.format(Locale.US, "%d:%02d:%02d", s / 3600, s % 3600 / 60, s % 60) else String.format(Locale.US, "%d:%02d", s / 60, s % 60)
 
-    private fun avatar(name: String, sizeDp: Int, url: String): View {
+    private fun avatar(name: String, sizeDp: Int, url: String, key: String = ""): View {
         val colors = intArrayOf(0xFFE53935.toInt(), 0xFF8E24AA.toInt(), 0xFF3949AB.toInt(), 0xFFF4511E.toInt(), 0xFF6D4C41.toInt(), 0xFF1E88E5.toInt(), 0xFF5E35B1.toInt())
         val c = colors[(name.hashCode() and 0x7fffffff) % colors.size]
         val f = FrameLayout(act)
@@ -1285,6 +1298,10 @@ class YtWatchPage(private val act: Activity, private val ui: Ui, private val hos
             val iv = ImageView(act).apply { scaleType = ImageView.ScaleType.CENTER_CROP }
             f.addView(iv, FrameLayout.LayoutParams(-1, -1))
             try { Glide.with(act).load(url).circleCrop().override(ui.dp(sizeDp), ui.dp(sizeDp)).into(iv) } catch (_: Throwable) {}
+        } else if (key.isNotBlank()) {   // (v1144) لوجو القناة ناقص ← جلب في الخلفية
+            val iv = ImageView(act).apply { scaleType = ImageView.ScaleType.CENTER_CROP }
+            f.addView(iv, FrameLayout.LayoutParams(-1, -1))
+            YtMtFeed.avatarAsync(act, key) { u -> act.runOnUiThread { try { if (f.isAttachedToWindow) Glide.with(act).load(u).circleCrop().override(ui.dp(sizeDp), ui.dp(sizeDp)).into(iv) } catch (_: Throwable) {} } }
         }
         return f
     }
@@ -1478,7 +1495,7 @@ class YtWatchPage(private val act: Activity, private val ui: Ui, private val hos
         metaTv.text = listOf(if (v.count > 0) fmtN(v.count) + " مشاهدة" else "", v.age).filter { it.isNotBlank() }.joinToString(" · ")
         paintLike()
         chanName.text = v.channel
-        chanAvHost.removeAllViews(); chanAvHost.addView(avatar(v.channel.ifBlank { "؟" }, 40, v.avatar), FrameLayout.LayoutParams(-1, -1))
+        chanAvHost.removeAllViews(); chanAvHost.addView(avatar(v.channel.ifBlank { "؟" }, 40, v.avatar, v.channelId.ifBlank { v.channelUrl }), FrameLayout.LayoutParams(-1, -1))
         LoadUi.set(descTv, "⏳ …"); descTv.maxLines = if (tv) 6 else 2
         paintSub(); paintSave(); paintTabs()
         listBox.removeAllViews()
@@ -1498,7 +1515,7 @@ class YtWatchPage(private val act: Activity, private val ui: Ui, private val hos
         likeCount = d.likes; paintLike()
         val nm = chanNameNow()
         chanName.text = nm
-        chanAvHost.removeAllViews(); chanAvHost.addView(avatar(nm.ifBlank { "؟" }, 40, v.avatar), FrameLayout.LayoutParams(-1, -1))
+        chanAvHost.removeAllViews(); chanAvHost.addView(avatar(nm.ifBlank { "؟" }, 40, v.avatar, v.channelId.ifBlank { chanUrl() }), FrameLayout.LayoutParams(-1, -1))
         descTv.text = d.desc.trim().ifBlank { "(مفيش وصف)" }
         paintSub(); paintSave()
         renderList()
@@ -1547,7 +1564,7 @@ class YtWatchPage(private val act: Activity, private val ui: Ui, private val hos
         val col = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL }
         col.addView(title, LinearLayout.LayoutParams(-1, -2)); col.addView(meta, LinearLayout.LayoutParams(-1, -2).apply { topMargin = ui.dp(3) })
         val info = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; gravity = Gravity.TOP; setPadding(ui.dp(12), ui.dp(12), ui.dp(12), ui.dp(16)) }
-        info.addView(avatar(v.channel.ifBlank { "؟" }, 36, v.avatar), LinearLayout.LayoutParams(ui.dp(36), ui.dp(36)).apply { marginEnd = ui.dp(12) })
+        info.addView(avatar(v.channel.ifBlank { "؟" }, 36, v.avatar, v.channelId.ifBlank { v.channelUrl }), LinearLayout.LayoutParams(ui.dp(36), ui.dp(36)).apply { marginEnd = ui.dp(12) })
         info.addView(col, LinearLayout.LayoutParams(0, -2, 1f))
         val root = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; foreground = YtSkin.ripple(); setOnClickListener { host.openVideo(v) }; YtFast.warmOnTouch(this) { v.id } }
         root.addView(box, LinearLayout.LayoutParams(-1, sw * 9 / 16)); root.addView(info, LinearLayout.LayoutParams(-1, -2))

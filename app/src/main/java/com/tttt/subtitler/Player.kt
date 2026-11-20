@@ -1918,7 +1918,7 @@ class PlayerActivity : Activity(), Host {
             } else am.adjustStreamVolume(android.media.AudioManager.STREAM_MUSIC, if (up) android.media.AudioManager.ADJUST_RAISE else android.media.AudioManager.ADJUST_LOWER, android.media.AudioManager.FLAG_SHOW_UI)
         } catch (e: Throwable) { LogStore.err("Tv:vol", e) }
     }
-    override fun finish() { super.finish(); if (gone) { try { overridePendingTransition(0, 0) } catch (_: Throwable) {}; return }; try { if (MtLook.playerAnim()) overridePendingTransition(R.anim.player_close_enter, R.anim.player_close_exit) else overridePendingTransition(R.anim.act_stay, R.anim.act_exit) } catch (e: Exception) { LogStore.err("Main:725", e) } }
+    override fun finish() { super.finish(); if (gone) { try { overridePendingTransition(0, 0) } catch (_: Throwable) {}; return }; try { if (ytPage) overridePendingTransition(R.anim.yt_page_down_enter, R.anim.yt_page_down_exit) else if (MtLook.playerAnim()) overridePendingTransition(R.anim.player_close_enter, R.anim.player_close_exit) else overridePendingTransition(R.anim.act_stay, R.anim.act_exit) } catch (e: Exception) { LogStore.err("Main:725", e) } }
     @Volatile var cur = 0L
     @Volatile var durMs = 0L
     @Volatile var status = ""
@@ -4835,7 +4835,7 @@ class PlayerActivity : Activity(), Host {
         } catch (_: Throwable) {}
         if (incognito) try { window.addFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE) } catch (_: Throwable) {}   // (v1062) متخفي: المعاينة في الريسنت سودا
         smoothRotation()   // (v429)
-        try { if (intent.getBooleanExtra("handoff", false)) overridePendingTransition(0, 0) else if (MtLook.playerAnim()) overridePendingTransition(R.anim.player_open_enter, R.anim.player_open_exit) } catch (_: Throwable) {}   // (v899) (v1130) التسليم من المشغّل المصغّر: من غير حركة حركة فتح المشغّل من MeeTube
+        try { if (intent.getBooleanExtra("handoff", false)) overridePendingTransition(0, 0) else if (ytPage) overridePendingTransition(R.anim.yt_page_up_enter, R.anim.yt_page_up_exit) else if (MtLook.playerAnim()) overridePendingTransition(R.anim.player_open_enter, R.anim.player_open_exit) } catch (_: Throwable) {}   // (v899) (v1143) صفحة يوتيوب: بتطلع من تحت (v1130) التسليم من المشغّل المصغّر: من غير حركة حركة فتح المشغّل من MeeTube
         synchronized(liveList) {
             liveList.removeAll { it.get() == null }
             liveList.toList().forEach { r -> r.get()?.let { o -> if (o !== this) try { o.runOnUiThread { o.killForNewVideo() } } catch (_: Throwable) {} } }
@@ -5571,7 +5571,7 @@ class PlayerActivity : Activity(), Host {
         }
         // زرار ⛶ (.fullscreen-btn): أسفل يسار الفيديو 10dp في الرأسي، 18dp في الشاشة الكاملة
         fsBtnV = ui.fsCircle("⛶") { toggleFs(); showChrome() }.apply { if (DeviceUi.isRemote(this@PlayerActivity)) visibility = View.GONE }   // (v663) تلفزيون/تابلت: مخفي من أول لحظة (كان بيظهر لحد أول OK على الريموت لأن applyChromeFn ماكانتش بتتنادى قبلها)
-        fsBtnLp = FrameLayout.LayoutParams(ui.dp(34), ui.dp(34), Gravity.BOTTOM or Gravity.LEFT)
+        fsBtnLp = FrameLayout.LayoutParams(ui.dp(34), ui.dp(34), Gravity.BOTTOM or (if (ytPage) Gravity.RIGHT else Gravity.LEFT))   // (v1143) صفحة يوتيوب: ⛶ يمين
         videoBox.addView(fsBtnV, fsBtnLp)
         // (v95) مكان 👁 والروتيشن: في النص بين الشريط العلوي والشريط السفلي (مش فوق شريحة الترجمة أبدًا)
         var modePillMoving = false
@@ -5672,6 +5672,7 @@ class PlayerActivity : Activity(), Host {
                 giShow("2× ⏩", Gravity.CENTER)
             }
             override fun onSingleTapConfirmed(e: MotionEvent): Boolean {
+                if (ytPage && !fullMode && !pipNow()) { pageCpShow = true; centerPlay.visibility = View.VISIBLE; h.removeCallbacks(pageCpHide); h.postDelayed(pageCpHide, 2500L); return true }   // (v1143)
                 // اللمس على الشاشة ما بيشغّلش ولا بيوقّف الفيديو — التشغيل/الإيقاف من زرار التشغيل بس
                 if (fullMode) {
                     if (chromeShown) { log("👆 ضغطة: إخفاء الشريط"); h.removeCallbacks(hideChrome); chromeShown = false; applyChromeFn() }
@@ -5705,6 +5706,10 @@ class PlayerActivity : Activity(), Host {
                 // (v340) سحب لفوق من حرف الفيديو التحتاني = لوحة «التالي» (فيديوهات القايمة / المقترحة) زي يوتيوب
                 if (!scrollLogged && !incognito && intent.getStringExtra("ytid") != null && e1.y > videoBox.height * 0.78f && e1.y - e2.y > ui.dp(56)) {
                     scrollLogged = true; log("↕ سحب لفوق: التالي"); openNextSheet(); return true
+                }
+                if (ytPage && !fullMode) {   // (v1143) صفحة يوتيوب المصغّرة: سحب لتحت = تصغير (صورة مصغّرة)، ومفيش صوت/سطوع
+                    if (!scrollLogged && e2.y - e1.y > ui.dp(56)) { scrollLogged = true; log("↕ سحب لتحت: تصغير"); enterPip(true) }
+                    return true
                 }
                 if (!MtLook.levelSwipes()) return true
                 val d = dy / videoBox.height.coerceAtLeast(1) * 1.3f
@@ -6286,7 +6291,7 @@ class PlayerActivity : Activity(), Host {
                 }
             }
             override fun onIsPlayingChanged(p: Boolean) {
-                val t = if (p) "⏸" else "▶"; if (!buffering) { ctl.play.text = t; fsPlayB.text = t; if (::centerPlay.isInitialized) centerPlay.text = t }; centerPlay.visibility = if (pipNow() || busyShown() || (fullMode && chromeShown) || (ytPage && !fullMode)) View.GONE else if (buffering) View.VISIBLE else if (p) View.GONE else View.VISIBLE
+                val t = if (p) "⏸" else "▶"; if (!buffering) { ctl.play.text = t; fsPlayB.text = t; if (::centerPlay.isInitialized) centerPlay.text = t }; centerPlay.visibility = if (pipNow() || busyShown() || (fullMode && chromeShown)) View.GONE else if (buffering) View.VISIBLE else if (p) (if (ytPage && !fullMode && pageCpShow) View.VISIBLE else View.GONE) else View.VISIBLE
                 // تشخيص الشاشة السودا: صوت شغّال ومفيش ولا فريم فيديو اتعرض بعد ٥ ثواني
                 if (p && !firstFrame) h.postDelayed({ if (!firstFrame && !isFinishing) log("⚠️ مفيش فريم فيديو اتعرض بعد ٥ ثواني — غالبًا كودك/بروفايل الفيديو مش مدعوم على الجهاز (مثلًا HEVC 10-bit)") }, 5000)
             }
@@ -6936,7 +6941,7 @@ class PlayerActivity : Activity(), Host {
         if (f) lp.setMargins(0, 0, 0, 0) else lp.setMargins(ui.dp(16), ui.dp(32), ui.dp(16), 0)
         videoBoxRef.layoutParams = lp
         videoBoxRef.background = GradientDrawable().apply { setColor(Color.BLACK); cornerRadius = if (f) 0f else ui.dp(14).toFloat() }
-        fsBtnLp.setMargins(ui.dp(10), 0, 0, ui.dp(10)); fsBtnV.layoutParams = fsBtnLp
+        if (ytPage) { fsBtnLp.gravity = Gravity.BOTTOM or Gravity.RIGHT; fsBtnLp.setMargins(0, 0, ui.dp(10), ui.dp(10)) } else fsBtnLp.setMargins(ui.dp(10), 0, 0, ui.dp(10)); fsBtnV.layoutParams = fsBtnLp   // (v1143)
         fsOnly.forEach { it.visibility = if (f && (it !== visBadge || (::visual.isInitialized && visual.running))) View.VISIBLE else View.GONE }   // (v431) 👁 البصري بس لو شغّال
         try { tbView?.let { v -> (v.layoutParams as? FrameLayout.LayoutParams)?.let { lp -> lp.rightMargin = ui.dp(8); v.layoutParams = lp } } } catch (_: Throwable) {}   // (v265)
         st.visibility = if (f) View.GONE else View.VISIBLE
@@ -6969,6 +6974,8 @@ class PlayerActivity : Activity(), Host {
         intent.getBooleanExtra("ytpage", false) && !DeviceUi.isTv(this) && !remote && intent.getStringExtra("ytid")?.length == 11
     }
     private var pageFullP = false
+    private var pageCpShow = false   // (v1143) لمسة على الفيديو في وضع الصفحة = يظهر ⏸/▶ ٢.٥ث
+    private val pageCpHide = Runnable { pageCpShow = false; try { if (ytPage && !fullMode && !buffering && player.isPlaying) centerPlay.visibility = View.GONE } catch (_: Throwable) {} }
     private var ytWatch: YtWatchPage? = null
 
     private fun wantFull(): Boolean {
@@ -7008,7 +7015,7 @@ class PlayerActivity : Activity(), Host {
         batchBtn.visibility = View.GONE
         rotBtn.visibility = View.GONE
         miniBar.visibility = View.GONE
-        centerPlay.visibility = View.GONE
+        centerPlay.visibility = if (buffering || pageCpShow || (::player.isInitialized && !player.isPlaying)) View.VISIBLE else View.GONE   // (v1143) زرار ⏸/▶ في النص
         st.visibility = View.GONE
         trChipV?.visibility = View.GONE
         if (::audBtn.isInitialized) audBtn.visibility = View.GONE
@@ -7022,7 +7029,7 @@ class PlayerActivity : Activity(), Host {
         val th0 = intent.getStringExtra("ytthumb") ?: ""
         val thumb = if (th0.isNotBlank()) th0 else "https://i.ytimg.com/vi/" + id + "/hqdefault.jpg"
         return NpItem(id, intent.getStringExtra("title") ?: "", intent.getStringExtra("ytchan") ?: "", intent.getStringExtra("ytchanurl") ?: "", thumb,
-            intent.getLongExtra("ytdur", 0L), intent.getLongExtra("ytcount", 0L), intent.getStringExtra("ytage") ?: "", 0, YtNp.watchUrl(id))
+            intent.getLongExtra("ytdur", 0L), intent.getLongExtra("ytcount", 0L), intent.getStringExtra("ytage") ?: "", 0, YtNp.watchUrl(id), 0L, intent.getStringExtra("ytav") ?: "", intent.getStringExtra("ytcid") ?: "")
     }
 
     private fun buildYtPage(): View {
@@ -7059,9 +7066,10 @@ class PlayerActivity : Activity(), Host {
         override fun openVideo(v: NpItem) {
             runOnUiThread { openYtPageVideo(v) }
         }
-        override fun audio(v: NpItem) {}
-        override fun download(anchor: View, v: NpItem) {}
+        override fun audio(v: NpItem) { runOnUiThread { try { audioOnly() } catch (e: Throwable) { LogStore.err("Player:ytAudio", e) } } }   // (v1144) صوت بس في نفس المشغّل
+        override fun download(anchor: View, v: NpItem) { runOnUiThread { try { if (url == null) Notice.show(this@PlayerActivity, "⏳ استنى لحد ما الفيديو يحمّل", 1800L) else downloadPopup(anchor) } catch (e: Throwable) { LogStore.err("Player:ytDl", e) } } }   // (v1144)
         override fun state(open: Boolean) {}
+        override fun bgTranslate() { runOnUiThread { try { translateInBackground(false, "صفحة يوتيوب (🌙 تفريغ وترجمة)") } catch (e: Throwable) { LogStore.err("Player:ytBg", e) } } }   // (v1145)
     }
 
     private fun openYtChannelInMain(url: String) {
@@ -7084,6 +7092,8 @@ class PlayerActivity : Activity(), Host {
             putExtra("ytchan", v.channel)
             putExtra("ytchanurl", v.channelUrl)
             putExtra("ytthumb", v.thumb)
+            putExtra("ytav", v.avatar)
+            putExtra("ytcid", v.channelId)
             putExtra("ytcount", v.count)
             putExtra("ytage", v.age)
             putExtra("ytdur", v.dur)

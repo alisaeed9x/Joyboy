@@ -71,18 +71,20 @@ class BrowserSaver(private val act: BrowserActivity, private val frame: FrameLay
         }
         private fun sha1(s: String): String = try { java.security.MessageDigest.getInstance("SHA-1").digest(s.toByteArray()).joinToString("") { "%02x".format(it) } } catch (_: Throwable) { s.hashCode().toString() }
 
-        private val JS_LAZY = """(function(){if(window.__jbL)return;window.__jbL=1;function f(){try{var l=document.querySelectorAll('img:not([loading]),iframe:not([loading])');for(var i=0;i<l.length;i++){l[i].loading='lazy'}}catch(e){}}f();try{new MutationObserver(f).observe(document.documentElement,{childList:true,subtree:true})}catch(e){}})();"""
-        private val JS_GUARD = """(function(){if(window.__jbG)return;window.__jbG=1;var t=0;function g(){t=Date.now()}['touchend','click','keydown'].forEach(function(e){addEventListener(e,g,true)});function ok(){return Date.now()-Math.max(t,window.__jbT||0)<2500}function h(v){if(v.__jbg)return;v.__jbg=1;try{v.preload='none'}catch(e){}v.addEventListener('play',function(){try{if(!ok()&&(v.muted||v.loop||v.offsetWidth<320)){v.pause()}}catch(e){}},true)}function s(){var l=document.querySelectorAll('video');for(var i=0;i<l.length;i++)h(l[i])}s();try{new MutationObserver(s).observe(document.documentElement,{childList:true,subtree:true})}catch(e){}})();"""
-        private val JS_SRCSET = """(function(){if(window.__jbS)return;window.__jbS=1;function f(){try{var l=document.querySelectorAll('img[srcset]:not([data-jb])');for(var i=0;i<l.length;i++){var m=l[i];m.setAttribute('data-jb','1');var c=m.getAttribute('srcset').split(',').map(function(s){var a=s.trim().split(/\s+/);return{u:a[0],w:parseFloat(a[1])||0}}).filter(function(x){return x.u});if(c.length>1){c.sort(function(a,b){return a.w-b.w});var k=c[c.length-1];for(var j=0;j<c.length;j++){if(c[j].w>=400){k=c[j];break}}m.removeAttribute('srcset');m.src=k.u}}}catch(e){}}f();try{new MutationObserver(f).observe(document.documentElement,{childList:true,subtree:true})}catch(e){}})();"""
+        private val JS_LAZY = """(function(){if(window.__jbL)return;window.__jbL=1;function f(){try{var l=document.querySelectorAll('img:not([loading]),iframe:not([loading])');for(var i=0;i<l.length;i++){l[i].loading='lazy'}}catch(e){}}f();try{new MutationObserver(function(){clearTimeout(window.__jbd1);window.__jbd1=setTimeout(f,600)}).observe(document.documentElement,{childList:true,subtree:true})}catch(e){}})();"""
+        private val JS_GUARD = """(function(){if(window.__jbG)return;window.__jbG=1;var t=0;function g(){t=Date.now()}['touchend','click','keydown'].forEach(function(e){addEventListener(e,g,true)});function ok(){return Date.now()-Math.max(t,window.__jbT||0)<2500}function h(v){if(v.__jbg)return;v.__jbg=1;try{v.preload='none'}catch(e){}v.addEventListener('play',function(){try{if(!ok()&&(v.muted||v.loop||v.offsetWidth<320)){v.pause()}}catch(e){}},true)}function s(){var l=document.querySelectorAll('video');for(var i=0;i<l.length;i++)h(l[i])}s();try{new MutationObserver(function(){clearTimeout(window.__jbd2);window.__jbd2=setTimeout(s,600)}).observe(document.documentElement,{childList:true,subtree:true})}catch(e){}})();"""
+        private val JS_SRCSET = """(function(){if(window.__jbS)return;window.__jbS=1;function f(){try{var l=document.querySelectorAll('img[srcset]:not([data-jb])');for(var i=0;i<l.length;i++){var m=l[i];m.setAttribute('data-jb','1');var c=m.getAttribute('srcset').split(',').map(function(s){var a=s.trim().split(/\s+/);return{u:a[0],w:parseFloat(a[1])||0}}).filter(function(x){return x.u});if(c.length>1){c.sort(function(a,b){return a.w-b.w});var k=c[c.length-1];for(var j=0;j<c.length;j++){if(c[j].w>=400){k=c[j];break}}m.removeAttribute('srcset');m.src=k.u}}}catch(e){}}f();try{new MutationObserver(function(){clearTimeout(window.__jbd3);window.__jbd3=setTimeout(f,600)}).observe(document.documentElement,{childList:true,subtree:true})}catch(e){}})();"""
         private const val JS_VID = "(function(){var l=document.querySelectorAll('video'),r=0;for(var i=0;i<l.length;i++){var v=l[i];if(!v.paused&&!v.ended){r=Math.max(r,v.readyState>2?1:2)}}return r})()"
         private const val JS_VQ = "(function(){var p=document.getElementById('movie_player');if(p&&p.getPlaybackQuality){try{return p.getPlaybackQuality()}catch(e){}}return ''})()"
         private val VQ_STEPS = intArrayOf(144, 240, 360, 480, 720, 1080)
+        // (v1146) تخفيف دايم (من غير وضع توفير): الموقع يفتكر إنك على نت ضعيف + مفيش prefetch/prerender
+        private const val JS_LITE = "(function(){if(window.__jbX)return;window.__jbX=1;try{var c=navigator.connection;if(c){var o={saveData:true,effectiveType:'3g',rtt:300,downlink:1.5},pr=Object.getPrototypeOf(c);['saveData','effectiveType','rtt','downlink'].forEach(function(k){try{Object.defineProperty(pr,k,{get:function(){return o[k]},configurable:true})}catch(e){}})}}catch(e){}try{var mm=window.matchMedia;window.matchMedia=function(q){var r=mm.call(window,q);if(/prefers-reduced-data/.test(q)&&/reduce/.test(q)){try{Object.defineProperty(r,'matches',{value:true})}catch(e){}}return r}}catch(e){}function f(){try{document.querySelectorAll('link[rel=prefetch],link[rel=prerender]').forEach(function(l){l.remove()})}catch(e){}}f();document.addEventListener('DOMContentLoaded',f)})();"
         private const val TRK_AVG = 15_000L    // تقدير: متوسط حجم طلب تتبّع اتمنع
         // (v785) تراكرز/تحليلات طرف ثالث — قايمة المتصفح الخاصة (ماتلمسش AdBlock). «كامل» على الموقع بيعطّلها له.
         private val TRK = listOf("google-analytics.com", "googletagmanager.com", "analytics.google.com", "stats.g.doubleclick.net", "connect.facebook.net",
             "hotjar.com", "mixpanel.com", "segment.io", "segment.com", "amplitude.com", "clarity.ms", "scorecardresearch.com", "quantserve.com",
             "fullstory.com", "mouseflow.com", "crazyegg.com", "nr-data.net", "adobedtm.com", "omtrdc.net")
-        private const val JS_NOPRE = "(function(){if(window.__jbP)return;window.__jbP=1;function f(){try{document.querySelectorAll('video:not([data-jbp]),audio:not([data-jbp])').forEach(function(m){m.setAttribute('data-jbp','1');if(m.paused)m.preload='none'});document.querySelectorAll('link[rel=prefetch],link[rel=prerender],link[rel=preload][as=video],link[rel=preload][as=fetch]').forEach(function(l){if(l.parentNode)l.parentNode.removeChild(l)})}catch(e){}}f();try{new MutationObserver(f).observe(document.documentElement,{childList:true,subtree:true})}catch(e){}})();"
+        private const val JS_NOPRE = "(function(){if(window.__jbP)return;window.__jbP=1;function f(){try{document.querySelectorAll('video:not([data-jbp]),audio:not([data-jbp])').forEach(function(m){m.setAttribute('data-jbp','1');if(m.paused)m.preload='none'});document.querySelectorAll('link[rel=prefetch],link[rel=prerender],link[rel=preload][as=video],link[rel=preload][as=fetch]').forEach(function(l){if(l.parentNode)l.parentNode.removeChild(l)})}catch(e){}}f();try{new MutationObserver(function(){clearTimeout(window.__jbd4);window.__jbd4=setTimeout(f,600)}).observe(document.documentElement,{childList:true,subtree:true})}catch(e){}})();"
         private const val JS_IMGS = "(function(){var n=0;document.querySelectorAll('img').forEach(function(i){if(!i.complete||!i.naturalWidth)n++});return n})()"
         /** (v788) إيقاف أي فيديو/صوت في تبويب خلفي ومنعه من التحميل المسبق — ده اللي كان بيفضل ينزّل مقاطع (≈ميجا/10ث) بعد ما تسيب التبويب */
         const val JS_STOPMEDIA = "(function(){try{document.querySelectorAll('video,audio').forEach(function(v){try{if(!v.paused)v.pause();v.preload='none'}catch(e){}})}catch(e){}})();"
@@ -260,7 +262,7 @@ class BrowserSaver(private val act: BrowserActivity, private val frame: FrameLay
     private val docStartDone = java.util.Collections.newSetFromMap(java.util.WeakHashMap<WebView, Boolean>())
     private fun docStartJs(lv: Int): String {
         val sb = StringBuilder()
-        if (lv >= SMART) sb.append(JS_LAZY)
+        if (lv != OFF) { sb.append(JS_LAZY); sb.append(JS_LITE) }   // (v1146) دايمًا مش بس من SMART
         if (!autoplayAllowed(lv)) sb.append(JS_GUARD)
         if (lv != OFF && !preloadAllowed()) sb.append(JS_NOPRE)
         return sb.toString()
@@ -278,7 +280,8 @@ class BrowserSaver(private val act: BrowserActivity, private val frame: FrameLay
 
     private fun jsFor(lv: Int, hs: String): String {
         val sb = StringBuilder()
-        if (lv >= SMART) { sb.append(JS_LAZY); if (lv >= MAX && imgMode() != "always") sb.append(JS_SRCSET) }
+        if (lv != OFF) { sb.append(JS_LAZY); sb.append(JS_LITE) }   // (v1146)
+        if (lv >= SMART && lv >= MAX && imgMode() != "always") sb.append(JS_SRCSET)
         if (!autoplayAllowed(lv)) sb.append(JS_GUARD)
         if (lv != OFF && !preloadAllowed()) sb.append(JS_NOPRE)
         if (isYt(hs)) { vqCap = vqPolicy(lv); sb.append(ytJs(ytQ(vqCap))) }
@@ -388,7 +391,7 @@ class BrowserSaver(private val act: BrowserActivity, private val frame: FrameLay
     /** (v981) الداتا/الطوارئ: بيمنع الخطوط بس (الصور بتتمنع بإعداد blockNetworkImage والفيديو بالحارس)؛ بيتنفذ بعد فحص الإعلانات */
     fun intercept(u: String, t: BTab): WebResourceResponse? {
         countReq(u, t)   // (v789) عدّ طلبات كل تبويب/موقع لزرار «إيه اللي بياكل النت؟»
-        if (level < SMART) return null
+        if (level < BAL) return null   // (v1146) حجب التتبّع من المتوازن (كان من SMART)
         val hs = hostOf(t.url)
         if (siteMode(hs) == 2) return null
         if (p.getBoolean("sv_trk", true)) {

@@ -131,3 +131,38 @@ object LoadUi {
         return v
     }
 }
+
+
+/**
+ * (v1143) انتقال المتصفح: شريط رفيع لامع بيجري فوق (زي كروم/يوتيوب) بدل حبّة اللودينج الكبيرة. من غير نص ومن غير خلفية.
+ * بيتحط في decorView وبيتشال بـremoveView؛ الأنيميشن بيقف لوحده لما الـView يتشال.
+ */
+object NavLoadBar {
+    fun make(ctx: android.content.Context): android.view.View {
+        val den = ctx.resources.displayMetrics.density
+        val bar = android.widget.FrameLayout(ctx)
+        bar.setBackgroundColor(0x22FFFFFF)
+        val glow = View(ctx)
+        glow.background = android.graphics.drawable.GradientDrawable(android.graphics.drawable.GradientDrawable.Orientation.LEFT_RIGHT,
+            intArrayOf(0x008FB4FF, 0xFF8FB4FF.toInt(), 0x008FB4FF))
+        bar.addView(glow, android.widget.FrameLayout.LayoutParams((140 * den).toInt(), -1))
+        var anim: android.animation.ValueAnimator? = null
+        bar.addOnLayoutChangeListener { _, l, _, r, _, _, _, _, _ ->
+            val w = (r - l).toFloat()
+            if (w > 0f && anim == null) {
+                anim = android.animation.ValueAnimator.ofFloat(-140f * den, w).apply {
+                    duration = 900L; repeatCount = android.animation.ValueAnimator.INFINITE
+                    interpolator = android.view.animation.AccelerateDecelerateInterpolator()
+                    addUpdateListener { glow.translationX = it.animatedValue as Float }
+                    start()
+                }
+            }
+        }
+        bar.addOnAttachStateChangeListener(object : View.OnAttachStateChangeListener {
+            override fun onViewAttachedToWindow(v: View) {}
+            override fun onViewDetachedFromWindow(v: View) { anim?.cancel(); anim = null }
+        })
+        bar.layoutParams = android.widget.FrameLayout.LayoutParams(-1, (3 * den).toInt().coerceAtLeast(3), android.view.Gravity.TOP)
+        return bar
+    }
+}

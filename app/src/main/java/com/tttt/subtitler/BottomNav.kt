@@ -32,7 +32,7 @@ class BottomNav(act: Activity, private val ui: Ui, private val th: Theme, privat
         /** (v475) خلايا يوتيوب الافتراضية (مش بوابات): الرئيسية 9 · الاشتراكات 10 · أنا 11 — بتحل محل خلية «يوتيوب» وانت جواه */
         const val YT_HOME = 9; const val YT_SUBS = 10; const val YT_ME = 11
         val NORMAL_ORDER = BAR_ORDER
-        val YT_ORDER = listOf(0, YT_HOME, YT_SUBS, YT_ME, NET, MORE)  // نسخة كاملة وانت في يوتيوب: الموسيقى والمتصفح بيروحوا لـ«المزيد» · (v829) زرار النت بعد «أنا» (كان قبلها)
+        val YT_ORDER = listOf(0, YT_HOME, YT_SUBS, YT_ME, 2, NET, MORE)  // نسخة كاملة وانت في يوتيوب: الموسيقى والمتصفح بيروحوا لـ«المزيد» · (v829) زرار النت بعد «أنا» (كان قبلها)
         val LITE_ORDER = listOf(YT_HOME, YT_SUBS, 0, YT_ME)           // نسخة اللايت: الرئيسية · الاشتراكات · محلي · أنا
         val DEFS = listOf("🎞" to "الفيديوهات", "🎵" to "الموسيقى", "🌐" to "المتصفح", "🗂" to "المخزن", "▶" to "يوتيوب", "⬇" to "مركز التحميل", "" to "", "⚙️" to "الإعدادات", "⋯" to "المزيد",
             "🏠" to "الرئيسية", "📺" to "الاشتراكات", "👤" to "أنا", "📱" to "الريموت", "📎" to "الكليبورد", "📶" to "", "📡" to "ريموت IR", "🩺" to "العناية")

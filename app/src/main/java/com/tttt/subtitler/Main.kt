@@ -1645,6 +1645,8 @@ class MainActivity : Activity() {
             putExtra("ytchan", v.channel)
             putExtra("ytchanurl", v.channelUrl)
             putExtra("ytthumb", v.thumb)
+            putExtra("ytav", v.avatar)
+            putExtra("ytcid", v.channelId)
             putExtra("ytcount", v.count)
             putExtra("ytage", v.age)
             putExtra("ytdur", v.dur)
@@ -1951,23 +1953,8 @@ class MainActivity : Activity() {
     private fun showBrowserLoading() {
         try {
             if (browserLoadingOv != null) return
-            val ov = android.widget.FrameLayout(this).apply {
-                background = android.graphics.drawable.GradientDrawable().apply { setColor(0xCC000000.toInt()); cornerRadius = (14 * resources.displayMetrics.density) }
-                setPadding((20 * resources.displayMetrics.density).toInt(), (16 * resources.displayMetrics.density).toInt(), (20 * resources.displayMetrics.density).toInt(), (16 * resources.displayMetrics.density).toInt())
-            }
-            val col = android.widget.LinearLayout(this).apply { orientation = android.widget.LinearLayout.VERTICAL; gravity = android.view.Gravity.CENTER }
-            val sp = LoadUi.view(this, 52)   // (v1122) نفس لودينج تشغيل الفيديو
-            val tx = android.widget.TextView(this).apply {
-                text = "جاري الانتقال الى المتصفح…"
-                setTextColor(android.graphics.Color.WHITE)
-                textSize = 16f
-                gravity = android.view.Gravity.CENTER
-                setPadding(0, (16 * resources.displayMetrics.density).toInt(), 0, 0)
-            }
-            col.addView(sp, android.widget.LinearLayout.LayoutParams(-2, -2).apply { gravity = android.view.Gravity.CENTER })
-            col.addView(tx, android.widget.LinearLayout.LayoutParams(-2, -2).apply { gravity = android.view.Gravity.CENTER })
-            ov.addView(col, android.widget.FrameLayout.LayoutParams(-2, -2, android.view.Gravity.CENTER))
-            (window.decorView as? android.view.ViewGroup)?.addView(ov, android.widget.FrameLayout.LayoutParams(-2, -2, android.view.Gravity.CENTER))
+            val ov = NavLoadBar.make(this)   // (v1143) شريط لامع رفيع فوق بدل الحبّة/السبينر الكبير
+            (window.decorView as? android.view.ViewGroup)?.addView(ov)
             browserLoadingOv = ov
         } catch (_: Throwable) {}
     }

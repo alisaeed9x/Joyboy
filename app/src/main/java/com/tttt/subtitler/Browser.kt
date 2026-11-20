@@ -441,23 +441,8 @@ class BrowserActivity : Activity() {
     private fun showBrowserLoading() {
         try {
             if (browserLoadingOv != null) return
-            val ov = FrameLayout(this).apply {
-                background = android.graphics.drawable.GradientDrawable().apply { setColor(0xCC000000.toInt()); cornerRadius = ui.dp(14).toFloat() }
-                setPadding(ui.dp(20), ui.dp(16), ui.dp(20), ui.dp(16))
-            }
-            val col = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER }
-            val sp = LoadUi.view(this, 52)   // (v1122) نفس لودينج تشغيل الفيديو
-            val tx = TextView(this).apply {
-                text = "جاري الانتقال الى المتصفح…"
-                setTextColor(Color.WHITE)
-                textSize = 16f
-                gravity = Gravity.CENTER
-                setPadding(0, ui.dp(16), 0, 0)
-            }
-            col.addView(sp, LinearLayout.LayoutParams(-2, -2).apply { gravity = Gravity.CENTER })
-            col.addView(tx, LinearLayout.LayoutParams(-2, -2).apply { gravity = Gravity.CENTER })
-            ov.addView(col, FrameLayout.LayoutParams(-2, -2, Gravity.CENTER))
-            (window.decorView as? ViewGroup)?.addView(ov, FrameLayout.LayoutParams(-2, -2, Gravity.CENTER))
+            val ov = NavLoadBar.make(this)   // (v1143) شريط لامع رفيع فوق بدل الحبّة/السبينر الكبير
+            (window.decorView as? android.view.ViewGroup)?.addView(ov)
             browserLoadingOv = ov
         } catch (_: Throwable) {}
     }
@@ -919,7 +904,7 @@ class BrowserActivity : Activity() {
                     noteYt(url, ti)
                 }
                 if (t.id == panicClearId && ((url ?: "").contains("google.") || BrowserSaver.isArchive(url))) { try { v.clearHistory() } catch (_: Throwable) {}; endPanicCover(); updateNav() }   // (v231) الرجوع مايرجّعش الصفحة اللي اتمسحت
-                if (t === tabs.getOrNull(curIdx)) { showUrl(if (BrowserSaver.isHomeArchive(url)) GOOGLE else url); updateNav(); updateStar(); scanOnce(); scheduleAutoScan(t, longArrayOf(1000L, 3500L)); scheduleFlashKb(t) }   // (v838) فحص أوتوماتيك · (v842) كيبورد ألعاب الفلاش
+                if (t === tabs.getOrNull(curIdx)) { showUrl(if (BrowserSaver.isHomeArchive(url)) GOOGLE else url); updateNav(); updateStar(); scanDelay = 2000L; scanOnce(); scheduleAutoScan(t, longArrayOf(1000L, 3500L)); scheduleFlashKb(t) }   // (v838) فحص أوتوماتيك · (v842) كيبورد ألعاب الفلاش
                 if (t === tabs.getOrNull(curIdx) && v.progress >= 100) hideBrowserLoading()   // (v1071) الصفحة فتحت بالكامل
                 if (adFor(url)) v.evaluateJavascript(adJs(), null)
                 saver.pageFinished(t, v, url)   // (v783)
@@ -2332,7 +2317,8 @@ class BrowserActivity : Activity() {
             }
         } catch (e: Throwable) { LogStore.err("Browser:grp2", e) }
     }
-    private fun scanLoop() { if (dead) return; scanOnce(); h.postDelayed({ scanLoop() }, 2000) }
+    private var scanDelay = 2000L   // (v1146) الفحص الدوري بيتباطأ لوحده (2→10ث) طول ما الصفحة ثابتة — كان كل ثانيتين على طول (تقل/سخونة)
+    private fun scanLoop() { if (dead) return; scanOnce(); h.postDelayed({ scanLoop() }, scanDelay); scanDelay = minOf(10_000L, scanDelay + 1000L) }
 
     private val ytPicks = HashMap<String, YtExtract.Pick>()   // (v119) معرّف → أحسن اختيار (فيه الصوت المنفصل وقايمة الجودات)
     private fun ytFetch(id: String) {
@@ -2408,13 +2394,13 @@ class BrowserActivity : Activity() {
         if (hls) {
             if (!head.startsWith("#EXTM3U")) return VRes(false, true, -1L, pk.mime)
             // قايمة HLS حقيقية: نتأكد إن أول مستوى وأول مقطع بيتحمّلوا (أغلب «الفيديو بيفضل 0%» بيبقى المقطع مرفوض)
-            var pl = httpPeek(f.url, hd, 120_000) ?: return VRes(false, false, -1L, pk.mime)
+            var pl = httpPeek(f.url, hd, 40_000) ?: return VRes(false, false, -1L, pk.mime)
             var plUrl = f.url
             var text = String(pl.body, Charsets.UTF_8)
             if (text.contains("#EXT-X-STREAM-INF")) {
                 val v = text.lines().map { it.trim() }.firstOrNull { it.isNotEmpty() && !it.startsWith("#") } ?: return VRes(false, true, -1L, pk.mime)
                 plUrl = resolveUrl(f.url, v)
-                pl = httpPeek(plUrl, hd, 120_000) ?: return VRes(false, false, -1L, pk.mime)
+                pl = httpPeek(plUrl, hd, 40_000) ?: return VRes(false, false, -1L, pk.mime)
                 if (pl.code !in 200..299 || !String(pl.body, Charsets.UTF_8).trimStart('\uFEFF', ' ', '\n', '\r').startsWith("#EXTM3U")) return VRes(false, !transientCode(pl.code), -1L, pk.mime)
                 text = String(pl.body, Charsets.UTF_8)
             }
@@ -3285,6 +3271,7 @@ class BrowserActivity : Activity() {
     private val hAt = java.util.concurrent.ConcurrentHashMap<String, Long>()   // (v558) وقت بداية فحص كل لينك
     private val PROBE_WAIT_MS = 12000L
     private fun probeHeight(f: Found) {
+        if (dlg?.isShowing != true) return   // (v1146) فحص الجودة بيحمّل من الملف نفسه: بس لما قايمة التحميل مفتوحة قدامك
         val k = Sniff.key(f.url)
         if (hCache.containsKey(k) || !hBusy.add(k)) return
         hAt[k] = System.currentTimeMillis()
