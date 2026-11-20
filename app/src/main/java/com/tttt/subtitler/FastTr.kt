@@ -60,6 +60,50 @@ class FastTr(
         return out
     }
 
+    // (v1141) حالة كل باتش للعرض في «📋 الباتشات»: ⏳ اتبعت لجيميناي (مفتاح + خطوة + وقت) · ✅ خلص · ❌ فشل
+    private val stage = ConcurrentHashMap<Int, String>()
+    private val keyNoOf = ConcurrentHashMap<Int, Int>()
+    private val startedAt = ConcurrentHashMap<Int, Long>()
+    private val msOf = ConcurrentHashMap<Int, Long>()
+    private val subN = ConcurrentHashMap<Int, Int>()
+
+    private fun fmtS(ms: Long): String { val t = (ms / 1000).toInt(); return if (t >= 60) "${t / 60}د${t % 60}ث" else "${t}ث" }
+
+    /** نفس شكل Engine.batchRows (نص + هل هو الأسرع) — بيتعرض بدل صفوف المحرك القديم لما المتوازن شغّال */
+    fun batchRows(cur: Int, ahead: Int = 8): List<Pair<String, Boolean>> {
+        val d = durSec
+        if (total <= 0 || d <= 0) return emptyList()
+        val out = ArrayList<Pair<String, Boolean>>()
+        val c = cur.coerceIn(0, total - 1)
+        for (i in maxOf(0, c - 1)..minOf(total - 1, c + ahead)) {
+            val a = try { eng.chunkStartSec(i) } catch (_: Throwable) { break }
+            if (a >= d) break
+            val b = minOf(try { eng.chunkStartSec(i + 1) } catch (_: Throwable) { d }, d)
+            val mark = when {
+                i in active -> "⏳"
+                i in failedSet && i !in doneSet -> "❌"
+                i in failedSet -> "🔁"
+                i in doneSet -> if ((subN[i] ?: 1) == 0) "🔇" else "✅"
+                else -> "▫"
+            }
+            val sb = StringBuilder()
+            sb.append(if (i == c) "▶ " else "  ").append("باتش ").append(i + 1).append(" ")
+                .append("%d:%02d–%d:%02d".format(a.toInt() / 60, a.toInt() % 60, b.toInt() / 60, b.toInt() % 60)).append(" ").append(mark)
+            if (mark == "✅" || mark == "🔁") subN[i]?.let { sb.append(" ").append(it).append(" جملة") }
+            val kn = keyNoOf[i]
+            if (mark == "⏳") {
+                sb.append(" · ").append(if (stage[i] == "ترجمة") "📤 بيترجم" else "📤 اتبعت لجيميناي (تفريغ)")
+                if (kn != null) sb.append(" · 🔑").append(kn).append(" ").append(model().removePrefix("gemini-"))
+                startedAt[i]?.let { sb.append(" · ").append(fmtS(System.currentTimeMillis() - it)) }
+            } else if (mark == "✅" || mark == "🔁") {
+                if (kn != null) sb.append(" · 🔑").append(kn)
+                msOf[i]?.let { sb.append(" · ").append(fmtS(it)) }
+            }
+            out.add(Pair(sb.toString(), false))
+        }
+        return out
+    }
+
     /** (v1116) FIX 1: نقاط حالة المفاتيح من حوض المحرك البسيط نفسه — نفس معنى وألوان Engine.keyDots */
     fun keyDots(): String {
         val dots = arrayOf("🔵", "🟢", "🔴", "🟠")
@@ -219,6 +263,7 @@ class FastTr(
         val workers = pool.all().size.coerceIn(1, MAX_WORKERS)
         host.log("⚡ [محرك ٢] $n باتش · $workers خيط (كل مفتاح باتش) · الموديل ${model().removePrefix("gemini-")}")
         val next = AtomicInteger(0)
+        val rampFirst = if (try { Cfg.bool("ramp_all", true) } catch (_: Throwable) { true }) order.firstOrNull() ?: -1 else -1   // (v1141) أول باتش (مكان التشغيل) بيتقسّم لخطوات بتكبر
         val ths = ArrayList<Thread>()
         for (w in 0 until workers) {
             val t = Thread {
@@ -230,10 +275,10 @@ class FastTr(
                     val idx = next.getAndIncrement()
                     if (idx >= order.size) break
                     val i = order[idx]
-                    active.add(i)
-                    try { process(i, s, dur) }
+                    active.add(i); startedAt[i] = System.currentTimeMillis(); stage[i] = "تفريغ"
+                    try { if (i == rampFirst) processRamp(i, s, dur) else process(i, s, dur) }
                     catch (e: Throwable) { failedSet.add(i); host.log("⚠ [محرك ٢] باتش ${i + 1}: " + (e.message ?: e.toString()).take(120)) }
-                    finally { active.remove(i) }
+                    finally { active.remove(i); msOf[i] = System.currentTimeMillis() - (startedAt[i] ?: System.currentTimeMillis()) }
                     state()
                 }
             }.apply { isDaemon = true; name = "fast-tr-$w" }
@@ -246,15 +291,36 @@ class FastTr(
     }
 
     // ===== باتش واحد =====
-    private fun process(i: Int, s: AudioSource, dur: Double) {
-        val bs = eng.chunkStartSec(i)
-        val be = minOf(eng.chunkStartSec(i + 1), dur)
-        if (be - bs < 0.3) { doneSet.add(i); return }
+    /** (v1141) أول باتش: خطوات 10←20←30←45←60ث (كل خطوة تفريغ+ترجمة وتظهر على طول) بدل الباتش كله مرة واحدة */
+    private val RAMP = doubleArrayOf(10.0, 20.0, 30.0, 45.0, 60.0)
+    private fun processRamp(i: Int, s: AudioSource, dur: Double) {
+        val cs = eng.chunkStartSec(i); val ce = minOf(eng.chunkStartSec(i + 1), dur)
+        val pos = try { host.position() } catch (_: Throwable) { cs }
+        val lead = maxOf(cs, minOf(pos - 1.0, ce - 3.0))
+        if (ce - lead < 12.0 && lead <= cs + 0.05) { process(i, s, dur); return }
+        var a = lead; var step = 0
+        host.log("⚡ [محرك ٢] باتش ${i + 1}: خطوات تصاعدية من ${a.toInt()}ث")
+        while (a < ce - 0.05 && !stopped) {
+            val size = RAMP.getOrNull(step) ?: Double.MAX_VALUE
+            var b = minOf(ce, a + size); if (ce - b < 8.0) b = ce
+            val isLast = b >= ce - 0.05 && lead <= cs + 0.05
+            process(i, s, dur, a, b, isLast)
+            if (failedSet.contains(i)) return   // خطوة فشلت: الباتش يفضل فاشل (زي الأول)
+            a = b; step++
+            waitIfPaused()
+        }
+        if (lead > cs + 0.05 && !stopped) process(i, s, dur, cs, lead, true)   // اللي قبل مكان التشغيل في الباتش ده
+    }
+
+    private fun process(i: Int, s: AudioSource, dur: Double, wbs: Double = Double.NaN, wbe: Double = Double.NaN, last: Boolean = true) {
+        val bs = if (wbs.isNaN()) eng.chunkStartSec(i) else wbs
+        val be = if (wbe.isNaN()) minOf(eng.chunkStartSec(i + 1), dur) else wbe
+        if (be - bs < 0.3) { if (last) doneSet.add(i); return }
         val a0 = maxOf(0.0, bs - PAD); val a1 = minOf(dur, be + PAD)
         var w: WavChunk? = s.wav(a0, a1)
         var r = 0
         while (w == null && r++ < 2 && !stopped) { nap(600); w = s.wav(a0, a1) }
-        if (w == null || w.silent) { merge(bs, be, emptyList()); doneSet.add(i); return }
+        if (w == null || w.silent) { merge(bs, be, emptyList()); if (last) doneSet.add(i); return }
         val wav = w
         val t0 = System.currentTimeMillis()
 
@@ -278,12 +344,13 @@ class FastTr(
         }
         if (raw == null) { failedSet.add(i); host.log("⚠ [محرك ٢] باتش ${i + 1}: التفريغ فشل بعد $TRIES محاولات"); return }
         merge(bs, be, raw)            // الجمل المفرّغة تظهر دلوقتي
+        subN[i] = raw.size
         val tTx = System.currentTimeMillis() - t0
-        if (raw.isEmpty()) { doneSet.add(i); failedSet.remove(i); host.log("⚡ [محرك ٢] باتش ${i + 1}: مفيش كلام (${tTx}ms)"); state(); return }
+        if (raw.isEmpty()) { if (last) doneSet.add(i); failedSet.remove(i); host.log("⚡ [محرك ٢] باتش ${i + 1}: مفيش كلام (${tTx}ms)"); state(); return }
 
         // (v1119) تفريغ بس: مفيش خطوة ترجمة — الجمل المفرّغة هي الناتج النهائي
         if (transOnly) {
-            doneSet.add(i)
+            if (last) doneSet.add(i)
             failedSet.remove(i)
             host.log("⚡ [محرك ٢] باتش ${i + 1}: ${raw.size} جملة · تفريغ بس ${tTx}ms")
             if (persistN.incrementAndGet() % 3 == 0) try { eng.saveNow() } catch (_: Throwable) {}
@@ -313,7 +380,7 @@ class FastTr(
             failedSet.add(i)   // التفريغ فضل ظاهر
             host.log("⚠ [محرك ٢] باتش ${i + 1}: الترجمة فشلت — التفريغ فاضل معروض")
         }
-        doneSet.add(i)
+        if (last) doneSet.add(i)
         host.log("⚡ [محرك ٢] باتش ${i + 1}: ${raw.size} جملة · تفريغ ${tTx}ms · إجمالي ${System.currentTimeMillis() - t0}ms")
         if (persistN.incrementAndGet() % 3 == 0) try { eng.saveNow() } catch (_: Throwable) {}
         state()
@@ -348,7 +415,7 @@ class FastTr(
             }
             val k = pool.pickIdle(i, avoid, 1) ?: pool.pickFree(avoid, i) ?: pool.pickFree(null, i)
             if (k == null) { nap(500); continue }
-            pool.begin(k, i)
+            pool.begin(k, i); stage[i] = label; keyNoOf[i] = pool.all().indexOf(k) + 1
             val t0 = System.currentTimeMillis()
             var ok = false
             try {

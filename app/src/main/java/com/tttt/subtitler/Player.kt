@@ -164,7 +164,7 @@ class PlayerActivity : Activity(), Host {
         j.put("locked", uiLocked)
         j.put("font", try { val f0 = SubStyle.load { k, d -> Cfg.str(k, d) }.font; SubStyle.fonts.firstOrNull { it.id == f0 }?.label ?: f0 } catch (_: Throwable) { "" })
         j.put("eng", try { TrWizard.summaryLine() } catch (_: Throwable) { "" })
-        j.put("cnt", try { PlayerLogic.percent(engine.coveredSec(), durMs / 1000.0).toString() + "% · " + list.size.toString() + " جملة" } catch (_: Throwable) { "" })
+        j.put("cnt", try { covPct().toString() + "% · " + list.size.toString() + " جملة" } catch (_: Throwable) { "" })
         j.put("trcolor", try { tvTrColor() } catch (_: Throwable) { 0xFFE53935.toInt() })
         // (v682) صفحة «المشغّل» في الريموت: وضع الترجمة · حالة المحرك · عدد جمل الوضع البصري · شفافية الخلفية
         j.put("mode", modeLabelNow())
@@ -2440,7 +2440,7 @@ class PlayerActivity : Activity(), Host {
             st.title = notifTitle(); st.posMs = player.currentPosition.coerceAtLeast(0); st.durMs = if (durMs > 0) durMs else 0L
             st.playing = player.isPlaying
             st.trState = if (!::engine.isInitialized || !engineStarted) 0 else if (engine.userPaused) 2 else 1
-            st.trPct = fastTr?.takeIf { it.total > 0 }?.pct ?: if (durMs > 0 && ::engine.isInitialized) PlayerLogic.percent(engine.coveredSec(), durMs / 1000.0).toInt() else 0
+            st.trPct = if (durMs > 0 && ::engine.isInitialized) covPct() else (fastTr?.takeIf { it.total > 0 }?.pct ?: 0)
             KeepAliveService.refresh()
         } catch (e: Throwable) { LogStore.err("pushNotif", e) }
     }
@@ -2760,6 +2760,27 @@ class PlayerActivity : Activity(), Host {
     fun pauseTranslate() { if (engineStarted) { engine.userPaused = true; try { fastTr?.paused = true } catch (_: Throwable) {}; updateTr() } }   // (دمج v1090)
 
     // ===== (دمج v1090) ⚖ متوازن = المحرك البسيط FastTr: كل مفتاح باتش، يفرّغه فيظهر على طول ثم يترجمه =====
+    /** (v1141) نسبة الترجمة الحقيقية في كل الأوضاع: تغطية المحرك الأساسي، أو باتشات المتوازن (FastTr)، أو الباتشات اللي فيها جمل مترجمة فعلًا (الدقيق/المتوازن كانوا بيظهروا 0% رغم إن الجمل بتتعد) */
+    private var covCacheAt = 0L
+    private var covCacheV = 0
+    private fun covPct(): Int {
+        val now = System.currentTimeMillis()
+        if (now - covCacheAt < 400L) return covCacheV
+        val dur = durMs / 1000.0
+        var v = try { PlayerLogic.percent(engine.coveredSec(), dur) } catch (_: Throwable) { 0 }
+        try { fastTr?.takeIf { it.total > 0 }?.let { v = maxOf(v, it.pct) } } catch (_: Throwable) {}
+        try {
+            if (dur > 0 && v < 100) {
+                val seen = HashSet<Int>()
+                for (sb in engine.subs) if (sb.chunk >= 0 && sb.translated.isNotBlank() && sb.translated != sb.original) seen.add(sb.chunk)
+                var sec = 0.0
+                for (c in seen) { val a = engine.chunkStartSec(c); val b = minOf(engine.chunkStartSec(c + 1), dur); if (b > a) sec += b - a }
+                v = maxOf(v, PlayerLogic.percent(sec, dur))
+            }
+        } catch (_: Throwable) {}
+        covCacheAt = now; covCacheV = v
+        return v
+    }
     private var fastTr: FastTr? = null
     /** (دمج v1081) أزرق في شريط التقدم لكل الأوضاع: المحرك القديم (سريع/٧٥/٢٥/الأدق) + المحرك البسيط (متوازن) */
     private fun allSentSegs(): List<DoubleArray> {
@@ -3437,25 +3458,38 @@ class PlayerActivity : Activity(), Host {
             val diaBox = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL }
             val qBox = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL }
             val qNote = shNote("سلايدر سريع ↔ دقيق بيشتغل مع ترجمة جيميناي بس (مش مع التفريغ ولا وشبر)")
-            val saveNote = ui.text("", 11.5f, 0xFF9AA0A6.toInt()).apply { setPadding(ui.dp(10), ui.dp(2), ui.dp(10), ui.dp(4)) }
-            fun paintSave() {
-                saveNote.text = when {
-                    !TrProfile.hasSaved() -> "لسه مفيش إعدادات محفوظة — اللي بتغيّره بيفضل زي ما هو"
-                    TrProfile.dirty() -> "⚠ فيه تغييرات لسه ما اتحفظتش — مع الفيديو الجاي هترجع للمحفوظ: " + TrProfile.savedSummary()
-                    else -> "✓ محفوظة: " + TrProfile.savedSummary() + " — بتتطبّق على أي فيديو جديد"
-                }
-                saveNote.setTextColor(if (TrProfile.dirty()) 0xFFFFB74D.toInt() else 0xFF9AA0A6.toInt())
-            }
+            fun paintSave() { try { TrProfile.save() } catch (_: Throwable) {} }   // (v1140) حفظ تلقائي: أي تغيير بيتحفظ لكل الفيديوهات على طول (مفيش زرار حفظ)
             fun paintDia() {
                 diaBox.removeAllViews()
-                val cd = TrProfile.dialect()
-                diaBox.addView(shNote("اللهجة"))
-                val rd = shFlow()
-                for (d in TrProfile.dialects()) rd.addView(shChip(d, d == cd) { val pd = curEngDia(); TrProfile.applyDialect(d); engSync(); updateTr(); paintDia(); paintSave(); if (d != cd) trLiveApply("dia", TrProfile.DIA, pd) }, shChipLp())   // (v1099) T4
-                diaBox.addView(rd, LinearLayout.LayoutParams(-1, -2))
+                val ds = TrProfile.dialects(); val cd = TrProfile.dialect()
+                var shown = cd
+                val dTitle = ui.text("🗣 اللهجة: " + cd, 14f, Color.WHITE, true).apply { gravity = Gravity.CENTER; setPadding(0, ui.dp(2), 0, ui.dp(2)) }
+                diaBox.addView(dTitle, LinearLayout.LayoutParams(-1, -2))
+                val dsb = SeekBar(this).apply {
+                    layoutDirection = View.LAYOUT_DIRECTION_LTR; max = (ds.size - 1).coerceAtLeast(0); progress = ds.indexOf(cd).coerceAtLeast(0)
+                    setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+                        override fun onProgressChanged(s: SeekBar?, p: Int, u: Boolean) {
+                            if (!u) return
+                            val d = ds.getOrNull(p) ?: return
+                            if (d == shown) return
+                            val pd = curEngDia(); shown = d
+                            TrProfile.applyDialect(d); engSync(); updateTr(); dTitle.text = "🗣 اللهجة: " + d; paintSave()
+                            trLiveApply("dia", TrProfile.DIA, pd)   // (v1140) سلايدر اللهجة (حفظ تلقائي + تطبيق بعد ~1.2ث من آخر لمسة)
+                        }
+                        override fun onStartTrackingTouch(s: SeekBar?) {}
+                        override fun onStopTrackingTouch(s: SeekBar?) {}
+                    })
+                }
+                diaBox.addView(dsb, LinearLayout.LayoutParams(-1, -2))
+                if (ds.size > 1) {
+                    val de = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_LTR; setPadding(ui.dp(10), 0, ui.dp(10), 0) }
+                    de.addView(ui.text(ds.first(), 11.5f, 0xFF9AA0A6.toInt()), LinearLayout.LayoutParams(0, -2, 1f))
+                    de.addView(ui.text(ds.last(), 11.5f, 0xFF9AA0A6.toInt()).apply { gravity = Gravity.END }, LinearLayout.LayoutParams(0, -2, 1f))
+                    diaBox.addView(de, LinearLayout.LayoutParams(-1, -2))
+                }
                 diaBox.addView(shNote("الشدة"))
                 val rs = shFlow(); val cg = TrProfile.degree()
-                for (g in TrProfile.degrees) rs.addView(shChip(g, g == cg) { TrProfile.setDegree(g); try { if (::engine.isInitialized) engine.toneStrength = g } catch (_: Throwable) {}; paintDia(); paintSave(); if (g != cg) trLiveApply("deg", TrProfile.DIA) }, shChipLp())   // (v1099) T4
+                for (g in TrProfile.degrees) rs.addView(shChip(g, g == cg) { TrProfile.setDegree(g); try { if (::engine.isInitialized) engine.toneStrength = g } catch (_: Throwable) {}; paintDia(); paintSave(); if (g != cg) trLiveApply("deg", TrProfile.DIA) }, shChipLp())
                 diaBox.addView(rs, LinearLayout.LayoutParams(-1, -2))
                 if (TrProfile.styleIsLiteral()) diaBox.addView(shNote("الأسلوب حرفي — الشدة مش هتأثر (غيّره من 🌐 اللهجة والأسلوب)", true))
             }
@@ -3465,7 +3499,6 @@ class PlayerActivity : Activity(), Host {
                 diaBox.visibility = if (m == TrProfile.DIA && !off) View.VISIBLE else View.GONE
                 qBox.visibility = if (m != TrProfile.TX && !off) View.VISIBLE else View.GONE
                 qNote.visibility = if (qBox.visibility == View.VISIBLE) View.GONE else View.VISIBLE
-                paintSave()
             }
             col.addView(modeTitle, LinearLayout.LayoutParams(-1, -2))
             var lastM = TrProfile.mode().let { if (off && it == TrProfile.DIA) TrProfile.MSA else it }
@@ -3474,7 +3507,7 @@ class PlayerActivity : Activity(), Host {
                 setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
                     override fun onProgressChanged(s: SeekBar?, p: Int, u: Boolean) {
                         if (!u || p == lastM) return
-                        val prevM = lastM; val pd = curEngDia(); lastM = p; TrProfile.setMode(p); engSync(); updateTr(); paintDia(); refresh(); trLiveApply("mode", prevM, pd)   // (v1099) T4
+                        val prevM = lastM; val pd = curEngDia(); lastM = p; TrProfile.setMode(p); engSync(); updateTr(); paintDia(); refresh(); trLiveApply("mode", prevM, pd); paintSave()   // (v1099) T4
                     }
                     override fun onStartTrackingTouch(s: SeekBar?) {}
                     override fun onStopTrackingTouch(s: SeekBar?) {}
@@ -3487,11 +3520,6 @@ class PlayerActivity : Activity(), Host {
             if (!off) mends.addView(ui.text("🗣 لهجة", 11.5f, 0xFF9AA0A6.toInt()).apply { gravity = Gravity.END }, LinearLayout.LayoutParams(0, -2, 1f))
             col.addView(mends, LinearLayout.LayoutParams(-1, -2))
             col.addView(diaBox, LinearLayout.LayoutParams(-1, -2))
-            col.addView(shSection("المحرك"))
-            val e = shFlow()
-            e.addView(shChip("☁ جيميناي", !off) { Cfg.put("tr_engine", "gem"); updateTr(); again() }, shChipLp())
-            e.addView(shChip("📴 وشبر أوفلاين", off) { Cfg.put("tr_engine", "off"); updateTr(); again() }, shChipLp())
-            col.addView(e, LinearLayout.LayoutParams(-1, -2))
             if (off) col.addView(shNote("الأوفلاين بيترجم فصحى بس — اللهجة والشدة محتاجين جيميناي"))
             trSliderSection(qBox) { paintSave() }
             col.addView(qBox, LinearLayout.LayoutParams(-1, -2))
@@ -3499,9 +3527,6 @@ class PlayerActivity : Activity(), Host {
             if (::realEngine.isInitialized && !remote && realEngine.applied.isNotEmpty())
                 col.addView(shRow("( ) شيل الأقواس من الجمل المتغيّرة", realEngine.applied.size.toString() + " جملة") { realEngine.clearMarks(); touchSubs(); again() })   // (v1099) T4
             // (v1098) حفظ: الإعدادات دي بتتطبّق تلقائي على أي فيديو تاني تفتحه بعد كده
-            col.addView(shSection("💾 الحفظ"))
-            col.addView(saveNote)
-            col.addView(shBtn("💾 حفظ الإعدادات لكل الفيديوهات", SH_BLUE) { TrProfile.save(); paintSave(); say("💾 اتحفظت: " + TrProfile.savedSummary() + " — هتتطبّق على أي فيديو جديد") }, LinearLayout.LayoutParams(-1, ui.dp(46)).apply { setMargins(ui.dp(4), ui.dp(2), ui.dp(4), ui.dp(4)) })
             col.addView(shRow("🔀 اختار نظام تاني (جيميناي · وشبر · تفريغ)", "", true) { close(); h.post { translateMenu(anchor) } })
             col.addView(shRow("🔧 إعدادات متقدمة", "", true) { close(); h.post { modeSettings(anchor) } })
             col.addView(shRow("إغلاق") { close() })
@@ -4211,7 +4236,8 @@ class PlayerActivity : Activity(), Host {
     /** (v146) نص الباتشات (مفتاح · موديل · زمن الرد) والأسرع في كل دفعة أخضر */
     private fun batchStyled(): CharSequence {
         val sb = android.text.SpannableStringBuilder()
-        for ((t, fast) in engine.batchRows()) {
+        val ftRows = try { fastTr?.takeIf { it.running && it.total > 0 }?.batchRows(engine.chunkOfSec(cur / 1000.0)) } catch (_: Throwable) { null }   // (v1141) المتوازن: صفوفه هو (⏳ اتبعت لجيميناي · مفتاح · وقت)
+        for ((t, fast) in (ftRows ?: engine.batchRows())) {
             if (sb.isNotEmpty()) sb.append('\n')
             val a = sb.length; sb.append(t)
             if (fast) sb.setSpan(android.text.style.ForegroundColorSpan(0xFF2ECC71.toInt()), a, sb.length, android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
@@ -5438,7 +5464,8 @@ class PlayerActivity : Activity(), Host {
             // من الشمال لليمين (LTR): 🔁 📋 📝 🔤 ⏱ 💬 CC ☰  ← يعني ☰ على اليمين جنب عداد الجمل
             tbRow.addView(toolBtns[4], lp(4)); tbRow.addView(spdB, lp(1)); tbRow.addView(toolBtns[2], lp(2)); tbRow.addView(rtB, lp(6))   // (v1025)
             tbRow.addView(textB, LinearLayout.LayoutParams(-2, ui.dp(38)).apply { setMargins(ui.dp(3), ui.dp(3), ui.dp(3), ui.dp(3)) })
-            tbRow.addView(toolBtns[0], lp(0)); tbRow.addView(toolBtns[5], lp(5)); tbRow.addView(toolBtns[3], lp(3)); // (v378) 🎙 فصل الصوت و HD و 📃 اتشالوا من الشريط العلوي (الجودة رجعت جنب زرار الترجمة، والتالي بقى لوحة تحت الأزرار)
+            tbRow.addView(toolBtns[0], lp(0)); tbRow.addView(toolBtns[5], lp(5)); // (v1141) 📝 ترجمات الفيديو اتشال من الشريط (الشكل القديم) — القايمة لسه من ☰ → 🗂 ترجمات الفيديو
+            // (v378) 🎙 فصل الصوت و HD و 📃 اتشالوا من الشريط العلوي (الجودة رجعت جنب زرار الترجمة، والتالي بقى لوحة تحت الأزرار)
             // (v221) زرار 🔑 وضع المفاتيح (toolBtns[7]) كان بيتشال هنا ومابيترجّعش — فمكانش بيظهر خالص في الشريط العلوي
             (bgTrB.parent as? ViewGroup)?.removeView(bgTrB); (spdB.parent as? ViewGroup)?.removeView(spdB); (rtB.parent as? ViewGroup)?.removeView(rtB)
             tbRow.addView(bgTrB, LinearLayout.LayoutParams(ui.dp(40), ui.dp(40)).apply { setMargins(ui.dp(3), ui.dp(3), ui.dp(3), ui.dp(3)) })   // (v1025) 🌙 مكان ☑
@@ -5598,7 +5625,7 @@ class PlayerActivity : Activity(), Host {
             if (on) { try { val tt = titleWithSummary(); if (topTitle.text.toString() != tt.toString()) topTitle.text = tt; topTitle.visibility = if (tt.isBlank()) View.GONE else View.VISIBLE; fixTopRowFn() } catch (_: Throwable) {} }   // (v330) (v360) + ملخص الإعداد
             if (on && !wasOn) { chromeFrame.animate().cancel(); chromeFrame.alpha = 0f; chromeFrame.translationY = ui.dp(22).toFloat(); chromeFrame.animate().setStartDelay(0L).alpha(1f).translationY(0f).setDuration(Skins.dur(280L)).setInterpolator(android.view.animation.DecelerateInterpolator(1.8f)).start() }
             else if (!on && !wasOn) { chromeFrame.animate().cancel(); chromeFrame.alpha = 1f; chromeFrame.translationY = 0f }
-            centerPlay.visibility = if (on || pipNow() || uiLocked || busyShown()) View.GONE else if (buffering) View.VISIBLE else if (player.isPlaying) View.GONE else View.VISIBLE   // الشريط ظاهر = فيه زرار تشغيل تحت، فمنشيلش الأوسط فوق الترجمة
+            centerPlay.visibility = if (on || pipNow() || uiLocked || busyShown()) View.GONE else if (buffering) View.VISIBLE else if (::player.isInitialized && player.isPlaying) View.GONE else View.VISIBLE   // الشريط ظاهر = فيه زرار تشغيل تحت، فمنشيلش الأوسط فوق الترجمة
             val cv = (!fullMode || chromeShown) && !pipNow()
             val tvHide = DeviceUi.isTv(this) || (DeviceUi.isRemote(this) && tvGateClosed())   // (v662) تلفزيون: 👁 و🔄 و⛶ العايمين مش بيظهروا خالص (الوظايف على شريط التحكم و«⋯») — (v636) تلفزيون: 👁 و⛶ مخفيين لحد ما شريط التحكم يظهر
             floatBar.visibility = if (cv && !tvHide && caps().visual) View.VISIBLE else View.GONE   // (v444) البصري في وضع صوت←جيميناي بس · (v427) 👁 مابقاش ظاهر طول الوقت: بيظهر مع الشريط (أو في الوضع العادي)
@@ -6074,8 +6101,8 @@ class PlayerActivity : Activity(), Host {
                     updateProblems()
                 }
                 if (now - lastBeat > 20000) { lastBeat = now; LogStore.add("💓 ${LogStore.heapLine()} · ${if (player.isPlaying) "بيشتغل" else "واقف"} @${fmtMs(cur)} · مترجم ${(engine.coveredSec() / 60).toInt()}د · ${engine.subs.size} جملة") }
-                run { val pc = fastTr?.takeIf { it.total > 0 }?.pct ?: PlayerLogic.percent(engine.coveredSec(), durMs / 1000.0); val wp = Offline.livePct() * 1000 + Offline.runIdx; if (pc != trPct || wp != lastWp) { trPct = pc; lastWp = wp; updateTr() }; val dn = dotsNow(); if (dn != lastDotsShown) { lastDotsShown = dn; updateTr() }; netStallWatch() }
-                if (fullMode) { fsBadge.set("🔊 " + PlayerLogic.percent(engine.coveredSec(), durMs / 1000.0).toString() + "% · " + list.size.toString() + " جملة" + dotsNow() + " ▾", ((try { engine.offlineBrief() } catch (_: Throwable) { null }) ?: "")); fsBadge.setOn(engineStarted && !engine.userPaused, ((Strict.freeText() || Strict.freeGem()) && FreeLlm.waiting)); netBadge.set(NetUse.fmt(NetUse.localTotal()), NetUse.fmt(NetUse.onlineTotal())); applyBadgeAlpha() }   // (v236) نقطة خضراء = الوضع الصوتي شغّال
+                run { val pc = covPct(); val wp = Offline.livePct() * 1000 + Offline.runIdx; if (pc != trPct || wp != lastWp) { trPct = pc; lastWp = wp; updateTr() }; val dn = dotsNow(); if (dn != lastDotsShown) { lastDotsShown = dn; updateTr() }; netStallWatch() }
+                if (fullMode) { fsBadge.set("🔊 " + covPct().toString() + "% · " + list.size.toString() + " جملة" + dotsNow() + " ▾", ((try { engine.offlineBrief() } catch (_: Throwable) { null }) ?: "")); fsBadge.setOn(engineStarted && !engine.userPaused, ((Strict.freeText() || Strict.freeGem()) && FreeLlm.waiting)); netBadge.set(NetUse.fmt(NetUse.localTotal()), NetUse.fmt(NetUse.onlineTotal())); applyBadgeAlpha() }   // (v236) نقطة خضراء = الوضع الصوتي شغّال
                 if (fullMode && ::visual.isInitialized) {   // (v431) الجزء البصري (👁 + الفاصل) بيظهر بس لما الوضع البصري شغّال؛ غير كده الكبسولة صوتي بس
                     val vOn = visual.running; val vv = if (vOn) View.VISIBLE else View.GONE
                     if (visBadge.visibility != vv) visBadge.visibility = vv
@@ -6083,7 +6110,7 @@ class PlayerActivity : Activity(), Host {
                     if (vOn) visBadge.set("👁 " + visual.count, "")
                 }   // (v358) كبسولة واحدة للصوتي والبصري: من غير نقطة ولا كلمة شغّال/واقف ولا فاصل — الحالة من الدايرة الحمراء
                 if (now - lastMem > 4000) { lastMem = now; if (!fullMode) mem.update(this@PlayerActivity) }
-                run { val ct = "جمل ${list.size} · 👁 ${visList.size} · تغطية ${PlayerLogic.percent(engine.coveredSec(), durMs / 1000.0)}% · فجوات ${engine.failedCount()} · كوتة ${Quota.used(conf.model)}/${Models.quotaOf(conf.model)} · ${NetUse.badgeLine()}"; if (ct != lastCountersTxt) { lastCountersTxt = ct; counters.text = ct } }   // (v458) كانت بتتكتب وتتقاس 5 مرات/ثانية حتى لو ما اتغيّرتش
+                run { val ct = "جمل ${list.size} · 👁 ${visList.size} · تغطية ${covPct()}% · فجوات ${engine.failedCount()} · كوتة ${Quota.used(conf.model)}/${Models.quotaOf(conf.model)} · ${NetUse.badgeLine()}"; if (ct != lastCountersTxt) { lastCountersTxt = ct; counters.text = ct } }   // (v458) كانت بتتكتب وتتقاس 5 مرات/ثانية حتى لو ما اتغيّرتش
                 if (logDlg.isShowing && logMode == 0) {
                     val nl = synchronized(logBuf) { logBuf.length }
                     if (nl != lastLogLen) {
@@ -7626,7 +7653,14 @@ class PlayerActivity : Activity(), Host {
 
 
     private val aiSel = linkedSetOf<String>()
-    private val DIAL_INSTR get() = "زوّد شدة اللهجة الشعبية في كل جملة درجة واحدة: ألفاظ وتعبيرات الشارع والعامية المحلية (${conf.lang}) بدل الفصحى والكلام الرسمي، من غير ما تغيّر المعنى أو الجنس."
+    /** (v1140) «لهجة +»: لو الترجمة فصحى بترفع قوة الفصحى نفسها (من غير أي لهجة)، ولو لهجة معيّنة بترفع شدة اللهجة دي بس */
+    private val DIAL_INSTR: String get() {
+        val eff = Cfg.str("conv_dialect", "").ifBlank { Cfg.str("lang", "فصحى") }.ifBlank { "فصحى" }.trim()
+        return if (eff == "فصحى")
+            "ارفع قوة وجودة الفصحى في كل جملة درجة واحدة: فصحى معاصرة سليمة وبليغة وطبيعية بدل الركاكة أو الحرفية، ومن غير أي ألفاظ عامية أو لهجة دارجة (لا مصرية ولا غيرها) — ممنوع تدخّل أي لهجة. من غير ما تغيّر المعنى أو الجنس."
+        else
+            "زوّد شدة اللهجة الشعبية ($eff) في كل جملة درجة واحدة: ألفاظ وتعبيرات الشارع والعامية المحلية ($eff) بدل الفصحى والكلام الرسمي، ومن غير ما تدخّل أي لهجة تانية. من غير ما تغيّر المعنى أو الجنس."
+    }
     private val FAMILY_INSTR = "نضّف الجملة من الألفاظ الخارجة والإيحاءات الجنسية وخليها عائلية ومناسبة لكل الأعمار مع الحفاظ على المعنى العام."
     private val EXPLICIT_INSTR = "رجّع الترجمة لمطابقة صراحة النص الأصلي بالظبط (الألفاظ والإيحاءات زي ما هي في الأصل من غير تلطيف ولا حذف)."
 

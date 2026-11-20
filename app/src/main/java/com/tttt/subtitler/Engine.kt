@@ -112,7 +112,12 @@ class Engine(
     private val FAST_FIRST_SECS = 10.0
     private val FAST_SPLIT_SECS = 30.0
     private class NoSplit : Exception()
-    private fun rampSizes(): DoubleArray = if (!Offline.on() && pool.usableCount() >= 2) doubleArrayOf(FAST_SPLIT_SECS) else RAMP_SECS
+    /** (v1141) تصاعد أول باتش (10←20←30←45←60ث) في الوضع الدقيق كمان (مش بس السريع). بيتثبّت وقت بداية الترجمة. في ٧٥/٢٥ (٣) خطوات أول باتش بتتفرّغ وتتترجم في نفس الطلب (زي fullChunks) عشان تظهر على طول؛ مش بيشتغل في الوضع ٤ (ترجمة سياقية بعد التفريغ كله) ولا المتوازن (محرك تاني) */
+    @Volatile private var rampAllLatched = false
+    private fun rampAllWanted(): Boolean = try { !Cfg.bool("fastmode", false) && !Cfg.bool("tr_bal", false) && Cfg.bool("ramp_all", true) } catch (_: Throwable) { false }
+    private val rampOn: Boolean get() = fastLatched || (rampAllLatched && activeMode < KeyMode.TRANSCRIBE_ALL)
+    private val RAMP_ALL = doubleArrayOf(10.0, 20.0, 30.0, 45.0, 60.0)
+    private fun rampSizes(): DoubleArray = if (!fastLatched) RAMP_ALL else if (!Offline.on() && pool.usableCount() >= 2) doubleArrayOf(FAST_SPLIT_SECS) else RAMP_SECS
     private fun scaleTimes(j: JSONObject, k: Double) {
         val a = j.optJSONArray("subtitles") ?: return
         for (x in 0 until a.length()) {
@@ -931,7 +936,7 @@ class Engine(
 
     fun run() {
         if (conf.keys.isEmpty() && conf.backup.isEmpty()) { host.status("⚠ ادخل مفتاح Gemini في الإعدادات"); host.log("⚠ مفيش مفاتيح Gemini"); host.notice("⚠ مفيش مفتاح جيميناي — ضيف واحد من الإعدادات ← المفاتيح"); return }
-        fastLatched = try { Cfg.bool("fastmode", false) } catch (_: Throwable) { false }; rampChunk = -1; fastLight.clear(); lightRetry.clear()   // (v1068) الوضع السريع بيتأخد من الإعداد وقت بداية الترجمة (مش وقت فتح المشغّل) — عشان صف «⚡ سريع» في قايمة جيميناي يشتغل على طول
+        fastLatched = try { Cfg.bool("fastmode", false) } catch (_: Throwable) { false }; rampAllLatched = rampAllWanted(); rampChunk = -1; fastLight.clear(); lightRetry.clear()   // (v1068) الوضع السريع بيتأخد من الإعداد وقت بداية الترجمة (مش وقت فتح المشغّل) — عشان صف «⚡ سريع» في قايمة جيميناي يشتغل على طول
         Api.onSlow = { m -> try { host.status(m) } catch (_: Throwable) {} }   // (v468) مؤشر «باتش بيحاول» في شريط الحالة
         NetWait.reset()
         val netSink = object : NetWait.Sink {   // (v1101) إشعار واحد لما النت يقع وواحد لما يرجع
@@ -960,7 +965,7 @@ class Engine(
                 val pcNow = if (headless) 0 else (posNow / ch).toInt().coerceAtLeast(0)
                 val hotNow = playheadHot()
                 // (v1094) سحب المشاهد لمكان تاني في الوضع السريع: الباتش اللي نزل عليه يبدأ بخطوات سريعة تاني (بعد ما الشغّال دلوقتي يخلص — مفيش إلغاء)
-                if (fastLatched && !headless) {
+                if (rampOn && !headless) {
                     val jumped = lastLoopPos >= 0 && Math.abs(posNow - lastLoopPos) > 8.0
                     if (jumped && pcNow != rampChunk && rampChunk !in inflight && pcNow !in inflight && d > 0 && !isDone(pcNow, d)) {
                         rampChunk = -1; rampStep = 0; rampNext = -1.0; fastLight.clear(); lightRetry.clear()
@@ -1169,7 +1174,7 @@ class Engine(
     /** فك صوت المقطع + الإرسال لجيميناي كله في خيط من الحوض: عدة باتشات بتفك صوتها وتتبعت بالتوازي على كل المفاتيح (قبل كده الفك كان بالترتيب في حلقة واحدة فالباتشات كانت بتمشي واحد ورا التاني) */
     private fun dispatch(i: Int, ex: java.util.concurrent.ExecutorService, force: Boolean = false, firstKey: String? = null, prep0: Prep? = null) {
         if (!inflight.add(i)) return
-        if (fastLatched && rampChunk < 0 && !force) { rampChunk = i; rampStep = 0; rampNext = -1.0 }   // (v1065) أول باتش بيتبعت = اللي بيتقسّم لخطوات بتكبر
+        if (rampOn && rampChunk < 0 && !force) { rampChunk = i; rampStep = 0; rampNext = -1.0 }   // (v1065) أول باتش بيتبعت = اللي بيتقسّم لخطوات بتكبر
         if (fastLatched && !force && TrSlider.on("light") && fastLight.size < FAST_LIGHT_N) fastLight.add(i)   // (v1097) T2 برومبت خفيف لأول باتشين
         startedAt[i] = System.currentTimeMillis(); hedged.remove(i)
         // (v151) المفتاح بيتحجز للباتش من لحظة الإرسال (قبل فك الصوت) عشان باتشين ما يتحطوش على نفس المفتاح
@@ -1271,7 +1276,7 @@ class Engine(
         synchronized(trimLock) {
             prepared.add(i)
             val cs = cStart(i); val ce = cEnd(i, d)
-            val rw = if (fastLatched && i == rampChunk) rampWindow(cs, ce) else null   // (v1065) خطوة صغيرة من الباتش بدل الباتش كله
+            val rw = if (rampOn && i == rampChunk) rampWindow(cs, ce) else null   // (v1065) خطوة صغيرة من الباتش بدل الباتش كله
             rawStart = rw?.get(0) ?: cs; rawEnd = rw?.get(1) ?: ce
         }
         val start = if (i == 0 && rawStart < 0.05) 0.0 else maxOf(0.0, rawStart - OVERLAP)
@@ -1288,7 +1293,7 @@ class Engine(
             if (d <= 0 || (rawEnd - rawStart > 5.0 && rawStart < d - 3.0)) { incomplete.add(i); host.log("⚠ باتش ${i + 1}: مقدرتش أفك صوته — أعده من علامة التحذير") }
             done.add(rawStart, rawEnd); persist(); return null
         }
-        if (fastLatched && i == rampChunk && rampStep < 2 && !w.silent) {   // (v1067) ✂ قص صمت أول/آخر الخطوات الأولى
+        if (rampOn && i == rampChunk && rampStep < 2 && !w.silent) {   // (v1067) ✂ قص صمت أول/آخر الخطوات الأولى
             val tr = try { AudioTools.trimSilence(w.bytes) } catch (_: Throwable) { null }
             if (tr != null) { host.log("✂ المقطع ${i + 1}: اتقص صمت ${"%.1f".format(w.durSec - tr.durSec)}ث من الأطراف"); w = WavChunk(tr.bytes, w.startSec + tr.leadSec, tr.durSec, false, w.gain, w.activeSec) }
         }
@@ -1429,7 +1434,7 @@ class Engine(
         val canSplit = fastStep && rampStep == 0 && w.durSec >= 16.0 && !Offline.on() && pool.usableCount() >= 2 && TrSlider.on("race")   // (v1067) طلبين بالتوازي   // (v1097) T2: TrSlider
         val sendBytes = if (spd > 1.0) { try { AudioTools.speedUp(w.bytes, spd) } catch (_: Throwable) { w.bytes } } else w.bytes
         val spdEff = if (sendBytes === w.bytes) 1.0 else spd
-        val tx = activeMode >= KeyMode.SPLIT_A && i !in fullChunks && !fastLatched   // (v210) ترانسكريبشن بس، والترجمة بعدين مجمّعة على مفاتيح الترجمة
+        val tx = activeMode >= KeyMode.SPLIT_A && i !in fullChunks && !fastLatched && !(rampOn && i == rampChunk)   // (v1141) خطوات التصاعد: تفريغ+ترجمة في طلب واحد // (v210) ترانسكريبشن بس، والترجمة بعدين مجمّعة على مفاتيح الترجمة
         while (running && tries++ < MAX_TRIES) {
             if (claimed.contains(i)) return   // نسخة تانية من الباتش ده خلصت وطُبّقت قبلنا
             if (!hedge) { keyOf[i] = key; offOf[i] = (tx && Offline.on()) }
@@ -1502,7 +1507,7 @@ class Engine(
                     host.log("🔇 المقطع ${i + 1}: Whisper ما لقاش كلام — اتقبل من غير إعادة")
                 }
                 // (v1094) الوضع السريع: خطوة جزئية من الباتش الأول رجعت فاضية وفيه جمل متترجمة قبلها = موسيقى/صمت. بتتقبل «خلصانة» بدل ما تتعاد 4 مرات وتتحط أولوية وتاخد مفاتيح الباتشات 2 و3 و4
-                if (!offRan && !tx && !hedge && fresh.isEmpty() && fastLatched && i == rampChunk && (rawStart > cStart(i) + 0.05 || rawEnd < cEnd(i, currentDur()) - 0.05) && subCount(i, currentDur()) > 0) {
+                if (!offRan && !tx && !hedge && fresh.isEmpty() && rampOn && i == rampChunk && (rawStart > cStart(i) + 0.05 || rawEnd < cEnd(i, currentDur()) - 0.05) && subCount(i, currentDur()) > 0) {
                     pool.good(key)
                     host.log("🔇 باتش ${i + 1}: الخطوة ${"%.0f".format(java.util.Locale.US, rawStart)}ث → ${"%.0f".format(java.util.Locale.US, rawEnd)}ث مفيهاش كلام — اتقبلت من غير إعادة")
                     done.add(rawStart, rawEnd); failed.remove(i); incomplete.remove(i)
@@ -1539,7 +1544,7 @@ class Engine(
                     if (hedge) { inflight.remove(i); host.log("⚡ باتش ${i + 1}: النسخة الاحتياطية خلصت الأول") }
                     return
                 }
-                val rampWin = fastLatched && i == rampChunk
+                val rampWin = rampOn && i == rampChunk
                 applyChunk(i, rawStart, rawEnd, w, j, fresh, prior)
                 if (rampWin) { rampStep++; rampNext = rawEnd }   // (v1065) الخطوة الجاية أكبر
                 if (!rampWin) startedAt[i]?.let { recentMs.addLast(System.currentTimeMillis() - it); while (recentMs.size > 8) recentMs.pollFirst() }   // خطوات التسخين القصيرة ما تقلّلش حد «الباتش المتأخر»
@@ -2610,7 +2615,7 @@ class Engine(
         }
         tagged = Subs.harmonize(tagged, subs)   // توحيد ترجمة سطور الكورَس المتكررة في الأغاني
         // (v1065) خطوة جزئية من باتش الوضع السريع: جمل الباتش نفسه برّه نافذة الخطوة دي (خطوات سابقة) بتفضل
-        val partialWin = fastLatched && i == rampChunk && (rawStart > cStart(i) + 0.05 || rawEnd < cEnd(i, currentDur()) - 0.05)
+        val partialWin = rampOn && i == rampChunk && (rawStart > cStart(i) + 0.05 || rawEnd < cEnd(i, currentDur()) - 0.05)
         synchronized(lock) {
             tagged = Subs.dropOverlapZone(tagged, subs.filter { it.chunk != i }, rawStart)
             val keep = subs.filter { (it.chunk != i || (partialWin && (it.start < rawStart - 0.5 || it.start >= rawEnd + 0.5))) && !(it.chunk == -1 && it.start >= rawStart && it.start < rawEnd) && !Subs.inMyZone(it, tagged, i, rawEnd) }
@@ -3180,7 +3185,7 @@ class Engine(
                     toolPct = bi.toFloat() / batches.size; report("$label ${bi + 1}/${batches.size}")
                     val list = JSONArray()
                     for (k in batch) { val s = snap[k]; list.put(JSONObject().put("idx", k).put("original", s.original).put("translated", s.translated).put("speaker_gender", s.gender).put("addressee_gender", s.addressee)) }
-                    val prompt = "أنت محرر ترجمة محترف. اللغة/اللهجة الحالية: ${conf.lang} — الأسلوب: ${conf.style}.\n" +
+                    val prompt = "أنت محرر ترجمة محترف. اللغة/اللهجة الحالية: ${convDialect.ifBlank { conf.lang }} — الأسلوب: ${conf.style}.\n" +
                         "المطلوب بالظبط: $instruction\n" +
                         "قواعد ثابتة: حافظ على المعنى وعلى عدد الجمل وترتيبها (ماتدمجش ولا تقسّم). ماتقلبش ذكر لأنثى ولا العكس: جنس المتكلم = speaker_gender، وجنس المخاطَب = addressee_gender، وجنس الشخصيات المسماة من الجدول:\n$table\n" +
                         "ماتلمسش الجملة لو مش محتاجة تغيير.\n\nالجمل:\n$list\n\n" +
