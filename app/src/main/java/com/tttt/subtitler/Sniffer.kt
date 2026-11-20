@@ -40,6 +40,8 @@ class Found(val url: String, val kind: String, val title: String = "", @Volatile
     @Volatile var origin = ""   // (v847) ref = الـReferer الحقيقي للطلب (إطار المشغّل) · page = صفحة المتصفح (للعنوان/التجميع)
     @Volatile var size = -1L
     @Volatile var mime = ""
+    /** (v1156) مؤكَّد من جوه الصفحة: الطلب رد 2xx فعلًا أو عنصر الفيديو حمّل المدة (من صيّاد الإطارات) — مش مجرد اسم لينك */
+    @Volatile var conf = false
     /** (v203) التبويب + «جيل» الصفحة اللي اتلقط منها: لما الصفحة تتغير الجيل بيزيد واللقطات القديمة بتختفي */
     @Volatile var tabId = -1L
     @Volatile var gen = 0
@@ -58,15 +60,22 @@ object Sniff {
         val e = u.indexOf('/', i + 3)
         return (if (e < 0) u else u.substring(0, e)).takeIf { it.length > i + 3 }
     }
+    private val SEARCH_HOST = Regex("^(www\\.)?google\\.[a-z.]+$|(^|\\.)(bing\\.com|duckduckgo\\.com|search\\.yahoo\\.com|yandex\\.[a-z]+|search\\.brave\\.com|ecosia\\.org|startpage\\.com|baidu\\.com)$")
+    /** (v1154) صفحة محرك بحث (جوجل وأمثاله): مفيش فيديوهات فيها — مفيش صيد ولا فحص ولا تحقق */
+    fun isSearchPage(u: String?): Boolean {
+        if (u.isNullOrBlank() || !u.startsWith("http", true)) return false
+        val host = try { Uri.parse(u).host?.lowercase() } catch (_: Throwable) { null } ?: return false
+        return SEARCH_HOST.containsMatchIn(host)
+    }
     fun isDirect(u: String) = u.startsWith("http", true) && EXT.containsMatchIn(u)
 
     /** رابط الطلب → رابط فيديو صالح أو null */
     fun accept(raw: String): String? {
         if (!raw.startsWith("http", true) || JUNK.containsMatchIn(raw) || AdBlock.blocked(raw)) return null
-        if (raw.contains("googlevideo.com/videoplayback")) {
-            // بس الصيغ اللي فيها صوت وصورة مع بعض (18 = 360p، 22 = 720p)؛ باقي الـ itags صوت أو صورة لوحدها
+        if (isPlayback(raw)) {
+            // بس الصيغ اللي فيها صوت وصورة مع بعض؛ باقي الـ itags صوت أو صورة لوحدها (v1154: + جوجل درايف و37/59/43…)
             val itag = Regex("[?&]itag=(\\d+)").find(raw)?.groupValues?.get(1)
-            if (itag != "18" && itag != "22") return null
+            if (itag == null || itag !in AV_ITAGS) return null
             var u = raw.replace(Regex("[?&](range|rn|rbuf)=[^&]*"), "")
             if (!u.contains('?') && u.contains('&')) u = u.replaceFirst('&', '?')
             return u
@@ -76,7 +85,16 @@ object Sniff {
     /** (v977) لينك جاي من صيّاد الجافا (VidHook): من غير شرط الامتداد، بنفس فلتر الإعلانات */
     fun acceptHooked(raw: String): String? {
         if (!raw.startsWith("http", true) || JUNK.containsMatchIn(raw) || AdBlock.blocked(raw)) return null
-        return if (raw.contains("googlevideo.com/videoplayback")) accept(raw) else raw
+        return if (isPlayback(raw)) accept(raw) else raw
+    }
+    private val AV_ITAGS = setOf("18", "22", "37", "59", "43", "34", "35", "44", "45", "46", "78")
+    private val DRIVE_HOST = Regex("(^|\\.)(drive|docs)\\.google\\.com$|googleusercontent\\.com$")
+    /** (v1154) videoplayback بتاع يوتيوب (googlevideo) وبتاع جوجل درايف (drive.google.com/videoplayback) */
+    fun isPlayback(raw: String): Boolean {
+        if (raw.contains("googlevideo.com/videoplayback")) return true
+        if (!raw.contains("/videoplayback")) return false
+        val host = try { Uri.parse(raw).host?.lowercase() } catch (_: Throwable) { null } ?: return false
+        return DRIVE_HOST.containsMatchIn(host)
     }
     fun kindOf(u: String): String {
         val p = u.substringBefore('?').lowercase()
@@ -112,7 +130,7 @@ object Sniff {
     private val HQ = Regex("(?<![0-9])(2160|1440|1080|720|576|540|480|432|406|360|288|270|240|180|144)(?![0-9])")
     fun heightOf(u: String): Int {
         // (v203) يوتيوب: الجودة من الـ itag (18 = 360p، 22 = 720p)
-        if (u.contains("videoplayback")) { when (Regex("[?&]itag=(\\d+)").find(u)?.groupValues?.get(1)) { "18" -> return 360; "22" -> return 720 } }
+        if (u.contains("videoplayback")) { when (Regex("[?&]itag=(\\d+)").find(u)?.groupValues?.get(1)) { "18", "43", "34" -> return 360; "22", "45" -> return 720; "59", "35", "44" -> return 480; "37", "46", "78" -> return 1080 } }
         return heightOf0(u)
     }
     private fun heightOf0(u: String): Int = HQ.findAll(u.substringBefore('?').substringBefore('#')).lastOrNull()?.value?.toIntOrNull() ?: 0
@@ -159,11 +177,13 @@ object AdBlock {
         if (BET_URL.containsMatchIn(url.substringBefore('?'))) return true
         return PATH.containsMatchIn(url)
     }
+    /** (v1154) بانرات الكوكيز/الموافقة (GDPR) — بتتخبّى وبتتشال ومعاها فك قفل السكرول */
+    private const val CONS_SEL = "#onetrust-consent-sdk,#onetrust-banner-sdk,#CybotCookiebotDialog,#CybotCookiebotDialogBodyUnderlay,.cc-window,.cc-banner,.cookie-banner,.cookie-consent,.cookie-notice,.cookies-banner,#cookie-banner,#cookie-notice,#cookie-consent,#cookieConsent,#cookiebanner,.cookiebanner,.fc-consent-root,#didomi-host,.qc-cmp2-container,#truste-consent-track,.osano-cm-window,#usercentrics-root,.cmplz-cookiebanner,#cmpbox,#cmpbox2,[id^=sp_message_container],[class*=cookie-law],[id*=cookie-law],#gdpr-cookie-message,.gdpr-banner,.js-cookie-consent,#cookie-law-info-bar,#CookieBanner,#cookieBanner"
     const val CSS = "ins.adsbygoogle,.adsbygoogle,[id^=div-gpt-ad],[id*=google_ads],[class*=ad-banner],[class*=adbanner],[class*=popup-ad],[id*=popup-ad]," +
         "[class*=sponsored-],[id^=aswift],iframe[src*=doubleclick],iframe[src*=googlesyndication],iframe[src*=adsterra],iframe[src*=exoclick]," +
         "iframe[src*=propeller],a[href*=popads],a[href*=exoclick],a[href*=adsterra],[class*=ad-overlay],[id*=ad-overlay],[class*=ad-container],[id*=ad-container]," +
         "[class*=ads-container],[class*=ad-wrapper],[class*=floatAd],[class*=floating-ad],[class*=popunder],iframe[src*=magsrv],iframe[src*=exosrv]," +
-        "a[href*=clickadu],a[href*=propellerads],a[href*=hilltopads]{display:none!important;visibility:hidden!important}"
+        "a[href*=clickadu],a[href*=propellerads],a[href*=hilltopads]," + CONS_SEL + "{display:none!important;visibility:hidden!important}"
     /** (v467) محدّدات بس (من غير قاعدة العرض) — لمراقب الـ DOM اللي بيمسح الإعلانات المتأخرة أول ما تظهر */
     private const val SEL = "ins.adsbygoogle,.adsbygoogle,[id^=div-gpt-ad],[id*=google_ads],[class*=ad-banner],[class*=adbanner],[class*=popup-ad],[id*=popup-ad],[id^=aswift],[class*=ad-overlay],[id*=ad-overlay],[class*=ad-container],[id*=ad-container],[class*=ads-container],[class*=ad-wrapper],[class*=floatAd],[class*=floating-ad],[class*=popunder],iframe[src*=doubleclick],iframe[src*=googlesyndication],iframe[src*=adsterra],iframe[src*=exoclick],iframe[src*=propeller],iframe[src*=magsrv],iframe[src*=exosrv]"
     // (v722) اللوجيك كله في الصفحة: إزالة عناصر إعلانية + فيديو الإعلان (كتم وقفز لآخره + ضغط «Skip») + بانرات اللينكات الخارجية ومقاسات IAB + بانرات المراهنات
@@ -173,6 +193,7 @@ if(!st){st=document.createElement('style');st.id='__svab';st.textContent='""" + 
 if(window.__svab2)return;
 window.__svab2=1;
 var SEL='""" + SEL + """';
+var CONS='""" + CONS_SEL + """';
 var TOK=/(?:^|[^A-Za-z0-9])(?:ads?|adv|advert|advertisement|adslot|adsbox|adbox|adunit|preroll|vast|vpaid|sponsored)(?![A-Za-z0-9])/i;
 var BETB=/1x\s?bet|1xlite|1xstavka|melbet|mostbet|betwinner|22bet|linebet|megapari|paripesa|betandyou|888starz|parimatch|(?:^|[^A-Za-z])refpa/i;
 var BETH=/casino|jackpot|slots|sportsbook|betting|bet365|betway|pin-?up/i;
@@ -213,6 +234,8 @@ function tick(){
 function scan(){
  try{
   document.querySelectorAll(SEL).forEach(function(e){e.remove()});
+  var cb=document.querySelectorAll(CONS);
+  if(cb.length){cb.forEach(function(e){e.remove()});[document.documentElement,document.body].forEach(function(x){try{if(x&&getComputedStyle(x).overflow==='hidden')x.style.setProperty('overflow','auto','important')}catch(e3){}})}
   var xs=document.querySelectorAll('iframe,img,a[href]');
   for(var i=0;i<xs.length;i++){
    var e=xs[i];var tg=e.tagName;var u=(tg==='A')?e.href:(e.src||'');

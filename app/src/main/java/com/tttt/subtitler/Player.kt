@@ -2977,6 +2977,7 @@ class PlayerActivity : Activity(), Host {
     private lateinit var modePill: TextView   // (v459) كبسولة عريضة لليوتيوب: «🎧 وضع الصوت / 🎬 وضع الفيديو» — تبديل جوه المشغّل نفسه · (v467) مكانها بقى جوّه صف الكبسولات جنب 👁 مش عايمة لوحدها
     private var badgeRowRef: LinearLayout? = null   // (v467) صف الكبسولات (🔊/👁/النت) — الكبسولة بتتنقل له أول ما يتبني
     private var ytAudioOnly = false
+    private var ytMerged: Boolean? = null   // (v1150) المصدر الحالي = فيديو + صوت منفصلين (Merging)؟ null = مش معروف (بنستنتج من aurl)
     private var audioHandoff: Intent? = null
     fun closeBatchPanel() {
         batchPanel?.let { p -> try { (p.parent as? ViewGroup)?.removeView(p) } catch (e: Exception) { LogStore.err("Main:938", e) } }
@@ -6124,6 +6125,7 @@ class PlayerActivity : Activity(), Host {
             val src = if (au != null) { val pf = androidx.media3.exoplayer.source.ProgressiveMediaSource.Factory(f)
                 androidx.media3.exoplayer.source.MergingMediaSource(pf.createMediaSource(MediaItem.fromUri(Uri.parse(o.url))), pf.createMediaSource(MediaItem.fromUri(Uri.parse(au)))) }
             else DefaultMediaSourceFactory(f).createMediaSource(MediaItem.fromUri(Uri.parse(o.url)))
+            ytVideoTrackOn(); ytMerged = au != null   // (v1150)
             player.exo()?.let { xp -> xp.setMediaSource(src, pos); xp.prepare() }; player.playWhenReady = play
             qCur = i; sizeTxt = ""; setQualLabel(o.h); refreshSize()
             if (ytAudioOnly) { ytAudioOnly = false; paintModePill() }   // (v459) تغيير الجودة بيرجّع الفيديو
@@ -6139,6 +6141,11 @@ class PlayerActivity : Activity(), Host {
     private fun ytAudioUrl(): String? = aOverride ?: aurl ?: qOpts.getOrNull(qCur)?.audio ?: qOpts.firstOrNull { it.audio != null }?.audio
 
     private var ytResolving = false   // (v467) جلب مسار الصوت عند الطلب شغّال
+    /** (v1150) بيرجّع مسار الفيديو (لو كان مقفول بوضع الصوت) وبيصفّر علامة وضع الصوت */
+    private fun ytVideoTrackOn() {
+        try { player.exo()?.let { xp -> if (xp.trackSelectionParameters.disabledTrackTypes.contains(androidx.media3.common.C.TRACK_TYPE_VIDEO)) xp.trackSelectionParameters = xp.trackSelectionParameters.buildUpon().setTrackTypeDisabled(androidx.media3.common.C.TRACK_TYPE_VIDEO, false).build() } } catch (_: Throwable) {}
+        if (ytAudioOnly) { ytAudioOnly = false; paintModePill() }
+    }
     private fun paintModePill() { if (::modePill.isInitialized) modePill.text = if (ytAudioOnly) "🎬 وضع الفيديو" else "🎧 وضع الصوت" }
 
     /** (v459) تبديل وضع الصوت/الفيديو لفيديو يوتيوب جوه المشغّل نفسه ومن نفس المكان: الصوت بس بيوفّر الداتا،
@@ -6146,6 +6153,17 @@ class PlayerActivity : Activity(), Host {
     private fun toggleYtMode() {
         try {
             val play = player.playWhenReady
+            // (v1150) تبديل فوري من غير إعادة تحميل: المصدر (فيديو + صوت منفصلين) بيفضل زي ما هو وبنقفل/نفتح مسار الفيديو بس —
+            // الصوت مابيقطعش ومكانك مابيتغيّرش، ومسار الفيديو المقفول مابيحمّلش داتا. المصدر المدمج في ملف واحد بيكمّل بالطريقة القديمة تحت.
+            val xpFast = player.exo()
+            if (xpFast != null && (ytMerged ?: (aurl != null))) {
+                val vt = androidx.media3.common.C.TRACK_TYPE_VIDEO
+                ytAudioOnly = !ytAudioOnly
+                xpFast.trackSelectionParameters = xpFast.trackSelectionParameters.buildUpon().setTrackTypeDisabled(vt, ytAudioOnly).build()
+                Notice.show(this, if (ytAudioOnly) "🎧 وضع الصوت: صوت بس — بيوفّر الداتا والبطارية" else "🎬 وضع الفيديو", 1500L)
+                paintModePill()
+                return
+            }
             if (!ytAudioOnly) {
                 val au = ytAudioUrl() ?: run {
                     // (v467) مفيش مسار صوت جاهز (دخول handoff مثلًا): بنجيبه عند الطلب بدل ما نقول «ملوش» على طول
@@ -6370,6 +6388,7 @@ class PlayerActivity : Activity(), Host {
         if (pendingYt) return   // (v351) لسه بنجيب الرابط: المشغّل فاضي ولودينج ويندوز بيلف
         val au = aurl
         val xp0: ExoPlayer = player.exo() ?: return
+        ytVideoTrackOn(); ytMerged = (uri == null && au != null)   // (v1150)
         if (uri == null && au != null) {
             val pf = androidx.media3.exoplayer.source.ProgressiveMediaSource.Factory(httpDsf ?: DefaultHttpDataSource.Factory().setDefaultRequestProperties(hdr).setAllowCrossProtocolRedirects(true))
             xp0.setMediaSource(androidx.media3.exoplayer.source.MergingMediaSource(pf.createMediaSource(MediaItem.fromUri(Uri.parse(url!!))), pf.createMediaSource(MediaItem.fromUri(Uri.parse(au)))))
@@ -6657,6 +6676,7 @@ class PlayerActivity : Activity(), Host {
                 try { httpDsf?.setDefaultRequestProperties(hdr) } catch (_: Throwable) {}
                 try {
                     val au = aurl
+                    ytMerged = au != null   // (v1150)
                     if (au != null) {
                         val pf = androidx.media3.exoplayer.source.ProgressiveMediaSource.Factory(httpDsf ?: DefaultHttpDataSource.Factory().setDefaultRequestProperties(hdr).setAllowCrossProtocolRedirects(true))
                         player.exo()?.setMediaSource(androidx.media3.exoplayer.source.MergingMediaSource(pf.createMediaSource(MediaItem.fromUri(Uri.parse(got.url))), pf.createMediaSource(MediaItem.fromUri(Uri.parse(au)))))

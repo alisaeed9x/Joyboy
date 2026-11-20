@@ -826,7 +826,7 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
     /** (v402) فيديو: صفحة المشاهدة (بأنيميشن من مكان الكارت) أو المشغّل مباشرة حسب إعداد «لما تدوس على فيديو» */
     /** (v406) علامة «مدبلج»: من الكاش، وإلا نفحص لغات الصوت في الخلفية بعد ما الكارت يفضل ظاهر ~0.8 ثانية */
     private fun bindDub(c: Card, vi: NpItem) {
-        c.dub.tag = vi.id; c.dub.visibility = View.GONE
+        c.dub.tag = vi.id; c.dub.visibility = View.GONE; c.newB.translationY = 0f
         if (vi.kind != 0 || vi.id.length != 11 || !YtDub.enabled()) return
         val cached = YtDub.get(vi.id)
         if (cached != null) { paintDub(c, vi, cached); return }
@@ -835,8 +835,8 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
         }, 800L)
     }
     private fun paintDub(c: Card, vi: NpItem, langs: List<String>) {
-        if (!YtDub.isDubbed(langs)) { c.dub.visibility = View.GONE; return }
-        c.dub.visibility = View.VISIBLE
+        if (!YtDub.isDubbed(langs)) { c.dub.visibility = View.GONE; c.newB.translationY = 0f; return }
+        c.dub.visibility = View.VISIBLE; c.newB.translationY = ui.dp(26).toFloat()   // (v1149) «جديد» على اليمين تحت «مدبلج» لو الاتنين ظاهرين
         c.dub.setOnClickListener { x ->
             val m = android.widget.PopupMenu(act, x)
             val pref = YtLang.pref()
@@ -1709,7 +1709,7 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
             text = "جديد"; textSize = 11f; setTextColor(Color.WHITE); includeFontPadding = false; typeface = medium; visibility = View.GONE
             setPadding(ui.dp(7), ui.dp(4), ui.dp(7), ui.dp(4)); background = GradientDrawable().apply { setColor(0xFFE53935.toInt()); cornerRadius = ui.dp(5).toFloat() }
         }
-        box.addView(newB, FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.END).apply { setMargins(ui.dp(8), ui.dp(8), ui.dp(8), ui.dp(8)) })
+        box.addView(newB, FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.RIGHT).apply { setMargins(ui.dp(8), ui.dp(8), ui.dp(8), ui.dp(8)) })
         val tb = YtThumbBtns.attach(act, ui, box)   // (v472) 🎧 صوت + ⬇ تحميل فوق كل صورة
         val av = TextView(act).apply { gravity = Gravity.CENTER; textSize = 15f; setTextColor(Color.WHITE); includeFontPadding = false; typeface = medium }
         val avImg = ImageView(act).apply { scaleType = ImageView.ScaleType.CENTER_CROP; visibility = View.GONE }

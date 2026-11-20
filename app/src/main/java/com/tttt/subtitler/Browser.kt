@@ -748,7 +748,7 @@ class BrowserActivity : Activity() {
 
     // ===== إنشاء WebView لتبويب =====
     /** (v977) لقطة من صيّاد الجافا — بتعدّي على نفس الفحص (verifyFound) زي أي لقطة */
-    private fun onHook(t: BTab, u: String, k: String, frame: String, origin: String) {
+    private fun onHook(t: BTab, u: String, k: String, frame: String, origin: String, conf: Boolean = false) {
         if (dead || t.hold != null) return
         val a = Sniff.acceptHooked(u) ?: return
         val kind = when (k) { "hls" -> "HLS"; "dash" -> "DASH"; else -> Sniff.kindOf(a) }
@@ -757,6 +757,7 @@ class BrowserActivity : Activity() {
         val pg = t.url; val g0 = t.gen
         val f = Found(a, kind, "", ref, uaOf(t), pg)
         if (og != null) f.origin = og
+        f.conf = conf   // (v1156) مؤكَّد من جوه الصفحة (رد 2xx / الفيديو حمّل)
         h.post { if (!dead) addFound(f, t, g0) }
     }
     private fun makeWebView(t: BTab): WebView {
@@ -771,7 +772,7 @@ class BrowserActivity : Activity() {
         }
         if (uaWeb.isEmpty()) uaWeb = w.settings.userAgentString ?: ""
         if (t.desktop) w.settings.userAgentString = DESK_UA
-        VidHook.install(w) { u, k, f, o -> onHook(t, u, k, f, o) }   // (v977) صيّاد جافا جوه كل الإطارات للمشغّلات الخارجية (لينكات من غير امتداد / قوايم HLS-DASH من fetch/XHR)
+        VidHook.install(w) { u, k, f, o, c -> onHook(t, u, k, f, o, c) }   // (v977) صيّاد جافا جوه كل الإطارات للمشغّلات الخارجية (لينكات من غير امتداد / قوايم HLS-DASH من fetch/XHR)
         if (t.priv) { w.settings.cacheMode = WebSettings.LOAD_NO_CACHE; @Suppress("DEPRECATION") w.settings.saveFormData = false }
         CookieManager.getInstance().setAcceptThirdPartyCookies(w, true)
         w.setBackgroundColor(Color.WHITE)
@@ -826,7 +827,7 @@ class BrowserActivity : Activity() {
                         hd.media = true
                         if (hd.sniffed.size < 6) { hd.sniffed.add(a) }
                     } else {
-                        val pg = t.url; val og = try { r.requestHeaders?.get("Origin") } catch (_: Throwable) { null }; h.post { if (!dead) addFound(Found(a, Sniff.kindOf(a), "", rf?.takeIf { it.startsWith("http", true) } ?: pg, uaOf(t), pg).also { f0 -> if (!og.isNullOrBlank() && og.startsWith("http", true)) f0.origin = og }, t, g0) }   // (v847) Referer الحقيقي بتاع الطلب · (v850) t.url بدل v.url — shouldInterceptRequest بيشتغل على thread خلفي وv.url كان بيكرّش التطبيق
+                        val pg = t.url; val og = try { r.requestHeaders?.get("Origin") } catch (_: Throwable) { null }; if (!Sniff.isSearchPage(pg)) h.post { if (!dead) addFound(Found(a, Sniff.kindOf(a), "", rf?.takeIf { it.startsWith("http", true) } ?: pg, uaOf(t), pg).also { f0 -> if (!og.isNullOrBlank() && og.startsWith("http", true)) f0.origin = og }, t, g0) }   // (v847) Referer الحقيقي بتاع الطلب · (v850) t.url بدل v.url — shouldInterceptRequest بيشتغل على thread خلفي وv.url كان بيكرّش التطبيق
                     }
                     Unit
                 }
@@ -1435,12 +1436,6 @@ class BrowserActivity : Activity() {
         val gVid: List<Pair<String, () -> Unit>> = listOf(
             "🎬 الفيديوهات الملقوطة (${groupsOf(vis()).size})" to { showList() },
             "🔎 افحص الصفحة (فيديوهات · ملفات · برامج · لينكات رفع)" to { pageScan() },
-            // (v981) مفتاح الاستكشاف الأوتوماتيك — الافتراضي مقفول؛ شغّال = الصفحات بتتفحص لوحدها، مقفول = الفحص اليدوي بالعدسة بس
-            (if (autoDiscoverOn()) "🔍 استكشاف تلقائي للفيديوهات والملفات: شغال ✓" else "🔍 استكشاف تلقائي للفيديوهات والملفات: مقفول") to {
-                val on = !autoDiscoverOn()
-                Cfg.put("auto_discover", if (on) "1" else "0")
-                Notice.show(this, if (on) "🔍 الاستكشاف الأوتوماتيك اشتغل — الصفحات هتتفحص لوحدها" else "🔍 الاستكشاف الأوتوماتيك اتقفل — الفحص اليدوي بالعدسة بس", 2600L)
-            },
             "🎞 تحكم الفيديو" to { showVideoControls() }
         )
         val gProt: List<Pair<String, () -> Unit>> = listOf(
@@ -1897,6 +1892,7 @@ class BrowserActivity : Activity() {
     // (v981) الفحص الخلفي الأوتوماتيك مسموح؟ اليدوي دايمًا مسموح؛ الأوتوماتيك لازم مفتاح الاستكشاف + مفتاح الفحص + يتقفل على داتا الموبايل (مستوى التوفير MAX أو أعلى، أو شبكة خلوية فعلًا)
     private fun autoBgAllowed(manual: Boolean): Boolean {
         if (manual) return true
+        if (true) return false   // (v1154) الفحص التلقائي بالجافا اتقفل نهائيًا: بيهلك داتا من غير لينكات — الاصطياد بالشبكة + صيّاد الإطارات شغّالين، والفحص اليدوي بالعدسة موجود
         if (!autoDiscoverOn()) return false
         if (!autoScanOn()) return false
         if (::saver.isInitialized && saver.level >= BrowserSaver.MAX) return false
@@ -2341,13 +2337,21 @@ class BrowserActivity : Activity() {
     fun addFound(f: Found, t: BTab? = tabs.getOrNull(curIdx), g: Int = t?.gen ?: 0) {
         if (t == null) return
         if (adOn && AdBlock.blocked(f.url)) return   // (v722) فيديو إعلان (شبكة إعلانات/مراهنات) مش بيتحسب لقطة
+        if (Sniff.isSearchPage(t.url)) return   // (v1154) جوجل ومحركات البحث: مفيش فيديوهات تتلقط
         f.tabId = t.id; f.gen = g
         if (g != t.gen) return   // لقطة من صفحة قديمة
-        if (!keys.add("${t.id}:$g:" + Sniff.key(f.url))) return
+        val kk0 = "${t.id}:$g:" + Sniff.key(f.url)
+        if (f.conf) { keys.add(kk0); if (items.any { it.tabId == t.id && it.gen == g && Sniff.key(it.url) == Sniff.key(f.url) }) return }   // (v1156) المؤكَّد بيعدّي حتى لو نسخة غير مؤكَّدة منه لسه بتتفحص
+        else if (!keys.add(kk0)) return
         if (f.kind.startsWith("YT")) { if (f.size > 0) { accept(f); return }; probe(f) { accept(f) }; return }   // يوتيوب زي ما كان
         // (v976) كل لينك ملقوط بيتفحص فعلًا قبل ما يظهر: لازم يرد بفيديو/قايمة HLS حقيقية (مش صفحة HTML / 403 / 404 / لينك منتهي) ولو HLS أول مقطع فيها لازم يتحمّل.
         // بيجرّب Referer/Origin بتوع المشغّل الخارجي ثم صفحة المتصفح ثم أصل اللينك ثم من غير — واللي ينجح بيتثبّت على اللقطة (المشغّل والتحميل بياخدوه)
         val sn0 = snapOf(t); sn0.cand++; sn0.vfy++
+        if (f.conf) {   // (v1156) الصفحة نفسها أكدت إنه اشتغل (رد 2xx / الفيديو حمّل): حقيقي — يظهر فورًا، والفحص في الخلفية بيظبط الهيدرز والحجم بس ومبيشيلوش
+            accept(f)
+            verifyFound(f) { _ -> sn0.vfy-- }
+            return
+        }
         verifyFound(f) { ok -> sn0.vfy--; if (ok) accept(f) else rejectFake(f) }   // أي فيديو أقل من 3 ميجا (إعلانات غالبًا) بيتتجاهل في accept
     }
     private class Peek(val code: Int, val mime: String, val body: ByteArray, val total: Long)
@@ -2380,7 +2384,7 @@ class BrowserActivity : Activity() {
     private fun resolveUrl(base: String, ref: String): String = try { java.net.URL(java.net.URL(base), ref.trim()).toString() } catch (_: Throwable) { ref.trim() }
     private fun checkMedia(f: Found, hd: Map<String, String>): VRes {
         val pk = httpPeek(f.url, hd, 4096) ?: return VRes(false, false, -1L, "")
-        if (pk.code !in 200..299) return VRes(false, !transientCode(pk.code), -1L, "")   // (v1063) 429/5xx/408 = مؤقت: ما نخبّيش اللقطة
+        if (pk.code !in 200..299) return VRes(false, !transientCode(pk.code), -1L, "")   // (v1063) 429/5xx/408 = مؤقت. (v1156) 401/403 = لينك مرفوض (مش بنحسبه لقطة إلا لو الصفحة نفسها أكدته)
         val head = String(pk.body, Charsets.UTF_8).trimStart('\uFEFF', ' ', '\n', '\r', '\t')
         val hls = isHls(f) || head.startsWith("#EXTM3U")
         if (hls) {
@@ -2477,6 +2481,7 @@ class BrowserActivity : Activity() {
         if (f.size in 1 until Sniff.MIN_BYTES) return
         val t = tabs.firstOrNull { it.id == f.tabId } ?: return
         if (f.gen != t.gen) return      // الصفحة اتغيّرت وإحنا بنفحص الحجم
+        if (items.any { it.tabId == t.id && it.gen == f.gen && Sniff.key(it.url) == Sniff.key(f.url) }) return   // (v1156) نفس اللينك اتضاف (مؤكَّد + غير مؤكَّد)
         items.add(f)
         if (t !== tabs.getOrNull(curIdx)) return
         refreshBadge()

@@ -127,6 +127,9 @@ class Engine(
         }
     }
     private val fastLight = ConcurrentHashMap.newKeySet<Int>()
+    /** (v1152) السريع (موضع ≤ 2): كل الباتشات خفيفة (رد أقصر = أسرع). موضع 3 فوق بيرجع للأول باتشين بس */
+    private fun lightAll(): Boolean = try { TrSlider.pos() <= 2 } catch (_: Throwable) { false }
+    @Volatile private var lightAllLogged = false
     private fun lightOn(chunk: Int, hole: Boolean, tx: Boolean): Boolean = fastLatched && !hole && !tx && chunk >= 0 && !easternSrc() &&   // (v1147) اللغات الشرقية: مفيش برومبت خفيف (السماع بيضعف)
         (chunk == rampChunk || chunk in fastLight || chunk in lightRetry)
     private val pool: Pool get() = if (activeMode >= KeyMode.SPLIT_A && !fastLatched) splitPools().first else basePool
@@ -1176,7 +1179,7 @@ class Engine(
     private fun dispatch(i: Int, ex: java.util.concurrent.ExecutorService, force: Boolean = false, firstKey: String? = null, prep0: Prep? = null) {
         if (!inflight.add(i)) return
         if (rampOn && rampChunk < 0 && !force) { rampChunk = i; rampStep = 0; rampNext = -1.0 }   // (v1065) أول باتش بيتبعت = اللي بيتقسّم لخطوات بتكبر
-        if (fastLatched && !force && TrSlider.on("light") && fastLight.size < FAST_LIGHT_N) fastLight.add(i)   // (v1097) T2 برومبت خفيف لأول باتشين
+        if (fastLatched && !force && TrSlider.on("light") && (fastLight.size < FAST_LIGHT_N || lightAll())) { fastLight.add(i); if (lightAll() && !lightAllLogged) { lightAllLogged = true; host.log("⚡ (v1152) السريع: كل الباتشات بالبرومبت الخفيف والرد المختصر (أسرع) — اللغات الشرقية بتفضل بالكامل") } }   // (v1097) T2 برومبت خفيف لأول باتشين · (v1152) ولكل الباتشات في «أسرع/سريع» (موضع ≤ 2)
         startedAt[i] = System.currentTimeMillis(); hedged.remove(i)
         // (v151) المفتاح بيتحجز للباتش من لحظة الإرسال (قبل فك الصوت) عشان باتشين ما يتحطوش على نفس المفتاح
         val fk = firstKey ?: pool.pickIdle(i, null, perKey)
@@ -1207,7 +1210,7 @@ class Engine(
         val now = System.currentTimeMillis()
         val ms = recentMs.toList().sorted()
         val med = if (ms.isEmpty()) 0L else ms[ms.size / 2]
-        val limit = (if (med > 0) med * 22 / 10 else 40_000L).coerceIn(25_000L, 120_000L)
+        val limit = if (fastLatched) (if (med > 0) med * 17 / 10 else 25_000L).coerceIn(12_000L, 90_000L) else (if (med > 0) med * 22 / 10 else 40_000L).coerceIn(25_000L, 120_000L)   // (v1151) السريع: الباتش المتأخر بيتنسخ على مفتاح تاني أبكر (~1.7× المعتاد، أدنى 12ث بدل 25ث)
         val i = inflight.filter { it < maxApplied && it !in hedged && preps.containsKey(it) && (startedAt[it]?.let { s -> now - s > limit } ?: false) }.minOrNull() ?: return
         val p = preps[i] ?: return
         if (!hedged.add(i)) return
