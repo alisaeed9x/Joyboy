@@ -700,7 +700,7 @@ class PlayerActivity : Activity(), Host {
             "ab_b" -> abSet(1)
             "ab_x" -> abClear()
             "redo" -> redoDialog(anchor)
-            "modeset" -> modeSettings(anchor)
+            "modeset" -> trSettings(anchor)
             "posy" -> { val n = (Cfg.int("sub_posy", 0) + v.toInt()).coerceIn(-60, 240); Cfg.put("sub_posy", n.toString()); runOnUiThread { try { restyleFn(); applyChromeFn() } catch (_: Throwable) {}; curIdx = -2 }; say("↕ موضع الترجمة: $n") }   // (v759) كان بيحفظ القيمة من غير ما يطبّق الهامش (applyChromeFn) — ودلوقتي بينزل تحت كمان (-60)
             "pip" -> runOnUiThread { try { enterPip() } catch (e: Throwable) { LogStore.err("Player:rpip", e) } }   // (v712) نافذة صغيرة من الريموت
             "voice" -> runOnUiThread { try { voiceMenu() } catch (e: Throwable) { LogStore.err("Player:rvoice", e) } }   // (v712) فصل صوت الكلام
@@ -1120,7 +1120,7 @@ class PlayerActivity : Activity(), Host {
         add("📝 ترجمات الفيديو (قديم + جديد)") { sfTranslationsDialog(anchor) }
         if (!Strict.hideTrOpts()) add("🌐 لغة / لهجة ترجمة البرنامج") { preferNative = false; tvSubDialog(1) }   // (v696) أوفلاين كامل: فصحى بس
         // (v552) «ترجمة ملف الترجمة» اتشالت — السؤال بقى جوه ▶ ترجم لما الفيديو يبقى فيه سوفت صب
-        add("⚙ إعدادات الترجمة") { modeSettings(anchor) }
+        add("⚙ إعدادات الترجمة") { trSettings(anchor) }
         if (groups.isEmpty() && !prog) add("ℹ مفيش ترجمة أصلية في الفيديو ده (السوفت صب والهارد صب بيتترجموا أوتوماتيك)") { }
         GAlert(this).setTitle("🌐 مصادر الترجمة").setItems(labels.toTypedArray()) { _, w -> if (w in acts.indices) acts[w]() }.show()
     }
@@ -1431,11 +1431,15 @@ class PlayerActivity : Activity(), Host {
                     if (cues.isEmpty()) { say("الملف ده مش ترجمة صالحة (SRT / ASS / VTT)"); return@Thread }
                 } else {
                     val sc = if (track >= 0) null else if (useMobile) mobileSub?.takeIf { it.exists() } else sfSidecar()
-                    if (sc != null) { cues = SubFileTr.parse(SubFileTr.decode(sc.readBytes())); label = sc.name }
+                    if (sc != null) {
+                        // (v1137) لو الملف ده ترجمة كتبها البرنامج وليها نسخة أصلية مخفية ← نترجم من الأصلي مش من العربي
+                        val srcF = (if (useMobile) null else SrtWriter.origFor(sc)) ?: sc
+                        cues = SubFileTr.parse(SubFileTr.decode(srcF.readBytes())); label = sc.name + (if (srcF !== sc) " (النص الأصلي)" else "")
+                    }
                     if (track >= 0 && vu != null) {
                         SubFileTr.readEmbeddedTrack(applicationContext, vu, track)?.let { cues = it.second; label = it.first + " من الفيديو" }
                         // (v667) أوتوماتيك: المسار فاضي أو عربي أصلًا ← نترجم ملف الترجمة اللي جنب الفيديو
-                        if (auto && (cues.isEmpty() || SubFileTr.mostlyArabic(cues))) { sfSidecar()?.let { sc2 -> val c2 = SubFileTr.parse(SubFileTr.decode(sc2.readBytes())); if (c2.isNotEmpty()) { cues = c2; label = sc2.name } } }
+                        if (auto && (cues.isEmpty() || SubFileTr.mostlyArabic(cues))) { sfSidecar()?.let { sc2 -> val c2 = SubFileTr.parse(SubFileTr.decode((SrtWriter.origFor(sc2) ?: sc2).readBytes())); if (c2.isNotEmpty()) { cues = c2; label = sc2.name } } }
                     }
                     else if (cues.isEmpty() && vu != null && (vu.scheme == "file" || vu.scheme == "content")) {
                         SubFileTr.readEmbedded(applicationContext, vu)?.let { cues = it.second; label = "مسار " + it.first + " من الفيديو" }
@@ -1578,7 +1582,7 @@ class PlayerActivity : Activity(), Host {
         add("📝 ترجمات الفيديو (قديم + جديد)") { sfTranslationsDialog(anchor) }
         if (tr) {
             add("🔄 إعادة / تقدم الباتشات") { batchDialog() }
-            add("⚙ إعدادات الترجمة") { modeSettings(anchor) }
+            add("⚙ إعدادات الترجمة") { trSettings(anchor) }
             add("🌙 كمّل الترجمة في الخلفية") { translateInBackground() }
             add("📜 اللوج") { toggleLog() }
         }
@@ -2281,7 +2285,10 @@ class PlayerActivity : Activity(), Host {
             MediaItem.Builder().setUri(u).setSubtitleConfigurations(listOf(cfg)).build()
         } catch (e: Throwable) { LogStore.err("Player:sidecar2", e); MediaItem.fromUri(u) }
     }
-    var offsetMs = 0L; var speed = 1f; var fit = 0; var fsFit = 2; var ccOn = true; var fitFsB: TextView? = null
+    var offsetMs = 0L; var speed = 1f; var fit = 0; var fsFit = 2; var fitFsB: TextView? = null
+    var ccSync: (() -> Unit)? = null   // (v1138) أي تغيير في ccOn (من أي مكان في الكود) بيحدّث شكل زرار CC
+    var ccOn = true
+        set(v) { field = v; try { ccSync?.invoke() } catch (_: Throwable) {} }
     fun isLandNow() = resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
     /** أفقي: وضع الشاشة الكاملة (الافتراضي تمديد) — رأسي: وضع منفصل (الافتراضي احتواء) */
     fun curFit(): Int { val m = if (isLandNow()) fsFit else fit; return if (m == 2) 2 else 0 }   // (v1020) احتواء / ملء الشاشة بس (القديم 1 و3 بيتحوّلوا لاحتواء)   // (v707) «100%» محتاج قرص بصباعين — مش بيشتغل بالريموت فعلى التلفزيون متشال
@@ -2530,6 +2537,12 @@ class PlayerActivity : Activity(), Host {
             if (remote || autoSubKey == key || noSub || askSaved || Cfg.str("auto_sub", "1") == "0") return
             if (engineStarted || engine.subs.isNotEmpty() || sfBusy.isNotEmpty()) return
             autoSubKey = key; softAskedFor = key
+            // (v1137) اختيار ملف الترجمة: «بدون ترجمة» محفوظ ← مفيش ترجمة تلقائية · أكتر من ملف ومفيش اختيار ← شاشة اختيار صريحة (مفيش اختيار صامت)
+            if (SubSel.choice(this, vu) == SubSel.NONE) return
+            if (SubSel.needsChoice(this, vu, subCands(true))) {
+                h.postDelayed({ try { if (!isFinishing && !isDestroyed && !engineStarted && engine.subs.isEmpty() && sfBusy.isEmpty() && uri?.toString() == key) subSelectSheet(window.decorView, true) } catch (e: Throwable) { LogStore.err("Player:subSel0", e) } }, 900L)
+                return
+            }
             h.postDelayed({
                 try {
                     if (isFinishing || isDestroyed || engineStarted || engine.subs.isNotEmpty() || sfBusy.isNotEmpty() || uri?.toString() != key) return@postDelayed
@@ -2714,6 +2727,8 @@ class PlayerActivity : Activity(), Host {
             else if (posNow > 2000L) { try { engine.translateFrom(posNow / 1000.0); log("▶ الترجمة من " + fmtMs(posNow)) } catch (e: Throwable) { LogStore.err("Player:translateFrom", e); say("⚠ تعذّر بدء الترجمة من مكان التشغيل — جرّب ▶ ترجمة تاني") } }   // (v287)
         }
         studioLabel = ""
+        // (v1139) ترجمة بالباتشات (من الصوت) بدأت: ملف الترجمة القديم / المسار الجاهز يتخفّى — كان بيظهر في أي لحظة الجملة الجديدة لسه ما وصلتش فيها. بيرجع لو اخترت الملف تاني من زرار الملفات
+        if (!engineStarted && sfBusy.isEmpty() && !sfShown && uri != null) { sfHideNative = true; preferNative = false; sfKillNative(); curIdx = -2 }
         val bal = balancedPath()   // (دمج v1090) ⚖ المتوازن = المحرك البسيط FastTr
         if (!engineStarted) { engineStarted = true; engine.userPaused = false; if (!(bal && startBalanced())) startEngine() }
         else if (fastTr != null) {
@@ -2803,6 +2818,31 @@ class PlayerActivity : Activity(), Host {
         var gearRef: TextView? = null
         val gearB = b("⚙", 0xFF37474F.toInt()) { gearRef?.let { trSettings(it) } }   // (v1097) T2: إعدادات الترجمة + سلايدر سريع↔دقيق
         gearRef = gearB
+        // (v1138) CC إظهار/إخفاء الترجمة — اتنقل هنا جنب زراير الترجمة: منوّر = الترجمة ظاهرة · خط مايل = مخفية
+        val ccV = CcToggleView(this).apply {
+            background = ui.box(0xFF37474F.toInt(), 0x33FFFFFF, if (compact) 8 else 10); isClickable = true; isFocusable = true
+            contentDescription = "إظهار/إخفاء الترجمة"; on = ccOn
+        }
+        ccV.setOnClickListener { ccToggleFn(); ccV.on = ccOn }
+        val prevSync = ccSync
+        ccSync = { prevSync?.invoke(); ccV.on = ccOn }
+        // (v1137) ➕ استيراد ملف ترجمة من بره + CC برقم عدد ملفات الترجمة المتاحة (مرسومين باليد) — جنب زرار الترجمة/الإعدادات
+        val plusB = PlusView(this).apply {
+            background = ui.box(0xFF37474F.toInt(), 0x33FFFFFF, if (compact) 8 else 10); isClickable = true; isFocusable = true
+            contentDescription = "إضافة ملف ترجمة من بره"; setOnClickListener { subImport() }
+        }
+        val subB = SubBadgeView(this).apply {
+            background = ui.box(0xFF37474F.toInt(), 0x33FFFFFF, if (compact) 8 else 10); isClickable = true; isFocusable = true
+            contentDescription = "ملفات الترجمة المتاحة"; visibility = View.GONE
+        }
+        subB.setOnClickListener { subSelectSheet(subB) }
+        fun paintSub() {
+            val n = if (uri != null) subCands().size else 0
+            subB.count = n; subB.off = (uri?.let { SubSel.choice(this, it) == SubSel.NONE } ?: false) || sfHideNative
+            subB.visibility = if (n > 0) View.VISIBLE else View.GONE
+            ccV.on = ccOn   // (v1138)
+            plusB.visibility = if (uri != null && !webVid) View.VISIBLE else View.GONE
+        }
         var lgRef: TextView? = null
         val lgB = b("🌐", 0xFF37474F.toInt()) { lgRef?.let { langPopup(it) } }
         lgRef = lgB
@@ -2823,13 +2863,16 @@ class PlayerActivity : Activity(), Host {
             var chipRef: TextView? = null
             val chipB = b("▶ ترجم ▾", 0xFFE53935.toInt()) { chipRef?.let { trMainClick(it) } }   // (v415) زرار واحد بقايمة منسدلة
             chipRef = chipB
-            val pz = b("⏸", 0xFF455A64.toInt()) { if (::engine.isInitialized && engine.userPaused) beginTranslate() else pauseTranslate() }   // (v438) إيقاف مؤقت / كمّل ظاهر جنب «ترجم» (كان جوه القايمة بس)
+            // (v1137) ⏸/▶ مرسوم باليد (PausePlayView) — الإيموجي/الأيقونة كانت بتظهر شفافة فاضية
+            val pz = PausePlayView(this).apply { playing = true; background = ui.box(0xFF455A64.toInt(), 0x33FFFFFF, 8); isClickable = true; isFocusable = true; contentDescription = "إيقاف مؤقت للترجمة"
+                setOnClickListener { if (::engine.isInitialized && engine.userPaused) beginTranslate() else pauseTranslate() } }   // (v438) إيقاف مؤقت / كمّل ظاهر جنب «ترجم» (كان جوه القايمة بس)
             val cx = stopBtn(8)   // (v741) مربع أبيض مرسوم باليد جوه الأحمر (كان بيختفي)
-            tidy(chipB); tidy(pz); pz.setPadding(0, 0, 0, 0); pz.textSize = 17f; dlB.setPadding(0, 0, 0, 0)
+            tidy(chipB); dlB.setPadding(0, 0, 0, 0)
             // (v1097) T2: «ترجم/النسبة» و⚙ جوه حاوية واحدة — الصف بيلفّ (FlowRow) فمنع ⚙ إنه ينزل سطر لوحده لما نص الشريحة يطول وهي شغّالة
             val chipGear = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL }
             chipGear.addView(chipB, lp(-2))   // (v415) زرار «ترجم» الواحد
             gearB.setPadding(0, 0, 0, 0); gearB.textSize = 17f; chipGear.addView(gearB, sq())
+            chipGear.addView(ccV, sq()); chipGear.addView(plusB, sq()); chipGear.addView(subB, sq())   // (v1137) (v1138) CC
             row.addView(chipGear, LinearLayout.LayoutParams(-2, -2))
             row.addView(pz, sq())
             row.addView(cx, sq())
@@ -2839,8 +2882,9 @@ class PlayerActivity : Activity(), Host {
                 val started = engineStarted
                 pz.visibility = if (started) View.VISIBLE else View.GONE
                 cx.visibility = if (started) View.VISIBLE else View.GONE
-                pz.text = if (paused) "▶" else "⏸"
+                pz.playing = !paused
                 pz.background = ui.box(if (paused) 0xFF2E7D32.toInt() else 0xFF455A64.toInt(), 0x33FFFFFF, 8)
+                paintSub()   // (v1137)
                 gearB.visibility = View.VISIBLE   // (v1097) ⚙ ظاهر دايمًا جنب «ترجم» حتى والترجمة شغّالة
                 lgB.visibility = if (caps().dialect) View.VISIBLE else View.GONE   // (v444) بس في الأوضاع اللي فيها لهجات
                 if (!started) {
@@ -2855,11 +2899,13 @@ class PlayerActivity : Activity(), Host {
                 }
             }
         } else {
-            val pz2 = b("⏸", 0xFF455A64.toInt()) { if (::engine.isInitialized && engine.userPaused) beginTranslate() else pauseTranslate() }   // (v438)
+            val pz2 = PausePlayView(this).apply { playing = true; background = ui.box(0xFF455A64.toInt(), 0x33FFFFFF, 10); isClickable = true; isFocusable = true; contentDescription = "إيقاف مؤقت للترجمة"
+                setOnClickListener { if (::engine.isInitialized && engine.userPaused) beginTranslate() else pauseTranslate() } }   // (v438) (v1137) مرسوم باليد
             val cx2 = stopBtn(10)   // (v741)
-            tidy(tr); tidy(pz2); pz2.setPadding(0, 0, 0, 0); pz2.textSize = 19f; dlB.setPadding(0, 0, 0, 0)
+            tidy(tr); dlB.setPadding(0, 0, 0, 0)
             row.addView(tr, lp(0).apply { width = 0; weight = 3.6f })   // (v415) زرار «ترجم» الواحد
             gearB.setPadding(0, 0, 0, 0); gearB.textSize = 19f; row.addView(gearB, sq())   // (v1097) T2
+            row.addView(ccV, sq()); row.addView(plusB, sq()); row.addView(subB, sq())   // (v1137) (v1138) CC
             row.addView(pz2, sq())
             row.addView(cx2, sq())
             if (webVid) { row.addView(qBtn(), lp(0).apply { width = 0; weight = 1.2f }); row.addView(aBtn(), lp(0).apply { width = 0; weight = 0.9f }); row.addView(dlB, sq()) }
@@ -2872,7 +2918,8 @@ class PlayerActivity : Activity(), Host {
                 tr.background = ui.box(if (!engineStarted) (if (soft) 0xFF2E7D32.toInt() else if (tx) 0xFF1F5FBF.toInt() else 0xFFE53935.toInt()) else (if (paused) 0xFF8D6E00.toInt() else if (trPct >= 100) 0xFF2E7D32.toInt() else 0xFF1F5FBF.toInt()), 0x33FFFFFF, 10)
                 pz2.visibility = if (engineStarted) View.VISIBLE else View.GONE
                 cx2.visibility = if (engineStarted) View.VISIBLE else View.GONE
-                pz2.text = if (paused) "▶" else "⏸"
+                pz2.playing = !paused
+                paintSub()   // (v1137)
                 pz2.background = ui.box(if (paused) 0xFF2E7D32.toInt() else 0xFF455A64.toInt(), 0x33FFFFFF, 10)
             }
         }
@@ -3218,6 +3265,78 @@ class PlayerActivity : Activity(), Host {
         }
     }
 
+    // ===================== (v1137) اختيار ملف الترجمة + ➕ استيراد + زرار الرقم =====================
+    private var subCandKey = ""; private var subCandAt = 0L; private var subCandList: List<java.io.File> = emptyList()
+    /** كل ملفات الترجمة المتاحة للفيديو الحالي (كاش ٢٠ث عشان الشريط بيتحدّث كتير؛ القايمة والاستيراد بيفرضوا تحديث) */
+    private fun subCands(force: Boolean = false): List<java.io.File> {
+        val u = uri ?: return emptyList()
+        val k = u.toString(); val now = System.currentTimeMillis()
+        if (!force && k == subCandKey && now - subCandAt < 20000L) return subCandList
+        subCandKey = k; subCandAt = now
+        subCandList = try { SubSidecar.findAll(this, u) } catch (_: Throwable) { emptyList() }
+        return subCandList
+    }
+    /** بعد تغيير الاختيار: نعيد تحميل المسار في المشغّل (الملف الجديد أو من غير ترجمة) ونصفّر كاش الاسم */
+    private fun subApplied(u: Uri, f: java.io.File?) {
+        try {
+            sfSideKey = ""; subCands(true)
+            softAskedFor = u.toString()
+            sfHideNative = false; nativeCue = ""; curIdx = -2
+            player.exo()?.let { xp ->
+                val pos = xp.currentPosition.coerceAtLeast(0L); val pw = xp.playWhenReady
+                xp.trackSelectionParameters = xp.trackSelectionParameters.buildUpon().setTrackTypeDisabled(androidx.media3.common.C.TRACK_TYPE_TEXT, f == null).build()
+                xp.setMediaItem(mediaItemFor(u), pos); xp.prepare(); xp.playWhenReady = pw
+            }
+            updateTr()
+        } catch (e: Throwable) { LogStore.err("Player:subApplied", e) }
+    }
+    /** ➕ ملف ترجمة من بره (SRT / ASS / VTT): بيتنسخ لفولدر التطبيق وبيتحدد للفيديو ده */
+    private fun subImport() {
+        val u = uri ?: run { say("افتح فيديو الأول"); return }
+        if (SubSel.videoPath(this, u) == null) { say("⚠ مسار الفيديو مش معروف — مش هقدر أربط ملف الترجمة بيه"); return }
+        SubPick.pick(this) { src ->
+            if (src == null) return@pick
+            Thread {
+                val f = SubSel.importFrom(this, u, src)
+                runOnUiThread {
+                    if (f == null) { say("الملف ده مش ترجمة صالحة (SRT / ASS / VTT)"); return@runOnUiThread }
+                    SubSel.setChoice(this, u, f.absolutePath)
+                    subApplied(u, f)
+                    sfNote("➕ اتضاف «" + f.name + "» واتحدد للفيديو ده — دوس «📄 ترجمة ملف الترجمة» من «ترجم» لو عايز تترجمه", 6000L)
+                }
+            }.also { it.isDaemon = true }.start()
+        }
+    }
+    /** شاشة اختيار ملف الترجمة: كل الملفات (الأحدث الأول) + بدون ترجمة + ترجمة بالباتشات + ➕ استيراد. fromOpen = أول ما الفيديو يفتح (الاختيار بيبدأ ترجمته) */
+    private fun subSelectSheet(anchor: View, fromOpen: Boolean = false) {
+        val u = uri ?: return
+        trMenuPop?.let { if (it.isShowing) it.dismiss(); trMenuPop = null }
+        val all = subCands(true)
+        val cur = SubSel.chosen(this, u, all)
+        val off = SubSel.choice(this, u) == SubSel.NONE
+        val col = LinearLayout(this)
+        fun close() { trMenuPop?.dismiss() }
+        col.addView(shHead(if (all.size > 1) "📄 فيه " + all.size + " ملفات ترجمة للفيديو ده" else if (all.size == 1) "📄 ملف ترجمة للفيديو ده" else "📄 مفيش ملف ترجمة للفيديو ده", if (fromOpen) "اختار واحد (الأحدث فوق)" else "بدّل بينهم أو شغّل من غير ترجمة"))
+        all.forEachIndexed { i, f ->
+            val ours = SrtWriter.isOurs(this, f)
+            val tag = (if (SubSel.isImported(this, u, f)) "➕ مستورد · " else "") + (if (ours) "🌐 مترجم بالبرنامج · " else "") + SubSel.whenOf(f)
+            col.addView(shRow((if (!off && cur?.absolutePath == f.absolutePath) "✓ " else "") + (i + 1) + " · " + f.name, tag) {
+                close()
+                SubSel.setChoice(this, u, f.absolutePath); subApplied(u, f)
+                if (fromOpen && Cfg.str("auto_sub", "1") != "0") { h.postDelayed({ try { if (!isFinishing && !isDestroyed && !engineStarted && sfBusy.isEmpty() && uri?.toString() == u.toString()) sfRun("soft", autoEng(), null, -2, true) } catch (e: Throwable) { LogStore.err("Player:subSel1", e) } }, 300L) }
+                else say("📄 اتحدد: " + f.name)
+            })
+        }
+        col.addView(shRow((if (off) "✓ " else "") + "🚫 بدون ترجمة", "الفيديو من غير ترجمة — وتقدر تترجم من «ترجم» عادي") {
+            close(); SubSel.setChoice(this, u, SubSel.NONE); subApplied(u, null); say("🚫 من غير ترجمة")
+        })
+        col.addView(shRow("⚡ ترجمة بالباتشات", "من الصوت — دقيق / سريع / أسرع") {
+            close(); SubSel.setChoice(this, u, SubSel.NONE); subApplied(u, null); sfBatchFresh = true; trAsked = true; h.post { translateMenu(anchor) }
+        })
+        col.addView(shRow("➕ إضافة ملف ترجمة من بره", "SRT / ASS / VTT") { close(); subImport() })
+        trMenuPop = showSheet(anchor, col, 340, "subSel") { pw -> if (trMenuPop === pw) trMenuPop = null }
+    }
+
     /** (v741) قايمة «ترجم»: قبل البداية = 3 أنظمة ترجمة + نظامين تفريغ · بعد البداية = تحكم (إيقاف/إلغاء) + أدوات + الإعدادات */
     private fun sfChoiceDialog(anchor: View) {
         val key = uri?.toString() ?: ""
@@ -3242,16 +3361,13 @@ class PlayerActivity : Activity(), Host {
         if (!started) {
             col.addView(shHead(if (sfBusy.isNotEmpty()) "⏳ ترجمة السوفت صب " + sfPct() + "% — " + sfBusy else "ترجمة الفيديو", "اختار النظام"))
             // (v667) السوفت صب والهارد صب بيتترجموا أوتوماتيك أول ما الفيديو يفتح — مفيش زراير ليهم هنا
+            // (v1137) لو فيه ملف ترجمة للفيديو: «ترجمة ملف الترجمة» فوق الخيارات الدقيقة (بيترجم النص الأصلي بس)
+            sfSidecar()?.let { sc -> col.addView(shRow("📄 ترجمة ملف الترجمة", sc.name) { close(); h.post { sfEngineChoice("ملف الترجمة") { e -> sfRun("soft", e) } } }) }
             col.addView(shSection("🔤 ترجمة"))
-            // (v1119) الأربع أوضاع ظاهرين على طول في القايمة — مش ورا ضغطة تانية (شكوى الريموت: كان بيظهر وضع واحد بس)
-            val dm = Cfg.int("dual_listen", 1)
-            val bal = Cfg.bool("tr_bal", false)
-            val fast = Cfg.bool("fastmode", false) && !bal
+            // (v1136) 4 محطات في سلايدر واحد (أسرع · سريع · متوازن · دقيق) بدل أربع صفوف — وصف الحالي في العنوان
             val gemNow = mk == "gem"
-            col.addView(shRow("🎯 السماع الأدق", if (gemNow && dm == 2 && !fast && !bal) "✓ الحالي" else "مفتاحين + حكم") { close(); h.post { Cfg.put("tr_bal", "0"); Cfg.put("dual_listen", "2"); Cfg.put("fastmode", "0"); geminiStart() } })
-            col.addView(shRow("⚡ ٧٥/٢٥ — سماع واحد", if (gemNow && dm == 0 && !fast && !bal) "✓ الحالي" else "أسرع وأرخص") { close(); h.post { Cfg.put("tr_bal", "0"); Cfg.put("dual_listen", "0"); Cfg.put("fastmode", "0"); geminiStart() } })
-            col.addView(shRow("⚡ سريع", if (gemNow && fast) "✓ الحالي" else "أول ترجمة في ثواني · برومبت خفيف") { close(); h.post { Cfg.put("tr_bal", "0"); Cfg.put("fastmode", "1"); geminiStart() } })
-            col.addView(shRow("⚖ متوازن", if (gemNow && bal) "✓ الحالي" else "كل مفتاح باتش: تفريغ يظهر فورًا ثم ترجمة") { close(); h.post { Cfg.put("tr_bal", "1"); geminiStart() } })
+            trSliderSection(col)
+            col.addView(shRow("☁ ترجم بجيميناي", if (gemNow) "✓ الحالي" else TrSlider.title(TrSlider.pos())) { close(); h.post { geminiStart() } })
             col.addView(shNote("لهجات + أسلوب + بصري · محتاج نت"))
             col.addView(shRow("📴 ٢ · وشبر + ترجمة أوفلاين (HY-MT1.5)", if (mk == "off") "✓ الحالي" else setVal) { close(); whisperStart() })
             col.addView(shRow("✍ تفريغ بس", if (mk == "txg" || mk == "txw") "✓ الحالي" else "من غير ترجمة") { close(); h.post { if (TrProfile.engine() == "off") askVideoLang { offlineQuick(true) } else startGeminiTranscribe() } })
@@ -3271,8 +3387,7 @@ class PlayerActivity : Activity(), Host {
             col.addView(shRow("🌙 كمّل في الخلفية") { close(); translateInBackground() })
         }
         col.addView(shSection("⚙ الإعدادات"))
-        if (started) col.addView(shRow("🎚 النوع واللهجة والشدة", "", true) { close(); h.post { trSettings(anchor) } })   // (v1099) T4: نفس ⚙ اللي جنب «ترجم»
-        col.addView(shRow("⚙ إعدادات الترجمة", setVal, true) { close(); h.post { modeSettings(anchor) } })
+        col.addView(shRow("⚙ إعدادات الترجمة", setVal, true) { close(); h.post { trSettings(anchor) } })   // (v1136) ورقة واحدة؛ «متقدم» جواها
         if (started) col.addView(shRow("🔀 غيّر النظام", "", true) {
             close()
             h.post { shConfirm("🔀 تغيير نظام الترجمة", "هوقف الترجمة الحالية (اللي اتترجم محفوظ) وتختار نظام تاني من القايمة.",
@@ -3287,6 +3402,7 @@ class PlayerActivity : Activity(), Host {
     private fun trMainClick(anchor: View) {
         if (engineStarted || sfBusy.isNotEmpty() || sfLive.isNotEmpty()) { translateMenu(anchor); return }
         val key = uri?.toString() ?: ""
+        uri?.let { vu -> if (SubSel.needsChoice(this, vu, subCands(true))) { subSelectSheet(anchor); return } }   // (v1137) أكتر من ملف ترجمة ومفيش اختيار: نسأل
         if (hasSoftSubNow() && softAskedFor != key) { sfChoiceDialog(anchor); return }
         val tx = trIsTx(); val off = TrProfile.engine() == "off"
         LogStore.add("▶ زرار ترجم ← " + (if (tx) "تفريغ" else "ترجمة") + " · " + (if (off) "وشبر أوفلاين" else "جيميناي"))   // (v1126) تشخيص: أنهي فرع اشتغل
@@ -3502,43 +3618,26 @@ class PlayerActivity : Activity(), Host {
         }
         col.addView(title, LinearLayout.LayoutParams(-1, -2))
         val sb = SeekBar(this).apply {
-            layoutDirection = View.LAYOUT_DIRECTION_LTR; max = TrSlider.MAX; progress = TrSlider.pos()
+            layoutDirection = View.LAYOUT_DIRECTION_LTR; max = TrSlider.STATIONS - 1; progress = TrSlider.station(TrSlider.pos())   // (v1134) 4 محطات
             setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
-                override fun onProgressChanged(s: SeekBar?, p: Int, u: Boolean) { if (u) { TrSlider.setPos(p); try { updateTr() } catch (_: Throwable) {}; paint(p); onChanged() } }
+                override fun onProgressChanged(s: SeekBar?, p: Int, u: Boolean) { if (u) { val ip = TrSlider.posOf(p); TrSlider.setPos(ip); try { updateTr() } catch (_: Throwable) {}; paint(ip); onChanged() } }
                 override fun onStartTrackingTouch(s: SeekBar?) {}
                 override fun onStopTrackingTouch(s: SeekBar?) { if (engineStarted) say("⚖ تغيير الوضع (سريع/متوازن/دقيق) بيبدأ من أول ترجمة جديدة — البلوكات لايف") }
             })
         }
         col.addView(sb, LinearLayout.LayoutParams(-1, -2))
         val ends = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_LTR; setPadding(ui.dp(10), 0, ui.dp(10), 0) }
-        ends.addView(ui.text("⚡ سريع", 11.5f, 0xFF9AA0A6.toInt()), LinearLayout.LayoutParams(0, -2, 1f))
-        ends.addView(ui.text("⚖", 11.5f, 0xFF9AA0A6.toInt()).apply { gravity = Gravity.CENTER }, LinearLayout.LayoutParams(0, -2, 1f))
-        ends.addView(ui.text("🎯 دقيق وأبطأ", 11.5f, 0xFF9AA0A6.toInt()).apply { gravity = Gravity.END }, LinearLayout.LayoutParams(0, -2, 1f))
+        ends.addView(ui.text("⚡ أسرع", 11.5f, 0xFF9AA0A6.toInt()), LinearLayout.LayoutParams(0, -2, 1f))
+        ends.addView(ui.text("⚡ سريع", 11.5f, 0xFF9AA0A6.toInt()).apply { gravity = Gravity.CENTER }, LinearLayout.LayoutParams(0, -2, 1f))
+        ends.addView(ui.text("⚖ متوازن", 11.5f, 0xFF9AA0A6.toInt()).apply { gravity = Gravity.CENTER }, LinearLayout.LayoutParams(0, -2, 1f))
+        ends.addView(ui.text("🎯 دقيق", 11.5f, 0xFF9AA0A6.toInt()).apply { gravity = Gravity.END }, LinearLayout.LayoutParams(0, -2, 1f))
         col.addView(ends, LinearLayout.LayoutParams(-1, -2))
         col.addView(balNote); col.addView(dualNote)
         paint(TrSlider.pos())
     }
 
-    /** (v743) اسم نظام السماع الحالي لجيميناي */
-    private fun listenName(): String = if (Cfg.bool("tr_bal", false)) "⚖ متوازن" else if (Cfg.bool("fastmode", false)) "⚡ سريع" else when (Cfg.int("dual_listen", 1)) { 0 -> "٧٥/٢٥"; 2 -> "🎯 الأدق"; else -> "🎯 ذكي" }
-    /** (v743) دوس جيميناي ← اختار: ٧٥/٢٥ (سماع واحد) أو 🎯 السماع الأدق (تسميع مزدوج بمفتاحين + حكم) — الاتنين موجودين */
-    private fun geminiAsk() {
-        if (needGeminiKey { geminiAsk() }) return   // (v1101) مفيش مفتاح: شاشة المفاتيح تفتح غصب وبعد الحفظ يكمّل
-        val n = try { Cfg.snapshot().let { c -> (c.keys + c.backup + c.refine).filter { it.length > 10 }.distinct().size } } catch (_: Throwable) { 0 }
-        val dm = Cfg.int("dual_listen", 1)
-        val bal = Cfg.bool("tr_bal", false)   // (دمج v1090)
-        val fast = Cfg.bool("fastmode", false) && !bal   // (v1068)
-        // (v749) الوضعين صفّين ظاهرين فوق بعض (من غير رسالة طويلة تزقّ الأزرار برّه الشاشة على التلفزيون)
-        shDialog(330) { col, close ->
-            col.addView(shHead("☁ جيميناي — اختار الوضع", "الحالي: " + listenName()))
-            col.addView(shRow("🎯 السماع الأدق", if (dm == 2 && !fast && !bal) "✓ الحالي" else "مفتاحين + حكم") { close(); h.post { Cfg.put("tr_bal", "0"); Cfg.put("dual_listen", "2"); Cfg.put("fastmode", "0"); geminiStart() } })
-            col.addView(shRow("⚡ ٧٥/٢٥ — سماع واحد", if (dm == 0 && !fast && !bal) "✓ الحالي" else "أسرع وأرخص") { close(); h.post { Cfg.put("tr_bal", "0"); Cfg.put("dual_listen", "0"); Cfg.put("fastmode", "0"); geminiStart() } })
-            // (v1068) ⚡ سريع تحت الاتنين: نفس مفتاح «⚡ الترجمة السريعة» (fastmode) — أول ترجمة في ثواني، برومبت خفيف، من غير تسميع مزدوج
-            col.addView(shRow("⚡ سريع", if (fast) "✓ الحالي" else "أول ترجمة في ثواني · برومبت خفيف") { close(); h.post { Cfg.put("tr_bal", "0"); Cfg.put("fastmode", "1"); geminiStart() } })
-            col.addView(shRow("⚖ متوازن", if (bal) "✓ الحالي" else "كل مفتاح باتش: تفريغ يظهر فورًا ثم ترجمة") { close(); h.post { Cfg.put("tr_bal", "1"); geminiStart() } })   // (دمج v1090) FastTr
-            if (n < 2) col.addView(shNote("عندك مفتاح واحد بس — 🎯 الأدق محتاج مفتاحين، ومن غيرهم هيشتغل كسماع واحد.", true))
-            col.addView(shRow("إلغاء") { close() })
-        }
+    private fun geminiAsk() {   // (v1136) مفيش قايمة اختيار: السلايدر (⚙ إعدادات الترجمة) هو اللي بيحدد الوضع، والزرار بيبدأ بيه على طول
+        geminiStart()
     }
 
     /** (v741) ☁ ترجمة جيميناي لوحده: الصوت بيتبعت باتشات لجيميناي بإعداداته (WAV/AAC + مفاتيحك) — من غير FreeLLM ولا وشبر */
@@ -3859,7 +3958,8 @@ class PlayerActivity : Activity(), Host {
         if (page == null) {
             // ---- الصفحة الرئيسية: صف لكل قسم بقيمته ----
             val head = when (mk) { "gem" -> "☁ جيميناي لوحده"; "off" -> "🌗 وشبر + LibreTranslate"; "free" -> "🆓 وشبر + FreeLLM"; "fgem" -> "⭐ FreeLLM · صوت ← جيميناي"; "txg" -> "☁ تفريغ جيميناي"; else -> "📴 تفريغ وشبر" }
-            col.addView(shHead("⚙ إعدادات الترجمة", head + " · بتتطبّق فورًا وانت شغّال"))
+            col.addView(shHead("🔧 متقدم", head + " · بتتطبّق فورًا وانت شغّال"))
+            col.addView(shRow("→ رجوع لإعدادات الترجمة") { setPop?.dismiss(); h.post { trSettings(anchor) } })
             val warnLang = try { whisperAdvice(Offline.lang()) != null } catch (_: Throwable) { false }
             if (caps(mk).dialect) col.addView(shRow("🌐 اللهجة والأسلوب", Cfg.str("conv_dialect", "").ifBlank { "فصحى" }, true) { setPop?.dismiss(); langPopup(anchor) })
             else col.addView(shNote(if (caps(mk).translates) "الوضع ده بيترجم فصحى حرفية بس — للهجات اختار مترجم FreeLLM" else "مفيش ترجمة في الوضع ده (تفريغ بس)"))
@@ -5273,7 +5373,7 @@ class PlayerActivity : Activity(), Host {
         val spdB = tip(ui.fsCircle(PlayerLogic.speedLabel(speed)) { cycleSpeed(); showChrome() }.apply { textSize = 11f }, "السرعة"); spdVisB = spdB
         val rtB = tip(mini("🔄") { batchDialog() }, "إعادة ترجمة")
         val bgTrB = tip(mini("🌙") { translateInBackground() }, "ترجمة بالخلفية")
-        val toolBtns = listOf<TextView>(syncB, tip(logB, "اللوج"), tip(sentB, "الجمل"), tip(mini("📝") { sfTranslationsDialog(window.decorView) }, "ترجمات الفيديو"), tip(ccB, "إظهار/إخفاء الترجمة"), tip(loopB, "تكرار الفيديو"), tip(dualB, "وضع الترجمة"), tip(charsB, "الشخصيات"), tip(voiceB, "فصل صوت الكلام عن الموسيقى"), qualB, nextListB)
+        val toolBtns = listOf<TextView>(syncB, tip(logB, "اللوج"), tip(sentB, "الجمل"), tip(mini("📝") { sfTranslationsDialog(window.decorView) }, "ترجمات الفيديو"), tip(loopB, "تكرار الفيديو"), tip(dualB, "وضع الترجمة"), tip(charsB, "الشخصيات"), tip(voiceB, "فصل صوت الكلام عن الموسيقى"), qualB, nextListB)
         toolBtns.drop(1).filter { it !== voiceB && it !== qualB && it !== nextListB }.forEach { b ->   // (v226) 🔑 اتشال من الشريط العلوي
             toolR.addView(b, LinearLayout.LayoutParams(if (b.text.startsWith("🔑")) ui.dp(42) else ui.dp(30), ui.dp(30)).apply { setMargins(ui.dp(3), 0, ui.dp(3), 0) })
         }
@@ -5522,6 +5622,7 @@ class PlayerActivity : Activity(), Host {
             if (DeviceUi.isTv(this)) { fsBtnV.visibility = View.GONE; floatBar.visibility = View.GONE; batchBtn.visibility = View.GONE; rotBtn.visibility = View.GONE }   // (v664) تلفزيون: الزراري العايمة دي ممنوعة نهائيًا مهما حصل
             subLp.bottomMargin = ((if (on) maxOf(ui.dp(128), fsBar.height + ui.dp(12)) else ui.dp(12)) + subPosExtra()).coerceAtLeast(0); sub.requestLayout()   // (v469) + رفع الاستوديو
             placeFloatFn()
+            applyPageChrome()
         }
 
         // ---- لمس الفيديو: لمسة = إظهار/إخفاء الشريط (أو تشغيل/إيقاف في الوضع الرأسي)، لمستين = ±10ث، سحب رأسي = صوت (يمين) / سطوع (شمال) ----
@@ -5675,6 +5776,7 @@ class PlayerActivity : Activity(), Host {
         ctl.play.setOnClickListener { togglePlay() }
         ctl.speed.setOnClickListener { cycleSpeed() }
         ctl.cc.setOnClickListener { toggleCc() }
+        ctl.cc.visibility = View.GONE   // (v1138) CC اتنقل لصف أزرار الترجمة
         ctl.exp.setOnClickListener { doExport() }
         ctl.rot.setOnClickListener { toggleFs() }
         ctl.prev.setOnClickListener { val t = player.currentPosition - offsetMs; val i = starts.indexOfLast { it < t - 1500 }; player.seekTo(if (i >= 0) starts[i] + offsetMs else 0L) }
@@ -5816,14 +5918,16 @@ class PlayerActivity : Activity(), Host {
         extrasCol.addView(pRow, LinearLayout.LayoutParams(-1, -2).apply { setMargins(ui.dp(16), ui.dp(8), ui.dp(16), 0) })
         extrasCol.addView(counters); extrasCol.addView(mem.root, LinearLayout.LayoutParams(-1, -2).apply { topMargin = ui.dp(6) })
         val scroll = ScrollView(this).apply { addView(extrasCol) }
-        extras = scroll
+        val extraView: View = if (ytPage) buildYtPage() else scroll
+        extras = extraView
         page.addView(videoBox, LinearLayout.LayoutParams(-1, ui.dp(220)))
-        page.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f))
+        page.addView(extraView, LinearLayout.LayoutParams(-1, 0, 1f))
         val rootFrame = FrameLayout(this).apply { layoutDirection = View.LAYOUT_DIRECTION_LTR }
         rootFrame.addView(page, FrameLayout.LayoutParams(-1, -1))
         setContentView(rootFrame)
         if (DeviceUi.isRemote(this)) { TvFocus.attach(this, th.primary); tvInitBar(rootFrame); tvSnapChrome(); tvChromeGate() }   // (v477 م4)
-        applyFull(true)   // شاشة كاملة دايمًا (أفقي ورأسي) — الأزرار في الشريط العلوي وزرار ☰ القائمة
+        // شاشة كاملة دايمًا (أفقي ورأسي) إلا في صفحة يوتيوب: الصفحة تحت الفيديو والتكبير بزرار ⛶
+        applyFull(wantFull())
         // فيديو اتفتح من فولدرات الجهاز: يشتغل لاندسكيب مباشرة زي MX Player
         // الاتجاه الأولي من شكل الفيديو (من المكتبة) — وبعدها بيتصحح لوحده أول ما الأبعاد الحقيقية تظهر (onVideoSizeChanged)
         if (intent.getBooleanExtra("landscape", false) && resources.configuration.orientation != Configuration.ORIENTATION_LANDSCAPE) requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
@@ -6146,7 +6250,7 @@ class PlayerActivity : Activity(), Host {
                     vidW = v.width; vidH = v.height; videoBox.post { applyFit(sv, videoBox) }
                     if (hlsH == 0 && qOpts.getOrNull(qCur) == null) setQualLabel(0)
                     // الفيديو يفتح على شكله الحقيقي: طولي → رأسي، عريض → أفقي (مرة واحدة، ومالهاش دعوة لو إنت بدّلت بإيدك)
-                    if (!userRot && !autoRotDone && !pipNow()) {
+                    if (!userRot && !autoRotDone && !pipNow() && !ytPage) {
                         autoRotDone = true
                         val wantLand = v.width >= v.height
                         val isLand = resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
@@ -6155,7 +6259,7 @@ class PlayerActivity : Activity(), Host {
                 }
             }
             override fun onIsPlayingChanged(p: Boolean) {
-                val t = if (p) "⏸" else "▶"; if (!buffering) { ctl.play.text = t; fsPlayB.text = t; if (::centerPlay.isInitialized) centerPlay.text = t }; centerPlay.visibility = if (pipNow() || busyShown() || (fullMode && chromeShown)) View.GONE else if (buffering) View.VISIBLE else if (p) View.GONE else View.VISIBLE
+                val t = if (p) "⏸" else "▶"; if (!buffering) { ctl.play.text = t; fsPlayB.text = t; if (::centerPlay.isInitialized) centerPlay.text = t }; centerPlay.visibility = if (pipNow() || busyShown() || (fullMode && chromeShown) || (ytPage && !fullMode)) View.GONE else if (buffering) View.VISIBLE else if (p) View.GONE else View.VISIBLE
                 // تشخيص الشاشة السودا: صوت شغّال ومفيش ولا فريم فيديو اتعرض بعد ٥ ثواني
                 if (p && !firstFrame) h.postDelayed({ if (!firstFrame && !isFinishing) log("⚠️ مفيش فريم فيديو اتعرض بعد ٥ ثواني — غالبًا كودك/بروفايل الفيديو مش مدعوم على الجهاز (مثلًا HEVC 10-bit)") }, 5000)
             }
@@ -6822,6 +6926,7 @@ class PlayerActivity : Activity(), Host {
         placeCard()
         if (f) showChrome() else { h.removeCallbacks(hideChrome); chromeShown = false; applyChromeFn() }
         if (::svRef.isInitialized) videoBoxRef.post { applyFit(svRef, videoBoxRef) }   // (v429) بعد ما الـ layout يخلص بالمقاس الجديد (كان بيتحسب على المقاس القديم لفريم)
+        applyPageChrome()
     }
     fun showChrome() { if (pipNow() || uiLocked || DeviceUi.isRemote(this)) return; chromeShown = true; applyChromeFn(); h.removeCallbacks(hideChrome); h.postDelayed(hideChrome, 3500) }
     fun togglePlay() { if (player.isPlaying) player.pause() else { if (player.playbackState == Player.STATE_ENDED) player.seekTo(0); if (player.playbackState == Player.STATE_IDLE && isCastSrc()) { castRecover = 0; try { player.exo()?.prepare() } catch (_: Throwable) {} }; player.play() } }   // (v767) واقف بعد خطأ في فيديو الموبايل: ▶ بيعيد المحاولة
@@ -6833,6 +6938,131 @@ class PlayerActivity : Activity(), Host {
     }
     private var userRot = false
     private var autoRotDone = false
+    private val ytPage: Boolean by lazy {
+        intent.getBooleanExtra("ytpage", false) && !DeviceUi.isTv(this) && !remote && intent.getStringExtra("ytid")?.length == 11
+    }
+    private var pageFullP = false
+    private var ytWatch: YtWatchPage? = null
+
+    private fun wantFull(): Boolean {
+        if (!ytPage) return true
+        if (pageFullP) return true
+        return resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
+    }
+
+    private fun enterPageFull() {
+        if (fullMode) return
+        userRot = true
+        val wide = vidW <= 0 || vidH <= 0 || vidW >= vidH
+        val isLand = resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
+        if (wide && !isLand) {
+            pageFullP = false
+            requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+        } else {
+            pageFullP = true
+            applyFull(true)
+        }
+    }
+
+    private fun exitPageFull() {
+        if (!fullMode) return
+        pageFullP = false
+        userRot = true
+        if (resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE) {
+            requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT
+        } else {
+            applyFull(false)
+        }
+    }
+
+    private fun applyPageChrome() {
+        if (!ytPage || fullMode) return
+        floatBar.visibility = View.GONE
+        batchBtn.visibility = View.GONE
+        rotBtn.visibility = View.GONE
+        miniBar.visibility = View.GONE
+        centerPlay.visibility = View.GONE
+        st.visibility = View.GONE
+        trChipV?.visibility = View.GONE
+        if (::audBtn.isInitialized) audBtn.visibility = View.GONE
+        if (::tvBtn.isInitialized) tvBtn.visibility = View.GONE
+        if (::modePill.isInitialized) modePill.visibility = View.GONE
+        fsBtnV.visibility = View.VISIBLE
+    }
+
+    private fun ytItemFromIntent(): NpItem {
+        val id = intent.getStringExtra("ytid") ?: ""
+        val th0 = intent.getStringExtra("ytthumb") ?: ""
+        val thumb = if (th0.isNotBlank()) th0 else "https://i.ytimg.com/vi/" + id + "/hqdefault.jpg"
+        return NpItem(id, intent.getStringExtra("title") ?: "", intent.getStringExtra("ytchan") ?: "", intent.getStringExtra("ytchanurl") ?: "", thumb,
+            intent.getLongExtra("ytdur", 0L), intent.getLongExtra("ytcount", 0L), intent.getStringExtra("ytage") ?: "", 0, YtNp.watchUrl(id))
+    }
+
+    private fun buildYtPage(): View {
+        val wp = YtWatchPage(this, ui, ytHost(), true)
+        wp.link = object : YtPageLink {
+            override fun posMs(): Long = try { player.currentPosition } catch (_: Throwable) { 0L }
+            override fun durMs(): Long = if (durMs > 0L) durMs else 0L
+            override fun seekToMs(ms: Long) {
+                try { player.seekTo(ms) } catch (_: Throwable) {}
+            }
+            override fun playing(): Boolean = try { player.isPlaying } catch (_: Throwable) { false }
+            override fun pause() {
+                try { player.pause() } catch (_: Throwable) {}
+            }
+        }
+        ytWatch = wp
+        val it0 = ytItemFromIntent()
+        wp.post { wp.open(it0, null) }
+        return wp
+    }
+
+    private fun ytHost(): YtWatchHost = object : YtWatchHost {
+        override fun expand(id: String, title: String, posMs: Long, translate: Boolean, pick: YtPick?) {
+            runOnUiThread {
+                if (translate) {
+                    enterPageFull()
+                    beginTranslate()
+                }
+            }
+        }
+        override fun openChannel(url: String, name: String) {
+            runOnUiThread { openYtChannelInMain(url) }
+        }
+        override fun openVideo(v: NpItem) {
+            runOnUiThread { openYtPageVideo(v) }
+        }
+        override fun audio(v: NpItem) {}
+        override fun download(anchor: View, v: NpItem) {}
+        override fun state(open: Boolean) {}
+    }
+
+    private fun openYtChannelInMain(url: String) {
+        if (url.isBlank()) return
+        startActivity(Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT).putExtra(Links.EX_URL, url))
+        closeNoBg()
+    }
+
+    private fun openYtPageVideo(v: NpItem) {
+        val ret = intent.getStringExtra("ret") ?: ""
+        startActivity(Intent(this, PlayerActivity::class.java).pipTask(this).apply {
+            putExtra("ytpend", true)
+            putExtra("ytid", v.id)
+            putExtra("title", v.title)
+            putExtra("ref", "https://www.youtube.com/")
+            putExtra("nosub", true)
+            putExtra("autotr", false)
+            putExtra("ret", ret)
+            putExtra("ytpage", true)
+            putExtra("ytchan", v.channel)
+            putExtra("ytchanurl", v.channelUrl)
+            putExtra("ytthumb", v.thumb)
+            putExtra("ytcount", v.count)
+            putExtra("ytage", v.age)
+            putExtra("ytdur", v.dur)
+        })
+        overridePendingTransition(0, 0)
+    }
     /** (v604) تدوير صورة الفيديو نفسها (0/90/180/270) — على التلفزيون بس (شاشته مابتلفّش) */
     private var rotDeg = 0
     private var rmFitSkip = false
@@ -6909,6 +7139,10 @@ class PlayerActivity : Activity(), Host {
         toggleFsLocal()
     }
     private fun toggleFsLocal() {
+        if (ytPage) {
+            if (fullMode) exitPageFull() else enterPageFull()
+            return
+        }
         smoothRotation()
         userRot = true
         requestedOrientation = if (resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE) ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT else ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
@@ -6947,7 +7181,7 @@ class PlayerActivity : Activity(), Host {
     fun doExport() { startActivityForResult(Intent(Intent.ACTION_CREATE_DOCUMENT).apply { addCategory(Intent.CATEGORY_OPENABLE); type = "application/x-subrip"; putExtra(Intent.EXTRA_TITLE, "subtitles.srt") }, 7) }
     fun doImport() { startActivityForResult(filePicker("*/*", "اختار ملف SRT", false), 9) }
     fun doOpen() { startActivityForResult(filePicker("video/*", "اختار فيديو", true), 8) }
-    override fun onConfigurationChanged(c: Configuration) { super.onConfigurationChanged(c); if (gone) return; if (!pipNow()) applyFull(true); if (remote) { rmFrameForce = true; try { h.postDelayed({ redrawLastRemoteFrame() }, 250L) } catch (_: Throwable) {} } }
+    override fun onConfigurationChanged(c: Configuration) { super.onConfigurationChanged(c); if (gone) return; if (!pipNow()) applyFull(wantFull()); if (remote) { rmFrameForce = true; try { h.postDelayed({ redrawLastRemoteFrame() }, 250L) } catch (_: Throwable) {} } }
     override fun onPictureInPictureModeChanged(inPipNow: Boolean, c: Configuration) {
         super.onPictureInPictureModeChanged(inPipNow, c)
         if (gone) return
@@ -6969,7 +7203,7 @@ class PlayerActivity : Activity(), Host {
         else {
             pipOv?.hide(); pipOv = null
             sub.suppressed = false; curIdx = -2; applyCard()
-            applyFull(true)
+            applyFull(wantFull())
             // لو الخروج من PiP كان بالـ ✕ (الأكتيفيتي مش ظاهرة) نقفل الفيديو ونخرج؛ لو كان توسيع، onResume بيلغي الفحص
             h.removeCallbacks(pipExitCheck); h.postDelayed(pipExitCheck, 500)
         }
@@ -7132,6 +7366,7 @@ class PlayerActivity : Activity(), Host {
     @Suppress("DEPRECATION")
     override fun onBackPressed() {
         if (gone) { super.onBackPressed(); return }
+        if (ytPage && fullMode && !pipNow()) { exitPageFull(); return }
         if (remote) { leaveController(); return }   // (v568) شاشة التحكم: الخروج منها ما بيوقّفش الفيديو على التلفزيون
         if (DeviceUi.isRemote(this) && miniLog != null) { closeMiniLog(); return }   // (v509) ✕ الصغيرة في لوج الجمل: Back يقفلها
         if (tvBar?.visible == true) { tvBar?.hide(); return }   // (v477 م4) تلفزيون: Back بيقفل شريط التحكم الأول

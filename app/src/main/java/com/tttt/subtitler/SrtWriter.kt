@@ -17,6 +17,13 @@ object SrtWriter {
         }
     } catch (_: Exception) { null }
 
+    /** (v1137) ملف النص الأصلي المخفي المقابل لملف ترجمة كتبه البرنامج: «.movie.orig.srt» */
+    fun origOf(srt: File): File = File(srt.parentFile, "." + srt.nameWithoutExtension + ".orig.srt")
+    /** (v1137) النص الأصلي المحفوظ لملف الترجمة ده (لو البرنامج هو اللي كتبه وفيه نسخة أصلية) وإلا null */
+    fun origFor(srt: File): File? = try { origOf(srt).takeIf { it.isFile && it.length() > 0L } } catch (_: Exception) { null }
+    /** (v1137) الملف ده كتبه البرنامج (ترجمة محفوظة) */
+    fun isOurs(ctx: Context, f: File): Boolean = try { File(ctx.filesDir, "srt_written.txt").readLines().contains(f.path) } catch (_: Exception) { false }
+
     /** بيرجّع المسار اللي اتكتب فيه أو null */
     fun save(ctx: Context, uri: String?, subs: List<Sub>, offsetMs: Long): String? {
         if (uri.isNullOrEmpty() || subs.isEmpty()) return null
@@ -35,6 +42,16 @@ object SrtWriter {
                 if (out.exists()) out.delete()
                 if (!tmp.renameTo(out)) { tmp.delete(); return null }
                 if (out.path !in written) reg.appendText(out.path + "\n")
+                // (v1137) النص الأصلي في ملف مخفي جنب الترجمة (.اسم.orig.srt): ملف الترجمة بيعرض المترجم بس، و«ترجمة ملف الترجمة» بتقرا الأصلي بدل ما تترجم فوق العربي
+                try {
+                    val orig = origOf(out)
+                    if (subs.any { !it.isSound && it.original.isNotBlank() && it.original.trim() != it.translated.trim() }) {
+                        val ot = File(dir, orig.name + ".tmp")
+                        ot.writeText(PlayerLogic.toSrtOriginal(subs, offsetMs), Charsets.UTF_8)
+                        if (orig.exists()) orig.delete()
+                        if (!ot.renameTo(orig)) ot.delete()
+                    }
+                } catch (_: Exception) { }
                 android.media.MediaScannerConnection.scanFile(ctx, arrayOf(out.path), arrayOf("application/x-subrip"), null)
                 return out.path
             } catch (_: Exception) { return null }

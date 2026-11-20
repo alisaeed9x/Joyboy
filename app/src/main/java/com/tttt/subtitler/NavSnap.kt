@@ -67,6 +67,8 @@ object NavSnap : Application.ActivityLifecycleCallbacks {
             val d = decor as? ViewGroup ?: return 0
             val bar = d.findViewWithTag<View>("tvfab_nav") ?: return 0
             if (bar.visibility != View.VISIBLE || bar.height <= 0 || bar.width < decor.width * 0.8f) return 0
+            // (v1134) الشريط الزجاجي العايم (جوه GlassView): اللقطة لازم تغطّي الشاشة كلها لحد تحت الشريط — لو اتقصّت عند الشريط، المنطقة اللي وراه بتكشف الشاشة الجديدة (أبيض لحد ما ترسم) وبيبان شريط أبيض
+            if (bar.parent is com.tttt.subtitler.mtui.GlassView) return 0
             val loc = IntArray(2); bar.getLocationInWindow(loc)
             val dl = IntArray(2); decor.getLocationInWindow(dl)
             val top = loc[1] - dl[1]

@@ -95,8 +95,10 @@ class DualProgress(ctx: Context, val th: Theme) : View(ctx) {
         val rad = hh / 2f
         if (trackColor != null) { p.shader = null; p.color = trackColor; c.drawRoundRect(RectF(0f, y0, w, y0 + hh), rad, rad, p) }
         if (durSec <= 0.0 || segs.isEmpty()) return
-        p.shader = null; p.color = color
+        p.shader = null
+        val dimC = (color and 0x00FFFFFF) or 0x66000000   // (v1139) باتش لسه ما اتبعتش (بيتجهّز/في الطابور): نفس اللون بشفافية
         for (s in segs) {
+            p.color = if (s.size > 2 && s[2] < 0.5) dimC else color
             val a = (w * (s[0] / durSec)).toFloat().coerceIn(0f, w)
             val b = (w * (s[1] / durSec)).toFloat().coerceIn(0f, w)
             if (b <= a && a >= w) continue

@@ -84,11 +84,16 @@ object TrSlider {
     fun speedBlocks(): List<Block> = blocks.filter { it.speed && it.wired }
     fun accuracyBlocks(): List<Block> = blocks.filter { !it.speed && it.wired }
 
-    fun title(p: Int): String = when (clamp(p)) {
-        0, 1 -> "⚡ أسرع"
-        2, 3 -> "⚡ سريع"
-        4, 5, 6 -> "⚖ متوازن (المحرك البسيط)"
-        7, 8 -> "🎯 دقيق"
-        else -> "🎯 أدق (وأبطأ)"
+    /** (v1134) 4 محطات حقيقية بدل 11 موضع: أسرع (0-1) · سريع (2-3) · متوازن (4-6) · دقيق (7-10). الموضع الداخلي (0..10) لسه هو اللي بيتحفظ وبيتقرا في Engine */
+    const val STATIONS = 4
+    private val REP = intArrayOf(1, 2, 5, 8)
+    fun station(p: Int): Int = when (clamp(p)) { 0, 1 -> 0; 2, 3 -> 1; 4, 5, 6 -> 2; else -> 3 }
+    fun posOf(s: Int): Int = REP[s.coerceIn(0, STATIONS - 1)]
+
+    fun title(p: Int): String = when (station(p)) {
+        0 -> "⚡ أسرع"
+        1 -> "⚡ سريع"
+        2 -> "⚖ متوازن (المحرك البسيط)"
+        else -> "🎯 دقيق"
     }
 }

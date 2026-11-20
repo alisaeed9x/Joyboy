@@ -65,6 +65,23 @@ object YtOpen {
     fun autoPlay(): Boolean = Cfg.str("yt_mini_auto", "1") != "0"
 }
 
+/** (v1133) صفحة المشاهدة جوه PlayerActivity: المشغّل الحقيقي هو اللي فوق، والصفحة بتسأله عن الموضع والمدة من هنا */
+interface YtPageLink {
+    fun posMs(): Long
+    fun durMs(): Long
+    fun seekToMs(ms: Long)
+    fun playing(): Boolean
+    fun pause()
+}
+
+object YtPlayerPage {
+    fun on(ctx: android.content.Context): Boolean {
+        if (DeviceUi.isTv(ctx)) return false
+        if (PlayTarget.enabled()) return false
+        return Cfg.str("yt_page_in_player", "1") != "0"
+    }
+}
+
 interface YtWatchHost {
     fun expand(id: String, title: String, posMs: Long, translate: Boolean, pick: YtPick?)
     fun openChannel(url: String, name: String)
@@ -846,7 +863,19 @@ object YtQueue {
 }
 
 /** الصفحة نفسها: مشغّل يوتيوب فوق + (عنوان · قناة · اشتراك · وصف · مقترحات/تعليقات) بتتحرك بالسحب تحته */
-class YtWatchPage(private val act: Activity, private val ui: Ui, private val host: YtWatchHost) : FrameLayout(act) {
+class YtWatchPage(private val act: Activity, private val ui: Ui, private val host: YtWatchHost, private val embedded: Boolean = false) : FrameLayout(act) {
+    var link: YtPageLink? = null
+
+    private fun pPos(): Long = if (embedded) (link?.posMs() ?: 0L) else kit.position()
+    private fun pDur(): Long = if (embedded) (link?.durMs() ?: 0L) else kit.durationMs()
+    private fun pSeek(ms: Long) {
+        if (embedded) link?.seekToMs(ms) else kit.seekToMs(ms)
+    }
+    private fun pPlaying(): Boolean = if (embedded) (link?.playing() ?: false) else kit.isPlayingNow()
+    private fun pPause() {
+        if (embedded) link?.pause() else kit.pause()
+    }
+
     private val sw = act.resources.displayMetrics.widthPixels
     private val medium: Typeface = YtSkin.medium
     private val kit = YtPlayerKit(act, ui)
@@ -910,7 +939,7 @@ class YtWatchPage(private val act: Activity, private val ui: Ui, private val hos
             if (!isOpen) return
             val v = item ?: return
             if (tv) tvPaint()
-            val pos = kit.position(); val dur = kit.durationMs()
+            val pos = pPos(); val dur = pDur()
             if (dur > 0 && pos > 0) {
                 val now = System.currentTimeMillis()
                 if (now - progSaveAt > 4000L) { progSaveAt = now; try { YtProg.save(v.id, pos, dur, titleNow(), v.thumb) } catch (_: Throwable) {} }
@@ -920,7 +949,7 @@ class YtWatchPage(private val act: Activity, private val ui: Ui, private val hos
                 val tgt = YtSponsor.skipTarget(v.id, pos)
                 if (tgt > 0) {
                     lastSkipFrom = pos; skipCoolUntil = System.currentTimeMillis() + 6000L
-                    kit.seekToMs(tgt)
+                    pSeek(tgt)
                     val cat = YtSponsor.cached(v.id)?.firstOrNull { it.endMs == tgt }?.cat ?: "sponsor"
                     sbTxt?.text = "⏭ اتخطى مقطع " + YtSponsor.label(cat)
                     sbBar?.visibility = View.VISIBLE
@@ -957,7 +986,7 @@ class YtWatchPage(private val act: Activity, private val ui: Ui, private val hos
     private fun canStartDrag(): Boolean = dragStartedOnVideo || !scroll.canScrollVertically(-1)   // فوق الفيديو دايمًا، وتحته لو المحتوى واقف في أوله
 
     override fun onInterceptTouchEvent(e: MotionEvent): Boolean {
-        if (!isOpen) return false
+        if (!isOpen || embedded) return false
         when (e.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
                 dragDownY = e.rawY; dragDownX = e.rawX; dragging = false
@@ -1007,7 +1036,7 @@ class YtWatchPage(private val act: Activity, private val ui: Ui, private val hos
     init {
         visibility = View.GONE; isClickable = true; setBackgroundColor(YtSkin.bgSolid); layoutDirection = View.LAYOUT_DIRECTION_RTL
         val col = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL }
-        col.addView(kit, LinearLayout.LayoutParams(-1, sw * 9 / 16))
+        if (!embedded) col.addView(kit, LinearLayout.LayoutParams(-1, sw * 9 / 16))
         col.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f))
         addView(col, FrameLayout.LayoutParams(-1, -1))
         body.orientation = LinearLayout.VERTICAL; body.layoutDirection = View.LAYOUT_DIRECTION_RTL
@@ -1016,13 +1045,13 @@ class YtWatchPage(private val act: Activity, private val ui: Ui, private val hos
 
         likeChip = chip("👍") { toggleLike() }
         saveChip = chip("🔖 احفظ") { toggleSave() }
-        for (c in listOf(likeChip, saveChip,
-            chip("🌐 ترجمة وفرجة") { val v = item; if (v != null) { val ho = kit.handoff(); host.expand(v.id, titleNow(), ho?.second ?: kit.position(), true, ho?.first) } },
-            chip("🎧 صوت") { val v = item; if (v != null) { try { kit.audioHint()?.let { YtAudioHint.put(v.id, it.first, it.second, it.third) } } catch (_: Throwable) {}; kit.pause(); host.audio(saveItem()) } },
+        for (c in listOf<TextView>(likeChip, saveChip,
+            chip("🌐 ترجمة وفرجة") { val v = item; if (v != null) { val ho = kit.handoff(); host.expand(v.id, titleNow(), ho?.second ?: pPos(), true, ho?.first) } },
+            chip("🎧 صوت") { val v = item; if (v != null) { try { kit.audioHint()?.let { YtAudioHint.put(v.id, it.first, it.second, it.third) } } catch (_: Throwable) {}; pPause(); host.audio(saveItem()) } },
             chip("⬇ تحميل") { a -> val v = item; if (v != null) host.download(a, saveItem()) },
             chip("📋 نسخ") { val v = item; if (v != null) copy(YtNp.watchUrl(v.id)) },
-            chip("↗ مشاركة") { val v = item; if (v != null) { val sec = kit.position() / 1000L; share(YtNp.watchUrl(v.id) + if (sec > 5) "&t=" + sec + "s" else "") } },
-            chip("➕ إضافة للليستة") { val v = item; if (v != null) PlayQueueUi.add(act, YtNp.watchUrl(v.id), titleNow()) })) {   // (v469) C11: مشاركة من الموضع الحالي · (v779) إضافة للليستة
+            chip("↗ مشاركة") { val v = item; if (v != null) { val sec = pPos() / 1000L; share(YtNp.watchUrl(v.id) + if (sec > 5) "&t=" + sec + "s" else "") } },
+            chip("➕ إضافة للليستة") { val v = item; if (v != null) PlayQueueUi.add(act, YtNp.watchUrl(v.id), titleNow()) }).filter { x -> !(embedded && (x.text.toString().startsWith("🎧") || x.text.toString().startsWith("⬇"))) }) {   // (v469) C11: مشاركة من الموضع الحالي · (v779) إضافة للليستة
             chipsRow.addView(c, LinearLayout.LayoutParams(-2, -2).apply { setMargins(ui.dp(4), 0, ui.dp(4), 0) })
         }
 
@@ -1074,7 +1103,7 @@ class YtWatchPage(private val act: Activity, private val ui: Ui, private val hos
         val st = TextView(act).apply { textSize = 12.5f; setTextColor(YtSkin.text); typeface = medium }
         val un = TextView(act).apply { text = "↩ تراجع"; textSize = 12.5f; typeface = medium; gravity = Gravity.CENTER; setTextColor(YtSkin.chipOnText); setPadding(ui.dp(12), ui.dp(6), ui.dp(12), ui.dp(6))
             background = GradientDrawable().apply { setColor(YtSkin.chipOnBg); cornerRadius = ui.dp(14).toFloat() }
-            setOnClickListener { if (lastSkipFrom >= 0) { kit.seekToMs(lastSkipFrom); skipCoolUntil = System.currentTimeMillis() + 12000L }; sbBar?.visibility = View.GONE } }
+            setOnClickListener { if (lastSkipFrom >= 0) { pSeek(lastSkipFrom); skipCoolUntil = System.currentTimeMillis() + 12000L }; sbBar?.visibility = View.GONE } }
         sb.addView(st, LinearLayout.LayoutParams(0, -2, 1f)); sb.addView(un, LinearLayout.LayoutParams(-2, -2))
         sbTxt = st; sbBar = sb
         (kit.parent as? LinearLayout)?.addView(sb, 1, LinearLayout.LayoutParams(-1, -2))
@@ -1347,15 +1376,22 @@ class YtWatchPage(private val act: Activity, private val ui: Ui, private val hos
         liked = likedSet().contains(v.id); likeCount = -1L; dislikeN = -1L; metaBase = ""; lastSkipFrom = -1L; sbBar?.visibility = View.GONE; cEdit.setText(""); composer.visibility = View.GONE; tabCom.text = "💬 تعليقات"
         if (YtSponsor.on()) YtSponsor.fetch(v.id) {}   // (v469) C1
         hh2.removeCallbacks(pageTick); hh2.postDelayed(pageTick, 600L)
-        kit.reset(); kit.setThumb(v.thumb); kit.loading(true)
+        if (!embedded) { kit.reset(); kit.setThumb(v.thumb); kit.loading(true) }
         bindItem(v)
         scroll.scrollTo(0, 0)
         if (tv) post { try { kit.requestFocus() } catch (_: Throwable) {} }   // (v479 م5) التركيز على الفيديو أول ما الصفحة تفتح (ومن مقترح كمان)
-        if (!wasOpen) { from = src; host.state(true); animateIn(src) }
+        if (!wasOpen) {
+            from = src
+            host.state(true)
+            if (embedded) {
+                visibility = View.VISIBLE
+                alpha = 1f
+            } else animateIn(src)
+        }
         else { body.alpha = 0f; body.animate().alpha(1f).setDuration(220L).start() }
         // (v471) الفيديو والتفاصيل بقوا على خيطين منفصلين: قبل كده المشغّل كان بيستنى NewPipe يخلّص كل التفاصيل (3-8 ثواني) قبل ما يبدأ يجيب الرابط،
         // وكمان كان بيمشي في الطريق البطيء بس. دلوقتي الرابط بيتجاب من نفس السباق السريع بتاع المشغّل الكامل (YtExtract + NewPipe + كاش) والتفاصيل تظهر لما تجهز.
-        Thread {
+        if (!embedded) Thread {
             val cap = Cfg.int("yt_maxh", 0)   // (v406) نفس جودة المشغّل الكامل (مشغّل الصفحة هو نفس المشغّل)
             var pk: YtPick? = null
             try { val g = YtFast.video(v.id, cap); if (g != null) pk = YtPick(g.url, g.audio, g.ua, g.title, 0, g.qlist) } catch (_: Throwable) {}
@@ -1389,10 +1425,10 @@ class YtWatchPage(private val act: Activity, private val ui: Ui, private val hos
         if (visibility != View.VISIBLE || closing) return
         closing = true; gen++
         hh2.removeCallbacks(pageTick); hh2.removeCallbacks(sbHide)   // (v469) C6: حفظ أخير قبل القفل
-        try { val v = item; val d = kit.durationMs(); if (v != null && d > 0) YtProg.save(v.id, kit.position(), d, titleNow(), v.thumb) } catch (_: Throwable) {}
+        try { val v = item; val d = pDur(); if (v != null && d > 0) YtProg.save(v.id, pPos(), d, titleNow(), v.thumb) } catch (_: Throwable) {}
         // (v417) النزول من صفحة المشاهدة: الفيديو بيكمّل في شريط صغير تحت (YtDock) بدل ما يقف ويختفي
         val kept = if (dock && YtDockCfg.on()) kit.detachForDock() else null
-        if (kept == null) kit.pause()
+        if (kept == null) pPause()
         host.state(false)
         val dockItem = item
         if (kept != null) { if (dockItem != null) host.dock(dockItem, kept) else { try { kept.p.release() } catch (_: Throwable) {} } }
@@ -1640,13 +1676,13 @@ class YtWatchPage(private val act: Activity, private val ui: Ui, private val hos
         }.apply { isDaemon = true }.start()
     }
 
-    fun pause() { kit.pause() }
+    fun pause() { pPause() }
     fun release() { kit.release() }
 
     /** (v606) خرجت من التطبيق (Home) والفيديو شغّال في صفحة المشاهدة (بورتريه، من غير ما تدخل شاشة كاملة): سلّمه للمشغّل الكامل ومعاه علامة «ادخل PiP» */
     fun pipHandoff(): Boolean {
         val v = item ?: return false
-        if (!isOpen || closing || !kit.isPlayingNow()) return false
+        if (!isOpen || closing || !pPlaying()) return false
         val ho = kit.handoff() ?: return false
         YtHandoff.pipNext = true
         host.expand(v.id, titleNow(), ho.second, false, ho.first)

@@ -203,8 +203,9 @@ class TvPlayerBar(private val act: Activity, private val ui: Ui, private val th:
             val rad = hh / 2f
             if (trackColor != null) { p.color = trackColor; c.drawRoundRect(RectF(0f, y, w, y + hh), rad, rad, p) }
             if (durSec <= 0.0) return
-            p.color = color
+            val dimC = (color and 0x00FFFFFF) or 0x66000000   // (v1139) لسه ما اتبعتش: شفاف
             for (s in segs) {
+                p.color = if (s.size > 2 && s[2] < 0.5) dimC else color
                 val a = (w * (s[0] / durSec)).toFloat().coerceIn(0f, w)
                 val b = (w * (s[1] / durSec)).toFloat().coerceIn(0f, w)
                 c.drawRoundRect(RectF(a, y, maxOf(b, a + 2f).coerceAtMost(w), y + hh), rad, rad, p)

@@ -51,7 +51,8 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
               private val onAudio: (NpItem) -> Unit = {},                      // (v337) 🎧 صوت بس في مشغّل الموسيقى
               private val onDownload: (NpItem, Boolean) -> Unit = { _, _ -> },
               private val onPubHistory: () -> Unit = {},
-              private val onPlayAt: ((String, String, Boolean, Long, YtPick?) -> Unit)? = null) {   // (v402) تشغيل من ثانية معيّنة (زرار التكبير في المشغّل المصغّر)   // (v349) السجل العام   // (v337) ⬇ تحميل (true = صوت بس)
+              private val onPlayAt: ((String, String, Boolean, Long, YtPick?) -> Unit)? = null,
+              private val onOpenPage: ((NpItem, Long) -> Unit)? = null) {   // (v402) تشغيل من ثانية معيّنة (زرار التكبير في المشغّل المصغّر)   // (v349) السجل العام   // (v337) ⬇ تحميل (true = صوت بس)
 
     private class St(val title: String, val tab: Int, val items: ArrayList<NpItem>, var next: Page?, val more: ((Page) -> YtRes)?,
                       val chUrl: String?, val chName: String?, val q: String?, val filter: String,
@@ -855,6 +856,13 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
         logWatch(it, false)
         YtStore.markApp(it.id)
         watch.seekOnOpenMs = try { YtProg.resumeMs(it.id, recs()["yt:" + it.id] as? Recent) } catch (_: Throwable) { 0L }   // (v469) C6
+        if (YtPlayerPage.on(act)) {
+            val fp = onOpenPage
+            if (fp != null) {
+                fp(it, watch.seekOnOpenMs)
+                return
+            }
+        }
         var r: android.graphics.Rect? = null
         if (view != null) {
             val loc = IntArray(2); view.getLocationOnScreen(loc)

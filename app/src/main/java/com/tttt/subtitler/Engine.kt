@@ -122,7 +122,7 @@ class Engine(
         }
     }
     private val fastLight = ConcurrentHashMap.newKeySet<Int>()
-    private fun lightOn(chunk: Int, hole: Boolean, tx: Boolean): Boolean = fastLatched && !hole && !tx && chunk >= 0 && (chunk == rampChunk || chunk in fastLight)
+    private fun lightOn(chunk: Int, hole: Boolean, tx: Boolean): Boolean = fastLatched && !hole && !tx && chunk >= 0 && (chunk == rampChunk || chunk in fastLight || chunk in lightRetry)
     private val pool: Pool get() = if (activeMode >= KeyMode.SPLIT_A && !fastLatched) splitPools().first else basePool
     private val trPool: Pool get() = splitPools().second
     @Volatile private var running = true
@@ -156,6 +156,10 @@ class Engine(
     private val prepared = ConcurrentHashMap.newKeySet<Int>()
     private val trimLock = Any()
     private val inflight = ConcurrentHashMap.newKeySet<Int>()
+    /** (v1139) باتشات الطلب بتاعها اتبعت لجيميناي فعلًا (inflight لوحده معناه «محجوز/بيتجهّز/في الطابور») — بيفرّق الأزرق الغامق من الفاتح في شريط التقدم */
+    private val sentReq = ConcurrentHashMap.newKeySet<Int>()
+    /** (v1139) السريع: باتش رجع فاضي ← إعادته ببرومبت خفيف (زي أول باتشين اللي بيطلعوا 100%) على مفتاح تاني */
+    private val lightRetry = ConcurrentHashMap.newKeySet<Int>()
     // ===== توزيع الباتشات على المفاتيح + نسخة احتياطية للباتش المتأخر (كل باتش يتحسب مرة واحدة بس) =====
     private val startedAt = ConcurrentHashMap<Int, Long>()          // وقت بداية الباتش الشغال
     private val preps = ConcurrentHashMap<Int, Prep>()              // صوت الباتش الشغال (عشان النسخة الاحتياطية ماتفكوش تاني)
@@ -535,7 +539,7 @@ class Engine(
         val d = currentDur(); if (d <= 0) return emptyList()
         val ids = java.util.TreeSet<Int>(); ids.addAll(inflight); ids.addAll(tHold.keys)
         val out = ArrayList<DoubleArray>()
-        for (k in ids) { if (cStart(k) >= d || isDone(k, d)) continue; out.add(doubleArrayOf(cStart(k), cEnd(k, d))) }
+        for (k in ids) { if (cStart(k) >= d || isDone(k, d)) continue; out.add(doubleArrayOf(cStart(k), cEnd(k, d), if (k in sentReq || tHold.containsKey(k)) 1.0 else 0.0)) }   // (v1139) العنصر التالت: 1 = اتبعت فعلًا · 0 = محجوز/بيتجهّز/في الطابور
         return out
     }
 
@@ -851,8 +855,8 @@ class Engine(
     fun redoAll(keep: Boolean = true) { redo(0, -1, keep); onlyChunks = null; forcedSticky = true; forcedCursor = 0; paused = false }
     /** كمّل الترجمة من المكان ده (من غير مسح حاجة): بيقفز بالمؤشر لباتش الوقت ده ويلغي الإيقاف */
     /** (v224) ابدأ من أول الفيديو: أول باتش لسه ناقص من الأول، بغض النظر عن مكان الفيديو دلوقتي (ثابت لحد ما يوصل لمكان التشغيل) */
-    fun translateFromStart() { onlyChunks = null; forcedSticky = true; forcedCursor = 0; paused = false; userPaused = false; rampChunk = -1; fastLight.clear() }
-    fun translateFrom(sec: Double) { onlyChunks = null; forcedSticky = false; forcedCursor = chunkOfSec(sec.coerceAtLeast(0.0)); paused = false; userPaused = false; rampChunk = -1; fastLight.clear() }
+    fun translateFromStart() { onlyChunks = null; forcedSticky = true; forcedCursor = 0; paused = false; userPaused = false; rampChunk = -1; fastLight.clear(); lightRetry.clear() }
+    fun translateFrom(sec: Double) { onlyChunks = null; forcedSticky = false; forcedCursor = chunkOfSec(sec.coerceAtLeast(0.0)); paused = false; userPaused = false; rampChunk = -1; fastLight.clear(); lightRetry.clear() }
     fun stop() { isClosed = true; running = false; bg.shutdownNow(); gapEx.shutdownNow(); exec?.shutdownNow(); try { trEx.shutdownNow() } catch (_: Exception) {}; try { hedgeEx.shutdownNow() } catch (_: Exception) {}; try { holeEx.shutdownNow() } catch (_: Exception) {}; try { persistEx.shutdownNow() } catch (_: Exception) {} }
     /** (v122) إعدادات اتغيّرت من شاشة الإعدادات (لهجة / أسلوب / موديل / شخصيات…): تتطبّق على الباتشات والتحويلات الجاية من غير إعادة تشغيل المحرك */
     fun applyConf(c: Conf) {
@@ -927,7 +931,7 @@ class Engine(
 
     fun run() {
         if (conf.keys.isEmpty() && conf.backup.isEmpty()) { host.status("⚠ ادخل مفتاح Gemini في الإعدادات"); host.log("⚠ مفيش مفاتيح Gemini"); host.notice("⚠ مفيش مفتاح جيميناي — ضيف واحد من الإعدادات ← المفاتيح"); return }
-        fastLatched = try { Cfg.bool("fastmode", false) } catch (_: Throwable) { false }; rampChunk = -1; fastLight.clear()   // (v1068) الوضع السريع بيتأخد من الإعداد وقت بداية الترجمة (مش وقت فتح المشغّل) — عشان صف «⚡ سريع» في قايمة جيميناي يشتغل على طول
+        fastLatched = try { Cfg.bool("fastmode", false) } catch (_: Throwable) { false }; rampChunk = -1; fastLight.clear(); lightRetry.clear()   // (v1068) الوضع السريع بيتأخد من الإعداد وقت بداية الترجمة (مش وقت فتح المشغّل) — عشان صف «⚡ سريع» في قايمة جيميناي يشتغل على طول
         Api.onSlow = { m -> try { host.status(m) } catch (_: Throwable) {} }   // (v468) مؤشر «باتش بيحاول» في شريط الحالة
         NetWait.reset()
         val netSink = object : NetWait.Sink {   // (v1101) إشعار واحد لما النت يقع وواحد لما يرجع
@@ -959,7 +963,7 @@ class Engine(
                 if (fastLatched && !headless) {
                     val jumped = lastLoopPos >= 0 && Math.abs(posNow - lastLoopPos) > 8.0
                     if (jumped && pcNow != rampChunk && rampChunk !in inflight && pcNow !in inflight && d > 0 && !isDone(pcNow, d)) {
-                        rampChunk = -1; rampStep = 0; rampNext = -1.0; fastLight.clear()
+                        rampChunk = -1; rampStep = 0; rampNext = -1.0; fastLight.clear(); lightRetry.clear()
                         host.log("⚡ سحبت لمكان تاني: الباتش ${pcNow + 1} هيبدأ بخطوات سريعة بعد ما الشغّال دلوقتي يخلص")
                     }
                 }
@@ -1182,9 +1186,9 @@ class Engine(
                         if (pp == null) failed.remove(i)
                         else { startedAt[i] = System.currentTimeMillis(); if (guard(i) { sendOrBackup(i, pp, fk) }) failed.remove(i) }
                     }
-                } finally { if (i !in bkQueued) inflight.remove(i); preps.remove(i); startedAt.remove(i); keyOf.remove(i); pool.unreserve(i); host.changed() }   // (v216) باتش في طابور الاحتياطي يفضل «شغّال» لحد ما يخلص
+                } finally { if (i !in bkQueued) inflight.remove(i); sentReq.remove(i); preps.remove(i); startedAt.remove(i); keyOf.remove(i); pool.unreserve(i); host.changed() }   // (v216) باتش في طابور الاحتياطي يفضل «شغّال» لحد ما يخلص
             }
-        } catch (_: RejectedExecutionException) { inflight.remove(i); preps.remove(i); startedAt.remove(i); pool.unreserve(i) }
+        } catch (_: RejectedExecutionException) { inflight.remove(i); sentReq.remove(i); preps.remove(i); startedAt.remove(i); pool.unreserve(i) }
     }
 
     /**
@@ -1436,7 +1440,7 @@ class Engine(
                 var resScale = 1.0   // (v1067) معامل إرجاع الأوقات للأصل (الصوت المتسرّع)
                 var gemCalled = false   // (v413) هل جيميناي اتنده فعلًا للباتش ده؟ (false = Whisper لوحده)
                 val r = run {
-                    pool.begin(key, i)
+                    sentReq.add(i); pool.begin(key, i)
                     try {
                         val gem = {
                             gemCalled = true
@@ -1505,9 +1509,10 @@ class Engine(
                     rampStep++; rampNext = rawEnd
                     persist(); return
                 }
-                if (!offRan && fresh.isEmpty() && !w.silent && !hedge && !backupFirst && queueBackup(i, p, "رجع من غير جمل")) return   // (v216) صفر جمل: على المفتاح الاحتياطي بالترتيب في كل الأوضاع
+                if (!offRan && fresh.isEmpty() && !w.silent && !hedge && !backupFirst && (!fastLatched || empties >= 1) && queueBackup(i, p, "رجع من غير جمل")) return   // (v216) صفر جمل: على المفتاح الاحتياطي بالترتيب في كل الأوضاع
                 if (!offRan && fresh.isEmpty() && empties < (if (w.silent) 1 else 3)) {
                     empties++
+                    if (fastLatched && !tx && !w.silent && TrSlider.on("light") && lightRetry.add(i)) host.log("⚡ باتش ${i + 1}: رجع فاضي — إعادة ببرومبت خفيف على مفتاح تاني (قبل الطابور الاحتياطي)")   // (v1139)
                     pool.markBad(key)
                     if (!w.silent) host.log("⚠ المقطع ${i + 1} رجع من غير جمل رغم وجود صوت — إعادة محاولة ($empties/3)")
                     switchKey(key)?.let { key = it }
@@ -1644,7 +1649,7 @@ class Engine(
                         failed[i] = MAX_FAILS
                         host.log("⚠ باتش ${i + 1} فشل برضه على الاحتياطي: " + (x.message ?: x.javaClass.simpleName).take(120))
                     } finally {
-                        bkQueued.remove(i); inflight.remove(i); host.changed(); persist()
+                        bkQueued.remove(i); inflight.remove(i); sentReq.remove(i); host.changed(); persist()
                     }
                 }
             } finally {

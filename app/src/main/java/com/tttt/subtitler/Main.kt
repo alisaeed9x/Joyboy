@@ -970,7 +970,7 @@ class MainActivity : Activity() {
                     kind == "v" -> openLink(ref)
                     kind == "a" && src == "youtube" -> playYtAudio(ref, title, "", "")
                     else -> {}
-                } } }, onPlayAt = { id, name, tr, ms, pk -> playYt(id, name, tr, tr, ms, pk) })
+                } } }, onPlayAt = { id, name, tr, ms, pk -> playYt(id, name, tr, tr, ms, pk) }, onOpenPage = { v, ms -> ytStartPage(v, ms) })
             ytUi = yt; yt.root.visibility = View.INVISIBLE; yt.onTab = { syncNav() }
             pane.addView(yt.root, 1, FrameLayout.LayoutParams(-1, -1))
             pane.addView(yt.busyView, FrameLayout.LayoutParams(-1, -1))
@@ -1627,6 +1627,29 @@ class MainActivity : Activity() {
             putExtra("ref", "https://www.youtube.com/")
             putExtra("nosub", !translate); putExtra("autotr", auto); putExtra("ret", ret); if (startMs > 0L) putExtra("startms", startMs)
         })
+    }
+    /** (v1133) صفحة المشاهدة جوه المشغّل: المشغّل الحقيقي فوق وصفحة الفيديو تحته؛ التكبير بزرار ⛶ في نفس الأكتيفيتي */
+    private fun ytStartPage(v: NpItem, startMs: Long) {
+        ytLoadLaunched = true
+        val ret = if (curTab == 4) "yt" else ""
+        startActivity(Intent(this, PlayerActivity::class.java).pipTask(this).apply {
+            putExtra("ytpend", true)
+            putExtra("ytid", v.id)
+            putExtra("title", v.title)
+            putExtra("ref", "https://www.youtube.com/")
+            putExtra("nosub", true)
+            putExtra("autotr", false)
+            putExtra("ret", ret)
+            if (startMs > 0L) putExtra("startms", startMs)
+            putExtra("ytpage", true)
+            putExtra("ytchan", v.channel)
+            putExtra("ytchanurl", v.channelUrl)
+            putExtra("ytthumb", v.thumb)
+            putExtra("ytcount", v.count)
+            putExtra("ytage", v.age)
+            putExtra("ytdur", v.dur)
+        })
+        overridePendingTransition(0, 0)
     }
     private fun ytStartLegacy(id: String, title: String, translate: Boolean, auto: Boolean, startMs: Long = 0L) {
         val tok = ++ytLoadTok; ytLoadLaunched = false

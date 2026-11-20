@@ -183,13 +183,18 @@ object CastServer {
  * (v676) ملف ترجمة جنب الفيديو (سوفت سب) — مشترك بين المشغّل (فيديو محلي) و CastServer (الموبايل بيجهّز الترجمة ويبعتها للتلفزيون مع الفيديو).
  */
 object SubSidecar {
-    fun find(ctx: Context, u: Uri): java.io.File? = try {
+    @Volatile private var lastScanMsg = ""   // (v1139) نفس سطر الفحص ما يتكتبش تاني (كان بيتكرر ~50 مرة في الجلسة)
+    /** (v1137) الملف المختار للفيديو (اختيار المستخدم المحفوظ، وإلا الأحدث). null = بدون ترجمة أو مفيش ملف */
+    fun find(ctx: Context, u: Uri): java.io.File? = try { SubSel.chosen(ctx, u, findAll(ctx, u)) } catch (e: Throwable) { LogStore.err("Player:sidecar", e); null }
+
+    /** (v1137) كل ملفات الترجمة المتاحة للفيديو (جنب الفيديو + المستوردة بزرار ➕) — الأحدث الأول */
+    fun findAll(ctx: Context, u: Uri): List<java.io.File> = try {
         var path: String? = null
         if (u.scheme == "file") path = u.path
         else if (u.scheme == "content") ctx.contentResolver.query(u, arrayOf(android.provider.MediaStore.MediaColumns.DATA), null, null, null)?.use { c -> if (c.moveToFirst()) path = c.getString(0) }
         val f = path?.let { java.io.File(it) }
         val dir = f?.parentFile
-        if (f == null || dir == null) { LogStore.add("💬 سوفت صب: مسار الفيديو مش معروف (" + (u.scheme ?: "?") + ") — مش هقدر ألاقي ملف ترجمة جنبه"); null } else {
+        if (f == null || dir == null) { LogStore.add("💬 سوفت صب: مسار الفيديو مش معروف (" + (u.scheme ?: "?") + ") — مش هقدر ألاقي ملف ترجمة جنبه"); emptyList() } else {
             val exts = listOf("srt", "ass", "ssa", "vtt", "ttml")
             val base = f.nameWithoutExtension.lowercase()
             fun norm(x: String) = x.lowercase().replace(Regex("[^\\p{L}\\p{N}]+"), "")
@@ -213,9 +218,8 @@ object SubSidecar {
                     files = out
                 } catch (e: Throwable) { LogStore.err("Player:sidecarMS", e) }
             }
-            var c = files.filter { it.isFile && it.extension.lowercase() in exts && matches(it.nameWithoutExtension) }
-            // (v1096) T1: لو في ملف بنفس الاسم بالظبط (movie.srt) ياخد الأولوية — «movie.ar.srt» و«movie.2.srt» يفضلوا احتياطي من غير ما يخطفوا
-            c.filter { it.nameWithoutExtension.lowercase() == base }.let { ex -> if (ex.isNotEmpty() && ex.size < c.size) c = ex }
+            // (v1137) الملفات المخفية (.name.orig.srt = النص الأصلي اللي البرنامج بيحفظه) مش ملفات ترجمة للعرض
+            var c = files.filter { it.isFile && !it.name.startsWith(".") && it.extension.lowercase() in exts && matches(it.nameWithoutExtension) }
             // (v667) مفيش تطابق بالاسم: فولدر فيه «1.mp4» و«ترجمة رقم 1.srt» (أو فولدر فرعي اسمه ترجمة/subs) ← نطابق بالرقم الأخير في الاسم
             if (c.isEmpty()) {
                 fun digits(x: String): String = buildString { for (ch in x) append(if (ch in '\u0660'..'\u0669') ('0' + (ch - '\u0660')) else if (ch in '\u06F0'..'\u06F9') ('0' + (ch - '\u06F0')) else ch) }
@@ -229,16 +233,19 @@ object SubSidecar {
                     } catch (_: Throwable) {}
                     // (v703) الرقم لوحده مش كفاية: الفيديو اسمه رقم بس، أو حروف الاتنين متشابهة (غير كده كان بياخد ملف فيلم تاني)
                     val vl = norm(f.nameWithoutExtension.filter { !it.isDigit() })
-                    c = pool.filter { it.isFile && it.extension.lowercase() in exts && lastNum(it.nameWithoutExtension) == vn &&
+                    c = pool.filter { it.isFile && !it.name.startsWith(".") && it.extension.lowercase() in exts && lastNum(it.nameWithoutExtension) == vn &&
                         (vl.isEmpty() || norm(it.nameWithoutExtension.filter { ch -> !ch.isDigit() }).let { sl -> sl.isNotEmpty() && (sl.contains(vl) || vl.contains(sl)) }) }
                     if (c.isNotEmpty()) LogStore.add("💬 سوفت صب: تطابق بالرقم ($vn) ← «" + c.first().name + "»")
                 }
             }
-            val r = c.sortedWith(compareBy({ x -> val n = x.name.lowercase(); if (n.contains(".ar.") || n.contains("arab") || n.contains(".ara.")) 0 else 1 }, { x -> exts.indexOf(x.extension.lowercase()) }, { it.name })).firstOrNull()
-            LogStore.add("💬 سوفت صب: فحص ملف جنب الفيديو — الفولدر فيه " + files.size + " ملف، " + (if (r != null) "لقيت «" + r.name + "»" else "مفيش ملف ترجمة بنفس الاسم"))
-            r
+            // (v1137) + الملفات المستوردة؛ الأحدث الأول (كان بيختار بالاسم/اللغة فيطلع الملف القديم)
+            val all = (c + SubSel.imported(ctx, u)).distinctBy { it.absolutePath }
+                .sortedWith(compareByDescending<java.io.File> { it.lastModified() }.thenBy { exts.indexOf(it.extension.lowercase()) }.thenBy { it.name })
+            val scanMsg = "💬 سوفت صب: فحص ملف جنب الفيديو — الفولدر فيه " + files.size + " ملف، " + (if (all.isNotEmpty()) "لقيت " + all.size + " ملف ترجمة (الأحدث «" + all.first().name + "»)" else "مفيش ملف ترجمة بنفس الاسم")
+            if (scanMsg != lastScanMsg) { lastScanMsg = scanMsg; LogStore.add(scanMsg) }
+            all
         }
-    } catch (e: Throwable) { LogStore.err("Player:sidecar", e); null }
+    } catch (e: Throwable) { LogStore.err("Player:sidecar", e); emptyList() }
 
     private fun ts(sec: Double): String {
         val ms = (sec * 1000.0).toLong().coerceAtLeast(0L)
