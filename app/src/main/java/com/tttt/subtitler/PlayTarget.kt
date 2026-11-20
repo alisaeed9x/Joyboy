@@ -156,7 +156,6 @@ object PlayTarget {
 
     private fun send(act: Activity, spec: MediaSpec, target0: String, local: Boolean = false, onSent: (() -> Unit)? = null) {
         Notice.show(act, "📺 بوصّل بالتلفزيون…", 2500L)
-        mirrorLast = if (local) spec.uri else null
         Thread {
             val er: String? = try {
                 if (!RemoteClient.ensureConnected(act, 8000L)) "ما قدرتش أوصل للتلفزيون — اتأكد إنه شغّال وعلى نفس الواي فاي"
