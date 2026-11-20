@@ -436,11 +436,6 @@ object ControllerPad {
 
             fun cardS(label: String, kind: String, c1: Int, c2: Int, repeat: Boolean = false, fs: Float = 10.5f, ic: Int = 26, fire: () -> Unit): View =
                 card(label, kind, c1, c2, false, repeat, fs, ic, fire)
-            fun rowC(h: Int, gp: Int, vararg cells: View): View {
-                val r = android.widget.LinearLayout(act).apply { orientation = android.widget.LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_LTR }
-                cells.forEachIndexed { i, c -> r.addView(c, android.widget.LinearLayout.LayoutParams(0, h, 1f).apply { if (i > 0) leftMargin = gp }) }
-                return r
-            }
 
             // ── (v797) الدايرة في نص الشاشة + 4 أزرار في الأركان + صوت متماثل (شمال أزرار · يمين سلايدر) ──
             fun miniBtn(kind: String, c1: Int, c2: Int, desc: String, repeat: Boolean, fire: () -> Unit): View {
@@ -483,12 +478,6 @@ object ControllerPad {
             volBar.vertical = true
             val muteH = dp(44)
             val volCol = android.widget.LinearLayout(act).apply { orientation = android.widget.LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_LTR }
-            fun volTxt(t: String, desc: String, cid: String): View {
-                val bx = FrameLayout(act).apply { background = cardBg(false); contentDescription = desc }
-                bx.addView(TextView(act).apply { text = t; textSize = 22f; setTextColor(Color.WHITE); gravity = Gravity.CENTER; typeface = android.graphics.Typeface.DEFAULT_BOLD; includeFontPadding = false }, FrameLayout.LayoutParams(-1, -1, Gravity.CENTER))
-                bind(bx, true) { RemoteRouter.press(act, cid) { m -> say("⚠ $m", 0xFFFFB74D.toInt()) } }   // (v821) ماسك = تكرار؛ واي فاي أو IR تلقائي
-                return bx
-            }
             volCol.addView(volBar, android.widget.LinearLayout.LayoutParams(-1, 0, 1f))
             volCol.addView(miniBtn("mute", 0xFFE8456F.toInt(), 0xFFBE185D.toInt(), "كتم الصوت", false) { RemoteRouter.press(act, Cmds.MUTE) { m -> say("⚠ $m", 0xFFFFB74D.toInt()) } }, android.widget.LinearLayout.LayoutParams(-1, muteH).apply { topMargin = gapP })
 
@@ -692,7 +681,6 @@ class VolumeBar(ctx: Context, private val onChange: (Int) -> Unit) : View(ctx) {
     var vertical = false
     /** (v817) نفس السلايدر بيتستخدم للسطوع: أيقونة تحت + لون الملى + أيقونة الصفر */
     var icon = "🔊"; var zeroIcon = "🔇"
-    fun setFillColor(c: Int) { pFill.color = c; invalidate() }
 
     fun setValue(v: Int) { val n = v.coerceIn(0, 100); if (n != value) { value = n; invalidate() } }
 

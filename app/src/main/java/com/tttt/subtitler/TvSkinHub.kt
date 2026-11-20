@@ -78,59 +78,6 @@ object TvSkinHub : TvSkin {
     override fun homeHeader(h: TvSkinHost): View? = null
 
 
-    internal fun continueBanner(h: TvSkinHost, tk: TvTokens = tokens, glass: Boolean = false): View? {
-        val r = h.lastRecent() ?: return null
-        val a = h.activity; val ui = h.ui; val pal = TvPalette(h.theme)
-        val dm = a.resources.displayMetrics
-        val bannerH = if (dm.heightPixels / dm.density < 520f) 150 else 190
-        val thumbW = (bannerH * 16 / 9)
-
-        val t = TvTileView(a, tk.radiusCard + 2).styled(tk, pal.primary)
-        if (glass) t.inner.background = TvSkinGlass.pane(pal.dark, ui.dp(tk.radiusCard).toFloat(), false, ui.dp(1)) else t.inner.setBackgroundColor(pal.cardFill)
-        t.tag = "skin:first"
-
-        val row = LinearLayout(a).apply {
-            orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL
-            layoutDirection = View.LAYOUT_DIRECTION_RTL
-            setPadding(0, 0, 0, 0)   // (v622) الصورة لازقة في حواف الكارت زي كروت الفيديوهات اللي تحت؛ التقصيص بالزوايا بيتعمل من inner بتاع الكارت نفسه
-        }
-        val box = FrameLayout(a).apply { setBackgroundColor(pal.border); minimumHeight = ui.dp(bannerH - 10) }
-        val iv = ImageView(a).apply { scaleType = ImageView.ScaleType.CENTER_CROP }
-        val play = ui.text("▶", bannerH * 0.22f, Color.WHITE).apply { gravity = Gravity.CENTER; setShadowLayer(8f, 0f, 2f, Color.BLACK) }
-        box.addView(iv, FrameLayout.LayoutParams(-1, -1)); box.addView(play, FrameLayout.LayoutParams(-2, -2, Gravity.CENTER))
-        row.addView(box, LinearLayout.LayoutParams(ui.dp(thumbW - 10), -1))
-        h.recentThumbInto(r, iv)
-
-        fun TextView.fit(maxL: Int) {
-            maxLines = maxL; ellipsize = TextUtils.TruncateAt.END; minWidth = 0
-            textDirection = View.TEXT_DIRECTION_FIRST_STRONG; textAlignment = View.TEXT_ALIGNMENT_VIEW_START
-        }
-        val col = LinearLayout(a).apply {
-            orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER_VERTICAL
-            layoutDirection = View.LAYOUT_DIRECTION_RTL; setPadding(ui.dp(18), ui.dp(10), ui.dp(14), ui.dp(10))
-        }
-        col.addView(ui.text("▶ كمّل المشاهدة", tk.textCaption + 1f, pal.primary, true).apply { fit(1) })
-        col.addView(ui.text(r.title, tk.textTitle + 5f, pal.fg, true).apply { fit(2); setPadding(0, ui.dp(4), 0, ui.dp(2)) })
-        val pct = r.percent
-        val meta = if (r.posSec > 0.0) "⏸ " + PlayerLogic.clock((r.posSec * 1000).toLong()) + (if (r.durSec > 0.0) " من " + PlayerLogic.clock((r.durSec * 1000).toLong()) else "") + " · " + pct + "%"
-                   else "ابدأ من الأول"
-        col.addView(ui.text(meta, tk.textBody, pal.fgSub).apply { fit(1) })
-        // شريط التقدّم
-        val bar = LinearLayout(a).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; setBackgroundColor(pal.border) }
-        if (pct > 0) bar.addView(View(a).apply { setBackgroundColor(pal.primary) }, LinearLayout.LayoutParams(0, -1, pct.toFloat()))
-        if (pct < 100) bar.addView(View(a), LinearLayout.LayoutParams(0, -1, (100 - pct).toFloat().coerceAtLeast(0.001f)))
-        col.addView(bar, LinearLayout.LayoutParams(-1, ui.dp(5)).apply { topMargin = ui.dp(10); bottomMargin = ui.dp(6) })
-        col.addView(ui.text("OK للتشغيل  ·  Menu إعدادات سريعة", tk.textCaption, pal.fgSub).apply { fit(1) })
-        row.addView(col, LinearLayout.LayoutParams(0, -2, 1f))
-        t.inner.addView(row, FrameLayout.LayoutParams(-1, -1))
-
-        t.setOnClickListener { h.playRecent(r) }
-        t.setOnLongClickListener { h.recentMenu(r); true }   // (v642)
-        t.contentDescription = "كمّل المشاهدة: " + r.title
-        t.minimumHeight = ui.dp(bannerH)   // (v622) الكارت بيكبر مع المحتوى (سطر «OK للتشغيل» كان بيتقص من تحت)
-        t.layoutParams = LinearLayout.LayoutParams(-1, -2).apply { setMargins(ui.dp(10), ui.dp(8), ui.dp(10), ui.dp(6)) }
-        return t
-    }
 
     // ===== لوحة الإعدادات السريعة (Menu) =====
     override fun menuKey(h: TvSkinHost): Boolean {

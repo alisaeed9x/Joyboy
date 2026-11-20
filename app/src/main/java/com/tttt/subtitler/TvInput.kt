@@ -333,23 +333,6 @@ class TvAccessService : AccessibilityService() {
     }
 
 
-    /** true = اتضغط أو كان على الحالة المطلوبة · null = لسه مالقيتش المفتاح (الشاشة لسه بتفتح) */
-    private fun clickWifiSwitch(want: Boolean): Boolean? {
-        val root = rootInActiveWindow ?: return null
-        if (root.packageName?.toString() == packageName) return null
-        val sw = ArrayList<AccessibilityNodeInfo>()
-        collectCheckable(root, sw, 0)
-        if (sw.isEmpty()) return null
-        val pick = sw.firstOrNull { isWifiLabel(it) } ?: (if (sw.size == 1) sw[0] else null) ?: return null
-        if (pick.isChecked == want) return true
-        var n: AccessibilityNodeInfo? = pick
-        var hops = 0
-        while (n != null && hops < 5) {
-            if (n.isClickable && n.performAction(AccessibilityNodeInfo.ACTION_CLICK)) return true
-            n = n.parent; hops++
-        }
-        return null
-    }
 
     private fun collectCheckable(n: AccessibilityNodeInfo, out: MutableList<AccessibilityNodeInfo>, d: Int) {
         if (d > 14) return
@@ -357,13 +340,6 @@ class TvAccessService : AccessibilityService() {
         for (i in 0 until n.childCount) { val c = n.getChild(i) ?: continue; collectCheckable(c, out, d + 1) }
     }
 
-    private fun isWifiLabel(n: AccessibilityNodeInfo): Boolean {
-        val sb = StringBuilder()
-        addTexts(n, sb, 0)
-        n.parent?.let { addTexts(it, sb, 0) }
-        val t = sb.toString().lowercase()
-        return t.contains("wi-fi") || t.contains("wifi") || t.contains("wi‑fi") || t.contains("واي")
-    }
 
     private fun addTexts(n: AccessibilityNodeInfo, sb: StringBuilder, d: Int) {
         if (d > 2) return

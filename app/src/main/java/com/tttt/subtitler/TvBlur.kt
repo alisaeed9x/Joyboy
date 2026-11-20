@@ -32,10 +32,4 @@ object TvBlur {
         return this
     }
 
-    fun <T : View> T.frostedButton(radiusDp: Float): T {
-        val density = resources.displayMetrics.density
-        background = frostDrawable(radiusDp, density)
-        elevation = 4f * density
-        return this
-    }
 }

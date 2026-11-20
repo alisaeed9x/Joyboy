@@ -1600,7 +1600,6 @@ class MainActivity : Activity() {
             }
         } catch (e: Throwable) { LogStore.err("Main:ytPage", e) }
     }
-    private fun cancelYtLoad() { ytLoadTok++; ytLoadLaunched = false }
     /** (v339) بنفتح «صفحة المشغّل» فورًا (لودينج جواها) وبنجيب رابط الفيديو في الخلفية؛ لو فشل بنقفلها ونطلّع الدايلوج ونفضل في يوتيوب */
     /** (v351) بنفتح المشغّل الكامل فورًا؛ هو اللي بيجيب رابط الفيديو ويحمّل جواه (من غير شاشة اللودينج السودا القديمة) */
     private fun ytStart(id: String, title: String, translate: Boolean, auto: Boolean, startMs: Long = 0L, handoff: YtPick? = null, retOv: String = "") {

@@ -52,7 +52,6 @@ object AppWall {
         val p = Cfg.int("app_wall_scrim", 55).coerceIn(0, 95)
         return Color.argb(p * 255 / 100, Color.red(themeBg), Color.green(themeBg), Color.blue(themeBg))
     }
-    fun refreshScrim() { scrim?.setBackgroundColor(scrimColor()) }
 
     private val loop = object : Runnable {
         override fun run() {
@@ -96,7 +95,6 @@ object AppWall {
         h.postDelayed(loop, wait)
     }
 
-    fun reapply(a: Activity) { applyNow(a) }
 
     /** (v772) هل الأكتفيتي دي هي اللي ماسكة الخلفية دلوقتي؟ (لانشر الموبايل بيرجّعها لنفسه لما Main/المتصفح يمسكوها وبعدين نرجع للرئيسية) */
     fun ownedBy(a: Activity): Boolean = actRef?.get() === a

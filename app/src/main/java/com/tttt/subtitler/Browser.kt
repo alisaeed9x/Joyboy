@@ -1376,14 +1376,6 @@ class BrowserActivity : Activity() {
         val r = ui.dp(18).toFloat()
         background = android.graphics.drawable.GradientDrawable().apply { setColor(coOff); cornerRadii = floatArrayOf(0f, 0f, r, r, r, r, 0f, 0f); setStroke(ui.dp(1), 0x66FFFFFF) }
     }
-    private fun buildCoButtons(): View {
-        val b = coTab("📺\n①") { toggleCoSurf() }; coBtn1 = b
-        return LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_LTR
-            addView(b, LinearLayout.LayoutParams(ui.dp(38), ui.dp(50)))
-            addView(coTab("🕶") { newTab(home(), true, -1L, true) }, LinearLayout.LayoutParams(ui.dp(38), ui.dp(50)).apply { topMargin = ui.dp(6) })   // (v649) تصفح مخفي
-        }
-    }
     private fun coTint(b: TextView?, on: Boolean) { (b?.background as? android.graphics.drawable.GradientDrawable)?.setColor(if (on) coOn else coOff) }
     private fun refreshCoBtns() { coTint(coBtn1, CoSurf.on) }
     /** على التلفزيون: افتح نفس الرابط في التبويب الحالي (بنفس الـUA بتاع الموبايل عشان الصفحة تطلع بنفس الشكل) */
@@ -2791,26 +2783,6 @@ class BrowserActivity : Activity() {
             b.translationX = cx - x; b.translationY = cy - y; b.scaleX = 0.2f; b.scaleY = 0.2f; b.alpha = 0f
             b.animate().translationX(0f).translationY(0f).scaleX(1f).scaleY(1f).alpha(1f).setStartDelay(i * 25L).setDuration(190L).start()
         }
-    }
-    /** دوسة على الفيديو في الصفحة: لو الدايرة لقت فيديو واحد والدوسة جوه مربعه ← الأزرار تفتح حوالين الدايرة */
-    private fun tapMaybeVideo(rx: Float, ry: Float) {
-        if (tvOn || dead || fanViews.isNotEmpty() || badge.visibility != View.VISIBLE) return
-        val wv = wvOrNull ?: return
-        val g = try { groupsOf(vis()).singleOrNull() } catch (_: Throwable) { null } ?: return
-        if (g.qs.isEmpty()) return
-        val loc = IntArray(2); wv.getLocationOnScreen(loc)
-        try {
-            wv.evaluateJavascript(VidMark.RECT_JS) { r ->
-                try {
-                    if (dead || fanViews.isNotEmpty() || r.isNullOrBlank() || r == "null") return@evaluateJavascript
-                    val a = JSONArray(r); if (a.length() < 5) return@evaluateJavascript
-                    val k = wv.width.toFloat() / a.getDouble(4).toFloat().coerceAtLeast(1f)
-                    val l = a.getDouble(0).toFloat() * k + loc[0]; val t = a.getDouble(1).toFloat() * k + loc[1]
-                    val w = a.getDouble(2).toFloat() * k; val hh = a.getDouble(3).toFloat() * k
-                    if (rx >= l && rx <= l + w && ry >= t && ry <= t + hh) openFan(g)
-                } catch (_: Throwable) {}
-            }
-        } catch (_: Throwable) {}
     }
 
     // ===== (v716) لوحة الأزرار تحت الدايرة =====

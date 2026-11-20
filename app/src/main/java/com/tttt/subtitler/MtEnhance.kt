@@ -76,12 +76,6 @@ object MtEnhance {
     private val fakeNames = listOf("إيقاف", "خفيف", "متوسط", "قوي")
     fun fake(): Int = Cfg.int(K_FAKE, 0).coerceIn(0, 3)
     fun fakeName(): String = fakeNames[fake()]
-    fun setFake(name: String) {
-        val i = fakeNames.indexOf(name).let { if (it < 0) 0 else it }
-        Cfg.put(K_FAKE, i.toString())
-        Cfg.put(K_OFF, "0")
-        memOff = false
-    }
     // ---------- (v949) أوضاع جاهزة — سويتش واحد بين كل أوضاع تحسين الصورة ----------
     class Mode(val name: String, val level: Int, val vivid: Boolean, val fake: Int)
     val modes: List<Mode> = listOf(
@@ -260,19 +254,6 @@ object MtEnhance {
         }
     }
 
-    /** (v1020) الفيت/الملء غيّر مقاس سطح الفيديو: لو الفلتر شغّال، الـVideoSink لازم يتبني تاني على المقاس الجديد وإلا الزرار «يتعطل» لحد الخروج */
-    fun onSurfaceResized() {
-        try {
-            if (applied.isEmpty()) return
-            ui.postDelayed({
-                try {
-                    val pp = player ?: return@postDelayed
-                    if (applied.isEmpty()) return@postDelayed
-                    cycleVideoRenderer(pp)
-                } catch (_: Throwable) {}
-            }, 180L)
-        } catch (_: Throwable) {}
-    }
 
     /** (v992) disable/enable لمسار الفيديو (~250ms) — بيعيد onEnabled للريندرر فيتبني الـVideoSink بالمؤثرات الحالية */
     private fun cycleVideoRenderer(p: ExoPlayer) {
@@ -290,24 +271,6 @@ object MtEnhance {
         } catch (e: Throwable) { LogStore.err("MtEnhance:cycle", e) }
     }
 
-    /** (v992) بعد ~1.8ث من التفعيل: بيرجّع نص بيقول الفلتر رسم فريمات فعلًا ولا لأ (للإشعار) */
-    fun reportLater(cb: (String) -> Unit) {
-        val base = drawn.get()
-        ui.postDelayed({
-            try {
-                val n = drawn.get() - base
-                val playing = player?.isPlaying == true
-                val msg = when {
-                    applied.isEmpty() -> ""
-                    n > 0 -> "✓ الفلتر بيرسم ($n فريم)"
-                    !playing -> "الفيديو واقف — شغّله عشان الفلتر يتشاف"
-                    else -> "⚠ الفلتر متفعّل بس ما رسمش ولا فريم (السطح/الـpipeline) — شوف اللوج MtEnhance"
-                }
-                if (msg.isNotEmpty()) LogStore.add("MtEnhance: $msg")
-                cb(msg)
-            } catch (_: Throwable) {}
-        }, 1800L)
-    }
 
     private fun clear() {
         cancelWatch()

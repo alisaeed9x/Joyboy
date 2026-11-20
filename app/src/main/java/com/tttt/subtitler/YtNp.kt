@@ -55,39 +55,6 @@ object YtLang {
         "it" to setOf("il", "lo", "gli", "di", "che", "e", "un", "una", "per", "con", "non", "del", "della", "nel", "come", "sono"),
         "tr" to setOf("ve", "bir", "bu", "için", "ile", "da", "de", "ne", "nasıl", "çok", "ama", "en", "mi", "ben"),
         "id" to setOf("yang", "dan", "di", "ini", "itu", "untuk", "dengan", "dari", "ke", "pada", "cara", "apa", "saya"))
-    /** لغة العنوان (كود) من الحروف: عربي/روسي/هندي/ياباني/كوري/صيني/تايلندي/عبري/يوناني، وللاتيني بكلمات شائعة. فاضي = مش متأكد */
-    fun titleLang(t: String): String {
-        var ar = 0; var cy = 0; var dv = 0; var kana = 0; var hang = 0; var han = 0; var th = 0; var he = 0; var el = 0; var lat = 0
-        for (c in t) when (c.code) {
-            in 0x0600..0x06FF, in 0x0750..0x077F -> ar++
-            in 0x0400..0x04FF -> cy++
-            in 0x0900..0x097F -> dv++
-            in 0x3040..0x30FF -> kana++
-            in 0xAC00..0xD7AF, in 0x1100..0x11FF -> hang++
-            in 0x4E00..0x9FFF -> han++
-            in 0x0E00..0x0E7F -> th++
-            in 0x0590..0x05FF -> he++
-            in 0x0370..0x03FF -> el++
-            else -> if (c.isLetter() && c.code < 0x250) lat++
-        }
-        val mx = maxOf(ar, cy, dv, kana, hang, han, th, he, el, lat)
-        if (mx == 0) return ""
-        return when (mx) {
-            ar -> "ar"; cy -> "ru"; dv -> "hi"; kana -> "ja"; hang -> "ko"; han -> if (kana > 0) "ja" else "zh"; th -> "th"; he -> "he"; el -> "el"
-            else -> {
-                val words = t.lowercase().split(Regex("[^\\p{L}]+")).filter { it.isNotEmpty() }
-                val best = STOP.maxByOrNull { (_, st) -> words.count { it in st } }
-                if (best != null && words.count { it in best.value } >= 2) best.key else "en"
-            }
-        }
-    }
-    /** (v623) اختيار مسار الصوت الذكي: قناة عربي ← عربي (لو موجود) · غير كده ← مسار بلغة العنوان (لو موجود) وإلا الأصلي */
-    fun chooseSmart(tr: List<Tr>, title: String, channel: String): Tr? {
-        if (tr.isEmpty()) return null
-        val want = if (hasArabic(channel)) "ar" else titleLang(title).ifEmpty { "orig" }
-        if (want != "orig") tr.firstOrNull { it.lang == want }?.let { return it }
-        return tr.firstOrNull { it.orig } ?: tr.firstOrNull { it.dflt } ?: tr.first()
-    }
     fun code(raw: String): String = raw.substringBefore('.').substringBefore('-').substringBefore('_').trim().lowercase()
     fun name(lang: String, orig: Boolean): String {
         val n = if (lang.isBlank()) "؟" else try { java.util.Locale(lang).getDisplayLanguage(java.util.Locale("ar")).ifBlank { lang } } catch (_: Throwable) { lang }

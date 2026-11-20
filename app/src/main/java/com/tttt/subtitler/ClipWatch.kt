@@ -311,34 +311,6 @@ class ClipDot(ctx: Context, private val glyph: String, private val fill: Int, pr
     }
 }
 
-/**
- * (v716) عمود دواير الأزرار الملوّنة (تلفزيون · تحميل · شاهد وترجم · شاهد بس · إلغاء) — نفس اللي بيظهر تحت دايرة الكليبورد،
- * ومستخدم كمان تحت دايرة الاصطياد في المتصفح. onPick بيستلم: tv · dl · tr · watch · cancel
- */
-fun Activity.clipDots(onPick: (String) -> Unit): LinearLayout {
-    val d = resources.displayMetrics.density
-    val bs = (46 * d).toInt()
-    val col = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_LTR }
-    fun add(label: String, glyph: String, fill: Int, gc: Int, act: String) {
-        val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_LTR; gravity = Gravity.CENTER_VERTICAL; isFocusable = true; alpha = 0f }
-        val tv = TextView(this).apply {
-            this.text = label; setTextColor(Color.WHITE); textSize = 12f; typeface = android.graphics.Typeface.DEFAULT_BOLD
-            setPadding((10 * d).toInt(), (5 * d).toInt(), (10 * d).toInt(), (5 * d).toInt())
-            background = android.graphics.drawable.GradientDrawable().apply { setColor(0xCC101418.toInt()); cornerRadius = 14 * d }
-        }
-        row.addView(tv, LinearLayout.LayoutParams(-2, -2).apply { marginEnd = (8 * d).toInt() })
-        row.addView(ClipDot(this, glyph, fill, gc), LinearLayout.LayoutParams(bs, bs))
-        row.setOnClickListener { onPick(act) }
-        col.addView(row, LinearLayout.LayoutParams(-2, -2).apply { gravity = Gravity.END; topMargin = (8 * d).toInt() })
-    }
-    add("مشاهدة ع التلفزيون", "📺", 0xFFE53935.toInt(), Color.WHITE, "tv")
-    add("تحميل", "⬇", 0xFF1E6FE0.toInt(), Color.WHITE, "dl")
-    add("مشاهدة وترجمة", "🌐", 0xFF34C759.toInt(), Color.WHITE, "tr")
-    add("مشاهدة بس", "▶", 0xFFFFC107.toInt(), 0xFF202020.toInt(), "watch")
-    add("إلغاء", "✕", 0xFF757575.toInt(), Color.WHITE, "cancel")
-    col.post { for (i in 0 until col.childCount) { val v = col.getChildAt(i); v.translationY = -10 * d; v.animate().alpha(1f).translationY(0f).setStartDelay(60L * i).setDuration(180).start() } }
-    return col
-}
 
 /**
  * أول ما البرنامج يفتح (أو يرجع له الفوكس): لو في الكليبورد لينك جديد، بتظهر دايرة عايمة صغيرة (ClipOrb) بدل الإشعار اللي فوق.

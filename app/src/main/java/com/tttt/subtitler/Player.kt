@@ -1918,7 +1918,8 @@ class PlayerActivity : Activity(), Host {
             } else am.adjustStreamVolume(android.media.AudioManager.STREAM_MUSIC, if (up) android.media.AudioManager.ADJUST_RAISE else android.media.AudioManager.ADJUST_LOWER, android.media.AudioManager.FLAG_SHOW_UI)
         } catch (e: Throwable) { LogStore.err("Tv:vol", e) }
     }
-    override fun finish() { super.finish(); if (gone) { try { overridePendingTransition(0, 0) } catch (_: Throwable) {}; return }; try { if (ytPage) overridePendingTransition(R.anim.yt_page_down_enter, R.anim.yt_page_down_exit) else if (MtLook.playerAnim()) overridePendingTransition(R.anim.player_close_enter, R.anim.player_close_exit) else overridePendingTransition(R.anim.act_stay, R.anim.act_exit) } catch (e: Exception) { LogStore.err("Main:725", e) } }
+    @Volatile private var replacedByNew = false   // (v1147) اتقفل لأن فيديو جديد فتح مكانه: لازم حركة القفل تساعد حركة الدخول (من تحت لفوق) مش تلغيها
+    override fun finish() { super.finish(); if (gone) { try { overridePendingTransition(0, 0) } catch (_: Throwable) {}; return }; try { if (ytPage && replacedByNew) overridePendingTransition(R.anim.yt_page_up_enter, R.anim.yt_page_up_exit) else if (ytPage) overridePendingTransition(R.anim.yt_page_down_enter, R.anim.yt_page_down_exit) else if (MtLook.playerAnim()) overridePendingTransition(R.anim.player_close_enter, R.anim.player_close_exit) else overridePendingTransition(R.anim.act_stay, R.anim.act_exit) } catch (e: Exception) { LogStore.err("Main:725", e) } }
     @Volatile var cur = 0L
     @Volatile var durMs = 0L
     @Volatile var status = ""
@@ -3703,11 +3704,6 @@ class PlayerActivity : Activity(), Host {
         } catch (e: Throwable) { LogStore.err("Player:freeGemStart", e); say("تعذّر بدء ترجمة FreeLLM") }
     }
 
-    /** (v440) 🆓 وشبر + FreeLLM: تفريغ على الجهاز وترجمة بالموديلات المجانية (Gemini/Gemma/Groq) بمفاتيحك — الموزّع بيختار الأبعد عن حده */
-    private fun freeStart() {
-        if (!FreeLlm.ready()) { say("🆓 FreeLLM محتاج مفتاح Gemini أو Groq (أو رابط سيرفر) — اكتبه وادوس حفظ وبعدين ارجع دوس الزرار"); freeDialog(); return }
-        offlineQuick(false, true)
-    }
 
     private fun freeDialog() {
         shDialog(340) { col, close ->
@@ -3860,20 +3856,6 @@ class PlayerActivity : Activity(), Host {
             }, ShBtn("إلغاء", SH_GRAY) { }))
     }
 
-    private fun libreDialog() {
-        shDialog(330) { col, close ->
-            col.addView(shHead("🌐 LibreTranslate", "سيرفر الترجمة (فصحى حرفية)"))
-            val eu = shField("https://libretranslate.com", Cfg.str("libre_url")); val ek = shField("مفتاح API (لو محتاج)", Cfg.str("libre_key"))
-            col.addView(eu); col.addView(ek)
-            col.addView(shDuo(
-                shBtn("حفظ", SH_BLUE) {
-                    Cfg.put("libre_url", eu.text.toString().trim().trimEnd('/')); Cfg.put("libre_key", ek.text.toString().trim())
-                    ExtTranslate.libreProv()?.let { ExtTranslate.clearBlock(it.id) }
-                    close(); say("🌐 سيرفر LibreTranslate اتحفظ — بيتطبّق على الباتشات الجاية")
-                },
-                shBtn("إلغاء", SH_GRAY) { close() }))
-        }
-    }
 
     /** (v762) أوامر ورقة ⚙ إعدادات الترجمة اللي على الموبايل — بتتطبّق هنا من غير ما تفتح أي قايمة على شاشة التلفزيون */
     private fun remoteMset(c: String) {
@@ -4411,6 +4393,7 @@ class PlayerActivity : Activity(), Host {
         val eng0 = engine
         retireEngine()
         Thread { try { eng0.saveNow() } catch (e: Throwable) { LogStore.err("Player:newVideoSave", e) } }.start()   // (v287)
+        replacedByNew = true   // (v1147)
         if (!isFinishing) finish()
     }
 
@@ -4652,10 +4635,6 @@ class PlayerActivity : Activity(), Host {
             { stepEpisode(-1) },
             { try { player.seekTo(0L); player.play() } catch (_: Throwable) {} },
             { stepEpisode(1) })
-    }
-    private fun nextEpisodeTitle(): String {
-        val p = libSibs() ?: return "الحلقة التالية"
-        return (p.first.getOrNull(p.second + 1) ?: (if (wrapOn()) p.first.firstOrNull() else null))?.title ?: "الحلقة التالية"
     }
 
     /** (v469) B12: لقطة الإطار الحالي — بتتحفظ في صور الجهاز وبتتعرض للمشاركة على طول */
@@ -6727,19 +6706,6 @@ class PlayerActivity : Activity(), Host {
             .putExtra("repair_id", id).putExtra("repair_url", old).putExtra("repair_title", t))
         finish()
     }
-    /** مفيش لينك صفحة محفوظ: بنطلبه منك مرة واحدة ونحفظه جنب لينك الفيديو */
-    private fun askPageLink() {
-        val clip = try { (getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager).primaryClip?.getItemAt(0)?.text?.toString()?.trim() ?: "" } catch (_: Exception) { "" }
-        val et = EditText(this).apply { setText(if (clip.startsWith("http", true)) clip else ""); hint = "https://…"; layoutDirection = View.LAYOUT_DIRECTION_LTR; setPadding(48, 36, 48, 36); maxLines = 4 }
-        val appCtx = applicationContext; val id = vid
-        GAlert(this).setTitle("🔗 لينك صفحة الفيديو").setMessage("لينك الفيديو خلص ومفيش لينك الصفحة محفوظ. الصق لينك الصفحة اللي بيتشغّل فيها الفيديو في الموقع — هحفظه، وأفتحهالك: تدوس تشغيل وأنا ألقط اللينك الجديد وأكمّل بنفس الترجمة.").setView(et)
-            .setPositiveButton("فتح الصفحة") { _, _ ->
-                val u = et.text.toString().trim()
-                if (!u.startsWith("http", true)) { Notice.show(this, "اللينك لازم يبدأ بـ http", 3000L); return@setPositiveButton }
-                Thread { WebVideos.update(appCtx, id) { it.copy(page = u) } }.apply { isDaemon = true }.start()
-                repairInBrowser(u)
-            }.setNegativeButton("إلغاء", null).show()
-    }
     private fun startLinkRefresh(page: String) {
         val old = url ?: return
         Notice.show(this, "⏳ بجيب لينك الفيديو من الصفحة…", 4000L)
@@ -7584,17 +7550,6 @@ class PlayerActivity : Activity(), Host {
         try { MtSmooth.detach(this) } catch (_: Throwable) {}
         try { MtEnhance.detach(this) } catch (_: Throwable) {}
         mtParityExo = null
-    }
-    private fun mtEnhanceCycle(btn: TextView? = null) {
-        mtParityAttach()
-        if (mtParityExo == null) { say("✨ تحسين الصورة مش متاح على المشغّل ده"); return }
-        val name = try { MtEnhance.cycleMode() } catch (_: Throwable) { return }
-        try { btn?.text = "✨ تحسين الصورة: " + name } catch (_: Throwable) {}
-        val why = try { MtEnhance.lastWhy } catch (_: Throwable) { "" }
-        say(if (name == "إيقاف") "✨ تحسين الصورة: إيقاف" else if (why.isEmpty()) "✨ تحسين الصورة: " + name else "✨ تحسين الصورة: " + name + " — مش شغّال على الفيديو ده (" + why + ")")
-        if (name != "إيقاف" && why.isEmpty()) {
-            try { MtEnhance.reportLater { r -> if (r.isNotEmpty()) say("✨ " + name + ": " + r) } } catch (_: Throwable) {}
-        }
     }
 
     private fun say(m: String) = runOnUiThread { Notice.show(this, (m).toString(), 2300L) }

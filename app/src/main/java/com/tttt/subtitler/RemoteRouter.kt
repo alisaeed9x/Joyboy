@@ -205,6 +205,4 @@ object RemoteRouter {
             "البروفايلات: ${d.profiles.size} · آخر مسار: ${lastTransport.name}"
     }
 
-    /** للاختبارات/إعادة الضبط */
-    fun resetForTest() { gate.reset(); health.ok(); lastTransport = Transport.NONE }
 }

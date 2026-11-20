@@ -129,7 +129,6 @@ object LinkSession {
         }.also { it.isDaemon = true }.start()
     }
 
-    fun takeControl() { send("control.take") { _, _ -> } }
 
     /** إعدادات من الموبايل للتلفزيون (قايمة بيضاء على التلفزيون؛ الحساس عبر /keys بس) ثم conf.reload */
     fun setCfg(kv: Map<String, String>, cb: ((Boolean) -> Unit)? = null) {

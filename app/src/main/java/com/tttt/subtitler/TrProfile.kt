@@ -106,18 +106,6 @@ object TrProfile {
     /** فيه فرق بين الإعدادات الحالية والمحفوظة؟ */
     fun dirty(): Boolean = hasSaved() && keys.any { cur(it) != Cfg.str("trp_$it", "") }
 
-    /** سطر ملخّص للمحفوظ: «🗣 لهجة مصري · شدة متوسطة · جيميناي» */
-    fun savedSummary(): String {
-        if (!hasSaved()) return ""
-        val kind = Cfg.str("trp_tr_kind", "translate").ifBlank { "translate" }; val dia = Cfg.str("trp_conv_dialect", "")
-        val what = when (modeOf(kind, dia, Cfg.str("trp_lang", "فصحى"))) {
-            TX -> "✍ تفريغ بس"
-            MSA -> "🔤 ترجمة فصحى"
-            else -> "🗣 لهجة " + dia.ifBlank { Cfg.str("trp_lang", "") }
-        }
-        val eng = if (Cfg.str("trp_tr_engine", "gem") == "off") "📴 وشبر" else "☁ جيميناي"
-        return what + (if (kind != "transcribe" && modeOf(kind, dia, Cfg.str("trp_lang", "فصحى")) == DIA) " · شدة " + Cfg.str("trp_tone_strength", "متوسطة") else "") + " · " + eng
-    }
 
     /**
      * بيطبّق المحفوظ على الإعدادات الشغّالة (مع كل فيديو جديد). بيرجّع true لو غيّر حاجة.

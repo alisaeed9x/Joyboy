@@ -65,14 +65,6 @@ object MtGlass {
         return GradientDrawable().apply { setColor(fill); cornerRadius = radiusPx; setStroke(max(1, (d * 0.75f).roundToInt()), edge) }
     }
 
-    /** شيت سفلي زجاجي (استدارة من فوق بس): سطح شبه شفاف + لمعة + حافة مضيئة */
-    fun sheetTop(th: Theme, radiusPx: Float, density: Float): Drawable {
-        val radii = floatArrayOf(radiusPx, radiusPx, radiusPx, radiusPx, 0f, 0f, 0f, 0f)
-        val base = mt("bg_glass_sheet", radiusPx)?.apply { cornerRadii = radii } ?: GradientDrawable().apply { setColor(sheet(th)); cornerRadii = radii }   // (v909) bg_glass_sheet الأصلي
-        val top = GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, intArrayOf(sheen(th), 0x00FFFFFF)).apply { cornerRadii = radii }
-        val edge = GradientDrawable().apply { setColor(Color.TRANSPARENT); cornerRadii = radii; setStroke(max(1, density.roundToInt()), rim(th)) }
-        return LayerDrawable(arrayOf<Drawable>(base, top, edge))
-    }
 
     /** (v901) كبسولة/دوك عايم زجاجي داكن (نص أبيض فوقه): سطح شبه شفاف + لمعة + حافة مضيئة (أو لون تمييز لما accent != 0) */
     fun floatPill(radiusPx: Float, density: Float, accent: Int = 0): Drawable {

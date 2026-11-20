@@ -2888,7 +2888,6 @@ class TvActivity : Activity() {
     @Suppress("UNUSED_PARAMETER")
     private fun ytRowLoad(subs: List<NpItem>, force: Boolean = false, quick: Boolean = false): List<NpItem> = emptyList()   // (v889) فيد الاشتراكات القديم اتمسح
 
-    private fun retryYt(yh: LinearLayout) { fillYt(yh, true, false, 2) }
 
     // ===== (v635) قايمة يوتيوب العمودية للسكنات اللي يوتيوب فيها تاب لوحده =====
     private var ytCont: Any? = null

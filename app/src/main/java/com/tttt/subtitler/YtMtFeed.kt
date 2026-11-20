@@ -91,21 +91,41 @@ object YtMtFeed {
     private val avBusy = ConcurrentHashMap<String, Boolean>()
 
     /** (v1144) لوجو قناة من أي مفتاح (رابط/@handle/UC…): كاش ← خريطة اشتراكاتك ← جلب من الخدمة في خيط خلفي. cb بيتنده على خيط خلفي (الـUI يعمل runOnUiThread) */
+    private val avWait = ConcurrentHashMap<String, MutableList<(String) -> Unit>>()
     fun avatarAsync(c: android.content.Context, key: String, cb: (String) -> Unit) {
         if (key.isBlank()) return
-        val cid = if (key.startsWith("UC") && key.length == 24) key else (YtRss.chanId(key) ?: return)
-        val hit = avCache[cid]
-        if (!hit.isNullOrBlank()) { cb(hit); return }
-        if (avBusy.putIfAbsent(cid, true) != null) return
+        val cid0 = if (key.startsWith("UC") && key.length == 24) key else YtRss.chanId(key)
+        if (cid0 != null) { val hit = avCache[cid0]; if (!hit.isNullOrBlank()) { cb(hit); return } }
+        val wk = cid0 ?: key
+        // (v1147) كل الكروت اللي من نفس القناة بتستنى نفس الجلب وكلها بتاخد اللوجو (قبل كده أول كارت بس كان بياخده والباقي بيتجاهل)
+        synchronized(avWait) {
+            val l = avWait[wk]
+            if (l != null) { l.add(cb); return }
+            avWait[wk] = mutableListOf(cb)
+        }
         Thread {
+            var got: String? = null
             try {
                 try { attach(c) } catch (_: Throwable) {}
-                val sm = YouTubeServiceManager.instance().contentService
-                var u: String? = try { sm.subscribedChannelAvatars?.get(cid) } catch (_: Throwable) { null }
-                if (u.isNullOrBlank()) u = try { sm.getChannelAvatarUrl(cid) } catch (_: Throwable) { null }
-                if (!u.isNullOrBlank()) { avCache[cid] = u; cb(u) }
+                var cid: String? = cid0
+                if (cid == null) {   // (v1147) @handle من غير معرّف محفوظ: نحلّه الأول (قبل كده كان بيقف هنا من غير لوجو)
+                    val latch = java.util.concurrent.CountDownLatch(1)
+                    var r: String? = null
+                    try { YtChanId.resolve(key) { x -> r = x; latch.countDown() } } catch (_: Throwable) { latch.countDown() }
+                    try { latch.await(12, java.util.concurrent.TimeUnit.SECONDS) } catch (_: Throwable) {}
+                    cid = r
+                }
+                if (cid != null) {
+                    val sm = YouTubeServiceManager.instance().contentService
+                    var u: String? = avCache[cid]
+                    if (u.isNullOrBlank()) u = try { sm.subscribedChannelAvatars?.get(cid) } catch (_: Throwable) { null }
+                    if (u.isNullOrBlank()) u = try { sm.getChannelAvatarUrl(cid) } catch (_: Throwable) { null }
+                    if (!u.isNullOrBlank()) { avCache[cid] = u; got = u }
+                }
             } catch (_: Throwable) {}
-            avBusy.remove(cid)
+            val ws = synchronized(avWait) { avWait.remove(wk) }
+            val g = got
+            if (!g.isNullOrBlank() && ws != null) for (w in ws) { try { w(g) } catch (_: Throwable) {} }
         }.apply { isDaemon = true; start() }
     }
 

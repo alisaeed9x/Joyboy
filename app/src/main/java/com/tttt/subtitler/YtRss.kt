@@ -238,7 +238,7 @@ object YtRss {
             }
         }
         if (all.isEmpty()) return null
-        val fresh = all.distinctBy { it.id }.map { if (it.ts > 0L) NpItem(it.id, it.title, it.channel, it.channelUrl, it.thumb, it.dur, it.count, ageOf(it.ts), it.kind, it.url, it.ts) else it }
+        val fresh = all.distinctBy { it.id }.map { if (it.ts > 0L) NpItem(it.id, it.title, it.channel, it.channelUrl, it.thumb, it.dur, it.count, ageOf(it.ts), it.kind, it.url, it.ts, it.avatar, it.channelId) else it }
         return YtRes(fresh.sortedByDescending { it.ts }.take(600), null)
     }
 
@@ -253,7 +253,7 @@ object YtRss {
             val out = ArrayList<NpItem>()
             val dl = System.currentTimeMillis() + 7000L
             for (f in fs) try { out.addAll(f.get(maxOf(1L, dl - System.currentTimeMillis()), java.util.concurrent.TimeUnit.MILLISECONDS)) } catch (_: Throwable) {}
-            return out.distinctBy { it.id }.map { if (it.ts > 0L) NpItem(it.id, it.title, it.channel, it.channelUrl, it.thumb, it.dur, it.count, ageOf(it.ts), it.kind, it.url, it.ts) else it }
+            return out.distinctBy { it.id }.map { if (it.ts > 0L) NpItem(it.id, it.title, it.channel, it.channelUrl, it.thumb, it.dur, it.count, ageOf(it.ts), it.kind, it.url, it.ts, it.avatar, it.channelId) else it }
         } finally { pool.shutdownNow() }
     }
 
@@ -266,7 +266,7 @@ object YtRss {
             val r = byId[o.id]
             val ts = when { r != null && r.ts > 0L -> r.ts; o.ts > 0L -> o.ts; else -> YtNp.ageMs(o.age) }
             NpItem(o.id, o.title, o.channel.ifBlank { r?.channel ?: "" }, o.channelUrl.ifBlank { r?.channelUrl ?: "" }, o.thumb, o.dur, if (o.count >= 0L) o.count else (r?.count ?: -1L),
-                if (ts > 0L && (r != null || o.age.isBlank())) ageOf(ts) else o.age, o.kind, o.url, ts, o.avatar)
+                if (ts > 0L && (r != null || o.age.isBlank())) ageOf(ts) else o.age, o.kind, o.url, ts, o.avatar.ifBlank { r?.avatar ?: "" }, o.channelId.ifBlank { r?.channelId ?: "" })
         }
         val ids = fixed.map { it.id }.toHashSet()
         val cutoff = minOf(fixed.filter { it.ts > 0L && it.kind == 0 }.minOfOrNull { it.ts } ?: return fixed.sortedByDescending { it.ts }, System.currentTimeMillis() - 3 * 86_400_000L)   // (v867) كان بيرجّع من غير ترتيب   // (v754) دايمًا آخر 3 أيام على الأقل من RSS
@@ -299,7 +299,7 @@ object YtRss {
             val dl = System.currentTimeMillis() + 40000L
             for (f in fs) try { all.addAll(f.get(maxOf(1L, dl - System.currentTimeMillis()), java.util.concurrent.TimeUnit.MILLISECONDS)) } catch (_: Throwable) {}
             // العمر بيتحسب من جديد (الكاش ممكن يكون قديم)
-            val fresh = all.distinctBy { it.id }.map { if (it.ts > 0L) NpItem(it.id, it.title, it.channel, it.channelUrl, it.thumb, it.dur, it.count, ageOf(it.ts), it.kind, it.url, it.ts) else it }
+            val fresh = all.distinctBy { it.id }.map { if (it.ts > 0L) NpItem(it.id, it.title, it.channel, it.channelUrl, it.thumb, it.dur, it.count, ageOf(it.ts), it.kind, it.url, it.ts, it.avatar, it.channelId) else it }
             saveDisk(list.mapNotNull { chanId(it.channelUrl) }.toSet())
             saveValid(list.mapNotNull { chanId(it.channelUrl) }.toSet())
             YtRes(fresh.sortedByDescending { it.ts }.take(600), null)

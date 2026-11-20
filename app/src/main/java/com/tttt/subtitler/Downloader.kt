@@ -396,17 +396,6 @@ object Downloader {
 
     private fun safeName(s: String): String = s.replace(Regex("[\\\\/:*?\"<>|\\n\\r]"), " ").trim().take(80).ifBlank { "video" }
 
-    /** (v137) تنزيل لملف مؤقت للأدوات (قص/ضغط/هارد ساب…): لينك مباشر / صورة+صوت (بيتدمجوا) / HLS. بيرمي استثناء لو فشل */
-    fun toCache(url: String, audio: String?, hls: Boolean, targetH: Int, headers: Map<String, String>, out: File, ctl: Ctl, onPct: (Int) -> Unit) {
-        if (hls) { val err = hlsFetch(url, headers, targetH, out, ctl, onPct); if (err != null) throw java.io.IOException(err); return }
-        if (audio == null) { copyTo(url, headers, out, ctl, onPct); return }
-        val v = File(out.parentFile, out.name + ".v"); val a = File(out.parentFile, out.name + ".a")
-        try {
-            copyTo(url, headers, v, ctl) { onPct(it / 2) }
-            copyTo(audio, headers, a, ctl) { onPct(50 + it / 2) }
-            mux(v, a, out)
-        } finally { try { v.delete() } catch (_: Throwable) {}; try { a.delete() } catch (_: Throwable) {} }
-    }
 
     /** بيرجّع (نجح؟, رسالة). استدعيه من خيط خلفي. onPct: 0..100 */
     fun run(ctx: Context, job: Job, onPct: (String, Int) -> Unit): Pair<Boolean, String> = NetLedger.inFile(job.name) { run0(ctx, job, onPct) }

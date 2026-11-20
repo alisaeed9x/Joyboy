@@ -55,7 +55,6 @@ class MtAurora(private val th: Theme, private val animated: Boolean, private val
 
     /** views بتتعمل لها invalidate مع كل نبضة (الشريط الزجاجي اللي بيبلّر الخلفية دي) */
     fun addHost(v: View) { if (!hosts.contains(v)) hosts.add(v) }
-    fun removeHost(v: View) { hosts.remove(v) }
 
     fun start() {
         if (!animated || running) return

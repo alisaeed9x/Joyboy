@@ -3,7 +3,6 @@ package com.tttt.subtitler
 import android.app.Activity
 import android.app.Application
 import android.os.Bundle
-import com.newtube.mobile.MobileMainApplication
 import java.util.WeakHashMap
 
 /**
@@ -17,16 +16,10 @@ class JoyApp : Application() {
         try { com.tttt.subtitler.mtui.ThemeMode.init(this) } catch (_: Throwable) {}   // (v1109 Y6b) الثيم بقى في app (كان بيتعمله init جوه MobileMainApplication.boot)
         // (v920) MeeTube هو الأساس: تهيئة فورية — اللانشر هو SplashActivity بتاعته
         try {
-            // (v1111 Y6d) تهيئة المحرك من app (MtEngine). لو فشلت لأي سبب: الرجوع للـboot القديم بتاع :mobile (يتشال في Y6e)
-            try { com.tttt.subtitler.mtui.MtEngine.boot(this) } catch (e2: Throwable) {
-                try { LogStore.err("JoyApp:mtengine", e2) } catch (_: Throwable) {}
-                MobileMainApplication.boot(this)
-            }
+            // (v1148) تهيئة محرك MediaServiceCore (MtEngine) — الاحتياطي القديم MobileMainApplication اتشال مع :mobile
+            com.tttt.subtitler.mtui.MtEngine.boot(this)
         } catch (e: Throwable) {
-            try {
-                LogStore.err("JoyApp:mtboot", e)
-            } catch (_: Throwable) {
-            }
+            try { LogStore.err("JoyApp:mtengine", e) } catch (_: Throwable) {}
         }
         try { com.tttt.subtitler.mtui.PlayerTrace.sink = com.tttt.subtitler.mtui.PlayerTrace.Sink { l -> try { LogStore.add(l) } catch (_: Throwable) {} } } catch (_: Throwable) {}   // (v952)
         try { com.tttt.subtitler.mtui.PlayerTrace.install(this) } catch (_: Throwable) {}   // (v1110 Y6c) كان بيتعمل جوه MobileMainApplication.onCreate (النسخة القديمة)

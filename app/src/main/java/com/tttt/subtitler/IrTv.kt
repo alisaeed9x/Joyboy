@@ -225,7 +225,6 @@ object IrTv {
         if (k != null) return k
         return if (prefs(c).getBoolean("ir_mode", false)) "tv" else ""
     }
-    fun setIrKind(c: Context, kind: String) { prefs(c).edit().putString("ir_kind", kind).apply() }
     fun irMode(c: Context): Boolean = irKind(c).isNotEmpty()
     /** الريموت المختار للنوع [kind] (المحفوظ، وإلا للتلفزيون الأقرب لماركة وموديل التلفزيون)؛ null لو الماركة مش معروفة لسه */
     fun current(c: Context, kind: String = irKind(c).ifEmpty { "tv" }): Remote? {

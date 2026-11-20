@@ -456,24 +456,6 @@ object RemoteClient {
 
 
 
-    private fun pump() {
-        synchronized(pMv) { if (pBusy) return; pBusy = true }
-        Thread {
-            try {
-                while (true) {
-                    var mx = 0f; var my = 0f; var sx = 0f; var sy = 0f
-                    synchronized(pMv) {
-                        mx = pMv[0]; my = pMv[1]; sx = pSc[0]; sy = pSc[1]
-                        pMv[0] = 0f; pMv[1] = 0f; pSc[0] = 0f; pSc[1] = 0f
-                        if (mx == 0f && my == 0f && sx == 0f && sy == 0f) { pBusy = false; return@Thread }
-                    }
-                    if (mx != 0f || my != 0f) post("/ptr", JSONObject().put("op", "mv").put("dx", mx.toDouble()).put("dy", my.toDouble()))
-                    if (sx != 0f || sy != 0f) post("/ptr", JSONObject().put("op", "scroll").put("dx", sx.toDouble()).put("dy", sy.toDouble()))
-                    try { Thread.sleep(12L) } catch (_: InterruptedException) {}
-                }
-            } catch (_: Throwable) { synchronized(pMv) { pBusy = false } }
-        }.also { it.isDaemon = true }.start()
-    }
 
     // (v662) صوت مطلق من السلايدر: بنبعت آخر قيمة بس، من خيط واحد (عشان الترتيب ما يتلخبطش وقت السحب)
     private val volPend = java.util.concurrent.atomic.AtomicInteger(-1)

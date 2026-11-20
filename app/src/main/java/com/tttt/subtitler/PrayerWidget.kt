@@ -195,10 +195,6 @@ internal object PrayerCard {
         return String.format(Locale.US, "%02d:%02d", h12, m)
     }
 
-    fun leftHM(ms: Long): String {
-        val m = ((ms.coerceAtLeast(0L) + 59_999L) / 60_000L)
-        return String.format(Locale.US, "%d:%02d", m / 60, m % 60)
-    }
 
     fun bgFile(times: Map<String, String>, now: Long): String {
         return when (PrayerTimes.currentPrayer(times, now)) {

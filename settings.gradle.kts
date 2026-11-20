@@ -8,7 +8,9 @@ dependencyResolutionManagement {
 }
 rootProject.name = "Subtitler"
 
-// (v878) MeeTube (GPL-3.0) مدموج كمودولات جوه Joyboy — بدل PlayTube. المجلد: meetube/
+// (v878) MeeTube (GPL-3.0) مدموج كمودولات جوه Joyboy — المجلد: meetube/
+// (v1148) اتشالت واجهة ميتيوب كلها (:mobile · :common · :filepicker-lib · :doubletapplayerview-media3 · :slidableactivity · :sabr-media3 · :appupdatechecker2) — كانت كلها مقفولة من المانيفست.
+//   فاضل بس محرك يوتيوب: :youtubeapi · :mediaserviceinterfaces · :sharedutils (+ :sharedtests عشان testImplementation بتاعتهم).
 val mt = File(settingsDir, "meetube")
 gradle.extra["sharedModulesRoot"] = File(mt, "SharedModules")
 gradle.extra["mediaServiceCoreRoot"] = File(mt, "MediaServiceCore")
@@ -16,14 +18,7 @@ gradle.extra["sharedModulesConstants"] = File(mt, "SharedModules/constants.gradl
 
 include(":app")
 fun mod(name: String, dir: String) { include(name); project(name).projectDir = File(mt, dir) }
-mod(":mobile", "mobile")
-mod(":common", "common")
-mod(":filepicker-lib", "filepicker-lib")
-mod(":doubletapplayerview-media3", "doubletapplayerview-media3")
-mod(":slidableactivity", "slidableactivity")
-mod(":sabr-media3", "sabr-media3")
 mod(":mediaserviceinterfaces", "MediaServiceCore/mediaserviceinterfaces")
 mod(":youtubeapi", "MediaServiceCore/youtubeapi")
 mod(":sharedutils", "SharedModules/sharedutils")
-mod(":appupdatechecker2", "SharedModules/appupdatechecker2")
 mod(":sharedtests", "SharedModules/sharedtests")

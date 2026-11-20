@@ -87,18 +87,6 @@ class MultiLayerRing(ctx: Context) : View(ctx) {
     private val p = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeCap = Paint.Cap.ROUND }
     private val tp = Paint(Paint.ANTI_ALIAS_FLAG).apply { textAlign = Paint.Align.CENTER; typeface = Typeface.DEFAULT_BOLD }
 
-    fun setLayers(l: List<Layer>, animate: Boolean = true) {
-        val target = FloatArray(l.size) { l[it].frac.coerceIn(0f, 1f) }
-        layers = l; anim?.cancel()
-        if (shown.size != target.size) shown = FloatArray(target.size)
-        if (!animate || CareMotion.reduced(context) || !isAttachedToWindow) { shown = target; invalidate(); return }
-        from = shown.copyOf()
-        val maxD = target.indices.maxOfOrNull { abs(target[it] - from[it]) } ?: 0f
-        anim = ValueAnimator.ofFloat(0f, 1f).apply {
-            duration = CareMotion.dur(maxD); interpolator = DecelerateInterpolator()
-            addUpdateListener { a -> val f = a.animatedValue as Float; for (i in target.indices) shown[i] = from[i] + (target[i] - from[i]) * f; invalidate() }; start()
-        }
-    }
 
     override fun onDetachedFromWindow() { anim?.cancel(); super.onDetachedFromWindow() }
 

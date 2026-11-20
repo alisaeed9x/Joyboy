@@ -19,7 +19,7 @@ object YtSnap {
             if (vids.isEmpty()) return
             val a = JSONArray()
             for (x in vids) a.put(JSONObject().put("i", x.id).put("t", x.title).put("c", x.channel).put("cu", x.channelUrl).put("th", x.thumb)
-                .put("d", x.dur).put("n", x.count).put("a", x.age).put("k", x.kind).put("u", x.url).put("ts", x.ts).put("av", x.avatar).put("sh", if (YtRss.isShort(x.id)) 1 else 0))
+                .put("d", x.dur).put("n", x.count).put("a", x.age).put("k", x.kind).put("u", x.url).put("ts", x.ts).put("av", x.avatar).put("cid", x.channelId).put("sh", if (YtRss.isShort(x.id)) 1 else 0))
             val f = file(ctx, tab); val tmp = File(f.parentFile, f.name + ".tmp")
             tmp.writeText(JSONObject().put("at", System.currentTimeMillis()).put("items", a).toString()); tmp.renameTo(f)
         } catch (_: Throwable) {}
@@ -33,7 +33,7 @@ object YtSnap {
                 val x = a.getJSONObject(n); val ts = x.optLong("ts", 0L)
                 if (x.optInt("sh", 0) == 1) YtRss.shortIds.add(x.optString("i"))
                 l.add(NpItem(x.optString("i"), x.optString("t"), x.optString("c"), x.optString("cu"), x.optString("th"), x.optLong("d", -1L), x.optLong("n", -1L),
-                    if (ts > 0L) YtRss.ageOf(ts) else x.optString("a"), x.optInt("k", 0), x.optString("u"), ts, x.optString("av")))
+                    if (ts > 0L) YtRss.ageOf(ts) else x.optString("a"), x.optInt("k", 0), x.optString("u"), ts, x.optString("av"), x.optString("cid")))
             }
             if (l.isEmpty()) null else l
         } catch (_: Throwable) { null }

@@ -36,9 +36,6 @@ object PlayTarget {
     /** (v662) بعد ✕ على الكبسولة: ما نكتشفش «فيديو شغّال على التلفزيون» تاني قبل الوقت ده (لحد ما التلفزيون يقفل المشغّل فعلًا) */
     @Volatile var noAutoUntil = 0L
 
-    /** (v560) يرجّع يفتح شاشة التحكم (دوسة على اسم الفيديو في الكبسولة) */
-    @Volatile private var mirrorLast: String? = null   // (v570) آخر ملف محلي اتبعت للتلفزيون (عشان إعادة فتح شاشة التحكم تعرض الفيديو بجودته)
-    fun reopenController(act: Activity) { openController(act, nowTitle ?: "", mirrorLast) }
 
     /** (v560) يقفل الفيديو على التلفزيون (الأمر close) ويشيل الكبسولة فورًا */
     fun closeOnTv(ctx: android.content.Context, done: (Boolean) -> Unit = {}) {
@@ -132,13 +129,6 @@ object PlayTarget {
         return null
     }
 
-    /** (v558) يفتح مشغّل الموبايل بوضع المتحكم (remote=true): تحكم في الفيديو اللي شغّال على التلفزيون. لو مفتوح قبل كده مابيتفتحش تاني */
-    private fun openController(act: Activity, title: String, mirrorUri: String? = null) {
-        try {
-            if (PlayerActivity.hasLive()) return
-            act.startActivity(Intent(act, PlayerActivity::class.java).putExtra("remote", true).putExtra("title", title).apply { if (!mirrorUri.isNullOrEmpty()) putExtra("mirror_uri", mirrorUri) })   // (v570) ملف على الموبايل: المعاينة من الملف نفسه بجودته
-        } catch (e: Throwable) { LogStore.err("PlayTarget:controller", e) }
-    }
 
     /** (v810) 🚨: مسح سجل المشاهدة كله على الجهاز ده: آخر المشغّلة + سجل المشاهدة (متصفح/يوتيوب/ملفات) + سجل يوتيوب + الفيديوهات المصطادة (حتى المخفي). مابيمسحش الفيديوهات نفسها ولا الترجمة المحفوظة */
     fun wipeWatchHistory(ctx: android.content.Context) {

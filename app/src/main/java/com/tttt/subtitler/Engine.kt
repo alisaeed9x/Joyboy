@@ -127,7 +127,8 @@ class Engine(
         }
     }
     private val fastLight = ConcurrentHashMap.newKeySet<Int>()
-    private fun lightOn(chunk: Int, hole: Boolean, tx: Boolean): Boolean = fastLatched && !hole && !tx && chunk >= 0 && (chunk == rampChunk || chunk in fastLight || chunk in lightRetry)
+    private fun lightOn(chunk: Int, hole: Boolean, tx: Boolean): Boolean = fastLatched && !hole && !tx && chunk >= 0 && !easternSrc() &&   // (v1147) اللغات الشرقية: مفيش برومبت خفيف (السماع بيضعف)
+        (chunk == rampChunk || chunk in fastLight || chunk in lightRetry)
     private val pool: Pool get() = if (activeMode >= KeyMode.SPLIT_A && !fastLatched) splitPools().first else basePool
     private val trPool: Pool get() = splitPools().second
     @Volatile private var running = true
@@ -1430,7 +1431,7 @@ class Engine(
         var langRetry = 0; var langSwitchRetry = 0
         var srv = 0   // (v459) مفيش موديل بديل: أخطاء السيرفر بتتعاد على نفس الموديل الواحد (كان في v227 بيبدّل لموديل تاني)
         val fastStep = fastLatched && !hedge && !backupFirst && i == rampChunk && rampStep < 2
-        val spd = if (fastStep && FAST_SPEED > 1.0 && w.durSec >= 4.0) FAST_SPEED else 1.0   // (v1067) تسريع الصوت
+        val spd = if (fastStep && FAST_SPEED > 1.0 && w.durSec >= 4.0 && !easternSrc()) FAST_SPEED else 1.0   // (v1147) من غير تسريع صوت للغات الشرقية   // (v1067) تسريع الصوت
         val canSplit = fastStep && rampStep == 0 && w.durSec >= 16.0 && !Offline.on() && pool.usableCount() >= 2 && TrSlider.on("race")   // (v1067) طلبين بالتوازي   // (v1097) T2: TrSlider
         val sendBytes = if (spd > 1.0) { try { AudioTools.speedUp(w.bytes, spd) } catch (_: Throwable) { w.bytes } } else w.bytes
         val spdEff = if (sendBytes === w.bytes) 1.0 else spd
@@ -1669,7 +1670,7 @@ class Engine(
     private val dialConf = ConcurrentHashMap<String, Conf>()
     /** (v742) كل طلب صوت لجيميناي بياخد بلوك «دقة السماع» في الآخر (لغات غير الإنجليزي بتتسمع غلط كتير بالصوت المضغوط) */
     private fun buildPrompt(durSec: Double, start: Double, strict: Boolean = false, chunk: Int = -1, hole: Boolean = false, holeNear: Boolean = false, tx: Boolean = false): String =
-        buildPromptCore(durSec, start, strict, chunk, hole, holeNear, tx) + (if (lightOn(chunk, hole, tx) || !TrSlider.on("listen")) "" else listenBlock())   // (v1097) T2 الخفيف من غير بلوك دقة السماع الطويل
+        buildPromptCore(durSec, start, strict, chunk, hole, holeNear, tx) + (if (lightOn(chunk, hole, tx) || !TrSlider.on("listen")) "" else listenBlock()) + (if (easternSrc() && !hole) easternBlock() else "")   // (v1097) T2 الخفيف من غير بلوك دقة السماع الطويل
 
     private fun listenBlock(): String {
         val lang = if (detDone && srcLang.isNotBlank()) " The spoken language is $srcLang (the language name is written in Arabic)." else ""
@@ -1681,6 +1682,20 @@ class Engine(
     }
 
     /** (v742) المصدر مش إنجليزي (بعد ما اللغة اتحددت — الاسم بالعربي) */
+    /** (v1147) لغة الكلام شرقية (يابانية/كورية/صينية/هندية/تايلاندية/فيتنامية…) — بعد ما اللغة اتحددت من أول باتش */
+    private fun easternSrc(): Boolean {
+        if (!detDone || srcLang.isBlank()) return false
+        val n = srcLang.trim().lowercase()
+        val keys = listOf("ياباني", "كوري", "صيني", "ماندرين", "كانتون", "هندي", "تايلاند", "فيتنام", "بنغال", "تاميل", "أردو", "اردو", "إندونيس", "اندونيس", "ملاو", "japan", "korean", "chines", "mandarin", "cantones", "hindi", "thai", "vietnam", "bengal", "tamil", "urdu", "indonesian", "malay", "日本", "한국", "中文")
+        if (keys.any { n.contains(it) }) return true
+        return langCodeOf(srcLang) in setOf("ja", "ko", "zh", "hi", "th", "vi", "bn", "ta", "ur", "id", "ms")
+    }
+    private fun easternBlock(): String =
+        "\n\n═══ EASTERN-LANGUAGE HEARING ═══\n" +
+        "- 🔴 Write every \"original\" in the language's NATIVE script (Japanese: kanji + kana · Korean: hangul · Chinese: hanzi · Hindi: devanagari · Thai: thai script). Never romanize and never write English in \"original\".\n" +
+        "- 🔴 Listen to the WHOLE phrase before writing it: sentence-final particles/endings, short interjections and one-word replies are real sentences — do not skip, merge or drop them.\n" +
+        "- 🔴 Do not paraphrase while listening: first write exactly what was said, then translate. If a word is unclear, give your best phonetic reading and set low_confidence=true.\n"
+
     private fun nonEnglishSrc(): Boolean = detDone && srcLang.isNotBlank() && !srcLang.contains("إنجليز") && !srcLang.contains("english", ignoreCase = true)
 
     private fun buildPromptCore(durSec: Double, start: Double, strict: Boolean = false, chunk: Int = -1, hole: Boolean = false, holeNear: Boolean = false, tx: Boolean = false): String {

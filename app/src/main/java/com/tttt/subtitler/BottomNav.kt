@@ -66,27 +66,6 @@ class BottomNav(act: Activity, private val ui: Ui, private val th: Theme, privat
         if (lpress != null) setOnLongClickListener { lpress(); true }
     }
 
-    /** يبني الصف التاني من جديد (الأعضاء بتتغير حسب الوضع: يوتيوب/عادي/تلفزيون) */
-    private fun rebuildMore(act: Activity) {
-        val sc = moreScroll ?: return
-        val inner = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; gravity = Gravity.CENTER_VERTICAL }
-        val ids = DEFS.indices.filter { it != MORE && it != DEAD_AI && (it < YT_HOME || (it == IR && !tvDev)) && it !in order && !(it == 4 && YT_HOME in order) && !(it == 1 && !lite && 0 in order) }
-        val items = ArrayList<MoreItem>()
-        for (id in ids.filter { it != 7 }) items.add(MoreItem(DEFS[id].first, DEFS[id].second, id == active) { collapseMore(); if (id == IR) IrCatalogUi.show(act) else onPick(id) })
-        if (!tvDev) {
-            items.add(MoreItem("📺", "وضع TV", PlayTarget.enabled(), {
-                // دوسة طويلة: باقي خيارات التلفزيون
-                val labels = arrayOf(TvModeFab.alwaysLabel(), "📤  إرسال التحديث للتلفزيون")
-                GAlert(act).setTitle("📺 التلفزيون").setItems(labels) { _, i -> collapseMore(); if (i == 0) TvModeFab.toggleAlways(act) else RemoteClient.forcePushFlow(act) }.setNegativeButton("إغلاق", null).show()
-            }) { collapseMore(); TvModeFab.toggle(act) })
-        }
-        if (7 in ids) items.add(MoreItem(DEFS[7].first, DEFS[7].second, 7 == active) { collapseMore(); onPick(7) })
-        val sw = act.resources.displayMetrics.widthPixels
-        val w = if (items.size <= 5) sw / items.size else (sw / 5.4f).toInt()
-        for (mi in items) inner.addView(moreCell(act, mi, w))
-        sc.removeAllViews()
-        sc.addView(inner, FrameLayout.LayoutParams(-2, ui.dp(56)))
-    }
 
     private fun animateMore(open: Boolean) {
         val host = moreHost ?: return
@@ -107,13 +86,6 @@ class BottomNav(act: Activity, private val ui: Ui, private val th: Theme, privat
     private fun toggleMore(act: Activity) { moreSheet(act) }
     private fun collapseMore() { if (moreOpen) animateMore(false) }
 
-    /** (v855) فتح المخزن على تبويب (fm ملفات · ft إرسال واستقبال) — لو إحنا أصلًا جواه بيبدّل الشاشة */
-    private fun openHub(act: Activity, tab: String, open: String = "") {
-        try {
-            act.startActivity(FilesHub.open(act, tab, open))
-            if (act is FileManagerActivity || act is FileTransferActivity) { act.finish(); act.overridePendingTransition(0, 0) }
-        } catch (e: Throwable) { LogStore.err("Nav:hub", e) }
-    }
 
     /** (v855) كل الأقسام والميزات مجمّعة في مجموعات (اسم المجموعة ← مربعاتها) */
     private fun moreGroups(act: Activity): List<Pair<String, List<MoreItem>>> {
