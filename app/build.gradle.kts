@@ -123,6 +123,19 @@ val pruneStaleKt = tasks.register("pruneStaleKt") {
 }
 tasks.matching { it.name == "preBuild" }.configureEach { dependsOn(pruneStaleKt) }
 
+// (v1184) لو نفس المورد موجود PNG وWebP جنب بعض (بيحصل لما نفك زيب جديد فوق الريبو والـPNG القديمة لسه موجودة)
+// بنمسح الـPNG ونسيب الـWebP — بيمنع «Duplicate resources» من غير ما نمسح الملفات بإيدينا.
+val pruneDupRes = tasks.register("pruneDupRes") {
+    doLast {
+        val res = file("src/main/res")
+        res.walkTopDown().filter { it.isFile && it.extension == "png" }.forEach { png ->
+            val webp = File(png.parentFile, png.nameWithoutExtension + ".webp")
+            if (webp.isFile) { println("pruning duplicate resource (kept webp): " + png.relativeTo(res).invariantSeparatorsPath); png.delete() }
+        }
+    }
+}
+tasks.matching { it.name == "preBuild" }.configureEach { dependsOn(pruneDupRes) }
+
 // (v589 T4) اختبارات المنطق محتاجة مسار assets (prompts/fonts) — بتتقرا من متغير بيئة
 tasks.withType(Test::class.java).configureEach {
     environment("SUBTITLER_ASSETS", "$projectDir/src/main/assets")
