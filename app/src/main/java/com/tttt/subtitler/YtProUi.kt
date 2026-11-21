@@ -609,6 +609,8 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
     fun onHide() { leftYt = true; YtNotify.clearNew(); try { markHomeViewed() } catch (_: Throwable) {}; hideKb(); sugBox.visibility = View.GONE; watch.pause(); h.removeCallbacks(pollRun); h.removeCallbacks(softRefresh); if (DeviceUi.isTv(act) && navSel == 1) { try { YtNotify.markOpened(act) } catch (_: Throwable) {} } }   // (v575) خرجت من الاشتراكات = العدّ من دلوقتي
     /** (v348) Main.onStop: الشورتس تقف لما التطبيق يروح الخلفية أو يظهر المشغّل فوقه (بترجع في refresh() مع onResume) */
     fun onPause() { watch.pause(); ytDock.pause() }
+    /** (v1162) صفحة المشاهدة اتصغّرت: المشغّل الشغّال بيتسلّم للدوك السفلي (instant لأن الحركة اتعملت في الصفحة) */
+    fun dockKept(item: NpItem, kept: YtKept) { ytDock.show(item, kept, true) }
     /** (v606) خروج من التطبيق (Home/Recents) والفيديو شغّال في صفحة المشاهدة أو الشريط السفلي: يتسلّم للمشغّل الكامل ويدخل PiP. true = اتسلّم */
     fun leaveForPip(): Boolean {
         if (Cfg.str("yt_auto_pip", "1") == "0") return false
@@ -1373,7 +1375,7 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
         val hs = intArrayOf(0, 1080, 720, 480, 360, 240)
         val labels = hs.map { if (it == 0) "أعلى جودة" else it.toString() + "p" }.toTypedArray()
         GAlert(act).setTitle("🎞 الجودة الافتراضية").setItems(labels) { _, w ->
-            Cfg.put("yt_maxh", hs[w].toString()); Notice.show(act, ("🎞 الجودة الافتراضية: " + labels[w]).toString(), 2200L)
+            Cfg.put("yt_maxh", hs[w].toString()); Notice.show(act, ("🎞 الجودة الافتراضية: " + labels[w]).toString(), 2200L); TvQ.askPin(act, hs[w])   // (v1163)
         }.setNegativeButton("إلغاء", null).show()
     }
     private fun openDownloads() {

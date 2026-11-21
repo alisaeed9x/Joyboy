@@ -1,6 +1,7 @@
 com/tttt/subtitler/ActionsWidget.kt
 com/tttt/subtitler/AppWall.kt
 com/tttt/subtitler/AudioBridge.kt
+com/tttt/subtitler/BatchExport.kt
 com/tttt/subtitler/AudioCore.kt
 com/tttt/subtitler/AudioEnc.kt
 com/tttt/subtitler/AudioIO.kt
@@ -113,6 +114,8 @@ com/tttt/subtitler/LiveLogic.kt
 com/tttt/subtitler/LocalMt.kt
 com/tttt/subtitler/Lock.kt
 com/tttt/subtitler/LockCore.kt
+com/tttt/subtitler/LogArchive.kt
+com/tttt/subtitler/LogArchiveUi.kt
 com/tttt/subtitler/LogStore.kt
 com/tttt/subtitler/Lyrics.kt
 com/tttt/subtitler/LyricsApi.kt

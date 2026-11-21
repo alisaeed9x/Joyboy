@@ -1919,7 +1919,7 @@ class PlayerActivity : Activity(), Host {
         } catch (e: Throwable) { LogStore.err("Tv:vol", e) }
     }
     @Volatile private var replacedByNew = false   // (v1147) اتقفل لأن فيديو جديد فتح مكانه: لازم حركة القفل تساعد حركة الدخول (من تحت لفوق) مش تلغيها
-    override fun finish() { super.finish(); if (gone) { try { overridePendingTransition(0, 0) } catch (_: Throwable) {}; return }; try { if (ytPage && replacedByNew) overridePendingTransition(R.anim.yt_page_up_enter, R.anim.yt_page_up_exit) else if (ytPage) overridePendingTransition(R.anim.yt_page_down_enter, R.anim.yt_page_down_exit) else if (MtLook.playerAnim()) overridePendingTransition(R.anim.player_close_enter, R.anim.player_close_exit) else overridePendingTransition(R.anim.act_stay, R.anim.act_exit) } catch (e: Exception) { LogStore.err("Main:725", e) } }
+    override fun finish() { super.finish(); if (dockedAway) { try { overridePendingTransition(0, 0) } catch (_: Throwable) {}; return }; if (gone) { try { overridePendingTransition(0, 0) } catch (_: Throwable) {}; return }; try { if (ytPage && replacedByNew) overridePendingTransition(R.anim.yt_swap_enter, R.anim.yt_swap_exit) else if (ytPage) overridePendingTransition(R.anim.yt_page_down_enter, R.anim.yt_page_down_exit) else if (MtLook.playerAnim()) overridePendingTransition(R.anim.player_close_enter, R.anim.player_close_exit) else overridePendingTransition(R.anim.act_stay, R.anim.act_exit) } catch (e: Exception) { LogStore.err("Main:725", e) } }
     @Volatile var cur = 0L
     @Volatile var durMs = 0L
     @Volatile var status = ""
@@ -1959,6 +1959,26 @@ class PlayerActivity : Activity(), Host {
     lateinit var th: Theme
     lateinit var ui: Ui
     val logBuf = StringBuilder()
+    // (v1167) سجل اللوجات: arcRun = تشغيلة الفيديو الحالية (لوجها + ترجماتها بتتحفظ في LogArchive) · logArcPlay = id لوج محفوظ بنشغّل الفيديو بجمله (عرض بس: من غير حفظ ولا ترجمة)
+    @Volatile private var arcRun: LogArchive.Run? = null
+    @Volatile private var logArcPlay: String? = null
+    private var logArcPlayVid = ""
+    private fun archiveNow() {
+        val r = arcRun ?: return
+        try { LogArchive.save(applicationContext, r, if (::realEngine.isInitialized) realEngine.subs else emptyList()) } catch (e: Throwable) { LogStore.err("Player:archive", e) }
+    }
+    /** «ترجم من الأول» على فيديو ليه ترجمة: التشغيلة الحالية بترجماتها بتتحفظ كنسخة، وبيبدأ لوج جديد للترجمة الجديدة */
+    private fun archiveRotate() {
+        val r = arcRun ?: return
+        try {
+            val cur0 = if (::realEngine.isInitialized) realEngine.subs else emptyList()
+            if (LogArchive.translatedCount(cur0) <= 0) { LogArchive.append(r, fmtMs(cur) + "  🔁 ترجمة من الأول"); return }
+            LogArchive.save(applicationContext, r, cur0)
+            val n = LogArchive.start(applicationContext, r.vid, r.title, r.uri, r.url)
+            LogArchive.append(n, fmtMs(cur) + "  🔁 ترجمة من أول وجديد — لوج جديد (اللوج اللي قبله اتحفظ بترجماته في سجل اللوجات)")
+            arcRun = n
+        } catch (e: Throwable) { LogStore.err("Player:archiveRotate", e) }
+    }
     val h = Handler(Looper.getMainLooper())
     var url: String? = null
     var aurl: String? = null
@@ -2535,7 +2555,7 @@ class PlayerActivity : Activity(), Host {
             if (studioAskOpen) return
             val vu = uri ?: return
             val key = vu.toString()
-            if (remote || autoSubKey == key || noSub || askSaved || Cfg.str("auto_sub", "1") == "0") return
+            if (remote || logArcPlay != null || autoSubKey == key || noSub || askSaved || Cfg.str("auto_sub", "1") == "0") return
             if (engineStarted || engine.subs.isNotEmpty() || sfBusy.isNotEmpty()) return
             autoSubKey = key; softAskedFor = key
             // (v1137) اختيار ملف الترجمة: «بدون ترجمة» محفوظ ← مفيش ترجمة تلقائية · أكتر من ملف ومفيش اختيار ← شاشة اختيار صريحة (مفيش اختيار صامت)
@@ -2685,6 +2705,7 @@ class PlayerActivity : Activity(), Host {
     }
     fun beginTranslate(auto: Boolean = false) {
         if (remote) { remoteBegin(auto); return }
+        if (logArcPlay != null) { if (!auto) say("🗂 إنت بتشوف ترجمات لوج محفوظ — افتح الفيديو عادي لو عايز تترجم من جديد"); return }   // (v1167)
         val asked = trAsked; trAsked = false
         if (!auto && softGate()) return
         if (::engine.isInitialized && (sfShown || (sfDoneUri.isNotEmpty() && sfDoneUri == (uri?.toString() ?: "")))) sfClearForBatch()
@@ -2751,6 +2772,7 @@ class PlayerActivity : Activity(), Host {
     private fun planSig(pl: TrWizard.Plan) = listOf(pl.mode, pl.only, pl.engine, pl.method, pl.onlineId, pl.lang, pl.model, pl.dialect, pl.dia ?: "-", Cfg.str("tr_mode_id", "")).joinToString("|")
     /** (v399) لو المحرك كان خلّص ووقف (مثلًا «تفريغ بس» خلص) والوضع اتغيّر: يبدأ الحلقة من جديد عشان الباقي يتترجم */
     private fun engineKick() {
+        if (logArcPlay != null) return   // (v1167) عرض لوج محفوظ: مفيش تشغيل للمحرك
         try { if (engineStarted && ::engine.isInitialized && engine.reopen()) { LogStore.add("♻ المحرك كان واقف — بشغّله تاني بالوضع الجديد"); startEngine() } } catch (e: Throwable) { LogStore.err("Player:engineKick", e) }
     }
     private var trChipV: View? = null
@@ -3669,6 +3691,7 @@ class PlayerActivity : Activity(), Host {
 
     /** (v741) ☁ ترجمة جيميناي لوحده: الصوت بيتبعت باتشات لجيميناي بإعداداته (WAV/AAC + مفاتيحك) — من غير FreeLLM ولا وشبر */
     private fun geminiStart() {
+        if (logArcPlay != null) { say("🗂 إنت بتشوف ترجمات لوج محفوظ — افتح الفيديو عادي لو عايز تترجم"); return }   // (v1167)
         if (needGeminiKey { geminiStart() }) return   // (v1101)
         // (v1119) FIX قلب الوضع: التشغيل هنا ترجمة، بس من غير ما يكتب فوق اختيار التفريغ المحفوظ
         // tr_kind بيتكتب من اختيارك الصريح بس (الإعدادات/القايمة)، مش من كل ضغطة ترجمة
@@ -3690,6 +3713,7 @@ class PlayerActivity : Activity(), Host {
 
     /** (v440) 🆓 ترجمة FreeLLM الصوتية: زي جيميناي فلاش لايت — الصوت بيتبعت باتشات للموديلات المجانية وبترجع الترجمة جاهزة (من غير وشبر) */
     private fun freeGemStart() {
+        if (logArcPlay != null) { say("🗂 إنت بتشوف ترجمات لوج محفوظ — افتح الفيديو عادي لو عايز تترجم"); return }   // (v1167)
         if (!FreeLlm.audioReady()) { if (!needGeminiKey { freeGemStart() }) say("🆓 ضيف مفتاح جيميناي من الإعدادات ← 🔑 المفاتيح (أو رابط سيرفر FreeLLM)"); return }   // (v1101)
         try {
             val dia = TrWizard.dialectWanted().ifBlank { "فصحى" }
@@ -4164,6 +4188,7 @@ class PlayerActivity : Activity(), Host {
             logBuf.append(fmtMs(cur)).append("  ").append(s).append('\n')
             if (logBuf.length > 30000) logBuf.delete(0, 10000)
         }
+        LogArchive.append(arcRun, fmtMs(cur) + "  " + s)
         LogStore.add(fmtMs(cur) + "  " + s)
     }
     private var lastBeat = 0L
@@ -4339,6 +4364,7 @@ class PlayerActivity : Activity(), Host {
     private fun diagLog(s: String) {
         try { if (BrainBus.active()) BrainBus.post("log", s) } catch (_: Throwable) {}
         synchronized(logBuf) { logBuf.append(fmtMs(cur)).append("  ").append(s).append('\n'); if (logBuf.length > 30000) logBuf.delete(0, 10000) }
+        LogArchive.append(arcRun, fmtMs(cur) + "  " + s)
         LogStore.add(fmtMs(cur) + "  " + s)
     }
     private fun subDiag(bad: Boolean, errN: Int) {
@@ -4796,6 +4822,7 @@ class PlayerActivity : Activity(), Host {
     }
     override fun onCreate(b: Bundle?) {
         NetLedger.start(this); NetLog.start(this); NetGate.apply(this)
+        try { if (Build.VERSION.SDK_INT >= 27 && intent.getBooleanExtra("ytpage", false) && intent.getStringExtra("ytid")?.length == 11 && !DeviceUi.isTv(this)) setTheme(R.style.AppPlayerYt) } catch (_: Throwable) {}   // (v1161) نافذة شفافة: الصفحة الخلفية (الفيد) بتبان وقت سحب التصغير زي يوتيوب
         super.onCreate(b)
         smoothRotation()   // (v1123) كروس-فيد الدوران يتحدّد قبل أي شغل تقيل (قبل ما النافذة تتعرض)
         // (v1123) الدخول للشاشة الكاملة من يوتيوب كان بيفتح المشغّل بورتريه وبعد أول فريم (onVideoSizeChanged) يلف لاندسكيب — ده كان سبب النتشة الكبيرة والسواد.
@@ -4815,7 +4842,8 @@ class PlayerActivity : Activity(), Host {
         } catch (_: Throwable) {}
         if (incognito) try { window.addFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE) } catch (_: Throwable) {}   // (v1062) متخفي: المعاينة في الريسنت سودا
         smoothRotation()   // (v429)
-        try { if (intent.getBooleanExtra("handoff", false)) overridePendingTransition(0, 0) else if (ytPage) overridePendingTransition(R.anim.yt_page_up_enter, R.anim.yt_page_up_exit) else if (MtLook.playerAnim()) overridePendingTransition(R.anim.player_open_enter, R.anim.player_open_exit) } catch (_: Throwable) {}   // (v899) (v1143) صفحة يوتيوب: بتطلع من تحت (v1130) التسليم من المشغّل المصغّر: من غير حركة حركة فتح المشغّل من MeeTube
+        if (ytPage && (!intent.getBooleanExtra("handoff", false) || intent.getBooleanExtra("ytpage", false))) try { window.setWindowAnimations(if (intent.getBooleanExtra("ytswap", false)) R.style.YtSwapWindowAnim else R.style.YtPageWindowAnim) } catch (_: Throwable) {}   // (v1160) احتياطي لو الروم تجاهلت overridePendingTransition
+        try { if (intent.getBooleanExtra("handoff", false) && !ytPage) overridePendingTransition(0, 0) else if (ytPage && intent.getBooleanExtra("ytswap", false)) overridePendingTransition(R.anim.yt_swap_enter, R.anim.yt_swap_exit) else if (ytPage) overridePendingTransition(R.anim.yt_page_up_enter, R.anim.yt_page_up_exit) else if (MtLook.playerAnim()) overridePendingTransition(R.anim.player_open_enter, R.anim.player_open_exit) } catch (_: Throwable) {}   // (v899) (v1143) صفحة يوتيوب: بتطلع من تحت (v1130) التسليم من المشغّل المصغّر: من غير حركة حركة فتح المشغّل من MeeTube
         synchronized(liveList) {
             liveList.removeAll { it.get() == null }
             liveList.toList().forEach { r -> r.get()?.let { o -> if (o !== this) try { o.runOnUiThread { o.killForNewVideo() } } catch (_: Throwable) {} } }
@@ -4854,6 +4882,7 @@ class PlayerActivity : Activity(), Host {
         intent.getStringExtra("cookie")?.takeIf { it.isNotEmpty() }?.let { hdr["Cookie"] = it }
 
         val page = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setBackgroundColor(th.bg); layoutDirection = View.LAYOUT_DIRECTION_RTL }
+        ytPageRef = page   // (v1161)
         val videoBox = FrameLayout(this).apply { background = GradientDrawable().apply { setColor(Color.BLACK); cornerRadius = ui.dp(14).toFloat() }; clipToOutline = true; layoutDirection = View.LAYOUT_DIRECTION_LTR }
         videoBoxRef = videoBox
         hookRotAnim(videoBox)   // (v1125)
@@ -5231,6 +5260,7 @@ class PlayerActivity : Activity(), Host {
         gSub.addView(pk("⏱ شريط التزامن السريع") { toggleSyncStrip() })   // (v469) B14
         // (v103) قايمة ☰ = قايمة منسدلة صغيرة فيها بس الأزرار اللي مش موجودة في المشغّل نفسه
         gTool.addView(pd("📤 تصدير SRT") { doExport() })
+        gTool.addView(pd("🎧 تنزيل الباتشات الصوتية (مترقمة)") { exportBatches() })   // (v1165)
         gTool.addView(pd("📥 استيراد ملف ترجمة (بيترجم فورًا)") { doImport() })
         gTool.addView(pd("📂 فتح فيديو") { doOpen() })
         // (v1025) اللي اتشال من الشريط العلوي لقلّة الاستعمال بقى هنا
@@ -5627,7 +5657,13 @@ class PlayerActivity : Activity(), Host {
             updateTrChip(); applyBadgeAlpha()   // (v323) العدّادات بتظهر مع أزرار المشغّل بس
             fsBtnV.visibility = if (!fullMode && !tvHide) View.VISIBLE else View.GONE   // في الشاشة الكاملة ⛶ جوه الشريط السفلي
             if (DeviceUi.isTv(this)) { fsBtnV.visibility = View.GONE; floatBar.visibility = View.GONE; batchBtn.visibility = View.GONE; rotBtn.visibility = View.GONE }   // (v664) تلفزيون: الزراري العايمة دي ممنوعة نهائيًا مهما حصل
-            subLp.bottomMargin = ((if (on) maxOf(ui.dp(128), fsBar.height + ui.dp(12)) else ui.dp(12)) + subPosExtra()).coerceAtLeast(0); sub.requestLayout()   // (v469) + رفع الاستوديو
+            val subOldBm = subLp.bottomMargin
+            subLp.bottomMargin = ((if (on) maxOf(ui.dp(128), fsBar.height + ui.dp(12)) else ui.dp(12)) + subPosExtra()).coerceAtLeast(0)
+            if (subOldBm != subLp.bottomMargin && sub.height > 0) {   // (v1169) الترجمة كانت بتنط لما الشريط يظهر/يختفي ← تنزلق لمكانها الجديد
+                sub.animate().cancel(); sub.translationY = sub.translationY + (subLp.bottomMargin - subOldBm)
+                sub.animate().translationY(0f).setStartDelay(0L).setDuration(Skins.dur(210L)).setInterpolator(android.view.animation.DecelerateInterpolator(1.6f)).start()
+            }
+            sub.requestLayout()   // (v469) + رفع الاستوديو
             placeFloatFn()
             applyPageChrome()
         }
@@ -5652,7 +5688,7 @@ class PlayerActivity : Activity(), Host {
                 giShow("2× ⏩", Gravity.CENTER)
             }
             override fun onSingleTapConfirmed(e: MotionEvent): Boolean {
-                if (ytPage && !fullMode && !pipNow()) { pageCpShow = true; centerPlay.visibility = View.VISIBLE; h.removeCallbacks(pageCpHide); h.postDelayed(pageCpHide, 2500L); return true }   // (v1143)
+                if (ytPage && !fullMode && !pipNow()) { pageCpShow = true; centerPlay.visibility = if (busyShown()) View.GONE else View.VISIBLE; h.removeCallbacks(pageCpHide); h.postDelayed(pageCpHide, 2500L); return true }   // (v1143)
                 // اللمس على الشاشة ما بيشغّلش ولا بيوقّف الفيديو — التشغيل/الإيقاف من زرار التشغيل بس
                 if (fullMode) {
                     if (chromeShown) { log("👆 ضغطة: إخفاء الشريط"); h.removeCallbacks(hideChrome); chromeShown = false; applyChromeFn() }
@@ -5688,8 +5724,7 @@ class PlayerActivity : Activity(), Host {
                     scrollLogged = true; log("↕ سحب لفوق: التالي"); openNextSheet(); return true
                 }
                 if (ytPage && !fullMode) {   // (v1143) صفحة يوتيوب المصغّرة: سحب لتحت = تصغير (صورة مصغّرة)، ومفيش صوت/سطوع
-                    if (!scrollLogged && e2.y - e1.y > ui.dp(56)) { scrollLogged = true; log("↕ سحب لتحت: تصغير"); enterPip(true) }
-                    return true
+                    return true   // (v1161) السحب لتحت بقى تفاعلي (ytDragTouch) مش ضغطة واحدة
                 }
                 if (!MtLook.levelSwipes()) return true
                 val d = dy / videoBox.height.coerceAtLeast(1) * 1.3f
@@ -5780,6 +5815,17 @@ class PlayerActivity : Activity(), Host {
                     return@setOnTouchListener true
                 }
                 MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> if (syncing) { syncing = false; syncCand = false; if (fullMode) showChrome(); return@setOnTouchListener true }
+            }
+            if (ytPage && !fullMode && !pipNow() && !hScrub && !fast2x) {   // (v1161) سحب التصغير التفاعلي
+                if (ytAnim?.isRunning == true) return@setOnTouchListener true
+                when (ev.actionMasked) {
+                    MotionEvent.ACTION_DOWN -> ytDragDown(ev)
+                    MotionEvent.ACTION_MOVE -> {
+                        if (!ytDragOn && ytDragStart(ev)) { val c = MotionEvent.obtain(ev); c.action = MotionEvent.ACTION_CANCEL; gd.onTouchEvent(c); c.recycle(); h.removeCallbacks(pageCpHide) }
+                        if (ytDragOn) { ytDragMove(ev); return@setOnTouchListener true }
+                    }
+                    MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> if (ytDragOn) { ytDragEnd(ev); return@setOnTouchListener true }
+                }
             }
             gd.onTouchEvent(ev); true
         }
@@ -6269,7 +6315,7 @@ class PlayerActivity : Activity(), Host {
             } catch (e: Throwable) { LogStore.err("Player:snap", e) }
         }
         // (v714) الجودة اللي مختارها في الإعدادات (yt_maxh) هي الحد الأقصى لفيديوهات المتصفح/HLS: أعلى جودة لحد الحد ده، ولو مفيش ينزل تحتها — وما يطلعش فوقه إلا لما تختار بإيدك من زرار الجودة
-        try { val mh = if (DeviceUi.realTvCached) 0 else Cfg.int("yt_maxh", 0); if (mh > 0 && uri == null) player.exo()?.let { xp -> xp.trackSelectionParameters = xp.trackSelectionParameters.buildUpon().setMaxVideoSize(Int.MAX_VALUE, mh).build() } } catch (e: Throwable) { LogStore.err("Player:maxh", e) }
+        try { val mh = if (DeviceUi.realTvCached) TvQ.HARD else Cfg.int("yt_maxh", 0); if (mh > 0 && uri == null) player.exo()?.let { xp -> xp.trackSelectionParameters = xp.trackSelectionParameters.buildUpon().setMaxVideoSize(Int.MAX_VALUE, mh).build() } } catch (e: Throwable) { LogStore.err("Player:maxh", e) }
         player.setPlaybackSpeed(speed)
         var firstFrame = false
         val plst = object : Player.Listener {
@@ -6344,7 +6390,7 @@ class PlayerActivity : Activity(), Host {
                             softLateKey = ""
                             runOnUiThread {
                                 try {
-                                    if (!isFinishing && !isDestroyed && ::engine.isInitialized && !engineStarted && engine.subs.isEmpty() && sfBusy.isEmpty() && sfLive.isEmpty() && Cfg.str("auto_sub", "1") != "0" && !noSub && !remote) {
+                                    if (!isFinishing && !isDestroyed && ::engine.isInitialized && !engineStarted && engine.subs.isEmpty() && sfBusy.isEmpty() && sfLive.isEmpty() && Cfg.str("auto_sub", "1") != "0" && !noSub && !remote && logArcPlay == null) {
                                         LogStore.add("💬 سوفت صب: المسار ظهر متأخر — بجرّب الترجمة الأوتوماتيك تاني")
                                         uri?.let { vu2 -> softAuto(vu2, 0L) { } }
                                     }
@@ -6373,6 +6419,7 @@ class PlayerActivity : Activity(), Host {
                 offerLinkRefresh()
             }
         }
+        plstRef = plst   // (v1162)
         player.exo()?.addListener(plst)
         if (handedOff) {   // (v406) المشغّل جاهز وشغّال: بنزامن الواجهة (حجم الفيديو/زرار التشغيل/اللودينج) لأن الأحداث دي عدّت قبل ما نسمع
             h.post {
@@ -6500,6 +6547,7 @@ class PlayerActivity : Activity(), Host {
     /** يشغّل المحرك. لو الدخول كان «ابدأ من الأول وجديد»: المسح والحفظ على خيط الخلفية قبل ما الحلقة تبدأ (مش على الـ UI) */
     private fun startEngine() {
         if (remote) return
+        if (logArcPlay != null) return   // (v1167) عرض لوج محفوظ
         val fresh = freshOnce; freshOnce = false
         if (fresh) { try { player.seekTo(0) } catch (e: Exception) { LogStore.err("Main:2041", e) }; cur = 0L }
         val eng = realEngine   // (v139) المحرك اللي اتطلب له التشغيل بالذات — مش اللي يبقى في الحقل وقت ما الخيط يشتغل
@@ -6536,6 +6584,13 @@ class PlayerActivity : Activity(), Host {
         val gh = GuardedHost(this); guard = gh
         val eng = Engine(conf, { makeSource(sp) }, store, gh, pb)
         eng.persistBlocked = true
+        // (v1167) سجل اللوجات: تشغيلة جديدة لكل فتحة فيديو (إلا المتخفي · الريموت · عرض لوج محفوظ)
+        val lap0 = intent.getStringExtra("logarc")?.takeIf { it.isNotBlank() } ?: LogArchive.takePending(vid)
+        if (lap0 != null) { logArcPlay = lap0; logArcPlayVid = vid } else if (logArcPlayVid != vid) logArcPlay = null   // إعادة initEngine لنفس الفيديو (رابط متأخر) بتفضل في وضع العرض
+        if (logArcPlay != null || incognito || remote || !Cfg.bool("logarc_on", true)) arcRun = null
+        else if (arcRun?.vid != vid) arcRun = LogArchive.start(applicationContext, vid, intent.getStringExtra("title")?.takeIf { it.isNotBlank() } ?: "", uri?.toString() ?: "", intent.getStringExtra("page")?.takeIf { it.isNotBlank() } ?: (url ?: ""))
+        eng.onFreshRun = { archiveRotate() }
+        if (logArcPlay != null) log("🗂 بتشغّل الفيديو بترجمات لوج محفوظ — عرض بس (مفيش ترجمة ولا حفظ على ترجمة الفيديو الأصلية)")
         realEngine = eng
         engine = LocalEngine(eng)
         brainSubsRef = null
@@ -6575,6 +6630,8 @@ class PlayerActivity : Activity(), Host {
             // (كانت بتتعمل على الـ UI وبتجمّد الشاشة): إيقاف ترجمة الخلفية + قراءة وتحليل ملف الترجمة المحفوظة
             if (wasBg) try { BgJobs.stopAndWait(vidNow, 2500) } catch (e: Throwable) { LogStore.err("Player:stopBg", e) }
             val savedPos0 = try { eng.load() } catch (e: Throwable) { LogStore.err("Player:load", e); 0.0 }
+            val viewLog = logArcPlay
+            if (viewLog != null) try { LogArchive.readSubs(applicationContext, viewLog)?.let { eng.loadSnapshot(it); log("🗂 اتحمّلت ${it.size} جملة من اللوج المحفوظ (${LogArchive.translatedCount(it)} مترجمة)") } } catch (e: Throwable) { LogStore.err("Player:logarcLoad", e) }
             // (v125) آخر مكان وقوف فعلي (بيتحفظ كل 3 ث، حتى وإنت في PiP) أحدث من اللي في ملف الترجمة
             val lastPosSec = try { val s = Cfg.p.getString("lastpos", "") ?: ""; val i = s.indexOf('\t'); if (i > 0 && s.substring(0, i) == vidNow) (s.substring(i + 1).toLongOrNull() ?: 0L) / 1000.0 else 0.0 } catch (_: Throwable) { 0.0 }
             // (v892) مخزن YtProg اتمسح مع طبقة يوتيوب القديمة (v889) — الاستكمال بقى من lastpos/recent.json بس
@@ -6583,7 +6640,7 @@ class PlayerActivity : Activity(), Host {
             val rp = if (savedPos <= 5.0 && uri == null) {
                 try { Recents.parse(File(filesDir, "recent.json").readText()).firstOrNull { it.id == vidNow }?.posSec ?: 0.0 } catch (_: Exception) { 0.0 }
             } else 0.0
-            eng.persistBlocked = false
+            eng.persistBlocked = (viewLog != null)   // (v1167) عرض لوج محفوظ: ممنوع الحفظ على ترجمة الفيديو
             runOnUiThread {
                 if (isFinishing || isDestroyed || realEngine !== eng) return@runOnUiThread
                 engineReady = true
@@ -6964,6 +7021,157 @@ class PlayerActivity : Activity(), Host {
     private val pageCpHide = Runnable { pageCpShow = false; try { if (ytPage && !fullMode && !buffering && player.isPlaying) centerPlay.visibility = View.GONE } catch (_: Throwable) {} }
     private var ytWatch: YtWatchPage? = null
 
+    // ===== (v1161) سحب التصغير زي يوتيوب: الفيديو بيصغّر ويتحرك لتحت مع الصباع · الصفحة تنزل وتبهت · الفيد اللي ورا يبان · بعد الإفلات يكمّل أو يرجع بحركة ناعمة =====
+    private var ytPageRef: LinearLayout? = null
+    private var ytDragOn = false
+    private var ytDragP = 0f
+    private var ytDownX = 0f
+    private var ytDownY = 0f
+    private var ytVt: android.view.VelocityTracker? = null
+    private var ytAnim: android.animation.ValueAnimator? = null
+    private fun ytPageH(): Float { val pg = ytPageRef; return (if (pg != null && pg.height > 0) pg.height else resources.displayMetrics.heightPixels).toFloat() }
+    private fun ytMiniScale(): Float { val w = videoBoxRef.width.toFloat().coerceAtLeast(1f); return minOf(ui.dp(104).toFloat(), w * 0.42f) / w }   // (v1162) نفس عرض فيديو الدوك السفلي
+    private fun ytMiniTy(): Float { val vb = videoBoxRef; return (ytPageH() - vb.height * ytMiniScale() - ui.dp(72)) - vb.top }
+    private fun ytApplyDrag(p0: Float) {
+        val vb = videoBoxRef; val pg = ytPageRef ?: return
+        val p = p0.coerceIn(0f, 1f); ytDragP = p
+        val s = ytMiniScale(); val sc = 1f - p * (1f - s)
+        vb.pivotX = 0f; vb.pivotY = 0f
+        vb.scaleX = sc; vb.scaleY = sc; vb.translationY = p * ytMiniTy(); vb.translationX = p * (pg.width - vb.width * s)   // (v1162) يلزق يمين زي الدوك
+        extras.translationY = p * (ytPageH() - vb.height)
+        extras.alpha = (1f - p * 1.7f).coerceIn(0f, 1f)
+        try { pg.background.mutate().alpha = (255f * (1f - (p * 1.4f).coerceAtMost(1f))).toInt() } catch (_: Throwable) {}
+    }
+    private fun ytAnimTo(target: Float, then: (() -> Unit)? = null) {
+        ytAnim?.cancel()
+        val a = android.animation.ValueAnimator.ofFloat(ytDragP, target)
+        a.duration = if (target > 0f) 220L else 260L
+        a.interpolator = android.view.animation.PathInterpolator(0.4f, 0f, 0.2f, 1f)
+        a.addUpdateListener { ytApplyDrag(it.animatedValue as Float) }
+        a.addListener(object : android.animation.AnimatorListenerAdapter() {
+            var cancelled = false
+            override fun onAnimationCancel(an: android.animation.Animator) { cancelled = true }
+            override fun onAnimationEnd(an: android.animation.Animator) { if (!cancelled) then?.invoke() }
+        })
+        ytAnim = a; a.start()
+    }
+    private fun ytDragReset() {
+        try { ytAnim?.cancel() } catch (_: Throwable) {}
+        ytDragOn = false
+        try {
+            ytApplyDrag(0f)
+            videoBoxRef.scaleX = 1f; videoBoxRef.scaleY = 1f; videoBoxRef.translationX = 0f; videoBoxRef.translationY = 0f
+            extras.translationY = 0f; extras.alpha = 1f
+            ytPageRef?.background?.mutate()?.alpha = 255
+        } catch (_: Throwable) {}
+    }
+    private fun ytDragDown(ev: MotionEvent) {
+        ytDownX = ev.rawX; ytDownY = ev.rawY; ytDragOn = false
+        try { ytVt?.recycle() } catch (_: Throwable) {}
+        ytVt = android.view.VelocityTracker.obtain().also { it.addMovement(ev) }
+    }
+    private fun ytDragStart(ev: MotionEvent): Boolean {
+        try { ytVt?.addMovement(ev) } catch (_: Throwable) {}
+        val dy = ev.rawY - ytDownY; val dx = ev.rawX - ytDownX
+        if (dy > ui.dp(14) && dy > Math.abs(dx) * 1.3f) { ytDragOn = true; log("↕ سحب لتحت: تصغير (تفاعلي)"); return true }
+        return false
+    }
+    private fun ytDragMove(ev: MotionEvent) {
+        try { ytVt?.addMovement(ev) } catch (_: Throwable) {}
+        val span = maxOf(ui.dp(220).toFloat(), ytMiniTy())
+        ytApplyDrag((ev.rawY - ytDownY - ui.dp(14)) / span)
+    }
+    private fun ytDragEnd(ev: MotionEvent) {
+        var vy = 0f
+        try { ytVt?.addMovement(ev); ytVt?.computeCurrentVelocity(1000); vy = ytVt?.yVelocity ?: 0f; ytVt?.recycle() } catch (_: Throwable) {}
+        ytVt = null; ytDragOn = false
+        val commit = ev.actionMasked == MotionEvent.ACTION_UP && (ytDragP > 0.35f || (vy > ui.dp(700) && ytDragP > 0.06f))
+        if (commit) ytAnimTo(1f) { ytCommitMini() } else ytAnimTo(0f)
+    }
+    // ===== (v1162) تسليم المشغّل للدوك السفلي في Main + سحب التصغير من الصفحة نفسها =====
+    @Volatile private var dockedAway = false
+    private var plstRef: Player.Listener? = null
+    private fun ytTryDock(): Boolean {
+        if (remote || !ytPage || !YtDockCfg.on() || audioOnlyMode) return false
+        try {
+            val ex = player.exo() ?: return false
+            val u = url?.takeIf { it.isNotBlank() } ?: return false
+            val st = ex.playbackState
+            if (st == Player.STATE_IDLE || st == Player.STATE_ENDED) return false
+            val item = ytItemFromIntent()
+            if (item.id.length != 11) return false
+            val pos = ex.currentPosition
+            val was = ex.playWhenReady
+            plstRef?.let { try { ex.removeListener(it) } catch (_: Throwable) {} }
+            try { loud?.release(); loud = null } catch (_: Throwable) {}
+            try { ex.setPlaybackSpeed(1f); ex.volume = 1f } catch (_: Throwable) {}
+            val pick = YtPick(u, aurl, hdr["User-Agent"] ?: "", item.title, vidH)
+            YtDockHold.put(item, YtKept(ex, pick, pos), was)
+            dockedAway = true
+            try { visual.stop() } catch (_: Throwable) {}
+            try { saveRecent() } catch (_: Throwable) {}
+            val eng0 = engine
+            retireEngine()
+            Thread { try { eng0.saveNow() } catch (e: Throwable) { LogStore.err("Player:dockSave", e) } }.start()
+            log("⤵ تصغير للدوك السفلي")
+            if (!isFinishing) finish()
+            return true
+        } catch (e: Throwable) { LogStore.err("Player:ytTryDock", e); dockedAway = false; return false }
+    }
+    private var ytPgActive = false   // السحب بدأ من صفحة المشاهدة (تحت الفيديو) مش من الفيديو
+    private fun ytCanScrollUp(v: View): Boolean {
+        if (v.visibility != View.VISIBLE) return false
+        if (v.canScrollVertically(-1)) return true
+        if (v is ViewGroup) for (i in 0 until v.childCount) if (ytCanScrollUp(v.getChildAt(i))) return true
+        return false
+    }
+    /** سحب التصغير من صفحة المشاهدة: لو القايمة فوق خالص وسحبت لتحت = نفس تصغير الفيديو */
+    private fun ytPageTouch(ev: MotionEvent): Boolean {
+        if (ytAnim?.isRunning == true) return true
+        when (ev.actionMasked) {
+            MotionEvent.ACTION_DOWN -> {
+                ytPgActive = false
+                if (!::extras.isInitialized) return false
+                val loc = IntArray(2); videoBoxRef.getLocationOnScreen(loc)
+                if (ev.rawY <= loc[1] + videoBoxRef.height) return false   // اللمسة على الفيديو: بتتعامل من gestureLayer
+                ytPgActive = true; ytDragDown(ev); return false
+            }
+            MotionEvent.ACTION_MOVE -> {
+                if (!ytPgActive) return false
+                if (!ytDragOn) {
+                    try { ytVt?.addMovement(ev) } catch (_: Throwable) {}
+                    val dy = ev.rawY - ytDownY; val dx = ev.rawX - ytDownX
+                    if (dy > ui.dp(18) && dy > Math.abs(dx) * 1.4f && !ytCanScrollUp(extras)) {
+                        ytDragOn = true; ytDownY = ev.rawY - ui.dp(14)
+                        log("↕ سحب لتحت من الصفحة: تصغير")
+                        val c = MotionEvent.obtain(ev); c.action = MotionEvent.ACTION_CANCEL; super.dispatchTouchEvent(c); c.recycle()
+                        return true
+                    }
+                    return false
+                }
+                ytDragMove(ev); return true
+            }
+            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                if (!ytPgActive) return false
+                ytPgActive = false
+                if (ytDragOn) { ytDragEnd(ev); return true }
+                try { ytVt?.recycle() } catch (_: Throwable) {}; ytVt = null
+                return false
+            }
+        }
+        return ytPgActive && ytDragOn
+    }
+    override fun dispatchTouchEvent(ev: MotionEvent): Boolean {
+        try { if (ytPage && !gone && !fullMode && !pipNow() && (ytPgActive || !ytDragOn || ytAnim?.isRunning == true) && ytPageTouch(ev)) return true } catch (_: Throwable) {}
+        return super.dispatchTouchEvent(ev)
+    }
+    /** نهاية التصغير: الصورة المصغّرة (PiP). لو ما دخلتش (إذن/جهاز) الفيديو يرجع مكانه بحركة ناعمة */
+    private fun ytCommitMini() {
+        if (ytTryDock()) return   // (v1162) الدوك السفلي جوه التطبيق (زي يوتيوب) — لو مش متاح: PiP زي ما كان
+        try { enterPip(true) } catch (e: Throwable) { LogStore.err("Player:ytCommitMini", e) }
+        h.postDelayed({ try { if (!gone && !isFinishing && !pipNow()) ytAnimTo(0f) } catch (_: Throwable) {} }, 650L)
+    }
+
     private fun wantFull(): Boolean {
         if (!ytPage) return true
         if (pageFullP) return true
@@ -7001,7 +7209,7 @@ class PlayerActivity : Activity(), Host {
         batchBtn.visibility = View.GONE
         rotBtn.visibility = View.GONE
         miniBar.visibility = View.GONE
-        centerPlay.visibility = if (buffering || pageCpShow || (::player.isInitialized && !player.isPlaying)) View.VISIBLE else View.GONE   // (v1143) زرار ⏸/▶ في النص
+        centerPlay.visibility = if (busyShown()) View.GONE else if (buffering || pageCpShow || (::player.isInitialized && !player.isPlaying)) View.VISIBLE else View.GONE   // (v1143) زرار ⏸/▶ في النص · (v1159) لودينج «بيحمّل الفيديو» ظاهر = مفيش زرار أوسط فوقه (كان بيطلع لودينجين فوق بعض)
         st.visibility = View.GONE
         trChipV?.visibility = View.GONE
         if (::audBtn.isInitialized) audBtn.visibility = View.GONE
@@ -7034,6 +7242,7 @@ class PlayerActivity : Activity(), Host {
         ytWatch = wp
         val it0 = ytItemFromIntent()
         wp.post { wp.open(it0, null) }
+        if (intent.getBooleanExtra("ytswap", false)) { wp.alpha = 0f; wp.translationY = ui.dp(28).toFloat(); wp.post { try { wp.animate().alpha(1f).translationY(0f).setStartDelay(100L).setDuration(280L).setInterpolator(android.view.animation.PathInterpolator(0.4f, 0f, 0.2f, 1f)).start() } catch (_: Throwable) { wp.alpha = 1f; wp.translationY = 0f } } }   // (v1161)
         return wp
     }
 
@@ -7075,6 +7284,7 @@ class PlayerActivity : Activity(), Host {
             putExtra("autotr", false)
             putExtra("ret", ret)
             putExtra("ytpage", true)
+            putExtra("ytswap", true)   // (v1161) فيديو تاني من صفحة المشاهدة: كروس-فيد في مكانه + المحتوى يطلع بنعومة (من غير ما الصفحة كلها تنزل وتطلع)
             putExtra("ytchan", v.channel)
             putExtra("ytchanurl", v.channelUrl)
             putExtra("ytthumb", v.thumb)
@@ -7084,7 +7294,7 @@ class PlayerActivity : Activity(), Host {
             putExtra("ytage", v.age)
             putExtra("ytdur", v.dur)
         })
-        overridePendingTransition(0, 0)
+        overridePendingTransition(R.anim.yt_swap_enter, R.anim.yt_swap_exit)
     }
     /** (v604) تدوير صورة الفيديو نفسها (0/90/180/270) — على التلفزيون بس (شاشته مابتلفّش) */
     private var rotDeg = 0
@@ -7209,6 +7419,7 @@ class PlayerActivity : Activity(), Host {
         super.onPictureInPictureModeChanged(inPipNow, c)
         if (gone) return
         inPip = inPipNow
+        if (inPipNow) try { ytDragReset() } catch (_: Throwable) {}   // (v1161)
         if (inPipNow) { try {
             closeSide(); dismissPopFn()
             h.removeCallbacks(hideChrome); chromeShown = false
@@ -7357,6 +7568,8 @@ class PlayerActivity : Activity(), Host {
     }
     private fun saveRecentForce() {
         if (incognito) return
+        if (logArcPlay != null) return   // (v1167) عرض لوج محفوظ: ما نغيّرش آخر مكان وقوف ولا تقدّم الفيديو
+        archiveNow()   // (v1167) سجل اللوجات: بيتحفظ مع كل حفظ لآخر المشغّلة (كل 20ث وقت التشغيل + الإيقاف + الخروج)
         saveYtProg()
         try { if (!hiddenSite && durMs > 0 && cur > 1000 && cur < durMs - 4000 && vid.isNotEmpty()) Cfg.p.edit().putString("lastpos", vid + "\t" + cur).apply() } catch (_: Throwable) {}
         try {
@@ -7626,6 +7839,15 @@ class PlayerActivity : Activity(), Host {
 
     private var pendingOrigSrt: String? = null
     /** (v153) تحميل SRT بالنص الأصلي المستخرج (من الإعدادات) — بيفتح اختيار مكان الحفظ */
+    /** (v1165) ينزّل الصوت مقسّم لنفس الباتشات ومترقّم (Download/Joyboy_Batches/<الفيديو>) عشان يتبعت للمراجعة */
+    fun exportBatches() {
+        if (!::engine.isInitialized) { say("المحرك لسه ما اشتغلش — شغّل الترجمة أو افتح الفيديو الأول"); return }
+        val t = try { Recents.titleOf(vid).substringBeforeLast('.', Recents.titleOf(vid)) } catch (_: Throwable) { "video" }
+        val le = (engine as? LocalEngine)?.e
+        if (le == null) { say("تنزيل الباتشات متاح لما الترجمة تشتغل على الجهاز ده نفسه"); return }
+        BatchExport.run(this, le, t)
+    }
+
     fun exportOriginalSrt() {
         val txt = PlayerLogic.toSrtOriginal(engine.subs, offsetMs)
         if (txt.isBlank()) { say("مفيش نص أصلي لسه"); return }
@@ -8260,6 +8482,7 @@ class PlayerActivity : Activity(), Host {
     private fun visLog(m: String) {
         try {
             synchronized(logBuf) { logBuf.append(fmtMs(cur)).append("  ").append(m).append('\n'); if (logBuf.length > 30000) logBuf.delete(0, 10000) }
+            LogArchive.append(arcRun, fmtMs(cur) + "  " + m)
             LogStore.add(fmtMs(cur) + "  " + m)
         } catch (_: Throwable) {}
     }
@@ -8520,7 +8743,7 @@ class PlayerActivity : Activity(), Host {
         retireEngine()
         if (!handedOff && !remote) try { engine.saveNow() } catch (e: Exception) { LogStore.err("Main:2593", e) }
         if (incognito && isFinishing) try { File(File(filesDir, "progress"), Store.keyFor(vid) + ".json").delete() } catch (_: Throwable) {}   // (v124) المتخفي: الترجمة المحفوظة بتتمسح أول ما تقفل
-        player.release()
+        if (dockedAway) { try { loud?.release(); loud = null } catch (_: Throwable) {} } else player.release()   // (v1162) المشغّل اتسلّم للدوك السفلي: ما نقفلوش
         // (v564) فيديو الموبايل على التلفزيون: امسح الكاش أول ما نخرج (لو مفيش مشغّل تاني بيستخدمه)
         try { castSubFile?.delete() } catch (_: Throwable) {}   // (v676)
         try { mobileSub?.delete() } catch (_: Throwable) {}   // (v684)

@@ -22,12 +22,14 @@ object AudioEnc {
     const val PRESET_KEY = "audio_preset"
     const val FAST = "fast"
     const val NORMAL = "normal"
+    /** (v1165) توفير داتا: AAC 32kbps (≈4KB/ث) — نص حجم السريع. الكلام الضعيف في اللغات الصعبة ممكن يتسمع أسوأ */
+    const val LOW = "low"
     const val BITRATE = 64000
     private val LADDER = intArrayOf(64000, 48000, 32000)
     @Volatile private var goodBr = 0
     /** (v742) على الخيط ده بس: ابعت WAV خام مهما كان البريسيت (مقاطع التدقيق القصيرة — مفيش سبب نضغطها) */
     val lossless = ThreadLocal<Boolean>()
-    fun preset(): String = if (Cfg.str(PRESET_KEY, FAST) == NORMAL) NORMAL else FAST
+    fun preset(): String = when (Cfg.str(PRESET_KEY, FAST)) { NORMAL -> NORMAL; LOW -> LOW; else -> FAST }
 
     private val cache: MutableMap<ByteArray, Packed> = Collections.synchronizedMap(WeakHashMap<ByteArray, Packed>())
     @Volatile private var fails = 0
@@ -37,10 +39,10 @@ object AudioEnc {
         cache[wav]?.let { return it }
         var p: Packed? = null
         if (fails < 3 && isWav(wav)) {
-            val tries = if (goodBr > 0) intArrayOf(goodBr) else LADDER
+            val tries = if (preset() == LOW) intArrayOf(32000) else if (goodBr > 0) intArrayOf(goodBr) else LADDER   // (v1165)
             var threw = 0
             for (br in tries) {
-                try { p = aac(wav, br)?.takeIf { it.bytes.size < wav.size * 0.8 }; if (p != null) { goodBr = br; break } }
+                try { p = aac(wav, br)?.takeIf { it.bytes.size < wav.size * 0.8 }; if (p != null) { if (preset() != LOW) goodBr = br; break } }
                 catch (_: Throwable) { threw++ }
             }
             if (p == null && threw == tries.size) fails++

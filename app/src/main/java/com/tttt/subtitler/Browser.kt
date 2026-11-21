@@ -164,6 +164,52 @@ object BrowserStore {
             java.io.File(c.filesDir, "br_tabs.json").writeText(JSONObject().put("cur", cur).put("tabs", a).toString())
         } catch (e: Exception) { LogStore.err("BrowserStore.tabs", e) }
     }
+    // ===== (v1168) جلسة المتصفح المخفي: بتتحفظ مشفّرة (Keystore) جوه التطبيق عشان تفضل حتى لو التطبيق اتقفل/اتقتل · الدخول عليها ببصمة بس =====
+    private const val PRIV_FILE = "br_priv_session.bin"
+    private var privSig = ""
+    private fun privKey(): javax.crypto.SecretKey {
+        val ks = java.security.KeyStore.getInstance("AndroidKeyStore"); ks.load(null)
+        (ks.getKey("joy_priv_session", null) as? javax.crypto.SecretKey)?.let { return it }
+        val g = javax.crypto.KeyGenerator.getInstance(android.security.keystore.KeyProperties.KEY_ALGORITHM_AES, "AndroidKeyStore")
+        g.init(android.security.keystore.KeyGenParameterSpec.Builder("joy_priv_session", android.security.keystore.KeyProperties.PURPOSE_ENCRYPT or android.security.keystore.KeyProperties.PURPOSE_DECRYPT)
+            .setBlockModes(android.security.keystore.KeyProperties.BLOCK_MODE_GCM)
+            .setEncryptionPaddings(android.security.keystore.KeyProperties.ENCRYPTION_PADDING_NONE)
+            .setKeySize(256).build())
+        return g.generateKey()
+    }
+    private fun privEnc(txt: String): ByteArray {
+        val ci = javax.crypto.Cipher.getInstance("AES/GCM/NoPadding"); ci.init(javax.crypto.Cipher.ENCRYPT_MODE, privKey())
+        return ci.iv + ci.doFinal(txt.toByteArray(Charsets.UTF_8))
+    }
+    private fun privDec(b: ByteArray): String {
+        val ci = javax.crypto.Cipher.getInstance("AES/GCM/NoPadding")
+        ci.init(javax.crypto.Cipher.DECRYPT_MODE, privKey(), javax.crypto.spec.GCMParameterSpec(128, b, 0, 12))
+        return String(ci.doFinal(b, 12, b.size - 12), Charsets.UTF_8)
+    }
+    fun hasPriv(c: Context): Boolean = java.io.File(c.filesDir, PRIV_FILE).let { it.exists() && it.length() > 12 }
+    fun clearPriv(c: Context) { privSig = ""; try { java.io.File(c.filesDir, PRIV_FILE).delete() } catch (_: Throwable) {} }
+    fun savePriv(c: Context, tabs: List<SavedTab>, cur: Int) {
+        try {
+            if (tabs.isEmpty()) { if (privSig != "" || hasPriv(c)) clearPriv(c); return }
+            val a = JSONArray()
+            for (t in tabs) a.put(JSONObject().put("u", t.url).put("t", t.title).put("k", t.desktop).put("s", t.state))
+            val txt = JSONObject().put("cur", cur).put("tabs", a).toString()
+            if (txt == privSig) return
+            val tmp = java.io.File(c.filesDir, PRIV_FILE + ".tmp")
+            tmp.writeBytes(privEnc(txt))
+            if (!tmp.renameTo(java.io.File(c.filesDir, PRIV_FILE))) { java.io.File(c.filesDir, PRIV_FILE).delete(); tmp.renameTo(java.io.File(c.filesDir, PRIV_FILE)) }
+            privSig = txt
+        } catch (e: Throwable) { LogStore.err("BrowserStore.priv", e) }
+    }
+    fun loadPriv(c: Context): Pair<List<SavedTab>, Int> {
+        val out = ArrayList<SavedTab>(); var cur = 0
+        try {
+            val o = JSONObject(privDec(java.io.File(c.filesDir, PRIV_FILE).readBytes()))
+            cur = o.optInt("cur", 0); val a = o.getJSONArray("tabs")
+            for (i in 0 until a.length()) { val t = a.getJSONObject(i); out.add(SavedTab(t.getString("u"), t.optString("t"), t.optBoolean("k", false), t.optString("s", ""))) }
+        } catch (e: Throwable) { LogStore.err("BrowserStore.privLoad", e) }
+        return out to cur
+    }
     fun loadTabs(c: Context): Pair<List<SavedTab>, Int> {
         val out = ArrayList<SavedTab>(); var cur = 0
         try {
@@ -724,6 +770,10 @@ class BrowserActivity : Activity() {
             else if (tabs.isEmpty()) newTab(home(), true)
             else select(curIdx)
             scanLoop()
+            if (prefs().getBoolean("br_priv_keep", true) && BrowserStore.hasPriv(this)) {   // (v1168) فيه جلسة مخفية محفوظة ← اسأل قبل ما تدخل
+                privRestorePending = true
+                h.postDelayed({ if (!dead) askPrivRestore() }, 450L)
+            }
         }, 360L)
     }
 
@@ -883,7 +933,7 @@ class BrowserActivity : Activity() {
                 val hd = t.hold
                 if (hd != null) { if (url != null && !url.startsWith("data:")) { t.url = url; hd.addUrl(url) }; return }
                 if (t.blockedUrl != null && url != null && SiteBlock.keyOf(url) == SiteBlock.keyOf(t.blockedUrl)) return   // (v412)
-                if (url != null && !url.startsWith("data:")) { t.url = url; newPage(t, url); noteYt(url, null) }
+                if (url != null && !url.startsWith("data:")) { t.url = url; newPage(t, url, true); noteYt(url, null) }   // (v1158) spa=true: تحديث تاريخ من جوه الصفحة
                 if (t === tabs.getOrNull(curIdx)) { showUrl(url); updateNav() }
                 if (url != null && CoSurf.on && t === tabs.getOrNull(curIdx)) CoSurf.nav(url, v.settings.userAgentString ?: "")   // (v646)
             }
@@ -1059,10 +1109,20 @@ class BrowserActivity : Activity() {
         return try { android.os.Bundle().also { w.saveState(it) } } catch (_: Throwable) { t.frozen }
     }
     @Volatile private var tabsReady = false   // (v918) مفيش حفظ للتابات قبل ما الاسترجاع المؤجَّل يخلّص (وإلا نمسح التابات المحفوظة)
+    /** (v1168) المخفي ماعادش بيضيع: بيتحفظ لوحده (مشفّر) في كل تغيير · لسه ما اترجّعتش بعد فتح جديد (مستني الاختيار/البصمة) ← مانلمسش الملف */
+    @Volatile private var privRestorePending = false
+    private fun persistPriv() {
+        if (privRestorePending) return
+        if (!prefs().getBoolean("br_priv_keep", true)) { if (BrowserStore.hasPriv(this)) BrowserStore.clearPriv(this); return }
+        val pv = tabs.filter { it.priv }
+        val ci = pv.indexOf(tabs.getOrNull(curIdx)).let { if (it < 0) 0 else it }
+        BrowserStore.savePriv(this, pv.map { BrowserStore.SavedTab(it.wv?.url?.takeIf { u -> !u.startsWith("data:") } ?: it.url, it.title, it.desktop, BrowserStore.packState(stateOf(it))) }, ci)
+    }
     private fun persistTabs() {
         if (!tabsReady) return
+        try { persistPriv() } catch (_: Throwable) {}   // (v1168)
         if (!prefs().getBoolean("br_save_tabs", true)) return
-        // (v124) التبويبات المتخفية عمرها ما بتتحفظ
+        // (v124) التبويبات المتخفية مش بتتحفظ مع العادية — ليها ملف مشفّر لوحده (persistPriv)
         val keep = tabs.filter { !it.priv }
         val ci = keep.indexOf(tabs.getOrNull(curIdx)).let { if (it < 0) 0 else it }
         BrowserStore.saveTabs(this, keep.map { BrowserStore.SavedTab(if (it.id == panicClearId) GOOGLE else (it.wv?.url?.takeIf { u -> !u.startsWith("data:") }?.let { u -> if (BrowserSaver.isHomeArchive(u)) GOOGLE else u } ?: it.url), it.title, it.desktop, if (it.id == panicClearId) "" else BrowserStore.packState(stateOf(it))) }, ci)
@@ -1225,34 +1285,84 @@ class BrowserActivity : Activity() {
         col.addView(pb("🔓 دخول بالبصمة", 0xFF6A1B9A.toInt()) { privAuth { privLocked = false; hidePrivLock() } })
         col.addView(pb("🔍 بحث جديد", 0xFF1E6BFF.toInt()) { privToGoogle(false) })
         col.addView(pb("🚪 خروج", 0xFFD32F2F.toInt()) { privToGoogle(true) })
-        val v = FrameLayout(this).apply { setBackgroundColor(Color.BLACK); isClickable = true; isFocusable = true; addView(col, FrameLayout.LayoutParams(ui.dp(280), -2, Gravity.CENTER)) }
+        // (v1168) لاندسكيب: الغطا فيه سكرول عشان الأزرار ما تتقطعش
+        val sv = android.widget.ScrollView(this).apply {
+            isFillViewport = true; isVerticalScrollBarEnabled = false
+            addView(FrameLayout(this@BrowserActivity).apply { addView(col, FrameLayout.LayoutParams(ui.dp(280), -2, Gravity.CENTER)) }, FrameLayout.LayoutParams(-1, -2))
+        }
+        val v = FrameLayout(this).apply { setBackgroundColor(Color.BLACK); isClickable = true; isFocusable = true; addView(sv, FrameLayout.LayoutParams(-1, -1)) }
         privLockV = v
         (window.decorView as? ViewGroup)?.addView(v, ViewGroup.LayoutParams(-1, -1))
+    }
+    /** (v1168) آخر جلسة كانت متصفح مخفي: نعم ← بصمة بس ← الجلسة ترجع مخفية زي ما كانت · لا ← صفحة عادية والجلسة تفضل محفوظة للمرة الجاية · امسحها ← تتمسح */
+    private fun askPrivRestore() {
+        if (dead || !privRestorePending) return
+        val n = BrowserStore.loadPriv(this).first.size
+        if (n == 0) { privRestorePending = false; BrowserStore.clearPriv(this); return }
+        try {
+            android.app.AlertDialog.Builder(this)
+                .setTitle("🔒 آخر جلسة كانت متصفح مخفي")
+                .setMessage("لسه محفوظ عندك " + n + (if (n == 1) " تبويب مخفي" else " تبويبات مخفية") + " زي ما سيبتهم. تدخل عليهم؟ (الدخول بالبصمة بس)")
+                .setCancelable(false)
+                .setPositiveButton("🔓 نعم — بالبصمة") { _, _ -> restorePrivSession() }
+                .setNegativeButton("لا — صفحة عادية") { _, _ -> Notice.show(this, "الجلسة المخفية لسه محفوظة للمرة الجاية", 2400L) }
+                .setNeutralButton("🗑 امسحها") { _, _ -> privRestorePending = false; BrowserStore.clearPriv(this) }
+                .show()
+        } catch (_: Throwable) {}
+    }
+    private fun restorePrivSession() {
+        privAuth(onCancel = { askPrivRestore() }) {
+            val (saved, cur) = BrowserStore.loadPriv(this)
+            privRestorePending = false
+            if (saved.isEmpty()) { BrowserStore.clearPriv(this); return@privAuth }
+            privLocked = false
+            var first = -1
+            for ((i, sv) in saved.withIndex()) {
+                val t = BTab(nextId++); t.priv = true; t.url = sv.url; t.title = sv.title; t.desktop = sv.desktop
+                t.frozen = BrowserStore.unpackState(sv.state)
+                tabs.add(t)
+                if (i == cur.coerceIn(0, saved.size - 1)) first = tabs.size - 1
+            }
+            refreshTabsCount()
+            select(first.coerceAtLeast(0))
+        }
     }
     /** بحث جديد: متصفح عادي على جوجل والمخفي يفضل مقفول · خروج: نفس الحاجة + المخفي يتقفل ويتمسح */
     private fun privToGoogle(closePriv: Boolean) {
         hidePrivLock()
         escapeGoogle = true
         val nt = newTab(GOOGLE, !closePriv)
-        if (closePriv) { privLocked = false; closeAllTabs(true, nt) }
+        if (closePriv) { privLocked = false; privRestorePending = false; closeAllTabs(true, nt); BrowserStore.clearPriv(this) }
     }
-    private fun privAuth(then: () -> Unit) {
+    /** (v1168) بصمة بس من غير نمط/PIN. لو مفيش بصمة متسجّلة/الحساس مش شغّال ← قفل الجهاز احتياطي عشان ما تتقفلش بره. onCancel = دوست إلغاء */
+    private fun privAuth(allowCred: Boolean = false, onCancel: (() -> Unit)? = null, then: () -> Unit) {
         if (android.os.Build.VERSION.SDK_INT < 28) { Notice.show(this, "البصمة محتاجة أندرويد 9 أو أحدث", 2800L); return }
         var done = false
+        val cancelOnce: () -> Unit = { if (!done) { done = true; onCancel?.invoke() } }   // زرار الإلغاء ممكن يجي من اتنين (listener + error) ← مرة واحدة بس
         try {
             val ex = mainExecutor
-            val b = android.hardware.biometrics.BiometricPrompt.Builder(this).setTitle("🔒 المتصفح المخفي").setSubtitle("ابصم للدخول")
-            if (android.os.Build.VERSION.SDK_INT >= 30) b.setAllowedAuthenticators(android.hardware.biometrics.BiometricManager.Authenticators.BIOMETRIC_WEAK or android.hardware.biometrics.BiometricManager.Authenticators.DEVICE_CREDENTIAL)
-            else if (android.os.Build.VERSION.SDK_INT >= 29) b.setDeviceCredentialAllowed(true)
-            else b.setNegativeButton("إلغاء", ex) { _, _ -> }
+            val b = android.hardware.biometrics.BiometricPrompt.Builder(this).setTitle("🔒 المتصفح المخفي").setSubtitle(if (allowCred) "ادخل بقفل الجهاز" else "ابصم للدخول")
+            if (allowCred) {
+                if (android.os.Build.VERSION.SDK_INT >= 30) b.setAllowedAuthenticators(android.hardware.biometrics.BiometricManager.Authenticators.BIOMETRIC_WEAK or android.hardware.biometrics.BiometricManager.Authenticators.DEVICE_CREDENTIAL)
+                else if (android.os.Build.VERSION.SDK_INT >= 29) b.setDeviceCredentialAllowed(true)
+                else b.setNegativeButton("إلغاء", ex) { _, _ -> cancelOnce() }
+            } else {
+                if (android.os.Build.VERSION.SDK_INT >= 30) b.setAllowedAuthenticators(android.hardware.biometrics.BiometricManager.Authenticators.BIOMETRIC_WEAK)
+                b.setNegativeButton("إلغاء", ex) { _, _ -> cancelOnce() }
+            }
             b.build().authenticate(android.os.CancellationSignal(), ex, object : android.hardware.biometrics.BiometricPrompt.AuthenticationCallback() {
                 override fun onAuthenticationSucceeded(r: android.hardware.biometrics.BiometricPrompt.AuthenticationResult?) { if (!done) { done = true; then() } }
                 override fun onAuthenticationError(code: Int, msg: CharSequence?) {
-                    if (code == android.hardware.biometrics.BiometricPrompt.BIOMETRIC_ERROR_USER_CANCELED || code == android.hardware.biometrics.BiometricPrompt.BIOMETRIC_ERROR_CANCELED) return
+                    if (done) return
+                    // 1 = الحساس مش متاح · 11 = مفيش بصمة متسجّلة · 12 = مفيش حساس أصلًا
+                    if (!allowCred && (code == 1 || code == 11 || code == 12)) { done = true; Notice.show(this@BrowserActivity, "مفيش بصمة شغّالة — هدخّلك بقفل الجهاز", 2600L); privAuth(true, onCancel, then); return }
+                    // 5 = اتلغت · 10 = المستخدم لغى · 13 = زرار الإلغاء
+                    if (code == 5 || code == 10 || code == 13) { cancelOnce(); return }
                     Notice.show(this@BrowserActivity, "مقدرتش أتأكد من البصمة — جرّب تاني أو دوس «خروج»", 3200L)
+                    cancelOnce()
                 }
             })
-        } catch (_: Throwable) { Notice.show(this, "مقدرتش أفتح البصمة", 2500L) }
+        } catch (_: Throwable) { Notice.show(this, "مقدرتش أفتح البصمة", 2500L); cancelOnce() }
     }
 
     private fun panic(blockedUrl: String? = null) {
@@ -1739,7 +1849,7 @@ class BrowserActivity : Activity() {
         tgt.addView(ui.noHint().apply { setPadding(0, 0, 0, ui.dp(6)) })
         tgt.addView(ui.switchRow("🔒 فصل لينكات الكبار في «سجل الخصوصية» المقفول", PrivacyFilter.on()) { Cfg.put("pf_on", if (it) "1" else "0") })
         tgt.addView(ui.switchRow("🤖 الذكاء الصناعي يصنّف الصفحات (بيبعت الرابط والعنوان بس، مرة لكل موقع)", PrivacyFilter.aiOn()) { Cfg.put("pf_ai", if (it) "1" else "0") })
-        tgt.addView(ui.switchRow("🕶 اقفل كل التبويبات المتخفية لما أخرج من التطبيق (هوم / ريسنت)", prefs().getBoolean("br_priv_close", false)) { v -> prefs().edit().putBoolean("br_priv_close", v).apply() })
+        tgt.addView(ui.switchRow("🕶 احتفظ بالمتصفح المخفي لو خرجت من التطبيق أو اتقفل (بيتحفظ مشفّر، والدخول عليه ببصمة بس)", prefs().getBoolean("br_priv_keep", true)) { v -> prefs().edit().putBoolean("br_priv_keep", v).apply(); if (!v) BrowserStore.clearPriv(this) else persistTabs() })
         // ---- التصفح ----
         sec("🌐 التصفح")
         tgt.addView(ui.switchRow("🖥 نسخة الكمبيوتر في التبويبات الجديدة", prefs().getBoolean("br_desktop_default", false)) { v -> prefs().edit().putBoolean("br_desktop_default", v).apply() })
@@ -1775,7 +1885,7 @@ class BrowserActivity : Activity() {
         })
         tgt.addView(ui.button("🕘 امسح السجل") { BrowserStore.clearHistory(this); PlayTarget.clearTvHistory(this, "browser"); Notice.show(this, "السجل اتمسح", 1800L) })
         tgt.addView(ui.button("🕶 اقفل كل التبويبات المتخفية دلوقتي") {
-            if (tabs.none { it.priv }) Notice.show(this, "مفيش تبويبات متخفية مفتوحة", 1800L) else { closeAllTabs(true); Notice.show(this, "التبويبات المتخفية اتقفلت", 1800L) }
+            if (tabs.none { it.priv }) Notice.show(this, "مفيش تبويبات متخفية مفتوحة", 1800L) else { privRestorePending = false; closeAllTabs(true); BrowserStore.clearPriv(this); Notice.show(this, "التبويبات المتخفية اتقفلت", 1800L) }
         })
         // ---- اختصارات ----
         sec("🔗 اختصارات (داتا · حظر · اصطياد · تلفزيون)")
@@ -2624,13 +2734,30 @@ class BrowserActivity : Activity() {
 
     // ===== (v203) صفحة جديدة = اصطياد جديد =====
     private val NOISE = Regex("[?&](t|start|time_continue|feature|si|fbclid|pp|utm_[a-z]+)=[^&#]*", RegexOption.IGNORE_CASE)
-    private fun newPage(t: BTab, url: String?) {
+    // (v1158) تغيير الرابط من جوه الصفحة (pushState / replaceState / باراميتر تتبّع) مش صفحة جديدة — قبل كده كان بيزوّد الجيل ويمسح اللقطة بعد ثانية من ما تتلقط
+    private val ID_KEYS = setOf("v", "id", "vid", "video", "videoid", "watch", "ep", "episode", "e", "s", "season", "p", "page", "post", "slug", "movie", "film", "file", "url", "u", "list", "index")
+    private fun sameSpaPage(a: String, b: String): Boolean {
+        return try {
+            val ua = java.net.URI(a); val ub = java.net.URI(b)
+            if (!ua.host.equals(ub.host, true) || (ua.rawPath ?: "") != (ub.rawPath ?: "")) return false
+            fun q(x: java.net.URI): Map<String, String> = (x.rawQuery ?: "").split('&').filter { it.isNotEmpty() }.associate { val i = it.indexOf('='); if (i < 0) it.lowercase() to "" else it.substring(0, i).lowercase() to it.substring(i + 1) }.filterKeys { it in ID_KEYS }
+            q(ua) == q(ub)
+        } catch (_: Throwable) { false }
+    }
+    private fun newPage(t: BTab, url: String?, spa: Boolean = false) {
         val u = (url ?: return).substringBefore('#').replace(NOISE, "")
         if (u.isEmpty() || u.startsWith("data:") || u == t.capUrl) return
+        if (spa && t.capUrl.isNotEmpty() && sameSpaPage(t.capUrl, u)) {   // (v1158) نفس الصفحة اتحدّث رابطها بس: الاصطياد يفضل
+            LogStore.add("🔁 (v1158) الرابط اتغيّر من جوه نفس الصفحة — الاصطياد اتساب: " + t.capUrl.take(90) + " ← " + u.take(90))
+            t.capUrl = u; return
+        }
+        val oldCap = t.capUrl
         if (panicUrl != null && t.id == panicTabId && !u.contains("google.")) { panicUrl = null; if (::undoB.isInitialized) undoB.visibility = View.GONE }   // (v231) مشيت لصفحة تانية: مفيش تراجع
         t.capUrl = u; t.gen++; markHidden = false
         snaps.remove(t.id)   // (v838) صفحة جديدة = عدّاد ملفات/لينكات جديد
         scheduleAutoScan(t, longArrayOf(3000L, 8000L, 16000L, 30000L))
+        val nGone = items.count { it.tabId == t.id && it.gen != t.gen }
+        if (nGone > 0) LogStore.add("🧹 (v1158) صفحة جديدة مسحت $nGone لقطة: " + oldCap.take(90) + " ← " + u.take(90) + (if (spa) " [من جوه الصفحة]" else " [تحميل]"))
         items.removeAll { it.tabId == t.id && it.gen != t.gen }
         keys.removeAll { it.startsWith("${t.id}:") && !it.startsWith("${t.id}:${t.gen}:") }
         if (t === tabs.getOrNull(curIdx)) { webGroups.clear(); autoShown = false; openKey = null; refreshBadge() }

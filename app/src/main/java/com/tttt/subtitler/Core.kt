@@ -697,7 +697,7 @@ object Api {
 
     /** (v177) حد طول رد الباتش: 8192 توكن كان بيتقطع فيه الرد في المقاطع الطويلة/الكتيرة الكلام (كل جملة معاها حقول كتير) فيرجع ناقص من الآخر.
      *  بيزيد مع طول المقطع (حتى 24576). لو الموديل رفض الرقم الكبير (400) بنرجع لـ 8192 ونفتكر ده للموديل. */
-    fun outTokens(durSec: Double): Int = (durSec * 150).toInt().coerceIn(8192, 24576)
+    fun outTokens(durSec: Double): Int = (durSec * 190).toInt().coerceIn(8192, 24576)   // (v1164) 150→190: الرد بقى فيه transcript قبل subtitles
     private val tokenCap = java.util.concurrent.ConcurrentHashMap<String, Int>()
     /** (v180) مهلة قراءة أقصر للخيط الحالي (الترجمة الحية: طلب أبطأ من ~12ث ملوش لازمة). null = الافتراضي 90ث */
     val readTimeoutOverride = ThreadLocal<Int?>()

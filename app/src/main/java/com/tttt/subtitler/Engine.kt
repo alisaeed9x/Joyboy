@@ -827,6 +827,21 @@ class Engine(
     fun chunkOfSec(sec: Double): Int { var i = 0; while (cStart(i + 1) <= sec) i++; return i }
     fun chunkStartSec(i: Int) = cStart(i)
 
+    /**
+     * (v1165) تصدير الصوت مقسّم لنفس الباتشات (blocking — من خيط خلفي بس). onEach(رقم الباتش من 0، العدد الكلي، بداية، نهاية، بايتات الصوت، mime).
+     * الصوت بيتضغط بنفس بريسيت الإرسال (AAC أو WAV) فالحجم هو اللي بيروح لجيميناي فعلًا. بيرجّع عدد الباتشات اللي اتصدّرت.
+     */
+    fun exportBatchAudio(onEach: (Int, Int, Double, Double, ByteArray, String) -> Unit): Int {
+        val d = currentDur(); val n = chunkCount(); var ok = 0
+        for (i in 0 until n) {
+            val st = cStart(i); val en = cEnd(i, d)
+            val w = try { src().wav(st, en) } catch (_: Throwable) { null } ?: continue
+            val pk = AudioEnc.pack(w.bytes)
+            onEach(i, n, st, en, pk.bytes, pk.mime); ok++
+        }
+        return ok
+    }
+
     /** يمسح ترجمة الباتشات من..إلى (شاملة، to < 0 = لحد النهاية) عشان تتترجم من جديد. بيحفظ نسخة قبلها (🗂 ترجمات الفيديو) */
     fun redo(from: Int, to: Int, keep: Boolean = true) {
         val d = currentDur()
@@ -861,7 +876,11 @@ class Engine(
     /** باتش ده لوحده وخلاص */
     fun redoOnly(i: Int, keep: Boolean = true) { redo(i, i, keep); onlyChunks = i..i; paused = false }
     /** من الأول خالص */
-    fun redoAll(keep: Boolean = true) { redo(0, -1, keep); onlyChunks = null; forcedSticky = true; forcedCursor = 0; paused = false }
+    /** (v1167) بيتنادى قبل ما «ترجم من الأول» تمسح الجمل: المشغّل بيحفظ منه لوج + ترجمات التشغيلة الحالية في سجل اللوجات وبيبدأ لوج جديد */
+    @Volatile var onFreshRun: (() -> Unit)? = null
+    fun redoAll(keep: Boolean = true) { try { onFreshRun?.invoke() } catch (_: Throwable) {}; redo(0, -1, keep); onlyChunks = null; forcedSticky = true; forcedCursor = 0; paused = false }
+    /** (v1167) «شغّل بالترجمة دي» من سجل اللوجات: بيحط جمل اللوج المحفوظ مكان جمل الفيديو في الذاكرة بس (والمشغّل بيمنع الحفظ والترجمة) */
+    fun loadSnapshot(list: List<Sub>) { synchronized(lock) { subs = list }; host.changed() }
     /** كمّل الترجمة من المكان ده (من غير مسح حاجة): بيقفز بالمؤشر لباتش الوقت ده ويلغي الإيقاف */
     /** (v224) ابدأ من أول الفيديو: أول باتش لسه ناقص من الأول، بغض النظر عن مكان الفيديو دلوقتي (ثابت لحد ما يوصل لمكان التشغيل) */
     fun translateFromStart() { onlyChunks = null; forcedSticky = true; forcedCursor = 0; paused = false; userPaused = false; rampChunk = -1; fastLight.clear(); lightRetry.clear() }

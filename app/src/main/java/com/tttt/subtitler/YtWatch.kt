@@ -161,6 +161,8 @@ object YtAudioHint {
 object YtHandoff {
     /** (v606) التسليم ده بسبب الخروج من التطبيق (Home) والفيديو شغّال: المشغّل الكامل يدخل PiP أول ما يفتح */
     @Volatile var pipNext = false
+    /** (v1162) التكبير من الدوك السفلي: يرجع لصفحة المشاهدة (مش شاشة كاملة) بنفس بيانات الفيديو */
+    @Volatile var pageItem: NpItem? = null
     @Volatile private var p: ExoPlayer? = null
     private val hh = Handler(Looper.getMainLooper())
     private val expire = Runnable { val x = p; p = null; snapBmp = null; try { x?.release() } catch (_: Throwable) {} }
@@ -1710,6 +1712,20 @@ class YtWatchPage(private val act: Activity, private val ui: Ui, private val hos
 /** (v417) مشغّل شغّال + الـ pick بتاعه + الموضع — بيتسلّم من مشغّل الصفحة لشريط يوتيوب السفلي */
 class YtKept(val p: ExoPlayer, val pick: YtPick, val pos: Long)
 
+/** (v1162) تسليم المشغّل من صفحة يوتيوب (PlayerActivity) للدوك السفلي في Main من غير ما يقف: Main.onResume بياخده. بيتنسى بعد 15ث لو محدّش أخده */
+object YtDockHold {
+    class H(val item: NpItem, val kept: YtKept, val wasPlaying: Boolean)
+    @Volatile private var h: H? = null
+    private val hh = Handler(Looper.getMainLooper())
+    private val expire = Runnable { val x = h; h = null; try { x?.kept?.p?.release() } catch (_: Throwable) {} }
+    fun put(item: NpItem, kept: YtKept, wasPlaying: Boolean) {
+        val old = h; h = H(item, kept, wasPlaying)
+        hh.removeCallbacks(expire); hh.postDelayed(expire, 15000L)
+        if (old != null && old.kept.p !== kept.p) try { old.kept.p.release() } catch (_: Throwable) {}
+    }
+    fun take(): H? { hh.removeCallbacks(expire); val x = h; h = null; return x }
+}
+
 object YtDockCfg { fun on(): Boolean = Cfg.str("yt_dock", "1") != "0" }
 
 /**
@@ -1724,6 +1740,7 @@ class YtDock(private val act: Activity, private val ui: Ui, private val onExpand
     private var ttl = ""
     private var vw = 0
     private var vh = 0
+    private var curItem: NpItem? = null   // (v1162)
     private val hh = Handler(Looper.getMainLooper())
     private val tex = TextureView(act)
     private val titleTv = TextView(act).apply { textSize = 13f; setTextColor(YtSkin.text); typeface = YtSkin.medium; maxLines = 2; ellipsize = TextUtils.TruncateAt.END }
@@ -1801,9 +1818,10 @@ class YtDock(private val act: Activity, private val ui: Ui, private val onExpand
         if (lp.bottomMargin != b) { lp.bottomMargin = b; layoutParams = lp }
     }
 
-    fun show(item: NpItem, k: YtKept) {
+    fun show(item: NpItem, k: YtKept, instant: Boolean = false) {
         applyInset(); post { applyInset() }
         dismissInner()
+        curItem = item
         vid = item.id; ttl = item.title; pick = k.pick
         titleTv.text = item.title; chanTv.text = item.channel
         val p = k.p; exo = p
@@ -1812,8 +1830,8 @@ class YtDock(private val act: Activity, private val ui: Ui, private val onExpand
         val v = p.videoSize
         if (v.width > 0 && v.height > 0) { vw = (v.width * v.pixelWidthHeightRatio).toInt(); vh = v.height; fit() }
         paintPlay()
-        alpha = 0f; translationY = ui.dp(24).toFloat(); visibility = View.VISIBLE
-        animate().alpha(1f).translationY(0f).setDuration(200L).start()
+        if (instant) { alpha = 1f; translationY = 0f; visibility = View.VISIBLE }   // (v1162) جاي من تصغير الصفحة: الحركة اتعملت في المشغّل نفسه
+        else { alpha = 0f; translationY = ui.dp(24).toFloat(); visibility = View.VISIBLE; animate().alpha(1f).translationY(0f).setDuration(200L).start() }
         hh.removeCallbacks(tick); hh.post(tick)
     }
 
@@ -1873,6 +1891,7 @@ class YtDock(private val act: Activity, private val ui: Ui, private val onExpand
         hh.removeCallbacks(tick); exo = null
         p.playWhenReady = true
         YtHandoff.put(p); YtHandoff.putSnap(tex)   // (v1124)
+        YtHandoff.pageItem = curItem   // (v1162)
         visibility = View.GONE
         onExpand(vid, ttl, pos, pk)
     }

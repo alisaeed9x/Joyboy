@@ -7,6 +7,7 @@ import android.content.res.ColorStateList
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.LinearGradient
+import android.graphics.RadialGradient
 import android.graphics.Paint
 import android.graphics.Shader
 import android.graphics.RectF
@@ -32,7 +33,31 @@ import java.io.File
 
 /** شريط التقدم: أزرق = موضع التشغيل، كهرماني = المترجم (زي fs-progress-played / fs-progress-translated) */
 class DualProgress(ctx: Context, val th: Theme) : View(ctx) {
-    var played = 0f
+    // (v1169) التقدم بيتحرك بنعومة: الحلقة بتبعت الموضع كل 200ms فكان الشريط بيمشي نُطّ نُطّ — دلوقتي بينزلق بين القيمتين (shown) · وبعد ما تسيب الصباع بيتجاهل الموضع القديم 700ms عشان ما يرجعش لورا لحظة
+    private var pl = 0f
+    private var shown = 0f
+    private var glide: android.animation.ValueAnimator? = null
+    private var holdUntil = 0L
+    var played: Float
+        get() = pl
+        set(v) { if (!dragging && android.os.SystemClock.uptimeMillis() < holdUntil) return; applyPlayed(v) }
+    private fun applyPlayed(v: Float) {
+        val nv = v.coerceIn(0f, 1f)
+        if (nv == pl) return
+        pl = nv
+        if (dragging || width == 0 || !isShown) { glide?.cancel(); shown = nv; invalidate(); return }
+        val from = shown
+        val jump = Math.abs(nv - from) * width
+        if (jump < 0.5f) { glide?.cancel(); shown = nv; invalidate(); return }
+        glide?.cancel()
+        val far = jump > 80f * d   // قفزة (سيك) ← انزلاق بتباطؤ · حركة تشغيل عادية ← خطي عشان تتصل بالتحديث الجاي من غير وقفة
+        glide = android.animation.ValueAnimator.ofFloat(from, nv).apply {
+            duration = if (far) 240L else 210L
+            interpolator = if (far) android.view.animation.DecelerateInterpolator(1.8f) else android.view.animation.LinearInterpolator()
+            addUpdateListener { shown = it.animatedValue as Float; invalidate() }
+            start()
+        }
+    }
     /** (قديم) نسبة المترجم المتصل — الشريط الأخضر بقى بيتحسب من الجمل الفعلية (cov) */
     var translated = 0f
     var dragging = false
@@ -62,6 +87,52 @@ class DualProgress(ctx: Context, val th: Theme) : View(ctx) {
     var sent: List<DoubleArray> = emptyList()
     private val SENT_BLUE = 0xFF2DA8FF.toInt()
     private val p = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val rf = RectF()   // (v1169) من غير إنشاء RectF جديد في كل فريم
+    private val gMat = android.graphics.Matrix()
+    private var gShader: LinearGradient? = null; private var gC1 = 0; private var gC2 = 0
+    // (v1170) جلوي: هالة نيون حوالين الجزء المتشغّل + دايرة المكان بهالة ووسط ملوّن — بتتقفل من إعداد «توهّج رأس الشريط» (progress_glow)
+    private var hShader: RadialGradient? = null; private var hColor = 0
+    private val hMat = android.graphics.Matrix()
+    /** هالة الشريط: طبقات شفافة بتتوسّع حوالين الجزء المتشغّل (من غير BlurMaskFilter عشان تشتغل على أي جهاز) */
+    private fun haloFill(c: Canvas, px: Float, cy: Float, half: Float, color: Int, g: Float) {
+        val rgb = color and 0x00FFFFFF
+        val al = intArrayOf(0x14, 0x1E, 0x2C, 0x40)   // من برّه لجوّه
+        val boost = 1f + 0.6f * g
+        p.shader = null; p.style = Paint.Style.FILL
+        val room = minOf(cy, height - cy) - 0.5f * d   // ما نتعدّاش حدود الـView عشان الهالة ما تتقصّش بخط مستقيم
+        for (i in 0..3) {
+            val e = minOf(half + (4 - i) * (1.1f + 0.7f * g) * d, room.coerceAtLeast(half))
+            p.color = rgb or ((al[i] * boost).toInt().coerceAtMost(255) shl 24)
+            rf.set(0f, cy - e, px, cy + e); c.drawRoundRect(rf, e, e, p)
+        }
+    }
+    /** هالة دايرة المكان: Radial متخزّن بيتمدّد بـMatrix */
+    private fun thumbHalo(c: Canvas, x: Float, y: Float, r: Float, color: Int, g: Float) {
+        var sh = hShader
+        if (sh == null || hColor != color) {
+            val rgb = color and 0x00FFFFFF
+            sh = RadialGradient(0f, 0f, 1f, intArrayOf(rgb or (0xB0 shl 24), rgb or (0x5A shl 24), rgb), floatArrayOf(0f, 0.45f, 1f), Shader.TileMode.CLAMP)
+            hShader = sh; hColor = color
+        }
+        val rad = minOf(r * (3.0f + 0.9f * g) + 4f * d, y, height - y).coerceAtLeast(r + 1f)
+        hMat.setScale(rad, rad); hMat.postTranslate(x, y); sh.setLocalMatrix(hMat)
+        p.shader = sh; p.style = Paint.Style.FILL; c.drawCircle(x, y, rad, p); p.shader = null
+    }
+    /** جسم الدايرة: ظل · حلقة ملوّنة · أبيض · نقطة ملوّنة في النص */
+    private fun knob(c: Canvas, x: Float, y: Float, r: Float, ring: Int, inner: Int) {
+        p.shader = null; p.style = Paint.Style.FILL
+        p.color = 0x40000000; c.drawCircle(x, y + 1.1f * d, r + 0.8f * d, p)
+        p.color = (ring and 0x00FFFFFF) or (0x99 shl 24); c.drawCircle(x, y, r + 1.8f * d, p)
+        p.color = Color.WHITE; c.drawCircle(x, y, r, p)
+        p.color = inner; c.drawCircle(x, y, r * 0.45f, p)
+    }
+    /** تدرّج جزء المشغّل: Shader واحد متخزّن بيتمدّد بـMatrix (من غير LinearGradient جديد في كل فريم) */
+    private fun gradFill(c: Canvas, px: Float, top: Float, bot: Float, rad: Float, c1: Int, c2: Int) {
+        var sh = gShader
+        if (sh == null || gC1 != c1 || gC2 != c2) { sh = LinearGradient(0f, 0f, 1f, 0f, c1, c2, Shader.TileMode.CLAMP); gShader = sh; gC1 = c1; gC2 = c2 }
+        gMat.setScale(px.coerceAtLeast(1f), 1f); sh.setLocalMatrix(gMat)
+        p.shader = sh; rf.set(0f, top, px, bot); c.drawRoundRect(rf, rad, rad, p); p.shader = null
+    }
     private val d = ctx.resources.displayMetrics.density
     /** (v445) 0..1: الشريط بيتخن والمقبض بيكبر وبيتوهّج وانت ماسكه (أنيميشن ناعم) */
     private var grow = 0f
@@ -93,7 +164,7 @@ class DualProgress(ctx: Context, val th: Theme) : View(ctx) {
 
     private fun strip(c: Canvas, w: Float, y0: Float, hh: Float, segs: List<DoubleArray>, color: Int, trackColor: Int?, minW: Float = 1.5f * d) {
         val rad = hh / 2f
-        if (trackColor != null) { p.shader = null; p.color = trackColor; c.drawRoundRect(RectF(0f, y0, w, y0 + hh), rad, rad, p) }
+        if (trackColor != null) { p.shader = null; p.color = trackColor; rf.set(0f, y0, w, y0 + hh); c.drawRoundRect(rf, rad, rad, p) }
         if (durSec <= 0.0 || segs.isEmpty()) return
         p.shader = null
         val dimC = (color and 0x00FFFFFF) or 0x66000000   // (v1139) باتش لسه ما اتبعتش (بيتجهّز/في الطابور): نفس اللون بشفافية
@@ -102,7 +173,7 @@ class DualProgress(ctx: Context, val th: Theme) : View(ctx) {
             val a = (w * (s[0] / durSec)).toFloat().coerceIn(0f, w)
             val b = (w * (s[1] / durSec)).toFloat().coerceIn(0f, w)
             if (b <= a && a >= w) continue
-            c.drawRoundRect(RectF(a, y0, maxOf(b, a + minW).coerceAtMost(w), y0 + hh), rad, rad, p)
+            rf.set(a, y0, maxOf(b, a + minW).coerceAtMost(w), y0 + hh); c.drawRoundRect(rf, rad, rad, p)
         }
     }
 
@@ -115,7 +186,7 @@ class DualProgress(ctx: Context, val th: Theme) : View(ctx) {
             if (pend.isNotEmpty()) strip(c, w, 0f, hh, pend, 0xFFF59E0B.toInt(), null)
             if (refine.isNotEmpty()) strip(c, w, 0f, hh, refine, 0xFF3B82F6.toInt(), null)
             p.color = 0x44FFFFFF; c.drawRect(0f, hh, w, 2f * hh, p)
-            p.color = 0xFF3B82F6.toInt(); c.drawRect(0f, hh, w * played.coerceIn(0f, 1f), 2f * hh, p)
+            p.color = 0xFF3B82F6.toInt(); c.drawRect(0f, hh, w * shown.coerceIn(0f, 1f), 2f * hh, p)
             strip(c, w, 2f * hh, hh, cov, 0xFF22C55E.toInt(), 0x33FFFFFF)
             if (sent.isNotEmpty()) strip(c, w, 2f * hh, hh, sent, SENT_BLUE, null, 5f * d)
             return
@@ -128,15 +199,13 @@ class DualProgress(ctx: Context, val th: Theme) : View(ctx) {
             if (buf.isNotEmpty()) strip(c, w, 3f * d, 3f * d * kk, buf, 0xFF22D3EE.toInt(), 0x3322D3EE)
             if (pend.isNotEmpty()) strip(c, w, 3f * d, 3f * d * kk, pend, 0xFFF59E0B.toInt(), if (buf.isEmpty()) 0x33F59E0B else null)
             if (refine.isNotEmpty()) strip(c, w, 3f * d, 3f * d * kk, refine, 0xFF3B82F6.toInt(), null)
+            val trd = tr * (1f + 0.55f * grow)   // (v1169) الشريط بيتخن بنعومة وانت ماسكه (الرسم بس — أماكن الخطوط اللي تحته ثابتة)
             p.color = th.border
-            c.drawRoundRect(RectF(0f, cy - tr, w, cy + tr), 3f * d, 3f * d, p)
-            val px = w * played.coerceIn(0f, 1f)
-            if (px > 0f && px < w && MtGlass.on()) glow.draw(c, px, cy, (if (big) 2.4f else 1f) * 7f * d, th.primary)
-            if (px > 0f) {
-                p.shader = LinearGradient(0f, 0f, px.coerceAtLeast(1f), 0f, th.primary, th.accent, Shader.TileMode.CLAMP)
-                c.drawRoundRect(RectF(0f, cy - tr, px, cy + tr), 3f * d, 3f * d, p)
-                p.shader = null
-            }
+            rf.set(0f, cy - trd, w, cy + trd); c.drawRoundRect(rf, 3f * d, 3f * d, p)
+            val px = w * shown.coerceIn(0f, 1f)
+            if (px > 0f && MtLook.glowOn()) haloFill(c, px, cy, trd, th.accent, grow)   // (v1170)
+            if (px > 0f && px < w && MtGlass.on()) glow.draw(c, px, cy, (if (big) 2.4f else 1f) * (7f + 3f * grow) * d, th.primary)
+            if (px > 0f) gradFill(c, px, cy - trd, cy + trd, 3f * d, th.primary, th.accent)
             if (big) {
                 // (v804) شريط واحد: تقدم الترجمة (أخضر) خط رفيع جوه نفس الشريط من تحت، وعلامات الوضع البصري (أزرق فاتح) من فوق
                 val ih = (tr * 0.7f).coerceAtLeast(2f * d)
@@ -149,13 +218,11 @@ class DualProgress(ctx: Context, val th: Theme) : View(ctx) {
                 if (sent.isNotEmpty()) strip(c, w, cy + tr + 3f * d * kk, 4f * d * kk, sent, SENT_BLUE, null, 5f * d)
                 if (vis.isNotEmpty()) strip(c, w, cy + tr + 8.5f * d * kk, 3f * d * kk, vis, 0xFF3B82F6.toInt(), null)
             }
-            val r = (if (dragging) 5.5f else 3.5f) * d * (if (big) 2.4f else 1f)
+            val r = (3.5f + 2f * grow) * d * (if (big) 2.4f else 1f)   // (v1169) المقبض بيكبر بالأنيميشن مش بقفزة
             val tcx = px.coerceIn(r, w - r)
-            p.style = Paint.Style.FILL; p.shader = null; p.color = Color.WHITE
+            if (MtLook.glowOn()) thumbHalo(c, tcx, cy, r, th.accent, grow)   // (v1170)
             if (drawThumb(c, tcx, cy, r)) return
-            c.drawCircle(tcx, cy, r, p)
-            p.style = Paint.Style.STROKE; p.strokeWidth = 2f * d; p.color = th.accent
-            c.drawCircle(tcx, cy, r, p)
+            knob(c, tcx, cy, r, th.accent, th.primary)
             return
         }
         val cy = height / 2f; val th6 = (2f + 1.4f * grow) * d
@@ -164,24 +231,20 @@ class DualProgress(ctx: Context, val th: Theme) : View(ctx) {
         if (refine.isNotEmpty()) strip(c, w, 2f * d, 3f * d, refine, 0xFF3B82F6.toInt(), null)
         p.style = Paint.Style.FILL; p.shader = null
         p.color = 0x38FFFFFF
-        c.drawRoundRect(RectF(0f, cy - th6, w, cy + th6), th6, th6, p)
-        val px = w * played.coerceIn(0f, 1f)
+        rf.set(0f, cy - th6, w, cy + th6); c.drawRoundRect(rf, th6, th6, p)
+        val px = w * shown.coerceIn(0f, 1f)
+        if (px > 0f && MtLook.glowOn()) haloFill(c, px, cy, th6, 0xFF3B82F6.toInt(), grow)   // (v1170)
         if (px > 0f && px < w && MtGlass.on()) glow.draw(c, px, cy, (6f + 4f * grow) * d, 0xFF3B82F6.toInt())
-        if (px > 0f) {
-            p.shader = LinearGradient(0f, 0f, px.coerceAtLeast(1f), 0f, 0xFF60A5FA.toInt(), 0xFF3B82F6.toInt(), Shader.TileMode.CLAMP)
-            c.drawRoundRect(RectF(0f, cy - th6, px, cy + th6), th6, th6, p)
-            p.shader = null
-        }
+        if (px > 0f) gradFill(c, px, cy - th6, cy + th6, th6, 0xFF60A5FA.toInt(), 0xFF3B82F6.toInt())
         strip(c, w, cy + th6 + 4f * d, 3f * d, cov, 0xFF22C55E.toInt(), 0x2EFFFFFF)
         if (sent.isNotEmpty()) strip(c, w, cy + th6 + 4f * d, 3f * d, sent, SENT_BLUE, null, 5f * d)
         if (vis.isNotEmpty()) strip(c, w, cy + th6 + 8.5f * d, 3f * d, vis, 0xFF3B82F6.toInt(), null)
         val r = (5.5f + 3.5f * grow) * d
         val tx = px.coerceIn(r, w - r)
         p.style = Paint.Style.FILL; p.shader = null
-        p.color = 0x303B82F6; c.drawCircle(tx, cy, r + (4f + 5f * grow) * d, p)   // هالة
+        if (MtLook.glowOn()) thumbHalo(c, tx, cy, r, 0xFF3B82F6.toInt(), grow) else { p.color = 0x303B82F6; c.drawCircle(tx, cy, r + (4f + 5f * grow) * d, p) }   // هالة (v1170)
         if (drawThumb(c, tx, cy, r)) return
-        p.color = 0x55000000; c.drawCircle(tx, cy + 1.2f * d, r + 0.6f * d, p)    // ظل خفيف
-        p.color = Color.WHITE; c.drawCircle(tx, cy, r, p)
+        knob(c, tx, cy, r, 0xFF60A5FA.toInt(), 0xFF3B82F6.toInt())
     }
 
     override fun onTouchEvent(e: MotionEvent): Boolean {
@@ -189,9 +252,9 @@ class DualProgress(ctx: Context, val th: Theme) : View(ctx) {
         if (width <= 0) return true
         val f = (e.x / width).coerceIn(0f, 1f)
         when (e.action) {
-            MotionEvent.ACTION_DOWN -> { dragging = true; animGrow(1f); parent?.requestDisallowInterceptTouchEvent(true); played = f; invalidate(); onDrag?.invoke(true); onScrub?.invoke(f) }
-            MotionEvent.ACTION_MOVE -> { played = f; invalidate(); onScrub?.invoke(f) }
-            MotionEvent.ACTION_UP -> { dragging = false; animGrow(0f); played = f; invalidate(); onDrag?.invoke(false); onSeek?.invoke(f) }
+            MotionEvent.ACTION_DOWN -> { dragging = true; animGrow(1f); parent?.requestDisallowInterceptTouchEvent(true); glide?.cancel(); applyPlayed(f); shown = f; invalidate(); onDrag?.invoke(true); onScrub?.invoke(f) }
+            MotionEvent.ACTION_MOVE -> { applyPlayed(f); shown = f; invalidate(); onScrub?.invoke(f) }
+            MotionEvent.ACTION_UP -> { dragging = false; animGrow(0f); applyPlayed(f); shown = f; holdUntil = android.os.SystemClock.uptimeMillis() + 700L; invalidate(); onDrag?.invoke(false); onSeek?.invoke(f) }
             MotionEvent.ACTION_CANCEL -> { dragging = false; animGrow(0f); invalidate(); onDrag?.invoke(false) }
         }
         return true

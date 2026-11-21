@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- (v1161) فيديو تاني من صفحة المشاهدة: الجديد بيظهر بكروس-فيد سريع في مكانه (من غير نزول/طلوع الصفحة كلها) -->
+<set xmlns:android="http://schemas.android.com/apk/res/android" android:interpolator="@android:interpolator/fast_out_slow_in">
+    <alpha android:fromAlpha="0" android:toAlpha="1" android:duration="200"/>
+</set>

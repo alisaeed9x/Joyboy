@@ -214,58 +214,74 @@ object MobileDataGuard {
             isClickable = true; isFocusable = true; isFocusableInTouchMode = true
             layoutDirection = View.LAYOUT_DIRECTION_RTL
             elevation = dp(200).toFloat()
-            setOnApplyWindowInsetsListener { v, i -> v.setPadding(0, i.systemWindowInsetTop, 0, i.systemWindowInsetBottom); i }
+            setOnApplyWindowInsetsListener { v, i -> v.setPadding(i.systemWindowInsetLeft, i.systemWindowInsetTop, i.systemWindowInsetRight, i.systemWindowInsetBottom); i }
             setOnKeyListener { _, k, _ -> k == KeyEvent.KEYCODE_BACK }   // الرجوع ما يقفلش التحذير
         }
-        val col = LinearLayout(act).apply {
-            orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER_HORIZONTAL
-            setPadding(dp(26), dp(20), dp(26), dp(20))
-        }
+        // (v1168) لاندسكيب: الشاشة قصيرة فالأزرار كانت بتتقطع تحت ← نصين (التحذير · الأزرار)
+        val land = act.resources.configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
+        fun vcol(): LinearLayout = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER_HORIZONTAL }
+        val info = vcol()
+        val icSize = if (land) 64 else 120
         val icon = TextView(act).apply {
-            text = "⚠"; textSize = 64f; setTextColor(Color.WHITE); gravity = Gravity.CENTER
-            background = rounded(Color.rgb(214, 40, 40), dp(60).toFloat(), Color.argb(90, 255, 255, 255), dp(3))
+            text = "⚠"; textSize = if (land) 32f else 64f; setTextColor(Color.WHITE); gravity = Gravity.CENTER
+            background = rounded(Color.rgb(214, 40, 40), dp(icSize / 2).toFloat(), Color.argb(90, 255, 255, 255), dp(3))
         }
-        col.addView(icon, LinearLayout.LayoutParams(dp(120), dp(120)))
+        info.addView(icon, LinearLayout.LayoutParams(dp(icSize), dp(icSize)))
         pulse = ObjectAnimator.ofPropertyValuesHolder(icon,
             PropertyValuesHolder.ofFloat(View.SCALE_X, 1f, 1.12f), PropertyValuesHolder.ofFloat(View.SCALE_Y, 1f, 1.12f)).apply {
             duration = 700L; repeatCount = ObjectAnimator.INFINITE; repeatMode = ObjectAnimator.REVERSE; start()
         }
-        col.addView(TextView(act).apply {
-            text = "إنت على داتا الموبايل"; textSize = 26f; setTextColor(Color.WHITE); typeface = Typeface.DEFAULT_BOLD; gravity = Gravity.CENTER
-        }, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(22) })
-        col.addView(TextView(act).apply {
+        info.addView(TextView(act).apply {
+            text = "إنت على داتا الموبايل"; textSize = if (land) 20f else 26f; setTextColor(Color.WHITE); typeface = Typeface.DEFAULT_BOLD; gravity = Gravity.CENTER
+        }, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(if (land) 10 else 22) })
+        info.addView(TextView(act).apply {
             text = "البرنامج استهلك " + fmt(used) + " من الداتا، ووقّفت كل التشغيل والتحميل مؤقتًا (Pause) لحد ما تختار."
-            textSize = 15f; setTextColor(Color.argb(220, 255, 255, 255)); gravity = Gravity.CENTER; setLineSpacing(0f, 1.25f)
-        }, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(12) })
-        col.addView(TextView(act).apply {
+            textSize = if (land) 13f else 15f; setTextColor(Color.argb(220, 255, 255, 255)); gravity = Gravity.CENTER; setLineSpacing(0f, 1.25f)
+        }, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(if (land) 8 else 12) })
+        info.addView(TextView(act).apply {
             text = "تكمّل بالداتا ولا تحوّل للواي فاي؟"
-            textSize = 17f; setTextColor(Color.rgb(255, 196, 0)); typeface = Typeface.DEFAULT_BOLD; gravity = Gravity.CENTER
-        }, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(18); bottomMargin = dp(22) })
+            textSize = if (land) 14f else 17f; setTextColor(Color.rgb(255, 196, 0)); typeface = Typeface.DEFAULT_BOLD; gravity = Gravity.CENTER
+        }, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(if (land) 10 else 18); bottomMargin = dp(if (land) 4 else 22) })
 
         fun btn(label: String, bg: Int, fg: Int, stroke: Int, onClick: () -> Unit): TextView = TextView(act).apply {
-            text = label; textSize = 17f; setTextColor(fg); typeface = Typeface.DEFAULT_BOLD; gravity = Gravity.CENTER
+            text = label; textSize = if (land) 15f else 17f; setTextColor(fg); typeface = Typeface.DEFAULT_BOLD; gravity = Gravity.CENTER
             background = rounded(bg, dp(16).toFloat(), stroke, if (stroke != 0) dp(2) else 0)
-            setPadding(dp(16), dp(15), dp(16), dp(15)); isClickable = true
+            setPadding(dp(16), dp(if (land) 11 else 15), dp(16), dp(if (land) 11 else 15)); isClickable = true
             setOnClickListener { try { onClick() } catch (e: Throwable) { try { LogStore.err("MobileDataGuard:btn", e) } catch (_: Throwable) {} } }
         }
-        val lp = { LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(10) } }
-        col.addView(btn("📶  إعدادات الواي فاي", Color.rgb(33, 150, 243), Color.WHITE, 0) {
+        val lp = { LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(if (land) 8 else 10) } }
+        val btns = vcol()
+        btns.addView(btn("📶  إعدادات الواي فاي", Color.rgb(33, 150, 243), Color.WHITE, 0) {
             awaitWifi = true
             try { act.startActivity(Intent(Settings.ACTION_WIFI_SETTINGS)) }
             catch (_: Throwable) { try { act.startActivity(Intent(Settings.ACTION_WIRELESS_SETTINGS)) } catch (_: Throwable) {} }
         }, lp())
-        col.addView(btn("▶  إكمال بالداتا", Color.argb(40, 255, 196, 0), Color.rgb(255, 196, 0), Color.rgb(255, 196, 0)) {
+        btns.addView(btn("▶  إكمال بالداتا", Color.argb(40, 255, 196, 0), Color.rgb(255, 196, 0), Color.rgb(255, 196, 0)) {
             allowed = true; tripped = false; awaitWifi = false
             try { app?.let { NetGate.allowMobile(it, true) } } catch (_: Throwable) {}
             removeOverlayView()
             resumeEverything()
         }, lp())
-        col.addView(btn("⛔  خروج من البرنامج", Color.argb(40, 255, 82, 82), Color.rgb(255, 120, 120), Color.rgb(255, 82, 82)) {
+        btns.addView(btn("⛔  خروج من البرنامج", Color.argb(40, 255, 82, 82), Color.rgb(255, 120, 120), Color.rgb(255, 82, 82)) {
             removeOverlayView()
             try { act.finishAndRemoveTask() } catch (_: Throwable) { try { act.finishAffinity() } catch (_: Throwable) {} }
-            main.postDelayed({ try { android.os.Process.killProcess(android.os.Process.myPid()) } catch (_: Throwable) {} }, 350L)
+            main.postDelayed({ try { android.os.Process.killProcess(android.os.Process.myPid()) } catch (_: Throwable) {} }, 350L)   // (v1168) المتصفح المخفي بيتحفظ في onPause قبل الكيل ويرجع بالبصمة
         }, lp())
 
+        // (v1168) من غير سكرول: لاندسكيب = الشاشة نصين (التحذير والصورة في نص · الـ3 اختيارات في النص التاني) · بورتريه زي ما كان
+        val col = LinearLayout(act).apply {
+            if (land) {
+                orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL
+                setPadding(dp(16), dp(6), dp(16), dp(6))
+                addView(info, LinearLayout.LayoutParams(0, -2, 1f).apply { marginEnd = dp(10) })
+                addView(btns, LinearLayout.LayoutParams(0, -2, 1f).apply { marginStart = dp(10) })
+            } else {
+                orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER_HORIZONTAL
+                setPadding(dp(26), dp(20), dp(26), dp(20))
+                addView(info, LinearLayout.LayoutParams(-1, -2))
+                addView(btns, LinearLayout.LayoutParams(-1, -2))
+            }
+        }
         root.addView(col, FrameLayout.LayoutParams(-1, -2, Gravity.CENTER))
         decor.addView(root, ViewGroup.LayoutParams(-1, -1))
         overlay = root; overlayHost = act

@@ -85,6 +85,8 @@ class BrowserSaver(private val act: BrowserActivity, private val frame: FrameLay
             "hotjar.com", "mixpanel.com", "segment.io", "segment.com", "amplitude.com", "clarity.ms", "scorecardresearch.com", "quantserve.com",
             "fullstory.com", "mouseflow.com", "crazyegg.com", "nr-data.net", "adobedtm.com", "omtrdc.net")
         private const val JS_NOPRE = "(function(){if(window.__jbP)return;window.__jbP=1;function f(){try{document.querySelectorAll('video:not([data-jbp]),audio:not([data-jbp])').forEach(function(m){m.setAttribute('data-jbp','1');if(m.paused)m.preload='none'});document.querySelectorAll('link[rel=prefetch],link[rel=prerender],link[rel=preload][as=video],link[rel=preload][as=fetch]').forEach(function(l){if(l.parentNode)l.parentNode.removeChild(l)})}catch(e){}}f();try{new MutationObserver(function(){clearTimeout(window.__jbd4);window.__jbd4=setTimeout(f,600)}).observe(document.documentElement,{childList:true,subtree:true})}catch(e){}})();"
+        /** (v1160) «ميتاداتا بس»: الفيديو بيطلب أول بايتات بس (الرابط بيظهر للصيد) بدل preload=none اللي كان بيمنع الطلب خالص على الداتا؛ ومش بنشيل preload as=fetch (مانيفست صغير) */
+        private val JS_NOPRE_META = JS_NOPRE.replace("m.preload='none'", "m.preload='metadata'").replace(",link[rel=preload][as=fetch]", "")
         private const val JS_IMGS = "(function(){var n=0;document.querySelectorAll('img').forEach(function(i){if(!i.complete||!i.naturalWidth)n++});return n})()"
         /** (v788) إيقاف أي فيديو/صوت في تبويب خلفي ومنعه من التحميل المسبق — ده اللي كان بيفضل ينزّل مقاطع (≈ميجا/10ث) بعد ما تسيب التبويب */
         const val JS_STOPMEDIA = "(function(){try{document.querySelectorAll('video,audio').forEach(function(v){try{if(!v.paused)v.pause();v.preload='none'}catch(e){}})}catch(e){}})();"
@@ -164,7 +166,9 @@ class BrowserSaver(private val act: BrowserActivity, private val frame: FrameLay
     // ===== (v785) إعدادات DATA & PERFORMANCE =====
     /** مفيش اختيار صريح = بيتبع مستوى التوفير (قبل كده: التوفير الذكي/الأقصى بيمنع التشغيل التلقائي) */
     private fun autoplayAllowed(lv: Int): Boolean = if (p.contains("sv_autoplay")) p.getBoolean("sv_autoplay", true) else lv < SMART
-    private fun preloadAllowed(): Boolean = when (p.getString("sv_pre", "wifi")) { "always" -> true; "off" -> false; else -> net == N_WIFI && !metered }
+    private fun preloadAllowed(): Boolean = when (p.getString("sv_pre", "meta")) { "always" -> true; "off" -> false; else -> net == N_WIFI && !metered }
+    /** (v1160) سكريبت التحميل المسبق للمستوى الحالي: null = من غير تقييد */
+    private fun preloadJs(): String? = when (p.getString("sv_pre", "meta")) { "always" -> null; "off" -> JS_NOPRE; "wifi" -> if (net == N_WIFI && !metered) null else JS_NOPRE; else -> if (net == N_WIFI && !metered) null else JS_NOPRE_META }
     private fun bgRestrict(): Boolean = when (p.getString("sv_bg", "cell")) { "always" -> true; "off" -> false; else -> net == N_CELL }
     private fun imgMode(): String = p.getString("sv_img", "opt") ?: "opt"
 
@@ -265,7 +269,7 @@ class BrowserSaver(private val act: BrowserActivity, private val frame: FrameLay
         if (lv != OFF) sb.append(JS_LAZY)   // (v1153) صور بس (الإطارات مش lazy — مشغّلات الفيديو الخارجية لازم تتحمّل)
         if (lv >= SMART) sb.append(JS_LITE)   // (v1153) رجوع لشرط ما قبل v1146: spoof النت الضعيف بيكسّر الصيد في «متوازن»
         if (!autoplayAllowed(lv)) sb.append(JS_GUARD)
-        if (lv != OFF && !preloadAllowed()) sb.append(JS_NOPRE)
+        if (lv != OFF) preloadJs()?.let { sb.append(it) }   // (v1160)
         return sb.toString()
     }
     private fun installDocStart(w: WebView, lv: Int) {
@@ -285,7 +289,7 @@ class BrowserSaver(private val act: BrowserActivity, private val frame: FrameLay
         if (lv >= SMART) sb.append(JS_LITE)   // (v1153)
         if (lv >= SMART && lv >= MAX && imgMode() != "always") sb.append(JS_SRCSET)
         if (!autoplayAllowed(lv)) sb.append(JS_GUARD)
-        if (lv != OFF && !preloadAllowed()) sb.append(JS_NOPRE)
+        if (lv != OFF) preloadJs()?.let { sb.append(it) }   // (v1160)
         if (isYt(hs)) { vqCap = vqPolicy(lv); sb.append(ytJs(ytQ(vqCap))) }
         return sb.toString()
     }
@@ -997,8 +1001,8 @@ class BrowserSaver(private val act: BrowserActivity, private val frame: FrameLay
         col.addView(ui.switchRow("🛡 حظر التراكرز والتحليلات (طرف ثالث — منفصل تمامًا عن مانع الإعلانات)", p.getBoolean("sv_trk", true)) { v -> p.edit().putBoolean("sv_trk", v).apply() })
         col.addView(ui.switchRow("▶ تشغيل الفيديو تلقائي (بيتطبّق على الصفحة الجاية)", autoplayAllowed(level)) { v -> p.edit().putBoolean("sv_autoplay", v).apply(); reapplyAll() })
         col.addView(lab("التحميل المسبق (preload/prefetch للصفحات والفيديو) — بيتطبّق على الصفحة الجاية"))
-        val prN = listOf("مقفول", "واي فاي بس", "دايمًا"); val prV = listOf("off", "wifi", "always")
-        col.addView(ui.chips(prN, { prN[prV.indexOf(p.getString("sv_pre", "wifi") ?: "wifi").coerceAtLeast(0)] }) { pick -> val i = prN.indexOf(pick); if (i >= 0) { p.edit().putString("sv_pre", prV[i]).apply(); reapplyAll() } })
+        val prN = listOf("مقفول", "ميتاداتا بس (للصيد)", "واي فاي بس", "دايمًا"); val prV = listOf("off", "meta", "wifi", "always")
+        col.addView(ui.chips(prN, { prN[prV.indexOf(p.getString("sv_pre", "meta") ?: "meta").coerceAtLeast(0)] }) { pick -> val i = prN.indexOf(pick); if (i >= 0) { p.edit().putString("sv_pre", prV[i]).apply(); reapplyAll() } })
         col.addView(lab("قيود الداتا في الخلفية — لما المتصفح يخرج من الشاشة الصفحات ماتطلبش شبكة (بترجع لما تفتحه)"))
         val bgN = listOf("مقفول", "على الداتا بس", "دايمًا"); val bgV = listOf("off", "cell", "always")
         col.addView(ui.chips(bgN, { bgN[bgV.indexOf(p.getString("sv_bg", "cell") ?: "cell").coerceAtLeast(0)] }) { pick -> val i = bgN.indexOf(pick); if (i >= 0) p.edit().putString("sv_bg", bgV[i]).apply() })

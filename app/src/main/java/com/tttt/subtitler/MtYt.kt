@@ -9,6 +9,51 @@ import org.json.JSONObject
 import java.util.concurrent.ConcurrentHashMap
 
 /**
+ * (v1163) جودة يوتيوب على التلفزيون.
+ *  - HARD = 720: أقصى جودة على التلفزيون في أي حالة (تلقائي أو يدوي من زرار الجودة) — مفيش 1080 / 2K / 4K.
+ *  - التلفزيون بيفتح الفيديو لوحده على «tv_ytq» (الافتراضي 480): أعلى جودة ≤ القيمة دي، ولو مفيش ينزل لأقل واحدة.
+ *  - tv_ytq مفتاح خاص بالتلفزيون (بادئة tv_ ما بتتزامنش مع yt_maxh بتاع الموبايل) — بيتعدّل من إعدادات التلفزيون، أو من الموبايل بسؤال «تثبيت للتلفزيون؟».
+ */
+object TvQ {
+    const val HARD = 720
+    const val DEF = 480
+    const val KEY = "tv_ytq"
+    fun auto(): Int = Cfg.int(KEY, DEF).coerceIn(144, HARD)
+    /** أعلى ارتفاع ≤ auto() من الارتفاعات المتاحة، ولو كلها أعلى منه: أقل واحد */
+    fun pickFrom(hs: List<Int>): Int {
+        val a = auto()
+        return hs.filter { it in 1..a }.maxOrNull() ?: (hs.filter { it > 0 }.minOrNull() ?: 0)
+    }
+    /** جودة الموبايل → جودة التلفزيون المثبّتة: أقل من 480 بتترفع لـ480، وأعلى منها (720 فما فوق / أعلى جودة) بتنزل لـ480 — ثابتة 480 */
+    fun fromPhone(@Suppress("UNUSED_PARAMETER") phoneH: Int): Int = DEF
+
+    /** على الموبايل بعد اختيار جودة يوتيوب: «تثبيت الجودة دي للتلفزيون؟» — أيوه ← تتبعت للتلفزيون، لأ ← التلفزيون يفضل على إعداده هو */
+    fun askPin(act: android.app.Activity, phoneH: Int) {
+        try {
+            if (DeviceUi.realTvCached) return
+            if (RemoteClient.pairedList().isEmpty()) return
+            val v = fromPhone(phoneH)
+            GAlert(act).setTitle("📺 تثبيت الجودة للتلفزيون؟")
+                .setMessage("التلفزيون هيفتح يوتيوب على " + v + "p ثابتة (أقصى حاجة تقدر تفتحها بإيدك من زرار الجودة 720p، ومفيش 1080 ولا 2K ولا 4K).")
+                .setPositiveButton("أيوه، ثبّتها") { _, _ ->
+                    Thread {
+                        var ok = false
+                        try {
+                            if (RemoteClient.ensureConnected(act, 6000L)) {
+                                val (c, _) = RemoteClient.postJson("/look", org.json.JSONObject().put("set", org.json.JSONObject().put(KEY, v.toString())))
+                                ok = c == 200
+                            }
+                        } catch (e: Throwable) { LogStore.err("TvQ:pin", e) }
+                        act.runOnUiThread { Notice.show(act, (if (ok) "📺 جودة التلفزيون: " + v + "p" else "⚠ ما قدرتش أوصل للتلفزيون — غيّرها من إعدادات التلفزيون ← الفيديوهات").toString(), 2800L) }
+                    }.also { it.isDaemon = true }.start()
+                }
+                .setNegativeButton("لأ", null)
+                .show()
+        } catch (e: Throwable) { LogStore.err("TvQ:ask", e) }
+    }
+}
+
+/**
  * (v889) جلب روابط فيديو/صوت يوتيوب من محرك MeeTube نفسه (MediaServiceCore) — بدل طبقة الاستخراج القديمة بتاعت Joyboy
  * (YtNp/YtFast/YtExtract-clients اتمسحوا). بيتنده من خيط خلفي بس (الطلب متزامن).
  * بيطلّع نفس الأشكال اللي المشغّل والموسيقى والتحميل متعودين عليها: Got (url + صوت منفصل + قايمة الجودات JSON) و YtPick.
@@ -120,7 +165,8 @@ object MtYt {
             out.add(Q(m.height.toString() + "p", m.url, null, m.height))
         }
         out.sortByDescending { it.h }
-        val capH = if (DeviceUi.realTvCached) 0 else maxH   // (v1045) التلفزيون الحقيقي بيفتح كل الجودات — سقف yt_maxh للموبايل بس
+        // (v1163) التلفزيون: القايمة (اللي بتتختار منها بإيدك) سقفها 720 ثابت — مفيش 1080/2K/4K خالص. الجودة اللي بيفتح بيها لوحده في video() (TvQ.auto)
+        val capH = if (DeviceUi.realTvCached) TvQ.HARD else maxH
         val capped = if (capH > 0) out.filter { it.h <= capH }.ifEmpty { out.takeLast(1) } else out
         return Pair(capped, audio?.url)
     }
@@ -137,7 +183,7 @@ object MtYt {
         val ua = uaFor(fi)
         val title = fi.title ?: ""
         val (qs, _) = build(fi, maxH)
-        val top = qs.firstOrNull()
+        val top = if (DeviceUi.realTvCached) TvQ.pickFrom(qs.map { it.h }).let { h -> qs.firstOrNull { it.h == h } ?: qs.firstOrNull() } else qs.firstOrNull()   // (v1163)
         if (top != null) return Got(top.url, top.audio, ua, title, qlistJson(qs), "MeeTube")
         val hls = try { fi.hlsManifestUrl } catch (_: Throwable) { null }
         if (!hls.isNullOrEmpty()) return Got(hls, null, ua, title, "", "MeeTube·HLS")
@@ -162,7 +208,7 @@ object MtYt {
     /** نفس الدالة بشكل YtPick للتحميل/الهاند-أوف: أحسن جودة ≤ maxH */
     fun pick(id: String, maxH: Int): YtPick? {
         val g = video(id, maxH) ?: return null
-        val h = try { JSONArray(g.qlist).optJSONObject(0)?.optInt("h") ?: 0 } catch (_: Throwable) { 0 }
+        val h = try { val qa = JSONArray(g.qlist); var r = qa.optJSONObject(0)?.optInt("h") ?: 0; for (i in 0 until qa.length()) { val o = qa.optJSONObject(i); if (o != null && o.optString("u") == g.url) { r = o.optInt("h"); break } }; r } catch (_: Throwable) { 0 }   // (v1163) التلفزيون: المختار مش دايمًا الأول
         val dur = (info(id)?.lengthSeconds?.toLongOrNull() ?: 0L) * 1000L
         return YtPick(g.url, g.audio, g.ua, g.title, h, g.qlist, dur)
     }

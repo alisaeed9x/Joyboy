@@ -153,11 +153,28 @@ Use this context to:
 - Never invent speech you did not hear. Answer {"subtitles":[]} only if there is truly no human speech at all (only music or noise).
 """
 
+    // ───────────────────────── (v1164) تفريغ أولًا ثم ترجمة بالسياق — في نفس الطلب ─────────────────────────
+
+    internal const val TWO_STAGE_EN = """
+═══ TWO STAGES IN THIS ONE REPLY (mandatory order) ═══
+You work in two stages, in this exact order, inside the single JSON answer. The translation must come from reading, never straight from the sound.
+STAGE 1 — "transcript" (written FIRST in the JSON): listen to the whole segment and write the complete dialogue exactly as heard, one entry per sentence or lyric line, each with start, end and original (the language actually spoken, native script). No translation in this stage. This is your working draft: if a word sounds odd, listen again and fix the reading HERE, before translating.
+STAGE 2 — "subtitles" (written AFTER the transcript): now read the transcript you just wrote as one continuous conversation and translate it with full context: who talks to whom, what was said before and after, jokes, sarcasm, idioms, references, pronouns and genders. Translate the meaning of the whole exchange, not each sound on its own.
+- 🔴 Each subtitle is exactly one transcript entry: same order, same count, same start, end and original. Never merge, drop, add or re-split entries in stage 2 (fix splitting in stage 1).
+- 🔴 "translated" must follow from the transcript and the context, never from a fresh guess at the audio. If a line makes no sense in context, correct it in the transcript first, then translate the corrected line.
+- 🔴🔴 No shifting: "translated" of entry k translates the original of entry k and nothing else. A translation that really belongs to the previous or the next entry (the translations slid one place) is the worst possible error. Before writing each translated, re-read that entry's own original, and check afterwards that no two neighbours swapped or shifted their meaning.
+- The transcript is only a working draft and is not shown to anyone: keep each entry to start, end and original only, nothing else.
+"""
+
+    internal const val FAST_TWO_STAGE = """Work in two stages inside one JSON answer. STAGE 1 "transcript" (write it first): listen to the whole segment and write every spoken sentence exactly as heard, in the language actually spoken, with start and end (no translation yet). STAGE 2 "subtitles" (after it): read that transcript as one conversation and translate it with full context (who talks to whom, what came before, jokes, idioms, pronouns, gender) into the target dialect. Never translate straight from the sound. Each subtitle = one transcript entry (same order, count, start, end, original); fix any odd-sounding word in the transcript before translating it. No shifting: the translation of entry k translates the original of entry k only, never the previous or next entry; re-check this before answering."""
+
     private fun schema(): String {
         val spk = if (Extras.spkNames) ",\"speaker_name\":\"\"" else ""
+        // (v1165) رد أقصر = أسرع: الحقول الفاضية/الافتراضية بتتشال (Parse.sub بيقراها بنفس القيم الافتراضية) وtranslated_en_pivot اتشال خالص
         return "Return JSON only, in exactly this shape, with no text outside it:\n" +
-            "{\"subtitles\":[{\"start\":0.0,\"end\":2.0,\"original\":\"...\",\"translated\":\"...\",\"translated_en_pivot\":\"\",\"gender\":\"male\",\"addressee\":\"male\",\"topic_gender\":\"none\",\"people\":[],\"places\":[],\"is_song\":false,\"emotion\":\"neutral\",\"low_confidence\":false,\"overlap\":false,\"speaker_tag\":\"\",\"is_continuation\":false,\"faint\":false$spk},...],\"prev_corrections\":[],\"detected_source_language\":\"...\"}\n" +
-            "\"original\" holds the text in the language actually spoken. \"translated_en_pivot\" stays an empty string.\n"
+            "{\"transcript\":[{\"start\":0.0,\"end\":2.0,\"original\":\"...\"},...],\"subtitles\":[{\"start\":0.0,\"end\":2.0,\"original\":\"...\",\"translated\":\"...\",\"gender\":\"male\",\"addressee\":\"male\",\"topic_gender\":\"none\",\"emotion\":\"neutral\"$spk},...],\"prev_corrections\":[],\"detected_source_language\":\"...\"}\n" +
+            "\"original\" holds the text in the language actually spoken. Always write start, end, original, translated, gender and addressee.\n" +
+            "🔴 Speed: keep every entry as short as possible. Add these optional fields ONLY when they are not the default, and leave them out otherwise: people (array of names), places (array), is_song:true, low_confidence:true, overlap:true, speaker_tag, is_continuation:true, faint:true, is_sound:true. Do not write translated_en_pivot at all.\n"
     }
 
     private fun charTable(chars: List<Chr>): String {
@@ -195,6 +212,7 @@ Use this context to:
         val sb = StringBuilder()
         sb.append(P("MAIN_EN", MAIN_EN).replace("{{TARGET}}", dialectEn(c.lang)).replace("{{STYLE}}", styleEn(c.style)))
         sb.append(schema())
+        sb.append(P("TWO_STAGE_EN", TWO_STAGE_EN))   // (v1164) تفريغ ثم ترجمة بالسياق في نفس الرد
         sb.append(P("TIMING_EN", TIMING_EN)).append(P("GENDER_EN", GENDER_EN)).append(P("RULES_EN", RULES_EN)).append(P("QUALITY_EN", QUALITY_EN)).append(P("REVIEW_EN", REVIEW_EN))
         sb.append(charTable(chars)).append(glossBlock(c, gloss))
         if (Extras.spkNames && !hole) sb.append(P("SPEAKER_EN", SPEAKER_EN))
@@ -216,13 +234,14 @@ Use this context to:
     fun fast(pb: PromptBuilder, c: Conf, durSec: Double, gloss: List<Gloss>, srcLang: String = "", strict: Boolean = false): String {
         val sb = StringBuilder()
         sb.append("You are a fast, accurate audio translator. This is a standalone audio segment; timestamps start at 0.0 at its beginning.\n\n")
-        sb.append("1. Listen and write every spoken sentence (singing too: one subtitle per lyric line) in \"original\", in the language actually spoken, exactly as heard.\n")
-        sb.append("2. Translate each sentence into ${dialectEn(c.lang)} (${styleEn(c.style)}), Arabic letters only, in \"translated\".\n")
+        sb.append("0. " + P("FAST_TWO_STAGE", FAST_TWO_STAGE) + "\n")   // (v1164)
+        sb.append("1. Listen and write every spoken sentence (singing too: one line per lyric line) in the transcript, in the language actually spoken, exactly as heard; each subtitle repeats it in \"original\".\n")
+        sb.append("2. Translate each transcript sentence into ${dialectEn(c.lang)} (${styleEn(c.style)}), Arabic letters only, in \"translated\".\n")
         sb.append("3. One subtitle = one stretch of speech between two pauses, at most about 12 spoken words; split longer speech at the nearest breath or pause. Different speakers are different subtitles.\n")
         sb.append("4. start and end are seconds relative to this segment only, real measured values with one decimal (never rounded or evenly spaced).\n")
         sb.append("5. Ignore music, noise and other non-speech sounds; never invent speech that is not audible. If nothing is spoken: {\"subtitles\":[]}.\n")
         sb.append("6. Accuracy (v1151): write only words that really exist in the spoken language and match the sounds; never replace an unfamiliar word with a more common or English-sounding one, and never write English for non-English speech. Quiet, distant, TV/phone speech and short interjections are sentences too. Keep names, numbers and technical terms exactly as spoken, with one consistent spelling. If a word is unclear, write your closest phonetic reading.\n\n")
-        sb.append("Return JSON only, no text outside it, exactly this shape:\n{\"subtitles\":[{\"start\":0.0,\"end\":2.0,\"original\":\"...\",\"translated\":\"...\"},...],\"detected_source_language\":\"...\"}\n")
+        sb.append("Return JSON only, no text outside it, exactly this shape:\n{\"transcript\":[{\"start\":0.0,\"end\":2.0,\"original\":\"...\"},...],\"subtitles\":[{\"start\":0.0,\"end\":2.0,\"original\":\"...\",\"translated\":\"...\"},...],\"detected_source_language\":\"...\"}\n")
         sb.append("detected_source_language: the spoken language written in Arabic, one or two words.\n")
         sb.append(glossBlock(c, gloss))
         sb.append("\n⏱ Exact duration of this audio: ${dur(durSec)} seconds; every start and end is between 0.0 and ${dur(durSec)}.\n")

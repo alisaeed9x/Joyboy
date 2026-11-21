@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- (v1160) صفحة يوتيوب (PlayerActivity ytpage): تفتح من تحت لفوق وتقفل لتحت، من الستايل نفسه كاحتياطي -->
+    <style name="YtPageWindowAnim" parent="@android:style/Animation.Activity">
+        <item name="android:activityOpenEnterAnimation">@anim/yt_page_up_enter</item>
+        <item name="android:activityOpenExitAnimation">@anim/yt_page_up_exit</item>
+        <item name="android:activityCloseEnterAnimation">@anim/yt_page_down_enter</item>
+        <item name="android:activityCloseExitAnimation">@anim/yt_page_down_exit</item>
+    </style>
+    <!-- (v1161) انتقال فيديو تاني من صفحة المشاهدة: كروس-فيد في مكانه -->
+    <style name="YtSwapWindowAnim" parent="@android:style/Animation.Activity">
+        <item name="android:activityOpenEnterAnimation">@anim/yt_swap_enter</item>
+        <item name="android:activityOpenExitAnimation">@anim/yt_swap_exit</item>
+        <item name="android:activityCloseEnterAnimation">@anim/yt_page_down_enter</item>
+        <item name="android:activityCloseExitAnimation">@anim/yt_page_down_exit</item>
+    </style>
+    <!-- (v1161) ثيم مشغّل صفحة يوتيوب: نافذة شفافة عشان الفيد يبان ورا الفيديو وقت سحب التصغير (API 27+ بس) -->
+    <style name="AppPlayerYt" parent="AppPlayer">
+        <item name="android:windowIsTranslucent">true</item>
+        <item name="android:windowBackground">@android:color/transparent</item>
+    </style>
+</resources>

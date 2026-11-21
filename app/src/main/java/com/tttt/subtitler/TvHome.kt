@@ -2118,7 +2118,8 @@ class TvActivity : Activity() {
         "tv_vid_view" to listOf("grid", "dense", "list"),
         "tv_br_mode" to listOf("ptr", "focus"),
         "tv_pray_method" to listOf("5", "4", "3", "2", "1", "8", "9", "10", "13", "12"),
-        "tv_ask_home" to listOf("0", "1"))
+        "tv_ask_home" to listOf("0", "1"),
+        "tv_ytq" to listOf("240", "360", "480", "720"))   // (v1163) جودة يوتيوب على التلفزيون (السقف 720)
     /** (v725) مفاتيح «رجّع المظهر للافتراضي» (الأصلية بس — الترتيب والعرض وغيرهم ما بيترجعوش) */
     private val lookAppearKeys = setOf("tv_wall", "tv_wall_sec", "tv_scrim", "tv_warm", "tv_icon_shape", "tv_icon_px", "tv_names", "tv_scale_adj",
         "tv_lift", "tv_halo", "tv_clock24", "tv_saver_min", "tv_apps_sys")
@@ -2128,7 +2129,7 @@ class TvActivity : Activity() {
         "tv_icon_px" to "86", "tv_names" to "always", "tv_scale_adj" to "100", "tv_lift" to "2", "tv_halo" to "1",
         "tv_clock24" to "0", "tv_saver_min" to "3", "tv_apps_sys" to "0",
         "tv_play" to "1", "tv_theme_after_skin" to "0", "tv_fold_sort" to "name", "tv_vid_sort" to "new", "tv_fold_view" to "grid", "tv_vid_view" to "grid",
-        "tv_br_mode" to "ptr", "tv_pray_method" to "5", "tv_ask_home" to "1")
+        "tv_br_mode" to "ptr", "tv_pray_method" to "5", "tv_ask_home" to "1", "tv_ytq" to "480")
 
     /** بيتنادى على الـ UI thread. j = التغييرات (set / skin / theme / wallnext / reset) أو null للقراءة بس. بيرجّع الحالة الحالية. */
     fun remoteLook(j: org.json.JSONObject?): org.json.JSONObject {
@@ -2150,7 +2151,7 @@ class TvActivity : Activity() {
                         "tv_scrim" -> scrimChg = true
                         "tv_warm" -> warmChg = true
                         "tv_scale_adj", "tv_play" -> recreateNow = true
-                        "tv_theme_after_skin", "tv_fold_sort", "tv_vid_sort", "tv_fold_view", "tv_vid_view", "tv_br_mode", "tv_pray_method", "tv_ask_home" -> { }   // (v725) بتتقري وقت الاستخدام
+                        "tv_theme_after_skin", "tv_fold_sort", "tv_vid_sort", "tv_fold_view", "tv_vid_view", "tv_br_mode", "tv_pray_method", "tv_ask_home", "tv_ytq" -> { }   // (v725) بتتقري وقت الاستخدام
                         else -> rebuild = true
                     }
                 }

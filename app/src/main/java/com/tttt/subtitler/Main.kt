@@ -410,7 +410,7 @@ class MainActivity : Activity() {
                 ui.text("الجودة الافتراضية (أعلى جودة بيتفتح بيها الفيديو — على الداتا اختار 360p أو 480p)", 13f, th.text, true),
                 ui.chips(ytQ, { ytQ[ytQv.indexOf(Cfg.int("yt_maxh", 0)).coerceAtLeast(0)] }) { pick ->
                     val i = ytQ.indexOf(pick)
-                    if (i >= 0) Cfg.put("yt_maxh", ytQv[i].toString())
+                    if (i >= 0) { Cfg.put("yt_maxh", ytQv[i].toString()); TvQ.askPin(this, ytQv[i]) }   // (v1163)
                 },
                 ui.text("🔊 لغة صوت الفيديو", 13f, th.text, true),
                 ui.chips(ytLangN, { ytLangN[ytLangV.indexOf(YtLang.pref()).coerceAtLeast(0)] }) { n -> Cfg.put("yt_alang", ytLangV[ytLangN.indexOf(n).coerceAtLeast(0)]); try { YtExtract.clearPicks(); YtFast.clearCache() } catch (_: Throwable) {} },
@@ -527,10 +527,10 @@ class MainActivity : Activity() {
         // (v167) بريسيت جودة الصوت المُرسَل للـ AI: سريع (AAC 32kbps) / نورمال (WAV خام)
         val audioPresetTitle = ui.text("جودة الصوت المُرسَل للـ AI", 13f, th.muted)
         val audioPresetDesc = ui.text("", 12f, th.muted)
-        val apFast = "⚡ سريع"; val apNormal = "🎚 نورمال"
-        fun apDesc() { audioPresetDesc.text = if (AudioEnc.preset() == AudioEnc.NORMAL) "WAV خام 16kHz من غير ضغط (≈32KB في الثانية) — أعلى دقة، لكن الرفع أبطأ (حوالي 8 أضعاف الحجم)." else "ضغط AAC بمعدل 32kbps (≈4KB في الثانية) — أصغر حوالي 8 مرات، والرفع أسرع. مناسب لمعظم الأفلام." }
-        val audioPresetChips = ui.chips(listOf(apFast, apNormal), { if (AudioEnc.preset() == AudioEnc.NORMAL) apNormal else apFast }) {
-            Cfg.put(AudioEnc.PRESET_KEY, if (it == apNormal) AudioEnc.NORMAL else AudioEnc.FAST); apDesc()
+        val apFast = "⚡ سريع"; val apNormal = "🎚 نورمال"; val apLow = "📉 توفير داتا"
+        fun apDesc() { audioPresetDesc.text = if (AudioEnc.preset() == AudioEnc.LOW) "توفير داتا: AAC بمعدل 32kbps (≈4KB في الثانية) — نص حجم «سريع». ممكن السمع يضعف في اللغات الصعبة (يابانية/كورية) والكلام الواطي." else if (AudioEnc.preset() == AudioEnc.NORMAL) "WAV خام 16kHz من غير ضغط (≈32KB في الثانية) — أعلى دقة، لكن الرفع أبطأ (حوالي 8 أضعاف الحجم)." else "ضغط AAC بمعدل 64kbps (≈8KB في الثانية) — أصغر حوالي 4 مرات من الخام، والرفع أسرع. مناسب لمعظم الأفلام." }
+        val audioPresetChips = ui.chips(listOf(apLow, apFast, apNormal), { when (AudioEnc.preset()) { AudioEnc.NORMAL -> apNormal; AudioEnc.LOW -> apLow; else -> apFast } }) {
+            Cfg.put(AudioEnc.PRESET_KEY, when (it) { apNormal -> AudioEnc.NORMAL; apLow -> AudioEnc.LOW; else -> AudioEnc.FAST }); apDesc()
         }
         apDesc()
         // (v253) الترانسكريبشن الأوفلاين: Whisper على الجهاز من غير مفتاح. جيميناي بيترجم وهو الاحتياطي لو الأوفلاين فشل
@@ -704,7 +704,7 @@ class MainActivity : Activity() {
                     },
                     *MtLook.views(this, ui, th).toTypedArray()) else null,
                 ui.section("🎞 الجودة الافتراضية", true,
-                    ui.chips(ytQ, { ytQ[ytQv.indexOf(Cfg.int("yt_maxh", 0)).coerceAtLeast(0)] }) { n -> Cfg.put("yt_maxh", ytQv[ytQ.indexOf(n).coerceAtLeast(0)].toString()) },
+                    ui.chips(ytQ, { ytQ[ytQv.indexOf(Cfg.int("yt_maxh", 0)).coerceAtLeast(0)] }) { n -> val qh = ytQv[ytQ.indexOf(n).coerceAtLeast(0)]; Cfg.put("yt_maxh", qh.toString()); TvQ.askPin(this, qh) },   // (v1163)
                     ui.switchRow("🔍 حدّة الفيديو (عرض SurfaceView زي المشغّل القديم)", Cfg.bool("sharp_surface", true)) { Cfg.put("sharp_surface", if (it) "1" else "0") },
                     ui.noHint()),
                 ui.section("⚡ السلاسة والفريمات", false,
@@ -713,6 +713,13 @@ class MainActivity : Activity() {
                     ui.switchRow("تنبيه لو الفيديو التقيل اتفك بالمعالج (سوفتوير)", MtSmooth.hwWarnOn()) { Cfg.put(MtSmooth.K_HW_WARN, if (it) "1" else "0") },
                     ui.noHint()),
                 watchViews[0]) }),   // الخروج من المشغّل
+            // ===== 🗂 سجل اللوجات (v1167) =====
+            tab("trlog", { listOf<View>(
+                ui.section("🗂 سجل اللوجات", true,
+                    ui.noHint(),
+                    ui.text("كل مرة بتفتح فيديو (أو بتترجمه من الأول وجديد) بيتحفظ لوج جديد كنسخة مستقلة، معاه الجمل المترجمة اللي طلعت وقتها — حتى لو خرجت ودخلت على نفس الفيديو أو فيديو تاني. لو ما طلعتش ترجمة بيتكتب «ما طلعش مع ترجمة».", 12f, th.muted),
+                    ui.switchRow("سجّل اللوجات تلقائيًا", Cfg.bool("logarc_on", true)) { Cfg.put("logarc_on", if (it) "1" else "0") },
+                    ui.button("🗂 افتح سجل اللوجات", true) { LogArchiveUi(this, ui, th).show() })) }),
             tab("youtube", ytSettingsViews),
             // ===== 🎵 الموسيقى =====
             
@@ -1607,8 +1614,11 @@ class MainActivity : Activity() {
         ytLoadLaunched = true
         val ret = if (retOv.isNotEmpty()) retOv else if (curTab == 4) "yt" else ""
         if (handoff != null) {   // (v406) المشغّل المصغّر اتسلّم (YtHandoff): المشغّل الكامل بياخده شغّال من غير ما يجيب الرابط ويحمّل من الأول
+            val pgItem = YtHandoff.pageItem; YtHandoff.pageItem = null   // (v1162) التكبير من الدوك = يرجع صفحة المشاهدة
+            val toPage = pgItem != null && pgItem.id == id && !YtHandoff.pipNext && !DeviceUi.isTv(this)
             startActivity(Intent(this, PlayerActivity::class.java).pipTask(this).apply {
                 putExtra("handoff", true)
+                if (toPage && pgItem != null) { putExtra("ytpage", true); putExtra("ytchan", pgItem.channel); putExtra("ytchanurl", pgItem.channelUrl); putExtra("ytthumb", pgItem.thumb); putExtra("ytav", pgItem.avatar); putExtra("ytcid", pgItem.channelId); putExtra("ytcount", pgItem.count); putExtra("ytage", pgItem.age); putExtra("ytdur", pgItem.dur) }
                 putExtra("url", handoff.url); putExtra("aurl", handoff.audio ?: ""); putExtra("ref", "https://www.youtube.com/"); putExtra("ua", handoff.ua)
                 if (handoff.qlist.isNotEmpty()) putExtra("qlist", handoff.qlist)
                 putExtra("title", title.ifBlank { handoff.title }); putExtra("ytid", id)
@@ -1650,7 +1660,7 @@ class MainActivity : Activity() {
             putExtra("ytage", v.age)
             putExtra("ytdur", v.dur)
         })
-        overridePendingTransition(0, 0)
+        overridePendingTransition(R.anim.yt_page_up_enter, R.anim.yt_page_up_exit)   // (v1160) الصفحة بتطلع من تحت لفوق — الحركة بتتحدد من الأكتيفيتي اللي بتفتح مش بس من المشغّل (بعض الرومات بتتجاهل اللي بيتنده جوه onCreate)
     }
     private fun ytStartLegacy(id: String, title: String, translate: Boolean, auto: Boolean, startMs: Long = 0L) {
         val tok = ++ytLoadTok; ytLoadLaunched = false
@@ -1968,6 +1978,12 @@ class MainActivity : Activity() {
 
     override fun onResume() {
         super.onResume()
+        try {   // (v1162) صفحة يوتيوب اتصغّرت لدوك: خد المشغّل الشغّال وحطّه في الدوك السفلي (لو مش في تبويب يوتيوب: اقفله)
+            YtDockHold.take()?.let { dk ->
+                val u = ytUi
+                if (u != null && curTab == 4) { dk.kept.p.playWhenReady = dk.wasPlaying; u.dockKept(dk.item, dk.kept) } else try { dk.kept.p.release() } catch (_: Throwable) {}
+            }
+        } catch (e: Throwable) { LogStore.err("Main:ytDockTake", e) }
         try { hideBrowserLoading() } catch (_: Throwable) {}   // (دمج v1071)
         TabNav.pendingMain?.let { t -> TabNav.pendingMain = null; try { onNewIntent(Intent().putExtra("tab", t)) } catch (e: Throwable) { LogStore.err("Main:pendingTab", e) } }   // (v973) REORDER_TO_FRONT من غير onNewIntent
         try { DataCapsule.attach(this) } catch (_: Throwable) {}   // (v799)
