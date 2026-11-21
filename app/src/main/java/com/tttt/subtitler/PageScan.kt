@@ -37,46 +37,6 @@ document.querySelectorAll('video').forEach(function(v){try{v.muted=true;var p=v.
 document.querySelectorAll(s).forEach(function(b){try{if(b.offsetWidth>0&&n<6){b.click();n++;}}catch(e){}});});
 return n;}catch(e){return -1}})()"""
 
-    /** [[url, title, kind, img]] — img (v1064) = poster/صورة الكارت — kind: m = فيديو/صوت · f = iframe/embed · a = لينك · ai = لينك فيه صورة */
-    val DOM_JS = """(function(){try{var o=[],s={},L=location.href,T=document.title;
-function A(u){try{return new URL(u,L).href}catch(e){return ''}}
-function I(e){try{var x=e;for(var d=0;d<3&&x&&x!==document.body;d++,x=x.parentElement){if(x.querySelectorAll('a[href]').length>4&&d>0)break;var m=x.tagName==='IMG'?x:x.querySelector('img');if(m){var u=m.currentSrc||m.getAttribute('src')||m.getAttribute('data-src')||m.getAttribute('data-lazy-src')||m.getAttribute('data-original')||(m.getAttribute('srcset')||'').trim().split(/\s+/)[0];if(u&&!/^data:/i.test(u))return A(u);}}}catch(e){}return ''}
-function P(u,t,k,g){if(!u)return;u=A(u);if(!/^https?:/i.test(u))return;u=u.split('#')[0];if(s[u])return;s[u]=1;var gi='';try{gi=g?A(g):''}catch(e){}o.push([u,String(t||'').replace(/\s+/g,' ').trim().slice(0,120),k,gi]);}
-document.querySelectorAll('video,audio').forEach(function(v){var g=v.getAttribute('poster')||I(v);P(v.currentSrc,T,'m',g);P(v.getAttribute('src'),T,'m',g);v.querySelectorAll('source').forEach(function(x){P(x.getAttribute('src'),T,'m',g);});});
-document.querySelectorAll('meta[property^="og:video"],meta[name="twitter:player:stream"]').forEach(function(m){P(m.content,T,'m');});
-document.querySelectorAll('iframe[src],embed[src]').forEach(function(f){P(f.getAttribute('src'),T,'f',I(f));});
-var SA=['data-embed-url','data-embed','data-url','data-src','data-link','data-href','data-iframe','data-video','data-player','data-frame','data-server','data-stream'];
-document.querySelectorAll('[data-embed-url],[data-embed],[data-url],[data-src],[data-link],[data-href],[data-iframe],[data-video],[data-player],[data-frame],[data-server],[data-stream]').forEach(function(e){if(e.tagName==='A'&&e.getAttribute('href')&&e.getAttribute('href')!=='#'&&e.getAttribute('href')!=='javascript:void(0)'&&!e.getAttribute('data-embed-url')&&!e.getAttribute('data-embed'))return;for(var i=0;i<SA.length;i++){var v=e.getAttribute(SA[i]);if(v&&/^(https?:)?\/\/|^\//.test(v.trim())){P(v.trim(),'سيرفر: '+(e.innerText||e.title||'').trim(),'s',I(e));break;}}});
-document.querySelectorAll('a[href]').forEach(function(a){var im=a.querySelector('img');P(a.getAttribute('href'),a.innerText||a.title||a.getAttribute('aria-label')||(im&&im.alt)||'',im?'ai':'a',I(a));});
-return JSON.stringify(o.slice(0,800));}catch(e){return '[]'}})()"""
-
-    /** (v851) جافا الصفحة الحيّة: كل <script> inline + ملفات الجافا + iframes + اللي مشغّل الصفحة (jwplayer/videojs) محمّله دلوقتي → StreamHunt */
-    val SCRIPT_JS = """(function(){try{var t=[],n=0;
-document.querySelectorAll('script:not([src])').forEach(function(s){var x=s.textContent||'';if(x.length>20&&n<600000){t.push(x.slice(0,200000));n+=x.length;}});
-var ss=[];document.querySelectorAll('script[src]').forEach(function(s){ss.push(s.src)});
-var fr=[];document.querySelectorAll('iframe[src],iframe[data-src]').forEach(function(f){fr.push(f.src||f.getAttribute('data-src'))});
-var pl=[];
-try{if(window.jwplayer){var j=window.jwplayer();var l=j&&j.getPlaylist&&j.getPlaylist();(l||[]).forEach(function(i){(i.sources||[]).forEach(function(x){pl.push(x.file)});if(i.file)pl.push(i.file)})}}catch(e){}
-try{if(window.videojs&&window.videojs.getPlayers){var P=window.videojs.getPlayers();for(var k in P){var p=P[k];if(p&&p.currentSrc)pl.push(p.currentSrc());}}}catch(e){}
-return JSON.stringify({i:t.join('\n'),s:ss.slice(0,60),f:fr.slice(0,12),p:pl.filter(Boolean).slice(0,10)});}catch(e){return '{}'}})()"""
-
-    /** (v838) فحص أوتوماتيك: بيشغّل <video> متوقّف مكتوم (3 بحد أقصى، مرة واحدة لكل فيديو) من غير ما يدوس على أي زرار في الصفحة */
-    val AUTO_PLAY_JS = """(function(){try{var n=0;
-document.querySelectorAll('video').forEach(function(v){try{
-if(n>=3||!v.paused||v.__jb||v.ended)return;
-if(!v.currentSrc&&!v.getAttribute('src')&&!v.querySelector('source'))return;
-v.__jb=1;v.__jbm=v.muted;v.__jbt=v.currentTime||0;v.muted=true;
-var p=v.play();if(p&&p.catch)p.catch(function(){v.__jb=0;v.muted=!!v.__jbm;});
-n++;}catch(e){}});
-return n;}catch(e){return -1}})()"""
-
-    /** (v838) بعد ثانيتين: بيوقّف بس الفيديوهات اللي إحنا شغّلناها ولسه مكتومة، ويرجّع الصوت ومكان التشغيل زي ما كانوا. لو إنت فتحت الصوت = بيسيبه شغّال */
-    val AUTO_PAUSE_JS = """(function(){try{document.querySelectorAll('video').forEach(function(v){try{
-if(v.__jb!==1)return;
-if(v.muted===true&&!v.paused){v.pause();if(isFinite(v.duration)&&v.__jbt>=0){try{v.currentTime=v.__jbt;}catch(e){}}}
-if(v.muted===true)v.muted=!!v.__jbm;
-v.__jb=2;}catch(e){}});}catch(e){}})()"""
-
     private val FILE_EXT = setOf("apk", "xapk", "apks", "aab", "exe", "msi", "zip", "rar", "7z", "tar", "gz", "tgz", "iso", "dmg", "pkg", "deb", "rpm", "jar",
         "pdf", "epub", "doc", "docx", "xls", "xlsx", "ppt", "pptx", "torrent", "mp3", "m4a", "aac", "flac", "wav", "ogg", "opus", "srt", "ass", "vtt", "sub")
     private val PAGE_RX = Regex("""(^|/)(watch|video|videos|embed|play|player|episode|ep|movie|movies|film|films|series|clip|مشاهدة|فيلم|مسلسل|حلقة)([/?._-]|$)""", RegexOption.IGNORE_CASE)

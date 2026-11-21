@@ -183,11 +183,12 @@ object AdBlock {
     }
     /** (v1154) بانرات الكوكيز/الموافقة (GDPR) — بتتخبّى وبتتشال ومعاها فك قفل السكرول */
     private const val CONS_SEL = "#onetrust-consent-sdk,#onetrust-banner-sdk,#CybotCookiebotDialog,#CybotCookiebotDialogBodyUnderlay,.cc-window,.cc-banner,.cookie-banner,.cookie-consent,.cookie-notice,.cookies-banner,#cookie-banner,#cookie-notice,#cookie-consent,#cookieConsent,#cookiebanner,.cookiebanner,.fc-consent-root,#didomi-host,.qc-cmp2-container,#truste-consent-track,.osano-cm-window,#usercentrics-root,.cmplz-cookiebanner,#cmpbox,#cmpbox2,[id^=sp_message_container],[class*=cookie-law],[id*=cookie-law],#gdpr-cookie-message,.gdpr-banner,.js-cookie-consent,#cookie-law-info-bar,#CookieBanner,#cookieBanner"
-    const val CSS = "ins.adsbygoogle,.adsbygoogle,[id^=div-gpt-ad],[id*=google_ads],[class*=ad-banner],[class*=adbanner],[class*=popup-ad],[id*=popup-ad]," +
+    // (v1183) القاعدة بقت :is(...):not(:has(video…)) — [class*=ad-container/ad-wrapper/ad-overlay] كانت بتطابق load-container/head-wrapper/load-overlay فتخبّي مشغّل الفيديو المدمج
+    const val CSS = ":is(" + "ins.adsbygoogle,.adsbygoogle,[id^=div-gpt-ad],[id*=google_ads],[class*=ad-banner],[class*=adbanner],[class*=popup-ad],[id*=popup-ad]," +
         "[class*=sponsored-],[id^=aswift],iframe[src*=doubleclick],iframe[src*=googlesyndication],iframe[src*=adsterra],iframe[src*=exoclick]," +
         "iframe[src*=propeller],a[href*=popads],a[href*=exoclick],a[href*=adsterra],[class*=ad-overlay],[id*=ad-overlay],[class*=ad-container],[id*=ad-container]," +
         "[class*=ads-container],[class*=ad-wrapper],[class*=floatAd],[class*=floating-ad],[class*=popunder],iframe[src*=magsrv],iframe[src*=exosrv]," +
-        "a[href*=clickadu],a[href*=propellerads],a[href*=hilltopads]," + CONS_SEL + "{display:none!important;visibility:hidden!important}"
+        "a[href*=clickadu],a[href*=propellerads],a[href*=hilltopads]," + CONS_SEL + "):not(:has(video,audio,iframe[src*=player],iframe[src*=embed])){display:none!important;visibility:hidden!important}"
     /** (v467) محدّدات بس (من غير قاعدة العرض) — لمراقب الـ DOM اللي بيمسح الإعلانات المتأخرة أول ما تظهر */
     private const val SEL = "ins.adsbygoogle,.adsbygoogle,[id^=div-gpt-ad],[id*=google_ads],[class*=ad-banner],[class*=adbanner],[class*=popup-ad],[id*=popup-ad],[id^=aswift],[class*=ad-overlay],[id*=ad-overlay],[class*=ad-container],[id*=ad-container],[class*=ads-container],[class*=ad-wrapper],[class*=floatAd],[class*=floating-ad],[class*=popunder],iframe[src*=doubleclick],iframe[src*=googlesyndication],iframe[src*=adsterra],iframe[src*=exoclick],iframe[src*=propeller],iframe[src*=magsrv],iframe[src*=exosrv]"
     // (v722) اللوجيك كله في الصفحة: إزالة عناصر إعلانية + فيديو الإعلان (كتم وقفز لآخره + ضغط «Skip») + بانرات اللينكات الخارجية ومقاسات IAB + بانرات المراهنات
@@ -210,15 +211,16 @@ function regd(h){var p=(h||'').split('.');if(p.length<=2)return h||'';var s=p[p.
 var ME=regd(location.hostname);
 function hostOf(u){try{return new URL(u,location.href).hostname}catch(e){return ''}}
 function txt(e){return((e.innerText||e.textContent||'')+'').trim()}
-function kill(e){try{var p=e.parentElement;e.remove();if(p&&p!==document.body&&p!==document.documentElement&&!p.children.length&&!txt(p))p.remove()}catch(e2){}}
+function kill(e){try{if(pl(e))return;var p=e.parentElement;e.remove();if(p&&p!==document.body&&p!==document.documentElement&&!p.children.length&&!txt(p))p.remove()}catch(e2){}}
 function cls(e){return(typeof e.className==='string'?e.className:'')+' '+(e.id||'')}
+function pl(e){try{var tg=e.tagName;if(tg==='VIDEO'||tg==='AUDIO')return true;if(e.querySelector&&e.querySelector('video,audio'))return true;if(tg==='IFRAME'){var s=(e.src||e.getAttribute('data-src')||'');if(/(player|embed|video|stream|vod|m3u8|mp4)/i.test(s)&&!BETB.test(s)&&!/(doubleclick|googlesyndication|adsterra|exoclick|propeller|magsrv|exosrv|popads|clickadu|hilltopads)/i.test(s))return true}if(e.querySelector&&e.querySelector('iframe[src*=player],iframe[src*=embed]'))return true;if(/(player|vjs|jwplayer|plyr|video-js|mejs)/i.test(cls(e)))return true}catch(x){}return false}
 function inAd(e){for(var i=0;e&&e.nodeType===1&&i<7;i++,e=e.parentElement){if(TOK.test(cls(e)))return true}return false}
 function extA(a){try{var h=hostOf(a.href);if(!h||regd(h)===ME||TRUST.test(h)||!/^https?:/i.test(a.href))return false;var tg=(a.target==='_blank')||/sponsored|nofollow/i.test(a.rel||'');if(!tg)return false;var r=a.getBoundingClientRect();if(r.width<180||r.height<40||txt(a).length>25)return false;return !!a.querySelector('img,iframe,video,canvas')}catch(e){return false}}
 function shortVid(v){var d=v.duration;return isFinite(d)&&d>0&&d<130}
 function fast(v){try{v.muted=true;v.volume=0;if(shortVid(v)){v.playbackRate=16;if(v.currentTime<v.duration-0.3)v.currentTime=v.duration-0.2}}catch(e){}}
 function leaves(){var out=[];try{var all=document.body?document.body.querySelectorAll('div,span,button,a,p'):[];for(var i=0;i<all.length;i++){var e=all[i];if(e.childElementCount>2)continue;var t=(e.textContent||'').trim();if(!t||t.length>26)continue;if(SKW.test(t.replace(/\s+/g,' ')))out.push(e)}}catch(e2){}return out}
 function nearVids(el){var p=el;for(var i=0;p&&i<7;i++,p=p.parentElement){var vs=p.querySelectorAll?p.querySelectorAll('video'):[];if(vs.length)return[].slice.call(vs)}return[]}
-function ov(el){try{var p=el;for(var i=0;p&&i<8;i++,p=p.parentElement){var cs=getComputedStyle(p);if(cs.position==='absolute'||cs.position==='fixed'){var r=p.getBoundingClientRect();if(r.width*r.height>=window.innerWidth*window.innerHeight*0.12){if(!p.querySelector('video'))p.style.setProperty('display','none','important');return}}}}catch(e){}}
+function ov(el){try{var p=el;for(var i=0;p&&i<8;i++,p=p.parentElement){var cs=getComputedStyle(p);if(cs.position==='absolute'||cs.position==='fixed'){var r=p.getBoundingClientRect();if(r.width*r.height>=window.innerWidth*window.innerHeight*0.12){if(!p.querySelector('video,audio,iframe'))p.style.setProperty('display','none','important');return}}}}catch(e){}}
 function tick(){
  try{
   var vids=document.querySelectorAll('video');
@@ -237,9 +239,9 @@ function tick(){
 }
 function scan(){
  try{
-  document.querySelectorAll(SEL).forEach(function(e){e.remove()});
+  document.querySelectorAll(SEL).forEach(function(e){if(!pl(e))e.remove()});
   var cb=document.querySelectorAll(CONS);
-  if(cb.length){cb.forEach(function(e){e.remove()});[document.documentElement,document.body].forEach(function(x){try{if(x&&getComputedStyle(x).overflow==='hidden')x.style.setProperty('overflow','auto','important')}catch(e3){}})}
+  if(cb.length){cb.forEach(function(e){if(!pl(e))e.remove()});[document.documentElement,document.body].forEach(function(x){try{if(x&&getComputedStyle(x).overflow==='hidden')x.style.setProperty('overflow','auto','important')}catch(e3){}})}
   var xs=document.querySelectorAll('iframe,img,a[href]');
   for(var i=0;i<xs.length;i++){
    var e=xs[i];var tg=e.tagName;var u=(tg==='A')?e.href:(e.src||'');
