@@ -257,23 +257,26 @@ object SubFileTr {
         gemKeys().filter { it != LocalKey.ID && !FreeLlm.isWrapped(it) && !FreeLlm.isKey(it) }
     } catch (_: Throwable) { emptyList() }
 
-    private fun gemPrompt(lang: String, style: String, ctx: String, srcLang: String? = null): String =
+    private fun gemPrompt(lang: String, style: String, ctx: String, srcLang: String? = null, ctxAfter: String = ""): String =
         "أنت مترجم أفلام ومسلسلات محترف. ترجم سطور الترجمة التالية (أي لغة أصلية) إلى العربية بلهجة «$lang» وأسلوب «$style».\n" +
         (if (srcLang.isNullOrBlank()) "" else "- لغة السطور الأصلية (كود ISO): $srcLang — السطور مكتوبة بيها، فمتخمّنش لغة تانية.\n") +
         dialectRule(lang) + "- ترجم اللي اتقال بس — متضيفش ألفاظ ولا معاني مش موجودة في الأصل، ومتخففش اللي موجود.\n" +
         "- حافظ على المعنى والنبرة والفروق بين المتكلمين، واجعل كل سطر قصيرًا ومناسبًا للقراءة على الشاشة.\n" +
         "- كل سطر له ترجمة واحدة بنفس رقم idx: ممنوع الدمج أو الحذف أو إعادة الترتيب.\n" +
         "- لو السطر وصف صوت أو موسيقى مثل [music] أو ♪ ترجمه بإيجاز بين أقواس أو اتركه كما هو.\n" +
-        "- السطور السابقة للسياق فقط، لا تترجمها." +
+        "- حافظ على الأرقام والتواريخ والوحدات زي الأصل واكتبها أرقامًا مش حروفًا، وأسماء الأشخاص والأماكن اكتبها بنفس الشكل في كل السطور (متترجمهاش بمعناها).\n" +
+        "- نوع الجملة يفضل زي ما هو (سؤال/تعجب/أمر) وحدة الكلام والشتيمة بنفس درجتها من غير تلطيف ولا تشديد، والتعبيرات الاصطلاحية تتترجم بمعناها مش حرفيًا.\n" +
+        "- السطور السابقة واللاحقة للسياق والفهم فقط، لا تترجمها." +
         (if (ctx.isBlank()) "" else "\nالسياق السابق:\n$ctx") +
+        (if (ctxAfter.isBlank()) "" else "\nالسياق اللاحق (للفهم فقط):\n$ctxAfter") +
         "\nأخرج JSON فقط بالشكل: {\"items\":[{\"idx\":0,\"translated\":\"...\"}]}\nالسطور:\n"
 
-    private fun gemBatch(items: List<Pair<Int, String>>, ctx: String, lang: String, style: String, keys: List<String>, first: Int, srcLang: String? = null, modelOv: String? = null, genders: Map<Int, String> = emptyMap()): Map<Int, String> {
+    private fun gemBatch(items: List<Pair<Int, String>>, ctx: String, lang: String, style: String, keys: List<String>, first: Int, srcLang: String? = null, modelOv: String? = null, genders: Map<Int, String> = emptyMap(), ctxAfter: String = "", extra: String = ""): Map<Int, String> {
         val arr = JSONArray()
         for ((i, t) in items) { val o = JSONObject().put("idx", i).put("text", oneLine(t)); genders[i]?.let { o.put("g", it) }; arr.put(o) }
         // (v1036) جنس المتكلم (m/f) لو معروف — بيتبعت جنب السطر عشان الأفعال/الصفات/الضمائر تتصرّف صح
         val gNote = if (genders.isEmpty()) "" else "ملحوظة: حقل g في السطر = جنس المتكلم (m ذكر، f أنثى) — صرّف أفعال المتكلم وصفاته وضمائره على جنسه.\n"
-        val prompt = gemPrompt(lang, style, ctx, srcLang) + gNote + arr.toString()
+        val prompt = gemPrompt(lang, style, ctx, srcLang, ctxAfter) + gNote + extra + arr.toString()
         var lastErr: Exception? = null
         for (attempt in 0 until 4) {
             val key = keys[(first + attempt) % keys.size]
@@ -316,7 +319,7 @@ object SubFileTr {
             if (keys.isEmpty()) return Out(List(n) { "" }, n, "مفيش مفتاح جيميناي — ضيفه من الإعدادات أو اختار جوجل")
             val lang = langOv ?: effLang(); val style = styleOv ?: effStyle()   // (v688) الموبايل بيبعت لهجته/أسلوبه
             if (keys.size >= 2 && n > 0) return translateMulti(cues, keys, lang, style, report, cancel, srcLang, modelOv)   // (v638) الملف كامل لمفتاحين + تنقيح بالباقي
-            val size = 40
+            val size = SINGLE_KEY_BATCH   // (v1179) وضع المفتاح الواحد: دفعات أكبر (60) ← طلبات أقل ← أسرع (المسار ده ما بيوصلوش غير مفتاح واحد)
             val batches = (0 until n).chunked(size)
             val next = AtomicInteger(0); val done = AtomicInteger(0); val bad = AtomicInteger(0)
             val par = minOf(4, keys.size).coerceAtLeast(1)
@@ -328,8 +331,9 @@ object SubFileTr {
                         if (bi >= batches.size) break
                         val b = batches[bi]
                         val ctx = if (b[0] == 0) "" else ((maxOf(0, b[0] - 3) until b[0]).joinToString("\n") { oneLine(cues[it].text) })
+                        val after = ((b.last() + 1) until minOf(n, b.last() + 4)).joinToString("\n") { oneLine(cues[it].text) }   // (v1180) سياق لاحق: 3 سطور بعد الدفعة
                         try {
-                            val m = gemBatch(b.map { (it - b[0]) to cues[it].text }, ctx, lang, style, keys, bi + w, srcLang, modelOv, b.mapNotNull { gi -> cues[gi].g.takeIf { it.isNotEmpty() }?.let { (gi - b[0]) to it } }.toMap())
+                            val m = gemBatch(b.map { (it - b[0]) to cues[it].text }, ctx, lang, style, keys, bi + w, srcLang, modelOv, b.mapNotNull { gi -> cues[gi].g.takeIf { it.isNotEmpty() }?.let { (gi - b[0]) to it } }.toMap(), ctxAfter = after)
                             for ((k, tr) in m) { val gi = b[0] + k; if (gi in b) res[gi] = tr }
                         } catch (e: Exception) { if (firstErr[0] == null) firstErr[0] = (e.message ?: e.javaClass.simpleName).take(100); bad.addAndGet(b.size) }
                         val d = done.incrementAndGet()
@@ -338,6 +342,32 @@ object SubFileTr {
                 }.apply { isDaemon = true }
             }
             workers.forEach { it.start() }; workers.forEach { try { it.join() } catch (_: InterruptedException) {} }
+            // (v1179) وضع المفتاح الواحد: الرد الجزئي (سطور ناقصة) كان بيتسيب فاضي ← تمريرة تانية على الناقص بس، دفعات صغيرة بسياقه
+            try {
+                val blank = (0 until n).filter { res[it].isNullOrBlank() && cues[it].text.isNotBlank() }
+                val numBad = (0 until n).filter { !res[it].isNullOrBlank() && numMiss(cues[it].text, res[it]!!) > 0 }.take(30)   // (v1180) أمانة الأرقام
+                val numSet = numBad.toSet()
+                val miss = (blank + numBad).sorted()
+                if (miss.isNotEmpty() && blank.size < n && !cancel()) {
+                    val groups = miss.chunked(30)
+                    for ((gi, g) in groups.withIndex()) {
+                        if (cancel()) break
+                        report("🔁 إعادة السطور الناقصة " + (gi + 1) + "/" + groups.size)
+                        val ctx = (maxOf(0, g[0] - 3) until g[0]).joinToString("\n") { oneLine(cues[it].text) }
+                        try {
+                            val m = gemBatch(g.mapIndexed { q, gi2 -> q to cues[gi2].text }, ctx, lang, style, keys, gi, srcLang, modelOv,
+                                g.mapIndexedNotNull { q, gi2 -> cues[gi2].g.takeIf { it.isNotEmpty() }?.let { q to it } }.toMap(),
+                                ctxAfter = ((g.last() + 1) until minOf(n, g.last() + 3)).joinToString("\n") { oneLine(cues[it].text) },
+                                extra = if (g.any { it in numSet }) "ملحوظة: حافظ على كل الأرقام زي الأصل بالظبط واكتبها أرقامًا مش حروفًا.\n" else "")
+                            for ((q, tr) in m) {
+                                if (q !in g.indices) continue
+                                val ix = g[q]; val old = res[ix]
+                                if (old.isNullOrBlank()) res[ix] = tr else if (numMiss(cues[ix].text, tr) < numMiss(cues[ix].text, old)) res[ix] = tr   // البديل بيتقبل بس لو أحسن في الأرقام
+                            }
+                        } catch (_: Exception) {}
+                    }
+                }
+            } catch (_: Throwable) {}
             failed = res.count { it.isNullOrBlank() }
             return Out(res.map { it ?: "" }, failed, if (failed == n) (firstErr[0] ?: "فشل") else "")
         }
@@ -362,6 +392,18 @@ object SubFileTr {
     }
 
     // ===================== (v638) خط الترجمة المتعدد: ترجمة كاملة بمفتاحين ← تنقيح بالباقي =====================
+    private fun numToks(t: String): List<String> {
+        val norm = t.map { ch -> when (ch) { in '٠'..'٩' -> '0' + (ch - '٠'); in '۰'..'۹' -> '0' + (ch - '۰'); else -> ch } }.joinToString("")
+        return Regex("\\d+(?:[.,]\\d+)?").findAll(norm).map { it.value.replace(",", "") }.toList()
+    }
+    /** (v1180) عدد الأرقام الموجودة في الأصل وناقصة من الترجمة */
+    private fun numMiss(src: String, dst: String): Int {
+        val a = numToks(src); if (a.isEmpty()) return 0
+        val d = numToks(dst).toMutableList(); var m = 0
+        for (x in a) if (!d.remove(x)) m++
+        return m
+    }
+    private const val SINGLE_KEY_BATCH = 60     // (v1179) حجم الدفعة لمفتاح واحد
     private const val MULTI_CHUNK = 200       // جمل في الطلب الواحد (الملف كله بيتبعت معاهم كسياق)
     private const val MULTI_CTX_ALL = 700     // لحد الرقم ده من الجمل: الملف كله سياق · أكتر: نافذة حواليهم
 

@@ -1136,6 +1136,13 @@ class MainActivity : Activity() {
         if (i == null || isFinishing || isDestroyed) return
         val raw = when (i.action) { Intent.ACTION_SEND -> i.getStringExtra(Intent.EXTRA_TEXT) ?: ""; Intent.ACTION_VIEW -> i.dataString ?: ""; else -> return }
         val url = Regex("https?://\\S+").find(raw)?.value ?: return
+        // (v1176) Joyboy كمشغّل فيديو للنظام: ACTION_VIEW بنوع فيديو/HLS على رابط http(s) ← المشغّل الحالي مباشرة (من غير ما نلمس Player)
+        val vidType = (i.type ?: "").lowercase()
+        if (i.action == Intent.ACTION_VIEW && (vidType.startsWith("video/") || vidType.contains("mpegurl"))) {
+            i.action = null
+            try { playClip(ClipVideo(url, i.getStringExtra("title") ?: "", null, "", "WEB", "", "")) } catch (e: Throwable) { LogStore.err("Main:viewVideo", e) }
+            return
+        }
         i.action = null   // ما يتكررش لو الأكتيفيتي اتعمل لها إعادة إنشاء
         val id = ytIdOf(url)
         if (id == null) { link.setText(url); openLinkAs(url); return }

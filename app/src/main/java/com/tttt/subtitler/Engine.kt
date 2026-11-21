@@ -46,6 +46,7 @@ class Engine(
         const val TGROUP_MIN = 4         // (v210) الوضعين 3/4: أقل عدد باتشات منسوخة تتجمّع قبل ما تتبعت للترجمة (إلا لو الدنيا مستعجلة)
         const val TGROUP_MAX = 5         // (v210) أقصى عدد باتشات في طلب ترجمة واحد
         const val TR_MAX_WAIT_MS = 40_000L   // (v210) باتش منسوخ مستني الترجمة أكتر من كده يتبعت من غير ما يستنى التجميع
+        const val QUAL_RETRY_BELOW = 60  // (v1178) باتش جودته أقل من كده بيتعاد تلقائي مرة واحدة
         const val TR_ROUNDS = 4          // (v210) جولات إعادة الجمل الناقصة قبل ما الباتش يرجع كطلب كامل (صوت ← ترجمة)
     }
 
@@ -377,12 +378,17 @@ class Engine(
     }
 
     // ===== (v469) A7: كاش أسطر دائم عبر الفيديوهات — hash(نص المصدر + اللهجة + الأسلوب) ← ترجمة، في ملف JSON في مجلد التطبيق =====
-    private val lineCache = ConcurrentHashMap<String, String>()
+    // (v1177) كاش LRU محدود (20000): أقدم سطر استُخدم هو اللي يتشال — كل وصول لازم يتم جوه synchronized(lineCache)
+    private val lineCache = object : LinkedHashMap<String, String>(1024, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, String>?): Boolean = size > 20000
+    }
     @Volatile private var lineCacheLoaded = false
     private val lineCacheSavePending = AtomicBoolean(false)
-    private fun cacheKey(orig: String): String {
+    private fun cacheKey(orig: String, gender: String = "", prev: String = ""): String {
         val norm = orig.trim().replace(Regex("\\s+"), " ").lowercase()
-        val raw = norm + "|" + convDialect.ifBlank { conf.lang } + "|" + conf.style + "|" + toneStyle
+        var raw = norm + "|" + convDialect.ifBlank { conf.lang } + "|" + conf.style + "|" + toneStyle
+        // (v1177) السطور القصيرة (أقل من 4 كلمات: "Yes." / "What?") معناها بيتغيّر بالسياق ← المفتاح بيشمل جنس المتكلم والسطر اللي قبلها. الطويلة مفتاحها زي ما هو (الكاش القديم يفضل شغال)
+        if (norm.split(' ').size < 4) raw += "|g=" + gender.lowercase() + "|p=" + prev.trim().replace(Regex("\\s+"), " ").lowercase().take(120)
         return try { val d = java.security.MessageDigest.getInstance("SHA-256").digest(raw.toByteArray(Charsets.UTF_8)); d.map { "%02x".format(it) }.joinToString("") } catch (_: Throwable) { raw.hashCode().toString() }
     }
     private fun lineCacheFile(): java.io.File? = try { Offline.dir?.let { java.io.File(it, "trcache_v469.json") } } catch (_: Throwable) { null }
@@ -405,7 +411,8 @@ class Engine(
         try {
             val f = lineCacheFile() ?: return
             val j = JSONObject()
-            for ((k, v) in lineCache.entries.toList().takeLast(20000)) j.put(k, v)
+            val snap = synchronized(lineCache) { lineCache.entries.map { it.key to it.value } }   // (v1177) لقطة تحت القفل، بالترتيب (الأقدم أولًا)
+            for ((k, v) in snap) j.put(k, v)
             val tmp = java.io.File(f.parentFile, f.name + ".tmp")
             tmp.writeText(j.toString(), Charsets.UTF_8)
             if (!tmp.renameTo(f)) { try { f.writeText(j.toString(), Charsets.UTF_8); tmp.delete() } catch (_: Throwable) {} }
@@ -413,27 +420,28 @@ class Engine(
     }
     private fun lineCacheSaveSoon() {
         if (!lineCacheSavePending.compareAndSet(false, true)) return
-        try { persistEx.schedule({ lineCacheSavePending.set(false); lineCacheSaveNow() }, 5, java.util.concurrent.TimeUnit.SECONDS) }
+        try { persistEx.schedule({ lineCacheSavePending.set(false); lineCacheSaveNow() }, 15, java.util.concurrent.TimeUnit.SECONDS) }
         catch (_: Exception) { lineCacheSavePending.set(false); lineCacheSaveNow() }
     }
-    private fun lineCacheGet(orig: String): String? { if (orig.isBlank()) return null; lineCacheLoad(); return lineCache[cacheKey(orig)] }
-    private fun lineCachePut(orig: String, tr: String) {
+    private fun lineCacheGet(orig: String, gender: String = "", prev: String = ""): String? { if (orig.isBlank()) return null; lineCacheLoad(); val k = cacheKey(orig, gender, prev); return synchronized(lineCache) { lineCache[k] } }
+    private fun lineCachePut(orig: String, tr: String, gender: String = "", prev: String = "") {
         val o = orig.trim(); val t = tr.trim()
         if (o.isEmpty() || t.isEmpty() || o == t) return
         lineCacheLoad()
-        val k = cacheKey(o)
-        if (lineCache[k] == t) return
-        lineCache[k] = t
-        lineCacheSaveSoon()
+        val k = cacheKey(o, gender, prev)
+        val changed = synchronized(lineCache) { if (lineCache[k] == t) false else { lineCache[k] = t; true } }
+        if (changed) lineCacheSaveSoon()
     }
     /** (v469) A7: تعبئة ترجمات جاهزة من الكاش في مصفوفة مجموعة قبل أي إرسال — بيرجع عدد الجمل اللي اتوفرت (مفاتيح API ما بتتصرفش عليها) */
     private fun cachePrefill(flat: List<Sub>, tr: Array<String?>): Int {
         if (!TrSlider.on("cache")) return 0   // (v1100) T2b: السلايدر
         var n = 0
+        val gl = glossaryPairs()   // (v1177) سطر فيه مصطلح قاموس ما بيتسحبش من الكاش (القاموس ممكن يكون اتغيّر بعد ما اتخزّن)
         for (i2 in flat.indices) {
             val s = flat[i2]
             if (s.isSound || s.isSong || s.original.isBlank()) continue
-            val c = lineCacheGet(s.original)
+            if (gl.isNotEmpty() && gl.any { s.original.contains(it.first, true) }) continue
+            val c = lineCacheGet(s.original, s.gender, flat.getOrNull(i2 - 1)?.original ?: "")
             if (!c.isNullOrBlank()) { tr[i2] = c; n++ }
         }
         return n
@@ -508,6 +516,9 @@ class Engine(
             val r = s.translated.length.toDouble() / maxOf(1, s.original.length)
             if (r < 0.25 || r > 3.0) pen += 12
             if (missingNums(s).isNotEmpty()) pen += 15
+            if (try { LangGuard.foreign(s) } catch (_: Throwable) { false }) pen += 20   // (v1178) سطر لغته غلط/أجنبي
+            val dur = s.end - s.start
+            if (dur > 0.3 && s.translated.length / dur > 22.0) pen += 8   // (v1178) سرعة قراءة أعلى من ~22 حرف/ث
         }
         return (100 - (pen / lines.size) * 4).toInt().coerceIn(0, 100)
     }
@@ -695,6 +706,7 @@ class Engine(
 
     /** باتشات فاشلة/ناقصة مطلوب إعادتها بالأولوية على المفاتيح الأساسية (لما تكون أكتر من 3) */
     private val priorityRetry = java.util.concurrent.ConcurrentSkipListSet<Int>()
+    private val qualRetried = ConcurrentHashMap.newKeySet<Int>()   // (v1178) باتشات اتعادت مرة بسبب الجودة — مرة واحدة بس لكل باتش
     /** عدد الباتشات اللي مستنية دورها في الإعادة بالأولوية */
 
     /**
@@ -853,6 +865,7 @@ class Engine(
         val last = if (to < 0) (if (d > 0) chunkCount() else from + 1000) else to
         for (i in from..last) { failed.remove(i); gapPass.remove(i); holeTried.remove(i); claimed.remove(i); rehomeQ.remove(i); tHold.remove(i); fullChunks.remove(i) }
         pool.clear(); lastGapTry = 0L; gapScanClean = false
+        qualRetried.clear()   // (v1178)
         fullRefineStarted = false; fullRefineDone = false
         host.changed(); persist()
     }
@@ -885,7 +898,7 @@ class Engine(
     /** (v224) ابدأ من أول الفيديو: أول باتش لسه ناقص من الأول، بغض النظر عن مكان الفيديو دلوقتي (ثابت لحد ما يوصل لمكان التشغيل) */
     fun translateFromStart() { onlyChunks = null; forcedSticky = true; forcedCursor = 0; paused = false; userPaused = false; rampChunk = -1; fastLight.clear(); lightRetry.clear() }
     fun translateFrom(sec: Double) { onlyChunks = null; forcedSticky = false; forcedCursor = chunkOfSec(sec.coerceAtLeast(0.0)); paused = false; userPaused = false; rampChunk = -1; fastLight.clear(); lightRetry.clear() }
-    fun stop() { isClosed = true; running = false; bg.shutdownNow(); gapEx.shutdownNow(); exec?.shutdownNow(); try { trEx.shutdownNow() } catch (_: Exception) {}; try { hedgeEx.shutdownNow() } catch (_: Exception) {}; try { holeEx.shutdownNow() } catch (_: Exception) {}; try { persistEx.shutdownNow() } catch (_: Exception) {} }
+    fun stop() { isClosed = true; running = false; bg.shutdownNow(); gapEx.shutdownNow(); exec?.shutdownNow(); try { trEx.shutdownNow() } catch (_: Exception) {}; try { hedgeEx.shutdownNow() } catch (_: Exception) {}; try { holeEx.shutdownNow() } catch (_: Exception) {}; try { persistEx.shutdownNow() } catch (_: Exception) {}; try { if (lineCacheSavePending.getAndSet(false)) Thread { lineCacheSaveNow() }.start() } catch (_: Throwable) {} }   // (v1177) آخر تعديلات الكاش ما تضيعش لو الإنجن اتقفل قبل التأجيل
     /** (v122) إعدادات اتغيّرت من شاشة الإعدادات (لهجة / أسلوب / موديل / شخصيات…): تتطبّق على الباتشات والتحويلات الجاية من غير إعادة تشغيل المحرك */
     fun applyConf(c: Conf) {
         val keysChanged = c.keys != conf.keys || c.backup != conf.backup || c.refine != conf.refine
@@ -2676,11 +2689,16 @@ class Engine(
             val lost = tagged.count { t -> val k = t.original.trim().take(10); k.length >= 4 && subs.none { it.start in (t.start - 3.0)..(t.end + 3.0) && it.original.contains(k) } }
             if (lost > 0 || fresh.size != tagged.size) host.log("📊 المقطع ${i + 1}: Gemini رجّع ${fresh.size} · بعد الفلاتر ${tagged.size} · اختفى بالتنضيف ~$lost")
         } catch (_: Throwable) {}
-        try { for (s in tagged) if (s.translated.isNotBlank() && s.translated != s.original && (convDialect.isBlank() || convDialect == "فصحى" || s.conv)) lineCachePut(s.original, s.translated) } catch (_: Throwable) {}   // (v469) A7: تعبئة كاش الأسطر من الترجمات المطبّقة باللهجة الصح بس
+        try { for ((ti, s) in tagged.withIndex()) if (s.translated.isNotBlank() && s.translated != s.original && !s.isSound && !s.isSong && !s.lowConf && missingNums(s).isEmpty() && !LangGuard.foreign(s) && (convDialect.isBlank() || convDialect == "فصحى" || s.conv)) lineCachePut(s.original, s.translated, s.gender, tagged.getOrNull(ti - 1)?.original ?: "") } catch (_: Throwable) {}   // (v1177) بوابة جودة: سطر ناقصه رقم أو لغته غلط أو ضعيف الثقة ما بيتخزّنش   // (v469) A7: تعبئة كاش الأسطر من الترجمات المطبّقة باللهجة الصح بس
         try { noteTopic(tagged) } catch (_: Throwable) {}   // (v469) A3: تحديث ذاكرة الموضوع
         lastQuality = batchQuality(tagged)   // (v469) A12
         done.add(rawStart, rawEnd)
         failed.remove(i); incomplete.remove(i)
+        try {   // (v1178) جودة ضعيفة جدًا ← إعادة واحدة تلقائية بالأولوية (نفس مسار الإعادة التلقائية الموجود)
+            if (lastQuality in 0 until QUAL_RETRY_BELOW && !isClosed && Cfg.bool("auto_requal", true) && qualRetried.add(i)) {
+                priorityRetry.add(i); host.log("🔎 باتش ${i + 1}: جودة $lastQuality% — إعادة تلقائية مرة واحدة")
+            }
+        } catch (_: Throwable) {}
         anyApplied = true
         host.changed()
         Stats.addSec(rawEnd - rawStart)
