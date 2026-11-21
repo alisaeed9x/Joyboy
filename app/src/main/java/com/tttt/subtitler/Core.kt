@@ -290,7 +290,43 @@ object Cfg {
 }
 
 // ===== بناء الـ prompt: النصوص مستخرجة بالحرف من كود البرنامج الأصلي (assets/prompts) =====
-class PromptBuilder(private val readAsset: (String) -> String) {
+/** (v1181) قوالب البرومبت (prompts/<10hex>.txt) بقت حزمة أسطر مشتركة واحدة prompts/_pack.txt بدل 96 ملف شبه متطابقين (≈1.3 ميجا أقل في الـAPK) — المحتوى بالحرف نفسه */
+object PromptPack {
+    private val HEX = Regex("prompts/[0-9a-f]{10}\\.txt")
+    @Volatile private var files: Map<String, IntArray>? = null
+    @Volatile private var lines: List<String>? = null
+    private fun load(raw: (String) -> String) {
+        if (files != null) return
+        synchronized(this) {
+            if (files != null) return
+            val parts = raw("prompts/_pack.txt").split('\u001e')
+            lines = parts[0].split('\u001f')
+            val m = HashMap<String, IntArray>()
+            for (i in 1 until parts.size) {
+                val s = parts[i]; if (s.isEmpty()) continue
+                val c = s.indexOf(':')
+                val ids = s.substring(c + 1)
+                m[s.substring(0, c)] = if (ids.isEmpty()) IntArray(0) else ids.split(',').map { it.toInt(36) }.toIntArray()
+            }
+            files = m
+        }
+    }
+    fun wrap(raw: (String) -> String): (String) -> String = { p ->
+        if (HEX.matches(p)) {
+            load(raw)
+            val ids = files!![p.substring(8, 18)] ?: throw java.io.FileNotFoundException(p)
+            val ln = lines!!
+            val sb = StringBuilder()
+            for (k in ids.indices) { if (k > 0) sb.append('\n'); sb.append(ln[ids[k]]) }
+            sb.toString()
+        } else raw(p)
+    }
+}
+
+class PromptBuilder(rawRead: (String) -> String) {
+    private val readAsset: (String) -> String = PromptPack.wrap(rawRead)
+    /** (v1181) الأصلي من assets/الحزمة من غير تعديلات المستخدم */
+    fun readAssetOrPack(p: String): String = readAsset(p)
     private val cache = HashMap<String, String>()
     /** (v288) النسخة المعدّلة من المستخدم (إعدادات ← البرومبتات) بتتقدّم على ملف assets من غير كاش عشان التعديل يظهر فورًا */
     fun read(p: String): String { PromptStore.get(p)?.let { return it }; return synchronized(cache) { cache.getOrPut(p) { readAsset(p) } } }

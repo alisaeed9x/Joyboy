@@ -47,7 +47,7 @@ android {
     testOptions { unitTests { isReturnDefaultValues = true } }   // (v589 T4) استدعاءات android.* في اختبارات JVM ترجّع قيم افتراضية بدل ما ترمي
     // (v1027) لغات المكتبات (material/appcompat/media3/…): كل واحدة جايبة ~80 لغة؛ واجهة التطبيق عربي + إنجليزي بس
     androidResources { localeFilters += listOf("ar", "en") }
-    packaging { jniLibs { useLegacyPackaging = true; if ("armeabi-v7a" !in joyAbis) excludes += "**/armeabi-v7a/**"; if ("arm64-v8a" !in joyAbis) excludes += "**/arm64-v8a/**"; excludes += listOf("**/x86/**", "**/x86_64/**") }; resources { excludes += listOf("/META-INF/{AL2.0,LGPL2.1}", "/META-INF/INDEX.LIST", "/META-INF/DEPENDENCIES", "/META-INF/*.version") } }   // (v325) NewPipeExtractor
+    packaging { jniLibs { useLegacyPackaging = true; if ("armeabi-v7a" !in joyAbis) excludes += "**/armeabi-v7a/**"; if ("arm64-v8a" !in joyAbis) excludes += "**/arm64-v8a/**"; excludes += listOf("**/x86/**", "**/x86_64/**") }; resources { excludes += listOf("/META-INF/{AL2.0,LGPL2.1}", "/META-INF/INDEX.LIST", "/META-INF/DEPENDENCIES", "/META-INF/*.version", "/kotlin/**", "/META-INF/*.kotlin_module", "/META-INF/**/*.kotlin_module", "/DebugProbesKt.bin", "/META-INF/maven/**", "/META-INF/proguard/**", "/META-INF/com/android/build/gradle/**") } }   // (v325) NewPipeExtractor
 }
 dependencies {
     implementation(project(":sharedutils"))   // (v885) أنواع أب MainUIData (DataChangeBase…)
@@ -56,16 +56,13 @@ dependencies {
     implementation("androidx.media3:media3-exoplayer:1.10.1")
     implementation("androidx.media3:media3-exoplayer-hls:1.10.1")
     implementation("androidx.media3:media3-exoplayer-dash:1.10.1")   // (v1148) كان جاي مع :mobile — DefaultMediaSourceFactory بيحمّل DASH بالانعكاس لو موجود (لينكات .mpd من المتصفح)
-    implementation("androidx.media3:media3-ui:1.10.1")   // (v959) MtBar.kt بيستخدم TimeBar/PlayerTimeBar؛ :mobile معرّفها stmobileImplementation فمش بتتمرر لـ:app (نفس media3Version في constants.gradle)
     implementation("androidx.media3:media3-datasource:1.10.1")
     implementation("androidx.media3:media3-database:1.10.1")   // (v564) كاش فيديو الموبايل على التلفزيون
     implementation("androidx.media3:media3-effect:1.10.1")
-    implementation("androidx.media3:media3-transformer:1.10.1")
-    implementation("com.journeyapps:zxing-android-embedded:4.3.0")   // (v598) ماسح QR داخل التطبيق (اقتران التلفزيون + دخول يوتيوب)
+    // (v1181) اتشالوا (صفر استدعاء في الكود/الـXML): media3-transformer · media3-ui · zxing-android-embedded · viewpager2
     implementation("androidx.profileinstaller:profileinstaller:1.4.1")   // (v834) يثبّت الـBaseline Profile حتى على التثبيت اليدوي (من غير Play)
     implementation("androidx.core:core:1.13.1")   // (v310) FileProvider للفايل مانجر
     implementation("androidx.recyclerview:recyclerview:1.3.2")   // (v772) لانشر الموبايل: صفحات الأيقونات + الدرج
-    implementation("androidx.viewpager2:viewpager2:1.1.0")
     implementation("androidx.dynamicanimation:dynamicanimation:1.0.0")
     implementation("com.google.android.material:material:1.14.0")   // (v909) GlassSwitch بيورّث SwitchMaterial؛ :mobile معرّفها implementation فكان :app مش شايف الـsupertype → "Type mismatch CompoundButton" (نفس materialVersion في constants.gradle)   // حركات الـspring
     implementation("com.github.bumptech.glide:glide:5.0.9")

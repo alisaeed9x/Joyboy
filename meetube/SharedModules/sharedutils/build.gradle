@@ -62,8 +62,7 @@ dependencies {
     // implementation 'com.google.android.gms:play-services-cronet:' + playServicesCronetVersion
     implementation 'org.chromium.net:cronet-api:' + cronetApiVersion
     
-    // Cronet provider support (native, gms).
-    implementation 'org.chromium.net:cronet-embedded:' + cronetApiVersion
+    // (v1181) cronet-embedded اتشال (~6 ميجا native): كان بيتستخدم بس لتسخين اتصال QUIC (preconnect) — من غيره الكل بيرجع لـOkHttp العادي
 
     implementation 'com.google.code.gson:gson:' + gsonVersion
 

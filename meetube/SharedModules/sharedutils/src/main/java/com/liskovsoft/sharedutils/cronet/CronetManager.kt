@@ -8,7 +8,7 @@ import java.util.Date
 import java.util.concurrent.Executors
 import org.chromium.net.CronetEngine
 import org.chromium.net.RequestFinishedInfo
-import org.chromium.net.impl.NativeCronetProvider
+import org.chromium.net.CronetProvider
 
 object CronetManager {
     private val TAG = CronetManager::class.java.simpleName
@@ -43,7 +43,15 @@ object CronetManager {
         initializationAttempted = true
 
         try {
-            val builder = NativeCronetProvider(context.applicationContext).createBuilder()
+            // (v1181) cronet-embedded اتشال من الـAPK: بنستعمل أي مزوّد Cronet متاح على الجهاز (GMS) وإلا مفيش engine
+            // والمتصلين (MediaHostPreconnect) بيتجاهلوا null ويكملوا OkHttp عادي.
+            val provider = CronetProvider.getAllProviders(context.applicationContext)
+                .firstOrNull { it.isEnabled && it.name != CronetProvider.PROVIDER_NAME_FALLBACK }
+            if (provider == null) {
+                engine = null
+                return engine
+            }
+            val builder = provider.createBuilder()
             val quicEnabled = !BuildConfig.DEBUG || debugProperty("debug.arc.cronet_quic") != "off"
 
             builder

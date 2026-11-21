@@ -128,7 +128,7 @@ object PromptCatalog {
         val pb = PromptBuilder(read)
         return caseTitle.map { (case, title) ->
             val id = pb.idFor(lang, style, case)
-            PEntry("prompts/$id.txt", title, "قالب $lang · $style", listOf("{{DUR}}", "§ROSTER§", "{{CTX}}")) { read("prompts/$id.txt") }
+            PEntry("prompts/$id.txt", title, "قالب $lang · $style", listOf("{{DUR}}", "§ROSTER§", "{{CTX}}")) { pb.readAssetOrPack("prompts/$id.txt") }
         }
     }
 

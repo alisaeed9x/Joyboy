@@ -3,14 +3,29 @@
 # بعد اختبار إصدار كامل، ممكن تضييق قاعدة التطبيق تدريجيًا.
 
 # كل كلاسات التطبيق (فيها نداءات بالانعكاس وJNI وخدمات في المانيفست)
--keep class com.tttt.subtitler.** { *; }
--keepclassmembers class com.tttt.subtitler.** { *; }
+# (v1181b) تقليص كود التطبيق نفسه: R8 بيشيل الكلاسات/الدوال اللي مفيش حد بيستدعيها، من غير تغيير أسماء (-dontobfuscate) عشان
+# اللوج وأسماء الكلاسات (SharedPreferences/Intent/JNI/Reflection) تفضل زي ما هي. لو حاجة وقعت: ارجع السطرين القديمين
+#   -keep class com.tttt.subtitler.** { *; }   و   -keepclassmembers class com.tttt.subtitler.** { *; }
+-dontobfuscate
+-keepclasseswithmembers class com.tttt.subtitler.** { native <methods>; }
+-keepclassmembers class * { @android.webkit.JavascriptInterface <methods>; }
+-keepclassmembers enum com.tttt.subtitler.** { *; }
+-keep class * extends android.view.View { <init>(...); }
+-keep class * extends android.app.Fragment { <init>(); }
+-keep class * extends androidx.fragment.app.Fragment { <init>(); }
+-keepclassmembers class * implements java.io.Serializable {
+    private static final long serialVersionUID;
+    private void writeObject(java.io.ObjectOutputStream);
+    private void readObject(java.io.ObjectInputStream);
+    java.lang.Object writeReplace();
+    java.lang.Object readResolve();
+}
 
 # JNI / native
 -keepclasseswithmembernames class * { native <methods>; }
 
 
-# Media3
+# Media3  (v1181: اتشال -keep الكامل — المكتبات جاية بقواعدها؛ لو الـHLS/DASH وقف: ارجع -keep class androidx.media3.exoplayer.** { *; })
 -dontwarn androidx.media3.**
 
 # OkHttp / Okio
@@ -18,7 +33,6 @@
 -dontwarn okio.**
 
 # Glide
--keep class com.bumptech.glide.** { *; }
 -dontwarn com.bumptech.glide.**
 
 # انعكاس عام شائع
@@ -37,7 +51,6 @@
 -keep class com.tttt.subtitler.mtui.** { *; }   # (v1108 Y6a) الجلاس المنقول من :mobile — بيتعمل inflate من layout/joy_nav_glass.xml
 -keep class com.github.vkay94.** { *; }
 -keep class com.eclipsesource.v8.** { *; }
--keep class androidx.media3.** { *; }
 -dontwarn com.liskovsoft.**
 -dontwarn org.chromium.net.**
 -dontwarn org.conscrypt.**
