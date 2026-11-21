@@ -773,7 +773,7 @@ class BrowserActivity : Activity() {
             if (prefs().getBoolean("br_priv_keep", true) && BrowserStore.hasPriv(this)) {   // (v1168) فيه جلسة مخفية محفوظة ← اسأل قبل ما تدخل
                 privRestorePending = true
                 h.postDelayed({ if (!dead) askPrivRestore() }, 450L)
-            }
+            } else if (tabs.none { it.priv }) privWipe()   // (v1174) مفيش جلسة مخفية: امسح أي بقايا من المرة اللي فاتت
         }, 360L)
     }
 
@@ -810,9 +810,24 @@ class BrowserActivity : Activity() {
         f.conf = conf   // (v1156) مؤكَّد من جوه الصفحة (رد 2xx / الفيديو حمّل)
         h.post { if (!dead) addFound(f, t, g0) }
     }
+    // ===== (v1174) ملف تعريف (Profile) منفصل للتبويب المخفي: كوكيز وتخزين جوجل مبقاش مشترك مع المتصفح العادي =====
+    private val PRIV_PROFILE = "priv"
+    private fun profOk(): Boolean = try { androidx.webkit.WebViewFeature.isFeatureSupported(androidx.webkit.WebViewFeature.MULTI_PROFILE) } catch (_: Throwable) { false }
+    private fun privCm(): CookieManager? = try { if (profOk()) androidx.webkit.ProfileStore.getInstance().getProfile(PRIV_PROFILE)?.cookieManager else null } catch (_: Throwable) { null }
+    /** كوكيز لينك: العادي + المخفي (الفحص والتحميل بيحتاجوا كوكيز التبويب اللي اتلقط منه الفيديو) */
+    private fun ckOf(u: String): String? {
+        val a = try { CookieManager.getInstance().getCookie(u) } catch (_: Throwable) { null }
+        val b = try { privCm()?.getCookie(u) } catch (_: Throwable) { null }
+        return listOfNotNull(a?.takeIf { it.isNotBlank() }, b?.takeIf { it.isNotBlank() }).joinToString("; ").ifEmpty { null }
+    }
+    private fun privWipe() {
+        try { if (profOk()) androidx.webkit.ProfileStore.getInstance().getProfile(PRIV_PROFILE)?.let { it.cookieManager.removeAllCookies(null); it.cookieManager.flush(); it.webStorage.deleteAllData() } } catch (_: Throwable) {}
+    }
     private fun makeWebView(t: BTab): WebView {
         if (PopupGuard.learned.isEmpty()) try { PopupGuard.learned.addAll(prefs().getStringSet("pop_learned", emptySet()) ?: emptySet()) } catch (_: Throwable) {}   // (v816)
-        val w = WebView(this); WebMute.register(w)
+        val w = WebView(this)
+        if (t.priv && profOk()) try { androidx.webkit.ProfileStore.getInstance().getOrCreateProfile(PRIV_PROFILE); androidx.webkit.WebViewCompat.setProfile(w, PRIV_PROFILE) } catch (_: Throwable) {}   // (v1174) لازم قبل أي استخدام تاني للـWebView
+        WebMute.register(w)
         w.settings.apply {
             javaScriptEnabled = true; domStorageEnabled = true; mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
             setSupportZoom(true); builtInZoomControls = true; displayZoomControls = false
@@ -824,7 +839,7 @@ class BrowserActivity : Activity() {
         if (t.desktop) w.settings.userAgentString = DESK_UA
         VidHook.install(w) { u, k, f, o, c -> onHook(t, u, k, f, o, c) }   // (v977) صيّاد جافا جوه كل الإطارات للمشغّلات الخارجية (لينكات من غير امتداد / قوايم HLS-DASH من fetch/XHR)
         if (t.priv) { w.settings.cacheMode = WebSettings.LOAD_NO_CACHE; @Suppress("DEPRECATION") w.settings.saveFormData = false }
-        CookieManager.getInstance().setAcceptThirdPartyCookies(w, true)
+        (if (t.priv) (privCm() ?: CookieManager.getInstance()) else CookieManager.getInstance()).setAcceptThirdPartyCookies(w, true)
         w.setBackgroundColor(Color.WHITE)
         if (::saver.isInitialized) saver.applyTo(w, t, t.url)   // (v783)
         w.webChromeClient = object : WebChromeClient() {
@@ -1098,6 +1113,7 @@ class BrowserActivity : Activity() {
         val openerIdx = tabs.indexOfFirst { it.id == t.opener }
         try { t.wv?.let { (it.parent as? ViewGroup)?.removeView(it); it.stopLoading(); if (t.priv) { it.clearCache(true); it.clearHistory(); it.clearFormData() }; it.destroy() } } catch (_: Throwable) {}
         tabs.removeAt(i)
+        if (t.priv && tabs.none { it.priv }) privWipe()   // (v1174) آخر تبويب مخفي اتقفل: امسح كوكيز وتخزين الملف المنفصل
         if (tabs.isEmpty()) { newTab(home(), true); return }
         if (wasCur) select(if (openerIdx in tabs.indices) openerIdx else (i - 1).coerceAtLeast(0).coerceAtMost(tabs.size - 1))
         else { if (i < curIdx) curIdx--; refreshTabsCount(); persistTabs() }
@@ -1738,6 +1754,7 @@ class BrowserActivity : Activity() {
         val curT = tabs.getOrNull(curIdx)
         for (t in victims) try { t.wv?.let { (it.parent as? ViewGroup)?.removeView(it); if (t.priv) { it.clearCache(true); it.clearHistory(); it.clearFormData() }; it.destroy() } } catch (_: Throwable) {}
         tabs.removeAll(victims.toSet())
+        if (priv) privWipe()   // (v1174)
         tabsDlg?.dismiss()
         if (tabs.isEmpty()) { newTab(home(), true); return }
         if (curT != null && curT in victims) select((landOn?.let { tabs.indexOf(it) } ?: -1).let { if (it >= 0) it else 0 }) else { curIdx = tabs.indexOf(curT).coerceAtLeast(0); webGroups.clear(); refreshBadge(); refreshTabsCount(); persistTabs() }
@@ -1881,6 +1898,7 @@ class BrowserActivity : Activity() {
         tgt.addView(ui.button("🧹 امسح الكاش") { try { tabs.forEach { it.wv?.clearCache(true) } } catch (_: Throwable) {}; Notice.show(this, "الكاش اتمسح", 1800L) })
         tgt.addView(ui.button("🍪 امسح الكوكيز وبيانات المواقع (هتتسجّل خروج من المواقع)") {
             try { CookieManager.getInstance().removeAllCookies(null); CookieManager.getInstance().flush(); WebStorage.getInstance().deleteAllData() } catch (_: Throwable) {}
+            if (tabs.none { it.priv }) privWipe()
             Notice.show(this, "الكوكيز وبيانات المواقع اتمسحت", 2000L)
         })
         tgt.addView(ui.button("🕘 امسح السجل") { BrowserStore.clearHistory(this); PlayTarget.clearTvHistory(this, "browser"); Notice.show(this, "السجل اتمسح", 1800L) })
@@ -1936,7 +1954,7 @@ class BrowserActivity : Activity() {
 
     private fun startDownload(url: String, ua: String?, name: String, mime: String?) {
         try {
-            val ck = try { CookieManager.getInstance().getCookie(url) } catch (_: Throwable) { null }
+            val ck = try { ckOf(url) } catch (_: Throwable) { null }
             // (v324) التحميل بيظهر في «المهام» (DmTasks بتتابع DownloadManager)
             DmTasks.start(applicationContext, url, name, mime, ua ?: uaWeb, ck, tab.url)
             Notice.show(this, "⬇ اتضاف للتحميل — تابعه من مركز التحميل: $name", 2600L)
@@ -1965,7 +1983,7 @@ class BrowserActivity : Activity() {
             Thread {
                 val hdr = HashMap<String, String>()
                 if (!ua.isNullOrEmpty()) hdr["User-Agent"] = ua
-                try { CookieManager.getInstance().getCookie(url)?.let { hdr["Cookie"] = it } } catch (_: Throwable) {}
+                try { ckOf(url)?.let { hdr["Cookie"] = it } } catch (_: Throwable) {}
                 if (tab.url.isNotEmpty()) hdr["Referer"] = tab.url
                 val sz = try { Downloader.sizeOf(url, hdr) } catch (_: Throwable) { -1L }
                 val bps = NetLedger.lastSpeed()
@@ -2135,7 +2153,7 @@ class BrowserActivity : Activity() {
             verifyPool.execute {
                 var real: PageScan.RealFile? = null
                 try {
-                    val ck: (String) -> String = { u -> try { CookieManager.getInstance().getCookie(u) ?: "" } catch (_: Throwable) { "" } }
+                    val ck: (String) -> String = { u -> try { ckOf(u) ?: "" } catch (_: Throwable) { "" } }
                     real = if (x.cat == PageScan.C_HOST) PageScan.resolve(x.url, ua)?.let { r -> PageScan.probeReal(r.url, ua, page, ck) } else PageScan.probeReal(x.url, ua, page, ck)
                 } catch (e: Throwable) { LogStore.err("Browser:verify", e) }
                 val rf = real
@@ -3270,7 +3288,7 @@ class BrowserActivity : Activity() {
     private fun applyRepair(q: Qv) {
         val id = repairId ?: return; repairId = null
         val f = q.f; val app = applicationContext
-        val ck = try { CookieManager.getInstance().getCookie(f.url) ?: "" } catch (_: Throwable) { "" }
+        val ck = try { ckOf(f.url) ?: "" } catch (_: Throwable) { "" }
         val pageNow = wvOrNull?.url ?: ""
         val ua = f.ua.ifEmpty { uaWeb }
         val ttl = repairTitle.ifEmpty { titleFor(f) }
@@ -3295,7 +3313,7 @@ class BrowserActivity : Activity() {
         val ua = f.ua.ifEmpty { uaWeb }; if (ua.isNotEmpty()) m["User-Agent"] = ua
         if (f.ref.isNotEmpty()) m["Referer"] = f.ref
         if (f.origin.isNotEmpty()) m["Origin"] = f.origin   // (v976)
-        val ck = try { CookieManager.getInstance().getCookie(f.url) ?: "" } catch (_: Throwable) { "" }
+        val ck = try { ckOf(f.url) ?: "" } catch (_: Throwable) { "" }
         if (ck.isNotEmpty()) m["Cookie"] = ck
         return m
     }
@@ -3322,7 +3340,7 @@ class BrowserActivity : Activity() {
     }
 
     private fun probe(f: Found, done: () -> Unit) {
-        val ck = try { CookieManager.getInstance().getCookie(f.url) ?: "" } catch (_: Throwable) { "" }
+        val ck = try { ckOf(f.url) ?: "" } catch (_: Throwable) { "" }
         Thread {
             try {
                 val c = java.net.URL(f.url).openConnection() as java.net.HttpURLConnection
@@ -3540,7 +3558,7 @@ class BrowserActivity : Activity() {
         val title = g.title + qTag(q)
         val ref = if (yid != null) "" else f.ref
         val ua = if (yid != null) "" else f.ua.ifEmpty { uaWeb }
-        val ck = if (yid != null) "" else try { CookieManager.getInstance().getCookie(f.url) ?: "" } catch (_: Throwable) { "" }
+        val ck = if (yid != null) "" else try { ckOf(f.url) ?: "" } catch (_: Throwable) { "" }
         // (v820) صفحة الفيديو (مش لينك الفيديو): بتتحفظ جنبه على التلفزيون عشان «تحديث اللينك» يشتغل لما اللينك يخلص
         val pageNow = if (yid != null) "" else (try { wvOrNull?.url ?: tabs.getOrNull(curIdx)?.url } catch (_: Throwable) { null } ?: "").takeIf { WebIdent.specific(it) } ?: ""
         Notice.show(this, if (translate) "📺🌐 بوصّل بالتلفزيون (بالترجمة)…" else "📺 بوصّل بالتلفزيون…", 2500L)
@@ -3603,7 +3621,7 @@ class BrowserActivity : Activity() {
         val isYtStream = f.kind.startsWith("YT") || f.url.contains("googlevideo") || f.url.contains("videoplayback")
         val yid = ytIds[Sniff.key(f.url)] ?: YtExtract.videoId(f.ref) ?: (if (isYtStream) YtExtract.videoId(wvOrNull?.url ?: "") else null) ?: ""
         // (v543 م4) وضع التلفزيون: يوتيوب ← ytid بس (التلفزيون يستخرج بنفسه)، وغير كده ← اللينك المصطاد بالهيدرز
-        val tvCookie = try { CookieManager.getInstance().getCookie(f.url) ?: "" } catch (_: Throwable) { "" }
+        val tvCookie = try { ckOf(f.url) ?: "" } catch (_: Throwable) { "" }
         if (PlayTarget.open(this, MediaSpec(
                 url = if (yid.isEmpty()) f.url else null, ytid = yid.ifEmpty { null },
                 headers = mapOf("ref" to f.ref, "ua" to f.ua.ifEmpty { uaWeb }, "cookie" to tvCookie),
@@ -3634,7 +3652,7 @@ class BrowserActivity : Activity() {
             } catch (e: Throwable) { LogStore.err("Browser:wq", e) }
             putExtra("url", openUrl); putExtra("ref", f.ref)
             try { (wvOrNull?.url ?: tabs.getOrNull(curIdx)?.url)?.takeIf { WebIdent.specific(it) }?.let { putExtra("page", it) } } catch (_: Throwable) { }   // (v750) صفحة الفيديو اللي اتصاد منها — بتتحفظ في السجل عشان تتفتح لوحدها لو اللينك بوظ
-            putExtra("cookie", try { CookieManager.getInstance().getCookie(f.url) ?: "" } catch (_: Throwable) { "" })
+            putExtra("cookie", try { ckOf(f.url) ?: "" } catch (_: Throwable) { "" })
             putExtra("ua", f.ua.ifEmpty { uaWeb }); putExtra("title", titleFor(f)); putExtra("nosub", noSub); putExtra("autotr", !noSub); putExtra("incognito", tabs.getOrNull(curIdx)?.let { it.priv && !it.auto } == true); putExtra("hsite", tabs.getOrNull(curIdx)?.let { SiteBlock.keyOf(it.url)?.let { k -> SiteBlock.has(this@BrowserActivity, k) } } == true); putExtra("ret", "browser")
         })
     }
@@ -3778,7 +3796,7 @@ class BrowserActivity : Activity() {
     override fun onResume() { super.onResume(); if (::saver.isInitialized) saver.start(); refreshCoBtns(); curRef = java.lang.ref.WeakReference(this); try { wvOrNull?.onResume() } catch (_: Throwable) {} }
     /** (v746) صيد الترجمة: تحميل الملف بكوكيز الصفحة وفكه وإضافته للفيديو */
     private fun huntCapture(url: String, ua: String, cd: String?, referer: String?) {
-        val ck = try { CookieManager.getInstance().getCookie(url) } catch (_: Throwable) { null }
+        val ck = try { ckOf(url) } catch (_: Throwable) { null }
         Notice.show(this, "⬇ بنزّل ملف الترجمة…", 2500L)
         SubHunt.capture(applicationContext, url, ua, ck, referer, cd) { ok, msg ->
             runOnUiThread {
