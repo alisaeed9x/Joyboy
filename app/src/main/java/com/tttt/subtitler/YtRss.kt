@@ -194,10 +194,28 @@ object YtRss {
         throw last ?: RuntimeException("RSS")
     }
 
+    // (v1174) الرجوع لـNewPipe (صفحة القناة كاملة = تقيل): كان بيتكرر مع كل تحديث للقنوات اللي من غير معرّف UC أو اللي RSS بتاعها فشل.
+    // دلوقتي: نتيجته بتتكاشّى 30 دقيقة، ومعرّف القناة بيتحفظ عشان المرة الجاية تتحدّث بـRSS الخفيف.
+    private val fbMem = HashMap<String, Entry>()
+    private fun fbCached(chUrl: String): List<NpItem>? {
+        val e = synchronized(this) { fbMem[chUrl] } ?: return null
+        return if (System.currentTimeMillis() - e.t < TTL_MS) e.items else null
+    }
+    private fun fbFetch(chUrl: String): List<NpItem> {
+        YtNp.init()
+        val items = YtNp.channel(chUrl).first.items.filter { it.kind == 0 }.take(6)
+        synchronized(this) { fbMem[chUrl] = Entry(System.currentTimeMillis(), items) }
+        try {
+            items.firstNotNullOfOrNull { it.channelId.takeIf { c -> c.startsWith("UC") } ?: RX.find(it.channelUrl)?.groupValues?.get(1) }?.let { YtChanId.put(chUrl, it) }
+        } catch (_: Throwable) {}
+        return items
+    }
     private fun fetchOne(cid: String, chUrl: String, force: Boolean, staleOk: Boolean = false): List<NpItem> {
         val now = System.currentTimeMillis()
         val e = synchronized(this) { mem[cid] }
-        if (!force && e != null && (staleOk || now - e.t < TTL_MS)) return e.items   // (v354) staleOk: اعرض الكاش فورًا حتى لو قديم
+        loadValid()
+        val hasV = synchronized(this) { valid.containsKey("https://www.youtube.com/feeds/videos.xml?channel_id=$cid") }   // (v1174) عندنا ETag للقناة: كل تحديث GET شرطي (304 ≈ 300 بايت) بدل ما نستنى 30 دقيقة
+        if (!force && e != null && (staleOk || (now - e.t < TTL_MS && !hasV))) return e.items   // (v354) staleOk: اعرض الكاش فورًا حتى لو قديم
         return try {
             val l = getFeed(cid, chUrl, e != null)
             synchronized(this) { mem[cid] = Entry(now, l) }
@@ -289,9 +307,9 @@ object YtRss {
                     val cid = chanId(s.channelUrl)
                     try {
                         if (cid != null) fetchOne(cid, s.channelUrl, force, staleOk)
-                        else if (fbBudget.getAndDecrement() > 0) { YtNp.init(); YtNp.channel(s.channelUrl).first.items.filter { it.kind == 0 }.take(6) } else emptyList()
+                        else fbCached(s.channelUrl) ?: (if (fbBudget.getAndDecrement() > 0) fbFetch(s.channelUrl) else emptyList())
                     } catch (_: Throwable) {
-                        if (cid != null && fbBudget.getAndDecrement() > 0) try { YtNp.init(); YtNp.channel(s.channelUrl).first.items.filter { it.kind == 0 }.take(6) } catch (_: Throwable) { emptyList() } else emptyList()
+                        if (cid != null) (fbCached(s.channelUrl) ?: (if (fbBudget.getAndDecrement() > 0) try { fbFetch(s.channelUrl) } catch (_: Throwable) { emptyList() } else emptyList())) else emptyList()
                     }
                 })
             }

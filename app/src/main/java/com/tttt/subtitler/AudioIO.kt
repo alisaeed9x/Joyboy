@@ -162,8 +162,9 @@ class FileSource(
             var fast = false
             if (uri == null && url!!.startsWith("http", true)) {
                 try {
-                    val rs = HttpRangeSource(url, hdr)
-                    if (rs.rangeSupported()) { e.setDataSource(rs); fast = true }
+                    // (v1172) مصدر واحد مشترك بين كل الـextractors: كاش واحد للكتل — قبل كده كل extractor كان بيحمّل نفس الكتل والـprefetch بتاعه لوحده (داتا مضاعفة)
+                    val rs = sharedRange()
+                    if (rs != null) { e.setDataSource(rs); fast = true }
                 } catch (t: Throwable) {
                     try { e.release() } catch (_: Exception) {}
                     e = MediaExtractor()
@@ -187,6 +188,20 @@ class FileSource(
             }
             return e
         } catch (t: Throwable) { try { e.release() } catch (e: Exception) { LogStore.err("AudioIO:166", e) }; throw t }
+    }
+
+    @Volatile private var rsShared: HttpRangeSource? = null
+    @Volatile private var rsChecked = false
+    private val rsLock = Any()
+    private fun sharedRange(): HttpRangeSource? {
+        if (rsChecked) return rsShared
+        synchronized(rsLock) {
+            if (!rsChecked) {
+                try { val rs = HttpRangeSource(url!!, hdr); if (rs.rangeSupported()) rsShared = rs } catch (_: Throwable) {}
+                rsChecked = true
+            }
+        }
+        return rsShared
     }
 
     private fun acquire(): MediaExtractor {
@@ -252,6 +267,7 @@ class FileSource(
     override fun close() {
         val all = synchronized(lock) { closed = true; val l = ArrayList(idle); idle.clear(); l }
         for (e in all) try { e.release() } catch (x: Exception) { LogStore.err("AudioIO:195", x) }
+        try { rsShared?.close() } catch (_: Throwable) {}
     }
 }
 

@@ -877,7 +877,7 @@ class BrowserActivity : Activity() {
                         hd.media = true
                         if (hd.sniffed.size < 6) { hd.sniffed.add(a) }
                     } else {
-                        val pg = t.url; val og = try { r.requestHeaders?.get("Origin") } catch (_: Throwable) { null }; if (!Sniff.isSearchPage(pg)) h.post { if (!dead) addFound(Found(a, Sniff.kindOf(a), "", rf?.takeIf { it.startsWith("http", true) } ?: pg, uaOf(t), pg).also { f0 -> if (!og.isNullOrBlank() && og.startsWith("http", true)) f0.origin = og }, t, g0) }   // (v847) Referer الحقيقي بتاع الطلب · (v850) t.url بدل v.url — shouldInterceptRequest بيشتغل على thread خلفي وv.url كان بيكرّش التطبيق
+                        val pg = t.url; val og = try { r.requestHeaders?.get("Origin") } catch (_: Throwable) { null }; if (!Sniff.isSearchPage(pg)) h.post { if (!dead) addFound(Found(a, Sniff.kindOf(a), "", rf?.takeIf { it.startsWith("http", true) } ?: pg, uaOf(t), pg).also { f0 -> f0.net = true; if (!og.isNullOrBlank() && og.startsWith("http", true)) f0.origin = og }, t, g0) }   // (v847) Referer الحقيقي بتاع الطلب · (v850) t.url بدل v.url — shouldInterceptRequest بيشتغل على thread خلفي وv.url كان بيكرّش التطبيق
                     }
                     Unit
                 }
@@ -2449,6 +2449,7 @@ class BrowserActivity : Activity() {
         if (adOn && AdBlock.blocked(f.url)) return   // (v722) فيديو إعلان (شبكة إعلانات/مراهنات) مش بيتحسب لقطة
         if (Sniff.isSearchPage(t.url)) return   // (v1154) جوجل ومحركات البحث: مفيش فيديوهات تتلقط
         f.tabId = t.id; f.gen = g
+        if (f.at == 0L) f.at = android.os.SystemClock.elapsedRealtime()   // (v1172)
         if (g != t.gen) return   // لقطة من صفحة قديمة
         val kk0 = "${t.id}:$g:" + Sniff.key(f.url)
         if (f.conf) { keys.add(kk0); if (items.any { it.tabId == t.id && it.gen == g && Sniff.key(it.url) == Sniff.key(f.url) }) return }   // (v1156) المؤكَّد بيعدّي حتى لو نسخة غير مؤكَّدة منه لسه بتتفحص
@@ -2460,6 +2461,17 @@ class BrowserActivity : Activity() {
         if (f.conf) {   // (v1156) الصفحة نفسها أكدت إنه اشتغل (رد 2xx / الفيديو حمّل): حقيقي — يظهر فورًا، والفحص في الخلفية بيظبط الهيدرز والحجم بس ومبيشيلوش
             accept(f)
             verifyFound(f) { _ -> sn0.vfy-- }
+            return
+        }
+        if (f.net && !f.kind.startsWith("YT")) {   // (v1173) طلب شبكة حقيقي من المشغّل: يظهر فورًا، والفحص بيشيله بس لو مزيّف فعلًا
+            accept(f)
+            verifyFound(f) { ok ->
+                sn0.vfy--
+                if (!ok || f.size in 1 until Sniff.MIN_BYTES) {
+                    if (items.remove(f)) { LogStore.add("🚫 (v1173) لقطة شبكة اتشالت بعد الفحص: " + f.url.take(120)); if (!dead) refreshBadge() }
+                    if (!ok) rejectFake(f)
+                }
+            }
             return
         }
         verifyFound(f) { ok -> sn0.vfy--; if (ok) accept(f) else rejectFake(f) }   // أي فيديو أقل من 3 ميجا (إعلانات غالبًا) بيتتجاهل في accept
@@ -2494,6 +2506,7 @@ class BrowserActivity : Activity() {
     private fun resolveUrl(base: String, ref: String): String = try { java.net.URL(java.net.URL(base), ref.trim()).toString() } catch (_: Throwable) { ref.trim() }
     private fun checkMedia(f: Found, hd: Map<String, String>): VRes {
         val pk = httpPeek(f.url, hd, 4096) ?: return VRes(false, false, -1L, "")
+        if (f.net && (pk.code == 401 || pk.code == 403)) return VRes(false, false, -1L, "")   // (v1173) 401/403 على لقطة شبكة حقيقية: مش دليل إنها مزيّفة (محتاجة كوكيز/هيدرز المشغّل)
         if (pk.code !in 200..299) return VRes(false, !transientCode(pk.code), -1L, "")   // (v1063) 429/5xx/408 = مؤقت. (v1156) 401/403 = لينك مرفوض (مش بنحسبه لقطة إلا لو الصفحة نفسها أكدته)
         val head = String(pk.body, Charsets.UTF_8).trimStart('\uFEFF', ' ', '\n', '\r', '\t')
         val hls = isHls(f) || head.startsWith("#EXTM3U")
@@ -2754,6 +2767,12 @@ class BrowserActivity : Activity() {
         val oldCap = t.capUrl
         if (panicUrl != null && t.id == panicTabId && !u.contains("google.")) { panicUrl = null; if (::undoB.isInitialized) undoB.visibility = View.GONE }   // (v231) مشيت لصفحة تانية: مفيش تراجع
         t.capUrl = u; t.gen++; markHidden = false
+        // (v1172) تغيير رابط من جوه الصفحة (spa) على نفس الموقع بعد لقط حديث (أقل من 25ث): اللقطة بتاعة نفس المشغّل — بتتنقل للجيل الجديد بدل ما تتمسح (السبب في «بتظهر وبعدين تختفي»: الفيديو مبيتطلبش تاني فمبيتلقطش من جديد)
+        if (spa && oldCap.isNotEmpty() && PopupGuard.hostOf(oldCap) == PopupGuard.hostOf(u)) {
+            val nowMs = android.os.SystemClock.elapsedRealtime(); var kept = 0
+            for (x in items) if (x.tabId == t.id && x.gen != t.gen && x.at > 0L && nowMs - x.at < 25_000L) { x.gen = t.gen; keys.add("${t.id}:${t.gen}:" + Sniff.key(x.url)); kept++ }
+            if (kept > 0) LogStore.add("🔁 (v1172) الرابط اتغيّر من جوه الصفحة بعد لقط حديث — اتسابت $kept لقطة: " + oldCap.take(90) + " ← " + u.take(90))
+        }
         snaps.remove(t.id)   // (v838) صفحة جديدة = عدّاد ملفات/لينكات جديد
         scheduleAutoScan(t, longArrayOf(3000L, 8000L, 16000L, 30000L))
         val nGone = items.count { it.tabId == t.id && it.gen != t.gen }

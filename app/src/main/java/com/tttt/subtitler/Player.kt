@@ -2673,13 +2673,27 @@ class PlayerActivity : Activity(), Host {
         }.show()
     }
     private fun studioAsk(vidNow: String) { studioAskOpen = false }   // (v1037) الاستوديو اتمسح — ما بقاش فيه مصدر ترجمة تاني يتسأل عليه
+    /** (v1171) النوع المحفوظ (⚙ تفريغ/ترجمة) هو المرجع قبل أي «من الأول»: بيظبط علم التفريغ في المحركين لو اتلخبط (كان «من الأول وجديد» بيشغّل ترجمة والنوع تفريغ) وبيكتب النتيجة في اللوج */
+    private fun syncTxFlag(why: String) {
+        try {
+            if (!::engine.isInitialized) return
+            val want = trIsTx(); val had = engine.transOnly
+            val keepSkip = !want && engine.baseSkipped   // «لغة الفيديو هي لغتك»: الأصل بيتعرض لوحده — ماننطّش عليه
+            if (want != had && !keepSkip) {
+                engine.transOnly = want
+                try { fastTr?.transOnly = want } catch (_: Throwable) {}
+                if (!want) try { if (::realEngine.isInitialized && !remote) realEngine.origView = false } catch (_: Throwable) {}
+            }
+            log("🧭 " + why + ": النوع المحفوظ=" + (if (want) "تفريغ" else "ترجمة") + " · علم التفريغ كان=" + had + (if (want != had && !keepSkip) " ← اتظبط" else "") + " · " + SongHint.state())
+        } catch (e: Throwable) { LogStore.err("Player:syncTx", e) }
+    }
     private fun trFresh() {
         if (!::engine.isInitialized) return
         resumePending = false; applyCard()
         Notice.show(this, "🔄 بترجم من الأول…", 2300L)
         engine.paused = true
         Thread {
-            try { engine.redoAll(true) } catch (e: Throwable) { val m = "⚠ " + (e.message ?: e.toString()).take(120); log(m); runOnUiThread { say(m) }; engine.paused = false }
+            try { syncTxFlag("من الأول وجديد"); engine.redoAll(true) } catch (e: Throwable) { val m = "⚠ " + (e.message ?: e.toString()).take(120); log(m); runOnUiThread { say(m) }; engine.paused = false }
             dirty = true; curIdx = -2
             runOnUiThread { try { player.seekTo(0) } catch (_: Throwable) {}; trAsked = true; beginTranslate() }
         }.apply { isDaemon = true }.start()
@@ -2738,6 +2752,8 @@ class PlayerActivity : Activity(), Host {
         dismissStrip()
         if (noSub) { noSub = false; if (!ccOn) ccToggleFn() }   // بدأت ترجمة: رجّع إظهار الترجمة
         // (v134) الترجمة تبدأ من المكان اللي واقف فيه في الفيديو (مش من الأول): المؤشر بيتحط على باتش الوقت الحالي، واللي اتترجم قبل كده بيتخطّى
+        try { SongHint.begin(vid, notifTitle()) } catch (_: Throwable) {}   // (v1171) 🎵 كشف الأغنية من العنوان
+        log("🧭 بدء: النوع المحفوظ=" + (if (trIsTx()) "تفريغ" else "ترجمة") + " · علم التفريغ في المحرك=" + (try { engine.transOnly } catch (_: Throwable) { false }) + " · " + SongHint.state())   // (v1171) عشان اللوج يقول أنهي نوع اشتغل فعلًا
         val wasFresh = freshOnce
         val posNow = try { player.currentPosition } catch (_: Throwable) { cur }
         if (posNow > 0) cur = posNow
@@ -3044,7 +3060,7 @@ class PlayerActivity : Activity(), Host {
         val kb = shRow("💾 القديمة (في 🗂)", keepVal()) { }
         kb.setOnClickListener { redoKeep = !redoKeep; (kb.getChildAt(1) as? TextView)?.text = keepVal() }
         col.addView(kb)
-        col.addView(shBtn("🔁 ترجم من الأول خالص", SH_BLUE) { val k = redoKeep; player.seekTo(0); go("🔄 بترجم من الأول…") { engine.redoAll(k) } }, LinearLayout.LayoutParams(-1, ui.dp(44)).apply { setMargins(ui.dp(4), ui.dp(2), ui.dp(4), ui.dp(2)) })
+        col.addView(shBtn("🔁 ترجم من الأول خالص", SH_BLUE) { val k = redoKeep; player.seekTo(0); go("🔄 بترجم من الأول…") { syncTxFlag("ترجم من الأول خالص"); engine.redoAll(k) } }, LinearLayout.LayoutParams(-1, ui.dp(44)).apply { setMargins(ui.dp(4), ui.dp(2), ui.dp(4), ui.dp(2)) })
         col.addView(ui.text("📍 دوس على الباتش يوديك له، وبعدين اختار ابدأ", 11f, th.muted))
         val list = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL }
         var curRow: View? = null
@@ -3548,6 +3564,7 @@ class PlayerActivity : Activity(), Host {
             trSliderSection(qBox) { paintSave() }
             col.addView(qBox, LinearLayout.LayoutParams(-1, -2))
             col.addView(qNote)
+            trSongSection(col)   // (v1171) 🎵 وضع الأغاني
             if (::realEngine.isInitialized && !remote && realEngine.applied.isNotEmpty())
                 col.addView(shRow("( ) شيل الأقواس من الجمل المتغيّرة", realEngine.applied.size.toString() + " جملة") { realEngine.clearMarks(); touchSubs(); again() })   // (v1099) T4
             // (v1098) حفظ: الإعدادات دي بتتطبّق تلقائي على أي فيديو تاني تفتحه بعد كده
@@ -3651,6 +3668,26 @@ class PlayerActivity : Activity(), Host {
             else if (realEngine.origView) { val o = q.original.ifBlank { base }; if (o.isBlank()) base else "($o)" }
             else if (q.translated.isNotEmpty() && realEngine.isApplied(q)) "($base)" else base
         } catch (_: Throwable) { base }
+    }
+
+    /** (v1171) 🎵 وضع الأغاني: تلقائي (من العنوان/is_song) · دايمًا أغنية · مقفول + مفتاح الكلمات المرجعية من LRCLIB — بيتطبّق على الباتشات الجاية */
+    private fun trSongSection(col: LinearLayout) {
+        col.addView(shSection("🎵 وضع الأغاني"))
+        val row = shFlow(); val lyr = shFlow()
+        val note = shNote("")
+        fun paint() {
+            val m = SongHint.mode(); val lw = SongHint.lyricsWanted()
+            row.removeAllViews(); lyr.removeAllViews()
+            row.addView(shChip("🤖 تلقائي", m == "auto") { SongHint.setMode("auto"); paint() }, shChipLp())
+            row.addView(shChip("🎵 دايمًا أغنية", m == "on") { SongHint.setMode("on"); paint() }, shChipLp())
+            row.addView(shChip("⛔ مقفول", m == "off") { SongHint.setMode("off"); paint() }, shChipLp())
+            lyr.addView(shChip(if (lw) "📜 كلمات مرجعية LRCLIB: شغّال" else "📜 كلمات مرجعية LRCLIB: مقفول", lw) { SongHint.setLyricsWanted(!lw); paint() }, shChipLp())
+            (note as? TextView)?.text = "الأغنية بتتعرف من العنوان أو من رد الموديل. وقتها: البرومبت الخفيف وتسريع الصوت بيتقفلوا، وقاعدة «تجاهل الموسيقى» بتتلغي، والكلمات المرجعية (للإملاء بس) بتتجاب من LRCLIB بإنترنت. بيتطبّق على الباتشات الجاية.\nدلوقتي: " + SongHint.state()
+        }
+        col.addView(row, LinearLayout.LayoutParams(-1, -2))
+        col.addView(lyr, LinearLayout.LayoutParams(-1, -2))
+        col.addView(note)
+        paint()
     }
 
     private fun trSliderSection(col: LinearLayout, onChanged: () -> Unit = {}) {
@@ -4054,9 +4091,9 @@ class PlayerActivity : Activity(), Host {
         keepRow.setOnClickListener { redoKeep = !redoKeep; (keepRow.getChildAt(1) as? TextView)?.text = keepVal() }
         col.addView(keepRow)
         col.addView(shSection("من فين؟"))
-        col.addView(shRow("🔁 من الأول خالص") { close(); val k = redoKeep; player.seekTo(0); redoGo("🔄 بترجم من الأول…") { engine.redoAll(k) } })
-        col.addView(shRow("▶ من الباتش ده وبعده", "باتش ${curC + 1}") { close(); val k = redoKeep; redoGo("🔄 بترجم من باتش ${curC + 1} وبعده…") { engine.redoFrom(curC, k) } })
-        col.addView(shRow("☝ الباتش ده بس", "باتش ${curC + 1}") { close(); val k = redoKeep; redoGo("🔄 بترجم باتش ${curC + 1} لوحده…") { engine.redoOnly(curC, k) } })
+        col.addView(shRow("🔁 من الأول خالص") { close(); val k = redoKeep; player.seekTo(0); redoGo("🔄 بترجم من الأول…") { syncTxFlag("إعادة من الأول"); engine.redoAll(k) } })
+        col.addView(shRow("▶ من الباتش ده وبعده", "باتش ${curC + 1}") { close(); val k = redoKeep; redoGo("🔄 بترجم من باتش ${curC + 1} وبعده…") { syncTxFlag("إعادة من باتش"); engine.redoFrom(curC, k) } })
+        col.addView(shRow("☝ الباتش ده بس", "باتش ${curC + 1}") { close(); val k = redoKeep; redoGo("🔄 بترجم باتش ${curC + 1} لوحده…") { syncTxFlag("إعادة باتش واحد"); engine.redoOnly(curC, k) } })
         col.addView(shRow("📋 اختار باتش معين…", "", true) { close(); batchDialog() })
         redoPop = showSheet(anchor, col, 300, "redo") { pw -> if (redoPop === pw) redoPop = null }
     }
@@ -4375,7 +4412,7 @@ class PlayerActivity : Activity(), Host {
         // (v1116) FIX 1: النقط من المحرك الشغّال فعلًا — المتوازن (FastTr) ليه حوض مفاتيح خاص بيه، والمحرك القديم حوضه في Engine
         val dots = try { fastTr?.keyDots() ?: engine.keyDots() } catch (_: Throwable) { "" }
         diagLog("🔬 عرض @" + fmtMs(cur) + " · حلقة_وقعت=" + bad + "(" + errN + ") · cc=" + ccOn + " · أصلية=" + nativeCue.length + "ح · مسارات_نص=" + sfNativeCountNow() + " · نص_مقفول=" + txtOff +
-            " · hide=" + sfHideNative + " · ترجمة_شغالة=" + engineStarted + " · جمل_المحرك=" + engine.subs.size + " · مفاتيح=" + dots + " · ظاهر=" + (sub.visibility == View.VISIBLE) + "/" + sub.height + " · curIdx=" + curIdx)
+            " · hide=" + sfHideNative + " · ترجمة_شغالة=" + engineStarted + " · جمل_المحرك=" + engine.subs.size + " · نوع=" + (if (trIsTx()) "تفريغ" else "ترجمة") + "/علم=" + engine.transOnly + " · " + SongHint.state() + " · مفاتيح=" + dots + " · ظاهر=" + (sub.visibility == View.VISIBLE) + "/" + sub.height + " · curIdx=" + curIdx)
     }
 
     private fun subSafeTick() {
@@ -6287,6 +6324,7 @@ class PlayerActivity : Activity(), Host {
             Thread { val got = try { MtYt.video(yid, Cfg.int("yt_maxh", 0)) } catch (_: Throwable) { null }
                 if (got != null) runOnUiThread { if (!isFinishing && !isDestroyed && qOpts.isEmpty() && intent.getStringExtra("ytid") == yid) {
                     aurl = got.audio?.takeIf { it.isNotEmpty() } ?: aurl
+                    try { aurl?.let { a -> spec?.let { sp -> if (sp.uri == null) sp.url = a } } } catch (_: Throwable) {}   // (v1172) محرك الترجمة يقرا الصوت مش لينك الفيديو
                     try { got.qlist.takeIf { it.isNotEmpty() }?.let { sj -> val qa = org.json.JSONArray(sj); qOpts = (0 until qa.length()).map { qi -> val o = qa.getJSONObject(qi); YtExtract.Opt(o.optString("l"), o.optString("u"), o.optString("a").ifEmpty { null }, o.optInt("h")) }; parseATracks(sj) } } catch (e: Exception) { LogStore.err("Player:hoQlist", e) }
                     if (qCur < 0) qCur = qOpts.indexOfFirst { it.url == url }
                     paintModePill(); try { applyChromeFn() } catch (_: Throwable) {}
@@ -6566,6 +6604,7 @@ class PlayerActivity : Activity(), Host {
         endCheckDone = false; resumeSeekDone = false; askResumeMs = 0L; finishedMark = false   // (v1056)
         if (StartFresh.consume()) noResPending = true   // (v1056) «ابدأ من جديد» جاية من الموبايل
         vid = videoId()
+        try { SongHint.begin(vid, notifTitle()) } catch (_: Throwable) {}   // (v1171) 🎵
         NetLedger.setVideo("player", try { notifTitle() } catch (_: Throwable) { null }, try { uri?.toString() ?: intent.getStringExtra("page")?.takeIf { it.isNotBlank() } ?: url } catch (_: Throwable) { null }); NetUse.init(); NetUse.videoReset(); NetUse.online = (uri == null)   // عدّاد النت: فيديو الإنترنت بيتحسب لوحده
         if (uri == null && url != null && !incognito) webRegister()
         offsetMs = (Cfg.str("sub_offset_ms:$vid", "0").toLongOrNull() ?: 0L).coerceIn(-10000L, 10000L)   // (v468) قص القيم المحفوظة القديمة لحد ±10ث

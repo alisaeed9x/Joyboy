@@ -457,18 +457,29 @@ class FastTr(
         return try { JSONArray(s.substring(a, b + 1)) } catch (_: Exception) { null }
     }
 
+    @Volatile private var songLogged = ""
+    /** (v1171) 🎵 وضع الأغاني في المحرك البسيط: بلوك آخر البرومبت + كلمات LRCLIB — واللوج بيقول مرة واحدة */
+    private fun songBlock(): String {
+        if (!SongHint.on()) return ""
+        val b = SongHint.block(transOnly, durSec, compact = true)
+        val st = SongHint.state()
+        if (st != songLogged) { songLogged = st; try { host.log("🎵 [محرك ٢] وضع الأغاني — $st · قاعدة «تجاهل الموسيقى» متلغية") } catch (_: Throwable) {} }
+        return b
+    }
+
     private fun transcribePrompt(): String =
         "Transcribe all the speech in this audio exactly as spoken, in its ORIGINAL language (do NOT translate). " +
         "Split it into natural subtitle sentences (one speaker turn or phrase each, short enough to read on screen). " +
         "The audio has a little extra overlap at both ends: transcribe everything you hear. Ignore music and noise that has no speech. " +
         "Return ONLY a JSON array, no markdown, no comments. Each item: {\"start\": seconds from the beginning of THIS audio (number), \"end\": seconds (number), \"text\": \"the sentence\"}. " +
-        "If there is no speech return []."
+        "If there is no speech return []." + songBlock()
 
     private fun translatePrompt(lines: List<String>): String {
         val lang = conf.lang.ifBlank { "Arabic" }
         val d = dialect.trim().takeIf { it.isNotEmpty() && it != "فصحى" }?.let { " Use the $it dialect." } ?: ""
         val sb = StringBuilder()
         sb.append("Translate each numbered subtitle line into $lang.$d Keep the meaning and a natural spoken subtitle style; do not merge or split lines. ")
+        if (SongHint.on()) sb.append("These lines are song lyrics: translate them as natural poetic lines (the meaning, not word by word). ")
         sb.append("Return ONLY a JSON array of exactly ${lines.size} strings (the translations, in the same order), no markdown.\n\n")
         for ((j, l) in lines.withIndex()) sb.append(j + 1).append(". ").append(l.replace('\n', ' ')).append('\n')
         return sb.toString()

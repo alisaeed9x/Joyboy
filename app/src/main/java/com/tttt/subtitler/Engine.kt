@@ -130,7 +130,7 @@ class Engine(
     /** (v1152) السريع (موضع ≤ 2): كل الباتشات خفيفة (رد أقصر = أسرع). موضع 3 فوق بيرجع للأول باتشين بس */
     private fun lightAll(): Boolean = try { TrSlider.pos() <= 2 } catch (_: Throwable) { false }
     @Volatile private var lightAllLogged = false
-    private fun lightOn(chunk: Int, hole: Boolean, tx: Boolean): Boolean = fastLatched && !hole && !tx && chunk >= 0 && !easternSrc() &&   // (v1147) اللغات الشرقية: مفيش برومبت خفيف (السماع بيضعف)
+    private fun lightOn(chunk: Int, hole: Boolean, tx: Boolean): Boolean = fastLatched && !hole && !tx && chunk >= 0 && !easternSrc() && !SongHint.on() &&   // (v1171) أغنية: مفيش برومبت خفيف   // (v1147) اللغات الشرقية: مفيش برومبت خفيف (السماع بيضعف)
         (chunk == rampChunk || chunk in fastLight || chunk in lightRetry)
     private val pool: Pool get() = if (activeMode >= KeyMode.SPLIT_A && !fastLatched) splitPools().first else basePool
     private val trPool: Pool get() = splitPools().second
@@ -1198,7 +1198,7 @@ class Engine(
     private fun dispatch(i: Int, ex: java.util.concurrent.ExecutorService, force: Boolean = false, firstKey: String? = null, prep0: Prep? = null) {
         if (!inflight.add(i)) return
         if (rampOn && rampChunk < 0 && !force) { rampChunk = i; rampStep = 0; rampNext = -1.0 }   // (v1065) أول باتش بيتبعت = اللي بيتقسّم لخطوات بتكبر
-        if (fastLatched && !force && TrSlider.on("light") && (fastLight.size < FAST_LIGHT_N || lightAll())) { fastLight.add(i); if (lightAll() && !lightAllLogged) { lightAllLogged = true; host.log("⚡ (v1152) السريع: كل الباتشات بالبرومبت الخفيف والرد المختصر (أسرع) — اللغات الشرقية بتفضل بالكامل") } }   // (v1097) T2 برومبت خفيف لأول باتشين · (v1152) ولكل الباتشات في «أسرع/سريع» (موضع ≤ 2)
+        if (fastLatched && !force && !SongHint.on() && TrSlider.on("light") && (fastLight.size < FAST_LIGHT_N || lightAll())) { fastLight.add(i); if (lightAll() && !lightAllLogged) { lightAllLogged = true; host.log("⚡ (v1152) السريع: كل الباتشات بالبرومبت الخفيف والرد المختصر (أسرع) — اللغات الشرقية بتفضل بالكامل") } }   // (v1097) T2 برومبت خفيف لأول باتشين · (v1152) ولكل الباتشات في «أسرع/سريع» (موضع ≤ 2)
         startedAt[i] = System.currentTimeMillis(); hedged.remove(i)
         // (v151) المفتاح بيتحجز للباتش من لحظة الإرسال (قبل فك الصوت) عشان باتشين ما يتحطوش على نفس المفتاح
         val fk = firstKey ?: pool.pickIdle(i, null, perKey)
@@ -1453,7 +1453,7 @@ class Engine(
         var langRetry = 0; var langSwitchRetry = 0
         var srv = 0   // (v459) مفيش موديل بديل: أخطاء السيرفر بتتعاد على نفس الموديل الواحد (كان في v227 بيبدّل لموديل تاني)
         val fastStep = fastLatched && !hedge && !backupFirst && i == rampChunk && rampStep < 2
-        val spd = if (fastStep && FAST_SPEED > 1.0 && w.durSec >= 4.0 && !easternSrc()) FAST_SPEED else 1.0   // (v1147) من غير تسريع صوت للغات الشرقية   // (v1067) تسريع الصوت
+        val spd = if (fastStep && FAST_SPEED > 1.0 && w.durSec >= 4.0 && !easternSrc() && !SongHint.on()) FAST_SPEED else 1.0   // (v1171) أغنية: من غير تسريع صوت   // (v1147) من غير تسريع صوت للغات الشرقية   // (v1067) تسريع الصوت
         val canSplit = fastStep && rampStep == 0 && w.durSec >= 16.0 && !Offline.on() && pool.usableCount() >= 2 && TrSlider.on("race")   // (v1067) طلبين بالتوازي   // (v1097) T2: TrSlider
         val sendBytes = if (spd > 1.0) { try { AudioTools.speedUp(w.bytes, spd) } catch (_: Throwable) { w.bytes } } else w.bytes
         val spdEff = if (sendBytes === w.bytes) 1.0 else spd
@@ -1540,7 +1540,7 @@ class Engine(
                 if (!offRan && fresh.isEmpty() && !w.silent && !hedge && !backupFirst && (!fastLatched || empties >= 1) && queueBackup(i, p, "رجع من غير جمل")) return   // (v216) صفر جمل: على المفتاح الاحتياطي بالترتيب في كل الأوضاع
                 if (!offRan && fresh.isEmpty() && empties < (if (w.silent) 1 else 3)) {
                     empties++
-                    if (fastLatched && !tx && !w.silent && TrSlider.on("light") && lightRetry.add(i)) host.log("⚡ باتش ${i + 1}: رجع فاضي — إعادة ببرومبت خفيف على مفتاح تاني (قبل الطابور الاحتياطي)")   // (v1139)
+                    if (fastLatched && !tx && !w.silent && !SongHint.on() && TrSlider.on("light") && lightRetry.add(i)) host.log("⚡ باتش ${i + 1}: رجع فاضي — إعادة ببرومبت خفيف على مفتاح تاني (قبل الطابور الاحتياطي)")   // (v1139)
                     pool.markBad(key)
                     if (!w.silent) host.log("⚠ المقطع ${i + 1} رجع من غير جمل رغم وجود صوت — إعادة محاولة ($empties/3)")
                     switchKey(key)?.let { key = it }
@@ -1692,7 +1692,17 @@ class Engine(
     private val dialConf = ConcurrentHashMap<String, Conf>()
     /** (v742) كل طلب صوت لجيميناي بياخد بلوك «دقة السماع» في الآخر (لغات غير الإنجليزي بتتسمع غلط كتير بالصوت المضغوط) */
     private fun buildPrompt(durSec: Double, start: Double, strict: Boolean = false, chunk: Int = -1, hole: Boolean = false, holeNear: Boolean = false, tx: Boolean = false): String =
-        buildPromptCore(durSec, start, strict, chunk, hole, holeNear, tx) + (if (lightOn(chunk, hole, tx) || !TrSlider.on("listen")) "" else listenBlock()) + (if (easternSrc() && !hole) easternBlock() else "")   // (v1097) T2 الخفيف من غير بلوك دقة السماع الطويل
+        buildPromptCore(durSec, start, strict, chunk, hole, holeNear, tx) + (if (lightOn(chunk, hole, tx) || !TrSlider.on("listen")) "" else listenBlock()) + (if (easternSrc() && !hole) easternBlock() else "") + songBlockLogged(tx)   // (v1097) T2 الخفيف من غير بلوك دقة السماع الطويل
+
+    /** (v1171) 🎵 وضع الأغاني: بلوك آخر البرومبت (غنا = كلام حتى فوق الموسيقى + كلمات مرجعية من LRCLIB) — واللوج بيقول مرة واحدة ليه اشتغل */
+    @Volatile private var songLogged = ""
+    private fun songBlockLogged(tx: Boolean): String {
+        if (!SongHint.on()) return ""
+        val b = SongHint.block(tx, try { currentDur() } catch (_: Throwable) { 0.0 })
+        val st = SongHint.state()
+        if (st != songLogged) { songLogged = st; try { host.log("🎵 وضع الأغاني — $st · البرومبت الخفيف وتسريع الصوت متقفلين · قاعدة «تجاهل الموسيقى» متلغية") } catch (_: Throwable) {} }
+        return b
+    }
 
     private fun listenBlock(): String {
         val lang = if (detDone && srcLang.isNotBlank()) " The spoken language is $srcLang (the language name is written in Arabic)." else ""
@@ -2053,6 +2063,7 @@ class Engine(
             val dl = j.optString("detected_source_language", "").trim()
             if (dl.isNotEmpty()) { srcLang = dl; detDone = true; host.log("🌐 لغة الفيديو الأصلية: $dl"); checkBaseSkip() } else try { fallbackDetectLang(fresh) } catch (_: Throwable) {}
         }
+        try { SongHint.vote(fresh.count { it.isSong }, fresh.size) } catch (_: Throwable) {}   // (v1171) كشف الأغنية من الموديل
         if (transOnly) {   // (v280) تفريغ بس: النص الأصلي بيتعرض ويتحفظ ويتحسب «اتنسخ» من غير ما يدخل مجمّع الترجمة
             showTranscriptPreview(i, p, fresh)
             host.log("✍ باتش ${i + 1}: ${fresh.size} جملة اتفرّغت — تفريغ بس (من غير ترجمة)")
@@ -2641,6 +2652,7 @@ class Engine(
             if (d.isNotEmpty()) { srcLang = d; detDone = true; host.log("🌐 لغة الفيديو الأصلية: $d"); checkBaseSkip(); maybeTranslateTemplate() } else try { fallbackDetectLang(fresh0) } catch (_: Throwable) {}
         }
         if (j != null) applyPrevCorrections(j)
+        try { SongHint.vote(fresh0.count { it.isSong }, fresh0.size) } catch (_: Throwable) {}   // (v1171) كشف الأغنية من الموديل
         val spansAbs = Speech.activeSpans(w.bytes, w.gain)?.let { Speech.absolute(it, w.startSec) }
         val direct = dialOf[i]?.let { it == convDialect } ?: false
         var tagged = Subs.splitAll(fresh).map { Subs.capPace(it).copy(chunk = i, conv = direct) }
