@@ -1,0 +1,79 @@
+name: Apply Patch
+# ارفع patch-XXXX.zip في فولدر patches/ (فيه الملفات المتغيّرة بنفس مساراتها + CHANGES_vNNNN.md).
+# قبل أي تعديل: بيعمل نسخة احتياطية كاملة للريبو (Tag اسمه backup-v<النسخة>-run<رقم>).
+# بعد التعديل: بيضيف لقائمة التغييرات (إضافة/تعديل/حذف) في آخر CHANGES أوتوماتيك، ويشغّل البيلد.
+# لمسح ملفات: ملف _delete.txt جوه الـzip فيه مسار كل ملف في سطر.
+on:
+  push:
+    paths: ['patches/*.zip']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: write
+
+concurrency:
+  group: apply-patch-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Apply patches
+        run: |
+          shopt -s nullglob
+          ZIPS=(patches/*.zip)
+          if [ ${#ZIPS[@]} -eq 0 ]; then echo "no patches"; exit 0; fi
+
+          # 1) نسخة احتياطية كاملة قبل التعديل
+          PREV=$(ls CHANGES_v*.md | sed -E 's/CHANGES_v([0-9]+)\.md/\1/' | sort -n | tail -1)
+          TAG="backup-v${PREV}-run${GITHUB_RUN_NUMBER}"
+          git tag "$TAG"
+          git push origin "$TAG"
+
+          # 2) تطبيق الـpatches
+          NAMES=""
+          for z in $(printf '%s\n' "${ZIPS[@]}" | sort); do
+            echo "== applying $z"
+            rm -rf /tmp/p && mkdir /tmp/p
+            unzip -o -q "$z" -d /tmp/p
+            rm -rf /tmp/p/.github /tmp/p/patches
+            if [ -f /tmp/p/_delete.txt ]; then
+              while IFS= read -r f; do
+                f="${f%$'\r'}"
+                [ -n "$f" ] && git rm -rf -q --ignore-unmatch -- "$f" || true
+              done < /tmp/p/_delete.txt
+              rm /tmp/p/_delete.txt
+            fi
+            cp -a /tmp/p/. .
+            git rm -q -f -- "$z"
+            NAMES="$NAMES $(basename "$z")"
+          done
+          git add -A
+
+          # 3) Changelog: لازم يبقى فيه CHANGES جديد لكل patch
+          VER=$(ls CHANGES_v*.md | sed -E 's/CHANGES_v([0-9]+)\.md/\1/' | sort -n | tail -1)
+          if [ "$VER" = "$PREV" ]; then
+            VER=$((PREV + 1))
+            printf '# Joyboy v%s — تعديل (الـChangelog اتولّد أوتوماتيك لإن الـpatch ماجابش واحد)\n' "$VER" > "CHANGES_v${VER}.md"
+          fi
+          LIST=$(git diff --cached --name-status -- . ':!patches' | sed -E 's/^A\t/➕ أضاف:  /; s/^M\t/✏️ عدّل:   /; s/^D\t/🗑️ حذف:   /; s/^R[0-9]*\t/↔ نقل:    /')
+          {
+            printf '\n\n## 🗂️ الملفات اللي اتغيّرت (أوتوماتيك)\n```\n%s\n```\n' "$LIST"
+            printf '🔙 نسخة احتياطية قبل التعديل: `%s` (للرجوع: Actions ← Rollback)\n' "$TAG"
+          } >> "CHANGES_v${VER}.md"
+          git add "CHANGES_v${VER}.md"
+
+          git config user.name "patch-bot"
+          git config user.email "patch-bot@users.noreply.github.com"
+          git commit -m "v${VER}: apply patch${NAMES}"
+          if [ -n "$DRY_RUN" ]; then echo DRY; exit 0; fi
+          git push
+      - name: Start build
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run build.yml --ref "${{ github.ref_name }}"
