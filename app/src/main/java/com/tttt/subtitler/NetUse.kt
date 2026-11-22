@@ -31,6 +31,7 @@ object NetUse {
         NetLedger.explicit("طلبات الترجمة", up, down)
         bumpTr(up.coerceAtLeast(0L) + down.coerceAtLeast(0L))   // (v759)
         if (online) { onUp.addAndGet(up); onDown.addAndGet(down) } else { locUp.addAndGet(up); locDown.addAndGet(down) }
+        sAdd(sApi, up.coerceAtLeast(0L) + down.coerceAtLeast(0L))   // (v1187)
     }
     fun api(up: Long, reply: String) = api(up, try { reply.toByteArray(Charsets.UTF_8).size.toLong() } catch (_: Throwable) { reply.length.toLong() })
     /** تحميل صوت/فيديو من لينك (دايمًا بيتحسب على فيديوهات الإنترنت) */
@@ -73,6 +74,35 @@ object NetUse {
         val rx = TrafficStats.getUidRxBytes(uid); val tx = TrafficStats.getUidTxBytes(uid)
         if (rx < 0 || tx < 0) return -1L
         return (rx - baseRx).coerceAtLeast(0L) + (tx - baseTx).coerceAtLeast(0L)
+    }
+
+    // (v1187) عدّاد جلسة الفيديو (جوه المشغّل): النت اللي الفيديو ده نفسه بيسحبه بس — مالوش علاقة بالعدّاد الكلي ولا بأي مهمة تانية (ترجمة خلفية / تحميل).
+    //  ١) الستريمنج: TransferListener على مصادر بيانات المشغّل (streamed). ٢) طلبات الترجمة + تحميل صوت الفيديو (api/mediaV) — بس من الخيوط اللي اتولدت من خيوط المشغّل:
+    //  الخيط بيشيل «رقم جلسة» بيورّثه لأي خيط بيعمله (InheritableThreadLocal)؛ BgTranslate بيشيله (unbindThread) فمهامه ما بتتحسبش.
+    private val sStream = AtomicLong(); private val sApi = AtomicLong(); private val sAudio = AtomicLong()
+    @Volatile private var sId = 0L
+    private val sTag = InheritableThreadLocal<Long>()
+    @Synchronized fun sessionReset() { sId++; sStream.set(0L); sApi.set(0L); sAudio.set(0L); sTag.set(sId) }
+    fun bindThread() { if (sId > 0L) sTag.set(sId) }
+    fun unbindThread() { try { sTag.remove() } catch (_: Throwable) {} }
+    private fun mine(): Boolean = sId > 0L && sTag.get() == sId
+    private fun sAdd(c: AtomicLong, n: Long) { if (n > 0L && mine()) c.addAndGet(n) }
+    /** بايتات الستريمنج من شبكة مصادر المشغّل (من الـTransferListener) */
+    fun streamed(n: Long) { if (n > 0L && sId > 0L) sStream.addAndGet(n) }
+    /** تحميل صوت/فيديو الفيديو ده للترجمة (AudioIO) — زي media بس بيتحسب على الجلسة */
+    fun mediaV(n: Long) { media(n); sAdd(sAudio, n) }
+    fun sessStream(): Long = sStream.get()
+    fun sessApi(): Long = sApi.get()
+    fun sessAudio(): Long = sAudio.get()
+    fun sessTotal(): Long = sStream.get() + sApi.get() + sAudio.get()
+    fun sessionLine(): String = "📶 " + fmt(sessTotal())
+    fun sessionReport(): String {
+        val sb = StringBuilder("📶 استهلاك النت — الفيديو ده بس\n(بيبدأ من الصفر مع كل فيديو يتفتح في المشغّل، ومابيحسبش أي مهمة تانية في الخلفية)\n\n")
+        sb.append("الإجمالي: ").append(fmt(sessTotal())).append("\n\n")
+        sb.append("▶ تشغيل الفيديو (ستريمنج): ").append(fmt(sessStream())).append('\n')
+        sb.append("🌐 طلبات الترجمة: ").append(fmt(sessApi())).append('\n')
+        sb.append("🔗 تحميل الصوت للترجمة: ").append(fmt(sessAudio()))
+        return sb.toString()
     }
 
     fun fmt(b: Long): String = when {

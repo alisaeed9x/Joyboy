@@ -268,6 +268,7 @@ class BgService : Service() {
     }
 
     private fun work() {
+        NetUse.unbindThread()   // (v1187) الترجمة الخلفية مش جزء من عدّاد نت فيديو المشغّل
         try {
             wake = (getSystemService(Context.POWER_SERVICE) as PowerManager).newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "subtitler:bg").apply { setReferenceCounted(false); acquire(6 * 3600 * 1000L) }
         } catch (e: Exception) { LogStore.err("BgTranslate:248", e) }

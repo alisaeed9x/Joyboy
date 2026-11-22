@@ -6178,7 +6178,7 @@ class PlayerActivity : Activity(), Host {
                     if (vOn) visBadge.set("👁 " + visual.count, "")
                 }   // (v358) كبسولة واحدة للصوتي والبصري: من غير نقطة ولا كلمة شغّال/واقف ولا فاصل — الحالة من الدايرة الحمراء
                 if (now - lastMem > 4000) { lastMem = now; if (!fullMode) mem.update(this@PlayerActivity) }
-                run { val ct = "جمل ${list.size} · 👁 ${visList.size} · تغطية ${covPct()}% · فجوات ${engine.failedCount()} · كوتة ${Quota.used(conf.model)}/${Models.quotaOf(conf.model)} · ${NetUse.badgeLine()}"; if (ct != lastCountersTxt) { lastCountersTxt = ct; counters.text = ct } }   // (v458) كانت بتتكتب وتتقاس 5 مرات/ثانية حتى لو ما اتغيّرتش
+                run { val ct = "جمل ${list.size} · 👁 ${visList.size} · تغطية ${covPct()}% · فجوات ${engine.failedCount()} · كوتة ${Quota.used(conf.model)}/${Models.quotaOf(conf.model)} · ${NetUse.sessionLine()}"; if (ct != lastCountersTxt) { lastCountersTxt = ct; counters.text = ct } }   // (v458) كانت بتتكتب وتتقاس 5 مرات/ثانية حتى لو ما اتغيّرتش
                 if (logDlg.isShowing && logMode == 0) {
                     val nl = synchronized(logBuf) { logBuf.length }
                     if (nl != lastLogLen) {
@@ -6202,7 +6202,7 @@ class PlayerActivity : Activity(), Host {
         if (i == qCur && !force) return
         try {
             val pos = player.currentPosition; val play = player.playWhenReady
-            val f = httpDsf ?: DefaultHttpDataSource.Factory().setDefaultRequestProperties(hdr).setAllowCrossProtocolRedirects(true)
+            val f = httpDsf ?: DefaultHttpDataSource.Factory().setDefaultRequestProperties(hdr).setAllowCrossProtocolRedirects(true).setTransferListener(netStreamTl)
             val au = if (o.audio != null) (aOverride ?: o.audio) else null   // (v388) لغة الصوت اللي اخترتها بتفضل مع تبديل الجودة
             // (v120) أي موقع: من غير صوت منفصل بنسيب ExoPlayer يختار النوع (MP4/HLS…) من اللينك؛ يوتيوب بصوت منفصل بيتدمج
             val src = if (au != null) { val pf = androidx.media3.exoplayer.source.ProgressiveMediaSource.Factory(f)
@@ -6262,7 +6262,7 @@ class PlayerActivity : Activity(), Host {
                     } else Notice.show(this, "الفيديو ده ملوش مسار صوت منفصل", 2000L)
                     return }
                 val pos = player.currentPosition
-                val f = httpDsf ?: DefaultHttpDataSource.Factory().setDefaultRequestProperties(hdr).setAllowCrossProtocolRedirects(true)
+                val f = httpDsf ?: DefaultHttpDataSource.Factory().setDefaultRequestProperties(hdr).setAllowCrossProtocolRedirects(true).setTransferListener(netStreamTl)
                 val src = DefaultMediaSourceFactory(f).createMediaSource(MediaItem.fromUri(Uri.parse(au)))
                 player.exo()?.let { xp -> xp.setMediaSource(src, pos); xp.prepare() }; player.playWhenReady = play
                 ytAudioOnly = true
@@ -6295,7 +6295,7 @@ class PlayerActivity : Activity(), Host {
         val ho = if (intent.getBooleanExtra("handoff", false) && uri == null) YtHandoff.take() else null
         handedOff = ho != null
         if (ho != null) {
-            httpDsf = DefaultHttpDataSource.Factory().setDefaultRequestProperties(hdr).setAllowCrossProtocolRedirects(true)
+            httpDsf = DefaultHttpDataSource.Factory().setDefaultRequestProperties(hdr).setAllowCrossProtocolRedirects(true).setTransferListener(netStreamTl)
             player = LocalPlayback(ho)
         } else {
         val castSrc = uri == null && CastCache.isCast(url)   // (v564) فيديو جاي من الموبايل: كاش مؤقت بيتمسح لما تخرج
@@ -6303,7 +6303,7 @@ class PlayerActivity : Activity(), Host {
         val netSrc = uri == null && !castSrc && (url?.startsWith("http") == true)
         val factory = if (uri != null) DefaultMediaSourceFactory(this)
         else {
-            val f = DefaultHttpDataSource.Factory().setDefaultRequestProperties(hdr).setAllowCrossProtocolRedirects(true).apply { if (castSrc) { setConnectTimeoutMs(15_000); setReadTimeoutMs(30_000) } }
+            val f = DefaultHttpDataSource.Factory().setDefaultRequestProperties(hdr).setAllowCrossProtocolRedirects(true).setTransferListener(netStreamTl).apply { if (castSrc) { setConnectTimeoutMs(15_000); setReadTimeoutMs(30_000) } }
             httpDsf = f
             val dsf = when {
                 castSrc -> CastCache.factory(this, f)
@@ -6475,7 +6475,7 @@ class PlayerActivity : Activity(), Host {
         val xp0: ExoPlayer = player.exo() ?: return
         ytVideoTrackOn(); ytMerged = (uri == null && au != null)   // (v1150)
         if (uri == null && au != null) {
-            val pf = androidx.media3.exoplayer.source.ProgressiveMediaSource.Factory(httpDsf ?: DefaultHttpDataSource.Factory().setDefaultRequestProperties(hdr).setAllowCrossProtocolRedirects(true))
+            val pf = androidx.media3.exoplayer.source.ProgressiveMediaSource.Factory(httpDsf ?: DefaultHttpDataSource.Factory().setDefaultRequestProperties(hdr).setAllowCrossProtocolRedirects(true).setTransferListener(netStreamTl))
             xp0.setMediaSource(androidx.media3.exoplayer.source.MergingMediaSource(pf.createMediaSource(MediaItem.fromUri(Uri.parse(url!!))), pf.createMediaSource(MediaItem.fromUri(Uri.parse(au)))))
         } else xp0.setMediaItem(uri?.let { mediaItemFor(it) } ?: MediaItem.fromUri(Uri.parse(url!!)))
         xp0.prepare(); xp0.playWhenReady = true
@@ -6605,7 +6605,7 @@ class PlayerActivity : Activity(), Host {
         if (StartFresh.consume()) noResPending = true   // (v1056) «ابدأ من جديد» جاية من الموبايل
         vid = videoId()
         try { SongHint.begin(vid, notifTitle()) } catch (_: Throwable) {}   // (v1171) 🎵
-        NetLedger.setVideo("player", try { notifTitle() } catch (_: Throwable) { null }, try { uri?.toString() ?: intent.getStringExtra("page")?.takeIf { it.isNotBlank() } ?: url } catch (_: Throwable) { null }); NetUse.init(); NetUse.videoReset(); NetUse.online = (uri == null)   // عدّاد النت: فيديو الإنترنت بيتحسب لوحده
+        NetLedger.setVideo("player", try { notifTitle() } catch (_: Throwable) { null }, try { uri?.toString() ?: intent.getStringExtra("page")?.takeIf { it.isNotBlank() } ?: url } catch (_: Throwable) { null }); NetUse.init(); NetUse.videoReset(); NetUse.sessionReset(); NetUse.online = (uri == null)   // عدّاد النت: فيديو الإنترنت بيتحسب لوحده
         if (uri == null && url != null && !incognito) webRegister()
         offsetMs = (Cfg.str("sub_offset_ms:$vid", "0").toLongOrNull() ?: 0L).coerceIn(-10000L, 10000L)   // (v468) قص القيم المحفوظة القديمة لحد ±10ث
         runCatching { offFsB?.text = String.format("%+.2fs", offsetMs / 1000.0) }
@@ -6774,7 +6774,7 @@ class PlayerActivity : Activity(), Host {
                     val au = aurl
                     ytMerged = au != null   // (v1150)
                     if (au != null) {
-                        val pf = androidx.media3.exoplayer.source.ProgressiveMediaSource.Factory(httpDsf ?: DefaultHttpDataSource.Factory().setDefaultRequestProperties(hdr).setAllowCrossProtocolRedirects(true))
+                        val pf = androidx.media3.exoplayer.source.ProgressiveMediaSource.Factory(httpDsf ?: DefaultHttpDataSource.Factory().setDefaultRequestProperties(hdr).setAllowCrossProtocolRedirects(true).setTransferListener(netStreamTl))
                         player.exo()?.setMediaSource(androidx.media3.exoplayer.source.MergingMediaSource(pf.createMediaSource(MediaItem.fromUri(Uri.parse(got.url))), pf.createMediaSource(MediaItem.fromUri(Uri.parse(au)))))
                     } else player.exo()?.setMediaItem(MediaItem.fromUri(Uri.parse(got.url)))
                     player.exo()?.prepare(); if (pos > 0L) player.seekTo(pos); player.playWhenReady = true
@@ -7655,7 +7655,7 @@ class PlayerActivity : Activity(), Host {
         closeNoBg()
     }
     private fun netDialog() {
-        shConfirm("📶 استهلاك النت", NetUse.report(), listOf(ShBtn("تمام", SH_BLUE) { }))
+        shConfirm("📶 استهلاك النت", NetUse.sessionReport(), listOf(ShBtn("تمام", SH_BLUE) { }))
     }
     private var exitAsk: android.app.Dialog? = null
     private fun askBgOnExit() {
@@ -8703,7 +8703,7 @@ class PlayerActivity : Activity(), Host {
         try { overridePendingTransition(0, 0) } catch (e: Exception) { LogStore.err("Main:2570", e) }
     }
     override fun onResume() {
-        super.onResume(); if (gone) return; internalNav = false; resumedNow = true; h.removeCallbacks(pipExitCheck)
+        super.onResume(); if (gone) return; NetUse.bindThread(); internalNav = false; resumedNow = true; h.removeCallbacks(pipExitCheck)
         tvWarmApply()   // (v462)
         mtParityAttach()   // (v1013) مطابقة فريمات + تحسين صورة (من مشغّل MeeTube)
         if (Cfg.bool("pip_hint_pending", false) && !canOverlay() && !DeviceUi.isTv(this)) {   // (v1010) آخر مرة خرجت عادي من غير PiP: اسأله دلوقتي
@@ -8742,7 +8742,7 @@ class PlayerActivity : Activity(), Host {
         }
     }
     private var pipAutoDone = false
-    override fun onPause() { super.onPause(); if (gone) return; LogStore.add("⏸ onPause · ${LogStore.heapLine()}"); resumedNow = false; if (!handedOff && !remote) { saveRecent(); Thread { engine.saveNow() }.start() } }
+    override fun onPause() { super.onPause(); if (gone) return; NetUse.unbindThread(); LogStore.add("⏸ onPause · ${LogStore.heapLine()}"); resumedNow = false; if (!handedOff && !remote) { saveRecent(); Thread { engine.saveNow() }.start() } }
     override fun onStop() {
         super.onStop(); if (gone) return; saveRecent()
         // ✕ على نافذة PiP: النظام بيوقف الأكتيفيتي وهي لسه في وضع PiP — نقفل الفيديو ونخرج (إلا لو الشاشة اتقفلت)
@@ -8816,4 +8816,12 @@ class StopSquareView(ctx: android.content.Context) : View(ctx) {
         val r = sz * 0.2f
         c.drawRoundRect(cx - sz / 2f, cy - sz / 2f, cx + sz / 2f, cy + sz / 2f, r, r, p)
     }
+}
+
+/** (v1187) عدّاد نت الفيديو ده: بايتات الشبكة الحقيقية اللي مصادر بيانات المشغّل بتسحبها (ستريمنج) — الكاش مابيتحسبش */
+private val netStreamTl = object : androidx.media3.datasource.TransferListener {
+    override fun onTransferInitializing(source: androidx.media3.datasource.DataSource, dataSpec: androidx.media3.datasource.DataSpec, isNetwork: Boolean) {}
+    override fun onTransferStart(source: androidx.media3.datasource.DataSource, dataSpec: androidx.media3.datasource.DataSpec, isNetwork: Boolean) {}
+    override fun onBytesTransferred(source: androidx.media3.datasource.DataSource, dataSpec: androidx.media3.datasource.DataSpec, isNetwork: Boolean, bytesTransferred: Int) { if (isNetwork) NetUse.streamed(bytesTransferred.toLong()) }
+    override fun onTransferEnd(source: androidx.media3.datasource.DataSource, dataSpec: androidx.media3.datasource.DataSpec, isNetwork: Boolean) {}
 }
