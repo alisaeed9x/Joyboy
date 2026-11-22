@@ -31,7 +31,16 @@ jobs:
           sudo fallocate -l 8G /swapfile && sudo chmod 600 /swapfile && sudo mkswap /swapfile && sudo swapon /swapfile || true
           free -m
       - name: Build Universal Debug APK only
-        run: gradle assembleDebug --stacktrace
+        run: |
+          set -o pipefail
+          gradle assembleDebug --stacktrace --console=plain 2>&1 | tee build.log
+      - name: Report build errors (annotation)
+        if: failure()
+        run: |
+          [ -f build.log ] || exit 0
+          { grep -E '^e: |error:|FAILED|What went wrong|Execution failed|Could not|Unresolved|AAPT|Exception' build.log | head -60; echo '--- tail ---'; tail -40 build.log; } > err.txt
+          MSG=$(python3 -c "s=open('err.txt',encoding='utf-8',errors='replace').read()[:14000]; print(s.replace('%','%25').replace('\r','%0D').replace('\n','%0A'))")
+          echo "::error title=BUILD_FAILED::$MSG"
       - name: Why did it die (v877)
         if: failure()
         run: |
