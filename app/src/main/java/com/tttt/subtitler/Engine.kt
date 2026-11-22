@@ -843,14 +843,33 @@ class Engine(
      * (v1165) تصدير الصوت مقسّم لنفس الباتشات (blocking — من خيط خلفي بس). onEach(رقم الباتش من 0، العدد الكلي، بداية، نهاية، بايتات الصوت، mime).
      * الصوت بيتضغط بنفس بريسيت الإرسال (AAC أو WAV) فالحجم هو اللي بيروح لجيميناي فعلًا. بيرجّع عدد الباتشات اللي اتصدّرت.
      */
-    fun exportBatchAudio(onEach: (Int, Int, Double, Double, ByteArray, String) -> Unit): Int {
+    fun exportBatchAudio(onFail: (Int, String) -> Unit = { _, _ -> }, onEach: (Int, Int, Double, Double, ByteArray, String) -> Unit): Int {
         val d = currentDur(); val n = chunkCount(); var ok = 0
+        host.log("🎧 تنزيل الباتشات: $n باتش")
         for (i in 0 until n) {
             val st = cStart(i); val en = cEnd(i, d)
-            val w = try { src().wav(st, en) } catch (_: Throwable) { null } ?: continue
-            val pk = AudioEnc.pack(w.bytes)
-            onEach(i, n, st, en, pk.bytes, pk.mime); ok++
+            // (v1195) نفس فك الصوت بتاع الترجمة: بيبدأ قبل الباتش بـ OVERLAP وبيعيد لحد 3 مرات (أول فك ساعات بيرجع فاضي مؤقتًا) — كان بيتخطّى الباتش من غير ما يقول ليه
+            val from = if (i == 0 && st < 0.05) 0.0 else maxOf(0.0, st - OVERLAP)
+            var w: WavChunk? = null; var err = ""
+            for (t in 1..3) {
+                try { w = src().wav(from, en) } catch (e: Throwable) { w = null; err = (e.message ?: e.javaClass.simpleName).take(80) }
+                if (w != null) break
+                try { Thread.sleep(700) } catch (_: InterruptedException) { break }
+            }
+            val wv = w
+            if (wv == null) {
+                val why = if (err.isNotEmpty()) "فك الصوت فشل: $err" else "فك الصوت رجّع فاضي (3 محاولات)"
+                host.log("⚠ تنزيل الباتشات: باتش ${i + 1} — $why"); onFail(i, why); continue
+            }
+            try {
+                val pk = AudioEnc.pack(wv.bytes)
+                onEach(i, n, st, en, pk.bytes, pk.mime); ok++
+            } catch (e: Throwable) {
+                val why = "ضغط/كتابة الصوت فشل: " + (e.message ?: e.javaClass.simpleName).take(80)
+                host.log("⚠ تنزيل الباتشات: باتش ${i + 1} — $why"); onFail(i, why)
+            }
         }
+        host.log("🎧 تنزيل الباتشات: خلص — $ok من $n")
         return ok
     }
 

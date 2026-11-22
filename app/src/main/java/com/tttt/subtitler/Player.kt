@@ -5992,6 +5992,7 @@ class PlayerActivity : Activity(), Host {
         val logRow = LinearLayout(this).apply { layoutDirection = View.LAYOUT_DIRECTION_RTL; setPadding(ui.dp(8), 0, ui.dp(8), ui.dp(4)) }
         logRow.addView(logChip("📋 نسخ") { logCopy() }); logRow.addView(logChip("الحالي") { logShow(0) })
         logRow.addView(logChip("🕘 الجلسة اللي فاتت") { logShow(1) }); logRow.addView(logChip("💥 آخر كراش") { logShow(2) })
+        logRow.addView(logChip("📦 ZIP لوج+ترجمة") { exportLogZip() })   // (v1195)
         logCol.addView(HorizontalScrollView(this).apply { isHorizontalScrollBarEnabled = false; addView(logRow) }, LinearLayout.LayoutParams(-1, -2))
         (batchTv.parent as? android.view.ViewGroup)?.removeView(batchTv)
         batchTv.setOnClickListener(null); batchTv.isClickable = false; batchTv.setTextIsSelectable(true)
@@ -7890,6 +7891,15 @@ class PlayerActivity : Activity(), Host {
         val le = (engine as? LocalEngine)?.e
         if (le == null) { say("تنزيل الباتشات متاح لما الترجمة تشتغل على الجهاز ده نفسه"); return }
         BatchExport.run(this, le, t)
+    }
+
+    /** (v1195) ZIP «اللوج + الترجمة»: اللوج كامل + الأصل لوحده + الترجمة الناتجة لوحدها (Download/Joyboy_Logs) */
+    fun exportLogZip() {
+        if (!::engine.isInitialized) { say("المحرك لسه ما اشتغلش — افتح الفيديو الأول"); return }
+        val t = try { Recents.titleOf(vid).substringBeforeLast('.', Recents.titleOf(vid)) } catch (_: Throwable) { "video" }
+        val snap: List<Sub> = try { ArrayList(engine.subs) } catch (_: Throwable) { ArrayList() }
+        val runLog = try { arcRun?.let { r -> synchronized(r.log) { r.log.toString() } } ?: "" } catch (_: Throwable) { "" }
+        LogZip.run(this, t, snap, offsetMs, (engine as? LocalEngine)?.e, runLog)
     }
 
     fun exportOriginalSrt() {
