@@ -1,0 +1,34 @@
+name: Rollback
+# بيرجّع الكود كله لنسخة احتياطية (Tag). شوف الأسماء في الريبو ← Tags (backup-v...).
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'اسم النسخة الاحتياطية، مثلا backup-v1189-run3'
+        required: true
+
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  rollback:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Restore
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          git rev-parse -q --verify "refs/tags/$TAG" >/dev/null || { echo "Tag مش موجود: $TAG"; exit 1; }
+          git ls-files -z | grep -zv '^\.github/' | xargs -0 git rm -q -f --
+          git checkout "$TAG" -- . ':(exclude).github'
+          git rm -q -f --ignore-unmatch -- patches/*.zip
+          git config user.name "patch-bot"
+          git config user.email "patch-bot@users.noreply.github.com"
+          git commit -m "rollback to $TAG" || { echo "مفيش فرق"; exit 0; }
+          git push
+          gh workflow run build.yml --ref "${{ github.ref_name }}"
