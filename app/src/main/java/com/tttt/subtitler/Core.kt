@@ -876,6 +876,7 @@ object Api {
                     if (js.isEmpty() || js == "[DONE]") continue
                     val root = try { JSONObject(js) } catch (_: Exception) { null }
                     if (root == null) continue
+                    root.optJSONObject("error")?.let { er -> throw ApiErr(er.optInt("code", 500), er.optString("message", "stream error")) }   // (v1191) خطأ جاي جوه الـstream
                     val cand = root.optJSONArray("candidates")?.optJSONObject(0)
                     if (cand == null) {
                         val why = root.optJSONObject("promptFeedback")?.optString("blockReason", "") ?: ""
@@ -944,7 +945,7 @@ object Api {
             NetUse.api(total, txt)
             if (code >= 300) throw ApiErr(code, errMsg(code, txt))
             if (looksHtml(txt)) throw ApiErr(502, htmlMsg(code, txt))
-            val root = JSONObject(txt)
+            val root = try { JSONObject(txt) } catch (e: org.json.JSONException) { throw java.io.IOException("رد جيميناي فاضي أو مكسور — إعادة المحاولة") }   // (v1191)
             val cand = root.optJSONArray("candidates")?.optJSONObject(0)
             if (cand == null) {
                 val br = root.optJSONObject("promptFeedback")?.optString("blockReason", "") ?: ""

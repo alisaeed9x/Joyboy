@@ -7206,7 +7206,7 @@ class PlayerActivity : Activity(), Host {
     }
     /** نهاية التصغير: الصورة المصغّرة (PiP). لو ما دخلتش (إذن/جهاز) الفيديو يرجع مكانه بحركة ناعمة */
     private fun ytCommitMini() {
-        if (ytTryDock()) return   // (v1162) الدوك السفلي جوه التطبيق (زي يوتيوب) — لو مش متاح: PiP زي ما كان
+        // (v1191) النزول بالسحب = PiP بس (مفيش دوك/شريط سفلي)
         try { enterPip(true) } catch (e: Throwable) { LogStore.err("Player:ytCommitMini", e) }
         h.postDelayed({ try { if (!gone && !isFinishing && !pipNow()) ytAnimTo(0f) } catch (_: Throwable) {} }, 650L)
     }
@@ -7437,6 +7437,11 @@ class PlayerActivity : Activity(), Host {
         if (Build.VERSION.SDK_INT >= 26) try {
             val pb = PictureInPictureParams.Builder()
             if (vidW > 0 && vidH > 0) pb.setAspectRatio(Rational((vidW.toFloat() / vidH).coerceIn(0.45f, 2.3f).times(1000).toInt(), 1000))
+            // (v1191) لو الفيديو مصغّر بالسحب: نقول للنظام مكانه الحالي عشان حركة الـPiP تنزل من نفسه من غير نطّة
+            if (ytPage && ytDragP > 0.5f) try {
+                val r = android.graphics.Rect()
+                if (videoBoxRef.getGlobalVisibleRect(r) && r.width() > 0 && r.height() > 0) pb.setSourceRectHint(r)
+            } catch (_: Throwable) {}
             if (Build.VERSION.SDK_INT >= 31) try { pb.setSeamlessResizeEnabled(true) } catch (e: Throwable) { LogStore.err("Main:2234", e) }
             enterPictureInPictureMode(pb.build())
         } catch (_: Exception) { Notice.show(this, ("PiP مش مدعوم على الجهاز ده").toString(), 2300L) }
