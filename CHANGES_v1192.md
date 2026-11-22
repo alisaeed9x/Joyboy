@@ -18,12 +18,3 @@
 <details><summary>التفاصيل التقنية</summary>
 FastTr.kt: transcribePrompt بيضيف spk/to + GENDER_TX (لو !transOnly) · gHint بيحوّلهم لـ[spk=.. to=..] · translatePrompt(lines, hints) + GENDER_TR والرد {s,a,t} · parse الترجمة بيقرا t قبل text · process بيحمل hints مع raw.
 </details>
-
-
-## 🗂️ الملفات اللي اتغيّرت (أوتوماتيك)
-```
-➕ أضاف:  CHANGES_v1192.md
-✏️ عدّل:   STATUS.txt
-✏️ عدّل:   app/src/main/java/com/tttt/subtitler/FastTr.kt
-```
-🔙 نسخة احتياطية قبل التعديل: `backup-v1191-run3` (للرجوع: Actions ← Rollback)
