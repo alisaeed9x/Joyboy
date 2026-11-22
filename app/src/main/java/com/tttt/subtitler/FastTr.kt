@@ -23,14 +23,15 @@ class FastTr(
         const val PAD = 2.0        // ثواني زيادة من الصوت على كل طرف عشان الجملة اللي على الحافة ماتتقصش
         const val TRIES = 6        // أقصى محاولات لكل خطوة (تفريغ / ترجمة) على مفاتيح مختلفة
         const val MAX_WORKERS = 6
-        // (v1192) ضبط المتكلم/المخاطَب من الكلام نفسه (مش من نبرة الصوت ولا جدول شخصيات)
-        const val GENDER_TX = "Also give each sentence spk (gender of the speaker) and to (gender of the person spoken to): m, f, p (group) or ? (no evidence). " +
-            "NEVER decide from voice pitch or tone: cartoon, anime and dubbed voices are often played by the opposite gender. Decide ONLY from the words: how the speaker refers to himself/herself (first-person forms, gendered verbs and adjectives, kinship usage), how others address or mention them (names, titles, vocatives, words like husband/wife/sir/madam/mom/dad/boss/secretary), the relationship and topic, and the neighbouring sentences (a reply is spoken by the person who was just addressed). Use ? when the words give no evidence. "
-        const val GENDER_TR = "🔴 Gender and addressing (Arabic verbs, pronouns, adjectives and address words depend on it). " +
-            "For every line decide s (speaker) and a (person addressed) from the whole dialogue, not from the line alone. A bracket like [spk=m to=f] is a soft hint from the transcription step: override it when the conversation shows otherwise. " +
-            "A reply is spoken by whoever was addressed in the previous line. A word that reveals gender (husband, wife, sir, madam, brother, sister, son, daughter, a gendered verb/adjective in the source) fixes that person's gender for the neighbouring lines until the speaker changes. " +
+        // (v1194) التفريغ بيدّي رقم المتكلم (محلي للباتش ده بس) والترجمة بتقرر جنس كل شخص مرة واحدة من كلامه
+        const val SPK_TX = "Also give each sentence spk: a whole number for the person speaking, counted 1, 2, 3 in order of first appearance in THIS audio only (the same voice keeps the same number inside this audio, a new voice gets the next number, 0 if you cannot tell). Do not write gender anywhere. "
+        const val GENDER_TR = "🔴 Gender and addressing (Arabic verbs, pronouns, adjectives and address words depend on it, and the source language may not mark gender at all). " +
+            "A line may start with [N]: N is a speaker number valid only inside this request, given by the transcription step from the audio. The same N is probably the same person, but numbers can be wrong, so the words of a line always beat the number. " +
+            "Decide the gender of each person ONCE, using every line of that person: first-person words (Japanese 俺/僕/私/あたし/わし and endings like わよ/かしら/だぜ/ぞ, Korean 오빠/형/누나/언니 said by the speaker, Chinese 老公/老婆), how others address or mention the person (names, titles, vocatives, husband/wife/sir/madam/mom/dad/boss/secretary) and the relationship between the speakers. One clear clue fixes the gender of all that person's lines. " +
+            "NEVER decide from voice pitch or tone, and never default to masculine. A reply is spoken by whoever was addressed in the previous line. If the clues for one person conflict, treat that person as unknown. " +
             "Relationship words must match the person they describe: a secretary talking to her male boss says his wife, never \"your husband\"; a woman speaking to a man uses masculine forms for him and feminine forms for herself, and the reverse. " +
-            "Never default to masculine. If s or a is truly unknown, use a neutral phrasing (nouns instead of gendered adjectives, avoid gendered address words) instead of guessing. "
+            "If s or a is unknown, use neutral phrasing (nouns instead of gendered adjectives, avoid gendered address words) instead of guessing. " +
+            "Names: when you decided the gender of a person who is called by name in the lines, put it in n as name=m or name=f (original spelling, comma separated); leave n out otherwise. "
     }
 
     @Volatile var running = false; private set
@@ -52,6 +53,19 @@ class FastTr(
     private var downNoted = false
     private val mergeLock = Any()
     private val srcLock = Any()
+    // (v1194) أسماء → جنس: أي باتش بيتعلّمها والباتشات اللي بتبدأ بعده بتستفيد منها (من غير ما حد يستنى حد)
+    private val nameG = ConcurrentHashMap<String, String>()
+    private fun learnNames(t: String) {
+        if (t.isBlank()) return
+        for (p in t.split(',', '،', ';')) {
+            val kv = p.split('=')
+            if (kv.size != 2) continue
+            val k = kv[0].trim(); val g = kv[1].trim().lowercase()
+            if (k.isEmpty() || k.length > 24 || (g != "m" && g != "f")) continue
+            if (nameG.size >= 80 && !nameG.containsKey(k)) continue
+            nameG.putIfAbsent(k, g)
+        }
+    }
     private val persistN = AtomicInteger(0)
     private val active = ConcurrentHashMap.newKeySet<Int>()   // (دمج v1081) باتشات اتبعتت (تفريغ/ترجمة) ولسه ما خلصتش
     @Volatile private var durSec = 0.0
@@ -348,7 +362,7 @@ class FastTr(
                 if (en <= st + 0.2) en = st + 1.5
                 en = minOf(en, dur)
                 out.add(plain(st, en, txt, txt, i))
-                hs.add(gHint(o.optString("spk", ""), o.optString("to", "")))
+                hs.add(spkTag(o.optInt("spk", 0)))
             }
             Pair(out, hs)
         }
@@ -379,6 +393,7 @@ class FastTr(
             val out = ArrayList<String>()
             for (x in 0 until lines.size) {
                 val v = a.opt(x)
+                if (v is JSONObject) learnNames(v.optString("n", ""))
                 val t = when (v) { is JSONObject -> v.optString("t", v.optString("text", "")); is String -> v; null -> ""; else -> v.toString() }
                 out.add(t.trim())
             }
@@ -483,16 +498,12 @@ class FastTr(
         "Transcribe all the speech in this audio exactly as spoken, in its ORIGINAL language (do NOT translate). " +
         "Split it into natural subtitle sentences (one speaker turn or phrase each, short enough to read on screen). " +
         "The audio has a little extra overlap at both ends: transcribe everything you hear. Ignore music and noise that has no speech. " +
-        "Return ONLY a JSON array, no markdown, no comments. Each item: {\"start\": seconds from the beginning of THIS audio (number), \"end\": seconds (number), \"text\": \"the sentence\"" + (if (transOnly) "" else ", \"spk\": \"m|f|p|?\", \"to\": \"m|f|p|?\"") + "}. " +
-        (if (transOnly) "" else GENDER_TX) +
+        "Return ONLY a JSON array, no markdown, no comments. Each item: {\"start\": seconds from the beginning of THIS audio (number), \"end\": seconds (number), \"text\": \"the sentence\"" + (if (transOnly) "" else ", \"spk\": 1") + "}. " +
+        (if (transOnly) "" else SPK_TX) +
         "If there is no speech return []." + songBlock()
 
-    /** (v1192) «spk»/«to» من التفريغ → تلميح قصير للترجمة: m/f/p (متكلم/مخاطَب) أو ? */
-    private fun gHint(spk: String, to: String): String {
-        fun n(v: String) = when (v.trim().lowercase().firstOrNull()) { 'm' -> "m"; 'f' -> "f"; 'p' -> "p"; else -> "?" }
-        val a = n(spk); val b = n(to)
-        return if (a == "?" && b == "?") "" else "[spk=$a to=$b]"
-    }
+    /** (v1194) رقم المتكلم من التفريغ (محلي للباتش ده بس) → «[N]» قدام السطر، أو فاضي لو 0 */
+    private fun spkTag(n: Int): String = if (n > 0) "[$n]" else ""
 
     private fun translatePrompt(lines: List<String>, hints: List<String> = emptyList()): String {
         val lang = conf.lang.ifBlank { "Arabic" }
@@ -501,7 +512,9 @@ class FastTr(
         sb.append("Translate each numbered subtitle line into $lang.$d Keep the meaning and a natural spoken subtitle style; do not merge or split lines. ")
         if (SongHint.on()) sb.append("These lines are song lyrics: translate them as natural poetic lines (the meaning, not word by word). ")
         sb.append(GENDER_TR)
-        sb.append("Return ONLY a JSON array of exactly ${lines.size} objects, in the same order, no markdown. Each object: {\"s\":\"m|f|p|?\",\"a\":\"m|f|p|?\",\"t\":\"the translation\"} — decide s and a FIRST, then write t.\n\n")
+        val known = nameG.entries.take(20).joinToString(", ") { "${it.key}=${it.value}" }
+        if (known.isNotEmpty()) sb.append("Already known from other parts of this video (name=gender): $known. ")
+        sb.append("Return ONLY a JSON array of exactly ${lines.size} objects, in the same order, no markdown. Each object: {\"s\":\"m|f|p|?\",\"a\":\"m|f|p|?\",\"t\":\"the translation\",\"n\":\"optional names\"} — decide s and a FIRST, then write t.\n\n")
         for ((j, l) in lines.withIndex()) {
             val h = hints.getOrNull(j).orEmpty()
             sb.append(j + 1).append(". ").append(if (h.isEmpty()) "" else "$h ").append(l.replace('\n', ' ')).append('\n')
