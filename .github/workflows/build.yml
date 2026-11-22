@@ -1,8 +1,9 @@
 name: Build APK
 # (v857) بعد كل بيلد ناجح: بيعمل Release فيه الـAPK (تبويب Releases في الريبو) + لسه بيرفع الـartifact زي الأول.
-# بيحتفظ بآخر 10 ريليزات بس (الأقدم بيتمسح مع التاج بتاعه).
+# بيحتفظ بآخر 30 ريليز بس (الأقدم بيتمسح مع التاج بتاعه).
 on:
   push:
+    paths-ignore: ['patches/**']   # رفع الـpatch ملوش بيلد؛ apply-patch هو اللي بيشغّله
   workflow_dispatch:
 
 concurrency:
@@ -52,12 +53,20 @@ jobs:
           APK=$(ls app/build/outputs/apk/debug/*.apk | head -1)
           OUT="Joyboy-v${NAME}-build${{ github.run_number }}.apk"
           cp "$APK" "$OUT"
+          # (v1190) ملاحظات الريليز = كل الـChangelogs الأحدث من آخر ريليز (الأحدث فوق)
+          PREVREL=$(gh release list --limit 1 --json name --jq '.[0].name' 2>/dev/null | sed -nE 's/^Joyboy v([0-9]+)\.([0-9]+).*/\1\2/p')
+          : > NOTES.md
+          for v in $(ls CHANGES_v*.md | sed -E 's/CHANGES_v([0-9]+)\.md/\1/' | sort -rn); do
+            if [ -z "$PREVREL" ] || [ "$v" -gt "$PREVREL" ]; then cat "CHANGES_v$v.md" >> NOTES.md; printf '\n\n---\n\n' >> NOTES.md; fi
+          done
+          [ -s NOTES.md ] || cp "CHANGES_v${VER}.md" NOTES.md
+          head -c 120000 NOTES.md > NOTES_cut.md
           FLAGS="--latest"
           if [ "${{ github.ref_name }}" != "main" ]; then FLAGS="--prerelease"; fi
           gh release create "build-${{ github.run_number }}" "$OUT" \
             --target "${{ github.sha }}" \
             --title "Joyboy v${NAME} (build ${{ github.run_number }}) · ${{ github.ref_name }}" \
-            --notes-file "CHANGES_v${VER}.md" $FLAGS
-          # تنضيف: آخر 10 ريليزات بيلد بس
-          gh release list --limit 100 --json tagName --jq '[.[] | select(.tagName | startswith("build-"))][10:][].tagName' \
+            --notes-file NOTES_cut.md $FLAGS
+          # تنضيف: آخر 30 ريليز بيلد بس
+          gh release list --limit 100 --json tagName --jq '[.[] | select(.tagName | startswith("build-"))][30:][].tagName' \
             | while read -r t; do gh release delete "$t" --cleanup-tag --yes; done
