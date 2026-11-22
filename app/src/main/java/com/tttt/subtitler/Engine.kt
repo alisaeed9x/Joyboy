@@ -2166,7 +2166,7 @@ class Engine(
         val cachedN = cachePrefill(flat, tr)   // (v469) A7: جمل جاهزة من كاش الأسطر ما بتتبعتش ولا بتكلّف مفاتيح
         if (cachedN > 0) host.log("💾 كاش الأسطر: $cachedN جملة من الكاش")
         var key: String? = null
-        var round = 0; var langBad = 0; var swapped = false
+        var round = 0; var langBad = 0; var swapped = false; var emptyRounds = 0   // (v1196)
         try {
             while (running && !isClosed && round < TR_ROUNDS) {
                 val missing = flat.indices.filter { tr[it].isNullOrBlank() }
@@ -2210,6 +2210,15 @@ class Engine(
                 if (rep0 == null) { if (swapTranslate(items, missing, tr, pv) > 0) { swapped = true; continue } else break }   // (v286) بديل تلقائي
                 val rep = rep0
                 val got = TParse.translations(rep, items.size)
+                // (v1196) رد جيميناي رجع JSON سليم لكن من غير ولا ترجمة (غالبًا خطأ 503/ضغط جوه الرد) — كان بيعيد نفس الطلب 4 مرات ورا بعض (حوالي دقيقة وربع ضايعة) قبل ما يروح للمفتاح الاحتياطي
+                if (got.isEmpty() && items.isNotEmpty()) {
+                    emptyRounds++
+                    val errTxt = try { rep.optJSONObject("error")?.optString("message", "").orEmpty().take(60) ?: "" } catch (_: Throwable) { "" }
+                    host.log("⚠ ترجمة مجمّعة: الرد رجع فاضي" + (if (errTxt.isNotBlank()) " ($errTxt)" else "") + " — تحويل لمفتاح تاني")
+                    key?.let { tp.block(it, 20_000) }; key = null
+                    if (emptyRounds >= 2) { host.log("🛟 ترجمة مجمّعة: رد فاضي مرتين — بسيبها للمفتاح الاحتياطي فورًا من غير تكرار"); break }
+                    nap(1200); continue
+                }
                 val okMap = LinkedHashMap<Int, Pair<String, String>>()
                 var offCount = 0
                 for ((ix, pr) in got) { val o = missing[ix]; if (LangGuard.foreign(flat[o].copy(translated = pr.first))) offCount++; okMap[o] = pr }

@@ -4102,7 +4102,8 @@ class PlayerActivity : Activity(), Host {
     fun translateInBackground(goHome: Boolean = true, src: String = "المشغّل (زرار 🌙)") {
         if (Cfg.allMainKeys().isEmpty() && conf.keys.isEmpty() && conf.backup.isEmpty()) { say("ضيف مفتاح API الأول"); return }
         if (incognito) { say("🕶 الترجمة بالخلفية مش متاحة في التخفي"); return }
-        if (handedOff || remote) return   // (v568) وضع المتحكم: الترجمة على التلفزيون، مفيش تسليم للخلفية على الموبايل
+        if (remote) { say("🌙 الترجمة بالخلفية مش متاحة وانت متحكم في التلفزيون — الترجمة شغّالة على التلفزيون نفسه"); return }   // (v568)(v1196) كان بيرجع بصمت
+        if (handedOff) { say("🌙 الترجمة بالفعل شغّالة في الخلفية"); return }   // (v1196)
         handedOff = true
         closeSide(); resumePending = false
         say(if (src.contains("تلقائي")) "🌙 كمّلت الترجمة في الخلفية لأن ✔ «كمّل في الخلفية لما أخرج» مفعّل (من فوق في المشغّل) — تقفله من نفس الزرار" else "🌙 هكمّل الترجمة في الخلفية — التقدم في الإشعارات")
@@ -5309,7 +5310,16 @@ class PlayerActivity : Activity(), Host {
             giShowFn(if (on) "هسألك لما تخرج: كمّل في الخلفية ولا لا" else "لما تخرج: الترجمة بتتقفل من غير سؤال ومن غير خلفية")
         })
         // (v1020) ✨ تحسين الصورة اتنقل برّه القايمة: زرار لوحده جنب ☰ في الشريط العلوي
-        gTool.addView(pd("🕳 سد الفجوات") { engine.retryFailed(); Notice.show(this, ("بحاول أسد الفجوات").toString(), 2300L) })
+        gTool.addView(pd("🕳 سد الفجوات") {   // (v1196) كان بيقول «بحاول» حتى لو مفيش حاجة تتسد أو الترجمة واقفة
+                val fc = try { engine.failedCount() } catch (_: Throwable) { 0 }
+                val wasPaused = try { engine.paused } catch (_: Throwable) { false }
+                if (fc == 0 && !wasPaused) { say("🕳 مفيش مقاطع فاشلة دلوقتي — الفجوات اللي فيها صوت من غير ترجمة بتتسد تلقائي أثناء الترجمة") }
+                else {
+                    engine.retryFailed()
+                    if (wasPaused) { try { engine.paused = false } catch (_: Throwable) {} }
+                    say("🕳 هعيد " + (if (fc > 0) "$fc مقطع فاشل" else "الترجمة الواقفة") + (if (wasPaused) " وكمّلت الترجمة" else ""))
+                }
+            })
         // (v87) ترجمات الفيديو: قايمة صغيرة منسدلة بالنسخ المحفوظة (دوسة على نسخة ترجّعها)
         val gVer = gCol()
         fun fillVer() {
