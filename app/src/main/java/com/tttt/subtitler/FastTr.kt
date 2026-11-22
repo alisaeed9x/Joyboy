@@ -23,6 +23,14 @@ class FastTr(
         const val PAD = 2.0        // ثواني زيادة من الصوت على كل طرف عشان الجملة اللي على الحافة ماتتقصش
         const val TRIES = 6        // أقصى محاولات لكل خطوة (تفريغ / ترجمة) على مفاتيح مختلفة
         const val MAX_WORKERS = 6
+        // (v1192) ضبط المتكلم/المخاطَب من الكلام نفسه (مش من نبرة الصوت ولا جدول شخصيات)
+        const val GENDER_TX = "Also give each sentence spk (gender of the speaker) and to (gender of the person spoken to): m, f, p (group) or ? (no evidence). " +
+            "NEVER decide from voice pitch or tone: cartoon, anime and dubbed voices are often played by the opposite gender. Decide ONLY from the words: how the speaker refers to himself/herself (first-person forms, gendered verbs and adjectives, kinship usage), how others address or mention them (names, titles, vocatives, words like husband/wife/sir/madam/mom/dad/boss/secretary), the relationship and topic, and the neighbouring sentences (a reply is spoken by the person who was just addressed). Use ? when the words give no evidence. "
+        const val GENDER_TR = "🔴 Gender and addressing (Arabic verbs, pronouns, adjectives and address words depend on it). " +
+            "For every line decide s (speaker) and a (person addressed) from the whole dialogue, not from the line alone. A bracket like [spk=m to=f] is a soft hint from the transcription step: override it when the conversation shows otherwise. " +
+            "A reply is spoken by whoever was addressed in the previous line. A word that reveals gender (husband, wife, sir, madam, brother, sister, son, daughter, a gendered verb/adjective in the source) fixes that person's gender for the neighbouring lines until the speaker changes. " +
+            "Relationship words must match the person they describe: a secretary talking to her male boss says his wife, never \"your husband\"; a woman speaking to a man uses masculine forms for him and feminine forms for herself, and the reverse. " +
+            "Never default to masculine. If s or a is truly unknown, use a neutral phrasing (nouns instead of gendered adjectives, avoid gendered address words) instead of guessing. "
     }
 
     @Volatile var running = false; private set
@@ -325,10 +333,11 @@ class FastTr(
         val t0 = System.currentTimeMillis()
 
         // 1) تفريغ
-        val raw = withKey(i, "تفريغ") { k, _ ->
+        val rawP = withKey(i, "تفريغ") { k, _ ->
             val rep = Api.generate(model(), k, transcribePrompt(), wav.bytes, Api.outTokens(wav.durSec), 0.0, true)
             val a = arr(rep.text) ?: throw BadReply("رد التفريغ مش JSON")
             val out = ArrayList<Sub>()
+            val hs = ArrayList<String>()
             for (x in 0 until a.length()) {
                 val o = a.optJSONObject(x) ?: continue
                 val txt = o.optString("text", "").trim()
@@ -339,9 +348,12 @@ class FastTr(
                 if (en <= st + 0.2) en = st + 1.5
                 en = minOf(en, dur)
                 out.add(plain(st, en, txt, txt, i))
+                hs.add(gHint(o.optString("spk", ""), o.optString("to", "")))
             }
-            out
+            Pair(out, hs)
         }
+        val raw = rawP?.first
+        val hints = rawP?.second ?: emptyList()
         if (raw == null) { failedSet.add(i); host.log("⚠ [محرك ٢] باتش ${i + 1}: التفريغ فشل بعد $TRIES محاولات"); return }
         merge(bs, be, raw)            // الجمل المفرّغة تظهر دلوقتي
         subN[i] = raw.size
@@ -361,13 +373,13 @@ class FastTr(
         // 2) ترجمة نفس الباتش
         val lines = raw.map { it.original }
         val tr = withKey(i, "ترجمة") { k, attempt ->
-            val rep = Api.generate(model(), k, translatePrompt(lines), null, 8192, 0.2, true)
+            val rep = Api.generate(model(), k, translatePrompt(lines, hints), null, 8192, 0.2, true)
             val a = arr(rep.text) ?: throw BadReply("رد الترجمة مش JSON")
             if (a.length() != lines.size && attempt < TRIES - 1) throw BadReply("عدد الجمل ${a.length()} بدل ${lines.size}")
             val out = ArrayList<String>()
             for (x in 0 until lines.size) {
                 val v = a.opt(x)
-                val t = when (v) { is JSONObject -> v.optString("text", v.optString("t", "")); is String -> v; null -> ""; else -> v.toString() }
+                val t = when (v) { is JSONObject -> v.optString("t", v.optString("text", "")); is String -> v; null -> ""; else -> v.toString() }
                 out.add(t.trim())
             }
             out
@@ -471,17 +483,29 @@ class FastTr(
         "Transcribe all the speech in this audio exactly as spoken, in its ORIGINAL language (do NOT translate). " +
         "Split it into natural subtitle sentences (one speaker turn or phrase each, short enough to read on screen). " +
         "The audio has a little extra overlap at both ends: transcribe everything you hear. Ignore music and noise that has no speech. " +
-        "Return ONLY a JSON array, no markdown, no comments. Each item: {\"start\": seconds from the beginning of THIS audio (number), \"end\": seconds (number), \"text\": \"the sentence\"}. " +
+        "Return ONLY a JSON array, no markdown, no comments. Each item: {\"start\": seconds from the beginning of THIS audio (number), \"end\": seconds (number), \"text\": \"the sentence\"" + (if (transOnly) "" else ", \"spk\": \"m|f|p|?\", \"to\": \"m|f|p|?\"") + "}. " +
+        (if (transOnly) "" else GENDER_TX) +
         "If there is no speech return []." + songBlock()
 
-    private fun translatePrompt(lines: List<String>): String {
+    /** (v1192) «spk»/«to» من التفريغ → تلميح قصير للترجمة: m/f/p (متكلم/مخاطَب) أو ? */
+    private fun gHint(spk: String, to: String): String {
+        fun n(v: String) = when (v.trim().lowercase().firstOrNull()) { 'm' -> "m"; 'f' -> "f"; 'p' -> "p"; else -> "?" }
+        val a = n(spk); val b = n(to)
+        return if (a == "?" && b == "?") "" else "[spk=$a to=$b]"
+    }
+
+    private fun translatePrompt(lines: List<String>, hints: List<String> = emptyList()): String {
         val lang = conf.lang.ifBlank { "Arabic" }
         val d = dialect.trim().takeIf { it.isNotEmpty() && it != "فصحى" }?.let { " Use the $it dialect." } ?: ""
         val sb = StringBuilder()
         sb.append("Translate each numbered subtitle line into $lang.$d Keep the meaning and a natural spoken subtitle style; do not merge or split lines. ")
         if (SongHint.on()) sb.append("These lines are song lyrics: translate them as natural poetic lines (the meaning, not word by word). ")
-        sb.append("Return ONLY a JSON array of exactly ${lines.size} strings (the translations, in the same order), no markdown.\n\n")
-        for ((j, l) in lines.withIndex()) sb.append(j + 1).append(". ").append(l.replace('\n', ' ')).append('\n')
+        sb.append(GENDER_TR)
+        sb.append("Return ONLY a JSON array of exactly ${lines.size} objects, in the same order, no markdown. Each object: {\"s\":\"m|f|p|?\",\"a\":\"m|f|p|?\",\"t\":\"the translation\"} — decide s and a FIRST, then write t.\n\n")
+        for ((j, l) in lines.withIndex()) {
+            val h = hints.getOrNull(j).orEmpty()
+            sb.append(j + 1).append(". ").append(if (h.isEmpty()) "" else "$h ").append(l.replace('\n', ' ')).append('\n')
+        }
         return sb.toString()
     }
 }
