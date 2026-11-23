@@ -5290,7 +5290,6 @@ class PlayerActivity : Activity(), Host {
         gSub.addView(pk("⏱ شريط التزامن السريع") { toggleSyncStrip() })   // (v469) B14
         // (v103) قايمة ☰ = قايمة منسدلة صغيرة فيها بس الأزرار اللي مش موجودة في المشغّل نفسه
         gTool.addView(pd("📤 تصدير SRT") { doExport() })
-        gTool.addView(pd("🎧 تنزيل الباتشات الصوتية (مترقمة)") { exportBatches() })   // (v1165)
         gTool.addView(pd("📥 استيراد ملف ترجمة (بيترجم فورًا)") { doImport() })
         gTool.addView(pd("📂 فتح فيديو") { doOpen() })
         // (v1025) اللي اتشال من الشريط العلوي لقلّة الاستعمال بقى هنا
