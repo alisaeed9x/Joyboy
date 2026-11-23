@@ -363,7 +363,7 @@ class BottomNav(act: Activity, private val ui: Ui, private val th: Theme, privat
         if (rail) {   // (v462) المؤشر شريط رأسي بيتحرك على Y
             if (c.height == 0) { if (placeTries++ < 10) rowLL.post { place(false) }; return false }
             val y = (c.top + c.height / 2 - ui.dp(11)).toFloat()
-            if (animate) { moving = true; indicator.animate().cancel(); indicator.animate().setStartDelay(0L).translationY(y).setDuration(300L).setInterpolator(OvershootInterpolator(1.4f)).start(); indicator.removeCallbacks(doneMoving); indicator.postDelayed(doneMoving, 340L) }   // (v1119) من غير withEndAction: أي listener بيخلّي الأنيميشن يمشي على الـUI thread ويتقطّع، من غيره بيمشي على الـRenderThread
+            if (animate) { moving = true; indicator.animate().cancel(); indicator.animate().setStartDelay(0L).translationY(y).setDuration(300L).setInterpolator(MtGlass.EXPO_OUT).start(); indicator.removeCallbacks(doneMoving); indicator.postDelayed(doneMoving, 340L) }   // (v1119) من غير withEndAction: أي listener بيخلّي الأنيميشن يمشي على الـUI thread ويتقطّع، من غيره بيمشي على الـRenderThread
             else { indicator.animate().cancel(); moving = false; indicator.translationY = y }
             placeTries = 0
             return true
@@ -381,7 +381,7 @@ class BottomNav(act: Activity, private val ui: Ui, private val th: Theme, privat
         if (animate) {
             moving = true
             indicator.animate().cancel()
-            indicator.animate().setStartDelay(0L).translationX(x).setDuration(if (glassNav) 320L else 300L).setInterpolator(if (glassNav) MtGlass.EMPHASIZED else OvershootInterpolator(1.4f)).start()
+            indicator.animate().setStartDelay(0L).translationX(x).setDuration(if (glassNav) 320L else 300L).setInterpolator(if (glassNav) MtGlass.EMPHASIZED else MtGlass.EXPO_OUT).start()
             indicator.removeCallbacks(doneMoving); indicator.postDelayed(doneMoving, 360L)   // (v1119) RenderThread
         } else {
             indicator.animate().cancel(); moving = false

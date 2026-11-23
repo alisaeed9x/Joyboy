@@ -159,7 +159,7 @@ class Ui(val ctx: Context, var th: Theme) {
         Glass.pressable(head)
         head.setOnClickListener {
             val o = body.visibility != View.VISIBLE
-            try { android.transition.TransitionManager.beginDelayedTransition((c.parent as? android.view.ViewGroup) ?: c, android.transition.AutoTransition().setDuration(220)) } catch (_: Exception) {}
+            try { android.transition.TransitionManager.beginDelayedTransition((c.parent as? android.view.ViewGroup) ?: c, android.transition.AutoTransition().setDuration(320).setInterpolator(MtGlass.EXPO_OUT)) } catch (_: Exception) {}
             body.visibility = if (o) View.VISIBLE else View.GONE
             if (o) Motion.stagger(body, 6, 30L)
             head.text = arr(o) + title

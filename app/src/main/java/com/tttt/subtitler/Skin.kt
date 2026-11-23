@@ -11,6 +11,8 @@ object Skins {
     fun dur(ms: Long): Long = ms.coerceAtLeast(60L)
     fun rad(r: Int): Int = r
     fun radF(px: Float, @Suppress("UNUSED_PARAMETER") density: Float): Float = px
-    fun interp(tension: Float): Interpolator = android.view.animation.OvershootInterpolator(tension)
+    /** (v1203) من غير ارتداد (Overshoot) — منحنى ease-out طويل: بيبدأ سريع ويهدى لحد ما يستقر. الـtension متساب عشان نقط الاستدعاء القديمة. */
+    @Suppress("UNUSED_PARAMETER")
+    fun interp(tension: Float): Interpolator = MtGlass.EXPO_OUT
     fun icon(name: String): String = name
 }

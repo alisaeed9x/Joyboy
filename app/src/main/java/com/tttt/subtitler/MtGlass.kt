@@ -121,6 +121,8 @@ object MtGlass {
     val EMPHASIZED_DECELERATE: Interpolator = com.tttt.subtitler.mtui.Motion.EMPHASIZED_DECELERATE
     val EMPHASIZED_ACCELERATE: Interpolator = com.tttt.subtitler.mtui.Motion.EMPHASIZED_ACCELERATE
     val STANDARD: Interpolator = PathInterpolator(0.2f, 0f, 0f, 1f)
+    /** (v1203) «سريع ثم بطيء لوقت أطول» (expo-out): للدخول والاستقرار من غير أي ارتداد أو تغيير اتجاه */
+    val EXPO_OUT: Interpolator = PathInterpolator(0.16f, 1f, 0.3f, 1f)
     val EMPHASIZED: Interpolator by lazy {
         val p = Path()
         p.moveTo(0f, 0f)
@@ -128,7 +130,7 @@ object MtGlass {
         p.cubicTo(0.208333f, 0.82f, 0.25f, 1f, 1f, 1f)
         PathInterpolator(p)
     }
-    const val ENTER_MS = 250L      // سطح داخل (شيت بينزلق لفوق)
+    const val ENTER_MS = 300L      // سطح داخل (شيت بينزلق لفوق)
     const val EXIT_MS = 200L       // سطح خارج
     const val FADE_OUT_MS = 90L
     const val FROST_MS = 320L      // صفحة بتطلع من زجاج مثلّج (تبديل تبويب)
@@ -139,14 +141,12 @@ object MtGlass {
 
     /** «الدفعة»: بيصغّر لـ in وبيعدّي لـ over وبيستقر (لايك/اختيار/سويتش) */
     fun pop(v: View?, inS: Float = 0.78f, over: Float = 1.12f) {
+        // (v1203) «استقرار» بدل «دفعة»: من حجم أصغر شوية لـ1 في اتجاه واحد وبمنحنى expo-out — من غير تخطّي (1.12) ولا رجوع. over متساب للتوافق.
         if (v == null) return
-        if (inS == 0.78f && over == 1.12f) { com.tttt.subtitler.mtui.Motion.pop(v); return }       // (v909) Motion.pop الأصلي
-        if (inS == 0.965f && over == 1.015f) { com.tttt.subtitler.mtui.Motion.nudge(v); return }   // (v909) Motion.nudge الأصلي
         v.animate().cancel()
-        fun kf() = arrayOf(Keyframe.ofFloat(0f, 1f), Keyframe.ofFloat(0.35f, inS), Keyframe.ofFloat(0.75f, over), Keyframe.ofFloat(1f, 1f))
-        val a = ObjectAnimator.ofPropertyValuesHolder(v, PropertyValuesHolder.ofKeyframe("scaleX", *kf()), PropertyValuesHolder.ofKeyframe("scaleY", *kf()))
-        a.duration = Skins.dur(POP_MS); a.interpolator = STANDARD
-        a.start()
+        val from = if (inS >= 0.95f) 0.985f else 0.9f
+        v.scaleX = from; v.scaleY = from
+        v.animate().setStartDelay(0L).scaleX(1f).scaleY(1f).setDuration(Skins.dur(POP_MS + 100L)).setInterpolator(EXPO_OUT).start()
     }
 
     private val frosting = WeakHashMap<View, Animator>()
@@ -197,7 +197,7 @@ object MtGlass {
                 }
                 MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
                     view.animate().setStartDelay(0L).scaleX(1f).scaleY(1f).translationY(0f).alpha(1f)
-                        .setDuration(Skins.dur(280L)).setInterpolator(OvershootInterpolator(2f)).start()
+                        .setDuration(Skins.dur(360L)).setInterpolator(EXPO_OUT).start()
                 }
             }
             false   // مابيعترضش الـclick

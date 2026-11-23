@@ -1,8 +1,13 @@
 package com.tttt.subtitler
 
+import android.animation.Animator
+import android.animation.AnimatorListenerAdapter
 import android.animation.ObjectAnimator
 import android.animation.PropertyValuesHolder
 import android.animation.ValueAnimator
+import android.graphics.RenderEffect
+import android.graphics.Shader
+import android.os.Build
 import android.view.View
 import android.view.ViewGroup
 import android.view.animation.AccelerateDecelerateInterpolator
@@ -42,35 +47,57 @@ object Motion {
         v.animate().setStartDelay(0L).scaleX(1f).scaleY(1f).setDuration(Skins.dur(280L)).setInterpolator(Skins.interp(2.6f)).start()
     }
 
-    /** قفزة صغيرة لفوق وبعدين استقرار (أيقونة الشريط السفلي لما تتفعّل) */
+    /** (v1203) استقرار الأيقونة لما تتفعّل: من أصغر شوية ومنزّلة 3dp لمكانها في اتجاه واحد (expo-out) — من غير قفزة لفوق ورجوع */
     fun bounce(v: View) {
-        if (MtGlass.on()) { MtGlass.pop(v, 0.86f, 1.1f); return }   // (v893)
         v.animate().cancel()
-        v.animate().setStartDelay(0L).translationY(-dp(v, 3f)).scaleX(1.2f).scaleY(1.2f).setDuration(Skins.dur(110L)).setInterpolator(DecelerateInterpolator())
-            .withEndAction {
-                v.animate().setStartDelay(0L).translationY(0f).scaleX(1f).scaleY(1f).setDuration(Skins.dur(280L)).setInterpolator(Skins.interp(3f)).start()
-            }.start()
+        v.scaleX = 0.86f; v.scaleY = 0.86f; v.translationY = dp(v, 3f)
+        v.animate().setStartDelay(0L).scaleX(1f).scaleY(1f).translationY(0f).setDuration(Skins.dur(380L)).setInterpolator(MtGlass.EXPO_OUT).start()
+    }
+
+    private val blurring = WeakHashMap<View, Animator>()
+
+    /** (v1203) بلور بيصفى مع الدخول (أندرويد 12+ وموبايل/تابلت بس؛ غير كده مفيش أثر). بيتشال في الآخر فمفيش تكلفة بعد كده. */
+    fun blurIn(v: View, dur: Long = 360L, delay: Long = 0L, radiusDp: Float = 7f) {
+        if (Build.VERSION.SDK_INT < 31 || !MtGlass.on()) return
+        blurring.remove(v)?.cancel()
+        val r0 = radiusDp * v.resources.displayMetrics.density
+        val a = ValueAnimator.ofFloat(r0, 0f)
+        a.startDelay = delay; a.duration = Skins.dur(dur); a.interpolator = MtGlass.EXPO_OUT
+        a.addUpdateListener { x ->
+            val r = x.animatedValue as Float
+            try { v.setRenderEffect(if (r < 0.5f) null else RenderEffect.createBlurEffect(r, r, Shader.TileMode.CLAMP)) } catch (_: Throwable) {}
+        }
+        a.addListener(object : AnimatorListenerAdapter() {
+            override fun onAnimationEnd(animation: Animator) {
+                try { v.setRenderEffect(null) } catch (_: Throwable) {}
+                if (blurring[v] === animation) blurring.remove(v)
+            }
+        })
+        blurring[v] = a
+        a.start()
     }
 
     /** دخول بتلاشي + انزلاق من اتجاه */
-    fun fadeSlideIn(v: View, dx: Float = 0f, dy: Float = 0f, dur: Long = 240L, delay: Long = 0L) {
+    fun fadeSlideIn(v: View, dx: Float = 0f, dy: Float = 0f, dur: Long = 320L, delay: Long = 0L, blur: Boolean = false) {
         v.animate().cancel()
         v.alpha = 0f; v.translationX = dx; v.translationY = dy
-        v.animate().setStartDelay(delay).alpha(1f).translationX(0f).translationY(0f).setDuration(Skins.dur(dur)).setInterpolator(ease(DecelerateInterpolator(1.6f))).start()
+        v.animate().setStartDelay(delay).alpha(1f).translationX(0f).translationY(0f).setDuration(Skins.dur(dur)).setInterpolator(MtGlass.EXPO_OUT).start()   // (v1203) expo-out
+        if (blur) blurIn(v, dur, delay)
     }
 
     /** انزلاق أفقي من غير تلاشي (للقوايم والـ WebView: التلاشي على الـ WebView بيعمل وميض) */
-    fun slideIn(v: View, side: Int, dur: Long = 240L) {
+    fun slideIn(v: View, side: Int, dur: Long = 300L) {
         v.animate().cancel()
         v.translationX = side * dp(v, 40f)
-        v.animate().setStartDelay(0L).translationX(0f).setDuration(Skins.dur(dur)).setInterpolator(ease(DecelerateInterpolator(1.6f))).start()
+        v.animate().setStartDelay(0L).translationX(0f).setDuration(Skins.dur(dur)).setInterpolator(MtGlass.EXPO_OUT).start()
     }
 
     /** أول N عناصر في الحاوية بتدخل ورا بعض */
-    fun stagger(group: ViewGroup, max: Int = 10, step: Long = 40L) {
+    fun stagger(group: ViewGroup, max: Int = 10, step: Long = 55L) {
+        // (v1203) كل عنصر: يطلع من blur لوضوح + ارتفاع بسيط (14dp)، بتأخير متساوي بين العناصر — البلور لأول 5 بس عشان الأداء
         val d = group.resources.displayMetrics.density
         val n = minOf(group.childCount, max)
-        for (i in 0 until n) fadeSlideIn(group.getChildAt(i), 0f, 16f * d, 240L, i * step)
+        for (i in 0 until n) fadeSlideIn(group.getChildAt(i), 0f, 14f * d, 360L, i * step, blur = i < 5)
     }
 
     /** تبديل تبويب: الصفحة الجديدة بتنزلق من جنب الاتجاه (side = -1 من الشمال، 1 من اليمين) */
@@ -80,7 +107,7 @@ object Motion {
         v.animate().cancel()
         v.setLayerType(View.LAYER_TYPE_HARDWARE, null)
         v.alpha = 0f; v.translationX = side * dp(v, 28f); v.translationY = 0f
-        v.animate().setStartDelay(0L).alpha(1f).translationX(0f).setDuration(Skins.dur(230L)).setInterpolator(ease(DecelerateInterpolator(1.8f)))
+        v.animate().setStartDelay(0L).alpha(1f).translationX(0f).setDuration(Skins.dur(280L)).setInterpolator(MtGlass.EXPO_OUT)
             .withEndAction { v.setLayerType(View.LAYER_TYPE_NONE, null) }.start()
     }
 
@@ -113,9 +140,9 @@ object Motion {
         val set = AnimationSet(true)
         set.addAnimation(AlphaAnimation(0f, 1f))
         set.addAnimation(TranslateAnimation(Animation.RELATIVE_TO_SELF, 0f, Animation.RELATIVE_TO_SELF, 0f, Animation.RELATIVE_TO_SELF, 0.35f, Animation.RELATIVE_TO_SELF, 0f))
-        set.duration = Skins.dur(240L)
-        set.interpolator = DecelerateInterpolator(1.4f)
-        lv.layoutAnimation = LayoutAnimationController(set, 0.08f)
+        set.duration = Skins.dur(320L)
+        set.interpolator = MtGlass.EXPO_OUT   // (v1203)
+        lv.layoutAnimation = LayoutAnimationController(set, 0.1f)
     }
 
     fun replay(lv: ViewGroup) { lv.scheduleLayoutAnimation() }
