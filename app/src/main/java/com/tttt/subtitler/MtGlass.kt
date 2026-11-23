@@ -39,7 +39,8 @@ object MtGlass {
     fun rim(th: Theme): Int = MeeRes.color("meetube_glass_rim", 0x3DFFFFFF, 0x1F000000)
     fun sheen(th: Theme): Int = MeeRes.color("meetube_glass_sheen", 0x1AFFFFFF, 0x80FFFFFF.toInt())
     fun selected(th: Theme): Int = MeeRes.color("meetube_glass_selected", 0x24FFFFFF, 0x14000000)
-    fun sheet(th: Theme): Int = MeeRes.color("meetube_sheet_glass", 0xC71C1C21.toInt(), 0xD6FFFFFF.toInt())
+    /** (v1206) سطح الشيت/الدايلوج بلون سطح الثيم الدافي (كان رمادي مزرق من MeeTube وبيتنافر مع Espresso/Vanilla) */
+    fun sheet(th: Theme): Int = ((if (th.isLight) 0xEB else 0xE6) shl 24) or (th.surface and 0x00FFFFFF)
     fun navInactive(th: Theme): Int = MeeRes.color("meetube_nav_inactive", 0xADFFFFFF.toInt(), 0x99000000.toInt())
     /** شريط سفلي: لون الصفحة مرفوع شوية (زجاج من غير حاجة تتبلّر تحته: «9% أبيض عشان يبان على الصفحة المسطّحة») */
     fun barSolid(th: Theme): Int = Glass.blend(th.bg, if (th.isLight) Color.BLACK else Color.WHITE, 0.07f)
@@ -79,7 +80,7 @@ object MtGlass {
     /** (v901) كبسولة/دوك عايم زجاجي داكن (نص أبيض فوقه): سطح شبه شفاف + لمعة + حافة مضيئة (أو لون تمييز لما accent != 0) */
     fun floatPill(radiusPx: Float, density: Float, accent: Int = 0): Drawable {
         // (v909) زجاج وحافة رسائل MeeTube (meetube_toast_glass / meetube_toast_rim) — نفس MobileSnackbar
-        val base = GradientDrawable().apply { setColor(MeeRes.color("meetube_toast_glass", 0xA3303034.toInt(), 0xA3303034.toInt())); cornerRadius = radiusPx }
+        val base = GradientDrawable().apply { setColor(MeeRes.color("meetube_toast_glass", 0xC0332C26.toInt(), 0xC0332C26.toInt()))   // (v1206) توست/كبسولة عايمة بلون Espresso دافي; cornerRadius = radiusPx }
         val top = GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, intArrayOf(0x1AFFFFFF, 0x00FFFFFF)).apply { cornerRadius = radiusPx }
         val edge = GradientDrawable().apply { setColor(Color.TRANSPARENT); cornerRadius = radiusPx; setStroke(max(1, density.roundToInt()), if (accent != 0) accent else MeeRes.color("meetube_toast_rim", 0x3DFFFFFF, 0x3DFFFFFF)) }
         return LayerDrawable(arrayOf<Drawable>(base, top, edge))
@@ -89,8 +90,8 @@ object MtGlass {
     fun flatFill(th: Theme): Int = if (th.isLight) 0x66FFFFFF else 0x14FFFFFF
 
     /** استدارة MeeTube: الكروت 22 · الشيتس 28 · الأزرار/الكبسولات 23 — بنكبّر استدارة Joyboy بـ1.3 والدواير (≥40) زي ما هي */
-    fun rad(r: Int): Int = if (r <= 0 || r >= 40) r else (r * 1.3f).roundToInt()
-    fun radPx(px: Float, density: Float): Float { val r = px / density; return if (r <= 0f || r >= 40f) px else px * 1.3f }
+    fun rad(r: Int): Int = if (r <= 0 || r >= 40) r else if (r < 8) (r * 1.3f).roundToInt() else (r * 1.5f).coerceIn(16f, 28f).roundToInt()   // (v1206) استدارة 16–28 للكروت والحقول والشيتس
+    fun radPx(px: Float, density: Float): Float { val r = px / density; return if (r <= 0f || r >= 40f) px else if (r < 8f) px * 1.3f else (r * 1.5f).coerceIn(16f, 28f) * density }
     fun hair(density: Float): Int = max(1, (density * 0.5f).roundToInt())
 
     // ===== أشكال =====
