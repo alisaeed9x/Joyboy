@@ -38,7 +38,8 @@ object MtGlass {
     fun stroke(th: Theme): Int = MeeRes.color("meetube_glass_stroke", 0x24FFFFFF, 0x1A000000)
     fun rim(th: Theme): Int = MeeRes.color("meetube_glass_rim", 0x3DFFFFFF, 0x1F000000)
     fun sheen(th: Theme): Int = MeeRes.color("meetube_glass_sheen", 0x1AFFFFFF, 0x80FFFFFF.toInt())
-    fun selected(th: Theme): Int = MeeRes.color("meetube_glass_selected", 0x24FFFFFF, 0x14000000)
+    /** (v1207) التحديد (تبويب الشريط السفلي · chip مختار) بصبغة لون التمييز الدافي (Mocha/Latte) بدل الرمادي المحايد */
+    fun selected(th: Theme): Int = (0x2B shl 24) or (th.primary and 0x00FFFFFF)
     /** (v1206) سطح الشيت/الدايلوج بلون سطح الثيم الدافي (كان رمادي مزرق من MeeTube وبيتنافر مع Espresso/Vanilla) */
     fun sheet(th: Theme): Int = ((if (th.isLight) 0xEB else 0xE6) shl 24) or (th.surface and 0x00FFFFFF)
     fun navInactive(th: Theme): Int = MeeRes.color("meetube_nav_inactive", 0xADFFFFFF.toInt(), 0x99000000.toInt())
