@@ -944,11 +944,11 @@ class PlayerActivity : Activity(), Host {
         else (if (::engine.isInitialized && engine.userPaused) "⏸ " else if (trPct >= 100) "✅ " else "⏳ ") + trPct + "%" + " · " + subCountNow() + " جملة" + dotsNow()
     } catch (_: Throwable) { "▶ ترجم" }
     private fun tvTrColor(): Int = try {
-        if (!engineStarted && sfBusy.isNotEmpty()) 0xFF1F5FBF.toInt()
+        if (!engineStarted && sfBusy.isNotEmpty()) 0xFF2A8C8C.toInt()
         else if (!engineStarted && sfDoneUri.isNotEmpty() && sfDoneUri == (uri?.toString() ?: "")) 0xFF2E7D32.toInt()
         else if (!engineStarted && hasSoftSubNow()) 0xFF2E7D32.toInt()
-        else if (!engineStarted) (if (trIsTx()) 0xFF1F5FBF.toInt() else 0xFFE53935.toInt())
-        else if (::engine.isInitialized && engine.userPaused) 0xFF8D6E00.toInt() else if (trPct >= 100) 0xFF2E7D32.toInt() else 0xFF1F5FBF.toInt()
+        else if (!engineStarted) (if (trIsTx()) 0xFF2A8C8C.toInt() else 0xFFE53935.toInt())
+        else if (::engine.isInitialized && engine.userPaused) 0xFF8D6E00.toInt() else if (trPct >= 100) 0xFF2E7D32.toInt() else 0xFF2A8C8C.toInt()
     } catch (_: Throwable) { 0xFFE53935.toInt() }
     /** (v639) لوحة Aa⏱ بتبويبين: 🔤 الشكل (حجم/توقيت/خط/خلفية) · ✨ الذكاء (لهجات/أسلوب/أدوات/شخصيات). يمين/شمال بيبدّل التبويب، ودوسة واحدة على أي أداة بتشغّلها */
     private fun tvSubDialog(startTab: Int = 0) {
@@ -1044,7 +1044,7 @@ class PlayerActivity : Activity(), Host {
         fun show(i: Int) {
             if (i == cur) return
             cur = i
-            for ((k, t) in tabViews.withIndex()) t.background = ui.box(if (k == i) 0xFF1F5FBF.toInt() else 0x33FFFFFF, 0x22FFFFFF, 12)
+            for ((k, t) in tabViews.withIndex()) t.background = ui.box(if (k == i) 0xFF8B6B50.toInt() else 0x33FFFFFF, 0x22FFFFFF, 12)
             bodyHolder.removeAllViews()
             bodyHolder.addView(if (i == 0) buildLook() else buildAi())
             bodyHolder.layoutParams?.let { it.height = if (i == 0) -2 else ui.dp(330); bodyHolder.layoutParams = it }
@@ -2447,7 +2447,7 @@ class PlayerActivity : Activity(), Host {
         val sb = android.text.SpannableStringBuilder(t); val st = sb.length
         sb.append("\n").append(s)
         sb.setSpan(android.text.style.RelativeSizeSpan(0.85f), st, sb.length, 0)
-        sb.setSpan(android.text.style.ForegroundColorSpan(0xFFBFD0FF.toInt()), st, sb.length, 0)
+        sb.setSpan(android.text.style.ForegroundColorSpan(0xFFE6D8C5.toInt()), st, sb.length, 0)
         return sb
     }
     fun pushNotif() {
@@ -2920,7 +2920,7 @@ class PlayerActivity : Activity(), Host {
             val chipB = b("▶ ترجم ▾", 0xFFE53935.toInt()) { chipRef?.let { trMainClick(it) } }   // (v415) زرار واحد بقايمة منسدلة
             chipRef = chipB
             // (v1137) ⏸/▶ مرسوم باليد (PausePlayView) — الإيموجي/الأيقونة كانت بتظهر شفافة فاضية
-            val pz = PausePlayView(this).apply { playing = true; background = ui.box(0xFF455A64.toInt(), 0x33FFFFFF, 8); isClickable = true; isFocusable = true; contentDescription = "إيقاف مؤقت للترجمة"
+            val pz = PausePlayView(this).apply { playing = true; background = ui.box(0xFF5A4B3F.toInt(), 0x33FFFFFF, 8); isClickable = true; isFocusable = true; contentDescription = "إيقاف مؤقت للترجمة"
                 setOnClickListener { if (::engine.isInitialized && engine.userPaused) beginTranslate() else pauseTranslate() } }   // (v438) إيقاف مؤقت / كمّل ظاهر جنب «ترجم» (كان جوه القايمة بس)
             val cx = stopBtn(8)   // (v741) مربع أبيض مرسوم باليد جوه الأحمر (كان بيختفي)
             tidy(chipB); dlB.setPadding(0, 0, 0, 0)
@@ -2939,7 +2939,7 @@ class PlayerActivity : Activity(), Host {
                 pz.visibility = if (started) View.VISIBLE else View.GONE
                 cx.visibility = if (started) View.VISIBLE else View.GONE
                 pz.playing = !paused
-                pz.background = ui.box(if (paused) 0xFF2E7D32.toInt() else 0xFF455A64.toInt(), 0x33FFFFFF, 8)
+                pz.background = ui.box(if (paused) 0xFF2E7D32.toInt() else 0xFF5A4B3F.toInt(), 0x33FFFFFF, 8)
                 paintSub()   // (v1137)
                 gearB.visibility = View.VISIBLE   // (v1097) ⚙ ظاهر دايمًا جنب «ترجم» حتى والترجمة شغّالة
                 lgB.visibility = if (caps().dialect) View.VISIBLE else View.GONE   // (v444) بس في الأوضاع اللي فيها لهجات
@@ -2947,15 +2947,15 @@ class PlayerActivity : Activity(), Host {
                     val tx = trIsTx()
                     val soft = hasSoftSubNow()
                     chipB.text = if (sfBusy.isNotEmpty()) sfChip() else if (sfLive.isNotEmpty()) "💬 ترجمة لحظية ▾" else if (soft) "💬 سوفت سب · " + modeShort() + " ▾" else (if (tx) "✍ تفريغ · " else "▶ ترجم · ") + modeShort() + " ▾"
-                    chipB.background = ui.box(if (soft) 0xFF2E7D32.toInt() else if (tx) 0xFF1F5FBF.toInt() else 0xFFE53935.toInt(), 0x33FFFFFF, 12)
+                    chipB.background = ui.box(if (soft) 0xFF2E7D32.toInt() else if (tx) 0xFF2A8C8C.toInt() else 0xFFE53935.toInt(), 0x33FFFFFF, 12)
                 }
                 else {
                     LoadUi.set(chipB, (Offline.liveShort()?.let { "$it · " } ?: modeChipTag()) + (if (paused) "⏸ " else if (trPct >= 100) "✅ " else "⏳ ") + trPct + "%" + dotsNow() + " ▾")
-                    chipB.background = ui.box(if (paused) 0xFF8D6E00.toInt() else if (trPct >= 100) 0xFF2E7D32.toInt() else 0xFF1F5FBF.toInt(), 0x33FFFFFF, 12)
+                    chipB.background = ui.box(if (paused) 0xFF8D6E00.toInt() else if (trPct >= 100) 0xFF2E7D32.toInt() else 0xFF2A8C8C.toInt(), 0x33FFFFFF, 12)
                 }
             }
         } else {
-            val pz2 = PausePlayView(this).apply { playing = true; background = ui.box(0xFF455A64.toInt(), 0x33FFFFFF, 10); isClickable = true; isFocusable = true; contentDescription = "إيقاف مؤقت للترجمة"
+            val pz2 = PausePlayView(this).apply { playing = true; background = ui.box(0xFF5A4B3F.toInt(), 0x33FFFFFF, 10); isClickable = true; isFocusable = true; contentDescription = "إيقاف مؤقت للترجمة"
                 setOnClickListener { if (::engine.isInitialized && engine.userPaused) beginTranslate() else pauseTranslate() } }   // (v438) (v1137) مرسوم باليد
             val cx2 = stopBtn(10)   // (v741)
             tidy(tr); dlB.setPadding(0, 0, 0, 0)
@@ -2971,12 +2971,12 @@ class PlayerActivity : Activity(), Host {
                 val tx = trIsTx()
                 val soft = hasSoftSubNow()
                 LoadUi.set(tr, if (!engineStarted) (if (sfBusy.isNotEmpty()) sfChip() else if (sfLive.isNotEmpty()) "💬 ترجمة لحظية ▾" else if (soft) "💬 سوفت سب · " + modeShort() + " ▾" else (if (tx) "✍ تفريغ · " else "▶ ترجم · ") + modeShort() + " ▾") else (Offline.liveShort()?.let { "$it · " } ?: modeChipTag()) + (if (paused) "⏸ " else if (trPct >= 100) "✅ " else "⏳ ") + trPct + "%" + dotsNow() + " ▾")
-                tr.background = ui.box(if (!engineStarted) (if (soft) 0xFF2E7D32.toInt() else if (tx) 0xFF1F5FBF.toInt() else 0xFFE53935.toInt()) else (if (paused) 0xFF8D6E00.toInt() else if (trPct >= 100) 0xFF2E7D32.toInt() else 0xFF1F5FBF.toInt()), 0x33FFFFFF, 10)
+                tr.background = ui.box(if (!engineStarted) (if (soft) 0xFF2E7D32.toInt() else if (tx) 0xFF2A8C8C.toInt() else 0xFFE53935.toInt()) else (if (paused) 0xFF8D6E00.toInt() else if (trPct >= 100) 0xFF2E7D32.toInt() else 0xFF2A8C8C.toInt()), 0x33FFFFFF, 10)
                 pz2.visibility = if (engineStarted) View.VISIBLE else View.GONE
                 cx2.visibility = if (engineStarted) View.VISIBLE else View.GONE
                 pz2.playing = !paused
                 paintSub()   // (v1137)
-                pz2.background = ui.box(if (paused) 0xFF2E7D32.toInt() else 0xFF455A64.toInt(), 0x33FFFFFF, 10)
+                pz2.background = ui.box(if (paused) 0xFF2E7D32.toInt() else 0xFF5A4B3F.toInt(), 0x33FFFFFF, 10)
             }
         }
         updateTr()
@@ -3197,7 +3197,7 @@ class PlayerActivity : Activity(), Host {
     /** شريحة اختيار: المختار أزرق */
     private fun shChip(label: String, on: Boolean = false, f: () -> Unit): View = ui.text(label, 12.5f, Color.WHITE, on).apply {
         gravity = Gravity.CENTER; isFocusable = true; setPadding(ui.dp(12), 0, ui.dp(12), 0)
-        background = ui.box(if (on) 0xFF1F5FBF.toInt() else 0x1AFFFFFF, if (on) 0x55FFFFFF else 0x22FFFFFF, 10); setOnClickListener { f() }
+        background = ui.box(if (on) 0xFF8B6B50.toInt() else 0x1AFFFFFF, if (on) 0x55FFFFFF else 0x22FFFFFF, 10); setOnClickListener { f() }
         tvRing(this)
     }
     private fun shChipLp() = ViewGroup.MarginLayoutParams(-2, ui.dp(36)).apply { setMargins(ui.dp(3), ui.dp(2), ui.dp(3), ui.dp(2)) }
@@ -3244,7 +3244,7 @@ class PlayerActivity : Activity(), Host {
     }
 
     // ===================== (v741) نوافذ حوار بنفس شكل الشيت (بدل AlertDialog القديم) =====================
-    private val SH_BLUE = 0xFF1F5FBF.toInt(); private val SH_RED = 0xFFB71C1C.toInt(); private val SH_GRAY = 0xFF455A64.toInt()
+    private val SH_BLUE = 0xFF8B6B50.toInt(); private val SH_RED = 0xFFB71C1C.toInt(); private val SH_GRAY = 0xFF5A4B3F.toInt()
     private class ShBtn(val t: String, val fill: Int, val f: () -> Unit)
     private fun shDialog(maxDp: Int = 330, onCancel: () -> Unit = {}, build: (LinearLayout, () -> Unit) -> Unit): android.app.Dialog {
         val dlg = android.app.Dialog(this)
@@ -3855,7 +3855,7 @@ class PlayerActivity : Activity(), Host {
     }
 
     /** (v445) خلفية القوايم المنسدلة: زجاج غامق بتدرّج + حد فاتح ورفيع بدل المستطيل المسطّح */
-    private fun glassPanelBg(): GradientDrawable = GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, if (MtGlass.on()) intArrayOf(0xE62E2E3C.toInt(), 0xEB121219.toInt()) else intArrayOf(0xF2242432.toInt(), 0xF5101017.toInt())).apply {   // (v894) موبايل: زجاج MeeTube — استدارة 24 + حافة مضيئة
+    private fun glassPanelBg(): GradientDrawable = GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, if (MtGlass.on()) intArrayOf(0xE63A322B.toInt(), 0xEB1A1612.toInt()) else intArrayOf(0xF22B241F.toInt(), 0xF5101017.toInt())).apply {   // (v894) موبايل: زجاج MeeTube — استدارة 24 + حافة مضيئة
         cornerRadius = ui.dp(if (MtGlass.on()) 24 else 18).toFloat(); setStroke(maxOf(1, if (MtGlass.on()) MtGlass.hair(ui.ctx.resources.displayMetrics.density) else ui.dp(1)), if (MtGlass.on()) 0x3DFFFFFF else 0x33FFFFFF)
     }
     /** (v450) اسم الوضع الحالي مختصر على زرار «ترجم» عشان تعرف الوضع من غير ما تفتح القايمة */
@@ -4608,7 +4608,7 @@ class PlayerActivity : Activity(), Host {
                 orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL
                 setPadding(ui.dp(14), ui.dp(10), ui.dp(14), ui.dp(10)); background = ui.box(0xE61A1C22.toInt(), 0x33FFFFFF, 14); alpha = REST_A
                 val t1 = ui.text("", 13f, Color.WHITE, true); nextUpTitleV = t1; addView(t1)
-                val t2 = ui.text("", 11f, 0xFFBFD0FF.toInt()); nextUpCountV = t2; addView(t2)
+                val t2 = ui.text("", 11f, 0xFFE6D8C5.toInt()); nextUpCountV = t2; addView(t2)
                 addView(ui.text(if (DeviceUi.isRemote(this@PlayerActivity)) "OK = شغّل دلوقتي  ·  رجوع = إلغاء" else "دوس على الكارت لإلغاء التشغيل التلقائي", 10f, 0xFF9AA0A6.toInt()))
                 setOnClickListener { cancelNextUp(); say("✖ التشغيل التلقائي للتالي اتلغى") }
             }
@@ -5094,7 +5094,7 @@ class PlayerActivity : Activity(), Host {
         // زرار تبديل عرض الترجمة: ترجمة ← أصلي ← ترجمة+أصلي تحت ← أصلي فوق+ترجمة تحت
         val dualCycle = listOf(0, 3, 1, 4); val dualShort = mapOf(0 to "فردي", 3 to "أصلي", 1 to "مزدوج", 4 to "مزدوج (أصلي فوق)", 2 to "إنجليزي")
         fun dualLabel() = "💬 وضع الترجمة: " + (dualShort[curStyle().dual] ?: "فردي")
-        fun dualCircleBg() = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(if (curStyle().dual == 0) 0xE00F0F12.toInt() else 0xFF1F5FBF.toInt()); setStroke(ui.dp(1), if (MtGlass.on()) 0x40FFFFFF else 0x1FFFFFFF) }
+        fun dualCircleBg() = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(if (curStyle().dual == 0) 0xE00F0F12.toInt() else 0xFF8B6B50.toInt()); setStroke(ui.dp(1), if (MtGlass.on()) 0x40FFFFFF else 0x1FFFFFFF) }
         fun cycleDual(v: TextView) {
             val n = dualCycle[(dualCycle.indexOf(curStyle().dual) + 1) % dualCycle.size]
             Cfg.put("sub_dual", n.toString()); restyle(); v.text = "💬"; v.background = dualCircleBg()
@@ -5207,7 +5207,7 @@ class PlayerActivity : Activity(), Host {
         }
         val ccB = mini("CC") { toggleCc() }.apply { textSize = 11f; typeface = android.graphics.Typeface.DEFAULT_BOLD }
         ccFsB = ccB
-        fun loopBg() = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(if (Cfg.str("loop", "0") == "1") 0xFF1F5FBF.toInt() else 0xE00F0F12.toInt()); setStroke(ui.dp(1), if (MtGlass.on()) 0x40FFFFFF else 0x1FFFFFFF) }
+        fun loopBg() = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(if (Cfg.str("loop", "0") == "1") 0xFF8B6B50.toInt() else 0xE00F0F12.toInt()); setStroke(ui.dp(1), if (MtGlass.on()) 0x40FFFFFF else 0x1FFFFFFF) }
         val loopB = mini("🔂") { v -> Cfg.put("loop", if (Cfg.str("loop", "0") == "1") "0" else "1"); v.background = loopBg(); giShow(if (Cfg.str("loop", "0") == "1") "🔂 تكرار الفيديو: شغّال" else "🔂 تكرار الفيديو: مقفول", Gravity.CENTER) }.apply { background = loopBg() }
         val dualB = mini("💬") { v -> cycleDual(v) }.apply { background = dualCircleBg() }
         // (v208) زرار 🔑 بيبدّل وضع المفاتيح (1→2→3→4) ويوصل للمحرك الشغّال فورًا — زي زرار اللغة
@@ -5384,7 +5384,7 @@ class PlayerActivity : Activity(), Host {
         val aiBtns = HashMap<String, TextView>()
         val aiApplyB = pd("▶ طبّق المحدد (0)") { applyAiOptions() }
         fun paintAi() {
-            for ((id, b) in aiBtns) { val on = id in aiSel; b.text = (if (on) "✓ " else "") + aiBase[id]; b.background = ui.box(if (on) 0xFF1F5FBF.toInt() else 0xE0141418.toInt(), 0x1FFFFFFF, 12) }
+            for ((id, b) in aiBtns) { val on = id in aiSel; b.text = (if (on) "✓ " else "") + aiBase[id]; b.background = ui.box(if (on) 0xFF8B6B50.toInt() else 0xE0141418.toInt(), 0x1FFFFFFF, 12) }
             aiApplyB.text = "▶ طبّق المحدد (${aiSel.size})"; aiApplyB.alpha = if (aiSel.isEmpty()) 0.45f else 1f
         }
         for ((id, base) in aiBase) {

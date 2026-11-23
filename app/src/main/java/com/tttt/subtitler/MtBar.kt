@@ -665,7 +665,7 @@ object MtBar {
 
     private fun mtGlassPanelBg(u: Ui): GradientDrawable {
         val cols = if (MtGlass.on()) {
-            intArrayOf(0xE62E2E3C.toInt(), 0xEB121219.toInt())
+            intArrayOf(0xE63A322B.toInt(), 0xEB1A1612.toInt())
         } else {
             intArrayOf(0xF2332C26.toInt(), 0xF51B1714.toInt())
         }
@@ -1066,7 +1066,7 @@ object MtBar {
         for (it in items) {
             views.add(u.text(it.msg, 11.5f, 0xFFF1F3F4.toInt()).apply { setPadding(dp(a, 10), 0, dp(a, 10), dp(a, 6)) })
         }
-        if (items.isEmpty()) views.add(u.text("مفيش إشعارات", 11.5f, 0xFFC9CED6.toInt()).apply { setPadding(dp(a, 10), 0, dp(a, 10), dp(a, 6)) })
+        if (items.isEmpty()) views.add(u.text("مفيش إشعارات", 11.5f, 0xFFCDBFAE.toInt()).apply { setPadding(dp(a, 10), 0, dp(a, 10), dp(a, 6)) })
         popupViews(a, anchor, true, views, 220)
     }
 
@@ -1297,7 +1297,7 @@ object MtBar {
         row.addView(trChip)
         row.addView(u.fsCircle("⚙") { MtTranslate.translateMenu(trChip) }.apply {
             textSize = 14f
-            background = u.box(0xE0374151.toInt(), 0x33FFFFFF, 12)
+            background = u.box(0xE04A3F36.toInt(), 0x33FFFFFF, 12)
             layoutParams = lp(dp(a, 38))
         })
         row.addView(u.fsBtn("🔁 إعادة") {
@@ -1312,7 +1312,7 @@ object MtBar {
                 }
             }
         }.apply {
-            background = u.box(0xFF6D28A8.toInt(), 0x33FFFFFF, 12)
+            background = u.box(0xFF8B6B50.toInt(), 0x33FFFFFF, 12)
             layoutParams = lp(-2)
         })
         pauseB = u.fsCircle("▮▮") {

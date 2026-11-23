@@ -60,13 +60,13 @@ class VidMark(ctx: Context, private val onAct: (String) -> Unit) : FrameLayout(c
         col.addView(row(head("📱 الموبايل"), head("📺 التلفزيون")))
         col.addView(row(btn("▶ مشاهدة", white, Color.WHITE, "mw"), btn("▶ مشاهدة", white, Color.WHITE, "tw")))
         col.addView(row(btn("🌐 مشاهدة بالترجمة", green, Color.WHITE, "mt"), btn("🌐 مشاهدة بالترجمة", green, Color.WHITE, "tt")))
-        col.addView(row(btn("⬇ تحميل", Color.WHITE, 0xFF1E6FE0.toInt(), "dl")))
+        col.addView(row(btn("⬇ تحميل", Color.WHITE, 0xFF8B6B50.toInt(), "dl")))
         panel.addView(col, LayoutParams(-1, -1))
         panel.addView(TextView(context).apply {
             text = "✕"; setTextColor(Color.WHITE); textSize = 14f; gravity = Gravity.CENTER; isClickable = true
             setOnClickListener { onAct("close") }
         }, LayoutParams((30 * d).toInt(), (30 * d).toInt(), Gravity.TOP or Gravity.LEFT))
-        panel.background = GradientDrawable().apply { setColor(0xF51E6FE0.toInt()); cornerRadius = 14 * d; setStroke((2 * d).toInt(), 0xCCFFFFFF.toInt()) }
+        panel.background = GradientDrawable().apply { setColor(0xF58B6B50.toInt()); cornerRadius = 14 * d; setStroke((2 * d).toInt(), 0xCCFFFFFF.toInt()) }
         panel.isClickable = true; panel.elevation = 6 * d
         addView(panel, LayoutParams(0, 0, Gravity.TOP or Gravity.LEFT))
     }

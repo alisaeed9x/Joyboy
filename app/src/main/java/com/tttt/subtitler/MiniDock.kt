@@ -47,7 +47,7 @@ class MiniDock(
         clipToOutline = true
     }
     private val title = ui.text("", 13f, Color.WHITE, true).apply { setSingleLine(); ellipsize = android.text.TextUtils.TruncateAt.MARQUEE; isSelected = true; maxWidth = ui.dp(120) }
-    private val sub = ui.text("", 11f, 0xFFB8BCC8.toInt()).apply { setSingleLine(); ellipsize = android.text.TextUtils.TruncateAt.END; maxWidth = ui.dp(120) }
+    private val sub = ui.text("", 11f, 0xFFCDBFAE.toInt()).apply { setSingleLine(); ellipsize = android.text.TextUtils.TruncateAt.END; maxWidth = ui.dp(120) }
     private val btnPrev = btn("⏮") { MusicEngine.step(-1) }
     private val btnPlay = btn("⏸") { MusicEngine.toggle() }
     private val btnNext = btn("⏭") { MusicEngine.step(1) }
@@ -68,7 +68,7 @@ class MiniDock(
     // ===== (v730) لوحة التحكم الموسّعة: تقدّم + صوت + قايمة التالي =====
     private var seeking = false
     private var queueKey = ""
-    private val muted = 0xFFB8BCC8.toInt()
+    private val muted = 0xFFCDBFAE.toInt()
     private val seek = SeekBar(act).apply { layoutDirection = android.view.View.LAYOUT_DIRECTION_LTR; max = 1000 }
     private val volBar = SeekBar(act).apply { layoutDirection = android.view.View.LAYOUT_DIRECTION_LTR; max = 100 }
     private val timeL = ui.text("0:00", 11f, muted)
@@ -233,14 +233,14 @@ class MiniDock(
             val key = if (on) 1 else 0
             if (glassKey != key) {
                 glassKey = key
-                val tint = if (on) 0xB02A3F6B.toInt() else MeeRes.color("meetube_toast_glass", 0xA3303034.toInt(), 0xA3303034.toInt())
+                val tint = if (on) 0xB04A3A2C.toInt() else MeeRes.color("meetube_toast_glass", 0xA3303034.toInt(), 0xA3303034.toInt())
                 try { com.tttt.subtitler.mtui.GlassDrawable.apply(dock, src, 0, tint) } catch (_: Throwable) { glassKey = -1 }
             }
             if (glassKey != -1) return
         }
         glassKey = -1
-        dock.background = if (MtGlass.on()) MtGlass.floatPill(ui.dp(if (expanded) 28 else 26).toFloat(), dock.resources.displayMetrics.density, if (on) 0xFF8FB4FF.toInt() else 0)   // (v901) زجاج MeeTube
-            else ui.box(0xEE1F1A16.toInt(), if (on) 0xFF8FB4FF.toInt() else 0x55FFFFFF, if (expanded) 28 else 26, 2)
+        dock.background = if (MtGlass.on()) MtGlass.floatPill(ui.dp(if (expanded) 28 else 26).toFloat(), dock.resources.displayMetrics.density, if (on) 0xFFD4B896.toInt() else 0)   // (v901) زجاج MeeTube
+            else ui.box(0xEE1F1A16.toInt(), if (on) 0xFFD4B896.toInt() else 0x55FFFFFF, if (expanded) 28 else 26, 2)
     }
 
     /** مكان الدايرة/الكبسولة: لازقة في الحافة (شمال/يمين) بالارتفاع المحفوظ — من غير ما تطلع بره الشاشة */

@@ -139,7 +139,7 @@ class OrbView(ctx: Context) : View(ctx) {
             c.drawCircle(x, y, r, p)
         } else {
             // (v241) مفيش بوستر: الروبوت جوه الفقاعة (no_poster) هو اللي بيلف مكان الغلاف
-            p.shader = LinearGradient(x - r, y - r, x + r, y + r, 0xFF2A2250.toInt(), 0xFF120C26.toInt(), Shader.TileMode.CLAMP)
+            p.shader = LinearGradient(x - r, y - r, x + r, y + r, 0xFF3A2E24.toInt(), 0xFF1A1410.toInt(), Shader.TileMode.CLAMP)
             c.drawCircle(x, y, r, p)
             val g = placeholder
             if (g != null) {
@@ -172,7 +172,7 @@ class OrbView(ctx: Context) : View(ctx) {
 
         // 2) الحلقة الزجاجية
         p.reset(); p.isAntiAlias = true
-        p.shader = RadialGradient(cx, cy, ro, intArrayOf(0xEE050508.toInt(), 0xD40B0B12.toInt(), 0xA0242434.toInt(), 0x66FFFFFF),
+        p.shader = RadialGradient(cx, cy, ro, intArrayOf(0xEE050508.toInt(), 0xD40B0B12.toInt(), 0xA02E2620.toInt(), 0x66FFFFFF),
             floatArrayOf(0f, 0.6f, 0.9f, 1f), Shader.TileMode.CLAMP)
         c.drawCircle(cx, cy, ro, p)
         // لمعتين على الجنبين جوه الزجاج (زي انعكاس الضوء)

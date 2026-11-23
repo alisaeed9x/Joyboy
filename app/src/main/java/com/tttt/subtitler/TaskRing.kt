@@ -63,7 +63,7 @@ class TaskRingView(ctx: Context, private val accent: Int) : View(ctx) {
     private val track = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; color = 0x33FFFFFF; strokeWidth = 4f * d }
     private val arc = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeCap = Paint.Cap.ROUND; strokeWidth = 4f * d; color = accent }
     private val txt = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0xFFFFFFFF.toInt(); textAlign = Paint.Align.CENTER; typeface = Typeface.DEFAULT_BOLD; textSize = 12f * d }
-    private val sub = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0xFFBFC6D4.toInt(); textAlign = Paint.Align.CENTER; typeface = Typeface.DEFAULT; textSize = 8.5f * d }
+    private val sub = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0xFFCDBFAE.toInt(); textAlign = Paint.Align.CENTER; typeface = Typeface.DEFAULT; textSize = 8.5f * d }
     private val badge = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = if (MtGlass.on()) 0xFF7A7A7A.toInt() else 0xFFE53935.toInt() }   // (v903)
     private val badgeTxt = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0xFFFFFFFF.toInt(); textAlign = Paint.Align.CENTER; typeface = Typeface.DEFAULT_BOLD; textSize = 9.5f * d }
     private val box = RectF()
@@ -81,7 +81,7 @@ class TaskRingView(ctx: Context, private val accent: Int) : View(ctx) {
         val inset = 4f * d + track.strokeWidth / 2f
         box.set(w / 2f - r + inset, h / 2f - r + inset, w / 2f + r - inset, h / 2f + r - inset)
         c.drawArc(box, 0f, 360f, false, track)
-        arc.color = if (dim) 0xFF8A93A6.toInt() else accent
+        arc.color = if (dim) 0xFF8F8272.toInt() else accent
         if (frac > 0.005f) c.drawArc(box, -90f, 360f * frac.coerceIn(0f, 1f), false, arc)
         val cy = h / 2f
         if (small.isEmpty()) c.drawText(main, w / 2f, cy - (txt.ascent() + txt.descent()) / 2f, txt)

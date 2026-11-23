@@ -144,7 +144,7 @@ object NavLoadBar {
         bar.setBackgroundColor(0x22FFFFFF)
         val glow = View(ctx)
         glow.background = android.graphics.drawable.GradientDrawable(android.graphics.drawable.GradientDrawable.Orientation.LEFT_RIGHT,
-            intArrayOf(0x008FB4FF, 0xFF8FB4FF.toInt(), 0x008FB4FF))
+            intArrayOf(0x00D4B896, 0xFFD4B896.toInt(), 0x00D4B896))
         bar.addView(glow, android.widget.FrameLayout.LayoutParams((140 * den).toInt(), -1))
         var anim: android.animation.ValueAnimator? = null
         bar.addOnLayoutChangeListener { _, l, _, r, _, _, _, _, _ ->

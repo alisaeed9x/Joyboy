@@ -290,7 +290,7 @@ object SendPill {
         val d = act.resources.displayMetrics.density
         fun dp(v: Int) = (v * d).toInt()
         val title = TextView(act).apply { textSize = 13f; setTextColor(Color.WHITE); typeface = android.graphics.Typeface.DEFAULT_BOLD; setSingleLine(); ellipsize = android.text.TextUtils.TruncateAt.END }
-        val sub = TextView(act).apply { textSize = 11f; setTextColor(0xFFB8C4DA.toInt()); setSingleLine(); ellipsize = android.text.TextUtils.TruncateAt.END }
+        val sub = TextView(act).apply { textSize = 11f; setTextColor(0xFFCDBFAE.toInt()); setSingleLine(); ellipsize = android.text.TextUtils.TruncateAt.END }
         lateinit var p: Pill
         val bar = object : View(act) {
             private val bg = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0x33FFFFFF }
@@ -306,7 +306,7 @@ object SendPill {
         val root = LinearLayout(act).apply {
             orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL
             setPadding(dp(18), dp(10), dp(18), dp(12)); elevation = dp(12).toFloat()
-            background = android.graphics.drawable.GradientDrawable().apply { setColor(0xF0151B2B.toInt()); setStroke(dp(1), 0x668FB4FF); cornerRadius = dp(22).toFloat() }
+            background = android.graphics.drawable.GradientDrawable().apply { setColor(0xF01F1A16.toInt()); setStroke(dp(1), 0x66D4B896); cornerRadius = dp(22).toFloat() }
             addView(title, LinearLayout.LayoutParams(-1, -2))
             addView(sub, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(1) })
             addView(bar, LinearLayout.LayoutParams(-1, dp(6)).apply { topMargin = dp(7) })

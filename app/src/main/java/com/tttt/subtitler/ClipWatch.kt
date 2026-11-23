@@ -290,7 +290,7 @@ class ClipOrb(ctx: Context) : View(ctx) {
             p.style = Paint.Style.STROKE; p.strokeWidth = 1f * d; p.color = 0x99FFFFFF.toInt(); c.drawRoundRect(box, hg / 2f, hg / 2f, p)
             p.style = Paint.Style.FILL; p.color = Color.WHITE; c.drawText(txt, l + w / 2f, tp + hg / 2f + 3.4f * d, p)
         }
-        if (files > 0) chip("📦" + (if (files > 9) "9+" else files.toString()), 0xFF1E6FE0.toInt(), cx - rc * 0.78f, cy - rc * 0.78f)
+        if (files > 0) chip("📦" + (if (files > 9) "9+" else files.toString()), 0xFF8B6B50.toInt(), cx - rc * 0.78f, cy - rc * 0.78f)
         if (links > 0) chip("🔗" + (if (links > 9) "9+" else links.toString()), 0xFFEF6C00.toInt(), cx + rc * 0.78f, cy + rc * 0.78f)
     }
 }
@@ -383,7 +383,7 @@ fun Activity.checkClipboard(onPlay: (ClipVideo) -> Unit, onAct: (String, ClipVid
         btns.addView(row, LinearLayout.LayoutParams(-2, -2).apply { gravity = Gravity.END; topMargin = (8 * d).toInt() })
     }
     addBtn("مشاهدة ع التلفزيون", "📺", 0xFFE53935.toInt(), Color.WHITE, "tv")
-    addBtn("تحميل", "⬇", 0xFF1E6FE0.toInt(), Color.WHITE, "dl")
+    addBtn("تحميل", "⬇", 0xFF8B6B50.toInt(), Color.WHITE, "dl")
     addBtn("مشاهدة وترجمة", "🌐", 0xFF34C759.toInt(), Color.WHITE, "tr")
     addBtn("مشاهدة بس", "▶", 0xFFFFC107.toInt(), 0xFF202020.toInt(), "watch")
     addBtn("إلغاء", "✕", 0xFF757575.toInt(), Color.WHITE, "cancel")

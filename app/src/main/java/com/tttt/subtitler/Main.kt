@@ -1155,7 +1155,7 @@ class MainActivity : Activity() {
         val prev = SubtitleView(this).apply { layoutDirection = View.LAYOUT_DIRECTION_RTL }
         val demo = Sub(0.0, 5.0, "I met Ahmed in Cairo yesterday and we talked for hours about everything", "قابلت أحمد في القاهرة امبارح واتكلمنا ساعات عن كل حاجة في الدنيا",
             "female", "unknown", "none", listOf("أحمد"), listOf("القاهرة"), false, false, -1, "", false, "", false, "I met Ahmed in Cairo yesterday")
-        val holder = FrameLayout(this).apply { setBackgroundColor(0xFF1B2733.toInt()); setPadding(0, ui.dp(30), 0, ui.dp(10)); addView(prev, FrameLayout.LayoutParams(-1, -2, Gravity.BOTTOM)) }
+        val holder = FrameLayout(this).apply { setBackgroundColor(0xFF1F1A16.toInt()); setPadding(0, ui.dp(30), 0, ui.dp(10)); addView(prev, FrameLayout.LayoutParams(-1, -2, Gravity.BOTTOM)) }
         fun st() = SubStyle.load { k, d -> Cfg.str(k, d) }
         fun showDemo() {
             val p = st()

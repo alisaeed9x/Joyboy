@@ -54,7 +54,7 @@ class PipSubBar(private val ctx: Context, private val rect: () -> IntArray?, pri
                 text = a.first; setTextColor(Color.WHITE); typeface = Typeface.DEFAULT_BOLD; gravity = Gravity.CENTER; maxLines = 1
                 setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f)
                 setPadding((5 * d).toInt(), (7 * d).toInt(), (5 * d).toInt(), (7 * d).toInt())
-                background = GradientDrawable().apply { setColor(if (i == 0) 0xF03F6FD1.toInt() else if (i == actions.size - 1) 0xF0C0432F.toInt() else 0xF0546E7A.toInt()); cornerRadius = 14 * d }
+                background = GradientDrawable().apply { setColor(if (i == 0) 0xF08B6B50.toInt() else if (i == actions.size - 1) 0xF0C0432F.toInt() else 0xF06F5E50.toInt()); cornerRadius = 14 * d }
                 setOnClickListener { try { a.second() } catch (_: Throwable) {} }
             }
             row.addView(b, android.widget.LinearLayout.LayoutParams(0, android.widget.LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { setMargins((2 * d).toInt(), 0, (2 * d).toInt(), 0) })

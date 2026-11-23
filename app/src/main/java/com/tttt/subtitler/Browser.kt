@@ -1016,7 +1016,7 @@ class BrowserActivity : Activity() {
         "<body style='font-family:sans-serif;background:#16161a;color:#eee;text-align:center;padding:48px 18px'>" +
         "<h2>⚠ الصفحة ما فتحتش</h2><p style='color:#bbb'>" + TextUtils.htmlEncode(msg) + "</p>" +
         "<p style='color:#888;word-break:break-all;direction:ltr;font-size:12px'>" + TextUtils.htmlEncode(url) + "</p>" +
-        "<button style='padding:12px 28px;font-size:16px;border:0;border-radius:10px;background:#4f8cff;color:#fff' onclick='location.replace(" + JSONObject.quote(url) + ")'>جرّب تاني</button></body></html>"
+        "<button style='padding:12px 28px;font-size:16px;border:0;border-radius:10px;background:#8B6B50;color:#fff' onclick='location.replace(" + JSONObject.quote(url) + ")'>جرّب تاني</button></body></html>"
 
     // ===== إدارة التبويبات =====
     /** url = null: تبويب فاضي بيستنى WebViewTransport (نافذة جديدة من صفحة) */
@@ -1216,7 +1216,7 @@ class BrowserActivity : Activity() {
         col.addView(IconTextView(this).apply { text = "🔒 المتصفح المخفي مقفول"; textSize = 20f; setTextColor(Color.WHITE); gravity = Gravity.CENTER; typeface = android.graphics.Typeface.DEFAULT_BOLD })
         col.addView(IconTextView(this).apply { text = "شغلك لسه مفتوح زي ما سيبته"; textSize = 13f; setTextColor(0xFFB0B0B0.toInt()); gravity = Gravity.CENTER; setPadding(0, ui.dp(4), 0, ui.dp(18)) })
         col.addView(pb("🔓 دخول بالبصمة", 0xFF6A1B9A.toInt()) { privAuth { privLocked = false; hidePrivLock() } })
-        col.addView(pb("🔍 بحث جديد", 0xFF1E6BFF.toInt()) { privToGoogle(false) })
+        col.addView(pb("🔍 بحث جديد", 0xFF8B6B50.toInt()) { privToGoogle(false) })
         col.addView(pb("🚪 خروج", 0xFFD32F2F.toInt()) { privToGoogle(true) })
         // (v1168) لاندسكيب: الغطا فيه سكرول عشان الأزرار ما تتقطعش
         val sv = android.widget.ScrollView(this).apply {
@@ -1410,7 +1410,7 @@ class BrowserActivity : Activity() {
 
     // ===== (v647) الزرار العايم 📺① (مزامنة الأحداث CoSurf) — (v649) ② المرآة اتشالت =====
     private var coBtn1: TextView? = null
-    private val coOff = 0xF2232838.toInt(); private val coOn = 0xFF2E9E5B.toInt()
+    private val coOff = 0xF22B241F.toInt(); private val coOn = 0xFF2E9E5B.toInt()
     /** لسان (كبسولة) طالع من الجنب الشمال — نفس شكل لسان التلفزيون/الكنترولر على اليمين بس مقلوب */
     private fun coTab(t: String, onTap: () -> Unit): TextView = TextView(this).apply {
         text = t; textSize = 13f; setTextColor(Color.WHITE); gravity = Gravity.CENTER; includeFontPadding = false
@@ -2505,7 +2505,7 @@ class BrowserActivity : Activity() {
         // الترتيب من اليمين لليسار (قراءة عربي): مشاهدة موبايل · بالترجمة موبايل · مشاهدة تلفزيون · بالترجمة تلفزيون · تحميل
         // (v975) التحميل في النص: مشاهدة موبايل · بالترجمة موبايل · ⬇ تحميل (نص) · مشاهدة تلفزيون · بالترجمة تلفزيون
         val acts = listOf(
-            Triple("mw", "📱\nمشاهدة", 0xFF2E9E5B.toInt()), Triple("mt", "📱🌐\nبالترجمة", 0xFF1E6BFF.toInt()),
+            Triple("mw", "📱\nمشاهدة", 0xFF2E9E5B.toInt()), Triple("mt", "📱🌐\nبالترجمة", 0xFF8B6B50.toInt()),
             Triple("dl", "⬇\nتحميل", 0xFF455A64.toInt()),
             Triple("tw", "📺\nمشاهدة", 0xFFE53935.toInt()), Triple("tt", "📺🌐\nبالترجمة", 0xFF7B1FA2.toInt()))
         val rad = ui.dp(108).toFloat(); val sz = ui.dp(58)

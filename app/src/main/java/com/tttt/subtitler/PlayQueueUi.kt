@@ -24,8 +24,8 @@ object PlayQueueUi {
     private const val BG = 0xFF1B1714.toInt()
     private const val CARD = 0xFF241E19.toInt()
     private const val LINE = 0xFF3F362E.toInt()
-    private const val DIM = 0xFF8FA3C8.toInt()
-    private const val ACC = 0xFF5B8DEF.toInt()
+    private const val DIM = 0xFFB5A593.toInt()
+    private const val ACC = 0xFF4DB6AC.toInt()
     private const val RED = 0xFFE5484D.toInt()
 
     private fun short(ref: String): String = try { android.net.Uri.parse(ref).let { (it.host ?: "") + (it.lastPathSegment?.let { s -> "/" + s } ?: "") } } catch (_: Throwable) { ref }.ifBlank { ref }.take(60)

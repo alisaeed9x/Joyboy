@@ -51,7 +51,7 @@ object UniSearch {
         }
         fun add(v: View) = box.addView(v, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = ui.dp(5) })
         fun webBtn(q: String): View = ui.text("🌐 ابحث في المتصفح عن «" + q.take(40) + "»", 14f, Color.WHITE, true).apply {
-            gravity = Gravity.CENTER; setPadding(ui.dp(18), ui.dp(13), ui.dp(18), ui.dp(13)); background = ui.box(0xFF4C6FB5.toInt(), 0xFF4C6FB5.toInt(), 14)
+            gravity = Gravity.CENTER; setPadding(ui.dp(18), ui.dp(13), ui.dp(18), ui.dp(13)); background = ui.box(0xFF8B6B50.toInt(), 0xFF8B6B50.toInt(), 14)
             setOnClickListener { try { dlg.dismiss() } catch (_: Throwable) {}; onWeb(q) }
         }
         fun run(q: String) {

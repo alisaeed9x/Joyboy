@@ -168,10 +168,10 @@ class LinkBubble(
         col.addView(orb, LinearLayout.LayoutParams(size, size).apply { gravity = Gravity.END })
         col.addView(btns, LinearLayout.LayoutParams(-2, -2).apply { gravity = Gravity.END })
         addBtn("مشاهدة ع التلفزيون", "📺", 0xFFE53935.toInt(), Color.WHITE, "tv")
-        addBtn("تحميل", "⬇", 0xFF1E6FE0.toInt(), Color.WHITE, "dl")
+        addBtn("تحميل", "⬇", 0xFF8B6B50.toInt(), Color.WHITE, "dl")
         addBtn("مشاهدة وترجمة", "🌐", 0xFF34C759.toInt(), Color.WHITE, "tr")
         addBtn("مشاهدة بس", "▶", 0xFFFFC107.toInt(), 0xFF202020.toInt(), "watch")
-        addBtn("افتح في متصفح Joyboy", "🧭", 0xFF7E57C2.toInt(), Color.WHITE, "web")
+        addBtn("افتح في متصفح Joyboy", "🧭", 0xFF6F5640.toInt(), Color.WHITE, "web")
         addBtn("إلغاء", "✕", 0xFF757575.toInt(), Color.WHITE, "cancel")
         orb.setOnClickListener {
             val u = links[idx]
