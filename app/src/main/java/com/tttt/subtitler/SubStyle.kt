@@ -47,13 +47,10 @@ data class SubStyle(
         /** ألوان سطور المتحدثين المتداخلين: لون الجنس أولًا، ولو اتكرر لون ياخد السطر لون تاني من الباليت عشان كل متحدث يبان لوحده */
         fun lineColors(subs: List<Sub>): List<Int> {
             // ألوان إضافية (من غير لون الجنس التاني) لو متحدثين من نفس الجنس: كل سطر لونه مختلف دايمًا
-            val extra = listOf(0xFF80DEEA.toInt(), 0xFFB9F6CA.toInt(), 0xFFFFAB91.toInt(), 0xFFCE93D8.toInt())
-            val used = HashSet<Int>(); val out = ArrayList<Int>()
-            for (x in subs) {
-                var c = if (x.gender == "female") FEMALE else MALE
-                if (c in used) c = extra.firstOrNull { it !in used && it != MALE && it != FEMALE } ?: c
-                used.add(c); out.add(c)
-            }
+            // (v1199) من غير لون الجنس: أول سطر أبيض والباقي ألوان مختلفة عن بعض (من غير الأصفر — محجوز للأسماء)
+            val pal = listOf(WHITE, 0xFF80DEEA.toInt(), 0xFFB9F6CA.toInt(), 0xFFFFAB91.toInt(), 0xFFCE93D8.toInt())
+            val out = ArrayList<Int>()
+            for ((i, _) in subs.withIndex()) out.add(pal[i % pal.size])
             return out
         }
         /** تقسيم الجملة الطويلة لسطور متوازنة بحد أقصى كلمات للسطر */
@@ -74,8 +71,7 @@ data class SubStyle(
         s.translated.startsWith("📻") -> WHITE   // كلام من راديو/إذاعة: أبيض عادي من غير لون جنس
         plain -> WHITE
         uniOn -> runCatching { Theme.parse(uniColor) }.getOrDefault(WHITE)
-        s.gender == "female" -> FEMALE
-        else -> MALE
+        else -> WHITE   // (v1199) لون الجنس (أزرق/وردي) اتشال — الجنس مش دايمًا معروف: الترجمة بيضا، والأسماء بس صفرا
     }
     /** وضع العرض (dual): 0 = ترجمة فقط، 1 = ترجمة فوق والأصلي تحت، 2 = الإنجليزي (pivot) تحت، 3 = الأصلي فقط، 4 = الأصلي فوق والترجمة تحت */
     fun secondary(s: Sub): String = when (dual) {

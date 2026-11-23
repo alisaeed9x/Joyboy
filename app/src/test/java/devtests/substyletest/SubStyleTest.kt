@@ -16,8 +16,8 @@ fun main() {
     val st = SubStyle.load { k, def -> mapOf("sub_scale" to "999", "sub_bgopa" to "-5", "sub_anim" to "bogus", "sub_dual" to "2")[k] ?: def }
     check("load بيقصّ القيم", st.scale == 200 && st.bgOpa == 0 && st.anim == "default" && st.dual == 2)
     check("13 أنيميشن و22 خط", SubStyle.entrances.size == 13 && SubStyle.fonts.size == 22)
-    check("لون الذكر", d.copy(plain = false).colorFor(mk("male")) == SubStyle.MALE)
-    check("لون الأنثى", d.copy(plain = false).colorFor(mk("female")) == SubStyle.FEMALE)
+    check("لون الذكر: أبيض (من غير لون جنس)", d.copy(plain = false).colorFor(mk("male")) == SubStyle.WHITE)
+    check("لون الأنثى: أبيض (من غير لون جنس)", d.copy(plain = false).colorFor(mk("female")) == SubStyle.WHITE)
     check("لون موحّد", d.copy(plain = false, uniOn = true, uniColor = "#FFE600").colorFor(mk("female")) == 0xFFFFE600.toInt())
     check("نص أبيض عادي يغلب", d.copy(plain = true, uniOn = true).colorFor(mk("female")) == SubStyle.WHITE)
     check("سطر ثانوي: الأصلي", d.copy(dual = 1).secondary(mk()) == "hello")
@@ -36,9 +36,9 @@ fun main() {
     check("fontPx بيحترم الحدود والسكيل", SubStyle.fontPx(1080, 2f, 100) == 36f && SubStyle.fontPx(300, 2f, 200) == 52f)
     check("الافتراضي زي الـ HTML: ألوان وتمييز (مش أبيض بس) + تقسيم العرض مقفول", !d.plain && !d.splitOn && SubStyle.load { _, def -> def }.let { !it.plain && !it.splitOn })
     check("قسّم عند الترقيم: شغّال افتراضيًا", d.punctOn && SubStyle.load { _, def -> def }.punctOn)
-    check("ألوان المتحدثين: نفس الجنس = لونين مختلفين", SubStyle.lineColors(listOf(mk("male"), mk("male"))).let { it[0] != it[1] } && SubStyle.lineColors(listOf(mk("male"), mk("female"))) == listOf(SubStyle.MALE, SubStyle.FEMALE))
+    check("ألوان المتحدثين: كل سطر لونه مختلف", SubStyle.lineColors(listOf(mk("male"), mk("male"))).let { it[0] != it[1] } && SubStyle.lineColors(listOf(mk("male"), mk("female"))).let { it[0] == SubStyle.WHITE && it[1] != it[0] })
     check("plain: حجم ثابت ومن غير تمييز", d.copy(plain = true).sizeFor(1) == 1f && d.copy(plain = true).sizeFor(20) == 1f && d.copy(plain = true).highlights("أحمد", mk(ppl = listOf("أحمد"))).isEmpty())
-    check("غير plain: تكبير تلقائي وألوان جنس شغالة", d.copy(plain = false).sizeFor(1) == 1.18f && d.copy(plain = false).colorFor(mk("female")) == SubStyle.FEMALE)
+    check("غير plain: تكبير تلقائي وأبيض عادي", d.copy(plain = false).sizeFor(1) == 1.18f && d.copy(plain = false).colorFor(mk("female")) == SubStyle.WHITE)
     check("mainText ما بيقسّمش (التقسيم بالتتابع)", d.mainText(mk(tr = "1 2 3 4 5 6 7 8 9 10")) == "1 2 3 4 5 6 7 8 9 10")
     if (fails > 0) { println("فشل $fails"); System.exit(1) } else println("كل الاختبارات نجحت")
 }

@@ -222,7 +222,7 @@ object Cfg {
         for (k in listOf("tone_style", "style")) { val v = p.all[k]; if (v is String && v == "+18") e.putString(k, "تلقائي") }
         e.putInt("cfgv", CfgCodec.VERSION).apply()
     }
-    fun str(k: String, d: String = "") = CfgCodec.str(raw(k), d)
+    fun str(k: String, d: String = "") = TrNorm.fix(k, CfgCodec.str(raw(k), d))   // (v1199) لهجات/أساليب قديمة بتتوحّد (TrNorm)
     fun bool(k: String, d: Boolean) = CfgCodec.bool(raw(k), d)
     fun keys(k: String) = str(k).lines().map { it.trim() }.filter { it.length > 10 }
     fun int(k: String, d: Int) = CfgCodec.int(raw(k), d)
@@ -440,7 +440,7 @@ class PromptBuilder(rawRead: (String) -> String) {
             "- حقل original بس هو اللي بيتكتب بلغة الصوت الأصلية (وtranslated_en_pivot للإنجليزي). translated ما بيبقاش أبدًا بلغة الصوت الأصلية ولا بالإنجليزي.\n" +
             "- لغة الترجمة النهائية ثابتة ($target) مهما كانت لغة التعليمات اللي فوق أو لغة الصوت أو لغة المقاطع اللي قبل كده.\n"
         t += dialectBlock(c.lang)
-        t += "- 🔴 ترجم اللي اتقال بس — متضيفش ألفاظ ولا معاني مش موجودة في الأصل، ومتخففش اللي موجود.\n"
+        t += "- 🔴 ترجم اللي اتقال بس — متضيفش ألفاظ ولا معاني مش موجودة في الأصل، ومتحذفش اللي موجود (التخفيف بيتم بس لو الأسلوب «عائلي»).\n"
         if (strict) t += "- ⚠⚠ الرد اللي فات فيه جمل في translated مش بالعربي. راجع كل subtitle قبل ما ترد وتأكد إن كل translated عربي بـ$target.\n"
         return t
     }

@@ -347,13 +347,11 @@ object PlayerPad {
                 }
                 if (sfEng == "gemini") {
                     grp(body, "لهجة الترجمة")
-                    chipRows(body, kotlin.collections.listOf("فصحى", "مصري", "شامي", "لبناني", "خليجي", "مغربي", "عراقي", "سوداني"), 4, { l -> l == sfDia }) { l -> sfDia = l; redo() }
+                    chipRows(body, kotlin.collections.listOf("فصحى", "مصري"), 4, { l -> l == TrNorm.dialect(sfDia).ifBlank { "فصحى" } }) { l -> sfDia = l; redo() }
                     grp(body, "الأسلوب")
-                    chipRows(body, kotlin.collections.listOf("تلقائي", "حرفي", "شعبي", "جرئ"), 4, { l -> l == sfSty }) { l -> sfSty = l; redo() }
-                    grp(body, "الشدة (مع شعبي / جرئ / تلقائي)")
-                    chipRows(body, kotlin.collections.listOf("خفيفة", "متوسطة", "شديدة"), 3, { l -> l == sfStr }) { l -> sfStr = l; redo() }
+                    chipRows(body, kotlin.collections.listOf("حرفي", "عائلي"), 4, { l -> l == TrNorm.style(sfSty) }) { l -> sfSty = l; redo() }
                 } else {
-                    body.addView(label("ℹ جوجل بيترجم فصحى بس — اللهجة والأسلوب والشدة مع جيميناي", 12.5f, 0xFFFFB74D.toInt(), false), lp(-1, -2).apply { topMargin = dp(10) })
+                    body.addView(label("ℹ جوجل بيترجم فصحى بس — اللهجة والأسلوب مع جيميناي", 12.5f, 0xFFFFB74D.toInt(), false), lp(-1, -2).apply { topMargin = dp(10) })
                 }
                 infoCard(body, "🔀 الترجمة هتشتغل على التلفزيون والموبايل مع بعض — أول واحد يخلّص بيتطبّق والتاني بيقف. لو التلفزيون مفيهوش نت الموبايل بيكمّل لوحده.")
                 body.addView(btn("▶ ترجم", 18f, 0xFF4F5BD5.toInt(), 0xFF7C8CF8.toInt()) {
@@ -382,7 +380,7 @@ object PlayerPad {
                 }, lp(-1, dp(56)).apply { topMargin = dp(16) })
             }
             fun openSfSettings(src: String, what: String) {
-                sfDia = curDialect.ifBlank { "فصحى" }; sfSty = curStyle.ifBlank { "تلقائي" }; sfStr = curStrength.ifBlank { "متوسطة" }; sfEng = lastSfEng
+                sfDia = curDialect.ifBlank { "فصحى" }; sfSty = TrNorm.style(curStyle); sfStr = curStrength.ifBlank { "متوسطة" }; sfEng = lastSfEng
                 sheetSfSettings(src, what)
             }
             fun pickSubFromPhone() {
@@ -578,22 +576,18 @@ object PlayerPad {
             fun sheetAi() = sheet("✨ لهجة وإعدادات الترجمة") { body, redo, close ->
                 if (!started) body.addView(label("⚠ ابدأ الترجمة الأول (الزرار الأحمر تحت)", 13f, 0xFFFFB74D.toInt()), lp(-1, -2).apply { topMargin = dp(8) })
                 grp(body, "لهجة الترجمة")
-                chipRows(body, kotlin.collections.listOf("فصحى", "مصري", "شامي", "لبناني", "خليجي", "مغربي", "عراقي", "سوداني"), 4,
-                    { l -> l == (if (curDialect.isBlank()) "فصحى" else curDialect) }, { l -> if (l == "فصحى") null else "dialect" }) { l ->
+                chipRows(body, kotlin.collections.listOf("فصحى", "مصري"), 4,
+                    { l -> l == TrNorm.dialect(curDialect).ifBlank { "فصحى" } }, { l -> if (l == "فصحى") null else "dialect" }) { l ->
                     curDialect = if (l == "فصحى") "" else l; if (started && l != "فصحى") tapFill("dialect"); go("dialect:$l"); redo()
                 }
                 grp(body, "الأسلوب")
-                chipRows(body, kotlin.collections.listOf("تلقائي", "حرفي", "شعبي", "جرئ"), 4, { l -> l == curStyle.ifBlank { "تلقائي" } }) { l ->
-                    curStyle = if (l == "تلقائي") "" else l; go("tone:" + l + "|" + curStrength.ifBlank { "متوسطة" }); redo()
+                chipRows(body, kotlin.collections.listOf("حرفي", "عائلي"), 4, { l -> l == TrNorm.style(curStyle) }) { l ->
+                    curStyle = l; go("tone:" + l + "|" + curStrength.ifBlank { "متوسطة" }); redo()
                 }
-                grp(body, "الشدة (مع شعبي / جرئ / تلقائي)")
-                chipRows(body, kotlin.collections.listOf("خفيفة", "متوسطة", "شديدة"), 3, { l -> l == curStrength.ifBlank { "متوسطة" } }) { l ->
-                    curStrength = l; go("tone:" + curStyle.ifBlank { "تلقائي" } + "|" + l); redo()
-                }
-                opt(body, "🔁 طبّق الأسلوب من هنا للآخر") { go("tone:" + curStyle.ifBlank { "تلقائي" } + "|" + curStrength.ifBlank { "متوسطة" } + "|from"); close() }
-                opt(body, "🔁 طبّق الأسلوب على الفيديو كله") { go("tone:" + curStyle.ifBlank { "تلقائي" } + "|" + curStrength.ifBlank { "متوسطة" } + "|all"); close() }
+                opt(body, "🔁 طبّق الأسلوب من هنا للآخر") { go("tone:" + TrNorm.style(curStyle) + "|" + curStrength.ifBlank { "متوسطة" } + "|from"); close() }
+                opt(body, "🔁 طبّق الأسلوب على الفيديو كله") { go("tone:" + TrNorm.style(curStyle) + "|" + curStrength.ifBlank { "متوسطة" } + "|all"); close() }
                 grp(body, "أدوات الذكاء (دوسة واحدة)")
-                val tools = mapOf("✍ تنقيح" to "refine", "🔥 لهجة +" to "dial", "🧹 عائلي" to "family", "🔞 صريح" to "explicit", "🔧 ضمائر" to "pron", "🧠 دمج مكرر" to "dedup")
+                val tools = mapOf("✍ تنقيح" to "refine", "🔥 لهجة +" to "dial", "🧹 عائلي" to "family", "🔧 ضمائر" to "pron", "🧠 دمج مكرر" to "dedup")
                 chipRows(body, tools.keys.toList(), 3, { false }, { l -> tools[l] }) { l -> if (started) tapFill(tools[l] ?: ""); go("ai:" + (tools[l] ?: "")); close() }
                 opt(body, "⚙ كل إعدادات الترجمة على التلفزيون") { go("subdlg", 1L); close() }
             }
@@ -737,7 +731,7 @@ object PlayerPad {
             val bodyAi = newBody()
             val aiBtnSettings = fillable(btn("🗣 لهجة وأسلوب وشدة…", 13f) { sheetAi() }, "*")   // (v712) بقى مش في الصفحة (مكرر مع ✨ لهجة وترجمة) — بيفضل متعرّف عشان render
             bodyAi.addView(label("أدوات الذكاء (دوسة واحدة)", 12f, cDim).apply { gravity = Gravity.START or Gravity.CENTER_VERTICAL }, lp(-1, -2).apply { topMargin = dp(10) })
-            val aiTools = kotlin.collections.listOf("✍ تنقيح" to "refine", "🔥 لهجة +" to "dial", "🧹 عائلي" to "family", "🔞 صريح" to "explicit", "🔧 ضمائر" to "pron", "🧠 دمج مكرر" to "dedup")
+            val aiTools = kotlin.collections.listOf("✍ تنقيح" to "refine", "🔥 لهجة +" to "dial", "🧹 عائلي" to "family", "🔧 ضمائر" to "pron", "🧠 دمج مكرر" to "dedup")
             grid(bodyAi, aiTools.map { pr -> fillable(btn(pr.first, 12.5f) { if (started) tapFill(pr.second); go("ai:" + pr.second) }, pr.second) }, 2, 46)
             // 🧰 أدوات
             val bodyTools = newBody()

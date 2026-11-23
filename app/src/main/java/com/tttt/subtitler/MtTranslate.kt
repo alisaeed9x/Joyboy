@@ -1007,24 +1007,19 @@ object MtTranslate : JoyboyPlayerHost.Provider {
         h("الترجمة: " + (if (!on) "واقفة" else pct + (if (paused) " (واقفة مؤقتًا)" else "")) + " · الوضع: " + curEngineMode())
         h("🔤 نظام الترجمة")
         val dm = try { Cfg.int("dual_listen", 1) } catch (_: Throwable) { 1 }
-        val one = try { Cfg.bool("tr_bal", false) && Cfg.bool("tr_one", false) } catch (_: Throwable) { false }   // (v1197) 🔑 مفتاح واحد
-        val bal = try { Cfg.bool("tr_bal", false) && !one } catch (_: Throwable) { false }   // (دمج v1090) ⚖ متوازن
+        val bal = try { Cfg.bool("tr_bal", false) } catch (_: Throwable) { false }   // (دمج v1090) ⚖ متوازن
         val fast = try { Cfg.bool("fastmode", false) && !bal } catch (_: Throwable) { false }   // (v1068)
-        m("☁ جيميناي — ٧٥/٢٥ (سماع واحد)" + (if (dm == 0 && !fast && !bal && !one) " ✓ الحالي" else "")) {
+        m("☁ جيميناي — ٧٥/٢٥ (سماع واحد)" + (if (dm == 0 && !fast && !bal) " ✓ الحالي" else "")) {
             Cfg.put("tr_bal", "0"); Cfg.put("tr_one", "0"); Cfg.put("dual_listen", "0"); Cfg.put("fastmode", "0")
             Notice.show(a, if (fast) "☁ جيميناي ٧٥/٢٥ — هيتطبق من أول ترجمة جديدة" else "☁ جيميناي ٧٥/٢٥ — هيتطبق على الباتشات الجاية", 2200L)
         }
-        m("🎯 جيميناي — السماع الأدق (مفتاحين + حكم)" + (if (dm == 2 && !fast && !bal && !one) " ✓ الحالي" else "")) {
+        m("🎯 جيميناي — السماع الأدق (مفتاحين + حكم)" + (if (dm == 2 && !fast && !bal) " ✓ الحالي" else "")) {
             Cfg.put("tr_bal", "0"); Cfg.put("tr_one", "0"); Cfg.put("dual_listen", "2"); Cfg.put("fastmode", "0")
             Notice.show(a, if (fast) "🎯 السماع الأدق — هيتطبق من أول ترجمة جديدة" else "🎯 السماع الأدق — هيتطبق على الباتشات الجاية", 2200L)
         }
         m("⚡ جيميناي — سريع (أول ترجمة في ثواني · برومبت خفيف)" + (if (fast) " ✓ الحالي" else "")) {
             Cfg.put("tr_bal", "0"); Cfg.put("tr_one", "0"); Cfg.put("fastmode", "1")
             Notice.show(a, "⚡ جيميناي سريع — هيشتغل من أول ترجمة جديدة", 2400L)
-        }
-        m("🔑 جيميناي — مفتاح واحد (مفتاح بيترجم بالتوالي + مفتاح تاني بينقّح بالسياق)" + (if (one) " ✓ الحالي" else "")) {   // (v1197)
-            Cfg.put("tr_bal", "1"); Cfg.put("tr_one", "1")
-            Notice.show(a, "🔑 مفتاح واحد — هيشتغل من أول ترجمة جديدة", 2400L)
         }
         m("⚖ جيميناي — متوازن (كل مفتاح باتش: تفريغ فوري ثم ترجمة)" + (if (bal) " ✓ الحالي" else "")) {   // (دمج v1090) FastTr
             Cfg.put("tr_bal", "1"); Cfg.put("tr_one", "0")

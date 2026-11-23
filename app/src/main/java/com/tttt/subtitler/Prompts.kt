@@ -114,8 +114,8 @@ class PEntry(val key: String, val title: String, val note: String, val required:
 class PGroup(val title: String, val note: String, val entries: List<PEntry>)
 
 object PromptCatalog {
-    val langs = listOf("مصري", "شامي", "لبناني", "خليجي", "مغربي", "عراقي", "سوداني", "فصحى")
-    val styles = listOf("تلقائي", "حرفي", "شعبي", "جرئ")
+    val langs = listOf("مصري", "فصحى")
+    val styles = listOf("حرفي", "عائلي")
     private val caseTitle = linkedMapOf(
         "first" to "أول باتش (لغة الصوت لسه مش معروفة)",
         "ja" to "لو الصوت ياباني",

@@ -364,8 +364,8 @@ class MainActivity : Activity() {
                 }.apply { isDaemon = true }.start()
             }
         }
-        val langs = listOf("مصري", "شامي", "لبناني", "خليجي", "مغربي", "عراقي", "سوداني", "فصحى")
-        val styles = listOf("تلقائي", "حرفي", "شعبي", "جرئ")
+        val langs = listOf("مصري", "فصحى")
+        val styles = listOf("حرفي", "عائلي")
         var lang = Cfg.str("lang", "فصحى"); var style = Cfg.str("style", "تلقائي"); var themeId = th.id
         link = ui.input("رابط فيديو مباشر (mp4 / m3u8)", "")
         fun save() {
@@ -1192,7 +1192,7 @@ class MainActivity : Activity() {
         val lookV = listOf<View>(
             ui.section("🎬 وضع العرض", true,
                 ui.chips(dualNames, { dualNames[st().dual] }) { put("sub_dual", dualNames.indexOf(it).toString()) },
-                sw("نص أبيض عادي بحجم ثابت (بدون ألوان الجنس والأسماء وكلمة التأكيد والتكبير التلقائي)", "sub_plain", false)),
+                sw("نص أبيض عادي بحجم ثابت (بدون تلوين الأسماء وكلمة التأكيد والتكبير التلقائي)", "sub_plain", false)),
             ui.section("🎨 اللون", false,
                 sw("لون نص موحّد", "sub_uni_on", false),
                 ui.chips(SubStyle.unifiedPalette, { st().uniColor }) { put("sub_uni_color", it) }),

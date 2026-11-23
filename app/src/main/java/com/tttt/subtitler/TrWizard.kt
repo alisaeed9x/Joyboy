@@ -61,7 +61,7 @@ object TrWizard {
     }
 
     /** اللهجات اللي ممكن تختارها للترجمة ("فصحى" = من غير تحويل) */
-    val dialects = listOf("فصحى", "مصري", "شامي", "لبناني", "خليجي", "مغربي", "عراقي", "سوداني")
+    val dialects = listOf("فصحى", "مصري")
 
     /** فيه مفتاح جيميناي واحد على الأقل (أساسي أو احتياطي)؟ لو مش عارف يفحص يرجّع true */
     fun hasGeminiKey(): Boolean = try { Cfg.snapshot().let { c -> (c.keys + c.backup + c.refine).any { it != LocalKey.ID && it.length > 10 } } } catch (_: Throwable) { true }

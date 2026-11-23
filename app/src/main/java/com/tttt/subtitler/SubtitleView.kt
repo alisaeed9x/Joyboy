@@ -184,7 +184,7 @@ class SubtitleView(ctx: Context) : View(ctx) {
         if (multi) { val lc = SubStyle.lineColors(lines); ranges.forEachIndexed { i, r -> if (!r.isEmpty()) sp.setSpan(ForegroundColorSpan(lc[i]), r.first, r.last + 1, 0) } }
         for ((a, b, place) in style.highlights(txt, s)) {
             if (place) sp.setSpan(ForegroundColorSpan(SubStyle.PLACE), a, b, 0)
-            else { sp.setSpan(ForegroundColorSpan(SubStyle.WHITE), a, b, 0); sp.setSpan(StyleSpan(Typeface.BOLD), a, b, 0) }
+            else { sp.setSpan(ForegroundColorSpan(SubStyle.PLACE), a, b, 0); sp.setSpan(StyleSpan(Typeface.BOLD), a, b, 0) }   // (v1199) الأسماء صفرا
         }
         if (style.underline && txt.isNotEmpty()) sp.setSpan(UnderlineSpan(), 0, txt.length, 0)
         main = build(sp, tp, avail)

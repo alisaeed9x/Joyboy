@@ -189,10 +189,9 @@ object ExtTranslate {
             sb.append("Translate into the Arabic dialect: ").append(d).append(" — real colloquial speech as native speakers talk, NOT Modern Standard Arabic. ")
             if (d == "مصري") sb.append("Use pure Egyptian Arabic: ده/دي/دول, إيه, ليه, إزاي, فين, إمتى, مين, اللي, مش, مفيش, عايز, دلوقتي, كده, عشان, أوي; present tense with ب (بيقول), future with ه (هعمل), negation ما…ش; never use لقد/سوف/لماذا/ماذا/هذا/الآن/أريد/كيف/أين. ")
         }
-        if (style == "تلقائي") sb.append("Style: automatic — judge each sentence on its own: ordinary speech stays faithful; street words, swearing and innuendo are translated frankly in street language exactly as spoken, without softening or exaggerating; idioms and proverbs are translated with the equivalent idiom in the target language, not literally. Intensity: ").append(deg).append(". ")
-        else if (style != "حرفي") sb.append("Style: ").append(style).append(", intensity: ").append(deg).append(" — use informal street-level wording that fits this style, without changing the meaning or gender. ")
-        else sb.append("Keep the translation faithful to the source. ")
-        sb.append("Translate only what was actually said — do not add words or meanings that are not in the original, and do not soften what is there. ")
+        if (TrNorm.style(style) == TrNorm.FAMILY) sb.append("Style: family-friendly — soften profanity, insults and sexual innuendo into mild, polite wording suitable for all ages while keeping the meaning (e.g. the polite word for body parts, light insults like 'son of a dog'). ")
+        else sb.append("Style: literal — translate exactly what was said with the same words and the same strength of swearing, no softening and no polishing. ")
+        sb.append("Translate only what was actually said — do not add words or meanings that are not in the original, and do not remove what is there. ")
         return sb.toString()
     }
 

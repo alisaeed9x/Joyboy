@@ -13,20 +13,13 @@ import org.json.JSONObject
 object ModePrompts {
     fun dialectEn(lang: String): String = when (lang) {
         "مصري" -> "Egyptian Arabic (everyday colloquial, as spoken on the streets of Cairo)"
-        "شامي" -> "Levantine (Shami) Arabic"
-        "لبناني" -> "Lebanese Arabic"
-        "خليجي" -> "Gulf Arabic"
-        "مغربي" -> "Moroccan Arabic (Darija)"
-        "عراقي" -> "Iraqi Arabic"
-        "سوداني" -> "Sudanese Arabic"
         else -> "Modern Standard Arabic (Fusha)"
     }
 
+    /** (v1199) أسلوبين بس: حرفي · عائلي */
     fun styleEn(style: String): String = when (style) {
-        "تلقائي" -> "automatic: judge each sentence on its own — ordinary speech stays faithful and close to the original; street words, swearing and innuendo are translated frankly in street language exactly as spoken, without softening or exaggerating; idioms and proverbs are translated with the equivalent idiom in the target language, never literally"
-        "شعبي" -> "street register: the way ordinary people really talk, relaxed and vivid"
-        "جرئ" -> "bold, uncensored register: keep strong language at the same intensity as the original"
-        else -> "faithful register: stay close to the original wording and meaning"
+        "عائلي" -> "family-friendly: soften profanity, insults and sexual innuendo into mild, polite wording suitable for all ages (for example use the polite or medical word for body parts, and light insults like 'son of a dog' or 'donkey' instead of heavy ones), keeping the meaning and intent, never dropping a line and never adding content that is not in the original"
+        else -> "literal: translate exactly what was said, word for word in spirit — same words, same strength of swearing and innuendo, with no softening, no polishing and no exaggeration; never add or remove content"
     }
 
     private fun dur(d: Double) = String.format(java.util.Locale.US, "%.1f", d)
@@ -78,7 +71,7 @@ This is a standalone audio segment; timestamps start at 0.0 relative to the begi
     internal const val QUALITY_EN = """
 ═══ TRANSLATION QUALITY (professional translator) ═══
 - 🔴 Accuracy first: convey the full meaning. Never add, drop or guess information. Numbers, names, dates and units must be carried over correctly.
-- 🔴 Translate only what was actually said: never add words or meanings that are not in the original, and never soften what is there.
+- 🔴 Translate only what was actually said: never add words or meanings that are not in the original, and never drop what is there (softening happens only when the requested style is family-friendly).
 - Understand the intent before translating: idioms, proverbs, sarcasm and metaphors are never translated word by word. Render the meaning with the natural equivalent in the target language and keep the speaker's tone (formal, ironic, angry, tender). Pick the right sense of a multi-meaning word from the scene.
 - Natural, correct, readable Arabic: no foreign sentence structure, no machine-translation feel, no missing words. Keep the same name or term spelled the same way across the segment.
 - Use the preceding context and the character table to decide pronouns (he / she / they) and the addressee.
@@ -335,7 +328,7 @@ The sentences below are consecutive speech from one video, in order. Each one al
 - Names: write in Arabic letters, and spell the same name the same way as in the context and in the character table.
 - Songs (is_song=true): translate the lyrics meaningfully line by line, naturally, not word by word.
 - Rows with faint=true are quiet or background speech: translate them with the same care.
-- 🔴 Translate only what was actually said: never add words or meanings that are not in the original, and never soften what is there. Do not invent, do not censor beyond what the register asks for.
+- 🔴 Translate only what was actually said: never add words or meanings that are not in the original, and never drop what is there (softening happens only when the requested style is family-friendly). Do not invent, do not censor beyond what the register asks for.
 """
 
     /** (v425) قواعد الإدخالات الجانبية (is_sound) في الترجمة: الشرح والكلام الخارجي بيتترجموا ويفضلوا فوق، والحوار العادي تحت */

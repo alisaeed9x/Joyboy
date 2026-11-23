@@ -27,8 +27,8 @@ object TrLib {
         val hasOverride: Boolean get() = ovDialect.isNotBlank() || ovStyle.isNotBlank() || ovStrength.isNotBlank() || ovModel.isNotBlank()
     }
 
-    val DIALECTS = listOf("فصحى", "مصري", "شامي", "لبناني", "خليجي", "مغربي", "عراقي", "سوداني")
-    val STYLES = listOf("تلقائي", "حرفي", "شعبي", "جرئ")
+    val DIALECTS = listOf("فصحى", "مصري")
+    val STYLES = listOf("حرفي", "عائلي")
     val STRENGTHS = listOf("خفيفة", "متوسطة", "شديدة")
 
     /** (v999) عرض أسلوب ترجمة قديمة محفوظ: "+18" اتشال من القوايم بس القيمة المحفوظة بتتعرض «+18 (قديم)» من غير ما تتغيّر */

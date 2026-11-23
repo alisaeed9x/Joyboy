@@ -1897,7 +1897,7 @@ object MtBar {
         val chips = FlowRow(a).apply {
             layoutDirection = View.LAYOUT_DIRECTION_RTL
         }
-        for (d in listOf("فصحى", "مصري", "شامي", "لبناني", "خليجي", "مغربي", "عراقي", "سوداني")) {
+        for (d in listOf("فصحى", "مصري")) {
             chips.addView(u.fsBtn(d) {
                 try {
                     Cfg.put("conv_dialect", d)
@@ -1909,22 +1909,22 @@ object MtBar {
                 Notice.show(a, "🗣 اللهجة: " + d, 1400L)
             })
         }
-        val styles = listOf("تلقائي", "حرفي", "شعبي", "جرئ")
+        val styles = listOf("حرفي", "عائلي")
         val degrees = listOf("خفيفة", "متوسطة", "شديدة")
         val curS = try {
-            Cfg.str("tone_style", "").ifBlank { "تلقائي" }
+            TrNorm.style(Cfg.str("tone_style", ""))
         } catch (_: Throwable) {
-            "تلقائي"
+            "حرفي"
         }
         val curG = try {
             Cfg.str("tone_strength", "متوسطة")
         } catch (_: Throwable) {
             "متوسطة"
         }
-        val toneLab = u.text("🎨 الأسلوب: " + curS + " / " + curG, 13f, Color.WHITE, false)
+        val toneLab = u.text("🎨 الأسلوب: " + (if (curS == "عائلي") "مناسب للمشاهدة العائلية" else "حرفي") + "   (حرفي ◂ عائلي)", 13f, Color.WHITE, false)
         val styleBar = SeekBar(a).apply {
-            max = 3
-            progress = styles.indexOf(curS).coerceIn(0, 3)
+            max = 1
+            progress = styles.indexOf(curS).coerceIn(0, 1)
             layoutParams = LinearLayout.LayoutParams(-1, -2).apply {
                 setMargins(dp(a, 12), dp(a, 8), dp(a, 12), dp(a, 4))
             }
@@ -1937,26 +1937,7 @@ object MtBar {
                         Cfg.put("tone_style", st)
                     } catch (_: Throwable) {}
                     applyTone(a, st, null)
-                    toneLab.text = "🎨 الأسلوب: " + st + " / " + Cfg.str("tone_strength", "متوسطة")
-                }
-            })
-        }
-        val degBar = SeekBar(a).apply {
-            max = 2
-            progress = degrees.indexOf(curG).coerceIn(0, 2)
-            layoutParams = LinearLayout.LayoutParams(-1, -2).apply {
-                setMargins(dp(a, 12), dp(a, 4), dp(a, 12), dp(a, 8))
-            }
-            setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
-                override fun onProgressChanged(s: SeekBar?, pr: Int, fromUser: Boolean) {}
-                override fun onStartTrackingTouch(s: SeekBar?) {}
-                override fun onStopTrackingTouch(s: SeekBar?) {
-                    val dg = degrees[s?.progress ?: 1]
-                    try {
-                        Cfg.put("tone_strength", dg)
-                    } catch (_: Throwable) {}
-                    applyTone(a, null, dg)
-                    toneLab.text = "🎨 الأسلوب: " + Cfg.str("tone_style", "").ifBlank { "تلقائي" } + " / " + dg
+                    toneLab.text = "🎨 الأسلوب: " + (if (st == "عائلي") "مناسب للمشاهدة العائلية" else "حرفي") + "   (حرفي ◂ عائلي)"
                 }
             })
         }
@@ -1973,7 +1954,7 @@ object MtBar {
                 Notice.show(a, "✅ اللهجة والأسلوب اتطبّقوا", 1800L)
             }, LinearLayout.LayoutParams(0, dp(a, 40), 1f))
         }
-        sheetDlg = panel(a, anchor, above, "🌐 اللغة والأسلوب", listOf(lab, chips, toneLab, styleBar, degBar), footer = listOf(applyRow))
+        sheetDlg = panel(a, anchor, above, "🌐 اللغة والأسلوب", listOf(lab, chips, toneLab, styleBar), footer = listOf(applyRow))
     }
 
     private fun applyTone(a: Activity, style: String?, strength: String?) {

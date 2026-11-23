@@ -709,7 +709,6 @@ class PlayerActivity : Activity(), Host {
             "tr_gem_acc" -> remoteTrGuarded { trAsked = true; h.post { Cfg.put("tr_bal", "0"); Cfg.put("tr_one", "0"); Cfg.put("dual_listen", "2"); Cfg.put("fastmode", "0"); geminiStart() } }   // (v1043) الاختيار اتعمل على الموبايل — من غير نافذة على التلفزيون
             "tr_gem_fast" -> remoteTrGuarded { trAsked = true; h.post { Cfg.put("tr_bal", "0"); Cfg.put("tr_one", "0"); Cfg.put("dual_listen", "0"); Cfg.put("fastmode", "0"); geminiStart() } }
             "tr_gem_quick" -> remoteTrGuarded { trAsked = true; h.post { Cfg.put("tr_bal", "0"); Cfg.put("tr_one", "0"); Cfg.put("fastmode", "1"); geminiStart() } }
-            "tr_gem_one" -> remoteTrGuarded { trAsked = true; h.post { Cfg.put("tr_bal", "1"); Cfg.put("tr_one", "1"); geminiStart() } }   // (v1197) 🔑 مفتاح واحد
             "tr_gem_bal" -> remoteTrGuarded { trAsked = true; h.post { Cfg.put("tr_bal", "1"); Cfg.put("tr_one", "0"); geminiStart() } }   // (دمج v1090) ⚖ متوازن   // (v1068) ⚡ سريع
             "tr_whisper" -> whisperStart()
             "tr_gtx" -> startGeminiTranscribe()
@@ -1016,31 +1015,25 @@ class PlayerActivity : Activity(), Host {
             val curL = Cfg.str("conv_dialect", "").ifBlank { "فصحى" }
             col.addView(note("لهجة الترجمة"), LinearLayout.LayoutParams(-2, -2))
             val rowL = flow()
-            for (l in listOf("فصحى", "مصري", "شامي", "لبناني", "خليجي", "مغربي", "عراقي", "سوداني"))
+            for (l in listOf("فصحى", "مصري"))
                 rowL.addView(btn((if (l == curL) "✓ " else "") + l, 16f, on, guard { d.dismiss(); dialectPick(l) }), flpm())
             col.addView(rowL, LinearLayout.LayoutParams(ui.dp(640), -2))
-            // الأسلوب والشدة بأزرار ◂ ▸
-            val styles = listOf("تلقائي", "حرفي", "شعبي", "جرئ"); val degs = listOf("خفيفة", "متوسطة", "شديدة")
-            fun stI() = styles.indexOf(Cfg.str("tone_style", "").ifBlank { "تلقائي" }).coerceAtLeast(0)
-            fun dgI() = degs.indexOf(Cfg.str("tone_strength", "متوسطة")).let { if (it < 0) 1 else it }
-            stepLine(col, { "الأسلوب: " + styles[stI()] }, {
-                if (on) { val i = (stI() - 1).coerceAtLeast(0); Cfg.put("tone_style", if (i == 0) "" else styles[i]); engine.toneStyle = if (i == 0) "" else styles[i] } else say("✨ $aiWhy")
-            }, {
-                if (on) { val i = (stI() + 1).coerceAtMost(styles.size - 1); Cfg.put("tone_style", styles[i]); engine.toneStyle = styles[i] } else say("✨ $aiWhy")
-            })
-            stepLine(col, { "الشدة: " + degs[dgI()] + (if (stI() == styles.indexOf("حرفي")) "  (مع شعبي/جرئ/تلقائي بس)" else "") }, {
-                if (on) { val i = (dgI() - 1).coerceAtLeast(0); Cfg.put("tone_strength", degs[i]); engine.toneStrength = degs[i] } else say("✨ $aiWhy")
-            }, {
-                if (on) { val i = (dgI() + 1).coerceAtMost(degs.size - 1); Cfg.put("tone_strength", degs[i]); engine.toneStrength = degs[i] } else say("✨ $aiWhy")
-            })
+            // (v1199) الأسلوب: زرارين بس — حرفي · مناسب للمشاهدة العائلية (الشدة اتشالت)
+            val styles = listOf("حرفي", "عائلي"); val styleLabels = listOf("حرفي", "مناسب للمشاهدة العائلية")
+            fun stI() = styles.indexOf(Cfg.str("tone_style", "")).coerceAtLeast(0)
+            col.addView(note("أسلوب الترجمة"), LinearLayout.LayoutParams(-2, -2))
+            val rowS = flow()
+            for ((si, sl) in styleLabels.withIndex())
+                rowS.addView(btn((if (si == stI()) "✓ " else "") + sl, 16f, on, guard { d.dismiss(); Cfg.put("tone_style", styles[si]); engine.toneStyle = styles[si]; say("الأسلوب: " + sl + " — الباتشات الجاية هتتترجم بيه. لو عايزه على اللي اتترجم دوس «طبّق»") }), flpm())
+            col.addView(rowS, LinearLayout.LayoutParams(ui.dp(640), -2))
             val rowA = flow()
-            rowA.addView(btn("🔁 طبّق من هنا للآخر", 16f, on, guard { d.dismiss(); val ins = toneInstrOf(styles[stI()], degs[dgI()]); runTool("أسلوب " + styles[stI()] + " (" + degs[dgI()] + ")", ins, false) }), flpm())
-            rowA.addView(btn("🔁 طبّق على الفيديو كله", 16f, on, guard { d.dismiss(); val ins = toneInstrOf(styles[stI()], degs[dgI()]); runTool("أسلوب " + styles[stI()] + " (" + degs[dgI()] + ")", ins, true) }), flpm())
+            rowA.addView(btn("🔁 طبّق من هنا للآخر", 16f, on, guard { d.dismiss(); val ins = toneInstrOf(styles[stI()], ""); runTool("أسلوب " + styleLabels[stI()], ins, false) }), flpm())
+            rowA.addView(btn("🔁 طبّق على الفيديو كله", 16f, on, guard { d.dismiss(); val ins = toneInstrOf(styles[stI()], ""); runTool("أسلوب " + styleLabels[stI()], ins, true) }), flpm())
             col.addView(rowA, LinearLayout.LayoutParams(ui.dp(640), -2))
             // أدوات الذكاء: دوسة واحدة = تشتغل على طول (التقدم في الإشعار اللي فوق)
             col.addView(note("أدوات الذكاء (دوسة واحدة)"), LinearLayout.LayoutParams(-2, -2))
             val rowT = flow()
-            for ((id, label) in listOf("refine" to "✍ تنقيح", "dial" to "🔥 لهجة +", "family" to "🧹 عائلي", "explicit" to "🔞 صريح", "pron" to "🔧 ضمائر", "dedup" to "🧠 دمج مكرر"))
+            for ((id, label) in listOf("refine" to "✍ تنقيح", "dial" to "🔥 لهجة +", "family" to "🧹 عائلي", "pron" to "🔧 ضمائر", "dedup" to "🧠 دمج مكرر"))
                 rowT.addView(btn(label, 16f, on, guard { d.dismiss(); applyAiOptions(listOf(id)) }), flpm())
             rowT.addView(btn("🧑 الشخصيات", 16f, engOk) { _ -> if (engOk) { d.dismiss(); showChars() } else say("✨ ابدأ الترجمة الأول") }, flpm())
             col.addView(rowT, LinearLayout.LayoutParams(ui.dp(640), -2))
@@ -1079,11 +1072,9 @@ class PlayerActivity : Activity(), Host {
         say(if (l == "فصحى") "الترجمة بالفصحى الحرفية" else "هحوّل للهجة $l من الباتش اللي إنت فيه وللقدّام، وبعدين اللي قبله — والباتشات الجديدة هتيجي باللهجة دي (النسخة القديمة اتحفظت في 🗂)")
         touchSubs()
     }
-    private fun toneInstrOf(st: String, dg: String): String {
-        val what = when (st) { "تلقائي" -> "تلقائي: كل جملة على طبيعتها — الكلام العادي يترجم حرفيًا بأمانة؛ كلام الشارع والسباب والإيحاءات تترجم بصراحتها الشعبية زي ما اتقالت بالظبط من غير تلطيف ولا مبالغة؛ والأمثال والتعبيرات الاصطلاحية تترجم بالمثل أو التعبير المقابل في لغة الهدف مش حرفيًا"; "شعبي" -> "كلام الشارع الشعبي والتعبيرات اليومية بدل الرسمي"; "جرئ" -> "أجرأ وأكتر حرية في الألفاظ من غير تلطيف زيادة"; else -> "" }
-        return if (what.isEmpty()) "رجّع كل جملة لترجمة حرفية أمينة قريبة من الأصل من غير مبالغة في العامية أو الجرأة."
-        else "أعد صياغة كل جملة بأسلوب «$st»: $what. الشدة: $dg. حافظ على المعنى والجنس."
-    }
+    private fun toneInstrOf(st: String, dg: String): String =   // (v1199) حرفي · عائلي بس
+        if (TrNorm.style(st) == TrNorm.FAMILY) "أعد صياغة كل جملة بأسلوب «مناسب للمشاهدة العائلية»: خفّف أي ألفاظ خارجة أو شتايم أو إيحاءات جنسية لألفاظ مهذّبة أو خفيفة (مثلًا «ثدي» بدل اللفظ الصريح، و«يا ابن الكلب» بدل الشتيمة الثقيلة) مع الحفاظ الكامل على المعنى والجنس، من غير حذف أو إضافة."
+        else "رجّع كل جملة لترجمة حرفية بالملي زي ما اتقالت في الأصل: نفس الألفاظ والشتايم والإيحاءات بنفس حدّتها، من غير تخفيف ولا تنميق ولا مبالغة."
     /** ⋯ المزيد: الأدوات اللي مش لازمة على الشريط الأساسي */
     /** (v521) لو اتختار مسار ترجمة أصلي من الفيديو: يتعرض هو حتى لو المحرك عنده ترجمة (لحد ما يرجّع ترجمة البرنامج أو الفيديو يتغيّر) */
     @Volatile private var preferNative = false
@@ -2840,13 +2831,13 @@ class PlayerActivity : Activity(), Host {
         val ft = FastTr(conf, { makeSource(sp) }, engine, hst, Cfg.str("conv_dialect", ""))
         // (v1119) تفريغ بس: المحرك البسيط بياخد العلم من الخطة اللي شغّلتها runPlanCore
         try { ft.transOnly = engine.transOnly } catch (_: Throwable) {}
-        try { ft.oneKey = Cfg.bool("tr_one", false) } catch (_: Throwable) {}   // (v1197) 🔑 مفتاح واحد
+        ft.oneKey = false   // (v1199) وضع «مفتاح واحد» اتشال من الواجهة — أي قيمة tr_one قديمة بتتجاهل
         ft.onState = { runOnUiThread { try { updateTr() } catch (_: Throwable) {} } }
         fastTr = ft
         val fresh = freshOnce; freshOnce = false
         if (fresh) { try { player.seekTo(0) } catch (_: Throwable) {}; cur = 0L }
         val balNote = if (ft.transOnly) "تفريغ بس — من غير ترجمة" else "تفريغ ثم ترجمة"
-        if (ft.oneKey) log("🔑 مفتاح واحد — مفتاح بيترجم بالتوالي (" + balNote + ") + مفتاح تأكيد بينقّح بالسياق") else log("⚖ متوازن — المحرك البسيط (كل مفتاح باتش: " + balNote + ")")
+        log("⚖ متوازن — المحرك البسيط (كل مفتاح باتش: " + balNote + ")")
         Thread {
             if (fresh) try { engine.redoAll() } catch (e: Throwable) { val m = "⚠ " + (e.message ?: e.toString()).take(120); log(m); runOnUiThread { say(m) } }
             ft.start()
@@ -3697,18 +3688,16 @@ class PlayerActivity : Activity(), Host {
         val title = ui.text("", 14f, Color.WHITE, true).apply { gravity = Gravity.CENTER; setPadding(0, ui.dp(2), 0, ui.dp(2)) }
         // (v1127) قايمة البلوكات (☑/☐) اتشالت — البلوكات بتتحدد لوحدها من موضع السلايدر (TrSlider.onAt) من غير عرض
         val balNote = shNote("⚖ المتوازن: المحرك البسيط — كل مفتاح ياخد باتش ويفرّغه (يظهر على طول) وبعدين يترجمه. من غير بلوكات سرعة/دقة. حرّك يمين للدقيق أو شمال للسريع.")
-        val oneNote = shNote("🔑 مفتاح واحد: مفتاح بيترجم الباتشات واحد ورا التاني (بيرتاح بين كل باتش عشان 429) ومفتاح تاني تأكيدي بيراجع كل اللي فات بالسياق ويبدّل الترجمة القديمة. لو باتش وقع بيروح لمفتاح فاضي، ولو مفيش بيستنى المفتاح التأكيدي.")
         val dualNote = shNote("⚡ ٧٥/٢٥ (سماع واحد) مختار من «🔧 إعدادات متقدمة» — تحريك السلايدر جوه الدقيق مش بيغيّره")
         fun paint(p: Int) {
             title.text = TrSlider.title(p)
             val bal = TrSlider.zone(p) == TrSlider.BAL
             balNote.visibility = if (bal) View.VISIBLE else View.GONE
-            oneNote.visibility = if (TrSlider.zone(p) == TrSlider.ONE) View.VISIBLE else View.GONE
             dualNote.visibility = if (TrSlider.zone(p) == TrSlider.ACC && Cfg.int("dual_listen", 1) == 0) View.VISIBLE else View.GONE
         }
         col.addView(title, LinearLayout.LayoutParams(-1, -2))
         val sb = SeekBar(this).apply {
-            layoutDirection = View.LAYOUT_DIRECTION_LTR; max = TrSlider.STATIONS - 1; progress = TrSlider.station(TrSlider.pos())   // (v1197) 5 محطات
+            layoutDirection = View.LAYOUT_DIRECTION_LTR; max = TrSlider.STATIONS - 1; progress = TrSlider.station(TrSlider.pos())   // (v1199) 3 محطات
             setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
                 override fun onProgressChanged(s: SeekBar?, p: Int, u: Boolean) { if (u) { val ip = TrSlider.posOf(p); TrSlider.setPos(ip); try { updateTr() } catch (_: Throwable) {}; paint(ip); onChanged() } }
                 override fun onStartTrackingTouch(s: SeekBar?) {}
@@ -3717,13 +3706,11 @@ class PlayerActivity : Activity(), Host {
         }
         col.addView(sb, LinearLayout.LayoutParams(-1, -2))
         val ends = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_LTR; setPadding(ui.dp(10), 0, ui.dp(10), 0) }
-        ends.addView(ui.text("⚡ أسرع", 11.5f, 0xFF9AA0A6.toInt()), LinearLayout.LayoutParams(0, -2, 1f))
-        ends.addView(ui.text("⚡ سريع", 11.5f, 0xFF9AA0A6.toInt()).apply { gravity = Gravity.CENTER }, LinearLayout.LayoutParams(0, -2, 1f))
-        ends.addView(ui.text("🔑 مفتاح", 11.5f, 0xFF9AA0A6.toInt()).apply { gravity = Gravity.CENTER }, LinearLayout.LayoutParams(0, -2, 1f))
+        ends.addView(ui.text("⚡ سريع", 11.5f, 0xFF9AA0A6.toInt()), LinearLayout.LayoutParams(0, -2, 1f))
         ends.addView(ui.text("⚖ متوازن", 11.5f, 0xFF9AA0A6.toInt()).apply { gravity = Gravity.CENTER }, LinearLayout.LayoutParams(0, -2, 1f))
         ends.addView(ui.text("🎯 دقيق", 11.5f, 0xFF9AA0A6.toInt()).apply { gravity = Gravity.END }, LinearLayout.LayoutParams(0, -2, 1f))
         col.addView(ends, LinearLayout.LayoutParams(-1, -2))
-        col.addView(balNote); col.addView(oneNote); col.addView(dualNote)
+        col.addView(balNote); col.addView(dualNote)
         paint(TrSlider.pos())
     }
 
@@ -5388,7 +5375,7 @@ class PlayerActivity : Activity(), Host {
         val toolsB = IconGlyphButton(this, "toolbox").apply { background = ui.box(0xE0141418.toInt(), 0x1FFFFFFF, 12); setOnClickListener { togglePop(this, gTools, false) } }
         tvMenuFn = { v -> togglePop(v, gTool, true) }; tvToolsFn = { v -> togglePop(v, gTools, true) }; tvMenuCol = gTool; tvToolsCol = gTools   // (v517) ⋯ المزيد على التلفزيون
         // (v151) خيارات متعددة الاختيار + زرار واحد «طبّق المحدد»: بيتنفّذوا ورا بعض (تنقيح ← لهجة+ ← عائلي/صريح ← ضمائر ← دمج مكرر)
-        val aiBase = linkedMapOf("refine" to "✍ تنقيح بالسياق", "dial" to "🔥 لهجة +", "family" to "🧹 عائلي", "explicit" to "🔞 صريح", "pron" to "🔧 ضمائر", "dedup" to "🧠 دمج مكرر")
+        val aiBase = linkedMapOf("refine" to "✍ تنقيح بالسياق", "dial" to "🔥 لهجة +", "family" to "🧹 عائلي", "pron" to "🔧 ضمائر", "dedup" to "🧠 دمج مكرر")
         val aiBtns = HashMap<String, TextView>()
         val aiApplyB = pd("▶ طبّق المحدد (0)") { applyAiOptions() }
         fun paintAi() {
@@ -5397,7 +5384,7 @@ class PlayerActivity : Activity(), Host {
         }
         for ((id, base) in aiBase) {
             val b = pk(base) { _ ->
-                if (!aiSel.remove(id)) { aiSel.add(id); if (id == "family") aiSel.remove("explicit"); if (id == "explicit") aiSel.remove("family") }   // عائلي وصريح عكس بعض
+                if (!aiSel.remove(id)) { aiSel.add(id); }
                 paintAi()
             }
             aiBtns[id] = b; gAi.addView(b)
@@ -5951,7 +5938,7 @@ class PlayerActivity : Activity(), Host {
                 }
                 val q = list[i]
                 val row = LinearLayout(this@PlayerActivity).apply { layoutDirection = View.LAYOUT_DIRECTION_RTL; setPadding(0, ui.dp(2), 0, ui.dp(2)) }
-                val bar = View(this@PlayerActivity).apply { setBackgroundColor(if (q.gender == "female") SubStyle.FEMALE else SubStyle.MALE) }
+                val bar = View(this@PlayerActivity).apply { setBackgroundColor(0x55FFFFFF) }   // (v1199) من غير لون الجنس
                 val col = LinearLayout(this@PlayerActivity).apply { orientation = LinearLayout.VERTICAL; setPadding(ui.dp(10), ui.dp(6), ui.dp(10), ui.dp(6)) }
                 col.addView(ui.text(PlayerLogic.clock((q.start * 1000).toLong()), 10f, th.muted))
                 col.addView(ui.text(dispTr(q), 14f, th.text))   // (v1099) T4
@@ -7938,7 +7925,6 @@ class PlayerActivity : Activity(), Host {
             "زوّد شدة اللهجة الشعبية ($eff) في كل جملة درجة واحدة: ألفاظ وتعبيرات الشارع والعامية المحلية ($eff) بدل الفصحى والكلام الرسمي، ومن غير ما تدخّل أي لهجة تانية. من غير ما تغيّر المعنى أو الجنس."
     }
     private val FAMILY_INSTR = "نضّف الجملة من الألفاظ الخارجة والإيحاءات الجنسية وخليها عائلية ومناسبة لكل الأعمار مع الحفاظ على المعنى العام."
-    private val EXPLICIT_INSTR = "رجّع الترجمة لمطابقة صراحة النص الأصلي بالظبط (الألفاظ والإيحاءات زي ما هي في الأصل من غير تلطيف ولا حذف)."
 
     /** (v151) بينفّذ كل الخيارات المحددة في قايمة ✨ بالترتيب بدوسة واحدة، وكل خطوة بتستنى اللي قبلها */
     fun applyAiOptions(sel: Collection<String> = aiSel) {
@@ -7946,7 +7932,7 @@ class PlayerActivity : Activity(), Host {
         // (v360) من غير مفتاح جيميناي، المهام الجانبية بتكمّل بمحرك LLM المختار (conv_via) — نفس شرط Engine.bgCall
         val llmOk = ExtLlm.byId(Cfg.str("conv_via", "").trim())?.let { ExtLlm.configured(it) && ExtLlm.enabled(it) && ExtLlm.blockedWhy(it) == null } == true
         if (Cfg.allMainKeys().isEmpty() && conf.keys.isEmpty() && !llmOk) { say("ضيف مفتاح API (أو اختار محرك LLM للمهام الجانبية) الأول"); return }
-        val order = listOf("refine", "dial", "family", "explicit", "pron", "dedup").filter { it in sel }
+        val order = listOf("refine", "dial", "family", "pron", "dedup").filter { it in sel }
         val results = ArrayList<String>()
         var stopped = false
         fun rep(m: String) { if (m.startsWith("في عملية شغالة")) { stopped = true; say(m) } else say(m) }
@@ -7958,7 +7944,6 @@ class PlayerActivity : Activity(), Host {
                 "refine" -> { say("✍ (${k + 1}/${order.size}) تنقيح بالسياق…"); engine.refineWholeNow({ m -> rep(m) }) { n -> fin("تنقيح", n) } }
                 "dial" -> { say("🔥 (${k + 1}/${order.size}) لهجة +…"); engine.rewriteAll("زيادة شدة اللهجة", DIAL_INSTR, 0.0, { m -> rep(m) }) { n -> fin("لهجة", n) } }
                 "family" -> { say("🧹 (${k + 1}/${order.size}) عائلي…"); engine.rewriteAll("عائلي", FAMILY_INSTR, 0.0, { m -> rep(m) }) { n -> fin("عائلي", n) } }
-                "explicit" -> { say("🔞 (${k + 1}/${order.size}) صريح…"); engine.rewriteAll("صريح", EXPLICIT_INSTR, 0.0, { m -> rep(m) }) { n -> fin("صريح", n) } }
                 "pron" -> { say("🔧 (${k + 1}/${order.size}) ضمائر…"); engine.correctPronounsNow({ m -> rep(m) }) { n -> fin("ضمائر", n) } }
                 else -> { val n = engine.removeDuplicates(); fin("دمج مكرر", n) }
             }
@@ -8273,7 +8258,7 @@ class PlayerActivity : Activity(), Host {
         langPop?.let { if (it.isShowing) { it.dismiss(); langPop = null; return } }
         if (!::engine.isInitialized) { say("استنى لحظة — الفيديو لسه بيتحمّل"); return }   // (v262) engine lateinit: الضغط قبل التحميل كان بيكرّش
         if (!caps().dialect) { say("🗣 اللهجة والأسلوب مش شغّالين في «" + modeName() + "» — اختار وضع من اللي فيها لهجات (FreeLLM / وشبر + مترجم LLM)"); return }   // (v444)
-        val langs = listOf("فصحى", "مصري", "شامي", "لبناني", "خليجي", "مغربي", "عراقي", "سوداني")
+        val langs = listOf("فصحى", "مصري")
         val curL = Cfg.str("conv_dialect", "").ifBlank { "فصحى" }
         if (RcCapture.active) {   // (v1051) اختيار اللهجة على الموبايل (الأسلوب والشدة سلايدرات: لسه على التلفزيون)
             rcPmList("🌐 اللهجة (الحالية: $curL)", langs.map { l -> (if (l == curL) "✓ " else "") + (if (l == "فصحى") "فصحى (حرفية)" else l) to { dialectPick(l) } })
@@ -8291,54 +8276,27 @@ class PlayerActivity : Activity(), Host {
         val rowL = shFlow()
         for (l in langs) rowL.addView(shChip(if (l == "فصحى") "فصحى (حرفية)" else l, l == curL) { langPop?.dismiss(); dialectPick(l) }, shChipLp())
         col.addView(rowL, LinearLayout.LayoutParams(-1, -2))
-        // أسلوب الترجمة وشدته: بيتحفظوا وبيدخلوا في برومبت كل باتش جديد وكل تحويل لهجة، ومعاهم زرار تطبيق على اللي اتترجم فعلًا
-        // (v134) الأسلوب والشدة بقوا سلايدرين بدل أزرار — بتحرّك واللي بتقف عليه بيتحفظ
-        val toneStyles = listOf("تلقائي", "حرفي", "شعبي", "جرئ"); val toneDegrees = listOf("خفيفة", "متوسطة", "شديدة")
-        var stI = toneStyles.indexOf(Cfg.str("tone_style", "").ifBlank { "تلقائي" }).coerceAtLeast(0)
-        var dgI = toneDegrees.indexOf(Cfg.str("tone_strength", "متوسطة")).let { if (it < 0) 1 else it }
-        fun curStyle() = toneStyles[stI]
-        fun curDeg() = toneDegrees[dgI]
-        val styleLbl = lbl(""); val degLbl = lbl("")
-        fun mkSb(max: Int, p: Int) = android.widget.SeekBar(this).apply { layoutDirection = android.view.View.LAYOUT_DIRECTION_LTR;
-            this.max = max; progress = p; layoutDirection = View.LAYOUT_DIRECTION_RTL
-            setPadding(ui.dp(16), ui.dp(6), ui.dp(16), ui.dp(6))
-            val tint = android.content.res.ColorStateList.valueOf(th.primary)
-            progressTintList = tint; thumbTintList = tint
-        }
-        val styleSb = mkSb(toneStyles.size - 1, stI); val degSb = mkSb(toneDegrees.size - 1, dgI)
+        // (v1199) أسلوب الترجمة: زرارين بس — حرفي · مناسب للمشاهدة العائلية (الشدة والأساليب القديمة اتشالت)
+        val toneStyles = listOf("حرفي", "عائلي"); val toneLabels = listOf("حرفي", "مناسب للمشاهدة العائلية")
+        var stI = toneStyles.indexOf(Cfg.str("tone_style", "")).coerceAtLeast(0)
+        fun curStyle() = toneLabels[stI]
+        col.addView(shHead("🗣 أسلوب الترجمة", "بيتطبّق على الباتشات الجاية"), LinearLayout.LayoutParams(-1, -2))
+        val rowS = shFlow()
         fun paintTone() {
-            styleLbl.text = "الأسلوب:  " + curStyle() + "   (تلقائي ◂ حرفي ◂ شعبي ◂ جرئ)"
-            degLbl.text = "الشدة:  " + curDeg() + if (stI == toneStyles.indexOf("حرفي")) "   (بتشتغل مع شعبي / جرئ / تلقائي بس)" else ""
-            degSb.alpha = if (stI == toneStyles.indexOf("حرفي")) 0.4f else 1f
+            rowS.removeAllViews()
+            for ((si, sl) in toneLabels.withIndex())
+                rowS.addView(shChip(sl, si == stI) {
+                    stI = si; Cfg.put("tone_style", toneStyles[si]); engine.toneStyle = toneStyles[si]; paintTone()
+                    say("الأسلوب: " + sl + " — الباتشات الجاية هتتترجم بيه. لو عايزه على اللي اتترجم دوس «طبّق»")
+                }, shChipLp())
         }
-        styleSb.setOnSeekBarChangeListener(object : android.widget.SeekBar.OnSeekBarChangeListener {
-            override fun onProgressChanged(sb: android.widget.SeekBar?, p: Int, fromUser: Boolean) {
-                if (!fromUser) return
-                stI = p; val v = if (p == 0) "" else toneStyles[p]; Cfg.put("tone_style", v); engine.toneStyle = v; paintTone()
-            }
-            override fun onStartTrackingTouch(sb: android.widget.SeekBar?) {}
-            override fun onStopTrackingTouch(sb: android.widget.SeekBar?) {
-                say(if (stI == toneStyles.indexOf("حرفي")) "الأسلوب حرفي — الباتشات الجاية من غير تعديل أسلوب" else "الأسلوب ${curStyle()} (${curDeg()}) — الباتشات الجاية هتتترجم بيه. لو عايزه على اللي اتترجم دوس «طبّق»")
-            }
-        })
-        degSb.setOnSeekBarChangeListener(object : android.widget.SeekBar.OnSeekBarChangeListener {
-            override fun onProgressChanged(sb: android.widget.SeekBar?, p: Int, fromUser: Boolean) {
-                if (!fromUser) return
-                dgI = p; Cfg.put("tone_strength", toneDegrees[p]); engine.toneStrength = toneDegrees[p]; paintTone()
-            }
-            override fun onStartTrackingTouch(sb: android.widget.SeekBar?) {}
-            override fun onStopTrackingTouch(sb: android.widget.SeekBar?) {
-                say(if (stI == toneStyles.indexOf("حرفي")) "الشدة بتشتغل مع شعبي / جرئ / تلقائي بس" else "الشدة ${curDeg()} — الباتشات الجاية هتتترجم بيها")
-            }
-        })
-        col.addView(styleLbl, LinearLayout.LayoutParams(-1, -2)); col.addView(styleSb, LinearLayout.LayoutParams(-1, -2))
-        col.addView(degLbl, LinearLayout.LayoutParams(-1, -2)); col.addView(degSb, LinearLayout.LayoutParams(-1, -2))
+        col.addView(rowS, LinearLayout.LayoutParams(-1, -2))
         paintTone()
-        fun toneInstr(): String = toneInstrOf(curStyle(), curDeg())
+        fun toneInstr(): String = toneInstrOf(toneStyles[stI], "")
         // (v999 ملاحظة 5) صف «طبّق» كان آخر عناصر السكرول فبيتقص في الأفقي — بقى فوتر ثابت برّه السكرول
         val applyRow = shDuo(
-            shBtn("🔁 طبّق من هنا للآخر", SH_BLUE) { langPop?.dismiss(); runTool("أسلوب " + curStyle() + " (" + curDeg() + ")", toneInstr(), false) },
-            shBtn("🔁 طبّق على الفيديو كله", SH_GRAY) { langPop?.dismiss(); runTool("أسلوب " + curStyle() + " (" + curDeg() + ")", toneInstr(), true) })
+            shBtn("🔁 طبّق من هنا للآخر", SH_BLUE) { langPop?.dismiss(); runTool("أسلوب " + curStyle(), toneInstr(), false) },
+            shBtn("🔁 طبّق على الفيديو كله", SH_GRAY) { langPop?.dismiss(); runTool("أسلوب " + curStyle(), toneInstr(), true) })
         langPop = showSheet(anchor, col, 430, "langPopup", footer = applyRow) { pw -> if (langPop === pw) langPop = null }
     }
 
