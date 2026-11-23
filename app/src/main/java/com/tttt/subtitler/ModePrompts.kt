@@ -13,6 +13,12 @@ import org.json.JSONObject
 object ModePrompts {
     fun dialectEn(lang: String): String = when (lang) {
         "مصري" -> "Egyptian Arabic (everyday colloquial, as spoken on the streets of Cairo)"
+        "شامي" -> "Levantine (Shami) Arabic"
+        "لبناني" -> "Lebanese Arabic"
+        "خليجي" -> "Gulf Arabic"
+        "مغربي" -> "Moroccan Arabic (Darija)"
+        "عراقي" -> "Iraqi Arabic"
+        "سوداني" -> "Sudanese Arabic"
         else -> "Modern Standard Arabic (Fusha)"
     }
 

@@ -98,13 +98,13 @@ object TrSlider {
 }
 
 /**
- * (v1199) توحيد القيم القديمة: اللهجات بقت فصحى + مصري بس، والأسلوب بقى حرفي + عائلي بس.
- * أي قيمة قديمة محفوظة (شامي/خليجي… · تلقائي/شعبي/جرئ/+18) بتتقرا كأنها مصري / حرفي من غير ما نمسح الإعدادات.
+ * (v1199) توحيد القيم القديمة: الزراير بتعرض فصحى + مصري بس (باقي اللهجات مخفية مش ممسوحة)، والأسلوب بقى حرفي + عائلي بس.
+ * الأساليب القديمة (تلقائي/شعبي/جرئ/+18) بتتقرا حرفي، واللهجات القديمة بتفضل زي ما هي من غير ما نمسح الإعدادات.
  */
 object TrNorm {
     const val LITERAL = "حرفي"; const val FAMILY = "عائلي"
     fun style(v: String): String = if (v.trim() == FAMILY) FAMILY else LITERAL
-    fun dialect(v: String): String { val t = v.trim(); return if (t.isEmpty() || t == "فصحى" || t == "مصري") t else "مصري" }
+    fun dialect(v: String): String = v.trim()   // (v1200) اللهجات التانية موجودة في الكود زي ما هي — مخفية من الزراير بس
     /** بيتنادى من Cfg.str — بيلمس 4 مفاتيح بس */
     fun fix(k: String, v: String): String = when (k) {
         "tone_style", "style" -> style(v)
