@@ -2865,18 +2865,18 @@ class PlayerActivity : Activity(), Host {
         fun tidy(v: TextView) { v.setSingleLine(); v.includeFontPadding = false }
         val webVid = uri == null && (url != null || intent.getStringExtra("ytid") != null)   // (v378) يوتيوب: اللينك بيتجاب بعد بناء الشريط، فزرار الجودة كان بيختفي
         var dlRef: TextView? = null
-        val dlB = b("⬇", 0xFF37474F.toInt()) { dlRef?.let { downloadPopup(it) } }
+        val dlB = b("⬇", 0xFF4A3F36.toInt()) { dlRef?.let { downloadPopup(it) } }
         dlRef = dlB
         if (MtGlass.on() && MtLook.hideDl()) dlB.visibility = View.GONE   // (v899) إعداد MeeTube: إخفاء الزرار
         var trRef: TextView? = null
         val tr = b("▶ ترجم ▾", 0xFFE53935.toInt()) { trRef?.let { trMainClick(it) } }   // (v254) قبل البداية: الإعداد المحفوظ أو شاشة «طريقة الترجمة»
         trRef = tr
         var gearRef: TextView? = null
-        val gearB = b("⚙", 0xFF37474F.toInt()) { gearRef?.let { trSettings(it) } }   // (v1097) T2: إعدادات الترجمة + سلايدر سريع↔دقيق
+        val gearB = b("⚙", 0xFF4A3F36.toInt()) { gearRef?.let { trSettings(it) } }   // (v1097) T2: إعدادات الترجمة + سلايدر سريع↔دقيق
         gearRef = gearB
         // (v1138) CC إظهار/إخفاء الترجمة — اتنقل هنا جنب زراير الترجمة: منوّر = الترجمة ظاهرة · خط مايل = مخفية
         val ccV = CcToggleView(this).apply {
-            background = ui.box(0xFF37474F.toInt(), 0x33FFFFFF, if (compact) 8 else 10); isClickable = true; isFocusable = true
+            background = ui.box(0xFF4A3F36.toInt(), 0x33FFFFFF, if (compact) 8 else 10); isClickable = true; isFocusable = true
             contentDescription = "إظهار/إخفاء الترجمة"; on = ccOn
         }
         ccV.setOnClickListener { ccToggleFn(); ccV.on = ccOn }
@@ -2884,11 +2884,11 @@ class PlayerActivity : Activity(), Host {
         ccSync = { prevSync?.invoke(); ccV.on = ccOn }
         // (v1137) ➕ استيراد ملف ترجمة من بره + CC برقم عدد ملفات الترجمة المتاحة (مرسومين باليد) — جنب زرار الترجمة/الإعدادات
         val plusB = PlusView(this).apply {
-            background = ui.box(0xFF37474F.toInt(), 0x33FFFFFF, if (compact) 8 else 10); isClickable = true; isFocusable = true
+            background = ui.box(0xFF4A3F36.toInt(), 0x33FFFFFF, if (compact) 8 else 10); isClickable = true; isFocusable = true
             contentDescription = "إضافة ملف ترجمة من بره"; setOnClickListener { subImport() }
         }
         val subB = SubBadgeView(this).apply {
-            background = ui.box(0xFF37474F.toInt(), 0x33FFFFFF, if (compact) 8 else 10); isClickable = true; isFocusable = true
+            background = ui.box(0xFF4A3F36.toInt(), 0x33FFFFFF, if (compact) 8 else 10); isClickable = true; isFocusable = true
             contentDescription = "ملفات الترجمة المتاحة"; visibility = View.GONE
         }
         subB.setOnClickListener { subSelectSheet(subB) }
@@ -2900,17 +2900,17 @@ class PlayerActivity : Activity(), Host {
             plusB.visibility = if (uri != null && !webVid) View.VISIBLE else View.GONE
         }
         var lgRef: TextView? = null
-        val lgB = b("🌐", 0xFF37474F.toInt()) { lgRef?.let { langPopup(it) } }
+        val lgB = b("🌐", 0xFF4A3F36.toInt()) { lgRef?.let { langPopup(it) } }
         lgRef = lgB
         trLgB = lgB
         fun qBtn(): TextView {
             val cur = qOpts.getOrNull(qCur)?.h ?: 0
-            val v = b(if (cur > 0) "${cur}p ▾" else "الجودة ▾", 0xFF37474F.toInt()) { }
+            val v = b(if (cur > 0) "${cur}p ▾" else "الجودة ▾", 0xFF4A3F36.toInt()) { }
             v.setOnClickListener { qualPopFn?.invoke(v) }
             qualRowRefs.add(v); return v
         }
         fun aBtn(): TextView {   // (v388) مربع لغة الصوت: بيظهر بس لو الفيديو له أكتر من لغة
-            val v = b("🔊 ▾", 0xFF37474F.toInt()) { }
+            val v = b("🔊 ▾", 0xFF4A3F36.toInt()) { }
             v.setOnClickListener { audPopFn?.invoke(v) }
             audRowRefs.add(v); v.visibility = View.GONE; paintAud(); return v
         }

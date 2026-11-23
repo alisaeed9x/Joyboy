@@ -21,9 +21,9 @@ import org.json.JSONObject
  *  - handoffToPhone(act): الفيديو الشغّال على التلفزيون يكمّل على الموبايل من نفس الثانية.
  */
 object PlayQueueUi {
-    private const val BG = 0xFF0F1830.toInt()
-    private const val CARD = 0xFF16233F.toInt()
-    private const val LINE = 0xFF2A3A5E.toInt()
+    private const val BG = 0xFF1B1714.toInt()
+    private const val CARD = 0xFF241E19.toInt()
+    private const val LINE = 0xFF3F362E.toInt()
     private const val DIM = 0xFF8FA3C8.toInt()
     private const val ACC = 0xFF5B8DEF.toInt()
     private const val RED = 0xFFE5484D.toInt()

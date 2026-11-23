@@ -18,7 +18,7 @@ class StatusStrip(private val act: Activity, private val parent: FrameLayout, pr
     private val main = Handler(Looper.getMainLooper())
     private val tv: TextView = ui.text("", 12.5f, Color.WHITE, true).apply {
         setSingleLine(); ellipsize = android.text.TextUtils.TruncateAt.END; gravity = Gravity.CENTER; maxWidth = ui.dp(300)
-        setPadding(ui.dp(14), ui.dp(7), ui.dp(14), ui.dp(7)); background = if (MtGlass.on()) MtGlass.floatPill(ui.dp(MtGlass.rad(18)).toFloat(), act.resources.displayMetrics.density) else ui.box(0xEE1B1E27.toInt(), 0x558FB4FF.toInt(), 18)   // (v901)
+        setPadding(ui.dp(14), ui.dp(7), ui.dp(14), ui.dp(7)); background = if (MtGlass.on()) MtGlass.floatPill(ui.dp(MtGlass.rad(18)).toFloat(), act.resources.displayMetrics.density) else ui.box(0xEE1F1A16.toInt(), 0x558FB4FF.toInt(), 18)   // (v901)
         elevation = ui.dp(9).toFloat(); visibility = View.GONE; layoutDirection = View.LAYOUT_DIRECTION_RTL
         setOnClickListener { hide(); onOpen() }
     }

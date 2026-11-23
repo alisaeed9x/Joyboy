@@ -42,7 +42,7 @@ class MiniDock(
     private var artKey = ""
 
     private val art = ImageView(act).apply {
-        scaleType = ImageView.ScaleType.CENTER_CROP; setBackgroundColor(0xFF2A2A36.toInt())
+        scaleType = ImageView.ScaleType.CENTER_CROP; setBackgroundColor(0xFF332C26.toInt())
         outlineProvider = object : ViewOutlineProvider() { override fun getOutline(v: View, o: Outline) { o.setOval(0, 0, v.width, v.height) } }
         clipToOutline = true
     }
@@ -240,7 +240,7 @@ class MiniDock(
         }
         glassKey = -1
         dock.background = if (MtGlass.on()) MtGlass.floatPill(ui.dp(if (expanded) 28 else 26).toFloat(), dock.resources.displayMetrics.density, if (on) 0xFF8FB4FF.toInt() else 0)   // (v901) زجاج MeeTube
-            else ui.box(0xEE1B1E27.toInt(), if (on) 0xFF8FB4FF.toInt() else 0x55FFFFFF, if (expanded) 28 else 26, 2)
+            else ui.box(0xEE1F1A16.toInt(), if (on) 0xFF8FB4FF.toInt() else 0x55FFFFFF, if (expanded) 28 else 26, 2)
     }
 
     /** مكان الدايرة/الكبسولة: لازقة في الحافة (شمال/يمين) بالارتفاع المحفوظ — من غير ما تطلع بره الشاشة */

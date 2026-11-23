@@ -58,7 +58,7 @@ object TaskAgg {
 /** (v472) دايرة زي دايرة مشغّل الموسيقى: حلقة تقدّم بتلف حواليها + الوقت المتبقي (أو النسبة) في النص + عدد المهام في ركن صغير */
 class TaskRingView(ctx: Context, private val accent: Int) : View(ctx) {
     private val d = resources.displayMetrics.density
-    private val bg = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = if (MtGlass.on()) 0xC71C1C21.toInt() else 0xF01B1E27.toInt() }   // (v902) زجاج MeeTube
+    private val bg = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = if (MtGlass.on()) 0xC71C1C21.toInt() else 0xF01F1A16.toInt() }   // (v902) زجاج MeeTube
     private val rimP = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; color = 0x3DFFFFFF; strokeWidth = d }
     private val track = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; color = 0x33FFFFFF; strokeWidth = 4f * d }
     private val arc = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeCap = Paint.Cap.ROUND; strokeWidth = 4f * d; color = accent }

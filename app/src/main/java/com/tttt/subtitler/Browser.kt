@@ -640,14 +640,14 @@ class BrowserActivity : Activity() {
         }
         undoB = IconTextView(this).apply {
             text = "↩"; textSize = 20f; gravity = Gravity.CENTER; setTextColor(Color.WHITE)
-            background = ui.box(0xCC1E2A3A.toInt(), 0x66FFFFFF, 22); elevation = ui.dp(4).toFloat(); visibility = View.GONE
+            background = ui.box(0xCC2B241F.toInt(), 0x66FFFFFF, 22); elevation = ui.dp(4).toFloat(); visibility = View.GONE
             setOnClickListener { undoPanic() }
         }
         ctl = buildControls()   // (v248) زرار مانع الإعلانات 🛡 بقى فوق زرار الطوارئ على طول
         // (v592) زرار التدوير 🔄 بقى عايم في العمود (بدل ما كان ثابت فوق جنب التابات): من فوق لتحت ← 📺 · 🛡 · 🔄 · 🚨 · ↩
         val rotFloat = IconTextView(this).apply {
             text = "🔄"; textSize = 18f; gravity = Gravity.CENTER; setTextColor(Color.WHITE)
-            background = ui.box(0xCC1E2A3A.toInt(), 0x66FFFFFF, 22); elevation = ui.dp(4).toFloat()
+            background = ui.box(0xCC2B241F.toInt(), 0x66FFFFFF, 22); elevation = ui.dp(4).toFloat()
             setOnClickListener { toggleRotate() }
             if (tvOn) visibility = View.GONE   // التلفزيون ما كانش فيه زرار تدوير
         }
@@ -2396,7 +2396,7 @@ class BrowserActivity : Activity() {
     private fun panelOn(): Boolean = try { Cfg.str("vid_panel", "0") == "1" } catch (_: Throwable) { false }
     private fun stripBtn(t: String, sp: Float = 18f, w: Int = 40, onTap: () -> Unit): TextView = IconTextView(this).apply {
         text = t; textSize = sp; gravity = Gravity.CENTER; setTextColor(Color.WHITE); includeFontPadding = false
-        background = ui.box(0xCC1E2A3A.toInt(), 0x66FFFFFF, 20)
+        background = ui.box(0xCC2B241F.toInt(), 0x66FFFFFF, 20)
         setOnClickListener { onTap() }
         layoutParams = LinearLayout.LayoutParams(ui.dp(w), ui.dp(38)).apply { setMargins(ui.dp(3), 0, ui.dp(3), 0) }
     }
