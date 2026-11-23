@@ -87,16 +87,13 @@ object Themes {
         val night = MeeRes.night()
         val n = if (night) 1 else 0
         cached?.let { if (cachedNight == n) return it }
-        val bg = MeeRes.color("mobile_color_background", 0xFF000000.toInt(), 0xFFFFFFFF.toInt()) or (0xFF shl 24)
-        val surface = over(MeeRes.color("mobile_color_surface", 0xFF1C1C21.toInt(), 0xFFFFFFFF.toInt()), bg)
-        val card = over(MeeRes.color("mobile_color_card", 0x17FFFFFF, 0xFFF2F2F2.toInt()), bg)
-        val border = over(MeeRes.color("mobile_color_divider", 0x1FFFFFFF, 0x1A000000), bg)
-        val primary = MeeRes.color("meetube_accent", 0xFFF1F1F1.toInt(), 0xFF0F0F0F.toInt()) or (0xFF shl 24)
-        val text = MeeRes.color("mobile_color_on_surface", 0xFFF5F5F7.toInt(), 0xFF0F0F0F.toInt()) or (0xFF shl 24)
-        val muted = over(MeeRes.color("mobile_color_on_surface_secondary", 0x99FFFFFF.toInt(), 0xFF606060.toInt()), bg)
-        val t = Theme(if (night) "mt_dark" else "mt_light", if (night) "MeeTube داكن" else "MeeTube فاتح",
-            bg, surface, card, border, primary, muted, text, muted,
-            if (night) 0xFF8A8A8A.toInt() else 0xFF3C3C3C.toInt(), 0xFF2BA640.toInt())
+        // (v1205) هوية «Vanilla Studio»: فاتح = Vanilla/Latte/Mocha/Espresso · داكن = Espresso عميق بسطوح Mocha غامقة (مش عكس الفاتح).
+        // الجانب (فاتح/داكن) لسه من إعداد MeeTube؛ الألوان بس هي اللي بقت دافية.
+        val c = { h: Long -> (0xFF000000L or h).toInt() }
+        val t = if (night) Theme("vanilla_dark", "Vanilla داكن",
+            c(0x1B1714), c(0x29241F), c(0x332C26), c(0x453B32), c(0xE6D8C5), c(0xB5A798), c(0xF5F0E7), c(0xB5A798), c(0xD9806E), c(0x6FB27C))
+        else Theme("vanilla_light", "Vanilla فاتح",
+            c(0xF5F0E7), c(0xFBF8F2), c(0xFFFDF9), c(0xE6D8C5), c(0x8B6B50), c(0x6F6052), c(0x29241F), c(0x6F6052), c(0xB3503F), c(0x3E8E55))
         cached = t; cachedNight = n
         return t
     }
