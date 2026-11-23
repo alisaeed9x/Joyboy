@@ -868,6 +868,9 @@ class Engine(
         return ok
     }
 
+    /** (v1202) نص برومبت الترجمة الكامل (للباتش الأول) — بيتحط في ملف البرومبت اللي بيتنسخ مع رفع الصوت للريبو */
+    fun promptText(): String = try { buildPrompt(currentDur(), 0.0) } catch (e: Throwable) { "" }
+
     /** يمسح ترجمة الباتشات من..إلى (شاملة، to < 0 = لحد النهاية) عشان تتترجم من جديد. بيحفظ نسخة قبلها (🗂 ترجمات الفيديو) */
     fun redo(from: Int, to: Int, keep: Boolean = true) {
         val d = currentDur()

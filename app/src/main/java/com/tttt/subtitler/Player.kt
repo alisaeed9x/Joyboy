@@ -1572,6 +1572,9 @@ class PlayerActivity : Activity(), Host {
         add("🔤⏱ شكل وتوقيت الترجمة") { tvSubDialog() }
         if (hasSubs) add("📝 الجمل المترجمة") { try { if (::sentDlg.isInitialized) sentDlg.show() } catch (_: Throwable) {} }
         add("📝 ترجمات الفيديو (قديم + جديد)") { sfTranslationsDialog(anchor) }
+        add("☁ ارفع الصوت للريبو (ترجمة بره)") { ghUpload() }   // (v1202)
+        add("📋 نسخ برومبت الريبو") { GhAudio.copyLast(this) }
+        add("🗑 امسح الصوت من الريبو") { GhAudio.clear(this) }
         if (tr) {
             add("🔄 إعادة / تقدم الباتشات") { batchDialog() }
             add("⚙ إعدادات الترجمة") { trSettings(anchor) }
@@ -5290,6 +5293,9 @@ class PlayerActivity : Activity(), Host {
         gSub.addView(pk("⏱ شريط التزامن السريع") { toggleSyncStrip() })   // (v469) B14
         // (v103) قايمة ☰ = قايمة منسدلة صغيرة فيها بس الأزرار اللي مش موجودة في المشغّل نفسه
         gTool.addView(pd("📤 تصدير SRT") { doExport() })
+        gTool.addView(pd("☁ ارفع الصوت للريبو (ترجمة بره)") { ghUpload() })   // (v1202)
+        gTool.addView(pd("📋 نسخ برومبت الريبو") { GhAudio.copyLast(this) })
+        gTool.addView(pd("🗑 امسح الصوت من الريبو") { GhAudio.clear(this) })
         gTool.addView(pd("📥 استيراد ملف ترجمة (بيترجم فورًا)") { doImport() })
         gTool.addView(pd("📂 فتح فيديو") { doOpen() })
         // (v1025) اللي اتشال من الشريط العلوي لقلّة الاستعمال بقى هنا
@@ -7892,6 +7898,15 @@ class PlayerActivity : Activity(), Host {
         val le = (engine as? LocalEngine)?.e
         if (le == null) { say("تنزيل الباتشات متاح لما الترجمة تشتغل على الجهاز ده نفسه"); return }
         BatchExport.run(this, le, t)
+    }
+
+    /** (v1202) يرفع صوت الفيديو (باتشات AAC في ZIP) على الريبو + برومبت الترجمة، ويتابع من «المهام» */
+    fun ghUpload() {
+        if (!::engine.isInitialized) { say("المحرك لسه ما اشتغلش — افتح الفيديو الأول"); return }
+        val t = try { Recents.titleOf(vid).substringBeforeLast('.', Recents.titleOf(vid)) } catch (_: Throwable) { "video" }
+        val le = (engine as? LocalEngine)?.e
+        if (le == null) { say("رفع الصوت متاح لما المحرك يشتغل على الجهاز ده نفسه"); return }
+        GhAudio.upload(this, le, t)
     }
 
     /** (v1195) ZIP «اللوج + الترجمة»: اللوج كامل + الأصل لوحده + الترجمة الناتجة لوحدها (Download/Joyboy_Logs) */

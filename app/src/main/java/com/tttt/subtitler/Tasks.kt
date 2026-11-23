@@ -81,7 +81,7 @@ object TaskCenter {
         val t = TaskItem(++seq, kind, title); t.work = work; t.workKeep = work; t.spec = spec
         appCtx = app.applicationContext
         items.add(0, t)
-        if (kind == "dm") {
+        if (kind == "dm" || kind == "ghup") {   // (v1202) رفع الصوت للريبو في خيط لوحده
             // (v324) تحميلات المتصفح (DownloadManager): بتتابع تقدّم التحميل بس، فكل واحدة في خيط لوحدها من غير طابور (التحميل نفسه شغّال في النظام بالتوازي)
             val ctx = app.applicationContext
             Thread { runOne(ctx, t) }.apply { isDaemon = true; start() }

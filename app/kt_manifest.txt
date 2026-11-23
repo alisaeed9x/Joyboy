@@ -320,3 +320,4 @@ com/tttt/subtitler/YoutubeUi.kt
 com/tttt/subtitler/YtFast.kt
 com/tttt/subtitler/YtBackend.kt
 com/tttt/subtitler/SongHint.kt
+com/tttt/subtitler/GhAudio.kt
