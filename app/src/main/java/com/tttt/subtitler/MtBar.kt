@@ -48,10 +48,10 @@ object MtBar {
     private const val TAG_SYNC = "mtbar_sync"
     private const val TAG_CAP = "mtbar_cap"
     private const val TAG_MODE = "mtbar_mode"
-    private const val BLUE_ON = 0xFF1F5FBF.toInt()
-    private const val MT_SH_BLUE = 0xFF1F5FBF.toInt()
+    private const val BLUE_ON = 0xFF3E8E88.toInt()   // (v1210) فيروزي هادي بدل الأزرق
+    private const val MT_SH_BLUE = 0xFF3E8E88.toInt()
     private const val MT_SH_RED = 0xFFB71C1C.toInt()
-    private const val MT_SH_GRAY = 0xFF455A64.toInt()
+    private const val MT_SH_GRAY = 0xFF5A4C40.toInt()
     private const val DARK_OFF = 0xE00F0F12.toInt()
     private const val TAG_LOCKOV = "mtbar_lockov"
     private const val REST_A = 0.25f
@@ -596,7 +596,7 @@ object MtBar {
             trChipLast = t
             chip.text = t
         }
-        val fill = if (pct >= 100) 0xFF2E7D32.toInt() else 0xFF1F5FBF.toInt()
+        val fill = if (pct >= 100) 0xFF2E7D32.toInt() else 0xFF3E8E88.toInt()
         chip.background = u.box(fill, 0x33FFFFFF, 12)
     }
 
@@ -667,7 +667,7 @@ object MtBar {
         val cols = if (MtGlass.on()) {
             intArrayOf(0xE62E2E3C.toInt(), 0xEB121219.toInt())
         } else {
-            intArrayOf(0xF2242432.toInt(), 0xF5101017.toInt())
+            intArrayOf(0xF2332C26.toInt(), 0xF51B1714.toInt())
         }
         return GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, cols).apply {
             cornerRadius = u.dp(if (MtGlass.on()) 24 else 18).toFloat()
@@ -1084,7 +1084,7 @@ object MtBar {
             v.foreground = if (on) android.graphics.drawable.GradientDrawable().apply {
                 shape = android.graphics.drawable.GradientDrawable.OVAL
                 setColor(0x00000000)
-                setStroke(2, 0xFF4C8DFF.toInt())
+                setStroke(2, 0xFF6CC4BC.toInt())
             } else null
         } catch (_: Throwable) {}
     }
@@ -1642,7 +1642,7 @@ object MtBar {
             setPadding(dp(a, 6), dp(a, 6), dp(a, 6), dp(a, 6))
             background = android.graphics.drawable.GradientDrawable(
                 android.graphics.drawable.GradientDrawable.Orientation.TOP_BOTTOM,
-                intArrayOf(0xF2242432.toInt(), 0xF5101017.toInt())
+                intArrayOf(0xF2332C26.toInt(), 0xF51B1714.toInt())
             ).apply {
                 cornerRadius = dp(a, 24).toFloat()
                 setStroke(1, 0x3DFFFFFF)
@@ -1707,7 +1707,7 @@ object MtBar {
                 layoutDirection = View.LAYOUT_DIRECTION_RTL
                 background = GradientDrawable(
                     GradientDrawable.Orientation.TOP_BOTTOM,
-                    intArrayOf(0xF2242432.toInt(), 0xF5101017.toInt())
+                    intArrayOf(0xF2332C26.toInt(), 0xF51B1714.toInt())
                 ).apply {
                     cornerRadius = dp(a, 24).toFloat()
                     setStroke(1, 0x3DFFFFFF)
