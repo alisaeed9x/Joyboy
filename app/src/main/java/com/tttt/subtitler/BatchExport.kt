@@ -77,53 +77,62 @@ object BatchExport {
         if (busy) { Notice.show(act, "⏳ التنزيل شغّال لسه…", 1800L); return }
         busy = true
         LogStore.add("🎧 تنزيل الباتشات: بدأ — $title")
-        Notice.show(act, "🎧 بجهّز الباتشات الصوتية…", 2000L)
-        Thread {
-            var msg: String
-            var target: OutTarget? = null
-            try {
-                val info = try { engine.batches() } catch (_: Throwable) { emptyList() }
-                val subsNow = try { ArrayList(engine.subs) } catch (_: Throwable) { ArrayList<Sub>() }
-                val zname = "Batches_" + safe(title) + ".zip"
-                val t = openOut(act, "Joyboy_Batches", zname, "application/zip"); target = t
-                val index = StringBuilder("الفيديو: ").append(title).append("\nكل ملف صوت بيبدأ قبل الباتش بـ ").append(Engine.OVERLAP.toInt()).append(" ثواني (نفس اللي بيتبعت لجيميناي)، والاسم بيدل على حدود الباتش نفسه.\n\n")
-                val fails = ArrayList<String>()
-                var last = ""
-                var n = 0
-                java.util.zip.ZipOutputStream(t.stream).use { zo ->
-                    n = engine.exportBatchAudio({ i, why -> fails.add("باتش " + (i + 1) + " — " + why) }) { i, total, st, en, bytes, mime ->
-                        val ext = if (mime.contains("wav")) "wav" else "aac"
-                        val name = String.format(Locale.US, "%03d_%s_%s.%s", i + 1, hms(st), hms(en), ext)
-                        zo.putNextEntry(java.util.zip.ZipEntry(name)); zo.write(bytes); zo.closeEntry()
-                        val cnt = subsNow.count { it.start >= st - 0.001 && it.start < en }
-                        index.append("باتش رقم ").append(i + 1).append(" — من ").append(hms(st)).append(" إلى ").append(hms(en)).append(" — ").append(bytes.size / 1024).append("KB — ").append(cnt).append(" جملة — ").append(name).append("\n")
-                        val m = "🎧 الباتش " + (i + 1) + " من " + total
-                        if (m != last) { last = m; act.runOnUiThread { Notice.show(act, m, 900L) } }
-                    }
-                    if (n > 0) {
-                        if (fails.isNotEmpty()) { index.append("\n⚠ باتشات ما طلعش صوتها (").append(fails.size).append("):\n"); fails.forEach { index.append("- ").append(it).append("\n") } }
-                        zo.putNextEntry(java.util.zip.ZipEntry("batches.txt")); zo.write(index.toString().toByteArray(Charsets.UTF_8)); zo.closeEntry()
-                        zo.putNextEntry(java.util.zip.ZipEntry("translation_by_batch.txt")); zo.write(byBatchText(title, info, subsNow).toByteArray(Charsets.UTF_8)); zo.closeEntry()
-                    }
+        Notice.show(act, "🎧 اتضاف للمهام — تابعه من «المهام»", 2400L)
+        // (v1198) بقى مهمة في «المهام» (تقدّم + فشل/إعادة) بدل إشعارات بس
+        TaskCenter.add(act, "export", "🎧 باتشات صوتية: " + safe(title)) { task ->
+            try { work(act, engine, title, task) } finally { busy = false }
+        }
+    }
+
+    private fun work(act: Activity, engine: Engine, title: String, task: TaskItem) {
+        var target: OutTarget? = null
+        try {
+            val info = try { engine.batches() } catch (_: Throwable) { emptyList() }
+            val subsNow = try { ArrayList(engine.subs) } catch (_: Throwable) { ArrayList<Sub>() }
+            val zname = "Batches_" + safe(title) + ".zip"
+            val t = openOut(act, "Joyboy_Batches", zname, "application/zip"); target = t
+            val index = StringBuilder("الفيديو: ").append(title).append("\nكل ملف صوت بيبدأ قبل الباتش بـ ").append(Engine.OVERLAP.toInt()).append(" ثواني (نفس اللي بيتبعت لجيميناي)، والاسم بيدل على حدود الباتش نفسه.\n\n")
+            val fails = ArrayList<String>()
+            var n = 0
+            java.util.zip.ZipOutputStream(t.stream).use { zo ->
+                n = engine.exportBatchAudio({ i, why -> fails.add("باتش " + (i + 1) + " — " + why) }) { i, total, st, en, bytes, mime ->
+                    if (task.cancelled) throw TaskCancelled()
+                    val ext = if (mime.contains("wav")) "wav" else "aac"
+                    val name = String.format(Locale.US, "%03d_%s_%s.%s", i + 1, hms(st), hms(en), ext)
+                    zo.putNextEntry(java.util.zip.ZipEntry(name)); zo.write(bytes); zo.closeEntry()
+                    val cnt = subsNow.count { it.start >= st - 0.001 && it.start < en }
+                    index.append("باتش رقم ").append(i + 1).append(" — من ").append(hms(st)).append(" إلى ").append(hms(en)).append(" — ").append(bytes.size / 1024).append("KB — ").append(cnt).append(" جملة — ").append(name).append("\n")
+                    task.pct = ((i + 1) * 100 / maxOf(1, total)).coerceIn(0, 99)
+                    task.msg = "🎧 الباتش " + (i + 1) + " من " + total
+                    TaskCenter.changed()
                 }
                 if (n > 0) {
-                    val where = if (t.uri != null) "Download/Joyboy_Batches/" + zname else (t.file?.absolutePath ?: zname)
-                    msg = "✅ نزّلت " + n + " باتش في ملف واحد: " + where + (if (fails.isNotEmpty()) "\n⚠ " + fails.size + " باتش ما طلعش صوته (التفاصيل في batches.txt)" else "")
-                    LogStore.add("🎧 تنزيل الباتشات: خلص — $n باتش (فشل ${fails.size}) ← $where")
-                } else {
-                    t.discard(act); target = null
-                    msg = "⚠ مفيش صوت أطلعه من الفيديو ده" + (if (fails.isNotEmpty()) "\n" + fails.first() else "")
-                    LogStore.add("🎧 تنزيل الباتشات: مفيش ولا باتش اتصدّر — " + (fails.firstOrNull() ?: "المدة صفر أو مفيش باتشات"))
+                    if (fails.isNotEmpty()) { index.append("\n⚠ باتشات ما طلعش صوتها (").append(fails.size).append("):\n"); fails.forEach { index.append("- ").append(it).append("\n") } }
+                    zo.putNextEntry(java.util.zip.ZipEntry("batches.txt")); zo.write(index.toString().toByteArray(Charsets.UTF_8)); zo.closeEntry()
+                    zo.putNextEntry(java.util.zip.ZipEntry("translation_by_batch.txt")); zo.write(byBatchText(title, info, subsNow).toByteArray(Charsets.UTF_8)); zo.closeEntry()
                 }
-            } catch (e: Throwable) {
-                LogStore.err("BatchExport", e)
-                try { target?.discard(act) } catch (_: Throwable) {}
-                msg = "⚠ التنزيل فشل: " + (e.message ?: e.javaClass.simpleName)
-                LogStore.add("🎧 تنزيل الباتشات: فشل — " + (e.message ?: e.javaClass.simpleName))
             }
-            busy = false
-            act.runOnUiThread { Notice.show(act, msg, 6000L) }
-        }.also { it.isDaemon = true }.start()
+            if (n > 0) {
+                val where = "Download/Joyboy_Batches/" + zname
+                task.outPath = where; task.mime = "application/zip"
+                task.msg = "✅ " + n + " باتش في ملف واحد" + (if (fails.isNotEmpty()) " · ⚠ " + fails.size + " ما طلعش صوته (التفاصيل في batches.txt)" else "")
+                LogStore.add("🎧 تنزيل الباتشات: خلص — $n باتش (فشل ${fails.size}) ← $where")
+                target = null
+            } else {
+                t.discard(act); target = null
+                val why = "⚠ مفيش صوت أطلعه من الفيديو ده" + (if (fails.isNotEmpty()) " — " + fails.first() else "")
+                LogStore.add("🎧 تنزيل الباتشات: مفيش ولا باتش اتصدّر — " + (fails.firstOrNull() ?: "المدة صفر أو مفيش باتشات"))
+                throw java.io.IOException(why)
+            }
+        } catch (e: TaskCancelled) {
+            try { target?.discard(act) } catch (_: Throwable) {}
+            throw e
+        } catch (e: Throwable) {
+            try { target?.discard(act) } catch (_: Throwable) {}
+            if (e !is java.io.IOException) LogStore.err("BatchExport", e)
+            LogStore.add("🎧 تنزيل الباتشات: فشل — " + (e.message ?: e.javaClass.simpleName))
+            throw e
+        }
     }
 }
 

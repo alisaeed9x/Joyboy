@@ -23,13 +23,16 @@ class TasksUi(private val act: Activity, private val ui: Ui, private val th: The
     var onOpenOut: ((TaskItem) -> Unit)? = null
         set(v) { field = v; closeB.visibility = if (v != null) View.VISIBLE else View.GONE }
 
+    // (v1198) المهام + مركز التحميل = صفحة واحدة: طابور ترجمة الخلفية فوق التحميلات
+    private val bgq = QueueUi(act, ui, th)
+    private val bgSec = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; visibility = View.GONE }
     private val sumTv = ui.text("", 12f, th.primary, true).apply { setPadding(ui.dp(16), 0, ui.dp(12), ui.dp(2)); visibility = View.GONE }
     private class Row(val card: LinearLayout, val title: TextView, val status: TextView, val bar: ProgressBar, val btns: LinearLayout)
     private val rows = HashMap<Int, Row>()
 
     init {
         val head = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; setPadding(ui.dp(16), ui.dp(14), ui.dp(12), ui.dp(6)) }
-        head.addView(ui.text("⬇ مركز التحميل", 18f, th.primary, true), LinearLayout.LayoutParams(0, -2, 1f))
+        head.addView(ui.text("📋 المهام", 18f, th.primary, true), LinearLayout.LayoutParams(0, -2, 1f))
         head.addView(ui.button("🗑 مسح المنتهي") { TaskCenter.clearFinished() }, LinearLayout.LayoutParams(-2, -2))
         head.addView(closeB, LinearLayout.LayoutParams(-2, -2).apply { marginStart = ui.dp(6) })
         val sv = ScrollView(act).apply { addView(list); overScrollMode = View.OVER_SCROLL_NEVER }
@@ -47,6 +50,10 @@ class TasksUi(private val act: Activity, private val ui: Ui, private val th: The
         connRow.addView(ui.chips(cv, { Cfg.int("dl_conns", 4).coerceIn(1, 8).toString().let { if (it in cv) it else "4" } }) { n -> Cfg.put("dl_conns", n) }, LinearLayout.LayoutParams(0, -2, 1f))
         root.addView(connRow, LinearLayout.LayoutParams(-1, -2))
         root.addView(sv, LinearLayout.LayoutParams(-1, 0, 1f))
+        bgSec.addView(ui.text("🌙 ترجمة الخلفية", 13f, th.primary, true).apply { setPadding(ui.dp(4), ui.dp(4), 0, ui.dp(2)) })
+        bgSec.addView(bgq.content)
+        list.addView(bgSec)
+        list.addView(ui.text("⬇ التحميلات والنقل", 13f, th.primary, true).apply { setPadding(ui.dp(4), ui.dp(10), 0, ui.dp(2)) })
         list.addView(taskList)
         refresh()
     }
@@ -138,6 +145,7 @@ class TasksUi(private val act: Activity, private val ui: Ui, private val th: The
     }
 
     fun refresh() {
+        try { val hasBg = BgJobs.jobs.isNotEmpty(); bgSec.visibility = if (hasBg) View.VISIBLE else View.GONE; if (hasBg) bgq.refresh() } catch (_: Throwable) {}
         // --- التحميلات ---
         val items = TaskCenter.items.toList()
         val runN = items.count { it.state == 1 && !it.paused }; val spd = TaskCenter.speedSum()
@@ -146,7 +154,7 @@ class TasksUi(private val act: Activity, private val ui: Ui, private val th: The
         val ids = items.map { it.id }.toSet()
         val gone = rows.keys.filter { it !in ids }
         for (k in gone) { rows.remove(k)?.let { taskList.removeView(it.card) } }
-        if (items.isEmpty()) { if (empty.parent == null) list.addView(empty) } else if (empty.parent != null) list.removeView(empty)
+        if (items.isEmpty() && BgJobs.jobs.isEmpty()) { if (empty.parent == null) list.addView(empty) } else if (empty.parent != null) list.removeView(empty)
         items.forEachIndexed { idx, t ->
             val r: Row = rows[t.id] ?: makeRow(t).also { nr -> rows[t.id] = nr; taskList.addView(nr.card, minOf(idx, taskList.childCount)); nr.card.tag = -1 }
             // الأزرار بتتبني من جديد بس لما حالة المهمة تتغيّر (عشان الدوسة ما تضيعش وسط تحديث التقدم)

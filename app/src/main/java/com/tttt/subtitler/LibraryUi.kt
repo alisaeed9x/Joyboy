@@ -386,19 +386,20 @@ class LibraryUi(
         selAllBtn.setOnLongClickListener { a -> a.performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS); popup(a, listOf("☑ تحديد الكل" to { selectAll() }, "☐ إلغاء التحديد" to { clearSel() }) + (if (inWebNow()) listOf("🗑 مسح كل الفيديوهات المصطادة" to { webClearAll() }) else emptyList())); true }
         selMenuBtn = hbtn("⋮") { }.apply { visibility = View.GONE; setOnClickListener { selMenu(it) } }
         selCloseBtn = hbtn("✕") { clearSel() }.apply { visibility = View.GONE }
+        selAllBtn.visibility = View.GONE   // (v1198) ▣ تحديد الكل بيظهر وقت التحديد بس (التحديد بالضغطة المطوّلة على أي صف)
         head.addView(selAllBtn); head.addView(selMenuBtn); head.addView(selCloseBtn)
         queueBtn = hbtn("📋") { onQueue() }
         head.addView(queueBtn)
         recBtn = hbtn("🕘") { toggleRecents() }
         recBtn.setOnLongClickListener { a -> a.performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS); popup(a, listOf((if (artRows()) "🖼 صور الأغاني في الفولدرات: شغّالة (دوس للقفل)" else "🖼 صور الأغاني في الفولدرات: مقفولة (دوس للتشغيل)") to { toggleArtRows() }, "🧹 مسح سجل آخر المشغّل" to { clearRecents() })); true }
         if (audio) head.addView(recBtn)
-        val linkBtn = hbtn("🔗") { onLink() }; head.addView(linkBtn)
-        val pickBtn = hbtn("📂") { onPick() }; head.addView(pickBtn)
+        val linkBtn = hbtn("🔗") { onLink() }   // (v1198) اتشال من الهيدر — لسه في القايمة الجانبية ☰
+        val pickBtn = hbtn("📂") { onPick() }   // (v1198) اتشال من الهيدر
         lateinit var setRef: View
         val setBtn = hbtn("⚙️") { onSettings(setRef) }; setRef = setBtn; head.addView(setBtn)
         refreshBtn = hbtn("🔄") { refreshBtn.animate().rotationBy(360f).setDuration(600).start(); userRefresh = true; onRefresh() }
-        head.addView(refreshBtn)
-        normalBtns = if (audio) listOf(recBtn, setBtn, refreshBtn) else listOf(queueBtn, linkBtn, pickBtn, setBtn, refreshBtn)
+        // (v1198) 🔄 اتشال من الهيدر: السحب لتحت من أول القايمة لسه بيعمل ريفريش
+        normalBtns = if (audio) listOf(recBtn, setBtn) else listOf(queueBtn, setBtn)
         if (audio) { queueBtn.visibility = View.GONE; linkBtn.visibility = View.GONE; pickBtn.visibility = View.GONE }
         root.addView(head, LinearLayout.LayoutParams(-1, -2))
         // (v932) مربعين المصدر (📺 فيديوهات التلفزيون | 📱 فيديوهات الموبايل) فوق: تحت الهيدر (فيه ⚙️) وفوق صف الترتيب — كانوا تحت خالص فوق الشريط السفلي
@@ -1286,7 +1287,7 @@ class LibraryUi(
         normalBtns.forEach { it.visibility = if (on) View.GONE else View.VISIBLE }
         selMenuBtn.visibility = if (on) View.VISIBLE else View.GONE
         selCloseBtn.visibility = if (on) View.VISIBLE else View.GONE
-        selAllBtn.visibility = if (selectableKeys().isEmpty()) View.GONE else View.VISIBLE
+        selAllBtn.visibility = if (on && selectableKeys().isNotEmpty()) View.VISIBLE else View.GONE
         if (on) {
             val fs = selFolders(); val vs = selVideos()
             titleTv.text = "☑ " + sel.size + (if (fs.isNotEmpty()) " فولدر محدد" else " $noun محدد")

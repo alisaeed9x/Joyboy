@@ -14,6 +14,8 @@ class QueueUi(private val act: Activity, private val ui: Ui, private val th: The
     private val col = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL }
     private var sig = ""
     val showing: Boolean get() = dlg?.isShowing == true
+    /** (v1198) محتوى الطابور بيتضمّن جوه صفحة المهام */
+    val content: LinearLayout get() = col
 
     private fun chip(t: String, f: () -> Unit) = IconTextView(act).apply {
         text = t; textSize = 12f; setTextColor(th.text); gravity = Gravity.CENTER; minHeight = ui.dp(44); setPadding(ui.dp(10), ui.dp(7), ui.dp(10), ui.dp(7)); background = ui.box(th.surface, th.border, 8)

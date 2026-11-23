@@ -90,7 +90,7 @@ object FilesHub {
     fun switchBar(act: Activity, ui: Ui, th: Theme, cur: Int): MediaSwitch {
         Cfg.put(K, "fm")
         // (v1051) تبويب «📡 إرسال واستقبال» اتشال: الأرقام الجديدة 0 ملفات · 1 موسيقى · 2 مركز التحميل (بتتحوّل للأرقام القديمة تحت)
-        val sw = MediaSwitch(act, ui, th, listOf("📂 الملفات", "🎵 الموسيقى", "⬇ مركز التحميل"), 12.5f) { t0 ->
+        val sw = MediaSwitch(act, ui, th, listOf("📂 الملفات", "🎵 الموسيقى", "📋 المهام"), 12.5f) { t0 ->
             val t = if (t0 == 0) 0 else t0 + 1
             if (t != cur) {
                 try {

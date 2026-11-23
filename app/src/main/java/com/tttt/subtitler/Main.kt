@@ -118,7 +118,7 @@ class MainActivity : Activity() {
     private fun webSearch(q: String) { saveCfgFn?.invoke(); NavAnim.set(curTab, 2); startActivity(Intent(this, BrowserActivity::class.java).putExtra("start", "https://www.google.com/search?q=" + java.net.URLEncoder.encode(q, "UTF-8"))) }
     private var fabHide = false
     /** (v336) الزرار العايم اتشال؛ الدالة دلوقتي بتحدّث عدّاد زرار «المهام» في الشريط السفلي */
-    private fun updateTasksFab() { try { val a = TaskCenter.active(); val t = TaskCenter.total(); val n = if (a > 0) a else t; navUi?.label(5, if (n > 0) "مركز التحميل ($n)" else "مركز التحميل"); tasksFabUi?.let { it.hidden = fabHide || curTab == 5 } } catch (_: Throwable) {} }
+    private fun updateTasksFab() { try { val a = TaskCenter.active(); val t = TaskCenter.total(); val n = if (a > 0) a else t; navUi?.label(5, if (n > 0) "المهام ($n)" else "المهام"); tasksFabUi?.let { it.hidden = fabHide || curTab == 5 } } catch (_: Throwable) {} }
     override fun onCreate(b: Bundle?) {
         TabNav.pendingMain = null   // (v973)
         val t0Boot = android.os.SystemClock.uptimeMillis()   // (v834) قياس زمن onCreate + بداية عدّ السبلاش
@@ -856,7 +856,7 @@ class MainActivity : Activity() {
         dismissSettings = { try { settingsDlg.dialog.dismiss() } catch (_: Throwable) {} }
         // رجّع الطابور المحفوظ (لو التطبيق اتقفل/اتمسح) وكمّل الترجمة
         if (!fromPlayer && BgJobs.restore(this) > 0) { BgService.start(this); libUi?.refreshRows() }
-        lib.onQueue = { qui.show() }
+        lib.onQueue = { showTasksDialog() }   // (v1198) المهام + طابور الترجمة صفحة واحدة
         try { TaskStore.resume(this) } catch (_: Throwable) {}   // (v457) كمّل مهام الترميز اللي اتقطعت
         BgJobs.onChange = { runOnUiThread { if (!isDestroyed) { libUi?.refreshRows(); if (qui.showing) qui.refresh(); TaskCenter.changed(); updateTasksFab() } } }
         lib.gate = { open -> lk.gate(open) }
